@@ -37,6 +37,7 @@ await runScript(async ({ bot, sdk }) => {
     await cheat(sdk, `setstat defence ${DEF}`);
     await cheat(sdk, 'give staff_of_fire 1');
     await cheat(sdk, 'give bloodrune 500');
+    await cheat(sdk, 'give deathrune 500');
     await cheat(sdk, 'give airrune 5000');
     await cheat(sdk, 'give firerune 5000');
     await cheat(sdk, `give shark ${Number(process.env.FOOD ?? 20)}`);
