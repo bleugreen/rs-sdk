@@ -17,6 +17,11 @@
  *   --eat=MODE        none | stun (eat the tick a failure is seen, inside the
  *                     stun) | flow (eat on every 5th success, >= 4 ticks after
  *                     the last stun ended). Uses lobsters (::give lobster 28).
+ *                     auto = realistic policy: eat in a success window
+ *                     (>= 4 ticks after the stun ended) when HP <= max-heal,
+ *                     or at once when HP <= --dmg (the next failure could kill).
+ *   --eatdelay=K      with --eat=stun, eat K ticks after the failure is seen
+ *   --food=NAME       food obj name for ::give (default lobster; heal via --heal)
  *   --stunprobe=K     after a failure, stop clicking; send ONE click K ticks
  *                     after the failed roll, then resume at roll+14. Shows
  *                     whether a click inside the stun is queued or dropped.
@@ -43,6 +48,9 @@ const HP = Number(flag('hp', '99'));
 const EAT = flag('eat', 'none')!;
 const STUNPROBE = Number(flag('stunprobe', '0'));
 const EVERY = Number(flag('every', '1'));
+const EATDELAY = Number(flag('eatdelay', '0'));
+const FOOD = flag('food', 'lobster')!;
+const DMG = Number(flag('dmg', '3'));
 const OUT = flag('out', `${process.env.TMPDIR ?? '/tmp'}/thieving-${NPC.source.replace(/\W+/g, '')}-${LEVEL}-${EAT}-${STUNPROBE}.jsonl`)!;
 
 /** stat_random from PlayerOps.ts STAT_RANDOM: chance out of 256. */
@@ -73,7 +81,7 @@ await runScript(async ({ bot, sdk }) => {
     if (TELE && TELE !== 'none') { await sdk.sendSay(`::tele ${TELE}`); await waitTicks(3); }
     if (HP) { await sdk.sendSay(`::setstat hitpoints ${HP}`); await waitTicks(2); }
     if (LEVEL) { await sdk.sendSay(`::setstat thieving ${LEVEL}`); await waitTicks(2); }
-    if (EAT !== 'none') { await sdk.sendSay('::give lobster 27'); }
+    if (EAT !== 'none') { await sdk.sendSay(`::give ${FOOD} 27`); }
     await waitTicks(3);
     console.log(`start: hp ${sdk.getState()!.player!.hp}/${sdk.getState()!.player!.maxHp}, thieving ${thieving(sdk.getState())!.baseLevel}`);
     while (sdk.getState()?.dialog.isOpen) { await sdk.sendClickDialog(0); await waitTicks(1); }
@@ -92,12 +100,15 @@ await runScript(async ({ bot, sdk }) => {
     type Roll = { tick: number; ok: boolean; dmg?: number; level: number; ateBefore?: number; rej: number; clicks: number };
     const rolls: Roll[] = [];
     let rejTicks = 0, clicksSince = 0, xpDrops = 0, noTargetRun = 0, deaths = 0;
+    let eatAt = -1, healed = 0, forcedEats = 0, restocks = 0, lastHpForHeal = state.player!.hp;
+    const HEAL = Number(flag('heal', FOOD === 'shark' ? '20' : '12'));
     let clicks = 0, rejections = 0, eats = 0, combatBlocks = 0, setstats = 0, noTarget = 0;
     let target: NearbyNpc | undefined;
     let suppressUntil = -1, probeAt = -1, probeSent = 0;
     let lastStunEnd = -100, successesSinceEat = 0, lastEatTick = -100;
     const startTick = state.tick;
     let prevLevel = thieving(state)!.baseLevel;
+    const startXp = thieving(state)!.experience;
 
     while (rolls.length < ATTEMPTS) {
         state = await nextTick(state.tick);
@@ -163,10 +174,22 @@ await runScript(async ({ bot, sdk }) => {
         if (EAT === 'none' && HP && hp > 0 && hp < 15) { await sdk.sendSay(`::setstat hitpoints ${HP}`); events.push('hpreset'); }
 
         // Eating.
-        const food = state.inventory.find(i => /lobster/i.test(i.name));
-        if (EAT !== 'none' && !food) { await sdk.sendSay('::give lobster 27'); }
-        if (food && EAT === 'stun' && failed > 0) {
+        const foodRe = new RegExp(FOOD.replace(/_/g, ' '), 'i');
+        const food = state.inventory.find(i => foodRe.test(i.name));
+        if (EAT !== 'none' && !food) { await sdk.sendSay(`::give ${FOOD} 27`); restocks++; }
+        if (EAT === 'stun' && failed > 0) eatAt = t + EATDELAY;
+        if (food && EAT === 'stun' && t === eatAt) {
             await sdk.sendUseItem(food.slot, 1); eats++; lastEatTick = t; events.push('eat');
+        }
+        if (hp > lastHpForHeal) healed += hp - lastHpForHeal;
+        lastHpForHeal = hp;
+        if (food && EAT === 'auto' && t - lastEatTick >= 3) {
+            const maxHp = state.player!.maxHp;
+            const window = picked > 0 && t - lastStunEnd >= 4;
+            if ((window && hp <= maxHp - HEAL) || (hp <= DMG && hp > 0)) {
+                await sdk.sendUseItem(food.slot, 1); eats++; lastEatTick = t; events.push(window ? 'eat' : 'eat-forced');
+                if (!window) forcedEats++;
+            }
         }
         if (food && EAT === 'flow' && picked > 0 && successesSinceEat >= 5 && t - lastStunEnd >= 4) {
             await sdk.sendUseItem(food.slot, 1); eats++; lastEatTick = t; successesSinceEat = 0; events.push('eat');
@@ -233,6 +256,8 @@ await runScript(async ({ bot, sdk }) => {
         rejectedTicksAfterSuccess: rejected.afterSuccess, rejectedTicksAfterFail: rejected.afterFail,
         gapsWithEat: eatGaps, xpDrops,
         clicks, rejections, rejectionsPerSuccess: +(rejections / Math.max(ok, 1)).toFixed(3),
-        damagePerFail: dmg, eats, setstats, combatBlocks, deaths, noTarget, probeSent, log: OUT,
+        damagePerFail: dmg, eats, forcedEats, healed, restocks, hpLost: rolls.filter(r => !r.ok).reduce((a, r) => a + (r.dmg ?? DMG), 0),
+        baseXpGained: +((thieving(state)!.experience - startXp) / 25).toFixed(1), ticksTotal: state.tick - startTick,
+        setstats, combatBlocks, deaths, noTarget, probeSent, log: OUT,
     }, null, 1));
 }, { timeout: 0, printState: false });
