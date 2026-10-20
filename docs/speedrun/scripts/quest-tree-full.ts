@@ -17,9 +17,14 @@ await runScript(async ({ bot, sdk }) => {
     await cheat(sdk, 'energy');
     const atk0 = sdk.getSkill('attack')!.experience;
     const T0 = now(sdk);
+    // The maze side of the village fence is z <= 3160; the loose railing at (2515,3161) has no requirement.
+    const railing = () => locOp(sdk, /loose railing/i, /squeeze/i, s => pos(s).z >= 3162, 20);
 
-    // 1. First entry: walk the maze to King Bolren (Elkoy only guides once the quest has started).
-    rec.add(await walk(bot, sdk, 2541, 3170, 1), '1 maze to Bolren');
+    // 1. First entry: walk the maze to the loose railing, squeeze through, walk to King Bolren
+    // (Elkoy only guides once the quest has started).
+    rec.add(await walk(bot, sdk, 2515, 3160, 0), '1a maze to loose railing');
+    rec.add(await railing(), '1b');
+    rec.add(await walk(bot, sdk, 2541, 3171, 1), '1c railing to Bolren');
     rec.add(await talk(sdk, /^King Bolren$/i, [/Can I help at all/, /glad to help/], { idle: 4 }), '2 Bolren start');
     console.log('treequest', await getvar(sdk, 'treequest'), 'pos', pos(sdk.getState()));
 
@@ -69,7 +74,8 @@ await runScript(async ({ bot, sdk }) => {
     await cheat(sdk, 'energy');
     rec.add(await walk(bot, sdk, 2504, 3193, 1), '15 walk to Elkoy');
     rec.add(await talk(sdk, /^Elkoy$/i, [/Yes please/], { idle: 3 }), '16 Elkoy guide in');
-    rec.add(await walk(bot, sdk, 2541, 3170, 1), '17 village to Bolren');
+    rec.add(await railing(), '17a');
+    rec.add(await walk(bot, sdk, 2541, 3171, 1), '17b railing to Bolren');
     rec.add(await talk(sdk, /^King Bolren$/i, [/find the warlord/], { idle: 4 }), '18 Bolren orb 1');
     console.log('treequest', await getvar(sdk, 'treequest'), 'pos', pos(sdk.getState()));
 
@@ -90,7 +96,8 @@ await runScript(async ({ bot, sdk }) => {
     await cheat(sdk, 'energy');
     rec.add(await walk(bot, sdk, 2504, 3193, 1), '21 walk to Elkoy');
     rec.add(await talk(sdk, /^Elkoy$/i, [/Yes please/], { idle: 3 }), '22 Elkoy guide in');
-    rec.add(await walk(bot, sdk, 2541, 3170, 1), '23 village to Bolren');
+    rec.add(await railing(), '23a');
+    rec.add(await walk(bot, sdk, 2541, 3171, 1), '23b railing to Bolren');
     rec.add(await talk(sdk, /^King Bolren$/i, [], { idle: 12 }), '24 Bolren finish + ceremony');
     await waitTicks(sdk, 3);
     const atk1 = sdk.getSkill('attack')!.experience;
