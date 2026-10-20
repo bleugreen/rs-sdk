@@ -177,6 +177,29 @@ export async function timedWalk(
     return { ticks: tick(sdk) - start, tiles, success: r.success, message: r.message ?? '' };
 }
 
+/**
+ * True while a level-up message is the open dialogue. At 25x xp these arrive
+ * every few kills and interrupt combat; a fight loop must dismiss them without
+ * mistaking a quest dialogue (Morgan Le Faye, the Titan) for one.
+ */
+export function isLevelUpDialog(sdk: BotSDK): boolean {
+    const d = sdk.getState()?.dialog;
+    if (!d?.isOpen) return false;
+    const text = [d.text ?? '', ...(d.allComponents ?? []).map(c => c.text)].join(' ');
+    return /Congratulations, you just advanced|You (are|have) now (level|reached)/i.test(text);
+}
+
+/** Dismiss a level-up dialogue page by page; returns pages clicked. */
+export async function dismissLevelUps(sdk: BotSDK): Promise<number> {
+    let n = 0;
+    while (isLevelUpDialog(sdk) && n < 10) {
+        await sdk.clickDialogByText(/continue/i).catch(() => sdk.sendClickDialog(0));
+        n++;
+        await sdk.waitForTicks(1);
+    }
+    return n;
+}
+
 export function report(title: string, rows: Record<string, unknown>): void {
     console.log(`\n== ${title} ==`);
     for (const [k, v] of Object.entries(rows)) console.log(`${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`);
