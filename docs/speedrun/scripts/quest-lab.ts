@@ -108,7 +108,13 @@ export async function talkThrough(
             if (!d.isWaiting && (d.pageId !== lastPage || stale)) {
                 lastPage = d.pageId;
                 lastClickTick = s.tick;
-                if (d.options.length > 0) {
+                const isContinue = d.options.length > 0 && d.options.every(o => /click here to continue|^continue/i.test(o.text));
+                if (isContinue) {
+                    transcript.push(`[${s.tick}] page: ${(d.text ?? '').replace(/\s+/g, ' ').slice(0, 90)}`);
+                    const r = await sdk.clickDialogByText(/continue/i);
+                    if (!r.success) lastPage = undefined;
+                    else pages++;
+                } else if (d.options.length > 0) {
                     const texts = d.options.map(o => o.text);
                     const pick = choices.find(re => texts.some(t => re.test(t)));
                     if (!pick) {
