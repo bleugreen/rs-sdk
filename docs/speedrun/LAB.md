@@ -74,10 +74,12 @@ batch to one executor.
 ## Measuring
 
 - Log the server tick of every xp change and report the gaps; that is the cycle
-  time. Report base xp (game xp / 25 at `NODE_XPRATE=25`; check the engine's
-  xp rate in your lab and say which you used).
+  time. Report base xp: the local engine defaults to the production rate of 25x
+  (`server/engine/src/util/WorldConfig.ts:102`), so base xp = game xp / 25.
 - Level-up chat dialogs freeze gathering loops; dismiss them
   (`sdk.sendClickDialog(0)`) as soon as they appear.
-- Commit measurement scripts under `docs/speedrun/scripts/` so a number labelled
-  measured names a script someone can rerun. Copy one into `bots/<name>/` (or
-  pass the bot name as an argument) to run it.
+- Commit measurement scripts under `docs/speedrun/scripts/<skill>-<what>.ts` so
+  a number labelled measured names a script someone can rerun. They import
+  `runScript` from `../../../sdk/runner` and take the bot name as an argument:
+  `bun docs/speedrun/scripts/mining-cycle.ts <botname>` (credentials come from
+  `bots/<botname>/bot.env`).
