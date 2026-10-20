@@ -34,12 +34,12 @@ await runScript(async ({ sdk }) => {
         const dB = Math.max(Math.abs(me.x - pair.b[0]), Math.abs(me.z - pair.b[1]));
         const target = dA <= dB ? pair.a : pair.b;
         const before = log.events.length;
-        sdk.getNewChat();
+        sdk.getNewChat({ types: [0] });
         const hp0 = sdk.getState()!.player!.hp;
         await sdk.sendWalk(target[0], target[1], true);
         let failed = false;
         await waitTicksFor(sdk, s => {
-            if (sdk.getNewChat().some(m => /were hit by/i.test(m.text))) failed = true;
+            if (sdk.getNewChat({ types: [0] }).some(m => /were hit by/i.test(m.text))) failed = true;
             return failed || log.events.length > before;
         }, 30);
         if (failed) {
