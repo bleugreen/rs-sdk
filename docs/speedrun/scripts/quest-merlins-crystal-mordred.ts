@@ -20,7 +20,7 @@ await runScript(async ({ bot, sdk }) => {
     await L.setStats(sdk, { attack: att, strength: str, defence: def, hitpoints: hp });
     await sdk.waitForTicks(3);
     for (const item of sdk.getInventory()) await bot.dropItem(item, 'all');
-    const gear = [weapon, 'rune_full_helm', 'rune_platebody', 'rune_platelegs', 'rune_kiteshield', 'amulet_of_strength'];
+    const gear = [weapon, 'rune_full_helm', 'rune_chainbody', 'rune_platelegs', 'rune_kiteshield', 'amulet_of_strength'];
     for (const g of gear) {
         if (!sdk.getEquipment().some(e => e.name.toLowerCase().replace(/ /g, '_') === g)) {
             await L.cheat(sdk, `give ${g} 1`, 1);
