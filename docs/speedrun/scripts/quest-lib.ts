@@ -186,6 +186,7 @@ export async function driveDialog(sdk: BotSDK, c: Counts, choices: (string | Reg
     while (s.tick - start < maxTicks) {
         s = await nextTick(sdk, s.tick);
         const d = s.dialog;
+        if (process.env.QDEBUG) console.log(`  [dlg] t=${s.tick} at ${s.player?.worldX},${s.player?.worldZ} open=${d?.isOpen} wait=${d?.isWaiting} text=${(d?.text ?? '').slice(0, 70)} opts=${d?.options.map(o => o.text).join('/')}`);
         if (!d?.isOpen) {
             if (++closedFor >= idleTicks && (!until || until(s))) return;
             continue;
