@@ -3,7 +3,8 @@
 //   bun docs/speedrun/scripts/quest-magearena-run.ts <botname>
 //
 // Env (all optional): MAGIC (default 80), HP (70), DEF (70), GOD (saradomin|guthix|zamorak, default
-// saradomin), SPELL (fire_wave|fire_blast, default fire_wave), RESET=1 sets %magearena to 0 first.
+// saradomin), SPELL (fire_wave|fire_blast, default fire_blast), FOOD (sharks, 20), EAT_BELOW (40),
+// FIGHT_CAP (ticks, 1500), RESET=1 sets %magearena to 0 first.
 // Setup uses staff commands (LOCAL_STAFF_LEVEL=4) and is not timed. Each timed segment logs its
 // tick count, dialogue pages, option clicks and tiles.
 import { runScript } from '../../../sdk/runner';
@@ -13,7 +14,9 @@ const MAGIC = Number(process.env.MAGIC ?? 80);
 const HP = Number(process.env.HP ?? 70);
 const DEF = Number(process.env.DEF ?? 70);
 const GOD = process.env.GOD ?? 'saradomin';
-const SPELL = process.env.SPELL ?? 'fire_wave';
+// Kolodion's Flames of Zamorak drains Magic by 1 + 5% per hit, stacking, so Fire Wave (75) is
+// refused after two hits at 80 Magic; Fire Blast (59) is the default.
+const SPELL = process.env.SPELL ?? 'fire_blast';
 const SPELL_COM: Record<string, number> = { fire_wave: 1189, fire_blast: 1181 };
 const STATUE: Record<string, { x: number; z: number }> = {
     saradomin: { x: 2500, z: 4721 },
@@ -36,7 +39,7 @@ await runScript(async ({ bot, sdk }) => {
     await cheat(sdk, 'give bloodrune 500');
     await cheat(sdk, 'give airrune 5000');
     await cheat(sdk, 'give firerune 5000');
-    await cheat(sdk, 'give shark 10');
+    await cheat(sdk, `give shark ${Number(process.env.FOOD ?? 20)}`);
     await waitTicks(sdk, 3);
     await bot.equipItem(/staff of fire/i);
     await tele(sdk, 2539, 4715);
@@ -75,7 +78,7 @@ await runScript(async ({ bot, sdk }) => {
         }
         for (const m of sdk.getNewChat({ types: [0] })) log(sdk, `chat: ${m.text}`, tArena);
         if (p) minHp = Math.min(minHp, p.hp);
-        if (p && p.hp > 0 && p.hp < 30) {
+        if (p && p.hp > 0 && p.hp < Number(process.env.EAT_BELOW ?? 40)) {
             const food = sdk.findInventoryItem(/shark/i);
             if (food) {
                 await bot.eatFood(food);
