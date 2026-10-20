@@ -112,12 +112,15 @@ async function crossTrack(sdk: Sdk, L: Ledger, heading: 'south' | 'north') {
     let alcove: [number, number] | null = null;
     while (!alcove && sdk.getState()!.tick - t0 < 80) {
         const { z, dir } = await cart1Dir(sdk);
+        // The alcove is 7-8 tiles (4 ticks running) from the corridor end; the
+        // cart moves 1 tile per tick, so a head-on cart must be at least 6
+        // tiles short of the alcove when we set off.
         if (heading === 'south') {
-            if (dir > 0 && z <= 4498) alcove = ALCOVE_N; // coming at us: duck at 4503 first
+            if (dir > 0 && z <= 4496) alcove = ALCOVE_N; // coming at us: duck at 4503 first
             else if (dir < 0 && z <= 4507) alcove = ALCOVE_S; // going away: follow, duck at 4496
         } else {
-            if (dir < 0 && z >= 4500) alcove = ALCOVE_S;
-            else if (dir > 0 && z >= 4493) alcove = ALCOVE_N;
+            if (dir < 0 && z >= 4503) alcove = ALCOVE_S; // coming at us: duck at 4496 first
+            else if (dir > 0 && z >= 4493) alcove = ALCOVE_N; // going away: follow, duck at 4503
         }
     }
     const waitedEntry = sdk.getState()!.tick - t0;
@@ -130,7 +133,13 @@ async function crossTrack(sdk: Sdk, L: Ledger, heading: 'south' | 'north') {
         if (z === null) return true;
         return heading === 'south' ? z > alcove![1] : z < alcove![1];
     };
-    await until(sdk, () => { const p = pos(sdk); return p.x === alcove![0] && p.z === alcove![1]; }, 40);
+    const trace: string[] = [];
+    const inAlcove = () => {
+        const p = pos(sdk);
+        trace.push(`${sdk.getState()!.tick}: me ${p.x},${p.z} cart ${cart1(sdk)}`);
+        return p.x === alcove![0] && p.z === alcove![1];
+    };
+    if (!(await until(sdk, inAlcove, 30))) throw new Error(`never reached alcove ${alcove}:\n${trace.join('\n')}`);
     const t2 = sdk.getState()!.tick;
     await until(sdk, passed, 60);
     const t3 = sdk.getState()!.tick;
