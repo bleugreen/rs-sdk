@@ -101,10 +101,9 @@ await runScript(async ({ bot, sdk }) => {
         if (swappedAtTick === null && weapon !== 'excalibur' && titan?.hp != null && titan.hp <= swapAt) {
             const ex = sdk.findInventoryItem(/^Excalibur$/i);
             if (ex) {
-                await sdk.sendUseItem(ex.slot, 1); // wield
                 swappedAtTick = L.tick(sdk) - fightStart;
                 swappedAtTitanHp = titan.hp;
-                await sdk.waitForTicks(1);
+                await bot.equipItem(ex);
                 await bot.attack(titan);
                 continue;
             }
