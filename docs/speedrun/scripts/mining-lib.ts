@@ -53,7 +53,14 @@ export function mineOp(loc: NearbyLoc): number {
 export async function setup(sdk: any, opts: { level: number; pick: string; x: number; z: number }): Promise<BotWorldState> {
     await sdk.sendSay(`::setstat mining ${opts.level}`);
     await waitTicks(sdk, 2);
-    const have = (sdk.getState() as BotWorldState).inventory.some(i => /pickaxe/i.test(i.name));
+    // Drop every other pickaxe: pickaxe_checker picks the best one held, but a stray
+    // tutorial bronze pickaxe confuses which tier is being measured.
+    const wanted = opts.pick.replace(/_/g, ' ').toLowerCase();
+    for (const i of (sdk.getState() as BotWorldState).inventory) {
+        if (/pickaxe/i.test(i.name) && i.name.toLowerCase() !== wanted) await sdk.sendDropItem(i.slot);
+    }
+    await waitTicks(sdk, 1);
+    const have = (sdk.getState() as BotWorldState).inventory.some(i => i.name.toLowerCase() === wanted);
     if (!have) {
         await sdk.sendSay(`::give ${opts.pick}`);
         await waitTicks(sdk, 2);
