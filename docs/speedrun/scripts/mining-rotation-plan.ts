@@ -19,16 +19,16 @@
 //    (click processed) --respawn ticks after it (Loc.ts turn, player_count.rs2).
 import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
-import { isTileWalkable, findLongPath } from '../../../sdk/pathfinding';
+import { isTileWalkable } from '../../../sdk/pathfinding';
 import { IRON_IDS, arg } from './mining-lib';
 
 const RUN = Number(arg('run', '1'));
 const RESPAWN = Number(arg('respawn', '19'));
 const LINK = Number(arg('link', '8'));
-const MIN = Number(arg('min', '3'));
-const BEAM = Number(arg('beam', '1500'));
-const HORIZON = Number(arg('horizon', '900'));
-const WARM = 300;
+const MIN = Number(arg('min', '5'));
+const BEAM = Number(arg('beam', '150'));
+const HORIZON = Number(arg('horizon', '600'));
+const WARM = 200;
 const SHOW = arg('show', '');
 
 type P = [number, number];
@@ -80,17 +80,29 @@ function plan(cluster: P[]) {
         }
     });
     if (!stands.length) return null;
-    // path lengths between stands
-    const dist: number[][] = stands.map(a => stands.map(b => {
-        if (a[0] === b[0] && a[1] === b[1]) return 0;
-        const path = findLongPath(0, a[0], a[1], b[0], b[1], 64);
-        const last = path[path.length - 1];
-        if (!last || last.x !== b[0] || last.z !== b[1]) return Infinity;
-        // waypoints are turn points; count tiles by Chebyshev steps between them
-        let n = 0, px = a[0], pz = a[1];
-        for (const w of path) { n += Math.max(Math.abs(w.x - px), Math.abs(w.z - pz)); px = w.x; pz = w.z; }
-        return n;
-    }));
+    // Step counts between stands: 8-way BFS over walkable non-rock tiles in a box around the
+    // cluster. Ignores wall edges and diagonal corner-cutting rules, so short routes are
+    // checked in the lab (mining-rotation.ts) before they are trusted.
+    const x0 = Math.min(...cluster.map(r => r[0])) - 6, z0 = Math.min(...cluster.map(r => r[1])) - 6;
+    const x1 = Math.max(...cluster.map(r => r[0])) + 6, z1 = Math.max(...cluster.map(r => r[1])) + 6;
+    const free = (x: number, z: number) => x >= x0 && x <= x1 && z >= z0 && z <= z1 && !rockSet.has(`${x},${z}`) && isTileWalkable(0, x, z);
+    const dist: number[][] = stands.map(a => {
+        const d = new Map<string, number>([[key(a), 0]]);
+        const q: P[] = [a];
+        while (q.length) {
+            const c = q.shift()!;
+            const dc = d.get(key(c))!;
+            if (dc >= 12) continue;
+            for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+                const n: P = [c[0] + dx!, c[1] + dz!];
+                if (d.has(key(n)) || !free(n[0], n[1])) continue;
+                if (dx && dz && (!free(c[0] + dx, c[1]) || !free(c[0], c[1] + dz))) continue;
+                d.set(key(n), dc + 1);
+                q.push(n);
+            }
+        }
+        return stands.map(b => d.get(key(b)) ?? Infinity);
+    });
 
     type S = { t: number; pos: number; avail: number[]; ores: number; late: number; hist: string[] };
     let beam: S[] = stands.map((_, i) => ({ t: -3, pos: i, avail: cluster.map(() => 0), ores: 0, late: 0, hist: [] }));
@@ -140,7 +152,9 @@ function plan(cluster: P[]) {
 
 const rows: string[] = [];
 for (const c of clusters.sort((a, b) => b.length - a.length)) {
+    const t0 = Date.now();
     const res = plan(c);
+    console.error(`planned ${c.length}-rock cluster at ${key(c[0]!)} in ${Date.now() - t0} ms`);
     if (!res || !res.best) continue;
     const lateTicks = HORIZON - WARM;
     const perOre = lateTicks / Math.max(1, res.best.late);
