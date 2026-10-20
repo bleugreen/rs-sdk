@@ -58,6 +58,11 @@ Gateway: `AGENT_PORT`, plus `WEB_MANAGEMENT_PORT` so it finds its engine
 | woodcutting | 8930 | 8931 | 8932 | 43630 | 7830 |
 | fishing | 8940 | 8941 | 8942 | 43640 | 7840 |
 | thieving | 8950 | 8951 | 8952 | 43650 | 7850 |
+| tickmanip | 8960 | 8961 | 8962 | 43660 | 7860 |
+
+The default block belongs to whoever is not on this list (the fletch-menu client
+hang fix, the quest-route issues). Quest-route children should take blocks from
+9010 upward in the same pattern.
 
 Example (mining block):
 
