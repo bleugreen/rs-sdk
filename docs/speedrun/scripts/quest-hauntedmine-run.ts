@@ -76,6 +76,28 @@ async function sendUntil(sdk: Sdk, L: Ledger, send: () => Promise<unknown>, done
     if (!done()) throw new Error(`${what} did not complete; at ${JSON.stringify(pos(sdk))}; ${sdk.getState()!.gameMessages.slice(-3).map(m => m.text).join(' | ')}`);
 }
 
+/**
+ * Cart 1 patrols x=2727 between z=4491 and z=4509 with 3-tick stops
+ * (hauntedmine.npc, hauntedmine_cart1), and that track is the only corridor
+ * between the ladders at (2734,4503) and (2725,4486). Start the run when the
+ * cart is north of the junction and heading north (or parked at the north
+ * end): it cannot come back past z=4503 for at least 9 ticks.
+ */
+async function waitCart1(sdk: Sdk, L: Ledger) {
+    const t0 = sdk.getState()!.tick;
+    let prev: number | null = null;
+    while (sdk.getState()!.tick - t0 < 60) {
+        const cart = sdk.getNearbyNpcs().find(n => /mine cart/i.test(n.name) && (n.tileX ?? n.x) === 2727);
+        if (!cart) break;
+        const z = cart.tileZ ?? cart.z;
+        if (prev !== null && z >= 4505 && (z > prev || z === 4509)) break;
+        prev = z;
+        await sdk.waitForStateUpdate();
+    }
+    const waited = sdk.getState()!.tick - t0;
+    L.note(`waited ${waited} ticks for cart 1`);
+}
+
 const inMap = (sdk: Sdk, mx: number, mz: number) => {
     const p = pos(sdk);
     return p.x >> 6 === mx && p.z >> 6 === mz;
@@ -151,6 +173,7 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         L.begin('ladders: 53_150 -> 43_71 -> 42_70 -> 43_70 mushroom area');
         await opLoc(sdk, L, /ladder/i, [3422, 9625], 1, () => inMap(sdk, 43, 71));
         await opLoc(sdk, L, /ladder/i, [2798, 4567], 1, () => inMap(sdk, 42, 70));
+        await waitCart1(sdk, L);
         await opLoc(sdk, L, /ladder/i, [2725, 4486], 1, () => inMap(sdk, 43, 70));
         L.end();
     },
@@ -207,6 +230,7 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         await energy(sdk);
         L.begin('mushroom half -> surface (ladders up, crawl out back entrance 2)');
         await opLoc(sdk, L, /ladder/i, [2789, 4486], 1, () => inMap(sdk, 42, 70));
+        await waitCart1(sdk, L);
         await opLoc(sdk, L, /ladder/i, [2734, 4503], 1, () => inMap(sdk, 43, 71));
         await opLoc(sdk, L, /ladder/i, [2782, 4569], 1, () => inMap(sdk, 53, 150));
         await opLoc(sdk, L, /cart tunnel/i, [3408, 9623], 1, () => pos(sdk).z < 4000);
