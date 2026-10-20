@@ -146,6 +146,33 @@ async function crossTrack(sdk: Sdk, L: Ledger, heading: 'south' | 'north') {
     L.note(`cart 1 (${heading}): entry wait ${waitedEntry}, to alcove ${t2 - t1}, alcove wait ${t3 - t2}, alcove ${alcove.join(',')}`);
 }
 
+/**
+ * Cart 4 patrols x=2739 between z=4528 and z=4531, parking 4 ticks at each
+ * end (14-tick cycle), and that track is the only way from the end-cart
+ * ladder to the lift-area ladder (2732,4529). Coming from the north the run
+ * needs track tiles 4531..4529 and steps off west at (2738,4528): 2 ticks.
+ * Go the tick the cart arrives at its south end; it then sits for 3 more.
+ */
+async function crossCart4(sdk: Sdk, L: Ledger) {
+    const STAGE: [number, number] = [2739, 4532];
+    L.add({ tiles: chebyshevPath(sdk, STAGE[0], STAGE[1]) });
+    await sdk.sendWalk(STAGE[0], STAGE[1], true);
+    if (!(await until(sdk, () => pos(sdk).x === STAGE[0] && pos(sdk).z === STAGE[1], 40))) throw new Error(`did not reach cart 4 staging tile; at ${JSON.stringify(pos(sdk))}`);
+    const cart4 = () => {
+        const c = sdk.getNearbyNpcs().find(n => /mine cart/i.test(n.name) && n.x === 2739 && n.z >= 4528 && n.z <= 4531);
+        return c ? c.z : null;
+    };
+    const t0 = sdk.getState()!.tick;
+    let prev = cart4();
+    while (sdk.getState()!.tick - t0 < 30) {
+        await sdk.waitForStateUpdate();
+        const z = cart4();
+        if (z === 4528 && prev !== null && prev > 4528) break;
+        prev = z;
+    }
+    L.note(`cart 4 wait ${sdk.getState()!.tick - t0}`);
+}
+
 const inMap = (sdk: Sdk, mx: number, mz: number) => {
     const p = pos(sdk);
     return p.x >> 6 === mx && p.z >> 6 === mz;
@@ -172,7 +199,7 @@ async function setup(sdk: Sdk, phase: Phase) {
     await cheat(sdk, `setvar hauntedmine ${stage}`);
     await cheat(sdk, `setvar hauntedmine_bits ${bits}`);
     if (idx >= 1 && idx <= 6 && !invHas(sdk, /zealot's key/i)) await cheat(sdk, 'give hauntedmine_lift_key 1');
-    if (idx === 7 && !invHas(sdk, /glowing fungus/i)) await cheat(sdk, 'give glowing_fungus 1');
+    if ((idx === 6 || idx === 7) && !invHas(sdk, /glowing fungus/i)) await cheat(sdk, 'give glowing_fungus 1');
     if (idx === 9 && !invHas(sdk, /^key$/i)) await cheat(sdk, 'give hauntedmine_reward_key 1');
     const start: Record<Phase, [number, number]> = {
         zealot: [3444, 3256], enter: [3446, 3256], mush: [2789, 4487], cart: [2778, 4508], exit: [2770, 4520],
@@ -321,6 +348,7 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         await energy(sdk);
         L.begin('end cart -> lift area (ladder up, walk, ladder down)');
         await opLoc(sdk, L, /ladder/i, [2774, 4540], 1, () => inMap(sdk, 42, 70));
+        await crossCart4(sdk, L);
         await opLoc(sdk, L, /ladder/i, [2732, 4529], 1, () => inMap(sdk, 43, 70));
         L.end();
         L.begin('use the lift key on the valve');
