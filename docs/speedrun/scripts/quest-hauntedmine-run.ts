@@ -78,7 +78,7 @@ async function setup(sdk: Sdk, phase: Phase) {
     if (idx === 9) await cheat(sdk, 'give hauntedmine_reward_key 1');
     const start: Record<Phase, [number, number]> = {
         zealot: [3444, 3256], enter: [3446, 3256], mush: [2789, 4487], cart: [2778, 4508], exit: [2770, 4520],
-        endcart: [3430, 3231], lift: [2774, 4539], stairs: [2725, 4452], boss: [2811, 4454], reward: [2788, 4457]
+        endcart: [3429, 3227], lift: [2774, 4539], stairs: [2725, 4452], boss: [2811, 4454], reward: [2788, 4457]
     };
     await tele(sdk, start[phase][0], start[phase][1]);
     if (phase === 'cart') {
@@ -108,8 +108,19 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
     },
 
     async enter(sdk, L) {
-        L.begin('walk to back entrance 2 and crawl in');
-        await opLoc(sdk, L, /cart tunnel/i, [3429, 3225], 1, () => pos(sdk).z > 9000, 200);
+        // The zealot's side of the ridge reaches the cart tunnel only over the
+        // obstacle cart; the back entrances share a ledge reachable only from
+        // inside the mine (collision map, see haunted_mine.md).
+        L.begin('zealot -> obstacle cart -> cart tunnel (sets stage 3)');
+        const before = pos(sdk);
+        await opLoc(sdk, L, /mine cart/i, [3445, 3236], 1, () => { const p = pos(sdk); return p.z <= 3235 || (p.x < 3445 && p.z < 3240); }, 120);
+        await ticks(sdk, 1);
+        L.note(`cart crossing ${before.x},${before.z} -> ${pos(sdk).x},${pos(sdk).z}`);
+        await opLoc(sdk, L, /cart tunnel/i, [3440, 3232], 1, () => pos(sdk).z > 9000, 120);
+        L.end();
+        L.begin('main half -> out through back entrance 1 -> in through back entrance 2');
+        await opLoc(sdk, L, /cart tunnel/i, [3404, 9631], 1, () => pos(sdk).z < 4000, 120);
+        await opLoc(sdk, L, /cart tunnel/i, [3429, 3225], 1, () => pos(sdk).z > 9000, 120);
         L.end();
         L.begin('ladders: 53_150 -> 43_71 -> 42_70 -> 43_70 mushroom area');
         await opLoc(sdk, L, /ladder/i, [3422, 9625], 1, () => inMap(sdk, 43, 71));
