@@ -93,6 +93,7 @@ await runScript(async ({ bot, sdk }) => {
     let suppressUntil = -1, probeAt = -1, probeSent = 0;
     let lastStunEnd = -100, successesSinceEat = 0, lastEatTick = -100;
     const startTick = state.tick;
+    let prevLevel = thieving(state)!.baseLevel;
 
     while (rolls.length < ATTEMPTS) {
         state = await nextTick(state.tick);
@@ -120,13 +121,13 @@ await runScript(async ({ bot, sdk }) => {
 
         const dxp = skill.experience - lastXp;
         if (dxp > 0) {
-            rolls.push({ tick: t, ok: true, level: skill.baseLevel - (skill.baseLevel > (LEVEL || 999) ? 1 : 0), ateBefore: t - lastEatTick });
+            rolls.push({ tick: t, ok: true, level: prevLevel, ateBefore: t - lastEatTick });
             events.push(`xp+${dxp}`);
             successesSinceEat++;
         }
         const failed = fresh.filter(x => /You fail to pick/.test(x)).length;
         for (let i = 0; i < failed; i++) {
-            rolls.push({ tick: t, ok: false, level: skill.baseLevel, ateBefore: t - lastEatTick });
+            rolls.push({ tick: t, ok: false, level: prevLevel, ateBefore: t - lastEatTick });
             events.push('fail');
             if (STUNPROBE) { suppressUntil = t + 14; probeAt = t + STUNPROBE; }
         }
@@ -138,7 +139,7 @@ await runScript(async ({ bot, sdk }) => {
         }
         if (hp > lastHp) events.push(`hp+${hp - lastHp}`);
         if (rej > lastRej) { rejections += rej - lastRej; events.push(`rej+${rej - lastRej}`); }
-        lastXp = skill.experience; lastHp = hp; lastRej = rej;
+        lastXp = skill.experience; lastHp = hp; lastRej = rej; prevLevel = skill.baseLevel;
 
         // Dismiss level-up dialogs, then hold the level.
         if (state.dialog.isOpen) { await sdk.sendClickDialog(0); events.push('dialog'); }
@@ -193,15 +194,17 @@ await runScript(async ({ bot, sdk }) => {
     const ch = CHANCES[name] ?? CHANCES[Object.keys(CHANCES).find(k => name.includes(k)) ?? ''];
     const dmg: Record<number, number> = {};
     for (const r of rolls) if (!r.ok && r.dmg !== undefined) dmg[r.dmg] = (dmg[r.dmg] ?? 0) + 1;
-    const xpPer = (thieving(state)!.experience, null);
+    // Expected success chance over the levels the rolls were actually made at.
+    const predicted = ch ? rolls.reduce((a, r) => a + statRandom(r.level, ch[0], ch[1]), 0) / rolls.length : null;
     console.log(JSON.stringify({
         npc: target?.name, level: LEVEL, eat: EAT, stunprobe: STUNPROBE, every: EVERY,
         rolls: rolls.length, successes: ok, fails,
         successRate: +(ok / rolls.length).toFixed(4),
-        predicted: ch && LEVEL ? +statRandom(LEVEL, ch[0], ch[1]).toFixed(4) : null,
+        predicted: predicted === null ? null : +predicted.toFixed(4),
+        levels: [rolls[0].level, rolls[rolls.length - 1].level],
         ticksFirstToLastRoll: span, rollsPerTick: +((rolls.length - 1) / span).toFixed(4),
         gapAfterSuccess: gaps.afterSuccess, gapAfterFail: gaps.afterFail,
         clicks, rejections, rejectionsPerSuccess: +(rejections / Math.max(ok, 1)).toFixed(3),
-        damagePerFail: dmg, eats, setstats, combatBlocks, noTarget, probeSent, log: OUT, xpPer,
+        damagePerFail: dmg, eats, setstats, combatBlocks, noTarget, probeSent, log: OUT,
     }, null, 1));
 }, { timeout: 0, printState: false });
