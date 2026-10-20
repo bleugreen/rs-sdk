@@ -20,6 +20,7 @@
  *                     auto = realistic policy: eat in a success window
  *                     (>= 4 ticks after the stun ended) when HP <= max-heal,
  *                     or at once when HP <= --dmg (the next failure could kill).
+ *   --eatbelow=N      auto: window-eat threshold (default maxHp - heal)
  *   --eatdelay=K      with --eat=stun, eat K ticks after the failure is seen
  *   --food=NAME       food obj name for ::give (default lobster; heal via --heal)
  *   --stunprobe=K     after a failure, stop clicking; send ONE click K ticks
@@ -102,6 +103,7 @@ await runScript(async ({ bot, sdk }) => {
     let rejTicks = 0, clicksSince = 0, xpDrops = 0, noTargetRun = 0, deaths = 0;
     let eatAt = -1, healed = 0, forcedEats = 0, restocks = 0, lastHpForHeal = state.player!.hp;
     const HEAL = Number(flag('heal', FOOD === 'shark' ? '20' : '12'));
+    const EATBELOW = Number(flag('eatbelow', String(state.player!.maxHp - HEAL)));
     let clicks = 0, rejections = 0, eats = 0, combatBlocks = 0, setstats = 0, noTarget = 0;
     let target: NearbyNpc | undefined;
     let suppressUntil = -1, probeAt = -1, probeSent = 0;
@@ -183,10 +185,13 @@ await runScript(async ({ bot, sdk }) => {
         }
         if (hp > lastHpForHeal) healed += hp - lastHpForHeal;
         lastHpForHeal = hp;
-        if (food && EAT === 'auto' && t - lastEatTick >= 3) {
-            const maxHp = state.player!.maxHp;
-            const window = picked > 0 && t - lastStunEnd >= 4;
-            if ((window && hp <= maxHp - HEAL) || (hp <= DMG && hp > 0)) {
+        if (food && EAT === 'auto') {
+            const window = picked > 0 && t - lastStunEnd >= 4 && t - lastEatTick >= 3;
+            // A forced eat may land while the player is delayed and be dropped,
+            // so it is re-sent every tick until HP rises (the server's own
+            // %eat_delay stops a double eat).
+            const forced = hp <= DMG && hp > 0;
+            if ((window && hp <= EATBELOW) || forced) {
                 await sdk.sendUseItem(food.slot, 1); eats++; lastEatTick = t; events.push(window ? 'eat' : 'eat-forced');
                 if (!window) forcedEats++;
             }
