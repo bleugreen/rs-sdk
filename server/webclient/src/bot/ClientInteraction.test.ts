@@ -76,6 +76,7 @@ mock.module('#/client/MobileKeyboard.js', () => ({
 const { Client } = await import('../client/Client.js');
 const { default: LocType } = await import('#/config/LocType.js');
 const { default: ObjType } = await import('#/config/ObjType.js');
+const { default: NpcType } = await import('#/config/NpcType.js');
 const { default: IfType } = await import('#/config/IfType.js');
 const { default: Packet } = await import('#/io/Packet.js');
 const { default: ClientPlayer, PlayerUpdate } = await import('#/dash3d/ClientPlayer.js');
@@ -725,5 +726,73 @@ describe('loc routing', () => {
         expect(result).toEqual({ success: true, routed: false });
         expect(opcodes).toEqual([ClientProt.OPLOCU]);
         expect(payload).toEqual([2512, 3468, 1996, 954, 0, 3214]);
+    });
+});
+
+describe('config lookups outside the table', () => {
+    /**
+     * A config archive whose byte 0 is a payload-free opcode (17, blockwalk=false
+     * for locs): a decode stuck at a NaN position re-reads it forever. The guard
+     * on g1 turns that would-be hang into a failing assertion.
+     */
+    function guardedDat(bytes: number[]) {
+        const dat = new Packet(Uint8Array.from(bytes));
+        const g1 = dat.g1.bind(dat);
+        dat.g1 = () => {
+            if (!Number.isInteger(dat.pos)) {
+                throw new Error(`decode read at pos ${dat.pos}`);
+            }
+            return g1();
+        };
+        return dat;
+    }
+
+    function installLocTable(): void {
+        LocType.recent = Array.from({ length: 10 }, () => new LocType());
+        LocType.recentPos = 0;
+        LocType.idx = Int32Array.from([1]); // loc 0 is the bare terminator at pos 1
+        LocType.dat = guardedDat([17, 0]);
+    }
+
+    test('LocType.list still decodes an id inside the table', () => {
+        installLocTable();
+
+        expect(LocType.list(0)).toMatchObject({ id: 0, blockwalk: true });
+    });
+
+    test.each([undefined, Number.NaN, -1, 1, 0.5])('LocType.list(%p) throws instead of decoding forever', id => {
+        installLocTable();
+
+        expect(() => LocType.list(id as number)).toThrow(RangeError);
+    });
+
+    test.each([
+        ['NpcType', NpcType],
+        ['ObjType', ObjType]
+    ] as const)('%s.list rejects an id outside the table', (_name, Type) => {
+        Type.recent = Array.from({ length: 20 }, () => new (Type as new () => never)());
+        Type.idx = Int32Array.from([1]);
+        Type.dat = guardedDat([17, 0]);
+
+        expect(() => Type.list(undefined as never)).toThrow(RangeError);
+        expect(() => Type.list(1)).toThrow(RangeError);
+    });
+
+    test('browser interactLoc with no locId fails instead of hanging', () => {
+        // sdk.sendInteractLoc(loc, 'chop') - the loc object lands in x, 'chop'
+        // in z and locId is undefined. Every bounds check compares false on NaN.
+        installLocTable();
+        const client = {
+            ingame: true,
+            out: { p2() {} },
+            localPlayer: { routeX: [12], routeZ: [8] },
+            mapBuildBaseX: 2500,
+            mapBuildBaseZ: 3400,
+            routeToLoc: () => true,
+            writePacketOpcode() {}
+        };
+
+        expect(() => Client.prototype.interactLoc.call(client as never, { x: 2512 } as never, 'chop' as never, undefined as never, 1))
+            .toThrow(RangeError);
     });
 });
