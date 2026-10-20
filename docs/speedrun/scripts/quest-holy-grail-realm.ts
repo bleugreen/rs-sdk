@@ -45,8 +45,8 @@ await runScript(async ({ bot, sdk }) => {
     // Whistle in.
     let t0 = L.tick(sdk);
     await sdk.sendUseItem(sdk.findInventoryItem(/Magic whistle/i)!.slot, 1);
-    out.whistleIn = (await L.waitUntil(sdk, () => L.pos(sdk).z > 4600, 30)) ?? -1 - t0;
-    out.whistleIn = (out.whistleIn as number) - t0;
+    const arrived = await L.waitUntil(sdk, () => L.pos(sdk).z > 4600, 30);
+    out.whistleIn = arrived === null ? null : arrived - t0;
     out.arrivedAt = L.pos(sdk);
     await sdk.waitForTicks(2);
 
