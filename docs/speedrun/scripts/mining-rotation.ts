@@ -57,7 +57,7 @@ await runScript(async ({ bot, sdk }) => {
     const log: string[] = [];
     let lastXp = miningXp(s);
     let step = 0;
-    let R = s.tick - 2; // pretend a roll just happened so the first click goes out now
+    let R = s.tick; // treat "now" as a roll tick so the first click goes out now
     let pos: P = [s.player!.worldX, s.player!.worldZ];
     let planUntil = -1; // label of the roll we are waiting for
 
@@ -90,7 +90,16 @@ await runScript(async ({ bot, sdk }) => {
         R = o.roll;
         planUntil = o.roll;
     };
+    const flush = (st: BotWorldState) => {
+        for (const [t, p] of [...sends].sort((a, b) => a[0] - b[0])) {
+            if (t > st.tick) continue;
+            sends.delete(t);
+            dropMatching(sdk, st, /ore$|^uncut/i, 3);
+            sdk.sendInteractLoc(p[0], p[1], locId(st, p), 1).catch(() => {});
+        }
+    };
     planNext();
+    flush(s);
 
     while (ticks.length < ORES) {
         s = await nextTick(sdk, s.tick);
@@ -102,23 +111,13 @@ await runScript(async ({ bot, sdk }) => {
             log.push(`  xp +${xp - lastXp} seen@${s.tick} (roll ${s.tick - 1}, predicted ${predicted[ticks.length - 1]})`);
             lastXp = xp;
         }
-        const p = sends.get(s.tick);
-        if (p) {
-            sends.delete(s.tick);
-            dropMatching(sdk, s, /ore$|^uncut/i, 3);
-            sdk.sendInteractLoc(p[0], p[1], locId(s, p), 1).catch(() => {});
-        }
+        flush(s);
         // Plan the next rock on the roll tick itself: our position is current (PLAYER_INFO
         // carries this tick's movement) and the next click must go out on this label.
         if (s.tick >= planUntil && sends.size === 0) {
             pos = [s.player!.worldX, s.player!.worldZ];
             planNext();
-            const now = sends.get(s.tick);
-            if (now) {
-                sends.delete(s.tick);
-                dropMatching(sdk, s, /ore$|^uncut/i, 3);
-                sdk.sendInteractLoc(now[0], now[1], locId(s, now), 1).catch(() => {});
-            }
+            flush(s);
         }
         if (s.tick > planUntil + 40) throw new Error(`stalled; log:\n${log.slice(-12).join('\n')}`);
     }
