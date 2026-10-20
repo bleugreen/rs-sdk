@@ -14,9 +14,11 @@ const MAGIC = Number(process.env.MAGIC ?? 80);
 const HP = Number(process.env.HP ?? 70);
 const DEF = Number(process.env.DEF ?? 70);
 const GOD = process.env.GOD ?? 'saradomin';
-// Kolodion's Flames of Zamorak drains Magic by 1 + 5% per hit, stacking, so Fire Wave (75) is
-// refused after two hits at 80 Magic; Fire Blast (59) is the default.
-const SPELL = process.env.SPELL ?? 'fire_blast';
+// Kolodion's Flames of Zamorak drains Magic by 1 + 5% per hit, stacking, so without Protect from
+// Magic Fire Wave (75) is refused after two hits at 80 Magic. Every Kolodion attack is a spell, so
+// PRAYER >= 37 (Protect from Magic) blocks all damage and drains. PRAYER=0 fights without it.
+const PRAYER = Number(process.env.PRAYER ?? 70);
+const SPELL = process.env.SPELL ?? (PRAYER >= 37 ? 'fire_wave' : 'fire_blast');
 const SPELL_COM: Record<string, number> = { fire_wave: 1189, fire_blast: 1181 };
 const STATUE: Record<string, { x: number; z: number }> = {
     saradomin: { x: 2500, z: 4721 },
@@ -35,6 +37,7 @@ await runScript(async ({ bot, sdk }) => {
     await cheat(sdk, `setstat magic ${MAGIC}`);
     await cheat(sdk, `setstat hitpoints ${HP}`);
     await cheat(sdk, `setstat defence ${DEF}`);
+    if (PRAYER > 0) await cheat(sdk, `setstat prayer ${PRAYER}`);
     await cheat(sdk, 'give staff_of_fire 1');
     await cheat(sdk, 'give bloodrune 500');
     await cheat(sdk, 'give deathrune 500');
@@ -50,6 +53,7 @@ await runScript(async ({ bot, sdk }) => {
 
     // ---- segment 1: talk to Kolodion until the arena teleport ----
     const t0 = tick(sdk);
+    if (PRAYER >= 37) await bot.activatePrayer('protect_from_magic');
     const kol = sdk.findNearbyNpc(/^Kolodion$/);
     if (!kol) throw new Error('Kolodion not found near the cellar spawn');
     await sdk.sendTalkToNpc(kol.index);
@@ -72,6 +76,10 @@ await runScript(async ({ bot, sdk }) => {
         const p = sdk.getState()?.player;
         if (!p || p.isDead || pos(sdk).z < 3900 || tick(sdk) - tArena > FIGHT_CAP) {
             throw new Error(`fight aborted at +${tick(sdk) - tArena}: dead=${p?.isDead} pos=${JSON.stringify(pos(sdk))} casts=${casts}`);
+        }
+        if (PRAYER >= 37 && !sdk.isPrayerActive('protect_from_magic') && (sdk.getSkill('Prayer')?.level ?? 0) > 0) {
+            log(sdk, 'protect from magic was off; reactivating', tArena);
+            await bot.activatePrayer('protect_from_magic');
         }
         if (p.hp !== lastHp) {
             log(sdk, `hp ${lastHp} -> ${p.hp}`, tArena);
@@ -102,6 +110,9 @@ await runScript(async ({ bot, sdk }) => {
     }
     if (lastForm !== -1) forms.push(`npc ${lastForm}: ${tick(sdk) - formStart} ticks (until teleport out)`);
     const tBack = tick(sdk);
+    const prayerLeft = sdk.getSkill('Prayer')?.level;
+    if (PRAYER >= 37) await bot.deactivateAllPrayers();
+    log(sdk, `prayer points ${PRAYER} -> ${prayerLeft}`, t0);
     log(sdk, `SEG fight: ${tBack - tArena} ticks, cast clicks ${casts}, eats ${eats}, min hp ${minHp}`, t0);
     for (const f of forms) console.log('   ' + f);
     const d2 = await talkThrough(sdk, [], { idleMs: 2500 });
