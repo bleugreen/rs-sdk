@@ -178,3 +178,95 @@ export function npcByName(sdk: BotSDK, re: RegExp) {
 export function baseXp(sdk: BotSDK, skill: string): number {
     return (sdk.getSkillXp(skill) ?? 0) / 25;
 }
+
+/** Read a varp with the staff `::getvar` command (lab only; not counted in segments). */
+export async function getvar(sdk: BotSDK, name: string): Promise<number> {
+    const t = now(sdk);
+    await sdk.sendSay(`::getvar ${name}`);
+    const re = new RegExp(`get ${name}: (-?\\d+)`);
+    for (let i = 0; i < 20; i++) {
+        await sdk.waitForStateUpdate();
+        const m = (sdk.getState()?.gameMessages ?? []).filter((g: any) => g.tick >= t - 1).map((g: any) => re.exec(g.text)).find(Boolean);
+        if (m) return parseInt(m[1]);
+    }
+    return NaN;
+}
+
+export async function logVars(sdk: BotSDK, names: string[]): Promise<void> {
+    const out: string[] = [];
+    for (const n of names) out.push(`${n}=${await getvar(sdk, n)}`);
+    console.log('[vars] ' + out.join(' ') + ' @' + JSON.stringify(pos(sdk)));
+}
+
+/** Nearest loc to (x, z) whose name matches, from an on-demand scan. */
+export async function locNear(sdk: BotSDK, x: number, z: number, re: RegExp = /./, radius = 20) {
+    const locs = await sdk.scanNearbyLocs(radius);
+    return locs.filter(l => re.test(l.name)).sort((a, b) => Math.max(Math.abs(a.x - x), Math.abs(a.z - z)) - Math.max(Math.abs(b.x - x), Math.abs(b.z - z)))[0] ?? null;
+}
+
+/** Nearest npc to (x, z) whose name matches. */
+export function npcNear(sdk: BotSDK, re: RegExp, x?: number, z?: number) {
+    const p = pos(sdk);
+    const cx = x ?? p.x, cz = z ?? p.z;
+    return sdk.getNearbyNpcs().filter(n => re.test(n.name)).sort((a, b) => Math.max(Math.abs(a.x - cx), Math.abs(a.z - cz)) - Math.max(Math.abs(b.x - cx), Math.abs(b.z - cz)))[0] ?? null;
+}
+
+/** Op a loc near (x, z), then click through whatever dialogue it opens. */
+export async function opLoc(sdk: BotSDK, rec: Recorder | null, x: number, z: number, re: RegExp, op = 1, choices: (string | RegExp)[] = [], opts: { openTicks?: number } = {}) {
+    const loc = await locNear(sdk, x, z, re);
+    if (!loc) { console.log(`[loc] none matching ${re} near ${x},${z}`); return null; }
+    await sdk.sendInteractLoc(loc.x, loc.z, loc.id, op);
+    rec?.interact();
+    return runDialog(sdk, rec, choices, { openTicks: opts.openTicks ?? 25 });
+}
+
+export async function talk(sdk: BotSDK, rec: Recorder | null, re: RegExp, choices: (string | RegExp)[] = [], x?: number, z?: number) {
+    const npc = npcNear(sdk, re, x, z);
+    if (!npc) { console.log(`[npc] none matching ${re}`); return null; }
+    await sdk.sendInteractNpc(npc.index, 1);
+    rec?.interact();
+    return runDialog(sdk, rec, choices, { openTicks: 30 });
+}
+
+export async function useOnNpc(sdk: BotSDK, rec: Recorder | null, itemRe: RegExp, npcRe: RegExp, choices: (string | RegExp)[] = [], x?: number, z?: number) {
+    const item = sdk.findInventoryItem(itemRe);
+    const npc = npcNear(sdk, npcRe, x, z);
+    if (!item || !npc) { console.log(`[use] missing item ${itemRe}=${!!item} or npc ${npcRe}=${!!npc}`); return null; }
+    await sdk.sendUseItemOnNpc(item.slot, npc.index);
+    rec?.interact();
+    return runDialog(sdk, rec, choices, { openTicks: 30 });
+}
+
+export async function useOnItem(sdk: BotSDK, rec: Recorder | null, aRe: RegExp, bRe: RegExp, choices: (string | RegExp)[] = []) {
+    const a = sdk.findInventoryItem(aRe), b = sdk.findInventoryItem(bRe);
+    if (!a || !b) { console.log(`[use] missing ${aRe}=${!!a} ${bRe}=${!!b}`); return null; }
+    await sdk.sendUseItemOnItem(a.slot, b.slot);
+    rec?.interact();
+    return runDialog(sdk, rec, choices, { openTicks: 4 });
+}
+
+/** Wait until the player's position satisfies `pred`, or `ticks` pass. */
+export async function waitPos(sdk: BotSDK, pred: (p: { x: number; z: number; level: number }) => boolean, ticks = 30): Promise<boolean> {
+    const t = now(sdk);
+    while (now(sdk) - t < ticks) {
+        if (pred(pos(sdk))) return true;
+        await sdk.waitForStateUpdate();
+    }
+    return pred(pos(sdk));
+}
+
+export function hp(sdk: BotSDK): number {
+    return sdk.getSkill('hitpoints')?.level ?? 0;
+}
+
+export async function setupAccount(sdk: BotSDK, bot: BotActions, stats: Record<string, number>, items: [string, number][]): Promise<void> {
+    await sdk.waitForReady(60_000);
+    const p = pos(sdk);
+    if (p.x < 3200 && p.x > 3000 && p.z > 3000 && p.z < 3150) {
+        const r = await bot.skipTutorial();
+        console.log('[setup] tutorial', r.message);
+    }
+    for (const [s, l] of Object.entries(stats)) await cheat(sdk, `setstat ${s} ${l}`);
+    for (const [i, n] of items) await cheat(sdk, `give ${i} ${n}`);
+    await sdk.waitForTicks(2);
+}
