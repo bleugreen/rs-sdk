@@ -1,0 +1,8 @@
+# Cairn Project Configuration
+mcpServers:
+  rs-agent:
+    type: stdio
+    command: bun
+    args:
+    - run
+    - /Users/mitch/rs-play/mcp/server.ts
