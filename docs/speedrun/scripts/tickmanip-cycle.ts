@@ -153,6 +153,8 @@ await runScript(async ({ bot, sdk }) => {
     let lastXp = startXp;
     let anchor: number | null = null; // observed tick on which the bootstrap click was sent
     let cooldownUntil = -1;
+    let curPhase = ((phase % 3) + 3) % 3;
+    let resyncs = 0;
     let actedTick = -1;
     let idleTicks = 0;
     let lastSeenTick = -1;
@@ -216,7 +218,10 @@ await runScript(async ({ bot, sdk }) => {
 
             // eat technique: open-loop schedule anchored on our own bootstrap click (see header)
             if (anchor !== null && (targetGone || (t - Math.max(anchor + method.r0 + 1, lastXpTick) > 15))) {
-                log(`T${t} resync (${targetGone ? 'target gone' : 'no xp'})`);
+                // A lock with no xp is mistimed by a tick or two (latency moved); try the next phase.
+                if (!targetGone) curPhase = (curPhase + 1) % 3;
+                resyncs++;
+                log(`T${t} resync (${targetGone ? 'target gone' : 'no xp'}), next phase ${curPhase}`);
                 anchor = null;
                 current = null;
                 cooldownUntil = t + 5; // let the pushed clock expire so the bootstrap click starts a fresh cycle
@@ -224,10 +229,10 @@ await runScript(async ({ bot, sdk }) => {
             if (anchor === null) {
                 if (t < cooldownUntil) return;
                 actedTick = t;
-                if (click(s)) { anchor = t; breaks.push(t); log(`T${t} bootstrap`); }
+                if (click(s)) { anchor = t; breaks.push(t); log(`T${t} bootstrap phase ${curPhase}`); }
                 return;
             }
-            const d = t - anchor - method.r0 - 1 - phase;
+            const d = t - anchor - method.r0 - 1 - curPhase;
             if (d < 0) return;
             const k = d % 3;
             if (k === 0) {
@@ -260,7 +265,7 @@ await runScript(async ({ bot, sdk }) => {
     const cycle = gaps.reduce((a, b) => gcd(a, b), 0);
     const gameXp = lastXp - startXp;
     const summary = [
-        `mode=${mode} level=${level} phase=${phase} xpEvents=${xpTicks.length} gapsCounted=${gaps.length} breaks=${breaks.length} dialogs=${dialogsSeen}`,
+        `mode=${mode} level=${level} phase=${phase} xpEvents=${xpTicks.length} gapsCounted=${gaps.length} breaks=${breaks.length} resyncs=${resyncs} finalPhase=${curPhase} dialogs=${dialogsSeen}`,
         `gap histogram (ticks:count) ${Object.entries(hist).map(([g, c]) => `${g}:${c}`).join(' ')}`,
         `min gap ${minGap}, gcd of gaps ${cycle}, span ${span} ticks, ticks per xp event ${(span / Math.max(1, xpTicks.length - 1)).toFixed(2)}`,
         `rolls in span at cycle ${cycle || '?'}: ${cycle ? span / cycle : '?'}; success fraction ${cycle ? ((xpTicks.length - 1) / (span / cycle)).toFixed(3) : '?'}`,
