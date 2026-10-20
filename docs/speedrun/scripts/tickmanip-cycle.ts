@@ -40,6 +40,9 @@ const level = Number(args.level ?? 99);
 const phase = Number(args.phase ?? 0);
 const maxTicks = Number(args.maxticks ?? rollsTarget * 12 + 200);
 const dropProducts = args.drop !== 'false';
+// A mistimed lock starves completely (each eat pushes the clock past the next click), so
+// "no xp for lockWindow ticks" means lost lock; size it so honest misses rarely trip it.
+const LOCK_WINDOW: Record<string, number> = { wc: 18, fly: 15, cage: 45 };
 const logPath = args.log ?? `${process.env.TMPDIR ?? '/tmp'}/tickmanip-${mode}${args.tag ? '-' + args.tag : ''}.log`;
 const FOOD = /^shrimps$/i;
 const FOOD_OBJ = 'shrimp';
@@ -69,6 +72,7 @@ if (!method || (technique !== 'base' && technique !== 'eat')) {
     console.error(`unknown mode ${mode}; methods ${Object.keys(METHODS).join(', ')}; techniques base, eat`);
     process.exit(2);
 }
+const lockWindow = Number(args.window ?? LOCK_WINDOW[methodName]);
 
 writeFileSync(logPath, `# tickmanip-cycle ${mode} level=${level} phase=${phase} rolls=${rollsTarget}\n`);
 const log = (line: string) => appendFileSync(logPath, line + '\n');
@@ -86,14 +90,33 @@ await runScript(async ({ bot, sdk }) => {
     await sdk.sendSay(`::tele ${method.tele}`);
     await sdk.waitForTicks(6);
 
+    type Target = { kind: 'loc'; x: number; z: number; id: number; op: number } | { kind: 'npc'; index: number; op: number; x: number; z: number };
+    let current: Target | null = null;
+
     const skillXp = (s: BotWorldState) => s.skills.find(k => k.name.toLowerCase() === method.skill)?.experience ?? 0;
+    // Warm-up: one ordinary click so the bot is standing at the target before any timing
+    // starts (a click that has to walk first shifts the open-loop anchor), then let the
+    // clock expire.
+    {
+        const s0 = sdk.getState()!;
+        current = findTarget(s0);
+        if (current) {
+            if (current.kind === 'loc') await sdk.sendInteractLoc(current.x, current.z, current.id, current.op);
+            else await sdk.sendInteractNpc(current.index, current.op);
+            const xp0 = skillXp(s0);
+            await sdk.waitForCondition(s => skillXp(s) > xp0, 60 * Number(process.env.NODE_TICKRATE ?? 300)).catch(() => {});
+        }
+        await sdk.sendWalk(sdk.getState()!.player!.worldX, sdk.getState()!.player!.worldZ); // stop the interaction
+        await sdk.waitForTicks(6);
+        for (const p of (sdk.getState()?.inventory ?? []).filter(i => method.product.test(i.name))) await sdk.sendDropItem(p.slot);
+        await sdk.waitForTicks(2);
+    }
     const startState = sdk.getState()!;
     const startXp = skillXp(startState);
     const startTick = startState.tick;
     log(`setup tick=${startTick} pos=${startState.player?.worldX},${startState.player?.worldZ} xp=${startXp}`);
 
-    type Target = { kind: 'loc'; x: number; z: number; id: number; op: number } | { kind: 'npc'; index: number; op: number; x: number; z: number };
-    let current: Target | null = null;
+
 
     const findTarget = (s: BotWorldState): Target | null => {
         if (method.kind === 'loc') {
@@ -217,7 +240,7 @@ await runScript(async ({ bot, sdk }) => {
             }
 
             // eat technique: open-loop schedule anchored on our own bootstrap click (see header)
-            if (anchor !== null && (targetGone || (t - Math.max(anchor + method.r0 + 1, lastXpTick) > 15))) {
+            if (anchor !== null && (targetGone || (t - Math.max(anchor + method.r0 + 1, lastXpTick) > lockWindow))) {
                 // A lock with no xp is mistimed by a tick or two (latency moved); try the next phase.
                 if (!targetGone) curPhase = (curPhase + 1) % 3;
                 resyncs++;
