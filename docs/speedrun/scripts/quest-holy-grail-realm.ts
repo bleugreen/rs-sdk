@@ -72,8 +72,9 @@ await runScript(async ({ bot, sdk }) => {
         if (s.player!.isDead) break;
         minHp = Math.min(minHp, s.player!.hp);
         if (s.dialog.isOpen) {
+            if (!L.isLevelUpDialog(sdk)) throw new Error(`unexpected dialogue mid-fight: ${s.dialog.text}`);
             levelUps++;
-            await bot.dismissBlockingUI();
+            await L.dismissLevelUps(sdk);
             const again = sdk.findNearbyNpc(/Black Knight Titan/);
             if (again) await bot.attack(again);
             continue;

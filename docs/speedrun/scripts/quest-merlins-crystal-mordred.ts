@@ -63,10 +63,10 @@ await runScript(async ({ bot, sdk }) => {
     while (L.tick(sdk) - t0 < 600) {
         const s = sdk.getState()!;
         if (s.dialog.isOpen) {
-            if (s.nearbyNpcs.some(n => /Morgan Le Faye/.test(n.name))) break;
-            // A level-up dialogue interrupts combat: dismiss it and re-attack.
+            // Any dialogue other than a level-up is Morgan Le Faye's interrupt.
+            if (!L.isLevelUpDialog(sdk)) break;
             levelUps++;
-            await bot.dismissBlockingUI();
+            await L.dismissLevelUps(sdk);
             const again = sdk.findNearbyNpc(/Sir Mordred/);
             if (again) await bot.attack(again);
             continue;
