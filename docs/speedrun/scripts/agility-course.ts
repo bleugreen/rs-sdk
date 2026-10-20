@@ -71,6 +71,9 @@ const course = COURSES[courseName];
 if (!course) throw new Error(`unknown course ${courseName}`);
 const laps = +lapsArg;
 
+// Every fail branch in the course scripts prints one of these (gnome_course.rs2 has none).
+const FAIL_RE = /slip and fall|lose your footing|lost your balance|missed a hand hold|missed the rope|were hit by|stumbled|stepped on a broken/i;
+
 async function nearestLoc(sdk: BotSDK, cands: [number, number, number][]) {
     const locs = await sdk.scanNearbyLocs(25);
     const me = pos(sdk);
@@ -121,6 +124,7 @@ await runScript(async ({ sdk }) => {
     const failDamage: { step: string; hpBefore: number; dmg: number }[] = [];
     let lastDoneTick = t0;
     let stuck = 0;
+    let heals = 0;
 
     for (let lap = 0; lap < laps; lap++) {
         let i = 0;
@@ -146,14 +150,21 @@ await runScript(async ({ sdk }) => {
                 if (i > 0) i--;
                 continue;
             }
+            sdk.getNewChat();
+            const msgs: string[] = [];
             await clickLoc(sdk, target[0], target[1], target[2]);
-            // done when an xp event of at least the obstacle's xp arrives; failed on hp loss
+            // done when an xp event of at least the obstacle's xp arrives; failed on a fail message
             let moved = false;
+            let failed = false;
             const p0 = pos(sdk);
             const ok = await waitTicksFor(sdk, s => {
                 const p = s.player;
                 if (p && (p.worldX !== p0.x || p.worldZ !== p0.z || p.level !== p0.level)) moved = true;
-                if ((p?.hp ?? 0) < hpBefore) return true;
+                for (const m of sdk.getNewChat()) {
+                    msgs.push(m.text);
+                    if (FAIL_RE.test(m.text)) failed = true;
+                }
+                if (failed) return true;
                 return log.events.slice(evBefore).some(e => e.baseGain >= step.xp - 0.05);
             }, 80);
             const gained = log.events.slice(evBefore).some(e => e.baseGain >= step.xp - 0.05);
@@ -165,25 +176,26 @@ await runScript(async ({ sdk }) => {
                 i++;
                 continue;
             }
-            const hpNow = sdk.getState()?.player?.hp ?? 0;
-            if (hpNow < hpBefore) {
-                fails[step.name] = (fails[step.name] ?? 0) + 1;
-                failDamage.push({ step: step.name, hpBefore, dmg: hpBefore - hpNow });
+            if (failed) {
                 // let the fail script finish
                 await sdk.waitForTicks(4);
+                const hpNow = sdk.getState()?.player?.hp ?? 0;
+                fails[step.name] = (fails[step.name] ?? 0) + 1;
+                failDamage.push({ step: step.name, hpBefore, dmg: hpBefore - hpNow });
                 if (pos(sdk).z > 6400) await climbOutOfPit(sdk);
                 console.log(`  lap ${lap} ${step.name}: FAIL at tick ${clickTick}, -${hpBefore - hpNow}hp, now at`, pos(sdk));
-                if (sdk.getState()!.player!.hp < 20) await cheat(sdk, `setstat hitpoints ${hpArg}`);
+                if (sdk.getState()!.player!.hp < +hpArg * 0.4) { await cheat(sdk, `setstat hitpoints ${hpArg}`); heals++; }
                 // progress varp is kept, so retry the same obstacle
                 continue;
             }
-            console.log(`  lap ${lap} ${step.name}: no xp after click (ok=${ok}, moved=${moved}) at`, pos(sdk));
+            console.log(`  lap ${lap} ${step.name}: no xp after click (ok=${ok}, moved=${moved}) at`, pos(sdk), msgs.slice(-3));
+            if (sdk.getState()!.player!.hp < +hpArg * 0.4) { await cheat(sdk, `setstat hitpoints ${hpArg}`); heals++; }
             if (++stuck > 5) throw new Error('stuck');
             if (!moved && i > 0) i--; // unreachable from here: redo the previous obstacle
         }
         const bonus = log.events.filter(e => e.baseGain >= course.lapBonus - 0.05);
         if (bonus.length >= 2) lapTicks.push(bonus[bonus.length - 1].tick - bonus[bonus.length - 2].tick);
-        console.log(`lap ${lap + 1} done at tick ${lastDoneTick} (${tick(sdk) - t0} since start), run energy ${sdk.getState()?.player?.runEnergy}`);
+        console.log(`lap ${lap + 1} done at tick ${lastDoneTick} (${tick(sdk) - t0} since start), run energy ${sdk.getState()?.player?.runEnergy}, hp ${sdk.getState()?.player?.hp}, hp lost so far ${log.hpLost}`);
     }
     const total = tick(sdk) - t0;
     const xp = (agilityXp(sdk.getState()) - startXp) / XP_RATE;
@@ -193,6 +205,6 @@ await runScript(async ({ sdk }) => {
         baseXpPerTick: +(xp / total).toFixed(2),
         lapTicks: summary(lapTicks), lapTicksList: lapTicks,
         stepTicks: Object.fromEntries(Object.entries(stepTicks).map(([k, v]) => [k, summary(v)])),
-        attempts, fails, failDamage,
+        attempts, fails, failDamage, hpLostTotal: log.hpLost, labHeals: heals,
     }, null, 1));
 }, { timeout: 3_600_000, printState: false });
