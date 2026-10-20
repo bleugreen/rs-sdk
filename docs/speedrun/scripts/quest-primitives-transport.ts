@@ -73,11 +73,16 @@ await runScript(async ({ sdk }) => {
     const want = (r: string) => !ONLY || ONLY === r;
     const out: Record<string, unknown> = {};
 
-    const ship = async (name: string, from: { x: number; z: number }, npc: RegExp, answers: RegExp[]) => {
+    const ship = async (name: string, starts: { x: number; z: number } | Array<{ x: number; z: number }>, npc: RegExp, answers: RegExp[]) => {
         const runs = [];
+        const cands = Array.isArray(starts) ? starts : [starts];
         for (let i = 0; i < 2; i++) {
-            await tele(sdk, from.x, from.z);
-            await waitTicks(sdk, 3);
+            // first start tile from which the NPC is reachable
+            for (const from of cands) {
+                await tele(sdk, from.x, from.z);
+                await waitTicks(sdk, 3);
+                if (sdk.findNearbyNpc(npc, { reachable: true } as any)) break;
+            }
             const c0 = invCount(sdk.getState(), /^coins$/i);
             const p0 = pos(sdk.getState());
             const ride = await converse(sdk, () => talk(sdk, npc), answers, far(p0, 40));
@@ -92,7 +97,7 @@ await runScript(async ({ sdk }) => {
     };
 
     if (want('karamja')) await ship('portSarimToKaramja', { x: 3029, z: 3217 }, /^(seaman lorris|seaman thresnor|captain tobias)$/i, [/^Yes please/]);
-    if (want('musa')) await ship('karamjaToPortSarim', { x: 2954, z: 3150 }, /^customs officer$/i, [/journey on this ship/i, /Search away/i, /^Ok\.?$/]);
+    if (want('musa')) await ship('karamjaToPortSarim', [{ x: 2954, z: 3146 }, { x: 2955, z: 3146 }, { x: 2956, z: 3147 }, { x: 2953, z: 3147 }, { x: 2954, z: 3148 }, { x: 2956, z: 3146 }], /^customs officer$/i, [/journey on this ship/i, /Search away/i, /^Ok\.?$/]);
     if (want('brimhaven')) await ship('ardougneToBrimhaven', { x: 2681, z: 3276 }, /^captain barnaby$/i, [/^Yes please/]);
     if (want('entrana')) {
         // Entrana bans weapons and armour: drop everything but runes and coins.
