@@ -378,7 +378,18 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
             const m0 = sdk.getState()!.gameMessages.length;
             const newMsg = (re: RegExp) => sdk.getState()!.gameMessages.slice(m0).some(m => re.test(m.text));
             await sdk.sendInteractLoc(lift.x, lift.z, lift.id, 1);
-            rode = await until(sdk, () => (inMap(sdk, 42, 69) && newMsg(/plunging you/i)) || newMsg(/can't reach/i), 60);
+            const trace: string[] = [];
+            let seen = m0;
+            rode = await until(sdk, () => {
+                const s = sdk.getState()!;
+                const p = pos(sdk);
+                const g = sdk.getNearbyNpcs().find(n => /ghost/i.test(n.name));
+                const msgs = s.gameMessages.slice(seen).map(m => m.text);
+                seen = s.gameMessages.length;
+                trace.push(`${s.tick} ${p.x},${p.z}${g ? ` ghost@${g.x},${g.z}` : ''}${msgs.length ? ' | ' + msgs.join(' | ') : ''}${s.dialog?.isOpen ? ' [dlg] ' + (s.dialog.text ?? '') : ''}`);
+                return (inMap(sdk, 42, 69) && newMsg(/plunging you/i)) || newMsg(/can't reach/i) || !!s.dialog?.isOpen;
+            }, 60);
+            if (!(rode && inMap(sdk, 42, 69))) console.log(`lift ${lift.id} trace:\n${trace.join('\n')}`);
             if (rode && inMap(sdk, 42, 69)) break;
             L.note(`lift ${lift.id}@${lift.x},${lift.z} unreachable`);
             rode = false;
