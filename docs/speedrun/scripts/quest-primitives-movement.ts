@@ -37,7 +37,9 @@ async function oneClick(sdk: BotSDK, x: number, z: number, running: boolean, max
 }
 
 /** Walk a long route by clicking the furthest route tile within `reach`, re-clicking `lead` tiles before the leg ends. */
-async function eagerWalk(sdk: BotSDK, x: number, z: number, reach = 30, lead = 4) {
+// reach stays well inside the client's 104x104 loaded area: a click beyond it
+// is clamped to the area's edge (LiteClient.walkTo) and the leg stops short.
+async function eagerWalk(sdk: BotSDK, x: number, z: number, reach = 20, lead = 3) {
     const t0 = now(sdk);
     const tr = trace(sdk);
     let clicks = 0;
