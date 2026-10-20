@@ -31,7 +31,7 @@ per-target cadence and success rate measured).
 | Band | Method | Location | Unlock | Base xp / success (read) | Ticks per roll (measured) | Success rate | Base xp / tick | Ticks for band |
 |---|---|---|---|---|---|---|---|---|
 | 1-25 | Pickpocket Man / Woman | East Ardougne market, e.g. (2614,3318) | none (members world) | 8.0 | 2 success / 11 fail | 70.7% at 1 -> 76% at 25 (read); 69.5% at 1, 70.0% at 20 (measured, 200 rolls each) | 1.17 at 1, 1.19 at 20 (measured) | 155 (inferred) |
-| 25-40 | Pickpocket Warrior woman (Al-Kharid warrior is the same row) | Ardougne warrior women, e.g. (2629,3295); Al-Kharid (3282,3170) | Thieving 25 | 26.0 | 2 / 11 | 52.3% at 25 -> 60.9% at 40 (read); 56.5% at 25, 55.5% at 35 (measured, Al-Kharid, 200 each) | 2.46 at 25, 2.35 at 35 (measured) | 181 (inferred) |
+| 25-40 | Pickpocket Warrior woman (Al-Kharid warrior is the same row) | Ardougne warrior women, e.g. (2629,3295); Al-Kharid (3282,3176) | Thieving 25 | 26.0 | 2 / 11 | 52.3% at 25 -> 60.9% at 40 (read); 56.5% at 25, 55.5% at 35 (measured, Al-Kharid, 200 each) | 2.46 at 25, 2.35 at 35 (measured) | 181 (inferred) |
 | 40-55 | Pickpocket Guard | Ardougne market guards, e.g. (2659,3309) | Thieving 40 | 46.8 | 2 / 11 | 49.2% at 40 (read); 52.0% (measured, 200) | 3.72 at 40 (measured) | 305 (inferred) |
 | 55-70 | Pickpocket Knight of Ardougne | Ardougne market, spawns (2653,3300), (2669,3298), (2671,3313), (2652,3318) | Thieving 55 | 84.3 | 2 / 11 | 60.5% at 55 -> 71.5% at 70 (read); 64.0% at 55, 71.3% at 70 (measured, 300 each) | 9.77 at 55, 12.68 at 70 (measured) | 422 (measured) |
 | 70-85 | Knight of Ardougne | same | | 84.3 | 2 / 11 | 83.3% at 85 (read); 84.0% (measured, 300) | 20.12 at 85 (measured) | 619 (measured) |
@@ -49,11 +49,11 @@ Totals:
 
 The spread is real. A 55 -> 99 run always needs exactly 452 successes (452 x
 84.3 = 38,104 base xp >= the 38,077 needed), so the variance comes from the
-failure count (96-106 measured; standard deviation of about 115 ticks,
-inferred) and from how far the chosen knight wanders (section 6).
+failure count (96-106 measured; standard deviation of about 120 ticks,
+inferred from the geometric failure count) and from how far the chosen knight wanders (section 6).
 
 The 'all targets' model route (farmers 10-25, Rogues 32-40, Fremennik 45-55)
-is only about 93 ticks faster from level 1 and needs the deep Wilderness and
+is only about 94 ticks faster from level 1 and needs the deep Wilderness and
 The Fremennik Trials, so the Ardougne-only route is recommended.
 
 ## 3. Quest xp
@@ -170,8 +170,8 @@ measured spot checks in section 4):
 |---|---|---|---|---|---|---|
 | 55 | 8.9 | | | | | 4.9 |
 | 70 | 12.6 | 10.2 | 8.9 | | | |
-| 80 | 16.5 | 11.6 | 10.7 | 9.8 | 9.1 | |
-| 90 | 22.1 | 13.4 | 13.1 | 11.5 | 10.5 | |
+| 80 | 16.5 | 11.6 | 10.7 | 9.8 | 9.0 | |
+| 90 | 21.5 | 13.4 | 13.1 | 11.5 | 10.5 | |
 | 99 | 29.1 (33.2 measured) | 15.2 (14.0 measured) | 15.6 | 13.5 | 12.2 (11.6 measured) | |
 
 - **Paladins and Heroes exist** (`pickpocket.dbrow:105-155`, spawned in the
@@ -201,8 +201,8 @@ measured spot checks in section 4):
 - **Damage and death.** Failure damage is fixed, not rolled: `damage(uid, 1,
   stun_damage)` (`damage.rs2:1-19`). It is 3 for knights, paladins and
   watchmen, 4 for heroes, 2 for warriors, guards and rogues, and 1 for men
-  (read). Measured: knights 3 in 98% of failures; the 2s are a regeneration
-  tick landing in the same tick. Over 55 -> 99 the account loses 285-317 HP
+  (read). Measured: knights 3 in 98% of failures. The 2s are probably a
+  regeneration tick landing in the same tick (inferred). Over 55 -> 99 the account loses 285-317 HP
   (measured, 3 runs), about 350 from level 1 (inferred). The first lab run
   died at 99 HP after 35 knight failures with no food. Failing does not put
   the account in combat: there were no "during combat" refusals in any run.
@@ -244,7 +244,7 @@ measured spot checks in section 4):
   success gaps were 2 (measured, 200 rolls each at 85). The market guards,
   paladins and heroes ignore pickpocketing.
 - **Members world only** (`pickpocket.rs2:101-104`). The demo server is
-  members (`WorldConfig.ts:100`).
+  members (`fly.toml:23`, `NODE_MEMBERS = "true"`).
 - **The bot must click every tick on production.** All measurements are on a
   local 100 ms engine with negligible latency. On production (300 ms ticks) a
   click that arrives one tick late turns a 2-tick success into 3. Per-tick
