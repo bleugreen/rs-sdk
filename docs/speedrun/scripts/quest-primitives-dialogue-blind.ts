@@ -1,6 +1,8 @@
-// Can several dialogue pages advance in one tick? Fires a burst of "continue"
-// clicks without waiting for each page, through the five plain pages of the
-// Cook's Assistant "You don't look very happy" branch (quest_cook.rs2:10-28).
+// Can several dialogue pages advance in one tick? Fires a choice click and a
+// burst of "continue" clicks without waiting for each page, through the plain
+// pages after the second choice of the Cook's Assistant "You don't look very
+// happy" branch (quest_cook.rs2:10-28). The burst must cover every page up to
+// the next choice, or the script waits for a choice that never appears.
 //
 // The stock lite client refuses a second continue until the next page arrives
 // (server/webclient/src/lite/actions.ts, the resumedPauseButton guard), so this
