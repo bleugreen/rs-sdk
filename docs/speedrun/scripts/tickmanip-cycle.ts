@@ -15,6 +15,12 @@
 // "Observed tick t" is the lite client's count of server ticks; packets sent while
 // handling t land in server tick t+1. --phase shifts the schedule for calibration.
 //
+// Packets cannot react to an observed roll in time (state -> gateway -> script -> gateway
+// -> client costs 1-2 ticks), so the schedule is open-loop: a click on an expired clock
+// landing on tick C rolls at C+r0, so the first eat is sent r0+1 ticks after the click and
+// then every 3 ticks; every packet shares the same latency, so relative timing survives.
+// xp drops are only used to detect a lost lock (then: stop, let the clock expire, re-click).
+//
 // Every packet sent and every xp change is logged with its tick to --log
 // (default $TMPDIR/tickmanip-<mode>.log); a summary goes to stdout.
 import { runScript } from '../../../sdk/runner';
@@ -48,12 +54,14 @@ interface Method {
     product: RegExp;
     /** First-click label rolls only when the clock equals map_clock (click on R+3). */
     clickOnRoll: boolean;
+    /** Ticks from a click on an expired clock to its first roll, read from the first-click label. */
+    r0: number;
 }
 
 const METHODS: Record<string, Method> = {
-    wc: { skill: 'woodcutting', tele: '0,48,50,15,34', give: [['rune_axe', 1]], kind: 'loc', target: /^willow/i, option: /^chop/i, product: /logs$/i, clickOnRoll: false },
-    fly: { skill: 'fishing', tele: '0,48,53,31,38', give: [['fly_fishing_rod', 1], ['feather', 5000]], kind: 'npc', target: /^fishing spot$/i, option: /^lure$/i, product: /^raw /i, clickOnRoll: false },
-    cage: { skill: 'fishing', tele: '0,44,53,34,41', give: [['lobster_pot', 1]], kind: 'npc', target: /^fishing spot$/i, option: /^cage$/i, product: /^raw /i, clickOnRoll: true }
+    wc: { skill: 'woodcutting', tele: '0,48,50,15,34', give: [['rune_axe', 1]], kind: 'loc', target: /^willow/i, option: /^chop/i, product: /logs$/i, clickOnRoll: false, r0: 3 },
+    fly: { skill: 'fishing', tele: '0,48,53,31,38', give: [['fly_fishing_rod', 1], ['feather', 5000]], kind: 'npc', target: /^fishing spot$/i, option: /^lure$/i, product: /^raw /i, clickOnRoll: false, r0: 4 },
+    cage: { skill: 'fishing', tele: '0,44,53,34,41', give: [['lobster_pot', 1]], kind: 'npc', target: /^fishing spot$/i, option: /^cage$/i, product: /^raw /i, clickOnRoll: true, r0: 4 }
 };
 
 const method = METHODS[methodName];
@@ -110,6 +118,9 @@ await runScript(async ({ bot, sdk }) => {
         return n ? { kind: 'npc', index: n.index, x: n.x, z: n.z, op: n.optionsWithIndex.find(o => method.option.test(o.text))!.opIndex } : null;
     };
 
+    const sameTarget = (a: Target | null, b: Target | null): boolean =>
+        !!a && !!b && a.kind === b.kind && (a.kind === 'loc' ? a.x === b.x && a.z === b.z && a.id === (b as any).id : a.index === (b as any).index);
+
     const fire = (tick: number, what: string, p: Promise<{ success: boolean; message?: string }>) => {
         log(`T${tick} send ${what}`);
         p.then(r => { if (!r.success) log(`T${tick} FAIL ${what}: ${r.message}`); }).catch(e => log(`T${tick} ERR ${what}: ${e}`));
@@ -140,10 +151,10 @@ await runScript(async ({ bot, sdk }) => {
     const xpTicks: number[] = [];
     const breaks: number[] = []; // ticks at which the schedule was re-bootstrapped (gaps spanning these are excluded)
     let lastXp = startXp;
-    let lastRoll: number | null = null;
+    let anchor: number | null = null; // observed tick on which the bootstrap click was sent
+    let cooldownUntil = -1;
     let actedTick = -1;
     let idleTicks = 0;
-    let bootstrapTick = -1;
     let lastSeenTick = -1;
     let dialogsSeen = 0;
     let dialogOpenSince: number | null = null;
@@ -158,7 +169,6 @@ await runScript(async ({ bot, sdk }) => {
                 xpTicks.push(t);
                 log(`T${t} XP +${xp - lastXp} (total ${xp})`);
                 lastXp = xp;
-                lastRoll = t;
             }
             if (s.dialog?.isOpen) {
                 if (dialogOpenSince === null) { dialogOpenSince = t; dialogsSeen++; log(`T${t} DIALOG open: ${(s.dialog.text ?? '').slice(0, 60)}`); }
@@ -182,33 +192,44 @@ await runScript(async ({ bot, sdk }) => {
             // Food top-up is a lab convenience standing in for banking; sent off-beat.
             const foodCount = s.inventory.filter(i => FOOD.test(i.name)).length;
 
+            const lastXpTick = xpTicks.length ? xpTicks[xpTicks.length - 1] : -1;
+            const targetGone = current !== null && !sameTarget(current, findTarget(s));
+
             if (technique === 'base') {
                 const full = s.inventory.length >= 28;
                 if (full && dropProducts) {
                     actedTick = t;
                     for (const p of s.inventory.filter(i => method.product.test(i.name))) fire(t, `drop ${p.name} slot${p.slot}`, sdk.sendDropItem(p.slot));
                     breaks.push(t);
-                    idleTicks = 0;
+                    anchor = null;
                     return;
                 }
-                if (s.dialog?.isOpen) { actedTick = t; fire(t, 'dismiss dialog', sdk.sendClickDialog(0)); breaks.push(t); return; }
-                if (bootstrapTick < 0 || idleTicks >= 3) {
+                if (s.dialog?.isOpen) { actedTick = t; fire(t, 'dismiss dialog', sdk.sendClickDialog(0)); breaks.push(t); anchor = null; return; }
+                const stalled = anchor !== null && t - Math.max(anchor, lastXpTick) > 12 && idleTicks >= 2;
+                if (anchor === null || targetGone || stalled) {
                     actedTick = t;
-                    if (click(s)) { bootstrapTick = t; idleTicks = -3; breaks.push(t); }
+                    current = null;
+                    if (click(s)) { anchor = t; breaks.push(t); }
                 }
                 return;
             }
 
-            // eat technique
-            if (lastRoll === null || (lastRoll < bootstrapTick) && t - bootstrapTick > 20 || (lastRoll !== null && t - lastRoll > 15)) {
-                // (re)bootstrap: plain click, then lock on the first xp drop
-                if (bootstrapTick < 0 || t - bootstrapTick > 20) {
-                    actedTick = t;
-                    if (click(s)) { bootstrapTick = t; breaks.push(t); lastRoll = null; log(`T${t} bootstrap`); }
-                }
-                if (lastRoll === null) return;
+            // eat technique: open-loop schedule anchored on our own bootstrap click (see header)
+            if (anchor !== null && (targetGone || (t - Math.max(anchor + method.r0 + 1, lastXpTick) > 15))) {
+                log(`T${t} resync (${targetGone ? 'target gone' : 'no xp'})`);
+                anchor = null;
+                current = null;
+                cooldownUntil = t + 5; // let the pushed clock expire so the bootstrap click starts a fresh cycle
             }
-            const k = (((t - lastRoll - phase) % 3) + 3) % 3;
+            if (anchor === null) {
+                if (t < cooldownUntil) return;
+                actedTick = t;
+                if (click(s)) { anchor = t; breaks.push(t); log(`T${t} bootstrap`); }
+                return;
+            }
+            const d = t - anchor - method.r0 - 1 - phase;
+            if (d < 0) return;
+            const k = d % 3;
             if (k === 0) {
                 actedTick = t;
                 eat(s);
