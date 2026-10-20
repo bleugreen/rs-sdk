@@ -307,7 +307,10 @@ export async function walk(bot: BotActions, sdk: BotSDK, c: Counts, x: number, z
 // ---------------------------------------------------------------------------
 // Fights
 
-export interface FightResult { ticks: number; dealt: number; taken: number; hits: number; eats: number; died: boolean }
+/** ticks: call to kill. engaged: call to first hitsplat either way. */
+export interface FightResult { ticks: number; engaged: number; dealt: number; taken: number; hits: number; eats: number; died: boolean }
+
+const LEVEL_UP = /congratulations|advanced a .* level|you've just advanced/i;
 
 /**
  * Waits until npc `re` (already attacking or attacked) is dead, attacking it if
@@ -315,8 +318,9 @@ export interface FightResult { ticks: number; dealt: number; taken: number; hits
  */
 export async function fight(sdk: BotSDK, c: Counts, re: RegExp, o: { food?: RegExp; eatAt?: number; attack?: boolean; maxTicks?: number } = {}): Promise<FightResult> {
     const t0 = tick(sdk);
-    let dealt = 0, taken = 0, hits = 0, eats = 0;
+    let dealt = 0, taken = 0, hits = 0, eats = 0, engagedTick = -1;
     const seen = new Set<string>();
+    const res = (s: BotWorldState, died: boolean): FightResult => ({ ticks: s.tick - t0, engaged: engagedTick < 0 ? -1 : engagedTick - t0, dealt, taken, hits, eats, died });
     let target: NearbyNpc | null = null;
     let lastAttack = -10;
     let s = sdk.getState()!;
@@ -328,14 +332,16 @@ export async function fight(sdk: BotSDK, c: Counts, re: RegExp, o: { food?: RegE
             seen.add(k);
             if (e.type === 'damage_dealt') { dealt += e.damage; hits++; }
             if (e.type === 'damage_taken') taken += e.damage;
+            if ((e.type === 'damage_dealt' || e.type === 'damage_taken') && engagedTick < 0) engagedTick = e.tick;
         }
-        if (s.player?.isDead) return { ticks: s.tick - t0, dealt, taken, hits, eats, died: true };
+        if (s.player?.isDead) return res(s, true);
         const killed = (s.combatEvents ?? []).some(e => e.type === 'kill' && e.tick >= t0 && target && e.targetIndex === target.index);
-        if (killed) return { ticks: s.tick - t0, dealt, taken, hits, eats, died: false };
+        if (killed) return res(s, false);
+        const levelUp = !!s.dialog?.isOpen && LEVEL_UP.test(s.dialog.text ?? '');
         // the death script opens a dialogue (or the npc vanishes) once we have hurt it
-        if (dealt > 0 && s.dialog?.isOpen) return { ticks: s.tick - t0, dealt, taken, hits, eats, died: false };
+        if (dealt > 0 && s.dialog?.isOpen && !levelUp) return res(s, false);
         const npc = target ? (s.nearbyNpcs.find(n => n.index === target!.index && re.test(n.name)) ?? null) : findNpc(sdk, re);
-        if (target && dealt > 0 && !npc) return { ticks: s.tick - t0, dealt, taken, hits, eats, died: false };
+        if (target && dealt > 0 && !npc) return res(s, false);
         if (s.dialog?.isOpen && !s.dialog.isWaiting) await sdk.sendClickDialog(0).catch(() => {});
         if (npc) target = npc;
         if (o.food && s.player && s.player.hp <= (o.eatAt ?? 0)) {
