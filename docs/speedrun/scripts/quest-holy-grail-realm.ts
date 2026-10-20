@@ -150,6 +150,11 @@ await runScript(async ({ bot, sdk }) => {
     await L.waitUntil(sdk, () => L.pos(sdk).level === 1, 40);
     out.stairsUp = { ticks: L.tick(sdk) - t0, via: `${stairs[0]!.name}@${stairs[0]!.x},${stairs[0]!.z}`, at: L.pos(sdk) };
     await sdk.waitForTicks(2);
+    // The King's room is behind two doors; talkTo opens the second itself.
+    t0 = L.tick(sdk);
+    const door = (await sdk.scanNearbyLocs(8)).find(l => l.name === 'Door' && l.x === 2766 && l.z === 4684);
+    if (door) await bot.openDoor(door);
+    out.firstDoor = { ticks: L.tick(sdk) - t0 };
     t0 = L.tick(sdk);
     const kt = await bot.talkTo(/Fisher King/);
     if (!kt.success) throw new Error(`fisher king: ${kt.message}`);
