@@ -5,6 +5,30 @@ import type { BotWorldState, NearbyLoc } from '../../../sdk/types';
 // Loc ids of iron rocks: ironrock1/ironrock2 (server/content/pack/loc.pack:2093-2094).
 export const IRON_IDS = [2092, 2093];
 
+/**
+ * 8-way step counts from `from` over walkable tiles that are not in `blocked`, using the
+ * client's diagonal rule (no corner cutting past a blocked tile). Ignores wall edges.
+ */
+export function stepMap(from: [number, number], blocked: Set<string>, walkable: (x: number, z: number) => boolean, max = 12): Map<string, number> {
+    const free = (x: number, z: number) => !blocked.has(`${x},${z}`) && walkable(x, z);
+    const d = new Map<string, number>([[`${from[0]},${from[1]}`, 0]]);
+    const q: [number, number][] = [from];
+    while (q.length) {
+        const c = q.shift()!;
+        const dc = d.get(`${c[0]},${c[1]}`)!;
+        if (dc >= max) continue;
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]] as const) {
+            const n: [number, number] = [c[0] + dx, c[1] + dz];
+            const k = `${n[0]},${n[1]}`;
+            if (d.has(k) || !free(n[0], n[1])) continue;
+            if (dx && dz && (!free(c[0] + dx, c[1]) || !free(c[0], c[1] + dz))) continue;
+            d.set(k, dc + 1);
+            q.push(n);
+        }
+    }
+    return d;
+}
+
 export function arg(name: string, def: string): string {
     const argv = process.argv.slice(2);
     const i = argv.indexOf(`--${name}`);
