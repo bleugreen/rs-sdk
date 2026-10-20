@@ -52,7 +52,10 @@ await runScript(async ({ bot, sdk }) => {
         sdk.sendInteractLoc(loc.x, loc.z, loc.id, mineOp(loc)).catch(() => {});
         target = p;
         clickTick = st.tick;
-        rollTick = st.tick + ROLL_AFTER_CLICK - 1;
+        // A click sent on observed tick c is processed on server tick c+1, whose first swing
+        // schedules the roll for c+1+rate. Clicking the next rock on that tick's observation
+        // (c+1+rate) lands it on the tick after the roll.
+        rollTick = st.tick + ROLL_AFTER_CLICK;
     };
 
     while (ticks.length < ORES) {
