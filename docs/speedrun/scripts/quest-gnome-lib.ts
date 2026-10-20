@@ -304,8 +304,18 @@ export async function openDoorAt(sdk: BotSDK, x: number, z: number, maxTicks = 3
     const door = (await sdk.scanNearbyLocs(20)).find(isClosed);
     if (!door) return { name: `door (${x},${z}) already open`, ticks: 0 };
     const t0 = now(sdk);
-    await sdk.sendInteractLoc(door.x, door.z, door.id, door.optionsWithIndex.find(o => /^open$/i.test(o.text))!.opIndex);
-    const r = await waitUntil(sdk, s => !(s.nearbyLocs ?? []).some(isClosed), maxTicks);
+    const op = door.optionsWithIndex.find(o => /^open$/i.test(o.text))!.opIndex;
+    await sdk.sendInteractLoc(door.x, door.z, door.id, op);
+    // A click sent while a script holds the player in p_delay is dropped; re-send until it lands.
+    let sent = t0;
+    const r = await waitUntil(sdk, s => {
+        if (!(s.nearbyLocs ?? []).some(isClosed)) return true;
+        if (s.tick - sent >= 5) {
+            sent = s.tick;
+            void sdk.sendInteractLoc(door.x, door.z, door.id, op);
+        }
+        return false;
+    }, maxTicks);
     return { name: `open door (${x},${z})`, ticks: (r?.tick ?? NaN) - t0, note: r ? undefined : 'TIMEOUT' };
 }
 
@@ -396,6 +406,8 @@ export class Recorder {
         this.steps.push(rec);
         const extra = [rec.approach !== undefined ? `approach ${rec.approach}` : '', rec.pages !== undefined ? `${rec.pages} pages` : '', rec.choices !== undefined ? `${rec.choices} choices` : '', rec.note ?? ''].filter(Boolean).join(', ');
         console.log(`STEP ${rec.ticks}\t${rec.name}${extra ? '  [' + extra + ']' : ''}`);
+        const log = (r as { run?: DialogueRun }).run?.log;
+        if (process.env.GNOME_DEBUG && log) for (const l of log) console.log(`  | ${l}`);
         return rec;
     }
     async time(label: string, fn: () => Promise<unknown>): Promise<StepRecord> {
