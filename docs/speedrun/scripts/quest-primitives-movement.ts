@@ -61,8 +61,9 @@ async function eagerWalk(sdk: BotSDK, x: number, z: number, reach = 30, lead = 4
     tr.stop();
     const rows = tr.rows;
     let tiles = 0;
-    for (let i = 1; i < rows.length; i++) tiles += cheb(rows[i], rows[i - 1]);
-    return { clicks, ticks: arrive - t0, routeQueryTicks: t1 - t0, walkTicks: arrive - t1, tilesWalked: tiles, idealTicks: Math.ceil(tiles / 2) };
+    const hist: Record<number, number> = {};
+    for (let i = 1; i < rows.length; i++) { const d = cheb(rows[i], rows[i - 1]); tiles += d; hist[d] = (hist[d] ?? 0) + 1; }
+    return { stepHistogram: hist, clicks, ticks: arrive - t0, routeQueryTicks: t1 - t0, walkTicks: arrive - t1, tilesWalked: tiles, idealTicks: Math.ceil(tiles / 2) };
 }
 
 async function sdkWalk(sdk: BotSDK, bot: any, x: number, z: number) {
@@ -74,8 +75,9 @@ async function sdkWalk(sdk: BotSDK, bot: any, x: number, z: number) {
     let tiles = 0;
     const rows = tr.rows;
     let idle = 0;
-    for (let i = 1; i < rows.length; i++) { const d = cheb(rows[i], rows[i - 1]); tiles += d; if (d === 0) idle++; }
-    return { ok: r.success, msg: r.message, ticks: arrive - t0, tilesWalked: tiles, idleTicks: idle, idealTicks: Math.ceil(tiles / 2) };
+    const hist: Record<number, number> = {};
+    for (let i = 1; i < rows.length; i++) { const d = cheb(rows[i], rows[i - 1]); tiles += d; if (d === 0) idle++; hist[d] = (hist[d] ?? 0) + 1; }
+    return { stepHistogram: hist, ok: r.success, msg: r.message, ticks: arrive - t0, tilesWalked: tiles, idleTicks: idle, idealTicks: Math.ceil(tiles / 2) };
 }
 
 // Optional section filter: run20 walk10 reach long energy
