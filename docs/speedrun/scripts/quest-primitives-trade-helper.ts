@@ -4,12 +4,14 @@
 //   bun docs/speedrun/scripts/quest-primitives-trade-helper.ts <helper> <scored> <trades>
 
 import { runScript } from '../../../sdk/runner';
-import { give, waitTicks, waitUntil } from './quest-primitives-lib';
+import { give, tele, waitTicks, waitUntil } from './quest-primitives-lib';
 
 const SCORED = (process.argv[3] ?? '').toLowerCase();
 const TRADES = Number(process.argv[4] ?? 3);
 
 await runScript(async ({ sdk }) => {
+    // stand next to the scored account's tile (quest-primitives-trade.ts uses 3222,3218)
+    await tele(sdk, 3223, 3218);
     for (let i = 0; i < TRADES; i++) {
         if (!sdk.getState()!.inventory.some(x => /law rune/i.test(x.name))) await give(sdk, 'lawrune', 100);
         const partner = await waitUntil(sdk, s => s.nearbyPlayers.some(p => p.name.toLowerCase() === SCORED), 100);
