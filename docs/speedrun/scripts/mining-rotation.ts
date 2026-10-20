@@ -3,6 +3,7 @@
 //
 //   bun docs/speedrun/scripts/mining-rotation.ts <bot> --rocks 2710,3328 2711,3329 ...
 //       [--start 2710,3329] [--ores 120] [--level 99] [--respawn 19] [--trick on|off]
+//       [--agility 99] [--min-energy 9000] [--loghead 40]
 //
 // --rocks is the order rocks are mined in, repeated cyclically (take it from the
 // planner's --show output). Ticks below are state.tick labels; a click sent while
@@ -33,6 +34,8 @@ const LEVEL = Number(arg('level', '99'));
 const RESPAWN = Number(arg('respawn', '19'));
 const TRICK = arg('trick', 'on') === 'on';
 const RUNSTEP = 2;
+const AGILITY = Number(arg('agility', '1'));
+const MIN_ENERGY = Number(arg('min-energy', '0'));
 
 const uniq = [...new Map(ROCKS.map(r => [`${r[0]},${r[1]}`, r])).values()];
 const beside = (pos: P, r: P) => Math.abs(pos[0] - r[0]) + Math.abs(pos[1] - r[1]) === 1;
@@ -44,6 +47,10 @@ await runScript(async ({ bot, sdk }) => {
     await bot.skipTutorial?.();
     const start: P = START.length === 2 && !START.some(Number.isNaN) ? START : [ROCKS[0]![0], ROCKS[0]![1] + 1];
     let s: BotWorldState = await setup(sdk, { level: LEVEL, pick: 'rune_pickaxe', x: start[0], z: start[1] });
+    // Run energy regenerates (agility/6)+8 per non-running tick (Player.ts updateEnergy).
+    if (AGILITY > 1) await sdk.sendSay(`::setstat agility ${AGILITY}`);
+    while ((s.player?.runEnergy ?? 0) < MIN_ENERGY) s = await nextTick(sdk, s.tick);
+    console.log(`starting with run energy ${s.player?.runEnergy}`);
     const avail = new Map<string, number>(uniq.map(r => [`${r[0]},${r[1]}`, -Infinity]));
     const av = (r: P) => avail.get(`${r[0]},${r[1]}`)!;
     const locId = (st: BotWorldState, r: P) => st.nearbyLocs.find(l => l.x === r[0] && l.z === r[1] && IRON_IDS.includes(l.id))?.id ?? IRON_IDS[0]!;
@@ -124,7 +131,7 @@ await runScript(async ({ bot, sdk }) => {
     const off = ticks.map((t, i) => t - 1 - predicted[i]!);
     const offHist: Record<number, number> = {};
     for (const o of off) offHist[o] = (offHist[o] ?? 0) + 1;
-    console.log(log.slice(-40).join('\n'));
+    console.log(log.slice(0, Number(arg('loghead', '40'))).join('\n'));
     console.log(`\ntransitions: ${JSON.stringify(kinds)}  observed-minus-predicted roll tick: ${JSON.stringify(offHist)}`);
     summarize(`rotation of ${uniq.length} rocks, trick=${TRICK}`, ticks.slice(10), xps.slice(10));
     console.log(`run energy now: ${s.player?.runEnergy}`);
