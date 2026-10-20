@@ -47,6 +47,9 @@ await runScript(async ({ bot, sdk }) => {
             attempts++;
             pickTotal++;
             if (!/fail/.test(m.text)) { successes++; pickOk++; }
+            // A failed attempt stuns for 8 ticks (digsite_workman.rs2:79-80) and a
+            // click during the stun is dropped, so wait it out before clicking.
+            else await sdk.waitForTicks(8);
             const now = tick(sdk);
             pickGaps.push(now - last);
             last = now;
