@@ -170,7 +170,13 @@ async function crossCart4(sdk: Sdk, L: Ledger) {
         if (z === 4528 && prev !== null && prev > 4528) break;
         prev = z;
     }
-    L.note(`cart 4 wait ${sdk.getState()!.tick - t0}`);
+    const t1 = sdk.getState()!.tick;
+    // (2738,4529) is reachable only down the track, and from it the ladder
+    // route leaves via (2738,4528), never the cart's parking tile (2739,4528).
+    L.add({ tiles: 4 });
+    await sdk.sendWalk(2738, 4529, true);
+    if (!(await until(sdk, () => pos(sdk).x === 2738 && pos(sdk).z === 4529, 15))) throw new Error(`cart 4 crossing failed; at ${JSON.stringify(pos(sdk))}`);
+    L.note(`cart 4 wait ${t1 - t0}, crossing ${sdk.getState()!.tick - t1}`);
 }
 
 const inMap = (sdk: Sdk, mx: number, mz: number) => {
