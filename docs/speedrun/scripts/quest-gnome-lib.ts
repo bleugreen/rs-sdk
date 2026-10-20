@@ -109,7 +109,9 @@ export function invCount(s: BotWorldState | null | undefined, re: RegExp): numbe
 export function dialogText(s: BotWorldState | null | undefined): string {
     const d = s?.dialog;
     if (!d?.isOpen) return '';
-    return (d.text ?? '') + (d.options.length ? ' | ' + d.options.map(o => `${o.index}:${o.text}`).join(' / ') : '');
+    // The page words arrive in allComponents; `text` is usually empty.
+    const words = (d.allComponents ?? []).map(c => c.text).filter(Boolean).join(' ') || (d.text ?? '');
+    return words + (d.options.length ? ' | ' + d.options.map(o => `${o.index}:${o.text}`).join(' / ') : '');
 }
 
 export function stats(xs: number[]): { n: number; min: number; max: number; mean: number } {
@@ -296,6 +298,17 @@ export async function locOp(sdk: BotSDK, re: RegExp, opRe: RegExp, done: Pred, m
     return { name: `${op.text} ${loc.name}`, ticks: (r?.tick ?? NaN) - t0, note: r ? undefined : 'TIMEOUT' };
 }
 
+/** Open the door at (x, z) and wait until it no longer offers Open (the opened door moves to the next tile). */
+export async function openDoorAt(sdk: BotSDK, x: number, z: number, maxTicks = 30): Promise<StepRecord> {
+    const isClosed = (l: { x: number; z: number; name: string; optionsWithIndex: { text: string }[] }) => l.x === x && l.z === z && /door|gate/i.test(l.name) && l.optionsWithIndex.some(o => /^open$/i.test(o.text));
+    const door = (await sdk.scanNearbyLocs(20)).find(isClosed);
+    if (!door) return { name: `door (${x},${z}) already open`, ticks: 0 };
+    const t0 = now(sdk);
+    await sdk.sendInteractLoc(door.x, door.z, door.id, door.optionsWithIndex.find(o => /^open$/i.test(o.text))!.opIndex);
+    const r = await waitUntil(sdk, s => !(s.nearbyLocs ?? []).some(isClosed), maxTicks);
+    return { name: `open door (${x},${z})`, ticks: (r?.tick ?? NaN) - t0, note: r ? undefined : 'TIMEOUT' };
+}
+
 /** Walk with run on and return ticks; the route is the SDK's (doors handled). */
 export async function walk(bot: BotActions, sdk: BotSDK, x: number, z: number, tol = 1): Promise<StepRecord> {
     const p0 = pos(sdk.getState());
@@ -333,22 +346,23 @@ export async function fight(sdk: BotSDK, bot: BotActions, re: RegExp, opts: { ea
     const t0 = now(sdk);
     const rec: FightRecord = { name: `fight ${npc.name} (lvl ${npc.combatLevel})`, ticks: NaN, playerHits: 0, damageTaken: 0, food: 0, died: false };
     let lastHp = startHp;
-    let eating = false;
+    let lastFood = invCount(sdk.getState(), food);
+    let lastEatClick = -10;
     const unsub = sdk.onStateUpdate(s => {
         const hp = s.player?.hp ?? lastHp;
         if (hp < lastHp) rec.damageTaken += lastHp - hp;
         lastHp = hp;
         if (s.player?.isDead) rec.died = true;
-        if (!eating && opts.eatBelow && hp < opts.eatBelow) {
+        // Food eaten is the drop in the food count, not the number of eat clicks.
+        const fc = invCount(s, food);
+        if (fc < lastFood) rec.food += lastFood - fc;
+        lastFood = fc;
+        if (opts.eatBelow && hp < opts.eatBelow && s.tick - lastEatClick >= 3) {
             const f = s.inventory.find(i => food.test(i.name));
             if (f) {
-                eating = true;
-                rec.food++;
-                void sdk.sendUseItem(f.slot, 1).finally(() => { eating = false; });
+                lastEatClick = s.tick;
+                void sdk.sendUseItem(f.slot, 1);
             }
-        }
-        for (const e of s.combatEvents ?? []) {
-            void e;
         }
     });
     const opAtk = npc.optionsWithIndex.find(o => /attack/i.test(o.text));
