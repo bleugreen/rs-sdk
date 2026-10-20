@@ -366,16 +366,17 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         L.end();
         L.begin('valve -> lift, ride down');
         // Three lift locs (lift_side_l/lift_back/lift_side_r) share one
-        // handler; the side panels can report reachable yet answer "I can't
-        // reach that!" from the valve side, so try the back panel first.
+        // handler. The back panel (4940, length 2) answers "I can't reach
+        // that!" from the lift's only entrance, so use a side panel.
         const lifts = (await sdk.scanNearbyLocs(50)).filter(l => /^lift$/i.test(l.name) && Math.abs(l.x - 2807) <= 2 && Math.abs(l.z - 4493) <= 2);
-        lifts.sort((a, b) => (a.id === 4940 ? 0 : 1) - (b.id === 4940 ? 0 : 1));
+        lifts.sort((a, b) => (a.id === 4940 ? 1 : 0) - (b.id === 4940 ? 1 : 0));
         let rode = false;
         for (const lift of lifts) {
             L.add({ tiles: chebyshevPath(sdk, lift.x, lift.z) });
-            t0 = sdk.getState()!.tick;
+            const m0 = sdk.getState()!.gameMessages.length;
+            const newMsg = (re: RegExp) => sdk.getState()!.gameMessages.slice(m0).some(m => re.test(m.text));
             await sdk.sendInteractLoc(lift.x, lift.z, lift.id, 1);
-            rode = await until(sdk, () => (inMap(sdk, 42, 69) && messageSince(sdk, t0, /plunging you/i)) || messageSince(sdk, t0, /can't reach/i), 60);
+            rode = await until(sdk, () => (inMap(sdk, 42, 69) && newMsg(/plunging you/i)) || newMsg(/can't reach/i), 60);
             if (rode && inMap(sdk, 42, 69)) break;
             L.note(`lift ${lift.id}@${lift.x},${lift.z} unreachable`);
             rode = false;
