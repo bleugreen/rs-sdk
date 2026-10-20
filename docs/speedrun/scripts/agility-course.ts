@@ -153,7 +153,7 @@ await runScript(async ({ sdk }) => {
                 if (i > 0) i--;
                 continue;
             }
-            sdk.getNewChat();
+            sdk.getNewChat({ types: [0] });
             const msgs: string[] = [];
             if (tick(sdk) - lapStart > 3000) throw new Error(`lap ${lap} exceeded 3000 ticks at step ${step.name}`);
             await sdk.sendInteractLoc(target[1], target[2], target[0], 1);
@@ -164,7 +164,7 @@ await runScript(async ({ sdk }) => {
             const ok = await waitTicksFor(sdk, s => {
                 const p = s.player;
                 if (p && (p.worldX !== p0.x || p.worldZ !== p0.z || p.level !== p0.level)) moved = true;
-                for (const m of sdk.getNewChat()) {
+                for (const m of sdk.getNewChat({ types: [0] })) {
                     msgs.push(m.text);
                     if (FAIL_RE.test(m.text)) failed = true;
                 }
