@@ -112,7 +112,7 @@ graph TD
 | Dragon Slayer | 2 | 32 QP | rs/11 |
 | Merlin's Crystal | 6 | | rs/12 |
 | Family Crest | 1 | no quest or `stat()` gate in `quest_crest/`. Chronozon must be hit by all four blast spells (`crest_chronozon.rs2:3`), so Fire Blast's Magic level applies | **none, this document** |
-| Heroes' Quest | 1 | `%qp >= 55`, Lost City, Dragon Slayer, Merlin's Crystal, and either Shield of Arrav gang (`quest_hero.rs2:1-7`, `quest_hero.constant:20`). No `stat()` checks in `quest_hero/`. The lava-eel spot needs `stat(fishing) >= 53` (`lavafish.rs2:84`), but `raw_lava_eel` and `lava_eel` are tradeable (no `tradeable=no` in `food_uncooked.obj` / `food_cooked.obj`), so a helper can supply the eel | **none** |
+| Heroes' Quest | 1 | `%qp >= 55`, Lost City, Dragon Slayer, Merlin's Crystal, and either Shield of Arrav gang (`quest_hero.rs2:1-7`, `quest_hero.constant:20`). No `stat()` checks in `quest_hero/`, but the eel imposes two levels. The lava-eel spot needs `stat(fishing) >= 53` (`lavafish.rs2:84`). Cooking it needs Cooking 53 (`cooking_generic.dbrow:110`), because Achietties wants the cooked `lava_eel` (`achietties.rs2:12`). `raw_lava_eel`, `lava_eel`, `oily_fishing_rod` and `blamish_oil` are all `tradeable=no`, so **the scored account must make the oily rod, fish the eel and cook it itself** | **none** |
 | Lost City | 3 | `stat(woodcutting) < 36`, `stat(crafting) < 31` (`quest_zanaris.rs2:37,78`) | **none** |
 | Shield of Arrav | 1 | none; needs the other gang's broken-shield half (tradeable) | **none** |
 | Shilo Village | 2 | Jungle Potion (`mosol_rei.rs2:2`); `stat(agility)` 32 / 15 (`quest_zombiequeen.rs2:390,527,619`), `stat(crafting)` 15 / 16 / 20 (`:1254,1270,1285`), HP 15, Prayer 10 | **none** |
@@ -138,7 +138,8 @@ graph TD
 The journal lists every level with `stat_base` (`legends_journal.rs2:65-128`), but
 only for display; the enforcing checks are the `stat()` ones above.
 
-**These gates cost the run nothing extra.** On this server's `2^(level/10)` curve,
+Heroes' Quest adds Fishing 53 and Cooking 53 through the untradeable lava eel (see the
+prerequisite table). **These gates cost the run nothing extra.** On this server's `2^(level/10)` curve,
 level 50 is 1,305 base and 56 is about 1,980 base
 (cairn://p/rs/main/task/per-skill). The max-total run takes every skill to 99 anyway,
 so the only constraint is ordering: Legends would have to come after these levels.
@@ -194,7 +195,7 @@ fighting. **Central estimate: about 4,000 ticks; range 2,600-8,000** (inferred).
 | Lost City | 3 | Lumbridge swamp shed, Entrana (no weapons or armour allowed), tree spirit, dramen staff, Zanaris | 2,000 / 1,200-3,000 | none | 0 |
 | Shield of Arrav | 1 | Varrock: Reldo, Baraem, a gang, a shield half; the other half is traded from a helper; certificates | 800 / 500-1,200 | none | 0 |
 | Family Crest | 1 | Dimintheis, Caleb (5 cooked fish from a helper), Avan, Boot, perfect gold, Johnathon, Chronozon (4 blast spells) in the Edgeville wilderness dungeon | 2,500 / 1,500-4,000 | none | 0 |
-| Heroes' Quest | 1 | Achietties; fire feather from Entrana's firebird (ice gloves from the Ice Queen, untradeable feather); lava eel from a helper; gang side in the Brimhaven mansion with a **live partner** (below) | 3,000 / 2,000-5,000 | 3,075 each Atk/Def/Str/HP, 2,075 Ranged, 2,725 Fishing, 2,825 Cooking, 1,575 WC, 1,575 FM, 2,275 Smithing, 2,575 Mining, 1,325 Herblore (`quest_hero.rs2:27-40`) | ~800 (Fishing ~270, Mining ~220, WC ~140, Ranged ~130, the rest ~0 because capped or cheap) |
+| Heroes' Quest | 1 | Achietties; fire feather from Entrana's firebird (ice gloves from the Ice Queen, untradeable feather); blamish oil, oily rod, lava eel fished in Taverley Dungeon and cooked (all untradeable, Fishing 53 and Cooking 53); gang side in the Brimhaven mansion with a **live partner** (below) | 3,000 / 2,000-5,000 | 3,075 each Atk/Def/Str/HP, 2,075 Ranged, 2,725 Fishing, 2,825 Cooking, 1,575 WC, 1,575 FM, 2,275 Smithing, 2,575 Mining, 1,325 Herblore (`quest_hero.rs2:27-40`) | ~800 (Fishing ~270, Mining ~220, WC ~140, Ranged ~130, the rest ~0 because capped or cheap) |
 | **Total** | **13** | | **12,000 / 7,500-19,000** | | **~800** |
 
 These are rough. Each will get its own document only if the plan ever adopts it.
