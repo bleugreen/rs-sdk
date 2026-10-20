@@ -168,6 +168,7 @@ export function dialogue(sdk: BotSDK, answers: RegExp[] = [], opts: { idle?: num
         let lastPage = '';
         let lastOpen = -1;
         let lastModal = -1;
+        let lastClick = -1;
         const t0 = now(sdk);
         let done = false;
         const finish = () => {
@@ -190,7 +191,11 @@ export function dialogue(sdk: BotSDK, answers: RegExp[] = [], opts: { idle?: num
                 lastOpen = s.tick;
                 if (run.firstTick < 0) run.firstTick = s.tick;
                 if (d.isWaiting || !d.pageId || d.pageId === lastPage) return;
+                // The client can republish the page it just answered within the same tick under
+                // a fresh pageId; the server cannot answer a click within the tick it was sent.
+                if (s.tick <= lastClick) return;
                 lastPage = d.pageId;
+                lastClick = s.tick;
                 const text = dialogText(s).replace(/\s+/g, ' ').slice(0, 90);
                 if (d.options.length > 1) {
                     let pick = -1;
