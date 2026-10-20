@@ -102,8 +102,13 @@ export async function wear(sdk: BotSDK, re: RegExp) {
     const it = (sdk.getState()?.inventory ?? []).find(i => re.test(i.name));
     if (!it) throw new Error('nothing to wear matching ' + re);
     const op = it.optionsWithIndex.find(o => /wear|wield/i.test(o.text));
-    await sdk.sendUseItem(it.slot, op?.opIndex ?? 2);
-    await waitTicksFor(sdk, s => s.equipment.some(e => re.test(e.name)), 5);
+    for (let attempt = 0; attempt < 3; attempt++) {
+        if (sdk.getState()?.dialog?.isOpen) await sdk.sendClickDialog(0).catch(() => {});
+        const slot = (sdk.getState()?.inventory ?? []).find(i => re.test(i.name))?.slot ?? it.slot;
+        await sdk.sendUseItem(slot, op?.opIndex ?? 2);
+        if (await waitTicksFor(sdk, s => s.equipment.some(e => re.test(e.name)), 5)) return;
+    }
+    throw new Error('could not wear ' + re);
 }
 
 // ---------------------------------------------------------------------------
@@ -337,12 +342,10 @@ export async function fight(sdk: BotSDK, c: Counts, re: RegExp, o: { food?: RegE
         if (s.player?.isDead) return res(s, true);
         const killed = (s.combatEvents ?? []).some(e => e.type === 'kill' && e.tick >= t0 && target && e.targetIndex === target.index);
         if (killed) return res(s, false);
-        const levelUp = !!s.dialog?.isOpen && LEVEL_UP.test(s.dialog.text ?? '');
-        // the death script opens a dialogue (or the npc vanishes) once we have hurt it
-        if (dealt > 0 && s.dialog?.isOpen && !levelUp) return res(s, false);
         const npc = target ? (s.nearbyNpcs.find(n => n.index === target!.index && re.test(n.name)) ?? null) : findNpc(sdk, re);
-        if (target && dealt > 0 && !npc) return res(s, false);
-        if (s.dialog?.isOpen && !s.dialog.isWaiting) await sdk.sendClickDialog(0).catch(() => {});
+        if (target && dealt > 0 && (!npc || npc.hp === 0)) return res(s, false);
+        // only level-up boxes can open mid-fight; the death script's dialogue starts after hp hits 0
+        if (s.dialog?.isOpen && !s.dialog.isWaiting && (LEVEL_UP.test(s.dialog.text ?? '') || dealt === 0 || (npc?.hp ?? 1) > 0)) await sdk.sendClickDialog(0).catch(() => {});
         if (npc) target = npc;
         if (o.food && s.player && s.player.hp <= (o.eatAt ?? 0)) {
             const f = s.inventory.find(i => o.food!.test(i.name));
