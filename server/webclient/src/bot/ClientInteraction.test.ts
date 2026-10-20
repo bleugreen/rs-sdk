@@ -580,7 +580,7 @@ describe('loc routing', () => {
             id, width: 1, length: 1, forceapproach: 0, ...props
         });
         LocType.recent = [loc];
-        LocType.idx = new Int32Array(1) as never;
+        LocType.idx = new Int32Array(id + 1) as never;
         LocType.dat = {} as never;
     }
 
@@ -676,7 +676,7 @@ describe('loc routing', () => {
     function defineObj(id: number, name: string): void {
         const obj = Object.assign(Object.create(ObjType.prototype), { id, name });
         ObjType.recent = [obj];
-        ObjType.idx = new Int32Array(1) as never;
+        ObjType.idx = new Int32Array(id + 1) as never;
         ObjType.dat = {} as never;
     }
 
@@ -766,16 +766,24 @@ describe('config lookups outside the table', () => {
         expect(() => LocType.list(id as number)).toThrow(RangeError);
     });
 
-    test.each([
-        ['NpcType', NpcType],
-        ['ObjType', ObjType]
-    ] as const)('%s.list rejects an id outside the table', (_name, Type) => {
-        Type.recent = Array.from({ length: 20 }, () => new (Type as new () => never)());
-        Type.idx = Int32Array.from([1]);
-        Type.dat = guardedDat([17, 0]);
+    test('NpcType.list rejects an id outside the table', () => {
+        NpcType.recent = Array.from({ length: 20 }, () => new NpcType());
+        NpcType.idx = Int32Array.from([1]);
+        NpcType.dat = guardedDat([17, 0]);
 
-        expect(() => Type.list(undefined as never)).toThrow(RangeError);
-        expect(() => Type.list(1)).toThrow(RangeError);
+        expect(() => NpcType.list(undefined as never)).toThrow(RangeError);
+        expect(() => NpcType.list(-1)).toThrow(RangeError);
+        expect(() => NpcType.list(1)).toThrow(RangeError);
+    });
+
+    test('ObjType.list rejects an id outside the table', () => {
+        ObjType.recent = Array.from({ length: 10 }, () => new ObjType());
+        ObjType.idx = Int32Array.from([1]);
+        ObjType.dat = guardedDat([17, 0]);
+
+        expect(() => ObjType.list(undefined as never)).toThrow(RangeError);
+        expect(() => ObjType.list(-1)).toThrow(RangeError);
+        expect(() => ObjType.list(1)).toThrow(RangeError);
     });
 
     test('browser interactLoc with no locId fails instead of hanging', () => {

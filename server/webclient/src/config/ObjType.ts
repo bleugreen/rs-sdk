@@ -88,17 +88,17 @@ export default class ObjType {
             throw new Error();
         }
 
+        // rs-sdk: an id outside the table would decode from a NaN position
+        // forever (see LocType.list).
+        if (!Number.isInteger(id) || id < 0 || id >= this.idx.length) {
+            throw new RangeError(`ObjType.list: no obj ${id}`);
+        }
+
         for (let i: number = 0; i < 10; i++) {
             const type: ObjType | null = this.recent[i];
             if (type && type.id === id) {
                 return type;
             }
-        }
-
-        // rs-sdk: an id outside the table would decode from a NaN position
-        // forever (see LocType.list).
-        if (!Number.isInteger(id) || id < 0 || id >= this.idx.length) {
-            throw new RangeError(`ObjType.list: no obj ${id}`);
         }
 
         this.recentPos = (this.recentPos + 1) % 10;

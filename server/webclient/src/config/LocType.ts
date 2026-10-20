@@ -84,18 +84,19 @@ export default class LocType {
             throw new Error();
         }
 
+        // rs-sdk: idx[id] is undefined for any id outside the table, and decode()
+        // from that NaN position never ends - DataView reads index NaN as 0 and
+        // NaN++ stays NaN, so it re-reads byte 0 forever and freezes the client.
+        // Checked before the cache, whose unfilled slots answer for id -1.
+        if (!Number.isInteger(id) || id < 0 || id >= this.idx.length) {
+            throw new RangeError(`LocType.list: no loc ${id}`);
+        }
+
         for (let i: number = 0; i < 10; i++) {
             const type: LocType | null = this.recent[i];
             if (type && type.id === id) {
                 return type;
             }
-        }
-
-        // rs-sdk: idx[id] is undefined for any id outside the table, and decode()
-        // from that NaN position never ends - DataView reads index NaN as 0 and
-        // NaN++ stays NaN, so it re-reads byte 0 forever and freezes the client.
-        if (!Number.isInteger(id) || id < 0 || id >= this.idx.length) {
-            throw new RangeError(`LocType.list: no loc ${id}`);
         }
 
         this.recentPos = (this.recentPos + 1) % 10;
