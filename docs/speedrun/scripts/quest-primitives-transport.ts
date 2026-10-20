@@ -41,7 +41,7 @@ async function converse(sdk: BotSDK, start: () => Promise<unknown>, answers: Reg
 }
 
 async function talk(sdk: BotSDK, npc: RegExp) {
-    const n = sdk.findNearbyNpc(npc);
+    const n = sdk.findNearbyNpc(npc, { reachable: true } as any) ?? sdk.findNearbyNpc(npc);
     if (!n) throw new Error('npc not found ' + npc + ' near ' + JSON.stringify(pos(sdk.getState())) + ': ' + sdk.getState()!.nearbyNpcs.map(x => x.name).join(','));
     const op = n.optionsWithIndex.find(o => /talk/i.test(o.text))!;
     await sdk.sendInteractNpc(n.index, op.opIndex);
