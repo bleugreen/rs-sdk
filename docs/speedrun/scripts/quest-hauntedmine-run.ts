@@ -147,9 +147,11 @@ async function setup(sdk: Sdk, phase: Phase) {
     await cheat(sdk, `setstat strength ${STATS}`);
     await cheat(sdk, `setstat defence ${STATS}`);
     await cheat(sdk, `setstat hitpoints ${STATS}`);
-    if (!invHas(sdk, /^chisel$/i)) await cheat(sdk, 'give chisel 1');
-    if (!invHas(sdk, /rune scimitar/i) && !sdk.findEquipmentItem(/rune scimitar/i)) await cheat(sdk, 'give rune_scimitar 1');
-    if (sdk.countInventoryItems(/^shark$/i) < 10) await cheat(sdk, `give shark ${10 - sdk.countInventoryItems(/^shark$/i)}`);
+    await cheat(sdk, '~clearinv inv');
+    await until(sdk, () => sdk.getInventory().length === 0, 10);
+    await cheat(sdk, 'give chisel 1');
+    if (!sdk.findEquipmentItem(/rune scimitar/i)) await cheat(sdk, 'give rune_scimitar 1');
+    await cheat(sdk, 'give shark 10');
     const sc = sdk.findInventoryItem(/rune scimitar/i);
     if (sc) await sdk.sendUseItem(sc.slot, 2);
     await ticks(sdk, 1);
@@ -229,8 +231,7 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         if (!cart || cart.x !== 2778) throw new Error(`start cart not found: ${JSON.stringify(cart)}`);
         L.add({ tiles: chebyshevPath(sdk, cart.x, cart.z) });
         const t0 = sdk.getState()!.tick;
-        await sdk.sendUseItemOnLoc(sdk.findInventoryItem(/glowing fungus/i)!.slot, cart.x, cart.z, cart.id);
-        if (!(await until(sdk, () => messageSince(sdk, t0, /place the glowing fungus/i), 60))) throw new Error('fungus not placed');
+        await sendUntil(sdk, L, () => sdk.sendUseItemOnLoc(sdk.findInventoryItem(/glowing fungus/i)!.slot, cart.x, cart.z, cart.id), () => messageSince(sdk, t0, /place the glowing fungus|already a load/i), 60, 'fungus on start cart');
         L.end();
     },
 
