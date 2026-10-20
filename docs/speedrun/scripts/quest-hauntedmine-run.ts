@@ -377,12 +377,22 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
             L.add({ tiles: chebyshevPath(sdk, lift.x, lift.z) });
             const m0 = sdk.getState()!.gameMessages.length;
             const newMsg = (re: RegExp) => sdk.getState()!.gameMessages.slice(m0).some(m => re.test(m.text));
+            // From the valve the clicked route (59 steps) stops two tiles
+            // short at (2805,4493); a second click from there enters the lift
+            // at once. Re-click the moment the player stands still.
             await sdk.sendInteractLoc(lift.x, lift.z, lift.id, 1);
             const trace: string[] = [];
             let seen = m0;
+            let last = pos(sdk);
+            let reclicks = 0;
             rode = await until(sdk, () => {
                 const s = sdk.getState()!;
                 const p = pos(sdk);
+                if (p.x === last.x && p.z === last.z && !s.dialog?.isOpen && !inMap(sdk, 42, 69) && Math.max(Math.abs(p.x - 2807), Math.abs(p.z - 4493)) <= 3 && reclicks < 3) {
+                    reclicks++;
+                    void sdk.sendInteractLoc(lift.x, lift.z, lift.id, 1);
+                }
+                last = p;
                 const g = sdk.getNearbyNpcs().find(n => /ghost/i.test(n.name));
                 const msgs = s.gameMessages.slice(seen).map(m => m.text);
                 seen = s.gameMessages.length;
@@ -390,6 +400,7 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
                 return (inMap(sdk, 42, 69) && newMsg(/plunging you/i)) || newMsg(/can't reach/i) || !!s.dialog?.isOpen;
             }, 60);
             if (!(rode && inMap(sdk, 42, 69))) console.log(`lift ${lift.id} trace:\n${trace.join('\n')}`);
+            else if (reclicks) L.note(`lift re-clicked ${reclicks}x`);
             if (rode && inMap(sdk, 42, 69)) break;
             L.note(`lift ${lift.id}@${lift.x},${lift.z} unreachable`);
             rode = false;
