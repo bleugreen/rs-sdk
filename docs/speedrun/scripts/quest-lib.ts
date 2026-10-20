@@ -221,12 +221,17 @@ export function findNpc(sdk: BotSDK, re: RegExp | number): NearbyNpc | null {
 
 /** Op1 (Talk-to) an npc and drive the resulting dialogue. */
 export async function talk(sdk: BotSDK, c: Counts, npc: RegExp | number, choices: (string | RegExp)[] = [], op = 1, until?: (s: BotWorldState) => boolean) {
-    const n = findNpc(sdk, npc);
-    if (!n) throw new Error('npc not nearby: ' + npc);
-    const r = await sdk.sendInteractNpc(n.index, op);
-    if (!r.success) throw new Error('talk failed: ' + r.message);
-    c.interactions++;
-    const opened = await waitTicksFor(sdk, s => !!s.dialog?.isOpen, 40);
+    // The lite client drops an interaction it thinks has no route (stale collision
+    // after a door animation, an npc in the way); a player would click again.
+    let opened = false;
+    for (let attempt = 0; attempt < 10 && !opened; attempt++) {
+        const n = findNpc(sdk, npc);
+        if (!n) throw new Error('npc not nearby: ' + npc);
+        const r = await sdk.sendInteractNpc(n.index, op);
+        if (!r.success) throw new Error('talk failed: ' + r.message);
+        c.interactions++;
+        opened = await waitTicksFor(sdk, s => !!s.dialog?.isOpen, attempt < 9 ? 8 : 40);
+    }
     if (!opened) throw new Error('no dialogue opened for ' + npc);
     await driveDialog(sdk, c, choices, 3, 400, until);
 }
