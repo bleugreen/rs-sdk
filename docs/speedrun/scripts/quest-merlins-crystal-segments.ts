@@ -125,6 +125,7 @@ await runScript(async ({ bot, sdk }) => {
             results.crystal = { ...dlg(d), clickToClose: L.tick(sdk) - t0 - 3, arthur: await L.getVar(sdk, 'arthur') };
         } else if (seg === 'reward') {
             await L.cheat(sdk, 'setvar arthur 6');
+            await L.cheat(sdk, 'setvar grail 0'); // any %grail > 0 sends Arthur down his Holy Grail branch
             await L.tele(sdk, 2764, 3513, 0);
             const arthur = await talk(/King Arthur/, []);
             results.reward = { arthur, arthurVarp: await L.getVar(sdk, 'arthur') };
