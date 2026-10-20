@@ -43,9 +43,37 @@ async function opLoc(sdk: Sdk, L: Ledger, name: string | RegExp, at: [number, nu
     if (!loc) throw new Error(`no loc ${name} near ${at}`);
     const tiles = chebyshevPath(sdk, loc.x, loc.z);
     L.add({ tiles: Math.max(tiles, 0) });
-    await sdk.sendInteractLoc(loc.x, loc.z, loc.id, op);
-    const ok = await until(sdk, done, timeout);
-    if (!ok) throw new Error(`op ${op} on ${loc.name}@${loc.x},${loc.z} did not complete; at ${JSON.stringify(pos(sdk))}`);
+    await sendUntil(sdk, L, () => sdk.sendInteractLoc(loc.x, loc.z, loc.id, op), done, timeout, `op ${op} on ${loc.name}@${loc.x},${loc.z}`);
+}
+
+/**
+ * Send an op and wait for `done`. An op sent while a previous script still
+ * holds the player (exactmove, p_delay) is dropped silently, so resend when
+ * the player has neither moved nor animated for 3 ticks.
+ */
+async function sendUntil(sdk: Sdk, L: Ledger, send: () => Promise<unknown>, done: () => boolean, timeout: number, what: string) {
+    const start = sdk.getState()!.tick;
+    let sends = 0;
+    while (sdk.getState()!.tick - start < timeout) {
+        await send();
+        sends++;
+        let last = pos(sdk);
+        let still = 0;
+        while (sdk.getState()!.tick - start < timeout) {
+            if (done()) {
+                if (sends > 1) L.note(`${what}: resent ${sends - 1}x`);
+                return;
+            }
+            await sdk.waitForStateUpdate();
+            const p = pos(sdk);
+            const anim = sdk.getState()!.player!.animId;
+            if (p.x === last.x && p.z === last.z && anim === -1 && !sdk.getState()!.dialog?.isOpen) still++;
+            else still = 0;
+            last = p;
+            if (still >= 3) break;
+        }
+    }
+    if (!done()) throw new Error(`${what} did not complete; at ${JSON.stringify(pos(sdk))}; ${sdk.getState()!.gameMessages.slice(-3).map(m => m.text).join(' | ')}`);
 }
 
 const inMap = (sdk: Sdk, mx: number, mz: number) => {
@@ -58,11 +86,9 @@ async function setup(sdk: Sdk, phase: Phase) {
     await cheat(sdk, `setstat strength ${STATS}`);
     await cheat(sdk, `setstat defence ${STATS}`);
     await cheat(sdk, `setstat hitpoints ${STATS}`);
-    for (const it of sdk.getInventory()) await sdk.sendDropItem(it.slot);
-    await ticks(sdk, 2);
-    await cheat(sdk, 'give chisel 1');
-    await cheat(sdk, 'give rune_scimitar 1');
-    await cheat(sdk, 'give shark 10');
+    if (!invHas(sdk, /^chisel$/i)) await cheat(sdk, 'give chisel 1');
+    if (!invHas(sdk, /rune scimitar/i) && !sdk.findEquipmentItem(/rune scimitar/i)) await cheat(sdk, 'give rune_scimitar 1');
+    if (sdk.countInventoryItems(/^shark$/i) < 10) await cheat(sdk, `give shark ${10 - sdk.countInventoryItems(/^shark$/i)}`);
     const sc = sdk.findInventoryItem(/rune scimitar/i);
     if (sc) await sdk.sendUseItem(sc.slot, 2);
     await ticks(sdk, 1);
@@ -73,15 +99,15 @@ async function setup(sdk: Sdk, phase: Phase) {
     if (idx === 5) bits |= 1 << BIT.endcartFungus;
     await cheat(sdk, `setvar hauntedmine ${stage}`);
     await cheat(sdk, `setvar hauntedmine_bits ${bits}`);
-    if (idx >= 1 && idx <= 6) await cheat(sdk, 'give hauntedmine_lift_key 1');
-    if (idx === 7) await cheat(sdk, 'give glowing_fungus 1');
-    if (idx === 9) await cheat(sdk, 'give hauntedmine_reward_key 1');
+    if (idx >= 1 && idx <= 6 && !invHas(sdk, /zealot's key/i)) await cheat(sdk, 'give hauntedmine_lift_key 1');
+    if (idx === 7 && !invHas(sdk, /glowing fungus/i)) await cheat(sdk, 'give glowing_fungus 1');
+    if (idx === 9 && !invHas(sdk, /^key$/i)) await cheat(sdk, 'give hauntedmine_reward_key 1');
     const start: Record<Phase, [number, number]> = {
         zealot: [3444, 3256], enter: [3446, 3256], mush: [2789, 4487], cart: [2778, 4508], exit: [2770, 4520],
         endcart: [3429, 3227], lift: [2774, 4539], stairs: [2725, 4452], boss: [2811, 4454], reward: [2788, 4457]
     };
     await tele(sdk, start[phase][0], start[phase][1]);
-    if (phase === 'cart') {
+    if (phase === 'cart' && !invHas(sdk, /glowing fungus/i)) {
         await cheat(sdk, 'give glowing_fungus 1');
     }
     if (phase === 'exit') await cheat(sdk, `setvar hauntedmine_bits ${(1 << BIT.heardAboutKey) | (1 << BIT.endcartFungus)}`);
