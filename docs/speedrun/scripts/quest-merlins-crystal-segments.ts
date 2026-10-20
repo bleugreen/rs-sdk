@@ -76,6 +76,11 @@ await runScript(async ({ bot, sdk }) => {
             results.candle = { ask, trade, gotCandle, lightTicks: lit === null ? null : lit - t0 };
         } else if (seg === 'lady') {
             await L.cheat(sdk, 'setvar arthur 4');
+            // She only offers Excalibur to a player who owns none (lady_of_the_lake.rs2:4).
+            if (sdk.getEquipment().some(e => /^Excalibur$/i.test(e.name))) await bot.unequipItem(/^Excalibur$/i);
+            await sdk.waitForTicks(1);
+            for (const it of sdk.getInventory().filter(i => /^Excalibur$/i.test(i.name))) await sdk.sendDropItem(it.slot);
+            await sdk.waitForTicks(2);
             await L.tele(sdk, 2924, 3403, 0);
             const lady = await talk(/Lady of the Lake/, [/seek the sword Excalibur/i]);
             results.lady = { lady, progress: await L.getVar(sdk, 'excalibur_components_progress') };
