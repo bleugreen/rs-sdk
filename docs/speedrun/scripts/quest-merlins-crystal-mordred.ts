@@ -18,13 +18,15 @@ const weapon = args[4] ?? 'rune_scimitar';
 await runScript(async ({ bot, sdk }) => {
     await bot.dismissBlockingUI();
     await L.setStats(sdk, { attack: att, strength: str, defence: def, hitpoints: hp });
+    await sdk.waitForTicks(3);
     for (const item of sdk.getInventory()) await bot.dropItem(item, 'all');
     const gear = [weapon, 'rune_full_helm', 'rune_platebody', 'rune_platelegs', 'rune_kiteshield', 'amulet_of_strength'];
     for (const g of gear) {
         if (!sdk.getEquipment().some(e => e.name.toLowerCase().replace(/ /g, '_') === g)) {
             await L.cheat(sdk, `give ${g} 1`, 1);
             const it = sdk.getInventory().find(i => i.name.toLowerCase().replace(/ /g, '_') === g);
-            if (it) await bot.equipItem(it);
+            const r = it ? await bot.equipItem(it) : { success: false, message: 'not given' };
+            if (!r.success) throw new Error(`could not equip ${g}: ${r.message}`);
         }
     }
     await L.cheat(sdk, 'give swordfish 10', 1);
@@ -45,6 +47,7 @@ await runScript(async ({ bot, sdk }) => {
     const arrive = L.pos(sdk);
 
     // Fight until Morgan Le Faye interrupts (Mordred's death queue opens her dialogue).
+    await L.waitUntil(sdk, () => sdk.findNearbyNpc(/Sir Mordred/) !== null, 20);
     const mordred = sdk.findNearbyNpc(/Sir Mordred/);
     if (!mordred) throw new Error('Sir Mordred not found');
     const hpStart = sdk.getState()!.player!.hp;
