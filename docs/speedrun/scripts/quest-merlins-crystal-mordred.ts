@@ -58,10 +58,19 @@ await runScript(async ({ bot, sdk }) => {
     await bot.attack(mordred);
     let firstHitTick: number | null = null;
     let eaten = 0;
+    let levelUps = 0;
     let minHp = hpStart;
     while (L.tick(sdk) - t0 < 600) {
         const s = sdk.getState()!;
-        if (s.dialog.isOpen) break;
+        if (s.dialog.isOpen) {
+            if (s.nearbyNpcs.some(n => /Morgan Le Faye/.test(n.name))) break;
+            // A level-up dialogue interrupts combat: dismiss it and re-attack.
+            levelUps++;
+            await bot.dismissBlockingUI();
+            const again = sdk.findNearbyNpc(/Sir Mordred/);
+            if (again) await bot.attack(again);
+            continue;
+        }
         const m = s.nearbyNpcs.find(n => /Sir Mordred/.test(n.name));
         if (firstHitTick === null && m && m.hp !== null && m.maxHp !== null && m.hp < m.maxHp) firstHitTick = s.tick;
         minHp = Math.min(minHp, s.player!.hp);
@@ -102,6 +111,7 @@ await runScript(async ({ bot, sdk }) => {
         hpStart,
         minHp,
         foodEaten: eaten,
+        levelUpDialogsDismissed: levelUps,
         morganDialogue: { ticks: morgan.ticks, pages: morgan.pages, options: morgan.options },
         arthurVarpAfter: arthur,
         downTwoStaircasesTicks: downTicks,
