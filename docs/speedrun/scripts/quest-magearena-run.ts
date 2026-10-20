@@ -63,7 +63,7 @@ await runScript(async ({ bot, sdk }) => {
     const forms: string[] = [];
     const FIGHT_CAP = Number(process.env.FIGHT_CAP ?? 1500);
     let lastHp = sdk.getState()?.player?.hp ?? 0;
-    let lastChat = sdk.getChat({ limit: 1 })[0]?.observationId ?? 0;
+    sdk.getNewChat({ types: [0] });
     while (pos(sdk).z < 4600) {
         const p = sdk.getState()?.player;
         if (!p || p.isDead || pos(sdk).z < 3900 || tick(sdk) - tArena > FIGHT_CAP) {
@@ -73,12 +73,7 @@ await runScript(async ({ bot, sdk }) => {
             log(sdk, `hp ${lastHp} -> ${p.hp}`, tArena);
             lastHp = p.hp;
         }
-        for (const m of sdk.getChat({ limit: 10 })) {
-            if ((m.observationId ?? 0) > lastChat) {
-                log(sdk, `chat: ${m.text}`, tArena);
-                lastChat = m.observationId ?? lastChat;
-            }
-        }
+        for (const m of sdk.getNewChat({ types: [0] })) log(sdk, `chat: ${m.text}`, tArena);
         if (p) minHp = Math.min(minHp, p.hp);
         if (p && p.hp > 0 && p.hp < 30) {
             const food = sdk.findInventoryItem(/shark/i);
@@ -95,7 +90,7 @@ await runScript(async ({ bot, sdk }) => {
                 formStart = tick(sdk);
                 log(sdk, `form npc ${target.id} lvl ${target.combatLevel}`, tArena);
             }
-            if (casts % 5 === 0) log(sdk, `target ${target.id} hp ${target.hp}/${target.maxHp} dist ${target.distance}`, tArena);
+            if (casts % 5 === 0) log(sdk, `target ${target.id} hp ${target.hp}/${target.maxHp} dist ${target.distance} magic xp ${sdk.getSkill('Magic')?.experience} runes ${sdk.getInventory().filter((i) => /rune/i.test(i.name)).map((i) => i.name + ' ' + i.count).join(',')} worn ${sdk.getEquipment().map((i) => i.name).join(',')}`, tArena);
             await sdk.sendSpellOnNpc(target.index, SPELL_COM[SPELL]);
             casts++;
         }
@@ -152,5 +147,5 @@ await runScript(async ({ bot, sdk }) => {
     log(sdk, `TOTAL ${tStaff - t0} ticks (talk to staff). Fight xp: magic ${magicXp / 25} base, hp ${hpXp / 25} base`, t0);
     await cheat(sdk, 'getvar magearena');
     await waitTicks(sdk, 2);
-    for (const m of sdk.getChat({ limit: 5 })) console.log('chat:', m.text);
+    for (const m of sdk.getNewChat({ types: [0] })) console.log('chat:', m.text);
 }, { timeout: 30 * 60_000, printState: false });
