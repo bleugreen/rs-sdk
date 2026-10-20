@@ -72,6 +72,12 @@ export default class NpcType {
             }
         }
 
+        // rs-sdk: an id outside the table would decode from a NaN position
+        // forever (see LocType.list).
+        if (!Number.isInteger(id) || id < 0 || id >= this.idx.length) {
+            throw new RangeError(`NpcType.list: no npc ${id}`);
+        }
+
         this.recentPos = (this.recentPos + 1) % 20;
 
         const npc: NpcType = (this.recent[this.recentPos] = new NpcType());

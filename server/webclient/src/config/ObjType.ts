@@ -95,6 +95,12 @@ export default class ObjType {
             }
         }
 
+        // rs-sdk: an id outside the table would decode from a NaN position
+        // forever (see LocType.list).
+        if (!Number.isInteger(id) || id < 0 || id >= this.idx.length) {
+            throw new RangeError(`ObjType.list: no obj ${id}`);
+        }
+
         this.recentPos = (this.recentPos + 1) % 10;
 
         const obj: ObjType = this.recent[this.recentPos]!;

@@ -91,6 +91,13 @@ export default class LocType {
             }
         }
 
+        // rs-sdk: idx[id] is undefined for any id outside the table, and decode()
+        // from that NaN position never ends - DataView reads index NaN as 0 and
+        // NaN++ stays NaN, so it re-reads byte 0 forever and freezes the client.
+        if (!Number.isInteger(id) || id < 0 || id >= this.idx.length) {
+            throw new RangeError(`LocType.list: no loc ${id}`);
+        }
+
         this.recentPos = (this.recentPos + 1) % 10;
 
         const loc: LocType = this.recent[this.recentPos]!;
