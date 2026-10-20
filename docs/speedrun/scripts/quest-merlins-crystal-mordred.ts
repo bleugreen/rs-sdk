@@ -24,7 +24,9 @@ await runScript(async ({ bot, sdk }) => {
     for (const g of gear) {
         if (!sdk.getEquipment().some(e => e.name.toLowerCase().replace(/ /g, '_') === g)) {
             await L.cheat(sdk, `give ${g} 1`, 1);
-            const it = sdk.getInventory().find(i => i.name.toLowerCase().replace(/ /g, '_') === g);
+            const named = (i: { name: string }) => i.name.toLowerCase().replace(/ /g, '_') === g;
+            await L.waitUntil(sdk, () => sdk.getInventory().some(named), 10);
+            const it = sdk.getInventory().find(named);
             const r = it ? await bot.equipItem(it) : { success: false, message: 'not given' };
             if (!r.success) throw new Error(`could not equip ${g}: ${r.message}`);
         }
