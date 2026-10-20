@@ -17,6 +17,84 @@ export interface ActionResult {
 
 export type ActionResultOrPromise = ActionResult | Promise<ActionResult>;
 
+type ActionOf<T extends BotAction['type']> = Extract<BotAction, { type: T }>;
+type IntegerKey<T extends BotAction['type']> = {
+    [K in keyof ActionOf<T>]-?: NonNullable<ActionOf<T>[K]> extends number ? K : never;
+}[keyof ActionOf<T>] & string;
+
+/**
+ * The integer fields of every action. Actions arrive as JSON from whatever
+ * controller is on the far side of the gateway, so nothing has checked their
+ * types: `sdk.sendInteractLoc(loc, 'chop')` lands here as x = an object,
+ * z = "chop" and no locId at all. A value like that must not reach the client,
+ * because an id that is not a valid integer index sends the config decoders
+ * (`LocType.list` and friends) into an endless read. Optional fields are
+ * checked only when present.
+ */
+const INTEGER_FIELDS: { [T in BotAction['type']]: { required?: readonly IntegerKey<T>[]; optional?: readonly IntegerKey<T>[] } } = {
+    none: {},
+    wait: { optional: ['ticks'] },
+    talkToNpc: { required: ['npcIndex'] },
+    interactNpc: { required: ['npcIndex', 'optionIndex'] },
+    interactPlayer: { required: ['playerIndex', 'optionIndex'] },
+    clickDialogOption: { required: ['optionIndex'] },
+    clickComponent: { required: ['componentId'] },
+    clickComponentWithOption: { required: ['componentId', 'optionIndex'], optional: ['slot'] },
+    acceptCharacterDesign: {},
+    randomizeCharacterDesign: {},
+    walkTo: { required: ['x', 'z'] },
+    useInventoryItem: { required: ['slot', 'optionIndex'], optional: ['interfaceId'] },
+    dropItem: { required: ['slot'] },
+    pickupItem: { required: ['x', 'z', 'itemId'] },
+    interactGroundItem: { required: ['x', 'z', 'itemId', 'optionIndex'] },
+    interactLoc: { required: ['x', 'z', 'locId', 'optionIndex'] },
+    useItemOnItem: { required: ['sourceSlot', 'targetSlot'] },
+    useItemOnLoc: { required: ['itemSlot', 'x', 'z', 'locId'] },
+    useItemOnNpc: { required: ['itemSlot', 'npcIndex'] },
+    useEquipmentItem: { required: ['slot', 'optionIndex'] },
+    shopBuy: { required: ['slot', 'amount'] },
+    shopSell: { required: ['slot', 'amount'] },
+    closeShop: {},
+    closeModal: {},
+    setCombatStyle: { required: ['style'] },
+    spellOnNpc: { required: ['npcIndex', 'spellComponent'] },
+    spellOnPlayer: { required: ['playerIndex', 'spellComponent'] },
+    spellOnItem: { required: ['slot', 'spellComponent'] },
+    spellOnGroundItem: { required: ['x', 'z', 'itemId', 'spellComponent'] },
+    setTab: { required: ['tabIndex'] },
+    say: {},
+    privateMessage: {},
+    bankDeposit: { required: ['slot', 'amount'] },
+    bankWithdraw: { required: ['slot', 'amount'] },
+    searchGE: {},
+    submitCountDialog: { required: ['value'] },
+    scanNearbyLocs: { optional: ['radius'] },
+    scanGroundItems: { optional: ['radius'] },
+    togglePrayer: { required: ['prayerIndex'] }
+};
+
+function describeValue(value: unknown): string {
+    if (value === undefined) return 'missing';
+    if (typeof value === 'string') return JSON.stringify(value);
+    if (typeof value === 'object') return value === null ? 'null' : 'an object';
+    return String(value);
+}
+
+/** One `field=value` entry per integer field the action got wrong; empty when it is well-formed. */
+export function invalidIntegerFields(action: BotAction): string[] {
+    const spec = INTEGER_FIELDS[action.type] as { required?: readonly string[]; optional?: readonly string[] } | undefined;
+    if (!spec) return [];
+    const fields = action as unknown as Record<string, unknown>;
+    const invalid: string[] = [];
+    for (const key of spec.required ?? []) {
+        if (!Number.isInteger(fields[key])) invalid.push(`${key}=${describeValue(fields[key])}`);
+    }
+    for (const key of spec.optional ?? []) {
+        if (fields[key] !== undefined && !Number.isInteger(fields[key])) invalid.push(`${key}=${describeValue(fields[key])}`);
+    }
+    return invalid;
+}
+
 // Interface for on-demand scanning and component discovery (provided by StateCollector)
 export interface ScanProvider {
     scanNearbyLocs(radius?: number): NearbyLoc[];
@@ -40,6 +118,16 @@ export class ActionExecutor {
     }
 
     execute(action: BotAction): ActionResultOrPromise {
+        const invalid = invalidIntegerFields(action);
+        if (invalid.length > 0) {
+            return {
+                success: false,
+                message: `${action.type} needs integer arguments; got ${invalid.join(', ')}`,
+                phase: 'validation',
+                reason: 'invalid_argument'
+            };
+        }
+
         try {
             switch (action.type) {
                 case 'none':

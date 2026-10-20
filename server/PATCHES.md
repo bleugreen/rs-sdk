@@ -347,6 +347,18 @@ Upgrade hazards:
       accesses some via `as any`, so **`bunx tsc --noEmit` does NOT catch all of these**;
       grep-audit `(client as any).X` accesses after a sync.
 
+### Config decoders
+- [ ] **`config/{Loc,Npc,Obj}Type.ts` `list()` id guard** — each throws a `RangeError` for an
+      id that is not an integer inside `idx`, checked before the recent-cache scan. Upstream
+      reads `dat.pos = idx[id]` unchecked: out of range that is `undefined`, and `decode()`
+      then never terminates (`DataView` reads index `NaN` as 0, `NaN++` stays `NaN`, so it
+      re-reads byte 0 forever) — a frozen browser tab or a pinned lite process. A mistyped
+      `sdk.sendInteractLoc(loc, 'chop')` (locId missing) reached it that way.
+      Pairs with `bot/ActionExecutor.ts` `INTEGER_FIELDS`, which refuses non-integer action
+      arguments with `reason: 'invalid_argument'` before they reach the client.
+      Verify: `grep -n "RangeError" src/config/LocType.ts src/config/NpcType.ts src/config/ObjType.ts`
+      (three files), plus `bun test src/bot/ClientInteraction.test.ts`.
+
 ### Build / shell
 - [ ] **`bundle.ts`** — `BUILD_MODE` standard/bot/both; **terser property mangling OFF**
       (mangling breaks bot.ejs/Puppeteer accessing client members by name).
