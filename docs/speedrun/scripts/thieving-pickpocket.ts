@@ -12,6 +12,7 @@
  *   --level=N         ::setstat thieving N first (and again on every level-up,
  *                     so the whole sample is at level N; --hold=0 lets it climb)
  *   --attempts=N      rolls to record (default 300)
+ *   --until=N         stop as soon as Thieving reaches level N (e.g. --hold=0 --until=99)
  *   --tele=l,mx,mz,lx,lz  ::tele first (default: Ardougne market knight)
  *   --hp=N            ::setstat hitpoints N first (default 99)
  *   --eat=MODE        none | stun (eat the tick a failure is seen, inside the
@@ -52,7 +53,9 @@ const EVERY = Number(flag('every', '1'));
 const EATDELAY = Number(flag('eatdelay', '0'));
 const FOOD = flag('food', 'lobster')!;
 const DMG = Number(flag('dmg', '3'));
-const OUT = flag('out', `${process.env.TMPDIR ?? '/tmp'}/thieving-${NPC.source.replace(/\W+/g, '')}-${LEVEL}-${EAT}-${STUNPROBE}.jsonl`)!;
+const UNTIL = Number(flag('until', '0'));
+const BOT = argv.find(a => !a.startsWith('--')) ?? 'bot';
+const OUT = flag('out', `${process.env.TMPDIR ?? '/tmp'}/thieving-${BOT}-${NPC.source.replace(/\W+/g, '')}-${LEVEL}-${EAT}-${STUNPROBE}.jsonl`)!;
 
 /** stat_random from PlayerOps.ts STAT_RANDOM: chance out of 256. */
 function statRandom(level: number, lo: number, hi: number): number {
@@ -112,7 +115,7 @@ await runScript(async ({ bot, sdk }) => {
     let prevLevel = thieving(state)!.baseLevel;
     const startXp = thieving(state)!.experience;
 
-    while (rolls.length < ATTEMPTS) {
+    while (rolls.length < ATTEMPTS && !(UNTIL && thieving(state)!.baseLevel >= UNTIL)) {
         state = await nextTick(state.tick);
         const t = state.tick;
         const skill = thieving(state)!;
