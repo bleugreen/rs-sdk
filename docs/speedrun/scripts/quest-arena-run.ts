@@ -21,7 +21,7 @@ const EAT_AT = Math.max(12, Math.floor(STATS * 0.45));
 
 // loc ids from server/content/pack/loc.pack, tiles from the maps
 const CHEST_SHUT = 75, CHEST_OPEN = 76;
-const DOOR1 = 81;
+const DOOR1 = 81, DOOR2 = 82;
 
 await runScript(async ({ bot, sdk }) => {
     await bot.skipTutorial?.();
@@ -136,6 +136,7 @@ await runScript(async ({ bot, sdk }) => {
         return JSON.stringify(r);
     });
     if (FROM < 9) await rec.seg('ogre dead: General dialogue + cell cutscene', 'mixed', async c => {
+        await waitTicksFor(sdk, s => !!s.dialog?.isOpen, 20);
         await driveDialog(sdk, c, [], 3, 400, s => inBox(s, 2586, 3139, 2601, 3143));
         return `stage ${await getvar(sdk, 'arenaquest')} at ${JSON.stringify(pos(sdk))}`;
     });
@@ -148,6 +149,7 @@ await runScript(async ({ bot, sdk }) => {
         return JSON.stringify(r);
     });
     await rec.seg('scorpion dead: General summons Bouncer', 'mixed', async c => {
+        await waitTicksFor(sdk, s => !!s.dialog?.isOpen, 20);
         await driveDialog(sdk, c, [], 3);
         return `stage ${await getvar(sdk, 'arenaquest')}`;
     });
@@ -156,6 +158,7 @@ await runScript(async ({ bot, sdk }) => {
         return JSON.stringify(r);
     });
     await rec.seg('Bouncer dead: General frees the Servils', 'mixed', async c => {
+        await waitTicksFor(sdk, s => !!s.dialog?.isOpen, 20);
         await driveDialog(sdk, c, [], 2);
         return `stage ${await getvar(sdk, 'arenaquest')}`;
     });
@@ -167,7 +170,21 @@ await runScript(async ({ bot, sdk }) => {
     }
     console.log(`fight chain (keys to stage 12${GENERAL ? ' + General' : ''}): ${tick(sdk) - chainStart} ticks`);
 
-    await rec.seg('leave arena, walk to Lady Servil', 'travel', async c => {
+    await rec.seg('walk to arena door (2606,3152)', 'travel', async c => {
+        await walk(bot, sdk, c, 2605, 3153, 0);
+    });
+    await rec.seg('arena door, out', 'interaction', async c => {
+        await opLoc(sdk, c, DOOR2, 2606, 3152, 1);
+        await waitTicksFor(sdk, s => (s.player?.worldX ?? 0) >= 2607, 10);
+    });
+    await rec.seg('walk to west prison door (2585,3141)', 'travel', async c => {
+        await walk(bot, sdk, c, 2586, 3141, 0);
+    });
+    await rec.seg('west prison door, out', 'interaction', async c => {
+        await opLoc(sdk, c, DOOR1, 2585, 3141, 1);
+        await waitTicksFor(sdk, s => (s.player?.worldX ?? 9999) < 2585, 10);
+    });
+    await rec.seg('walk to Lady Servil', 'travel', async c => {
         await walk(bot, sdk, c, 2567, 3197, 1);
     });
     await rec.seg('Lady Servil: reward', 'dialogue', async c => {
