@@ -1,0 +1,86 @@
+// Shared helpers for the Mage Arena and Dwarf Cannon measurement scripts.
+// Staff commands need the engine started with LOCAL_STAFF_LEVEL=4 (docs/speedrun/LAB.md).
+import type { BotSDK } from '../../../sdk/index';
+import type { BotActions } from '../../../sdk/actions';
+
+export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Server tick as counted by the lite client (one PLAYER_INFO per tick). */
+export function tick(sdk: BotSDK): number {
+    return sdk.getState()?.tick ?? -1;
+}
+
+export async function waitTicks(sdk: BotSDK, n: number): Promise<void> {
+    const target = tick(sdk) + n;
+    while (tick(sdk) < target) await sleep(20);
+}
+
+export async function cheat(sdk: BotSDK, command: string): Promise<void> {
+    await sdk.sendSay(`::${command}`);
+    await waitTicks(sdk, 2);
+}
+
+/** `::tele level,mx,mz,lx,lz` from absolute tile coordinates. */
+export async function tele(sdk: BotSDK, x: number, z: number, level = 0): Promise<void> {
+    await cheat(sdk, `tele ${level},${x >> 6},${z >> 6},${x & 63},${z & 63}`);
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline) {
+        const p = sdk.getState()?.player;
+        if (p && p.worldX === x && p.worldZ === z) break;
+        await sleep(50);
+    }
+    await waitTicks(sdk, 2);
+}
+
+export function pos(sdk: BotSDK): { x: number; z: number; level: number } {
+    const p = sdk.getState()?.player;
+    return { x: p?.worldX ?? -1, z: p?.worldZ ?? -1, level: p?.level ?? -1 };
+}
+
+/** Log with the current server tick, relative to `t0` when given. */
+export function log(sdk: BotSDK, msg: string, t0?: number): void {
+    const t = tick(sdk);
+    console.log(`[t=${t}${t0 !== undefined ? ` +${t - t0}` : ''}] ${msg}`);
+}
+
+/** Click through chat dialogs until none is open, choosing options by text when offered. */
+export async function talkThrough(
+    sdk: BotSDK,
+    choices: (string | RegExp)[] = [],
+    opts: { maxPages?: number; idleMs?: number } = {}
+): Promise<{ pages: number; options: number }> {
+    const maxPages = opts.maxPages ?? 80;
+    const idleMs = opts.idleMs ?? 1500;
+    let pages = 0;
+    let options = 0;
+    let idleSince = Date.now();
+    const queue = [...choices];
+    while (pages + options < maxPages) {
+        const d = sdk.getDialog();
+        if (!d || !d.isOpen) {
+            if (Date.now() - idleSince > idleMs) break;
+            await sleep(30);
+            continue;
+        }
+        if (d.options && d.options.length > 0) {
+            const want = queue[0];
+            const match = want === undefined ? undefined : d.options.find((o) => (typeof want === 'string' ? o.text.includes(want) : want.test(o.text)));
+            if (!match) {
+                throw new Error(`no option matching ${String(want)} in [${d.options.map((o) => o.text).join(' | ')}]`);
+            }
+            queue.shift();
+            await sdk.sendClickDialog(match.index);
+            options++;
+        } else {
+            await sdk.sendClickDialog(0);
+            pages++;
+        }
+        // wait until this page is replaced (next tick at least)
+        const t = tick(sdk);
+        while (tick(sdk) === t) await sleep(10);
+        idleSince = Date.now();
+    }
+    return { pages, options };
+}
+
+export type Ctx = { bot: BotActions; sdk: BotSDK };
