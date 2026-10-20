@@ -169,6 +169,7 @@ export function dialogue(sdk: BotSDK, answers: RegExp[] = [], opts: { idle?: num
         let lastOpen = -1;
         let lastModal = -1;
         let lastClick = -1;
+        let lastKey = '';
         const t0 = now(sdk);
         let done = false;
         const finish = () => {
@@ -190,13 +191,23 @@ export function dialogue(sdk: BotSDK, answers: RegExp[] = [], opts: { idle?: num
             if (d.isOpen) {
                 lastOpen = s.tick;
                 if (run.firstTick < 0) run.firstTick = s.tick;
-                if (d.isWaiting || !d.pageId || d.pageId === lastPage) return;
-                // The client can republish the page it just answered within the same tick under
-                // a fresh pageId; the server cannot answer a click within the tick it was sent.
-                if (s.tick <= lastClick) return;
+                if (d.isWaiting || !d.pageId) return;
+                // The client republishes pages under fresh pageIds, the server applies a click
+                // to whatever page it is waiting on, and a second click reaching the server in
+                // the same tick is dropped. So: new content is answered at once; a page that
+                // looks exactly like the one just answered (the ballista asks three identical
+                // coordinate questions) is answered when it is republished 2+ ticks after the
+                // last click, or after 4 ticks if nothing changes (stall recovery).
+                const key = dialogText(s);
+                const fresh = key !== lastKey;
+                const republished = d.pageId !== lastPage && s.tick - lastClick >= 2;
+                const stalled = s.tick - lastClick >= 4;
+                if (!fresh && !republished && !stalled) return;
+                if (fresh && d.pageId === lastPage) return;
                 lastPage = d.pageId;
+                lastKey = key;
                 lastClick = s.tick;
-                const text = dialogText(s).replace(/\s+/g, ' ').slice(0, 90);
+                const text = key.replace(/\s+/g, ' ').slice(0, 90);
                 if (d.options.length > 1) {
                     let pick = -1;
                     for (let i = 0; i < queue.length && pick < 0; i++) {
