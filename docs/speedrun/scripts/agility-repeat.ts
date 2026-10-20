@@ -1,13 +1,15 @@
 // Repeats one obstacle or shortcut in place and reports ticks between xp drops.
-//   bun docs/speedrun/scripts/agility-repeat.ts <bot> <locId> <x> <z> <startX> <startZ> <plane> <reps> [agility=99]
+//   bun docs/speedrun/scripts/agility-repeat.ts <bot> <locId> <x> <z> <startX> <startZ> <plane> <reps> [agility=99] [altId,altX,altZ]
 // The loc is clicked again as soon as each xp drop is observed, from wherever
 // the previous crossing left the player; a click that yields no xp within 40
 // ticks is reported as not repeatable from that side.
 import { runScript } from '../../../sdk/runner';
 import { XpLog, cheat, tele, pos, tick, waitTicksFor, summary, XP_RATE, agilityXp } from './agility-lib';
 
-const [, , , idA, xA, zA, sxA, szA, plA = '0', repsA = '20', aglA = '99'] = process.argv;
+const [, , , idA, xA, zA, sxA, szA, plA = '0', repsA = '20', aglA = '99', altA] = process.argv;
 const [id, x, z, sx, sz, plane, reps] = [idA, xA, zA, sxA, szA, plA, repsA].map(Number);
+// optional "id,x,z" of the far end: clicks alternate between the two ends
+const alt = altA ? altA.split(',').map(Number) : null;
 
 await runScript(async ({ sdk }) => {
     await cheat(sdk, `setstat agility ${aglA}`);
@@ -21,7 +23,8 @@ await runScript(async ({ sdk }) => {
         const before = log.events.length;
         const from = pos(sdk);
         sdk.getNewChat({ types: [0] });
-        await sdk.sendInteractLoc(x, z, id, 1);
+        if (alt && r % 2 === 1) await sdk.sendInteractLoc(alt[1], alt[2], alt[0], 1);
+        else await sdk.sendInteractLoc(x, z, id, 1);
         const ok = await waitTicksFor(sdk, () => log.events.length > before, 40);
         const msgs = sdk.getNewChat({ types: [0] }).map(m => m.text);
         if (!ok) {
