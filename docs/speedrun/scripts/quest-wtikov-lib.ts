@@ -109,7 +109,7 @@ export async function runDialog(
     sdk: BotSDK,
     rec: Recorder | null,
     choices: (string | RegExp)[] = [],
-    opts: { openTicks?: number; idleTicks?: number; maxTicks?: number } = {},
+    opts: { openTicks?: number; idleTicks?: number; maxTicks?: number; chooser?: (texts: string[], options: string[]) => RegExp | null } = {},
 ): Promise<{ pages: number; options: number; texts: string[] }> {
     const openTicks = opts.openTicks ?? 12;
     const idleTicks = opts.idleTicks ?? 2;
@@ -135,7 +135,9 @@ export async function runDialog(
         const real = d.options.filter(o => o.text && !/click here to continue/i.test(o.text));
         if (real.length > 1) {
             let picked = -1;
-            for (let qi = 0; qi < queue.length && picked < 0; qi++) {
+            const dyn = opts.chooser?.(texts, real.map(o => o.text));
+            if (dyn) { const m = real.find(o => dyn.test(o.text)); if (m) { picked = m.index; texts.push('> ' + m.text); } }
+            for (let qi = 0; qi < queue.length && picked < 0 && !dyn; qi++) {
                 const m = real.find(o => queue[qi].test(o.text));
                 if (m) { picked = m.index; queue.splice(qi, 1); texts.push('> ' + m.text); }
             }
@@ -169,6 +171,34 @@ export function msgsSince(sdk: BotSDK, tick: number): string[] {
 
 export function invHas(sdk: BotSDK, re: RegExp): boolean {
     return sdk.getInventory().some(i => re.test(i.name));
+}
+
+let objIds: Map<string, number> | null = null;
+
+/** Config id of an obj by its debug name, from server/content/pack/obj.pack. */
+export function objId(name: string): number {
+    if (!objIds) {
+        objIds = new Map();
+        const text = require('fs').readFileSync(new URL('../../../server/content/pack/obj.pack', import.meta.url), 'utf8') as string;
+        for (const line of text.split('\n')) {
+            const i = line.indexOf('=');
+            if (i > 0) objIds.set(line.slice(i + 1).trim(), parseInt(line.slice(0, i)));
+        }
+    }
+    const id = objIds.get(name);
+    if (id === undefined) throw new Error(`unknown obj ${name}`);
+    return id;
+}
+
+/** An inventory item by display-name pattern, or by debug name (string). */
+export type ItemRef = RegExp | string;
+
+export function inv(sdk: BotSDK, ref: ItemRef) {
+    if (typeof ref === 'string') {
+        const id = objId(ref);
+        return sdk.getInventory().find(i => i.id === id) ?? null;
+    }
+    return sdk.findInventoryItem(ref);
 }
 
 export function npcByName(sdk: BotSDK, re: RegExp) {
@@ -220,16 +250,16 @@ export async function opLoc(sdk: BotSDK, rec: Recorder | null, x: number, z: num
     return runDialog(sdk, rec, choices, { openTicks: opts.openTicks ?? 25 });
 }
 
-export async function talk(sdk: BotSDK, rec: Recorder | null, re: RegExp, choices: (string | RegExp)[] = [], x?: number, z?: number) {
+export async function talk(sdk: BotSDK, rec: Recorder | null, re: RegExp, choices: (string | RegExp)[] = [], x?: number, z?: number, chooser?: (texts: string[], options: string[]) => RegExp | null) {
     const npc = npcNear(sdk, re, x, z);
     if (!npc) { console.log(`[npc] none matching ${re}`); return null; }
     await sdk.sendInteractNpc(npc.index, 1);
     rec?.interact();
-    return runDialog(sdk, rec, choices, { openTicks: 30 });
+    return runDialog(sdk, rec, choices, { openTicks: 30, chooser });
 }
 
-export async function useOnNpc(sdk: BotSDK, rec: Recorder | null, itemRe: RegExp, npcRe: RegExp, choices: (string | RegExp)[] = [], x?: number, z?: number) {
-    const item = sdk.findInventoryItem(itemRe);
+export async function useOnNpc(sdk: BotSDK, rec: Recorder | null, itemRe: ItemRef, npcRe: RegExp, choices: (string | RegExp)[] = [], x?: number, z?: number) {
+    const item = inv(sdk, itemRe);
     const npc = npcNear(sdk, npcRe, x, z);
     if (!item || !npc) { console.log(`[use] missing item ${itemRe}=${!!item} or npc ${npcRe}=${!!npc}`); return null; }
     await sdk.sendUseItemOnNpc(item.slot, npc.index);
@@ -237,8 +267,8 @@ export async function useOnNpc(sdk: BotSDK, rec: Recorder | null, itemRe: RegExp
     return runDialog(sdk, rec, choices, { openTicks: 30 });
 }
 
-export async function useOnItem(sdk: BotSDK, rec: Recorder | null, aRe: RegExp, bRe: RegExp, choices: (string | RegExp)[] = []) {
-    const a = sdk.findInventoryItem(aRe), b = sdk.findInventoryItem(bRe);
+export async function useOnItem(sdk: BotSDK, rec: Recorder | null, aRe: ItemRef, bRe: ItemRef, choices: (string | RegExp)[] = []) {
+    const a = inv(sdk, aRe), b = inv(sdk, bRe);
     if (!a || !b) { console.log(`[use] missing ${aRe}=${!!a} ${bRe}=${!!b}`); return null; }
     await sdk.sendUseItemOnItem(a.slot, b.slot);
     rec?.interact();
@@ -261,11 +291,8 @@ export function hp(sdk: BotSDK): number {
 
 export async function setupAccount(sdk: BotSDK, bot: BotActions, stats: Record<string, number>, items: [string, number][]): Promise<void> {
     await sdk.waitForReady(60_000);
-    const p = pos(sdk);
-    if (p.x < 3200 && p.x > 3000 && p.z > 3000 && p.z < 3150) {
-        const r = await bot.skipTutorial();
-        console.log('[setup] tutorial', r.message);
-    }
+    const r = await bot.skipTutorial();
+    console.log('[setup] tutorial', r.message, JSON.stringify(pos(sdk)));
     for (const [s, l] of Object.entries(stats)) await cheat(sdk, `setstat ${s} ${l}`);
     for (const [i, n] of items) await cheat(sdk, `give ${i} ${n}`);
     await sdk.waitForTicks(2);
