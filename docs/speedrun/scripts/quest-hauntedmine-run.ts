@@ -83,19 +83,58 @@ async function sendUntil(sdk: Sdk, L: Ledger, send: () => Promise<unknown>, done
  * cart is north of the junction and heading north (or parked at the north
  * end): it cannot come back past z=4503 for at least 9 ticks.
  */
-async function waitCart1(sdk: Sdk, L: Ledger) {
+//
+// The corridor is one tile wide (walls on both sides of x=2727) with two
+// dead-end alcoves: (2728,4503) and (2726,4496). The cart pushes anyone on
+// the tile ahead of it back one tile (hauntedmine_cart.rs2), so the crossing
+// is: get into the alcove that lies between you and the cart, let it pass,
+// then run the rest of the corridor behind it.
+const ALCOVE_N: [number, number] = [2728, 4503];
+const ALCOVE_S: [number, number] = [2726, 4496];
+
+function cart1(sdk: Sdk): number | null {
+    const c = sdk.getNearbyNpcs().find(n => /mine cart/i.test(n.name) && (n.tileX ?? n.x) === 2727);
+    return c ? (c.tileZ ?? c.z) : null;
+}
+
+async function cart1Dir(sdk: Sdk): Promise<{ z: number; dir: number }> {
+    const a = cart1(sdk)!;
+    await sdk.waitForStateUpdate();
+    const b = cart1(sdk)!;
+    // parked at an end: it will head back
+    const dir = b !== a ? Math.sign(b - a) : b >= 4509 ? -1 : b <= 4491 ? 1 : 0;
+    return { z: b, dir };
+}
+
+async function crossTrack(sdk: Sdk, L: Ledger, heading: 'south' | 'north') {
     const t0 = sdk.getState()!.tick;
-    let prev: number | null = null;
-    while (sdk.getState()!.tick - t0 < 60) {
-        const cart = sdk.getNearbyNpcs().find(n => /mine cart/i.test(n.name) && (n.tileX ?? n.x) === 2727);
-        if (!cart) break;
-        const z = cart.tileZ ?? cart.z;
-        if (prev !== null && z >= 4505 && (z > prev || z === 4509)) break;
-        prev = z;
-        await sdk.waitForStateUpdate();
+    // southbound enters at the north end (z 4509), northbound at the south end (z 4489)
+    let alcove: [number, number] | null = null;
+    while (!alcove && sdk.getState()!.tick - t0 < 80) {
+        const { z, dir } = await cart1Dir(sdk);
+        if (heading === 'south') {
+            if (dir > 0 && z <= 4498) alcove = ALCOVE_N; // coming at us: duck at 4503 first
+            else if (dir < 0 && z <= 4507) alcove = ALCOVE_S; // going away: follow, duck at 4496
+        } else {
+            if (dir < 0 && z >= 4500) alcove = ALCOVE_S;
+            else if (dir > 0 && z >= 4493) alcove = ALCOVE_N;
+        }
     }
-    const waited = sdk.getState()!.tick - t0;
-    L.note(`waited ${waited} ticks for cart 1`);
+    const waitedEntry = sdk.getState()!.tick - t0;
+    if (!alcove) throw new Error('cart 1 never gave an opening');
+    await sdk.sendWalk(alcove[0], alcove[1], true);
+    const t1 = sdk.getState()!.tick;
+    // wait in the alcove until the cart has gone past it, away from our exit
+    const passed = () => {
+        const z = cart1(sdk);
+        if (z === null) return true;
+        return heading === 'south' ? z > alcove![1] : z < alcove![1];
+    };
+    await until(sdk, () => { const p = pos(sdk); return p.x === alcove![0] && p.z === alcove![1]; }, 40);
+    const t2 = sdk.getState()!.tick;
+    await until(sdk, passed, 60);
+    const t3 = sdk.getState()!.tick;
+    L.note(`cart 1 (${heading}): entry wait ${waitedEntry}, to alcove ${t2 - t1}, alcove wait ${t3 - t2}, alcove ${alcove.join(',')}`);
 }
 
 const inMap = (sdk: Sdk, mx: number, mz: number) => {
@@ -173,7 +212,10 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         L.begin('ladders: 53_150 -> 43_71 -> 42_70 -> 43_70 mushroom area');
         await opLoc(sdk, L, /ladder/i, [3422, 9625], 1, () => inMap(sdk, 43, 71));
         await opLoc(sdk, L, /ladder/i, [2798, 4567], 1, () => inMap(sdk, 42, 70));
-        await waitCart1(sdk, L);
+        L.add({ tiles: chebyshevPath(sdk, 2728, 4510) });
+        await sdk.sendWalk(2728, 4510, true);
+        await until(sdk, () => pos(sdk).x === 2728 && pos(sdk).z === 4510, 30);
+        await crossTrack(sdk, L, 'south');
         await opLoc(sdk, L, /ladder/i, [2725, 4486], 1, () => inMap(sdk, 43, 70));
         L.end();
     },
@@ -230,7 +272,10 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         await energy(sdk);
         L.begin('mushroom half -> surface (ladders up, crawl out back entrance 2)');
         await opLoc(sdk, L, /ladder/i, [2789, 4486], 1, () => inMap(sdk, 42, 70));
-        await waitCart1(sdk, L);
+        L.add({ tiles: chebyshevPath(sdk, 2726, 4488) });
+        await sdk.sendWalk(2726, 4488, true);
+        await until(sdk, () => pos(sdk).x === 2726 && pos(sdk).z === 4488, 30);
+        await crossTrack(sdk, L, 'north');
         await opLoc(sdk, L, /ladder/i, [2734, 4503], 1, () => inMap(sdk, 43, 71));
         await opLoc(sdk, L, /ladder/i, [2782, 4569], 1, () => inMap(sdk, 53, 150));
         await opLoc(sdk, L, /cart tunnel/i, [3408, 9623], 1, () => pos(sdk).z < 4000);
