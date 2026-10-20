@@ -90,8 +90,11 @@ await runScript(async ({ bot, sdk }) => {
         busy = true;
         fn().catch(e => log({ ev: 'error', why, msg: String(e) })).finally(() => (busy = false));
     };
-    const click = async (s: BotWorldState, why: string) => {
-        const spot = (target && s.nearbyNpcs.find(n => n.index === target!.index && isSpot(n))) || nearestSpot(s);
+    let lastClickTick = -1;
+    let lastPos = '';
+    const click = async (s: BotWorldState, why: string, nearest = false) => {
+        const spot = (!nearest && target && s.nearbyNpcs.find(n => n.index === target!.index && isSpot(n))) || nearestSpot(s);
+        lastClickTick = s.tick;
         if (!spot) {
             log({ ev: 'nospot', tick: s.tick });
             return;
@@ -155,15 +158,22 @@ await runScript(async ({ bot, sdk }) => {
                     moves++;
                     log({ ev: 'move', tick: s.tick, from: targetTile, to: tile });
                     targetTile = tile;
-                    if (react === 'move') run('move', () => click(s, 'move'));
+                    // The client routes every click itself (clientRoutefinder), so the server never
+                    // follows a relocated spot: re-click, choosing whichever matching spot is nearest.
+                    if (react === 'move') run('move', () => click(s, 'move', true));
                 }
             }
             // Watchdog: idle animation for 10 ticks with no catch means the interaction died.
+            const pos = s.player ? `${s.player.worldX},${s.player.worldZ}` : '';
+            if (pos !== lastPos) {
+                log({ ev: 'pos', tick: s.tick, pos });
+                lastPos = pos;
+            }
             idleTicks = s.player && s.player.animId === -1 ? idleTicks + 1 : 0;
-            if (idleTicks >= 10 && s.tick - lastCatchTick > 10) {
+            if (idleTicks >= 10 && s.tick - lastCatchTick > 10 && s.tick - lastClickTick > 10) {
                 idleTicks = 0;
                 log({ ev: 'watchdog', tick: s.tick });
-                run('watchdog', () => click(s, 'watchdog'));
+                run('watchdog', () => click(s, 'watchdog', true));
             }
             if (firstCatchTick >= 0 && s.tick - firstCatchTick >= runTicks) {
                 done = true;
