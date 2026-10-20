@@ -71,10 +71,11 @@ await runScript(async ({ bot, sdk }) => {
     await sdk.waitForCondition(s => (s.player?.worldX ?? 0) > 0, 15000);
     await bot.skipTutorial().catch(() => {});
     if (TELE && TELE !== 'none') { await sdk.sendSay(`::tele ${TELE}`); await waitTicks(3); }
-    if (HP) { await sdk.sendSay(`::setstat hitpoints ${HP}`); }
-    if (LEVEL) { await sdk.sendSay(`::setstat thieving ${LEVEL}`); }
+    if (HP) { await sdk.sendSay(`::setstat hitpoints ${HP}`); await waitTicks(2); }
+    if (LEVEL) { await sdk.sendSay(`::setstat thieving ${LEVEL}`); await waitTicks(2); }
     if (EAT !== 'none') { await sdk.sendSay('::give lobster 27'); }
     await waitTicks(3);
+    console.log(`start: hp ${sdk.getState()!.player!.hp}/${sdk.getState()!.player!.maxHp}, thieving ${thieving(sdk.getState())!.baseLevel}`);
     while (sdk.getState()?.dialog.isOpen) { await sdk.sendClickDialog(0); await waitTicks(1); }
 
     let state = sdk.getState()!;
@@ -90,7 +91,7 @@ await runScript(async ({ bot, sdk }) => {
     // the previous roll and this one.
     type Roll = { tick: number; ok: boolean; dmg?: number; level: number; ateBefore?: number; rej: number; clicks: number };
     const rolls: Roll[] = [];
-    let rejTicks = 0, clicksSince = 0, xpDrops = 0;
+    let rejTicks = 0, clicksSince = 0, xpDrops = 0, noTargetRun = 0, deaths = 0;
     let clicks = 0, rejections = 0, eats = 0, combatBlocks = 0, setstats = 0, noTarget = 0;
     let target: NearbyNpc | undefined;
     let suppressUntil = -1, probeAt = -1, probeSent = 0;
@@ -183,7 +184,15 @@ await runScript(async ({ bot, sdk }) => {
             await sdk.sendInteractNpc(target.index, op.opIndex);
             clicks++; clicksSince++; events.push('click');
             if (t === probeAt) { probeSent++; events.push('probe'); }
-        } else if (click) { noTarget++; events.push('notarget'); }
+        } else if (click) {
+            noTarget++; events.push('notarget');
+            if (++noTargetRun >= 20 && TELE && TELE !== 'none') {
+                await sdk.sendSay(`::tele ${TELE}`); noTargetRun = 0; events.push('retele');
+                if (HP) await sdk.sendSay(`::setstat hitpoints ${HP}`);
+            }
+        }
+        if (target) noTargetRun = 0;
+        if (state.player!.isDead) deaths += fresh.some(x => /you are dead/i.test(x)) ? 1 : 0;
 
         log.write(JSON.stringify({ t, xp: skill.experience, lvl: skill.baseLevel, hp, rej, npc: target ? [target.tileX ?? target.x, target.tileZ ?? target.z] : null, me: [state.player!.worldX, state.player!.worldZ], ev: events, msg: fresh }) + '\n');
     }
@@ -221,6 +230,6 @@ await runScript(async ({ bot, sdk }) => {
         rejectedTicksAfterSuccess: rejected.afterSuccess, rejectedTicksAfterFail: rejected.afterFail,
         gapsWithEat: eatGaps, xpDrops,
         clicks, rejections, rejectionsPerSuccess: +(rejections / Math.max(ok, 1)).toFixed(3),
-        damagePerFail: dmg, eats, setstats, combatBlocks, noTarget, probeSent, log: OUT,
+        damagePerFail: dmg, eats, setstats, combatBlocks, deaths, noTarget, probeSent, log: OUT,
     }, null, 1));
 }, { timeout: 0, printState: false });
