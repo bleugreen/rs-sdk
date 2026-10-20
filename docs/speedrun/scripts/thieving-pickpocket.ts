@@ -159,6 +159,9 @@ await runScript(async ({ bot, sdk }) => {
             events.push('setstat');
         }
 
+        // Cadence runs keep the account alive with a cheat; eat runs use food.
+        if (EAT === 'none' && HP && hp > 0 && hp < 15) { await sdk.sendSay(`::setstat hitpoints ${HP}`); events.push('hpreset'); }
+
         // Eating.
         const food = state.inventory.find(i => /lobster/i.test(i.name));
         if (EAT !== 'none' && !food) { await sdk.sendSay('::give lobster 27'); }
