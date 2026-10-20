@@ -24,7 +24,10 @@ const legs: Array<[string, P, P]> = [
     // The village spirit tree is inside the maze fence; the quick way out is the loose railing
     // (2515,3161), squeezed through from inside to (2515,3160).
     ['GT village spirit tree -> loose railing (inside)', [2542, 3169], [2515, 3161]],
-    ['GT loose railing (outside) -> Hazelmere ladder', [2515, 3160], [2677, 3088]],
+    ['GT loose railing (outside) -> Hazelmere ladder (back through the maze)', [2515, 3160], [2677, 3088]],
+    // Elkoy (maze side of the railing, 2514,3159) jumps a Tree Gnome Village graduate to the entrance (elkoy.rs2:170-181).
+    ['GT maze entrance (Elkoy jump) -> Hazelmere ladder', [2504, 3192], [2677, 3088]],
+    ['GT Hazelmere ladder -> maze entrance (Elkoy)', [2677, 3088], [2504, 3192]],
     ['GT Ardougne teleport -> Hazelmere ladder', [2661, 3305], [2677, 3088]],
     ['GT Yanille (Watchtower teleport is not Yanille here) bank -> Hazelmere ladder', [2612, 3092], [2677, 3088]],
     // The Grand Tree's doors (treedoorl/r, z=3492) are scripted, not masked as doors: legs stop at them.
