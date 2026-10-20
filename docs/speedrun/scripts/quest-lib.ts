@@ -171,7 +171,7 @@ export class Counts {
  * appears. Each continue click counts one page; each menu click one option.
  * Clicks are sent on the tick the page is observed, at most one per tick.
  */
-export async function driveDialog(sdk: BotSDK, c: Counts, choices: (string | RegExp)[] = [], idleTicks = 3, maxTicks = 400) {
+export async function driveDialog(sdk: BotSDK, c: Counts, choices: (string | RegExp)[] = [], idleTicks = 3, maxTicks = 400, until?: (s: BotWorldState) => boolean) {
     const queue = [...choices];
     let closedFor = 0;
     let lastPage = '';
@@ -182,7 +182,7 @@ export async function driveDialog(sdk: BotSDK, c: Counts, choices: (string | Reg
         s = await nextTick(sdk, s.tick);
         const d = s.dialog;
         if (!d?.isOpen) {
-            if (++closedFor >= idleTicks) return;
+            if (++closedFor >= idleTicks && (!until || until(s))) return;
             continue;
         }
         closedFor = 0;
@@ -215,7 +215,7 @@ export function findNpc(sdk: BotSDK, re: RegExp | number): NearbyNpc | null {
 }
 
 /** Op1 (Talk-to) an npc and drive the resulting dialogue. */
-export async function talk(sdk: BotSDK, c: Counts, npc: RegExp | number, choices: (string | RegExp)[] = [], op = 1) {
+export async function talk(sdk: BotSDK, c: Counts, npc: RegExp | number, choices: (string | RegExp)[] = [], op = 1, until?: (s: BotWorldState) => boolean) {
     const n = findNpc(sdk, npc);
     if (!n) throw new Error('npc not nearby: ' + npc);
     const r = await sdk.sendInteractNpc(n.index, op);
@@ -223,7 +223,13 @@ export async function talk(sdk: BotSDK, c: Counts, npc: RegExp | number, choices
     c.interactions++;
     const opened = await waitTicksFor(sdk, s => !!s.dialog?.isOpen, 40);
     if (!opened) throw new Error('no dialogue opened for ' + npc);
-    await driveDialog(sdk, c, choices);
+    await driveDialog(sdk, c, choices, 3, 400, until);
+}
+
+/** True while the player stands inside the inclusive box on `level`. */
+export function inBox(s: BotWorldState, x0: number, z0: number, x1: number, z1: number, level = 0): boolean {
+    const p = s.player;
+    return !!p && p.level === level && p.worldX >= x0 && p.worldX <= x1 && p.worldZ >= z0 && p.worldZ <= z1;
 }
 
 // ---------------------------------------------------------------------------
@@ -324,12 +330,13 @@ export async function fight(sdk: BotSDK, c: Counts, re: RegExp, o: { food?: RegE
             if (e.type === 'damage_taken') taken += e.damage;
         }
         if (s.player?.isDead) return { ticks: s.tick - t0, dealt, taken, hits, eats, died: true };
-        if (s.dialog?.isOpen) return { ticks: s.tick - t0, dealt, taken, hits, eats, died: false }; // the kill script opened a dialogue
-        const npc = findNpc(sdk, re);
-        if (target && (!npc || npc.index !== target.index)) {
-            // target vanished: dead
-            return { ticks: s.tick - t0, dealt, taken, hits, eats, died: false };
-        }
+        const killed = (s.combatEvents ?? []).some(e => e.type === 'kill' && e.tick >= t0 && target && e.targetIndex === target.index);
+        if (killed) return { ticks: s.tick - t0, dealt, taken, hits, eats, died: false };
+        // the death script opens a dialogue (or the npc vanishes) once we have hurt it
+        if (dealt > 0 && s.dialog?.isOpen) return { ticks: s.tick - t0, dealt, taken, hits, eats, died: false };
+        const npc = target ? (s.nearbyNpcs.find(n => n.index === target!.index && re.test(n.name)) ?? null) : findNpc(sdk, re);
+        if (target && dealt > 0 && !npc) return { ticks: s.tick - t0, dealt, taken, hits, eats, died: false };
+        if (s.dialog?.isOpen && !s.dialog.isWaiting) await sdk.sendClickDialog(0).catch(() => {});
         if (npc) target = npc;
         if (o.food && s.player && s.player.hp <= (o.eatAt ?? 0)) {
             const f = s.inventory.find(i => o.food!.test(i.name));
