@@ -89,7 +89,7 @@ await runScript(async ({ bot, sdk }) => {
     t0 = L.tick(sdk);
     const door = (await sdk.scanNearbyLocs(20)).find(l => /Large door/.test(l.name) && l.options.includes('Knock-at'));
     await bot.interactLoc(door!, 'Open');
-    await L.waitUntil(sdk, () => L.pos(sdk).x < 2763, 60);
+    await L.waitUntil(sdk, () => L.pos(sdk).x <= 2763, 60);
     const doorTicks = L.tick(sdk) - t0;
     const outside = L.pos(sdk);
     const walk = await L.timedWalk(sdk, bot, 2800, 3440, 1);
