@@ -208,7 +208,7 @@ export async function driveDialog(sdk: BotSDK, c: Counts, choices: (string | Reg
         lastPage = page;
         lastClickTick = s.tick;
     }
-    throw new Error('dialogue did not finish within ' + maxTicks + ' ticks');
+    throw new Error(`dialogue did not finish within ${maxTicks} ticks; at ${JSON.stringify(pos(sdk))}, dialog ${JSON.stringify({ open: s.dialog?.isOpen, text: s.dialog?.text, opts: s.dialog?.options.map(o => o.text) })}, last msgs ${s.gameMessages.slice(-3).map(m => m.text).join(' | ')}`);
 }
 
 export function findNpc(sdk: BotSDK, re: RegExp | number): NearbyNpc | null {
