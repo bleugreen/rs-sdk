@@ -168,6 +168,8 @@ await runScript(async ({ sdk }) => {
                     msgs.push(m.text);
                     if (FAIL_RE.test(m.text)) failed = true;
                 }
+                // falls into a pit (wilderness/barbarian) land underground
+                if ((p?.worldZ ?? 0) > 6400 && p0.z < 6400) failed = true;
                 if (failed) return true;
                 return log.events.slice(evBefore).some(e => e.baseGain >= step.xp - 0.05);
             }, 80);
