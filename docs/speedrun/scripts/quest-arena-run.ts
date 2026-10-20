@@ -1,6 +1,6 @@
 // Fight Arena, end to end, as tick-stamped segments (docs/speedrun/quests/fight_arena.md).
 //
-//   bun docs/speedrun/scripts/quest-arena-run.ts <bot> [--stats 70] [--general yes|no] [--from 0|3|5]
+//   bun docs/speedrun/scripts/quest-arena-run.ts <bot> [--stats 70] [--general yes|no] [--from 0|3|5|9]
 //
 // Starts next to Lady Servil with helper-supplied gear (rune scimitar, rune
 // kiteshield, rune platelegs, amulet of power, 20 swordfish, 10 coins) and
@@ -111,7 +111,7 @@ await runScript(async ({ bot, sdk }) => {
         await rec.seg('walk to Jeremy (2616,3168)', 'travel', async c => {
             await walk(bot, sdk, c, 2618, 3167, 0);
         });
-    } else if (FROM === 5) {
+    } else if (FROM >= 5) {
         await cheat(sdk, 'give khazard_helmet 1');
         await cheat(sdk, 'give khazard_platemail 1');
         await cheat(sdk, 'give khazard_cellkeys 1');
@@ -123,15 +123,19 @@ await runScript(async ({ bot, sdk }) => {
 
     // ---- the fight chain: everything from the keys to stage 12 ----
     const chainStart = tick(sdk);
-    await rec.seg('Jeremy: free him, cutscene into the arena', 'mixed', async c => {
+    if (FROM === 9) {
+        await tele(sdk, 2600, 3142);
+        await cheat(sdk, 'setvar arenaquest 9');
+    }
+    if (FROM < 9) await rec.seg('Jeremy: free him, cutscene into the arena', 'mixed', async c => {
         await talk(sdk, c, /jeremy servil/i, [], 1, s => inBox(s, 2581, 3151, 2606, 3171));
         return `stage ${await getvar(sdk, 'arenaquest')} at ${JSON.stringify(pos(sdk))}`;
     });
-    await rec.seg('fight: Khazard ogre', 'fight', async c => {
+    if (FROM < 9) await rec.seg('fight: Khazard ogre', 'fight', async c => {
         const r = await fight(sdk, c, /khazard ogre/i, { food: FOOD, eatAt: EAT_AT });
         return JSON.stringify(r);
     });
-    await rec.seg('ogre dead: General dialogue + cell cutscene', 'mixed', async c => {
+    if (FROM < 9) await rec.seg('ogre dead: General dialogue + cell cutscene', 'mixed', async c => {
         await driveDialog(sdk, c, [], 3, 400, s => inBox(s, 2586, 3139, 2601, 3143));
         return `stage ${await getvar(sdk, 'arenaquest')} at ${JSON.stringify(pos(sdk))}`;
     });
