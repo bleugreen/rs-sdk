@@ -48,12 +48,23 @@ async function eagerWalk(sdk: BotSDK, x: number, z: number, reach = 20, lead = 3
     const path = await sdk.sendFindPath(x, z, 500);
     if (!path.success || !path.waypoints.length) throw new Error('no path ' + path.error);
     const t1 = now(sdk);
+    // Waypoints are turn points that can be far apart; expand the route into
+    // tiles (each leg is a straight or diagonal run) so a click target can be
+    // chosen at any distance along it.
+    const tiles: Array<{ x: number; z: number }> = [];
+    let cur = pos(sdk.getState());
+    for (const wp of path.waypoints) {
+        while (cur.x !== wp.x || cur.z !== wp.z) {
+            cur = { ...cur, x: cur.x + Math.sign(wp.x - cur.x), z: cur.z + Math.sign(wp.z - cur.z) };
+            tiles.push({ x: cur.x, z: cur.z });
+        }
+    }
     let next = 0;
     for (let guard = 0; guard < 60; guard++) {
         const p = pos(sdk.getState());
         if (p.x === x && p.z === z) break;
-        let target = path.waypoints[next];
-        for (let i = next; i < path.waypoints.length && cheb(path.waypoints[i], p) <= reach; i++) { target = path.waypoints[i]; next = i; }
+        let target = tiles[next];
+        for (let i = next; i < tiles.length && cheb(tiles[i], p) <= reach; i++) { target = tiles[i]; next = i; }
         await sdk.sendWalk(target.x, target.z, true);
         clicks++;
         const final = target.x === x && target.z === z;
