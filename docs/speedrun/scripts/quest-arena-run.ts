@@ -1,6 +1,6 @@
 // Fight Arena, end to end, as tick-stamped segments (docs/speedrun/quests/fight_arena.md).
 //
-//   bun docs/speedrun/scripts/quest-arena-run.ts <bot> [--stats 70] [--general yes|no] [--from 0|5]
+//   bun docs/speedrun/scripts/quest-arena-run.ts <bot> [--stats 70] [--general yes|no] [--from 0|3|5]
 //
 // Starts next to Lady Servil with helper-supplied gear (rune scimitar, rune
 // kiteshield, rune platelegs, amulet of power, 20 swordfish, 10 coins) and
@@ -53,7 +53,7 @@ await runScript(async ({ bot, sdk }) => {
             return `stage ${await getvar(sdk, 'arenaquest')}`;
         });
         await rec.seg('walk to north prison door (2617,3171)', 'travel', async c => {
-            await walk(bot, sdk, c, 2617, 3172, 0);
+            await walk(bot, sdk, c, 2617, 3173, 0);
         });
         await rec.seg('north prison door (guard lets you in)', 'interaction', async c => {
             await opLoc(sdk, c, DOOR1, 2617, 3171, 1);
@@ -68,12 +68,38 @@ await runScript(async ({ bot, sdk }) => {
             await talk(sdk, c, 254);
             return `stage ${await getvar(sdk, 'arenaquest')}`;
         });
+    }
+    if (FROM === 3) {
+        await cheat(sdk, 'give khazard_helmet 1');
+        await cheat(sdk, 'give khazard_platemail 1');
+        await wear(sdk, /khazard helmet/i);
+        await wear(sdk, /khazard armour/i);
+        await tele(sdk, 2616, 3142);
+        await cheat(sdk, 'setvar arenaquest 3');
+    }
+    if (FROM <= 3) {
+        await rec.seg('walk to west prison door (2585,3141)', 'travel', async c => {
+            await walk(bot, sdk, c, 2585, 3141, 0);
+        });
+        await rec.seg('west prison door, out', 'interaction', async c => {
+            await opLoc(sdk, c, DOOR1, 2585, 3141, 1);
+            await waitTicksFor(sdk, s => (s.player?.worldX ?? 0) < 2585, 10);
+        });
         await rec.seg('walk to barman (2566,3140)', 'travel', async c => {
             await walk(bot, sdk, c, 2567, 3140, 1);
         });
         await rec.seg('barman: buy Khali brew', 'dialogue', async c => {
             await talk(sdk, c, /khazard barman/i, [/khali brew/i]);
             return `brew=${invCount(sdk, /khali brew/i)}`;
+        });
+        await rec.seg('walk back to west prison door', 'travel', async c => {
+            await walk(bot, sdk, c, 2584, 3141, 0);
+        });
+        await rec.seg('west prison door, in (guard lets you in)', 'interaction', async c => {
+            await opLoc(sdk, c, DOOR1, 2585, 3141, 1);
+            await waitTicksFor(sdk, s => !!s.dialog?.isOpen || (s.player?.worldX ?? 0) >= 2585, 20);
+            await driveDialog(sdk, c, [], 2);
+            await waitTicksFor(sdk, s => (s.player?.worldX ?? 0) >= 2585, 10);
         });
         await rec.seg('walk back to drunk guard', 'travel', async c => {
             await walk(bot, sdk, c, 2616, 3142, 1);
@@ -85,7 +111,7 @@ await runScript(async ({ bot, sdk }) => {
         await rec.seg('walk to Jeremy (2616,3168)', 'travel', async c => {
             await walk(bot, sdk, c, 2618, 3167, 0);
         });
-    } else {
+    } else if (FROM === 5) {
         await cheat(sdk, 'give khazard_helmet 1');
         await cheat(sdk, 'give khazard_platemail 1');
         await cheat(sdk, 'give khazard_cellkeys 1');
