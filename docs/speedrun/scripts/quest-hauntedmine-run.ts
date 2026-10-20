@@ -365,16 +365,22 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         if (!(await until(sdk, () => messageSince(sdk, t0, /open the valve/i), 80))) throw new Error('valve not opened');
         L.end();
         L.begin('valve -> lift, ride down');
-        const lift = await findLoc(sdk, /^lift$/i, { x: 2807, z: 4494 }, 50);
-        const path = sdk.findPath(lift!.x, lift!.z, 500);
-        const ghostZone = path.waypoints.some(w => w.x >= 2800 && w.x <= 2803 && w.z >= 4512 && w.z <= 4516);
-        L.note(`path crosses ghost zone: ${ghostZone}`);
-        L.add({ tiles: chebyshevPath(sdk, lift!.x, lift!.z) });
-        t0 = sdk.getState()!.tick;
-        await sdk.sendInteractLoc(lift!.x, lift!.z, lift!.id, 1);
-        if (!(await until(sdk, () => inMap(sdk, 42, 69) && messageSince(sdk, t0, /plunging you/i), 120))) {
-            throw new Error(`lift ride failed: ${sdk.getState()!.gameMessages.slice(-4).map(m => m.text).join(' | ')}`);
+        // Three lift locs (lift_side_l/lift_back/lift_side_r) share one
+        // handler; the side panels can report reachable yet answer "I can't
+        // reach that!" from the valve side, so try the back panel first.
+        const lifts = (await sdk.scanNearbyLocs(50)).filter(l => /^lift$/i.test(l.name) && Math.abs(l.x - 2807) <= 2 && Math.abs(l.z - 4493) <= 2);
+        lifts.sort((a, b) => (a.id === 4940 ? 0 : 1) - (b.id === 4940 ? 0 : 1));
+        let rode = false;
+        for (const lift of lifts) {
+            L.add({ tiles: chebyshevPath(sdk, lift.x, lift.z) });
+            t0 = sdk.getState()!.tick;
+            await sdk.sendInteractLoc(lift.x, lift.z, lift.id, 1);
+            rode = await until(sdk, () => (inMap(sdk, 42, 69) && messageSince(sdk, t0, /plunging you/i)) || messageSince(sdk, t0, /can't reach/i), 60);
+            if (rode && inMap(sdk, 42, 69)) break;
+            L.note(`lift ${lift.id}@${lift.x},${lift.z} unreachable`);
+            rode = false;
         }
+        if (!rode) throw new Error(`lift ride failed: ${sdk.getState()!.gameMessages.slice(-4).map(m => m.text).join(' | ')}`);
         await until(sdk, () => pos(sdk).z === 4452, 10);
         L.end();
     },
