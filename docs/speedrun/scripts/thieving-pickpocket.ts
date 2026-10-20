@@ -79,7 +79,7 @@ await runScript(async ({ bot, sdk }) => {
 
     let state = sdk.getState()!;
     let lastXp = thieving(state)!.experience;
-    let lastHp = state.player!.hitpoints;
+    let lastHp = state.player!.hp;
     let lastRej = state.opFeedback?.opRejectedCount ?? 0;
     const seen = new Set<number>();
     for (const m of state.gameMessages) if (m.observationId !== undefined) seen.add(m.observationId);
@@ -102,7 +102,7 @@ await runScript(async ({ bot, sdk }) => {
         state = await nextTick(state.tick);
         const t = state.tick;
         const skill = thieving(state)!;
-        const hp = state.player!.hitpoints;
+        const hp = state.player!.hp;
         const rej = state.opFeedback?.opRejectedCount ?? 0;
         const events: string[] = [];
 
