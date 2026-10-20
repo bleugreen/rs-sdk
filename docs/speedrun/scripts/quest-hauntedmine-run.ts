@@ -366,10 +366,12 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         L.end();
         L.begin('valve -> lift, ride down');
         // Three lift locs (lift_side_l/lift_back/lift_side_r) share one
-        // handler. The back panel (4940, length 2) answers "I can't reach
-        // that!" from the lift's only entrance, so use a side panel.
+        // handler, but only lift_side_r (4938, 2807,4492) is reachable: the
+        // other two answer "I can't reach that!" from the lift's entrance.
+        // A wasted click is fatal here: the valve-to-lift route has to cross
+        // the cheeky ghost's zone, which turns the valve off 25 ticks later.
         const lifts = (await sdk.scanNearbyLocs(50)).filter(l => /^lift$/i.test(l.name) && Math.abs(l.x - 2807) <= 2 && Math.abs(l.z - 4493) <= 2);
-        lifts.sort((a, b) => (a.id === 4940 ? 1 : 0) - (b.id === 4940 ? 1 : 0));
+        lifts.sort((a, b) => (a.id === 4938 ? 0 : 1) - (b.id === 4938 ? 0 : 1));
         let rode = false;
         for (const lift of lifts) {
             L.add({ tiles: chebyshevPath(sdk, lift.x, lift.z) });
