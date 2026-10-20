@@ -86,8 +86,11 @@ await runScript(async ({ bot, sdk }) => {
     const seenText = new Map<string, number>();
     for (const m of state.gameMessages) seenText.set(`${m.tick}|${m.text}`, (seenText.get(`${m.tick}|${m.text}`) ?? 0) + 1);
 
-    type Roll = { tick: number; ok: boolean; dmg?: number; level: number; ateBefore?: number };
+    // rej/clicks: ticks carrying a server rejection, and clicks sent, between
+    // the previous roll and this one.
+    type Roll = { tick: number; ok: boolean; dmg?: number; level: number; ateBefore?: number; rej: number; clicks: number };
     const rolls: Roll[] = [];
+    let rejTicks = 0, clicksSince = 0, xpDrops = 0;
     let clicks = 0, rejections = 0, eats = 0, combatBlocks = 0, setstats = 0, noTarget = 0;
     let target: NearbyNpc | undefined;
     let suppressUntil = -1, probeAt = -1, probeSent = 0;
@@ -119,15 +122,22 @@ await runScript(async ({ bot, sdk }) => {
         }
         if (fresh.some(x => /during combat/.test(x))) combatBlocks++;
 
+        // Rolls are timed by their messages: the success and failure lines are
+        // emitted at the roll tick, while the client applies the xp update one
+        // tick later.
         const dxp = skill.experience - lastXp;
-        if (dxp > 0) {
-            rolls.push({ tick: t, ok: true, level: prevLevel, ateBefore: t - lastEatTick });
-            events.push(`xp+${dxp}`);
+        if (dxp > 0 && lastXp >= 0) { xpDrops++; events.push(`xp+${dxp}`); }
+        const picked = fresh.filter(x => /^You pick the/.test(x)).length;
+        for (let i = 0; i < picked; i++) {
+            rolls.push({ tick: t, ok: true, level: prevLevel, ateBefore: t - lastEatTick, rej: rejTicks, clicks: clicksSince });
+            rejTicks = 0; clicksSince = 0;
+            events.push('success');
             successesSinceEat++;
         }
         const failed = fresh.filter(x => /You fail to pick/.test(x)).length;
         for (let i = 0; i < failed; i++) {
-            rolls.push({ tick: t, ok: false, level: prevLevel, ateBefore: t - lastEatTick });
+            rolls.push({ tick: t, ok: false, level: prevLevel, ateBefore: t - lastEatTick, rej: rejTicks, clicks: clicksSince });
+            rejTicks = 0; clicksSince = 0;
             events.push('fail');
             if (STUNPROBE) { suppressUntil = t + 14; probeAt = t + STUNPROBE; }
         }
@@ -138,14 +148,13 @@ await runScript(async ({ bot, sdk }) => {
             events.push(`hp-${lastHp - hp}`);
         }
         if (hp > lastHp) events.push(`hp+${hp - lastHp}`);
-        if (rej > lastRej) { rejections += rej - lastRej; events.push(`rej+${rej - lastRej}`); }
+        if (rej > lastRej) { rejections += rej - lastRej; rejTicks++; events.push(`rej+${rej - lastRej}`); }
         lastXp = skill.experience; lastHp = hp; lastRej = rej; prevLevel = skill.baseLevel;
 
         // Dismiss level-up dialogs, then hold the level.
         if (state.dialog.isOpen) { await sdk.sendClickDialog(0); events.push('dialog'); }
         if (LEVEL && HOLD && skill.baseLevel !== LEVEL) {
             await sdk.sendSay(`::setstat thieving ${LEVEL}`); setstats++;
-            lastXp = -1; // next tick's xp drop from the setstat is not a roll
             events.push('setstat');
         }
 
@@ -155,7 +164,7 @@ await runScript(async ({ bot, sdk }) => {
         if (food && EAT === 'stun' && failed > 0) {
             await sdk.sendUseItem(food.slot, 1); eats++; lastEatTick = t; events.push('eat');
         }
-        if (food && EAT === 'flow' && dxp > 0 && successesSinceEat >= 5 && t - lastStunEnd >= 4) {
+        if (food && EAT === 'flow' && picked > 0 && successesSinceEat >= 5 && t - lastStunEnd >= 4) {
             await sdk.sendUseItem(food.slot, 1); eats++; lastEatTick = t; successesSinceEat = 0; events.push('eat');
         }
 
@@ -172,7 +181,7 @@ await runScript(async ({ bot, sdk }) => {
         if (t < suppressUntil) click = t === probeAt;
         if (click && target && op) {
             await sdk.sendInteractNpc(target.index, op.opIndex);
-            clicks++; events.push('click');
+            clicks++; clicksSince++; events.push('click');
             if (t === probeAt) { probeSent++; events.push('probe'); }
         } else if (click) { noTarget++; events.push('notarget'); }
 
@@ -182,10 +191,15 @@ await runScript(async ({ bot, sdk }) => {
 
     // ---- summary ----
     const gaps: Record<string, Record<number, number>> = { afterSuccess: {}, afterFail: {} };
+    const rejected: Record<string, Record<number, number>> = { afterSuccess: {}, afterFail: {} };
+    const eatGaps: Record<number, number> = {};
     for (let i = 1; i < rolls.length; i++) {
         const g = rolls[i].tick - rolls[i - 1].tick;
-        const bucket = rolls[i - 1].ok ? gaps.afterSuccess : gaps.afterFail;
-        bucket[g] = (bucket[g] ?? 0) + 1;
+        const key = rolls[i - 1].ok ? 'afterSuccess' : 'afterFail';
+        gaps[key][g] = (gaps[key][g] ?? 0) + 1;
+        rejected[key][rolls[i].rej] = (rejected[key][rolls[i].rej] ?? 0) + 1;
+        // Gap of an interval in which food was eaten (ateBefore counts from the eat to this roll).
+        if (EAT !== 'none' && (rolls[i].ateBefore ?? 999) <= g) eatGaps[g] = (eatGaps[g] ?? 0) + 1;
     }
     const ok = rolls.filter(r => r.ok).length;
     const fails = rolls.length - ok;
@@ -204,6 +218,8 @@ await runScript(async ({ bot, sdk }) => {
         levels: [rolls[0].level, rolls[rolls.length - 1].level],
         ticksFirstToLastRoll: span, rollsPerTick: +((rolls.length - 1) / span).toFixed(4),
         gapAfterSuccess: gaps.afterSuccess, gapAfterFail: gaps.afterFail,
+        rejectedTicksAfterSuccess: rejected.afterSuccess, rejectedTicksAfterFail: rejected.afterFail,
+        gapsWithEat: eatGaps, xpDrops,
         clicks, rejections, rejectionsPerSuccess: +(rejections / Math.max(ok, 1)).toFixed(3),
         damagePerFail: dmg, eats, setstats, combatBlocks, noTarget, probeSent, log: OUT,
     }, null, 1));
