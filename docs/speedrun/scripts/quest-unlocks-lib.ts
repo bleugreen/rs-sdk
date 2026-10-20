@@ -62,7 +62,11 @@ export async function talkThrough(
             await sleep(30);
             continue;
         }
-        if (d.options && d.options.length > 0) {
+        const isContinue = d.options?.length === 1 && /continue/i.test(d.options[0].text);
+        if (isContinue) {
+            await sdk.sendClickDialog(d.options[0].index);
+            pages++;
+        } else if (d.options && d.options.length > 0) {
             const want = queue[0];
             const match = want === undefined ? undefined : d.options.find((o) => (typeof want === 'string' ? o.text.includes(want) : want.test(o.text)));
             if (!match) {
