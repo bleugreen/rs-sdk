@@ -11,6 +11,8 @@
 //   tele=x,z           tile to start on (default per method)
 //   pin=1              restore the level with ::setstat after every level-up
 //   out=path           JSONL event log (default $TMPDIR/fishing-<method>-<level>.jsonl)
+//   until=N            stop once the base level reaches N (ticks is then a cap)
+//   watchdog=N         re-click the nearest spot after N ticks without xp (default 30)
 //
 // Every event carries the server tick it was observed on (the lite client counts one
 // tick per server tick). The summary is printed at the end; analyse the JSONL for gaps.
@@ -44,6 +46,12 @@ const react = opts.react ?? 'move';
 const pin = opts.pin === '1';
 const tele = opts.tele ? (opts.tele.split(',').map(Number) as [number, number]) : method.tele;
 const out = opts.out ?? `${process.env.TMPDIR ?? '/tmp'}/fishing-${methodName}-${level}.jsonl`;
+const until = opts.until ? Number(opts.until) : 0;
+const watchdogTicks = Number(opts.watchdog ?? 30);
+// Equipment and bait are never dropped; everything else in the inventory is catch.
+const KEEP = /fishing rod|feather|fishing bait|^net$|big net|harpoon|lobster pot/i;
+// An action whose result never comes back must not stall the loop.
+const within = <T>(p: Promise<T>, ms = 1500) => Promise.race([p, new Promise(r => setTimeout(r, ms))]);
 writeFileSync(out, '');
 const log = (ev: Record<string, unknown>) => appendFileSync(out, JSON.stringify(ev) + '\n');
 
@@ -62,8 +70,6 @@ await runScript(async ({ bot, sdk }) => {
     await sdk.sendSay(teleCmd(tele[0], tele[1]));
     await sdk.waitForTicks(3);
 
-    const keep = new Set<string>();
-    for (const item of sdk.getInventory()) keep.add(item.name);
 
     let target: NearbyNpc | null = null;
     let targetTile: readonly [number, number] | null = null;
@@ -77,7 +83,7 @@ await runScript(async ({ bot, sdk }) => {
     let levelUps = 0;
     let busy = false;
     let dialogBusy = false;
-    let idleTicks = 0;
+    let lastHp = -1;
     let done = false;
     const gaps = new Map<number, number>();
 
@@ -102,11 +108,11 @@ await runScript(async ({ bot, sdk }) => {
         target = spot;
         targetTile = tileOf(spot);
         log({ ev: 'click', tick: s.tick, why, spot: spot.index, at: targetTile, dist: spot.distance });
-        await sdk.sendInteractNpc(spot.index, opIndex(spot));
+        await within(sdk.sendInteractNpc(spot.index, opIndex(spot)));
     };
     const dropAll = async (s: BotWorldState, max: number) => {
-        const slots = s.inventory.filter(i => !keep.has(i.name)).slice(0, max);
-        for (const it of slots) await sdk.sendDropItem(it.slot);
+        const slots = s.inventory.filter(i => !KEEP.test(i.name)).slice(0, max);
+        for (const it of slots) await within(sdk.sendDropItem(it.slot));
         log({ ev: 'drop', tick: s.tick, n: slots.length });
         return slots.length;
     };
@@ -151,6 +157,10 @@ await runScript(async ({ bot, sdk }) => {
                     await click(sdk.getState()!, 'after-full');
                 });
             }
+            if (s.player && s.player.hp !== lastHp) {
+                log({ ev: 'hp', tick: s.tick, hp: s.player.hp });
+                lastHp = s.player.hp;
+            }
             if (target) {
                 const now = s.nearbyNpcs.find(n => n.index === target!.index);
                 const tile = now ? tileOf(now) : null;
@@ -158,6 +168,8 @@ await runScript(async ({ bot, sdk }) => {
                     moves++;
                     log({ ev: 'move', tick: s.tick, from: targetTile, to: tile });
                     targetTile = tile;
+                    // A spot that left view is forgotten; the click below picks the nearest one.
+                    if (!tile) target = null;
                     // The client routes every click itself (clientRoutefinder), so the server never
                     // follows a relocated spot: re-click, choosing whichever matching spot is nearest.
                     if (react === 'move') run('move', () => click(s, 'move', true));
@@ -169,13 +181,11 @@ await runScript(async ({ bot, sdk }) => {
                 log({ ev: 'pos', tick: s.tick, pos });
                 lastPos = pos;
             }
-            idleTicks = s.player && s.player.animId === -1 ? idleTicks + 1 : 0;
-            if (idleTicks >= 10 && s.tick - lastCatchTick > 10 && s.tick - lastClickTick > 10) {
-                idleTicks = 0;
+            if (s.tick - Math.max(lastCatchTick, lastClickTick) > watchdogTicks) {
                 log({ ev: 'watchdog', tick: s.tick });
                 run('watchdog', () => click(s, 'watchdog', true));
             }
-            if (firstCatchTick >= 0 && s.tick - firstCatchTick >= runTicks) {
+            if ((firstCatchTick >= 0 && s.tick - firstCatchTick >= runTicks) || (until && fx.baseLevel >= until)) {
                 done = true;
                 resolve();
             }
@@ -184,9 +194,12 @@ await runScript(async ({ bot, sdk }) => {
     await finished;
 
     const span = lastCatchTick - firstCatchTick;
+    const startTick = start.tick;
     const summary = {
         method: methodName,
         level,
+        endLevel: fishingXp(sdk.getState()!).baseLevel,
+        ticksFromFirstClick: lastCatchTick - startTick,
         dropMode,
         react,
         catches,
