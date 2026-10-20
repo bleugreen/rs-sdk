@@ -95,7 +95,7 @@ await runScript(async ({ bot, sdk }) => {
     let lastClicked = '';
     let lastXp = sdk.getSkillXp('woodcutting') ?? 0;
     let logs = 0;
-    let startTick = -1, lastTick = -1, interruptions = 0, allDeadTicks = 0;
+    let startTick = -1, lastTick = -1, interruptions = 0, allDeadTicks = 0, startMs = 0, endMs = 0;
 
     const click = (s: BotWorldState, t: [number, number]) => {
         const loc = alive(s, t)!;
@@ -108,7 +108,8 @@ await runScript(async ({ bot, sdk }) => {
         const off = sdk.onStateUpdate(s => {
             if (s.tick === lastTick) return; // one pass per server tick
             lastTick = s.tick;
-            if (startTick < 0) startTick = s.tick;
+            if (startTick < 0) { startTick = s.tick; startMs = Date.now(); }
+            endMs = Date.now();
             if (s.dialog.isOpen) fire(sdk.sendClickDialog(0));
 
             // A log is counted from its 'You get some ...' message (one per success); xp
@@ -198,6 +199,7 @@ await runScript(async ({ bot, sdk }) => {
         ticksWithAllTreesDown: allDeadTicks,
         respawnTicks: respawns,
         interruptions,
+        wallMsPerCountedTick: +((endMs - startMs) / (lastTick - startTick)).toFixed(1),
         baseXpPerTick: +(((xs.length - 1) * XP_PER_LOG[treeName]) / span).toFixed(3),
         idealBaseXpPerTick: +((XP_PER_LOG[treeName] * expected) / 4).toFixed(3),
     };
