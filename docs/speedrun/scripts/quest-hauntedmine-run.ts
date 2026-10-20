@@ -365,48 +365,40 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         if (!(await until(sdk, () => messageSince(sdk, t0, /open the valve/i), 80))) throw new Error('valve not opened');
         L.end();
         L.begin('valve -> lift, ride down');
-        // Three lift locs (lift_side_l/lift_back/lift_side_r) share one
-        // handler, but only lift_side_r (4938, 2807,4492) is reachable: the
-        // other two answer "I can't reach that!" from the lift's entrance.
-        // A wasted click is fatal here: the valve-to-lift route has to cross
-        // the cheeky ghost's zone, which turns the valve off 25 ticks later.
-        const lifts = (await sdk.scanNearbyLocs(50)).filter(l => /^lift$/i.test(l.name) && Math.abs(l.x - 2807) <= 2 && Math.abs(l.z - 4493) <= 2);
-        lifts.sort((a, b) => (a.id === 4938 ? 0 : 1) - (b.id === 4938 ? 0 : 1));
-        let rode = false;
-        for (const lift of lifts) {
-            L.add({ tiles: chebyshevPath(sdk, lift.x, lift.z) });
-            const m0 = sdk.getState()!.gameMessages.length;
-            const newMsg = (re: RegExp) => sdk.getState()!.gameMessages.slice(m0).some(m => re.test(m.text));
-            // From the valve the clicked route (59 steps) stops two tiles
-            // short at (2805,4493); a second click from there enters the lift
-            // at once. Re-click the moment the player stands still.
-            await sdk.sendInteractLoc(lift.x, lift.z, lift.id, 1);
-            const trace: string[] = [];
-            let seen = m0;
-            let last = pos(sdk);
-            let reclicks = 0;
-            rode = await until(sdk, () => {
-                const s = sdk.getState()!;
-                const p = pos(sdk);
-                if (p.x === last.x && p.z === last.z && !s.dialog?.isOpen && !inMap(sdk, 42, 69) && Math.max(Math.abs(p.x - 2807), Math.abs(p.z - 4493)) <= 3 && reclicks < 3) {
-                    reclicks++;
-                    void sdk.sendInteractLoc(lift.x, lift.z, lift.id, 1);
-                }
-                last = p;
-                const g = sdk.getNearbyNpcs().find(n => /ghost/i.test(n.name));
-                const msgs = s.gameMessages.slice(seen).map(m => m.text);
-                seen = s.gameMessages.length;
-                trace.push(`${s.tick} ${p.x},${p.z}${g ? ` ghost@${g.x},${g.z}` : ''}${msgs.length ? ' | ' + msgs.join(' | ') : ''}${s.dialog?.isOpen ? ' [dlg] ' + (s.dialog.text ?? '') : ''}`);
-                return (inMap(sdk, 42, 69) && newMsg(/plunging you/i)) || newMsg(/can't reach/i) || !!s.dialog?.isOpen;
-            }, 60);
-            if (!(rode && inMap(sdk, 42, 69))) console.log(`lift ${lift.id} trace:\n${trace.join('\n')}`);
-            else if (reclicks) L.note(`lift re-clicked ${reclicks}x`);
-            if (rode && inMap(sdk, 42, 69)) break;
-            L.note(`lift ${lift.id}@${lift.x},${lift.z} unreachable`);
-            rode = false;
-        }
-        if (!rode) throw new Error(`lift ride failed: ${sdk.getState()!.gameMessages.slice(-4).map(m => m.text).join(' | ')}`);
-        await until(sdk, () => pos(sdk).z === 4452, 10);
+        // Three lift locs (lift_side_l 4937, lift_back 4940, lift_side_r
+        // 4938) share one handler. From the valve, a click on a lift walks
+        // the 59-step route but stops two tiles short at (2805,4493)
+        // ("I can't reach that!" or a silent stall); a second click from
+        // there enters the lift at once. Time matters: the route crosses the
+        // cheeky ghost's zone, which turns the valve off 25 ticks later.
+        const lifts = (await sdk.scanNearbyLocs(50)).filter(l => /^lift$/i.test(l.name) && Math.abs(l.x - 2807) <= 2 && Math.abs(l.z - 4493) <= 2 && l.id !== 4940);
+        const landed = () => inMap(sdk, 42, 69) && pos(sdk).z <= 4452;
+        L.add({ tiles: chebyshevPath(sdk, lifts[0]!.x, lifts[0]!.z) });
+        const trace: string[] = [];
+        let seen = sdk.getState()!.gameMessages.length;
+        let clicks = 1;
+        await sdk.sendInteractLoc(lifts[0]!.x, lifts[0]!.z, lifts[0]!.id, 1);
+        let last = pos(sdk);
+        const ok = await until(sdk, () => {
+            const s = sdk.getState()!;
+            const p = pos(sdk);
+            const g = sdk.getNearbyNpcs().find(n => /ghost/i.test(n.name));
+            const msgs = s.gameMessages.slice(seen).map(m => m.text);
+            seen = s.gameMessages.length;
+            trace.push(`${s.tick} ${p.x},${p.z}${g ? ` ghost@${g.x},${g.z}` : ''}${msgs.length ? ' | ' + msgs.join(' | ') : ''}${s.dialog?.isOpen ? ' [dlg] ' + (s.dialog.text ?? '') : ''}`);
+            if (landed()) return true;
+            if (s.dialog?.isOpen) return true; // "needs to be powered": too late
+            const near = Math.max(Math.abs(p.x - 2807), Math.abs(p.z - 4493)) <= 3;
+            if (near && p.x === last.x && p.z === last.z && !inMap(sdk, 42, 69) && clicks < 5) {
+                const lift = lifts[clicks % lifts.length]!;
+                clicks++;
+                void sdk.sendInteractLoc(lift.x, lift.z, lift.id, 1);
+            }
+            last = p;
+            return false;
+        }, 80);
+        if (!ok || !landed()) throw new Error(`lift ride failed:\n${trace.join('\n')}`);
+        L.note(`lift clicks ${clicks}`);
         L.end();
     },
 
