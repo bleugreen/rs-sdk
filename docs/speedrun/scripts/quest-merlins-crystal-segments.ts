@@ -104,7 +104,9 @@ await runScript(async ({ bot, sdk }) => {
             await ensure('bat_bones');
             await L.tele(sdk, 2780, 3515, 0); // ^camelot_magic_symbol
             const t0 = L.tick(sdk);
-            await bot.dropItem(sdk.findInventoryItem(/^Bat bones$/i)!, 1);
+            // Raw drop packet: the quest script intercepts the drop (opheld5), so
+            // bot.dropItem would wait for a ground item that never appears.
+            await sdk.sendDropItem(sdk.findInventoryItem(/^Bat bones$/i)!.slot);
             const d = await L.talkThrough(sdk, [/^Snarthon Candtrick Termanto$/]);
             results.thrantax = { ...dlg(d), clickToClose: L.tick(sdk) - t0 - 3, arthur: await L.getVar(sdk, 'arthur') };
         } else if (seg === 'crystal') {
