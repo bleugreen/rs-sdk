@@ -4,7 +4,7 @@
 // (gap between lap-bonus xp events), ticks per obstacle, failures and damage.
 import { runScript } from '../../../sdk/runner';
 import type { BotSDK } from '../../../sdk';
-import { XpLog, cheat, tele, clickLoc, pos, tick, waitTicksFor, summary, agilityXp, XP_RATE } from './agility-lib';
+import { XpLog, cheat, tele, pos, tick, waitTicksFor, summary, agilityXp, XP_RATE } from './agility-lib';
 
 interface Step {
     name: string;
@@ -84,7 +84,9 @@ async function nearestLoc(sdk: BotSDK, cands: [number, number, number][]) {
         const d = Math.max(Math.abs(c[1] - me.x), Math.abs(c[2] - me.z));
         if (d < bestD) { bestD = d; best = c; }
     }
-    return best;
+    // Bridge-flagged locs (logs and ledges stored on plane 1 over plane-0 tiles)
+    // never show up in the scan; the server resolves them anyway.
+    return best ?? cands[0] ?? null;
 }
 
 async function clickByOption(sdk: BotSDK, re: RegExp) {
@@ -128,6 +130,7 @@ await runScript(async ({ sdk }) => {
 
     for (let lap = 0; lap < laps; lap++) {
         let i = 0;
+        const lapStart = tick(sdk);
         while (i < course.steps.length) {
             const step = course.steps[i];
             attempts[step.name] = (attempts[step.name] ?? 0) + 1;
@@ -152,7 +155,8 @@ await runScript(async ({ sdk }) => {
             }
             sdk.getNewChat();
             const msgs: string[] = [];
-            await clickLoc(sdk, target[0], target[1], target[2]);
+            if (tick(sdk) - lapStart > 3000) throw new Error(`lap ${lap} exceeded 3000 ticks at step ${step.name}`);
+            await sdk.sendInteractLoc(target[1], target[2], target[0], 1);
             // done when an xp event of at least the obstacle's xp arrives; failed on a fail message
             let moved = false;
             let failed = false;
