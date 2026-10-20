@@ -61,8 +61,24 @@ await runScript(async ({ bot, sdk }) => {
     let lastForm = -1;
     let formStart = tArena;
     const forms: string[] = [];
+    const FIGHT_CAP = Number(process.env.FIGHT_CAP ?? 1500);
+    let lastHp = sdk.getState()?.player?.hp ?? 0;
+    let lastChat = sdk.getChat({ limit: 1 })[0]?.observationId ?? 0;
     while (pos(sdk).z < 4600) {
         const p = sdk.getState()?.player;
+        if (!p || p.isDead || pos(sdk).z < 3900 || tick(sdk) - tArena > FIGHT_CAP) {
+            throw new Error(`fight aborted at +${tick(sdk) - tArena}: dead=${p?.isDead} pos=${JSON.stringify(pos(sdk))} casts=${casts}`);
+        }
+        if (p.hp !== lastHp) {
+            log(sdk, `hp ${lastHp} -> ${p.hp}`, tArena);
+            lastHp = p.hp;
+        }
+        for (const m of sdk.getChat({ limit: 10 })) {
+            if ((m.observationId ?? 0) > lastChat) {
+                log(sdk, `chat: ${m.text}`, tArena);
+                lastChat = m.observationId ?? lastChat;
+            }
+        }
         if (p) minHp = Math.min(minHp, p.hp);
         if (p && p.hp > 0 && p.hp < 30) {
             const food = sdk.findInventoryItem(/shark/i);
@@ -79,6 +95,7 @@ await runScript(async ({ bot, sdk }) => {
                 formStart = tick(sdk);
                 log(sdk, `form npc ${target.id} lvl ${target.combatLevel}`, tArena);
             }
+            if (casts % 5 === 0) log(sdk, `target ${target.id} hp ${target.hp}/${target.maxHp} dist ${target.distance}`, tArena);
             await sdk.sendSpellOnNpc(target.index, SPELL_COM[SPELL]);
             casts++;
         }
