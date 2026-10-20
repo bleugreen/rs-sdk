@@ -48,7 +48,8 @@ await runScript(async ({ bot, sdk }) => {
     const mordred = sdk.findNearbyNpc(/Sir Mordred/);
     if (!mordred) throw new Error('Sir Mordred not found');
     const hpStart = sdk.getState()!.player!.hp;
-    t0 = L.tick(sdk);
+    const fightStart = L.tick(sdk);
+    t0 = fightStart;
     await bot.attack(mordred);
     let firstHitTick: number | null = null;
     let eaten = 0;
@@ -92,7 +93,7 @@ await runScript(async ({ bot, sdk }) => {
         climbTwoStaircasesTicks: climbTicks,
         arrivedAt: arrive,
         fightTicksClickToMorgan: fightTicks,
-        ticksToFirstDamage: firstHitTick === null ? null : firstHitTick - t0,
+        ticksToFirstDamage: firstHitTick === null ? null : firstHitTick - fightStart,
         hpStart,
         minHp,
         foodEaten: eaten,
