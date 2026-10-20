@@ -10,7 +10,7 @@
 // which the quest does not require (lady_servil.rs2:8-13 pays out at stage 12).
 import { runScript } from '../../../sdk/runner';
 import {
-    arg, cheat, driveDialog, fight, getvar, opLoc, pos, Recorder, settle, setup, talk, tele, tick, useOnLoc, waitTicksFor, walk, wear, invCount,
+    inBox, arg, cheat, driveDialog, fight, getvar, opLoc, pos, Recorder, settle, setup, talk, tele, tick, useOnLoc, waitTicksFor, walk, wear, invCount,
 } from './quest-lib';
 
 const STATS = Number(arg('stats', '70'));
@@ -93,7 +93,7 @@ await runScript(async ({ bot, sdk }) => {
             return `brew=${invCount(sdk, /khali brew/i)}`;
         });
         await rec.seg('walk back to west prison door', 'travel', async c => {
-            await walk(bot, sdk, c, 2584, 3141, 0);
+            await walk(bot, sdk, c, 2583, 3141, 0);
         });
         await rec.seg('west prison door, in (guard lets you in)', 'interaction', async c => {
             await opLoc(sdk, c, DOOR1, 2585, 3141, 1);
@@ -124,7 +124,7 @@ await runScript(async ({ bot, sdk }) => {
     // ---- the fight chain: everything from the keys to stage 12 ----
     const chainStart = tick(sdk);
     await rec.seg('Jeremy: free him, cutscene into the arena', 'mixed', async c => {
-        await talk(sdk, c, /jeremy servil/i);
+        await talk(sdk, c, /jeremy servil/i, [], 1, s => inBox(s, 2581, 3151, 2606, 3171));
         return `stage ${await getvar(sdk, 'arenaquest')} at ${JSON.stringify(pos(sdk))}`;
     });
     await rec.seg('fight: Khazard ogre', 'fight', async c => {
@@ -132,11 +132,11 @@ await runScript(async ({ bot, sdk }) => {
         return JSON.stringify(r);
     });
     await rec.seg('ogre dead: General dialogue + cell cutscene', 'mixed', async c => {
-        await driveDialog(sdk, c, [], 4);
+        await driveDialog(sdk, c, [], 3, 400, s => inBox(s, 2586, 3139, 2601, 3143));
         return `stage ${await getvar(sdk, 'arenaquest')} at ${JSON.stringify(pos(sdk))}`;
     });
     await rec.seg('Hengrad: talk, guard escorts you to the arena', 'mixed', async c => {
-        await talk(sdk, c, /hengrad/i);
+        await talk(sdk, c, /hengrad/i, [], 1, s => inBox(s, 2581, 3151, 2606, 3171));
         return `at ${JSON.stringify(pos(sdk))}`;
     });
     await rec.seg('fight: Khazard scorpion', 'fight', async c => {
