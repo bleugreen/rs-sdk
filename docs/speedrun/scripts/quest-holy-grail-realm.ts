@@ -98,8 +98,12 @@ await runScript(async ({ bot, sdk }) => {
     if (bell) await bot.pickupItem(bell);
     await L.waitUntil(sdk, () => sdk.countInventoryItems(/Grail bell/i) > 0, 20);
     out.walkToBell = { ...walk, withPickup: L.tick(sdk) - t0 };
+    const bellItem = sdk.findInventoryItem(/Grail bell/i);
+    if (!bellItem) {
+        throw new Error(`no Grail bell; ground: ${JSON.stringify((await sdk.scanGroundItems(15)).map(g => [g.name, g.x, g.z]))}; so far ${JSON.stringify(out)}; fisher ${fisher.transcript.join(' / ')}`);
+    }
     t0 = L.tick(sdk);
-    await sdk.sendUseItem(sdk.findInventoryItem(/Grail bell/i)!.slot, 1);
+    await sdk.sendUseItem(bellItem.slot, 1);
     const ring = await L.talkThrough(sdk, []);
     out.ringBell = { ticks: ring.ticks, pages: ring.pages, clickToClose: L.tick(sdk) - t0 - 3, insideAt: L.pos(sdk) };
 
