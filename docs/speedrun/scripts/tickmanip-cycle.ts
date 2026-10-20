@@ -94,29 +94,6 @@ await runScript(async ({ bot, sdk }) => {
     let current: Target | null = null;
 
     const skillXp = (s: BotWorldState) => s.skills.find(k => k.name.toLowerCase() === method.skill)?.experience ?? 0;
-    // Warm-up: one ordinary click so the bot is standing at the target before any timing
-    // starts (a click that has to walk first shifts the open-loop anchor), then let the
-    // clock expire.
-    {
-        const s0 = sdk.getState()!;
-        current = findTarget(s0);
-        if (current) {
-            if (current.kind === 'loc') await sdk.sendInteractLoc(current.x, current.z, current.id, current.op);
-            else await sdk.sendInteractNpc(current.index, current.op);
-            const xp0 = skillXp(s0);
-            await sdk.waitForCondition(s => skillXp(s) > xp0, 60 * Number(process.env.NODE_TICKRATE ?? 300)).catch(() => {});
-        }
-        await sdk.sendWalk(sdk.getState()!.player!.worldX, sdk.getState()!.player!.worldZ); // stop the interaction
-        await sdk.waitForTicks(6);
-        for (const p of (sdk.getState()?.inventory ?? []).filter(i => method.product.test(i.name))) await sdk.sendDropItem(p.slot);
-        await sdk.waitForTicks(2);
-    }
-    const startState = sdk.getState()!;
-    const startXp = skillXp(startState);
-    const startTick = startState.tick;
-    log(`setup tick=${startTick} pos=${startState.player?.worldX},${startState.player?.worldZ} xp=${startXp}`);
-
-
 
     const findTarget = (s: BotWorldState): Target | null => {
         if (method.kind === 'loc') {
@@ -169,6 +146,29 @@ await runScript(async ({ bot, sdk }) => {
         const p = invItem(s, method.product);
         if (p) fire(s.tick, `drop ${p.name} slot${p.slot}`, sdk.sendDropItem(p.slot));
     };
+
+    // Warm-up: one ordinary click so the bot is standing at the target before any timing
+    // starts (a click that has to walk first shifts the open-loop anchor), then stop and
+    // let the clock expire.
+    {
+        const s0 = sdk.getState()!;
+        current = findTarget(s0);
+        if (current) {
+            if (current.kind === 'loc') await sdk.sendInteractLoc(current.x, current.z, current.id, current.op);
+            else await sdk.sendInteractNpc(current.index, current.op);
+            const xp0 = skillXp(s0);
+            await sdk.waitForCondition(s => skillXp(s) > xp0, 60 * Number(process.env.NODE_TICKRATE ?? 300)).catch(() => {});
+        }
+        const here = sdk.getState()!.player!;
+        await sdk.sendWalk(here.worldX, here.worldZ); // stop the interaction
+        await sdk.waitForTicks(6);
+        for (const p of (sdk.getState()?.inventory ?? []).filter(i => method.product.test(i.name))) await sdk.sendDropItem(p.slot);
+        await sdk.waitForTicks(2);
+    }
+    const startState = sdk.getState()!;
+    const startXp = skillXp(startState);
+    const startTick = startState.tick;
+    log(`setup tick=${startTick} pos=${startState.player?.worldX},${startState.player?.worldZ} xp=${startXp}`);
 
     // ---- measurement loop -------------------------------------------------
     const xpTicks: number[] = [];
