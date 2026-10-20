@@ -84,6 +84,7 @@ await runScript(async ({ bot, sdk }) => {
     let busy = false;
     let dialogBusy = false;
     let lastHp = -1;
+    let needClick = false;
     let done = false;
     const gaps = new Map<number, number>();
 
@@ -172,15 +173,19 @@ await runScript(async ({ bot, sdk }) => {
                     if (!tile) target = null;
                     // The client routes every click itself (clientRoutefinder), so the server never
                     // follows a relocated spot: re-click, choosing whichever matching spot is nearest.
-                    if (react === 'move') run('move', () => click(s, 'move', true));
+                    if (react === 'move') needClick = true;
                 }
             }
-            // Watchdog: idle animation for 10 ticks with no catch means the interaction died.
+            if (needClick && !busy) {
+                needClick = false;
+                run('move', () => click(s, 'move', true));
+            }
             const pos = s.player ? `${s.player.worldX},${s.player.worldZ}` : '';
             if (pos !== lastPos) {
                 log({ ev: 'pos', tick: s.tick, pos });
                 lastPos = pos;
             }
+            // Watchdog: a long stretch with neither xp nor a click means the interaction died.
             if (s.tick - Math.max(lastCatchTick, lastClickTick) > watchdogTicks) {
                 log({ ev: 'watchdog', tick: s.tick });
                 run('watchdog', () => click(s, 'watchdog', true));
