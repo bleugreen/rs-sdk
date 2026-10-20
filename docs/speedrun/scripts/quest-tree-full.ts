@@ -5,7 +5,7 @@
 // Run: bun docs/speedrun/scripts/quest-tree-full.ts <botname>
 
 import { runScript } from '../../../sdk/runner';
-import { cheat, dialogue, fight, getvar, give, invCount, locOp, now, pos, Recorder, setvar, talk, tele, waitTicks, waitUntil, walk } from './quest-gnome-lib';
+import { cheat, dialogue, fight, getvar, give, invCount, locOp, now, openDoorAt, pos, Recorder, setvar, talk, tele, waitTicks, waitUntil, walk } from './quest-gnome-lib';
 
 await runScript(async ({ bot, sdk }) => {
     const rec = new Recorder('tree_gnome_village');
@@ -59,8 +59,9 @@ await runScript(async ({ bot, sdk }) => {
         await d;
         rec.add({ ...r, ticks: now(sdk) - t0 }, '9');
     }
-    rec.add(await walk(bot, sdk, 2503, 3253, 0), '10 walk to ladder');
-    rec.add(await locOp(sdk, /ladder/i, /climb-up/i, s => pos(s).level === 1, 20), '11');
+    // The ladder (2503,3252) is in the next room: through the door at (2505,3256).
+    rec.add(await openDoorAt(sdk, 2505, 3256), '10a');
+    rec.add(await locOp(sdk, /^ladder$/i, /climb-up/i, s => pos(s).level === 1, 30), '10b walk + 11');
     rec.add(await locOp(sdk, /chest/i, /^open$/i, s => (s.nearbyLocs ?? []).some(l => /^open chest$/i.test(l.name)), 30), '12');
     {
         const t0 = now(sdk);
@@ -99,7 +100,8 @@ await runScript(async ({ bot, sdk }) => {
     rec.add(await talk(sdk, /^Elkoy$/i, [/Yes please/], { idle: 3 }), '22 Elkoy guide in');
     rec.add(await railing(), '23a');
     rec.add(await walk(bot, sdk, 2541, 3171, 1), '23b railing to Bolren');
-    rec.add(await talk(sdk, /^King Bolren$/i, [], { idle: 12 }), '24 Bolren finish + ceremony');
+    // The ceremony leaves the chat box closed for about 17 ticks while the gnomes chant.
+    rec.add(await talk(sdk, /^King Bolren$/i, [], { idle: 25 }), '24 Bolren finish + ceremony');
     await waitTicks(sdk, 3);
     const atk1 = sdk.getSkill('attack')!.experience;
     console.log('treequest', await getvar(sdk, 'treequest'), 'attack xp gained', atk1 - atk0, '=', (atk1 - atk0) / 25, 'base');
