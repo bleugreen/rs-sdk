@@ -52,7 +52,9 @@ await runScript(async ({ bot, sdk }) => {
     await L.cheat(sdk, 'setvar grail 4'); // ^grail_spoken_crone
     await L.tele(sdk, 2741, 3235, 0); // inside the crossing zone 0_42_50_52_34..55_37
     await sdk.waitForTicks(2);
-    const out: Record<string, unknown> = { stats: `${att}/${str}/${def}, ${hp} hp`, weapon, swapAt: weapon === 'excalibur' ? null : swapAt, protectFromMelee: pray };
+    const out: Record<string, unknown> = {};
+    process.on('exit', () => { if (!out.done) L.report('Holy Grail realm visit (partial)', out); });
+    Object.assign(out, { stats: `${att}/${str}/${def}, ${hp} hp`, weapon, swapAt: weapon === 'excalibur' ? null : swapAt, protectFromMelee: pray });
 
     // Whistle in.
     let t0 = L.tick(sdk);
@@ -144,20 +146,30 @@ await runScript(async ({ bot, sdk }) => {
 
     // Up to the Fisher King.
     t0 = L.tick(sdk);
-    const stairs = (await sdk.scanNearbyLocs(12)).filter(l => l.options.some(o => /Climb-up/.test(o)));
+    const stairs = (await sdk.scanNearbyLocs(20)).filter(l => l.options.some(o => /Climb-up/.test(o)));
     stairs.sort((a, b) => a.distance - b.distance);
     await bot.interactLoc(stairs[0]!, 'Climb-up');
     await L.waitUntil(sdk, () => L.pos(sdk).level === 1, 40);
     out.stairsUp = { ticks: L.tick(sdk) - t0, via: `${stairs[0]!.name}@${stairs[0]!.x},${stairs[0]!.z}`, at: L.pos(sdk) };
     await sdk.waitForTicks(2);
-    // The King's room is behind two doors; talkTo opens the second itself.
+    // The King's room is behind two doors (2766,4684 and 2766,4688), which
+    // close again on a timer: open whichever closed door is nearest until the
+    // talk-to path goes through.
     t0 = L.tick(sdk);
-    const door = (await sdk.scanNearbyLocs(8)).find(l => l.name === 'Door' && l.x === 2766 && l.z === 4684);
-    if (door) await bot.openDoor(door);
-    out.firstDoor = { ticks: L.tick(sdk) - t0 };
-    t0 = L.tick(sdk);
-    const kt = await bot.talkTo(/Fisher King/);
+    let doorsOpened = 0;
+    let kt = await bot.talkTo(/Fisher King/);
+    while (!kt.success && doorsOpened < 4) {
+        const door = (await sdk.scanNearbyLocs(10))
+            .filter(l => l.name === 'Door' && l.options.includes('Open'))
+            .sort((a, b) => a.distance - b.distance)[0];
+        if (!door) break;
+        await bot.openDoor(door);
+        doorsOpened++;
+        kt = await bot.talkTo(/Fisher King/);
+    }
     if (!kt.success) throw new Error(`fisher king: ${kt.message}`);
+    out.toKing = { ticks: L.tick(sdk) - t0, doorsOpened };
+    t0 = L.tick(sdk);
     const king = await L.talkThrough(sdk, [/You don't look too well/]);
     out.fisherKing = { ticks: king.ticks, pages: king.pages, options: king.options, total: L.tick(sdk) - t0 - 3, grail: await L.getVar(sdk, 'grail') };
 
@@ -166,5 +178,6 @@ await runScript(async ({ bot, sdk }) => {
     await sdk.sendUseItem(sdk.findInventoryItem(/Magic whistle/i)!.slot, 1);
     const back = await L.waitUntil(sdk, () => L.pos(sdk).z < 4000, 30);
     out.whistleOut = { ticks: back === null ? null : back - t0, at: L.pos(sdk) };
+    out.done = true;
     L.report('Holy Grail: first Fisher Realm visit', out);
 }, { timeout: 900_000, printState: false });
