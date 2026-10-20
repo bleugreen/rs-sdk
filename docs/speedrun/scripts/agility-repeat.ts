@@ -20,10 +20,10 @@ await runScript(async ({ sdk }) => {
     for (let r = 0; r < reps && misses < 3; r++) {
         const before = log.events.length;
         const from = pos(sdk);
-        sdk.getNewChat();
+        sdk.getNewChat({ types: [0] });
         await sdk.sendInteractLoc(x, z, id, 1);
         const ok = await waitTicksFor(sdk, () => log.events.length > before, 40);
-        const msgs = sdk.getNewChat().map(m => m.text);
+        const msgs = sdk.getNewChat({ types: [0] }).map(m => m.text);
         if (!ok) {
             misses++;
             console.log(`rep ${r}: no xp from`, from, '->', pos(sdk), msgs.slice(-3));
