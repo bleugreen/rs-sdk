@@ -15,6 +15,11 @@ BOT=$1; shift
 LOG=${LAB_LOG:-${TMPDIR:-/tmp}/trolllab}
 mkdir -p "$LOG"
 
+# Build slots are reused unevenly, so install dependencies when missing.
+for d in "" server/engine server/webclient server/gateway; do
+    [ -d "$ROOT/$d/node_modules" ] || (cd "$ROOT/$d" && bun install > "$LOG/install.log" 2>&1)
+done
+
 export WEB_PORT=9090 WEB_MANAGEMENT_PORT=9091 HISCORES_WEB_PORT=9092 NODE_PORT=43790 AGENT_PORT=7990
 PIDS=()
 cleanup() { for p in "${PIDS[@]}"; do kill "$p" 2>/dev/null; done; sleep 1; for p in "${PIDS[@]}"; do kill -9 "$p" 2>/dev/null; done; }
