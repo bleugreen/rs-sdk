@@ -15,11 +15,9 @@ await runScript(async ({ bot, sdk }) => {
         await waitTicks(sdk, 3);
     }
     await setstats(sdk, { attack: att, strength: str, defence: def, hitpoints: hp, prayer: 43, agility: 25, magic: 59, ranged: 70, thieving: 20, crafting: 20 });
-    const inv = sdk.getState()!.inventory;
-    if (!inv.some(i => /shark/i.test(i.name))) {
-        await cheat(sdk, 'give rune_scimitar 1');
-        await give(sdk, 'shark', 8);
-    }
+    await cheat(sdk, '~clearinv');
+    await cheat(sdk, 'give rune_scimitar 1');
+    await give(sdk, 'shark', 8);
     await waitTicks(sdk, 2);
     const sc = sdk.findInventoryItem(/rune scimitar/i);
     if (sc) await bot.equipItem(sc);

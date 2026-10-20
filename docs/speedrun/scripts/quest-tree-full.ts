@@ -9,16 +9,17 @@ import { cheat, dialogue, fight, getvar, give, invCount, locOp, now, pos, Record
 
 await runScript(async ({ bot, sdk }) => {
     const rec = new Recorder('tree_gnome_village');
-    await cheat(sdk, 'clearinv inv');
+    await cheat(sdk, '~clearinv');
     await setvar(sdk, 'treequest', 0);
     await give(sdk, 'logs', 6);
     await give(sdk, 'shark', 6);
     await tele(sdk, 2504, 3193);
-    await cheat(sdk, 'energy');
+    await cheat(sdk, '~energy');
     const atk0 = sdk.getSkill('attack')!.experience;
     const T0 = now(sdk);
-    // The maze side of the village fence is z <= 3160; the loose railing at (2515,3161) has no requirement.
-    const railing = () => locOp(sdk, /loose railing/i, /squeeze/i, s => pos(s).z >= 3162, 20);
+    // The maze side of the village fence is z <= 3160; squeezing through the loose railing at (2515,3161)
+    // (no requirement) moves you one tile, onto the railing line, on the village side.
+    const railing = () => locOp(sdk, /loose railing/i, /squeeze/i, s => pos(s).z >= 3161, 20);
 
     // 1. First entry: walk the maze to the loose railing, squeeze through, walk to King Bolren
     // (Elkoy only guides once the quest has started).
@@ -29,7 +30,7 @@ await runScript(async ({ bot, sdk }) => {
     console.log('treequest', await getvar(sdk, 'treequest'), 'pos', pos(sdk.getState()));
 
     // 2. Commander Montai, three conversations.
-    await cheat(sdk, 'energy');
+    await cheat(sdk, '~energy');
     rec.add(await walk(bot, sdk, 2523, 3212, 1), '3 walk to Montai');
     rec.add(await talk(sdk, /^Commander Montai$/i, [/gather some wood/]), '4 Montai 1');
     rec.add(await talk(sdk, /^Commander Montai$/i, []), '5 Montai 2 (logs)');
@@ -49,7 +50,7 @@ await runScript(async ({ bot, sdk }) => {
     console.log('treequest', await getvar(sdk, 'treequest'));
 
     // 4. Into the stronghold over the crumbled wall, up the ladder, open and search the chest.
-    await cheat(sdk, 'energy');
+    await cheat(sdk, '~energy');
     rec.add(await walk(bot, sdk, 2509, 3252, 0), '8 walk to crumbled wall');
     {
         const t0 = now(sdk);
@@ -71,7 +72,7 @@ await runScript(async ({ bot, sdk }) => {
     rec.add(await locOp(sdk, /ladder/i, /climb-down/i, s => pos(s).level === 0, 20), '14');
 
     // 5. Back to Bolren with the orb: walk out to Elkoy, who jumps you through the maze.
-    await cheat(sdk, 'energy');
+    await cheat(sdk, '~energy');
     rec.add(await walk(bot, sdk, 2504, 3193, 1), '15 walk to Elkoy');
     rec.add(await talk(sdk, /^Elkoy$/i, [/Yes please/], { idle: 3 }), '16 Elkoy guide in');
     rec.add(await railing(), '17a');
@@ -80,7 +81,7 @@ await runScript(async ({ bot, sdk }) => {
     console.log('treequest', await getvar(sdk, 'treequest'), 'pos', pos(sdk.getState()));
 
     // 6. The Khazard warlord north-west of the battlefield.
-    await cheat(sdk, 'energy');
+    await cheat(sdk, '~energy');
     rec.add(await walk(bot, sdk, 2459, 3300, 3), '19 walk to warlord');
     {
         const hp0 = sdk.getState()!.player!.hp;
@@ -93,7 +94,7 @@ await runScript(async ({ bot, sdk }) => {
     console.log('treequest', await getvar(sdk, 'treequest'));
 
     // 7. Return the orbs: Elkoy again, then the ceremony.
-    await cheat(sdk, 'energy');
+    await cheat(sdk, '~energy');
     rec.add(await walk(bot, sdk, 2504, 3193, 1), '21 walk to Elkoy');
     rec.add(await talk(sdk, /^Elkoy$/i, [/Yes please/], { idle: 3 }), '22 Elkoy guide in');
     rec.add(await railing(), '23a');

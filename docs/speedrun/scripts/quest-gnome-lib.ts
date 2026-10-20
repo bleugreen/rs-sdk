@@ -53,6 +53,7 @@ export async function waitTicks(sdk: BotSDK, n: number): Promise<void> {
     await waitUntil(sdk, s => s.tick >= t + n, n + 5);
 }
 
+/** Staff command; debugprocs take the '~' prefix (::~energy, ::~clearinv). */
 export async function cheat(sdk: BotSDK, cmd: string): Promise<void> {
     await sdk.sendSay('::' + cmd);
     await waitTicks(sdk, 1);
