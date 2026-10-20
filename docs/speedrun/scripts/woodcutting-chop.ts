@@ -111,27 +111,26 @@ await runScript(async ({ bot, sdk }) => {
             if (startTick < 0) startTick = s.tick;
             if (s.dialog.isOpen) fire(sdk.sendClickDialog(0));
 
+            // A log is counted from its 'You get some ...' message (one per success); xp
+            // deltas would miss a log that lands on the same tick as a --hold level reset.
             const wc = s.skills.find(k => k.name.toLowerCase() === 'woodcutting')!;
-            if (wc.experience > lastXp) {
-                logs++;
-                // the roll that produced this log used the level before any setstat re-hold
-                events.push({ k: 'X', t: s.tick, tree: current ? key(current) : '?', lvl: hold && level ? Number(level) : wc.level });
-                out('X', s.tick, `lvl=${wc.level} +${(wc.experience - lastXp) / 25} tree=${current ? key(current) : '?'}`);
-                lastXp = wc.experience;
-                if (hold && level && wc.baseLevel !== Number(level)) {
-                    fire(sdk.sendSay(`::setstat woodcutting ${level}`));
-                    lastXp = -1; // re-read after the reset
-                }
-            } else if (lastXp < 0 || wc.experience < lastXp) {
-                lastXp = wc.experience;
-            }
+            let gotLog = false;
             for (const m of s.gameMessages) {
                 const id = m.observationId ?? `${m.tick}:${m.text}`;
                 if (seenMsg.has(id)) continue;
                 seenMsg.add(id);
+                if (/^You get some/.test(m.text)) gotLog = true;
                 if (/swing your axe/.test(m.text)) { events.push({ k: 'S', t: s.tick }); out('S', s.tick); }
                 if (/too full|need a Woodcutting level|do not have an axe/.test(m.text)) out('M', s.tick, m.text);
             }
+            if (gotLog) {
+                logs++;
+                // with --hold the roll was made at the held level
+                events.push({ k: 'X', t: s.tick, tree: current ? key(current) : '?', lvl: hold && level ? Number(level) : wc.level });
+                out('X', s.tick, `lvl=${wc.level} xp=${wc.experience} tree=${current ? key(current) : '?'}`);
+                if (hold && level && wc.baseLevel !== Number(level)) fire(sdk.sendSay(`::setstat woodcutting ${level}`));
+            }
+            lastXp = wc.experience;
             for (const t of trees) {
                 const k = key(t);
                 const up = !!alive(s, t);
