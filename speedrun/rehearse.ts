@@ -757,7 +757,8 @@ async function main(argv: string[]): Promise<number> {
     // /playercount through the attempt (rs/158): an HTTP GET beside the game socket, no game packets.
     const readPlayers = async (label: 'during' | 'end') => {
         const smp = await samplePlayerCount(origin);
-        const st = session.sdk.getState();
+        // The client tick ties a read to the band it fell in; after the logout the state is stale.
+        const st = session.expectInWorld ? session.sdk.getState() : null;
         log.append(annotation(log, account, 'players', `(players) ${label}`, {
             sessionId: session.sessionId, ...(st?.inGame ? { startTick: st.tick } : {}),
             meta: { players: smp.players, at: new Date(smp.at).toISOString(), ms: smp.ms, ...(smp.error ? { error: smp.error } : {}) },

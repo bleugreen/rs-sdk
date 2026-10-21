@@ -264,7 +264,8 @@ level with and without the watcher) has not been measured yet.
   group (a terminal Ctrl-C reaches only this process), and it never outlives
   this process: a crash, SIGTERM or SIGHUP logs every launched runner out
   (`abandonClient`), and any other exit kills it.
-- `logoutClean` waits out the 16-tick post-combat window, clicks logout
+- `logoutClean` waits out the 16-tick post-combat window (none when
+  `lastDamageTick` is -1, never hit; a fresh account's first ticks don't wait), clicks logout
   (IF_BUTTON 2458), retries once if refused, and verifies: no tick after the
   click, and the lite child exited or the gateway reports the bot dead. It
   never kills the process to log out. A closed socket leaves the player in the
@@ -578,12 +579,14 @@ over `runResumable` (`runSteps` plus the resume walk from game state), `lib/sess
 ```
 bun speedrun/rehearse.ts --skill=<name|module.ts> --bot=<env name> [--to=99] [--client=browser|lite]
     [--kit-from=<giver> --kit=<item:n,...>] [--technique=auto|knife|plain] [--skill-opt=<key>=<value> ...]
-    [--gate-bot=<gate account env>] [--gate-json=<file>] [--gate-probe-trials=60] [--probe-trials=0]
+    [--gate-bot=<gate account env, default cairn_twin off a local world>] [--gate-json=<file>]
+    [--gate-probe-trials=60] [--probe-trials=0]
     [--force-gate] [--from=<step name or index>] [--log=<file>] [--lab] [--insecure-query-login]
 ```
 
 1. **Gate, off the clock.** `/playercount`; the direct read on a separate gate account
-   (`--gate-bot` runs `docs/speedrun/scripts/tickmanip-latency.ts --path=direct --json` in its own
+   (off a local world, `cairn_twin`, the twin's gate account, unless `--gate-bot` names another or
+   `--gate-json` replaces the read; the lab has no default) (`--gate-bot` runs `docs/speedrun/scripts/tickmanip-latency.ts --path=direct --json` in its own
    process, `--gate-json` takes a file it wrote at most 10 minutes ago); then, on the browser,
    the gate account's own tab logs in and runs `probeInPage` (`--gate-probe-trials`, default 60
    with `--gate-bot`). Each is a `(gate)` row. It refuses to start (exit 3, nothing logged in) when
@@ -594,7 +597,9 @@ bun speedrun/rehearse.ts --skill=<name|module.ts> --bot=<env name> [--to=99] [--
    `probeInPage` on this account (`--probe-trials`, on its clock), an optional kit receive (S01:
    `receiveFrom` with `want` built from `--kit`; on the lab `--kit` alone uses `::give`), and
    `skill.steps({to, technique, ...skill-opts})`. `--kit` takes debug names (`rune_axe:1`), or
-   `item=n` under `lab/lab.sh`, which splits a script's arguments on `:`.
+   `item=n` under `lab/lab.sh`, which splits a script's arguments on `:`. Meanwhile `/playercount`
+   is read every 10 minutes (`PLAYERS_EVERY_MS`; an HTTP GET beside the game socket, no game
+   packets), and once more right after the logout.
 3. **Out, then the free work.** `logoutClean` follows the moment the chain ends; a last step that
    logged out by itself counts as done. Then the gate tab's after-probe, the public player page
    (`tools/hiscore-scrape.ts`) against the log, and a one-screen summary. Exit codes: 0 done,
@@ -602,7 +607,12 @@ bun speedrun/rehearse.ts --skill=<name|module.ts> --bot=<env name> [--to=99] [--
 
 The tick log adds annotation rows: `(session)` from client tick 0 (the login) to the logout click
 per client session, `(program)` per in-page program run (its final `ProgramStatus`), `(reach)` per
-level gained, `(gate)` and `(hiscore)`. The summary's arithmetic (`summarize`) is the session
+level gained, `(gate)`, `(hiscore)`, and `(players)` per `/playercount` read during the attempt
+(the count, the wall time, and the client tick while in the world). The summary prints the
+count's range over the attempt (the gate's read and the `(players)` rows) and a `MOVED` line when
+its lowest read is under half its highest (`playerSwing`: (highest - lowest) / highest over 0.5),
+which is a demo restart and refill: respawn-bound bands then ran in two regimes, each priced at
+its own count (rs/147, addendum 7). The summary's arithmetic (`summarize`) is the session
 minus the step rows (the overhead), split into boundary rows, the resume walk's rows, and the
 ticks outside the runner (login to the first step, the end to the logout click). The hiscore
 check (`compareHiscore`, hiscore-timestamps.md): a skill row is the playtime its level was reached
@@ -622,6 +632,7 @@ last step and can start a later band whose preconditions happen to hold.
 | S00, chop stub to WC 15, logout | 71 | 68 (3 + 65) | 0 over 3 | 3 |
 | S00, idle 20; SIGINT mid-step: logout at the boundary, click on the part's end tick | 26 | 23 | 0 over 3 | 3 |
 | Re-run `--from=2`: idle 20 + 20, logout | 42 | 40 | 0 over 3 | 2 |
+| S00, idle 1, logout (after the `lastDamageTick = -1` fix): click on tick 7, S00 ended on 6 | 7 | 4 (3 + 1) | 0 over 3 | 3 |
 
 The ticks outside the runner are the login frames the client counts before the SDK's first
 advancing state (`openSession`); the logout click lands on the last step's end tick. Results and
