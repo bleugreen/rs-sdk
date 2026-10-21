@@ -293,12 +293,21 @@ jobs:
             (cd server/gateway && AGENT_PORT=$GATEWAY_PORT GATEWAY_HOSTNAME=127.0.0.1 WEB_MANAGEMENT_PORT=8953 exec bun run gateway.ts) > "$OUT/gateway.log" 2>&1 &
             GW=$!
             sleep 2
-            (cd server/webclient && exec bun src/lite/runner.ts "$BOT") > "$OUT/lite-runner.log" 2>&1 &
-            RN=$!
+            RN=''
             # A failed kill (process already gone) must not change the probe's exit status.
             stop() { set +e; kill -INT $RN 2>/dev/null; sleep 3; kill $RN $GW 2>/dev/null; sleep 1; kill -9 $RN $GW 2>/dev/null; rm -rf "bots/$BOT"; }
             trap stop EXIT
-            for i in $(seq 120); do grep -q 'Gateway connected' "$OUT/lite-runner.log" && break; sleep 1; done
+            # The lite runner logs into the game first and exits if the login is refused (re-login is
+            # its supervisor's job), so a session the demo still holds is retried here.
+            for attempt in 1 2 3 4; do
+              (cd server/webclient && exec bun src/lite/runner.ts "$BOT") > "$OUT/lite-runner.log" 2>&1 &
+              RN=$!
+              for i in $(seq 120); do grep -q 'Gateway connected' "$OUT/lite-runner.log" && break; kill -0 $RN 2>/dev/null || break; sleep 1; done
+              grep -q 'Gateway connected' "$OUT/lite-runner.log" && break
+              grep -q 'Account already logged in' "$OUT/lite-runner.log" || break
+              echo "gateway path: account still logged in on the demo (attempt $attempt), retrying in 45 s"
+              kill $RN 2>/dev/null || true; sleep 45
+            done
             if ! grep -q 'Gateway connected' "$OUT/lite-runner.log"; then echo '::error::lite client did not log in'; tail -30 "$OUT/lite-runner.log"; exit 1; fi
             sleep 3
             run_probe gateway-path "$PROBE_COMMAND"
@@ -430,6 +439,10 @@ jobs:
           # "probe start <date> <time> PDT: ..." and "probe end <date> <time> PDT, exit N" -> "HH:MM:SS-HH:MM:SS PDT"
           span() { [ -s "$OUT/$1.txt" ] || return 0; s=$(grep -m1 '^probe start' "$OUT/$1.txt" | awk '{print $4}'); e=$(grep -m1 '^probe end' "$OUT/$1.txt" | awk '{print $4}'); echo "$s-$e PDT"; }
           online_end=$(jq -r '.playercountEnd // empty' "$OUT/direct.json" 2>/dev/null || true)
+          # Interval between tick publications, p50/p90/max ms: the direct probe's decoded ticks, the
+          # SDK's state publications (gateway path, overlay probe) or the page's decoded ticks (in-page).
+          pub() { grep -m1 -E "$2" "$OUT/$1.txt" 2>/dev/null | grep -oE 'p50 [0-9.]+ p90 [0-9.]+ max [0-9.]+' | head -1 || true; }
+          pub_row="$(pub direct 'tick interval p10') / $(pub gateway-path '^state publication interval') / $(pub browser-probe '^(state publication|decoded tick) interval')"
 
           {
             echo '## Demo latency probe'
@@ -446,6 +459,7 @@ jobs:
                    "| TCP / TLS / TTFB(404) p90 ms | \(.vantage.http_ms.tcp_connect.p90) / \(.vantage.http_ms.tls_done.p90) / \(.vantage.http_ms.ttfb_404.p90) |",
                    "| reaction ticks, gateway path | \(.gateway_path.reaction_ticks // {} | to_entries | map("\(.key):\(.value)") | join(" ")) |",
                    "| reaction ticks, direct (+0 ms) | \($direct) |",
+                   "| tick publication interval ms, p50/p90/max (direct / gateway / browser) | \($pub) |",
                    "| probes from | \(.ref) @ \(.sha[0:9]) |",
                    "| lite client and gateway from | \(.lite.ref) @ \(.lite.sha[0:9]) |",
                    (if .browser then
@@ -457,7 +471,7 @@ jobs:
                      "| knife loop, \(.browser.knife.cycles) logs (trees west of Lumbridge castle) | \(.browser.knife.metric | gsub("\\|"; "/")) |"
                    else empty end)' --arg direct "$direct_ticks" \
               --arg online_end "$online_end" --arg mode "$MODE" --arg dspan "$(span direct)" --arg gspan "$(span gateway-path)" \
-              --arg bspan "$(span browser-probe)" --arg kspan "$(span knife)" "$OUT/result.json"
+              --arg bspan "$(span browser-probe)" --arg kspan "$(span knife)" --arg pub "$pub_row" "$OUT/result.json"
             for f in frames-browser-probe frames-knife; do
               if [ -s "$OUT/$f.txt" ]; then echo; echo "### where the time goes on the page's sockets: ${f#frames-}"; echo '```'; cat "$OUT/$f.txt"; echo '```'; fi
             done
