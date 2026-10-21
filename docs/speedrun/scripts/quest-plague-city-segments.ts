@@ -67,7 +67,8 @@ await runScript(async ({ bot, sdk }) => {
             await quest('edmond1');
             await ensure(sdk, 'dwellberries', /^Dwellberries$/i);
             const pic = (await sdk.scanGroundItems(12)).find(g => /^Picture$/i.test(g.name));
-            if (pic) await S.step('pick up the picture (2576,3334)', () => sdk.sendPickup(pic.x, pic.z, pic.id), { done: has(sdk, /^Picture$/i), settle: 0 });
+            // bot.pickupItem walks next to the item (sendPickup alone does not route) and opens doors on the way.
+            if (pic) await S.step('pick up the picture (2576,3334)', () => bot.pickupItem(pic), { done: has(sdk, /^Picture$/i), settle: 0 });
             else console.log('  picture not on the ground (already taken?)');
             await S.step('Alrena: dwellberries -> gas mask (1->2)', talk(sdk, /^Alrena$/), { settle: 6, done: has(sdk, /^Gas mask$/i) });
             await quest('alrena');
