@@ -45,6 +45,12 @@
 //                   published once fully decoded), 1 before it
 //   --marks=B1,B2,..  print the tick at which base xp first reaches each Bi and the ticks
 //                   from there to the end (quest-start segments, fishing.md section 3)
+//   --gate=on|off   run-time host gate (tick-manipulation.md, "Run-time host gate";
+//                   speedrun/lib/hostgate.ts), on by default for eat and knife: probe packet
+//                   latency before the first lock, after every lost lock (no xp), and every
+//                   500 ticks while off. While it is off the base technique runs instead.
+//                   off: always manipulate (the rows measured before the gate).
+//   --threshold=F   the gate's on-time fraction (default 0.95)
 // The lost-lock window for fly fishing scales with the read catch chance at the current
 // level, so a run of honest misses at a low level is not taken for a lost lock: 3 ticks per
 // roll for enough rolls that all of them fail with chance below 0.5% (at least 15 ticks).
@@ -56,6 +62,7 @@
 import { runScript } from '../../../sdk/runner';
 import type { BotWorldState, InventoryItem } from '../../../sdk/types';
 import { appendFileSync, writeFileSync } from 'fs';
+import { DEFAULT_THRESHOLD, HostGate } from '../../../speedrun/lib/hostgate';
 
 const args: Record<string, string> = Object.fromEntries(
     process.argv.slice(2).filter(a => a.startsWith('--')).map(a => {
@@ -133,7 +140,8 @@ const lockWindowAt = (L: number) => {
     return Math.max(base, 3 * Math.ceil(Math.log(0.005) / Math.log(1 - p)));
 };
 
-writeFileSync(logPath, `# tickmanip-cycle ${mode} level=${level} phase=${phase} rolls=${rollsTarget} until=${untilLevel} dismiss=${dismiss} reanchor=${reanchor} xplag=${XP_LAG}\n`);
+const gated = technique !== 'base' && args.gate !== 'off';
+writeFileSync(logPath, `# tickmanip-cycle ${mode} level=${level} phase=${phase} rolls=${rollsTarget} until=${untilLevel} dismiss=${dismiss} reanchor=${reanchor} xplag=${XP_LAG} gate=${gated ? 'on' : 'off'}\n`);
 const log = (line: string) => appendFileSync(logPath, line + '\n');
 
 await runScript(async ({ bot, sdk }) => {
@@ -255,6 +263,12 @@ await runScript(async ({ bot, sdk }) => {
         for (const p of (sdk.getState()?.inventory ?? []).filter(i => method.product.test(i.name))) await sdk.sendDropItem(p.slot);
         await sdk.waitForTicks(2);
     }
+    // Run-time host gate: probe before the first lock; the probe ends on the tile it started on.
+    const gate = gated
+        ? new HostGate(sdk, { threshold: Number(args.threshold ?? DEFAULT_THRESHOLD), log: line => { log(line); console.log(line); } })
+        : null;
+    if (gate) await gate.probe('start');
+    const plainNow = () => technique === 'base' || (gate !== null && !gate.on);
     const startState = sdk.getState()!;
     const startXp = skillXp(startState);
     const startTick = startState.tick;
@@ -285,6 +299,7 @@ await runScript(async ({ bot, sdk }) => {
     const markTicks = new Map<number, number>();
     const seenMsgs = new Set<string>((startState.gameMessages ?? []).map(m => `${m.tick ?? ''}|${m.text}`));
     let lastHp = -2;
+    let probing = false;
 
     const done = new Promise<void>(resolve => {
         const unsubscribe = sdk.onStateUpdate((s: BotWorldState) => {
@@ -322,7 +337,7 @@ await runScript(async ({ bot, sdk }) => {
                 dialogOpenSince = null;
             }
             // Answer a level-up the tick it is seen (and again if it is still open 3 ticks on).
-            if (technique !== 'base' && dismiss !== 'none' && s.dialog?.isOpen && t !== lastDismiss && (dialogOpenSince === t || t - lastDismiss >= 3)) {
+            if (!probing && !plainNow() && dismiss !== 'none' && s.dialog?.isOpen && t !== lastDismiss && (dialogOpenSince === t || t - lastDismiss >= 3)) {
                 lastDismiss = t;
                 fire(t, `dismiss dialog${dismiss === 'blind' ? ' (blind)' : ''}`, sdk.sendClickDialog(0, dismiss === 'blind' ? { blind: true } : {}));
             }
@@ -338,7 +353,29 @@ await runScript(async ({ bot, sdk }) => {
                 resolve();
                 return;
             }
-            if (actedTick === t) return;
+            if (probing || actedTick === t) return;
+
+            // Gate probe: at once while plain (periodic re-probe); while manipulating only after a
+            // lost lock, at the re-bootstrap, once the pushed clock has expired. The probe walks a
+            // tile and back and clears the interaction, so every path re-clicks afterwards.
+            if (gate && gate.due(t) && (plainNow() || (anchor === null && awaitXpSince === null && t >= cooldownUntil))) {
+                actedTick = t;
+                probing = true;
+                breaks.push(t);
+                gate.probe(plainNow() ? 'periodic' : 'lost lock')
+                    .catch(e => log(`T${t} gate probe failed: ${e}`))
+                    .finally(() => {
+                        probing = false;
+                        anchor = null;
+                        awaitXpSince = null;
+                        current = null;
+                        currentTile = null;
+                        cooldownUntil = -1;
+                        const now = sdk.getState()?.tick ?? t;
+                        breaks.push(now);
+                    });
+                return;
+            }
 
             // Food top-up is a lab convenience standing in for banking; sent off-beat.
             const foodCount = s.inventory.filter(i => FOOD.test(i.name)).length;
@@ -346,7 +383,7 @@ await runScript(async ({ bot, sdk }) => {
             const lastXpTick = xpTicks.length ? xpTicks[xpTicks.length - 1] : -1;
             const targetGone = current !== null && !sameTarget(current, findTarget(s));
 
-            if (technique === 'base') {
+            if (plainNow()) {
                 const full = s.inventory.length >= 28;
                 if (full && dropProducts) {
                     actedTick = t;
@@ -388,6 +425,7 @@ await runScript(async ({ bot, sdk }) => {
                 const why = moved ? 'spot moved' : targetGone ? 'target gone' : 'no xp';
                 // A lock with no xp is mistimed by a tick or two (latency moved); try the next phase.
                 if (reanchor === 'click' && why === 'no xp') curPhase = (curPhase + 1) % 3;
+                if (why === 'no xp') gate?.slip();
                 resyncs++;
                 log(`T${t} resync (${why})${reanchor === 'click' ? `, next phase ${curPhase}` : ''}`);
                 anchor = null;
@@ -475,6 +513,9 @@ await runScript(async ({ bot, sdk }) => {
         `spot moves ${moves.length}: spanning gaps ${histOf(mvRows.map(r => r.gap))}`,
         `  ${mvRows.map(r => `T${r.tick}:${r.gap}`).join(' ')}`,
         `logs given during the run ${logsGiven}`,
+        gate
+            ? `gate: ${gate.history.length} probes (${gate.history.map(h => `T${h.tick} ${h.why} ${h.result.onTime}/${h.result.trials}`).join(', ')}), switches ${gate.switches() || 'none'}, ${gate.plainTicks(segEnd)} ticks plain, ends ${gate.on ? 'manipulating' : 'plain'}`
+            : 'gate: off',
         ...(marks.length ? [`marks (base xp: tick passed, ticks to end T${segEnd}): ${marks.map(m => markTicks.has(m) ? `${m}: T${markTicks.get(m)} ${segEnd - markTicks.get(m)!}` : `${m}: -`).join(' | ')}`] : []),
         `levels reached: ${levelUps.map(l => `${l.level}@T${l.tick}`).join(' ')}`,
         `mode=${mode} level=${level} phase=${phase} xpEvents=${xpTicks.length} gapsCounted=${gaps.length} breaks=${breaks.length} resyncs=${resyncs} finalPhase=${curPhase} dialogs=${dialogsSeen}`,
