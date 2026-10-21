@@ -90,23 +90,18 @@ type Dispatch = (action: unknown) => Promise<unknown>;
  * silently counting nothing.
  */
 export function meterDispatch(sdk: object, window: TickWindow): () => void {
-    const target = sdk as { sendAction?: Dispatch };
-    const original = target.sendAction;
-    if (typeof original !== 'function') {
+    if (typeof (sdk as { sendAction?: Dispatch }).sendAction !== 'function') {
         throw new Error('meterDispatch: the SDK has no sendAction to meter (was it renamed in sdk/index.ts?)');
     }
-    const own = Object.prototype.hasOwnProperty.call(target, 'sendAction');
-    target.sendAction = (action: unknown) => {
+    // patchMethod tolerates out-of-order unwinds: an abandoned step's runner can
+    // finish after the resumed one installed its own meter (runner/resume.ts).
+    return patchMethod(sdk, 'sendAction', (send: Dispatch) => (action: unknown) => {
         const type = (action as { type?: unknown } | null)?.type;
-        if (typeof type === 'string' && NO_PACKET.has(type)) return original.call(sdk, action);
+        if (typeof type === 'string' && NO_PACKET.has(type)) return send(action);
         window.dispatched();
-        const p = original.call(sdk, action);
+        const p = send(action);
         const settle = () => window.acknowledged();
         p.then(settle, settle);
         return p;
-    };
-    return () => {
-        if (own) target.sendAction = original;
-        else delete target.sendAction;
-    };
+    });
 }
