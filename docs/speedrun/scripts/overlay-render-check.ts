@@ -47,8 +47,10 @@ const box = (await (await page.$('canvas'))!.boundingBox())!;
 
 const scenes = new Map<string, string[]>();
 const meta: string[] = [];
-// The 3D viewport inside the canvas, for scenes whose detail is small (a projectile).
-const viewport = { x: box.x + 4, y: box.y + 4, width: 512, height: 334 };
+// The 3D viewport inside the 765-wide canvas (at 4,4, 512x334), scaled to its on-page size,
+// for scenes whose detail is small (a projectile).
+const s = box.width / 765;
+const viewport = { x: box.x + 4 * s, y: box.y + 4 * s, width: 512 * s, height: 334 * s };
 async function shot(scene: string, name: string, clip = box): Promise<void> {
     const file = join(framesDir, `${name}.jpg`);
     const info = await page.evaluate(() => {
