@@ -246,6 +246,12 @@ await runScript(async ({ bot, sdk }) => {
         const flickTick0 = FLICK.length > 0 && phase === 0;
         const flickTick1 = FLICK.length === 3 && phase === 1;
         const freeTick = FLICK.length === 0 || phase >= 2;
+        // A sip or eat runs on tick s and sets delayedUntil = s + 2; client input is decoded
+        // before the delay is cleared (World.ts processClientsIn, then processPlayers), so
+        // prayer buttons on s + 1 and s + 2 are dropped. Consumes therefore go out in the
+        // last flick burst's tick, after its toggles (phase 1), so the two blocked ticks
+        // are the free phases 2 and 3.
+        const consumeTick = FLICK.length === 0 || phase === 1;
 
         // target upkeep
         const alive = (n?: NearbyNpc) => !!n && state.nearbyNpcs.some(o => o.index === n.index && (o.hp ?? 1) > 0);
@@ -272,17 +278,16 @@ await runScript(async ({ bot, sdk }) => {
             attack('flick-attack');
         } else if (flickTick1) {
             toggle(US); toggle(IR);
-            attack('flick-attack');
         }
+        let consumed = false;
         // Phase 3's published state shows phase 1's toggles: if one was dropped (sent while
         // delayed), the prayer is off though intended on; switch it on again.
         if (FLICK.length > 0 && phase === 3) for (const i of WANTED) if (intended[i] && !act[i] && pts > 0) { send('prayer', sdk.sendTogglePrayer(i)); restores++; ev.push(`restore-prayer-${i}`); }
         if (FLICK.length === 0 && !act[PFM] && pts > 0 && rel % 5 === 0) send('prayer', sdk.sendTogglePrayer(PFM));
 
-        // 2) dialogs, consumes, cannon on free ticks
-        if (freeTick) {
-            if (state.dialog.isOpen) { send('dialog', sdk.sendClickDialog(0)); dialogs++; ev.push('dialog'); }
-            if (hp > 0 && hp < SAFETY_HP) { send('cheat', sdk.sendSay(`::setstat hitpoints ${HP}`)); safetyHeals++; lastHp = HP; ev.push('SAFETY-HEAL'); }
+        // 2) consumes on the consume tick; dialogs and cannon top-ups on free ticks outside a
+        // consume's blocked input
+        if (consumeTick) {
             if (t - lastConsume >= 3) {
                 const inv = state.inventory;
                 const find = (re: RegExp) => inv.find(i => re.test(i.name));
@@ -300,9 +305,16 @@ await runScript(async ({ bot, sdk }) => {
                     const op = item.optionsWithIndex.find(o => /^(eat|drink)$/i.test(o.text));
                     send(use.what, sdk.sendUseItem(item.slot, op?.opIndex ?? 1));
                     doses[use.what] = (doses[use.what] ?? 0) + 1;
-                    lastConsume = t; consumedAt.push(rel); reattackUntil = t + 2; ev.push(`consume-${use.what}`);
+                    lastConsume = t; consumedAt.push(rel); reattackUntil = t + 2; consumed = true; ev.push(`consume-${use.what}`);
                 }
             }
+        }
+        if (flickTick1 && !consumed) attack('flick-attack');
+        if (freeTick) {
+            if (state.dialog.isOpen) { send('dialog', sdk.sendClickDialog(0)); dialogs++; ev.push('dialog'); }
+            if (hp > 0 && hp < SAFETY_HP) { send('cheat', sdk.sendSay(`::setstat hitpoints ${HP}`)); safetyHeals++; lastHp = HP; ev.push('SAFETY-HEAL'); }
+        }
+        if (freeTick && t - lastConsume > 2) {
             const due = dry || t - lastReload >= RELOAD_EVERY;
             if (due && ballSlot() >= 0 && packets < 5) {
                 cannon = cannonLoc(/multicannon/i) ?? cannon;
