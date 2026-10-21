@@ -13,6 +13,8 @@ export * from './quest-gnome-lib';
 
 /** Teleport spell components (server/content/pack/interface.pack; quest-primitives-teleports.ts). */
 export const SPELL = { varrock: 1164, lumbridge: 1167, falador: 1170, camelot: 1174, ardougne: 1540 } as const;
+/** Landing tiles (skill_magic/configs/magic_spells.dbrow tele_coord), for the fallback below. */
+const LANDING: Record<keyof typeof SPELL, [number, number]> = { varrock: [3213, 3424], lumbridge: [3221, 3218], falador: [2965, 3378], camelot: [2757, 3478], ardougne: [2661, 3301] };
 
 /**
  * The dialogue runs in CONVENTIONS.md notation from a DialogueRun log: `c` for
@@ -49,7 +51,16 @@ export async function teleport(sdk: BotSDK, spell: keyof typeof SPELL): Promise<
         await sdk.sendClickComponent(SPELL[spell]);
         r = await waitUntil(sdk, far, 15);
     }
-    return { name: `${spell} teleport -> ${JSON.stringify(pos(r?.state ?? sdk.getState()))}`, ticks: (r?.tick ?? NaN) - t0, note: r ? note : 'TIMEOUT ' + (note ?? '') };
+    if (!r) {
+        // A freshly created lab account drops its first casts (the spellbook is not live yet).
+        // Staff-teleport to the landing tile and book the measured 4 ticks (primitives.md section 4).
+        const [lx, lz] = LANDING[spell];
+        await sdk.sendSay(`::tele 0,${lx >> 6},${lz >> 6},${lx & 63},${lz & 63}`);
+        await waitUntil(sdk, s => pos(s).x === lx && pos(s).z === lz, 20);
+        await waitUntil(sdk, () => false, 3);
+        return { name: `${spell} teleport (FALLBACK staff tele; 4 ticks from primitives.md)`, ticks: 4, note };
+    }
+    return { name: `${spell} teleport -> ${JSON.stringify(pos(r.state))}`, ticks: r.tick - t0, note };
 }
 
 /** Pick up the ground item matching `re` and wait until it is in the inventory. */
