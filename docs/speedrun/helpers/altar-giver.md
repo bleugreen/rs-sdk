@@ -80,6 +80,8 @@ Lab (local engine at `NODE_TICKRATE=300`, the launcher with 3 givers and the sta
 
 Restock round trip at the air altar via Falador east bank: 91-93 ticks (mean 91.7, n=18).
 
+Body altar (the S21 fallback while nature talismans are at 0), bgsrv-mac, 2026-10-21 23:12Z, `altar-givers.ts --variant=bank --altar=body --cycles=12`: 12/12 tuned turns, all 8 measurable gaps 7. Restock round trip via Edgeville bank: **139-142 ticks** (mean 140.8, n=9), so a continuous body roster needs N = ceil(142 / 7) + 1 = **22 givers** (23 body talismans with the scored account's). As for the air figure, the lab bank is empty and the essence is a staff give at the bank. Through the direct path (`--path=direct`, 3 givers, 23:21Z): 9/9, all gaps 7.
+
 Demo (rs-sdk-demo.fly.dev, 2026-10-21 16:27-16:36 UTC, the launcher on bgsrv-ub, San Diego, 14 ms TCP connect; 3 givers logged in before the stand-in; 26 essence per trade so the stand-in can keep its talisman):
 
 | Variant | Turns given |
@@ -113,5 +115,14 @@ One more mixed run went 0/21 and is set aside, for a reason outside the givers: 
 The latency probe (`speedrun/lab/path-side-by-side.ts`, both paths concurrently in the same minutes, 60 trials each): **relay 58/60 on time, direct 60/60** (direct catch-ups 0/min, tick arrival p90 355 ms).
 
 On loopback the relay is nearly always in time, so the lab shows that the direct path works and is never later than the relay. The comparison that decides it is on the run host. There, rs/141 measured relay 44/60 against direct 53/60 in the same minutes, with tuned two-giver turns on the relay at 11/19.
+
+The ashburn slot for this comparison (2026-10-21 22:05-22:12 UTC; h70 direct, h71 relay, h75 stand-in on the relay; tuned):
+
+| Measurement | Relay | Direct |
+|---|---|---|
+| latency probe, same minutes, 60 trials each | 57/60 on time (h75 through the launcher) | 56/60 (h72, in-process) |
+| mixed tuned turns (23 by the receiver's count) | 5/10 | 6/13 |
+
+Both chained gaps were exactly 7. Those minutes were overrun minutes: 9-23 catch-ups per minute and tick arrival p90 446-507 ms (`speedrun/lab/tick-health.ts` via h71). So in that slot the direct path made no measurable difference. The relay was much better than in rs/141's slot (57/60 against 44/60), and both paths lost blind turns to the demo's catch-up bursts. The direct path stays the mechanism for the givers because it is tick-exact in the lab and removes four hops. But it does not rescue the tuned schedule in overrun minutes; that falls to the scored side's fallback rungs (robust, then the stock reacting cycle).
 
 **Notes are not a load.** A supply trade of 200 rune essence arrives as one noted stack with the essence's name, so restock checks count only the item ids themselves (`NOTE_IDS` in `altar-room.ts`). Before that fix a giver walked into the room with 200 notes it could not hand over.
