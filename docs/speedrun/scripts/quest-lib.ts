@@ -343,24 +343,42 @@ export async function walk(bot: BotActions, sdk: BotSDK, c: Counts, x: number, z
 // Fights
 
 /** ticks: call to kill. engaged: call to first hitsplat either way. */
-export interface FightResult { ticks: number; engaged: number; dealt: number; taken: number; hits: number; eats: number; died: boolean }
+export interface FightResult { ticks: number; engaged: number; dealt: number; taken: number; hits: number; eats: number; died: boolean; prayerUsed?: number; prayerDoses?: number }
 
 const LEVEL_UP = /congratulations|advanced a .* level|you've just advanced/i;
 
 /**
  * Waits until npc `re` (already attacking or attacked) is dead, attacking it if
  * we are idle, eating `food` below `eatAt` hp. Measures from call to kill.
+ * `spell` (a spell component, e.g. 1169 Fire Bolt) casts it on the npc every
+ * 2 ticks instead of meleeing; `prayer` keeps that prayer on, drinking a
+ * Prayer potion below `drinkBelow` points.
  */
-export async function fight(sdk: BotSDK, c: Counts, re: RegExp, o: { food?: RegExp; eatAt?: number; attack?: boolean; maxTicks?: number } = {}): Promise<FightResult> {
+export async function fight(sdk: BotSDK, c: Counts, re: RegExp, o: { food?: RegExp; eatAt?: number; attack?: boolean; maxTicks?: number; spell?: number; prayer?: 'protect_from_melee' | 'protect_from_magic'; drinkBelow?: number } = {}): Promise<FightResult> {
     const t0 = tick(sdk);
     let dealt = 0, taken = 0, hits = 0, eats = 0, engagedTick = -1;
     const seen = new Set<string>();
-    const res = (s: BotWorldState, died: boolean): FightResult => ({ ticks: s.tick - t0, engaged: engagedTick < 0 ? -1 : engagedTick - t0, dealt, taken, hits, eats, died });
+    const doses = (st: BotWorldState) => st.inventory.filter(i => /^Prayer potion\(\d\)$/.test(i.name)).reduce((a, i) => a + i.count * Number(/\((\d)\)/.exec(i.name)![1]), 0);
+    const doses0 = doses(sdk.getState()!);
+    let lastPts = sdk.getPrayerState()?.prayerPoints ?? 0, prayerUsed = 0, lastDrink = -10;
+    const res = (s: BotWorldState, died: boolean): FightResult => ({
+        ticks: s.tick - t0, engaged: engagedTick < 0 ? -1 : engagedTick - t0, dealt, taken, hits, eats, died,
+        ...(o.prayer ? { prayerUsed, prayerDoses: doses0 - doses(s) } : {}),
+    });
     let target: NearbyNpc | null = null;
     let lastAttack = -10;
     let s = sdk.getState()!;
+    if (o.prayer && !sdk.isPrayerActive(o.prayer)) await sdk.sendTogglePrayer(o.prayer).catch(() => {});
     while (s.tick - t0 < (o.maxTicks ?? 600)) {
         s = await nextTick(sdk, s.tick);
+        if (o.prayer) {
+            const pts = sdk.getPrayerState()?.prayerPoints ?? lastPts;
+            if (pts < lastPts) prayerUsed += lastPts - pts;
+            lastPts = pts;
+            if (pts > 0 && !sdk.isPrayerActive(o.prayer) && s.tick % 3 === 0) await sdk.sendTogglePrayer(o.prayer).catch(() => {});
+            const pot = s.inventory.find(i => /^Prayer potion/.test(i.name));
+            if (pot && pts < (o.drinkBelow ?? 8) && s.tick - lastDrink >= 3) { await sdk.sendUseItem(pot.slot, 1).catch(() => {}); lastDrink = s.tick; lastAttack = -10; }
+        }
         for (const e of s.combatEvents ?? []) {
             const k = `${e.tick}:${e.type}:${e.damage}:${e.sourceIndex}:${e.targetIndex}`;
             if (seen.has(k) || e.tick < t0) continue;
@@ -381,7 +399,11 @@ export async function fight(sdk: BotSDK, c: Counts, re: RegExp, o: { food?: RegE
             const f = s.inventory.find(i => o.food!.test(i.name));
             if (f) { await sdk.sendUseItem(f.slot, 1).catch(() => {}); eats++; }
         }
-        if (npc && o.attack !== false && !(s.player?.combat.inCombat) && s.tick - lastAttack > 4) {
+        if (npc && o.spell && o.attack !== false && s.tick - lastAttack >= 2) {
+            await sdk.sendSpellOnNpc(npc.index, o.spell).catch(() => {});
+            c.interactions++;
+            lastAttack = s.tick;
+        } else if (npc && !o.spell && o.attack !== false && !(s.player?.combat.inCombat) && s.tick - lastAttack > 4) {
             await sdk.sendInteractNpc(npc.index, 2).catch(() => {});
             c.interactions++;
             lastAttack = s.tick;

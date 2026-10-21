@@ -1,6 +1,14 @@
 // Fight Arena, end to end, as tick-stamped segments (docs/speedrun/quests/fight_arena.md).
 //
 //   bun docs/speedrun/scripts/quest-arena-run.ts <bot> [--stats 70] [--general yes|no] [--from 0|3|5|9]
+//       [--att N --str N --def N --hp N] [--prayer N --pray yes --ppots N] [--magic N --spell fire_bolt|fire_blast]
+//
+// --att/--str/--def/--hp override --stats per skill (route-level runs,
+// docs/speedrun/quests/pre_mm_fights.md). --pray yes keeps Protect from Melee on
+// during each fight (Prayer --prayer, default 43, with --ppots Prayer potion(4)s).
+// --spell casts that spell at the three monsters instead of meleeing, with a
+// staff of fire and amulet of magic (Magic --magic, default 51). Rune armour is
+// only worn at base Defence 40+ (its wield requirement).
 //
 // Starts next to Lady Servil with helper-supplied gear (rune scimitar, rune
 // kiteshield, rune platelegs, amulet of power, 20 swordfish, 10 coins) and
@@ -14,10 +22,17 @@ import {
 } from './quest-lib';
 
 const STATS = Number(arg('stats', '70'));
+const [ATT, STR, DEF, HP] = ['att', 'str', 'def', 'hp'].map(k => Number(arg(k, String(STATS))));
+const PRAY = arg('pray', 'no') === 'yes';
+const PRAYER = Number(arg('prayer', PRAY ? '43' : '1'));
+const PPOTS = Number(arg('ppots', '0'));
+const MAGIC = Number(arg('magic', '51'));
+const SPELL = ({ fire_bolt: 1169, fire_blast: 1181 } as Record<string, number>)[arg('spell', '')];
 const GENERAL = arg('general', 'no') === 'yes';
 const FROM = Number(arg('from', '0'));
 const FOOD = /swordfish/i;
-const EAT_AT = Math.max(12, Math.floor(STATS * 0.45));
+const EAT_AT = Math.max(Math.min(12, HP - 3), Math.floor(HP * 0.45));
+const FIGHT = { food: FOOD, eatAt: EAT_AT, maxTicks: 3000, ...(SPELL ? { spell: SPELL } : {}), ...(PRAY ? { prayer: 'protect_from_melee' as const } : {}) };
 
 // loc ids from server/content/pack/loc.pack, tiles from the maps
 const CHEST_SHUT = 75, CHEST_OPEN = 76;
@@ -25,12 +40,14 @@ const DOOR1 = 81, DOOR2 = 82;
 
 await runScript(async ({ bot, sdk }) => {
     await bot.skipTutorial?.();
-    const rec = new Recorder(sdk, `Fight Arena (melee ${STATS}, general=${GENERAL}, from=${FROM})`);
+    const rec = new Recorder(sdk, `Fight Arena (${ATT}/${STR}/${DEF}, ${HP} hp, prayer ${PRAY ? PRAYER : 'off'}, ${SPELL ? `spell ${arg('spell', '')} at Magic ${MAGIC}` : 'melee'}, general=${GENERAL}, from=${FROM})`);
+    const weapons: [string, number][] = SPELL ? [['staff_of_fire', 1], ['amulet_of_magic', 1], ['chaosrune', 300], ['deathrune', 300], ['airrune', 2000]] : [['rune_scimitar', 1], ['amulet_of_power', 1]];
+    const armour: [string, number][] = DEF >= 40 ? [['rune_kiteshield', 1], ['rune_platelegs', 1]] : [];
     await setup(sdk, {
-        stats: { attack: STATS, strength: STATS, defence: STATS, hitpoints: STATS, thieving: 1 },
-        give: [['rune_scimitar', 1], ['rune_kiteshield', 1], ['rune_platelegs', 1], ['amulet_of_power', 1], ['coins', 10], ['swordfish', 20]],
+        stats: { attack: ATT, strength: STR, defence: DEF, hitpoints: HP, thieving: 1, prayer: PRAYER, magic: MAGIC },
+        give: [...weapons, ...armour, ['coins', 10], ['swordfish', 20], ...(PPOTS ? [['4doseprayerrestore', PPOTS] as [string, number]] : [])],
     });
-    for (const re of [/rune scimitar/i, /rune kiteshield/i, /rune platelegs/i, /amulet of power/i]) await wear(sdk, re);
+    for (const re of [...(SPELL ? [/staff of fire/i, /amulet of magic/i] : [/rune scimitar/i, /amulet of power/i]), ...(DEF >= 40 ? [/rune kiteshield/i, /rune platelegs/i] : [])]) await wear(sdk, re);
     console.log('worn:', sdk.getState()!.equipment.map(e => e.name).join(', '), '| style:', JSON.stringify(sdk.getState()!.combatStyle));
 
     if (FROM === 0) {
@@ -133,7 +150,7 @@ await runScript(async ({ bot, sdk }) => {
         return `stage ${await getvar(sdk, 'arenaquest')} at ${JSON.stringify(pos(sdk))}`;
     });
     if (FROM < 9) await rec.seg('fight: Khazard ogre', 'fight', async c => {
-        const r = await fight(sdk, c, /khazard ogre/i, { food: FOOD, eatAt: EAT_AT });
+        const r = await fight(sdk, c, /khazard ogre/i, FIGHT);
         return JSON.stringify(r);
     });
     if (FROM < 9) await rec.seg('ogre dead: General dialogue + cell cutscene', 'mixed', async c => {
@@ -146,7 +163,7 @@ await runScript(async ({ bot, sdk }) => {
         return `at ${JSON.stringify(pos(sdk))}`;
     });
     await rec.seg('fight: Khazard scorpion', 'fight', async c => {
-        const r = await fight(sdk, c, /khazard scorpion/i, { food: FOOD, eatAt: EAT_AT });
+        const r = await fight(sdk, c, /khazard scorpion/i, FIGHT);
         return JSON.stringify(r);
     });
     await rec.seg('scorpion dead: General summons Bouncer', 'mixed', async c => {
@@ -155,9 +172,10 @@ await runScript(async ({ bot, sdk }) => {
         return `stage ${await getvar(sdk, 'arenaquest')}`;
     });
     await rec.seg('fight: Bouncer', 'fight', async c => {
-        const r = await fight(sdk, c, /bouncer/i, { food: FOOD, eatAt: EAT_AT });
+        const r = await fight(sdk, c, /bouncer/i, FIGHT);
         return JSON.stringify(r);
     });
+    if (PRAY) await sdk.sendTogglePrayer('protect_from_melee').catch(() => {});
     await rec.seg('Bouncer dead: General frees the Servils', 'mixed', async c => {
         await waitTicksFor(sdk, s => !!s.dialog?.isOpen, 20);
         await driveDialog(sdk, c, [], 2);
