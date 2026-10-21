@@ -37,13 +37,15 @@ const LEVEL_XP = (level: number) => level * 1_000;
  * every wine in the bank (each good, +1 level). A relog (the test's callback)
  * restarts the tick counter and re-arms the timer at login + 20.
  */
+type Phase = 'input' | 'close' | 'interaction';
+
 class FakeEngine {
     readonly sdk = new FakeSdk(baseState({ tick: 100, inGame: true, nearbyLocs: [BOOTH] as never }));
     due = Infinity;
     banked = 0;
     relogs = 0;
     firings: Array<{ tick: number; wines: number }> = [];
-    private pending: Array<{ at: number; fn: (s: BotWorldState) => Partial<BotWorldState> }> = [];
+    private pending: Array<{ at: number; phase: Phase; fn: (s: BotWorldState) => Partial<BotWorldState> }> = [];
     private timer: ReturnType<typeof setInterval> | null = null;
 
     constructor(readonly loginTick: number, notes: number, level: number, opts: { kit?: boolean; rtt?: number } = {}) {
@@ -55,15 +57,15 @@ class FakeEngine {
         this.sdk.onSend = (a: SentAction) => this.onSend(a, rtt);
     }
 
-    private later(ticks: number, fn: (s: BotWorldState) => Partial<BotWorldState>): void {
-        this.pending.push({ at: this.sdk.state!.tick + ticks, fn });
+    private later(ticks: number, phase: Phase, fn: (s: BotWorldState) => Partial<BotWorldState>): void {
+        this.pending.push({ at: this.sdk.state!.tick + ticks, phase, fn });
     }
 
     private onSend(a: SentAction, rtt: number): void {
-        if (a.method === 'sendInteractLoc') this.later(rtt, () => ({ bank: { isOpen: true, items: [], noteMode: false }, interface: { isOpen: true, interfaceId: 5292, options: [], inventories: [] } }));
+        if (a.method === 'sendInteractLoc') this.later(rtt, 'interaction', () => ({ bank: { isOpen: true, items: [], noteMode: false }, interface: { isOpen: true, interfaceId: 5292, options: [], inventories: [] } }));
         if (a.method === 'sendBankDeposit') {
             const amount = a.args[1] as number;
-            this.later(rtt, s => {
+            this.later(rtt, 'input', s => {
                 const note = s.inventory.find(i => i.id === ITEM.wineNote);
                 if (!note || !s.bank.isOpen) return {};
                 const n = amount === -1 ? note.count : Math.min(amount, note.count);
@@ -72,9 +74,9 @@ class FakeEngine {
                 return { inventory: left > 0 ? s.inventory.map(i => (i === note ? { ...i, count: left } : i)) : s.inventory.filter(i => i !== note) };
             });
         }
-        if (a.method === 'sendCloseModal') this.later(rtt, () => ({ bank: { isOpen: false, items: [], noteMode: false }, interface: { isOpen: false, interfaceId: -1, options: [], inventories: [] } }));
+        if (a.method === 'sendCloseModal') this.later(rtt, 'close', () => ({ bank: { isOpen: false, items: [], noteMode: false }, interface: { isOpen: false, interfaceId: -1, options: [], inventories: [] } }));
         if (a.method === 'sendUseItemOnItem') {
-            this.later(rtt, s => {
+            this.later(rtt, 'input', s => {
                 this.due = s.tick + 20;
                 const inv = s.inventory.filter(i => i.id !== ITEM.grapes && i.id !== ITEM.jugWater);
                 return { inventory: [...inv, item(3, ITEM.wine, 'Unfermented wine', 1)] };
@@ -94,17 +96,22 @@ class FakeEngine {
         };
     }
 
+    /** One engine tick in World.ts order: packets, then queues (a requested close), timers, then interactions. */
     private step(): void {
-        const s = this.sdk.state!;
-        const t = s.tick + 1;
+        const t = this.sdk.state!.tick + 1;
         let patch: Partial<BotWorldState> = {};
-        let cur = s;
-        for (const p of this.pending.filter(p => p.at <= t)) {
-            const d = p.fn({ ...cur, ...patch, tick: t });
-            patch = { ...patch, ...d };
-            cur = { ...cur, ...d };
-        }
+        let cur: BotWorldState = { ...this.sdk.state!, tick: t };
+        const due = this.pending.filter(p => p.at <= t);
         this.pending = this.pending.filter(p => p.at > t);
+        const apply = (phase: Phase) => {
+            for (const p of due.filter(p => p.phase === phase)) {
+                const d = p.fn(cur);
+                patch = { ...patch, ...d };
+                cur = { ...cur, ...d };
+            }
+        };
+        apply('input');
+        apply('close');
         // Timer phase: only when no bank window is open (a modal holds it).
         if (t >= this.due && !cur.bank.isOpen) {
             const wines = this.banked + (cur.inventory.find(i => i.id === ITEM.wine)?.count ?? 0);
@@ -114,7 +121,9 @@ class FakeEngine {
             patch = { ...patch, skills: [{ ...c, level, baseLevel: level, experience: c.experience + wines * 1_000 }] as never, inventory: cur.inventory.filter(i => i.id !== ITEM.wine) };
             this.banked = 0;
             this.due = Infinity;
+            cur = { ...cur, ...patch };
         }
+        apply('interaction');
         this.sdk.tick(patch);
     }
 
