@@ -140,7 +140,7 @@ always a teleport).
 | Pool mesbox (`mage_arena.rs2:47-50`) | `state` | 2 | 1 | 1 |
 | Statue (`chamber.rs2:14-22`) | `state, 1c` (the cape is on the ground before the second box) | 4 | 2 | 2 |
 | Guardian (`chamber_guardian.rs2:10-16`) | `5c` (staff and stage 8 come before the last box) | 10 | 5 | 1 |
-| **Total** | 13 + 1 + 2 + 5 + 1 pages... 22 pages, 4 options | **52** | **26** | **14** |
+| **Total** | 22 pages, 4 options | **52** | **26** | **14** |
 
 Kolodion's congratulations after the fight (`mage_arena.rs2:154-156`,
 `kolodion.rs2:114-118`) reads as `5c`, but the measured runs saw no page to click
@@ -176,7 +176,9 @@ number of times per tick for 20 ticks and reads Magic xp every tick.
 | 10 | **5 every tick** (the surplus waits in the queue) | 4.55 sustained (200 casts over 44 ticks) |
 
 So the per-skill report's 5 casts per tick is right at the production tick rate:
-**900 base Magic per tick**. The cap is the engine's, not the script's: it decodes
+**900 base Magic per tick**. This is the plan, not a workaround to avoid: the main
+thread's ruling on server-permitted behaviour (cairn://p/rs/tenets/2) covers it.
+A bot keeps at least 5 Charge clicks queued per tick. The cap is the engine's, not the script's: it decodes
 at most 5 user-event packets per player per tick and IF_BUTTON is one
 (`server/engine/src/network/game/client/ClientGameProtCategory.ts:6`,
 `model/IfButton.ts:5`). At 100 ms the client could not keep the queue full every
