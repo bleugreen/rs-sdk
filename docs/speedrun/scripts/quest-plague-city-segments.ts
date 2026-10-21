@@ -135,7 +135,8 @@ await runScript(async ({ bot, sdk }) => {
             await S.walk('Rehnison door -> plague house door', 2533, 3273);
             await S.step('plague house door: the mourner (23->24)', loc('plagueDoor'), { choices: [/I fear not a mere plague/] });
             await quest('plagueDoor');
-            await S.walk('plague house -> clerk', 2528, 3316);
+            // A run click from the door tile right after the mourner's dialogue does not move the bot; bot.walkTo does.
+            await S.longWalk(bot, 'plague house -> clerk (bot.walkTo)', 2528, 3316);
             await S.step('clerk (24->25)', talk(sdk, /^Clerk$/), { choices: [/I need permission to enter a plague house/, /This is urgent though/] });
             await quest('clerk');
         } else if (seg === 'bravek') {
