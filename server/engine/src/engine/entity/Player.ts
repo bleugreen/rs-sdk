@@ -957,6 +957,7 @@ export default class Player extends PathingEntity {
                 request.delay = 0;
             }
 
+            if (/retaliate|combat_damage/.test(request.script.name)) console.log(`FLTRACE ${World.currentTick} queue=${request.script.name} type=${request.type} delay=${request.delay} access=${this.canAccess() ? 1 : 0} delayed=${this.delayed ? 1 : 0} prot=${this.protect ? 1 : 0} modal=${this.containsModalInterface() ? 1 : 0}`);
             const delay = request.delay--;
             if (this.canAccess() && delay <= 0) {
                 request.unlink();
@@ -2261,6 +2262,9 @@ export default class Player extends PathingEntity {
     }
 
     executeScript(script: ScriptState, protect: boolean = false, force: boolean = false) {
+        const fltName = script.script.name;
+        const fltOn = /retaliate|_tree|combat_damage|player_ranged|player_melee|opnpc2|apnpc2|player_combat|opheld5/.test(fltName);
+        const fltBefore = fltOn ? `${this.hasInteraction() ? 1 : 0} wp=${this.hasWaypoints() ? 1 : 0} tOp=${this.targetOp} ad=${this.getVar(VarPlayerType.getId('action_delay'))} nodef=${this.getVar(VarPlayerType.getId('option_nodef'))}` : '';
         // printDebug('Executing', script.script.name);
 
         // clear weakqueue here instead of later so weakqueues added by resumed script
@@ -2269,6 +2273,7 @@ export default class Player extends PathingEntity {
             this.weakQueue.clear();
         }
         const state = this.runScript(script, protect, force);
+        if (fltOn) console.log(`FLTRACE ${World.currentTick} script=${fltName}->${script.script.name} ran=${state === -1 ? 0 : 1} before: inter=${fltBefore} after: inter=${this.hasInteraction() ? 1 : 0} tOp=${this.targetOp} ad=${this.getVar(VarPlayerType.getId('action_delay'))} delayed=${this.delayed ? 1 : 0}`);
         if (state === -1) {
             // printDebug('Script did not run', script.script.name, protect, this.protect);
             return;

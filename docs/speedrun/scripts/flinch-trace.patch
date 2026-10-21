@@ -1,0 +1,118 @@
+diff --git a/server/engine/src/engine/World.ts b/server/engine/src/engine/World.ts
+index 4cc1b0b4c..d72895b83 100644
+--- a/server/engine/src/engine/World.ts
++++ b/server/engine/src/engine/World.ts
+@@ -780,6 +780,7 @@ class World {
+                     player.executeScript(player.activeScript, true, true);
+                 }
+ 
++                console.log(`FLTRACE ${this.currentTick} beg pos=${player.x},${player.z} target=${player.target?.constructor?.name ?? '-'} inter=${player.hasInteraction() ? 1 : 0} tOp=${player.targetOp} wp=${player.hasWaypoints() ? 1 : 0} ad=${player.getVar(VarPlayerType.getId('action_delay'))} delayed=${player.delayed ? 1 : 0}`);
+                 // - primary queue
+                 // - weak queue
+                 player.processQueues();
+@@ -799,6 +800,7 @@ class World {
+                 // - interactions
+                 // - movement
+                 player.processInteraction();
++                console.log(`FLTRACE ${this.currentTick} end pos=${player.x},${player.z} target=${player.target?.constructor?.name ?? '-'} inter=${player.hasInteraction() ? 1 : 0} tOp=${player.targetOp} wp=${player.hasWaypoints() ? 1 : 0} steps=${player.stepsTaken} ad=${player.getVar(VarPlayerType.getId('action_delay'))}`);
+                 // After movement: face a loc/obj target if we walked over and held still (needs stepsTaken).
+                 player.reorient();
+                 if (!player.busy() && !player.delayed && !player.loggingOut) player.recoverItems();
+diff --git a/server/engine/src/engine/entity/Player.ts b/server/engine/src/engine/entity/Player.ts
+index d087fa34a..d249402fd 100644
+--- a/server/engine/src/engine/entity/Player.ts
++++ b/server/engine/src/engine/entity/Player.ts
+@@ -957,6 +957,7 @@ export default class Player extends PathingEntity {
+                 request.delay = 0;
+             }
+ 
++            if (/retaliate|combat_damage/.test(request.script.name)) console.log(`FLTRACE ${World.currentTick} queue=${request.script.name} type=${request.type} delay=${request.delay} access=${this.canAccess() ? 1 : 0} delayed=${this.delayed ? 1 : 0} prot=${this.protect ? 1 : 0} modal=${this.containsModalInterface() ? 1 : 0}`);
+             const delay = request.delay--;
+             if (this.canAccess() && delay <= 0) {
+                 request.unlink();
+@@ -2261,6 +2262,9 @@ export default class Player extends PathingEntity {
+     }
+ 
+     executeScript(script: ScriptState, protect: boolean = false, force: boolean = false) {
++        const fltName = script.script.name;
++        const fltOn = /retaliate|_tree|combat_damage|player_ranged|player_melee|opnpc2|apnpc2|player_combat|opheld5/.test(fltName);
++        const fltBefore = fltOn ? `${this.hasInteraction() ? 1 : 0} wp=${this.hasWaypoints() ? 1 : 0} tOp=${this.targetOp} ad=${this.getVar(VarPlayerType.getId('action_delay'))} nodef=${this.getVar(VarPlayerType.getId('option_nodef'))}` : '';
+         // printDebug('Executing', script.script.name);
+ 
+         // clear weakqueue here instead of later so weakqueues added by resumed script
+@@ -2269,6 +2273,7 @@ export default class Player extends PathingEntity {
+             this.weakQueue.clear();
+         }
+         const state = this.runScript(script, protect, force);
++        if (fltOn) console.log(`FLTRACE ${World.currentTick} script=${fltName}->${script.script.name} ran=${state === -1 ? 0 : 1} before: inter=${fltBefore} after: inter=${this.hasInteraction() ? 1 : 0} tOp=${this.targetOp} ad=${this.getVar(VarPlayerType.getId('action_delay'))} delayed=${this.delayed ? 1 : 0}`);
+         if (state === -1) {
+             // printDebug('Script did not run', script.script.name, protect, this.protect);
+             return;
+diff --git a/server/engine/src/engine/script/handlers/PlayerOps.ts b/server/engine/src/engine/script/handlers/PlayerOps.ts
+index dde2bfc29..9b0aa34e5 100644
+--- a/server/engine/src/engine/script/handlers/PlayerOps.ts
++++ b/server/engine/src/engine/script/handlers/PlayerOps.ts
+@@ -597,6 +597,7 @@ const PlayerOps: CommandHandlers = {
+         const chance = Math.floor(JavaRandom.nextDouble() * 256);
+ 
+         state.pushInt(value > chance ? 1 : 0);
++        console.log(`FLTRACE ${World.currentTick} roll stat=${stat} lvl=${clampedLevel} v=${value} c=${chance} ok=${value > chance ? 1 : 0}`);
+     },
+ 
+     [ScriptOpcode.SPOTANIM_PL]: state => {
+diff --git a/server/engine/src/network/game/client/handler/OpHeldHandler.ts b/server/engine/src/network/game/client/handler/OpHeldHandler.ts
+index 5c6dd8990..1311dec7f 100644
+--- a/server/engine/src/network/game/client/handler/OpHeldHandler.ts
++++ b/server/engine/src/network/game/client/handler/OpHeldHandler.ts
+@@ -8,6 +8,7 @@ import ClientGameMessageHandler from '#/network/game/client/ClientGameMessageHan
+ import OpHeld from '#/network/game/client/model/OpHeld.js';
+ import { LoggerEventType } from '#/server/logger/LoggerEventType.js';
+ import Environment from '#/util/Environment.js';
++import World from '#/engine/World.js';
+ 
+ export default class OpHeldHandler extends ClientGameMessageHandler<OpHeld> {
+     handle(message: OpHeld, player: Player): boolean {
+@@ -15,6 +16,7 @@ export default class OpHeldHandler extends ClientGameMessageHandler<OpHeld> {
+ 
+         if (player.delayed) {
+             // normal: cannot interact while delayed
++            console.log(`FLTRACE ${World.currentTick} opheld op=${message.op} slot=${slot} rejected=delayed`);
+             return false;
+         }
+ 
+@@ -39,6 +41,7 @@ export default class OpHeldHandler extends ClientGameMessageHandler<OpHeld> {
+             return false;
+         } else if (!inv.hasAt(slot, objId)) {
+             // bad client or lag: item does not exist in inventory
++            console.log(`FLTRACE ${World.currentTick} opheld op=${message.op} slot=${slot} rejected=noitem`);
+             return false;
+         }
+ 
+@@ -48,6 +51,7 @@ export default class OpHeldHandler extends ClientGameMessageHandler<OpHeld> {
+             return false;
+         }
+ 
++        console.log(`FLTRACE ${World.currentTick} opheld op=${message.op} slot=${slot} ok inter=${player.hasInteraction() ? 1 : 0}`);
+         player.lastItem = objId;
+         player.lastSlot = slot;
+ 
+diff --git a/server/engine/src/network/game/client/handler/OpLocHandler.ts b/server/engine/src/network/game/client/handler/OpLocHandler.ts
+index 42e589a68..1c685321c 100644
+--- a/server/engine/src/network/game/client/handler/OpLocHandler.ts
++++ b/server/engine/src/network/game/client/handler/OpLocHandler.ts
+@@ -13,6 +13,7 @@ export default class OpLocHandler extends ClientGameMessageHandler<OpLoc> {
+ 
+         if (player.delayed) {
+             // normal: cannot interact while delayed
++            console.log(`FLTRACE ${World.currentTick} oploc at=${x},${z} rejected=delayed`);
+             player.write(new UnsetMapFlag());
+             return false;
+         }
+@@ -53,6 +54,7 @@ export default class OpLocHandler extends ClientGameMessageHandler<OpLoc> {
+         player.clearPendingAction();
+         player.setInteraction(Interaction.ENGINE, loc, trigger);
+         player.opcalled = true;
++        console.log(`FLTRACE ${World.currentTick} oploc at=${x},${z} ok pos=${player.x},${player.z}`);
+         return true;
+     }
+ }
