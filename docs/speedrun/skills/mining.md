@@ -5,35 +5,50 @@ respawn, drop tests), [`mining-rotation.ts`](../scripts/mining-rotation.ts) (exe
 rock rotation and checks every roll against the timing model),
 [`mining-rotation-plan.ts`](../scripts/mining-rotation-plan.ts) (offline: finds the best
 rotation for every iron cluster in the map files), [`mining-model.ts`](../scripts/mining-model.ts)
-(route totals), shared helpers in [`mining-lib.ts`](../scripts/mining-lib.ts). Lab:
-[../LAB.md](../LAB.md), mining port block, engine at `NODE_TICKRATE=300`. Labels follow
-[README.md](README.md#labels).
+(route totals), shared helpers in [`mining-lib.ts`](../scripts/mining-lib.ts), and the
+knife-starter rotation [`tickmanip-mine.ts`](../scripts/tickmanip-mine.ts) (with
+[`tickmanip-mine-run.sh`](../scripts/tickmanip-mine-run.sh), owned by
+[tick-manipulation.md](tick-manipulation.md)). Lab: [../LAB.md](../LAB.md), engine at
+`NODE_TICKRATE=300`. Labels follow [README.md](README.md#labels).
 
 ## 1. Recommendation
 
 Do Doric's Quest first (helpers hand over 6 clay, 4 copper ore and 2 iron ore; 1,300 base
 xp puts Mining at 49), then mine iron with a rune pickaxe on the six-rock cluster south of
 the Ardougne zoo (rocks at 2602-2605, 3233-3237), following a fixed rock rotation that
-walks to chosen standing tiles and uses the "timer starter" trick (section 4). Drop each
-ore in the same tick as the next rock click. On the demo, where about 1,260 players online
-shorten iron respawn from 19 to 13 ticks, this rotation sustains **3.61 ticks per ore, 9.69
-base xp per tick** at level 99 (measured, 60 ores, with the server's player count
-emulated). Mining from 49 to 99 then takes **about 4,030 ticks**, and from level 1 about
-4,320 (inferred from the measured rates, section 2). Doric's Quest therefore saves about
-280 ticks of mining for roughly 30 ticks of dialogue on the road west from Falador. With
-Digsite as well (16,600 base, level 86), mining needs **about 2,420 ticks**, but Digsite
-itself takes about 2,180 ticks of playtime (measured on the stock client, p90 about 2,600;
-`docs/speedrun/quests/digsite.md`, cairn://p/rs/16) to save about 1,612 ticks of mining.
-It is a net loss for Mining alone; do it only if the quest plan needs it for another
-reason, such as its quest points.
+walks to chosen standing tiles, and start every move with the **knife-on-logs starter**
+([tick-manipulation.md](tick-manipulation.md)). On the tick after each roll, send knife on
+logs, the "15 Arrow Shafts" button, the ore drop and the run to the next standing tile; the
+next rock's first swing then rolls at once (section 4). On the demo, where about 1,260
+players online shorten iron respawn from 19 to 13 ticks, a five-rock period of this
+cluster holds the 3-tick floor: **3.00 ticks per ore, 11.67 base xp per tick** at level 99
+(measured, `tickmanip-mine.ts`, two runs of 200 ores at 300 ms with the player count
+emulated; every ore on its predicted tick, no slip, no log used). Mining from 49 to 99
+then takes **about 3,360 ticks**, and from level 1 about 3,620 (inferred from the measured
+rate, section 2). The starter needs a knife, one normal log (carry a few spares), a members
+world (the demo is one) and Fletching 1.
+
+Without a knife, rs/5's adjacent-rock "timer starter" (section 4) is the fallback: **3.61
+ticks per ore, 9.69 base xp per tick** (measured again in the same session,
+`mining-rotation.ts`, 200 ores), and 49 to 99 takes **about 4,030 ticks**. The knife saves
+about 670 ticks, 17%.
+
+Doric's Quest saves about 260 ticks of mining with the knife (3,621 to 3,360; 280 without)
+for roughly 30 ticks of dialogue on the road west from Falador. With Digsite as well
+(16,600 base, level 86), mining needs **about 2,015 ticks** with the knife (2,420 without),
+but Digsite itself takes about 2,180 ticks of playtime (measured on the stock client, p90
+about 2,600; `docs/speedrun/quests/digsite.md`, cairn://p/rs/16) to save about 1,345 ticks
+of mining (1,612 without). It is a net loss for Mining alone; do it only if the quest plan
+needs it for another reason, such as its quest points.
 
 **Plague City is provisional** (cairn://p/rs/3). It gives 2,425 base Mining
 (`quest_elena.rs2:12`) and the Ardougne teleport. With the Regicide chain off the route it
 is being judged on its own. With Doric's Quest and Plague City, Mining starts at level 64
-(3,725 base) with **about 3,765 ticks** left on the demo (about 4,000 on a quiet server),
-so Plague City saves about 270 mining ticks against about 620 ticks of quest on the fixed
-client (inferred, `mining-model.ts`). For Mining alone it is a net loss; it stays on the
-route only if the teleport pays for it.
+(3,725 base) with **about 3,134 ticks** left on the demo with the knife (3,765 without;
+about 3,650 and 4,000 on a quiet server), so Plague City saves about 226 mining ticks with
+the knife (270 without) against about 620 ticks of quest on the fixed client (inferred,
+`mining-model.ts`). For Mining alone it is a net loss; it stays on the route only if the
+teleport pays for it.
 
 The earlier "about 3,500 ticks" model assumed a 3-tick cycle could run forever. It
 cannot: every ore depletes its rock, so a 3-tick cycle needs 5 rocks on the demo (7 on a
@@ -42,36 +57,40 @@ has that geometry.
 
 ## 2. Route by level band
 
-Rates at level 99 are measured (`mining-rotation.ts`, 60 ores per run, every roll landing
-on its predicted tick). Below 63 iron can fail. The bands below 63 come from
-`mining-model.ts` (inferred), which combines the measured rotation cost of a successful ore
-with the read success formula and pickaxe rates.
+Rates at level 99 are measured: with the knife, `tickmanip-mine.ts` (2 x 200 ores at
+respawn 13, 60 ores at respawn 19, every roll on its predicted tick); without it,
+`mining-rotation.ts` (200 ores at respawn 13, 60 at respawn 19). Below 63 iron can fail. The
+bands below 63 come from `mining-model.ts` (inferred), which combines the measured rotation
+cost of a successful ore with the read success formula and pickaxe rates. The knife's
+level-up cost in Mining was not measured; the model keeps half a tick per level-up
+(Fishing measured about 0.4 with the knife, [fishing.md](fishing.md) section 6).
 
-| Band | Method | Location | Unlock | Base xp per ore (read) | Ticks per roll | Success (read) | Base xp per tick | Ticks for band (demo / quiet) |
+| Band | Method | Location | Unlock | Base xp per ore (read) | Ticks per roll | Success (read) | Base xp per tick | Ticks for band, demo: knife / adjacent-rock |
 |---|---|---|---|---|---|---|---|---|
 | 1-15 | Copper or tin, one rock, iron pickaxe | any copper/tin rock | none | 17.5 | 8 with iron pickaxe (rate 6 + p_delay; inferred) | 50% at 1, 65% at 15 | 1.1 at 1, 1.5 at 10 (inferred) | 61 / 61 |
-| 15-41 | Iron rotation, steel/mithril/adamant pickaxe as levels allow | zoo cluster | Mining 15 | 35 | rate + 1 | 52% at 15, 78% at 41 | 2.9 at 15 -> 7.8 at 41 (inferred) | 142 / 146 |
-| 41-63 | Iron rotation, rune pickaxe | zoo cluster | Mining 41 (rune pickaxe) | 35 | 3 | 78% at 41, 86% at 49, 92% at 55, 100% from 63 | 7.8 -> 9.7 (inferred) | 301 / 318 |
-| 63-99 | Iron rotation, rune pickaxe | zoo cluster, steps in section 4 | | 35 | 3 | 100% (1 roll in 256 hits the gem table, no xp) | **9.69** demo (measured, emulated respawn 13); **9.12** quiet server (measured, respawn 19) | 3,813 / 4,054 |
+| 15-41 | Iron rotation, steel/mithril/adamant pickaxe as levels allow | zoo cluster | Mining 15 | 35 | rate + 1 | 52% at 15, 78% at 41 | 2.9 at 15 -> 7.8 at 41 without the knife (inferred) | 131 / 142 |
+| 41-63 | Iron rotation, rune pickaxe | zoo cluster | Mining 41 (rune pickaxe) | 35 | 3 | 78% at 41, 86% at 49, 92% at 55, 100% from 63 | knife 9.0 at 41 -> 11.6 at 63; adjacent-rock 7.8 -> 9.7 (inferred) | 255 / 301 |
+| 63-99 | Iron rotation, rune pickaxe, knife starter on every move | zoo cluster, steps in section 4 | knife, logs, Fletching 1 | 35 | 3 | 100% (1 roll in 256 hits the gem table, no xp) | **11.67** demo (measured, emulated respawn 13); **10.00** quiet server (measured, respawn 19). Adjacent-rock starter: 9.69 demo, 9.12 quiet (measured) | 3,173 / 3,813 |
 
-Totals (inferred, `mining-model.ts --extra 1.61` for the demo, `--extra 1.84` for a quiet
-server; half a tick per level-up, section 6):
+Totals (inferred, `mining-model.ts`; `--extra` is the measured cost per ore above the rune
+pickaxe's 2 ticks: knife 1.00 on the demo and 1.50 on a quiet server, adjacent-rock 1.61
+and 1.84; half a tick per level-up, section 6):
 
-| Start | Demo (respawn 13) | Quiet server (respawn 19) |
-|---|---|---|
-| Level 1, no quests | 4,316 | 4,578 |
-| Doric's Quest, 1,300 base (level 49) | 4,034 | 4,288 |
-| Plague City, 2,425 base (level 58) | 3,904 | 4,150 |
-| Doric + Plague City, 3,725 base (level 64; Plague City provisional) | 3,765 | 4,003 |
-| Digsite, 15,300 base (level 85) | 2,557 | 2,718 |
-| Doric + Digsite, 16,600 base (level 86) | 2,422 | 2,575 |
+| Start | Demo, knife | Demo, adjacent-rock | Quiet server, knife | Quiet server, adjacent-rock |
+|---|---|---|---|---|
+| Level 1, no quests | 3,621 | 4,316 | 4,190 | 4,578 |
+| Doric's Quest, 1,300 base (level 49) | **3,360** | 4,034 | 3,912 | 4,288 |
+| Plague City, 2,425 base (level 58) | 3,250 | 3,904 | 3,786 | 4,150 |
+| Doric + Plague City, 3,725 base (level 64; Plague City provisional) | **3,134** | 3,765 | 3,651 | 4,003 |
+| Digsite, 15,300 base (level 85) | 2,127 | 2,557 | 2,479 | 2,718 |
+| Doric + Digsite, 16,600 base (level 86) | 2,015 | 2,422 | 2,348 | 2,575 |
 
-These count mining ticks only; travel to the mine is not included. Half of the total
-is spent above level 90 (1,923 of 4,316 ticks on the demo), where every ore succeeds,
-so the band that decides the skill is fully measured.
+These count mining ticks only; travel to the mine is not included. Almost half of the
+total is spent above level 90 (1,600 of 3,621 ticks on the demo with the knife), where
+every ore succeeds, so the band that decides the skill is fully measured.
 
 Seen against nickquarry (the demo's Mining #1, section 4a): 6,015 ticks for the whole
-account, against about 4,030 + 30 + travel for this route.
+account, against about 3,360 + 30 + travel for this route (4,030 + 30 without the knife).
 
 ## 3. Quest xp
 
@@ -142,6 +161,12 @@ Ticks from level 1 and from each post-quest level are in the totals table above.
   to another rock's side and click it; its first swing on the following tick finds
   `%action_delay = map_clock` and rolls at once. The starter rock is not consumed. Measured
   working: 20-24 trick transitions per 60-ore run, every one on its predicted tick.
+- **Knife starter.** Knife on logs plus the "15 Arrow Shafts" button writes
+  `%action_delay = map_clock + 2` when the clock has expired (`cut_logs.rs2:83-85`), so it
+  does what the starter rock does without needing a live rock beside you: every move of up
+  to 4 tiles with run becomes a 3-tick transition. Sent on R+1 with the ore drop and the
+  run, followed by the next rock's click, it rolls on R+3. Mechanism, packet order and
+  supplies are in [tick-manipulation.md](tick-manipulation.md) sections 2 and 5.
 - The bot should choose its standing tile itself: walk to the planner's tile, then click the
   rock on arrival. The first swing lands on the same tick a walk-into-the-rock would, and it
   keeps the stay and starter options the planner relies on. Letting the client route to
@@ -155,7 +180,7 @@ in the maps, read from `server/content/maps`). The best open-world results:
 
 | Cluster (rocks) | Where | Planner ticks/ore, D=19 / D=13 | Measured |
 |---|---|---|---|
-| South of Ardougne zoo, 2602-2605,3233-3237 (6) | members, no requirement | 3.81 / 3.57 | **3.84 at D=19, 3.61 at D=13** (60 ores each) |
+| South of Ardougne zoo, 2602-2605,3233-3237 (6) | members, no requirement | 3.81 / 3.57; with a starter on every move (`--free-starter`) 3.42 / 2.99 | Knife: **3.50 at D=19** (60 ores), **3.00 at D=13** (2 x 200 ores). Adjacent-rock: 3.84 at D=19 (60 ores), 3.61 at D=13 (60 and 200 ores) |
 | North of East Ardougne, 2710-2715,3328-3332 (6) | members | 3.81 / 3.74 | 4.02-4.12 at D=19 with client-chosen tiles (60 and 45 ores) |
 | Wilderness, 3099-3101,3765-3768 (8, 13 within 8 tiles) | about level 31 Wilderness | 3.96 / 3.39 | attempt did not finish (section 6) |
 | NE of Rellekka, 2722-2728,3688-3696 (9) | Fremennik province | 4.00 / 4.00 | not run |
@@ -171,13 +196,28 @@ Steps for the recommended cluster (stand>rock, one period; start on the first st
 Run with `bun docs/speedrun/scripts/mining-rotation.ts <bot> --respawn 13 --start 2604,3235
 --steps '...'` (quote each step).
 
+With the knife the demo steps above hold 3.00 ticks per ore: the five-rock period is 15
+ticks, exactly the D + 2 a rock needs between rolls. The planner's free-starter period,
+`2604,3235>2605,3235 2604,3237>2605,3237 2603,3236>2602,3236 2603,3234>2602,3234
+2603,3233>2602,3233`, measured the same 3.00 (200 ores). Run either with
+`bash docs/speedrun/scripts/tickmanip-mine-run.sh 13 <bot> knife:200`, or
+`tickmanip-mine.ts <bot> --respawn=13 --starter=knife --steps ...`. A seventh rock cannot
+help at D=13: 3.00 is the floor (no 2-tick Mining, tick-manipulation.md section 4). At
+D=19 a six-rock lap of 18 ticks is short of the 21 a rock needs, so one move per lap waits
+(3.50); a seven-rock lap would hold 3.00 (inferred, not run).
+
 ### What the bot sees, and when
 
-The lite client publishes state when PLAYER_INFO arrives, and the server writes that
-before the same tick's zone, inventory and stat updates (`World.ts:1299-1309`). So xp and
-depletion from tick R appear in the state for R+1. A bot that waits to see the xp
-before clicking loses a tick per ore: measured 4-tick cycle reacting, 3 predicting
-(`mining-cycle.ts --mode react|predict`). The executor never waits: at level 63+ every roll
+Before #20 the lite client published state when PLAYER_INFO arrived, and the server
+writes that before the same tick's zone, inventory and stat updates (`World.ts:1299-1309`),
+so xp and depletion from tick R appeared in the state for R+1. Since #20 the client
+publishes a tick only once it is fully decoded, so they appear in the state for R itself
+(measured: all 400 knife ores of the respawn-13 runs showed their xp on the roll's own
+label). Packet timing did not change: a packet sent on label c is processed on c+1. The
+executors take `--xplag` (0 now, 1 for an older client) for the label on which they expect
+a roll's xp. On the old client a bot that waited to see the xp before clicking lost a tick
+per ore: measured 4-tick cycle reacting, 3 predicting (`mining-cycle.ts --mode
+react|predict`); the reacting cycle was not re-measured on the new client. The executor never waits: at level 63+ every roll
 is certain, so it sends each click on the predicted tick. Switching rocks on a roll tick
 costs nothing even when the roll fails, because the new rock's first swing schedules the
 same next roll. This is the general issue cairn://p/rs/22.
@@ -214,11 +254,9 @@ Hypotheses, in the order checked:
    only writers that set `%action_delay` to `map_clock` or `map_clock + 1` are the bullroarer
    (it refuses unless the timer is 8+ ticks stale, `bullroarer.rs2:2-8`) and queued
    smelting/pottery steps. The real lever is the opposite one, keeping the 3-tick cycle
-   while moving, which the timer starter does (section 4). The sibling tick-manipulation
-   issue's knife-on-logs writer (`cut_logs.rs2:83-85`, cairn://p/rs/9) would make every
-   move a starter. The planner puts that at 3.31 ticks per ore (10.59 base xp per tick) on
-   the Rellekka cluster at D=19 and 3.48 on the zoo cluster (inferred, untested, blocked by
-   the client hang in cairn://p/rs/1).
+   while moving, which the timer starter does (section 4). The knife-on-logs writer
+   (`cut_logs.rs2:83-85`, cairn://p/rs/9) makes every move a starter: 3.50 ticks per ore
+   at D=19 and 3.00 at D=13 on the zoo cluster (measured, section 4).
 4. **Server differences (read).** The demo reports revision 289 (`/api/version`), the same
    engine as this fork. The SDK's tracked `collision-data.json` is the demo's own export
    (`sdk/fetch-collision-data.ts`), and rotations planned on it ran tick-exact in this
@@ -238,7 +276,7 @@ cluster or a simple rotation without chosen tiles or starters, on a busy server.
 | One tile beside 3 iron rocks (Al Kharid 3295,3310) | 6.56 base/tick demo, 4.77 quiet (measured) | Loses about 1,800 ticks to the rotation on the demo. Only sensible if the bot cannot schedule clicks. |
 | Rotation with the client choosing tiles | 7.87-8.71 base/tick (measured) | Loses about 9-18%; walk to chosen tiles instead. |
 | Wilderness 8-rock core | planner 10.33 at D=13 | 7% above the zoo cluster on paper, but hostile NPCs and players; the live attempt stalled. |
-| Knife-on-logs starter on every move | planner 10.06-10.59 | Up to about 9% faster; depends on cairn://p/rs/9 and cairn://p/rs/1. |
+| Adjacent-rock timer starter, no knife | 9.69 base/tick demo, 9.12 quiet (measured) | The fallback for an account without a knife or logs: about 670 ticks slower than the knife from Doric's Quest on the demo. |
 | Coal, gold, mithril, adamantite, runite, gem rocks, essence, limestone | all below 7 (inferred) | Section 4a. |
 | Skip Doric's Quest | +282 ticks of mining | Lose. |
 
@@ -285,6 +323,7 @@ cluster or a simple rotation without chosen tiles or starters, on a busy server.
 | Copper ore | 4 | Doric's Quest |
 | Iron ore | 2 | Doric's Quest |
 | Rune pickaxe | 1 | Usable from Mining 41, so straight after Doric's Quest |
+| Knife and logs | 1 knife, about 5 normal logs | Knife starter (Fletching 1); no log was used in 400 ores at 300 ms, spares cover slipped cycles |
 | Iron, steel, mithril, adamant pickaxes | 1 each | Only if skipping Doric's Quest |
 
 No food expected: the Ardougne-north runs ended at full HP with bears nearby. The zoo
@@ -298,8 +337,12 @@ cluster was not checked for aggressive NPCs.
 - **Live demo check.** The respawn-13 numbers come from the lab with the player count
   emulated (an uncommitted one-line edit to `player_count.rs2`). One run on the demo would
   confirm D and the rate; the planner and executor take `--respawn`.
-- **Starter writers.** If cairn://p/rs/9 lands a menu-free `%action_delay = map_clock + 2`
-  writer, re-plan with `--free-starter`: up to about 9% faster.
+- **The knife below 63 and through level-ups** is modelled: the measured runs are at
+  level 99. Failed rolls leave the rock live, so the open-loop executor would need the
+  failure handling `mining-rotation.ts` has before it can run those bands.
+- **Host load.** The knife loop depends on every packet landing on its tick. On a host
+  at load 100+ it fell to 8.6 ticks per ore (tick-manipulation.md section 6); run it on
+  a quiet machine.
 - **Travel and Doric's Quest** are not measured: walking to Doric and on to Ardougne
   belongs to the quest-route plans; the dialogue estimate uses rs/21's 2 ticks per page.
 - **The patched lite client** (cairn://p/rs/22) would not change this route: the
