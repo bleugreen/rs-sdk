@@ -1,0 +1,164 @@
+import { describe, expect, test } from 'bun:test';
+import { bidderOptions, competingBid, decideBid, openOwn, type MarketView, type OwnOffer } from './bidder';
+
+const GRAPES = 1987;
+const opts = bidderOptions({ item: 'Grapes', target: 520, tranche: 150, maxPrice: 3000 });
+
+const offer = (over: Partial<OwnOffer> = {}): OwnOffer => ({
+    id: 15914,
+    item: GRAPES,
+    side: 'buy',
+    state: 'open',
+    price: 1650,
+    quantity: 61,
+    remaining: 45,
+    filled: 16,
+    items: 0,
+    coins: 0,
+    ...over
+});
+
+/** A book: other bidders' (qty, price) rows plus our offers, as the market API reports it. */
+function book(others: Array<[number, number]>, ours: OwnOffer[] = [], over: Partial<MarketView> = {}): MarketView {
+    const all = [...others, ...ours.map(o => [o.remaining, o.price] as [number, number])];
+    return {
+        bid: all.length ? Math.max(...all.map(([, p]) => p)) : null,
+        ask: null,
+        buyQuantity: all.reduce((a, [q]) => a + q, 0),
+        buyValue: all.reduce((a, [q, p]) => a + q * p, 0),
+        lastPrice: 1623,
+        ...over
+    };
+}
+
+describe('competingBid excludes our own offer', () => {
+    test('our offer is the best bid: not outbid, others are below (demo book 07:53 UTC)', () => {
+        const ours = [offer()];
+        const quote = book([[99_508, 1000]], ours);
+        expect(quote).toMatchObject({ bid: 1650, buyQuantity: 99_553, buyValue: 99_582_250 });
+        const c = competingBid(quote, ours);
+        expect(c).toMatchObject({ outbid: false, competing: null, tie: false, belowAvg: 1000 });
+    });
+
+    test('a higher bid from someone else is an outbid', () => {
+        const ours = [offer()];
+        const c = competingBid(book([[99_508, 1000], [50, 1700]], ours), ours);
+        expect(c).toMatchObject({ outbid: true, competing: 1700 });
+    });
+
+    test('others resting at exactly our price are a tie, not an outbid', () => {
+        const ours = [offer()];
+        const c = competingBid(book([[30, 1650]], ours), ours);
+        expect(c).toMatchObject({ outbid: false, tie: true, competing: 1650 });
+    });
+
+    test('alone on the book: no competing bid', () => {
+        const ours = [offer()];
+        expect(competingBid(book([], ours), ours)).toMatchObject({ outbid: false, competing: null, belowAvg: null });
+    });
+
+    test('a quote that predates our offer (market lag) is not an outbid', () => {
+        const ours = [offer()];
+        const c = competingBid(book([[99_508, 1000]]), ours);
+        expect(c).toMatchObject({ outbid: false, stale: true, competing: 1000 });
+    });
+
+    test('without an offer of ours, the best bid is the competing bid', () => {
+        expect(competingBid(book([[99_508, 1000], [10, 1623]]), [])).toMatchObject({ competing: 1623, outbid: false });
+    });
+
+    test('only open buy offers for the item count as ours', () => {
+        const offers = [offer(), offer({ id: 2, state: 'completed', remaining: 0 }), offer({ id: 3, item: 995 }), offer({ id: 4, side: 'sell' })];
+        expect(openOwn(offers, GRAPES).map(o => o.id)).toEqual([15914]);
+    });
+});
+
+describe('decideBid', () => {
+    test('outbid: cancel ours and replace just above the competitor, funded by the refund', () => {
+        const ours = [offer({ remaining: 100, quantity: 100, filled: 0 })];
+        const d = decideBid({ held: 116, ours, quote: book([[40, 1700]], ours), coins: 10_000, options: opts });
+        expect(d).toMatchObject({ action: 'replace', cancel: [15914], price: 1725, capped: false });
+        // 10,000 carried + 165,000 escrow back = 175,000 -> 101 at 1,725
+        expect(d.quantity).toBe(101);
+    });
+
+    test('still the best bid: hold, no churn', () => {
+        const ours = [offer({ remaining: 140, quantity: 150, filled: 10 })];
+        const d = decideBid({ held: 116, ours, quote: book([[99_508, 1000]], ours), coins: 500_000, options: opts });
+        expect(d.action).toBe('hold');
+        expect(d.cancel).toEqual([]);
+    });
+
+    test('still the best bid with most of the tranche filled: top up at our price without cancelling', () => {
+        const ours = [offer()]; // 45 resting
+        const d = decideBid({ held: 116, ours, quote: book([[99_508, 1000]], ours), coins: 400_000, options: opts });
+        expect(d).toMatchObject({ action: 'place', price: 1650, quantity: 105, cancel: [] });
+    });
+
+    test('no offer: place a tranche just above the competing bid', () => {
+        const d = decideBid({ held: 116, ours: [], quote: book([[99_508, 1000], [10, 1623]]), coins: 400_000, options: opts });
+        expect(d).toMatchObject({ action: 'place', price: 1648, quantity: 150, coinsShort: 0 });
+    });
+
+    test('coins short: place what we can afford and report the shortfall', () => {
+        const d = decideBid({ held: 116, ours: [], quote: book([[10, 1623]]), coins: 100_000, options: opts });
+        expect(d).toMatchObject({ action: 'place', price: 1648, quantity: 60 });
+        expect(d.coinsShort).toBe(150 * 1648 - 100_000);
+    });
+
+    test('no coins at all: short, nothing placed', () => {
+        const d = decideBid({ held: 116, ours: [], quote: book([[10, 1623]]), coins: 1000, options: opts });
+        expect(d).toMatchObject({ action: 'short', quantity: 0 });
+    });
+});
+
+describe('the 3,000 gp cap', () => {
+    test('a competitor past the cap: replace at exactly maxPrice, flagged capped', () => {
+        const ours = [offer({ remaining: 100 })];
+        const d = decideBid({ held: 116, ours, quote: book([[20, 3100]], ours), coins: 1_000_000, options: opts });
+        expect(d).toMatchObject({ action: 'replace', price: 3000, capped: true });
+    });
+
+    test('already at the cap and outbid: hold, never raise', () => {
+        const ours = [offer({ price: 3000, remaining: 100 })];
+        const d = decideBid({ held: 116, ours, quote: book([[20, 3100]], ours), coins: 1_000_000, options: opts });
+        expect(d).toMatchObject({ action: 'hold', capped: true, price: 3000, cancel: [] });
+    });
+
+    test('a competitor just under the cap is beaten at the cap, not above it', () => {
+        const d = decideBid({ held: 116, ours: [], quote: book([[20, 2990]]), coins: 1_000_000, options: opts });
+        expect(d).toMatchObject({ action: 'place', price: 3000, capped: false });
+    });
+
+    test('a fresh offer against a competitor past the cap rests at the cap', () => {
+        const d = decideBid({ held: 0, ours: [], quote: book([[20, 5000]]), coins: 1_000_000, options: opts });
+        expect(d).toMatchObject({ action: 'place', price: 3000, capped: true });
+    });
+});
+
+describe('the target stop', () => {
+    test('target held: cancel what rests and stop', () => {
+        const ours = [offer({ remaining: 30 })];
+        const d = decideBid({ held: 520, ours, quote: book([[50, 2000]], ours), coins: 500_000, options: opts });
+        expect(d).toMatchObject({ action: 'done', cancel: [15914] });
+    });
+
+    test('target held with nothing resting: done, nothing to cancel, nothing placed', () => {
+        const d = decideBid({ held: 600, ours: [], quote: book([[50, 2000]]), coins: 500_000, options: opts });
+        expect(d).toMatchObject({ action: 'done', cancel: [], quantity: 0 });
+    });
+
+    test('the last tranche is only what is still missing', () => {
+        const d = decideBid({ held: 470, ours: [], quote: book([[10, 1623]]), coins: 500_000, options: opts });
+        expect(d).toMatchObject({ action: 'place', quantity: 50 });
+    });
+});
+
+describe('bidderOptions', () => {
+    test('defaults and validation', () => {
+        expect(opts).toMatchObject({ target: 520, tranche: 150, maxPrice: 3000, recheckMinutes: 30, outbidBy: 25, minPrice: 0 });
+        expect(() => bidderOptions({ target: 520 })).toThrow(/item/);
+        expect(() => bidderOptions({ item: 'Grapes' })).toThrow(/target/);
+        expect(() => bidderOptions({ item: 'Grapes', target: 520, maxPrice: -1 })).toThrow(/maxPrice/);
+    });
+});
