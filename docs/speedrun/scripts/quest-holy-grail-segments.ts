@@ -14,7 +14,7 @@
 // two staircases, take the Grail, whistle out), reward (King Arthur).
 
 import { runScript } from '../../../sdk/runner';
-import * as L from './quest-lab';
+import * as L from './quest-arthur-lab';
 
 const all = ['start', 'merlin', 'boatout', 'priest', 'boatback', 'galahad', 'whistles', 'percival', 'realm2', 'reward'];
 const picked = process.argv.slice(3).filter(a => !a.startsWith('-'));

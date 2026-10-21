@@ -9,7 +9,7 @@
 // to the candle maker. Defaults: 70/70/70, 70 hp, rune scimitar, rune armour.
 
 import { runScript } from '../../../sdk/runner';
-import * as L from './quest-lab';
+import * as L from './quest-arthur-lab';
 
 const args = process.argv.slice(3).filter(a => !a.startsWith('-'));
 const [att, str, def, hp] = [0, 1, 2, 3].map(i => Number(args[i] ?? 70));

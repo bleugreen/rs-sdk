@@ -18,7 +18,7 @@
 // Defaults: 70/70/70, 70 hp, Excalibur throughout, rune armour.
 
 import { runScript } from '../../../sdk/runner';
-import * as L from './quest-lab';
+import * as L from './quest-arthur-lab';
 
 const args = process.argv.slice(3).filter(a => !a.startsWith('-'));
 const nums = args.filter(a => /^\d+$/.test(a)).map(Number);

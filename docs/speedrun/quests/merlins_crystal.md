@@ -190,5 +190,5 @@ about 113 and the total to about 710.
   the keep, from the crate's landing tile to the candle maker, including the fight.
 - `docs/speedrun/scripts/quest-arthur-grail-routes.ts`: route tiles for every
   travel leg in this document and in `holy_grail.md` (offline; no server needed).
-- `docs/speedrun/scripts/quest-lab.ts`: shared helpers (dialogue driver that
+- `docs/speedrun/scripts/quest-arthur-lab.ts`: shared helpers (dialogue driver that
   counts pages and clicks, staff commands, level-up handling).

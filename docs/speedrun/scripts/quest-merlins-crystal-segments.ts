@@ -13,7 +13,7 @@
 // Sir Mordred fight are in quest-merlins-crystal-mordred.ts.
 
 import { runScript } from '../../../sdk/runner';
-import * as L from './quest-lab';
+import * as L from './quest-arthur-lab';
 
 const all = ['camelot', 'crate', 'candle', 'lady', 'beggar', 'altar', 'thrantax', 'crystal', 'reward'];
 const picked = process.argv.slice(3).filter(a => !a.startsWith('-'));
