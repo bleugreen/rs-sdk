@@ -40,6 +40,11 @@
  * share of ticks each wanted prayer was active; packets this script sent per tick,
  * and how many ticks exceeded the engine's 5 user events (NetworkPlayer.ts: a sixth
  * is not refused, it is decoded the next tick).
+ *
+ * Known defect: the cannon top-up is a use-item-on-cannon click. If the player has
+ * stepped away from the cannon, a flick re-attack two ticks later cancels the walk back
+ * and the cannon can run dry ("out of ammo"; the summary's refires count shows it). Runs
+ * with refires > 0 under a flick config have unreliable cannon numbers.
  */
 import { runScript } from '../../../sdk/runner';
 import type { BotWorldState, NearbyLoc, NearbyNpc } from '../../../sdk/types';
