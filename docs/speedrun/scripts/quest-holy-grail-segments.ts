@@ -56,12 +56,17 @@ await runScript(async ({ bot, sdk }) => {
         await L.waitUntil(sdk, () => L.pos(sdk).level === toLevel, 60);
         return { ticks: L.tick(sdk) - t0, via: `${loc.name}@${loc.x},${loc.z}` };
     };
+    // The monk's dialogue closes during the voyage (set_sail's p_delay), so
+    // arrival is detected by position: on the destination ship's deck (level 1).
     const sail = async (monk: RegExp, choices: RegExp[], landed: () => boolean) => {
         const t0 = L.tick(sdk);
         const r = await bot.talkTo(monk);
         if (!r.success) throw new Error(`talk ${monk}: ${r.message}`);
-        const d = await L.talkThrough(sdk, choices, { maxTicks: 120, settleTicks: 20 });
+        const d = await L.talkThrough(sdk, choices, { maxTicks: 60, settleTicks: 2 });
+        await L.waitUntil(sdk, () => L.pos(sdk).level === 1 && landed(), 60);
         const onDeck = L.tick(sdk) - t0;
+        const arrival = await L.talkThrough(sdk, [], { settleTicks: 1 }); // "The ship arrives at ..."
+        d.pages += arrival.pages;
         const t1 = L.tick(sdk);
         const plank = (await sdk.scanNearbyLocs(10)).find(l => l.options.includes('Cross'));
         if (!plank) throw new Error(`no gangplank near ${JSON.stringify(L.pos(sdk))}`);
