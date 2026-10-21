@@ -6,7 +6,8 @@
 // the path being measured. Read-only: it attaches as an observer to a bot that is
 // already logged in behind a gateway, and sends nothing.
 //
-//   GATEWAY_URL=ws://127.0.0.1:8476 PASSWORD=... bun speedrun/lab/tick-health.ts cairn_h75 300
+//   (set -a; . bots/cairn_h75/bot.env; set +a; GATEWAY_URL=ws://127.0.0.1:8476 bun speedrun/lab/tick-health.ts cairn_h75 300)
+// Credentials come from the environment only, never argv (visible to every user in ps).
 import { BotSDK } from '../../sdk';
 
 const [account, secs = '300'] = process.argv.slice(2);
