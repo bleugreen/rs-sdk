@@ -25,8 +25,8 @@
 // `stockrate` ticks per line, World.ts) up to `maxWaitTicks`, then moves on.
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
-import { MarketClient } from '../../sdk/market';
 import type { BotWorldState } from '../../sdk/types';
+import { pointMarketAtServer } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
 
 export interface Tile {
@@ -142,23 +142,14 @@ export class Buyer {
     private readonly bot: BotActions;
     private readonly sdk: BotSDK;
     private bankCounts = new Map<string, number>();
-    /**
-     * Market reads go to the game server's HTTP origin. sdk.getMarketItem*
-     * derives the origin from the gateway URL, which is wrong behind a local
-     * gateway (it has no /api/market), so the buyer keeps its own client.
-     */
-    private readonly market: MarketClient;
     readonly reports: LineReport[] = [];
 
     constructor(private readonly ctx: RoleContext) {
         this.bot = ctx.bot;
         this.sdk = ctx.sdk;
-        const origin = typeof ctx.options.marketOrigin === 'string' ? ctx.options.marketOrigin : `https://${process.env.SERVER ?? 'rs-sdk-demo.fly.dev'}`;
-        this.market = new MarketClient(origin);
-        // bot.openGE() first asks sdk.getGEAvailability(), which has the same
-        // gateway-derived URL problem; answer it from the real origin instead.
-        // An own property on this one SDK instance, not a change to the SDK.
-        Object.assign(this.sdk, { getGEAvailability: () => this.market.status() });
+        // The SDK derives market and GE-availability URLs from the gateway; behind a
+        // loopback gateway that is wrong, so point it at the game server (SERVER).
+        pointMarketAtServer(this.sdk);
     }
 
     private get state(): BotWorldState {
@@ -222,10 +213,10 @@ export class Buyer {
 
     async resolveItem(item: string | number): Promise<{ id: number; name: string }> {
         if (typeof item === 'number') {
-            const q = await this.market.item(item);
+            const q = await this.sdk.getMarketItem(item);
             return { id: q.id, name: q.name };
         }
-        const found = await this.market.items(item, { limit: 25 });
+        const found = await this.sdk.getMarketItems(item, { limit: 25 });
         const exact = found.items.find(i => sameName(i.name, item));
         if (!exact) throw new Error(`unknown item ${item}`);
         return { id: exact.id, name: exact.name };
@@ -248,7 +239,7 @@ export class Buyer {
         const coinsBefore = coinsIn(this.state);
 
         if (!existing) {
-            const quote = await this.market.item(id);
+            const quote = await this.sdk.getMarketItem(id);
             const cap = line.maxPrice ?? Infinity;
             let price: number;
             if (quote.ask !== null && quote.ask <= cap) price = quote.ask;
@@ -371,11 +362,11 @@ export class Buyer {
         if (line.maxPrice !== undefined) return need * line.maxPrice;
         if (line.source === 'ge') {
             const { id } = await this.resolveItem(line.item);
-            const q = await this.market.item(id);
+            const q = await this.sdk.getMarketItem(id);
             return need * (q.ask ?? 0);
         }
         const { id } = await this.resolveItem(line.item);
-        const q = await this.market.item(id);
+        const q = await this.sdk.getMarketItem(id);
         return need * q.basePrice * 3;
     }
 
