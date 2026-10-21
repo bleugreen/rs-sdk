@@ -65,11 +65,12 @@ UTC, through a loopback gateway on bbs (about 300 ms per tick). Logs:
 |---|---|---|
 | h21 | mine | Tutorial skip 3 s, then Mining 1 to 44 in one inventory (404 ticks), 63 at 19 min wall |
 | h22 | mine | Tutorial skip 2 s, Lumbridge to the first Falador deposit 309 ticks, Mining 45 at 10 min, 56 at 18 min (bronze pickaxe, 4-9 players at the west mine) |
-| h20 | full | Smithing 1 to 16 on 14 bronze bars, 16 to 30 on 17 iron bars (half of iron smelts fail without a Ring of Forging), 30 to 49 on 54 steel bars. Fresh to Smithing 49 and Mining 79 took 1 h 47 min wall, including a death, a lost pickaxe, a login lockout and restarts; a clean run is about 1 h 15 min. |
+| h22 | mine | Mining 62 and in the guild at 26 min; adamant pickaxe bought at 28 min, all unattended |
+| h20 | full | Smithing 1 to 16 on 14 bronze bars, 16 to 30 on 17 iron bars (half of iron smelts fail without a Ring of Forging), 30 to 51 on 63 steel bars. Fresh to Smithing 51 (first mithril bars) and Mining 82 took 2 h 4 min wall, including a death, a lost pickaxe, a login lockout and restarts; a clean run is about 1 h 30 min. |
 
 Smithing rose faster than the content files predict: steel smelting is 17.5 xp
-(`smelting.struct`) times `NODE_XPRATE=25`, yet 54 steel bars took Smithing 30 to 49,
-which needs about 1,400 xp per bar. The cause is not known; count Smithing training in
+(`smelting.struct`) times `NODE_XPRATE=25`, 437.5 per bar, yet 54 steel bars took
+Smithing 30 to 49, which needs at least about 1,400 xp per bar. The cause is not known; count Smithing training in
 bars, as above, not in computed xp.
 
 ### Production rates
@@ -80,9 +81,11 @@ bars, as above, not in computed xp.
 | Guild, adamant pickaxe, 65-73 other players in view (h20, h21) | 25-27 ore per inventory in 1,273-2,089 ticks: 22-26 coal and 1-3 mithril. Per inventory, 113-216 rocks were depleted by someone else before we got ore and 14-25 times we left coal for a live mithril rock. Bank to bank about 7-11 min, so ~150-225 coal and ~10-20 mithril per account-hour. |
 | Barbarian Village coal, adamant pickaxe, 23 players (h21) | 27 coal in 1,842 ticks, 908 of them waiting for a live rock: ~165 coal per hour, no mithril. Worse than the guild; keep it for when the guild is even more crowded. |
 | West Falador mine, adamant pickaxe (h20) | 26-27 iron and coal in 370-542 ticks (5-11 players) |
-| Steel smelting trip, west bank to furnace and back | 9 bars in 131-176 ticks |
+| Guild, rune pickaxe, 75 players (h20) | 25 ore (24 coal, 1 mithril) in 1,282 ticks: no clear gain over adamant, because contention, not the roll rate, sets the pace |
+| Steel smelting trip, west bank to furnace and back | 9 bars in 128-176 ticks |
+| Mithril smelting trip (h20, Smithing 51) | 5 bars in 102-106 ticks, about 21 ticks per bar |
 | Smelting cadence | one bar per 4-5 ticks (`smelting_ore` re-queues with delay 4) |
-| Grand Exchange plus Nurmof upgrade trip | Falador east bank to the exchange to Nurmof: about 2 min wall. Sold 23 coal (3,278 gp after tax) and 18 steel bars (11,970 gp), both filled at once against the bid book. |
+| Grand Exchange plus Nurmof upgrade trip | Falador east bank to the exchange to Nurmof: about 2 min wall. Adamant pickaxes: h21 and h22 sold 23 coal each (3,278 gp after tax), h20 sold 18 steel bars (11,970 gp). Rune pickaxe: h20 sold 36 steel bars (23,940 gp). Every sale filled at once against the bid book. |
 
 ### The constraint is mithril ore
 
@@ -90,7 +93,7 @@ A mithril bar is 1 mithril ore and 4 coal. In the camped guild an account mines 
 mithril and 150-225 coal per hour, so it has three to four times the coal its mithril
 needs. **Bars per account-hour equal mithril ore per account-hour: about 10-20 at
 current contention**, whichever route turns them into bars. Smelting is cheap by
-comparison: 5 mithril bars per furnace trip in about 125 ticks, roughly 25 ticks per
+comparison: 5 mithril bars per furnace trip in about 104 ticks, roughly 21 ticks per
 bar, or under 5% of a full-mode account's hour.
 
 The whole guild cannot supply much more. Its 5 mithril rocks respawn in 400 ticks
