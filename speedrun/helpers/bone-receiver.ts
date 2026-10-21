@@ -14,12 +14,14 @@
 // closing to the giver's request reaching it.
 //
 // Role options: giver (account, required), loads (default 8), n (23), buryEvery (3),
-//   site {x,z} (default the oak tile 2914,3494), pageLoads (default [2, 5]), holdTicks (6)
+//   site {x,z} (default the oak tile 2914,3494), pageLoads (default [2, 5]), holdTicks (6),
+//   asks [15, 21, ...]: S18's top-ups instead (the giver in mode on-request): before each
+//   trade write that size with writeBoneAsk, then click trade; loads = asks.length
 import type { BotWorldState } from '../../sdk/types';
 import { receiveFrom } from '../lib/trade';
 import { CueWriter, cueDir, FrameLog } from './altar-cue';
 import { cheat, count, isLocalServer, labTele, pos, until, type Tile } from './altar-room';
-import { S07_SITES } from './bone-giver';
+import { S07_SITES, writeBoneAsk } from './bone-giver';
 import { runStandalone, type Role, type RoleContext } from './role';
 
 const BONES = /^dragon bones$/i;
@@ -46,8 +48,9 @@ export const role: Role = {
         const o = ctx.options;
         const giver = String(o.giver ?? '');
         if (!giver) throw new Error('bone-receiver: options.giver is required');
-        const loads = Number(o.loads ?? 8);
-        const n = Number(o.n ?? 23);
+        const asks = Array.isArray(o.asks) ? (o.asks as number[]).map(Number) : null;
+        const loads = asks ? asks.length : Number(o.loads ?? 8);
+        const sizeOf = (load: number) => (asks ? asks[load]! : Number(o.n ?? 23));
         const buryEvery = Number(o.buryEvery ?? 3);
         const site: Tile = (o.site as Tile) ?? S07_SITES[0]!.receiver;
         const pageLoads = new Set((o.pageLoads as number[]) ?? [2, 5]);
@@ -76,6 +79,8 @@ export const role: Role = {
                     break;
                 }
                 const standingAtClick = s().gameMessages.some(m => m.tick >= requestSince && isRequestFrom(giver)(m));
+                const n = sizeOf(load);
+                if (asks) writeBoneAsk(cueDir(), n, load + 1);
                 const r = await receiveFrom(sdk, giver, { want: [{ item: BONES, amount: n }], openTimeoutMs: 60_000 });
                 const res: LoadResult = { load, ok: r.ok && count(s(), BONES) >= n, clickToBones: r.ticks, standingAtClick, ...(r.reason ? { reason: r.reason } : {}) };
                 results.push(res);
