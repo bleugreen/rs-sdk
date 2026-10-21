@@ -49,7 +49,10 @@ const QUOTA: Record<Kind, number> = { gems: Number(arg('q-gems', '160')), potion
 const P1WORK = arg('p1work', '0') === '1';
 const GUARD = arg('guard', '1') === '1';
 const TAG = arg('tag', '');
-const FIRE = 20; // login.rs2 -> ~ferment_wines_login: settimer(fermenting_wine, 20)
+// login.rs2 -> ~ferment_wines_login: settimer(fermenting_wine, 20). Labels are the client's
+// in-world tick count; its first published in-world state is label 2 in the lab, so the login
+// tick is label 1 (`login` below = first label - 1), as wine.md counts it. Firing: login + 20.
+const FIRE = 20;
 const LOGDIR = process.env.LAB_LOG ?? join(process.env.TMPDIR ?? '/tmp', 'wine-window');
 mkdirSync(LOGDIR, { recursive: true });
 
@@ -448,8 +451,8 @@ async function runRep(name: string, plan: Plan, rep: number) {
     })();
     const r0 = await relog(recv);
     session = 1;
-    const L1 = r0.firstTick;
-    const D1 = L1 + FIRE;
+    const L1 = r0.firstTick - 1; // login tick (label)
+    const D1 = L1 + FIRE; // due label of the login timer
 
     // ---- trade
     const tr = await receiveFrom(R, GIVER, { want: [{ item: /unfermented wine/i, amount: WINES }], openTimeoutMs: 60_000 });
@@ -541,8 +544,9 @@ async function runRep(name: string, plan: Plan, rep: number) {
     const r1 = await relog(recv);
     session = 2;
     win = 'W2';
-    const L2 = r1.firstTick;
+    const L2 = r1.firstTick - 1;
     const D2 = L2 + FIRE;
+    worker.boothAt = -99; // labels restart with the new session
     prev = R.getState()!;
     const cookB = xpOf(prev, 'Cooking');
     const S2 = { F2: -1, cook2: 0, E: -1, end: -1, segs: [] as Array<{ kind: Kind; start: number; end: number }> };
@@ -588,20 +592,22 @@ async function runRep(name: string, plan: Plan, rep: number) {
         return undefined;
     });
 
+    // Scored ticks as wine.md's demo timeline counts them: the old session's ticks after the
+    // planned relog's click, session 1 to its last in-world label, session 2 to the endpoint label.
     const relog0 = r0.lastTick - r0.clickTick;
-    const sess1 = r1.lastTick - L1 + 1;
+    const sess1 = r1.lastTick - L1;
     const out = {
         variant: name, rep, levels: LEVEL, p1work: plan.P1, guard: GUARD,
         relog0: { clickToOut: relog0, firstTick: L1, wallMs: r0.wallMs },
         trade: { receiverTicks: tr.ticks, endAfterLogin: tradeEnd - L1, giverTicks: gv.ticks },
         s1: {
-            bankOpenAfterLogin: S1.bankOpen - L1, deadlineMarginTicks: L1 + 19 - S1.bankOpen, depositDoneAfterLogin: S1.depDone - L1,
+            bankOpenAfterLogin: S1.bankOpen - L1, deadlineMarginTicks: D1 - 1 - S1.bankOpen, depositDoneAfterLogin: S1.depDone - L1,
             firing1AfterLogin: S1.F1 - L1, cookingAfter1: S1.cook1, p1Ticks: S1.p1BankOpen - S1.F1, p1PageTicks: S1.p1Pages,
             restDoneAfterLogin: S1.restDone - L1, ticks: sess1,
         },
         relog1: { clickToOut: r1.lastTick - r1.clickTick, firstTick: L2, wallMs: r1.wallMs },
         s2: { firing2AfterLogin: S2.F2 - L2, cookingAfter2: S2.cook2, finalPagesClearedAfterLogin: S2.E - L2, endAfterLogin: S2.end - L2, segs: S2.segs.map(x => ({ ...x, ticks: x.end - x.start })) },
-        scored: { wineSequence: relog0 + sess1 + (S2.E - L2 + 1), toEnd: relog0 + sess1 + ((plan.W1 || plan.W2 ? S2.end : S2.E) - L2 + 1) },
+        scored: { wineSequence: relog0 + sess1 + (S2.E - L2), toEnd: relog0 + sess1 + ((plan.W1 || plan.W2 ? S2.end : S2.E) - L2) },
         actions: Object.fromEntries(Object.entries(acts).map(([k, v]) => [k, Math.round(v * 10) / 10])),
         levelUps: ups,
         log: logFile,
