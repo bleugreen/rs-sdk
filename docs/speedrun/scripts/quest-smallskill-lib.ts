@@ -130,6 +130,30 @@ export async function clearInv(sdk: BotSDK): Promise<void> {
     }
 }
 
+/**
+ * Interact with loc `id` at (x, z) without scanning (the client's loc scan
+ * mislabels bridged floors such as the fishing platform), answer any dialogue,
+ * and wait for `done`. Re-sends the click every 6 ticks while idle where it started.
+ */
+export async function locId(sdk: BotSDK, x: number, z: number, id: number, op: number, done: Pred, opts: { answers?: RegExp[]; idle?: number; maxTicks?: number; label?: string } = {}): Promise<StepRecord & { run: DialogueRun }> {
+    const t0 = now(sdk);
+    const d = dialogue(sdk, opts.answers ?? [], { idle: opts.idle ?? 3, startTimeout: 12 });
+    await sdk.sendInteractLoc(x, z, id, op);
+    let sent = t0;
+    const p0 = pos(sdk.getState());
+    let moved = false;
+    const r = await waitUntil(sdk, s => {
+        if (done(s)) return true;
+        const p = pos(s);
+        if (p.x !== p0.x || p.z !== p0.z || p.level !== p0.level) moved = true;
+        if (!moved && !s.dialog.isOpen && s.tick - sent >= 6) { sent = s.tick; void sdk.sendInteractLoc(x, z, id, op); }
+        return false;
+    }, opts.maxTicks ?? 60);
+    const run = await d;
+    const end = Math.max(r?.tick ?? NaN, run.endTick >= 0 ? run.endTick : -1);
+    return { name: `${opts.label ?? 'loc ' + id} (${x},${z})`, ticks: end - t0, pages: run.pages, choices: run.choices, run, note: r ? undefined : 'TIMEOUT' };
+}
+
 /** Print the dialogue runs of a talk/locTalk record and pass it through. */
 export function withRuns<T extends StepRecord & { run?: DialogueRun }>(r: T): T {
     if (r.run) r.note = [r.note, `runs ${runsOf(r.run)}`].filter(Boolean).join('; ');
