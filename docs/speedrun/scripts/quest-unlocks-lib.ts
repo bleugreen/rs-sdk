@@ -19,6 +19,19 @@ export async function waitTicks(sdk: BotSDK, n: number, wallMs = 10_000 + n * 10
     }
 }
 
+/** Wait until `cond` holds, failing after `maxTicks` server ticks. Returns ticks waited. */
+export async function waitUntil(sdk: BotSDK, cond: () => boolean, maxTicks: number, label: string): Promise<number> {
+    const t0 = tick(sdk);
+    const wallDeadline = Date.now() + 10_000 + maxTicks * 1000;
+    while (!cond()) {
+        if (tick(sdk) - t0 > maxTicks || Date.now() > wallDeadline) {
+            throw new Error(`timed out after ${tick(sdk) - t0} ticks waiting for: ${label}`);
+        }
+        await sleep(20);
+    }
+    return tick(sdk) - t0;
+}
+
 export async function cheat(sdk: BotSDK, command: string): Promise<void> {
     await sdk.sendSay(`::${command}`);
     await waitTicks(sdk, 2);

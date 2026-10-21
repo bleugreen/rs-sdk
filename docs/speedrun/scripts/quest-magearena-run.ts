@@ -31,6 +31,13 @@ await runScript(async ({ bot, sdk }) => {
     await bot.dismissBlockingUI();
 
     // ---- untimed setup ----
+    // FROM=pool resumes a run whose fight finished (%magearena = 6) at the cellar pool.
+    const FROM = process.env.FROM ?? 'kolodion';
+    let t0 = tick(sdk);
+    let tDone = t0;
+    const magicXp0 = sdk.getSkill('Magic')?.experience ?? 0;
+    const hpXp0 = sdk.getSkill('Hitpoints')?.experience ?? 0;
+    if (FROM === 'kolodion') {
     if (process.env.RESET === '1') await cheat(sdk, 'setvar magearena 0');
     for (const it of sdk.getEquipment()) await bot.unequipItem(it);
     for (const it of sdk.getInventory()) await bot.dropItem(it);
@@ -48,17 +55,15 @@ await runScript(async ({ bot, sdk }) => {
     await bot.equipItem(/staff of fire/i);
     await tele(sdk, 2539, 4715);
     await waitTicks(sdk, 5);
-    const magicXp0 = sdk.getSkill('Magic')?.experience ?? 0;
-    const hpXp0 = sdk.getSkill('Hitpoints')?.experience ?? 0;
 
     // ---- segment 1: talk to Kolodion until the arena teleport ----
-    const t0 = tick(sdk);
+    t0 = tick(sdk);
     if (PRAYER >= 37) await bot.activatePrayer('protect_from_magic');
     const kol = sdk.findNearbyNpc(/^Kolodion$/);
     if (!kol) throw new Error('Kolodion not found near the cellar spawn');
     await sdk.sendTalkToNpc(kol.index);
     const d1 = await talkThrough(sdk, ['Can I fight here?', 'Yes indeedy.', "Ok, let's fight."]);
-    while (pos(sdk).z > 4000) await sleep(20);
+    await waitUntil(sdk, () => pos(sdk).z < 4000, 60, 'arena teleport');
     const tArena = tick(sdk);
     log(sdk, `SEG talk-kolodion: ${tArena - t0} ticks, ${d1.pages} pages, ${d1.options} options`, t0);
 
@@ -124,16 +129,25 @@ await runScript(async ({ bot, sdk }) => {
     log(sdk, `prayer points ${PRAYER} -> ${prayerLeft}`, t0);
     log(sdk, `SEG fight: ${tBack - tArena} ticks, cast clicks ${casts}, eats ${eats}, min hp ${minHp}`, t0);
     for (const f of forms) console.log('   ' + f);
-    const d2 = await talkThrough(sdk, [], { idleMs: 2500 });
-    const tDone = tick(sdk);
+    // finish_mage_arena: p_delay(3) + teleport + p_delay(2), then Kolodion's congratulations
+    await waitUntil(sdk, () => sdk.getDialog()?.isOpen === true, 30, 'finish dialogue');
+    const d2 = await talkThrough(sdk, [], { idleMs: 3000 });
+    tDone = tick(sdk);
     log(sdk, `SEG finish-dialogue: ${tDone - tBack} ticks, ${d2.pages} pages`, t0);
+    } else {
+        await tele(sdk, 2540, 4716);
+        t0 = tick(sdk);
+        tDone = t0;
+    }
+    log(sdk, `dialog before pool: ${JSON.stringify(sdk.getDialog())}`);
 
     // ---- segment 3: pool to the chamber ----
     const pool = sdk.findNearbyLoc(/sparkling pool/i);
     if (!pool) throw new Error('pool not found');
     const from3 = pos(sdk);
-    await bot.interactLoc(pool, 'Step-into');
-    while (pos(sdk).z > 4700) await sleep(20);
+    const r3 = await bot.interactLoc(pool, 'Step-into');
+    log(sdk, `pool interact: ${JSON.stringify(r3).slice(0, 200)}`);
+    await waitUntil(sdk, () => pos(sdk).z < 4700, 40, 'arrive in the chamber');
     await waitTicks(sdk, 1);
     const tChamber = tick(sdk);
     log(sdk, `SEG pool: ${tChamber - tDone} ticks from ${JSON.stringify(from3)} to ${JSON.stringify(pos(sdk))}`, t0);
@@ -152,7 +166,7 @@ await runScript(async ({ bot, sdk }) => {
     }
     if (!cape) throw new Error('no cape on the ground');
     await bot.pickupItem(cape);
-    while (!sdk.findInventoryItem(/cape of/i)) await sleep(20);
+    await waitUntil(sdk, () => !!sdk.findInventoryItem(/cape of/i), 30, 'cape in inventory');
     const tCape = tick(sdk);
     log(sdk, `SEG statue+cape: ${tCape - tChamber} ticks from ${JSON.stringify(from4)}, ${d4.pages} pages`, t0);
 
