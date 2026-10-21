@@ -1,0 +1,28 @@
+session /home/ubuntu/rs130/out/20261021T2245-in-page-oak exit 0
+browser page from main @ c14428fc5, probes from 5ed37d629
+gate: PASS: a 58/60 ok; c 1 catch-ups in 1.2 min = 0.7/min ok; b (context) frame interval p90 343 max 609
+react delay +0 ms: ticks {"1":58,"2":2}  reactMs p10 0.2 p50 0.3 p90 8 max 9.3 (n=60)
+latency in ticks (in-page probe, label of the step - label sent): 1:60  (60 trials, 0 lost, 60 ticks)
+on time 60/60
+decoded tick interval ms in the page: p10 242 p50 300 p90 372 max 523 (n 60)
+server frame interval ms in the page: p50 300 p90 380 max 523, catch-ups 0 (0.0/min), under 150 0, over 350 10
+page publication interval ms: p50 300 p90 380 max 523
+-- frames browser-probe
+window 2026-10-21T22:47:09.762Z - 2026-10-21T22:47:28.916Z: 290 frames
+tick output arrival interval ms: p10 76 p50 144 p90 235 max 321 (n 124); catch-ups 0 in 0.3 min
+game packet out, ms after its tick's output arrived: p10 1 p50 1 p90 154 max 269 (n 100)
+-- frames knife
+window 2026-10-21T22:47:28.922Z - 2026-10-21T22:50:18.801Z: 4188 frames
+tick output arrival interval ms: p10 75 p50 120 p90 224 max 462 (n 1187); catch-ups 3 in 2.8 min
+game packet out, ms after its tick's output arrived: p10 1 p50 25 p90 153 max 385 (n 536)
+gateway actions: 12, 12 following a state within 1 s
+  tick output in -> state out (page publication): p10 1 p50 1 p90 10 max 12 (n 12)
+  state out -> action in (gateway, SDK script, gateway): p10 0 p50 5 p90 6 max 20 (n 12)
+  action in -> game packet out (overlay drain to flush): p10 0 p50 1 p90 1 max 1 (n 12)
+  tick output in -> game packet out (whole reaction in the page's view): p10 6 p50 7 p90 13 max 21 (n 12)
+-- frames plain
+window 2026-10-21T22:50:18.808Z - 2026-10-21T22:53:21.497Z: 2371 frames
+tick output arrival interval ms: p10 86 p50 145 p90 230 max 502 (n 1174); catch-ups 7 in 3.0 min
+game packet out, ms after its tick's output arrived: p10 1 p50 68 p90 175 max 442 (n 432)
+-- knife/plain
+players end 1564
