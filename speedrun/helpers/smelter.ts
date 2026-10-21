@@ -12,7 +12,8 @@
 //               the account has Smithing 70 and the ore, otherwise mithril)
 //   site        'auto' | 'guild' | 'west' | 'rimmington' | 'barbarian'   where to mine (auto: west
 //               or Rimmington below Mining 60, the Mining Guild from 60; barbarian is coal only)
-//   smeltMin    bars' worth of ore in the bank before a production smelting session (25)
+//   smeltMin    bars' worth of ore and coal in the bank before a production (mithril or
+//               adamantite) smelting session starts (25); smelt mode ignores it
 //   pickaxe     false to never buy pickaxes (default true: sell steel bars, iron bars and,
 //               if needed, coal on the Grand Exchange and buy adamant/rune from Nurmof)
 //
@@ -59,7 +60,7 @@ const ROCK_ORE = new Map<number, Ore>();
 for (const [ore, ids] of Object.entries(ROCKS) as [Ore, number[]][]) for (const id of ids) ROCK_ORE.set(id, ore);
 
 /** Smelting recipes (smelting.struct) and the furnace interface's "Smelt 10" buttons (interface.pack). */
-type Bar = 'bronze' | 'iron' | 'steel' | 'mith' | 'addy';
+export type Bar = 'bronze' | 'iron' | 'steel' | 'mith' | 'addy';
 const BARS: Record<Bar, { bar: number; ore: number; second?: number; secondCount: number; level: number; smelt10: number }> = {
     bronze: { bar: ITEM.bronzeBar, ore: ITEM.copper, second: ITEM.tin, secondCount: 1, level: 1, smelt10: 2807 },
     iron: { bar: ITEM.ironBar, ore: ITEM.iron, secondCount: 0, level: 15, smelt10: 3989 },
@@ -127,6 +128,80 @@ function readOpts(o: Record<string, unknown>): Opts {
 }
 
 class Abort extends Error {}
+
+// ---------------------------------------------------------------- decisions (pure)
+
+export interface BarChoice {
+    smithing: number;
+    /** Banked count of an item id. */
+    banked: (id: number) => number;
+    mode: Opts['mode'];
+    tier: Opts['tier'];
+    smeltMin: number;
+    /** A session is under way: any complete set keeps it going. */
+    continuing: boolean;
+}
+
+/**
+ * Which bar to smelt next from banked materials, or null. A production tier (mithril,
+ * adamantite) starts a session only with `smeltMin` sets banked, so the furnace walk is
+ * paid once per batch; smelt mode smelts whatever it has. Training bars are made only in
+ * full mode below Smithing 50.
+ */
+export function chooseBar(c: BarChoice): Bar | null {
+    const sets = (b: Bar) => {
+        const r = BARS[b];
+        const ore = c.banked(r.ore);
+        return r.second ? Math.min(ore, Math.floor(c.banked(r.second) / r.secondCount)) : ore;
+    };
+    const order: Bar[] = [];
+    if (c.tier !== 'mithril') order.push('addy');
+    if (c.tier !== 'adamant' || c.smithing < 70) order.push('mith');
+    for (const b of order) {
+        if (c.smithing < BARS[b].level) continue;
+        const n = sets(b);
+        if (n > 0 && (c.continuing || c.mode === 'smelt' || n >= c.smeltMin)) return b;
+    }
+    if (c.smithing >= 50 || c.mode !== 'full') return null;
+    if (c.smithing >= 30 && sets('steel') >= 9) return 'steel';
+    if (c.smithing >= 15 && c.smithing < 30 && sets('iron') >= 10) return 'iron';
+    if (c.smithing < 15 && sets('bronze') >= 5) return 'bronze';
+    return null;
+}
+
+export type Pickaxe = (typeof PICKAXES)[number];
+export interface Sellable {
+    id: number;
+    n: number;
+    /** Current best bid, gp each. */
+    price: number;
+}
+/** Coins left over after the purchase, for rounding and the next shop visit. */
+const PURCHASE_MARGIN = 50;
+const afterTax = (n: number, price: number) => Math.floor(n * price * 0.95);
+
+/**
+ * The best pickaxe in `candidates` (best first) that coins plus everything in `offers`
+ * can fund after the exchange's 5% tax, and what to sell for it. Offers are sold in the
+ * order given; bars are surplus and sold whole, coal is product and sold only as far as
+ * the price needs.
+ */
+export function planPickaxePurchase(candidates: readonly Pickaxe[], coins: number, offers: readonly Sellable[]): { target: Pickaxe; sell: Sellable[] } | null {
+    const worth = coins + offers.reduce((sum, o) => sum + afterTax(o.n, o.price), 0);
+    const target = candidates.find(p => p.price + PURCHASE_MARGIN <= worth);
+    if (!target) return null;
+    const goal = target.price + PURCHASE_MARGIN;
+    const sell: Sellable[] = [];
+    let funds = coins;
+    for (const o of offers) {
+        if (funds >= goal) break;
+        const need = Math.ceil((goal - funds) / (o.price * 0.95));
+        const take = o.id === ITEM.coal ? Math.min(o.n, need) : o.n;
+        sell.push({ ...o, n: take });
+        funds += afterTax(take, o.price);
+    }
+    return { target, sell };
+}
 
 /** Why mineRock stopped working a rock; counted per inventory so a slow inventory explains itself. */
 type RockOutcome = 'ore' | 'full' | 'depleted' | 'switched' | 'gaveUp' | 'timeout';
@@ -494,33 +569,13 @@ class Smelter {
 
     // ------------------------------------------------------------ smelting
 
-    /** Which bar to smelt next from banked materials, or null. */
-    private nextBar(production: boolean): Bar | null {
-        const sm = this.lvl('smithing');
-        const sets = (b: Bar) => {
-            const r = BARS[b];
-            const ore = this.banked(r.ore);
-            return r.second ? Math.min(ore, Math.floor(this.banked(r.second) / r.secondCount)) : ore;
-        };
-        const order: Bar[] = [];
-        if (this.o.tier !== 'mithril') order.push('addy');
-        if (this.o.tier !== 'adamant' || sm < 70) order.push('mith');
-        for (const b of order) {
-            if (sm < BARS[b].level) continue;
-            const n = sets(b);
-            if (n > 0 && (!production || n >= this.o.smeltMin || this.o.mode === 'smelt')) return b;
-        }
-        if (production) return null;
-        // Training bars, only while below Smithing 50.
-        if (sm >= 50 || this.o.mode !== 'full') return null;
-        if (sm >= 30 && sets('steel') >= 9) return 'steel';
-        if (sm >= 15 && sm < 30 && sets('iron') >= 10) return 'iron';
-        if (sm < 15 && sets('bronze') >= 5) return 'bronze';
-        return null;
+    private nextBar(continuing: boolean): Bar | null {
+        const { mode, tier, smeltMin } = this.o;
+        return chooseBar({ smithing: this.lvl('smithing'), banked: id => this.banked(id), mode, tier, smeltMin, continuing });
     }
 
     private async smeltSession() {
-        let bar = this.nextBar(true) ?? this.nextBar(false);
+        let bar = this.nextBar(false);
         if (!bar) return;
         const tierAtStart = bar;
         this.ctx.log('smelt session', { bar, ...this.progress() });
@@ -546,7 +601,7 @@ class Smelter {
             this.stats.smelted += made;
             this.ctx.log('smelt trip', { bar, made, ticks: this.s().tick - t0, smithing: this.lvl('smithing') });
             if (made === 0) break;
-            bar = this.nextBar(false) === bar || this.nextBar(true) === bar ? bar : null;
+            bar = this.nextBar(true) === bar ? bar : null;
         }
     }
 
@@ -786,28 +841,17 @@ class Smelter {
         );
         if (candidates.length === 0) return false;
         const coins = this.have(ITEM.coins);
-        const afterTax = (n: number, price: number) => Math.floor(n * price * 0.95);
         // Price every sellable once, then aim at the best pickaxe the whole lot can fund.
-        const offers: { id: number; n: number; price: number }[] = [];
+        const offers: Sellable[] = [];
         for (const id of [ITEM.steelBar, ITEM.ironBar, ITEM.coal]) {
             const n = this.banked(id);
             if (n <= 0) continue;
             const bid = await this.bid(id);
             if (bid && bid > 0) offers.push({ id, n, price: bid });
         }
-        const worth = coins + offers.reduce((sum, o) => sum + afterTax(o.n, o.price), 0);
-        const target = candidates.find(p => p.price + 50 <= worth);
-        if (!target) return false;
-        const sell: typeof offers = [];
-        let funds = coins;
-        for (const o of offers) {
-            if (funds >= target.price + 50) break;
-            // Bars are pure surplus; coal is product, so sell only what the pickaxe needs.
-            const need = Math.ceil((target.price + 50 - funds) / (o.price * 0.95));
-            const take = o.id === ITEM.coal ? Math.min(o.n, need) : o.n;
-            sell.push({ ...o, n: take });
-            funds += afterTax(take, o.price);
-        }
+        const plan = planPickaxePurchase(candidates, coins, offers);
+        if (!plan) return false;
+        const { target, sell } = plan;
         this.ctx.log('pickaxe trip', { target: target.name, coins, sell });
 
         // Withdraw coins and sellables (noted).
