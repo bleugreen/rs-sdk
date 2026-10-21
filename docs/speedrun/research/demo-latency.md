@@ -157,6 +157,10 @@ The trial: on a fresh tick, walk one tile, and count the ticks until the step sh
 | Ashburn run machine | **browser tab, in-page program, main ae6d5664d (#94's program host)**, headless Chrome 156; **burst minute: gate failed** | 10:46-10:47 | iad | none; TCP 2.0 ms | 1,615-1,616 | 60 | **53** | 7 | 0 | rs/130, same session; decision 1 ms, action packet out 0.7 ms p50 / 2.0 max after its tick; 0 catch-ups in its own 21 s window |
 | Ashburn run machine | direct lite probe, reference for the row below | 12:45 | iad (iad2) | none; TCP 2.0 ms | 1,624-1,679 | 60 | 51 | 9 | 0 | rs/130, [`data/browser-rows/host-20261021T1945-in-page/`](data/browser-rows/host-20261021T1945-in-page/); gate failed on (a) and (c): 11.7 catch-ups per minute, p90 427 |
 | Ashburn run machine | **browser tab, in-page program, main ae6d5664d**, headless Chrome 156; **burst minute: gate failed** | 12:47 | iad (iad2) | none; TCP 2.0 ms | 1,624-1,679 | 60 | **47** | 12 | 1 | rs/130, same session; decision 1 ms, action packet out 0.7 ms p50 / 2.5 max after its tick; 5 catch-ups per minute in its own window |
+| Ashburn run machine | direct lite probe, reference for the row below | 13:15 | iad (iad2) | none; TCP 2.3 ms | 1,474-1,597 | 60 | 59 | 1 | 0 | rs/130, [`data/browser-rows/host-20261021T2015-overlay/`](data/browser-rows/host-20261021T2015-overlay/); gate failed on (c) only, narrowly: 2.4 catch-ups per minute (3 in 1.2 min), p90 363 |
+| Ashburn run machine | **browser tab, overlay to a loopback gateway, main ae6d5664d**, headless Chrome 156; near-calm minute, gate failed on (c) | 13:17 | iad (iad2) | none; TCP 2.3 ms | 1,474-1,597 | 60 | **59** | 1 | 0 | rs/130, same session; equal to direct; page-side reaction p50 6 / p90 7 ms; 0 catch-ups in its own 19 s window |
+| Ashburn run machine | direct lite probe, reference for the row below | 13:35 | iad (iad2) | none; TCP 2.3 ms | 1,593-1,603 | 60 | 41 | 17 | 1 (+1 lost) | rs/130, [`data/browser-rows/host-20261021T2035-in-page-oak/`](data/browser-rows/host-20261021T2035-in-page-oak/); gate failed on (a) and (c): 12.2 catch-ups per minute |
+| Ashburn run machine | **browser tab, in-page program, main ae6d5664d**; **burst minute: gate failed** | 13:37 | iad (iad2) | none; TCP 2.3 ms | 1,593-1,603 | 60 | **51** | 7 | 2 | rs/130, same session; action packet out p50 1.1 / max 2.0 ms after its tick |
 <!-- rs130-1115 -->
 
 Runs 2, 4 and 7 used the same relay path from the same region; 51/9, 32/28 and 40/20 show how
@@ -453,10 +457,14 @@ minute measured so far failed the gate, so none of these is the calm-minute row 
 | 09:51, GitHub eastus (history) | in-page, main c9a6c31be | 53/6/1, 13.2/min (burst) | 46/11/3 | decision (`react`) p50 2 ms; game loop 75/s (p10 71, min 22); 8 catch-ups over the probe |
 | 10:45, run machine | in-page, main ae6d5664d | 57/3/0, 8.7/min (burst) | 53/7/0 | decision p50 1 ms; action packet out p50 0.7 / max 2.0 ms after its tick; loop p10 72/s, min 37.5; 0 catch-ups in the probe's window |
 | 12:45, run machine | in-page, main ae6d5664d | 51/9/0, 11.7/min (burst) | 47/12/1 | decision p50 1 ms; action packet out p50 0.7 / max 2.5 ms after its tick; 5.0 catch-ups/min over the probe |
+| 13:15, run machine | overlay, main ae6d5664d | 59/1/0, 2.4/min (fails (c) narrowly) | **59/1/0** | tick output in to game packet out p10 5 / **p50 6** / p90 7 / max 33 ms: page publication 1, gateway and SDK script 4, overlay flush 0; 0 catch-ups in the probe's window |
+| 13:35, run machine | in-page, main ae6d5664d | 41/17/1, 12.2/min (burst) | 51/7/2 | action packet out p50 1.1 / max 2.0 ms after its tick; 7.0 catch-ups/min over the probe |
 <!-- rs130-1115-s7 -->
 
-The overlay's page-side reaction is now **5 ms at the median**, against 22 ms before #90 and 7 at
-05:38; what is left is the gateway and SDK script round trip. Its 60/60 came in a 21 s probe window
+The overlay's page-side reaction is now **5-6 ms at the median**, against 22 ms before #90 and 7 at
+05:38; what is left is the gateway and SDK script round trip. At 13:15, in the calmest minute
+measured on the run machine (direct 59/60, 2.4 catch-ups per minute), the overlay landed 59/60,
+equal to direct, which closes rs/113's two-trial check. Its 60/60 came in a 21 s probe window
 that itself saw 0 catch-ups, so it is a fair reading of the path even though the direct row's
 minute failed.
 
@@ -538,16 +546,25 @@ A calm-minute knife and plain pair is still needed.
 **The in-page knife (rs/130, Ashburn run machine, main ae6d5664d, burst minutes).** rs/97's
 `knife-cycle` program counts a `roll` each time the skill's xp rises
 (`server/webclient/src/bot/programs/knife-cycle.ts`), so its `ticksPerRoll` is ticks per **log**,
-not per expected roll. Put in this section's unit (each log weighted by the 1/p rolls expected at
-its level, the levels taken from the program's level-up counter):
+not per expected roll. Put in this section's unit: ticks per expected roll = ticks / Σ 1/p(L)
+over the logs, L the Woodcutting level each log was cut at and p(L) = stat_random(L, lo, hi) =
+(floor(lo(99 - L)/98) + floor(hi(L - 1)/98) + 1)/256, the tree's success chance for a bronze axe
+(trees.dbrow: normal tree lo, hi = 64, 200; oak 32, 100). `tickmanip-demo-report.ts` computes it
+for the lite runner's logs and `docs/speedrun/scripts/knife-minutes.ts` for the in-page program's;
+for 12:45 the levels come from the program's level-up counter. All rows are Ashburn, all burst or
+near-burst minutes:
 
-| Session | Loop | Woodcutting | Ticks per log | Ticks per expected roll | Catch-ups in the window |
+| Session | Loop | Tree, Woodcutting, p | Ticks per log | Ticks per expected roll (Σ1/p) | Catch-ups in the window |
 | --- | --- | --- | --- | --- | --- |
-| 12:45 run machine | Knife, in-page program | 19-52 | 8.59 | **3.94** | 14 in 2.7 min (5.1 per minute) |
-| 12:45 run machine | Plain, lite runner through the page's gateway | 52-56 | 11.95 | **6.44** | 5 in 1.3 min |
-| 09:51 GitHub eastus | Knife, in-page program | about 82-84 | 5.32 | about **3.7** | 1.7 per minute |
-| 09:10 GitHub eastus | Knife, rs/113's overlay | 78-80 | 13.61 | **9.20** | |
-| 09:10 GitHub eastus | Plain | 80-82 | 9.32 | **6.39** | |
+| 13:35 run machine | Knife, in-page program | oak, 63-66, p 0.29-0.30 | 10.89 | **3.25** (63.6 over 19 gaps) | 16 in 1 min (12-17 per minute) |
+| 13:35 run machine | Plain, in-page program (`technique: 'plain'`) | oak, 66-68, p 0.30-0.31 | 12.28 | **3.76** (58.7 over 18 gaps) | 11 in 1.1 min (9-11 per minute) |
+| 13:15 run machine | Knife, rs/113's overlay | normal, 56-60, p 0.53-0.54 | 14.72 | **8.27** | 10 in 2.4 min (4.2 per minute) |
+| 13:15 run machine | Plain, lite runner through the page's gateway | normal, 61-63, p 0.54-0.55 | 12.47 | **7.23** | 5 in 1.4 min |
+| 12:45 run machine | Knife, in-page program | normal, 19-52, p 0.35-0.53 | 8.59 | **3.94** (128.7) | 14 in 2.7 min (5.1 per minute) |
+| 12:45 run machine | Plain, lite runner through the page's gateway | normal, 52-56, p 0.53-0.55 | 11.95 | **6.44** | 5 in 1.3 min |
+| 09:51 GitHub eastus | Knife, in-page program | normal, about 82-84, p about 0.69-0.70 | 5.32 | about **3.7** | 1.7 per minute |
+| 09:10 GitHub eastus | Knife, rs/113's overlay | normal, 78-80 | 13.61 | **9.20** | |
+| 09:10 GitHub eastus | Plain | normal, 80-82 | 9.32 | **6.39** | |
 
 The 09:51 plain control (21 logs at 29.10 per expected roll) is left out as broken. In the page
 the knife beats plain by about 40% even in a burst minute, close to its lab 3 plus the walk between
@@ -560,6 +577,19 @@ several plain cycles lost per miss. They cannot be tied to individual catch-ups 
 because the program stamps only its last 13 logs with ticks. Why the overlay's knife loses where
 the page's wins is not measured yet; the overlay adds the gateway and SDK script round trip
 (section 7) to every starter.
+
+**Oak, in the page, 13:35.** Oaks fall on one log in eight (`woodcut.rs2`), so on oak neither
+loop walks between most logs, and both ran as the same in-page program on the nearest oak to the
+Lumbridge stand, the plain one being the scored run's fallback when the gate turns the knife off.
+The knife read 3.25 ticks per expected roll against plain's 3.76, about 14% better, but on 19 and
+18 gaps, where one lucky or unlucky roll moves either figure by several per cent; plain under its
+own 4-tick cycle says the same. Every minute of the session was a burst (9-17 catch-ups per
+minute), so the split by minute that would answer whether the knife holds in calm minutes has no
+calm side yet. Of the knife's 17 gaps longer than 3 ticks, 11 contain a 350/150 catch-up and 15 a
+soft pair; of its 2 gaps of 3, none and 1. The knife counted 4 off-phase rolls and 6 resyncs in 25
+logs, against none of either at 12:45. The per-log stamps come from the program's final logTail
+(20 of the knife's 25 logs, all 19 of plain's): its `status()` has no logTail mid-run, so polling
+it cannot stamp a longer run.
 
 Overruns therefore matter for the knife as well: in a minute like 04:13 even the in-page direct
 path falls under Woodcutting's line. That is what the steadiness check in the run-night gate
@@ -942,7 +972,10 @@ rs/102 does.
    and 12:45 (46/60, 53/60, 47/60; decision 1-2 ms, action packets out within 2.5 ms of their
    tick). Every one of those minutes failed the gate, so neither variant has a calm-minute row
    yet. The in-page knife beats plain per expected roll even in burst minutes (3.7-3.9 against
-   6.4, section 8); the overlay's knife loses (8.3-9.2 against 6.4-7.2). Still open: both variants in a gate-passing
+   6.4 on normal trees, section 8; 3.25 against the in-page plain loop's 3.76 on oak, small
+   samples); the overlay's knife loses (8.3-9.2 against 6.4-7.2). The knife in a calm minute
+   against a catch-up minute, split per log, is still unmeasured: every minute at 13:35 was a
+   burst. Still open: both variants in a gate-passing
    minute, whether the in-page misses in a window with no 350/150 catch-ups come from soft
    overrun pairs (section 7), and the knife's completed fletches on the overlay.
 9. **What drives overruns.** Not the hour, and barely the player count (correlation 0.20 per
