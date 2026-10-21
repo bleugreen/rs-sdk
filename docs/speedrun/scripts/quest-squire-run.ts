@@ -63,7 +63,7 @@ await runScript(async ({ bot, sdk }) => {
             await opLocText(sdk, c, 3008, 3150, /climb-down/i);
             await waitTicksFor(sdk, s => (s.player?.worldZ ?? 0) > 6000, 20);
         });
-        await rec.seg('walk to blurite (3049,9566)', 'travel', async c => { await walk(bot, sdk, c, 3048, 9566, 0); });
+        await rec.seg('walk to blurite (3049,9566)', 'travel', async c => { await walk(bot, sdk, c, 3048, 9567, 1); });
         await rec.seg(`mine one blurite (Mining ${MINING})`, 'interaction', async c => {
             const t0 = tick(sdk);
             let clicks = 0;
