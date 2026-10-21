@@ -30,6 +30,7 @@ const BEAM = Number(arg('beam', '150'));
 const HORIZON = Number(arg('horizon', '600'));
 const WARM = 200;
 const SHOW = arg('show', '');
+const FREE_STARTER = process.argv.includes('--free-starter');
 
 type P = [number, number];
 const key = (p: P) => `${p[0]},${p[1]}`;
@@ -112,7 +113,10 @@ function plan(cluster: P[]) {
         for (const s of beam) {
             const R = s.t;
             const starters = adj[s.pos]!.filter(ri => s.avail[ri]! <= R + 1);
-            const starterU = Math.min(...adj[s.pos]!.map(ri => Math.max(R + 1, s.avail[ri]!)));
+            // --free-starter: something other than a rock sets %action_delay = map_clock + 2 on the
+            // tick after each roll (e.g. knife on logs, cut_logs.rs2:83-85; owned by rs/9), so every
+            // one-tick move can use the timer trick.
+            const starterU = FREE_STARTER ? R + 1 : Math.min(...adj[s.pos]!.map(ri => Math.max(R + 1, s.avail[ri]!)));
             for (let p2 = 0; p2 < stands.length; p2++) {
                 const d = dist[s.pos]![p2]!;
                 if (d === Infinity) continue;
