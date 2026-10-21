@@ -69,11 +69,15 @@ export class FakeSdk {
         return this.push(s => ({ tick: s.tick + 1, ...(typeof patch === 'function' ? patch(s) : patch) }));
     }
 
-    private record(method: string, ...args: unknown[]): Promise<ActionResult> {
-        const a = { method, args };
+    /** The one dispatch point every send goes through, as in BotSDK (where it is private). */
+    sendAction(a: SentAction): Promise<ActionResult> {
         this.sent.push(a);
         this.onSend(a, this);
         return Promise.resolve({ success: true, message: 'ok' });
+    }
+
+    private record(method: string, ...args: unknown[]): Promise<ActionResult> {
+        return this.sendAction({ method, args });
     }
 
     sendBankDeposit(slot: number, amount = 1) { return this.record('sendBankDeposit', slot, amount); }
