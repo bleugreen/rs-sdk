@@ -67,6 +67,7 @@ await runScript(async ({ bot, sdk }) => {
     let eats = 0;
     let minHp = 999;
     let lastForm = -1;
+    let stage = 0;
     let formStart = tArena;
     const forms: string[] = [];
     const FIGHT_CAP = Number(process.env.FIGHT_CAP ?? 1500);
@@ -94,7 +95,13 @@ await runScript(async ({ bot, sdk }) => {
                 eats++;
             }
         }
-        const target = sdk.getNearbyNpcs().find((n) => n.name === 'Kolodion' && n.options?.some?.((o: string) => /attack/i.test(o)));
+        const d = sdk.getDialog();
+        if (d?.isOpen && d.options.length <= 1) await sdk.sendClickDialog(d.options[0]?.index ?? 0); // level-up box
+        // Forms in order: kolhuman 907, kologre 908, kolspider 909, kolethereal 910, koldemon 911.
+        // Only the current stage's form is attackable; leftover forms from an aborted run are ignored.
+        const kols = sdk.getNearbyNpcs().filter((n) => n.name === 'Kolodion' && n.options.some((o) => /attack/i.test(o)));
+        if (!kols.some((n) => n.id === 907 + stage) && kols.some((n) => n.id === 908 + stage)) stage++;
+        const target = kols.find((n) => n.id === 907 + stage);
         if (target) {
             if (target.id !== lastForm) {
                 if (lastForm !== -1) forms.push(`npc ${lastForm}: ${tick(sdk) - formStart} ticks`);
