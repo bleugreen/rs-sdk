@@ -35,6 +35,7 @@ await runScript(async ({ bot, sdk }) => {
 
     if (FROM === 0) {
         await cheat(sdk, 'setvar waterfall_quest 0');
+        await cheat(sdk, 'setvar pillar_waterfall_quest 0');
         await tele(sdk, 2522, 3496);
         await rec.seg('Almera: start', 'dialogue', async c => {
             await talk(sdk, c, /almera/i, ['How can I help?']);
