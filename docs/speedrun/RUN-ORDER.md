@@ -65,7 +65,7 @@ loops. A figure taken only on the lite client says so.
 | ARC | the main thread's arc, cairn://p/rs/main/arc |
 | M05xx, M06xx | main's binding notes relayed by the rs/103 coordinator on 2026-10-21 at 05:30, 05:50, 06:02, 06:06 and 06:12; M0550's rates are "rs/97 in-page results via main, 05:50" (wired branch, local engine, visible tab) |
 | C#n | comment n on cairn://p/rs/111 (the coordinator relaying main, rs/41, rs/124 and the labs) |
-| TWIN | rs/164 on the rehearsal twin, 2026-10-21 20:44-20:52Z, account cairn_smoke, at 3ed0cd49c (merged into rs/147's branch as 4e0e8ae4, the same code); relayed by rs/147 at 13:53 PDT |
+| TWIN | rs/164 on the rehearsal twin, 2026-10-21 20:44-20:52Z, account cairn_smoke, at 3ed0cd49c (merged into rs/147's branch as 4e0e8ae4, the same code; on main as c2d9eada, #146, byte-identical to 4e0e8ae4); relayed by rs/147 at 13:53 PDT |
 
 **Units of the in-page knife figures.** `knife-cycle`'s old status fields `rolls` and `ticksPerRoll`
 counted Woodcutting xp events, that is logs (`server/webclient/src/bot/programs/knife-cycle.ts`:
@@ -73,7 +73,8 @@ counted Woodcutting xp events, that is logs (`server/webclient/src/bot/programs/
 by rs/159 (#132): `ticksPerSuccess` is per log; `ticksPerExpectedRoll` is per expected roll. Every
 in-page knife-cycle "ticks per roll" on this page predates the rename and is ticks per **log**. rs/130's
 demo rows (O11) are ticks per **expected roll**: `tickmanip-demo-report.ts` weights each log by the
-1/p rolls expected at its level. On oak from Woodcutting 60, where p = 1, the two coincide; on
+1/p rolls expected at its level. On oak from Woodcutting 60 with a rune axe, where p is 255/256 or 1,
+the two coincide (with a bronze axe they do not: rs/130's oak rows, O11); on
 willow at 99 a loop on the 3-tick lattice reads 4.36 per log and 3.00 per expected roll.
 
 **Dialogue column.** The run uses rs/51's blind continues: `continueBurst` in
@@ -451,20 +452,22 @@ there: relog 1 and the final logout end long sessions, and the arming relog come
 later, after the first firing at + 20 and P1, so that wait never fell on a planned relog. Only an
 unplanned logout within 16 ticks of a re-login was exposed, and rs/164 fixes it.
 
-**These logouts all leave from SCORED's browser tab, so `RUN_COMMIT` must include rs/164.** That
-covers both planned relogs, every shortfall or restock pause, and the final logout. rs/164 passed on
-the twin: the page confirmed every logout in 222-324 ms, 0 ticks of latency, and because the gateway
-still said `inGame: true` afterwards, `session.ts` no longer consults it for a browser session (m,
-TWIN). The code that ran is 3ed0cd49c, merged into rs/147's branch as 4e0e8ae4; main's commit is
-named when rs/165's snapshot merges (RUN-HOST.md "Credentials"). With it on `RUN_COMMIT` the
-~60-tick worst case below goes away, and a relog costs the ~20 above. Without rs/164,
-`logoutClean` cannot confirm a tab's logout: the gateway keeps `inGame: true` with status `stale`
-after the page leaves the game (m, rs/149 on the rehearsal twin, via rs/147, 2026-10-21). Each
-planned relog then risks `logoutClean`'s wait up to failure, up to ~60 ticks (i, R1's bound). On
-top of that is whatever run.ts does with a reported failure, which isn't written yet. Of that wait, the 15-tick confirmation timeout (r, `session.ts`) comes after the click,
-so it reaches the clock only if SCORED has not in fact left. This is a precondition on `RUN_COMMIT`
-(RUN-HOST.md "Credentials"; MAN entries 0 and 29), not a line in section 7. Until it holds, the
-final logout is confirmed on the host before the recording stops (RUN-HOST.md step 8).
+**These logouts all leave from SCORED's browser tab, so `RUN_COMMIT` must include rs/164, which is
+main's `c2d9eada`** (#146; RUN-HOST.md "Credentials" and step 0). That covers both planned relogs,
+every shortfall or restock pause, and the final logout. rs/164 passed on the twin: the page
+confirmed every logout in 222-324 ms, 0 ticks of latency, and because the gateway still said
+`inGame: true` afterwards, `session.ts` no longer consults it for a browser session (m, TWIN). The
+code that ran is 3ed0cd49c, merged into rs/147's branch as 4e0e8ae4 and brought to main
+byte-identical as c2d9eada. From c2d9eada `logoutClean` confirms a tab's logout through the page's
+own in-game flag over Chrome's DevTools port (`speedrun/lib/tab.ts` `pageInGame`; r), so a relog
+costs the ~20 above. **The ~60-tick worst case is historical**, gone on any `RUN_COMMIT` at or after
+c2d9eada. Before rs/164, `logoutClean` could not confirm a tab's logout, because the gateway keeps
+`inGame: true` with status `stale` after the page leaves the game (m, rs/149 on the rehearsal twin,
+via rs/147, 2026-10-21). Each planned relog then risked `logoutClean`'s wait up to failure, up to
+~60 ticks (i, R1's bound). This is a precondition on `RUN_COMMIT` (RUN-HOST.md "Credentials"; MAN
+entries 0 and 29), not a line in section 7. The final logout is still checked on the host before
+the recording stops: the run script's `logoutClean` result and the login screen in the live view
+(RUN-HOST.md step 8).
 
 **Logout-safe pause points** (where a supply shortfall is waited out logged out, at no tick cost
 beyond the relog): S01's landing tile; after S03 and after S04 (the row's end); in the air altar room
@@ -592,7 +595,7 @@ fourth. The largest measured change is Prayer, -605 (BP; rs/141).
 | Demo restarts: 1.5 expected at ~21.6 + 3 in place of ~3.6 + 3 (10 to 37) | Overhead (55): 1,483 to 1,510 | +27 | 0 | TWIN; RES§2, §6 |
 | The relog tail (2 x 46/29) kept on top | Overhead (55) | 0 | 0 | WINE "Relog risk" |
 | R17, the wine's login + 19 deadline against a re-navigated tab: text and sensitivity rows only (+~25 as built, beyond the totals) | - | 0 | 0 | R17; O33 |
-| rs/164 on `RUN_COMMIT` removes the ~60-tick unconfirmed-logout case: a precondition, never in the totals | - | 0 | 0 | TWIN; section 4 |
+| rs/164 on `RUN_COMMIT` (main's c2d9eada, #146) removes the ~60-tick unconfirmed-logout case, historical on any `RUN_COMMIT` at or after c2d9eada: a precondition, never in the totals | - | 0 | 0 | TWIN; section 4 |
 | **Net** | | **+63** | **+36** | |
 
 The new totals: knife on **34,410 / 31,699**; knife off in force **37,659 / 35,371**; knife off with
@@ -797,7 +800,7 @@ actions against ~650 slots), so the tick delta against the plan is 0 (i, SP§2, 
 
 | # | Risk | Where | Cost | The run's response |
 |---|---|---|---|---|
-| R1 | **Relog cost and tail**: a relog from SCORED's tab passes ~20 ticks in the world before the bot layer sees state (first state at client tick 20-22 against 3 for a fresh tab; m, TWIN; cause unmeasured), and about 1 in 29 logouts stays tens of ticks in the world, on the clock (46 seen) | S25c's two relogs; any shortfall pause; a restart's relog | ~21.6 expected per relog (20 + 46/29); 46 worst seen on top | two planned relogs only; clear pages and leave combat 16 ticks before each click; booth work in the windows leaves nothing pending at the click (0 ticks in 42 of 42 lab relogs, WW§3); **rs/164 on `RUN_COMMIT`**: with it a tab logout confirms in 222-324 ms, 0 ticks of latency (m, TWIN; 3ed0cd49c, merged into rs/147's branch as 4e0e8ae4), so `logoutClean`'s ~60-tick wait on an unconfirmed logout (WINE "Relog risk") goes away once it is on `RUN_COMMIT`; without it the gateway keeps `inGame: true`, `stale` (m, rs/149), and each relog risks that wait (section 4). A relog that does not re-navigate the tab would cut the ~20 (O33) |
+| R1 | **Relog cost and tail**: a relog from SCORED's tab passes ~20 ticks in the world before the bot layer sees state (first state at client tick 20-22 against 3 for a fresh tab; m, TWIN; cause unmeasured), and about 1 in 29 logouts stays tens of ticks in the world, on the clock (46 seen) | S25c's two relogs; any shortfall pause; a restart's relog | ~21.6 expected per relog (20 + 46/29); 46 worst seen on top | two planned relogs only; clear pages and leave combat 16 ticks before each click; booth work in the windows leaves nothing pending at the click (0 ticks in 42 of 42 lab relogs, WW§3); **`RUN_COMMIT` at or after c2d9eada** (main's rs/164 commit, #146): a tab logout confirms in 222-324 ms, 0 ticks of latency (m, TWIN; 3ed0cd49c, the same code as rs/147's 4e0e8ae4 and main's c2d9eada), so `logoutClean`'s ~60-tick wait on an unconfirmed logout (WINE "Relog risk"; before rs/164 the gateway's `inGame: true`, `stale`, left it unconfirmed, m, rs/149) is historical, gone on any such `RUN_COMMIT` (section 4). A relog that does not re-navigate the tab would cut the ~20 (O33) |
 | R2 | **Demo tick-overrun bursts**: after an overrun the next tick comes early and a reaction aimed at it misses. rs/102's per-reaction miss rate by the next tick interval (1,284 trials, m, demo-latency.md section 9 on rs/83's branch): under 150 ms 86%; 150-200 ms 18% (8 of 14 after a tick over 400 ms); 200-225 ms 2/30; 225-250 ms 5/92; 250 ms or more 3.5%. Every probe minute on the run host from 16:28 to 17:02 UTC was a burst (ARC). On rs/102's 24 samples, (c) at most 2 agreed with (a) on 22, and its two false passes (10:43 and 11:18) were caught by (a), so (a) stays a pass line; the gate's (b), publication p90, agreed with (a) on 17. Soft pairs are an in-run warning only (main's ruling, 11:05 PDT) | every reactive loop: S07, S09, S17, S18, S22; the tuned Runecraft cycle | ~600 expected (ARC, e); a whole night of failed gates +3,249 (+2,624 with rs/162's plain+bury) | tenet 12's gate (section 1); knife only while it holds, plain otherwise with periodic re-probes; the pause rule (more than ~5 catch-ups a minute pauses, under 1 resumes); predicted loops resync on observed slips (rs/96, rs/97, `hostgate.ts`); the start chosen by a 3-5 minute gate read |
 | R3 | **Browser background throttling**: a hidden or occluded tab slows timers and rAF, so every in-page and overlay reaction (M0550) | the whole run | unbounded: a throttled tab fails the knife and slows every step | section 1 setup (flags, a maximised unobscured tab on :10, power saving off); gate (d) measured ~72 loops per second p10 on the run host with RDP connected or disconnected and the capture on or off (RUN-HOST.md, "Measured"), checked continuously by the in-run monitor |
 | R4 | **Our client or network drops while the server stays up**: the player stays in the world 500 ticks (socket closed) or 1,000 (open and silent) unless something takes it over (rs/101; RES§2) | anywhere | 3-12 ticks in the world + 2 to the resumed step with the watchdog (m, RES§6, lite client); in the tab the takeover is a re-navigated login, ~20 more (i, TWIN), carried in the retries' 100 e | run under the watchdog; it takes the in-world player over at once (`session.ts`, `reconnect.ts`); never leave a dead client to the timeout; in the Wilderness a dropped player stays attackable |
@@ -904,7 +907,7 @@ actions against ~650 slots), so the tick delta against the plan is 0 (i, SP§2, 
 |---|---|---|---|---|
 | O3 | Wind Strike at the coop or at an NPC nearer (3222,3222) | T01-02 50 m; a target within ~20 tiles would save ~35 i | a site check near the landing | rs/103 coordinator (no lab assigned) |
 | O7 | The altar-giver roster N and the talisman keeper for S21 | N = ceil(restock / 7) + 1 (rs/117); 0 with 4+ talismans and the keeper, +34 with 2 (SF§ 7) | the keeper's pipeline time (R = 25 e) and the talisman count | rs/117, rs/41 |
-| O11 | The knife loops on the demo from Ashburn in the browser | **partly settled**: on the run host the in-page knife beats plain even in a burst minute (m, demo; demo-latency.md section 8 on rs/83's branch). rs/130's 12:45 PDT session (main ae6d5664, 11.7 catch-ups a minute, direct 51/60): knife-cycle **3.94 ticks per expected roll** (WC 19-52, normal trees; 8.56 per log) against plain **6.44** through the overlay (11.95 per log); the 09:51 GitHub run ~3.7 per expected roll at WC ~83. The overlay knife (8.9-9.2) is the one that loses. Gap histogram: 39 of 57 gaps on multiples of 3, 0 off-phase re-anchors, 2 lost-lock resyncs in 60 logs. These are normal trees in burst minutes, so they do not price S07's oak and willow bands. rs/130's 13:35 PDT session (20:35Z; run machine, main ae6d5664d, a burst minute: direct 41/60, 12.2 catch-ups a minute; in-page on oak with a bronze axe; ticks per expected roll = ticks / Σ 1/p, p(L) = stat_random(L, 32, 100)): knife-cycle's knife **3.25 per expected roll** (10.89 per log, WC 63-66, 19 gaps) and **the in-page plain technique 3.76** (12.28 per log, WC 66-68, 18 gaps) (m, demo; `docs/speedrun/research/data/browser-rows/host-20261021T2035-in-page-oak/` on rs/130's branch, via rs/158, 13:46 PDT). It is the first demo measurement of the plain fallback the run uses when the gate turns the knife off. Reading (i): the knife held within ~8% of its 3.0 lab cadence through a severe burst; plain's 3.76, below its own 4-tick cycle, is small-sample luck, so no knife/plain ratio is read from this pair | a calm-minute reading on the route's trees (none occurred in the 20:35Z session); the per-log catch-up correlation, which that session could not give: per-log stamps are now published (rs/159, #132), and the catch-up split awaits a session that uses them; rs/151's rehearsal | rs/130, rs/151 |
+| O11 | The knife loops on the demo from Ashburn in the browser | **partly settled**: on the run host the in-page knife beats plain even in a burst minute (m, demo; demo-latency.md section 8 on rs/83's branch). rs/130's 12:45 PDT session (main ae6d5664, 11.7 catch-ups a minute, direct 51/60): knife-cycle **3.94 ticks per expected roll** (WC 19-52, normal trees; 8.56 per log) against plain **6.44** through the overlay (11.95 per log); the 09:51 GitHub run ~3.7 per expected roll at WC ~83. The overlay knife (8.9-9.2) is the one that loses. Gap histogram: 39 of 57 gaps on multiples of 3, 0 off-phase re-anchors, 2 lost-lock resyncs in 60 logs. These are normal trees in burst minutes, so they do not price S07's oak and willow bands. rs/130's 13:35 PDT session (20:35Z; run machine, main ae6d5664d, a burst minute: direct 41/60, 12.2 catch-ups a minute; in-page on oak with a bronze axe; ticks per expected roll = ticks / Σ 1/p, p(L) = stat_random(L, 32, 100)): knife-cycle's knife **3.25 per expected roll** (10.89 per log, WC 63-66, 19 gaps) and **the in-page plain technique 3.76** (12.28 per log, WC 66-68, 18 gaps) (m, demo; `docs/speedrun/research/data/browser-rows/host-20261021T2035-in-page-oak/` on rs/130's branch, via rs/158, 13:46 PDT). It is the first demo measurement of the plain fallback the run uses when the gate turns the knife off. Reading (i): the knife held within ~8% of its 3.0 lab cadence through a severe burst; plain's 3.76, below its own 4-tick cycle, is small-sample luck, so no knife/plain ratio is read from this pair. rs/175 (PR #151, open, not on main at this writing) makes the unit native for oak and willow: knife-cycle reports `ticksPerExpectedRoll` from the axe worn or carried and names it, and sizes the lost-lock window from that axe's p (bronze oak at WC 60: 48 ticks, not 18), which should remove the false resyncs seen in rs/130's bronze-oak session (6 in 25 logs, cairn://p/rs/175) (r, rs/175's `knife-cycle.ts` at 3553d915; i) | a calm-minute reading on the route's trees (none occurred in the 20:35Z session); the per-log catch-up correlation, which that session could not give: per-log stamps are now published (rs/159, #132), and the catch-up split awaits a session that uses them; rs/151's rehearsal | rs/130, rs/151 |
 | O12 | How long overrun bursts last, and whether the start time avoids them | **mostly settled** by rs/102's overnight series (section 1, "Start time"; R2): severe bursts bounded at 12-65 min each, simmer stretches for hours, no hour clean in advance. The 600 e overrun allowance stands, still e | rs/140's gate history on the run host until the run (RUN-HOST.md, "Gate history timer") | rs/140 |
 | O14 | Monkey Madness at the route's real levels (Defence 1, ~42 HP; Prayer now ~94) | +180 expected failures | a run at those levels | Q open item (a) |
 | O17 | The tally's combat best of 1,750 | not in the sources; 1,829 used | main's basis for it | main |
