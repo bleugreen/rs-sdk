@@ -100,16 +100,29 @@ many times over, and a rune pickaxe for one account.
 
 ## Running it
 
-Standalone, from the repo root, with the account's lite client already running:
+**In the fleet** (the normal way): the role has no required options, so adopting
+an account is `fleetctl assign cairn_h30 essence` then `fleetctl reload`
+(`docs/speedrun/HELPERS.md`). A brand-new account in the range goes straight in
+with `fleetctl add h30-h34 --count 1 --role essence`. The fleet owns the gateway,
+re-logins and clean logouts; the role logs `phase {from, to}` (tutorial, quest,
+mine), which `fleetctl status` shows, and a `trip` line about every 100 s.
+
+**Standalone** (development), from the repo root, with the account's lite client
+already running:
 
     bun speedrun/helpers/essence.ts cairn_h30
 
-On bbs, behind a loopback gateway (the public gateway delivers state in bursts):
-`server/gateway/gateway.ts` with `AGENT_PORT=<port> GATEWAY_HOSTNAME=127.0.0.1`,
-and `GATEWAY_URL=ws://127.0.0.1:<port>` in the account's `bot.env` for both the
-lite runner and the role. Wrap both in restart loops: the demo server restarts
+On bbs, run a loopback gateway (`server/gateway/gateway.ts` with
+`AGENT_PORT=<port> GATEWAY_HOSTNAME=127.0.0.1`; the public gateway delivers state
+in bursts) and set `GATEWAY_URL=ws://127.0.0.1:<port>` for both the lite runner
+and the role, in a development copy's own `bots/<account>/bot.env` only. Never
+add it to `~/rs-fleet/bots/`: the fleet refuses an env file that bypasses its
+gateway. Wrap client and role in restart loops: the demo server restarts
 occasionally (one logged everyone out at 04:31 UTC on 2026-10-21 and refused
 logins for about a minute), and the role resumes from wherever the account is.
+To stop, click logout (component 2458, `speedrun/lib/session.ts` `logoutClean`)
+before ending the client: SIGINT to the lite runner only closes the socket, which
+leaves the account in the world for up to 500 ticks.
 
 **How many accounts.** The mine does not contend: four accounts mining at once
 measured the same 1,024-1,026 essence per hour each, matching a single account,
