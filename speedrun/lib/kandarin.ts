@@ -112,6 +112,16 @@ export async function crossToKandarin(t: Traveller, dest: Pt, what: string): Pro
     t.log('arrived in Kandarin', { at: what, ticks: (t.sdk.getState()?.tick ?? 0) - t0, hitpoints: t.sdk.getSkill('Hitpoints')?.level });
 }
 
+/** From Kandarin back to `dest` on the Lumbridge side (Varrock, Falador), over White Wolf Mountain. */
+export async function crossFromKandarin(t: Traveller, dest: Pt, what: string): Promise<void> {
+    await crossingSettings(t.sdk, t.log);
+    t.log('crossing back from Kandarin', { from: pos(t.sdk), to: what, hitpoints: t.sdk.getSkill('Hitpoints')?.level });
+    const t0 = t.sdk.getState()?.tick ?? 0;
+    await travel(t, TAVERLEY, 4, 'Taverley', 300_000);
+    await travel(t, dest, 3, what, 300_000);
+    t.log('back from Kandarin', { at: what, ticks: (t.sdk.getState()?.tick ?? 0) - t0, hitpoints: t.sdk.getSkill('Hitpoints')?.level });
+}
+
 /**
  * Fight the Lumbridge cows until `done()`, in the first combat style that trains
  * `skill` (Strength with a melee weapon, Ranged with a bow and arrows equipped).
