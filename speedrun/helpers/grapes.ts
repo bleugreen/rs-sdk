@@ -639,14 +639,29 @@ class Gatherer {
             for (const w of [GUILD_APPROACH_SOUTH, GUILD_APPROACH_SW, GUILD_APPROACH_WEST]) await this.walkOrOpen(w, 2);
         }
         await this.walkOrOpen(GUILD_OUTSIDE, 0);
-        const door = (await this.sdk.scanNearbyLocs(4)).find(l => l.x === GUILD_DOOR.x && l.z === GUILD_DOOR.z && /door/i.test(l.name));
-        if (door?.optionsWithIndex.some(o => /^open$/i.test(o.text))) {
-            const r = await this.bot.openDoor(door);
-            if (!r.success) throw new Error(`guild door: ${r.message} (Cooking ${skillLevel(this.sdk, 'Cooking')}, hat ${this.wearingHat()})`);
+        // The door script (cooking_guild.rs2, open_and_close_door) moves the player
+        // through and swaps the door for an invisible wall while it swings, also when
+        // another player passes. So the entry is gated on being inside, not on the door
+        // looking open; a door that is mid-swing is waited out and asked again.
+        const inside = (s: BotWorldState) => !!s.player && s.player.level === 0 && inBox(GUILD_GROUND, s.player.worldX, s.player.worldZ);
+        for (let attempt = 0; attempt < 5; attempt++) {
+            if (inside(this.state())) break;
+            const door = (await this.sdk.scanNearbyLocs(4)).find(l => l.x === GUILD_DOOR.x && l.z === GUILD_DOOR.z && /door/i.test(l.name));
+            const open = door?.optionsWithIndex.find(o => /^open$/i.test(o.text));
+            if (!door || !open) {
+                await this.sdk.waitForTicks(2);
+                continue;
+            }
+            await this.sdk.sendInteractLoc(door.x, door.z, door.id, open.opIndex);
+            const r = await waitUntil(this.sdk, s => inside(s) || s.dialog.isOpen, { maxTicks: 8 });
+            if (r.ok && !inside(r.state)) {
+                const said = r.state.dialog.text ?? '';
+                await this.bot.dismissBlockingUI();
+                throw new Error(`guild door refused: ${said} (Cooking ${skillLevel(this.sdk, 'Cooking')}, hat ${this.wearingHat()})`);
+            }
         }
-        const w = await this.bot.walkTo(GUILD_INSIDE.x, GUILD_INSIDE.z, 0);
-        const p = position(this.sdk);
-        if (!inBox(GUILD_GROUND, p.x, p.z)) throw new Error(`could not enter the guild: ${w.message}`);
+        if (!inside(this.state())) throw new Error(`could not enter the guild from ${JSON.stringify(position(this.sdk))}`);
+        await this.bot.walkTo(GUILD_INSIDE.x, GUILD_INSIDE.z, 0);
     }
 
     async goToSpawn(): Promise<void> {
@@ -738,6 +753,7 @@ class Gatherer {
             if (!w.success) throw new Error(`${spawn.name}: could not reach the stand tile ${stand.x},${stand.z}: ${w.message}`);
         };
         if (!onSpawn()) await toStand();
+        this.ctx.log('camping', { spawn: spawn.name, at: position(this.sdk), grapesHeld: invCount(this.sdk, ITEM.grapes), freeSlots: freeSlots(this.sdk) });
         let lastGone = tick(this.sdk);
         let visibleSince = -1;
         while (invCount(this.sdk, ITEM.grapes) < bankAt && freeSlots(this.sdk) > 1) {
@@ -758,6 +774,7 @@ class Gatherer {
                 const got = invCount(this.sdk, ITEM.grapes) - before;
                 if (got > 0) {
                     this.s.grapes += got;
+                    this.ctx.log('grape', { held: invCount(this.sdk, ITEM.grapes), taken: this.s.grapes, seen: this.s.seen, takenByOthers: this.s.takenByOthers });
                     if (this.s.grapes % 10 === 0) this.ctx.log('grapes', summary(this.s));
                 } else if (!this.groundAt(spot, ITEM.grapes)) this.s.takenByOthers++;
                 else continue; // still there: our packet did not land yet, try again
