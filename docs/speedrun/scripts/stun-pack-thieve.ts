@@ -74,10 +74,13 @@ const EATBELOW = Number(flag('eatbelow', String(HP - 20)));
 const MARGIN = Number(flag('margin', '1'));
 const TELE = flag('tele', '0,41,51,29,37'); // the rs/2 knight, (2653,3300)
 
+// k = 8 lands on T+10, the last stun tick. xp gained there queues a level-up page that pops on
+// T+11 and makes the player busy for the attempt (smoke run: 12 ticks to the next roll with a
+// page against 11 without), so the default plans send only the knight click there.
 const PLANS: Record<number, string> = {
-    3: '2:hhhb,3:-,4:hhhb,5:-,6:hhhb,7:c,8:hhhc',
-    2: '2:hhhb,3:-,4:hhhb,5:-,6:hhhh,7:hhhc,8:hhhc',
-    0: '2:hhhh,3:hhhh,4:hhhh,5:hhhh,6:hhhh,7:hhhc,8:hhhc',
+    3: '2:hhhb,3:-,4:hhhb,5:-,6:hhhb,7:c,8:c',
+    2: '2:hhhb,3:-,4:hhhb,5:-,6:hhhh,7:hhhc,8:c',
+    0: '2:hhhh,3:hhhh,4:hhhh,5:hhhh,6:hhhh,7:hhhc,8:c',
 };
 const PLAN_SRC = flag('plan', PLANS[BONES] ?? PLANS[3]!);
 const plan = new Map<number, string>();
