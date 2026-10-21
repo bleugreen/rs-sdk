@@ -227,7 +227,7 @@ that to matter, so it is recomputed (r21).
 
 | Quest | Ticks stock / fixed / burst | Reward | Training replaced (marginal) | Net (fixed) | Verdict | Doc |
 |---|---|---|---|---|---|---|
-| Merlin's Crystal + Holy Grail | 820 m + 1,240 i = 2,060 / 703 + 1,152 = 1,855 i / 647 + 1,115 = 1,762 i (pm); the Mordred and Titan fights would also need re-costing at route levels | 15,300 Defence, 11,000 Prayer, 8 QP (r) | Defence ~1,272 i (the MM-route combat finish is ~2,249 with it, ~3,521 without; measured rates). Prayer ~150-350: ~350 m standalone (rs/33: dragon bones at 2 ticks each, ~34.8 base/tick with banking) down to ~150 m if the ~153 bones are buried in the idle ticks of 4-tick Woodcutting or 5-tick fly fishing (rs/38). The protect prayers do not need it (above) | **about -224 to -424** | OFF (coordinator, after rs/33) | [merlins_crystal.md](merlins_crystal.md), [holy_grail.md](holy_grail.md) |
+| Merlin's Crystal + Holy Grail | 820 m + 1,240 i = 2,060 / 703 + 1,152 = 1,855 i / 647 + 1,115 = 1,762 i (pm); the Mordred and Titan fights would also need re-costing at route levels | 15,300 Defence, 11,000 Prayer, 8 QP (r) | Defence ~1,272 i (the MM-route combat finish is ~2,249 with it, ~3,521 without; measured rates). Prayer ~150-350: ~350 m standalone (rs/33: dragon bones at 2 ticks each, ~34.8 base/tick with banking) down to ~150 m if the ~153 bones are buried in the idle ticks of 4-tick Woodcutting or 5-tick fly fishing (rs/38). The protect prayers do not need it (above) | **about -233 to -433** | OFF (coordinator, after rs/33) | [merlins_crystal.md](merlins_crystal.md), [holy_grail.md](holy_grail.md) |
 | Legends' Quest (with its chain and ~41 QP of filler) | ~22,500 i (15,000-35,000) | 4 picks of 7,650 (r) | ~3,600 i (with Heroes' along the way) | **about -19,000** | OFF | [legends.md](legends.md) |
 | Heroes' Quest | ~3,000 i (2,000-5,000), plus the 55-QP gate | small xp in 13 skills (r) | ~800 i | about -2,200 | OFF: needs a live helper partner and Fishing/Cooking 53 for the untradeable lava eel | [legends.md](legends.md) |
 | Dragon Slayer | 1,120 / 1,010 / 970 (~370 m; burst pre-rule) | 18,650 Strength, 18,650 Defence, 2 QP (r) | with MM, in place of Waterfall (Package B): its Strength and Defence shrink the post-MM finish from ~3,520 to ~2,020 (i, phase model), and Waterfall's 888 is saved; needs 15 QP of filler (546 fixed i). Without MM: little or nothing, because Hitpoints binds (section 6) | Package B is ~830 better than Package A before Waterfall's pre-MM saving | **CONDITIONAL with MM, pending rs/56** (section 7); OFF without MM | [dragon_slayer.md](dragon_slayer.md) |
@@ -285,10 +285,10 @@ training starts is what the marginal values assume.
 
 Each of these was costed and dropped on the board. Section 3 has the numbers.
 
-- **Merlin's Crystal + Holy Grail**: Holy Grail's Defence is worth ~1,281 ticks of the
+- **Merlin's Crystal + Holy Grail**: Holy Grail's Defence is worth ~1,270 ticks of the
   combat finish. Its 11,000 Prayer is worth ~350 standalone (rs/33, measured), or ~150 if the
   bones are buried in Woodcutting and fly-fishing idle ticks (rs/38). Together that is
-  ~1,430-1,630 against 1,855 fixed for the pair, a loss of ~220-420, before the Mordred and
+  ~1,420-1,620 against 1,855 fixed for the pair, a loss of ~230-430, before the Mordred and
   Titan fights are re-costed at route levels. The protect prayers it used to gate cost
   ~11 dragon bones instead. [merlins_crystal.md](merlins_crystal.md), [holy_grail.md](holy_grail.md)
 - **Legends' Quest**: the 107-QP gate forces ~41 QP of filler on top of a seven-quest chain:
@@ -517,8 +517,8 @@ raised:
    A) only if its pre-MM fight saving exceeds ~830**. Without MM both are worth ~0
    (Hitpoints binds).
 2. **Merlin's Crystal + Holy Grail: OFF** (after rs/33's measured Prayer rate). See
-   section 5. Defence ~1,281 (this page's model; the coordinator's ~1,312 was the earlier
-   estimate) plus Prayer ~150-350, against 1,855 fixed: about -220 to -420. Taking them off
+   section 5. Defence ~1,270 (this page's model on measured rates; the coordinator's ~1,312 was
+   the earlier estimate) plus Prayer ~150-350, against 1,855 fixed: about -230 to -430. Taking them off
    removes Plague City's ~31 Holy Grail saving and the base-Attack-20 constraint, and moves
    the protect prayers to dragon bones.
 3. **Quest points.** The on-route set gives **18** (12 without MM, Tree Gnome Village and
