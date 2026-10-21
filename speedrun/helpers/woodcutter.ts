@@ -70,6 +70,19 @@ const AXES: { name: RegExp; label: string; price?: number }[] = [
     { name: /^bronze axe$/i, label: 'Bronze axe', price: 16 }
 ];
 const COINS = /^coins$/i;
+/** The axe worth a trip back to Bob once the account chops magic trees (see fetchBetterAxe). */
+const UPGRADE_AXE = AXES.find(a => a.label === 'Steel axe')!;
+/**
+ * Arhein's general store in Catherby, next to the Catherby bank: the nearest shop
+ * in Kandarin that buys logs. catherby.npc: shop_buy_multiplier 400, shop_delta 30.
+ */
+const ARHEIN = { x: 2804, z: 3431 };
+const ARHEIN_BUY = { multiplier: 400, delta: 30 };
+/** Logs worth selling for coins, best first, with their obj `cost` (skill_firemaking/configs/firemaking.obj). */
+const SELLABLE_LOGS: { name: string; cost: number }[] = [
+    { name: 'Yew logs', cost: 160 },
+    { name: 'Maple logs', cost: 80 }
+];
 /** Player controls tab buttons (server/content/pack/interface.pack, player_controls.rs2). */
 const IF_AUTO_RETALIATE_OFF = 151; // controls:com_3
 const IF_RUN_ON = 153; // controls:com_5
@@ -127,6 +140,44 @@ const axeRank = (name: string) => {
     return i < 0 ? Infinity : i;
 };
 
+/**
+ * Chance per 4-tick roll of getting a log: floor(lo*(99-L)/98) + floor(hi*(L-1)/98) + 1
+ * out of 256 (PlayerOps STAT_RANDOM with trees.dbrow successchance lo,hi). On a magic
+ * tree at level 75: bronze 5/256, iron 7, steel 10, rune 17.
+ */
+export function chopChance(level: number, lo: number, hi: number): number {
+    return (Math.floor((lo * (99 - level)) / 98) + Math.floor((hi * (level - 1)) / 98) + 1) / 256;
+}
+
+/**
+ * What a shop pays for the n-th unit sold (n from 0) when it already holds `held`
+ * above its base stock (shop.rs2 calc_shop_value with the shop's buy multiplier).
+ */
+export function shopBuyPrice(cost: number, n: number, held = 0, shop = ARHEIN_BUY): number {
+    const multiplier = Math.max(100, shop.multiplier - Math.min(1000, Math.max(-5000, (held + n) * shop.delta)));
+    return Math.floor((multiplier * cost) / 1000);
+}
+
+/**
+ * Logs to take out of the bank to raise `need` coins at Arhein's, yews first, plus
+ * `spare` more of the last kind used in case other players have sold the same logs
+ * there recently (which lowers his price). null when the bank cannot raise it.
+ */
+export function planLogSale(need: number, bank: Record<string, number>, spare = 2): { name: string; count: number }[] | null {
+    if (need <= 0) return [];
+    const plan: { name: string; count: number }[] = [];
+    let raised = 0;
+    for (const log of SELLABLE_LOGS) {
+        const have = bank[log.name] ?? 0;
+        let count = 0;
+        while (count < have && raised < need) raised += shopBuyPrice(log.cost, count++);
+        if (count === 0) continue;
+        plan.push({ name: log.name, count: Math.min(have, count + (raised >= need ? spare : 0)) });
+        if (raised >= need) return plan;
+    }
+    return null;
+}
+
 class Stop extends Error {}
 
 class Woodcutter {
@@ -150,6 +201,8 @@ class Woodcutter {
     private bankLogs: Record<string, number> = {};
     /** Trees that refused us recently (unreachable): `x,z` -> tick until which to skip. */
     private avoid = new Map<string, number>();
+    /** fetchBetterAxe runs at most once per process, so a sold-out Bob cannot loop it. */
+    private upgradeTried = false;
 
     constructor(private ctx: RoleContext) {
         this.bot = ctx.bot;
@@ -350,6 +403,61 @@ class Woodcutter {
         await this.wieldBestAxe();
     }
 
+    /**
+     * At magic trees the bronze axe is the bottleneck: the Seers trees are camped
+     * (20+ other players), every log goes to whoever's roll lands first, so an
+     * account's share scales with chopChance. Steel doubles it (10 vs 5 per 256 at
+     * level 75). No better axe is listed on the exchange, so the upgrade is Bob's
+     * steel axe; the trip (sell yews at Catherby, cross east, buy, cross back) costs
+     * about 10 minutes and pays back in about 30.
+     */
+    private wantsBetterAxe(): boolean {
+        const held = this.heldAxe();
+        return this.buyAxe && !this.upgradeTried && this.tierNow().tier === 'magic' && !!held && axeRank(held.name) > axeRank(UPGRADE_AXE.label);
+    }
+
+    /**
+     * Raise Bob's price by selling banked yews (then maples) to Arhein in Catherby,
+     * and walk out of Kandarin. The main loop then runs trekToSeers, which buys the
+     * axe at Bob's and crosses back. A death on the way east respawns in Lumbridge
+     * with the coins (a top-3 item), so it only shortens the walk.
+     */
+    private async fetchBetterAxe(): Promise<void> {
+        this.upgradeTried = true;
+        const price = UPGRADE_AXE.price!;
+        this.setPhase('axe-upgrade');
+        await this.openBankAt('seers');
+        await this.depositAllButAxe(true);
+        const bank = Object.fromEntries(this.sdk.getBankItems().map(i => [i.name, i.count]));
+        const plan = planLogSale(price - this.sdk.countInventoryItems(COINS), bank);
+        if (plan) for (const { name, count } of plan) await this.bot.withdrawItem(exact(name), count);
+        this.reportBank('seers');
+        await this.bot.closeBank();
+        if (!plan) {
+            this.ctx.log('axe upgrade skipped: not enough logs to sell', { coins: this.sdk.countInventoryItems(COINS), price });
+            return;
+        }
+        if (plan.length > 0) {
+            await this.travel(ARHEIN, 3, "Arhein's store");
+            const open = await this.bot.openShop(/^arhein$/i);
+            if (!open.success) throw new Error(`could not open Arhein's store: ${open.message}`);
+            for (const { name } of plan) {
+                while (this.sdk.countInventoryItems(COINS) < price && this.sdk.countInventoryItems(exact(name)) > 0) {
+                    const r = await this.bot.sellToShop(exact(name), 1);
+                    if (!r.success) {
+                        this.ctx.log('sell refused', { item: name, reason: r.message });
+                        break;
+                    }
+                }
+            }
+            await this.bot.closeShop();
+        }
+        const coins = this.sdk.countInventoryItems(COINS);
+        this.ctx.log('axe upgrade: walking to Bob', { coins, price, sold: plan });
+        if (coins < price) return; // the coins and leftover logs are banked on the next cycle
+        await this.travel(TAVERLEY, 4, 'Taverley', 300_000);
+    }
+
     // ---------------------------------------------------------------- getting set up
 
     /**
@@ -512,12 +620,17 @@ class Woodcutter {
             const alternatives = this.spotsFor(tier.tier).length > 1;
             if (trees.length === 0) {
                 bareSince ||= now;
-                // Every tree here is a stump: try the next spot after a short wait
-                // (an oak or willow is back in 30 ticks, a magic tree in 400).
+                // Every tree here is a stump: after a short wait, move to another spot
+                // that has a standing tree (or is out of sight), else keep waiting here.
+                // Moving blindly ping-pongs between two bare magic clusters and arrives
+                // late to every respawn.
                 if (alternatives && now - bareSince > 10) {
-                    this.ctx.log('spot bare, moving', { from: spot.id });
-                    this.spotIndex++;
-                    return;
+                    const next = await this.spotWithStandingTree(tier, spot);
+                    if (next !== undefined) {
+                        this.ctx.log('spot bare, moving', { from: spot.id, to: this.spotsFor(tier.tier)[next]!.id });
+                        this.spotIndex = next;
+                        return;
+                    }
                 }
                 stats.waits++;
                 await this.sdk.waitForTicks(2);
@@ -533,14 +646,39 @@ class Woodcutter {
             if (best.others >= 2 && alternatives) {
                 crowdedSince ||= now;
                 if (now - crowdedSince > 30) {
-                    this.ctx.log('spot crowded, moving', { from: spot.id, others: best.others });
-                    this.spotIndex++;
-                    return;
+                    const next = await this.spotWithStandingTree(tier, spot);
+                    if (next !== undefined) {
+                        this.ctx.log('spot crowded, moving', { from: spot.id, to: this.spotsFor(tier.tier)[next]!.id, others: best.others });
+                        this.spotIndex = next;
+                        return;
+                    }
+                    crowdedSince = now;
                 }
             } else crowdedSince = 0;
             await this.chopTree(best.t, tier.tree);
             spot = this.currentSpot();
         }
+    }
+
+    /**
+     * The index (into spotsFor(tier)) of the next other spot that has a standing
+     * tree, or that is too far away to see. The lite client's scene spans the
+     * loaded map region, so a 40-tile scan covers both Seers magic clusters.
+     */
+    private async spotWithStandingTree(tier: (typeof TIERS)[number], current: Spot): Promise<number | undefined> {
+        const SCAN = 40;
+        const spots = this.spotsFor(tier.tier);
+        const locs = await this.sdk.scanNearbyLocs(SCAN);
+        const me = this.pos();
+        const now = this.tick();
+        const start = Math.max(0, spots.indexOf(current));
+        for (let k = 1; k < spots.length; k++) {
+            const i = (start + k) % spots.length;
+            const spot = spots[i]!;
+            if (cheb(me, spot.stand) + spot.radius > SCAN) return i;
+            if (this.treesAt(spot, locs, tier.tree).some(t => (this.avoid.get(`${t.x},${t.z}`) ?? 0) < now)) return i;
+        }
+        return undefined;
     }
 
     /** Click a tree once and keep watching while the server loops the chop. */
@@ -665,6 +803,10 @@ class Woodcutter {
                 }
                 if (!inKandarin(this.state())) await this.trekToSeers();
                 await this.ensureAxe();
+                if (this.wantsBetterAxe()) {
+                    await this.fetchBetterAxe();
+                    continue;
+                }
                 if (this.freeSlots() === 0 || this.junk().length > 0) {
                     await this.bank(this.currentSpot().bank);
                     if (this.junk().length > 0) throw new Error(`could not bank ${this.junk().map(i => i.name).join(', ')}`);
