@@ -11,12 +11,18 @@ import { cheat, now, pos, tele, waitTicks, waitUntil } from './quest-primitives-
 
 const [stage, from, targets] = process.argv.slice(3);
 const [fx, fz] = from.split(',').map(Number);
-const list = targets.split(';').map(t => t.split(',').map(Number));
+const list = (targets ?? '').split(';').filter(t => /\d/.test(t)).map(t => t.split(',').map(Number));
 
 await runScript(async ({ sdk }) => {
     await cheat(sdk, `setvar regicide_quest ${stage}`);
     await waitTicks(sdk, 1);
     await tele(sdk, fx, fz, 0);
+    if (list.length === 0 || process.argv.includes('--locs')) {
+        await waitTicks(sdk, 2);
+        const locs = await sdk.scanNearbyLocs(8);
+        console.log('RESULT pos', JSON.stringify(pos(sdk.getState())));
+        console.log('RESULT locs', JSON.stringify(locs.map(l => `${l.name}#${l.id}@${l.x},${l.z},${l.level}:${l.options.join('/')}`)));
+    }
     for (const [tx, tz] of list) {
         const t0 = now(sdk);
         let last = pos(sdk.getState());
