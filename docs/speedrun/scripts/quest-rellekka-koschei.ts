@@ -164,6 +164,8 @@ await runScript(async ({ bot, sdk }) => {
                     }
                     out.form4Doses = n;
                     out.hpAfterForm4Brew = sdk.getState()!.player!.hp;
+                    const k4 = koschei();
+                    if (k4) await bot.attack(k4);
                 }
             }
             if (s.dialog.isOpen) {
@@ -174,8 +176,9 @@ await runScript(async ({ bot, sdk }) => {
                     const d = await L.talkThrough(sdk, [], { settleTicks: 1, maxTicks: 30 });
                     pages += d.pages;
                 }
+                // Keep attacking in form 4 as well: it only engages reliably when attacked.
                 const k = koschei();
-                if (k && form < 4) await bot.attack(k);
+                if (k) await bot.attack(k);
                 continue;
             }
             if (form < 4 && p.hp <= eatAt && sdk.countInventoryItems(/Shark/) > 0) {
@@ -186,7 +189,7 @@ await runScript(async ({ bot, sdk }) => {
                 continue;
             }
             const k = koschei();
-            if (k && form < 4 && (!p.combat.inCombat || p.combat.targetIndex !== k.index) && L.tick(sdk) % 3 === 0) await bot.attack(k);
+            if (k && (!p.combat.inCombat || p.combat.targetIndex !== k.index) && L.tick(sdk) % 3 === 0) await bot.attack(k);
             await sdk.waitForStateUpdate();
         }
         Object.assign(out, {
