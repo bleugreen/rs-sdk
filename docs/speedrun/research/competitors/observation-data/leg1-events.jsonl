@@ -1,0 +1,13 @@
+{"at":"2026-10-21T08:11:13.248Z","event":"login","tick":1,"me":[3222,3222,0],"modal":-1}
+{"at":"2026-10-21T08:11:13.248Z","event":"ready","tick":1,"me":[3222,3222,0]}
+{"at":"2026-10-21T08:11:43.056Z","event":"walk","spot":"draynor","ok":true,"msg":"Arrived","ticks":93,"me":[3092,3237]}
+{"at":"2026-10-21T08:11:43.056Z","event":"dwell","spot":"draynor","arrived":true,"tick":94}
+{"at":"2026-10-21T08:15:47.286Z","event":"walk","spot":"falador_east_bank","ok":true,"msg":"Arrived","ticks":208,"me":[3009,3358]}
+{"at":"2026-10-21T08:15:47.287Z","event":"dwell","spot":"falador_east_bank","arrived":true,"tick":902}
+{"at":"2026-10-21T08:18:57.520Z","event":"walk","spot":"mining_guild_entrance","ok":true,"msg":"Arrived","ticks":26,"me":[3020,3337]}
+{"at":"2026-10-21T08:18:57.520Z","event":"dwell","spot":"mining_guild_entrance","arrived":true,"tick":1533}
+{"at":"2026-10-21T08:22:26.626Z","event":"walk","spot":"falador_west_bank","ok":false,"msg":"Cannot walk to (2946, 3374): no fresh world state","ticks":0,"me":[3022,3337]}
+{"at":"2026-10-21T08:22:26.626Z","event":"dwell","spot":"falador_west_bank","arrived":false,"tick":2106}
+{"at":"2026-10-21T08:25:38.493Z","event":"walk","spot":"barbarian_fishing","ok":false,"msg":"Cannot walk to (3100, 3428): no fresh world state","ticks":0,"me":[3022,3337]}
+{"at":"2026-10-21T08:25:38.493Z","event":"dwell","spot":"barbarian_fishing","arrived":false,"tick":2106}
+{"at":"2026-10-21T08:28:40.357Z","event":"logout","why":"tour finished","tick":2106}
