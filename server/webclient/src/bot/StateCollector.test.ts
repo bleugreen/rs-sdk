@@ -411,3 +411,51 @@ describe('BotStateCollector combat styles', () => {
         ]);
     });
 });
+
+describe('BotStateCollector quest state', () => {
+    // Colours as the client stores them after IF_SETCOLOUR (5 bits a channel).
+    const RED = 0xf80000, YELLOW = 0xf8f800, GREEN = 0x00f800;
+
+    function questClient() {
+        const client = createClient();
+        client.var = [];
+        client.var[101] = 7; // qp
+        client.var[173] = 1; // option_run
+        client.var[31] = 100; // doricquest: never transmitted, must not leak
+        client.mainModalId = -1;
+        (IfType.list as any)[7336] = { id: 7336, colour: GREEN }; // questlist:doric
+        (IfType.list as any)[7372] = { id: 7372, colour: YELLOW }; // questlist:elena
+        (IfType.list as any)[7333] = { id: 7333, colour: RED }; // questlist:cook
+        (IfType.list as any)[7380] = { id: 7380, colour: 0xff0000 }; // questlist:tree, the cache default
+        (IfType.list as any)[8144] = { id: 8144, text: '@dre@Plague City' };
+        (IfType.list as any)[8145] = { id: 8145, text: '@dbl@I need to use Water to soften' };
+        (IfType.list as any)[8147] = { id: 8147, text: '@dbl@the ground near the sewer.' };
+        for (let id = 8148; id <= 8195; id++) (IfType.list as any)[id] = { id, text: '' };
+        return client;
+    }
+
+    test('publishes the varp whitelist, quest points and the started/complete quests', () => {
+        const state = new BotStateCollector(questClient()).collectState(1, true);
+
+        expect(state.varps).toEqual({ qp: 7, option_run: 1, bankcert: 0 });
+        expect(state.questPoints).toBe(7);
+        expect(state.quests).toEqual({ doric: 'complete', elena: 'started' });
+        expect(state.questJournal).toBeNull();
+    });
+
+    test('keeps the journal after it closes, with the tick it was last open', () => {
+        const client = questClient();
+        const collector = new BotStateCollector(client);
+
+        client.mainModalId = 8134;
+        expect(collector.collectState(5, true).questJournal).toEqual({
+            title: 'Plague City',
+            lines: ['@dbl@I need to use Water to soften', '@dbl@the ground near the sewer.'],
+            open: true,
+            tick: 5
+        });
+
+        client.mainModalId = -1;
+        expect(collector.collectState(6, true).questJournal).toMatchObject({ title: 'Plague City', open: false, tick: 5 });
+    });
+});
