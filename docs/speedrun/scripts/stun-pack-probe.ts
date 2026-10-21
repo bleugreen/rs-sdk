@@ -46,7 +46,7 @@ const slotOf = (re: RegExp) => inv().find(i => re.test(i.name))!;
 // 1. Standing still.
 mark('bury (standing)'); await sdk.sendUseItem(bone().slot, bone().optionsWithIndex.find(o => /bury/i.test(o.text))?.opIndex ?? 1); await waitTicks(4);
 mark('charge (standing)'); await sdk.sendClickComponent(1193); await waitTicks(4);
-mark('arrows (standing)'); await sdk.sendUseItemOnItem(slotOf(/^rune arrowheads$/i).slot, slotOf(/^headless arrow$/i).slot); await waitTicks(4);
+mark('arrows (standing)'); await sdk.sendUseItemOnItem(slotOf(/^rune arrow(head|tip)s$/i).slot, slotOf(/^headless arrow$/i).slot); await waitTicks(4);
 mark('3 charge + bury burst (fire-and-forget)');
 for (let i = 0; i < 3; i++) void sdk.sendClickComponent(1193);
 void sdk.sendUseItem(bone().slot, 1);

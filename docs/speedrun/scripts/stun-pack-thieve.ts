@@ -93,12 +93,12 @@ const log = (o: unknown) => appendFileSync(LOG, JSON.stringify(o) + '\n');
 const CHARGE_COM = 1193;
 const XP_BONE = 72 * 25, XP_CAST = 180 * 25;
 const TIERS: Array<{ re: RegExp; level: number; product: RegExp }> = [
-    { re: /^rune arrowheads$/i, level: 75, product: /^rune arrows?$/i },
-    { re: /^adamant arrowheads$/i, level: 60, product: /^adamant arrows?$/i },
-    { re: /^mithril arrowheads$/i, level: 45, product: /^mithril arrows?$/i },
-    { re: /^steel arrowheads$/i, level: 30, product: /^steel arrows?$/i },
-    { re: /^iron arrowheads$/i, level: 15, product: /^iron arrows?$/i },
-    { re: /^bronze arrowheads$/i, level: 1, product: /^bronze arrows?$/i },
+    { re: /^rune arrow(head|tip)s$/i, level: 75, product: /^rune arrows?$/i },
+    { re: /^adamant arrow(head|tip)s$/i, level: 60, product: /^adamant arrows?$/i },
+    { re: /^mithril arrow(head|tip)s$/i, level: 45, product: /^mithril arrows?$/i },
+    { re: /^steel arrow(head|tip)s$/i, level: 30, product: /^steel arrows?$/i },
+    { re: /^iron arrow(head|tip)s$/i, level: 15, product: /^iron arrows?$/i },
+    { re: /^bronze arrow(head|tip)s$/i, level: 1, product: /^bronze arrows?$/i },
 ];
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const skill = (s: BotWorldState, n: string) => s.skills.find(k => k.name.toLowerCase() === n)!;
