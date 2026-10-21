@@ -203,7 +203,12 @@ await runScript(async ({ bot, sdk }) => {
         sdk.getNewChat({ types: [0] });
         const msgs: string[] = [];
         const ri = await bot.interactLoc(cannon, 'Inspect');
-        if (!ri.success) log(sdk, `inspect: ${ri.message} at ${JSON.stringify(pos(sdk))}`, tStart);
+        if (!ri.success) {
+            log(sdk, `inspect: ${ri.message} at ${JSON.stringify(pos(sdk))}`, tStart);
+            const shut = (await sdk.scanNearbyLocs(6)).find((l) => /door/i.test(l.name) && l.options.includes('Open'));
+            if (shut) await bot.openDoor(shut);
+            continue;
+        }
         inspects++;
         await waitUntil(sdk, () => {
             msgs.push(...sdk.getNewChat({ types: [0] }).map((m) => m.text));
