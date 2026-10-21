@@ -464,7 +464,7 @@ column.
 | R11 | **No spare quest point** at the Champions' Guild door: exactly 32 (Q§7) | S26 | any lost point blocks Dragon Slayer and the finish | check the quest-point count after S24, before walking to the door (quest points in `BotWorldState` are rs/114); Sheep Shearer (~68 i) or Imp Catcher (~94 i) is the replacement (Q§7) |
 | R12 | **Runecraft cycle order**: the tuned 7-tick cycle schedules the giver's packets too, so the giver needs a direct path and must be processed before SCORED (players are visited by IP bucket, then login order, r, SK:runecraft §4) | S06, S21 | a giver that relogged after SCORED: robust 8-tick for its trades (+1 per craft; +168 if all); a giver relayed from bbs: the stock 15-tick reactive cycle (+1,344) | altar givers on the run machine through rs/117, logged in before SCORED and staying in through the planned relogs (section 1, section 4); the cycle switches a giver to the robust schedule if it logged in after SCORED; never run the tuned schedule with the order unknown (half the cycles failed when it was wrong, m) |
 | R13 | **Quest steps in the browser client**: every quest figure was taken on the lite client | S05-S26 | unknown; the fixed-column expected already assumes one tick per page | rehearse each quest script on the run configuration; the overlay drives them (rs/82's browser fix, rs/113); S15 and S19 are rs/116's; quest-state preconditions and resume are rs/114's |
-| R14 | **SCORED's name exposed** in the repository, logs or game chat | everywhere | a named account before the run invites interference and breaks the naming rule | SCORED never appears in the repository, commits or documents; rs/117's cue files carry the display name at runtime only and are gitignored (coordinator, 06:xx); the ambassador (cairn://p/rs/58) will not name the scored account in game chat before the run (M0606) |
+| R14 | **SCORED's name exposed** in the repository, logs or game chat | everywhere | a named account before the run invites interference and breaks the naming rule | SCORED never appears in the repository, commits or documents; rs/117's cue files carry the display name at runtime only and are gitignored (rs/103 coordinator, relaying rs/117's cue contract); the ambassador (cairn://p/rs/58) will not name the scored account in game chat before the run (M0606) |
 
 ## 9. Ordering questions
 
@@ -488,7 +488,7 @@ column.
 - **Mining starts at 64**, not 49 (SK:mining §2; M0602): a correction to v1's label, not to its order.
 - **Dialogue column**: fixed for expected, burst for best (header).
 - **Runecraft's cycle order**: the altar givers run on the run machine through rs/117, logged in before
-  SCORED, so the tuned 7-tick cycle is the expected case (M0602, M0612; coordinator 06:xx).
+  SCORED, so the tuned 7-tick cycle is the expected case (M0602, M0612; the rs/103 coordinator's note on rs/117's cue contract).
 - **Wine last inside S25**: relog 1 doubles as S25's staging pause and the wine waits have bones in
   hand (section 4).
 
