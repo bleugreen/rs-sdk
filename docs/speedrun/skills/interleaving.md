@@ -17,6 +17,17 @@ loaded host pushes some of them a tick late (the Fishing lock losses in section 
 ~1-tick enchant recovery in section 4 may partly be that). rs/26's bbs correction factor had not
 been published when this was written (01:15).
 
+**Client.** Every number here was taken on the headless lite client against a local lab engine,
+where a reaction lands on the next tick. The scored run drives the browser webclient against the
+demo, where each reaction to observed state costs 1-2 more ticks through the SDK relay from home
+and about 0.15 from Ashburn (rs/2; `docs/speedrun/LAB.md` on main, "Which client a number was
+taken on" and the host-latency table under "Running several labs on one machine"). The plans here
+are mostly predicted rather than reactive: the helper bursts and phase-locked plans go out on
+computed ticks, and the stun plans key off one observed tick per stun (the failure message).
+The Fishing phase lock reacts to xp drops, which is what loses it (section 2). Predicted plans
+are the ones LAB.md says must run as in-page tick programs on the scored run, not through the
+relay.
+
 ## Checklist for bot authors
 
 The rules a `speedrun/lib` interleaver must follow (each is measured below):
@@ -241,7 +252,14 @@ share the stuns. Standalone ticks saved per stun: 2 bones = 4 ticks, 2 enchants 
 | Magic, High Alchemy (`p_delay(3)`) | stuns only (1 per stun) | ~100 casts | 1 slot per item, plus natures |
 | Smithing (anvil), Firemaking (lines), Runecraft (altar), Cooking (range), combat | **no**: they need a location or are the self-only activity | - | - |
 
-Totals are small for the delay-free skills (~250 standalone ticks together). The larger
+Totals are small for the delay-free skills (~250 standalone ticks together by capacity), and
+smaller net of the two costs this table leaves out: top-up trades (5-9 ticks each) and level-up
+dialogs in a gathering host (section 5). Net, **only Fletching absorbs cleanly**, in pickpocket
+stuns, because its inputs stack and stun dialogs block nothing (about 30-45 of its 50 ticks,
+`fletching.md` section 5). **Crafting and Herblore net to nothing**: one or two slots per item
+make every load a top-up trade that costs as much as the bank cycle it replaces, and their
+level-ups would cost a gathering host more than their standalone time (`crafting.md` and
+`herblore.md` section 5). The larger
 prizes are Prayer (~400 ticks of burying absorbable in stuns, more in 4-tick WC or fishing)
 and, on routes where it comes late enough, Magic enchanting (~190 casts in stuns). Each top-up
 trade is real time that is not absorbed, so the saving is the standalone action time, not the
@@ -253,25 +271,32 @@ The earlier allocation (rs/28 coordinator, 23:56) spent about 80 stuns on Magic'
 ladder 7 -> 71 (~150-170 enchants, ~450 standalone ticks absorbed) and about 20 on dragon bones
 (~40 bones, ~80 ticks): about 530 ticks in all. Package B changes the Magic side completely.
 The pre-MM fights are cast and pay ~3,600 base Magic, so the ladder now stops at 59 (60
-enchants) and the Mage Arena is reached at base 76-77 without more (`magic.md` section 1). Those
+enchants) and the Mage Arena is reached at base 76 without more (`magic.md` section 1;
+[quests README](../quests/README.md) section 4). Those
 60 enchants must all be done **before Tree Gnome Village**: the Ardougne teleport at 51 and the
 warlord's Fire Blast at 59. Thieving is trained only **after Fight Arena**, whose 2,175 Thieving
-is worth most while Thieving is low (rs/3 README section 4). So no enchant can be in a stun.
+is worth most while Thieving is low ([quests README](../quests/README.md) step 5). So no
+enchant can be in a stun.
 
 | Use of Thieving's ~100 stuns (55 -> 99) | Before (Package A plan) | Package B |
 |---|---|---|
 | Enchants | ~80 stuns, ~150-170 casts, ~450 ticks | **0** |
 | Dragon bones (1.96 per stun, measured) | ~20 stuns, ~40 bones, ~80 ticks | **~100 stuns, ~196 bones: ~392 bury ticks + ~7 bank visits (~28), so ~400-420 ticks** |
-| Top-up trades (not absorbed) | ~8 | ~8 (bones at ~24 per load, ~12 stuns each) |
-| **Standalone ticks absorbed** | **~530** | **~400-420** |
+| Delay-free helper actions beside the bones (7.3 per stun, measured) | none planned | **Charge 80 -> 99, ~163 casts in ~22 stuns (~33 ticks), and Fletching's 173 rune-tier actions in ~24 stuns (~35 ticks)**: no bone displaced |
+| Top-up trades (not absorbed) | ~8 | ~9-10 (bones at ~21-24 per load, ~12 stuns each; the helper stacks take 2-3 slots) |
+| **Standalone ticks absorbed** | **~530** | **~470-490** (~400-420 from bones, ~65-70 from Charge and Fletching) |
 
 The measured per-stun figures are unchanged; only the allocation moves. Prayer's other ~348
 bones (555 - 11 early - 196) can still ride un-manipulated 4-tick Woodcutting or 5-tick fly
 fishing (section 3), which would absorb up to ~700 more standalone ticks (`prayer.md` section
 5). A third bone per stun (T+4, T+6, T+8) lands about 2/3 of the time by reading, which would
-lift the stun share to ~260 bones (~520 ticks); unmeasured as a sustained plan. Charge 80 -> 99
-(~33 standalone ticks, after the Mage Arena) is absorbable into any later gathering session
-(`magic.md` section 5).
+lift the stun share to ~260 bones (~520 ticks); unmeasured as a sustained plan. The stun shares
+are clean against the README's two column 5 conditions: the host is the plain pickpocket loop,
+Thieving has no knife column, and the stun's packets (3 per tick at +2, +4, +6) fit the budget.
+The gathering-clock share applies only against Woodcutting's and Fishing's plain column
+(section 7). Charge needs Thieving to fall after the Mage Arena; if it does not, Charge rides
+plain 4-tick Woodcutting instead (section 2, measured), which applies only against
+Woodcutting's normal column (`magic.md` section 5).
 
 ## 9. Open questions
 
