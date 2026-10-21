@@ -46,6 +46,13 @@ describe('amountButtons', () => {
         expect(amountButtons(4, 100)).toEqual([4]);
         expect(amountButtons(28, 100)).toEqual([28]);
     });
+
+    test('singlePress: one button, X when no single button fits', () => {
+        expect(amountButtons(15, 20, { singlePress: true })).toEqual([15]);
+        expect(amountButtons(2, 20, { singlePress: true })).toEqual([2]);
+        expect(amountButtons(10, 20, { singlePress: true })).toEqual([10]);
+        expect(amountButtons(20, 20, { singlePress: true })).toEqual([-1]);
+    });
 });
 
 describe('planWithdraws', () => {
