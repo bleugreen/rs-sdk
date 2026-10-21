@@ -53,10 +53,10 @@ for (const o of oploc.filter(o => o.ok)) {
     const ph = Math.min(o.t - prev.t, 9);
     clickPhase[ph] = (clickPhase[ph] ?? 0) + 1;
 }
-// ticks lost per level-up: the gap after a roll whose xp crossed a level
-const levelUpTicks = new Set(lines.filter(l => / levelup /.test(l)).map(l => Number(l.slice(l.indexOf('WCTRACE ') + 8).split(' ')[0])));
+// a level-up is a successful roll followed by a roll at a higher level
+const levelUpTicks = new Set(rolls.filter((r, i) => r.ok && i + 1 < rolls.length && rolls[i + 1].lvl > r.lvl).map(r => r.t));
 const gapHist: Record<number, number> = {};
-let lost = 0, lostAfterDepletion = 0, lostOther = 0, waitsAllDown = 0;
+let lost = 0, lostAfterDepletion = 0, lostAfterLevelUp = 0, lostOther = 0, waitsAllDown = 0;
 const lostEvents: string[] = [];
 for (let i = 1; i < rolls.length; i++) {
     const a = rolls[i - 1], b = rolls[i];
@@ -66,7 +66,9 @@ for (let i = 1; i < rolls.length; i++) {
     const extra = gap - 4;
     if (gap > 40) { waitsAllDown++; continue; } // a respawn wait or a deliberate pause, reported separately
     lost += extra;
-    if (depleteTicks.has(a.t)) lostAfterDepletion += extra; else lostOther += extra;
+    if (depleteTicks.has(a.t)) lostAfterDepletion += extra;
+    else if (levelUpTicks.has(a.t)) lostAfterLevelUp += extra;
+    else lostOther += extra;
     if (lostEvents.length < 25) {
         const window = (t: number) => t > a.t && t < b.t;
         lostEvents.push(`roll@${a.t}->${b.t} +${extra}${depleteTicks.has(a.t) ? ' after-depletion' : ''} opheld@[${opheld.filter(o => window(o.t) || o.t === a.t).map(o => `${o.t}${o.ok ? '' : ':' + o.why}`).join(',')}] oploc@[${oploc.filter(o => window(o.t) || o.t === a.t).map(o => `${o.t}${o.ok ? '' : ':' + o.why}`).join(',')}] moved@[${moved.filter(window).join(',')}]`);
@@ -85,7 +87,7 @@ const summary = {
     zScore: +((succ - expected) / sd).toFixed(2),
     levels: [...new Set(rolls.map(r => r.lvl))].slice(0, 10),
     rollGapHistogram: gapHist,
-    ticksLost: lost, ticksLostAfterDepletion: lostAfterDepletion, ticksLostOther: lostOther,
+    ticksLost: lost, ticksLostAfterDepletion: lostAfterDepletion, ticksLostAfterLevelUp: lostAfterLevelUp, ticksLostOther: lostOther,
     longWaits: waitsAllDown,
     depletions: depleteTicks.size, depletionPerLog: +(depleteTicks.size / succ).toFixed(4),
     respawnDurations: durations,
