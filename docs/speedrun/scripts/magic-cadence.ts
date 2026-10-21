@@ -11,7 +11,7 @@
 // (OpHeldTHandler refuses OPHELDT while the player is delayed) costs nothing, so this measures the
 // server's own floor. burst > 1 shows whether several casts can land in one tick.
 import { runScript } from '../../../sdk/runner';
-import { cheat, freshKit, histogram, log, nextTick, prepare, tick, waitTicks, xpRecorder } from './magic-lib';
+import { cheat, freshKit, histogram, log, namePattern, nextTick, prepare, tick, waitTicks, xpRecorder } from './magic-lib';
 
 type Spell = {
     level: number;
@@ -59,8 +59,9 @@ await runScript(async ({ bot, sdk }) => {
         const casts = s.item ? Math.min(CASTS, free) : CASTS;
         if (s.item) await cheat(sdk, `give ${s.item} ${casts}`);
         await waitTicks(sdk, 3);
-        sdk.getNewChat();
-        const itemId = s.item ? sdk.getInventory().find((i) => i.count === 1 && !/staff|rune/i.test(i.name))?.id : undefined;
+        sdk.getNewChat({ types: [0] });
+        const itemId = s.item ? sdk.getInventory().find((i) => namePattern(s.item!).test(i.name))?.id : undefined;
+        if (s.item && itemId === undefined) throw new Error(`no ${s.item} in inventory`);
 
         const xp0 = sdk.getSkill('Magic')!.experience;
         const t0 = tick(sdk);
@@ -88,7 +89,7 @@ await runScript(async ({ bot, sdk }) => {
         const perTick = gains.map((g) => g.base / s.base);
         const span = gains.length > 1 ? gains.at(-1)!.tick - gains[0]!.tick : 0;
         const tpc = n > 1 ? span / (n - 1) : NaN;
-        const msgs = sdk.getNewChat().map((m) => m.text).filter((x) => !/^::|Inventory wiped|successfully enchant|You feel/.test(x));
+        const msgs = sdk.getNewChat({ types: [0] }).map((m) => m.text).filter((x) => !/^::|Inventory wiped|successfully enchant|You feel/.test(x));
         log(sdk, `${name}: ${n.toFixed(1)} casts, ${sent} clicks over ${t1 - t0} ticks; casts per xp tick ${histogram(perTick)}; gaps ${histogram(gaps)}; ${tpc.toFixed(2)} ticks/cast; ${(s.base / tpc).toFixed(2)} base xp/tick`);
         if (msgs.length) console.log('   chat:', [...new Set(msgs)].slice(0, 6).join(' | '));
         summary.push(`| ${name} | ${s.level} | ${s.base} | ${BURST} | ${n.toFixed(0)} | ${tpc.toFixed(2)} | ${(s.base / tpc).toFixed(2)} | ${histogram(gaps)} |`);

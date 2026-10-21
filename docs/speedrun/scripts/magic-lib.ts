@@ -100,8 +100,10 @@ export async function prepare(sdk: BotSDK, bot: BotActions): Promise<void> {
 
 /** Wipe inventory and worn items, then optionally wield a staff. */
 export async function freshKit(sdk: BotSDK, bot: BotActions, staff?: string): Promise<void> {
-    await cheat(sdk, 'clearinv inv');
-    await cheat(sdk, 'clearinv worn');
+    // debugprocs take the NODE_DEBUGPROC_CHAR prefix, '~' by default (WorldConfig.ts)
+    await cheat(sdk, '~clearinv inv');
+    await cheat(sdk, '~clearinv worn');
+    await waitUntil(sdk, () => sdk.getInventory().length === 0 && sdk.getEquipment().length === 0, 10, 'empty inventory and equipment');
     if (staff) {
         await cheat(sdk, `give ${staff} 1`);
         await waitUntil(sdk, () => sdk.getInventory().length > 0, 10, 'staff in inventory');
@@ -111,8 +113,13 @@ export async function freshKit(sdk: BotSDK, bot: BotActions, staff?: string): Pr
             const chat = sdk.getNewChat().map((m) => m.text).slice(-5).join(' | ');
             throw new Error(`could not wield ${staff}: ${r.message} at (${p?.worldX},${p?.worldZ}); chat: ${chat}`);
         }
-        await cheat(sdk, 'clearinv inv');
+        await cheat(sdk, '~clearinv inv');
     }
+}
+
+/** Inventory display name pattern for a debugname (`gold_ore` -> /^gold ore$/i). */
+export function namePattern(debugname: string): RegExp {
+    return new RegExp(`^${debugname.replace(/_/g, ' ')}$`, 'i');
 }
 
 export function histogram(xs: number[]): string {
