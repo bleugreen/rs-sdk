@@ -131,36 +131,38 @@ export class RestartTracker {
     observe(s: DemoSample): void {
         this.sampledAt = s.at;
         this.players = s.players;
-        const collapsed = s.players !== null && this.running !== null && this.running >= this.o.collapseFloor && s.players < this.running * this.o.collapseShare;
-        const gone = s.players === null || collapsed;
-        if (gone) {
-            if (!this.current && this.phase !== 'unknown') this.beginOutage(s.at);
-            else if (!this.current && this.phase === 'unknown' && s.players === null) this.phase = 'down';
-            if (this.current) this.phase = this.current.loginAt ? 'recovering' : s.players === null ? 'down' : 'refusing';
-            return;
-        }
-        if (this.current) {
-            this.current.answeringAt ??= s.at;
-            const back = this.current.playersBefore !== null && s.players! >= this.current.playersBefore * this.o.recoveredShare;
-            const longAgo = this.current.loginAt !== null && s.at - this.current.loginAt >= this.o.recoveredAfterMs;
-            if (back || longAgo || (this.current.playersBefore ?? 0) < this.o.collapseFloor) {
-                if (this.current.loginAt !== null || back || longAgo) {
-                    this.endOutage(s);
-                    return;
-                }
+        const cur = this.current;
+        if (!cur) {
+            const collapsed = s.players !== null && this.running !== null && this.running >= this.o.collapseFloor && s.players < this.running * this.o.collapseShare;
+            if (s.players === null || collapsed) {
+                // Unreachable before any good sample: down, but no restart time to report.
+                if (this.phase === 'unknown' && s.players === null) this.phase = 'down';
+                else this.beginOutage(s.at, s.players);
+                return;
             }
-            this.phase = this.current.loginAt ? 'recovering' : 'refusing';
+            this.phase = 'up';
+            this.lastNormalAt = s.at;
+            // Follows rises at once and decays slowly, so one low sample cannot hide a collapse.
+            this.running = this.running === null ? s.players : Math.max(s.players, Math.round(this.running * 0.9 + s.players * 0.1));
             return;
         }
-        this.phase = 'up';
-        this.lastNormalAt = s.at;
-        // A slow-moving running count: follows rises at once, decays slowly.
-        this.running = this.running === null ? s.players : Math.max(s.players!, Math.round(this.running * 0.9 + s.players! * 0.1));
+        if (s.players === null) {
+            this.phase = cur.loginAt ? 'recovering' : 'down';
+            return;
+        }
+        cur.answeringAt ??= s.at;
+        const before = cur.playersBefore;
+        const refilled = before !== null && before >= this.o.collapseFloor
+            ? s.players >= before * this.o.recoveredShare
+            : cur.loginAt !== null || (before === null && s.players >= this.o.collapseFloor * 10);
+        const longAgo = cur.loginAt !== null && s.at - cur.loginAt >= this.o.recoveredAfterMs;
+        if (refilled || longAgo) this.endOutage(s);
+        else this.phase = cur.loginAt ? 'recovering' : 'refusing';
     }
 
     /** Our own login was refused (code 8 during an outage, or no answer). */
     noteLoginRefused(at: number): void {
-        if (!this.current) this.beginOutage(at);
+        if (!this.current) this.beginOutage(at, this.players);
         this.current!.refusals++;
         if (!this.current!.loginAt) this.phase = this.players === null ? 'down' : 'refusing';
     }
@@ -169,10 +171,12 @@ export class RestartTracker {
     noteLoginAccepted(at: number): void {
         if (!this.current) return;
         this.current.loginAt ??= at;
-        this.phase = 'recovering';
+        const before = this.current.playersBefore;
+        if (before === null || before < this.o.collapseFloor) this.endOutage({ at, players: this.players, ms: 0 });
+        else this.phase = 'recovering';
     }
 
-    /** Our client's ticks stopped while the world was up: count it as an outage only if /playercount agrees. */
+    /** Catch-ups per completed minute, oldest first (CatchUpMeter.perMinute, or a program's frames). */
     noteCatchUps(perMinute: number[]): void {
         this.minutes = perMinute.slice(-10);
     }
@@ -194,9 +198,9 @@ export class RestartTracker {
         };
     }
 
-    private beginOutage(at: number): void {
+    private beginOutage(at: number, players: number | null): void {
         this.current = { downAt: at, lastNormalAt: this.lastNormalAt, answeringAt: null, loginAt: null, refusals: 0, playersBefore: this.running };
-        this.phase = 'down';
+        this.phase = players === null ? 'down' : 'refusing';
     }
 
     private endOutage(s: DemoSample): void {
