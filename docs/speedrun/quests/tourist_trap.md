@@ -91,7 +91,7 @@ Agility and Thieving rolls (the cart and the lock below).
 |---|---|---|
 | Amulet of glory (charged) | 1 | teleport to Al Kharid |
 | Shantay pass | 1 | the first crossing (`shantay_pass.rs2:79-97`) |
-| Waterskin (4) | 1-2 | desert heat takes a sip every 150 ticks (190 in full desert clothes), else 1-10 damage (`area_desert/scripts/desert_heat.rs2:10-119`). The playthrough used only 2 sips (measured: it ended with Waterskin(2) and two full ones), since the camp, the mine and the tents spare you most of the time (`desertheat_disabled_zones`, `desert_heat.rs2:72-75`). |
+| Waterskin (4) | 1-2 | desert heat takes a sip every 150 ticks (190 in full desert clothes), else 1-10 damage (`area_desert/scripts/desert_heat.rs2:10-119`). The playthrough used only 2 sips (measured: it ended with Waterskin(2) and two full ones), since the mining camp and the Bedabin camp are heat-free (`desert_heat_zones.dbrow:3-8`, applied at `desert_heat.rs2:72-75`) and the mine is outside the desert zones. |
 | Desert shirt, desert robe, desert boots | 1 each | traded to the slave for his clothes (`mining_slave.rs2:145-200`); wear them from the start (+40 ticks per sip) |
 | Bronze bar | 3-6 | 2.6 expected at Smithing 20; the run used 6 |
 | Feathers | 40-80 | 10 per try, 3.2 tries expected at Fletching 10 |
