@@ -62,7 +62,14 @@ await runScript(async ({ bot, sdk }) => {
             if (a) await bot.equipItem(a);
         }
         if (boost) {
-            await L.cheat(sdk, 'give 2doseattack 1', 1); // placeholder names resolved below
+            for (const [obj, re] of [['3dose2attack', /Super attack/], ['3dose2strength', /Super strength/]] as const) {
+                await L.cheat(sdk, `give ${obj} 1`, 2);
+                const pot = sdk.findInventoryItem(re);
+                if (pot) await sdk.sendUseItem(pot.slot, 1);
+                await sdk.waitForTicks(3);
+            }
+            for (const v of sdk.getInventory().filter(i => /Vial|Super/.test(i.name))) await sdk.sendDropItem(v.slot);
+            await sdk.waitForTicks(1);
         }
         await L.cheat(sdk, 'setvar viking 1');
         await L.cheat(sdk, `setvar viking_bits ${THORVALD_STARTED}`);
@@ -87,6 +94,13 @@ await runScript(async ({ bot, sdk }) => {
         let eaten = 0;
         let minHp = sdk.getState()!.player!.hp;
         let hpAtForm4: number | null = null;
+        const eatAt = eatAtArg ? Number(eatAtArg.slice(6)) : Math.floor(hp / 2);
+        if (pray) {
+            await bot.activatePrayer('ultimate_strength');
+            await bot.activatePrayer('incredible_reflexes');
+        }
+        out.boostedAtt = sdk.getSkill('Attack')?.level;
+        out.boostedStr = sdk.getSkill('Strength')?.level;
         await bot.attack(sdk.findNearbyNpc(/Koschei/)!);
         let done = false;
         while (L.tick(sdk) - t0 < 2000) {
@@ -118,7 +132,7 @@ await runScript(async ({ bot, sdk }) => {
                 continue;
             }
             if (p.isDead) break;
-            if (forms.length < 3 && p.hp < p.maxHp * 0.5 && sdk.countInventoryItems(/Shark/) > 0) {
+            if (forms.length < 3 && p.hp <= eatAt && sdk.countInventoryItems(/Shark/) > 0) {
                 await bot.eatFood(/Shark/);
                 eaten++;
                 const k2 = sdk.findNearbyNpc(/Koschei/);
