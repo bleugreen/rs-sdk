@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One-batch Woodcutting lab on the woodcutting port block (docs/speedrun/LAB.md):
 # starts the engine, gateway and a lite runner, runs the given scripts in order,
-# then stops everything. Copied from agility-lab.sh with the port block changed.
+# then stops everything. Same flow as lab.sh, plus the WC_TRACE engine patch below.
 #
 #   docs/speedrun/scripts/woodcutting-lab.sh <bot> <script.ts>[:arg:arg...] ...
 #

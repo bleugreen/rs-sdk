@@ -90,12 +90,19 @@ batch to one executor.
 
 Long-lived terminals may not be pinnable to the executor that runs your
 scripts. In that case, run the whole lab inside one pinned batch:
-`docs/speedrun/scripts/agility-lab.sh <bot> <script.ts>[:arg:arg] ...` starts the
-engine and gateway, waits for `World ready`, creates or repoints the bot, runs
-the scripts in order, then stops everything. It hard-codes the agility port
-block (`agility-lab.sh:18,39`), so copy it as `<skill>-lab.sh` and change those
-lines for another block. Give the batch a long timeout, because the first boot
-packs the content.
+`LAB_BLOCK=<block> NODE_TICKRATE=<ms> bash docs/speedrun/scripts/lab.sh <bot> <script.ts>[:arg:arg] ...`
+starts the engine and gateway on that row of the port table, waits for
+`World ready`, creates or repoints the bot, runs the scripts in order, then
+stops everything. `LAB_BLOCK` defaults to `agility` and `NODE_TICKRATE` to 100.
+Give the batch a long timeout, because the first boot packs the content.
+
+On a loaded executor the bot itself can stall: at 300 ms on a machine at load
+29 of 32 cores, single click round trips through the gateway and runner took up
+to 29 s and the engine's own ticks stretched to over 2 s. A per-tick loop
+cannot click during such a stall, so a cadence measured there mixes bot
+latency into server cadence. Log wall-clock time beside ticks (as
+`thieving-pickpocket.ts` does), report stall-free windows separately, and
+prefer an idle executor for headline runs.
 
 ## Measuring
 

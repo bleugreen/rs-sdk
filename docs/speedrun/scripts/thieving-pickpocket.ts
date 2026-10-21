@@ -32,6 +32,16 @@
  *
  * Ticks are the lite client's count of server ticks (one per PLAYER_INFO), so
  * gaps are server-tick gaps. Base xp = game xp / 25.
+ *
+ * Each log row also carries `ms` (wall clock when the script handled that
+ * tick's state) and `clickMs` (round trip of the click through gateway and
+ * runner). Ticks the loop never saw (`ticksUnseen` in the summary, grouped by
+ * stall length) are bot-side stalls: no click reached the server during them,
+ * whatever the cadence. `slowClicks` counts round trips longer than one tick.
+ * `stallFree` reports throughput over the stretches between stalls longer than
+ * --stallms (default 1000) of wall clock: what the bot does when it is not
+ * starved. If no state arrives for 60 s (runner gone), the run stops and still
+ * prints its summary.
  */
 import { runScript } from '../../../sdk/runner';
 import type { BotWorldState, NearbyNpc } from '../../../sdk/types';
@@ -54,6 +64,7 @@ const EATDELAY = Number(flag('eatdelay', '0'));
 const FOOD = flag('food', 'lobster')!;
 const DMG = Number(flag('dmg', '3'));
 const UNTIL = Number(flag('until', '0'));
+const STALL_MS = Number(flag('stallms', '1000'));
 const BOT = argv.find(a => !a.startsWith('--')) ?? 'bot';
 const OUT = flag('out', `${process.env.TMPDIR ?? '/tmp'}/thieving-${BOT}-${NPC.source.replace(/\W+/g, '')}-${LEVEL}-${EAT}-${STUNPROBE}.jsonl`)!;
 
@@ -78,6 +89,11 @@ await runScript(async ({ bot, sdk }) => {
         if (now && now.tick > after) return resolve(now);
         const off = sdk.onStateUpdate(s => { if (s.tick > after) { off(); resolve(s); } });
     });
+    /** nextTick, or null when no state arrives for 60 s. */
+    const nextTickOrGone = (after: number) => Promise.race([
+        nextTick(after),
+        new Promise<null>(resolve => setTimeout(() => resolve(null), 60_000)),
+    ]);
     const waitTicks = async (n: number) => { let t = sdk.getState()!.tick; for (let i = 0; i < n; i++) t = (await nextTick(t)).tick; };
 
     await sdk.waitForCondition(s => (s.player?.worldX ?? 0) > 0, 15000);
@@ -114,10 +130,23 @@ await runScript(async ({ bot, sdk }) => {
     const startTick = state.tick;
     let prevLevel = thieving(state)!.baseLevel;
     const startXp = thieving(state)!.experience;
+    const unseen: Record<number, number> = {};
+    let slowClicks = 0, maxClickMs = 0, tickMs = 0, aborted: string | undefined;
+    let lastMs = Date.now(), lastT = state.tick;
+    // Wall-clock stalls longer than STALL_MS split the run into stall-free windows.
+    const stalls: { t: number; ms: number }[] = [];
 
     while (rolls.length < ATTEMPTS && !(UNTIL && thieving(state)!.baseLevel >= UNTIL)) {
-        state = await nextTick(state.tick);
+        const next = await nextTickOrGone(state.tick);
+        if (!next) { aborted = 'no state update for 60 s'; break; }
+        state = next;
         const t = state.tick;
+        const ms = Date.now();
+        if (t - lastT > 1) unseen[t - lastT - 1] = (unseen[t - lastT - 1] ?? 0) + 1;
+        else if (!tickMs) tickMs = ms - lastMs; // first clean gap: wall-clock tick length
+        if (ms - lastMs > STALL_MS) stalls.push({ t: lastT, ms: ms - lastMs });
+        lastT = t; lastMs = ms;
+        let clickMs: number | undefined;
         const skill = thieving(state)!;
         const hp = state.player!.hp;
         const rej = state.opFeedback?.opRejectedCount ?? 0;
@@ -215,7 +244,12 @@ await runScript(async ({ bot, sdk }) => {
         let click = (t - startTick) % EVERY === 0;
         if (t < suppressUntil) click = t === probeAt;
         if (click && target && op) {
+            const c0 = Date.now();
             await sdk.sendInteractNpc(target.index, op.opIndex);
+            clickMs = Date.now() - c0;
+            if (clickMs > (tickMs || 100)) slowClicks++;
+            maxClickMs = Math.max(maxClickMs, clickMs);
+            if (clickMs > STALL_MS) stalls.push({ t, ms: clickMs });
             clicks++; clicksSince++; events.push('click');
             if (t === probeAt) { probeSent++; events.push('probe'); }
         } else if (click) {
@@ -228,7 +262,7 @@ await runScript(async ({ bot, sdk }) => {
         if (target) noTargetRun = 0;
         if (state.player!.isDead) deaths += fresh.some(x => /you are dead/i.test(x)) ? 1 : 0;
 
-        log.write(JSON.stringify({ t, xp: skill.experience, lvl: skill.baseLevel, hp, rej, npc: target ? [target.tileX ?? target.x, target.tileZ ?? target.z] : null, me: [state.player!.worldX, state.player!.worldZ], ev: events, msg: fresh }) + '\n');
+        log.write(JSON.stringify({ t, xp: skill.experience, lvl: skill.baseLevel, hp, rej, npc: target ? [target.tileX ?? target.x, target.tileZ ?? target.z] : null, me: [state.player!.worldX, state.player!.worldZ], ev: events, msg: fresh, ms, clickMs }) + '\n');
     }
     await log.end();
 
@@ -243,6 +277,17 @@ await runScript(async ({ bot, sdk }) => {
         rejected[key][rolls[i].rej] = (rejected[key][rolls[i].rej] ?? 0) + 1;
         // Gap of an interval in which food was eaten (ateBefore counts from the eat to this roll).
         if (EAT !== 'none' && (rolls[i].ateBefore ?? 999) <= g) eatGaps[g] = (eatGaps[g] ?? 0) + 1;
+    }
+    // Stall-free cadence: intervals between consecutive rolls that contain no
+    // stall, counted separately for gaps after a success and after a failure.
+    const stallTicks = stalls.map(s => s.t);
+    const clean = { rolls: 0, ticks: 0, afterSuccess: {} as Record<number, number>, afterFail: {} as Record<number, number> };
+    for (let i = 1; i < rolls.length; i++) {
+        const a = rolls[i - 1].tick, b = rolls[i].tick;
+        if (stallTicks.some(s => s >= a && s < b)) continue;
+        clean.rolls++; clean.ticks += b - a;
+        const m = rolls[i - 1].ok ? clean.afterSuccess : clean.afterFail;
+        m[b - a] = (m[b - a] ?? 0) + 1;
     }
     const ok = rolls.filter(r => r.ok).length;
     const fails = rolls.length - ok;
@@ -266,6 +311,10 @@ await runScript(async ({ bot, sdk }) => {
         clicks, rejections, rejectionsPerSuccess: +(rejections / Math.max(ok, 1)).toFixed(3),
         damagePerFail: dmg, eats, forcedEats, healed, restocks, hpLost: rolls.filter(r => !r.ok).reduce((a, r) => a + (r.dmg ?? DMG), 0),
         baseXpGained: +((thieving(state)!.experience - startXp) / 25).toFixed(1), ticksTotal: state.tick - startTick,
-        setstats, combatBlocks, deaths, noTarget, probeSent, log: OUT,
+        setstats, combatBlocks, deaths, noTarget, probeSent,
+        ticksUnseen: unseen, ticksUnseenTotal: Object.entries(unseen).reduce((a, [k, v]) => a + +k * v, 0),
+        slowClicks, maxClickMs, stallsOverMs: { ms: STALL_MS, count: stalls.length, wallMs: stalls.reduce((a, s) => a + s.ms, 0) },
+        stallFree: { intervals: clean.rolls, ticks: clean.ticks, rollsPerTick: +(clean.rolls / Math.max(clean.ticks, 1)).toFixed(4), gapAfterSuccess: clean.afterSuccess, gapAfterFail: clean.afterFail },
+        aborted, log: OUT,
     }, null, 1));
 }, { timeout: 0, printState: false });
