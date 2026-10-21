@@ -113,9 +113,13 @@ if (PATH === 'relay') {
     }, 10 * 60_000);
     try {
         await session.waitTicks(5);
-        if (TELE) {
-            if (session.client.isModalOpen() && session.client.getModalInterface() === 3559) session.client.acceptCharacterDesign();
+        // a first login opens the character design screen (3559), which holds the walks
+        if (session.client.isModalOpen() && session.client.getModalInterface() === 3559) {
+            session.client.acceptCharacterDesign();
+            session.client.flush();
             await session.waitTicks(2);
+        }
+        if (TELE) {
             session.client.say('::tele 0,50,50,22,18');
             session.client.flush();
             await session.waitTicks(6);
