@@ -75,7 +75,7 @@ above use the model.
 |---|---|---|---|
 | Grand Tree | 7,900 | `quest_grandtree.rs2:199` | 25 to climb the tree (`quest_grandtree.rs2:23-27`) |
 | Regicide | 13,750 | `quest_regicide.rs2:852` | 45 for two log balances (`:346,368`), 56 for an obstacle (`:404`); requires Underground Pass complete (`regicide_kings_messenger.rs2:2`) |
-| Troll Romance | 8,000 | `quest_troll_love.rs2:305` (plus 25 per sled ride, `:223,294`) | 28 (`quest_troll_love.rs2:2`); Troll Stronghold prerequisite needs 15 (`quest_troll.rs2:7,18,46,140,164`) |
+| Troll Romance | 8,000 | `quest_troll_love.rs2:305` (plus 25 per sled ride, `:223,294`) | 28 (`quest_troll_love.rs2:2`); its prerequisite Troll Stronghold (`ug.rs2:30`) needs 15 (`quest_troll.rs2:7,18,46,140,164`) |
 | Underground Pass | 3,000 | `quest_upass.rs2:800` | none; its obstacles roll `stat_random` (`upass_obstacles.rs2:22,113`) |
 | Fremennik Trials | 2,812.4 (and the same to nine other skills) | `quest_viking.rs2:135-144` | none checked |
 | Tourist Trap | 4,650 per pick, 2 picks; Agility is one of the four choices | `irena.rs2:77-91` | none |
