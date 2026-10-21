@@ -233,6 +233,9 @@ function summarise(v: any): 'fault' | 'ok' {
         const f = (x: unknown) => typeof x === 'number' ? x.toFixed(2) : String(x);
         console.log(`knife-cycle: ${r.rolls} rolls, ${r.ticks} ticks, ${f(r.ticksPerRoll)} ticks per roll (mean gap), ${f(r.ticksPerRollOverSpan)} over the span of ${r.span}; gaps ${JSON.stringify(r.histogram)}; starters ${r.starters}, resyncs ${r.resyncs}, moves ${r.moves}, level-ups ${Array.isArray(r.levelUps) ? r.levelUps.length : r.levelUps}`);
     }
+    const stat = (s: any) => ['p50', 'p90', 'max'].map(k => `${k} ${typeof s?.[k] === 'number' ? s[k].toFixed(0) : '?'}`).join(' ');
+    if (v.frames) console.log(`server frame interval ms (page): ${stat(v.frames)}, catch-ups ${v.frames.catchUps ?? '?'} (${typeof v.frames.catchUpsPerMinute === 'number' ? v.frames.catchUpsPerMinute.toFixed(1) : '?'}/min), under 150 ${v.frames.under150 ?? '?'}, over 350 ${v.frames.over350 ?? '?'}`);
+    if (v.publish) console.log(`page publication interval ms: ${stat(v.publish)}`);
     if (typeof v.phase === 'string') {
         console.log(`program ${v.name} ${v.phase}${v.fault ? ` (fault: ${typeof v.fault === 'string' ? v.fault : JSON.stringify(v.fault)})` : ''}: deferred ${v.deferred}, skippedTicks ${v.skippedTicks}, maxTickMs ${v.maxTickMs}, packets ${v.packets}`);
         if (v.phase === 'fault') return 'fault';
