@@ -1,10 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { FakeSdk } from './fake-sdk';
+import { loginTokenProof } from '../../server/webclient/login-token';
 import {
     LOGOUT_BUTTON,
     abandonClient,
     backoffMs,
     browserUrl,
+    mintLoginToken,
+    openBrowserClient,
     parseBotEnv,
     startWatchdog,
     watchdogDecision,
@@ -279,13 +282,51 @@ test('backoff doubles from 1 s and caps at 30 s', () => {
     expect([1, 2, 3, 4, 5, 6, 7].map(backoffMs)).toEqual([1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000]);
 });
 
-test('parseBotEnv and browserUrl', () => {
-    const env = parseBotEnv('# c\nBOT_USERNAME=srlab1\nPASSWORD=p w\nSERVER=localhost:9300\n');
-    expect(env.BOT_USERNAME).toBe('srlab1');
-    expect(browserUrl(env)).toBe('http://localhost:9300/bot?bot=srlab1&password=p%20w');
-    expect(browserUrl({ ...env, SERVER: 'rs-sdk-demo.fly.dev' })).toBe('https://rs-sdk-demo.fly.dev/bot?bot=srlab1&password=p%20w');
-    expect(() => parseBotEnv('SERVER=x')).toThrow();
-    // The run client through proxy.ts: the page URL already carries ?server= and ?gateway=.
-    expect(browserUrl({ ...env, CLIENT_URL: 'http://127.0.0.1:8889/bot?server=rs-sdk-demo.fly.dev&gateway=ws://127.0.0.1:7780' }))
-        .toBe('http://127.0.0.1:8889/bot?server=rs-sdk-demo.fly.dev&gateway=ws://127.0.0.1:7780&bot=srlab1&password=p%20w');
+describe('browserUrl', () => {
+    const env = parseBotEnv('# c\nBOT_USERNAME=srlab1\nPASSWORD=s3cr3t pw\nSERVER=localhost:9300\n');
+    const proxied = { ...env, SERVER: 'rs-sdk-demo.fly.dev', CLIENT_URL: 'http://127.0.0.1:8899/bot?server=rs-sdk-demo.fly.dev&gateway=ws://127.0.0.1:7780' };
+    const secret = [env.PASSWORD, encodeURIComponent(env.PASSWORD), 'password='];
+
+    test('parseBotEnv', () => {
+        expect(env.BOT_USERNAME).toBe('srlab1');
+        expect(() => parseBotEnv('SERVER=x')).toThrow();
+    });
+
+    test('with a token source the URL never embeds PASSWORD, whatever the env says', () => {
+        // The run client through proxy.ts: the page URL already carries ?server= and ?gateway=.
+        const url = browserUrl(proxied, { token: 'tok-1' });
+        expect(url).toBe('http://127.0.0.1:8899/bot?server=rs-sdk-demo.fly.dev&gateway=ws://127.0.0.1:7780&bot=srlab1&token=tok-1');
+        for (const e of [proxied, { ...proxied, SERVER: 'localhost:9300', CLIENT_URL: 'http://127.0.0.1:8899/bot' }]) {
+            const u = browserUrl(e, { token: 'tok-2' });
+            for (const s of secret) expect(u).not.toContain(s);
+        }
+        // A token is only good at the page server that minted it.
+        expect(() => browserUrl(env, { token: 'tok-3' })).toThrow(/CLIENT_URL/);
+    });
+
+    test('the query-string password only for a local lab world, and only when asked for', () => {
+        const insecure = { insecureQueryLogin: true } as const;
+        expect(browserUrl(env, insecure)).toBe('http://localhost:9300/bot?bot=srlab1&password=s3cr3t%20pw');
+        expect(browserUrl({ ...env, CLIENT_URL: 'http://127.0.0.1:8899/bot?server=localhost:9300' }, insecure))
+            .toBe('http://127.0.0.1:8899/bot?server=localhost:9300&bot=srlab1&password=s3cr3t%20pw');
+        expect(() => browserUrl({ ...env, SERVER: 'rs-sdk-demo.fly.dev' }, insecure)).toThrow(/local lab only/);
+        expect(() => browserUrl(proxied, insecure)).toThrow(/local lab only/);
+    });
+
+    test('mintLoginToken sends a proof, not the password', async () => {
+        const sent: { url: string; body: string }[] = [];
+        const token = await mintLoginToken(proxied, async (url, init) => {
+            sent.push({ url, body: String(init.body) });
+            return new Response(JSON.stringify({ token: 'minted' }));
+        });
+        expect(token).toBe('minted');
+        expect(sent.map(s => s.url)).toEqual(['http://127.0.0.1:8899/bot/login-token']);
+        expect(JSON.parse(sent[0]!.body)).toEqual({ bot: 'srlab1', proof: loginTokenProof('srlab1', env.PASSWORD) });
+        for (const s of secret) expect(sent[0]!.body).not.toContain(s);
+        await expect(mintLoginToken(proxied, async () => new Response('{"error":"nope"}', { status: 403 }))).rejects.toThrow(/HTTP 403/);
+    });
+
+    test('a browser launch without CDP refuses the token form rather than put it on a command line', async () => {
+        await expect(openBrowserClient(proxied, {})).rejects.toThrow(/CDP/);
+    });
 });
