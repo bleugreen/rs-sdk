@@ -595,10 +595,39 @@ $F assign cairn_h42 jugs --options '{"target":600}'
 $F reload
 ```
 
-cairn_h40 is also the wine maker (Cooking 35). When the wine is due, reassign it
-(`$F assign cairn_h40 wine --options '{"acceptFrom":"^cairn_(h\\d+|mule\\d)$","receiver":"<scored account>"}'`)
-and deliver the bought grapes and the jugs of water to it by trade at Varrock
-west bank. cairn_h44 is the test receiver; it stays logged out.
+cairn_h40 is also the wine maker (Cooking 35, 42 by 2026-10-21). cairn_h44 is the
+test receiver; it stays logged out.
+
+### Making the run's stock (cairn://p/rs/118, 2026-10-21)
+
+The 520 wines were made in one sitting, about 8 minutes from the maker's login to
+the last note:
+
+1. The bought grapes sat on the GE bidder (cairn_h61). Its Grapes line came out of
+   its options first, or the bidder would count the grapes gone and buy again.
+2. cairn_h40 was taken out of the fleet **at Varrock west bank**, not in the
+   guild: the wine role's walk refuses another plane, and the guild camper stands
+   upstairs. Setting `bankAt: 1` on its grapes role sends it to the bank at once;
+   disabling it on the next `[grapes] banked` log line logs it out there.
+3. On a private gateway, cairn_h40 ran `wine` with
+   `{"target":520,"acceptFrom":"^cairn_h(42|61)$"}`. It made notes from its own
+   bank first, then waited in `acceptSupplies`.
+4. One courier at a time (taken out of the fleet with `--disable`, back with its
+   original options afterwards) ran `mule.ts courier` with
+   `{"mule":"cairn_h40","items":["^grapes$"]}` (cairn_h61, 520 grapes) and
+   `{"items":["^jug of water$"]}` (cairn_h42, 867 jugs). Each delivery was a
+   single trade of one noted stack. `docs/speedrun/scripts/wine-logout.ts` logs
+   any helper out cleanly before its client stops.
+5. 418 more wines in 35 rounds (500 maker ticks, about 12 per round in 3-4 make
+   ticks). The maker's bank held no unfermented wine at the end.
+
+**Where the wines are:** 520 noted unfermented wines in cairn_h40's inventory,
+logged out at Varrock west bank. In fleet.json it is the `wine` role with
+`{"target":520}`, **disabled**. Never put it back on `grapes` while it holds the
+notes: that role's bank trip deposits everything but the hat, coins, food and
+starter gear, and the bank would store the notes as fermenting wine. For the
+hand-off to the run machine's trade giver, run the wine role with `receiver` set
+(`giveWine`), or trade the one noted stack by hand.
 
 Gotchas found on the demo:
 
