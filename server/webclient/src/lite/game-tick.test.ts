@@ -13,22 +13,20 @@
 // watchdog) keeps its 20ms cadence however often the socket wakes the loop.
 //
 // Drives the real framing path (handlePacket via pumpPackets over a fake socket).
-// Needs no network: the interface baseline is stubbed empty when no earlier
-// suite loaded the cache.
+// Needs no network: the interface baseline is this suite's own stub.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 
 import './dom-shim.js';
 
-import IfType from '#/config/IfType.js';
 import Packet from '#/io/Packet.js';
 import { ServerProt } from '#/io/ServerProt.js';
 
 import type { BotWorldState } from '#/bot/types.js';
 
-import { captureBaseInterfaces, resetBaseInterfaces } from './interfaces.js';
 import { LiteClient } from './LiteClient.js';
 import { runPacketLoop, type PacketSocket } from './session.js';
+import { stubComponent, useStubBaseline } from './test-support/stub-baseline.js';
 
 /** A socket that hands back a byte script, which tests can extend between pumps. */
 class FakeStream {
@@ -78,23 +76,11 @@ function makeClient(name: string, locIndex: object = {}): { client: LiteClient; 
     return { client, stream };
 }
 
-let stubbedBase: IfType[] | null = null;
-
-beforeAll(() => {
-    try {
-        makeClient('probe');
-    } catch {
-        IfType.list = [];
-        captureBaseInterfaces();
-        stubbedBase = IfType.list;
-    }
-});
-
-afterAll(() => {
-    if (stubbedBase) {
-        resetBaseInterfaces();
-    }
-});
+// The components the quest state reads: questlist:doric, the journal (8134),
+// its title (8144) and qj1..qj50 (8145, 8147..8195).
+useStubBaseline(
+    [7336, 8134, 8144, 8145, ...Array.from({ length: 49 }, (_, i) => 8147 + i)].map(id => stubComponent(id, { colour: 0xff0000, text: '' }))
+);
 
 describe('game tick publication', () => {
     test('observers see packets written after PLAYER_INFO in the same tick', async () => {
@@ -125,13 +111,6 @@ describe('game tick publication', () => {
     });
 
     test('a varp, quest-tab colour and journal sent after PLAYER_INFO are in that tick\'s published state', async () => {
-        // The components the quest state reads: questlist:doric, the journal's
-        // title and qj1..qj50. The real cache has them; the stubbed one needs them.
-        if (stubbedBase) {
-            for (const id of [7336, 8134, 8144, 8145, ...Array.from({ length: 49 }, (_, i) => 8147 + i)]) {
-                stubbedBase[id] = Object.assign(Object.create(IfType.prototype) as IfType, { id, colour: 0xff0000, text: '' });
-            }
-        }
         const { client, stream } = makeClient('quest1', EMPTY_WORLD);
         const published: BotWorldState[] = [];
         client.setOnGameTickCallback(ticks => {

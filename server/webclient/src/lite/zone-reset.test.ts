@@ -8,19 +8,18 @@
 // gate for the rest of the session.
 //
 // Needs no network: the loc index is stubbed and the interface baseline is
-// stubbed empty when no earlier suite loaded the cache.
+// this suite's own empty stub.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 
 import './dom-shim.js';
 
-import IfType from '#/config/IfType.js';
 import Packet from '#/io/Packet.js';
 import { ServerProt } from '#/io/ServerProt.js';
 
-import { captureBaseInterfaces, resetBaseInterfaces } from './interfaces.js';
 import { LiteClient } from './LiteClient.js';
 import { dispatch } from './protocol/incoming.js';
+import { useStubBaseline } from './test-support/stub-baseline.js';
 
 const BASE_X = 3200;
 const BASE_Z = 3200;
@@ -53,23 +52,7 @@ function zoneResetPacket(zoneX: number, zoneZ: number): Packet {
     return buf;
 }
 
-let stubbedBase = false;
-
-beforeAll(() => {
-    try {
-        makeClient('probe');
-    } catch {
-        IfType.list = [];
-        captureBaseInterfaces();
-        stubbedBase = true;
-    }
-});
-
-afterAll(() => {
-    if (stubbedBase) {
-        resetBaseInterfaces();
-    }
-});
+useStubBaseline();
 
 describe('UPDATE_ZONE_FULL_FOLLOWS overlay reset', () => {
     test('drops overlay entries inside the zone, keeps the rest, and dirties collision', () => {
