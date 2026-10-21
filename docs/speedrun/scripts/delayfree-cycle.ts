@@ -393,10 +393,13 @@ await runScript(async ({ bot, sdk }) => {
                     const r = await bot.depositItem(it, -1);
                     if (!r.success) throw new Error(`deposit: ${r.message}`);
                 }
-                const aName = sdk.getState()!.bank.items.find(i => i.id === id(recipe.a))?.name;
-                if (!aName) { finished = `out of ${recipe.name} supplies`; break; }
-                await bot.withdrawItem(id(recipe.a), recipe.tool ? 27 : PAIR);
-                if (recipe.b) await bot.withdrawItem(id(recipe.b), PAIR);
+                // withdrawItem(number) means a bank slot, so pass the BankItem itself.
+                const inBank = (o: string) => sdk.getState()!.bank.items.find(i => i.id === id(o) && i.count > 0);
+                const aItem = inBank(recipe.a);
+                const bItem = recipe.b ? inBank(recipe.b) : undefined;
+                if (!aItem || (recipe.b && !bItem)) { finished = `out of ${recipe.name} supplies`; break; }
+                await bot.withdrawItem(aItem, recipe.tool ? 27 : PAIR);
+                if (bItem) await bot.withdrawItem(bItem, PAIR);
                 await bot.closeBank();
                 cyc.done = sdk.getState()!.tick - t0;
             }
