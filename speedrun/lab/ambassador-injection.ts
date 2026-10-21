@@ -17,6 +17,7 @@ import type { BotAction } from '../../sdk/types';
 import { GE_POST, role } from '../helpers/ambassador';
 import { readRecords, type LogRecord } from '../helpers/ambassador/log';
 import { checkOutput, buildDenyList } from '../helpers/ambassador/policy';
+import { memoryRoleState } from '../helpers/role';
 import { openSession } from '../lib/session';
 import { arg, botArg, result } from './common';
 import { cheat, tele } from './setup';
@@ -103,6 +104,7 @@ const defaultFilesBefore = (() => {
 const ctl = new AbortController();
 const startedAt = Date.now();
 const running = role.run({
+    state: memoryRoleState(),
     bot: amb.bot,
     sdk: amb.sdk,
     account: amb.name,

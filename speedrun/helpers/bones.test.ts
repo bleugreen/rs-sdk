@@ -4,6 +4,7 @@ import type { BotSDK } from '../../sdk/index';
 import type { BotActions } from '../../sdk/actions';
 import type { BotWorldState, InventoryItem, NearbyNpc } from '../../sdk/types';
 import { Run } from './bones';
+import { memoryRoleState } from './role';
 import { summarizeWindow } from '../../docs/speedrun/scripts/bones-dev/stats';
 import { gearRank, healOf, inBabyBlueRoom, isClutter, keepOnBank, parseOptions } from './bones';
 
@@ -112,7 +113,7 @@ describe('preferred spot recovery', () => {
         opt.spot = { ...opt.spot, acquire: async () => false };
         const run = new Run({
             sdk: extended as unknown as BotSDK, bot: bot as unknown as BotActions,
-            account: 'test', options: {}, signal: new AbortController().signal,
+            account: 'test', options: {}, signal: new AbortController().signal, state: memoryRoleState(),
             log: (message, data) => logs.push({ message, ...data }), reportBank: () => {}
         }, opt);
         return { run, sdk: extended, bot, item, logs };
