@@ -107,12 +107,22 @@ await page.evaluate(() => {
     evs.length = 0;
 });
 
+// Game loops and frames drawn per second over the probe: decoding on arrival wakes the run
+// loop early once per tick, which must move its phase, not its pace.
+const cycles = () => page.evaluate(() => {
+    const C = (window as any).gameClient?.constructor;
+    return { loop: C?.loopCycle ?? 0, draw: C?.drawCycle ?? 0, t: performance.now() };
+});
+const c0 = await cycles();
 const probe = spawn('bun', ['docs/speedrun/scripts/tickmanip-latency.ts', bot, `--trials=${trials}`], { stdio: ['ignore', 'pipe', 'inherit'] });
 let probeOut = '';
 probe.stdout.on('data', d => { probeOut += d; });
 const code = await new Promise<number>(r => probe.on('exit', c => r(c ?? 1)));
 for (const line of probeOut.split('\n')) if (!/^\[(Runner|SDK|BotSDK)\]|Pathfinding/.test(line) && line.trim()) console.log(line);
 const load = loadavg().map(l => l.toFixed(1)).join(' ');
+const c1 = await cycles();
+const secs = (c1.t - c0.t) / 1000;
+const pace = `game loops ${((c1.loop - c0.loop) / secs).toFixed(1)}/s, frames drawn ${((c1.draw - c0.draw) / secs).toFixed(1)}/s over ${secs.toFixed(0)} s`;
 
 const evs: Ev[] = await page.evaluate(() => (window as any).__trace);
 await browser.close();
@@ -154,6 +164,7 @@ console.log(`  arrival to wire   ${q3(arrival)}`);
 console.log(`  tick to state     ${q3(toState)}`);
 console.log(`  action back       ${q3(back)}`);
 console.log(`  page reaction     ${q3(reaction)}`);
+console.log(`  ${pace}`);
 if (process.env.TRACE_EXCERPT) {
     // The events around a few actions, relative to the action's arrival.
     const actions = evs.map((e, i) => (e.s === 'g' && e.k === 'action' ? i : -1)).filter(i => i >= 0);
