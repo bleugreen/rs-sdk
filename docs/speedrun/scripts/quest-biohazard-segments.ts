@@ -224,6 +224,19 @@ await runScript(async ({ bot, sdk }) => {
             await S.step("Guidor's door (priest gown)", opAt(3282, 3382, /Open/), { done: () => L.pos(sdk).x >= 3283, settle: 0 });
             await S.step('Guidor (12->14)', talk(sdk, /^Guidor$/), { choices: [/I've come to ask your assistance/, /sent by your old pupil Elena/, /So what does that mean exactly/] });
             await quest('guidor');
+        } else if (seg === 'westgate') {
+            // After Biohazard: King Lathas -> the West Ardougne wall doors (open for %biohazard = 16,
+            // area_ardougne_west/scripts/doors.rs2) -> Koftik at the Underground Pass entrance.
+            await stage(16);
+            await L.tele(sdk, 2577, 3293, 1);
+            await S.walk('Lathas -> castle stairs (L1)', 2571, 3296);
+            await S.step('castle stairs down', opAt(2571, 3295, /Climb-down/), { done: atLevel(sdk, 0), settle: 0 });
+            await S.walk('castle stairs -> wall doors (east side)', 2559, 3300);
+            const doors = (await sdk.scanNearbyLocs(5)).filter(l => /door/i.test(l.name) && l.x >= 2556 && l.x <= 2559).sort((a, b) => a.distance - b.distance);
+            out.wallDoors = doors.map(d => [d.name, d.x, d.z, d.options]);
+            if (!doors[0]) throw new Error('no wall door');
+            await S.step('wall doors: through to West Ardougne', () => sdk.sendInteractLoc(doors[0].x, doors[0].z, doors[0].id, 1), { done: () => L.pos(sdk).x <= 2556, settle: 0, maxTicks: 30 });
+            await S.longWalk(bot, 'wall doors -> Koftik (2436,3315)', 2437, 3315);
         } else if (seg === 'finale') {
             await stage(14);
             await L.tele(sdk, 3285, 3383);
