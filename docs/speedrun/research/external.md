@@ -36,8 +36,9 @@ not assumed from a release date.
 | [travel-and-overhead.md](travel-and-overhead.md) | Teleports, transport, logout tricks, starting position, supply staging | rs/79 |
 
 Lab follow-ups for candidates worth about 300 ticks or more: **rs/90** (2-tick Woodcutting by
-the auto-retaliate flinch, running) and **rs/91** (the boosted Package B combat finish, measured;
-[helper-fed-and-combat.md](helper-fed-and-combat.md) §3).
+the auto-retaliate flinch: mechanism confirmed, [self-only-methods.md](self-only-methods.md)
+§3a; its attacker setup is brief A2, still to run) and **rs/91** (the boosted Package B combat
+finish, measured; [helper-fed-and-combat.md](helper-fed-and-combat.md) §3).
 
 The self-only skill routes (`skills/*.md`, rs/2) are on main since PR #72; cite main's
 `docs/speedrun/skills/README.md`, not rs/2's branch.
@@ -130,15 +131,21 @@ ticks.
    (fixed client). No lab is needed.
 3. **2-tick Woodcutting by the flinch (mechanism confirmed by rs/90; worth ~500 with two NPC
    attackers at the two-willow tile, 0 with a Wilderness helper; self-only-methods.md section
-   3a and brief A2).** The original brief follows.
-   *Brief:* first an engine trace (a run-only logging patch, discarded) of every
-   `playerhit_n_retaliate` run (`busy2`, the clock before and after) and every woodcutting label.
-   That shows which link broke the first attempt: the queue not running, an interaction or
-   waypoint surviving the drop, or the bot clicking a tick late because it sees the hitsplat
-   late. Then 200 rolls at level 99 with the corrected loop. *Success:* at least 80% of gaps are
-   2 ticks, and the player's own attack never fires. If it holds, Mining stays (row 4) follow
-   through a planner run. If it cannot hold, the trace gives the file and line that says why, and
-   rows 1 and 4 close.
+   3a and brief A2).** *Result (m):* the engine trace showed the first attempt failed on setup
+   (attackers on adjacent ticks, and a skipped label after each click), not on the mechanism. With
+   that fixed: 196 rolls at Woodcutting 99, 160 of 166 steady gaps at 2 ticks, every roll on the
+   tick after a flinch write, and the player's own attack never fired. On one tree the fells make it
+   5.15 ticks per roll, slower than the knife, so the value needs a tile that reaches two trees:
+   ~500 at the two-willow multi-combat tile (2674,3227) from level 73, ~580 with two-oak tiles
+   below 73 too, and 0 with a Wilderness helper (no such tile there). A single attacker flinches
+   only every 4 ticks, which also leaves Mining (row 4) needing a Wilderness helper.
+   *Next, brief A2 (self-only-methods.md §3):* at (2674,3227), check that two attackers engage
+   from the east and south tiles (at the two-oak tile only 1 of 10 did), measure the steady gap
+   histogram and the cost of a fell with the other willow standing, and *succeed* on at least 80%
+   of steady gaps at 2 ticks and ticks per roll within 10% of `flinch-model.ts`. Then the
+   practical question: `::npcadd` is staff-only, so the demo needs two naturally spawning
+   attackers that can be brought to that tile 2 ticks out of phase. Do not change rs/2's
+   Woodcutting route until A2 passes.
 4. **Boosted Package B combat finish (~194 against the route, measured by rs/91; adopted).**
    Flicked Protect from Melee, a ranging potion, a glory and super antipoison with no food
    raise cannon-plus-knives from 18.56 to 21.95 base Ranged per tick at Ranged 85 (m, 3 runs
