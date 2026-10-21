@@ -29,7 +29,7 @@ segment, section 3). With a 3-tick cycle ([tick-manipulation.md](tick-manipulati
 
 | Band | Method | Location | Unlock | Base xp per catch (read) | Ticks per roll | Catch chance per roll (read) | Base xp per tick | Ticks for band |
 |---|---|---|---|---|---|---|---|---|
-| 1-20 | Small net: shrimp, anchovies from 15 | Draynor spots (3085-3086, 3227-3231), stand at (3088,3229) | Small fishing net (starter kit) | 10 shrimp, 40 anchovies (`fishing.struct:1-11`) | 6 (measured) | 19% at 1, 29% at 10, shrimp near-certain from 15 | 0.32 at 1, 1.6 at 20 (inferred) | **201** (measured, `fishing-rate.ts net 1 8000 until=20`, 10 catches) |
+| 1-20 | Small net: shrimp, anchovies from 15 | Draynor spots (3085-3086, 3227-3231), stand at (3088,3229) | Small fishing net (starter kit) | 10 shrimp, 40 anchovies (`fishing.struct:1-11`) | 6 (measured) | 19% at 1, 26% at 10, 41% at 15 (anchovies rolled first), 46% at 20 | 0.32 at 1, 1.6 at 20 (inferred) | **201** (measured, `fishing-rate.ts net 1 8000 until=20`, 10 catches) |
 | walk | Draynor to the Lumbridge river | about 155 tiles | | | | | | about 78 at run speed, 2 tiles per tick, infinite run on the demo (inferred) |
 | 20-99 | Fly fishing: trout, salmon from 30 | Lumbridge river: spots on (3239, 3241-3244) and (3238, 3251-3255), stand at (3241,3248) | Fly fishing rod and feathers, Fishing 20 | 50 trout, 70 salmon (`fishing.struct:25-35`) | 5 (measured) | 25% at 20, 42% at 30, 57% at 50, 69% at 70, 80% at 90, 85% at 99 | 2.5 at 20, 6.5 at 50, 8.0 at 70, 9.4 at 90 (read); **9.83 at 99** (measured, 757 rolls, 0.855 catches per roll) | **4,837** (measured at 300 ms ticks, 673 catches, 69 level-ups, 18 spot moves) |
 
@@ -138,7 +138,7 @@ ticks with drop-when-full.
 | Harpoon: shark | `memberfish.rs2:50-78` (+5) | 76 | 110 | 6 | - / - / 2.9 | 2.52 | no |
 | Karambwanji | `tbwt.rs2:67-97` (+5) | 5 | 5, or 10 for shrimp | 6 | below net | not run | no |
 
-Crossovers (read model): net beats nothing else below 5. Bait sardines and herring beat
+Crossovers (read model): below 5 the net is the only method. Bait sardines and herring beat
 the net from 5 to 20 (0.59 against 0.37 at level 5, 1.85 against 1.62 at 20). Fly fishing
 beats every other method at every level from 20 (2.46 against 1.85 at 20, 9.99 against
 5.93 for the best alternative at 99). Under a 3-tick cycle the net overtakes bait at 15,
@@ -239,7 +239,7 @@ clusters, win. The loss per move is the walk plus the 4-tick re-arm. It was the 
   ticks there or at any other spot measured. Baxtorian Falls has moss giants (`cowardly`,
   range 2, combat 42).
 - **Random events** (`afk_event` whirlpools and the river troll, `macro_event_*.rs2`) are
-  off on production.
+  off on production (`fly.toml:25`, `Environment.ts:53`).
 - **Lab:** `::clearinv inv` does nothing, so `fishing-rate.ts` drops the starter kit itself.
 
 ## 7. Helper supply list
