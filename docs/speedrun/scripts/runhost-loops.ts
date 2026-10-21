@@ -3,14 +3,16 @@
 //
 //   cd ~/rs-sdk && ~/.bun/bin/bun docs/speedrun/scripts/runhost-loops.ts <bot> --label=NAME
 //       [--minutes=5] [--interval=10] [--profile=$HOME/rs-run/chrome-profile]
-//       [--progress=$HOME/recordings/ffmpeg-progress.log] [--out=FILE.jsonl] [--skip-tutorial]
+//       [--progress=$HOME/recordings/ffmpeg-progress.log] [--out=FILE.jsonl] [--skip-tutorial] [--logout]
 //
 // Runs on the run host. Attaches to the bot's tab through the loopback gateway named by
 // GATEWAY_URL in bots/<bot>/bot.env, the same path a run script uses, and starts the
 // in-page probe for the length of the sample: the page publishes `loops` only while a
 // program runs, and the probe is the cheapest one (one walk to a neighbouring tile and
 // back per tick). Each condition gets a fresh probe run, so `loops.min` is that
-// condition's own minimum. The probe is stopped at the end; the tab stays logged in.
+// condition's own minimum. The probe is stopped at the end; the tab stays logged in unless
+// --logout, which clicks the logout button (as speedrun/lib/session.ts logoutClean does) and
+// waits until the tab is out of the game.
 //
 // Every --interval seconds it prints and appends one sample:
 // - loops: the page's {last, p10Last10s, min} (server/webclient/src/bot/programs/frames.ts);
@@ -112,7 +114,7 @@ const r1 = (x: number) => Math.round(x * 10) / 10;
 await runScript(async ({ bot, sdk }) => {
     const state = sdk.getState();
     if (!state?.inGame) throw new Error('the tab is not in game');
-    if (flag('skip-tutorial') !== undefined || process.argv.includes('--skip-tutorial')) await bot.skipTutorial().catch(() => {});
+    if (process.argv.includes('--skip-tutorial')) await bot.skipTutorial().catch(() => {});
     const before = programStatus(sdk.getState());
     if (before?.phase === 'running') throw new Error(`program ${before.name} is running in the tab; stop it first (this sampler starts its own probe)`);
     const started = await startProgram(sdk, 'probe', { trials: 1_000_000, stallTicks: 100_000 });
@@ -176,4 +178,11 @@ await runScript(async ({ bot, sdk }) => {
         `cpu% ffmpeg ${stats('ffmpeg')}, tab ${stats('chromeTab')}, gpu ${stats('chromeGpu')}, chrome ${stats('chromeAll')}, page server ${stats('pageServer')}, gateway ${stats('gateway')}, xorg ${stats('xorg')}, xrdp ${stats('xrdp')}; ` +
         `total busy ${stats('totalBusyPct')}%, load ${stats('load1')}; probe on time ${end?.counters.onTime ?? 0}, late ${end?.counters.late ?? 0}, lost ${end?.counters.lost ?? 0}; frames p90 ${end?.frames.p90} ms, catch-ups ${end?.frames.catchUps}` +
         (samples.some(s => s.ffFps !== null) ? `; ffmpeg fps ${stats('ffFps')}, dropped at end ${samples.at(-1)?.ffDrop}, duplicated at end ${samples.at(-1)?.ffDup}` : ''));
+    if (process.argv.includes('--logout')) {
+        const LOGOUT_BUTTON = 2458; // speedrun/lib/session.ts
+        await sdk.sendClickComponent(LOGOUT_BUTTON);
+        const deadline = Date.now() + 20_000;
+        while (sdk.getState()?.inGame && Date.now() < deadline) await sleep(500);
+        console.log(sdk.getState()?.inGame ? 'logout: still in game after 20 s (log out by hand)' : 'logout: out of the game');
+    }
 }, { timeout: (minutes + 2) * 60_000 + intervalS * 1000, printState: false });
