@@ -7,7 +7,6 @@
 // Run: bun docs/speedrun/scripts/quest-grandtree-roots.ts <botname>
 
 import { runScript } from '../../../sdk/runner';
-import type { BotWorldState } from '../../../sdk/types';
 import { cheat, dialogue, getvar, give, invCount, now, result, setvar, stats, tele, waitTicks, waitUntil } from './quest-gnome-lib';
 
 const ROOTS: Record<number, [number, number]> = {
@@ -15,8 +14,6 @@ const ROOTS: Record<number, [number, number]> = {
     6: [2444, 9893], 7: [2452, 9893], 8: [2465, 9891], 9: [2468, 9890], 10: [2467, 9896],
     11: [2473, 9897], 12: [2481, 9904], 13: [2485, 9885], 14: [2490, 9889], 15: [2467, 9872],
 };
-
-const lastMsg = (s: BotWorldState) => s.gameMessages.at(-1)?.text ?? '';
 
 await runScript(async ({ sdk }) => {
     await cheat(sdk, '~clearinv');
@@ -26,11 +23,9 @@ await runScript(async ({ sdk }) => {
     const search = async (x: number, z: number): Promise<{ ticks: number; found: boolean }> => {
         const loc = (await sdk.scanNearbyLocs(20)).find(l => l.x === x && l.z === z && /root/i.test(l.name))!;
         const op = loc.optionsWithIndex.find(o => /search/i.test(o.text))!;
-        const n0 = sdk.getState()!.gameMessages.length;
-        const m0 = lastMsg(sdk.getState()!);
         const t0 = now(sdk);
         await sdk.sendInteractLoc(x, z, loc.id, op.opIndex);
-        const r = await waitUntil(sdk, s => (s.gameMessages.length !== n0 || lastMsg(s) !== m0) && /root|interesting|nothing/i.test(lastMsg(s)) || (s.dialog.isOpen && /Daconia/i.test(JSON.stringify(s.dialog.allComponents ?? []))), 30);
+        const r = await waitUntil(sdk, s => s.gameMessages.some(m => m.tick > t0 && /root|interesting|nothing/i.test(m.text)) || (s.dialog.isOpen && /Daconia/i.test(JSON.stringify(s.dialog.allComponents ?? []))), 30);
         const found = !!r && r.state.dialog.isOpen;
         if (found) {
             await dialogue(sdk, [], { idle: 2 });
@@ -54,6 +49,7 @@ await runScript(async ({ sdk }) => {
     }
     result('grandtree_root_search_empty', { adjacent: stats(adjacent), adjacentRaw: adjacent, fromFourTiles: stats(fromFour), fromFourRaw: fromFour });
 
+    if (process.env.ROOTS_EMPTY_ONLY) return;
     // 2. Each value against its own root.
     const matches: Record<number, { found: boolean; ticks: number }> = {};
     for (const v of Object.keys(ROOTS).map(Number)) {
