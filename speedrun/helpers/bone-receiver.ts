@@ -69,7 +69,12 @@ export const role: Role = {
             let lastBury = -1;
             let requestSince = s().tick;
             for (let load = 0; load < loads && !ctx.signal.aborted; load++) {
-                // The trade, once the pack is empty (the first load starts empty).
+                // The trade, once the pack is empty (the first load starts empty) and the giver is beside us.
+                const near = (st: BotWorldState) => st.nearbyPlayers.some(p => p.name.toLowerCase().replace(/\s+/g, '_') === giver.toLowerCase());
+                if (!(await until(ctx, near, 400))) {
+                    results.push({ load, ok: false, clickToBones: 0, standingAtClick: false, reason: 'giver never came into sight' });
+                    break;
+                }
                 const standingAtClick = s().gameMessages.some(m => m.tick >= requestSince && isRequestFrom(giver)(m));
                 const r = await receiveFrom(sdk, giver, { want: [{ item: BONES, amount: n }], openTimeoutMs: 60_000 });
                 const res: LoadResult = { load, ok: r.ok && count(s(), BONES) >= n, clickToBones: r.ticks, standingAtClick, ...(r.reason ? { reason: r.reason } : {}) };
