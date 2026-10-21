@@ -48,7 +48,7 @@ from the measured cycle and the engine's level table).
 |---|---|---|---|---|---|---|---|---|---|
 | 1-44 | Air altar, helper in the room | altar (2843,4833), stand at (2844,4832); ruins (2984,3291) south of Falador | air talisman (tradeable) | 5.0 | 27 | 7 (8 of 8; a level-up every craft) | 19.3 (measured) | 7 | 49 |
 | 44-99 | Nature altar, helper in the room | altar (2399,4840), stand at (2400,4839); ruins (2868,3018), Karamja | Runecraft 44, nature talisman (tradeable) | 9.0 | 27 | 7 (13 of 14) | 34.7 at 7 ticks; 32.4 measured over the run with its one 14 | 161 | 1,127 |
-| (alt.) 54-99 | Law altar, helper in the room | altar (2463,4831), stand at (2464,4830); ruins (2857,3380), Entrana | Runecraft 54, law talisman (Troll Stronghold), for the scored account **and every giver** | 9.5 | 27 | 7 (35 of 35) | 36.64 (measured) | 149 | 1,043 |
+| (alt.) 54-99 | Law altar, helper in the room | altar (2463,4831), stand at (2464,4830); ruins (2857,3380), Entrana | Runecraft 54, law talisman (Troll Stronghold), for the scored account **and every giver** | 9.5 | 27 | 7 (55 of 55, levels 54 and 99) | 36.64 (measured) | 149 | 1,043 |
 
 Totals (crafting only; travel is in section 6):
 
