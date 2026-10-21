@@ -19,21 +19,28 @@ Code:
 
 ## How fermentation works (`wine.rs2`, `login.rs2`)
 
-- Using grapes on a jug of water needs Cooking 35. It makes one
-  `jug_unfermented_wine` (obj 1995) and calls `settimer(fermenting_wine, 20)` on
-  the maker. Every login calls the same `settimer` (`~ferment_wines_login`).
-- When the timer fires it rolls every obj 1995 in the **bank** and the
-  **inventory**: the bank in 15 equal batches of floor(N/15), then the N % 15
-  remainder one at a time, then the inventory one at a time. Each roll is
-  `stat_random(cooking, 48, 352)` at the current level (about 19% at 1, 78% at
-  50, certain from 68). A success turns the whole batch into jugs of wine and
-  gives 110 xp per wine (times the server's xp rate, 25 on the demo) before the
-  next roll. A failure turns the batch into jugs of bad wine and gives nothing.
-  There is no Cooking-level check on the timer itself.
+- Using grapes on a jug of water needs Cooking 35 (`wine.rs2:8-11`). It makes
+  one `jug_unfermented_wine` (obj 1995) and calls `settimer(fermenting_wine, 20)`
+  on **the account that mixed it** (`wine.rs2:20`). Every login calls the same
+  `settimer` on the account logging in (`login.rs2:70` ->
+  `~ferment_wines_login`, `wine.rs2:72-73`). Those are the only two ways the
+  timer is armed: a helper's mixing arms the helper's timer, never the
+  receiver's.
+- When the timer fires (`wine.rs2:22-70`) it rolls every obj 1995 in the
+  **bank** and the **inventory**. The bank goes in 15 equal batches of
+  floor(N/15), **one `stat_random(cooking, 48, 352)` roll per batch, all or
+  nothing**, with the batch's xp added by `stat_advance` inside the loop, so
+  each later batch rolls at the level the earlier ones raised (`:26-41`). The
+  N % 15 remainder then rolls one wine at a time (`:43-55`), then the
+  inventory's wines one at a time (`:57-69`). The chance is about 19% at
+  Cooking 1, 78% at 50, certain from 68. A success gives 110 xp per wine
+  (times the server's xp rate, 25 on the demo). A failure turns the batch into
+  jugs of bad wine and gives nothing. There is no Cooking-level check on the
+  timer itself.
 - `settimer` replaces a running timer, so each make pushes the firing 20 ticks
   out. A normal timer does not fire while a modal (bank, trade, a level-up chat
-  box) is open (`Player.processTimers` needs `canAccess`). It fires on the first
-  tick the account is free again.
+  box) is open (`Player.ts` `processTimers`: a non-soft timer needs
+  `canAccess()`). It fires on the first tick the account is free again.
 - **Noted unfermented wine (obj 1996) is invisible to the timer.** It never
   ferments, through any number of timers and logins. The bank stores deposited
   notes as obj 1995, so a helper must never bank its notes.
@@ -53,7 +60,7 @@ This engine's level curve is `2^(level/10)`, not the classic `2^(level/7)`: 99 i
 | T6: deliver inside the receiver's login window | trade from login+1, deposit done at login+8, fermented at login+20, no extra relog |
 | T7: grapes on a jug of water at Cooking 20 | refused ("You need a Cooking level of 35") |
 | T8: 450 wines made, one trade, one deposit, one firing at Cooking 1 | made in 349 maker ticks (35 rounds, 0.78 ticks per wine); trade 4 + deposit 3 receiver ticks; 330 good, 120 bad: **Cooking 97**, not 99 |
-| T9: single-login split, 29 then 421 (re-armed by one make) | Cooking 1 -> 55 at login+20, -> **99** at login+76; receiver actions 45 ticks (see below) |
+| T9 (three runs): single-login split, 29 then 421 (re-armed by one make) | first firing at login+20 every run (Cooking 1 -> 53-55), second at login+73 to +77, **99** every run; receiver active ticks 45, 47, 51 (timeline below) |
 
 The model in `wine-ferment.ts` reproduces the lab exactly: 12 good wines from
 level 1 give level 50, and 330 give 97.
@@ -67,14 +74,33 @@ of 1 plus 14 singles), so the first level is reliable. At that level the
 receiver can make one wine itself, which re-arms the timer for the rest in the
 same login.
 
-Monte Carlo (40,000 trials per plan, `bun speedrun/helpers/wine-ferment.ts`). It
-implements the batch rule above exactly (`fermentBank`: fifteen all-or-nothing
-rolls of floor(N/15) at the current level, then N % 15 single rolls), not
-independent per-wine rolls; that is why one firing over 450 reaches only 46%.
-Each delivery after the first is counted as fermenting in its own firing: in
-the P(first < 35) cases that firing is the next login (the two-login variant
-below), not the same one.
+Monte Carlo (`bun speedrun/helpers/wine-ferment.ts`). It implements the batch
+rule above exactly (`fermentBank` mirrors `wine.rs2:26-55`: fifteen
+all-or-nothing rolls of floor(N/15) at the level reached so far, then N % 15
+single rolls). It never used independent per-wine rolls; that is why one firing
+over 450 reaches only 46%. Every delivery is deposited in the bank, so no
+inventory wines are modelled (the receiver's one re-arming wine is ignored,
+which only understates the xp).
 
+**450 and 520 wines under the recommended split** (200,000 trials each, xp
+rate 25):
+
+| Plan | P(99), two-login variant (= eventually) | P(99) within the single login | P(first firing leaves Cooking < 35) |
+|---|---|---|---|
+| 450 in one firing | 46.2% | 46.2% | |
+| **29 + 421** | **99.06%** | **98.29%** | 0.99% |
+| 44 + 406 | 99.09% | 98.45% | 0.97% |
+| 520 in one firing | 65.0% | 65.0% | |
+| **29 + 491** | **99.83%** | **98.91%** | 1.04% |
+| 44 + 476 | 99.80% | 98.97% | 0.98% |
+
+The two variants roll the same two firings, so they have the same P(99). The
+single-login one also needs Cooking 35 after the first firing to mix the
+re-arming wine; in the ~1% where it is lower, the rest ferments at the next
+login instead (the two-login variant), which is why its in-one-login figure is
+lower.
+
+Other plans (40,000 trials each):
 
 | Plan (wines per firing) | P(99) | 5th percentile level | P(first firing leaves Cooking < 35) |
 |---|---|---|---|
@@ -105,15 +131,44 @@ below), not the same one.
    and ferments at the next login. That is the two-login variant, which also
    reaches 99 at 99.1%.
 
-Receiver ticks (lab T9, 450 wines): trade 4, first deposit 5, then 36 for the
-level-up dismissal, the second deposit and the make, so 45 active ticks out of
-76 from login to 99. The waits in between (login+8 to +20 and the 20 ticks
-after the make) cost no actions, and the scored account can do anything there
-that opens no modal. Two re-runs meant to time the level-up dismissal apart from
-the bank and make (T9b) died on a slow lab host before the hand-off (the client
-stopped publishing state), so the 36 ticks are not split further.
+**How each firing is armed on the scored account.** The first firing is the
+login timer (`login.rs2:70` -> `wine.rs2:72-73`): it fires at login+20, so the
+29 notes must be deposited and the bank closed before then. That costs no
+relog. The second firing is armed by the scored account mixing one wine itself
+(`wine.rs2:20` sets the timer on whoever mixes); it fires 20 ticks after that
+make. The maker's own mixing arms only the maker's timer and does nothing for
+the receiver. So the single-login run step is "trade, deposit, wait for
+login+20, deposit, mix one, wait 20". The two-login step is "trade, deposit,
+wait for login+20" now and "deposit within 20 ticks of a later login" then.
+Wine that reaches the bank after a firing waits for the next login or mix.
 
-**On the demo** (rs-sdk-demo.fly.dev over a loopback gateway on bbs, 2026-10-21
+**Receiver timeline, single-login split, 450 wines (lab only: three runs on
+the local engine, 300 ms ticks; ticks after the receiver's login):**
+
+| Step | Run 1 | Run 2 | Run 3 |
+|---|---|---|---|
+| Accept the trade (450 notes, 1 grapes, 1 jug of water); starts at login+0/+1 | 4 | 4 | 4 |
+| Open bank, deposit 29 notes, close | 5 (done ~+9) | 5 | 5 |
+| Idle until the login timer fires | to +20 | to +20 | to +20 |
+| First firing; Cooking 1 -> | 55 | 53 | 55 |
+| Dismiss the level-up pages | (in the next row) | 5 | 5 |
+| Open bank, deposit the 421 notes, close, mix one wine | 36 (level-ups included) | 28 | 31 + 1 |
+| Mix tick (re-arms the timer) | +56 | +53 | +57 |
+| Idle until the mixed timer fires | 20 | 20 | 20 |
+| Second firing, Cooking -> 99 | +76 | +73 | +77 |
+| Dismiss the final level-up pages | not timed | 5 | 5 |
+| **Active receiver ticks** | **45** (no final level-up) | **47** | **51** |
+
+About 47-51 active ticks and 73-77 ticks from login to 99. The two idle
+stretches (about +9 to +20, and the 20 ticks after the mix) cost no actions;
+the scored account can do anything there that opens no modal. The second bank
+visit (28-31 ticks for one deposit of a single note stack, against 5 for the
+first) is the largest cost and is not broken down yet; it is the place to look
+for savings. Two later attempts to re-time it died on a slow lab host before the
+hand-off (the client stopped publishing state). The split has not been run on
+the demo.
+
+**On the demo, window variant only (one sample)** (rs-sdk-demo.fly.dev over a loopback gateway on bbs, 2026-10-21
 07:14 UTC, `docs/speedrun/scripts/wine-handoff.ts cairn_h40 cairn_h44 --mode=window`):
 the maker (cairn_h40, Cooking 35) made 17 noted wines in 25 ticks (2 rounds);
 the receiver (cairn_h44, Cooking 1) logged in at the bank, its trade started at
@@ -124,10 +179,13 @@ sight before it opens the trade (`waitForPlayer` in wine.ts): the lib's
 `openTrade` gives up after 5 ticks without a sighting, and a demo login takes
 longer, which failed the first demo attempt and the lab on slow hosts.
 
-**Two-login variant** (no grapes and jug in the trade): the same first part,
-and the rest is deposited at any later login the route already makes. Its
-receiver cost is the trade (4) + deposit (3-5) + a second deposit (3) at the
-later login.
+**Two-login variant** (no grapes and jug in the trade): the same first part
+(trade 4, deposit 29 by login+20, dismiss the level-up 5). The other 421 stay
+noted in the inventory, where they never ferment, and are deposited within 20
+ticks of any later login the route already makes; that login's timer ferments
+them at its +20. Receiver cost: about 14 ticks now plus a deposit (3-5) and a
+level-up dismissal (5) at the later login. Same P(99) as the single-login
+split.
 
 **Receiver makes the wine itself?** Not below Cooking 35 (T7), and above it
 making costs about 0.78 ticks per wine on the scored clock (T8: 349 ticks for
