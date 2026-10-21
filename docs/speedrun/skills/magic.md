@@ -77,9 +77,9 @@ Enchanting an amulet gives the same xp as the ring (same spell row,
   **400 ticks** (section 1). The quest itself uses the Varrock teleport (Magic 25) and the
   Ardougne teleport (Magic 51, after Plague City) for its fastest legs (`grand_tree.md`).
   If the plan wants those teleports during the quest, the account needs Magic 51 first. That
-  costs about 7 -> 51 by enchanting, about 195 ticks of casting (inferred: 12 + 27 + about 7
-  casts at 3 ticks, plus about 4 bank visits). The quest's xp then lands at 51 + 2,150 base, about
-  level 61, so the ticks are not lost; they are moved.
+  costs 1 -> 51 at about 160 ticks (inferred: Wind Strike 18, then 12 sapphire + 27 emerald + 4 ruby
+  casts = 129 ticks, plus the first withdraw and 2 bank visits). The quest's xp then lands at
+  1,401 + 2,150 = 3,551 base, level 64, so the ticks are not lost; they are moved.
 - **Grand Tree + Watchtower** (17,450 base) would start at level **87**, with no enchanting at
   all: Charge 87 -> 99 is 125 casts, 25 ticks (inferred from rs/20's 5 casts per tick).
 - **Imp Catcher + Witch's Potion** (1,200 base) give level 47 from scratch. That is worth about
