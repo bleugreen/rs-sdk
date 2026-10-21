@@ -15,7 +15,7 @@ export interface StateSpec {
     maxHp?: number;
     animId?: number;
     skills?: Record<string, { xp: number; level?: number }>;
-    inventory?: Array<string | { name: string; options?: string[] }>;
+    inventory?: Array<string | { name: string; options?: string[]; count?: number }>;
     /** Worn items, by name. */
     equipment?: string[];
     npcs?: Array<Partial<NearbyNpc> & { index: number; name: string; options?: string[] }>;
@@ -31,7 +31,8 @@ export function makeState(spec: StateSpec): BotWorldState {
     const inventory: InventoryItem[] = (spec.inventory ?? []).map((it, slot) => {
         const name = typeof it === 'string' ? it : it.name;
         const options = typeof it === 'string' ? ['Use', 'Drop'] : (it.options ?? ['Use', 'Drop']);
-        return { slot, id: 1000 + slot, name, count: 1, optionsWithIndex: options.map((text, i) => ({ text, opIndex: i + 1 })) };
+        const count = typeof it === 'string' ? 1 : (it.count ?? 1);
+        return { slot, id: 1000 + slot, name, count, optionsWithIndex: options.map((text, i) => ({ text, opIndex: i + 1 })) };
     });
     const npcs = (spec.npcs ?? []).map(n => {
         const options = n.options ?? ['Talk-to'];
