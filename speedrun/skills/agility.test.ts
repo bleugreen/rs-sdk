@@ -183,7 +183,7 @@ describe('agility Wilderness decisions', () => {
         sdk.end({ ended: 'level', level: 99, levelTicks: { 99: 101 } }, { skills: [{ name: 'Agility', level: 99, baseLevel: 99, experience: 0 }] });
         await run;
         expect(logouts).toBe(1);
-        expect(log.rows.map(r => r.step)).toEqual(['agility:level', 'agility:program', 'agility:final-logout']);
+        expect(log.rows.map(r => r.step)).toEqual(['agility:final-logout']);
         expect(band.postconditions(baseState({ inGame: false }), {} as never)).toBe(true);
     });
 

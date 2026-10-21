@@ -462,7 +462,8 @@ async function walkRoute(ctx: StepContext<unknown>, route: ReadonlyArray<readonl
             if (!r.success && /no path|no waypoints/i.test(r.message)) {
                 const door = await ctx.bot.openDoor(/gate|door/i);
                 if (!door.success) throw new Error(`walk to (${x},${z}): ${r.message}; and no gate to open: ${door.message}`);
-                await waitUntil(ctx.sdk, st => st.tick >= (ctx.sdk.getState()?.tick ?? 0) + 2, { maxTicks: 4 });
+                const t = ctx.sdk.getState()?.tick ?? 0;
+                await waitUntil(ctx.sdk, st => st.tick >= t + 2, { maxTicks: 4 });
             }
             if (!r.success) r = await ctx.bot.walkTo(x, z, 3, { timeout: 90_000 });
             if (!r.success) throw new Error(`walk to (${x},${z}): ${r.message}`);

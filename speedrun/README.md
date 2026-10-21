@@ -624,10 +624,11 @@ pause count lives. More than `maxPauses` pauses in a band refuses to resume
 has answered. A player's hit (`attacked`) never fights back: it eats at the
 line, steps away from the attacker, logs out the first tick the combat window
 allows, and throws `retreat`. A death logs out at the respawn and throws
-`died`. No food at the line logs out and throws `no-food`. Ledger rows:
-`agility:level` (one per level, at its tick), `agility:program` (the band's
-program result without per-lap arrays), `agility:pause`, `agility:retreat`,
-`agility:death`, `agility:final-logout`, `agility:walk-wilderness:legs`.
+`died`. No food at the line logs out and throws `no-food`. Walks eat at the
+same line and open a gate the pathfinder cannot route through. Ledger rows
+(zero ticks): `agility:pause`, `agility:retreat`, `agility:death`,
+`agility:final-logout`, `agility:walk-wilderness:legs`; the program results and
+the level ticks are `rehearse.ts`'s `(program)` and `(reach)` rows.
 
 ## Lab
 
