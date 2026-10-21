@@ -28,6 +28,21 @@ trap 'rm -f "$RES"' EXIT
 trap 'exit 143' TERM
 mkdir -p "$OUT/page" "$OUT/knife"
 
+# TCP state toward the demo (per-route quickack and the like), and the account's crowd: an account
+# standing alone on the run host can see ticks glued together in delivery, which reads as fake
+# catch-ups (rs/83, 21:40). Every 13 s: the account's tile and level from /playerpositions, and the
+# other players on that level within 15 tiles (Chebyshev).
+DEMO_IP=$(getent ahostsv4 "$DEMO" | head -1 | cut -d' ' -f1)
+{ date -u +%FT%TZ; echo "demo $DEMO_IP"; ip route get "$DEMO_IP"; ip route show; sysctl net.ipv4.tcp_autocorking net.ipv4.tcp_low_latency net.ipv4.tcp_congestion_control 2>/dev/null; } > "$OUT/tcp-state.txt" 2>&1
+( while :; do
+    curl -s --max-time 5 "https://$DEMO/playerpositions" | jq -c --arg me "$BOT" --arg t "$(date -u +%FT%T.%3NZ)" 'def ab: if . < 0 then -. else . end;
+      (map(select((.name | ascii_downcase | gsub(" "; "_")) == ($me | ascii_downcase))) | .[0]) as $m |
+      {t: $t, online: length, me: (if $m then [$m.x, $m.z, $m.level] else null end),
+       near: (if $m then [.[] | select(.name != $m.name and .level == $m.level and ((.x - $m.x) | ab) <= 15 and ((.z - $m.z) | ab) <= 15)] | length else null end)}' >> "$OUT/crowd.jsonl" 2>/dev/null
+    sleep 13; done ) &
+CROWD=$!
+trap 'kill $CROWD 2>/dev/null; rm -f "$RES"' EXIT
+
 # Refuse to share the machine: another probe, client or rs/96's tmux session.
 echo "== preflight $(TZ=America/Los_Angeles date '+%T %Z')"; pgrep -a chrome; pgrep -a ffmpeg; pgrep -a bun; echo '== end preflight'
 busy=$(pgrep -fa 'demo-latency-probe|tickmanip-|demo-browser-page|lite/runner|hostgate|gateway.ts|proxy.ts' | grep -v "$$" | grep -v pgrep || true)
