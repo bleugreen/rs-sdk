@@ -34,7 +34,7 @@ export async function connect(name: string): Promise<BotSDK> {
     const sdk = new BotSDK({
         botUsername: env.BOT_USERNAME,
         password: env.PASSWORD,
-        gatewayUrl: deriveGatewayUrl(env.SERVER),
+        gatewayUrl: env.GATEWAY_URL || deriveGatewayUrl(env.SERVER),
         connectionMode: 'control',
         autoReconnect: true,
         autoLaunchBrowser: false,
