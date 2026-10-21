@@ -381,7 +381,12 @@ The conditions and what to do on a failure are in RUN-ORDER.md section 1 and ten
   `docs/speedrun/scripts/tickmanip-latency.ts <gate account> --path=direct --no-tele`
   (cairn://p/rs/96, PR #101; its procedure and verdict are in `skills/tick-manipulation.md`, "Run-time
   host gate"). It logs the gate account in itself, in-process, so run it **before** the gate account's
-  tab opens, with the tab closed.
+  tab opens, with the tab closed. Bound: 15 min (its probe gives up after 10):
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'cd ~/rs-sdk && timeout --kill-after=30s 15m ~/.bun/bin/bun docs/speedrun/scripts/tickmanip-latency.ts GATE_ACCOUNT --path=direct --no-tele'
+```
+
 - **(d)**, the tab's loop rate: open the gate account's tab (step 3's Chrome command with the gate
   account's env file), let it reach the game, then sample for five minutes with
   `docs/speedrun/scripts/runhost-loops.ts`. It attaches to the tab through the loopback gateway, runs
