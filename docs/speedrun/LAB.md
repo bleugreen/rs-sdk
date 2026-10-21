@@ -137,7 +137,7 @@ the next tick, and through a private loopback gateway plus the lite client 32 at
 at 2. A local lab engine gives 1-tick reactions through the relay, so **every loop figure
 taken in this lab is a direct-path figure**. The scored run runs its reactive loops (knife
 loops, pickpocket re-click, Agility obstacles) as in-page tick programs in the browser
-webclient (cairn://p/rs/82) for that reason. Don't plan a relay-driven knife loop against
+webclient (cairn://p/rs/97) for that reason. Don't plan a relay-driven knife loop against
 the demo.
 
 Long-lived terminals may not be pinnable to the executor that runs your

@@ -323,7 +323,7 @@ SDK relay (runner, gateway, lite client). From Azure eastus to the demo at about
 online (cairn://p/rs/86, 2026-10-21), the direct path landed 60 of 60 reactions on the next
 tick and the relay 32 at 1 and 28 at 2. The relay costs a tick about half the time on any
 host; the server's tick did not overrun. In the scored run the knife loops, the pickpocket
-re-click and Agility obstacles run as in-page tick programs (cairn://p/rs/82), and the SDK
+re-click and Agility obstacles run as in-page tick programs (cairn://p/rs/97), and the SDK
 drives only the non-reactive steps. Every cycle measured in this document was taken against
 a local engine with 1-tick reactions, so read them as **direct-path figures**. Do not plan a
 relay-driven knife loop on the demo. On the direct path the gate's criterion is 60 of 60 at 1
@@ -341,7 +341,7 @@ the loops probe where they re-bootstrap anyway. The probe uses only the SDK (`st
 the player's position, `sendWalk`). The browser webclient publishes a state per
 PLAYER_INFO once the positions are decoded (`Client.ts`), as the lite client does since #20,
 so the probe should read the same on both. That is read from the code, not measured; the
-browser client is rs/82's. `tickmanip-latency.ts` is the CLI over it.
+browser tick-publication fix is cairn://p/rs/82's and the in-page probe cairn://p/rs/97's. `tickmanip-latency.ts` is the CLI over it.
 
 **A constant latency costs nothing.** The cycle loops anchor their schedule on their own
 bootstrap click: every starter goes out a whole number of cycles after it. If every packet
@@ -463,7 +463,7 @@ shifting, and the packets in flight when each run's client disconnected at the e
   comes from the SDK relay, not the host or the server tick. Direct path from Azure eastus:
   60 of 60 at 1 tick; relay from the same host 32/28/0, from bbs mostly 2. The run drives
   the reactive loops in-page (section 6, "Run-time host gate"). Still open: the knife
-  loops measured in-page in the browser webclient on the demo (cairn://p/rs/82), and the
+  loops measured in-page in the browser webclient on the demo (cairn://p/rs/97), and the
   direct-path probe on the run machine on the night (cairn://p/rs/96).
 - **Second-run slips in the lab** (rs/62): the second open-loop iron run in one lab session
   slipped 17-40 times in 60 ores, while the first was clean whichever script version went

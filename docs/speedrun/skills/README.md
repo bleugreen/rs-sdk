@@ -81,7 +81,7 @@ unless that row says it fits the knife loop.
 
    **Decision (cairn://p/rs/main):** in the scored run the reactive loops (the knife loops,
    the pickpocket re-click, Agility obstacles) run as in-page tick programs in the browser
-   webclient (cairn://p/rs/82), and the SDK drives only the non-reactive steps. Every lab
+   webclient (cairn://p/rs/97), and the SDK drives only the non-reactive steps. Every lab
    figure in these documents was taken with 1-tick reactions, so it is a direct-path
    figure and applies to that setup. Do not plan a relay-driven knife loop on the demo.
    Before the run, probe the direct path on the run machine at the actual player count:
@@ -101,8 +101,9 @@ unless that row says it fits the knife loop.
    relay-driven run cannot do worse than the normal column.
 2. **Browser client.** All figures are on the headless lite client. The run drives the
    browser webclient, which froze under rapid-fire input in this lab and lacks the #20
-   tick-publication fix. Main's cairn://p/rs/82 is porting the fix and proving the knife
-   loops and the 2-tick pickpocket in a visible tab ([../LAB.md](../LAB.md), "Which
+   tick-publication fix. Main's cairn://p/rs/82 is porting that fix. The in-page tick
+   programs (the knife loops, the 2-tick pickpocket, Agility and the in-page probe) are
+   cairn://p/rs/97, which proves them in a visible tab ([../LAB.md](../LAB.md), "Which
    client a number was taken on").
 3. **Reactions cost more through the relay.** Agility pays one latency per obstacle: 66
    ticks per lap at 1-tick latency (the direct path, which the run uses for obstacles), about
