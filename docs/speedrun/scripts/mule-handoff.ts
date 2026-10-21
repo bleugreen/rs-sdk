@@ -6,7 +6,7 @@
 // The mule runs speedrun/helpers/mule.ts with the same packages and
 // serveMode:'request', serve:<receiver> (giver 'burst' or 'stock', preRequest on or
 // off). Each round: PM the package name, wait until the mule is ready (its
-// pre-request, or 15 s without one), then time the receive on THIS account's
+// pre-request, or READY_WAIT_MS without one), then time the receive on THIS account's
 // clock: from the trade request to the items in the inventory. The items are then
 // traded back to the mule (unmeasured) so the next round reuses them.
 //
@@ -31,17 +31,18 @@ await runScript(
         const results: Record<string, unknown>[] = [];
         for (let round = 1; round <= rounds; round++) {
             // Readiness: the mule's pre-request lands as a type-4 "wishes to trade" line.
-            const seen = sdk.getChat({ types: [TRADE_REQUEST_CHAT_TYPE], limit: 100 }).length;
+            const key = (m: { observationId?: number; tick: number }) => m.observationId ?? m.tick;
+            const muleRequests = () =>
+                sdk.getChat({ types: [TRADE_REQUEST_CHAT_TYPE], limit: 100 }).filter(m => canonName(m.sender) === canonName(mule));
+            const seen = Math.max(-1, ...muleRequests().map(key));
             await requestPackage(sdk, mule, pkg.name);
-            const deadline = Date.now() + 60_000;
+            const waitUntil = Date.now() + (process.env.READY_WAIT_MS ? Number(process.env.READY_WAIT_MS) : 60_000);
             let preRequested = false;
-            while (Date.now() < deadline) {
-                const reqs = sdk.getChat({ types: [TRADE_REQUEST_CHAT_TYPE], limit: 100 });
-                if (reqs.slice(seen).some(m => canonName(m.sender) === canonName(mule)) || reqs.length > seen && reqs.slice(-1)[0] && canonName(reqs.slice(-1)[0]!.sender) === canonName(mule)) {
+            while (Date.now() < waitUntil) {
+                if (muleRequests().some(m => key(m) > seen)) {
                     preRequested = true;
                     break;
                 }
-                if (mode === 'stock' && Date.now() > deadline - 45_000) break; // 15 s for a mule without pre-request
                 await sdk.waitForTicks(1);
             }
 
