@@ -1,15 +1,15 @@
 # Run host: the Ashburn machine, step by step
 
 The scored run is played first person in our fork's browser webclient, in a visible Chrome tab on
-a dedicated machine in Ashburn (cairn://p/rs/tenets/11). This page is that machine's runbook, in run
+a dedicated machine in Ashburn (cairn://p/rs/tenets/12, which supersedes tenet 11). This page is that machine's runbook, in run
 order: what to check, what to start, what to record, how to measure the gate, and how to stop.
 [RUN-ORDER.md](RUN-ORDER.md) section 1 summarises it; the gate's conditions and the knife switching
 rule live there. **SCORED** is the scored account; its real name never appears here, in a commit, a
 log line or a chat message. Figures carry a label: **m** measured (with the time), **r** read from a
 file, a config or main's notes, **i** inferred.
 
-**The run's standing configuration** (main, 10:02 PDT 2026-10-21, on the measurements below; it departs
-from tenet 11's "remote desktop connected" and rests on the proposed successor to tenet 11):
+**The run's standing configuration** (main, 10:02 PDT 2026-10-21, on the measurements below; tenet 12,
+approved, which supersedes tenet 11's "remote desktop connected"):
 
 - the recording is captured on the VM;
 - **RDP is disconnected during the run**;
@@ -81,9 +81,10 @@ and nothing was stopped by hand:
 - the sampler, bounded at 30 s, ended at 31 s through the SDK runner's own SIGTERM cleanup.
 
 The explicit stops still work: step 8's `q` finished a recording (17.1 s, 513 frames) and step 9's
-teardown left nothing. The gate (a)-(c) command's bound was not exercised. The host's clone
-(`85a28dc8d`) has an older `tickmanip-latency.ts` that needs an attached tab and exited by itself
-within 17 s. Afterwards the leftover check showed no tmux server, no process and no reservation.
+teardown left nothing. The gate (a)-(c) command's bound was not exercised. The host's clone was
+then at `85a28dc8d`, whose older `tickmanip-latency.ts` needs an attached tab and exited by itself
+within 17 s. Main has since moved `~/rs-sdk` to main `ae6d5664` (rs/96's direct CLI and rs/127),
+and from now on only step 0's run commit moves it (r: main via rs/103, 2026-10-21). Afterwards the leftover check showed no tmux server, no process and no reservation.
 
 **Probe slots, while rs/96 and rs/130 measure on the host.** Nothing is tested, rehearsed or
 verified on the host in minutes :00-:03, :15-:25, :30-:33 or :45-:55 of any hour. Use :04-:14,
@@ -102,7 +103,8 @@ rs/83's systemd user timer honours it. The timer runs the gate read (#101) at :0
 `~/gate-history/<utc>.json`, which rs/83's docs child harvests. It skips any read while `until` is in
 the future. A stale reservation (owner gone, `until` passed) is ignored, so nothing needs cleaning by
 hand (r: main via rs/103, 10:45 PDT; at 17:22 UTC neither the timer nor `~/gate-history` was on the
-host yet, m). Who writes it:
+host yet, m). The timer runs from its own clone, `~/gate/rs-sdk`, checked out at the commit in
+`~/run-commit` (step 0), never from `~/rs-sdk` (r: main via rs/103). Who writes it:
 
 - **the run**: run.ts writes it at the start with `until` = start + 9 h (the run bound above), and
   removes it after SCORED's final clean logout;
@@ -182,11 +184,21 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o 
 ## 0. Prepare the checkout (once per run commit)
 
 The page server needs the browser bundle, and the gateway its own dependencies; on 2026-10-21 only
-the root `bun install` had been done (m). Put the clone on the commit main names for the run
-(`RUN_COMMIT`), then build:
+the root `bun install` had been done (m). Main names the run's commit (`RUN_COMMIT`). Step 0 first
+writes it to **`~/run-commit`**: one line, the full 40-hex commit. Only step 0 writes that file,
+and it writes it **before** it moves `~/rs-sdk`. rs/83's gate timer reads the same file and checks
+that commit out in its own clone, `~/gate/rs-sdk`. Main seeded it with `ae6d5664` (main on
+2026-10-21), and `~/rs-sdk` is already at that commit (r: main via rs/103). Replace `C` with the full
+commit:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'export PATH=$HOME/.bun/bin:$PATH; cd ~/rs-sdk && git fetch -q origin && git checkout -q --detach RUN_COMMIT && bun install && (cd server/webclient && bun install && bun run build) && (cd server/gateway && bun install) && mkdir -p ~/recordings ~/rs-run/chrome-profile && git log -1 --oneline && ls server/webclient/out/bot/client.js'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'C=0000000000000000000000000000000000000000; case "$C" in *[!0-9a-f]*) echo "not a commit: $C"; exit 1;; esac; [ ${#C} -eq 40 ] || { echo "need the full 40-hex commit"; exit 1; }; printf "%s\n" "$C" >$HOME/run-commit.tmp && mv $HOME/run-commit.tmp $HOME/run-commit && cat $HOME/run-commit'
+```
+
+Then put the clone on it and build:
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'export PATH=$HOME/.bun/bin:$PATH; cd ~/rs-sdk && git fetch -q origin && git checkout -q --detach "$(cat $HOME/run-commit)" && bun install && (cd server/webclient && bun install && bun run build) && (cd server/gateway && bun install) && mkdir -p ~/recordings ~/rs-run/chrome-profile && git log -1 --oneline && ls server/webclient/out/bot/client.js'
 ```
 
 `RUN_COMMIT` must include rs/138's merge: step 3's Chrome login (`speedrun/tools/tab-login.ts` and
@@ -250,7 +262,7 @@ connected and disconnected, with or without the capture (m, "Measured" below). W
 The session survives a disconnect intact. After the operator disconnected at 16:41 UTC, display :10
 stayed at 1920x1080 under the same `xfce4-session` process until 17:04 UTC. Chrome kept running and
 the tab stayed in game, maximised and unobscured (m). That is why the run can leave RDP
-disconnected. Tenet 11 asks for it connected, so this rests on the proposed successor to tenet 11.
+disconnected. Tenet 11 asked for it connected; tenet 12, which supersedes it, has it disconnected.
 What does not change: Chrome stays maximised and unobscured on :10 with the throttling flags.
 
 ## 3. Bring up the page server, the gateway and Chrome
@@ -296,7 +308,7 @@ Expect `[tab-login] <name>: tab reloaded with a one-time token`, then `in game a
 0. A `403 ... chmod 600` means the env file's mode is too loose. **Running tab-login is the
 account's login; opening the tab is not.** Why each flag:
 
-- the three `--disable-background...` flags are tenet 11's: no timer, renderer or occlusion
+- the three `--disable-background...` flags are tenet 12's (carried over from tenet 11): no timer, renderer or occlusion
   throttling;
 - `--user-data-dir` gives the run its own Chrome. If another Chrome is already running on the default
   profile, a plain `google-chrome` only opens a window in that process and **its flags are lost**;
@@ -423,7 +435,7 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o 
 **The gate** is measured here, on this machine, right before the run, at the real player count, and
 **on a gate account, never SCORED**: SCORED's playtime starts at its first login, which is step 7.
 Measure it in the run's configuration: RDP disconnected, with the recording and the live view running.
-The conditions and what to do on a failure are in RUN-ORDER.md section 1 and tenet 11.
+The conditions and what to do on a failure are in RUN-ORDER.md section 1 and tenet 12.
 
 - **(a)-(c)**, next-tick reactions, tick publication p90 and catch-ups: rs/96's direct-path CLI,
   `docs/speedrun/scripts/tickmanip-latency.ts <gate account> --path=direct --no-tele`
