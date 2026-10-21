@@ -27,6 +27,11 @@ const CACHE_DIR = process.env.LITE_TEST_CACHE ?? '/tmp/rs-sdk-lite-test-cache';
 let available = false;
 let realChecksums: number[] = [];
 
+// Real network I/O: with --isolate every file fetches /crc itself, and a fresh
+// runner downloads the archives too. Far past bun's 5s hook default; an
+// unreachable server still skips the suite through the catch below.
+const NETWORK_WARMUP_MS = 120_000;
+
 beforeAll(async () => {
     try {
         // Warm the disk caches from the real origin so the mock server below
@@ -39,7 +44,7 @@ beforeAll(async () => {
     } catch {
         available = false;
     }
-});
+}, NETWORK_WARMUP_MS);
 
 afterAll(() => {
     // Don't leak the mock's checksums into later test files in this process.

@@ -26,6 +26,11 @@ const CACHE_DIR = process.env.LITE_TEST_CACHE ?? '/tmp/rs-sdk-lite-test-cache';
 
 let available = false;
 
+// Real network I/O: with --isolate every file fetches /crc itself, and a fresh
+// runner downloads the archives too. Far past bun's 5s hook default; an
+// unreachable server still skips the suite through the catch below.
+const NETWORK_WARMUP_MS = 120_000;
+
 beforeAll(async () => {
     try {
         await loadCache({ origin: ORIGIN, cacheDir: CACHE_DIR, quiet: true });
@@ -33,7 +38,7 @@ beforeAll(async () => {
     } catch {
         available = false;
     }
-});
+}, NETWORK_WARMUP_MS);
 
 /** A socket that hands back a fixed byte script. */
 class FakeStream {

@@ -30,6 +30,11 @@ const INV_COMPONENT = 3214;
 
 let available = false;
 
+// Real network I/O: with --isolate every file fetches /crc itself, and a fresh
+// runner downloads the archives too. Far past bun's 5s hook default; an
+// unreachable server still skips the suite through the catch below.
+const NETWORK_WARMUP_MS = 120_000;
+
 beforeAll(async () => {
     try {
         await loadCache({ origin: ORIGIN, cacheDir: CACHE_DIR, quiet: true });
@@ -37,7 +42,7 @@ beforeAll(async () => {
     } catch {
         available = false;
     }
-});
+}, NETWORK_WARMUP_MS);
 
 /** A LiteClient with no socket: nothing below touches the connection. */
 function makeClient(name: string): LiteClient {
