@@ -69,6 +69,7 @@ describe('kit', () => {
             { debugName: 'feather', name: 'feather', amount: 800 },
         ]);
         expect(kitWant(kit)).toEqual([{ item: 'rune axe', amount: 1 }, { item: 'knife', amount: 1 }, { item: 'feather', amount: 800 }]);
+        expect(parseKit('knife=3')).toEqual([{ debugName: 'knife', name: 'knife', amount: 3 }]);
         expect(() => parseKit('rune axe:1')).toThrow('bad kit item');
         expect(() => parseKit('knife,knife:2')).toThrow('listed twice');
         expect(() => parseKit('knife:0')).toThrow('at least 1');

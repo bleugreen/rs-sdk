@@ -174,12 +174,15 @@ export function parseArgs(argv: readonly string[]): RehearseArgs {
 
 // ------------------------------------------------------------------ kit (manifest entry 33)
 
-/** `rune_axe:1,knife,feather:800`: debug names with `_` for spaces, amount default 1. */
+/**
+ * `rune_axe:1,knife,feather:800`: debug names with `_` for spaces, amount default 1. `item=n` is
+ * the same, for speedrun/lab/lab.sh, which splits a script's arguments on `:`.
+ */
 export function parseKit(spec: string): KitItem[] {
     const out: KitItem[] = [];
     for (const part of spec.split(',').map(p => p.trim()).filter(Boolean)) {
-        const m = /^([a-z0-9_]+)(?::(\d+))?$/i.exec(part);
-        if (!m) throw new UsageError(`bad kit item "${part}": use item or item:n, a debug name with _ for spaces`);
+        const m = /^([a-z0-9_]+)(?:[:=](\d+))?$/i.exec(part);
+        if (!m) throw new UsageError(`bad kit item "${part}": use item, item:n or item=n, a debug name with _ for spaces`);
         const debugName = m[1]!.toLowerCase();
         const amount = m[2] === undefined ? 1 : Number(m[2]);
         if (amount < 1) throw new UsageError(`kit item ${debugName}: the amount must be at least 1`);
