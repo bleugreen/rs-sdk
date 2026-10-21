@@ -172,18 +172,118 @@ recovered at all.
 - Monitor the run from our own tick log, not the board: the board lags by a whole session.
 - A quest-point time is a save time, not the moment the quest finished.
 
-## 5. Incidents during the probe (open)
+## 5. Incidents during the probe
 
-- **A dropped login may cost thousands of ticks.** At 07:58 a login reached the world and then
-  dropped before its first advancing tick. The account entered phase a at playtime ≈4,652
-  (4,708 − 56), but had left recon at 52. About **4,600 ticks went by unobserved, roughly
-  23 minutes**: from the 07:58 drop to the demo's 08:21 to 08:23 restart. The audit's finding
-  4b expects a disconnected player to leave after 500 to 1,000 ticks. Either the lite runner
-  from the failed attempt kept the session alive after its parent script exited, or the server
-  did not remove the player. Neither could be checked here: `ps` is blocked in this sandbox,
-  and the restart erased the evidence. Until a lab run settles this, assume a crashed login can
-  leave the scored account in the world for many minutes. Run it under `startWatchdog`, so a
-  relaunch triggers the session takeover at once (`speedrun/README.md`, crash recovery).
+### 5.1 The dropped login (settled by rs/101)
+
+**What happened.** At 07:58 UTC a phase-a login reached the world, and `openSession` threw
+`tick did not advance` (the replayed-state bug below). The probe exited, but the lite runner it
+had launched kept running. Nothing killed it: `openSession` did not clean up after itself, and
+a Bun parent's exit does not end its children (measured below). The runner kept sending
+keepalives, so the server kept the player for about **4,600 ticks**, until the demo restart at
+08:21 to 08:23 cut its socket. The evidence is in rs/72's transcript. The batch
+(`live cairn_hsp1 a 2>&1 | grep | tail`) failed within a minute of the login, but its result
+came back only at 08:22:14. The `| tail` pipe stayed open because the orphaned runner held the
+inherited stderr. The runner's last line, `Game session ended (disconnected)`, was printed by
+the restart, not at 07:58. Under today's code, a server-side drop alone is capped at 1,000
+ticks (below), so 4,600 ticks needs a live client.
+
+**How long a player stays after its client drops.** The engine increments `playtime` for every
+player in the player loop, whether or not a socket is attached (`World.ts` `processClientsIn`).
+`NetworkPlayer.decodeIn` sets `lastConnected` every tick that a socket is attached, and
+`lastResponse` every tick that bytes arrive. A closed websocket swaps in a `NullClientSocket`
+(`web/websocket.ts` `close`), which freezes both. `World.processLogouts` then applies two
+constants (`World.ts`, `TIMEOUT_NO_CONNECTION` and `TIMEOUT_NO_RESPONSE`):
+
+| Client state after the drop | Rule | N (ticks) |
+|---|---|---|
+| Socket closed (process killed or crashed; the OS sends the FIN) | `currentTick - lastConnected >= 500` sets `requestIdleLogout`, re-set every tick, honoured once `currentTick >= preventLogoutUntil` | **500** |
+| Socket open but silent (network gone, no FIN; or the client process frozen) | `currentTick - lastResponse >= 1000` forces the logout and ignores `preventLogoutUntil` | **1,000** |
+| Client alive with nothing driving it (orphaned lite runner, wedged bot, forgotten browser tab) | None applies. The lite runner sends `NO_TIMEOUT` every 50 client cycles, about 1 s (`lite/session.ts` `KEEPALIVE_CYCLES`), and the browser client sends it too (`Client.ts`) | **unbounded** |
+
+The player cannot be removed while any of these hold:
+
+- `preventLogoutUntil` has not passed. Combat sets it 16 ticks ahead (`p_preventlogout` in
+  `logout.rs2`). This delays the 500-tick path only.
+- `canAccess()` is false: the player is `delayed`, or a protected script is running.
+- The engine queue is not empty.
+- A queued script is not a discardable LONG queue.
+
+The last three hold up even the forced 1,000-tick path. Every one of them clears itself within
+a few ticks in normal play: `closeModal()` runs first and drops dialog-suspended scripts. The
+client's own AFK packet (`IDLE_TIMER`, `IdleTimerHandler.ts`) is ignored on the demo
+(`NODE_DEBUG=true`, `fly.toml`). The browser client sends it after 10 minutes without input, so
+it cannot end a forgotten tab either. `NODE_DEBUG_SOCKET` would raise both timeouts to 60,000,
+but `fly.toml` does not set it. Nothing on the SDK side holds a player in the world: the
+gateway relays between the SDK and the game client and has no engine socket of its own. A
+runner told `save_and_disconnect` just closes its game socket, which is a 500-tick drop unless
+a takeover login removes the player first.
+
+**Measured.** The local runs used the speedrun lab on `bgsrv-mac` (load about 4 on 12 cores,
+`NODE_TICKRATE=300`, `NODE_DEBUG=true`), with `speedrun/lab/measure-drop.ts`. Its oracle is the
+saved `playtime` (byte 24 of the `.sav`), and every row is one run. Ticks are counted after the
+client's last observed tick. A baseline clean logout before each scenario gave an offset of 0
+between client ticks and saved playtime.
+
+| Reproduction | Ticks in the world after the drop | Engine's own log |
+|---|---|---|
+| Local: SIGKILL the runner 20 ticks into a session | **499** | `requesting idle logout ... ticksSinceConnected=500` |
+| Local: SIGKILL the runner the moment it logs in (the hsp1 shape) | **500** | same |
+| Local: sever the network (a TCP relay drops both directions and keeps both sockets open; the runner itself gave up after 60 s) | **998** | `forcing logout ... ticksSinceResponse=1000` |
+| Local: the controlling script crashes after `openSession({launch:true})`, today's code | still in the world after **1,303** ticks; the runner was alive after its parent exited; ended only by attaching and logging out | none until that logout |
+| Demo, throwaway `cairn_dl1`, 2026-10-21 12:08 UTC: SIGKILL the runner 27 ticks in | **497 ± 2** by the server's playtime; gone from `/playerpositions` 507 wall ticks after the kill (5 s polling) | n/a |
+
+The demo row comes from `speedrun/tools/drop-probe.ts`. A timed-out removal saves the player,
+but a board row is rewritten only when its level changes, so the probe logs back in and chops
+one log. Woodcutting's level-up at client tick 17 stamped 583, so the stay is
+583 − 40 − (27 + 1) − (17 + 1) = 497. The account then logged out cleanly.
+
+**The policy for the scored run.** Never leave the scored account's client to the server's
+timeouts. `speedrun/lib/session.ts` now does the following:
+
+- `startWatchdog` logs a wedged client out with `logoutClean`, the clean-logout primitive, and
+  then logs back in. Wedged means no advancing tick for 10 ticks, or the gateway reports the
+  bot dead or stale, while the client process runs. It falls back to a relaunch only when that
+  logout is not confirmed within 8 ticks, or when the client process has exited. A relaunch's
+  login takes the session over (`World.ts`, "kick the existing session"). That is the only way
+  out faster than 500 or 1,000 ticks once the client cannot click.
+- `progressStaleTicks` is opt-in. When the bot stops calling `markProgress` on a healthy client,
+  the watchdog logs out and stays out (verdict `stop`).
+- A launched lite runner no longer outlives its controller. A failed `openSession` logs it out,
+  or kills it if the click cannot land, through `abandonClient`. A crash, SIGTERM or SIGHUP
+  logs it out before exiting. Any other exit kills it, which bounds the stay to 500 ticks.
+- The runner runs in its own process group, so a terminal Ctrl-C reaches only the step runner,
+  which logs out at a safe boundary. Before this change, the runner's own SIGINT handler closed
+  its socket, which is a 500-tick drop.
+
+| With the fixed watchdog (local, 300 ms) | What it did | Ticks from the wedge until the old session left |
+|---|---|---|
+| Relay wedged, client alive: runner state stops reaching the gateway, but actions still reach the runner | clean logout, then relog | **10**: the 10-tick stale threshold, and the player left on the tick after the click (0 ticks of latency) |
+| Client frozen (SIGSTOP) | logout not confirmed after 8 ticks, then relaunch and takeover | **20** |
+| Client killed | immediate relaunch and takeover | **about 1** by the save (5 by wall clock) |
+| Controller crashes after `openSession` | the exit guard clicks logout | **0**; the runner exited with the parent |
+
+Answer, in ticks after our client drops:
+
+| Case | Under the old code | Under this change |
+|---|---|---|
+| Clean logout | 0 ticks after the click (the relog budget is that tick plus the click's latency: 0 in the lab, about 2 through the demo relay) | same |
+| Client wedged but alive | a relaunch, so the stale threshold plus login time | about 10 ticks: the stale threshold, then a clean logout |
+| Client frozen | same as wedged | 10 + 8 + login time: 20 in the lab; on the demo, where a login takes about 20 s, roughly 85 (inferred, not measured on the demo) |
+| Client died, watchdog running | detection plus login time; the README's lab figure is 12-14 | same: 1-5 in this lab, about 70 on the demo (inferred) |
+| Client died, no watchdog | 500 (497 measured on the demo) | 500 |
+| Controller crashed | unbounded (the hsp1 incident: about 4,600) | 0, through the exit guard |
+| Network severed | 1,000; the watchdog's logout cannot land, and its relaunch cannot connect until the network returns. Once the network is back, the takeover ends the stay | same |
+
+Residual risks. A SIGKILLed controller cannot run its guard, so the runner is orphaned and the
+stay is unbounded. If that happens, attach (`openSession` without `launch`) and call
+`logoutClean`. The browser webclient is a tab, not a child process: the watchdog's logout
+works through the SDK, but the exit guards cannot reach the tab, and a forgotten tab holds the
+player indefinitely. Logout waits out combat (16 ticks). The cases marked inferred have not
+been measured on the demo.
+
+### 5.2 Other incidents
+
 - **A stale replayed state broke `openSession`.** On connect, the gateway can hand back the
   bot's last published state, still marked `inGame`. `openSession(..., {launch: true})` then
   allowed only 6 s for the tick to advance, while a demo login takes about 20 s, so it threw.
