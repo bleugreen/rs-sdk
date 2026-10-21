@@ -177,6 +177,11 @@ await runScript(async ({ bot, sdk }) => {
     await sdk.sendInteractLoc(cannon.x, cannon.z, cannon.id, 1);
     await waitTicks(1);
     await dismiss();
+    // Open the window with every wanted prayer on, so the first flick burst (phase 0) turns them all off.
+    for (let i = 0; i < 8 && !WANTED.every(p => sdk.getState()!.prayers?.activePrayers?.[p]); i++) {
+        if (i === 4) for (const p of WANTED) if (!sdk.getState()!.prayers?.activePrayers?.[p]) await sdk.sendTogglePrayer(p);
+        await waitTicks(1);
+    }
     const cx = cannon.x + 1, cz = cannon.z + 1;
 
     // ---- firing window ----
@@ -200,10 +205,12 @@ await runScript(async ({ bot, sdk }) => {
     const animIds: Record<number, number> = {};
     const perWindow: Record<string, number>[] = [];
     const consumedAt: number[] = [];
+    const intended: boolean[] = Array.from({ length: 15 }, (_, i) => WANTED.includes(i));
+    let restores = 0;
 
     while (tick() - tFire < TICKS) {
         state = await nextTick(state.tick);
-        const t = state.tick, rel = t - tFire, phase = rel % 4;
+        const t = state.tick, rel = t - tFire, phase = (rel - 1) % 4;
         observed++;
         const ev: string[] = [];
         const msgs = freshChat(state);
@@ -255,17 +262,21 @@ await runScript(async ({ bot, sdk }) => {
             if (live && op) { send('attack', sdk.sendInteractNpc(live.index, op.opIndex)); attacks++; ev.push(why); }
         };
 
-        // 1) flick bursts
+        // 1) flick bursts. Toggles are chosen from the script's own record of what it
+        // has switched (`intended`), not from the published prayer state, which shows a
+        // toggle about two ticks after it is sent.
+        const toggle = (i: number) => { send('prayer', sdk.sendTogglePrayer(i)); intended[i] = !intended[i]; };
         if (flickTick0) {
-            if (FLICK.length === 1) { send('prayer', sdk.sendTogglePrayer(PFM)); send('prayer', sdk.sendTogglePrayer(PFM)); }
-            else { for (const i of [PFM, US, IR]) if (act[i]) send('prayer', sdk.sendTogglePrayer(i)); send('prayer', sdk.sendTogglePrayer(PFM)); }
+            for (const i of FLICK) if (intended[i]) toggle(i);
+            toggle(PFM);
             attack('flick-attack');
         } else if (flickTick1) {
-            send('prayer', sdk.sendTogglePrayer(US)); send('prayer', sdk.sendTogglePrayer(IR));
+            toggle(US); toggle(IR);
             attack('flick-attack');
         }
-        // In flick mode, put the wanted set back if a toggle got lost (checked on free ticks only).
-        if (FLICK.length > 0 && phase === 3) for (const i of WANTED) if (!act[i] && pts > 0) { send('prayer', sdk.sendTogglePrayer(i)); ev.push(`restore-prayer-${i}`); }
+        // Phase 3's published state shows phase 1's toggles: if one was dropped (sent while
+        // delayed), the prayer is off though intended on; switch it on again.
+        if (FLICK.length > 0 && phase === 3) for (const i of WANTED) if (intended[i] && !act[i] && pts > 0) { send('prayer', sdk.sendTogglePrayer(i)); restores++; ev.push(`restore-prayer-${i}`); }
         if (FLICK.length === 0 && !act[PFM] && pts > 0 && rel % 5 === 0) send('prayer', sdk.sendTogglePrayer(PFM));
 
         // 2) dialogs, consumes, cannon on free ticks
@@ -346,7 +357,7 @@ await runScript(async ({ bot, sdk }) => {
         animStarts, animStartsPerTick: per(animStarts), animIds,
         dmgTaken, dmgTakenPerTick: per(dmgTaken), doses, consumedAt, safetyHeals,
         prayer: { start: points0, min: pointsMin, end: pointsEnd, used: points0 - pointsEnd, activeShare: Object.fromEntries([...prayerUp].map(([i, n]) => [i, +(n / observed).toFixed(3)])) },
-        attacks, reloads, refires, dialogs,
+        attacks, reloads, refires, dialogs, prayerRestores: restores,
         packets: { total: packetsPerTick.reduce((a, b) => a + b, 0), max: maxPackets, ticksOver5: overCap, histogram: hist, failed, failures },
         per100: perWindow.map(o => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, +v.toFixed(0)]))),
         endLevels: { attack: [sk(sEnd, 'attack').level, sk(sEnd, 'attack').baseLevel], strength: [sk(sEnd, 'strength').level, sk(sEnd, 'strength').baseLevel], ranged: [sk(sEnd, 'ranged').level, sk(sEnd, 'ranged').baseLevel] },
