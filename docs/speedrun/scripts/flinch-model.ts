@@ -84,6 +84,8 @@ const routes: Route[] = [
     { name: 'NPC flinch on the two-willow tile from 73, knife oaks before', bands: [normal, { from: 15, tree: T.oak!, cycle: 'knife', trees: 3, switchCost: 0 }, { from: 73, tree: T.willow!, cycle: 'flinch', trees: 2, switchCost: 0 }] },
     { name: 'NPC flinch on two-tree tiles throughout (oaks 15-73, willows 73-99)', bands: [normal, { from: 15, tree: T.oak!, cycle: 'flinch', trees: 2, switchCost: 0 }, { from: 73, tree: T.willow!, cycle: 'flinch', trees: 2, switchCost: 0 }] },
     { name: 'Helper flinch, Wilderness oaks 15-99, two oaks a 2-tile walk apart', bands: [normal, { from: 15, tree: T.oak!, cycle: 'flinch', trees: 2, switchCost: 4 }] },
+    { name: 'Helper flinch, Wilderness oaks 15-73 (2-tile walk pair), knife willows 73-99', bands: [normal, { from: 15, tree: T.oak!, cycle: 'flinch', trees: 2, switchCost: 4 }, { from: 73, tree: T.willow!, cycle: 'knife', trees: 3, switchCost: 0 }] },
+    { name: 'NPC flinch on the two-oak tile 15-73, knife willows 73-99', bands: [normal, { from: 15, tree: T.oak!, cycle: 'flinch', trees: 2, switchCost: 0 }, { from: 73, tree: T.willow!, cycle: 'knife', trees: 3, switchCost: 0 }] },
     { name: 'Helper flinch, Wilderness oaks 15-99, one oak (wait out every fell)', bands: [normal, { from: 15, tree: T.oak!, cycle: 'flinch', trees: 1, switchCost: 0 }] },
     { name: 'NPC flinch on one oak (the lab tile), 15-99', bands: [normal, { from: 15, tree: T.oak!, cycle: 'flinch', trees: 1, switchCost: 0 }] },
 ];
