@@ -14,6 +14,7 @@ import LocType from '#/config/LocType.js';
 import type LinkList from '#/datastruct/LinkList.js';
 
 import { ReachProbe } from './reach.js';
+import { collectQuests, collectVarps, QuestJournalTracker } from './quest-state.js';
 
 import {
     SKILL_NAMES,
@@ -137,7 +138,8 @@ export class BotStateCollector implements ScanProvider {
     private lastOpRejectedTick: number = -1;
     private lastTileX: number = -1;
     private lastTileZ: number = -1;
-    private dialogObservations = new Map<string, { tick: number; observationId: number }>();
+    private dialogObservations = new Map<string, { tick: number; observationId: number }>()
+  private readonly questJournal = new QuestJournalTracker();
 
     // Cached prayer component map (built once on first use)
     private prayerComponentMap: PrayerComponentMap | null = null;
@@ -183,6 +185,8 @@ export class BotStateCollector implements ScanProvider {
             }
         }
 
+        const varps = collectVarps(c.var);
+
         return {
             tick: currentTick,
             combatTargetTelemetryVersion: 1,
@@ -215,7 +219,11 @@ export class BotStateCollector implements ScanProvider {
             // head icon or blindly click a control that might already be set.
             isSkulled: (c.var?.[78] ?? 0) > 0,
             autoRetaliateEnabled: (c.var?.[172] ?? 1) === 0,
-            opFeedback: this.collectOpFeedback(currentTick)
+            opFeedback: this.collectOpFeedback(currentTick),
+            varps,
+            questPoints: varps.qp,
+            quests: collectQuests(),
+            questJournal: this.questJournal.collect(c.mainModalId ?? -1, currentTick)
         };
     }
 

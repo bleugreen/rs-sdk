@@ -430,6 +430,21 @@ export interface OpFeedbackState {
     lastOpRejectedTick: number;
 }
 
+/** A quest's status as the quest tab colours it (red / yellow / green). */
+export type QuestStatus = 'not_started' | 'started' | 'complete';
+
+/** The quest journal scroll (questjournal_scroll), as last seen open. */
+export interface QuestJournalState {
+    /** The journal's header, colour tags removed. Not always the quest's title. */
+    title: string;
+    /** Lines as the server sent them, tags kept (@str@ marks struck-through lines); trailing empty lines dropped. */
+    lines: string[];
+    /** True while the scroll is the open modal. */
+    open: boolean;
+    /** Last tick it was open. The text was current then and may be stale since. */
+    tick: number;
+}
+
 export interface BotState {
     tick: number;
     /** Version of nearby-player combat-target telemetry emitted by the Lite client. */
@@ -472,6 +487,22 @@ export interface BotState {
     autoRetaliateEnabled: boolean;
     /** Whether the server accepted or silently discarded recent ops */
     opFeedback: OpFeedbackState;
+    /**
+     * Whitelisted transmitted varps by content name (bot/quest-state.ts
+     * PUBLISHED_VARPS): qp, option_run, bankcert. Quest progress varps are
+     * server-only and never appear here.
+     */
+    varps: Record<string, number>;
+    /** Quest points (varp 101, %qp). */
+    questPoints: number;
+    /**
+     * Quests the quest tab shows as started or complete, by quest-list key
+     * (questlist:<key>, e.g. doric, elena, mm). A quest missing from the map is
+     * not started.
+     */
+    quests: Record<string, 'started' | 'complete'>;
+    /** The quest journal open now, else the last one seen open; null before any. */
+    questJournal: QuestJournalState | null;
 }
 
 // Extended world state interface for agent (includes extra debug info)

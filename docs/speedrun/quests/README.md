@@ -9,6 +9,7 @@ dialogue rule, and records the decisions the synthesis prompted
 ([Decisions and pending items](#decisions-and-pending-items)).
 
 Conventions: [CONVENTIONS.md](CONVENTIONS.md). Timing primitives: [primitives.md](primitives.md).
+Quest state as a step can check it (quest tab, journal, stage tables): [quest-state.md](quest-state.md).
 All xp is **base** xp (game xp / 25; level 99 is 39,938 on this server's 2^(L/10) curve). All
 ticks are 300 ms server ticks spent logged in on the scored account.
 
