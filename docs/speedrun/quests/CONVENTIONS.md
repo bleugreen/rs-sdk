@@ -104,9 +104,22 @@ issue cairn://p/rs/2; if it has not merged into your branch yet, read it with
 ```sh
 bun install; (cd server/engine && bun install); (cd server/webclient && bun install)
 cd server/engine && WEB_PORT=<W> WEB_MANAGEMENT_PORT=<W+1> HISCORES_WEB_PORT=<W+2> NODE_PORT=<N> \
-  BUILD_VERIFY=false NODE_TICKRATE=100 LOCAL_STAFF_LEVEL=4 bun run start
+  BUILD_VERIFY=false BUILD_LIVE_RELOAD=false NODE_TICKRATE=100 LOCAL_STAFF_LEVEL=4 bun run start
 cd server/webclient && bun run watch
 cd server/gateway && AGENT_PORT=<A> WEB_MANAGEMENT_PORT=<W+1> bun run gateway
+```
+
+`BUILD_LIVE_RELOAD=false` (`server/engine/src/server/WorldConfig.ts:285`) stops the
+dev reload thread from `fs.watch()`ing all of `content/`. On Linux that watch
+exhausts file descriptors and the engine panics with EMFILE in
+`us_create_timer`.
+
+`NODE_TICKRATE=100` is fine for counting server ticks in scripted segments, but
+the bot reacts in wall-clock time, so anything reaction-dependent (fights, weapon
+switches, prayer flicks, eating) can come out differently at 100 ms. Quote those
+from runs at `NODE_TICKRATE=300`, or say that they were not re-run.
+
+```sh
 bun bots/create-bot.ts <name> --local   # then set SERVER=localhost:<W>, GATEWAY_URL=ws://localhost:<A> in bots/<name>/bot.env
 cd server/webclient && bun src/lite/runner.ts <name>
 ```
