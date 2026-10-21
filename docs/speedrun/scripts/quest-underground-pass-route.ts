@@ -108,8 +108,9 @@ one([2393, 9651, 0], [2392, 9646, 0], 'mud_dig', 'spade, quest_upass.rs2:210-224
 one([2375, 9644, 0], [2374, 9638, 0], 'ledge', 'agility 200/260 roll, upass_obstacles.rs2:246-293', { id: 3238, x: 2374, z: 9644, op: 1 });
 one([2380, 9619, 0], [2381, 9619, 0], 'railing5', 'Thieving 50, quest_upass.rs2:247-266', { id: 3268, x: 2380, z: 9619, op: 1 });
 one([2403, 9620, 0], [2404, 9620, 0], 'railing5', 'Thieving 50, quest_upass.rs2:247-266', { id: 3268, x: 2404, z: 9620, op: 1 });
-for (const [x, id] of [[2375, 3219], [2376, 3218], [2400, 3219], [2401, 3218]]) one([x, 9612, 0], [2371, 9666, 0], 'unicorn_door', 'quest_upass.rs2:318-327', { id, x, z: 9611, op: 1 });
-for (const [x, id] of [[2370, 3218], [2371, 3219]]) one([x, 9664, 0], [2376, 9610, 0], 'unicorn_door', 'at upass >= 4, quest_upass.rs2:322-323', { id, x, z: 9665, op: 1 });
+// Tunnels: the pair at z 9611 (used from the south) leads to area 3; the pair at z 9665 (used from the north) leads back.
+for (const [x, id] of [[2375, 3219], [2376, 3218], [2400, 3219], [2401, 3218]]) one([x, 9610, 0], [2371, 9666, 0], 'unicorn_door', 'quest_upass.rs2:318-327', { id, x, z: 9611, op: 1 });
+for (const [x, id] of [[2370, 3218], [2371, 3219]]) one([x, 9666, 0], [2376, 9610, 0], 'unicorn_door', 'at upass >= 4, quest_upass.rs2:322-323', { id, x, z: 9665, op: 1 });
 one([2369, 9718, 0], [2173, 4725, 1], 'temple_door2', 'unlocked by badges and horn, quest_upass.rs2:394-405', { id: 3220, x: 2368, z: 9717, op: 1 });
 one([2173, 4724, 1], [2370, 9719, 0], 'temple_door2', 'quest_upass.rs2:396-397', { id: 3221, x: 2174, z: 4724, op: 1 });
 one([2150, 4546, 1], [2336, 9794, 0], 'stairs', 'quest_upass.rs2:407-409', { id: 3222, x: 2150, z: 4545, op: 1 });
