@@ -137,21 +137,27 @@ export async function clearInv(sdk: BotSDK): Promise<void> {
  */
 export async function locId(sdk: BotSDK, x: number, z: number, id: number, op: number, done: Pred, opts: { answers?: RegExp[]; idle?: number; maxTicks?: number; label?: string } = {}): Promise<StepRecord & { run: DialogueRun }> {
     const t0 = now(sdk);
-    const d = dialogue(sdk, opts.answers ?? [], { idle: opts.idle ?? 3, startTimeout: 12 });
+    let talked = false;
+    const d = dialogue(sdk, opts.answers ?? [], { idle: opts.idle ?? 3, startTimeout: 12 }).then(r => { if (r.firstTick >= 0) talked = true; return r; });
     await sdk.sendInteractLoc(x, z, id, op);
     let sent = t0;
     const p0 = pos(sdk.getState());
     let moved = false;
     const r = await waitUntil(sdk, s => {
-        if (done(s)) return true;
+        if (done(s) || talked) return true;
         const p = pos(s);
         if (p.x !== p0.x || p.z !== p0.z || p.level !== p0.level) moved = true;
         if (!moved && !s.dialog.isOpen && s.tick - sent >= 6) { sent = s.tick; void sdk.sendInteractLoc(x, z, id, op); }
         return false;
     }, opts.maxTicks ?? 60);
     const run = await d;
-    const end = Math.max(r?.tick ?? NaN, run.endTick >= 0 ? run.endTick : -1);
+    const end = talked && run.endTick >= 0 ? run.endTick : (r?.tick ?? NaN);
     return { name: `${opts.label ?? 'loc ' + id} (${x},${z})`, ticks: end - t0, pages: run.pages, choices: run.choices, run, note: r ? undefined : 'TIMEOUT' };
+}
+
+/** True once a game message matching `re` has arrived since tick `since`. */
+export function msgSince(re: RegExp, since: number): Pred {
+    return s => s.gameMessages.some(m => re.test(m.text) && ((m as { tick?: number }).tick ?? since) >= since);
 }
 
 /** Print the dialogue runs of a talk/locTalk record and pass it through. */

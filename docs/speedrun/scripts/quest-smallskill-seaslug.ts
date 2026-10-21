@@ -8,7 +8,7 @@
 
 import { runScript } from '../../../sdk/runner';
 import type { BotSDK } from '../../../sdk/index';
-import { cheat, clearInv, getvar, give, invCount, invOp, locId, now, pickup, pos, Recorder, setstats, setvar, talk, tele, teleport, useOnItem, waitTicks, waitUntil, walkTo, withRuns } from './quest-smallskill-lib';
+import { cheat, clearInv, getvar, give, invCount, invOp, locId, msgSince, now, pickup, pos, Recorder, setstats, setvar, talk, tele, teleport, useOnItem, waitTicks, waitUntil, walkTo, withRuns } from './quest-smallskill-lib';
 
 // Loc ids and tiles from server/content/maps/m43_51.jm2 (quest-smallskill-locate.ts).
 // The platform's ground floor is server level 0, its upper floor level 1.
@@ -51,7 +51,7 @@ await runScript(async ({ bot, sdk }) => {
     rec.add(await pickup(sdk, /^damp sticks$/i), '5d');
     rec.add(await useOnItem(sdk, /^broken glass$/i, /^damp sticks$/i, s => invCount(s, /^dry sticks$/i) > 0), '5e dry the sticks');
     rec.add(await locId(sdk, LADDER_UP.x, LADDER_UP.z, LADDER_UP.id, 1, lvl(1), { label: 'climb up' }), '6a');
-    rec.add(withRuns(await locId(sdk, KWALL.x, KWALL.z, KWALL.id, 1, s => !s.dialog.isOpen && false, { label: 'Kennith through the wall', maxTicks: 40 })), '6b Kennith 1');
+    rec.add(withRuns(await locId(sdk, KWALL.x, KWALL.z, KWALL.id, 1, () => false, { label: 'Kennith through the wall', maxTicks: 40 })), '6b Kennith 1');
     console.log('stage', await stage(sdk), pos(sdk.getState()));
     rec.add(await locId(sdk, LADDER_DOWN.x, LADDER_DOWN.z, LADDER_DOWN.id, 1, lvl(0), { label: 'climb down' }), '6c');
 
@@ -70,12 +70,12 @@ await runScript(async ({ bot, sdk }) => {
     rec.add(withRuns(await locId(sdk, KWALL.x, KWALL.z, KWALL.id, 1, () => false, { label: 'Kennith through the wall', maxTicks: 40 })), '11b Kennith 2');
     console.log('stage', await stage(sdk));
     const s9 = async () => (await stage(sdk)) === 9;
-    rec.add(await locId(sdk, PANEL.x, PANEL.z, PANEL.id, 1, () => false, { label: 'kick the loose panel', maxTicks: 12, idle: 1 }), '12 kick panel');
+    rec.add(await locId(sdk, PANEL.x, PANEL.z, PANEL.id, 1, msgSince(/opening big enough/i, now(sdk)), { label: 'kick the loose panel', maxTicks: 20, idle: 1 }), '12 kick panel');
     console.log('stage', await stage(sdk), 'panel done', await s9());
     rec.add(withRuns(await locId(sdk, KWALL.x, KWALL.z, KWALL.id, 1, () => false, { label: 'Kennith through the wall', maxTicks: 40 })), '13 Kennith 3');
     console.log('stage', await stage(sdk));
     rec.add(await walkTo(bot, sdk, CRANE.x, CRANE.z + 3, 0), '14a stand north of the crane');
-    rec.add(await locId(sdk, CRANE.x, CRANE.z, CRANE.id, 1, () => false, { label: 'crane', maxTicks: 14, idle: 1 }), '14b crane');
+    rec.add(await locId(sdk, CRANE.x, CRANE.z, CRANE.id, 1, msgSince(/row boat waiting below/i, now(sdk)), { label: 'crane', maxTicks: 20, idle: 1 }), '14b crane');
     console.log('stage', await stage(sdk));
     rec.add(await locId(sdk, LADDER_DOWN.x, LADDER_DOWN.z, LADDER_DOWN.id, 1, lvl(0), { label: 'climb down' }), '15a');
     rec.add(withRuns(await talk(sdk, /^Holgart$/i, [], { done: s => pos(s).x < 2760 && !s.dialog.isOpen })), '15b Holgart, back to shore');
