@@ -125,6 +125,10 @@ async function emptyInventory(s: typeof sdk) {
         await waitTicks(s, 8);
     }
 }
+// A lab slot creates fresh accounts. Off Tutorial Island they have no inventory or spellbook tabs,
+// and the server then refuses every OPHELD and IF_BUTTON silently, so skip the tutorial first.
+await scored.bot.skipTutorial().catch(() => {});
+if (helper) await helper.bot.skipTutorial().catch(() => {});
 await say(sdk, `tele ${TELE}`);
 await waitTicks(sdk, 3);
 await emptyInventory(sdk);

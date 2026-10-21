@@ -28,6 +28,7 @@ sdk.onStateUpdate(s => {
     last = { p, m: mg, f: fl, rej };
 });
 const say = (c: string) => sdk.sendSay('::' + c);
+await ses.bot.skipTutorial().catch(() => {});
 await say('tele 0,41,51,29,37');
 await waitTicks(3);
 for (const it of [...sdk.getState()!.inventory]) void sdk.sendDropItem(it.slot);
