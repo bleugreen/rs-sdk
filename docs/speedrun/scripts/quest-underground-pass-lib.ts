@@ -178,14 +178,23 @@ export class Lab {
                         const final = j === stopAt - 1;
                         let still = 0;
                         let lq = this.pos();
+                        let walkResends = 0;
                         await L.waitUntil(this.sdk, () => {
                             const q = this.pos();
                             const d = Math.max(Math.abs(q[0] - target[0]), Math.abs(q[1] - target[1]));
+                            if (final ? d === 0 : d <= 2) return true;
                             still = q[0] === lq[0] && q[1] === lq[1] ? still + 1 : 0;
                             lq = q;
-                            // stopped short (an NPC on the tile, or the client routed elsewhere): carry on from here
-                            if (still >= 3) return true;
-                            return final ? d === 0 : d <= 2;
+                            if (still >= 2) {
+                                // a click during a forced move is dropped: send it again; after 6 tries
+                                // accept stopping short (an NPC standing on the tile)
+                                if (walkResends >= 6) return true;
+                                walkResends++;
+                                this.resends++;
+                                still = 0;
+                                void this.sdk.sendWalk(target[0], target[1], true);
+                            }
+                            return false;
                         }, 60);
                         k = j + 1;
                     }
