@@ -40,7 +40,7 @@ await runScript(async ({ bot, sdk }) => {
     // The keep's only exit is the web at 3158,3951 (north wall); two more webs guard the ladder.
     // Walk toward each goal; when the path is blocked, knife the nearest web (50% per try).
     let slashTries = 0;
-    const goals: [number, number][] = [[3158, 3950], [3158, 3953], [3092, 3957]];
+    const goals: [number, number][] = [[3158, 3950], [3158, 3953], [3096, 3957], [3094, 3957], [3092, 3957]];
     for (const [gx, gz] of goals) {
         for (let attempt = 0; attempt < 12; attempt++) {
             if (Math.abs(pos(sdk).x - gx) <= 1 && Math.abs(pos(sdk).z - gz) <= 1) break;
