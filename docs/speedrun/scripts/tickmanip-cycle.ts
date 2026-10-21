@@ -96,7 +96,8 @@ await runScript(async ({ bot, sdk }) => {
     await sdk.sendSay(`::setstat ${method.skill} ${level}`);
     for (const [obj, n] of method.give) await sdk.sendSay(`::give ${obj} ${n}`);
     if (technique === 'eat') await sdk.sendSay(`::give ${FOOD_OBJ} 18`);
-    if (technique === 'knife') { await sdk.sendSay('::give knife 1'); await sdk.sendSay('::give logs 1'); }
+    // Spare logs: a cycle whose click slips lets the queued fletch run and use one log.
+    if (technique === 'knife') { await sdk.sendSay('::give knife 1'); for (let i = 0; i < 10; i++) await sdk.sendSay('::give logs 1'); }
     // A fresh account's tutorial exit can land after the first teleport; retry until we are there.
     const [, mx, mz, lx, lz] = method.tele.split(',').map(Number);
     for (let attempt = 0; attempt < 5; attempt++) {
