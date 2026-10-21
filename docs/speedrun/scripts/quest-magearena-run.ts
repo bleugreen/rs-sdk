@@ -131,7 +131,7 @@ await runScript(async ({ bot, sdk }) => {
     for (const f of forms) console.log('   ' + f);
     // finish_mage_arena: p_delay(3) + teleport + p_delay(2), then Kolodion's congratulations
     await waitUntil(sdk, () => sdk.getDialog()?.isOpen === true, 30, 'finish dialogue');
-    const d2 = await talkThrough(sdk, [], { idleMs: 3000 });
+    const d2 = await talkThrough(sdk, []);
     tDone = clock(sdk);
     log(sdk, `SEG finish-dialogue: ${tDone - tBack} ticks, ${d2.pages} pages`, t0);
     } else {
@@ -168,8 +168,9 @@ await runScript(async ({ bot, sdk }) => {
     const from4 = pos(sdk);
     sdk.getNewChat({ types: [0] });
     const r4 = await bot.interactLoc(statue, statue.options[0]);
+    await waitUntil(sdk, () => sdk.getDialog()?.isOpen === true, 60, 'statue mesbox');
     log(sdk, `statue ${statue.id} options ${statue.options.join('/')} interact: ${JSON.stringify(r4).slice(0, 200)}`);
-    const d4 = await talkThrough(sdk, [], { idleMs: 1500 });
+    const d4 = await talkThrough(sdk, []);
     let cape = null;
     for (let i = 0; i < 40 && !cape; i++) {
         cape = (await sdk.scanGroundItems(15)).find((g) => /cape of/i.test(g.name)) ?? null;
@@ -195,7 +196,8 @@ await runScript(async ({ bot, sdk }) => {
     }
     if (!guard) throw new Error('guardian not found');
     await sdk.sendTalkToNpc(guard.index);
-    const d5 = await talkThrough(sdk, [], { idleMs: 2000 });
+    await waitUntil(sdk, () => sdk.getDialog()?.isOpen === true, 60, 'guardian dialogue');
+    const d5 = await talkThrough(sdk, []);
     const staff = sdk.findInventoryItem(/staff of (saradomin|guthix|zamorak)/i);
     const tStaff = clock(sdk);
     log(sdk, `SEG guardian: ${tStaff - tCape} ticks from ${JSON.stringify(from5)}, ${d5.pages} pages, staff=${staff?.name}`, t0);
