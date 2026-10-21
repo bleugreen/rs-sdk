@@ -16,7 +16,8 @@
  *   --fires=N       successes to record (default 27)
  *   --row=X,Z,LEN   snake origin and row length: row 0 runs west from (X,Z)
  *                   over LEN tiles, row 1 (Z-1) runs back east, and so on
- *                   (default 3019,3361,27, south of Falador east bank)
+ *                   (default 3019,3362,27, south of Falador east bank; rows
+ *                   z=3362 and z=3361 are clear for 27 tiles, z=3360 is not)
  *   --rows=N        rows in the snake before it repeats from row 0 (default 2)
  *   --mode=inv|ground  inv: tinderbox on an inventory log (the log is dropped
  *                   and lit where the player stands). ground: "Light" (op4)
@@ -55,7 +56,7 @@ const LEVEL = Number(flag('level', '0'));
 const HOLD = flag('hold', '1') !== '0';
 const UNTIL = Number(flag('until', '0'));
 const FIRES = Number(flag('fires', '27'));
-const [RX, RZ, RLEN] = flag('row', '3019,3361,27')!.split(',').map(Number);
+const [RX, RZ, RLEN] = flag('row', '3019,3362,27')!.split(',').map(Number);
 const ROWS = Number(flag('rows', '2'));
 const MODE = flag('mode', 'inv')!;
 const SEND = Number(flag('send', '0'));
@@ -115,9 +116,11 @@ await runScript(async ({ bot, sdk }) => {
     const rejectedSends: number[] = [];   // per fire: sends that did not take
     let sendsThisFire = 0;
 
+    let lastProgress = state.tick, walkStart = -1, skipped = 0;
     while (successes < FIRES && !(UNTIL && fm(state).baseLevel >= UNTIL)) {
         state = await nextTick(state.tick);
         const t = state.tick;
+        if (t - lastProgress > 80) { console.log(`stalled at tick ${t}`); break; }
         const me: [number, number] = [state.player!.worldX, state.player!.worldZ];
         const level = fm(state).baseLevel;
         const ev: string[] = [];
@@ -130,7 +133,8 @@ await runScript(async ({ bot, sdk }) => {
         const xp = fm(state).experience;
         if (xp > lastXp) ev.push(`xp+${(xp - lastXp) / 25}`);
         lastXp = xp;
-        if (fresh.some(x => /You attempt to light/.test(x))) { evs.push({ t, kind: 'start', level, tile: me }); ev.push('start'); }
+        if (fresh.some(x => /You attempt to light/.test(x))) { evs.push({ t, kind: 'start', level, tile: me }); ev.push('start'); lastProgress = t; }
+        if (fresh.some(x => /fire catches/.test(x))) lastProgress = t;
         if (fresh.some(x => /fire catches/.test(x))) {
             evs.push({ t, kind: 'success', level, tile: snakeTile(idx) }); ev.push('success');
             successes++; idx++; phase = 'idle'; notBefore = t + SEND;
@@ -157,9 +161,13 @@ await runScript(async ({ bot, sdk }) => {
                 if (!logsNow) {
                     if (RESTOCK === 'give') { await sdk.sendSay(`::give ${LOGS} 27`); restocks++; ev.push('restock'); notBefore = t + 2; }
                     else break;
+                } else if (!onTarget && walkStart >= 0 && t - walkStart > 4) {
+                    ev.push(`skip(${target})`); skipped++; idx++; walkStart = -1;
                 } else if (!onTarget) {
+                    if (walkStart < 0) walkStart = t;
                     if (t - walkedAt >= RETRY) { await sdk.sendWalk(target[0], target[1], true); walks++; walkedAt = t; ev.push(`walk(${target})`); }
                 } else if (tinder) {
+                    walkStart = -1;
                     const lg = state.inventory.find(i => logName.test(i.name))!;
                     await sdk.sendUseItemOnItem(tinder.slot, lg.slot);
                     sends++; sendsThisFire++; sentAt = t; logsBefore = logsNow; phase = 'pending'; ev.push('light');
@@ -208,7 +216,7 @@ await runScript(async ({ bot, sdk }) => {
         ticksPerFire: span ? +(span / (succ.length - 1)).toFixed(3) : null,
         baseXpGained: +((fm(state).experience - startXp) / 25).toFixed(1), ticksTotal: state.tick - startTick,
         baseXpPerTickFirstToLast: span ? +(((fm(state).experience - startXp) / 25) * ((succ.length - 1) / succ.length) / span).toFixed(2) : null,
-        sends, rejectedSendsPerFire: rej, walks, restocks, dialogs, setstats,
+        sends, rejectedSendsPerFire: rej, walks, skipped, restocks, dialogs, setstats,
         logsUsed, logsPerSuccess: MODE === 'inv' ? +(logsUsed / Math.max(1, succ.length)).toFixed(3) : null,
         gapsList: succ.map((e, i) => i ? e.t - succ[i - 1].t : 0).slice(1).join(''),
         levels: [succ[0]?.level, succ.at(-1)?.level], log: OUT,
