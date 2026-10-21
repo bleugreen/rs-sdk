@@ -139,6 +139,11 @@ await runScript(async ({ bot, sdk }) => {
     out.walkToBell = { ...walk, withPickup: L.tick(sdk) - t0 };
     const bellItem = sdk.findInventoryItem(/Grail bell/i);
     if (!bellItem) throw new Error(`no Grail bell; so far ${JSON.stringify(out)}`);
+    // The bell only works with a Grail maiden within 4 tiles (quest_grail.rs2:54), and they wander.
+    t0 = L.tick(sdk);
+    const maiden = sdk.getState()!.nearbyNpcs.filter(n => /Grail maiden/i.test(n.name)).sort((a, b) => a.distance - b.distance)[0];
+    if (maiden && maiden.distance > 2) await bot.walkTo(maiden.x, maiden.z, 2);
+    out.toMaiden = { ticks: L.tick(sdk) - t0, maidenDistanceBefore: maiden?.distance ?? null };
     t0 = L.tick(sdk);
     await sdk.sendUseItem(bellItem.slot, 1);
     const ring = await L.talkThrough(sdk, []);
@@ -158,11 +163,10 @@ await runScript(async ({ bot, sdk }) => {
     t0 = L.tick(sdk);
     let doorsOpened = 0;
     let kt = await bot.talkTo(/Fisher King/);
-    while (!kt.success && doorsOpened < 4) {
-        const door = (await sdk.scanNearbyLocs(10))
-            .filter(l => l.name === 'Door' && l.options.includes('Open'))
-            .sort((a, b) => a.distance - b.distance)[0];
-        if (!door) break;
+    for (const [dx, dz] of [[2766, 4684], [2766, 4688]]) {
+        if (kt.success) break;
+        const door = (await sdk.scanNearbyLocs(12)).find(l => l.name === 'Door' && l.x === dx && l.z === dz && l.options.includes('Open'));
+        if (!door) continue;
         await bot.openDoor(door);
         doorsOpened++;
         kt = await bot.talkTo(/Fisher King/);
