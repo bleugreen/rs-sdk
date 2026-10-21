@@ -416,7 +416,20 @@ Measured with the CLI on 2026-10-21 from bbs (load about 4 of 32 cores, cairn://
 | Demo, same minute, `--edge=any` (home vantage, reference only) | direct | 16 / 44 | 308 / 406 / 635 ms (60 s) | 2 | re-measure (p90), and (a) under the floor |
 
 The home row's p90 is the home path's own jitter, which is why the preconditions come first.
-The run-machine read is still to come (from Ashburn, cairn://p/rs/83's workflow or the run VM).
+
+On the run machine (Ashburn, AWS us-east-1c; preconditions passed every time: edge iad, app
+iad, no mesh hop, TCP connect p50 2.1-2.3 ms), three probes about two minutes apart on
+2026-10-21 (arrivals and log in
+[`research/data/hostgate-ashburn/`](../research/data/hostgate-ashburn/)):
+
+| UTC, online | Reactions 1 / 2 / 3 ticks | Tick p10 / p50 / p90 / max | Catch-ups per minute | Verdict |
+|---|---|---|---|---|
+| 16:31, 1,694 | 49 / 10 / 1 | 155 / 329 / 453 / 723 ms | 13.9 | re-measure |
+| 16:34, 1,697 | 54 / 5 / 1 | 197 / 342 / 528 / 871 ms | 8.0 | re-measure |
+| 16:37, 1,685 | 46 / 14 / 0 | 163 / 336 / 500 / 639 ms | 14.0 | re-measure |
+
+All three were overrun minutes on the demo itself (the run machine sits beside the app), and
+(c) named them; (a) under the floor followed from the overruns, as the status order intends.
 
 **Probe.** `probeOnTime(sdk, {trials})` walks one tile and back, sending each walk on the
 fresh state label that showed the previous step, the same send-on-a-fresh-label pattern the
