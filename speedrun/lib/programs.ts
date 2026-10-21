@@ -13,7 +13,7 @@
 
 import type { BotSDK } from '../../sdk/index';
 import type { ActionResult, BotWorldState } from '../../sdk/types';
-import { type ProbeResult, summarizeProbe } from './hostgate';
+import { type ProbeResult, summarizeProbe, tickSteadiness } from './hostgate';
 import { tickMs } from './wait';
 
 /** The page's published program status (server/webclient/src/bot/programs/types.ts). */
