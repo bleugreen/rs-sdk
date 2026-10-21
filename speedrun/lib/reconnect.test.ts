@@ -22,7 +22,7 @@ test('outageStep', () => {
     expect(outageStep({ reachable: false, now: 0, deadline: 10, childExit: null })).toBe('wait');
     expect(outageStep({ reachable: true, now: 0, deadline: 10, childExit: 1 })).toBe('login');
     expect(outageStep({ reachable: true, now: 0, deadline: 10, childExit: 3 })).toBe('give_up');
-    expect(outageStep({ reachable: false, now: 10, deadline: 10, childExit: null })).toBe('wait' === 'wait' ? 'give_up' : 'wait');
+    expect(outageStep({ reachable: false, now: 10, deadline: 10, childExit: null })).toBe('give_up');
 });
 
 describe('reconnectAfterOutage', () => {
