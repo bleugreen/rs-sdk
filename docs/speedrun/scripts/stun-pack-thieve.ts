@@ -25,6 +25,13 @@
 //   --helper=<bot>             the helper bot (needed for stun|success).
 //   --hp=97 --magic=80 --fletching=1 --prayer=43 --defence=89   SCORED's post-MM stats.
 //   --sharks=4                 sharks carried; each top-up brings the stock back to this.
+//   --tradeks=2,4              stun offsets at which a top-up trade may start.
+//   --load0tiers=4             arrowhead tiers carried from the start (with a helper); the rest
+//                              arrive in top-ups.
+//
+// Top-up load: sized when SCORED sends the request, to SCORED's free slots then (bones still held
+// count as occupied), less --margin; it carries sharks back to --sharks and, when SCORED is down to
+// one arrowhead tier, the next tier.
 //   --eatbelow=maxHp-20        eat a shark in a success window at or below this HP.
 //   --margin=1                 free slots left in a bone load (a new arrow type can take one).
 //   --tag=x                    log name suffix.
@@ -75,7 +82,12 @@ const EATBELOW = Number(flag('eatbelow', String(HP - 20)));
 const MARGIN = Number(flag('margin', '1'));
 const TELE = flag('tele', '0,41,51,29,37'); // the rs/2 knight, (2653,3300)
 const HFIRST = flag('hfirst', 'charge'); // which delay-free action fills 'h' first: charge | arrows
-const TRADE_BY = Number(flag('tradeby', '5')); // latest stun offset at which a top-up trade may start
+// Stun offsets at which a top-up trade may start. Not the tick after a bury: the bury's p_delay
+// drops the request (k = 3 after a k = 2 bury never opened a trade).
+const TRADE_KS = flag('tradeks', '2,4').split(',').map(Number);
+// Arrowhead tiers SCORED carries from the start; the rest come in top-ups, one tier at a time,
+// whenever SCORED is down to one tier, so they do not hold bone slots for the whole run.
+const LOAD0_TIERS = Number(flag('load0tiers', '4'));
 const DISMISS = flag('dismiss', '1') === '1'; // resume open level-up pages before a stun tick's packets
 
 // k = 8 lands on T+10, the last stun tick. xp gained there queues a level-up page that pops on
@@ -107,6 +119,9 @@ const TIERS: Array<{ re: RegExp; level: number; product: RegExp }> = [
     { re: /^iron arrow(head|tip)s$/i, level: 15, product: /^iron arrows?$/i },
     { re: /^bronze arrow(head|tip)s$/i, level: 1, product: /^bronze arrows?$/i },
 ];
+// Arrowheads per tier for Fletching 1-99 (fletching.md): each stack lasts to the next tier's level.
+const HEAD_LOADS = [['bronze', 60], ['iron', 90], ['steel', 135], ['mithril', 225], ['adamant', 495], ['rune', 2595]] as const;
+const TIER_BY_NAME = new Map(HEAD_LOADS.map(([n], i) => [n, TIERS[TIERS.length - 1 - i]!]));
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const skill = (s: BotWorldState, n: string) => s.skills.find(k => k.name.toLowerCase() === n)!;
 const count = (s: BotWorldState, re: RegExp) => s.inventory.filter(i => re.test(i.name)).reduce((a, i) => a + i.count, 0);
@@ -146,7 +161,7 @@ await say(sdk, `give airrune ${big || 500}`);
 if (FLETCH) {
     await say(sdk, `give headless_arrow ${big || 3600}`);
     if (HOLD) await say(sdk, 'give rune_arrowheads 60000');
-    else for (const [n, c] of [['bronze', 60], ['iron', 90], ['steel', 135], ['mithril', 225], ['adamant', 495], ['rune', 2595]] as const) await say(sdk, `give ${n}_arrowheads ${c}`);
+    else for (const [n, c] of HEAD_LOADS.slice(0, HELPER ? LOAD0_TIERS : HEAD_LOADS.length)) await say(sdk, `give ${n}_arrowheads ${c}`);
 }
 await say(sdk, `give shark ${SHARKS}`);
 await waitTicks(sdk, 3);
@@ -172,7 +187,9 @@ let pagesInStun = 0, pagesOutside = 0;
 let eats = 0, forcedEats = 0, stunEats = 0, hpLost = 0, deaths = 0;
 const dmg: Record<number, number> = {};
 let f = -1000, lastStunEnd = -100, lastEat = -100;
-let armed = false, armedAt = -1, reqConfirmed = false, staged = false, stagedLoad = { bones: 0, sharks: 0 };
+type Load = { bones: number; sharks: number; tier?: string; heads?: number };
+let armed = false, armedAt = -1, reqConfirmed = false, staged = false, stagedLoad: Load = { bones: 0, sharks: 0 };
+let pageOpensIn = 0, pageOpensOut = 0, lastDlg = false;
 let rctx: ReceiverCtx | null = null, rctxStart = -1, rctxTopup: (typeof topups)[number] | null = null;
 let giveRefills = 0, chargeOutSent = 0, setstats = 0;
 let stallStart = -1, aborted: string | undefined;
@@ -251,6 +268,11 @@ function onScored(s: BotWorldState) {
     last.pr = pr; last.mg = mg; last.headless = hl;
     if (hp < last.hp) { const d = last.hp - hp; hpLost += d; dmg[d] = (dmg[d] ?? 0) + 1; ev.push(`hp-${d}`); }
     last.hp = hp;
+    // Level-up pages, counted by the dialog opening: most level-up chat messages never reach the
+    // published state (none of 42 Thieving levels in the plain run), but the page itself does.
+    const dlgNow = !!s.dialog?.isOpen;
+    if (dlgNow && !lastDlg) { if (inWindow(t)) pageOpensIn++; else pageOpensOut++; ev.push('page'); }
+    lastDlg = dlgNow;
 
     // Stall watchdog: no roll for 40 ticks (the longest normal gap is a 14-tick stun plus a walk)
     // means the account stopped acting. Try a blind page resume and a fresh click; give up at 120.
@@ -315,8 +337,10 @@ function onScored(s: BotWorldState) {
         if (k === 0 || k === 1) { log({ t, k, lvl: th.baseLevel, hp, ev, msgs: msgs.map(m => m.text) }); return; }
         // Forced eat only (it costs 3 ticks here).
         if (hp > 0 && hp <= 6) { const sh = slot(s, SHARK); if (sh) { void sdk.sendUseItem(sh.slot, 1); eats++; forcedEats++; stunEats++; st.ate = true; ev.push('eat-forced'); } }
-        if (TOPUP === 'stun' && needNow && canTrade && k <= TRADE_BY && !st.topup) {
+        const load = TOPUP === 'stun' && needNow && canTrade && TRADE_KS.includes(k) && !st.topup ? loadFor(s) : null;
+        if (load) {
             st.topup = true;
+            stagedLoad = load;
             rctx = newReceiverCtx(helper!.name, s.inventory, wantFor(stagedLoad));
             rctxStart = t;
             rctxTopup = { mode: 'stun', armedAt, clickAt: t, ok: false, bones: stagedLoad.bones, sharks: stagedLoad.sharks, afterRoll: f };
@@ -346,7 +370,9 @@ function onScored(s: BotWorldState) {
 
     // ---- outside the stun window
     const picked = msgs.some(m => /^You pick the/.test(m.text));
-    if (TOPUP === 'success' && needNow && canTrade && picked) {
+    const sLoad = TOPUP === 'success' && needNow && canTrade && picked ? loadFor(s) : null;
+    if (sLoad) {
+        stagedLoad = sLoad;
         rctx = newReceiverCtx(helper!.name, s.inventory, wantFor(stagedLoad));
         rctxStart = t;
         rctxTopup = { mode: 'success', armedAt, clickAt: t, ok: false, bones: stagedLoad.bones, sharks: stagedLoad.sharks, afterRoll: t };
@@ -371,11 +397,32 @@ function onScored(s: BotWorldState) {
     log({ t, k: k > 200 ? null : k, lvl: th.baseLevel, hp, ev, msgs: msgs.map(m => m.text), me: [s.player!.worldX, s.player!.worldZ], hd: hAdj.d });
 }
 
-function wantFor(load: { bones: number; sharks: number }) {
+function wantFor(load: Load) {
     const w: Array<{ item: RegExp; amount: number }> = [];
     if (load.bones) w.push({ item: BONE, amount: load.bones });
     if (load.sharks) w.push({ item: SHARK, amount: load.sharks });
+    if (load.tier && load.heads) w.push({ item: TIER_BY_NAME.get(load.tier)!.re, amount: load.heads });
     return w.length ? w : undefined;
+}
+
+/**
+ * The load that fits SCORED's inventory as it stands when the request is sent: SCORED sends
+ * nothing else while the trade is open, so its free slots cannot shrink before the trade
+ * completes. Bones still held count as occupied. Sharks back to --sharks, the next arrowhead
+ * tier when SCORED is down to one, and bones in the rest less --margin.
+ */
+function loadFor(s: BotWorldState): Load | null {
+    const hs = helper!.sdk.getState()!;
+    const free = 28 - s.inventory.length;
+    const sharks = Math.min(count(hs, SHARK), Math.max(0, SHARKS - count(s, SHARK)));
+    let tier: string | undefined, heads: number | undefined;
+    if (FLETCH && TIERS.filter(tr => count(s, tr.re) > 0).length <= 1) {
+        const next = HEAD_LOADS.find(([n]) => count(hs, TIER_BY_NAME.get(n)!.re) > 0);
+        if (next) { tier = next[0]; heads = count(hs, TIER_BY_NAME.get(next[0])!.re); }
+    }
+    const bones = Math.min(count(hs, BONE), free - sharks - (tier ? 1 : 0) - MARGIN);
+    if (bones <= 0) return null;
+    return { bones, sharks, tier, heads };
 }
 
 function pickKnight(s: BotWorldState) {
@@ -425,6 +472,7 @@ function runActs(s: BotWorldState, acts: string, click: () => void): string[] {
 }
 
 // ------------------------------------------------------------------ helper: per-tick loop
+let tiersStaged = false;
 let gctx: GiverCtx | null = null, gplan: OfferEntry[] = [], hLast = -1, lastReq = -100, hBusy = 0, hReqs = 0, stageAt = -100, lastFollow = -100, hAnswers = 0;
 function onHelper(hs: BotWorldState) {
     if (!helper || !hs?.inGame || done) return;
@@ -443,24 +491,29 @@ function onHelper(hs: BotWorldState) {
         return;
     }
     if (tr.isOpen) {
-        gplan = planOffers(hs.inventory, 'all');
+        const specs: Array<{ item: RegExp; n: number }> = [{ item: BONE, n: stagedLoad.bones }];
+        if (stagedLoad.sharks) specs.push({ item: SHARK, n: stagedLoad.sharks });
+        if (stagedLoad.tier && stagedLoad.heads) specs.push({ item: TIER_BY_NAME.get(stagedLoad.tier)!.re, n: stagedLoad.heads });
+        gplan = planOffers(hs.inventory, specs);
         gctx = newGiverCtx(scored.name, hs.inventory, gplan);
         onHelperGiver(hs);
         return;
     }
     if (!armed) return;
     const s = sdk.getState()!;
+    // Stage: the helper's stock (a stand-in for its bank trips, which cost SCORED nothing) is
+    // the undelivered arrowhead tiers, --sharks sharks and bones in every other slot. The load
+    // itself is sized by SCORED when it sends the request (loadFor).
     if (!staged) {
-        if (hs.inventory.length === 0 && hs.tick - stageAt > 6) {
-            const sharks = Math.max(0, SHARKS - count(s, SHARK));
-            const nonBone = s.inventory.filter(i => !BONE.test(i.name)).length + (s.inventory.some(i => /^coins$/i.test(i.name)) ? 0 : 1);
-            const bones = Math.max(0, 28 - nonBone - sharks - MARGIN);
-            if (bones) void say(helper.sdk, `give dragon_bones ${bones}`);
-            if (sharks) void say(helper.sdk, `give shark ${sharks}`);
-            stagedLoad = { bones, sharks };
+        if (hs.tick - stageAt > 6) {
+            if (FLETCH && !HOLD && !tiersStaged) { for (const [n, c] of HEAD_LOADS.slice(LOAD0_TIERS)) void say(helper.sdk, `give ${n}_arrowheads ${c}`); tiersStaged = true; }
+            const tierSlots = HEAD_LOADS.filter(([n]) => count(hs, TIER_BY_NAME.get(n)!.re) > 0).length || (FLETCH && !HOLD ? HEAD_LOADS.length - LOAD0_TIERS : 0);
+            const wantBones = 28 - tierSlots - SHARKS;
+            const needB = wantBones - count(hs, BONE), needS = SHARKS - count(hs, SHARK);
+            if (needB > 0) void say(helper.sdk, `give dragon_bones ${needB}`);
+            if (needS > 0) void say(helper.sdk, `give shark ${needS}`);
             stageAt = hs.tick;
-        } else if (hs.inventory.length > 0 && count(hs, BONE) >= stagedLoad.bones && count(hs, SHARK) >= stagedLoad.sharks && stagedLoad.bones) {
-            staged = true;
+            if (needB <= 0 && needS <= 0) staged = true;
         }
         return;
     }
@@ -511,7 +564,7 @@ function finish() {
         topupStuns: { n: tu.length, next: hist(tu.map(x => x.next!)), bones: mean(tu.map(x => x.bones)), casts: mean(tu.map(x => x.casts)), arrows: mean(tu.map(x => x.arrows)) },
         topups: { n: topups.length, ok: topups.filter(u => u.ok).length, recvTicks: hist(topups.filter(u => u.recvTicks !== undefined).map(u => u.recvTicks!)), successGaps: hist(topups.filter(u => u.gap !== undefined).map(u => u.gap!)), failures: topups.filter(u => !u.ok).map(u => u.reason), list: topups, helperRequests: hReqs, helperAnswers: hAnswers, helperBusy: hBusy, giveRefills },
         totals: tot, outside, chargeOutSent,
-        pages, pagesInStun, pagesOutside,
+        pages, pagesInStun, pagesOutside, pageOpens: { inStun: pageOpensIn, outside: pageOpensOut },
         eats, forcedEats, stunEats, hpLost, damage: dmg, deaths, setstats,
         standaloneReplaced: { bury: tot.bones * 2, charge: +(tot.casts / 5).toFixed(1), fletch: +(tot.arrows / 5).toFixed(1) },
         ticksUnseen: unseen,
