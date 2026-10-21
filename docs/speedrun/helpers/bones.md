@@ -39,7 +39,7 @@ scoreboard; they cost only wall clock.
 
 | Method | Requirement | Fresh helper to requirement | Bones per account-hour | Base xp per account-hour | Account-hours per 1,000 base | Account-hours for 28,938 base | Risk | Status |
 |---|---|---|---:|---:|---:|---:|---|---|
-| **Hill giants**, Edgeville dungeon (12 spawns, level 28) | Melee about 50, food | **0.42 h measured** (20 min to 50/50/50 on cows, 4.5 min fishing/cooking kit) | RATE_GIANTS | XP_GIANTS | HPK_GIANTS | TOTAL_GIANTS | None: no PvP, giants hit up to about 4 | **Built and running** |
+| **Hill giants**, Edgeville dungeon (12 spawns, level 28) | Melee about 50, food | **0.42 h measured** (20 min to 50/50/50 on cows, 4.5 min fishing/cooking kit) | **161-166 measured** (117 in a fresh account's first hour) | 2,475 | 0.40 | 11.7 (about 4 h wall clock on 3 accounts) | None: no PvP, giants hit up to about 4 | **Built and running** |
 | Baby blue dragons, Taverley dungeon (9 spawns, level 48, 50 hp, no fire) | Dusty key (Velrak, Taverley jail; the Jailer drops the jail key), melee about 60 | about 0.8 h inferred (giants to 60, plus the key) | about 60 inferred | about 1,800 | about 0.56 | about 16 | Low | Spot written (`spot: 'baby_blue'`), key fetch not written, never run |
 | Blue dragons, Taverley dungeon (3 spawns; Brimhaven has 7) | Anti-dragon shield (the Duke gives it once Dragon Slayer is started, 32 quest points) or Protect from Magic, melee about 75 | Many hours (quest points) | about 20-30 inferred | 1,400-2,200 | 0.5-0.7 | 13-20 | Dragonfire max 30-50 unprotected (`dragon.rs2`) | Infeasible tonight |
 | Green dragons, wilderness level 35-39 (5 spawns) | As for blue dragons, melee about 70 | Many hours, or Prayer 37 (about 36 big bones buried by the helper) for Protect from Magic, which drains during fights | about 20-30 inferred | 1,400-2,200 | 0.5-0.7 | 13-20 | **PvP is live**: anyone within the wilderness level of your combat level can attack (`pvp_combat.rs2`); a 280-tile wilderness walk to Edgeville bank | Not built |
@@ -61,9 +61,11 @@ prayer potions Protect from Magic doesn't sustain a farm.
 
 **Recommendation.** Hill giants now. They're the only method that runs unattended
 tonight with no risk, and 3-4 accounts cover the 1,930 big bones in a few wall-clock
-hours. The worthwhile stage 2 is baby blue dragons, behind the dusty key. They give
-about the same helper-hours per xp and halve the scored account's bury ticks and bank
-cycles relative to big bones. Real dragon bones would save another 1,126 ticks over
+hours. The worthwhile stage 2 is baby blue dragons, behind the dusty key. By estimate they
+cost about 40% more helper-hours per xp than the measured giants, but they halve the
+scored account's bury ticks and bank cycles relative to big bones (1,930 fewer ticks for
+the 28,938 base). Since helper time is free on the scoreboard, that trade is worth taking
+once the giants' stock covers the first pass. Real dragon bones would save another 1,126 ticks over
 babydragon bones. That needs Dragon Slayer quest points or a prayer-potion supply on a
 helper, plus wilderness exposure for greens, and is not worth building before the
 scored-account route says it is.
@@ -121,7 +123,36 @@ the bank's bone stock, and the session summary.
 
 ## Measured on the demo (2026-10-21 UTC)
 
-MEASURED_SECTION
+Three accounts shared the hill giants through the loopback gateway on bbs. The headline
+hour, 06:14-07:14 UTC, ran on the final code with nobody touching it:
+
+| Account | Start of the hour | Big bones looted in the hour | Bank visits (why) | Rate | Levels at the end |
+|---|---|---:|---|---:|---|
+| cairn_h50 | 62 combat, at the giants | 147 in 0.91 h | 10 (full 8, out of food 2) | 161 / h | 83/83/83, HP 83 |
+| cairn_h51 | 72 combat, at the giants | 159 in 0.96 h | 11 (full 10, out of food 1) | 166 / h | 85/84/84, HP 84 |
+| cairn_h52 | **fresh account at 05:47**; at the giants from 06:12 | 116 in 0.99 h | 9 (full 5, out of food 3, surface 1) | 117 / h (includes the feather stop) | 75/75/74, HP 75 |
+
+In that hour there were no deaths, flees or cycle errors. Trips carried 12-18 bones once
+the bag was no longer full of fish; with 20 fish per trip, trips had carried 4-6 bones.
+Drops besides bones, per account-hour: about 1,100-1,300 coins, 6-18 nature, 4-10 law,
+4-8 cosmic runes, 6-15 limpwurt roots, 1-5 body talismans, the odd uncut gem (sapphire,
+emerald, ruby, diamond), and iron/steel armour and steel longswords, which are worn.
+
+Fresh-account bootstrap (cairn_h52, measured): tutorial skip 2 s; cows to 50/50/50 in
+20.4 min; net fishing to Fishing 20 in 2.7 min; rod 0.6 min; cooking practice to Cooking 25
+in 1.2 min. Total: **25 minutes from first login to the giants.** Training continues at the
+giants (50 -> 75 in an hour).
+
+**Banks at hand-over (07:20 UTC, Varrock West):**
+
+| Account | Big bones | Coins | Other |
+|---|---:|---:|---|
+| cairn_h50 | 260 | 2,163 | law, nature, cosmic, death runes; limpwurt roots; uncut sapphires, emerald; body talisman |
+| cairn_h51 | 279 | 1,920 | law, nature, cosmic, chaos, death runes; 24 limpwurt roots; 7 body talismans; uncut diamond |
+| cairn_h52 | 134 | 1,142 | law, nature, cosmic, chaos, death runes; limpwurt roots; uncut rubies, sapphire |
+| **Total** | **673** (10,095 base Prayer xp, 35% of 28,938) | 5,225 | |
+
+The remaining 1,257 big bones take about 7.6 account-hours, or 2.5 hours on these three.
 
 ## Running it
 
@@ -151,7 +182,15 @@ fine; more than about five would crowd a public spot, which the etiquette rules 
   every bank visit was "full" with 17-20 food and only 4-6 bones, because a 66-combat
   helper barely gets hit. Hence `fishPerTrip` 10 and the drop-food-for-bones rule.
 - Gateway stalls (`waitForTicks safety timeout - no state updates received`) at 04:24-04:25,
-  04:31-04:32 and 04:43-04:44 UTC. The cycle's catch-and-backoff survived them.
+  04:31-04:32 and 04:43-04:44 UTC, before the loopback gateway. The cycle's
+  catch-and-backoff survived them. There were none in the 06:14-07:20 run.
+- **Stopping cleanly.** Giants are aggressive, so a helper stopped in their room may never
+  be out of combat long enough to log out. Stop the role right after a `banked` line,
+  while the helper is at the bank booth. Then click logout (component 2458) **before**
+  stopping whatever relaunches the lite client, and stop the relauncher while it waits out
+  its backoff. Closing the relauncher's tmux pane first hangs up the lite client too.
+  That is a drop: the account stays in the world until the 500-tick no-connection timeout.
+  It happened at this hand-over, harmlessly, at the bank.
 - The lite client reports the brass-key door as a locked door and `walkTo` re-routes
   around it. That is harmless because the role walks to the tile outside and uses the key.
 - Bank calls are still the stock `bot.depositItem` per item name, about 10 names a visit.
