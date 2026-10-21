@@ -66,7 +66,6 @@ function invPacket(componentId: number, items: Array<[number, number]>): Packet 
 describe.skipIf(!liteOriginReachable)('per-client interface tables', () => {
     test('two clients keep separate inventories', () => {
         if (!available) {
-            console.warn(`[skip] ${LITE_ORIGIN} unreachable`);
             return;
         }
 

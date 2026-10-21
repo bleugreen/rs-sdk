@@ -119,7 +119,6 @@ class Capture {
 describe.skipIf(!liteOriginReachable)('outgoing action encoding', () => {
     test('OPHELDU field order matches OpHeldUDecoder (obj, slot, com, useObj, useSlot, useCom)', () => {
         if (!available) {
-            console.warn(`[skip] ${LITE_ORIGIN} unreachable`);
             return;
         }
 

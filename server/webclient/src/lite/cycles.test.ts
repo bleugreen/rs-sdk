@@ -59,7 +59,6 @@ function messagePacket(text: string): Packet {
 describe.skipIf(!liteOriginReachable)('per-client cycle counters', () => {
     test('one client ticking does not advance another', () => {
         if (!available) {
-            console.warn(`[skip] ${LITE_ORIGIN} unreachable`);
             return;
         }
 

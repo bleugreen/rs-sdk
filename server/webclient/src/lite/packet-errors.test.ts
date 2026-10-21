@@ -90,7 +90,6 @@ async function quietly<T>(fn: () => Promise<T>): Promise<T> {
 describe.skipIf(!liteOriginReachable)('packet handler errors', () => {
     test('a throwing handler drops its packet and the next one still lands', async () => {
         if (!available) {
-            console.warn(`[skip] ${LITE_ORIGIN} unreachable`);
             return;
         }
 
@@ -120,7 +119,6 @@ describe.skipIf(!liteOriginReachable)('packet handler errors', () => {
 
     test('handlers failing in a burst end the session', async () => {
         if (!available) {
-            console.warn(`[skip] ${LITE_ORIGIN} unreachable`);
             return;
         }
 
