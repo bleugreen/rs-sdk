@@ -441,8 +441,9 @@ jobs:
           online_end=$(jq -r '.playercountEnd // empty' "$OUT/direct.json" 2>/dev/null || true)
           # Interval between tick publications, p50/p90/max ms: the direct probe's decoded ticks, the
           # SDK's state publications (gateway path, overlay probe) or the page's decoded ticks (in-page).
-          pub() { grep -m1 -E "$2" "$OUT/$1.txt" 2>/dev/null | grep -oE 'p50 [0-9.]+ p90 [0-9.]+ max [0-9.]+' | head -1 || true; }
-          pub_row="$(pub direct 'tick interval p10') / $(pub gateway-path '^state publication interval') / $(pub browser-probe '^(state publication|decoded tick) interval')"
+          # pub <file> <label regex>: the quantiles that follow the label (a line can carry others first).
+          pub() { grep -m1 -oE "$2[^(]*" "$OUT/$1.txt" 2>/dev/null | grep -oE 'p50 [0-9.]+ p90 [0-9.]+ max [0-9.]+' | head -1 || true; }
+          pub_row="$(pub direct 'tick interval p10') / $(pub gateway-path '^state publication interval') / $(pub browser-probe '^(state|page) publication interval')"
           # The run-night gate (cairn://p/rs/83) on the direct row: (a) at least 58/60 on the next tick,
           # (b) frame interval p90 <= 400 ms and max <= 600, (c) at most 1 catch-up per minute (a frame
           # under 150 ms right after one over 350). Frames within 20 ms are one tick's output, which
