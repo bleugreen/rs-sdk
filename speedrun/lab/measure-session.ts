@@ -24,7 +24,7 @@ for (let i = 0; i < n; i++) {
     await waitTicks(sdk, 3);
     const out = await logoutClean(session);
     const relog = await login(session);
-    result('logout', { ...out, reloginWallMs: relog.wallMs });
+    result('logout', { ...out, reloginWallMs: relog.wallMs, loginAttempts: relog.attempts });
 }
 
 // 2. Watchdog: kill -9 the lite runner mid-world.

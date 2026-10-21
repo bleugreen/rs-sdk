@@ -282,14 +282,50 @@ export async function waitLoggedOut(session: Session, ms: number): Promise<void>
     await sleep(ms);
 }
 
-/** Relaunch the client after a logout and wait for an advancing tick. */
-export async function login(session: Session, opts: { timeoutMs?: number } = {}): Promise<{ wallMs: number }> {
+/**
+ * Relaunch the client after a logout and wait for an advancing tick.
+ *
+ * A login seconds after a logout can be accepted by the login thread and then
+ * dropped by the world while the old session's save is still flushing
+ * (World.ts: "old session is mid-logout"); the lite client then ends its
+ * session at once. So a client that exits before its first in-world tick is
+ * relaunched with backoff, up to `attempts` times.
+ */
+export async function login(session: Session, opts: { timeoutMs?: number; attempts?: number } = {}): Promise<{ wallMs: number; attempts: number }> {
     const t0 = Date.now();
-    await launchClient(session);
-    await waitAdvancingTick(session, opts.timeoutMs ?? 60_000);
-    session.expectInWorld = true;
-    session.watchdog?.resume();
-    return { wallMs: Date.now() - t0 };
+    const deadline = t0 + (opts.timeoutMs ?? 90_000);
+    const maxAttempts = opts.attempts ?? 6;
+    for (let attempt = 1; ; attempt++) {
+        const sinceTick = session.lastInWorldTick;
+        const sinceAdvance = session.lastAdvanceAt;
+        await launchClient(session);
+        const outcome = await waitInWorldOrExit(session, sinceTick, sinceAdvance, Math.max(1_000, deadline - Date.now()));
+        if (outcome === 'in-world') {
+            session.expectInWorld = true;
+            session.watchdog?.resume();
+            return { wallMs: Date.now() - t0, attempts: attempt };
+        }
+        if (outcome === 'timeout' || attempt >= maxAttempts || session.childExit === 3) {
+            throw new Error(`${session.name}: login failed after ${attempt} attempt(s) (${outcome}, exit ${session.childExit})`);
+        }
+        await sleep(backoffMs(attempt));
+    }
+}
+
+/** Resolve once the tick advances past what was seen before the launch, or the lite child exits. */
+async function waitInWorldOrExit(session: Session, sinceTick: number, sinceAdvance: number, ms: number): Promise<'in-world' | 'exited' | 'timeout'> {
+    const deadline = Date.now() + ms;
+    let firstTick: number | null = null;
+    while (Date.now() < deadline) {
+        if (session.client === 'lite' && session.childExit !== null) return 'exited';
+        const s = session.sdk.getState();
+        if (s?.inGame && session.lastAdvanceAt > sinceAdvance && session.lastAdvanceAt > session.launchedAt) {
+            if (firstTick === null) firstTick = s.tick;
+            else if (s.tick !== firstTick && s.tick !== sinceTick) return 'in-world';
+        }
+        await sleep(50);
+    }
+    return 'timeout';
 }
 
 // ---------------------------------------------------------------- watchdog
