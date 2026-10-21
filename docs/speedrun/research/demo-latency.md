@@ -448,7 +448,9 @@ within rs/113's two-trial bar but not yet a calm-minute row.
 **Browser rows on main (rs/130).** Main has carried rs/113's overlay since #90 and rs/97's program
 host since #94. The rows were first taken from GitHub's Ashburn runners and then, once it existed,
 from the run machine itself (AWS us-east-1c, TCP p50 2 ms to the demo, headless Chrome 156,
-`~/rs130/session.sh`, which runs the workflow's browser mode by hand under a hard 595 s stop). Every
+`~/rs130/session.sh`, which runs the workflow's browser mode by hand under a hard 595 s stop and a
+`~/host-reserved.json` sentinel; copy in
+[`data/browser-rows/host-scripts/`](data/browser-rows/host-scripts/)). Every
 minute measured so far failed the gate, so none of these is the calm-minute row yet:
 
 | PDT, host | Variant, page from | Direct (gate) | Browser | Page side |
