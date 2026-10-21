@@ -5,13 +5,13 @@
 // Run: bash docs/speedrun/scripts/quest-smallskill-lab.sh <bot> docs/speedrun/scripts/quest-smallskill-doric.ts
 
 import { runScript } from '../../../sdk/runner';
-import { cheat, getvar, give, now, pathTiles, pos, Recorder, setstats, setvar, talk, tele, teleport, waitTicks, waitUntil, walkTo, withRuns } from './quest-smallskill-lib';
+import { cheat, clearInv, getvar, give, now, pathTiles, pos, Recorder, setstats, setvar, talk, tele, teleport, waitTicks, waitUntil, walkTo, withRuns } from './quest-smallskill-lib';
 
 const DORIC = { x: 2952, z: 3451 };
 
 await runScript(async ({ bot, sdk }) => {
     const rec = new Recorder('dorics_quest');
-    await cheat(sdk, '~clearinv');
+    await clearInv(sdk);
     await setvar(sdk, 'doricquest', 0);
     await setstats(sdk, { magic: 99, mining: 1 });
     for (const [o, n] of [['clay', 6], ['copper_ore', 4], ['iron_ore', 2], ['lawrune', 5], ['airrune', 15], ['waterrune', 5]] as const) await give(sdk, o, n);

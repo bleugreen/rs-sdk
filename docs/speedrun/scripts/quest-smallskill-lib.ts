@@ -111,6 +111,17 @@ export async function walkTo(bot: BotActions, sdk: BotSDK, x: number, z: number,
     return { name: `walk (${p0.x},${p0.z},${p0.level})->(${x},${z})`, ticks: now(sdk) - t0, tiles, note: `${tiles} tiles stepped${r.success ? '' : ' FAILED ' + r.message}` };
 }
 
+/** Empty the inventory and worn slots (::~clearinv is unreliable in this lab, fishing.md section 6), then drop leftovers. */
+export async function clearInv(sdk: BotSDK): Promise<void> {
+    await sdk.sendSay('::~clearinv inv');
+    await sdk.sendSay('::~clearinv worn');
+    await waitUntil(sdk, () => false, 2);
+    for (let pass = 0; pass < 4 && (sdk.getState()!.inventory.length > 0); pass++) {
+        for (const it of sdk.getState()!.inventory) await sdk.sendDropItem(it.slot).catch(() => {});
+        await waitUntil(sdk, () => false, 2);
+    }
+}
+
 /** Print the dialogue runs of a talk/locTalk record and pass it through. */
 export function withRuns<T extends StepRecord & { run?: DialogueRun }>(r: T): T {
     if (r.run) r.note = [r.note, `runs ${runsOf(r.run)}`].filter(Boolean).join('; ');
