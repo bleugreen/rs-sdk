@@ -204,23 +204,22 @@ hosts: a pickpocket stun (1.96 bones per stun measured), the wait ticks of an un
   The stun's packets fit the budget (3 per tick at +2, +4, +6, measured). If Charge's or
   Fletching's stacks ride the same loads (magic.md section 5, fletching.md), each takes a slot
   from the bones, so a load drops to ~21-22 bones and the top-ups rise to ~9-10 (inferred).
-- **Gathering clocks.** The other ~348 bones (555 - 11 early - 196) fit 4-tick Woodcutting or
-  5-tick fly fishing at one per cycle, about 1,400-1,750 gathering ticks, but only where those
-  skills are not on rs/9's 3-tick cycles, which remove the free tick. Top-ups come every
-  ~50-100 gathering ticks. **This share applies only against Woodcutting's and Fishing's
-  normal (plain-loop) column.** rs/9's knife loop (knife-on-logs, the button, a drop and a
-  re-click on the tick after each roll, every 3 ticks) leaves no 2-tick gap for a bury
-  (interleaving.md sections 3 and 7). Burying on a 4-tick Woodcutting clock instead of the
-  knife loop's 3 costs 1 Woodcutting tick per bone and saves 2 bury ticks, so against the
-  knife column the ~348 bones save net ~1 tick each, not 2 (interleaving.md section 7,
-  inferred).
+- **The knife Woodcutting loop.** The other ~348 bones (555 - 11 early - 196), and the 11
+  early ones, ride the 3-tick knife Woodcutting loop: `[knife, button, drop, bury]` on the
+  roll label and the re-click alone two labels later, landing on the next roll tick
+  (measured, rs/105, [`research/bones-placement.md`](../research/bones-placement.md)). One
+  bone per cycle, 0.298 per tick, so ~1,200 of S07's knife ticks, at **0.23 Woodcutting ticks
+  per bone** with real top-up trades (23 per load, 5 ticks each). That holds against
+  Woodcutting's knife column. Plain 4-tick Woodcutting + bury costs 1.17 per bone against the
+  knife column (measured), and 5-tick fly fishing + bury 2.04, no better than the booth; Mining
+  is a reserve host (~200 bones on a reordered lap).
 
 | Plan | Prayer's own ticks to 99 | Basis |
 |---|---|---|
 | Standalone (bank booth) | **1,151** (measured run 1,221 with stalls) | section 2 |
 | Stuns only: 11 early + 196 in stuns + 348 standalone | **about 800** (21 + 723 + 40-72 of top-ups) | inferred |
-| Stuns + un-manipulated WC/fishing clocks | **about 150-220** (21 early + ~23 top-up trades) | inferred; applies only against Woodcutting's and Fishing's normal column. rs/3's README quotes ~150 for the gathering-clock case |
-| Stuns + 4-tick WC, counted against WC's knife column | **about 500-570** (the 150-220 plus ~348 Woodcutting ticks lost to the slower clock) | inferred, interleaving.md section 7 |
+| **Stuns + knife Woodcutting** (recommended) | **about 80-110** (359 bones x 0.23-0.30; no S10a or booth step) | 0.23 measured per bone with trades, oak; `research/bones-placement.md` sections 5-6 |
+| Stuns + plain 4-tick WC, against WC's knife column | about 420 (359 x 1.17) | measured rate, `research/bones-placement.md` section 1 |
 
 ## 6. Gotchas
 
