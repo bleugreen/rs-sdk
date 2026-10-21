@@ -2,7 +2,7 @@
 // Handles connection, reconnection, message sending/receiving
 
 import type { BotAction, BotWorldState } from './types.js';
-import { gatewayUrl } from '#/io/Endpoints.js';
+import { gatewayUrl } from '#/util/Endpoints.js';
 
 export interface GatewayMessageHandler {
     onAction(action: BotAction, actionId: string | null, actionTimeoutMs?: number): void;
