@@ -198,11 +198,12 @@ maze's 260.
 
 ## Risks and gotchas
 
-- **Death at low Hitpoints** in the Elvarg fight (measured, 1 of 2 at 40/40/40). A death after
-  stage 9 keeps the stage, so the run can return by the Karamja secret wall only if
-  `%dragon_wall` was set, which happens on leaving the lair through it (`crandor.rs2:11-27`).
-  Otherwise it is a second voyage... which Klarense refuses at stage 9 (`klarense.rs2:19-27`);
-  ask Ned again (`dragonslayer_ned.rs2:4`).
+- **Death at low Hitpoints** in the Elvarg fight (measured, 1 of 2 at 40/40/40), and a death
+  after sailing is expensive. The stage stays at 9, but sailing reset `%dragon_ned_hired` and
+  the plank count (`dragonslayer_ned.rs2:23-24`), so the deck ladder now leads to the hold
+  (`lady_lumbridge.rs2:133-141`) rather than to Ned. The other way back is the secret wall from
+  the Karamja side, which works once `%dragon_wall` is set (`crandor.rs2:11-27`). Neither return
+  route was tested (see Open questions). Fight at 60+ Hitpoints.
 - Crandor's dungeon has aggressive monsters on the way to the gate: the voyage runs took
   0-8 damage (measured).
 - Oziach hands over the maze key only if none is in the inventory or bank
@@ -211,6 +212,10 @@ maze's 260.
 - Logout: every quest varp is `scope=perm` (read), so any segment may be split by a logout.
 
 ## Open questions
+
+- The return route after a death on Crandor: whether the secret wall can be opened from the
+  Karamja side before `%dragon_wall` is set (`crandor.rs2:12-25` uses `check_axis_locactive`),
+  or whether re-patching the hull and re-hiring Ned is possible at stage 9.
 
 - Melzar's Maze end to end (the largest inferred segment). Worth measuring only if Monkey
   Madness leaves the plan.
