@@ -109,7 +109,8 @@ cd server/webclient && bun run watch
 cd server/gateway && AGENT_PORT=<A> WEB_MANAGEMENT_PORT=<W+1> bun run gateway
 ```
 
-`BUILD_LIVE_RELOAD=false` (`server/engine/src/server/WorldConfig.ts:285`) stops the
+`BUILD_LIVE_RELOAD=false` (`server/engine/src/util/WorldConfig.ts:285`, gated at
+`server/engine/src/engine/World.ts:360`) stops the
 dev reload thread from `fs.watch()`ing all of `content/`. On Linux that watch
 exhausts file descriptors and the engine panics with EMFILE in
 `us_create_timer`.
