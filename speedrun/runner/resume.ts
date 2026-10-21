@@ -149,14 +149,17 @@ export function sessionLink(session: Session, opts: SessionLinkOptions = {}): Li
         restored: async timeoutMs => {
             const deadline = Date.now() + timeoutMs;
             const since = Math.max(lostAt, 1);
+            // Back means two different in-world ticks seen after the loss, so a
+            // replayed stale state does not count. The watchdog's login already
+            // waited for that, so this usually resolves on the first poll.
+            let first: number | null = null;
             while (Date.now() < deadline) {
                 const s = session.sdk.getState();
                 if (s?.inGame && session.expectInWorld && session.lastAdvanceAt > since && why() === null) {
-                    // One more advance, so a replayed stale state does not count.
-                    await nextTick(session.sdk).catch(() => null);
-                    if (why() === null) return;
+                    if (first === null) first = session.sessionId * 1e9 + s.tick;
+                    if (session.sessionId * 1e9 + s.tick !== first || session.launchedAt > since) return;
                 }
-                await sleep(pollMs);
+                await sleep(Math.min(pollMs, 20));
             }
             throw new Error(`${session.name}: not back in the world within ${timeoutMs} ms`);
         },
@@ -235,8 +238,14 @@ export async function runResumable<C>(session: RunnerSession, steps: ReadonlyArr
             const a = fence.open();
             const watch = new AbortController();
             const lost = opts.link.lost(watch.signal).then(reason => ({ lost: reason }) as const);
+            let running = point.index;
+            const tracked = steps.map((s, i) => ({
+                ...s,
+                run: (ctx: Parameters<Step<C>['run']>[0]) => ((running = i), s.run.call(s, ctx)),
+                ...(s.resume ? { resume: (ctx: Parameters<Step<C>['run']>[0]) => ((running = i), s.resume!.call(s, ctx)) } : {}),
+            }));
             const run = fence
-                .run(a, () => runSteps(session, steps, { ...opts, from: point.index, startMode: point.mode === 'resume' ? 'resume' : 'run', observed: point.observed, signal: a.signal }))
+                .run(a, () => runSteps(session, tracked, { ...opts, from: point.index, startMode: point.mode === 'resume' ? 'resume' : 'run', observed: point.observed, signal: a.signal }))
                 .then(r => ({ result: r }) as const, (e: unknown) => ({ error: e }) as const);
             const first = await Promise.race([run, lost]);
             watch.abort();
@@ -254,7 +263,7 @@ export async function runResumable<C>(session: RunnerSession, steps: ReadonlyArr
             const dropTick = currentTick(session.sdk);
             a.abort(reason);
             drops++;
-            const current = steps[Math.min(point.index, steps.length - 1)]?.name ?? null;
+            const current = steps[Math.min(running, steps.length - 1)]?.name ?? null;
             opts.onEvent?.({ kind: 'drop', attempt, reason, step: current, tick: dropTick });
             if (drops > (opts.maxDrops ?? 20)) throw new Error(`gave up after ${drops - 1} drops (last: ${reason})`);
             const r0 = Date.now();
