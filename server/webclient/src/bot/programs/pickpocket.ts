@@ -45,7 +45,7 @@ import { modalOpen, StunPack } from './stun-actions.js';
 import type { ProgramParams, TickProgram } from './types.js';
 import { baseLevel, FreshMessages, invItem, itemOp, num, oneOf, regex, skillXp } from './util.js';
 
-createPickpocket.params = ['npc', 'option', 'rolls', 'untilLevel', 'maxTicks', 'every', 'eat', 'food', 'heal', 'forcedBelow', 'eatBelow'] as const;
+createPickpocket.params = ['npc', 'option', 'rolls', 'untilLevel', 'maxTicks', 'every', 'eat', 'food', 'heal', 'forcedBelow', 'eatBelow', 'idleOnInterface', 'stunActions', 'stunWindow', 'stunPerTick'] as const;
 export function createPickpocket(params: ProgramParams): TickProgram {
     const npcRe = regex(params.npc, '^Knight of Ardougne$', 'npc');
     const opRe = regex(params.option, '^pickpocket$', 'option');
