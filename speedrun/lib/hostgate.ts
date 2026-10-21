@@ -297,8 +297,9 @@ export class HostGate {
     private slipPending = false;
     private lastProbeTick = Number.NEGATIVE_INFINITY;
     private offUntil = Number.NEGATIVE_INFINITY;
-    /** xp-drop ticks since the last probe or switch, all in the current mode. */
+    /** xp-drop ticks since the last probe or switch, all in the current mode, and the rolls each stands for. */
     private stretch: number[] = [];
+    private stretchRolls: number[] = [];
     private lastPlainRate = Number.NaN;
     private readonly offReprobeTicks: number;
     private readonly minProbeGapTicks: number;
@@ -320,20 +321,24 @@ export class HostGate {
     /**
      * The loop saw an xp drop on `tick`. While manipulating, once `measureDrops` drops are in,
      * switch off if the stretch is not faster than plain. Returns true when it switched.
+     * `rolls` is how many rolls the drop stands for (1 / success chance, for a stretch in ticks
+     * per expected roll; `plainTicksPerDrop` is then per roll too). Default 1: ticks per drop.
      */
-    drop(tick: number): boolean {
+    drop(tick: number, rolls = 1): boolean {
         this.stretch.push(tick);
+        this.stretchRolls.push(rolls);
         if (!this.on) {
-            if (this.stretch.length >= this.measureDrops) this.lastPlainRate = ticksPerDrop(this.stretch);
+            if (this.stretch.length >= this.measureDrops) this.lastPlainRate = this.stretchRate();
             return false;
         }
         if (this.stretch.length < this.measureDrops) return false;
-        const knife = ticksPerDrop(this.stretch);
+        const knife = this.stretchRate();
         const plain = this.opts.plainTicksPerDrop ?? this.lastPlainRate;
         if (!(knife >= plain * (1 - (this.opts.measuredMargin ?? 0)))) return false;
         this.on = false;
         this.offUntil = tick + this.measuredOffTicks;
         this.stretch = [];
+        this.stretchRolls = [];
         this.history.push({ tick, why: 'measured', on: false, switched: true, measured: { knife, plain } });
         this.opts.log?.(`T${tick} gate (measured): knife ${knife.toFixed(2)} ticks per drop over ${this.measureDrops} drops, plain ${plain.toFixed(2)} -> SWITCH manipulate -> plain`);
         return true;
@@ -351,6 +356,14 @@ export class HostGate {
         return tick >= this.offUntil && tick - this.lastProbeTick >= this.offReprobeTicks;
     }
 
+    /** Ticks per roll over the stretch: its span over the rolls after its first drop (`ticksPerDrop` when each is 1). */
+    private stretchRate(): number {
+        if (this.stretch.length < 2) return Number.NaN;
+        let rolls = 0;
+        for (let i = 1; i < this.stretchRolls.length; i++) rolls += this.stretchRolls[i]!;
+        return (this.stretch[this.stretch.length - 1]! - this.stretch[0]!) / rolls;
+    }
+
     async probe(why: string): Promise<boolean> {
         const was = this.on;
         const first = !this.history.length;
@@ -362,6 +375,7 @@ export class HostGate {
         this.slipPending = false;
         this.lastProbeTick = tick;
         this.stretch = [];
+        this.stretchRolls = [];
         const switched = !first && was !== this.on;
         this.history.push({ tick, why, on: this.on, switched, result, verdict });
         const mode = (on: boolean) => (on ? 'manipulate' : 'plain');
