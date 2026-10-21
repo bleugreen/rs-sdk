@@ -549,8 +549,11 @@ export function give(sdk: TradeSdk, partner: string, specs: readonly GiveSpec[],
     return giveImpl(sdk, partner, specs, opts);
 }
 
+/** expectTheirs for a giver that takes back whatever the partner hands over in the same trade, including nothing. */
+export const ANY_OFFER: WantSpec[] = [{ item: /./, amount: 0 }];
+
 export interface GiveOptions {
-    /** What the partner may put up (default: nothing). */
+    /** What the partner may put up (default: nothing; ANY_OFFER for anything). */
     expectTheirs?: WantSpec[];
     maxTicks?: number;
     openTimeoutMs?: number;

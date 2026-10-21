@@ -1381,13 +1381,18 @@ bones, bidder, grapes, wine maker, coins) are supply, not step scripts; `SUPPLIE
   `essence.ts`.
 - **Acceptance:** as entry 9.
 
-### H5. Anvil helper: `speedrun/helpers/anvil.ts` (missing)
+### H5. Anvil helper: `speedrun/helpers/anvil.ts` (exists, rs/188)
 
 - **Gates:** S25a (exposure 1,147). It stands on (3187,3427), offers the next 25 bars and accepts
   SCORED's 5 products in the same trade, about 31 times (`skills/smithing.md` §1).
-- **Builds on:** `smithing-trade.ts`'s helper side; bars from [rs/41] `smelter.ts`.
+- **Builds on:** `smithing-trade.ts`'s helper side (now this role); bars from [rs/41] `smelter.ts`.
 - **Acceptance:** local, a turnaround of at most 10 ticks with the helper's side scripted from this
   module (the 40-tick first-trade wait in the measured run was the lab helper's own setup).
+- **Measured (rs/188, `helpers/anvil.md`):** two full routes, 1 to 99 in 1,024 ticks, 31 trades,
+  none failed, restocking at the booth. Screens to bars 3 ticks on every trade. Turnaround 8-10
+  on 26 of 30 trades (mean 8.9); trades 1-4 ran 11-12, with the helper's request already standing:
+  queued level-up pages open one per tick after the make chain and ahead of SCORED's trade
+  interaction, about a tick per item that crossed a level (an engine floor, traced by rs/197).
 
 ### H6. Log-row dropper: `speedrun/helpers/fm-row.ts` (missing)
 

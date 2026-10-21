@@ -26,6 +26,8 @@ import { offerSatisfies } from '../../sdk/trade-helpers';
 import type { BankItem, GameMessage, InventoryItem, TradeItem, TradeItemSpec } from '../../sdk/types';
 import { TRADE_REQUEST_CHAT_TYPE } from '../../sdk/types';
 import { travelTo } from '../lib/toll-gate';
+import { ANY_OFFER, give } from '../lib/trade';
+import { tickMs } from '../lib/wait';
 import { runStandalone, type Role, type RoleContext } from './role';
 
 // ============ Places ============
@@ -329,11 +331,14 @@ function diffItems(before: InventoryItem[], after: InventoryItem[]): { gained: T
  * is already open with them. The one function both modes sit behind, so the
  * implementation can switch to speedrun/lib/trade.ts when it lands.
  *
- * burst: one "Offer All" per item id plus the accept, sent back to back; the
- *   server drains them 5 per tick in order, so the accept lands after the last
- *   offer. Then once per tick: re-accept if the partner's offer changed, and on
- *   both screens check the partner is exactly `partner` and our offer is exactly
- *   `items` before accepting; any mismatch declines (nothing changes hands).
+ * burst: speedrun/lib/trade.ts give(), the one giver implementation: every offer
+ *   (one exact-count press per id) plus the accept, sent back to back, so the
+ *   server's 5-per-tick drain lands the accept after the last offer. Whatever the
+ *   partner puts up is accepted (ANY_OFFER: the scored account may hand items back
+ *   in the same trade, the two-way swap), re-accepted after any offer resets both
+ *   accepts, and the confirm screen is accepted once our own offer is exactly
+ *   `items` and the partner is exactly `partner`; any mismatch declines. A decline
+ *   after our confirm accept is settled on the server's word (lib/trade.ts).
  * stock: the SDK's bot.trade (offers one item at a time, waiting for each).
  */
 export async function giveOpenTrade(
@@ -363,58 +368,11 @@ export async function giveOpenTrade(
         return { success: r.success, message: r.message, ticks: tick(sdk) - startTick, gave: r.gave, received: r.received };
     }
 
-    const exactPartner = new RegExp(`^${escapeRegExp(canonName(partner))}$`);
-    const deadline = Date.now() + timeoutMs;
-    const decline = async (why: string) => {
-        await bot.declineTrade();
-        return done(false, `Declined: ${why}`);
-    };
-
-    const slots = firstSlotPerId(items);
-    await Promise.all([...slots.map(i => sdk.sendOfferItem(i.slot, -1)), sdk.sendAcceptTrade()]);
-    let lastAcceptTick = tick(sdk);
-    let lastReofferTick = tick(sdk);
-    let closedTicks = 0;
-
-    while (Date.now() < deadline) {
-        await nextTick(sdk);
-        const t = sdk.getTradeState();
-        const now = tick(sdk);
-        if (!t.isOpen) {
-            // The offer->confirm switch closes the side modal for a moment; only two
-            // ticks without a screen mean the session ended.
-            if (++closedTicks < 2) continue;
-            const inv = countById(sdk.getInventory());
-            const gone = [...expected].every(([id, n]) => (inv.get(id) ?? 0) <= (countById(invBefore).get(id) ?? 0) - n);
-            return done(gone, gone ? `Gave package to ${partner}` : 'Trade closed before completion');
-        }
-        closedTicks = 0;
-        if (!accountMatches(t.partner, exactPartner)) return decline(`partner is ${t.partner}, expected ${partner}`);
-        const mine = countById(t.myOffer);
-        if (t.screen === 'offer') {
-            for (const id of mine.keys()) if (!expected.has(id)) return decline('our offer holds an item outside the package');
-            if (!sameItems(mine, expected)) {
-                // An offer the server dropped (packet lost or refused) is re-sent after 3 quiet ticks.
-                if (now - lastReofferTick >= 3) {
-                    lastReofferTick = now;
-                    const inv = sdk.getInventory().filter(i => expected.has(i.id) && (mine.get(i.id) ?? 0) < expected.get(i.id)!);
-                    await Promise.all(firstSlotPerId(inv).map(i => sdk.sendOfferItem(i.slot, -1)));
-                }
-                continue;
-            }
-            if (!t.myAccepted && now !== lastAcceptTick) {
-                lastAcceptTick = now;
-                await sdk.sendAcceptTrade();
-            }
-        } else if (t.screen === 'confirm') {
-            if (!sameItems(mine, expected)) return decline('confirm screen offer differs from the package');
-            if (!t.myAccepted && now !== lastAcceptTick) {
-                lastAcceptTick = now;
-                await sdk.sendAcceptTrade();
-            }
-        }
-    }
-    return decline('timed out');
+    const specs = firstSlotPerId(items).map(i => ({ item: i.id, n: 'all' as const }));
+    const r = await give(sdk, partner, specs, { expectTheirs: ANY_OFFER, maxTicks: Math.ceil(timeoutMs / tickMs()), openTimeoutMs: 5_000 });
+    const { gained } = diffItems(invBefore, sdk.getInventory());
+    const message = r.ok ? `Gave package to ${partner}${r.reason ? ` (${r.reason})` : ''}` : `Not given: ${r.reason ?? 'unknown'}`;
+    return { success: r.ok, message, ticks: r.ticks, gave: r.gave, received: gained };
 }
 
 // ============ Receiver (the scored account's side) ============
