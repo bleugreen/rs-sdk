@@ -10,8 +10,8 @@ wine needs? If so, how much Crafting, Herblore or Prayer moves in?
 **Answer: yes.** Carry **one 27-bone inventory of dragon bones** through the sequence and bury it
 in every window. That saves **37 scored ticks** (measured). Without bones to spare, cut gems in
 every window, which saves **about 31** (Crafting ticks moved into the sequence), or mix potions,
-which saves **about 25**. Every timer fired on time, every deadline held and every relog was
-clean in all 42 relogs of the headline batch.
+which saves **about 25**. With the guard in section 3, every timer fired on time, every deadline
+held and all 42 relogs on the lab host were clean.
 
 Labels: *measured* (lab, script and sample named), *read* (source traced), *inferred* (reasoned
 from measured or read figures), *estimated*.
@@ -37,7 +37,7 @@ from measured or read figures), *estimated*.
   `speedrun/` was edited.
 - **Host and rate:** bgsrv-mac (12 cores, load 1.4-4.3 during the runs), local engine at
   `NODE_TICKRATE=300`, lite client. 18 reps in the headline batch (6 variants x 3), plus 3
-  unguarded bones reps. Two earlier batches on fedora agree (section 6). One more fedora batch
+  unguarded bones reps. An earlier batch on fedora agrees (section 6). A later fedora batch
   ran at load 30-69; its reps show bot stalls (a booth click unanswered for 8 ticks with no page
   open) and are not used.
 - **Levels:** Crafting 55 (dragonstones), Herblore 78 (Zamorak potions), Prayer 50, Cooking 1.
@@ -93,7 +93,7 @@ mixes are worse than that (132 and 135). Section 4 explains why.
 |---|---|---|
 | **Deposit deadline** (bank open by login + 19) | Opened at login + 7 in 20 of 21 reps (12 ticks spare), + 10 once with a slow trade (9 spare). The work load is withdrawn in the same burst as the 29 deposit (10 events instead of 8), which costs nothing measurable: the deposit was done at + 9 with or without it (+ 10 for potions, whose load is 5 withdraw clicks). | measured |
 | **First firing** at login + 20 | + 20 in every guarded rep. Gem cuts and potion mixes never delay the player. A level-up page left open would hold a normal timer (`Player.ts` `processTimers` needs `canAccess()`), but each cut, mix or continue in the due tick's packets closes it first (`OpHeldUHandler` calls `clearPendingAction`, which closes the modal), so the timer still fired on time. | measured; read |
-| **Bury on the due tick** | A bury delays the player for the rest of its tick (`p_delay(0)`; `World.ts` clears `delayed` at the start of the next tick's player phase). A bury landing on the due tick therefore holds the timer one tick. Unguarded: the first firing came at + 21 in **3 of 3** reps. Guarded (no bury sent on the tick before the due tick): + 20 in 6 of 6. The total was the same either way, because the late firing buys one more bone. Keep the guard anyway, so the firing tick stays predictable. | measured; read |
+| **Bury on the due tick** | A bury delays the player for the rest of its tick (`p_delay(0)`; `World.ts` clears `delayed` at the start of the next tick's player phase). A bury landing on the due tick therefore holds the timer one tick. Unguarded: the first firing came at + 21 in **3 of 3** reps. Guarded (no bury sent on the tick before the due tick): + 20 in 3 of 3 bones reps, and in all 18 guarded reps. The total was the same either way, because the late firing buys one more bone. Keep the guard anyway, so the firing tick stays predictable. | measured; read |
 | **Page chain P1** (one level-up script per tick; the bank opens in the tick the last one goes) | Cooking pages ran at 1 per tick, as in rs/88. Pages left over from W1 work are queued ahead of the Cooking pages and lengthen P1 one tick each: gems at Crafting 55 leaked **5** Crafting pages (every rep); potions and guarded bones leaked **0**; bury + cut leaked **8 Crafting + 3 Prayer**. | measured |
 | **Arming relog** (removal waits for no delay, no modal and an empty engine queue: `World.ts` `processLogouts`, playtime-audit.md 1d) | Click to out: **0 ticks in 42 of 42** relogs on bgsrv-mac. The new session could act at its tick 1, so each relog cost 1 scored tick (wine.md's lab figure). Nothing is pending at the click: the bank only opens once the queue is empty, no work is sent in P1, and the rest deposit closes the bank in the same burst. | measured (local only; the demo's 2 ticks and 1-in-29 tail stand from wine.md) |
 | **Second firing** at the new login + 20 | + 20 in every rep, including gem and potion runs that make booth visits in W2. A bank still open on the due tick would hold the timer until it closes (wine.md T2); it did not happen here, and at worst it costs a tick in which the work goes on anyway. | measured; read |
@@ -118,7 +118,8 @@ mixes are worse than that (132 and 135). Section 4 explains why.
   the next booth visit, so work that needs no bank visit (bones) runs straight through them. In
   the gems variant Crafting pages interleaved with the 13 Cooking pages and the bank opened 4-5
   ticks later than plain, while cutting carried on.
-- **Work during P1 itself** (variant `gemsP1`, fedora, 1 rep): nothing to do. W1 had already used
+- **Work during P1 itself** (variant `gemsP1`, fedora, 1 rep at load about 30, identical to
+  `gems`): nothing to do. W1 had already used
   the whole load, and a fresh load would need a bank visit across the due tick. Bones in P1 would
   halve the page drain, so each bone would lengthen the critical path by exactly its 2 standalone
   ticks: break-even (inferred). Leave P1 to the page clicker.
@@ -172,8 +173,8 @@ the booth skills' standalone ticks separately.
 
 ## 6. Corroboration and limits
 
-- **fedora** (bginf-halo, 32 cores, load 1.5-3 for these), 300 ms, same script before the
-  bury + cut and page-tag additions: gems 96 and 91 against a 120 baseline, potions 85 and 81
+- **fedora** (bginf-halo, 32 cores, load 1.6-2.8), 300 ms, same script before the bury + cut
+  and page-tag additions (the batch after the session-2 booth-clock fix): gems 96 and 91 against a 120 baseline, potions 85 and 81
   against 107, and bones 85 and 85 against 124, unnormalised. That is 24-29, 22-26 and 39 saved,
   the same picture within the Cooking roll. Firings, deadlines and logouts as above. 2 reps
   each.
