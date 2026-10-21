@@ -121,7 +121,8 @@ that trade belongs to the quest plan.
   against the inferred 97 for dragonstone from 43).
 - **Battlestaves instead of dragonstones**: tie on xp per action; about the same total (the
   14-item cycle is shorter but twice as many cycles). Each orb costs a helper a Charge Orb cast
-  (Magic 56/60/63/66, 3 cosmic runes, at an obelisk, `charge_orb.rs2`) plus an unpowered orb
+  (Magic 56/60/63/66, 3 cosmic + 30 elemental runes, at an obelisk, `magic_spells.dbrow:125-160`,
+  `charge_orb.rs2`) plus an unpowered orb
   (helper glassblowing at Crafting 46, `glass.struct:12-14`).
 - **Trading instead of banking**: an in-trade swap of 27 gems costs 5-9 ticks (`primitives.md`
   section 6) against a 1-tick bank visit plus the click. Bank wins.
