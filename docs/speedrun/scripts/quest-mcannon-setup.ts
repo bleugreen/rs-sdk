@@ -29,14 +29,25 @@ await runScript(async ({ bot, sdk }) => {
 
     await cheat(sdk, 'setvar mcannon 11');
     await waitTicks(sdk, 2);
-    const t0 = clock(sdk);
-    await sdk.sendUseItem(base().slot, 1);
-    try {
-        await waitUntil(sdk, () => !sdk.findInventoryItem(/cannon base/i), 20, 'base placed');
-    } catch (e) {
-        for (const m of sdk.getNewChat({ types: [0] })) log(sdk, `chat: ${m.text}`);
-        throw e;
+    let t0 = clock(sdk);
+    // cannon_setup.rs2 needs the 3x3 around the player free and walkable; try open tiles nearby
+    const spots: [number, number][] = [[3248, 3244], [3245, 3240], [3240, 3245], [3256, 3246], [3222, 3218]];
+    let placed = false;
+    for (const [sx, sz] of spots) {
+        await tele(sdk, sx, sz);
+        sdk.getNewChat({ types: [0] });
+        t0 = clock(sdk);
+        await sdk.sendUseItem(base().slot, 1);
+        try {
+            await waitUntil(sdk, () => !sdk.findInventoryItem(/cannon base/i), 8, 'base placed');
+            placed = true;
+            log(sdk, `base placed at ${sx},${sz}`);
+            break;
+        } catch {
+            for (const m of sdk.getNewChat({ types: [0] })) log(sdk, `at ${sx},${sz}: ${m.text}`);
+        }
     }
+    if (!placed) throw new Error('no spot fitted the cannon');
     log(sdk, `base placed at +${clock(sdk) - t0}`);
     const steps: [RegExp, RegExp][] = [
         [/cannon stand/i, /cannon base/i],
