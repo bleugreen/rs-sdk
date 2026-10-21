@@ -91,7 +91,11 @@ export const SHOPS: Record<string, ShopSpec> = {
     // Ranging Guild, whose door needs Ranged 40 and which walkTo cannot path
     // through: fletcher.ts enters and leaves it before using this entry.
     hickton: { npc: /^hickton$/i, stand: { x: 2821, z: 3442 }, bank: BANKS.catherby },
-    dargaud: { npc: /^bow and arrow salesman$/i, stand: { x: 2672, z: 3434 }, bank: BANKS.seers }
+    dargaud: { npc: /^bow and arrow salesman$/i, stand: { x: 2672, z: 3434 }, bank: BANKS.seers },
+    // Port Sarim food store: pot of flour 3, raw beef 1, raw chicken 1, banana 3, redberries 1 (port_sarim.inv wydinstore).
+    wydin: { npc: /^wydin$/i, stand: { x: 3015, z: 3205 }, bank: BANKS.draynor },
+    // Varrock clothes shop: silk 5 (varrock.inv clotheshop).
+    thessalia: { npc: /^thessalia$/i, stand: { x: 3205, z: 3416 }, bank: BANKS.varrockWest }
 };
 
 /** Underground maps sit 6,400 tiles north of the surface they belong to. */
