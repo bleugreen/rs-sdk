@@ -80,6 +80,9 @@ console.log(`  total 1->99: ${r(low.gnomeOnly + wild52)} (safe) / ${r(low.gnomeT
 const Q = { grandTree: 7900, regicide: 13750, trollRomance: 8000, undergroundPass: 3000, fremennik: 2812.4, touristPick: 4650, legendsPick: 7650 };
 const to99 = (start: number) => (start >= X99 ? 0 : start >= X52 ? ticksBetween(start, X99, L => best(L)) : ticksBetween(start, X52, L => GNOME) + wild52);
 const scen: [string, number][] = [
+    // Planned quest route (cairn://p/rs/3): the troll chain is off, UP + Regicide pending rs/15.
+    ['GT + UP + Regicide (on route)', Q.grandTree + Q.undergroundPass + Q.regicide],
+    ['GT only (if the Regicide chain drops)', Q.grandTree],
     ['GT + Regicide + TR', Q.grandTree + Q.regicide + Q.trollRomance],
     ['GT + Regicide + TR + UP', Q.grandTree + Q.regicide + Q.trollRomance + Q.undergroundPass],
     ['... + Fremennik', Q.grandTree + Q.regicide + Q.trollRomance + Q.undergroundPass + Q.fremennik],
