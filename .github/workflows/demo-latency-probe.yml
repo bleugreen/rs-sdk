@@ -1,0 +1,178 @@
+name: Demo latency probe
+
+# Reaction latency to the live demo (rs-sdk-demo.fly.dev, Fly region iad) from a
+# GitHub-hosted runner, which usually sits in Azure East US next to Ashburn.
+# It logs one throwaway account (repo variable DEMO_PROBE_USERNAME, secret
+# DEMO_PROBE_PASSWORD) into the demo for a few minutes, so it is dispatch-only:
+# never add push, pull_request or schedule triggers.
+#
+#   gh workflow run demo-latency-probe.yml -R bleugreen/rs-sdk --ref <branch> [-f trials=60] [-f ref=<checkout ref>]
+on:
+  workflow_dispatch:
+    inputs:
+      trials:
+        description: Reaction trials
+        default: '60'
+      command:
+        description: Probe command, run from the repo root with BOT, TRIALS and OUT set
+        default: bun docs/speedrun/scripts/tickmanip-latency.ts "$BOT" --trials="$TRIALS"
+      ref:
+        description: Ref to check out and probe with (empty means the dispatched ref)
+        default: ''
+
+permissions:
+  contents: read
+
+# One demo session at a time, across all dispatches.
+concurrency:
+  group: demo-latency-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DEMO: rs-sdk-demo.fly.dev
+      BOT: ${{ vars.DEMO_PROBE_USERNAME }}
+      TRIALS: ${{ inputs.trials }}
+      PROBE_COMMAND: ${{ inputs.command }}
+      OUT: ${{ github.workspace }}/probe-out
+      GATEWAY_PORT: '7851'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      # The lite client, the gateway and the SDK runner; no engine build, no Chromium.
+      - name: Install root, webclient and gateway dependencies
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+        run: for d in . server/webclient server/gateway; do (cd "$d" && bun install --frozen-lockfile); done
+
+      - name: Verify the vantage point (edge region, app region, HTTP timing)
+        id: vantage
+        run: |
+          set -uo pipefail
+          mkdir -p "$OUT"
+          path="/latency-probe-nonexistent-$(date +%s)"
+          curl -s -o /dev/null -D "$OUT/flyio-headers.txt" -H 'flyio-debug: doit' "https://$DEMO$path"
+          grep -i '^flyio-debug:' "$OUT/flyio-headers.txt" | cut -d' ' -f2- | tr -d '\r' | jq . > "$OUT/flyio-debug.json" || true
+          [ -s "$OUT/flyio-debug.json" ] || echo '{}' > "$OUT/flyio-debug.json"
+          nr=$(jq -r '.nr // ""' "$OUT/flyio-debug.json")
+          case "$nr" in iad|ewr|bos|atl|mia|phl|yyz|yul) near=true ;; *) near=false ;; esac
+
+          # 20 fresh connections, 2 s apart: TCP connect, TLS done, first byte of a 404.
+          for i in $(seq 20); do
+            curl -s -o /dev/null -w '%{time_connect} %{time_appconnect} %{time_starttransfer}\n' "https://$DEMO$path"
+            sleep 2
+          done > "$OUT/http-timing.txt"
+          pct() { awk -v c="$1" '{print $c * 1000}' "$OUT/http-timing.txt" | sort -n | awk -v p="$2" '{a[NR]=$1} END {i=int(p*NR); if (i<1) i=1; if (i>NR) i=NR; printf "%.0f", a[i]}'; }
+
+          # Only the location fields leave the metadata service; the rest is not ours to publish.
+          azure=$(curl -s --max-time 3 -H Metadata:true 'http://169.254.169.254/metadata/instance?api-version=2021-02-01' | jq -c '{location: .compute.location, vmSize: .compute.vmSize, zone: .compute.zone}' 2>/dev/null || echo null)
+          ipinfo=$(curl -s --max-time 5 https://ipinfo.io/json | jq -c '{ip, city, region, country, org}' 2>/dev/null || echo null)
+          players=$(curl -s --max-time 5 "https://$DEMO/playercount" | jq -r '.count // ""' 2>/dev/null || echo '')
+
+          jq -n \
+            --arg pdt "$(TZ=America/Los_Angeles date '+%Y-%m-%d %H:%M %Z')" \
+            --argjson fly "$(cat "$OUT/flyio-debug.json")" \
+            --argjson azure "${azure:-null}" --argjson ipinfo "${ipinfo:-null}" \
+            --arg players "$players" --argjson near "$near" \
+            --arg tcp50 "$(pct 1 0.5)" --arg tcp90 "$(pct 1 0.9)" \
+            --arg tls50 "$(pct 2 0.5)" --arg tls90 "$(pct 2 0.9)" \
+            --arg ttfb50 "$(pct 3 0.5)" --arg ttfb90 "$(pct 3 0.9)" \
+            '{time_pdt: $pdt, edge_region: $fly.nr, app_region: $fly.sr, app_dc: $fly.sdc, mrtt_ms: $fly.mrtt,
+              near_ashburn: $near, players_online: ($players | tonumber? // null),
+              runner: {azure: $azure, ipinfo: $ipinfo},
+              http_ms: {samples: 20, tcp_connect: {p50: ($tcp50|tonumber), p90: ($tcp90|tonumber)},
+                        tls_done: {p50: ($tls50|tonumber), p90: ($tls90|tonumber)},
+                        ttfb_404: {p50: ($ttfb50|tonumber), p90: ($ttfb90|tonumber)}},
+              flyio_debug: $fly}' > "$OUT/vantage.json"
+          cat "$OUT/vantage.json"
+          echo "near=$near" >> "$GITHUB_OUTPUT"
+          if [ "$near" != true ]; then echo "::warning::Fly edge is '$nr', not an east-coast edge: this run is NOT near Ashburn"; fi
+
+      - name: Probe (private loopback gateway + lite client on the demo)
+        env:
+          PASSWORD: ${{ secrets.DEMO_PROBE_PASSWORD }}
+        run: |
+          set -uo pipefail
+          if [ -z "$BOT" ] || [ -z "$PASSWORD" ]; then echo '::error::DEMO_PROBE_USERNAME (variable) or DEMO_PROBE_PASSWORD (secret) is not set'; exit 1; fi
+          mkdir -p "bots/$BOT"
+          ( umask 077; printf 'BOT_USERNAME=%s\nPASSWORD=%s\nSERVER=%s\nSHOW_CHAT=false\nTELEMETRY=false\nGATEWAY_URL=ws://127.0.0.1:%s\n' \
+              "$BOT" "$PASSWORD" "$DEMO" "$GATEWAY_PORT" > "bots/$BOT/bot.env" )
+          unset PASSWORD
+
+          (cd server/gateway && AGENT_PORT=$GATEWAY_PORT GATEWAY_HOSTNAME=127.0.0.1 WEB_MANAGEMENT_PORT=8953 exec bun run gateway.ts) > "$OUT/gateway.log" 2>&1 &
+          GW=$!
+          sleep 2
+          (cd server/webclient && exec bun src/lite/runner.ts "$BOT") > "$OUT/lite-runner.log" 2>&1 &
+          RN=$!
+          stop() { kill -INT $RN 2>/dev/null; sleep 3; kill $RN $GW 2>/dev/null; sleep 1; kill -9 $RN $GW 2>/dev/null; rm -rf "bots/$BOT"; }
+          trap stop EXIT
+          for i in $(seq 120); do grep -q 'Gateway connected' "$OUT/lite-runner.log" && break; sleep 1; done
+          if ! grep -q 'Gateway connected' "$OUT/lite-runner.log"; then echo '::error::lite client did not log in'; tail -30 "$OUT/lite-runner.log"; exit 1; fi
+          sleep 3
+
+          echo "probe start $(TZ=America/Los_Angeles date '+%F %T %Z'): $PROBE_COMMAND" | tee "$OUT/probe.txt"
+          code=0
+          timeout 1200 bash -c "$PROBE_COMMAND" > "$OUT/probe-full.log" 2>&1 || code=$?
+          grep -vE 'Pathfinding|\[Runner\]|\[BotSDK\]|LOGOUT DEBUG' "$OUT/probe-full.log" | tee -a "$OUT/probe.txt" || true
+          echo "probe end $(TZ=America/Los_Angeles date '+%F %T %Z'), exit $code" | tee -a "$OUT/probe.txt"
+          exit $code
+
+      - name: Results (JSON, job summary)
+        if: always()
+        env:
+          NEAR: ${{ steps.vantage.outputs.near }}
+          CHECKOUT_REF: ${{ inputs.ref || github.ref }}
+          PASSWORD: ${{ secrets.DEMO_PROBE_PASSWORD }}
+        run: |
+          set -uo pipefail
+          mkdir -p "$OUT"; touch "$OUT/probe.txt"; [ -s "$OUT/vantage.json" ] || echo '{}' > "$OUT/vantage.json"
+          # Artifacts of a public repo are public: scrub the password from everything uploaded.
+          if [ -n "$PASSWORD" ]; then grep -rlF -- "$PASSWORD" "$OUT" | xargs -r sed -i "s/$PASSWORD/[redacted]/g" || true; fi
+
+          # A probe that writes its own OUT/probe.json wins; otherwise parse the
+          # tickmanip-latency.ts text lines ("latency in ticks ...: 2:25 3:35  (60 trials)").
+          if [ ! -s "$OUT/probe.json" ]; then
+            hist=$(grep -m1 '^latency in ticks' "$OUT/probe.txt" | sed -E 's/^[^:]*: //; s/ +\(.*$//' || true)
+            jq -n --arg h "$hist" \
+              --arg pub "$(grep -m1 '^state publication interval' "$OUT/probe.txt" | sed 's/^[^:]*: //')" \
+              --arg send "$(grep -m1 '^send resolve' "$OUT/probe.txt" | sed 's/^[^:]*: //')" \
+              '{reaction_ticks: ($h | split(" ") | map(select(test("^[0-9]+:[0-9]+$")) | split(":") | {(.[0]): (.[1] | tonumber)}) | add),
+                publication_interval_ms: $pub, send_resolve_ms: $send}' > "$OUT/probe.json"
+          fi
+          jq -n --slurpfile v "$OUT/vantage.json" --slurpfile p "$OUT/probe.json" \
+            --arg run "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --arg sha "$(git rev-parse HEAD)" --arg ref "$CHECKOUT_REF" \
+            '{run_url: $run, ref: $ref, sha: $sha, vantage: $v[0], probe: $p[0]}' > "$OUT/result.json"
+
+          {
+            echo '## Demo latency probe'
+            if [ "$NEAR" != true ]; then echo; echo '**NOT near Ashburn:** the Fly edge for this runner is not an east-coast region.'; fi
+            echo
+            jq -r '"| field | value |\n|---|---|",
+                   "| time | \(.vantage.time_pdt) |",
+                   "| edge (nr) / app (sr, sdc) | \(.vantage.edge_region) / \(.vantage.app_region), \(.vantage.app_dc) |",
+                   "| mrtt (edge to app) ms | \(.vantage.mrtt_ms) |",
+                   "| runner | \(.vantage.runner.azure.location // "?") \(.vantage.runner.ipinfo.city // "") \(.vantage.runner.ipinfo.region // "") (\(.vantage.runner.ipinfo.ip // "?")) |",
+                   "| players online | \(.vantage.players_online) |",
+                   "| TCP / TLS / TTFB(404) p50 ms | \(.vantage.http_ms.tcp_connect.p50) / \(.vantage.http_ms.tls_done.p50) / \(.vantage.http_ms.ttfb_404.p50) |",
+                   "| TCP / TLS / TTFB(404) p90 ms | \(.vantage.http_ms.tcp_connect.p90) / \(.vantage.http_ms.tls_done.p90) / \(.vantage.http_ms.ttfb_404.p90) |",
+                   "| reaction ticks | \(.probe.reaction_ticks // {} | to_entries | map("\(.key):\(.value)") | join(" ")) |",
+                   "| checkout | \(.ref) @ \(.sha[0:9]) |"' "$OUT/result.json"
+            echo; echo '```'; cat "$OUT/probe.txt"; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$OUT/result.json"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: demo-latency-${{ github.run_id }}
+          path: probe-out
