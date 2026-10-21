@@ -197,7 +197,8 @@ describe('a handover list is never repeated by a restarted run', () => {
         meet: VARROCK_WEST_MEET,
         handovers: to.map(name => ({ to: name, items: [{ item: 'Coins', n: 100_000 }] }))
     });
-    const receivers = (given: { to: string }[]) => given.map(g => g.to);
+    /** Who was traded with, from the stub's `give <to> <x>,<z>` events. */
+    const receivers = (events: string[]) => events.filter(e => e.startsWith('give ')).map(e => e.split(' ')[1]);
 
     test('2026-10-21 h63: the list ran to the end and was started again; nothing is withdrawn or given twice', async () => {
         const first = setup(VARROCK_WEST_BANK, 0);
@@ -247,11 +248,11 @@ describe('a handover list is never repeated by a restarted run', () => {
             return delivered(items);
         }, { abort });
         await runHandovers(first.ctx, coins(H53, H54), first.io);
-        expect(receivers(first.given.map((_, i) => ({ to: [H53, H54][i]! })))).toEqual([H53]);
+        expect(receivers(first.events)).toEqual([H53]);
 
         const again = setup(VARROCK_WEST_BANK, 0, undefined, { state: first.state });
         const report = await runHandovers(again.ctx, coins(H53, H54), again.io);
-        expect(again.events.filter(e => e.startsWith('give')).map(e => e.split(' ')[1])).toEqual([H54]);
+        expect(receivers(again.events)).toEqual([H54]);
         expect(report.done).toEqual([H53, H54]);
     });
 
