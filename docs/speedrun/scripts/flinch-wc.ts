@@ -14,11 +14,13 @@
 // the clock equals map_clock (woodcut.rs2:97-99). The bot sees the hitsplat on its label
 // for tick F, so a click sent then lands on F+1.
 //
-// npcsN: hobgoblins are added one at a time with ::npcadd on the bot's tile, each
-// attacking every 4 ticks. After each spawn the bot watches hits for 12 ticks; it stops
-// adding once the hit ticks cover two residues mod 4 that differ by 2 (a hit every 2
-// ticks on the drop ticks), or at N. Extra attackers are harmless: a hit on a click tick
-// finds the chop interaction (busy2) and writes nothing.
+// npcsN: hobgoblins are added with ::npcadd on the bot's tile, each attacking every 4
+// ticks. The first spawn teaches the bot the delay from a spawn label to that NPC's first
+// hit (mod 4); later spawns are timed so their hits land 2 ticks after the existing ones,
+// giving a hit on every other tick. ::npcadd NPCs despawn after 500 ticks
+// (ClientCheatHandler.ts:515), so whenever the hits of the last 8 ticks stop covering two
+// residues 2 apart the controller spawns again (at most N spawns in all). Extra attackers
+// are harmless: a hit on a click tick finds the chop interaction (busy2) and writes nothing.
 //
 // Loop, every label: if a new hitsplat is seen and the bot did not click on the previous
 // label, click the oak; otherwise drop one log. Never two clicks in a row (a click on an
@@ -84,16 +86,27 @@ await runScript(async ({ bot, sdk }) => {
         return true;
     };
 
-    // Spawn attackers until hit residues mod 4 contain a pair 2 apart. Drops every label
-    // meanwhile, so the retaliate attack never fires.
-    const residues = () => new Set(hitTicks.slice(-12).map(t => t % 4));
-    const covered = () => { const r = residues(); return [0, 1].some(a => r.has(a) && r.has(a + 2)); };
-    for (let n = 0; n < npcMax && !covered(); n++) {
+    // Spawn controller (runs inside the loop below, on every label).
+    const residues = (now: number) => new Set(hitTicks.filter(t => t > now - 8).map(t => t % 4));
+    const covered = (r: Set<number>) => [0, 1].some(a => r.has(a) && r.has(a + 2));
+    let spawns = 0, spawnTick = -1, dMod: number | null = null, nextSpawn = 0;
+    const spawnTicks: number[] = [];
+    const controller = (s: BotWorldState, newHit: boolean) => {
+        if (dMod === null && newHit && spawnTick >= 0) {
+            dMod = (s.tick - spawnTick) % 4;
+            console.log(`learned: spawn label ${spawnTick} -> first hit ${s.tick}, delay mod 4 = ${dMod}`);
+        }
+        if (spawns >= npcMax || s.tick < nextSpawn) return;
+        const r = residues(s.tick);
+        if (covered(r)) return;
+        if (dMod !== null && r.size > 0) {
+            const wanted = (Math.min(...r) + 2) % 4;
+            if ((s.tick + dMod) % 4 !== wanted) return;
+        } else if (dMod === null && spawns > 0) return; // still learning from the first spawn
         fire(sdk.sendSay('::npcadd hobgoblin_unarmed'));
-        for (let i = 0; i < 12; i++) { const s = await T(1); seeHit(s); dropLog(s); }
-        console.log(`spawned ${n + 1}: hit residues mod 4 = {${[...residues()].sort().join(',')}}`);
-    }
-    if (npcMax) console.log(`attackers ready: residues {${[...residues()].sort().join(',')}} covered=${covered()}`);
+        spawns++; spawnTick = s.tick; spawnTicks.push(s.tick); nextSpawn = s.tick + 10;
+        console.log(`S t=${s.tick} spawn ${spawns}, hit residues {${[...r].sort().join(',')}}`);
+    };
 
     let lastXp = sdk.getSkillXp('woodcutting') ?? 0;
     let clickedLast = false;
@@ -108,6 +121,7 @@ await runScript(async ({ bot, sdk }) => {
         const xp = sdk.getSkillXp('woodcutting') ?? 0;
         if (xp > lastXp) { xpTicks.push(s.tick); console.log(`X t=${s.tick} +${(xp - lastXp) / 25}`); lastXp = xp; }
         const newHit = seeHit(s);
+        controller(s, newHit);
         const stump = s.nearbyLocs.some(l => l.x === oak.x && l.z === oak.z && l.name !== 'Oak');
         if (stump && !wasStump) { fellAt.push(s.tick); console.log(`F t=${s.tick} oak felled`); }
         wasStump = stump;
@@ -119,16 +133,22 @@ await runScript(async ({ bot, sdk }) => {
         }
         clickedLast = false;
         dropLog(s);
-        if (s.inventory.filter(i => isLog(i.name)).length < 4) fire(sdk.sendSay('::give logs 10'));
+        if (s.inventory.filter(i => isLog(i.name)).length < 6 && s.tick % 5 === 0) fire(sdk.sendSay('::give logs 10'));
     };
 
-    for (let i = 0; i < labels && xpTicks.length < targetRolls; i++) step(await T(1));
+    for (let i = 0; i < labels && xpTicks.length < targetRolls; i++) {
+        let s: BotWorldState;
+        try { s = await T(1); } catch (e) { console.log(`state stall: ${e}`); continue; }
+        step(s);
+    }
 
     const gaps: Record<number, number> = {};
-    const fellGaps: number[] = [];
+    const fellGaps: number[] = [], spawnGaps: number[] = [];
     for (let i = 1; i < xpTicks.length; i++) {
         const g = xpTicks[i] - xpTicks[i - 1];
-        if (fellAt.some(f => f > xpTicks[i - 1] && f <= xpTicks[i])) { fellGaps.push(g); continue; }
+        const inGap = (ts: number[], lead: number) => ts.some(f => f > xpTicks[i - 1] - lead && f <= xpTicks[i]);
+        if (inGap(fellAt, 0)) { fellGaps.push(g); continue; }
+        if (inGap(spawnTicks, 8)) { spawnGaps.push(g); continue; }
         gaps[g] = (gaps[g] ?? 0) + 1;
     }
     const xpOnClick = xpTicks.filter(t => clickLand.includes(t)).length;
@@ -137,6 +157,7 @@ await runScript(async ({ bot, sdk }) => {
     console.log(`summary: mode=${mode} weapon=${weapon} labelsHitsSeen=${hitTicks.length - loopHits0} clicks=${clickLand.length} xpDrops=${xpTicks.length} xpOnAClickTick=${xpOnClick} xpOnTickAfterSeenHit=${afterHit} fells=${fellAt.length} knives ${knives0}->${knives1}`);
     console.log(`gaps between xp drops, no fell in between (ticks:count): ${Object.entries(gaps).map(([g, c]) => `${g}:${c}`).join(' ')}`);
     console.log(`gaps spanning a fell: ${fellGaps.join(' ')}`);
+    console.log(`gaps spanning a (re)spawn (from 8 ticks before it): ${spawnGaps.join(' ')}; spawns at ${spawnTicks.join(',')}`);
     const span = xpTicks.length > 1 ? (xpTicks[xpTicks.length - 1] - xpTicks[0]) / (xpTicks.length - 1) : NaN;
     console.log(`ticks per roll over the xp span, fells included: ${span.toFixed(2)}`);
 }, { printState: false });
