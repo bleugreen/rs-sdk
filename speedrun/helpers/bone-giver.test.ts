@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import type { BotWorldState, GameMessage } from '../../sdk/types';
 import { baseState } from '../lib/fake-sdk';
-import { boneGiverOptions, decideRequest, newRequestCtx, S07_SITES, type RequestCtx } from './bone-giver';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { nameHash } from './altar-cue';
+import { boneGiverOptions, decideRequest, newRequestCtx, newRequestFrom, readBoneAsk, S07_SITES, usableAsk, writeBoneAsk, type RequestCtx } from './bone-giver';
 
 const o = { noReplyTicks: 3, resendTicks: 100 };
 const msg = (tick: number, text: string): GameMessage => ({ type: 0, text, sender: '', tick, fromSelf: false });
@@ -90,5 +94,38 @@ describe('bone giver options', () => {
         expect(() => boneGiverOptions({ sites: [{ giver: { x: 1 }, receiver: { x: 1, z: 2 } }] })).toThrow(/giver needs/);
         expect(() => boneGiverOptions({ restock: { kind: 'trade' } })).toThrow(/restock.kind/);
         expect(boneGiverOptions({ trades: 2, restock: { kind: 'cheat' } })).toMatchObject({ trades: 2, restock: { kind: 'cheat' } });
+    });
+});
+
+describe('on-request mode (S18 top-ups)', () => {
+    const scored = 'Cairn H75';
+    const hash = nameHash('cairn_h75');
+    const req = (tick: number, sender: string): GameMessage => ({ type: 4, text: 'wishes to trade with you.', sender, tick, fromSelf: false });
+
+    test('a request from the scored account is found by its name hash, newest first, only after the last answered', () => {
+        const s = frame(20, [req(12, scored), req(18, scored), req(19, 'Someone Else'), msg(19, 'wishes to trade with you.')]);
+        expect(newRequestFrom(s, hash, -1)).toBe(18);
+        expect(newRequestFrom(s, hash, 18)).toBeNull();
+        expect(newRequestFrom(s, nameHash('someone_else'), 0)).toBe(19);
+    });
+
+    test('the ask: written by the scored side, used once, and only while fresh', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'bone-ask-'));
+        expect(readBoneAsk(dir)).toBeNull();
+        const a = writeBoneAsk(dir, 17, 1);
+        expect(readBoneAsk(dir)).toEqual(a);
+        expect(usableAsk(a, 0, a.ms + 1000)).toEqual(a);
+        expect(usableAsk(a, 1, a.ms + 1000)).toBeNull(); // already served
+        expect(usableAsk(a, 0, a.ms + 61_000)).toBeNull(); // stale
+        expect(() => writeBoneAsk(dir, 0, 2)).toThrow();
+        expect(() => writeBoneAsk(dir, 29, 2)).toThrow();
+    });
+
+    test('options: on-request needs a waiting site; hold and refill bounds', () => {
+        expect(() => boneGiverOptions({ mode: 'on-request' })).toThrow(/needs sites/);
+        const site = [{ giver: { x: 2655, z: 3306 }, receiver: { x: 2655, z: 3305 } }];
+        expect(boneGiverOptions({ mode: 'on-request', sites: site })).toMatchObject({ mode: 'on-request', hold: 28, refillBelow: 21, follow: 3 });
+        expect(() => boneGiverOptions({ mode: 'on-request', sites: site, hold: 20, refillBelow: 21 })).toThrow(/refillBelow/);
+        expect(() => boneGiverOptions({ mode: 'sometimes' })).toThrow(/mode/);
     });
 });

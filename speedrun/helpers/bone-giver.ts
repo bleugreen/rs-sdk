@@ -461,9 +461,9 @@ export class BoneGiver {
                 await cheat(ctx, '~clearinv inv');
                 await until(ctx, st => st.inventory.length === 0, 10);
             }
-            const missing = o.n - this.held();
+            const missing = n - this.held();
             if (missing > 0) await cheat(ctx, `give dragon_bones ${missing}`);
-            if (!(await until(ctx, () => this.held() >= o.n, 10))) throw new Error('staff give did not arrive');
+            if (!(await until(ctx, () => this.held() >= n, 10))) throw new Error('staff give did not arrive');
             return;
         }
         const bank = o.restock.bank;
@@ -471,9 +471,9 @@ export class BoneGiver {
         await walkNear(ctx, bank.x, bank.z, 3);
         if (!(await openBank(ctx))) throw new Error('could not open the bank');
         await depositAllExcept(ctx.sdk);
-        const w = await withdrawMany(ctx.sdk, [{ item: this.re, n: o.n }]);
+        const w = await withdrawMany(ctx.sdk, [{ item: this.re, n }]);
         await closeBank(ctx);
-        if (!w.ok || this.held() !== o.n) throw new Error(`bank withdraw left ${this.held()} of ${o.n} (${w.reason ?? 'short'})`);
+        if (!w.ok || this.held() !== n) throw new Error(`bank withdraw left ${this.held()} of ${n} (${w.reason ?? 'short'})`);
     }
 }
 
