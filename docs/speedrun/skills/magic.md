@@ -356,9 +356,25 @@ with 4 rune slots), 5 from 57 (26 per inventory).
 
 ## 8. Open questions
 
-- **Mage Arena at 75**: the fight length at Magic 75 with Fire Wave was not measured (rs/3's
-  `mage_arena.md` measured it at 80). If it is under about 100 ticks longer, it pays. It also
-  needs the plan to reach the arena at 75 rather than 80.
+- **Where the Charge sip goes.** Measured, the sip costs about 3 ticks before the first Charge
+  (4-tick gap). Charge has no location check (`charge.rs2`), so it can be cast in the chamber
+  right after the guardian sets `%magearena = 8`. A sip taken during the chamber walk (rs/20's
+  pool, statue and guardian, 74 ticks) would hide the delay if no decay step falls between the
+  sip and the casts. Inferred, not measured; it belongs to the Mage Arena run (rs/3).
+- **Fight yield below 76.** Base 76 from the bottom of 71 needs 2,379 base from the fight. The
+  three base-71 fights paid 2,787-3,129, and the lowest ever measured is 2,404 (rs/3, base 80,
+  100 ms). If a fight falls short, one or two dragonstone casts, or a sip and a Charge at base
+  76 later, close the gap. The fight's xp is mostly per cast (42.5 base each), and a less
+  accurate fight casts more, so a short yield is unlikely (inferred).
+- **Magic potion supply.** Helper Herblore 76 (or the GE) is the only source. The Herblore plan
+  should confirm it reaches 76 before the scored account's arena trip. Without it, the mind
+  bomb (+3, shops) gives Fire Wave at base 72, about 5 more dragonstone casts (measured gate,
+  inferred cost).
+- **Whether the decay phase can be steered.** The restore timer is aligned to login
+  (`login.rs2:36`). A sip right after a decay step holds a full 100 ticks; the measured fights
+  needed 2 re-sips. Logging in so that a decay step falls just before the fight would save at
+  most one re-sip (2 ticks at worst, 0 when it lands inside an attack delay). Not worth
+  planning around.
 - **The packet floor of the bank visit** (2 ticks, or 1 with a blind OPHELDT) was inferred, not
   measured. It needs a client that sends the next cast without waiting for its own inventory
   to update, which belongs to the fast primitives in `speedrun/lib/` (tenet 4).
