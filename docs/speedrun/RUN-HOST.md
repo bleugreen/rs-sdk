@@ -45,6 +45,7 @@ again before step 7.
 | Chrome, gate account's tab (steps 3 and 6) | - | `T=15m` |
 | Chrome, SCORED's tab (step 7) | `T=9h` | - |
 | `tab-login.ts`, the tab's login (steps 3, 6, 7) | `3m` | `3m` (it gives up by itself after 120 s) |
+| `tab-logout.ts`, the tab's logout (steps 6 and 8) | `3m` | `3m` (20 s to attach, `logoutClean`'s waits, 15 s to confirm) |
 | rs/117's helper launcher (step 4) | `T=9h` | `T=30m` |
 | Recording (step 5), SIGINT at the bound | `T=9h` | `T=30m` |
 | Live view (step 5) | `T=9h` | `T=30m` |
@@ -139,6 +140,16 @@ to be `96fc462a` or a descendant of it. **No real account's credentials, fleet o
 host while `~/rs-sdk` is at an older commit** (main, 10:20 PDT): step 4 (the helpers are fleet
 accounts) and step 7 (SCORED) check this first.
 
+`RUN_COMMIT` must also include **rs/164's merge** (commit named here when it lands). Until it does,
+`logoutClean` (`speedrun/lib/session.ts`) cannot confirm a browser tab's logout. The gateway keeps
+`inGame: true` with status `stale` after the page leaves the game, so the check waits out its timeout
+and reports a failure (m, rs/149 on the rehearsal twin, via rs/147, 2026-10-21; cairn://p/rs/164).
+That affects SCORED's two planned relogs, every shortfall or restock pause, and the final logout that
+writes the hiscore row (RUN-ORDER.md section 4 and R1). Check it the same way as `96fc462a`:
+`git -C ~/rs-sdk merge-base --is-ancestor <rs/164's merge> "$RUN_COMMIT"`. Until then, steps 6 and 8
+confirm a tab's logout with rs/149's `speedrun/tools/tab-logout.ts`, which reads the page itself over
+Chrome's DevTools port, or by seeing the login screen in the live view.
+
 **Leftover check.** It lists every tmux socket on the host with its sessions, other agents' sockets
 included, plus every `chrome*`, `ffmpeg`, `bun` and `timeout` process with its age, and the host
 reservation. It does not count the gate history timer's processes: they run in
@@ -202,6 +213,7 @@ The run-night gate's history accumulates on this host until the scored run, with
 - **History.** One file per firing, `~/gate-history/<UTC timestamp>.json`: `commit`, `status` (`ok`, `not-probed`, `timeout`, `error` or `skip`), `on`, `onTime`, `catchUpsPerMinute`, `tickP90Ms`, `players`, `edge`, with the gate's own JSON under `gate`. Skips record the reason in `note`. There's one journal line per firing: `journalctl --user -u rs-gate-read`. Check the next firing with `systemctl --user list-timers rs-gate-read.timer`.
 - **Every 15 minutes from two hours before the start:** `bash ~/.local/lib/rs-gate/install.sh --every 15` (`--every 30` switches back).
 - **Reserving the host.** Anyone who needs the host quiet (the run script, rehearsals, a slot holder) writes `~/host-reserved.json`, e.g. `{"owner": "rs/NNN", "until": "2026-10-22T03:00:00Z", "reason": "rehearsal"}` with `until` in UTC, and removes it afterwards. While it's live every firing logs `skip: reserved by rs/NNN` and does nothing. A file whose `until` has passed is ignored. To take one read inside your own reservation: `systemctl --user set-environment RS_GATE_OWNER=rs/NNN`, then `systemctl --user start rs-gate-read.service`, then `systemctl --user unset-environment RS_GATE_OWNER`.
+- **The gate account stays in the world after each read.** rs/96's direct gate CLI (`speedrun/lib/direct.ts`'s gate, which this timer runs) closes its socket without logging out, so the account stays in the world after every read until the server's no-connection timeout (rs/149, relayed by rs/158, 2026-10-21). It's harmless to SCORED, but the account's next login (the next firing's, or step 6's tab-login after (a)-(c) on the same account) may see 'already logged in'. Main owns the fix.
 - **Stopping and removing.** To pause, run `systemctl --user disable --now rs-gate-read.timer`; to resume, run `bash ~/.local/lib/rs-gate/install.sh`. To remove it, run `bash ~/.local/lib/rs-gate/uninstall.sh`. That stops a read in progress and keeps `~/gate-history` and the clone.
 
 **For the run script and rehearsals:** in step 0 or setup, write `~/host-reserved.json` covering the whole run with margin before anything else starts, rather than disabling the timer. A forgotten removal then costs nothing. The leftover check should not count the timer: between firings it has no process, and during one its processes belong to `rs-gate-read.service` (`systemctl --user status rs-gate-read.service`).
@@ -268,6 +280,9 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o 
 `RUN_COMMIT` must include rs/138's merge (#120, `96fc462a`): step 3's Chrome login
 (`speedrun/tools/tab-login.ts` and the page server's token endpoints) arrived with it ("Credentials",
 above). Check with `git -C ~/rs-sdk merge-base --is-ancestor 96fc462a "$RUN_COMMIT"`.
+`RUN_COMMIT` must also include rs/164's merge (commit named here when it lands), so that
+`logoutClean` can confirm a logout from the tab ("Credentials"). Check with
+`git -C ~/rs-sdk merge-base --is-ancestor <rs/164's merge> "$RUN_COMMIT"`.
 
 Account files: the gate account (step 6) is a throwaway demo account whose name starts with
 `cairn_`, with `~/rs-sdk/bots/<gate>/bot.env` holding `BOT_USERNAME`, `PASSWORD`,
@@ -403,18 +418,27 @@ processes showing the password, the processes showing a token, and the tab URLs 
 Expect `0 0 0`:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'ENV=$HOME/rs-sdk/bots/GATE_ACCOUNT/bot.env; echo "$(ps -efww | grep -c -F -f <(sed -n "s/^PASSWORD=//p" "$ENV")) $(ps -efww | grep -c "[t]oken=") $(curl -s http://127.0.0.1:9222/json/list | grep -c -F -e token= -f <(sed -n "s/^PASSWORD=//p" "$ENV"))"'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'ENV=$HOME/rs-sdk/bots/GATE_ACCOUNT/bot.env; echo "$(ps -efww | grep -c -F -f <(sed -n "s/^PASSWORD=//p" "$ENV")) $(ps -efww | grep -c "[t]oken=") $(curl -s http://127.0.0.1:9222/json/list | grep -c -F -e "token""=" -f <(sed -n "s/^PASSWORD=//p" "$ENV"))"'
 ```
+
+Before the third grep's literal was written `"token""="`, a `2` in the middle came from the check's own command line, not a token (m, rs/149 on the rehearsal twin, via rs/147, 13:36 PDT 2026-10-21).
 
 ## 4. Helpers on the run machine (rs/117)
 
-The tick-exact helpers (the Runecraft altar givers, the trade giver, the wine giver) run on this
+The tick-exact helpers (the Runecraft altar givers, the trade giver, the wine giver, the S07 bone givers) run on this
 machine through rs/117's launcher, `speedrun/helpers/standalone.ts`, from this same checkout, on their
 own loopback gateway (7795 by default). How to configure, start and stop them is
 [HELPERS.md](HELPERS.md), "Helpers on the run machine" (cairn://p/rs/117); this page doesn't repeat
 it. The one ordering rule that touches this runbook: **the helpers are logged in before SCORED's tab
 opens** (the launcher's `helpersReady`), because login order decides the 7- or 8-tick Runecraft
 cycle.
+
+**The S07 bone givers** are rs/41's three, **cairn_b01-b03**, which serve SUPPLIES.md's H4.1-H4.n
+at the Woodcutting trees. They take turns, and they're a role rs/141 added to the same launcher
+(rs/141's `bone-giver.ts`, rs/41's PR #135). Like the altar givers, they **log in before SCORED and
+stay in through both planned relogs** (RUN-ORDER.md section 4). There may be four if the demo round
+trip from Falador west to the Taverley trees exceeds ~200 ticks. rs/141's lab round trip was 149-170
+ticks with the bank (m, SUPPLIES.md H4.1-H4.n), and rs/163 is measuring it on the demo.
 
 Two rules from this page apply to that launch:
 
@@ -508,7 +532,9 @@ The conditions and what to do on a failure are in RUN-ORDER.md section 1 and ten
   `docs/speedrun/scripts/tickmanip-latency.ts <gate account> --path=direct --no-tele`
   (cairn://p/rs/96, PR #101; its procedure and verdict are in `skills/tick-manipulation.md`, "Run-time
   host gate"). It logs the gate account in itself, in-process, so run it **before** the gate account's
-  tab opens, with the tab closed. Bound: 15 min (its probe gives up after 10):
+  tab opens, with the tab closed. It closes its socket without logging out, so (d)'s tab-login of the
+  same account may see 'already logged in' ("Gate history timer"). Bound: 15 min (its probe gives up
+  after 10):
 
 ```sh
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'cd ~/rs-sdk && timeout --kill-after=30s 15m ~/.bun/bin/bun docs/speedrun/scripts/tickmanip-latency.ts GATE_ACCOUNT --path=direct --no-tele'
@@ -518,13 +544,19 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o 
   tab-login commands with the gate account's env file), let it reach the game, then sample for five minutes with
   `docs/speedrun/scripts/runhost-loops.ts`. It attaches to the tab through the loopback gateway, runs
   the in-page probe (the page publishes `loops` only while a program runs), and every 10 s prints the
-  page's loop rate beside each process's CPU and ffmpeg's frame counters. Closing the tab afterwards
-  drops the gate account's client; a throwaway account left in the world until the server's
-  no-connection timeout costs nothing. Bounds: the tab `T=15m` (step 3's command), the sampler
-  10 min. If the ssh line dies before the closing `kill-session`, the tab's own bound closes it.
+  page's loop rate beside each process's CPU and ffmpeg's frame counters. **Before Chrome is stopped,
+  the gate account's tab is logged out** with rs/149's `speedrun/tools/tab-logout.ts`, so the account
+  doesn't linger in the world. It confirms the logout from the page over Chrome's DevTools port,
+  because `logoutClean`'s own confirmation can't be trusted from a tab until rs/164 is on
+  `RUN_COMMIT` ("Credentials"). It exits 0 once the page is out of game and 1 when it isn't
+  confirmed, and the command below stops Chrome only on 0. tab-logout.ts arrives with rs/147's
+  snapshot. Until `RUN_COMMIT` includes it, drop it from the command and check in the live view that
+  the tab shows the login screen before the `kill-session`. Bounds: the tab `T=15m` (step 3's
+  command), the sampler 10 min, tab-logout 3 min. If the ssh line dies, or tab-logout does not
+  confirm, before the closing `kill-session`, the tab's own bound closes it.
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'cd ~/rs-sdk && timeout --kill-after=30s 10m ~/.bun/bin/bun docs/speedrun/scripts/runhost-loops.ts GATE_ACCOUNT --label=gate --minutes=5 --display=:10 --out=$HOME/rs-run/gate-loops.jsonl 2>&1 | grep -v -E "^\[(Runner|BotSDK)\]|Pathfinding|LOGOUT DEBUG"; tmux -L run kill-session -t chrome'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'cd ~/rs-sdk && timeout --kill-after=30s 10m ~/.bun/bin/bun docs/speedrun/scripts/runhost-loops.ts GATE_ACCOUNT --label=gate --minutes=5 --display=:10 --out=$HOME/rs-run/gate-loops.jsonl 2>&1 | grep -v -E "^\[(Runner|BotSDK)\]|Pathfinding|LOGOUT DEBUG"; timeout --kill-after=30s 3m ~/.bun/bin/bun speedrun/tools/tab-logout.ts GATE_ACCOUNT && tmux -L run kill-session -t chrome'
 ```
 
 Read (d) from the summary line's `loops p10` (lowest / median / highest 10-second sample). **Pass**:
@@ -547,8 +579,23 @@ same way: session.ts mints a fresh token from `CLIENT_URL` and re-navigates the 
 
 ## 8. Stop the recording and pull it
 
-After SCORED's final clean logout (the run script's `logoutClean`; check the tab shows the login
-screen), stop ffmpeg with `q`, so it finishes the file, and check what it wrote:
+After SCORED's final clean logout (the run script's `logoutClean`), and only once that logout is
+confirmed, stop ffmpeg with `q`, so it finishes the file, and check what it wrote. The final logout
+is what writes SCORED's hiscore row (RUN-ORDER.md section 4, "Final logout"). Until `RUN_COMMIT`
+includes rs/164's merge, `logoutClean`'s confirmation can't be trusted from the tab
+("Credentials"). Confirm the logout here with `tab-logout.ts` on SCORED's account, or by seeing
+the login screen in the live view. tab-logout.ts exits 0 with `no tab in game` when the page is already out.
+If SCORED is still in game, it logs SCORED out cleanly itself. **Never kill the tab while SCORED is
+in game.** `ENV` is `$SCORED_ENV`, as in step 7. Bound: 3 min. Like tab-login, it prints the
+account's name, so keep its output out of chat and logs:
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'ENV=SCORED_ENV; cd ~/rs-sdk && timeout --kill-after=30s 3m ~/.bun/bin/bun speedrun/tools/tab-logout.ts "$(basename "$(dirname "$ENV")")"'
+```
+
+Expect `no tab in game; nothing to log out` or `logged out; the page is out of game`, and exit 0.
+On exit 1 (`not confirmed`), look at the tab in the live view. Stop nothing until it shows the login
+screen. Then stop the recording:
 
 ```sh
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'tmux -L run send-keys -t rec q; sleep 5; tmux -L run has-session -t rec 2>/dev/null && echo "ffmpeg still running"; for f in ~/recordings/run-*.mkv; do ffprobe -v error -show_entries format=duration,size:stream=width,height,pix_fmt -of compact "$f"; done; grep -E "^(frame|drop_frames)=" ~/recordings/ffmpeg-progress.log | tail -2'
@@ -621,3 +668,26 @@ A dry run at 16:21 UTC on the session's earlier 3072x1728 geometry (disconnected
 top-left 1920x1080) had Chrome at about 1.45 cores and ffmpeg at 1.7, against 0.8 and 0.95 here.
 The scene differed, so it is not a clean comparison, but it agrees with fixing the session at
 1920x1080 (m for the figures, i for the reading).
+
+### Corroborating: the rehearsal twin's gate read of record (not this host)
+
+Taken on **rs-ashburn-rehearsal** (i-0f690e919614af7b2), rs/147's twin of this host with the same
+AMI, instance type and subnet, **not on this host**. It is the first full pass in the run-night
+configuration: RDP disconnected, recording on, xrdp display :10, throwaway account cairn_twin
+(m, 2026-10-21 20:22-20:29 UTC; rs/149, `docs/speedrun/rehearsals/HOST.md` on rs/147's branch,
+via rs/147, 13:46 PDT).
+
+| Gate condition | Twin, 20:22-20:29 UTC |
+|---|---|
+| (a) direct reactions | 60/60 |
+| (c) catch-ups | 0 a minute |
+| (b) tick p90 | 377 ms (context, not a pass line) |
+| (d) tab loop p10, lowest / median / highest sample | 70.8 / 72.0 / 72.9 |
+| In-page probe (`probeInPage`) | 60/60 |
+| Recording | 29.9 fps, 0 dropped |
+| Host | ~32% busy |
+| Online | 1,589 |
+
+All m. It shows that the run-night configuration passes all four conditions on identical hardware
+in a calm minute. It does not replace this host's own reads (step 6 and rs/140's gate history),
+and the run is never played on the twin (tenet 13).
