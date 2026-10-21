@@ -53,7 +53,7 @@ Gnome Village.
 Derived here from rs/3's step order (README section 4 and `pre_mm_fights.md` on
 cairn://p/rs/3/1/coordinator); rs/80, which is finalising that README, had not published its own
 timeline when this was written. Base xp from this server's curve (`Player.ts`,
-`levelExperience`: 59 = 2,468.0, 64 = 3,504.9, 67 = 4,330, 73 = 6,568.0, 76 = 8,092.7, 77 =
+`levelExperience`: 59 = 2,468.0, 64 = 3,504.9, 67 = 4,322.7, 73 = 6,568.0, 76 = 8,092.7, 77 =
 8,675.5, 80 = 10,686.8, 81 = 11,455.6).
 
 | Point on the route | Magic base xp | Level | Basis |
@@ -137,6 +137,12 @@ and `magic-route.ts` for the bands as run end to end). Success is 100% for every
 | **57 -> 71, end to end** | diamond, dragonstone, 26 per inventory | | | | | **52** | **about 164** (156 casting + first withdraw + 1 visit; inferred from the measured cadence and bank cycle) |
 | 71 -> 76/77 | Mage Arena fight: Fire Wave (com 1189) at boosted 75, Protect from Magic, re-sip at each decay step | base 60 to start (`kolodion.rs2:6`), boosted 75 for Fire Wave | 42.5 + 2 per damage | 5 (attack delay) | about 8.8 | about 50-58 (inferred from the xp) | **320-346** (3 runs, mean 331), +2,787-3,129 base (measured, 300 ms) |
 | 76/77 -> 99 | Charge after a magic-potion sip | **boosted** 80, `%magearena >= 8` | 180 | 0.2 (5 per tick) | 900 | 175-180 | **40-41 from the sip** (4 ticks of sip delay + 36-37 casting; measured, 300 ms) |
+| **Package B route (on route)** | | | | | | | |
+| 1 -> 7 | Wind Strike on chickens | Magic 1 | 7.5 typical | 5 | about 1.5 | 4 | 16-20 (measured) |
+| 7 -> 59 | Enchant sapphire 12, emerald 27, ruby 16, diamond 5, before Tree Gnome Village | Magic 7 / 27 / 49 / 57 | 17.5-67 | 3 | 5.8-22.3 | **60** | **about 192** (180 casting + first withdraw + 2 bank visits; inferred from the measured cadence and bank cycle) |
+| 59 -> 76/77 | The pre-MM fights by spell, The Grand Tree's reward, teleports | Fire Bolt 35, Fire Blast 59 | | | | | 0 Magic-training ticks: counted in rs/3's quest steps (timeline in section 1) |
+| 76/77 -> 80/81 | Mage Arena fight, Fire Wave, no potion | base 60, boosted 75 | | | | | 0 here: rs/3's step 10 (about 315-340, inferred) |
+| 80/81 -> 99 | Charge, no sip | 80, `%magearena >= 8` | 180 | 0.2 | 900 | 156-163 | **about 32-33** (rs/20 measured 33 from 80, 300 ms) |
 
 "Ticks for band" counts the span from the first cast to the tick the next action can land.
 The last cast's delay is included. The end-to-end figures are measured
@@ -153,12 +159,17 @@ Enchanting an amulet gives the same xp as the ring (same spell row,
 | Quest | Base Magic | Source | On route? |
 |---|---|---|---|
 | The Grand Tree | 2,150 | `quest_grandtree.rs2:201` (`stat_advance(magic, 21500)`) | yes (rs/3) |
-| Watchtower | 15,300 | `quest_itwatchtower.rs2:533` | listed off route in this issue's brief; `quest_points.md` counts its 4 QP in one plan, so check with rs/3 |
+| Pre-MM fights by spell (not quest rewards) | about 3,583: Khazard warlord 1,047 (measured, Fire Bolt), black demon 996 (measured, Fire Bolt), Fight Arena about 1,540 (inferred) | rs/3 `pre_mm_fights.md` section 1 (rs/56, 300 ms); 2 base per damage + 22.5 (Fire Bolt) or 34.5 (Fire Blast) per cast, `magic_combat_spells.dbrow` | **yes**, Package B |
+| Teleport casts on the way | Ardougne 61, Camelot 55.5, Falador 48, Varrock 35 per cast; about 600 before the arena (inferred count) | `magic_spells.dbrow` (read) | yes |
+| Watchtower | 15,300 | `quest_itwatchtower.rs2:533` | off route (rs/3 README section 5: worth at most ~510 against ~1,100) |
 | Horror from the Deep | 4,662 (and 4,662 each in Strength and Ranged) | `quest_horror.rs2:491-493` | skipped (`horror_from_the_deep.md`) |
-| Imp Catcher | 875 | `quest_imp.rs2:4` | filler only (`quest_points.md`) |
-| Witch's Potion | 325 | `quest_hetty.rs2:11` | filler only |
+| Imp Catcher | 875 | `quest_imp.rs2:4` | no: not in Package B's filler (Goblin Diplomacy, Romeo & Juliet, Cook's Assistant, Druidic Ritual) |
+| Witch's Potion | 325 | `quest_hetty.rs2:11` | no, as above |
 | Mage Arena fight (not a quest reward) | about 2,400-3,050 from casting | `mage_arena.md` (measured 3,044 and 2,404) | yes, it unlocks Charge |
 
+- **On the route (Package B)** the Grand Tree's 2,150 lands on top of the enchant ladder and
+  the first two fights, at base ~4,561, taking the account from 67 to 73 (section 1). The
+  bullets below are the earlier, fights-meleed accounting.
 - **The Grand Tree alone**: 2,150 base is level **57** (57 starts at 2,143.7 base). That is
   exactly the diamond unlock, so the route from there is diamond -> dragonstone to 71 -> the
   Mage Arena with a magic potion -> Charge, about **205 ticks** of Magic training (section 1;
