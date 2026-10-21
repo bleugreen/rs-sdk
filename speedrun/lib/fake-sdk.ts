@@ -1,7 +1,8 @@
 // A scriptable stand-in for BotSDK in unit tests: push states, record sends.
 // Only the members the speedrun modules touch are implemented.
 
-import type { ActionResult, BotWorldState, DialogState } from '../../sdk/types';
+import type { ActionResult, BotWorldState, DialogState, GameMessage, InventoryItem, SkillState } from '../../sdk/types';
+import { PLAYER_CHAT_TYPES } from '../../sdk/types';
 
 export interface SentAction {
     method: string;
@@ -50,6 +51,19 @@ export class FakeSdk {
         return this.state;
     }
 
+    getSkill(name: string): SkillState | null {
+        const n = name.trim().toLowerCase();
+        return this.state?.skills.find(s => s.name.toLowerCase() === n) ?? null;
+    }
+
+    getInventory(): InventoryItem[] {
+        return this.state?.inventory ?? [];
+    }
+
+    getEquipment(): InventoryItem[] {
+        return this.state?.equipment ?? [];
+    }
+
     onStateUpdate(listener: (s: BotWorldState) => void): () => void {
         this.listeners.add(listener);
         return () => this.listeners.delete(listener);
@@ -90,7 +104,36 @@ export class FakeSdk {
     sendAcceptTrade() { return this.record('sendAcceptTrade'); }
     sendDeclineTrade() { return this.record('sendDeclineTrade'); }
     sendCountDialog(value: number) { return this.record('sendCountDialog', value); }
+    sendInteractNpc(npcIndex: number, option = 1) { return this.record('sendInteractNpc', npcIndex, option); }
+    sendInteractLoc(x: number, z: number, locId: number, option = 1) { return this.record('sendInteractLoc', x, z, locId, option); }
+    sendCloseModal() { return this.record('sendCloseModal'); }
+    sendUseItemOnItem(sourceSlot: number, targetSlot: number) { return this.record('sendUseItemOnItem', sourceSlot, targetSlot); }
     sendWalk(x: number, z: number, running = true) { return this.record('sendWalk', x, z, running); }
+
+    // Chat: pushChat stands in for lines arriving from the server; getNewChat reads them
+    // with the SDK's cursor semantics; sends report the SDK's say/PM result shape.
+    private chat: GameMessage[] = [];
+    private chatCursor = 0;
+
+    pushChat(msg: Partial<GameMessage> & { text: string }): GameMessage {
+        const m: GameMessage = { type: 2, sender: '', tick: this.state?.tick ?? 0, fromSelf: false, ...msg };
+        this.chat.push(m);
+        return m;
+    }
+
+    getNewChat(opts: { types?: readonly number[]; includeSelf?: boolean } = {}): GameMessage[] {
+        const types = new Set(opts.types ?? PLAYER_CHAT_TYPES);
+        const fresh = this.chat.slice(this.chatCursor);
+        this.chatCursor = this.chat.length;
+        return fresh.filter(m => types.has(m.type) && (opts.includeSelf || !m.fromSelf));
+    }
+
+    private chatResult(r: Promise<ActionResult>, text: string): Promise<ActionResult> {
+        return r.then(res => ({ ...res, data: { sent: true, truncated: false, filtered: false, finalText: text } }));
+    }
+
+    sendSay(message: string) { return this.chatResult(this.record('sendSay', message), message); }
+    sendPrivateMessage(targetName: string, message: string) { return this.chatResult(this.record('sendPrivateMessage', targetName, message), message); }
 }
 
 /** Let queued promise callbacks run. */

@@ -380,6 +380,16 @@ export interface LogoutResult {
 const CANT_LOGOUT = /can't log out/i;
 
 /**
+ * Default wait for a logout to complete. A logout normally leaves the world in
+ * the click's tick, but the engine removes a player only once its engine queue
+ * is empty (World.ts processLogouts), running one queued script per tick until
+ * then, so a chain of queued level-ups (one per level a single xp drop crossed;
+ * 40 or more after a wine firing) keeps the account in the world that many
+ * ticks longer.
+ */
+const LOGOUT_WAIT_TICKS = 60;
+
+/**
  * Log out with the logout button, verified. Waits out the post-combat window
  * first; if the server still refuses, waits the remaining ticks and retries
  * once. Verification: no in-game tick after the click, and the lite child
@@ -403,7 +413,7 @@ export async function logoutClean(session: Session, opts: { timeoutMs?: number }
     for (let attempt = 0; attempt < 2; attempt++) {
         const clickTick = sdk.getState()?.tick ?? -1;
         void sdk.sendClickComponent(LOGOUT_BUTTON);
-        const out = await waitLoggedOutSignal(session, opts.timeoutMs ?? Math.max(5_000, 15 * tickMs()), clickTick);
+        const out = await waitLoggedOutSignal(session, opts.timeoutMs ?? Math.max(5_000, LOGOUT_WAIT_TICKS * tickMs()), clickTick);
         if (out === 'refused' && attempt === 0) {
             await waitUntil(sdk, () => false, { maxTicks: COMBAT_LOGOUT_TICKS + 1 });
             continue;
@@ -483,6 +493,44 @@ export async function login(session: Session, opts: { timeoutMs?: number; attemp
             throw new Error(`${session.name}: login failed after ${attempt} attempt(s) (${outcome}, exit ${session.childExit})`);
         }
         await sleep(backoffMs(attempt));
+    }
+}
+
+export interface RelogResult {
+    logout: LogoutResult;
+    /**
+     * Tick of the new session's first in-world state. The client's tick counter
+     * restarts with the launch and counts the ticks the account has been in the
+     * world, so this is also the in-world ticks the login cost before the state
+     * was visible.
+     */
+    loginTick: number;
+    loginWallMs: number;
+    attempts: number;
+}
+
+/**
+ * Clean logout, `offlineMs` of wall time (no in-world ticks pass while logged
+ * out; a little of it spares the login a retry while the old session's save
+ * flushes), and a fresh login. A relog re-arms the login timers (wine's
+ * fermentation among them). It does not skip queued level-up pages: the
+ * logout runs them out first, one per in-world tick (LOGOUT_WAIT_TICKS).
+ */
+export async function relog(session: Session, opts: { offlineMs?: number; loginTimeoutMs?: number } = {}): Promise<RelogResult> {
+    const logout = await logoutClean(session);
+    if (!logout.ok) throw new Error(`${session.name}: logout failed: ${logout.reason}`);
+    if (opts.offlineMs ?? 2_000) await sleep(opts.offlineMs ?? 2_000);
+    const before = Date.now();
+    let first: number | null = null;
+    const unsub = session.sdk.onStateUpdate(st => {
+        // Only states from the relaunched client count; it starts after `before`.
+        if (first === null && session.launchedAt >= before && st.inGame && (st.player?.worldX ?? 0) > 0) first = st.tick;
+    });
+    try {
+        const r = await login(session, { timeoutMs: opts.loginTimeoutMs });
+        return { logout, loginTick: first ?? session.sdk.getState()?.tick ?? 0, loginWallMs: r.wallMs, attempts: r.attempts };
+    } finally {
+        unsub();
     }
 }
 
