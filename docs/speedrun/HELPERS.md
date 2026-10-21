@@ -21,7 +21,7 @@ The speedrun's scored account (`www_cairn_md`, displayed as 'Www Cairn Md') is r
 | [woodcutter](helpers/woodcutter.md) | Magic logs and lower tiers (Firemaking) | cairn_h10-h14 | cairn://p/rs/44 |
 | [bars](helpers/bars.md) | Mithril and adamant bars (Smithing) | cairn_h20-h24 | cairn://p/rs/45 |
 | [essence](helpers/essence.md) | Rune/pure essence (Runecraft) | cairn_h30-h34 | cairn://p/rs/46 |
-| [wine](helpers/wine.md) | Grapes, jugs of water, unfermented wine (Cooking) | cairn_h40-h49 | cairn://p/rs/47 |
+| [grapes, jugs, wine](helpers/wine.md) | Grapes (guild, Phoenix hideout, goblins), jugs of water, noted unfermented wine (Cooking) | cairn_h40-h49 | cairn://p/rs/47. Three roles; `wine` is the Cooking-35 maker and giver. |
 | [bones](helpers/bones.md) | Dragon bones or the best Prayer xp per helper-hour | cairn_h50-h54 | cairn://p/rs/48 |
 | [mule](helpers/mule.md) | Consolidates stock, serves trades to the scored account | cairn_mule1, cairn_mule2 (stand-in receiver cairn_h05) | cairn://p/rs/49 |
 | [coins / buyer](helpers/coins.md) | Coins; Grand Exchange and shop purchases | cairn_h60-h64 | cairn://p/rs/50 |
