@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { FakeSdk } from '../lib/fake-sdk';
-import { flush } from '../lib/fake-sdk';
+import { FakeSdk, flush } from '../lib/fake-sdk';
 import { meterDispatch, TickWindow, USER_EVENTS_PER_TICK } from './budget';
 
 describe('TickWindow', () => {

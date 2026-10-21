@@ -137,16 +137,16 @@ describe('runSteps boundaries', () => {
     });
 
     test('a failing precondition waits exactly one tick, then is checked again', async () => {
-        const { session } = manualSession(10);
+        const { session, sdk } = manualSession(10);
         const log = TickLog.memory('t');
         const seen: number[] = [];
         const steps = [
-            step('a', { run: async ({ sdk }) => { fake(sdk).tick(); } }),
+            step('a', { run: async () => { sdk.tick(); } }),
             step('b', {
                 preconditions: s => {
                     seen.push(s.tick);
                     if (s.tick >= 12) return true;
-                    setTimeout(() => session.sdk.getState() && (session.sdk as unknown as FakeSdk).tick(), 1);
+                    setTimeout(() => sdk.tick(), 1);
                     return 'door not open yet';
                 },
             }),
@@ -195,7 +195,7 @@ describe('runSteps boundaries', () => {
             step('a', {
                 run: async ({ sdk }) => {
                     await Promise.all([1, 2, 3, 4, 5].map(i => fake(sdk).sendBankDeposit(i, 1)));
-                    setTimeout(() => sdk.getState() && fake(sdk).tick(), 1);
+                    setTimeout(() => fake(sdk).tick(), 1);
                 },
             }),
             step('b', { run: async ({ sdk }) => { bSawTick = sdk.getState()!.tick; } }),
