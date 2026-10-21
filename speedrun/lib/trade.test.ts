@@ -232,9 +232,9 @@ describe('trade completion race: cairn_h30 gives cairn_h71 a talisman and 200 no
             frame(4, toH71({ screen: 'confirm', myOffer: [offer[1]!] }), []),
             frame(5, toH71({ screen: 'confirm', myOffer: [offer[1]!] }), []),
             frame(6, toH71({ screen: 'confirm', myOffer: [offer[1]!] }), []), // still open: decline again
-            said(frame(7, null, []), stale), // the browser's local close
-            said(frame(8, null, []), stale),
-            said(frame(9, null, kit), stale), // the server's refund
+            frame(7, null, []), // the browser's local close
+            frame(8, null, []),
+            frame(9, null, kit), // the server's refund
         ].map(f => said(f, stale)));
         expect(ds.map(d => d.action)).toEqual(['burst', 'accept', 'decline', 'wait', 'wait', 'decline', 'wait', 'wait', 'closed']);
         expect(ds[8]).toMatchObject({ reason: 'my confirm offer is not what was planned' });
