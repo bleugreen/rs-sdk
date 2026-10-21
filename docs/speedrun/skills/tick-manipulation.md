@@ -27,8 +27,9 @@ Use the **knife-on-logs starter**. On the tick after each roll, send knife-on-lo
 the next roll to 3 ticks after the last one (read: `cut_logs.rs2:83-85`). In steady state it
 consumes nothing: the re-click closes the menu and clears the queued fletch before it
 runs (read: `Player.ts:817-820`). Measured end inventories kept all 10 logs over 150
-willow logs, 150 fly catches, 80 lobsters and 60 ores. It needs a knife, one normal log, a members world (the
-demo is one, `fly.toml:23`) and Fletching 1. The fletch-menu path is **tested** (section 7).
+willow logs, 150 fly catches, 80 lobsters and 60 ores. It needs a knife, one normal log,
+a members world (the demo is one, `fly.toml:23`) and Fletching 1. The fletch-menu path is
+**tested** (section 7).
 
 Eating food is a menu-free alternative that writes the same clock (`consume.rs2:129-131`).
 It costs one food bite per cycle, though, and its relative `+3` carries a late packet
@@ -159,9 +160,10 @@ lock is a failed roll or a cycle that did not roll.
 The willow runs only count with the bot's combat stats raised (`tickmanip-cycle.ts` sets
 hitpoints, attack, strength and defence to 70). Without that, an NPC caster beside the
 Draynor willows attacked the level-3 lab bot ("You feel weakened",
-`npc_combat_magic.rs2:136`; most likely a dark wizard, inferred) and killed it within about
-40 ticks ("Oh dear you are dead!", respawn at 3221,3217) in all four early knife runs. The eat runs hid this because every bite
-heals. Earlier 100 ms willow runs are left out for the same reason.
+`npc_combat_magic.rs2:136`; most likely a dark wizard, inferred) and killed it within
+about 40 ticks ("Oh dear you are dead!", respawn at 3221,3217) in all four early knife
+runs. The eat runs hid this because every bite heals. Earlier 100 ms willow runs are left
+out for the same reason.
 
 Mining, `tickmanip-mine.ts`, rs/5's south-of-zoo cluster (mining.md section 4); "ticks per
 ore" is from the sixth ore on:
@@ -230,8 +232,8 @@ this (`resync` in `tickmanip-cycle.ts`, `SLIP` in `tickmanip-mine.ts`).
 
 - **Supplies (knife):** knife and one normal log (2 slots) plus spares. A slipped cycle
   lets the fletch run and turns one log into 15 arrow shafts (Fletching xp, one stacking
-  slot). Measured log use: 0 per 150 fly catches, 80 lobsters and 60 ores at 300 ms; 6 per
-  100 fly catches at 100 ms. Carry about 5 spare logs (inferred).
+  slot). Measured log use: 0 per 150 willow logs, 150 fly catches, 80 lobsters and 60 ores
+  at 300 ms; 6 per 100 fly catches at 100 ms. Carry about 5 spare logs (inferred).
 - **Supplies (eat):** one bite per cycle. Food does not stack. Cakes give 3 bites per slot
   (`consume.rs2:78-83`), pies and pizzas 2. 26 cakes last 78 cycles, about 234 ticks
   (inferred), so the eat starter needs constant restocking. It is not a sustained method.
