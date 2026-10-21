@@ -292,6 +292,34 @@ point (`combat.rs2`, `style_magic_normal`). The spell attack delay is 5 ticks
 
 ## 5. Alternatives considered
 
+- **Package B with the ladder stopped at 51** (the Ardougne teleport's gate, needed for Tree
+  Gnome Village's maze leg). Magic training falls from about 245 to about 195 ticks
+  (section 1), but three things come back. The warlord is fought with Fire Bolt: 165 ticks
+  against Fire Blast's 133 (measured, rs/56, 6 and 2 runs). The arena needs a sip for Fire
+  Wave at base 74 and Charge needs another, about 6 ticks with 2-3 doses. And the black demon,
+  met at 58 instead of 64, cannot use Fire Blast; at 64 it could, which by the warlord's ratio
+  would save about 30 ticks (inferred; the demon was only measured on Fire Bolt). Net: 51 wins
+  by about 10-15 ticks if Fire Blast does not speed up the demon, and loses by about 15 if it
+  does. That is inside the error, so **59 is recommended**: it removes the magic potion
+  (Herblore 76 or the GE, no shop sells it) from the critical path, and it is the order rs/3
+  and rs/56 already plan (`pre_mm_fights.md` section 5).
+- **Boosting the teleport gate instead** (the Ardougne teleport checks `stat()`, so base 47 +
+  a magic potion casts it, read): it saves about 8 casts (24 ticks) on the 51 plan, but every
+  teleport before the warlord lifts base past 51 needs a fresh boost. Not worth the sips.
+- **Interleaving** (`interleaving.md` section 8, the absorbable-fractions table). Enchants fit
+  only inside pickpocket stuns, about 2 per stun. On Package B **none of the 60 enchants can
+  go there**: all of them come before Tree Gnome Village, and Thieving is trained only after
+  Fight Arena, whose 2,175 Thieving is worth most while Thieving is low (rs/3 README section
+  4). **Charge 80 -> 99 (about 33 standalone ticks) is absorbable** into any gathering session
+  after the arena: it is an IF_BUTTON, needs no re-click, and landed 4.73 casts per tick during
+  Woodcutting (measured, 300 ms). Woodcutting fell from 11.1 to 9.8 base per tick while it ran
+  (measured), about 4 Woodcutting ticks over the ~34 ticks of Charge. interleaving.md rates
+  Charge's 19 level-ups harmless; that is unmeasured for Charge itself. So about 30 of Magic's
+  ~245 ticks can be absorbed, and the ~210 of Wind Strike and enchanting before Tree Gnome
+  Village cannot (inferred).
+
+The items below were costed for the earlier route (no Magic from the pre-MM fights).
+
 - **Mage Arena at an unboosted 75 (the previous recommendation, superseded by the boosted
   route).** From 57: diamond to 68 (38 casts), dragonstone to 75 (38 casts), about 2 bank visits
   and the first withdraw. That is about 240 ticks. The fight's about 3,000 base takes 75 (7,549
@@ -376,6 +404,31 @@ point (`combat.rs2`, `style_magic_normal`). The spell attack delay is 5 ticks
 Counts are the casts `magic-route.ts` planned and completed. Add a spare inventory per tier only
 if the bank-slot trick above is used (the spares come back).
 
+**Package B route (on route): enchant 1 -> 59 before Tree Gnome Village, fights by spell, no
+potions needed** (counts inferred from the cast plan in section 1 and the read rune costs)
+
+| Item | Quantity | Used for | Where helpers get it |
+|---|---|---|---|
+| Air rune, mind rune | 4 each | Wind Strike 1 -> 7 | Aubury, Varrock; Magic Guild shop |
+| Staff of water | 1 | removes water runes from Lvl-1 Enchant | Zaff, Varrock; Magic Guild |
+| Sapphire / emerald / ruby / diamond ring | 12 / 27 / 16 / 5 | 7 -> 27 -> 49 -> 57 -> 59 | helper Crafting 20 / 27 / 34 / 43; GE |
+| Cosmic rune | 60 | 1 per enchant | GE, or helper Runecraft at the cosmic altar |
+| Air rune | 81 | emerald (3 per cast) | rune shops |
+| Fire rune | 80 | ruby (5 per cast) | rune shops |
+| Earth rune | 50 | diamond (10 per cast) | rune shops |
+| Staff of fire, amulet of magic | 1 each | the pre-MM fights, Kolodion and Charge (fire runes from the staff) | Zaff; Magic Guild; GE |
+| Pre-MM fight runes | **about 200 chaos + 600 air** for the warlord and demon on Fire Bolt, **about 40 death + 160 air** for Fight Arena on Fire Blast | rs/3 `pre_mm_fights.md` section 4 (inferred there from cast counts). With the warlord on Fire Blast at 59, his share becomes death + air (1 death, 4 air per cast, read), about 30 death + 120 air in place of about 30 chaos + 90 air (inferred from 133 ticks at a 5-tick spell delay) | Magic Guild; GE |
+| Kolodion | about 70 blood + 400 air | Fire Wave, with the staff of fire (`mage_arena.md`) | as above |
+| Charge | about 490 blood + 490 air | 156-163 casts from base 80-81 (3 of each per cast; fire from the staff) | Magic Guild (blood, 1,000 stock); rune shops |
+| Magic potion | **1, insurance only** | a sip for Charge if Kolodion pays under ~2,436 base (section 1) | helper Herblore 76 or the GE (no shop) |
+
+One trade covers the enchant ladder (about 6 stacks, rings noted), before Plague City. The fight
+runes, staff and amulet ride the helper trade before Tree Gnome Village that also carries the 11
+dragon bones and the prayer potions (rs/3 `pre_mm_fights.md` section 4). The arena and Charge
+runes go in the Mage Arena trade.
+
+The lists below are for the earlier route.
+
 **From level 1, Mage Arena at 80**
 
 | Item | Quantity | Used for | Where helpers get it |
@@ -440,10 +493,23 @@ with 4 rune slots), 5 from 57 (26 per inventory).
   100 ms). If a fight falls short, one or two dragonstone casts, or a sip and a Charge at base
   76 later, close the gap. The fight's xp is mostly per cast (42.5 base each), and a less
   accurate fight casts more, so a short yield is unlikely (inferred).
-- **Magic potion supply.** Helper Herblore 76 (or the GE) is the only source. The Herblore plan
-  should confirm it reaches 76 before the scored account's arena trip. Without it, the mind
-  bomb (+3, shops) gives Fire Wave at base 72, about 5 more dragonstone casts (measured gate,
-  inferred cost).
+- **Magic potion supply.** On Package B it is insurance only (one potion, for Charge after a
+  low-yield fight). Helper Herblore 76 (or the GE) is the only source. Without it, the mind bomb
+  (+3, shops) covers the same case: base 79 + 3 = 82 meets Charge's 80 (read gate; inferred
+  use).
+- **Package B timeline inputs that were not measured** (section 1): the warlord's and Fight
+  Arena's Magic yield on Fire Blast (only Fire Bolt's yields were logged, and Fight Arena's
+  ~1,540 is inferred), the number of teleports before the arena (~600 base assumed), and the
+  Kolodion fight's length at base 76-77 (inferred 315-340 between the base-71 and base-80
+  measurements). None can move the arena level below 76 unless the fights pay ~500 base less
+  than assumed.
+- **The pre-MM fights' rune counts look generous.** `pre_mm_fights.md` quotes Fire Bolt at
+  55-114 casts per fight, but a 165-tick fight at the 5-tick spell attack delay
+  (`player_magic.rs2:188`) allows at most about 33 casts. The supply list above keeps rs/3's
+  figures as an upper bound; the real count belongs in rs/3's document.
+- **rs/80's timeline.** rs/80 (finalising rs/3's README) plans the arena at about base 76 with
+  no potion for Fire Wave and one potion for Charge. This document finds Charge needs no
+  potion for any yield measured at base 71; reconcile once rs/80 lands.
 - **Whether the decay phase can be steered.** The restore timer is aligned to login
   (`login.rs2:36`). A sip right after a decay step holds a full 100 ticks; the measured fights
   needed 2 re-sips. Logging in so that a decay step falls just before the fight would save at
@@ -459,6 +525,6 @@ with 4 rune slots), 5 from 57 (26 per inventory).
   dropped while delayed. That is for the packet-budget interleaving issue (rs/38) to measure.
   Most user-event handlers (`OpHeldT`, `OpLoc`, `InvButton`) refuse while delayed, so this
   likely needs IF_BUTTON-driven actions.
-- **Which on-route quests are done before Magic training.** The Grand Tree wants the Varrock and
-  Ardougne teleports (Magic 25 and 51) for its fastest legs, so some enchanting may come first
-  (section 3). The README ordering should decide.
+- **Which on-route quests are done before Magic training.** Settled by Package B: all the
+  enchanting (to 59) comes before Plague City's teleport legs and Tree Gnome Village, and
+  Charge after the Mage Arena (section 1).
