@@ -94,7 +94,7 @@ await runScript(async ({ bot, sdk }) => {
                 continue;
             }
             const k = sdk.findNearbyNpc(/Koschei/);
-            if (k && !p.isInCombat && L.tick(sdk) % 5 === 0) await bot.attack(k);
+            if (k && !p.combat.inCombat && L.tick(sdk) % 5 === 0) await bot.attack(k);
             await sdk.waitForStateUpdate();
         }
         Object.assign(out, {
