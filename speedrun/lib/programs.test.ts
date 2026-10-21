@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { ActionResult } from '../../sdk/types';
 import { baseState, FakeSdk, flush, type SentAction } from './fake-sdk';
-import { awaitProgram, probeInPage, ProgramError, programCounters, type ProgramStatus, runProgram, startProgram } from './programs';
+import { awaitProgram, marksSince, probeInPage, ProgramError, programCounters, type ProgramStatus, runProgram, startProgram } from './programs';
 
 /** A FakeSdk with the relay the page answers: records program actions, replies like ProgramRuntime.command. */
 class PageSdk extends FakeSdk {
@@ -40,7 +40,7 @@ describe('speedrun programs', () => {
     });
 
     test('marksSince returns the stamps a poller has not seen, and what it lost', () => {
-        const at = (count: number, ticks: number[]) => baseState().program && ({ ...baseState().program, marks: { successes: { count, ticks } } } as ProgramStatus);
+        const at = (count: number, ticks: number[]) => status({ marks: { successes: { count, ticks } } });
         expect(marksSince(null, 'successes', 0)).toEqual({ count: 0, ticks: [], missed: 0 });
         let r = marksSince(at(2, [103, 106]), 'successes', 0);
         expect(r).toEqual({ count: 2, ticks: [103, 106], missed: 0 });

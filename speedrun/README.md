@@ -402,7 +402,8 @@ Drives the browser page's in-page tick programs (`server/webclient/src/bot/progr
 design in `docs/speedrun/tick-programs.md`) over the ordinary `sdk_action` relay:
 `startProgram(sdk, name, params)`, `awaitProgram(sdk, runId, {onProgress})` (resolves on done,
 stopped or replaced, rejects on a fault or a page that stops publishing), `runProgram`,
-`programCounters`, and `probeInPage` (the host gate's probe over the direct path). Programs:
+`programCounters`, `marksSince` (the per-event tick stamps a poller has not seen yet, e.g.
+`knife-cycle`'s `marks.successes`), and `probeInPage` (the host gate's probe over the direct path). Programs:
 `probe`, `knife-cycle`, `knife-mine`, `pickpocket`, `agility`.
 
 **`knife-cycle` with bones (S07).** Knife Woodcutting that buries a bone every 3-tick cycle:
