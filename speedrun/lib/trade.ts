@@ -129,7 +129,7 @@ export type ReceiverAction =
     | { action: 'closed' };
 
 export function newReceiverCtx(partner: string, inventory: readonly InventoryItem[], want?: WantSpec[]): ReceiverCtx {
-    return { partner, ...(want ? { want } : {}), invBefore: countInventoryById(inventory), snapshot: null, confirmOffer: null, lastAcceptTick: -1, sawOpen: false, closedSince: null };
+    return { partner, ...(want ? { want } : {}), invBefore: countInventoryById([...inventory]), snapshot: null, confirmOffer: null, lastAcceptTick: -1, sawOpen: false, closedSince: null };
 }
 
 /**
@@ -213,7 +213,7 @@ export type GiverAction =
     | { action: 'closed' };
 
 export function newGiverCtx(partner: string, inventory: readonly InventoryItem[], plan: OfferEntry[], expectTheirs?: WantSpec[]): GiverCtx {
-    return { partner, plan, ...(expectTheirs ? { expectTheirs } : {}), invBefore: countInventoryById(inventory), burstTick: null, lastAcceptTick: -1, confirmAccepted: false, sawOpen: false, closedSince: null };
+    return { partner, plan, ...(expectTheirs ? { expectTheirs } : {}), invBefore: countInventoryById([...inventory]), burstTick: null, lastAcceptTick: -1, confirmAccepted: false, sawOpen: false, closedSince: null };
 }
 
 function theirsAcceptable(theirs: readonly TradeItem[], expect: WantSpec[] | undefined): boolean {
