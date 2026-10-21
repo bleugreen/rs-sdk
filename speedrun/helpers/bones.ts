@@ -63,7 +63,9 @@ const BRASS_KEY_SPAWN: Tile = { x: 3131, z: 9862 };
 const BRASS_KEY = /^brass key$/i;
 const inBrassHouse = (p: Tile) => inBox({ x1: 3113, z1: 3450, x2: 3117, z2: 3453 }, p.x, p.z);
 
-const COW_FIELD: Box = { x1: 3242, z1: 3255, x2: 3265, z2: 3298 };
+/** Lumbridge cows east of the river: they never hurt, so any account can train combat here. */
+export const COW_FIELD: Box = { x1: 3242, z1: 3255, x2: 3265, z2: 3298 };
+export const COW_CENTRE: Tile = { x: 3253, z: 3282 };
 const CHICKEN_COOP: Box = { x1: 3222, z1: 3293, x2: 3238, z2: 3303 };
 const DRAYNOR_NET: Tile = { x: 3087, z: 3229 };
 const GERRANT: Tile = { x: 3014, z: 3224 };
@@ -1351,7 +1353,7 @@ export class Run {
         // 2. Train on cows (they never hurt).
         if (!this.trainingDone()) {
             this.phase('train');
-            await this.surfaceFight({ npc: /^cow$/i, area: COW_FIELD, centre: { x: 3253, z: 3282 }, loot: null });
+            await this.surfaceFight({ npc: /^cow$/i, area: COW_FIELD, centre: COW_CENTRE, loot: null });
             return;
         }
 
