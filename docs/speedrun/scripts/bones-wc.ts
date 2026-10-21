@@ -66,7 +66,7 @@ const CYCLE = KNIFE ? 3 : 4;
 // for a fletched shafts stack or a level-up's extra log.
 const LOAD = Number(kv('load', KNIFE ? '23' : '25'));
 const TRADE = kv('trade', 'on') === 'on';
-const PREREQUEST = Number(kv('prerequest', '4'));
+const PREREQUEST = Number(kv('prerequest', '2'));
 const TAG = `${TREE}-${MODE}-L${LEVEL}${kv('tag', '') ? '-' + kv('tag', '') : ''}`;
 const LOG = kv('log', `${process.env.LAB_LOG ?? process.env.TMPDIR ?? '/tmp'}/bones-wc-${TAG}.log`);
 writeFileSync(LOG, `# bones-wc ${argv.join(' ')} host=${hostname()} load=${loadavg().map(x => x.toFixed(1)).join('/')} tickrate=${process.env.NODE_TICKRATE} at=${new Date().toISOString()}\n`);
@@ -262,12 +262,6 @@ await new Promise<void>(resolve => {
         acted = t;
 
         if (KNIFE && items(s, KNIFE_LOG).length === 0) { logsGiven++; fire(t, 'give logs (slip stand-in)', sdk.sendSay('::give logs 1')); }
-        if (BURY && TRADE && !helperRequest && items(s, BONES).length <= PREREQUEST) {
-            // The helper asks to trade ahead of time; the request waits until the scored account clicks.
-            helperRequest = giveTrade(helper.sdk, scored.name, [{ item: BONES, n: 'all' }], { maxTicks: 80, openTimeoutMs: 60_000 })
-                .then(g => log(`helper give: ${g.ok ? 'ok' : g.reason} ${g.ticks} ticks, ${g.sent} events`));
-            log(`T${t} helper requests a trade`);
-        }
 
         if (rolled) { R = t; sinceXp = 0; }
         if (R === null) {
@@ -281,6 +275,15 @@ await new Promise<void>(resolve => {
         // A roll every cycle at oak 60+ (100%); at willow allow honest misses before calling the lock lost.
         if (sinceXp > (TREE === 'oak' && LEVEL >= 60 ? 1 : 8)) { resyncs++; log(`T${t} resync (no xp for ${sinceXp} cycles)`); R = null; current = null; return; }
         const p = t - R;
+        // The helper asks to trade ahead of time, timed to land on the roll tick: trade.rs2
+        // [opplayer4] refuses a target that is busy (delayed or in a modal), and a bury keeps the
+        // scored account delayed on the tick it lands and the next. The request then waits
+        // (%tradestatus = received) until the scored account's own trade click opens both screens.
+        if (BURY && TRADE && !helperRequest && items(s, BONES).length <= PREREQUEST && p === CYCLE - 1) {
+            helperRequest = giveTrade(helper.sdk, scored.name, [{ item: BONES, n: 'all' }], { maxTicks: 80, openTimeoutMs: 60_000 })
+                .then(g => log(`helper give: ${g.ok ? 'ok' : g.reason} ${g.ticks} ticks, ${g.sent} events`));
+            log(`T${t} helper requests a trade`);
+        }
         if (p === 0) {
             if (BURY && TRADE && items(s, BONES).length === 0 && trades.length < 99) { void topUp(t, rollTicks[rollTicks.length - 1] ?? -1); return; }
             if (!phase0(s)) { allDown++; log(`T${t} all trees down`); R = null; }
