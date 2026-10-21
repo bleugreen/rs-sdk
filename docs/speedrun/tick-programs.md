@@ -64,7 +64,7 @@ the host gate can select with the same parameters.
 |---|---|---|---|
 | `probe` | `speedrun/lib/hostgate.ts` `probeOnTime` | `trials`, `maxWait` | n/a |
 | `knife-mine` | `tickmanip-mine.ts` | `steps` (stand>rock pairs), `respawn`, `ores`, `starter: 'knife' \| 'none'` | `starter: 'none'` (plain and adjacent-rock transitions) |
-| `knife-cycle` | `tickmanip-cycle.ts` | `method` (`fly`, `willow`, `oak`, `tree`, `cage`, or an object), `rolls` / `untilLevel` / `maxTicks`, `reanchor` | `technique: 'plain'` |
+| `knife-cycle` | `tickmanip-cycle.ts`; `bury` from `bones-wc.ts --mode=knifebury` | `method` (`fly`, `willow`, `oak`, `tree`, `cage`, or an object), `rolls` / `untilLevel` / `maxTicks`, `reanchor`, `trees` (the loc tiles reached from the standing tile), `bury` (oak and willow) | `technique: 'plain'` (no bury) |
 | `pickpocket` | `thieving-pickpocket.ts` (`--eat=auto`) | `npc`, `rolls`, `food`, `eatBelow`, `forcedBelow` | n/a: it clicks every tick |
 | `agility` | `agility-course.ts` | `course` (`gnome`, `barbarian`, `wilderness`, or an object; `agility-courses.ts`), `laps` | `technique: 'plain'` waits `settleTicks` after each obstacle |
 
@@ -78,6 +78,13 @@ Notes that differ from the lite scripts:
   so the program treats a log itself as the fall (a normal tree always falls on its
   first log) and avoids that tree for a few ticks. It also avoids for 100 ticks a tree
   that yields nothing for 30 (often one out of reach).
+- **Bury inside the knife cycle** (`bury`, the S07 bones): the roll label carries knife,
+  button, drop and a Bury, and the tree click goes alone two labels later, landing on the
+  roll tick itself. A bone with no tree list loses the lock whenever the nearest live tree
+  needs a walk, so the variant goes with `trees`. Schedule, rules and measurements are in
+  `skills/woodcutting.md` section 9.
+- A non-depleting tree that falls is a switch inside the lock (`switches`), not a resync.
+  With every listed tree down, no starter goes out, because its fletch would use the knife's log.
 - Mining plans each transition on the label that shows the previous roll's xp (closed
   loop, lead 0), so a late roll costs only its late ticks. The plain fallback's
   adjacent-rock trick needs walking distances, which the page can't compute; steps
@@ -125,6 +132,8 @@ rs/82's figure (LAB.md); the lite column is from the skills docs.
 | Knife fly, Lumbridge, level 20 to 99, 690 catches | **4.26 ticks per catch over the span** (4.10 mean gap; 3:493 6:132 9:29), 68 level-ups, 10 spot moves | 4.16 | 4.28 | 3.2-7.5 |
 | Knife willow, rune axe, level 99, 150 logs | 4.83 over the span (4.60 mean gap; 3:80 4:9 6:32 7:2 9:10 12:1 15:2 16:1) | | 4.23 (3:85 4:8 6:25 7:2 8:2 9:7 12:2) | 2.5-5.6 |
 | Knife willow, 500 logs | 4.68 over the span (4.59 mean gap), 59 depletions | | | 2.3-3.0 |
+| Knife oak, WC 60, the three oaks from 2914,3494, 200 rolls x 2 (2026-10-21 10:52 PDT) | **3.201, 3.402** over the span, 20-31 tree falls switched in the lock | | rs/105: 3.18 (from 11.78 base xp per tick) | 2.5-3.3 |
+| Knife oak + bury (dragon bones), same, 200 rolls x 4 | **3.16-3.26** over the span, **0.329 bones per tick**, every bury sent landed | | rs/105: 0.298 including trades | 2.0-3.3 |
 | Knife normal trees, bronze axe, from Woodcutting 1, 150 logs | **7.24 ticks per log** over the span (6.80 mean gap) | | | 2.2-2.9 |
 | Normal trees, plain fallback, from level 1, 100 logs | 11.60 | | | 2.6 |
 | Knife normal trees, bronze axe, Woodcutting 64, 150 logs (the demo account's level) | **6.91** over the span (5.50 mean gap) | | | 1.6-2.8 |

@@ -239,6 +239,7 @@ against 8.44 at 60).
 | Rune axe | 1 | Best axe, usable from level 1 |
 | Knife | 1 | Only for the knife tick manipulation (tick-manipulation.md) |
 | Logs (normal) | 1 | Only for the knife tick manipulation; not consumed in steady state |
+| Dragon bones | 359 over S07, about 23 per top-up trade | Buried inside the knife cycle (section 9) |
 
 No food is needed at the recommended oak and Taverley willow tiles (no hostile spawns
 within 15 tiles). Bring food or combat levels only for the Draynor willows.
@@ -261,3 +262,61 @@ within 15 tiles). Bring food or combat levels only for the Draynor willows.
 - **Contention** with other players is inferred from the script, not measured.
 - **Levels 1-15** on normal trees are modelled with one walking tick per log (inferred).
   They are 14 ticks in total, so the error is a few ticks at most.
+
+## 9. Bones inside the knife cycle (in-page program)
+
+The run buries most of its dragon bones while chopping (S07; why and how many in
+`research/bones-placement.md` on rs/103's branch). The in-page program `knife-cycle` does it
+with the `bury` parameter (`server/webclient/src/bot/programs/knife-cycle.ts`; how a step script
+starts it in `speedrun/README.md`, `programs.ts`).
+
+**The schedule (read, bones-placement.md section 2; measured in-page).** On the label that
+shows roll R, the page sends knife on logs, button 8889, one log drop and a bone's Bury (4 of
+the 5 user events per tick). On R+2 it sends the tree click alone. On R+1 the knife sets the
+clock to R+3, then the bury clears the interaction and the queued fletch and delays the
+player through R+2 (`bury_bone.rs2`), so nothing may land on R+2. The click lands on R+3, where
+the first-click label finds the clock due and rolls at once (`woodcut.rs2:97-98`): the 3-tick
+lattice holds with one bone per roll. That click also closes a level-up page, so Woodcutting
+and Prayer level-ups cost no roll. With no bone in the pack the roll label sends the plain knife
+bundle (with the click), which rolls on the same R+3, so running out loses no label, and burying
+resumes when bones arrive. The variant is refused for fishing (the fly lock breaks, measured by
+rs/105) and for normal trees (each log re-bootstraps on the next tree).
+
+**Two things the variant needs.**
+
+- **Only the reachable trees (`trees`).** The program clicks the nearest live tree. Without a
+  list, when one of the three oaks falls the nearest live oak can need a walk. A walk never
+  completes in a bury cycle, because each roll label's bury (`p_stopaction`) cancels it, so
+  the account buries a bone every cycle and chops nothing until it creeps to the tree. Measured
+  without the list: 292 and 302 bones buried in 200 rolls, 0.28 and 0.27 bones per tick, 5.21
+  and 5.53 ticks per roll over the span. With the list, the account never left 2914,3494.
+- **A fall is a switch, not a lost lock.** A tree that falls (one log in 8 at 100% success)
+  leaves the clock with the player, so a live tree clicked by the roll tick takes the roll. The
+  program sends the cycle's click to a live tree. If the plain knife's click already went to the
+  fallen one, it re-clicks before the roll. Every tree down: the plain knife sends no starter
+  (a starter with no click leaves the fletching menu open, so the fletch completes and uses
+  the knife's log). A bury cycle still goes out, so bones are buried through the wait. Both
+  rules apply to the plain knife loop as well.
+
+**Measured** (local engine, `NODE_TICKRATE=300`, a visible Chrome tab on bgsrv-mac, load 2.0-3.3,
+2026-10-21 10:52-11:06 PDT, `tickprog-lab.sh` `oak` mode: WC 60 and Prayer 43 at the start, rune
+axe, the three oaks from 2914,3494; the in-page probe 60 of 60 on the next tick; 0 deferred
+packets, 0 skipped ticks in every run). Bones were topped up by a staff `::give` at 3 left, so
+the figures are the loop's own; the run's trades come on top.
+
+| 200 rolls each, in run order | Ticks per roll over the span | Gaps at 3 | Bones per tick | Tree falls switched | Resyncs |
+|---|---|---|---|---|---|
+| Knife | 3.201 | 191 of 199 | | 26 | 0 |
+| Knife + bury | 3.261 | 187 of 199 | **0.329** (215 sent, 215 buried) | 25 | 0 |
+| Knife | 3.402 | 187 of 198 | | 31 | 1 |
+| Knife + bury | 3.156 | 190 of 199 | **0.329** (208 of 208) | 20 | 0 |
+| Knife + bury (previous batch, same program apart from the all-down rule) | 3.261, 3.201 | 189, 189 of 199 | 0.329, 0.329 | 26, 22 | 0, 0 |
+
+The bury costs the loop nothing measurable: 3.21 ticks per roll against 3.30 for the plain
+knife at the same band, in the same tab. Each run had 42-43 Prayer and 19 Woodcutting
+level-ups. The lite figure (rs/105) was 0.298 bones per tick including its real trades. 5 ticks
+per 23-bone load (rs/105 section 3) would put the in-page loop at about **0.31 bones per tick
+with trades** (inferred, 23 bones in 23 x 3.21 + 5 ticks). Not measured in-page: the trade
+itself, which the program leaves to the step script (stop, `receiveFrom`, start). The restart
+re-anchors on observed xp, so it may cost a few ticks more than the lite script's bootstrap.
+The willow band is not measured in-page.
