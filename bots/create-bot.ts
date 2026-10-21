@@ -53,6 +53,9 @@ async function createBot(username?: string, serverOverride?: string, hideChat?: 
     // Copy template directory
     await cp(templateDir, botDir, { recursive: true });
     console.log(`Created bot directory: ${botDir}`);
+    // Only the owner reads the password (set before it is written); proxy.ts
+    // refuses to log in from a looser file.
+    await chmod(join(botDir, 'bot.env'), 0o600);
 
     // Generate random password
     const password = generateRandomString(12);
@@ -71,8 +74,6 @@ async function createBot(username?: string, serverOverride?: string, hideChat?: 
     }
 
     const envPath = join(botDir, 'bot.env');
-    // Only the owner reads the password; proxy.ts refuses to log in from a looser file.
-    await chmod(envPath, 0o600);
 
     // Override server if --local or --server= was passed
     if (serverOverride) {
