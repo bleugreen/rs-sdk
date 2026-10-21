@@ -303,6 +303,10 @@ level with and without the watcher) has not been measured yet.
 | Watchdog: client killed (relaunch and takeover) | about 1 |
 | Controller crashed, exit guard | 0 |
 
+The two wedged rows were measured at the earlier 10-tick stale default. At
+the current 17 they read about 17 and 27 (inferred: the threshold plus the same
+logout and takeover times); the killed-client row does not depend on it.
+
 | Measurement (`lab/measure-session.ts`) | Result |
 |---|---|
 | Logout click to not in world | **0 ticks** as the client sees it: the last in-world tick is the tick the click was sent in (3 of 3); the server applies the click while processing the next tick, and no state for that tick is published |
