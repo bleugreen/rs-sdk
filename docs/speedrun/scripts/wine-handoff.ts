@@ -36,6 +36,14 @@ const result = (name: string, data: unknown) => console.log(`RESULT ${name} ${JS
 const maker = await openSession(makerName);
 const M = ctxOf(maker);
 await prepare(M);
+// A grape camper may be upstairs in the Cooking Guild: climb down first.
+for (let i = 0; i < 4 && (maker.sdk.getState()?.player?.level ?? 0) > 0; i++) {
+    const level = maker.sdk.getState()!.player!.level;
+    const down = (await maker.sdk.scanNearbyLocs(10)).filter(l => /stair|ladder/i.test(l.name) && l.optionsWithIndex.some(o => /climb-down|climb down/i.test(o.text))).sort((a, b) => a.distance - b.distance)[0];
+    if (!down) throw new Error('maker: no way down');
+    await maker.bot.interactLoc(down, /climb-down|climb down/i);
+    await waitUntil(maker.sdk, s => (s.player?.level ?? 0) < level, { maxTicks: 20 });
+}
 await walkNear(M, VARROCK_WEST_BANK.x, VARROCK_WEST_BANK.z, 2);
 const made = await makeNotedWine(M, max);
 result('maker-made', { ...made, cooking: maker.sdk.getSkill('Cooking')?.baseLevel });
