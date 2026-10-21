@@ -150,8 +150,8 @@ same. Quests that do give Smithing, all marked off route there (read):
   | Cast | Smithing base per tick | Magic base per tick | Separate ticks for the same xp | Verdict |
   |---|---|---|---|---|
   | Gold, 27 casts + 4-tick bank (3.15 ticks/cast) | 7.1 | 16.8 | 7.1/47.2 + 16.8/26 = 0.80 | loses 20% |
-  | Runite, 3 casts per trip (about 4.3 ticks/cast) | 11.6 | 12.3 | 11.6/47.2 + 12.3/26 = 0.72 | loses 28% |
-  | Gold with goldsmith gauntlets (56.25 base) | 17.9 | 16.8 | 17.9/47.2 + 16.8/26 = 1.03 | a wash, and unavailable (below) |
+  | Runite, 3 casts per trip (9 + 4 ticks per 3 casts) | 11.5 | 12.2 | 11.5/47.2 + 12.2/26 = 0.71 | loses 29% |
+  | Gold with goldsmith gauntlets (56.25 base) | 17.9 | 16.8 | 17.9/47.2 + 16.8/26 = 1.02 | a wash, and unavailable (below) |
 
   **Goldsmith gauntlets are not tradeable** (`quest_crest.obj:95`, `tradeable=no`), and a dropped
   untradeable item is never revealed to another player (`Zone.ts:333`). A helper cannot hand them
@@ -195,8 +195,8 @@ same. Quests that do give Smithing, all marked off route there (read):
   next 25 bars into its own inventory (un-noted). A helper banking at the Varrock west booth (10
   tiles away) has roughly the scored account's own bank leg (about 19 ticks, measured) to do it,
   which fits (inferred). If it does not, alternate two helpers. The lab helper used `::give`.
-- **No food, no hostile NPCs, no depletion.** The anvil is indoors in Varrock with guards nearby
-  who do not aggro.
+- **No food, combat or depletion.** Nothing on the anvil tile changes; the only state is bars,
+  products and the hammer.
 - **The stock `smithAtAnvil`** stops after one item at 300 ms; use raw use-bar plus a make-5 click.
 
 ## 7. Helper supply list
@@ -205,7 +205,7 @@ Per 99 from level 1 (the measured route's plan, `smithing-trade.ts`; the model g
 
 | Item | Quantity | Where helpers get it |
 |---|---|---|
-| Hammer | 1 | General stores (1 coin) or the GE |
+| Hammer | 1 | Any general store, or the GE |
 | Bronze bar | 15 | GE, or smelt (copper + tin) |
 | Iron bar | 39 | GE, or smelt (50% failure without a ring of forging) |
 | Steel bar | 95 | GE, or smelt (iron ore + 2 coal, Smithing 30): 95 iron ore + 190 coal |
