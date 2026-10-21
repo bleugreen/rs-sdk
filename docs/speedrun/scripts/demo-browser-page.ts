@@ -25,7 +25,8 @@
 //
 //   bun docs/speedrun/scripts/demo-browser-page.ts frames --dir=DIR [--from=MS] [--to=MS]
 //     Where the time goes on the page's sockets between two epoch-ms marks: the interval
-//     between tick outputs arriving on the game socket, how long after a tick's output each
+//     between tick outputs arriving on the game socket (and the catch-up ticks: under 150 ms
+//     right after one over 350 ms), how long after a tick's output each
 //     game packet leaves, and for every gateway action the chain
 //       tick output in -> state out to the gateway -> action in from the gateway -> game packet out.
 //     Frame times are the browser's own (Chrome DevTools Network events), so they exclude
@@ -248,16 +249,21 @@ function frames() {
     const all: F[] = readFileSync(path, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l) as F).filter(f => f.t >= from && f.t <= to);
     const of = (s: string, d: string, k?: string) => all.filter(f => f.s === s && f.d === d && (k === undefined || f.k === k)).map(f => f.t);
 
-    // The engine flushes a tick's output once; a frame more than 100 ms after the previous
-    // one starts the next tick.
+    // A tick's output arrives within a few ms; a frame more than 20 ms after the previous one
+    // starts the next tick. (A wider grouping merges a late tick with the catch-up tick the demo
+    // sends right after it, and charges the gap to the page.)
     const ticks: number[] = [];
     let prev = -Infinity;
-    for (const t of of('game', 'in')) { if (t - prev > 100) ticks.push(t); prev = t; }
+    for (const t of of('game', 'in')) { if (t - prev > 20) ticks.push(t); prev = t; }
     const last = (xs: number[], t: number) => { let lo = 0, hi = xs.length - 1, r = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (xs[m]! <= t) { r = m; lo = m + 1; } else hi = m - 1; } return r < 0 ? NaN : xs[r]!; };
     const first = (xs: number[], t: number) => { let lo = 0, hi = xs.length - 1, r = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (xs[m]! >= t) { r = m; hi = m - 1; } else lo = m + 1; } return r < 0 ? NaN : xs[r]!; };
 
     console.log(`window ${new Date(from).toISOString()} - ${to === Number.MAX_SAFE_INTEGER ? 'end' : new Date(to).toISOString()}: ${all.length} frames`);
-    console.log(`tick output arrival interval ms: ${quantiles(ticks.slice(1).map((t, i) => t - ticks[i]!))}`);
+    const intervals = ticks.slice(1).map((t, i) => t - ticks[i]!);
+    // A catch-up: a tick under 150 ms after one that came over 350 ms late (rs/97's definition).
+    const catchUps = intervals.filter((v, i) => i > 0 && v < 150 && intervals[i - 1]! > 350).length;
+    const minutes = ticks.length > 1 ? (ticks[ticks.length - 1]! - ticks[0]!) / 60_000 : 0;
+    console.log(`tick output arrival interval ms: ${quantiles(intervals)}; catch-ups ${catchUps} in ${minutes.toFixed(1)} min`);
     const gameOut = of('game', 'out');
     console.log(`game packet out, ms after its tick's output arrived: ${quantiles(gameOut.map(t => t - last(ticks, t)).filter(Number.isFinite))}`);
 
