@@ -383,7 +383,14 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
             }
 
             const lost = anchor !== null && t - Math.max(anchor + method.r0 + 1, lastXpTick) > (windowOverride || lockWindow(method, lvl));
-            if (method.depletes && xpNow && (anchor !== null || awaitXpSince !== null)) {
+            // A non-depleting tree that fell is not a lost lock (header): the schedule's next click picks a live tree.
+            const switchTree = targetGone && !moved && !lost && anchor !== null && method.kind === 'loc' && !method.depletes;
+            if (switchTree) {
+                switches++;
+                ctx.count('switches');
+                ctx.log('tree gone: the next click goes to a live one');
+                current = null;
+            } else if (method.depletes && xpNow && (anchor !== null || awaitXpSince !== null)) {
                 // The target fell to the roll just seen (a normal tree always falls on its first
                 // log), though the state may list it for another tick: start the next one from
                 // this label with a starter bundle, like a bootstrap; its first swing rolls 2
@@ -403,6 +410,7 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
                 ctx.count('resyncs');
                 ctx.log(`resync (${why})`);
                 anchor = null;
+                clickDue = null;
                 awaitXpSince = null;
                 current = null;
                 currentTile = null;
@@ -447,6 +455,21 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
                 }
                 return;
             }
+            if (clickDue !== null && t > clickDue) {
+                // The label a bury cycle's click was due on was never seen (two ticks decoded in one
+                // pass), so the roll it was for is gone: click now and anchor on the next xp.
+                clickDue = null;
+                lateClicks++;
+                ctx.count('lateClicks');
+                ctx.log('bury click label skipped: re-click and anchor on xp');
+                anchor = null;
+                current = null;
+                if (click(ctx)) {
+                    awaitXpSince = t;
+                    breakAt(t);
+                }
+                return;
+            }
             let d = t - anchor - method.r0 - 1 - curPhase + anchorLead;
             if (d < 0) return;
             if (xpNow && d % 3 !== 0) {
@@ -456,6 +479,7 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
                 // that one roll instead of a drift back into phase.
                 anchor = t - method.r0 - 1 - curPhase + anchorLead;
                 d = 0;
+                clickDue = null;
                 ctx.count('phaseResyncs');
                 ctx.log('roll off phase: re-anchored on it');
             }
@@ -472,8 +496,22 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
                 starters++;
                 ctx.count('starters');
                 if (dropProducts) dropOne(ctx);
+                if (bonesRe && buryOne(ctx)) {
+                    // the bury delays the player through R+2, so the click goes out on R+2 to land on R+3
+                    clickDue = t + 2;
+                    return;
+                }
+                if (bonesRe) {
+                    noBoneCycles++;
+                    ctx.count('noBoneCycles');
+                }
                 if (!method.clickOnRoll) click(ctx);
-            } else if (k === 2 && method.clickOnRoll) {
+            } else if (clickDue === t || (k === 2 && method.clickOnRoll)) {
+                clickDue = null;
+                click(ctx);
+            } else if (switchTree && clickDue === null) {
+                // this cycle's click went to the tree that fell: a click on a live one that lands by the
+                // roll tick keeps the roll (a mid-cycle click keeps the pending clock)
                 click(ctx);
             }
         }
