@@ -1,5 +1,6 @@
-// Herb gatherer: kills chaos druids for herbs (irit is the line that matters), does Druidic
-// Ritual, identifies the herbs and makes unfinished potions at the bank, and reports.
+// Herb gatherer: kills chaos druids for herbs (the herb-table mix), does Druidic Ritual,
+// identifies the herbs and makes unfinished potions at the bank, buys and fills vials and buys
+// eyes of newt at Jatix's shop in Taverley, and reports.
 // Built on the bone collector's combat engine (bones.ts: training on cows, fishing for food,
 // fighting, looting, banking), pointed at a chaos-druid spot.
 //
@@ -12,12 +13,13 @@
 //                      Thunder in Taverley dungeon (two animated suits of armour guard its
 //                      door), Sanfew, Kaqemeex. Done when Herblore is above 1.
 //   3. herbs           farm the spot (bones.ts); after each bank visit, identify every herb
-//                      the level allows and mix irit (Herblore 45) and guam leaves with vials
-//                      of water into unfinished potions.
+//                      the level allows and mix the best herb on the `unf` list with vials of
+//                      water; from the Falador west bank, a Jatix trip once vials and eyes of
+//                      newt are wanted.
 // Options are the bone collector's (train, fish, eatAt, ...) plus `spot` (chaos_druids:
-// Edgeville dungeon, 11 spawns, Wilderness 1-3; chaos_druids_taverley: 6 spawns), `ritual`
-// (default true), `process` (default true), `guamUnf` (guam unfinished potions to make,
-// default 41). docs/speedrun/helpers/herbs.md has the sources and the measured rates.
+// Edgeville dungeon, 11 spawns, Wilderness 1-3; chaos_druids_taverley: 6 spawns), `ritual`,
+// `process`, `unf`, `supply`, `supplyBatch`, `eyes`. docs/speedrun/helpers/herbs.md has the
+// sources, the options and the measured rates.
 import type { InventoryItem, NearbyLoc } from '../../sdk/types';
 import type { BankSnapshot, Role, RoleContext } from './role';
 import { runStandalone } from './role';
