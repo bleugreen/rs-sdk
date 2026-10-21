@@ -18,9 +18,9 @@ ROLE_OPTIONS='{"mode":"full"}' bun speedrun/helpers/smelter.ts cairn_h20
 |---|---|---|
 | `mode` | `full`, `mine`, `smelt` | `full`: train Mining and Smithing, mine, smelt, bank bars. `mine`: train Mining only and bank ore and coal for someone else to smelt. `smelt`: smelt whatever ore is in this account's bank (handed over by trade), otherwise idle and re-read the bank every 100 ticks. |
 | `tier` | `auto`, `mithril`, `adamant` | Which bars to smelt. `auto` smelts adamantite when the account has Smithing 70 and the ore, else mithril. |
-| `site` | `auto`, `guild`, `west`, `rimmington`, `barbarian`, `dwarven` | Where to mine. `auto`: the west Falador mine below Mining 60 (Rimmington when it is camped), the Mining Guild from 60, the adamantite site once the account makes adamantite bars. `barbarian` is coal only (see the measurements before using it). |
-| `addy` | `dwarven`, `none` | Where an adamant-tier account (Mining 70, and Smithing 70 in `full` mode) mines adamantite. `none` keeps it in the guild. |
-| `combat` | the site's threshold + 2 | Combat level to reach on Lumbridge cows before an addy site with aggressive NPCs (31 for `dwarven`). |
+| `site` | `auto`, `guild`, `west`, `rimmington`, `barbarian`, `dwarven`, `alkharid` | Where to mine. `auto`: the west Falador mine below Mining 60 (Rimmington when it is camped), the Mining Guild from 60, the adamantite site once the account makes adamantite bars. `barbarian` is coal only (see the measurements before using it). |
+| `addy` | `dwarven`, `alkharid`, `none` | Where an adamant-tier account (Mining 70, and Smithing 70 in `full` mode) mines adamantite. `none` keeps it in the guild. Put each adamantite account on its own site. |
+| `combat` | the site's threshold + 2 | Combat level to reach on Lumbridge cows before an addy site with aggressive NPCs (31 for both `dwarven` and `alkharid`). |
 | `steel`, `iron` | `0` | Bars of each to hold in this account's bank. The role buys the iron ore (or mines it while waiting for adamantite respawns) and smelts it with banked coal. |
 | `buyOre` | `true` | Buy the quotas' iron ore on the exchange, selling coal the quotas do not need to pay for it. |
 | `maxOrePrice` | `200` | Highest iron ore ask to pay. |
@@ -56,9 +56,22 @@ calls `ctx.reportBank`. Phase changes (`tutorial`, `train-smithing`, `train-mini
   `bones.ts`'s fighter (about 15 minutes at 25x xp). The 2 king scorpions (level 32)
   still attack and wander beside two of the rocks: the role skips a rock with a king
   scorpion within 3 tiles, and when anything hits it, it steps back through the door and
-  rests until 20 ticks without a hit and half hitpoints. At the site it mines only
-  adamantite, plus iron while the bar quotas still lack ore. It logs `addy` per ore
-  (with `others`, the rocks someone else emptied in view) and `retreat`.
+  rests until 20 ticks without a hit and half hitpoints. At the site it mines
+  adamantite, and in the respawn waits coal (while held coal is under 6 per held
+  adamantite ore plus 60) and iron (while the bar quotas lack ore); it leaves those
+  rocks the moment an adamantite rock is live. It logs `addy` per ore (with `others`,
+  the rocks someone else emptied in view) and `retreat`.
+- **The guild door's geometry.** The door is a wall on its own tile (3046,9756), and that
+  tile is the guild side: clicking it from there walks the player to 3046,9757 (the
+  Dwarven Mine), clicking from 9757 walks them back onto the door tile
+  (`open_and_close_door` with `check_axis`). So an exit ends on 9756, and the guild's box
+  includes that row. With the box one row short, a good exit looked like a failure and
+  the retry walked straight back in: the account never banked (`door failed` loops).
+- **Al Kharid, the second adamantite site.** The Al Kharid mine (2 adamantite at
+  3298,3317 and 3300,3318, 2 mithril, 3 coal, 11 iron), banked at Varrock east and
+  reached on foot from Varrock. Its 8 scorpions are level 14 and `cowardly` like the
+  Dwarven Mine's, so the same combat 31 makes it safe; there are no king scorpions and
+  no door. Smelting still happens at the Falador furnace.
 - **Steel and iron quotas.** At a bank visit, if the quotas lack iron ore and the
   exchange sells it at or under `maxOrePrice`, the role sells coal it does not need
   (keeping 2 per steel bar still owed, 6 per banked adamantite ore, and 300 spare), buys
@@ -149,6 +162,19 @@ An adamantite rock respawns in 800 ticks scaled by `(4000 - players) / 4000`
 bar needs one ore and six coal. A 2-3 rock site leaves its miner idle most of the time,
 so one account per site is the useful unit.
 
+### Adamantite measured at the Dwarven Mine (h21, 2026-10-21 15:37-19:47 UTC)
+
+| What | Measured |
+|---|---|
+| Combat 3 to 31 on Lumbridge cows | about 30 minutes (`bones.ts` fighter, 25x xp) |
+| Ore per hour at the site | 8 (first 20 min), 27, 18 (an iron-quota smelting trip in it), 9, 7 in 25 min: **about 18 per account-hour** over 3.8 h, 70 ore in all |
+| Contention | 4-17 other players in the mine. In the last hour others emptied 39 adamantite rocks in view against our 12: every respawn is raced |
+| King scorpion retreats | 12 in an hour at worst; each costs a door trip and up to 20 quiet ticks, no deaths |
+| Adamantite smelting | 4 bars per Falador furnace trip (28 slots / 7) in 72-101 ticks |
+
+The site is saturated by other players, so a second account of ours there would mostly
+race the first; the second account goes to Al Kharid instead.
+
 ### The constraint is mithril ore
 
 A mithril bar is 1 mithril ore and 4 coal. In the camped guild an account mines 10-20
@@ -191,14 +217,18 @@ label), not visited. The 6-mithril, 6-adamantite cluster is the one worth checki
 | (c) Grand Exchange | not viable | No sellers of mithril or adamantite bars or ore, or of coal (2026-10-21 05:30 UTC). Coal has a 6.85M-unit buy book at 150 gp, steel bars a 700 gp bid, adamantite bars 1,666 gp, adamantite ore 1,148 gp. Selling surplus coal is how the role funds pickaxes. A standing buy offer for mithril bars or ore, funded by the coal surplus, is cheap to try (rs/50's buyer). |
 | Superheat Item | does not win | Magic 43 plus a nature rune and 4 fire runes per bar. It saves only the furnace walk, under 5% of the hour. Not built. |
 
-Adamant bars are not practical yet. They need Smithing 70 (on content-file xp, about
-850 mithril bars smelted from 50; fewer if the observed xp surplus holds) and
-adamantite ore, which the guild does not have. The role mines adamantite whenever a
-rock is live, banks it, and smelts it once `tier` and Smithing allow.
+Adamant bars need Smithing 70, which the smelters reached on the way through mithril
+(h20-h23 are at 70-89), and adamantite ore, which the guild does not have: see the two
+adamantite sites above.
 
 ## What the fleet needs
 
-- **Recommended:** `{"mode":"full"}` on 3-4 accounts. If the fleet already runs
+- **Adamantite (the open line):** one `full` account per adamantite site,
+  `{"mode":"full"}` (Dwarven Mine) and `{"mode":"full","addy":"alkharid"}`. Mithril is
+  over target, so no account needs to stay in the guild for it.
+- **Steel and iron:** `{"steel":N,"iron":M}` on any account with Smithing 30, which
+  buys the iron ore on the exchange; about 950 steel bars per account-hour.
+- **Mithril (when needed again):** `{"mode":"full"}` on 3-4 accounts. If the fleet already runs
   couriers to the mule, use `{"mode":"mine"}` miners plus one `{"mode":"smelt"}`
   account fed by the mule. More than 4 accounts in the guild crowds a contested spawn.
 - One lite client per account. The role logs `phase`, `bank`, `inventory` (with
