@@ -1,13 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 import { fermentBank, LEVEL_TENTHS, levelOf, rollChance } from './wine-ferment';
 
-describe('level table', () => {
-    test('matches the standard thresholds (in tenths)', () => {
-        expect(LEVEL_TENTHS[0]).toBe(830); // level 2 = 83 xp
-        expect(LEVEL_TENTHS[97]).toBe(130_344_310); // level 99 = 13,034,431 xp
+describe('level table (this engine: 2^(level/10), not the classic 2^(level/7))', () => {
+    test('reproduces the lab: 12 good wines take Cooking 1 to 50, 330 to 97, 364 reach 99 at 25x', () => {
+        const wine = 1100 * 25;
+        expect(LEVEL_TENTHS[0]).toBe(800); // level 2 = 80 xp
         expect(levelOf(0)).toBe(1);
-        expect(levelOf(830)).toBe(2);
-        expect(levelOf(130_344_310)).toBe(99);
+        expect(levelOf(12 * wine)).toBe(50);
+        expect(levelOf(330 * wine)).toBe(97);
+        expect(levelOf(363 * wine)).toBe(98);
+        expect(levelOf(364 * wine)).toBe(99);
     });
 });
 
