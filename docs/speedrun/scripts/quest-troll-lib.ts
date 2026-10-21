@@ -97,6 +97,25 @@ export function dialogText(s: BotWorldState | null | undefined): string {
     return body + (d.options.length ? ' | ' + d.options.map(o => `${o.index}:${o.text}`).join(' / ') : '');
 }
 
+/** The page's real choices; the client lists "Click here to continue" as an option on plain pages. */
+export function choices(s: BotWorldState | null | undefined) {
+    return (s?.dialog.options ?? []).filter(o => !/click here to continue/i.test(o.text));
+}
+
+/** Advance the open page: click the first choice matching `want`, or continue a plain page. */
+export async function advance(sdk: BotSDK, s: BotWorldState, want?: RegExp): Promise<'choice' | 'page'> {
+    const ch = choices(s);
+    if (ch.length) {
+        const o = want && ch.find(c => want.test(c.text));
+        if (!o) throw new Error(`no choice for options: ${dialogText(s)}`);
+        await sdk.clickDialogByText(want!);
+        return 'choice';
+    }
+    const cont = s.dialog.options.find(o => /click here to continue/i.test(o.text));
+    await sdk.sendClickDialog(cont ? cont.index : 0);
+    return 'page';
+}
+
 export function lastMessages(s: BotWorldState | null | undefined, n = 5): string[] {
     return (s?.gameMessages ?? []).slice(-n).map(m => m.text);
 }
@@ -118,14 +137,15 @@ export async function drive(sdk: BotSDK, choices: RegExp[] = [], opts: { idleTic
         const s = r.state;
         lastPage = s.dialog.pageId ?? dialogText(s);
         if (opts.log) console.log(`  t${s.tick} ${dialogText(s).slice(0, 140)}`);
-        if (s.dialog.options.length) {
-            const want = queue.find(q => s.dialog.options.some(o => q.test(o.text)));
+        const ch = choices(s);
+        if (ch.length) {
+            const want = queue.find(q => ch.some(o => q.test(o.text)));
             if (!want) throw new Error(`no choice for options: ${dialogText(s)}`);
             queue.splice(queue.indexOf(want), 1);
-            await sdk.clickDialogByText(want);
+            await advance(sdk, s, want);
             clicks++;
         } else {
-            await sdk.sendClickDialog(0);
+            await advance(sdk, s);
             pages++;
         }
         if (pages + clicks >= maxPages) break;

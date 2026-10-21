@@ -25,7 +25,7 @@ import { runScript } from '../../../sdk/runner';
 import type { BotSDK } from '../../../sdk/index';
 import type { BotActions } from '../../../sdk/actions';
 import type { NearbyNpc } from '../../../sdk/types';
-import { cheat, tele, give, setStats, clearInv, now, pos, waitTicks, waitUntil, findNpc, dialogText, invCount, stats, result } from './quest-troll-lib';
+import { advance, choices, cheat, tele, give, setStats, clearInv, now, pos, waitTicks, waitUntil, findNpc, dialogText, invCount, stats, result } from './quest-troll-lib';
 
 const [, , , fightArg = 'dad', profileArg = 'p70', runsArg = '5'] = process.argv;
 const RUNS = parseInt(runsArg);
@@ -56,12 +56,12 @@ function attackOp(n: NearbyNpc): number {
     return o.opIndex;
 }
 
-interface FightLog { ticks: number; attacks: number; knockbacks: number; eats: number; pages: number; hpLost: number; dealt: number; died: boolean }
+interface FightLog { levelUps: number; ticks: number; attacks: number; knockbacks: number; eats: number; pages: number; hpLost: number; dealt: number; died: boolean }
 
 /** Fight `target` until `done()` holds. Re-sends Attack when idle and out of reach, eats below half hp. */
 async function fight(bot: BotActions, sdk: BotSDK, target: () => NearbyNpc | undefined, done: () => boolean, maxTicks = 900): Promise<FightLog> {
     const t0 = now(sdk);
-    const log: FightLog = { ticks: 0, attacks: 0, knockbacks: 0, eats: 0, pages: 0, hpLost: 0, dealt: 0, died: false };
+    const log: FightLog = { levelUps: 0, ticks: 0, attacks: 0, knockbacks: 0, eats: 0, pages: 0, hpLost: 0, dealt: 0, died: false };
     let last = pos(sdk.getState()), lastHp = sdk.getState()!.player!.hp, lastTick = t0, idle = 0, lastAttack = -99;
     const evSeen = new Set<number>();
     const first = target();
@@ -93,8 +93,9 @@ async function fight(bot: BotActions, sdk: BotSDK, target: () => NearbyNpc | und
         idle = jump === 0 ? idle + 1 : 0;
         last = p;
         if (done()) break;
-        if (s.dialog.isOpen && !s.dialog.isWaiting && s.dialog.options.length === 0) {
-            await sdk.sendClickDialog(0);
+        if (s.dialog.isOpen && !s.dialog.isWaiting && choices(s).length === 0) {
+            if (/advanced|level/i.test(dialogText(s))) log.levelUps++;
+            await advance(sdk, s);
             log.pages++;
             continue;
         }
@@ -139,9 +140,10 @@ await runScript(async ({ bot, sdk }) => {
             for (let k = 0; k < 6; k++) {
                 const r = await waitUntil(sdk, s => s.dialog.isOpen && !s.dialog.isWaiting, 6);
                 if (!r) break;
-                console.log(`  dialog t${r.tick}: ${JSON.stringify({ text: r.state.dialog.text, opts: r.state.dialog.options.map(o => o.text), comps: (r.state.dialog.allComponents ?? []).map(c => c.text).filter(Boolean) })}`);
-                if (r.state.dialog.options.length) { await sdk.clickDialogByText(/going now/i); f.pages++; await waitUntil(sdk, s => s.tick > r.tick, 3); }
-                else { await sdk.sendClickDialog(0); f.pages++; await waitUntil(sdk, s => s.tick > r.tick, 3); }
+                const kind = await advance(sdk, r.state, /going now/i);
+                f.pages++;
+                await waitUntil(sdk, s => s.tick > r.tick, 3);
+                if (kind === 'choice') break;
             }
             runs.push({ ...f, surrenderTick: surrendered, totalTicks: now(sdk) - surrendered + f.ticks });
         } else if (fightArg === 'general') {
@@ -174,8 +176,8 @@ await runScript(async ({ bot, sdk }) => {
                 const r = await waitUntil(sdk, s => (s.dialog.isOpen && !s.dialog.isWaiting) || pos(s).level === 0, 10);
                 if (!r) break;
                 if (pos(r.state).level === 0) break;
-                if (r.state.dialog.options.length) { await sdk.clickDialogByText(/here to kill you/i); talkPages.clicks++; }
-                else { await sdk.sendClickDialog(0); talkPages.pages++; }
+                if ((await advance(sdk, r.state, /here to kill you/i)) === 'choice') talkPages.clicks++;
+                else talkPages.pages++;
                 await waitUntil(sdk, s => s.tick > r.tick, 3);
             }
             const tTele = now(sdk);
@@ -196,6 +198,7 @@ await runScript(async ({ bot, sdk }) => {
         fight: stats(fightTicks),
         total: stats(runs.map(r => r.totalTicks as number)),
         eats: stats(runs.map(r => r.eats as number)),
+        levelUps: stats(runs.map(r => r.levelUps as number)),
         knockbacks: stats(runs.map(r => r.knockbacks as number)),
         hpLost: stats(runs.map(r => r.hpLost as number)),
         deaths: runs.filter(r => r.died).length,
