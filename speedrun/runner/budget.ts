@@ -19,6 +19,8 @@
 // action that is acknowledged a window late is booked to the later one. Erring
 // high costs at most the one-tick wait the runner would otherwise have taken.
 
+import { patchMethod } from './fence';
+
 export const USER_EVENTS_PER_TICK = 5;
 
 /** SDK action types that put no game packet on the wire. */
