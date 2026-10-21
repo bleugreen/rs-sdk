@@ -69,8 +69,35 @@ describe('continueBurst', () => {
         expect(sdk.sent.length).toBe(7);
         expect(sdk.sent[0]!.args).toEqual([0, { blind: true }]);
         sdk.tick({ dialog: cont('p6') });
-        sdk.tick({ dialog: closed });
-        expect(await p).toEqual({ ok: true, mode: 'burst', ticks: 2 });
+        sdk.tick({ dialog: closed }); // floor tick: landed
+        sdk.tick({ dialog: closed }); // quiet tick confirms it
+        expect(await p).toEqual({ ok: true, mode: 'burst', ticks: 3, landedTicks: 2 });
+    });
+
+    test('a burst split across ticks is not done while pages are still moving', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 10, dialog: cont('p1') }));
+        let settled = false;
+        const p = continueBurst(sdk as never, 10).then(r => { settled = true; return r; });
+        await flush();
+        sdk.tick({ dialog: cont('p4') }); // 3 landed
+        sdk.tick({ dialog: cont('p9') }); // floor tick (t0+2): 8 landed, 2 still buffered
+        await flush();
+        expect(settled).toBe(false);
+        sdk.tick({ dialog: choice('c') }); // the last 2 land
+        await flush();
+        expect(settled).toBe(false);
+        sdk.tick({ dialog: choice('c') }); // quiet
+        expect(await p).toMatchObject({ ok: true, mode: 'burst', ticks: 4, landedTicks: 3 });
+    });
+
+    test('until: resolves on the landing itself, skipping the quiet tick', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 10, dialog: cont('p1') }));
+        const p = continueBurst(sdk as never, 10, { until: s => classifyPage(s.dialog) === 'choice' });
+        await flush();
+        sdk.tick({ dialog: cont('p6') });
+        sdk.tick({ dialog: cont('p9') }); // floor, but not the landing
+        sdk.tick({ dialog: choice('c') });
+        expect(await p).toEqual({ ok: true, mode: 'burst', ticks: 3, landedTicks: 3 });
     });
 
     test('falls back to read-then-act when the client refuses continues after the first', async () => {
@@ -109,6 +136,12 @@ describe('levelup', () => {
         expect(isLevelUp(s)).toBe(true);
         expect(isLevelUp({ ...s, dialog: choice('c') })).toBe(false);
         expect(isLevelUp({ ...s, recentDialogs: [{ text: ['Hello there'], tick: 1, interfaceId: 2 }] })).toBe(false);
+    });
+
+    test('an old level-up history entry does not match a later page', () => {
+        const entry = { text: ['Congratulations, you just advanced a mining level.'], tick: 50, interfaceId: 1 };
+        expect(isLevelUp(baseState({ tick: 52, dialog: cont('l'), recentDialogs: [entry] }))).toBe(true);
+        expect(isLevelUp(baseState({ tick: 90, dialog: cont('npc'), recentDialogs: [entry] }))).toBe(false);
     });
 
     test('a base level rising arms the watcher; unlock pages in the chain are dismissed too', () => {
