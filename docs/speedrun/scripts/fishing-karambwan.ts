@@ -46,6 +46,8 @@ await runScript(async ({ bot, sdk }) => {
     let loadedId = -1;
     let lastEmpty = 0;
 
+    const startTick = sdk.getState()!.tick;
+    let using = false;
     await new Promise<void>(resolve => {
         let sending = false;
         sdk.onStateUpdate(s => {
@@ -89,7 +91,18 @@ await runScript(async ({ bot, sdk }) => {
                 return;
             }
             const spot = s.nearbyNpcs.filter(n => n.name === 'Fishing spot').sort((a, b) => a.distance - b.distance)[0];
-            if (spot) sdk.sendUseItemOnNpc(slots[0].slot, spot.index);
+            if (spot && !using) {
+                // One use in flight at a time; the server drops uses sent while the player is delayed.
+                using = true;
+                within(sdk.sendUseItemOnNpc(slots[0].slot, spot.index)).then(r => {
+                    const res = r as { success?: boolean; message?: string } | undefined;
+                    if (res && !res.success) log({ ev: 'use-failed', tick: s.tick, msg: res.message });
+                }).finally(() => (using = false));
+            }
+            if (s.tick - Math.max(lastAttemptTick, startTick) > 60) {
+                log({ ev: 'stalled', tick: s.tick, inv: s.inventory.map(i => `${i.id}:${i.name}`), dialog: s.dialog?.isOpen });
+                resolve();
+            }
         });
     });
 
