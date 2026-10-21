@@ -28,7 +28,18 @@ const argv = process.argv.slice(2);
 const ri = argv.indexOf('--rocks');
 const ROCKS: P[] = [];
 for (let i = ri + 1; ri >= 0 && i < argv.length && !argv[i]!.startsWith('--'); i++) ROCKS.push(argv[i]!.split(',').map(Number) as P);
-if (!ROCKS.length) throw new Error('--rocks x,z x,z ... required');
+if (!ROCKS.length && si < 0) throw new Error('--rocks x,z ... or --steps stand>rock ... required');
+// --steps stand>rock ... replays the planner's steps exactly (its --show output, one period).
+// The bot walks to the planner's standing tile itself (MOVE_GAMECLICK) and clicks the rock
+// once beside it; the first swing lands on the same tick the walk-into-op would, so choosing
+// the tile costs nothing and keeps the planner's stay/trick options.
+const si = argv.indexOf('--steps');
+const STEPS: { stand: P; rock: P }[] = [];
+for (let i = si + 1; si >= 0 && i < argv.length && !argv[i]!.startsWith('--'); i++) {
+    const [a, b] = argv[i]!.replace(/^\d+:/, '').split('>');
+    STEPS.push({ stand: a!.split(',').map(Number) as P, rock: b!.split(',').map(Number) as P });
+}
+if (STEPS.length) for (const st of STEPS) ROCKS.push(st.rock);
 const START = arg('start', '').split(',').map(Number) as P;
 const ORES = Number(arg('ores', '120'));
 const LEVEL = Number(arg('level', '99'));
@@ -62,8 +73,10 @@ await runScript(async ({ bot, sdk }) => {
     const av = (r: P) => avail.get(`${r[0]},${r[1]}`)!;
     const locId = (st: BotWorldState, r: P) => st.nearbyLocs.find(l => l.x === r[0] && l.z === r[1] && IRON_IDS.includes(l.id))?.id ?? IRON_IDS[0]!;
 
-    // pending sends: label -> rock to click (and whether to drop ore with it)
+    // pending sends: label -> rock to click, or a tile to walk to
     const sends = new Map<number, P>();
+    const walks = new Set<number>(); // labels whose send is a walk, not a rock click
+    const tileSteps = (a: P, b: P) => (a[0] === b[0] && a[1] === b[1] ? 0 : stepMap(a, rockSet, (x, z) => isTileWalkable(0, x, z)).get(`${b[0]},${b[1]}`) ?? Infinity);
     const predicted: number[] = [];
     // Rolls awaiting their xp; a roll on server tick R shows xp at label R+1.
     const pending: { roll: number; rock: P }[] = [];
@@ -83,9 +96,23 @@ await runScript(async ({ bot, sdk }) => {
 
     const planNext = () => {
         const r = ROCKS[step % ROCKS.length]!;
+        const stand = STEPS.length ? STEPS[step % STEPS.length]!.stand : null;
         step++;
-        const options: { kind: string; roll: number; sendsAt: [number, P][] }[] = [];
-        if (beside(pos, r)) {
+        const options: { kind: string; roll: number; sendsAt: [number, P][]; walkAt?: number[] }[] = [];
+        if (stand && !(stand[0] === pos[0] && stand[1] === pos[1])) {
+            const d = tileSteps(pos, stand);
+            const m = Math.ceil(d / RUNSTEP);
+            // walk to the stand, click the rock on arrival (processed the tick after arrival)
+            const w = Math.max(R, av(r) - 1 - m);
+            options.push({ kind: 'walk', roll: w + m + 3, sendsAt: [[w, stand], [w + m, r]], walkAt: [w] });
+            if (TRICK && d <= RUNSTEP) {
+                for (const st of uniq) {
+                    if (!beside(pos, st)) continue;
+                    const u = Math.max(R + 1, av(st));
+                    if (av(r) <= u + 2) options.push({ kind: 'trick', roll: u + 2, sendsAt: [[u - 1, st], [u, stand], [u + 1, r]], walkAt: [u] });
+                }
+            }
+        } else if (beside(pos, r)) {
             const send = Math.max(R, av(r) - 1);
             options.push({ kind: 'stay', roll: send + 3, sendsAt: [[send, r]] });
         } else {
@@ -104,7 +131,11 @@ await runScript(async ({ bot, sdk }) => {
         const o = options[0]!;
         kinds[o.kind]!++;
         lastKind = o.kind;
-        for (const [t, p] of o.sendsAt) sends.set(Math.max(t, s.tick), p);
+        for (const [t, p] of o.sendsAt) {
+            const at = Math.max(t, s.tick);
+            sends.set(at, p);
+            if (o.walkAt?.includes(t)) walks.add(at);
+        }
         prevAvail = av(r);
         avail.set(`${r[0]},${r[1]}`, o.roll + RESPAWN);
         predicted.push(o.roll);
@@ -117,6 +148,10 @@ await runScript(async ({ bot, sdk }) => {
         for (const [t, p] of [...sends].sort((a, b) => a[0] - b[0])) {
             if (t > st.tick) continue;
             sends.delete(t);
+            if (walks.delete(t)) {
+                sdk.sendWalk(p[0], p[1], true).catch(() => {});
+                continue;
+            }
             dropMatching(sdk, st, /ore$|^uncut/i, 3);
             sdk.sendInteractLoc(p[0], p[1], locId(st, p), 1).catch(() => {});
         }
