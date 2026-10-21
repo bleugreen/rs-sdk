@@ -109,10 +109,13 @@ async function fight(bot: BotActions, sdk: BotSDK, target: () => NearbyNpc | und
 
 await runScript(async ({ bot, sdk }) => {
     await bot.skipTutorial().catch(() => {});
+    console.log('kit', now(sdk));
     await kit(bot, sdk);
+    console.log('kitted', now(sdk), sdk.getState()!.player!.hp);
     const runs: Array<Record<string, unknown>> = [];
     for (let i = 0; i < RUNS; i++) {
         await topUp(bot, sdk);
+        console.log(`run ${i + 1} start tick ${now(sdk)}`);
         if (fightArg === 'dad') {
             await cheat(sdk, 'setvar troll_quest 10');
             await cheat(sdk, 'setvar troll_varbit 0');
