@@ -37,3 +37,10 @@ server/engine/data/market.sqlite*
 
 # Dashboard state is live host data, not source.
 /dashboard-max/data/
+
+# Helper fleet runtime state on the fleet host (speedrun/helpers/fleet.ts).
+/fleet.json
+/stockpile.json
+/fleet-run/
+# The scored account's private name and any other accounts the fleet must refuse (fleet-config.ts).
+/forbidden-accounts.txt
