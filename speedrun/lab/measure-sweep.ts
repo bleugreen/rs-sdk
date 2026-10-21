@@ -290,7 +290,7 @@ async function probeBankop() {
     await teleTo(main, VARROCK_WEST_BANK.x, VARROCK_WEST_BANK.z);
     await setstat(sdk, 'crafting', 99);
     await dismissAll();
-    await fresh('give cert_uncut_sapphire 400');
+    await fresh('give cert_uncut_sapphire 2000'); // 2 variants x N samples x 3 cycles x 27, plus a spare stack
     const opened = await bot.openBank();
     if (!opened.success) throw new Error(`openBank: ${opened.message}`);
     fire('dep', sdk.sendBankDeposit(items(sdk.getState(), /uncut sapphire/i)[0]!.slot, -1));
@@ -302,7 +302,7 @@ async function probeBankop() {
     const booth = () => sdk.getState()!.nearbyLocs.filter(l => /bank booth/i.test(l.name)).sort((a, b) => a.distance - b.distance)[0]!;
     const boothOp = (l = booth()) => l.optionsWithIndex.find(o => /use-quickly|^bank/i.test(o.text))?.opIndex ?? 2;
 
-    for (const variant of ['close', 'noclose'] as const) {
+    for (const variant of arg('bankop', 'close,noclose').split(',') as ('close' | 'noclose')[]) {
         for (let n = 0; n < N; n++) {
             // start each sample from an open bank with only the chisel in the inventory
             const b = booth();
