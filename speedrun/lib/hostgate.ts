@@ -257,6 +257,11 @@ export interface GateOptions {
      */
     measureDrops?: number;
     plainTicksPerDrop?: number;
+    /**
+     * The measured switch-off fires unless the knife stretch is at least this share faster
+     * than plain: knife >= plain * (1 - measuredMargin). Default 0, not faster at all.
+     */
+    measuredMargin?: number;
     /** After a measured switch-off, stay off this long before probing again (default 3000). */
     measuredOffTicks?: number;
     /** While off, re-probe this many ticks after the last probe (default 500, 2.5 min at 300 ms). */
@@ -325,7 +330,7 @@ export class HostGate {
         if (this.stretch.length < this.measureDrops) return false;
         const knife = ticksPerDrop(this.stretch);
         const plain = this.opts.plainTicksPerDrop ?? this.lastPlainRate;
-        if (!(knife >= plain)) return false;
+        if (!(knife >= plain * (1 - (this.opts.measuredMargin ?? 0)))) return false;
         this.on = false;
         this.offUntil = tick + this.measuredOffTicks;
         this.stretch = [];
