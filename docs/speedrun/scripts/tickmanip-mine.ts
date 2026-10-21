@@ -1,7 +1,8 @@
 // Iron-rock rotation with the eat or knife starter (docs/speedrun/skills/tick-manipulation.md).
 //
 //   bun docs/speedrun/scripts/tickmanip-mine.ts <bot> --respawn=13 [--starter=eat|knife|none] [--ores=60]
-//       [--level=99] [--xplag=0] [--gate=on|off] [--threshold=0.95] --steps 2604,3235>2605,3235 ...
+//       [--level=99] [--xplag=0] [--gate=on|off] [--plain-cycle=3.61] [--lead=auto|N]
+//       --steps 2604,3235>2605,3235 ...
 //
 // --steps is one period of stand>rock pairs (rs/5's rotation format, mining.md section 4);
 // the bot teleports to the first stand. Labels are state.tick: a packet sent while label c
@@ -36,11 +37,20 @@
 // and every 500 ticks while off. While it is off the rotation runs closed-loop with the trick
 // and plain transitions: each transition is planned on the label that shows its roll's xp,
 // so a late packet costs the ticks it was late instead of the schedule. --gate=off always
-// uses the starter (the rows measured before the gate).
+// uses the starter (the rows measured before the gate). The gate's cost model takes
+// --plain-cycle (the fallback rotation's ticks per ore; rs/5's adjacent-rock rotation
+// measured 3.61 at respawn 13 and 3.84 at 19) and a miss cost of 9 ticks (the 5-tick wait
+// after a slip plus a plain transition), and the measured rate overrides it.
+//
+// Lead. The schedule is anchored on its own bootstrap click, so a constant latency L shifts
+// every roll by L-1 without breaking the lock; only the predicted labels move. --lead=N
+// (auto: the gate's last probe, dominant latency - 1) sends everything N labels before the
+// roll label it serves and puts the predicted rolls N labels later, so the slip check expects
+// the xp where it will show.
 import { runScript } from '../../../sdk/runner';
 import { isTileWalkable } from '../../../sdk/pathfinding';
 import type { BotWorldState } from '../../../sdk/types';
-import { DEFAULT_THRESHOLD, HostGate } from '../../../speedrun/lib/hostgate';
+import { HostGate } from '../../../speedrun/lib/hostgate';
 import { stepMap } from './mining-lib';
 
 type P = [number, number];
@@ -61,7 +71,8 @@ const ORES = Number(kv('ores', '60'));
 const LEVEL = Number(kv('level', '99'));
 const XP_LAG = Number(kv('xplag', '0'));
 const GATE = EAT && kv('gate', 'on') !== 'off';
-const THRESHOLD = Number(kv('threshold', String(DEFAULT_THRESHOLD)));
+const PLAIN_CYCLE = Number(kv('plain-cycle', '3.61'));
+const LEAD_ARG = kv('lead', 'auto');
 const key = (p: P) => `${p[0]},${p[1]}`;
 const same = (a: P, b: P) => a[0] === b[0] && a[1] === b[1];
 const beside = (a: P, b: P) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) === 1;
@@ -95,11 +106,16 @@ await runScript(async ({ bot, sdk }) => {
     const xpOf = (st: BotWorldState) => st.skills.find(k => k.name.toLowerCase() === 'mining')?.experience ?? 0;
 
     const log: string[] = [];
-    const gate = GATE ? new HostGate(sdk, { threshold: THRESHOLD, probe: { walkable }, log: line => { log.push(line); console.log(line); } }) : null;
+    const gate = GATE
+        ? new HostGate(sdk, { model: { plainCycle: PLAIN_CYCLE, missCost: 9 }, probe: { walkable }, log: line => { log.push(line); console.log(line); } })
+        : null;
     const manip = () => (gate ? gate.on : EAT);
+    let LEAD = 0; // fixed per schedule: set at each (re)start
+    const leadNow = () => (LEAD_ARG === 'auto' ? (gate?.lead ?? 0) : Number(LEAD_ARG));
     const sched = new Map<number, Array<[string, () => Promise<unknown>]>>();
+    // `label` is the label the send would go out on at latency 1; it goes LEAD labels earlier.
     const add = (label: number, what: string, fn: () => Promise<unknown>) => {
-        const at = Math.max(label, s.tick);
+        const at = Math.max(label - LEAD, s.tick);
         if (!sched.has(at)) sched.set(at, []);
         sched.get(at)!.push([what, fn]);
     };
@@ -137,7 +153,7 @@ await runScript(async ({ bot, sdk }) => {
         const m = manip();
         let roll: number;
         let kind: string;
-        if (k === 1) { roll = s.tick + 3; kind = 'stay'; add(s.tick, `click ${key(rock)}`, click(rock)); }
+        if (k === 1) { roll = s.tick + 3 + LEAD; kind = 'stay'; add(s.tick + LEAD, `click ${key(rock)}`, click(rock)); }
         else {
             let trick: { st: P; u: number } | null = null;
             if (!move && clickLand === R + 1) { roll = R + 3; kind = 'stay'; }
@@ -219,12 +235,13 @@ await runScript(async ({ bot, sdk }) => {
     const restart = () => {
         restartAt = null;
         rolled = null;
+        LEAD = manip() ? leadNow() : 0;
         pos = [s.player!.worldX, s.player!.worldZ];
         const { stand, rock } = STEPS[k % STEPS.length]!;
         k++;
         const avail = (lastRoll.get(key(rock)) ?? -1e9) + D;
-        const clickLand = Math.max(s.tick + 3, avail); // up to 4 tiles of running before the click lands
-        add(s.tick, `walk ${key(stand)}`, () => sdk.sendWalk(stand[0], stand[1], true));
+        const clickLand = Math.max(s.tick + 3 + LEAD, avail); // up to 4 tiles of running before the click lands
+        add(s.tick + LEAD, `walk ${key(stand)}`, () => sdk.sendWalk(stand[0], stand[1], true));
         add(clickLand - 1, `click ${key(rock)}`, click(rock));
         const roll = clickLand + 2;
         log.push(`restart #${k} ${key(pos)}->${key(stand)} rock ${key(rock)} roll@${roll}`);
@@ -251,6 +268,7 @@ await runScript(async ({ bot, sdk }) => {
         rolled = null;
     };
     if (gate) await probeHost('start');
+    LEAD = manip() ? leadNow() : 0;
     plan();
     while (xpLabels.length < ORES) {
         if (restartAt !== null && s.tick >= restartAt) {
@@ -267,7 +285,7 @@ await runScript(async ({ bot, sdk }) => {
                 fn().catch(() => {});
             }
         }
-        if (restartAt === null && (manip() ? s.tick >= R : rolled !== null)) {
+        if (restartAt === null && (manip() ? s.tick >= R - LEAD : rolled !== null)) {
             if (!manip()) {
                 R = rolled!;
                 if (pendingRock) lastRoll.set(key(pendingRock), R);
@@ -289,6 +307,13 @@ await runScript(async ({ bot, sdk }) => {
             if (predicted.includes(s.tick - XP_LAG)) onTime++;
             log.push(`  L${s.tick} XP +${xp - lastXp} (roll ${s.tick - XP_LAG})`);
             lastXp = xp;
+            if (gate?.drop(s.tick)) {
+                // measured switch-off: drop the schedule and restart plain from here
+                sched.clear();
+                for (const q of predicted) checked.add(q);
+                restartAt = s.tick;
+                R = Number.POSITIVE_INFINITY;
+            }
         }
         if (s.dialog.isOpen) sdk.sendClickDialog(0).catch(() => {});
         if (restartAt === null) checkSlip();
@@ -307,7 +332,7 @@ await runScript(async ({ bot, sdk }) => {
         `end inventory: logs ${(sdk.getState()?.inventory ?? []).filter(i => /^logs$/i.test(i.name)).length}, arrow shafts ${(sdk.getState()?.inventory ?? []).filter(i => /^arrow shaft/i.test(i.name)).reduce((n, i) => n + i.count, 0)}`,
         `transitions ${JSON.stringify(kinds)}, starters sent ${eatsSent}, xp events ${xpLabels.length}, on predicted tick ${onTime}, slips ${slips}`,
         gate
-            ? `gate: ${gate.history.length} probes (${gate.history.map(h => `T${h.tick} ${h.why} ${h.result.onTime}/${h.result.trials}`).join(', ')}), switches ${gate.switches() || 'none'}, ${gate.plainTicks(s.tick)} ticks plain, ends ${gate.on ? 'manipulating' : 'plain'}`
+            ? `gate: ${gate.history.length} events (${gate.summary()}), switches ${gate.switches() || 'none'}, ${gate.plainTicks(s.tick)} ticks plain, ends ${gate.on ? 'manipulating' : 'plain'}, lead ${LEAD}`
             : 'gate: off',
         `steady state (from 6th ore): ${gaps.length} gaps, histogram ${Object.entries(hist).map(([g, c]) => `${g}:${c}`).join(' ')}`,
         `ticks per ore ${(span / gaps.length).toFixed(2)}, base xp per tick ${((35 * gaps.length) / span).toFixed(2)}`
