@@ -108,7 +108,9 @@ const around = (x: number, z: number, l: number) => {
 for (const t of around(2416, 9674, 0)) one(t, [2423, 9660, 0], 'well_down', 'needs the four orb bits, quest_upass.rs2:119-129', { id: 3264, x: 2416, z: 9674, op: 1 });
 for (const z of [9716, 9717, 9718, 9719, 9720]) for (const x of [2369, 2370]) if (walkable([x, z, 0])) one([x, z, 0], [2173, 4725, 1], 'temple_door2', 'unlocked by badges and horn, quest_upass.rs2:394-405', { id: 3220, x: 2368, z: 9717, op: 1 });
 one([2423, 9662, 0], [2418, 9674, 0], 'mudpile_up', 'quest_upass.rs2:149-154', { id: 3307, x: 2423, z: 9661, op: 1 });
-one([2443, 9652, 0], [2482, 9715, 0], 'rockpile', 'upass_obstacles.rs2:50-55', { id: 3265, x: 2443, z: 9651, op: 1 });
+for (const t of [[2442, 9652, 0], [2444, 9652, 0], [2443, 9653, 0], [2442, 9651, 0], [2444, 9651, 0], [2442, 9650, 0], [2443, 9650, 0], [2444, 9650, 0]] as T[]) {
+    if (walkable(t)) one(t, [2482, 9715, 0], 'rockpile', 'upass_obstacles.rs2:50-55', { id: 3265, x: 2443, z: 9651, op: 1 });
+}
 one([2393, 9655, 0], [2393, 9654, 0], 'cage_pick', 'thieving 128/400 roll, quest_upass.rs2:226-240', { id: 3266, x: 2393, z: 9655, op: 1 });
 one([2393, 9654, 0], [2393, 9655, 0], 'cage_pick', 'quest_upass.rs2:226-240', { id: 3266, x: 2393, z: 9655, op: 1 });
 one([2393, 9651, 0], [2392, 9646, 0], 'mud_dig', 'spade, quest_upass.rs2:210-224', { id: 3216, x: 2393, z: 9650, item: /^Spade$/i });
@@ -142,6 +144,10 @@ export const TRAP_TILES = new Set<string>([
 ]);
 export let TRAP_PENALTY = 8;
 export function setTrapPenalty(v: number) { TRAP_PENALTY = v; }
+
+for (const list of edges.values()) for (const e of list) {
+    if (!walkable(e.from)) console.warn(`route: ${e.kind} ${e.note} starts on a blocked tile ${e.from}`);
+}
 
 /** The crossing edges leaving a tile (for debugging routes). */
 export const edgesFrom = (t: T) => edges.get(K(t)) ?? [];
