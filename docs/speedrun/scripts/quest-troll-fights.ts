@@ -30,7 +30,10 @@ import { advance, choices, cheat, tele, give, setStats, clearInv, now, pos, wait
 const [, , , fightArg = 'dad', profileArg = 'p70', runsArg = '5', weaponArg = 'rune_scimitar'] = process.argv;
 const RUNS = parseInt(runsArg);
 const PROFILES: Record<string, number> = { min: 40, p70: 70, p99: 99 };
-const LV = PROFILES[profileArg];
+// "+pray" suffix: 70 Prayer and Protect from Melee on for every run (npc melee
+// checks it in npc_combat_melee.rs2:44; Arrg's rock throw is ranged and is not blocked).
+const PRAY = profileArg.endsWith('+pray');
+const LV = PROFILES[profileArg.replace('+pray', '')];
 if (!LV) throw new Error(`unknown profile ${profileArg}`);
 
 const GEAR = [weaponArg, 'rune_full_helm', 'rune_platebody', 'rune_platelegs', 'rune_kiteshield', 'amulet_of_strength'];
@@ -48,6 +51,10 @@ async function topUp(bot: BotActions, sdk: BotSDK) {
     const have = invCount(sdk.getState(), /^swordfish$/i);
     if (have < 20) await give(sdk, 'swordfish', 20 - have);
     await cheat(sdk, `setstat hitpoints ${LV}`);
+    if (PRAY) {
+        await cheat(sdk, 'setstat prayer 70');
+        if (!sdk.isPrayerActive('protect_from_melee')) await bot.activatePrayer('protect_from_melee').catch(e => console.log('pray', e?.message ?? e));
+    }
 }
 
 function attackOp(n: NearbyNpc): number {
@@ -99,7 +106,7 @@ async function fight(bot: BotActions, sdk: BotSDK, target: () => NearbyNpc | und
             log.pages++;
             continue;
         }
-        if (hp * 2 < LV && invCount(s, /^swordfish$/i) > 0) {
+        if (hp * 10 < LV * 6 && invCount(s, /^swordfish$/i) > 0) {
             await bot.eatFood(/^swordfish$/i);
             log.eats++;
             lastAttack = -99; // eating interrupts the attack; re-attack next tick
