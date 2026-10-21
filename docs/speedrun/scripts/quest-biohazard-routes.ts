@@ -50,6 +50,10 @@ const legs: Leg[] = [
     ['Elena door -> Lathas stairs (2571,3295)', 0, [2592, 3340], [2572, 3295]],
     ['Ardougne teleport -> Lathas stairs', 0, [2661, 3301], [2572, 3295]],
     ['stairs top (2571,3295 L1) -> King Lathas (2578,3293 L1)', 1, [2571, 3296], [2577, 3293]],
+    // After Biohazard: the West Ardougne wall doors (2557-2558,3299-3300) open for %biohazard = 16
+    ['Lathas stairs (2572,3295) -> wall doors, east side (2559,3300)', 0, [2572, 3295], [2559, 3300]],
+    ['Ardougne teleport -> wall doors, east side', 0, [2661, 3301], [2559, 3300]],
+    ['wall doors, west side (2556,3300) -> Koftik (2436,3315)', 0, [2556, 3300], [2437, 3315]],
 ];
 
 measure(legs);
