@@ -118,7 +118,13 @@ interface Site {
     combat?: number;
     /** NPCs that attack even at `combat`: rocks near them are skipped, a hit means retreat. */
     danger?: RegExp;
+    /**
+     * Surface waypoint walked to first when coming from farther than APPROACH_RANGE, for a
+     * site whose shortest path from elsewhere crosses something to avoid.
+     */
+    approach?: Point;
 }
+const APPROACH_RANGE = 40;
 const SITES: Record<Site['name'], Site> = {
     // miningguildladder (Mining 60) -> ladder_from_cellar. 5 mithril, ~37 coal, only dwarves.
     // z1 is the guild door's own row: see the dwarven door below.
@@ -141,7 +147,9 @@ const SITES: Record<Site['name'], Site> = {
     },
     // Al Kharid mine, reached on foot from Varrock: 2 adamantite (3298,3317 and 3300,3318), 2 mithril,
     // 3 coal, 11 iron. 8 scorpions (level 14, cowardly) ignore combat 29+; no king scorpions.
-    alkharid: { name: 'alkharid', box: { x0: 3290, x1: 3310, z0: 3280, z1: 3322 }, centre: { x: 3299, z: 3315 }, bank: BANK_VARROCK_EAST, combat: 29 },
+    // From Lumbridge, the cows or Falador the shortest path runs through the Al Kharid toll
+    // gate (3268,3227), where walks stick; from Varrock east bank it comes down from the north.
+    alkharid: { name: 'alkharid', box: { x0: 3290, x1: 3310, z0: 3280, z1: 3322 }, centre: { x: 3299, z: 3315 }, bank: BANK_VARROCK_EAST, combat: 29, approach: BANK_VARROCK_EAST },
     // West of Falador: 2 copper, 6 tin, 3 iron, 2 coal, no NPC spawns.
     west: { name: 'west', box: { x0: 2898, x1: 2915, z0: 3348, z1: 3371 }, centre: { x: 2907, z: 3360 }, bank: BANK_WEST },
     // Rimmington: 6 iron, 5 copper, 2 tin, no NPC spawns.
@@ -676,6 +684,7 @@ class Smelter {
             return this.walk(site.centre.x, site.centre.z, 3);
         }
         if (underground(z) && !(await this.toSurface())) return false;
+        if (site.approach && cheb(this.pos(), site.centre) > APPROACH_RANGE && !(await this.walk(site.approach.x, site.approach.z, 4))) return false;
         if (!site.down) return this.walk(site.centre.x, site.centre.z, 4);
         if (!(await this.walk(site.down.x, site.down.z, 3))) return false;
         return this.climb(site.down.id, /climb-down/i, true);
