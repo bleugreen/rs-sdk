@@ -12,11 +12,11 @@
 # a "logins" field counts as two), if a chrome, bun or ffmpeg process runs with no slot, or if the
 # account is still in the world; take the slot for 6 min;
 # start rs/96's direct gate CLI (RUN-HOST.md step 6, its defaults: 60 trials, --no-tele) on the
-# second, bounded by `timeout --kill-after=30s 5m`. The CLI closes its socket without logging out
-# (rs/168), so the account stays in the world until the server drops it, about 500 ticks on the
-# demo (hiscore-timestamps.md section 5.1). The script holds the slot until /playerpositions no
-# longer lists the account, then releases it and runs the leftover check again. Every loop it
-# starts runs under its own timeout.
+# second, bounded by `timeout --kill-after=30s 5m`. The CLI logs out at the end (rs/168), but a
+# CLI killed by the timeout may not, and a dropped account stays in the world about 500 ticks on
+# the demo (hiscore-timestamps.md section 5.1). So the script holds the slot until
+# /playerpositions no longer lists the account, then releases it and runs the leftover check
+# again. Every loop it starts runs under its own timeout.
 set -u
 T=${1:?usage: twin-gate-pair.sh HH:MM:SS (UTC, today)}
 BOT=${BOT:-cairn_gate}
