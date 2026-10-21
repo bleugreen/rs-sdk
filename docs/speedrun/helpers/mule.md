@@ -91,9 +91,9 @@ tick later; the shape is the same. Measure through the demo's public gateway and
    It gives nothing.
 4. Deposit or use the items; that is the run's own step.
 
-The mule needs time between hand-offs to withdraw the next package: two to three
-seconds per item type of its own time (no scored ticks), so about a minute for 23
-types. Back-to-back hand-offs closer than that should alternate between two mules.
+The mule needs time between hand-offs to bank and withdraw the next package, on its
+own clock: about 12 s for a 23-type noted package in the lab. Back-to-back hand-offs
+closer than that should alternate between two mules.
 
 **Choosing a package by request.** `serveMode: 'request'` serves only a package that
 was asked for, through `requestFile`: a file on the mule's host where each line is a
@@ -132,7 +132,7 @@ Cadence: consolidation only matters for what the scored account will take from t
 mule, since the ledger already counts every helper's bank. Run each gatherer's
 courier trip once a day, and before a run segment that pulls its supply. A trip costs
 the helper its walk to Varrock plus about 10 s at the bank per load (measured: 12 item
-types in one trade, `cairn_h05` -> `cairn_mule1`, 8 s from bank to trade done). The
+types in one trade, `cairn_h05` -> `cairn_mule1`, 7 s from bank to trade done). The
 mule's bank has 288 slots, one per item type, which covers the whole supply list.
 
 ## Grand Exchange
