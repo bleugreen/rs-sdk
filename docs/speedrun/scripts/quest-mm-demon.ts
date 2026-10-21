@@ -48,6 +48,9 @@ await runScript(async ({ bot, sdk }) => {
         // Out of the battle zone long enough for an earlier run's squad and demon to despawn.
         await tele(sdk, 2805, 2759);
         await waitTicks(sdk, 30);
+        // Again: a previous kill's queued stage change (mm_demon.rs2:387-389) can land after the first set.
+        await setvar(sdk, 'mm_main', 5);
+        await setvar(sdk, 'mm_waiting_for_final_battle', 0);
         await give(sdk, 'mm_sigil', 1);
         await waitTicks(sdk, 2);
         const tWear = now(sdk);
