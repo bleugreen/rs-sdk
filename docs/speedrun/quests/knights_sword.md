@@ -108,7 +108,7 @@ ticks per tile.
 
 | Part | Ticks | Label |
 |---|---|---|
-| Travel (walking) | 666 (2,086 route tiles) | measured |
+| Travel (walking) | 666 (1,180 route tiles) | measured |
 | Travel (teleports: 3 Falador, 1 Varrock, 2 glory) | 28 | measured, `primitives.md` §4 |
 | Dialogue (58 pages, 6 options, 8 conversations) | 155 | measured |
 | Interactions (2 climbs down/up, 3 castle climbs, mining, cupboard) | 53 | measured |
@@ -118,7 +118,7 @@ ticks per tile.
 | **Total** | **911** | measured, stock client |
 
 Raw counts: 58 dialogue pages and 6 option clicks; 6 teleports; 1 trade; 6 climbs;
-2,086 route tiles. With the client fix (cairn://p/rs/22) the dialogue drops to
+1,180 route tiles. With the client fix (cairn://p/rs/22) the dialogue drops to
 about 85 ticks and the trade to 5, so the total to about 837.
 
 The Reldo leg is a quarter of the total. The SDK's collision snapshot shows a gap
