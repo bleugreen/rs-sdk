@@ -27,7 +27,8 @@
 //
 // - In the program (preferred): a `player` stun action sends the request, gated with `fewer`
 //   (e.g. fewer than 3 bones) and placed first in `stunActions`, so it goes out at offset +2.
-//   It owns its tick (no click, no other stun action), and with `idleOnInterface: true` the
+//   It owns its tick (no click, no other stun action), the program sends nothing more until
+//   the trade opens (at most REQUEST_HOLD ticks), and with `idleOnInterface: true` the
 //   program sends nothing at all while the trade is open (no page resume, no eat, no stun
 //   action, no click), resuming on the first tick it is closed. The step module only accepts
 //   the offer and confirm screens. rs/106's trades requested at +2 completed at +7 or +8, so
@@ -157,6 +158,11 @@ export function createPickpocket(params: ProgramParams): TickProgram {
             if (rolls >= rollsTarget || t - startTick > maxTicks || (untilLevel && baseLevel(s, 'thieving') >= untilLevel)) return ctx.done(summary());
             if (hp <= 0 || s.player.isDead) return ctx.fault('died', summary());
 
+            if (stun?.holding(t, s)) {
+                // a trade request waits for its trade: any packet would replace or close it
+                ctx.count('requestHoldTicks');
+                return;
+            }
             if (idleOnInterface && modalOpen(s)) {
                 // a trade (or another modal) owns the account: any packet would close it
                 ctx.count('interfaceTicks');

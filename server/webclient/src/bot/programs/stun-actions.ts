@@ -23,7 +23,10 @@
 //
 // A `player` action (a trade request, OPPLAYER4 by default) owns its tick: it is the tick's only
 // stun action and the knight click is skipped, because a click after it would replace the
-// request's interaction, and a bury before it would stop it. It fires at most once per stun and
+// request's interaction, and a bury before it would stop it. The program then holds every
+// packet back until the trade opens, for at most REQUEST_HOLD ticks (rs/106's account sent
+// nothing between its request and the open trade; the helper answers on the next tick).
+// If no trade has opened by then, the program carries on. It fires at most once per stun and
 // only on a player standing next to the account (a stunned player cannot walk). Gate it with
 // `fewer` (e.g. fewer than 3 bones) so it goes out only when a top-up is due, and give it
 // `window: [2, 4]`: rs/106's trades took 5-6 ticks from the request, so one sent later than +4
@@ -325,6 +328,9 @@ export interface StunSummary {
     ownedTicks: number;
 }
 
+/** Ticks after a trade request in which the program sends nothing while it waits for the trade to open. */
+export const REQUEST_HOLD = 3;
+
 /** A main modal (a trade, a bank) is open: an inventory op, a button or a click would close it. */
 export function modalOpen(s: BotWorldState): boolean {
     return !!(s.modalOpen || s.trade?.isOpen);
@@ -347,6 +353,7 @@ export class StunPack {
     private modalTicks = 0;
     private ownedTicks = 0;
     private playerSentThisStun = false;
+    private requestTick: number | null = null;
     private readonly byAction: Record<string, number> = {};
 
     constructor(opts: StunPackOptions) {
@@ -366,6 +373,19 @@ export class StunPack {
         this.firedThisStun = 0;
         this.playerSentThisStun = false;
         this.stuns++;
+    }
+
+    /**
+     * True while a trade request waits for its trade to open: send nothing. Ends when a modal
+     * opens (the caller's interface rule takes over) or REQUEST_HOLD ticks have passed.
+     */
+    holding(t: number, s: BotWorldState): boolean {
+        if (this.requestTick === null) return false;
+        if (modalOpen(s) || t > this.requestTick + REQUEST_HOLD) {
+            this.requestTick = null;
+            return false;
+        }
+        return t > this.requestTick;
     }
 
     /**
@@ -431,7 +451,10 @@ export class StunPack {
                 this.costly++;
                 ctx.count('stunCostly');
             }
-            if (p.t.kind === 'player') this.playerSentThisStun = true;
+            if (p.t.kind === 'player') {
+                this.playerSentThisStun = true;
+                this.requestTick = t;
+            }
         }
         if (owned) {
             this.ownedTicks++;
