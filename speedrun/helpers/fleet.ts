@@ -34,11 +34,14 @@ import { abortable, executionContext } from '../../sdk/execution-context';
 import { BotSDK } from '../../sdk/index';
 import { initPathfinding } from '../../sdk/pathfinding';
 import { createAccountEnv, listAccounts, nextAccountName, parseBotEnv, parseRange } from './accounts';
-import { Backoff, LoginGate } from './backoff';
+import { COMBAT_LOGOUT_TICKS, LOGOUT_BUTTON } from '../lib/session';
+import { Backoff, LoginLimiter, loginFailurePolicy } from './backoff';
+import { EventLog, parseEvents, summariseEvents, type FleetEventType } from './events';
 import {
     activeAccounts,
     ConfigError,
     diffActive,
+    loginLimitPolicy,
     parseFleetConfig,
     ROLE_NAME_RE,
     type AccountConfig,
@@ -53,6 +56,7 @@ const ROOT = resolve(fileURLToPath(new URL('../../', import.meta.url)));
 export const PATHS = {
     config: join(ROOT, 'fleet.json'),
     ledger: join(ROOT, 'stockpile.json'),
+    events: join(ROOT, 'fleet-events.jsonl'),
     bots: join(ROOT, 'bots'),
     run: join(ROOT, 'fleet-run'),
     logs: join(ROOT, 'fleet-run', 'logs'),
@@ -242,8 +246,11 @@ function attributeConsole(): void {
         const original = console[level].bind(console);
         console[level] = (...args: unknown[]) => {
             const runner = accountScope.getStore();
-            if (runner) runner.note(`[${level === 'log' || level === 'info' ? 'sdk' : `sdk ${level}`}] ${format(...args)}`);
-            else original(...args);
+            if (!runner) return original(...args);
+            const text = format(...args);
+            runner.note(`[${level === 'log' || level === 'info' ? 'sdk' : `sdk ${level}`}] ${text}`);
+            // e.g. "waitForTicks(1) safety timeout - no state updates received": worth correlating across accounts.
+            if (/safety timeout|no state updates/i.test(text)) runner.sdkStall(text);
         };
     }
 }
@@ -277,19 +284,35 @@ function bankSummary(snapshot: BankSnapshot): string {
 
 // ------------------------------------------------------------------ one account
 
-type Phase = 'queued' | 'logging-in' | 'attaching' | 'online' | 'backoff' | 'stopping' | 'stopped' | 'outdated';
+type RunnerState = 'queued' | 'logging-in' | 'attaching' | 'online' | 'backoff' | 'stopping' | 'stopped' | 'outdated';
 
 interface SessionExit {
     code: number | null;
     reason: string;
+    /** Set when the server refused the login: its response code (LOGIN_RESPONSE) and message. */
+    login?: { code: number; message: string };
+}
+
+/** A role's `ctx.log('phase', { phase: 'gather' })` (or 'phase gather'), as one short string. */
+export function describePhase(message: string, data?: Record<string, unknown>): string | null {
+    if (!/^phase\b/i.test(message)) return null;
+    const named = data?.phase ?? data?.to;
+    if (typeof named === 'string') return named;
+    const rest = message.replace(/^phase\b\s*:?\s*/i, '');
+    return rest || (data ? JSON.stringify(data) : 'phase');
 }
 
 class AccountRunner {
-    phase: Phase = 'queued';
+    state: RunnerState = 'queued';
     onlineSince: number | null = null;
     nextAttemptAt: number | null = null;
     lastLog: { at: number; text: string } | null = null;
     lastError: string | null = null;
+    /** The role's latest `phase` log line. */
+    rolePhase: { at: number; text: string } | null = null;
+    private refusals = { code: -1, streak: 0 };
+    private lastStallEventAt = 0;
+    private roles: Promise<void> | null = null;
     readonly stats = { logins: 0, sessionEnds: 0, roleStarts: 0, roleFailures: 0, bankReports: 0 };
 
     private child: Subprocess<'ignore', 'pipe', 'pipe'> | null = null;
@@ -328,6 +351,16 @@ class AccountRunner {
         this.log.write(`${iso(at)} ${text}`);
     }
 
+    private event(type: FleetEventType, fields: Record<string, unknown> = {}): void {
+        this.fleet.events.record(type, { account: this.account, role: this.cfg.role, ...fields });
+    }
+
+    sdkStall(line: string): void {
+        if (Date.now() - this.lastStallEventAt < 30_000) return;
+        this.lastStallEventAt = Date.now();
+        this.event('sdk_stall', { line: line.slice(0, 200) });
+    }
+
     start(): void {
         this.loop = this.supervise();
     }
@@ -339,41 +372,62 @@ class AccountRunner {
         this.roleCtl?.abort(new Error('reconfigured'));
     }
 
-    /** Abort the role, close the client (the engine saves on socket close), and stop re-logging. */
+    /**
+     * Abort the role, log out with the logout button (the player leaves the world
+     * that tick; a dropped socket leaves it in the world for hundreds of ticks and
+     * blocks the next controller's login), and stop re-logging. Falls back to
+     * closing the client if the logout is refused or never lands.
+     */
     async stop(reason: string): Promise<void> {
         if (!this.stopping) {
-            this.phase = 'stopping';
+            this.state = 'stopping';
             this.stopCtl.abort(new Error(reason));
             this.roleCtl?.abort(new Error(reason));
-            await this.killChild(reason);
+            await settledWithin(this.roles, 5_000);
+            const clean = await this.logout().catch(() => false);
+            if (this.child) this.event(clean ? 'logout' : 'logout_forced', { reason });
+            if (!clean) await this.killChild(reason);
         }
         await settledWithin(this.loop, STOP_GRACE_MS * 2);
         await this.sdk?.disconnect().catch(() => undefined);
         this.sdk = null;
-        this.phase = 'stopped';
+        this.state = 'stopped';
         this.note(`[fleet] stopped (${reason})`);
         await this.log.close();
     }
 
     private async supervise(): Promise<void> {
         while (!this.stopping) {
-            this.phase = 'queued';
-            await Promise.race([this.fleet.loginGate.turn(), sleep(24 * 3600_000, this.stopCtl.signal)]);
+            this.state = 'queued';
+            await Promise.race([this.fleet.logins.take(), sleep(24 * 3600_000, this.stopCtl.signal)]);
             if (this.stopping) break;
             const started = Date.now();
             const exit = await this.session().catch((e): SessionExit => ({ code: null, reason: `supervisor error: ${errText(e)}` }));
             if (this.stopping) break;
             this.stats.sessionEnds++;
             if (exit.code === EXIT_OUTDATED) {
-                this.phase = 'outdated';
+                this.state = 'outdated';
                 this.lastError = exit.reason;
+                this.event('session_end', { reason: exit.reason, exitCode: exit.code });
                 this.fleet.outdated(this);
                 return;
             }
-            const delay = this.reloginBackoff.failure(this.onlineSince ?? started, Date.now());
+            let delay = this.reloginBackoff.failure(this.onlineSince ?? started, Date.now());
+            if (exit.login) {
+                const { code, message } = exit.login;
+                this.refusals = { code, streak: this.refusals.code === code ? this.refusals.streak + 1 : 1 };
+                const policy = loginFailurePolicy(code, this.refusals.streak);
+                this.event('login_error', { code, message, streak: this.refusals.streak, needsAttention: policy.needsAttention });
+                if (policy.fleetPauseMs > 0) this.fleet.pauseLogins(policy.fleetPauseMs, `${this.account}: ${message} (code ${code})`);
+                delay = Math.max(delay, Math.round(policy.accountDelayMs * (1 + 0.25 * Math.random())));
+            } else {
+                this.refusals = { code: -1, streak: 0 };
+                const onlineSec = this.onlineSince ? Math.round((Date.now() - this.onlineSince) / 1000) : 0;
+                this.event('session_end', { reason: exit.reason, exitCode: exit.code, onlineSec });
+            }
             this.onlineSince = null;
             this.lastError = exit.reason;
-            this.phase = 'backoff';
+            this.state = 'backoff';
             this.nextAttemptAt = Date.now() + delay;
             this.note(`[fleet] session over: ${exit.reason}; logging in again in ${Math.round(delay / 1000)}s`);
             await sleep(delay, this.stopCtl.signal);
@@ -391,6 +445,7 @@ class AccountRunner {
         }
         if (env.BOT_USERNAME !== this.account || !env.PASSWORD) return `${path} has no BOT_USERNAME=${this.account} / PASSWORD`;
         if (!env.SERVER) return `${path} has no SERVER`;
+        if (env.SERVER.startsWith('localhost') || env.SERVER.startsWith('127.')) return `${path} points at a local server (${env.SERVER}); the fleet runs demo accounts`;
         if (env.GATEWAY_URL && env.GATEWAY_URL !== this.fleet.gatewayUrl) {
             return `${path} sets GATEWAY_URL=${env.GATEWAY_URL}, which would bypass the fleet gateway; remove that line`;
         }
@@ -402,7 +457,7 @@ class AccountRunner {
         const creds = await this.readCredentials();
         if (typeof creds === 'string') return { code: null, reason: creds };
 
-        this.phase = 'logging-in';
+        this.state = 'logging-in';
         this.stats.logins++;
         this.note(`[fleet] logging in to ${creds.server}`);
         const child = Bun.spawn([process.execPath, 'src/lite/runner.ts', this.account], {
@@ -416,11 +471,17 @@ class AccountRunner {
         let lastLine = '';
         // A crash prints a source excerpt and ends with Bun's version line; the error line is the useful one.
         let errorLine = '';
+        let refusal: { code: number; message: string } | undefined;
         let markLoggedIn: () => void = () => undefined;
         const loggedIn = new Promise<'in'>(r => (markLoggedIn = () => r('in')));
         const onLine = (line: string) => {
             lastLine = line;
             if (/^\w*Error: |^error: /.test(line)) errorLine = line;
+            // The runner dies on a refused login with Bun's trace: "LoginError: <message>" then " code: <n>,".
+            const refused = /^LoginError: (.*)$/.exec(line);
+            if (refused) refusal = { code: 0, message: refused[1]! };
+            const code = /^\s*code: (\d+),?$/.exec(line);
+            if (code && refusal) refusal.code = Number(code[1]);
             this.note(`[lite] ${line}`);
             if (/^\[lite-runner\] '.+' logged into /.test(line)) markLoggedIn();
         };
@@ -428,7 +489,7 @@ class AccountRunner {
         const exited = child.exited.then(async (code): Promise<SessionExit> => {
             await settledWithin(piped, 2000);
             const said = errorLine || lastLine;
-            return { code, reason: `lite client exited with code ${code}${said ? ` (${said.slice(0, 200)})` : ''}` };
+            return { code, reason: `lite client exited with code ${code}${said ? ` (${said.slice(0, 200)})` : ''}`, ...(refusal ? { login: refusal } : {}) };
         });
 
         const first = await Promise.race([
@@ -444,9 +505,9 @@ class AccountRunner {
             return first === 'timeout' ? { code: null, reason: `login timed out after ${LOGIN_TIMEOUT_MS / 1000}s` } : exit;
         }
 
-        this.phase = 'attaching';
+        this.state = 'attaching';
         try {
-            await this.attachSdk(creds.password);
+            await this.attachSdk(creds.password, creds.server);
             await this.waitForLiveState();
         } catch (e) {
             await this.killChild('attach failed');
@@ -460,11 +521,14 @@ class AccountRunner {
             return { code: null, reason: `logged in, but the fleet could not attach: ${errText(e)}` };
         }
 
-        this.phase = 'online';
+        this.state = 'online';
         this.onlineSince = Date.now();
+        this.refusals = { code: -1, streak: 0 };
         this.note('[fleet] online');
+        this.event('login', { login: this.stats.logins });
         const session = new AbortController();
         const roles = this.roleLoop(session.signal);
+        this.roles = roles;
         const watchdog = setInterval(() => this.watch(), WATCH_EVERY_MS);
         const exit = await exited;
         clearInterval(watchdog);
@@ -479,7 +543,7 @@ class AccountRunner {
      * session across client reconnects and re-sends sdk_connected when the
      * client comes back, so a re-login needs no new SDK.
      */
-    private async attachSdk(password: string): Promise<void> {
+    private async attachSdk(password: string, server: string): Promise<void> {
         if (this.sdk) return;
         const sdk = new BotSDK({
             botUsername: this.account,
@@ -489,7 +553,10 @@ class AccountRunner {
             autoReconnect: true,
             autoLaunchBrowser: false,
             showChat: false,
-            readyTimeout: 0
+            readyTimeout: 0,
+            // The SDK derives its HTTP origin (Grand Exchange and market calls) from this,
+            // else from the gateway URL, which here is loopback with no game server behind it.
+            browserLaunchUrl: `https://${server.replace(/^wss?:\/\//, '').replace(/\/.*$/, '')}/bot`
         });
         try {
             await accountScope.run(this, () => Promise.race([sdk.connect(), rejectAfter(SDK_HANDSHAKE_MS, 'gateway handshake')]));
@@ -509,16 +576,18 @@ class AccountRunner {
     }
 
     private watch(): void {
-        if (this.phase !== 'online' || !this.sdk) return;
+        if (this.state !== 'online' || !this.sdk) return;
         const age = this.sdk.getStateAge();
         if (age > STATE_SILENCE_MS) {
             this.note(`[fleet] no game state for ${Math.round(age / 1000)}s; restarting the client`);
+            this.event('client_silent', { silentSec: Math.round(age / 1000) });
             void this.killChild('state went silent');
             return;
         }
         const quiet = Date.now() - this.lastRoleActivity;
         if (this.roleCtl && quiet > this.cfg.stallMinutes * 60_000) {
             this.note(`[fleet] role has not logged for ${Math.round(quiet / 60_000)} min; restarting it`);
+            this.event('role_stall', { quietMin: Math.round(quiet / 60_000) });
             this.roleCtl.abort(new Error(`stalled (${this.cfg.stallMinutes} min without a log line)`));
         }
     }
@@ -548,6 +617,7 @@ class AccountRunner {
                 if (!ctl.signal.aborted) {
                     this.stats.roleFailures++;
                     this.lastError = `role ${outcome}`;
+                    this.event('role_error', { error: errText(e).slice(0, 300) });
                     if (e instanceof Error && e.stack) this.note(`[fleet] ${e.stack.split('\n').slice(0, 6).join(' | ')}`);
                 }
             } finally {
@@ -574,6 +644,8 @@ class AccountRunner {
             signal,
             log: (message, data) => {
                 this.lastRoleActivity = Date.now();
+                const phase = describePhase(message, data);
+                if (phase !== null) this.rolePhase = { at: this.lastRoleActivity, text: phase };
                 this.note(`[${cfg.role}] ${message}${data ? ` ${JSON.stringify(data)}` : ''}`);
             },
             reportBank: snapshot => {
@@ -583,6 +655,33 @@ class AccountRunner {
                 void this.fleet.ledger.record({ account: this.account, role: cfg.role, asOf: iso(), items: snapshot.items });
             }
         };
+    }
+
+    /**
+     * Click the logout button and wait for the client to leave (its session ends
+     * and the runner exits). The server refuses within COMBAT_LOGOUT_TICKS of
+     * combat ("You can't log out ..."), so a refusal waits that out and retries once.
+     */
+    private async logout(): Promise<boolean> {
+        const child = this.child;
+        const sdk = this.sdk;
+        if (!child || child.exitCode !== null || !sdk || !sdk.getState()?.inGame) return false;
+        this.note('[fleet] logging out');
+        for (let attempt = 0; attempt < 2; attempt++) {
+            const clickTick = sdk.getState()?.tick ?? 0;
+            await sdk.sendClickComponent(LOGOUT_BUTTON).catch(() => undefined);
+            const refused = sdk
+                .waitForCondition(s => s.gameMessages.some(m => /can't log ?out/i.test(m.text) && m.tick >= clickTick), 8_000)
+                .then(() => 'refused' as const, () => new Promise<never>(() => undefined));
+            const outcome = await Promise.race([child.exited.then(() => 'out' as const), refused, sleep(8_000).then(() => 'timeout' as const)]);
+            if (outcome === 'out') return true;
+            if (outcome === 'timeout') return false;
+            if (attempt === 0) {
+                const from = sdk.getState()?.tick ?? clickTick;
+                await sdk.waitForCondition(s => s.tick >= from + COMBAT_LOGOUT_TICKS + 1, 15_000).catch(() => undefined);
+            }
+        }
+        return false;
     }
 
     private async killChild(reason: string): Promise<void> {
