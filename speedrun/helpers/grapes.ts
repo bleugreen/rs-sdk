@@ -110,6 +110,8 @@ const GRAPE_RESPAWN_TICKS = 80;
 // Phoenix Gang hideout (m50_152.jm2, underground) and the solo half of Shield of Arrav
 // that opens its door (quest_blackarmgang.rs2 phoenixdoor: %phoenixgang >= joined).
 const PHOENIX_GRAPES = { x: 3237, z: 9761, level: 0 };
+/** The grapes lie on a table (loc 595) that blocks their tile; the camper stands just south. */
+const PHOENIX_STAND = { x: 3237, z: 9762, level: 0 };
 /** Ladder down (loc 1754, m50_52.jm2) in the VTAM building, south-east Varrock. */
 const PHOENIX_LADDER_DOWN = { x: 3244, z: 3383, id: 1754 };
 const PHOENIX_DOOR = { x: 3247, z: 9779, id: 2397 };
@@ -130,6 +132,8 @@ const underground = (p: { z: number }) => p.z > 9000;
 interface Spawn {
     name: string;
     tile: { x: number; z: number; level: number };
+    /** Where the camper stands, when the spawn's own tile is not walkable. Defaults to `tile`. */
+    stand?: { x: number; z: number; level: number };
     jug?: { x: number; z: number; level: number };
     bank: Tile;
     /** True when the account is in the spawn's building (and must leave before banking). */
@@ -592,6 +596,7 @@ class Gatherer {
     readonly phoenix: Spawn = {
         name: 'phoenix',
         tile: PHOENIX_GRAPES,
+        stand: PHOENIX_STAND,
         bank: VARROCK_EAST_BANK,
         inside: () => underground(position(this.sdk)),
         goTo: () => this.enterHideout(),
@@ -610,14 +615,15 @@ class Gatherer {
             return;
         }
         const spot = spawn.tile;
-        // The spawn is a race (other players camp it too): stand on the spawn tile, watch
+        const stand = spawn.stand ?? spot;
+        // The spawn is a race (other players camp it too): stand on (or by) the spawn, watch
         // every tick from shortly before the respawn is due, and send the pickup packet
         // the tick the grape appears. The jug spawn is only visited when no grape is due.
         const onSpawn = () => {
             const q = position(this.sdk);
-            return q.x === spot.x && q.z === spot.z && q.level === spot.level;
+            return q.x === stand.x && q.z === stand.z && q.level === stand.level;
         };
-        if (!onSpawn()) await this.bot.walkTo(spot.x, spot.z, 0);
+        if (!onSpawn()) await this.bot.walkTo(stand.x, stand.z, 0);
         let lastGone = tick(this.sdk);
         let visibleSince = -1;
         while (invCount(this.sdk, ITEM.grapes) < bankAt && freeSlots(this.sdk) > 1) {
@@ -659,7 +665,7 @@ class Gatherer {
                 await this.bot.walkTo(spot.x, spot.z, 0);
                 continue;
             }
-            if (!onSpawn() && !due) await this.bot.walkTo(spot.x, spot.z, 0);
+            if (!onSpawn() && !due) await this.bot.walkTo(stand.x, stand.z, 0);
             await this.sdk.waitForTicks(due ? 1 : Math.min(5, GRAPE_RESPAWN_TICKS - 15 - since));
         }
     }
@@ -678,7 +684,7 @@ class Gatherer {
             if (!down.ok) throw new Error(`could not climb down into the hideout from ${JSON.stringify(position(this.sdk))}`);
         }
         // Through the gang's door (open only to members), then to the spawn.
-        const reach = await this.bot.walkTo(PHOENIX_GRAPES.x, PHOENIX_GRAPES.z, 0);
+        const reach = await this.bot.walkTo(PHOENIX_STAND.x, PHOENIX_STAND.z, 0);
         if (dist(position(this.sdk), PHOENIX_GRAPES) <= 1) {
             this.phoenixMember = true;
             return;
@@ -692,7 +698,7 @@ class Gatherer {
             this.phoenixMember = false;
             throw new NotPhoenixMember();
         }
-        await this.bot.walkTo(PHOENIX_GRAPES.x, PHOENIX_GRAPES.z, 0);
+        await this.bot.walkTo(PHOENIX_STAND.x, PHOENIX_STAND.z, 0);
         if (dist(position(this.sdk), PHOENIX_GRAPES) > 1) throw new Error(`hideout: could not reach the spawn (${reach.message})`);
         this.phoenixMember = true;
     }
@@ -788,6 +794,8 @@ class Gatherer {
         });
         if (this.phoenixMember) return;
         await this.converse(/^straven$/i, [/intelligence report/]);
+        // Straven keeps the report when he lets you join.
+        if (!report()) this.phoenixMember = true;
         this.ctx.log('phoenix', { joined: !report() });
     }
 
