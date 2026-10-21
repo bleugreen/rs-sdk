@@ -769,7 +769,19 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
             await walkPath(sdk, out, 6);
         }
         const door = await findLoc(sdk, /^door$/i, { x: 2799, z: 4453 }, 10);
-        if (door?.options.some(o => /open/i.test(o))) await opLoc(sdk, L, /^door$/i, [2799, 4453], 1, () => true, 5);
+        if (door?.options.some(o => /open/i.test(o))) {
+            // a new op replaces a pending one, so wait for the door to open
+            // before clicking the stairs
+            const m0 = sdk.getState()!.gameMessages.length;
+            await sdk.sendInteractLoc(door.x, door.z, door.id, 1);
+            let opened = false;
+            for (let i = 0; i < 10 && !opened; i++) {
+                await ticks(sdk, 1);
+                const d2 = (await sdk.scanNearbyLocs(3)).find(l => /^door$/i.test(l.name) && Math.abs(l.x - 2799) <= 1 && Math.abs(l.z - 4453) <= 1);
+                opened = !d2 || !d2.options.some(o => /open/i.test(o)) || d2.x !== door.x || d2.z !== door.z;
+            }
+            if (!opened) throw new Error(`boss door did not open: ${sdk.getState()!.gameMessages.slice(m0).map(m => m.text).join(' | ')}`);
+        }
         await opLoc(sdk, L, /stairs/i, [2812, 4452], 1, () => inMap(sdk, 42, 69), 80);
         L.end();
         L.begin('flooded level west -> west stairs down to the crystal chamber');
