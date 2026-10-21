@@ -29,6 +29,10 @@ const legs: Array<[string, P, P]> = [
     ['GT maze entrance (Elkoy jump) -> Hazelmere ladder', [2504, 3192], [2677, 3088]],
     ['GT Hazelmere ladder -> maze entrance (Elkoy)', [2677, 3088], [2504, 3192]],
     ['GT Ardougne teleport -> Hazelmere ladder', [2661, 3305], [2677, 3088]],
+    // The stronghold spirit tree only works after the quest (spirit_tree.rs2:1-5): leave by the gate.
+    ['GT Grand Tree door (south) -> stronghold gate (north side)', [2465, 3491], [2461, 3385]],
+    ['GT stronghold gate (south side) -> Hazelmere ladder', [2461, 3382], [2677, 3088]],
+    ['GT Ardougne teleport -> Battlefield young tree', [2661, 3305], [2555, 3259]],
     ['GT Yanille (Watchtower teleport is not Yanille here) bank -> Hazelmere ladder', [2612, 3092], [2677, 3088]],
     // The Grand Tree's doors (treedoorl/r, z=3492) are scripted, not masked as doors: legs stop at them.
     ['GT stronghold spirit tree -> Grand Tree door (south)', [2461, 3444], [2465, 3491]],
