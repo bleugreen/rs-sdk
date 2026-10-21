@@ -117,6 +117,24 @@ describe('readQuestStage', () => {
         expect(sdk.sent.map(a => a.method)).toEqual(['sendClickComponent', 'sendCloseModal']);
     });
 
+    test('clicks once more when the server dropped the first click', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 50, quests: { elena: 'started' }, questJournal: null }));
+        let clicks = 0;
+        sdk.onSend = (a, f) => {
+            if (a.method === 'sendClickComponent' && ++clicks === 1) {
+                // Busy: the click is skipped, and the ticks go by.
+                queueMicrotask(() => { for (let i = 0; i < 4; i++) f.tick(); });
+            } else if (a.method === 'sendClickComponent') {
+                queueMicrotask(() => f.tick(s => ({ questJournal: journal('Plague City', ELENA_MUD, s.tick + 1) })));
+            } else if (a.method === 'sendCloseModal') {
+                queueMicrotask(() => f.tick(s => ({ questJournal: { ...s.questJournal!, open: false } })));
+            }
+        };
+        const r = await readQuestStage(sdk as never, 'elena');
+        expect(r.reading.source).toBe('journal');
+        expect(sdk.sent.map(a => a.method)).toEqual(['sendClickComponent', 'sendClickComponent', 'sendCloseModal']);
+    });
+
     test('no click when the tab alone leaves one stage', async () => {
         const sdk = new FakeSdk(baseState({ quests: { cook: 'started' } }));
         const r = await readQuestStage(sdk as never, 'cook');

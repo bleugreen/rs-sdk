@@ -163,6 +163,7 @@ export interface ReadOptions {
     force?: boolean;
     /** Leave the journal open (the caller closes it, or the next modal replaces it). */
     leaveOpen?: boolean;
+    /** Ticks to wait for the journal after each of the (at most two) clicks; default 3. */
     maxTicks?: number;
 }
 
@@ -187,15 +188,20 @@ export async function readQuestStage(sdk: JournalSdk, key: QuestKey, opts: ReadO
     if (!before || !t.questList || !t.journalTitle) throw new Error(`readQuestStage: ${t.title} is not observable`);
     if (!opts.force && before.stages.length === 1) return { reading: before, journal: null };
 
-    const maxTicks = opts.maxTicks ?? 5;
-    const sentAt = s0.tick;
-    await sdk.sendClickComponent(t.questList.componentId);
-    const opened = await waitUntil(
-        sdk,
-        s => !!s.questJournal?.open && s.questJournal.tick >= sentAt && compact(s.questJournal.title) === compact(t.journalTitle!),
-        { maxTicks, after: sentAt - 1 },
-    );
-    if (!opened.ok) throw new Error(`readQuestStage: the ${t.title} journal did not open within ${maxTicks} ticks`);
+    // The click runs a protected script, which the engine skips without a word
+    // while the player is busy (delayed, or inside another script, as right after
+    // a teleport or a dialogue): so one more click if the journal has not opened
+    // in time. The journal opens the tick after an accepted click.
+    const perClick = opts.maxTicks ?? 3;
+    const journalOpen = (after: number) => (s: BotWorldState) =>
+        !!s.questJournal?.open && s.questJournal.tick > after && compact(s.questJournal.title) === compact(t.journalTitle!);
+    let opened = null as Awaited<ReturnType<typeof waitUntil>> | null;
+    for (let attempt = 0; attempt < 2 && !opened?.ok; attempt++) {
+        const sentAt = sdk.getState()?.tick ?? s0.tick;
+        await sdk.sendClickComponent(t.questList.componentId);
+        opened = await waitUntil(sdk, journalOpen(sentAt), { maxTicks: perClick, after: sentAt });
+    }
+    if (!opened?.ok) throw new Error(`readQuestStage: the ${t.title} journal did not open after two clicks`);
     const journal = opened.state.questJournal!;
     const reading = questStage({ state: opened.state, probed: { [journalProbeName(key)]: journal } }, key)!;
     if (!opts.leaveOpen) {
