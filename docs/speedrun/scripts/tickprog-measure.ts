@@ -13,7 +13,8 @@
 //                (off the scored clock; the run's trades cost rs/105's 5 ticks per load on top)
 //   tree         knife normal trees, Lumbridge    --successes=150 [--level=1]  (the demo loop)
 //                (knife modes: --successes counts xp drops, one log or fish each; the result's
-//                ticksPerExpectedRoll, on tree and fly, is the figure to set against the cadence)
+//                ticksPerExpectedRoll is the figure to set against the cadence; on the trees it
+//                needs an axe worn or carried, and the result names the one it used)
 //   pickpocket   Ardougne knight, eat in windows  --level=55 --rolls=300 [--hold=1]
 //   agility      Wilderness course                --laps=10 [--course=gnome]
 //
