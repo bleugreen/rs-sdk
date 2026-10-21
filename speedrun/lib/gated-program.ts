@@ -184,7 +184,8 @@ export async function runGatedProgram(
 
         const started = await startProgram(sdk, name, run);
         log(`T${started.tick} ${name} run ${started.runId} ${technique}${paused ? ' (paused)' : ''}`);
-        let stopFor: SegmentEnd | null = null;
+        // set from the onProgress closure, which TypeScript's narrowing does not follow
+        let stopFor = null as SegmentEnd | null;
         let drops = 0;
         let slips = 0;
         const requestStop = (why: SegmentEnd) => {

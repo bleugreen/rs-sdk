@@ -80,7 +80,7 @@ const isKnife = (st: ProgramStatus) => st.params.technique === 'knife' || st.par
  */
 function gather(gaps: { knife: number; plain: number }, extra?: (st: ProgramStatus, off: number) => void) {
     return (st: ProgramStatus, t: number) => {
-        const key = st.name === 'knife-mine' ? 'ores' : 'rolls';
+        const key = st.name === 'knife-mine' ? 'ores' : st.params.logs !== undefined ? 'logs' : 'rolls';
         const off = t - st.startedTick;
         if (off > 0 && off % (isKnife(st) ? gaps.knife : gaps.plain) === 0) st.counters[key] = (st.counters[key] ?? 0) + 1;
         extra?.(st, off);
@@ -102,7 +102,7 @@ function scriptedGate(page: FakePage, onTimes: number[], opts: Partial<GateOptio
     return new HostGate(page.sdk, {
         model: { plainCycle: 4 },
         direct: IN_PAGE_RULE,
-        plainTicksPerDrop: 4,
+        plainTicksPerRoll: 4,
         minProbeGapTicks: 10,
         offReprobeTicks: 1000,
         measureDrops: 10,
@@ -244,7 +244,7 @@ describe('inPageGate', () => {
     test('probes in the page with 20 trials; 19 of 20 keeps the knife on, 18 turns it off', async () => {
         for (const [onTime, on, status] of [[20, true, 'pass'], [19, true, 'marginal'], [18, false, 'investigate']] as const) {
             const page = probePage([...Array(onTime).fill(1), ...Array(20 - onTime).fill(2)]);
-            const gate = inPageGate(page.sdk, { plainTicksPerDrop: 4 });
+            const gate = inPageGate(page.sdk, { plainTicksPerRoll: 4 });
             expect(await drive(page, gate.probe('start'))).toBe(on);
             expect(page.starts).toEqual([{ name: 'probe', params: { trials: 20, maxWait: 8 }, tick: 1000 }]);
             expect(gate.history[0]!.result!.path).toBe('direct');
@@ -254,15 +254,15 @@ describe('inPageGate', () => {
 
     test('the trial count is exposed, and the rule scales to it', async () => {
         const page = probePage(Array(10).fill(1));
-        const gate = inPageGate(page.sdk, { plainTicksPerDrop: 4, trials: 10 });
+        const gate = inPageGate(page.sdk, { plainTicksPerRoll: 4, trials: 10 });
         expect(await drive(page, gate.probe('start'))).toBe(true);
         expect(page.starts[0]!.params.trials).toBe(10);
         expect(gate.history[0]!.verdict).toMatchObject({ passAt: 10, floorAt: 10 });
     });
 
-    test('arms the measured switch-off from plainTicksPerDrop', () => {
+    test('arms the measured switch-off from plainTicksPerRoll', () => {
         const page = probePage([]);
-        const gate = inPageGate(page.sdk, { plainTicksPerDrop: 4, measureDrops: 3 });
+        const gate = inPageGate(page.sdk, { plainTicksPerRoll: 4, measureDrops: 3 });
         gate.on = true;
         gate.drop(100);
         gate.drop(105);
