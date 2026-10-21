@@ -694,6 +694,7 @@ bun speedrun/rehearse.ts --skill=<name|module.ts> --bot=<env name> [--to=99] [--
     [--gate-bot=<gate account env, default cairn_twin off a local world>] [--gate-json=<file>]
     [--gate-probe-trials=60] [--probe-trials=0]
     [--force-gate] [--from=<step name or index>] [--log=<file>] [--lab] [--insecure-query-login]
+    [--host-reservation=<file>]
 ```
 
 1. **Gate, off the clock.** `/playercount`; the direct read on a separate gate account
@@ -715,7 +716,7 @@ bun speedrun/rehearse.ts --skill=<name|module.ts> --bot=<env name> [--to=99] [--
 3. **Out, then the free work.** `logoutClean` follows the moment the chain ends; a last step that
    logged out by itself counts as done. Then the gate tab's after-probe, the public player page
    (`tools/hiscore-scrape.ts`) against the log, and a one-screen summary. Exit codes: 0 done,
-   3 refused, 4 stopped or paused (a re-run resumes), 1 failed.
+   3 refused, 4 stopped or paused (a re-run resumes), 5 host reserved (below), 1 failed.
 
 **Claiming a name: `--claim`.** `bun speedrun/rehearse.ts --claim --bot=<name> --log=<file>` runs
 S00 and then `logoutClean`, nothing else. The tutorial skip creates the account, and the clean
@@ -725,6 +726,22 @@ tab probes and no skill module, so a claim is exactly one login. A world that do
 The summary and the hiscore check run as for an attempt, against the Overall row only.
 `--claim` refuses every option that would add a login, a probe or a step
 (docs/speedrun/rehearsals/CLAIMS.md).
+
+**Host reservation.** A run-capable host carries `~/host-reserved.json`
+(`{"owner", "until", "reason"}`, docs/speedrun/rehearsals/HOST.md, 'Run-capable twin') while the
+gate or the scored run holds it. It is live while `until` is in the future; a missing file, a
+past `until` or a malformed file (which prints a warning) is not. The path is
+`--host-reservation=<file>`, else `$SPEEDRUN_HOST_RESERVATION`, else `$HOME/host-reserved.json`.
+While it is live, an attempt or a claim refuses before any login (the gate account's, the gate
+tab's or its own), naming owner, until and reason, and exits 5; `--force-gate` does not override
+it. It is read again before each login and **at every logout-safe step boundary**, which is the
+only place it is checked in flight: the runner exposes no safe point inside a step, so a long
+band runs to its end before the pause. A live reservation there logs out with `logoutClean`
+(page-confirmed; it clears `expectInWorld`, so the watchdog relaunches nothing), logs the gate tab
+out without its after-probe, writes a `(gate) paused for the gate/run` row (owner, until, reason,
+the next step), and exits 5. Nothing restarts it: once the file is gone or expired, the same
+command resumes from game state, and every summary over that log prints a `PAUSED for the
+gate/run` line per pause.
 
 The tick log adds annotation rows: `(session)` from client tick 0 (the login) to the logout click
 per client session, `(program)` per in-page program run (its final `ProgramStatus`), `(reach)` per
