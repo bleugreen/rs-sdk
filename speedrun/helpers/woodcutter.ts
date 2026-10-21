@@ -117,8 +117,10 @@ const SPOTS: Spot[] = [
     // (bank upstairs) and Tirannwn (Regicide).
     { id: 'seers-magic-north', tier: 'magic', bank: 'seers', stand: { x: 2693, z: 3426 }, radius: 6 },
     { id: 'seers-magic-south', tier: 'magic', bank: 'seers', stand: { x: 2701, z: 3400 }, radius: 6 },
-    { id: 'seers-yews', tier: 'yew', bank: 'seers', stand: { x: 2709, z: 3462 }, radius: 7 },
+    // Catherby first: 7 trees and, on the demo, no other player on our tree (332
+    // yews/h); the 3 Seers yews had 33-43 players around them (72-133/h).
     { id: 'catherby-yews', tier: 'yew', bank: 'catherby', stand: { x: 2761, z: 3435 }, radius: 12 },
+    { id: 'seers-yews', tier: 'yew', bank: 'seers', stand: { x: 2709, z: 3462 }, radius: 7 },
     { id: 'seers-maples', tier: 'maple', bank: 'seers', stand: { x: 2727, z: 3498 }, radius: 7 },
     { id: 'seers-maples-south', tier: 'maple', bank: 'seers', stand: { x: 2724, z: 3472 }, radius: 10 },
     { id: 'seers-willows', tier: 'willow', bank: 'seers', stand: { x: 2711, z: 3507 }, radius: 9 },
@@ -203,6 +205,8 @@ class Woodcutter {
     private avoid = new Map<string, number>();
     /** fetchBetterAxe runs at most once per process, so a sold-out Bob cannot loop it. */
     private upgradeTried = false;
+    /** Axes the server refused to wield (the Attack level is short); they work from the pack. */
+    private unwieldable = new Set<string>();
 
     constructor(private ctx: RoleContext) {
         this.bot = ctx.bot;
@@ -370,9 +374,12 @@ class Woodcutter {
     /** Wield the best carried axe if the Attack level allows; otherwise it works from the pack. */
     private async wieldBestAxe(): Promise<void> {
         const carried = this.keptPackAxe();
-        if (!carried || !carried.optionsWithIndex.some(o => /wield/i.test(o.text))) return;
+        if (!carried || this.unwieldable.has(carried.name) || !carried.optionsWithIndex.some(o => /wield/i.test(o.text))) return;
         const r = await this.bot.equipItem(carried);
-        if (!r.success) this.ctx.log('axe stays in the pack', { axe: carried.name, reason: r.message });
+        if (!r.success) {
+            this.unwieldable.add(carried.name);
+            this.ctx.log('axe stays in the pack', { axe: carried.name, reason: r.message });
+        }
     }
 
     /** Bank at the spot's bank: logs in, junk in, best axe out, bank reported. */
