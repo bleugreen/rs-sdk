@@ -133,10 +133,11 @@ in with a one-time token over Chrome's DevTools port (cairn://p/rs/138; step 3, 
 that expects `0 0 0`). The earlier launch put the password in the tab's URL, and so in `ps`, in tmux
 and in shell history (rs/130). It is gone from this runbook; never rebuild it.
 
-`tab-login.ts` and the page server's token endpoints exist only on rs/138's branch, so every command
-marked **requires rs/138 on RUN_COMMIT** needs step 0's `RUN_COMMIT` to include rs/138's merge.
-**Until rs/138 is merged to main, no real account's credentials, fleet or SCORED, go on the host**
-(main, 10:20 PDT). Step 4 (the helpers are fleet accounts) and step 7 (SCORED) wait for it.
+`tab-login.ts` and the page server's token endpoints are on main since rs/138's merge (#120,
+`96fc462a`), so every command marked **requires rs/138 on RUN_COMMIT** needs step 0's `RUN_COMMIT`
+to be `96fc462a` or a descendant of it. **No real account's credentials, fleet or SCORED, go on the
+host while `~/rs-sdk` is at an older commit** (main, 10:20 PDT): step 4 (the helpers are fleet
+accounts) and step 7 (SCORED) check this first.
 
 **Leftover check.** It lists every tmux socket on the host with its sessions, other agents' sockets
 included, plus every `chrome*`, `ffmpeg`, `bun` and `timeout` process with its age, and the host
@@ -264,8 +265,9 @@ Then put the clone on it and build:
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'export PATH=$HOME/.bun/bin:$PATH; cd ~/rs-sdk && git fetch -q origin && git checkout -q --detach "$(cat $HOME/run-commit)" && bun install && (cd server/webclient && bun install && bun run build) && (cd server/gateway && bun install) && mkdir -p ~/recordings ~/rs-run/chrome-profile && git log -1 --oneline && ls server/webclient/out/bot/client.js'
 ```
 
-`RUN_COMMIT` must include rs/138's merge: step 3's Chrome login (`speedrun/tools/tab-login.ts` and
-the page server's token endpoints) exists only there ("Credentials", above).
+`RUN_COMMIT` must include rs/138's merge (#120, `96fc462a`): step 3's Chrome login
+(`speedrun/tools/tab-login.ts` and the page server's token endpoints) arrived with it ("Credentials",
+above). Check with `git -C ~/rs-sdk merge-base --is-ancestor 96fc462a "$RUN_COMMIT"`.
 
 Account files: the gate account (step 6) is a throwaway demo account whose name starts with
 `cairn_`, with `~/rs-sdk/bots/<gate>/bot.env` holding `BOT_USERNAME`, `PASSWORD`,
@@ -277,7 +279,7 @@ users can read. SCORED's env file has the same keys and mode. Its path is set on
 written here only as `$SCORED_ENV`. It must be `~/rs-sdk/bots/<account>/bot.env`, with the directory
 named after `BOT_USERNAME` (`bots/*/` is gitignored, so it stays outside git): the page server and
 the run's session.ts both read accounts from `~/rs-sdk/bots`. **It is not put on the host until
-rs/138 is merged to main.** Never use a fleet or helper account for the gate.
+`~/rs-sdk` is at a `RUN_COMMIT` that includes #120.** Never use a fleet or helper account for the gate.
 
 ## 1. Preconditions: Fly edge iad, TCP connect p50 at most 5 ms
 
@@ -423,8 +425,8 @@ Two rules from this page apply to that launch:
   fires instead, the helpers are dropped, not logged out; whether the launcher logs out on SIGTERM
   is rs/117's to say. Neither the launcher nor HELPERS.md is on this branch or on the host's
   checkout yet (m, 17:22 UTC), so this form has not been run.
-- **Blocked until rs/138 is merged to main.** The helpers are fleet accounts, so their credentials
-  stay off the host until then ("Credentials").
+- **Only once `~/rs-sdk` is at a `RUN_COMMIT` that includes #120** (rs/138, on main). The helpers are
+  fleet accounts, so their credentials stay off the host before that ("Credentials").
 
 ## 5. Start the recording
 
@@ -533,7 +535,7 @@ programs run, which is what the in-run monitor reads.
 
 ## 7. SCORED's tab: the run's first login
 
-**Blocked until rs/138 is merged to main and in `RUN_COMMIT`** ("Credentials").
+**Only once `RUN_COMMIT` includes #120** (rs/138, on main since `96fc462a`; "Credentials").
 
 With the helpers in (step 4), the recording running (step 5) and the gate passed (step 6), launch
 Chrome as in step 3 with `ENV=$SCORED_ENV` and `T=9h`. Then log it in with step 3's tab-login
