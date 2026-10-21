@@ -536,35 +536,179 @@ raw output is in `data/fedora-0400.json` and `data/fedora-samples.log`.
 **Steadiness from Ashburn**, per direct session (one minute or so each; p90 from
 `demo-latency-analyze.ts`, catch-ups per minute counted by rs/102 from decoded ticks):
 
-| Session | Direct result | Tick p90 | Catch-ups per minute | Passes p90 <= 400 and catch-ups <= 1 |
+| Session | Direct result | Tick p90 | Catch-ups per minute | Passes (c), at most 2 per minute |
 | --- | --- | --- | --- | --- |
 | 02:43 eastus | 60/0/0 | 374 ms | 0 | yes |
 | 03:05 Quebec | 56/4/0 | 386 ms | 0.8 | yes (its misses come from its 24 ms connect) |
 | 03:17 eastus | 60/0/0 | 373 ms | 0 | yes |
 | 04:04 eastus | 60/0/0 | 372 ms | 0 | yes |
-| 04:13 eastus | 40/16/4 | 486 ms | 22.6 | **no** |
-| 04:24 eastus2 (rs/95, probe minute) | 49/11/0 | 391 ms | 14 | **no** (fails a, c) |
-| 04:47 eastus (rs/95) | 60/0/0 | 350 ms | 3.3 (4 in 1.2 min) | **no** (b by 4 ms, c) |
-| 04:55 eastus (rs/95) | 59/0/0 (1 lost) | 346 ms | 1.5 | **no** (c only, narrowly) |
-| 05:35 eastus (rs/95) | 36/22/1 (+1 at 7) | 473 ms | 13.8 | **no** (fails a, b, c) |
+| 04:13 eastus | 40/16/4 | 486 ms | 22.6 (31 in 1.4 min) | **no** |
+| 04:24 eastus2 (rs/95, probe minute) | 49/11/0 | 391 ms | 10.8 (15 in 1.4 min) | **no** (fails a, c) |
+| 04:47 eastus (rs/95) | 60/0/0 | 350 ms | 0.8 (1 in 1.3 min) | yes |
+| 04:55 eastus (rs/95) | 59/0/0 (1 lost) | 346 ms | 0 | yes |
+| 05:35 eastus (rs/95) | 36/22/1 (+1 at 7) | 473 ms | 23.3 (32 in 1.4 min) | **no** (fails a, c) |
+
+Corrected: earlier drafts gave 3.3, 1.5, 14 and 13.8 catch-ups per minute for 04:47, 04:55, 04:24
+and 05:35. Recounted from each session's decoded ticks over its wall time with
+`docs/speedrun/scripts/demo-burst-analysis.ts`, they are 0.8, 0, 10.8 and 23.3, so 04:47 and 04:55
+pass (c) and are not evidence that a few catch-ups are harmless.
 
 A cap on the maximum interval does not separate good minutes from bad: single long ticks are common
 and harmless on their own, and a 600 ms cap rejected the minutes at 02:43, 03:17 and 04:04 that
-scored 60 of 60. The p90 and catch-up criteria do, on this data. rs/95's 04:24 session shows why
-the catch-up count is needed as well as p90: its p90 of 391 ms passes, but 14 catch-ups per minute
-cost the direct path 11 of 60. The limit of 1 per minute is conservative: at 04:47 and 04:55 the
-direct path landed 60 and 59 of 60 with 3.3 and 1.5 catch-ups per minute. A few isolated catch-ups
-cost little; what costs is a burst of them. rs/102's overnight series should calibrate the limit.
+scored 60 of 60. The catch-up count does. rs/95's 04:24 session shows why it is needed as well as
+p90: its p90 of 391 ms passes, but 10.8 catch-ups per minute cost the direct path 11 of 60. The
+overnight series below calibrates the limit at 2 per minute.
 
-**Should the run go at a quiet hour?** Not settled, and home data cannot settle it. Overruns are
-load-dependent, but 04:04 (1,673 online) had none while 04:13 (1,645-1,669) had many, so the player
-count alone does not predict them. A quieter hour also costs elsewhere: rocks and trees respawn
-faster with more players online (`server/content/scripts/general/scripts/player_count.rs2:1-4`,
-capped at 2,000), and rs/2 costs Mining at about 4,034 ticks at 1,260 online against about 4,288 at
-a quiet hour. cairn://p/rs/102 samples the Ashburn pair overnight, with about 7.5 continuous minutes
-of tick spacing per pair (`--phases=react,sample --minutes=6`); its section on overrun bursts will
-follow in its own change. Until then: start at a normal hour and let the run-night gate decide
-minute by minute (section 10).
+**Should the run go at a quiet hour?** No hour can be chosen in advance (next subsection): the
+player count barely predicts overruns, and a quieter hour also costs elsewhere, since rocks and
+trees respawn faster with more players online
+(`server/content/scripts/general/scripts/player_count.rs2:1-4`, capped at 2,000) and rs/2 costs
+Mining at about 4,034 ticks at 1,260 online against about 4,288 at a quiet hour. Start at a normal
+hour and let the run-night gate decide minute by minute (section 10).
+
+### Overrun bursts overnight
+
+cairn://p/rs/102 sampled the demo from Ashburn from 02:43 to 12:30 PDT on 21 October: every 30-60
+minutes, a GitHub Azure eastus runner behind the `iad` edge (TCP connect 2-3 ms) ran the direct
+reaction probe (60 trials at +0 ms), and from 06:00 kept the same session open for 6-17 more
+minutes of tick spacing. rs/95's and rs/130's runs on the same runner are included, which gives
+24 Ashburn samples (the 03:05 Quebec runner is excluded). Between samples, the public
+`/playercount`, a no-login websocket upgrade and a hash of `/bot/client.js` were read every 20 s,
+60 s and 5 min. Scripts: `docs/speedrun/scripts/demo-burst-sampler.ts` and
+`demo-burst-analysis.ts`; raw logs, per-pair JSON, the per-minute series and the analysis output are
+in [`data/overnight-bursts/`](data/overnight-bursts/). Catch-ups are counted as in section 10 (an
+interval under 150 ms right after one over 350 ms) from decoded ticks.
+
+**Three regimes, not a continuum.** Per sample, over the probe's own 1.3 minutes:
+
+| Regime | Catch-ups per minute | Ashburn samples | Direct reactions on the next tick |
+| --- | --- | --- | --- |
+| Calm | 2 or fewer | 18 | 971 of 985 (98.6%) |
+| Simmer | 2-10 | 1 (07:01, 4.0) | 54 of 60 |
+| Severe burst | 10 or more | 5 (04:13, 04:24, 05:36, 06:10, 09:51; 11-26 per minute) | 212 of 300 (71%) |
+
+The long windows show simmer to be far more common than one sample suggests: inside them, single
+minutes with 3-9 catch-ups come and go all morning.
+
+**How long bursts last.**
+
+- *Severe bursts* were each seen in exactly one sample, with calm samples on both sides. The
+  tightest bounds: 04:13 lasted at most 14 minutes (calm at 04:04 and 04:18), 04:24 at most 23,
+  05:36 at most 51 and 09:51 at most 52. Only one was watched continuously: 06:10, at 19-23
+  catch-ups in each of 4 minutes, which ended with the demo's restart at 06:14. So a severe burst
+  lasts at least a few minutes and, in every case followed, was gone by the next sample 5-25
+  minutes later.
+- *Simmer minutes* (3 or more catch-ups in a single minute) come in short runs: 26 runs inside the
+  long windows, of which 21 closed inside a window at 1-4 minutes (median 1); the other 5 were cut
+  off by a window's edge at 1-5 minutes.
+- *Simmer stretches* last much longer. From 08:36 to 11:36 the demo was rarely calm for five
+  minutes at a time (table below), and the direct probe lost 6 and 5 of 60 at 10:43 and 11:18 at
+  only 1.6 and 0.8 catch-ups per minute in the probe's own span. 12:02-12:21 was the calmest long
+  window of the night.
+
+**Which hours would have passed the gate.** (a) at 58 of 60 or better and (c) at 2 or fewer per
+minute, per sample; and, for the long windows, the share of overlapping 5-minute windows with (c) at
+2 or fewer:
+
+| PDT hour | Samples passing (a) and (c) | 5-minute windows passing (c) | Online (median) |
+| --- | --- | --- | --- |
+| 02:00 | 2 of 2 | (no long window) | 1,564-1,651 |
+| 03:00 | 1 of 1 | (no long window) | 1,658 |
+| 04:00 | 4 of 6 | (no long window) | 1,673 |
+| 05:00 | 1 of 2 | (no long window) | 1,720 |
+| 06:00 | 2 of 3 | 4 of 5 | 1,671 |
+| 07:00 | 2 of 3 | 16 of 20 | 1,631 |
+| 08:00 | 1 of 1 | 5 of 14 | 1,699 |
+| 09:00 | 2 of 3 | 1 of 2 | 1,690 |
+| 10:00 | 0 of 1 | 0 of 14 | 1,605 |
+| 11:00 | 0 of 1 | 6 of 13 | 1,626 |
+| 12:00 | 1 of 1 | 13 of 13 | 1,518 |
+
+No hour was clean throughout, and the worst stretch (10:00-11:30) was neither the busiest nor the
+quietest. The 02:00-03:59 samples all passed, but they are three short samples, too few to call
+that hour safe.
+
+**What bursts line up with.**
+
+- *Player count:* weakly at most. Over 159 scored minutes, the correlation between players online
+  and catch-ups per minute is 0.20, and the share of minutes failing (c) by player-count tercile
+  (below 1,612, 1,612-1,676, above) is 44%, 30% and 47%. All five severe samples were at
+  1,645-1,719 online, but so were nine calm ones (for example 1,701 at 09:10 and 1,696 at 08:36).
+- *Hour:* no pattern beyond the one in the table.
+- *The helper fleet:* not testable from this night. rs/41's per-minute series covers 02:00-04:30
+  only (12 scored minutes), and the fleet is about 30 of 1,650 accounts. The severe 04:13 sample sat
+  in a stable stretch with no fleet logins or logouts.
+- *Restarts:* the demo restarted at 01:22 (from rs/41's fleet log), 04:53 and 06:14, and not again
+  through 12:30: the bundle hash, Fly machine and worker stayed the same all morning, and all 238
+  websocket upgrades from 07:44 returned 101. Four of the five severe bursts (04:13, 04:24, 05:36,
+  06:10) fell within 40 minutes before one of the two restarts, and in the 6.3 hours after 06:14
+  there was one severe burst (09:51) and no restart. That fits a game process that degrades before
+  it exits (for example memory growth and long garbage-collection pauses on the 4 GB machine), but
+  it is inferred from two restarts and nothing on the server side has been seen. The longest silence
+  without a restart was 1,987 ms, at 07:50.
+- *The per-player save cadence* (`World.PLAYER_SAVERATE`) was not tested: its phase on the demo is
+  unknown.
+
+**Calibrating (c).** Agreement of (c) with (a) over the 24 Ashburn samples, by limit:
+
+| (c) limit, catch-ups per minute | Agrees with (a) | False passes | False fails |
+| --- | --- | --- | --- |
+| 1 | 21 | 1 (11:18) | 2 (05:09 and 12:02, both 60/60 at 1.6) |
+| **2** | **22** | 2 (10:43, 11:18) | 0 |
+| 3 | 22 | 2 | 0 |
+| 4 | 21 | 3 (adds 07:01's simmer) | 0 |
+| 5 | 21 | 3 | 0 |
+
+Two is the lowest limit with no false fails and keeps margin below the first bad simmer (4.0).
+Both false passes are the late-morning simmer stretch, and (a) caught both, which is why (a) stays a
+pass line beside (c). The 10:43 sample lost 6 of 60 at 1.6 catch-ups per minute, the same rate at
+which 05:09 scored 60 of 60; most of its misses followed runs of two or three short ticks after one
+overrun, where the rule counts only the first. No rule tried separates the two, and both sit at the
+resolution limit of one 60-trial sample.
+
+Softer overrun rules do no better per sample. With each at its best limit, agreement with (a) is
+22 of 24 for 350/150 (the rule above), 21 for 400/200, 21 for 400/225, 21 for 400/250, 22 for a
+bare count of intervals under 150 ms (with two false fails instead of two false passes) and 22 for
+"two ticks summing under 400 ms after one over 350". The softer the rule, the more calm samples it
+fails, because jitter fills calm minutes with long-then-shortish pairs (up to 4.9 per minute in a
+60 of 60 sample).
+
+(b), publication p90 at most 400 ms, agreed with (a) on 17 of 24. Six of its seven disagreements
+failed samples that scored 59 or 60 of 60 (04:18, 07:41, 08:36, 09:10, 09:31 and 12:02, p90
+408-455 ms with 0-1.6 catch-ups per minute), and one passed the bad 07:01 simmer at 383 ms. The p90
+drifted above 400 ms from about 07:40 without costing reactions, so (b) stays context, not a pass
+line.
+
+#### Miss rate by the next tick interval
+
+Per reaction, what decides a miss is how soon the tick after the reaction's frame comes. Over the
+1,284 Ashburn +0 ms trials with a known next interval:
+
+| Next interval | All trials missed | Missed, when the previous interval was over 400 ms |
+| --- | --- | --- |
+| under 150 ms | 51 of 59 (86%) | 27 of 28 |
+| 150-200 ms | 13 of 74 (18%) | 8 of 14 (57%) |
+| 200-225 ms | 2 of 30 (7%) | 0 of 2 |
+| 225-250 ms | 5 of 92 (5%) | 3 of 8 |
+| 250 ms or more | 36 of 1,029 (3.5%) | 10 of 120 (8%) |
+
+This is what the in-page programs' resync logic should expect: a reaction whose frame is followed
+by a catch-up tick almost always lands a tick late; a moderately short tick after a long one
+(150-200 ms) misses about half the time; and a normal interval still misses about 1 in 30. Soft
+pairs are real per reaction even though counting them does not improve the per-minute gate, so the
+in-run monitor can count them as a warning, not a gate.
+
+**For the run.** A start time cannot dodge overruns: they are not tied to the clock or, much, to
+the player count, and severe bursts strike out of calm samples. What the night does support:
+
+- Read the gate right before starting (rs/140's timer now reads it at :00 and :30 UTC from the
+  run host). A severe reading was gone by the next sample in every case followed, so waiting 10-15
+  minutes and re-reading is the right response to one.
+- A simmer stretch can last hours (08:36-11:36 here). If the gate fails on simmer more than twice in
+  a row, starting on a passing read is still right, with the in-run pause above about 5 per minute.
+- A severe burst that lasts more than a few minutes may precede a restart (06:10-06:14 here; 4 of 5
+  severe bursts fell within 40 minutes before one). That suits the restart-warning hook of
+  cairn://p/rs/127, with its threshold as a parameter, not a gate on its own.
 
 ## 10. Run-host recommendation
 
@@ -685,9 +829,10 @@ rs/102 does.
 2. **The relay fix's tail.** rs/98's fixed lite runner landed 60 of 60 from Ashburn (section 5).
    State collection's tail (40 ms p90 on a loaded host) is the remaining risk; run-night
    re-measures keep testing it.
-3. **Other hours.** The reaction distribution and tick steadiness at other hours and player
-   counts, from Ashburn: cairn://p/rs/102's overnight sampler (`--phases=react,sample --minutes=6`
-   per pair). Home samples cannot answer this (section 9).
+3. **Other hours.** Answered for 02:43-12:30 PDT on one night (section 9, 'Overrun bursts
+   overnight'): no hour is reliably clean, and the gate has to decide at the moment of starting.
+   Still open: the evening and a second night. The run host's gate timer (rs/140, :00 and :30 UTC)
+   extends the series without a GitHub runner.
 4. **The HTTP wait.** Ashburn's 404 waits run up to about 380 ms, longer than the reaction data
    allows for the engine's busy time. Other work served between cycles is the likely cause
    (inferred); it does not affect the run's route.
@@ -706,10 +851,11 @@ rs/102 does.
    36/22/1), where rs/113 cut the page-side reaction from 22 ms to 7. Still wanted: rs/113's
    overlay and the in-page program each in a gate-passing minute, and a calm-minute knife and plain
    pair (section 8). The knife's completed fletches on the overlay are unexplained.
-9. **When overruns happen.** They took the Ashburn direct path from 60/60 at 04:04 to 40/16/4 at
-   04:13 with about the same player count. rs/102's overnight Ashburn series should show whether
-   they cluster by hour, by player count, or by something else on the demo (saves every 15 minutes
-   at `World.PLAYER_SAVERATE`, other users' load).
+9. **What drives overruns.** Not the hour, and barely the player count (correlation 0.20 per
+   minute; section 9, 'Overrun bursts overnight'). Four of five severe bursts fell within 40
+   minutes before one of the demo's restarts, which suggests a process degrading before it exits,
+   but that is two restarts and no server-side data. Untested: the phase of the per-player saves
+   (`World.PLAYER_SAVERATE`) and the helper fleet beyond 04:30.
 
 Corrected: an earlier draft ruled out long server ticks as a cause. They are a cause, through the
 engine's catch-up scheduling (sections 2 and 3).
