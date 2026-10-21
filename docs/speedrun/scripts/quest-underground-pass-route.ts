@@ -143,6 +143,9 @@ export const TRAP_TILES = new Set<string>([
 export let TRAP_PENALTY = 8;
 export function setTrapPenalty(v: number) { TRAP_PENALTY = v; }
 
+/** The crossing edges leaving a tile (for debugging routes). */
+export const edgesFrom = (t: T) => edges.get(K(t)) ?? [];
+
 export interface Plan { cost: number; tiles: number; crossings: string[]; traps: string[]; steps: Array<{ t: T; edge?: Edge }>; end: T }
 
 /** Cheapest route; arrives on or next to dst. */
