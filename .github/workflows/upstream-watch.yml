@@ -1,0 +1,149 @@
+name: Upstream watch
+
+# Nightly report of upstream commits touching paths the speedrun depends on, and of the demo's
+# hiscore #1. Design: docs/speedrun/UPSTREAM-WATCH.md.
+
+on:
+  schedule:
+    - cron: "23 11 * * *" # about 04:23 Pacific
+  workflow_dispatch:
+    inputs:
+      since:
+        description: "Replay from this upstream commit (posts a [replay] report and never moves state)"
+        required: false
+        default: ""
+  push:
+    paths:
+      - "speedrun/tools/upstream-watch*"
+      - "speedrun/tools/fixtures/**"
+      - ".github/workflows/upstream-watch.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  # Runs on any branch, so the workflow is proven before it reaches main (workflow_dispatch only
+  # works from the default branch). Opens no issue and moves no state.
+  self-test:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Unit and offline end-to-end tests
+        run: bun test speedrun/tools
+
+      - name: Replay a known upstream range and read the live hiscores
+        run: |
+          code=0
+          bun speedrun/tools/upstream-watch.ts --since df3d8888 --until b565f2d9 \
+            --cache-dir "$RUNNER_TEMP/upstream.git" --report "$RUNNER_TEMP/report.md" \
+            --summary-json "$RUNNER_TEMP/summary.json" > /dev/null || code=$?
+          cat "$RUNNER_TEMP/summary.json"
+          head -c 900000 "$RUNNER_TEMP/report.md" >> "$GITHUB_STEP_SUMMARY"
+          test "$code" = 1
+          # 578f12fd (worldfeed.ts only) is in range but must not be reported.
+          jq -e '.commitsTotal == 5 and .watchedCommits == [
+              "54f3e62084cc567e7dee28e263ee60a60b4bb610",
+              "ac6ef5e42cd341b40ee9287e4c716d31b642d63d",
+              "55fa26ccaad35417c4fe828000e5d832512186c1",
+              "b565f2d920bf6f5ec427bc6f66dc6fd64a2e15c1"]' "$RUNNER_TEMP/summary.json"
+          status=$(jq -r .hiscore.status "$RUNNER_TEMP/summary.json")
+          if [ "$status" = unparsed ]; then echo "::error::The hiscores page no longer parses"; exit 1; fi
+          if [ "$status" = unreachable ]; then echo "::warning::The hiscores page was unreachable; parse not verified"; fi
+
+  watch:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # push the upstream-watch-state branch
+      issues: write
+    concurrency:
+      group: upstream-watch-live
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SINCE: ${{ github.event.inputs.since }}
+      STATE_BRANCH: upstream-watch-state
+      STATE_FILE: speedrun/tools/upstream-watch.state.json
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Load state from the state branch, or keep the seed
+        run: |
+          if git ls-remote --exit-code --heads origin "$STATE_BRANCH" > /dev/null; then
+            git fetch --depth=1 origin "$STATE_BRANCH"
+            git show FETCH_HEAD:upstream-watch.state.json > "$STATE_FILE"
+            echo "State loaded from $STATE_BRANCH"
+          else
+            echo "No $STATE_BRANCH branch yet; using the seed state"
+          fi
+          cat "$STATE_FILE"
+
+      - name: Run the watch
+        id: watch
+        run: |
+          args=(--cache-dir "$RUNNER_TEMP/upstream.git" --report "$RUNNER_TEMP/report.md"
+                --issue-body "$RUNNER_TEMP/issue.md" --summary-json "$RUNNER_TEMP/summary.json")
+          if [ -n "$SINCE" ]; then args+=(--since "$SINCE"); else args+=(--update); fi
+          code=0
+          bun speedrun/tools/upstream-watch.ts "${args[@]}" > /dev/null || code=$?
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" -ge 2 ]; then exit "$code"; fi
+          cat "$RUNNER_TEMP/summary.json"
+          head -c 900000 "$RUNNER_TEMP/report.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the full report
+        if: steps.watch.outputs.code == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-watch-report
+          path: ${{ runner.temp }}/report.md
+
+      # Posted before state moves, so a failure here re-reports the range next night rather than losing it.
+      - name: Open or update the upstream-watch issue
+        if: steps.watch.outputs.code == '1'
+        run: |
+          title=$(jq -r .title "$RUNNER_TEMP/summary.json")
+          if [ -n "$SINCE" ]; then title="[replay] $title"; fi
+          body="$RUNNER_TEMP/issue.md"
+          printf '\n---\n_[Workflow run](%s/%s/actions/runs/%s)_\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> "$body"
+          gh label create upstream-watch --color B60205 --description "Upstream changed something the speedrun depends on" --force
+          number=$(gh issue list --label upstream-watch --state open --limit 1 --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            { printf '**%s**\n\n' "$title"; cat "$body"; } > "$RUNNER_TEMP/comment.md"
+            gh issue comment "$number" --body-file "$RUNNER_TEMP/comment.md"
+          else
+            gh issue create --title "$title" --label upstream-watch --assignee "$GITHUB_REPOSITORY_OWNER" --body-file "$body"
+          fi
+
+      - name: Save state to the state branch
+        if: env.SINCE == ''
+        env:
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          if [ "$(jq -r .stateChanged "$RUNNER_TEMP/summary.json")" != true ]; then echo "State unchanged"; exit 0; fi
+          parent=()
+          if git ls-remote --exit-code --heads origin "$STATE_BRANCH" > /dev/null; then
+            git fetch --depth=1 origin "$STATE_BRANCH"
+            parent=(-p "$(git rev-parse FETCH_HEAD)")
+          fi
+          blob=$(git hash-object -w "$STATE_FILE")
+          tree=$(printf '100644 blob %s\tupstream-watch.state.json\n' "$blob" | git mktree)
+          head=$(jq -r .head "$RUNNER_TEMP/summary.json")
+          commit=$(git commit-tree "$tree" "${parent[@]}" -m "upstream-watch: state at upstream ${head:0:7}")
+          git push origin "$commit:refs/heads/$STATE_BRANCH"
