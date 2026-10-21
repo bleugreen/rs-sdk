@@ -151,6 +151,7 @@ let lvWc = levelOf(s0, 'woodcutting'), lvPr = levelOf(s0, 'prayer');
 let R: number | null = null; // last roll tick (observed or predicted)
 let current: Tree | null = null;
 let acted = -1, busy = false, sentPackets = 0, bonesSent = 0, logsGiven = 0, resyncs = 0, allDown = 0, dialogs = 0;
+let buriedAt = -1; // label of the last knifebury bundle that carried a bury (its p2 click lands on the roll)
 let sinceXp = 0; // rolls predicted since the last observed xp
 let helperRequest: Promise<unknown> | null = null;
 const startTick = s0.tick;
@@ -198,7 +199,8 @@ const phase0 = (s: BotWorldState): boolean => {
     if (KNIFE) {
         if (!knifeStart(s)) return false;
         drop(s);
-        if (!(BURY && bury(s))) click(s);
+        if (BURY && bury(s)) buriedAt = s.tick;
+        else click(s);
     } else {
         drop(s);
         click(s);
@@ -275,7 +277,7 @@ await new Promise<void>(resolve => {
         }
         const dialog = !!s.dialog?.isOpen;
         if (MODE === 'knifebury') {
-            if (p === 2 && items(s, BONES).length + 0 >= 0) click(s);
+            if (p === 2 && buriedAt === R) click(s);
             return;
         }
         if (MODE === 'plainbury') {
