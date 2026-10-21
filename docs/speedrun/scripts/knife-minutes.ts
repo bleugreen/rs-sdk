@@ -4,9 +4,11 @@
 //   bun docs/speedrun/scripts/knife-minutes.ts <session dir> [--phases=knife,plain] [--chance=32,100]
 //       [--level=N] [--limit=2] [--json=PATH]
 //
-// Per log: the harness polls a compact view of the program's logTail every 3 s (`<phase>-full.log`
-// progress lines {t, r, x: ["T611 xp", "T623 level 48", ...]}), so every xp event has its game tick.
-// Each poll also pairs a wall time with the program's tick, which maps ticks to wall time. Ticks on
+// Per log: xp and level lines ("T611 xp", "T623 level 48") from `<phase>-full.log`, both the
+// harness's 3 s progress polls ({t, r, x}) and the final result's logTail. knife-cycle's status()
+// carries no logTail while it runs, so in practice the stamps are the result's last 40 log lines
+// (about 20 knife logs or all of a short plain run); the line printed per phase gives the count.
+// Each poll pairs a wall time with the program's tick, which maps ticks to wall time. Ticks on
 // the page are inbound game frames of 5+ bytes grouped when under 8 ms apart (page-send-delays.ts);
 // a catch-up is an interval < 150 ms right after one > 350 ms, a soft pair one < 250 ms after one
 // > 350 ms (demo-latency.md section 7). Each wall-clock minute is calm when its catch-ups, scaled to a
