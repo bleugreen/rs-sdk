@@ -416,6 +416,12 @@ What the distributions measured here do to a loop aimed at R+1:
 | Ashburn, relay, runs 2, 4, 7 combined: 123/57/0 | 0.68 at 1 | fails | passes | passes |
 | Ashburn, relay, 02:45: 32/28/0 | 0.53 at 1 | fails | fails | passes |
 | Ashburn, direct, sending on the frame: 180/0/0 over three runs | 1.00 at 1 | passes, full gain | passes, full gain | passes, full gain |
+| Ashburn, direct, during overruns, 04:13: 40/16/4 | 0.67 at 1 | fails: 3 + 0.33 x 4 = 4.3 > 4 | passes narrowly: 4.7 vs 5 | passes |
+
+Overruns therefore matter for the knife as well: in a minute like 04:13 even the in-page direct
+path falls under Woodcutting's line. That is what the steadiness check in the run-night gate
+(section 10) and rs/62's measured override (which switches the knife off when its measured rate
+is not better) are for.
 
 Two conclusions. First, what hurts a predicted loop is a **split** distribution, not a long one:
 the steady 2-tick world from home through the relay keeps the lock better than the 50/50 world
