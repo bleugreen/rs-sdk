@@ -273,6 +273,10 @@ export function manifestLines(o: RunesOptions, shop: string, items: string[], ma
 
 type Status = 'done' | 'skip' | 'blocked';
 
+/** Errors that mean the session dropped, not that the phase failed. */
+const STALE_STATE = /no fresh world state|waitForStateChange timed out|no game state|not connected/i;
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
 const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 const exactly = (name: string) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
 
@@ -767,6 +771,7 @@ export class Runes {
         // Learn the bank's contents at the nearest booth (banks are shared, so any booth will do).
         await this.atBank(this.nearestBank(), () => this.buyer.depositAllBut([])).catch(e => ctx.log('first bank visit failed', { error: String(e) }));
         const status = new Map<Phase, Status>();
+        let offline = 0;
         for (let round = 1; round <= this.o.rounds && !ctx.signal.aborted; round++) {
             for (const p of this.o.phases) {
                 if (ctx.signal.aborted || status.get(p) === 'done' || status.get(p) === 'skip') continue;
@@ -776,6 +781,15 @@ export class Runes {
                 } catch (e) {
                     status.set(p, 'blocked');
                     ctx.log('phase failed', { phase: p, error: String(e) });
+                    // A dropped session (the server logs accounts out; the client relogs) is not a
+                    // failed phase: wait for the world state to come back and don't spend the round.
+                    if (STALE_STATE.test(String(e)) && offline < 20) {
+                        offline++;
+                        ctx.log('runes: no live world state; waiting for the session to come back', { waits: offline });
+                        await sleep(60_000);
+                        round--;
+                        break;
+                    }
                     await ctx.bot.dismissBlockingUI().catch(() => undefined);
                 }
                 ctx.log('phase', { phase: p, status: status.get(p), round, holdings: this.holdings(), magic: this.magic(), hitpoints: this.hitpoints() });
