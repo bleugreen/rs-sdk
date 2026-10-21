@@ -178,6 +178,9 @@ if (ROLE === 'helper') {
         let delivered = -1;
         let inTrade = false;
         let tradingSeq = -1;
+        let seenSeq = -1;
+        let seenTick = -1;
+        let stagedSeq = -1;
         let offeredTick = -1;
         let gaveTick = -99;
         let plan: PlanMsg | null = null;
@@ -211,6 +214,7 @@ if (ROLE === 'helper') {
                 inTrade = false;
                 if (!Object.keys(plan.bars).some(b => count(s.inventory, barRe(b)) > 0)) delivered = tradingSeq;
             }
+            if (plan.seq !== seenSeq) { seenSeq = plan.seq; seenTick = s.tick; }
             if (delivered >= plan.seq) {
                 // Idle: get rid of the finished items the scored account handed back.
                 const junk = s.inventory.slice(0, 5);
@@ -230,6 +234,7 @@ if (ROLE === 'helper') {
                 }
                 continue;
             }
+            if (stagedSeq !== plan.seq) { stagedSeq = plan.seq; console.log(`HELPER seq ${plan.seq}: plan seen ${seenTick}, staged ${s.tick}`); }
             const p = s.nearbyPlayers.find(x => x.name.toLowerCase() === partner);
             if (p) sdk.sendTradeRequest(p.index).catch(() => {});
         }
