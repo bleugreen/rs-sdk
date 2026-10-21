@@ -21,8 +21,10 @@ decide whether a reaction fits:
    timers inside the lite runner. The public gateway is saturated and costs hundreds of ms more.
 
 From Ashburn, a direct in-process reaction landed on the next tick 180 of 180 times over three
-paired runs, and the SDK relay 123 of 180. The server's tick length is **not** the cause of the
-relay's misses (section 3).
+paired runs, and the SDK relay 123 of 180. A third cause hits every client wherever it sits: when
+a tick overruns, the engine starts the next one almost at once to catch up, so there is no idle gap
+and a reaction to the long tick misses. At 04:13 that took the Ashburn direct path to 40/16/4
+(section 3).
 
 ## 1. Where the app runs
 
@@ -70,8 +72,12 @@ on the main thread:
    Then logins, zones, and info.
 3. `processClientsOut`, which encodes every player's tick output and hands it to the socket
    synchronously, in one batch (`WSClientSocket.beginBatch`/`endBatch`).
-4. Cleanup, then `setTimeout` for the rest of the 300 ms. Catch-up after an overrun is capped at
-   two ticks.
+4. Cleanup, then `setTimeout` for the rest of the 300 ms. The schedule is a fixed 300 ms grid with
+   catch-up: `World.ts:386-390` takes the start time, clamps the backlog to two ticks
+   (`nextTick = max(nextTick, start - 2 * tickRate)`) and computes `drift = start - nextTick`;
+   `World.ts:589` advances `nextTick` by 300; `World.ts:593` waits
+   `max(0, tickRate - cycleTime - drift)`. So after a cycle that overran, the next one is scheduled
+   with a delay of 0 or close to it, and the two ticks run nearly back to back.
 
 The game websocket (`wss://host/`, path `/` on port 8080), the `/gateway` relay, and every HTTP
 route share this one thread (`server/engine/src/web/index.ts`, `web/websocket.ts`), so sockets are
@@ -128,6 +134,8 @@ The trial: on a fresh tick, walk one tile, and count the ticks until the step sh
 | Ashburn | direct | 04:04 | iad | none | 1,673 | 60 | 60 | 0 | 0 | [rs/98 pair](https://github.com/bleugreen/rs-sdk/actions/runs/39589100761) |
 | Ashburn | private relay, **rs/98's fixed lite runner** (agent/rs-98-builder-0@589f7823, PR #78) | 04:06 | iad | none | 1,673 | 60 | **60** | 0 | 0 | rs/98 pair |
 | Home (fedora) | direct, +0 ms | 04:00 | lax | 56-86 ms | 1,623-1,675 | 15 | 1 | 14 | 0 | fedora hour sampler 1; probe turnaround p50 0.3 ms (clean) |
+| Ashburn | direct, lite on main after #78 | 04:13 | iad | none | 1,645-1,669 | 60 | 40 | 16 | 4 | [rs/86 run](https://github.com/bleugreen/rs-sdk/actions/runs/39590172234); publication p10 136 / p50 305 / p90 513 / max 824 |
+| Ashburn | private relay, lite on main after #78 | 04:13 | iad | none | 1,645-1,669 | 60 | 40 | 20 | 0 | same run |
 | Home (Mac) | direct, +0 ms, **host loaded** | 03:46 | lax | 56-86 ms | 1,674 | 15 | 0 | 14 | 1 | hour sample; probe turnaround p50 10 ms, p90 76 ms (normally under 1 ms), so not a clean reading |
 | Ashburn VM (operator) | direct and relay | pending | | | | | | | | placeholder |
 | Browser tab, overlay path (rs/82's branch) | browser | pending | | | | | | | | rs/95 |
@@ -142,13 +150,31 @@ much that path varies between draws. Across the three paired Ashburn runs the di
 path. The run-night gate must check the connect time as well as the edge (section 10).
 
 Publication intervals (tick state to tick state at the client) were p10 196-245 / p50 245-306 /
-p90 348-407 / max 486-879 ms across runs. The Ashburn direct run had a maximum tick interval of
-879 ms and still landed 60 of 60.
+p90 348-407 / max 486-879 ms across the runs before 04:13, and p10 136 / p90 513 / max 824 at 04:13.
 
-**Ruled out: long server ticks as the cause of the Ashburn relay misses.** The direct path from
-the same runner at the same player count landed every reaction on the next tick, even across an
-879 ms tick interval. All of the relay's misses from Ashburn come from the relay. Do not re-test
-this.
+**Long ticks are a cause, and they hit every client.** An earlier draft of this document ruled
+them out, because three Ashburn direct runs landed 60 of 60 even across an 879 ms tick interval.
+That was wrong: those runs simply had few overruns. At 04:13 the same Ashburn setup gave direct
+40/16/4. The mechanism is the engine's catch-up (section 2): after a tick that overruns, the next
+starts almost at once, so there is no idle gap for a reaction to the long tick. A single long
+interval does no harm by itself; what does harm is the back-to-back tick after it. This is
+load-dependent and placement-independent: no placement and no client avoids it.
+
+Per trial, for the Ashburn direct runs that carry per-trial fields (02:48, 03:17, 04:04, 04:13; 231
+trials at +0 ms; `demo-latency-analyze.ts` over rs/86's `direct.json` artifacts), by the interval
+from the trigger frame to the next frame:
+
+| Next tick arrived | Missed the next tick | Of which at 04:13 |
+| --- | --- | --- |
+| under 50 ms after (back to back) | 5 of 5 | 5 of 5 |
+| 50-200 ms after | 9 of 24 | 9 of 9 (the calm runs: 0 of 15) |
+| 200 ms or more after | 6 of 171 | 6 of 46 (the calm runs: 0 of 125) |
+
+So P(miss | next interval under 200 ms) = 14/29 = 48% (100% at 04:13), against P(miss | otherwise)
+= 6/171 = 3.5%, all from the overloaded run. The misses at 04:13 that followed a normal interval
+mostly came after a long previous tick (2 of the 5 trials whose previous interval exceeded 400 ms).
+The Quebec runner's 4 misses all followed normal intervals; its 24 ms connect, not overruns,
+explains them.
 
 ### The margin after a frame, read from the delay sweep
 
@@ -413,12 +439,27 @@ The interval p10 of 118 ms from home is the engine's catch-up after a long tick 
 the next cycle start early to recover up to two ticks of backlog). Samples at other hours are
 still to come (open question 3).
 
-**Should the run go at a quiet hour?** Not for latency's sake. On the direct path from Ashburn,
-reactions already land 60 of 60 at about 1,655 online, so a quieter hour has nothing left to gain
-there. It would cost elsewhere: rocks and trees respawn faster with more players online
+**How often would a steadiness gate pass?** Over 1-minute windows of tick arrivals
+(`demo-latency-analyze.ts --window-min=1`):
+
+| Series | Windows passing p90 <= 400 ms | Passing p90 <= 400 and max <= 600 ms |
+| --- | --- | --- |
+| Ashburn direct sessions, 02:43-04:13 (one window each, plus three at 02:48) | 7 of 8; the one failure is 04:13 | 2 of 8; rejects the three 60/60 runs at 02:43, 03:17 and 04:04 |
+| fedora, 10-minute sample at 04:00, 1,623-1,675 online | 11 of 19 | 1 of 19 |
+
+The max criterion does not separate good minutes from bad: single long ticks are common and
+harmless on their own. The p90 criterion does, on this data: it passes every Ashburn session that
+landed 60 of 60 and fails the one that did not. At 04:00 a little over half the minutes would
+pass.
+
+**Should the run go at a quiet hour?** Not settled. Overruns are load-dependent, so a quieter
+hour may have fewer of them, but 04:04 (1,673 online) had none while 04:13 (1,645-1,669) had many,
+so the player count alone does not predict them. A quieter hour also costs elsewhere: rocks and
+trees respawn faster with more players online
 (`server/content/scripts/general/scripts/player_count.rs2:1-4`, capped at 2,000), and rs/2 costs
-Mining at about 4,034 ticks at 1,260 online against about 4,288 at a quiet hour. Run at a normal
-hour, and let the run-night probe decide (section 10).
+Mining at about 4,034 ticks at 1,260 online against about 4,288 at a quiet hour. The fedora sampler
+(one session, 45 minutes apart) is collecting the hour series; until it shows a pattern, start at
+a normal hour and let the run-night gate decide minute by minute (section 10).
 
 ## 10. Run-host recommendation
 
@@ -463,7 +504,12 @@ real player count:
 3. The direct in-page probe lands **60 of 60 on the next tick (floor 58)**.
 4. The blind sender lands at least 95% on the aimed tick, and a burst of the knife's bundle lands
    on one tick.
-5. If the SDK drives any step that reacts, the relay probe for that step, gated by
+5. **Tick steadiness over the probe's minute: publication interval p90 <= 400 ms.** If it fails,
+   wait and re-measure; do not start on a minute of overruns. A cap on the maximum interval (for
+   example 600 ms) is not recommended: on the data so far it rejects the minutes that scored 60
+   of 60. Keep checking during the run; a reactive loop that sees back-to-back ticks (an interval
+   under 50 ms) should expect its next reaction to miss.
+6. If the SDK drives any step that reacts, the relay probe for that step, gated by
    `speedrun/lib/hostgate.ts`.
 
 Until the in-page probe exists, `demo-latency-probe.ts --phases=react,burst,blind` from the run
@@ -492,5 +538,10 @@ machine is the stand-in for items 3 and 4.
 8. **The browser-path rows** (rs/95): the tab's overlay on rs/82's branch and the in-page program
    on rs/97's branch.
 
-Ruled out, and not worth re-testing: long server ticks as the cause of the relay's misses from
-Ashburn (section 3).
+9. **When overruns happen.** They took the Ashburn direct path from 60/60 at 04:04 to 40/16/4 at
+   04:13 with about the same player count. The fedora sampler's hour series, with tick p90 per
+   window, should show whether they cluster by hour, by player count, or by something else on the
+   demo (saves every 15 minutes at `World.PLAYER_SAVERATE`, other users' load).
+
+Corrected: an earlier draft ruled out long server ticks as a cause. They are a cause, through the
+engine's catch-up scheduling (sections 2 and 3).
