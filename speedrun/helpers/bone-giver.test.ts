@@ -4,8 +4,8 @@ import { baseState } from '../lib/fake-sdk';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { nameHash } from './altar-cue';
-import { boneGiverOptions, decideRequest, newRequestCtx, newRequestFrom, readBoneAsk, S07_SITES, usableAsk, writeBoneAsk, type RequestCtx } from './bone-giver';
+import { nameHash, newRequestFrom } from './altar-cue';
+import { boneGiverOptions, decideRequest, newRequestCtx, readBoneAsk, S07_SITES, usableAsk, writeBoneAsk, type RequestCtx } from './bone-giver';
 
 const o = { noReplyTicks: 3, resendTicks: 100 };
 const msg = (tick: number, text: string): GameMessage => ({ type: 0, text, sender: '', tick, fromSelf: false });

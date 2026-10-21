@@ -33,6 +33,7 @@ import {
     giverSteps,
     judgeTick,
     nameHash,
+    newRequestFrom,
     resolveOffset,
     TRADE_ACCEPT,
     TRADE_CONFIRM,
@@ -88,6 +89,8 @@ interface Armed {
     open: number;
     schedule: TurnSchedule;
     receiverHash: string;
+    /** Our frame when the turn was armed. */
+    armedTick: number;
 }
 
 class Stop extends Error {}
@@ -285,7 +288,7 @@ export class AltarGiver {
         if (this.armed) this.done.add(this.armed.key); // superseded by a newer turn for us
         // The robust option slows the blind schedules; a stock turn reacts and has no schedule to slow.
         const schedule: TurnSchedule = this.o.schedule === 'robust' && choice.schedule === 'tuned' ? 'robust' : choice.schedule;
-        this.armed = { key: choice.key, session: cue.session, seq: cue.seq, T: choice.turn.T, myT: choice.myT, open: cue.open, schedule, receiverHash: cue.receiver.sha256 };
+        this.armed = { key: choice.key, session: cue.session, seq: cue.seq, T: choice.turn.T, myT: choice.myT, open: cue.open, schedule, receiverHash: cue.receiver.sha256, armedTick: now };
         this.setPhase('armed');
         this.wakeServe?.();
     }
@@ -373,17 +376,20 @@ export class AltarGiver {
     }
 
     /**
-     * A stock turn: from the request frame (T+K-1 in our numbering, or at once when the cue came
-     * later), trade the receiver through lib/trade.ts's reacting give: request (re-sent while it
-     * is busy), offer every essence, accept, confirm, each on what the frames show, until the
-     * judge tick. The scored side reacts too, so nothing here needs an exact tick.
+     * A stock turn: from the request frame (T+K-1 in our numbering), or as soon as the receiver's
+     * own request shows (the scored side's reacting receive requests when it writes the turn, so
+     * waiting for T+K would only idle), trade the receiver through lib/trade.ts's reacting give:
+     * request or answer, offer every essence, accept, confirm, each on what the frames show,
+     * until the judge tick. The scored side reacts too, so nothing here needs an exact tick.
      */
     private async executeStock(a: Armed): Promise<Outcome> {
         const { sdk } = this.ctx;
         const judge = judgeTick(a.myT, a.open, 'stock');
         const requestFrame = a.myT + a.open - 1;
+        // The cue is read a poll or two after the receiver wrote it and requested.
+        const since = Math.min(a.armedTick, a.myT) - 5;
         this.started = false;
-        await until(this.ctx, st => st.tick >= requestFrame || this.armed !== a, Math.max(0, requestFrame - (this.s?.tick ?? requestFrame)) + 5);
+        await until(this.ctx, st => st.tick >= requestFrame || newRequestFrom(st, a.receiverHash, since) !== null || this.armed !== a, Math.max(0, requestFrame - (this.s?.tick ?? requestFrame)) + 5);
         let outcome: Outcome;
         let detail: string | undefined;
         const receiver = this.s?.nearbyPlayers.find(p => nameHash(p.name) === a.receiverHash);

@@ -21,6 +21,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, watch, writeFileSync, type FSWatcher } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
+import type { BotWorldState } from '../../sdk/types';
 
 export const CUE_VERSION = 1;
 export const CUE_FILE = 'cue.json';
@@ -122,6 +123,15 @@ export function canonName(name: string): string {
 
 export function nameHash(name: string): string {
     return createHash('sha256').update(canonName(name)).digest('hex');
+}
+
+/** The tick of the newest trade request (chat type 4, "wishes to trade with you.") from the receiver, by name hash, after `after`; or null. */
+export function newRequestFrom(s: BotWorldState, receiverHash: string, after: number): number | null {
+    let tick: number | null = null;
+    for (const m of s.gameMessages) {
+        if (m.type === 4 && m.tick > after && /wishes to trade/i.test(m.text) && nameHash(m.sender) === receiverHash) tick = Math.max(tick ?? m.tick, m.tick);
+    }
+    return tick;
 }
 
 // ------------------------------------------------------------------ schedule
