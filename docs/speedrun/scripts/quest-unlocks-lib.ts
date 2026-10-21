@@ -99,19 +99,24 @@ export async function talkThrough(
             continue;
         }
         closedAt = -1;
+        // Guarded clicks (bound to pageId + component): the client can re-publish a page under a
+        // new pageId, and an unguarded click on the stale copy lands on the next page instead.
         const isContinue = d.options?.length === 1 && /continue/i.test(d.options[0].text);
         if (isContinue) {
-            await sdk.sendClickDialog(d.options[0].index);
-            pages++;
+            const r = await sdk.clickDialogByText(/continue/i);
+            if (r.success) pages++;
         } else if (d.options && d.options.length > 0) {
             const want = queue[0];
             const match = want === undefined ? undefined : d.options.find((o) => (typeof want === 'string' ? o.text.includes(want) : want.test(o.text)));
             if (!match) {
                 throw new Error(`no option matching ${String(want)} in [${d.options.map((o) => o.text).join(' | ')}]`);
             }
-            queue.shift();
-            await sdk.sendClickDialog(match.index);
-            options++;
+            const esc = match.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const r = await sdk.clickDialogByText(new RegExp(`^${esc}$`));
+            if (r.success) {
+                queue.shift();
+                options++;
+            }
         } else {
             await sdk.sendClickDialog(0);
             pages++;
