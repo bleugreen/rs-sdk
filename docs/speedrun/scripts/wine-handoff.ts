@@ -64,7 +64,6 @@ if (mode === 'split') {
     result('demo-split', {
         ...s,
         loginTick,
-        tradeStartAfterLogin: '(see tradeTicks)',
         firstFermentAfterLogin: s.firstFermentTick - loginTick,
         secondFermentAfterLogin: s.secondFermentTick - loginTick,
         receiverActionTicks: s.tradeTicks + s.firstBankTicks + s.levelUpTicks + s.rearmTicks + s.finalLevelUpTicks,
