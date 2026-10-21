@@ -30,7 +30,12 @@ const argv = process.argv.slice(3);
 const mode = argv[0] ?? 'control';
 const labels = Number(argv[1] ?? '60');
 const npcCount = /^npcs\d+$/.test(mode) ? Number(mode.slice(4)) : 0;
-const stand = (argv[2] ?? '2948,3315').split(',').map(Number);
+// weapon: knife (bronze thrown knives, attackrate 3, flinch +1) or none (empty hand,
+// attackrate 4, flinch +2). policy: hit (the loop below) or idle (send nothing and
+// watch whether the bot retaliates: its combat target and knife count are logged).
+const weapon = argv[2] ?? 'knife';
+const policy = argv[3] ?? 'hit';
+const stand = (argv[4] ?? '2948,3315').split(',').map(Number);
 
 await runScript(async ({ bot, sdk }) => {
     await bot.skipTutorial();
@@ -40,7 +45,7 @@ await runScript(async ({ bot, sdk }) => {
 
     for (const s of ['::setstat woodcutting 99', '::setstat hitpoints 99', '::setstat defence 99',
         '::give rune_axe 1', '::give bronze_knife 500', '::give logs 24']) await say(s);
-    for (const pat of [/Rune axe/, /Bronze knife/]) {
+    for (const pat of weapon === 'knife' ? [/Rune axe/, /Bronze knife/] : [/Rune axe/]) {
         const it = sdk.getState()!.inventory.find(i => pat.test(i.name));
         const w = it?.optionsWithIndex.find(o => /wield/i.test(o.text));
         if (it && w) { await sdk.sendUseItem(it.slot, w.opIndex); await T(2); }
@@ -80,6 +85,8 @@ await runScript(async ({ bot, sdk }) => {
     let lastXp = sdk.getSkillXp('woodcutting') ?? 0;
     let lastDmg = sdk.getState()!.player?.combat?.lastDamageTick ?? -1;
     let clickedLast = false;
+    let skipNext = false;
+    let lastTarget = '';
     const xpTicks: number[] = [];
     const hitTicks: number[] = [];
     const clickLand: number[] = [];
@@ -90,9 +97,17 @@ await runScript(async ({ bot, sdk }) => {
         const dmg = s.player?.combat?.lastDamageTick ?? -1;
         const newHit = dmg !== lastDmg;
         if (newHit) { hitTicks.push(s.tick); lastDmg = dmg; }
+        if (policy === 'idle') {
+            const c = s.player?.combat;
+            const knives = s.equipment.find(i => /Bronze knife/.test(i.name))?.count ?? 0;
+            const tgt = `${c?.targetType}:${c?.targetIndex} knives=${knives}`;
+            if (tgt !== lastTarget) { console.log(`T t=${s.tick} target=${tgt}${newHit ? ' (hit seen)' : ''}`); lastTarget = tgt; }
+            return;
+        }
+        if (skipNext) { skipNext = false; return; } // let the chop loop run one tick
         if (newHit && !clickedLast) {
             const stump = s.nearbyLocs.some(l => l.x === oak.x && l.z === oak.z && l.name !== 'Oak');
-            if (!stump) { fire(sdk.sendInteractLoc(oak.x, oak.z, oak.id, 1)); clickLand.push(s.tick + 1); clickedLast = true; return; }
+            if (!stump) { fire(sdk.sendInteractLoc(oak.x, oak.z, oak.id, 1)); clickLand.push(s.tick + 1); clickedLast = true; skipNext = true; return; }
         }
         clickedLast = false;
         const log = s.inventory.find(i => i.name === 'Logs');
