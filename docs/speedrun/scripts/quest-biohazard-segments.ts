@@ -80,7 +80,7 @@ await runScript(async ({ bot, sdk }) => {
             const cage = (await sdk.scanGroundItems(15)).filter(g => /^Pigeon cage$/i.test(g.name)).sort((a, b) => a.distance - b.distance)[0];
             if (!cage) throw new Error('no pigeon cage on the ground');
             out.cageAt = { x: cage.x, z: cage.z, reachable: cage.reachable };
-            await S.step(`pick up a pigeon cage (${cage.x},${cage.z}), walking from the cupboard`, () => sdk.sendPickup(cage.x, cage.z, cage.id), { done: has(sdk, /^Pigeon cage$/i), settle: 0, maxTicks: 120 });
+            await S.step(`pick up a pigeon cage (${cage.x},${cage.z}), walking from the cupboard`, () => bot.pickupItem(cage), { done: has(sdk, /^Pigeon cage$/i), settle: 0, maxTicks: 120 });
             await S.walk('pigeons -> watch tower', 2564, 3303);
             const tower = (await sdk.scanNearbyLocs(6)).filter(l => /watch ?tower/i.test(l.name)).sort((a, b) => a.distance - b.distance)[0];
             if (!tower) throw new Error('no watch tower loc');
