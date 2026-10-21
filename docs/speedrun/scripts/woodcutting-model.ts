@@ -109,13 +109,17 @@ for (const [label, xp] of [['Level 1, no quests', 0], ['Monk\'s Friend', 2000], 
     console.log(`| ${label} | ${xp.toLocaleString('en-US')} | ${levelOf(xp)} | ${q.toFixed(0)} | ${d.toFixed(0)} | ${(q * KNIFE).toFixed(0)} | ${(d * KNIFE).toFixed(0)} |`);
 }
 
-console.log('\n## ticks remaining to 99 from the start of each level (4-tick, demo D=20; knife = x0.765)');
-console.log('| Level | Base xp | Ticks to 99 |');
-console.log('|---|---|---|');
-const rng = mulberry32(777);
-const acc: number[] = new Array(100).fill(0);
-for (let i = 0; i < TRIALS; i++) {
-    const r = simulate(0, 1260, rng);
-    for (let L = 1; L <= 99; L++) acc[L]! += r.ticks - (r.reached[L] ?? 0);
-}
-for (const L of [1, 10, 15, 20, 25, 30, 35, 40, 45, 50, 52, 55, 57, 60, 65, 70, 75, 80, 85, 90, 93, 95, 97, 98, 99]) console.log(`| ${L} | ${LEVEL_XP[L]!.toFixed(1)} | ${(acc[L]! / TRIALS).toFixed(0)} |`);
+console.log('\n## ticks remaining to 99 from the start of each level (4-tick; knife = x0.765)');
+console.log('| Level | Base xp | Tree from here | Ticks to 99, demo (D=20) | Ticks to 99, quiet (D=29) |');
+console.log('|---|---|---|---|---|');
+const remaining = (players: number) => {
+    const rng = mulberry32(777);
+    const acc: number[] = new Array(100).fill(0);
+    for (let i = 0; i < TRIALS; i++) {
+        const r = simulate(0, players, rng);
+        for (let L = 1; L <= 99; L++) acc[L]! += r.ticks - (r.reached[L] ?? 0);
+    }
+    return acc.map(a => a / TRIALS);
+};
+const demo = remaining(1260), quiet = remaining(1);
+for (const L of [1, 10, 15, 20, 25, 30, 35, 40, 45, 50, 52, 55, 57, 60, 65, 70, 73, 75, 80, 85, 90, 93, 95, 97, 98, 99]) console.log(`| ${L} | ${LEVEL_XP[L]!.toFixed(1)} | ${best(L).name} | ${demo[L]!.toFixed(0)} | ${quiet[L]!.toFixed(0)} |`);
