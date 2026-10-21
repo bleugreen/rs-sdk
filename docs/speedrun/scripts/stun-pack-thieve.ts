@@ -75,6 +75,7 @@ const EATBELOW = Number(flag('eatbelow', String(HP - 20)));
 const MARGIN = Number(flag('margin', '1'));
 const TELE = flag('tele', '0,41,51,29,37'); // the rs/2 knight, (2653,3300)
 const HFIRST = flag('hfirst', 'charge'); // which delay-free action fills 'h' first: charge | arrows
+const TRADE_BY = Number(flag('tradeby', '5')); // latest stun offset at which a top-up trade may start
 const DISMISS = flag('dismiss', '1') === '1'; // resume open level-up pages before a stun tick's packets
 
 // k = 8 lands on T+10, the last stun tick. xp gained there queues a level-up page that pops on
@@ -304,7 +305,9 @@ function onScored(s: BotWorldState) {
     }
 
     const hAdj = helperAdjacent(s);
-    const canTrade = TOPUP !== 'give' && helper && armed && reqConfirmed && staged && hAdj.ok && hAdj.index !== undefined;
+    // SCORED requests first: its own OPPLAYER clears any open level-up page, so it is never "busy"
+    // to the helper, which answers the request on the next tick (onHelper).
+    const canTrade = TOPUP !== 'give' && helper && armed && staged && hAdj.ok && hAdj.index !== undefined;
 
     // ---- inside the stun window
     if (k >= 0 && k <= 8) {
@@ -312,7 +315,7 @@ function onScored(s: BotWorldState) {
         if (k === 0 || k === 1) { log({ t, k, lvl: th.baseLevel, hp, ev, msgs: msgs.map(m => m.text) }); return; }
         // Forced eat only (it costs 3 ticks here).
         if (hp > 0 && hp <= 6) { const sh = slot(s, SHARK); if (sh) { void sdk.sendUseItem(sh.slot, 1); eats++; forcedEats++; stunEats++; st.ate = true; ev.push('eat-forced'); } }
-        if (TOPUP === 'stun' && needNow && canTrade && k <= 4 && !st.topup) {
+        if (TOPUP === 'stun' && needNow && canTrade && k <= TRADE_BY && !st.topup) {
             st.topup = true;
             rctx = newReceiverCtx(helper!.name, s.inventory, wantFor(stagedLoad));
             rctxStart = t;
@@ -422,7 +425,7 @@ function runActs(s: BotWorldState, acts: string, click: () => void): string[] {
 }
 
 // ------------------------------------------------------------------ helper: per-tick loop
-let gctx: GiverCtx | null = null, gplan: OfferEntry[] = [], hLast = -1, lastReq = -100, hBusy = 0, hReqs = 0, stageAt = -100;
+let gctx: GiverCtx | null = null, gplan: OfferEntry[] = [], hLast = -1, lastReq = -100, hBusy = 0, hReqs = 0, stageAt = -100, lastFollow = -100, hAnswers = 0;
 function onHelper(hs: BotWorldState) {
     if (!helper || !hs?.inGame || done) return;
     if (hs.tick === hLast) return;
@@ -461,14 +464,20 @@ function onHelper(hs: BotWorldState) {
         }
         return;
     }
-    // Request (and so stand adjacent): until SCORED has seen a request, and again whenever SCORED
-    // has walked off. Never while SCORED is mid-trade.
-    if (rctx) return;
-    const me = hs.player!, p = s.player!;
-    const adj = Math.abs(me.worldX - p.worldX) + Math.abs(me.worldZ - p.worldZ) === 1;
+    // Answer SCORED's request at once. Otherwise keep beside SCORED: inside a stun (SCORED cannot
+    // move) walk in by requesting, which leaves the helper cardinally adjacent; outside it, follow.
     const scoredIdx = hs.nearbyPlayers.find(x => sameName(x.name, scored.name))?.index;
     if (scoredIdx === undefined) return;
-    if ((!reqConfirmed || !adj) && hs.tick - lastReq >= 3) { void helper.sdk.sendTradeRequest(scoredIdx); lastReq = hs.tick; hReqs++; }
+    if (msgs.some(m => m.type === 4 && /wishes to trade/i.test(m.text) && sameName(m.sender, scored.name))) {
+        void helper.sdk.sendTradeRequest(scoredIdx); lastReq = hs.tick; hReqs++; hAnswers++;
+        return;
+    }
+    const me = hs.player!, p = s.player!;
+    const dx = Math.abs(me.worldX - p.worldX), dz = Math.abs(me.worldZ - p.worldZ);
+    const adj = dx + dz === 1;
+    const k = s.tick - f;
+    if (!adj && k >= 1 && k <= 6 && hs.tick - lastReq >= 2) { void helper.sdk.sendTradeRequest(scoredIdx); lastReq = hs.tick; hReqs++; }
+    else if (!adj && (k < 1 || k > 6) && hs.tick - lastFollow >= 4 && hs.tick - lastReq >= 2) { void helper.sdk.sendInteractPlayer(scoredIdx, 3); lastFollow = hs.tick; }
 }
 function onHelperGiver(hs: BotWorldState) {
     const d = decideGiver(hs, gctx!);
@@ -500,7 +509,7 @@ function finish() {
         normalStuns: { n: normal.length, next: hist(normal.map(x => x.next!)), meanNext: mean(normal.map(x => x.next!)), bones: mean(normal.map(x => x.bones)), casts: mean(normal.map(x => x.casts)), arrows: mean(normal.map(x => x.arrows)), pages: mean(normal.map(x => x.pages)) },
         nextByPages: { withPage: mean(normal.filter(x => x.pages > 0).map(x => x.next!)), withoutPage: mean(normal.filter(x => x.pages === 0).map(x => x.next!)), nWith: normal.filter(x => x.pages > 0).length },
         topupStuns: { n: tu.length, next: hist(tu.map(x => x.next!)), bones: mean(tu.map(x => x.bones)), casts: mean(tu.map(x => x.casts)), arrows: mean(tu.map(x => x.arrows)) },
-        topups: { n: topups.length, ok: topups.filter(u => u.ok).length, recvTicks: hist(topups.filter(u => u.recvTicks !== undefined).map(u => u.recvTicks!)), successGaps: hist(topups.filter(u => u.gap !== undefined).map(u => u.gap!)), failures: topups.filter(u => !u.ok).map(u => u.reason), list: topups, helperRequests: hReqs, helperBusy: hBusy, giveRefills },
+        topups: { n: topups.length, ok: topups.filter(u => u.ok).length, recvTicks: hist(topups.filter(u => u.recvTicks !== undefined).map(u => u.recvTicks!)), successGaps: hist(topups.filter(u => u.gap !== undefined).map(u => u.gap!)), failures: topups.filter(u => !u.ok).map(u => u.reason), list: topups, helperRequests: hReqs, helperAnswers: hAnswers, helperBusy: hBusy, giveRefills },
         totals: tot, outside, chargeOutSent,
         pages, pagesInStun, pagesOutside,
         eats, forcedEats, stunEats, hpLost, damage: dmg, deaths, setstats,
