@@ -99,7 +99,8 @@ with every command. In order:
   the bring-up, then disconnects for the rest of the run and watches a 3 fps MJPEG live view (one
   desktop session per user: disconnect, never log out);
 - start the page server, the tab's loopback gateway and Chrome under `tmux -L run`. Chrome gets its own
-  profile, tenet 11's three throttling flags and a maximised app window;
+  profile, tenet 11's three throttling flags and a maximised app window, and stays maximised and
+  unobscured on display :10 for the whole run;
 - log rs/117's helpers in;
 - start the recording on the VM (ffmpeg x11grab, 1920x1080, 30 fps, libx264 veryfast crf 20);
 - check that nothing else runs;
@@ -112,7 +113,8 @@ Gate (d) was measured there on 2026-10-21 at about 1,700 online. The tab's loop-
 per second with RDP connected or disconnected and the capture on or off. The capture costs about
 0.75-0.95 of a core. Chrome was not throttled with RDP disconnected. The recording is smooth only
 disconnected: 29.9 fps against about 23 fps connected (m, RUN-HOST.md, "Measured"). Hence main's
-configuration: RDP disconnected for the run (10:02 PDT 2026-10-21).
+configuration: RDP disconnected for the run (10:02 PDT 2026-10-21). This departs from tenet 11's
+"remote desktop connected" and rests on the proposed successor to tenet 11.
 
 **The run gate, and the knife switching rule (M0530, M0550; ARC).** The knife is on only while all
 four hold, measured on the run machine from SCORED's own tab:
