@@ -122,6 +122,8 @@ const BARAEK: Tile = { x: 3218, z: 3435 };
 const BLUE_MOON_INN: Box = { x1: 3214, z1: 3390, x2: 3232, z2: 3404 };
 const JONNY: Tile = { x: 3223, z: 3395 };
 const ARRAV_BOOK = 757;
+// Shows as "Scroll" on the ground and in the inventory (obj intelligence_report).
+const INTELLIGENCE_REPORT = 761;
 const underground = (p: { z: number }) => p.z > 9000;
 
 /** A grape ground spawn and how to get to it and away from it. */
@@ -735,7 +737,7 @@ class Gatherer {
      */
     async joinPhoenixGang(): Promise<void> {
         const { sdk, bot } = this;
-        const report = () => sdk.getInventory().some(i => /^intelligence report$/i.test(i.name));
+        const report = () => sdk.getInventory().some(i => i.id === INTELLIGENCE_REPORT);
         if (!report()) {
             if (invCount(sdk, ITEM.coins) < 20) {
                 await walkNear(this.ctx, VARROCK_WEST_BANK.x, VARROCK_WEST_BANK.z, 3);
@@ -773,7 +775,7 @@ class Gatherer {
             for (let attempt = 0; attempt < 40 && !report(); attempt++) {
                 checkAbort(this.ctx);
                 await this.eatIfLow();
-                const r = await this.fightOne(/^jonny the beard$/i, BLUE_MOON_INN, JONNY, /^intelligence report$/i);
+                const r = await this.fightOne(/^jonny the beard$/i, BLUE_MOON_INN, JONNY, /^scroll$/i);
                 const jonny = sdk.getState()?.nearbyNpcs.filter(n => /jonny/i.test(n.name)).map(n => ({ x: n.x, z: n.z, hp: n.hp, inCombat: n.inCombat, reachable: n.reachable, options: n.optionsWithIndex.map(o => o.text) }));
                 if (attempt % 5 === 0 || r === 'killed') this.ctx.log('jonny', { attempt, result: r, at: position(sdk), jonny, report: report() });
                 if (r === 'low') await this.rest();
