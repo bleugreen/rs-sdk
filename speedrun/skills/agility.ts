@@ -106,6 +106,11 @@ export interface AgilityOptions {
     maxPauses: number;
     /** Set once the coordinator has answered a pause-limit stop. */
     pauseLimitAck: boolean;
+    /**
+     * Items to drop before the walk to the Gnome course (a pattern), to make room for
+     * food: a rehearsal account's starter kit fills 10+ slots.
+     */
+    drop?: string;
     /** How to leave the world (default logoutClean); tests inject one. */
     logout?: (session: RunnerSession) => Promise<unknown>;
 }
@@ -133,6 +138,7 @@ export function parseOptions(raw: Record<string, unknown> = {}): AgilityOptions 
         to,
         technique: technique === 'plain' ? 'plain' : 'react',
         ...(typeof raw.food === 'string' && raw.food ? { food: raw.food } : {}),
+        ...(typeof raw.drop === 'string' && raw.drop ? { drop: raw.drop } : {}),
         ...(eatBelow !== undefined ? { eatBelow } : {}),
         finish: pick(raw.finish, ['stay', 'final-logout'] as const, to === 99 ? 'final-logout' : 'stay', 'finish'),
         pauseFor: pick(raw.pauseFor, ['none', 'threat', 'any'] as const, 'none', 'pauseFor'),
@@ -464,14 +470,24 @@ async function passGate(ctx: StepContext<unknown>): Promise<boolean> {
         .filter(l => /gate|door/i.test(l.name) && l.distance <= 6 && l.optionsWithIndex.some(o => /^open$/i.test(o.text)))
         .sort((a, b) => a.distance - b.distance)[0];
     if (!gate) return false;
-    void ctx.sdk.sendInteractLoc(gate.x, gate.z, gate.id, gate.optionsWithIndex.find(o => /^open$/i.test(o.text))!.opIndex);
-    let goneAt = -1;
-    await waitUntil(ctx.sdk, st => {
-        const q = st.player;
-        if (q && cheb(q.worldX, q.worldZ, p.worldX, p.worldZ) >= 2) return true;
-        if (goneAt < 0 && !st.nearbyLocs.some(l => l.id === gate.id && l.x === gate.x && l.z === gate.z)) goneAt = st.tick;
-        return goneAt >= 0 && st.tick >= goneAt + 4;
-    }, { maxTicks: 20 });
+    for (let click = 0; click < 2; click++) {
+        void ctx.sdk.sendInteractLoc(gate.x, gate.z, gate.id, gate.optionsWithIndex.find(o => /^open$/i.test(o.text))!.opIndex);
+        let goneAt = -1;
+        const r = await waitUntil(ctx.sdk, st => {
+            const q = st.player;
+            if (st.dialog?.isOpen) return true;
+            if (q && cheb(q.worldX, q.worldZ, p.worldX, p.worldZ) >= 2) return true;
+            if (goneAt < 0 && !st.nearbyLocs.some(l => l.id === gate.id && l.x === gate.x && l.z === gate.z)) goneAt = st.tick;
+            return goneAt >= 0 && st.tick >= goneAt + 4;
+        }, { maxTicks: 20 });
+        if (!r.ok || !r.state.dialog?.isOpen) break;
+        // From the south on a first visit the Gnome gate starts Femi's boxes scene instead
+        // (gnome_gate.rs2, femi.rs2): decline, which sets %femi_help, and click again.
+        for (let k = 0; k < 10 && ctx.sdk.getState()?.dialog?.isOpen; k++) {
+            const a = await advance(ctx.sdk, { choose: /^Sorry, I'm a bit busy\.$/, maxTicks: 6 });
+            if (!a.ok) break;
+        }
+    }
     await nextTick(ctx.sdk);
     return true;
 }
@@ -501,11 +517,20 @@ const walkGnome = (gnomeEnd: number, o: AgilityOptions): Step => ({
     run: async ctx => {
         const s = stateOf(ctx);
         if (agilityLevel(s) >= gnomeEnd || nearGnome(s)) return;
+        if (o.drop) await dropMatching(ctx, o.drop);
         await walkRoute(ctx, ROUTES.spawnToGnome, o);
     },
     postconditions: s => (agilityLevel(s) >= gnomeEnd || nearGnome(s) ? true : 'not at the Gnome course'),
     logoutSafe: true
 });
+
+/** Drop every inventory item matching `pattern` in one burst (5 a tick), confirmed once. */
+async function dropMatching(ctx: StepContext<unknown>, pattern: string): Promise<void> {
+    const re = new RegExp(pattern, 'i');
+    const slots = stateOf(ctx).inventory.filter(i => re.test(i.name)).map(i => i.slot);
+    for (const slot of slots) void ctx.sdk.sendDropItem(slot);
+    await waitUntil(ctx.sdk, st => !st.inventory.some(i => re.test(i.name)), { maxTicks: Math.ceil(slots.length / 5) + 4 });
+}
 
 /** Pull the Ardougne lever (first pull: a warning page and a choice) and wait for the Deserted Keep. */
 async function pullLever(ctx: StepContext<unknown>): Promise<void> {
