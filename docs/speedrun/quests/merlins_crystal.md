@@ -151,7 +151,8 @@ about 113 and the total to about 710.
   them and re-attack. It must not dismiss Morgan's dialogue by mistake, which
   costs the whole interrupt (it happened in one lab run).
 - **The keep is hostile.** Renegade knights killed a level-3 lab account during
-  exploration; at 70 combat they did not engage on the measured path.
+  exploration. The measured runs (40 and 70 combat) reached Mordred without
+  dying, but whether the knights attacked on the way was not tracked.
 - **The chaos altar is in the Wilderness** (level 12, `wilderness_levels.rs2`
   formula in `primitives.md` §4). Teleports out still work there.
 - **The Thrantax words are shuffled.** A wrong choice costs the lit candle and

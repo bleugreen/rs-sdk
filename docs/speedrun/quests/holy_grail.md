@@ -99,7 +99,7 @@ realm needs a whistle, and whistles need the napkin, which needs `%grail` 4.
 ### Step 14 in detail: the first Fisher Realm visit
 
 Measured with `quest-holy-grail-realm.ts` (rune armour, amulet of strength,
-aggressive style), 13 runs.
+aggressive style): 18 Titan fights, 5 complete visits.
 
 | Sub-step | Action | Raw counts | Ticks | Notes |
 |---|---|---|---|---|
@@ -115,9 +115,10 @@ aggressive style), 13 runs.
 | j | Blow the whistle; land at (2741,3235) on Karamja | 1 item click | 1 | |
 
 Typical total with the weapon switch: 1 + 195 + 15 + 14 + 34 + 15 (expected wait,
-inferred) + 8 + 11 + 8 + 20 + 1 = **about 325**. Two complete runs measured 309 and
-354 click to click (whistle in to whistle out), and one with the Titan at 314
-(Excalibur only) took 431.
+inferred) + 8 + 11 + 8 + 20 + 1 = **about 325**. The five complete visits summed
+to 287 and 299 (scimitar and switch), 406 (switch at ≤ 20 and 26 ticks at the
+doors), 434 (with the prayer, including a 90-tick maiden wait) and 423 (Excalibur
+only), counting the sub-steps above.
 
 ## Fights
 
