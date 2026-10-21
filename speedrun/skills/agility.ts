@@ -369,11 +369,9 @@ async function bandProgram(ctx: StepContext<unknown>, band: Band, o: AgilityOpti
         }
         throw e;
     }
+    // rehearse.ts logs the program's final status as a (program) row and each level as a (reach) row
     if (end.phase !== 'done') throw new AgilityStop('program', `the agility program was ${end.phase} in ${name}`);
-    const r = end.result as AgilityResult;
-    for (const [lv, tick] of Object.entries(r.levelTicks ?? {})) row(ctx, 'agility:level', tick, { band: name, level: Number(lv), course: band.course });
-    row(ctx, 'agility:program', end.endedTick ?? end.tick, { band: name, ...compact(r), eatBelow });
-    return r;
+    return end.result as AgilityResult;
 }
 
 /** The program result without its per-lap arrays, for a ledger row. */
@@ -436,23 +434,51 @@ function bandStep(band: Band, o: AgilityOptions, last: boolean): Step {
     };
 }
 
-async function walkRoute(ctx: StepContext<unknown>, route: ReadonlyArray<readonly [number, number]>): Promise<void> {
+/**
+ * Eat at the line while a walk runs: a 10 HP account crosses White Wolf Mountain
+ * and the Wilderness on foot (the lab lost one to the wolves without it).
+ */
+function eatWhileWalking(sdk: StepContext<unknown>['sdk'], o: AgilityOptions): () => void {
+    let lastEat = -Infinity;
+    return sdk.onStateUpdate(s => {
+        const p = s.player;
+        if (!p || s.tick - lastEat < 3) return;
+        if (p.hp > (o.eatBelow ?? defaultEatBelow('wilderness', p.maxHp))) return;
+        const f = foodSlot(s, o.food);
+        if (!f) return;
+        lastEat = s.tick;
+        void sdk.sendUseItem(f.slot, f.op);
+    });
+}
+
+async function walkRoute(ctx: StepContext<unknown>, route: ReadonlyArray<readonly [number, number]>, o: AgilityOptions): Promise<void> {
     const s = stateOf(ctx);
-    for (let i = routeStart(route, s.player!.worldX, s.player!.worldZ); i < route.length; i++) {
-        const [x, z] = route[i]!;
-        let r = await ctx.bot.walkTo(x, z, 2, { timeout: 90_000 });
-        if (!r.success) r = await ctx.bot.walkTo(x, z, 3, { timeout: 90_000 });
-        if (!r.success) throw new Error(`walk to (${x},${z}): ${r.message}`);
+    const stopEating = eatWhileWalking(ctx.sdk, o);
+    try {
+        for (let i = routeStart(route, s.player!.worldX, s.player!.worldZ); i < route.length; i++) {
+            const [x, z] = route[i]!;
+            let r = await ctx.bot.walkTo(x, z, 2, { timeout: 90_000 });
+            // the SDK pathfinder has no route through a closed gate (the Gnome Stronghold's): open the nearest one
+            if (!r.success && /no path|no waypoints/i.test(r.message)) {
+                const door = await ctx.bot.openDoor(/gate|door/i);
+                if (!door.success) throw new Error(`walk to (${x},${z}): ${r.message}; and no gate to open: ${door.message}`);
+                await waitUntil(ctx.sdk, st => st.tick >= (ctx.sdk.getState()?.tick ?? 0) + 2, { maxTicks: 4 });
+            }
+            if (!r.success) r = await ctx.bot.walkTo(x, z, 3, { timeout: 90_000 });
+            if (!r.success) throw new Error(`walk to (${x},${z}): ${r.message}`);
+        }
+    } finally {
+        stopEating();
     }
 }
 
-const walkGnome = (gnomeEnd: number): Step => ({
+const walkGnome = (gnomeEnd: number, o: AgilityOptions): Step => ({
     name: 'agility:walk-gnome',
     preconditions: s => (s.player ? true : 'no player'),
     run: async ctx => {
         const s = stateOf(ctx);
         if (agilityLevel(s) >= gnomeEnd || nearGnome(s)) return;
-        await walkRoute(ctx, ROUTES.spawnToGnome);
+        await walkRoute(ctx, ROUTES.spawnToGnome, o);
     },
     postconditions: s => (agilityLevel(s) >= gnomeEnd || nearGnome(s) ? true : 'not at the Gnome course'),
     logoutSafe: true
@@ -530,13 +556,13 @@ const walkWilderness = (o: AgilityOptions): Step => ({
         const p = s.player!;
         if (p.worldZ < 3800) {
             if (p.worldX > 2700) throw new Error(`no route to the Wilderness course from (${p.worldX},${p.worldZ}); walk to the Gnome Stronghold or the Ardougne lever first`);
-            await walkRoute(ctx, ROUTES.gnomeToLever);
+            await walkRoute(ctx, ROUTES.gnomeToLever, o);
             await pullLever(ctx);
         }
         const inKeep = (ctx.sdk.getState()?.player?.worldX ?? 0) > 3140;
         const slashes = inKeep ? await leaveKeep(ctx) : 0;
         const seen = (ctx.sdk.getState()?.nearbyPlayers ?? []).map(q => ({ name: q.name, combatLevel: q.combatLevel, distance: q.distance }));
-        await walkRoute(ctx, ROUTES.keepToRidge);
+        await walkRoute(ctx, ROUTES.keepToRidge, o);
         const ridge = await crossRidge(ctx);
         row(ctx, 'agility:walk-wilderness:legs', ctx.sdk.getState()?.tick ?? -1, { ticks: (ctx.sdk.getState()?.tick ?? t0) - t0, slashes, ridgeTries: ridge, playersAtKeep: seen });
     },
@@ -548,7 +574,7 @@ const walkWilderness = (o: AgilityOptions): Step => ({
 export function steps(raw: Record<string, unknown> = {}): Step[] {
     const o = parseOptions(raw);
     const bands = planBands(o.to);
-    const out: Step[] = [walkGnome(bands[0]!.to), bandStep(bands[0]!, o, bands.length === 1)];
+    const out: Step[] = [walkGnome(bands[0]!.to, o), bandStep(bands[0]!, o, bands.length === 1)];
     if (bands[1]) out.push(walkWilderness(o), bandStep(bands[1], o, true));
     return out;
 }
