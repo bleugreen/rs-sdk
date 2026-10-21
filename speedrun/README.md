@@ -24,11 +24,12 @@ speedrun/
     fake-sdk.ts   scriptable BotSDK stand-in for the unit tests
   runner/
     step.ts       Step type and runSteps
+    budget.ts     TickWindow: the per-tick user-event budget a step boundary hands off against
     example-bank.ts  'bank everything at Varrock west', end to end
   lab/            local lab: never imported by lib/
     lab.sh        engine + gateway + lite runners on port block 9300
     setup.ts      ::tele / ::give / ::setstat fixtures
-    measure-*.ts  the measurements quoted below
+    measure-*.ts  the measurements quoted below (measure-runner.ts: runner boundary ticks)
     probe-engine.ts      engine-rule probes (docs/speedrun/research/engine-sweep/engine.md)
     census-delayfree.ts  static census of delay-free item/xp triggers (same doc)
     measure-sweep.ts     top-ten verification (docs/speedrun/research/engine-sweep.md section 8)
@@ -294,13 +295,41 @@ ticks per drop are not faster than plain. The design and the measurements are in
 A step is `{name, preconditions(state, c), run(ctx), postconditions(state, c), logoutSafe}`.
 `runSteps(session, steps, {log, c, from?, shouldStop?})`:
 
-1. Takes a fresh tick and checks the preconditions. A failure is logged, and
-   it throws before `run` is called.
+1. Checks the preconditions on the state already published for the current
+   tick. A failing check waits exactly one tick and is checked once more; a
+   second failure is logged, and it throws before `run` is called.
 2. Runs the step inside `measure`.
-3. Takes the next tick and checks the postconditions. A failure is logged and fatal.
+3. Checks the postconditions the same way (now, then once more a tick later).
+   A second failure is logged and fatal.
 4. After a `logoutSafe` step, if a stop was requested (default: SIGINT), logs
    out cleanly and returns `resumeAt`. A stop during an unsafe step waits for
    the next safe boundary.
+5. Hands off to the next step in the same tick when that tick still has room
+   for one more user event, otherwise on the next tick, never later.
+
+The scored clock runs between steps too, so a boundary waits for a tick only
+when it must. The budget (`budget.ts`, `TickWindow`) is the engine's 5 accepted
+user events per tick (`NetworkPlayer.ts` `decodeIn`), booked from the SDK's own
+traffic: actions acknowledged in the current tick window, actions dispatched
+and not yet acknowledged, and any earlier burst the server is still decoding at
+5 per tick. It hooks the SDK's single dispatch method for the length of the
+run, so `bot.*` porcelain is counted along with raw sends. A state older than
+one tick of wall time (`tickMs()`) is waited past before a check, since the
+server has already moved on and its publication is due.
+
+Every boundary is a ledger row named `(boundary)`, with `meta: {from, to,
+index, waits, budget}`; `waits` names why it took a tick (`post-recheck`,
+`budget`, `stale`, `pre-recheck`). The first runs from the `runSteps` call to
+the first step and the last to `(end)` or `(logout)`, so the report's total is
+the whole run, idle ticks included.
+
+| Measurement (`lab/measure-runner.ts`: 10 steps, each one walk of one tile confirmed on arrival; 3 chains each) | Measured step ticks | Boundary ticks | Chain total |
+|---|---|---|---|
+| Before (each boundary took a fresh tick before the preconditions and another after the step) | 10 | **20** (1 entry, 2 between each pair of steps, 1 exit) | 30 |
+| After | 10 | **0** | 10 |
+
+Boundary ticks there are the chain's ticks outside every step row, computed
+from the step rows alone so both runners are measured the same way.
 
 `runner/example-bank.ts` is the shape in miniature. On the lab (1 sample, same
 provenance), "bank everything at Varrock west" (open the bank, deposit 24
