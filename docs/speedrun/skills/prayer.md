@@ -69,7 +69,7 @@ Measured runs (all `prayer-bury.ts`, 300 ms, dragon bones, Varrock west bank):
 
 | Quest | Prayer base xp (read) | Level reached from 1 | On route? | Bones it replaces |
 |---|---|---|---|---|
-| Holy Grail | **11,000** (`stat_advance(prayer, 110000)`, `quest_grail.rs2:116`) | **80**, not about 75: 80 needs 10,687 base and 81 needs 11,456 | **no**: rs/3 dropped it (with Merlin's Crystal) on 2026-10-20. Burying the same 11,000 base costs about 316 ticks (153 bones), less than the two quests | 153 (about 316 ticks) |
+| Holy Grail | **11,000** (`stat_advance(prayer, 110000)`, `quest_grail.rs2:116`) | **80**, not about 75: 80 needs 10,687 base and 81 needs 11,456 | **no**: rs/3 dropped it (with Merlin's Crystal) on 2026-10-20. Burying the same 11,000 base costs about 316 ticks (153 bones), and rs/3 judged the two quests not worth that | 153 (about 316 ticks) |
 | Priest in Peril | 1,406 (`priestperil.rs2:9`) | 51 | **no**, per the rs/33 brief. `haunted_mine.md` says Haunted Mine needs it, so check if Haunted Mine stays on route | 19-20 (about 40 ticks) |
 | The Restless Ghost | 1,125 (`quest_priest.rs2:98`) | 47 | no (`legends.md` leaves it out) | 15 (about 33 ticks) |
 | Legends' Quest | 7,650 per pick (`radimus_erkle.rs2:119-122`) | n/a | no (`legends.md`: not worth doing) | 106 per pick |
