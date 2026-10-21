@@ -87,7 +87,7 @@ on:
         default: ''
       cycles:
         description: 'mode=browser: logs cut by the knife woodcutting loop'
-        default: '150'
+        default: '60'
       browser_probe_command:
         description: "mode=browser: the probe in the page; 'auto' is the variant's (overlay: tickmanip-latency.ts over the gateway; in-page: rsPrograms.run('probe'))"
         default: auto
@@ -443,6 +443,23 @@ jobs:
           # SDK's state publications (gateway path, overlay probe) or the page's decoded ticks (in-page).
           pub() { grep -m1 -E "$2" "$OUT/$1.txt" 2>/dev/null | grep -oE 'p50 [0-9.]+ p90 [0-9.]+ max [0-9.]+' | head -1 || true; }
           pub_row="$(pub direct 'tick interval p10') / $(pub gateway-path '^state publication interval') / $(pub browser-probe '^(state publication|decoded tick) interval')"
+          # The run-night gate (cairn://p/rs/83) on the direct row: (a) at least 58/60 on the next tick,
+          # (b) frame interval p90 <= 400 ms and max <= 600, (c) at most 1 catch-up per minute (a frame
+          # under 150 ms right after one over 350). Frames within 20 ms are one tick's output, which
+          # reproduces the probe's own printed interval quantiles. A failing minute is a burst.
+          gate=$(jq -r '
+            (.react.trials // []) as $tr | ($tr | map(select(.ticks == 1)) | length) as $on | ($tr | length) as $n |
+            (.react.frames.raw // [] | map(.[0])) as $f |
+            (reduce $f[] as $x ({b: [], last: null}; if .last == null or $x - .last > 20 then {b: (.b + [$x]), last: $x} else .last = $x end) | .b) as $t |
+            [range(1; $t | length) as $i | $t[$i] - $t[$i - 1]] as $iv | ($iv | sort) as $s | ($s | length) as $m |
+            (if $m > 0 then $s[[($m * 0.9 | floor), $m - 1] | min] else null end) as $p90 | ($s[-1] // null) as $max |
+            ([range(1; $iv | length) as $i | select($iv[$i] < 150 and $iv[$i - 1] > 350)] | length) as $cu |
+            (if ($t | length) > 1 then ($t[-1] - $t[0]) / 60000 else 0 end) as $mins |
+            (if $mins > 0 then $cu / $mins else null end) as $rate |
+            ($n > 0 and $on * 60 >= 58 * $n) as $a | ($p90 != null and $p90 <= 400 and $max <= 600) as $b | ($rate != null and $rate <= 1) as $c |
+            "\(if $a and $b and $c then "PASS" else "FAIL (burst)" end): a \($on)/\($n) \(if $a then "ok" else "fail" end); b frame interval p90 \($p90 // 0 | floor) max \($max // 0 | floor) \(if $b then "ok" else "fail" end); c \($cu) catch-ups in \($mins * 10 | floor / 10) min = \($rate // 0 | . * 10 | floor / 10)/min \(if $c then "ok" else "fail" end)"
+          ' "$OUT/direct.json" 2>/dev/null || echo 'not scored (no direct row)')
+          burst=''; case "$gate" in FAIL*) burst=' (burst)' ;; esac
 
           {
             echo '## Demo latency probe'
@@ -460,6 +477,7 @@ jobs:
                    "| reaction ticks, gateway path | \(.gateway_path.reaction_ticks // {} | to_entries | map("\(.key):\(.value)") | join(" ")) |",
                    "| reaction ticks, direct (+0 ms) | \($direct) |",
                    "| tick publication interval ms, p50/p90/max (direct / gateway / browser) | \($pub) |",
+                   "| run-night gate on the direct row (a >= 58/60; b p90 <= 400, max <= 600; c <= 1 catch-up/min) | \($gate) |",
                    "| probes from | \(.ref) @ \(.sha[0:9]) |",
                    "| lite client and gateway from | \(.lite.ref) @ \(.lite.sha[0:9]) |",
                    (if .browser then
@@ -467,11 +485,12 @@ jobs:
                      "| page, bundle and gateway from | \(.browser.ref) @ \(.browser.sha[0:9]) |",
                      "| browser probe PDT / knife PDT | \($bspan) / \($kspan) |",
                      "| players online, end of browser path | \(.browser.players_online_end) |",
-                     "| reaction ticks, browser \(.browser.variant) | \(.browser.probe.reaction_ticks // {} | to_entries | map("\(.key):\(.value)") | join(" ")) |",
+                     "| reaction ticks, browser \(.browser.variant)\($burst) | \(.browser.probe.reaction_ticks // {} | to_entries | map("\(.key):\(.value)") | join(" ")) |",
                      "| knife loop, \(.browser.knife.cycles) logs (trees west of Lumbridge castle) | \(.browser.knife.metric | gsub("\\|"; "/")) |"
                    else empty end)' --arg direct "$direct_ticks" \
               --arg online_end "$online_end" --arg mode "$MODE" --arg dspan "$(span direct)" --arg gspan "$(span gateway-path)" \
-              --arg bspan "$(span browser-probe)" --arg kspan "$(span knife)" --arg pub "$pub_row" "$OUT/result.json"
+              --arg bspan "$(span browser-probe)" --arg kspan "$(span knife)" --arg pub "$pub_row" --arg gate "$gate" --arg burst "$burst" "$OUT/result.json"
+            echo "$gate" > "$OUT/gate.txt"
             for f in frames-browser-probe frames-knife; do
               if [ -s "$OUT/$f.txt" ]; then echo; echo "### where the time goes on the page's sockets: ${f#frames-}"; echo '```'; cat "$OUT/$f.txt"; echo '```'; fi
             done
