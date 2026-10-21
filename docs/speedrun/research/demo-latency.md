@@ -558,8 +558,8 @@ near-burst minutes:
 | --- | --- | --- | --- | --- | --- |
 | 13:35 run machine | Knife, in-page program | oak, 63-66, p 0.29-0.30 | 10.89 | **3.25** (63.6 over 19 gaps) | 16 in 1 min (12-17 per minute) |
 | 13:35 run machine | Plain, in-page program (`technique: 'plain'`) | oak, 66-68, p 0.30-0.31 | 12.28 | **3.76** (58.7 over 18 gaps) | 11 in 1.1 min (9-11 per minute) |
-| 13:15 run machine | Knife, rs/113's overlay | normal, 56-60, p 0.53-0.54 | 14.72 | **8.27** | 10 in 2.4 min (4.2 per minute) |
-| 13:15 run machine | Plain, lite runner through the page's gateway | normal, 61-63, p 0.54-0.55 | 12.47 | **7.23** | 5 in 1.4 min |
+| 13:15 run machine | Knife, rs/113's overlay | normal, 56-60, p 0.55-0.57 | 14.72 | **8.27** | 10 in 2.4 min (4.2 per minute) |
+| 13:15 run machine | Plain, lite runner through the page's gateway | normal, 61-63, p 0.57-0.59 | 12.47 | **7.23** | 5 in 1.4 min |
 | 12:45 run machine | Knife, in-page program | normal, 19-52, p 0.35-0.53 | 8.59 | **3.94** (128.7) | 14 in 2.7 min (5.1 per minute) |
 | 12:45 run machine | Plain, lite runner through the page's gateway | normal, 52-56, p 0.53-0.55 | 11.95 | **6.44** | 5 in 1.3 min |
 | 09:51 GitHub eastus | Knife, in-page program | normal, about 82-84, p about 0.69-0.70 | 5.32 | about **3.7** | 1.7 per minute |
@@ -582,8 +582,8 @@ the page's wins is not measured yet; the overlay adds the gateway and SDK script
 loop walks between most logs, and both ran as the same in-page program on the nearest oak to the
 Lumbridge stand, the plain one being the scored run's fallback when the gate turns the knife off.
 The knife read 3.25 ticks per expected roll against plain's 3.76, about 14% better, but on 19 and
-18 gaps, where one lucky or unlucky roll moves either figure by several per cent; plain under its
-own 4-tick cycle says the same. Every minute of the session was a burst (9-17 catch-ups per
+18 gaps, where one lucky or unlucky roll moves either figure by several per cent: plain's 3.76 is
+below its own 4-tick swing cycle, which only luck on the rolls allows. Every minute of the session was a burst (9-17 catch-ups per
 minute), so the split by minute that would answer whether the knife holds in calm minutes has no
 calm side yet. Of the knife's 17 gaps longer than 3 ticks, 11 contain a 350/150 catch-up and 15 a
 soft pair; of its 2 gaps of 3, none and 1. The knife counted 4 off-phase rolls and 6 resyncs in 25
