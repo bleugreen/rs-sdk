@@ -121,7 +121,10 @@ await runScript(async ({ sdk }) => {
         await sdk.sendClickComponent(COM_TAR_UP);
         await sdk.sendClickComponent(COM_COAL);
         await sdk.sendClickComponent(COM_COAL);
-        const coalAt = [6, 9, 12].map(k => s0 + 2 * k - 2 + delta);
+        // A coal click sent on observed tick s lands on server tick T0 + (s - s0) + 1
+        // (primitives.md, two clocks). Coal for fire k is safe anywhere after fire
+        // k-2 and up to fire k (see `sim`), so aim at T0 + 2k - 2, mid-window.
+        const coalAt = [6, 9, 12].map(k => s0 + 2 * k - 3 + delta);
         const log: Array<[number, number | null]> = [];
         let done: number | null = null;
         while (now(sdk) - s0 < 80) {
