@@ -153,13 +153,14 @@ lock is a failed roll or a cycle that did not roll.
 | Lobster | **knife**, click on R+3 | 80 drops, 79 gaps | 3:34 6:19 9:11 12:8 15:2 18:3 27:1 36:1 | **7.06** | 0 lost locks; logs kept |
 | Lobster | eat, click on R+1 | 13 drops | none | 199 | stops fishing (section 2) |
 | Willow, Draynor | base | 80 drops, 75 gaps | 4:47 5:6 7:2 8:15 12:2 13:3 | 5.53 | combat stats 70 |
-| Willow | eat | 200 drops, 163 gaps | 3:114 6:33 9:8 4:1 12:1 22:5 25:1 | 6.22 overall | 37 lost locks: tree depletion and dark-wizard attacks (combat stats not raised) |
+| Willow | eat | 200 drops, 163 gaps | 3:114 6:33 9:8 4:1 12:1 22:5 25:1 | 6.22 overall | 37 lost locks: tree depletion and NPC attacks (combat stats not raised) |
 | Willow | **knife** | 150 drops, 131 gaps | 3:85 6:25 9:7 4:8 7:2 8:2 12:2 | **4.23** | combat stats 70; 18 lost locks, all tree depletion; 10 of 10 logs kept |
 
 The willow runs only count with the bot's combat stats raised (`tickmanip-cycle.ts` sets
-hitpoints, attack, strength and defence to 70). Without that, dark wizards beside the
-Draynor willows attacked the level-3 lab bot ("You feel weakened") and killed it within
-about 40 ticks, in all four early knife runs. The eat runs hid this because every bite
+hitpoints, attack, strength and defence to 70). Without that, an NPC caster beside the
+Draynor willows attacked the level-3 lab bot ("You feel weakened",
+`npc_combat_magic.rs2:136`; most likely a dark wizard, inferred) and killed it within about
+40 ticks ("Oh dear you are dead!", respawn at 3221,3217) in all four early knife runs. The eat runs hid this because every bite
 heals. Earlier 100 ms willow runs are left out for the same reason.
 
 Mining, `tickmanip-mine.ts`, rs/5's south-of-zoo cluster (mining.md section 4); "ticks per
@@ -245,8 +246,8 @@ this (`resync` in `tickmanip-cycle.ts`, `SLIP` in `tickmanip-mine.ts`).
 - **Level-up dialog:** a level-up opens a chat dialog and pauses (`levelup.rs2:51-55`).
   The next starter closes it, because both handlers call `closeModal` (read), so the lock
   should survive (inferred). The one level-30 run (eat, 31 dialogs in 60 willow logs, 23
-  lost locks) was at Draynor without raised combat stats, so dark-wizard attacks may
-  explain the losses; it does not settle the question (section 8).
+  lost locks) was at Draynor without raised combat stats, so NPC attacks may explain the
+  losses; it does not settle the question (section 8).
 - **Combat:** being attacked starts auto-retaliate, which replaces the gathering
   interaction and breaks the lock. Train where nothing aggressive reaches the account, or
   outlevel the local aggressors (measured at the Draynor willows, section 4).
