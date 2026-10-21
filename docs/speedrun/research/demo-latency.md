@@ -118,10 +118,23 @@ The trial: on a fresh tick, walk one tile, and count the ticks until the step sh
 | Des Moines | private relay | 02:25 | ord | 22 ms | 1,549 | 60 | 44 | 16 | 0 | [rs/86 run 3](https://github.com/bleugreen/rs-sdk/actions/runs/39576693034) |
 | Ashburn | **direct** | 02:43:53 | iad | none | ~1,655 | 60 | **60** | 0 | 0 | [rs/86 run 4](https://github.com/bleugreen/rs-sdk/actions/runs/39579095329) |
 | Ashburn | private relay | 02:45:38 | iad | none | ~1,655 | 60 | 32 | 28 | 0 | rs/86 run 4, same runner 26 s later |
+| Ashburn | direct, +0 ms | 02:49 | iad | none | 1,564-1,672 | 15 | 15 | 0 | 0 | [rs/86 run 5](https://github.com/bleugreen/rs-sdk/actions/runs/39579740957) |
+| Quebec (Azure CanadaEast) | direct | 03:05 | **iad**, but TCP 24 ms | none | 1,649-1,653 | 60 | 56 | 4 | 0 | [rs/86 run 6](https://github.com/bleugreen/rs-sdk/actions/runs/39581904913) |
+| Quebec (Azure CanadaEast) | private relay | 03:05 | iad, TCP 24 ms | none | 1,649-1,653 | 60 | 36 | 24 | 0 | rs/86 run 6 |
+| Ashburn | direct | 03:17 | iad | none | 1,659-1,668 | 60 | 60 | 0 | 0 | [rs/86 run 7](https://github.com/bleugreen/rs-sdk/actions/runs/39583303736) |
+| Ashburn | private relay | 03:17 | iad | none | 1,659-1,668 | 60 | 40 | 20 | 0 | rs/86 run 7 |
+| Home (Mac) | direct, +0 ms, **host loaded** | 03:46 | lax | 56-86 ms | 1,674 | 15 | 0 | 14 | 1 | hour sample; probe turnaround p50 10 ms, p90 76 ms (normally under 1 ms), so not a clean reading |
 | Ashburn VM (operator) | direct and relay | pending | | | | | | | | placeholder |
+| Browser tab, overlay path (rs/82's branch) | browser | pending | | | | | | | | rs/95 |
+| Browser tab, in-page program (rs/97's branch) | browser | pending | | | | | | | | rs/95 |
 
-Runs 2 and 4 used the same relay path from the same region; 51/9 then 32/28 shows how much that
-path varies between draws.
+Runs 2, 4 and 7 used the same relay path from the same region; 51/9, 32/28 and 40/20 show how
+much that path varies between draws. Across the three paired Ashburn runs the direct path landed
+180 of 180, and the relay 72 of 120 on the next tick.
+
+**An `iad` edge does not by itself mean Ashburn.** The Quebec runner reached the demo through the
+`iad` edge with no mesh hop, but with a 24 ms TCP connect, and it missed 4 of 60 on the direct
+path. The run-night gate must check the connect time as well as the edge (section 10).
 
 Publication intervals (tick state to tick state at the client) were p10 196-245 / p50 245-306 /
 p90 348-407 / max 486-879 ms across runs. The Ashburn direct run had a maximum tick interval of
@@ -132,27 +145,36 @@ the same runner at the same player count landed every reaction on the next tick,
 879 ms tick interval. All of the relay's misses from Ashburn come from the relay. Do not re-test
 this.
 
-### The idle gap, read from the delay sweep (Mac, 02:45, 1,660 online)
+### The margin after a frame, read from the delay sweep
 
-| Added delay `r` | 1 tick | 2 ticks | 3 ticks |
-| --- | --- | --- | --- |
-| +0 ms (react p50 0.6 ms) | 10 | 5 | 0 |
-| +25 ms | 1 | 14 | 0 |
-| +50 ms | 1 | 13 | 1 |
-| +75 ms | 0 | 15 | 0 |
-| +100 ms | 0 | 15 | 0 |
-| +150 ms | 0 | 15 | 0 |
-| +200 ms | 0 | 11 | 4 |
+Ticks to land, 15 trials per added delay `r`, direct path:
 
-So from home, `W - RTT` lies between 0 and 25 ms on about 60% of ticks and below 0 on the rest.
-With a home RTT of about 90 ms, **`W` is about 90-115 ms on most ticks**, which puts the busy part
-of the cycle (tick start to output flush) at about 185-210 ms at this load. Four of 15 trials at
-+200 ms slipped to 3 ticks, which needs `W` under about 0 on those ticks: an occasional long cycle.
-The blind sender (section 6) agrees: sends within 50 ms of a tick frame hit the next tick 86% of
-the time, and later sends never did.
+| Added delay `r` | Home (Mac), 02:45, 1,660 online: 1 / 2 / 3 | Ashburn (rs/86 run 5), 02:49, 1,564-1,672 online: 1 / 2 / 3 |
+| --- | --- | --- |
+| +0 ms | 10 / 5 / 0 | **15** / 0 / 0 |
+| +25 ms | 1 / 14 / 0 | 13 / 2 / 0 |
+| +50 ms | 1 / 13 / 1 | 9 / 6 / 0 |
+| +75 ms | 0 / 15 / 0 | 2 / 13 / 0 |
+| +100 ms | 0 / 15 / 0 | 1 / 14 / 0 |
+| +150 ms | 0 / 15 / 0 | 0 / 15 / 0 |
+| +200 ms | 0 / 11 / 4 | 0 / 13 / 2 |
 
-From Ashburn, with RTT about 3 ms, the direct path's 60 of 60 at `r` up to 25 ms says `W` exceeded
-about 28 ms on every one of those ticks.
+The margin a client has after the tick-T frame arrives, `W - RTT`, is what this sweep reads
+directly. **From Ashburn it is about 50 ms at the median** (87% of ticks give at least 25 ms, 60%
+at least 50 ms, 13% at least 75 ms). **From home it is 0-25 ms on about 60% of ticks and negative
+on the rest.** Trials at +200 ms that slipped to 3 ticks, from both places, need a margin below
+about -100 ms on those ticks: an occasional long cycle.
+
+The two sweeps do not fit a single `W` with a home RTT of 90 ms: that would leave home a margin
+of about -36 ms and no next-tick reactions, yet home got 10 of 15. Either the game socket's real
+home RTT is nearer 50-60 ms than Fly's `mrtt` suggests, or the frame for each account leaves the
+engine at a different point in the output batch (accounts are flushed one after another in
+`processClientsOut`), or the load differed between the two minutes. This is listed as open; the
+measured per-vantage margins are what the recommendation uses.
+
+The blind senders (section 6) agree with the sweeps: from home, sends within 50 ms of a frame hit
+the next tick 86% of the time and later sends never did; from Ashburn, 76% within 50 ms, 43% at
+50-100 ms, 12% at 100-150 ms, and none later.
 
 ## 4. HTTP and websocket timing
 
@@ -193,8 +215,8 @@ Home (Mac or fedora, Los Angeles edge) at about 1,650 online, and what changes i
 | Fly edge to app over the mesh, one way | ~35 ms | 0 (no mesh hop) | placement | `mrtt` p50 70 ms |
 | Fly proxy processing | a few ms | a few ms | fixed, small | Ashburn TLS done at 25 ms with TCP at 2-3 ms; not separated further |
 | **Network round trip (RTT)** | **~90 ms** | **~3-5 ms** | placement | sum of the above |
-| Engine busy part of the tick (start to flush) | ~185-210 ms on most ticks, occasionally over 300 | same | load (player count), not placement | delay sweep, section 3 |
-| Idle gap `W` before the next input read | ~90-115 ms on most ticks | same | load | delay sweep |
+| Margin after the frame, `W - RTT` | 0-25 ms on ~60% of ticks, negative on the rest | ~50 ms median (25 ms on 87%, 75 ms on 13%) | placement and load | delay sweeps, section 3 |
+| Engine busy part of the tick, and occasional long cycles | most of each tick; some cycles run past 300 ms | same | load (player count), not placement | sweeps at +200 ms; HTTP waits, section 4 |
 | Input read | once, at cycle start, after `processWorld` | same | fixed | `World.ts` |
 | Output flush | once, near cycle end | same | fixed | `World.ts` |
 | Client turnaround, direct in-process | 0.3-0.6 ms p50, under 25 ms max | same | fixed | probe `reactMs` |
@@ -203,11 +225,11 @@ Home (Mac or fedora, Los Angeles edge) at about 1,650 online, and what changes i
 
 **Threshold for a 1-tick reaction:** client turnaround `r` < `W - RTT`. At home that is 0-25 ms on
 most ticks and negative on the rest, so even a perfect client lands on the next tick only about
-two times in three. In Ashburn it is about 85-110 ms on most ticks.
+two times in three. In Ashburn it is about 50 ms at the median and at least 25 ms on 87% of ticks.
 
-**Predicted distribution in Ashburn:** direct, essentially all on the next tick (measured 60 of
-60). Private relay, about half (measured 32/28 and 51/9), because the relay's 46-73 ms typical
-turnaround sits right at the edge of the gap, and its tail runs past it.
+**Distribution in Ashburn:** direct, all on the next tick (measured 180 of 180 across three paired
+runs). Private relay, about 60% (measured 51/9, 32/28, 40/20), because the relay's 46-73 ms typical
+turnaround sits right on Ashburn's ~50 ms median margin, and its tail runs past it.
 
 ### Where the relay's time goes (Mac, private relay, 02:53, 60 trials)
 
@@ -249,8 +271,9 @@ would remove the fixed part (this is diagnosis only; nothing was changed):
    (`session.ts:212`).
 
 What would remain is state collection (3 ms median, 40 ms p90) and two loopback hops of about
-1 ms. That would put the relay at about 5-10 ms typical, well inside Ashburn's 85-110 ms margin,
-with state collection's tail as the remaining risk. That prediction is inferred and needs the
+1 ms. That would put the relay at about 5-10 ms typical, inside Ashburn's ~50 ms median margin
+(the direct path landed 13 of 15 even at +25 ms), with state collection's tail as the remaining
+risk. That prediction is inferred and needs the
 same paired Ashburn sample to confirm. The browser tab has the same class of delay: its overlay
 executes queued actions in the draw loop (`Client.gameDraw`, `BotOverlay.tick`, about 14-20 ms
 frames) and publishes through the engine's `/gateway`, which is why main chose in-page programs
@@ -268,12 +291,14 @@ processed. A packet that never shows was absorbed by the next one on the same ti
 | --- | --- | --- | --- | --- | --- | --- |
 | Home (Mac), direct | 02:44 (smoke) | 1,652 | 4 | 2:3, 3:1 | same tick 4 of 4 | same tick 4 of 4 |
 | Home (Mac), direct | 02:47 | 1,660 | 20 | 1:6, 2:13, 3:1 | same 16, +1 tick 4 | same 11, +1 tick 9 |
-| Ashburn, direct | pending (rs/86) | | | | | |
+| Ashburn, direct | 02:49-02:56 | 1,564-1,672 | 20 | 1:20 | same 9, +1 tick 11 | same 1, +1 tick 19 |
 
-From home, packets sent within 70 ms of each other mostly share a tick; a packet sent 140 ms after
-the frame splits from the first about half the time, because the input-read cut falls between
-them. Multi-packet bundles for the knife loops (starter plus button in one tick) should be sent
-together, as one flush, not spread out.
+From Ashburn the first packet always makes the next tick. A packet sent 70 ms after the frame
+misses it about half the time, and one sent 140 ms after almost always does: the input-read cut
+falls 50-100 ms after the frame arrives, as the sweep says. From home the cut falls much earlier,
+so most of a burst lands together one tick later. Either way, **a multi-packet bundle that must
+share a tick (the knife's starter plus its button) has to go out as one flush, immediately on the
+frame**, not spread across the tick.
 
 **Blind every-tick sender** (`--phases=blind`): 200 walks on a fixed 300 ms clock, not waiting for
 state (the knife loop's shape), each aimed at the tick after the latest one seen.
@@ -282,9 +307,13 @@ state (the knife loop's shape), each aimed at the tick after the latest one seen
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Home (Mac), direct | 02:44 (smoke) | 1,652 | 40 | 0 | 39 | 1 | 0% at every phase |
 | Home (Mac), direct | 02:47 | 1,660 | 200 | 31 (16%) | 158 (79%) | 11 (6%) | 0-50 ms: 86%; 50-100 ms: 8%; later: 0% |
-| Ashburn, direct | pending (rs/86) | | | | | | |
+| Ashburn, direct | 02:49-02:56 | 1,564-1,672 | 200 (20 absorbed) | 45 (23%) | 155 (78%) | 0 | 0-50 ms: 76%; 50-100 ms: 43%; 100-150 ms: 12%; later: 0% |
 
-From home, a blind sender's dominant offset is +1 tick at 79%. Section 8 uses that share.
+A free-running 300 ms clock drifts against the server's ticks, which are not exactly 300 ms, so its
+sends fall at every phase of the tick and only the early ones make the aimed tick: 23% even from
+Ashburn. The dominant offset is +1 tick at 78-79% from both places. Section 8 uses that share.
+**An in-page tick program should send on the frame's arrival, not on its own clock**: from Ashburn
+that lands 15 of 15 (sweep at +0) where the free-running clock lands 23%.
 
 ## 7. The browser tab's sockets, and the route the run's input must take
 
@@ -342,8 +371,10 @@ What the distributions measured here do to a loop aimed at R+1:
 | Home, bbs, relay, rs/26: 0/25/35 | 0.58 at 3 | fails: 3 + 0.42 x 4 = 4.7 > 4 | fails, about even: 5.1 vs 5 | passes: 3.4 vs 3.61 |
 | Home, Mac, relay, 02:35: 3/56/1 | 0.93 at 2 | passes | passes | passes |
 | Home, Mac, blind direct sender, 02:47 | 0.79 at +1 | passes, narrowly | passes | passes |
+| Ashburn, blind direct sender (free-running clock), 02:49 | 0.78 at +1 | passes, narrowly | passes | passes |
+| Ashburn, relay, runs 2, 4, 7 combined: 123/57/0 | 0.68 at 1 | fails | passes | passes |
 | Ashburn, relay, 02:45: 32/28/0 | 0.53 at 1 | fails | fails | passes |
-| Ashburn, direct, 02:43: 60/0/0 | 1.00 at 1 | passes, full gain | passes, full gain | passes, full gain |
+| Ashburn, direct, sending on the frame: 180/0/0 over three runs | 1.00 at 1 | passes, full gain | passes, full gain | passes, full gain |
 
 Two conclusions. First, what hurts a predicted loop is a **split** distribution, not a long one:
 the steady 2-tick world from home through the relay keeps the lock better than the 50/50 world
@@ -360,6 +391,7 @@ the gate would correctly keep the knife off on trees and fly.
 | 02:45-02:50 | Mac, direct session | 1,567-1,660 | 118 / 259 / 357 / 580 ms | `data/mac-0247.json` |
 | 02:43 | Ashburn, direct session | ~1,655 | p50 245 / p90 348 / max 879 ms | rs/86 run 4 |
 | 01:54-02:45 | GitHub runners, relay publication | 1,549-1,663 | p10 224-245 / p50 289-306 / p90 368-388 / max 486-670 ms | rs/86 runs 1-4 |
+| 03:47-03:57 | Mac, one session, 10 min, no input | 1,576-1,680 | 179 / 299 / 404 / 803 ms; 210 of 2,021 intervals over 400 ms (10%) | hour sample |
 
 The interval p10 of 118 ms from home is the engine's catch-up after a long tick (`World.ts` lets
 the next cycle start early to recover up to two ticks of backlog). Samples at other hours are
@@ -376,7 +408,8 @@ hour, and let the run-night probe decide (section 10).
 
 **Where.** The machine that shows the visible browser tab runs in Ashburn: Fly's iad region, AWS
 us-east-1, or Azure eastus. It must reach the demo through the Ashburn edge (`flyio-debug`
-`nr=iad` with no mesh hop) with TCP connect under 5 ms. The operator needs a desktop session they
+`nr=iad` with no mesh hop) **and** with TCP connect under 5 ms; an `iad` edge alone is not enough
+(the Quebec runner had it at 24 ms and missed 4 of 60 on the direct path). The operator needs a desktop session they
 can watch (VNC or RDP), Chrome, and the client watchdog from `speedrun/lib` (rs/40).
 
 **Route.** As decided (section 7): our webclient served on the run host, game socket to
@@ -406,7 +439,8 @@ route (local webclient build, loopback gateway, in-page probe; cairn://p/rs/96 a
 real player count:
 
 1. `GET /playercount`, recorded.
-2. `flyio-debug` shows `nr=iad`, `sr=iad`, no mesh hop; TCP connect under 5 ms.
+2. `flyio-debug` shows `nr=iad`, `sr=iad`, no mesh hop; TCP connect p50 under 5 ms (rs/86's
+   workflow refuses to log in above 10 ms).
 3. The direct in-page probe lands **60 of 60 on the next tick (floor 58)**.
 4. The blind sender lands at least 95% on the aimed tick, and a burst of the knife's bundle lands
    on one tick.
@@ -432,7 +466,12 @@ machine is the stand-in for items 3 and 4.
    steps) to price the run exactly.
 6. **The public-relay path** from home and from Ashburn, for completeness. The gateway's HTTP
    numbers already show it is the worst path, and the run does not use it.
-7. **Websocket ping** as a cross-check on the one-way latency estimates.
+7. **Websocket ping** as a cross-check on the one-way latency estimates, and the related mismatch
+   between the home and Ashburn delay sweeps (section 3): either the game socket's home RTT is
+   lower than `mrtt` suggests, or each account's frame leaves at a different point in the
+   engine's output batch. A sweep from two accounts at once from Ashburn would separate them.
+8. **The browser-path rows** (rs/95): the tab's overlay on rs/82's branch and the in-page program
+   on rs/97's branch.
 
 Ruled out, and not worth re-testing: long server ticks as the cause of the relay's misses from
 Ashburn (section 3).
