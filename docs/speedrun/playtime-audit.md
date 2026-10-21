@@ -78,6 +78,6 @@ means it was reasoned from the code but not traced end to end or exercised.
 
 The score is the in-world tick of the last level-up. The levers are therefore to leave the
 world whenever the account itself has nothing productive to do (helper deliveries, exchange
-fills, waiting), to log out explicitly rather than drop the socket (4b), and not to leave a
-maxed account sitting idle and connected (4c). The idle case does not move the final stamp,
-but it does push back every intermediate total.
+fills, waiting), to log out explicitly rather than drop the socket (4b), and not to sit idle while
+connected (4c). Every counted tick before the last level-up adds to the score. Once an account
+is maxed, its stamp is final and further time online costs nothing.
