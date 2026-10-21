@@ -16,14 +16,16 @@
 //    whatever the bank holds.
 //  - Every stat_advance that crosses a level enqueues its own level-up script on
 //    the engine queue (Player.ts addXp). Over 29 wines from Cooking 1 that is
-//    about 16 scripts, each a chat page. Dismissing one ends its script and the
-//    engine queue starts the next in the same tick, before interactions, so the
-//    bank cannot open until the last page is gone. While a page is open the
-//    player holds protected access, so a make (OPHELDU) or the logout button is
-//    ignored without a message.
-//  - The engine queue is not saved: a logout drops the pages still queued.
+//    about 16 scripts, each a chat page, and two pages each when the final level
+//    is one of Cooking's unlock levels (53, 55, ...). Dismissing one ends its
+//    script and the engine queue starts the next in the same tick, before
+//    interactions, so the bank cannot open until the last page is gone: at
+//    least one tick per page.
+//  - A logout does not skip them: the engine removes a player only when its
+//    engine queue is empty, running one queued script per tick until then
+//    (World.ts processLogouts).
 import type { BotSDK } from '../../sdk/index';
-import type { BotWorldState, InventoryItem } from '../../sdk/types';
+import type { BotWorldState } from '../../sdk/types';
 import { classifyPage } from '../lib/dialogue';
 import { receiveFrom, type TradeSdk } from '../lib/trade';
 import type { StateSource } from '../lib/wait';
@@ -578,9 +580,4 @@ export async function splitDelivery(ctx: ReceiverCtx, giver: string, opts: Split
         out.finalPages = dr.pages;
     }
     return out;
-}
-
-/** The inventory slot holding the noted wines, for callers that want to show it. */
-export function noteStack(inventory: readonly InventoryItem[]): InventoryItem | undefined {
-    return inventory.find(i => i.id === ITEM.wineNote);
 }

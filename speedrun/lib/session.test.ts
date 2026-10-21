@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { baseState } from './fake-sdk';
-import { backoffMs, browserUrl, logoutBurst, parseBotEnv, watchdogDecision, type WatchdogInputs } from './session';
+import { backoffMs, browserUrl, parseBotEnv, watchdogDecision, type WatchdogInputs } from './session';
 
 const healthy: WatchdogInputs = {
     expectInWorld: true,
@@ -59,21 +58,4 @@ test('parseBotEnv and browserUrl', () => {
     expect(browserUrl(env)).toBe('http://localhost:9300/bot?bot=srlab1&password=p%20w');
     expect(browserUrl({ ...env, SERVER: 'rs-sdk-demo.fly.dev' })).toBe('https://rs-sdk-demo.fly.dev/bot?bot=srlab1&password=p%20w');
     expect(() => parseBotEnv('SERVER=x')).toThrow();
-});
-
-describe('logoutBurst', () => {
-    test('just the logout button when no page is open', () => {
-        expect(logoutBurst(baseState())).toEqual(['logout']);
-        expect(logoutBurst(null)).toEqual(['logout']);
-    });
-
-    test('a continue page (a level-up) is dismissed in the same burst, first', () => {
-        const page = baseState({ dialog: { isOpen: true, isWaiting: false, options: [{ index: 1, text: 'Click here to continue', buttonType: 6 }] } as never });
-        expect(logoutBurst(page)).toEqual(['continue', 'logout']);
-    });
-
-    test('a choice page is never answered', () => {
-        const choice = baseState({ dialog: { isOpen: true, isWaiting: false, options: [{ index: 1, text: 'Yes' }, { index: 2, text: 'No' }] } as never });
-        expect(logoutBurst(choice)).toEqual(['logout']);
-    });
 });
