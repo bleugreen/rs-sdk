@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# Helper fleet control, run ON the fleet host (bbs). From the Mac:
+#   ssh bleu@bbs '~/rs-fleet/speedrun/helpers/fleetctl status'
+# Operating guide: docs/speedrun/HELPERS.md.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+BUN="${BUN:-$HOME/.bun/bin/bun}"
+UNIT=rs-fleet
+cd "$ROOT"
+
+fleet() { "$BUN" speedrun/helpers/fleet.ts "$@"; }
+running() { systemctl --user is-active --quiet "$UNIT"; }
+
+cmd="${1:-help}"
+[ $# -gt 0 ] && shift
+case "$cmd" in
+  start)
+    if running; then echo "$UNIT is already running"; exit 0; fi
+    [ -f fleet.json ] || { echo "no fleet.json in $ROOT (see docs/speedrun/HELPERS.md)"; exit 1; }
+    systemctl --user reset-failed "$UNIT" 2>/dev/null || true
+    # Restart after a crash, but not after exit 2 (bad config, another fleet running)
+    # or 3 (client revision outdated): those need a person, not a retry loop.
+    # SIGINT to the supervisor only (KillMode=mixed) lets it log every account out.
+    systemd-run --user --quiet --unit="$UNIT" --description="rs helper fleet ($ROOT)" \
+      --working-directory="$ROOT" \
+      -p Restart=on-failure -p RestartSec=30 -p 'RestartPreventExitStatus=2 3' \
+      -p KillMode=mixed -p KillSignal=SIGINT -p TimeoutStopSec=120 \
+      -E PATH="$(dirname "$BUN"):/usr/local/bin:/usr/bin:/bin" \
+      "$BUN" speedrun/helpers/fleet.ts run
+    sleep 3
+    systemctl --user --no-pager status "$UNIT" | head -3
+    ;;
+  stop)
+    if running; then
+      echo "stopping $UNIT (logging every account out; up to a minute)..."
+      systemctl --user stop "$UNIT"
+      echo stopped
+    else
+      echo "$UNIT is not running"
+    fi
+    ;;
+  restart)
+    "$0" stop
+    "$0" start
+    ;;
+  status)
+    fleet status "$@"
+    ;;
+  logs)
+    # logs [fleet|gateway|<account>] [lines]
+    name="${1:-fleet}"
+    tail -n "${2:-60}" "fleet-run/logs/$name.log"
+    ;;
+  follow)
+    tail -F "fleet-run/logs/${1:-fleet}.log"
+    ;;
+  journal)
+    journalctl --user -u "$UNIT" -n "${1:-100}" --no-pager
+    ;;
+  reload | add | assign | peek)
+    fleet "$cmd" "$@"
+    ;;
+  update)
+    # update [ref]: check out a branch or commit of origin (default main) and install
+    # dependencies. During the rs/41 mission deploy the integration branch, after it
+    # ships deploy main. Runtime files (bots/, fleet.json, stockpile.json,
+    # fleet-run/) are gitignored and untouched; an rsynced speedrun/ is overwritten.
+    ref="${1:-main}"
+    git fetch --quiet origin "$ref"
+    git checkout --quiet --force --detach FETCH_HEAD
+    mkdir -p fleet-run
+    printf '{"ref":"%s","sha":"%s","at":"%s"}\n' "$ref" "$(git rev-parse HEAD)" "$(date -u +%FT%TZ)" >fleet-run/deployed.json
+    "$BUN" install --frozen-lockfile >/dev/null
+    (cd server/webclient && "$BUN" install --frozen-lockfile >/dev/null)
+    echo "now at $(git log -1 --format='%h %s')"
+    echo "running code changes take effect on: fleetctl restart"
+    ;;
+  *)
+    cat <<EOF
+usage: fleetctl <command>
+  start | stop | restart        the supervisor, as the systemd user unit $UNIT
+  status [--json]               accounts, roles, last log age, stock totals
+  logs [fleet|gateway|ACCOUNT] [N]   last N log lines (default fleet, 60)
+  follow [fleet|gateway|ACCOUNT]     tail -F a log
+  journal [N]                   the unit's journal
+  add RANGE [--count N] [--role R] [--options JSON]   new credentials (and fleet.json entries)
+  assign ACCOUNT ROLE [--options JSON] [--disable]    put an existing account in fleet.json
+  reload                        apply fleet.json to the running fleet
+  peek ACCOUNT                  position, levels, inventory, last game messages (read-only)
+  update [REF]                  check out a branch or commit of origin (default main) and bun install
+EOF
+    ;;
+esac

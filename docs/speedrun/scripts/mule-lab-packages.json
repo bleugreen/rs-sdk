@@ -1,0 +1,40 @@
+[
+  { "name": "s1", "items": [{ "item": "Shark", "amount": 100, "noted": true }] },
+  { "name": "s10", "items": [
+    { "item": "Logs", "amount": 100, "noted": true },
+    { "item": "Oak logs", "amount": 100, "noted": true },
+    { "item": "Willow logs", "amount": 100, "noted": true },
+    { "item": "Maple logs", "amount": 100, "noted": true },
+    { "item": "Yew logs", "amount": 100, "noted": true },
+    { "item": "Magic logs", "amount": 100, "noted": true },
+    { "item": "Copper ore", "amount": 100, "noted": true },
+    { "item": "Tin ore", "amount": 100, "noted": true },
+    { "item": "Iron ore", "amount": 100, "noted": true },
+    { "item": "Coal", "amount": 100, "noted": true }
+  ] },
+  { "name": "s23", "items": [
+    { "item": "Logs", "amount": 100, "noted": true },
+    { "item": "Oak logs", "amount": 100, "noted": true },
+    { "item": "Willow logs", "amount": 100, "noted": true },
+    { "item": "Maple logs", "amount": 100, "noted": true },
+    { "item": "Yew logs", "amount": 100, "noted": true },
+    { "item": "Magic logs", "amount": 100, "noted": true },
+    { "item": "Copper ore", "amount": 100, "noted": true },
+    { "item": "Tin ore", "amount": 100, "noted": true },
+    { "item": "Iron ore", "amount": 100, "noted": true },
+    { "item": "Coal", "amount": 100, "noted": true },
+    { "item": "Mithril ore", "amount": 100, "noted": true },
+    { "item": "Adamantite ore", "amount": 100, "noted": true },
+    { "item": "Bronze bar", "amount": 100, "noted": true },
+    { "item": "Iron bar", "amount": 100, "noted": true },
+    { "item": "Steel bar", "amount": 100, "noted": true },
+    { "item": "Mithril bar", "amount": 100, "noted": true },
+    { "item": "Adamantite bar", "amount": 100, "noted": true },
+    { "item": "Raw lobster", "amount": 100, "noted": true },
+    { "item": "Shark", "amount": 100, "noted": true },
+    { "item": "Lobster", "amount": 100, "noted": true },
+    { "item": "Bones", "amount": 100, "noted": true },
+    { "item": "Big bones", "amount": 100, "noted": true },
+    { "item": "Dragon bones", "amount": 100, "noted": true }
+  ] }
+]

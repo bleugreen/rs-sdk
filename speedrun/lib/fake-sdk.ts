@@ -1,7 +1,7 @@
 // A scriptable stand-in for BotSDK in unit tests: push states, record sends.
 // Only the members the speedrun modules touch are implemented.
 
-import type { ActionResult, BotWorldState, DialogState } from '../../sdk/types';
+import type { ActionResult, BotWorldState, DialogState, InventoryItem, SkillState } from '../../sdk/types';
 
 export interface SentAction {
     method: string;
@@ -50,6 +50,19 @@ export class FakeSdk {
         return this.state;
     }
 
+    getSkill(name: string): SkillState | null {
+        const n = name.trim().toLowerCase();
+        return this.state?.skills.find(s => s.name.toLowerCase() === n) ?? null;
+    }
+
+    getInventory(): InventoryItem[] {
+        return this.state?.inventory ?? [];
+    }
+
+    getEquipment(): InventoryItem[] {
+        return this.state?.equipment ?? [];
+    }
+
     onStateUpdate(listener: (s: BotWorldState) => void): () => void {
         this.listeners.add(listener);
         return () => this.listeners.delete(listener);
@@ -86,6 +99,10 @@ export class FakeSdk {
     sendAcceptTrade() { return this.record('sendAcceptTrade'); }
     sendDeclineTrade() { return this.record('sendDeclineTrade'); }
     sendCountDialog(value: number) { return this.record('sendCountDialog', value); }
+    sendInteractNpc(npcIndex: number, option = 1) { return this.record('sendInteractNpc', npcIndex, option); }
+    sendInteractLoc(x: number, z: number, locId: number, option = 1) { return this.record('sendInteractLoc', x, z, locId, option); }
+    sendCloseModal() { return this.record('sendCloseModal'); }
+    sendUseItemOnItem(sourceSlot: number, targetSlot: number) { return this.record('sendUseItemOnItem', sourceSlot, targetSlot); }
     sendWalk(x: number, z: number, running = true) { return this.record('sendWalk', x, z, running); }
 }
 
