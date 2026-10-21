@@ -5,6 +5,7 @@
 //
 // Each scenario sets the account up with staff commands, runs one phase of the
 // role with its own options, and prints the role's log lines and the result.
+import { memoryRoleState } from '../helpers/role';
 import { Runes, type Phase } from '../helpers/runes';
 import { openSession } from '../lib/session';
 import { waitTicks } from '../lib/wait';
@@ -79,7 +80,7 @@ for (const sc of scenarios.filter(x => only.includes(x.phase))) {
     await waitTicks(sdk, 3);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), sc.secs * 1000);
-    const runes = new Runes({ bot: s.bot, sdk, account: name, options: { ...sc.options, phases: [sc.phase] }, log, reportBank: b => log('bank', { items: b.items.length }), signal: controller.signal });
+    const runes = new Runes({ bot: s.bot, sdk, account: name, options: { ...sc.options, phases: [sc.phase] }, log, reportBank: b => log('bank', { items: b.items.length }), signal: controller.signal, state: memoryRoleState() });
     const t0 = sdk.getState()?.tick ?? 0;
     try {
         await runes.run();
