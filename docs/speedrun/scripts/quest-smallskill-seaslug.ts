@@ -16,7 +16,7 @@ const LADDER_UP = { x: 2784, z: 3286, id: 2517 };   // slugladder
 const LADDER_DOWN = { x: 2784, z: 3286, id: 1746 }; // laddertop
 const KWALL = { x: 2764, z: 3287, id: 2519 };       // kennithwall
 const PANEL = { x: 2765, z: 3288, id: 2518 };       // loosepanel
-const CRANE = { x: 2768, z: 3286, id: 2520 };       // fishingcrane, used from z >= 3289
+const CRANE = { x: 2768, z: 3286, id: 2520 };       // fishingcrane, used from z >= 3289 (quest_seaslug.rs2:97)
 
 const stage = (sdk: BotSDK) => getvar(sdk, 'seaslugquest');
 
@@ -104,7 +104,7 @@ await runScript(async ({ bot, sdk }) => {
     rec.add(await viaDoor(sdk, [2765, 3285], KDOOR, [KWALL.x, KWALL.z - 1]), 'into the room by Kennith\'s wall 3');
     rec.add(withRuns(await locId(sdk, KWALL.x, KWALL.z, KWALL.id, 1, () => false, { label: 'Kennith through the wall', maxTicks: 40 })), '13 Kennith 3');
     console.log('stage', await stage(sdk));
-    rec.add(await clickWalk(sdk, CRANE.x, CRANE.z + 3, 0), '14a stand north of the crane');
+    rec.add(await clickWalk(sdk, CRANE.x, CRANE.z + 4, 0), '14a stand north of the crane'); // its footprint blocks z 3286-3289
     rec.add(await locId(sdk, CRANE.x, CRANE.z, CRANE.id, 1, msgSince(/row boat waiting below/i, now(sdk)), { label: 'crane', maxTicks: 20, idle: 1 }), '14b crane');
     console.log('stage', await stage(sdk));
     rec.add(await clickWalk(sdk, LADDER_DOWN.x, LADDER_DOWN.z - 1, 1), 'walk to the ladder');
