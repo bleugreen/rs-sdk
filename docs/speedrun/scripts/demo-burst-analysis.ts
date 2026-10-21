@@ -229,15 +229,15 @@ const ruleSamples = segments.filter(s => s.kind === 'pair' && s.vantage === 'ash
     return { a: s.direct!.onTime / s.direct!.n >= 58 / 60, rates: pairRules.map(([, f]) => { let c = 0; for (let i = 1; i < iv.length; i++) if (f(iv, i)) c++; return c / mins; }) };
 });
 say();
-say('| pair rule | best limit /min | agrees with (a) | false passes | false fails |');
-say('|---|---|---|---|---|');
+say('| pair rule | best limits /min (false passes, false fails) | agrees with (a) |');
+say('|---|---|---|');
 pairRules.forEach(([name], k) => {
-    let best = { lim: 0, ok: -1, fp: 0, ff: 0 };
-    for (const lim of [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8]) {
+    const graded = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8].map(lim => {
         const fp = ruleSamples.filter(s => s.rates[k]! <= lim && !s.a).length, ff = ruleSamples.filter(s => s.rates[k]! > lim && s.a).length;
-        if (ruleSamples.length - fp - ff > best.ok) best = { lim, ok: ruleSamples.length - fp - ff, fp, ff };
-    }
-    say(`| ${name} | ${best.lim} | ${best.ok}/${ruleSamples.length} | ${best.fp} | ${best.ff} |`);
+        return { lim, ok: ruleSamples.length - fp - ff, fp, ff };
+    });
+    const top = Math.max(...graded.map(g => g.ok));
+    say(`| ${name} | ${graded.filter(g => g.ok === top).map(g => `${g.lim} (${g.fp}, ${g.ff})`).join(', ')} | ${top}/${ruleSamples.length} |`);
 });
 
 // ---------------------------------------------------------------- bursts within windows
