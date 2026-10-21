@@ -13,7 +13,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
-import './dom-shim.js';
+import './test-support/browser-globals.js';
 
 import LocType from '#/config/LocType.js';
 import CollisionMap from '#/dash3d/CollisionMap.js';

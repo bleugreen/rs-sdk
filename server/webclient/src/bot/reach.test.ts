@@ -12,6 +12,8 @@
 
 import { describe, expect, test } from 'bun:test';
 
+import '../lite/test-support/browser-globals.js';
+
 import CollisionMap, { BuildArea } from '#/dash3d/CollisionMap.js';
 import { LocAngle } from '#/dash3d/LocAngle.js';
 import { LocShape } from '#/dash3d/LocShape.js';

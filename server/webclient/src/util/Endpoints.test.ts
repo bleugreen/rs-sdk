@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
+import '../lite/test-support/browser-globals.js';
+
 import { gatewayUrl, worldEndpoint } from './Endpoints.js';
 
 const page = (search: string, protocol = 'https:', host = 'rs-sdk-demo.fly.dev') => ({ host, protocol, search });

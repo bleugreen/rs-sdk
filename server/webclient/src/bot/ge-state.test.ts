@@ -1,5 +1,7 @@
 import { afterEach, expect, test } from 'bun:test';
-import '../lite/dom-shim.js';
+
+import '../lite/test-support/browser-globals.js';
+
 import IfType from '#/config/IfType.js';
 import { Client } from '#/client/Client.js';
 import { getInterfaceOptions, searchGE } from '../lite/actions.js';

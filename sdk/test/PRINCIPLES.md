@@ -14,6 +14,17 @@ Write these with `bun:test` (`describe`/`test`/`expect`). Never call
 `process.exit()` in one — Bun runs all test files in a single process, so an
 exit truncates the run and the remaining files are silently skipped.
 
+`bun run test` passes `--isolate`, so each file gets its own globals and module
+registry. A package-local run such as `cd server/webclient && bun test src` does
+not, and there a module that throws while it is first evaluated stays broken for
+every later file. So that a suite behaves the same under both, every
+`server/webclient/src/**/*.test.ts` takes `lite/test-support/browser-globals.js`
+as its first import and installs no browser globals by hand.
+`browser-globals.test.ts` enforces this.
+A suite that replaces shared config state hands it back when it ends: the
+interface baseline through `useStubBaseline`, the LocType/NpcType/ObjType tables
+through `useOwnConfigTables` (both in `lite/test-support/`).
+
 **Integration scripts** — every other `sdk/test/*.ts`. Each is a standalone
 `bun` program that spawns a real bot against a local game server and asserts on
 observed state. They need `bun server/...` running plus Puppeteer, so CI does

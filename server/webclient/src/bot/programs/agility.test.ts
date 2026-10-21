@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+
+import '../../lite/test-support/browser-globals.js';
+
 import { createAgility } from './agility.js';
 import type { AgilityCourse } from './agility-courses.js';
 import { Harness, makeState } from './testkit.js';

@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+
+import '../../lite/test-support/browser-globals.js';
+
 import { MARK_TAIL, parseProgramCommand, ProgramRuntime } from './runtime.js';
 import { declared, Harness, makeState } from './testkit.js';
 import type { TickProgram } from './types.js';

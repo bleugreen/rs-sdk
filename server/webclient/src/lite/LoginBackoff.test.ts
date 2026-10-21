@@ -1,4 +1,7 @@
 import { expect, test } from 'bun:test';
+
+import './test-support/browser-globals.js';
+
 import { loginJitterMs } from './LoginBackoff.js';
 
 test('fleet delays spread attempts and respect disabled, invalid and capped settings', () => {

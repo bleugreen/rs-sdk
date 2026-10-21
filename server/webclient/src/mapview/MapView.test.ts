@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import '../lite/dom-shim.js';
+
+import '../lite/test-support/browser-globals.js';
+
 import Pix2D from '#/graphics/Pix2D.js';
 import { MapView } from './MapView.js';
 

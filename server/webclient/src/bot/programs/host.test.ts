@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+
+import '../../lite/test-support/browser-globals.js';
+
 import { ProgramHost } from './host.js';
 import { makeState } from './testkit.js';
 

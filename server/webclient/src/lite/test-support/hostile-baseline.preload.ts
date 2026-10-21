@@ -7,7 +7,7 @@
 //     --preload ./server/webclient/src/lite/test-support/hostile-baseline.preload.ts \
 //     server/webclient/src/lite/game-tick.test.ts
 
-import '../dom-shim.js';
+import './browser-globals.js';
 
 import IfType from '#/config/IfType.js';
 
