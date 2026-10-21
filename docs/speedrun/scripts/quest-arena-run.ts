@@ -31,6 +31,7 @@ await runScript(async ({ bot, sdk }) => {
         give: [['rune_scimitar', 1], ['rune_kiteshield', 1], ['rune_platelegs', 1], ['amulet_of_power', 1], ['coins', 10], ['swordfish', 20]],
     });
     for (const re of [/rune scimitar/i, /rune kiteshield/i, /rune platelegs/i, /amulet of power/i]) await wear(sdk, re);
+    console.log('worn:', sdk.getState()!.equipment.map(e => e.name).join(', '), '| style:', JSON.stringify(sdk.getState()!.combatStyle));
 
     if (FROM === 0) {
         await cheat(sdk, 'setvar arenaquest 0');
