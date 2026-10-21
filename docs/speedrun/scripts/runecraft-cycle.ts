@@ -66,8 +66,10 @@ for (const [sdk, t] of [[S, sTile], [H, hTile]] as const) {
     await tele(sdk, t.x, t.z, A.enter.level);
 }
 await cheat(S, `setstat runecraft ${LEVEL}`);
-await cheat(H, `give ${TALISMAN} 1`);
-await cheat(H, `give blankrune ${ESS}`);
+await waitTicks(S, 3);
+if (invCount(H.getState(), /talisman/i) === 0) await cheat(H, `give ${TALISMAN} 1`);
+await waitTicks(S, 2);
+await refill();
 await waitTicks(S, 3);
 console.log('helper inventory', JSON.stringify(H.getState()!.inventory.map(i => `${i.slot}:${i.name}x${i.count}`)));
 console.log('scored inventory', JSON.stringify(S.getState()!.inventory.map(i => `${i.slot}:${i.name}x${i.count}`)));
@@ -176,8 +178,10 @@ async function runScheduled(robust: boolean) {
     await at(T - 1, () => { craftClick(); });
     for (let i = 0; i < CYCLES; i++) {
         const n0 = crafts.length;
-        // refill the helper while the scored account is delayed
-        await at(T + 1, () => { refill(); });
+        // Refill the helper while the scored account is delayed. Not before
+        // T+2: the helper's published inventory still shows the essence it
+        // traded on T until its T+1 publication.
+        await at(T + 2, () => { refill(); });
         await at(T + OPEN - 1, () => { H.sendTradeRequest(sp().index); S.sendTradeRequest(hp().index); });
         await at(T + OPEN, () => {
             H.sendOfferItem(essSlot(H), -1).then(() => H.sendClickComponent(3420));
