@@ -12,7 +12,15 @@
 //
 // `HostGate` turns probes into an on/off decision for a loop: probe before the first lock,
 // again after the loop reports a lost lock (its xp-drop signal, not a second detector), and
-// periodically while off so a host that quietens down gets the manipulation back.
+// periodically while off so a host that quietens down gets the manipulation back. The
+// decision is a cost model (`gateDecision`: does the predicted knife cycle beat the plain
+// one?), overridden by the loop's measured ticks per drop (`drop`).
+//
+// What a latency costs depends on the anchor. A loop anchored on its own bootstrap send
+// needs every starter's latency to equal the bootstrap's (a constant latency, even 3 ticks,
+// cancels), so it is judged on `sameAsPrevious`. A loop anchored on an observed roll needs
+// the starter to land on roll+1: it sends `mode - 1` ticks early (the lead) and is judged on
+// `modeFraction`.
 
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState } from '../../sdk/types';
@@ -36,6 +44,17 @@ export interface ProbeSummary {
     fraction: number;
     /** How many ticks late each late trial was (1 = processed on c+2); a lost trial reads maxWait. */
     lateTicks: number[];
+    /** Trials per latency in ticks, e.g. {1: 0, 2: 25, 3: 35}. */
+    counts: Record<number, number>;
+    /** The most common latency (the smaller on a tie); 0 when no trial ran. */
+    mode: number;
+    /** Share of trials at `mode`: what a schedule anchored on observed rolls lands with lead mode-1. */
+    modeFraction: number;
+    /**
+     * Share of consecutive trials with the same latency: what a schedule anchored on its own
+     * bootstrap send needs, because a constant latency cancels against the bootstrap's.
+     */
+    sameAsPrevious: number;
 }
 
 export interface ProbeResult extends ProbeSummary {
@@ -54,12 +73,23 @@ export interface ProbeResult extends ProbeSummary {
 const NEIGHBOURS: ReadonlyArray<readonly [number, number]> = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
 export function summarizeProbe(latencies: number[]): ProbeSummary {
+    const n = latencies.length;
     const onTime = latencies.filter(l => l <= 1).length;
+    const counts: Record<number, number> = {};
+    for (const l of latencies) counts[l] = (counts[l] ?? 0) + 1;
+    let mode = 0;
+    for (const [l, c] of Object.entries(counts)) if (c > (counts[mode] ?? 0) || (c === counts[mode] && Number(l) < mode)) mode = Number(l);
+    let same = 0;
+    for (let i = 1; i < n; i++) if (latencies[i] === latencies[i - 1]) same++;
     return {
-        trials: latencies.length,
+        trials: n,
         onTime,
-        fraction: latencies.length ? onTime / latencies.length : 0,
+        fraction: n ? onTime / n : 0,
         lateTicks: latencies.filter(l => l > 1).map(l => l - 1),
+        counts,
+        mode,
+        modeFraction: n ? (counts[mode] ?? 0) / n : 0,
+        sameAsPrevious: n > 1 ? same / (n - 1) : 0,
     };
 }
 
@@ -165,25 +195,65 @@ export function probeOnTime(sdk: ProbeSdk, opts: ProbeOptions = {}): Promise<Pro
 }
 
 /**
- * Default 0.95: at most one late trial in 20. A host like rs/53's quiet one (110 of 110 on
- * time) passes nearly always, a host with half its packets late essentially never, and
- * demanding 20 of 20 would switch the knife off on a host losing 3% of packets about half
- * the time (tick-manipulation.md, "Run-time host gate").
+ * What a loop gains and risks, in ticks per roll (tick-manipulation.md, "Run-time host gate").
+ * A starter that lands off its tick costs `missCost` on top of the knife cycle.
  */
-export const DEFAULT_THRESHOLD = 0.95;
-
-export function gateDecision(r: ProbeSummary, threshold: number = DEFAULT_THRESHOLD): boolean {
-    return r.trials > 0 && r.fraction >= threshold;
+export interface CycleModel {
+    /** The plain loop's ticks per roll (woodcutting 4, fly 5, lobster 6; iron rotation 3.61). */
+    plainCycle: number;
+    /** The manipulated cycle (3). */
+    knifeCycle?: number;
+    /**
+     * Extra ticks a mistimed starter costs. Default: one plain cycle, which fits rs/53's loaded
+     * fly run; the mining executor's slip-and-restart costs about 9 (5 to let the clock expire,
+     * then a plain transition).
+     */
+    missCost?: number;
+    /**
+     * 'self' (default): the schedule is anchored on the loop's own bootstrap send, so a starter
+     * lands right when its latency equals the bootstrap's (`sameAsPrevious`). 'xp': anchored on
+     * observed rolls with lead mode-1 (`modeFraction`).
+     */
+    anchor?: 'self' | 'xp';
 }
 
-/** One probe, one decision: true when the host lands packets on time often enough to manipulate. */
-export async function shouldManipulate(sdk: ProbeSdk, opts: ProbeOptions & { threshold?: number } = {}): Promise<boolean> {
-    return gateDecision(await probeOnTime(sdk, opts), opts.threshold ?? DEFAULT_THRESHOLD);
+export interface GateVerdict {
+    on: boolean;
+    /** Probability a starter lands on its tick, from the probe. */
+    p: number;
+    /** Predicted ticks per roll with the knife: knifeCycle + (1 - p) * missCost. */
+    knife: number;
+    plain: number;
+    /** Ticks to send early on an xp-anchored schedule: mode - 1. */
+    lead: number;
+}
+
+/** Manipulate when the predicted knife cycle beats the plain one. A probe with no trials says no. */
+export function gateDecision(r: ProbeSummary, model: CycleModel): GateVerdict {
+    const knifeCycle = model.knifeCycle ?? 3;
+    const missCost = model.missCost ?? model.plainCycle;
+    const p = model.anchor === 'xp' ? r.modeFraction : r.trials === 1 ? 1 : r.sameAsPrevious;
+    const knife = knifeCycle + (1 - p) * missCost;
+    return { on: r.trials > 0 && knife < model.plainCycle, p, knife, plain: model.plainCycle, lead: Math.max(0, r.mode - 1) };
+}
+
+/** One probe, one decision. */
+export async function shouldManipulate(sdk: ProbeSdk, model: CycleModel, opts: ProbeOptions = {}): Promise<GateVerdict> {
+    return gateDecision(await probeOnTime(sdk, opts), model);
 }
 
 export interface GateOptions {
-    threshold?: number;
+    model: CycleModel;
     probe?: ProbeOptions;
+    /**
+     * Measured override: after this many xp drops in one manipulating stretch, compare its
+     * ticks per drop with the plain loop's (`plainTicksPerDrop`, else the last measured plain
+     * stretch) and switch off if the knife is not faster. Default 30.
+     */
+    measureDrops?: number;
+    plainTicksPerDrop?: number;
+    /** After a measured switch-off, stay off this long before probing again (default 3000). */
+    measuredOffTicks?: number;
     /** While off, re-probe this many ticks after the last probe (default 500, 2.5 min at 300 ms). */
     offReprobeTicks?: number;
     /** Never probe again sooner than this after the last probe ended (default 100). */
@@ -191,28 +261,45 @@ export interface GateOptions {
     log?: (line: string) => void;
 }
 
-export interface GateProbe {
+export interface GateEvent {
     tick: number;
     why: string;
     on: boolean;
     switched: boolean;
-    result: ProbeResult;
+    /** Set for probes. */
+    result?: ProbeResult;
+    verdict?: GateVerdict;
+    /** Set for a measured switch-off: ticks per drop of the knife stretch and of plain. */
+    measured?: { knife: number; plain: number };
+}
+
+/** Ticks per drop over a stretch of xp-drop ticks; NaN below two drops. */
+export function ticksPerDrop(drops: number[]): number {
+    return drops.length > 1 ? (drops[drops.length - 1]! - drops[0]!) / (drops.length - 1) : Number.NaN;
 }
 
 export class HostGate {
     /** Manipulate (true) or run the plain loop (false). False until the first probe. */
     on = false;
-    readonly history: GateProbe[] = [];
+    /** Ticks an xp-anchored schedule should send early (mode - 1 of the last probe). */
+    lead = 0;
+    readonly history: GateEvent[] = [];
     private slipPending = false;
     private lastProbeTick = Number.NEGATIVE_INFINITY;
-    private readonly threshold: number;
+    private offUntil = Number.NEGATIVE_INFINITY;
+    /** xp-drop ticks since the last probe or switch, all in the current mode. */
+    private stretch: number[] = [];
+    private lastPlainRate = Number.NaN;
     private readonly offReprobeTicks: number;
     private readonly minProbeGapTicks: number;
+    private readonly measureDrops: number;
+    private readonly measuredOffTicks: number;
 
-    constructor(private readonly sdk: ProbeSdk, private readonly opts: GateOptions = {}) {
-        this.threshold = opts.threshold ?? DEFAULT_THRESHOLD;
+    constructor(private readonly sdk: ProbeSdk, private readonly opts: GateOptions) {
         this.offReprobeTicks = opts.offReprobeTicks ?? 500;
         this.minProbeGapTicks = opts.minProbeGapTicks ?? 100;
+        this.measureDrops = opts.measureDrops ?? 30;
+        this.measuredOffTicks = opts.measuredOffTicks ?? 3000;
     }
 
     /** The loop's lost-lock signal: a predicted roll whose xp never came. Ignored while off. */
@@ -221,14 +308,37 @@ export class HostGate {
     }
 
     /**
+     * The loop saw an xp drop on `tick`. While manipulating, once `measureDrops` drops are in,
+     * switch off if the stretch is not faster than plain. Returns true when it switched.
+     */
+    drop(tick: number): boolean {
+        this.stretch.push(tick);
+        if (!this.on) {
+            if (this.stretch.length >= this.measureDrops) this.lastPlainRate = ticksPerDrop(this.stretch);
+            return false;
+        }
+        if (this.stretch.length < this.measureDrops) return false;
+        const knife = ticksPerDrop(this.stretch);
+        const plain = this.opts.plainTicksPerDrop ?? this.lastPlainRate;
+        if (!(knife >= plain)) return false;
+        this.on = false;
+        this.offUntil = tick + this.measuredOffTicks;
+        this.stretch = [];
+        this.history.push({ tick, why: 'measured', on: false, switched: true, measured: { knife, plain } });
+        this.opts.log?.(`T${tick} gate (measured): knife ${knife.toFixed(2)} ticks per drop over ${this.measureDrops} drops, plain ${plain.toFixed(2)} -> SWITCH manipulate -> plain`);
+        return true;
+    }
+
+    /**
      * Whether the loop should call `probe` at `tick`: before the first probe, after a slip
-     * while on, and every `offReprobeTicks` while off; never within `minProbeGapTicks` of
-     * the last probe.
+     * while on, and every `offReprobeTicks` while off (after a measured switch-off, not before
+     * `measuredOffTicks`); never within `minProbeGapTicks` of the last probe.
      */
     due(tick: number): boolean {
         if (!this.history.length) return true;
         if (tick - this.lastProbeTick < this.minProbeGapTicks) return false;
-        return this.on ? this.slipPending : tick - this.lastProbeTick >= this.offReprobeTicks;
+        if (this.on) return this.slipPending;
+        return tick >= this.offUntil && tick - this.lastProbeTick >= this.offReprobeTicks;
     }
 
     async probe(why: string): Promise<boolean> {
@@ -236,15 +346,19 @@ export class HostGate {
         const first = !this.history.length;
         const result = await probeOnTime(this.sdk, this.opts.probe);
         const tick = this.sdk.getState()?.tick ?? -1;
-        this.on = gateDecision(result, this.threshold);
+        const verdict = gateDecision(result, this.opts.model);
+        this.on = verdict.on;
+        this.lead = verdict.lead;
         this.slipPending = false;
         this.lastProbeTick = tick;
+        this.stretch = [];
         const switched = !first && was !== this.on;
-        this.history.push({ tick, why, on: this.on, switched, result });
+        this.history.push({ tick, why, on: this.on, switched, result, verdict });
         const mode = (on: boolean) => (on ? 'manipulate' : 'plain');
         this.opts.log?.(
-            `T${tick} gate (${why}): ${result.onTime}/${result.trials} on time, latency ${latencyHistogram(result.latencies) || '-'}` +
-                `${result.reason ? ` (${result.reason})` : ''}, ${result.ticks} ticks -> ` +
+            `T${tick} gate (${why}): latency ${latencyHistogram(result.latencies) || '-'} of ${result.trials}` +
+                `${result.reason ? ` (${result.reason})` : ''}, same as previous ${result.sameAsPrevious.toFixed(2)}, in ${result.ticks} ticks;` +
+                ` p ${verdict.p.toFixed(2)}, predicted knife ${verdict.knife.toFixed(2)} vs plain ${verdict.plain.toFixed(2)}, lead ${verdict.lead} -> ` +
                 (switched ? `SWITCH ${mode(was)} -> ${mode(this.on)}` : mode(this.on))
         );
         return this.on;
@@ -266,6 +380,11 @@ export class HostGate {
 
     /** `T120 plain->manipulate T880 manipulate->plain` for summaries. */
     switches(): string {
-        return this.history.filter(h => h.switched).map(h => `T${h.tick} ${h.on ? 'plain->manipulate' : 'manipulate->plain'}`).join(' ');
+        return this.history.filter(h => h.switched).map(h => `T${h.tick} ${h.on ? 'plain->manipulate' : 'manipulate->plain'}${h.why === 'measured' ? ' (measured)' : ''}`).join(' ');
+    }
+
+    /** `T122 start 1:20, T900 slip 1:18 2:2, T1400 measured` for summaries. */
+    summary(): string {
+        return this.history.map(h => `T${h.tick} ${h.why}${h.result ? ` ${latencyHistogram(h.result.latencies) || '-'}` : ''}`).join(', ');
     }
 }
