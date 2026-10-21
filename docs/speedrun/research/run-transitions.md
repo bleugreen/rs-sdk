@@ -275,8 +275,10 @@ S07→S08, S09→S10, S11→S12, S12→S13, S15→S16, S18→S19, S19→S20, S22
 Goblin Diplomacy figure) and S25→S26. They add up to 47 + 129 + 103 + 74 + 121 + 158 + 33 + 42 +
 10 + 45 + 37 = 799 counted in those documents, against 44 + 131 + 55.5 + 71 + 121 + 158 + 49 + 42
 + 16.3 + 90 + 44 = 821.8 here. So **about 1,464 ticks of the 2,286 are legs that no step total
-counts yet** (1,365 with S17 last). That is the figure to set against the main tally's travel
-lump. Hand-offs add 4-8 ticks each on top (section 3). Their count is the route's supply plan,
+counts yet** (1,365 with S17 last). **Correction (rs/111):** what the legs add to a sum of step
+totals is larger, because the replaced arrival legs measured 22.8 more than the documents count:
+2,286 − 799 = **about 1,487** (1,388 with S17 last). That is the figure to set against the main
+tally's travel lump. RUN-ORDER.md section 6 nets each leg against its own document's arrival row. Hand-offs add 4-8 ticks each on top (section 3). Their count is the route's supply plan,
 which is outside this page.
 
 ## 9. What is not settled
