@@ -260,7 +260,7 @@ await runScript(async ({ bot: actions, sdk }) => {
             try {
                 const end = await awaitProgram(sdk, started.runId, { onProgress: progress });
                 report(pack.length ? `pickpocket +${pack.join('+')}` : 'pickpocket', end);
-                if (pack.length) console.log(`pack: ${(gained.Prayer / (72 * 25)).toFixed(0)} bones buried (Prayer xp), ${(gained.Magic / (180 * 25)).toFixed(0)} Charges (Magic xp), ${(gained.Fletching / (10 * 25 * 15)).toFixed(0)} rune arrow actions (Fletching xp)`);
+                if (pack.length) console.log(`pack: ${(gained.Prayer / (72 * 25)).toFixed(0)} bones buried (Prayer xp), ${(gained.Magic / (180 * 25)).toFixed(0)} Charges (Magic xp), ${(gained.Fletching / (12.5 * 25 * 15)).toFixed(0)} rune arrow actions (Fletching xp)`);
                 return;
             } finally {
                 un();
