@@ -107,7 +107,16 @@ await runScript(async ({ bot, sdk }) => {
         out.spawnWait = spawned === null ? null : spawned - (down ?? t0);
         if (spawned === null) throw new Error('Koschei never spawned');
 
+        // The form is read from Koschei's npc type id (viking_enemy1..4 = 1290..1293,
+        // npc.pack), not from his defeat pages: the SDK's eat action can dismiss a
+        // defeat page, which would desynchronise a page count.
+        const ENEMY1 = 1290;
+        const formOf = () => {
+            const k = sdk.getNearbyNpcs().find(n => n.id >= ENEMY1 && n.id <= ENEMY1 + 3);
+            return k ? k.id - ENEMY1 + 1 : 0;
+        };
         const forms: number[] = [];
+        let form = formOf();
         let formStart = L.tick(sdk);
         let pages = 0;
         let levelUps = 0;
@@ -121,7 +130,8 @@ await runScript(async ({ bot, sdk }) => {
         }
         out.boostedAtt = sdk.getSkill('Attack')?.level;
         out.boostedStr = sdk.getSkill('Strength')?.level;
-        await bot.attack(sdk.findNearbyNpc(/Koschei/)!);
+        const koschei = () => sdk.getNearbyNpcs().find(n => n.id >= ENEMY1 && n.id <= ENEMY1 + 3) ?? null;
+        await bot.attack(koschei()!);
         let done = false;
         while (L.tick(sdk) - t0 < 2000) {
             const s = sdk.getState()!;
@@ -135,45 +145,48 @@ await runScript(async ({ bot, sdk }) => {
                 done = true;
                 break;
             }
+            if (p.isDead) break;
+            const f = formOf();
+            if (f > form) {
+                forms.push(L.tick(sdk) - formStart);
+                formStart = L.tick(sdk);
+                form = f;
+                if (form === 4) {
+                    hpAtForm4 = p.hp;
+                    let n = 0;
+                    while (n < brew4 && sdk.getState()!.player!.level === 2) {
+                        if (s.dialog.isOpen) await sdk.clickDialogByText(/continue/i).catch(() => sdk.sendClickDialog(0));
+                        const pot = sdk.findInventoryItem(/Zamorak potion/i);
+                        if (!pot) break;
+                        await sdk.sendUseItem(pot.slot, 1);
+                        n++;
+                        await sdk.waitForTicks(2);
+                    }
+                    out.form4Doses = n;
+                    out.hpAfterForm4Brew = sdk.getState()!.player!.hp;
+                }
+            }
             if (s.dialog.isOpen) {
                 if (L.isLevelUpDialog(sdk)) {
                     levelUps++;
                     await L.dismissLevelUps(sdk);
                 } else {
-                    // A defeat page ("It seems you have some idea of combat...").
-                    forms.push(L.tick(sdk) - formStart);
-                    formStart = L.tick(sdk);
                     const d = await L.talkThrough(sdk, [], { settleTicks: 1, maxTicks: 30 });
                     pages += d.pages;
-                    if (forms.length === 3) {
-                        hpAtForm4 = sdk.getState()!.player!.hp;
-                        let n = 0;
-                        while (n < brew4 && sdk.getState()!.player!.level === 2) {
-                            const pot = sdk.findInventoryItem(/Zamorak potion/i);
-                            if (!pot) break;
-                            await sdk.sendUseItem(pot.slot, 1);
-                            n++;
-                            await sdk.waitForTicks(2);
-                        }
-                        out.form4Doses = n;
-                        out.hpAfterForm4Brew = sdk.getState()!.player!.hp;
-                        continue;
-                    }
                 }
-                const k = sdk.findNearbyNpc(/Koschei/);
-                if (k) await bot.attack(k);
+                const k = koschei();
+                if (k && form < 4) await bot.attack(k);
                 continue;
             }
-            if (p.isDead) break;
-            if (forms.length < 3 && p.hp <= eatAt && sdk.countInventoryItems(/Shark/) > 0) {
+            if (form < 4 && p.hp <= eatAt && sdk.countInventoryItems(/Shark/) > 0) {
                 await bot.eatFood(/Shark/);
                 eaten++;
-                const k2 = sdk.findNearbyNpc(/Koschei/);
+                const k2 = koschei();
                 if (k2) await bot.attack(k2);
                 continue;
             }
-            const k = sdk.findNearbyNpc(/Koschei/);
-            if (k && (!p.combat.inCombat || p.combat.targetIndex !== k.index) && L.tick(sdk) % 3 === 0) await bot.attack(k);
+            const k = koschei();
+            if (k && form < 4 && (!p.combat.inCombat || p.combat.targetIndex !== k.index) && L.tick(sdk) % 3 === 0) await bot.attack(k);
             await sdk.waitForStateUpdate();
         }
         Object.assign(out, {
