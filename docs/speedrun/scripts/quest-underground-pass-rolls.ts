@@ -2,160 +2,176 @@
 //
 //   bun docs/speedrun/scripts/quest-underground-pass-rolls.ts <bot> <obstacle> <level> [attempts]
 //
-// Obstacles and the stat each one rolls (stat_random(stat, low, high), success
-// when floor(low*(99-L)/98) + floor(high*(L-1)/98) + 1 > random(256), on the
+// Obstacles and the stat each one rolls (stat_random(stat, low, high): success
+// when floor(low*(99-L)/98) + floor(high*(L-1)/98) + 1 > random(256), L the
 // current level, PlayerOps.ts STAT_RANDOM):
 //   rockslide        agility 160/300  upass_obstacles.rs2:3-31     (2460,9720)
-//   bridgeshot       ranged  160/300  upass_bridge.rs2:33-87       guide rope (2443,9718)
+//   bridgeshot       ranged  160/300  upass_bridge.rs2:33-87       guide rope (2443,9718), shot from (2446,9722)
 //   ropeswing        agility 100/410  upass_obstacles.rs2:93-128   rock (2460,9699)
-//   ledge            agility 200/260  upass_obstacles.rs2:246-293  (2374,9639-9644)
-//   stonebridge      agility 160/300  upass_obstacles.rs2:295-328  (2380,9634)
-//   collapsedbridge  agility 160/300  upass_obstacles.rs2:368-407  (2142,4562, level 1)
-//   cagepick         thieving 128/400 quest_upass.rs2:226-240      (2393,9655)
-//   logtrap          thieving 160/300 upass_obstacles.rs2:222-244  (2382,9668)
-//   speartrap        thieving 160/300 upass_obstacles.rs2:150-174  (2435,9675)
-// Each attempt is timed from the click (or the use-item) to the observed
-// result: arrival on the far side, or the failure message / failure landing.
-// Prints one line per attempt and a RESULT line with the counts.
+//   ledge            agility 200/260  upass_obstacles.rs2:246-293  (2374,9644) from (2375,9644)
+//   stonebridge      agility 160/300  upass_obstacles.rs2:295-328  (2380,9634) from (2379,9634)
+//   collapsedbridge  agility 160/300  upass_obstacles.rs2:368-407  (2142,4562,1) from (2142,4561,1)
+//   cagepick         thieving 128/400 quest_upass.rs2:226-240      gate (2393,9655)
+//   logtrap          thieving 160/300 upass_obstacles.rs2:222-244  flat rock (2382,9668)
+// Each attempt starts with the player idle and is timed from the click (or
+// use-item) to two points: the result message (`msg`) and the player idle again
+// (`idle`: no movement, no new message, no dialogue for 3 ticks, which is when
+// the next click can act). The idle figure, minus the 3-tick settle, is the
+// cost of the attempt. Prints one line per attempt and a RESULT line.
 
 import { runScript } from '../../../sdk/runner';
-import type { BotSDK } from '../../../sdk/index';
 import * as L from './quest-arthur-lab';
 
 const [obstacle, levelArg, nArg] = process.argv.slice(3);
 const level = Number(levelArg ?? 40);
 const attempts = Number(nArg ?? 25);
 
-const STAT: Record<string, string> = {
-    rockslide: 'agility', bridgeshot: 'ranged', ropeswing: 'agility', ledge: 'agility', stonebridge: 'agility',
-    collapsedbridge: 'agility', cagepick: 'thieving', logtrap: 'thieving', speartrap: 'thieving',
-};
-const ROLL: Record<string, [number, number]> = {
-    rockslide: [160, 300], bridgeshot: [160, 300], ropeswing: [100, 410], ledge: [200, 260], stonebridge: [160, 300],
-    collapsedbridge: [160, 300], cagepick: [128, 400], logtrap: [160, 300], speartrap: [160, 300],
-};
-const expected = (low: number, high: number, lv: number) => {
-    const c = Math.min(lv, 99);
-    const v = Math.floor((low * (99 - c)) / 98) + Math.floor((high * (c - 1)) / 98) + 1;
-    return Math.min(v, 256) / 256;
-};
-
-const newMessages = (sdk: BotSDK, from: number) => (sdk.getState()?.gameMessages ?? []).slice(from).map(m => m.text);
-const msgCount = (sdk: BotSDK) => sdk.getState()?.gameMessages.length ?? 0;
+interface Spec {
+    stat: string;
+    roll: [number, number];
+    ok: RegExp;
+    fail: RegExp;
+    start: [number, number, number];
+    /** re-teleport to start before every attempt (otherwise only when off the two sides) */
+    reset: boolean;
+    act: (i: number) => Promise<void>;
+}
 
 await runScript(async ({ bot, sdk }) => {
-    if (!STAT[obstacle]) throw new Error(`unknown obstacle ${obstacle}`);
-    await bot.dismissBlockingUI();
-    await L.cheat(sdk, `setstat ${STAT[obstacle]} ${level}`, 2);
-    await L.cheat(sdk, 'setstat hitpoints 99', 2);
-    // Koftik's insanity scene would interrupt bridge falls (upass_obstacles.rs2:381-386).
-    await L.cheat(sdk, `setvar ibanmulti ${(1 << 11) | (1 << 17)}`);
-    const rows: Array<{ ok: boolean; ticks: number; note: string }> = [];
-
-    const waitResult = async (t0: number, before: number, ok: () => boolean, fail: () => boolean, max = 40) => {
+    const msgs = () => sdk.getState()?.gameMessages ?? [];
+    const since = (n: number) => msgs().slice(n).map(m => m.text);
+    const idle = async (max = 60) => {
+        let still = 0;
+        let last = L.pos(sdk);
+        let lastMsgs = msgs().length;
         for (let i = 0; i < max; i++) {
             await sdk.waitForTicks(1);
-            if (ok()) return { ok: true, ticks: L.tick(sdk) - t0 };
-            if (fail()) return { ok: false, ticks: L.tick(sdk) - t0 };
+            const p = L.pos(sdk);
+            const s = sdk.getState()!;
+            if (s.dialog.isOpen) {
+                if (L.isLevelUpDialog(sdk)) await L.dismissLevelUps(sdk);
+                still = 0;
+                continue;
+            }
+            const n = msgs().length;
+            still = p.x === last.x && p.z === last.z && p.level === last.level && n === lastMsgs ? still + 1 : 0;
+            last = p;
+            lastMsgs = n;
+            if (still >= 3) return;
         }
-        return { ok: false, ticks: -1, note: `timeout ${JSON.stringify(newMessages(sdk, before))}` };
     };
-    const hasMsg = (before: number, re: RegExp) => () => newMessages(sdk, before).some(m => re.test(m));
-    const at = (x: number, z: number, lv = 0) => () => {
-        const p = L.pos(sdk);
-        return p.x === x && p.z === z && p.level === lv;
+    const teleTo = async (x: number, z: number, l: number) => {
+        for (let k = 0; k < 3; k++) {
+            await L.tele(sdk, x, z, l);
+            if (await L.waitUntil(sdk, () => { const p = L.pos(sdk); return p.x === x && p.z === z && p.level === l; }, 8) !== null) return;
+            await idle();
+        }
+        throw new Error(`could not teleport to ${x},${z},${l}`);
     };
-    const ensureItem = async (name: string, re: RegExp, n = 1) => {
-        if (sdk.countInventoryItems(re) < n) {
-            await L.cheat(sdk, `give ${name} ${n}`, 2);
-            await L.waitUntil(sdk, () => sdk.countInventoryItems(re) >= n, 10);
+    const ensure = async (name: string, re: RegExp) => {
+        if (sdk.countInventoryItems(re) < 1 && !sdk.getEquipment().some(e => re.test(e.name))) {
+            await L.cheat(sdk, `give ${name} 1`, 2);
+            await L.waitUntil(sdk, () => sdk.countInventoryItems(re) >= 1, 10);
         }
     };
 
-    for (let i = 0; i < attempts; i++) {
-        if ((sdk.getState()?.player?.hp ?? 99) < 40) await L.cheat(sdk, 'setstat hitpoints 99', 2);
-        let r: { ok: boolean; ticks: number; note?: string };
-        const before = msgCount(sdk);
-        if (obstacle === 'rockslide') {
-            if (i === 0) await L.tele(sdk, 2460, 9721, 0);
-            const p = L.pos(sdk);
-            const other = p.z > 9720 ? 9719 : 9721;
-            const t0 = L.tick(sdk);
-            await sdk.sendInteractLoc(2460, 9720, 3309, 1);
-            r = await waitResult(t0, before, at(2460, other), hasMsg(before, /slip back down/));
-            if (!r.ok) await sdk.waitForTicks(1);
-        } else if (obstacle === 'bridgeshot') {
-            if (i === 0) {
-                await ensureItem('shortbow', /^Shortbow$/i);
+    const specs: Record<string, Spec> = {
+        rockslide: {
+            stat: 'agility', roll: [160, 300], ok: /step down the other side/, fail: /slip back down/, start: [2460, 9721, 0], reset: false,
+            act: async () => { await sdk.sendInteractLoc(2460, 9720, 3309, 1); },
+        },
+        bridgeshot: {
+            stat: 'ranged', roll: [160, 300], ok: /impales the rope/, fail: /just misses/, start: [2446, 9722, 0], reset: true,
+            act: async () => {
+                await ensure('shortbow', /^Shortbow$/i);
                 if (!sdk.getEquipment().some(e => /^Shortbow$/i.test(e.name))) await bot.equipItem(/^Shortbow$/i);
-            }
-            await L.tele(sdk, 2447, 9721, 0);
-            await ensureItem('litarrow', /^Bronze fire arrows$/i);
-            await bot.equipItem(/^Bronze fire arrows$/i);
-            await sdk.waitForTicks(1);
-            const t0 = L.tick(sdk);
-            await sdk.sendInteractLoc(2443, 9718, 3340, 1);
-            r = await waitResult(t0, before, at(2442, 9716), hasMsg(before, /just misses/));
-        } else if (obstacle === 'ropeswing') {
-            await L.tele(sdk, 2462, 9699, 0);
-            await ensureItem('rope', /^Rope$/i);
-            await sdk.waitForTicks(4); // the rock is "being used" for 5 ticks after a swing
-            const rope = sdk.findInventoryItem(/^Rope$/i)!;
-            const t0 = L.tick(sdk);
-            await sdk.sendUseItemOnLoc(rope.slot, 2460, 9699, 2276);
-            r = await waitResult(t0, before, at(2466, 9699), () => L.pos(sdk).z < 9660);
-        } else if (obstacle === 'ledge') {
-            await L.tele(sdk, 2375, 9644, 0);
-            await sdk.waitForTicks(1);
-            const t0 = L.tick(sdk);
-            await sdk.sendInteractLoc(2374, 9644, 3238, 1);
-            r = await waitResult(t0, before, at(2374, 9638), hasMsg(before, /rat pit/));
-            if (!r.ok) await sdk.waitForTicks(3);
-        } else if (obstacle === 'stonebridge') {
-            await L.tele(sdk, 2379, 9634, 0);
-            await sdk.waitForTicks(1);
-            const t0 = L.tick(sdk);
-            await sdk.sendInteractLoc(2380, 9634, 3276, 1);
-            r = await waitResult(t0, before, at(2381, 9634), hasMsg(before, /fall off/));
-            if (!r.ok) await sdk.waitForTicks(4);
-        } else if (obstacle === 'collapsedbridge') {
-            // bridgecollapsed1 at (2142,4562,1): crossed between (2142,4561) and (2142,4565).
-            await L.tele(sdk, 2142, 4561, 1);
-            await sdk.waitForTicks(1);
-            const t0 = L.tick(sdk);
-            await sdk.sendInteractLoc(2142, 4562, 3254, 1);
-            r = await waitResult(t0, before, at(2142, 4565, 1), () => L.pos(sdk).level === 0);
-        } else if (obstacle === 'cagepick') {
-            if (i === 0) await L.tele(sdk, 2393, 9655, 0);
-            const p = L.pos(sdk);
-            const target = p.z >= 9655 ? 9654 : 9655;
-            const t0 = L.tick(sdk);
-            await sdk.sendInteractLoc(2393, 9655, 3266, 1);
-            r = await waitResult(t0, before, at(2393, target), hasMsg(before, /fail to pick/));
-            if (!r.ok) await sdk.waitForTicks(1);
-        } else {
-            // logtrap / speartrap: Search, a message page, then "Yes, I'll give it a go."
-            const [x, z, id, sx, sz] = obstacle === 'logtrap' ? [2382, 9668, 3339, 2383, 9668] : [2435, 9675, 3234, 2435, 9676];
-            await L.tele(sdk, sx, sz, 0);
-            await sdk.waitForTicks(2);
-            const t0 = L.tick(sdk);
-            await sdk.sendInteractLoc(x, z, id, 1);
-            const d = await L.talkThrough(sdk, [/give it a go/i], { settleTicks: 1 });
-            r = await waitResult(t0, before, hasMsg(before, /and succeed/), hasMsg(before, /and fail/));
-            r.note = `dialogue ${d.pages}p+${d.options}o`;
-            await sdk.waitForTicks(6);
+                await ensure('litarrow', /^Bronze fire arrows$/i);
+                if (!sdk.getEquipment().some(e => /fire arrows/i.test(e.name))) await bot.equipItem(/^Bronze fire arrows$/i);
+                await idle();
+                await sdk.sendInteractLoc(2443, 9718, 3340, 1);
+            },
+        },
+        ropeswing: {
+            stat: 'agility', roll: [100, 410], ok: /skillfully swing across/, fail: /fall in to the darkness/, start: [2462, 9699, 0], reset: true,
+            act: async () => {
+                await ensure('rope', /^Rope$/i);
+                await sdk.waitForTicks(5); // the rock is "being used" for 5 ticks after each swing
+                await sdk.sendUseItemOnLoc(sdk.findInventoryItem(/^Rope$/i)!.slot, 2460, 9699, 2276);
+            },
+        },
+        ledge: {
+            // no message on success: judged by the landing tile (2374,9638)
+            stat: 'agility', roll: [200, 260], ok: /^$/, fail: /rat pit/, start: [2375, 9644, 0], reset: true,
+            act: async () => { await sdk.sendInteractLoc(2374, 9644, 3238, 1); },
+        },
+        stonebridge: {
+            stat: 'agility', roll: [160, 300], ok: /and make it/, fail: /fall off it/, start: [2379, 9634, 0], reset: true,
+            act: async () => { await sdk.sendInteractLoc(2380, 9634, 3276, 1); },
+        },
+        collapsedbridge: {
+            stat: 'agility', roll: [160, 300], ok: /cross safely/, fail: /slip and tumble/, start: [2142, 4561, 1], reset: true,
+            act: async () => { await sdk.sendInteractLoc(2142, 4562, 3254, 1); },
+        },
+        cagepick: {
+            stat: 'thieving', roll: [128, 400], ok: /manage to pick the lock/, fail: /fail to pick the lock/, start: [2393, 9655, 0], reset: false,
+            act: async () => { await sdk.sendInteractLoc(2393, 9655, 3266, 1); },
+        },
+        logtrap: {
+            stat: 'thieving', roll: [160, 300], ok: /and succeed/, fail: /and fail/, start: [2383, 9668, 0], reset: true,
+            act: async () => {
+                await sdk.sendInteractLoc(2382, 9668, 3339, 1);
+                await L.talkThrough(sdk, [/give it a go/i], { settleTicks: 1 });
+            },
+        },
+    };
+    const spec = specs[obstacle];
+    if (!spec) throw new Error(`unknown obstacle ${obstacle}`);
+
+    await bot.dismissBlockingUI();
+    await L.cheat(sdk, `setstat ${spec.stat} ${level}`, 2);
+    await L.cheat(sdk, 'setstat hitpoints 99', 2);
+    // Koftik's insanity scene would follow a bridge fall (upass_obstacles.rs2:381-386); %upass 5 keeps
+    // the cavern scripts in their mid-quest branches.
+    await L.cheat(sdk, `setvar ibanmulti ${(1 << 11) | (1 << 17)}`);
+    await L.cheat(sdk, 'setvar upass 5');
+    await idle();
+    await teleTo(...spec.start);
+
+    const rows: Array<{ ok: boolean | null; msg: number; idle: number }> = [];
+    for (let i = 0; i < attempts; i++) {
+        if ((sdk.getState()?.player?.hp ?? 99) < 50) await L.cheat(sdk, 'setstat hitpoints 99', 2);
+        const p = L.pos(sdk);
+        const onStart = Math.abs(p.x - spec.start[0]) + Math.abs(p.z - spec.start[1]) <= 6 && p.level === spec.start[2];
+        if (spec.reset || !onStart) await teleTo(...spec.start);
+        await idle();
+        const before = msgs().length;
+        const t0 = L.tick(sdk);
+        await spec.act(i);
+        let msgTick = -1;
+        let ok: boolean | null = null;
+        for (let k = 0; k < 60 && ok === null; k++) {
+            const m = since(before);
+            if (m.some(t => spec.fail.test(t))) ok = false;
+            else if (obstacle === 'ledge' ? (L.pos(sdk).x === 2374 && L.pos(sdk).z === 9638) : m.some(t => spec.ok.test(t))) ok = true;
+            if (ok !== null) msgTick = L.tick(sdk) - t0;
+            else await sdk.waitForTicks(1);
         }
-        rows.push({ ok: r.ok, ticks: r.ticks, note: r.note ?? '' });
-        console.log(`attempt ${i + 1}: ${r.ok ? 'ok  ' : 'FAIL'} ${r.ticks}t ${r.note ?? ''} hp=${sdk.getState()?.player?.hp}`);
+        await idle();
+        const idleTicks = L.tick(sdk) - t0 - 3;
+        rows.push({ ok, msg: msgTick, idle: idleTicks });
+        console.log(`attempt ${i + 1}: ${ok === null ? 'NONE' : ok ? 'ok  ' : 'FAIL'} msg=${msgTick}t idle=${idleTicks}t pos=(${L.pos(sdk).x},${L.pos(sdk).z},${L.pos(sdk).level}) hp=${sdk.getState()?.player?.hp}${ok === null ? ' ' + JSON.stringify(since(before)) : ''}`);
     }
-    const ok = rows.filter(r => r.ok);
-    const fail = rows.filter(r => !r.ok && r.ticks >= 0);
-    const med = (a: number[]) => (a.length ? [...a].sort((p, q) => p - q)[Math.floor(a.length / 2)] : null);
-    const [low, high] = ROLL[obstacle];
+    const okRows = rows.filter(r => r.ok === true);
+    const failRows = rows.filter(r => r.ok === false);
+    const med = (a: number[]) => (a.length ? [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)] : null);
+    const [low, high] = spec.roll;
+    const c = Math.min(level, 99);
+    const expected = Math.min(Math.floor((low * (99 - c)) / 98) + Math.floor((high * (c - 1)) / 98) + 1, 256) / 256;
     console.log(`RESULT ${obstacle} ${JSON.stringify({
-        stat: STAT[obstacle], level, attempts: rows.length, successes: ok.length, failures: fail.length,
-        timeouts: rows.length - ok.length - fail.length,
-        measuredSuccessRate: +(ok.length / rows.length).toFixed(3), expectedSuccessRate: +expected(low, high, level).toFixed(3),
-        successTicksMedian: med(ok.map(r => r.ticks)), successTicks: ok.map(r => r.ticks), failTicksMedian: med(fail.map(r => r.ticks)),
+        stat: spec.stat, level, attempts: rows.length, successes: okRows.length, failures: failRows.length,
+        unknown: rows.length - okRows.length - failRows.length,
+        measuredSuccessRate: +(okRows.length / Math.max(1, okRows.length + failRows.length)).toFixed(3), expectedSuccessRate: +expected.toFixed(3),
+        successIdleMedian: med(okRows.map(r => r.idle)), failIdleMedian: med(failRows.map(r => r.idle)),
+        successMsgMedian: med(okRows.map(r => r.msg)), failMsgMedian: med(failRows.map(r => r.msg)),
     })}`);
-}, { timeout: 1_800_000, printState: false });
+}, { timeout: 3_600_000, printState: false });
