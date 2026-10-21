@@ -89,6 +89,10 @@ await runScript(async ({ bot, sdk }) => {
                     if (s.tick - sent >= 3) {
                         sent = s.tick;
                         clicks++;
+                        // The client cannot route to this trapdoor (cant_reach), so walk onto its only
+                        // access tile, west of it, and click from there.
+                        const p = pos(s);
+                        if (p.x !== 2806 || p.z !== 2785) { void sdk.sendWalk(2806, 2785, true); return false; }
                         void sdk.scanNearbyLocs(20).then(ls => {
                             const l = ls.find(l => l.x === 2807 && l.z === 2785);
                             if (l) void sdk.sendInteractLoc(l.x, l.z, l.id, l.optionsWithIndex[0]?.opIndex ?? 1);
