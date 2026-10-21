@@ -227,9 +227,12 @@ bridges can no longer fail, and only the ledge (5% at 70) remains.
 | Fights at 50/50/50 instead of 70 | +~400 | measured medians |
 
 With the client fix cairn://p/rs/22 (1 tick per page) the 57 dialogue clicks save about 57
-ticks. The measured steps also include a dropped click after most forced moves (the
-script re-clicks on the next quiet tick, so about 1 tick each over ~45 crossings); a
-client that clicks on the exact tick a forced move ends would save part of that.
+ticks. The measured steps also include a dropped click after most forced moves: the lite client
+refuses to send a loc interaction when its own pathfinder finds no route from where it
+thinks the player is (runner log: `cant_reach ... nothing was sent`), which is the case
+during a forced move. The script re-clicks on the next quiet tick, so this costs about 1
+tick per crossing over ~45 crossings; a client that clicks on the exact tick a forced move
+ends would save part of that.
 
 ## After completion: the traversal Regicide needs
 
