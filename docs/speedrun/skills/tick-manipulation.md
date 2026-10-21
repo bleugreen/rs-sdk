@@ -339,14 +339,14 @@ a schedule anchored on an *observed* roll (`--reanchor=xp`, or mining with `--le
 to send early, by the lead: the dominant offset minus 1. On normal trees each log
 re-bootstraps from the label that shows it, so no lead is possible or needed there.
 
-**A late starter misses one cycle; it does not break the lock (read, then measured).** In
+**A late starter costs a cycle; it does not break the lock (read, then measured).** In
 woodcutting, a starter meant for R+1 that lands on R+2 finds the loop's continuation has
 already re-armed the clock to R+4 (`woodcut.rs2`, `cut_tree`). So the knife's expired-clock
 check (`cut_logs.rs2:83-85`) fails and nothing is written, and that roll runs at the plain
 length. The 3-tick schedule then lands on the roll tick itself, where the knife writes
 nothing and the roll still happens. It drifts one tick per cycle until a starter lands on
-roll+1 again. So about one knife cycle is lost, no lock is lost, and the lost-lock window
-(15 ticks or more) does not fire. Fishing's first-click and continuation labels have the
+roll+1 again. So about one plain cycle is lost (measured below), no lock is lost, and the
+lost-lock window (15 ticks or more) does not fire. Fishing's first-click and continuation labels have the
 same shape (inferred). Mining used to be different: the open-loop executor planned the next
 transition on the *predicted* roll label, so after a late roll its walk landed on the roll
 tick and cancelled it, and the slip check restarted the rotation (about 9 ticks). With no
