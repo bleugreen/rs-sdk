@@ -223,10 +223,55 @@ action has.
 
 Min 1, median 2, max 2, mean 1.88. Offline wall time between logout and the
 first in-world state was 3.3-8.1 s (free: no ticks pass while logged out), no
-login needed a retry. Lab: 1 tick every time (0 + 1). It prices the deadline
-fallback, the arming relog of the default sequence, and the ~1% case where the
-first firing leaves Cooking below 35 (which no longer matters with the relog
-arming).
+login needed a retry. A second set at about 09:54 UTC (n = 10, same account):
+**2, 1, 2, 2, 3, 2, 2, 2, 2, 3** (click -> out 0-2, first action at the new
+session's tick 1). Together, n = 18: min 1, median 2, max 3, mean 2.0. Lab:
+1 tick every time (0 + 1). It prices the deadline fallback, the arming relog
+of the default sequence, and the ~1% case where the first firing leaves
+Cooking below 35 (which no longer matters with the relog arming).
+
+### Relog risk (for every planned relog, not only wine)
+
+The scored clock is the server's per-player `playtime`, incremented every
+tick for every player in the world (`World.ts` processClientsIn,
+`player.playtime++`). Logged-out time does not count, so only two parts of a
+relog can cost: the ticks between the logout click and the player's removal,
+and the new session's ticks before its first action.
+
+- **The login side is free and flat.** In all 29 demo relogs the new session
+  could act at its tick 1; login wall time (3.3-8.1 s, one retry never needed)
+  passes with no character in the world. A slow login costs wall time only.
+- **The logout side is where the risk is.** 28 of 29 demo logouts left the
+  world 0-2 ticks after the click. One (run C's arming relog, 2026-10-21 09:46
+  UTC) left **46 ticks** after it, with no level-up page, modal, trade or
+  combat. Those ticks **were on the scored clock**: the client kept counting
+  PLAYER_INFO ticks of the old session to tick 71 (the server sends them only
+  to players in the world), and the wall clock agrees (the session ran 18.3 s
+  longer than run D's, 13.5 s of it the 45 extra ticks at 300 ms).
+- **What holds a removal** (`World.ts` processLogouts): the logout request
+  itself is taken in the same tick; removal then waits for (a) the post-combat
+  window (`preventLogoutUntil`, which sends "You can't log out", not seen), (b)
+  an empty engine queue and no non-discardable queued script, with no modal or
+  delay (`canAccess`; queued level-ups do this, one tick each, but this firing
+  gained no level), and (c) the removal budget: line `removed >= 10 ||
+  (removed > 0 && performance.now() - started >= budgetMs)` defers a player
+  only when another player was already removed earlier in the same tick and
+  the 50 ms budget (`budgetMs`, `tickRate / 6`) is spent, or 10 were removed.
+  **The budget hypothesis is unconfirmed:** it needs a removal ahead of ours
+  (in player-loop order) in each of 46 consecutive ticks with a slow world
+  checkpoint, i.e. a burst of other players logging out of the shared demo.
+  Only the demo's own `[LOGOUT DEBUG]` lines could confirm it. The outlier did
+  not reproduce in 10 further relogs.
+- **Delayed logout, not delayed login.** The stall was in the old session
+  (ticks after the click); the next login was ordinary. So the run script
+  cannot move it off the scored clock: the logout is requested at once and
+  the character is in the world until the server removes it, whenever the
+  click is sent; and a login before the removal is refused (already logged
+  in), costing only wall time. What the run can do: clear level-up pages
+  before any relog (they cost one in-world tick each during a logout), avoid
+  combat in the 16 ticks before it, and budget **2 ticks per relog with a rare
+  tail of tens of ticks** (1 in 29 here). `logoutClean` waits up to 60 ticks
+  before it reports a failure, so a stall like this one still completes.
 
 ### The level-up pages, and the second bank visit
 
@@ -330,12 +375,9 @@ each login's counter starts at 1.
 - **Pages per tick on the demo: 0.9** (18 scripts in 20 ticks, run A); the lab
   gives 1.0. A missing tick is a round trip that landed late; the blind
   continues keep the pipe full, so it does not compound.
-- **Relog tail.** 19 demo logouts in all (8 in the relog-cost run, 11 here): 18
-  left the world within 1 tick of the click, one (run C's arming relog) 46 ticks
-  later, with no page, modal or trade open. The likeliest cause is the engine's
-  removal budget (`World.ts` processLogouts removes at most 10 players a tick
-  and defers the rest while a world checkpoint runs), i.e. a busy demo server;
-  not confirmed. Main should carry 2 ticks per relog and know the tail exists.
+- **Arming relog, click -> out, runs A-E: 1, 1, 46, 1, 0.** The 46 were in
+  the world, on the scored clock; see Relog risk above (cause unconfirmed,
+  did not reproduce in 10 more relogs).
 - One trade (not in the table) was reported declined on the confirm screen
   although its 3 notes arrived. The receiver now counts a trade by the notes
   that arrived, and `speedrun/lib/trade.ts` waits 3 ticks on an empty confirm
@@ -350,6 +392,14 @@ relog's click to the last page (75-85 across the usual page counts)**, of which
 about 26 are idle waits that need no actions. Before rs/88 (lab T9, make
 arming): 73-77 ticks from login to the second firing plus the final pages,
 about 90 in all, with 28-31 for the second bank visit alone.
+
+**Accounts after these runs (2026-10-21 about 09:57 UTC).** cairn_h40 (the
+maker): logged out, **disabled** in fleet.json until rs/93 merges; by count
+from its makes, 31 grapes and 7 jugs of water in its bank and 3 noted
+unfermented wines in its inventory. cairn_h48 (test receiver, Cooking 73):
+logged out, credentials in `~/rs-fleet/bots/`, not in fleet.json; it holds the
+fermented wine (jugs of wine and bad wine) in its bank. cairn_h42 gave 30
+jugs of water to cairn_h40 and is back on its jugs role.
 
 ### Where the Cooking step goes in the run
 
