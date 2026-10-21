@@ -21,8 +21,14 @@
 // published one state with the confirm screen still open, both offer lists
 // empty and its inventory unchanged. Both sides wait out an empty confirm
 // list, and a decline sent after our own confirm accept is not taken as the
-// outcome: the trade may have completed before it landed, so the result is
-// judged by the inventory once the trade closes.
+// outcome: the trade may have completed before it landed.
+//
+// Settling such a decline needs the server's word, not just a closed screen:
+// the browser client's sendDeclineTrade closes the modal locally at once, so it
+// publishes the trade closed while the giver's offered items are still out of
+// its inventory, a tick or two before the server refunds them. The server's
+// word is either the refund (our offered items back in the inventory) or the
+// "Accepted trade." message it sends both players as the items swap.
 
 import type { BotSDK } from '../../sdk/index';
 import type { ActionResult, BotWorldState, InventoryItem, TradeItem, TradeState } from '../../sdk/types';
@@ -133,7 +139,9 @@ export interface ReceiverCtx {
     closedSince: number | null;
     /** First tick the confirm screen showed an empty partner offer. */
     confirmEmptySince?: number | null;
-    /** Why we declined after accepting the confirm screen; the outcome then waits for the close. */
+    /** Tick of our first confirm-screen accept; -1 before it. */
+    confirmTick: number;
+    /** Why we declined after accepting the confirm screen; the outcome then waits for the server. */
     declined: string | null;
     declineTick: number;
 }
@@ -151,6 +159,23 @@ export const CONFIRM_EMPTY_GRACE_TICKS = 3;
 export const REDECLINE_TICKS = 3;
 
 /**
+ * Ticks a trade we declined after confirming may sit closed without the
+ * server's word on the outcome before the call gives up on it as unsettled.
+ */
+export const SETTLE_TICKS = 10;
+
+/**
+ * The server's word that the trade completed: [if_button,tradeconfirm:accept]
+ * sends "Accepted trade." to both players as the items swap. Messages are
+ * stamped with the tick they were first seen, so one at or after our own
+ * confirm accept belongs to this trade.
+ */
+export function sawTradeAccepted(state: BotWorldState, confirmTick: number): boolean {
+    if (confirmTick < 0) return false;
+    return state.gameMessages.some(m => m.type === 0 && !m.fromSelf && m.tick >= confirmTick && /^accepted trade\.?$/i.test(m.text.trim()));
+}
+
+/**
  * A decline is `settle` when we had already accepted the confirm screen: the
  * trade may have completed before the decline lands, so the driver sends it
  * and keeps reading states until the inventory shows the outcome.
@@ -165,7 +190,7 @@ export type ReceiverAction =
     | { action: 'closed'; reason?: string };
 
 export function newReceiverCtx(partner: string, inventory: readonly InventoryItem[], want?: WantSpec[]): ReceiverCtx {
-    return { partner, ...(want ? { want } : {}), invBefore: countInventoryById([...inventory]), snapshot: null, confirmOffer: null, lastAcceptTick: -1, sawOpen: false, closedSince: null, declined: null, declineTick: -1 };
+    return { partner, ...(want ? { want } : {}), invBefore: countInventoryById([...inventory]), snapshot: null, confirmOffer: null, lastAcceptTick: -1, sawOpen: false, closedSince: null, confirmTick: -1, declined: null, declineTick: -1 };
 }
 
 interface Settling {
@@ -191,6 +216,10 @@ function closedAction(ctx: Settling): { action: 'closed'; reason?: string } {
     return ctx.declined !== null ? { action: 'closed', reason: ctx.declined } : { action: 'closed' };
 }
 
+function unsettled(ctx: Settling): { action: 'closed'; reason: string } {
+    return { action: 'closed', reason: `no settlement seen after declining: ${ctx.declined}` };
+}
+
 /**
  * One receiver step per published state. Returns the action to take and the
  * updated context (the input is not mutated).
@@ -204,7 +233,8 @@ function closedAction(ctx: Settling): { action: 'closed'; reason?: string } {
  *   first, so the outcome is read from the inventory once it closes.
  * - Closed: done once the inventory delta shows the confirmed items arrived;
  *   a close without the delta is final only after 2 ticks (the offer-to-confirm
- *   transition can publish a closed frame in between).
+ *   transition can publish a closed frame in between), or SETTLE_TICKS when we
+ *   declined late and the server said "Accepted trade.".
  */
 export function decideReceiver(state: BotWorldState, ctx: ReceiverCtx): { next: ReceiverCtx } & ReceiverAction {
     const t = tradeOf(state);
@@ -235,6 +265,7 @@ export function decideReceiver(state: BotWorldState, ctx: ReceiverCtx): { next: 
             if (!good) return decline(next, state.tick, 'confirm screen offer does not match', settle);
             if (canAccept) {
                 next.lastAcceptTick = state.tick;
+                if (ctx.confirmTick < 0) next.confirmTick = state.tick;
                 next.confirmOffer = t.theirOffer.map(i => ({ ...i }));
                 return { next, action: 'accept' };
             }
@@ -251,8 +282,10 @@ export function decideReceiver(state: BotWorldState, ctx: ReceiverCtx): { next: 
             : gained.length > 0;
         if (arrived && (!ctx.want || offerSatisfies(ctx.want, gained))) return { next, action: 'done', received: gained };
     }
+    // Success needs the items in hand; the server's word only buys them time.
+    const patience = ctx.declined !== null && sawTradeAccepted(state, ctx.confirmTick) ? SETTLE_TICKS : 2;
     if (ctx.closedSince === null) next.closedSince = state.tick;
-    else if (state.tick - ctx.closedSince >= 2) return { next, ...closedAction(ctx) };
+    else if (state.tick - ctx.closedSince >= patience) return { next, ...closedAction(ctx) };
     return { next, action: 'wait' };
 }
 
@@ -271,7 +304,9 @@ export interface GiverCtx {
     closedSince: number | null;
     /** First tick the confirm screen showed our offer empty. */
     confirmEmptySince: number | null;
-    /** Why we declined after accepting the confirm screen; the outcome then waits for the close. */
+    /** Tick of our first confirm-screen accept; -1 before it. */
+    confirmTick: number;
+    /** Why we declined after accepting the confirm screen; the outcome then waits for the server. */
     declined: string | null;
     declineTick: number;
 }
@@ -285,7 +320,7 @@ export type GiverAction =
     | { action: 'closed'; reason?: string };
 
 export function newGiverCtx(partner: string, inventory: readonly InventoryItem[], plan: OfferEntry[], expectTheirs?: WantSpec[]): GiverCtx {
-    return { partner, plan, ...(expectTheirs ? { expectTheirs } : {}), invBefore: countInventoryById([...inventory]), burstTick: null, lastAcceptTick: -1, confirmAccepted: false, sawOpen: false, closedSince: null, confirmEmptySince: null, declined: null, declineTick: -1 };
+    return { partner, plan, ...(expectTheirs ? { expectTheirs } : {}), invBefore: countInventoryById([...inventory]), burstTick: null, lastAcceptTick: -1, confirmAccepted: false, sawOpen: false, closedSince: null, confirmEmptySince: null, confirmTick: -1, declined: null, declineTick: -1 };
 }
 
 function theirsAcceptable(theirs: readonly TradeItem[], expect: WantSpec[] | undefined): boolean {
@@ -304,7 +339,10 @@ function theirsAcceptable(theirs: readonly TradeItem[], expect: WantSpec[] | und
  *   empty own offer is waited out for CONFIRM_EMPTY_GRACE_TICKS first: it is
  *   what the completing trade publishes just before it closes.
  * - After our confirm accept, a decline settles: the trade may have completed
- *   first, so the outcome is read from the inventory once it closes.
+ *   first, and a closed screen is no evidence (the browser client closes it
+ *   locally before the server refunds). Failed once the offered items are
+ *   back; done once they are gone and the server said "Accepted trade.";
+ *   failed as unsettled after SETTLE_TICKS closed with neither.
  * - Closed: done once the inventory lost what we offered.
  */
 export function decideGiver(state: BotWorldState, ctx: GiverCtx): { next: GiverCtx } & GiverAction {
@@ -339,6 +377,7 @@ export function decideGiver(state: BotWorldState, ctx: GiverCtx): { next: GiverC
             if (!theirsAcceptable(t.theirOffer, ctx.expectTheirs)) return decline(next, state.tick, 'partner confirm offer is not acceptable', settle);
             if (!t.myAccepted && state.tick > ctx.lastAcceptTick) {
                 next.lastAcceptTick = state.tick;
+                if (!ctx.confirmAccepted) next.confirmTick = state.tick;
                 next.confirmAccepted = true;
                 return { next, action: 'accept' };
             }
@@ -349,7 +388,15 @@ export function decideGiver(state: BotWorldState, ctx: GiverCtx): { next: GiverC
 
     if (!ctx.sawOpen) return { next, action: 'wait' };
     const lost = diffInventories(ctx.invBefore, countInventoryById(state.inventory)).lost;
-    if (ctx.confirmAccepted && mine.length > 0 && shortfall(mine, lost).length === 0) return { next, action: 'done', gave: lost };
+    const gone = mine.length > 0 && shortfall(mine, lost).length === 0;
+    if (ctx.declined !== null) {
+        if (!gone) return { next, ...closedAction(ctx) };
+        if (sawTradeAccepted(state, ctx.confirmTick)) return { next, action: 'done', gave: lost };
+        if (ctx.closedSince === null) next.closedSince = state.tick;
+        else if (state.tick - ctx.closedSince >= SETTLE_TICKS) return { next, ...unsettled(ctx) };
+        return { next, action: 'wait' };
+    }
+    if (ctx.confirmAccepted && gone) return { next, action: 'done', gave: lost };
     if (ctx.closedSince === null) next.closedSince = state.tick;
     else if (state.tick - ctx.closedSince >= 2) return { next, ...closedAction(ctx) };
     return { next, action: 'wait' };
