@@ -10,6 +10,13 @@ labels: `docs/speedrun/LAB.md` and `docs/speedrun/skills/README.md` (rs/2). Ever
 headline number below was measured at `NODE_TICKRATE=300`; the rows marked 100 ms
 are exploration runs.
 
+**Host.** The 300 ms samples ran on the Mac executor `local`, which main measured at load
+11-18 on 16 cores that night (cairn://p/rs/main, 00:36). Read every 300 ms rate here as a
+**busy host's figure, a few percent pessimistic**: the bot reacts in wall-clock time, so a slow
+host occasionally costs a tick on a re-attack or retarget. The quiet reference host is bbs;
+rs/26's bbs correction factor had not been published when this was written (01:15), so no
+factor is applied.
+
 Per-skill documents: [attack.md](attack.md), [strength.md](strength.md),
 [defence.md](defence.md), [hitpoints.md](hitpoints.md).
 
@@ -35,9 +42,32 @@ plan assumed. The gap has three causes, all read from source and confirmed by th
   ticks per kill on top of the 4-tick swing (measured mean gap from the killing
   hitsplat to the next hitsplat: 4.7-6.7).
 
-**The scenario answer (inferred, `combat-model.ts`):**
+**On the route: rs/3's Package B** (`docs/speedrun/quests/README.md` and
+`pre_mm_fights.md` on cairn://p/rs/3/1/coordinator; decided 01:08, README being finalised by
+cairn://p/rs/80). Waterfall is off. Dragon Slayer is on after Monkey Madness option 1, with 15
+QP of filler (Goblin Diplomacy, Witch's House, Romeo & Juliet, Cook's Assistant). Merlin's
+Crystal and Holy Grail are off. The pre-MM fights (Khazard warlord, black demon, Fight Arena)
+are **cast, not meleed**, so they give Magic and Hitpoints but no Strength or Defence
+(`pre_mm_fights.md` section 1). The account reaches the cannon session and MM at Attack 99,
+Strength 1, Defence 1, about 42 HP.
 
-| Skill | With MM option 1: quest base xp | Gap | Melee ticks | No MM: quest base xp | Gap | Melee ticks |
+| Skill | Package B quest base xp (read, section 7) | Post-quest gap | Training ticks to 99 | Basis |
+|---|---|---|---|---|
+| Attack | TGV 11,450 + GT 18,400 + Fight Arena 12,175 = **42,025** before the cannon session (already 99), + MM 20,000 = **62,025** | 0 | **0** | read |
+| Strength | MM 35,000 + Dragon Slayer 18,650 = **53,650** | 0 | **0** | read |
+| Defence | MM 20,000 + Dragon Slayer 18,650 = **38,650** (level 98) | **1,288** | **230**, inside the cannon finish (cannon + defensive melee at 5.60 Defence per tick, `ranged.md` plan (e)); 140 on ogres alone at 9.18 (inferred), but that forgoes the cannon's 11 Ranged per tick | inferred from measured rates |
+| Hitpoints | start 39.2 + the pre-MM fights' ~722 (warlord 226 m, demon 209 m, Fight Arena ~287 i, `pre_mm_fights.md`) + MM 35,000 + Witch's House 6,325 (`quest_ball.rs2:202`, via `quest_points.md`) = **~42,086** | 0 once Witch's House is done | **0** | read + measured. rs/3's README quotes a 4,938 gap (MM alone); counting the fights it is 4,177 before Witch's House, and the finish's own by-product (5,089 HP, rs/31) covers either |
+| Ranged | none from quests; ~54 after MM's Jungle Demon fight (1,790 base, `ranged.md` section 3) | 38,148 | **113** before MM (Ranged 1 -> 50) + **2,051** after (cannon + defensive melee 230, then cannon + rapid knives 1,821) | inferred from measured rates (`ranged-model.ts`, rs/31) |
+| **Combat after the quests** | | | **2,051** after MM (+113 before it) | rs/3's own phase model gives 2,023; the 28-tick difference is the unmeasured Ranged 67-70 stretch, so 2,023-2,051 is the honest range |
+
+So under Package B **no melee block remains at all**. The only melee is the 230 ticks of
+defensive style that ride alongside the cannon at the Wilderness spiders, and the Defence gap
+it closes is small enough that the cannon's Ranged, not Defence, sets the finish.
+
+**Alternatives, not on the route** (kept for comparison; inferred, `combat-model.ts`). Package
+A (Waterfall on, Dragon Slayer off), and no Monkey Madness at all:
+
+| Skill | Package A, MM option 1: quest base xp | Gap | Melee ticks | No MM: quest base xp | Gap | Melee ticks |
 |---|---|---|---|---|---|---|
 | Attack | 75,775 (TGV 11,450 + GT 18,400 + Waterfall 13,750 + Fight Arena 12,175 + MM 20,000) | 0 | 0 | 44,325 (GT + Waterfall + Fight Arena) | 0 | 0 |
 | Strength | 48,750 (MM 35,000 + Waterfall 13,750) | 0 | 0 | 13,750 (Waterfall; level 83) | 26,188 | **2,901** (yields 8,729 HP) |
@@ -45,9 +75,9 @@ plan assumed. The gap has three causes, all read from source and confirmed by th
 | Hitpoints | 35,000 (MM) | 4,938 | **0**: the Defence training's 6,646 HP covers it | 39 (level 10) | 39,899 | 17,857 left after Strength and Defence: **5,683** more on melee alone (Attack style, its xp wasted), less with Ranged combat (below) |
 | **Total melee** | | | **2,121** | | | **7,149 + up to 5,683 for HP** |
 
-Quest totals follow rs/3's route of 22:28 (Holy Grail, Merlin's Crystal and the troll
-chain off; Tree Gnome Village only with MM; Waterfall conditional on rs/56). Every
-reward was checked against the scripts (section 7).
+The alternative columns follow rs/3's route of 22:28 (Holy Grail, Merlin's Crystal and the
+troll chain off; Tree Gnome Village only with MM; Waterfall on), and their melee figures assume
+melee-trained pre-MM fights. Every reward was checked against the scripts (section 7).
 
 Monkey Madness (4,400-5,300 ticks with failures, rs/3) replaces about 5,000 ticks of
 Strength and Defence melee (7,149 - 2,121). It also removes the Hitpoints problem:
@@ -57,8 +87,9 @@ done. Ranged trained by combat earns 1.33 HP per damage as well
 about 1,450 ticks of wasted-xp melee. **At the measured rate, MM wins by roughly
 2,000-3,000 ticks with failures counted**, more if Ranged is not trained by combat.
 
-**On the MM route, the remaining melee (Defence 19,938) has a better place than
-ogres while Ranged is still training.** rs/31 measured defensive melee alongside a
+**On any MM route, the remaining melee has a better place than ogres while Ranged is still
+training.** Under Package B that is the 1,288 Defence above (230 ticks). Under Package A it
+was the whole 19,938. rs/31 measured defensive melee alongside a
 dwarf multicannon at the Wilderness poison spiders: 5.60 Defence + 1.85 HP + 11.03
 Ranged per tick, which finishes Ranged, Defence and HP 99 in 3,520 ticks against
 4,197 for ogres then Ranged. See `docs/speedrun/skills/ranged.md` section 1,
