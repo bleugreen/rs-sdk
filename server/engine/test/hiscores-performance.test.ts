@@ -28,6 +28,8 @@ test('ranking indexes preserve results and avoid scanning other skills and sorti
     }
 });
 
+// The fixture process imports the engine's hiscore pages and database layer:
+// about 1 s on an idle host, 2.5-6 s on a loaded 8-core one, past bun's 5 s default.
 test('cached ranks remain correct across profiles, exclusions and cache refresh', () => {
     const dir = mkdtempSync(join(tmpdir(), 'ranked-hiscores-'));
     try {
@@ -40,8 +42,6 @@ test('cached ranks remain correct across profiles, exclusions and cache refresh'
     } finally {
         rmSync(dir, { recursive: true, force: true });
     }
-    // The fixture process imports the engine's hiscore pages and database layer:
-    // about 1 s on an idle host, 2.5-6 s on a loaded 8-core one, past bun's 5 s default.
 }, 15_000);
 
 
