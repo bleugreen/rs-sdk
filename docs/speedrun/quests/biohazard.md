@@ -181,6 +181,38 @@ Coordinator findings:
 Raw counts: 162 page and option clicks (149 in steps, 13 on the ships). With the client
 fix (1 tick per click) the total is about 1,400.
 
+### Dialogue in three columns
+
+Columns as `CONVENTIONS.md` defines them. Stock and fixed come from the measured counts.
+**The burst column is inferred** with the same model as `plague_city.md` (an opening run
+of P - 2O continues, then 3 ticks per option for the click and a 2-page run); dialogues
+with a script delay in the middle (Omart, Elena's vials, the errand boys in Varrock, the
+gate search) are split at each delay, and the ship dialogues are left at the fixed figure.
+
+| Step | Pages + options | Stock | Fixed | Burst (inferred) |
+|---|---|---|---|---|
+| 2 Elena | 10 + 1 | 22 | 11 | 5 |
+| 4 Jerico | 7 | 14 | 7 | 2 |
+| 5 cupboard (two mesboxes) | 2 | 4 | 2 | 2 |
+| 9 Omart (delays inside) | 4 + 1 | 10 | 5 | 4 |
+| 13 HQ door | 1 | 2 | 1 | 1 |
+| 19 Elena, vials (two `p_delay(2)` inside) | 11 | 22 | 11 | 5 |
+| 25 chemist | 14 + 2 | 32 | 16 | 8 |
+| 26 Hops, Chancy, DeVinci in Rimmington | 18 + 3 | 42 | 21 | 12 |
+| 28 gate search | 2 | 4 | 2 | 2 |
+| 29 the boys in Varrock (delays inside) | 14 | 28 | 14 | 6 |
+| 31 Guidor | 21 + 3 | 48 | 24 | 12 |
+| 33 Elena | 9 | 18 | 9 | 2 |
+| 35 Lathas, reward and level-up | 24 + 1 + 1 | 52 | 26 | 9 |
+| Ships (steps 21, 23) | 9 + 4 | 26 | 13 | 13 |
+| **Total** | **147 + 15** | **324** | **162** | **~83** |
+
+| Column | Total |
+|---|---|
+| Stock | ~1,564 |
+| Fixed client | ~1,402 |
+| Burst | ~1,323 |
+
 ## Risks and gotchas
 
 - **Never teleport while holding the plague sample** (steps 19-31). It disintegrates

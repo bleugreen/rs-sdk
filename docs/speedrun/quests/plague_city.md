@@ -121,6 +121,45 @@ time before Jethick. The order inside West Ardougne is fixed by the stage checks
 With the client fix cairn://p/rs/22 (1 tick per page or option), the dialogue drops by
 117 ticks and the total to about 620.
 
+### Dialogue in three columns
+
+Columns as `CONVENTIONS.md` defines them. The stock and fixed columns come from the
+measured page and option counts per step. **The burst column is inferred**: the step
+scripts recorded counts, not the order of pages, so each dialogue is modelled as one
+opening run of P - 2O continues, then for each option the click plus a 2-page run (the
+player's echo line and the reply), which costs 1 + 2 = 3 ticks. Single mesbox pages
+opened by an item use (the four buckets, the rope, the spade) and the two cure item uses
+gain nothing. The README can replace the model with exact runs if it needs them.
+
+| Step | Pages + options | Stock | Fixed | Burst (inferred) |
+|---|---|---|---|---|
+| 2 Edmond | 15 + 2 | 34 | 17 | 9 |
+| 4 Alrena | 7 | 14 | 7 | 2 |
+| 5 Edmond | 3 | 6 | 3 | 1 |
+| 6 cure (item uses) | 2 | 4 | 2 | 2 |
+| 8 buckets (one mesbox each) | 4 | 8 | 4 | 4 |
+| 9 spade (objbox, fall, mesbox) | 2 | 4 | 2 | 2 |
+| 11, 25, 26 (one page each) | 3 | 6 | 3 | 3 |
+| 12 Edmond in the sewer | 4 | 8 | 4 | 1 |
+| 14 Jethick | 11 + 1 | 24 | 12 | 5 |
+| 15 Ted's door, 16 Ted, 17 Milli | 5, 3, 5 | 26 | 13 | 3 |
+| 18 plague house mourner | 7 + 1 | 16 | 8 | 4 |
+| 19 clerk | 7 + 2 | 18 | 9 | 7 |
+| 21 Bravek | 6 + 2 | 16 | 8 | 7 |
+| 22 Bravek, warrant | 11 + 1 | 24 | 12 | 5 |
+| 24 plague house door, 27 Elena | 4, 4 | 16 | 8 | 2 |
+| 31 Edmond, reward and level-up | 3 | 6 | 3 | 3 |
+| 32 magic scroll | 2 | 4 | 2 | 1 |
+| **Total** | **108 + 9** | **234** | **117** | **~61** |
+
+| Column | Total (from the Camelot teleport) |
+|---|---|
+| Stock | ~737 |
+| Fixed client | ~620 |
+| Burst | ~564 |
+
+The clerk's expected retries (14 ticks stock) shrink in the same proportion.
+
 ## Risks and gotchas
 
 - **The clerk is random.** The stage only advances if Bravek is within 7 tiles of the

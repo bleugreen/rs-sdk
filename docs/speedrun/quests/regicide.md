@@ -426,7 +426,7 @@ branch, `docs/speedrun/skills/`):
 
 1. **The chain does not pay for its xp.** It costs about 7,400-8,100 ticks and its
    skill rewards replace about 3,200-3,550. The 12 quest points and the Ardougne teleport
-   would have to be worth about 4,000 ticks more for the chain to break even.
+   would have to be worth about 3,900-4,900 ticks for the chain to break even.
 2. **Regicide does not pay even when Underground Pass is done anyway** (for Legends'
    Quest). Its own share is about 3,015-3,150 ticks, against about 2,000 ticks of
    Agility it replaces, a loss of about 1,000-1,150 ticks. Most of its cost is the two
