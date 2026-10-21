@@ -161,6 +161,7 @@ Monte Carlo (`delayfree-model.ts wine`, 20,000 trials each):
 | 15, then 435 | 450 | 92.7% |
 | 30, then 420 (rs/47's plan) | 450 | 96.6% |
 | 29, then 420 | 449 | 99.1% |
+| 29, then 421 re-armed in the same login (rs/47, 200k trials) | 450 | 98.3% in one login, 99.1% with a fallback login |
 | **29 bank + 28 inventory, then 400** | **457** | **100.0%** |
 | pre-levelled to 68 by kebabs, then 321 | 321 + 39 kebabs | 100.0% |
 
@@ -211,12 +212,13 @@ from the click). Measured (`cooking-range.ts`, 26 lobsters each): range, fast sc
 
 ## 7. Helper supply list
 
-**Route 1, wine (two logins), 457 unfermented wines:**
+**Route 1, wine (one login): 450 unfermented wines as notes, plus 1 grapes and 1 jug of water for
+the re-arming wine** (two-login variant: 457 wines, no grapes or jug):
 
 | Item | Quantity | Where helpers get it (read; rs/47) | Scarcity |
 |---|---|---|---|
-| Grapes | 457 | 2 ground spawns, respawn 80 ticks (`wine.obj`, `respawnrate=80`): the Cooking Guild top floor (3144,3450,2; Cooking 32 and a chef's hat) and the Phoenix Gang hideout (`maps/m50_152.jm2`); goblin drop 1/128 (`goblin.rs2:120-121`) | **contested**: GE bid 1,650 gp x 99,658, no sellers; rs/47 measured about 132 grapes per helper-hour at the guild |
-| Jug of water | 457 | empty jugs in general stores (2 each, restocking) and 8 ground spawns; filled at a sink or fountain; jugs of water in the Shantay Pass, Bedabin and Rellekka shops | easy |
+| Grapes | 451 | 2 ground spawns, respawn 80 ticks (`wine.obj`, `respawnrate=80`): the Cooking Guild top floor (3144,3450,2; Cooking 32 and a chef's hat) and the Phoenix Gang hideout (`maps/m50_152.jm2`); goblin drop 1/128 (`goblin.rs2:120-121`) | **contested**: GE bid 1,650 gp x 99,658, no sellers; rs/47 measured about 132 grapes per helper-hour at the guild |
+| Jug of water | 451 | empty jugs in general stores (2 each, restocking) and 8 ground spawns; filled at a sink or fountain; jugs of water in the Shantay Pass, Bedabin and Rellekka shops | easy |
 | Wine maker | 1 helper at Cooking 35 | `wine.rs2:8` | the maker's own timer ferments its loose wine 20 ticks after its last make: deposit and withdraw as notes in the same bank session (rs/47) |
 
 **Route 2, kebabs (1 -> 99), about 340 of each (336 used in the measured run, plus spares for
