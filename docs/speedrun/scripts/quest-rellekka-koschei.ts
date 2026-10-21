@@ -29,6 +29,17 @@ const style = Number(args.find(a => a.startsWith('style='))?.slice(6) ?? 1);
 // food=N gives N sharks (food is not on the trial's forbidden list) and eats one
 // below half hitpoints during forms 1-3; never during form 4, which must kill you.
 const food = Number(args.find(a => a.startsWith('food='))?.slice(5) ?? 0);
+// eatAt=N eats at or below N hitpoints (default half). Forms 1-3 hit for at most
+// about 3, 5 and 7 (npc_melee_maxhit at strength 20/40/60), so a low threshold
+// carries few hitpoints into form 4, which then ends sooner.
+const eatAtArg = args.find(a => a.startsWith('eatAt='));
+// boost: drink a super attack and a super strength potion before the ladder.
+// amulet=<obj>: wear it (amulets are not on the forbidden list).
+// pray: Ultimate Strength and Incredible Reflexes during forms 1-3 (prayer is
+// drained at the form 3 defeat anyway, viking_thorvald.rs2:297).
+const boost = args.includes('boost');
+const amulet = args.find(a => a.startsWith('amulet='))?.slice(7);
+const pray = args.includes('pray');
 
 // %viking_bits: Thorvald's 2-bit field starts at bit 16 (quest_viking.constant:20).
 const THORVALD_STARTED = 1 << 16;
@@ -44,7 +55,15 @@ await runScript(async ({ bot, sdk }) => {
     process.on('exit', () => L.report(`Koschei ${att}/${str}/${def} ${hp}hp (partial=${all.length < runs})`, { runs: all }));
 
     for (let run = 0; run < runs; run++) {
-        await L.setStats(sdk, { attack: att, strength: str, defence: def, hitpoints: hp, prayer: 1 });
+        await L.setStats(sdk, { attack: att, strength: str, defence: def, hitpoints: hp, prayer: pray ? 99 : 1 });
+        if (amulet && !sdk.getEquipment().some(e => e.name.toLowerCase().replace(/ /g, '_') === amulet)) {
+            await L.cheat(sdk, `give ${amulet} 1`, 2);
+            const a = sdk.getInventory().find(i => i.name.toLowerCase().replace(/ /g, '_') === amulet);
+            if (a) await bot.equipItem(a);
+        }
+        if (boost) {
+            await L.cheat(sdk, 'give 2doseattack 1', 1); // placeholder names resolved below
+        }
         await L.cheat(sdk, 'setvar viking 1');
         await L.cheat(sdk, `setvar viking_bits ${THORVALD_STARTED}`);
         if (food > 0) await L.cheat(sdk, `give shark ${food}`, 2);
