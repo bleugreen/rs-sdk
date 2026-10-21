@@ -425,10 +425,6 @@ class Gatherer {
         if (food) await this.bot.eatFood(food);
     }
 
-    combatLevelOk(level: number): boolean {
-        return ['Attack', 'Strength', 'Defence'].every(s => skillLevel(this.sdk, s) >= level);
-    }
-
     /** Set the combat style to whichever melee stat is lowest. */
     async pickStyle(): Promise<void> {
         const cs = this.sdk.getState()?.combatStyle;
