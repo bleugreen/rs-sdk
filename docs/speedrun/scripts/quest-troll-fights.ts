@@ -50,6 +50,12 @@ async function topUp(bot: BotActions, sdk: BotSDK) {
     await cheat(sdk, `setstat hitpoints ${LV}`);
 }
 
+function attackOp(n: NearbyNpc): number {
+    const o = n.optionsWithIndex.find(x => /attack/i.test(x.text));
+    if (!o) throw new Error(`${n.name} has no Attack option: ${n.options.join('|')}`);
+    return o.opIndex;
+}
+
 interface FightLog { ticks: number; attacks: number; knockbacks: number; eats: number; pages: number; hpLost: number; dealt: number; died: boolean }
 
 /** Fight `target` until `done()` holds. Re-sends Attack when idle and out of reach, eats below half hp. */
@@ -60,7 +66,7 @@ async function fight(bot: BotActions, sdk: BotSDK, target: () => NearbyNpc | und
     const evSeen = new Set<number>();
     const first = target();
     if (!first) throw new Error('no target');
-    await sdk.sendInteractNpc(first.index, first.options.findIndex(o => /attack/i.test(o)) + 1);
+    await sdk.sendInteractNpc(first.index, firsattackOp(t));
     log.attacks++;
     lastAttack = now(sdk);
     while (!done()) {
@@ -75,6 +81,10 @@ async function fight(bot: BotActions, sdk: BotSDK, target: () => NearbyNpc | und
             if (e.type === 'damage_dealt') log.dealt += e.damage;
         }
         const p = pos(s), hp = s.player!.hp;
+        if ((s.tick - t0) % 20 === 0) {
+            const tt = target();
+            console.log(`  t+${s.tick - t0} me ${p.x},${p.z} hp ${hp} | ${tt ? `${tt.name} hp ${tt.hp}/${tt.maxHp} d${tt.distance} inCombat ${tt.inCombat}` : 'no target'} | combat ${s.player!.combat.inCombat}->${s.player!.combat.targetIndex} | dialog ${dialogText(s).slice(0, 60)}`);
+        }
         if (hp < lastHp) log.hpLost += lastHp - hp;
         lastHp = hp;
         if (s.player!.isDead) { log.died = true; break; }
@@ -98,7 +108,7 @@ async function fight(bot: BotActions, sdk: BotSDK, target: () => NearbyNpc | und
         if (!t) continue;
         const engaged = s.player!.combat.inCombat && s.player!.combat.targetIndex === t.index;
         if ((jump >= 4 || (!engaged && idle >= 2) || (t.distance > 2 && idle >= 2)) && s.tick - lastAttack >= 2) {
-            await sdk.sendInteractNpc(t.index, t.options.findIndex(o => /attack/i.test(o)) + 1);
+            await sdk.sendInteractNpc(t.index, attackOp(t));
             log.attacks++;
             lastAttack = s.tick;
         }
