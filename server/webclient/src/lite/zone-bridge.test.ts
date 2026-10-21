@@ -26,8 +26,8 @@ import { ServerProt } from '#/io/ServerProt.js';
 
 import { LiteClient } from './LiteClient.js';
 import { dispatch } from './protocol/incoming.js';
-import { useStubBaseline } from './test-support/stub-baseline.js';
 import { zonePacket } from './protocol/zone.js';
+import { useStubBaseline } from './test-support/stub-baseline.js';
 
 const BASE_X = 3200;
 const BASE_Z = 3200;
