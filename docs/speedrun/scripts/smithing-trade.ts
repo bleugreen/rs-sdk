@@ -170,6 +170,8 @@ if (ROLE === 'helper') {
         let s = await waitTicks(sdk, 1);
         let delivered = -1;
         let inTrade = false;
+        let tradingSeq = -1;
+        let offeredTick = -1;
         let gaveTick = -99;
         let plan: PlanMsg | null = null;
         const end = Date.now() + 60 * 60_000;
@@ -180,25 +182,25 @@ if (ROLE === 'helper') {
             if ((plan as any).stop) break;
             const t = s.trade;
             if (t?.isOpen) {
-                inTrade = true;
+                if (!inTrade) { inTrade = true; tradingSeq = plan.seq; offeredTick = -1; }
                 if (t.screen === 'offer') {
-                    const want = Object.values(plan.bars).reduce((a, b) => a + b, 0);
-                    const mine = t.myOffer.reduce((a, i) => a + i.count, 0);
-                    if (mine < want) {
+                    // Offer and accept in one tick. An offer resets both accepts (trade.rs2
+                    // movetotrade), so if the scored account's offer lands after ours we re-accept
+                    // on the next tick that shows it accepted.
+                    if (offeredTick < 0) {
                         for (const bar of Object.keys(plan.bars)) {
-                            if (count(t.myOffer, barRe(bar)) > 0) continue;
                             const it = s.inventory.find(i => barRe(bar).test(i.name));
                             if (it) sdk.sendOfferItem(it.slot, -1).catch(() => {});
                         }
-                    } else if (!t.myAccepted && t.theirOffer.reduce((a, i) => a + i.count, 0) >= plan.products) {
                         sdk.sendAcceptTrade().catch(() => {});
-                    }
+                        offeredTick = s.tick;
+                    } else if (!t.myAccepted && s.tick > offeredTick) sdk.sendAcceptTrade().catch(() => {});
                 } else if (t.screen === 'confirm' && !t.myAccepted) sdk.sendAcceptTrade().catch(() => {});
                 continue;
             }
             if (inTrade) {
                 inTrade = false;
-                if (!Object.keys(plan.bars).some(b => count(s.inventory, barRe(b)) > 0)) delivered = plan.seq;
+                if (!Object.keys(plan.bars).some(b => count(s.inventory, barRe(b)) > 0)) delivered = tradingSeq;
             }
             if (delivered >= plan.seq) {
                 // Idle: get rid of the finished items the scored account handed back.
@@ -264,6 +266,8 @@ await runScript(async ({ bot, sdk }) => {
     let firstRequest = -1;
     let reached = -1;
     const offered = new Set<number>();
+    let lastClick = -99;
+    let retries = 0;
     const end = Date.now() + Number(arg('minutes', '40')) * 60_000;
     const done = () => (route ? reached >= 0 : inv >= CYCLES) || Date.now() > end;
 
@@ -317,12 +321,12 @@ await runScript(async ({ bot, sdk }) => {
             const want = Object.values(PLAN[inv]!.bars).reduce((a, b) => a + b, 0);
             if (t?.isOpen && t.screen === 'offer') {
                 // Offer-all once per finished item id (the trade-side inventory keeps main-inventory slots).
+                // Offer-all once per finished item id, then accept in the same tick (see the helper).
                 const products = s.inventory.filter(i => !/^hammer$/i.test(i.name) && !offered.has(i.id));
-                for (const p of products.slice(0, 5)) { sdk.sendOfferItem(p.slot, -1).catch(() => {}); offered.add(p.id); }
+                for (const p of products.slice(0, 4)) { sdk.sendOfferItem(p.slot, -1).catch(() => {}); offered.add(p.id); }
                 const theirs = t.theirOffer.reduce((a, i) => a + i.count, 0);
-                const mine = t.myOffer.reduce((a, i) => a + i.count, 0);
-                const made = inv > 0 ? PLAN[inv - 1]!.segs.reduce((a, g) => a + g.count, 0) : 0;
-                if (!t.myAccepted && theirs >= want && mine >= made) sdk.sendAcceptTrade().catch(() => {});
+                if (products.length && products.length <= 4) sdk.sendAcceptTrade().catch(() => {});
+                else if (!products.length && !t.myAccepted && (theirs >= want || s.tick === L.tradeOpen)) sdk.sendAcceptTrade().catch(() => {});
             } else if (t?.isOpen && t.screen === 'confirm' && !t.myAccepted) sdk.sendAcceptTrade().catch(() => {});
             else if (!t?.isOpen) {
                 const have = Object.keys(PLAN[inv]!.bars).reduce((a, b) => a + count(s.inventory, barRe(b)), 0);
@@ -335,12 +339,15 @@ await runScript(async ({ bot, sdk }) => {
                 } else if (s.tick - L.tradeOpen > 10) { phase = 'free'; offered.clear(); }
             }
         }
-        if (phase === 'anvil' && s.tick >= freeFrom) {
+        // A click that produced no xp (lost behind a level-up dialog) is retried.
+        if (phase === 'smith' && s.tick - lastClick > 6 && s.tick - progress > 6) { phase = 'anvil'; retries++; }
+        if (phase === 'anvil' && s.tick >= freeFrom && !s.dialog.isOpen) {
             const g = PLAN[inv]!.segs[seg]!;
             if (s.interface?.isOpen && s.interface.interfaceId === SMITHING_IF) {
                 const make = left >= 10 ? 10 : left >= 5 ? 5 : 1;
                 sdk.sendClickComponentWithOption(g.row.com, make === 10 ? 3 : make === 5 ? 2 : 1, g.row.slot).catch(() => {});
                 expect = make;
+                lastClick = s.tick;
                 L.clicks.push(s.tick);
                 phase = 'smith';
             } else {
@@ -368,7 +375,7 @@ await runScript(async ({ bot, sdk }) => {
     const gaps: Record<number, number> = {};
     for (const l of logs) for (let i = 1; i < l.xps.length; i++) { const g = l.xps[i]! - l.xps[i - 1]!; gaps[g] = (gaps[g] ?? 0) + 1; }
     console.log(`xp gap histogram (within inventories): ${JSON.stringify(gaps)}`);
-    console.log(`ticks with a dialog open: ${dialogTicks}; levels ${Math.min(...Object.keys(levelTicks).map(Number))} -> ${smith(s).baseLevel}`);
+    console.log(`interface click retries: ${retries}; ticks with a dialog open: ${dialogTicks}; levels ${Math.min(...Object.keys(levelTicks).map(Number))} -> ${smith(s).baseLevel}`);
     if (route) {
         console.log(`route ${start} -> ${UNTIL}: first trade request ${firstRequest}, level ${UNTIL} at ${reached}: ${reached - firstRequest} ticks over ${logs.length} inventories (plan ${PLAN.length})`);
         const marks = [10, 20, 30, 33, 40, 48, 50, 60, 68, 70, 80, 88, 90, 95, 99].filter(l => levelTicks[l]);
