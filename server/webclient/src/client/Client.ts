@@ -262,6 +262,8 @@ export class Client extends GameShell {
     private ptype: number = 0;
     private timeoutTimer: number = 0;
     private noTimeoutTimer: number = 0;
+    /** rs-sdk: a flushNow write failure on the current stream, rethrown by gameLoop's flush. */
+    private flushError: unknown = null;
     private logoutTimer: number = 0;
     private ptype0: number = 0;
     private ptype1: number = 0;
@@ -4201,6 +4203,9 @@ export class Client extends GameShell {
 
             const world = worldEndpoint();
             this.stream = new ClientStream(await ClientStream.openSocket(world.host, world.secured));
+            this.flushError = null;
+            // Decode each server message when it arrives: wake the run loop for a pass now.
+            this.stream.onReceive(() => this.wake());
 
             const userhash = JString.toUserhash(username);
             const loginServer = Number(userhash >> 16n) & 0x1f;
@@ -4538,6 +4543,9 @@ export class Client extends GameShell {
         }
 
         await this.drainPackets();
+        // rs-sdk: what the decoded-tick callback wrote (an in-page program's
+        // reaction) leaves now rather than after the rest of this pass.
+        this.flushNow();
 
         const now = performance.now();
 
@@ -4916,10 +4924,9 @@ export class Client extends GameShell {
             this.macroMinimapZoomModifier = -1;
         }
 
-        // rs-sdk: run queued SDK actions here, just before the flush below, so
-        // their packets leave in this cycle and in one websocket frame. Run from
-        // the draw call they waited for a frame and then for the next cycle's
-        // flush, which on a slow frame pushed a burst past the tick boundary.
+        // rs-sdk: SDK actions run when the gateway delivers them and leave through
+        // flushNow. This is their fallback drain (waits, expiry, work held off the
+        // game screen), just before the flush below so its packets leave this cycle.
         this.botOverlay?.tick();
 
         if (now - this.noTimeoutTimer > 1_000) {
@@ -4928,18 +4935,12 @@ export class Client extends GameShell {
         }
 
         try {
-            if (this.stream && this.out.pos > 0) {
-                // Log packet data before sending (for debugging)
-                if (this.packetLogEnabled) {
-                    const dataBytes = Array.from(this.out.data.slice(0, this.out.pos));
-                    // First byte is the encrypted opcode - try to get the last known opcode
-                    this.logPacket(this.currentPacketOpcode, dataBytes);
-                }
-
-                this.stream.write(this.out.data, this.out.pos);
-                this.out.pos = 0;
-                this.noTimeoutTimer = now;
+            if (this.flushError !== null) {
+                const error = this.flushError;
+                this.flushError = null;
+                throw error;
             }
+            this.writeOut(now);
         } catch (e) {
             if (e instanceof WebSocket && e.readyState === 3) {
                 // IO error
@@ -4949,6 +4950,43 @@ export class Client extends GameShell {
                 // logic error
                 await this.logout();
             }
+        }
+    }
+
+    /** Send every packet queued in `out` as one websocket message. Throws as ClientStream.write does. */
+    private writeOut(now: number): void {
+        if (!this.stream || this.out.pos === 0) {
+            return;
+        }
+        // Log packet data before sending (for debugging)
+        if (this.packetLogEnabled) {
+            const dataBytes = Array.from(this.out.data.slice(0, this.out.pos));
+            // First byte is the encrypted opcode - try to get the last known opcode
+            this.logPacket(this.currentPacketOpcode, dataBytes);
+        }
+
+        this.stream.write(this.out.data, this.out.pos);
+        this.out.pos = 0;
+        this.noTimeoutTimer = now;
+    }
+
+    /**
+     * rs-sdk: put the packets queued in `out` on the wire now rather than at the
+     * end of the next game-loop pass, for the bot overlay's gateway actions,
+     * which run when they arrive. The engine reads input once per tick, so a
+     * packet held for the loop's ~20 ms cadence comes straight out of the gap a
+     * reaction has to land in. Never call it mid-packet: everything written to
+     * `out` up to now leaves as one message. A write failure is held for
+     * gameLoop's own flush, which rethrows it where lostCon/logout can be awaited.
+     */
+    flushNow(): void {
+        if (!this.ingame || this.flushError !== null) {
+            return;
+        }
+        try {
+            this.writeOut(performance.now());
+        } catch (e) {
+            this.flushError = e;
         }
     }
 

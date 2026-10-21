@@ -39,6 +39,14 @@ export default class ClientStream {
         return this.dummy || this.remoteClosed;
     }
 
+    /**
+     * rs-sdk: call `listener` after each message from the server, once its bytes
+     * are buffered for reading (the reader's own handler is registered first).
+     */
+    onReceive(listener: () => void): void {
+        this.socket.addEventListener('message', listener);
+    }
+
     get host(): string {
         return this.socket.url.split('/')[2];
     }

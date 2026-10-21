@@ -58,10 +58,39 @@ Every measured number under `docs/speedrun/skills/` was taken on the **headless 
 client** (`server/webclient/src/lite/`) unless its row says otherwise. The scored run
 will drive the **browser webclient** in a visible tab, because the recording must be
 first-person. Since cairn://p/rs/82 the browser client has the lite client's tick
-handling: it publishes a tick only after all of the tick's packets are decoded, runs the
-SDK's actions in the game loop before that cycle's flush, and drains a burst of actions in
-one cycle. The bot state reports entities at their server tile, not their eased draw
-position.
+handling: it publishes a tick only after all of the tick's packets are decoded, and the bot
+state reports entities at their server tile, not their eased draw position. Since
+cairn://p/rs/113 the overlay runs an SDK action when its gateway message arrives, not on the
+next game cycle, and flushes the game socket at the end of that task (`Client.flushNow`), so
+a burst delivered together leaves as one websocket message. It publishes the post-action
+state afterwards, in a task of its own. The game loop's own pass still drains `wait`
+actions, expiry, and anything sent while the client was off the game screen.
+
+The page also decodes each server tick when it arrives. The game socket's message event
+wakes the run loop (`GameShell.wake`, `ClientStream.onReceive`), so the next pass, which
+decodes at its start, runs at once instead of after the loop's sleep. Decoding stays
+inside a normal pass, with the vanilla structures, order, `loopCycle` and error handling
+(`lostCon` and `logout` still block the loop), and the draw never sees half a tick. The
+decoded-tick callback (in-page programs, the overlay's state) therefore fires at arrival,
+and the loop flushes straight after its decode, so what the callback writes leaves at
+once. `run()` paces itself from measured frame times, so an early pass shifts the loop's
+phase and not its rate. Reaction timing no longer waits on a timer, which a background
+tab would throttle.
+
+The overlay's reaction path, measured page-side with `overlay-trace-lab.sh` (every websocket
+message the page sends or receives, on the page's clock) on bgsrv-mac, visible Chrome tab,
+local engine at `NODE_TICKRATE=300`, 60 trials each, all 60 of 60 at 1 tick, load 2.8-4.0,
+in ms p10 / p50 / p90:
+
+| Hop | Before (main, #81) | rs/113 |
+|---|---|---|
+| Tick frame in to state out | 1.6 / 7.2 / 12.4 | 0.4 / 0.5 / 0.6 |
+| State out to action in (gateway, SDK, gateway) | 2.7 / 2.9 / 3.6 | 2.4 / 2.8 / 3.6 |
+| Action arrival to packet on the wire | 8.8 / 11.2 / 12.9 | 0.2 / 0.2 / 0.3 |
+| Page reaction, tick frame in to packet out | 15.2 / 20.7 / 27.4 | 3.1 / 3.5 / 4.4 |
+| Game loops and frames drawn per second | 74.2 and 74.2 | 74.2 and 74.2 |
+
+What remains is the gateway and SDK round trip, outside the page.
 
 The earlier warning that the browser freezes under rapid-fire input did not reproduce. In a
 visible tab on a quiet Mac, the stock client sent 4 packets per cycle at 71 fps with no
