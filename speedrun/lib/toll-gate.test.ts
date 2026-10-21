@@ -1,50 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import type { BotWorldState, NearbyLoc, NearbyNpc } from '../../sdk/types';
-import { baseState, FakeSdk, type SentAction } from './fake-sdk';
-import { crossTollGate, inAlKharid, isEastOfTollGate, pickBorderGuard, TOLL_EAST, TOLL_WEST, travelTo, WEST_OF_GATE, type TollGateBot, type TollGateSdk } from './toll-gate';
-
-const coins = (count: number) => ({ slot: 0, id: 995, name: 'Coins', count, optionsWithIndex: [] });
-const guard = (index: number, x: number, distance: number): NearbyNpc =>
-    ({ kind: 'npc', id: 1, index, name: 'Border Guard', combatLevel: 8, x, z: 3228, tileX: x, tileZ: 3228, distance, optionsWithIndex: [{ text: 'Talk-to', opIndex: 1 }] }) as unknown as NearbyNpc;
-const gateLoc: NearbyLoc = { id: 2882, name: 'Gate', x: 3268, z: 3227, level: 0, distance: 1, optionsWithIndex: [{ text: 'Open', opIndex: 1 }], options: ['Open'] } as NearbyLoc;
-
-function world(at: { x: number; z: number }, carried: number, extra: Partial<BotWorldState> = {}): FakeSdk {
-    return new FakeSdk(
-        baseState({
-            player: { worldX: at.x, worldZ: at.z, hp: 10, maxHp: 10 } as BotWorldState['player'],
-            inventory: carried > 0 ? [coins(carried)] : [],
-            ...extra
-        })
-    );
-}
-
-const CHOICE = { isOpen: true, isWaiting: false, pageId: 'choice', options: [
-    { index: 1, text: "No thank you, I'll walk around." },
-    { index: 2, text: 'Who does my money go to?' },
-    { index: 3, text: 'Yes, ok.' }
-] };
-const CLOSED = { isOpen: false, isWaiting: false, options: [] };
-
-/** The border guard's script: a choice page, then the toll and a walk through, or the broke line. */
-function borderGuard(fake: FakeSdk, opts: { refuse?: boolean } = {}): void {
-    fake.onSend = (a: SentAction, sdk) => {
-        if (a.method === 'sendInteractNpc' || a.method === 'sendInteractLoc') sdk.push({ dialog: CHOICE });
-        if (a.method !== 'sendClickDialog') return;
-        const s = sdk.state!;
-        if (s.dialog.pageId === 'choice' && a.args[0] === 3) {
-            const have = s.inventory[0]?.count ?? 0;
-            if (opts.refuse || have < 10) {
-                sdk.push({ dialog: { isOpen: true, isWaiting: false, pageId: 'broke', options: [], text: "Oh dear, I don't actually seem to have enough money." } });
-                return;
-            }
-            const east = inAlKharid(s);
-            const to = east ? TOLL_WEST : TOLL_EAST;
-            sdk.push({ dialog: CLOSED, inventory: have > 10 ? [coins(have - 10)] : [], player: { ...s.player!, worldX: to.x, worldZ: to.z } });
-        } else if (s.dialog.isOpen) {
-            sdk.push({ dialog: CLOSED });
-        }
-    };
-}
+import type { FakeSdk } from './fake-sdk';
+import { borderGuard, gateLoc, guard, pathfinder, tollWorld as world } from './fake-toll-gate';
+import { crossTollGate, isEastOfTollGate, pickBorderGuard, TOLL_EAST, TOLL_WEST, travelTo, WEST_OF_GATE, type TollGateBot, type TollGateSdk } from './toll-gate';
 
 const bot: TollGateBot = { walkTo: async () => ({ success: true, message: 'ok' }) };
 const asSdk = (f: FakeSdk) => f as unknown as TollGateSdk;
@@ -120,29 +77,6 @@ describe('crossTollGate', () => {
         expect(r).toEqual({ ok: false, paid: 0, reason: 'no guard or gate' });
     });
 });
-
-/**
- * A walkTo with the SDK pathfinder's toll gate behaviour: it arrives anywhere on
- * the player's own side, and a destination across the fence ends at the gate.
- */
-export function pathfinder(fake: FakeSdk) {
-    const calls: { to: [number, number]; fromEast: boolean }[] = [];
-    const bot: TollGateBot = {
-        walkTo: async (x: number, z: number) => {
-            const s = fake.state!;
-            const fromEast = inAlKharid(s);
-            calls.push({ to: [x, z], fromEast });
-            if (isEastOfTollGate({ x, z }) !== fromEast) {
-                const gate = fromEast ? TOLL_EAST : TOLL_WEST;
-                fake.push({ player: { ...s.player!, worldX: gate.x, worldZ: gate.z } });
-                return { success: false, message: `Stuck at (${gate.x}, ${gate.z})` };
-            }
-            fake.push({ player: { ...s.player!, worldX: x, worldZ: z } });
-            return { success: true, message: 'ok' };
-        }
-    };
-    return { bot, calls };
-}
 
 const VARROCK_WEST_BANK = { x: 3185, z: 3436 };
 const AL_KHARID_BANK = { x: 3270, z: 3167 };
