@@ -214,6 +214,8 @@ await runScript(async ({ bot, sdk }) => {
     let lastSeenTick = -1;
     let dialogsSeen = 0;
     let dialogOpenSince: number | null = null;
+    const seenMsgs = new Set<string>((startState.gameMessages ?? []).map(m => `${(m as any).tick ?? ''}|${m.text}`));
+    let lastHp = -2;
 
     const done = new Promise<void>(resolve => {
         const unsubscribe = sdk.onStateUpdate((s: BotWorldState) => {
@@ -226,6 +228,14 @@ await runScript(async ({ bot, sdk }) => {
                 log(`T${t} XP +${xp - lastXp} (total ${xp})`);
                 lastXp = xp;
             }
+            // Game messages and hitpoint changes explain lost locks (random events, deaths).
+            const msgs = s.gameMessages ?? [];
+            for (const m of msgs.slice(Math.max(0, msgs.length - 5))) {
+                const key = `${m.tick ?? ''}|${m.text}`;
+                if (!seenMsgs.has(key)) { seenMsgs.add(key); if (seenMsgs.size > 1) log(`T${t} MSG ${m.text}`); }
+            }
+            const hp = s.skills.find(k => k.name.toLowerCase() === 'hitpoints')?.level ?? -1;
+            if (hp !== lastHp) { if (lastHp !== -2) log(`T${t} HP ${lastHp} -> ${hp} at ${s.player?.worldX},${s.player?.worldZ}`); lastHp = hp; }
             if (s.dialog?.isOpen) {
                 if (dialogOpenSince === null) { dialogOpenSince = t; dialogsSeen++; log(`T${t} DIALOG open at ${s.player?.worldX},${s.player?.worldZ}: ${(s.dialog.text ?? '').slice(0, 60)}`); }
             } else if (dialogOpenSince !== null) {
