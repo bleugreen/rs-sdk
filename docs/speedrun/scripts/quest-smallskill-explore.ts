@@ -13,17 +13,24 @@ await runScript(async ({ sdk }) => {
     for (const op of [1, 2]) {
         const r = await sdk.sendInteractLoc(2765, 3277, 1533, op);
         await waitTicks(sdk, 4);
-        console.log('door op', op, JSON.stringify(r), pos(sdk.getState()), 'MSGS', msgs());
+        console.log('door op', op, JSON.stringify(r), JSON.stringify(pos(sdk.getState())), 'MSGS', msgs());
     }
     const g = (await sdk.scanGroundItems(10)).find(i => /broken glass/i.test(i.name));
     console.log('glass', JSON.stringify(g));
     if (g) {
         const r = await sdk.sendPickup(g.x, g.z, g.id);
         await waitTicks(sdk, 6);
-        console.log('pickup', JSON.stringify(r), pos(sdk.getState()), 'INV', sdk.getState()!.inventory.map(i => i.name).join(','), 'MSGS', msgs());
+        console.log('pickup', JSON.stringify(r), JSON.stringify(pos(sdk.getState())), 'INV', sdk.getState()!.inventory.map(i => i.name).join(','), 'MSGS', msgs());
     }
-    // Walk-in test: click the glass tile itself.
+    for (const [x, z] of [[2765, 3278], [2766, 3278], [2766, 3276], [2765, 3277]]) {
+        await sdk.sendWalk(x, z);
+        await waitTicks(sdk, 4);
+        console.log('after walk click', x, z, '->', JSON.stringify(pos(sdk.getState())), 'MSGS', msgs());
+    }
+    const r2 = await sdk.sendInteractLoc(2765, 3277, 1533, 1);
+    await waitTicks(sdk, 4);
+    console.log('door again', JSON.stringify(r2), JSON.stringify(pos(sdk.getState())));
     await sdk.sendWalk(2765, 3278);
-    await waitTicks(sdk, 5);
-    console.log('after walk click', pos(sdk.getState()), 'MSGS', msgs());
+    await waitTicks(sdk, 4);
+    console.log('final', JSON.stringify(pos(sdk.getState())), 'MSGS', msgs());
 }, { timeout: 200_000 });
