@@ -12,9 +12,12 @@
 // Local lab only (::tele, ::setvar need LOCAL_STAFF_LEVEL=4, LAB.md):
 //   bun docs/speedrun/scripts/runclient-check.ts --client=browser|lite --bot=NAME \
 //       --server=localhost:9160 --gateway=ws://localhost:7960 [--checks=door,puzzle]
-// The browser client opens in a visible Chrome window (system Chrome) and its
-// console's packet lines are captured; the lite client runs as a runner child
-// (bots/NAME/bot.env must point at the same server and gateway).
+// The browser client opens in a visible Chrome window (system Chrome) on this
+// build's out/bot bundle as the engine serves it; the lite client runs as a
+// runner child (bots/NAME/bot.env must point at the same server and gateway).
+// The production bundle drops console output, so the packets themselves are
+// pinned by the unit tests (src/bot/ClientInteraction.test.ts); here only the
+// server's reaction tells them apart - only OPHELD5 has a trigger on the grid.
 // Prints one `RESULT {json}` line per check.
 
 import puppeteer, { type Browser } from 'puppeteer';
@@ -38,7 +41,6 @@ const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
 // --- client launch -----------------------------------------------------------
 
-const consoleLines: string[] = [];
 let browser: Browser | null = null;
 let liteChild: ReturnType<typeof Bun.spawn> | null = null;
 
@@ -54,10 +56,6 @@ if (CLIENT === 'browser') {
         protocolTimeout: 120_000,
     });
     const page = await browser.newPage();
-    page.on('console', m => {
-        const t = m.text();
-        if (/useInventoryItem SENDING|clickInterfaceIop\]|\[Walk\]/.test(t)) consoleLines.push(t);
-    });
     page.on('pageerror', e => console.error('[page error]', (e as Error).message));
     const url = `http://${SERVER}/bot?bot=${BOT}&password=${encodeURIComponent(PASSWORD)}&gateway=${encodeURIComponent(GATEWAY)}`;
     console.log('opening', url.replace(PASSWORD, '***'));
@@ -72,12 +70,6 @@ await sdk.waitForCondition(s => (s.player?.worldX ?? 0) > 0 && s.tick > 0, 180_0
 await waitTicks(sdk, 3);
 console.log(`[${CLIENT}] in game at`, JSON.stringify(pos(sdk.getState())), 'tick', now(sdk));
 
-function mark(): number {
-    return consoleLines.length;
-}
-function since(m: number): string[] {
-    return consoleLines.slice(m);
-}
 function result(check: string, data: Record<string, unknown>): void {
     console.log('RESULT ' + JSON.stringify({ client: CLIENT, check, ...data }));
 }
@@ -106,10 +98,9 @@ async function ensureClosed(d: Door): Promise<void> {
 
 async function walkTo(t: [number, number], level: number, maxTicks: number) {
     const t0 = now(sdk);
-    const m = mark();
     const sent = await sdk.sendWalk(t[0], t[1]);
     const r = await waitUntil(sdk, at(t[0], t[1], level), maxTicks);
-    return { arrived: r !== null, ticks: r ? r.tick - t0 : null, endedAt: pos(sdk.getState()), sent: sent.success, message: sent.message, console: since(m) };
+    return { arrived: r !== null, ticks: r ? r.tick - t0 : null, endedAt: pos(sdk.getState()), sent: sent.success, message: sent.message };
 }
 
 /**
@@ -172,12 +163,11 @@ const sameLayout = (a: number[] | null, b: number[] | null) => !!a && !!b && a.e
 
 async function move(kind: 'sendUseItem' | 'sendClickComponentWithOption', slot: number) {
     const before = layout(sdk.getState());
-    const m = mark();
     const t0 = now(sdk);
     const sent = kind === 'sendUseItem' ? await sdk.sendUseItem(slot, 5, PUZZLE) : await sdk.sendClickComponentWithOption(PUZZLE, 5, slot);
     const r = await waitUntil(sdk, s => !sameLayout(layout(s), before), 4);
     const after = layout(sdk.getState());
-    return { call: `${kind}(${kind === 'sendUseItem' ? `${slot}, 5, ${PUZZLE}` : `${PUZZLE}, 5, ${slot}`})`, sent: sent.success, gapBefore: before ? gapOf(before) : null, gapAfter: after ? gapOf(after) : null, moved: r !== null, ticks: r ? r.tick - t0 : null, console: since(m) };
+    return { call: `${kind}(${kind === 'sendUseItem' ? `${slot}, 5, ${PUZZLE}` : `${PUZZLE}, 5, ${slot}`})`, sent: sent.success, gapBefore: before ? gapOf(before) : null, gapAfter: after ? gapOf(after) : null, moved: r !== null, ticks: r ? r.tick - t0 : null };
 }
 
 async function puzzleCheck(): Promise<void> {
