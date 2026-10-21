@@ -35,6 +35,7 @@ import { advance } from '../lib/dialogue';
 import { withLevelUpDismissal } from '../lib/levelup';
 import { ProgramError, runProgram, type ProgramStatus } from '../lib/programs';
 import { logoutClean, type Session } from '../lib/session';
+import { receiveFrom, type ReceiveResult, type WantSpec } from '../lib/trade';
 import { parseLog, type TickLog, type TickRow } from '../lib/ticks';
 import { nextTick, tickMs, waitUntil } from '../lib/wait';
 import type { RunnerSession, Step, StepContext } from '../runner/step';
@@ -59,6 +60,8 @@ export const WILD_PIT: Box = [2985, 10330, 3025, 10390];
 export const SAFE_TILE: [number, number] = [3004, 3937];
 /** The ridge gate (loc 2309), entered from its south side. */
 export const RIDGE_GATE = { id: 2309, x: 2998, z: 3917, approach: [2998, 3916] as [number, number] };
+/** The course gate's right half (loc 2307, m46_61.jm2): from inside it leads over the ridge to RIDGE_GATE.approach. */
+export const COURSE_GATE = { id: 2307, x: 2998, z: 3931 };
 /** The Deserted Keep's only exit, the web in its north wall (mage_arena.md). */
 export const KEEP_WEB: [number, number] = [3158, 3951];
 /** The post-combat logout block (logout.rs2 p_preventlogout 16). */
@@ -111,8 +114,42 @@ export interface AgilityOptions {
      * food: a rehearsal account's starter kit fills 10+ slots.
      */
     drop?: string;
+    /**
+     * A mid-band food restock (rehearsal only): when `below` or fewer food items are
+     * left, leave the course by its gate, take `want` from `giver` (lib/trade.ts
+     * receiveFrom) on the ridge gate's south side, and cross back. A failed trade
+     * logs out and throws `no-food`.
+     */
+    restock?: Restock;
     /** How to leave the world (default logoutClean); tests inject one. */
     logout?: (session: RunnerSession) => Promise<unknown>;
+    /** The trade (default receiveFrom); tests inject one. */
+    receive?: (sdk: StepContext<unknown>['sdk'], giver: string, want: WantSpec[]) => Promise<ReceiveResult>;
+}
+
+export interface Restock {
+    giver: string;
+    want: WantSpec[];
+    below: number;
+}
+
+/** `shark:20,lobster:5` (the harness's kit syntax) or a WantSpec list. */
+export function parseWant(v: unknown): WantSpec[] {
+    if (Array.isArray(v)) return v as WantSpec[];
+    if (typeof v !== 'string' || !v) throw new Error('agility: restock want must be like shark:20');
+    return v.split(',').map(part => {
+        const [name, n] = part.split(/[:=]/);
+        const amount = Number(n ?? 1);
+        if (!name || !Number.isFinite(amount)) throw new Error(`agility: bad restock want '${part}'`);
+        return { item: new RegExp(`^${name.replace(/_/g, ' ')}$`, 'i'), amount };
+    });
+}
+
+function parseRestock(raw: Record<string, unknown>): Restock | undefined {
+    const r = (typeof raw.restock === 'object' && raw.restock ? raw.restock : {}) as Record<string, unknown>;
+    const giver = r.giver ?? raw.restockGiver;
+    if (giver === undefined || giver === '') return undefined;
+    return { giver: String(giver), want: parseWant(r.want ?? raw.restockWant ?? 'shark:20'), below: int(r.below ?? raw.restockBelow, 'restock below') ?? 4 };
 }
 
 const int = (v: unknown, name: string): number | undefined => {
@@ -148,7 +185,9 @@ export function parseOptions(raw: Record<string, unknown> = {}): AgilityOptions 
         ...(int(raw.threatCloseTicks, 'threatCloseTicks') !== undefined ? { threatCloseTicks: int(raw.threatCloseTicks, 'threatCloseTicks') } : {}),
         maxPauses: int(raw.maxPauses, 'maxPauses') ?? 3,
         pauseLimitAck: raw.pauseLimitAck === true || raw.pauseLimitAck === 'true',
-        ...(typeof raw.logout === 'function' ? { logout: raw.logout as AgilityOptions['logout'] } : {})
+        ...(parseRestock(raw) ? { restock: parseRestock(raw)! } : {}),
+        ...(typeof raw.logout === 'function' ? { logout: raw.logout as AgilityOptions['logout'] } : {}),
+        ...(typeof raw.receive === 'function' ? { receive: raw.receive as AgilityOptions['receive'] } : {})
     };
 }
 
@@ -239,7 +278,7 @@ export class AgilityStop extends Error {
 // ------------------------------------------------------------------ steps
 
 interface AgilityResult {
-    ended?: 'laps' | 'maxTicks' | 'level' | 'player' | 'attacked' | 'no-food' | 'died';
+    ended?: 'laps' | 'maxTicks' | 'level' | 'player' | 'attacked' | 'no-food' | 'low-food' | 'died';
     laps: number;
     ticksPerLap: number;
     lapTicks: number[];
@@ -342,6 +381,32 @@ export async function finalLogout(ctx: StepContext<unknown>, o: AgilityOptions):
     return { waited, moved };
 }
 
+/** Logs whose band already took its one restock (a second would be a coordinator's call). */
+const restocked = new WeakSet<object>();
+
+/** Out through the course gate, the courier's trade on the ridge's south side, and back over the ridge. */
+export async function restockAt(ctx: StepContext<unknown>, o: AgilityOptions, band: string): Promise<void> {
+    const rs = o.restock!;
+    const sdk = ctx.sdk;
+    const t0 = sdk.getState()?.tick ?? -1;
+    void sdk.sendInteractLoc(COURSE_GATE.x, COURSE_GATE.z, COURSE_GATE.id, 1);
+    const out = await waitUntil(sdk, s => !!s.player && s.player.worldZ <= RIDGE_GATE.approach[1] + 1, { maxTicks: 60 });
+    if (!out.ok) {
+        await leave(ctx, o);
+        throw new AgilityStop('no-food', `could not leave the course for the restock in ${band}; logged out`);
+    }
+    const receive = o.receive ?? ((s, giver, want) => receiveFrom(s, giver, { want }));
+    const r = await receive(sdk, rs.giver, rs.want);
+    const t1 = sdk.getState()?.tick ?? -1;
+    row(ctx, 'agility:restock', t1, { band, giver: rs.giver, ok: r.ok, tradeTicks: r.ticks, outTicks: out.tick - t0, received: r.received, ...(r.reason ? { reason: r.reason } : {}) }, r.ok);
+    if (!r.ok) {
+        await leave(ctx, o);
+        throw new AgilityStop('no-food', `the restock from ${rs.giver} failed (${r.reason}) in ${band}; logged out. Tell the coordinator`);
+    }
+    restocked.add(ctx.log);
+    await crossRidge(ctx);
+}
+
 async function bandProgram(ctx: StepContext<unknown>, band: Band, o: AgilityOptions, name: string): Promise<AgilityResult> {
     const s = stateOf(ctx);
     const eatBelow = o.eatBelow ?? defaultEatBelow(band.course, s.player!.maxHp);
@@ -356,6 +421,7 @@ async function bandProgram(ctx: StepContext<unknown>, band: Band, o: AgilityOpti
         ...(o.food ? { food: o.food } : {}),
         ...(band.course === 'wilderness'
             ? {
+                  ...(o.restock && !restocked.has(ctx.log) ? { restockBelow: o.restock.below } : {}),
                   pauseFor: o.pauseFor,
                   playerRadius: o.playerRadius,
                   ...(o.threatTargetRange !== undefined ? { threatTargetRange: o.threatTargetRange } : {}),
@@ -401,8 +467,12 @@ function bandStep(band: Band, o: AgilityOptions, last: boolean): Step {
                 throw new AgilityStop('pause-limit', `${pausesTaken(ctx.log, name)} pauses in ${name} (limit ${o.maxPauses}); message the coordinator, then resume with --skill-opt=pauseLimitAck=true`);
             }
             for (let attempt = 1; ; attempt++) {
-                if (attempt > 5) throw new AgilityStop('program', `${name}: the program ended 5 times below level ${band.to}`);
+                if (attempt > 6) throw new AgilityStop('program', `${name}: the program ended 6 times below level ${band.to}`);
                 const r = await bandProgram(ctx, band, o, name);
+                if (r.ended === 'low-food' && o.restock) {
+                    await restockAt(ctx, o, name);
+                    continue;
+                }
                 if (r.ended === 'player') {
                     await leave(ctx, o);
                     const n = pausesTaken(ctx.log, name) + 1;
