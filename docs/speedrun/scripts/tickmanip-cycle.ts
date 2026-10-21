@@ -36,6 +36,10 @@
 //   --from-xp=B     report the segment from the tick base xp first reaches B (a quest start)
 //   --dismiss=now|blind|none  answer a level-up dialog the tick it is seen with
 //                   sendClickDialog(0) (blind: { blind: true }); default now
+//   --dismiss=watcher|burst|click|none  the level-up lab's policies (levelup-dismiss.ts): the
+//                   speedrun/lib watcher, one blind continue per expected page, a re-click of
+//                   the target, or nothing (the next starter closes it); each level-up is logged
+//                   as an episode and summarised
 //   --reanchor=click|xp  after a lost lock or a moved spot: click (default) waits 5 ticks for
 //                   the clock to expire, re-clicks and steps the phase; xp re-clicks the
 //                   nearest target at once and anchors the schedule on the first xp it sees.
@@ -64,6 +68,7 @@ import type { BotWorldState, InventoryItem } from '../../../sdk/types';
 import { appendFileSync, writeFileSync } from 'fs';
 import { hostname } from 'os';
 import { HostGate } from '../../../speedrun/lib/hostgate';
+import { isPolicy, LevelUpLab } from './levelup-dismiss';
 
 const args: Record<string, string> = Object.fromEntries(
     process.argv.slice(2).filter(a => a.startsWith('--')).map(a => {
@@ -339,6 +344,9 @@ await runScript(async ({ bot, sdk }) => {
     const seenMsgs = new Set<string>((startState.gameMessages ?? []).map(m => `${m.tick ?? ''}|${m.text}`));
     let lastHp = -2;
     let probing = false;
+    // --dismiss=watcher|burst|click (levelup-dismiss.ts) replaces the dismissal below; 'none'
+    // keeps its old meaning (nothing sent) and also records episodes.
+    const lab = isPolicy(dismiss) ? new LevelUpLab(sdk, dismiss, method.skill, { reclick: st => { if (current) click(st); }, log }) : null;
 
     const done = new Promise<void>(resolve => {
         const unsubscribe = sdk.onStateUpdate((s: BotWorldState) => {
@@ -377,7 +385,7 @@ await runScript(async ({ bot, sdk }) => {
                 dialogOpenSince = null;
             }
             // Answer a level-up the tick it is seen (and again if it is still open 3 ticks on).
-            if (!probing && !plainNow() && dismiss !== 'none' && s.dialog?.isOpen && t !== lastDismiss && (dialogOpenSince === t || t - lastDismiss >= 3)) {
+            if (!probing && !plainNow() && !lab && s.dialog?.isOpen && t !== lastDismiss && (dialogOpenSince === t || t - lastDismiss >= 3)) {
                 lastDismiss = t;
                 fire(t, `dismiss dialog${dismiss === 'blind' ? ' (blind)' : ''}`, sdk.sendClickDialog(0, dismiss === 'blind' ? { blind: true } : {}));
             }
@@ -432,7 +440,7 @@ await runScript(async ({ bot, sdk }) => {
                     anchor = null;
                     return;
                 }
-                if (s.dialog?.isOpen) { actedTick = t; fire(t, 'dismiss dialog', sdk.sendClickDialog(0)); breaks.push(t); anchor = null; return; }
+                if (s.dialog?.isOpen && !lab) { actedTick = t; fire(t, 'dismiss dialog', sdk.sendClickDialog(0)); breaks.push(t); anchor = null; return; }
                 const stalled = anchor !== null && t - Math.max(anchor, lastXpTick) > 12 && idleTicks >= 2;
                 if (anchor === null || targetGone || stalled) {
                     actedTick = t;
@@ -534,6 +542,7 @@ await runScript(async ({ bot, sdk }) => {
         });
     });
     await done;
+    lab?.stop();
 
     // ---- summary ------------------------------------------------------------
     const endInv = sdk.getState()?.inventory ?? [];
@@ -586,6 +595,7 @@ await runScript(async ({ bot, sdk }) => {
         `rolls in span at cycle ${cycle || '?'}: ${cycle ? span / cycle : '?'}; success fraction ${cycle ? ((xpTicks.length - 1) / (span / cycle)).toFixed(3) : '?'}`,
         `game xp ${gameXp} (base ${gameXp / 25}), base xp per tick over span ${(span ? gameXp / 25 / span : 0).toFixed(2)}`,
         `end inventory: logs ${countOf(/^logs$/i)}, arrow shafts ${countOf(/^arrow shaft/i)}, shrimps ${countOf(FOOD)}, packets sent ${packetsSent}`,
+        ...(lab ? [lab.summary()] : []),
         `log ${logPath}`
     ].join('\n');
     log(summary);
