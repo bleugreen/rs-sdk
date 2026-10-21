@@ -108,8 +108,8 @@ route tiles the script logged.
 | 22 | Large door (2772,4450) | Open with the key from the north | 9 → 10 | 16 tiles, 1 door | **12** | measured |
 | 23 | Crystal outcrop (2788,4428) | Cut with the chisel | 10 → 11 | 27 tiles, 1 interaction | **16** | measured: +550,000 Strength xp |
 
-The end-to-end runs: `--from=zealot --to=stairs` at 300 ms (steps 1-15: 559
-ticks), boss and reward at 100 ms (`--from=boss`, `--from=reward`).
+The end-to-end runs: `--from=zealot --to=stairs` at 300 ms (steps 1-15: 582
+ticks summed), boss and reward at 100 ms (`--from=boss`, `--from=reward`).
 
 ### The cart puzzle (steps 6-9)
 
