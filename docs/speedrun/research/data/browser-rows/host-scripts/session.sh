@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# rs/130 browser-row session on the Ashburn run machine: the demo-latency-probe.yml browser mode,
-# run by hand. Usage: session.sh overlay|in-page|in-page-oak   (one session at a time; nothing left running)
+# Browser-row session on the Ashburn run machine (rs/130, then rs/176): the demo-latency-probe.yml
+# browser mode, run by hand. Usage: [OWNER=rs/N] session.sh overlay|in-page|in-page-oak
+# (one session at a time; nothing left running). in-page-oak needs a page at main c14428fc or later:
+# it stamps every log from knife-cycle's status.marks.successes (rs/159).
 set -uo pipefail
 export PATH=$HOME/.bun/bin:$PATH PUPPETEER_SKIP_DOWNLOAD=true
 VARIANT=${1:?overlay or in-page}
+OWNER=${OWNER:-rs/130}
 export DEMO=rs-sdk-demo.fly.dev TRIALS=60 VARIANT
 # A host slot is 10 min: the session stops itself at BUDGET s. Knife rolls: in-page 60 (about 2 min);
 # overlay 30 logs (about 14 ticks each). The plain control runs PLAIN_ROLLS logs or until the budget ends.
@@ -19,8 +22,8 @@ export BOT BOT_USERNAME=$BOT
 cd $HOME/rs130/probe
 # Host reservation (rs/83, 12:33): rs/140's gate timer skips while this file names a future 'until'.
 RES=$HOME/host-reserved.json
-if [ -f "$RES" ] && [ "$(jq -r .owner "$RES" 2>/dev/null)" != rs/130 ] && [ "$(date -u -d "$(jq -r .until "$RES")" +%s 2>/dev/null || echo 0)" -gt "$(date -u +%s)" ]; then echo "RESERVED, not starting:"; cat "$RES"; exit 3; fi
-jq -n --arg until "$(date -u -d "@$(( $(date +%s) + 600 ))" +%FT%TZ)" --arg v "$VARIANT" '{owner: "rs/130", until: $until, reason: ("rs/130 browser-row session, " + $v + ", hard stop 595 s")}' > "$RES"
+if [ -f "$RES" ] && [ "$(jq -r .owner "$RES" 2>/dev/null)" != "$OWNER" ] && [ "$(date -u -d "$(jq -r .until "$RES")" +%s 2>/dev/null || echo 0)" -gt "$(date -u +%s)" ]; then echo "RESERVED, not starting:"; cat "$RES"; exit 3; fi
+jq -n --arg until "$(date -u -d "@$(( $(date +%s) + 600 ))" +%FT%TZ)" --arg v "$VARIANT" --arg o "$OWNER" '{owner: $o, until: $until, reason: ($o + " browser-row session, " + $v + ", hard stop 595 s")}' > "$RES"
 trap 'rm -f "$RES"' EXIT
 trap 'exit 143' TERM
 mkdir -p "$OUT/page" "$OUT/knife"
@@ -98,17 +101,33 @@ browser_path() {
     in-page|in-page-oak) bp="$page"' --json="$OUT/browser-probe.json" "rsPrograms.run(\"probe\", { trials: $TRIALS })"'
              kn="$setup && $kpage"' --json="$OUT/knife.json" --timeout-min=30 "rsPrograms.run(\"knife-cycle\", { method: \"tree\", rolls: $CYCLES, maxTicks: 6000 })"' ;;
   esac
-  # Oaks fall on 1 log in 8 (woodcut.rs2), so neither loop walks between most logs. Both run as
-  # the in-page knife-cycle program (technique knife, then plain) on the nearest oak, by ticks.
-  [ "$VARIANT" = in-page-oak ] && kn="$setup && $kpage"' --json="$OUT/knife.json" --timeout-min=10 "rsPrograms.run(\"knife-cycle\", { method: \"oak\", maxTicks: 320 })"'
   local plain='bun docs/speedrun/scripts/tickmanip-cycle.ts "$BOT" --mode=tree-base --demo --rolls="$PLAIN_ROLLS" --log="$OUT/knife/r1-plain.log"'
-  [ "$VARIANT" = in-page-oak ] && plain="$kpage"' --json="$OUT/plain.json" --timeout-min=10 "rsPrograms.run(\"knife-cycle\", { method: \"oak\", technique: \"plain\", maxTicks: 230 })"'
   local rc=0
   run_probe browser-probe "$bp" || rc=$?
   local t; t=$(( $(left) - 75 )); [ $t -lt 60 ] && t=60
-  run_probe knife "$kn" $t || rc=$?
-  t=$(( $(left) - 25 )); [ $t -lt 30 ] && t=30
-  echo "plain control: up to $PLAIN_ROLLS logs, $t s left in the slot"
+  if [ "$VARIANT" = in-page-oak ]; then
+    # Oaks fall on 1 log in 8 (woodcut.rs2), so neither loop walks between most logs. Both run as
+    # the in-page knife-cycle program (technique knife, then plain) on the oaks at 3203,3240 and
+    # 3203,3246, each sized in ticks (about 2.8 per second in bursts) from the time left: the knife
+    # takes 55% after setup, plain the rest. Every 2.5 s the poll records the program's tick, its
+    # success count with the last 12 success ticks (marks.successes; a stamp's index is count - 12 + i),
+    # and the counters that classify resyncs (phaseResyncs, slips, resyncs, levelUps, switches).
+    export KPROG='(() => { const s = rsPrograms.status(); if (!s) return null; const m = (s.marks && s.marks.successes) || { count: 0, ticks: [] }; const c = s.counters || {}; return { id: s.runId, ph: s.phase, t: s.tick, n: m.count, k: m.ticks.slice(-12), pr: c.phaseResyncs || 0, sl: c.slips || 0, rs: c.resyncs || 0, lu: c.levelUps || 0, sw: c.switches || 0 }; })()'
+    kpage='bun --no-install docs/speedrun/scripts/demo-browser-page.ts eval --dir="$OUT/page" --every=2.5 --progress="$KPROG"'
+    local oaks='trees: [[3203, 3240], [3203, 3246]]'
+    local kt=$(( ( t - 40 ) * 55 / 100 * 28 / 10 )); [ $kt -gt 900 ] && kt=900; [ $kt -lt 150 ] && kt=150
+    kn="$setup && $kpage"' --json="$OUT/knife.json" --timeout-min=10 "rsPrograms.run(\"knife-cycle\", { method: \"oak\", '"$oaks"', maxTicks: '"$kt"' })"'
+    echo "knife: maxTicks $kt, $t s left in the slot"
+    run_probe knife "$kn" $t || rc=$?
+    t=$(( $(left) - 25 )); [ $t -lt 30 ] && t=30
+    local pt=$(( ( t - 8 ) * 28 / 10 )); [ $pt -lt 60 ] && pt=60
+    plain="$kpage"' --json="$OUT/plain.json" --timeout-min=10 "rsPrograms.run(\"knife-cycle\", { method: \"oak\", technique: \"plain\", '"$oaks"', maxTicks: '"$pt"' })"'
+    echo "plain control: maxTicks $pt, $t s left in the slot"
+  else
+    run_probe knife "$kn" $t || rc=$?
+    t=$(( $(left) - 25 )); [ $t -lt 30 ] && t=30
+    echo "plain control: up to $PLAIN_ROLLS logs, $t s left in the slot"
+  fi
   run_probe plain "$plain" $t || rc=$?
   bun docs/speedrun/scripts/tickmanip-demo-report.ts "$OUT/knife" >> "$OUT/plain.txt" 2>&1 || true
   curl -s --max-time 5 "https://$DEMO/playercount" | jq -r '.count // ""' > "$OUT/players-end.txt" 2>/dev/null || true
