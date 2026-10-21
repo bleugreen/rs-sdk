@@ -1,0 +1,12 @@
+probe start 2026-10-21 09:51:16 PDT: bun docs/speedrun/scripts/demo-latency-probe.ts --label=gha-$RUNNER_AZURE_REGION --out=$OUT/direct.json --phases=react --trials=$TRIALS --react-delay=0
+demo-latency-probe gha-eastus (runnervm8k3b6) 10/21/2026, 09:51:16 PDT -> rs-sdk-demo.fly.dev
+players online at start: 1695
+react: login 1599 ms, 543 messages, msgs/tick p10 1 p50 1 p90 1 max 89 (n=276), tick interval p10 165.7 p50 309.8 p90 464.8 max 745.5 (n=275)
+react delay +0 ms: ticks {"1":53,"2":6,"3":1}  reactMs p10 0.2 p50 0.3 p90 12.3 max 16.5 (n=60)
+warm GET engine:443  ttfb p10 50.5 p50 201.9 p90 274.8 max 405.6 (n=13)
+  by phase since frame: 0:274.8(4) 50:157.4(4) 100:222.9(3) 150:50.5(1) 450:216.7(1)
+warm GET gateway:7443 ttfb p10 469.4 p50 2780.7 p90 4794.3 max 4794.3 (n=7)
+  by phase since frame: 0:4794.3(2) 50:1131.8(1) 100:469.4(1) 150:3109.1(1) 200:2884.8(1) 250:1495.2(1)
+players online at end: 1688
+json: /home/runner/work/rs-sdk/rs-sdk/probe-out/direct.json
+probe end 2026-10-21 09:52:49 PDT, exit 0
