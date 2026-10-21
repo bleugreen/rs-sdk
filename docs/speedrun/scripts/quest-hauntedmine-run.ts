@@ -27,6 +27,7 @@ const TO = arg('to', 'reward') as Phase;
 const STATS = parseInt(arg('stats', '70'), 10);
 // --style=magic fights Treus Dayth with Crumble Undead (Magic set to --stats)
 const STYLE = arg('style', 'melee') as 'melee' | 'magic';
+const FOOD = parseInt(arg('food', '20'), 10); // sharks
 const CRUMBLE_UNDEAD = 1171; // magic:crumble_undead
 
 // hauntedmine_bits
@@ -311,7 +312,7 @@ async function setup(sdk: Sdk, phase: Phase) {
     await until(sdk, () => sdk.getInventory().length === 0, 10);
     await cheat(sdk, 'give chisel 1');
     if (!sdk.findEquipmentItem(/rune scimitar/i)) await cheat(sdk, 'give rune_scimitar 1');
-    await cheat(sdk, 'give shark 10');
+    await cheat(sdk, `give shark ${FOOD}`);
     const sc = sdk.findInventoryItem(/rune scimitar/i);
     if (sc) await sdk.sendUseItem(sc.slot, 2);
     await ticks(sdk, 1);
@@ -708,6 +709,7 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         const dealt = STYLE === 'magic' ? `${gained} magic xp` : Math.round(gained / 100);
         L.note(`attack clicks ${swings}, approach walks ${approaches} (${approachTiles} tiles), level-up pages ${levelUpPages}, struck-off tiles ${badTiles.size}, fade-outs ${moves}, sharks ${eats}, damage dealt ~${dealt}, hp left ${sdk.getState()!.player!.hp}${died ? ', DIED' : ''}; hp/boss% ${hpLog.join(' ')}`);
         const kd = await dialog(sdk, [], { settle: 1 });
+        kd.pages += killPages;
         L.add(kd);
         L.end();
         const st = await getvar(sdk, 'hauntedmine');
@@ -727,6 +729,13 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         L.end();
         L.begin('reward door (sets stage 10)');
         await energy(sdk);
+        // Leaving the boss room the click route fails on the cranes and carts
+        // (NPCs), so walk out on the npc-aware path first.
+        const out = npcAwarePath(sdk, (x, z) => Math.max(Math.abs(x - 2772), Math.abs(z - 4451)) <= 1);
+        if (out) {
+            L.add({ tiles: out.length });
+            await walkPath(sdk, out, 6);
+        }
         await opLoc(sdk, L, /large door/i, [2772, 4450], 1, () => pos(sdk).z <= 4450, 80);
         await ticks(sdk, 1);
         L.end();
