@@ -321,7 +321,7 @@ export class Bidder {
         if (d.action === 'done' || d.action === 'replace') {
             for (const id of d.cancel) {
                 const r = await bot.cancelGEOffer(id);
-                this.log('cancel', { id, success: r.success, message: r.message });
+                this.log('cancel', { id, success: r.success, result: r.message });
             }
             await this.buyer.collectFills();
             if (d.action === 'replace') {
@@ -333,7 +333,7 @@ export class Bidder {
         }
         if (d.action === 'place' && d.price !== null) {
             const r = await bot.placeGEOffer({ item: this.item.id, side: 'buy', quantity: d.quantity, price: d.price });
-            this.log('offer', { success: r.success, message: r.message, reason: r.reason, outcome: r.outcome, id: r.offer?.id, price: d.price, quantity: d.quantity, filled: r.offer?.filled });
+            this.log('offer', { success: r.success, result: r.message, reason: r.reason, outcome: r.outcome, id: r.offer?.id, price: d.price, quantity: d.quantity, filled: r.offer?.filled });
             await this.buyer.collectFills();
         }
         if (d.capped) this.log('capped', { competing: d.competition.competing, maxPrice: this.o.maxPrice, price: d.price, note: 'competitor at or past maxPrice: not raising; tell cairn://p/rs/41' });

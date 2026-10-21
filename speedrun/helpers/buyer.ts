@@ -202,7 +202,7 @@ export class Buyer {
         const waiting = this.sdk.getGEState()?.offers.filter(o => o.items > 0 || o.coins > 0) ?? [];
         if (waiting.length === 0) return { items: 0, coins: 0 };
         const r = await this.bot.collectGE();
-        this.ctx.log('ge collect', { success: r.success, items: r.items ?? 0, coins: r.coins ?? 0, message: r.message });
+        this.ctx.log('ge collect', { success: r.success, items: r.items ?? 0, coins: r.coins ?? 0, result: r.message });
         await waitTicks(this.sdk, 2);
         return { items: r.items ?? 0, coins: r.coins ?? 0 };
     }
