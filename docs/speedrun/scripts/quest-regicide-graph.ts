@@ -69,7 +69,7 @@ for (let x = X0; x <= X1; x++) {
     }
 }
 
-type Crossing = { kind: string; a: P; b: P; note: string };
+export type Crossing = { kind: string; a: P; b: P; note: string };
 const crossings: Crossing[] = [];
 // Log balances: forcemove onto the start loc, then 1+2+2 tiles (quest_regicide.rs2:367-386).
 crossings.push({ kind: 'log', a: [2196, 3237], b: [2202, 3237], note: 'logbalance1 (2197/2201,3237)' });
@@ -179,7 +179,7 @@ export function solve(from: P, to: P, allowCrossovers: boolean) {
     for (const n of nodes) if (compOf(n) !== undefined) uniq.set(nodeKey(n), n);
     const list = [...uniq.values()];
     const dist = new Map<string, number>();
-    const prev = new Map<string, { from: string; how: string; tiles: number }>();
+    const prev = new Map<string, { from: string; how: string; tiles: number; cross?: Crossing; start?: P; end?: P }>();
     dist.set(nodeKey(from), 0);
     const done = new Set<string>();
     const walkCache = new Map<string, number | null>();
@@ -204,14 +204,14 @@ export function solve(from: P, to: P, allowCrossovers: boolean) {
                 if (nodeKey(s) !== bk) continue;
                 const ek = nodeKey(e);
                 const nd = bd + crossCost[c.kind];
-                if (nd < (dist.get(ek) ?? Infinity)) { dist.set(ek, nd); prev.set(ek, { from: bk, how: `${c.kind}: ${c.note}`, tiles: 0 }); }
+                if (nd < (dist.get(ek) ?? Infinity)) { dist.set(ek, nd); prev.set(ek, { from: bk, how: `${c.kind}: ${c.note}`, tiles: 0, cross: c, start: s, end: e }); }
             }
         }
     }
-    const steps: Array<{ at: string; how: string; tiles: number }> = [];
+    const steps: Array<{ at: string; how: string; tiles: number; cross?: Crossing; start?: P; end?: P }> = [];
     let cur = nodeKey(to);
     if (!prev.has(cur) && cur !== nodeKey(from)) return null;
-    while (cur !== nodeKey(from)) { const p = prev.get(cur)!; steps.unshift({ at: cur, how: p.how, tiles: p.tiles }); cur = p.from; }
+    while (cur !== nodeKey(from)) { const p = prev.get(cur)!; steps.unshift({ at: cur, how: p.how, tiles: p.tiles, cross: p.cross, start: p.start, end: p.end }); cur = p.from; }
     const tiles = steps.reduce((a, s) => a + s.tiles, 0);
     const kinds: Record<string, number> = {};
     for (const s of steps) if (s.how !== 'walk') { const k = s.how.split(':')[0]; kinds[k] = (kinds[k] ?? 0) + 1; }
