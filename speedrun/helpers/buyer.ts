@@ -1,0 +1,432 @@
+// Buyer: executes a shopping list at the Grand Exchange and at NPC shops, then
+// banks what it bought and reports.
+//
+//   ROLE_OPTIONS='{"list":[{"item":"Feather","quantity":200,"source":"shop","shop":"gerrant","maxPrice":6},
+//                          {"item":"Shark","quantity":5,"source":"ge","maxPrice":500}]}' \
+//     bun speedrun/helpers/buyer.ts <account>
+//
+// Quantities are TARGETS for what the account holds (bank + inventory), not
+// amounts to add, so a restart or a second run buys only the shortfall.
+// Coins come from the account's own bank (it withdraws what the list needs).
+//
+// Grand Exchange lines buy at the current ask (the lowest open sell offer),
+// never above `maxPrice`. If there is no ask, or the ask is above `maxPrice`,
+// a resting bid at `maxPrice` is left open (it fills while we are offline and
+// a later run collects it); without a `maxPrice` the line is skipped. An offer
+// for more than the ask's depth fills what it can and leaves the rest resting
+// at the ask price, so the buyer never chases the book upwards.
+//
+// Shop lines buy in steps of at most 10 and re-read the live price before each
+// step: a shop's price rises by 1% of the item's base cost for every unit its
+// stock is below the configured level (shop.rs2 calc_shop_value, shop_delta
+// 10), up to 6x base. A step is bought only while the price is at most
+// `maxPrice` (default 3x the item's base cost). When stock is gone or too
+// dear, the buyer waits with the shop open for restocks (one unit per
+// `stockrate` ticks per line, World.ts) up to `maxWaitTicks`, then moves on.
+import type { BotActions } from '../../sdk/actions';
+import type { BotSDK } from '../../sdk/index';
+import { MarketClient } from '../../sdk/market';
+import type { BotWorldState } from '../../sdk/types';
+import { runStandalone, type Role, type RoleContext } from './role';
+
+export interface Tile {
+    x: number;
+    z: number;
+}
+
+export interface ShopSpec {
+    /** NPC that offers Trade. */
+    npc: RegExp;
+    /** A tile next to the shopkeeper (walkTo target). */
+    stand: Tile;
+    /** Nearest bank booth area, for non-stackable purchases and the final deposit. */
+    bank: Tile;
+}
+
+const BANKS = {
+    varrockWest: { x: 3185, z: 3438 },
+    varrockEast: { x: 3253, z: 3421 },
+    draynor: { x: 3092, z: 3245 },
+    alKharid: { x: 3270, z: 3167 },
+    faladorWest: { x: 2946, z: 3369 }
+} satisfies Record<string, Tile>;
+
+/** Shops the buyer knows how to reach. Prices and stock: docs/speedrun/helpers/market.md. */
+export const SHOPS: Record<string, ShopSpec> = {
+    aubury: { npc: /^aubury$/i, stand: { x: 3253, z: 3401 }, bank: BANKS.varrockEast },
+    gerrant: { npc: /^gerrant$/i, stand: { x: 3014, z: 3224 }, bank: BANKS.draynor },
+    betty: { npc: /^betty$/i, stand: { x: 3013, z: 3258 }, bank: BANKS.draynor },
+    lumbridgeGeneral: { npc: /^shop (keeper|assistant)$/i, stand: { x: 3211, z: 3246 }, bank: BANKS.draynor },
+    varrockGeneral: { npc: /^shop (keeper|assistant)$/i, stand: { x: 3217, z: 3413 }, bank: BANKS.varrockWest },
+    zeke: { npc: /^zeke$/i, stand: { x: 3287, z: 3188 }, bank: BANKS.alKharid }
+};
+
+export interface ListLine {
+    /** Item name as the game spells it ("Feather", "Cosmic rune") or its id. */
+    item: string | number;
+    quantity: number;
+    maxPrice?: number;
+    source: 'ge' | 'shop';
+    /** Key of SHOPS, for shop lines. */
+    shop?: string;
+    /** Shop lines: ticks to wait for restocks when stock is gone or above maxPrice (default 300). */
+    maxWaitTicks?: number;
+}
+
+export interface LineReport {
+    item: string;
+    source: string;
+    target: number;
+    heldBefore: number;
+    bought: number;
+    spent: number;
+    /** GE only: an offer left resting for the remainder. */
+    restingOffer?: { id: number; price: number; remaining: number };
+    note?: string;
+}
+
+/** East of the Al-Kharid toll gate fence and south of the Lumbridge-Varrock road. */
+export const inAlKharid = (s: BotWorldState) => s.player!.worldX >= 3268 && s.player!.worldZ < 3240 && s.player!.worldZ > 3100;
+
+/**
+ * Cross the Al-Kharid toll gate (10 gp, either direction; walkTo cannot path
+ * through it because the guard's dialog has to be answered). The gate stands
+ * on the edge between x=3267 and x=3268. Returns whether the player ended on
+ * the requested side, and the coins it cost.
+ */
+export async function crossTollGate(bot: BotActions, sdk: BotSDK, toEast: boolean, log: (m: string, d?: Record<string, unknown>) => void): Promise<{ ok: boolean; paid: number }> {
+    const onTargetSide = () => inAlKharid(sdk.getState()!) === toEast;
+    const approach = toEast ? { x: 3267, z: 3227 } : { x: 3268, z: 3227 };
+    const before = coinsIn(sdk.getState()!);
+    for (let attempt = 0; attempt < 3 && !onTargetSide(); attempt++) {
+        await bot.walkTo(approach.x, approach.z, 1);
+        const gate = sdk.getState()!.nearbyLocs
+            .filter(l => /gate/i.test(l.name) && l.x >= 3267 && l.x <= 3268 && l.z >= 3226 && l.z <= 3228)
+            .sort((a, b) => a.distance - b.distance)[0];
+        const op = gate?.optionsWithIndex.find(o => /pay|open/i.test(o.text)) ?? gate?.optionsWithIndex[0];
+        if (!gate || !op) {
+            log('toll gate not found', { attempt });
+            await waitTicks(sdk, 3);
+            continue;
+        }
+        await sdk.sendInteractLoc(gate.x, gate.z, gate.id, op.opIndex);
+        for (let i = 0; i < 40 && !onTargetSide(); i++) {
+            const s = await waitTicks(sdk, 1);
+            if (!s.dialog.isOpen) continue;
+            const yes = s.dialog.options.find(o => /^yes/i.test(o.text));
+            await sdk.sendClickDialog(yes ? yes.index : 0);
+        }
+    }
+    while (sdk.getState()!.dialog.isOpen) {
+        await sdk.sendClickDialog(0);
+        await waitTicks(sdk, 1);
+    }
+    const s = sdk.getState()!;
+    const paid = Math.max(0, before - coinsIn(s));
+    log('toll gate', { toEast, ok: onTargetSide(), paid, x: s.player!.worldX, z: s.player!.worldZ });
+    return { ok: onTargetSide(), paid };
+}
+
+const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+const coinsIn = (s: BotWorldState) => s.inventory.filter(i => i.name === 'Coins').reduce((a, i) => a + i.count, 0);
+const inTutorial = (s: BotWorldState) => s.player!.worldX >= 3050 && s.player!.worldX <= 3160 && s.player!.worldZ >= 3050 && s.player!.worldZ <= 3140;
+/** Inventory count of an item including its banknote form. */
+const heldInInventory = (s: BotWorldState, name: string) => s.inventory.filter(i => sameName(i.name, name)).reduce((a, i) => a + i.count, 0);
+
+async function waitTicks(sdk: BotSDK, n: number): Promise<BotWorldState> {
+    for (let i = 0; i < n; i++) await sdk.waitForStateUpdate();
+    return sdk.getState()!;
+}
+
+export class Buyer {
+    private readonly bot: BotActions;
+    private readonly sdk: BotSDK;
+    private bankCounts = new Map<string, number>();
+    /**
+     * Market reads go to the game server's HTTP origin. sdk.getMarketItem*
+     * derives the origin from the gateway URL, which is wrong behind a local
+     * gateway (it has no /api/market), so the buyer keeps its own client.
+     */
+    private readonly market: MarketClient;
+    readonly reports: LineReport[] = [];
+
+    constructor(private readonly ctx: RoleContext) {
+        this.bot = ctx.bot;
+        this.sdk = ctx.sdk;
+        const origin = typeof ctx.options.marketOrigin === 'string' ? ctx.options.marketOrigin : `https://${process.env.SERVER ?? 'rs-sdk-demo.fly.dev'}`;
+        this.market = new MarketClient(origin);
+        // bot.openGE() first asks sdk.getGEAvailability(), which has the same
+        // gateway-derived URL problem; answer it from the real origin instead.
+        // An own property on this one SDK instance, not a change to the SDK.
+        Object.assign(this.sdk, { getGEAvailability: () => this.market.status() });
+    }
+
+    private get state(): BotWorldState {
+        const s = this.sdk.getState();
+        if (!s?.player) throw new Error('no game state');
+        return s;
+    }
+
+    async walk(t: Tile): Promise<boolean> {
+        for (let i = 0; i < 5 && !this.ctx.signal.aborted; i++) {
+            const r = await this.bot.walkTo(t.x, t.z, 2);
+            const p = this.state.player!;
+            if (r.success || Math.max(Math.abs(p.worldX - t.x), Math.abs(p.worldZ - t.z)) <= 3) return true;
+            this.ctx.log('walk retry', { to: t, message: r.message });
+            await waitTicks(this.sdk, 2);
+        }
+        return false;
+    }
+
+    /** Open the bank at `at`, run `body` with it open, report the bank, close it. */
+    async atBank<T>(at: Tile, body: () => Promise<T>): Promise<T> {
+        await this.walk(at);
+        const opened = await this.bot.openBank();
+        if (!opened.success) throw new Error(`bank: ${opened.message}`);
+        await this.sdk.waitForCondition(s => s.bank?.isOpen === true, 5000).catch(() => undefined);
+        try {
+            return await body();
+        } finally {
+            const items = this.sdk.getBankItems();
+            this.bankCounts = new Map(items.map(i => [i.name.toLowerCase(), i.count]));
+            this.ctx.reportBank({ items: items.map(i => ({ id: i.id, name: i.name, count: i.count })) });
+            await this.bot.closeBank();
+        }
+    }
+
+    /** Deposit every inventory stack except `keep` (names, case-insensitive). */
+    async depositAllBut(keep: string[] = []): Promise<void> {
+        const seen = new Set<string>();
+        for (const it of this.state.inventory) {
+            if (keep.some(k => sameName(k, it.name)) || seen.has(it.name)) continue;
+            seen.add(it.name);
+            await this.bot.depositItem(it.name, -1);
+        }
+    }
+
+    /** Make the inventory hold exactly `want` coins (bank must be open). */
+    async setCoins(want: number): Promise<number> {
+        const have = coinsIn(this.state);
+        if (have > want) await this.bot.depositItem(/^coins$/i, have - want);
+        else if (have < want) {
+            const inBank = this.sdk.getBankItems().find(i => i.name === 'Coins')?.count ?? 0;
+            const take = Math.min(want - have, inBank);
+            if (take > 0) await this.bot.withdrawItem(/^coins$/i, take);
+        }
+        return coinsIn(this.state);
+    }
+
+    held(name: string): number {
+        return (this.bankCounts.get(name.toLowerCase()) ?? 0) + heldInInventory(this.state, name);
+    }
+
+    async resolveItem(item: string | number): Promise<{ id: number; name: string }> {
+        if (typeof item === 'number') {
+            const q = await this.market.item(item);
+            return { id: q.id, name: q.name };
+        }
+        const found = await this.market.items(item, { limit: 25 });
+        const exact = found.items.find(i => sameName(i.name, item));
+        if (!exact) throw new Error(`unknown item ${item}`);
+        return { id: exact.id, name: exact.name };
+    }
+
+    // ------------------------------------------------------------ Grand Exchange
+
+    /** Buy toward `line.quantity` at the Varrock west Grand Exchange; coins must be carried. */
+    async buyAtGE(line: ListLine, waitTicksForFill = 20): Promise<LineReport> {
+        const { id, name } = await this.resolveItem(line.item);
+        const heldBefore = this.held(name);
+        const report: LineReport = { item: name, source: 'ge', target: line.quantity, heldBefore, bought: 0, spent: 0 };
+        const need = line.quantity - heldBefore;
+        if (need <= 0) return { ...report, note: 'already held' };
+
+        const opened = await this.bot.openGE();
+        if (!opened.success) return { ...report, note: `openGE: ${opened.message}` };
+        // An earlier run's resting offer for this item counts toward the target.
+        const existing = this.sdk.getGEState()?.offers.find(o => o.item === id && o.side === 'buy' && o.state === 'open');
+        const coinsBefore = coinsIn(this.state);
+
+        if (!existing) {
+            const quote = await this.market.item(id);
+            const cap = line.maxPrice ?? Infinity;
+            let price: number;
+            if (quote.ask !== null && quote.ask <= cap) price = quote.ask;
+            else if (line.maxPrice !== undefined) price = line.maxPrice;
+            else return { ...report, note: quote.ask === null ? 'no sellers and no maxPrice' : `ask ${quote.ask} above maxPrice` };
+            const affordable = Math.floor(coinsBefore / price);
+            const quantity = Math.min(need, affordable);
+            if (quantity <= 0) return { ...report, note: `cannot afford at ${price}` };
+            const placed = await this.bot.placeGEOffer({ item: id, side: 'buy', quantity, price });
+            this.ctx.log('ge offer', { item: name, quantity, price, ask: quote.ask, askDepth: quote.sellQuantity, success: placed.success, message: placed.message });
+            if (!placed.success) return { ...report, note: `place: ${placed.reason ?? ''} ${placed.message}` };
+        }
+
+        // Fills against an existing ask are immediate; give partial fills a moment.
+        for (let i = 0; i < waitTicksForFill; i++) {
+            const o = this.sdk.getGEState()?.offers.find(x => x.item === id && x.side === 'buy');
+            if (!o || o.state !== 'open' || o.remaining === 0) break;
+            await waitTicks(this.sdk, 1);
+        }
+        await this.bot.collectGE();
+        await waitTicks(this.sdk, 2);
+        const offer = this.sdk.getGEState()?.offers.find(x => x.item === id && x.side === 'buy' && x.state === 'open');
+        if (offer) report.restingOffer = { id: offer.id, price: offer.price, remaining: offer.remaining };
+        report.bought = this.held(name) - heldBefore;
+        // Coins still in escrow for a resting offer are committed, not spent.
+        report.spent = coinsBefore - coinsIn(this.state) - (offer ? offer.remaining * offer.price : 0);
+        await this.bot.closeInterface();
+        return report;
+    }
+
+    // ------------------------------------------------------------ shops
+
+    /** Buy toward `line.quantity` from an NPC shop; coins must be carried. */
+    async buyAtShop(line: ListLine, maxWaitTicks = line.maxWaitTicks ?? 300): Promise<LineReport> {
+        const shop = line.shop ? SHOPS[line.shop] : undefined;
+        const name = typeof line.item === 'string' ? line.item : (await this.resolveItem(line.item)).name;
+        const heldBefore = this.held(name);
+        const report: LineReport = { item: name, source: `shop:${line.shop}`, target: line.quantity, heldBefore, bought: 0, spent: 0 };
+        if (!shop) return { ...report, note: `unknown shop ${line.shop}` };
+        if (line.quantity - heldBefore <= 0) return { ...report, note: 'already held' };
+
+        const coinsAtStart = coinsIn(this.state);
+        let waited = 0;
+        // The live price is only knowable by paying it: ShopItem.buyPrice is the
+        // price at the shop's CONFIGURED stock (StateCollector computes it with a
+        // stock difference of 0), and a drained shop charges up to 6x that. So
+        // probe with one unit, then track the price from what each step costs.
+        let unitPrice: number | null = null;
+        /** Shelf count when unitPrice was measured; each unit restocked since lowers the price by `rise`. */
+        let priceAtCount = 0;
+        while (!this.ctx.signal.aborted) {
+            const remaining = line.quantity - this.held(name);
+            if (remaining <= 0) break;
+            if (!this.state.shop.isOpen) {
+                await this.walk(shop.stand);
+                const opened = await this.bot.openShop(shop.npc);
+                if (!opened.success) {
+                    report.note = `openShop: ${opened.message}`;
+                    break;
+                }
+            }
+            const item = this.state.shop.shopItems.find(i => sameName(i.name, name));
+            if (!item) {
+                report.note = 'not sold here';
+                break;
+            }
+            const cap = line.maxPrice ?? item.baseCost * 3;
+            // Each unit bought below the configured stock adds haggle/1000 of base.
+            const rise = (item.baseCost * (this.state.shop.shopConfig?.haggle ?? 10)) / 1000;
+            const predicted = unitPrice === null ? null : unitPrice - rise * (item.count - priceAtCount);
+            if (item.count <= 0 || (predicted !== null && predicted > cap)) {
+                if (waited >= maxWaitTicks) {
+                    report.note = item.count <= 0 ? 'out of stock' : `price ~${predicted?.toFixed(1)} above ${cap}`;
+                    break;
+                }
+                // Wait for restocks (one unit per stockrate ticks) to bring the price down.
+                await waitTicks(this.sdk, 10);
+                waited += 10;
+                continue;
+            }
+            const inv = this.state.inventory;
+            const stacks = inv.some(i => i.id === item.id && i.count > 1);
+            if (inv.length >= 28 && !inv.some(i => i.id === item.id && stacks)) {
+                // Non-stackable and the pack is full: bank and come back.
+                await this.bot.closeShop();
+                await this.atBank(shop.bank, () => this.depositAllBut(['Coins']));
+                continue;
+            }
+            const price = predicted ?? item.buyPrice;
+            const underCap = predicted === null ? 1 : rise > 0 ? Math.floor((cap - predicted) / rise) + 1 : 10;
+            const step = Math.min(10, remaining, item.count, underCap, Math.floor(coinsIn(this.state) / Math.max(price, 1)));
+            if (step <= 0) {
+                report.note = 'out of coins';
+                break;
+            }
+            const coinsBefore = coinsIn(this.state);
+            const r = await this.bot.buyFromShop(item, step);
+            const got = r.amountBought ?? 0;
+            if (got > 0) {
+                const average = (coinsBefore - coinsIn(this.state)) / got;
+                unitPrice = average + (rise * (got - 1)) / 2 + rise; // estimate for the next unit
+                priceAtCount = this.state.shop.shopItems.find(i => i.id === item.id)?.count ?? 0;
+                if (heldBefore === this.held(name) - got) this.ctx.log('shop price', { item: name, paid: average, nextUnit: +unitPrice.toFixed(2), cap, stock: item.count });
+            } else {
+                this.ctx.log('shop buy failed', { item: name, step, message: r.message });
+                await waitTicks(this.sdk, 2);
+            }
+        }
+        if (this.state.shop.isOpen) await this.bot.closeShop();
+        report.bought = this.held(name) - heldBefore;
+        report.spent = coinsAtStart - coinsIn(this.state);
+        return report;
+    }
+
+    // ------------------------------------------------------------ the list
+
+    /** Estimated coins for a line (generous: shop prices creep up as stock drains). */
+    private async budget(line: ListLine): Promise<number> {
+        const need = Math.max(0, line.quantity - this.held(typeof line.item === 'string' ? line.item : (await this.resolveItem(line.item)).name));
+        if (line.maxPrice !== undefined) return need * line.maxPrice;
+        if (line.source === 'ge') {
+            const { id } = await this.resolveItem(line.item);
+            const q = await this.market.item(id);
+            return need * (q.ask ?? 0);
+        }
+        const { id } = await this.resolveItem(line.item);
+        const q = await this.market.item(id);
+        return need * q.basePrice * 3;
+    }
+
+    async run(list: ListLine[]): Promise<LineReport[]> {
+        await this.sdk.waitForCondition(s => (s.player?.worldX ?? 0) > 0, 60_000);
+        if (inTutorial(this.state)) {
+            const r = await this.bot.skipTutorial();
+            this.ctx.log('tutorial', { success: r.success, result: r.message });
+            await waitTicks(this.sdk, 3);
+        }
+        if (inAlKharid(this.state)) await crossTollGate(this.bot, this.sdk, false, this.ctx.log);
+        // Start at Varrock west: learn holdings, withdraw the whole budget once.
+        let budget = 0;
+        await this.atBank(BANKS.varrockWest, async () => {
+            await this.depositAllBut(['Coins']);
+            this.bankCounts = new Map(this.sdk.getBankItems().map(i => [i.name.toLowerCase(), i.count]));
+            for (const line of list) budget += await this.budget(line);
+            const carried = await this.setCoins(budget);
+            this.ctx.log('budget', { budget, carried });
+        });
+
+        const ordered = [...list.filter(l => l.source === 'ge'), ...list.filter(l => l.source === 'shop')];
+        let lastBank: Tile = BANKS.varrockWest;
+        for (const line of ordered) {
+            if (this.ctx.signal.aborted) break;
+            try {
+                const rep = line.source === 'ge' ? await this.buyAtGE(line) : await this.buyAtShop(line);
+                if (line.source === 'shop' && line.shop && SHOPS[line.shop] && rep.note !== 'already held') lastBank = SHOPS[line.shop]!.bank;
+                this.reports.push(rep);
+                this.ctx.log('line done', { ...rep });
+            } catch (e) {
+                this.reports.push({ item: String(line.item), source: line.source, target: line.quantity, heldBefore: 0, bought: 0, spent: 0, note: String(e) });
+                this.ctx.log('line failed', { item: line.item, error: String(e) });
+            }
+        }
+        // Bank everything, coins included.
+        await this.atBank(lastBank, () => this.depositAllBut([]));
+        const spent = this.reports.reduce((a, r) => a + r.spent, 0);
+        this.ctx.log('done', { spent, lines: this.reports });
+        return this.reports;
+    }
+}
+
+export const role: Role = {
+    name: 'buyer',
+    produces: [],
+    async run(ctx: RoleContext) {
+        const list = (ctx.options.list ?? []) as ListLine[];
+        if (!Array.isArray(list) || list.length === 0) throw new Error('buyer: options.list is empty');
+        await new Buyer(ctx).run(list);
+    }
+};
+
+if (import.meta.main) await runStandalone(role);
