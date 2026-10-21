@@ -141,7 +141,7 @@ export class Recorder {
         const s: Segment = {
             label, kind, startTick, endTick, ticks: endTick - startTick,
             pages: c.pages, options: c.options, interactions: c.interactions,
-            tiles: c.tiles || (p0.level === p1.level ? Math.max(Math.abs(p1.x - p0.x), Math.abs(p1.z - p0.z)) : 0),
+            tiles: c.tiles || (p0.level === p1.level && Math.max(Math.abs(p1.x - p0.x), Math.abs(p1.z - p0.z)) < 200 ? Math.max(Math.abs(p1.x - p0.x), Math.abs(p1.z - p0.z)) : 0), // a jump (dungeon, teleport) is not tiles walked
             note: note || undefined,
         };
         this.segments.push(s);
