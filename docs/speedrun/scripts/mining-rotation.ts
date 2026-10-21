@@ -51,7 +51,6 @@ const MIN_ENERGY = Number(arg('min-energy', '0'));
 
 const uniq = [...new Map(ROCKS.map(r => [`${r[0]},${r[1]}`, r])).values()];
 const beside = (pos: P, r: P) => Math.abs(pos[0] - r[0]) + Math.abs(pos[1] - r[1]) === 1;
-const cheb = (a: P, b: P) => Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1]));
 // Steps to the nearest tile beside rock r: corner-aware BFS over the SDK collision map with
 // every iron rock treated as blocked (the client routes the same way).
 const rockSet = new Set(uniq.map(r => `${r[0]},${r[1]}`));
@@ -59,7 +58,6 @@ const stepsTo = (pos: P, r: P) => {
     const d = stepMap(pos, rockSet, (x, z) => isTileWalkable(0, x, z));
     return Math.min(...[[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => d.get(`${r[0] + dx!},${r[1] + dz!}`) ?? Infinity));
 };
-void cheb;
 
 await runScript(async ({ bot, sdk }) => {
     await bot.skipTutorial?.();
