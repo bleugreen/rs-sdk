@@ -18,7 +18,7 @@
 import { hostname, loadavg } from 'os';
 import { runScript } from '../../../sdk/runner';
 import { latencyHistogram } from '../../../speedrun/lib/hostgate';
-import { probeInPage, ProgramError, runProgram, startProgram, awaitProgram } from '../../../speedrun/lib/programs';
+import { awaitProgram, probeInPage, ProgramError, programStatus, runProgram, startProgram } from '../../../speedrun/lib/programs';
 
 const bot = process.argv[2];
 const mode = process.argv[3];
@@ -79,6 +79,8 @@ await runScript(async ({ bot: actions, sdk }) => {
             const ms = [...r.publishMs].sort((a, b) => a - b);
             const q = (p: number) => (ms.length ? ms[Math.min(ms.length - 1, Math.floor(p * ms.length))] : NaN);
             console.log(`decoded-tick interval ms in the page: p10 ${q(0.1)} p50 ${q(0.5)} p90 ${q(0.9)} max ${q(1)}`);
+            const st = programStatus(sdk.getState());
+            if (st) console.log(`frame arrival to decision ms: p50 ${st.react.p50} p90 ${st.react.p90} max ${st.react.max}; loops/s last ${st.loops.last} p10(10 s) ${st.loops.p10Last10s}; frames p90 ${st.frames.p90} ms, catch-ups ${st.frames.catchUps}`);
             return;
         }
         case 'mine': {
