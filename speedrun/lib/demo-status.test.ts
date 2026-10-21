@@ -27,10 +27,12 @@ describe('RestartTracker', () => {
         tr.observe(at('06:16:36', 473));
         expect(tr.status().phase).toBe('recovering');
         tr.observe(at('06:17:16', 1160));
-        const s = tr.status(T('07:46:00'));
+        const s = tr.status(T('06:17:30'));
         expect(s.phase).toBe('up');
         expect(s.lastRestart).toMatchObject({ downAt: T('06:14:07'), loginAt: T('06:16:35'), refusals: 1, answeringAt: T('06:14:55') });
-        expect(formatStatus(s, T('07:46:00'))).toBe('demo up, 1,160 players | last restart 06:14:07, 1h31m ago');
+        expect(formatStatus(s, T('06:17:30'))).toBe('demo up, 1,160 players | last restart 06:14:07, 3m23s ago');
+        // A status read long after its last sample says so.
+        expect(formatStatus(s, T('07:46:00'))).toBe('demo up, 1,160 players | last restart 06:14:07, 1h31m ago | (sample 1h28m old)');
     });
 
     test('a collapse is a restart even when the unreachable minute was missed', () => {
@@ -94,7 +96,7 @@ describe('DemoMonitor', () => {
     test('writes the status file and keeps the last restart across monitor restarts', async () => {
         const file = join(mkdtempSync(join(tmpdir(), 'demo-status-')), 'status.json');
         const replies: (number | null)[] = [1700, null, 0, 1600];
-        const sample = async () => ({ at: Date.now(), players: replies.shift() ?? 1600, ms: 1 });
+        const sample = async () => ({ at: Date.now(), players: replies.length ? replies.shift()! : 1600, ms: 1 });
         const lines: string[] = [];
         const mon = new DemoMonitor('o', { file, sample, onLine: l => lines.push(l) });
         for (let i = 0; i < 4; i++) await mon.sampleNow();
