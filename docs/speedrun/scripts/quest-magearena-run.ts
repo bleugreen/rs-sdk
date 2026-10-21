@@ -147,7 +147,11 @@ await runScript(async ({ bot, sdk }) => {
     const from3 = pos(sdk);
     const r3 = await bot.interactLoc(pool, 'Step-into');
     log(sdk, `pool interact: ${JSON.stringify(r3).slice(0, 200)}`);
+    // mage_arena.rs2: a mesbox opens before the jump once %magearena >= 6
+    await waitUntil(sdk, () => sdk.getDialog()?.isOpen === true, 20, 'pool mesbox');
+    const d3 = await talkThrough(sdk, [], { idleMs: 400 });
     await waitUntil(sdk, () => pos(sdk).z < 4700, 40, 'arrive in the chamber');
+    log(sdk, `pool mesbox pages ${d3.pages}`);
     await waitTicks(sdk, 1);
     const tChamber = tick(sdk);
     log(sdk, `SEG pool: ${tChamber - tDone} ticks from ${JSON.stringify(from3)} to ${JSON.stringify(pos(sdk))}`, t0);
