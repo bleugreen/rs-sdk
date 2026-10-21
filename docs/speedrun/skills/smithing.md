@@ -174,6 +174,15 @@ same. Quests that do give Smithing, all marked off route there (read):
   everywhere from 33 up (`smithing-model.ts --table`); below 33 they are what the first inventory
   uses.
 
+**Interleaving** (`interleaving.md` section 8, the absorbable-fractions table): **none of the
+anvil route can be absorbed into self-only time.** It is location-bound (the account must stand
+at the anvil with the bars), and each item is `p_delay(1)` + `p_delay(2)` (section 4), so the
+player is delayed for nearly all of every 5-tick item and drops any packet a host skill would
+send. The only portable Smithing xp is Superheat (`p_delay(1)`, about 2 per pickpocket stun),
+but 2 gold superheats with the gauntlets are 112.5 base, about 2.4 anvil ticks at the 47-per-tick
+top band, against 4 standalone ticks for the 2 dragon bones the same stun would carry. The stuns
+go to Prayer (inferred).
+
 ## 6. Gotchas
 
 - **Accept only once your own offer holds every item.** An offer packet sent on the tick the
