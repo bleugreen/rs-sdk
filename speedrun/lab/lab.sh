@@ -10,7 +10,8 @@
 # script path separated by ':', e.g. "speedrun/lab/measure-bank.ts:--n=3".
 # LAB_HELPERS names extra bots that get their own lite runner (trade giver).
 # LAB_RUNNERS=0 starts no lite runner for <bot>, for scripts that launch and
-# kill the client themselves (measure-session.ts). The engine runs with
+# kill the client themselves; LAB_BOTS names extra bots that only get a
+# bot.env pointed at the lab (measure-session.ts). The engine runs with
 # LOCAL_STAFF_LEVEL=4 so ::tele / ::give / ::setstat work. The first boot packs
 # the content and can take several minutes.
 set -u
@@ -41,7 +42,7 @@ sleep 2
 
 RUNNERS="${LAB_HELPERS:-}"
 [ "${LAB_RUNNERS:-1}" != "0" ] && RUNNERS="$BOT $RUNNERS"
-for b in "$BOT" ${LAB_HELPERS:-}; do
+for b in "$BOT" ${LAB_HELPERS:-} ${LAB_BOTS:-}; do
     if [ ! -f "$ROOT/bots/$b/bot.env" ]; then
         (cd "$ROOT" && bun bots/create-bot.ts "$b" --local --no-chat > /dev/null)
     fi

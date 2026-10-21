@@ -171,8 +171,9 @@ export async function launchClient(session: Session): Promise<void> {
             env: { ...process.env },
         });
         session.child = child;
+        // A signal-killed child can report a null code; count it as 128+SIGKILL.
         void child.exited.then(code => {
-            if (session.child === child) session.childExit = code;
+            if (session.child === child) session.childExit = code ?? 137;
         });
         return;
     }
