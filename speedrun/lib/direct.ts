@@ -89,6 +89,15 @@ export interface DirectSessionOptions {
     cacheDir?: string;
 }
 
+/**
+ * How a direct session ended. `logged-out`: the server sent LOGOUT. `disconnected`: the
+ * server hung up. `closed`: this process closed the socket.
+ */
+export interface DirectSessionEnd {
+    reason: 'logged-out' | 'disconnected' | 'closed' | (string & {});
+    error?: unknown;
+}
+
 export interface DirectLogoutOptions {
     /** Wall-clock bound on the whole logout, clicks and retries included. Default max(10 s, 40 ticks). */
     timeoutMs?: number;
@@ -97,7 +106,7 @@ export interface DirectLogoutOptions {
 }
 
 export interface DirectLogoutResult {
-    /** The server took the player out: it sent LOGOUT, or it closed the socket after the click. */
+    /** The server took the player out: it sent LOGOUT, or it hung up after the click. */
     ok: boolean;
     via: 'logout' | 'server-close' | null;
     /** Logout clicks sent (more than one when the server refused the first). */
@@ -115,24 +124,80 @@ export interface DirectSession {
     readonly origin: string;
     readonly sdk: DirectProbeSdk;
     readonly client: DirectSessionClient;
+    /** Resolves once, when the session ends, with how it ended. */
+    readonly ended: Promise<DirectSessionEnd>;
     /** Resolve once the label has moved `n` ticks. */
     waitTicks(n: number): Promise<void>;
-    /**
-     * Leave the world and end the session: click logout, wait for the server's LOGOUT (or its
-     * close of the socket), re-click while it refuses, then close. Always closes, confirmed or
-     * not; calling it again returns the first call's result.
-     */
+    /** Leave the world, then close (`logoutDirect`). Calling it again returns the first call's result. */
     logout(opts?: DirectLogoutOptions): Promise<DirectLogoutResult>;
     /** Close the socket without logging out: the server sees a dropped client. Prefer logout(). */
     close(): void;
 }
 
-/** The engine connection under a direct session: its websocket, and who closed it. */
-export interface DirectConnection {
-    readonly socket: { addEventListener(type: 'message' | 'close', listener: () => void): void };
-    /** Closed by us or hung up on by the server. */
-    readonly isClosed: boolean;
+/** What the logout sequence needs from a session. */
+export interface DirectLogoutTarget {
+    readonly sdk: Pick<ProbeSdk, 'getState' | 'onStateUpdate'>;
+    readonly client: Pick<DirectSessionClient, 'clickComponent' | 'flush' | 'isInGame'>;
+    readonly ended: Promise<DirectSessionEnd>;
     close(): void;
+}
+
+/**
+ * Click logout (logout:try_logout) and wait for the session to end: the server's LOGOUT is the
+ * confirmation, and a hang-up after the click counts too. The server ignores a click inside
+ * the post-combat window (logout.rs2), so the click repeats every `retryTicks` until it
+ * lands or `timeoutMs` passes. Always closes the session at the end, confirmed or not.
+ */
+export async function logoutDirect(s: DirectLogoutTarget, opts: DirectLogoutOptions = {}): Promise<DirectLogoutResult> {
+    const t0 = performance.now();
+    const deadline = t0 + (opts.timeoutMs ?? Math.max(10_000, 40 * tickMs()));
+    const retryTicks = opts.retryTicks ?? COMBAT_LOGOUT_TICKS + 1;
+    const label = () => s.sdk.getState()?.tick ?? 0;
+    let end: DirectSessionEnd | null = null;
+    void s.ended.then(e => (end = e));
+    // a session that has already ended resolves first in the race
+    end = await Promise.race([s.ended, Promise.resolve(null)]);
+    const clickTick = label();
+    const result = (via: DirectLogoutResult['via'], clicks: number, reason?: string): DirectLogoutResult => {
+        s.close();
+        return { ok: via !== null, via, clicks, clickTick, endTick: label(), wallMs: performance.now() - t0, ...(reason ? { reason } : {}) };
+    };
+    const verdict = (e: DirectSessionEnd, clicks: number) =>
+        e.reason === 'logged-out' ? result('logout', clicks) : e.reason === 'disconnected' && clicks > 0 ? result('server-close', clicks) : result(null, clicks, `session ended before a logout: ${e.reason}`);
+    if (end) return verdict(end, 0);
+    if (!s.client.isInGame()) return result(null, 0, 'not in game');
+
+    let clicks = 0;
+    while (performance.now() < deadline) {
+        if (s.client.clickComponent(LOGOUT_BUTTON)) clicks++;
+        s.client.flush();
+        const sent = label();
+        await until(s, () => end !== null || label() >= sent + retryTicks, deadline);
+        if (end) return verdict(end, clicks);
+    }
+    return result(null, clicks, `still in the world after ${Math.round(performance.now() - t0)} ms`);
+}
+
+/** Resolve once `done()` holds after a tick or the session's end, or at `deadline`. */
+function until(s: DirectLogoutTarget, done: () => boolean, deadline: number): Promise<void> {
+    return new Promise<void>(resolve => {
+        if (done()) return resolve();
+        let settled = false;
+        const finish = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            offTick();
+            resolve();
+        };
+        const check = () => {
+            if (done()) finish();
+        };
+        const timer = setTimeout(finish, Math.max(0, deadline - performance.now()));
+        const offTick = s.sdk.onStateUpdate(check);
+        // after logoutDirect's own then() on ended, so `end` is set when check runs
+        void s.ended.then(() => queueMicrotask(check));
+    });
 }
 
 /** One line for a logout result, as the probe prints it. */
@@ -169,29 +234,10 @@ export async function openDirectSession(opts: DirectSessionOptions): Promise<Dir
     const locIndex = await LocIndex.load({ origin, cacheDir, versionlistCrc: checksums[5], quiet: true });
     const connection = await GameConnection.connect({ host: opts.host, secured, username: opts.username, password: opts.password, checksums });
     const client: DirectSessionClient = new LiteClient({ connection, locIndex, username: opts.username, password: opts.password });
-    const conn: DirectConnection = {
-        socket: connection.stream.socket as WebSocket,
-        get isClosed() {
-            return connection.isClosed;
-        },
-        close: () => connection.close(),
-    };
-    return startDirectSession(conn, client, { host: opts.host, origin, noTimeoutOpcode: ClientProt.NO_TIMEOUT });
-}
-
-/**
- * The session core over a logged-in client: pump on every socket message, keepalives, tick
- * waits, and the clean logout. `openDirectSession` calls it after login; tests drive it with
- * a scripted socket and client.
- */
-export function startDirectSession(conn: DirectConnection, client: DirectSessionClient, opts: { host: string; origin: string; noTimeoutOpcode: number }): DirectSession {
     let lastArrival = performance.now();
     const sdk = directProbeSdk(client, () => lastArrival);
-    // Called after every drain and on socket close, for waits on non-tick events (LOGOUT).
-    const watchers = new Set<() => void>();
-    const notify = () => {
-        for (const w of [...watchers]) w();
-    };
+    let endWith: (e: DirectSessionEnd) => void = () => {};
+    const ended = new Promise<DirectSessionEnd>(resolve => (endWith = resolve));
 
     // One drain at a time; a message that arrives mid-drain runs another pass after it.
     let pumping = false;
@@ -213,89 +259,45 @@ export function startDirectSession(conn: DirectConnection, client: DirectSession
             console.error('[direct] pump failed', e);
         } finally {
             pumping = false;
-            notify();
+            if (client.isLoggedOut()) endWith({ reason: 'logged-out' });
         }
     };
-    conn.socket.addEventListener('message', () => {
+    let closedByUs = false;
+    const socket = connection.stream.socket as WebSocket;
+    socket.addEventListener('message', () => {
         lastArrival = performance.now();
         void pump();
     });
-    conn.socket.addEventListener('close', notify);
+    socket.addEventListener('close', () => endWith({ reason: client.isLoggedOut() ? 'logged-out' : closedByUs ? 'closed' : 'disconnected' }));
     const keepalive = setInterval(() => {
-        client.writeOpcode(opts.noTimeoutOpcode);
+        client.writeOpcode(ClientProt.NO_TIMEOUT);
         client.flush();
     }, 1000);
     void pump();
 
-    let closedByUs = false;
-    const close = () => {
-        clearInterval(keepalive);
-        closedByUs = true;
-        conn.close();
-    };
-    const label = () => sdk.getState()?.tick ?? 0;
-    const outcome = (): DirectLogoutResult['via'] => (client.isLoggedOut() ? 'logout' : conn.isClosed && !closedByUs ? 'server-close' : null);
-
-    /** Resolve true once `done()` holds after a drain, tick or close; false at `deadline`. */
-    const until = (done: () => boolean, deadline: number) =>
-        new Promise<boolean>(resolve => {
-            if (done()) return resolve(true);
-            const finish = (v: boolean) => {
-                clearTimeout(timer);
-                watchers.delete(check);
-                offTick();
-                resolve(v);
-            };
-            const check = () => {
-                if (done()) finish(true);
-            };
-            const timer = setTimeout(() => finish(done()), Math.max(0, deadline - performance.now()));
-            watchers.add(check);
-            const offTick = sdk.onStateUpdate(check);
-        });
-
-    const runLogout = async (lo: DirectLogoutOptions): Promise<DirectLogoutResult> => {
-        const t0 = performance.now();
-        const deadline = t0 + (lo.timeoutMs ?? Math.max(10_000, 40 * tickMs()));
-        const retryTicks = lo.retryTicks ?? COMBAT_LOGOUT_TICKS + 1;
-        const clickTick = label();
-        const result = (via: DirectLogoutResult['via'], clicks: number, reason?: string): DirectLogoutResult => {
-            close();
-            return { ok: via !== null, via, clicks, clickTick, endTick: label(), wallMs: performance.now() - t0, ...(reason ? { reason } : {}) };
-        };
-        if (client.isLoggedOut()) return result('logout', 0);
-        if (conn.isClosed) return result(null, 0, closedByUs ? 'already closed' : 'socket closed by the server before the logout');
-        if (!client.isInGame()) return result(null, 0, 'not in game');
-        let clicks = 0;
-        while (performance.now() < deadline) {
-            // The server ignores a click inside the post-combat window (logout.rs2), so keep
-            // clicking every retryTicks until it takes or the deadline passes.
-            if (client.clickComponent(LOGOUT_BUTTON)) clicks++;
-            client.flush();
-            const sent = label();
-            await until(() => outcome() !== null || label() >= sent + retryTicks, deadline);
-            const via = outcome();
-            if (via) return result(via, clicks);
-        }
-        return result(null, clicks, `still in the world after ${Math.round(performance.now() - t0)} ms`);
-    };
     let logout: Promise<DirectLogoutResult> | null = null;
-
-    return {
+    const session: DirectSession = {
         host: opts.host,
-        origin: opts.origin,
+        origin,
         sdk,
         client,
+        ended,
         waitTicks: n =>
             new Promise<void>(resolve => {
-                const target = label() + n;
+                const target = (sdk.getState()?.tick ?? 0) + n;
                 const off = sdk.onStateUpdate(s => {
                     if (s.tick < target) return;
                     off();
                     resolve();
                 });
             }),
-        logout: (lo = {}) => (logout ??= runLogout(lo)),
-        close,
+        logout: lo => (logout ??= logoutDirect(session, lo)),
+        close: () => {
+            clearInterval(keepalive);
+            closedByUs = true;
+            connection.close();
+            endWith({ reason: 'closed' });
+        },
     };
+    return session;
 }
