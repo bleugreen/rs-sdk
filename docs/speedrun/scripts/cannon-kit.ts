@@ -282,7 +282,7 @@ await runScript(async ({ bot, sdk }) => {
         let consumed = false;
         // Phase 3's published state shows phase 1's toggles: if one was dropped (sent while
         // delayed), the prayer is off though intended on; switch it on again.
-        if (FLICK.length > 0 && phase === 3) for (const i of WANTED) if (intended[i] && !act[i] && pts > 0) { send('prayer', sdk.sendTogglePrayer(i)); restores++; ev.push(`restore-prayer-${i}`); }
+        if (FLICK.length > 0 && phase === 3 && t - lastConsume > 2) for (const i of WANTED) if (intended[i] && !act[i] && pts > 0) { send('prayer', sdk.sendTogglePrayer(i)); restores++; ev.push(`restore-prayer-${i}`); }
         if (FLICK.length === 0 && !act[PFM] && pts > 0 && rel % 5 === 0) send('prayer', sdk.sendTogglePrayer(PFM));
 
         // 2) consumes on the consume tick; dialogs and cannon top-ups on free ticks outside a
