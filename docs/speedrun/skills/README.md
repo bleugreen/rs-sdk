@@ -67,6 +67,35 @@ and the knife starter compete for the same ticks, the same 5 user-event packets 
 self-only loop it rides on. Do not add an interleaving saving to a knife-column total
 unless that row says it fits the knife loop.
 
+| Skill | Headline method | Start level (on-route quests) | Ticks to 99, normal | Ticks to 99, with interleaving (net) | Basis | Helper supplies | Document |
+|---|---|---|---|---|---|---|---|
+| Attack | none: quest-capped | 99 before the cannon session (TGV 11,450 + Grand Tree 18,400 + Fight Arena 12,175 = 42,025; MM option 1 adds 20,000) | 0 | n/a | read | none | [attack.md](attack.md) |
+| Strength | none: quest-capped | 99 after Dragon Slayer (MM option 1 35,000 + Dragon Slayer 18,650); Strength 1 until MM | 0 | n/a | read | none | [strength.md](strength.md) |
+| Defence | defensive melee beside the cannon at the Wilderness poison spiders, rs/91's kit | 98 (MM 20,000 + Dragon Slayer 18,650 = 38,650; gap 1,288) | 168, **inside the Ranged row** (230 without the kit) | n/a | measured rate (7.65 per tick, rs/91), inferred total; busy host | in the Ranged row | [defence.md](defence.md) |
+| Hitpoints | by-product of the cannon finish | 97 (start + ~720 from the pre-MM spell fights + MM 35,000; gap ~4,220) | 0 (the finish yields ~5,440 with the kit) | n/a | read + measured; by-product inferred | none | [hitpoints.md](hitpoints.md) |
+| Ranged (with Defence and Hitpoints 99) | dwarf multicannon at the Wilderness poison spiders with the rune scimitar to Ranged 50 before MM; after MM rs/91's kit: cannon + defensive melee, then cannon + rapid rune knives from 70 | 1; 50 after the pre-MM cannon session, ~54 after MM's Jungle Demon | **1,970** = 113 + 1,857 (2,164-2,324 without the kit) | n/a (location-bound self-only time) | measured rates (rs/31, rs/91), inferred totals; busy host | cannon set, ~1,000-1,300 cannonballs, up to ~760 rune knives, rune scimitar, ~9 ranging doses, ~3 super antipoison, 1 dose each of super attack and super strength, glory, 1 antipoison(4) | [ranged.md](ranged.md), [combat.md](combat.md) |
+| Magic | Wind Strike 1-7, enchant 7-59 before TGV; the cast pre-MM fights, Grand Tree and Kolodion carry it to 80-81; Charge to 99 | 1; 59 by enchanting, 76 at the Mage Arena, 80-81 after Kolodion | **~245** | ~215: Charge's ~33 ride pickpocket stuns beside the bones (clean: Thieving has no knife column) | measured cadences, inferred timeline; busy host | sapphire/emerald/ruby/diamond rings 12/27/16/5, 60 cosmic, staffs of water and fire, fight runes, Kolodion ~70 blood + 400 air, Charge ~490 blood + 490 air, 1 magic potion (insurance) | [magic.md](magic.md) |
+| Prayer | bury dragon bones at a bank booth; 11 early for Prayer 43 before TGV | 1 (no on-route quest gives Prayer) | **1,151** (measured run 1,221 with stalls) | **~800** with ~196 bones in pickpocket stuns (clean). Adding ~348 bones on plain 4-tick Woodcutting and 5-tick fly fishing gives ~150-220, against those skills' normal column only; against Woodcutting's knife column it is ~500-570 | measured cadence (fedora, busy host); interleaving totals inferred | 555 dragon bones | [prayer.md](prayer.md) |
+| Smithing | platebodies at the Varrock west anvil, helper trades 25 bars and takes the 5 products back per cycle | 1 | **1,147** measured (~1,107 with the helper staged) | n/a (anvil-bound, delayed throughout) | measured end to end; busy host | hammer; bars 15 bronze, 39 iron, 95 steel, 280 mithril, 340 adamant | [smithing.md](smithing.md) |
+| Firemaking | tinderbox line, highest log tier, on a helper-dropped row | 1; 30 before Sea Slug if it stays on route (`quest_seaslug.rs2:43`) | **~650** (~695 with trades) | n/a (each light moves the player a tile) | measured end to end (bgsrv-mac) | 157 logs (107 magic), tinderbox | [firemaking.md](firemaking.md) |
+| Runecraft | in the altar room with a helper trading 27 essence per 7-tick cycle: air altar 1-44, nature altar 44-99 | 1 | **~1,330** (~1,180 crafting + ~150 travel) | n/a (altar room, no idle ticks) | measured cycle, inferred totals; busy host | 4,536 rune essence, air and nature talismans, charged glory | [runecraft.md](runecraft.md) |
+| Crafting | cut gems at a bank booth, 5 per tick | 42 after Dwarf Cannon (45 if trained after Goblin Diplomacy) | **101** from 42 (130 from 1) | n/a net: one slot per gem and 57 level-ups cost a host more than they save | measured (bbs) | chisel; uncut gems by band (dragonstones effectively unobtainable; fallback 364 uncut diamonds, ~121 ticks) | [crafting.md](crafting.md) |
+| Herblore | mix finished potions at a bank booth, 5 per tick | 28 after Druidic Ritual (mandatory: every Herblore action needs level 3) | **112** from 28 | n/a net: two slots per potion, 71 level-ups | measured (bbs, 1 run) | 245 unfinished potions and secondaries by band, 245 vials (torstol unobtainable; realistic cap at ranging) | [herblore.md](herblore.md) |
+| Fletching | arrowheads on headless arrows, 15 per action, 5 actions per tick | 1 | **50** | ~5-20: the rune-tier actions ride ~24 pickpocket stuns beside the bones (clean) | measured (bbs); interleaving inferred | 3,600 headless arrows; arrowheads by tier (2,595 rune, scarce) | [fletching.md](fletching.md) |
+| Cooking | rs/47's one-login wine bank fermentation (deposit 29, let the login timer fire, deposit 421, make one wine) | 30 after Cook's Assistant; irrelevant, one firing covers 1-99 | **45-51** active ticks, right after a login (98.3% reach 99 in one login) | n/a | measured by rs/47 (3 runs) | 450 unfermented wines as notes, 1 grapes, 1 jug of water (grapes are scarce on the demo; kebab fallback 131 ticks) | [cooking.md](cooking.md) |
+| **Total** | | | **about 6,800** | **about 6,390** with stun absorption only | Sum of the rows; Defence's 168 sits inside Ranged's 1,970 and Cooking is taken at 48 | | |
+
+The interleaving column saves about 410 ticks, all of it in pickpocket stuns during Thieving
+(`interleaving.md` section 8): ~351 for Prayer, ~30 for Magic and ~30 for Fletching. Stun
+absorption doesn't conflict with any knife column. Prayer's further ~580-650 on plain
+Woodcutting and fishing clocks is excluded from the total, because it holds only against
+those skills' normal columns. Combat (Attack to Ranged) costs 1,970 after the quests in all,
+at the rs/91 kit described in `ranged.md` section 1; the no-kit range and the Monkey Madness
+comparison are in `combat.md` and `docs/speedrun/quests/README.md` section 6. Every item-fed
+figure was taken on the headless lite client with 1-tick reactions. Reaction-bound cadences
+(trades, bank turnarounds, Runecraft's 7-tick cycle) list their reactions per cycle in each
+document's method section; see the first open question below for the relay cost.
+
 ## Open questions
 
 1. **Tick manipulation on the demo server.** The knife loops need each reaction to land on
