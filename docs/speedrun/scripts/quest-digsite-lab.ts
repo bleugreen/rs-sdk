@@ -318,16 +318,31 @@ export class QuestBot {
 
     async opLoc(key: string, op: number, until: () => boolean, opts: { near?: [number, number]; dialog?: boolean } = {}) {
         const l = await this.loc(key, opts.near);
-        this.S.action();
-        await this.sdk.sendInteractLoc(l.x, l.z, l.id, op);
-        await this.settle(until, 80, [], opts.dialog);
+        await this.withReachRetry(() => this.sdk.sendInteractLoc(l.x, l.z, l.id, op), until, opts.dialog);
     }
 
     async useOnLoc(obj: string, key: string, until: () => boolean, opts: { near?: [number, number]; dialog?: boolean } = {}) {
         const l = await this.loc(key, opts.near);
-        this.S.action();
-        await this.sdk.sendUseItemOnLoc(this.need(obj).slot, l.x, l.z, l.id);
-        await this.settle(until, 80, [], opts.dialog);
+        await this.withReachRetry(() => this.sdk.sendUseItemOnLoc(this.need(obj).slot, l.x, l.z, l.id), until, opts.dialog);
+    }
+
+    /** Send a loc click; if the server answers "I can't reach that!", log it and click again. */
+    private async withReachRetry(send: () => Promise<unknown>, until: () => boolean, dialog?: boolean) {
+        for (let attempt = 0; ; attempt++) {
+            this.sdk.getNewChat({ types: [0], includeSelf: true });
+            this.S.action();
+            await send();
+            let unreachable = false;
+            const check = () => {
+                if (this.sdk.getNewChat({ types: [0], includeSelf: true }).some(m => /can't reach that/i.test(m.text))) unreachable = true;
+                return unreachable || until();
+            };
+            await this.settle(check, 80, [], dialog && attempt === 0 ? dialog : dialog);
+            if (!unreachable) return;
+            console.log(`  [${tick(this.sdk)}] "I can't reach that!" in ${this.S.cur?.name}; retrying`);
+            if (attempt >= 2) throw new Error(`unreachable loc in ${this.S.cur?.name}`);
+            await waitUntil(this.sdk, () => false, 2);
+        }
     }
 
     async useOnObj(src: string, dst: string, until: () => boolean) {
