@@ -54,7 +54,10 @@ export const PLACES = {
     keepWeb: { x: 3158, z: 3951 },
     keepWebSouth: { x: 3158, z: 3950 },
     keepWebNorth: { x: 3158, z: 3952 },
-    /** Mage Arena: the cellar ladder outside Kolodion's barrier, and Lundail in the cellar. */
+    /**
+     * Mage Arena: the cellar ladder (3091, 3957, m48_61) outside Kolodion's barrier, in a ruin
+     * entered by its north doorway (3095, 3959) and two webs; and Lundail in the cellar.
+     */
     arenaLadder: { x: 3091, z: 3956 },
     lundail: { x: 2536, z: 4718 }
 } satisfies Record<string, Tile>;
@@ -690,6 +693,40 @@ export class Runes {
     }
 
     /**
+     * Cut the nearest web within `maxDistance` tiles with the carried blade (web.rs2 oplocu;
+     * half of all cuts succeed). The Mage Arena ladder sits in a ruin whose corridor has two
+     * webs, (3095, 3957) and (3093, 3957). True once a cut lands or the web is gone.
+     */
+    private async cutNearestWeb(maxDistance = 6): Promise<boolean> {
+        const { bot, sdk, log } = this.ctx;
+        const web = sdk
+            .getNearbyLocs()
+            .filter(l => /^web$/i.test(l.name) && l.distance <= maxDistance)
+            .sort((a, b) => a.distance - b.distance)[0];
+        if (!web) return false;
+        const blade = this.state.inventory.find(i => this.o.webWeapons.some(p => p.test(i.name)));
+        for (let i = 0; i < 8 && !this.ctx.signal.aborted; i++) {
+            const since = this.state.tick;
+            const r = blade ? await bot.useItemOnLoc(blade, web, { timeout: 3000 }) : await bot.interactLoc(web, /slash/i);
+            const said = this.state.gameMessages.filter(m => m.tick >= since && m.type === 0).map(m => m.text);
+            log('lundail: web cut', { at: { x: web.x, z: web.z }, ok: r.success, said });
+            if (said.some(t => /slash the web apart/i.test(t))) return true;
+            if (said.some(t => /only a sharp blade/i.test(t))) return false;
+            if (!sdk.getNearbyLocs().some(l => /^web$/i.test(l.name) && l.x === web.x && l.z === web.z)) return true;
+        }
+        return false;
+    }
+
+    /** Run `step` (true when it got there), cutting the nearest web each time it is refused. */
+    private async throughWebs(step: () => Promise<boolean>, what: string): Promise<void> {
+        for (let i = 0; i < 6 && !this.ctx.signal.aborted; i++) {
+            if (await step().catch(() => false)) return;
+            if (!(await this.cutNearestWeb())) break;
+        }
+        if (!(await step().catch(() => false))) throw new Error(`lundail: could not ${what}`);
+    }
+
+    /**
      * Lundail (Mage Arena cellar): cosmic runes, and laws if still short. The walk
      * from the Deserted Keep lever to the cellar ladder is Wilderness level ~51-55;
      * the cellar itself is outside every wilderness_zones rectangle. Carries coins
@@ -751,7 +788,10 @@ export class Runes {
                     }
                 }
                 await this.walk(PLACES.arenaLadder, 'the Mage Arena cellar ladder');
-                await this.climb(/^ladder$/i, /climb-down/i, inCellar, 'climb down to Lundail');
+                await this.throughWebs(async () => {
+                    await bot.interactLoc(/^ladder$/i, /climb-down/i);
+                    return (await waitUntil(sdk, s => !!s.player && inCellar(s), { maxTicks: 10 })).ok;
+                }, 'climb down to Lundail');
             }
             const opened = await bot.openShop(/^lundail$/i);
             if (!opened.success) throw new Error(`lundail: ${opened.message}`);
@@ -759,7 +799,11 @@ export class Runes {
             await bot.closeShop();
             for (const line of lines) log('lundail: line', { ...(await this.buyer.buyAtShop(line, line.maxWaitTicks)) });
             await this.climb(/^ladder$/i, /climb-up/i, s => !inCellar(s), 'climb out of the cellar');
-            await this.walk(PLACES.keepWebNorth, 'the keep web');
+            // The ruin's webs regrow 100 ticks after a cut, so the way out may need them cut again.
+            await this.throughWebs(async () => {
+                await this.walk(PLACES.keepWebNorth, 'the keep web');
+                return this.near(PLACES.keepWebNorth);
+            }, 'walk back to the keep');
             await this.crossWeb('south');
             await this.walk(PLACES.keepLever, 'the Deserted Keep lever');
             await bot.interactLoc(/^lever$/i, /pull/i);
