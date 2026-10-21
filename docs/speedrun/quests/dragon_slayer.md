@@ -3,13 +3,13 @@
 **Verdict: skip it.** The quest costs about **1,120 ticks** with the stock client
 (about 1,010 with the fixed client, about 970 with dialogue bursts; about 370 of
 those ticks are measured). It is worth at most **about 330 ticks** of training in
-the planned route. Its 18,650 Strength is entirely wasted: Monkey Madness, Haunted
-Mine, Waterfall and Troll Romance already put Strength past 99. Its 18,650
-Defence fills only the 4,638 gap that Monkey Madness option 1 and Holy Grail
-leave. Dragon Slayer pays for itself only if Monkey Madness is dropped (see
-[Value](#value-what-the-xp-replaces)). Its 32-quest-point gate then costs
-nothing extra, because the other planned quests already give 48-51 quest points
-([quest_points.md](quest_points.md)).
+the planned route. Its 18,650 Strength is wasted: Monkey Madness option 1 and
+Waterfall alone give 48,750 base Strength, past 99's 39,938. Its 18,650 Defence
+fills only the 4,638 gap that Monkey Madness option 1 and Holy Grail leave.
+Dragon Slayer pays for itself only if Monkey Madness is dropped, and then clearly
+(about +1,500 ticks; see [Value](#value-what-the-xp-replaces)). Its
+32-quest-point gate costs nothing extra in either case, because the other
+planned quests already give 46-49 quest points ([quest_points.md](quest_points.md)).
 
 Measured figures come from a local engine at the production tick rate
 (`NODE_TICKRATE=300`), launched with `bash docs/speedrun/scripts/quest-dragon-lab.sh`
@@ -64,25 +64,30 @@ quests' Strength and Defence (read, base xp):
 | Source | Strength | Defence |
 |---|---|---|
 | Monkey Madness option 1 / option 2 (`mm_daero.rs2:295-307`) | 35,000 / 20,000 | 20,000 / 35,000 |
-| Haunted Mine (`hauntedmine_crystals.rs2:54`) | 22,000 | |
 | Waterfall (`quest_waterfall.rs2:492`) | 13,750 | |
-| Troll Romance (`quest_troll_love.rs2:304`) | 4,000 | |
+| Troll Romance (`quest_troll_love.rs2:304`, `stat_advance(strength, 40000)`) | 4,000 | |
 | Holy Grail (`quest_grail.rs2:117`) | | 15,300 |
 | **Level 99** | 39,938 | 39,938 |
 
-| Plan | Strength gap before DS | Defence gap before DS | Useful DS xp | Worth (ticks) |
-|---|---|---|---|---|
-| MM option 1 (recommended by monkey_madness.md), all of the above | 0 | 4,638 | 4,638 | **~330** |
-| MM option 2, all of the above | 0 | 0 | 0 | **0** |
-| MM option 1, Haunted Mine dropped (its boss is unreliable) | 0 | 4,638 | 4,638 | ~330 |
-| MM option 2, Haunted Mine dropped | 2,188 | 0 | 2,188 | ~155 |
-| **Monkey Madness dropped** (it needs the rs/23 client fix) | 188 | 24,638 | 18,838 | **~1,345** |
+Haunted Mine's 22,000 Strength (`hauntedmine_crystals.rs2:54`) is not counted: it is on the
+skip list ([haunted_mine.md](haunted_mine.md): 1 boss kill in 6 attempts). Counting it would
+only make Strength fuller.
 
-Against a cost of about 1,120 ticks (stock), Dragon Slayer is a loss of about 800 ticks in
-every plan that keeps Monkey Madness. It gains about 230 (stock) to 375 (burst) only if Monkey
-Madness is dropped. One caveat in that case: melee training also gives a third of its xp as
-Hitpoints, and quest Defence does not, so replacing Defence training with Dragon Slayer could
-open a Hitpoints gap (inferred). The README should check that against the Hitpoints sources.
+| Plan | Strength before DS | Defence before DS | Useful DS xp | Worth (ticks) |
+|---|---|---|---|---|
+| **MM option 1** (recommended by monkey_madness.md) + Waterfall + Troll Romance + Holy Grail | 52,750 (gap 0) | 35,300 (gap 4,638) | 4,638 | **~330** |
+| MM option 1, without Troll Romance | 48,750 (gap 0) | 35,300 (gap 4,638) | 4,638 | ~330 |
+| MM option 2 + the rest | 37,750 (gap 2,188) | 50,300 (gap 0) | 2,188 | ~155 |
+| MM option 2, without Troll Romance | 33,750 (gap 6,188) | 50,300 (gap 0) | 6,188 | ~440 |
+| **Monkey Madness dropped** (it needs the rs/23 client fix) | 17,750 (gap 22,188) | 15,300 (gap 24,638) | 37,300 | **~2,665** |
+
+Against a cost of about 1,120 ticks (stock), Dragon Slayer loses about 700-950 ticks in every
+plan that keeps Monkey Madness. If Monkey Madness is dropped, both of Dragon Slayer's rewards
+land in open gaps and it gains about 1,545 (stock) to 1,695 (burst) ticks, so it should then be
+done. One caveat in that case: melee training also gives a third of its xp as Hitpoints, and
+quest xp does not, so replacing 37,300 of melee training with Dragon Slayer removes about
+12,400 Hitpoints that training would have produced (inferred). The README should check that
+against the Hitpoints sources.
 
 ## Helper-supplied items (one trade, 9 ticks stock / 5 fixed)
 
