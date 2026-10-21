@@ -60,10 +60,10 @@ const BARBARIAN_FISH: Tile = { x: 3106, z: 3431 };
 const BARBARIAN_FIRE: Tile = { x: 3079, z: 3444 };
 const LONGHALL: Box = { x1: 3076, z1: 3441, x2: 3081, z2: 3445 };
 
-interface Spot {
+export interface Spot {
     id: string;
     npc: RegExp;
-    /** Bones this spot yields; always looted. */
+    /** The spot's product, always looted: its bones, or herbs for the herb gatherer's spots. */
     bones: RegExp;
     /** Where the monsters live; targets outside it are ignored so the helper stays put. */
     area: Box;
@@ -257,7 +257,65 @@ const BABY_BLUE: Spot = {
     }
 };
 
-const SPOTS: Record<string, Spot> = { hill_giants: HILL_GIANTS, baby_blue: BABY_BLUE };
+/** Unidentified herbs are all named "Herb" in this revision (one item id per herb). */
+const HERB = /^herb$/i;
+
+/**
+ * Edgeville dungeon chaos druids: 11 spawns at (3104-3115, 9925-9943), level 13, 20 hp,
+ * respawn 50 ticks, magic attackers. Herbs on 57/128 kills (chaos_druid.rs2), vials of water
+ * on 10/128. The room is inside Wilderness levels 1-3, so PvP is live there. Herb gatherer.
+ */
+const CHAOS_DRUIDS: Spot = {
+    id: 'chaos_druids',
+    npc: /^chaos druid$/i,
+    bones: HERB,
+    area: { x1: 3098, z1: 9918, x2: 3120, z2: 9950 },
+    centre: { x: 3109, z: 9935 },
+    async enter(r) {
+        if (!r.underground()) {
+            if (!(await r.walk(EDGEVILLE_TRAPDOOR.x, EDGEVILLE_TRAPDOOR.z + 1, 1, 300_000))) return false;
+            if (!(await r.climb(/trapdoor/i, /climb-down|open/i, true, EDGEVILLE_TRAPDOOR))) return false;
+        }
+        return r.walk(this.centre.x, this.centre.z, 4, 120_000);
+    },
+    async leave(r) {
+        if (r.underground()) {
+            if (!(await r.walk(EDGEVILLE_LADDER_BOTTOM.x, EDGEVILLE_LADDER_BOTTOM.z + 1, 2, 120_000))) return false;
+            if (!(await r.climb(/ladder/i, /climb-up/i, false, EDGEVILLE_LADDER_BOTTOM))) return false;
+        }
+        return r.walk(EDGEVILLE_BANK.x, EDGEVILLE_BANK.z, 3, 300_000);
+    }
+};
+
+/** Taverley dungeon chaos druids: 6 spawns at (2929-2937, 9846-9852), north-east of the ladder; not wilderness. Herb gatherer. */
+const CHAOS_DRUIDS_TAVERLEY: Spot = {
+    id: 'chaos_druids_taverley',
+    npc: /^chaos druid$/i,
+    bones: HERB,
+    area: { x1: 2922, z1: 9840, x2: 2944, z2: 9858 },
+    centre: { x: 2933, z: 9849 },
+    async enter(r) {
+        if (!r.underground()) {
+            if (!(await r.walk(TAVERLEY_DUNGEON_LADDER.x, TAVERLEY_DUNGEON_LADDER.z + 1, 2, 300_000))) return false;
+            if (!(await r.climb(/ladder/i, /climb-down/i, true, TAVERLEY_DUNGEON_LADDER))) return false;
+        }
+        return r.walk(this.centre.x, this.centre.z, 4, 120_000);
+    },
+    async leave(r) {
+        if (r.underground()) {
+            if (!(await r.walk(TAVERLEY_DUNGEON_BOTTOM.x, TAVERLEY_DUNGEON_BOTTOM.z, 2, 120_000))) return false;
+            if (!(await r.climb(/ladder/i, /climb-up/i, false, TAVERLEY_DUNGEON_BOTTOM))) return false;
+        }
+        return r.walk(FALADOR_WEST_BANK.x, FALADOR_WEST_BANK.z, 3, 300_000);
+    }
+};
+
+export const SPOTS: Record<string, Spot> = {
+    hill_giants: HILL_GIANTS,
+    baby_blue: BABY_BLUE,
+    chaos_druids: CHAOS_DRUIDS,
+    chaos_druids_taverley: CHAOS_DRUIDS_TAVERLEY
+};
 
 // ---------------------------------------------------------------------------
 // Items
@@ -374,14 +432,16 @@ export function parseOptions(o: Record<string, unknown>): Options {
 interface Target { npc: RegExp; area: Box; centre: Tile; loot: RegExp | null }
 type Outcome = 'killed' | 'lost' | 'flee' | 'none' | 'full';
 
-class Run {
+export class Run {
     readonly bot: BotActions;
     readonly sdk: BotSDK;
     nextKeyLook = 0;
     /** Give up on a spot's `acquire` (and fall back to hill giants) after this wall time. */
     readonly acquireDeadline = Date.now() + 30 * 60_000;
-    private kills = 0;
+    kills = 0;
     private looted: Record<string, number> = {};
+    /** Loot picked up, by item id: tells apart items that share a name (every unidentified herb is "Herb"). */
+    readonly lootedById: Record<number, number> = {};
     private deaths = 0;
     private readonly startedAt = Date.now();
     private lastRespawnCount: number | null = null;
@@ -704,8 +764,10 @@ class Run {
             const before = this.sdk.countInventoryItems(exact(g.name));
             const r = await this.bot.pickupItem(g);
             const after = this.sdk.countInventoryItems(exact(g.name));
-            if (after > before) this.looted[g.name] = (this.looted[g.name] ?? 0) + (after - before);
-            else if (!r.success) return 'killed';
+            if (after > before) {
+                this.looted[g.name] = (this.looted[g.name] ?? 0) + (after - before);
+                this.lootedById[g.id] = (this.lootedById[g.id] ?? 0) + (after - before);
+            } else if (!r.success) return 'killed';
         }
         return 'killed';
     }
