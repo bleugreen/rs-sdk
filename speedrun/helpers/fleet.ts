@@ -1089,7 +1089,7 @@ async function cmdStatus(args: string[]): Promise<void> {
     } else {
         const stale = now - Date.parse(status.asOf) > 3 * STATUS_EVERY_MS;
         const state = livePid ? (stale ? 'RUNNING BUT STATUS IS STALE' : 'running') : 'NOT RUNNING';
-        const online = status.accounts.filter(a => a.phase === 'online').length;
+        const online = status.accounts.filter(a => a.state === 'online').length;
         const lite = status.accounts.filter(a => a.rssMB !== null);
         const liteRss = lite.reduce((s, a) => s + (a.rssMB ?? 0), 0);
         const liteCpu = lite.reduce((s, a) => s + (a.cpuPct ?? 0), 0);
@@ -1105,14 +1105,26 @@ async function cmdStatus(args: string[]): Promise<void> {
         const onDisk = await codeVersion();
         const loaded = describeCode(status.code);
         console.log(`code: running ${loaded}${livePid && describeCode(onDisk) !== loaded ? `; checkout now has ${describeCode(onDisk)} (fleetctl restart to load it)` : ''}`);
-        const rows = [['ACCOUNT', 'ROLE', 'STATE', 'FOR', 'LOGINS', 'BANKS', 'LOG AGE', 'LAST LOG / ERROR']];
+        const rows = [['ACCOUNT', 'ROLE', 'STATE', 'FOR', 'PHASE', 'CLIENT PID', 'LOGINS', 'BANKS', 'LOG AGE', 'LAST LOG / ERROR']];
         for (const a of status.accounts) {
-            const since = a.phase === 'online' ? ago(a.onlineSince, now) : a.phase === 'backoff' ? `retry ${a.nextAttemptAt ? Math.max(0, Math.round((Date.parse(a.nextAttemptAt) - now) / 1000)) : '?'}s` : '';
-            const last = a.phase === 'online' || !a.lastError ? a.lastLog : `${a.lastError}`;
-            rows.push([a.account, a.role, a.phase, since, String(a.stats.logins), String(a.stats.bankReports), ago(a.lastLogAt, now), (last ?? '').slice(0, 110)]);
+            const since = a.state === 'online' ? ago(a.onlineSince, now) : a.state === 'backoff' ? `retry ${a.nextAttemptAt ? Math.max(0, Math.round((Date.parse(a.nextAttemptAt) - now) / 1000)) : '?'}s` : '';
+            const last = a.state === 'online' || !a.lastError ? a.lastLog : `${a.lastError}`;
+            const phase = a.rolePhase ? `${a.rolePhase.slice(0, 24)} (${ago(a.rolePhaseAt, now)})` : '-';
+            rows.push([a.account, a.role, a.state, since, phase, String(a.pid ?? '-'), String(a.stats.logins), String(a.stats.bankReports), ago(a.lastLogAt, now), (last ?? '').slice(0, 100)]);
         }
         console.log('');
         console.log(table(rows));
+    }
+
+    const events = parseEvents(await readFile(PATHS.events, 'utf8').catch(() => ''));
+    const summary = summariseEvents(events, now);
+    const counts = Object.entries(summary.counts).map(([type, n]) => `${type} ${n}`).join(', ');
+    console.log(`\nevents, last hour (${PATHS.events}): ${counts || 'none'}`);
+    const codes = Object.entries(summary.loginErrors).map(([code, n]) => `code ${code} x${n}`).join(', ');
+    if (codes) console.log(`  login refusals: ${codes}`);
+    for (const c of summary.clusters.slice(0, 8)) {
+        const types = Object.entries(c.types).map(([type, n]) => `${type} x${n}`).join(', ');
+        console.log(`  cluster ${c.minute.slice(11, 16)} UTC: ${c.accounts.length ? c.accounts.join(' ') : '(fleet-wide)'}: ${types}`);
     }
     if (config instanceof Error) {
         console.log(`\nfleet.json: ${config.message}`);
