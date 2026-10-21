@@ -31,6 +31,7 @@ import { giveAll, receiveFrom, sameName } from '../../../speedrun/lib/trade';
 import { sleep, waitTicks, waitUntil } from '../../../speedrun/lib/wait';
 import { tele, VARROCK_WEST_BANK } from '../../../speedrun/lab/setup';
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { hostname, loadavg } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -192,9 +193,11 @@ class Worker {
             const r = pick('gems', lvlOf(s, 'Crafting'));
             const A = id(r.a);
             const free = 28 - s.inventory.filter(i => RESERVED.has(i.id)).length - (cnt(s, CHISEL) === 0 ? 1 : 0);
-            const nB = Math.max(0, Math.floor(free / 4.5) - cnt(s, BONES)); // 26 free: 5 bones + 21 gems; 27: 6 + 21
+            const target = Math.floor(free / 4.5); // 26 free: 5 bones + 21 gems; 27: 6 + 21
+            const extra = cnt(s, BONES) > target; // e.g. a bones-only first window left 22
+            const nB = extra ? target : target - cnt(s, BONES);
             const seen = new Set<number>();
-            for (const it of s.inventory) if (!RESERVED.has(it.id) && it.id !== A && it.id !== BONES && !seen.has(it.id)) { seen.add(it.id); f(R.sendBankDeposit(it.slot, -1)); burst.push(`dep ${it.name}`); }
+            for (const it of s.inventory) if (!RESERVED.has(it.id) && it.id !== A && (extra || it.id !== BONES) && !seen.has(it.id)) { seen.add(it.id); f(R.sendBankDeposit(it.slot, -1)); burst.push(`dep ${it.name}`); }
             if (cnt(s, CHISEL) === 0) { f(R.sendBankWithdraw(bankSlot(s, CHISEL)!, 1)); burst.push('wd chisel'); }
             const bb = bankSlot(s, BONES), ab = bankSlot(s, A);
             if (bb === undefined || ab === undefined) throw new Error('out of bones or gems in the bank');
@@ -379,6 +382,7 @@ const PLANS: Record<string, Plan> = {
     gemsP1: { W1: 'gems', P1: true, W2: 'gems', after: ['gems'] },
     potionsP1: { W1: 'potions', P1: true, W2: 'potions', after: ['potions'] },
     mix: parsePlan(arg('mix', 'W1:buryCut,P1:-,W2:buryCut,after:gems+bones')),
+    mix2: { W1: 'bones', P1: false, W2: 'buryCut', after: ['gems', 'bones'] },
 };
 
 // ---------------------------------------------------------------- fixture (not timed)
@@ -598,6 +602,7 @@ async function runRep(name: string, plan: Plan, rep: number) {
     const L2 = r1.firstTick - 1;
     const D2 = L2 + FIRE;
     worker.boothAt = -99; // labels restart with the new session
+    worker.lastBury = -99;
     prev = R.getState()!;
     const cookB = xpOf(prev, 'Cooking');
     const S2 = { F2: -1, cook2: 0, E: -1, end: -1, segs: [] as Array<{ kind: Kind; start: number; end: number }> };
@@ -652,7 +657,7 @@ async function runRep(name: string, plan: Plan, rep: number) {
     const relog0 = r0.lastTick - r0.clickTick;
     const sess1 = r1.lastTick - L1;
     const out = {
-        variant: name, rep, levels: LEVEL, p1work: plan.P1, guard: GUARD,
+        variant: name, rep, levels: LEVEL, p1work: plan.P1, guard: GUARD, host: hostname(), load: loadavg().map(x => Math.round(x * 10) / 10),
         relog0: { clickToOut: relog0, firstTick: L1, wallMs: r0.wallMs },
         trade: { receiverTicks: tr.ticks, endAfterLogin: tradeEnd - L1, giverTicks: gv.ticks },
         s1: {
