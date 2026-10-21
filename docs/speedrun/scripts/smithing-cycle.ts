@@ -1,6 +1,6 @@
 // Anvil smithing cadence and the anvil <-> bank cycle (docs/speedrun/skills/smithing.md).
 //
-//   bun docs/speedrun/scripts/smithing-cycle.ts <bot> [--site varrock|seers|yanille] [--bank fast|stock]
+//   bun docs/speedrun/scripts/smithing-cycle.ts <bot> [--site varrock|seers|seers2|yanille] [--bank fast|stock]
 //       [--make 1|5|10] [--product adamant_platebody] [--level 99] [--cycles 4] [--stock 200]
 //       [--run 0|1] [--minutes 12]
 //
@@ -55,6 +55,7 @@ const COLUMN_BASE = 1119; // interface.pack: 1119=smithing:column1 .. 1123=colum
 const SITES: Record<string, { tele: [number, number]; anvil: [number, number] }> = {
     varrock: { tele: [3185, 3436], anvil: [3188, 3426] },
     seers: { tele: [2722, 3493], anvil: [2713, 3492] },
+    seers2: { tele: [2722, 3493], anvil: [2714, 3495] },
     yanille: { tele: [2613, 3091], anvil: [2613, 3081] },
 };
 
@@ -187,6 +188,8 @@ await runScript(async ({ bot, sdk }) => {
         let bankHandledTick = -1;
         let withdrawn = false;
         let newCycle = true;
+        let clickTick = -99;
+        let lastXpTick = -99;
         let progressTick = s.tick;
         let lastPhase: Phase = phase;
         while (!done()) {
@@ -202,6 +205,7 @@ await runScript(async ({ bot, sdk }) => {
             if (xp > lastXp) {
                 cyc?.xps.push(s.tick);
                 lastXp = xp;
+                lastXpTick = s.tick;
                 progressTick = s.tick;
                 itemsLeftInClick--;
                 if (phase === 'smith') {
@@ -212,6 +216,12 @@ await runScript(async ({ bot, sdk }) => {
                         freeFrom = s.tick + 1;
                     }
                 }
+            }
+            // attempt_smithing starts with if_close: an interface still open after the click means
+            // the click was refused (InvButtonHandler), so re-send it.
+            if (phase === 'smith' && smithingOpen(s) && s.tick > clickTick && s.tick - lastXpTick > 2) {
+                sdk.sendClickComponentWithOption(row.com, optionFor(MAKE), row.slot).catch(() => {});
+                clickTick = s.tick;
             }
             if (phase === 'booth' && s.tick >= freeFrom) {
                 if (s.bank.isOpen) phase = 'bank';
@@ -261,6 +271,7 @@ await runScript(async ({ bot, sdk }) => {
                         newCycle = false;
                     }
                     sdk.sendClickComponentWithOption(row.com, optionFor(MAKE), row.slot).catch(() => {});
+                    clickTick = s.tick;
                     itemsLeftInClick = MAKE;
                     phase = 'smith';
                 } else if (s.tick >= freeFrom && s.tick - useSentTick >= (MAKE === 1 ? 1 : 3)) {
