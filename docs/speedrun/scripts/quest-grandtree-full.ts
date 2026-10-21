@@ -98,7 +98,7 @@ await runScript(async ({ bot, sdk }) => {
     if (runs('A')) {
         // King Narnode: the cutscene takes you down his trapdoor and back up.
         await enterTree('A1');
-        add(await talk(sdk, /^King Narnode Shareen$|^King Narnode$/i, [/seem worried/, /happy to help/], { idle: 15, done: near(2464, 3497, 0) }), 'A2 Narnode start (trapdoor cutscene)');
+        add(await talk(sdk, /^King Narnode Shareen$|^King Narnode$/i, [/seem worried/, /happy to help/], { idle: 25, done: near(2464, 3497, 0) }), 'A2 Narnode start (trapdoor cutscene)');
         await check('A');
     }
     if (runs('B')) {
