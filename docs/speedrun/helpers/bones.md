@@ -150,7 +150,7 @@ the bank's bone stock, and the session summary.
 
 | Option | Default | Meaning |
 |---|---|---|
-| `spot` | `hill_giants` | `hill_giants`, or `baby_blue` (needs a dusty key in the bank or inventory; falls back to hill giants without one) |
+| `spot` | `hill_giants` | `hill_giants`, or `baby_blue` (fetches its own dusty key; falls back to hill giants if that fails for 30 minutes; banks at Falador West) |
 | `train` | 50 | Attack/Strength/Defence target on cows before the spot |
 | `fish` | true | Catch and cook own food; false means rest at the bank when hurt (about 30 s per hp: useless in practice) |
 | `fishPerTrip` | 10 | Raw fish per food run |
@@ -189,11 +189,21 @@ giants (50 -> 75 in an hour).
 | Account | Big bones | Coins | Other |
 |---|---:|---:|---|
 | cairn_h50 | 260 | 2,163 | law, nature, cosmic, death runes; limpwurt roots; uncut sapphires, emerald; body talisman |
-| cairn_h51 | 279 | 1,920 | law, nature, cosmic, chaos, death runes; 24 limpwurt roots; 7 body talismans; uncut diamond |
+| cairn_h51 | 279, plus **34 babydragon bones** from the probe (bank at Falador West) | 1,920 | law, nature, cosmic, chaos, death runes; 24 limpwurt roots; 7 body talismans; uncut diamond |
 | cairn_h52 | 134 | 1,142 | law, nature, cosmic, chaos, death runes; limpwurt roots; uncut rubies, sapphire |
 | **Total** | **673** (10,095 base Prayer xp, 35% of 28,938) | 5,225 | |
 
-The remaining 1,257 big bones take about 7.6 account-hours, or 2.5 hours on these three.
+**Baby blue dragon probe** (cairn_h51, 85 combat, `spot: 'baby_blue'`, 07:47-08:33 UTC):
+Varrock West to the dusty key in 3 minutes (walk, Jailer kill, jail key, Velrak's cell,
+dialogue). In the room it made about 2 kills a minute and ate about one fish per kill. Each
+trip ended "out of food" with 9-15 bones. Banking at Falador West, fishing and cooking at
+Barbarian Village and walking back took about 6 minutes. That gives about 60 babydragon
+bones an hour once settled; 34 were banked in the 45 minutes, including one death. The
+death (08:12) came on the way back in: the role doesn't eat during a long walk, and the
+route passes aggressive monsters. It respawned in Lumbridge, rebought the rod and
+feathers, fetched a new dusty key and carried on. A gateway stall at 08:22-08:24 UTC
+ended in a lite-client relogin, which it survived. It was logged out cleanly at the Falador
+West booth.
 
 ## Running it
 
@@ -234,6 +244,11 @@ fine; more than about five would crowd a public spot, which the etiquette rules 
   It happened at this hand-over, harmlessly, at the bank.
 - The lite client reports the brass-key door as a locked door and `walkTo` re-routes
   around it. That is harmless because the role walks to the tile outside and uses the key.
+- Other players' spare dusty keys lie in the baby blue room; the role loots a key only
+  when it carries none and drops spare copies and the spent jail key.
+- The baby blue room is walled off from the Taverley ladder. The role decides which side
+  of the dusty-key door it is on by offline reachability (`findLongPath` with the door
+  shut), not by a coordinate box.
 - Bank calls are still the stock `bot.depositItem` per item name, about 10 names a visit.
   Switching to `speedrun/lib/bank.ts` `depositMatching` would save a few seconds per
   visit; the 78-tile walk dominates, so it was left for later.
