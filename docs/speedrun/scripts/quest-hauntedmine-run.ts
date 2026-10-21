@@ -460,6 +460,21 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
                 const near = sdk.getNearbyNpcs().filter(n => Math.max(Math.abs(n.x - me.worldX), Math.abs(n.z - me.worldZ)) <= 6 && !/treus/i.test(n.name)).map(n => `${n.name}@${n.x},${n.z}`);
                 hpLog.push(`${s.tick - t0}:${me.hp}/${b ? `${b.name}@${b.x},${b.z} ${b.healthPercent ?? '?'}%` : 'none'} me@${me.worldX},${me.worldZ}${msgs.length ? ` msgs[${msgs.join('; ')}]` : ''}${near.length ? ` npcs[${near.join(' ')}]` : ''}`);
                 if (process.argv.includes('--diag') && s.tick - t0 >= 150) break;
+                if (process.argv.includes('--diag') && b && /treus/i.test(b.name) && Math.max(Math.abs(b.x - me.worldX), Math.abs(b.z - me.worldZ)) > 3 && s.tick - t0 >= 50) {
+                    const bb = sdk.findNearbyNpc(/treus dayth/i)!;
+                    const r = sdk.findPath(bb.x, bb.z, 500);
+                    console.log(`DIAG boss@${bb.x},${bb.z} reachable=${(bb as any).reachable} sdkPath=${r.success} ${JSON.stringify(r.waypoints)}`);
+                    for (const [dx, dz] of [[0, 1], [1, 0], [-1, 0], [0, -1]]) {
+                        await sdk.sendWalk(bb.x + dx, bb.z + dz, true);
+                        await ticks(sdk, 8);
+                        console.log(`DIAG walk to ${bb.x + dx},${bb.z + dz} -> ${JSON.stringify(pos(sdk))}`);
+                        if (Math.abs(pos(sdk).x - bb.x) + Math.abs(pos(sdk).z - bb.z) === 1) break;
+                    }
+                    await sdk.sendInteractNpc(bb.index, 2);
+                    await ticks(sdk, 6);
+                    console.log(`DIAG after attack: me ${JSON.stringify(pos(sdk))}, attack xp +${sdk.getSkill('attack')!.experience - atk0}`);
+                    break;
+                }
             }
             if (me.hp <= 30) {
                 const food = sdk.findInventoryItem(/shark/i);
