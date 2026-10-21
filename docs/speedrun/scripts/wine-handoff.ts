@@ -2,7 +2,13 @@
 // docs/speedrun/helpers/wine.md). Never run it with the scored account.
 //
 //   bun docs/speedrun/scripts/wine-handoff.ts <maker> <receiver> [--mode=window|split] [--first=29]
-//       [--max=450] [--arming=make|relog] [--launch-maker] [--trace]
+//       [--max=450] [--arming=relog|make] [--runs=1] [--give=W1,W2,...] [--firsts=F1,F2,...]
+//       [--launch-maker] [--trace]
+//
+// --runs repeats the split: run k hands over W_k wines (default all held) and
+// ferments F_k (default --first) of them first. Every run starts with the
+// planned relog at the bank (the step the run script places before the wine), so
+// `demo-split` reports the whole sequence in scored ticks, both relogs included.
 //
 // The maker (Cooking 35, grapes and jugs of water in its bank) is attached to
 // its running lite client, or launched with --launch-maker. The receiver's
@@ -33,7 +39,10 @@ for (const name of [makerName, receiverName]) if (!/^cairn_h\d+$/.test(name)) th
 const mode = opt('mode', 'window');
 const first = Number(opt('first', '29'));
 const max = Number(opt('max', '450'));
-const arming = opt('arming', 'make') as SecondArming;
+const arming = opt('arming', 'relog') as SecondArming;
+const runs = Number(opt('runs', '1'));
+const gives = opt('give', '').split(',').filter(Boolean).map(Number);
+const firsts = opt('firsts', '').split(',').filter(Boolean).map(Number);
 
 const ctxOf = (s: Session) => ({ sdk: s.sdk, bot: s.bot, log: (m: string, d?: Record<string, unknown>) => console.log(JSON.stringify({ bot: s.name, m, tick: tick(s.sdk), ...d })) });
 const result = (name: string, data: unknown) => console.log(`RESULT ${name} ${JSON.stringify(data)}`);
@@ -76,12 +85,22 @@ if (args.includes('--trace')) {
     });
 }
 
+interface RelogRow { clickTick: number; lastInWorldTick: number; out: number; loginTick: number; dialogOpenAtClick: boolean }
+const relogs: RelogRow[] = [];
 const relogReceiver = async () => {
+    const dialogOpenAtClick = receiver.sdk.getState()?.dialog.isOpen ?? false;
     const r = await relog(receiver, { offlineMs: 3_000 });
-    result('receiver-relog', { clickTick: r.logout.clickTick, lastInWorldTick: r.logout.lastInWorldTick, loginTick: r.loginTick });
+    const row = { clickTick: r.logout.clickTick, lastInWorldTick: r.logout.lastInWorldTick, out: r.logout.lastInWorldTick - r.logout.clickTick, loginTick: r.loginTick, dialogOpenAtClick };
+    relogs.push(row);
+    result('receiver-relog', row);
     return r.loginTick;
 };
-const giving = mode === 'split' && arming === 'make' ? giveWineKit(M, receiver.name, 300_000) : giveWine(M, receiver.name, -1, 300_000);
+
+const startGiving = (k: number) => {
+    const w = gives[k] ?? -1;
+    return mode === 'split' && arming === 'make' ? giveWineKit(M, receiver.name, 300_000) : giveWine(M, receiver.name, w, 300_000);
+};
+let giving = startGiving(0);
 let loginTick = -1;
 const unsub = receiver.sdk.onStateUpdate((st: BotWorldState) => {
     if (loginTick < 0 && st.inGame && (st.player?.worldX ?? 0) > 0) loginTick = st.tick;
@@ -90,18 +109,41 @@ await login(receiver);
 unsub();
 
 if (mode === 'split') {
-    const s = await splitDelivery(R, maker.name, { loginTick, first, arming, relog: relogReceiver });
-    const L = s.loginTick;
-    result('demo-split', {
-        ...s,
-        firstLoginTick: loginTick,
-        firstBankOpenAfterLogin: s.firstBankOpenTick - loginTick,
-        firstFermentAfterLogin: s.firstFermentTick - L,
-        rearmMakeAfterLogin: s.rearmMakeTick >= 0 ? s.rearmMakeTick - L : null,
-        secondFermentAfterLogin: s.arming === 'make' ? s.secondFermentTick - L : s.secondFermentTick - s.secondLoginTick,
-        cookingBefore: cooking0?.baseLevel,
-        giver: await giving
-    });
+    for (let k = 0; k < runs; k++) {
+        // Run k > 0: the planned relog at the bank, with the giver already waiting.
+        let relog1: RelogRow | null = null;
+        if (k > 0) {
+            giving = startGiving(k);
+            loginTick = await relogReceiver();
+            relog1 = relogs[relogs.length - 1]!;
+        }
+        const nRelogs = relogs.length;
+        const level0 = receiver.sdk.getSkill('Cooking')?.baseLevel;
+        const s = await splitDelivery(R, maker.name, { loginTick, first: firsts[k] ?? first, arming, relog: relogReceiver });
+        const own = relogs.slice(nRelogs);
+        const last = own[own.length - 1];
+        const L = s.loginTick;
+        const endTick = receiver.sdk.getState()?.tick ?? -1;
+        // Scored ticks: the planned relog's ticks after its click (and the new
+        // session's first tick), then each session's in-world ticks (the client's
+        // counter restarts at every login), up to the last page dismissed.
+        const sessions = [...own.map(r => r.lastInWorldTick), endTick];
+        const total = (relog1 ? relog1.out : 0) + sessions.reduce((a, b) => a + b, 0);
+        result('demo-split', {
+            run: k, cookingBefore: level0, ...s,
+            firstLoginTick: loginTick,
+            firstBankOpenAfterLogin: s.firstBankOpenTick - loginTick,
+            firstFermentAfterLogin: s.firstFermentTick - L,
+            pagesPerTick: s.pagesTicks > 0 ? Number((s.pagesAfterFirst / s.pagesTicks).toFixed(2)) : null,
+            rearmMakeAfterLogin: s.rearmMakeTick >= 0 ? s.rearmMakeTick - L : null,
+            secondFermentAfterLogin: s.arming === 'make' ? s.secondFermentTick - L : s.secondFermentTick - s.secondLoginTick,
+            plannedRelog: relog1,
+            armingRelog: last ?? null,
+            sessionTicks: sessions,
+            totalScoredTicks: total,
+            giver: await giving
+        });
+    }
 } else {
     const r = await receiveWine(R, maker.name, { loginTick, relog: relogReceiver });
     const fired = await awaitFiring(receiver.sdk, r.loginTick + FERMENT_TIMER_TICKS);
