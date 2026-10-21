@@ -112,7 +112,7 @@ or the remaining-ticks table in section 2.
   Then it swings and, if the timer equals `map_clock`, rolls at once (`woodcut.rs2:97-98`).
   The loop continues through `cut_tree` with `p_oploc(3)`: on the tick after a roll it
   sets the timer 3 ahead again, and it rolls when the timer comes due
-  (`woodcut.rs2:153-160`). So the rolls fall every 4 ticks (measured: 2,600 of 2,851 gaps
+  (`woodcut.rs2:153-160`). So the rolls fall every 4 ticks (measured: 2,600 of 2,850 gaps
   in one run, and every gap except fells and level-ups in the predicted runs).
 - The axe only selects the lo/hi pair (`woodcut.rs2:249-262`, `trees.dbrow`). Every axe
   has the same cycle, and there is **no dragon axe**: `axes.obj` holds bronze through
@@ -128,7 +128,7 @@ or the remaining-ticks table in section 2.
   fall on every log (`woodcut.rs2:168-174`, `random(0)` is always 0). Measured on
   willow: 238 fells in 1,979 logs (1 in 8.3). The stump lasts
   `scale_by_playercount(respawnrate)`: willow and oak 30 -> **29 ticks** with one player
-  (measured, every one of about 430 fells), 20 on the demo at 1,260 online (inferred,
+  (measured, every one of about 480 fells), 20 on the demo at 1,260 online (inferred,
   `player_count.rs2`).
 
 | Tree | Level (read) | Base xp | Rune lo/hi | Respawn (read) | Success at 99 | Base xp/tick at 75 / 99 (ideal) |
@@ -142,7 +142,7 @@ or the remaining-ticks table in section 2.
 | Magic | 75 | 250 | 7/21 | 400 | 8.6% | 4.15 / 5.37 |
 
 Crossovers (inferred, `woodcutting-model.ts`): normal to oak at 15 (the oak unlock), and
-oak to willow at **73**. Oak beats willow from 30 to 72 (6.67 against 6.00 at 30, 9.38
+oak to willow at **73**. Oak beats willow from 30 to 72 (6.67 against 6.00 at 30, 9.34
 against 8.44 at 60).
 
 ### The predicted loop: why drops and switches cost nothing (measured)
