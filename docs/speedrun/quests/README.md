@@ -64,8 +64,9 @@ fixed-column figures from a model over rs/30's and rs/31's measured rates (secti
 margin of about 4,700 expected ticks survives every failure case measured on Ape Atoll, but
 those were measured at 70/70/70 and the route arrives at Defence 1 and ~42 Hitpoints
 (open item (a)). Monkey Madness needs the rs/23 client fix (merged). Sea Slug needs
-cairn://p/rs/54 (PR #31, open). Fishing Contest is conditional on the fly-fishing cycle
-(cairn://p/rs/53); dropping either costs the route its 32nd quest point.
+cairn://p/rs/54 (PR #31, open); while it is blocked, the route is one quest point short of
+the guild door. Fishing Contest now stays on either fly-fishing cycle (cairn://p/rs/53),
+because dropping it would cost a 1-QP replacement worth more than the 37 ticks saved.
 
 **Waterfall or Dragon Slayer: decided, Package B** (coordinator, 2026-10-21 01:07, on
 cairn://p/rs/56). Both fill MM option 1's Strength gap. cairn://p/rs/56 measured
