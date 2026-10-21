@@ -139,7 +139,7 @@ await makeNotedWine(M, 14);
 const xp1 = receiver.sdk.getSkill('Cooking')?.experience ?? 0;
 await logoutClean(receiver);
 await Bun.sleep(3_000);
-const g6 = giveWine(M, receiver.name, -1, 120_000);
+const g6 = giveWine(M, receiver.name, -1, 300_000);
 let tR2 = -1;
 const unsub = receiver.sdk.onStateUpdate(st => {
     if (tR2 < 0 && st.inGame && (st.player?.worldX ?? 0) > 0) tR2 = st.tick;
@@ -199,7 +199,7 @@ await makeNotedWine(M, big);
 await prepareRearmKit(M);
 await logoutClean(receiver);
 await Bun.sleep(3_000);
-const g9 = giveWineKit(M, receiver.name);
+const g9 = giveWineKit(M, receiver.name, 300_000);
 let tR9 = -1;
 const unsub9 = receiver.sdk.onStateUpdate(st => {
     if (tR9 < 0 && st.inGame && (st.player?.worldX ?? 0) > 0) tR9 = st.tick;
