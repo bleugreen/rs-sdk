@@ -229,7 +229,7 @@ await runScript(async ({ bot, sdk }) => {
     let lastXp = xp0;
     const actPerTick: number[] = []; // per observed tick in the run: actions landed (from xp)
     const cycles: Array<{ open: number; seen: number; done: number; actions: number; xp: number }> = [];
-    let dialogs = 0;
+    let dialogs = 0; // ticks on which the client showed a dialog (level-up boxes)
     let packets = 0;
     let finished = '';
 
@@ -301,7 +301,16 @@ await runScript(async ({ bot, sdk }) => {
                 }
                 if (phase === 'opening') {
                     if (!s.bank.isOpen) {
-                        if (t - openSentAt >= 4) { openBank(t, burst); send(t, burst); }
+                        // The last action of an inventory often levels up, and the level-up
+                        // dialog holds the booth interaction. Dismiss it and re-click every tick
+                        // (a duplicate booth click is harmless).
+                        if (s.dialog?.isOpen) { sdk.sendClickDialog(0).catch(() => {}); burst.push('dialog'); }
+                        if (t - openSentAt >= 1) {
+                            sdk.sendInteractLoc(booth.x, booth.z, booth.id, boothOp).catch(() => {});
+                            burst.push('open again');
+                            openSentAt = t;
+                        }
+                        send(t, burst);
                         return;
                     }
                     cycle.seen = t;
