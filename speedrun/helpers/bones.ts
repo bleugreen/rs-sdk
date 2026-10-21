@@ -75,6 +75,8 @@ interface Spot {
     requires?: RegExp;
     /** Optional upkeep run while standing in the area (e.g. fetching a key). */
     upkeep?(r: Run): Promise<void>;
+    /** Obtain `requires` when neither the inventory nor the bank has it; one step per call, true when done. */
+    acquire?(r: Run): Promise<boolean>;
 }
 
 /** Edgeville dungeon hill giants: 12 spawns around (3096-3120, 9816-9850), level 28, 35 hp, big bones. */
@@ -131,6 +133,64 @@ const TAVERLEY_DUNGEON_LADDER: Tile = { x: 2884, z: 3397 };
 const TAVERLEY_DUNGEON_BOTTOM: Tile = { x: 2884, z: 9798 };
 const DUSTY_KEY_DOOR: Tile = { x: 2924, z: 9803 };
 const DUSTY_KEY = /^dusty key$/i;
+const JAIL_KEY = /^jail key$/i;
+/** Taverley dungeon jail: the Jailer walks the corridor; Velrak's cell is south of the door at (2931, 9690) and opens from inside without a key. */
+const JAILER: Tile = { x: 2933, z: 9693 };
+const JAIL_AREA: Box = { x1: 2922, z1: 9686, x2: 2945, z2: 9705 };
+const VELRAK_CELL_DOOR: Tile = { x: 2931, z: 9690 };
+const inVelrakCell = (t: Tile) => t.z < VELRAK_CELL_DOOR.z && t.z > 9675 && Math.abs(t.x - VELRAK_CELL_DOOR.x) <= 4;
+
+/**
+ * Get a dusty key: kill the Jailer (the jail key always drops; it lies for 1 minute), unlock
+ * Velrak's cell with it, and accept his key (velrak_the_explorer.rs2 gives one to anyone not
+ * carrying one). One step per call; returns true once the key is carried and the cell is left.
+ */
+async function fetchDustyKey(r: Run): Promise<boolean> {
+    if (!r.underground()) {
+        if (!(await r.walk(TAVERLEY_DUNGEON_LADDER.x, TAVERLEY_DUNGEON_LADDER.z + 1, 2, 300_000))) return false;
+        return r.climb(/ladder/i, /climb-down/i, true, TAVERLEY_DUNGEON_LADDER) && false;
+    }
+    const cellDoor = async () => (await r.sdk.scanNearbyLocs(6)).find(l => /door/i.test(l.name) && l.x === VELRAK_CELL_DOOR.x && l.z === VELRAK_CELL_DOOR.z);
+    if (!r.carrying(DUSTY_KEY)) {
+        if (!inVelrakCell(r.pos())) {
+            if (!r.carrying(JAIL_KEY)) {
+                if (dist(r.pos(), JAILER) > 6) {
+                    await r.walk(JAILER.x, JAILER.z, 3, 180_000);
+                    return false;
+                }
+                const out = await r.fight({ npc: /^jailer$/i, area: JAIL_AREA, centre: JAILER, loot: JAIL_KEY });
+                if (out === 'none') await r.sdk.waitForTicks(5);
+                if (r.carrying(JAIL_KEY)) r.ctx.log('dusty key: got the jail key');
+                return false;
+            }
+            await r.walk(VELRAK_CELL_DOOR.x, VELRAK_CELL_DOOR.z + 1, 0, 60_000);
+            const door = await cellDoor();
+            if (!door) { r.ctx.log('dusty key: no cell door', { at: [r.pos().x, r.pos().z] }); return false; }
+            await r.bot.useItemOnLoc(JAIL_KEY, door);
+            await r.waitFor(s => inVelrakCell({ x: s.player?.worldX ?? 0, z: s.player?.worldZ ?? 0 }), 8);
+            return false;
+        }
+        await r.bot.talkTo(/^velrak/i);
+        for (let page = 0; page < 15 && !r.carrying(DUSTY_KEY); page++) {
+            const d = r.sdk.getDialog();
+            if (!d?.isOpen) { await r.sdk.waitForTicks(1); continue; }
+            const pick = d.options.find(o => /anywhere good to explore|yes please/i.test(o.text));
+            if (pick) await r.bot.clickDialogByText(pick.text);
+            else await r.sdk.sendClickDialog(0);
+            await r.sdk.waitForTicks(1);
+        }
+        await r.bot.dismissBlockingUI();
+        r.ctx.log('dusty key', { got: r.carrying(DUSTY_KEY) });
+        if (!r.carrying(DUSTY_KEY)) return false;
+    }
+    if (inVelrakCell(r.pos())) {
+        const door = await cellDoor();
+        if (door) await r.bot.interactLoc(door, /open/i);
+        await r.waitFor(s => (s.player?.worldZ ?? 0) > VELRAK_CELL_DOOR.z, 8);
+        return !inVelrakCell(r.pos());
+    }
+    return true;
+}
 
 /**
  * Taverley dungeon baby blue dragons: 9 spawns behind the dusty-key door at (2924, 9803),
@@ -144,6 +204,7 @@ const BABY_BLUE: Spot = {
     area: { x1: 2876, z1: 9740, x2: 2912, z2: 9800 },
     centre: { x: 2893, z: 9780 },
     requires: DUSTY_KEY,
+    acquire: fetchDustyKey,
     async enter(r) {
         if (!r.underground()) {
             if (!(await r.walk(TAVERLEY_DUNGEON_LADDER.x, TAVERLEY_DUNGEON_LADDER.z + 1, 2, 300_000))) return false;
@@ -294,6 +355,8 @@ class Run {
     readonly bot: BotActions;
     readonly sdk: BotSDK;
     nextKeyLook = 0;
+    /** Give up on a spot's `acquire` (and fall back to hill giants) after this wall time. */
+    readonly acquireDeadline = Date.now() + 30 * 60_000;
     private kills = 0;
     private looted: Record<string, number> = {};
     private deaths = 0;
@@ -850,11 +913,17 @@ class Run {
             return;
         }
         if (spot.requires && !this.carrying(spot.requires)) {
-            await this.bank('fetch requirement', spot, [{ re: spot.requires, n: 1 }]);
-            if (!this.carrying(spot.requires)) {
-                this.ctx.log('missing requirement; switching to hill giants', { spot: spot.id, requires: String(spot.requires) });
-                this.opt.spot = HILL_GIANTS;
+            if (this.bankView === null || this.banked(spot.requires) > 0) {
+                await this.bank('fetch requirement', spot, [{ re: spot.requires, n: 1 }]);
+                return;
             }
+            if (spot.acquire && Date.now() < this.acquireDeadline) {
+                this.phase(`acquire:${spot.id}`);
+                await spot.acquire(this);
+                return;
+            }
+            this.ctx.log('missing requirement; switching to hill giants', { spot: spot.id, requires: String(spot.requires) });
+            this.opt.spot = HILL_GIANTS;
             return;
         }
 
