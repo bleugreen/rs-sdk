@@ -6,6 +6,7 @@ import {
     abandonClient,
     backoffMs,
     browserUrl,
+    loggedOutBy,
     logoutClean,
     mintLoginToken,
     openBrowserClient,
@@ -322,6 +323,100 @@ describe('logoutClean and the post-combat window', () => {
         const { session, clicks } = atTick(100, 83);
         expect((await logoutClean(session, { timeoutMs: 1_000 })).ok).toBe(true);
         expect(clicks).toEqual([100]);
+    });
+});
+
+describe('logoutClean on a browser tab: the page confirms, never the gateway', () => {
+    /** A stand-in for Chrome's DevTools port: /json/list and a websocket that answers Runtime.evaluate. */
+    function fakeCdp(bot: string) {
+        const page = { tab: true, inGame: true, evaluations: 0 };
+        const server = Bun.serve({
+            port: 0,
+            hostname: '127.0.0.1',
+            fetch(req, srv) {
+                if (new URL(req.url).pathname === '/json/list') {
+                    return Response.json(page.tab ? [{ id: 't1', type: 'page', url: `http://127.0.0.1:8899/bot?bot=${bot}`, webSocketDebuggerUrl: `ws://127.0.0.1:${srv.port}/devtools/page/t1` }] : []);
+                }
+                return srv.upgrade(req) ? undefined : new Response('not found', { status: 404 });
+            },
+            websocket: {
+                message(ws, m) {
+                    page.evaluations++;
+                    const msg = JSON.parse(String(m)) as { id: number };
+                    ws.send(JSON.stringify({ id: msg.id, result: { result: { type: 'boolean', value: page.inGame } } }));
+                },
+            },
+        });
+        return { page, origin: `http://127.0.0.1:${server.port}`, stop: () => server.stop(true) };
+    }
+
+    /** A browser session whose SDK state stays in game and whose gateway says `gateway`. */
+    function browserSession(cdp: string | undefined, gateway: { status: string; inGame: boolean }) {
+        const f = fakeSession({ client: 'browser', child: null, lastInWorldTick: 40 } as Partial<Session>);
+        (f.session as { env: Record<string, string> }).env = { BOT_USERNAME: 'srtest', PASSWORD: 'x', ...(cdp ? { CDP_URL: cdp } : {}) };
+        f.sdk.checkBotStatus = async () => gateway;
+        f.sdk.state = { ...f.sdk.state!, tick: 40 };
+        return f;
+    }
+
+    test('a stale gateway still reading inGame true: the page says out, so the logout is confirmed', async () => {
+        const cdp = fakeCdp('srtest');
+        try {
+            const { session, sdk } = browserSession(cdp.origin, { status: 'stale', inGame: true });
+            sdk.onSend = a => {
+                if (a.method === 'sendClickComponent' && a.args[0] === LOGOUT_BUTTON) cdp.page.inGame = false;
+            };
+            const r = await logoutClean(session, { timeoutMs: 2_000 });
+            expect(r).toMatchObject({ ok: true, clickTick: 40, lastInWorldTick: 40, latencyTicks: 0, confirmedBy: 'page' });
+            expect(sdk.state!.inGame).toBe(true); // the published state never said out
+            expect(cdp.page.evaluations).toBeGreaterThan(0);
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    test('a gateway saying dead or out is not trusted while the page is still in game', async () => {
+        const cdp = fakeCdp('srtest');
+        try {
+            const { session } = browserSession(cdp.origin, { status: 'dead', inGame: false });
+            const r = await logoutClean(session, { timeoutMs: 300 });
+            expect(r).toMatchObject({ ok: false, reason: 'still in game after timeout' });
+            expect(r.confirmedBy).toBeUndefined();
+            expect(await loggedOutBy(session)).toBeNull();
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    test('no tab for the bot is not out (a closed tab is a dropped client); no DevTools port is not out either', async () => {
+        const cdp = fakeCdp('srtest');
+        try {
+            cdp.page.tab = false;
+            expect(await loggedOutBy(browserSession(cdp.origin, { status: 'dead', inGame: false }).session)).toBeNull();
+        } finally {
+            cdp.stop();
+        }
+        // Nothing listens there any more: the probe fails, which is not a confirmation.
+        expect(await loggedOutBy(browserSession(cdp.origin, { status: 'dead', inGame: false }).session)).toBeNull();
+    });
+
+    test('without CDP only the published state confirms a browser logout', async () => {
+        const { session, sdk } = browserSession(undefined, { status: 'dead', inGame: false });
+        expect(await loggedOutBy(session)).toBeNull();
+        sdk.push({ inGame: false });
+        expect(await loggedOutBy(session)).toBe('state');
+    });
+
+    test('the lite client keeps its signals: the child exit, else the gateway', async () => {
+        const { session, child } = fakeSession();
+        expect(await loggedOutBy(session)).toBeNull();
+        child.exit(0);
+        await child.exited;
+        await flush();
+        expect(await loggedOutBy(session)).toBe('child');
+        const attached = fakeSession({ child: null });
+        attached.sdk.checkBotStatus = async () => ({ status: 'dead', inGame: false });
+        expect(await loggedOutBy(attached.session)).toBe('gateway');
     });
 });
 
