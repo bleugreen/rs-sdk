@@ -5,6 +5,9 @@ import {
     castsToLevel,
     GUILD_ITEMS,
     inKeep,
+    KEEP_WEB_OUT,
+    RUIN_WEBS_IN,
+    RUIN_WEBS_OUT,
     limitToCarry,
     manifestLines,
     PLACES,
@@ -130,5 +133,18 @@ describe('the Deserted Keep', () => {
         expect(inKeep(PLACES.keepWebSouth.x, PLACES.keepWebSouth.z)).toBe(true);
         expect(inKeep(PLACES.keepWebNorth.x, PLACES.keepWebNorth.z)).toBe(false);
         expect(inKeep(PLACES.arenaLadder.x, PLACES.arenaLadder.z)).toBe(false);
+    });
+    test('every web crossing steps two tiles straight through its web', () => {
+        for (const c of [KEEP_WEB_OUT, ...RUIN_WEBS_IN, ...RUIN_WEBS_OUT]) {
+            expect(Math.abs(c.from.x - c.to.x) + Math.abs(c.from.z - c.to.z)).toBe(2);
+            expect((c.from.x + c.to.x) / 2).toBe(c.web.x);
+            expect((c.from.z + c.to.z) / 2).toBe(c.web.z);
+        }
+    });
+    test('the ruin route chains east to west into the ladder, and back out the same way', () => {
+        expect(RUIN_WEBS_IN[0]!.to).toEqual(RUIN_WEBS_IN[1]!.from);
+        expect(RUIN_WEBS_IN[1]!.to).toEqual({ x: 3092, z: 3957 }); // beside the ladder at (3091, 3957)
+        expect(RUIN_WEBS_OUT.map(c => c.name)).toEqual(['the ruin west web', 'the ruin east web']);
+        expect(RUIN_WEBS_OUT[1]!.to).toEqual({ x: 3096, z: 3957 });
     });
 });
