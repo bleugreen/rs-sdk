@@ -25,7 +25,7 @@ like every other role (see coins.md).
 | `quantity` | **Target holdings** (bank + inventory), not an amount to add. A restart, or running the same list again, buys only the shortfall. |
 | `maxPrice` | Highest unit price to pay. GE: the bid price when there is no ask at or below it. Shop: the cap on the live price (default 3x the item's base cost). |
 | `source` | `ge` or `shop`. |
-| `shop` | For shop lines, a key of `SHOPS` in buyer.ts: `aubury`, `gerrant`, `betty`, `lumbridgeGeneral`, `varrockGeneral`, `zeke`. Adding a shop is one entry: the shopkeeper's NPC name, a tile beside them, and the nearest bank. |
+| `shop` | For shop lines, a key of `SHOPS` in buyer.ts: `aubury`, `gerrant`, `betty`, `lumbridgeGeneral`, `varrockGeneral`, `zeke`, `nurmof`, `wayne`, `peksa`, `shantay`, `louie`, `lowe`, `dargaud`. Adding a shop is one entry: the shopkeeper's NPC name, a tile beside them, and the nearest bank. |
 | `maxWaitTicks` | Shop lines: how long to wait for restocks when the shelf is empty or the price is above `maxPrice` (default 300 ticks). |
 
 GE lines run first (at Varrock west, where the budget is withdrawn), then the
