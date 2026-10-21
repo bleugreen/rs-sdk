@@ -862,9 +862,10 @@ scripts are in section 4; the shared primitives and their build order are in sec
   fallback (the bones there at 2.07 ticks each) and for a knife-off night with bones left over.
 - **Parameters:** `bones` count, `mode: 'inline' | 'booth'`, `untilLevel`.
 - **Preconditions:** inline: entry 3's. Booth: the bones in the bank at Varrock west.
-- **Postconditions:** Prayer ~94 when S07 ends with every line held (~95 on the 21:20 UTC stock, ~96
-  after its Mining lap); 99 when S18 ends, on that stock too (S07 ~978, the Mining lap ~85, the
-  stuns ~200, none at the booth); only a stock that overflows to the booth reaches 99 there, in S25.
+- **Postconditions:** Prayer ~94 when S07 ends with every line held, 99 when S18 ends. On the 21:20
+  UTC stock ~95 when S07 ends; while `knife-mine` has no bury (RUN-ORDER.md O35, in force) ~98 when
+  S18 ends and 99 at the booth in S25 with the ~85 past S07; once O35 closes ~96 after the Mining
+  lap and 99 when S18 ends, with none at the booth.
 - **Ticks:** expected **95**, best **65**: 16 loads of 23 with rs/141's lab giver, 4 ticks each on
   SCORED's clock (the first 5) and refusals free (m, cairn://p/rs/141 at 732497c64), 65; +30
   inferred for the in-page stop, `receiveFrom` and restart (RUN-ORDER.md R15). rs/137 measured the
