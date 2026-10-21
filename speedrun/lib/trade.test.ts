@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import type { BotWorldState, InventoryItem, TradeItem, TradeState } from '../../sdk/types';
+import type { BotWorldState, GameMessage, InventoryItem, TradeItem, TradeState } from '../../sdk/types';
 import { baseState, FakeSdk, flush } from './fake-sdk';
-import { decideGiver, decideReceiver, give, newGiverCtx, newReceiverCtx, planOffers, receiveFrom, sameName, type GiverCtx, type ReceiverCtx, type TradeSdk } from './trade';
+import { decideGiver, decideReceiver, give, newGiverCtx, newReceiverCtx, planOffers, receiveFrom, sameName, SETTLE_TICKS, type GiverCtx, type ReceiverCtx, type TradeSdk } from './trade';
 
 const inv = (slot: number, id: number, name: string, count = 1): InventoryItem => ({ slot, id, name, count, optionsWithIndex: [] });
 const ti = (id: number, name: string, count: number): TradeItem => ({ slot: 0, id, name, count });
@@ -206,13 +206,25 @@ describe('trade completion race: cairn_h30 gives cairn_h71 a talisman and 200 no
             .toEqual(['burst', 'wait', 'accept', 'wait', 'done']);
     });
 
-    test('giver: a decline after our confirm accept settles on the inventory', () => {
-        const ds = decisions(decideGiver, giverCtx(), giverFrames({ myOffer: [offer[1]!] }));
-        expect(ds.map(d => d.action)).toEqual(['burst', 'wait', 'accept', 'decline', 'done']);
+    // The server's "Accepted trade.", sent to both players as the items swap.
+    const accepted = (tick: number): GameMessage => ({ type: 0, text: 'Accepted trade.', sender: '', tick, fromSelf: false });
+    const said = (f: BotWorldState, ...messages: GameMessage[]): BotWorldState => ({ ...f, gameMessages: messages });
+
+    // The browser client's sendDeclineTrade closes the modal locally, so a giver
+    // that declined is shown the trade closed with its offered items still out of
+    // the inventory, before the server has said how the trade ended.
+    test('giver: a late decline is not settled by the local close; the server\'s "Accepted trade." settles it', () => {
+        const ds = decisions(decideGiver, giverCtx(), [
+            ...giverFrames({ myOffer: [offer[1]!] }), // decline at 4, local close at 5
+            said(frame(6, null, []), accepted(5)),
+        ]);
+        expect(ds.map(d => d.action)).toEqual(['burst', 'wait', 'accept', 'decline', 'wait', 'done']);
         expect(ds[3]).toMatchObject({ reason: 'my confirm offer is not what was planned', settle: true });
     });
 
-    test('giver: a settled decline whose items come back is a failure carrying the decline reason', () => {
+    test('giver: a late decline closed locally before the refund is a failure once the items come back', () => {
+        // "Accepted trade." from an earlier trade is still in the chat history.
+        const stale = accepted(0);
         const ds = decisions(decideGiver, giverCtx(), [
             frame(1, toH71({}), kit),
             frame(2, toH71({ screen: 'confirm', myOffer: offer }), []),
@@ -220,12 +232,19 @@ describe('trade completion race: cairn_h30 gives cairn_h71 a talisman and 200 no
             frame(4, toH71({ screen: 'confirm', myOffer: [offer[1]!] }), []),
             frame(5, toH71({ screen: 'confirm', myOffer: [offer[1]!] }), []),
             frame(6, toH71({ screen: 'confirm', myOffer: [offer[1]!] }), []), // still open: decline again
-            frame(7, null, kit),
-            frame(8, null, kit),
-            frame(9, null, kit),
-        ]);
+            said(frame(7, null, []), stale), // the browser's local close
+            said(frame(8, null, []), stale),
+            said(frame(9, null, kit), stale), // the server's refund
+        ].map(f => said(f, stale)));
         expect(ds.map(d => d.action)).toEqual(['burst', 'accept', 'decline', 'wait', 'wait', 'decline', 'wait', 'wait', 'closed']);
         expect(ds[8]).toMatchObject({ reason: 'my confirm offer is not what was planned' });
+    });
+
+    test('giver: a late decline with no word from the server fails as unsettled, never as given', () => {
+        const closed = Array.from({ length: SETTLE_TICKS + 1 }, (_, i) => frame(5 + i, null, []));
+        const ds = decisions(decideGiver, giverCtx(), [...giverFrames({ myOffer: [offer[1]!] }).slice(0, 4), ...closed]);
+        expect(ds.slice(4, -1).every(d => d.action === 'wait')).toBe(true);
+        expect(ds.at(-1)).toMatchObject({ action: 'closed', reason: 'no settlement seen after declining: my confirm offer is not what was planned' });
     });
 
     test('giver: a decline before our confirm accept is final', () => {
@@ -256,6 +275,20 @@ describe('trade completion race: cairn_h30 gives cairn_h71 a talisman and 200 no
         expect(ds[2]).toMatchObject({ settle: true });
     });
 
+    test('receiver: after a late decline, "Accepted trade." waits longer for the items but never stands in for them', () => {
+        const late = [
+            frame(1, fromH30({ theirOffer: offer, partnerAccepted: true })),
+            frame(2, fromH30({ screen: 'confirm', theirOffer: offer })),
+            frame(3, fromH30({ screen: 'confirm', theirOffer: [offer[0]!] })),
+        ];
+        const closed = (n: number) => Array.from({ length: n }, (_, i) => said(frame(4 + i, null), accepted(3)));
+        const arrives = decisions(decideReceiver, newReceiverCtx('cairn_h30', []), [...late, ...closed(4), frame(8, null, kit)]);
+        expect(arrives.map(d => d.action)).toEqual(['accept', 'accept', 'decline', 'wait', 'wait', 'wait', 'wait', 'done']);
+        const never = decisions(decideReceiver, newReceiverCtx('cairn_h30', []), [...late, ...closed(SETTLE_TICKS + 1)]);
+        expect(never.at(-1)).toMatchObject({ action: 'closed', reason: 'confirm screen offer does not match' });
+        expect(never.slice(3, -1).every(d => d.action === 'wait')).toBe(true);
+    });
+
     // FakeSdk.push merges into the last state; a closed frame has to clear `trade`.
     const show = (sdk: FakeSdk, f: BotWorldState) => sdk.push({ ...f, trade: f.trade });
 
@@ -268,6 +301,43 @@ describe('trade completion race: cairn_h30 gives cairn_h71 a talisman and 200 no
         expect(r.ok).toBe(true);
         expect(r.gave.map(i => [i.id, i.count]).sort()).toEqual([[1437, 200], [1438, 1]]);
         expect(sdk.sent.map(a => a.method)).not.toContain('sendDeclineTrade');
+    });
+
+    // As in the browser client: the decline closes the trade at once, locally.
+    function closeLocallyOnDecline(sdk: FakeSdk) {
+        sdk.onSend = a => {
+            if (a.method === 'sendDeclineTrade') queueMicrotask(() => show(sdk, frame(sdk.getState()!.tick, null, [])));
+        };
+    }
+
+    test('give() does not report a late decline as given when the local close comes before the refund', async () => {
+        const sdk = new FakeSdk(frame(1, toH71({}), kit));
+        closeLocallyOnDecline(sdk);
+        const result = give(sdk as unknown as TradeSdk, 'cairn_h71', specs);
+        await flush();
+        show(sdk, frame(2, toH71({ screen: 'confirm', myOffer: offer }), []));
+        show(sdk, frame(3, toH71({ screen: 'confirm', myOffer: [offer[1]!] }), []));
+        await flush();
+        expect(sdk.getState()!.trade).toBeUndefined();
+        show(sdk, frame(4, null, []));
+        show(sdk, frame(5, null, kit));
+        const r = await result;
+        expect(r).toMatchObject({ ok: false, gave: [], reason: 'my confirm offer is not what was planned' });
+    });
+
+    test('give() reports a late decline as given once the server says "Accepted trade."', async () => {
+        const sdk = new FakeSdk(frame(1, toH71({}), kit));
+        closeLocallyOnDecline(sdk);
+        const result = give(sdk as unknown as TradeSdk, 'cairn_h71', specs);
+        await flush();
+        show(sdk, frame(2, toH71({ screen: 'confirm', myOffer: offer }), []));
+        show(sdk, frame(3, toH71({ screen: 'confirm', myOffer: [offer[1]!] }), []));
+        await flush();
+        show(sdk, said(frame(4, null, []), accepted(3)));
+        const r = await result;
+        expect(r.ok).toBe(true);
+        expect(r.reason).toBe('completed as the decline landed: my confirm offer is not what was planned');
+        expect(r.gave.map(i => [i.id, i.count]).sort()).toEqual([[1437, 200], [1438, 1]]);
     });
 
     test('receiveFrom() reports a trade that completed as its decline landed as received', async () => {
