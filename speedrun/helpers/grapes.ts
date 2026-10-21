@@ -25,6 +25,7 @@
 // camping, default 35), bankAt (grapes held before banking, default 26), fightLevel
 // (Attack/Strength/Defence trained on chickens before goblins, default 10).
 import type { BotWorldState, GroundItem, NearbyLoc, NearbyNpc } from '../../sdk/types';
+import { waitUntil } from '../lib/wait';
 import type { Role, RoleContext } from './role';
 import { runStandalone } from './role';
 import {
@@ -168,10 +169,11 @@ class Gatherer {
 
     // ---- banking (Draynor for the Lumbridge phases, Varrock west for the guild) ----
 
-    async bank(at: Tile, withdraw: RegExp | null = null): Promise<void> {
+    /** Bank everything but the hat, coins, starter kit and (with keepFood) the cooked chickens. */
+    async bank(at: Tile, withdraw: RegExp | null = null, keepFood = true): Promise<void> {
         await walkNear(this.ctx, at.x, at.z, 4);
         await openBank(this.ctx, at);
-        await depositAllExcept(this.sdk, i => i.id === ITEM.chefsHat || i.id === ITEM.coins || i.id === COOKED_CHICKEN || STARTER_GEAR.test(i.name));
+        await depositAllExcept(this.sdk, i => i.id === ITEM.chefsHat || i.id === ITEM.coins || (keepFood && i.id === COOKED_CHICKEN) || STARTER_GEAR.test(i.name));
         if (withdraw) {
             for (const item of this.sdk.getBankItems().filter(i => withdraw.test(i.name))) {
                 if (this.sdk.getInventory().some(i => i.id === item.id) || this.sdk.getEquipment().some(e => e.id === item.id)) continue;
@@ -542,7 +544,7 @@ class Gatherer {
     async camp(bankAt: number): Promise<void> {
         if (invCount(this.sdk, ITEM.grapes) >= bankAt || freeSlots(this.sdk) <= 1) {
             if (position(this.sdk).level > 0) await this.leaveGuild();
-            await this.bank(VARROCK_WEST_BANK);
+            await this.bank(VARROCK_WEST_BANK, null, false);
             return;
         }
         const p = position(this.sdk);
@@ -550,18 +552,21 @@ class Gatherer {
             await this.goToSpawn();
             return;
         }
-        // Watch the spawn tick by tick: take it when it appears, and note when someone else does.
+        // The spawn is a race (other players camp it too): stand on the spawn tile, watch
+        // every tick from shortly before the respawn is due, and send the pickup packet
+        // the tick the grape appears. The jug spawn is only visited when no grape is due.
+        const onSpawn = () => {
+            const q = position(this.sdk);
+            return q.x === GUILD_GRAPES.x && q.z === GUILD_GRAPES.z && q.level === GUILD_GRAPES.level;
+        };
+        if (!onSpawn()) await this.bot.walkTo(GUILD_GRAPES.x, GUILD_GRAPES.z, 0);
         let lastGone = tick(this.sdk);
         let visibleSince = -1;
         while (invCount(this.sdk, ITEM.grapes) < bankAt && freeSlots(this.sdk) > 1) {
             checkAbort(this.ctx);
             await dismissDialogs(this.bot, this.sdk);
-            const jug = this.groundAt(GUILD_JUG, ITEM.jugEmpty);
-            if (jug && freeSlots(this.sdk) > 2) {
-                const before = invCount(this.sdk, ITEM.jugEmpty);
-                await this.bot.pickupItem(jug);
-                this.s.jugs += invCount(this.sdk, ITEM.jugEmpty) - before;
-            }
+            const since = tick(this.sdk) - lastGone;
+            const due = since >= GRAPE_RESPAWN_TICKS - 15;
             const g = this.groundAt(GUILD_GRAPES, ITEM.grapes);
             if (g) {
                 if (visibleSince < 0) {
@@ -570,24 +575,34 @@ class Gatherer {
                     this.s.respawnGaps.push(visibleSince - lastGone);
                 }
                 const before = invCount(this.sdk, ITEM.grapes);
-                const r = await this.bot.pickupItem(g);
+                await this.sdk.sendPickup(g.x, g.z, g.id);
+                await waitUntil(this.sdk, () => invCount(this.sdk, ITEM.grapes) > before || !this.groundAt(GUILD_GRAPES, ITEM.grapes), { maxTicks: 4 });
                 const got = invCount(this.sdk, ITEM.grapes) - before;
                 if (got > 0) {
                     this.s.grapes += got;
                     if (this.s.grapes % 10 === 0) this.ctx.log('grapes', summary(this.s));
-                } else if (r.reason === 'taken_by_other') this.s.takenByOthers++;
+                } else if (!this.groundAt(GUILD_GRAPES, ITEM.grapes)) this.s.takenByOthers++;
+                else continue; // still there: our packet did not land yet, try again
                 lastGone = tick(this.sdk);
                 visibleSince = -1;
-            } else {
-                if (visibleSince >= 0) {
-                    // vanished without us taking it
-                    this.s.takenByOthers++;
-                    lastGone = tick(this.sdk);
-                    visibleSince = -1;
-                }
-                const wait = Math.max(1, Math.min(5, GRAPE_RESPAWN_TICKS - (tick(this.sdk) - lastGone) - 2));
-                await this.sdk.waitForTicks(wait);
+                continue;
             }
+            if (visibleSince >= 0) {
+                // vanished between two looks without our pickup
+                this.s.takenByOthers++;
+                lastGone = tick(this.sdk);
+                visibleSince = -1;
+            }
+            const jug = this.groundAt(GUILD_JUG, ITEM.jugEmpty);
+            if (!due && jug && freeSlots(this.sdk) > 2) {
+                const before = invCount(this.sdk, ITEM.jugEmpty);
+                await this.bot.pickupItem(jug);
+                this.s.jugs += invCount(this.sdk, ITEM.jugEmpty) - before;
+                await this.bot.walkTo(GUILD_GRAPES.x, GUILD_GRAPES.z, 0);
+                continue;
+            }
+            if (!onSpawn() && !due) await this.bot.walkTo(GUILD_GRAPES.x, GUILD_GRAPES.z, 0);
+            await this.sdk.waitForTicks(due ? 1 : Math.min(5, GRAPE_RESPAWN_TICKS - 15 - since));
         }
     }
 
