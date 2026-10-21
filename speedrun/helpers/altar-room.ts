@@ -67,12 +67,24 @@ export function isLocalServer(server = process.env.SERVER ?? ''): boolean {
     return /^(localhost|127\.)/.test(server);
 }
 
+/**
+ * Notes of rune essence and the two talismans (server/content/pack/obj.pack: each
+ * cert id is the item's id + 1). A note has the item's name, so a name match alone
+ * takes a stack of 200 noted essence from a supply trade for a full load, and the
+ * giver walks into the room with nothing it can hand over.
+ */
+export const NOTE_IDS: ReadonlySet<number> = new Set([1437 /* cert_blankrune */, 1439 /* cert_air_talisman */, 1463 /* cert_nature_talisman */]);
+
+const real = (i: InventoryItem, re: RegExp) => re.test(i.name) && !NOTE_IDS.has(i.id);
+
+/** How many of the item are carried as the item itself (notes don't count). */
 export function count(s: BotWorldState | null | undefined, re: RegExp): number {
-    return (s?.inventory ?? []).filter(i => re.test(i.name)).reduce((n, i) => n + i.count, 0);
+    return (s?.inventory ?? []).filter(i => real(i, re)).reduce((n, i) => n + i.count, 0);
 }
 
+/** The first carried slot holding the item itself (never a note). */
 export function findItem(s: BotWorldState | null | undefined, re: RegExp): InventoryItem | undefined {
-    return s?.inventory.find(i => re.test(i.name));
+    return s?.inventory.find(i => real(i, re));
 }
 
 /** Resolve on the first state for which `pred` holds, or false after `ticks` server ticks. */
