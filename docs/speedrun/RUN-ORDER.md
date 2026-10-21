@@ -427,6 +427,11 @@ is the order the 7-tick Runecraft cycle needs. A helper that relogs after SCORED
 Two relogs is the whole planned count. Planned relogs need pages cleared and 16 ticks out of combat
 before the click (WINE). S25 does the wine last so relog 1 can double as S25's staging pause, and so
 the gems cut in the windows meet Crafting late in its route, where they leak no pages (WW§4).
+Before rs/164, `logoutClean` (`speedrun/lib/session.ts`) read `lastDamageTick = -1` (never damaged)
+as a hit and waited 17 ticks on any logout in a session's first 16 ticks. No planned logout falls
+there: relog 1 and the final logout end long sessions, and the arming relog comes at login + 21 or
+later, after the first firing at + 20 and P1, so the 2 m per relog stand. Only an unplanned logout
+within 16 ticks of a re-login was exposed, and rs/164 fixes it.
 
 **Logout-safe pause points** (where a supply shortfall is waited out logged out, at no tick cost
 beyond the relog): S01's landing tile; after S03 and after S04 (the row's end); in the air altar room

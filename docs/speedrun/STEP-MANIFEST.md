@@ -1167,6 +1167,12 @@ scripts are in section 4; the shared primitives and their build order are in sec
 - **Ticks:** **8** (measured on the demo, already on SCORED's clock).
 - **Kept for:** rehearsals and gate accounts, which need the same skip: `bot.skipTutorial()` or two
   guarded dialogue clicks; at most 7 ticks on the lab engine, 11 on the demo.
+- **Lab measurement (rs/150):** **3 ticks** (m: lab, 3 of 3 runs, bgsrv-mac, `NODE_TICKRATE=300`, lite
+  client, a fresh bot). The design accept and the guide talk go in one tick, the question page is
+  continued the tick it shows, and a guarded "Yes please." goes the tick the choice shows. It fails
+  rather than falls back if the skip is not offered. The stock `bot.skipTutorial()` measured 6. The
+  demo bar stays at most 11 until rs/164's cairn_smoke reports (`docs/speedrun/rehearsals/HARNESS.md`
+  on rs/147's branch). SCORED's S00 stays done at 8; no total changes.
 - **logoutSafe:** yes.
 
 ## 4. Helper-side scripts
