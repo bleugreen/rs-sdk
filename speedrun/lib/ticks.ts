@@ -12,8 +12,20 @@ import { dirname, join } from 'path';
 import type { StateSource } from './wait';
 import { tickMs } from './wait';
 
+/**
+ * Annotation rows describe the run rather than one stretch of it, so they overlap the step rows:
+ * `session` (client tick 0 to the logout click), `program` (an in-page program's final status),
+ * `gate` (a gate reading taken before or during the run), `reach` (the tick a level was first
+ * observed), `hiscore` (the public row read after logout, against the log), `players` (a
+ * /playercount read during the attempt). `report` lists them
+ * apart and never sums them into the total. A row without a kind is a step, boundary or runner
+ * row, and the step and boundary rows together cover the run.
+ */
+export type RowKind = 'session' | 'program' | 'gate' | 'reach' | 'hiscore' | 'players';
+
 export interface TickRow {
     v: 1;
+    kind?: RowKind;
     runId: string;
     account: string;
     sessionId: number;
@@ -153,16 +165,34 @@ export interface StepReport {
     lowerBound: boolean;
 }
 
+export interface AnnotationReport {
+    kind: RowKind;
+    step: string;
+    count: number;
+    totalTicks: number;
+}
+
 export interface RunReport {
     steps: StepReport[];
     totalTicks: number;
     lowerBound: boolean;
+    /** Annotation rows per kind and name, outside `totalTicks`. */
+    annotations: AnnotationReport[];
 }
 
-/** Aggregate rows per step name, in first-seen order. */
+/** Aggregate rows per step name, in first-seen order. Annotation rows are counted apart. */
 export function report(rows: TickRow[]): RunReport {
     const byStep = new Map<string, TickRow[]>();
+    const notes = new Map<string, AnnotationReport>();
     for (const r of rows) {
+        if (r.kind) {
+            const key = `${r.kind}\u0000${r.step}`;
+            const a = notes.get(key) ?? { kind: r.kind, step: r.step, count: 0, totalTicks: 0 };
+            a.count++;
+            a.totalTicks += r.ticks;
+            notes.set(key, a);
+            continue;
+        }
         const list = byStep.get(r.step);
         if (list) list.push(r);
         else byStep.set(r.step, [r]);
@@ -186,6 +216,7 @@ export function report(rows: TickRow[]): RunReport {
         steps,
         totalTicks: steps.reduce((a, s) => a + s.totalTicks, 0),
         lowerBound: steps.some(s => s.lowerBound),
+        annotations: [...notes.values()],
     };
 }
 
@@ -211,7 +242,12 @@ export function formatReport(rep: RunReport): string {
     body.push(['TOTAL' + (rep.lowerBound ? ' (>=)' : ''), '', '', String(rep.totalTicks), '', '', '']);
     const widths = header.map((h, i) => Math.max(h.length, ...body.map(r => r[i]!.length)));
     const line = (cells: string[]) => cells.map((c, i) => (i === 0 ? c.padEnd(widths[i]!) : c.padStart(widths[i]!))).join('  ');
-    return [line(header), line(widths.map(w => '-'.repeat(w))), ...body.map(line)].join('\n');
+    const table = [line(header), line(widths.map(w => '-'.repeat(w))), ...body.map(line)];
+    if (rep.annotations.length) {
+        table.push('', 'annotations (not in TOTAL):');
+        for (const a of rep.annotations) table.push(`  ${a.kind.padEnd(8)} ${a.step}  n=${a.count}  ticks=${a.totalTicks}`);
+    }
+    return table.join('\n');
 }
 
 if (import.meta.main) {

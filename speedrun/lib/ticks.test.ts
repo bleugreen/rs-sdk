@@ -25,6 +25,23 @@ describe('report', () => {
         expect(formatReport(rep)).toContain('x (>=)');
     });
 
+    test('annotation rows are listed apart and never summed into the total', () => {
+        const rep = report([
+            row('(session)', 40, { kind: 'session' }),
+            row('S00', 6),
+            row('(boundary)', 1),
+            row('(program)', 30, { kind: 'program' }),
+            row('(program)', 12, { kind: 'program' }),
+        ]);
+        expect(rep.steps.map(s => s.step)).toEqual(['S00', '(boundary)']);
+        expect(rep.totalTicks).toBe(7);
+        expect(rep.annotations).toEqual([
+            { kind: 'session', step: '(session)', count: 1, totalTicks: 40 },
+            { kind: 'program', step: '(program)', count: 2, totalTicks: 42 },
+        ]);
+        expect(formatReport(rep)).toContain('annotations (not in TOTAL)');
+    });
+
     test('parseLog skips blank lines and other versions', () => {
         const text = JSON.stringify(row('a', 1)) + '\n\n' + JSON.stringify({ ...row('b', 2), v: 2 }) + '\n';
         expect(parseLog(text).map(r => r.step)).toEqual(['a']);

@@ -34,6 +34,8 @@ speedrun/
     resume.ts     resolveResume (walk the manifest from game state), sessionLink, runResumable
     fence.ts      Fence: an abandoned step attempt cannot send or hear state; patchMethod
     example-bank.ts  'bank everything at Varrock west', end to end
+  skills/         the run's step modules: `skill` and `steps({to, ...})` returning runner Steps
+    start.ts      S00, the tutorial skip on a brand-new account's first login
   lab/            local lab: never imported by lib/
     lab.sh        engine + gateway + lite runners on port block 9300
     setup.ts      ::tele / ::give / ::setstat fixtures
@@ -259,9 +261,18 @@ level with and without the watcher) has not been measured yet.
   group (a terminal Ctrl-C reaches only this process), and it never outlives
   this process: a crash, SIGTERM or SIGHUP logs every launched runner out
   (`abandonClient`), and any other exit kills it.
-- `logoutClean` waits out the 16-tick post-combat window, clicks logout
+- `logoutClean` waits out the 16-tick post-combat window (none when
+  `lastDamageTick` is -1, never hit; a fresh account's first ticks don't wait), clicks logout
   (IF_BUTTON 2458), retries once if refused, and verifies: no tick after the
-  click, and the lite child exited or the gateway reports the bot dead. It
+  click, and the published state says out, or the lite child exited (a lite
+  client attached without its child: the gateway reports it dead or out), or,
+  for a browser tab, **the page's own `gameClient.ingame` read over CDP**
+  (`loggedOutBy`; `LogoutResult.confirmedBy` names the signal). A browser tab
+  is never judged by the gateway: once a page logs out it stops publishing,
+  and the gateway keeps `inGame: true` (status `stale`, or still `active`), as
+  measured on the twin (docs/speedrun/rehearsals/HARNESS.md). A missing tab is
+  not out (a closed tab is a dropped client); without CDP only a published
+  `inGame: false` confirms. It
   never kills the process to log out. A closed socket leaves the player in the
   world for 500 ticks, a silent one for 1,000, and a live client with nothing
   driving it forever (hiscore-timestamps.md section 5.1).
@@ -385,6 +396,11 @@ ticks were never observed. `report(rows)` totals per step;
 `bun speedrun/lib/ticks.ts report speedrun/runs/<runId>.jsonl` prints the table
 (lower bounds marked `>=`).
 
+**Annotation rows.** A row with a `kind` (`session`, `program`, `gate`, `reach`, `hiscore`)
+describes the run instead of one stretch of it, so it overlaps the step rows. `report` lists it
+under "annotations" and never sums it into the total. Rows without a kind (steps, `(boundary)`,
+`(resume)`, `(drop)`) together cover the run, as before.
+
 ## hostgate.ts
 
 The run-time gate for the tick-manipulation loops. `probeOnTime(sdk, {trials = 20})` walks
@@ -502,6 +518,25 @@ distinct items) took **6 ticks** and wrote its tick log:
 speedrun/lab/lab.sh srlab1 'speedrun/runner/example-bank.ts:--lab'
 bun speedrun/lib/ticks.ts report speedrun/runs/<runId>.jsonl
 ```
+
+## skills/start.ts (S00)
+
+The tutorial skip, STEP-MANIFEST.md entry 34, as one `logoutSafe` step (`steps()` returns it, so a
+run or `rehearse.ts` chains it like a skill module). A fresh account logs in on Tutorial Island
+with the character-design screen open. The step sends the design accept and the talk to the
+RuneScape Guide in the same tick (FIFO puts the accept first, and closing the screen queues
+the guide's welcome state before the talk lands). It answers the guide's question page with a
+continue on the tick it shows, and the choice page with a guarded "Yes please." on the tick it
+shows. The guard is the content's own (`runescape_guide.rs2`, `map_live = false`): the choice
+must offer "Yes please.", and the question page's text must ask about skipping whenever the
+client published it. If the skip is not offered, the step fails rather than starting the
+tutorial. Precondition: on Tutorial Island. Postcondition: on (3222,3222) with the starter kit
+(side tabs are not in `BotWorldState`; the same script opens them). `done`: off the island.
+
+| Measurement (`rehearse.ts` on the lab, fresh bots, lite client, bgsrv-mac, 300 ms) | Ticks |
+|---|---|
+| S00 step row, first published state to Lumbridge with the kit | **3** (3 of 3): question page +1, choice page +2, landed +3 |
+| Stock `bot.skipTutorial()` (manifest entry 34, `travel-walk-enchant.ts`) | 6 |
 
 ## Lab
 

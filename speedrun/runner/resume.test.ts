@@ -253,6 +253,16 @@ describe('sessionLink', () => {
         expect(link.isLost()).toBe(false);
     });
 
+    test('a lite exit after an intended logout is not a drop', () => {
+        const { s } = fakeSession();
+        const link = sessionLink(s, { pollMs: 2 });
+        (s as { expectInWorld: boolean }).expectInWorld = false;
+        (s as { childExit: number | null }).childExit = 1;
+        expect(link.isLost()).toBe(false);
+        (s as { expectInWorld: boolean }).expectInWorld = true;
+        expect(link.isLost()).toBe(true);
+    });
+
     test('lost when the tick stops for staleTicks; quiet while the account is meant to be out', async () => {
         const { s } = fakeSession();
         const link = sessionLink(s, { staleTicks: 2, pollMs: 2 });
