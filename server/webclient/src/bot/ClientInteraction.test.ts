@@ -510,6 +510,7 @@ describe('browser bot overlay action dispatch', () => {
     function overlay(execute: (action: { type: string }) => unknown) {
         const results: Array<[string, boolean]> = [];
         const o = Object.assign(Object.create(BotOverlay.prototype), {
+            client: { idleTimer: 0 },
             actionQueue: new BotActionQueue(),
             waitTicks: 0,
             executor: { execute },
