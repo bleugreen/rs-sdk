@@ -171,11 +171,53 @@ export function parsePackageRequest(text: string, packages: Package[]): Package 
     return packages.find(p => p.name.toLowerCase() === name) ?? null;
 }
 
-/** Bank items a courier should carry: every item matching a pattern, noted, up to `freeSlots` types. */
-export function courierPicks(bank: BankItem[], patterns: RegExp[], freeSlots: number): BankItem[] {
-    return bank
-        .filter(b => b.count > 0 && patterns.some(p => p.test(b.name)))
-        .slice(0, Math.max(0, freeSlots));
+/** One courier line: items whose name matches `re`, at most `n` of them in all (null: everything). */
+export interface CourierItem {
+    re: RegExp;
+    n: number | null;
+}
+
+/** The courier's `items` option: RegExp sources (carry everything matching) or `{ item, n }` (carry at most n). */
+export function courierItems(value: unknown): CourierItem[] {
+    const list = Array.isArray(value) ? value : value === undefined || value === null ? [] : [value];
+    return list.map(v => {
+        if (v && typeof v === 'object' && !(v instanceof RegExp) && 'item' in v) {
+            const n = Number((v as { n?: unknown }).n);
+            return { re: new RegExp(String((v as { item: unknown }).item), 'i'), n: Number.isFinite(n) && n >= 0 ? Math.floor(n) : null };
+        }
+        return { re: v instanceof RegExp ? v : new RegExp(String(v), 'i'), n: null };
+    });
+}
+
+/**
+ * Bank stacks a courier should carry, as notes, up to `freeSlots` types. A stack belongs
+ * to the first line it matches; a line's `n` caps the total across its stacks, in bank order.
+ */
+export function courierPicks(bank: BankItem[], items: CourierItem[], freeSlots: number): { bankItem: BankItem; amount: number }[] {
+    const left = items.map(i => i.n);
+    const picks: { bankItem: BankItem; amount: number }[] = [];
+    for (const b of bank) {
+        if (picks.length >= freeSlots) break;
+        if (b.count <= 0) continue;
+        const i = items.findIndex(it => it.re.test(b.name));
+        if (i < 0) continue;
+        const cap = left[i] ?? null;
+        const amount = cap === null ? b.count : Math.min(cap, b.count);
+        if (amount <= 0) continue;
+        if (cap !== null) left[i] = cap - amount;
+        picks.push({ bankItem: b, amount });
+    }
+    return picks;
+}
+
+/** Lower each line's cap by what a trade gave (each item counts against the first line it matches). */
+export function courierGave(items: CourierItem[], gave: ReadonlyArray<{ name: string; count: number }>): CourierItem[] {
+    const out = items.map(i => ({ ...i }));
+    for (const g of gave) {
+        const line = out.find(it => it.re.test(g.name));
+        if (line && line.n !== null) line.n = Math.max(0, line.n - g.count);
+    }
+    return out;
 }
 
 // ============ Chat cursors ============
@@ -929,13 +971,18 @@ export const role: Role = {
 // ============ Courier ============
 
 export interface CourierOptions {
+    /** The receiving account: the mule, or any account that accepts the trade. */
     mule: string;
-    /** Item-name RegExp sources, case-insensitive. */
-    items: string | string[];
+    /** Item-name RegExp sources, case-insensitive (carry everything matching), or `{ item, n }` (carry at most n). */
+    items: string | Array<string | { item: string; n: number }>;
     /** Make the trip only when the bank holds at least this many matching item types. Default 1. */
     minStacks?: number;
     /** Walk back to where the trip started. Default true. */
     returnHome?: boolean;
+    /** Bank tile where the trade happens. Default Varrock west, where the mule stands. */
+    at?: { x: number; z: number };
+    /** How long to wait at `at` for the receiver to come into sight, in ms. Default 0. */
+    waitMs?: number;
 }
 
 /**
@@ -946,9 +993,10 @@ export interface CourierOptions {
 export async function courierTrip(ctx: RoleContext): Promise<{ trades: number; carried: string[] }> {
     const o = ctx.options as unknown as CourierOptions;
     if (!o.mule) throw new Error('courier: options.mule is required');
-    const patterns = toRegExps(o.items);
-    if (patterns.length === 0) throw new Error('courier: options.items is required');
+    let items = courierItems(o.items);
+    if (items.length === 0) throw new Error('courier: options.items is required');
     const minStacks = o.minStacks ?? 1;
+    const at = o.at ?? MULE_STAND;
     const { sdk, bot } = ctx;
     const carried: string[] = [];
     let trades = 0;
@@ -959,26 +1007,31 @@ export async function courierTrip(ctx: RoleContext): Promise<{ trades: number; c
     const p = sdk.getState()?.player;
     if (!p) throw new Error('courier: no player state');
     const home = { x: p.worldX, z: p.worldZ };
-    const matching = () => sdk.getInventory().filter(i => patterns.some(re => re.test(i.name)));
-    const keepNonMatching = () => countById(sdk.getInventory().filter(i => !patterns.some(re => re.test(i.name))));
+    const matching = () => sdk.getInventory().filter(i => items.some(it => it.re.test(i.name)));
+    const keepNonMatching = () => countById(sdk.getInventory().filter(i => !items.some(it => it.re.test(i.name))));
 
-    if (!(await walkNear(ctx, MULE_STAND.x, MULE_STAND.z, 4))) throw new Error('courier: could not reach Varrock west bank');
+    if (!(await walkNear(ctx, at.x, at.z, 4))) throw new Error(`courier: could not reach the bank at ${at.x},${at.z}`);
+    if (o.waitMs && !sdk.findNearbyPlayer(playerPattern(o.mule))) {
+        ctx.log('courier: waiting for the receiver', { mule: o.mule, waitMs: o.waitMs });
+        const until = Date.now() + o.waitMs;
+        while (!sdk.findNearbyPlayer(playerPattern(o.mule)) && Date.now() < until && !ctx.signal.aborted) await sdk.waitForTicks(5);
+    }
 
     for (let round = 0; round < 20 && !ctx.signal.aborted; round++) {
         if (!(await openBank(ctx))) throw new Error('courier: could not open the bank');
         // Matching items already carried (produce, or notes from an interrupted trip)
         // go in first: the bank un-notes them, and everything comes back out as notes.
         if (matching().length) await depositAllExcept(sdk, keepNonMatching());
-        const picks = courierPicks(sdk.getBankItems(), patterns, freeSlots(sdk));
+        const picks = courierPicks(sdk.getBankItems(), items, freeSlots(sdk));
         if (round === 0 && picks.length + matching().length < minStacks) {
             ctx.log('courier: not enough stock to carry', { stacks: picks.length, minStacks });
             ctx.reportBank(bankSnapshot(sdk));
             await closeBank(ctx);
             break;
         }
-        for (const b of picks) {
-            const r = await bot.withdrawItem(b, -1, { asNote: true });
-            if (!r.success) ctx.log('courier: withdraw failed', { item: b.name, result: r.message });
+        for (const { bankItem, amount } of picks) {
+            const r = await bot.withdrawItem(bankItem, amount, { asNote: true });
+            if (!r.success) ctx.log('courier: withdraw failed', { item: bankItem.name, amount, result: r.message });
         }
         ctx.reportBank(bankSnapshot(sdk));
         await closeBank(ctx);
@@ -1005,9 +1058,10 @@ export async function courierTrip(ctx: RoleContext): Promise<{ trades: number; c
         if (!r.success) break;
         trades++;
         carried.push(...r.gave.map(i => `${i.name} x${i.count}`));
-        // Another round only if the bank still holds matching stock.
+        items = courierGave(items, r.gave);
+        // Another round only if the bank still holds matching stock under the caps.
         if (!(await openBank(ctx))) break;
-        const left = courierPicks(sdk.getBankItems(), patterns, 28);
+        const left = courierPicks(sdk.getBankItems(), items, 28);
         ctx.reportBank(bankSnapshot(sdk));
         if (left.length === 0) {
             await closeBank(ctx);
