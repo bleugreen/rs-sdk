@@ -78,12 +78,12 @@ await runScript(async ({ bot, sdk }) => {
 
     if (FROM === 'start') {
         await cheat(sdk, 'setvar desertrescue 0');
-        for (const [o, n] of [['water_skin4', 1], ['water_skin4', 1], ['water_skin4', 1], ['shantay_pass', 1], ['desert_shirt', 1], ['desert_robe', 1], ['desert_boots', 1], ['bronze_bar', 1], ['bronze_bar', 1], ['feather', 30], ['hammer', 1], ['rune_scimitar', 1]] as const) await give(sdk, o, n);
+        for (const [o, n] of [['water_skin4', 1], ['water_skin4', 1], ['water_skin4', 1], ['shantay_pass', 1], ['desert_shirt', 1], ['desert_robe', 1], ['desert_boots', 1], ['bronze_bar', 6], ['feather', 80], ['hammer', 1], ['rune_scimitar', 1]] as const) await give(sdk, o, n);
         await tele(sdk, 3293, 3163); // glory: Al Kharid landing, +6 ticks
     } else if (FROM === 'shabim') {
         // stage 10 (pineapple errand), just outside the camp gate, slave clothes carried
         await cheat(sdk, 'setvar desertrescue 10');
-        for (const [o, n] of [['water_skin4', 1], ['water_skin4', 1], ['slave_shirt', 1], ['slave_robe', 1], ['slave_boots', 1], ['metal_key', 1], ['bronze_bar', 1], ['bronze_bar', 1], ['feather', 30], ['hammer', 1]] as const) await give(sdk, o, n);
+        for (const [o, n] of [['water_skin4', 1], ['water_skin4', 1], ['slave_shirt', 1], ['slave_robe', 1], ['slave_boots', 1], ['metal_key', 1], ['bronze_bar', 6], ['feather', 80], ['hammer', 1]] as const) await give(sdk, o, n);
         await tele(sdk, 3272, 3029);
     } else {
         await cheat(sdk, 'setvar desertrescue 16');
@@ -225,8 +225,15 @@ await runScript(async ({ bot, sdk }) => {
             while (!q.inv('thprotodarttip')) {
                 if (!q.inv('bronze_bar')) throw new Error('out of bronze bars');
                 bars++;
-                const n = q.count('bronze_bar');
-                await q.useOnLoc('bronze_bar', 'experimental_anvil', () => q.count('bronze_bar') < n && !sdk.getState()!.dialog.isOpen, { choices: [/Yes, I'd like to try/] });
+                // The bar is deleted at the start of the forge (quest_desertrescue.rs2:612), so
+                // wait for the outcome: the tip, or the waste message.
+                let wasted = false;
+                const outcome = () => {
+                    if (sdk.getNewChat({ types: [0], includeSelf: true }).some(m => /waste the bronze bar/.test(m.text))) wasted = true;
+                    return wasted || !!q.inv('thprotodarttip');
+                };
+                sdk.getNewChat({ types: [0], includeSelf: true });
+                await q.useOnLoc('bronze_bar', 'experimental_anvil', outcome, { choices: [/Yes, I'd like to try/] });
                 await q.settle(() => true, 5);
             }
             return `${bars} bars used`;
