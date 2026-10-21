@@ -93,4 +93,25 @@ From the run host (ashburn, AWS us-east-1, 1.8 ms to the demo; 2026-10-21 16:58-
 
 So a giver driven through the SDK relay is tick-exact only where that relay is: measure it on the run machine with the same probe before trusting the tuned or the robust schedule. Where it isn't, the giver's schedule has to fire on raw frame arrival inside the client process (the counterpart of the scored side's in-page programs).
 
+## The direct path
+
+A giver with `path: 'direct'` in the launcher config drives its own lite client in-process, with no gateway (HELPERS.md, "The direct path"; `speedrun/lib/direct.ts`). The role code is the same module. Its `onStateUpdate` listener runs inside the client's tick callback, and the request, offer+accept and confirm it fires there are on the wire before that callback returns. Through the relay, the same packets cross two more processes and four loopback socket hops first.
+
+Lab (local engine at `NODE_TICKRATE=300`, bbl, 2026-10-21 20:34-20:49 UTC, givers logged in before the stand-in, tuned, the stand-in on the relay):
+
+| Run | Givers | Turns given | Craft-to-craft gaps |
+|---|---|---|---|
+| direct | 3 (h70-h72) | 21/21 | 20 gaps, all 7 |
+| direct | 2 (h70, h71) | 20/21 | 17 gaps at 7, 1 at 8; the miss: the stand-in had a Runecraft level-up page open and refused the request ("busy") |
+| direct | 2 | 6/6 | 5 gaps, all 7 |
+| mixed, same minutes | h70, h72 direct; h71 relay | 20/21: direct 13/13, relay 7/8 | 18 gaps, all 7. The miss: the relay giver's request, offer+accept and confirm reached the gateway within 200 ms of each other, so steps meant for separate ticks landed together |
+| mixed | the same | 9/9 | 8 gaps, all 7 |
+| relay (control) | 3 | 9/9 | 8 gaps, all 7 |
+
+One more mixed run went 0/21 and is set aside, for a reason outside the givers: every turn, the stand-in (relay) sent its whole half of the turn (request, accept, confirm, craft) to the gateway within one millisecond, and it had level-up pages open. So each giver request found it busy. The next run on the same engine went 9/9.
+
+The latency probe (`speedrun/lab/path-side-by-side.ts`, both paths concurrently in the same minutes, 60 trials each): **relay 58/60 on time, direct 60/60** (direct catch-ups 0/min, tick arrival p90 355 ms).
+
+On loopback the relay is nearly always in time, so the lab shows that the direct path works and is never later than the relay. The comparison that decides it is on the run host. There, rs/141 measured relay 44/60 against direct 53/60 in the same minutes, with tuned two-giver turns on the relay at 11/19.
+
 **Notes are not a load.** A supply trade of 200 rune essence arrives as one noted stack with the essence's name, so restock checks count only the item ids themselves (`NOTE_IDS` in `altar-room.ts`). Before that fix a giver walked into the room with 200 notes it could not hand over.
