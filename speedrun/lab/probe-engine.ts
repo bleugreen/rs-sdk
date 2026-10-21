@@ -161,7 +161,8 @@ async function probeCharge() {
         let bursts = 0;
         for (let i = 1; i <= 40; i++) {
             await nextTick(sdk);
-            if (i % 5 === 0) { for (let k = 0; k < 4; k++) fire('charge', sdk.sendClickComponent(CHARGE)); bursts++; }
+            // period 3 against the 5-tick fly cycle, so casts land on catch ticks too
+            if (i % 3 === 0) { for (let k = 0; k < 4; k++) fire('charge', sdk.sendClickComponent(CHARGE)); bursts++; }
         }
         const end = (await waitTicks(sdk, 3)).tick;
         const fish = deltas(start, end, s => xp(s, 'fishing'));
@@ -182,8 +183,39 @@ async function probeCharge() {
     }
 }
 
+/** Answer continue pages (level-ups) until no dialog is open. */
+async function dismissAll(maxTicks = 40) {
+    for (let i = 0; i < maxTicks; i++) {
+        const s = await nextTick(sdk);
+        if (!s.dialog.isOpen && !s.modalOpen) return;
+        fire('continue', sdk.sendClickDialog(0));
+    }
+}
+
 // ---- wine: timer restart and no level check at fermentation ----
 async function probeWine() {
+    await dismissAll();
+    for (let n = 0; n < N; n++) {
+        // blocked variant: a level-up chat held open across the timer's due tick
+        await setstat(sdk, 'cooking', 35);
+        await setstat(sdk, 'woodcutting', 1);
+        await fresh('give grapes 3', 'give jug_water 3');
+        const g = items(sdk.getState(), /^grapes$/i);
+        const j = items(sdk.getState(), /^jug of water$/i);
+        const a = await nextTick(sdk);
+        for (let i = 0; i < g.length; i++) fire('wine', sdk.sendUseItemOnItem(g[i]!.slot, j[i]!.slot));
+        await waitTicks(sdk, 4);
+        await cheat(sdk, 'advancestat woodcutting 2');
+        const opened = await waitUntil(sdk, s => s.dialog.isOpen, { maxTicks: 6 });
+        await waitTicks(sdk, 30 - (sdk.getState()!.tick - a.tick));
+        const heldUntil = sdk.getState()!.tick - a.tick;
+        const unfAtRelease = count(sdk.getState(), /^unfermented wine$/i);
+        await dismissAll();
+        const fer = await waitUntil(sdk, s => count(s, /^unfermented wine$/i) === 0, { maxTicks: 30 });
+        result('wine blocked by modal', { dialogOpened: opened.ok, dialogHeldUntilTick: heldUntil, unfermentedWhenReleased: unfAtRelease, fermentedAtTick: fer.tick - a.tick, fermented: fer.ok });
+        await dismissAll();
+        flushRefusals('wine blocked');
+    }
     for (let n = 0; n < N; n++) {
         await setstat(sdk, 'cooking', 35);
         await fresh('give grapes 10', 'give jug_water 10');
@@ -195,6 +227,7 @@ async function probeWine() {
         const unf = (s: BotWorldState) => count(s, /^unfermented wine$/i);
         const a = await nextTick(sdk);
         const cook0 = xp(a, 'cooking');
+        const level0 = a.skills.find(k => k.name.toLowerCase() === 'cooking')?.baseLevel;
         make(a, 5);
         await waitTicks(sdk, 10);
         const b = await nextTick(sdk);
@@ -208,14 +241,17 @@ async function probeWine() {
             made10: made.ok,
             fermentedAfterFirstBurst: done.tick - a.tick,
             fermentedAfterSecondBurst: done.tick - b.tick,
-            cookingLevelAtFerment: e.skills.find(k => k.name.toLowerCase() === 'cooking')?.baseLevel,
+            cookingLevelAtStart: level0,
+            cookingLevelAfterFerment: e.skills.find(k => k.name.toLowerCase() === 'cooking')?.baseLevel,
             wine: count(e, /^jug of wine$/i),
             badWine: count(e, /^jug of bad wine$/i),
             cookingXp: xp(e, 'cooking') - cook0,
         });
         flushRefusals('wine');
+        await dismissAll();
     }
     await setstat(sdk, 'cooking', 99);
+    await dismissAll();
 }
 
 // ---- bankheld: OPHELD on the inventory tab with the bank open ----
