@@ -56,6 +56,21 @@ describe('decideReceiver', () => {
         ])).toEqual(['accept', 'decline']);
     });
 
+    test('an empty confirm-screen offer is not read yet: wait, accept when it fills, decline if it stays empty', () => {
+        expect(runReceiver(newReceiverCtx('helper', [], want), [
+            frame(1, { theirOffer: [ORE] }),
+            frame(2, { screen: 'confirm', theirOffer: [] }),
+            frame(3, { screen: 'confirm', theirOffer: [ORE] }),
+        ])).toEqual(['accept', 'wait', 'accept']);
+        expect(runReceiver(newReceiverCtx('helper', [], want), [
+            frame(1, { theirOffer: [ORE] }),
+            frame(2, { screen: 'confirm', theirOffer: [] }),
+            frame(3, { screen: 'confirm', theirOffer: [] }),
+            frame(4, { screen: 'confirm', theirOffer: [] }),
+            frame(5, { screen: 'confirm', theirOffer: [] }),
+        ])).toEqual(['accept', 'wait', 'wait', 'wait', 'decline']);
+    });
+
     test('no want: accept when the partner accepts, then decline a short count on confirm', () => {
         const ctx = newReceiverCtx('helper', []);
         expect(runReceiver(ctx, [
