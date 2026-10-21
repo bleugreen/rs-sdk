@@ -66,7 +66,7 @@ async function fight(bot: BotActions, sdk: BotSDK, target: () => NearbyNpc | und
     const evSeen = new Set<number>();
     const first = target();
     if (!first) throw new Error('no target');
-    await sdk.sendInteractNpc(first.index, firsattackOp(t));
+    await sdk.sendInteractNpc(first.index, attackOp(first));
     log.attacks++;
     lastAttack = now(sdk);
     while (!done()) {
