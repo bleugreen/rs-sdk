@@ -160,7 +160,8 @@ for (const phase of phases) {
         const prev = logs[i]!;
         const min = minutes.get(minuteOf(g.wall))!;
         const ticks = g.tick - prev.tick;
-        const kind = g.phaseResync || ticks === 4 ? 'timing' : ticks >= 21 ? 'honest' : 'other';
+        // Plain swings every 4 ticks, so a 4-tick gap is its cadence, not a timing slip.
+        const kind = g.phaseResync || (ticks === 4 && phase !== 'plain') ? 'timing' : ticks >= 21 ? 'honest' : 'other';
         return { ticks, level: g.level, p: r3(p(g.level)), expRolls: 1 / p(g.level), calm: min.calm, contiguous: g.n === prev.n + 1,
             trailing60: within(catchUps, g.wall - 60000, g.wall), trailingSoft60: within(softs, g.wall - 60000, g.wall),
             catchUpsInGap: within(catchUps, prev.wall, g.wall), softsInGap: within(softs, prev.wall, g.wall), kind };
@@ -183,7 +184,7 @@ for (const phase of phases) {
     const last = polls[polls.length - 1]!;
     const counters = final?.counters ?? { phaseResyncs: last.pr, slips: last.sl, resyncs: last.rs, levelUps: last.lu, switches: last.sw };
     const kinds = { honest: gaps.filter(g => g.kind === 'honest').length, timing: gaps.filter(g => g.kind === 'timing').length,
-        timingFourTick: gaps.filter(g => g.ticks === 4).length, timingPhaseResync: gaps.filter(g => g.kind === 'timing' && g.ticks !== 4).length };
+        timingFourTick: gaps.filter(g => g.kind === 'timing' && g.ticks === 4).length, timingPhaseResync: gaps.filter(g => g.kind === 'timing' && g.ticks !== 4).length };
     const line = (label: string, s: ReturnType<typeof sum>) => console.log(`  ${label.padEnd(30)} ${s.logs} gaps, ${s.ticks} ticks, ${s.perLog} per log, ${s.perExpectedRoll} per expected roll (Σ1/p ${s.expRolls})`);
     console.log(`${phase}: ${logs.length} logs stamped (${stamps.size ? `marks, ${missed} not stamped` : 'log lines'}; ${polls.length} polls), Woodcutting ${levels} (start ${startLevel}), p ${ps}`);
     line('all', split.all);
