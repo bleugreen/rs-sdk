@@ -103,8 +103,9 @@ run at the measured defensive rate (5.60).
 
 **Parallel against the best single-combat melee:** at the spiders the cannon adds
 11.03 Ranged per tick while defensive melee drops from rs/30's 9.25 at the ogres to
-5.60. On the current route that trade is worth about 680 ticks ((f) 3,520 against (g)
-4,197), so the spiders win while Ranged is below 99. Once Ranged is 99 the cannon's xp
+5.60. On Package A that trade was worth about 680 ticks ((f) 3,520 against (g)
+4,197), and on Package B (e) 2,051 beats (g) 2,180 by about 130, so the spiders win while
+Ranged is below 99. Once Ranged is 99 the cannon's xp
 is wasted, and the ogres are the place to finish melee.
 
 **No-MM scenario** (Strength gap 26,188, Defence 24,638, most of Hitpoints):
