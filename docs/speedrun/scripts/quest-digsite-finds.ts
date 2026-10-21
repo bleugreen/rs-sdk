@@ -48,8 +48,8 @@ await runScript(async ({ bot, sdk }) => {
             }
             await sdk.sendInteractNpc(w.npc.index, w.opIndex);
             const m = await waitForMessage(sdk, [/You steal|You find a specimen|You fail to pick/], 40);
-            if (!m) continue;
-            if (sdk.getState()!.dialog.isOpen) await sdk.sendClickDialog(0);
+            if (!m) { console.log('pickpocket: no result seen'); continue; }
+            if (sdk.getState()!.dialog.isOpen) await runDialog(sdk, [], { settleTicks: 1 });
             attempts++;
             pickTotal++;
             if (!/fail/.test(m.text)) { successes++; pickOk++; }
