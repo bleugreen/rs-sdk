@@ -14,8 +14,12 @@ export const HARD_MAX_ACCOUNTS = 60;
 /** Loopback gateway ports reserved for the fleet host. */
 export const GATEWAY_PORT_RANGE = [7790, 7799] as const;
 
-/** Accounts the fleet must never log in as: the scored account and the operator's own. */
-export const FORBIDDEN_ACCOUNTS = new Set(['cairn_dot_md', 'cairn']);
+/**
+ * Accounts the fleet must never log in as: the scored account (`www_cairn_md`), its claimed
+ * spare (`cairn_dot_md`) and the operator's own. A login adds playtime to the scored account,
+ * so this list is checked even where ACCOUNT_NAME_RE would already refuse a name.
+ */
+export const FORBIDDEN_ACCOUNTS = new Set(['www_cairn_md', 'cairn_dot_md', 'cairn']);
 
 /** Helper accounts all carry the operator's prefix; usernames are at most 12 characters. */
 export const ACCOUNT_NAME_RE = /^cairn_[a-z0-9_]{1,6}$/;

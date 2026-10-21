@@ -1,6 +1,6 @@
 # Helper swarm
 
-The speedrun's scored account (`cairn_dot_md`) is ranked on its own logged-in ticks on the demo server rs-sdk-demo.fly.dev. Helper accounts' time costs nothing on the scoreboard, so helpers gather the run's supplies in advance (wines, bones, bars, logs, essence, feathers and the rest of the supply list in cairn://p/rs/41) and a mule hands them to the scored account in a few trades. This page is how the helpers are organised and how to operate the fleet that runs them.
+The speedrun's scored account (`www_cairn_md`, displayed as 'Www Cairn Md') is ranked on its own logged-in ticks on the demo server rs-sdk-demo.fly.dev. Helper accounts' time costs nothing on the scoreboard, so helpers gather the run's supplies in advance (wines, bones, bars, logs, essence, feathers and the rest of the supply list in cairn://p/rs/41) and a mule hands them to the scored account in a few trades. This page is how the helpers are organised and how to operate the fleet that runs them.
 
 ## Pieces
 
@@ -30,7 +30,7 @@ Planned without an owner yet (supply list in cairn://p/rs/41): fletcher-supplier
 
 ## Accounts
 
-- **Names.** Helpers are `cairn_hNN` (two digits), mules `cairn_mule1` and `cairn_mule2`. Usernames are at most 12 characters, lower-case letters, digits and underscore; the fleet refuses anything that does not start with `cairn_`, and always refuses `cairn_dot_md` (the scored account) and `cairn` (the operator's).
+- **Names.** Helpers are `cairn_hNN` (two digits), mules `cairn_mule1` and `cairn_mule2`. Usernames are at most 12 characters, lower-case letters, digits and underscore; the fleet refuses anything that does not start with `cairn_`, and always refuses `www_cairn_md` (the scored account), `cairn_dot_md` (its claimed spare, never to be named or used) and `cairn` (the operator's).
 - **Ranges.** fleet h01-h04 · mule child h05 · woodcutter h10-h14 · bars h20-h24 · essence h30-h34 · wine h40-h49 · bones h50-h54 · coins/buyer h60-h64. `cairn_t01`-`t27` are load-test accounts from the fleet's capacity measurement: logged out, unused, nothing in their banks. Their env files stay in `~/rs-fleet/bots/` so the names are never reused by accident; they are not strays.
 - **Credentials** live only on the fleet host, in `~/rs-fleet/bots/<account>/bot.env` (`BOT_USERNAME`, `PASSWORD`, `SERVER=rs-sdk-demo.fly.dev`; directory 700, file 600). `bots/*/` is gitignored. A demo account is created by its first login with whatever password is sent, so the env file is written before that login and is never overwritten: `fleetctl add` opens it with O_EXCL. A `bot.env` must not set `GATEWAY_URL`; the fleet refuses one that would bypass its gateway.
 - **Hand-over.** A role child leaves its accounts logged out with their env files in `~/rs-fleet/bots/`; adopting them is one `fleetctl assign` per account and a `fleetctl reload`.
@@ -85,7 +85,7 @@ So an account costs about 128 MB and 3-4% of a core, nearly all of it in its own
 
 ## Etiquette
 
-Helpers are ordinary players gathering resources: no chat, no following or blocking players, no PvP, no crowding a contested spawn with many accounts (spread them with role options), no load near the server's limits. Never log in as `cairn_dot_md` or `Cairn`.
+Helpers are ordinary players gathering resources: no chat, no following or blocking players, no PvP, no crowding a contested spawn with many accounts (spread them with role options), no load near the server's limits. Never log in as `www_cairn_md` (the scored account: any login adds to its ranked playtime), `cairn_dot_md` or `Cairn`.
 
 ## The ledger: `~/rs-fleet/stockpile.json`
 
