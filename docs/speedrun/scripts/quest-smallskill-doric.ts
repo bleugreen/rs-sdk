@@ -16,6 +16,7 @@ await runScript(async ({ bot, sdk }) => {
     await setstats(sdk, { magic: 99, mining: 1 });
     for (const [o, n] of [['clay', 6], ['copper_ore', 4], ['iron_ore', 2], ['lawrune', 5], ['airrune', 15], ['waterrune', 5]] as const) await give(sdk, o, n);
     await tele(sdk, 3222, 3218);
+    await waitTicks(sdk, 6); // a teleport cast straight after ::setstat magic is dropped
     await cheat(sdk, '~energy');
     await waitTicks(sdk, 2);
     const xp0 = sdk.getSkill('mining')!.experience;

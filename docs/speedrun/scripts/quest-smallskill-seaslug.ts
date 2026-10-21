@@ -28,6 +28,7 @@ await runScript(async ({ bot, sdk }) => {
     await setstats(sdk, { magic: 99, firemaking: 99, fishing: 1, hitpoints: 60 });
     for (const [o, n] of [['swamppaste', 1], ['torch_unlit', 1], ['lawrune', 4], ['waterrune', 4]] as const) await give(sdk, o, n);
     await tele(sdk, 3222, 3218);
+    await waitTicks(sdk, 6); // a teleport cast straight after ::setstat magic is dropped
     await cheat(sdk, '~energy');
     await waitTicks(sdk, 2);
     const xp0 = sdk.getSkill('fishing')!.experience;
@@ -45,7 +46,8 @@ await runScript(async ({ bot, sdk }) => {
     console.log('stage', await stage(sdk), pos(sdk.getState()));
 
     // Platform, first visit: glass and damp sticks, dry them, then Kennith upstairs.
-    rec.add(await walkTo(bot, sdk, 2765, 3278, 0), '5a walk to broken glass');
+    // The glass is in the room behind the door at (2765,3277).
+    rec.add(await locId(sdk, 2765, 3277, 1533, 1, s => !(s.nearbyLocs ?? []).some(l => l.x === 2765 && l.z === 3277 && l.id === 1533), { label: 'open door', maxTicks: 30 }), '5a open the door to the glass');
     rec.add(await pickup(sdk, /^broken glass$/i), '5b');
     rec.add(await walkTo(bot, sdk, 2784, 3289, 0), '5c walk to damp sticks');
     rec.add(await pickup(sdk, /^damp sticks$/i), '5d');
