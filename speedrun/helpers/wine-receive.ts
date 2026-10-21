@@ -106,11 +106,14 @@ export interface Booth {
     op: number;
 }
 
-/** The nearest bank booth with a Bank/Use option, or null. */
+/**
+ * The nearest bank booth and its op that opens the bank directly: Bank, else
+ * Use-quickly. Plain Use starts a banker conversation (a choice page).
+ */
 export function findBooth(s: BotWorldState): Booth | null {
     const booths = s.nearbyLocs
         .filter(l => /bank booth/i.test(l.name))
-        .map(l => ({ l, opt: l.optionsWithIndex.find(o => /^bank$/i.test(o.text)) ?? l.optionsWithIndex.find(o => /use/i.test(o.text)) }))
+        .map(l => ({ l, opt: l.optionsWithIndex.find(o => /^bank$/i.test(o.text)) ?? l.optionsWithIndex.find(o => /use.quickly/i.test(o.text)) }))
         .filter(b => b.opt)
         .sort((a, b) => a.l.distance - b.l.distance);
     const b = booths[0];
