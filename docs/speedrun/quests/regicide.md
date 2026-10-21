@@ -1,8 +1,8 @@
 # Regicide
 
 **About 1,830 ticks of Regicide itself (about 9 minutes at 300 ms) plus two forced
-Underground Pass traversals of about 550-590 ticks each, so about 3,000 ticks
-(15 minutes) in all, at Agility 56 and 70/70/70 melee, for 13,750 base Agility and
+Underground Pass traversals of about 635 and 680 ticks, so about 3,150 ticks
+(16 minutes) in all, at Agility 56 and 70/70/70 melee, for 13,750 base Agility and
 3 quest points.** The two pass traversals are not optional: the account must
 enter Tirannwn at stage 2 (the Arandar gate is shut from outside until stage 13),
 and it must enter again at stage 11 carrying naphtha, because the only still is
@@ -74,7 +74,10 @@ gauntlets are `armour_hands`. Without them the furnace step costs 8 hitpoints an
 time (measured, `quest-regicide-segments.ts quicklime`).
 
 **One helper trade (9 ticks) before the first entry** carries: limestone, 8 coal, 4
-balls of wool, cooked rabbit, pestle and mortar, pot, food, runes. The helper cannot
+balls of wool, cooked rabbit, pestle and mortar, pot, food, runes, plus what the two
+Underground Pass traversals use (per the Underground Pass agent): a bow, 2 arrows (one
+per traversal), a tinderbox, 2 ropes and a spade. The tinderbox is for the pass's fire
+arrow, not for Regicide. The helper cannot
 enter Tirannwn (it would need the whole Underground Pass and Regicide chain), so
 everything after the first entry must already be on the scored account.
 
@@ -168,7 +171,7 @@ arrival tile with every crossing (`quest-regicide-traverse.ts <leg>`).
 | 1 | wherever the player is | King's messenger spawns 1-3 tiles away and walks up; scroll | 0 -> 1 | 2 pages | 3 + 4 = **7** | measured, same |
 | 2 | -> King Lathas (2578,3293,1) | Ardougne teleport, 90 tiles to the stairs (2571,3295), climb, 7 tiles | | 1 teleport, 97 tiles, 1 climb | 4 + 46 + 2 + 4 = **56** | inferred (route tiles) |
 | 3 | Lathas | "I received your message" (no options) | 1 -> 2 | 6 pages | **15** | measured `segments lathas1` |
-| 4 | -> Iban temple doors (2143,4648,1) | Down, out of the castle, Underground Pass traversal #1 (`%upass` = 10) | | about 175 + 610 tiles, UP crossings | **about 550** | inferred: UP agent's planner `quest-underground-pass-route.ts POST` gives 455 from the cave landing; placeholder until that doc's measured figure |
+| 4 | -> Iban temple doors (2143,4648,1) | Down the stairs, west through the West Ardougne wall doors to the cave (2433,3313), Underground Pass traversal #1 (`%upass` = 10) | | 1 climb, about 150 tiles to the cave, UP crossings and about 600 tiles inside | 2 + about 78 + **555** = **about 635** | UP part measured by the Underground Pass agent (`quest-underground-pass-segments.ts post`, n=4: 545 ticks of steps, about 555 for a player reacting within a tick, cave click to through the doors); approach inferred from its and plague-city's route figures |
 | 5 | temple doors -> Well of Voyage | Open door (teleports to (2014,4711,1)), 5 tiles, climb into well1 (2008,4711,1), 31 tiles underground, exit (2312,9623) -> (2312,3216) | | 1 door, 1 well, 36 tiles, 1 exit | 2 + 4 + 17 = **23** | measured `segments iban/well/exit` |
 | 6 | Isafdar | Walk west; Idris spawns 20-30 ticks after entering mapzone 0_35_50 (timer runs while walking). **Stand still** after his 2 pages until the elves' 4 pages finish | 2 -> 3 | 6 pages | **18** first page to last close | measured `segments idris` |
 | 7 | -> Lord Iorwerth (2205,3252) | pitfall, woodspring, pitfall, log 1 | | 170 tiles, 2 pitfalls, 1 woodspring, 1 log | **134** (132, 136 walking; total runs 161, 167 incl. dialogue) | measured `traverse e1-first` |
@@ -193,7 +196,7 @@ arrival tile with every crossing (`quest-regicide-traverse.ts <leg>`).
 | 26 | -> still (2927,3212), Rimmington | Walk | | 190 tiles | **96** | inferred (route tiles) |
 | 27 | Fractionalizing still | **Logout-unsafe.** Tar on the still, button schedule below | | 5 coal, 3 valve clicks, 1 close | **33** click to naphtha | measured `quest-regicide-still.ts`, 6/6 |
 | 28 | anywhere | Pot of quicklime on naphtha, ground sulphur on the mix, cloth on the bomb | | 3 item-on-items | **6** | measured `segments bomb` |
-| 29 | -> Iban temple doors | Ardougne teleport, about 250 tiles to the cave, UP traversal #2 | | 1 teleport, about 860 tiles, UP crossings | **about 590** | inferred (as row 4) |
+| 29 | -> Iban temple doors | Ardougne teleport, wall doors, cave, UP traversal #2 | | 1 teleport, about 250 tiles to the cave, UP crossings | 4 + about 122 + **555** = **about 681** | UP part measured (as row 4); approach inferred by the Underground Pass agent (Ardougne teleport -> doors 59, door 2, -> cave 61) |
 | 30 | doors -> surface | as row 5 | | | **23** | measured |
 | 31 | -> lazy guard (2181,3184) | pitfall, woodspring, 6 cross-overs, tripwire | | 176 tiles | **182** (one run with 0 woodspring failures; 227 with 4) | measured `traverse e2-guard` |
 | 32 | Lazy guard | Use cooked rabbit on him (after the last cross_over3, which clears the bit, `quest_regicide.rs2:473-476`) | bit 3 set | 3 pages | **9** | measured `segments rabbit` |
@@ -291,8 +294,8 @@ cross-over below stage 9 (`:393-399`).
 | Forced waits: still (row 27), catapult cutscene (row 33) | 68 | measured |
 | Trade | 9 | measured |
 | **Regicide subtotal** | **1,831** (at 99 melee about 1,750) | sum of the step rows |
-| Underground Pass traversals #1 and #2 (rows 4, 29) | about 1,140 | inferred placeholders (UP agent's offline planner) |
-| **Total** | **about 2,970** | |
+| Underground Pass traversals #1 and #2 (rows 4, 29) | about 1,316 | 2 x 555 measured inside UP, approaches inferred |
+| **Total** | **about 3,150** | |
 | Messenger wait (row 0) | 0 if overlapped with other content, else 400-1200 | read |
 
 Raw counts for recompute: 78 dialogue pages and no option clicks; 2 teleports in
@@ -345,9 +348,11 @@ client fix (1 tick per page) the dialogue drops by about 78 ticks.
 
 ## Open questions
 
-- The two Underground Pass traversals (rows 4 and 29) are placeholders from the UP
-  agent's offline planner (455 ticks cave landing to temple doors) plus inferred
-  approaches; the UP document's measured figure should replace them.
+- The two Underground Pass traversals (rows 4 and 29) use the Underground Pass agent's
+  measured 555 ticks inside the pass (Agility 99, Thieving 50, Ranged 60, no failed
+  rolls); the approaches from Lathas's castle and from the Ardougne teleport are
+  inferred. Lower Agility, Ranged or Thieving adds failure costs given in that
+  document.
 - Rows 2, 19, 21, 26, 36, 38 and the gathering detours are route-tile estimates, not
   measured walks.
 - The guard fight with magic (magic defence -10) is not measured.
