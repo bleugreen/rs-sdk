@@ -31,9 +31,9 @@ checked in the lab with the same script. Everything else is labelled.
 
 - **None.** King Roald starts it with no check, not even members
   (`king_roald.rs2:37-41`); no script in `quest_priestperil/` or
-  `area_mausoleum/` calls `stat()` or `stat_base()` except the Zamorak monks'
-  spell choice (`evil_monks.rs2`, which boosted/real level only picks weaken or
-  confuse).
+  `area_mausoleum/` calls `stat()` or `stat_base()` as a requirement. The only
+  calls are in the Zamorak monks' attack scripts, where they choose between
+  weaken, confuse and curse (`evil_monks.rs2:7-31`).
 - **Stage gates that shape the route:** the temple doors open from outside only at
   stage 4 or more (`temple_doors.rs2:10`); the dog can be attacked only at stage 2
   (`temple_guardian.rs2:14-22`); gate 1 in the mausoleum needs stage 5, gate 2
