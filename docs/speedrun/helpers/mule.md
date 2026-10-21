@@ -189,8 +189,10 @@ back-to-back hand-offs or while the first is at the GE. The module exports `role
 (mule), `courier` and `roles`. The fleet loads a role by name from
 `speedrun/helpers/<name>.ts`, so `speedrun/helpers/courier.ts` re-exports the courier
 as its `role`: `fleetctl assign <account> courier --options '{"mule":...,"items":[...]}'`.
-A courier trip ends when the trip is done, so the fleet should assign `courier` for
-one run and then give the account its gathering role back.
+A courier trip ends when the trip is done: `run` returns, so the fleet does not start
+it again. Borrow the account with `--return` (`fleetctl assign <account> courier --options
+'...' --return`) and the fleet puts it back on its gathering role, with the same options,
+when the trip finishes (HELPERS.md, "Borrowing an account").
 
 The courier's `mule` can be any account standing at Varrock west bank that accepts the
 trade. The bones role does that with its `coinsFrom` option to take coins for Grand
