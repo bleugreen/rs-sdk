@@ -135,19 +135,17 @@ aws_ ec2 associate-address --allocation-id "$ALLOC" --instance-id "$ID" --allow-
 EIP=$(aws_ ec2 describe-addresses --allocation-ids "$ALLOC" --query 'Addresses[0].PublicIp' --output text)
 
 # --- known_hosts, pinned from the console (a new instance has new host keys, even at an old address)
-if true; then
-    KEYS=
-    for _ in $(seq 60); do
-        KEYS=$(aws_ ec2 get-console-output --instance-id "$ID" --latest --query Output --output text 2>/dev/null | tr -d '\r' |
-            sed -n '/-----BEGIN SSH HOST KEY KEYS-----/,/-----END SSH HOST KEY KEYS-----/p' | grep -E '^(ssh-|ecdsa-)' || true)
-        [ -n "$KEYS" ] && break
-        sleep 10
-    done
-    [ -n "$KEYS" ] || die "no host keys on $ID's console after 10 min; do not fall back to trust-on-first-use"
-    printf '%s\n' "$KEYS" | awk -v ip="$EIP" '{print ip, $1, $2}' >"$KNOWN.tmp" && mv "$KNOWN.tmp" "$KNOWN"
-    chmod 600 "$KNOWN"
-    say "pinned $(wc -l <"$KNOWN" | tr -d ' ') host keys for $EIP in $KNOWN"
-fi
+KEYS=
+for _ in $(seq 60); do
+    KEYS=$(aws_ ec2 get-console-output --instance-id "$ID" --latest --query Output --output text 2>/dev/null | tr -d '\r' |
+        sed -n '/-----BEGIN SSH HOST KEY KEYS-----/,/-----END SSH HOST KEY KEYS-----/p' | grep -E '^(ssh-|ecdsa-)' || true)
+    [ -n "$KEYS" ] && break
+    sleep 10
+done
+[ -n "$KEYS" ] || die "no host keys on $ID's console after 10 min; do not fall back to trust-on-first-use"
+printf '%s\n' "$KEYS" | awk -v ip="$EIP" '{print ip, $1, $2}' >"$KNOWN.tmp" && mv "$KNOWN.tmp" "$KNOWN"
+chmod 600 "$KNOWN"
+say "pinned $(wc -l <"$KNOWN" | tr -d ' ') host keys for $EIP in $KNOWN"
 SSH=(ssh -o BatchMode=yes -o IdentitiesOnly=yes -i "$KEY" -o UserKnownHostsFile="$KNOWN" -o StrictHostKeyChecking=yes -o CheckHostIP=no "ubuntu@$EIP")
 for _ in $(seq 30); do "${SSH[@]}" true 2>/dev/null && break; sleep 5; done
 "${SSH[@]}" 'cloud-init status --wait >/dev/null; echo "provision: ssh ok: $(hostname), $(. /etc/os-release; echo $PRETTY_NAME), $(nproc) vCPU"'
