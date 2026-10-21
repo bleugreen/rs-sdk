@@ -342,7 +342,7 @@ async function setup(sdk: Sdk, phase: Phase) {
     if (idx === 9 && !invHas(sdk, /^key$/i)) await cheat(sdk, 'give hauntedmine_reward_key 1');
     const start: Record<Phase, [number, number]> = {
         zealot: [3444, 3256], enter: [3446, 3256], mush: [2789, 4487], cart: [2778, 4508], exit: [2770, 4520],
-        endcart: [3429, 3227], lift: [2774, 4539], stairs: [2725, 4452], boss: [2811, 4454], reward: [2788, 4457]
+        endcart: [3429, 3227], lift: [2774, 4539], stairs: [2725, 4452], boss: [2811, 4454], reward: [2788, 4454]
     };
     await tele(sdk, start[phase][0], start[phase][1]);
     if (phase === 'cart' && !invHas(sdk, /glowing fungus/i)) {
