@@ -1,8 +1,9 @@
 # The Tourist Trap
 
 **Verdict: about 1,830 ticks on the stock client (about 1,560 with the client fix, about
-1,430 with dialogue bursts), for two picks of 4,650 base, plus a combat level of at least
-87 so the camp's Rowdy Guards leave you alone.** Spent as recommended below (one Agility
+1,430 with dialogue bursts), for two picks of 4,650 base, plus either a combat level of at
+least 87, so the camp's Rowdy Guards leave you alone, or Protect from Melee for each guard
+that attacks (about 110 ticks and 21 prayer points per fight, measured at 70/70/70).** Spent as recommended below (one Agility
 pick, one Thieving pick), the picks save about 1,060 ticks of training, so the quest loses
 about 370-770 ticks as xp. Do it for its 2 quest points or the dart unlock, not for the
 xp. The camp, the mine and the cart section are about 60% of the time, and four walks
@@ -55,7 +56,9 @@ there):
 
 So the first pick goes to Agility (662), and the second is a near tie between Thieving
 (402 after Fight Arena) and Agility (373, or 0 with Fremennik). Thieving wins clearly
-(907) if the route skips Fight Arena. The reward comes at the very end of the quest, so a
+(907) if the route skips Fight Arena. The final allocation belongs to rs/2's skill-route
+README. rs/2 is re-timing Thieving and Agility at 300 ms ticks, so the 373-against-402
+comparison may flip; Agility twice is the fallback. The reward comes at the very end of the quest, so a
 pick helps only training done after Tourist Trap. Neither pick helps the quest's own
 Agility and Thieving rolls (the cart and the lock below).
 
@@ -71,7 +74,9 @@ Agility and Thieving rolls (the cart and the lock below).
   `desertrescue.npc:364-397`) unless the player's combat level is above twice theirs:
   `player.combatLevel > type.vislevel * 2` (read, `server/engine/src/engine/entity/Npc.ts:1011`).
   **So combat 87 or more makes the camp safe.** That is about 76 in Attack, Strength,
-  Defence and Hitpoints (inferred from the standard combat formula).
+  Defence and Hitpoints (inferred from the standard combat formula). Below that,
+  Protect from Melee (Prayer 43) switched on when a guard attacks kept the account alive
+  at 70/70/70 (measured, "Fights").
 - Random rolls, all `stat_random(stat, low, high)`, which succeed with probability
   (⌊low(99-L)/98⌋ + ⌊high(L-1)/98⌋ + 1)/256 at current level L
   (`server/engine/src/engine/script/handlers/PlayerOps.ts:591-600`):
@@ -171,6 +176,13 @@ costs 2 ticks (`primitives.md` §5).
 |---|---|---|---|---|
 | 80/80/80, 80 hp | 92 | 39 ticks, 5 hp lost | never attacked (the whole quest) | measured, 300 ms run |
 | 70/70/70, 70 hp | 80 | 63-68 ticks, 11-12 hp lost | attacked on the walk to the slave (a 109-tick fight) and again at the slave, **which killed the account** (no food) | measured, two 100 ms runs |
+| 70/70/70, 70 hp, Prayer 43, Protect from Melee switched on when a guard attacks and off after the kill | 80 (prayer adds about 5) | 55 ticks, 4 hp lost | one attack, at the surface winch: a 111-tick fight with no damage taken, 21 of 43 prayer points used; **survived**, quest complete in 1,746 ticks | measured, one 300 ms run (`quest-touristtrap-run.ts tt16 start 25 70 pray`) |
+
+Guard encounters are random: guards wander (range 3) and the bot passes them at
+different moments. The 70/70/70 runs drew 2, 2 and 1 attacks. So at combat 80, budget
+about 110 ticks and 21 prayer points per attack, and carry a prayer potion or two for a
+second or third (inferred from those three runs). Holy Grail gives the Prayer early in
+the plan.
 
 The captain is a one-on-one duel (`mercenary_captain.rs2:62-67`); his death hook awards
 the stage and the key only if `finduid(%npc_aggressive_player)` succeeds
@@ -210,7 +222,8 @@ The base xp per tick is 9,300 / 1,830 = 5.1 on the stock client.
 
 - **Rowdy Guards below combat 87.** They roam the camp surface and the mine (9 spawns,
   wanderrange 3) and attack anyone they pass beside. At 70/70/70 one walk drew two fights
-  and a death. Either be combat 87+ or carry food and add about 110 ticks per fight.
+  and a death. Either be combat 87+, or use Protect from Melee when one attacks (measured:
+  no damage, about 110 ticks and 21 prayer points per fight).
 - **The slave's lock sends you to a cell on the third failure in a row** if a guard is
   within 10 tiles, which one always is at that slave (`mining_slave.rs2:115-127`): 34% at
   Thieving 25, 8% at 55, 2% at 70. The attempt count is kept in the varp across
@@ -225,8 +238,10 @@ The base xp per tick is 9,300 / 1,830 = 5.1 on the stock client.
   and put them back on before the mine doors (6 clicks, about 17 ticks, measured).
 - **The clothes trade duplicates the slave clothes** (measured): with the desert clothes
   worn, the slave's swap puts the slave clothes in the worn slots *and* a second set in
-  the inventory. It is harmless here (three extra slots), but it looks like a server bug
-  in `mining_slave.rs2:170-200`.
+  the inventory. `quest-touristtrap-run.ts` logs the worn items and the inventory just
+  after the trade, and both lists held the shirt, robe and boots in every full run. It is
+  harmless here (three extra slots), but it looks like a server bug in
+  `mining_slave.rs2:170-200`.
 - **Bronze bars and feathers are destroyed on a failed roll**, so pack enough.
 - **Two scenes close the dialogue in the middle**: Al Shabim takes the plans with an
   `if_close; p_delay(2)` (`al_shabim.rs2:53-55`), and Ana's goodbye does the same before
@@ -246,6 +261,9 @@ The base xp per tick is 9,300 / 1,830 = 5.1 on the stock client.
 ## Open questions
 
 - The cell escape's cost is inferred, not measured.
+- Combat 87 comes only after Monkey Madness in the plan (per the coordinator), so before
+  that the Protect from Melee route above applies. It was measured in one run; the number
+  of guard attacks per quest (1-2 seen) needs more samples to budget prayer precisely.
 - The Fletching and Smithing pick values are taken as near zero because those skills are
   helper-fed. The skill-route issue's helper-fed rates will confirm or revise that.
 - The order of the two Al Shabim trips is forced by the stages (the pineapple errand
