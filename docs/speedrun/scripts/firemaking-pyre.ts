@@ -51,7 +51,7 @@ await runScript(async ({ bot, sdk }) => {
     const rounds: object[] = [];
     const startXp = fm(sdk.getState()!).experience;
     for (let r = 0; r < ROUNDS; r++) {
-        await sdk.sendSay('::clearinv'); await waitTicks(1);
+        await sdk.sendSay('::~clearinv'); await waitTicks(1);
         await sdk.sendSay(`::give ${LOGS} ${PAIRS}`); await waitTicks(1);
         await sdk.sendSay(`::give sacred_oil4 ${PAIRS}`); await waitTicks(3);
         while (sdk.getState()!.dialog.isOpen) { await sdk.sendClickDialog(0); await waitTicks(1); }
