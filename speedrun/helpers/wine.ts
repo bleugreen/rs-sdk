@@ -74,6 +74,21 @@ export function pairsForRound(freeSlotsNow: number, grapesInBank: number, jugsIn
     return Math.max(0, Math.min(Math.floor(freeSlotsNow / 2), grapesInBank, jugsInBank, wanted));
 }
 
+/**
+ * The largest amount up to `n` that the bank's 1/5/10/All buttons move in at most
+ * three clicks (or the whole `stack` with All), so a round never needs the X count
+ * dialog: two X withdrawals in one burst lost the second one on the lab (0 grapes,
+ * 13 jugs). 13 becomes 12 (10+1+1).
+ */
+export function buttonAmount(n: number, stack: number): number {
+    if (n >= stack) return stack;
+    for (let k = n; k > 0; k--) {
+        if (k === 1 || k === 5 || k === 10) return k;
+        if (Math.floor(k / 10) + Math.floor((k % 10) / 5) + (k % 5) <= 3) return k;
+    }
+    return 0;
+}
+
 export interface MakeResult {
     made: number;
     ticks: number;
@@ -176,7 +191,8 @@ export async function makeNotedWine(ctx: Ctx & Partial<Pick<RoleContext, 'report
         const noted = await noteWinesInBank(ctx);
         await depositAllExcept(sdk, i => i.id === ITEM.wineNote || i.id === ITEM.chefsHat);
         if (ctx.reportBank) reportBank({ sdk, reportBank: ctx.reportBank });
-        const want = pairsForRound(freeSlots(sdk), bankCount(sdk, ITEM.grapes), bankCount(sdk, ITEM.jugWater), target - noted);
+        const pairs = pairsForRound(freeSlots(sdk), bankCount(sdk, ITEM.grapes), bankCount(sdk, ITEM.jugWater), target - noted);
+        const want = Math.min(buttonAmount(pairs, bankCount(sdk, ITEM.grapes)), buttonAmount(pairs, bankCount(sdk, ITEM.jugWater)));
         if (want <= 0) {
             await closeBank(bot, sdk);
             return { noted, made, rounds, ticks: tick(sdk) - start };

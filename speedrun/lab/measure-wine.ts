@@ -199,7 +199,10 @@ await makeNotedWine(M, big);
 await prepareRearmKit(M);
 await logoutClean(receiver);
 await Bun.sleep(3_000);
-const g9 = giveWineKit(M, receiver.name, 300_000);
+const g9 = giveWineKit(M, receiver.name, 300_000).catch(e => {
+    result('T9-giver-failed', { error: String(e), inv: maker.sdk.getInventory().map(i => `${i.name} x${i.count}`) });
+    throw e;
+});
 let tR9 = -1;
 const unsub9 = receiver.sdk.onStateUpdate(st => {
     if (tR9 < 0 && st.inGame && (st.player?.worldX ?? 0) > 0) tR9 = st.tick;

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { InventoryItem } from '../../sdk/types';
-import { pairsForRound, planMakes } from './wine';
+import { buttonAmount, pairsForRound, planMakes } from './wine';
 import { ITEM } from './wine-common';
 
 const item = (slot: number, id: number, name: string, count = 1): InventoryItem => ({ slot, id, name, count, optionsWithIndex: [] }) as unknown as InventoryItem;
@@ -48,5 +48,21 @@ describe('pairsForRound', () => {
     test('never negative', () => {
         expect(pairsForRound(27, 500, 500, -5)).toBe(0);
         expect(pairsForRound(0, 0, 0, 10)).toBe(0);
+    });
+});
+
+describe('buttonAmount', () => {
+    test('at most three 10/5/1 clicks, never the X dialog', () => {
+        expect(buttonAmount(13, 500)).toBe(12);
+        expect(buttonAmount(14, 500)).toBe(12);
+        expect(buttonAmount(12, 500)).toBe(12);
+        expect(buttonAmount(9, 500)).toBe(7);
+        expect(buttonAmount(4, 500)).toBe(3);
+        expect(buttonAmount(0, 500)).toBe(0);
+    });
+
+    test('the whole stack is one All click', () => {
+        expect(buttonAmount(13, 13)).toBe(13);
+        expect(buttonAmount(13, 9)).toBe(9);
     });
 });
