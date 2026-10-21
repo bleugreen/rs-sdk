@@ -152,7 +152,12 @@ await runScript(async ({ bot, sdk }) => {
             await tele(sdk, 2837, 10090, 2);
             const gen = await waitUntil(sdk, () => !!findNpc(sdk, /^Troll General$/), 200);
             if (!gen) throw new Error('no general');
-            const tgt = findNpc(sdk, /^Troll General$/)!;
+            await waitTicks(sdk, 2);
+            const gens = sdk.getState()!.nearbyNpcs.filter(n => n.name === 'Troll General');
+            console.log('  generals:', gens.map(n => `${n.index}@${n.x},${n.z} d${n.distance} reach ${n.reachable}`).join(' '));
+            const tgt = gens.filter(n => n.reachable !== false).sort((a, b) => a.distance - b.distance)[0] ?? gens[0];
+            const engage = await bot.attack(tgt).catch(e => ({ success: false, message: String(e) }));
+            console.log('  engage:', JSON.stringify(engage).slice(0, 200));
             const idx = tgt.index;
             // The general's death queue drops the key (troll_commander.rs2:4-5); done when
             // the general is gone or at 0 hp, then scan for the key.
