@@ -62,7 +62,7 @@ if (!altarLoc) throw new Error('no altar visible from the room entry');
 const sTile = { x: altarLoc.x + 1, z: altarLoc.z - 1 };
 const hTile = { x: altarLoc.x + 2, z: altarLoc.z - 1 };
 for (const [sdk, t] of [[S, sTile], [H, hTile]] as const) {
-    await cheat(sdk, 'clearinv');
+    await cheat(sdk, 'clearinv inv');
     await tele(sdk, t.x, t.z, A.enter.level);
 }
 await cheat(S, `setstat runecraft ${LEVEL}`);
