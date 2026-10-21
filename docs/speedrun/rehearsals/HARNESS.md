@@ -43,13 +43,76 @@ runs below; one sample each.
   kit trade from a giver (`receiveFrom` is measured in `speedrun/README.md`, "trade.ts"). These are
   for the demo run below.
 
-## Demo acceptance (open)
+## Demo acceptance (passed, rs/164, 2026-10-21 13:46-13:51 PDT)
 
-Waiting on the rehearsal host (rs/149), token login on this branch (rs/138, main 96fc462a), and
-a slot for the throwaway `cairn_smoke` (granted by rs/147). Pass: S00 at most 11 ticks, and the
-hiscore playtime within 2 ticks of the session row. The plan: `cairn_smoke` through the browser
-tab, S00, then `--skill=speedrun/runner/stub.ts --skill-opt=idle=50`. No level is gained, so
-Overall is the logout playtime, which the session row predicts as its last tick + 1.
+On rs-ashburn-rehearsal (54.167.144.8) under rs/147's slot. The run used a fresh throwaway,
+`cairn_smoke`, with the gate account `cairn_twin`. The browser tab ran on the xrdp display `:10`
+(1920x1080, 24 planes), Chrome 156 with RUN-HOST.md step 3's six flags, and the page server and
+gateway from `~/rs-sdk` at main 7c3e8c706. The harness ran from a worktree of the branch at
+3ed0cd49c (`~/rs-164`, removed afterwards). There was no on-VM recording. Every figure below is
+measured (m), and the source is the tick log `~/rs-run/cairn_smoke.jsonl` and the harness summary.
+
+| Check | Bar | Measured |
+|---|---|---|
+| S00 on the demo | at most 11 ticks | **4** (ticks 2-6) |
+| Hiscore Overall against the session row | within 2 ticks | **56** against the log's 57 (session ticks 0-56, last tick + 1): **-1, ok** |
+| Session minus step rows | about 1 per boundary | 56 - 54 = 2 over 3 boundaries; every boundary row 0 ticks |
+| Logout | the click on the last step's end | click on tick 56, the stub's end tick; latency 0; confirmed by **the page** over CDP in 233 ms |
+| Direct gate read, `cairn_twin` (rs/96's CLI, 20:46:37Z) | (a) at least 58/60, (c) at most 2/min | 60/60, all at 1 tick; (c) 0 catch-ups/min; tick p90 391 ms; vantage edge iad, TCP connect p50 2.5 ms |
+| Gate tab in-page probe, before | runs, (c) passes | 60/60, (c) 0/min, loop p10 72.6/s; (b) tick p90 422 ms, over the 400 report line |
+| Gate tab in-page probe, after | runs | 60/60, (c) 0/min, loop p10 72.8/s; (b) p90 439 ms, over |
+| `/playercount` | logged | 1,540 at the gate, 1,594 after the logout (no swing) |
+
+The gate tab's tick p90 was over 400 ms on both probes, while the direct read on the same
+account gave 391 ms. That is a report line, not a pass line, so it refused nothing.
+
+**Relogs through the run's path (rs/158's question).** Right after the harness, still in the slot,
+the run's own `login` and `logoutClean` relogged `cairn_smoke` three times through its tab
+(`speedrun/tools/relog-probe.ts cairn_smoke --n=3`). Each relog was: the logout click, the out
+confirmed by the page's flag, the tab re-navigated to a fresh one-time token, and the new
+session's tick advancing.
+
+| Relog | Click to confirmed out | Signal | Out to back in the world | Click to the new session's first published state | That state's client tick |
+|---|---|---|---|---|---|
+| 1 | 228 ms, 0 ticks | page | 11.9 s | 11.8 s | 20 |
+| 2 | 324 ms, 0 ticks | page | 12.3 s | 12.3 s | 21 |
+| 3 | 320 ms, 0 ticks | page | 12.9 s | 13.0 s | 22 |
+
+The final logout was confirmed by the page in 222 ms. Each re-navigated tab's first state already
+read client tick 20-22. The client counts its tick from PLAYER_INFO packets, which the server
+sends only to a player in the world (`lib/wait.ts`). So the page was in the world about 20 ticks
+before the SDK saw it. The first login on a freshly opened tab read tick 3 (`firstObservedTick`).
+**Inferred:** a relog through a re-navigated tab costs about 20 ticks of playtime before control
+returns, against the 2 ticks the run prices it at. The hiscore can't confirm this: Overall stays
+at the first logout's 56, because a stamp moves only when a level is gained. The cause (the page's
+socket to the gateway, or the SDK reattaching after a navigation) is not yet measured.
+
+**The gateway can't confirm a browser logout.** After both pages read out of game, the gateway
+still reported `cairn_twin` as `stale, inGame: true` (state 100 s old) and `cairn_smoke` as
+`active, inGame: true`. `logoutClean` now confirms a browser tab by the page's own
+`gameClient.ingame` over CDP (`lib/session.ts` `loggedOutBy`), and never by the gateway.
+
+**Procedure notes.** A worktree's tracked `bots/` holds `create-bot.ts`, so link each account's
+directory (`ln -s ~/rs-sdk/bots/<name> ~/rs-164/bots/<name>`), not `bots/` itself. Bun is not on
+a non-login shell's PATH, so the harness spawns its gate CLI with its own bun
+(`process.execPath`). The teardown is: read both pages' flags, and only when both are out,
+`tmux -L run kill-server`.
+
+The exact command, in the host's tmux and timeout form (the bound `B=20m` covers the gate read of
+about 1.5 min, the two 60-trial tab probes, and the attempt; the stack had `T=30m`):
+
+```sh
+rm -f ~/rs-run/cairn_smoke.jsonl ~/rs-run/cairn_smoke.log; B=20m; ACCOUNT=cairn_smoke; mkdir -p ~/rs-run
+tmux -L rehearsal new-session -d -s "$ACCOUNT" "cd ~/rs-164 && exec timeout --kill-after=30s $B ~/.bun/bin/bun speedrun/rehearse.ts --skill=speedrun/runner/stub.ts --skill-opt=idle=50 --bot=$ACCOUNT --gate-bot=cairn_twin --log=$HOME/rs-run/$ACCOUNT.jsonl >>$HOME/rs-run/$ACCOUNT.log 2>&1"
+```
+
+The relogs (`timeout` as a foreground measurement):
+
+```sh
+cd ~/rs-164 && timeout --kill-after=30s 6m ~/.bun/bin/bun speedrun/tools/relog-probe.ts cairn_smoke --n=3 --json=$HOME/rs-run/cairn_smoke-relog.json >>$HOME/rs-run/cairn_smoke-relog.log 2>&1
+```
+
+The leftover check was clean before (20:44Z) and after (20:52Z): no tmux server, no process, no slot.
 
 ## The command a skill child runs on the host
 
@@ -60,8 +123,10 @@ whole command of its own tmux session, logs by redirection). The ssh line, key a
 `~/rs-sdk/bots/<ACCOUNT>/bot.env` (mode 600) needs `CLIENT_URL` (the proxy.ts page) and `CDP_URL`,
 and the gate account `cairn_twin`'s needs the same. Off a local world the harness uses
 `cairn_twin` when no `--gate-bot` is given; the command below names it anyway.
-`cairn_gate` is rs/149's personal gate account, and the harness never uses it. Before launching: the slot (`~/rehearsal-slots/`) and the
-leftover check.
+`cairn_gate` is rs/149's personal gate account, and the harness never uses it. Before
+launching: the slot (`~/rehearsal-slots/`) and the leftover check. When the host checkout
+is not at the attempt's commit, run from a worktree of it, as the demo acceptance did (HOST.md).
+Then replace `cd ~/rs-sdk` with `cd` to that worktree.
 
 ```sh
 # B: the bound, expected wall time x 1.5 (a 99 is about 1-3 h); ACCOUNT: the name rs/147 assigned.

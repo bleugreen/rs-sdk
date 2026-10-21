@@ -52,6 +52,8 @@ speedrun/
                          and resume times (docs/speedrun/RESILIENCE.md section 6)
   tools/          tab-login.ts (log an account's browser tab in with a one-time token over
                   CDP; see "Logging the browser tab in");
+                  relog-probe.ts (relog timing through session.ts login/logoutClean: click to
+                  confirmed out and its signal, out to in world, the new session's first tick);
                   upstream watch (nightly diff of watched upstream paths);
                   drop-probe.ts (the dropped-client stay on the demo, with a throwaway);
                   hiscore-stamp-probe.ts (the live stamp test, plus uncached
@@ -267,7 +269,15 @@ level with and without the watcher) has not been measured yet.
 - `logoutClean` waits out the 16-tick post-combat window (none when
   `lastDamageTick` is -1, never hit; a fresh account's first ticks don't wait), clicks logout
   (IF_BUTTON 2458), retries once if refused, and verifies: no tick after the
-  click, and the lite child exited or the gateway reports the bot dead. It
+  click, and the published state says out, or the lite child exited (a lite
+  client attached without its child: the gateway reports it dead or out), or,
+  for a browser tab, **the page's own `gameClient.ingame` read over CDP**
+  (`loggedOutBy`; `LogoutResult.confirmedBy` names the signal). A browser tab
+  is never judged by the gateway: once a page logs out it stops publishing,
+  and the gateway keeps `inGame: true` (status `stale`, or still `active`), as
+  measured on the twin (docs/speedrun/rehearsals/HARNESS.md). A missing tab is
+  not out (a closed tab is a dropped client); without CDP only a published
+  `inGame: false` confirms. It
   never kills the process to log out. A closed socket leaves the player in the
   world for 500 ticks, a silent one for 1,000, and a live client with nothing
   driving it forever (hiscore-timestamps.md section 5.1).
