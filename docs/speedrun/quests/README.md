@@ -535,8 +535,17 @@ raised:
    better than option 2 by ~3,130 ticks (section 6). MM itself beats no-MM by ~3,710 expected,
    and only a melee rate of ~16 base/tick would flip it.
 
+**Confirmed by rs/31 (2026-10-20 23:02, `ranged-model.ts` on measured 300 ms rates,
+`ranged.md` section 1 on agent/rs-31-builder-0):** the Package A finish is **3,520** ticks
+(defensive melee at the Wilderness spiders with the cannon running until Ranged 99, 3,459,
+then 62 of melee alone; HP by-product ~6,590). Next best is 4,197 (melee alone for Defence,
+then cannon + rapid knives); hand-only with longrange is 9,685. With Waterfall also off it
+is 4,054 (this page's 'neither' line used ~4,006). The cannon saves ~2,630 on this route
+including Dwarf Cannon's 1,078. Pushing Ranged to 70 before Monkey Madness does not pay
+(4,017 vs 3,900).
+
 Still to slot in: `pre_mm_fights.md` (rs/56: the pre-MM fights, and with them Package A
-against B), rs/31's confirmation of the ~3,520 and ~2,020 finishes, rs/30's `combat.md`
+against B), rs/31's confirmation of the ~2,020 Package B finish, rs/30's `combat.md`
 (its rates are quoted here from rs/28), rs/53 (Fishing Contest), and the rs/54 merge (Sea
 Slug).
 
