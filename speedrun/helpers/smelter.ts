@@ -62,7 +62,7 @@ const PICKAXE_IDS = new Set(PICKAXES.map(p => p.id));
 /** Varrock west bank's exchange table; openGE() walks here itself but with a 120 s budget. */
 const GE_STAND = { x: 3181, z: 3443 };
 
-type Ore = 'copper' | 'tin' | 'iron' | 'coal' | 'mith' | 'addy';
+export type Ore = 'copper' | 'tin' | 'iron' | 'coal' | 'mith' | 'addy';
 const ROCKS: Record<Ore, number[]> = {
     copper: [2090, 2091], tin: [2094, 2095], iron: [2092, 2093],
     coal: [2096, 2097], mith: [2102, 2103], addy: [2104, 2105]
@@ -235,6 +235,21 @@ export interface BarChoice {
     continuing: boolean;
     /** Steel and iron bars to hold in the bank (made from banked iron ore and coal). */
     quota?: Quota;
+}
+
+/** Coal held beyond the banked adamantite ore's needs before an addy-site miner stops mining coal: about ten more ore's worth. */
+const ADDY_COAL_BUFFER = 60;
+
+/**
+ * What an account at an adamantite site mines: adamantite always; coal while held coal
+ * (bank plus inventory) is short of 6 per held adamantite ore plus a buffer, so the account
+ * never stalls on coal; iron while the quotas lack ore.
+ */
+export function addySiteOres(held: (id: number) => number, ironShort: number): Ore[] {
+    const out: Ore[] = ['addy'];
+    if (held(ITEM.coal) < BARS.addy.secondCount * held(ITEM.addy) + ADDY_COAL_BUFFER) out.push('coal');
+    if (ironShort > 0) out.push('iron');
+    return out;
 }
 
 /** Iron smelts fail half the time without a Ring of Forging (smelting.rs2). */
@@ -885,13 +900,9 @@ class Smelter {
         const m = this.lvl('mining');
         const sm = this.lvl('smithing');
         const ok = (o: Ore) => m >= ORE_LEVEL[o];
-        // At the addy site: adamantite, plus iron while the bar quotas still lack ore (mined
-        // in the respawn waits; mineRock drops it the moment an adamantite rock is live).
-        if (this.addySite()) {
-            const out: Ore[] = ['addy'];
-            if (ironOreShort(this.o.quota, id => this.have(id)) > 0) out.push('iron');
-            return out;
-        }
+        // At the addy site: adamantite, plus coal and iron the bars still need (mined in the
+        // respawn waits; mineRock drops them the moment an adamantite rock is live).
+        if (this.addySite()) return addySiteOres(id => this.have(id), ironOreShort(this.o.quota, id => this.have(id)));
         const out: Ore[] = [];
         if (ok('addy')) out.push('addy');
         if (ok('mith')) out.push('mith');
