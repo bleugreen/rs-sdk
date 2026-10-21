@@ -101,7 +101,7 @@ export interface PackagePlan {
  * package that does not fit in 28 slots is reported as `slots > 28` for the caller
  * to refuse.
  */
-export function planPackage(pkg: Package, bank: BankItem[], stackable: (item: BankItem) => boolean = () => false): PackagePlan {
+export function planPackage(pkg: Package, bank: BankItem[], stackable: (name: string) => boolean = isStackableName): PackagePlan {
     const withdrawals: Withdrawal[] = [];
     const missing: PackagePlan['missing'] = [];
     let slots = 0;
@@ -116,9 +116,18 @@ export function planPackage(pkg: Package, bank: BankItem[], stackable: (item: Ba
         }
         const noted = spec.noted ?? false;
         withdrawals.push({ bankItem, amount, noted });
-        slots += noted || stackable(bankItem) ? 1 : amount;
+        slots += noted || stackable(bankItem.name) ? 1 : amount;
     }
     return { withdrawals, missing, slots };
+}
+
+/**
+ * Items that stack unnoted (coins, runes, ammunition). Bank data does not say, so
+ * this only sizes a package against 28 slots; a wrong guess shows up as a failed
+ * withdrawal, never as a wrong trade.
+ */
+export function isStackableName(name: string): boolean {
+    return /^coins$| rune$|arrows?$|arrowtips$|arrowheads$|bolts$|darts?$|dart tips?$|^feathers?$|knife$|cannonballs?$/i.test(name);
 }
 
 /** Aggregate an inventory or offer into id -> count. */
@@ -668,7 +677,7 @@ class Mule {
         if (!this.packageReady()) this.held = null;
 
         if (this.pending && !this.held) {
-            const plan = planPackage(this.pending, sdk.getBankItems(), b => !!sdk.getBankItems().find(x => x.id === b.id) && isStackableName(b.name));
+            const plan = planPackage(this.pending, sdk.getBankItems());
             if (plan.missing.length || plan.slots > 28) {
                 if (this.shortSince === 0) ctx.log('package short', { package: this.pending.name, missing: plan.missing, slots: plan.slots });
                 this.shortSince = Date.now();
@@ -850,11 +859,6 @@ class Mule {
     }
 }
 
-/** Names the bank shows for items that stack unnoted (coins, runes, arrows...); used only to count slots. */
-function isStackableName(name: string): boolean {
-    return /^(coins|.* rune|.*arrows?|.*arrowtips|.*bolts|.*darts?|.*dart tip|feather|.*knife|.*essence)$/i.test(name) && !/essence/i.test(name);
-}
-
 export const role: Role = {
     name: 'mule',
     produces: [],
@@ -896,14 +900,15 @@ export async function courierTrip(ctx: RoleContext): Promise<{ trades: number; c
     const p = sdk.getState()!.player;
     const home = { x: p.worldX, z: p.worldZ };
     const matching = () => sdk.getInventory().filter(i => patterns.some(re => re.test(i.name)));
+    const keepNonMatching = () => countById(sdk.getInventory().filter(i => !patterns.some(re => re.test(i.name))));
 
     if (!(await walkNear(ctx, MULE_STAND.x, MULE_STAND.z, 4))) throw new Error('courier: could not reach Varrock west bank');
 
     for (let round = 0; round < 20 && !ctx.signal.aborted; round++) {
         if (!(await openBank(ctx))) throw new Error('courier: could not open the bank');
-        // Unnoted produce in the pack goes in first so it comes back out as notes.
-        const unnoted = matching().filter(i => !isNoteOf(i, sdk.getBankItems()));
-        if (unnoted.length) await depositAllExcept(sdk, countById(sdk.getInventory().filter(i => !unnoted.some(u => u.id === i.id))));
+        // Matching items already carried (produce, or notes from an interrupted trip)
+        // go in first: the bank un-notes them, and everything comes back out as notes.
+        if (matching().length) await depositAllExcept(sdk, keepNonMatching());
         const picks = courierPicks(sdk.getBankItems(), patterns, freeSlots(sdk));
         if (round === 0 && picks.length + matching().length < minStacks) {
             ctx.log('courier: not enough stock to carry', { stacks: picks.length, minStacks });
@@ -924,7 +929,7 @@ export async function courierTrip(ctx: RoleContext): Promise<{ trades: number; c
         if (!mule) {
             ctx.log('courier: mule not in sight; banking the notes again', { mule: o.mule });
             if (await openBank(ctx)) {
-                await depositAllExcept(sdk, countById(sdk.getInventory().filter(i => !give.some(g => g.id === i.id))));
+                await depositAllExcept(sdk, keepNonMatching());
                 ctx.reportBank(bankSnapshot(sdk));
                 await closeBank(ctx);
             }
@@ -952,18 +957,13 @@ export async function courierTrip(ctx: RoleContext): Promise<{ trades: number; c
 
     // Anything matching still carried (a failed trade) goes back to the bank.
     if (matching().length && (await openBank(ctx))) {
-        await depositAllExcept(sdk, countById(sdk.getInventory().filter(i => !matching().some(m => m.id === i.id))));
+        await depositAllExcept(sdk, keepNonMatching());
         ctx.reportBank(bankSnapshot(sdk));
     }
     await closeBank(ctx);
     if (o.returnHome !== false) await walkNear(ctx, home.x, home.z, 3);
     ctx.log('courier: trip done', { trades, carried });
     return { trades, carried };
-}
-
-/** An inventory item is a banknote when the bank holds the same name under a different id. */
-function isNoteOf(item: InventoryItem, bank: BankItem[]): boolean {
-    return bank.some(b => b.name === item.name && b.id !== item.id) || !item.optionsWithIndex.some(o => /drop/i.test(o.text)) === false && false;
 }
 
 export const courier: Role = {
