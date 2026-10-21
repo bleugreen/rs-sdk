@@ -18,9 +18,9 @@ Charge rate). Primitive costs come from `primitives.md`.
 
 ## Reward
 
-- **No xp reward.** The fight itself gives about 2,400 base Magic at 80 Magic
-  with Fire Wave (measured once, 100 ms lab; the later runs' xp line was broken by
-  the setup order and is fixed in the script now), which is 13 Charge casts.
+- **No xp reward.** The fight itself gives about 3,000 base Magic and 440 base
+  Hitpoints at 80 Magic with Fire Wave (measured: 3,044 and 440 in the last 300 ms
+  run; 2,404 Magic in an earlier 100 ms run), which is 17 Charge casts.
 - **Charge** (Magic 80): `[if_button,magic:charge]` refuses with "This spell can
   only be learnt in the Mage Arena." while `%magearena < ^mage_arena_staff_given`
   (8) (read, `skill_magic/scripts/spells/charge.rs2:4-7`). It gives 1,800 tenths =
@@ -105,14 +105,14 @@ measurements.
    pending re-queues itself (`player_magic.rs2:95-97`), so the bot clicks every 2
    ticks. Each form's death sets the next stage (`kolodion_fight.rs2:23-139`).
    After the demon, `finish_mage_arena` waits 3 + 2 ticks and teleports you to the
-   cellar (2540,4716) (`mage_arena.rs2:146-158`). Measured **312 and 314 ticks**
-   at 300 ms, and 240, 246, 298 and 354 at 100 ms (the fight is server-paced, so
-   the rates agree): mean 294. See Fights.
+   cellar (2540,4716) (`mage_arena.rs2:146-158`). Measured **312, 314 and 322
+   ticks** at 300 ms, and 240, 246, 298 and 354 at 100 ms (the fight is
+   server-paced, so the rates agree): mean 298. See Fights.
 8. **Kolodion's congratulations** in the cellar: 2-5 ticks measured (the page
    came and went before the script counted it).
 9. **Step into the sparkling pool** at (2541,4719) (`mage_arena.rs2:15-77`): at
    `%magearena >= 6` a mesbox (2 pages counted), a jump and a teleport to the
-   chamber (2509,4689). **12-14 ticks.**
+   chamber (2509,4689). **10-14 ticks.**
 10. **Pray at a statue**: Saradomin (2500,4721), Guthix (2507,4724) or Zamorak
     (2516,4721) (`chamber.rs2:1-22`); the god only decides which god spell you can
     cast later. Two mesboxes, `p_delay(2)`; sets `%magearena = 7` and drops the
@@ -133,13 +133,13 @@ measurements.
 | Travel in (Ardougne route) | 1 teleport, about 166 tiles, 1 lever (1 page, 1 option), 3 webs (about 6 knife tries), 1 ladder | 4 + 61 + 15 + 75 + 3 = **158** | measured (`quest-magearena-travel.ts`, 300 ms: 172 with 12 web tries), teleport primitive |
 | Travel in without Plague City | glory to Edgeville, about 470 tiles north, 2 webs, 1 ladder | 6 + **335** = 341 | measured (`FROM=edgeville`, 5 web tries), glory primitive |
 | Talk to Kolodion | 13 pages, 3 options, arena teleport | **39** | measured |
-| Fight | about 60 casts, 150 clicks | **about 300** (240-354) | measured, 6 runs |
+| Fight | about 60 casts, 150 clicks | **about 300** (240-354) | measured, 7 runs |
 | Congratulations, pool, statue and cape, guardian | 1 + 2 + 2 + 5 pages, about 50 tiles, 1 pickup | 3 + 13 + 32 + 26 = **74** | measured |
 | Teleport out | 1 teleport | **4** | primitive |
 | **Total, Ardougne route** | | **about 575** | |
 | **Total, Edgeville route** | | **about 760** | |
 
-The unlock (talk to staff) measured 421 and 430 ticks at 300 ms. Then Charge: 163
+The unlock (talk to staff) measured 421, 430 and 430 ticks at 300 ms. Then Charge: 163
 casts in **33 ticks** for Magic 80 to 99 (below), so the Mage Arena route costs
 about 610 ticks for 29,251 base Magic.
 
@@ -194,17 +194,17 @@ Saradomin Strike drains Prayer by 1, every successful hit, stacking
   59) it reached the spider and died there, drained below 59. A Magic potion or
   restore potions might carry it, not tested.
 - **With Protect from Magic he never hits** (`npc_combat_magic.rs2:37` skips the
-  hit when `check_protect_prayer(^magic_style)`): no damage taken in any of the 6
+  hit when `check_protect_prayer(^magic_style)`): no damage taken in any of the 7
   completed runs, no drains, no food eaten. The prayer drains about **1 point per
-  5.2 ticks**: 48 points over 246 ticks, 58/298, 67/354 (100 ms), 59/312 and
-  60/314 (300 ms). One run lost its 70 points at tick 408 of the fight and died.
+  5.2 ticks**: 48 points over 246 ticks, 58/298, 67/354 (100 ms), 59/312,
+  60/314 and 61/322 (300 ms). One run lost its 70 points at tick 408 of the fight and died.
   **Prayer budget**: about 60 points for a typical fight and 70 for a slow one.
   Holy Grail's 11,000 base Prayer (`quest_grail.rs2:116`) is Prayer **80** on this
   curve (80 needs 10,687 base, 81 needs 11,456), so with Holy Grail done there are
   80 points, enough for about 420 fight ticks; bring a prayer potion only below
   about Prayer 75.
 - **Fight length at 80 Magic, Fire Wave, staff of fire, no other bonuses:** 240,
-  246, 298, 354, 312, 314 ticks (mean 294). The spread is accuracy and damage
+  246, 298, 354, 312, 314, 322 ticks (mean 298). The spread is accuracy and damage
   rolls; the cast cadence was one cast per 5 ticks throughout. The fight is the
   same at 70/70/70 melee: melee is not allowed and Defence does not matter under
   the prayer.
