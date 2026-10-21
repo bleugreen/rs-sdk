@@ -1,7 +1,7 @@
 // Smoke test for a quest lab session: log in, skip the tutorial, print the
 // tick, position and a staff command's reply.
 //
-//   BOTS=dig16 docs/speedrun/scripts/quest-lab-session.sh bun docs/speedrun/scripts/quest-lab-smoke.ts dig16
+//   BOTS=dig16 docs/speedrun/scripts/quest-digsite-lab-session.sh bun docs/speedrun/scripts/quest-digsite-lab-smoke.ts dig16
 import { runScript } from '../../../sdk/runner';
 
 await runScript(async ({ bot, sdk }) => {
