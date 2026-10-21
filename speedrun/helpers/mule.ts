@@ -18,6 +18,8 @@
 // Run standalone (lite client already running for the account):
 //   ROLE_OPTIONS='{...}' bun speedrun/helpers/mule.ts <account>            # mule
 //   ROLE_OPTIONS='{...}' bun speedrun/helpers/mule.ts <account> courier    # courier
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
 import { offerSatisfies } from '../../sdk/trade-helpers';
@@ -523,8 +525,14 @@ export interface MuleOptions {
     /** Courier account-name RegExp source(s), matched against login names. */
     couriers?: string | string[];
     packages?: Package[];
-    /** 'order': serve packages in order, one per trade from `serve`. 'request': only after a PM naming one. */
+    /**
+     * 'order': serve packages in order, one per trade from `serve`. 'request': only
+     * after a request names one, by a line in `requestFile` or a PM from `serve`
+     * (PMs need the world's friends server; none reached the mule in our tests).
+     */
     serveMode?: 'order' | 'request';
+    /** A file on the mule's host; each line is a package name to prepare next. */
+    requestFile?: string;
     giver?: GiverMode;
     /** Send `serve` a trade request when a package is ready and it comes within 12 tiles. Default true. */
     preRequest?: boolean;
@@ -546,6 +554,7 @@ function muleOptions(raw: Record<string, unknown>): Required<Omit<MuleOptions, '
         couriers: o.couriers ?? DEFAULT_COURIERS,
         packages,
         serveMode: o.serveMode ?? 'order',
+        requestFile: o.requestFile ?? '',
         giver: o.giver ?? 'burst',
         preRequest: o.preRequest ?? true,
         stand: o.stand ?? MULE_STAND,
@@ -609,11 +618,16 @@ class Mule {
         const { ctx } = this;
         const { sdk } = ctx;
 
-        // 1. Package requests by PM from the scored account.
-        for (const pm of this.pms.next()) {
-            if (!this.isServe(pm.sender)) continue;
-            const pkg = parsePackageRequest(pm.text, this.o.packages);
-            ctx.log('package request', { from: pm.sender, text: pm.text, found: pkg?.name ?? null });
+        // 1. Package requests: a PM from the scored account, or a line in the request file.
+        const asks: { from: string; text: string }[] = this.pms
+            .next()
+            .filter(pm => this.isServe(pm.sender))
+            .map(pm => ({ from: pm.sender, text: pm.text }));
+        const fileAsk = this.takeFileRequest();
+        if (fileAsk) asks.push({ from: 'requestFile', text: fileAsk });
+        for (const ask of asks) {
+            const pkg = parsePackageRequest(ask.text, this.o.packages);
+            ctx.log('package request', { from: ask.from, text: ask.text, found: pkg?.name ?? null });
             if (pkg && pkg !== this.pending) {
                 this.pending = pkg;
                 this.held = null;
@@ -645,6 +659,17 @@ class Mule {
             await walkNear(ctx, this.o.stand.x, this.o.stand.z, 3);
         }
         await nextTick(sdk);
+    }
+
+    /** Pop the first package name from the request file (one name per line), if any. */
+    private takeFileRequest(): string | null {
+        const path = this.o.requestFile;
+        if (!path || !existsSync(path)) return null;
+        const lines = readFileSync(path, 'utf8').split('\n').map(l => l.trim());
+        const first = lines.findIndex(l => l.length > 0);
+        if (first < 0) return null;
+        writeFileSync(path, lines.slice(first + 1).filter(Boolean).map(l => `${l}\n`).join(''));
+        return lines[first]!;
     }
 
     private wantsPackage(): boolean {
