@@ -114,11 +114,15 @@ await runScript(async ({ bot, sdk }) => {
             const apple2 = (await sdk.scanGroundItems(5)).find(g => /^Rotten apples?$/i.test(g.name));
             if (!apple2) throw new Error('no rotten apple');
             await S.step('pick up the rotten apple', () => sdk.sendPickup(apple2.x, apple2.z, apple2.id), { done: has(sdk, /^Rotten apples?$/i), settle: 0 });
-            await S.step('rotten apple on the cauldron (5->6), walking from the apple', useOnLoc(sdk, /^Rotten apples?$/i, 2543, 3332, 2043), { settle: 4, done: () => !sdk.getInventory().some(i => /^Rotten apples?$/i.test(i.name)), maxTicks: 120 });
-            await sdk.waitForTicks(3);
-            out.cauldronFrom = L.pos(sdk);
+            // The cauldron is inside the mourner HQ yard; the way in is the fence at (2541,3331)
+            // ("Climb-over", general_use/scripts/fence.rs2, no requirement).
+            await S.step('climb the yard fence (in), walking from the apple', opAt(2541, 3331, /Climb-over/), { done: () => L.pos(sdk).x >= 2542, settle: 0, maxTicks: 60 });
+            out.fenceInside = L.pos(sdk);
+            await S.step('rotten apple on the cauldron (5->6)', useOnLoc(sdk, /^Rotten apples?$/i, 2543, 3332, 2043), { settle: 4, done: () => !sdk.getInventory().some(i => /^Rotten apples?$/i.test(i.name)), maxTicks: 60 });
+            await sdk.waitForTicks(4);
             await quest('stew');
-            await S.walk('cauldron -> nurse cupboard', 2518, 3276);
+            await S.step('climb the yard fence (out)', opAt(2541, 3331, /Climb-over/), { done: () => L.pos(sdk).x <= 2541, settle: 0, maxTicks: 60 });
+            await S.walk('fence -> nurse cupboard', 2519, 3276);
             await S.step('open the nurse cupboard', opAt(2517, 3276, /Open/), { done: () => sdk.getState()!.nearbyLocs.some(l => l.x === 2517 && l.z === 3276 && /Search/.test(l.options.join())), settle: 0 });
             await S.step("search: doctors' gown", opAt(2517, 3276, /Search/), { done: has(sdk, /^Doctors' gown$/i), settle: 0 });
             await S.step("wear the doctors' gown", async () => { await bot.equipItem(/^Doctors' gown$/i); }, { done: () => sdk.getEquipment().some(e => /Doctors' gown/i.test(e.name)), settle: 0 });
