@@ -647,6 +647,15 @@ that hour safe.
   it exits (for example memory growth and long garbage-collection pauses on the 4 GB machine), but
   it is inferred from two restarts and nothing on the server side has been seen. The longest silence
   without a restart was 1,987 ms, at 07:50.
+- *Refill after a restart* (`playercount.tsv`, 20 s samples, no login). 04:53: 0 online at
+  04:53:58, 198 a minute later, 1,216 at +2 min, 1,426 at +3.3, about 1,500 by +6 and 1,600-1,670
+  by +18 (05:11-05:14), against 1,680 before. 06:14: 0 at 06:14:55, held at 3-10 for 1.4 minutes
+  (logins not yet open), then 473 at +1.7 min, 1,160 at +2.4, 1,439 at +5.4, 1,587 at +10 and
+  1,610 at +15.5, against 1,687 before. So about 70% of the count is back within 2.5 minutes of
+  the server answering and 85% within 5; the last 5-10% takes 10-18 minutes. A probable third
+  restart at about 20:00 UTC (13:00 PDT), about 14 hours after 06:14, fits the same curve: 38
+  online at the gate timer's 20:00 read, 1,411 at 20:12 (rs/147's twin host), 1,597 at 20:21. That
+  restart is inferred from the count; the gate's error text was lost (rs/140 now keeps it).
 - *The per-player save cadence* (`World.PLAYER_SAVERATE`) was not tested: its phase on the demo is
   unknown.
 
@@ -796,6 +805,21 @@ loop that sees a catch-up should expect its next reaction to miss, and reactive 
 pause while catch-ups run above about 5 per minute (rs/102's in-run rule). Per-reaction miss rates
 by the next tick interval, which the programs' resync logic should expect, are in section 9, 'Miss
 rate by the next tick interval'.
+
+**Gate samples from run-class hosts** (AWS us-east-1c, edge iad, TCP about 2 ms), 21 October:
+
+| UTC | Host | Online | (a) direct | (c) catch-ups per minute | Verdict |
+| --- | --- | --- | --- | --- | --- |
+| 18:10 | run host, gate timer's first (hand) read | 1,587 | 54/60 | 3.97 | fail |
+| 19:45 | run host, rs/130's reference row | 1,679-1,624 | 51/60 | 11.7 | fail |
+| 20:12 | rs/147's twin (same zone and image), Xvfb with recording | 1,411 | 60/60; in-page probe 60/60 | 0 | **pass** (loop p10 72-73/s) |
+
+The 20:12 pass came about 12 minutes after the probable 20:00 restart, and 05:09 (60/60, 16
+minutes after the 04:53 restart) was calm too, but 05:36 (43 minutes after it) was a severe burst.
+Three samples don't show that the time after a restart is systematically calm, and restarts can't
+be scheduled (about 14 hours apart this time, 1.5-3.5 overnight). So the start policy stays
+'start when the gate passes'; a restart during the wait is a reason to re-read the gate once the
+world has refilled, not a window to wait for.
 
 Also before starting:
 
