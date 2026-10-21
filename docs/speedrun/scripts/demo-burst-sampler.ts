@@ -12,6 +12,7 @@
 //       [--every-min=30] [--ref=agent/rs-83-coordinator-0] [--lite-ref=main] [--yield-min=10]
 //       [--sample-minutes=6]   (0: the workflow's default react-only direct probe)
 //       [--reserve=30-45]      (minutes past each PDT hour reserved for this sampler)
+//       [--slot-offset-min=30] (with --every-min=60: one slot an hour at :30, when sharing the runner)
 //       [--long-minutes=17 --long-idle-min=30]  (a direct-only long sample when the runner has been free)
 //       [--foreign-since-min=60] (collect other dispatchers' finished runs from this far back)
 //   bun docs/speedrun/scripts/demo-burst-sampler.ts --dir=... --collect=<run id>,...   (backfill, no dispatch)
@@ -36,6 +37,7 @@ const WORKFLOW = 'demo-latency-probe.yml';
 const REF = args.get('ref') ?? 'agent/rs-83-coordinator-0';
 const LITE_REF = args.get('lite-ref') ?? 'main';
 const EVERY_MIN = Number(args.get('every-min') ?? 30);
+const SLOT_OFFSET_MIN = Number(args.get('slot-offset-min') ?? 0);
 const SLOT_BUDGET_MIN = Number(args.get('slot-budget-min') ?? 25);
 const YIELD_MIN = Number(args.get('yield-min') ?? 10);
 const COUNT_S = Number(args.get('count-s') ?? 20);
@@ -294,8 +296,9 @@ async function slot(slotStart: number) {
 async function pairLoop() {
     while (Date.now() < UNTIL) {
         const period = EVERY_MIN * 60_000;
-        // Slots on the PDT clock (:00 and :30 for 30 min); PDT is a whole-hour UTC offset.
-        const start = Math.floor(Date.now() / period) * period;
+        // Slots on the PDT clock (:00 and :30 for 30 min, or --slot-offset-min past); PDT is a whole-hour UTC offset.
+        const offset = SLOT_OFFSET_MIN * 60_000;
+        const start = Math.floor((Date.now() - offset) / period) * period + offset;
         await slot(Math.max(start, Date.now() - 60_000));
         const next = start + period;
         if (next > Date.now()) await sleep(next - Date.now());
