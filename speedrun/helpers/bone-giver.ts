@@ -35,7 +35,7 @@ import type { BotWorldState, NearbyPlayer } from '../../sdk/types';
 import { withdrawMany } from '../lib/bank';
 import { give, tradeOf } from '../lib/trade';
 import { assertUntracked, canonName, CueWatcher, cueDir, nameHash, writeJsonAtomicSync, type Cue } from './altar-cue';
-import { chebyshev, count, isLocalServer, labTele, pos, standOn, until, type Tile } from './altar-room';
+import { chebyshev, cheat, count, isLocalServer, labTele, pos, standOn, until, type Tile } from './altar-room';
 import { closeBank, depositAllExcept, ensureOutOfTutorial, openBank, walkNear } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
 
@@ -316,8 +316,13 @@ export class BoneGiver {
         const { ctx, o } = this;
         if (o.restock.kind === 'cheat') {
             if (!isLocalServer()) throw new Error('restock kind cheat is for the local lab only');
+            // Carry nothing else: a fresh lab account's starter kit leaves fewer free slots than a load needs.
+            if ((this.s?.inventory ?? []).some(i => !this.re.test(i.name))) {
+                await cheat(ctx, '~clearinv inv');
+                await until(ctx, st => st.inventory.length === 0, 10);
+            }
             const missing = o.n - this.held();
-            if (missing > 0) await ctx.sdk.sendSay(`::give dragon_bones ${missing}`);
+            if (missing > 0) await cheat(ctx, `give dragon_bones ${missing}`);
             if (!(await until(ctx, () => this.held() >= o.n, 10))) throw new Error('staff give did not arrive');
             return;
         }
