@@ -189,16 +189,19 @@ scripts are in section 4; the shared primitives and their build order are in sec
     cannon set and ~1,170 cannonballs; the rune axe or main's decision to run without it; the budget
     (expected + fallback deltas in force under 35,916). run.ts reads them from the operator's
     checklist (`SUPPLIES.md` section 5); it does not count bones itself;
-  - **`RUN_COMMIT` includes rs/164** (`RUN-HOST.md` "Credentials" and step 0): 3ed0cd49c on the
-    twin, merged into rs/147's branch as 4e0e8ae4; main's commit is named when rs/165's snapshot
-    merges. With it the page confirmed every tab logout in 222-324 ms, 0 ticks of latency, and
-    `session.ts` no longer consults the gateway for a browser session, since the gateway still said
-    `inGame: true` afterwards (m, rs/164 on the rehearsal twin, cairn_smoke, 20:44-20:52Z). Without
-    it `logoutClean` cannot confirm a logout from the browser tab, because the gateway keeps
-    `inGame: true` with status `stale` (m, rs/149 on the rehearsal twin). Cost if not: up to ~60
-    ticks per relog (i, RUN-ORDER.md R1's bound), for both planned relogs and any pause, plus
-    whatever run.ts does on the reported failure; the final logout is then confirmed on the host
-    (`RUN-HOST.md` step 8). A precondition, not a line in the totals;
+  - **`RUN_COMMIT` includes rs/164, main's `c2d9eada`** (#146; `RUN-HOST.md` "Credentials" and
+    step 0, `git merge-base --is-ancestor c2d9eada "$RUN_COMMIT"`). c2d9eada is byte-identical to
+    rs/147's 4e0e8ae4, whose code is 3ed0cd49c, the commit that ran on the twin. With it the page
+    confirmed every tab logout in 222-324 ms, 0 ticks of latency, and `session.ts` no longer
+    consults the gateway for a browser session, since the gateway still said `inGame: true`
+    afterwards (m, rs/164 on the rehearsal twin, cairn_smoke, 20:44-20:52Z). `logoutClean` treats
+    `lastDamageTick < 0` as never damaged and confirms a tab's logout through the page's own
+    in-game flag over CDP (`tab.ts` `pageInGame`; r, c2d9eada). On an older commit it cannot
+    confirm a logout from the browser tab, because the gateway keeps `inGame: true` with status
+    `stale` (m, rs/149 on the rehearsal twin), and each relog risks up to ~60 ticks (i,
+    RUN-ORDER.md R1's bound); that case is historical on any `RUN_COMMIT` at or after c2d9eada.
+    The final logout is still checked on the host (`RUN-HOST.md` step 8). A precondition, not a
+    line in the totals;
   - rs/117's helpers logged in before SCORED (`launcher.json` `helpersReady`);
   - a session that publishes advancing ticks (`openSession`, `waitAdvancingTick`); the watchdog
     started; the in-page runtime present (`startProgram(sdk, 'probe')` answers);
@@ -395,6 +398,14 @@ scripts are in section 4; the shared primitives and their build order are in sec
   while SCORED holds 2 bones. **Tab gate (tenet 12, run.ts entry):** knife mode only while it holds;
   otherwise plain, re-probed every 500 ticks while plain (`skills/tick-manipulation.md` §5); the
   pause rule applies. The in-page program resyncs on observed slips.
+- **Lost-lock window** (rs/175, PR #151, open, not on main at this writing): the number of no-xp
+  ticks before knife-cycle counts the lock as lost is sized from the swinging axe's p,
+  `max(18, 3 * ceil(ln 0.005 / ln(1 - p)))`, so honest misses trip it under 0.5% of the time per
+  lock (r, rs/175's `knife-cycle.ts` at 3553d915). With the rune axe at S07's bands (oak 15-73,
+  willow 73-99) it is **18-21 ticks**: 21 at oak 15 (p = 147/256) and at willow 73 (p = 143/256),
+  18 through the rest of both bands (i, from trees.dbrow's rune bounds, oak 112/350 and willow
+  56/175). A weaker axe widens it (bronze oak at WC 60: 48). Before rs/175, oak and willow used a
+  fixed 18, which honest misses with a bronze axe tripped (rs/130's oak run, RUN-ORDER.md O11).
 - **The bury variant** (`research/bones-placement.md` §2): on the label of roll R send `[knife on
   logs, button 8889, drop, bury]`; on R+2 send only the tree click, which lands on R+3 and rolls at
   once. Accept a trade on a roll label once the last bone is buried, then bootstrap the knife cycle
@@ -431,23 +442,33 @@ scripts are in section 4; the shared primitives and their build order are in sec
   With rs/162: 0.230 bones per tick, 0.12-0.20 ticks per bone against the plain column (BP, lite).
   If the bury variant fails on the demo: the bones go to the Mining `stay2` lap (up to ~200, entry 4)
   and the booth (+278 in all; +640 if all at the booth).
-- **Acceptance, local:** browser tab, lab engine at 300 ms, willows at 99: knife within 5% of
-  **4.36** ticks per log over 200+ logs, the 3-tick lattice at the formula's success rate (3/p,
-  p(99) = 0.6875, `skills/woodcutting.md` §4), reported beside ticks per expected roll (3.00 on the
-  lattice); plain within 5% of **5.82** per log (4/p; 4.00 per expected roll). The chop RNG alone
-  gives ticks per log a standard error of about 4% at 200 logs, so if a run misses, the gap
+- **Units.** Acceptance and reporting are in **ticks per expected roll as knife-cycle reports it**
+  (`ticksPerExpectedRoll`, with the axe named in the result; rs/175, PR #151). With no axe found
+  the figure is NaN; a NaN, or an axe other than the band's kit, fails the run. Ticks per log is a
+  second, labelled column. Until #151 is on `RUN_COMMIT`, knife-cycle reports no per-roll figure on
+  oak and willow, and they are weighted by `tickmanip-demo-report.ts` instead (the same 1/p per log).
+- **Reference (rs/175, lab):** willow, rune axe, from WC 40, 60 logs in each of two runs: **2.84 and
+  2.94 ticks per expected roll, 0 resyncs** (m, lab; rs/175's note on cairn://p/rs/158, 14:21 PDT).
+  That fits the knife's 3-tick roll cadence that S07's 2,986 assumes. Below 3 is luck at 60 logs:
+  at p(40) = 103/256 the standard error is about 10% (i). It is a reference, not the acceptance run.
+- **Acceptance, local:** browser tab, lab engine at 300 ms, willows at 99, rune axe: knife within 5%
+  of **3.00** ticks per expected roll over 200+ logs (the 3-tick lattice), reported beside **4.36**
+  per log (3/p, p(99) = 0.6875, `skills/woodcutting.md` §4); plain within 5% of **4.00** per
+  expected roll (5.82 per log, 4/p). The chop RNG alone gives either figure a standard error of
+  about 4% at 200 logs, so if a run misses, the gap
   histogram decides: gaps on multiples of the cycle with a fitted success per roll within two
   standard errors of 0.6875 pass, as rs/97's 4.83 run would have (`tick-programs.md`). Normal trees
-  from level 1 within 5% of **7.24**. **Bury:** oak at 60, `trees` passed: at least **0.31 bones per tick** without trades
+  from level 1 within 5% of **7.24** per log. **Bury:** oak at 60, `trees` passed: at least **0.31 bones per tick** without trades
   (0.329 measured in the page, #124) and ticks per log within 5% of the no-bury knife in the same
   tab; then with a real helper trading 23-bone loads through stop, `receiveFrom` and restart, at
   least 0.29 bones per tick and 5 or fewer ticks per load. **Forced fallen tree:** fell the target
   tree mid-run; pass if the rate stays at or above 0.31 (the failure mode is 0.27-0.28). **Forced slip:** hold 15% of starters
-  one tick: within 5% of **5.76** and never above plain, and 3 injected overrun minutes turn the knife
+  one tick: within 5% of **5.76** per log and never above plain, and 3 injected overrun minutes turn the knife
   off within one probe window.
 - **Acceptance, demo (throwaway):** from Ashburn, normal trees with the starter axe, 5 rounds of 20
   logs knife and plain, alternating; then 2 rounds with the bury (any bones). Pass: probe at least 58
-  of 60, knife ticks per expected roll (`tickmanip-demo-report.ts`'s weighting) within 5% of the local
+  of 60, knife ticks per expected roll as knife-cycle reports it, with the starter axe named
+  (`tickmanip-demo-report.ts`'s weighting until #151 is on `RUN_COMMIT`), within 5% of the local
   figure, and the bury keeps the 3-tick roll gaps.
 - **Start from:** rs/97 `programs/knife-cycle.ts` with rs/137's bury variant; `docs/speedrun/scripts/bones-wc.ts`
   (`--mode=knifebury`), `tickmanip-cycle.ts`, `woodcutting-model.ts`.
@@ -1116,9 +1137,10 @@ scripts are in section 4; the shared primitives and their build order are in sec
 - **Preconditions:** SCORED at Varrock west bank at a planned relog, never in a first login; the wine
   giver beside the bank requesting; 520 noted unfermented wines (held, rs/118); the chisel and the
   gems for the windows banked from H21d; S25a, S25d and S25e done; level-up pages cleared and 16
-  ticks out of combat before each relog; **`RUN_COMMIT` includes rs/164** (entry 0). Without it each
-  of the two relogs risks up to ~60 ticks of `logoutClean`'s unconfirmed wait (i, RUN-ORDER.md R1's
-  bound) on top of the tab relog's ~20.
+  ticks out of combat before each relog; **`RUN_COMMIT` at or after `c2d9eada`**, main's rs/164
+  commit (#146; entry 0), so `logoutClean` confirms each relog's logout from the page. The up to
+  ~60 ticks of unconfirmed wait each relog risked before rs/164 (i, RUN-ORDER.md R1's bound) are
+  gone on such a `RUN_COMMIT`, leaving the tab relog's ~20.
 - **Postconditions:** Cooking 99; 107 more gems cut. Items out: none.
 - **Ticks:** expected **116**, best **111**: WINE's demo run A and projection, 75-85, measured at
   80 / 75 with 2 ticks per relog on the lite client, plus 2 x 18 for the two planned relogs from
