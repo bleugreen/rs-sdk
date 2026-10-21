@@ -391,7 +391,8 @@ What it still needs (read):
 - `docs/speedrun/scripts/quest-underground-pass-route.ts [leg...] [--no=kind]`: the offline
   route planner (tiles, crossings, trap tiles) used by the segments and for the orb order.
 - `docs/speedrun/scripts/quest-underground-pass-map.ts`: offline region map of the pass.
-- `docs/speedrun/scripts/quest-underground-pass-lib.ts`: the route executor, timed actions,
-  dialogues and the fight loop.
+- The route executor (`travel`, which walks planner routes and clicks each crossing) lives in
+  `quest-underground-pass-segments.ts`; timed actions, dialogues, fights and the segment
+  recorder come from `speedrun/lib` (act, converse, combat) and `speedrun/lab` (setup, record).
 - `docs/speedrun/scripts/quest-underground-pass-explore.ts <bot> <step>...`: the lab console
   used to find coordinates and options.

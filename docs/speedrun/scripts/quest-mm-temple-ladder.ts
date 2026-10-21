@@ -10,9 +10,11 @@
 // The quest scripts gate neither the ladders (quest_mm.rs2:759-771) nor the trapdoor (mm_temple.rs2:1-17).
 
 import { runScript } from '../../../sdk/runner';
-import {
-    cheat, give, locOpAt, now, pos, result, setstats, setvar, stats, tele, waitTicks, waitUntil,
-} from './quest-gnome-lib';
+import { opLoc } from '../../../speedrun/lib/act';
+import { currentTick, waitTicks, waitUntil } from '../../../speedrun/lib/wait';
+import { pos } from '../../../speedrun/lib/world';
+import { result, stats } from '../../../speedrun/lab/record';
+import { cheat, give, setStats, setvar, tele } from '../../../speedrun/lab/setup';
 
 const SEGS = (process.argv[3] ?? 'LP').toUpperCase().split('');
 const REPS = Number(process.argv[4] ?? 5);
@@ -24,8 +26,8 @@ await runScript(async ({ bot, sdk }) => {
     const reset = async (x: number, z: number, level = 0) => {
         await sdk.sendCloseModal();
         await waitTicks(sdk, 1);
-        await cheat(sdk, '~clearinv');
-        await setstats(sdk, { hitpoints: 70, prayer: 43 });
+        await cheat(sdk, '~clearinv', 1);
+        await setStats(sdk, { hitpoints: 70, prayer: 43 });
         await setvar(sdk, 'treequest', 9);
         await setvar(sdk, 'grandtree', 160);
         await setvar(sdk, 'mm_main', 3);
@@ -48,18 +50,19 @@ await runScript(async ({ bot, sdk }) => {
             await reset(2795, 2786);
             await bot.activatePrayer('protect_from_melee');
             const hp0 = hp();
-            const t0 = now(sdk);
-            const up = await locOpAt(sdk, 2794, 2773, /climb/i, s => pos(s).level === 1, 40);
-            const tUp = now(sdk);
+            const t0 = currentTick(sdk);
+            await opLoc(sdk, { x: 2794, z: 2773 }, /climb/i, s => pos(s).level === 1, { maxTicks: 40 });
+            const tUp = currentTick(sdk);
             const at1 = pos(sdk.getState());
             const w = await bot.walkTo(2806, 2785, 0);
-            const tWalk = now(sdk);
+            const tWalk = currentTick(sdk);
             const at1b = pos(sdk.getState());
-            let down = { ticks: NaN, note: 'skipped' } as { ticks: number; note?: string };
+            let downNote: string | undefined = 'skipped';
             if (at1b.level === 1 && at1b.x === 2806 && at1b.z === 2785) {
-                down = await locOpAt(sdk, 2805, 2785, /climb/i, s => pos(s).level === 0, 20);
+                const down = await opLoc(sdk, { x: 2805, z: 2785 }, /climb/i, s => pos(s).level === 0, { maxTicks: 20 });
+                downNote = down.ok ? undefined : 'TIMEOUT';
             }
-            const tDown = now(sdk);
+            const tDown = currentTick(sdk);
             const landing = pos(sdk.getState());
             // Trapdoor: open, then climb down; re-click every 3 ticks (as quest-mm-atoll.ts segment T).
             let clicks = 0;
@@ -76,18 +79,19 @@ await runScript(async ({ bot, sdk }) => {
                 }
                 void eatIfLow();
                 return false;
-            }, 60);
-            const tEnd = r?.tick ?? NaN;
+            }, { maxTicks: 60 });
+            const tEnd = r.ok ? r.tick : NaN;
             const total = tEnd - t0;
             if (Number.isFinite(total)) totals.push(total);
             result('ladder_drop', {
                 rep, total, climbUp: tUp - t0, landedFloor1: at1, walkFloor1: tWalk - tUp, walkOk: w.success, walkMsg: w.success ? undefined : w.message,
-                floor1End: at1b, climbDown: tDown - tWalk, downNote: down.note, landing, trapdoor: tEnd - tDown, trapdoorClicks: clicks,
+                floor1End: at1b, climbDown: tDown - tWalk, downNote, landing, trapdoor: tEnd - tDown, trapdoorClicks: clicks,
                 hpLost: hp0 - hp(), prayerUsed: 43 - pp(), below: pos(sdk.getState()),
             });
             await bot.deactivateAllPrayers();
         }
-        result('ladder_drop_summary', stats(totals));
+        const { n, min, max, mean } = stats(totals);
+        result('ladder_drop_summary', { n, min, max, mean });
     }
 
     if (SEGS.includes('P')) {
@@ -97,7 +101,7 @@ await runScript(async ({ bot, sdk }) => {
             await waitTicks(sdk, 1);
             const hp0 = hp();
             const pp0 = pp();
-            const t0 = now(sdk);
+            const t0 = currentTick(sdk);
             let last = t0;
             let toggles = 0;
             let unprotectedTicks = 0;
@@ -114,8 +118,8 @@ await runScript(async ({ bot, sdk }) => {
                 }
                 if (s.player!.hp < 35) { eaten++; void eatIfLow(); }
                 return false;
-            }, 120);
-            result('prayer_toggle', { mode, ticks: now(sdk) - t0, toggles, prayerUsed: pp0 - pp(), hpNet: hp0 - hp(), eaten, publishedTicksWithoutPfm: unprotectedTicks, at: pos(sdk.getState()) });
+            }, { maxTicks: 120 });
+            result('prayer_toggle', { mode, ticks: currentTick(sdk) - t0, toggles, prayerUsed: pp0 - pp(), hpNet: hp0 - hp(), eaten, publishedTicksWithoutPfm: unprotectedTicks, at: pos(sdk.getState()) });
             await bot.deactivateAllPrayers();
         }
     }

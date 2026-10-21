@@ -9,7 +9,7 @@
 // read-then-act per page and says so in its result.
 
 import type { BotSDK } from '../../sdk/index';
-import type { ActionResult, BotWorldState, DialogState } from '../../sdk/types';
+import type { ActionResult, BotWorldState, DialogOption, DialogState } from '../../sdk/types';
 import { waitUntil, type StateSource } from './wait';
 
 export type DialogueSdk = StateSource & Pick<BotSDK, 'sendClickDialog' | 'clickDialogByText'>;
@@ -27,6 +27,75 @@ export function classifyPage(dialog: DialogState | null | undefined): PageKind {
     if (!dialog?.isOpen) return 'none';
     if (dialog.options.length > 1 || dialog.options.some(o => o.buttonType === BUTTON_OK)) return 'choice';
     return 'continue';
+}
+
+/**
+ * The open page's own words. The lite client publishes them in
+ * `allComponents`; `text` is rarely filled in and is only the fallback.
+ */
+export function pageText(dialog: DialogState | null | undefined): string {
+    if (!dialog?.isOpen) return '';
+    const words = (dialog.allComponents ?? []).map(c => c.text).filter(Boolean).join(' ');
+    return (words || dialog.text || '').replace(/\s+/g, ' ').trim();
+}
+
+/** A string matches an option as a case-insensitive substring; a RegExp is tested against its text. */
+export type OptionPattern = string | RegExp;
+
+export function matchesOption(text: string, pattern: OptionPattern): boolean {
+    if (typeof pattern === 'string') return text.toLowerCase().includes(pattern.toLowerCase());
+    pattern.lastIndex = 0;
+    return pattern.test(text);
+}
+
+export function findOption(dialog: DialogState | null | undefined, pattern: OptionPattern): DialogOption | undefined {
+    if (!dialog?.isOpen) return undefined;
+    return dialog.options.find(o => matchesOption(o.text, pattern));
+}
+
+export interface OptionClick {
+    ok: boolean;
+    /** The option text that was clicked (or would have been). */
+    text?: string;
+    /** `no_dialog`, `absent` (nothing sent), or the SDK's refusal (`stale_dialog`, ...). */
+    reason?: string;
+    /** The options on the page that was read. */
+    options: string[];
+}
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Click a dialogue option by its text, guarded. The option is resolved on the
+ * page as published, and when no option matches nothing is sent at all. The
+ * click then goes out as the SDK's page-bound `clickDialogByText` with the
+ * option's exact text, so a page re-published under a new id, or a different
+ * page that replaced it, is refused (`stale_dialog`) instead of clicked: an
+ * unguarded click on a stale copy lands on whatever page the server shows next.
+ */
+export async function clickOption(sdk: Pick<BotSDK, 'getState' | 'clickDialogByText'>, pattern: OptionPattern): Promise<OptionClick> {
+    const d = sdk.getState()?.dialog;
+    const options = d?.isOpen ? d.options.map(o => o.text) : [];
+    if (!d?.isOpen) return { ok: false, reason: 'no_dialog', options };
+    const match = findOption(d, pattern);
+    if (!match) return { ok: false, reason: 'absent', options };
+    const r = await sdk.clickDialogByText(new RegExp(`^${escapeRe(match.text)}$`));
+    return r.success ? { ok: true, text: match.text, options } : { ok: false, text: match.text, reason: r.reason ?? r.message, options };
+}
+
+const CONTINUE = /click here to continue|^continue$/i;
+
+/**
+ * Continue the open page. A page that publishes its "Click here to continue"
+ * option (with a page id and component) gets the guarded click, for the same
+ * reason as `clickOption`; anything else (no option, an older client) gets the
+ * plain `sendClickDialog(0)`.
+ */
+export async function clickContinue(sdk: Pick<BotSDK, 'getState' | 'sendClickDialog' | 'clickDialogByText'>): Promise<ActionResult> {
+    const d = sdk.getState()?.dialog;
+    const opt = d?.isOpen ? d.options.find(o => CONTINUE.test(o.text)) : undefined;
+    if (d?.pageId && opt?.componentId !== undefined) return sdk.clickDialogByText(new RegExp(`^${escapeRe(opt.text)}$`));
+    return sdk.sendClickDialog(0);
 }
 
 export function dialogText(s: BotWorldState | null | undefined): string {
@@ -63,11 +132,11 @@ export interface AdvanceResult {
 }
 
 /**
- * Wait for a fresh page, then act on it: a continue page gets a continue; a
- * choice page is answered with the guarded `clickDialogByText(choose)`, which
- * refuses rather than mis-clicks if the page changed under it.
+ * Wait for a fresh page, then act on it: a continue page gets `clickContinue`;
+ * a choice page is answered with `clickOption(choose)`. Both refuse rather
+ * than mis-click if the page changed under them.
  */
-export async function advance(sdk: DialogueSdk, opts: { choose?: RegExp; maxTicks?: number } = {}): Promise<AdvanceResult> {
+export async function advance(sdk: DialogueSdk, opts: { choose?: OptionPattern; maxTicks?: number } = {}): Promise<AdvanceResult> {
     const t0 = sdk.getState()?.tick ?? 0;
     const r = await waitUntil(sdk, s => isFresh(sdk, s.dialog), { maxTicks: opts.maxTicks ?? 10 });
     if (!r.ok) return { ok: false, kind: 'none', text: '', ticks: r.tick - t0, reason: 'no fresh page' };
@@ -75,15 +144,17 @@ export async function advance(sdk: DialogueSdk, opts: { choose?: RegExp; maxTick
     const kind = classifyPage(s.dialog);
     const text = dialogText(s);
     const pageId = s.dialog.pageId;
-    let res: ActionResult;
+    let failed: string | undefined;
     if (kind === 'choice') {
         if (!opts.choose) return { ok: false, kind, text, ticks: s.tick - t0, reason: 'choice page and no `choose` pattern' };
-        res = await sdk.clickDialogByText(opts.choose);
+        const c = await clickOption(sdk, opts.choose);
+        if (!c.ok) failed = c.reason;
     } else {
-        res = await sdk.sendClickDialog(0);
+        const res = await clickContinue(sdk);
+        if (!res.success) failed = res.reason ?? res.message;
     }
     acted.set(sdk, { pageId, sawWaiting: false });
-    if (!res.success) return { ok: false, kind, text, ticks: s.tick - t0, reason: res.reason ?? res.message };
+    if (failed !== undefined) return { ok: false, kind, text, ticks: s.tick - t0, reason: failed };
     // The client marks a sent continue as waiting and republishes right away;
     // record that so an identical next page still counts as fresh.
     if (kind === 'continue') {

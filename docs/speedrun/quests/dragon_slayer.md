@@ -149,7 +149,7 @@ Notes on the route:
   about 74, which would bring the voyage to about 122.
 - The lite client does not list the Lady Lumbridge's gangplank or deck ladder in
   `nearbyLocs` (they sit on a bridge-flagged map level). Click them by tile and loc id:
-  gangplank 2593 at (3047,3205), deck ladder 2590 at (3049,3208) (`quest-dragon-lib.ts` `clickLoc`).
+  gangplank 2593 at (3047,3205), deck ladder 2590 at (3049,3208) (`quest-dragon-voyage.ts` hands them to `opLoc` in `speedrun/lib/act.ts` as explicit locs).
 - Melzar's Maze was **not measured**. It is a ladder maze over the ground floor, two upper
   floors and the cellar (ladders and coloured doors from the `m45_50` and `m45_150` map
   files), and it is the largest uncertain segment. Measuring it would only matter if the

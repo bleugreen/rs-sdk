@@ -163,5 +163,5 @@ and the route documents. The Dragon Slayer guide [S4] was read.
 - `docs/speedrun/scripts/quest-mm-temple-ladder.ts <bot> [LP] [reps]`: segment L is row 1's
   ladder drop, segment P is row 4's prayer drain. Run with
   `LAB_BLOCK=tickmanip NODE_TICKRATE=300 bash docs/speedrun/scripts/lab.sh Cairn docs/speedrun/scripts/quest-mm-temple-ladder.ts:LP:5`.
-- `quest-gnome-lib.ts` (from rs/3) and `lab.sh` (from rs/2) are verbatim copies so the script
-  runs on this branch.
+- The script imports shared primitives from `speedrun/lib` and staff fixtures from
+  `speedrun/lab`; `scripts/lab.sh` runs the local engine and client.

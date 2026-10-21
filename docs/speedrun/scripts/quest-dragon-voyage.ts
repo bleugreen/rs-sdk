@@ -14,73 +14,92 @@
 //  dungeon walk to Elvarg's gate (2847,9637), open it, stand inside the lair
 
 import { runScript } from '../../../sdk/runner';
-import { cheat, now, pos, result, tele, waitTicks, waitUntil } from './quest-primitives-lib';
-import { clickLoc, converseSeq, routeCounter, talk } from './quest-dragon-lib';
+import type { BotSDK } from '../../../sdk/index';
+import type { BotWorldState, NearbyLoc } from '../../../sdk/types';
+import { mustTele, setStats, setvar } from '../../../speedrun/lab/setup';
+import { result } from '../../../speedrun/lab/record';
+import { opLoc, talkTo, walkTo } from '../../../speedrun/lib/act';
+import { converse, dialogueRuns, type ConverseResult } from '../../../speedrun/lib/converse';
+import { currentTick, waitTicks } from '../../../speedrun/lib/wait';
+import { findLoc, pos, tileCounter } from '../../../speedrun/lib/world';
 
 const RUNS = Number(process.argv[3] ?? 2);
+
+/**
+ * The Lady Lumbridge's gangplank and deck ladder sit on a bridge-flagged map
+ * level the lite client does not list, so a loc is addressed by tile and loc
+ * id (loc.pack) when no listed loc matches; op 1 is its named option.
+ */
+async function locAt(sdk: BotSDK, x: number, z: number, id: number, name: string, op: string): Promise<NearbyLoc> {
+    return (await findLoc(sdk, { x, z, id })) ?? { id, name, x, z, level: pos(sdk).level, distance: 0, options: [op], optionsWithIndex: [{ text: op, opIndex: 1 }] };
+}
+
+const inLair = (s: BotWorldState) => { const p = pos(s); return p.x >= 2847 && p.x <= 2863 && p.z > 9600 && p.z < 9650; };
+const summary = (r: ConverseResult) => ({ ok: r.ok, opened: r.opened, ticks: r.opened ? r.ticks : null, pages: r.pages, options: r.options, levelUps: r.levelUps, runs: dialogueRuns(r.transcript), ...(r.reason ? { reason: r.reason } : {}) });
 
 await runScript(async ({ bot, sdk }) => {
     const runs = [];
     for (let i = 0; i < RUNS; i++) {
-        for (const v of ['dragonquest 8', 'dragon_ned_hired 1', 'dragonquestvar 3']) { await cheat(sdk, 'setvar ' + v); await waitTicks(sdk, 1); }
-        await cheat(sdk, 'setstat hitpoints 99'); await waitTicks(sdk, 1);
+        await setvar(sdk, 'dragonquest', 8);
+        await setvar(sdk, 'dragon_ned_hired', 1);
+        await setvar(sdk, 'dragonquestvar', 3);
+        await setStats(sdk, { hitpoints: 99 });
         const run: Record<string, unknown> = {};
 
         // board
-        await tele(sdk, 3047, 3203);
+        await mustTele(sdk, 3047, 3203);
         await waitTicks(sdk, 3);
-        let t = now(sdk);
-        await clickLoc(sdk, /^gangplank$/i, /^cross$/i, undefined, { x: 3047, z: 3205, id: 2593, op: 1 });
-        let r = await waitUntil(sdk, s => pos(s).level === 1, 20);
-        run.board = { ticks: r ? r.tick - t : null, at: pos(sdk.getState()) };
+        const board = await opLoc(sdk, await locAt(sdk, 3047, 3205, 2593, 'Gangplank', 'Cross'), /^cross$/i, s => pos(s).level === 1, { maxTicks: 20 });
+        run.board = { ticks: board.ok ? board.ticks : null, resends: board.resends, at: pos(sdk) };
         await waitTicks(sdk, 1);
 
         // ladder down to Ned's deck
-        t = now(sdk);
-        await clickLoc(sdk, /^ladder$/i, /^climb-down$/i, { x: 3049, z: 3208 }, { x: 3049, z: 3208, id: 2590, op: 1 });
-        r = await waitUntil(sdk, s => pos(s).level === 3, 20);
-        run.ladder = { ticks: r ? r.tick - t : null, at: pos(sdk.getState()) };
+        const ladder = await opLoc(sdk, await locAt(sdk, 3049, 3208, 2590, 'Ladder', 'Climb-down'), /^climb-down$/i, s => pos(s).level === 3, { maxTicks: 20 });
+        run.ladder = { ticks: ladder.ok ? ladder.ticks : null, resends: ladder.resends, at: pos(sdk) };
         await waitTicks(sdk, 2);
 
         // sail
         // Ned's two pages and the choice, then p_delay(11) on the ship_journey
         // overlay, then three arrival pages (mesbox, Ned, player) on Crandor.
-        const tSail = now(sdk);
-        const sail = await converseSeq(sdk, () => talk(sdk, /^ned$/i), [/Yep lets go/i], s => pos(s).x < 2900, 80);
-        const arrival = await converseSeq(sdk, async () => {}, [], s => !s.dialog.isOpen, 60);
-        run.sail = { ...sail, arrival, ticks: now(sdk) - tSail };
+        // The conversation can end on the teleport before the arrival pages
+        // open, so a second one answers them if they are still to come; the
+        // segment ends where the last of the two did.
+        const sail = await talkTo(sdk, /^ned$/i, [/Yep lets go/i], { until: s => pos(s).x < 2900, maxTicks: 80 });
+        const arrival = await converse(sdk, [], { openTicks: 10, maxTicks: 60 });
+        const sailEnd = arrival.opened ? arrival.endTick : sail.endTick;
+        run.sail = { ...summary(sail), arrival: summary(arrival), ticks: sail.ok && sailEnd >= 0 ? sailEnd - sail.startTick : null };
 
         // Crandor surface: out through the broken hull (it does not block; see
         // quest-dragon-wreck-probe.ts) to the rock opening, and climb down.
         // bot.walkTo costs about 0.57 ticks per tile (primitives.md section 2),
         // so routeTiles is recorded to re-cost the walk at 0.5 for chained clicks.
-        t = now(sdk);
-        let rc = routeCounter(sdk);
-        const surfaceStart = pos(sdk.getState());
-        const w1 = await bot.walkTo(2834, 3253, 1, { timeout: 60_000 });
-        const tWalk1 = now(sdk) - t;
-        await clickLoc(sdk, /^rock opening$/i, /^climb-down$/i, undefined, { x: 2833, z: 3255, id: 2609, op: 1 });
-        r = await waitUntil(sdk, s => pos(s).z > 9000, 30);
+        let t = currentTick(sdk);
+        let rc = tileCounter(sdk, 3);
+        const surfaceStart = pos(sdk);
+        const w1 = await walkTo(bot, sdk, 2834, 3253, 1);
+        const rock = await locAt(sdk, 2833, 3255, 2609, 'Rock opening', 'Climb-down');
+        let tc = currentTick(sdk);
+        const down = await opLoc(sdk, rock, /^climb-down$/i, s => pos(s).z > 9000, { maxTicks: 30 });
         rc.stop();
-        run.surface = { from: surfaceStart, walk: w1.success ? tWalk1 : w1.message, ticks: r ? r.tick - t : null, routeTiles: rc.tiles, at: pos(sdk.getState()), hp: sdk.getState()!.player!.hp };
+        run.surface = { from: surfaceStart, walk: w1.ok ? w1.ticks : w1.message, ticks: down.ok ? tc + down.ticks - t : null, routeTiles: rc.tiles, at: pos(sdk), hp: sdk.getState()!.player!.hp };
         await waitTicks(sdk, 1);
 
         // dungeon: to Elvarg's gate and through it
-        t = now(sdk);
-        rc = routeCounter(sdk);
-        const w2 = await bot.walkTo(2846, 9637, 1, { timeout: 60_000 });
-        const tWalk2 = now(sdk) - t;
-        await clickLoc(sdk, /^gate$/i, /^open$/i, { x: 2847, z: 9637 }, { x: 2847, z: 9637, id: 2608, op: 1 });
-        r = await waitUntil(sdk, s => pos(s).x >= 2847 && pos(s).x <= 2863 && pos(s).z > 9600 && pos(s).z < 9650, 30);
+        t = currentTick(sdk);
+        rc = tileCounter(sdk, 3);
+        const w2 = await walkTo(bot, sdk, 2846, 9637, 1);
+        const gate = await locAt(sdk, 2847, 9637, 2608, 'Gate', 'Open');
+        tc = currentTick(sdk);
+        const through = await opLoc(sdk, gate, /^open$/i, inLair, { maxTicks: 30 });
         rc.stop();
-        run.dungeon = { walk: w2.success ? tWalk2 : w2.message, ticks: r ? r.tick - t : null, routeTiles: rc.tiles, at: pos(sdk.getState()), hp: sdk.getState()!.player!.hp, chat: sdk.getChat({ limit: 3 }).map(m => m.text) };
+        run.dungeon = { walk: w2.ok ? w2.ticks : w2.message, ticks: through.ok ? tc + through.ticks - t : null, routeTiles: rc.tiles, at: pos(sdk), hp: sdk.getState()!.player!.hp, chat: sdk.getChat({ limit: 3 }).map(m => m.text) };
 
         const segs = ['board', 'ladder', 'sail', 'surface', 'dungeon'].map(k => (run[k] as { ticks: number | null }).ticks);
         run.total = segs.every(x => x !== null) ? (segs as number[]).reduce((a, b) => a + b, 0) : null;
         runs.push(run);
         console.log('run', i, JSON.stringify(run));
         // step back out so the next run starts clean
-        await tele(sdk, 3047, 3203);
+        await mustTele(sdk, 3047, 3203);
     }
     result('voyage', runs);
 }, { timeout: 900_000 });

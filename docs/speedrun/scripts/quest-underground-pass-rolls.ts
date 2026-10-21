@@ -15,12 +15,19 @@
 //   logtrap          thieving 160/300 upass_obstacles.rs2:222-244  flat rock (2382,9668)
 // Each attempt starts with the player idle and is timed from the click (or
 // use-item) to two points: the result message (`msg`) and the player idle again
-// (`idle`: no movement, no new message, no dialogue for 3 ticks, which is when
-// the next click can act). The idle figure, minus the 3-tick settle, is the
+// (`idle`: the last tick of movement, a new message or a dialogue before 3
+// still ticks, which is when the next click can act). The idle figure is the
 // cost of the attempt. Prints one line per attempt and a RESULT line.
 
 import { runScript } from '../../../sdk/runner';
-import * as L from './quest-arthur-lab';
+import { slotOf, wield } from '../../../speedrun/lib/act';
+import { converse } from '../../../speedrun/lib/converse';
+import { idle } from '../../../speedrun/lib/idle';
+import { currentTick, waitUntil } from '../../../speedrun/lib/wait';
+import { messagesSince, pos, worn } from '../../../speedrun/lib/world';
+import type { BotWorldState } from '../../../sdk/types';
+import { result, stats } from '../../../speedrun/lab/record';
+import { ensureItem, mustTele, setstat, setvar } from '../../../speedrun/lab/setup';
 
 const [obstacle, levelArg, nArg] = process.argv.slice(3);
 const level = Number(levelArg ?? 40);
@@ -38,52 +45,8 @@ interface Spec {
 }
 
 await runScript(async ({ bot, sdk }) => {
-    // The client keeps a capped message list, so collect new messages by identity.
-    const seen = new Set<string>();
-    const log: string[] = [];
-    const keyOf = (m: { tick: number; text: string; observationId?: number }) => `${m.tick}|${m.observationId ?? ''}|${m.text}`;
-    for (const m of sdk.getState()?.gameMessages ?? []) seen.add(keyOf(m));
-    sdk.onStateUpdate(st => {
-        for (const m of st.gameMessages ?? []) {
-            const k = keyOf(m);
-            if (!seen.has(k)) { seen.add(k); log.push(m.text); }
-        }
-    });
-    const msgs = () => log;
-    const since = (n: number) => log.slice(n);
-    const idle = async (max = 60) => {
-        let still = 0;
-        let last = L.pos(sdk);
-        let lastMsgs = msgs().length;
-        for (let i = 0; i < max; i++) {
-            await sdk.waitForTicks(1);
-            const p = L.pos(sdk);
-            const s = sdk.getState()!;
-            if (s.dialog.isOpen) {
-                if (L.isLevelUpDialog(sdk)) await L.dismissLevelUps(sdk);
-                still = 0;
-                continue;
-            }
-            const n = msgs().length;
-            still = p.x === last.x && p.z === last.z && p.level === last.level && n === lastMsgs ? still + 1 : 0;
-            last = p;
-            lastMsgs = n;
-            if (still >= 3) return;
-        }
-    };
-    const teleTo = async (x: number, z: number, l: number) => {
-        for (let k = 0; k < 3; k++) {
-            await L.tele(sdk, x, z, l);
-            if (await L.waitUntil(sdk, () => { const p = L.pos(sdk); return p.x === x && p.z === z && p.level === l; }, 8) !== null) return;
-            await idle();
-        }
-        throw new Error(`could not teleport to ${x},${z},${l}`);
-    };
     const ensure = async (name: string, re: RegExp) => {
-        if (sdk.countInventoryItems(re) < 1 && !sdk.getEquipment().some(e => re.test(e.name))) {
-            await L.cheat(sdk, `give ${name} 1`, 2);
-            await L.waitUntil(sdk, () => sdk.countInventoryItems(re) >= 1, 10);
-        }
+        if (!worn(sdk, re)) await ensureItem(sdk, name, re, 1);
     };
 
     const specs: Record<string, Spec> = {
@@ -95,10 +58,10 @@ await runScript(async ({ bot, sdk }) => {
             stat: 'ranged', roll: [160, 300], ok: /impales the rope/, fail: /just misses/, start: [2446, 9722, 0], reset: true,
             act: async () => {
                 await ensure('shortbow', /^Shortbow$/i);
-                if (!sdk.getEquipment().some(e => /^Shortbow$/i.test(e.name))) await bot.equipItem(/^Shortbow$/i);
+                await wield(sdk, /^Shortbow$/i);
                 await ensure('litarrow', /^Bronze fire arrows$/i);
-                if (!sdk.getEquipment().some(e => /fire arrows/i.test(e.name))) await bot.equipItem(/^Bronze fire arrows$/i);
-                await idle();
+                await wield(sdk, /^Bronze fire arrows$/i);
+                await idle(sdk, { maxTicks: 60 });
                 await sdk.sendInteractLoc(2443, 9718, 3340, 1);
             },
         },
@@ -107,7 +70,7 @@ await runScript(async ({ bot, sdk }) => {
             act: async () => {
                 await ensure('rope', /^Rope$/i);
                 await sdk.waitForTicks(5); // the rock is "being used" for 5 ticks after each swing
-                await sdk.sendUseItemOnLoc(sdk.findInventoryItem(/^Rope$/i)!.slot, 2460, 9699, 2276);
+                await sdk.sendUseItemOnLoc(slotOf(sdk, /^Rope$/i), 2460, 9699, 2276);
             },
         },
         ledge: {
@@ -131,58 +94,59 @@ await runScript(async ({ bot, sdk }) => {
             stat: 'thieving', roll: [160, 300], ok: /and succeed/, fail: /and fail/, start: [2383, 9668, 0], reset: true,
             act: async () => {
                 await sdk.sendInteractLoc(2382, 9668, 3339, 1);
-                await L.talkThrough(sdk, [/give it a go/i], { settleTicks: 1 });
+                await converse(sdk, [/give it a go/i], { keep: true, idle: 1 });
             },
         },
     };
-    const spec = specs[obstacle];
+    const spec = obstacle ? specs[obstacle] : undefined;
     if (!spec) throw new Error(`unknown obstacle ${obstacle}`);
+    const [sx, sz, sl] = spec.start;
 
     await bot.dismissBlockingUI();
-    await L.cheat(sdk, `setstat ${spec.stat} ${level}`, 2);
-    await L.cheat(sdk, 'setstat hitpoints 99', 2);
+    await setstat(sdk, spec.stat, level);
+    await setstat(sdk, 'hitpoints', 99);
     // Koftik's insanity scene would follow a bridge fall (upass_obstacles.rs2:381-386); %upass 5 keeps
     // the cavern scripts in their mid-quest branches.
-    await L.cheat(sdk, `setvar ibanmulti ${(1 << 11) | (1 << 17)}`);
-    await L.cheat(sdk, 'setvar upass 5');
-    await idle();
-    await teleTo(...spec.start);
+    await setvar(sdk, 'ibanmulti', (1 << 11) | (1 << 17));
+    await setvar(sdk, 'upass', 5);
+    await idle(sdk, { maxTicks: 60 });
+    await mustTele(sdk, sx, sz, sl);
 
     const rows: Array<{ ok: boolean | null; msg: number; idle: number }> = [];
     for (let i = 0; i < attempts; i++) {
-        if ((sdk.getState()?.player?.hp ?? 99) < 50) await L.cheat(sdk, 'setstat hitpoints 99', 2);
-        const p = L.pos(sdk);
-        const onStart = Math.abs(p.x - spec.start[0]) + Math.abs(p.z - spec.start[1]) <= 6 && p.level === spec.start[2];
-        if (spec.reset || !onStart) await teleTo(...spec.start);
-        await idle();
-        const before = msgs().length;
-        const t0 = L.tick(sdk);
+        if ((sdk.getState()?.player?.hp ?? 99) < 50) await setstat(sdk, 'hitpoints', 99);
+        const p = pos(sdk);
+        const onStart = Math.abs(p.x - sx) + Math.abs(p.z - sz) <= 6 && p.level === sl;
+        if (spec.reset || !onStart) await mustTele(sdk, sx, sz, sl);
+        await idle(sdk, { maxTicks: 60 });
+        const t0 = currentTick(sdk);
         await spec.act(i);
-        let msgTick = -1;
-        let ok: boolean | null = null;
-        for (let k = 0; k < 60 && ok === null; k++) {
-            const m = since(before);
-            if (m.some(t => spec.fail.test(t))) ok = false;
-            else if (obstacle === 'ledge' ? (L.pos(sdk).x === 2374 && L.pos(sdk).z === 9638) : m.some(t => spec.ok.test(t))) ok = true;
-            if (ok !== null) msgTick = L.tick(sdk) - t0;
-            else await sdk.waitForTicks(1);
-        }
-        await idle();
-        const idleTicks = L.tick(sdk) - t0 - 3;
+        const outcome = (s: BotWorldState): boolean | null => {
+            const m = messagesSince(s, t0);
+            if (m.some(t => spec.fail.test(t))) return false;
+            const q = pos(s);
+            if (obstacle === 'ledge' ? q.x === 2374 && q.z === 9638 : m.some(t => spec.ok.test(t))) return true;
+            return null;
+        };
+        const r = await waitUntil(sdk, s => outcome(s) !== null, { maxTicks: 60 });
+        const ok = r.ok ? outcome(r.state) : null;
+        const msgTick = r.ok ? r.tick - t0 : -1;
+        const idleTicks = (await idle(sdk, { maxTicks: 60 })).last - t0;
         rows.push({ ok, msg: msgTick, idle: idleTicks });
-        console.log(`attempt ${i + 1}: ${ok === null ? 'NONE' : ok ? 'ok  ' : 'FAIL'} msg=${msgTick}t idle=${idleTicks}t pos=(${L.pos(sdk).x},${L.pos(sdk).z},${L.pos(sdk).level}) hp=${sdk.getState()?.player?.hp}${ok === null ? ' ' + JSON.stringify(since(before)) : ''}`);
+        const q = pos(sdk);
+        console.log(`attempt ${i + 1}: ${ok === null ? 'NONE' : ok ? 'ok  ' : 'FAIL'} msg=${msgTick}t idle=${idleTicks}t pos=(${q.x},${q.z},${q.level}) hp=${sdk.getState()?.player?.hp}${ok === null ? ' ' + JSON.stringify(messagesSince(sdk, t0)) : ''}`);
     }
     const okRows = rows.filter(r => r.ok === true);
     const failRows = rows.filter(r => r.ok === false);
-    const med = (a: number[]) => (a.length ? [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)] : null);
+    const med = (a: number[]) => stats(a).median; // NaN, printed as null, for no sample
     const [low, high] = spec.roll;
     const c = Math.min(level, 99);
     const expected = Math.min(Math.floor((low * (99 - c)) / 98) + Math.floor((high * (c - 1)) / 98) + 1, 256) / 256;
-    console.log(`RESULT ${obstacle} ${JSON.stringify({
+    result(obstacle!, {
         stat: spec.stat, level, attempts: rows.length, successes: okRows.length, failures: failRows.length,
         unknown: rows.length - okRows.length - failRows.length,
         measuredSuccessRate: +(okRows.length / Math.max(1, okRows.length + failRows.length)).toFixed(3), expectedSuccessRate: +expected.toFixed(3),
         successIdleMedian: med(okRows.map(r => r.idle)), failIdleMedian: med(failRows.map(r => r.idle)),
         successMsgMedian: med(okRows.map(r => r.msg)), failMsgMedian: med(failRows.map(r => r.msg)),
-    })}`);
+    });
 }, { timeout: 3_600_000, printState: false });

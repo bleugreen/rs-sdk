@@ -1,0 +1,261 @@
+// Combat: one fight loop for every quest fight, and the prayer / potion / food
+// upkeep it shares with loops that are not fights (a cannon session).
+//
+// The loop reads one state per tick and fires its sends without awaiting each
+// other (speedrun/README.md, "fire, then confirm once"). Two things it must get
+// right, both found in the quest-route lab:
+//
+// - At 25x xp a level-up box opens every few kills and interrupts combat. It
+//   is told apart from quest dialogue by the page's own words (rs/12), and is
+//   dismissed on the tick it shows with the attack on the same target re-sent
+//   behind it, so the fight neither stalls nor drifts to another NPC.
+// - Under a protect prayer the NPC's blocked swings need not trigger
+//   auto-retaliate, so "in combat" can mean only that we are being attacked.
+//   The loop re-attacks when it has dealt no damage for `stallTicks` (rs/56).
+
+import type { BotSDK } from '../../sdk/index';
+import { PRAYER_INDICES, type BotWorldState, type InventoryItem, type NearbyNpc, type PrayerName } from '../../sdk/types';
+import { clickContinue } from './dialogue';
+import { matchesItem, type ItemPattern } from './items';
+import { levelUpChain } from './levelup';
+import { waitUntil, type Pred, type StateSource } from './wait';
+import { npcByIndex, opIndex, waitForNpc, type NamePattern } from './world';
+
+export type UpkeepSdk = StateSource & Pick<BotSDK, 'sendUseItem' | 'sendTogglePrayer'>;
+export type CombatSdk = UpkeepSdk & Pick<BotSDK, 'sendInteractNpc' | 'sendSpellOnNpc' | 'sendClickDialog' | 'clickDialogByText'>;
+
+export function prayerActive(s: BotWorldState, prayer: PrayerName): boolean {
+    return s.prayers?.activePrayers?.[PRAYER_INDICES[prayer]] === true;
+}
+
+/** Prayer potion doses held: a "Prayer potion(3)" counts 3. */
+export function prayerDoses(s: BotWorldState): number {
+    return s.inventory.reduce((a, i) => {
+        const m = /^Prayer potion\((\d)\)$/i.exec(i.name);
+        return m ? a + i.count * Number(m[1]) : a;
+    }, 0);
+}
+
+export interface UpkeepOptions {
+    /** Keep this prayer on while there are points. */
+    prayer?: PrayerName;
+    /** Drink a Prayer potion when points fall below this (default 8; only with `prayer`). */
+    drinkBelow?: number;
+    /** Eat when hitpoints fall below this. No eating unless set. */
+    eatBelow?: number;
+    /** What to eat (default: any inventory item that offers Eat). */
+    food?: ItemPattern;
+}
+
+const firstOp = (i: InventoryItem, re: RegExp) => i.optionsWithIndex.find(o => re.test(o.text))?.opIndex;
+
+/**
+ * Prayer, potion and food upkeep, one `step` per tick. Clicks are spaced 3
+ * ticks apart per kind (an eat or a drink takes that long to land), and a
+ * prayer toggle 2, so an unconfirmed click is not repeated in between.
+ */
+export class Upkeep {
+    prayerUsed = 0;
+    eats = 0;
+    drinks = 0;
+    private lastPts: number | null = null;
+    private lastToggle = -Infinity;
+    private lastDrink = -Infinity;
+    private lastEat = -Infinity;
+
+    constructor(private sdk: UpkeepSdk, private o: UpkeepOptions) {}
+
+    /** One tick of upkeep. True when it ate or drank (melee wants the attack re-sent after that). */
+    step(s: BotWorldState): boolean {
+        const o = this.o;
+        let consumed = false;
+        const pts = s.prayers?.prayerPoints ?? 0;
+        if (this.lastPts !== null && pts < this.lastPts) this.prayerUsed += this.lastPts - pts;
+        this.lastPts = pts;
+        if (o.prayer) {
+            if (pts > 0 && !prayerActive(s, o.prayer) && s.tick - this.lastToggle >= 2) {
+                this.lastToggle = s.tick;
+                void this.sdk.sendTogglePrayer(o.prayer);
+            }
+            const pot = s.inventory.find(i => /^Prayer potion/i.test(i.name));
+            if (pot && pts < (o.drinkBelow ?? 8) && s.tick - this.lastDrink >= 3) {
+                this.lastDrink = s.tick;
+                this.drinks++;
+                consumed = true;
+                void this.sdk.sendUseItem(pot.slot, firstOp(pot, /^drink$/i) ?? 1);
+            }
+        }
+        const hp = s.player?.hp;
+        if (o.eatBelow !== undefined && hp !== undefined && hp < o.eatBelow && s.tick - this.lastEat >= 3) {
+            const f = s.inventory.find(i => (o.food !== undefined ? matchesItem(i, o.food) : firstOp(i, /^eat$/i) !== undefined));
+            if (f) {
+                this.lastEat = s.tick;
+                this.eats++;
+                consumed = true;
+                void this.sdk.sendUseItem(f.slot, firstOp(f, /^eat$/i) ?? 1);
+            }
+        }
+        return consumed;
+    }
+}
+
+export interface FightOptions extends UpkeepOptions {
+    /** Send the attack (default true). False waits out a fight the NPC started, leaving it to auto-retaliate. */
+    attack?: boolean;
+    /** Cast this spell component on the target instead of meleeing, every `castEvery` ticks (default 2; the cast delay keeps the real rate). */
+    spell?: number;
+    castEvery?: number;
+    /** Give up after this many ticks (default 600). */
+    maxTicks?: number;
+    /** Ticks to wait for the target to come into view (default 10). */
+    findTicks?: number;
+    /** Ends the fight when it holds, checked every tick (a death teleport, a cutscene). */
+    done?: Pred;
+    /** False for scripted bosses: ignore kill/hp/disappearance and wait for done, quest dialogue, death or timeout. */
+    endOnTargetDeath?: boolean;
+    /** A dialogue other than a level-up: end the fight (default; the quest's death hook) or click it through. */
+    onDialog?: 'stop' | 'continue';
+    /** Melee: re-send the attack after this many ticks out of combat (default 4). */
+    reattackAfter?: number;
+    /** With `prayer` on: re-attack after this many ticks without dealing damage (default 8). */
+    stallTicks?: number;
+    /** Fight-specific moves, once per tick before the attack decision (a weapon swap at low target hp). Return true if it acted, to re-send the attack. */
+    onTick?: (s: BotWorldState, target: NearbyNpc | null) => boolean | void | Promise<boolean | void>;
+}
+
+export type FightEnd = 'killed' | 'gone' | 'done' | 'dialog' | 'died' | 'timeout' | 'no target';
+
+export interface FightResult {
+    /** killed, gone, done and dialog are ok; died, timeout and no target are not. */
+    ok: boolean;
+    end: FightEnd;
+    /** Call to end. */
+    ticks: number;
+    /** Call to the first hitsplat between the player and the target, either way; -1 if none. */
+    engaged: number;
+    dealt: number;
+    taken: number;
+    hits: number;
+    attacks: number;
+    levelUps: number;
+    eats: number;
+    drinks: number;
+    prayerUsed: number;
+    prayerDoses: number;
+    minHp: number;
+    died: boolean;
+    targetIndex: number;
+}
+
+/**
+ * Fight one NPC to the end: the nearest match for `target` (or that NPC
+ * itself), tracked by world index so a second spawn is never counted.
+ */
+export async function fight(sdk: CombatSdk, target: NamePattern | NearbyNpc, o: FightOptions = {}): Promise<FightResult> {
+    const s0 = sdk.getState();
+    if (!s0) throw new Error('fight: no state');
+    const t0 = s0.tick;
+    const npc0 = typeof target === 'object' && 'index' in target ? target : await waitForNpc(sdk, target, o.findTicks ?? 10);
+    const upkeep = new Upkeep(sdk, o);
+    const doses0 = prayerDoses(s0);
+    const r: FightResult = {
+        ok: false, end: 'no target', ticks: 0, engaged: -1, dealt: 0, taken: 0, hits: 0, attacks: 0, levelUps: 0,
+        eats: 0, drinks: 0, prayerUsed: 0, prayerDoses: 0, minHp: s0.player?.hp ?? 0, died: false, targetIndex: npc0?.index ?? -1,
+    };
+    const end = (s: BotWorldState, e: FightEnd): FightResult => {
+        r.end = e;
+        r.ok = e === 'killed' || e === 'gone' || e === 'done' || e === 'dialog';
+        r.died = e === 'died';
+        r.ticks = s.tick - t0;
+        r.eats = upkeep.eats;
+        r.drinks = upkeep.drinks;
+        r.prayerUsed = upkeep.prayerUsed;
+        r.prayerDoses = doses0 - prayerDoses(s);
+        return r;
+    };
+    if (!npc0) return end(sdk.getState() ?? s0, 'no target');
+    const idx = npc0.index;
+    let npc: NearbyNpc | null = npc0;
+    const meleeOp = opIndex(npc0, /^attack$/i) ?? 2;
+    let lastAttack = -Infinity;
+    let lastDealt = t0;
+    const attack = (tick: number) => {
+        lastAttack = tick;
+        r.attacks++;
+        void (o.spell !== undefined ? sdk.sendSpellOnNpc(idx, o.spell) : sdk.sendInteractNpc(idx, meleeOp));
+    };
+    const attacking = o.attack !== false;
+    if (attacking) attack(t0);
+
+    const levelUp = levelUpChain();
+    let answered: { key: string; tick: number } | null = null;
+    const seen = new Set<string>();
+    let missing = 0;
+    let s = s0;
+    for (;;) {
+        const prev = s.tick;
+        const w = await waitUntil(sdk, st => st.tick > prev, { maxTicks: 50 });
+        if (!w.ok) throw new Error(`fight: the client stopped publishing at tick ${prev}`);
+        s = w.state;
+        if (s.tick - t0 > (o.maxTicks ?? 600)) return end(s, 'timeout');
+        for (const e of s.combatEvents ?? []) {
+            const k = `${e.tick}:${e.observationId ?? ''}:${e.type}:${e.damage}:${e.sourceIndex}:${e.targetIndex}`;
+            if (e.tick < t0 || seen.has(k)) continue;
+            seen.add(k);
+            // Damage dealt counts only on the tracked target: a hit on another NPC
+            // (multi-combat, a cannon) must not reset the protect-prayer stall timer.
+            const onTarget = e.type === 'damage_dealt' && e.targetType === 'npc' && e.targetIndex === idx;
+            const fromTarget = e.type === 'damage_taken' && e.sourceType === 'npc' && e.sourceIndex === idx;
+            if (onTarget) {
+                r.dealt += e.damage;
+                r.hits++;
+                lastDealt = e.tick;
+            } else if (e.type === 'damage_taken') r.taken += e.damage;
+            if ((onTarget || fromTarget) && r.engaged < 0) r.engaged = e.tick - t0;
+        }
+        if (s.player) r.minHp = Math.min(r.minHp, s.player.hp);
+        if (s.player?.isDead) return end(s, 'died');
+        if (o.done?.(s)) return end(s, 'done');
+        npc = npcByIndex(s, idx);
+        if (o.endOnTargetDeath !== false) {
+            if ((s.combatEvents ?? []).some(e => e.type === 'kill' && e.tick >= t0 && e.targetIndex === idx)) return end(s, 'killed');
+            if (npc?.hp === 0) return end(s, 'killed');
+            // One tick of grace: the NPC list can drop an entry for a tick.
+            if (!npc && ++missing >= 2) return end(s, r.dealt > 0 ? 'killed' : 'gone');
+        }
+        if (npc) missing = 0;
+
+        const d = s.dialog;
+        if (d.isOpen) {
+            if (d.isWaiting) continue;
+            const key = d.pageId ?? String(s.tick);
+            const fresh = !answered || answered.key !== key || s.tick - answered.tick >= 3;
+            if (levelUp(s)) {
+                if (fresh) {
+                    answered = { key, tick: s.tick };
+                    r.levelUps++;
+                    void clickContinue(sdk);
+                    if (attacking && npc) attack(s.tick); // same tick, same target
+                }
+                continue;
+            }
+            if ((o.onDialog ?? 'stop') === 'stop') return end(s, 'dialog');
+            if (fresh) {
+                answered = { key, tick: s.tick };
+                void clickContinue(sdk);
+            }
+            continue;
+        }
+
+        let resend = upkeep.step(s);
+        if (o.onTick && (await o.onTick(s, npc))) resend = true;
+        if (!attacking || !npc) continue;
+        if (o.spell !== undefined) {
+            if (resend || s.tick - lastAttack >= (o.castEvery ?? 2)) attack(s.tick);
+            continue;
+        }
+        const inCombat = s.player?.combat?.inCombat === true;
+        const stalled = o.prayer !== undefined && s.tick - lastDealt > (o.stallTicks ?? 8);
+        if (resend || ((!inCombat || stalled) && s.tick - lastAttack > (o.reattackAfter ?? 4))) attack(s.tick);
+    }
+}

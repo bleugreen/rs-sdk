@@ -16,13 +16,15 @@
 
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState } from '../../sdk/types';
-import { classifyPage } from './dialogue';
+import { classifyPage, pageText } from './dialogue';
 import type { StateSource } from './wait';
 
 export type LevelUpSdk = StateSource & Pick<BotSDK, 'sendClickDialog'>;
 
 /** Lines from the levelup dbtable: title "Congratulations, you just advanced ..." and body "Your X level is now N." */
-export const LEVEL_UP_TEXT = /just advanced|level is now|hitpoints are now/i;
+export const LEVEL_UP_TEXT = /just advanced|level is now|hitpoints are now|you (are|have) now (level|reached)/i;
+/** The objbox/mesbox pages `~levelup_unlocks` shows after some level-ups ("You can now mine Iron."). */
+export const UNLOCK_TEXT = /\byou can now\b/i;
 export const ARM_TICKS = 4;
 export const CHAIN_TICKS = 3;
 
@@ -37,6 +39,38 @@ export function isLevelUp(state: BotWorldState): boolean {
     if (classifyPage(state.dialog) !== 'continue') return false;
     const latest = state.recentDialogs?.[0];
     return !!latest && latest.tick >= state.tick - ARM_TICKS && LEVEL_UP_TEXT.test(latest.text.join(' '));
+}
+
+/**
+ * True when the open continue page is itself a level-up page, judged by the
+ * page's own words. This is what tells a level-up apart from a quest dialogue
+ * that opens mid-fight (Morgan Le Faye after Sir Mordred, the Black Knight
+ * Titan's taunt): `isLevelUp` keys on recent history and a skill rise, which a
+ * quest page opening right after a kill also satisfies. A client that does
+ * not publish the page's words falls back to `isLevelUp`.
+ */
+export function isLevelUpPage(state: BotWorldState): boolean {
+    if (classifyPage(state.dialog) !== 'continue') return false;
+    const own = pageText(state.dialog).replace(/click here to continue/gi, '').trim();
+    return own ? LEVEL_UP_TEXT.test(own) : isLevelUp(state);
+}
+
+/**
+ * A recogniser for a whole level-up chain, fed one state at a time: level-up
+ * pages (`isLevelUpPage`), and the unlock pages that follow one within
+ * CHAIN_TICKS. Quest dialogue is never matched, so a fight loop can dismiss
+ * what this accepts and treat any other page as the quest's.
+ */
+export function levelUpChain(): (state: BotWorldState) => boolean {
+    let lastAt = -Infinity;
+    return state => {
+        if (classifyPage(state.dialog) !== 'continue') return false;
+        if (isLevelUpPage(state) || (state.tick - lastAt <= CHAIN_TICKS && UNLOCK_TEXT.test(pageText(state.dialog)))) {
+            lastAt = state.tick;
+            return true;
+        }
+        return false;
+    };
 }
 
 export interface WatcherMemory {

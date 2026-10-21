@@ -1,0 +1,237 @@
+import { describe, expect, test } from 'bun:test';
+import type { BotWorldState, DialogState, NearbyLoc, NearbyNpc, PlayerState } from '../../sdk/types';
+import { act, actConverse, castTeleport, openDoor, opLoc, pickup, talkTo, wield } from './act';
+import { baseState, FakeSdk, flush } from './fake-sdk';
+
+const player = (worldX: number, worldZ: number, level = 0) => ({ worldX, worldZ, level, hp: 10, maxHp: 10 }) as PlayerState;
+const loc = (id: number, name: string, x: number, z: number, ops: string[]): NearbyLoc =>
+    ({ id, name, x, z, level: 0, distance: 1, optionsWithIndex: ops.map((text, i) => ({ text, opIndex: i + 1 })), options: ops });
+const npc = (index: number, name: string): NearbyNpc =>
+    ({ kind: 'npc', id: 5, index, name, x: 1, z: 1, distance: 1, hp: null, maxHp: null, optionsWithIndex: [{ text: 'Talk-to', opIndex: 1 }, { text: 'Pickpocket', opIndex: 3 }], options: ['Talk-to', 'Pickpocket'] }) as NearbyNpc;
+const cont = (pageId: string): DialogState => ({ isOpen: true, isWaiting: false, pageId, options: [{ index: 1, text: 'Click here to continue', buttonType: 6, componentId: 10 }] });
+const closed: DialogState = { isOpen: false, options: [], isWaiting: false };
+
+async function ticks(sdk: FakeSdk, n: number, patch: (i: number) => Partial<BotWorldState> = () => ({})) {
+    for (let i = 0; i < n; i++) {
+        await flush();
+        sdk.tick(patch(i));
+    }
+    await flush();
+}
+
+describe('act', () => {
+    test('re-sends a click dropped while the player stands still, and stops once done holds', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: player(10, 10) }));
+        let done = false;
+        const p = act(sdk as never, () => sdk.sendWalk(0, 0), () => done, { resendEvery: 3 });
+        await ticks(sdk, 4);
+        expect(sdk.sent.length).toBe(2);
+        done = true;
+        await ticks(sdk, 1);
+        expect(await p).toMatchObject({ ok: true, resends: 1, ticks: 5 });
+    });
+
+    test('a moving player has the click: no re-send', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: player(10, 10) }));
+        const p = act(sdk as never, () => sdk.sendWalk(0, 0), () => false, { resendEvery: 3, maxTicks: 6 });
+        await ticks(sdk, 8, i => ({ player: player(10 - i, 10) }));
+        expect(await p).toMatchObject({ ok: false, resends: 0, reason: 'timeout' });
+    });
+
+    test("\"I can't reach that!\" triggers a re-send", async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: player(10, 10) }));
+        const p = act(sdk as never, () => sdk.sendWalk(0, 0), () => false, { resendEvery: 50, maxTicks: 3 });
+        await ticks(sdk, 1, () => ({ gameMessages: [{ type: 0, text: "I can't reach that!", sender: '', tick: 2, fromSelf: false }] }));
+        await ticks(sdk, 3);
+        expect((await p).resends).toBe(1);
+    });
+});
+
+describe('loc, npc and item helpers', () => {
+    test('opLoc resolves the loc and its option; without done it only sends', async () => {
+        const sdk = new FakeSdk(baseState({ nearbyLocs: [loc(1, 'Ladder', 5, 5, ['Climb-up', 'Climb-down'])] }));
+        const r = await opLoc(sdk as never, { x: 5, z: 5 }, /climb-down/i);
+        expect(r.ok).toBe(true);
+        expect(sdk.sent).toEqual([{ method: 'sendInteractLoc', args: [5, 5, 1, 2] }]);
+        await expect(opLoc(sdk as never, { x: 5, z: 5 }, 'Search')).rejects.toThrow(/no loc/);
+    });
+
+    test('openDoor: done once no closed door is left on the tile; an open door is a no-op', async () => {
+        const door = loc(1530, 'Door', 3, 3, ['Open']);
+        const sdk = new FakeSdk(baseState({ tick: 1, nearbyLocs: [door] }));
+        const p = openDoor(sdk as never, 3, 3);
+        await ticks(sdk, 1, () => ({ nearbyLocs: [loc(1531, 'Door', 3, 4, ['Close'])] }));
+        expect(await p).toMatchObject({ ok: true, ticks: 1 });
+        expect(await openDoor(sdk as never, 3, 3)).toMatchObject({ ok: true, ticks: 0 });
+    });
+
+    test('talkTo uses the Talk-to option, answers the dialogue, and re-clicks when nothing opens', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, nearbyNpcs: [npc(9, 'Monk')] }));
+        let interacts = 0;
+        sdk.onSend = (a, f) => {
+            if (a.method === 'sendInteractNpc' && ++interacts === 2) queueMicrotask(() => f.tick({ dialog: cont('p') }));
+            if (a.method === 'clickDialogByText') queueMicrotask(() => f.tick({ dialog: closed }));
+        };
+        const p = talkTo(sdk as never, /monk/i, [], { openTicks: 2, idle: 1 });
+        await ticks(sdk, 8);
+        const r = await p;
+        expect(r).toMatchObject({ opened: true, pages: 1, clicks: 2 });
+        expect(sdk.sent.filter(a => a.method === 'sendInteractNpc').map(a => a.args)).toEqual([[9, 1], [9, 1]]);
+    });
+
+    test('wield and pickup confirm on state', async () => {
+        const sword = { slot: 4, id: 1, name: 'Rune scimitar', count: 1, optionsWithIndex: [{ text: 'Wield', opIndex: 2 }] };
+        const sdk = new FakeSdk(baseState({ tick: 1, inventory: [sword] }));
+        const w = wield(sdk as never, /scimitar/i);
+        await ticks(sdk, 1, () => ({ inventory: [], equipment: [sword] }));
+        expect(await w).toMatchObject({ ok: true });
+        expect(sdk.sent[0]).toEqual({ method: 'sendUseItem', args: [4, 2] });
+
+        const g = new FakeSdk(baseState({ tick: 1, groundItems: [{ id: 7, name: 'Bucket', count: 1, x: 2, z: 2, distance: 1 }] }));
+        const p = pickup(g as never, /bucket/i);
+        await ticks(g, 1, () => ({ inventory: [{ slot: 0, id: 7, name: 'Bucket', count: 1, optionsWithIndex: [] }] }));
+        expect(await p).toMatchObject({ ok: true, ticks: 1 });
+    });
+
+    test('castTeleport waits for the jump', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: player(3000, 3000) }));
+        const p = castTeleport(sdk as never, 'varrock');
+        await ticks(sdk, 4, i => (i === 3 ? { player: player(3213, 3424) } : {}));
+        expect(await p).toMatchObject({ ok: true, ticks: 4, at: { x: 3213, z: 3424, level: 0 } });
+        expect(sdk.sent[0]).toEqual({ method: 'sendClickComponent', args: [1164] });
+    });
+});
+
+describe('actConverse', () => {
+    const effect = (s: BotWorldState) => s.player?.worldX === 20;
+    const click = (sdk: FakeSdk) => () => sdk.sendUseItem(0, 1);
+
+    test('effect before dialogue still answers the later page and measures its closing tick', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: player(10, 10) }));
+        let settled = false;
+        const p = actConverse(sdk, click(sdk), [], { done: effect, idle: 3 }).then(r => { settled = true; return r; });
+        await ticks(sdk, 1, () => ({ player: player(20, 10) }));
+        expect(settled).toBe(false);
+        await ticks(sdk, 1, () => ({ dialog: cont('after-effect') }));
+        await ticks(sdk, 1, () => ({ dialog: closed }));
+        await ticks(sdk, 3);
+        expect(await p).toMatchObject({ ok: true, startTick: 1, endTick: 4, ticks: 3, effectTick: 2, resends: 0, dialogue: { opened: true, pages: 1 } });
+        expect(sdk.sent.map(a => a.method)).toEqual(['sendUseItem', 'clickDialogByText']);
+    });
+
+    test('dialogue closing does not complete a step until its required effect arrives', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: player(10, 10) }));
+        let settled = false;
+        const p = actConverse(sdk, click(sdk), [], { done: effect, idle: 1, resendEvery: 2 }).then(r => { settled = true; return r; });
+        await ticks(sdk, 1, () => ({ dialog: cont('before-effect') }));
+        await ticks(sdk, 1, () => ({ dialog: closed }));
+        await ticks(sdk, 4);
+        expect(settled).toBe(false);
+        expect(sdk.sent.filter(a => a.method === 'sendUseItem')).toHaveLength(1);
+        await ticks(sdk, 1, () => ({ player: player(20, 10) }));
+        expect(await p).toMatchObject({ ok: true, ticks: 7, endTick: 8, effectTick: 8, dialogue: { pages: 1 } });
+    });
+
+    test('remembers an effect that held only while dialogue was open', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: player(10, 10) }));
+        const p = actConverse(sdk, click(sdk), [], { done: effect, idle: 1 });
+        await ticks(sdk, 1, () => ({ dialog: cont('first') }));
+        await ticks(sdk, 1, () => ({ player: player(20, 10), dialog: cont('second') }));
+        await ticks(sdk, 1, () => ({ player: player(10, 10), dialog: closed }));
+        await ticks(sdk, 1);
+        expect(await p).toMatchObject({ ok: true, effectTick: 3, endTick: 4, ticks: 3, dialogue: { pages: 2 } });
+    });
+
+    test('an initially true done still sends the click and allows delayed dialogue', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: player(20, 10) }));
+        let settled = false;
+        const p = actConverse(sdk, click(sdk), [], { done: effect, idle: 3 }).then(r => { settled = true; return r; });
+        await ticks(sdk, 2);
+        expect(settled).toBe(false);
+        await ticks(sdk, 1, () => ({ dialog: cont('already-had-item') }));
+        await ticks(sdk, 1, () => ({ dialog: closed }));
+        await ticks(sdk, 3);
+        expect(await p).toMatchObject({ ok: true, effectTick: 1, endTick: 5, ticks: 4, dialogue: { pages: 1 } });
+        expect(sdk.sent.filter(a => a.method === 'sendUseItem')).toHaveLength(1);
+    });
+
+    test('a required effect can succeed without dialogue, excluding the grace wait from ticks', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: player(10, 10) }));
+        const p = actConverse(sdk, click(sdk), [], { done: effect, idle: 2 });
+        await ticks(sdk, 1, () => ({ player: player(20, 10) }));
+        await ticks(sdk, 3);
+        expect(await p).toMatchObject({ ok: true, ticks: 1, endTick: 2, effectTick: 2, dialogue: { opened: false } });
+    });
+
+    test('missing dialogue without an effect predicate is a failure', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1 }));
+        const p = actConverse(sdk, click(sdk), [], { openTicks: 3, resendEvery: 0 });
+        await ticks(sdk, 4);
+        expect(await p).toMatchObject({ ok: false, ticks: 4, reason: 'no dialogue opened' });
+    });
+
+    test('a dropped click is retried until dialogue opens, then choices and continues are counted', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1 }));
+        let clicks = 0;
+        sdk.onSend = (a, f) => {
+            if (a.method === 'sendUseItem' && ++clicks === 2) f.push({ dialog: cont('retry') });
+        };
+        const p = actConverse(sdk, click(sdk), ['Yes'], { resendEvery: 2, idle: 1 });
+        await ticks(sdk, 3);
+        await ticks(sdk, 1, () => ({ dialog: { isOpen: true, isWaiting: false, pageId: 'choice', options: [{ index: 1, text: 'Yes', buttonType: 1, componentId: 20 }] } }));
+        await ticks(sdk, 1, () => ({ dialog: closed }));
+        await ticks(sdk, 1);
+        expect(await p).toMatchObject({ ok: true, resends: 1, endTick: 6, ticks: 5, dialogue: { pages: 1, options: 1, remaining: [] } });
+        expect(clicks).toBe(2);
+    });
+
+    test('a required effect that never arrives fails even after dialogue was answered', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1 }));
+        const p = actConverse(sdk, click(sdk), [], { done: effect, idle: 1, maxTicks: 6 });
+        await ticks(sdk, 3);
+        await ticks(sdk, 1, () => ({ dialog: cont('late') }));
+        await ticks(sdk, 1, () => ({ dialog: closed }));
+        await ticks(sdk, 2);
+        expect(await p).toMatchObject({ ok: false, endTick: 8, ticks: 7, effectTick: -1, reason: 'timeout', dialogue: { opened: true, pages: 1 } });
+    });
+
+    test('missing both effect and dialogue exhausts the action budget', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1 }));
+        const p = actConverse(sdk, click(sdk), [], { done: effect, maxTicks: 4, resendEvery: 0 });
+        await ticks(sdk, 5);
+        expect(await p).toMatchObject({ ok: false, ticks: 5, effectTick: -1, reason: 'done never held' });
+    });
+});
+
+describe('action segment recording', () => {
+    test('records the later dialogue end, page counts and original interaction', async () => {
+        const { step } = await import('../../docs/speedrun/scripts/quest-plague-city-segments');
+        const { Recorder } = await import('../lab/record');
+        const sdk = new FakeSdk(baseState({ tick: 1, player: player(10, 10) }));
+        const rec = new Recorder(sdk, 'test');
+        const p = step(rec, sdk as never, 'use item', () => sdk.sendUseItem(0, 1), {
+            done: s => s.player?.worldX === 20, idle: 2,
+        });
+        await ticks(sdk, 1, () => ({ player: player(20, 10) }));
+        await ticks(sdk, 1, () => ({ dialog: cont('message') }));
+        await ticks(sdk, 1, () => ({ dialog: closed }));
+        await ticks(sdk, 2);
+        expect(await p).toMatchObject({ startTick: 1, endTick: 4, ticks: 3, pages: 1, interactions: 1, runs: '1c' });
+        expect(rec.segments).toHaveLength(1);
+        expect(rec.cur).toBeNull();
+    });
+
+    test('records timeout at the stop tick, not an earlier dialogue close', async () => {
+        const { step } = await import('../../docs/speedrun/scripts/quest-plague-city-segments');
+        const { Recorder } = await import('../lab/record');
+        const sdk = new FakeSdk(baseState({ tick: 1 }));
+        const rec = new Recorder(sdk, 'test');
+        const p = step(rec, sdk as never, 'missing effect', () => sdk.sendUseItem(0, 1), {
+            done: () => false, idle: 1, maxTicks: 4,
+        });
+        await ticks(sdk, 1, () => ({ dialog: cont('message') }));
+        await ticks(sdk, 1, () => ({ dialog: closed }));
+        await ticks(sdk, 3);
+        expect(await p).toMatchObject({ startTick: 1, endTick: 6, ticks: 5, pages: 1, interactions: 1, note: 'timeout' });
+    });
+});

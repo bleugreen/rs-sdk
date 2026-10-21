@@ -110,6 +110,18 @@ export class FakeSdk {
     sendUseItemOnItem(sourceSlot: number, targetSlot: number) { return this.record('sendUseItemOnItem', sourceSlot, targetSlot); }
     sendUseItem(slot: number, option = 1) { return this.record('sendUseItem', slot, option); }
     sendWalk(x: number, z: number, running = true) { return this.record('sendWalk', x, z, running); }
+    sendSpellOnNpc(npcIndex: number, spell: number) { return this.record('sendSpellOnNpc', npcIndex, spell); }
+    sendUseEquipmentItem(slot: number, option = 1) { return this.record('sendUseEquipmentItem', slot, option); }
+    sendUseItemOnLoc(slot: number, x: number, z: number, locId: number) { return this.record('sendUseItemOnLoc', slot, x, z, locId); }
+    sendUseItemOnNpc(slot: number, npcIndex: number) { return this.record('sendUseItemOnNpc', slot, npcIndex); }
+    sendPickup(x: number, z: number, itemId: number) { return this.record('sendPickup', x, z, itemId); }
+    sendDropItem(slot: number) { return this.record('sendDropItem', slot); }
+    sendTogglePrayer(prayer: string | number) { return this.record('sendTogglePrayer', prayer); }
+
+    /** Locs an on-demand scan returns (default: the published list). */
+    scanLocs: BotWorldState['nearbyLocs'] | null = null;
+    async scanNearbyLocs() { return this.scanLocs ?? this.state?.nearbyLocs ?? []; }
+    async scanGroundItems() { return this.state?.groundItems ?? []; }
 
     // Chat: pushChat stands in for lines arriving from the server; getNewChat reads them
     // with the SDK's cursor semantics; sends report the SDK's say/PM result shape.

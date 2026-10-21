@@ -71,6 +71,14 @@ export function waitUntil(sdk: StateSource, pred: Pred, opts: WaitOptions): Prom
     });
 }
 
+/** `waitUntil`, throwing "timed out after N ticks waiting for: <what>" instead of returning `ok:false`. */
+export async function waitOrThrow(sdk: StateSource, pred: Pred, maxTicks: number, what: string): Promise<BotWorldState> {
+    const t0 = currentTick(sdk);
+    const r = await waitUntil(sdk, pred, { maxTicks });
+    if (!r.ok) throw new Error(`timed out after ${r.tick - t0} ticks waiting for: ${what}`);
+    return r.state;
+}
+
 /** Resolve on the first state whose tick is past `after` (default: now). Throws if no tick arrives. */
 export async function nextTick(sdk: StateSource, after: number = currentTick(sdk)): Promise<BotWorldState> {
     const r = await waitUntil(sdk, s => s.tick > after, { maxTicks: 3, after });

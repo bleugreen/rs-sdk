@@ -24,6 +24,7 @@
 //
 // Setup uses staff commands (LOCAL_STAFF_LEVEL=4) and is never timed.
 import { runScript } from '../../../sdk/runner';
+import { converse } from '../../../speedrun/lib/converse';
 import type { BotSDK } from '../../../sdk/index';
 import type { BotActions } from '../../../sdk/actions';
 import { cheat, freshKit, log, nextTick, prepare, sleep, tele, tick, waitTicks, waitUntil, xpRecorder } from './magic-lib';
@@ -237,47 +238,6 @@ async function charge(sdk: BotSDK, bot: BotActions, bases: number[]): Promise<vo
 // ---------------------------------------------------------------- fight
 const KOLODION_SPOT = { x: 2539, z: 4715 };
 
-async function talkThrough(sdk: BotSDK, choices: string[]): Promise<{ pages: number; options: number }> {
-    // rs/3's quest-unlocks-lib talkThrough, trimmed: guarded clicks bound to the page.
-    let pages = 0;
-    let options = 0;
-    let closedAt = -1;
-    const queue = [...choices];
-    while (pages + options < 60) {
-        const d = sdk.getDialog();
-        if (!d || !d.isOpen) {
-            if (closedAt < 0) closedAt = tick(sdk);
-            if (tick(sdk) - closedAt >= 4) break;
-            await sleep(10);
-            continue;
-        }
-        closedAt = -1;
-        if (d.options?.length === 1 && /continue/i.test(d.options[0]!.text)) {
-            if ((await sdk.clickDialogByText(/continue/i)).success) pages++;
-        } else if (d.options && d.options.length > 0) {
-            const want = queue[0];
-            const match = want === undefined ? undefined : d.options.find((o) => o.text.includes(want));
-            if (!match) throw new Error(`no option matching ${want} in [${d.options.map((o) => o.text).join(' | ')}]`);
-            const esc = match.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            if ((await sdk.clickDialogByText(new RegExp(`^${esc}$`))).success) {
-                queue.shift();
-                options++;
-            }
-        } else {
-            await sdk.sendClickDialog(0);
-            pages++;
-        }
-        const t = tick(sdk);
-        const page = d.pageId;
-        while (tick(sdk) - t < 6) {
-            const nd = sdk.getDialog();
-            if (tick(sdk) > t && (!nd?.isOpen || nd.pageId !== page)) break;
-            await sleep(10);
-        }
-    }
-    return { pages, options };
-}
-
 async function fightOnce(sdk: BotSDK, bot: BotActions, run: number) {
     // ---- untimed setup ----
     await freshKit(sdk, bot, 'staff_of_fire');
@@ -304,7 +264,7 @@ async function fightOnce(sdk: BotSDK, bot: BotActions, run: number) {
     const kol = sdk.findNearbyNpc(/^Kolodion$/);
     if (!kol) throw new Error('Kolodion not found');
     await sdk.sendTalkToNpc(kol.index);
-    const d1 = await talkThrough(sdk, ['Can I fight here?', 'Yes indeedy.', "Ok, let's fight."]);
+    const d1 = await converse(sdk, ['Can I fight here?', 'Yes indeedy.', "Ok, let's fight."], { idle: 4, openTicks: 4 });
     await waitUntil(sdk, () => pos(sdk).z < 4000, 60, 'arena teleport');
     const tArena = tick(sdk);
     log(sdk, `RUN ${run} talk: ${tArena - t0} ticks, ${d1.pages} pages, ${d1.options} options; magic ${lvl(sdk)}`, t0);
@@ -383,7 +343,7 @@ async function fightOnce(sdk: BotSDK, bot: BotActions, run: number) {
 
     // ---- Charge straight after (pool, statue and guardian skipped: rs/3 measured them at 74 ticks) ----
     await waitTicks(sdk, 4);
-    await talkThrough(sdk, []).catch(() => ({ pages: 0, options: 0 }));
+    await converse(sdk, [], { idle: 4, openTicks: 4 }).catch(() => ({ pages: 0, options: 0 }));
     await cheat(sdk, 'setvar magearena 8');
     const base = magic(sdk).baseLevel;
     log(sdk, `RUN ${run} after fight: magic ${lvl(sdk)}`);

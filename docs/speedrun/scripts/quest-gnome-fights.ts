@@ -14,40 +14,50 @@
 //                Prayer potions are drunk when prayer points fall below 15.
 
 import { runScript } from '../../../sdk/runner';
-import { cheat, dialogue, fight, give, locTalkAt, now, pos, result, setstats, setvar, stats, tele, waitTicks, waitUntil } from './quest-gnome-lib';
+import type { PrayerName } from '../../../sdk/types';
+import { opLoc, slotOf, wield } from '../../../speedrun/lib/act';
+import { fight } from '../../../speedrun/lib/combat';
+import { converse } from '../../../speedrun/lib/converse';
+import { currentTick, waitTicks, waitUntil } from '../../../speedrun/lib/wait';
+import { findNpc, invItem, pos } from '../../../speedrun/lib/world';
+import { result, stats } from '../../../speedrun/lab/record';
+import { cheat, clearInventory, give, mustTele, setStats, setvar } from '../../../speedrun/lab/setup';
 
 const WHO = process.argv[3] ?? 'warlord';
 const RUNS = Number(process.argv[4] ?? 5);
-const [ATT, STR, DEF, HP] = [5, 6, 7, 8].map((i, k) => Number(process.argv[i] ?? [70, 70, 70, 70][k]));
+const [ATT, STR, DEF, HP] = [5, 6, 7, 8].map((i, k) => Number(process.argv[i] ?? [70, 70, 70, 70][k])) as [number, number, number, number];
 const PRAYER = process.env.PRAYER !== 'off';
 
 await runScript(async ({ bot, sdk }) => {
     const samples: Array<{ ticks: number; damage: number; food: number; prayerUsed: number; died: boolean; hpLeft: number }> = [];
     for (let run = 0; run < RUNS; run++) {
-        await cheat(sdk, '~clearinv');
-        await setstats(sdk, { attack: ATT, strength: STR, defence: DEF, hitpoints: HP, prayer: 43 });
+        await clearInventory(sdk);
+        await setStats(sdk, { attack: ATT, strength: STR, defence: DEF, hitpoints: HP, prayer: 43 });
         const weapon = process.env.WEAPON ?? 'rune_scimitar';
         await give(sdk, weapon, 1);
         if (/bow/.test(weapon)) await give(sdk, 'rune_arrow', 300);
         await give(sdk, 'shark', 16);
         await give(sdk, '4doseprayerrestore', 4);
-        await setstats(sdk, { ranged: Number(process.env.RANGED ?? 70) });
+        await setStats(sdk, { ranged: Number(process.env.RANGED ?? 70) });
         await waitTicks(sdk, 2);
         for (const re of [/scimitar|warhammer|shortbow|longbow/i, /rune arrow/i]) {
-            const it = sdk.getState()!.inventory.find(i => re.test(i.name));
-            if (it) await bot.equipItem(it.name);
+            if (invItem(sdk, re)) await wield(sdk, re);
         }
         let target: RegExp;
+        let prayer: PrayerName = 'protect_from_melee';
         if (WHO === 'warlord') {
-            await tele(sdk, 2456, 3300);
-            await cheat(sdk, 'npcadd khazard_warlord');
+            await mustTele(sdk, 2456, 3300);
+            await cheat(sdk, 'npcadd khazard_warlord', 1);
             await waitTicks(sdk, 2);
             target = /^Khazard warlord$/i;
         } else if (WHO === 'blackdemon') {
             await setvar(sdk, 'grandtree', 130);
-            await tele(sdk, 2487, 3465, 2);
+            await mustTele(sdk, 2487, 3465, 2);
             if (PRAYER) await bot.activatePrayer('protect_from_melee');
-            await locTalkAt(sdk, 2487, 3464, /^open$/i, [], { idle: 4 });
+            // The trapdoor opens Glough's cutscene; the demon spawns after it.
+            const conv = converse(sdk, [], { idle: 4, openTicks: 60, closeModals: true });
+            await opLoc(sdk, { x: 2487, z: 3464, op: /^open$/i }, /^open$/i);
+            await conv;
             target = /^Black Demon$/i;
         } else if (WHO === 'jungledemon') {
             await setvar(sdk, 'mm_main', 5);
@@ -55,27 +65,27 @@ await runScript(async ({ bot, sdk }) => {
             await setvar(sdk, 'mm_waiting_for_final_battle', 0);
             // Leave the battle zone long enough for a previous run's squad and demon to despawn
             // (they delete themselves when their player is out of the zone, mm_demon.rs2:212-220,272-279).
-            await tele(sdk, 2805, 2759);
+            await mustTele(sdk, 2805, 2759);
             await waitTicks(sdk, 30);
             await give(sdk, 'mm_sigil', 1);
             await waitTicks(sdk, 2);
-            const t0 = now(sdk);
-            const sig = sdk.getState()!.inventory.find(i => /sigil/i.test(i.name))!;
-            const d = dialogue(sdk, [], { idle: 3, startTimeout: 80 });
-            await sdk.sendUseItem(sig.slot, 2);
-            await waitUntil(sdk, s => pos(s).z > 9100 && pos(s).level === 1, 60);
-            const tArrive = now(sdk);
+            const t0 = currentTick(sdk);
+            const d = converse(sdk, [], { idle: 3, openTicks: 80, closeModals: true });
+            await sdk.sendUseItem(slotOf(sdk, /sigil/i), 2);
+            const arrived = await waitUntil(sdk, s => pos(s).z > 9100 && pos(s).level === 1, { maxTicks: 60 });
+            const tArrive = arrived.ok ? arrived.tick : NaN;
             await d;
-            const r = await waitUntil(sdk, s => s.nearbyNpcs.some(n => /^Jungle Demon$/i.test(n.name)), 60);
-            console.log(`sigil: worn -> arrival ${tArrive - t0} ticks, -> demon spawned ${(r?.tick ?? NaN) - t0} ticks`);
+            const r = await waitUntil(sdk, s => findNpc(s, /^Jungle Demon$/i) !== null, { maxTicks: 60 });
+            console.log(`sigil: worn -> arrival ${tArrive - t0} ticks, -> demon spawned ${(r.ok ? r.tick : NaN) - t0} ticks`);
             if (PRAYER) await bot.activatePrayer('protect_from_magic');
+            prayer = 'protect_from_magic';
             target = /^Jungle Demon$/i;
             if (/bow/.test(process.env.WEAPON ?? '')) {
                 // Ranged: step 6 tiles away from the demon first, so it stays on wave spells (melee only
                 // within 2 tiles, mm_demon.rs2:332) and Protect from Magic stops all of its damage.
-                const dm = sdk.getState()!.nearbyNpcs.find(n => /^Jungle Demon$/i.test(n.name));
+                const dm = findNpc(sdk, /^Jungle Demon$/i);
                 if (dm) {
-                    const p = pos(sdk.getState());
+                    const p = pos(sdk);
                     const dx = Math.sign(p.x - dm.x) || 1, dz = Math.sign(p.z - dm.z) || 1;
                     await sdk.sendWalk(p.x + dx * 6, p.z + dz * 6, true);
                     await waitTicks(sdk, 4);
@@ -85,32 +95,24 @@ await runScript(async ({ bot, sdk }) => {
             throw new Error(`fight ${WHO} not wired yet`);
         }
         if (PRAYER && WHO === 'warlord') await bot.activatePrayer('protect_from_melee');
-        // Prayer potions keep the protection up through long fights.
-        let lastDrink = -10;
-        const unsubPray = sdk.onStateUpdate(s => {
-            const pr = sdk.getSkill('prayer');
-            if (pr && pr.level < 15 && s.tick - lastDrink >= 3) {
-                const pot = s.inventory.find(i => /prayer potion|restore/i.test(i.name));
-                if (pot) { lastDrink = s.tick; void sdk.sendUseItem(pot.slot, 1); }
-            }
-        });
-        const pr0 = sdk.getSkill('prayer')!.level;
         const diag = sdk.onStateUpdate(s => {
             if (s.tick % 20 !== 0) return;
-            const t = s.nearbyNpcs.find(n => target.test(n.name));
-            console.log(`  t${s.tick} hp=${s.player?.hp} prayer=${sdk.getSkill('prayer')?.level} active=${JSON.stringify((s as unknown as { prayers?: unknown }).prayers ?? '')} targetDist=${t?.distance} targetHp=${t?.hp}`);
+            const t = findNpc(s, target);
+            console.log(`  t${s.tick} hp=${s.player?.hp} prayer=${s.prayers?.prayerPoints} active=${JSON.stringify(s.prayers ?? '')} targetDist=${t?.distance} targetHp=${t?.hp}`);
         });
-        const f = await fight(sdk, bot, target, { eatBelow: Math.max(20, Math.round(HP * 0.5)) });
-        const s = sdk.getState()!;
-        const prayerUsed = pr0 - (sdk.getSkill('prayer')!.level);
-        samples.push({ ticks: f.ticks, damage: f.damageTaken, food: f.food, prayerUsed, died: f.died, hpLeft: s.player?.hp ?? -1 });
-        unsubPray();
+        // Prayer potions keep the protection up through long fights (combat's Upkeep drinks below drinkBelow).
+        const f = await fight(sdk, target, {
+            eatBelow: Math.max(20, Math.round(HP * 0.5)), food: 'shark',
+            ...(PRAYER ? { prayer, drinkBelow: 15 } : {}),
+            maxTicks: 1500, onDialog: 'continue',
+        });
         diag();
-        console.log(`run ${run}: ${JSON.stringify(samples.at(-1))}`);
+        if (f.end === 'no target') throw new Error(`fight target ${target} not found`);
+        samples.push({ ticks: f.ticks, damage: f.taken, food: f.eats, prayerUsed: f.prayerUsed, died: f.died, hpLeft: sdk.getState()!.player?.hp ?? -1 });
+        console.log(`run ${run}: ${JSON.stringify(samples.at(-1))} end=${f.end}`);
         await bot.deactivateAllPrayers();
         // Let any death/respawn or loot settle.
         await waitTicks(sdk, 5);
-        void dialogue; void pos; void now; void waitUntil;
     }
     result(`fight_${WHO}_${process.env.WEAPON ?? 'rune_scimitar'}_${ATT}_${STR}_${DEF}_${HP}${PRAYER ? '' : '_noprayer'}`, {
         ticks: stats(samples.map(s => s.ticks)), damage: stats(samples.map(s => s.damage)), food: stats(samples.map(s => s.food)),

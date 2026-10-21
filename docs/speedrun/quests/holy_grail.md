@@ -225,4 +225,5 @@ for this quest.
   percival, realm2, reward).
 - `docs/speedrun/scripts/quest-arthur-grail-routes.ts`: route tiles for the travel
   legs (offline).
-- `docs/speedrun/scripts/quest-arthur-lab.ts`: shared helpers.
+- `speedrun/lib` (`converse`, `combat.fight`, `act`) and `speedrun/lab` (staff
+  set-up, `result`): shared helpers.

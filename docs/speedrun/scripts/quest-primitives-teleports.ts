@@ -6,46 +6,50 @@
 import { runScript } from '../../../sdk/runner';
 import type { BotSDK } from '../../../sdk/index';
 import type { BotWorldState } from '../../../sdk/types';
-import { cheat, give, now, pos, result, stats, tele, waitTicks, waitUntil } from './quest-primitives-lib';
+import { give, mustTele, setvar } from '../../../speedrun/lab/setup';
+import { result, stats } from '../../../speedrun/lab/record';
+import { TELEPORTS } from '../../../speedrun/lib/act';
+import { currentTick, waitTicks, waitUntil } from '../../../speedrun/lib/wait';
+import { findNpc, invItem, opIndex, pos, type Tile } from '../../../speedrun/lib/world';
 
-// Component ids from server/content/pack/interface.pack.
-const SPELLS: Record<string, number> = { varrock: 1164, lumbridge: 1167, falador: 1170, camelot: 1174, ardougne: 1540, watchtower: 1541 };
+// Component ids from server/content/pack/interface.pack; Watchtower teleport is not in the scored run's table.
+const SPELLS: Record<string, number> = { ...TELEPORTS, watchtower: 1541 };
 const HOME = { x: 3222, z: 3218 };
-const far = (p0: ReturnType<typeof pos>) => (s: BotWorldState) => { const p = pos(s); return Math.abs(p.x - p0.x) + Math.abs(p.z - p0.z) > 30; };
+const far = (p0: Tile) => (s: BotWorldState) => { const p = pos(s); return Math.abs(p.x - p0.x) + Math.abs(p.z - p0.z) > 30; };
 
 async function castAt(sdk: BotSDK, comp: number, from = HOME) {
-    await tele(sdk, from.x, from.z);
+    await mustTele(sdk, from.x, from.z);
     await waitTicks(sdk, 2);
-    const p0 = pos(sdk.getState());
+    const p0 = pos(sdk);
     const msgs0 = sdk.getState()!.gameMessages.length;
-    const t0 = now(sdk);
+    const t0 = currentTick(sdk);
     await sdk.sendClickComponent(comp);
-    const r = await waitUntil(sdk, far(p0), 15);
+    const r = await waitUntil(sdk, far(p0), { maxTicks: 15 });
     const s = sdk.getState()!;
-    return { ticks: r ? r.tick - t0 : null, arrived: pos(r?.state ?? s), anim: r?.state.player?.animId, messages: s.gameMessages.slice(0, Math.max(0, s.gameMessages.length - msgs0) || 3).map(m => m.text) };
+    return { ticks: r.ok ? r.tick - t0 : null, arrived: pos(r.ok ? r.state : s), anim: r.ok ? r.state.player?.animId : undefined, messages: s.gameMessages.slice(0, Math.max(0, s.gameMessages.length - msgs0) || 3).map(m => m.text) };
 }
 
 async function rub(sdk: BotSDK, item: RegExp, choice: RegExp, from = HOME) {
-    await tele(sdk, from.x, from.z);
+    await mustTele(sdk, from.x, from.z);
     await waitTicks(sdk, 2);
-    const it = sdk.getState()!.inventory.find(i => item.test(i.name));
+    const it = invItem(sdk, item);
     if (!it) return { error: 'no item ' + item };
-    const op = it.optionsWithIndex.find(o => /rub/i.test(o.text));
-    if (!op) return { error: 'no Rub op: ' + it.optionsWithIndex.map(o => o.text).join(',') };
-    const p0 = pos(sdk.getState());
-    const t0 = now(sdk);
-    await sdk.sendUseItem(it.slot, op.opIndex);
-    const d = await waitUntil(sdk, s => s.dialog.isOpen && !s.dialog.isWaiting && s.dialog.options.some(o => choice.test(o.text)), 15);
-    if (!d) return { error: 'no choice dialog', messages: sdk.getState()!.gameMessages.slice(-3).map(m => m.text) };
+    const op = opIndex(it, /rub/i);
+    if (op === undefined) return { error: 'no Rub op: ' + it.optionsWithIndex.map(o => o.text).join(',') };
+    const p0 = pos(sdk);
+    const t0 = currentTick(sdk);
+    await sdk.sendUseItem(it.slot, op);
+    const d = await waitUntil(sdk, s => s.dialog.isOpen && !s.dialog.isWaiting && s.dialog.options.some(o => choice.test(o.text)), { maxTicks: 15 });
+    if (!d.ok) return { error: 'no choice dialog', messages: sdk.getState()!.gameMessages.slice(-3).map(m => m.text) };
     const t1 = d.tick;
     await sdk.sendClickDialog(d.state.dialog.options.find(o => choice.test(o.text))!.index);
-    const r = await waitUntil(sdk, far(p0), 15);
-    return { clickToChoice: t1 - t0, choiceToArrive: r ? r.tick - t1 : null, total: r ? r.tick - t0 : null, arrived: pos(r?.state ?? sdk.getState()), messages: sdk.getState()!.gameMessages.slice(-2).map(m => m.text), item: sdk.getState()!.inventory.filter(i => /glory|necklace/i.test(i.name)).map(i => i.name) };
+    const r = await waitUntil(sdk, far(p0), { maxTicks: 15 });
+    return { clickToChoice: t1 - t0, choiceToArrive: r.ok ? r.tick - t1 : null, total: r.ok ? r.tick - t0 : null, arrived: pos(r.ok ? r.state : sdk), messages: sdk.getState()!.gameMessages.slice(-2).map(m => m.text), item: sdk.getState()!.inventory.filter(i => /glory|necklace/i.test(i.name)).map(i => i.name) };
 }
 
-await runScript(async ({ bot, sdk }) => {
-    await cheat(sdk, 'setvar elenaquest 30'); await waitTicks(sdk, 1);
-    await cheat(sdk, 'setvar itwatchtower 14'); await waitTicks(sdk, 1);
+await runScript(async ({ sdk }) => {
+    await setvar(sdk, 'elenaquest', 30);
+    await setvar(sdk, 'itwatchtower', 14);
 
     const spells: Record<string, unknown> = {};
     const allTicks: number[] = [];
@@ -53,17 +57,17 @@ await runScript(async ({ bot, sdk }) => {
         const runs = [];
         for (let i = 0; i < 3; i++) runs.push(await castAt(sdk, comp));
         runs.forEach(r => typeof r.ticks === 'number' && allTicks.push(r.ticks));
-        spells[name] = { ticks: stats(runs.map(r => r.ticks ?? NaN)), arrived: runs[0].arrived, msgs: runs[0].messages };
+        spells[name] = { ticks: stats(runs.map(r => r.ticks ?? NaN)), arrived: runs[0]!.arrived, msgs: runs[0]!.messages };
         console.log(name, JSON.stringify(spells[name]));
     }
     result('teleport.spells', { perSpell: spells, all: stats(allTicks) });
 
     // Jewellery
-    const jw: Record<string, unknown[]> = { glory: [], games: [] };
+    const jw = { glory: [] as Array<Awaited<ReturnType<typeof rub>>>, games: [] as Array<Awaited<ReturnType<typeof rub>>> };
     for (let i = 0; i < 3; i++) {
-        if (!sdk.getState()!.inventory.some(x => /glory\(/i.test(x.name))) await give(sdk, 'amulet_of_glory_4', 1);
+        if (!invItem(sdk, /glory\(/i)) await give(sdk, 'amulet_of_glory_4', 1);
         jw.glory.push(await rub(sdk, /glory\(/i, /Draynor/i));
-        if (!sdk.getState()!.inventory.some(x => /games necklace/i.test(x.name))) await give(sdk, 'necklace_of_minigames_8', 1);
+        if (!invItem(sdk, /games necklace/i)) await give(sdk, 'necklace_of_minigames_8', 1);
         jw.games.push(await rub(sdk, /games necklace/i, /Burthorpe/i));
     }
     for (const [k, v] of Object.entries(jw)) console.log(k, JSON.stringify(v));
@@ -73,10 +77,10 @@ await runScript(async ({ bot, sdk }) => {
     const wild: Record<string, unknown> = {};
     for (const lvl of [25, 35]) {
         const z = 3520 + (lvl - 1) * 8;
-        wild[`spell_lvl${lvl}`] = await castAt(sdk, SPELLS.varrock, { x: 3100, z });
-        if (!sdk.getState()!.inventory.some(x => /glory\(/i.test(x.name))) await give(sdk, 'amulet_of_glory_4', 1);
+        wild[`spell_lvl${lvl}`] = await castAt(sdk, TELEPORTS.varrock, { x: 3100, z });
+        if (!invItem(sdk, /glory\(/i)) await give(sdk, 'amulet_of_glory_4', 1);
         wild[`glory_lvl${lvl}`] = await rub(sdk, /glory\(/i, /Draynor/i, { x: 3100, z });
-        if (!sdk.getState()!.inventory.some(x => /games necklace/i.test(x.name))) await give(sdk, 'necklace_of_minigames_8', 1);
+        if (!invItem(sdk, /games necklace/i)) await give(sdk, 'necklace_of_minigames_8', 1);
         wild[`games_lvl${lvl}`] = await rub(sdk, /games necklace/i, /Burthorpe/i, { x: 3100, z });
     }
     result('teleport.wilderness', wild);
@@ -84,19 +88,18 @@ await runScript(async ({ bot, sdk }) => {
     // In combat: attack a goblin east of Lumbridge, cast once a hit has landed.
     const combat = [];
     for (let i = 0; i < 2; i++) {
-        await tele(sdk, 3250, 3235);
+        await mustTele(sdk, 3250, 3235);
         await waitTicks(sdk, 2);
-        const npc = sdk.findNearbyNpc(/^(goblin|man|cow)$/i);
+        const npc = findNpc(sdk, /^(goblin|man|cow)$/i);
         if (!npc) { combat.push({ error: 'no npc' }); continue; }
-        const atk = npc.optionsWithIndex.find(o => /attack/i.test(o.text))!;
-        await sdk.sendInteractNpc(npc.index, atk.opIndex);
-        const hit = await waitUntil(sdk, s => s.combatEvents.some(e => e.type === 'damage_dealt' || e.type === 'damage_taken'), 30);
+        await sdk.sendInteractNpc(npc.index, opIndex(npc, /attack/i)!);
+        const hit = await waitUntil(sdk, s => s.combatEvents.some(e => e.type === 'damage_dealt' || e.type === 'damage_taken'), { maxTicks: 30 });
         const s = sdk.getState()!;
         const p0 = pos(s);
-        const t0 = now(sdk);
-        await sdk.sendClickComponent(SPELLS.lumbridge);
-        const r = await waitUntil(sdk, far(p0), 15);
-        combat.push({ npc: npc.name, inCombat: s.player?.combat.inCombat, hitSeen: !!hit, ticks: r ? r.tick - t0 : null, arrived: pos(r?.state ?? sdk.getState()) });
+        const t0 = currentTick(sdk);
+        await sdk.sendClickComponent(TELEPORTS.lumbridge);
+        const r = await waitUntil(sdk, far(p0), { maxTicks: 15 });
+        combat.push({ npc: npc.name, inCombat: s.player?.combat.inCombat, hitSeen: hit.ok, ticks: r.ok ? r.tick - t0 : null, arrived: pos(r.ok ? r.state : sdk) });
     }
     result('teleport.inCombat', combat);
 }, { timeout: 600_000 });

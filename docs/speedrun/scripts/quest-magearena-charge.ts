@@ -8,18 +8,20 @@
 // (ClientGameProtCategory.ts), so B > 5 shows whether the surplus carries over.
 // Env: BURSTS (default 1,3,5,10), ROUNDS (default 20), STAFF (default 'staff of fire').
 import { runScript } from '../../../sdk/runner';
-import { cheat, log, sleep, tick, waitTicks } from './quest-unlocks-lib';
+import { clickContinue } from '../../../speedrun/lib/dialogue';
+import { currentTick, nextTick, waitTicks } from '../../../speedrun/lib/wait';
+import { skillXp } from '../../../speedrun/lib/world';
+import { getvar, give, setStats } from '../../../speedrun/lab/setup';
 
 const CHARGE = 1193;
 const BURSTS = (process.env.BURSTS ?? '1,3,5,10').split(',').map(Number);
 const ROUNDS = Number(process.env.ROUNDS ?? 20);
 
-await runScript(async ({ bot, sdk }) => {
-    await cheat(sdk, 'getvar magearena');
-    await cheat(sdk, 'setstat magic 80');
-    await cheat(sdk, 'give bloodrune 5000');
-    await cheat(sdk, 'give airrune 5000');
-    await cheat(sdk, 'give firerune 5000');
+await runScript(async ({ sdk }) => {
+    const log = (msg: string) => console.log(`[t=${currentTick(sdk)}] ${msg}`);
+    log(`magearena = ${await getvar(sdk, 'magearena')}`);
+    await setStats(sdk, { magic: 80 });
+    await give(sdk, ['bloodrune', 'airrune', 'firerune'], 5000);
     await waitTicks(sdk, 3);
     for (const m of sdk.getNewChat({ types: [0] })) console.log('chat:', m.text);
 
@@ -32,19 +34,18 @@ await runScript(async ({ bot, sdk }) => {
 
     for (const burst of BURSTS) {
         await waitTicks(sdk, 5);
-        const xp0 = sdk.getSkill('Magic')?.experience ?? 0;
-        const t0 = tick(sdk);
+        const xp0 = skillXp(sdk, 'magic');
+        const t0 = currentTick(sdk);
         for (let r = 0; r < ROUNDS; r++) {
-            const t = tick(sdk);
+            const t = currentTick(sdk);
             await Promise.all(Array.from({ length: burst }, () => sdk.sendClickComponent(CHARGE)));
-            while (tick(sdk) === t) await sleep(5);
-            const d = sdk.getDialog();
-            if (d?.isOpen) await sdk.sendClickDialog(d.options[0]?.index ?? 0); // level-up
+            await nextTick(sdk, t);
+            if (sdk.getState()?.dialog.isOpen) await clickContinue(sdk); // level-up
         }
         // let queued packets drain
         await waitTicks(sdk, 10);
-        const t1 = tick(sdk);
-        const xp1 = sdk.getSkill('Magic')?.experience ?? 0;
+        const t1 = currentTick(sdk);
+        const xp1 = skillXp(sdk, 'magic');
         // per-tick casts (1800 game xp per cast at 25x = 4500? read the delta per tick)
         const perTick: number[] = [];
         let prev = xp0;
@@ -57,8 +58,8 @@ await runScript(async ({ bot, sdk }) => {
         const castXp = 180 * 25; // charge: experience 1800 (tenths) = 180 base, 25x
         const casts = (xp1 - xp0) / castXp;
         const active = perTick.filter((d) => d > 0);
-        log(sdk, `BURST ${burst}/tick x ${ROUNDS} rounds: ${casts} casts over ${t1 - t0} ticks; casts per active tick ${JSON.stringify(active.map((d) => d / castXp))}`);
-        log(sdk, `   = ${(casts / ROUNDS).toFixed(2)} casts per click-round, ${((casts * 180) / ROUNDS).toFixed(0)} base xp per round tick`);
+        log(`BURST ${burst}/tick x ${ROUNDS} rounds: ${casts} casts over ${t1 - t0} ticks; casts per active tick ${JSON.stringify(active.map((d) => d / castXp))}`);
+        log(`   = ${(casts / ROUNDS).toFixed(2)} casts per click-round, ${((casts * 180) / ROUNDS).toFixed(0)} base xp per round tick`);
     }
     for (const m of sdk.getNewChat({ types: [0] }).slice(-5)) console.log('chat:', m.text);
 }, { timeout: 10 * 60_000, printState: false });

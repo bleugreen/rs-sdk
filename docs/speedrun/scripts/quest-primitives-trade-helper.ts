@@ -4,30 +4,32 @@
 //   bun docs/speedrun/scripts/quest-primitives-trade-helper.ts <helper> <scored> <trades>
 
 import { runScript } from '../../../sdk/runner';
-import { give, tele, waitTicks, waitUntil } from './quest-primitives-lib';
+import { give, mustTele } from '../../../speedrun/lab/setup';
+import { waitTicks, waitUntil } from '../../../speedrun/lib/wait';
+import { invItem } from '../../../speedrun/lib/world';
 
 const SCORED = (process.argv[3] ?? '').toLowerCase();
 const TRADES = Number(process.argv[4] ?? 3);
 
 await runScript(async ({ sdk }) => {
     // stand next to the scored account's tile (quest-primitives-trade.ts uses 3222,3218)
-    await tele(sdk, 3223, 3218);
+    await mustTele(sdk, 3223, 3218);
     for (let i = 0; i < TRADES; i++) {
-        if (!sdk.getState()!.inventory.some(x => /law rune/i.test(x.name))) await give(sdk, 'lawrune', 100);
-        const partner = await waitUntil(sdk, s => s.nearbyPlayers.some(p => p.name.toLowerCase() === SCORED), 100);
-        if (!partner) throw new Error('scored account not nearby');
+        if (!invItem(sdk, /law rune/i)) await give(sdk, 'lawrune', 100);
+        const partner = await waitUntil(sdk, s => s.nearbyPlayers.some(p => p.name.toLowerCase() === SCORED), { maxTicks: 100 });
+        if (!partner.ok) throw new Error('scored account not nearby');
         const p = partner.state.nearbyPlayers.find(x => x.name.toLowerCase() === SCORED)!;
         await sdk.sendTradeRequest(p.index);
         console.log(`HELPER requested at ${sdk.getState()!.tick}`);
-        const open = await waitUntil(sdk, s => s.trade?.isOpen === true && s.trade.screen === 'offer', 100);
-        if (!open) throw new Error('trade never opened');
-        const slot = open.state.inventory.find(x => /law rune/i.test(x.name))!.slot;
+        const open = await waitUntil(sdk, s => s.trade?.isOpen === true && s.trade.screen === 'offer', { maxTicks: 100 });
+        if (!open.ok) throw new Error('trade never opened');
+        const slot = invItem(open.state, /law rune/i)!.slot;
         await sdk.sendOfferItem(slot, -1);
-        await waitUntil(sdk, s => (s.trade?.myOffer.length ?? 0) > 0, 20);
+        await waitUntil(sdk, s => (s.trade?.myOffer.length ?? 0) > 0, { maxTicks: 20 });
         await sdk.sendAcceptTrade();
-        const conf = await waitUntil(sdk, s => s.trade?.screen === 'confirm', 60);
-        if (conf) await sdk.sendAcceptTrade();
-        await waitUntil(sdk, s => !s.trade?.isOpen, 60);
+        const conf = await waitUntil(sdk, s => s.trade?.screen === 'confirm', { maxTicks: 60 });
+        if (conf.ok) await sdk.sendAcceptTrade();
+        await waitUntil(sdk, s => !s.trade?.isOpen, { maxTicks: 60 });
         await waitTicks(sdk, 5);
     }
 }, { timeout: 300_000 });
