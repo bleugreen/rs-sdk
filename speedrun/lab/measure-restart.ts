@@ -257,9 +257,10 @@ async function main(): Promise<void> {
     const cp = c1 as { saved: Saved | null; tick: number } | null;
     result('resume-points', r.points.map(p => `${p.step}:${p.mode}`));
     result('after-restart', afterRestart);
+    const sinceKill = (at: number | undefined) => (at === undefined || t.kill === undefined ? null : at - t.kill);
     result('timing-ms', {
-        killToEngineReady: t.engineReady - t.kill, killToDropSeen: t.dropSeen - t.kill, killToAnswering: t.answering - t.kill,
-        killToInWorld: t.inWorld - t.kill, killToRestored: t.restored - t.kill, killToResumed: t.resumed - t.kill, refusals: t.refusals ?? 0,
+        killToEngineReady: sinceKill(t.engineReady), killToDropSeen: sinceKill(t.dropSeen), killToAnswering: sinceKill(t.answering),
+        killToInWorld: sinceKill(t.inWorld), killToRestored: sinceKill(t.restored), killToResumed: sinceKill(t.resumed), refusals: t.refusals ?? 0,
     });
     if (k && cp?.saved && end.saved) {
         // Ticks SCORED was in the world after the checkpoint and before the kill, which the crash erased.
