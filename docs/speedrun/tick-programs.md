@@ -85,8 +85,9 @@ The program sees only the successes (xp drops, one log or fish each), so it repo
   the next tree as well. Willow, oak and cage carry no catch chance, so the program claims
   no figure for them.
 
-A knife run at 8.56 ticks per log on the demo's normal trees (p near 0.46) is about 3.9 ticks
-per expected roll: it beats a plain loop, whose own ticks per log at that level sit near 8.7.
+rs/130's run-host reading on the demo's normal trees is the case in point: 8.56 ticks per log
+set against the plain loop's 6.44 ticks per expected roll reads as the knife losing, but the
+same run is 3.94 ticks per expected roll, a win (corrected by rs/83).
 
 Notes that differ from the lite scripts:
 
