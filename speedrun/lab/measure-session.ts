@@ -35,6 +35,8 @@ for (let i = 0; i < n; i++) {
     const killTick = sdk.getState()!.tick;
     const sessionBefore = session.sessionId;
     const relaunchesBefore = wd.relaunches;
+    const logins = (readFileSync(session.logPath, 'utf-8').match(/logged into/g) ?? []).length;
+    const posBefore = sdk.getState()!.player;
     const t0 = Date.now();
     session.child!.kill('SIGKILL');
     // Wait for the watchdog to relaunch and the new client to tick in world.
@@ -47,15 +49,18 @@ for (let i = 0; i < n; i++) {
     } catch {}
     const backAt = Date.now();
     const runnerLog = readFileSync(session.logPath, 'utf-8');
+    const posAfter = sdk.getState()?.player;
     result('watchdog kill', {
         killTick,
-        newSessionFirstTick: sdk.getState()?.tick,
+        newSessionTick: sdk.getState()?.tick,
+        samePosition: posBefore?.worldX === posAfter?.worldX && posBefore?.worldZ === posAfter?.worldZ,
         detectMs: relaunchAt - t0,
         backInWorldMs: backAt - t0,
         ticksLostApprox: Math.round((backAt - t0) / tickMs()),
         relaunches: wd.relaunches - relaunchesBefore,
-        loginOk: back && /logged into/.test(runnerLog),
-        runnerLogTail: runnerLog.trim().split('\n').slice(-3),
+        newLogins: (runnerLog.match(/logged into/g) ?? []).length - logins,
+        loginOk: back,
+        runnerLogTail: runnerLog.trim().split('\n').slice(-4),
     });
 }
 wd.stop();

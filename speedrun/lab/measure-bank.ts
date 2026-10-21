@@ -7,8 +7,8 @@
 import { depositAll, withdrawMany, type WithdrawSpec } from '../lib/bank';
 import { closeSession, openSession } from '../lib/session';
 import { formatReport, report } from '../lib/ticks';
-import { arg, botArg, labLog, normName, sample } from './common';
-import { bankFixture, LAB_ITEMS } from './setup';
+import { arg, botArg, labLog, sample } from './common';
+import { bankFixture, isLabItem, LAB_ITEMS } from './setup';
 
 const n = Number(arg('n', '3'));
 const session = await openSession(botArg());
@@ -16,8 +16,7 @@ const { sdk, bot } = session;
 const log = labLog('bank');
 
 await bankFixture(session, { ironOre: 100 });
-const wanted = new Set(LAB_ITEMS.map(normName));
-const labIds = sdk.getState()!.bank.items.filter(i => wanted.has(normName(i.name))).map(i => i.id);
+const labIds = LAB_ITEMS.map(d => sdk.getState()!.bank.items.find(i => isLabItem(i.name, d))?.id).filter((id): id is number => id !== undefined);
 if (labIds.length < 28) throw new Error(`bank holds only ${labIds.length} lab items`);
 const ore = sdk.getState()!.bank.items.find(i => i.name === 'Iron ore')!.id;
 const specs = (k: number): WithdrawSpec[] => labIds.slice(0, k).map(id => ({ item: id, n: 1 }));

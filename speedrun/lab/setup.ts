@@ -22,6 +22,12 @@ export const LAB_ITEMS = [
     'uncut_emerald', 'uncut_ruby', 'raw_lobster', 'leather',
 ] as const;
 
+/** In-game names can differ from debug names (raw_shrimp is "Raw shrimps"), so match on a prefix. */
+export function isLabItem(name: string, debugName: string): boolean {
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+    return norm(name).startsWith(norm(debugName));
+}
+
 export async function cheat(sdk: LabSdk, cmd: string): Promise<void> {
     await sdk.sendSay('::' + cmd);
 }
@@ -62,8 +68,8 @@ export async function bankFixture(session: Session, opts: { ironOre?: number } =
     const opened = await bot.openBank();
     if (!opened.success) throw new Error(`openBank: ${opened.message}`);
     await depositAll(sdk);
-    const banked = new Set(sdk.getState()!.bank.items.map(i => i.name.toLowerCase().replace(/ /g, '_')));
-    const missing = LAB_ITEMS.filter(n => !banked.has(n));
+    const banked = sdk.getState()!.bank.items;
+    const missing = LAB_ITEMS.filter(n => !banked.some(i => isLabItem(i.name, n)));
     if (missing.length) {
         await give(sdk, missing);
         await depositAll(sdk);

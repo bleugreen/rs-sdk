@@ -10,6 +10,9 @@ const healthy: WatchdogInputs = {
     gateway: 'active',
     childExit: null,
     nextAttemptAt: 0,
+    msSinceLaunch: 60_000,
+    tickedSinceLaunch: true,
+    launchGraceMs: 30_000,
 };
 
 describe('watchdogDecision', () => {
@@ -31,6 +34,13 @@ describe('watchdogDecision', () => {
     test('no-op while paused or when the account is meant to be out', () => {
         expect(watchdogDecision({ ...healthy, childExit: 1, paused: true })).toBe('ok');
         expect(watchdogDecision({ ...healthy, childExit: 1, expectInWorld: false })).toBe('ok');
+    });
+
+    test('a client still logging in is not stale, but its exit still counts', () => {
+        const fresh = { ...healthy, msSinceLaunch: 3_500, tickedSinceLaunch: false, msSinceAdvance: 3_500, gateway: 'dead' as const };
+        expect(watchdogDecision(fresh)).toBe('ok');
+        expect(watchdogDecision({ ...fresh, childExit: 1 })).toBe('relaunch');
+        expect(watchdogDecision({ ...fresh, msSinceLaunch: 31_000, msSinceAdvance: 31_000 })).toBe('relaunch');
     });
 
     test('waits out the backoff window', () => {

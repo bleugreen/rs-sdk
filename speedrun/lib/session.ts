@@ -12,7 +12,7 @@
 // cannot help. The SDK reconnects to the gateway but never relaunches a client,
 // which is the watchdog's job here.
 
-import { existsSync, mkdirSync, readFileSync } from 'fs';
+import { appendFileSync, existsSync, mkdirSync, openSync, readFileSync } from 'fs';
 import { join } from 'path';
 import type { Subprocess } from 'bun';
 import type { BotSDK } from '../../sdk/index';
@@ -80,6 +80,8 @@ export interface Session {
     /** Last tick seen while inGame, and when it last advanced (wall ms). */
     lastInWorldTick: number;
     lastAdvanceAt: number;
+    /** Wall ms of the last client launch. */
+    launchedAt: number;
     watchdog: Watchdog | null;
     logPath: string;
 }
@@ -126,6 +128,7 @@ export async function openSession(botName: string, opts: OpenOptions = {}): Prom
         childExit: null,
         lastInWorldTick: -1,
         lastAdvanceAt: Date.now(),
+        launchedAt: 0,
         watchdog: null,
         logPath: join(logDir, `${env.BOT_USERNAME}-${opts.client ?? 'lite'}.log`),
     };
@@ -162,11 +165,12 @@ function waitFor(sdk: BotSDK, pred: (s: BotWorldState) => boolean, ms: number): 
 export async function launchClient(session: Session): Promise<void> {
     session.sessionId++;
     session.childExit = null;
-    session.lastAdvanceAt = Date.now();
+    session.launchedAt = Date.now();
     if (session.client === 'lite') {
+        appendFileSync(session.logPath, `[speedrun] launch session ${session.sessionId} at ${new Date().toISOString()}\n`);
         const child = Bun.spawn(['bun', 'src/lite/runner.ts', session.name], {
             cwd: join(ROOT, 'server', 'webclient'),
-            stdout: Bun.file(session.logPath),
+            stdout: openSync(session.logPath, 'a'),
             stderr: 'inherit',
             env: { ...process.env },
         });
@@ -297,6 +301,11 @@ export interface WatchdogInputs {
     /** Wall ms since the in-game tick last advanced. */
     msSinceAdvance: number;
     staleMs: number;
+    /** Wall ms since the last client launch, and whether a tick has advanced since. */
+    msSinceLaunch: number;
+    tickedSinceLaunch: boolean;
+    /** How long a fresh client may take to log in before staleness counts. */
+    launchGraceMs: number;
     gateway: BotStatus['status'] | null;
     /** Lite child exit code, null while running or for the browser. */
     childExit: number | null;
@@ -314,7 +323,9 @@ export type WatchdogVerdict = 'ok' | 'wait' | 'relaunch' | 'give_up';
 export function watchdogDecision(i: WatchdogInputs): WatchdogVerdict {
     if (i.paused || !i.expectInWorld) return 'ok';
     if (i.childExit === 3) return 'give_up';
-    const unhealthy = i.childExit !== null || i.msSinceAdvance > i.staleMs || i.gateway === 'dead' || i.gateway === 'stale';
+    // A client that is still logging in is not stale; only its exit counts.
+    const loggingIn = !i.tickedSinceLaunch && i.msSinceLaunch < i.launchGraceMs;
+    const unhealthy = i.childExit !== null || (!loggingIn && (i.msSinceAdvance > i.staleMs || i.gateway === 'dead' || i.gateway === 'stale'));
     if (!unhealthy) return 'ok';
     return i.now >= i.nextAttemptAt ? 'relaunch' : 'wait';
 }
@@ -339,8 +350,9 @@ export interface WatchdogEvent {
     sessionId: number;
 }
 
-export function startWatchdog(session: Session, opts: { staleTicks?: number; onEvent?: (e: WatchdogEvent) => void } = {}): Watchdog {
+export function startWatchdog(session: Session, opts: { staleTicks?: number; launchGraceMs?: number; onEvent?: (e: WatchdogEvent) => void } = {}): Watchdog {
     const staleMs = (opts.staleTicks ?? 10) * tickMs();
+    const launchGraceMs = opts.launchGraceMs ?? 30_000;
     let paused = false;
     let stopped = false;
     let gaveUp = false;
@@ -361,7 +373,11 @@ export function startWatchdog(session: Session, opts: { staleTicks?: number; onE
                 gateway = (await gatewayStatus(session))?.status ?? null;
             }
             const msSinceAdvance = Date.now() - session.lastAdvanceAt;
-            const verdict = watchdogDecision({ expectInWorld: session.expectInWorld, paused, now: Date.now(), msSinceAdvance, staleMs, gateway, childExit: session.child ? session.childExit : null, nextAttemptAt });
+            const verdict = watchdogDecision({
+                expectInWorld: session.expectInWorld, paused, now: Date.now(), msSinceAdvance, staleMs,
+                msSinceLaunch: Date.now() - session.launchedAt, tickedSinceLaunch: session.lastAdvanceAt > session.launchedAt, launchGraceMs,
+                gateway, childExit: session.child ? session.childExit : null, nextAttemptAt,
+            });
             if (verdict === 'ok') {
                 if (msSinceAdvance < staleMs) attempt = 0;
                 return;
