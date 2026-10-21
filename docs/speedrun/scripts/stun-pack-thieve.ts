@@ -75,6 +75,7 @@ const EATBELOW = Number(flag('eatbelow', String(HP - 20)));
 const MARGIN = Number(flag('margin', '1'));
 const TELE = flag('tele', '0,41,51,29,37'); // the rs/2 knight, (2653,3300)
 const HFIRST = flag('hfirst', 'charge'); // which delay-free action fills 'h' first: charge | arrows
+const DISMISS = flag('dismiss', '1') === '1'; // resume open level-up pages before a stun tick's packets
 
 // k = 8 lands on T+10, the last stun tick. xp gained there queues a level-up page that pops on
 // T+11 and makes the player busy for the attempt (smoke run: 12 ticks to the next roll with a
@@ -156,7 +157,7 @@ if (helper) {
 while (sdk.getState()!.dialog?.isOpen) { await sdk.sendClickDialog(0); await waitTicks(sdk, 1); }
 
 // ------------------------------------------------------------------ shared state
-type Stun = { f: number; level: number; bones: number; casts: number; arrows: number; pages: number; topup: boolean; ate: boolean; next?: number; sent: string[] };
+type Stun = { f: number; level: number; bones: number; casts: number; arrows: number; pages: number; topup: boolean; ate: boolean; next?: number; sent: string[]; dismissed?: number };
 const stuns: Stun[] = [];
 const rolls: Array<{ t: number; ok: boolean }> = [];
 const topups: Array<{ mode: string; armedAt: number; clickAt: number; doneAt?: number; recvTicks?: number; ok: boolean; reason?: string; bones: number; sharks: number; afterRoll: number; gap?: number }> = [];
@@ -169,6 +170,8 @@ let f = -1000, lastStunEnd = -100, lastEat = -100;
 let armed = false, armedAt = -1, reqConfirmed = false, staged = false, stagedLoad = { bones: 0, sharks: 0 };
 let rctx: ReceiverCtx | null = null, rctxStart = -1, rctxTopup: (typeof topups)[number] | null = null;
 let giveRefills = 0, chargeOutSent = 0, setstats = 0;
+let stallStart = -1, aborted: string | undefined;
+const stalls: Array<{ at: number; ticks: number; recovered: boolean; k: number }> = [];
 const unseen: Record<number, number> = {};
 
 const s0 = sdk.getState()!;
@@ -244,6 +247,16 @@ function onScored(s: BotWorldState) {
     if (hp < last.hp) { const d = last.hp - hp; hpLost += d; dmg[d] = (dmg[d] ?? 0) + 1; ev.push(`hp-${d}`); }
     last.hp = hp;
 
+    // Stall watchdog: no roll for 40 ticks (the longest normal gap is a 14-tick stun plus a walk)
+    // means the account stopped acting. Try a blind page resume and a fresh click; give up at 120.
+    const lastRoll = rolls.length ? rolls[rolls.length - 1]!.t : t0;
+    if (!rctx && t - lastRoll >= 40) {
+        if (stallStart < 0) { stallStart = lastRoll; stalls.push({ at: lastRoll - t0, ticks: 0, recovered: false, k: lastRoll - f }); }
+        stalls[stalls.length - 1]!.ticks = t - lastRoll;
+        if ((t - lastRoll) % 5 === 0) { void sdk.sendClickDialog(0, { blind: true }); ev.push('stall-resume'); }
+        if (t - lastRoll >= 120) { aborted = `stalled at tick ${lastRoll - t0}`; done = true; finish(); return; }
+    } else if (stallStart >= 0 && rolls.length && rolls[rolls.length - 1]!.t > stallStart) { stalls[stalls.length - 1]!.recovered = true; stallStart = -1; }
+
     // Stop conditions and level holds.
     if (!HOLD && th.baseLevel >= UNTIL && reachedAt < 0) reachedAt = t;
     if ((HOLD && t - t0 >= TICKS) || (!HOLD && reachedAt > 0) || t - t0 >= (HOLD ? TICKS : 6000)) { done = true; finish(); return; }
@@ -306,7 +319,15 @@ function onScored(s: BotWorldState) {
             log({ t, k, lvl: th.baseLevel, hp, ev, msgs: msgs.map(m => m.text) });
             return;
         }
-        const acts = plan.get(k);
+        let acts = plan.get(k);
+        // An open level-up page is resumed properly first (RESUME_PAUSEBUTTON), at the cost of one
+        // 'h' slot, instead of being closed underneath by Charge's if_close or an inventory op.
+        if (acts !== undefined && acts !== '' && s.dialog?.isOpen && DISMISS) {
+            void sdk.sendClickDialog(0);
+            ev.push('dismiss');
+            st.dismissed = (st.dismissed ?? 0) + 1;
+            acts = acts.replace('h', '');
+        }
         if (acts !== undefined) {
             const sent = runActs(s, acts, click);
             st.sent.push(`${k}:${sent.join('')}`);
@@ -481,6 +502,8 @@ function finish() {
         eats, forcedEats, stunEats, hpLost, damage: dmg, deaths, setstats,
         standaloneReplaced: { bury: tot.bones * 2, charge: +(tot.casts / 5).toFixed(1), fletch: +(tot.arrows / 5).toFixed(1) },
         ticksUnseen: unseen,
+        dismissedInStuns: stuns.reduce((a, x) => a + (x.dismissed ?? 0), 0),
+        stalls, aborted,
         log: LOG,
     };
     log({ summary });
@@ -490,7 +513,12 @@ function finish() {
 
 sdk.onStateUpdate(onScored);
 if (helper) helper.sdk.onStateUpdate(onHelper);
+// Silent state (client gone or logged out): stop after 30 s and still print the summary.
+let lastStateAt = Date.now();
+sdk.onStateUpdate(() => { lastStateAt = Date.now(); });
+const silence = setInterval(() => { if (!done && Date.now() - lastStateAt > 30_000) { aborted = 'no state for 30 s'; done = true; finish(); } }, 1000);
 await finished;
+clearInterval(silence);
 await closeSession(scored);
 if (helper) await closeSession(helper);
 process.exit(0);
