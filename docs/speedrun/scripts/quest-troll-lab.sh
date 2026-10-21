@@ -9,10 +9,16 @@
 #
 # "docs/speedrun/scripts/quest-troll-fights.ts:dad:70:10" runs
 # `bun docs/speedrun/scripts/quest-troll-fights.ts <bot> dad 70 10`.
+# Environment: LAB_TICKRATE (ms, default 300 = production, so bot reaction
+# time is realistic), LAB_SCRIPT_TIMEOUT (seconds per script, default 900),
+# LAB_LOG (log directory, default /tmp/trolllab; build-slot TMPDIRs differ
+# between batches, so a fixed path keeps logs readable afterwards).
 set -u
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
 BOT=$1; shift
-LOG=${LAB_LOG:-${TMPDIR:-/tmp}/trolllab}
+LOG=${LAB_LOG:-/tmp/trolllab}
+TICKRATE=${LAB_TICKRATE:-300}
+SCRIPT_TIMEOUT=${LAB_SCRIPT_TIMEOUT:-900}
 mkdir -p "$LOG"
 
 # Build slots are reused unevenly, so install dependencies when missing.
@@ -30,7 +36,7 @@ wait_for() { # file phrase seconds
     echo "timeout waiting for '$2' in $1"; tail -20 "$1"; return 1
 }
 
-(cd "$ROOT/server/engine" && BUILD_VERIFY=false NODE_TICKRATE=100 LOCAL_STAFF_LEVEL=4 exec bun run src/app.ts) > "$LOG/engine.log" 2>&1 &
+(cd "$ROOT/server/engine" && BUILD_VERIFY=false NODE_TICKRATE=$TICKRATE LOCAL_STAFF_LEVEL=4 exec bun run src/app.ts) > "$LOG/engine.log" 2>&1 &
 PIDS+=($!)
 wait_for "$LOG/engine.log" 'World ready' 900 || exit 1
 
@@ -52,6 +58,13 @@ STATUS=0
 for spec in "$@"; do
     IFS=':' read -r -a parts <<< "$spec"
     echo "=== ${parts[*]} ==="
-    (cd "$ROOT" && bun "${parts[0]}" "$BOT" "${parts[@]:1}") || STATUS=$?
+    out="$LOG/$(basename "${parts[0]}" .ts)-$(IFS=-; echo "${parts[*]:1}").log"
+    (cd "$ROOT" && exec bun "${parts[0]}" "$BOT" "${parts[@]:1}") > "$out" 2>&1 &
+    sp=$!
+    ( sleep "$SCRIPT_TIMEOUT"; kill "$sp" 2>/dev/null && echo "TIMEOUT after ${SCRIPT_TIMEOUT}s" >> "$out" ) &
+    wd=$!
+    wait "$sp" || STATUS=$?
+    kill "$wd" 2>/dev/null
+    grep -v '^\[Bot\|LOGOUT\|^Pathfinding' "$out" | tail -${LAB_TAIL:-40}
 done
 exit $STATUS
