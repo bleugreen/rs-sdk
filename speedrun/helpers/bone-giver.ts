@@ -267,7 +267,7 @@ export class BoneGiver {
         this.setPhase('trading');
         const r = await give(ctx.sdk, t.partner, [{ item: this.re, n: o.n }], { openTimeoutMs: 5_000 });
         if (r.ok) this.trades++;
-        ctx.log('trade', { ok: r.ok, ticks: r.ticks, gave: r.gave.reduce((a, i) => a + i.count, 0), ...req, ...(r.reason ? { reason: r.reason } : {}) });
+        ctx.log('trade', { ok: r.ok, ticks: r.ticks, gave: r.gave.reduce((a, i) => a + i.count, 0), waited: req.waited, sends: req.sends, bounces: req.bounces, ...(r.reason ? { reason: r.reason } : {}) });
     }
 
     /** Keep a request standing until the receiver's click opens the screens. Gives up if it leaves sight or the cue stops. */
