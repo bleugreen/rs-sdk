@@ -4,10 +4,23 @@
 //
 //   bun docs/speedrun/scripts/quest-underground-pass-segments.ts <bot> <segment> [--grid=342] [--thieving=50] [--agility=99]
 //
-// Segments:
-//   post      after completion: cave entrance to the Iban temple doors and through them
-//             (Regicide's second traversal, %upass 10, %regicide_quest 2)
-// Prints one line per step and a RESULT line.
+// Segments (quest order):
+//   start      King Lathas (%upass 0, started bit, grid answer), Koftik outside (-> 1), enter
+//   entry      cave entrance -> Koftik's cloth -> bridge shot (-> 2) -> rope swing -> grid -> lever
+//   gridfall   one wrong grid step, the pit, the climb out
+//   orbs       portcullis -> four orbs -> furnace -> down the well (-> 3)
+//   area2      cage, mud, ledge, Thieving-50 cages, pipe, railing, boulder (-> 4), horn, tunnel
+//   paladins   three paladins, badges and horn into the well, the door (-> 5)
+//   cavern     Nilhoof (-> 6), cat, witch, chest (-> 7), three demons, shadow, then `brew`
+//   brew       (resumable) brew, tomb, ashes, Kalrag, dove
+//   iban       disciple, robes only, temple doors (-> 8), doll in the pit (-> 9), Koftik, out
+//   handin     King Lathas at %upass 9 (-> 10, the reward)
+//   fights     every fight, --rounds times, at --att/--str/--def/--hp
+//   swingfail / ledgefail / bridgefall   cost of a failed rope swing, ledge, broken bridge
+//   post       after completion: cave entrance to the Iban temple doors and through them
+//              (Regicide's second traversal, %upass 10, %regicide_quest 2)
+// Prints one line per step (click to idle, minus a 3-tick settle) and a RESULT line.
+// Segment TOTAL rows also count the 3-tick settle before each step; sum the steps instead.
 
 import { runScript } from '../../../sdk/runner';
 import { Lab, ibanmulti, BIT } from './quest-underground-pass-lib';
