@@ -2,7 +2,7 @@
 # One self-contained lab session: start the engine, the gateway and a headless
 # lite client per bot on one port block, run a command, then tear it all down.
 #
-#   BOTS="dig16 tt16" docs/speedrun/scripts/quest-lab-session.sh \
+#   BOTS="dig16 tt16" docs/speedrun/scripts/quest-digsite-lab-session.sh \
 #       bun docs/speedrun/scripts/quest-digsite-finds.ts dig16
 #
 # Why a wrapper: when an agent's long-lived terminals and its one-shot batches
@@ -23,7 +23,7 @@ MGMT=$((WEB + 1))
 HIS=$((WEB + 2))
 NODE=${NODE_PORT:-43770}
 AGENT=${AGENT_PORT:-7970}
-LOG=${LAB_LOG_DIR:-${TMPDIR:-/tmp}/questlab-$WEB}
+LOG=${LAB_LOG_DIR:-${TMPDIR:-/tmp}/questlab-digsite-$WEB}
 BOTS=${BOTS:-}
 mkdir -p "$LOG"
 

@@ -5,14 +5,14 @@
 //   C. digging a level 3 site with a trowel until the Talisman of Zaros
 //      (stage 5, area_digsite.rs2:400-507)
 //
-//   BOTS=dig16 docs/speedrun/scripts/quest-lab-session.sh \
+//   BOTS=dig16 docs/speedrun/scripts/quest-digsite-lab-session.sh \
 //       bun docs/speedrun/scripts/quest-digsite-finds.ts dig16 [trials] [thieving]
 //
 // Each trial resets the inventory and the quest varps, so the attempt counts
 // are independent draws. The script reacts to each result as soon as the
 // state shows it, so the ticks per attempt include a bot's own latency.
 import { runScript } from '../../../sdk/runner';
-import { cheat, clearInv, drainChat, findLoc, findNpcWithOp, geometric, give, has, invSlot, runDialog, stats, tele, tick, waitForMessage } from './quest-lab';
+import { cheat, clearInv, drainChat, findLoc, findNpcWithOp, geometric, give, has, invSlot, runDialog, stats, tele, tick, waitForMessage } from './quest-digsite-lab';
 
 const TRIALS = parseInt(process.argv[3] ?? '10');
 const THIEVING = parseInt(process.argv[4] ?? '25');

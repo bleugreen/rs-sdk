@@ -1,7 +1,7 @@
 // The Dig Site, played start to finish on a lab account in route order, with
 // every segment timed in server ticks (stock lite client).
 //
-//   NODE_TICKRATE=300 BOTS=dig16 docs/speedrun/scripts/quest-lab-session.sh \
+//   NODE_TICKRATE=300 BOTS=dig16 docs/speedrun/scripts/quest-digsite-lab-session.sh \
 //       bun docs/speedrun/scripts/quest-digsite-run.ts dig16
 //
 // Setup (not timed): stats set to the quest's enforced minimums (Thieving 25,
@@ -14,7 +14,7 @@
 //
 // Prints SEG <json> per segment and SUMMARY <json> at the end.
 import { runScript } from '../../../sdk/runner';
-import { cheat, clearInv, give, QuestBot, stats, tele, tick, waitUntil } from './quest-lab';
+import { cheat, clearInv, give, QuestBot, stats, tele, tick, waitUntil } from './quest-digsite-lab';
 
 // Answers that pass each exam once the students' errands are done (examiner.rs2).
 const EXAM1 = [/Yes, I certainly am/, /The study of the earth, its contents, and history/, /All that have passed the appropriate/, /Gloves and boots to be worn/];
