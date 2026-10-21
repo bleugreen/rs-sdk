@@ -402,7 +402,8 @@ Drives the browser page's in-page tick programs (`server/webclient/src/bot/progr
 design in `docs/speedrun/tick-programs.md`) over the ordinary `sdk_action` relay:
 `startProgram(sdk, name, params)`, `awaitProgram(sdk, runId, {onProgress})` (resolves on done,
 stopped or replaced, rejects on a fault or a page that stops publishing), `runProgram`,
-`programCounters`, and `probeInPage` (the host gate's probe over the direct path). Programs:
+`programCounters`, `marksSince` (the per-event tick stamps a poller has not seen yet, e.g.
+`knife-cycle`'s `marks.successes`), and `probeInPage` (the host gate's probe over the direct path). Programs:
 `probe`, `knife-cycle`, `knife-mine`, `pickpocket`, `agility`.
 
 **`knife-cycle` with bones (S07).** Knife Woodcutting that buries a bone every 3-tick cycle:
@@ -419,8 +420,10 @@ The bones come from the inventory; with none left the program runs the plain kni
 the same labels and resumes burying when bones appear. Pass `trees` whenever `bury` is on: a
 click on a tree that needs a walk never rolls in a bury cycle. The status carries `buried`,
 `burySent`, `noBoneCycles`, `switches` (tree falls absorbed in the lock) and the gauges
-`bonesLeft`, `buriesPerTick`, `ticksPerRoll`, `ticksPerRollSpan` and `lastRollGap`, so a step
-script sees a lost 3-tick lock as gaps over 3. The program does not trade: a top-up is the step
+`bonesLeft`, `buriesPerTick`, `ticksPerSuccess`, `ticksPerSuccessSpan` and `lastSuccessGap`, so a
+step script sees a lost 3-tick lock as success gaps that are not multiples of 3. A success is one
+log, not one roll: ticks per success is the cadence over the catch chance (see
+`docs/speedrun/tick-programs.md`, "What the knife cycle reports"). The program does not trade: a top-up is the step
 script's (stop, `trade.ts` `receiveFrom`, start again). Measured 0.329 bones per tick at oak
 WC 60 with the knife cadence unchanged (`docs/speedrun/skills/woodcutting.md` section 9).
 

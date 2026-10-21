@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { createKnifeCycle, CYCLE_METHODS, lockWindow, SHAFTS_BUTTON } from './knife-cycle.js';
+import { catchChance, createKnifeCycle, CYCLE_METHODS, lockWindow, SHAFTS_BUTTON } from './knife-cycle.js';
 import { Harness, makeState, type StateSpec } from './testkit.js';
 
 /**
@@ -146,7 +146,9 @@ describe('knife cycle', () => {
         expect(gaps.slice(1).every(g => g === 3)).toBe(true);
         expect(rollTicks.length).toBeGreaterThan(60);
         expect(h.status.result).toMatchObject({ resyncs: 0 });
-        expect((h.status.result as { ticksPerRoll: number }).ticksPerRoll).toBeLessThan(3.05);
+        expect((h.status.result as { ticksPerSuccess: number }).ticksPerSuccess).toBeLessThan(3.05);
+        // willow carries no catch chance, so no expected-roll figure is claimed
+        expect(h.status.result).not.toHaveProperty('ticksPerExpectedRoll');
     });
 
     test('the starter bundle goes out on the label that shows the roll, in order', () => {
@@ -227,6 +229,16 @@ describe('knife cycle', () => {
         expect((h.status.result as { starters: number }).starters).toBeGreaterThanOrEqual(rollTicks.length - 1);
     });
 
+    test('ticks per expected roll weights each success by the catch chance at its level', () => {
+        // every roll in the stand-in succeeds; the harness level is 99, where p is 201/256
+        const { h } = serverRun({ method: 'tree', ticks: 120 });
+        const r = h.status.result as { ticksPerSuccess: number; ticksPerExpectedRoll: number };
+        const p = catchChance(CYCLE_METHODS.tree!, 99)!;
+        expect(r.ticksPerExpectedRoll).toBeCloseTo(r.ticksPerSuccess * p, 2);
+        expect(r.ticksPerExpectedRoll).toBeLessThan(r.ticksPerSuccess);
+        expect(h.status.gauges.ticksPerExpectedRoll).toBe(r.ticksPerExpectedRoll);
+    });
+
     test('a tree that yields nothing is avoided and the next one is tried', () => {
         const { rollTicks } = serverRun({ method: 'tree', ticks: 200, deadTrees: 2 });
         expect(rollTicks.length).toBeGreaterThan(10);
@@ -245,15 +257,36 @@ describe('knife cycle', () => {
         expect(h.sent.filter(s => s.action.type === 'interactLoc')).toHaveLength(1);
     });
 
-    test('ends after the requested rolls with a summary', () => {
-        const { h } = serverRun({ method: 'willow', ticks: 500, params: { rolls: 20 } });
+    test('every success is stamped in the status as it happens', () => {
+        // a scripted stream: xp on chosen ticks, the status read after every tick
+        const h = new Harness('cycle', createKnifeCycle);
+        const xpOn = new Set([1005, 1009, 1012, 1015, 1021]);
+        const state = (tick: number, xp: number) => makeState({ tick, skills: { Woodcutting: { xp } }, inventory: ['Knife', 'Logs', 'Logs'], locs: [{ id: 1, x: 3201, z: 3204, name: 'Willow', options: ['Chop down'] }] });
+        let xp = 0;
+        h.start('cycle', { method: 'willow', maxTicks: 100 }, state(1000, xp));
+        const seen: number[] = [];
+        for (let t = 1001; t <= 1025; t++) {
+            if (xpOn.has(t)) {
+                xp += 500;
+                seen.push(t);
+            }
+            h.step(state(t, xp));
+            expect(h.status.phase).toBe('running');
+            expect(h.status.marks.successes ?? { count: 0, ticks: [] }).toEqual({ count: seen.length, ticks: seen });
+        }
+        expect(h.status.counters.successes).toBe(5);
+    });
+
+    test('ends after the requested successes with a summary', () => {
+        const { h } = serverRun({ method: 'willow', ticks: 500, params: { successes: 20 } });
         expect(h.status.phase).toBe('done');
-        expect(h.status.result).toMatchObject({ rolls: 20, technique: 'knife' });
+        expect(h.status.result).toMatchObject({ successes: 20, technique: 'knife' });
+        expect(h.status.counters.successes).toBe(20);
     });
 
     test('rejects a start with no end condition or an unknown method', () => {
-        expect(() => createKnifeCycle({ method: 'willow' })).toThrow(/rolls/);
-        expect(() => createKnifeCycle({ method: 'nope', rolls: 5 })).toThrow(/unknown method/);
+        expect(() => createKnifeCycle({ method: 'willow' })).toThrow(/give successes/);
+        expect(() => createKnifeCycle({ method: 'nope', successes: 5 })).toThrow(/unknown method/);
     });
 
     test('a tree that falls on a roll keeps the lock: the bundle clicks a live one', () => {
@@ -315,7 +348,7 @@ describe('knife cycle: bury variant', () => {
         expect(res.burySent - res.buried).toBeLessThanOrEqual(1);
         expect(res.buried).toBeGreaterThanOrEqual(rollTicks.length - 3);
         expect(h.status.gauges.buriesPerTick).toBeGreaterThan(0.3);
-        expect(h.status.gauges.lastRollGap).toBe(3);
+        expect(h.status.gauges.lastSuccessGap).toBe(3);
     });
 
     test('when the bones run out the roll label sends the plain knife bundle and no label is lost', () => {
@@ -366,14 +399,14 @@ describe('knife cycle: bury variant', () => {
         const { h, rollTicks } = serverRun({ method: 'oak', ticks: 120, inventory: KIT, bones: 40, deadTrees: 1, params: { bury: true, trees: [[3201, 3204], [3202, 3204]] } });
         expect(h.sent.some(s => s.action.type === 'interactLoc' && (s.action as { x: number }).x === 3200)).toBe(false);
         expect(gapsOf(rollTicks).slice(1).every(g => g === 3)).toBe(true);
-        expect(() => createKnifeCycle({ method: 'oak', rolls: 5, trees: [] })).toThrow(/trees/);
-        expect(() => createKnifeCycle({ method: 'oak', rolls: 5, trees: [[1, 2, 3]] })).toThrow(/trees\[0\]/);
+        expect(() => createKnifeCycle({ method: 'oak', successes: 5, trees: [] })).toThrow(/trees/);
+        expect(() => createKnifeCycle({ method: 'oak', successes: 5, trees: [[1, 2, 3]] })).toThrow(/trees\[0\]/);
     });
 
     test('bury is refused where the lock cannot carry it', () => {
-        expect(() => createKnifeCycle({ method: 'fly', rolls: 5, bury: true })).toThrow(/not supported/);
-        expect(() => createKnifeCycle({ method: 'tree', rolls: 5, bury: true })).toThrow(/not supported/);
-        expect(() => createKnifeCycle({ method: 'oak', technique: 'plain', rolls: 5, bury: true })).toThrow(/knife technique/);
-        expect(() => createKnifeCycle({ method: 'oak', rolls: 5, bury: '^dragon bones$' })).not.toThrow();
+        expect(() => createKnifeCycle({ method: 'fly', successes: 5, bury: true })).toThrow(/not supported/);
+        expect(() => createKnifeCycle({ method: 'tree', successes: 5, bury: true })).toThrow(/not supported/);
+        expect(() => createKnifeCycle({ method: 'oak', technique: 'plain', successes: 5, bury: true })).toThrow(/knife technique/);
+        expect(() => createKnifeCycle({ method: 'oak', successes: 5, bury: '^dragon bones$' })).not.toThrow();
     });
 });

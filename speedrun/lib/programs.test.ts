@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { ActionResult } from '../../sdk/types';
 import { baseState, FakeSdk, flush, type SentAction } from './fake-sdk';
-import { awaitProgram, probeInPage, ProgramError, programCounters, type ProgramStatus, runProgram, startProgram } from './programs';
+import { awaitProgram, marksSince, probeInPage, ProgramError, programCounters, type ProgramStatus, runProgram, startProgram } from './programs';
 
 /** A FakeSdk with the relay the page answers: records program actions, replies like ProgramRuntime.command. */
 class PageSdk extends FakeSdk {
@@ -24,7 +24,7 @@ class PageSdk extends FakeSdk {
 }
 
 function status(p: Partial<ProgramStatus>): ProgramStatus {
-    return { runId: 1, name: 'x', phase: 'running', params: {}, startedTick: 100, tick: 100, progressTick: 100, counters: {}, gauges: {}, packets: 0, deferred: 0, skippedTicks: 0, maxTickMs: 0, frames: frames(), publish: frames(), react: { n: 0, p50: 0, p90: 0, max: 0 }, loops: { last: 0, p10Last10s: 0, min: 0 }, ...p };
+    return { runId: 1, name: 'x', phase: 'running', params: {}, startedTick: 100, tick: 100, progressTick: 100, counters: {}, gauges: {}, marks: {}, packets: 0, deferred: 0, skippedTicks: 0, maxTickMs: 0, frames: frames(), publish: frames(), react: { n: 0, p50: 0, p90: 0, max: 0 }, loops: { last: 0, p10Last10s: 0, min: 0 }, ...p };
 }
 
 function frames() {
@@ -34,15 +34,28 @@ function frames() {
 describe('speedrun programs', () => {
     test('start sends one program action over the relay', async () => {
         const sdk = new PageSdk(baseState());
-        const s = await startProgram(sdk, 'knife-cycle', { method: 'fly', rolls: 100 });
-        expect(sdk.actions).toEqual([{ type: 'program', op: 'start', name: 'knife-cycle', params: { method: 'fly', rolls: 100 }, reason: 'speedrun' }]);
+        const s = await startProgram(sdk, 'knife-cycle', { method: 'fly', successes: 100 });
+        expect(sdk.actions).toEqual([{ type: 'program', op: 'start', name: 'knife-cycle', params: { method: 'fly', successes: 100 }, reason: 'speedrun' }]);
         expect(s.runId).toBe(1);
+    });
+
+    test('marksSince returns the stamps a poller has not seen, and what it lost', () => {
+        const at = (count: number, ticks: number[]) => status({ marks: { successes: { count, ticks } } });
+        expect(marksSince(null, 'successes', 0)).toEqual({ count: 0, ticks: [], missed: 0 });
+        let r = marksSince(at(2, [103, 106]), 'successes', 0);
+        expect(r).toEqual({ count: 2, ticks: [103, 106], missed: 0 });
+        r = marksSince(at(2, [103, 106]), 'successes', r.count);
+        expect(r).toEqual({ count: 2, ticks: [], missed: 0 });
+        r = marksSince(at(4, [103, 106, 109, 112]), 'successes', r.count);
+        expect(r).toEqual({ count: 4, ticks: [109, 112], missed: 0 });
+        // the window holds 2 here; 5 new stamps since the last poll lose 3
+        expect(marksSince(at(9, [124, 127]), 'successes', 4)).toEqual({ count: 9, ticks: [124, 127], missed: 3 });
     });
 
     test('a refused start throws with the page message', async () => {
         const sdk = new PageSdk(baseState());
-        sdk.reply = () => ({ success: false, message: 'bad parameters: give rolls' });
-        await expect(startProgram(sdk, 'knife-cycle')).rejects.toThrow(/give rolls/);
+        sdk.reply = () => ({ success: false, message: 'bad parameters: give successes' });
+        await expect(startProgram(sdk, 'knife-cycle')).rejects.toThrow(/give successes/);
     });
 
     test('runProgram resolves on done, reporting progress on the way', async () => {

@@ -27,6 +27,8 @@ export interface ProgramStatus {
     progressTick: number;
     counters: Record<string, number>;
     gauges: Record<string, number>;
+    /** Per-event tick stamps published while the run goes; read them with `marksSince`. */
+    marks: Record<string, ProgramMark>;
     packets: number;
     deferred: number;
     skippedTicks: number;
@@ -49,6 +51,25 @@ export interface ProgramStatus {
     result?: unknown;
     endedTick?: number;
     logTail?: string[];
+}
+
+/** server/webclient/src/bot/programs/types.ts: `count` grows through a run, `ticks` keeps the last 64 stamps. */
+export interface ProgramMark {
+    count: number;
+    ticks: number[];
+}
+
+/**
+ * The stamps of mark `name` since a poll that had seen `seen` of them (0 at a new runId):
+ * `ticks` the new ones in order, `count` the value to pass next time, and `missed` the new
+ * stamps that already fell out of the page's window (the poller was too slow).
+ */
+export function marksSince(status: ProgramStatus | null | undefined, name: string, seen: number): { count: number; ticks: number[]; missed: number } {
+    const m = status?.marks?.[name];
+    if (!m) return { count: seen, ticks: [], missed: 0 };
+    const fresh = Math.max(0, m.count - seen);
+    const ticks = m.ticks.slice(m.ticks.length - Math.min(fresh, m.ticks.length));
+    return { count: m.count, ticks, missed: fresh - ticks.length };
 }
 
 /** server/webclient/src/bot/programs/frames.ts */

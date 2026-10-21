@@ -6,12 +6,14 @@
 //   probe        in-page latency probe            --trials=60 [--no-tele]
 //   mine         knife iron rotation at respawn 13 (player_count pinned locally)
 //                                                --ores=200 [--starter=knife|none]
-//   fly          knife fly fishing, Lumbridge     --level=20 --until=99 | --rolls=N [--technique=plain]
-//   willow       knife willows, Draynor           --rolls=150
-//   oak          knife oaks, Taverley (2914,3494) --rolls=200 [--level=60] [--bury [--prayer=43]]
+//   fly          knife fly fishing, Lumbridge     --level=20 --until=99 | --successes=N [--technique=plain]
+//   willow       knife willows, Draynor           --successes=150
+//   oak          knife oaks, Taverley (2914,3494) --successes=200 [--level=60] [--bury [--prayer=43]]
 //                --bury buries dragon bones inside the cycle; a ::give tops them up at 3 left
 //                (off the scored clock; the run's trades cost rs/105's 5 ticks per load on top)
-//   tree         knife normal trees, Lumbridge    --rolls=150 [--level=1]  (the demo loop)
+//   tree         knife normal trees, Lumbridge    --successes=150 [--level=1]  (the demo loop)
+//                (knife modes: --successes counts xp drops, one log or fish each; the result's
+//                ticksPerExpectedRoll, on tree and fly, is the figure to set against the cadence)
 //   pickpocket   Ardougne knight, eat in windows  --level=55 --rolls=300 [--hold=1]
 //   agility      Wilderness course                --laps=10 [--course=gnome]
 //
@@ -114,7 +116,7 @@ await runScript(async ({ bot: actions, sdk }) => {
             }
             const params: Record<string, unknown> = { method, technique: flag('technique', 'knife') };
             if (flag('until')) params.untilLevel = num('until', 99);
-            else params.rolls = num('rolls', 150);
+            else params.successes = num('successes', 150);
             params.maxTicks = num('maxticks', 30_000);
             if (flag('reanchor')) params.reanchor = flag('reanchor');
             const end = await runProgram(sdk, 'knife-cycle', params, { onProgress: progress });
@@ -133,7 +135,7 @@ await runScript(async ({ bot: actions, sdk }) => {
                 await tele('0,45,54,34,38', 2914, 3494);
                 while (sdk.getState()?.dialog.isOpen) { await sdk.sendClickDialog(0); await sdk.waitForTicks(1); }
             }
-            const params: Record<string, unknown> = { method: 'oak', technique: flag('technique', 'knife'), rolls: num('rolls', 200), maxTicks: num('maxticks', 30_000) };
+            const params: Record<string, unknown> = { method: 'oak', technique: flag('technique', 'knife'), successes: num('successes', 200), maxTicks: num('maxticks', 30_000) };
             // the three oaks reached from 2914,3494 (woodcutting.md section 2); --any-tree clicks the nearest oak
             if (!has('any-tree')) params.trees = [[2912, 3491], [2914, 3495], [2915, 3492]];
             if (bury) params.bury = '^dragon bones$';

@@ -40,6 +40,14 @@
 //
 // Plain (`technique: 'plain'`): click the target, re-click only when it is gone,
 // the player went idle, or after dropping a full inventory.
+//
+// Report: a roll is one swing of the cadence (every 3 ticks locked, `plainCycle` plain), and
+// it succeeds with the method's catch chance. `successes` counts the xp drops, one log or
+// fish each, and `ticksPerSuccess` is the mean gap between them, so it sits above the cadence
+// by 1/p. Where the method has a catch chance, `ticksPerExpectedRoll` weights each success as
+// 1/p rolls at the level it was rolled at (as tickmanip-demo-report.ts does); that is the
+// figure to set against 3 and `plainCycle`. The status carries every success's tick while the
+// run goes (`marks.successes`), so a poller can time each log or fish.
 
 import type { BotWorldState, InventoryItem } from '../types.js';
 import type { ProgramContext, ProgramParams, TickProgram } from './types.js';
@@ -129,10 +137,10 @@ function parseMethod(value: unknown): CycleMethod {
 export function createKnifeCycle(params: ProgramParams): TickProgram {
     const method = parseMethod(params.method);
     const technique = oneOf(params.technique, ['knife', 'plain'] as const, 'knife', 'technique');
-    const rollsTarget = num(params.rolls, Infinity, 'rolls');
+    const successTarget = num(params.successes, Infinity, 'successes');
     const untilLevel = num(params.untilLevel, 0, 'untilLevel');
     const maxTicks = num(params.maxTicks, Infinity, 'maxTicks');
-    if (rollsTarget === Infinity && !untilLevel && maxTicks === Infinity) throw new Error('give rolls, untilLevel or maxTicks');
+    if (successTarget === Infinity && !untilLevel && maxTicks === Infinity) throw new Error('give successes, untilLevel or maxTicks');
     const xpLag = num(params.xpLag, 0, 'xpLag');
     const lead = num(params.lead, 0, 'lead');
     const dismiss = oneOf(params.dismiss, ['now', 'blind', 'none'] as const, 'now', 'dismiss');
@@ -160,7 +168,11 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
     let currentTile: [number, number] | null = null;
     let lastXp = 0;
     let lastLevel = 0;
-    const rolls = new GapCounter();
+    const successes = new GapCounter();
+    // The gaps `successes` counts, in ticks and in rolls expected at the catch chance.
+    let gapTicks = 0;
+    let gapExpectedRolls = 0;
+    const ticksPerExpectedRoll = () => (gapExpectedRolls ? Math.round((gapTicks / gapExpectedRolls) * 1000) / 1000 : Number.NaN);
     let anchor: number | null = null;
     let anchorLead = 0;
     let awaitXpSince: number | null = null;
@@ -248,20 +260,21 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
         ctx.count('burySent');
         return true;
     };
-    const breakAt = (t: number) => rolls.break(t);
+    const breakAt = (t: number) => successes.break(t);
 
     const summary = () => {
-        const g = rolls.stats();
+        const g = successes.stats();
         return {
             method: params.method,
             technique: plain && technique === 'knife' ? 'knife->plain' : technique,
-            rolls: g.events,
+            successes: g.events,
             ticks: lastTick - startTick,
-            ticksPerRoll: g.ticksPerEvent,
+            ticksPerSuccess: g.ticksPerEvent,
+            ...(method.catchChance ? { ticksPerExpectedRoll: ticksPerExpectedRoll() } : {}),
             gaps: g.gaps,
             histogram: g.histogram,
             span: g.span,
-            ticksPerRollOverSpan: g.events > 1 ? Math.round((g.span / (g.events - 1)) * 1000) / 1000 : Number.NaN,
+            ticksPerSuccessOverSpan: g.events > 1 ? Math.round((g.span / (g.events - 1)) * 1000) / 1000 : Number.NaN,
             starters,
             resyncs,
             moves,
@@ -296,16 +309,24 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
             const xp = skillXp(s, method.skill);
             let xpNow = false;
             if (xp > lastXp) {
-                const prev = rolls.lastTick;
-                rolls.event(t);
+                const prev = successes.lastTick;
+                const gap = successes.event(t);
+                // rolled at the level before any level-up this xp brings (lastLevel is updated below)
+                const p = catchChance(method, lastLevel);
+                if (gap !== null && p) {
+                    gapTicks += gap;
+                    gapExpectedRolls += 1 / p;
+                }
                 xpNow = true;
                 lastXp = xp;
-                ctx.count('rolls');
-                // The roll cadence: a lost 3-tick lock shows as gaps over 3 and a rising span figure.
-                ctx.gauge('ticksPerRoll', rolls.ticksPerEvent);
-                if (prev !== null) ctx.gauge('lastRollGap', t - prev);
-                const g = rolls.stats();
-                if (g.events > 1) ctx.gauge('ticksPerRollSpan', Math.round((g.span / (g.events - 1)) * 1000) / 1000);
+                ctx.count('successes');
+                ctx.mark('successes');
+                // A lost 3-tick lock shows as success gaps that are not multiples of 3 and a rising span figure.
+                ctx.gauge('ticksPerSuccess', successes.ticksPerEvent);
+                if (p) ctx.gauge('ticksPerExpectedRoll', ticksPerExpectedRoll());
+                if (prev !== null) ctx.gauge('lastSuccessGap', t - prev);
+                const g = successes.stats();
+                if (g.events > 1) ctx.gauge('ticksPerSuccessSpan', Math.round((g.span / (g.events - 1)) * 1000) / 1000);
                 ctx.progress();
             }
             if (bonesRe) {
@@ -337,7 +358,7 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
             } else dialogOpenSince = null;
             idleTicks = (s.player?.animId ?? -1) === -1 ? idleTicks + 1 : 0;
 
-            if (rolls.count >= rollsTarget || t - startTick > maxTicks || (untilLevel && lvl >= untilLevel)) return ctx.done(summary());
+            if (successes.count >= successTarget || t - startTick > maxTicks || (untilLevel && lvl >= untilLevel)) return ctx.done(summary());
 
             // Answer a level-up the tick it is seen (and again if it is still open 3 ticks on).
             // The engine opens it after R+1's packets, so the starter already in is unaffected
@@ -347,7 +368,7 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
                 ctx.send({ type: 'clickDialogOption', optionIndex: 0, ...(dismiss === 'blind' ? { blind: true } : {}) }, 'dismiss dialog');
             }
 
-            const lastXpTick = rolls.lastTick ?? -1;
+            const lastXpTick = successes.lastTick ?? -1;
             const targetGone = current !== null && !sameTarget(current, findTarget(s));
             if (xpNow || targetGone) ctx.log(`${xpNow ? 'xp' : ''}${xpNow && targetGone ? ', ' : ''}${targetGone ? 'target gone' : ''} (anchor ${anchor ?? '-'}, awaiting xp since ${awaitXpSince ?? '-'})`);
 
@@ -448,7 +469,7 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
                 if (t < cooldownUntil) return;
                 // The first lock always anchors on observed xp: it needs no warm-up walk, and at
                 // the page's latency of 1 the anchor is exact.
-                if (reanchor === 'xp' || rolls.count === 0) {
+                if (reanchor === 'xp' || successes.count === 0) {
                     if (click(ctx)) {
                         awaitXpSince = t;
                         breakAt(t);

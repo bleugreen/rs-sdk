@@ -35,7 +35,15 @@ the time, and the reactive steps are worth roughly 3,000 ticks over the route.
   phase (`running`, `done`, `fault`, `stopped`, `replaced`), counters and gauges,
   packets, `deferred`, `skippedTicks` (ticks the page decoded together in one pass),
   the slowest `onTick`, and the result. An ended run also carries its last 40 log
-  lines (`logTail`), because the production bundle strips console calls. For the host
+  lines (`logTail`), because the production bundle strips console calls.
+  `marks` carries per-event tick stamps while the run goes (`ctx.mark(name)`):
+  `marks[name] = {count, ticks}`, where `count` only grows during the run and `ticks`
+  holds the last 64 stamps. A poller keeps the `count` it last saw and takes that many
+  fewer from the end of `ticks` (`speedrun/lib/programs.ts` `marksSince`, which also
+  reports stamps lost to a poll slower than the window). A stamp is the decoded tick the
+  program saw the event on, the last of them when the page decodes several in one pass.
+  Counters and gauges stay numbers; marks exist because a count cannot time each event
+  when several land between polls. For the host
   gate's in-run rule it adds:
   - `frames`: intervals between server frames, from the raw websocket arrival of each
     PLAYER_INFO message (`ClientStream.receivedAt`), with **catch-ups** (an interval
@@ -64,9 +72,33 @@ the host gate can select with the same parameters.
 |---|---|---|---|
 | `probe` | `speedrun/lib/hostgate.ts` `probeOnTime` | `trials`, `maxWait` | n/a |
 | `knife-mine` | `tickmanip-mine.ts` | `steps` (stand>rock pairs), `respawn`, `ores`, `starter: 'knife' \| 'none'` | `starter: 'none'` (plain and adjacent-rock transitions) |
-| `knife-cycle` | `tickmanip-cycle.ts`; `bury` from `bones-wc.ts --mode=knifebury` | `method` (`fly`, `willow`, `oak`, `tree`, `cage`, or an object), `rolls` / `untilLevel` / `maxTicks`, `reanchor`, `trees` (the loc tiles reached from the standing tile), `bury` (oak and willow) | `technique: 'plain'` (no bury) |
+| `knife-cycle` | `tickmanip-cycle.ts`; `bury` from `bones-wc.ts --mode=knifebury` | `method` (`fly`, `willow`, `oak`, `tree`, `cage`, or an object), `successes` / `untilLevel` / `maxTicks`, `reanchor`, `trees` (the loc tiles reached from the standing tile), `bury` (oak and willow) | `technique: 'plain'` (no bury) |
 | `pickpocket` | `thieving-pickpocket.ts` (`--eat=auto`) | `npc`, `rolls`, `food`, `eatBelow`, `forcedBelow` | n/a: it clicks every tick |
 | `agility` | `agility-course.ts` | `course` (`gnome`, `barbarian`, `wilderness`, or an object; `agility-courses.ts`), `laps` | `technique: 'plain'` waits `settleTicks` after each obstacle |
+
+### What the knife cycle reports
+
+A **roll** is one swing of the gathering cadence: every 3 ticks with the knife locked,
+every `plainCycle` ticks on the plain loop. It succeeds with the method's catch chance p.
+The program sees only the successes (xp drops, one log or fish each), so it reports:
+
+- `successes` (counter and result) and `ticksPerSuccess`: ticks per log or fish, the mean
+  gap between xp drops outside re-bootstraps and resyncs. This is the cadence divided by p,
+  so it is **not** comparable with the 3 and 4 of the loops. The `successes` parameter stops
+  the run after that many.
+- `ticksPerExpectedRoll` (result and gauge, on methods with a `catchChance`: `tree`,
+  `fly`): the same gaps over the rolls expected for them, each success weighted 1/p at
+  the level it was rolled at, as `scripts/tickmanip-demo-report.ts` does. This is the figure
+  to set against 3 (knife) and `plainCycle` (plain); on normal trees it carries the walk to
+  the next tree as well. Willow, oak and cage carry no catch chance, so the program claims
+  no figure for them.
+- `marks.successes`: the tick of every success while the run goes (count and last 64
+  ticks), so a host poller can stamp each log or fish, for example to price the loop in
+  catch-up minutes against calm ones.
+
+rs/130's run-host reading on the demo's normal trees is the case in point: 8.56 ticks per log
+set against the plain loop's 6.44 ticks per expected roll reads as the knife losing, but the
+same run is 3.94 ticks per expected roll, a win (corrected by rs/83).
 
 Notes that differ from the lite scripts:
 
