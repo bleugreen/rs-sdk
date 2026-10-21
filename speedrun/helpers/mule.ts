@@ -228,6 +228,7 @@ async function ensureOutOfTutorial(ctx: RoleContext): Promise<void> {
     for (let i = 0; i < 30; i++) {
         const p = sdk.getState()?.player;
         if (p && !onTutorialIsland(p.worldX, p.worldZ)) return;
+        if (i === 0) ctx.log('skipping tutorial', { x: p?.worldX, z: p?.worldZ });
         await bot.skipTutorial();
         await sdk.waitForTicks(2).catch(() => {});
     }
@@ -243,6 +244,8 @@ function distanceTo(sdk: BotSDK, x: number, z: number): number {
 async function walkNear(ctx: RoleContext, x: number, z: number, tolerance: number): Promise<boolean> {
     for (let attempt = 0; attempt < 5 && distanceTo(ctx.sdk, x, z) > tolerance; attempt++) {
         if (ctx.signal.aborted) return false;
+        const p = ctx.sdk.getState()?.player;
+        ctx.log('walking', { from: p ? [p.worldX, p.worldZ] : null, to: [x, z] });
         const r = await ctx.bot.walkTo(x, z, tolerance);
         if (!r.success) ctx.log('walk failed', { x, z, message: r.message });
     }
