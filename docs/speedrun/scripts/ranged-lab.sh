@@ -19,7 +19,8 @@ BOT=$1; shift
 LOG=${LAB_LOG:-${TMPDIR:-/tmp}/rangedlab}
 mkdir -p "$LOG"
 
-export WEB_PORT=9210 WEB_MANAGEMENT_PORT=9211 HISCORES_WEB_PORT=9212 NODE_PORT=43910 AGENT_PORT=8110
+# The ranged block of docs/speedrun/LAB.md unless the caller names another block's ports.
+export WEB_PORT=${WEB_PORT:-9210} WEB_MANAGEMENT_PORT=${WEB_MANAGEMENT_PORT:-9211} HISCORES_WEB_PORT=${HISCORES_WEB_PORT:-9212} NODE_PORT=${NODE_PORT:-43910} AGENT_PORT=${AGENT_PORT:-8110}
 PIDS=()
 cleanup() { for p in "${PIDS[@]}"; do kill "$p" 2>/dev/null; done; sleep 1; for p in "${PIDS[@]}"; do kill -9 "$p" 2>/dev/null; done; }
 trap cleanup EXIT
@@ -40,7 +41,7 @@ sleep 2
 if [ ! -f "$ROOT/bots/$BOT/bot.env" ]; then
     (cd "$ROOT" && bun bots/create-bot.ts "$BOT" --local --no-chat > /dev/null)
 fi
-sed -i.bak -e 's#^SERVER=.*#SERVER=localhost:9210#' -e 's#^GATEWAY_URL=.*#GATEWAY_URL=ws://localhost:8110#' -e 's#^TELEMETRY=.*#TELEMETRY=false#' "$ROOT/bots/$BOT/bot.env"
+sed -i.bak -e "s#^SERVER=.*#SERVER=localhost:$WEB_PORT#" -e "s#^GATEWAY_URL=.*#GATEWAY_URL=ws://localhost:$AGENT_PORT#" -e 's#^TELEMETRY=.*#TELEMETRY=false#' "$ROOT/bots/$BOT/bot.env"
 
 (cd "$ROOT/server/webclient" && exec bun src/lite/runner.ts "$BOT") > "$LOG/runner-$BOT.log" 2>&1 &
 PIDS+=($!)

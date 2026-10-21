@@ -30,11 +30,16 @@ export function countByName(items: ReadonlyArray<{ name: string; count: number }
  * not in {1, 5, 10} is an X amount, which costs a count-dialog round trip and
  * holds the client's action queue while it waits. Up to three 10/5/1 clicks
  * are preferred over X.
+ *
+ * `singlePress` limits the result to one button (All, 1/5/10, or X). Use it
+ * when the count is spread one item per slot (an unstackable item in the
+ * inventory): every press names a slot, the server takes the item from that
+ * slot first, and a second press on the now-empty slot moves nothing.
  */
-export function amountButtons(n: number, stack: number): number[] {
+export function amountButtons(n: number, stack: number, opts: { singlePress?: boolean } = {}): number[] {
     if (!Number.isInteger(n) || n <= 0) throw new Error(`invalid amount ${n}`);
     if (n >= stack) return [-1];
-    if (n === 1 || n === 5 || n === 10) return [n];
+    if (n === 1 || n === 5 || n === 10 || opts.singlePress) return [n];
     const tens = Math.floor(n / 10);
     const fives = Math.floor((n % 10) / 5);
     const ones = n % 5;

@@ -16,6 +16,10 @@ backups/
 bots/*/
 !bots/_template/
 
+# Run-machine runtime files (speedrun/helpers/standalone.ts, altar-cue.ts): live
+# run state, logs and cue files; never committed.
+run-machine/
+
 # Daemon type checker temp file
 sdk/__exec_check.ts
 
@@ -37,3 +41,10 @@ server/engine/data/market.sqlite*
 
 # Dashboard state is live host data, not source.
 /dashboard-max/data/
+
+# Helper fleet runtime state on the fleet host (speedrun/helpers/fleet.ts).
+/fleet.json
+/stockpile.json
+/fleet-run/
+# The scored account's private name and any other accounts the fleet must refuse (fleet-config.ts).
+/forbidden-accounts.txt
