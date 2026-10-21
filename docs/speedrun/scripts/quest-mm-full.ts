@@ -25,6 +25,7 @@ const near = (x: number, z: number, r = 3, l = 0): Pred => s => {
 };
 const GLIDER_GANDIUS = 824; // glidermap:com_21 (server/content/pack/interface.pack)
 const GLIDER_TA_QUIR_PRIW = 825; // glidermap:com_22
+const PUZZLE_TILES = 11129; // reinitialisation_puzzle:com_3
 
 // Quest state each segment starts from (varp/varbit name -> value), its items, and its tile.
 type Start = { vars: Record<string, number>; items?: Array<[string, number]>; at: [number, number, number?] };
@@ -34,7 +35,8 @@ const STARTS: Record<string, Start> = {
     C: { vars: { mm_main: 1, mm_narnode: 3, mm_caranock: 3 }, items: [['mm_gnome_royal_seal', 1]], at: [2956, 3024] },
     D: { vars: { mm_main: 1, mm_narnode: 7, mm_caranock: 3 }, items: [['mm_gnome_royal_seal', 1], ['mm_narnode_orders', 1]], at: [2465, 3496] },
     E: { vars: { mm_main: 1, mm_narnode: 7, mm_caranock: 3, mm_daero: 4, mm_daero_option_bit_one: 1, mm_daero_option_bit_two: 1, mm_daero_option_bit_three: 1 }, items: [['mm_gnome_royal_seal', 1]], at: [2393, 9892] },
-    F: { vars: { mm_main: 1, mm_narnode: 7, mm_caranock: 3, mm_daero: 7 }, items: [['mm_gnome_royal_seal', 1]], at: [2893, 2726] },
+    F: { vars: { mm_main: 2, mm_narnode: 7, mm_caranock: 3, mm_daero: 6 }, items: [['mm_gnome_royal_seal', 1]], at: [2649, 4508] },
+    G: { vars: { mm_main: 2, mm_narnode: 7, mm_caranock: 3, mm_daero: 7 }, items: [['mm_gnome_royal_seal', 1]], at: [2893, 2726] },
 };
 
 await runScript(async ({ bot, sdk }) => {
@@ -112,7 +114,32 @@ await runScript(async ({ bot, sdk }) => {
     }
     if (runs('E')) {
         add(await talk(sdk, /^Daero$/i, [], { idle: 4 }), 'E1 Daero + Waydar intro');
+        // Reinitialisation. The lab stands in for Glough's 200,000-coin fix (mm_glough.rs2:28-29),
+        // which leaves the puzzle one move from solved (mm_puzzle.rs2:33-34,73-75): the gap is next
+        // to slot 24, so clicking slot 24 solves it. A bot solving the full scramble needs about
+        // 63 moves at 5 per tick (quest-mm-puzzle-sim.ts); the open and the cutscene are the same.
+        await setvar(sdk, 'mm_hangar_puzzle_complete', 1);
+        add(await locOpAt(sdk, 2394, 9883, /./, s => s.modalOpen, 20), 'E2 open control panel');
+        {
+            const t0 = now(sdk);
+            await sdk.sendClickComponentWithOption(PUZZLE_TILES, 5, 24);
+            const r = await waitUntil(sdk, near(2649, 4507, 3), 60);
+            add({ name: 'last tile -> rumble -> hangar cutscene -> powered hangar', ticks: (r?.tick ?? NaN) - t0 }, 'E3');
+        }
         await check('E');
+    }
+    if (runs('F')) {
+        add(await walk(bot, sdk, 2648, 4512, 1), 'F1 walk to Daero');
+        add(await talk(sdk, /^Daero$/i, [], { idle: 4 }), 'F2 Daero: reinitialised');
+        add(await talk(sdk, /^Waydar$/i, [/^Yes$/], { idle: 4, closeModals: false, done: near(2893, 2725, 4) }), 'F3 Waydar: fly to Crash Island');
+        await check('F');
+    }
+    if (runs('G')) {
+        add(await talk(sdk, /^Waydar$/i, [], { idle: 3 }), 'G1 Waydar on Crash Island');
+        add(await talk(sdk, /^Lumdo$/i, [], { idle: 3 }), 'G2 Lumdo');
+        // Waydar orders Lumdo to ferry you; the chapter 2 cutscene follows and ends on Ape Atoll.
+        add(await talk(sdk, /^Waydar$/i, [/cannot convince Lumdo/], { idle: 12, done: near(2801, 2707, 4) }), 'G3 Waydar -> cutscene -> Ape Atoll');
+        await check('G');
     }
     console.log('wall ticks', now(sdk) - T0);
     rec.summary();
