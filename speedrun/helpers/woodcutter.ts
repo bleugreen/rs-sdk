@@ -624,7 +624,7 @@ class Woodcutter {
                 const carried = Object.fromEntries(
                     TIERS.map(t => [t.tier, this.sdk.countInventoryItems(t.log)] as const).filter(([, n]) => n > 0)
                 );
-                this.ctx.log('chopping', { spot: spot.id, carried, woodcutting: this.wc(), playersNear: this.state().nearbyPlayers.length - 1 });
+                this.ctx.log('chopping', { spot: spot.id, carried, woodcutting: this.wc(), playersNear: this.state().nearbyPlayers.filter(p => p.name !== this.state().player!.name).length });
             }
             if (this.tierNow().tier !== tier.tier) return; // levelled into a new tier: go to its spot with what we carry
             const s = this.state();
