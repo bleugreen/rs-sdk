@@ -243,6 +243,34 @@ for (const kind of ['browser', 'lite'] as const) {
             expect(f.out.pos).toBe(3);
         });
 
+        test('a continued page keeps its id until the next page arrives', async () => {
+            const f = fixture();
+            defineComponent(9230, { children: [9231] });
+            defineComponent(9231, { buttonType: 6, buttonText: 'Continue', text: '' });
+            if (kind === 'lite') {
+                f.client.interfaces.list[9230] = IfType.list[9230];
+                f.client.interfaces.list[9231] = IfType.list[9231];
+            }
+            await f.receive(ServerProt.IF_OPENCHAT, 9230);
+            const before = f.snapshot();
+            expect(f.executor.execute({
+                type: 'clickDialogOption', optionIndex: 1, reason: 'test',
+                guard: { pageId: before.pageId, componentId: 9231 }
+            })).toMatchObject({ success: true });
+
+            // Published while the server has not answered yet: the same page,
+            // marked waiting, never a fresh id a script could mistake for the
+            // next page and answer early.
+            expect(f.snapshot()).toMatchObject({ isOpen: true, isWaiting: true, pageId: before.pageId });
+
+            // The next page is new even when its content is identical.
+            await f.receive(ServerProt.IF_OPENCHAT, 9230);
+            const next = f.snapshot();
+            expect(next.isWaiting).toBe(false);
+            expect(next.pageId).toBeDefined();
+            expect(next.pageId).not.toBe(before.pageId);
+        });
+
         if (kind === 'lite') {
             test('a token from a different client cannot select an identical page', async () => {
                 const a = fixture();

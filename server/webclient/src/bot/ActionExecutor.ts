@@ -225,8 +225,11 @@ export class ActionExecutor {
                     if (action.guard !== undefined) {
                         const { pageId, componentId } = action.guard;
                         // Validate and dispatch synchronously: no packet can change
-                        // the dialogue between this check and the actual click.
+                        // the dialogue between this check and the actual click. A
+                        // page whose Continue is already in flight is spent: the
+                        // server answers the click on whatever page comes next.
                         if (typeof pageId !== 'string' || getDialogPageId(this.client) !== pageId ||
+                            this.client.isWaitingForDialog() ||
                             !this.client.getDialogOptions().some(option =>
                                 option.componentId === componentId && option.index === action.optionIndex)) {
                             return {

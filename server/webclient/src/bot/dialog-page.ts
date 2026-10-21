@@ -1,9 +1,14 @@
 import IfType from '#/config/IfType.js';
 
-type DialogClient = { chatModalId: number; resumedPauseButton: boolean };
+type DialogClient = { chatModalId: number };
 
 // Tokens belong to the client instance, not an interface ID: servers reuse the
 // same interface and button IDs for successive dialogue pages.
+//
+// A page keeps its token after its Continue is sent. Waiting for the server is
+// published as `isWaiting`, and ActionExecutor refuses guarded clicks while it
+// holds; minting a new token instead would make the spent page look like the
+// next one to anything that watches for the id to change.
 const pages = new WeakMap<object, { signature: string; token: string }>();
 const session = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 let revision = 0;
@@ -36,7 +41,7 @@ export function getDialogPageId(instance: object): string | undefined {
         return undefined;
     }
 
-    const signature = JSON.stringify([client.chatModalId, client.resumedPauseButton, components]);
+    const signature = JSON.stringify([client.chatModalId, components]);
     let page = pages.get(client);
     if (!page || page.signature !== signature) {
         page = { signature, token: `${session}:${++revision}` };
