@@ -153,8 +153,6 @@ export interface RequestOutcome {
     waited: number;
     sends: number;
     bounces: number;
-    /** Frames from each refusal's answer to the re-send that followed it (1 means the very next tick). */
-    resendGaps: number[];
     reason?: string;
 }
 
@@ -279,13 +277,11 @@ export class BoneGiver {
             let rc = newRequestCtx();
             let first = -1;
             let lastTick = -1;
-            let bounceSeen = -1;
             let unseen = 0;
-            const resendGaps: number[] = [];
             const finish = (ok: boolean, reason?: string) => {
                 unsub();
                 clearInterval(guard);
-                resolve({ ok, waited: first < 0 ? 0 : (this.s?.tick ?? first) - first, sends: rc.sends, bounces: rc.bounces, resendGaps, ...(reason ? { reason } : {}) });
+                resolve({ ok, waited: first < 0 ? 0 : (this.s?.tick ?? first) - first, sends: rc.sends, bounces: rc.bounces, ...(reason ? { reason } : {}) });
             };
             const onFrame = (st: BotWorldState) => {
                 if (st.tick === lastTick && !tradeOf(st).isOpen) return;
@@ -302,14 +298,8 @@ export class BoneGiver {
                 rc = d.next;
                 if (d.action === 'open') return finish(true);
                 if (d.action !== 'send') return;
-                if (d.why === 'bounce') {
-                    // The refusal is on this frame: the re-send goes out on it too, so it lands on the next tick.
-                    bounceSeen = st.tick;
-                    resendGaps.push(0);
-                    this.ctx.log('bounce', { tick: st.tick });
-                } else if (bounceSeen >= 0 && resendGaps.length) {
-                    resendGaps[resendGaps.length - 1] = st.tick - bounceSeen;
-                }
+                // A refusal is answered on the frame that carries it, so the re-send lands on the next tick.
+                if (d.why === 'bounce') this.ctx.log('bounce', { tick: st.tick });
                 if (first < 0) first = st.tick;
                 void ctx.sdk.sendTradeRequest(receiver!.index);
             };
