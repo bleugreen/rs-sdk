@@ -67,7 +67,7 @@ is "with interleaving (net)". The loop conditions are in section 5.
 
 | Skill | Headline method | Start level (on-route quests) | Ticks to 99, normal | Ticks to 99, with interleaving (net) | Basis | Helper supplies | Document |
 |---|---|---|---|---|---|---|---|
-| Prayer | bury dragon bones at a bank booth; 11 early for Prayer 43 before TGV | 1 (no on-route quest gives Prayer; [quests README](../quests/README.md) section 4, step 0) | 1,151 (measured run 1,221 with stalls) | **~800** with the ~196 bones in pickpocket stuns: clean, Thieving has no knife column. Adding ~348 bones on 4-tick WC / 5-tick fly fishing gives ~150-220, which applies only against those skills' normal column; against WC's knife column it is ~500-570 | measured cadence (fedora, busy host); interleaving totals inferred | 555 dragon bones (11 unnoted before TGV, the rest one noted stack) | prayer.md |
+| Prayer | bury dragon bones at a bank booth; 11 early for Prayer 43 before TGV | 1 (no on-route quest gives Prayer; [quests README](../quests/README.md) section 4, step 0) | 1,151 (measured run 1,221 with stalls) | **~800** with the ~196 bones in pickpocket stuns: clean, Thieving has no knife column. **~80-110** with the other 359 in the knife Woodcutting loop, clean against WC's knife column (`research/bones-placement.md`) | measured cadence (fedora, busy host); interleaving totals inferred | 555 dragon bones (11 unnoted before TGV, the rest one noted stack) | prayer.md |
 
 ## 2. Route by level band
 
@@ -191,8 +191,9 @@ bones before the quest.
 **Interleaving: most of Prayer can be absorbed into self-only time** (`interleaving.md`
 section 8, the absorbable-fractions table; per-stun and per-clock figures measured there at
 300 ms, the totals here inferred). Burying is a 2-tick delayed action, so it fits in three
-hosts: a pickpocket stun (1.96 bones per stun measured), the wait ticks of an un-manipulated
-4-tick Woodcutting clock (1 bone per 4 ticks) and of 5-tick fly fishing (1 per 5).
+hosts: a pickpocket stun (1.96 bones per stun measured), the 3-tick knife Woodcutting loop (1
+bone per cycle, measured, rs/105), and the wait ticks of an un-manipulated 4-tick Woodcutting
+clock (1 bone per 4 ticks) or 5-tick fly fishing (1 per 5).
 
 - **Pickpocket stuns.** Under Package B the Magic enchants no longer compete for the stuns:
   they all happen before Tree Gnome Village, and Thieving starts after Fight Arena
