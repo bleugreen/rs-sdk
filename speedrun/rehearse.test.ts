@@ -482,8 +482,10 @@ describe('host reservation: in flight (runAttempt)', () => {
         expect(pause).toHaveLength(1);
         expect(pause[0]!.ok).toBe(true);
         expect(pause[0]!.meta).toMatchObject({ owner: 'run', until, reason: 'gate and scored run', path, before: 'two', logout: { ok: true, confirmedBy: 'child' } });
-        // The runner's own logout boundary sits before it.
-        expect(tlog.rows.some(x => x.step === BOUNDARY_STEP && x.meta?.ended === '(logout)') || tlog.rows.some(x => x.step === BOUNDARY_STEP)).toBe(true);
+        // The runner's own logout boundary, after step one, sits just before it.
+        const out = tlog.rows.findIndex(x => x.step === BOUNDARY_STEP && x.meta?.to === '(logout)');
+        expect(tlog.rows[out]!.meta).toMatchObject({ from: 'one', index: 1 });
+        expect(tlog.rows.indexOf(pause[0]!)).toBe(out + 1);
 
         // The summary shows the pause.
         const summary = summarize(tlog.rows);
