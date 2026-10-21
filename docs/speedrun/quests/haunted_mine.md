@@ -4,10 +4,16 @@
 22,000 base Strength and 2 quest points**, plus about 125 ticks to walk from the
 Priest in Peril holy barrier to the zealot. That is about 20 base xp per tick
 for the quest itself, and 22,000 is 55% of level 99 (39,938). The route through
-the mine is measured end to end at the production tick rate. The Treus Dayth
-fight (about 325 ticks) is the one large uncertainty: a lab bot killed it once
-in six serious attempts, and in at least two runs the boss was left at 0-11% and
-never died (see Risks).
+the mine is measured end to end at the production tick rate.
+
+**The total is not a reliable figure, because of the Treus Dayth fight.** The
+325 ticks in it are the one kill measured: **1 kill in 6 serious bot attempts**.
+In 3 of the failures the boss reached 0-11%, never died, and despawned with the
+stage stuck at 8. With this bot the expected cost of the fight, failures
+included, is about 3,000-5,000 ticks, which is in effect unknown. That estimate
+assumes 5 expected failures at 500-1,000 ticks each, since a stuck boss holds
+until its 1,000-tick lifetime ends, plus the 325-tick kill. The stuck kills point
+to a probable content defect (see Fights).
 
 All ticks are stock-client figures. The route segments were measured with
 `docs/speedrun/scripts/quest-hauntedmine-run.ts` at `NODE_TICKRATE=300`
@@ -181,6 +187,29 @@ Measured (bot, `quest-hauntedmine-run.ts --style=magic|melee`):
 | 70 Magic, 70 Hitpoints, Crumble Undead | 100% → 8% in 260 ticks, then died on bot positioning stalls (20 sharks); another run reached 0% and it never died |
 | 70 melee, rune scimitar | never killed; best 80 damage in 358 ticks. Defence 100 against a rune scimitar, and every fade-and-move needs a fresh approach |
 
+**Success rate (measured): 1 kill in 6 serious attempts.** Of the 5 failures,
+3 left the boss at 0-11% and stuck (never died, despawned at stage 8), and 2 were
+bot positioning failures (out of reach or out of sight while it kept hitting).
+**Expected fight cost with this bot: about 3,000-5,000 ticks, effectively
+unknown** (5 expected failures at 500-1,000 ticks each plus the 325-tick kill).
+A better positioning bot removes the second kind of failure, but not the first.
+
+**Probable content defect: the faded form has no death hook.** The death
+handler is `[ai_queue3,hauntedmine_boss_ghost]`
+(`quests/quest_hauntedmine/scripts/hauntedmine_boss_ghost.rs2:247-249`). There is
+no `ai_queue3` for `hauntedmine_boss_ghost_faded` (defined at
+`quests/quest_hauntedmine/configs/hauntedmine.npc:218`), although the script
+writes `ai_timer` handlers for both types (`hauntedmine_boss_ghost.rs2:109-110`).
+The boss switches to the faded type on half of the hits it takes (`:244-245`,
+`:264-303`). The engine consumes a due NPC queue entry even when the current type
+has no handler for it (`server/engine/src/engine/entity/Npc.ts:561-583`), and
+`npc_default_damage` stops damaging an NPC at 0 hitpoints
+(`skill_combat/scripts/npc/npc_combat.rs2:78-80`). So a death that comes due
+while the boss is faded is lost, and the boss stays at 0 HP until it despawns.
+That matches the 3 stuck runs (inferred; I didn't capture the queue order in the
+lab). Fix: an `[ai_queue3,hauntedmine_boss_ghost_faded]` that jumps to the same
+death code, or a shared category.
+
 **Inferred plan: Crumble Undead (Magic 39; helper-supplied air, earth and chaos
 runes), about 325 ticks, about 15 sharks at 70 Hitpoints.** Its maximum hit is
 fixed by the spell, and with magic defence -5 almost every cast lands, so 70
@@ -205,9 +234,9 @@ no cart can cut off. It is still not reliable.
 | Travel (runs, climbs, crawls, doors, the lift ride, flooded-level wading) | **475** | measured (steps 2-4, 10, 12-16, 20-21 less the cart waits) |
 | Dialogue (zealot, end cart, cutscene, key twice, kill message) | **86** | measured (steps 1, 11, 17, 19) + 2 inferred for the kill page |
 | Interactions (fungus, panel, levers, send, door, crystal) | **130** | measured (steps 5-9, 22-23); 3 lever pulls, 2.5 expected |
-| Fights | **325** | measured once at 99/99 (step 18) |
+| Fights | **325** | measured once at 99/99 (step 18); expected about 3,000-5,000 with this bot, see Fights |
 | Forced waits (carts 1 and 4) | **56** | measured (22 + 31 + 3) |
-| **Total, zealot to crystal** | **1,072** | |
+| **Total, zealot to crystal** | **1,072** | if the fight goes as measured; **not reliable**: with the expected fight cost it is about 3,700-5,700 |
 | Plus the walk from the holy barrier to the zealot | 123 | inferred (step 0) |
 
 At the patched-client floor (cairn://p/rs/22) the zealot conversation drops by
@@ -215,14 +244,10 @@ about 25 ticks and the other dialogue by about 6 (inferred from primitives.md).
 
 ## Risks and gotchas
 
-- **The kill can fail to count.** In two of the 99-Magic runs and one 70 run the
-  boss reached 0-11%, stopped taking damage and later despawned while
-  `%hauntedmine` stayed 8. The death handler exists only for the normal boss type
-  (`[ai_queue3,hauntedmine_boss_ghost]`, `hauntedmine_boss_ghost.rs2:247-249`); the
-  faded type has none, and NPC queue entries are consumed whether or not the
-  current type has a handler (`Npc.ts` `processQueue`). A death that comes due
-  while it is faded would explain it, but I didn't establish the exact order.
-  Cost: another key, another full-health boss.
+- **The kill can fail to count** (3 of 6 attempts). The boss stops at 0-11% and
+  despawns with `%hauntedmine` still 8. The probable cause is the missing faded-type
+  death hook (Fights). Cost: wait out the lifetime or leave, take the key again,
+  and fight a full-health boss.
 - **The 1,000-tick boss lifetime** (`:54`): a slow fight ends with nothing.
 - **Cart puzzle guesses sink the fungus** (about 60 ticks each, above).
 - **The lift window**: a wasted click after the ghost's zone loses the valve;
@@ -242,8 +267,9 @@ about 25 ticks and the other dialogue by about 6 (inferred from primitives.md).
 
 ## Open questions
 
-- Why the kill sometimes doesn't count (above), and whether a melee or a
-  slower spell avoids it. Worth a lab test that sets the boss's hitpoints low.
+- Confirming the faded-type death hook defect in the lab, for example by logging
+  the boss's type and hitpoints on each hit near the end. If confirmed, it is a
+  one-line content fix.
 - A reliable bot fight at the account's real stats; the measured kill is n=1.
 - Exposing `if_setmodel` model ids in the bot state, so a production bot can read
   the points panel.
