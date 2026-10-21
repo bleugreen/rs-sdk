@@ -51,6 +51,11 @@ const KNIFE = /^knife$/i;
 const LOGS = /^logs$/i;
 const ORE = /ore$|^uncut/i;
 const MINE = /^mine$/i;
+/**
+ * Depleted rocks keep op1=Mine (rocks.loc: rocks1, plainrock1_alt, rocks2, rocks3 carry
+ * mining_rock_empty; ids from loc.pack), so a live rock is one with Mine that is not these.
+ */
+export const EMPTY_ROCKS: ReadonlySet<number> = new Set([450, 451, 452, 453]);
 const key = (p: P) => `${p[0]},${p[1]}`;
 const same = (a: P, b: P) => a[0] === b[0] && a[1] === b[1];
 const beside = (a: P, b: P) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) === 1;
@@ -323,7 +328,7 @@ export function createKnifeMine(params: ProgramParams): TickProgram {
                 started = true;
                 startTick = t;
                 for (const { rock } of STEPS) {
-                    const loc = s.nearbyLocs.find(l => l.x === rock[0] && l.z === rock[1] && l.optionsWithIndex.some(o => MINE.test(o.text)));
+                    const loc = s.nearbyLocs.find(l => l.x === rock[0] && l.z === rock[1] && !EMPTY_ROCKS.has(l.id) && l.optionsWithIndex.some(o => MINE.test(o.text)));
                     if (!loc) {
                         const near = s.nearbyLocs.filter(l => Math.abs(l.x - rock[0]) + Math.abs(l.z - rock[1]) <= 1).map(l => `${l.name}#${l.id}@${l.x},${l.z}`);
                         return ctx.fault(`no live rock at ${key(rock)}`, { near });
