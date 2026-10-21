@@ -22,17 +22,16 @@ const TRIALS = Number(opt('trials', '400'));
 const KNIFE = 0.765;
 
 // level thresholds in base xp
+// Player.ts:77-85 stores floor(acc/4)*10 in tenths of game xp for level i+2, i.e.
+// floor(acc/4) game xp, which is floor(acc/4)/25 base xp.
 const LEVEL_XP: number[] = [0, 0]; // LEVEL_XP[L] = base xp needed for level L
 {
     let acc = 0;
-    for (let i = 0; i < 98; i++) {
-        const level = i + 1;
+    for (let level = 1; level <= 98; level++) {
         acc += Math.floor(level + Math.pow(2, level / 10) * 300);
-        LEVEL_XP.push((Math.floor(acc / 4) * 10) / 10 / 25 * 10 / 10); // fine xp/10 -> game xp; /25 -> base
+        LEVEL_XP.push(Math.floor(acc / 4) / 25);
     }
 }
-// Player.ts stores fine xp (tenths of game xp): floor(acc/4)*10 fine = floor(acc/4) game xp
-for (let L = 2; L <= 99; L++) LEVEL_XP[L] = LEVEL_XP[L]! ; // (kept explicit for readers)
 const levelOf = (xp: number) => { let L = 1; while (L < 99 && xp >= LEVEL_XP[L + 1]!) L++; return L; };
 
 type Tree = { name: string; req: number; xp: number; lo: number; hi: number; respawn: number; fellsEveryLog: boolean };
@@ -54,7 +53,11 @@ function simulate(startXp: number, players: number, rng: () => number) {
     const scale = (r: number) => Math.floor((r * (4000 - Math.min(players, 2000))) / 4000);
     let xp = startXp, t = 0, L = levelOf(xp);
     const reached: number[] = []; reached[L] = 0;
-    let deadUntil = [0, 0, 0]; // 3 trees at the standing tile; tick each is live again
+    // 3 trees at the standing tile; deadUntil = first roll tick a felled tree can take.
+    // A tree felled at R is back at the end of R+D-1, seen at R+D, clicked then and
+    // rolled 4 ticks later: R+D+4 (measured 424 -> 457 at D=29). A roll on tick t uses a
+    // tree clicked on t-3, so the predicted rotation uses it from the same tick.
+    let deadUntil = [0, 0, 0];
     let tree = best(L);
     while (L < 99) {
         const nb = best(L);
@@ -63,14 +66,14 @@ function simulate(startXp: number, players: number, rng: () => number) {
         let live = deadUntil.findIndex(d => d <= t);
         if (live < 0 && !tree.fellsEveryLog) {
             const first = Math.min(...deadUntil);
-            t = Math.max(t, first + 3); // respawn seen and clicked: roll D+4 after the fell
+            t = Math.max(t, first);
             live = deadUntil.indexOf(first);
         }
         let step = 4;
         if (rng() < p(tree, L)) {
             xp += tree.xp;
             if (tree.fellsEveryLog) step += 1;
-            else if (rng() < 1 / 8) deadUntil[live] = t + scale(tree.respawn) + 1;
+            else if (rng() < 1 / 8) deadUntil[live] = t + scale(tree.respawn) + 4;
             const nL = levelOf(xp);
             if (nL > L) { step += 1; for (let k = L + 1; k <= nL; k++) reached[k] = t + 1; L = nL; }
         }
