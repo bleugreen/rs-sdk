@@ -14,9 +14,9 @@ with helper labs) at **`NODE_TICKRATE=300`** with the headless lite client, at V
 
 **Druidic Ritual is a hard prerequisite.** Every Herblore action needs level 3 by default, and
 nothing below level 3 gives Herblore xp except quest steps (section 3). So the scored account
-starts Herblore at **level 28** after Druidic Ritual's 250 base, or at **level 57** if Digsite's
-2,000 base has also been claimed. rs/3 has put Druidic Ritual on the route for this reason
-(cairn://p/rs/3, quest README section 4 on `agent/rs-3-coordinator-0`).
+starts Herblore at **level 28** after Druidic Ritual's 250 base. rs/3 has put Druidic Ritual on the
+route for this reason; Digsite and Watchtower are off it (cairn://p/rs/3, quest README sections
+1 and 4 on `agent/rs-3-coordinator-0`). **On-route: 28 -> 99 = 112 ticks** (measured).
 
 Then mix finished potions at a bank booth, 14 unfinished potions + 14 secondaries per
 inventory, 5 mixes per tick, best potion per band (super strength 55, super defence 66,
@@ -27,15 +27,15 @@ next tick. The steady cycle is **4 ticks per 14 potions**.
 
 | Start | Ticks to 99, fast script | Ticks to 99, stock SDK | Basis |
 |---|---|---|---|
-| **57 (Druidic Ritual + Digsite + Watchtower steps, about 2,280 base), the on-route start if Herblore is trained after Digsite** | **84** | about 338 | fast measured (1 run); stock inferred (17 cycles x 21.1) |
-| 28 (Druidic Ritual only) | **112** | about 381 | fast measured (1 run); stock inferred |
+| **28 (Druidic Ritual, 250 base), the on-route start** | **112** | about 381 | fast measured (1 run); stock inferred (18 cycles x 21.1) |
+| 57, only if Digsite (and Watchtower) return to the route (about 2,280 base) | 84 | about 338 | fast measured (1 run); stock inferred |
 | 66 | **77** | **317** | measured, 1 run each |
 | 1 without Druidic Ritual | impossible | impossible | read (section 4) |
 
 Supply decides the top tier, not playtime (section 7). Zamorak potions need torstol, whose only
-source in the content is a keyed chest. **Capping at ranging potions costs about 1 cycle, 5 ticks**;
-capping at super defence about 3 cycles, 15 ticks (inferred). Pick the cap by what helpers can
-actually gather.
+source in the content is a keyed chest. From 28, **capping at ranging potions costs about 1 cycle,
+5 ticks**; capping at super defence about 2 cycles, 10 ticks (inferred). Pick the cap by what
+helpers can actually gather.
 
 ## 2. Route by level band
 
@@ -76,15 +76,15 @@ End to end (measured, `delayfree-cycle.ts --skill=herblore`):
 | Quest | Herblore (base, read) | Start level | On route? |
 |---|---|---|---|
 | **Druidic Ritual** | 250 (`quest_druid.rs2:3`) | **28** | **yes, mandatory** (moved onto the route by rs/3 for this finding) |
-| Watchtower | 10 per ogre-potion step, 3 steps (`ogre_potion.rs2:52,81,87`); the steps need Herblore 14 (`watchtower.md` on rs/3's branch) | +30 | yes |
-| Digsite | 2,000 (`quest_itexam.rs2:42`) plus 2.5 per chemistry mix (`itexam_chemistry.rs2:35,49,68`); the mixes need Herblore 10 | 56 alone, **57 with Druidic Ritual** | yes |
+| Watchtower | 10 per ogre-potion step, 3 steps (`ogre_potion.rs2:52,81,87`); the steps need Herblore 14 (`watchtower.md` on rs/3's branch) | +30 | **off route** (rs/3 quest README, section 1) |
+| Digsite | 2,000 (`quest_itexam.rs2:42`) plus 2.5 per chemistry mix (`itexam_chemistry.rs2:35,49,68`); the mixes need Herblore 10 | 56 alone, 57 with Druidic Ritual | **off route** (rs/3 quest README, section 1) |
 | Jungle Potion | 775 (`quest_junglepotion.rs2:74`) | | off route |
 | Heroes' Quest | 1,325 (`quest_hero.rs2:40`) | | off route |
 | Eadgar's Ruse | 11,000 (`quest_eadgar.rs2:595`) | 79 | not costed by rs/3 |
 | Shades of Mort'ton | 335 + 2,000 (`quest_mortton.rs2:55,66`) | | not costed |
 
-**Hard dependency: Druidic Ritual must be on the route**, before Watchtower (Herblore 14) and
-Digsite (Herblore 10), and before any Herblore training:
+**Hard dependency: Druidic Ritual must be on the route** before any Herblore training (and before
+Watchtower or Digsite, which need Herblore 14 and 10, if either returns to the route):
 
 - `brew_potion_level` defaults to 3 (`skill_herblore/configs/brewing/brew_potion.param:1-3`).
   The attack potion and every unfinished potion without an explicit level (`unf_guam_potion`,
@@ -99,9 +99,9 @@ Digsite (Herblore 10), and before any Herblore training:
 - Measured: at Herblore 1 the attack-potion mix sends cleanly and does nothing; the ladder run
   from level 1 cycled the bank for an hour with no xp.
 
-Train Herblore after Digsite if the order allows: 57 -> 99 is 84 ticks against 112 from 28
-(28 ticks saved, measured). Digsite's chemistry and Watchtower's potion only need levels 10 and
-14, which Druidic Ritual's 28 already covers.
+**On-route start: 28** (Druidic Ritual only), 112 ticks to 99 (measured). If Digsite (and
+Watchtower) return to the route, train Herblore after them: 57 -> 99 is 84 ticks, 28 fewer
+(measured). Their Herblore gates (10 and 14) are already covered by Druidic Ritual's 28.
 
 ## 4. Mechanics
 
@@ -149,11 +149,12 @@ Train Herblore after Digsite if the order allows: 57 -> 99 is 84 ticks against 1
   delay-free): 9 herbs + 9 vials + 9 secondaries per inventory, 18 actions per 9 potions, about
   5 ticks per 9 potions, roughly 1.7x the ticks (inferred). Only if no helper has the Herblore
   level for the unfinished potion.
-- **Super attack only (irit + eye of newt) from 45**: 378 actions from 57 instead of 224, about
-  27 inventories = 137 ticks instead of 84 (inferred). Its secondary is a shop item, so this is
-  the supply-safe fallback if no high-level herbs can be gathered.
-- **Ranging cap** (no Zamorak potions): 238 actions from 57, about 5 more ticks. **Super defence
-  cap**: 255 actions, about 15 more ticks (inferred).
+- **Attack to 45, then super attack (guam/irit + eye of newt)**: 418 actions from 28 instead of
+  245, 30 inventories instead of 18, about 60 more ticks (inferred: about 170 against the
+  measured 112). Its secondary is a shop item, so this is the supply-safe fallback if no
+  high-level herbs can be gathered.
+- **Ranging cap** (no Zamorak potions): 258 actions from 28, about 5 more ticks. **Super defence
+  cap**: 276 actions, about 10 more ticks (inferred).
 - **Identifying herbs** (`identify.rs2`, OPHELD1, delay-free, 27 per inventory): torstol 15
   base, cadantine 12.5 (`herbs.obj`). About 48-60 base per tick, a tenth of mixing (inferred).
 - **Grinding** (pestle and mortar) gives no xp (`herblore.rs2:27-36`).
@@ -177,28 +178,34 @@ Train Herblore after Digsite if the order allows: 57 -> 99 is 84 ticks against 1
 
 ## 7. Helper supply list
 
-Per 99 from level 57 (the on-route start), exact actions; add one spare inventory (14) of each
-line if the scored account banks by fixed slot:
+Per 99 from level 28 (the on-route start, after Druidic Ritual), exact actions (245); add one spare
+inventory (14) of each line if the scored account banks by fixed slot:
 
 | Item | Quantity | Where helpers get it (read) | Scarcity on the demo (GE snapshot 2026-10-21) |
 |---|---|---|---|
-| Kwuarm potion (unf) | 16 | helper with Herblore 55: kwuarm + vial of water; kwuarm from the herb drop table (`shared_droptables.rs2`) | herbs: no GE sellers |
-| Limpwurt root | 16 | drops: druids, giants, hobgoblins, chaos druid warriors, tribesmen | no GE market |
+| Harralander potion (unf) + chocolate dust | 1 + 1 | Herblore 22 (harralander, herb drops); chocolate bars from Port Sarim, Yanille, gnome shops, ground with a pestle | easy |
+| Ranarr potion (unf) | 8 | Herblore 30 (ranarr, herb drops) | herbs: no GE sellers |
+| Irit potion (unf) + eye of newt | 10 + 10 | Herblore 45 (irit, herb drops); eye of newt from the Port Sarim magic shop (300, `port_sarim.inv:50`) | eye of newt easy |
+| Kwuarm potion (unf) | 17 | helper with Herblore 55: kwuarm + vial of water; kwuarm from the herb drop table (`shared_droptables.rs2`) | herbs: no GE sellers |
+| Limpwurt root | 17 | drops: druids, giants, hobgoblins, chaos druid warriors, tribesmen | no GE market |
 | Cadantine potion (unf) | 14 | Herblore 66; cadantine from herb drops | no GE sellers |
-| White berries | 14 | 3 ground spawns (one deep in the Wilderness at (3214,3814)); drops from chaos druid warriors and Salarin | scarce |
-| Dwarf weed potion (unf) | 19 | Herblore 72; dwarf weed from herb drops and the Miscellania kingdom | **contested**: a 7,000 gp bid for 839 dwarf weed, no sellers |
-| Wine of Zamorak | 19 | one spawn at the Asgarnian Chaos Temple (telekinetic grab); Kalphite Queen drop | scarce |
+| White berries | 22 (8 defence + 14 super defence) | 3 ground spawns (one deep in the Wilderness at (3214,3814)); drops from chaos druid warriors and Salarin | scarce |
+| Dwarf weed potion (unf) | 20 | Herblore 72; dwarf weed from herb drops and the Miscellania kingdom | **contested**: a 7,000 gp bid for 839 dwarf weed, no sellers |
+| Wine of Zamorak | 20 | one spawn at the Asgarnian Chaos Temple (telekinetic grab); Kalphite Queen drop | scarce |
 | Torstol potion (unf) | 175 | Herblore 78; **torstol's only source is the sinister-key chest in the Yanille agility dungeon, one per key** (`agility_dungeon.rs2:101-124`) | **effectively unobtainable**: no GE market at all |
 | Jangerberries | 175 | 4 bush spawns near Yanille (`maps/m39_48.jm2`) | slow |
-| Vial of water (for the unf) | 224 | Karamja jungle store 50 in stock (`karamja.inv:48`), Ardougne, Shilo, Rellekka shops; or fill empty vials | easy |
+| Vial of water (for the unf) | 245 | Karamja jungle store 50 in stock (`karamja.inv:48`), Ardougne, Shilo, Rellekka shops; or fill empty vials | easy |
 
-**Realistic list (ranging cap)**, from 57: kwuarm unf 16 + limpwurt 16, cadantine unf 14 + white
-berries 14, **dwarf weed unf 208 + wine of Zamorak 208**. Wine of Zamorak then becomes the hard
-line (one spawn). **Supply-safe list**: irit unf 378 + eye of newt 378 (Port Sarim magic shop,
-300 in stock, fast restock, `port_sarim.inv:50`), 137 ticks.
+**Realistic list (ranging cap)**, from 28 (258 actions, about 117 ticks): harralander unf 1 +
+chocolate dust 1, ranarr unf 8, irit unf 10 + eye of newt 10, kwuarm unf 17 + limpwurt 17,
+cadantine unf 14, white berries 22, **dwarf weed unf 208 + wine of Zamorak 208**, 258 vials of
+water. Wine of Zamorak then becomes the hard line (one spawn). **Supply-safe list**, from 28
+(418 actions, about 170 ticks): guam unf 27 + irit unf 391 + eye of newt 418 (Port Sarim magic
+shop, 300 in stock, fast restock, `port_sarim.inv:50`).
 
-From level 28 add: harralander unf 1 + chocolate dust 1, ranarr unf 8 + white berries 8, irit
-unf 10 + eye of newt 10, one more kwuarm unf + limpwurt.
+If Digsite returns to the route and Herblore is trained after it (from 57, 224 actions): kwuarm
+unf 16 + limpwurt 16, cadantine unf 14 + white berries 14, dwarf weed unf 19 + wine of Zamorak
+19, torstol unf 175 + jangerberries 175, 224 vials.
 
 **Hand-off.** Noted unfinished potions and secondaries in one trade (about 8-10 stacks; adjacent
 helper 9 ticks stock, 5 floor), deposited at the training booth: one deposit-All per stack
@@ -209,8 +216,8 @@ helper 9 ticks stock, 5 floor), deposited at the training booth: one deposit-All
 - **Herb supply rates.** The herb drop table and the Miscellania kingdom are the only herb
   sources apart from the keyed chest. How many herbs per helper-hour, and whether torstol is
   obtainable at all, belongs to the helper-supply issues under rs/41.
-- **Order versus Digsite.** Training after Digsite saves 28 ticks (measured). rs/3's final order
-  decides.
+- **Digsite off the route.** If Digsite (and Watchtower) return to the route, training Herblore
+  after Digsite saves 28 ticks (measured, 84 from 57 against 112 from 28).
 - **Level-up stalls** cost about 1 tick per pending level-up box at a bank visit. A route
   that banks on a tick where no level-up is pending would remove them; not tried.
 - **Production latency** is not measured; a late packet is queued to the next tick, not
