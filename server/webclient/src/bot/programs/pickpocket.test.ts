@@ -32,8 +32,13 @@ interface Landing {
  * Every packet landing on a delayed tick is dropped. A bury delays the rest of its tick and the
  * next one (p_delay(0)); eating while not free adds 3 to the action delay; Charge and arrows
  * have no delay.
+ *
+ * With a `helper` standing next to the account: a trade request landing on L opens the trade
+ * from L+2 (the helper answers on L+1) for `openTicks` states, then delivers `bones`. A click
+ * landing after the request in the same tick replaces it; any packet landing while the trade
+ * is open closes it with nothing delivered.
  */
-function thieve(opts: { ticks: number; outcome: (n: number) => boolean; hp?: number; params?: Record<string, unknown>; kit?: Kit; dialogAt?: (tick: number) => boolean }) {
+function thieve(opts: { ticks: number; outcome: (n: number) => boolean; hp?: number; params?: Record<string, unknown>; kit?: Kit; dialogAt?: (tick: number) => boolean; helper?: { openTicks?: number; bones: number } }) {
     const h = new Harness('pp', createPickpocket);
     const kit = { food: 10, bones: 0, blood: 0, air: 0, headless: 0, magic: 80, fletching: 1, ...opts.kit, heads: { ...opts.kit?.heads } };
     let tick = 200;
@@ -50,6 +55,8 @@ function thieve(opts: { ticks: number; outcome: (n: number) => boolean; hp?: num
     const failedAttempts: number[] = [];
     const landings: Landing[] = [];
     let attemptAt: number | null = null;
+    const trade = { requests: 0, replaced: 0, opened: 0, done: 0, broken: 0, openFrom: -1, closeAt: -1, requestedOn: [] as number[], doneOn: [] as number[] };
+    const tradeOpen = (t: number) => t >= trade.openFrom && t < trade.closeAt;
     const inventory = () => [
         ...Array.from({ length: kit.food }, () => ({ name: 'Shark', options: ['Eat', 'Drop'] })),
         ...Array.from({ length: kit.bones }, () => ({ name: 'Dragon bones', options: ['Bury', 'Drop'] })),
@@ -72,7 +79,9 @@ function thieve(opts: { ticks: number; outcome: (n: number) => boolean; hp?: num
             inventory: inv,
             npcs: [{ index: 12, name: 'Knight of Ardougne', options: ['Talk-to', 'Attack', 'Pickpocket'] }],
             messages: msgs.slice(-20),
-            dialogOpen: opts.dialogAt?.(tick) ?? false
+            dialogOpen: opts.dialogAt?.(tick) ?? false,
+            tradeOpen: tradeOpen(tick),
+            players: opts.helper ? [{ index: 7, name: 'helper' }] : []
         });
     };
     h.start('pp', { maxTicks: opts.ticks, ...opts.params }, state());
@@ -98,13 +107,36 @@ function thieve(opts: { ticks: number; outcome: (n: number) => boolean; hp?: num
                 failedAttempts.push(a);
             }
         }
+        // a trade that ran its course delivers
+        if (opts.helper && tick === trade.closeAt) {
+            kit.bones += opts.helper.bones;
+            trade.done++;
+            trade.doneOn.push(tick);
+        }
         // this tick's packets, in the order they were sent
         let dropRest = delayed.has(tick);
+        let requestedNow = false;
         for (const p of pending.filter(p => p.at === tick)) {
             const a = p.sent.action;
             const lastFail = failedAttempts[failedAttempts.length - 1];
             landings.push({ tick, type: a.type, name: p.name, sinceFail: lastFail === undefined ? undefined : tick - lastFail, dropped: dropRest });
             if (dropRest) continue;
+            if (tradeOpen(tick)) {
+                // any packet closes an open trade, with nothing delivered
+                trade.broken++;
+                trade.closeAt = tick;
+                trade.openFrom = -1;
+            }
+            if (a.type === 'interactPlayer' && opts.helper) {
+                trade.requests++;
+                trade.requestedOn.push(tick);
+                requestedNow = true;
+                continue;
+            }
+            if (requestedNow && a.type === 'interactNpc') {
+                trade.replaced++;
+                requestedNow = false;
+            }
             if (a.type === 'interactNpc') {
                 if (tick >= freeAt && attemptAt === null) {
                     attemptAt = tick;
@@ -132,13 +164,18 @@ function thieve(opts: { ticks: number; outcome: (n: number) => boolean; hp?: num
                 fletchXp += made * 25;
             }
         }
+        if (requestedNow && opts.helper) {
+            trade.opened++;
+            trade.openFrom = tick + 2;
+            trade.closeAt = tick + 2 + (opts.helper.openTicks ?? 4);
+        }
         for (const s of h.step(state())) {
             const slot = 'slot' in s.action ? s.action.slot : 'sourceSlot' in s.action ? s.action.sourceSlot : undefined;
             pending.push({ at: tick + 1, sent: s, name: slot === undefined ? undefined : inv[slot]?.name });
         }
     }
     const stunActions = landings.filter(l => l.type !== 'interactNpc' && l.type !== 'clickDialogOption' && !(l.type === 'useInventoryItem' && l.name === 'Shark'));
-    return { h, rolls, landings, stunActions, kit, failedAttempts, xp: () => ({ prayerXp, magicXp, fletchXp }) };
+    return { h, rolls, landings, stunActions, kit, failedAttempts, trade, xp: () => ({ prayerXp, magicXp, fletchXp }) };
 }
 
 type Result = { gapAfterSuccess: Record<number, number>; gapAfterFail: Record<number, number>; rollsPerTick: number; rolls: number; fails: number; stun?: StunSummary };
@@ -291,9 +328,51 @@ describe('pickpocket stun actions', () => {
         expect(h.status.counters.stunCostly).toBe(r.stun!.stuns);
     });
 
+    describe('top-up trades', () => {
+        const TOPUP = { name: 'topup', kind: 'player', player: '^helper$', fewer: [{ item: '^dragon bones$', than: 3 }] };
+        const run = (idleOnInterface: boolean, openTicks?: number) =>
+            thieve({ ticks: 260, outcome: everyFifthFails, kit: { bones: 4, blood: 6000, air: 6000, food: 4 }, helper: { bones: 12, openTicks }, params: { stunActions: [TOPUP, 'bury', 'charge'], idleOnInterface } });
+
+        test('a request at +2 owns its tick, the program idles through the trade, and the attempt stays on time', () => {
+            const r = run(true);
+            const res = r.h.status.result as Result;
+            expect(r.trade.replaced).toBe(0);
+            expect(r.trade.broken).toBe(0);
+            expect(r.trade.done).toBeGreaterThanOrEqual(2);
+            expect(r.trade.done).toBe(r.trade.opened);
+            expect(Object.keys(res.gapAfterFail)).toEqual(['11']);
+            expect(Object.keys(res.gapAfterSuccess)).toEqual(['2']);
+            for (const req of r.trade.requestedOn) {
+                // the request lands on T+4 (sent on k = 2), alone in its tick
+                const fail = r.failedAttempts.filter(a => a <= req).pop()!;
+                expect(req - fail).toBe(4);
+                expect(r.landings.filter(l => l.tick === req).map(l => l.type)).toEqual(['interactPlayer']);
+                // the top-up stun buries nothing; the trade's ticks carry no packet at all
+                expect(r.landings.some(l => l.tick > req && l.tick < fail + 11 && l.name === 'Dragon bones')).toBe(false);
+            }
+            expect(r.h.status.counters.interfaceTicks).toBe(4 * r.trade.opened);
+            // stuns after a top-up bury three again
+            expect(r.h.status.result && (res.stun!.byAction.bury ?? 0)).toBeGreaterThanOrEqual(3 * (res.stun!.stuns - r.trade.opened) - 6);
+        });
+
+        test('without idleOnInterface the knight click closes the trade', () => {
+            const r = run(false);
+            expect(r.trade.broken).toBeGreaterThan(0);
+            expect(r.trade.done).toBe(0);
+        });
+
+        test('a trade still open on the attempt tick delays the attempt by its extra ticks', () => {
+            const r = run(true, 7);
+            const res = r.h.status.result as Result;
+            expect(r.trade.broken).toBe(0);
+            // open T+6..T+12 (7 states): the first click after it lands on T+14
+            expect(res.gapAfterFail[14]).toBe(r.trade.opened);
+        });
+    });
+
     test('rejects a window outside the stun and unknown presets', () => {
         const h = new Harness('pp', createPickpocket);
-        for (const params of [{ stunWindow: [1, 6] }, { stunWindow: [2, 8] }, { stunWindow: [5, 3] }, { stunActions: ['juggle'] }, { stunActions: [{ kind: 'item', item: 'x' }] }, { stunActions: [] }]) {
+        for (const params of [{ stunWindow: [1, 6] }, { stunWindow: [2, 8] }, { stunWindow: [5, 3] }, { stunActions: ['juggle'] }, { stunActions: [{ kind: 'item', item: 'x' }] }, { stunActions: [] }, { stunActions: [{ kind: 'player' }] }]) {
             const s = h.runtime.start('pp', { maxTicks: 10, stunActions: ['bury'], ...params });
             expect(s.phase).toBe('fault');
             expect(s.fault).toMatch(/bad parameters/);
