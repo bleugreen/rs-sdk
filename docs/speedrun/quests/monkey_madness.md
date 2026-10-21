@@ -12,7 +12,8 @@
 **Verdict: about 4,500 ticks (stock client), about 3,950 with 1-tick pages,
 about 3,600 with dialogue bursts, for 110,000 base combat xp.** At the combat
 rate (about 14 base xp per tick, README) that xp is worth about 7,850 ticks, so the
-quest nets roughly 3,300-4,250 ticks. It is the most valuable quest in the chain,
+quest nets roughly 3,300-4,250 ticks on the success path, or about 2,600-3,500
+expected once failures are counted (below). It is the most valuable quest in the chain,
 but it carries real risk on Ape Atoll (the temple guards and two forced jailings,
 see Risks).
 
