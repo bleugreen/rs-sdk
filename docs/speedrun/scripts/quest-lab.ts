@@ -60,6 +60,7 @@ export interface DialogRun {
     pages: number; // continue clicks
     options: number; // option clicks
     ticks: number; // first open to closed
+    closedAt: number; // first tick the dialogue was seen closed (-1 if it never opened)
     transcript: string[];
 }
 
@@ -75,7 +76,7 @@ export async function runDialog(
 ): Promise<DialogRun> {
     const settle = opts.settleTicks ?? 3;
     const queue = [...choices];
-    const out: DialogRun = { pages: 0, options: 0, ticks: 0, transcript: [] };
+    const out: DialogRun = { pages: 0, options: 0, ticks: 0, closedAt: -1, transcript: [] };
     let first = -1;
     let lastOpen = -1;
     let lastPage = '';
@@ -118,6 +119,7 @@ export async function runDialog(
         await sdk.waitForStateUpdate();
     }
     out.ticks = first < 0 ? 0 : lastOpen - first + 1;
+    out.closedAt = first < 0 ? -1 : lastOpen + 1;
     if (queue.length) throw new Error(`dialog ended with unused choices: ${queue.join(', ')}`);
     return out;
 }
@@ -151,4 +153,70 @@ export function stats(xs: number[]) {
     const mean = s.reduce((a, b) => a + b, 0) / Math.max(1, s.length);
     const q = (f: number) => s[Math.min(s.length - 1, Math.floor(f * s.length))];
     return { n: s.length, mean: +mean.toFixed(2), min: s[0], p50: q(0.5), p90: q(0.9), max: s[s.length - 1] };
+}
+
+/** name -> id from a server/content/pack/*.pack file (npc, loc, obj). */
+export function packIds(file: 'npc.pack' | 'loc.pack' | 'obj.pack'): Map<string, number> {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { readFileSync } = require('fs') as typeof import('fs');
+    const m = new Map<string, number>();
+    const path = new URL(`../../../server/content/pack/${file}`, import.meta.url).pathname;
+    for (const line of readFileSync(path, 'utf8').split('\n')) {
+        const i = line.indexOf('=');
+        if (i > 0) m.set(line.slice(i + 1).trim(), parseInt(line.slice(0, i)));
+    }
+    return m;
+}
+
+export interface Segment {
+    name: string;
+    ticks: number;
+    pages: number;
+    options: number;
+    actions: number; // clicks on npcs, locs, items and ground items (not dialogue, not walking)
+    note?: string;
+}
+
+/**
+ * Segment timer. A segment runs from its first action to the tick its last
+ * effect was seen (dialogue closed, item arrived), so the helpers' settle
+ * waits are not counted.
+ */
+export class Segments {
+    list: Segment[] = [];
+    cur: Segment | null = null;
+    private start = 0;
+    private end = 0;
+    constructor(private sdk: BotSDK) {}
+
+    async run(name: string, fn: () => Promise<void | string>) {
+        this.cur = { name, ticks: 0, pages: 0, options: 0, actions: 0 };
+        this.start = tick(this.sdk);
+        this.end = this.start;
+        const note = await fn();
+        if (note) this.cur.note = note;
+        this.cur.ticks = this.end - this.start;
+        this.list.push(this.cur);
+        console.log(`SEG ${JSON.stringify(this.cur)}`);
+        this.cur = null;
+    }
+
+    mark(at = tick(this.sdk)) {
+        if (at > this.end) this.end = at;
+    }
+
+    action() {
+        if (this.cur) this.cur.actions++;
+    }
+
+    dialog(r: DialogRun) {
+        if (!this.cur) return;
+        this.cur.pages += r.pages;
+        this.cur.options += r.options;
+        if (r.closedAt >= 0) this.mark(r.closedAt);
+    }
+
+    total() {
+        return this.list.reduce((a, s) => ({ ticks: a.ticks + s.ticks, pages: a.pages + s.pages, options: a.options + s.options, actions: a.actions + s.actions }), { ticks: 0, pages: 0, options: 0, actions: 0 });
+    }
 }
