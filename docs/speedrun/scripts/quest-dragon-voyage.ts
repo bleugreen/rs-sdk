@@ -30,14 +30,14 @@ await runScript(async ({ sdk }) => {
         await tele(sdk, 3047, 3203);
         await waitTicks(sdk, 3);
         let t = now(sdk);
-        await clickLoc(sdk, /^gangplank$/i, /^cross$/i);
+        await clickLoc(sdk, /^gangplank$/i, /^cross$/i, undefined, { x: 3047, z: 3205, id: 2593, op: 1 });
         let r = await waitUntil(sdk, s => pos(s).level === 1, 20);
         run.board = { ticks: r ? r.tick - t : null, at: pos(sdk.getState()) };
         await waitTicks(sdk, 1);
 
         // ladder down to Ned's deck
         t = now(sdk);
-        await clickLoc(sdk, /^ladder$/i, /^climb-down$/i);
+        await clickLoc(sdk, /^ladder$/i, /^climb-down$/i, { x: 3049, z: 3208 }, { x: 3049, z: 3208, id: 2590, op: 1 });
         r = await waitUntil(sdk, s => pos(s).level === 3, 20);
         run.ladder = { ticks: r ? r.tick - t : null, at: pos(sdk.getState()) };
         await waitTicks(sdk, 2);
@@ -50,14 +50,14 @@ await runScript(async ({ sdk }) => {
         t = now(sdk);
         let rc = routeCounter(sdk);
         const surfaceStart = pos(sdk.getState());
-        await clickLoc(sdk, /^rock opening$/i, /^climb-down$/i);
+        await clickLoc(sdk, /^rock opening$/i, /^climb-down$/i, undefined, { x: 2833, z: 3255, id: 2609, op: 1 });
         r = await waitUntil(sdk, s => pos(s).z > 9000, 120);
         rc.stop();
         if (!r) {
             // the opening may be outside the loaded area or the route: walk closer first
             await sdk.sendWalk(2835, 3253, true);
             await waitUntil(sdk, s => Math.abs(pos(s).x - 2835) <= 2 && Math.abs(pos(s).z - 3253) <= 2, 80);
-            await clickLoc(sdk, /^rock opening$/i, /^climb-down$/i);
+            await clickLoc(sdk, /^rock opening$/i, /^climb-down$/i, undefined, { x: 2833, z: 3255, id: 2609, op: 1 });
             r = await waitUntil(sdk, s => pos(s).z > 9000, 60);
         }
         run.surface = { from: surfaceStart, ticks: r ? r.tick - t : null, routeTiles: rc.tiles, at: pos(sdk.getState()), hp: sdk.getState()!.player!.hp };
@@ -66,7 +66,7 @@ await runScript(async ({ sdk }) => {
         // dungeon: to Elvarg's gate and through it
         t = now(sdk);
         rc = routeCounter(sdk);
-        await clickLoc(sdk, /^gate$/i, /^open$/i, { x: 2847, z: 9637 });
+        await clickLoc(sdk, /^gate$/i, /^open$/i, { x: 2847, z: 9637 }, { x: 2847, z: 9637, id: 2608, op: 1 });
         r = await waitUntil(sdk, s => pos(s).x >= 2848 && pos(s).z > 9600 && pos(s).z < 9650, 120);
         rc.stop();
         run.dungeon = { ticks: r ? r.tick - t : null, routeTiles: rc.tiles, at: pos(sdk.getState()), hp: sdk.getState()!.player!.hp, chat: sdk.getChat({ limit: 3 }).map(m => m.text) };
