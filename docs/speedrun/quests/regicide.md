@@ -283,14 +283,14 @@ cross-over below stage 9 (`:393-399`).
 
 | Part | Ticks | Basis |
 |---|---|---|
-| Travel in Kandarin (rows 2, 24-26, 36, 38; teleports included) | 229 | inferred route tiles, measured teleports |
-| Tirannwn legs with their obstacle crossings (rows 5, 7, 9-10, 12, 14-15, 17-19, 21-22, 30-31, 34) | 1,097 | measured legs (`traverse`), the rest inferred from measured parts |
-| Dialogue (rows 1, 3, 6, 8, 11, 13, 16, 23, 32, 35, 37, 39: 78 pages, 0 options) | 182 | measured click-to-close totals (2 ticks per page + approach) |
-| Interactions and item steps (rows 25, 28, part of 9/14/18) | 22 | measured |
+| Travel in Kandarin (rows 2, 24, the walk in 25, 26, 36, 38; teleports included) | 221 | inferred route tiles, measured teleports |
+| Tirannwn legs with their obstacle crossings and the pickups, loom, tar and tracks on the way (rows 5, 7, 9-10, 12, 14-15, 17-19, 21-22, 30-31, 34) | 1,131 | measured legs (`traverse`), the rest inferred from measured parts |
+| Dialogue (rows 1, 3, 6, 8, 11, 13, 16, 23, 32, 35, 37, 39: 74 pages, 0 options; the tracker's last 4 pages are in row 17) | 181 | measured click-to-close totals (2 ticks per page + approach) |
+| Item steps outside Tirannwn (quicklime and grind in 25, bomb in 28) | 14 | measured |
 | Fight (row 20, 70/70/70) | 207 | measured median |
 | Forced waits: still (row 27), catapult cutscene (row 33) | 68 | measured |
 | Trade | 9 | measured |
-| **Regicide subtotal** | **about 1,830** (at 99 melee about 1,750) | |
+| **Regicide subtotal** | **1,831** (at 99 melee about 1,750) | sum of the step rows |
 | Underground Pass traversals #1 and #2 (rows 4, 29) | about 1,140 | inferred placeholders (UP agent's offline planner) |
 | **Total** | **about 2,970** | |
 | Messenger wait (row 0) | 0 if overlapped with other content, else 400-1200 | read |
