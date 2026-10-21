@@ -78,10 +78,10 @@ describe('continueBurst', () => {
         let n = 0;
         const orig = sdk.sendClickDialog.bind(sdk);
         (sdk as unknown as { sendClickDialog: unknown }).sendClickDialog = async (o: number, opts?: unknown) => {
-            n++;
+            const call = ++n;
             const busy = sdk.state!.dialog.isWaiting;
             await orig(o);
-            if (busy || (opts && n > 1 && n <= 3)) return { success: false, message: 'Failed to click dialog option' };
+            if (busy || (opts && call > 1 && call <= 3)) return { success: false, message: 'Failed to click dialog option' };
             queueMicrotask(() => sdk.push({ dialog: cont(sdk.state!.dialog.pageId!, true) }));
             return { success: true, message: 'ok' };
         };
@@ -135,5 +135,11 @@ describe('levelup', () => {
         w.stop();
         expect(w.dismissed).toBe(1);
         expect(sdk.sent).toEqual([{ method: 'sendClickDialog', args: [0] }]);
+    });
+
+    test('advance sends a plain continue', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, dialog: cont('only') }));
+        await advance(sdk as never, { maxTicks: 1 });
+        expect(sdk.sent[0]).toEqual({ method: 'sendClickDialog', args: [0] });
     });
 });
