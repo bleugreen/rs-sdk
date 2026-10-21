@@ -284,6 +284,7 @@ await runScript(async ({ bot, sdk }) => {
     let lastXpTick = -99;
     let clickArgs: [number, number, number] = [0, 1, 0];
     let retries = 0;
+    let closes = 0;
     const end = Date.now() + Number(arg('minutes', '40')) * 60_000;
     const done = () => (route ? reached >= 0 : inv >= CYCLES) || Date.now() > end;
 
@@ -325,6 +326,9 @@ await runScript(async ({ bot, sdk }) => {
         if (phase === 'free' && s.tick >= freeFrom) {
             if (s.trade?.isOpen) { phase = 'trade'; L.tradeOpen = s.tick; progress = s.tick; }
             else {
+                // An open chat modal (level-up dialog, "not enough bars" mesbox) makes us busy()
+                // (Player.ts), and the helper's trade requests bounce off until it closes.
+                if (s.dialog.isOpen || s.modalOpen) { sdk.sendCloseModal().catch(() => {}); closes++; }
                 const h = s.nearbyPlayers.find(p => p.name.toLowerCase() === HELPER.toLowerCase());
                 if (h) {
                     if (DISPOSE === 'drop') for (const p of s.inventory.filter(i => !/^hammer$/i.test(i.name)).slice(0, 3)) sdk.sendDropItem(p.slot).catch(() => {});
@@ -411,7 +415,7 @@ await runScript(async ({ bot, sdk }) => {
     const gaps: Record<number, number> = {};
     for (const l of logs) for (let i = 1; i < l.xps.length; i++) { const g = l.xps[i]! - l.xps[i - 1]!; gaps[g] = (gaps[g] ?? 0) + 1; }
     console.log(`xp gap histogram (within inventories): ${JSON.stringify(gaps)}`);
-    console.log(`interface click retries: ${retries}; ticks with a dialog open: ${dialogTicks}; levels ${Math.min(...Object.keys(levelTicks).map(Number))} -> ${smith(s).baseLevel}`);
+    console.log(`close-modal sends: ${closes}; interface click resends: ${retries}; ticks with a dialog open: ${dialogTicks}; levels ${Math.min(...Object.keys(levelTicks).map(Number))} -> ${smith(s).baseLevel}`);
     if (route) {
         console.log(`route ${start} -> ${UNTIL}: first trade request ${firstRequest}, level ${UNTIL} at ${reached}: ${reached - firstRequest} ticks over ${logs.length} inventories (plan ${PLAN.length})`);
         const marks = [10, 20, 30, 33, 40, 48, 50, 60, 68, 70, 80, 88, 90, 95, 99].filter(l => levelTicks[l]);
