@@ -11,6 +11,7 @@
 //   tripwire   tripwire (2220,3153): Step-over, then walking straight through
 //   crossover  dense forest (2232,3148) west->east and back (Agility 56, stage >= 8)
 //   teleport   Falador teleport cast at the old-camp tracker (2257,3150)
+//   gate       Arandar gate from the south and the north side at stages 11 and 13
 
 import { runScript } from '../../../sdk/runner';
 import { findLoc, now, pos, result, setStats, setVar, tele, waitTicks, waitUntil } from './quest-regicide-lab';
@@ -24,6 +25,7 @@ const at = (x: number, z: number) => (s: any) => s.player?.worldX === x && s.pla
 await runScript(async ({ sdk }) => {
     await setStats(sdk, { agility, hitpoints: 99 });
     const hp = () => sdk.getState()?.player?.hp ?? -1;
+    const bot_dismiss = async () => { for (let k = 0; k < 6 && sdk.getState()!.dialog.isOpen; k++) { await sdk.sendClickDialog(0); await waitTicks(sdk, 2); } };
 
     // Click a loc from where we stand and wait for one of the landing tiles.
     // The log balances are level-1 locs over bridge tiles; the client's scan only
@@ -146,6 +148,27 @@ await runScript(async ({ sdk }) => {
             await waitTicks(sdk, 6);
         }
         result('crossover', rows);
+    } else if (segment === 'gate') {
+        // Arandar gate (overpass_gate_left/right at 2384/2386,3334): opens if
+        // %regicide_quest > 12 or the player stands south of it (z < 3334),
+        // regicide_arandar_gate_guard.rs2:5. Try both sides at stage 11 and 13.
+        const rows = [];
+        for (const stage of [11, 13]) {
+            await setVar(sdk, 'regicide_quest', stage);
+            for (const [sz, side] of [[3333, 'south'], [3335, 'north']] as const) {
+                await tele(sdk, 2385, sz);
+                await waitTicks(sdk, 3);
+                const gate = (await sdk.scanNearbyLocs(4)).find(l => /gate/i.test(l.name) && l.options.length > 0);
+                if (!gate) { rows.push({ stage, side, error: 'gate not found' }); continue; }
+                const t0 = now(sdk);
+                await sdk.sendInteractLoc(gate.x, gate.z, gate.id, 1);
+                const r = await waitUntil(sdk, s => Math.abs((s.player?.worldZ ?? 0) - sz) >= 2 || s.dialog.isOpen, 12);
+                const d = sdk.getState()!.dialog;
+                rows.push({ stage, side, gate: `${gate.name}@${gate.x},${gate.z}`, ticks: r ? r.tick - t0 : null, end: pos(sdk.getState()), dialog: d.isOpen ? (d.text ?? '').slice(0, 60) : '' });
+                if (d.isOpen) { await sdk.sendClickDialog(0); await waitTicks(sdk, 2); await bot_dismiss(); }
+            }
+        }
+        result('arandar-gate', rows);
     } else if (segment === 'teleport') {
         const rows = [];
         for (let i = 0; i < reps; i++) {
