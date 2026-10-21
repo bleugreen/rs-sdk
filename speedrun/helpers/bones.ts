@@ -243,6 +243,8 @@ interface Options {
     fishPerTrip: number;
     /** Go for food when fewer than this many are carried. */
     minFood: number;
+    /** With a full bag, drop food for a bone while more than minFood + spareFood are carried. */
+    spareFood: number;
     /** Feathers to collect from chickens when the stock runs out. */
     feathers: number;
     /** Eat below this fraction of max hitpoints. */
@@ -268,8 +270,9 @@ export function parseOptions(o: Record<string, unknown>): Options {
         spot,
         train: num('train', 50),
         fish: o.fish !== false,
-        fishPerTrip: num('fishPerTrip', 20),
+        fishPerTrip: num('fishPerTrip', 10),
         minFood: num('minFood', 2),
+        spareFood: num('spareFood', 3),
         feathers: num('feathers', 300),
         eatAt: num('eatAt', 0.55),
         fleeAt: num('fleeAt', 0.35),
@@ -589,8 +592,14 @@ class Run {
             if (!g) return 'killed';
             const stacks = this.state().inventory.some(i => i.id === g.id) && /^(coins|.+ rune|feather)$/i.test(g.name);
             if (this.freeSlots() === 0 && !stacks) {
-                // Make room by eating if hurt at all; otherwise the trip is over.
+                // Make room by eating if hurt at all, or, for bones, by dropping a fish the trip
+                // will not need (self-caught food is cheap; a bank walk is not). Otherwise the trip is over.
                 if (this.food().length && this.hpFrac() < 0.95) await this.bot.eatFood(this.food()[0]!);
+                else if (/bones/i.test(g.name) && this.food().length > this.opt.minFood + this.opt.spareFood) {
+                    const f = this.food()[0]!;
+                    await this.bot.dropItem(exact(f.name), 1);
+                    await this.waitFor(s => s.inventory.length < 28, 3);
+                }
                 if (this.freeSlots() === 0) return 'full';
             }
             const before = this.sdk.countInventoryItems(exact(g.name));
