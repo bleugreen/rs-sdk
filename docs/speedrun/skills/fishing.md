@@ -90,6 +90,56 @@ from level 20; a quest-first account also skips the roughly 280-tick 1-20 band a
 At a 3-tick cycle every saving shrinks to about 60% of that. Quest durations belong to
 `docs/speedrun/quests/`; each quest pays only if its own playtime is below these figures.
 
+Remaining Fishing ticks for every subset of the five quests, to combine with quest
+durations. Abbreviations: SS Sea Slug, TBWT Tai Bwo Wannai Trio, Frem Fremennik Trials,
+Hero Heroes' Quest, Contest Fishing Contest.
+
+- **Normal cycle:** a measured segment of the 300 ms run (`fly20to99-lumb-300ms`), from the
+  tick it passed that xp to level 99. Every subset starts above level 20, so it skips the
+  1-20 band and the Draynor walk. The "none" row is the 1-99 total from section 2.
+- **3-tick cycle:** inferred, read model plus 1.3 ticks per level-up and 11 ticks per spot
+  move at 3.7 moves per 1,000 ticks.
+
+| Quests done | Base xp | Level | Fishing ticks, normal cycle | Fishing ticks, 3-tick |
+|---|---|---|---|---|
+| none | 0 | 1 | 5,120 | 3,110 |
+| Contest | 2,437 | 58 | 4,365 | 2,626 |
+| Hero | 2,725 | 60 | 4,323 | 2,598 |
+| Frem | 2,812.4 | 60 | 4,318 | 2,591 |
+| Hero+Contest | 5,162 | 69 | 3,982 | 2,387 |
+| Frem+Contest | 5,249.4 | 69 | 3,977 | 2,380 |
+| Frem+Hero | 5,537.4 | 70 | 3,930 | 2,356 |
+| TBWT | 6,500 | 72 | 3,808 | 2,280 |
+| SS | 7,175 | 74 | 3,735 | 2,226 |
+| Frem+Hero+Contest | 7,974.4 | 75 | 3,636 | 2,165 |
+| TBWT+Contest | 8,937 | 77 | 3,476 | 2,091 |
+| TBWT+Hero | 9,225 | 77 | 3,441 | 2,070 |
+| TBWT+Frem | 9,312.4 | 78 | 3,436 | 2,062 |
+| SS+Contest | 9,612 | 78 | 3,410 | 2,040 |
+| SS+Hero | 9,900 | 78 | 3,360 | 2,019 |
+| SS+Frem | 9,987.4 | 79 | 3,355 | 2,011 |
+| TBWT+Hero+Contest | 11,662 | 81 | 3,181 | 1,889 |
+| TBWT+Frem+Contest | 11,749.4 | 81 | 3,171 | 1,882 |
+| TBWT+Frem+Hero | 12,037.4 | 81 | 3,131 | 1,862 |
+| SS+Hero+Contest | 12,337 | 82 | 3,094 | 1,839 |
+| SS+Frem+Contest | 12,424.4 | 82 | 3,089 | 1,833 |
+| SS+Frem+Hero | 12,712.4 | 82 | 3,049 | 1,813 |
+| SS+TBWT | 13,675 | 83 | 2,928 | 1,744 |
+| TBWT+Frem+Hero+Contest | 14,474.4 | 84 | 2,816 | 1,687 |
+| SS+Frem+Hero+Contest | 15,149.4 | 85 | 2,736 | 1,638 |
+| SS+TBWT+Contest | 16,112 | 85 | 2,624 | 1,572 |
+| SS+TBWT+Hero | 16,400 | 86 | 2,592 | 1,551 |
+| SS+TBWT+Frem | 16,487.4 | 86 | 2,587 | 1,545 |
+| SS+TBWT+Hero+Contest | 18,837 | 88 | 2,309 | 1,382 |
+| SS+TBWT+Frem+Contest | 18,924.4 | 88 | 2,299 | 1,376 |
+| SS+TBWT+Frem+Hero | 19,212.4 | 88 | 2,270 | 1,357 |
+| all five | 21,649.4 | 90 | 2,008 | 1,191 |
+
+A quest's saving inside a plan is the difference between two rows that differ only by
+that quest. For example, Fremennik Trials saves 755 ticks alone (5,120 - 4,365... no:
+5,120 - 4,318 = 802) but only 341 on top of SS+TBWT (2,928 - 2,587), because later xp is
+dearer per level and cheaper per tick to replace.
+
 Fishing Trawler is a minigame, not a reward: about 20 catch rolls per player per
 1,000-tick game (`trawler_control.rs2:149-162`, `trawler_win.rs2:108-156`), roughly 1 base
 xp per tick (inferred), and helpers in the same boat do not raise any one player's share.
