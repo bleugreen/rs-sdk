@@ -176,10 +176,11 @@ costs 2 ticks (`primitives.md` §5).
 |---|---|---|---|---|
 | 80/80/80, 80 hp | 92 | 39 ticks, 5 hp lost | never attacked (the whole quest) | measured, 300 ms run |
 | 70/70/70, 70 hp | 80 | 63-68 ticks, 11-12 hp lost | attacked on the walk to the slave (a 109-tick fight) and again at the slave, **which killed the account** (no food) | measured, two 100 ms runs |
-| 70/70/70, 70 hp, Prayer 43, Protect from Melee switched on when a guard attacks and off after the kill | 80 (prayer adds about 5) | 55 ticks, 4 hp lost | one attack, at the surface winch: a 111-tick fight with no damage taken, 21 of 43 prayer points used; **survived**, quest complete in 1,746 ticks | measured, one 300 ms run (`quest-touristtrap-run.ts tt16 start 25 70 pray`) |
+| 70/70/70, 70 hp, Prayer 43, Protect from Melee switched on when a guard attacks and off after the kill | 85 with Prayer 43 (still below 87) | 55 ticks, 4 hp lost | one attack, at the surface winch: a 111-tick fight with no damage taken, 21 of 43 prayer points used; **survived**, quest complete in 1,746 ticks | measured, one 300 ms run (`quest-touristtrap-run.ts tt16 start 25 70 pray`) |
 
 Guard encounters are random: guards wander (range 3) and the bot passes them at
-different moments. The 70/70/70 runs drew 2, 2 and 1 attacks. So at combat 80, budget
+different moments. The three 70/70/70 runs drew 1 (a run cut short at the slave), 2 (the
+death) and 1 attacks. So at combat 80, budget
 about 110 ticks and 21 prayer points per attack, and carry a prayer potion or two for a
 second or third (inferred from those three runs). Holy Grail gives the Prayer early in
 the plan.
