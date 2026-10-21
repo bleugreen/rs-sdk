@@ -4,8 +4,8 @@ import type { ProgramStatus } from './lib/programs';
 import type { TickRow } from './lib/ticks';
 import { BOUNDARY_STEP } from './runner/step';
 import {
-    annotation, compareHiscore, type DirectRead, formatSummary, gateRefusal, type InPageRead, kitMissing, kitWant, parseArgs, parseDirectJson, parseKit,
-    ProgramTracker, ReachTracker, SessionClock, summarize, UsageError,
+    annotation, compareHiscore, DEFAULT_GATE_BOT, type DirectRead, formatPlayers, formatSummary, GATE_PLAYERS_STEP, gateRefusal, type InPageRead, kitMissing, kitWant,
+    parseArgs, parseDirectJson, parseKit, playerReads, playerSwing, ProgramTracker, ReachTracker, SessionClock, summarize, UsageError,
 } from './rehearse';
 import type { PlayerRow } from './tools/hiscore-scrape';
 
@@ -25,11 +25,26 @@ describe('parseArgs', () => {
     });
 
     test('the gate tab probes default to 60 trials with --gate-bot on the browser client', () => {
-        expect(parseArgs(['--skill=x', '--bot=b', '--gate-bot=cairn_gate']).gateProbeTrials).toBe(60);
+        expect(parseArgs(['--skill=x', '--bot=b', '--gate-bot=cairn_twin']).gateProbeTrials).toBe(60);
         expect(parseArgs(['--skill=x', '--bot=b', '--gate-bot=g', '--client=lite']).gateProbeTrials).toBe(0);
         expect(parseArgs(['--skill=x', '--bot=b', '--gate-bot=g', '--gate-probe-trials=20']).gateProbeTrials).toBe(20);
         expect(() => parseArgs(['--skill=x', '--bot=b', '--gate-probe-trials=20'])).toThrow('needs --gate-bot');
         expect(() => parseArgs(['--skill=x', '--bot=b', '--gate-bot=b'])).toThrow('separate gate account');
+    });
+
+    test('off a local world the gate account defaults to cairn_twin, with its tab probes', () => {
+        const demo = { defaultGateBot: DEFAULT_GATE_BOT };
+        expect(DEFAULT_GATE_BOT).toBe('cairn_twin');
+        expect(parseArgs(['--skill=x', '--bot=cairn_smoke'], demo)).toMatchObject({ gateBot: 'cairn_twin', gateProbeTrials: 60 });
+        expect(parseArgs(['--skill=x', '--bot=cairn_smoke', '--client=lite'], demo)).toMatchObject({ gateBot: 'cairn_twin', gateProbeTrials: 0 });
+        expect(parseArgs(['--skill=x', '--bot=b', '--gate-bot=g'], demo).gateBot).toBe('g');
+        // A direct read from a file: no gate account, so no gate tab either.
+        const fromFile = parseArgs(['--skill=x', '--bot=b', '--gate-json=/tmp/g.json'], demo);
+        expect(fromFile.gateBot).toBeUndefined();
+        expect(fromFile.gateProbeTrials).toBe(0);
+        expect(() => parseArgs(['--skill=x', '--bot=cairn_twin'], demo)).toThrow('the default, cairn_twin');
+        // The lab has no default.
+        expect(parseArgs(['--skill=x', '--bot=b']).gateBot).toBeUndefined();
     });
 
     test('refuses what cannot be right', () => {
@@ -92,7 +107,7 @@ const verdict = (c: GateCheck): DirectVerdict => ({
 });
 const now = Date.parse('2026-10-21T20:00:00Z');
 const read = (c: GateCheck, over: Partial<DirectRead> = {}): DirectRead => ({ source: 'gate-bot', takenAt: '2026-10-21T19:58:00Z', verdict: verdict(c), vantage: null, ...over });
-const page = (c: GateCheck, label = 'gate tab before'): InPageRead => ({ label, account: 'cairn_gate', verdict: verdict(c), loopRateP10: 72, at: '' });
+const page = (c: GateCheck, label = 'gate tab before'): InPageRead => ({ label, account: 'cairn_twin', verdict: verdict(c), loopRateP10: 72, at: '' });
 
 describe('gateRefusal', () => {
     test('a clean read on a live world goes', () => {
@@ -167,6 +182,60 @@ describe('summarize', () => {
         expect(text).toContain('rehearsal cairn_smoke: woodcutting to 15: chain done');
         expect(text).toContain('session: 57 ticks (57) -> playtime 58');
         expect(text).toContain('overhead 4 = 1.33 per boundary');
+    });
+});
+
+describe('player count through the attempt', () => {
+    const t0 = Date.parse('2026-10-21T20:00:00Z'); // 13:00 PDT
+    const min = 60_000;
+    const gateRow = (players: number | null) => ({ ...annotation(log, 'a', 'gate', GATE_PLAYERS_STEP, { meta: { players, origin: 'x' } }), at: new Date(t0).toISOString() });
+    const playersRow = (players: number | null, minutes: number) =>
+        annotation(log, 'a', 'players', '(players) during', { meta: { players, at: new Date(t0 + minutes * min).toISOString(), ms: 40 } });
+
+    test('reads come from the gate row and the players rows, in log order; other rows are ignored', () => {
+        const rows = [gateRow(1500), row('S00 tutorial skip', 3), playersRow(1480, 10), annotation(log, 'a', 'gate', '(gate) direct', {}), playersRow(null, 20)];
+        expect(playerReads(rows)).toEqual([{ at: t0, players: 1500 }, { at: t0 + 10 * min, players: 1480 }, { at: t0 + 20 * min, players: null }]);
+    });
+
+    test('the swing is (highest - lowest) / highest over the answered reads', () => {
+        const steady = playerSwing([{ at: 0, players: 1500 }, { at: 1, players: 1200 }, { at: 2, players: 1350 }]);
+        expect(steady).toMatchObject({ reads: 3, unanswered: 0, swing: 0.2, moved: false });
+        expect(steady.min?.players).toBe(1200);
+        expect(steady.max?.players).toBe(1500);
+        expect(steady.first?.players).toBe(1500);
+        expect(steady.last?.players).toBe(1350);
+
+        // A restart and refill: 1,587 down to 23 and back.
+        const restart = playerSwing([{ at: 0, players: 1587 }, { at: 1, players: null }, { at: 2, players: 23 }, { at: 3, players: 900 }]);
+        expect(restart).toMatchObject({ reads: 4, unanswered: 1, moved: true });
+        expect(restart.swing).toBeCloseTo(1564 / 1587, 10);
+        // A refill after a restart just before the attempt also counts (the first read is the low one).
+        expect(playerSwing([{ at: 0, players: 23 }, { at: 1, players: 600 }]).moved).toBe(true);
+    });
+
+    test('exactly half is not moved; just over is', () => {
+        expect(playerSwing([{ at: 0, players: 1000 }, { at: 1, players: 500 }])).toMatchObject({ swing: 0.5, moved: false });
+        expect(playerSwing([{ at: 0, players: 1000 }, { at: 1, players: 499 }]).moved).toBe(true);
+    });
+
+    test('degenerate inputs: none, one, all unanswered, all zero', () => {
+        expect(playerSwing([])).toMatchObject({ reads: 0, swing: 0, moved: false, first: null });
+        expect(playerSwing([{ at: 0, players: 40 }])).toMatchObject({ reads: 1, swing: 0, moved: false });
+        expect(playerSwing([{ at: 0, players: null }, { at: 1, players: null }])).toMatchObject({ reads: 2, unanswered: 2, swing: 0, moved: false, min: null });
+        expect(playerSwing([{ at: 0, players: 0 }, { at: 1, players: 0 }])).toMatchObject({ swing: 0, moved: false });
+    });
+
+    test('the summary lines: always the range, and the warning only when it moved', () => {
+        expect(formatPlayers(playerSwing([]))).toEqual([]);
+        const calm = formatPlayers(playerSwing(playerReads([gateRow(1500), playersRow(1400, 10)])));
+        expect(calm).toEqual(['players: 1,500 at the start, 1,400 at the end; lowest 1,400 (13:10:00 PDT), highest 1,500 (13:00:00 PDT); 2 reads']);
+        const moved = formatPlayers(playerSwing(playerReads([gateRow(1587), playersRow(null, 10), playersRow(23, 20), playersRow(900, 30)])));
+        expect(moved[0]).toBe('players: 1,587 at the start, 900 at the end; lowest 23 (13:20:00 PDT), highest 1,587 (13:00:00 PDT); 4 reads, 1 unanswered');
+        expect(moved[1]).toContain('MOVED 99% during the attempt (over 50%)');
+        // summarize carries it, and formatSummary prints it.
+        const s = summarize([gateRow(1587), playersRow(23, 20), annotation(log, 'a', 'session', '(session)', { sessionId: 1, startTick: 0, endTick: 57 })]);
+        expect(s.players.moved).toBe(true);
+        expect(formatSummary(s, { account: 'a', skill: 'woodcutting', to: 15, outcome: 'chain done', gate: [], hiscore: null })).toContain('MOVED 99%');
     });
 });
 
