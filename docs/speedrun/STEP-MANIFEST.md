@@ -624,7 +624,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Reference (rs/175, lab):** willow, rune axe, from WC 40, 60 logs in each of two runs: **2.84 and
   2.94 ticks per expected roll, 0 false lock-losses in 120 logs** (m, lab; rs/175, #151; its note on
   cairn://p/rs/158, 14:21 PDT, and rs/158's relay of main's summary, 14:48 PDT).
-  That fits the knife's 3-tick roll cadence that S07's 2,986 assumes. Below 3 is luck at 60 logs:
+  That fits the knife's 3-tick roll cadence that S07's knife figure assumes. Below 3 is luck at 60 logs:
   at p(40) = 103/256 the standard error is about 10% (i). It is a reference, not the acceptance run.
 - **Acceptance, local:** browser tab, lab engine at 300 ms, willows at 99, rune axe: knife within 5%
   of **3.00** ticks per expected roll over 200+ logs (the 3-tick lattice), reported beside **4.36**
