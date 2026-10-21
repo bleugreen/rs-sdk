@@ -47,8 +47,13 @@ await runScript(async ({ bot, sdk }) => {
     await sdk.sendSetCombatStyle(0); // accurate: not rapid, so the flinch is +1
     await say(`::tele 0,${stand[0] >> 6},${stand[1] >> 6},${stand[0] & 63},${stand[1] & 63}`);
     await T(2);
-    const oak = sdk.getState()!.nearbyLocs.filter(l => l.name === 'Oak').sort((a, b) => a.distance - b.distance)[0];
-    if (!oak) throw new Error('no oak in view');
+    let oak = sdk.getState()!.nearbyLocs.filter(l => l.name === 'Oak').sort((a, b) => a.distance - b.distance)[0];
+    for (let i = 0; !oak && i < 10; i++) {
+        await T(1);
+        oak = sdk.getState()!.nearbyLocs.filter(l => l.name === 'Oak').sort((a, b) => a.distance - b.distance)[0];
+    }
+    // fallback: the multi-combat oak south-west of Falador (loc 1281 oaktree, map m46_51)
+    if (!oak) oak = { x: 2949, z: 3314, id: 1281, name: 'Oak', distance: 1 } as any;
     const eq = sdk.getState()!.equipment.map(i => i.name).join(', ');
     console.log(`setup: mode=${mode} at (${sdk.getState()!.player!.worldX},${sdk.getState()!.player!.worldZ}) oak@(${oak.x},${oak.z}) equipment=[${eq}]`);
     // walk next to the oak with one ordinary chop click
@@ -88,8 +93,8 @@ await runScript(async ({ bot, sdk }) => {
             if (log) { fire(sdk.sendDropItem(log.slot)); dropTicks.push(s.tick + 1); }
             else fire(sdk.sendSay('::give logs 20'));
         } else {
-            const live = s.nearbyLocs.find(l => l.x === oak.x && l.z === oak.z && l.name === 'Oak');
-            if (live) { fire(sdk.sendInteractLoc(live.x, live.z, live.id, 1)); clickTicks.push(s.tick + 1); }
+            const stump = s.nearbyLocs.some(l => l.x === oak.x && l.z === oak.z && l.name !== 'Oak');
+            if (!stump) { fire(sdk.sendInteractLoc(oak.x, oak.z, oak.id, 1)); clickTicks.push(s.tick + 1); }
         }
     };
 
