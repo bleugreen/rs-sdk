@@ -186,9 +186,17 @@ Mule options: `serve` (the scored account), `couriers` (default `^cairn_h\d+$`),
 
 In the fleet: one mule account is enough; a second (`cairn_mule2`) helps only for
 back-to-back hand-offs or while the first is at the GE. The module exports `role`
-(mule), `courier` and `roles`. A courier trip ends when the trip is done, so the
-fleet should assign `courier` for one run and then give the account its gathering
-role back. The mule logs `phase` lines (`idle`, `consolidate`, `serve`, `ge`), a
+(mule), `courier` and `roles`. The fleet loads a role by name from
+`speedrun/helpers/<name>.ts`, so `speedrun/helpers/courier.ts` re-exports the courier
+as its `role`: `fleetctl assign <account> courier --options '{"mule":...,"items":[...]}'`.
+A courier trip ends when the trip is done, so the fleet should assign `courier` for
+one run and then give the account its gathering role back.
+
+The courier's `mule` can be any account standing at Varrock west bank that accepts the
+trade. The bones role does that with its `coinsFrom` option to take coins for Grand
+Exchange food (docs/speedrun/helpers/bones.md). A courier that starts in Al Kharid (the
+coin earners' warriors) gets stuck at the toll gate: its walk does not pay the gate.
+`crossTollGate` in `speedrun/lib/toll-gate.ts` handles that crossing. The mule logs `phase` lines (`idle`, `consolidate`, `serve`, `ge`), a
 `hand-off` line per package with the giver's ticks, and calls `reportBank` after
 every bank visit. Its role has `produces: []`: it holds stock rather than producing
 it, so the ledger should attribute the mule's bank by account, not by role.

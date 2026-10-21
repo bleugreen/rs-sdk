@@ -1,26 +1,37 @@
 // Bone collector: kills monsters for their bones (the scored account buries them for
-// Prayer), loots coins and small valuables, catches and cooks its own food, banks, reports.
+// Prayer), loots coins and small valuables, banks, reports. Food is bought at the Grand
+// Exchange or caught and cooked by the helper itself.
 //
 //   bun speedrun/helpers/bones.ts <account>
 //   ROLE_OPTIONS='{"spot":"hill_giants","train":50}' bun speedrun/helpers/bones.ts <account>
+//   ROLE_OPTIONS='{"spot":"baby_blue","coinsFrom":"^cairn_h6\\d$"}' bun speedrun/helpers/bones.ts <account>
 //
 // Stages, chosen afresh from observed state at the top of every cycle (so the role
 // resumes from anywhere: mid-fight, mid-walk, full inventory, after a relog or a death):
 //   1. tutorial      skip it.
 //   2. train         Lumbridge cows until Attack, Strength and Defence reach `train`.
-//   3. fishing kit   Draynor net fishing to Fishing 20, a fly fishing rod from Gerrant
-//                    (Port Sarim, 5 gp), feathers from the Lumbridge chickens.
-//   4. food          fly fish trout/salmon at Barbarian Village, cook on its fire.
+//   3. fishing kit   (food: 'fish' only) Draynor net fishing to Fishing 20, a fly fishing
+//                    rod from Gerrant (Port Sarim, 5 gp), feathers from the Lumbridge chickens.
+//   4. food          'ge': sharks bought in bulk at the Varrock west Grand Exchange, banked,
+//                    `foodPerTrip` carried out per trip; 'fish': fly fish trout/salmon at
+//                    Barbarian Village and cook on its fire.
 //   5. bones         work the spot (Edgeville dungeon hill giants by default; the brass
 //                    key from the dungeon floor opens the short route), bank at Varrock West.
-// No food at all (fish: false, or no kit yet) falls back to resting at the bank.
+// Throughout, an EatGuard eats below `eatAt` whatever the role is doing (walks included).
+// With no food at all (food: 'none') the helper rests at the bank.
 // docs/speedrun/helpers/bones.md has the method comparison and the measured rates.
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, GroundItem, InventoryItem, NearbyNpc } from '../../sdk/types';
+import { TRADE_REQUEST_CHAT_TYPE } from '../../sdk/types';
 import type { Role, RoleContext } from './role';
 import { runStandalone } from './role';
 import { findLongPath, getDoorAt } from '../../sdk/pathfinding';
+import { openTrade } from '../lib/trade';
+import { Buyer } from './buyer';
+import { EatGuard } from './eat-guard';
+import { waitForFreshState } from '../lib/fresh-state';
+import { accountMatches, playerPattern } from './mule';
 
 interface Box { x1: number; z1: number; x2: number; z2: number }
 interface Tile { x: number; z: number }
@@ -50,6 +61,7 @@ const BRASS_LADDER_BOTTOM: Tile = { x: 3116, z: 9853 };
 /** Ground spawn of the brass key, 15 tiles from the giants. */
 const BRASS_KEY_SPAWN: Tile = { x: 3131, z: 9862 };
 const BRASS_KEY = /^brass key$/i;
+const inBrassHouse = (p: Tile) => inBox({ x1: 3113, z1: 3450, x2: 3117, z2: 3453 }, p.x, p.z);
 
 const COW_FIELD: Box = { x1: 3242, z1: 3255, x2: 3265, z2: 3298 };
 const CHICKEN_COOP: Box = { x1: 3222, z1: 3293, x2: 3238, z2: 3303 };
@@ -90,6 +102,7 @@ const HILL_GIANTS: Spot = {
     area: { x1: 3088, z1: 9812, x2: 3126, z2: 9858 },
     centre: { x: 3108, z: 9836 },
     async enter(r) {
+        if (!(await r.routeToSpot(this))) return false;
         if (!r.underground()) {
             if (r.carrying(BRASS_KEY)) {
                 if (!(await r.throughBrassDoor(true))) return false;
@@ -149,6 +162,7 @@ const inVelrakCell = (t: Tile) => t.z < VELRAK_CELL_DOOR.z && t.z > 9675 && Math
  * carrying one). One step per call; returns true once the key is carried and the cell is left.
  */
 async function fetchDustyKey(r: Run): Promise<boolean> {
+    if (!(await r.routeToSpot(BABY_BLUE))) return false;
     if (!r.underground()) {
         if (!(await r.walk(TAVERLEY_DUNGEON_LADDER.x, TAVERLEY_DUNGEON_LADDER.z + 1, 2, 300_000))) return false;
         await r.climb(/ladder/i, /climb-down/i, true, TAVERLEY_DUNGEON_LADDER);
@@ -208,6 +222,16 @@ function sameSideOf(door: Tile, from: Tile, to: Tile): boolean {
 }
 
 /**
+ * Whether an underground tile is inside the baby blue room, west of the dusty-key gate. The gate
+ * tile itself counts as outside: a helper can stop on it (seen 2026-10-21 09:26 UTC, cairn_h51
+ * at (2924, 9803) with "The gate locks shut behind you"), and from there the way on is east.
+ */
+export function inBabyBlueRoom(p: Tile): boolean {
+    return p.x < DUSTY_KEY_DOOR.x && sameSideOf(DUSTY_KEY_DOOR, p, BABY_BLUE_CENTRE);
+}
+const BABY_BLUE_CENTRE: Tile = { x: 2898, z: 9775 };
+
+/**
  * Taverley dungeon baby blue dragons: 9 spawns at (2892-2909, 9763-9806), level 48, 50 hp,
  * no dragonfire, cowardly, babydragon bones (30 base). Four blue dragons share the room
  * (cowardly too; the role ignores them). The ladder bottom is walled off from the room: the
@@ -219,19 +243,20 @@ const BABY_BLUE: Spot = {
     npc: /^baby blue dragon$/i,
     bones: /^babydragon bones$/i,
     area: { x1: 2876, z1: 9740, x2: 2923, z2: 9810 },
-    centre: { x: 2898, z: 9775 },
+    centre: BABY_BLUE_CENTRE,
     requires: DUSTY_KEY,
     acquire: fetchDustyKey,
     inside(r) {
         const p = r.pos();
-        return r.underground() && inBox(this.area, p.x, p.z) && sameSideOf(DUSTY_KEY_DOOR, p, this.centre);
+        return r.underground() && inBox(this.area, p.x, p.z) && inBabyBlueRoom(p);
     },
     async enter(r) {
+        if (!(await r.routeToSpot(this))) return false;
         if (!r.underground()) {
             if (!(await r.walk(TAVERLEY_DUNGEON_LADDER.x, TAVERLEY_DUNGEON_LADDER.z + 1, 2, 300_000))) return false;
             if (!(await r.climb(/ladder/i, /climb-down/i, true, TAVERLEY_DUNGEON_LADDER))) return false;
         }
-        if (!sameSideOf(DUSTY_KEY_DOOR, r.pos(), this.centre)) {
+        if (!inBabyBlueRoom(r.pos())) {
             if (!(await r.walk(DUSTY_KEY_DOOR.x + 1, DUSTY_KEY_DOOR.z, 0, 180_000))) return false;
             const door = (await r.sdk.scanNearbyLocs(4)).find(l => /door|gate/i.test(l.name) && l.x === DUSTY_KEY_DOOR.x && l.z === DUSTY_KEY_DOOR.z);
             if (!door) { r.ctx.log('baby_blue: no dusty-key door', { at: [r.pos().x, r.pos().z] }); return false; }
@@ -243,7 +268,12 @@ const BABY_BLUE: Spot = {
     },
     async leave(r) {
         if (r.underground()) {
-            if (sameSideOf(DUSTY_KEY_DOOR, r.pos(), this.centre)) {
+            if (inVelrakCell(r.pos())) {
+                const door = (await r.sdk.scanNearbyLocs(6)).find(l => l.x === VELRAK_CELL_DOOR.x && l.z === VELRAK_CELL_DOOR.z);
+                if (door) await r.bot.interactLoc(door, /open/i);
+                if (!(await r.waitFor(s => (s.player?.worldZ ?? 0) > VELRAK_CELL_DOOR.z, 8))) return false;
+            }
+            if (inBabyBlueRoom(r.pos())) {
                 if (!(await r.walk(DUSTY_KEY_DOOR.x - 1, DUSTY_KEY_DOOR.z, 0, 90_000))) return false;
                 const door = (await r.sdk.scanNearbyLocs(4)).find(l => /door|gate/i.test(l.name) && l.x === DUSTY_KEY_DOOR.x && l.z === DUSTY_KEY_DOOR.z);
                 if (door) await r.bot.interactLoc(door, /open/i);
@@ -272,6 +302,7 @@ const CHAOS_DRUIDS: Spot = {
     area: { x1: 3098, z1: 9918, x2: 3120, z2: 9950 },
     centre: { x: 3109, z: 9935 },
     async enter(r) {
+        if (!(await r.routeToSpot(this))) return false;
         if (!r.underground()) {
             if (!(await r.walk(EDGEVILLE_TRAPDOOR.x, EDGEVILLE_TRAPDOOR.z + 1, 1, 300_000))) return false;
             if (!(await r.climb(/trapdoor/i, /climb-down|open/i, true, EDGEVILLE_TRAPDOOR))) return false;
@@ -295,6 +326,7 @@ const CHAOS_DRUIDS_TAVERLEY: Spot = {
     area: { x1: 2922, z1: 9840, x2: 2944, z2: 9858 },
     centre: { x: 2933, z: 9849 },
     async enter(r) {
+        if (!(await r.routeToSpot(this))) return false;
         if (!r.underground()) {
             if (!(await r.walk(TAVERLEY_DUNGEON_LADDER.x, TAVERLEY_DUNGEON_LADDER.z + 1, 2, 300_000))) return false;
             if (!(await r.climb(/ladder/i, /climb-down/i, true, TAVERLEY_DUNGEON_LADDER))) return false;
@@ -325,6 +357,13 @@ export const SPOTS: Record<string, Spot> = {
 const DEFAULT_LOOT = /^(coins|(law|nature|cosmic|death|chaos|blood|soul) rune|grimy .+|limpwurt root|uncut (sapphire|emerald|ruby|diamond|dragonstone)|.+ talisman|brass key|dusty key)$/i;
 
 const FOOD = /^(shark|manta ray|sea turtle|swordfish|lobster|monkfish|bass|tuna|salmon|pike|trout|cod|herring|mackerel|sardine|anchovies|shrimps|cooked chicken|cooked meat|bread|cake|2\/3 cake|slice of cake|chocolate cake|meat pie|stew|kebab|plain pizza|meat pizza)$/i;
+/** Hitpoints each food heals (consume.rs2 effects); anything else is taken as 5. */
+const HEAL: Record<string, number> = {
+    shark: 20, 'manta ray': 22, 'sea turtle': 21, swordfish: 14, lobster: 12, monkfish: 16, bass: 13, tuna: 10,
+    salmon: 9, pike: 8, trout: 7, cod: 7, mackerel: 6, herring: 5, sardine: 4, shrimps: 3, anchovies: 1
+};
+export const healOf = (name: string) => HEAL[name.toLowerCase()] ?? 5;
+const edible = (i: InventoryItem) => FOOD.test(i.name) && i.optionsWithIndex.some(o => /^eat$/i.test(o.text));
 const RAW_FISH = /^raw (trout|salmon)$/i;
 const NET_FISH = /^raw (shrimps|anchovies)$/i;
 const NET = /^small fishing net$/i;
@@ -375,12 +414,31 @@ export function gearRank(name: string): { slot: string; tier: number; metal: str
 // Options
 // ---------------------------------------------------------------------------
 
+type FoodSource = 'ge' | 'fish' | 'none';
+const FOOD_SOURCES: FoodSource[] = ['ge', 'fish', 'none'];
+
 interface Options {
     spot: Spot;
     /** Train Attack, Strength and Defence on cows until all reach this. */
     train: number;
-    /** Catch and cook food (trout/salmon at Barbarian Village). */
-    fish: boolean;
+    /**
+     * Where food comes from: 'ge' buys `foodItem` at the Grand Exchange (falling back to
+     * 'fish' for 30 minutes when there are no coins); 'fish' catches and cooks trout/salmon
+     * at Barbarian Village; 'none' rests at the bank when hurt.
+     */
+    food: FoodSource;
+    /** GE food: the item bought and eaten. */
+    foodItem: string;
+    /** GE food: carried out of the bank per trip. */
+    foodPerTrip: number;
+    /** GE food: bought per exchange visit, coins permitting. */
+    buyFood: number;
+    /** GE food: never pay more per item (a resting bid at this price is left when the ask is higher). */
+    maxFoodPrice: number;
+    /** GE food: login-name RegExp of accounts whose coins this account accepts by trade while it waits at Varrock West. */
+    coinsFrom: RegExp | null;
+    /** GE food: minutes to wait at Varrock West for coins before catching fish instead. */
+    coinWaitMin: number;
     /** Raw fish to catch per food run. */
     fishPerTrip: number;
     /** Go for food when fewer than this many are carried. */
@@ -410,10 +468,18 @@ export function parseOptions(o: Record<string, unknown>): Options {
     const spotId = typeof o.spot === 'string' ? o.spot : 'hill_giants';
     const spot = SPOTS[spotId];
     if (!spot) throw new Error(`bones: unknown spot '${spotId}' (known: ${Object.keys(SPOTS).join(', ')})`);
+    const food = (o.food ?? (spot === BABY_BLUE ? 'ge' : 'fish')) as FoodSource;
+    if (!FOOD_SOURCES.includes(food)) throw new Error(`bones: unknown food '${String(o.food)}' (known: ${FOOD_SOURCES.join(', ')})`);
     return {
         spot,
         train: num('train', 50),
-        fish: o.fish !== false,
+        food,
+        foodItem: typeof o.foodItem === 'string' ? o.foodItem : 'Shark',
+        foodPerTrip: num('foodPerTrip', 10),
+        buyFood: num('buyFood', 150),
+        maxFoodPrice: num('maxFoodPrice', 900),
+        coinsFrom: typeof o.coinsFrom === 'string' && o.coinsFrom ? new RegExp(o.coinsFrom, 'i') : null,
+        coinWaitMin: num('coinWaitMin', 20),
         fishPerTrip: num('fishPerTrip', 10),
         minFood: num('minFood', 2),
         spareFood: num('spareFood', 3),
@@ -439,8 +505,10 @@ export class Run {
     readonly bot: BotActions;
     readonly sdk: BotSDK;
     nextKeyLook = 0;
-    /** Give up on a spot's `acquire` (and fall back to hill giants) after this wall time. */
-    readonly acquireDeadline = Date.now() + 30 * 60_000;
+    private acquireSince: number | null = null;
+    private requirementBankChecked = false;
+    /** The requested spot never changes; a fallback lasts only until the next bank visit. */
+    activeSpot: Spot;
     kills = 0;
     private looted: Record<string, number> = {};
     /** Loot picked up, by item id: tells apart items that share a name (every unidentified herb is "Herb"). */
@@ -451,6 +519,23 @@ export class Run {
     /** Bank contents as of the last visit (null until the first one). */
     private bankView: Map<string, number> | null = null;
     private currentPhase = 'start';
+    /** Eats below eatAt whatever the role is doing; started and stopped by the role. */
+    readonly guard: EatGuard;
+    readonly buyer: Buyer;
+    /** GE food falls back to catching fish until this time (no food banked and no coins for more). */
+    private fishUntil = 0;
+    /** Missing fishing equipment must not cause a tight GE/fishing retry loop. */
+    private fishingRetryAt = 0;
+    /** GE food: no purchase is tried before this time (the last exchange visit bought nothing). */
+    private geRetryAt = 0;
+    /** When the current wait for coins at Varrock West began (0: not waiting). */
+    private coinWaitSince = 0;
+    /** Price paid per food item at the last purchase (null: not bought this session). */
+    private foodPrice: number | null = null;
+    /** The trip in progress: left the bank at `at` with `food` food; `inRoomAt` is the first cycle at the spot. */
+    private trip: { at: number; food: number; eats: number; kills: number; inRoomAt: number | null } | null = null;
+    /** Ticks from each attack to the target's death, this session. */
+    private readonly killTicks: number[] = [];
 
     /** Log each stage change once: train, kit:net, kit:rod, kit:feathers, food:cook, food:fish, bones:<spot>. */
     phase(to: string): void {
@@ -460,8 +545,40 @@ export class Run {
     }
 
     constructor(readonly ctx: RoleContext, readonly opt: Options) {
+        this.activeSpot = opt.spot;
         this.bot = ctx.bot;
         this.sdk = ctx.sdk;
+        this.guard = new EatGuard(ctx.sdk, { eatAt: opt.eatAt, food: FOOD });
+        this.buyer = new Buyer(ctx);
+    }
+
+    /** The food source in effect now: GE food can be falling back to fishing. */
+    foodSource(): FoodSource {
+        return this.opt.food === 'ge' && Date.now() < this.fishUntil ? 'fish' : this.opt.food;
+    }
+    fishing(): boolean { return this.foodSource() === 'fish'; }
+    get foodRe(): RegExp { return exact(this.opt.foodItem); }
+
+    /** A failed temporary fallback must never disable the requested GE source or its receiver. */
+    stopFishing(why: string): void {
+        this.fishUntil = 0;
+        if (this.opt.food === 'ge') {
+            this.fishingRetryAt = Date.now() + 30 * 60_000;
+            this.coinWaitSince = 0;
+            this.ctx.log(`${why}; resuming GE food, fishing retry in 30 minutes`);
+        } else {
+            this.ctx.log(`${why}; fishing for food disabled`);
+            this.opt.food = 'none';
+        }
+    }
+
+    /** What a bank visit takes back out for the next trip. */
+    tripKit(): { re: RegExp; n: number }[] {
+        const kit = [{ re: BRASS_KEY, n: 1 }];
+        if (this.opt.spot.requires) kit.push({ re: this.opt.spot.requires, n: 1 });
+        if (this.opt.food === 'ge') kit.push({ re: this.foodRe, n: this.opt.foodPerTrip });
+        if (this.fishing()) kit.push({ re: ROD, n: 1 }, { re: FEATHER, n: 10_000 });
+        return kit;
     }
 
     // ---- state helpers ----
@@ -483,7 +600,8 @@ export class Run {
         return (hp?.level ?? p.hp) / Math.max(1, hp?.baseLevel ?? p.maxHp ?? 10);
     }
     freeSlots(): number { return 28 - this.state().inventory.length; }
-    food(): InventoryItem[] { return this.state().inventory.filter(i => FOOD.test(i.name)); }
+    /** Edible food carried (banknotes excluded). */
+    food(): InventoryItem[] { return this.state().inventory.filter(edible); }
     carried(re: RegExp): number { return this.state().inventory.filter(i => re.test(i.name)).reduce((a, i) => a + i.count, 0); }
     carrying(re: RegExp): boolean { return this.carried(re) > 0; }
     banked(re: RegExp): number {
@@ -504,7 +622,25 @@ export class Run {
         return !!s && pred(s);
     }
 
+    /** Exit the dungeon we are actually in, not the spot selected for our next trip. */
+    locationSpot(): Spot | null {
+        if (!this.underground()) return null;
+        return this.pos().x < 3000 ? BABY_BLUE : HILL_GIANTS;
+    }
+
+    async routeToSpot(spot: Spot): Promise<boolean> {
+        const here = this.locationSpot();
+        if (here && (here.centre.x < 3000) !== (spot.centre.x < 3000)) return here.leave(this);
+        if (!here && inBrassHouse(this.pos())) return this.throughBrassDoor(false);
+        return true;
+    }
+
     async walk(x: number, z: number, tol: number, timeout: number): Promise<boolean> {
+        if (z < UNDERGROUND_Z) {
+            const here = this.locationSpot();
+            if (here && !(await here.leave(this))) return false;
+            if (inBrassHouse(this.pos()) && !inBrassHouse({ x, z }) && !(await this.throughBrassDoor(false))) return false;
+        }
         for (let attempt = 0; attempt < 3; attempt++) {
             if (this.aborted()) return false;
             if (dist(this.pos(), { x, z }) <= tol) return true;
@@ -540,7 +676,7 @@ export class Run {
 
     /** Unlock the brass-key house door with the key, going in (`entering`) or out. */
     async throughBrassDoor(entering: boolean): Promise<boolean> {
-        const inside = (s: BotWorldState) => (s.player?.worldZ ?? 0) >= BRASS_DOOR.z;
+        const inside = (s: BotWorldState) => !!s.player && inBrassHouse({ x: s.player.worldX, z: s.player.worldZ });
         for (let attempt = 0; attempt < 4; attempt++) {
             if (inside(this.state()) === entering) return true;
             if (entering && !(await this.walk(BRASS_DOOR_OUTSIDE.x, BRASS_DOOR_OUTSIDE.z, 1, 300_000))) continue;
@@ -569,12 +705,16 @@ export class Run {
     summary(): Record<string, unknown> {
         const hours = (Date.now() - this.startedAt) / 3_600_000;
         const bones = Object.entries(this.looted).filter(([k]) => /bones/i.test(k)).reduce((a, [, v]) => a + v, 0);
+        const sorted = [...this.killTicks].sort((a, b) => a - b);
+        const pct = (p: number) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))] ?? null;
         return {
             kills: this.kills,
             looted: this.looted,
+            eaten: this.guard.eaten,
             deaths: this.deaths,
             hours: Number(hours.toFixed(3)),
             bonesPerHour: hours > 0 ? Math.round(bones / hours) : 0,
+            killTicks: { n: sorted.length, p10: pct(0.1), p50: pct(0.5), p90: pct(0.9) },
             levels: ['Attack', 'Strength', 'Defence', 'Hitpoints', 'Fishing', 'Cooking'].map(s => `${s.slice(0, 2)}${this.level(s)}`).join(' ')
         };
     }
@@ -613,14 +753,6 @@ export class Run {
         }
     }
 
-    async eatIfLow(): Promise<boolean> {
-        if (this.hpFrac() >= this.opt.eatAt) return false;
-        const f = this.food()[0];
-        if (!f) return false;
-        const r = await this.bot.eatFood(f);
-        return r.success;
-    }
-
     /** Keep one of each key; the jail key is done with once the dusty key is carried. */
     async dropSpareKeys(): Promise<void> {
         const inv = this.state().inventory;
@@ -645,25 +777,46 @@ export class Run {
         const inv = this.state().inventory;
         const carried = {
             used: inv.length,
-            food: inv.filter(i => FOOD.test(i.name)).length,
+            food: inv.filter(edible).length,
             bones: inv.filter(i => /bones$/i.test(i.name)).length
         };
+        // The trip so far, measured from the bank it left to the moment it turned back.
+        const t = this.trip;
+        const trip = t && {
+            min: Number(((Date.now() - t.at) / 60_000).toFixed(1)),
+            roomMin: t.inRoomAt ? Number(((Date.now() - t.inRoomAt) / 60_000).toFixed(1)) : 0,
+            foodOut: t.food,
+            foodBack: carried.food,
+            eats: this.guard.eats - t.eats,
+            kills: this.kills - t.kills
+        };
         if (!this.nearBank()) {
-            const ok = spot ? await spot.leave(this) : await this.walkToNearestBank();
+            const exit = this.locationSpot();
+            const ok = exit ? await exit.leave(this) : await this.walkToNearestBank();
             if (!ok) return false;
         }
         const open = await this.bot.openBank();
-        if (!open.success) {
-            this.ctx.log('bank: open failed', { why, reason: open.message });
+        // Only the bank's own state says its contents are loaded. Depositing into, or reading,
+        // any other window leaves the bank looking empty to the food stages and the ledger.
+        if (!open.success || !(await this.waitFor(s => s.bank.isOpen, 5))) {
+            this.ctx.log('bank: open failed', { why, reason: open.success ? 'bank interface not open' : open.message });
+            if (this.state().interface.isOpen) await this.bot.closeInterface();
             return false;
         }
         const lv = { fishing: this.level('Fishing'), cooking: this.level('Cooking') };
-        const keep = (name: string) => keepOnBank(name, lv, spot?.requires);
-        for (const name of [...new Set(this.state().inventory.map(i => i.name))].filter(n => !keep(n))) {
-            await this.bot.depositItem(exact(name), -1);
+        // Food is kept for the next trip, but food banknotes (from the exchange) go in to be
+        // un-noted, and without fishing the fishing kit and raw fish only cost slots.
+        const fishingKit = (n: string) => ROD.test(n) || FEATHER.test(n) || RAW_FISH.test(n) || NET.test(n) || NET_FISH.test(n);
+        const fishing = this.fishing();
+        const keep = (i: InventoryItem) => keepOnBank(i.name, lv, this.opt.spot.requires) && !(FOOD.test(i.name) && !edible(i)) && (fishing || !fishingKit(i.name));
+        const seen = new Set<number>();
+        for (const item of this.state().inventory) {
+            if (seen.has(item.id) || keep(item)) continue;
+            seen.add(item.id);
+            await this.bot.depositItem(item, -1);
         }
         for (const w of withdraw) {
-            const have = this.carried(w.re);
+            const have = this.state().inventory.filter(i => w.re.test(i.name) && (!FOOD.test(i.name) || edible(i))).reduce((a, i) => a + i.count, 0);
             const item = this.sdk.getBankItems().find(b => w.re.test(b.name));
             if (item && have < w.n) await this.bot.withdrawItem(item, Math.min(item.count, w.n - have));
         }
@@ -671,8 +824,16 @@ export class Run {
         this.bankView = new Map(items.map(i => [i.name, i.count]));
         this.ctx.reportBank({ items });
         const bones = items.filter(i => /bones/i.test(i.name)).map(i => `${i.name} ${i.count}`).join(', ');
-        this.ctx.log('banked', { why, carried, stock: bones || 'no bones', ...this.summary() });
+        const food = this.opt.food === 'ge' ? { foodBanked: this.banked(this.foodRe), coinsBanked: this.banked(/^coins$/i) } : {};
+        this.ctx.log('banked', { why, carried, trip, ...food, stock: bones || 'no bones', ...this.summary() });
         await this.bot.closeBank();
+        if (this.activeSpot !== this.opt.spot) {
+            this.logDowngrade('bank trip; retrying preferred spot');
+            this.activeSpot = this.opt.spot;
+            this.acquireSince = null;
+            this.requirementBankChecked = false;
+        }
+        this.trip = { at: Date.now(), food: this.food().length, eats: this.guard.eats, kills: this.kills, inRoomAt: null };
         return true;
     }
 
@@ -697,7 +858,8 @@ export class Run {
             t.npc.test(n.name) && n.hp !== 0 && inBox(t.area, n.x, n.z) &&
             n.optionsWithIndex.some(o => /attack/i.test(o.text)));
         // An NPC already on us comes first (giants aggress); otherwise skip ones in someone else's fight.
-        const onMe = candidates.filter(n => n.inCombat && n.distance <= 2 && s.player!.combat.inCombat);
+        const combat = s.player!.combat;
+        const onMe = candidates.filter(n => n.inCombat && combat.inCombat && combat.targetType === 'npc' && combat.targetIndex === n.index);
         if (onMe.length) return onMe.sort((a, b) => a.distance - b.distance)[0] ?? null;
         const crowded = (n: NearbyNpc) => s.nearbyPlayers.filter(p =>
             Math.max(Math.abs((p.worldX ?? p.x) - n.x), Math.abs((p.worldZ ?? p.z) - n.z)) <= 1).length > this.opt.maxPlayersNearTarget;
@@ -714,16 +876,19 @@ export class Run {
             return 'lost';
         }
         let last: Tile = { x: target.x, z: target.z };
+        const startTick = this.state().tick;
         const deadline = Date.now() + 120_000;
         let idleTicks = 0;
+        let eatsSeen = this.guard.eats;
         while (Date.now() < deadline && !this.aborted()) {
             await this.sdk.waitForTicks(1);
             const s = this.state();
             if (s.player!.isDead) return 'lost';
-            if (this.hpFrac() < this.opt.eatAt) {
-                if (!(await this.eatIfLow()) && this.hpFrac() < this.opt.fleeAt) return 'flee';
-                // Eating interrupts the attack; re-engage.
-                const again = this.state().nearbyNpcs.find(n => n.index === target.index);
+            if (this.hpFrac() < this.opt.fleeAt && this.food().length === 0) return 'flee';
+            if (this.guard.eats !== eatsSeen) {
+                // The guard ate, which clears the attack (OPHELD clears the interaction); re-engage.
+                eatsSeen = this.guard.eats;
+                const again = s.nearbyNpcs.find(n => n.index === target.index);
                 if (again && again.hp !== 0) await this.bot.attack(again);
             }
             const npc = this.state().nearbyNpcs.find(n => n.index === target.index);
@@ -738,6 +903,7 @@ export class Run {
             } else idleTicks = 0;
         }
         this.kills++;
+        this.killTicks.push(this.state().tick - startTick);
         if (this.kills % 25 === 0) this.ctx.log('progress', this.summary());
         return t.loot ? this.loot(t.loot, last) : 'killed';
     }
@@ -754,10 +920,14 @@ export class Run {
             if (!g) return 'killed';
             const stacks = this.state().inventory.some(i => i.id === g.id) && /^(coins|.+ rune|feather)$/i.test(g.name);
             if (this.freeSlots() === 0 && !stacks) {
-                // Make room by eating if hurt at all, or, for bones, by dropping a fish the trip
-                // will not need (self-caught food is cheap; a bank walk is not). Otherwise the trip is over.
-                if (this.food().length && this.hpFrac() < 0.95) await this.bot.eatFood(this.food()[0]!);
-                else if (/bones/i.test(g.name) && this.food().length > this.opt.minFood + this.opt.spareFood) {
+                // Make room by eating when the meal would not be wasted, or, for bones, by dropping
+                // a self-caught fish the trip will not need (cheap, unlike a bank walk; bought food
+                // is never dropped). Otherwise the trip is over.
+                const f = this.food()[0];
+                const hp = this.sdk.getSkill('Hitpoints');
+                const missing = hp ? hp.baseLevel - hp.level : 0;
+                if (f && missing >= healOf(f.name) - 2) await this.bot.eatFood(f);
+                else if (/bones/i.test(g.name) && this.fishing() && this.food().length > this.opt.minFood + this.opt.spareFood) {
                     const f = this.food()[0]!;
                     await this.bot.dropItem(exact(f.name), 1);
                     await this.waitFor(s => s.inventory.length < 28, 3);
@@ -810,8 +980,7 @@ export class Run {
                 await this.bank('fetch net', null, [{ re: /^small fishing net$/i, n: 1 }]);
                 if (this.carrying(/^small fishing net$/i)) return;
             }
-            this.ctx.log('no small fishing net; fishing for food disabled');
-            this.opt.fish = false;
+            this.stopFishing('no small fishing net');
             return;
         }
         if (dist(this.pos(), DRAYNOR_NET) > 8) {
@@ -825,10 +994,7 @@ export class Run {
     async netForCooking(spot: Spot): Promise<void> {
         if (!this.carrying(NET)) {
             await this.bank('fetch net', this.underground() ? spot : null, [{ re: NET, n: 1 }]);
-            if (!this.carrying(NET)) {
-                this.ctx.log('no small fishing net for cooking practice; fishing for food disabled');
-                this.opt.fish = false;
-            }
+            if (!this.carrying(NET)) this.stopFishing('no small fishing net for cooking practice');
             return;
         }
         if (this.underground()) {
@@ -847,10 +1013,7 @@ export class Run {
         const coins = () => this.carried(/^coins$/i);
         if (coins() < 5) {
             await this.bank('fetch coins', null, [{ re: /^coins$/i, n: 1_000_000 }]);
-            if (coins() < 5) {
-                this.ctx.log('no coins for a fly fishing rod; fishing for food disabled until some are earned');
-                this.opt.fish = false;
-            }
+            if (coins() < 5) this.stopFishing('no coins for a fly fishing rod');
             return;
         }
         if (dist(this.pos(), GERRANT) > 4) {
@@ -945,6 +1108,224 @@ export class Run {
         this.ctx.log('cooked', { food: this.food().length, stuck, levels: this.summary().levels });
     }
 
+    // ---- food from the Grand Exchange ----
+
+    private askCache: { at: number; ask: number | null } | null = null;
+
+    /** The exchange's current ask for the food (cached 10 minutes), or null when unknown. */
+    async foodAsk(): Promise<number | null> {
+        if (this.askCache && Date.now() - this.askCache.at < 10 * 60_000) return this.askCache.ask;
+        let ask: number | null = null;
+        try {
+            const { id } = await this.buyer.resolveItem(this.opt.foodItem);
+            ask = (await this.sdk.getMarketItem(id)).ask;
+        } catch (e) {
+            this.ctx.log('market read failed', { item: this.opt.foodItem, error: String(e) });
+        }
+        this.askCache = { at: Date.now(), ask };
+        return ask;
+    }
+
+    /**
+     * GE food, with fewer than minFood carried. In order: take a trip's worth from the bank
+     * when it holds one; buy at the exchange when the coins cover half a trip; take whatever is
+     * banked; wait at Varrock West for coins (coinsFrom); and after coinWaitMin catch fish
+     * for 30 minutes.
+     */
+    async geFood(spot: Spot): Promise<void> {
+        const stock = this.banked(this.foodRe);
+        if (this.bankView === null || stock >= this.opt.foodPerTrip) {
+            this.phase('food:bank');
+            await this.bank('out of food', spot, this.tripKit());
+            return;
+        }
+        const coins = this.banked(/^coins$/i) + this.carried(/^coins$/i);
+        const price = Math.min(this.foodPrice ?? (await this.foodAsk()) ?? this.opt.maxFoodPrice, this.opt.maxFoodPrice);
+        // Half a trip's worth is enough to make the exchange visit worth it.
+        if (Date.now() >= this.geRetryAt && coins >= price * Math.ceil(this.opt.foodPerTrip / 2)) {
+            this.phase('food:buy');
+            await this.buyFood(spot);
+            return;
+        }
+        if (stock > 0) {
+            this.phase('food:bank');
+            await this.bank('out of food, last of the stock', spot, this.tripKit());
+            return;
+        }
+        if (this.offerOpen) {
+            // A bid is resting on the exchange with our coins in escrow: look again shortly.
+            this.phase('food:offer');
+            if (Date.now() >= this.geRetryAt) await this.buyFood(spot);
+            else await this.sdk.waitForTicks(10);
+            return;
+        }
+        const fishingUnavailable = Date.now() < this.fishingRetryAt;
+        if (this.opt.coinsFrom && (fishingUnavailable || this.coinWaitSince === 0 || Date.now() - this.coinWaitSince < this.opt.coinWaitMin * 60_000)) {
+            this.phase('food:coins');
+            await this.waitForCoins(spot);
+            return;
+        }
+        if (fishingUnavailable) {
+            this.phase('food:wait');
+            if (!BANKS.some(bank => dist(this.pos(), bank) <= 4)) await this.bank('fishing unavailable', this.locationSpot());
+            await this.sdk.waitForTicks(10);
+            return;
+        }
+        this.ctx.log('no food banked and no coins for more; catching fish for 30 minutes', { coins, price, stock });
+        this.coinWaitSince = 0;
+        this.fishUntil = Date.now() + 30 * 60_000;
+    }
+
+    /** Whether a buy offer for the food was left resting on the exchange at the last visit. */
+    private offerOpen = false;
+
+    /**
+     * Collect whatever the exchange holds for this account (fills of a resting bid land while
+     * it is away). Buyer.buyAtGE does not count uncollected items as held, and a filled offer
+     * no longer counts as open, so without this a second visit would buy the whole lot again.
+     */
+    async collectExchange(): Promise<void> {
+        const opened = await this.bot.openGE();
+        if (!opened.success) return;
+        const offers = this.sdk.getGEState()?.offers ?? [];
+        if (offers.some(o => o.items > 0 || o.coins > 0)) {
+            const c = await this.bot.collectGE();
+            this.ctx.log('exchange collected', { items: c.items, coins: c.coins, result: c.message });
+        }
+        await this.bot.closeInterface();
+    }
+
+    /**
+     * Bank the haul, walk to Varrock West, take every coin out, collect earlier fills, buy up to
+     * `buyFood` held at the exchange (at the ask, never above maxFoodPrice; above it a bid rests
+     * at maxFoodPrice), bank the banknotes and take a trip's worth.
+     */
+    async buyFood(spot: Spot): Promise<void> {
+        if (this.underground() || this.carrying(spot.bones)) {
+            await this.bank('out of food', spot);
+            return;
+        }
+        if (dist(this.pos(), VARROCK_WEST_BANK) > 4) {
+            await this.walk(VARROCK_WEST_BANK.x, VARROCK_WEST_BANK.z, 3, 600_000);
+            return;
+        }
+        if (!(await this.bank('buy food', null, [{ re: /^coins$/i, n: 2_000_000_000 }]))) return;
+        const coins = this.carried(/^coins$/i);
+        try {
+            await this.collectExchange();
+            // The target is what the inventory holds (banknotes included): the bank holds less
+            // than a trip, or this visit would not have happened.
+            const rep = await this.buyer.buyAtGE({ item: this.opt.foodItem, quantity: this.opt.buyFood, source: 'ge', maxPrice: this.opt.maxFoodPrice });
+            if (rep.bought > 0 && rep.spent > 0) this.foodPrice = Math.round(rep.spent / rep.bought);
+            this.offerOpen = !!rep.restingOffer;
+            // Resting bid: look again in 3 minutes. Nothing bought and nothing resting: 10.
+            this.geRetryAt = rep.restingOffer ? Date.now() + 3 * 60_000 : rep.bought > 0 || rep.note === 'already held' ? 0 : Date.now() + 10 * 60_000;
+            this.ctx.log('bought food', { ...rep, coinsCarried: coins });
+        } catch (e) {
+            this.geRetryAt = Date.now() + 10 * 60_000;
+            this.ctx.log('buy food failed', { error: String(e) });
+            if (this.state().interface.isOpen) await this.bot.closeInterface();
+        }
+        await this.bank('bought food', null, this.tripKit());
+    }
+
+    /** Fresh trade-request messages are read once each; keyed like the mule's chat cursor. */
+    private tradeRequestsSeen = -1;
+
+    /**
+     * Stand at Varrock West bank, where couriers deliver, and take coins by trade from an
+     * account matching coinsFrom. The offer must be coins or the food item (as banknotes or
+     * not) and nothing else; this account gives nothing, and a trade with anyone else is declined.
+     */
+    async waitForCoins(spot: Spot): Promise<void> {
+        const from = this.opt.coinsFrom!;
+        if (this.underground() || this.carrying(spot.bones)) {
+            await this.bank('fetch coins', spot);
+            return;
+        }
+        if (dist(this.pos(), VARROCK_WEST_BANK) > 2) {
+            await this.walk(VARROCK_WEST_BANK.x, VARROCK_WEST_BANK.z, 1, 600_000);
+            return;
+        }
+        if (this.coinWaitSince === 0) {
+            this.coinWaitSince = Date.now();
+            this.ctx.log('waiting for coins', { from: from.source, minutes: this.opt.coinWaitMin, at: [this.pos().x, this.pos().z] });
+        }
+        const s = this.state();
+        const key = (m: { observationId?: number; tick: number }) => m.observationId ?? m.tick;
+        const requests = this.sdk.getChat({ types: [TRADE_REQUEST_CHAT_TYPE], limit: 20 });
+        const fresh = requests.filter(m => key(m) > this.tradeRequestsSeen && accountMatches(m.sender, from));
+        this.tradeRequestsSeen = requests.reduce((a, m) => Math.max(a, key(m)), this.tradeRequestsSeen);
+        const openWith = s.trade?.isOpen ? (s.trade.partner ?? '') : null;
+        if (openWith !== null && !accountMatches(openWith, from)) {
+            await this.bot.declineTrade();
+            return;
+        }
+        const partner = openWith ?? fresh.at(-1)?.sender;
+        if (!partner) {
+            await this.sdk.waitForTicks(5);
+            return;
+        }
+        const opened = await openTrade(this.sdk, partner, { timeoutMs: 20_000 });
+        if (!opened.ok) {
+            this.ctx.log('coin trade did not open', { from: partner, reason: opened.reason });
+            return;
+        }
+        const coinsBefore = this.carried(/^coins$/i);
+        const foodBefore = this.carried(this.foodRe);
+        const r = await this.bot.trade(playerPattern(partner), {
+            accept: offer => offer.length > 0 && offer.every(i => /^coins$/i.test(i.name) || this.foodRe.test(i.name)),
+            rejectAfterMs: 30_000,
+            timeout: 90_000,
+            requestTimeout: 5_000
+        });
+        const coins = this.carried(/^coins$/i) - coinsBefore;
+        const food = this.carried(this.foodRe) - foodBefore;
+        this.ctx.log('coins received', { from: partner, success: r.success, result: r.message, coins, food });
+        if (coins > 0 || food > 0) {
+            this.coinWaitSince = 0;
+            this.geRetryAt = 0;
+            await this.bank('coins received', null);
+        }
+    }
+
+    logDowngrade(reason: string): void {
+        this.ctx.log('phase', {
+            to: 'downgrade', from: this.opt.spot.id, fallback: this.activeSpot.id, reason,
+            inventory: this.state().inventory.map(i => ({ name: i.name, count: i.count })),
+            bank: this.bankView ? Object.fromEntries(this.bankView) : null
+        });
+    }
+
+    async ensureRequirement(spot: Spot): Promise<boolean> {
+        if (!spot.requires) return true;
+        if (!this.carrying(spot.requires)) {
+            await waitForFreshState(this.sdk, { timeoutMs: 15_000, signal: this.ctx.signal });
+        }
+        if (this.carrying(spot.requires)) {
+            this.acquireSince = null;
+            this.requirementBankChecked = false;
+            return true;
+        }
+        // A cached empty bank is not proof of a lost key. Re-open it once per recovery,
+        // and never treat a failed bank visit or withdrawal as a missing requirement.
+        if (!this.requirementBankChecked || this.banked(spot.requires) > 0) {
+            if (await this.bank('fetch requirement', spot, [{ re: spot.requires, n: 1 }, ...this.tripKit()])) {
+                this.requirementBankChecked = true;
+            }
+            return false;
+        }
+        this.acquireSince ??= Date.now();
+        if (spot.acquire && Date.now() - this.acquireSince < 30 * 60_000) {
+            this.phase(`acquire:${spot.id}`);
+            await spot.acquire(this);
+            return false;
+        }
+        this.activeSpot = HILL_GIANTS;
+        this.logDowngrade('requirement recovery exhausted');
+        return false;
+    }
+
     // ---- the cycle ----
 
     trainingDone(): boolean { return ['Attack', 'Strength', 'Defence'].every(s => this.level(s) >= this.opt.train); }
@@ -975,11 +1356,12 @@ export class Run {
         }
 
         // 3. Fishing kit. Coins come from the spot's drops if the starting 25 are gone.
-        if (this.opt.fish && this.bankView === null && !this.carrying(ROD)) {
-            await this.bank('first look', this.underground() ? this.opt.spot : null);
+        const fishing = this.fishing();
+        if (fishing && this.bankView === null && !this.carrying(ROD)) {
+            await this.bank('first look', this.locationSpot());
             return;
         }
-        if (this.opt.fish && !this.owns(ROD)) {
+        if (fishing && !this.owns(ROD)) {
             if (this.level('Fishing') < 20) {
                 this.phase('kit:net');
                 await this.netFish();
@@ -989,7 +1371,7 @@ export class Run {
             }
             return;
         }
-        if (this.opt.fish && !this.owns(FEATHER) && !this.carrying(RAW_FISH) && this.food().length < this.opt.minFood) {
+        if (fishing && !this.owns(FEATHER) && !this.carrying(RAW_FISH) && this.food().length < this.opt.minFood) {
             this.phase('kit:feathers');
             const feathers: Target = { npc: /^chicken$/i, area: CHICKEN_COOP, centre: { x: 3230, z: 3298 }, loot: FEATHER };
             while (!this.aborted() && this.carried(FEATHER) < this.opt.feathers && this.freeSlots() > 0) {
@@ -1000,8 +1382,8 @@ export class Run {
             return;
         }
 
-        const spot = this.opt.spot;
-        if (this.opt.fish && this.level('Cooking') < 15) {
+        const spot = this.activeSpot;
+        if (fishing && this.level('Cooking') < 15) {
             this.phase('kit:cook');
             if (this.carried(NET_FISH) >= 6 || (this.carrying(NET_FISH) && this.freeSlots() === 0)) {
                 if (this.underground()) await spot.leave(this);
@@ -1013,33 +1395,26 @@ export class Run {
             }
             return;
         }
-        if (spot.requires && !this.carrying(spot.requires)) {
-            if (this.bankView === null || this.banked(spot.requires) > 0) {
-                await this.bank('fetch requirement', spot, [{ re: spot.requires, n: 1 }]);
-                return;
-            }
-            if (spot.acquire && Date.now() < this.acquireDeadline) {
-                this.phase(`acquire:${spot.id}`);
-                await spot.acquire(this);
-                return;
-            }
-            this.ctx.log('missing requirement; switching to hill giants', { spot: spot.id, requires: String(spot.requires) });
-            this.opt.spot = HILL_GIANTS;
+        // GE food before the spot's requirement: fetching it (the Jailer, the dungeon walk) needs
+        // food too. A fresh helper at 60 combat reached the Jailer with none and fought at half hp.
+        if (this.foodSource() === 'ge' && this.food().length < this.opt.minFood) {
+            await this.geFood(spot);
             return;
         }
+        if (!(await this.ensureRequirement(spot))) return;
 
-        // 4. Food.
-        if (this.carrying(RAW_FISH) && (this.food().length < this.opt.minFood || !this.underground())) {
+        // 4. Food (GE food was handled above, before the requirement).
+        if (fishing && this.carrying(RAW_FISH) && (this.food().length < this.opt.minFood || !this.underground())) {
             this.phase('food:cook');
             if (this.underground()) await spot.leave(this);
             await this.cook();
             return;
         }
-        if (this.opt.fish && this.food().length < this.opt.minFood) {
+        if (fishing && this.food().length < this.opt.minFood) {
             this.phase('food:fish');
             const haul = this.state().inventory.some(i => spot.bones.test(i.name) || /^coins$/i.test(i.name));
             if (haul || !this.carrying(ROD) || !this.carrying(FEATHER) || this.freeSlots() < 8) {
-                await this.bank('out of food', spot, [{ re: ROD, n: 1 }, { re: FEATHER, n: 10_000 }, { re: BRASS_KEY, n: 1 }]);
+                await this.bank('out of food', spot, this.tripKit());
                 return;
             }
             if (this.underground()) {
@@ -1057,13 +1432,12 @@ export class Run {
             await this.rest();
             return;
         }
-        await this.eatIfLow();
         for (const name of new Set(this.state().inventory.filter(i => isClutter(i.name, this.level('Cooking'))).map(i => i.name))) {
             await this.bot.dropItem(exact(name), 'all');
         }
         await this.dropSpareKeys();
         if (this.freeSlots() === 0) {
-            await this.bank('full', spot, [{ re: ROD, n: 1 }, { re: FEATHER, n: 10_000 }, { re: BRASS_KEY, n: 1 }]);
+            await this.bank('full', spot, this.tripKit());
             return;
         }
         const p = this.pos();
@@ -1074,6 +1448,7 @@ export class Run {
             }
             return;
         }
+        if (this.trip && this.trip.inRoomAt === null) this.trip.inRoomAt = Date.now();
         await spot.upkeep?.(this);
         const tick0 = this.state().tick;
         const out = await this.fight({ npc: spot.npc, area: spot.area, centre: spot.centre, loot: new RegExp(`${spot.bones.source}|${this.opt.loot.source}`, 'i') });
@@ -1091,9 +1466,9 @@ export class Run {
         } else if (out === 'flee') {
             this.ctx.log('fleeing', { hp: Number(this.hpFrac().toFixed(2)) });
             await this.bank('fled', spot);
-            if (!this.opt.fish) await this.rest();
+            if (this.foodSource() === 'none') await this.rest();
         } else if (out === 'full') {
-            await this.bank('full', spot, [{ re: ROD, n: 1 }, { re: FEATHER, n: 10_000 }, { re: BRASS_KEY, n: 1 }]);
+            await this.bank('full', spot, this.tripKit());
         }
     }
 }
@@ -1105,17 +1480,22 @@ export const role: Role = {
         const opt = parseOptions(ctx.options);
         await ctx.sdk.waitForReady(60_000);
         const run = new Run(ctx, opt);
-        ctx.log('start', { spot: opt.spot.id, train: opt.train, fish: opt.fish, ...run.summary() });
+        ctx.log('start', { spot: opt.spot.id, train: opt.train, food: opt.food, foodPerTrip: opt.foodPerTrip, coinsFrom: opt.coinsFrom?.source ?? null, ...run.summary() });
+        run.guard.start();
         let errors = 0;
-        while (!ctx.signal.aborted) {
-            try {
-                await run.cycle();
-                errors = 0;
-            } catch (e) {
-                errors++;
-                ctx.log('cycle error', { error: String(e), errors });
-                await new Promise(r => setTimeout(r, Math.min(30_000, 1000 * errors)));
+        try {
+            while (!ctx.signal.aborted) {
+                try {
+                    await run.cycle();
+                    errors = 0;
+                } catch (e) {
+                    errors++;
+                    ctx.log('cycle error', { error: String(e), errors });
+                    await new Promise(r => setTimeout(r, Math.min(30_000, 1000 * errors)));
+                }
             }
+        } finally {
+            run.guard.stop();
         }
         ctx.log('stopped', run.summary());
     }

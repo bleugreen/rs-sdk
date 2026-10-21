@@ -108,6 +108,7 @@ export class FakeSdk {
     sendInteractLoc(x: number, z: number, locId: number, option = 1) { return this.record('sendInteractLoc', x, z, locId, option); }
     sendCloseModal() { return this.record('sendCloseModal'); }
     sendUseItemOnItem(sourceSlot: number, targetSlot: number) { return this.record('sendUseItemOnItem', sourceSlot, targetSlot); }
+    sendUseItem(slot: number, option = 1) { return this.record('sendUseItem', slot, option); }
     sendWalk(x: number, z: number, running = true) { return this.record('sendWalk', x, z, running); }
 
     // Chat: pushChat stands in for lines arriving from the server; getNewChat reads them
