@@ -40,7 +40,7 @@ await runScript(async ({ bot, sdk }) => {
         let last = t0;
         let misses = 0;
         while (!(has(sdk, /^Rock sample 1$/) && has(sdk, /^Specimen brush$/))) {
-            const w = findNpcWithOp(sdk, /workman/i, /pick.?pocket/i);
+            const w = findNpcWithOp(sdk, /workman/i, /steal-from|pick.?pocket/i);
             if (!w) {
                 if (++misses > 30) throw new Error('no workman with a pickpocket option in view');
                 await sdk.waitForTicks(1);
