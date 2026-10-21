@@ -41,6 +41,7 @@ const DOOR1 = 81, DOOR2 = 82;
 await runScript(async ({ bot, sdk }) => {
     await bot.skipTutorial?.();
     const rec = new Recorder(sdk, `Fight Arena (${ATT}/${STR}/${DEF}, ${HP} hp, prayer ${PRAY ? PRAYER : 'off'}, ${SPELL ? `spell ${arg('spell', '')} at Magic ${MAGIC}` : 'melee'}, general=${GENERAL}, from=${FROM})`);
+    await bot.deactivateAllPrayers().catch(() => {}); // a prayer left on by an earlier script would drain through the cutscenes
     const weapons: [string, number][] = SPELL ? [['staff_of_fire', 1], ['amulet_of_magic', 1], ['chaosrune', 300], ['deathrune', 300], ['airrune', 2000]] : [['rune_scimitar', 1], ['amulet_of_power', 1]];
     const armour: [string, number][] = DEF >= 40 ? [['rune_kiteshield', 1], ['rune_platelegs', 1]] : [];
     await setup(sdk, {

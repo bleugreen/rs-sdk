@@ -67,7 +67,8 @@ async function wield(sdk: BotSDK, g: string) {
     if ((await L.waitUntil(sdk, () => sdk.getEquipment().some(named), 6)) === null) throw new Error(`could not wield ${g}`);
 }
 
-async function reset(sdk: BotSDK) {
+async function reset(sdk: BotSDK, bot: BotActions) {
+    await bot.deactivateAllPrayers().catch(() => {}); // a crashed earlier script may have left one on
     for (let pass = 0; pass < 2; pass++) {
         for (const e of sdk.getEquipment()) await sdk.sendUseEquipmentItem(e.slot, 1).catch(() => {});
         await sdk.waitForTicks(1);
@@ -102,8 +103,11 @@ async function fight(sdk: BotSDK, bot: BotActions, target: RegExp): Promise<Samp
     let casts = 0, levelUps = 0, reheals = 0, lastAct = -10, lastDrink = -10, lastEat = -10;
     let swapped: number | null = null;
     let won = false, died = false, note: string | undefined;
-    let npc: NearbyNpc | null = sdk.findNearbyNpc(target);
+    // The nearest match is the one we fight; track it by index so a second spawn
+    // (the warlord also has a static spawn at his post) is never counted.
+    let npc: NearbyNpc | null = [...s.nearbyNpcs].filter(n => target.test(n.name)).sort((a, b) => a.distance - b.distance)[0] ?? null;
     if (!npc) throw new Error(`no ${target} in view`);
+    const idx = npc.index;
     const t0 = s.tick;
     const attack = async (n: NearbyNpc) => {
         if (MAGIC) { await sdk.sendSpellOnNpc(n.index, SPELL[MODE]!); casts++; }
@@ -112,7 +116,8 @@ async function fight(sdk: BotSDK, bot: BotActions, target: RegExp): Promise<Samp
     };
     await attack(npc);
     while (true) {
-        s = await sdk.waitForStateUpdate();
+        // A loaded host can stall the engine past the SDK's 5 s wait; keep waiting rather than abort.
+        try { s = await sdk.waitForStateUpdate(); } catch { continue; }
         const p = s.player!;
         if (s.tick - t0 > CAP) { note = 'CAP'; break; }
         if (p.isDead || p.hp <= 0) { died = true; break; }
@@ -122,7 +127,7 @@ async function fight(sdk: BotSDK, bot: BotActions, target: RegExp): Promise<Samp
         if (pts < lastPts) ptsUsed += lastPts - pts;
         lastPts = pts;
         if (WHO === 'titan' && p.worldX < 2791) { won = true; break; }
-        npc = s.nearbyNpcs.find(n => target.test(n.name)) ?? null;
+        npc = s.nearbyNpcs.find(n => n.index === idx && target.test(n.name)) ?? null;
         if (s.dialog.isOpen) {
             if (L.isLevelUpDialog(sdk)) { levelUps++; await L.dismissLevelUps(sdk); }
             else if (WHO === 'mordred') { won = true; break; } // Morgan Le Faye: the death hook fired
@@ -173,7 +178,7 @@ await runScript(async ({ bot, sdk }) => {
     const samples: Sample[] = [];
     for (let run = 0; run < RUNS; run++) {
         if (sdk.getState()!.player!.isDead) await sdk.waitForTicks(10);
-        await reset(sdk);
+        await reset(sdk, bot);
         await sdk.waitForTicks(3); // let the prayer points from ::setstat land before the fight reads them
         let target: RegExp;
         if (WHO === 'warlord') {

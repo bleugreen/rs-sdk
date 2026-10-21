@@ -52,8 +52,9 @@ await runScript(async ({ bot, sdk }) => {
     const results: unknown[] = [];
     for (let run = 0; run < RUNS; run++) {
         // ---- untimed set-up ----
-        const old = loc(/multicannon/i, /pick-up/i);
-        if (old) { await bot.interactLoc(old, 'Pick-up'); await waitTicks(3); }
+        await bot.deactivateAllPrayers().catch(() => {});
+        const old = loc(/multicannon|cannon base|cannon stand/i, /pick-up/i);
+        if (old) { await sdk.sendInteractLoc(old.x, old.z, old.id, 2); for (let i = 0; i < 30 && loc(/multicannon|cannon base|cannon stand/i); i++) await waitTicks(1); }
         for (const e of sdk.getEquipment()) await sdk.sendUseEquipmentItem(e.slot, 1).catch(() => {});
         await waitTicks(1);
         for (const it of sdk.getInventory()) await sdk.sendDropItem(it.slot);
@@ -104,7 +105,7 @@ await runScript(async ({ bot, sdk }) => {
         let lastReload = tFire, lastEat = -10, lastDrink = -10, lastAnti = -1000, died = false, end = 'window';
         const seen = new Set<string>();
         while (tick() - tFire < TICKS) {
-            s = await sdk.waitForStateUpdate();
+            try { s = await sdk.waitForStateUpdate(); } catch { continue; }
             const p = s.player!;
             if (p.isDead || p.hp <= 0) { died = true; end = 'died'; break; }
             const msgs: string[] = [];
@@ -131,6 +132,10 @@ await runScript(async ({ bot, sdk }) => {
             if (UNTIL && lvl(s, 'Ranged') >= UNTIL) { end = `Ranged ${UNTIL}`; break; }
         }
         if (PROTECT) await bot.deactivateAllPrayers().catch(() => {});
+        // pick the cannon up so the next run can set it again (op 2, as in ranged-cannon.ts)
+        cannon = loc(/multicannon/i) ?? cannon;
+        await sdk.sendInteractLoc(cannon.x, cannon.z, cannon.id, 2);
+        for (let i = 0; i < 30 && !sdk.findInventoryItem(/cannon base/i); i++) await waitTicks(1);
         const s1 = sdk.getState()!;
         const r = {
             run, end, ticks: tick() - tFire, died, rangedLevels: [RNG, lvl(s1, 'Ranged')], rangedBase: Math.round((xp(s1, 'Ranged') - r0) / 25),
