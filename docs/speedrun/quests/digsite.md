@@ -70,7 +70,8 @@ wiki lists the same three; this server enforces all of them and nothing else.
 | 1 law, 3 air, 1 fire rune | | Varrock teleport (Magic 25) for the museum trip |
 
 All are ordinary items with no `tradeable=no` flag (read). Leather gloves and boots
-are not checked anywhere in this content. There is no teleport near the Digsite
+are checked only at the level 1 dig sites (`area_digsite.rs2:258-276`), which this route
+never uses. There is no teleport near the Digsite
 (the Varrock teleport landing is 195 route tiles from the examiner).
 
 ## Mechanics that shape the route (read)
@@ -143,7 +144,7 @@ per option, and don't separately cost state-changing pages, so they are a lower 
 | 30 | Invitation letter on a workman -> stage 6 | 8 | 2 + 0 | `2c` | 1 | 1 |
 | 31 | Walk to the private winch (3370,3428) | 32 | | | | |
 | 32 | Rope on the winch (bit 3), Operate: down to (3353,9818) | 5 | | | | 2 |
-| 33 | Workman 2 (3352,9821): "I have been invited to research here.", "Do you know where to find a chest key?", "I don't suppose I could use it?", "Please?", "Aww... go on.", "Pretty please!", "Pretty please with sugar on top!" -> chest key | 53 | 18 + 7 | `2c,opt` x7, `3c` | 15 | 1 |
+| 33 | Workman 2 (3352,9821): "I have been invited to research here.", "Do you know where to find a chest key?", "I don't suppose I could use it?", "Please?", "Aww... go on.", "Pretty please!", "Pretty please with sugar on top!" -> chest key | 53 | 18 + 7 | `2c,opt` x6, `3c,opt,3c` | 15 | 1 |
 | 34 | Pick up an Arcenia root (ground spawn, (3348,9819) or (3351,9824)) | 7 | | | | 1 |
 | 35 | Climb the rope (3353,9817) to (3370,3427) | 3 | | | | 1 |
 | 36 | Walk to the chest (3374,3378) | 26 | | | | |
