@@ -46,12 +46,13 @@ await runScript(async ({ bot, sdk }) => {
     console.log('stage', await stage(sdk), pos(sdk.getState()));
 
     // Platform, first visit: glass and damp sticks, dry them, then Kennith upstairs.
-    // The glass is in the room behind the door at (2765,3277).
-    rec.add(await locId(sdk, 2765, 3277, 1533, 1, s => !(s.nearbyLocs ?? []).some(l => l.x === 2765 && l.z === 3277 && l.id === 1533), { label: 'open door', maxTicks: 30 }), '5a open the door to the glass');
-    rec.add(await pickup(sdk, /^broken glass$/i), '5b');
-    rec.add(await walkTo(bot, sdk, 2784, 3289, 0), '5c walk to damp sticks');
-    rec.add(await pickup(sdk, /^damp sticks$/i), '5d');
-    rec.add(await useOnItem(sdk, /^broken glass$/i, /^damp sticks$/i, s => invCount(s, /^dry sticks$/i) > 0), '5e dry the sticks');
+    // The glass is in the west room behind the door at (2765,3277); open it from the pier tile beside it.
+    rec.add(await walkTo(bot, sdk, 2766, 3277, 0), '5a walk to the glass room door');
+    rec.add(await locId(sdk, 2765, 3277, 1533, 1, s => !(s.nearbyLocs ?? []).some(l => l.x === 2765 && l.z === 3277 && l.id === 1533), { label: 'open door', maxTicks: 30 }), '5b open the door');
+    rec.add(await pickup(sdk, /^broken glass$/i), '5c');
+    rec.add(await walkTo(bot, sdk, 2784, 3289, 0), '5d walk to damp sticks');
+    rec.add(await pickup(sdk, /^damp sticks$/i), '5e');
+    rec.add(await useOnItem(sdk, /^broken glass$/i, /^damp sticks$/i, s => invCount(s, /^dry sticks$/i) > 0), '5f dry the sticks');
     rec.add(await locId(sdk, LADDER_UP.x, LADDER_UP.z, LADDER_UP.id, 1, lvl(1), { label: 'climb up' }), '6a');
     rec.add(withRuns(await locId(sdk, KWALL.x, KWALL.z, KWALL.id, 1, () => false, { label: 'Kennith through the wall', maxTicks: 40 })), '6b Kennith 1');
     console.log('stage', await stage(sdk), pos(sdk.getState()));
