@@ -2,8 +2,12 @@
 // Hiscore stamp probe: what the time on a demo hiscore row means.
 //
 //   bun speedrun/tools/hiscore-stamp-probe.ts page <player>...      rows with exact ticks, as JSON
-//   bun speedrun/tools/hiscore-stamp-probe.ts classify <player>...  shared-stamp analysis per player
+//   bun speedrun/tools/hiscore-stamp-probe.ts classify <player>...  stamp ordering and batches per player
 //   bun speedrun/tools/hiscore-stamp-probe.ts live <bot> <phase>    one session of the live test
+//
+// page and classify read the current page uncached, one a second ($PROBE_DELAY_MS);
+// they print what `hiscore-scrape.ts players` + `analyze` would, without a snapshot.
+// Parsing and stamp grouping live in hiscore-scrape.ts (parsePlayer, analyzeAccount).
 //
 // The board shows a time per row; the exact tick count is in the hover title
 // of each time (`<span title="12,006 ticks">`, web/pages/hiscores.ts). The
@@ -29,71 +33,29 @@ import { appendFileSync, mkdirSync } from 'fs';
 import { dirname, join } from 'path';
 import type { BotWorldState } from '../../sdk/types';
 import { ROOT, closeSession, logoutClean, openSession, type Session } from '../lib/session';
-import { sleep, waitTicks, waitUntil } from '../lib/wait';
+import { sleep, waitTicks } from '../lib/wait';
+import { BASE_URL, analyzeAccount, isStamped, parsePlayer, playerPath, renderAnalysis, type PlayerRow } from './hiscore-scrape';
 
-const ORIGIN = process.env.HISCORE_ORIGIN ?? 'https://rs-sdk-demo.fly.dev';
+const ORIGIN = process.env.HISCORE_ORIGIN ?? BASE_URL;
 
 // ------------------------------------------------------------------ board
 
-export interface BoardRow {
-    category: number; // 0 overall, stat + 1 for a skill, 100 quest points
-    name: string;
-    rank: string;
-    level: number | null;
-    ticks: number | null;
+/** The player's rows read fresh from the page, or null when the account has no page. */
+export async function fetchPlayer(name: string): Promise<PlayerRow[] | null> {
+    const res = await fetch(ORIGIN + playerPath(name), { headers: { 'cache-control': 'no-cache' } });
+    // A missing player is a 404 whose "not found" body parsePlayer reads as null.
+    if (!res.ok && res.status !== 404) throw new Error(`hiscores ${name}: HTTP ${res.status}`);
+    return parsePlayer(await res.text());
 }
 
-const ROW =
-    /<a href="\/hiscores\?category=(\d+)&profile=[^"]*" class="c[^"]*">(?:<img[^>]*>)?([^<]+)<\/a><\/td>\s*<td align="right">([^<]*)<\/td>\s*<td align="right">([^<]*)<\/td>\s*<td align="right">(?:<span title="([\d,]+) ticks"[^>]*>[^<]*<\/span>|-)<\/td>/g;
-
-export function parsePlayerPage(html: string): BoardRow[] {
-    const rows: BoardRow[] = [];
-    for (const m of html.matchAll(ROW)) {
-        const num = (s: string | undefined) => (s && /\d/.test(s) ? Number(s.replace(/,/g, '')) : null);
-        rows.push({ category: Number(m[1]), name: m[2]!.trim(), rank: m[3]!.trim(), level: num(m[4]), ticks: num(m[5]) });
-    }
-    return rows;
+function present(rows: PlayerRow[] | null): PlayerRow[] {
+    return (rows ?? []).filter(isStamped);
 }
 
-/** The player's rows, or null when the account has no page (404). */
-export async function fetchPlayer(name: string, profile = 'main'): Promise<BoardRow[] | null> {
-    const res = await fetch(`${ORIGIN}/hiscores/player/${encodeURIComponent(name)}?profile=${profile}`, { headers: { 'cache-control': 'no-cache' } });
-    if (res.status === 404) return null;
-    if (!res.ok) throw new Error(`hiscores ${name}: HTTP ${res.status}`);
-    return parsePlayerPage(await res.text());
-}
+/** The fields the live test watches; rank is left out because it moves with other players. */
+const brief = (rows: PlayerRow[]) => rows.map(r => ({ c: r.category, name: r.skill, level: r.level, ticks: r.ticks }));
 
-/** Only the rows that exist (a level and a time). */
-function present(rows: BoardRow[] | null): BoardRow[] {
-    return (rows ?? []).filter(r => r.level !== null && r.ticks !== null);
-}
-
-export interface Classification {
-    player: string;
-    overall: { level: number; ticks: number } | null;
-    questPoints: { level: number; ticks: number } | null;
-    /** Skill rows grouped by identical stamp, largest group first. */
-    groups: { ticks: number; skills: string[] }[];
-    maxSkillTicks: number | null;
-}
-
-/**
- * Group skill stamps by value. Under the v9 rule two skills share a stamp only
- * if one action levelled both in the same tick (a combat hit with Hitpoints, a
- * quest reward); a group of unrelated skills at one value is a batch written
- * at a logout, so every member is an upper bound on its reach tick.
- */
-export function classify(player: string, rows: BoardRow[]): Classification {
-    const skills = present(rows).filter(r => r.category > 0 && r.category < 100);
-    const by = new Map<number, string[]>();
-    for (const r of skills) by.set(r.ticks!, [...(by.get(r.ticks!) ?? []), r.name]);
-    const groups = [...by.entries()].map(([ticks, s]) => ({ ticks, skills: s })).sort((a, b) => b.skills.length - a.skills.length || a.ticks - b.ticks);
-    const pick = (cat: number) => {
-        const r = present(rows).find(x => x.category === cat);
-        return r ? { level: r.level!, ticks: r.ticks! } : null;
-    };
-    return { player, overall: pick(0), questPoints: pick(100), groups, maxSkillTicks: skills.length ? Math.max(...skills.map(r => r.ticks!)) : null };
-}
+const same = (a: PlayerRow[], b: PlayerRow[]) => JSON.stringify(brief(a)) === JSON.stringify(brief(b));
 
 // ------------------------------------------------------------------ live test
 
@@ -131,13 +93,11 @@ function watchLevels(session: Session, log: ProbeLog): () => void {
     });
 }
 
-async function snapshot(log: ProbeLog, label: string, tick: number | null): Promise<BoardRow[]> {
+async function snapshot(log: ProbeLog, label: string, tick: number | null): Promise<PlayerRow[]> {
     const rows = present(await fetchPlayer(log.bot));
-    log.write('board', { label, tick, rows: rows.map(r => ({ c: r.category, name: r.name, level: r.level, ticks: r.ticks })) });
+    log.write('board', { label, tick, rows: brief(rows) });
     return rows;
 }
-
-const same = (a: BoardRow[], b: BoardRow[]) => JSON.stringify(a) === JSON.stringify(b);
 
 /** Stay in the world for `ticks`, reading the board every `every` ticks and logging any change. */
 async function idleWatching(session: Session, log: ProbeLog, ticks: number, every: number): Promise<void> {
@@ -148,7 +108,7 @@ async function idleWatching(session: Session, log: ProbeLog, ticks: number, ever
         await waitTicks(session.sdk, Math.min(every, left));
         const tick = session.sdk.getState()!.tick;
         const rows = present(await fetchPlayer(log.bot));
-        if (!same(rows, last)) log.write('board-changed-in-world', { tick, rows });
+        if (!same(rows, last)) log.write('board-changed-in-world', { tick, rows: brief(rows) });
         last = rows;
     }
     await snapshot(log, 'idle-end', session.sdk.getState()!.tick);
@@ -189,7 +149,7 @@ async function burnUntil(session: Session, log: ProbeLog, level: number): Promis
 }
 
 /** After logout the login server writes the rows; read until they change or `ms` passes. */
-async function boardAfterLogout(log: ProbeLog, before: BoardRow[], ms: number): Promise<void> {
+async function boardAfterLogout(log: ProbeLog, before: PlayerRow[], ms: number): Promise<void> {
     const t0 = Date.now();
     let rows = before;
     while (Date.now() - t0 < ms) {
@@ -197,7 +157,7 @@ async function boardAfterLogout(log: ProbeLog, before: BoardRow[], ms: number): 
         rows = present(await fetchPlayer(log.bot));
         if (!same(rows, before)) break;
     }
-    log.write('board', { label: 'after-logout', changed: !same(rows, before), waitedMs: Date.now() - t0, rows: rows.map(r => ({ c: r.category, name: r.name, level: r.level, ticks: r.ticks })) });
+    log.write('board', { label: 'after-logout', changed: !same(rows, before), waitedMs: Date.now() - t0, rows: brief(rows) });
 }
 
 /**
@@ -219,7 +179,7 @@ async function openWithRetry(botName: string, log: ProbeLog): Promise<Session> {
 async function live(botName: string, phase: string): Promise<void> {
     const log = new ProbeLog(process.env.PROBE_LOG ?? join(ROOT, 'speedrun', 'runs', `hiscore-probe-${botName}.jsonl`), botName, phase);
     const before = present(await fetchPlayer(botName).catch(() => null));
-    log.write('board', { label: 'before-login', rows: before });
+    log.write('board', { label: 'before-login', rows: brief(before) });
 
     const session = await openWithRetry(botName, log);
     const s0 = session.sdk.getState()!;
@@ -262,14 +222,13 @@ async function live(botName: string, phase: string): Promise<void> {
 
 async function main(): Promise<void> {
     const [cmd, ...args] = process.argv.slice(2);
-    if (cmd === 'page') {
-        for (const p of args) console.log(JSON.stringify({ player: p, rows: await fetchPlayer(p) }));
-    } else if (cmd === 'classify') {
+    if (cmd === 'page' || cmd === 'classify') {
         // One request at a time, with a pause: this reads a shared public server.
-        for (const p of args) {
+        for (const [i, p] of args.entries()) {
+            if (i > 0) await sleep(Number(process.env.PROBE_DELAY_MS ?? 1_000));
             const rows = await fetchPlayer(p);
-            console.log(JSON.stringify(rows ? classify(p, rows) : { player: p, missing: true }));
-            await sleep(Number(process.env.PROBE_DELAY_MS ?? 1_000));
+            if (cmd === 'page') console.log(JSON.stringify({ player: p, rows }));
+            else console.log(rows ? renderAnalysis(p, analyzeAccount(rows)) + '\n' : `### ${p}: not found\n`);
         }
     } else if (cmd === 'live' && args.length === 2) {
         await live(args[0]!, args[1]!);
