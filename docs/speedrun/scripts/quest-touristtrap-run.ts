@@ -227,12 +227,8 @@ await runScript(async ({ bot, sdk }) => {
                 bars++;
                 // The bar is deleted at the start of the forge (quest_desertrescue.rs2:612), so
                 // wait for the outcome: the tip, or the waste message.
-                let wasted = false;
-                const outcome = () => {
-                    if (sdk.getNewChat({ types: [0], includeSelf: true }).some(m => /waste the bronze bar/.test(m.text))) wasted = true;
-                    return wasted || !!q.inv('thprotodarttip');
-                };
-                sdk.getNewChat({ types: [0], includeSelf: true });
+                const mark = q.chatMark();
+                const outcome = () => q.chatSince(mark, /waste the bronze bar/) || !!q.inv('thprotodarttip');
                 await q.useOnLoc('bronze_bar', 'experimental_anvil', outcome, { choices: [/Yes, I'd like to try/] });
                 await q.settle(() => true, 5);
             }

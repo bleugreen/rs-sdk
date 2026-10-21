@@ -331,15 +331,25 @@ export class QuestBot {
         await this.withReachRetry(() => this.sdk.sendUseItemOnLoc(this.need(obj).slot, l.x, l.z, l.id), until, opts.dialog, opts.choices);
     }
 
+    /** A chat watermark: game messages published after it are "since" it. */
+    chatMark() {
+        return this.sdk.getChat({ types: [0], includeSelf: true }).reduce((a, m) => Math.max(a, m.observationId ?? m.tick), -1);
+    }
+
+    /** Has a game message matching `re` arrived since `mark`? Does not consume chat. */
+    chatSince(mark: number, re: RegExp) {
+        return this.sdk.getChat({ types: [0], includeSelf: true }).some(m => (m.observationId ?? m.tick) > mark && re.test(m.text));
+    }
+
     /** Send a loc click; if the server answers "I can't reach that!", log it and click again. */
     private async withReachRetry(send: () => Promise<unknown>, until: () => boolean, dialog?: boolean, choices: RegExp[] = []) {
         for (let attempt = 0; ; attempt++) {
-            this.sdk.getNewChat({ types: [0], includeSelf: true });
+            const mark = this.chatMark();
             this.S.action();
             await send();
             let unreachable = false;
             const abort = () => {
-                if (this.sdk.getNewChat({ types: [0], includeSelf: true }).some(m => /can't reach that/i.test(m.text))) unreachable = true;
+                if (this.chatSince(mark, /can't reach that/i)) unreachable = true;
                 return unreachable;
             };
             await this.settle(until, 80, [...choices], dialog, abort);
