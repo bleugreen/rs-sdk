@@ -32,8 +32,10 @@ await runScript(async ({ bot, sdk }) => {
         await setstats(sdk, { hitpoints: 70, thieving: THIEVING });
         await cheat(sdk, '~clearinv');
         await give(sdk, 'shark', 5);
-        await tele(sdk, 2801, 2707);
+        // The knockout leaves the player busy for a few ticks; retry the teleport until it lands.
+        for (let k = 0; k < 5 && !(await tele(sdk, 2801, 2707)); k++) await waitTicks(sdk, 5);
         await waitTicks(sdk, 2);
+        if (inCell(sdk.getState()!)) { runs.push({ run: i, note: 'teleport failed' }); continue; }
         // 1. Walk the western corridor towards the west watchtower until knocked out.
         const t0 = now(sdk);
         let koTick = -1;
