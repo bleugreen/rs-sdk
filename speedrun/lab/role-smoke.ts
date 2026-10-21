@@ -6,7 +6,7 @@
 //
 // --cheats is a ';'-separated list of staff commands without '::'. Prints the
 // role's log lines and bank snapshots, then the final inventory and position.
-import type { Role } from '../helpers/role';
+import { memoryRoleState, type Role } from '../helpers/role';
 import { prepare } from '../helpers/wine-common';
 import { openSession } from '../lib/session';
 import { waitTicks } from '../lib/wait';
@@ -31,7 +31,7 @@ const controller = new AbortController();
 setTimeout(() => controller.abort(), secs * 1000);
 await Promise.race([
     mod.role
-        .run({ bot: s.bot, sdk: s.sdk, account: name, options, log, reportBank: b => log('bank', { bank: b.items }), signal: controller.signal })
+        .run({ bot: s.bot, sdk: s.sdk, account: name, options, log, reportBank: b => log('bank', { bank: b.items }), signal: controller.signal, state: memoryRoleState() })
         .catch(e => log('role threw', { error: String(e) })),
     Bun.sleep(secs * 1000 + 30_000)
 ]);
