@@ -61,9 +61,17 @@ prices the holdings reported today.
 | Rune armour (rs/124) | helm by drop only; chain and legs Scavvo only | 1 set | SCORED buys chain and legs from Scavvo during S26; adamant helm | **~+15-20 (e)** | | none | no |
 | Rune axe (rs/124) | none; competing bid 100,001 | 1 | adamant axe, mithril axe | **+457 / +523** knife / plain (adamant); +960 / +1,098 (mithril) | | | **budget item: worth far more than its price** |
 
-Two of these lines decide the start: dragon bones and the rune axe. The rest add **~+640 (i/e)**
-when every one of them falls back, and two thirds of that is the glory legs, which are still
-estimates. The cannon is a hard requirement, but only its cannonballs are hard to get.
+Two of these lines decide the start: dragon bones and the rune axe. The rest add **~+660 (i/e)**
+when every one of them falls back:
+
+- Smithing 119, Fletching 5, Crafting 88, Herblore 85;
+- talismans 34 with a keeper and 2 talismans;
+- the bow without a glory 20, the longsword -1;
+- the glory legs ~290;
+- the armour ~20.
+
+Nearly half of that is the glory legs, which are still estimates. The cannon is a hard
+requirement, but only its cannonballs are hard to get.
 
 ## Recommended policy for the start decision
 
@@ -95,10 +103,10 @@ estimates. The cannon is a hard requirement, but only its cannonballs are hard t
 | Scenario | Sum of deltas | Expected | Best | Against the record (exp / best) |
 |---|---|---|---|---|
 | Everything held | 0 | 35,321 | 32,325 | -595 / -3,591 |
-| 555 dragon bones and the rune axe held; every other line falls back (adamantite 0, diamonds 5, the irit mix, 2 talismans + keeper, bow, longsword, no glory, Scavvo armour, cannon from a helper) | ~+640 | ~35,960 | ~32,965 | **~+45** / -2,950 |
-| As above, with no rune axe (adamant) | ~+1,100 | ~36,420 | ~33,420 | +505 / -2,495 |
-| Today: no dragon bones (babydragons farmed to 99), rune axe held, the rest falling back | ~+2,250 | ~37,570 | ~34,575 | +1,655 / -1,340 |
-| Today, and no rune axe | ~+2,705 | ~38,025 | ~35,030 | +2,110 / -885 |
+| 555 dragon bones and the rune axe held; every other line falls back (adamantite 0, diamonds 5, the herb-table mix, 2 talismans + keeper, bow, longsword, no glory, Scavvo armour, cannon from a helper) | ~+660 | ~35,980 | ~32,985 | **~+65** / -2,930 |
+| As above, with no rune axe (adamant) | ~+1,120 | ~36,440 | ~33,445 | +525 / -2,470 |
+| Today: no dragon bones (babydragons farmed to 99), rune axe held, the rest falling back | ~+2,270 | ~37,590 | ~34,595 | +1,675 / -1,320 |
+| Today, and no rune axe | ~+2,725 | ~38,045 | ~35,050 | +2,130 / -865 |
 
 The scenarios are additive (i); the lines barely interact, because they touch different steps.
 The exception is the glory and the talisman keeper, which share the givers' round trip
@@ -215,8 +223,8 @@ mithril platebody without adamantite. Superheat, furnace smelting and cannonball
 
 - **H21a:** about +425 mithril bars at zero adamantite (735 against 305 + 25 margin). rs/41
   reports mithril as covered at 305; the extra must come from the bars role (rs/119).
-- **S25a:** about four more trades (142 + 2 against 125 platebody inventories), already
-  inside the 7 ticks per platebody.
+- **S25a:** +17 platebodies at zero adamantite (142 mithril against 57 + 68), about four more
+  25-bar trades. Their turnaround is already inside the 7 ticks per platebody.
 
 ## 3. Adamant arrowheads (S18d; H14)
 
@@ -446,8 +454,8 @@ SCORED completes it at S13, so the restricted part is only who supplies the set 
 - **The cannonballs** are the hard part. No shop sells them (r: Nulodion's `mcannonshop` stocks
   the four parts, the manual and the mould only). Only a player who has completed Dwarf Cannon can
   make them, with the untradeable mould, from steel bars. So the line is **one helper who has done
-  Dwarf Cannon** (helper time is free) **plus ~290 steel bars** for ~1,170 balls (4 per bar, r,
-  `cannonballs.rs2`), or GE balls.
+  Dwarf Cannon** (helper time is free) **plus ~290 steel bars** for ~1,170 balls, or GE balls. A bar makes 4 balls at Smithing 35 with the
+  mould, members only (r, `cannonballs.rs2:6-38`).
 
 **Balls actually used (i).** About 0.59 shots per tick in the finish (m: 20.9-23.1 Ranged per ball
 at 12.35-13.66 Ranged per tick, helper-fed-and-combat.md section 3), so ~1,100 over S27's 1,857.
