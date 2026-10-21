@@ -28,7 +28,7 @@ describe('waitForFreshState', () => {
         const r = await wait;
         expect(r.state.tick).toBe(3);
         expect(r.state.inventory).toEqual([]);
-        expect(r.passedOver).toEqual([9000, 2].slice(0, 1));
+        expect(r.passedOver).toEqual([9000]);
         expect(describeFreshState(r)).toBe('tick 3 (passed over 9000): inventory 0 stacks; ');
     });
 
