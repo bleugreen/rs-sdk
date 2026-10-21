@@ -13,10 +13,13 @@ describe('RestartTracker', () => {
         for (const [t, n] of [['06:12:58', 1690], ['06:13:18', 1688], ['06:13:38', 1687]] as const) tr.observe(at(t, n));
         expect(tr.status().phase).toBe('up');
         tr.observe(at('06:14:07', null));
+        // One unanswered sample is a stall or a blip until the next one agrees.
+        expect(tr.status().phase).toBe('up');
+        expect(tr.pendingMisses).toBe(1);
+        tr.observe(at('06:14:35', null));
         expect(tr.status().phase).toBe('down');
         expect(tr.status().lastRestart?.downAt).toBe(T('06:14:07'));
         expect(tr.status().lastRestart?.lastNormalAt).toBe(T('06:13:38'));
-        tr.observe(at('06:14:35', null));
         tr.observe(at('06:14:55', 0));
         expect(tr.status().phase).toBe('refusing');
         tr.noteLoginRefused(T('06:15:30'));
@@ -44,6 +47,16 @@ describe('RestartTracker', () => {
         expect(tr.status().lastRestart?.downAt).toBe(T('04:54:18'));
     });
 
+    test('a single unanswered sample (a 2 s stall, a network blip) is not a restart', () => {
+        const tr = new RestartTracker('o');
+        tr.observe(at('07:50:00', 1600));
+        tr.observe(at('07:50:20', null));
+        tr.observe(at('07:50:40', 1590));
+        expect(tr.status().phase).toBe('up');
+        expect(tr.status().lastRestart).toBeNull();
+        expect(tr.pendingMisses).toBe(0);
+    });
+
     test('an ordinary dip is not a restart', () => {
         const tr = new RestartTracker('o');
         for (const n of [1700, 1650, 1500, 1400]) tr.observe({ at: Date.now(), players: n, ms: 1 });
@@ -55,6 +68,7 @@ describe('RestartTracker', () => {
         const tr = new RestartTracker('http://localhost:9300');
         tr.observe({ at: 1_000, players: 1, ms: 1 });
         tr.observe({ at: 2_000, players: null, ms: 1 });
+        tr.observe({ at: 2_500, players: null, ms: 1 });
         expect(tr.status().phase).toBe('down');
         tr.observe({ at: 3_000, players: 0, ms: 1 });
         tr.noteLoginRefused(3_100);
@@ -95,12 +109,13 @@ describe('CatchUpMeter', () => {
 describe('DemoMonitor', () => {
     test('writes the status file and keeps the last restart across monitor restarts', async () => {
         const file = join(mkdtempSync(join(tmpdir(), 'demo-status-')), 'status.json');
-        const replies: (number | null)[] = [1700, null, 0, 1600];
+        const replies: (number | null)[] = [1700, null, null, 0, 1600];
         const sample = async () => ({ at: Date.now(), players: replies.length ? replies.shift()! : 1600, ms: 1 });
         const lines: string[] = [];
         const mon = new DemoMonitor('o', { file, sample, onLine: l => lines.push(l) });
-        for (let i = 0; i < 4; i++) await mon.sampleNow();
-        expect(lines[1]).toStartWith('DEMO DOWN since');
+        for (let i = 0; i < 5; i++) await mon.sampleNow();
+        expect(lines[1]).toStartWith('demo up');
+        expect(lines[2]).toStartWith('DEMO DOWN since');
         expect(readStatus(file)?.lastRestart).not.toBeNull();
         const again = new DemoMonitor('o', { file, sample });
         expect(again.tracker.status().lastRestart?.downAt).toBe(readStatus(file)!.lastRestart!.downAt);

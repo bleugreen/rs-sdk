@@ -193,6 +193,23 @@ describe('runResumable', () => {
         expect(log.rows.find(row => row.step === 'mine-to-5' && row.meta?.resumed)).toBeDefined();
     });
 
+    test("a step that fails with rs/97's 'page reloaded' after the link is back resumes, it is not a failure", async () => {
+        const client = droppingClient(world(1, 10, 0));
+        let tries = 0;
+        const c: C = { trace: [], fenced: 0 };
+        const steps: Step<C>[] = [{
+            name: 'program', preconditions: () => true, postconditions: () => true, logoutSafe: false, done: () => false,
+            run: async () => {
+                if (++tries === 1) throw new Error('program run 3 is not in the page\'s state (page reloaded?)');
+                c.trace.push('ran');
+            },
+        }];
+        const r = await runResumable(client.session, steps, { log: TickLog.memory(), c, link: client.link, shouldStop: () => false });
+        client.stop();
+        expect(r.drops).toBe(1);
+        expect(c.trace).toEqual(['ran']);
+    });
+
     test('a failure with the link healthy is thrown, not retried', async () => {
         const client = droppingClient(world(1, 0, 0));
         const steps: Step<C>[] = [{ name: 'a', preconditions: () => true, run: async () => {}, postconditions: () => 'wrong', logoutSafe: false, done: () => false }];
