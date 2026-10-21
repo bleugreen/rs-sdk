@@ -60,7 +60,7 @@
 
 import type { BotWorldState, InventoryItem } from '../types.js';
 import type { ProgramContext, ProgramParams, TickProgram } from './types.js';
-import { baseLevel, GapCounter, invCount, invItem, itemOp, num, oneOf, regex, skillXp, statRandom, tile } from './util.js';
+import { baseLevel, bonesParam, buryable, buryBone, GapCounter, invCount, invItem, num, oneOf, regex, skillXp, statRandom, tile } from './util.js';
 
 export interface CycleMethod {
     skill: string;
@@ -114,10 +114,6 @@ export const SHAFTS_BUTTON = 8889;
 
 const KNIFE = /^knife$/i;
 const LOGS = /^logs$/i;
-const BURY = /^bury$/i;
-/** Any buryable bones; the run's are dragon bones. */
-export const DEFAULT_BONES = 'bones$';
-
 /** The axe woodcutting_axe_checker swings: the best one worn or carried. */
 export function axeOf(s: BotWorldState): Axe | undefined {
     const names = new Set([...s.equipment, ...s.inventory].map(i => i.name.toLowerCase()));
@@ -188,7 +184,7 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
     const productRe = regex(method.product, '', 'method.product');
     // When the product is the knife's own log, keep a few for the starter.
     const keepProducts = num(params.keepProducts, productRe.test('Logs') ? 3 : 0, 'keepProducts');
-    const bonesRe = params.bury === undefined || params.bury === false ? null : regex(params.bury === true ? DEFAULT_BONES : params.bury, DEFAULT_BONES, 'bury');
+    const bonesRe = bonesParam(params.bury);
     if (bonesRe && technique !== 'knife') throw new Error('bury needs the knife technique (a plain loop with a bury is not implemented)');
     if (bonesRe && !method.buryOnRoll) throw new Error(`bury is not supported for this method: its first click does not roll on a due clock (presets that allow it: ${Object.keys(CYCLE_METHODS).filter(k => CYCLE_METHODS[k]!.buryOnRoll).join(', ')})`);
 
@@ -284,10 +280,9 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
         ctx.send({ type: 'clickComponent', componentId: SHAFTS_BUTTON }, `button ${SHAFTS_BUTTON}`);
         return true;
     };
-    const bones = (s: BotWorldState): InventoryItem[] => (bonesRe ? s.inventory.filter(i => bonesRe.test(i.name) && i.optionsWithIndex.some(o => BURY.test(o.text))) : []);
+    const bones = (s: BotWorldState): InventoryItem[] => (bonesRe ? buryable(s, bonesRe) : []);
     const buryOne = (ctx: ProgramContext): boolean => {
-        const b = bones(ctx.state)[0];
-        if (!b || !ctx.send({ type: 'useInventoryItem', slot: b.slot, optionIndex: itemOp(b, BURY, 1) }, `bury ${b.name}`)) return false;
+        if (!bonesRe || !buryBone(ctx, bonesRe)) return false;
         burySent++;
         ctx.count('burySent');
         return true;

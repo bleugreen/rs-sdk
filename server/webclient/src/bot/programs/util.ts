@@ -1,6 +1,7 @@
 // Small readers over the published state shared by the tick programs.
 
 import type { BotWorldState, GameMessage, InventoryItem } from '../types.js';
+import type { ProgramContext } from './types.js';
 
 /** Game xp per base xp point (server WorldConfig xp rate). */
 export const XP_RATE = 25;
@@ -28,6 +29,28 @@ export function invCount(s: BotWorldState, re: RegExp): number {
 
 export function itemOp(item: InventoryItem, re: RegExp, fallback: number): number {
     return item.optionsWithIndex.find(o => re.test(o.text))?.opIndex ?? fallback;
+}
+
+const BURY = /^bury$/i;
+/** Any buryable bones; the run's are dragon bones. */
+export const DEFAULT_BONES = 'bones$';
+
+/** The programs' `bury` parameter: true for DEFAULT_BONES, or a regular expression over the bones' name; null when absent or false. */
+export function bonesParam(value: unknown, name = 'bury'): RegExp | null {
+    if (value === undefined || value === false) return null;
+    return regex(value === true ? DEFAULT_BONES : value, DEFAULT_BONES, name);
+}
+
+/** Inventory items matching `re` that offer Bury, in inventory order. */
+export function buryable(s: BotWorldState, re: RegExp): InventoryItem[] {
+    return s.inventory.filter(i => re.test(i.name) && i.optionsWithIndex.some(o => BURY.test(o.text)));
+}
+
+/** Sends Bury on the first buryable bone. Returns the bone, or null when there is none or the send was refused. */
+export function buryBone(ctx: ProgramContext, re: RegExp): InventoryItem | null {
+    const b = buryable(ctx.state, re)[0];
+    if (!b || !ctx.send({ type: 'useInventoryItem', slot: b.slot, optionIndex: itemOp(b, BURY, 1) }, `bury ${b.name}`)) return null;
+    return b;
 }
 
 export function playerTile(s: BotWorldState): [number, number] | null {
