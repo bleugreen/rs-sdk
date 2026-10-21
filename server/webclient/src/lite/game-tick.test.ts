@@ -153,8 +153,11 @@ describe('game tick publication', () => {
             ...varpLarge(173, 1), // option_run
             ...setColour(7336, 31 << 5), // questlist:doric, ^green_rgb
             ...setText(8144, "@dre@Dorics' Quest"),
+            // ~quest_journal sets all 50 lines, empty ones included: the cache's
+            // own text for an unset line is its name ("qj3").
             ...setText(8145, '@str@I have spoken to Doric.'),
             ...setText(8147, '@dbl@Doric rewarded me for all my hard work'),
+            ...Array.from({ length: 48 }, (_, i) => setText(8148 + i, '')).flat(),
             ...openMain(8134)
         );
         await client.pumpPackets();
