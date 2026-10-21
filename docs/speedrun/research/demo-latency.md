@@ -10,17 +10,19 @@ engine lands it on the next tick, and where the scored run's client must sit. Sc
 **Summary.** The app runs on one machine in Fly's iad region (Ashburn, Virginia). The engine
 spends most of each 300 ms tick computing on the same thread that reads sockets, so a client's
 reply lands on the next tick only if its whole round trip, including its own turnaround, fits
-in the idle gap after the tick's output is flushed. At about 1,550-1,670 players online that gap
-is roughly 90-115 ms on most ticks. Two things decide whether a reaction fits:
+in the idle gap after the tick's output is flushed. At about 1,550-1,680 players online, a client
+in Ashburn has about 50 ms after a tick's frame arrives (median) to get its reply out. Two things
+decide whether a reaction fits:
 
-1. **Placement.** From Southern California the network round trip is about 90 ms, which uses up
-   nearly the whole gap. From Ashburn it is about 3 ms.
+1. **Placement.** From Southern California the network round trip is about 80-90 ms, which leaves
+   0-25 ms on most ticks and nothing on the rest. From Ashburn it is about 3 ms.
 2. **The client path.** Reacting in-process on the game socket costs under 1 ms. The SDK relay
    (lite runner, gateway, SDK script) costs 73 ms at the median, almost all of it in two 20 ms
    timers inside the lite runner. The public gateway is saturated and costs hundreds of ms more.
 
-From Ashburn, a direct in-process reaction lands on the next tick 60 of 60 times, and the SDK
-relay 32 of 60. The server's tick length is **not** the cause of the remaining misses (section 3).
+From Ashburn, a direct in-process reaction landed on the next tick 180 of 180 times over three
+paired runs, and the SDK relay 123 of 180. The server's tick length is **not** the cause of the
+relay's misses (section 3).
 
 ## 1. Where the app runs
 
@@ -194,7 +196,8 @@ From fedora at 02:37 (1,648-1,653 online), 40 fresh connections per target, spac
 From Ashburn (rs/86 run 2), with about 3 ms of network, the engine's 404 first byte minus TLS was
 spread roughly evenly from about 30 to 380 ms. That is the engine's event-loop wait, and it says
 the thread is busy for most of each tick. It is wider than the reaction data allows for game
-sockets (`W` of about 90 ms means the thread is idle about a third of the time), so HTTP requests
+sockets (Ashburn's ~50 ms margin after each frame means the thread reads game input for a good
+part of every tick), so HTTP requests
 probably also queue behind other work served between cycles (other users' HTTP, the `/gateway`
 relay, the world feed). That is inferred and listed as open.
 
