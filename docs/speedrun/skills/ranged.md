@@ -21,6 +21,18 @@ slow host occasionally costs a tick on a reload, retarget or knife throw. The ca
 sweep is a server timer and does not depend on the host. rs/26's bbs correction factor had not
 been published when this was written (01:15), so no factor is applied.
 
+**Client.** Every number here was taken on the headless lite client against a local lab engine,
+where a reaction lands on the next tick. The scored run drives the browser webclient against the
+demo, where each reaction to observed state costs 1-2 more ticks through the SDK relay from home
+and about 0.15 from Ashburn (rs/2; `docs/speedrun/LAB.md` on main, "Which client a number was
+taken on" and the host-latency table under "Running several labs on one machine"). The reactions
+in these loops: the cannon set-up is about 5 steps, each sent when the last is seen (once per
+2,500-tick cannon life); the reload every ~20 ticks is one packet from beside the cannon; the
+knives retarget once per kill; and each sip or eat is followed by one re-attack. rs/91's 4-tick
+flick re-sends the attack blind, which is why it threw slightly more often than the held control
+(0.44-0.45 knives per tick against 0.42, measured). The cannon's sweep and the 2-tick knife
+clock are server timers. Totals are not re-derived for the webclient.
+
 ## 1. Recommendation
 
 **Use the dwarf multicannon at the Wilderness poison spiders (3288,3810),
@@ -35,19 +47,32 @@ against **about 5,270 by knives alone**. No quest on the planned route gives Ran
 (section 3), so the post-quest start is level 1, or level ~54 after the Monkey
 Madness Jungle Demon fight.
 
-**On the route: rs/3's Package B** (01:08; `docs/speedrun/quests/README.md` on
-cairn://p/rs/3/1/coordinator). Monkey Madness option 1, then Dragon Slayer, whose 32-QP door
-needs Goblin Diplomacy, Romeo & Juliet and Cook's Assistant plus Druidic Ritual first; Waterfall, Merlin's Crystal and Holy Grail off. After the quests Attack and Strength
-are capped, the Defence gap is **1,288** (MM 20,000 + Dragon Slayer 18,650) and the
-Hitpoints gap about 4,177 (combat.md Summary). Fire the cannon for **113 ticks before MM**
+**On the route: rs/3's Package B** ([`docs/speedrun/quests/README.md`](../quests/README.md)
+section 4, the canonical quest order). Monkey Madness option 1, then Dragon Slayer, whose 32-QP
+door needs 11 QP of filler (Goblin Diplomacy, Romeo & Juliet, Cook's Assistant) plus Druidic
+Ritual's 4 (README step 12); Waterfall, Merlin's Crystal and Holy Grail off. After the quests
+Attack and Strength are capped, the Defence gap is **1,288** (MM 20,000 + Dragon Slayer 18,650)
+and the Hitpoints gap **~4,220** (README section 6). Fire the cannon for **113 ticks before MM**
 for Ranged 50 (the Jungle Demon's magic shortbow), wielding the rune scimitar at Attack 99.
-After MM and Dragon Slayer, run **plan (e): cannon + defensive melee at the spiders for 230
-ticks** (Defence 99, Ranged 54 -> 67), **then cannon + rapid rune knives for 1,821** to Ranged
-99. That is **2,051 ticks after MM for Ranged 99 + Defence 99 + Hitpoints 99**, with about
-5,089 HP as a by-product (inferred from measured rates, `ranged-model.ts`). rs/3's phase model
-gives 2,023 for the same plan. The 28-tick difference is the Ranged 67-70 stretch, where
-cannon + knives is unmeasured, so **2,023-2,051** is the honest range; the on-route figure
-here is 2,051. Next best are (c) 2,120 and (g) 2,180.
+
+After MM and Dragon Slayer, **run plan (e) with rs/91's kit** (rs/91, measured at 300 ms:
+`docs/speedrun/research/helper-fed-and-combat.md` section 3 on cairn://p/rs/91/1/builder,
+scripts `cannon-kit.ts` and `cannon-kit-model.ts`). The kit is super attack and super strength,
+an amulet of glory, Protect from Melee + Ultimate Strength + Incredible Reflexes flicked every
+4 ticks, one super antipoison dose per ~600 ticks and no food, plus a ranging potion once the
+knives are out. **Cannon + defensive melee for 168 ticks** (13.66 Ranged + 7.65 Defence per
+tick, measured) closes Defence. Then the cannon with the scimitar to Ranged 70 and **cannon +
+rapid rune knives** to 99 (21.95 Ranged per tick at 85 against the control's 18.56, measured),
+1,688 ticks. That is **1,857 ticks after MM for Ranged 99 + Defence 99 + Hitpoints 99**
+(measured rates, inferred total), with about 5,440 HP as a by-product against the ~4,220 gap.
+
+**Without the kit, plan (e) is 2,051-2,211**: 2,051 on rs/31's rates (230 + 1,821; Prayer 99,
+survival by `::setstat`) and 2,211 on rs/91's own control (Prayer 43, real sips and food;
+inferred total). The difference is mostly the control running 19.88 at Ranged 99 against
+rs/31's 22.72. So the kit's gain is measured against its own control: about 354 ticks like for
+like, about 194 against 2,051. README step 14 still quotes 2,023-2,051, the no-kit figure (rs/3's
+phase model gives 2,023 on rs/31's rates). Without the kit the next best plans are (c) 2,120 and
+(g) 2,180.
 
 Alternatives, no longer on the route: **Package A** (Waterfall on, Dragon Slayer off; Defence
 gap 19,938, HP 4,938) is plan (f), cannon + defensive melee until Ranged 99 (3,459) then
@@ -69,6 +94,10 @@ with Protect from Melee, and a rune scimitar unless a ranged weapon is listed.
 | Cannon + reactive accurate melee (auto-retaliate only) | 10.14 | 0 | 5.40 | 1.79 | 400 ticks |
 | **Cannon + rapid rune knives**, Ranged 70 / 85 / 99 | **17.34 / 18.69 / 22.72** | 0 | 0 | 2.12 / 2.42 / 3.28 | 300 ticks each; cannon's share 11.0 / 11.4 / 12.9 |
 | Cannon + longrange rune knives, Ranged/Defence 70 | 12.07 | 2.19 | 0 | 1.45 | 300 ticks |
+| Cannon + rapid knives, **rs/91 control** (Prayer 43, Protect from Melee held, prayer potions and sharks), Ranged 70 / 85 / 99 | 17.40 / 18.56 / 19.88 | 0 | 0 | 2.03 / 2.38 / 2.59 | rs/91, 400 ticks, 1 / 3 / 2 runs |
+| **Cannon + rapid knives, rs/91 kit** (Protect from Melee flicked, ranging potion, glory, super antipoison, no food), Ranged 70 / 85 / 99 | **19.46 / 21.95 / 24.47** | 0 | 0 | 2.57 / 3.19 / 3.48 | rs/91, 400 ticks, 1 / 3 / 1 clean run (two more at 99 ran the cannon dry) |
+| **Cannon + defensive melee, rs/91 scimitar kit** (supers, glory, three prayers flicked, super antipoison), Ranged 85 | **13.66** | **7.65** | 0 | 2.53 | rs/91, 400 ticks, 1 run; swings held the 4-tick ideal |
+| Cannon alone, rs/91 scimitar kit | 13.64 | 0 | 0 | 0 | rs/91, 400 ticks, 1 run |
 | **Rapid rune knives alone** (moss giants), Ranged 50 / 70 / 99 | **5.37 / 8.13 / 8.75** | 0 | 0 | 1.77 / 2.68 / 2.89 | 300 ticks each |
 | Rapid rune darts alone, Ranged 70 | 8.00 | 0 | 0 | 2.65 | 300 ticks |
 | **Longrange rune knives alone** (moss giants), Ranged/Defence 70 | **2.63** | **2.63** | 0 | 1.74 | 300 ticks |
@@ -83,8 +112,9 @@ run at the measured defensive rate (5.60).
 
 | Scenario | Plan | Ticks |
 |---|---|---|
-| Ranged 1 -> 50 before MM | cannon, melee weapon wielded | **113** firing + ~10 set-up and pick-up + travel; knives only: 628 |
-| **Package B (current route)**: MM option 1 + Dragon Slayer (18,650 Str + 18,650 Def), Waterfall off, from Ranged ~54: Defence gap 1,288, HP gap ~4,177 (4,938 counting MM alone) | **(e) cannon + defensive melee (230), then cannon + rapid knives (1,821)**; (c) 2,120; (g) 2,180 | **2,051** |
+| Ranged 1 -> 50 before MM | cannon, melee weapon wielded | **113** firing + ~10 set-up and pick-up + travel (README step 7); about 96 with super attack, glory and Incredible Reflexes flicked (inferred: 113 x 11.52 / 13.64, rs/91's kit cannon-only rate; unmeasured at Strength 1, Defence 1); knives only: 628 |
+| **Package B (current route) with rs/91's kit, recommended**: from Ranged ~54, Defence gap 1,288, HP gap ~4,220 (README section 6) | **(e) with the kit: cannon + defensive melee (168), then the cannon, knives from 70 (1,688)** | **1,857** (rs/91, `cannon-kit-model.ts`) |
+| Package B without the kit: MM option 1 + Dragon Slayer (18,650 Str + 18,650 Def), Waterfall off | **(e) cannon + defensive melee (230), then cannon + rapid knives (1,821)**; (c) 2,120; (g) 2,180 | **2,051** on rs/31's rates; 2,211 on rs/91's control |
 | Package A (superseded): MM option 1, Waterfall on, Holy Grail off: from Ranged ~54 (50 + ~485 from the demon fight), Defence gap 19,938, HP gap 4,938 | **(f) cannon + defensive melee at the spiders until Ranged 99 (3,459), then melee alone at the ogres (62)** | **3,520** |
 | | (d) cannon + defensive melee at the spiders throughout | 3,560 |
 | | (g) melee alone at the ogres for Defence (2,155), then cannon + knives for Ranged (2,041) | 4,197 |
