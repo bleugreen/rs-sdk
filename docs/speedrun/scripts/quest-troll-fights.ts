@@ -1,6 +1,6 @@
 // Times the troll-chain fights on a local server (docs/speedrun/scripts/quest-troll-lab.sh).
 //
-//   bun docs/speedrun/scripts/quest-troll-fights.ts <bot> <dad|general|arrg> <min|p70|p99> [runs=5]
+//   bun docs/speedrun/scripts/quest-troll-fights.ts <bot> <dad|general|arrg> <min|p70|p99> [runs=5] [weapon=rune_scimitar]
 //
 // Profiles (all with helper-supplied gear: rune scimitar, rune full helm,
 // platebody, platelegs, kiteshield, amulet of strength, 20 swordfish; style
@@ -27,19 +27,19 @@ import type { BotActions } from '../../../sdk/actions';
 import type { NearbyNpc } from '../../../sdk/types';
 import { advance, choices, cheat, tele, give, setStats, clearInv, now, pos, waitTicks, waitUntil, findNpc, dialogText, invCount, stats, result } from './quest-troll-lib';
 
-const [, , , fightArg = 'dad', profileArg = 'p70', runsArg = '5'] = process.argv;
+const [, , , fightArg = 'dad', profileArg = 'p70', runsArg = '5', weaponArg = 'rune_scimitar'] = process.argv;
 const RUNS = parseInt(runsArg);
 const PROFILES: Record<string, number> = { min: 40, p70: 70, p99: 99 };
 const LV = PROFILES[profileArg];
 if (!LV) throw new Error(`unknown profile ${profileArg}`);
 
-const GEAR = ['rune_scimitar', 'rune_full_helm', 'rune_platebody', 'rune_platelegs', 'rune_kiteshield', 'amulet_of_strength'];
+const GEAR = [weaponArg, 'rune_full_helm', 'rune_platebody', 'rune_platelegs', 'rune_kiteshield', 'amulet_of_strength'];
 
 async function kit(bot: BotActions, sdk: BotSDK) {
     await clearInv(bot, sdk);
     await setStats(sdk, { attack: LV, strength: LV, defence: LV, hitpoints: LV });
     for (const g of GEAR) await give(sdk, g);
-    for (const g of [/rune scimitar/i, /rune full helm/i, /rune platebody/i, /rune platelegs/i, /rune kiteshield/i, /amulet of strength/i]) await bot.equipItem(g).catch(e => console.log('equip', g, e?.message));
+    for (const g of [new RegExp('^' + weaponArg.replace(/_/g, ' ') + '$', 'i'), /rune full helm/i, /rune platebody/i, /rune platelegs/i, /rune kiteshield/i, /amulet of strength/i]) await bot.equipItem(g).catch(e => console.log('equip', g, e?.message));
     await give(sdk, 'swordfish', 20);
     await sdk.sendSetCombatStyle(1);
 }
@@ -198,7 +198,7 @@ await runScript(async ({ bot, sdk }) => {
         console.log(`run ${i + 1}`, JSON.stringify(runs[runs.length - 1]));
     }
     const fightTicks = runs.map(r => r.ticks as number);
-    result(`${fightArg}-${profileArg}`, {
+    result(`${fightArg}-${profileArg}-${weaponArg}`, {
         fight: stats(fightTicks),
         total: stats(runs.map(r => r.totalTicks as number)),
         eats: stats(runs.map(r => r.eats as number)),

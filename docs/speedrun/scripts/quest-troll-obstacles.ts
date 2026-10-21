@@ -53,13 +53,12 @@ async function crossOnce(sdk: BotSDK, ob: Obstacle, msgBase: number) {
     // settle: position unchanged for 3 ticks after having moved, or 12 ticks without moving
     let last = p0, lastMove = t0, moved = false;
     for (;;) {
-        const r = await waitUntil(sdk, s => s.tick > (sdk.getState()?.tick ?? 0) - 1 && s.tick > lastMove, 2);
-        const s = r?.state ?? sdk.getState()!;
+        await waitTicks(sdk, 1);
+        const s = sdk.getState()!;
         const p = pos(s);
         if (p.x !== last.x || p.z !== last.z) { moved = true; lastMove = s.tick; last = p; }
-        if (s.tick - lastMove >= 3 && moved) break;
+        if (moved && s.tick - lastMove >= 3) break;
         if (s.tick - t0 >= 14) break;
-        await waitTicks(sdk, 1);
     }
     const s1 = sdk.getState()!;
     const msgs = (s1.gameMessages ?? []).slice(msgBase).map(m => m.text);
