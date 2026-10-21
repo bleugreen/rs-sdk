@@ -299,7 +299,8 @@ async function pairLoop() {
         // Slots on the PDT clock (:00 and :30 for 30 min, or --slot-offset-min past); PDT is a whole-hour UTC offset.
         const offset = SLOT_OFFSET_MIN * 60_000;
         const start = Math.floor((Date.now() - offset) / period) * period + offset;
-        await slot(Math.max(start, Date.now() - 60_000));
+        // Only inside the slot's own window: a restart mid-hour must not open a slot in someone else's turn.
+        if (Date.now() < start + SLOT_BUDGET_MIN * 60_000) await slot(start);
         const next = start + period;
         if (next > Date.now()) await sleep(next - Date.now());
     }
