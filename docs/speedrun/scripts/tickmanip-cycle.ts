@@ -62,7 +62,8 @@
 import { runScript } from '../../../sdk/runner';
 import type { BotWorldState, InventoryItem } from '../../../sdk/types';
 import { appendFileSync, writeFileSync } from 'fs';
-import { DEFAULT_THRESHOLD, HostGate } from '../../../speedrun/lib/hostgate';
+import { hostname } from 'os';
+import { HostGate } from '../../../speedrun/lib/hostgate';
 
 const args: Record<string, string> = Object.fromEntries(
     process.argv.slice(2).filter(a => a.startsWith('--')).map(a => {
@@ -83,9 +84,10 @@ const reanchor = args.reanchor ?? 'click';
 const XP_LAG = Number(args.xplag ?? 0);
 const marks = (args.marks ?? '').split(',').filter(Boolean).map(Number);
 const dropProducts = args.drop !== 'false';
+const DEMO = args.demo === 'true';
 // A mistimed lock starves completely (each eat pushes the clock past the next click), so
 // "no xp for lockWindow ticks" means lost lock; size it so honest misses rarely trip it.
-const LOCK_WINDOW: Record<string, number> = { wc: 18, fly: 15, flylumb: 15, cage: 45 };
+const LOCK_WINDOW: Record<string, number> = { wc: 18, tree: 18, fly: 15, flylumb: 15, cage: 45 };
 const logPath = args.log ?? `${process.env.TMPDIR ?? '/tmp'}/tickmanip-${mode}${args.tag ? '-' + args.tag : ''}.log`;
 const FOOD = /^shrimps$/i;
 const FOOD_OBJ = 'shrimp';
@@ -104,6 +106,10 @@ interface Method {
     r0: number;
     /** Read chance that a roll gives xp at a level (sizes the lost-lock window). */
     catchP?: (level: number) => number;
+    /** The plain loop's ticks per roll, for the host gate's cost model. */
+    plainCycle: number;
+    /** The target is gone after every successful roll (normal trees). */
+    depletes?: boolean;
 }
 
 // stat_random (PlayerOps.ts): floor(lo*(99-L)/98) + floor(hi*(L-1)/98) + 1 > rand(256)
@@ -117,11 +123,15 @@ const flyCatchP = (L: number) => {
 };
 
 const METHODS: Record<string, Method> = {
-    wc: { skill: 'woodcutting', tele: '0,48,50,15,34', give: [['rune_axe', 1]], kind: 'loc', target: /^willow/i, option: /^chop/i, product: /^willow logs$/i, clickOnRoll: false, r0: 3 },
-    fly: { skill: 'fishing', tele: '0,48,53,31,38', give: [['fly_fishing_rod', 1], ['feather', 5000]], kind: 'npc', target: /^fishing spot$/i, option: /^lure$/i, product: /^raw /i, clickOnRoll: false, r0: 4, catchP: flyCatchP },
+    wc: { skill: 'woodcutting', tele: '0,48,50,15,34', give: [['rune_axe', 1]], kind: 'loc', target: /^willow/i, option: /^chop/i, product: /^willow logs$/i, clickOnRoll: false, r0: 3, plainCycle: 4 },
+    // Normal trees with a bronze axe (the starter kit; trees.dbrow successchance 64,200). A
+    // normal tree always falls on its first log (woodcut.rs2 get_logs, deplete_chance 0), so
+    // each log re-bootstraps on the next tree. Lab tele: the trees west of Lumbridge castle.
+    tree: { skill: 'woodcutting', tele: '0,49,50,58,30', give: [['bronze_axe', 1]], kind: 'loc', target: /^(tree|dead tree|evergreen)$/i, option: /^chop/i, product: /^logs$/i, clickOnRoll: false, r0: 3, plainCycle: 4, depletes: true, catchP: (L: number) => statRandom(L, 64, 200) },
+    fly: { skill: 'fishing', tele: '0,48,53,31,38', give: [['fly_fishing_rod', 1], ['feather', 5000]], kind: 'npc', target: /^fishing spot$/i, option: /^lure$/i, product: /^raw /i, clickOnRoll: false, r0: 4, catchP: flyCatchP, plainCycle: 5 },
     // standing tile (3241,3248) between the river's two spot clusters
-    flylumb: { skill: 'fishing', tele: '0,50,50,41,48', give: [['fly_fishing_rod', 1], ['feather', 5000]], kind: 'npc', target: /^fishing spot$/i, option: /^lure$/i, product: /^raw /i, clickOnRoll: false, r0: 4, catchP: flyCatchP },
-    cage: { skill: 'fishing', tele: '0,44,53,34,41', give: [['lobster_pot', 1]], kind: 'npc', target: /^fishing spot$/i, option: /^cage$/i, product: /^raw /i, clickOnRoll: true, r0: 4 }
+    flylumb: { skill: 'fishing', tele: '0,50,50,41,48', give: [['fly_fishing_rod', 1], ['feather', 5000]], kind: 'npc', target: /^fishing spot$/i, option: /^lure$/i, product: /^raw /i, clickOnRoll: false, r0: 4, catchP: flyCatchP, plainCycle: 5 },
+    cage: { skill: 'fishing', tele: '0,44,53,34,41', give: [['lobster_pot', 1]], kind: 'npc', target: /^fishing spot$/i, option: /^cage$/i, product: /^raw /i, clickOnRoll: true, r0: 4, plainCycle: 6 }
 };
 
 const method = METHODS[methodName] ? { ...METHODS[methodName]! } : undefined;
@@ -141,13 +151,24 @@ const lockWindowAt = (L: number) => {
 };
 
 const gated = technique !== 'base' && args.gate !== 'off';
-writeFileSync(logPath, `# tickmanip-cycle ${mode} level=${level} phase=${phase} rolls=${rollsTarget} until=${untilLevel} dismiss=${dismiss} reanchor=${reanchor} xplag=${XP_LAG} gate=${gated ? 'on' : 'off'}\n`);
+// --lead=N sends an xp-anchored schedule N ticks early; auto (the default) takes the gate's
+// last probe (dominant latency - 1). A schedule anchored on its own send needs none.
+const LEAD_ARG = args.lead ?? 'auto';
+writeFileSync(logPath, `# tickmanip-cycle ${mode} level=${level} phase=${phase} rolls=${rollsTarget} until=${untilLevel} dismiss=${dismiss} reanchor=${reanchor} xplag=${XP_LAG} gate=${gated ? 'on' : 'off'} lead=${LEAD_ARG} demo=${DEMO} host=${hostname()} at=${new Date().toISOString()}\n`);
 const log = (line: string) => appendFileSync(logPath, line + '\n');
 
 await runScript(async ({ bot, sdk }) => {
     await bot.skipTutorial();
     await sdk.waitForTicks(2);
 
+    // --demo: no staff cheats. The account must already stand by the targets with its kit
+    // (for knife: a knife and at least one normal log).
+    if (DEMO) {
+        const inv = sdk.getState()?.inventory ?? [];
+        const has = (re: RegExp) => inv.some(i => re.test(i.name));
+        if (technique === 'knife' && (!has(/^knife$/i) || !has(/^logs$/i))) throw new Error('--demo knife needs a knife and a normal log in the inventory');
+        if (technique === 'eat' && !has(FOOD)) throw new Error('--demo eat needs shrimps');
+    } else {
     // Clean inventory, then stats, kit and position.
     for (const item of [...(sdk.getState()?.inventory ?? [])]) await sdk.sendDropItem(item.slot);
     await sdk.waitForTicks(2);
@@ -167,6 +188,7 @@ await runScript(async ({ bot, sdk }) => {
         await sdk.waitForTicks(6);
         const p = sdk.getState()?.player;
         if (p && Math.abs(p.worldX - (mx * 64 + lx)) <= 2 && Math.abs(p.worldZ - (mz * 64 + lz)) <= 2) break;
+    }
     }
 
     type Target = { kind: 'loc'; x: number; z: number; id: number; op: number } | { kind: 'npc'; index: number; op: number; x: number; z: number };
@@ -237,8 +259,11 @@ await runScript(async ({ bot, sdk }) => {
         fire(s.tick, `button ${SHAFTS_BUTTON}`, sdk.sendClickComponent(SHAFTS_BUTTON) as Promise<{ success: boolean; message?: string }>);
         return true;
     };
+    // When the product is the knife's own log, keep a few for the starter.
+    const keepProducts = technique === 'knife' && method.product.test('Logs') ? 3 : 0;
+    const droppable = (s: BotWorldState) => s.inventory.filter(i => method.product.test(i.name)).slice(keepProducts);
     const dropOne = (s: BotWorldState) => {
-        const p = invItem(s, method.product);
+        const p = droppable(s)[0];
         if (p) fire(s.tick, `drop ${p.name} slot${p.slot}`, sdk.sendDropItem(p.slot));
     };
     // A slipped knife cycle lets the queued fletch run and turns one log into shafts. Long
@@ -260,14 +285,21 @@ await runScript(async ({ bot, sdk }) => {
         const here = sdk.getState()!.player!;
         await sdk.sendWalk(here.worldX, here.worldZ); // stop the interaction
         await sdk.waitForTicks(6);
-        for (const p of (sdk.getState()?.inventory ?? []).filter(i => method.product.test(i.name))) await sdk.sendDropItem(p.slot);
+        for (const p of droppable(sdk.getState()!)) await sdk.sendDropItem(p.slot);
         await sdk.waitForTicks(2);
     }
     // Run-time host gate: probe before the first lock; the probe ends on the tile it started on.
+    // --plain-rate=T gives the measured override plain's ticks per drop; without it the gate
+    // compares against the last plain stretch it measured itself.
     const gate = gated
-        ? new HostGate(sdk, { threshold: Number(args.threshold ?? DEFAULT_THRESHOLD), log: line => { log(line); console.log(line); } })
+        ? new HostGate(sdk, {
+              model: { plainCycle: method.plainCycle, anchor: reanchor === 'xp' ? 'xp' : 'self' },
+              plainTicksPerDrop: args['plain-rate'] ? Number(args['plain-rate']) : undefined,
+              log: line => { log(line); console.log(line); },
+          })
         : null;
     if (gate) await gate.probe('start');
+    const lead = () => (LEAD_ARG === 'auto' ? (gate?.lead ?? 0) : Number(LEAD_ARG));
     const plainNow = () => technique === 'base' || (gate !== null && !gate.on);
     const startState = sdk.getState()!;
     const startXp = skillXp(startState);
@@ -280,6 +312,7 @@ await runScript(async ({ bot, sdk }) => {
     const breaks: number[] = []; // ticks at which the schedule was re-bootstrapped (gaps spanning these are excluded)
     let lastXp = startXp;
     let anchor: number | null = null; // observed tick on which the bootstrap click was sent
+    let anchorLead = 0; // ticks the schedule sends early: only when anchored on an observed roll
     let cooldownUntil = -1;
     let curPhase = ((phase % 3) + 3) % 3;
     let resyncs = 0;
@@ -313,6 +346,7 @@ await runScript(async ({ bot, sdk }) => {
                 xpNow = true;
                 log(`T${t} XP +${xp - lastXp} (total ${xp})`);
                 lastXp = xp;
+                if (gate && !probing && gate.drop(t)) { anchor = null; awaitXpSince = null; current = null; breaks.push(t); }
                 if (segStartTick === null && fromXp > 0 && xp / 25 >= fromXp) { segStartTick = t; segStartXp = xp; log(`T${t} SEGMENT start at base ${xp / 25}`); }
                 for (const m of marks) if (!markTicks.has(m) && xp / 25 >= m) markTicks.set(m, t);
             }
@@ -387,7 +421,7 @@ await runScript(async ({ bot, sdk }) => {
                 const full = s.inventory.length >= 28;
                 if (full && dropProducts) {
                     actedTick = t;
-                    for (const p of s.inventory.filter(i => method.product.test(i.name))) fire(t, `drop ${p.name} slot${p.slot}`, sdk.sendDropItem(p.slot));
+                    for (const p of droppable(s)) fire(t, `drop ${p.name} slot${p.slot}`, sdk.sendDropItem(p.slot));
                     breaks.push(t);
                     anchor = null;
                     return;
@@ -402,7 +436,7 @@ await runScript(async ({ bot, sdk }) => {
                 return;
             }
 
-            if (technique === 'knife' && s.inventory.filter(i => /^logs$/i.test(i.name)).length < 4 && t % 3 === 1 && logsGiven < 200) {
+            if (!DEMO && technique === 'knife' && s.inventory.filter(i => /^logs$/i.test(i.name)).length < 4 && t % 3 === 1 && logsGiven < 200) {
                 logsGiven++;
                 fire(t, 'give logs', sdk.sendSay('::give logs 1'));
             }
@@ -421,7 +455,17 @@ await runScript(async ({ bot, sdk }) => {
 
             // eat technique: open-loop schedule anchored on our own bootstrap click (see header)
             const lost = anchor !== null && t - Math.max(anchor + method.r0 + 1, lastXpTick) > lockWindowAt(lvl);
-            if (moved || (anchor !== null && (targetGone || lost))) {
+            // A depleting target fell to the roll we just saw: start the next one from this
+            // label with a starter bundle, like a bootstrap (its own send is the anchor, so no
+            // lead and no cooldown). The starter lands while the clock has expired and the
+            // first swing on the new target rolls 2 ticks later, if it is within reach by then.
+            if (method.depletes && targetGone && xpNow && technique === 'knife' && (anchor !== null || awaitXpSince !== null)) {
+                anchor = t - method.r0 - 1 - curPhase;
+                anchorLead = 0;
+                awaitXpSince = null;
+                current = null;
+                log(`T${t} next target`);
+            } else if (moved || (anchor !== null && (targetGone || lost))) {
                 const why = moved ? 'spot moved' : targetGone ? 'target gone' : 'no xp';
                 // A lock with no xp is mistimed by a tick or two (latency moved); try the next phase.
                 if (reanchor === 'click' && why === 'no xp') curPhase = (curPhase + 1) % 3;
@@ -438,9 +482,10 @@ await runScript(async ({ bot, sdk }) => {
                 if (xpNow && t > awaitXpSince) {
                     // roll on R = t - xplag; the loop's own re-arm puts the next roll on R + r0 + 1
                     anchor = t - XP_LAG;
+                    anchorLead = lead();
                     curPhase = 0;
                     awaitXpSince = null;
-                    log(`T${t} anchored on xp (roll ${anchor})`);
+                    log(`T${t} anchored on xp (roll ${anchor}), lead ${anchorLead}`);
                 } else {
                     if (t - awaitXpSince > 30) { actedTick = t; current = null; if (click(s)) awaitXpSince = t; log(`T${t} re-click while waiting for xp`); }
                     return;
@@ -453,10 +498,10 @@ await runScript(async ({ bot, sdk }) => {
                     if (click(s)) { awaitXpSince = t; breaks.push(t); log(`T${t} re-click, anchoring on the next xp`); }
                     return;
                 }
-                if (click(s)) { anchor = t; breaks.push(t); log(`T${t} bootstrap phase ${curPhase}`); }
+                if (click(s)) { anchor = t; anchorLead = 0; breaks.push(t); log(`T${t} bootstrap phase ${curPhase}`); }
                 return;
             }
-            const d = t - anchor - method.r0 - 1 - curPhase;
+            const d = t - anchor - method.r0 - 1 - curPhase + anchorLead;
             if (d < 0) return;
             const k = d % 3;
             if (k === 0) {
@@ -514,7 +559,7 @@ await runScript(async ({ bot, sdk }) => {
         `  ${mvRows.map(r => `T${r.tick}:${r.gap}`).join(' ')}`,
         `logs given during the run ${logsGiven}`,
         gate
-            ? `gate: ${gate.history.length} probes (${gate.history.map(h => `T${h.tick} ${h.why} ${h.result.onTime}/${h.result.trials}`).join(', ')}), switches ${gate.switches() || 'none'}, ${gate.plainTicks(segEnd)} ticks plain, ends ${gate.on ? 'manipulating' : 'plain'}`
+            ? `gate: ${gate.history.length} events (${gate.summary()}), switches ${gate.switches() || 'none'}, ${gate.plainTicks(segEnd)} ticks plain, ends ${gate.on ? 'manipulating' : 'plain'}, lead ${lead()}`
             : 'gate: off',
         ...(marks.length ? [`marks (base xp: tick passed, ticks to end T${segEnd}): ${marks.map(m => markTicks.has(m) ? `${m}: T${markTicks.get(m)} ${segEnd - markTicks.get(m)!}` : `${m}: -`).join(' | ')}`] : []),
         `levels reached: ${levelUps.map(l => `${l.level}@T${l.tick}`).join(' ')}`,
