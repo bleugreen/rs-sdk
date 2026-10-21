@@ -43,6 +43,11 @@
 //                   starter goes out on label R + r0 + 1, the same as a bootstrap at label R.
 //   --xplag=0|1     label offset of a roll's xp: 0 on the lite client since #20 (a tick is
 //                   published once fully decoded), 1 before it
+//   --marks=B1,B2,..  print the tick at which base xp first reaches each Bi and the ticks
+//                   from there to the end (quest-start segments, fishing.md section 3)
+// The lost-lock window for fly fishing scales with the read catch chance at the current
+// level, so a run of honest misses at a low level is not taken for a lost lock: 3 ticks per
+// roll for enough rolls that all of them fail with chance below 0.5% (at least 15 ticks).
 // A fishing spot that teleports keeps its NPC index, so a move is detected by its tile; the
 // client never follows it (fishing.md section 4).
 //
@@ -69,6 +74,7 @@ const fromXp = Number(args['from-xp'] ?? 0);
 const dismiss = args.dismiss ?? 'now';
 const reanchor = args.reanchor ?? 'click';
 const XP_LAG = Number(args.xplag ?? 0);
+const marks = (args.marks ?? '').split(',').filter(Boolean).map(Number);
 const dropProducts = args.drop !== 'false';
 // A mistimed lock starves completely (each eat pushes the clock past the next click), so
 // "no xp for lockWindow ticks" means lost lock; size it so honest misses rarely trip it.
@@ -89,13 +95,25 @@ interface Method {
     clickOnRoll: boolean;
     /** Ticks from a click on an expired clock to its first roll, read from the first-click label. */
     r0: number;
+    /** Read chance that a roll gives xp at a level (sizes the lost-lock window). */
+    catchP?: (level: number) => number;
 }
+
+// stat_random (PlayerOps.ts): floor(lo*(99-L)/98) + floor(hi*(L-1)/98) + 1 > rand(256)
+const statRandom = (L: number, lo: number, hi: number) => Math.min(1, (Math.floor((lo * (99 - L)) / 98) + Math.floor((hi * (L - 1)) / 98) + 1) / 256);
+// fly: salmon (16, 96) rolled first from level 30, then trout (32, 192) (freshfish.rs2, fishing.rs2)
+const flyCatchP = (L: number) => {
+    const pt = statRandom(L, 32, 192);
+    if (L < 30) return pt;
+    const ps = statRandom(L, 16, 96);
+    return ps + (1 - ps) * pt;
+};
 
 const METHODS: Record<string, Method> = {
     wc: { skill: 'woodcutting', tele: '0,48,50,15,34', give: [['rune_axe', 1]], kind: 'loc', target: /^willow/i, option: /^chop/i, product: /^willow logs$/i, clickOnRoll: false, r0: 3 },
-    fly: { skill: 'fishing', tele: '0,48,53,31,38', give: [['fly_fishing_rod', 1], ['feather', 5000]], kind: 'npc', target: /^fishing spot$/i, option: /^lure$/i, product: /^raw /i, clickOnRoll: false, r0: 4 },
+    fly: { skill: 'fishing', tele: '0,48,53,31,38', give: [['fly_fishing_rod', 1], ['feather', 5000]], kind: 'npc', target: /^fishing spot$/i, option: /^lure$/i, product: /^raw /i, clickOnRoll: false, r0: 4, catchP: flyCatchP },
     // standing tile (3241,3248) between the river's two spot clusters
-    flylumb: { skill: 'fishing', tele: '0,50,50,41,48', give: [['fly_fishing_rod', 1], ['feather', 5000]], kind: 'npc', target: /^fishing spot$/i, option: /^lure$/i, product: /^raw /i, clickOnRoll: false, r0: 4 },
+    flylumb: { skill: 'fishing', tele: '0,50,50,41,48', give: [['fly_fishing_rod', 1], ['feather', 5000]], kind: 'npc', target: /^fishing spot$/i, option: /^lure$/i, product: /^raw /i, clickOnRoll: false, r0: 4, catchP: flyCatchP },
     cage: { skill: 'fishing', tele: '0,44,53,34,41', give: [['lobster_pot', 1]], kind: 'npc', target: /^fishing spot$/i, option: /^cage$/i, product: /^raw /i, clickOnRoll: true, r0: 4 }
 };
 
@@ -107,7 +125,13 @@ if (!method || !['base', 'eat', 'knife'].includes(technique!)) {
     console.error(`unknown mode ${mode}; methods ${Object.keys(METHODS).join(', ')}; techniques base, eat, knife`);
     process.exit(2);
 }
-const lockWindow = Number(args.window ?? LOCK_WINDOW[methodName]);
+const lockWindowAt = (L: number) => {
+    if (args.window) return Number(args.window);
+    const base = LOCK_WINDOW[methodName]!;
+    const p = method.catchP?.(L);
+    if (!p || p >= 1) return base;
+    return Math.max(base, 3 * Math.ceil(Math.log(0.005) / Math.log(1 - p)));
+};
 
 writeFileSync(logPath, `# tickmanip-cycle ${mode} level=${level} phase=${phase} rolls=${rollsTarget} until=${untilLevel} dismiss=${dismiss} reanchor=${reanchor} xplag=${XP_LAG}\n`);
 const log = (line: string) => appendFileSync(logPath, line + '\n');
@@ -258,6 +282,7 @@ await runScript(async ({ bot, sdk }) => {
     let segStartTick: number | null = fromXp > 0 && startXp / 25 >= fromXp ? startTick : null;
     let segStartXp = segStartTick !== null ? startXp : 0;
     let segEndTick: number | null = null;
+    const markTicks = new Map<number, number>();
     const seenMsgs = new Set<string>((startState.gameMessages ?? []).map(m => `${m.tick ?? ''}|${m.text}`));
     let lastHp = -2;
 
@@ -274,6 +299,7 @@ await runScript(async ({ bot, sdk }) => {
                 log(`T${t} XP +${xp - lastXp} (total ${xp})`);
                 lastXp = xp;
                 if (segStartTick === null && fromXp > 0 && xp / 25 >= fromXp) { segStartTick = t; segStartXp = xp; log(`T${t} SEGMENT start at base ${xp / 25}`); }
+                for (const m of marks) if (!markTicks.has(m) && xp / 25 >= m) markTicks.set(m, t);
             }
             const lvl = baseLevelOf(s);
             if (lvl > lastLevel) {
@@ -357,7 +383,7 @@ await runScript(async ({ bot, sdk }) => {
             }
 
             // eat technique: open-loop schedule anchored on our own bootstrap click (see header)
-            const lost = anchor !== null && t - Math.max(anchor + method.r0 + 1, lastXpTick) > lockWindow;
+            const lost = anchor !== null && t - Math.max(anchor + method.r0 + 1, lastXpTick) > lockWindowAt(lvl);
             if (moved || (anchor !== null && (targetGone || lost))) {
                 const why = moved ? 'spot moved' : targetGone ? 'target gone' : 'no xp';
                 // A lock with no xp is mistimed by a tick or two (latency moved); try the next phase.
@@ -449,6 +475,8 @@ await runScript(async ({ bot, sdk }) => {
         `spot moves ${moves.length}: spanning gaps ${histOf(mvRows.map(r => r.gap))}`,
         `  ${mvRows.map(r => `T${r.tick}:${r.gap}`).join(' ')}`,
         `logs given during the run ${logsGiven}`,
+        ...(marks.length ? [`marks (base xp: tick passed, ticks to end T${segEnd}): ${marks.map(m => markTicks.has(m) ? `${m}: T${markTicks.get(m)} ${segEnd - markTicks.get(m)!}` : `${m}: -`).join(' | ')}`] : []),
+        `levels reached: ${levelUps.map(l => `${l.level}@T${l.tick}`).join(' ')}`,
         `mode=${mode} level=${level} phase=${phase} xpEvents=${xpTicks.length} gapsCounted=${gaps.length} breaks=${breaks.length} resyncs=${resyncs} finalPhase=${curPhase} dialogs=${dialogsSeen}`,
         `gap histogram (ticks:count) ${Object.entries(hist).map(([g, c]) => `${g}:${c}`).join(' ')}`,
         `min gap ${minGap}, gcd of gaps ${cycle}, span ${span} ticks, ticks per xp event ${(span / Math.max(1, xpTicks.length - 1)).toFixed(2)}`,
