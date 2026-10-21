@@ -19,6 +19,7 @@ for (const path of process.argv.slice(2)) {
         `totals ${JSON.stringify(s.totals)} outside ${JSON.stringify(s.outside)} cOut ${s.chargeOutSent}`,
         `topups ${s.topups.ok}/${s.topups.n} recv ${JSON.stringify(s.topups.recvTicks)} sgaps ${JSON.stringify(s.topups.successGaps)} tuStun ${JSON.stringify(s.topupStuns)} fail ${JSON.stringify(s.topups.failures)} give ${s.topups.giveRefills}`,
         `eats ${s.eats} forced ${s.forcedEats} inStun ${s.stunEats} hpLost ${s.hpLost} dmg ${JSON.stringify(s.damage)} deaths ${s.deaths}`,
+        `dismissed ${s.dismissedInStuns} stalls ${JSON.stringify(s.stalls)} aborted ${s.aborted ?? '-'}`,
         `levels ${JSON.stringify(s.levels)} pages ${JSON.stringify(s.pages)} in/out ${s.pagesInStun}/${s.pagesOutside} unseen ${JSON.stringify(s.ticksUnseen)}`,
     ].join(' | '));
 }
