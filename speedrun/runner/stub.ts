@@ -4,7 +4,8 @@
 //   steps({to})         chop normal trees near the Lumbridge spawn with the starter axe until
 //                       Woodcutting reaches `to` (stock bot.chopTree; level-ups dismissed)
 //   steps({idle: N})    stand still for N ticks: no xp, so a fresh account's hiscore Overall
-//                       stays its logout playtime, which is what the session row is checked against
+//                       stays its logout playtime, which is what the session row is checked against;
+//                       `parts: k` splits it into k logout-safe steps (a SIGINT test needs a boundary)
 //
 //   bun speedrun/rehearse.ts --skill=speedrun/runner/stub.ts --skill-opt=idle=50 ...
 
@@ -44,9 +45,9 @@ function chopTo(to: number): Step<any> {
     };
 }
 
-function idleFor(n: number): Step<any> {
+function idleFor(n: number, label = `${n} ticks`): Step<any> {
     return {
-        name: `stub: idle ${n} ticks`,
+        name: `stub: idle ${label}`,
         preconditions: () => true,
         run: async ({ sdk }) => {
             await waitTicks(sdk, n);
@@ -56,11 +57,15 @@ function idleFor(n: number): Step<any> {
     };
 }
 
-export function steps(opts: { to?: number; idle?: number | string; [k: string]: unknown } = {}): Step<any>[] {
+export function steps(opts: { to?: number; idle?: number | string; parts?: number | string; [k: string]: unknown } = {}): Step<any>[] {
     if (opts.idle !== undefined) {
         const n = Number(opts.idle);
+        const k = Number(opts.parts ?? 1);
         if (!Number.isInteger(n) || n <= 0) throw new Error(`stub: idle must be a positive whole number of ticks, not ${opts.idle}`);
-        return [idleFor(n)];
+        if (!Number.isInteger(k) || k <= 0 || k > n) throw new Error(`stub: parts must be a whole number from 1 to idle, not ${opts.parts}`);
+        // `parts` splits the idle into logout-safe steps, so a stop has a boundary to land on.
+        if (k === 1) return [idleFor(n)];
+        return Array.from({ length: k }, (_, i) => idleFor(Math.floor(n / k) + (i < n % k ? 1 : 0), `part ${i + 1}/${k}`));
     }
     return [chopTo(opts.to ?? 15)];
 }
