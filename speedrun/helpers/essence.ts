@@ -51,7 +51,7 @@ const PICKAXES: { name: RegExp; level: number; attack: number }[] = [
     { name: /^bronze pickaxe$/i, level: 1, attack: 1 }
 ];
 
-const inMine = (s: BotWorldState | null) =>
+export const inMine = (s: BotWorldState | null) =>
     !!s?.player && s.player.worldX >= 2870 && s.player.worldX <= 2950 && s.player.worldZ >= 4790 && s.player.worldZ <= 4880;
 const inTowerBasement = (s: BotWorldState | null) =>
     !!s?.player && s.player.worldZ > 9500 && s.player.worldZ < 9650 && s.player.worldX > 3080 && s.player.worldX < 3130;
