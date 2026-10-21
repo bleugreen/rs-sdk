@@ -10,7 +10,9 @@
 // an ordinary NPC (viking_draugen_safe, id 1280) that the client can see, so the
 // bot walks straight to it once it is in view instead of re-reading directions.
 // The butterfly id is a temporary varp (draugen_butterfly_uid): a fresh login
-// gives a fresh spawn, so each sample uses a bot that has not hunted yet.
+// gives a fresh spawn, so each sample uses a bot that has not hunted yet, and
+// samples run one at a time (a bot can see other players' butterflies).
+// quest-rellekka-draugen.sh runs fresh bots serially.
 // Fights with a rune scimitar and rune armour at the given stats (default 70s).
 
 import { runScript } from '../../../sdk/runner';
@@ -68,7 +70,9 @@ await runScript(async ({ bot, sdk }) => {
         uses++;
         const m = await useTalisman();
         trail.push(`${JSON.stringify(L.pos(sdk))} ${m}`);
-        const dir = Object.keys(dirs).find(d => m.includes(`guides you ${d}`));
+        // Newest direction message only (older ones linger in the message list).
+        const last = sdk.getState()!.gameMessages.map(x => x.text).filter(t => /guides you/.test(t)).at(-1) ?? '';
+        const dir = Object.keys(dirs).find(d => last.endsWith(`guides you ${d}.`));
         if (!dir) { await sdk.waitForTicks(1); continue; }
         const [dx, dz] = dirs[dir];
         const p = L.pos(sdk);
