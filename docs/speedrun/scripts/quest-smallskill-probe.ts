@@ -1,13 +1,11 @@
 // Lists locs (with options), ground items and NPCs around a tile, for building
 // the step lists of the small self-skill quests. Optional varp set first.
-// Run: bash docs/speedrun/scripts/quest-smallskill-lab.sh <bot> docs/speedrun/scripts/quest-smallskill-probe.ts -- x z level [radius] [varp=value ...]
-// (the bot name is appended last by the lab wrapper)
+// Run: PROBE='x z level [radius] [varp=value ...]' bash docs/speedrun/scripts/quest-smallskill-lab.sh <bot> docs/speedrun/scripts/quest-smallskill-probe.ts
 
 import { runScript } from '../../../sdk/runner';
 import { setvar, tele, waitTicks } from './quest-smallskill-lib';
 
-const args = process.argv.slice(2).filter(a => a !== '--');
-args.pop(); // bot name
+const args = (process.env.PROBE ?? '').trim().split(/\s+/);
 const [x, z, level, radius] = args.slice(0, 4).map(Number);
 const vars = args.slice(4).filter(a => a.includes('=')).map(a => a.split('=') as [string, string]);
 
