@@ -45,7 +45,8 @@ plan assumed. The gap has three causes, all read from source and confirmed by th
 **On the route: rs/3's Package B** (`docs/speedrun/quests/README.md` and
 `pre_mm_fights.md` on cairn://p/rs/3/1/coordinator; decided 01:08, README being finalised by
 cairn://p/rs/80). Waterfall is off. Dragon Slayer is on after Monkey Madness option 1, with 15
-QP of filler (Goblin Diplomacy, Witch's House, Romeo & Juliet, Cook's Assistant). Merlin's
+QP of filler (Goblin Diplomacy, Romeo & Juliet, Cook's Assistant and Druidic Ritual; Druidic
+Ritual replaced Witch's House at 01:20 as Herblore's mandatory unlock). Merlin's
 Crystal and Holy Grail are off. The pre-MM fights (Khazard warlord, black demon, Fight Arena)
 are **cast, not meleed**, so they give Magic and Hitpoints but no Strength or Defence
 (`pre_mm_fights.md` section 1). The account reaches the cannon session and MM at Attack 99,
@@ -56,7 +57,7 @@ Strength 1, Defence 1, about 42 HP.
 | Attack | TGV 11,450 + GT 18,400 + Fight Arena 12,175 = **42,025** before the cannon session (already 99), + MM 20,000 = **62,025** | 0 | **0** | read |
 | Strength | MM 35,000 + Dragon Slayer 18,650 = **53,650** | 0 | **0** | read |
 | Defence | MM 20,000 + Dragon Slayer 18,650 = **38,650** (level 98) | **1,288** | **230**, inside the cannon finish (cannon + defensive melee at 5.60 Defence per tick, `ranged.md` plan (e)); 140 on ogres alone at 9.18 (inferred), but that forgoes the cannon's 11 Ranged per tick | inferred from measured rates |
-| Hitpoints | start 39.2 + the pre-MM fights' ~722 (warlord 226 m, demon 209 m, Fight Arena ~287 i, `pre_mm_fights.md`) + MM 35,000 + Witch's House 6,325 (`quest_ball.rs2:202`, via `quest_points.md`) = **~42,086** | 0 once Witch's House is done | **0** | read + measured. rs/3's README quotes a 4,938 gap (MM alone); counting the fights it is 4,177 before Witch's House, and the finish's own by-product (5,089 HP, rs/31) covers either |
+| Hitpoints | start 39.2 + the pre-MM fights' ~722 (warlord 226 m, demon 209 m, Fight Arena ~287 i, `pre_mm_fights.md`) + MM 35,000 = **~35,761** (level 97) | **4,177** | **0**: the cannon finish's own by-product, 5,089 HP (rs/31, `ranged.md` Package B row), covers it | read + measured; by-product inferred from measured rates. rs/3's README quotes a 4,938 gap because it counts MM alone. With Witch's House gone from the filler, no quest adds Hitpoints |
 | Ranged | none from quests; ~54 after MM's Jungle Demon fight (1,790 base, `ranged.md` section 3) | 38,148 | **113** before MM (Ranged 1 -> 50) + **2,051** after (cannon + defensive melee 230, then cannon + rapid knives 1,821) | inferred from measured rates (`ranged-model.ts`, rs/31) |
 | **Combat after the quests** | | | **2,051** after MM (+113 before it) | rs/3's own phase model gives 2,023; the 28-tick difference is the unmeasured Ranged 67-70 stretch, so 2,023-2,051 is the honest range |
 
@@ -339,8 +340,8 @@ Whether delay-free helper actions could ride the cannon + knives phase is unmeas
 | Tree Gnome Village | Attack 11,450 | `quest_tree.rs2:98` |
 | Holy Grail (off route) | Defence 15,300 | `quest_grail.rs2:117` |
 | Dragon Slayer (**on route**, Package B, after MM) | Strength 18,650, Defence 18,650 | `quest_dragon.rs2:33-34` |
-| Witch's House (**on route**, Package B filler) | Hitpoints 6,325 | `quest_ball.rs2:202` (via rs/3 `quest_points.md`) |
-| Goblin Diplomacy, Romeo & Juliet, Cook's Assistant (Package B filler) | no combat xp | rs/3 `quest_points.md` |
+| Goblin Diplomacy, Romeo & Juliet, Cook's Assistant, Druidic Ritual (Package B filler) | no combat xp | rs/3 `quest_points.md` |
+| Witch's House (off route: replaced in the filler by Druidic Ritual) | Hitpoints 6,325 | `quest_ball.rs2:202` (via rs/3 `quest_points.md`) |
 | Pre-MM fights by spell (not quest rewards) | Hitpoints ~722 in all (warlord 226 m, demon 209 m, Fight Arena ~287 i); no Attack, Strength or Defence | rs/3 `pre_mm_fights.md` section 1 |
 | Haunted Mine | Strength 22,000 | `hauntedmine_crystals.rs2:54` |
 | Death Plateau, Troll Romance (off route) | Attack 3,000; Strength 4,000 | `quest_death.rs2:221`, `quest_troll_love.rs2:304` |
