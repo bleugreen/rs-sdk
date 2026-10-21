@@ -220,8 +220,10 @@ Reading the stun-pack rows: rolls per tick differ by the success-rate draw (0.64
 and 11.80 against 11.83 after a failure, are the same. The pack run's 14-tick failures (10
 against 2) include its 5 forced eats inside a stun (+3 each): the lab kit carried 6 sharks at
 40 HP with a `::give` top-up that lagged, a lab setting rather than the program. Magic held at
-80 by `::setstat` and Prayer from 43 put about 130 level-up pages into the run; they did not
-move the failure-to-next figure.
+80 by `::setstat` (reset at each 99) and Prayer from 43 put many level-up pages into the run;
+they did not move the failure-to-next figure. The `arrows` preset did not fire in this run
+(Charge fills every delay-free slot while Magic is held below 99); it is covered by the unit
+tests only.
 
 Reading the willow row: both runs hold the 3-tick lock, and nearly every gap is a
 multiple of 3. The difference is how many 3-tick rolls yield a log. Fitting a
