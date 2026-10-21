@@ -165,7 +165,8 @@ export class Lab {
                     const directClick = edge && ['rockslide', 'stonebridge', 'stairs', 'unicorn_door', 'temple_door2', 'well_down', 'mudpile_up', 'pipe6', 'pipe4', 'exit_cave', 'enter_cave', 'rockpile'].includes(edge.kind);
                     // walk the run (all of it, unless the crossing's loc can be clicked from afar)
                     let k = 0;
-                    const stopAt = directClick && run.length > 0 ? Math.max(0, run.length - reach) : run.length;
+                    // a loc clicked from afar is approached by the server; keep that to the last 8 tiles
+                    const stopAt = directClick && run.length > 0 ? Math.max(0, run.length - 8) : run.length;
                     const tw = this.tick();
                     const tiles0 = tiles;
                     while (k < stopAt) {
