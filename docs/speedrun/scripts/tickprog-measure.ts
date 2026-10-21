@@ -79,7 +79,7 @@ await runScript(async ({ bot: actions, sdk }) => {
             console.log(`in-page probe: ${where()}, server ${process.env.SERVER ?? '(bot.env)'}`);
             console.log(`latency in ticks: ${latencyHistogram(r.latencies)}  (${r.trials} trials, ${r.lost} lost, ${r.ticks} ticks)${r.reason ? `  ${r.reason}` : ''}`);
             console.log(`on time ${r.onTime}/${r.trials}; sequence ${r.latencies.join('')}`);
-            const ms = [...r.publishMs].sort((a, b) => a - b);
+            const ms = [...((r as { publishMs?: number[] }).publishMs ?? [])].sort((a, b) => a - b);
             const q = (p: number) => (ms.length ? ms[Math.min(ms.length - 1, Math.floor(p * ms.length))] : NaN);
             console.log(`decoded-tick interval ms in the page: p10 ${q(0.1)} p50 ${q(0.5)} p90 ${q(0.9)} max ${q(1)}`);
             const st = programStatus(sdk.getState());
