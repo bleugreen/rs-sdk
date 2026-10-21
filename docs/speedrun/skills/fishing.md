@@ -1,0 +1,373 @@
+# Fishing: fastest route to 99
+
+Scripts: [`fishing-rate.ts`](../scripts/fishing-rate.ts) (any rod/net/harpoon method: logs
+the server tick of every xp drop, catch, drop, click, spot move and hitpoint change, with
+drop and re-find policies), [`fishing-karambwan.ts`](../scripts/fishing-karambwan.ts)
+(karambwan vessel cadence) and, for the knife starter's 3-tick cycle,
+[`tickmanip-cycle.ts`](../scripts/tickmanip-cycle.ts) (owned by
+[tick-manipulation.md](tick-manipulation.md); its runs are at 300 ms). Lab: [../LAB.md](../LAB.md), fishing port block. Most runs used
+`NODE_TICKRATE=100`; the route totals were re-measured at `NODE_TICKRATE=300` (production
+speed), because the costs that depend on the bot's reaction time (level-up dialogs, full
+inventories) shrink when a tick is longer. Labels follow [README.md](README.md#labels).
+
+## 1. Recommendation
+
+Fly fish at the Lumbridge river from level 20 to 99, dropping every fish the tick after it
+is caught together with a re-click of the spot, and re-clicking the nearest spot whenever
+the one you fish moves. Below 20, net shrimp with the starter-kit net at Draynor. Fly
+fishing is the best method at every level from 20 to 99, in both the normal and the 3-tick
+case, so there is only one band change. Measured at production tick speed, 20 to 99 takes
+**4,837 ticks** (`fishing-rate.ts fly 20 ... until=99`, 673 catches), and level 1 to 99
+about **5,120 ticks** including the 1-20 band and the walk (inferred, section 2). That is
+about 9% above the 4,700-tick model this replaces: spot moves, level-up dialogs and the
+first walk cost about 450 ticks.
+
+Quest rewards are the large lever. Sea Slug alone gives 7,175 base (level 74), and five
+quests give 21,649 base (level 90), leaving **about 2,010 ticks** of fly fishing (measured
+segment, section 3).
+
+**With the knife starter** ([tick-manipulation.md](tick-manipulation.md)), every cycle is 3
+ticks instead of 5: on the tick after each roll send knife on logs, the "15 Arrow Shafts"
+button, the fish drop and a re-click of the spot. It needs a knife, a normal log, a members
+world and Fletching 1. Measured at production tick speed, 20 to 99 takes **2,896 ticks**
+(`tickmanip-cycle.ts --mode=flylumb-knife --level=20 --until=99`, 677 catches, 67
+level-ups, 7 spot moves; 40% faster than 4,837), so level 1 to 99 is about 3,175 with the
+normal-cycle 1-20 band and walk, and 90 to 99 about 1,204 (measured segment).
+
+**On the planned quest route** only Sea Slug and Fishing Contest are done. Tai Bwo Wannai
+Trio, Fremennik Trials and Heroes' Quest are net losses or need more than the route has
+(`docs/speedrun/quests/`, cairn://p/rs/3). Sea Slug saves 1,385 ticks and Fishing Contest
+after it 325 more (section 3 table), leaving **about 3,410 ticks** of fly fishing from
+level 78, or **about 2,000 with the knife starter** (measured 2,032 and 1,978 ticks in two
+300 ms runs, section 2). **Ordering:** Sea Slug checks
+Firemaking 30 with `stat()` (`quest_seaslug.rs2:43`), so schedule it after the
+helper-fed Firemaking training passes 30 (a Firemaking boost would also satisfy it).
+
+## 2. Route by level band
+
+| Band | Method | Location | Unlock | Base xp per catch (read) | Ticks per roll | Catch chance per roll (read) | Base xp per tick | Ticks for band |
+|---|---|---|---|---|---|---|---|---|
+| 1-20 | Small net: shrimp, anchovies from 15 | Draynor spots (3085-3086, 3227-3231), stand at (3088,3229) | Small fishing net (starter kit) | 10 shrimp, 40 anchovies (`fishing.struct:1-11`) | 6 (measured) | 19% at 1, 26% at 10, 41% at 15 (anchovies rolled first), 46% at 20 | 0.32 at 1, 1.6 at 20 (inferred) | **201** (measured, `fishing-rate.ts net 1 8000 until=20`, 10 catches) |
+| walk | Draynor to the Lumbridge river | about 155 tiles | | | | | | about 78 at run speed, 2 tiles per tick, infinite run on the demo (inferred) |
+| 20-99 | Fly fishing: trout, salmon from 30 | Lumbridge river: spots on (3239, 3241-3244) and (3238, 3251-3255), stand at (3241,3248) | Fly fishing rod and feathers, Fishing 20 | 50 trout, 70 salmon (`fishing.struct:25-35`) | 5 (measured) | 25% at 20, 42% at 30, 57% at 50, 69% at 70, 80% at 90, 85% at 99 | 2.5 at 20, 6.5 at 50, 8.0 at 70, 9.4 at 90 (read); **9.83 at 99** (measured, 757 rolls, 0.855 catches per roll) | **4,837** (measured at 300 ms ticks, 673 catches, 69 level-ups, 18 spot moves) |
+
+Time inside the 20-99 band (measured, 300 ms run, ticks from the first click): level 50 at
+303, 60 at 488, 70 at 875, 80 at 1,543, 90 at 2,813, 95 at 3,793, 99 at 4,837. Over 40%
+of the band is spent above level 90.
+
+Totals from each starting point. Both cycles are measured at 300 ms ticks on the Lumbridge
+spots: the normal cycle with `fishing-rate.ts` (673 catches), the 3-tick cycle with the
+knife starter and `tickmanip-cycle.ts --mode=flylumb-knife --level=20 --until=99
+--reanchor=xp --dismiss=now` (677 catches, 67 level-ups, 7 spot moves; lite client with
+the #20 fix, on a quiet host, `bgsrv-mac`). Quest starts are segments of those runs from
+the tick at which they passed that xp. The level-1 rows add the 1-20 band and the walk at
+the normal cycle (279 ticks): the small net cannot take the knife (section 4).
+
+| Start | Base xp | Level | Normal cycle | Knife, 3-tick cycle (measured) |
+|---|---|---|---|---|
+| Level 1, no quests | 0 | 1 | about 5,120 (201 + 78 + 4,837) | about 3,175 (279 + 2,896) |
+| Level 20 | 124.2 | 20 | 4,837 | 2,896 |
+| Sea Slug | 7,175 | 74 | 3,735 | 2,173 |
+| Sea Slug + Fishing Contest (the planned route) | 9,612 | 78 | 3,410 | 2,032 (a second run from 9,620: 1,978) |
+| Sea Slug + Tai Bwo Wannai Trio | 13,675 | 83 | 2,928 | 1,754 |
+| ... + Fremennik Trials | 16,487.4 | 86 | 2,587 | 1,556 |
+| ... + Heroes' Quest + Fishing Contest (all five) | 21,649.4 | 90 | 2,008 | 1,204 |
+
+The read model without overheads gives 4,525 ticks for 20-99 at the normal cycle and
+2,715 at 3 ticks. The knife run took 2,896, 7% above its model: rolls lost inside the lock
+(the 3-tick gaps that are not catch failures), 7 spot moves at about 8-9 ticks each, and
+re-anchoring (section 6). The two runs from level 78 differ by 3% with 5 spot moves each;
+the second lost more after level-ups (section 6) and to catch luck. Take about 2,000 for
+the route.
+
+The 1-20 band is small whichever way it is done. Baiting sardines and herring from level
+5 is slightly faster (5 to 20 in 152 ticks, measured with 5 catches; 133 ticks for 1 to 20
+in the read model with net to 5 and bait after), but it needs a rod and bait for about 20
+ticks of saving. A quest-first plan skips the band and the walk entirely.
+
+## 3. Quest xp
+
+| Quest | Base Fishing xp (read) | Source | Level after (alone) | Fishing-related requirement in the content |
+|---|---|---|---|---|
+| Sea Slug | 7,175 | `caroline.rs2:45` (`stat_advance(fishing, 71750)`) | 74 | Checks 30 Firemaking (`quest_seaslug.rs2:43`) |
+| Tai Bwo Wannai Trio | 6,500: 1,500 for becoming Lubufu's apprentice (`tbwt_lubufu.rs2:365`) and 5,000 from Tiadeche after the quest (`tbwt_tiadeche_final.rs2:21`) | | 72 | |
+| Fremennik Trials | 2,812.4 | `quest_viking.rs2:141` | 60 | |
+| Heroes' Quest | 2,725 | `quest_hero.rs2:34` | 60 | The lava eel needs 53 Fishing and an oily rod to catch (`lavafish.rs2:82-99`) |
+| Fishing Contest | 2,437 | `quest_fishingcompo.rs2:112` | 58 | 10 Fishing (`hemenster_fishing.rs2:70`, `fishingcompo_journal.rs2:11`) |
+| Digsite (panning) | 2 | `area_digsite.rs2:28` | | negligible |
+
+All five together give 21,649.4 base, level 90 (91 needs 22,932.4). Order does not matter
+for the total, since each reward is a fixed amount.
+
+No reward choice can be spent on Fishing. Legends' Quest offers Attack, Defence, Strength,
+Hitpoints, Prayer, Magic, Woodcutting, Crafting, Smithing, Herblore, Agility and Thieving
+(`radimus_erkle.rs2:87-117`), and Tourist Trap offers Fletching, Agility, Smithing and
+Thieving (`irena.rs2:77-91`). Genie lamps are untradeable and random events are off on
+production (prior research).
+
+Playtime each reward replaces, at the normal cycle (measured segments, against 4,837 ticks
+from level 20; a quest-first account also skips the roughly 280-tick 1-20 band and walk):
+
+- Sea Slug: 1,102 ticks (1,380 from level 1).
+- Tai Bwo Wannai Trio after Sea Slug: 807 more.
+- Fremennik Trials after those two: 341 more.
+- Heroes' Quest and Fishing Contest after those three: 579 more together.
+
+With the knife's 3-tick cycle every saving shrinks to about two thirds of that (Sea Slug
+saves 723 ticks from level 20 instead of 1,102; measured segments). Quest durations belong to
+`docs/speedrun/quests/`; each quest pays only if its own playtime is below these figures.
+
+Remaining Fishing ticks for every subset of the five quests, to combine with quest
+durations. Abbreviations: SS Sea Slug, TBWT Tai Bwo Wannai Trio, Frem Fremennik Trials,
+Hero Heroes' Quest, Contest Fishing Contest.
+
+- **Normal cycle:** a measured segment of the 300 ms run (`fly20to99-lumb-300ms`), from the
+  tick it passed that xp to level 99. Every subset starts above level 20, so it skips the
+  1-20 band and the Draynor walk. The "none" row is the 1-99 total from section 2.
+- **Knife, 3-tick cycle:** a measured segment of the 300 ms knife run from level 20
+  (`tickmanip-cycle.ts --mode=flylumb-knife --level=20 --until=99 --marks=...`, section 2),
+  from the tick it passed that xp to level 99. A segment starts on a catch, so it can be up
+  to one gap (3-4 ticks) short of a fresh start; a real start also pays one bootstrap,
+  about 5 ticks. The "none" row adds the normal-cycle 1-20 band and walk (279 ticks).
+  The inferred figures this replaces were within 3% of every row.
+
+| Quests done | Base xp | Level | Fishing ticks, normal cycle | Fishing ticks, knife 3-tick (measured) |
+|---|---|---|---|---|
+| none | 0 | 1 | 5,120 | 3,175 |
+| Contest | 2,437 | 58 | 4,365 | 2,555 |
+| Hero | 2,725 | 60 | 4,323 | 2,534 |
+| Frem | 2,812.4 | 60 | 4,318 | 2,528 |
+| Hero+Contest | 5,162 | 69 | 3,982 | 2,339 |
+| Frem+Contest | 5,249.4 | 69 | 3,977 | 2,321 |
+| Frem+Hero | 5,537.4 | 70 | 3,930 | 2,294 |
+| TBWT | 6,500 | 72 | 3,808 | 2,225 |
+| SS | 7,175 | 74 | 3,735 | 2,173 |
+| Frem+Hero+Contest | 7,974.4 | 75 | 3,636 | 2,128 |
+| TBWT+Contest | 8,937 | 77 | 3,476 | 2,071 |
+| TBWT+Hero | 9,225 | 77 | 3,441 | 2,053 |
+| TBWT+Frem | 9,312.4 | 78 | 3,436 | 2,050 |
+| SS+Contest | 9,612 | 78 | 3,410 | 2,032 (second run: 1,978) |
+| SS+Hero | 9,900 | 78 | 3,360 | 2,011 |
+| SS+Frem | 9,987.4 | 79 | 3,355 | 2,002 |
+| TBWT+Hero+Contest | 11,662 | 81 | 3,181 | 1,888 |
+| TBWT+Frem+Contest | 11,749.4 | 81 | 3,171 | 1,882 |
+| TBWT+Frem+Hero | 12,037.4 | 81 | 3,131 | 1,864 |
+| SS+Hero+Contest | 12,337 | 82 | 3,094 | 1,838 |
+| SS+Frem+Contest | 12,424.4 | 82 | 3,089 | 1,832 |
+| SS+Frem+Hero | 12,712.4 | 82 | 3,049 | 1,814 |
+| SS+TBWT | 13,675 | 83 | 2,928 | 1,754 |
+| TBWT+Frem+Hero+Contest | 14,474.4 | 84 | 2,816 | 1,697 |
+| SS+Frem+Hero+Contest | 15,149.4 | 85 | 2,736 | 1,658 |
+| SS+TBWT+Contest | 16,112 | 85 | 2,624 | 1,586 |
+| SS+TBWT+Hero | 16,400 | 86 | 2,592 | 1,568 |
+| SS+TBWT+Frem | 16,487.4 | 86 | 2,587 | 1,556 |
+| SS+TBWT+Hero+Contest | 18,837 | 88 | 2,309 | 1,381 |
+| SS+TBWT+Frem+Contest | 18,924.4 | 88 | 2,299 | 1,372 |
+| SS+TBWT+Frem+Hero | 19,212.4 | 88 | 2,270 | 1,354 |
+| all five | 21,649.4 | 90 | 2,008 | 1,204 |
+
+A quest's saving inside a plan is the difference between two rows that differ only by
+that quest. For example, Fremennik Trials saves 802 ticks alone (5,120 - 4,318) but only
+341 on top of SS+TBWT (2,928 - 2,587). Its 2,812.4 base replaces slow low-level fishing
+when it comes first, and fast high-level fishing (about 8-9 base per tick) when it comes
+last.
+
+Fishing Trawler is a minigame, not a reward: about 20 catch rolls per player per
+1,000-tick game (`trawler_control.rs2:149-162`, `trawler_win.rs2:108-156`), roughly 1 base
+xp per tick (inferred), and helpers in the same boat do not raise any one player's share.
+
+## 4. Mechanics
+
+### The fly-fishing cycle (read, then measured)
+
+- Clicking Lure runs `attempt_fish_trout_salmon` (`freshfish.rs2:25-56`). If
+  `%action_delay < map_clock` it sets `%action_delay = map_clock + 4`. At `+3` and `+2`
+  it only prints the cast messages, and in every case it continues to the hidden op 4.
+- Op 4 runs `fish_trout_salmon` (`freshfish.rs2:59-87`). It rolls when
+  `%action_delay = map_clock`. On the next tick `%action_delay < map_clock` again, so it
+  re-arms `+4` and the next roll lands 5 ticks after the last. Measured: 437 of 673 gaps in
+  the 300 ms route run are exactly 5 ticks, and the rest are multiples of 5 (failed rolls)
+  except around level-ups and moves.
+- Each roll tries salmon first and then trout (`fishing.rs2:40-72`, from level 30,
+  `freshfish.rs2:80-84`). So xp per roll is `Ps*70 + (1-Ps)*Pt*50`, with `Ps`/`Pt` from
+  `stat_random(fishing, 16, 96)` and `(32, 192)`. The success formula is
+  `floor(lo*(99-L)/98) + floor(hi*(L-1)/98) + 1 > rand(256)` (`PlayerOps.ts:591-600`). At 99
+  that is 0.379 and 0.754, 0.847 catches per roll and 49.9 base per roll (read). Measured
+  0.855 over 757 rolls at 100 ms and 0.889 over 270 rolls at 300 ms.
+- The roll uses the current level (`PlayerOps.ts:594`), so a boost would help, but nothing
+  in the content boosts Fishing (no `stat_boost` or `stat_add` of fishing anywhere in
+  `server/content/scripts`).
+- A feather is used only on a catch (`fishing.rs2:62-65`).
+
+### Every method in this content
+
+Cycle = ticks between rolls. Normal cycles were measured with `fishing-rate.ts`; the
+re-arm offsets are read. Rates at 99 are read; measured values are at 99 over 1,500-2,500
+ticks with drop-when-full.
+
+| Method | Script (re-arm) | Level | Base xp per catch | Cycle | Base xp per tick at 50 / 70 / 99 (read) | Measured at 99 | Survives a 3-tick re-click (read) |
+|---|---|---|---|---|---|---|---|
+| Net: shrimp, anchovies | `saltfish.rs2:60-81` (+5) | 1, anchovies 15 | 10, 40 | 6 | 2.7 / 3.3 / 4.2 | 1.65 (inventory stalls; cycle 6 confirmed, 88 gaps of 6) | no |
+| Bait: sardine, herring | `saltfish.rs2:128-155` (+4) | 5, herring 10 | 20, 30 | 5 | 3.0 / 3.7 / 4.5 | 5 to 20 only | no |
+| Fly: trout, salmon | `freshfish.rs2:59-87` (+4) | 20, salmon 30 | 50, 70 | 5 | **6.6 / 8.0 / 10.0** | **9.83** | **yes** |
+| Bait: pike | `freshfish.rs2:123-150` (+4) | 25 | 60 | 5 | 2.7 / 3.4 / 4.5 | not run | yes |
+| Slimey eel (Mort Myre) | `slimeyfish.rs2:46-69` (+4) | 28 | 65 | 5 | 2.3 / 3.0 / 4.1 | not run | no |
+| Harpoon: tuna, swordfish | `rarefish.rs2:185-232` (+5) | 35, swordfish 50 | 80, 100 | 6 | 3.5 / 4.4 / 5.9 | 5.71 | no |
+| Cage: lobster | `rarefish.rs2:79-123` (+5) | 40 | 90 | 6 | 3.0 / 4.0 / 5.6 | 4.99 | no |
+| Big net (mackerel, cod, bass, junk; every item rolled independently) | `memberfish.rs2:121-215` (+5) | 16, cod 23, bass 46 | 0.1-100 | 6 | 3.0 / 3.9 / 5.4 | 5.10 | no |
+| Lava eel (oily rod) | `lavafish.rs2:70-80` (+4) | 53 | 60 | 5 | - / 3.4 / 4.5 | not run | yes |
+| Karambwan (vessel) | `tbwt.rs2:99-134` (`p_delay(5)`, no loop, not on the clock) | 65, Tai Bwo Wannai Trio | 105 | 7 minimum (measured, 36 of 300 attempts; lab mean 8.4) | - / 6.7 / 9.4 | 0.623 per attempt (read 0.629) | not on the clock |
+| Harpoon: shark | `memberfish.rs2:50-78` (+5) | 76 | 110 | 6 | - / - / 2.9 | 2.52 | no |
+| Karambwanji | `tbwt.rs2:67-97` (+5) | 5 | 5, or 10 for shrimp | 6 | below net | not run | no |
+
+Crossovers (read model): below 5 the net is the only method. Bait sardines and herring beat
+the net from 5 to 20 (0.59 against 0.37 at level 5, 1.85 against 1.62 at 20). Fly fishing
+beats every other method at every level from 20 (2.46 against 1.85 at 20, 9.99 against
+5.93 for the best alternative at 99). Under a 3-tick cycle the net overtakes bait at 15,
+and fly still wins from 20. The 6-tick methods gain most from 3 ticks, but even swordfish
+reach only 11.9 against fly's 16.6 at 99. Karambwan cannot be manipulated at all.
+
+### Tick manipulation (which methods can take it)
+
+Every method except karambwan rolls on the shared `%action_delay = map_clock` check, like
+Woodcutting and Mining. The knife-on-log trick sets `%action_delay = map_clock + 2` when
+the clock has expired (`cut_logs.rs2:83-84`). The player then re-clicks the spot, which
+enters the attempt label with `%action_delay = map_clock + 2`. Only some attempt labels
+continue from that state (read):
+
+- **Continue:** fly and pike (`freshfish.rs2:37-52`, `102-117`), the waterfall loc
+  (`waterfall.rs2:14-29`) and lava eel (`lavafish.rs2:50-67`). These fall through to the
+  fishing op whatever the offset.
+- **Stop fishing silently:** small net, saltwater bait, cage, harpoon, shark, big net,
+  slimey eel and karambwanji. Their attempt labels only act on `<`, `= +3`/`+4` and `=`,
+  so a click at `+2` does nothing. Example: `rarefish.rs2:164-180`.
+
+So the 3-tick numbers in this document apply to fly fishing, the method the route uses.
+The trick itself is owned by [tick-manipulation.md](tick-manipulation.md); the route
+figures in sections 1-3 were measured with it through level-ups and spot moves.
+
+### Spot movement (read, then measured)
+
+Every spot type has `timer=1` and an `ai_timer` that waits 2 ticks (`npc_delay(2)`),
+teleports to a random empty coordinate from its area's list and re-arms
+`280 + random(250)` ticks. So each spot moves every 280-529 ticks, 404.5 on average
+(`fishing_movement.rs2:1-28`, coordinate lists in `fishing_movement.enum`). Nothing in the
+fishing scripts scales with player count. The 2-tick delay lets two spots claim the same
+empty tile at startup, so stacked spots exist; probes showed two on one tile at Catherby
+and the Gnome Stronghold.
+
+The server does not walk the player after a moved spot. The lite client routes every
+click itself (`clientRoutefinder`, `server/webclient/src/lite/actions.ts:6-8`), so the bot
+must re-click. Measured, fly at 99, with an immediate re-click of the nearest matching
+spot (about 4,000 ticks per location at 100 ms; 3,000 for Barbarian Village and Seers'):
+
+| Location (spots / tiles) | Base xp per tick | Moves per 1,000 ticks | Ticks lost per move |
+|---|---|---|---|
+| **Lumbridge** (2 / 8) | **9.83** | 3.2 | 10.7 |
+| Entrana (4 / 7) | 9.56 | 3.8 | 11.5 |
+| Gnome Stronghold (7 / 12) | 9.42 | 5.8 | 9.4 |
+| Baxtorian Falls (6 / 10) | 9.42 | 4.3 | 9.9 |
+| Seers' Village (4 / 7) | 9.38 | 4.3 | not split |
+| Barbarian Village (2 / 5) | 9.34 | 2.7 | not split |
+
+"Moves" counts relocations of the spot being fished. More spots mean more moves without
+much cheaper re-finds, so Lumbridge's two spots, with a standing tile between their two
+clusters, win. The loss per move is the walk plus the 4-tick re-arm. It was the same
+(about 11 ticks) at 300 ms ticks.
+
+## 5. Alternatives considered
+
+- **Karambwan** (measured, `fishing-karambwan.ts`, 300 attempts at 99). The `p_delay(5)`
+  costs 7 ticks at best, so the ceiling is 66 / 7 = 9.4 base per tick, below fly's 10.0.
+  The lab managed 8.4 ticks per attempt (7.8 base per tick). It also needs Tai Bwo Wannai
+  Trio, a 14-vessel load per inventory (each catch adds a fish while the empty vessel keeps
+  its slot, and a full inventory refuses the attempt, `tbwt.rs2:115-118`), and karambwanji
+  for every attempt, including failures. It cannot be manipulated.
+- **Harpoon, cage, big net, shark** (measured 5.71, 4.99, 5.10, 2.52 at 99): 6-tick cycles
+  and lower xp per roll, all below 60% of fly. They also cannot take a drop-and-re-click
+  mid-cycle (section 6).
+- **Pike, slimey eel, lava eel** (read): 4.5 or less at 99.
+- **Fishing Trawler**: about 1 base per tick (inferred, section 3).
+- **Other fly spots**: 1-5% slower than Lumbridge (table above). Barbarian Village is the
+  natural choice near Edgeville at 9.34.
+- **Drop-when-full** instead of drop-as-you-go: about 5 ticks lost per 26-fish inventory at
+  300 ms (8.4 at 100 ms), or 130 ticks over 20-99 (measured per inventory, inferred total).
+
+## 6. Gotchas
+
+- **Inventory, fly fishing.** A drop clears the interaction (`OpHeldHandler.ts:54-56`) but
+  not `%action_delay`. The fly attempt label continues from any offset, so dropping each
+  fish and re-clicking the spot in the ticks after the catch costs nothing. Measured: the
+  drop-as-you-go runs hit the read catch rate per roll (0.855 against 0.847). Send the drop
+  and the click right after the catch: a click that lands on the roll tick itself replaces
+  the fishing op with the attempt label, which does not roll, and loses that roll (read,
+  `freshfish.rs2:37-52`). Rod and feathers take 2 slots, leaving 26.
+- **Inventory, every 6-tick method.** The attempt label continues only on the tick after a
+  catch (`< map_clock`) or the tick after that (`= +4`). A drop-and-re-click landing later
+  stops fishing silently. Measured at 100 ms: drop-as-you-go harpoon and cage runs stalled
+  for about 70 ticks at a time until the watchdog re-clicked. Drop when full there instead
+  (5 user-event packets per tick, `ClientGameProtCategory.ts:6`, so 26 drops take 6 ticks).
+- **Inventory full.** "You can't carry any more fish." opens a message box and ends the
+  action (`freshfish.rs2:72-76`). Oddly, the check is skipped while exactly one feather is
+  left.
+- **Level-up dialogs** pause the interaction, because `canAccess()` is false while a modal
+  is open (`Player.ts:878-888`). Measured: 1.3 ticks lost per level-up at 300 ms, about 2 at
+  100 ms, with `sendClickDialog(0)` sent as soon as the dialog appears. 1 to 99 has 98
+  level-ups (about 130 ticks); a quest start removes most of them.
+  **With the knife starter** a level-up costs about half a tick and does not break the lock
+  (measured, `tickmanip-cycle.ts --dismiss=now`, plain `sendClickDialog(0)`, two 300 ms
+  runs). The dialog opens on R+1, after that tick's starter packets, and blocks that
+  tick's fishing op; the bot sees it on label R+1 and its dismissal lands on R+2, before
+  the roll on R+3. In the 78-99 run, 20 of 22 dialogs closed on the next label and 2 after
+  3. Across the 38 level-ups between 79 and 98 in the two runs that did not coincide with a
+  spot move, the gap from the level's catch to the next catch averaged 4.2 ticks (3.7 in the
+  first run, 4.65 in the second), against 3.7 for all in-lock gaps of the 78-99 run: about
+  0.5 ticks per level-up, within the noise of 38 gaps (roughly 0 to 1 tick). 25 of the 38
+  were 3-tick gaps. None needed a re-anchor. From level 20, 2 of 67 did: one beside a spot move, and one at
+  level 35, followed by 28 ticks without a catch. A late dismissal would lose one roll at
+  most: the next starter's `closeModal` clears the dialog and its absolute clock write puts
+  the lock back on schedule (inferred from the read handlers).
+- **Spot moves with the knife.** The spot keeps its NPC index when it teleports, so
+  `tickmanip-cycle.ts` watches its tile; on a move it re-clicks the nearest spot and
+  anchors the 3-tick schedule on the first catch after the click (`--reanchor=xp`): after a
+  roll on R the normal loop rolls on R+5, so the first starter goes out then. The gap
+  spanning a move measured 9-22 ticks over 12 moves (median 12, mean 13.3), so about 8-9
+  ticks lost per move against an in-lock gap near 4; moves came 2.4-2.5 per 1,000 ticks.
+- **Spot moves** every 280-529 ticks (section 4). Re-click the nearest matching spot at
+  once; never rely on the server to follow.
+- **Hostile NPCs** (read, `all.hunt` and `all.npc`): none that matter at Lumbridge (giant
+  spiders are `cowardly`, range 1, combat 2). Draynor's dark wizards are aggressive casters
+  (`huntmode=ranged`, range 5) that attack low-combat players. No damage was taken in 201
+  ticks there or at any other spot measured. Baxtorian Falls has moss giants (`cowardly`,
+  range 2, combat 42).
+- **Random events** (`afk_event` whirlpools and the river troll, `macro_event_*.rs2`) are
+  off on production (`fly.toml:25`, `Environment.ts:53`).
+- **Lab:** `::clearinv inv` does nothing, so `fishing-rate.ts` drops the starter kit itself.
+
+## 7. Helper supply list
+
+| Item | Count | For |
+|---|---|---|
+| Fly fishing rod | 1 | 20-99 |
+| Feathers | about 700 from level 20 (673 used in the measured run, one per catch); about 320 from the all-quest level 90 | fly fishing |
+| Small fishing net | 0 (in the starter kit) | 1-20 |
+| Knife and logs | see [tick-manipulation.md](tick-manipulation.md) | 3-tick cycle only |
+
+## 8. Open questions
+
+- **Production latency.** The 300 ms lab ran bot, gateway and engine on one machine. On
+  the demo, internet round-trips may push some re-clicks one tick later: a level-up
+  dismissal, or a drop and re-click that lands on the roll tick. A timed run on a
+  throwaway demo account would settle it.
+- **3-tick totals** are measured, but on one run from level 20 and a second from 78 (3%
+  apart). They also assume a quiet host: on a machine at load 100+ the same loop measured
+  7.1-7.7 ticks per catch, worse than the normal cycle, because its packets landed a tick
+  late (tick-manipulation.md section 6). The demo's own latency is still the open
+  question above.
+- **The sea methods' failure under a 3-tick re-click** is read, not tested. It does not
+  affect the route.
+- **Heroes' Quest's lava eel**: whether helpers can supply it (it would spare the 53
+  Fishing requirement) was not checked.
+- **Quest playtimes** for Sea Slug, Tai Bwo Wannai Trio, Fremennik Trials, Heroes' Quest
+  and Fishing Contest belong to `docs/speedrun/quests/`. Each is worth doing for Fishing
+  only if it costs less than the ticks it replaces (section 3).

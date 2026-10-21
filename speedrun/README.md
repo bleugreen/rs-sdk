@@ -20,6 +20,7 @@ speedrun/
     levelup.ts    isLevelUp, startLevelUpWatcher, withLevelUpDismissal
     session.ts    openSession, launchClient, logoutClean, waitLoggedOut, login, startWatchdog
     ticks.ts      TickLog (JSONL), measure, report; CLI: bun speedrun/lib/ticks.ts report <file>
+    hostgate.ts   probeOnTime (packet latency in ticks), gateDecision, HostGate (run-time knife gate)
     fake-sdk.ts   scriptable BotSDK stand-in for the unit tests
   runner/
     step.ts       Step type and runSteps
@@ -273,6 +274,17 @@ are a lower bound: the counter restarts, and the dropped player's in-world
 ticks were never observed. `report(rows)` totals per step;
 `bun speedrun/lib/ticks.ts report speedrun/runs/<runId>.jsonl` prints the table
 (lower bounds marked `>=`).
+
+## hostgate.ts
+
+The run-time gate for the tick-manipulation loops. `probeOnTime(sdk, {trials = 20})` walks
+one tile and back and reports, per trial, how many ticks after its send label each walk was
+processed (1 on a punctual host), as counts, the dominant offset and its share. It ends on
+the starting tile. `gateDecision(probe, {plainCycle, missCost})` says whether the knife's
+predicted ticks per roll beat the plain loop's. `HostGate` probes at the start, after the
+loop's lost locks and periodically while off, and switches off when the loop's measured
+ticks per drop are not faster than plain. The design and the measurements are in
+`docs/speedrun/skills/tick-manipulation.md` ("Run-time host gate").
 
 ## runner/step.ts
 
