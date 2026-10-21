@@ -219,7 +219,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 | knife-cycle rename and per-log stamps (rs/159) | 3, 5 | on main, c14428fc (#132) | |
 | knife-cycle axe-aware p (rs/175) | 3 | on main, 6c58db8e (#151) | |
 | knife-cycle plain+bury | 3, 15 | building (rs/162) | S07's gate-off fallback |
-| knife-mine `bury` on `stay2` | 4 | building (rs/182) | O35, the ~85 bones placed in S09 |
+| knife-mine `bury` on `stay2` | 4 | building (rs/182) | O35, the ~85 bones placed in S09. Without it they go to the booth, **+154** (RUN-ORDER.md O35, in the stock row in force), or ~61 more dragon bones close it with no code |
 | `logoutClean` tab confirmation | 0, 1 (final logout), every relog | on main, c2d9eada (#146) | |
 | Direct gate clean logout | the gate probe | on main, 9d26aa87 (#142), d83f2e86 (#152) | |
 | In-page relog `login({inPage:true})` | 0 (restarts), 29 (the wine relogs, R17) | building (rs/174) | plus rs/183, the client's second-login hang (PR #155, open) |
