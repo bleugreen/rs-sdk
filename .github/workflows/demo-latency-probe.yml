@@ -32,7 +32,10 @@ name: Demo latency probe
 # then readies the account at the normal trees west of Lumbridge castle
 # (tickmanip-demo-setup.ts) and runs `cycles` logs of the knife woodcutting loop.
 # The driver (docs/speedrun/scripts/demo-browser-page.ts) records every websocket
-# frame of the page, and the summary breaks each reaction into its hops.
+# frame of the page, and the summary breaks each reaction into its hops. It runs as
+# `bun --no-install`: with the root bunfig's auto-install, debug's optional
+# require('supports-color') resolves from the global cache once the webclient's
+# install has put it there, and puppeteer then fails to load.
 # browser_ref is separate from ref because the probe scripts (ref) and the page
 # under test usually come from different branches.
 #
@@ -313,7 +316,7 @@ jobs:
             (cd "$BROWSER_DIR/server/webclient" && exec bun run proxy.ts --world="https://$DEMO" --port="$PAGE_PORT" --gateway="ws://127.0.0.1:$GATEWAY_PORT") > "$OUT/page-server.log" 2>&1 &
             PS=$!
             sleep 2
-            BOT_USERNAME="$BOT" bun docs/speedrun/scripts/demo-browser-page.ts open --dir="$OUT/page" --url="http://127.0.0.1:$PAGE_PORT/bot?bot=$BOT" \
+            BOT_USERNAME="$BOT" bun --no-install docs/speedrun/scripts/demo-browser-page.ts open --dir="$OUT/page" --url="http://127.0.0.1:$PAGE_PORT/bot?bot=$BOT" \
               --chrome="$CHROME_PATH" --gateway-port="$GATEWAY_PORT" > "$OUT/page-driver.log" 2>&1 &
             PG=$!
             unset PASSWORD
@@ -328,7 +331,7 @@ jobs:
             for i in $(seq 60); do grep -q 'Bot connected' "$OUT/gateway.log" && break; sleep 1; done
             if ! grep -q 'Bot connected' "$OUT/gateway.log"; then echo '::error::the page overlay did not register with the loopback gateway'; tail -20 "$OUT/gateway.log"; exit 1; fi
             sleep 3
-            local page='bun docs/speedrun/scripts/demo-browser-page.ts eval --dir="$OUT/page" --progress="rsPrograms.status()"'
+            local page='bun --no-install docs/speedrun/scripts/demo-browser-page.ts eval --dir="$OUT/page" --progress="rsPrograms.status()"'
             local setup='bun docs/speedrun/scripts/tickmanip-demo-setup.ts "$BOT"'
             if [ "$BROWSER_PROBE_COMMAND" = auto ]; then
               case "$VARIANT" in
@@ -373,7 +376,7 @@ jobs:
           if [ -s "$OUT/page/frames.jsonl" ]; then
             for f in browser-probe knife; do
               read -r _ t0 t1 < <(grep "^$f " "$OUT/marks.tsv") || continue
-              bun docs/speedrun/scripts/demo-browser-page.ts frames --dir="$OUT/page" --from="$t0" --to="$t1" > "$OUT/frames-$f.txt" 2>&1 || true
+              bun --no-install docs/speedrun/scripts/demo-browser-page.ts frames --dir="$OUT/page" --from="$t0" --to="$t1" > "$OUT/frames-$f.txt" 2>&1 || true
             done
           fi
 
