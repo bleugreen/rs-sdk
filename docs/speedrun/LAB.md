@@ -83,6 +83,23 @@ Ticks per catch depends on level (catch chance), so compare the fishing row's ga
 histogram (the 3-tick knife cadence) rather than its average. The speedrun/lib watchdog
 still catches a wedged tab: it relaunched 3.1 s after the wedge.
 
+Two lite-client fixes the quest route depends on hold on the browser client too, checked
+with `scripts/runclient-check.ts` on both clients against one local engine (bgsrv-less
+`local` Mac, `NODE_TICKRATE=300`, load 150-190 on 16 cores, 2026-10-21, cairn://p/rs/116):
+
+- **Sea Slug's bridged doors** (cairn://p/rs/54). For both platform doors, `loc_1533`
+  (2765,3277) and `loc_1530` (2764,3285) upstairs, a routed `sendWalk` into the room
+  stops at the door while it is shut and arrives in 1-2 ticks once the overlay has opened
+  it, on both clients. The browser never had the lite defect: it applies loc changes to
+  its own pushed-down scene and collision maps, as the original client does. These are
+  the only doors on bridged tiles anywhere in the map. After a long `::tele` the browser
+  needs the region fetched and rebuilt before its scene holds the door (46 ticks at that
+  load); wait for the loc, not a fixed delay.
+- **Monkey Madness's sliding puzzle** (cairn://p/rs/23). `sdk.sendUseItem(slot, 5, 11130)`
+  sends OPHELD5 and moves a tile in 1-2 ticks on both clients; the last move reached the
+  powered hangar 21 ticks later (lite 22). `sendClickComponentWithOption(11130, 5, slot)`
+  sends INV_BUTTON5 and moves nothing on either client.
+
 **Against the demo.** `server/webclient/proxy.ts` serves this build's bot bundle in front
 of a remote world, and the page takes `?server=` (game socket) and `?gateway=` (overlay
 gateway) parameters (`src/util/Endpoints.ts`). From bgsrv-mac, a throwaway account logged
