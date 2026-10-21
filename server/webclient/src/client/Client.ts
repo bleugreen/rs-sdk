@@ -665,8 +665,10 @@ export class Client extends GameShell {
     private botAutoLoginAttempted: boolean = false;
     private loginInProgress: boolean = false;
 
-    // rs-sdk: Callback fired when a game tick is received (PLAYER_INFO packet processed)
-    private onGameTickCallback: (() => void) | null = null;
+    // rs-sdk: Callback fired once a server tick has been fully decoded (see drainPackets)
+    private onGameTickCallback: ((ticks: number) => void) | null = null;
+    /** PLAYER_INFOs decoded and not yet published. */
+    private pendingGameTicks: number = 0;
 
     // rs-sdk: Adaptive tick speed: measures real server tick interval to scale client movement
     private lastTickTime: number = 0;
@@ -766,10 +768,13 @@ export class Client extends GameShell {
     }
 
     /**
-     * Set a callback for when a game tick is received (PLAYER_INFO packet processed).
-     * This fires once per server tick (~420ms), allowing SDK to sync state on actual game ticks.
+     * `callback` runs once per game cycle that decoded at least one server tick,
+     * after every packet of those ticks is applied. `ticks` is how many
+     * PLAYER_INFOs it covers: normally 1, more when the page fell behind and
+     * several ticks' messages were queued, which observers should count rather
+     * than replay.
      */
-    setOnGameTickCallback(callback: (() => void) | null): void {
+    setOnGameTickCallback(callback: ((ticks: number) => void) | null): void {
         this.onGameTickCallback = callback;
     }
 
@@ -4525,9 +4530,7 @@ export class Client extends GameShell {
             this.logoutTimer--;
         }
 
-        for (let i: number = 0; i < 5 && (await this.tcpIn()); i++) {
-            // empty
-        }
+        await this.drainPackets();
 
         const now = performance.now();
 
@@ -4905,6 +4908,12 @@ export class Client extends GameShell {
         if (this.macroMinimapZoom > 10) {
             this.macroMinimapZoomModifier = -1;
         }
+
+        // rs-sdk: run queued SDK actions here, just before the flush below, so
+        // their packets leave in this cycle and in one websocket frame. Run from
+        // the draw call they waited for a frame and then for the next cycle's
+        // flush, which on a slow frame pushed a burst past the tick boundary.
+        this.botOverlay?.tick();
 
         if (now - this.noTimeoutTimer > 1_000) {
             // nothing sent in the last 1s, keep the client connected
@@ -6672,10 +6681,9 @@ export class Client extends GameShell {
             this.areaGame?.setPixels();
         }
 
-        // Update Bot SDK overlay
+        // Update Bot SDK overlay panel (its actions run in gameLoop)
         if (this.botOverlay) {
             this.botOverlay.update();
-            this.botOverlay.tick();
         }
 
         this.worldUpdateNum = 0;
@@ -8402,6 +8410,40 @@ export class Client extends GameShell {
 
     private interfaceReloadWarning = false;
 
+    /**
+     * Decode this cycle's packets, then publish any server tick they completed.
+     *
+     * The vanilla client decodes at most 5 packets per cycle. The engine writes a
+     * tick as one websocket message in the order map update, PLAYER_INFO,
+     * NPC_INFO, zones, inventories, stats, interface opens/closes
+     * (World.processClientsOut, NetworkPlayer.encodeOut), so the cap spread a
+     * tick over several cycles, and state published at PLAYER_INFO missed the
+     * NPC moves, doors, items and dialogue page of its own tick: every reaction
+     * landed a tick late. Once a PLAYER_INFO is decoded the socket is drained,
+     * the same as LiteClient.pumpPackets, and the tick is published once whole.
+     * Without one the vanilla cap still paces the login and rebuild traffic.
+     */
+    private async drainPackets(): Promise<void> {
+        for (let decoded = 0; decoded < 5000; decoded++) {
+            if (!(await this.tcpIn())) {
+                this.publishGameTicks();
+                return;
+            }
+            if (decoded >= 4 && this.pendingGameTicks === 0) {
+                return;
+            }
+        }
+    }
+
+    private publishGameTicks(): void {
+        const ticks = this.pendingGameTicks;
+        if (ticks === 0) {
+            return;
+        }
+        this.pendingGameTicks = 0;
+        this.onGameTickCallback?.(ticks);
+    }
+
     private async tcpIn(): Promise<boolean> {
         if (!this.stream) {
             return false;
@@ -8975,10 +9017,9 @@ export class Client extends GameShell {
                 this.getPlayerPos(this.in, this.psize);
                 this.awaitingPlayerInfo = false;
 
-                // Publish this tick only after its player update is fully decoded.
-                if (this.onGameTickCallback) {
-                    this.onGameTickCallback();
-                }
+                // PLAYER_INFO arrives exactly once per server tick. Count it, but
+                // publish only once the rest of the tick is decoded (drainPackets).
+                this.pendingGameTicks++;
 
                 this.ptype = -1;
                 return true;
