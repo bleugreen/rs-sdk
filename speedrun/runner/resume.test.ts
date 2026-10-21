@@ -109,10 +109,13 @@ function droppingClient(start: Partial<BotWorldState>) {
     const sdk = new FakeSdk(baseState(start));
     const session = { sdk, bot: {}, name: 'lab', sessionId: 1 } as unknown as RunnerSession & { sessionId: number };
     let online = true;
+    let detected = false;
     let clicks = 0;
     let offlineSends = 0;
     sdk.onSend = a => {
-        if (!online) offlineSends++;
+        // A send between the drop and its detection goes into the dead socket and
+        // cannot be fenced; one after detection would be the abandoned attempt's.
+        if (!online && detected) offlineSends++;
         if (a.method === 'sendClickComponent' && a.args[0] === 1) clicks++;
     };
     const timer = setInterval(() => {
@@ -125,7 +128,10 @@ function droppingClient(start: Partial<BotWorldState>) {
         isLost: () => !online,
         lost: async signal => {
             while (!signal.aborted) {
-                if (!online) return 'client out of game';
+                if (!online) {
+                    detected = true;
+                    return 'client out of game';
+                }
                 await sleep(2);
             }
             return 'stopped';
@@ -143,6 +149,7 @@ function droppingClient(start: Partial<BotWorldState>) {
             session.sessionId++;
             sdk.push({ ...world(lvl, 10, 0) });
             online = true;
+            detected = false;
         },
         stop() { clearInterval(timer); },
     };
@@ -177,7 +184,8 @@ describe('runResumable', () => {
         expect(events).toEqual(['resume walk-to-rocks run', 'drop', 'restored', 'resume mine-to-5 resume']);
         expect(c.trace).toEqual(['walk', 'mine:run', 'mine:resume', 'bank', 'quest']);
         expect(mining(client.sdk.getState()!)).toBe(5);
-        // The abandoned attempt never reached the client: refused while offline and after.
+        // Nothing was sent between the drop's detection and the restore, and the
+        // abandoned attempt's later sends were refused.
         expect(client.offlineSends).toBe(0);
         expect(c.fenced).toBeGreaterThanOrEqual(1);
         const kinds = log.rows.map(row => row.step).filter(s => s === RESUME_STEP || s === DROP_STEP);
