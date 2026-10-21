@@ -213,6 +213,7 @@ rs/82's figure (LAB.md); the lite column is from the skills docs.
 | Normal trees, plain, Woodcutting 64, 100 logs | 9.92 | | | 1.7-2.4 |
 | Pickpocket, Knight of Ardougne, level 55 held, 300 rolls | **0.173 rolls per tick**; after a success 2 ticks on 171 of 188; after a fail 11 on 79 of 111; 15 eats, 2 forced | 0.170 | 0.167 | 4.8-7.5 |
 | Pickpocket, level 55 held, 300 rolls, plain then `stunActions: ['bury', 'charge']`, one session, 2026-10-21 15:14-15:32 PDT (rs/132) | plain **0.1785** rolls per tick (success 0.640; mean success gap 2.15, failure to next roll 11.80, 11 on 79 of 107); pack **0.1656** (success 0.600; 2.16 and **11.83**, 11 on 84 of 120). At the predicted 0.607 success both are 0.168. Pack: **3.00 bones and 8.04 Charges per stun** (360 and 965, all landed by xp), 0 refused, 0 costly, 0 dry stuns | | | 5.2-7.3 |
+| Same, plain then `stunActions: ['bury', 'arrows']` (rune arrowheads on headless arrows, Fletching 75 held), 2026-10-21 15:35-15:54 PDT | plain **0.1613** (success 0.573; success gap 2.18, failure to next roll 11.65, 11 on 97 of 127); pack **0.1657** (success 0.580; 2.09 and **11.53**, 11 on 101 of 125). Pack: **7.97 arrow actions** (about 120 arrows) **and 2.98 bones per stun** over 126 stuns (1,004 and 375, all landed by xp), 0 refused, 0 costly, 0 dry | | | 4.4-5.2 |
 | Agility, Wilderness course, level 99, 10 laps | **66 ticks per lap** on all 9 measured laps | | 66 | 3.8-6.1 |
 
 Reading the stun-pack rows: rolls per tick differ by the success-rate draw (0.64 against
@@ -221,9 +222,10 @@ and 11.80 against 11.83 after a failure, are the same. The pack run's 14-tick fa
 against 2) include its 5 forced eats inside a stun (+3 each): the lab kit carried 6 sharks at
 40 HP with a `::give` top-up that lagged, a lab setting rather than the program. Magic held at
 80 by `::setstat` (reset at each 99) and Prayer from 43 put many level-up pages into the run;
-they did not move the failure-to-next figure. The `arrows` preset did not fire in this run
-(Charge fills every delay-free slot while Magic is held below 99); it is covered by the unit
-tests only.
+they did not move the failure-to-next figure. The `arrows` preset does not fire beside
+`charge` while Magic is held below 99 (Charge fills every delay-free slot first), so it has its
+own row: the Fletching half of the pack, as it runs once Charge reaches 99. Its headless
+arrows are given, as in rs/106's plan; making them is not part of the stun pack.
 
 Reading the willow row: both runs hold the 3-tick lock, and nearly every gap is a
 multiple of 3. The difference is how many 3-tick rolls yield a log. Fitting a
