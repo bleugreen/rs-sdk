@@ -98,11 +98,13 @@ await runScript(async ({ bot, sdk }) => {
             return stage();
         });
         await rec.seg('walk to the castle ladder (2994,3341)', 'travel', async c => { await walk(bot, sdk, c, 2993, 3341, 0); });
-        await rec.seg('ladders up to the second floor', 'interaction', async c => {
+        await rec.seg('ladder up, first-floor stairs up to Vyvin\'s floor', 'interaction', async c => {
             await opLocText(sdk, c, 2994, 3341, /climb-up/i);
             await waitTicksFor(sdk, s => s.player?.level === 1, 20);
-            await opLocText(sdk, c, 2996, 3341, /climb-up/i);
+            await walk(bot, sdk, c, 2985, 3337, 1);
+            await opLocText(sdk, c, 2984, 3337, /climb-up/i);
             await waitTicksFor(sdk, s => s.player?.level === 2, 20);
+            return `at ${JSON.stringify(pos(sdk))}`;
         });
         await rec.seg('walk to Vyvin\'s cupboard (2984,3336)', 'travel', async c => { await walk(bot, sdk, c, 2985, 3336, 1); });
         await rec.seg('open + search cupboard: portrait', 'interaction', async c => {
