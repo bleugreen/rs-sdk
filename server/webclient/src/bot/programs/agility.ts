@@ -461,6 +461,27 @@ export function createAgility(params: ProgramParams): TickProgram {
                 }
             }
 
+            // Protect from Melee, every tick but the first 3 after an obstacle click: the button runs
+            // p_clearpendingaction, which would cancel the walk to the obstacle. On a click tick the
+            // toggles go out before the click.
+            if (protect !== 'off' && !(phase.kind === 'wait' && t - phase.clickTick < 3)) {
+                const on = s.prayers?.activePrayers?.[14] === true;
+                const want = protect !== 'near' || (s.nearbyNpcs ?? []).some(nn => nn.distance <= protectRange && protectNpc.test(nn.name));
+                const toggle = () => {
+                    if (ctx.send({ type: 'togglePrayer', prayerIndex: 14 }, 'protect from melee')) toggles++;
+                    lastToggle = t;
+                };
+                if (want && !on && t - lastToggle >= 2) {
+                    toggle();
+                    lastOn = t;
+                } else if (!want && on && t - lastToggle >= 2) toggle();
+                else if (want && on && protect === 'flick' && t - lastOn >= flickGap) {
+                    toggle(); // off
+                    toggle(); // and on again, in the same tick
+                    lastOn = t;
+                }
+            }
+
             // level-up and message boxes freeze scripts; continue them
             if (s.dialog?.isOpen && s.dialog.options.length === 0 && !s.dialog.isWaiting) ctx.send({ type: 'clickDialogOption', optionIndex: 0 }, 'dismiss dialog');
 
@@ -526,25 +547,6 @@ export function createAgility(params: ProgramParams): TickProgram {
                         }
                     }
                     return;
-                }
-            }
-
-            // Protect from Melee, before this tick's click (the button clears a pending interaction)
-            if (protect !== 'off') {
-                const on = s.prayers?.activePrayers?.[14] === true;
-                const want = protect !== 'near' || (s.nearbyNpcs ?? []).some(nn => nn.distance <= protectRange && protectNpc.test(nn.name));
-                const toggle = () => {
-                    if (ctx.send({ type: 'togglePrayer', prayerIndex: 14 }, 'protect from melee')) toggles++;
-                    lastToggle = t;
-                };
-                if (want && !on && t - lastToggle >= 2) {
-                    toggle();
-                    lastOn = t;
-                } else if (!want && on && t - lastToggle >= 2) toggle();
-                else if (want && on && protect === 'flick' && t - lastOn >= flickGap) {
-                    toggle(); // off
-                    toggle(); // and on again, in the same tick
-                    lastOn = t;
                 }
             }
 
