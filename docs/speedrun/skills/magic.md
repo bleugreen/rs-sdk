@@ -163,7 +163,7 @@ Enchanting an amulet gives the same xp as the ring (same spell row,
 | Teleport casts on the way | Ardougne 61, Camelot 55.5, Falador 48, Varrock 35 per cast; about 600 before the arena (inferred count) | `magic_spells.dbrow` (read) | yes |
 | Watchtower | 15,300 | `quest_itwatchtower.rs2:533` | off route (rs/3 README section 5: worth at most ~510 against ~1,100) |
 | Horror from the Deep | 4,662 (and 4,662 each in Strength and Ranged) | `quest_horror.rs2:491-493` | skipped (`horror_from_the_deep.md`) |
-| Imp Catcher | 875 | `quest_imp.rs2:4` | no: not in Package B's filler (Goblin Diplomacy, Romeo & Juliet, Cook's Assistant, Druidic Ritual) |
+| Imp Catcher | 875 | `quest_imp.rs2:4` | no: not in Package B's filler (Goblin Diplomacy, Romeo & Juliet, Cook's Assistant; Druidic Ritual is a separate mandatory unlock) |
 | Witch's Potion | 325 | `quest_hetty.rs2:11` | no, as above |
 | Mage Arena fight (not a quest reward) | about 2,400-3,050 from casting | `mage_arena.md` (measured 3,044 and 2,404) | yes, it unlocks Charge |
 

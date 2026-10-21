@@ -36,8 +36,8 @@ against **about 5,270 by knives alone**. No quest on the planned route gives Ran
 Madness Jungle Demon fight.
 
 **On the route: rs/3's Package B** (01:08; `docs/speedrun/quests/README.md` on
-cairn://p/rs/3/1/coordinator). Monkey Madness option 1, then Dragon Slayer with 15 QP of
-filler; Waterfall, Merlin's Crystal and Holy Grail off. After the quests Attack and Strength
+cairn://p/rs/3/1/coordinator). Monkey Madness option 1, then Dragon Slayer, whose 32-QP door
+needs Goblin Diplomacy, Romeo & Juliet and Cook's Assistant plus Druidic Ritual first; Waterfall, Merlin's Crystal and Holy Grail off. After the quests Attack and Strength
 are capped, the Defence gap is **1,288** (MM 20,000 + Dragon Slayer 18,650) and the
 Hitpoints gap about 4,177 (combat.md Summary). Fire the cannon for **113 ticks before MM**
 for Ranged 50 (the Jungle Demon's magic shortbow), wielding the rune scimitar at Attack 99.
@@ -142,7 +142,8 @@ Totals:
 No quest on the planned route awards Ranged. The route is rs/3's Package B: Doric's,
 Plague City, Tree Gnome Village, The Grand Tree, Fight Arena, Dwarf Cannon, Monkey Madness
 option 1, Mage Arena, Dragon Slayer with its filler (Goblin Diplomacy, Romeo & Juliet, Cook's
-Assistant, Druidic Ritual), Sea Slug and Fishing Contest. The pre-MM fights are cast, not
+Assistant) and Druidic Ritual, Sea Slug if rs/54 unblocks it (Sheep Shearer otherwise), and
+Fishing Contest. The pre-MM fights are cast, not
 shot (rs/3 `pre_mm_fights.md`), so the on-route start is level 1, then 50 from the cannon
 session and about 54 after the Jungle Demon. The Ranged rewards in the content are all off route (read):
 
