@@ -73,7 +73,7 @@ await runScript(async ({ bot, sdk }) => {
                 throw e;
             }
         });
-    void seg;
+
     let lockTries = 0, bars = 0, featherTries = 0, cartTries = 0, fightTicks = 0, fightHpLost = 0;
 
     if (FROM === 'start') {
@@ -89,28 +89,28 @@ await runScript(async ({ bot, sdk }) => {
     const tStart = tick(sdk);
 
     if (FROM === 'start') {
-        await S.run('wear the desert clothes (3 clicks)', async () => {
+        await seg('wear the desert clothes (3 clicks)', async () => {
             for (const o of ['desert_shirt', 'desert_robe', 'desert_boots']) await q.invOp(o, /wear/i, () => q.worn(o));
         });
-        await S.run('Al Kharid glory landing -> Shantay Pass (walk)', async () => {
+        await seg('Al Kharid glory landing -> Shantay Pass (walk)', async () => {
             await q.walk(3302, 3118, 1);
         });
-        await S.run('Shantay Pass, first crossing (disclaimer)', async () => {
+        await seg('Shantay Pass, first crossing (disclaimer)', async () => {
             await q.opLoc('shantay_pass_henge_doorway', 1, () => p().worldZ < 3116, { choices: [/poster doesn't scare me/] });
         });
-        await S.run('Irena: start the quest', async () => {
+        await seg('Irena: start the quest', async () => {
             await q.talk('irena', [/What's the matter/, /Is there a reward/, /Okay Irena, calm down/]);
         });
-        await S.run('Shantay Pass -> Mercenary Captain (walk)', async () => {
+        await seg('Shantay Pass -> Mercenary Captain (walk)', async () => {
             await q.walk(3271, 3031, 2);
         });
-        await S.run('wield the scimitar', async () => {
+        await seg('wield the scimitar', async () => {
             await q.invOp('rune_scimitar', /wield/i, () => q.worn('rune_scimitar'));
         });
-        await S.run('Mercenary Captain: provoke the duel', async () => {
+        await seg('Mercenary Captain: provoke the duel', async () => {
             await q.talk('desertminingcaptain', [/Wow! A real captain/, /work for a tough guy/, /something for a strong Captain/, /don't think I can do that/, /funny captain/]);
         });
-        await S.run('fight the Mercenary Captain', async () => {
+        await seg('fight the Mercenary Captain', async () => {
             const t0 = tick(sdk);
             const hp0 = hp();
             const capt = await q.npc('desertminingcaptain');
@@ -124,13 +124,13 @@ await runScript(async ({ bot, sdk }) => {
             fightHpLost = hp0 - hp();
             return `${fightTicks} ticks, ${fightHpLost} hp lost`;
         });
-        await S.run('unwield the scimitar', async () => {
+        await seg('unwield the scimitar', async () => {
             await q.unequip('rune_scimitar');
         });
-        await S.run('camp gate: enter with the metal key', async () => {
+        await seg('camp gate: enter with the metal key', async () => {
             await q.opLoc('miningcampgateclosedl', 1, () => p().worldX > 3273);
         });
-        await S.run('gate -> slave (walk)', async () => {
+        await seg('gate -> slave (walk)', async () => {
             await q.walk(3301, 3031, 1);
         });
         const retry = /Yeah I'll give it another go|Yes, I'll trade|let's give it a go/;
@@ -143,70 +143,70 @@ await runScript(async ({ bot, sdk }) => {
         await seg('slave: talk, pick the lock, trade clothes',
             () => slaveTalk([/I've just arrived/, /that sounds interesting/, /What's that then/, /I can try to undo them/, /funny you should say that/, /let's give it a go/]),
             () => slaveTalk([]));
-        await S.run('slave -> mine doors (walk)', async () => {
+        await seg('slave -> mine doors (walk)', async () => {
             await q.walk(3301, 3035, 1);
         });
-        await S.run('mine doors: enter the mine', async () => {
+        await seg('mine doors: enter the mine', async () => {
             await q.opLoc('thttmineentrancel', 1, () => p().worldZ > 9000);
         });
-        await S.run('cave guard: ask for another area (pineapple errand)', async () => {
+        await seg('cave guard: ask for another area (pineapple errand)', async () => {
             await q.talk('desertminingmercenary2', [/mine in a different area/, /quite right sir/, /understand each other perfectly/]);
         });
-        await S.run('mine exit doors: back to the surface', async () => {
+        await seg('mine exit doors: back to the surface', async () => {
             await q.opLoc('thttmineexitl', 1, () => p().worldZ < 9000);
         });
-        await S.run('remove the slave clothes (3 clicks)', async () => {
+        await seg('remove the slave clothes (3 clicks)', async () => {
             for (const o of ['slave_shirt', 'slave_robe', 'slave_boots']) await q.unequip(o);
         });
-        await S.run('mine doors -> camp gate (walk)', async () => {
+        await seg('mine doors -> camp gate (walk)', async () => {
             await q.walk(3274, 3029, 1);
         });
-        await S.run('camp gate: leave', async () => {
+        await seg('camp gate: leave', async () => {
             await q.opLoc('miningcampgateclosedl', 1, () => p().worldX < 3273);
         });
-        await S.run('camp gate -> Al Shabim (walk)', async () => {
+        await seg('camp gate -> Al Shabim (walk)', async () => {
             await q.walk(3172, 3026, 2);
         });
-        await S.run('Al Shabim: pineapple errand, Bedabin key', async () => {
+        await seg('Al Shabim: pineapple errand, Bedabin key', async () => {
             await q.talk('al_shabim', [/looking for a pineapple/, /Yes, I'm interested/]);
             if (!q.inv('thbedobinkey')) throw new Error('no Bedabin key');
         });
-        await S.run('Al Shabim -> camp gate (walk)', async () => {
+        await seg('Al Shabim -> camp gate (walk)', async () => {
             await q.walk(3272, 3029, 1);
         });
-        await S.run('camp gate: enter', async () => {
+        await seg('camp gate: enter', async () => {
             await q.opLoc('miningcampgateclosedl', 1, () => p().worldX > 3273);
         });
-        await S.run('gate -> Siad ladder (walk) and climb', async () => {
+        await seg('gate -> Siad ladder (walk) and climb', async () => {
             await q.walk(3290, 3035, 1);
             await q.opLoc('ladder', 1, () => p().level === 1, { near: [3290, 3036] });
         });
-        await S.run('Siad: bookcase, sailing chat, chest (plans)', async () => {
+        await seg('Siad: bookcase, sailing chat, chest (plans)', async () => {
             await q.opLoc('capt_siad_bookcase', 2, () => true, { dialog: true });
             await q.talk('capt_siad', [/I wanted to have a chat/, /a lot of books/, /interested in sailing/, /cut of your jib/]);
             await q.opLoc('captain_siads_chest_closed', 1, () => !!q.inv('thcaptplans'));
         });
-        await S.run('Siad: ladder down', async () => {
+        await seg('Siad: ladder down', async () => {
             await q.opLoc('laddertop', 1, () => p().level === 0, { near: [3290, 3036] });
         });
-        await S.run('ladder -> camp gate (walk)', async () => {
+        await seg('ladder -> camp gate (walk)', async () => {
             await q.walk(3274, 3029, 1);
         });
-        await S.run('camp gate: leave', async () => {
+        await seg('camp gate: leave', async () => {
             await q.opLoc('miningcampgateclosedl', 1, () => p().worldX < 3273);
         });
-        await S.run('camp gate -> Al Shabim (walk)', async () => {
+        await seg('camp gate -> Al Shabim (walk)', async () => {
             await q.walk(3172, 3026, 2);
         });
-        await S.run('Al Shabim: show the plans', async () => {
+        await seg('Al Shabim: show the plans', async () => {
             await q.useOnNpc('thcaptplans', 'al_shabim', () => true, [/Yes, I'm very interested/, /kind of curious/]);
         });
-        await S.run('tent guard: show the plans, enter the tent', async () => {
+        await seg('tent guard: show the plans, enter the tent', async () => {
             await q.walk(3170, 3044, 1);
             const z0 = p().worldZ;
             await q.useOnNpc('thcaptplans', 'bedabin_guard', () => p().worldZ > z0 + 1);
         });
-        await S.run('anvil: forge the dart tip', async () => {
+        await seg('anvil: forge the dart tip', async () => {
             while (!q.inv('thprotodarttip')) {
                 if (!q.inv('bronze_bar')) throw new Error('out of bronze bars');
                 bars++;
@@ -216,7 +216,7 @@ await runScript(async ({ bot, sdk }) => {
             }
             return `${bars} bars used`;
         });
-        await S.run('feathers on the tip: prototype dart', async () => {
+        await seg('feathers on the tip: prototype dart', async () => {
             while (!q.inv('thprotodart')) {
                 featherTries++;
                 const f = q.count('feather');
@@ -225,43 +225,43 @@ await runScript(async ({ bot, sdk }) => {
             }
             return `${featherTries} attempts`;
         });
-        await S.run('leave the tent', async () => {
+        await seg('leave the tent', async () => {
             const z0 = p().worldZ;
             await q.opLoc('bedabin_tentdoor', 1, () => p().worldZ < z0);
         });
-        await S.run('Al Shabim: show the dart (pineapple)', async () => {
+        await seg('Al Shabim: show the dart (pineapple)', async () => {
             await q.walk(3172, 3026, 2);
             await q.talk('al_shabim');
             if (!q.inv('tentipineapple')) throw new Error('no pineapple');
         });
-        await S.run('Al Shabim -> camp gate (walk)', async () => {
+        await seg('Al Shabim -> camp gate (walk)', async () => {
             await q.walk(3272, 3029, 1);
         });
-        await S.run('camp gate: enter', async () => {
+        await seg('camp gate: enter', async () => {
             await q.opLoc('miningcampgateclosedl', 1, () => p().worldX > 3273);
         });
-        await S.run('wear the slave clothes (3 clicks)', async () => {
+        await seg('wear the slave clothes (3 clicks)', async () => {
             for (const o of ['slave_shirt', 'slave_robe', 'slave_boots']) await q.invOp(o, /wear/i, () => q.worn(o));
         });
     }
 
-    await S.run('gate -> mine doors (walk)', async () => {
+    await seg('gate -> mine doors (walk)', async () => {
         await q.walk(3301, 3035, 1);
     });
-    await S.run('mine doors: enter the mine', async () => {
+    await seg('mine doors: enter the mine', async () => {
         await q.opLoc('thttmineentrancel', 1, () => p().worldZ > 9000);
     });
-    await S.run('cave guard: hand over the pineapple', async () => {
+    await seg('cave guard: hand over the pineapple', async () => {
         await q.talk('desertminingmercenary2');
         if (q.inv('tentipineapple')) throw new Error('pineapple not taken');
     });
-    await S.run('cave passage east', async () => {
+    await seg('cave passage east', async () => {
         await q.opLoc('thminecavel', 1, () => p().worldX >= 3285, { near: [3281, 9415] });
     });
-    await S.run('empty barrel by the lower mine cart', async () => {
+    await seg('empty barrel by the lower mine cart', async () => {
         await q.opLoc('thminebarrel_empty', 2, () => !!q.inv('thminebarrel_empty'), { near: [3303, 9418], choices: [/Yeah, cool/] });
     });
-    await S.run('lower mine cart: ride to the deep mine', async () => {
+    await seg('lower mine cart: ride to the deep mine', async () => {
         while (p().worldX < 3310) {
             cartTries++;
             const hp0 = hp();
@@ -270,22 +270,22 @@ await runScript(async ({ bot, sdk }) => {
         }
         return `${cartTries} tries`;
     });
-    await S.run('mine cart -> Ana (walk)', async () => {
+    await seg('mine cart -> Ana (walk)', async () => {
         await q.walk(3303, 9464, 2);
     });
-    await S.run('Ana: into the barrel', async () => {
+    await seg('Ana: into the barrel', async () => {
         await q.useOnNpc('thminebarrel_empty', 'ana', () => !!q.inv('thanainabarrel'));
     });
-    await S.run('Ana -> upper mine cart (walk)', async () => {
+    await seg('Ana -> upper mine cart (walk)', async () => {
         await q.walk(3318, 9431, 1);
     });
-    await S.run('upper mine cart: send Ana down', async () => {
+    await seg('upper mine cart: send Ana down', async () => {
         await q.useOnLoc('thanainabarrel', 'touristtrap_minecart', () => !q.inv('thanainabarrel') && !sdk.getState()!.dialog.isOpen, { near: [3318, 9430] });
         await waitUntil(sdk, () => sdk.getNewChat({ types: [0], includeSelf: true }).some(m => /returns/.test(m.text)), 10);
         S.mark();
     });
     let backTries = 0;
-    await S.run('upper mine cart: ride back', async () => {
+    await seg('upper mine cart: ride back', async () => {
         while (p().worldX > 3310) {
             backTries++;
             const hp0 = hp();
@@ -295,42 +295,42 @@ await runScript(async ({ bot, sdk }) => {
         cartTries += backTries;
         return `${backTries} tries`;
     });
-    await S.run('barrel by the lower cart: Ana', async () => {
+    await seg('barrel by the lower cart: Ana', async () => {
         await q.opLoc('thminebarrel_empty', 2, () => !!q.inv('thanainabarrel'), { near: [3303, 9418] });
     });
-    await S.run('lift guard: Ana onto the lift', async () => {
+    await seg('lift guard: Ana onto the lift', async () => {
         await q.useOnLoc('thanainabarrel', 'ropepullthingy2', () => !q.inv('thanainabarrel'), { choices: [/Yes please/, /very gregarious/] });
     });
-    await S.run('cave passage west', async () => {
+    await seg('cave passage west', async () => {
         await q.opLoc('thminecaver', 1, () => p().worldX <= 3280, { near: [3283, 9415] });
     });
-    await S.run('mine exit doors: back to the surface', async () => {
+    await seg('mine exit doors: back to the surface', async () => {
         await q.walk(3278, 9424, 1);
         await q.opLoc('thttmineexitl', 1, () => p().worldZ < 9000);
     });
-    await S.run('mine doors -> surface winch (walk)', async () => {
+    await seg('mine doors -> surface winch (walk)', async () => {
         await q.walk(3280, 3018, 1);
     });
-    await S.run('surface winch: haul Ana up', async () => {
+    await seg('surface winch: haul Ana up', async () => {
         await q.opLoc('ropepullthingy', 2, () => true, { dialog: true });
     });
-    await S.run('upper barrel: pick up Ana', async () => {
+    await seg('upper barrel: pick up Ana', async () => {
         await q.opLoc('thminebarrel_full', 2, () => !!q.inv('thanainabarrel'), { near: [3278, 3017] });
     });
-    await S.run('mine cart: load Ana', async () => {
+    await seg('mine cart: load Ana', async () => {
         await q.useOnLoc('thanainabarrel', 'loc_2682', () => !q.inv('thanainabarrel'));
     });
-    await S.run('cart driver: talk him into leaving', async () => {
+    await seg('cart driver: talk him into leaving', async () => {
         await q.talk('mining_cart_driver', [/Nice cart/, /One wagon wheel/, /One good turn/, /shot perhaps/, /In for a penny/, /it's like this/, /Prison riot/, /You can't leave me here/]);
     });
-    await S.run('mine cart: ride out with Ana', async () => {
+    await seg('mine cart: ride out with Ana', async () => {
         await q.opLoc('loc_2682', 2, () => !!q.inv('thanainabarrel'), { choices: [/Yes, I'll get on/] });
     });
-    await S.run('cart drop -> Irena (walk)', async () => {
+    await seg('cart drop -> Irena (walk)', async () => {
         await q.walk(3303, 3112, 1);
     });
     const agi0 = sdk.getSkill('agility')!.experience;
-    await S.run('Irena and Ana: rewards (Agility twice)', async () => {
+    await seg('Irena and Ana: rewards (Agility twice)', async () => {
         await q.talk('irena', [/^Agility/, /^Agility/]);
         await q.settle(() => sdk.getSkill('agility')!.experience >= agi0 + 2 * 116_250, 40);
     });
