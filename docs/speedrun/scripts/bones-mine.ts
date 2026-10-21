@@ -229,8 +229,8 @@ const out = [
     `ores ${xpLabels.length}, on predicted tick ${onTime}, slips ${slips}; transitions ${JSON.stringify(kinds)}`,
     `steady state (from 6th ore): ${gaps.length} gaps, histogram ${Object.entries(h).map(([g, c]) => `${g}:${c}`).join(' ')}`,
     `ticks per ore ${(span / gaps.length).toFixed(3)}, base mining xp per tick ${((35 * gaps.length) / span).toFixed(3)}`,
-    `bones buried ${buries.length} of ${buriesSent} sent; in the steady span ${bonesIn} = ${(bonesIn / span).toFixed(3)} per tick; base prayer ${lastP - p0}; packets ${sent}`,
-    `RESULT ${JSON.stringify({ rot: ROT, bury: BURY, D, ores: xpLabels.length, onTime, slips, span, gaps: gaps.length, ticksPerOre: span / gaps.length, xpPerTick: (35 * gaps.length) / span, bones: buries.length, bonesInSpan: bonesIn, bonesPerTick: bonesIn / span, hist: h, base: lastM - m0 })}`
+    `bones buried ${buries.length} of ${buriesSent} sent; in the steady span ${bonesIn} = ${(bonesIn / span).toFixed(3)} per tick; base prayer ${(lastP - p0) / 25}; packets ${sent}`,
+    `RESULT ${JSON.stringify({ rot: ROT, bury: BURY, D, ores: xpLabels.length, onTime, slips, span, gaps: gaps.length, ticksPerOre: span / gaps.length, xpPerTick: (35 * gaps.length) / span, bones: buries.length, bonesInSpan: bonesIn, bonesPerTick: bonesIn / span, hist: h, base: (lastM - m0) / 25 })}`
 ].join('\n');
 log(out);
 console.log(out);
