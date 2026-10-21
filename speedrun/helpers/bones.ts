@@ -182,7 +182,7 @@ const SPOTS: Record<string, Spot> = { hill_giants: HILL_GIANTS, baby_blue: BABY_
 /** Valuables worth a pickup on top of the bones: stackables and small light items. */
 const DEFAULT_LOOT = /^(coins|(law|nature|cosmic|death|chaos|blood|soul) rune|grimy .+|limpwurt root|uncut (sapphire|emerald|ruby|diamond|dragonstone)|.+ talisman|brass key|dusty key)$/i;
 
-const FOOD = /^(shark|manta ray|sea turtle|swordfish|lobster|monkfish|bass|tuna|salmon|pike|trout|cod|herring|mackerel|sardine|cooked chicken|cooked meat|bread|cake|2\/3 cake|slice of cake|chocolate cake|meat pie|stew|kebab|plain pizza|meat pizza)$/i;
+const FOOD = /^(shark|manta ray|sea turtle|swordfish|lobster|monkfish|bass|tuna|salmon|pike|trout|cod|herring|mackerel|sardine|anchovies|shrimps|cooked chicken|cooked meat|bread|cake|2\/3 cake|slice of cake|chocolate cake|meat pie|stew|kebab|plain pizza|meat pizza)$/i;
 const RAW_FISH = /^raw (trout|salmon)$/i;
 const NET_FISH = /^raw (shrimps|anchovies)$/i;
 const NET = /^small fishing net$/i;
@@ -190,6 +190,19 @@ const NET = /^small fishing net$/i;
 const COOK_REQ: Record<string, number> = { 'raw shrimps': 1, 'raw anchovies': 1, 'raw trout': 15, 'raw salmon': 25 };
 const ROD = /^fly fishing rod$/i;
 const FEATHER = /^feather$/i;
+
+/** Items a bank visit leaves in the inventory: food, the fly fishing kit, keys, and the net and its catch while cooking practice still needs them. */
+export function keepOnBank(name: string, lv: { fishing: number; cooking: number }, requires?: RegExp): boolean {
+    return FOOD.test(name) || RAW_FISH.test(name) || ROD.test(name) || FEATHER.test(name) || BRASS_KEY.test(name) ||
+        (requires?.test(name) ?? false) ||
+        (NET.test(name) && (lv.fishing < 20 || lv.cooking < 15)) ||
+        (NET_FISH.test(name) && lv.cooking < 15);
+}
+
+/** Bootstrap leftovers that only cost loot slots at the spot: raw net fish once Cooking is 15, and anything burnt. */
+export function isClutter(name: string, cooking: number): boolean {
+    return /^burnt /i.test(name) || (NET_FISH.test(name) && cooking >= 15);
+}
 
 const METALS = ['bronze', 'iron', 'steel', 'black', 'mithril', 'adamant', 'rune'];
 const METAL_REQ: Record<string, number> = { bronze: 1, iron: 1, steel: 5, black: 10, mithril: 20, adamant: 30, rune: 40 };
@@ -202,7 +215,7 @@ const SLOTS: { slot: string; re: RegExp; skill: 'Attack' | 'Defence' }[] = [
 ];
 
 /** Slot and tier of a melee item we know how to rank, or null. Higher tier is better; within a metal, longswords/scimitars beat swords and full helms beat med helms. */
-function gearRank(name: string): { slot: string; tier: number; metal: string; skill: 'Attack' | 'Defence' } | null {
+export function gearRank(name: string): { slot: string; tier: number; metal: string; skill: 'Attack' | 'Defence' } | null {
     if (/^wooden shield$/i.test(name)) return { slot: 'shield', tier: 0, metal: 'bronze', skill: 'Defence' };
     for (const s of SLOTS) {
         const m = s.re.exec(name);
@@ -246,7 +259,7 @@ interface Options {
     styleCap: number;
 }
 
-function parseOptions(o: Record<string, unknown>): Options {
+export function parseOptions(o: Record<string, unknown>): Options {
     const num = (k: string, d: number) => (typeof o[k] === 'number' ? (o[k] as number) : d);
     const spotId = typeof o.spot === 'string' ? o.spot : 'hill_giants';
     const spot = SPOTS[spotId];
@@ -462,23 +475,26 @@ class Run {
 
     /**
      * Open the nearest bank (walking out of the spot first if needed), deposit everything
-     * except the kit, take out `withdraw`, report, close.
+     * except the kit, take out `withdraw`, report, close. `why` names the trigger in the log.
      */
-    async bank(spot: Spot | null, withdraw: { re: RegExp; n: number }[] = []): Promise<boolean> {
+    async bank(why: string, spot: Spot | null, withdraw: { re: RegExp; n: number }[] = []): Promise<boolean> {
+        const inv = this.state().inventory;
+        const carried = {
+            used: inv.length,
+            food: inv.filter(i => FOOD.test(i.name)).length,
+            bones: inv.filter(i => /bones$/i.test(i.name)).length
+        };
         if (!this.nearBank()) {
             const ok = spot ? await spot.leave(this) : await this.walkToNearestBank();
             if (!ok) return false;
         }
         const open = await this.bot.openBank();
         if (!open.success) {
-            this.ctx.log('bank: open failed', { reason: open.message });
+            this.ctx.log('bank: open failed', { why, reason: open.message });
             return false;
         }
-        const keep = (name: string) =>
-            FOOD.test(name) || RAW_FISH.test(name) || ROD.test(name) || FEATHER.test(name) || BRASS_KEY.test(name) ||
-            (spot?.requires?.test(name) ?? false) ||
-            (NET.test(name) && (this.level('Fishing') < 20 || this.level('Cooking') < 15)) ||
-            (NET_FISH.test(name) && this.level('Cooking') < 15);
+        const lv = { fishing: this.level('Fishing'), cooking: this.level('Cooking') };
+        const keep = (name: string) => keepOnBank(name, lv, spot?.requires);
         for (const name of [...new Set(this.state().inventory.map(i => i.name))].filter(n => !keep(n))) {
             await this.bot.depositItem(exact(name), -1);
         }
@@ -491,7 +507,7 @@ class Run {
         this.bankView = new Map(items.map(i => [i.name, i.count]));
         this.ctx.reportBank({ items });
         const bones = items.filter(i => /bones/i.test(i.name)).map(i => `${i.name} ${i.count}`).join(', ');
-        this.ctx.log('banked', { stock: bones || 'no bones', ...this.summary() });
+        this.ctx.log('banked', { why, carried, stock: bones || 'no bones', ...this.summary() });
         await this.bot.closeBank();
         return true;
     }
@@ -602,7 +618,7 @@ class Run {
         const p = this.pos();
         if (this.underground() || !inBox(t.area, p.x, p.z)) {
             if (this.underground()) {
-                await this.bank(this.opt.spot);
+                await this.bank('surface', this.opt.spot);
                 return;
             }
             await this.walk(t.centre.x, t.centre.z, 4, 300_000);
@@ -618,7 +634,7 @@ class Run {
     async netFish(): Promise<void> {
         if (!this.carrying(/^small fishing net$/i)) {
             if (this.banked(/^small fishing net$/i) > 0 || this.bankView === null) {
-                await this.bank(null, [{ re: /^small fishing net$/i, n: 1 }]);
+                await this.bank('fetch net', null, [{ re: /^small fishing net$/i, n: 1 }]);
                 if (this.carrying(/^small fishing net$/i)) return;
             }
             this.ctx.log('no small fishing net; fishing for food disabled');
@@ -635,7 +651,7 @@ class Run {
     /** Net a handful of shrimps at Draynor so the first cooking levels (trout needs 15) come from food that cooks at 1. */
     async netForCooking(spot: Spot): Promise<void> {
         if (!this.carrying(NET)) {
-            await this.bank(this.underground() ? spot : null, [{ re: NET, n: 1 }]);
+            await this.bank('fetch net', this.underground() ? spot : null, [{ re: NET, n: 1 }]);
             if (!this.carrying(NET)) {
                 this.ctx.log('no small fishing net for cooking practice; fishing for food disabled');
                 this.opt.fish = false;
@@ -657,7 +673,7 @@ class Run {
     async buyRod(): Promise<void> {
         const coins = () => this.carried(/^coins$/i);
         if (coins() < 5) {
-            await this.bank(null, [{ re: /^coins$/i, n: 1_000_000 }]);
+            await this.bank('fetch coins', null, [{ re: /^coins$/i, n: 1_000_000 }]);
             if (coins() < 5) {
                 this.ctx.log('no coins for a fly fishing rod; fishing for food disabled until some are earned');
                 this.opt.fish = false;
@@ -787,7 +803,7 @@ class Run {
 
         // 3. Fishing kit. Coins come from the spot's drops if the starting 25 are gone.
         if (this.opt.fish && this.bankView === null && !this.carrying(ROD)) {
-            await this.bank(this.underground() ? this.opt.spot : null);
+            await this.bank('first look', this.underground() ? this.opt.spot : null);
             return;
         }
         if (this.opt.fish && !this.owns(ROD)) {
@@ -825,7 +841,7 @@ class Run {
             return;
         }
         if (spot.requires && !this.carrying(spot.requires)) {
-            await this.bank(spot, [{ re: spot.requires, n: 1 }]);
+            await this.bank('fetch requirement', spot, [{ re: spot.requires, n: 1 }]);
             if (!this.carrying(spot.requires)) {
                 this.ctx.log('missing requirement; switching to hill giants', { spot: spot.id, requires: String(spot.requires) });
                 this.opt.spot = HILL_GIANTS;
@@ -844,7 +860,7 @@ class Run {
             this.phase('food:fish');
             const haul = this.state().inventory.some(i => spot.bones.test(i.name) || /^coins$/i.test(i.name));
             if (haul || !this.carrying(ROD) || !this.carrying(FEATHER) || this.freeSlots() < 8) {
-                await this.bank(spot, [{ re: ROD, n: 1 }, { re: FEATHER, n: 10_000 }, { re: BRASS_KEY, n: 1 }]);
+                await this.bank('out of food', spot, [{ re: ROD, n: 1 }, { re: FEATHER, n: 10_000 }, { re: BRASS_KEY, n: 1 }]);
                 return;
             }
             if (this.underground()) {
@@ -858,13 +874,16 @@ class Run {
         // 5. Bones.
         this.phase(`bones:${spot.id}`);
         if (this.hpFrac() < this.opt.fleeAt && this.food().length === 0) {
-            await this.bank(spot);
+            await this.bank('low hp, no food', spot);
             await this.rest();
             return;
         }
         await this.eatIfLow();
+        for (const name of new Set(this.state().inventory.filter(i => isClutter(i.name, this.level('Cooking'))).map(i => i.name))) {
+            await this.bot.dropItem(exact(name), 'all');
+        }
         if (this.freeSlots() === 0) {
-            await this.bank(spot, [{ re: ROD, n: 1 }, { re: FEATHER, n: 10_000 }, { re: BRASS_KEY, n: 1 }]);
+            await this.bank('full', spot, [{ re: ROD, n: 1 }, { re: FEATHER, n: 10_000 }, { re: BRASS_KEY, n: 1 }]);
             return;
         }
         const p = this.pos();
@@ -883,10 +902,10 @@ class Run {
             else await this.sdk.waitForTicks(3);
         } else if (out === 'flee') {
             this.ctx.log('fleeing', { hp: Number(this.hpFrac().toFixed(2)) });
-            await this.bank(spot);
+            await this.bank('fled', spot);
             if (!this.opt.fish) await this.rest();
         } else if (out === 'full') {
-            await this.bank(spot, [{ re: ROD, n: 1 }, { re: FEATHER, n: 10_000 }, { re: BRASS_KEY, n: 1 }]);
+            await this.bank('full', spot, [{ re: ROD, n: 1 }, { re: FEATHER, n: 10_000 }, { re: BRASS_KEY, n: 1 }]);
         }
     }
 }
