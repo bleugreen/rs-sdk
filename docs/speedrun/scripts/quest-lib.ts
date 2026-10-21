@@ -372,7 +372,7 @@ export async function fight(sdk: BotSDK, c: Counts, re: RegExp, o: { food?: RegE
         if (s.player?.isDead) return res(s, true);
         const killed = (s.combatEvents ?? []).some(e => e.type === 'kill' && e.tick >= t0 && target && e.targetIndex === target.index);
         if (killed) return res(s, false);
-        const npc = target ? (s.nearbyNpcs.find(n => n.index === target!.index && re.test(n.name)) ?? null) : findNpc(sdk, re);
+        const npc: NearbyNpc | null = target ? (s.nearbyNpcs.find(n => n.index === target!.index && re.test(n.name)) ?? null) : findNpc(sdk, re);
         if (target && dealt > 0 && (!npc || npc.hp === 0)) return res(s, false);
         // only level-up boxes can open mid-fight; the death script's dialogue starts after hp hits 0
         if (s.dialog?.isOpen && !s.dialog.isWaiting && (LEVEL_UP.test(s.dialog.text ?? '') || dealt === 0 || (npc?.hp ?? 1) > 0)) await sdk.sendClickDialog(0).catch(() => {});
