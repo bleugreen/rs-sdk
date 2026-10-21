@@ -47,6 +47,8 @@ The rules a `speedrun/lib` interleaver must follow (each is measured below):
 5. **Charge needs no re-click.** It is an interface button, not an inventory op.
 6. **Delayed actions (bury, alch, enchant) go only into free ticks**: the wait ticks of a
    4-tick Woodcutting or 5-tick Fishing clock (bury only), or a pickpocket stun (all three).
+   Bury also rides the 3-tick knife Woodcutting loop if the re-click moves to the next roll
+   tick (section 3).
 7. **Thieving: interleave inside stuns only.** Helpers between attempts slow pickpocketing.
 8. **Level-ups cost gathering ticks.** Each one opens a chat dialog that makes the player
    busy for the tick it pops. Let helper skills level where no gathering roll is waiting
@@ -251,7 +253,7 @@ share the stuns. Standalone ticks saved per stun: 2 bones = 4 ticks, 2 enchants 
 | Herblore (mixing) | anywhere, delay-free | all ~270 potions (~89 standalone ticks) | 2 non-stackable slots per potion: ~13 per load, so the top-up trades dominate |
 | Crafting (gem cutting) | anywhere, delay-free | all ~290 gems (~80 standalone ticks) | 1 slot per gem + chisel |
 | Magic, Charge 80-99 | anywhere, no re-click | all (~33 standalone ticks), 5 per tick | 3 rune stacks |
-| Prayer, bury dragon bones | 4-tick WC (1/4 ticks), 5-tick fishing (1/5), stuns (~2) | ~200 of ~555 bones in stuns; the rest needs ~4 WC ticks or ~5 fishing ticks per bone | 1 slot per bone; a top-up every ~12 stuns or ~50-100 gathering ticks |
+| Prayer, bury dragon bones | knife WC (1 per 3-tick cycle, `research/bones-placement.md`), 4-tick WC (1/4 ticks), 5-tick fishing (1/5), stuns (~2) | ~200 of ~555 bones in stuns; the rest in ~1,200 ticks of knife WC at ~0.23 ticks per bone | 1 slot per bone; a top-up every ~12 stuns or ~77 knife WC ticks (5 ticks each) |
 | Magic, enchant / Superheat (`p_delay(1)`) | stuns only (~2 per stun) | ~190 casts by capacity; **0 on rs/3's Package B route**, whose 60 enchants all come before Thieving starts (below) | 1 slot per item |
 | Magic, High Alchemy (`p_delay(3)`) | stuns only (1 per stun) | ~100 casts | 1 slot per item, plus natures |
 | Smithing (anvil), Firemaking (lines), Runecraft (altar), Cooking (range), combat | **no**: they need a location or are the self-only activity | - | - |
