@@ -14,6 +14,8 @@ export interface Row { label: string; ticks: number; [k: string]: unknown }
 
 export class Lab {
     rows: Row[] = [];
+    /** clicks re-sent because the first was dropped during a forced move */
+    resends = 0;
     log: string[] = [];
     private seen = new Set<string>();
     constructor(public sdk: BotSDK, public bot: BotActions) {
@@ -147,6 +149,7 @@ export class Lab {
         const crossings: string[] = [];
         const fails: string[] = [];
         let replans = 0;
+        const resends0 = this.resends;
         try {
             for (let attempt = 0; attempt < 12; attempt++) {
                 const p = plan(this.pos(), dst, opts.allow);
@@ -180,17 +183,29 @@ export class Lab {
                     if (opts.before) await opts.before(edge);
                     const c = edge.click!;
                     const m0 = this.log.length;
-                    if (c.item) await this.useOnLoc(c.item, c.id, c.x, c.z);
-                    else await this.clickLoc(c.id, c.x, c.z, c.op ?? 1);
+                    const send = async () => {
+                        if (c.item) await this.useOnLoc(c.item, c.id, c.x, c.z);
+                        else await this.clickLoc(c.id, c.x, c.z, c.op ?? 1);
+                    };
+                    await send();
                     const to = edge.to;
                     const from = this.pos();
                     const failRe = /slip|fall|fail|darkness|rat pit|tumble|can't|cannot|refuses|locked|need|reach that/i;
+                    // A click sent while a forced move is still running is dropped: re-send if
+                    // nothing has moved or been said for 3 ticks.
+                    let quiet = 0;
+                    let lastQ = from;
+                    let resent = 0;
                     const arrived = await L.waitUntil(this.sdk, () => {
                         const q = this.pos();
                         if (this.since(m0).some(t => failRe.test(t))) return true;
-                        if (to[2] !== edge.from[2]) return q[2] === to[2];
-                        return Math.max(Math.abs(q[0] - to[0]), Math.abs(q[1] - to[1])) <= 1 && q[2] === to[2];
-                    }, 70);
+                        if (to[2] !== edge.from[2] ? q[2] === to[2] : Math.max(Math.abs(q[0] - to[0]), Math.abs(q[1] - to[1])) <= 1 && q[2] === to[2]) return true;
+                        quiet = q[0] === lastQ[0] && q[1] === lastQ[1] && this.log.length === m0 ? quiet + 1 : 0;
+                        lastQ = q;
+                        if (quiet >= 3 && resent < 6) { quiet = 0; resent++; void send(); }
+                        return false;
+                    }, 90);
+                    this.resends += resent;
                     const failMsg = this.since(m0).find(t => failRe.test(t));
                     if (arrived === null || failMsg) {
                         await this.idle();
@@ -216,7 +231,7 @@ export class Lab {
         } finally {
             off();
         }
-        const row = { label, ticks: this.tick() - t0 - 3, tiles, crossings: crossings.length, crossingList: crossings, fails, replans, hpLost: hp0 - this.hp(), at: this.pos() };
+        const row = { label, ticks: this.tick() - t0 - 3, tiles, crossings: crossings.length, crossingList: crossings, fails, replans, resends: this.resends - resends0, hpLost: hp0 - this.hp(), at: this.pos() };
         this.record(row);
         return row;
     }
