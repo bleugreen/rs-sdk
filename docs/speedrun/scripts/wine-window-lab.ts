@@ -621,9 +621,10 @@ async function runRep(name: string, plan: Plan, rep: number) {
             }
             // Standalone segments, one per kind, in plan.after order.
             const next = pending[0] ?? null;
-            if (worker.kind && worker.kind !== next && done[worker.kind]) {
-                S2.segs.push({ kind: worker.kind, start: segStart, end: done[worker.kind]!.t });
-                segStart = done[worker.kind]!.t;
+            const wk = worker.kind as Kind | null; // plain segments are single kinds
+            if (wk && wk !== next && done[wk]) {
+                S2.segs.push({ kind: wk, start: segStart, end: done[wk]!.t });
+                segStart = done[wk]!.t;
             }
             if (!next) { S2.end = segStart; line(s, t, burst, ' END'); return true; }
             if (worker.kind !== next) worker.set(next, true);
