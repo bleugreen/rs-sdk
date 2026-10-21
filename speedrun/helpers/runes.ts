@@ -589,6 +589,11 @@ export class Runes {
                 } else if (this.state.gameMessages.some(m => m.tick >= castTick && /someone else is fighting/i.test(m.text))) {
                     busyUntil.set(target.index, this.state.tick + 50);
                     if (current === target.index) current = null;
+                } else if (/already under attack/i.test(r.message)) {
+                    // Single combat: fight back at whatever is attacking us (goblins are aggressive).
+                    const hit = [...this.state.combatEvents].reverse().find(e => e.type === 'damage_taken' && e.sourceType === 'npc');
+                    current = hit ? hit.sourceIndex : null;
+                    if (!hit) await waitTicks(sdk, 2);
                 } else {
                     failures++;
                     current = null;
