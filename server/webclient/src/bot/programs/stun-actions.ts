@@ -265,7 +265,7 @@ export interface StunPackOptions {
 export interface StunSummary {
     window: [number, number];
     stuns: number;
-    /** Stuns in which nothing resolved (the pack ran dry). */
+    /** Stuns whose window passed with nothing fired (the pack ran dry). */
     dry: number;
     fired: number;
     rejected: number;
@@ -373,7 +373,7 @@ export class StunPack {
         return {
             window: [this.from, this.to],
             stuns: this.stuns,
-            dry: this.dry + (this.failTick !== null && this.firedThisStun === 0 ? 1 : 0),
+            dry: this.dry,
             fired: this.fired,
             rejected: this.rejected,
             costly: this.costly,

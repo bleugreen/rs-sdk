@@ -13,8 +13,15 @@
 // window once HP is at or below `eatBelow`, and at once only when HP is at or
 // below `forcedBelow` (the next failure's damage could kill), re-sending each tick
 // until HP rises.
+//
+// Stun actions (`stunActions`, off by default): rs/106's stun pack. On the ticks of the window
+// after a failure (`stunWindow`, offsets from the tick that shows it) the program sends actions
+// resolved from the inventory, ahead of the knight click: bury, Charge, arrowheads on headless
+// arrows, or any item, item-on-item, spell-on-item or button template. Timing, costs and the
+// template shape are in stun-actions.ts. The click still goes out every tick, last.
 
 import type { NearbyNpc } from '../types.js';
+import { StunPack } from './stun-actions.js';
 import type { ProgramParams, TickProgram } from './types.js';
 import { baseLevel, FreshMessages, invItem, itemOp, num, oneOf, regex, skillXp } from './util.js';
 
@@ -31,6 +38,7 @@ export function createPickpocket(params: ProgramParams): TickProgram {
     const heal = num(params.heal, 12, 'heal');
     const forcedBelow = num(params.forcedBelow, 3, 'forcedBelow');
     const eatBelowParam = params.eatBelow === undefined ? undefined : num(params.eatBelow, 0, 'eatBelow');
+    const stun = params.stunActions === undefined ? null : new StunPack({ actions: params.stunActions, window: params.stunWindow, perTick: params.stunPerTick });
 
     const messages = new FreshMessages();
     let started = false;
@@ -77,7 +85,8 @@ export function createPickpocket(params: ProgramParams): TickProgram {
         gapAfterFail,
         eats,
         forcedEats,
-        baseXp: (xpNow - startXp) / 25
+        baseXp: (xpNow - startXp) / 25,
+        ...(stun ? { stun: stun.summary() } : {})
     });
 
     return {
@@ -110,6 +119,7 @@ export function createPickpocket(params: ProgramParams): TickProgram {
                 } else if (/You fail to pick/i.test(m.text)) {
                     roll(t, false);
                     ctx.count('fails');
+                    stun?.failure(t);
                 } else if (/You've been stunned/i.test(m.text)) {
                     lastStunEnd = t + 8;
                 } else if (/during combat/i.test(m.text)) {
@@ -147,6 +157,9 @@ export function createPickpocket(params: ProgramParams): TickProgram {
             } else if (eat === 'window' && !food && hp <= eatBelow) {
                 ctx.count('outOfFood');
             }
+
+            // After the page resume and any eat, before the click (an arrow action clears the interaction).
+            stun?.act(ctx);
 
             const cur = target;
             target = cur && s.nearbyNpcs.some(n => n.index === cur.index)
