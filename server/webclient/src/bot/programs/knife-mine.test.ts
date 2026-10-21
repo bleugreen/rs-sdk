@@ -224,4 +224,19 @@ describe('knife mining', () => {
         expect(parseMineSteps([{ stand: [1, 2], rock: [3, 4], tiles: 3 }])).toEqual([{ stand: [1, 2], rock: [3, 4], tiles: 3 }]);
         expect(() => parseMineSteps('1,2')).toThrow();
     });
+
+    test('a depleted rock (it keeps its Mine option) is not live at the start: fault, no cached id', () => {
+        const at = (id: number) => makeState({ tick: 1, x: 2604, z: 3235, inventory: ['Rune pickaxe', 'Knife', 'Logs'], locs: [{ id, x: 2605, z: 3235, name: 'Rocks', options: ['Mine', 'Prospect'] }] });
+        const empty = new Harness('mine', createKnifeMine);
+        empty.start('mine', { steps: '2604,3235>2605,3235', ores: 5 });
+        empty.step(at(450));
+        expect(empty.status.phase).toBe('fault');
+        expect(empty.status.fault).toContain('no live rock');
+        // the same start on the live rock runs and clicks the live id
+        const live = new Harness('mine', createKnifeMine);
+        live.start('mine', { steps: '2604,3235>2605,3235', ores: 5 });
+        live.step(at(2092));
+        expect(live.status.phase).toBe('running');
+        expect(live.sent.find(s => s.action.type === 'interactLoc')?.action).toMatchObject({ locId: 2092, optionIndex: 1 });
+    });
 });

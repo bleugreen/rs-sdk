@@ -125,7 +125,9 @@ Notes that differ from the lite scripts:
 - A non-depleting tree that falls is a switch inside the lock (`switches`), not a resync.
   With every listed tree down, no starter goes out, because its fletch would use the knife's log.
 - Mining plans each transition on the label that shows the previous roll's xp (closed
-  loop, lead 0), so a late roll costs only its late ticks. The plain fallback's
+  loop, lead 0), so a late roll costs only its late ticks. A depleted iron rock keeps its
+  Mine option (ids 450-453), so the start excludes those ids and faults on one rather
+  than cache the empty rock and slip every lap: start or restart after the respawn. The plain fallback's
   adjacent-rock trick needs walking distances, which the page can't compute; steps
   take an optional `tiles`, else the straight-line tile distance is used.
 - **Bury on a Mining stay** (`bury`, the same parameter and bone-selection code as
