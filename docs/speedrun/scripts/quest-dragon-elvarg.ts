@@ -29,15 +29,17 @@ const GEAR: Array<[string, RegExp]> = [
     ['amulet_of_strength', /^amulet of strength$/i],
     ['antidragonbreathshield', /^dragonfire shield$/i],
 ];
-const inElvargLair = (p: { x: number; z: number; level: number }) => p.level === 0 && p.x >= 2848 && p.x <= 2863 && p.z >= 9628 && p.z <= 9646;
+// The lair zone from quest_dragon.rs2:27 (0_44_150_31_28 to 0_44_150_47_46); the gate tiles are its west edge.
+const inElvargLair = (p: { x: number; z: number; level: number }) => p.level === 0 && p.x >= 2847 && p.x <= 2863 && p.z >= 9628 && p.z <= 9646;
 
 await runScript(async ({ bot, sdk }) => {
     const runs = [];
     for (let i = 0; i < RUNS; i++) {
         for (const [stat, lvl] of [['attack', LVL], ['strength', LVL], ['defence', LVL], ['hitpoints', LVL], ['prayer', 1]] as const) { await cheat(sdk, `setstat ${stat} ${lvl}`); await waitTicks(sdk, 1); }
         await cheat(sdk, 'setvar dragonquest 9'); await waitTicks(sdk, 1);
-        // gear: spawn what is missing, wear it, verify
-        for (const [obj, re] of GEAR) {
+        // gear: spawn what is missing, wear it, verify (two passes: a wield can
+        // fail while the previous weapon or shield is being swapped out)
+        for (const [obj, re] of [...GEAR, ...GEAR]) {
             const st = sdk.getState()!;
             if (!st.equipment.some(e => re.test(e.name)) && !st.inventory.some(e => re.test(e.name))) await give(sdk, obj, 1);
             if (!sdk.getState()!.equipment.some(e => re.test(e.name))) {
