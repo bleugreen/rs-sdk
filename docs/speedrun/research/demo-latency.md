@@ -613,7 +613,9 @@ Also before starting:
    program sends on a free-running clock. The blind sender's on-aim share is diagnostic only: it
    tops out at about 76% even from Ashburn when sent within 50 ms of the frame, and 23% free-running
    (section 6), so it cannot be a pass/fail line.
-4. **The tab's machine** (proposed by rs/83, pending main). Until cairn://p/rs/113's
+4. **The tab's machine**: decided, the gate's fourth criterion in cairn://p/rs/tenets/11. On macOS
+   with a display attached, rs/97 saw no throttling; the run VM must reproduce that, not assume
+   it. Until cairn://p/rs/113's
    decode-on-arrival lands, an in-page reaction includes up to one game-loop period (about
    13.5 ms at 74 loops per second), and Chrome throttles hidden or occluded tabs. So: the tab's
    loop rate p10 at least about 50 per second; the remote-desktop session connected; screensaver
