@@ -14,7 +14,7 @@
 import { runScript } from '../../../sdk/runner';
 import {
     Recorder, cheat, tele, pos, walk, now, talk, useOnNpc, useOnItem, opLoc, waitPos, logVars, inv,
-    setupAccount, hp, runDialog, npcNear, getvar,
+    setupAccount, hp, runDialog, npcNear, nextState,
 } from './quest-wtikov-lib';
 
 const VARS = ['itwatchtower', 'itwatchtower_bits', 'gutanoth_gold'];
@@ -50,7 +50,7 @@ await runScript(async ({ bot, sdk }) => {
         rec.interact();
         while (!inv(sdk, 'ogretooth') && now(sdk) - t0 < 300) {
             if (hp(sdk) < 30) { await bot.eatFood(/shark/i); rec.interact(); }
-            const s = await sdk.waitForStateUpdate();
+            const s = await nextState(sdk);
             if (s.dialog.isOpen) await runDialog(sdk, rec, [], { openTicks: 1 });
         }
         await runDialog(sdk, rec, [], { openTicks: 2 });
@@ -197,7 +197,7 @@ await runScript(async ({ bot, sdk }) => {
         rec.start('enclave2: mine the rock of Dalgroth, leave');
         await walk(bot, sdk, 2590, 9450, 1);
         await opLoc(sdk, rec, 2590, 9449, /./, 2);
-        for (let i = 0; i < 10 && !inv(sdk, 'powering_crystal4'); i++) await sdk.waitForStateUpdate();
+        for (let i = 0; i < 10 && !inv(sdk, 'powering_crystal4'); i++) await nextState(sdk);
         await walk(bot, sdk, 2598, 9467, 1);
         await opLoc(sdk, rec, 2598, 9468, /./);
         await waitPos(sdk, p => !under(p), 10);
@@ -216,7 +216,7 @@ await runScript(async ({ bot, sdk }) => {
         await logVars(sdk, VARS);
         const magic0 = sdk.getSkillXp('magic') ?? 0;
         await opLoc(sdk, rec, 2543, 3115, /lever/i);
-        for (let i = 0; i < 12 && (sdk.getSkillXp('magic') ?? 0) === magic0; i++) await sdk.waitForStateUpdate();
+        for (let i = 0; i < 12 && (sdk.getSkillXp('magic') ?? 0) === magic0; i++) await nextState(sdk);
         await runDialog(sdk, rec, [], { openTicks: 6 });
         rec.end(`magic base xp gained ${((sdk.getSkillXp('magic') ?? 0) - magic0) / 25}`);
         rec.start('finish: read the spell scroll');
@@ -226,4 +226,4 @@ await runScript(async ({ bot, sdk }) => {
         await logVars(sdk, VARS);
     }
     rec.summary('Watchtower route');
-}, { timeout: 1_500_000 });
+}, { timeout: 900_000 });
