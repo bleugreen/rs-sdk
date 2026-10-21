@@ -4,7 +4,7 @@
 //   bun docs/speedrun/scripts/tickmanip-latency.ts <bot> [--path=relay|direct] [--trials=60] [--no-tele] [--bot=NAME]
 //       relay only:  [--plain=4] [--miss=4]
 //       direct only: [--steady=60] [--edge=iad|any] [--max-connect=5] [--floor=58] [--p90=400]
-//                    [--catchups=2] [--json=PATH]
+//                    [--p90-pass] [--catchups=2] [--json=PATH]
 //
 // A CLI over speedrun/lib/hostgate.ts `probeOnTime`: every predicted loop assumes a packet
 // sent while state label c is current is processed on server tick c+1. It prints the trials
@@ -20,9 +20,9 @@
 // the vantage preconditions (Fly edge iad, app iad, no mesh hop, TCP connect p50 <= 5 ms)
 // and, if one fails, says which and exits 2 without logging in. Then it probes, keeps reading
 // ticks until --steady seconds (default 60) of arrivals are in, and prints the direct go/no-go:
-// (a) on time >= 58/60, (b) tick p90 <= 400 ms, (c) <= 2 catch-ups per minute ((d), the page's
-// loop rate, is the in-page probe's; not measured here). Exit 0 when the loops may start, 1
-// when not. Needs server/webclient's dependencies (`cd server/webclient && bun install`).
+// (a) on time >= 58/60, (b) tick p90 <= 400 ms (reported only; --p90-pass makes it a pass
+// line), (c) <= 2 catch-ups per minute ((d), the page's loop rate, is the in-page probe's; not
+// measured here). Exit 0 when the loops may start, 1 when not. Needs server/webclient's dependencies (`cd server/webclient && bun install`).
 // --bot=NAME overrides <bot>: under lab.sh, whose runner holds <bot>, the direct probe logs
 // in a second account.
 //
@@ -126,7 +126,7 @@ if (PATH === 'relay') {
         }
         const r = await probeOnTime(session.sdk, { trials: N, steadyMs: Number(flag('steady') ?? 60) * 1000 });
         printProbe(r, host);
-        const v = directDecision(r, { floor: num('floor'), maxTickP90Ms: num('p90'), maxCatchUpsPerMinute: num('catchups') });
+        const v = directDecision(r, { floor: num('floor'), maxTickP90Ms: num('p90'), tickP90PassLine: process.argv.includes('--p90-pass'), maxCatchUpsPerMinute: num('catchups') });
         console.log(`gate (direct): ${verdictText(v)} -> ${v.on ? 'start the in-page loops' : `do not start: ${v.failures.join('; ')}`}`);
         const json = flag('json');
         if (json) {

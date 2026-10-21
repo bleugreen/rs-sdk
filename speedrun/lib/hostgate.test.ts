@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import type { BotWorldState, PlayerState } from '../../sdk/types';
 import { baseState, FakeSdk, flush } from './fake-sdk';
 import { type DirectClient, directProbeSdk } from './direct';
-import { directDecision, gateDecision, HostGate, latencyHistogram, probeOnTime, type ProbeState, summarizeProbe, steadinessHistogram, tickSteadiness, ticksPerDrop, vantageDecision } from './hostgate';
+import { directDecision, gateDecision, HostGate, latencyHistogram, probeOnTime, type ProbeState, summarizeProbe, steadinessHistogram, tickSteadiness, ticksPerDrop, vantageDecision, verdictText } from './hostgate';
 
 const HOME: [number, number] = [3200, 3200];
 const player = (x: number, z: number) => ({ name: 'probe', worldX: x, worldZ: z }) as PlayerState;
@@ -269,11 +269,13 @@ describe('directDecision', () => {
         // rs/83's 04:13 minute: direct 40:16:4, tick p90 486, 22.6 catch-ups per minute
         const v = directDecision({ onTime: 40, trials: 60, steadiness: { p90: 486, catchUpsPerMinute: 22.6 } });
         expect(v).toMatchObject({ on: false, status: 're-measure' });
-        expect(v.failures[0]).toBe('overrun period, re-measure (tick p90 486 ms over 400, 22.6 catch-ups per minute over 2)');
+        expect(v.failures[0]).toBe('overrun period, re-measure (22.6 catch-ups per minute over 2)');
+        const strict = directDecision({ onTime: 40, trials: 60, steadiness: { p90: 486, catchUpsPerMinute: 22.6 } }, { tickP90PassLine: true });
+        expect(strict.failures[0]).toBe('overrun period, re-measure (22.6 catch-ups per minute over 2, tick p90 486 ms over 400)');
         expect(v.failures[1]).toBe('on time 40/60, under the floor of 58');
-        // 60 of 60 still re-measures on p90 alone (b) or catch-ups alone (c)
-        expect(directDecision({ onTime: 60, trials: 60, steadiness: { p90: 404, catchUpsPerMinute: 0 } }).status).toBe('re-measure');
+        // 60 of 60 re-measures on catch-ups alone (c), and on p90 alone (b) only as a pass line
         expect(directDecision({ onTime: 60, trials: 60, steadiness: { p90: 350, catchUpsPerMinute: 3.3 } }).status).toBe('re-measure');
+        expect(directDecision({ onTime: 60, trials: 60, steadiness: { p90: 404, catchUpsPerMinute: 0 } }, { tickP90PassLine: true }).status).toBe('re-measure');
     });
     test('the catch-up limit is a parameter: default 2 per minute', () => {
         // rs/95's 04:55 minute: 59 of 60 with 1.5 catch-ups per minute
@@ -281,7 +283,17 @@ describe('directDecision', () => {
         expect(directDecision(v).on).toBe(true);
         expect(directDecision({ ...v, steadiness: { p90: 346, catchUpsPerMinute: 2 } }).on).toBe(true);
         expect(directDecision(v, { maxCatchUpsPerMinute: 1 }).status).toBe('re-measure');
-        expect(directDecision(v, { maxTickP90Ms: 340 }).status).toBe('re-measure');
+        expect(directDecision(v, { maxTickP90Ms: 340 }).status).toBe('marginal');
+        expect(directDecision(v, { maxTickP90Ms: 340, tickP90PassLine: true }).status).toBe('re-measure');
+    });
+    test('(b) is report-only by default: printed with its value, never in failures or the status', () => {
+        const v = directDecision({ onTime: 60, trials: 60, steadiness: { p90: 513, catchUpsPerMinute: 0 } });
+        expect(v).toMatchObject({ on: true, status: 'pass', failures: [] });
+        expect(v.checks.map(k => [k.id, k.role, k.ok])).toEqual([['a', 'pass', true], ['b', 'report', false], ['c', 'pass', true], ['d', 'pass', null]]);
+        expect(verdictText(v)).toBe('(a) on time 60/60, pass 60, floor 58 pass; (b) tick p90 513 ms <= 400 report, over; (c) catch-ups 0/min <= 2 pass; (d) loop p10 >= 50 not measured: pass');
+        const strict = directDecision({ onTime: 60, trials: 60, steadiness: { p90: 513, catchUpsPerMinute: 0 } }, { tickP90PassLine: true });
+        expect(strict).toMatchObject({ on: false, status: 're-measure' });
+        expect(verdictText(strict)).toContain('(b) tick p90 513 ms <= 400 FAIL;');
     });
     test('a throttled tab fails (d); an in-process probe has no loop rate and is not held to it', () => {
         expect(directDecision({ ...probe(60), loopRateP10: 74 })).toMatchObject({ status: 'pass' });

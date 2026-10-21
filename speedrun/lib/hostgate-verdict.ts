@@ -6,12 +6,13 @@
 //
 // The probe's path picks the rule:
 // - direct: the reaction is issued in-page by the browser webclient, or in-process on the
-//   engine websocket, with no relay hop. The go/no-go of cairn://p/rs/tenets/11, measured on
-//   the run machine: (a) on-time trials at least 58 of 60, (b) tick arrival p90 at most
-//   400 ms, (c) at most 2 catch-up ticks per minute, (d) the page's game-loop rate p10 at
-//   least 50 per second. Failing (b) or (c) is an overrun period on the demo: wait and
-//   re-measure. Failing (d) is a throttled tab. Failing (a) alone is a broken host or client
-//   to investigate, not a cost to model.
+//   engine websocket, with no relay hop. The go/no-go measured on the run machine, with
+//   main's 2026-10-21 defaults: pass lines (a) on-time trials at least 58 of 60, (c) at most 2
+//   catch-up ticks per minute, (d) the page's game-loop rate p10 at least 50 per second; and
+//   (b) tick arrival p90 at most 400 ms, reported but not a pass line unless the rule says so
+//   (it agreed with (a) less often than (c) did). Failing (c) is an overrun period on the
+//   demo: wait and re-measure. Failing (d) is a throttled tab. Failing (a) alone is a broken
+//   host or client to investigate, not a cost to model.
 // - relay (runner, gateway, lite client): the dominant-offset cost model, `gateDecision`.
 // Before either, `vantageDecision` checks that the machine sits beside the app.
 
@@ -244,13 +245,15 @@ export interface DirectRule {
     floor?: number;
     /** (b) Tick arrival interval p90 over the probe window. */
     maxTickP90Ms?: number;
+    /** Make (b) a pass line (failing it reads re-measure). Default false: (b) is reported only. */
+    tickP90PassLine?: boolean;
     /** (c) Catch-ups per minute over the probe window (rs/102 calibrates the final value). */
     maxCatchUpsPerMinute?: number;
     /** (d) The page's game-loop rate p10 over the probe window, loops per second. */
     minLoopRateP10?: number;
 }
 
-export const DIRECT_RULE = { trials: 60, pass: 60, floor: 58, maxTickP90Ms: 400, maxCatchUpsPerMinute: 2, minLoopRateP10: 50 } as const;
+export const DIRECT_RULE = { trials: 60, pass: 60, floor: 58, maxTickP90Ms: 400, tickP90PassLine: false, maxCatchUpsPerMinute: 2, minLoopRateP10: 50 } as const;
 
 /**
  * What the direct rule reads. A `ProbeResult` from `probeOnTime` is one (it carries its own
@@ -269,7 +272,9 @@ export interface DirectEvidence {
 export interface GateCheck {
     id: 'a' | 'b' | 'c' | 'd';
     name: string;
-    /** null: not measured on this probe (it neither passes nor fails the gate). */
+    /** pass: a pass line, failing it holds the loops. report: printed, never decides. */
+    role: 'pass' | 'report';
+    /** Within the limit. null: not measured on this probe (it neither passes nor fails the gate). */
     ok: boolean | null;
     value: number | null;
     limit: number;
@@ -277,7 +282,7 @@ export interface GateCheck {
 
 /**
  * pass: start the in-page loops. marginal: start, but (a) is short of a clean read.
- * re-measure: (b) or (c) failed, an overrun period on the demo; wait and probe again.
+ * re-measure: (c), or (b) as a pass line, failed: an overrun period on the demo; wait and probe again.
  * throttled: (d) failed; fix the tab (run-machine setup) and probe again.
  * investigate: (a) below the floor on a steady server, or no trials: don't start the loops.
  */
@@ -295,7 +300,7 @@ export interface DirectVerdict {
     passAt: number;
     floorAt: number;
     checks: GateCheck[];
-    /** One line per failed check, by name; the first names the status. */
+    /** One line per failed pass line, by name; the first names the status. */
     failures: string[];
     /** A direct path that passes reacts on the next tick, so no schedule sends early. */
     lead: 0;
@@ -305,7 +310,8 @@ export interface DirectVerdict {
  * The direct path's go/no-go (cairn://p/rs/tenets/11). (a) holds a probe with a different
  * trial count to the same shares, rounded up: a 20-trial probe needs 20 of 20 to pass and 20
  * to clear the floor. The status takes the most specific cause: an overrun period explains
- * misses, so (b) or (c) failing reads re-measure even when (a) failed too.
+ * misses, so (c) failing (or (b), when it is a pass line) reads re-measure even when (a)
+ * failed too. A report-only (b) is in `checks` with its value and never in `failures`.
  */
 export function directDecision(r: DirectEvidence, rule: DirectRule = {}): DirectVerdict {
     const of = rule.trials ?? DIRECT_RULE.trials;
@@ -317,19 +323,20 @@ export function directDecision(r: DirectEvidence, rule: DirectRule = {}): Direct
     const minLoop = rule.minLoopRateP10 ?? DIRECT_RULE.minLoopRateP10;
     const s = r.steadiness ?? null;
     const loop = r.loopRateP10 ?? null;
-    const a: GateCheck = { id: 'a', name: 'on-time trials', ok: r.trials > 0 && r.onTime >= floorAt, value: r.onTime, limit: floorAt };
-    const b: GateCheck = { id: 'b', name: 'tick p90', ok: s ? s.p90 <= maxP90 : null, value: s?.p90 ?? null, limit: maxP90 };
-    const c: GateCheck = { id: 'c', name: 'catch-ups per minute', ok: s ? s.catchUpsPerMinute <= maxCatchUps : null, value: s?.catchUpsPerMinute ?? null, limit: maxCatchUps };
-    const d: GateCheck = { id: 'd', name: 'loop rate p10', ok: loop === null ? null : loop >= minLoop, value: loop, limit: minLoop };
+    const a: GateCheck = { id: 'a', name: 'on-time trials', role: 'pass', ok: r.trials > 0 && r.onTime >= floorAt, value: r.onTime, limit: floorAt };
+    const b: GateCheck = { id: 'b', name: 'tick p90', role: (rule.tickP90PassLine ?? DIRECT_RULE.tickP90PassLine) ? 'pass' : 'report', ok: s ? s.p90 <= maxP90 : null, value: s?.p90 ?? null, limit: maxP90 };
+    const c: GateCheck = { id: 'c', name: 'catch-ups per minute', role: 'pass', ok: s ? s.catchUpsPerMinute <= maxCatchUps : null, value: s?.catchUpsPerMinute ?? null, limit: maxCatchUps };
+    const d: GateCheck = { id: 'd', name: 'loop rate p10', role: 'pass', ok: loop === null ? null : loop >= minLoop, value: loop, limit: minLoop };
+    const failed = (k: GateCheck) => k.role === 'pass' && k.ok === false;
+    const overrun = failed(b) || failed(c);
     const failures: string[] = [];
-    if (b.ok === false || c.ok === false) {
-        const why = [b.ok === false ? `tick p90 ${b.value} ms over ${maxP90}` : '', c.ok === false ? `${c.value} catch-ups per minute over ${maxCatchUps}` : ''].filter(Boolean).join(', ');
+    if (overrun) {
+        const why = [failed(c) ? `${c.value} catch-ups per minute over ${maxCatchUps}` : '', failed(b) ? `tick p90 ${b.value} ms over ${maxP90}` : ''].filter(Boolean).join(', ');
         failures.push(`overrun period, re-measure (${why})`);
     }
-    if (d.ok === false) failures.push(`tab throttled: loop rate p10 ${loop}/s under ${minLoop} (check the run-machine setup)`);
+    if (failed(d)) failures.push(`tab throttled: loop rate p10 ${loop}/s under ${minLoop} (check the run-machine setup)`);
     if (!a.ok) failures.push(r.trials === 0 ? 'no probe trials' : `on time ${r.onTime}/${r.trials}, under the floor of ${floorAt}`);
-    const status: DirectStatus =
-        b.ok === false || c.ok === false ? 're-measure' : d.ok === false ? 'throttled' : !a.ok ? 'investigate' : r.onTime >= passAt ? 'pass' : 'marginal';
+    const status: DirectStatus = overrun ? 're-measure' : failed(d) ? 'throttled' : !a.ok ? 'investigate' : r.onTime >= passAt ? 'pass' : 'marginal';
     return { path: 'direct', on: status === 'pass' || status === 'marginal', status, onTime: r.onTime, trials: r.trials, passAt, floorAt, checks: [a, b, c, d], failures, lead: 0 };
 }
 
@@ -340,11 +347,14 @@ export function hostVerdict(r: ProbeSummary & DirectEvidence & { path?: ProbePat
     return r.path === 'direct' ? directDecision(r, direct) : gateDecision(r, model);
 }
 
-/** The verdict's numbers, for logs. */
+/**
+ * The verdict's numbers, for logs: (a) to (d) in order, each marked pass or FAIL (a pass line),
+ * report (a report-only check, with `over` when it is past its limit), or not measured.
+ */
 export function verdictText(v: HostVerdict): string {
     if (v.path === 'relay') return `p ${v.p.toFixed(2)}, predicted knife ${v.knife.toFixed(2)} vs plain ${v.plain.toFixed(2)}, lead ${v.lead}`;
     const [a, b, c, d] = v.checks as [GateCheck, GateCheck, GateCheck, GateCheck];
-    const mark = (k: GateCheck) => (k.ok === null ? 'not measured' : k.ok ? 'ok' : 'FAIL');
+    const mark = (k: GateCheck) => (k.ok === null ? 'not measured' : k.role === 'report' ? (k.ok ? 'report' : 'report, over') : k.ok ? 'pass' : 'FAIL');
     const val = (k: GateCheck, unit: string) => (k.value === null ? '' : `${k.value}${unit} `);
     return (
         `(a) on time ${v.onTime}/${v.trials}, pass ${v.passAt}, floor ${v.floorAt} ${mark(a)};` +
