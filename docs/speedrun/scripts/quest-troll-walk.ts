@@ -42,6 +42,18 @@ const LEGS: Record<string, Act[]> = {
         { loc: [3723], until: p => p.z >= 3596 },
         { walk: [2856, 3611, 0] },
     ],
+    // The pass, from its south entrance: tunnel, then around the Trollheim
+    // rockslide (2910,3686) along x=2913 to the stronghold door.
+    ts_pass: [
+        { cheat: 'setvar troll_quest 20' },
+        { tele: [2903, 3643] },
+        { loc: [3757], until: p => p.z > 9000 },
+        { walk: [2907, 10035, 1] },
+        { loc: [3758], until: p => p.z < 9000 },
+        { walk: [2913, 3672, 0] }, { walk: [2913, 3688, 0] },
+        { walk: [2839, 3690, 1] },
+        { loc: [3771], until: p => p.level === 2 },
+    ],
     ts_out: [
         { cheat: 'setvar troll_quest 20' }, { cheat: 'setvar troll_varbit 0' },
         { tele: [2856, 3611] },
@@ -51,9 +63,9 @@ const LEGS: Record<string, Act[]> = {
         { walk: [2877, 3622, 0] },
         { loc: [3790, 3791], near: [2878, 3622], until: p => p.x >= 2880 },
         { walk: [2896, 3618, 0] },
-        { loc: [3782, 3783], until: p => p.x >= 2898 },
+        { loc: [3782, 3783], until: p => p.x >= 2897 },
         { walk: [2916, 3628, 0] },
-        { loc: [3785, 3786], until: p => p.z >= 3630 },
+        { loc: [3785, 3786], until: p => p.z >= 3629 },
         { walk: [2903, 3643, 1] },
         { loc: [3757], until: p => p.z > 9000 },
         { walk: [2907, 10035, 1] },
@@ -170,7 +182,8 @@ async function doLoc(bot: BotActions, sdk: BotSDK, a: Extract<Act, { loc: number
 await runScript(async ({ bot, sdk }) => {
     await bot.skipTutorial().catch(() => {});
     await cheat(sdk, 'setstat agility 99');
-    await cheat(sdk, 'setstat hitpoints 99');
+    // The troll pass and Trollheim have aggressive trolls; a level-3 walker died in the tunnel.
+    for (const st of ['hitpoints', 'defence', 'attack', 'strength']) await cheat(sdk, `setstat ${st} 99`);
     await cheat(sdk, 'setvar death_equiproom 80');
     await give(sdk, 'death_climbingboots');
     await bot.equipItem(/climbing boots/i).catch(e => console.log('boots', e?.message ?? e));
