@@ -10,7 +10,8 @@
 // Other options:
 //   tier        'auto' | 'mithril' | 'adamant'  which bars to smelt (auto: adamantite when
 //               the account has Smithing 70 and the ore, otherwise mithril)
-//   site        'auto' | 'guild' | 'dwarven'    where to mine (auto: Mining Guild from 60)
+//   site        'auto' | 'guild' | 'west' | 'rimmington' | 'barbarian'   where to mine (auto: west
+//               or Rimmington below Mining 60, the Mining Guild from 60; barbarian is coal only)
 //   smeltMin    bars' worth of ore in the bank before a production smelting session (25)
 //   pickaxe     false to never buy pickaxes (default true: sell steel bars, iron bars and,
 //               if needed, coal on the Grand Exchange and buy adamant/rune from Nurmof)
@@ -72,6 +73,7 @@ const BARS: Record<Bar, { bar: number; ore: number; second?: number; secondCount
 type Point = { x: number; z: number };
 const BANK_EAST: Point = { x: 3013, z: 3357 }; // Falador east bank, booths on z=3354
 const BANK_WEST: Point = { x: 2946, z: 3369 }; // Falador west bank, booths on z=3367; nearest the furnace
+const BANK_EDGE: Point = { x: 3093, z: 3491 }; // Edgeville bank, booths on x=3095-3098 (no furnace here in 2004)
 const FURNACE: Point = { x: 2974, z: 3370 }; // Falador furnace at 2975,3368
 const NURMOF: Point = { x: 2998, z: 9846 }; // pickaxe shop, north Dwarven Mine
 // The Dwarven Mine's north entrance (trapdoor in the Ice Mountain hut) lands among
@@ -81,7 +83,7 @@ const ICE_TRAPDOOR: Point = { x: 3019, z: 3450 };
 const LADDERS_UP = new Set([1755]); // ladder_from_cellar (guild cellar, Nurmof)
 
 interface Site {
-    name: 'guild' | 'west' | 'rimmington';
+    name: 'guild' | 'west' | 'rimmington' | 'barbarian';
     /** Underground sites: surface loc that leads down. */
     down?: { id: number; x: number; z: number };
     box: { x0: number; x1: number; z0: number; z1: number };
@@ -94,7 +96,10 @@ const SITES: Record<Site['name'], Site> = {
     // West of Falador: 2 copper, 6 tin, 3 iron, 2 coal, no NPC spawns.
     west: { name: 'west', box: { x0: 2898, x1: 2915, z0: 3348, z1: 3371 }, centre: { x: 2907, z: 3360 }, bank: BANK_WEST },
     // Rimmington: 6 iron, 5 copper, 2 tin, no NPC spawns.
-    rimmington: { name: 'rimmington', box: { x0: 2963, x1: 2991, z0: 3228, z1: 3253 }, centre: { x: 2975, z: 3240 }, bank: BANK_WEST }
+    rimmington: { name: 'rimmington', box: { x0: 2963, x1: 2991, z0: 3228, z1: 3253 }, centre: { x: 2975, z: 3240 }, bank: BANK_WEST },
+    // Barbarian Village: 4 coal (3087-3089, 3431-3434), barbarians and goblins never attack.
+    // Coal only and no furnace nearby: an opt-in site for mine-mode accounts when the guild is camped.
+    barbarian: { name: 'barbarian', box: { x0: 3082, x1: 3094, z0: 3426, z1: 3438 }, centre: { x: 3088, z: 3430 }, bank: BANK_EDGE }
 };
 const TRAINING_SITES: Site['name'][] = ['west', 'rimmington'];
 
@@ -115,7 +120,7 @@ function readOpts(o: Record<string, unknown>): Opts {
     return {
         mode: pick(o.mode, ['full', 'mine', 'smelt'] as const, 'full'),
         tier: pick(o.tier, ['auto', 'mithril', 'adamant'] as const, 'auto'),
-        site: pick(o.site, ['auto', 'guild', 'west', 'rimmington'] as const, 'auto'),
+        site: pick(o.site, ['auto', 'guild', 'west', 'rimmington', 'barbarian'] as const, 'auto'),
         smeltMin: typeof o.smeltMin === 'number' && o.smeltMin > 0 ? o.smeltMin : 25,
         pickaxe: o.pickaxe !== false
     };
@@ -202,13 +207,14 @@ class Smelter {
         return Object.values(SITES).find(st => inBox(st.box, x, z));
     }
 
-    /** The bank for where we are: east when at or near the guild, else west. */
+    /** The bank for where we are: the site's own bank, else the nearest of Falador east/west and Edgeville. */
     private nearestBank(): Point {
         const site = this.siteAt();
         if (site) return site.bank;
         const { x, z } = this.pos();
         if (underground(z)) return BANK_EAST;
-        return Math.hypot(x - BANK_EAST.x, z - BANK_EAST.z) < Math.hypot(x - BANK_WEST.x, z - BANK_WEST.z) ? BANK_EAST : BANK_WEST;
+        const d = (b: Point) => Math.hypot(x - b.x, z - b.z);
+        return [BANK_EAST, BANK_WEST, BANK_EDGE].reduce((a, b) => (d(b) < d(a) ? b : a));
     }
 
     // ------------------------------------------------------------ main loop
