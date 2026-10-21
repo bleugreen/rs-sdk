@@ -28,6 +28,7 @@ import type { BotSDK } from '../../sdk/index';
 import type { InventoryItem } from '../../sdk/types';
 import { depositMatching, withdrawMany } from '../lib/bank';
 import { give, receiveFrom, sameName } from '../lib/trade';
+import { advance, classifyPage } from '../lib/dialogue';
 import { waitUntil } from '../lib/wait';
 import type { Role, RoleContext } from './role';
 import { runStandalone } from './role';
@@ -302,8 +303,9 @@ export interface SplitResult {
     /** Ticks are on the receiver's clock. */
     tradeTicks: number;
     firstBankTicks: number;
-    /** Dismissing the level-up dialog after the first firing, and after the second. */
+    /** Dismissing the level-up dialog after the first firing (and its page count), and after the second. */
     levelUpTicks: number;
+    levelUpPages: number;
     finalLevelUpTicks: number;
     /** Bank (deposit the rest) plus the one re-arming make, and the two parts. */
     rearmTicks: number;
@@ -365,9 +367,10 @@ export async function splitDelivery(ctx: Ctx, giver: string, opts: { first?: num
     const levelAfterFirst = skillLevel(sdk, 'Cooking');
     const rest = invCount(sdk, ITEM.wineNote);
 
-    // The jump in Cooking opens a level-up chat modal; banking and the make wait on it.
+    // The jump in Cooking opens level-up pages (and unlock pages); banking and the
+    // make wait on them, so click through until the chat box stays closed.
     const tDlg = tick(sdk);
-    await bot.dismissBlockingUI();
+    const levelUpPages = await clearDialogs(sdk);
     const levelUpTicks = tick(sdk) - tDlg;
 
     const t2 = tick(sdk);
@@ -394,12 +397,13 @@ export async function splitDelivery(ctx: Ctx, giver: string, opts: { first?: num
             secondFermentTick = ok.tick;
             await waitUntil(sdk, s => s.dialog.isOpen, { maxTicks: 2 });
             const t3 = tick(sdk);
-            await bot.dismissBlockingUI();
+            await clearDialogs(sdk);
             finalLevelUpTicks = tick(sdk) - t3;
         }
     }
     return {
         levelUpTicks,
+        levelUpPages,
         finalLevelUpTicks,
         rearmBankTicks,
         rearmMakeTicks,
@@ -415,6 +419,30 @@ export async function splitDelivery(ctx: Ctx, giver: string, opts: { first?: num
         levelAfterSecond: skillLevel(sdk, 'Cooking'),
         rearmed
     };
+}
+
+/**
+ * Click through continue pages (level-up and unlock pages) until the chat box has
+ * stayed closed for two ticks. Returns the pages clicked. A choice page is left alone.
+ */
+export async function clearDialogs(sdk: BotSDK, maxTicks = 40): Promise<number> {
+    let pages = 0;
+    let closedSince = -1;
+    const start = tick(sdk);
+    while (tick(sdk) - start < maxTicks) {
+        const d = sdk.getState()?.dialog;
+        if (d?.isOpen && classifyPage(d) === 'continue') {
+            closedSince = -1;
+            const r = await advance(sdk, { maxTicks: 3 });
+            if (r.ok) pages++;
+            continue;
+        }
+        if (d?.isOpen) return pages;
+        if (closedSince < 0) closedSince = tick(sdk);
+        else if (tick(sdk) - closedSince >= 2) return pages;
+        await sdk.waitForTicks(1);
+    }
+    return pages;
 }
 
 /**
