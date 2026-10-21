@@ -141,6 +141,9 @@ await runScript(async ({ bot, sdk }) => {
     }
     log(sdk, `dialog before pool: ${JSON.stringify(sdk.getDialog())}`);
 
+    let tChamber = tick(sdk);
+    let tCape = tick(sdk);
+    if (FROM !== 'guardian') {
     // ---- segment 3: pool to the chamber ----
     const pool = sdk.findNearbyLoc(/sparkling pool/i);
     if (!pool) throw new Error('pool not found');
@@ -153,7 +156,7 @@ await runScript(async ({ bot, sdk }) => {
     await waitUntil(sdk, () => pos(sdk).z < 4700, 40, 'arrive in the chamber');
     log(sdk, `pool mesbox pages ${d3.pages}`);
     await waitTicks(sdk, 1);
-    const tChamber = tick(sdk);
+    tChamber = tick(sdk);
     log(sdk, `SEG pool: ${tChamber - tDone} ticks from ${JSON.stringify(from3)} to ${JSON.stringify(pos(sdk))}`, t0);
 
     // ---- segment 4: pray at the statue and take the cape ----
@@ -177,13 +180,18 @@ await runScript(async ({ bot, sdk }) => {
     }
     await bot.pickupItem(cape);
     await waitUntil(sdk, () => !!sdk.findInventoryItem(/cape of/i), 30, 'cape in inventory');
-    const tCape = tick(sdk);
+    tCape = tick(sdk);
     log(sdk, `SEG statue+cape: ${tCape - tChamber} ticks from ${JSON.stringify(from4)}, ${d4.pages} pages`, t0);
+    }
 
     // ---- segment 5: chamber guardian hands over the staff ----
-    const guard = sdk.findNearbyNpc(/chamber guardian/i);
-    if (!guard) throw new Error('guardian not found');
     const from5 = pos(sdk);
+    let guard = sdk.findNearbyNpc(/chamber guardian/i);
+    if (!guard) {
+        await bot.walkTo(2506, 4699, 2);
+        guard = sdk.findNearbyNpc(/chamber guardian/i);
+    }
+    if (!guard) throw new Error('guardian not found');
     await sdk.sendTalkToNpc(guard.index);
     const d5 = await talkThrough(sdk, [], { idleMs: 2000 });
     const staff = sdk.findInventoryItem(/staff of (saradomin|guthix|zamorak)/i);
