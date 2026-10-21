@@ -86,6 +86,7 @@ await runScript(async ({ bot, sdk }) => {
                     return false;
                 }, 30);
                 add({ name: 'open trapdoor (under attack)', ticks: (r?.tick ?? NaN) - t0 }, 'T1');
+                console.log('after T1', JSON.stringify(pos(sdk.getState())), 'hp', sdk.getState()!.player!.hp, 'prayer', sdk.getSkill('prayer')!.level, 'msgs', sdk.getState()!.gameMessages.slice(-5).map(m => m.text).join(' | '));
             }
             add(await locOpAt(sdk, 2807, 2785, /climb/i, s => pos(s).z > 9000, 30), 'T2 climb down');
             const p = pos(sdk.getState());
