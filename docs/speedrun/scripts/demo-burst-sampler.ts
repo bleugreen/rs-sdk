@@ -333,8 +333,8 @@ async function countLoop() {
         // The login path: a websocket upgrade on the game socket (no login; closed at once). The engine
         // answers 101 from its tick thread, so during an outage this fails separately from /playercount.
         if (i % 3 === 0) {
-            const w = spawnSync('curl', ['-s', '--http1.1', '--max-time', '4', '-o', '/dev/null', '-w', '%{http_code} %{time_starttransfer}',
-                '-H', 'Connection: Upgrade', '-H', 'Upgrade: websocket', '-H', 'Sec-WebSocket-Version: 13', '-H', 'Sec-WebSocket-Key: cmVzZWFyY2gtcHJvYmUtMTA=', '-H', 'Sec-WebSocket-Protocol: binary',
+            const w = spawnSync('curl', ['-s', '--http1.1', '--max-time', '2', '-o', '/dev/null', '-w', '%{http_code} %{time_starttransfer}',
+                '-H', 'Connection: Upgrade', '-H', 'Upgrade: websocket', '-H', 'Sec-WebSocket-Version: 13', '-H', 'Sec-WebSocket-Key: cnMxMDItcHJvYmUtMDAwMQ==', /* 16 bytes, or the upgrade is refused */ '-H', 'Sec-WebSocket-Protocol: binary',
                 `https://${HOST}/`], { encoding: 'utf8' });
             const [code, t] = (w.stdout ?? '').split(' ');
             tsv('wsupgrade.tsv', ['pdt', 'epoch_ms', 'http_code', 'ms'], [pdt(Date.now()), Date.now(), code, Math.round(Number(t) * 1000)]);
@@ -367,6 +367,7 @@ if (args.has('collect')) {
 
 log(`start: ${WORKFLOW} on ${REPO} @ ${REF} (lite_ref=${LITE_REF}, direct sample ${SAMPLE_MIN} min) every ${EVERY_MIN} min until ${UNTIL === Infinity ? 'stopped' : pdt(UNTIL)}; dir ${DIR}`);
 collectOrphans();
+const counting = countLoop();
 // An orphan still running when this process started: wait for it before the first slot.
 for (const id of mine) {
     const r = gh(['run', 'view', id, '-R', REPO, '--json', 'status,conclusion']);
@@ -375,4 +376,4 @@ for (const id of mine) {
         log(`orphan ${id}: ${collect(id, await waitDone(id))}`);
     }
 }
-await Promise.all([pairLoop(), countLoop()]);
+await Promise.all([pairLoop(), counting]);
