@@ -117,6 +117,28 @@ function listRuns(): RunRow[] | null {
     }
 }
 
+/**
+ * Whether a run is finished, judged by its jobs: GitHub can keep a run 'in_progress' for half an
+ * hour after its only job ended (a vantage skip at 08:01 stayed in_progress until 08:31), and the
+ * artifact is uploaded inside the job, so finished jobs mean a free runner and a collectable run.
+ */
+function runDone(id: string): { done: boolean; conclusion: string } | null {
+    const r = gh(['run', 'view', id, '-R', REPO, '--json', 'status,conclusion,jobs']);
+    if (!r.ok) return null;
+    try {
+        const j = JSON.parse(r.out);
+        if (j.status === 'completed') return { done: true, conclusion: j.conclusion };
+        const jobs: { status: string; conclusion: string }[] = j.jobs ?? [];
+        if (jobs.length && jobs.every(x => x.status === 'completed')) {
+            const c = jobs.some(x => x.conclusion === 'failure') ? 'failure' : jobs.every(x => x.conclusion === 'cancelled') ? 'cancelled' : 'success';
+            return { done: true, conclusion: c };
+        }
+        return { done: false, conclusion: '' };
+    } catch {
+        return null;
+    }
+}
+
 /** Why the runner is not ours to take right now, or null when it is. */
 function busyReason(): string | null {
     if (existsSync(join(DIR, 'hold'))) {
@@ -125,7 +147,7 @@ function busyReason(): string | null {
     }
     const runs = listRuns();
     if (!runs) return 'gh run list failed';
-    const active = runs.filter(r => r.status !== 'completed');
+    const active = runs.filter(r => r.status !== 'completed' && !runDone(String(r.databaseId))?.done);
     if (active.length) return `active run ${active.map(r => `${r.databaseId} (${r.status}, ${r.headBranch})`).join(', ')}`;
     collectForeign(runs);
     const recent = runs.filter(r => !mine.has(String(r.databaseId)) && Date.now() - Date.parse(r.updatedAt) < YIELD_MIN * 60_000);
@@ -139,10 +161,13 @@ const seen = new Set(existsSync(SEEN) ? readFileSync(SEEN, 'utf8').split('\n').f
 function collectForeign(runs: RunRow[]) {
     for (const r of runs) {
         const id = String(r.databaseId);
-        if (r.status !== 'completed' || mine.has(id) || seen.has(id) || Date.parse(r.createdAt) < SINCE) continue;
+        if (mine.has(id) || seen.has(id) || Date.parse(r.createdAt) < SINCE) continue;
+        const d = r.status === 'completed' ? { done: true, conclusion: r.conclusion } : runDone(id);
+        if (!d?.done) continue;
         seen.add(id);
         appendFileSync(SEEN, id + '\n');
-        log(`foreign run ${id} (${r.headBranch}): ${collect(id, r.conclusion, r.headBranch.startsWith('agent/rs-95') ? 'rs95' : r.headBranch)}`);
+        const source = r.headBranch.startsWith('agent/rs-95') ? 'rs95' : r.headBranch.startsWith('agent/rs-130') ? 'rs130' : r.headBranch;
+        log(`foreign run ${id} (${r.headBranch}): ${collect(id, d.conclusion, source)}`);
     }
 }
 const r0 = (rs: RunRow[]) => `${Math.round((Date.now() - Math.max(...rs.map(r => Date.parse(r.updatedAt)))) / 60_000)} min`;
@@ -185,13 +210,8 @@ function dispatch(long: boolean): string | null {
 
 async function waitDone(id: string): Promise<string> {
     for (let i = 0; i < 120; i++) {
-        const r = gh(['run', 'view', id, '-R', REPO, '--json', 'status,conclusion']);
-        if (r.ok) {
-            try {
-                const j = JSON.parse(r.out);
-                if (j.status === 'completed') return j.conclusion as string;
-            } catch {}
-        }
+        const d = runDone(id);
+        if (d?.done) return d.conclusion;
         await sleep(20_000);
     }
     return 'timeout';
@@ -352,10 +372,8 @@ function collectOrphans() {
     const logged = new Set(readText(join(DIR, 'attempts.tsv')).split('\n').map(l => l.split('\t')[1]).filter(Boolean));
     for (const id of mine) {
         if (logged.has(id)) continue;
-        const r = gh(['run', 'view', id, '-R', REPO, '--json', 'status,conclusion']);
-        if (!r.ok) continue;
-        const j = JSON.parse(r.out);
-        if (j.status === 'completed') log(`orphan ${id}: ${collect(id, j.conclusion)}`);
+        const d = runDone(id);
+        if (d?.done) log(`orphan ${id}: ${collect(id, d.conclusion)}`);
     }
 }
 
@@ -374,8 +392,7 @@ collectOrphans();
 const counting = countLoop();
 // An orphan still running when this process started: wait for it before the first slot.
 for (const id of mine) {
-    const r = gh(['run', 'view', id, '-R', REPO, '--json', 'status,conclusion']);
-    if (r.ok && JSON.parse(r.out).status !== 'completed') {
+    if (runDone(id)?.done === false) {
         log(`orphan ${id} still running, waiting`);
         log(`orphan ${id}: ${collect(id, await waitDone(id))}`);
     }
