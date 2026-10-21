@@ -527,6 +527,7 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         const xp0 = sdk.getSkill(STYLE === 'magic' ? 'magic' : 'attack')!.experience;
         let msgSeen = sdk.getState()!.gameMessages.length;
         let approaches = 0;
+        let levelUpPages = 0;
         let approachTiles = 0;
         const atk0 = sdk.getSkill('attack')!.experience;
         let lastSwing = t0;
@@ -535,7 +536,13 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         const hpLog: string[] = [];
         while (sdk.getState()!.tick - t0 < 1500) {
             const s = sdk.getState()!;
-            if (messageSince(sdk, t0, /killing strike/i) || s.dialog?.isOpen) break;
+            if (messageSince(sdk, t0, /killing strike/i) || /killing strike/i.test(s.dialog?.text ?? '')) break;
+            if (s.dialog?.isOpen) {
+                // level-up messages interrupt the fight; click through
+                const d = await dialog(sdk, [], { settle: 0, stopWhen: () => /killing strike/i.test(sdk.getState()!.dialog?.text ?? '') });
+                levelUpPages += d.pages;
+                continue;
+            }
             if (messageSince(sdk, t0, /you are dead/i)) { died = true; break; }
             const me = s.player!;
             if (me.animId !== -1) lastSwing = s.tick;
@@ -631,7 +638,7 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         // melee: 4 xp per damage at 25x; magic: game xp gained, reported raw
         const gained = sdk.getSkill(STYLE === 'magic' ? 'magic' : 'attack')!.experience - xp0;
         const dealt = STYLE === 'magic' ? `${gained} magic xp` : Math.round(gained / 100);
-        L.note(`attack clicks ${swings}, approach walks ${approaches} (${approachTiles} tiles), fade-outs ${moves}, sharks ${eats}, damage dealt ~${dealt}, hp left ${sdk.getState()!.player!.hp}${died ? ', DIED' : ''}; hp/boss% ${hpLog.join(' ')}`);
+        L.note(`attack clicks ${swings}, approach walks ${approaches} (${approachTiles} tiles), level-up pages ${levelUpPages}, fade-outs ${moves}, sharks ${eats}, damage dealt ~${dealt}, hp left ${sdk.getState()!.player!.hp}${died ? ', DIED' : ''}; hp/boss% ${hpLog.join(' ')}`);
         const kd = await dialog(sdk, [], { settle: 1 });
         L.add(kd);
         L.end();
