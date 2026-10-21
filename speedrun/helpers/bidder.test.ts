@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { bidderOptions, competingBid, decideBid, openOwn, type MarketView, type OwnOffer } from './bidder';
+import { bidderOptions, competingBid, decideBid, lineOptions, MAX_OFFERS_PER_LINE, openOwn, type MarketView, type OwnOffer } from './bidder';
 
 const GRAPES = 1987;
-const opts = bidderOptions({ item: 'Grapes', target: 520, tranche: 150, maxPrice: 3000 });
+const opts = lineOptions({ item: 'Grapes', target: 520, tranche: 150, maxPrice: 3000 });
+/** Main's dragon bone line (rs/41): 1,000 steps, a step after an hour without fills, cap 12,000. */
+const bones = lineOptions({ item: 'Dragon bones', target: 555, tranche: 30, maxPrice: 12_000, minPrice: 6000, step: 1000, stepAfterIdleMinutes: 60 });
 
 const offer = (over: Partial<OwnOffer> = {}): OwnOffer => ({
     id: 15914,
@@ -121,13 +123,13 @@ describe('our price never goes down', () => {
     });
 
     test('minPrice is a floor too', () => {
-        const o = bidderOptions({ item: 'Grapes', target: 520, minPrice: 1650 });
+        const o = lineOptions({ item: 'Grapes', target: 520, maxPrice: 3000, minPrice: 1650 });
         expect(decideBid({ held: 161, ours: [], quote: book([[99_508, 1000]]), coins: 400_000, options: o })).toMatchObject({ price: 1650 });
     });
 
     test('an open offer below the floor is re-priced up', () => {
         const ours = [offer({ id: 15945, price: 1025, quantity: 1, remaining: 1, filled: 0 })];
-        const o = bidderOptions({ item: 'Grapes', target: 520, minPrice: 1650 });
+        const o = lineOptions({ item: 'Grapes', target: 520, maxPrice: 3000, minPrice: 1650 });
         const d = decideBid({ held: 161, ours, quote: book([[99_508, 1000]], ours), coins: 400_000, options: o });
         expect(d).toMatchObject({ action: 'replace', cancel: [15945], price: 1650 });
     });
@@ -180,11 +182,65 @@ describe('the target stop', () => {
     });
 });
 
-describe('bidderOptions', () => {
-    test('defaults and validation', () => {
-        expect(opts).toMatchObject({ target: 520, tranche: 150, maxPrice: 3000, recheckMinutes: 30, outbidBy: 25, minPrice: 0 });
-        expect(() => bidderOptions({ target: 520 })).toThrow(/item/);
-        expect(() => bidderOptions({ item: 'Grapes' })).toThrow(/target/);
-        expect(() => bidderOptions({ item: 'Grapes', target: 520, maxPrice: -1 })).toThrow(/maxPrice/);
+describe('step mode (dragon bones)', () => {
+    const boneOffer = (over: Partial<OwnOffer> = {}) => offer({ id: 16015, item: 536, price: 6000, quantity: 30, remaining: 30, filled: 0, ...over });
+
+    test('starts at minPrice above a lower competitor', () => {
+        const d = decideBid({ held: 0, ours: [], quote: book([[1254, 5000]]), coins: 500_000, options: bones });
+        expect(d).toMatchObject({ action: 'place', price: 6000, quantity: 30 });
+    });
+
+    test('an hour without fills: one step up, never a jump', () => {
+        const ours = [boneOffer()];
+        const quote = book([[1254, 5000]], ours);
+        expect(decideBid({ held: 11, ours, quote, coins: 0, options: bones, idleMinutes: 59 }).action).toBe('hold');
+        const d = decideBid({ held: 11, ours, quote, coins: 0, options: bones, idleMinutes: 61 });
+        expect(d).toMatchObject({ action: 'replace', cancel: [16015], price: 7000 });
+    });
+
+    test('a competitor above us: the first whole step above them', () => {
+        const ours = [boneOffer()];
+        expect(decideBid({ held: 11, ours, quote: book([[50, 6100]], ours), coins: 500_000, options: bones })).toMatchObject({ action: 'replace', price: 7000 });
+        expect(decideBid({ held: 11, ours, quote: book([[50, 7000]], ours), coins: 500_000, options: bones })).toMatchObject({ action: 'replace', price: 8000 });
+    });
+
+    test('the 12,000 cap: the last step stops at the cap, then hold', () => {
+        const at11 = [boneOffer({ price: 11_500 })];
+        expect(decideBid({ held: 11, ours: at11, quote: book([], at11), coins: 0, options: bones, idleMinutes: 90 })).toMatchObject({ action: 'replace', price: 12_000 });
+        const at12 = [boneOffer({ price: 12_000 })];
+        expect(decideBid({ held: 11, ours: at12, quote: book([], at12), coins: 0, options: bones, idleMinutes: 90 })).toMatchObject({ action: 'hold', capped: true });
+        expect(decideBid({ held: 11, ours: at12, quote: book([[5, 13_000]], at12), coins: 0, options: bones })).toMatchObject({ action: 'hold', capped: true });
+    });
+
+    test('target 555 held: done', () => {
+        const ours = [boneOffer()];
+        expect(decideBid({ held: 555, ours, quote: book([], ours), coins: 0, options: bones })).toMatchObject({ action: 'done', cancel: [16015] });
+    });
+});
+
+describe('offer slots', () => {
+    test(`no top-up beyond ${MAX_OFFERS_PER_LINE} offers per line (the server has 6 slots per account)`, () => {
+        const ours = [offer({ id: 1, remaining: 20 }), offer({ id: 2, remaining: 20 })];
+        const d = decideBid({ held: 116, ours, quote: book([[99_508, 1000]], ours), coins: 500_000, options: opts });
+        expect(d.action).toBe('hold');
+    });
+});
+
+describe('options', () => {
+    test('line defaults and validation', () => {
+        expect(opts).toMatchObject({ target: 520, tranche: 150, maxPrice: 3000, outbidBy: 25, minPrice: 0, step: null, stepAfterIdleMinutes: null });
+        expect(() => lineOptions({ target: 520, maxPrice: 3000 })).toThrow(/item/);
+        expect(() => lineOptions({ item: 'Grapes', maxPrice: 3000 })).toThrow(/target/);
+        expect(() => lineOptions({ item: 'Grapes', target: 520 })).toThrow(/maxPrice/);
+        expect(() => lineOptions({ item: 'Grapes', target: 520, maxPrice: 3000, stepAfterIdleMinutes: 60 })).toThrow(/needs step/);
+    });
+
+    test('a list of lines in priority order, or one line at the top level', () => {
+        const o = bidderOptions({ lines: [{ item: 'Dragon bones', target: 555, maxPrice: 12_000, step: 1000 }, { item: 'Grapes', target: 520, maxPrice: 3000 }], recheckMinutes: 30 });
+        expect(o.lines.map(l => l.item)).toEqual(['Dragon bones', 'Grapes']);
+        expect(o).toMatchObject({ recheckMinutes: 30, fillCheckMinutes: 3 });
+        expect(bidderOptions({ item: 'Grapes', target: 520, maxPrice: 3000 }).lines).toHaveLength(1);
+        expect(() => bidderOptions({ lines: [{ item: 'Grapes', target: 1, maxPrice: 1 }, { item: 'grapes', target: 2, maxPrice: 1 }] })).toThrow(/two lines/);
+        expect(() => bidderOptions({ lines: [{ item: 'Grapes', target: 1 }] })).toThrow(/lines\[0\]\.maxPrice/);
     });
 });
