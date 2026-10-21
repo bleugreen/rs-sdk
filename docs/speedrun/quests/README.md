@@ -544,8 +544,14 @@ is 4,054 (this page's 'neither' line used ~4,006). The cannon saves ~2,630 on th
 including Dwarf Cannon's 1,078. Pushing Ranged to 70 before Monkey Madness does not pay
 (4,017 vs 3,900).
 
+**Package B's finish, also confirmed by rs/31 (23:03):** **2,051** (cannon + defensive
+melee at the spiders 230, Ranged to 67; then cannon + rapid rune knives 1,821; HP by-product
+5,089). This page's phase model gave ~2,023; the 28-tick gap is the Ranged 67-70 stretch,
+where cannon + knives is unmeasured, so **2,023-2,051** is the honest range, and the
+Package A-vs-B threshold for Waterfall's pre-MM saving is **~800-830** ticks.
+
 Still to slot in: `pre_mm_fights.md` (rs/56: the pre-MM fights, and with them Package A
-against B), rs/31's confirmation of the ~2,020 Package B finish, rs/30's `combat.md`
+against B), rs/30's `combat.md`
 (its rates are quoted here from rs/28), rs/53 (Fishing Contest), and the rs/54 merge (Sea
 Slug).
 
