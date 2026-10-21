@@ -258,9 +258,11 @@ describe('knife cycle', () => {
         const { h, rollTicks } = serverRun({ method: 'oak', ticks: 200, fellEvery: 8, fellLag: 1 });
         expect(h.status.result).toMatchObject({ resyncs: 0 });
         expect(gapsOf(rollTicks).slice(1).every(g => g === 3)).toBe(true);
-        // the re-click goes out on the label after the roll, alone
+        // the fallen tree is listed on R and R+1, so it is seen gone on R+2 and the re-click
+        // goes out then, alone, landing on the roll tick itself
         const fell = rollTicks[7]!;
-        expect(h.sent.filter(s => s.tick === fell + 1).map(s => s.action.type)).toEqual(['interactLoc']);
+        expect(h.sent.filter(s => s.tick === fell + 1)).toHaveLength(0);
+        expect(h.sent.filter(s => s.tick === fell + 2).map(s => s.action.type)).toEqual(['interactLoc']);
     });
 
     test('the lost-lock window scales with the catch chance', () => {
