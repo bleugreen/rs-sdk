@@ -28,12 +28,18 @@ changed.
 3. While `delayed` (p_delay, p_arrivedelay) every op packet and MOVE_CLICK is **dropped, not
    queued**. IF_BUTTON, RESUME_PAUSEBUTTON, RESUME_P_COUNTDIALOG and CLOSE_MODAL have no delay
    check. A `p_delay(n)` started on tick T blocks packets on T+1 .. T+1+n; the next accepted
-   packet is on T+2+n (read; measured for bury, section 7).
+   packet is on T+2+n (read; measured for bury: 5 clicks at once bury 1, one click a tick buries
+   every 2 ticks, section 7).
 4. Every op packet, every inventory op and MOVE_CLICK cancels the current interaction, closes
    modals and **clears the weak queue**. IF_BUTTON, INV_BUTTON and CLOSE_MODAL never touch
    the interaction. Buttons on the four "overlay" side tabs (magic, prayer, stats,
    staff spells) run **unprotected**, so Charge can be cast up to 5 times a tick beside a
-   running gathering loop (read; section 3 lists every overlap path).
+   running gathering loop, and both grant xp in the same tick (measured, section 7; section 3
+   lists every overlap path).
+6. Normal timers (wine fermentation) wait for `canAccess()`: any open modal, including a
+   level-up chat, holds them; every new wine restarts the 20-tick clock (measured).
+7. The server accepts an inventory-tab op while the bank is open: it closes the bank and runs
+   the op in the same packet (measured). `sdk/index.ts:1183-1186` says the opposite.
 5. About 270 inventory and button triggers produce an item or xp with no delay, queue or menu
    on any path (static census, `speedrun/lab/census-delayfree.ts`), so they run at 5 per tick.
    Make-X menus can be answered blind in the same tick, but the content allows **one** menu
@@ -214,14 +220,15 @@ There is no way to run two loc/npc ops in one tick: the target is a single slot.
 |---|---|---|---|
 | O1 | Held ops first, then a click: up to 4 delay-free held scripts run during decode, the click's op runs in step 4 | **yes** | read (`NetworkPlayer.ts:137-138`, `World.ts:402, 425`); the rs/2 knife cycle (drop + click in one tick) relies on it |
 | O2 | Click first, then a held op | **no**, the held op cancels the click | read (`OpHeldHandler.ts:55`) |
-| O3 | Overlay-tab IF_BUTTON (Charge, `content/skill_magic/scripts/spells/charge.rs2`) beside a running p_oploc/p_opnpc loop | **yes**, the button never clears the interaction and `if_close` only closes modals; up to 5 casts a tick while the loop keeps rolling. Needs `canAccess()` at decode time (no delay, no modal) | read (`IfButtonHandler.ts:39-43`, `charge.rs2:2-3`, `Player.ts:817-871`); measured, section 7 |
-| O4 | Normal timer + interaction (e.g. wine fermentation + a gathering roll) | **yes**: timers run before the interaction in step 4 (`World.ts:788, 801`), both need only `canAccess()` | read |
+| O3 | Overlay-tab IF_BUTTON (Charge, `content/skill_magic/scripts/spells/charge.rs2`) beside a running p_oploc/p_opnpc loop | **yes**, the button never clears the interaction and `if_close` only closes modals; up to 5 casts a tick while the loop keeps rolling. Needs `canAccess()` at decode time (no delay, no modal) | read (`IfButtonHandler.ts:39-43`, `charge.rs2:2-3`, `Player.ts:817-871`); **measured**: fly fishing kept catching through 52 casts without a re-click, with same-tick Magic + Fishing xp (section 7) |
+| O3b | The same loop + one OPHELD | no: the loop stops (0 catches in 25 ticks) | measured, section 7 |
+| O4 | Normal timer + interaction (e.g. wine fermentation + a gathering roll) | **yes**: timers run before the interaction in step 4 (`World.ts:788, 801`), both need only `canAccess()`; an open modal holds the timer (measured, section 7) | read |
 | O5 | Soft timer + anything | yes, soft timers run even while busy or delayed (`Player.ts:1008-1010`) | read |
 | O6 | Normal/strong queue + interaction | **yes** (`World.ts:785` then `:801`) if the queue script does not delay | read |
 | O7 | Weak queue + a click in the same tick | **no**: the click's `clearPendingAction` empties the weak queue during decode, before step 4 | read (`Player.ts:818-820`) |
-| O8 | Weak queue + a running p_oploc loop | **no** on any tick the loop continues: `p_oploc` calls `stopAction`, which empties the weak queue (`PlayerOps.ts:396`). The weak entry runs only if it is due on a tick before the loop's script runs that tick, i.e. step 4's queue phase precedes the interaction: a weak entry due on tick T runs in T's queue phase, then the loop clears the rest | read, inferred |
+| O8 | Weak queue + a running p_oploc loop | only for an entry already due: in step 4 the weak queue runs before the interaction (`World.ts:785, 801`), so an entry due on tick T runs, and then the loop's `p_oploc` (`stopAction`, `PlayerOps.ts:396`) empties whatever is left. A weak-queued product loop therefore cannot keep running beside a loc/npc loop | read, inferred |
 | O9 | IF_BUTTON/INV_BUTTON (delay-free, e.g. shop buy, tanner) + interaction | yes, if no modal is open; but those interfaces are main modals, which make `canAccess()` false and stall the interaction | read |
-| O10 | Delay-free held op x5 in one tick | yes, 5 effects per tick (e.g. bow stringing `content/skill_fletching/scripts/bows.rs2:22-41`, herb identify, gem cutting) | read; measured, section 7 |
+| O10 | Delay-free held op x5 in one tick | yes, 5 effects per tick (e.g. bow stringing `content/skill_fletching/scripts/bows.rs2:22-41`, herb identify, gem cutting) | read; measured for herb identify and wine (5 per tick, the rest the next tick), section 7 |
 | O11 | Resumed dialogue page + interaction | no: a paused dialogue is a modal; resuming to the end closes the chat (`Player.ts:2290-2293`), after which the interaction can run in step 4 of the same tick | read |
 
 The queue speedup quirk: an entry added to the **end** of the normal queue during the queue pass
@@ -231,11 +238,11 @@ can run in the same pass (`Player.ts:949-953`, authentic).
 
 | Exploit | Guard and why it is open | Label |
 |---|---|---|
-| **Charge, no cooldown** | `[if_button,magic:charge]` (`content/skill_magic/scripts/spells/charge.rs2:1-27`): the 2005 cooldown is commented out (`:8-12`), there is no `p_delay`, and `settimer(charge, 2)` only restarts the fade timer. The spellbook root is `type=overlay` (`content/skill_magic/interfaces/magic.if:1`), so the handler runs it unprotected (`IfButtonHandler.ts:41-42`); the script then takes protected access with `p_finduid(uid)` (`charge.rs2:3`), which succeeds whenever `canAccess()` (`PlayerOps.ts:78-97`). Requirements: Mage Arena progress `%magearena >= 8` (`charge.rs2:4`, `content/areas/area_mage_arena/configs/mage_arena.constant:8`), Magic 80, 3 fire + 3 blood + 3 air runes, members (`content/skill_magic/configs/magic_spells.dbrow:206-212`, `content/skill_magic/scripts/magic.rs2:12-50`). The cap is the 5-USER-event budget. A cast while delayed or with a modal open is refused by `p_finduid`, not by the handler | read; measured, section 7 |
+| **Charge, no cooldown** | `[if_button,magic:charge]` (`content/skill_magic/scripts/spells/charge.rs2:1-27`): the 2005 cooldown is commented out (`:8-12`), there is no `p_delay`, and `settimer(charge, 2)` only restarts the fade timer. The spellbook root is `type=overlay` (`content/skill_magic/interfaces/magic.if:1`), so the handler runs it unprotected (`IfButtonHandler.ts:41-42`); the script then takes protected access with `p_finduid(uid)` (`charge.rs2:3`), which succeeds whenever `canAccess()` (`PlayerOps.ts:78-97`). Requirements: Mage Arena progress `%magearena >= 8` (`charge.rs2:4`, `content/areas/area_mage_arena/configs/mage_arena.constant:8`), Magic 80, 3 fire + 3 blood + 3 air runes, members (`content/skill_magic/configs/magic_spells.dbrow:206-212`, `content/skill_magic/scripts/magic.rs2:12-50`). The cap is the 5-USER-event budget. A cast while delayed or with a modal open is refused by `p_finduid`, not by the handler | read; **measured**: 10 casts fired at once land 5 + 5 (section 7) |
 | **5 dialogue pages a tick** | `ResumePauseButtonHandler.ts:7-21`: no component id in the packet (`codec/ResumePauseButtonDecoder.ts`), no delay check, no modal check; only "a script is paused on p_pausebutton and no choice buttons are registered" (`:8-18`), then a forced resume. Each accepted continue is one USER event (5 a tick); a continue with no pause pending is refused and costs a CLIENT slot | read; measured by rs/51 (`speedrun/README.md`, dialogue.ts) |
 | **Knife-on-log tick manipulation** | The write is `if (%action_delay < map_clock) %action_delay = map_clock + 2` in `process_fletch_logs` (`content/skill_fletching/scripts/cut_logs.rs2:83-85`), reached only after the `skill_multi3`/`skill_multi2` menu returns (`cut_logs.rs2:38-47`, `content/interface_chat/scripts/chat.rs2:711-754` and the multi3 twin). The menu's buttons are registered resume buttons, so a blind IF_BUTTON in the same tick is accepted (`IfButtonHandler.ts:29-37`). The fletch itself is a weak queue (`cut_logs.rs2:86`) that the same-tick re-click empties (`Player.ts:818-820`). What shortens the gather cycle is that `%action_delay` is a single shared clock and the gathering labels only test equality or expiry (`content/skill_mining/scripts/mining.rs2:76-86, 118-124`, `content/skill_woodcutting/scripts/woodcut.rs2:55-62, 97-101`). One menu completion per tick: closing a multi menu stamps `%weakqueue_map_clock = map_clock` (`chat.rs2:1101-1119`), and a menu answered on that same tick does `if_close; p_delay(0)` (`chat.rs2:734-738`), which then drops the cycle's later packets. The host gate is cairn://p/rs/62 | read (mechanism and rates: rs/2 `tick-manipulation.md`) |
-| **Bury: hard 2 ticks** | `content/skill_prayer/scripts/bury_bone.rs2:3-16`: `p_stopaction` (clears the interaction, closes modals, clears the walk), `p_delay(0)`, then delete + xp. `p_delay(0)` on T means delayed until T+1 (`PlayerOps.ts:376-380`), cleared in step 4 of T+1 after the packets (`World.ts:776`), so an OPHELD on T+1 is dropped (`OpHeldHandler.ts:16-19`) and the next bury is accepted on T+2 | read; measured, section 7 |
-| **Wine fermentation, no Cooking check** | Making: `[opheldu,grapes]` -> `make_wine` checks Cooking 35 only at make time, has no delay, and calls `settimer(fermenting_wine, 20)` (`content/skill_cooking/scripts/cooking_inv/scripts/wine/wine.rs2:7-20`). Every new wine restarts the 20-tick clock (`Player.ts:985-996`). The timer (`wine.rs2:22-70`) has no stat check: it converts every unfermented jug in the **bank and the inventory**, rolling `stat_random(cooking, 48, 352)` each and granting 110 xp per success; bank jugs go in 15 batches whose xp is multiplied by the batch size (`:26-41`). It is a normal timer, so it fires on the first tick at or after the 20th on which `canAccess()` holds (`Player.ts:1010`). Every login arms it unconditionally (`content/login_logout/login.rs2:70`, `wine.rs2:72-73`) | read; measured, section 7 |
+| **Bury: hard 2 ticks** | `content/skill_prayer/scripts/bury_bone.rs2:3-16`: `p_stopaction` (clears the interaction, closes modals, clears the walk), `p_delay(0)`, then delete + xp. `p_delay(0)` on T means delayed until T+1 (`PlayerOps.ts:376-380`), cleared in step 4 of T+1 after the packets (`World.ts:776`), so an OPHELD on T+1 is dropped (`OpHeldHandler.ts:16-19`) and the next bury is accepted on T+2 | read; **measured**: 5 clicks at once bury 1; a click every tick buries every 2 ticks (section 7) |
+| **Wine fermentation, no Cooking check** | Making: `[opheldu,grapes]` -> `make_wine` checks Cooking 35 only at make time, has no delay, and calls `settimer(fermenting_wine, 20)` (`content/skill_cooking/scripts/cooking_inv/scripts/wine/wine.rs2:7-20`). Every new wine restarts the 20-tick clock (`Player.ts:985-996`). The timer (`wine.rs2:22-70`) has no stat check: it converts every unfermented jug in the **bank and the inventory**, rolling `stat_random(cooking, 48, 352)` each and granting 110 xp per success; bank jugs go in 15 batches whose xp is multiplied by the batch size (`:26-41`). It is a normal timer, so it fires on the first tick at or after the 20th on which `canAccess()` holds (`Player.ts:1010`). Every login arms it unconditionally (`content/login_logout/login.rs2:70`, `wine.rs2:72-73`) | read; **measured**: 5 wines a tick, fermentation 21 ticks after the last wine, held by an open dialog (section 7); the missing level check is read only |
 
 ## 5. Delay-free and blind-drivable flows
 
@@ -314,8 +321,11 @@ the bank or a shop open. The client hides them; the server does not (section 6).
 1. **Inventory ops while banking.** An OPHELD on the inventory tab (component 3214) while the bank
    or a shop is open passes the visibility check (tabs are unchanged, `Player.ts:2185-2187`), then
    `clearPendingAction` closes the bank and the op runs (`OpHeldHandler.ts:54-56`). The SDK says
-   the server drops it (`sdk/index.ts:1183-1186`, for `sendUseItemOnItem`); by the handler code it
-   is accepted. Measured, section 7.
+   the server drops it (`sdk/index.ts:1183-1186`, for `sendUseItemOnItem`, which refuses client-side
+   with the bank or a shop open); the server accepts it. Measured with OPHELD (`sendUseItem`), 3 of
+   3: the bank closed and the op ran. OPHELDU goes through the same visibility check
+   (`OpHeldUHandler.ts:26-42`) and the same `clearPendingAction` (`:86`), so it should behave the
+   same (inferred). A bot can therefore skip the separate CLOSE_MODAL before an inventory op.
 2. **Refused USER events are budget-free** (`NetworkPlayer.ts:141-147`): speculative packets cost
    CLIENT slots (20 a tick), not USER slots.
 3. **IF_BUTTON has no delay check** (`IfButtonHandler.ts`); overlay-tab buttons run unprotected
@@ -339,6 +349,51 @@ item not in the named slot is refused. IF_BUTTON on a closed interface is refuse
 
 ## 7. Lab
 
-To be filled in: probe scripts under `speedrun/lab/probe-*.ts`, run with the lab on port block
-9340 (`WEB_PORT=9340 WEB_MANAGEMENT_PORT=9341 HISCORES_WEB_PORT=9342 NODE_PORT=44040
-AGENT_PORT=8340`), `NODE_TICKRATE=300`, headless lite client.
+**Setup.** `speedrun/lab/probe-engine.ts` (one file, `--probe=bury,held,charge,wine,bankheld`,
+`--n=3`), run through `speedrun/lab/lab.sh` on port block 9340, which `lab.sh` now takes from the
+environment (defaults unchanged):
+
+```
+WEB_PORT=9340 WEB_MANAGEMENT_PORT=9341 HISCORES_WEB_PORT=9342 NODE_PORT=44040 AGENT_PORT=8340 \
+  NODE_TICKRATE=300 speedrun/lab/lab.sh srlab67 'speedrun/lab/probe-engine.ts:--n=3'
+```
+
+Host **bgsrv-mac** (macOS arm64, load average 2-5 during the runs), stock headless lite client,
+main @ 9c1397eb9, 300 ms ticks, 3 trials per row; all 3 identical unless a range is shown.
+"Tick k" counts published client ticks from the tick on which the burst was fired. Every
+burst was fired from a fresh state tick; the lite client sends FIFO about 20 ms apart.
+
+| Probe | Result | Claim it tests |
+|---|---|---|
+| 5 bury clicks (5 different bones) fired at once | **1** buried (3 of 3) | OPHELD during a `p_delay` is **dropped, not queued** (`OpHeldHandler.ts:16-19`) |
+| one bury click on every tick for 8 ticks | 4 buried, Prayer xp on ticks 2, 4, 6, 8: **every 2 ticks** (3 of 3) | `p_delay(0)` held op repeats every 2 ticks (section 2.3, `bury_bone.rs2:8-10`) |
+| 10 herb identifies (OPHELD1, delay-free) fired at once | all **10** identified: **5** on tick 1, **5** on tick 2 (3 of 3) | 5 accepted USER events per tick; the excess is **buffered** to the next tick, not dropped (`NetworkPlayer.ts:69`) |
+| bury + 4 identifies in one burst | 1 buried, **0** identified (3 of 3) | the delay blocks a different item through the same packet type |
+| 10 Charge casts (IF_BUTTON 1193) fired at once (Magic 99, `%magearena` 8, runes) | all **10** cast: **5 + 5** over two ticks; 4,500 Magic xp each (1,800 tenths x `NODE_XPRATE` 25) | Charge has no cooldown and runs at the 5-event cap (`charge.rs2`) |
+| fly fishing (Barbarian Village, Fishing 99) clicked once, then 4 Charges every 3 ticks for 43 ticks, never re-clicking the spot | fishing kept going: **7** catches; 52 of 52 casts landed; Magic and Fishing xp rose on the **same tick** 3, 2 and 2 times | overlap O3: an overlay-tab IF_BUTTON does not cancel the interaction, and both grant xp in one tick |
+| control: one herb identify (OPHELD) while fishing | **0** catches in the next 25 ticks (3 of 3) | an OPHELD cancels the interaction (`OpHeldHandler.ts:55`) |
+| 5 wines (OPHELDU grapes on jug) fired at once | **5** made on tick 1 | wine making is delay-free |
+| 5 wines, 10 ticks later 5 more, then `::setstat cooking 1` | all 10 fermented **21** ticks after the second burst (32 after the first); 4-6 wines and 4-6 bad wines per trial | each new wine **restarts** the 20-tick timer (`Player.ts:985-996`); the timer fired after the level was lowered |
+| 3 wines, then a level-up chat (`::advancestat woodcutting 2`) held open until tick 30 | fermented on tick **32-33**, 2-3 ticks after the dialog was dismissed, not at tick ~21 | a normal timer needs `canAccess()`: any open modal holds it (`Player.ts:1010`) |
+| bank open (Varrock west), then OPHELD bury on inventory slot (component 3214) | **accepted**: the bank closed and the bone was buried, Prayer xp granted (3 of 3) | inventory ops while banking (section 6, item 1) |
+
+What the wine rows do not show: the Cooking level and xp read from the state at the fermentation
+tick were not consistent with either "the level was 1" or "the level was 35" (the stats seem to
+publish a tick after the inventory change), so **"no Cooking check at fermentation" stays
+read** (`wine.rs2:22-70` has no `stat` test). The timing rows are measured.
+
+**Lab gotchas found on the way** (measured):
+
+- A bot made by `bots/create-bot.ts` is still in the tutorial: its side tabs (inventory, magic,
+  prayer, ...) are not set, so the server refuses **every** held op and tab button as
+  "component not visible" (`Player.ts:2185-2187`), silently, while NPC ops still work. The first
+  run of these probes showed exactly that (0 of every held op). Tabs are set at login off
+  Tutorial Island (`content/login_logout/login.rs2:84-89, 95-118`), so `probe-engine.ts` first does
+  `::setvar tutorial 1000`, a teleport and a relog (`--setup=0` skips it).
+- The lab and the demo both run `NODE_XPRATE=25` (`util/WorldConfig.ts:102`, `fly.toml:27`), so a
+  single fermented jug at Cooking 1 is worth many levels, and the level-up dialogs it queues then
+  hold every later normal timer until they are answered (the row above).
+
+Not probed (read only): refused USER events are budget-free (the lite client's 20 ms pacing
+smears any burst across tick boundaries, so a clean test needs a raw socket); CLOSE_MODAL and
+IF_BUTTON during a delay; OPHELD on a main-modal component.
