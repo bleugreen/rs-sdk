@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import type { NearbyPlayer } from '../../sdk/types';
 import type { GiverStatus } from './altar-cue';
 import { giverOptions } from './altar-giver';
-import { roomTiles } from './altar-room';
+import { count, ESSENCE, findItem, roomTiles } from './altar-room';
 import { chooseBatch, planTurns } from './altar-receiver';
 
 const status = (account: string, over: Partial<GiverStatus> = {}): GiverStatus => ({
@@ -87,5 +87,25 @@ describe('giver options', () => {
         expect(() => giverOptions({ slot: 3 })).toThrow();
         expect(() => giverOptions({ schedule: 'fast' })).toThrow();
         expect(() => giverOptions({ restock: { kind: 'teleport' } })).toThrow();
+    });
+});
+
+describe('carried items', () => {
+    const inv = (items: [number, string, number][]) =>
+        ({ inventory: items.map(([id, name, n], slot) => ({ slot, id, name, count: n, optionsWithIndex: [] })) }) as never;
+    const AIR = /^air talisman$/i;
+
+    test('notes are not a load: 200 noted essence and a noted talisman count as none', () => {
+        const s = inv([[1437, 'Rune essence', 200], [1439, 'Air talisman', 1]]);
+        expect(count(s, ESSENCE)).toBe(0);
+        expect(count(s, AIR)).toBe(0);
+        expect(findItem(s, ESSENCE)).toBeUndefined();
+    });
+
+    test('real items count, and the slot to offer is a real one even behind a note', () => {
+        const s = inv([[1437, 'Rune essence', 50], [1438, 'Air talisman', 1], ...Array.from({ length: 27 }, () => [1436, 'Rune essence', 1] as [number, string, number])]);
+        expect(count(s, ESSENCE)).toBe(27);
+        expect(count(s, AIR)).toBe(1);
+        expect(findItem(s, ESSENCE)?.slot).toBe(2);
     });
 });
