@@ -626,7 +626,10 @@ async function main(argv: string[]): Promise<number> {
         if (!a.forceGate) {
             for (const r of refusal) console.error(`[rehearse] REFUSED: ${r}`);
             console.error('[rehearse] nothing was logged in for the attempt; re-read the gate and run again (or --force-gate)');
-            if (gateTab) await logoutClean(gateTab).catch(() => {}), await closeSession(gateTab);
+            if (gateTab) {
+                await logoutClean(gateTab).catch(() => {});
+                await closeSession(gateTab);
+            }
             return 3;
         }
         for (const r of refusal) console.warn(`[rehearse] --force-gate: starting anyway: ${r}`);
