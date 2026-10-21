@@ -1,0 +1,1 @@
+FAIL (burst): a 59/60 ok; b frame interval p90 373 max 688 fail; c 14 catch-ups in 1.2 min = 10.8/min fail

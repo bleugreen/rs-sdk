@@ -1,0 +1,2 @@
+probe start 2026-10-21 10:47:30 PDT: bun docs/speedrun/scripts/tickmanip-cycle.ts "$BOT" --mode=tree-base --demo --rolls="$PLAIN_ROLLS" --log="$OUT/knife/r1-plain.log"
+probe end 2026-10-21 10:47:30 PDT, exit 1

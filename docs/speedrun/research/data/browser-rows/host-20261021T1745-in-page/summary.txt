@@ -1,0 +1,23 @@
+session /home/ubuntu/rs130/out/20261021T1745-in-page exit 1
+browser page from main @ ae6d5664d, probes from 5ed37d629
+gate: FAIL (burst): a 57/60 fail; c 11 catch-ups in 1.2 min = 8.7/min fail; b (context) frame interval p90 366 max 715
+react delay +0 ms: ticks {"1":57,"2":3}  reactMs p10 0.2 p50 0.2 p90 0.3 max 0.8 (n=60)
+latency in ticks (in-page probe, label of the step - label sent): 1:53 2:7  (60 trials, 0 lost, 67 ticks)
+on time 53/60
+decoded tick interval ms in the page: p10 185 p50 285 p90 443 max 535 (n 67)
+server frame interval ms in the page: p50 290 p90 450 max 535, catch-ups 0 (0.0/min), under 150 1, over 350 19
+page publication interval ms: p50 290 p90 450 max 535
+-- frames browser-probe
+window 2026-10-21T17:47:08.733Z - 2026-10-21T17:47:29.884Z: 311 frames
+tick output arrival interval ms: p10 83 p50 152 p90 242 max 416 (n 131); catch-ups 0 in 0.3 min
+game packet out, ms after its tick's output arrived: p10 1 p50 1 p90 140 max 271 (n 106)
+-- frames knife
+window 2026-10-21T17:47:29.890Z - 2026-10-21T17:47:30.259Z: 4 frames
+tick output arrival interval ms: p10 171 p50 171 p90 171 max 171 (n 1); catch-ups 0 in 0.0 min
+game packet out, ms after its tick's output arrived: none
+-- frames plain
+window 2026-10-21T17:47:30.265Z - 2026-10-21T17:47:30.639Z: 3 frames
+tick output arrival interval ms: none; catch-ups 0 in 0.0 min
+game packet out, ms after its tick's output arrived: p10 73 p50 73 p90 73 max 73 (n 1)
+-- knife/plain
+players end 1616

@@ -1,0 +1,52 @@
+{
+  "time_pdt": "2026-10-21 09:51 PDT",
+  "edge_region": "iad",
+  "app_region": "iad",
+  "app_dc": "iad2",
+  "mrtt_ms": null,
+  "near_ashburn": true,
+  "players_online": 1692,
+  "runner": {
+    "azure": {
+      "location": "eastus",
+      "vmSize": "Standard_D4ads_v5",
+      "zone": ""
+    },
+    "ipinfo": {
+      "ip": "52.150.30.135",
+      "city": "Dulles Town Center",
+      "region": "Virginia",
+      "country": "US",
+      "org": "AS8075 Microsoft Corporation"
+    }
+  },
+  "http_ms": {
+    "samples": 20,
+    "tcp_connect": {
+      "p50": 2,
+      "p90": 3
+    },
+    "tls_done": {
+      "p50": 25,
+      "p90": 26
+    },
+    "ttfb_404": {
+      "p50": 99,
+      "p90": 322
+    }
+  },
+  "flyio_debug": {
+    "n": "edge-dp-ash2-b91e",
+    "nr": "iad",
+    "ra": "52.150.30.135",
+    "rf": "Verbatim",
+    "sr": "iad",
+    "sdc": "iad2",
+    "sid": "82962dc77ee3e8",
+    "st": 20,
+    "nrtt": 0,
+    "bn": "worker-cf-iad2-ce4c",
+    "mhn": null,
+    "mrtt": null
+  }
+}
