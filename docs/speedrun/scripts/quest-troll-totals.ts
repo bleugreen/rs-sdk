@@ -23,7 +23,7 @@ interface Step {
     q: 'DP' | 'TS' | 'TR';
     what: string;
     talk?: string | string[];
-    walk?: number | [XY, XY];
+    walk?: number | [XY, XY] | Array<number | [XY, XY]>;
     act?: number;
     wait?: number;
     fight?: number;
@@ -76,13 +76,13 @@ const STEPS: Step[] = [
     { q: 'TS', what: 'North door, run to the troll pass', walk: 10 + 12, act: 3, label: 'measured walks; door inferred' },
     { q: 'TS', what: 'Pass tunnel, round the Trollheim rockslide on x=2913, stronghold door', walk: 110, label: 'measured (ts_pass)' },
     { q: 'TS', what: 'Kill a Troll General, pick up the prison key', fight: 112, label: 'measured, 70 melee + Protect from Melee, n=3 (103-127)' },
-    { q: 'TS', what: 'North stairs to level 1, prison door (10 -> 30... 20 -> 30), stairs to level 0, run to Twig', walk: 10 + 4 + 5 + 3 + 4 + 19, act: 3, label: 'measured (ts_in); prison door inferred' },
+    { q: 'TS', what: 'North stairs to level 1, prison door (20 -> 30), stairs to level 0, run to Twig', walk: 10 + 4 + 5 + 3 + 4 + 19, act: 3, label: 'measured (ts_in); prison door inferred' },
     { q: 'TS', what: 'Pickpocket Twig for cell key 1 (Thieving 30, stat_random 60/300)', act: 3, label: 'inferred; 89% at Thieving 70, see Risks' },
     { q: 'TS', what: 'Unlock Godric\'s cell (30 -> 40)', act: 2, talk: '1c', label: 'read (quest_troll.rs2:241-309)' },
     { q: 'TS', what: 'Games necklace to Burthorpe, run to Dunstan', act: NECKLACE, walk: [COURTYARD, DUNSTAN], label: 'inferred' },
     { q: 'TS', what: 'Dunstan: Godric is home, quest complete (40 -> 50); close the scroll', talk: '4c', act: 2, label: 'read' },
     // ---------------- Troll Romance ----------------
-    { q: 'TR', what: 'Dunstan to the Death Plateau rocks, up, rockslides to the secret door, in, to Ug', walk: [[2919, 3573], DP_ROCKS], act: 5 + 18 + 2 + 20 + 2 + 15 + 1 + 18, label: 'measured legs (walk.ts); Dunstan -> rocks pathfinder' },
+    { q: 'TR', what: 'Dunstan to the Death Plateau rocks, up, rockslides to the secret door, in, to Ug', walk: [[[2919, 3573], DP_ROCKS], 18 + 20 + 15 + 18], act: 5 + 2 + 2 + 1, label: 'measured legs (walk.ts); Dunstan -> rocks pathfinder' },
     { q: 'TR', what: 'Ug: "Awww, you poor troll...", "Don\'t worry now, I\'ll see what I can do." (0 -> 5)', talk: '2c,o,3c,o,4c', label: 'read' },
     { q: 'TR', what: 'Run to Aga', walk: 21, label: 'measured (stile_to_ug)' },
     { q: 'TR', what: 'Aga: "So... how\'s your... um... love life?", "Errr... I\'ve got to go." (5 -> 10)', talk: '1c,o,9c,o,1c', label: 'read' },
@@ -92,10 +92,10 @@ const STEPS: Step[] = [
     { q: 'TR', what: 'Dunstan: "I need a sled!!", "Yes." (15 -> 20)', talk: '2c,o,1c,o,8c', label: 'read' },
     { q: 'TR', what: 'Dunstan again with yew logs, iron bar, rope: sled (20 -> 22); walk off at the menu', talk: '4c,s,2c', label: 'read' },
     { q: 'TR', what: 'Swamp tar on bucket of wax (cake tin held), wax on sled (22 -> 25)', act: 4, label: 'inferred, 2 item uses' },
-    { q: 'TR', what: 'To the Death Plateau rocks, secret door, through the stronghold to the level 2 top door', walk: [[2919, 3573], DP_ROCKS], act: 5 + 18 + 2 + 20 + 2 + 15 + 1 + 37 + 4 + 3 + 3 + 5 + 4 + 10 + 2, label: 'measured legs (walk.ts ts_in reversed); stronghold doors inferred' },
+    { q: 'TR', what: 'To the Death Plateau rocks, secret door, through the stronghold to the level 2 top door', walk: [[[2919, 3573], DP_ROCKS], 18 + 20 + 15 + 37 + 3 + 5 + 10], act: 5 + 2 + 2 + 1 + 4 + 3 + 4 + 2, label: 'measured legs (walk.ts ts_in reversed); stronghold doors inferred' },
     { q: 'TR', what: 'Trollheim to the ice cave, crevasse, sled start; wield sled, ride 1 (Agility 28)', walk: 88 + 48 + 18 + 6, act: 1 + 2 + 2 + 21, label: 'measured (trollweiss leg)' },
     { q: 'TR', what: 'Pick the Trollweiss (25 -> 30)', act: 3, label: 'inferred, p_delay(0)' },
-    { q: 'TR', what: 'Games necklace to Burthorpe, to the rocks, secret door, Ug', act: NECKLACE + 5 + 18 + 2 + 20 + 2 + 15 + 1 + 18, walk: [COURTYARD, DP_ROCKS], label: 'measured legs; necklace inferred' },
+    { q: 'TR', what: 'Games necklace to Burthorpe, to the rocks, secret door, Ug', act: NECKLACE + 5 + 2 + 2 + 1, walk: [[COURTYARD, DP_ROCKS], 18 + 20 + 15 + 18], label: 'measured legs; necklace inferred' },
     { q: 'TR', what: 'Ug: flower (30 -> 35)', talk: '10c', label: 'read' },
     { q: 'TR', what: 'Run to Arrg; "I am here to kill you!"; fight in the arena (35 -> 40)', walk: 16, fight: 144, label: 'measured, 70 melee + Protect from Melee, n=3 (125-161), includes the talk' },
     { q: 'TR', what: 'Arena west door, climbing rocks, rockslide, secret door, Ug', walk: 105, label: 'measured (arena_to_ug)' },
@@ -114,14 +114,22 @@ function parse(r: string) {
 }
 
 initPathfinding();
-function walkTicks(w: Step['walk']): { ticks: number; tiles: string } {
-    if (w === undefined) return { ticks: 0, tiles: '' };
-    if (typeof w === 'number') return { ticks: w, tiles: 'measured' };
-    const [a, b] = w;
+function routeTicks(a: XY, b: XY): { ticks: number; tiles: number } {
     const p = findLongPath(a[2] ?? 0, a[0], a[1], b[0], b[1], 3000);
     let s = 0, px = a[0], pz = a[1];
     for (const q of p) { s += Math.max(Math.abs(q.x - px), Math.abs(q.z - pz)); px = q.x; pz = q.z; }
-    return { ticks: Math.ceil(s / 2) + 1, tiles: `${s} tiles` };
+    return { ticks: Math.ceil(s / 2) + 1, tiles: s };
+}
+function walkTicks(w: Step['walk']): { ticks: number; tiles: string } {
+    if (w === undefined) return { ticks: 0, tiles: '' };
+    if (typeof w === 'number') return { ticks: w, tiles: 'measured' };
+    const parts: Array<number | [XY, XY]> = typeof w[0] === 'number' || (Array.isArray(w[0]) && typeof w[0][0] === 'number') ? [w as [XY, XY]] : (w as Array<number | [XY, XY]>);
+    let ticks = 0, tiles = 0, measured = 0;
+    for (const part of parts) {
+        if (typeof part === 'number') { ticks += part; measured += part; }
+        else { const r = routeTicks(part[0], part[1]); ticks += r.ticks; tiles += r.tiles; }
+    }
+    return { ticks, tiles: tiles ? `${tiles} route tiles${measured ? ` + ${measured} measured` : ''}` : 'measured' };
 }
 
 const md = process.argv.includes('--md');
