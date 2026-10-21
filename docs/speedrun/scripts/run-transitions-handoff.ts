@@ -65,6 +65,10 @@ for (const onPile of [false, true]) {
         for (let i = 0; i < n; i++) {
             await clear(recv);
             await clear(giver);
+            // leftovers from a failed sample would count as revealed drops
+            await tele(recv.sdk, dx, dz);
+            for (const g of recv.sdk.getState()!.groundItems.filter((q) => q.x === dx && q.z === dz)) { void recv.sdk.sendPickup(g.x, g.z, g.id); await waitTicks(recv.sdk, 2); }
+            await clear(recv);
             await tele(giver.sdk, dx, dz);
             await tele(recv.sdk, onPile ? dx : dx + 1, dz);
             await give(giver.sdk, DROP_ITEMS.slice(0, k), 1);
@@ -80,13 +84,19 @@ for (const onPile of [false, true]) {
             }
             const revealAfter = recv.sdk.getState()!.tick - t0;
             await nextTick(recv.sdk);
+            // A pickup is an interaction, and a newer interaction replaces an older one, so a burst
+            // of k pickups takes only the last: pick up one item at a time, each on its arrival.
             const r = await sample(log, recv, `drop pickup ${k} item(s), receiver ${onPile ? 'on the pile' : 'on the next tile'}`, async () => {
-                const piles = recv.sdk.getState()!.groundItems.filter((g) => g.x === dx && g.z === dz);
-                for (const p of piles) void recv.sdk.sendPickup(p.x, p.z, p.id);
                 const ts = recv.sdk.getState()!.tick;
-                while (recv.sdk.getState()!.inventory.length < k) {
-                    if (recv.sdk.getState()!.tick - ts > 30) return { ok: false, reason: 'not all picked up' };
-                    await nextTick(recv.sdk);
+                for (let got = 0; got < k; got++) {
+                    const p = recv.sdk.getState()!.groundItems.find((g) => g.x === dx && g.z === dz);
+                    if (!p) return { ok: false, reason: 'pile gone' };
+                    const before = recv.sdk.getState()!.inventory.length;
+                    void recv.sdk.sendPickup(p.x, p.z, p.id);
+                    while (recv.sdk.getState()!.inventory.length <= before) {
+                        if (recv.sdk.getState()!.tick - ts > 30) return { ok: false, reason: 'not all picked up' };
+                        await nextTick(recv.sdk);
+                    }
                 }
                 return { ok: true };
             }, { k, onPile });
