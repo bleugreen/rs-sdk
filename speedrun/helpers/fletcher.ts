@@ -574,7 +574,7 @@ class Fletcher {
         let lastReport = 0;
         const report = () => {
             const held = holdings();
-            const hours = since ? Math.max(((this.tick() - since.tick) * 0.6) / 3600, 1e-6) : 0;
+            const hours = since ? Math.max(((this.tick() - since.tick) * 0.3) / 3600, 1e-6) : 0;
             const perHour = since ? Object.fromEntries(lines.map(l => [l.item, Math.round((held[l.item]! - since!.held[l.item]!) / hours)])) : {};
             this.ctx.log('camp holdings', { held, perHour, hours: +hours.toFixed(2), coins: this.held(COINS) });
             lastReport = this.tick();
