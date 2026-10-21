@@ -13,7 +13,7 @@ function journal(title: string, text: string, tick = 100, open = true): QuestJou
     return { title, lines, open, tick };
 }
 
-const ELENA_MUD = "Edmond has asked me to get some help. @str@I need to get some Dwellberries for Alrena. I need to use Water to soften the ground near the sewer.";
+const ELENA_MUD = 'Edmond has asked me to help find his daughter. @str@Alrena has made me a gas mask. I need to use Water to soften the ground near the sewer.';
 
 describe('questStatus', () => {
     test('reads the tab, missing means not started', () => {
