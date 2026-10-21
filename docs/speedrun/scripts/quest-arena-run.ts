@@ -46,7 +46,8 @@ await runScript(async ({ bot, sdk }) => {
     const armour: [string, number][] = DEF >= 40 ? [['rune_kiteshield', 1], ['rune_platelegs', 1]] : [];
     await setup(sdk, {
         stats: { attack: ATT, strength: STR, defence: DEF, hitpoints: HP, thieving: 1, prayer: PRAYER, magic: MAGIC },
-        give: [...weapons, ...armour, ['coins', 10], ['swordfish', 20], ...(PPOTS ? [['4doseprayerrestore', PPOTS] as [string, number]] : [])],
+        // 28 slots: leave room for the Khazard helmet, armour and cell keys given at --from 3/5
+        give: [...weapons, ...armour, ['coins', 10], ['swordfish', Math.min(20, 22 - weapons.length - armour.length - PPOTS)], ...(PPOTS ? [['4doseprayerrestore', PPOTS] as [string, number]] : [])],
     });
     for (const re of [...(SPELL ? [/staff of fire/i, /amulet of magic/i] : [/rune scimitar/i, /amulet of power/i]), ...(DEF >= 40 ? [/rune kiteshield/i, /rune platelegs/i] : [])]) await wear(sdk, re);
     console.log('worn:', sdk.getState()!.equipment.map(e => e.name).join(', '), '| style:', JSON.stringify(sdk.getState()!.combatStyle));

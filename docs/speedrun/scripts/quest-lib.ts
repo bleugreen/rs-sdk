@@ -366,7 +366,7 @@ export async function fight(sdk: BotSDK, c: Counts, re: RegExp, o: { food?: RegE
         ...(o.prayer ? { prayerUsed, prayerDoses: doses0 - doses(s) } : {}),
     });
     let target: NearbyNpc | null = null;
-    let lastAttack = -10;
+    let lastAttack = -10, lastDealt = t0;
     let s = sdk.getState()!;
     if (o.prayer && !sdk.isPrayerActive(o.prayer)) await sdk.sendTogglePrayer(o.prayer).catch(() => {});
     while (s.tick - t0 < (o.maxTicks ?? 600)) {
@@ -383,7 +383,7 @@ export async function fight(sdk: BotSDK, c: Counts, re: RegExp, o: { food?: RegE
             const k = `${e.tick}:${e.type}:${e.damage}:${e.sourceIndex}:${e.targetIndex}`;
             if (seen.has(k) || e.tick < t0) continue;
             seen.add(k);
-            if (e.type === 'damage_dealt') { dealt += e.damage; hits++; }
+            if (e.type === 'damage_dealt') { dealt += e.damage; hits++; lastDealt = e.tick; }
             if (e.type === 'damage_taken') taken += e.damage;
             if ((e.type === 'damage_dealt' || e.type === 'damage_taken') && engagedTick < 0) engagedTick = e.tick;
         }
@@ -403,7 +403,9 @@ export async function fight(sdk: BotSDK, c: Counts, re: RegExp, o: { food?: RegE
             await sdk.sendSpellOnNpc(npc.index, o.spell).catch(() => {});
             c.interactions++;
             lastAttack = s.tick;
-        } else if (npc && !o.spell && o.attack !== false && !(s.player?.combat.inCombat) && s.tick - lastAttack > 4) {
+        } else if (npc && !o.spell && o.attack !== false && (!(s.player?.combat.inCombat) || (o.prayer && s.tick - lastDealt > 8)) && s.tick - lastAttack > 4) {
+            // Under a protect prayer the npc's blocked swings need not trigger auto-retaliate, so
+            // "in combat" can mean only that we are being attacked: re-attack if we have not hit lately.
             await sdk.sendInteractNpc(npc.index, 2).catch(() => {});
             c.interactions++;
             lastAttack = s.tick;
