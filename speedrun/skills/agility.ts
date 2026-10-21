@@ -272,7 +272,7 @@ async function leave(ctx: StepContext<unknown>, o: AgilityOptions): Promise<void
 }
 
 function foodSlot(s: BotWorldState, food: string | undefined): { slot: number; op: number } | null {
-    const re = new RegExp(food ?? '^(shark|lobster|swordfish|monkfish|tuna|salmon|trout|cake|2/3 cake|slice of cake)$', 'i');
+    const re = new RegExp(food ?? '^(shark|lobster|swordfish|monkfish|tuna|salmon|trout|shrimps|bread|cake|2/3 cake|slice of cake)$', 'i');
     const it = s.inventory.find(i => re.test(i.name));
     if (!it) return null;
     return { slot: it.slot, op: it.optionsWithIndex?.find(x => /^eat$/i.test(x.text))?.opIndex ?? 1 };

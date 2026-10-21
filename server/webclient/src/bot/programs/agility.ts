@@ -190,7 +190,7 @@ export function createAgility(params: ProgramParams): TickProgram {
     if (laps === Infinity && maxTicks === Infinity && untilLevel === Infinity) throw new Error('give laps, maxTicks or untilLevel');
     const technique = oneOf(params.technique, ['react', 'plain'] as const, 'react', 'technique');
     const settleTicks = num(params.settleTicks, 1, 'settleTicks');
-    const foodRe = regex(params.food, '^(shark|lobster|swordfish|monkfish|tuna|salmon|trout|cake|2/3 cake|slice of cake)$', 'food');
+    const foodRe = regex(params.food, '^(shark|lobster|swordfish|monkfish|tuna|salmon|trout|shrimps|bread|cake|2/3 cake|slice of cake)$', 'food');
     const eatBelow = num(params.eatBelow, 0, 'eatBelow');
     const eatGap = num(params.eatGap, 3, 'eatGap');
     const stepTimeout = num(params.stepTimeout, 80, 'stepTimeout');
