@@ -43,7 +43,7 @@ every sample). Plan it as a by-product:
 | Quest | Hitpoints (base, read) |
 |---|---|
 | Monkey Madness option 1 / 2 | 35,000 / 20,000 (`mm_daero.rs2:298,307`); option 1 on route |
-| Witch's House (off route: Druidic Ritual replaced it in Package B's filler at 01:20) | 6,325 (`quest_ball.rs2:202`, via rs/3 `quest_points.md`) |
+| Witch's House (off route: Druidic Ritual took its quest points at 01:20) | 6,325 (`quest_ball.rs2:202`, via rs/3 `quest_points.md`) |
 | The Fremennik Trials (off route) | 2,812.4 (`quest_viking.rs2:138`) |
 
 An account starts at level 10 (39.2 base). On the route the pre-MM spell fights add about

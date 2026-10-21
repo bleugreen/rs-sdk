@@ -262,9 +262,8 @@ is worth most while Thieving is low (rs/3 README section 4). So no enchant can b
 |---|---|---|
 | Enchants | ~80 stuns, ~150-170 casts, ~450 ticks | **0** |
 | Dragon bones (1.96 per stun, measured) | ~20 stuns, ~40 bones, ~80 ticks | **~100 stuns, ~196 bones: ~392 bury ticks + ~7 bank visits (~28), so ~400-420 ticks** |
-| Enchant recovery cost (~1 tick per enchant stun, measured) | ~80 ticks lost | 0 |
 | Top-up trades (not absorbed) | ~8 | ~8 (bones at ~24 per load, ~12 stuns each) |
-| **Standalone ticks absorbed** | **~530** (~450 net of the recovery) | **~400-420** |
+| **Standalone ticks absorbed** | **~530** | **~400-420** |
 
 The measured per-stun figures are unchanged; only the allocation moves. Prayer's other ~348
 bones (555 - 11 early - 196) can still ride un-manipulated 4-tick Woodcutting or 5-tick fly

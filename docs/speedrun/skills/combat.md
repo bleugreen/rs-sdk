@@ -44,9 +44,10 @@ plan assumed. The gap has three causes, all read from source and confirmed by th
 
 **On the route: rs/3's Package B** (`docs/speedrun/quests/README.md` and
 `pre_mm_fights.md` on cairn://p/rs/3/1/coordinator; decided 01:08, README being finalised by
-cairn://p/rs/80). Waterfall is off. Dragon Slayer is on after Monkey Madness option 1, with 15
-QP of filler (Goblin Diplomacy, Romeo & Juliet, Cook's Assistant and Druidic Ritual; Druidic
-Ritual replaced Witch's House at 01:20 as Herblore's mandatory unlock). Merlin's
+cairn://p/rs/80). Waterfall is off. Dragon Slayer is on after Monkey Madness option 1, with the
+quest points it needs from Goblin Diplomacy, Romeo & Juliet and Cook's Assistant (the filler) plus
+Druidic Ritual (counted separately, as Herblore's mandatory unlock; it displaced Witch's House
+at 01:20). Merlin's
 Crystal and Holy Grail are off. The pre-MM fights (Khazard warlord, black demon, Fight Arena)
 are **cast, not meleed**, so they give Magic and Hitpoints but no Strength or Defence
 (`pre_mm_fights.md` section 1). The account reaches the cannon session and MM at Attack 99,
@@ -340,8 +341,8 @@ Whether delay-free helper actions could ride the cannon + knives phase is unmeas
 | Tree Gnome Village | Attack 11,450 | `quest_tree.rs2:98` |
 | Holy Grail (off route) | Defence 15,300 | `quest_grail.rs2:117` |
 | Dragon Slayer (**on route**, Package B, after MM) | Strength 18,650, Defence 18,650 | `quest_dragon.rs2:33-34` |
-| Goblin Diplomacy, Romeo & Juliet, Cook's Assistant, Druidic Ritual (Package B filler) | no combat xp | rs/3 `quest_points.md` |
-| Witch's House (off route: replaced in the filler by Druidic Ritual) | Hitpoints 6,325 | `quest_ball.rs2:202` (via rs/3 `quest_points.md`) |
+| Goblin Diplomacy, Romeo & Juliet, Cook's Assistant (Package B filler); Druidic Ritual (mandatory Herblore unlock) | no combat xp | rs/3 `quest_points.md` |
+| Witch's House (off route: Druidic Ritual took its quest points) | Hitpoints 6,325 | `quest_ball.rs2:202` (via rs/3 `quest_points.md`) |
 | Pre-MM fights by spell (not quest rewards) | Hitpoints ~722 in all (warlord 226 m, demon 209 m, Fight Arena ~287 i); no Attack, Strength or Defence | rs/3 `pre_mm_fights.md` section 1 |
 | Haunted Mine | Strength 22,000 | `hauntedmine_crystals.rs2:54` |
 | Death Plateau, Troll Romance (off route) | Attack 3,000; Strength 4,000 | `quest_death.rs2:221`, `quest_troll_love.rs2:304` |

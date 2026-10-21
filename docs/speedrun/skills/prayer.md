@@ -32,7 +32,7 @@ including the bank visit, takes **58 ticks** with a one-click-per-tick loop and
   300 ms, 555 bones). No on-route quest gives Prayer xp: rs/3 dropped Holy
   Grail from the route on 2026-10-20, so the post-quest start *is* level 1.
   That still holds under rs/3's final **Package B** (01:08): Dragon Slayer and its filler
-  (Goblin Diplomacy, Romeo & Juliet, Cook's Assistant, Druidic Ritual) give no Prayer
+  (Goblin Diplomacy, Romeo & Juliet, Cook's Assistant) and Druidic Ritual give no Prayer
   (read, `quest_dragon.rs2:33-34`; rs/3 `quest_points.md`).
 - **Only if Holy Grail returns** (11,000 base, level 80): 402 dragon bones,
   835 ticks (inferred). A measured run from level 80 (10,687 base, so 407
