@@ -350,16 +350,21 @@ trial in the page); the rules live in
 [`speedrun/lib/hostgate-verdict.ts`](../../../speedrun/lib/hostgate-verdict.ts), which imports
 nothing, so the page or the SDK side can call them on the page's numbers.
 
-**Direct-path go/no-go** (cairn://p/rs/tenets/11), measured on the run machine itself, just
-before the run, at the real player count:
+**Direct-path go/no-go** (cairn://p/rs/tenets/11, with main's ruling of 2026-10-21 on the
+defaults), measured on the run machine itself, just before the run, at the real player count:
 
-| Check | Default | Configurable as | On failure |
-|---|---|---|---|
-| Preconditions: Fly edge `nr` and app `sr` both iad, no mesh hop (`mhn`), TCP connect p50 | iad, iad, none, 5 ms | `VantageRule` `edge`, `app`, `maxConnectP50Ms` | named; the probe does not run |
-| (a) reactions on the next tick | at least 58 of 60 (60 is a clean pass; 58-59 starts as `marginal`) | `DirectRule` `floor`, `pass`, `trials` | `investigate` |
-| (b) tick arrival interval p90 over the probe minute | at most 400 ms | `maxTickP90Ms` | `re-measure` (overrun period) |
-| (c) catch-up ticks per probe minute | at most 2 | `maxCatchUpsPerMinute` | `re-measure` (overrun period) |
-| (d) the tab's game-loop rate p10 over the probe minute | at least 50 per second | `minLoopRateP10` | `throttled` |
+| Check | Default | Role | Configurable as | On failure |
+|---|---|---|---|---|
+| Preconditions: Fly edge `nr` and app `sr` both iad, no mesh hop (`mhn`), TCP connect p50 | iad, iad, none, 5 ms | precondition | `VantageRule` `edge`, `app`, `maxConnectP50Ms` | named; the probe does not run |
+| (a) reactions on the next tick | at least 58 of 60 (60 is a clean pass; 58-59 starts as `marginal`) | pass line | `DirectRule` `floor`, `pass`, `trials` | `investigate` |
+| (b) tick arrival interval p90 over the probe minute | at most 400 ms | report only | `maxTickP90Ms`; `tickP90PassLine: true` makes it a pass line | reported; as a pass line, `re-measure` |
+| (c) catch-up ticks per probe minute | at most 2 | pass line, the primary steadiness check | `maxCatchUpsPerMinute` | `re-measure` (overrun period) |
+| (d) the tab's game-loop rate p10 over the probe minute | at least 50 per second | pass line | `minLoopRateP10` | `throttled` |
+
+(b) is report-only because it agreed with (a) on 13 of 15 Ashburn samples, and at least one
+disagreement was (b) passing a bad minute: as an extra pass line it adds nothing (c) does not
+catch and can cost start opportunities. The verdict prints (a) to (d) in that order, each
+marked `pass`, `FAIL`, `report` (`report, over` past its limit) or `not measured`.
 
 A catch-up is an interval under 150 ms immediately after one over 350 ms: the server ran
 late and, on its fixed 300 ms grid, ran the next tick at once, so a reaction to the long tick
@@ -373,7 +378,7 @@ on the direct path (publication time on the relay, which is reference only), and
 Under a minute, the raw count stands against the per-minute limit. The limit of 2 is the
 working value (1 failed a 60 of 60 sample at 1.6 per minute; 2 agreed with (a) on all 15
 Ashburn samples); rs/102 calibrates the final one. The status names the most specific cause:
-(b) or (c) failing reads `re-measure` even when (a) failed with them, because overruns explain
+(c) failing (or (b), as a pass line) reads `re-measure` even when (a) failed with it, because overruns explain
 the misses, and the demo flips in and out of such minutes. (a) failing alone on a steady
 server is a broken host or client, not a cost to model: don't start the knife loops, and
 investigate. (d) is the page's (rs/97 reports its loop rate). An in-process probe has no page
