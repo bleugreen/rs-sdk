@@ -23,8 +23,13 @@
  *                   on a log already on the target tile, e.g. one a helper
  *                   dropped (see firemaking-drop.ts); the client walks there.
  *   --send=K        first light/walk is sent K ticks after the success is
- *                   seen (default 1: the tick the player is still delayed by
- *                   the push, so it is expected to be rejected and resent)
+ *                   seen (default 0: at once; the success message is emitted
+ *                   the tick after the roll, once push_player's p_delay(0)
+ *                   resumes, so the reply lands two ticks after the roll)
+ *   --retry=K       resend a light/walk that has not taken effect after K
+ *                   ticks (default 1, right at 300 ms; at 100 ms the bot's
+ *                   round trip is about 2 ticks, and a premature resend in
+ *                   inv mode drops a second log, counted as logsPerSuccess)
  *   --restock=give|none  inv mode: ::give 27 more logs when out (default
  *                   give; the resupply itself is costed by firemaking-supply.ts)
  *   --out=PATH      JSONL per-tick log
@@ -53,7 +58,8 @@ const FIRES = Number(flag('fires', '27'));
 const [RX, RZ, RLEN] = flag('row', '3019,3361,27')!.split(',').map(Number);
 const ROWS = Number(flag('rows', '2'));
 const MODE = flag('mode', 'inv')!;
-const SEND = Number(flag('send', '1'));
+const SEND = Number(flag('send', '0'));
+const RETRY = Number(flag('retry', '1'));
 const RESTOCK = flag('restock', 'give')!;
 const OUT = flag('out', `${process.env.TMPDIR ?? '/tmp'}/firemaking-line-${BOT}-${LOGS}-${LEVEL}-${MODE}.jsonl`)!;
 const logName = LOGS === 'logs' ? /^logs$/i : new RegExp(`^${LOGS.replace('_logs', '').replace(/_/g, ' ')} logs$`, 'i');
@@ -86,7 +92,8 @@ await runScript(async ({ bot, sdk }) => {
     await sdk.sendSay(`::tele 0,${sx >> 6},${sz >> 6},${sx & 63},${sz & 63}`);
     await waitTicks(3);
     if (LEVEL) { await sdk.sendSay(`::setstat firemaking ${LEVEL}`); await waitTicks(2); }
-    if (!sdk.getState()!.inventory.some(i => /tinderbox/i.test(i.name))) { await sdk.sendSay('::give tinderbox 1'); await waitTicks(2); }
+    await sdk.sendSay('::clearinv'); await waitTicks(2);
+    await sdk.sendSay('::give tinderbox 1'); await waitTicks(2);
     if (MODE === 'inv') { await sdk.sendSay(`::give ${LOGS} 27`); await waitTicks(3); }
     while (sdk.getState()?.dialog.isOpen) { await sdk.sendClickDialog(0); await waitTicks(1); }
 
@@ -103,7 +110,7 @@ await runScript(async ({ bot, sdk }) => {
     let phase: 'idle' | 'pending' = 'idle';
     let notBefore = state.tick + 1;
     let sentAt = -1, sends = 0, walks = 0, restocks = 0, dialogs = 0, setstats = 0, refused = 0;
-    let logsBefore = 0;
+    let logsBefore = 0, logsUsed = 0, prevLogs = -1, walkedAt = -100;
     let successes = 0;
     const rejectedSends: number[] = [];   // per fire: sends that did not take
     let sendsThisFire = 0;
@@ -137,8 +144,10 @@ await runScript(async ({ bot, sdk }) => {
         if (LEVEL && HOLD && level !== LEVEL) { await sdk.sendSay(`::setstat firemaking ${LEVEL}`); setstats++; ev.push('setstat'); }
 
         const logsNow = state.inventory.filter(i => logName.test(i.name)).length;
+        if (prevLogs >= 0 && logsNow < prevLogs) logsUsed += prevLogs - logsNow;
+        prevLogs = logsNow;
         const tinder = state.inventory.find(i => /tinderbox/i.test(i.name));
-        if (phase === 'pending' && MODE === 'inv' && logsNow >= logsBefore && t - sentAt >= 1) phase = 'idle'; // send did not take
+        if (phase === 'pending' && MODE === 'inv' && logsNow >= logsBefore && t - sentAt >= RETRY) phase = 'idle'; // send did not take
         if (phase === 'pending' && MODE === 'ground' && !fresh.length && t - sentAt >= 6) phase = 'idle';
 
         if (phase === 'idle' && t >= notBefore) {
@@ -149,7 +158,7 @@ await runScript(async ({ bot, sdk }) => {
                     if (RESTOCK === 'give') { await sdk.sendSay(`::give ${LOGS} 27`); restocks++; ev.push('restock'); notBefore = t + 2; }
                     else break;
                 } else if (!onTarget) {
-                    await sdk.sendWalk(target[0], target[1], true); walks++; ev.push(`walk(${target})`);
+                    if (t - walkedAt >= RETRY) { await sdk.sendWalk(target[0], target[1], true); walks++; walkedAt = t; ev.push(`walk(${target})`); }
                 } else if (tinder) {
                     const lg = state.inventory.find(i => logName.test(i.name))!;
                     await sdk.sendUseItemOnItem(tinder.slot, lg.slot);
@@ -200,6 +209,8 @@ await runScript(async ({ bot, sdk }) => {
         baseXpGained: +((fm(state).experience - startXp) / 25).toFixed(1), ticksTotal: state.tick - startTick,
         baseXpPerTickFirstToLast: span ? +(((fm(state).experience - startXp) / 25) * ((succ.length - 1) / succ.length) / span).toFixed(2) : null,
         sends, rejectedSendsPerFire: rej, walks, restocks, dialogs, setstats,
+        logsUsed, logsPerSuccess: MODE === 'inv' ? +(logsUsed / Math.max(1, succ.length)).toFixed(3) : null,
+        gapsList: succ.map((e, i) => i ? e.t - succ[i - 1].t : 0).slice(1).join(''),
         levels: [succ[0]?.level, succ.at(-1)?.level], log: OUT,
     }, null, 1));
 }, { timeout: 0, printState: false });
