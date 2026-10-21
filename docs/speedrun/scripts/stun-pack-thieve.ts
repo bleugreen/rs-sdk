@@ -189,7 +189,7 @@ const dmg: Record<number, number> = {};
 let f = -1000, lastStunEnd = -100, lastEat = -100;
 type Load = { bones: number; sharks: number; tier?: string; heads?: number };
 let armed = false, armedAt = -1, reqConfirmed = false, staged = false, stagedLoad: Load = { bones: 0, sharks: 0 };
-let pageOpensIn = 0, pageOpensOut = 0, lastDlg = false;
+let pageOpensIn = 0, pageOpensOut = 0, lastDlg = false, shortTicks = 0;
 let rctx: ReceiverCtx | null = null, rctxStart = -1, rctxTopup: (typeof topups)[number] | null = null;
 let giveRefills = 0, chargeOutSent = 0, setstats = 0;
 let stallStart = -1, aborted: string | undefined;
@@ -301,6 +301,11 @@ function onScored(s: BotWorldState) {
         const d = decideReceiver(s, rctx);
         rctx = d.next;
         const tu = rctxTopup!;
+        // The helper accepted an offer that does not cover the want: it will not change, so
+        // decline now instead of waiting out the timeout with SCORED idle.
+        const tv = tradeOf(s);
+        if (d.action === 'wait' && tv.isOpen && tv.screen === 'offer' && tv.partnerAccepted) shortTicks++; else shortTicks = 0;
+        if (shortTicks >= 2) { void sdk.sendDeclineTrade(); tu.ok = false; tu.reason = 'short offer'; rctx = null; shortTicks = 0; ev.push('t-short'); log({ t, k: t - f, lvl: th.baseLevel, hp, ev, theirs: tv.theirOffer.map(i => `${i.name}x${i.count}`), want: stagedLoad }); return; }
         if (d.action === 'accept') { void sdk.sendAcceptTrade(); ev.push('t-accept'); }
         else if (d.action === 'decline') { void sdk.sendDeclineTrade(); tu.ok = false; tu.reason = d.reason; rctx = null; ev.push('t-decline'); }
         else if (d.action === 'done') { tu.ok = true; tu.doneAt = t; tu.recvTicks = t - rctxStart; rctx = null; armed = false; reqConfirmed = false; staged = false; ev.push('t-done'); }
@@ -498,7 +503,11 @@ function onHelper(hs: BotWorldState) {
         const specs: Array<{ item: RegExp; n: number }> = [{ item: BONE, n: stagedLoad.bones }];
         if (stagedLoad.sharks) specs.push({ item: SHARK, n: stagedLoad.sharks });
         if (stagedLoad.tier && stagedLoad.heads) specs.push({ item: TIER_BY_NAME.get(stagedLoad.tier)!.re, n: stagedLoad.heads });
-        gplan = planOffers(hs.inventory, specs);
+        // One offer press per item. Unstackable bones offered with two presses on the same slot
+        // (Offer-10 then Offer-5) land only the first: the slot is empty once the first ten
+        // leave it. A single All or Offer-X lands the whole count.
+        const one = planOffers(hs.inventory, specs).map(e => (e.amounts.length > 1 ? { ...e, amounts: [e.expected] } : e));
+        gplan = [...one.filter(e => !e.amounts.some(a => a !== -1 && a !== 1 && a !== 5 && a !== 10)), ...one.filter(e => e.amounts.some(a => a !== -1 && a !== 1 && a !== 5 && a !== 10))];
         gctx = newGiverCtx(scored.name, hs.inventory, gplan);
         onHelperGiver(hs);
         return;
