@@ -86,6 +86,7 @@ export class FakeSdk {
     sendAcceptTrade() { return this.record('sendAcceptTrade'); }
     sendDeclineTrade() { return this.record('sendDeclineTrade'); }
     sendCountDialog(value: number) { return this.record('sendCountDialog', value); }
+    sendWalk(x: number, z: number, running = true) { return this.record('sendWalk', x, z, running); }
 }
 
 /** Let queued promise callbacks run. */
