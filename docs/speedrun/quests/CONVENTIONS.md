@@ -156,7 +156,7 @@ the defaults belong to cairn://p/rs/1):
 
 | Child | WEB_PORT | WEB_MANAGEMENT_PORT | HISCORES_WEB_PORT | NODE_PORT | AGENT_PORT |
 |---|---|---|---|---|---|
-| gnome chain (Tree Gnome Village, Grand Tree, Monkey Madness) | 9010 | 9011 | 9012 | 43710 | 7910 |
+| Small self-skill quests (the gnome chain's block, now finished) | 9010 | 9011 | 9012 | 43710 | 7910 |
 | Dragon Slayer and the 32 quest points | 9020 | 9021 | 9022 | 43720 | 7920 |
 | Merlin's Crystal and Holy Grail | 9030 | 9031 | 9032 | 43730 | 7930 |
 | Priest in Peril and Haunted Mine | 9040 | 9041 | 9042 | 43740 | 7940 |
