@@ -12,7 +12,7 @@
 // file write outside the log directory, or a message to the fleet.
 //
 // Run standalone (lite client already running for the account):
-//   ROLE_OPTIONS='{"scoredAccount":"www_cairn_md"}' bun speedrun/helpers/ambassador.ts cairn_md
+//   bun speedrun/helpers/ambassador.ts cairn_md
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runStandalone, type Role, type RoleContext } from './role';
@@ -53,8 +53,6 @@ const ALWAYS_DENIED = ['cairn_md', 'cairn_amb', 'cairn_cam', 'cairn_dot_md', 'ca
 
 export interface AmbassadorOptions {
     post: Post;
-    /** Login name of the scored account the ambassador may mention (e.g. www_cairn_md); unset = never. */
-    scoredAccount?: string;
     model: ModelOptions;
     logDir: string;
     /** Start conversations when chat is quiet (default true). */
@@ -70,7 +68,6 @@ export function ambassadorOptions(o: Record<string, unknown>): AmbassadorOptions
     const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
     return {
         post: { x: num(post?.x, GE_POST.x), z: num(post?.z, GE_POST.z), tolerance: num(post?.tolerance, GE_POST.tolerance) },
-        scoredAccount: typeof o.scoredAccount === 'string' && o.scoredAccount ? o.scoredAccount : undefined,
         model: o.model && typeof o.model === 'object' ? (o.model as ModelOptions) : {},
         logDir: typeof o.logDir === 'string' && o.logDir ? o.logDir : DEFAULT_LOG_DIR,
         initiate: o.initiate !== false,
@@ -470,7 +467,6 @@ export const role: Role = {
         const deny = buildDenyList(listBotNames(o.botsDir), [...ALWAYS_DENIED, ...o.denyExtra]);
         const limiter = new Limiter(parseLimiterState(log.loadState()));
         const model = new ModelClient(o.model, { onSwitch: (from, to) => log.write('model_switch', { from, to }) });
-        const spoken = o.scoredAccount?.replace(/_/g, ' ');
         log.write('start', { account: ctx.account, model: model.label(), post: o.post, initiate: o.initiate, muted: log.muted(), denyNames: deny.squashed.length });
         ctx.log('phase', { phase: 'setup', model: model.label() });
 
@@ -497,7 +493,7 @@ export const role: Role = {
             log,
             limiter,
             deny,
-            system: systemPrompt(persona, { scoredAccount: spoken }),
+            system: systemPrompt(persona),
             selfName: ctx.sdk.getState()?.player?.name ?? ctx.account,
             post: o.post,
             initiate: o.initiate,

@@ -24,8 +24,8 @@ describe('names', () => {
         expect(canon('Cairn H01')).toBe('cairn_h01');
         expect(canon('  cairn_h01 ')).toBe('cairn_h01');
     });
-    test('our own accounts, the operator and the scored account are ours', () => {
-        for (const n of ['Cairn H01', 'cairn_mule1', 'Cairn Md', 'Cairn', 'Www Cairn Md', 'cairn_dot_md']) expect(isOurs(n)).toBe(true);
+    test('our own accounts and the operator are ours', () => {
+        for (const n of ['Cairn H01', 'cairn_mule1', 'Cairn Md', 'Cairn', 'cairn_dot_md']) expect(isOurs(n)).toBe(true);
         for (const n of ['Bob', 'Cairnsy', 'Mr Cairn', 'Www Bob']) expect(isOurs(n)).toBe(false);
     });
 });
@@ -36,7 +36,6 @@ describe('output filter', () => {
             'Hi! I am a bot run by an agent team. More at cairn.md',
             'Gz on 99 fishing! What are you training next?',
             'Lobsters go for about 150 each on the GE today',
-            'Our speedrun account is www cairn md, wish it luck',
             'Hiscores are at rs-sdk-demo.fly.dev/hiscores',
             'Nice try, I only chat :)'
         ]) {
@@ -55,7 +54,7 @@ describe('output filter', () => {
         expect(reason('try ::give coins')).toBe('command');
     });
     test('our account names in any spelling', () => {
-        for (const t of ['ask cairn_h01', 'Cairn H01 is mine', 'cairn h 01', 'talk to cairn mule', 'I am Cairn Md', 'cairn_t27 knows', 'cairnt27']) {
+        for (const t of ['ask cairn_h01', 'Cairn H01 is mine', 'cairn h 01', 'talk to cairn mule', 'I am Cairn Md', 'cairn_t27 knows', 'cairnt27', 'our speedrun account is www cairn md', 'see Www_Cairn on the hiscores', 'our site is cairn md']) {
             expect(reason(t)).not.toBeNull();
         }
         expect(reason('the cairn dot md account')).toBe('scored-spare');

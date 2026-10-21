@@ -26,11 +26,11 @@ The loop polls chat every second. Lines arriving within 3 seconds of the first o
 
 ## Persona
 
-`speedrun/helpers/ambassador/persona.md` is the system prompt: friendly, curious and brief; honest that it is a bot run by an AI agent team; points people to the site as "www cairn md"; talks prices, routes and game facts; congratulates people; asks what other fleets are doing; asks rather than guesses when unsure. Its briefing is a curated list of public facts about the server (300 ms ticks, accelerated XP, infinite run energy, no random events, how the hiscores rank, the Grand Exchange and its 5% seller tax, the SDK, the one-social-packet-per-tick rule). It deliberately does not include `HELPERS.md` or any fleet document: those name our accounts, ranges and host, which is exactly what it must not reveal.
+`speedrun/helpers/ambassador/persona.md` is the system prompt: friendly, curious and brief; honest that it is a bot run by an AI agent team; tells people our website has the same name as the ambassador itself; talks prices, routes and game facts; congratulates people; asks what other fleets are doing; asks rather than guesses when unsure. Its briefing is a curated list of public facts about the server (300 ms ticks, accelerated XP, infinite run energy, no random events, how the hiscores rank, the Grand Exchange and its 5% seller tax, the SDK, the one-social-packet-per-tick rule). It deliberately does not include `HELPERS.md` or any fleet document: those name our accounts, ranges and host, which is exactly what it must not reveal.
 
-The operator decides whether it may name the scored account: the `scoredAccount` role option (login name, e.g. `www_cairn_md`) is spoken as "www cairn md". Without the option it names no account of ours at all.
+**It names no account of ours, the scored account included.** The scored account's name is not chosen before the run and must not be spoken in game or appear in git, so the role has no option for it, the model is never told one, and the output filter refuses our naming scheme in any spelling (a `www`-prefixed name too). A fixed rule in `systemPrompt` (`model.ts`) repeats this whatever the persona says, and `ambassador.test.ts` drives the loop with a model that tries eight spellings of our names and checks that none is sent.
 
-**The demo's word filter stars out web addresses.** "cairn.md" arrives as "********", so the persona writes the site as "www cairn md", which is also the scored account's display name (the account name is the URL). It never writes "cairn dot md": that spells the claimed spare account `cairn_dot_md`, which is never named.
+**The demo's word filter stars out web addresses.** "cairn.md" arrives as "********", so the persona says the site has the same name as the ambassador (its own name is shown above its head) without spelling either out. It never writes "cairn dot md": that spells the claimed spare account `cairn_dot_md`, which is never named.
 
 ## Hard rules and where each is enforced
 
@@ -39,9 +39,9 @@ Everything read from chat is data. It reaches the model only inside the user mes
 | Rule | Enforced in code by |
 |---|---|
 | Never trades, drops, follows, or moves on request | `AmbassadorIO` has no such call. The only movement is `returnToPost()`, checked every 5 minutes and only when more than 10 tiles from the post or off the ground floor, never because of chat. |
-| Never answers our own accounts | `isOurs` (`policy.ts`): every `cairn_*`, `cairn` and `www_cairn_md`. Their lines are logged with `ours: true` and never reach the model. |
+| Never answers our own accounts | `isOurs` (`policy.ts`): every `cairn_*` and `cairn`. Their lines are logged with `ours: true` and never reach the model. |
 | Never names our accounts, hosts, files or secrets | `checkOutput`: our naming scheme in any spelling (`cairn h01`, `cairn_mule1`, `Cairn Md`...), every directory name under `bots/` and the role's `denyExtra` (compared with spaces and punctuation removed), `cairn dot md`, host names and private IPs, file paths and extensions, the words password, api key, ssh, token, secret, credential. |
-| No links but our own | `checkOutput` refuses any URL or domain except `cairn.md`, `www cairn md`, the demo's own hiscores and market pages and the rs-sdk GitHub repo. |
+| No links but our own | `checkOutput` refuses any URL or domain except `cairn.md`, the demo's own hiscores and market pages and the rs-sdk GitHub repo. |
 | Never insults anyone | `checkOutput`'s insult list. A blocked line is logged as `blocked` with the reason, and nothing is sent. |
 | One line, one packet | 80 printable ASCII characters at most (the wire limit), checked by `checkOutput` and again by `AmbassadorIO`, which also refuses `::` (a staff command typed in chat). It sends with `sendSay` / `sendPrivateMessage`, never the chunking `say` / `dm`. |
 | Never spams | `Limiter` (`policy.ts`), persisted in `state.json` so a restart cannot reset it: at least 12 s between any two lines, at most 3 a minute and 40 an hour; at most one reply to a player per 20 s; six replies to one player within 15 minutes puts that player on a 15-minute cooldown (this ends bot-to-bot loops). |
@@ -73,16 +73,15 @@ The ambassador never uses the Claude subscription sign-in or `@cairn/sdk` on bbs
 ### Under the fleet (bbs)
 
 ```sh
-ssh bleu@bbs '~/rs-fleet/speedrun/helpers/fleetctl assign cairn_md ambassador --options "{\"scoredAccount\":\"www_cairn_md\"}" && ~/rs-fleet/speedrun/helpers/fleetctl reload'
+ssh bleu@bbs '~/rs-fleet/speedrun/helpers/fleetctl assign cairn_md ambassador && ~/rs-fleet/speedrun/helpers/fleetctl reload'
 ```
 
-The role sets `readsChat: true` in its `Role` export, so the fleet turns player chat on for this account's SDK (every other role's SDK keeps `showChat: false`). `fleetctl status` shows its phase: `setup`, `listening`, `muted` or `model-down`, refreshed at least every 5 minutes with its counters.
+It needs no options. The role sets `readsChat: true` in its `Role` export, so the fleet turns player chat on for this account's SDK (every other role's SDK keeps `showChat: false`). `fleetctl status` shows its phase: `setup`, `listening`, `muted` or `model-down`, refreshed at least every 5 minutes with its counters.
 
 Options:
 
 | Option | Default | Meaning |
 |---|---|---|
-| `scoredAccount` | unset | Login name of the scored account it may mention (spoken with spaces). Unset: it names none of our accounts. |
 | `post` | `{x: 3181, z: 3443, tolerance: 3}` | Where it stands (the tile beside the GE table). |
 | `initiate` | `true` | Start conversations when chat is quiet. |
 | `model` | Ollama `qwen3.5:27b` | See Model. |
@@ -97,7 +96,7 @@ When it first moves from a development copy into the fleet, copy `state.json` ac
 With its lite client already running against a gateway:
 
 ```sh
-GATEWAY_URL=ws://127.0.0.1:8581 ROLE_OPTIONS='{"scoredAccount":"www_cairn_md"}' bun speedrun/helpers/ambassador.ts cairn_md
+GATEWAY_URL=ws://127.0.0.1:8581 bun speedrun/helpers/ambassador.ts cairn_md
 ```
 
 `runStandalone` forces `showChat` on, since the account's `bot.env` carries `SHOW_CHAT=false`. Ctrl-C stops the role but leaves the account logged in; log it out with the logout button (`sdk.sendClickComponent(2458)`, or `logoutClean` in `speedrun/lib/session.ts`).
@@ -190,7 +189,7 @@ What it said: "Nice try, i only chat" (to the prompt-extraction attempt), "I'm a
 
 ## Live run on the demo
 
-Standalone in the bbs development copy (`~/rs-dev/ambassador`, behind a dev loopback gateway), `qwen3.5:27b`, `scoredAccount: www_cairn_md`, 2026-10-21 07:17 to 11:44 UTC. The role restarted three times in the first 20 minutes for code updates, then ran unattended from 07:36. The lite client dropped once (08:21 to 08:36) and came back through a re-login loop; under the fleet the supervisor does that job. Stopped cleanly at the end: role stopped, account logged out with the logout button.
+Standalone in the bbs development copy (`~/rs-dev/ambassador`, behind a dev loopback gateway), `qwen3.5:27b`, 2026-10-21 07:17 to 11:44 UTC. This run predates the rule that no scored-account name is given out: it still had a since-removed option naming a candidate, and spoke it at most a handful of times. The role restarted three times in the first 20 minutes for code updates, then ran unattended from 07:36. The lite client dropped once (08:21 to 08:36) and came back through a re-login loop; under the fleet the supervisor does that job. Stopped cleanly at the end: role stopped, account logged out with the logout button.
 
 | Measure | Value |
 |---|---|
