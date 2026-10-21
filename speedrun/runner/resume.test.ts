@@ -24,7 +24,7 @@ const world = (lvl: number, px: number, tick = 0): Partial<BotWorldState> => ({
     player: { name: 'lab', x: px, z: 0, worldX: px, worldZ: 0, level: 0 } as PlayerState,
 });
 
-function manifest(journal: { stage: string }, probeCalls: string[]): Step<C>[] {
+function manifest(journal: { stage: string }): Step<C>[] {
     const mineLoop = (label: string) => async ({ sdk, c }: { sdk: RunnerSession['sdk']; c: C }) => {
         c.trace.push(label);
         while (mining(sdk.getState()!) < 5) {
@@ -51,7 +51,7 @@ function manifest(journal: { stage: string }, probeCalls: string[]): Step<C>[] {
             name: 'quest', preconditions: s => x(s) === 20 || 'not at the bank', run: async ({ c }) => { c.trace.push('quest'); journal.stage = 'complete'; }, postconditions: () => true, logoutSafe: true,
             done: o => o.probed.journal === 'complete', probes: ['journal'],
         },
-    ].map(s => s as Step<C>).map(s => ({ ...s, probes: s.probes })).map((s, i, all) => (i === 3 ? { ...s, done: (o: Observation) => { probeCalls.push('read'); return o.probed.journal === 'complete'; } } : all[i]!)) as Step<C>[];
+    ];
 }
 
 function observe(state: Partial<BotWorldState>, journal: string, calls: string[]): Observation {
@@ -60,7 +60,7 @@ function observe(state: Partial<BotWorldState>, journal: string, calls: string[]
 }
 
 describe('resolveResume', () => {
-    const steps = manifest({ stage: '' }, []);
+    const steps = manifest({ stage: '' });
     const c: C = { trace: [], fenced: 0 };
 
     test('a fresh account starts at the first step', async () => {
@@ -158,7 +158,7 @@ function droppingClient(start: Partial<BotWorldState>) {
 describe('runResumable', () => {
     test('a client that drops mid-step comes back rolled back, and the manifest resumes at that step', async () => {
         const journal = { stage: 'not started' };
-        const steps = manifest(journal, []);
+        const steps = manifest(journal);
         const client = droppingClient(world(1, 0, 0));
         const c: C = { trace: [], fenced: 0 };
         const log = TickLog.memory('t');
@@ -205,8 +205,9 @@ describe('runResumable', () => {
         const client = droppingClient(world(5, 20, 0));
         const journal = { stage: 'complete' };
         const c: C = { trace: [], fenced: 0 };
-        const r = await runResumable(client.session, manifest(journal, []), { log: TickLog.memory(), c, link: client.link, shouldStop: () => false, from: 'quest', probes: { journal: async () => journal.stage } });
+        const r = await runResumable(client.session, manifest(journal), { log: TickLog.memory(), c, link: client.link, shouldStop: () => false, from: 'quest', probes: { journal: async () => journal.stage } });
         client.stop();
+        // The walk would have said 'finished' (the journal reads complete); --from wins once.
         expect(c.trace).toEqual(['quest']);
         expect(r.points[0]?.reason).toBe('operator --from');
     });
