@@ -181,7 +181,7 @@ cannot bury while the trade is open. Capacity is therefore (failures - top-ups) 
   waiting out a timeout with nothing sent.
 - The multi-press behaviour comes from `speedrun/lib/items.ts` `amountButtons`, which
   `planOffers` uses for every item. Any helper trade of an unstackable item in a count that is not
-  1, 5, 10 or All is exposed to it (filed as an issue; this lab works around it in its own copy).
+  1, 5, 10 or All is exposed to it (cairn://p/rs/136; this lab works around it in its own copy).
 
 ## 6. Inventory and supply plan
 
