@@ -8,9 +8,10 @@ one row per product). Read-only audit: no server, sdk or lab changes, and no lab
 
 ## Conventions
 
-- **Paths.** Script and config paths are relative to `server/content/scripts/<skill>/`
-  (the skill folder is the row's skill; `general/scripts/xplamp/`, `tutorial/scripts/`,
-  `login_logout/` otherwise). Engine paths are relative to
+- **Paths.** Script and config citations give the bare file name; each name is unique
+  under `server/content/scripts/<skill folder>/` (`scripts/` or `configs/`) for the row's
+  skill, and under `general/scripts/xplamp/`, `tutorial/scripts/` or `login_logout/` for
+  the others. Engine paths are relative to
   `server/engine/src/`, under `network/game/client/handler/` for the handlers and
   `engine/` for `World.ts` and `entity/`.
 - **Base xp** is the script value divided by 10 (scripts award tenths), before the
@@ -37,7 +38,7 @@ These rules turn a script's guards into the "actions per tick" column.
    (`OpHeldUHandler.ts:16`); they do not check for an open modal, and their
    `clearPendingAction()` closes any chat modal such as a level-up dialog. So **an
    item-on-item or item-op grant with no delay on its path fires once per accepted packet,
-   up to 5 per tick** (inferred from the handlers; rs/37 measured it for arrows).
+   up to 5 per tick** (inferred from the handlers; main verified it for rune arrows, per the rs/37 brief).
 3. **Loc, npc and obj interactions run once per tick.** `OpLocUHandler` (and the other
    `Op*` handlers for world entities) only set an interaction (`OpLocUHandler.ts:79`);
    the script runs in the player phase of the world loop (`engine/World.ts:801`). A
