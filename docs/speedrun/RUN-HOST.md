@@ -119,13 +119,13 @@ Write it (`O` is the owner, `M` the bound in minutes). It refuses if someone els
 that has not expired:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'O=rs/NNN-rehearsal; M=30; F=$HOME/host-reserved.json; if [ -f $F ]; then U=$(sed -n "s/.*\"until\": *\"\([^\"]*\)\".*/\1/p" $F); if [ -n "$U" ] && [ $(date -d "$U" +%s) -gt $(date +%s) ] && ! grep -q "\"owner\": *\"$O\"" $F; then echo "host reserved, stop: $(cat $F)"; exit 1; fi; fi; printf "{\"owner\":\"%s\",\"until\":\"%s\",\"reason\":\"%s\"}\n" "$O" "$(date -u -d "now + $M minutes" +%Y-%m-%dT%H:%M:%SZ)" "rehearsal" >$F.tmp && mv $F.tmp $F && cat $F'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'O=rs/NNN-rehearsal; M=30; F=$HOME/host-reserved.json; if [ -f $F ]; then U=$(sed -n "s/.*\"until\": *\"\([^\"]*\)\".*/\1/p" $F); if [ -n "$U" ] && [ $(date -d "$U" +%s) -gt $(date +%s) ] && ! grep -q "\"owner\": *\"$O\"" $F; then echo "host reserved, stop: $(cat $F)"; exit 1; fi; fi; printf "{\"owner\":\"%s\",\"until\":\"%s\",\"reason\":\"%s\"}\n" "$O" "$(date -u -d "now + $M minutes" +%Y-%m-%dT%H:%M:%SZ)" "rehearsal" >$F.tmp && mv $F.tmp $F && cat $F'
 ```
 
 Remove it after teardown (only your own):
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'O=rs/NNN-rehearsal; F=$HOME/host-reserved.json; grep -q "\"owner\": *\"$O\"" $F 2>/dev/null && rm $F; cat $F 2>/dev/null || echo "no host reservation"'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'O=rs/NNN-rehearsal; F=$HOME/host-reserved.json; grep -q "\"owner\": *\"$O\"" $F 2>/dev/null && rm $F; cat $F 2>/dev/null || echo "no host reservation"'
 ```
 
 **Credentials.** No password and no login token is ever a process argument, part of the URL Chrome
@@ -160,6 +160,19 @@ requirement. rs/149's `speedrun/tools/tab-logout.ts`, the interim confirm, reach
 (#140) but not main, since #146 did not carry it. Steps 6 and 8 therefore confirm a tab's logout with
 `logoutClean` itself and the login screen in the live view.
 
+`RUN_COMMIT` must also be at or after three more changes. **rs/174's merge commit** (PR #164, head
+a2a1564cf, merging in main's 16:45 PDT window with rs/183's client fix; named when it lands): `speedrun/lib/tab.ts` `reloadOrOpenTab` closes the old page's gateway socket before
+a navigation, so a relog's first SDK state is at login + 1, not + 19 to + 20; on a commit without it
+a navigated relog pays the twin's ~19-tick gateway takeover (m, rs/174 on the twin against the demo,
+21:58-22:08Z; RUN-ORDER.md section 4). The client's second-login fix it builds on is already on main
+(#155). **#159**, `knife-mine`'s `stay2` bury (rs/182, merged on main at 15:52 PDT), which today's
+stock row prices (RUN-ORDER.md O35). **rs/207's merge commit** (named when it lands; its rebased
+head is 2c9e4da2, merging at 16:45 PDT): `knife-mine` faults instead of slipping forever when a
+restart lands on a depleted iron rock (RUN-ORDER.md R18).
+Main's commits for #155 and #159 are not yet in this repository's store, so each is checked by its
+merge commit once named, the same way as c2d9eada:
+`git -C ~/rs-sdk merge-base --is-ancestor <commit> "$RUN_COMMIT"`.
+
 **Leftover check.** It lists every tmux socket on the host with its sessions, other agents' sockets
 included, plus every `chrome*`, `ffmpeg`, `bun` and `timeout` process with its age, and the host
 reservation. It does not count the gate history timer's processes: they run in
@@ -170,7 +183,7 @@ bound. After teardown expect `no server running` on every socket, no processes a
 reservations:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'for s in /tmp/tmux-$(id -u)/*; do [ -S "$s" ] && echo "tmux -L $(basename $s): $(tmux -S $s ls 2>&1 | tr "\n" " ")"; done; L=; for p in $(pgrep "^(chrome.*|ffmpeg|bun|timeout)$"); do grep -q rs-gate-read.service /proc/$p/cgroup 2>/dev/null || L="$L,$p"; done; if [ -n "$L" ]; then ps -o pid,etime,comm -p "${L#,}"; else echo "no chrome, ffmpeg, bun or timeout process outside the gate timer"; fi; echo "gate timer read: $(systemctl --user is-active rs-gate-read.service)"; cat ~/host-reserved.json 2>/dev/null || echo "no host reservation"'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'for s in /tmp/tmux-$(id -u)/*; do [ -S "$s" ] && echo "tmux -L $(basename $s): $(tmux -S $s ls 2>&1 | tr "\n" " ")"; done; L=; for p in $(pgrep "^(chrome.*|ffmpeg|bun|timeout)$"); do grep -q rs-gate-read.service /proc/$p/cgroup 2>/dev/null || L="$L,$p"; done; if [ -n "$L" ]; then ps -o pid,etime,comm -p "${L#,}"; else echo "no chrome, ffmpeg, bun or timeout process outside the gate timer"; fi; echo "gate timer read: $(systemctl --user is-active rs-gate-read.service)"; cat ~/host-reserved.json 2>/dev/null || echo "no host reservation"'
 ```
 
 ## The host
@@ -178,7 +191,7 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o 
 | | | |
 |---|---|---|
 | Machine | AWS us-east-1c, c7i.2xlarge: 8 vCPU (Xeon Platinum 8488C), 16 GB, 60 GB gp3, **no GPU**, Ubuntu 24.04 | r: main on cairn://p/rs/103, 08:45 and 08:53 PDT 2026-10-21; CPU model m (`/proc/cpuinfo`) |
-| Address | 54.242.152.95; SSH and RDP admit only the operator's address; tailnet name `rs-ashburn` (100.66.164.37) | r: main, same notes |
+| Address | **3.209.186.185**, an Elastic IP (eipalloc-0af65bca5f7a25606), since 23:11Z on 2026-10-21; 54.242.152.95 is released. SSH and RDP admit only the operator's address; tailnet name `rs-ashburn` (100.66.164.37, unchanged); the host key is unchanged (ssh-ed25519 ...WZ0wE). It moved because in 5 of 5 same-second gate pairs the run host failed and the twin passed, and captures showed tick messages held 135-218 ms in Fly's delivery path to the old address on every connection to that machine, with the machine, its TCP stack and the account ruled out (rs/83's demo-latency.md sections 9 and 10, when written) | r: main; the host thread, cairn://p/rs/host, 16:12 PDT |
 | Desktop | XFCE served by xrdp, user `ubuntu`; `max_bpp=24`; sesman `KillDisconnected=false`, `DisconnectedTimeLimit=0`, `IdleTimeLimit=0`, so a disconnected session lives on | m: read from `/etc/xrdp/xrdp.ini` and `sesman.ini`, 16:23 UTC |
 | One desktop per user | a second session (another resolution, say) starts and dies at once, because `xfce4-session` cannot run twice for one user; the old session holds the only desktop. **Changing resolution means ending the session first** | r: main, 09:26 PDT |
 | Screen | screensaver and locker removed, `xset` no-blank at login, logind `IdleAction=ignore` | r: main |
@@ -192,7 +205,7 @@ this exact ssh line (or `speedrun/helpers/ashburn.sh` once rs/41 merges it). Fro
 batch on executor `local`, `bgsrv-mac` or `bgsrv-ub`.
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'uptime'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'uptime'
 ```
 
 **Names and ports.**
@@ -231,27 +244,27 @@ The run-night gate's history accumulates on this host until the scored run, with
 The same commands in this page's ssh form. The journal, the next firing and the latest history file:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'journalctl --user -u rs-gate-read -n 20 --no-pager; systemctl --user list-timers rs-gate-read.timer --no-pager; ls -t ~/gate-history | head -1 | sed "s|^|$HOME/gate-history/|" | xargs -r cat'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'journalctl --user -u rs-gate-read -n 20 --no-pager; systemctl --user list-timers rs-gate-read.timer --no-pager; ls -t ~/gate-history | head -1 | sed "s|^|$HOME/gate-history/|" | xargs -r cat'
 ```
 
 Every 15 minutes from two hours before the start (`--every 30` switches back):
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'bash ~/.local/lib/rs-gate/install.sh --every 15'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'bash ~/.local/lib/rs-gate/install.sh --every 15'
 ```
 
 One read inside your own reservation (`O` is its owner; it waits for the read, at most 270 s):
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'O=rs/NNN; systemctl --user set-environment RS_GATE_OWNER=$O && systemctl --user start rs-gate-read.service; systemctl --user unset-environment RS_GATE_OWNER; ls -t ~/gate-history | head -1'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'O=rs/NNN; systemctl --user set-environment RS_GATE_OWNER=$O && systemctl --user start rs-gate-read.service; systemctl --user unset-environment RS_GATE_OWNER; ls -t ~/gate-history | head -1'
 ```
 
 Pause, resume and remove:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'systemctl --user disable --now rs-gate-read.timer'
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'bash ~/.local/lib/rs-gate/install.sh'
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'bash ~/.local/lib/rs-gate/uninstall.sh'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'systemctl --user disable --now rs-gate-read.timer'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'bash ~/.local/lib/rs-gate/install.sh'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'bash ~/.local/lib/rs-gate/uninstall.sh'
 ```
 
 ## 0. Prepare the checkout (once per run commit)
@@ -263,7 +276,7 @@ from now to the planned start plus 600 (the 9 h bound and an hour's margin). It 
 owner holds a live reservation:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'O=run; M=MINUTES; case "$M" in ""|*[!0-9]*) echo "set M to whole minutes"; exit 1;; esac; F=$HOME/host-reserved.json; if [ -f $F ]; then U=$(sed -n "s/.*\"until\": *\"\([^\"]*\)\".*/\1/p" $F); if [ -n "$U" ] && [ $(date -d "$U" +%s) -gt $(date +%s) ] && ! grep -q "\"owner\": *\"$O\"" $F; then echo "host reserved, stop: $(cat $F)"; exit 1; fi; fi; printf "{\"owner\":\"%s\",\"until\":\"%s\",\"reason\":\"%s\"}\n" "$O" "$(date -u -d "now + $M minutes" +%Y-%m-%dT%H:%M:%SZ)" "scored run" >$F.tmp && mv $F.tmp $F && cat $F'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'O=run; M=MINUTES; case "$M" in ""|*[!0-9]*) echo "set M to whole minutes"; exit 1;; esac; F=$HOME/host-reserved.json; if [ -f $F ]; then U=$(sed -n "s/.*\"until\": *\"\([^\"]*\)\".*/\1/p" $F); if [ -n "$U" ] && [ $(date -d "$U" +%s) -gt $(date +%s) ] && ! grep -q "\"owner\": *\"$O\"" $F; then echo "host reserved, stop: $(cat $F)"; exit 1; fi; fi; printf "{\"owner\":\"%s\",\"until\":\"%s\",\"reason\":\"%s\"}\n" "$O" "$(date -u -d "now + $M minutes" +%Y-%m-%dT%H:%M:%SZ)" "scored run" >$F.tmp && mv $F.tmp $F && cat $F'
 ```
 
 A firing that began before the write still finishes (within 270 s). Run the leftover check until it
@@ -278,13 +291,13 @@ that commit out in its own clone, `~/gate/rs-sdk`. Main seeded it with `ae6d5664
 commit:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'C=0000000000000000000000000000000000000000; case "$C" in *[!0-9a-f]*) echo "not a commit: $C"; exit 1;; esac; [ ${#C} -eq 40 ] || { echo "need the full 40-hex commit"; exit 1; }; printf "%s\n" "$C" >$HOME/run-commit.tmp && mv $HOME/run-commit.tmp $HOME/run-commit && cat $HOME/run-commit'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'C=0000000000000000000000000000000000000000; case "$C" in *[!0-9a-f]*) echo "not a commit: $C"; exit 1;; esac; [ ${#C} -eq 40 ] || { echo "need the full 40-hex commit"; exit 1; }; printf "%s\n" "$C" >$HOME/run-commit.tmp && mv $HOME/run-commit.tmp $HOME/run-commit && cat $HOME/run-commit'
 ```
 
 Then put the clone on it and build:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'export PATH=$HOME/.bun/bin:$PATH; cd ~/rs-sdk && git fetch -q origin && git checkout -q --detach "$(cat $HOME/run-commit)" && bun install && (cd server/webclient && bun install && bun run build) && (cd server/gateway && bun install) && mkdir -p ~/recordings ~/rs-run/chrome-profile && git log -1 --oneline && ls server/webclient/out/bot/client.js'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'export PATH=$HOME/.bun/bin:$PATH; cd ~/rs-sdk && git fetch -q origin && git checkout -q --detach "$(cat $HOME/run-commit)" && bun install && (cd server/webclient && bun install && bun run build) && (cd server/gateway && bun install) && mkdir -p ~/recordings ~/rs-run/chrome-profile && git log -1 --oneline && ls server/webclient/out/bot/client.js'
 ```
 
 `RUN_COMMIT` must include rs/138's merge (#120, `96fc462a`): step 3's Chrome login
@@ -295,7 +308,8 @@ rs/147's branch and 3ed0cd49c on the twin), so that `logoutClean` can confirm a 
 ("Credentials"). Check with
 `git -C ~/rs-sdk merge-base --is-ancestor c2d9eada "$RUN_COMMIT"`. c2d9eada descends from
 96fc462a, so this check alone covers both requirements; the `96fc462a` line stays beside it so a
-failure says which one is missing.
+failure says which one is missing. `RUN_COMMIT` must also include rs/174's merge commit, #159 and
+rs/207's merge commit ("Credentials"); check each the same way once its commit is named.
 
 Account files: the gate account (step 6) is a throwaway demo account whose name starts with
 `cairn_`, with `~/rs-sdk/bots/<gate>/bot.env` holding `BOT_USERNAME`, `PASSWORD`,
@@ -312,7 +326,7 @@ the run's session.ts both read accounts from `~/rs-sdk/bots`. **It is not put on
 ## 1. Preconditions: Fly edge iad, TCP connect p50 at most 5 ms
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'curl -s -o /dev/null -D - https://rs-sdk-demo.fly.dev/ | grep -i "^fly-request-id"; for i in $(seq 20); do curl -s -o /dev/null -w "%{time_connect}\n" https://rs-sdk-demo.fly.dev/; done | sort -n | awk "{ms[NR]=\$1*1000} END {printf \"TCP connect ms over %d: p50 %.1f p90 %.1f max %.1f\n\", NR, ms[int(NR/2)+1], ms[int(NR*0.9)+1], ms[NR]}"'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'curl -s -o /dev/null -D - https://rs-sdk-demo.fly.dev/ | grep -i "^fly-request-id"; for i in $(seq 20); do curl -s -o /dev/null -w "%{time_connect}\n" https://rs-sdk-demo.fly.dev/; done | sort -n | awk "{ms[NR]=\$1*1000} END {printf \"TCP connect ms over %d: p50 %.1f p90 %.1f max %.1f\n\", NR, ms[int(NR/2)+1], ms[int(NR*0.9)+1], ms[NR]}"'
 ```
 
 Pass: the request id ends in `-iad`, and p50 is at most 5 ms. On 2026-10-21 at 16:26 UTC: `-iad`,
@@ -343,7 +357,7 @@ After the operator connects, read which display the session is on and its geomet
 the host and the operator connects again (one desktop per user, above).
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'sudo grep "Session started successfully" /var/log/xrdp-sesman.log | tail -1; ls /tmp/.X11-unix; DISPLAY=:10 xdpyinfo | grep -E "dimensions|depth of root"; ss -tn state established "( sport = :3389 )" | tail -n +2 | wc -l | sed "s/^/RDP connections: /"'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'sudo grep "Session started successfully" /var/log/xrdp-sesman.log | tail -1; ls /tmp/.X11-unix; DISPLAY=:10 xdpyinfo | grep -E "dimensions|depth of root"; ss -tn state established "( sport = :3389 )" | tail -n +2 | wc -l | sed "s/^/RDP connections: /"'
 ```
 
 The commands below use `:10`. If the log names another display, replace `:10` everywhere.
@@ -364,7 +378,7 @@ Gateway and page server (the page server redirects a bare `/bot` to `?server=` t
 `?gateway=` the loopback gateway). Bound: `T=9h` for the run, `T=30m` for a rehearsal:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'T=9h; B=$HOME/.bun/bin/bun; tmux -L run new-session -d -s gateway -c ~/rs-sdk/server/gateway "exec timeout --kill-after=30s $T env AGENT_PORT=7780 GATEWAY_HOSTNAME=127.0.0.1 $B run gateway.ts >>$HOME/rs-run/gateway.log 2>&1"; tmux -L run new-session -d -s page -c ~/rs-sdk/server/webclient "exec timeout --kill-after=30s $T $B run proxy.ts --world=https://rs-sdk-demo.fly.dev --port=8899 --gateway=ws://127.0.0.1:7780 >>$HOME/rs-run/page.log 2>&1"; sleep 4; ss -ltn | grep -E ":(7780|8899) "; curl -s -o /dev/null -w "%{http_code} %{redirect_url}\n" "http://127.0.0.1:8899/bot?bot=x"'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'T=9h; B=$HOME/.bun/bin/bun; tmux -L run new-session -d -s gateway -c ~/rs-sdk/server/gateway "exec timeout --kill-after=30s $T env AGENT_PORT=7780 GATEWAY_HOSTNAME=127.0.0.1 $B run gateway.ts >>$HOME/rs-run/gateway.log 2>&1"; tmux -L run new-session -d -s page -c ~/rs-sdk/server/webclient "exec timeout --kill-after=30s $T $B run proxy.ts --world=https://rs-sdk-demo.fly.dev --port=8899 --gateway=ws://127.0.0.1:7780 >>$HOME/rs-run/page.log 2>&1"; sleep 4; ss -ltn | grep -E ":(7780|8899) "; curl -s -o /dev/null -w "%{http_code} %{redirect_url}\n" "http://127.0.0.1:8899/bot?bot=x"'
 ```
 
 Expect both ports listening and `302 http://127.0.0.1:8899/bot?bot=x&server=rs-sdk-demo.fly.dev&gateway=ws%3A%2F%2F127.0.0.1%3A7780`.
@@ -372,7 +386,7 @@ Then check that the page server refuses a password in the URL (**requires rs/138
 Expect `400`:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'curl -s -o /dev/null -w "%{http_code}\n" "http://127.0.0.1:8899/bot?bot=x&password=y"'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'curl -s -o /dev/null -w "%{http_code}\n" "http://127.0.0.1:8899/bot?bot=x&password=y"'
 ```
 
 **Chrome.** Chrome starts on the bare page `http://127.0.0.1:8899/bot?bot=<name>`, which carries no
@@ -388,13 +402,13 @@ The tab. Bound: `T=15m` for the gate account's tab, here and in step 6; `T=9h` f
 (step 7):
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'T=15m; ENV=$HOME/rs-sdk/bots/GATE_ACCOUNT/bot.env; NAME=$(sed -n "s/^BOT_USERNAME=//p" "$ENV"); tmux -L run new-session -d -s chrome "exec timeout --kill-after=30s $T env DISPLAY=:10 google-chrome --user-data-dir=$HOME/rs-run/chrome-profile --remote-debugging-port=9222 --no-first-run --no-default-browser-check --password-store=basic --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --start-maximized --app=\"http://127.0.0.1:8899/bot?bot=$NAME\""'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'T=15m; ENV=$HOME/rs-sdk/bots/GATE_ACCOUNT/bot.env; NAME=$(sed -n "s/^BOT_USERNAME=//p" "$ENV"); tmux -L run new-session -d -s chrome "exec timeout --kill-after=30s $T env DISPLAY=:10 google-chrome --user-data-dir=$HOME/rs-run/chrome-profile --remote-debugging-port=9222 --no-first-run --no-default-browser-check --password-store=basic --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --start-maximized --app=\"http://127.0.0.1:8899/bot?bot=$NAME\""'
 ```
 
 The login. Bound: 3 min (`tab-login.ts` gives up by itself after `--wait-ms`, 120 s by default):
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'ENV=$HOME/rs-sdk/bots/GATE_ACCOUNT/bot.env; cd ~/rs-sdk && timeout --kill-after=30s 3m ~/.bun/bin/bun speedrun/tools/tab-login.ts "$(basename "$(dirname "$ENV")")" --bots-dir="$(dirname "$(dirname "$ENV")")"'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'ENV=$HOME/rs-sdk/bots/GATE_ACCOUNT/bot.env; cd ~/rs-sdk && timeout --kill-after=30s 3m ~/.bun/bin/bun speedrun/tools/tab-login.ts "$(basename "$(dirname "$ENV")")" --bots-dir="$(dirname "$(dirname "$ENV")")"'
 ```
 
 Expect `[tab-login] <name>: tab reloaded with a one-time token`, then `in game after N s`, and exit
@@ -422,7 +436,7 @@ still connected, sees the tab come up. Once this check passes, the operator **di
 Everything from step 4 on runs disconnected:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'ps -o args= -C chrome | grep -v -- --type= | grep -o -E "disable-background-timer-throttling|disable-renderer-backgrounding|disable-backgrounding-occluded-windows|start-maximized|remote-debugging-port=[0-9]*|user-data-dir=[^ ]*"; DISPLAY=:10 xwininfo -root -tree | grep "Bot Client"; tail -2 $HOME/rs-run/gateway.log'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'ps -o args= -C chrome | grep -v -- --type= | grep -o -E "disable-background-timer-throttling|disable-renderer-backgrounding|disable-backgrounding-occluded-windows|start-maximized|remote-debugging-port=[0-9]*|user-data-dir=[^ ]*"; DISPLAY=:10 xwininfo -root -tree | grep "Bot Client"; tail -2 $HOME/rs-run/gateway.log'
 ```
 
 Then run the secrets check (**requires rs/138 on RUN_COMMIT**). It feeds the password to grep
@@ -431,7 +445,7 @@ processes showing the password, the processes showing a token, and the tab URLs 
 Expect `0 0 0`:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'ENV=$HOME/rs-sdk/bots/GATE_ACCOUNT/bot.env; echo "$(ps -efww | grep -c -F -f <(sed -n "s/^PASSWORD=//p" "$ENV")) $(ps -efww | grep -c "[t]oken=") $(curl -s http://127.0.0.1:9222/json/list | grep -c -F -e "token""=" -f <(sed -n "s/^PASSWORD=//p" "$ENV"))"'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'ENV=$HOME/rs-sdk/bots/GATE_ACCOUNT/bot.env; echo "$(ps -efww | grep -c -F -f <(sed -n "s/^PASSWORD=//p" "$ENV")) $(ps -efww | grep -c "[t]oken=") $(curl -s http://127.0.0.1:9222/json/list | grep -c -F -e "token""=" -f <(sed -n "s/^PASSWORD=//p" "$ENV"))"'
 ```
 
 Before the third grep's literal was written `"token""="`, a `2` in the middle came from the check's own command line, not a token (m, rs/149 on the rehearsal twin, via rs/147, 13:36 PDT 2026-10-21). The `2` was the remote shell plus its command-substitution subshell, both of whose command lines held the literal (m, rs/149 on rs-ashburn-rehearsal, 20:24 UTC).
@@ -444,7 +458,13 @@ own loopback gateway (7795 by default). How to configure, start and stop them is
 [HELPERS.md](HELPERS.md), "Helpers on the run machine" (cairn://p/rs/117); this page doesn't repeat
 it. The one ordering rule that touches this runbook: **the helpers are logged in before SCORED's tab
 opens** (the launcher's `helpersReady`), because login order decides the 7- or 8-tick Runecraft
-cycle.
+cycle. Every helper counts against the 80-login cap from its login until it logs out (step 7), and
+SCORED's run login is the peak, because S21's altar givers are already in (SUPPLIES.md, "Peak
+concurrent logins"). After a demo restart the helpers come back by relaunching rs/141's headless
+lite-runner child processes (`fleet.ts`, `standalone.ts`), not tabs: the OS closes the old child's
+gateway socket when it exits, so there is no gateway takeover (inferred from the code; owned by
+rs/41), and the earlier lite restart measurement read 3 in-world ticks after the relogin
+(`RESILIENCE.md` section 6).
 
 **The S07 bone givers** are rs/41's four, **cairn_b01-b04**, which serve SUPPLIES.md's H4.1-H4.n
 at the Woodcutting trees. They take turns, and they're a role rs/141 added to the same launcher
@@ -476,7 +496,7 @@ running, as in the run. Bound: `T=9h` for the run, `T=30m` for a rehearsal. At t
 sends SIGINT, which ffmpeg treats like `q`: it finishes the file:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'T=9h; mkdir -p ~/recordings; rm -f ~/recordings/ffmpeg-progress.log; F=$HOME/recordings/run-$(date -u +%Y%m%dT%H%M%SZ).mkv; tmux -L run new-session -d -s rec "exec timeout -s INT --kill-after=30s $T ffmpeg -hide_banner -loglevel warning -f x11grab -draw_mouse 1 -framerate 30 -video_size 1920x1080 -i :10.0+0,0 -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -progress $HOME/recordings/ffmpeg-progress.log $F 2>>$HOME/recordings/ffmpeg.log"; sleep 5; echo $F; grep -E "^(fps|drop_frames|speed)=" ~/recordings/ffmpeg-progress.log | tail -3; df -h / | tail -1'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'T=9h; mkdir -p ~/recordings; rm -f ~/recordings/ffmpeg-progress.log; F=$HOME/recordings/run-$(date -u +%Y%m%dT%H%M%SZ).mkv; tmux -L run new-session -d -s rec "exec timeout -s INT --kill-after=30s $T ffmpeg -hide_banner -loglevel warning -f x11grab -draw_mouse 1 -framerate 30 -video_size 1920x1080 -i :10.0+0,0 -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -progress $HOME/recordings/ffmpeg-progress.log $F 2>>$HOME/recordings/ffmpeg.log"; sleep 5; echo $F; grep -E "^(fps|drop_frames|speed)=" ~/recordings/ffmpeg-progress.log | tail -3; df -h / | tail -1'
 ```
 
 The line is main's decision (x11grab, 1920x1080, 30 fps, libx264 `-preset veryfast -crf 20`) plus
@@ -501,7 +521,7 @@ screen updates competing with the grab for the X server (i). The game is unaffec
 Check the recording during the run with:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'grep -E "^(frame|fps|drop_frames|dup_frames|speed|out_time)=" ~/recordings/ffmpeg-progress.log | tail -6; ls -la ~/recordings; df -h / | tail -1'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'grep -E "^(frame|fps|drop_frames|dup_frames|speed|out_time)=" ~/recordings/ffmpeg-progress.log | tail -6; ls -la ~/recordings; df -h / | tail -1'
 ```
 
 **The operator's live view**, started with the recording and left running until teardown. It is a
@@ -516,7 +536,7 @@ recording (i). As its own process, it can come and go without touching the recor
 the ffmpeg inside it (`-nostdin` keeps a stray key in the pane away from ffmpeg):
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'T=9h; tmux -L run new-session -d -s live "exec timeout --kill-after=30s $T bash -c \"while true; do ffmpeg -nostdin -hide_banner -loglevel warning -f x11grab -draw_mouse 1 -framerate 3 -video_size 1920x1080 -i :10.0+0,0 -vf scale=960:540 -c:v mjpeg -q:v 8 -f mpjpeg -listen 1 http://100.66.164.37:8090/live.mjpg; sleep 1; done\""'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'T=9h; tmux -L run new-session -d -s live "exec timeout --kill-after=30s $T bash -c \"while true; do ffmpeg -nostdin -hide_banner -loglevel warning -f x11grab -draw_mouse 1 -framerate 3 -video_size 1920x1080 -i :10.0+0,0 -vf scale=960:540 -c:v mjpeg -q:v 8 -f mpjpeg -listen 1 http://100.66.164.37:8090/live.mjpg; sleep 1; done\""'
 ```
 
 It costs 3.7% of one core (m: `pidstat` over 40 s, 16:53 UTC, ~150 kbit/s), and the recording
@@ -535,7 +555,7 @@ The gate history timer is quiet: step 0's reservation makes every firing skip, s
 `rs-gate-read.service` process should appear here.
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'uptime; ls /tmp/tmux-$(id -u)/; ps -eo pid,pcpu,etime,args --sort=-pcpu | cut -c1-160 | head -20; pgrep -c -f "chrome --type=gpu-process" | sed "s/^/Chrome GPU processes (expect 1): /"'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'uptime; ls /tmp/tmux-$(id -u)/; ps -eo pid,pcpu,etime,args --sort=-pcpu | cut -c1-160 | head -20; pgrep -c -f "chrome --type=gpu-process" | sed "s/^/Chrome GPU processes (expect 1): /"'
 ```
 
 **The gate** is measured here, on this machine, right before the run, at the real player count, and
@@ -553,7 +573,7 @@ The conditions and what to do on a failure are in RUN-ORDER.md section 1 and ten
   after 10):
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'cd ~/rs-sdk && timeout --kill-after=30s 15m ~/.bun/bin/bun docs/speedrun/scripts/tickmanip-latency.ts GATE_ACCOUNT --path=direct --no-tele'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'cd ~/rs-sdk && timeout --kill-after=30s 15m ~/.bun/bin/bun docs/speedrun/scripts/tickmanip-latency.ts GATE_ACCOUNT --path=direct --no-tele'
 ```
 
 - **(d)**, the tab's loop rate: open the gate account's tab and log it in (step 3's Chrome and
@@ -578,7 +598,7 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o 
   leaves the account to the server's no-connection timeout.
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'cd ~/rs-sdk && timeout --kill-after=30s 10m ~/.bun/bin/bun docs/speedrun/scripts/runhost-loops.ts GATE_ACCOUNT --label=gate --minutes=5 --display=:10 --out=$HOME/rs-run/gate-loops.jsonl 2>&1 | grep -v -E "^\[(Runner|BotSDK)\]|Pathfinding|LOGOUT DEBUG"; B=GATE_ACCOUNT timeout --kill-after=30s 3m ~/.bun/bin/bun -e "const m = await import(\"./speedrun/lib/session.ts\"); const s = await m.openSession(process.env.B, { client: \"browser\", pathfinding: false, readyTimeoutMs: 30000 }); const r = await m.logoutClean(s); console.log(r.ok ? \"logged out; the page is out of game\" : \"not confirmed: \" + r.reason); await m.closeSession(s); process.exit(r.ok ? 0 : 1);" && tmux -L run kill-session -t chrome'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'cd ~/rs-sdk && timeout --kill-after=30s 10m ~/.bun/bin/bun docs/speedrun/scripts/runhost-loops.ts GATE_ACCOUNT --label=gate --minutes=5 --display=:10 --out=$HOME/rs-run/gate-loops.jsonl 2>&1 | grep -v -E "^\[(Runner|BotSDK)\]|Pathfinding|LOGOUT DEBUG"; B=GATE_ACCOUNT timeout --kill-after=30s 3m ~/.bun/bin/bun -e "const m = await import(\"./speedrun/lib/session.ts\"); const s = await m.openSession(process.env.B, { client: \"browser\", pathfinding: false, readyTimeoutMs: 30000 }); const r = await m.logoutClean(s); console.log(r.ok ? \"logged out; the page is out of game\" : \"not confirmed: \" + r.reason); await m.closeSession(s); process.exit(r.ok ? 0 : 1);" && tmux -L run kill-session -t chrome'
 ```
 
 Read (d) from the summary line's `loops p10` (lowest / median / highest 10-second sample). **Pass**:
@@ -591,15 +611,31 @@ programs run, which is what the in-run monitor reads.
 
 **Only once `RUN_COMMIT` includes #120** (rs/138, on main since `96fc462a`; "Credentials").
 
-With the helpers in (step 4), the recording running (step 5) and the gate passed (step 6), launch
+**The login cap, a pre-start condition** (main, 15:35 PDT; a tenet is proposed). Before SCORED logs
+in, count our simultaneous demo logins **summed across every host**: rs/117's launcher on this host
+(its `helpersReady` roster), the bbs fleet (rs/41 reports its count to the operator; no command on
+this page reads it), the ambassador's host (rs/58), and any other host with one of our accounts in
+the world. With SCORED's 1 the total must be **at most 80**, the working cap: 100 simultaneous
+connections per IP is the server operator's ban threshold, and spreading accounts across IPs to
+evade it is what gets accounts banned. **Fleet accounts not needed during the run are logged out**
+before the count; gathering is finished by run day. The gate account is already out (step 6).
+SUPPLIES.md, "Peak concurrent logins", has the count by run phase: on the body-altar plan (22 givers,
+rs/163) the start is ~90 with the gathering fleet's ~53 in and 37 without it, so **logging the
+unneeded fleet out first is mandatory**. When S21's givers log in (at the start or later, on the
+running machine) is open (RUN-ORDER.md O38). Do not log
+SCORED in over the cap.
+
+With the helpers in (step 4), the recording running (step 5), the gate passed (step 6) and the
+login count at or under 80, launch
 Chrome as in step 3 with `ENV=$SCORED_ENV` and `T=9h`. Then log it in with step 3's tab-login
 command, with the same `ENV`; it exits 0 once SCORED is in game. run.ts checks that step 0's host
 reservation is live and the run's own, and refuses to start otherwise. From here the run scripts drive the tab through the gateway on
 7780 (RUN-ORDER.md, STEP-MANIFEST.md). Nobody touches the window. Relaunches during the run go the
 same way: session.ts mints a fresh token from `CLIENT_URL` and re-navigates the tab over
-`CDP_URL`. Each such relog passes ~20 ticks on SCORED's clock before the bot layer sees state (m,
-rs/164 on the twin: first state at client tick 20-22 against 3 for a fresh tab; RUN-ORDER.md
-section 4, O33).
+`CDP_URL`. The run's relogs use `login(session, {inPage: true})`, with this navigation as the fallback.
+With rs/174's fix on `RUN_COMMIT` either path costs ~2 ticks on SCORED's clock (first SDK state at
+login + 1; m, rs/174 on the twin against the demo); without it a navigated relog passes ~19-20
+ticks before the bot layer sees state (m, rs/164 and rs/174; RUN-ORDER.md section 4).
 
 ## 8. Stop the recording and pull it
 
@@ -616,7 +652,7 @@ game.** `ENV` is `$SCORED_ENV`, as in step 7. Bound: 3 min. Its error messages c
 account's name, so keep its output out of chat and logs:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'ENV=SCORED_ENV; cd ~/rs-sdk && B="$(basename "$(dirname "$ENV")")" timeout --kill-after=30s 3m ~/.bun/bin/bun -e "const m = await import(\"./speedrun/lib/session.ts\"); const s = await m.openSession(process.env.B, { client: \"browser\", pathfinding: false, readyTimeoutMs: 30000 }); const r = await m.logoutClean(s); console.log(r.ok ? \"logged out; the page is out of game\" : \"not confirmed: \" + r.reason); await m.closeSession(s); process.exit(r.ok ? 0 : 1);"'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'ENV=SCORED_ENV; cd ~/rs-sdk && B="$(basename "$(dirname "$ENV")")" timeout --kill-after=30s 3m ~/.bun/bin/bun -e "const m = await import(\"./speedrun/lib/session.ts\"); const s = await m.openSession(process.env.B, { client: \"browser\", pathfinding: false, readyTimeoutMs: 30000 }); const r = await m.logoutClean(s); console.log(r.ok ? \"logged out; the page is out of game\" : \"not confirmed: \" + r.reason); await m.closeSession(s); process.exit(r.ok ? 0 : 1);"'
 ```
 
 Expect `logged out; the page is out of game`, and exit 0. On exit 1 (`not confirmed`, or no
@@ -624,14 +660,14 @@ advancing tick to attach to, which is also what a tab already out of game gives)
 the live view. Stop nothing until it shows the login screen. Then stop the recording:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'tmux -L run send-keys -t rec q; sleep 5; tmux -L run has-session -t rec 2>/dev/null && echo "ffmpeg still running"; for f in ~/recordings/run-*.mkv; do ffprobe -v error -show_entries format=duration,size:stream=width,height,pix_fmt -of compact "$f"; done; grep -E "^(frame|drop_frames)=" ~/recordings/ffmpeg-progress.log | tail -2'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'tmux -L run send-keys -t rec q; sleep 5; tmux -L run has-session -t rec 2>/dev/null && echo "ffmpeg still running"; for f in ~/recordings/run-*.mkv; do ffprobe -v error -show_entries format=duration,size:stream=width,height,pix_fmt -of compact "$f"; done; grep -E "^(frame|drop_frames)=" ~/recordings/ffmpeg-progress.log | tail -2'
 ```
 
 Pull it to the Mac (or with `ashburn.sh` once rs/41 merges it), and check the copy plays before
 anything on the host is deleted:
 
 ```sh
-mkdir -p ~/Movies/rs-run && scp -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no 'ubuntu@54.242.152.95:recordings/run-*.mkv' ~/Movies/rs-run/ && ls -la ~/Movies/rs-run/
+mkdir -p ~/Movies/rs-run && scp -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no 'ubuntu@3.209.186.185:recordings/run-*.mkv' ~/Movies/rs-run/ && ls -la ~/Movies/rs-run/
 ```
 
 ## 9. Teardown
@@ -641,7 +677,7 @@ HELPERS.md says (clean logouts first). Then stop the tab's stack. The recording 
 stopped (step 8), since killing tmux under ffmpeg cuts the file short:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'tmux -L run has-session -t rec 2>/dev/null && { echo "recording still running: stop it first (step 8)"; exit 1; }; tmux -L run kill-server; sleep 2; ls /tmp/tmux-$(id -u)/; pgrep -a -f "[p]roxy.ts|[g]ateway.ts|rs-run/[c]hrome-profile" || echo "tab stack stopped"'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'tmux -L run has-session -t rec 2>/dev/null && { echo "recording still running: stop it first (step 8)"; exit 1; }; tmux -L run kill-server; sleep 2; ls /tmp/tmux-$(id -u)/; pgrep -a -f "[p]roxy.ts|[g]ateway.ts|rs-run/[c]hrome-profile" || echo "tab stack stopped"'
 ```
 
 The brackets keep the pattern from matching the ssh command's own shell, whose command line contains
@@ -652,7 +688,10 @@ Then run the leftover check ("Rules for every launch"). After a rehearsal, remov
 reservation; after the run, run.ts removes the run's. The session itself stays: nobody logs out of
 XFCE. The recording stays on the host until its copy on the Mac is checked.
 
-## Measured: gate (d) on this host, 2026-10-21
+## Measured: gate (d) on this host, 2026-10-21, at the old address
+
+**Taken at the old address, 54.242.152.95**, before the move to 3.209.186.185 ("The host"), so
+these figures do not stand for the new address until gate (d) is measured there.
 
 **How it was taken.** On this host (c7i.2xlarge, 8 vCPU, no GPU), 16:28-16:52 UTC (09:28-09:52
 PDT), with the demo at about 1,690-1,700 online (the page's footer, m). Chrome 156.0.8078.47 was
