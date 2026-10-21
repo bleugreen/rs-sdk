@@ -476,11 +476,12 @@ export interface SplitOptions extends LoginWindow {
     /** Wines in the first firing (default 29: 29 rolls of one wine each). */
     first?: number;
     /**
-     * How the second firing is armed: 'make' (one wine mixed by the receiver;
-     * needs Cooking 35 and the grapes + jug of water from the trade) or 'relog'
-     * (a clean relog, which also drops the first firing's queued level-up pages).
-     * Default 'make'. Below Cooking 35, 'make' falls back to a relog when one is
-     * given, else the rest stays banked for the next login.
+     * How the second firing is armed: 'relog' (default: bank the rest, then a
+     * clean relog, whose login timer fires at login + 20; about 2 scored ticks on
+     * the demo) or 'make' (one wine mixed by the receiver; needs Cooking 35 and
+     * one grapes + one jug of water in the trade). Below Cooking 35, 'make' falls
+     * back to a relog when one is given, else the rest stays banked for the next
+     * login.
      */
     arming?: SecondArming;
     /** Click through the second firing's level-up pages (default true). */
@@ -495,21 +496,24 @@ export interface SplitOptions extends LoginWindow {
  *
  *  1. receive the noted wines (+ one grapes and one jug of water for 'make') in
  *     one trade, unless they are already held (a restart after a relog);
+ *     the scored account should log in at the bank with the giver beside it,
+ *     which in the run means right after a planned relog there;
  *  2. deposit `first` notes; the bank must open by login + 19. If it opened
  *     later, the timer has fired on whatever the bank held before: the deposit
  *     is finished anyway and the account relogs, and the new login's timer
  *     ferments the batch;
- *  3. after the first firing, either click through the level-up pages to the
- *     bank, deposit the rest and close in one burst, and make one wine (arming
- *     'make'), or relog and deposit the rest inside the new login window
- *     (arming 'relog'); 20 ticks later the rest ferments.
+ *  3. after the first firing, click through the level-up pages to the bank,
+ *     deposit the rest and close in one burst, and arm the second firing: a
+ *     clean relog (arming 'relog', the default; the new login's timer fires at
+ *     login + 20) or one wine mixed by the receiver (arming 'make', 20 ticks
+ *     after the make).
  *
  * Stand next to a bank booth, and keep out of modals when a timer is due.
  */
 export async function splitDelivery(ctx: ReceiverCtx, giver: string, opts: SplitOptions): Promise<SplitResult> {
     const { sdk } = ctx;
     const first = opts.first ?? 29;
-    let arming: SecondArming = opts.arming ?? 'make';
+    let arming: SecondArming = opts.arming ?? 'relog';
     const t = await takeTrade(ctx, giver, first + 1, arming === 'make', opts.openTimeoutMs ?? 120_000);
     const received = t.skipped ? 0 : t.received;
 
@@ -569,13 +573,20 @@ export async function splitDelivery(ctx: ReceiverCtx, giver: string, opts: Split
         out.rearmMakeTick = mk.tick;
         due = mk.tick + FERMENT_TIMER_TICKS;
     } else {
-        let login2 = await requireRelog(opts)();
-        let d = await depositForTimer(ctx, 'all', login2 + FERMENT_TIMER_TICKS);
-        out.secondBankTicks = d.bankTicks;
-        if (!d.held) {
-            login2 = await requireRelog(opts)();
-            out.missRelogs++;
-        }
+        // Bank the rest before the relog: the bank only opens once the level-up
+        // pages are gone, and a logout would run them out anyway (one per tick), so
+        // the new session starts with nothing to do but wait for login + 20.
+        const doRelog = requireRelog(opts);
+        const t2 = sdk.getState()?.tick ?? 0;
+        const open = await openBankThroughPages(sdk);
+        if (!open.ok) throw new Error(`split delivery: second bank visit: ${open.reason}`);
+        out.pagesTicks = open.openTick - t2;
+        out.pagesAfterFirst = open.pages;
+        out.resumesAfterFirst = open.resumes;
+        const d = await depositNotes(sdk, 'all', { close: true });
+        if (!d.ok) throw new Error(`split delivery: deposit of the rest failed (${d.reason})`);
+        out.secondBankTicks = d.doneTick - t2;
+        const login2 = await doRelog();
         out.secondLoginTick = login2;
         due = login2 + FERMENT_TIMER_TICKS;
     }

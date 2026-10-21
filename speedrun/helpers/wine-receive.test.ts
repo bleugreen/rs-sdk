@@ -177,9 +177,9 @@ describe('receiveWine: the login-timer deadline fallback', () => {
 });
 
 describe('splitDelivery', () => {
-    test('on time with a relog arming: first firing at login + 20, the rest at the new login + 20', async () => {
+    test('on time with the default relog arming: first firing at login + 20, the rest banked before the relog and fermented at the new login + 20', async () => {
         const e = new FakeEngine(100, 59, 1);
-        const r = await splitDelivery({ sdk: run(e) }, 'maker', { loginTick: 100, first: 29, arming: 'relog', relog: e.relogTo(5_000) });
+        const r = await splitDelivery({ sdk: run(e) }, 'maker', { loginTick: 100, first: 29, relog: e.relogTo(5_000) });
         expect(r.tradeSkipped).toBe(true);
         expect(r.firstHeld).toBe(true);
         expect(r.missRelogs).toBe(0);
@@ -204,7 +204,7 @@ describe('splitDelivery', () => {
 
     test('make arming: the rest is banked and one make re-arms; the made wine ferments with it', async () => {
         const e = new FakeEngine(100, 59, 10, { kit: true });
-        const r = await splitDelivery({ sdk: run(e) }, 'maker', { loginTick: 100, first: 29, relog: e.relogTo(5_000) });
+        const r = await splitDelivery({ sdk: run(e) }, 'maker', { loginTick: 100, first: 29, arming: 'make', relog: e.relogTo(5_000) });
         expect(r.arming).toBe('make');
         expect(r.levelAfterFirst).toBeGreaterThanOrEqual(35);
         expect(r.rearmMakeTick).toBeGreaterThan(r.firstFermentTick);
@@ -215,7 +215,7 @@ describe('splitDelivery', () => {
 
     test('make arming below Cooking 35 falls back to the relog arming', async () => {
         const e = new FakeEngine(100, 59, 1, { kit: true });
-        const r = await splitDelivery({ sdk: run(e) }, 'maker', { loginTick: 100, first: 4, relog: e.relogTo(5_000) });
+        const r = await splitDelivery({ sdk: run(e) }, 'maker', { loginTick: 100, first: 4, arming: 'make', relog: e.relogTo(5_000) });
         expect(r.levelAfterFirst).toBeLessThan(35);
         expect(r.arming).toBe('relog');
         expect(r.secondFermentTick).toBe(5_020);
