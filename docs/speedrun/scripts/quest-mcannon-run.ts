@@ -68,7 +68,16 @@ await runScript(async ({ bot, sdk }) => {
     await cheat(sdk, 'setstat hitpoints 70');
     for (const it of sdk.getEquipment()) await bot.unequipItem(it);
     for (const it of sdk.getInventory()) await bot.dropItem(it);
-    await tele(sdk, ARDOUGNE[0], ARDOUGNE[1]);
+    // FROM=shed starts at stage 6 (toolkit in hand, railings done) beside the shed door
+    const FROM = process.env.FROM ?? 'start';
+    if (FROM === 'shed') {
+        await cheat(sdk, 'setvar mcannon 6');
+        await cheat(sdk, 'setvar mcannonmulti 2016');
+        await cheat(sdk, 'give mcannontoolkit 1');
+        await tele(sdk, 2574, 3462);
+    } else {
+        await tele(sdk, ARDOUGNE[0], ARDOUGNE[1]);
+    }
     const tStart = clock(sdk);
     let t = clock(sdk);
     const seg = (name: string, d: { pages?: number; options?: number; tiles?: number; note?: string }) => {
@@ -78,16 +87,19 @@ await runScript(async ({ bot, sdk }) => {
         t = clock(sdk);
     };
 
+    let tiles = 0;
+    let d = { pages: 0, options: 0 };
+    let pages = 0;
+    let opts = 0;
+    if (FROM === 'start') {
     // 1. Ardougne teleport landing -> Commander Lawgof, start
-    let tiles = await walk(bot, sdk, LAWGOF[0], LAWGOF[1] - 2, 2);
+    tiles = await walk(bot, sdk, LAWGOF[0], LAWGOF[1] - 2, 2);
     seg('walk ardougne->lawgof', { tiles });
-    let d = await talk(bot, sdk, /dwarf commander|lawgof/i, ["Yeah, I'd love to help."]);
+    d = await talk(bot, sdk, /dwarf commander|lawgof/i, ["Yeah, I'd love to help."]);
     seg('lawgof start (6 railings)', d);
 
     // 2. the six railings
     let tries = 0;
-    let pages = 0;
-    let opts = 0;
     tiles = 0;
     for (const [rx, rz, rid] of RAILINGS) {
         for (let attempt = 0; attempt < 12; attempt++) {
@@ -167,6 +179,7 @@ await runScript(async ({ bot, sdk }) => {
     const tiles2 = await walk(bot, sdk, LAWGOF[0], LAWGOF[1] - 2, 2);
     d = await talk(bot, sdk, /dwarf commander|lawgof/i, ["Ok, I'll see what I can do."]);
     seg('mud pile + walk + lawgof toolkit', { ...d, tiles: tiles + tiles2 });
+    }
 
     // 5. the shed: door 2576,3461, broken cannon 2577,3461 (3x3)
     pages = 0;
@@ -175,33 +188,51 @@ await runScript(async ({ bot, sdk }) => {
     let fixTries = 0;
     const door = await locAt(sdk, 2576, 3461, /door/i);
     if (door) await bot.openDoor(door);
+    // mcannon_broken_cannon.rs2: first inspect -> chatplayer (stage 7); later inspects roll
+    // "find the problem" (two mes + p_delay(3), then a 5-way menu) and each part fix rolls again
+    // (p_delay(2)); with all four bits set the next inspect says it is in working order (stage 8).
     const parts = ['Pipe', 'Barrel', 'Axle', 'Shaft'];
     let partIdx = 0;
-    for (let i = 0; i < 30; i++) {
+    let findFails = 0;
+    let fixFails = 0;
+    let done = false;
+    const dialogText = () => (sdk.getDialog()?.allComponents ?? []).map((c) => c.text).join(' ');
+    for (let i = 0; i < 40 && !done; i++) {
         const cannon = (await sdk.scanNearbyLocs(10)).find((l) => /broken multicannon/i.test(l.name));
         if (!cannon) throw new Error('broken cannon not found');
         sdk.getNewChat({ types: [0] });
+        const msgs: string[] = [];
         await bot.interactLoc(cannon, 'Inspect');
         inspects++;
-        await waitTicks(sdk, 3);
-        if (sdk.getDialog()?.isOpen) {
-            const dlg = sdk.getDialog()!;
-            const isChoice = dlg.options.length > 1;
-            const dd = await talkThrough(sdk, isChoice ? [parts[partIdx]] : [], { idleMs: 800 });
-            pages += dd.pages;
-            opts += dd.options;
-            if (isChoice) fixTries++;
+        await waitUntil(sdk, () => {
+            msgs.push(...sdk.getNewChat({ types: [0] }).map((m) => m.text));
+            return sdk.getDialog()?.isOpen === true || msgs.some((m) => /can't quite find/i.test(m));
+        }, 15, 'cannon inspect result');
+        if (msgs.some((m) => /can't quite find/i.test(m))) {
+            findFails++;
+            continue;
         }
-        await waitTicks(sdk, 3);
-        const msgs = sdk.getNewChat({ types: [0] }).map((m) => m.text);
-        if (msgs.some((m) => /manage to fix it|already fixed this part/i.test(m))) partIdx++;
-        const recent = JSON.stringify(sdk.getState()?.recentDialogs?.slice(-2) ?? []);
-        if (/working order/i.test(recent)) break;
-        if (partIdx >= 4 && i > 0) {
-            // one more inspect reports working order
+        const dlg = sdk.getDialog()!;
+        if (dlg.options.length > 1) {
+            const dd = await talkThrough(sdk, [parts[partIdx]], { keepIdle: true, idleTicks: 1 });
+            opts += dd.options;
+            fixTries++;
+            await waitUntil(sdk, () => {
+                msgs.push(...sdk.getNewChat({ types: [0] }).map((m) => m.text));
+                return msgs.some((m) => /manage to fix it|fail to fix it|already fixed/i.test(m));
+            }, 15, 'part fix result');
+            if (msgs.some((m) => /manage to fix it|already fixed/i.test(m))) {
+                partIdx++;
+                await waitTicks(sdk, 3); // p_delay(2) after a successful fix
+            } else fixFails++;
+        } else {
+            if (/working order/i.test(dialogText())) done = true;
+            const dd = await talkThrough(sdk, []);
+            pages += dd.pages;
         }
     }
-    seg('shed: inspect + repair 4 parts', { pages, options: opts, note: `${inspects} inspects, ${fixTries} part attempts at Smithing ${SMITH} / Crafting ${CRAFT}` });
+    if (!done) throw new Error(`cannon not repaired after ${inspects} inspects (${partIdx} parts)`);
+    seg('shed: inspect + repair 4 parts', { pages, options: opts, note: `${inspects} inspects (${findFails} failed to find the problem), ${fixTries} part attempts (${fixFails} failed) at Smithing ${SMITH} / Crafting ${CRAFT}` });
     tiles = await walk(bot, sdk, LAWGOF[0], LAWGOF[1] - 2, 2);
     d = await talk(bot, sdk, /dwarf commander|lawgof/i, ['Ok then, just for you!']);
     seg('lawgof repaired', { ...d, tiles });
