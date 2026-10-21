@@ -20,12 +20,18 @@ speedrun/
     levelup.ts    isLevelUp, startLevelUpWatcher, withLevelUpDismissal
     session.ts    openSession, launchClient, logoutClean, waitLoggedOut, login, startWatchdog,
                   abandonClient, markProgress
+    demo-status.ts  restart detector (/playercount, our logins, catch-ups): one status line +
+                  speedrun/runs/demo-status.json; CLI: bun speedrun/lib/demo-status.ts watch|show
+    reconnect.ts  reconnectAfterOutage, serverDownProbe (the watchdog's outage path)
+    tab.ts        the scored browser tab over the Chrome DevTools protocol (reload, not reopen)
     ticks.ts      TickLog (JSONL), measure, report; CLI: bun speedrun/lib/ticks.ts report <file>
     hostgate.ts   probeOnTime (packet latency in ticks), gateDecision, HostGate (run-time knife gate)
     fake-sdk.ts   scriptable BotSDK stand-in for the unit tests
   runner/
     step.ts       Step type and runSteps
     budget.ts     TickWindow: the per-tick user-event budget a step boundary hands off against
+    resume.ts     resolveResume (walk the manifest from game state), sessionLink, runResumable
+    fence.ts      Fence: an abandoned step attempt cannot send or hear state; patchMethod
     example-bank.ts  'bank everything at Varrock west', end to end
   lab/            local lab: never imported by lib/
     lab.sh        engine + gateway + lite runners on port block 9300
@@ -36,6 +42,8 @@ speedrun/
     measure-sweep.ts     top-ten verification (docs/speedrun/research/engine-sweep.md section 8)
     measure-drop.ts      ticks from a client drop to the player leaving, with and without the
                          watchdog (docs/speedrun/research/competitors/hiscore-timestamps.md 5.1)
+    measure-restart.ts   engine SIGKILL and client SIGKILL mid-run: what rolls back, reconnect
+                         and resume times (docs/speedrun/RESILIENCE.md section 6)
   tools/          upstream watch (nightly diff of watched upstream paths);
                   drop-probe.ts (the dropped-client stay on the demo, with a throwaway);
                   hiscore-stamp-probe.ts (the live stamp test, plus uncached
@@ -261,8 +269,13 @@ level with and without the watcher) has not been measured yet.
   session's save is still flushing (`World.ts`, "old session is mid-logout");
   the lab hit this once in 7 re-logins. So a client that exits before its
   first in-world tick is relaunched with backoff.
+- `launchClient` sets `LITE_LOGIN_JITTER_MS=0` for the lite runner (its 0-5 s
+  fleet jitter only delays a takeover), uses `CLIENT_URL` from the bot.env as
+  the browser page (proxy.ts with `?server=`/`?gateway=`), and with `CDP_URL`
+  re-navigates the one scored tab instead of opening another (`tab.ts`).
 - `startWatchdog` acts while the account should be in the world. A client
-  whose tick stopped advancing for 10 ticks, or whose gateway status is dead or
+  whose tick stopped advancing for 17 ticks (~5 s; the demo has gone ~2 s
+  without a frame and recovered), or whose gateway status is dead or
   stale, while its process runs, is logged out cleanly (`logoutClean`) and
   logged back in. If that logout is not confirmed within 8 ticks, or the lite
   child has exited, the watchdog kills the client and relaunches it; the new
@@ -272,7 +285,13 @@ level with and without the watcher) has not been measured yet.
   Relaunches back off 1 s, 2 s, 4 s ... 30 s; the logout does not wait. It never
   relaunches after exit code 3 (outdated client), and it is a no-op while
   paused around an intended logout. The decision is the pure
-  `watchdogDecision`.
+  `watchdogDecision`. With `serverDown` (reconnect.ts `serverDownProbe` over a
+  `DemoMonitor`), an unhealthy client is first checked against the world: if
+  the world is gone (a demo restart) the verdict is `outage` and
+  `reconnectAfterOutage` waits for it and logs in once logins are accepted,
+  one try per 10 s, behind an optional login-order gate. Nothing is on the
+  clock then, so there is nothing to take over. Why, and what a restart costs:
+  docs/speedrun/RESILIENCE.md.
 
 | Measurement (`lab/measure-drop.ts`, bgsrv-mac, 300 ms) | Ticks from the drop or wedge until the old session left |
 |---|---|
@@ -283,6 +302,10 @@ level with and without the watcher) has not been measured yet.
 | Watchdog: client frozen (logout fails, then relaunch and takeover) | 20 |
 | Watchdog: client killed (relaunch and takeover) | about 1 |
 | Controller crashed, exit guard | 0 |
+
+The two wedged rows were measured at the earlier 10-tick stale default. At
+the current 17 they read about 17 and 27 (inferred: the threshold plus the same
+logout and takeover times); the killed-client row does not depend on it.
 
 | Measurement (`lab/measure-session.ts`) | Result |
 |---|---|
@@ -365,6 +388,32 @@ the whole run, idle ticks included.
 
 Boundary ticks there are the chain's ticks outside every step row, computed
 from the step rows alone so both runners are measured the same way.
+
+### Resume (`runner/resume.ts`)
+
+`runResumable(session, steps, {log, c, link, probes?, from?, recover?})` runs the
+manifest to the end through drops and restarts, and decides where to start
+from the game state on every start, never from its own memory:
+
+- Steps may declare `done(observed)` (a milestone: true once its effect is in
+  the game and from then on), `inProgress(observed)` with a `resume` entry, and
+  `probes` (named in `probes`, e.g. a bank-open probe; run only when the walk
+  needs them). `resolveResume` finds the first milestone not done, then the
+  latest step back to the last done milestone that can start now: in progress
+  (enter by `resume`) or preconditions true (enter by `run`).
+- On a lost link (`sessionLink`: the lite runner exited, `inGame` false, or no
+  tick for 17 ticks) the attempt is abandoned and fenced (`fence.ts`: its sends
+  are refused at `sendAction` and its listeners muted), `recover` waits for the
+  watchdog to bring the session back, and the walk runs again. A step error
+  after the session changed, or a `page reloaded` program rejection, is the
+  drop, not a failure.
+- `runSteps` gained `startMode: 'resume'` (enter the first step by `resume`,
+  skipping its start preconditions) and `signal` (checked at every boundary).
+  Ledger rows: `(resume)` and `(drop)`.
+
+Measured on the local engine (`lab/measure-restart.ts`, RESILIENCE.md section
+6): after an engine SIGKILL the walk resumed at the first rolled-back step in
+3 of 3 runs, 4.1-11.7 s after the kill, 3 in-world ticks after the relogin.
 
 `runner/example-bank.ts` is the shape in miniature. On the lab (1 sample, same
 provenance), "bank everything at Varrock west" (open the bank, deposit 24

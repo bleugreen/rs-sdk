@@ -36,6 +36,9 @@ wait_for() { # file phrase seconds
 
 (cd "$ROOT/server/engine" && BUILD_VERIFY=false BUILD_LIVE_RELOAD=false LOCAL_STAFF_LEVEL=4 exec bun run src/app.ts) > "$LOG/engine.log" 2>&1 &
 PIDS+=($!)
+# measure-restart.ts SIGKILLs the engine by this pid and starts its own replacement.
+echo $! > "$LOG/engine.pid"
+export LAB_LOG=$LOG
 wait_for "$LOG/engine.log" 'World ready' 900 || exit 1
 
 (cd "$ROOT/server/gateway" && exec bun run gateway.ts) > "$LOG/gateway.log" 2>&1 &

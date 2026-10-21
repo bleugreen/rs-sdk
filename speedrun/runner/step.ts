@@ -27,12 +27,26 @@ export type Check<C> = (s: BotWorldState, c: C) => true | string;
 
 export type RunnerSession = Pick<Session, 'sdk' | 'bot' | 'name' | 'sessionId'>;
 
+/**
+ * What the resume walk (runner/resume.ts) knows about the game: the published
+ * state, plus the results of any probes the steps asked for (a bank-open probe,
+ * a quest-journal read). A probe that could not run (not at a bank) is null.
+ */
+export interface Observed {
+    state: BotWorldState;
+    probed: Readonly<Record<string, unknown>>;
+}
+
+export type ObservedCheck<C> = (o: Observed, c: C) => boolean;
+
 export interface StepContext<C> {
     session: RunnerSession;
     sdk: RunnerSession['sdk'];
     bot: RunnerSession['bot'];
     c: C;
     log: TickLog;
+    /** Set when the step is entered through `resume` after a restart: what the walk observed. */
+    observed?: Observed;
 }
 
 export interface Step<C = Record<string, never>> {
@@ -42,6 +56,22 @@ export interface Step<C = Record<string, never>> {
     postconditions: Check<C>;
     /** True when the account can log out right after this step and resume at the next. */
     logoutSafe: boolean;
+
+    // Resume protocol (runner/resume.ts). All optional: a step without `done` is
+    // transient (travel, banking) and is never a checkpoint.
+
+    /**
+     * A milestone: true once this step's effect is in the game state, and true
+     * for every later state of the run (levels, xp, quest stage, items owned).
+     * The walk resumes at the first milestone that is not done.
+     */
+    done?: ObservedCheck<C>;
+    /** The step was started and not finished (say, Mining between 64 and 99 at the rocks). */
+    inProgress?: ObservedCheck<C>;
+    /** Entry when `inProgress` holds; default `run`. Must work from any state `inProgress` admits. */
+    resume?(ctx: StepContext<C>): Promise<void>;
+    /** Probes (names in the resumable runner's `probes`) that `done` / `inProgress` read. */
+    probes?: readonly string[];
 }
 
 export class StepError extends Error {
@@ -60,13 +90,25 @@ export interface RunStepsOptions<C> {
     shouldStop?: () => boolean;
     /** How to leave the world at a stop (default: logoutClean). */
     logout?: (session: RunnerSession) => Promise<unknown>;
+    /**
+     * 'resume' enters the first step through its `resume` handler (default
+     * `run`) without its precondition check: the resume walk already found it in
+     * progress, which its start preconditions need not admit.
+     */
+    startMode?: 'run' | 'resume';
+    /** Handed to the resumed step's context. */
+    observed?: Observed;
+    /** Checked before each step and before a stop's logout: once aborted, return without starting anything. */
+    signal?: AbortSignal;
 }
 
 export interface RunStepsResult {
     /** Steps completed in this call. */
     completed: number;
-    /** Set when stopped at a logout-safe boundary: the index to resume from. */
+    /** Set when stopped at a logout-safe boundary (or aborted): the index to resume from. */
     resumeAt?: number;
+    /** The signal aborted the run (a dropped connection, runner/resume.ts). */
+    aborted?: true;
 }
 
 export function resolveStart(steps: ReadonlyArray<{ name: string }>, from: number | string | undefined): number {
@@ -147,7 +189,9 @@ export async function runSteps<C>(session: RunnerSession, steps: ReadonlyArray<S
         let boundary = openBoundary(session, '(start)');
         for (let i = start; i < steps.length; i++) {
             const step = steps[i]!;
-            const ctx: StepContext<C> = { session, sdk, bot: session.bot, c: opts.c, log: opts.log };
+            if (opts.signal?.aborted) return { completed: i - start, resumeAt: i, aborted: true };
+            const resuming = i === start && opts.startMode === 'resume';
+            const ctx: StepContext<C> = { session, sdk, bot: session.bot, c: opts.c, log: opts.log, ...(resuming && opts.observed ? { observed: opts.observed } : {}) };
 
             let waited = false;
             if (i > start) {
@@ -162,15 +206,18 @@ export async function runSteps<C>(session: RunnerSession, steps: ReadonlyArray<S
                 boundary.waits.push('stale');
                 await nextTick(sdk);
             }
-            const pre = await check(sdk, step.preconditions, opts.c, boundary, 'pre-recheck');
-            if (pre !== true) {
-                failRow(opts.log, session, step.name, 'precondition', pre);
-                throw new StepError(step.name, 'precondition', pre);
+            if (!resuming) {
+                const pre = await check(sdk, step.preconditions, opts.c, boundary, 'pre-recheck');
+                if (pre !== true) {
+                    failRow(opts.log, session, step.name, 'precondition', pre);
+                    throw new StepError(step.name, 'precondition', pre);
+                }
             }
             closeBoundary(opts.log, session, boundary, step.name, i);
 
+            const entry = resuming && step.resume ? step.resume.bind(step) : step.run.bind(step);
             try {
-                await measure(opts.log, session, step.name, () => step.run(ctx), { index: i });
+                await measure(opts.log, session, step.name, () => entry(ctx), { index: i, ...(resuming ? { resumed: true } : {}) });
             } catch (e) {
                 throw new StepError(step.name, 'run', e instanceof Error ? e.message : String(e));
             }
@@ -182,6 +229,7 @@ export async function runSteps<C>(session: RunnerSession, steps: ReadonlyArray<S
                 throw new StepError(step.name, 'postcondition', post);
             }
 
+            if (opts.signal?.aborted) return { completed: i + 1 - start, resumeAt: i + 1, aborted: true };
             if (step.logoutSafe && i + 1 < steps.length && shouldStop()) {
                 closeBoundary(opts.log, session, boundary, '(logout)', i + 1);
                 await logout(session);
