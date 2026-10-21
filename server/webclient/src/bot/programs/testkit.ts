@@ -16,6 +16,8 @@ export interface StateSpec {
     animId?: number;
     skills?: Record<string, { xp: number; level?: number }>;
     inventory?: Array<string | { name: string; options?: string[] }>;
+    /** Worn items, by name. */
+    equipment?: string[];
     npcs?: Array<Partial<NearbyNpc> & { index: number; name: string; options?: string[] }>;
     locs?: Array<Partial<NearbyLoc> & { id: number; x: number; z: number; name: string; options?: string[] }>;
     messages?: Array<{ text: string; tick?: number; id?: number }>;
@@ -67,7 +69,7 @@ export function makeState(spec: StateSpec): BotWorldState {
         },
         skills,
         inventory,
-        equipment: [],
+        equipment: (spec.equipment ?? []).map((name, slot) => ({ slot, id: 2000 + slot, name, count: 1, optionsWithIndex: [{ text: 'Remove', opIndex: 1 }] })),
         nearbyNpcs: npcs,
         nearbyPlayers: [],
         nearbyLocs: locs,

@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { catchChance, createKnifeCycle, CYCLE_METHODS, lockWindow, SHAFTS_BUTTON } from './knife-cycle.js';
+import { readFileSync } from 'node:fs';
+import { type Axe, AXES, axeOf, catchChance, createKnifeCycle, CYCLE_METHODS, lockWindow, SHAFTS_BUTTON, TREE_CHANCE } from './knife-cycle.js';
 import { Harness, makeState, type StateSpec } from './testkit.js';
+import { statRandom } from './util.js';
 
 /**
  * A deterministic stand-in for the engine's gathering loop (tick-manipulation.md
@@ -33,6 +35,13 @@ function serverRun(opts: {
     deadTrees?: number;
     /** Labels the page never sees on their own: decoded together with the next (server overrun). */
     merged?: (tick: number) => boolean;
+    /** The skill's level (99 if not given). */
+    level?: number;
+    /** An axe added to the inventory, and items worn. */
+    axe?: string;
+    equipment?: string[];
+    /** Rolls (counted from 1) that fail: the cadence goes on, no xp and no log. */
+    miss?: (roll: number) => boolean;
 }) {
     const m = CYCLE_METHODS[opts.method]!;
     const skill = m.skill === 'fishing' ? 'Fishing' : 'Woodcutting';
@@ -53,10 +62,12 @@ function serverRun(opts: {
     let prayerXp = 0;
     let buryXpOn = -1;
     const pending: Array<{ at: number; type: string; locId?: number }> = [];
+    let rolls = 0;
     const rollTicks: number[] = [];
     const buryTicks: number[] = [];
     const inventory: Array<string | { name: string; options: string[] }> = [
         ...(opts.inventory ?? ['Knife', 'Logs', 'Logs', 'Logs', 'Logs', 'Logs']),
+        ...(opts.axe ? [opts.axe] : []),
         ...Array.from({ length: opts.bones ?? 0 }, () => ({ name: 'Dragon bones', options: ['Bury', 'Drop'] }))
     ];
     const treeName = opts.method === 'tree' ? 'Tree' : opts.method === 'oak' ? 'Oak' : 'Willow';
@@ -64,8 +75,9 @@ function serverRun(opts: {
     const treeX = (id: number) => 3201 + (id % 2);
     const spec = (): StateSpec => ({
         tick,
-        skills: { [skill]: { xp }, Prayer: { xp: prayerXp } },
+        skills: { [skill]: { xp, level: opts.level }, Prayer: { xp: prayerXp } },
         inventory,
+        equipment: opts.equipment,
         animId: interacting ? 1 : -1,
         dialogOpen: dialog,
         npcs: m.kind === 'npc' ? [{ index: 7, name: 'Fishing spot', x: spotX, z: 3200, options: ['Lure', 'Bait'] }] : [],
@@ -117,16 +129,18 @@ function serverRun(opts: {
         if (opts.logsGoneAt === tick) inventory.splice(0, inventory.length, 'Knife');
         if (felledAt !== null && tick > felledAt + (opts.fellLag ?? 0)) felledAt = null;
         if (interacting && nextRoll === tick) {
-            xp += 500;
-            rollTicks.push(tick);
             lastRoll = tick;
             nextRoll = tick + m.plainCycle;
-            if (m.depletes || (opts.fellEvery && rollTicks.length % opts.fellEvery === 0)) {
-                treeId++;
-                interacting = false;
-                nextRoll = null;
-                if (opts.fellLag) felledAt = tick;
-                if (opts.allDownFor && !m.depletes) downUntil = tick + opts.allDownFor;
+            if (!opts.miss?.(++rolls)) {
+                xp += 500;
+                rollTicks.push(tick);
+                if (m.depletes || (opts.fellEvery && rollTicks.length % opts.fellEvery === 0)) {
+                    treeId++;
+                    interacting = false;
+                    nextRoll = null;
+                    if (opts.fellLag) felledAt = tick;
+                    if (opts.allDownFor && !m.depletes) downUntil = tick + opts.allDownFor;
+                }
             }
         }
         if (opts.merged?.(tick)) { skipped++; continue; }
@@ -147,8 +161,39 @@ describe('knife cycle', () => {
         expect(rollTicks.length).toBeGreaterThan(60);
         expect(h.status.result).toMatchObject({ resyncs: 0 });
         expect((h.status.result as { ticksPerSuccess: number }).ticksPerSuccess).toBeLessThan(3.05);
-        // willow carries no catch chance, so no expected-roll figure is claimed
-        expect(h.status.result).not.toHaveProperty('ticksPerExpectedRoll');
+        // no axe in the pack: no catch chance, so no expected-roll figure is claimed
+        const r = h.status.result as { ticksPerExpectedRoll: number; axe: string | null };
+        expect(r.axe).toBeNull();
+        expect(Number.isNaN(r.ticksPerExpectedRoll)).toBe(true);
+        expect(h.status.gauges).not.toHaveProperty('ticksPerExpectedRoll');
+    });
+
+    test('willow with a rune axe reports ticks per expected roll at the rune chance', () => {
+        // rune on willow at 60: floor(56*39/98) + floor(175*59/98) + 1 = 128, so p = 1/2
+        const { h } = serverRun({ method: 'willow', ticks: 200, level: 60, axe: 'Rune axe' });
+        const r = h.status.result as { ticksPerSuccess: number; ticksPerExpectedRoll: number; axe: string; resyncs: number };
+        expect(r).toMatchObject({ axe: 'rune', resyncs: 0 });
+        expect(r.ticksPerExpectedRoll).toBeCloseTo(r.ticksPerSuccess / 2, 2);
+        expect(h.status.gauges.ticksPerExpectedRoll).toBe(r.ticksPerExpectedRoll);
+    });
+
+    test('a worn axe counts, and the best axe worn or carried is the one used', () => {
+        const { h } = serverRun({ method: 'oak', ticks: 60, level: 60, axe: 'Bronze axe', equipment: ['Adamant axe'] });
+        const r = h.status.result as { ticksPerSuccess: number; ticksPerExpectedRoll: number; axe: string };
+        expect(r.axe).toBe('adamant');
+        expect(r.ticksPerExpectedRoll).toBeCloseTo(r.ticksPerSuccess * catchChance(CYCLE_METHODS.oak!, 60, 'adamant')!, 2);
+    });
+
+    test('bronze on oak at 60: ten honest misses in a row keep the lock; the old 18-tick window called them a lost lock', () => {
+        const miss = (r: number) => r >= 20 && r < 30;
+        const sized = serverRun({ method: 'oak', ticks: 200, level: 60, axe: 'Bronze axe', miss });
+        expect(lockWindow(CYCLE_METHODS.oak!, 60, 'bronze')).toBe(48);
+        expect(sized.h.status.result).toMatchObject({ resyncs: 0 });
+        expect(sized.h.status.counters.slips ?? 0).toBe(0);
+        // the lattice holds through the misses: one 33-tick gap, 3s otherwise
+        expect(gapsOf(sized.rollTicks).slice(1).filter(g => g !== 3)).toEqual([33]);
+        const fixed = serverRun({ method: 'oak', ticks: 200, level: 60, axe: 'Bronze axe', miss, params: { window: 18 } });
+        expect(fixed.h.status.counters.slips).toBeGreaterThanOrEqual(1);
     });
 
     test('the starter bundle goes out on the label that shows the roll, in order', () => {
@@ -230,10 +275,11 @@ describe('knife cycle', () => {
     });
 
     test('ticks per expected roll weights each success by the catch chance at its level', () => {
-        // every roll in the stand-in succeeds; the harness level is 99, where p is 201/256
-        const { h } = serverRun({ method: 'tree', ticks: 120 });
+        // every roll in the stand-in succeeds; the harness level is 99, where bronze's p is 201/256
+        const { h } = serverRun({ method: 'tree', ticks: 120, axe: 'Bronze axe' });
         const r = h.status.result as { ticksPerSuccess: number; ticksPerExpectedRoll: number };
-        const p = catchChance(CYCLE_METHODS.tree!, 99)!;
+        const p = catchChance(CYCLE_METHODS.tree!, 99, 'bronze')!;
+        expect(p).toBe(201 / 256);
         expect(r.ticksPerExpectedRoll).toBeCloseTo(r.ticksPerSuccess * p, 2);
         expect(r.ticksPerExpectedRoll).toBeLessThan(r.ticksPerSuccess);
         expect(h.status.gauges.ticksPerExpectedRoll).toBe(r.ticksPerExpectedRoll);
@@ -323,7 +369,97 @@ describe('knife cycle', () => {
     test('the lost-lock window scales with the catch chance', () => {
         expect(lockWindow(CYCLE_METHODS.fly!, 99)).toBe(15);
         expect(lockWindow(CYCLE_METHODS.fly!, 20)).toBeGreaterThan(15);
-        expect(lockWindow(CYCLE_METHODS.willow!, 1)).toBe(18);
+        // no axe: no chance, the preset's window
+        expect(lockWindow(CYCLE_METHODS.willow!, 30)).toBe(18);
+    });
+});
+
+/** trees.dbrow's successchance rows, by preset name. */
+function contentTreeTable(): Record<'tree' | 'oak' | 'willow', Record<string, [number, number]>> {
+    const text = readFileSync(new URL('../../../../content/scripts/skill_woodcutting/configs/trees.dbrow', import.meta.url), 'utf8');
+    const rows: Record<string, Record<string, [number, number]>> = {};
+    for (const block of text.split(/\n(?=\[)/)) {
+        const name = /^\[(\w+)\]/.exec(block)?.[1];
+        if (!name) continue;
+        rows[name] = Object.fromEntries([...block.matchAll(/^data=successchance,(\w+)_axe,(\d+),(\d+)$/gm)].map(m => [m[1]!, [Number(m[2]), Number(m[3])] as [number, number]]));
+    }
+    return { tree: rows.normal_tree_table!, oak: rows.oak_tree_table!, willow: rows.willow_tree_table! };
+}
+
+describe('knife cycle: catch chance from the axe', () => {
+    const content = contentTreeTable();
+    const trees = ['tree', 'oak', 'willow'] as const;
+
+    test('the presets carry trees.dbrow for every axe', () => {
+        for (const tree of trees) {
+            expect(Object.keys(content[tree]).sort()).toEqual([...AXES].sort());
+            expect(TREE_CHANCE[tree]).toEqual(content[tree] as Record<Axe, [number, number]>);
+            expect(CYCLE_METHODS[tree]!.catchChance).toBe(TREE_CHANCE[tree]);
+        }
+    });
+
+    test('p(L) for every axe on tree, oak and willow at levels 1, 50 and 99, from the content bounds', () => {
+        // stat_random: floor(lo*(99-L)/98) + floor(hi*(L-1)/98) + 1 out of 256 (PlayerOps.ts STAT_RANDOM)
+        for (const tree of trees) {
+            for (const [axe, [lo, hi]] of Object.entries(content[tree]) as Array<[Axe, [number, number]]>) {
+                const p = (L: number) => catchChance(CYCLE_METHODS[tree]!, L, axe)!;
+                expect(p(1) * 256).toBe(lo + 1);
+                expect(p(50) * 256).toBe(Math.floor(lo / 2) + Math.floor(hi / 2) + 1);
+                expect(p(99) * 256).toBe(Math.min(hi + 1, 256));
+            }
+        }
+        // the figures quoted for rs/130's oak run and the rune willow lab run
+        expect(catchChance(CYCLE_METHODS.oak!, 60, 'bronze')).toBe(73 / 256);
+        expect(catchChance(CYCLE_METHODS.willow!, 60, 'rune')).toBe(128 / 256);
+    });
+
+    test('the lock window is 3k ticks for the least k misses at or under 0.5%, never below the preset', () => {
+        expect(lockWindow(CYCLE_METHODS.oak!, 60, 'bronze')).toBe(48);
+        expect(lockWindow(CYCLE_METHODS.willow!, 60, 'rune')).toBe(24);
+        expect(lockWindow(CYCLE_METHODS.willow!, 30, 'bronze')).toBeGreaterThan(lockWindow(CYCLE_METHODS.willow!, 30, 'rune'));
+        for (const tree of trees) {
+            const m = CYCLE_METHODS[tree]!;
+            for (const axe of AXES) {
+                for (const L of [1, 15, 30, 45, 60, 75, 99]) {
+                    const w = lockWindow(m, L, axe);
+                    const q = 1 - catchChance(m, L, axe)!;
+                    expect(w % 3).toBe(0);
+                    if (w > m.lockWindow) {
+                        expect(q ** (w / 3)).toBeLessThanOrEqual(0.005);
+                        expect(q ** (w / 3 - 1)).toBeGreaterThan(0.005);
+                    } else {
+                        expect(w).toBe(m.lockWindow);
+                        expect(q ** (m.lockWindow / 3)).toBeLessThanOrEqual(0.005);
+                    }
+                }
+            }
+            // no axe worn or carried: no chance, the preset's window
+            expect(catchChance(m, 60)).toBeUndefined();
+            expect(lockWindow(m, 60)).toBe(m.lockWindow);
+        }
+    });
+
+    test('regression: bronze on normal trees keeps the chance and window the preset had', () => {
+        for (let L = 1; L <= 99; L++) {
+            const p = statRandom(L, 64, 200);
+            const before = p >= 1 ? 18 : Math.max(18, 3 * Math.ceil(Math.log(0.005) / Math.log(1 - p)));
+            expect(catchChance(CYCLE_METHODS.tree!, L, 'bronze')).toBe(p);
+            expect(lockWindow(CYCLE_METHODS.tree!, L, 'bronze')).toBe(before);
+        }
+    });
+
+    test('cage uses lobster (fishing.struct 6/95) and fly is unchanged', () => {
+        expect(catchChance(CYCLE_METHODS.cage!, 40)).toBe(41 / 256);
+        expect(lockWindow(CYCLE_METHODS.cage!, 99)).toBe(45);
+        expect(lockWindow(CYCLE_METHODS.cage!, 40)).toBeGreaterThan(45);
+        expect(catchChance(CYCLE_METHODS.fly!, 25)).toBe(statRandom(25, 32, 192));
+    });
+
+    test('axeOf picks the best axe worn or carried, as woodcutting_axe_checker does', () => {
+        expect(axeOf(makeState({ tick: 1, inventory: ['Bronze axe'], equipment: ['Rune axe'] }))).toBe('rune');
+        expect(axeOf(makeState({ tick: 1, inventory: ['Iron axe', 'Steel axe'] }))).toBe('steel');
+        expect(axeOf(makeState({ tick: 1, inventory: ['Black axe', 'Steel axe'] }))).toBe('black');
+        expect(axeOf(makeState({ tick: 1, inventory: ['Knife', 'Logs'] }))).toBeUndefined();
     });
 });
 
