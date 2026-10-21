@@ -32,8 +32,14 @@ speedrun/
     probe-engine.ts      engine-rule probes (docs/speedrun/research/engine-sweep/engine.md)
     census-delayfree.ts  static census of delay-free item/xp triggers (same doc)
     measure-sweep.ts     top-ten verification (docs/speedrun/research/engine-sweep.md section 8)
-  tools/          upstream watch (nightly diff of watched upstream paths)
-  runs/           tick logs (gitignored)
+  tools/          upstream watch (nightly diff of watched upstream paths);
+                  hiscore-stamp-probe.ts (board reader and the live stamp test,
+                  docs/speedrun/research/competitors/hiscore-timestamps.md);
+                  observe.ts, the passive in-game observer and /playerpositions tracker
+                  (docs/speedrun/research/competitors/observation.md);
+                  hiscore-scrape.ts (demo hiscore snapshots and climber diffs,
+                  docs/speedrun/research/competitors/hiscores.md)
+  runs/           tick logs and the hiscore HTML cache (gitignored)
 ```
 
 ## Conventions
@@ -225,6 +231,9 @@ level with and without the watcher) has not been measured yet.
 - `openSession(bot, {client: 'lite'|'browser', launch?})` builds the control
   `BotSDK` from `bots/<bot>/bot.env` the way `runScript` does, without
   `runScript`'s disconnect-is-fatal policy, and waits for an advancing tick.
+  The gateway can replay the bot's last published state (still `inGame`) on
+  connect, so with `launch` the advance gets the whole ready budget: a demo
+  login takes about 20 s.
 - `launchClient` spawns the lite runner (`server/webclient`, `src/lite/runner.ts`)
   or opens the browser client URL; each launch bumps `sessionId`, and the
   client's tick counter restarts with it.

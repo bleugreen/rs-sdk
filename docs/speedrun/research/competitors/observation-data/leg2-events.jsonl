@@ -1,0 +1,16 @@
+{"at":"2026-10-21T08:31:37.073Z","event":"mes","tick":1,"text":"Welcome to RuneScape."}
+{"at":"2026-10-21T08:31:37.075Z","event":"login","tick":1,"me":[3022,3337,0],"modal":-1}
+{"at":"2026-10-21T08:31:37.075Z","event":"ready","tick":1,"me":[3022,3337,0]}
+{"at":"2026-10-21T08:32:09.869Z","event":"walk","spot":"draynor","ok":true,"msg":"Arrived","ticks":109,"me":[3092,3243]}
+{"at":"2026-10-21T08:32:09.870Z","event":"dwell","spot":"draynor","arrived":true,"tick":110}
+{"at":"2026-10-21T08:35:38.324Z","event":"walk","spot":"falador_west_bank","ok":true,"msg":"Arrived","ticks":122,"me":[2950,3377]}
+{"at":"2026-10-21T08:35:38.324Z","event":"dwell","spot":"falador_west_bank","arrived":true,"tick":800}
+{"at":"2026-10-21T08:39:00.216Z","event":"walk","spot":"barbarian_fishing","ok":true,"msg":"Arrived","ticks":92,"me":[3096,3424]}
+{"at":"2026-10-21T08:39:00.217Z","event":"dwell","spot":"barbarian_fishing","arrived":true,"tick":1473}
+{"at":"2026-10-21T08:42:07.531Z","event":"walk","spot":"edgeville_bank","ok":true,"msg":"Arrived","ticks":51,"me":[3086,3492]}
+{"at":"2026-10-21T08:42:07.532Z","event":"dwell","spot":"edgeville_bank","arrived":true,"tick":2095}
+{"at":"2026-10-21T08:45:32.236Z","event":"walk","spot":"varrock_west_bank","ok":true,"msg":"Arrived","ticks":109,"me":[3182,3430]}
+{"at":"2026-10-21T08:45:32.237Z","event":"dwell","spot":"varrock_west_bank","arrived":true,"tick":2777}
+{"at":"2026-10-21T08:48:34.255Z","event":"walk","spot":"varrock_sw_mine","ok":true,"msg":"Arrived","ticks":36,"me":[3182,3378]}
+{"at":"2026-10-21T08:48:34.256Z","event":"dwell","spot":"varrock_sw_mine","arrived":true,"tick":3384}
+{"at":"2026-10-21T08:51:26.185Z","event":"logout","why":"tour finished","tick":3955}

@@ -1,0 +1,38 @@
+{"at":"2026-10-21T08:55:18.506Z","event":"mes","tick":1,"text":"Welcome to RuneScape."}
+{"at":"2026-10-21T08:55:18.507Z","event":"login","tick":1,"me":[3182,3376,0],"modal":-1}
+{"at":"2026-10-21T08:55:18.508Z","event":"ready","tick":1,"me":[3182,3376,0]}
+{"at":"2026-10-21T08:56:43.681Z","event":"walk","spot":"catherby_fishing","ok":false,"msg":"Walk aborted: player died en route to (2840, 3435)","ticks":281,"me":[2844,3505]}
+{"at":"2026-10-21T08:56:43.682Z","event":"dwell","spot":"catherby_fishing","arrived":false,"tick":282}
+{"at":"2026-10-21T08:56:44.182Z","event":"displaced","spot":"catherby_fishing","me":[2844,3505],"tick":283}
+{"at":"2026-10-21T08:56:44.683Z","event":"displaced","spot":"catherby_fishing","me":[2844,3505],"tick":284}
+{"at":"2026-10-21T08:56:45.184Z","event":"displaced","spot":"catherby_fishing","me":[2844,3505],"tick":286}
+{"at":"2026-10-21T08:56:45.685Z","event":"displaced","spot":"catherby_fishing","me":[2844,3505],"tick":287}
+{"at":"2026-10-21T08:56:45.887Z","event":"mes","tick":288,"text":"Oh dear you are dead!"}
+{"at":"2026-10-21T08:56:46.186Z","event":"displaced","spot":"catherby_fishing","me":[3222,3216],"tick":288}
+{"at":"2026-10-21T08:58:26.489Z","event":"displaced","spot":"catherby_fishing","me":[2861,3496],"tick":624}
+{"at":"2026-10-21T08:58:26.935Z","event":"mes","tick":626,"text":"Oh dear you are dead!"}
+{"at":"2026-10-21T08:58:26.990Z","event":"displaced","spot":"catherby_fishing","me":[3220,3219],"tick":626}
+{"at":"2026-10-21T08:59:15.474Z","event":"mes","tick":787,"text":"Congratulations, you just advanced an attack level."}
+{"at":"2026-10-21T09:00:13.597Z","event":"walk","spot":"@Asukalabs","ok":false,"msg":"Walk aborted: player died en route to (2810, 3444)","ticks":185,"me":[2844,3505]}
+{"at":"2026-10-21T09:00:13.597Z","event":"dwell","spot":"@Asukalabs","arrived":false,"tick":971}
+{"at":"2026-10-21T09:00:14.097Z","event":"displaced","spot":"@Asukalabs","me":[2844,3505],"tick":972}
+{"at":"2026-10-21T09:00:14.598Z","event":"displaced","spot":"@Asukalabs","me":[2844,3505],"tick":974}
+{"at":"2026-10-21T09:00:15.099Z","event":"displaced","spot":"@Asukalabs","me":[2844,3505],"tick":975}
+{"at":"2026-10-21T09:00:15.414Z","event":"mes","tick":977,"text":"Oh dear you are dead!"}
+{"at":"2026-10-21T09:00:15.601Z","event":"displaced","spot":"@Asukalabs","me":[3222,3217],"tick":977}
+{"at":"2026-10-21T09:02:04.967Z","event":"displaced","spot":"@Asukalabs","me":[2851,3488],"tick":1341}
+{"at":"2026-10-21T09:02:05.468Z","event":"displaced","spot":"@Asukalabs","me":[2851,3488],"tick":1343}
+{"at":"2026-10-21T09:02:05.969Z","event":"displaced","spot":"@Asukalabs","me":[2851,3488],"tick":1345}
+{"at":"2026-10-21T09:02:06.170Z","event":"mes","tick":1346,"text":"Oh dear you are dead!"}
+{"at":"2026-10-21T09:02:06.481Z","event":"displaced","spot":"@Asukalabs","me":[3221,3217],"tick":1347}
+{"at":"2026-10-21T09:04:02.525Z","event":"walk","spot":"catherby_bank","ok":false,"msg":"Walk aborted: player died en route to (2809, 3436)","ticks":254,"me":[2850,3481]}
+{"at":"2026-10-21T09:04:02.525Z","event":"dwell","spot":"catherby_bank","arrived":false,"tick":1728}
+{"at":"2026-10-21T09:04:03.031Z","event":"displaced","spot":"catherby_bank","me":[2850,3481],"tick":1729}
+{"at":"2026-10-21T09:04:03.532Z","event":"displaced","spot":"catherby_bank","me":[2850,3481],"tick":1730}
+{"at":"2026-10-21T09:04:04.035Z","event":"displaced","spot":"catherby_bank","me":[2850,3481],"tick":1732}
+{"at":"2026-10-21T09:04:04.172Z","event":"mes","tick":1733,"text":"Oh dear you are dead!"}
+{"at":"2026-10-21T09:04:04.535Z","event":"displaced","spot":"catherby_bank","me":[3222,3220],"tick":1734}
+{"at":"2026-10-21T09:07:26.503Z","event":"walk","spot":"seers_bank","ok":true,"msg":"Arrived","ticks":74,"me":[2727,3484]}
+{"at":"2026-10-21T09:07:26.504Z","event":"dwell","spot":"seers_bank","arrived":true,"tick":2401}
+{"at":"2026-10-21T09:13:19.386Z","event":"session_ended","reason":"disconnected","tick":3412}
+{"at":"2026-10-21T09:13:19.387Z","event":"logout","why":"tour finished","tick":3412}
