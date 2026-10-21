@@ -389,8 +389,11 @@ async function takeTrade(ctx: ReceiverCtx, giver: string, wantNotes: number, kit
     const want = [{ item: /^unfermented wine$/i, amount: wantNotes - before }];
     if (kit) want.push({ item: /^grapes$/i, amount: 1 }, { item: /^jug of water$/i, amount: 1 });
     const r = await receiveFrom(sdk, giver, { want, openTimeoutMs });
+    // The inventory is the truth: on the demo a receiver reported a declined trade
+    // whose items had arrived (its decline landed after the trade completed).
     const received = count(sdk.getState(), ITEM.wineNote) - before;
-    if (!r.ok || received <= 0) throw new Error(`wine trade failed: ${r.reason ?? 'no wine arrived'}`);
+    if (received <= 0) throw new Error(`wine trade failed: ${r.reason ?? 'no wine arrived'}`);
+    if (!r.ok) ctx.log?.('wine trade reported failure but the notes arrived', { reason: r.reason, received });
     return { received, tradeTicks: r.ticks, skipped: false };
 }
 
