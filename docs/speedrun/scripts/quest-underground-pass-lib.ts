@@ -133,7 +133,8 @@ export class Lab {
      * lands. Returns ticks from the first click to idle at the destination.
      */
     async travel(label: string, dst: T, opts: { allow?: (kind: string) => boolean; reach?: number; before?: (e: Edge) => Promise<void> } = {}) {
-        const reach = opts.reach ?? 20;
+        // winding cave routes can exceed the client's 25-turn click route, so keep clicks short
+        const reach = opts.reach ?? 10;
         await this.idle();
         const t0 = this.tick();
         const hp0 = this.hp();
