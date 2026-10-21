@@ -4,18 +4,24 @@ Shared measurement, mechanics and gear: [combat.md](combat.md). Scripts:
 [`combat-rate.ts`](../scripts/combat-rate.ts), [`combat-model.ts`](../scripts/combat-model.ts).
 Labels follow `docs/speedrun/skills/README.md` (rs/2). Host: the ogre rates are combat.md's
 and the spider rates ranged.md's, all taken at 300 ms on the Mac executor `local` at load
-11-18 on 16 cores, so they are **busy-host figures, a few percent pessimistic**.
+11-18 on 16 cores, so they are **busy-host figures, a few percent pessimistic**. rs/91's kit
+rates ran on its own lab (macOS and Linux executors, `docs/speedrun/research/helper-fed-and-combat.md`
+section 3 on cairn://p/rs/91/1/builder). Client: the headless lite client; the reactions per
+cycle and the webclient caveat are in combat.md's and ranged.md's client lines.
 
 ## 1. Recommendation
 
 **On the route (rs/3's Package B), Defence needs only 1,288 base after the quests.**
 Monkey Madness option 1 gives 20,000 and Dragon Slayer (after MM) 18,650: 38,650, level 98
-(read). The pre-MM fights are cast, so Defence stays at 1 until MM. Close the 1,288 with
-**defensive melee beside the cannon at the Wilderness poison spiders: 230 ticks** at 5.60
-Defence per tick (rs/31's plan (e), `ranged.md`; inferred from measured rates). Those ticks
-are part of the Ranged finish, not extra: the cannon earns 11.03 Ranged per tick over them
-(Ranged 54 -> 67), then the finish continues with cannon + rapid knives. Ogres alone would
-close the gap in about 140 ticks (1,288 / 9.18) but give up the cannon's Ranged.
+(read; [quests README](../quests/README.md) section 6). The pre-MM fights are cast, so Defence
+stays at 1 until MM. Close the 1,288 with **defensive melee beside the cannon at the Wilderness
+poison spiders with rs/91's kit: 168 ticks** at 7.65 Defence per tick (measured, rs/91: super
+attack and super strength, glory, Protect from Melee + Ultimate Strength + Incredible Reflexes
+flicked, super antipoison; `ranged.md` section 1). Those ticks are part of the Ranged finish,
+not extra: the cannon earns 13.66 Ranged per tick over them, then the finish continues with the
+cannon and rapid knives. Without the kit it is 230 ticks at 5.60 (rs/31's plan (e), inferred
+from measured rates). Ogres alone would close the gap in about 140 ticks (1,288 / 9.18) but
+give up the cannon's Ranged.
 
 Under the alternatives (Package A, no Dragon Slayer) the gap was 19,938 base from MM option
 1's 20,000, and Defence was the main melee line. Two ways to close a gap that size:
@@ -31,11 +37,21 @@ Under the alternatives (Package A, no Dragon Slayer) the gap was 19,938 base fro
 
 | Start | Ticks to 99 on ogres | HP earned | Basis |
 |---|---|---|---|
-| **On route: Package B, MM option 1 + Dragon Slayer (38,650, level 98)** | **140** on ogres; on the route, **230** at the spiders alongside the cannon (shared with Ranged) | about 426 either way (a third of 1,288; 1.85 HP per tick at the spiders); the HP gap is covered by the Ranged finish anyway | inferred |
+| **On route: Package B, MM option 1 + Dragon Slayer (38,650, level 98)** | **140** on ogres; on the route, **168** at the spiders with the kit (230 without), alongside the cannon (shared with Ranged) | about 426 either way (a third of 1,288); the HP gap is covered by the Ranged finish anyway | inferred from measured rates |
 | Package A: MM option 1 alone (20,000, level 89) | 2,121 | 6,646, more than MM's 4,938 HP gap | inferred |
 | With MM option 2 (35,000, level 97) | 525 | 1,646 | inferred |
 | No MM (0) | **4,248** | 13,313 | inferred |
 | Level 1 | **4,248** | 13,313 | inferred |
+
+### Summary row
+
+rs/2's columns for the Item-fed skills section of `docs/speedrun/skills/README.md`; column 5
+is "with interleaving (net)", n/a where nothing is absorbable. The 168 ticks are inside
+Ranged's 1,857-tick finish and must not be added to it.
+
+| Skill | Headline method | Start level (on-route quests) | Ticks to 99, normal | Ticks to 99, with interleaving (net) | Basis | Helper supplies | Document |
+|---|---|---|---|---|---|---|---|
+| Defence | defensive melee beside the cannon at the Wilderness poison spiders, rs/91's kit | 98: MM option 1 20,000 + Dragon Slayer 18,650 = 38,650, gap 1,288 ([quests README](../quests/README.md) section 6) | 168, **inside Ranged's finish** (230 without the kit) | n/a | measured rate (7.65 per tick, rs/91), inferred total; busy host | 1 dose each of super attack and super strength, glory (in Ranged's list) | defence.md |
 
 ## 2. Route by level band
 
@@ -74,7 +90,8 @@ level does not change the xp rate.
 - **Controlled melee** gives only a third of the xp to Defence (combat.md section 4).
 - **Interleaving** (`interleaving.md` section 8): none of it can be absorbed into self-only
   time. Defence is trained by melee at a fixed site, which is itself self-only time, and on
-  the route its 230 ticks already share the cannon's clock with Ranged.
+  the route its 168 ticks (230 without the kit) already share the cannon's clock with Ranged,
+and rs/91's three-prayer flick fills the 5-event packet budget on its flick ticks (measured).
 
 ## 6. Gotchas
 
@@ -83,8 +100,9 @@ See combat.md section 8. At low Defence, ogres still hit rarely and for at most 
 
 ## 7. Helper supply list
 
-On the route (Package B) Defence has no list of its own: its 230 ticks run inside the cannon
-finish, whose supplies are in `ranged.md` section 7. For Package A, Defence 89 -> 99 on ogres
+On the route (Package B) Defence has no list of its own: its 168 ticks run inside the cannon
+finish, whose supplies (with the kit's super attack and super strength dose) are in `ranged.md`
+section 7. For Package A, Defence 89 -> 99 on ogres
 (2,121 ticks, inferred):
 
 | Item | Count | Source |
