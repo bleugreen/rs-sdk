@@ -17,6 +17,16 @@ end-to-end runs as a **busy host's figures, a few percent pessimistic**. The sta
 58-tick cycle, and the 1,151 inferred from it, is the clean figure. rs/26's bbs correction
 factor had not been published when this was written (01:15).
 
+**Client.** Every number here was taken on the headless lite client against a local lab engine,
+where a reaction lands on the next tick. The scored run drives the browser webclient against the
+demo, where each reaction to observed state costs 1-2 more ticks through the SDK relay from home
+and about 0.15 from Ashburn (rs/2; `docs/speedrun/LAB.md` on main, "Which client a number was
+taken on" and the host-latency table under "Running several labs on one machine"). The bank
+cycle has **1 reaction per 28-bone inventory**: withdraw-all and close go out on the tick the
+bank is seen open (section 4). Each of the 67 level-up dialogs is dismissed in the same tick as
+the next Bury (section 6). The buries go out blind every 2 ticks. Totals are not re-derived for
+the webclient.
+
 ## 1. Recommendation
 
 Bury **dragon bones** (72 base, `bones.obj:82`) from level 1 to 99 at any bank
@@ -181,17 +191,37 @@ hosts: a pickpocket stun (1.96 bones per stun measured), the wait ticks of an un
   (`magic.md` section 5). So all of Thieving's ~100 stuns go to bones: **~196 bones, ~392 bury
   ticks plus ~7 bank visits (~28), so ~420 standalone ticks absorbed**. Bones take a slot
   each, so a load of ~24 lasts ~12 stuns, and ~8 top-up trades (5 ticks fixed client, 9
-  stock) are not absorbed.
+  stock) are not absorbed. **This share is clean:** the host loop is the plain pickpocket
+  loop, and Thieving has no knife column (no tick-manipulation variant) for it to net against.
+  The stun's packets fit the budget (3 per tick at +2, +4, +6, measured). If Charge's or
+  Fletching's stacks ride the same loads (magic.md section 5, fletching.md), each takes a slot
+  from the bones, so a load drops to ~21-22 bones and the top-ups rise to ~9-10 (inferred).
 - **Gathering clocks.** The other ~348 bones (555 - 11 early - 196) fit 4-tick Woodcutting or
   5-tick fly fishing at one per cycle, about 1,400-1,750 gathering ticks, but only where those
   skills are not on rs/9's 3-tick cycles, which remove the free tick. Top-ups come every
-  ~50-100 gathering ticks.
+  ~50-100 gathering ticks. **This share applies only against Woodcutting's and Fishing's
+  normal (plain-loop) column.** rs/9's knife loop (knife-on-logs, the button, a drop and a
+  re-click on the tick after each roll, every 3 ticks) leaves no 2-tick gap for a bury
+  (interleaving.md sections 3 and 7). Burying on a 4-tick Woodcutting clock instead of the
+  knife loop's 3 costs 1 Woodcutting tick per bone and saves 2 bury ticks, so against the
+  knife column the ~348 bones save net ~1 tick each, not 2 (interleaving.md section 7,
+  inferred).
 
 | Plan | Prayer's own ticks to 99 | Basis |
 |---|---|---|
 | Standalone (bank booth) | **1,151** (measured run 1,221 with stalls) | section 2 |
 | Stuns only: 11 early + 196 in stuns + 348 standalone | **about 800** (21 + 723 + 40-72 of top-ups) | inferred |
-| Stuns + un-manipulated WC/fishing clocks | **about 150-220** (21 early + ~23 top-up trades) | inferred; rs/3's README quotes ~150 for the gathering-clock case |
+| Stuns + un-manipulated WC/fishing clocks | **about 150-220** (21 early + ~23 top-up trades) | inferred; applies only against Woodcutting's and Fishing's normal column. rs/3's README quotes ~150 for the gathering-clock case |
+| Stuns + 4-tick WC, counted against WC's knife column | **about 500-570** (the 150-220 plus ~348 Woodcutting ticks lost to the slower clock) | inferred, interleaving.md section 7 |
+
+### Summary row
+
+rs/2's columns for the Item-fed skills section of `docs/speedrun/skills/README.md`; column 5
+is "with interleaving (net)".
+
+| Skill | Headline method | Start level (on-route quests) | Ticks to 99, normal | Ticks to 99, with interleaving (net) | Basis | Helper supplies | Document |
+|---|---|---|---|---|---|---|---|
+| Prayer | bury dragon bones at a bank booth; 11 early for Prayer 43 before TGV | 1 (no on-route quest gives Prayer; [quests README](../quests/README.md) section 4, step 0) | 1,151 (measured run 1,221 with stalls) | **~800** with the ~196 bones in pickpocket stuns: clean, Thieving has no knife column. Adding ~348 bones on 4-tick WC / 5-tick fly fishing gives ~150-220, which applies only against those skills' normal column; against WC's knife column it is ~500-570 | measured cadence (fedora, busy host); interleaving totals inferred | 555 dragon bones (11 unnoted before TGV, the rest one noted stack) | prayer.md |
 
 ## 6. Gotchas
 
