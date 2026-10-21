@@ -73,7 +73,7 @@ export interface DialogRun {
 export async function runDialog(
     sdk: BotSDK,
     choices: RegExp[] = [],
-    opts: { settleTicks?: number; openTimeoutTicks?: number; maxSteps?: number; log?: boolean } = {},
+    opts: { settleTicks?: number; openTimeoutTicks?: number; maxSteps?: number; log?: boolean; allowUnused?: boolean } = {},
 ): Promise<DialogRun> {
     const settle = opts.settleTicks ?? 3;
     const queue = [...choices];
@@ -121,7 +121,7 @@ export async function runDialog(
     }
     out.ticks = first < 0 ? 0 : lastOpen - first + 1;
     out.closedAt = first < 0 ? -1 : lastOpen + 1;
-    if (queue.length) throw new Error(`dialog ended with unused choices: ${queue.join(', ')}`);
+    if (queue.length && !opts.allowUnused) throw new Error(`dialog ended with unused choices: ${queue.join(', ')}`);
     return out;
 }
 
@@ -297,19 +297,19 @@ export class QuestBot {
         throw new Error(`timed out in segment ${this.S.cur?.name}`);
     }
 
-    async talk(key: string, choices: RegExp[] = []) {
+    async talk(key: string, choices: RegExp[] = [], opts: { allowUnused?: boolean } = {}) {
         const n = await this.npc(key);
         const op = n.optionsWithIndex.find(o => /talk/i.test(o.text));
         if (!op) throw new Error(`${key} has no talk option`);
         this.S.action();
         await this.sdk.sendInteractNpc(n.index, op.opIndex);
-        const r = await runDialog(this.sdk, choices, { openTimeoutTicks: 60, settleTicks: 2 });
+        const r = await runDialog(this.sdk, choices, { openTimeoutTicks: 60, settleTicks: 2, allowUnused: opts.allowUnused });
         if (r.closedAt < 0) throw new Error(`${key}: no dialogue opened`);
         this.S.dialog(r);
         return r;
     }
 
-    async useOnNpc(obj: string, key: string, until: () => boolean = () => true, choices: RegExp[] = []) {
+    async useOnNpc(obj: string, key: string, until: () => boolean = () => true, choices: RegExp[] = []): Promise<void> {
         const n = await this.npc(key);
         this.S.action();
         await this.sdk.sendUseItemOnNpc(this.need(obj).slot, n.index);
@@ -317,9 +317,9 @@ export class QuestBot {
         await this.settle(until, 80, choices);
     }
 
-    async opLoc(key: string, op: number, until: () => boolean, opts: { near?: [number, number]; dialog?: boolean } = {}) {
+    async opLoc(key: string, op: number, until: () => boolean, opts: { near?: [number, number]; dialog?: boolean; choices?: RegExp[] } = {}) {
         const l = await this.loc(key, opts.near);
-        await this.withReachRetry(() => this.sdk.sendInteractLoc(l.x, l.z, l.id, op), until, opts.dialog);
+        await this.withReachRetry(() => this.sdk.sendInteractLoc(l.x, l.z, l.id, op), until, opts.dialog, opts.choices);
     }
 
     async useOnLoc(obj: string, key: string, until: () => boolean, opts: { near?: [number, number]; dialog?: boolean } = {}) {
@@ -328,7 +328,7 @@ export class QuestBot {
     }
 
     /** Send a loc click; if the server answers "I can't reach that!", log it and click again. */
-    private async withReachRetry(send: () => Promise<unknown>, until: () => boolean, dialog?: boolean) {
+    private async withReachRetry(send: () => Promise<unknown>, until: () => boolean, dialog?: boolean, choices: RegExp[] = []) {
         for (let attempt = 0; ; attempt++) {
             this.sdk.getNewChat({ types: [0], includeSelf: true });
             this.S.action();
@@ -338,12 +338,38 @@ export class QuestBot {
                 if (this.sdk.getNewChat({ types: [0], includeSelf: true }).some(m => /can't reach that/i.test(m.text))) unreachable = true;
                 return unreachable;
             };
-            await this.settle(until, 80, [], dialog, abort);
+            await this.settle(until, 80, [...choices], dialog, abort);
             if (!unreachable) return;
             console.log(`  [${tick(this.sdk)}] "I can't reach that!" in ${this.S.cur?.name}; retrying`);
             if (attempt >= 2) throw new Error(`unreachable loc in ${this.S.cur?.name}`);
             await waitUntil(this.sdk, () => false, 2);
         }
+    }
+
+    /** Click an inventory item's named op (Wear, Wield, Search...). */
+    async invOp(obj: string, op: RegExp, until: () => boolean, choices: RegExp[] = []) {
+        const i = this.need(obj);
+        const o = i.optionsWithIndex.find(x => op.test(x.text));
+        if (!o) throw new Error(`${obj} has no ${op} op: ${i.optionsWithIndex.map(x => x.text).join('/')}`);
+        this.S.action();
+        await this.sdk.sendUseItem(i.slot, o.opIndex);
+        await this.settle(until, 20, choices);
+    }
+
+    /** Remove a worn item by config name. */
+    async unequip(obj: string) {
+        const id = this.id(this.OBJ, obj);
+        const e = this.sdk.getEquipment().find(x => x.id === id);
+        if (!e) throw new Error(`${obj} not worn`);
+        const o = e.optionsWithIndex.find(x => /remove/i.test(x.text)) ?? { opIndex: 1 };
+        this.S.action();
+        await this.sdk.sendUseEquipmentItem(e.slot, o.opIndex);
+        await this.settle(() => !this.sdk.getEquipment().some(x => x.id === id), 20);
+    }
+
+    worn(obj: string) {
+        const id = this.id(this.OBJ, obj);
+        return this.sdk.getEquipment().some(x => x.id === id);
     }
 
     async useOnObj(src: string, dst: string, until: () => boolean) {
