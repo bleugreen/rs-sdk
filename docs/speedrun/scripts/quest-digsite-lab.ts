@@ -278,10 +278,11 @@ export class QuestBot {
     }
 
     /** Run any dialogue that opens, until `until()` holds with no dialogue open. */
-    async settle(until: () => boolean, timeoutTicks = 80, choices: RegExp[] = [], requireDialog = false) {
+    async settle(until: () => boolean, timeoutTicks = 80, choices: RegExp[] = [], requireDialog = false, abort: () => boolean = () => false) {
         const t0 = tick(this.sdk);
         let saw = false;
         while (tick(this.sdk) - t0 < timeoutTicks) {
+            if (abort()) return;
             if (this.sdk.getState()!.dialog.isOpen) {
                 saw = true;
                 this.S.dialog(await runDialog(this.sdk, choices.splice(0), { settleTicks: 1, openTimeoutTicks: 1 }));
@@ -333,11 +334,11 @@ export class QuestBot {
             this.S.action();
             await send();
             let unreachable = false;
-            const check = () => {
+            const abort = () => {
                 if (this.sdk.getNewChat({ types: [0], includeSelf: true }).some(m => /can't reach that/i.test(m.text))) unreachable = true;
-                return unreachable || until();
+                return unreachable;
             };
-            await this.settle(check, 80, [], dialog && attempt === 0 ? dialog : dialog);
+            await this.settle(until, 80, [], dialog, abort);
             if (!unreachable) return;
             console.log(`  [${tick(this.sdk)}] "I can't reach that!" in ${this.S.cur?.name}; retrying`);
             if (attempt >= 2) throw new Error(`unreachable loc in ${this.S.cur?.name}`);
