@@ -63,6 +63,26 @@ import {
 } from './types.js';
 import type { ScanProvider } from './ActionExecutor.js';
 
+/**
+ * Where the server last placed an entity, in fine units (128 per tile, centred
+ * on its footprint) - the position observers must see.
+ *
+ * The browser client eases `x`/`z` toward the newest tile a few units per frame
+ * (Client.moveEntity) so movement looks smooth. That drawn position trails the
+ * server by up to a tick, and its tile (`x >> 7`) only changes once the sprite
+ * crosses the tile edge, so a step taken on tick T read as T+1. `routeX[0]` /
+ * `routeZ[0]` is always the newest tile the server sent (ClientEntity.teleport,
+ * moveCode). The lite client snaps `x`/`z` to exactly this value before it
+ * publishes (LiteClient.snapEntities), so both clients report the same thing.
+ */
+function serverPos(e: { x?: number; z?: number; routeX?: ArrayLike<number>; routeZ?: ArrayLike<number>; size?: number }): { x: number; z: number } {
+    if (!e.routeX || !e.routeZ) {
+        return { x: e.x || 0, z: e.z || 0 };
+    }
+    const half = (e.size ?? 1) * 64;
+    return { x: e.routeX[0] * 128 + half, z: e.routeZ[0] * 128 + half };
+}
+
 /** Cached prayer component discovery result */
 interface PrayerComponentMap {
     /** Component IDs for each prayer (indexed 0-14) */
@@ -211,8 +231,9 @@ export class BotStateCollector implements ScanProvider {
         const c = this.client as any;
         const count: number = c.mapFlagUnsetCount ?? 0;
         const player = c.localPlayer;
-        const tileX = ((player?.x ?? 0) >> 7);
-        const tileZ = ((player?.z ?? 0) >> 7);
+        const pos = player ? serverPos(player) : { x: 0, z: 0 };
+        const tileX = pos.x >> 7;
+        const tileZ = pos.z >> 7;
 
         if (currentTick !== this.opFeedbackTick) {
             if (this.opFeedbackTick !== -1 && count > this.lastMapFlagUnsetCount) {
@@ -631,15 +652,16 @@ export class BotStateCollector implements ScanProvider {
             this.lifeId++;
         }
 
+        const pos = serverPos(player);
         return {
             name: player.name || 'Unknown',
             combatLevel: player.combatLevel || 0,
             hp,
             maxHp,
-            x: player.x || 0,
-            z: player.z || 0,
-            worldX: (c.mapBuildBaseX || 0) + ((player.x || 0) >> 7),
-            worldZ: (c.mapBuildBaseZ || 0) + ((player.z || 0) >> 7),
+            x: pos.x,
+            z: pos.z,
+            worldX: (c.mapBuildBaseX || 0) + (pos.x >> 7),
+            worldZ: (c.mapBuildBaseZ || 0) + (pos.z >> 7),
             level: c.minusedlevel || 0,
             runEnergy: c.runenergy || 0,
             runWeight: c.runweight || 0,
@@ -945,15 +967,14 @@ export class BotStateCollector implements ScanProvider {
             // Validate NPC coordinates are within scene bounds (0 to 104*128 = 13,312)
             // NPCs with invalid coords are likely despawning or in a bad state
             const maxLocalCoord = 104 * 128;
-            const npcX = npc.x || 0;
-            const npcZ = npc.z || 0;
+            const { x: npcX, z: npcZ } = serverPos(npc);
             if (npcX < 0 || npcX > maxLocalCoord || npcZ < 0 || npcZ > maxLocalCoord) {
                 continue; // Skip NPCs with invalid coordinates
             }
 
             const npcType = npc.type as NpcType;
-            const dx = npcX - (player.x || 0);
-            const dz = npcZ - (player.z || 0);
+            const dx = npcX - playerPos.x;
+            const dz = npcZ - playerPos.z;
             const distance = Math.max(Math.abs(dx), Math.abs(dz)) >> 7;
 
             const optionsWithIndex: NpcOption[] = [];
@@ -1050,13 +1071,14 @@ export class BotStateCollector implements ScanProvider {
 
             if (!player || player === localPlayer || !player.name) continue;
 
-            const dx = (player.x || 0) - (localPlayer.x || 0);
-            const dz = (player.z || 0) - (localPlayer.z || 0);
+            const pos = serverPos(player);
+            const dx = pos.x - localPos.x;
+            const dz = pos.z - localPos.z;
             const distance = Math.max(Math.abs(dx), Math.abs(dz)) >> 7;
 
             // Convert fine-grained local coords (128 units/tile) to world coordinates
-            const playerWorldX = baseX + ((player.x || 0) >> 7);
-            const playerWorldZ = baseZ + ((player.z || 0) >> 7);
+            const playerWorldX = baseX + (pos.x >> 7);
+            const playerWorldZ = baseZ + (pos.z >> 7);
             const facing = BotStateCollector.decodeFaceEntity(player.faceEntity ?? -1);
             const combatCycle = player.combatCycle ?? -1000;
             const corroborated = combatCycle > clientCycle;
@@ -1074,7 +1096,7 @@ export class BotStateCollector implements ScanProvider {
                 combatTargetIndex: target.index,
                 inCombat: corroborated,
                 reachable: this.reachProbeReady()
-                    ? this.reachProbe.canReachEntity(player.routeX?.[0] ?? (player.x || 0) >> 7, player.routeZ?.[0] ?? (player.z || 0) >> 7, 1)
+                    ? this.reachProbe.canReachEntity(pos.x >> 7, pos.z >> 7, 1)
                     : undefined
             });
         }
@@ -1109,8 +1131,9 @@ export class BotStateCollector implements ScanProvider {
         };
 
         const currentLevel = c.minusedlevel || 0;
-        const playerTileX = (player.x || 0) >> 7;
-        const playerTileZ = (player.z || 0) >> 7;
+        const playerPos = serverPos(player);
+        const playerTileX = playerPos.x >> 7;
+        const playerTileZ = playerPos.z >> 7;
         const baseX = c.mapBuildBaseX || 0;
         const baseZ = c.mapBuildBaseZ || 0;
 
@@ -1299,8 +1322,9 @@ export class BotStateCollector implements ScanProvider {
         const probeReady = this.reachProbeReady();
 
         const currentLevel = c.minusedlevel || 0;
-        const playerTileX = (player.x || 0) >> 7;
-        const playerTileZ = (player.z || 0) >> 7;
+        const playerPos = serverPos(player);
+        const playerTileX = playerPos.x >> 7;
+        const playerTileZ = playerPos.z >> 7;
         const baseX = c.mapBuildBaseX || 0;
         const baseZ = c.mapBuildBaseZ || 0;
 
