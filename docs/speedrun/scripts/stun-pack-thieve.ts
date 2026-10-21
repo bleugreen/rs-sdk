@@ -307,7 +307,7 @@ function onScored(s: BotWorldState) {
             st.sent.push(`${k}:${sent.join('')}`);
             ev.push(...sent);
         }
-        log({ t, k, lvl: th.baseLevel, hp, ev, msgs: msgs.map(m => m.text) });
+        log({ t, k, lvl: th.baseLevel, hp, ev, msgs: msgs.map(m => m.text), rej: s.opFeedback?.opRejectedCount ?? null, bones, dlg: s.dialog?.isOpen || undefined, modal: (s as any).interface?.isOpen || undefined });
         return;
     }
 
