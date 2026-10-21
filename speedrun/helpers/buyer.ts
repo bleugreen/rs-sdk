@@ -26,7 +26,7 @@
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState } from '../../sdk/types';
-import { crossTollGate, inAlKharid, isEastOfTollGate, TOLL_GP, TOLL_WEST } from '../lib/toll-gate';
+import { besideGateWest, crossTollGate, inAlKharid, isEastOfTollGate, TOLL_GP, WEST_OF_GATE } from '../lib/toll-gate';
 import { pointMarketAtServer } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
 
@@ -93,16 +93,6 @@ export const SHOPS: Record<string, ShopSpec> = {
     hickton: { npc: /^hickton$/i, stand: { x: 2821, z: 3442 }, bank: BANKS.catherby },
     dargaud: { npc: /^bow and arrow salesman$/i, stand: { x: 2672, z: 3434 }, bank: BANKS.seers }
 };
-
-/**
- * A step west, clear of the toll gate. From the gate's west side the SDK
- * pathfinder (which takes the gate for a door) routes the Varrock east bank
- * back through Al Kharid and sticks at the gate; from here no west-side
- * destination does (sdk/pathfinding.ts findLongPath, checked for the banks and
- * shops above).
- */
-const WEST_OF_GATE: Tile = { x: 3255, z: 3228 };
-const besideGateWest = (t: Tile) => !isEastOfTollGate(t) && Math.max(Math.abs(t.x - TOLL_WEST.x), Math.abs(t.z - TOLL_WEST.z)) <= 6;
 
 /** Underground maps sit 6,400 tiles north of the surface they belong to. */
 export const isUnderground = (t: Tile): boolean => t.z > 6400;
