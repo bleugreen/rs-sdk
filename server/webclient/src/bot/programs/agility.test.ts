@@ -199,6 +199,44 @@ describe('agility course', () => {
     });
 });
 
+describe('Protect from Melee', () => {
+    /** Ticks 1..n standing still, the prayer state following the toggles sent; `npcAt(t)` places a skeleton. */
+    function drive(params: Record<string, unknown>, n: number, npcAt: (t: number) => boolean = () => true) {
+        const h = new Harness('agl', createAgility);
+        let on = false;
+        const state = (t: number) => {
+            const s = makeState({ tick: t, x: 3004, z: 3940, npcs: npcAt(t) ? [{ index: 2, name: 'Skeleton', x: 3005, z: 3940 }] : [] });
+            (s as unknown as { prayers: unknown }).prayers = { activePrayers: Array.from({ length: 15 }, (_, i) => i === 14 && on), prayerPoints: 43, prayerLevel: 43 };
+            return s;
+        };
+        h.start('agl', { course: COURSE, maxTicks: 1000, ...params }, state(0));
+        const toggles: number[] = [];
+        for (let t = 1; t <= n; t++) {
+            for (const sent of h.step(state(t))) if (sent.action.type === 'togglePrayer') { on = !on; toggles.push(t); }
+        }
+        return toggles;
+    }
+
+    test('off sends nothing; hold turns it on once', () => {
+        expect(drive({}, 20)).toEqual([]);
+        expect(drive({ protect: 'hold' }, 20).length).toBe(1);
+    });
+
+    test('flick turns it off and on in one tick every flickGap ticks, outside the 3 ticks after a click', () => {
+        const t = drive({ protect: 'flick' }, 30);
+        expect(t.length).toBeGreaterThan(3);
+        // after the first on, toggles come in same-tick pairs
+        const pairs = t.slice(1);
+        for (let k = 0; k < pairs.length; k += 2) expect(pairs[k]).toBe(pairs[k + 1]);
+    });
+
+    test('near: on while a skeleton is close, off when it is gone', () => {
+        const t = drive({ protect: 'near' }, 40, tick => tick < 20);
+        expect(t.length).toBe(2);
+        expect(t[1]).toBeGreaterThanOrEqual(20);
+    });
+});
+
 describe('Wilderness rules', () => {
     const me: Me = { x: 3004, z: 3940, combatLevel: 3, wild: wildernessLevel(3004, 3940) };
     const player = (o: Partial<NearbyPlayer> & { x: number; z: number }): NearbyPlayer => ({ kind: 'player', index: 1, name: 'p', combatLevel: 30, distance: Math.max(Math.abs(o.x - me.x), Math.abs(o.z - me.z)), combatTargetType: 'none', ...o });
