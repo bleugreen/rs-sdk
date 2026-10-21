@@ -1,0 +1,3 @@
+window 2026-10-21T20:37:06.762Z - 2026-10-21T20:37:28.906Z: 321 frames
+tick output arrival interval ms: p10 92 p50 154 p90 281 max 386 (n 131); catch-ups 0 in 0.4 min
+game packet out, ms after its tick's output arrived: p10 1 p50 1 p90 134 max 265 (n 108)
