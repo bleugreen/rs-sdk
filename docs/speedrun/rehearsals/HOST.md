@@ -279,6 +279,56 @@ Notes on the reads:
   out; that was before the logout-first teardown existed. cairn_twin was logged out cleanly at
   20:35 UTC.
 
+## Run-capable twin: gate timer and host reservation (rs/host)
+
+Since 2026-10-21 both Ashburn machines are run-capable (main's policy; successor tenet pending the
+operator). Before the scored run, both are gated in the same minute with the giver roster logged in,
+and the run starts on one that passes. Rehearsals continue on the machine not chosen, and pause
+during the gate and the run.
+
+- **Gate clone and account.** `~/gate/rs-sdk` is the gate's own clone, detached at the commit in
+  `~/run-commit`. Its read account is a throwaway (credentials only in
+  `~/gate/rs-sdk/bots/gate/bot.env`, mode 600), never a rehearsal or fleet account.
+- **Timer.** `rs-gate-read.timer` / `rs-gate-read.service` (systemd user units; installed copy
+  `~/.local/lib/rs-gate`, history `~/gate-history/<UTC>.json`). It is installed but DISABLED on the
+  twin, and stays disabled until the run night.
+  - Status: `systemctl --user is-enabled rs-gate-read.timer; systemctl --user list-timers
+    rs-gate-read.timer --all --no-pager`.
+  - Enable every 30 min (:00/:30): `bash ~/.local/lib/rs-gate/install.sh`. Every 15 min:
+    `bash ~/.local/lib/rs-gate/install.sh --every 15`.
+  - Disable: `systemctl --user disable --now rs-gate-read.timer`.
+  - One read by hand, inside your own reservation: `systemctl --user set-environment
+    RS_GATE_OWNER=<owner>; systemctl --user start rs-gate-read.service; systemctl --user
+    unset-environment RS_GATE_OWNER`.
+
+  Each read logs in once (direct path, no Chrome), takes about 90 s, logs out, and is killed by
+  systemd at 270 s. It skips by itself if the host is busy (ffmpeg, bun, a live tmux server, or a
+  Chrome with its own profile or open connections), so it never runs into an attempt.
+- **Host reservation (sentinel).** File `/home/ubuntu/host-reserved.json`, one JSON object:
+  `{"owner": "<rs/NNN or run>", "until": "<UTC ISO, e.g. 2026-10-22T03:00:00Z>", "reason": "<text>"}`.
+  It is live while `until` is in the future; a file whose `until` has passed is ignored. While it
+  is live, the gate timer skips, and rehearsal attempts and claims do not start (pre-flight).
+  - It is written by the scored run's step 0 (covering the gate and, on the chosen machine, the
+    run) and by rs/host for installs and hand reads.
+  - Rehearsal attempts keep using their slot files, not this file.
+  - Check: `cat ~/host-reserved.json 2>/dev/null || echo none`.
+
+  `speedrun/rehearse.ts` enforcing this, at pre-flight and at step boundaries, is rs/213. Until it
+  lands, rs/147 checks the file by hand before granting any slot.
+- **Run night, for an attempt in flight.** main announces the run night's window, and rs/147
+  grants no attempt that would still be running when it opens. If an attempt is in flight when a
+  live reservation appears:
+  1. It logs out at its next step boundary (within 5 minutes).
+  2. It records the stop as 'paused for the gate/run'.
+  3. It does not restart until the reservation is gone.
+
+  After the machine is chosen, the other machine's reservation is removed and rehearsals may resume
+  there, unless tick-exact givers run on it (allowed only if it also passed).
+- **Step 0 on the twin.** On run night, RUN-HOST.md step 0 runs on both machines: it writes
+  `~/run-commit` and moves `~/rs-sdk` to RUN_COMMIT. On the twin that happens only under the run's
+  reservation, when no attempt worktree is in use. If the twin is not chosen, `~/rs-sdk` is
+  returned to main for attempts afterwards.
+
 ## Stop, start, terminate
 
 On the Mac (`bglab`). A stop ends the desktop session, so after a start the operator connects over
