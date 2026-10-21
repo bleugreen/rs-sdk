@@ -607,7 +607,9 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
             if (s.dialog?.isOpen) {
                 // level-up messages interrupt the fight; click through
                 const d = await dialog(sdk, [], { settle: 0 });
-                if (d.texts.some(t => /killing strike|machinery/i.test(t))) { killPages = d.pages; break; }
+                // the kill's mesbox text is not always in the dialog state;
+                // the stage is the ground truth (9 = boss defeated)
+                if (d.texts.some(t => /killing strike|machinery/i.test(t)) || (await getvar(sdk, 'hauntedmine')) >= 9) { killPages = d.pages; break; }
                 levelUpPages += d.pages;
                 continue;
             }
@@ -754,23 +756,41 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         }
         if (!invHas(sdk, /key/i)) throw new Error('no reward key');
         L.end();
-        L.begin('reward door (sets stage 10)');
+        // The crystal chamber is not connected to the boss room: back out the
+        // boss door, up the east stairs to the flooded level, west across it
+        // and down the west stairs (hauntedmine_darkstairs.rs2: 4_20 lands at
+        // 43_69 6_38), then the reward door.
         await energy(sdk);
-        // Leaving the boss room the click route fails on the cranes and carts
-        // (NPCs), so walk out on the npc-aware path first.
-        const out = npcAwarePath(sdk, (x, z) => Math.max(Math.abs(x - 2772), Math.abs(z - 4451)) <= 1);
+        L.begin('boss room -> boss door -> east stairs up');
+        // the click route out of the boss room fails on the crane and cart NPCs
+        const out = npcAwarePath(sdk, [{ x: 2798, z: 4453 }]);
         if (out) {
             L.add({ tiles: out.length });
             await walkPath(sdk, out, 6);
         }
-        await opLoc(sdk, L, /large door/i, [2772, 4450], 1, () => pos(sdk).z <= 4450, 80);
-        await ticks(sdk, 1);
+        const door = await findLoc(sdk, /^door$/i, { x: 2799, z: 4453 }, 10);
+        if (door?.options.some(o => /open/i.test(o))) await opLoc(sdk, L, /^door$/i, [2799, 4453], 1, () => true, 5);
+        await opLoc(sdk, L, /stairs/i, [2812, 4452], 1, () => inMap(sdk, 42, 69), 80);
+        L.end();
+        L.begin('flooded level west -> west stairs down to the crystal chamber');
+        await opLoc(sdk, L, /stairs/i, [2692, 4436], 1, () => inMap(sdk, 43, 69), 120);
+        L.end();
+        L.begin('reward door (sets stage 10)');
+        let doorOps = 0;
+        for (let i = 0; i < 3; i++) {
+            const z0 = pos(sdk).z;
+            await opLoc(sdk, L, /large door/i, [2772, 4450], 1, () => pos(sdk).z !== z0 && Math.abs(pos(sdk).x - 2772) <= 2, 80);
+            doorOps++;
+            await ticks(sdk, 1);
+            if ((await getvar(sdk, 'hauntedmine')) === 10) break;
+        }
+        L.note(`door ops ${doorOps}, now at ${pos(sdk).x},${pos(sdk).z}`);
         L.end();
         const st = await getvar(sdk, 'hauntedmine');
         console.log('stage after door', st);
         L.begin('cut a crystal (quest complete)');
         const strBefore = sdk.getSkill('strength')!.experience;
-        await opLoc(sdk, L, /crystal outcrop/i, [2787, 4428], 1, () => sdk.getSkill('strength')!.experience > strBefore, 80);
+        await opLoc(sdk, L, /crystal/i, [2788, 4428], 1, () => sdk.getSkill('strength')!.experience > strBefore, 80);
         L.note(`strength xp +${sdk.getSkill('strength')!.experience - strBefore} (game xp)`);
         L.end();
     }
