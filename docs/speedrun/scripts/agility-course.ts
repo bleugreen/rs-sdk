@@ -83,9 +83,10 @@ const laps = +lapsArg;
 // Every fail branch in the course scripts prints one of these (gnome_course.rs2 has none).
 const FAIL_RE = /slip and fall|lose your footing|lost your balance|missed a hand hold|missed the rope|were hit by|stumbled|stepped on a broken/i;
 
-// Level from game xp (Player.ts level table), to tell which obstacles followed a level-up.
+// Level from game xp (Player.ts level table; the engine keeps tenths, the bot state whole xp),
+// to tell which obstacles followed a level-up.
 const LEVEL_XP: number[] = [0, 0];
-for (let L = 1, acc = 0; L < 99; L++) { acc += Math.floor(L + Math.pow(2, L / 10) * 300); LEVEL_XP[L + 1] = Math.floor(acc / 4) * 10; }
+for (let L = 1, acc = 0; L < 99; L++) { acc += Math.floor(L + Math.pow(2, L / 10) * 300); LEVEL_XP[L + 1] = Math.floor(acc / 4); }
 const levelOfXp = (xp: number) => { let L = 1; while (L < 99 && xp >= LEVEL_XP[L + 1]!) L++; return L; };
 
 async function nearestLoc(sdk: BotSDK, cands: [number, number, number][]) {
