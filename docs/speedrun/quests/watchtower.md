@@ -219,10 +219,28 @@ failed in ways that fixed the geography, not the timings:
 
 ## Open questions
 
-- **Is the south city reachable from Toban's ladder without the battlement?**
-  This decides between the shortcut (about 1,100) and the relic route (about
-  1,500-1,700). The fastest check is a lab bot on the ladder landing (2500,2988)
-  walking to ogre guard 4 (2527,3020).
+- **Does the shortcut route work? (unverified; the first thing to measure if
+  Watchtower's quest points are wanted.)** It decides between about 1,100 ticks
+  and the relic route's about 1,500-1,700. Each gate it relies on, read:
+
+  | Gate | What the script checks | Where |
+  |---|---|---|
+  | Gorad's tooth | given on his death only while `%itwatchtower` < 4 (stage 0 qualifies), with a free slot and no tooth already | `gorad.rs2:27`, `:31` |
+  | City guard's map | death rune accepted while `%itwatchtower` ≤ 5; sets stage 6 and gives the map | `city_guard.rs2:49-52` |
+  | Grew's crystal | first talk needs `%itwatchtower` ≥ 2 (stage 6 qualifies); second talk takes the tooth | `grew.rs2:48,58`, `:33-44` |
+  | Mad skavid's crystal | needs the five skavid bits only; sets stage 7 at any stage | `skavid.rs2:165`, `:210` |
+  | Enclave guard | nightshade refused below stage 7; sets 8 only from 7 | `enclave_guard.rs2:26-31` |
+  | Potion | mixing needs stage ≥ 9; only the wizard's talk at stage 8 gives 9; the wizard enchants an ogre potion at any stage below 13 and sets 10 | `brew_potion.rs2:16`, `watchtower_wizard.rs2:54-60`, `:294-302` |
+  | West gate | the guard intercepts while `%itwatchtower` < 4; at stage 6 it just opens | `quest_itwatchtower.rs2:276-284` |
+  | East (gold-bar) gate | first talk pushes you to the hill; the second, with a gold bar, lets you in. Its inside does not reach the city guards on the collision map | `ogre_guard.rs2:3-29`, `quest-wtikov-routes.ts` |
+  | Chasm jump into the guards' pen | Agility 25 (`stat()`), 20 coins, ogre guard 4 within 8 tiles | `quest_itwatchtower.rs2:392-420` |
+  | Battlement (the intended way into the south city) | climbable only after the rock cake (market bits = 2); otherwise guard 3 talks and can push you out to (2523,2998) | `quest_itwatchtower.rs2:319-333`, `ogre_guard.rs2:88-144` |
+  | **Toban's ladder into the south city** | the ladder drops you at (2500,2988). The SDK collision snapshot routes from there into the south city (3 tiles to (2499,2990)) **but not back**, so it may be a one-way gap or a snapshot artefact | `quest_itwatchtower.rs2:238-240`, `quest-wtikov-routes.ts` |
+
+  The last row is the one that matters. If the gap is real, the shortcut works.
+  If not, entering the south city needs the battlement, and that needs the west
+  gate (stage 4, the relic). The fastest check is a lab bot standing on
+  (2500,2988) walking to ogre guard 4 (2527,3020).
 - **Why no tooth in the lab?** Log `bot.attack`'s result and Gorad's hit points.
   `ai_queue3` gives the tooth through `npc_findhero` and a player queue
   (`gorad.rs2:22-34`), which may fail like Mordred's hook did for the Holy Grail
