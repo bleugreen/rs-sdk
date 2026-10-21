@@ -21,7 +21,20 @@ measured lap and fall costs with the success-roll formula; rerun it with
 
 ## 1. Recommendation
 
-**With quests:** Agility's quest rewards are Grand Tree, Regicide, Troll
+**On the planned quest route** (cairn://p/rs/3): Grand Tree, Underground Pass and
+Regicide give **24,650 base xp (level 92)**, leaving **about 2,186 ticks** of
+Wilderness laps to 99 (inferred, `agility-model.ts`). Underground Pass and
+Regicide are provisional until the Regicide-chain quest document lands; with
+Grand Tree alone it is 4,695 ticks from level 75. The troll chain (Death Plateau,
+Troll Stronghold, Troll Romance) is off the route: Troll Romance's 8,000 base saves
+about 1,150 ticks of laps here, against about 2,735 ticks for the chain on the
+fixed client (`docs/speedrun/quests/troll_romance.md`). Tourist Trap is off too: two
+Agility picks would save about 1,336 ticks (2,186 to 850) against 1,430-1,830 ticks of
+quest. Do Underground Pass before Grand Tree to skip the 122-159 ticks of
+pre-quest training below, unless its failable obstacles at low Agility cost more
+quest time than that.
+
+**With every Agility quest:** Agility's quest rewards are Grand Tree, Regicide, Troll
 Romance and Underground Pass. Regicide requires Underground Pass, so the real
 base is **32,650 base xp (level 96)**, not the 29,650 that leaves Underground
 Pass out. From there the Wilderness course takes **about 1,035 ticks** to 99
@@ -106,6 +119,10 @@ excluded, see `docs/speedrun/quests/`):
 | Quest xp in | Base xp | Start level | Ticks to 99 |
 |---|---|---|---|
 | none | 0 | 1 | 6,956 (Gnome below 52) / 6,509 (monkey bars) |
+| Grand Tree only | 7,900 | 75 | 4,695 |
+| **Grand Tree + Underground Pass + Regicide (planned quest route)** | **24,650** | **92** | **2,186** |
+| ... + 1 Tourist Trap pick (off the route) | 29,300 | 94 | 1,515 |
+| ... + 2 Tourist Trap picks (off the route) | 33,950 | 96 | 850 |
 | Grand Tree + Regicide + Troll Romance | 29,650 | 94 | 1,465 |
 | ... + Underground Pass (required by Regicide) | 32,650 | 96 | 1,035 |
 | ... + Fremennik Trials | 35,462 | 97 | 634 |
@@ -129,9 +146,9 @@ course it replaces):
 The picks displace Wilderness laps at about 7.0 base per tick, so a 4,650 pick
 is worth about 660 ticks and a 7,650 pick about 1,035 ticks (capped by what is
 left to 99). That beats the roughly 400 and 600 ticks the same picks save on
-Thieving. Agility is the better home for the first Tourist Trap pick and for
-one Legends pick. A second Agility pick only helps if fewer Agility quests are
-done.
+Thieving. Neither Tourist Trap nor Legends is on the planned route; whether a
+reward quest is worth doing, and where its picks go, is decided in
+[README.md](README.md).
 
 ## 4. Mechanics
 
