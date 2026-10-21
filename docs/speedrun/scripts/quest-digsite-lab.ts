@@ -389,7 +389,7 @@ export class QuestBot {
     async useOnObj(src: string, dst: string, until: () => boolean) {
         this.S.action();
         await this.sdk.sendUseItemOnItem(this.need(src).slot, this.need(dst).slot);
-        await this.settle(until, 20);
+        await this.settle(until, 60);
     }
 
     async pickup(obj: string) {
