@@ -162,12 +162,22 @@ export interface ChatDrain {
 }
 
 /**
- * Tracks the chat while level-up pages chain, and sends one blind continue per
- * tick while a continue page shows. Blind: the lite client would otherwise wait
- * to see the next page before sending, which costs a round trip per page on the
- * demo; at one continue per tick the server ends one page per tick however long
- * the round trip is. A continue that arrives after the last page finds no paused
- * script and is ignored by the engine.
+ * Blind continues sent per tick while a page shows. The engine resumes paused
+ * scripts in the packet phase but starts the next queued level-up script only in
+ * the player phase, so a second continue in the same tick cannot reach the next
+ * level-up: it ends a second page only inside the same script (the unlock page a
+ * level-up shows at Cooking's unlock levels). Two per tick therefore clear one
+ * level-up script per tick whether or not it has an unlock page; any extra
+ * continue finds no paused script and is ignored.
+ */
+export const CONTINUES_PER_TICK = 2;
+
+/**
+ * Tracks the chat while level-up pages chain, and sends `perTick` blind
+ * continues per tick while a continue page shows. Blind: the lite client would
+ * otherwise wait to see the next page before sending, which costs a round trip
+ * per page on the demo; sending every tick lets the server end a script per tick
+ * however long the round trip is.
  */
 class PageClicker {
     pages = 0;
@@ -176,7 +186,7 @@ class PageClicker {
     private wasOpen = false;
     private lastWaiting = false;
 
-    constructor(private readonly sdk: Pick<BotSDK, 'sendClickDialog'>) {}
+    constructor(private readonly sdk: Pick<BotSDK, 'sendClickDialog'>, private readonly perTick = CONTINUES_PER_TICK) {}
 
     /** 'continue' while a continue page shows, 'choice' for a page that is not ours, 'closed' otherwise. */
     see(s: BotWorldState): 'continue' | 'choice' | 'closed' {
@@ -191,8 +201,10 @@ class PageClicker {
         this.lastWaiting = s.dialog.isWaiting;
         if (s.tick > this.lastResume) {
             this.lastResume = s.tick;
-            this.resumes++;
-            void this.sdk.sendClickDialog(0, { blind: true });
+            for (let i = 0; i < this.perTick; i++) {
+                this.resumes++;
+                void this.sdk.sendClickDialog(0, { blind: true });
+            }
         }
         return 'continue';
     }
@@ -202,10 +214,10 @@ class PageClicker {
  * Dismiss chained continue pages (level-ups) until the chat is closed and stays
  * closed over `quietTicks` more ticks. Never answers a choice page.
  */
-export async function drainChat(sdk: StateSource & Pick<BotSDK, 'sendClickDialog'>, opts: { maxTicks?: number; quietTicks?: number } = {}): Promise<ChatDrain> {
+export async function drainChat(sdk: StateSource & Pick<BotSDK, 'sendClickDialog'>, opts: { maxTicks?: number; quietTicks?: number; perTick?: number } = {}): Promise<ChatDrain> {
     const startTick = sdk.getState()?.tick ?? 0;
     const quiet = opts.quietTicks ?? 1;
-    const clicker = new PageClicker(sdk);
+    const clicker = new PageClicker(sdk, opts.perTick);
     let closedAt = -1;
     const r = await onStates(sdk, opts.maxTicks ?? 120, s => {
         const kind = clicker.see(s);
@@ -236,7 +248,7 @@ export interface BankOpen {
  * bank opens in the very tick the last page is dismissed. The op is re-sent if
  * neither a page nor the bank shows for `resendTicks` ticks.
  */
-export async function openBankThroughPages(sdk: ReceiverSdk, opts: { maxTicks?: number; resendTicks?: number } = {}): Promise<BankOpen> {
+export async function openBankThroughPages(sdk: ReceiverSdk, opts: { maxTicks?: number; resendTicks?: number; perTick?: number } = {}): Promise<BankOpen> {
     const s0 = sdk.getState();
     if (!s0) throw new Error('openBankThroughPages: no state');
     const startTick = s0.tick;
@@ -244,7 +256,7 @@ export async function openBankThroughPages(sdk: ReceiverSdk, opts: { maxTicks?: 
     const booth = findBooth(s0);
     if (!booth) return { ok: false, openTick: -1, startTick, pages: 0, resumes: 0, reason: 'no bank booth in sight' };
     const resend = opts.resendTicks ?? 4;
-    const clicker = new PageClicker(sdk);
+    const clicker = new PageClicker(sdk, opts.perTick);
     let lastOp = s0.tick;
     let lastPage = s0.tick;
     void sdk.sendInteractLoc(booth.x, booth.z, booth.id, booth.op);

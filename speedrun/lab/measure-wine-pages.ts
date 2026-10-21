@@ -128,6 +128,20 @@ for (let rep = 0; rep < n; rep++) {
         });
     }
 
+    if (only.includes('E')) {
+        // Continues per tick: does a burst clear more than one queued level-up per tick?
+        for (const perTick of [1, 5, 2]) {
+            const due = await arm(29, 30);
+            const f = await awaitFiring(sdk, due);
+            tracing = `E${perTick}`;
+            const t0 = tick(sdk);
+            const open = await openBankThroughPages(sdk, { perTick });
+            tracing = '';
+            await depositNotes(sdk, 'all', { close: true });
+            result('E-continues-per-tick', { perTick, firedAt: f.tick, level: f.level, xp: f.xpGained, pages: open.pages, resumes: open.resumes, pagesTicks: open.openTick - t0 });
+        }
+    }
+
     if (only.includes('C')) {
         // A logout click with level-up pages queued: the engine runs the queue out (one
         // script per in-world tick) before it removes the player. Then what a relog leaves.
