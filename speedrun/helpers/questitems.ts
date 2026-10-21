@@ -442,8 +442,13 @@ export class Gatherer {
                 const food = this.sdk.getInventory().find(i => FOOD.test(i.name));
                 if (food) await this.bot.eatFood(food);
                 else {
-                    this.log('resting', { hp: hp.level });
-                    await this.ticks(100);
+                    // One Hitpoint per 100 ticks: rest back to 80%, or the next failed
+                    // pickpocket puts it straight back here.
+                    this.log('resting', { hp: hp.level, of: hp.baseLevel, coins: this.held('Coins'), thieving: this.level('Thieving') });
+                    await this.until(() => {
+                        const h = this.sdk.getSkill('Hitpoints');
+                        return !h || h.level * 5 >= h.baseLevel * 4;
+                    }, 1500);
                 }
                 continue;
             }
