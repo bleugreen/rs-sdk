@@ -348,7 +348,7 @@ export class Bidder {
             const { id, name } = await this.buyer.resolveItem(o.item);
             this.lines.push({ o, id, name, floor: 0, lastFillAt: now, fillsSinceLog: 0, reached: false, prev: null });
         }
-        this.log('phase', { phase: 'bid', lines: this.lines.map(l => ({ item: l.name, id: l.id, ...l.o })), recheckMinutes: this.o.recheckMinutes });
+        this.log('phase', { phase: 'bid', lines: this.lines.map(l => ({ ...l.o, item: l.name, id: l.id })), recheckMinutes: this.o.recheckMinutes });
 
         while (!ctx.signal.aborted) {
             const due = Date.now() - this.lastCycle >= this.o.recheckMinutes * 60_000;
