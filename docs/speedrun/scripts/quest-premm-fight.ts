@@ -133,7 +133,8 @@ async function fight(sdk: BotSDK, bot: BotActions, target: RegExp): Promise<Samp
         }
         if (WHO !== 'titan' && WHO !== 'mordred' && (!npc || npc.hp === 0)) { won = true; break; }
         if (PROTECT && pts > 0 && !sdk.isPrayerActive('protect_from_melee') && s.tick - lastAct >= 1) await sdk.sendTogglePrayer('protect_from_melee');
-        if (pts < DRINK_BELOW && s.tick - lastDrink >= 3) {
+        // the prayer state can lag a fresh ::setstat by a tick or two; never drink in the first 5 ticks
+        if (pts < DRINK_BELOW && s.tick - t0 > 5 && (sdk.getSkill('Prayer')?.level ?? pts) < DRINK_BELOW && s.tick - lastDrink >= 3) {
             const pot = s.inventory.find(i => /^Prayer potion/.test(i.name));
             if (pot) { await sdk.sendUseItem(pot.slot, 1); lastDrink = s.tick; if (npc) await attack(npc); continue; }
         }
@@ -173,6 +174,7 @@ await runScript(async ({ bot, sdk }) => {
     for (let run = 0; run < RUNS; run++) {
         if (sdk.getState()!.player!.isDead) await sdk.waitForTicks(10);
         await reset(sdk);
+        await sdk.waitForTicks(3); // let the prayer points from ::setstat land before the fight reads them
         let target: RegExp;
         if (WHO === 'warlord') {
             // He has no quest gate on attacking (quest-gnome-fights.ts); spawn one beside his post.

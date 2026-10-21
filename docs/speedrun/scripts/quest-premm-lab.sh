@@ -28,13 +28,21 @@ for i in $(seq 1 1800); do grep -q 'World ready' "$LOG/engine.log" && break; kil
 GPID=$!; sleep 4
 rm -rf bots/$BOT; bun bots/create-bot.ts $BOT --local >"$LOG/create.log" 2>&1
 sed -i -e "s#^SERVER=.*#SERVER=localhost:$W#" -e "s#^GATEWAY_URL=.*#GATEWAY_URL=ws://localhost:$AGENT#" -e 's#^TELEMETRY=.*#TELEMETRY=false#' bots/$BOT/bot.env 2>/dev/null
-(cd server/webclient && exec bun src/lite/runner.ts $BOT >"$LOG/runner.log" 2>&1) &
-RPID=$!; sleep 40
-grep -q 'logged into' "$LOG/runner.log" || { echo RUNNER NOT LOGGED IN; tail -20 "$LOG/runner.log"; exit 1; }
+# The headless client ends its session if the server is silent for ~60 s
+# (server/webclient/src/lite/session.ts IDLE_CYCLES); restart it before a
+# script if it has gone, so one stall does not lose the rest of the batch.
+start_runner() {
+    (cd server/webclient && exec bun src/lite/runner.ts $BOT >>"$LOG/runner.log" 2>&1) &
+    RPID=$!
+    for i in $(seq 1 60); do [ "$(grep -c 'logged into' "$LOG/runner.log")" -gt "${1:-0}" ] && return 0; sleep 2; done
+    echo RUNNER NOT LOGGED IN; tail -20 "$LOG/runner.log"; exit 1
+}
+start_runner 0; sleep 10
 bun docs/speedrun/scripts/quest-primitives-setup.ts $BOT >/dev/null 2>&1
 args=()
 for a in "$@" --; do
     if [ "$a" = -- ]; then
+        [ ${#args[@]} -gt 0 ] && kill -0 $RPID 2>/dev/null || { [ ${#args[@]} -gt 0 ] && { echo "(restarting the headless client)"; start_runner "$(grep -c 'logged into' "$LOG/runner.log")"; sleep 5; }; }
         [ ${#args[@]} -gt 0 ] && { s=${args[0]}; echo "===== ${args[*]}"; NODE_TICKRATE=$TICK timeout 5400 bun docs/speedrun/scripts/$s $BOT "${args[@]:1}" 2>&1 | tee -a "$LOG/results.log" | grep -E '^(RESULT|run |SEG|SETUP|fight chain|final|hp |  [0-9]|── Error|    at |Error|\{| ")'; }
         args=()
     else args+=("$a"); fi
