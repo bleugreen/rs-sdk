@@ -96,9 +96,14 @@ export async function talkThrough(
             await sdk.sendClickDialog(0);
             pages++;
         }
-        // wait until this page is replaced (next tick at least)
+        // wait until this page is replaced or closed (at most 6 ticks)
         const t = tick(sdk);
-        while (tick(sdk) === t) await sleep(10);
+        const page = d.pageId;
+        while (tick(sdk) - t < 6) {
+            const nd = sdk.getDialog();
+            if (tick(sdk) > t && (!nd?.isOpen || nd.pageId !== page)) break;
+            await sleep(10);
+        }
         idleSince = Date.now();
     }
     return { pages, options };
