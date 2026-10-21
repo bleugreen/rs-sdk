@@ -591,7 +591,7 @@ until the flick has run on Ape Atoll itself.
   **With the efficiency kit on both sides** (rs/91, i, on measured rates): Package A's finish
   falls to ~2,720 (cannon + defensive melee at the kit's 7.65 Defence and 13.66 Ranged per
   tick for ~2,606 ticks, then ~110 of cannon + knives), so A totals ~3,561-3,593 against B's
-  ~3,254, and C ~4,021-4,053. **B still wins, by ~310-340 over A** instead of ~910-970,
+  ~3,254, and C ~4,068-4,100. **B still wins, by ~310-340 over A** instead of ~910-970,
   because the kit's melee boost helps A's long melee stretch more than B's short one.
 
   Dragon Slayer's 18,650 Strength caps Strength, and its 18,650 Defence leaves only a
