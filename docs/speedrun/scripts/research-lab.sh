@@ -16,7 +16,11 @@ LOG=${LAB_LOG:-${TMPDIR:-/tmp}/researchlab}
 mkdir -p "$LOG"
 
 export WEB_PORT=9290 WEB_MANAGEMENT_PORT=9291 HISCORES_WEB_PORT=9292 NODE_PORT=43990 AGENT_PORT=8190
-for p in $WEB_PORT $WEB_MANAGEMENT_PORT $HISCORES_WEB_PORT $NODE_PORT $AGENT_PORT; do fuser -k $p/tcp 2>/dev/null; done
+for p in $WEB_PORT $WEB_MANAGEMENT_PORT $HISCORES_WEB_PORT $NODE_PORT $AGENT_PORT; do
+    if command -v lsof >/dev/null; then lsof -ti tcp:$p | xargs kill 2>/dev/null; else fuser -k $p/tcp 2>/dev/null; fi
+done
+# macOS has no `timeout`; fall back to gtimeout or no limit.
+TIMEOUT=$(command -v timeout || command -v gtimeout || true)
 PIDS=()
 cleanup() { for p in "${PIDS[@]}"; do kill "$p" 2>/dev/null; done; sleep 1; for p in "${PIDS[@]}"; do kill -9 "$p" 2>/dev/null; done; }
 trap cleanup EXIT
@@ -50,7 +54,7 @@ for spec in "$@"; do
     IFS=':' read -r -a parts <<< "$spec"
     echo "=== ${parts[*]} ==="
     # Results also go to $LOG/results.log, so a lost batch connection does not lose them.
-    (cd "$ROOT" && timeout "${SCRIPT_TIMEOUT:-2400}" bun "${parts[0]}" "$BOT" "${parts[@]:1}") 2>&1 \
+    (cd "$ROOT" && ${TIMEOUT:+$TIMEOUT "${SCRIPT_TIMEOUT:-2400}"} bun "${parts[0]}" "$BOT" "${parts[@]:1}") 2>&1 \
         | grep -v '^\[Client\]' | tee -a "$LOG/results.log"
     [ "${PIPESTATUS[0]}" -eq 0 ] || STATUS=1
 done
