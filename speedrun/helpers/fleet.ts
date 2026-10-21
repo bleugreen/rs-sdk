@@ -6,7 +6,7 @@
 //   bun speedrun/helpers/fleet.ts run                  # the supervisor (fleetctl start runs it under systemd)
 //   bun speedrun/helpers/fleet.ts status [--json]
 //   bun speedrun/helpers/fleet.ts add <range> [--count N] [--role R] [--options JSON]
-//   bun speedrun/helpers/fleet.ts assign <account> <role> [--options JSON] [--disable]
+//   bun speedrun/helpers/fleet.ts assign <account> <role> [--options JSON] [--then ROLE [--then-options JSON] | --return] [--disable]
 //   bun speedrun/helpers/fleet.ts reload               # re-read fleet.json in the running supervisor
 //   bun speedrun/helpers/fleet.ts peek <account>       # position, levels, inventory (read-only)
 //
@@ -22,6 +22,10 @@
 // with backoff through a fleet-wide login gate, except for exit code 3 (client
 // revision older than the server's), which stops the whole fleet: every
 // account would fail the same way and retrying cannot fix it.
+//
+// A role whose run() returns has finished (role.ts) and is not started again
+// for that assignment (FleetRoleLoop); an assignment with `then` is rewritten
+// in fleet.json to that role, which starts at once.
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createWriteStream, renameSync, statSync, type WriteStream } from 'node:fs';
 import { mkdir, readFile, rm } from 'node:fs/promises';
@@ -43,13 +47,16 @@ import {
     diffActive,
     loginLimitPolicy,
     parseFleetConfig,
+    returnAssignment,
     ROLE_NAME_RE,
+    sameAssignment,
     type AccountConfig,
+    type Assignment,
     type FleetConfig
 } from './fleet-config';
 import { LedgerWriter, readLedger, writeJsonAtomic, type Ledger } from './ledger';
 import { describeFreshState, waitForFreshState } from '../lib/fresh-state';
-import type { BankSnapshot, Role, RoleContext } from './role';
+import { openRoleState, type BankSnapshot, type Role, type RoleContext, type RoleFinish } from './role';
 
 const ROOT = resolve(fileURLToPath(new URL('../../', import.meta.url)));
 
@@ -64,6 +71,8 @@ export const PATHS = {
     status: join(ROOT, 'fleet-run', 'status.json'),
     pid: join(ROOT, 'fleet-run', 'fleet.pid'),
     history: join(ROOT, 'fleet-run', 'bank-history.jsonl'),
+    /** One RoleState file per account (role.ts), e.g. handover outcomes. */
+    roleState: join(ROOT, 'fleet-run', 'role-state'),
     /** Written by `fleetctl update`: the ref and commit last deployed. */
     deployed: join(ROOT, 'fleet-run', 'deployed.json')
 };
@@ -281,6 +290,160 @@ export function loadRole(name: string): Promise<Role> {
 function bankSummary(snapshot: BankSnapshot): string {
     const top = [...snapshot.items].sort((a, b) => b.count - a.count).slice(0, 4);
     return `${snapshot.items.length} stacks; ${top.map(i => `${i.name} x${i.count}`).join(', ')}`;
+}
+
+/** What FleetRoleLoop needs from its account (AccountRunner, or a fake in tests). */
+export interface RoleLoopHooks {
+    load(name: string): Promise<Role>;
+    /** The context for one run of `cfg`'s role, its RoleState read afresh. */
+    context(cfg: AccountConfig, signal: AbortSignal): Promise<RoleContext>;
+    /** Run the role to its end; the fleet wraps it in the account's console and execution scope. */
+    run(role: Role, ctx: RoleContext, signal: AbortSignal): Promise<void | RoleFinish>;
+    started(role: Role, cfg: AccountConfig): void;
+    failed(cfg: AccountConfig, e: unknown): void;
+    /** A finished role asked for a person (RoleFinish.attention). */
+    attention(text: string): void;
+    note(text: string): void;
+    event(type: FleetEventType, fields?: Record<string, unknown>): void;
+    /** `finished` has a `then`: make it the account's assignment in fleet.json and return it, or null when that could not be done. */
+    returnTo(finished: AccountConfig): Promise<AccountConfig | null>;
+    isStopping(): boolean;
+    sleep?(ms: number, signal: AbortSignal): Promise<void>;
+}
+
+/**
+ * One account's role across its sessions. It is started on every session,
+ * restarted promptly after a stall or a reassignment and with backoff after a
+ * throw, and never started again for an assignment whose run() returned: that
+ * role has finished its job (role.ts). A finished assignment with `then` hands
+ * the account to that role, written to fleet.json first so a supervisor restart
+ * does not run the finished one again; without `then` the account idles,
+ * logged in, until it is reassigned. The run-machine launcher's RoleLoop
+ * (standalone.ts) follows the same rule for role processes that exit 0.
+ */
+export class FleetRoleLoop {
+    /** The running role's controller; the watchdog aborts it on a stall. */
+    ctl: AbortController | null = null;
+    /** The assignment that finished; idle while it is still `cfg`. */
+    private done: AccountConfig | null = null;
+    private wake: (() => void) | null = null;
+    private readonly backoff = new Backoff({ initialMs: 15_000, maxMs: 10 * 60_000, resetAfterMs: 10 * 60_000 });
+
+    constructor(
+        public cfg: AccountConfig,
+        private readonly h: RoleLoopHooks
+    ) {}
+
+    /** The account's current assignment has finished. */
+    get finished(): boolean {
+        return this.done === this.cfg;
+    }
+
+    /** A new role or options: stop the running role (or end the idle) and start the new one. */
+    reconfigure(cfg: AccountConfig): void {
+        this.cfg = cfg;
+        this.interrupt('reconfigured');
+    }
+
+    /** The same role and options with other settings changed (`then`): nothing restarts, and a finished assignment stays finished. */
+    update(cfg: AccountConfig): void {
+        if (this.done === this.cfg) this.done = cfg;
+        this.cfg = cfg;
+    }
+
+    interrupt(reason: string): void {
+        this.ctl?.abort(new Error(reason));
+        this.wake?.();
+    }
+
+    /** The role for one game session; resolves when the session ends or the account stops. */
+    async run(session: AbortSignal): Promise<void> {
+        const h = this.h;
+        while (!session.aborted && !h.isStopping()) {
+            const cfg = this.cfg;
+            if (this.done === cfg) {
+                await this.idle(session);
+                continue;
+            }
+            const ctl = new AbortController();
+            const relay = () => ctl.abort(session.reason);
+            session.addEventListener('abort', relay, { once: true });
+            this.ctl = ctl;
+            const started = Date.now();
+            let outcome: string;
+            let finish: RoleFinish | null = null;
+            try {
+                const role = await h.load(cfg.role);
+                h.started(role, cfg);
+                h.note(`[fleet] starting role ${cfg.role} ${JSON.stringify(cfg.options)}`);
+                const result = await h.run(role, await h.context(cfg, ctl.signal), ctl.signal);
+                if (!ctl.signal.aborted) finish = result ?? {};
+                outcome = ctl.signal.aborted ? `stopped: ${errText(ctl.signal.reason)}` : 'finished';
+            } catch (e) {
+                outcome = ctl.signal.aborted ? `stopped: ${errText(ctl.signal.reason)}` : `threw: ${errText(e)}`;
+                if (!ctl.signal.aborted) h.failed(cfg, e);
+            } finally {
+                session.removeEventListener('abort', relay);
+                this.ctl = null;
+            }
+            if (session.aborted || h.isStopping()) {
+                h.note(`[fleet] role ${outcome}`);
+                return;
+            }
+            if (finish) {
+                await this.finish(cfg, finish);
+                continue;
+            }
+            // Stalls and reconfigures restart promptly; crashes back off so a broken role cannot hot-loop.
+            const delay = ctl.signal.aborted ? 3_000 : this.backoff.failure(started, Date.now());
+            h.note(`[fleet] role ${outcome}; restarting it in ${Math.round(delay / 1000)}s`);
+            await (h.sleep ?? sleep)(delay, session);
+        }
+    }
+
+    private async finish(cfg: AccountConfig, f: RoleFinish): Promise<void> {
+        const h = this.h;
+        this.backoff.reset();
+        // A reload may have replaced the entry while the role ran: a new `then` counts, a new role or options win.
+        if (!sameAssignment(this.cfg, cfg)) return;
+        const current = this.cfg;
+        this.done = current;
+        h.event('role_finished', { then: current.then?.role ?? null, ...(f.attention ? { attention: f.attention, needsAttention: true } : {}) });
+        if (f.attention) {
+            h.attention(f.attention);
+            h.note(`[fleet] !!! ATTENTION, role ${cfg.role}: ${f.attention}`);
+        }
+        h.note(`[fleet] role ${cfg.role} finished; not restarting it`);
+        if (!current.then) {
+            h.note('[fleet] no `then` assignment: idle, logged in, until reassigned (fleetctl assign, then fleetctl reload)');
+            return;
+        }
+        const next = await h.returnTo(current);
+        if (this.cfg !== current) return;
+        if (!next) {
+            h.note(`[fleet] could not move on to ${describeAssignment(current.then)}; idle until reassigned`);
+            return;
+        }
+        h.note(`[fleet] returning to ${describeAssignment(next)}`);
+        this.cfg = next;
+    }
+
+    private idle(session: AbortSignal): Promise<void> {
+        return new Promise(resolve => {
+            if (session.aborted || this.h.isStopping()) return resolve();
+            const done = () => {
+                session.removeEventListener('abort', done);
+                this.wake = null;
+                resolve();
+            };
+            session.addEventListener('abort', done, { once: true });
+            this.wake = done;
+        });
+    }
+}
+
+function describeAssignment(a: Assignment): string {
+    return `role ${a.role} ${JSON.stringify(a.options)}`;
 }
 
 // ------------------------------------------------------------------ one account
