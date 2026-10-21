@@ -54,14 +54,14 @@ await runScript(async ({ bot, sdk }) => {
     if (SELF) {
         // McGrubor's Wood: squeeze through the loose railing, dig a red vine worm, back out.
         rec.add(await teleport(sdk, 'camelot'), '3a');
-        rec.add(await walkTo(bot, sdk, RAILING.x + 1, RAILING.z, 0), '3b walk to the loose railing');
-        rec.add(await locId(sdk, RAILING.x, RAILING.z, RAILING.id, 1, s => pos(s).x <= RAILING.x, { label: 'squeeze through', maxTicks: 20 }), '3c');
+        rec.add(await walkTo(bot, sdk, RAILING.x - 1, RAILING.z, 0), '3b walk to the loose railing'); // outside is the west side; the wood is entered eastwards
+        rec.add(await locId(sdk, RAILING.x, RAILING.z, RAILING.id, 1, s => pos(s).x >= RAILING.x, { label: 'squeeze through', maxTicks: 20 }), '3c');
         rec.add(await walkTo(bot, sdk, VINE.x, VINE.z - 1, 1), '3d walk to the vines');
         const vine = (await sdk.scanNearbyLocs(6)).find(l => /vine/i.test(l.name) && l.optionsWithIndex.length > 0);
         if (!vine) throw new Error('no vine loc near ' + JSON.stringify(pos(sdk.getState())));
         rec.add(await locId(sdk, vine.x, vine.z, vine.id, vine.optionsWithIndex[0]!.opIndex, s => invCount(s, /red vine worm/i) > 0, { label: 'dig ' + vine.name, maxTicks: 20 }), '3e');
         rec.add(await walkTo(bot, sdk, RAILING.x, RAILING.z, 0), '3f back to the railing');
-        rec.add(await locId(sdk, RAILING.x, RAILING.z, RAILING.id, 1, s => pos(s).x > RAILING.x, { label: 'squeeze out', maxTicks: 20 }), '3g');
+        rec.add(await locId(sdk, RAILING.x, RAILING.z, RAILING.id, 1, s => pos(s).x < RAILING.x, { label: 'squeeze out', maxTicks: 20 }), '3g');
         rec.add(await walkTo(bot, sdk, GATE.x + 2, GATE.z, 1), '4a walk to Hemenster');
     } else {
         rec.add(await teleport(sdk, 'camelot'), '3a');
