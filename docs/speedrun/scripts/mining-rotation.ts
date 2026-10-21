@@ -67,7 +67,9 @@ await runScript(async ({ bot, sdk }) => {
     const predicted: number[] = [];
     // Rolls awaiting their xp; a roll on server tick R shows xp at label R+1.
     const pending: { roll: number; rock: P }[] = [];
-    let onTime = 0, failed = 0;
+    let onTime = 0, failed = 0, levelUps = 0;
+    let prevAvail = -Infinity;
+    let lastLevel = 0;
     const ticks: number[] = [];
     const xps: number[] = [];
     const kinds: Record<string, number> = { stay: 0, trick: 0, walk: 0 };
@@ -101,6 +103,7 @@ await runScript(async ({ bot, sdk }) => {
         const o = options[0]!;
         kinds[o.kind]!++;
         for (const [t, p] of o.sendsAt) sends.set(Math.max(t, s.tick), p);
+        prevAvail = av(r);
         avail.set(`${r[0]},${r[1]}`, o.roll + RESPAWN);
         predicted.push(o.roll);
         pending.push({ roll: o.roll, rock: r });
@@ -121,11 +124,29 @@ await runScript(async ({ bot, sdk }) => {
 
     while (ticks.length < ORES) {
         s = await nextTick(sdk, s.tick);
-        if (s.dialog.isOpen) {
-            log.push(`  dialog seen@${s.tick}, continue sent`);
-            sdk.sendClickDialog(0).catch(() => {});
-        }
         const xp = miningXp(s);
+        const lvl = s.skills.find(k => k.name.toLowerCase() === 'mining')?.baseLevel ?? 0;
+        if (lvl > lastLevel && lastLevel > 0) {
+            // A level-up from the roll on R (seen now, at R+1) queued [advancestat] in the ENGINE
+            // queue, which runs on R+1 before interactions (World.ts processPlayers) and opens a
+            // chat modal, so the click that landed on R+1 was blocked (Player.canAccess). Drop the
+            // plan made on R and re-plan the same rock from now: the re-sent click lands on R+2 and
+            // closes the modal itself (OpLocHandler: clearPendingAction -> closeModal).
+            const last = pending.pop();
+            sends.clear();
+            if (last) {
+                avail.set(`${last.rock[0]},${last.rock[1]}`, prevAvail);
+                predicted.pop();
+                step--;
+            }
+            levelUps++;
+            log.push(`  level ${lvl} seen@${s.tick}: re-planning from here`);
+            R = s.tick;
+            pos = [s.player!.worldX, s.player!.worldZ];
+            planNext();
+        }
+        lastLevel = lvl;
+        if (s.dialog.isOpen && sends.size === 0 && s.tick < planUntil - 2) sdk.sendClickDialog(0).catch(() => {});
         if (xp > lastXp) {
             ticks.push(s.tick);
             xps.push(xp - lastXp);
@@ -155,7 +176,7 @@ await runScript(async ({ bot, sdk }) => {
         if (s.tick > planUntil + 40) throw new Error(`stalled; log:\n${log.slice(-12).join('\n')}`);
     }
     console.log(log.slice(0, Number(arg('loghead', '40'))).join('\n'));
-    console.log(`\ntransitions: ${JSON.stringify(kinds)}  rolls with xp on the predicted tick: ${onTime}, rolls without xp: ${failed}, xp events: ${ticks.length}`);
+    console.log(`\ntransitions: ${JSON.stringify(kinds)}  rolls with xp on the predicted tick: ${onTime}, rolls without xp: ${failed}, level-ups: ${levelUps}, xp events: ${ticks.length}`);
     summarize(`rotation of ${uniq.length} rocks, trick=${TRICK}`, ticks.slice(10), xps.slice(10));
     console.log(`run energy now: ${s.player?.runEnergy}`);
 }, { timeout: 30 * 60_000 });
