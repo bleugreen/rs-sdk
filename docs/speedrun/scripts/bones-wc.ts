@@ -213,7 +213,18 @@ async function topUp(t: number, prevRoll: number) {
     const s = sdk.getState()!;
     const before = items(s, BONES).length;
     log(`T${t} TRADE start (bones ${before}, free ${28 - s.inventory.length})`);
+    // Trace both sides' trade screens, one line per change.
+    const traces = [scored, helper].map(sess => {
+        let last = '';
+        return sess.sdk.onStateUpdate(st => {
+            const tr = st.trade;
+            const msg = st.gameMessages?.slice(-1)[0]?.text ?? '';
+            const k = tr?.isOpen ? `${tr.screen} mine=${tr.myOffer.reduce((n, i) => n + i.count, 0)} theirs=${tr.theirOffer.reduce((n, i) => n + i.count, 0)} acc=${tr.myAccepted ? 1 : 0}/${tr.partnerAccepted ? 1 : 0}` : `closed (${msg.slice(0, 40)})`;
+            if (k !== last) { last = k; log(`T${st.tick} trade[${sess === scored ? 'scored' : 'helper'}] ${k} at ${st.player?.worldX},${st.player?.worldZ}`); }
+        });
+    });
     const r = await receiveFrom(sdk, helper.name, { want: [{ item: BONES, amount: LOAD }], maxTicks: 60, openTimeoutMs: 20_000 });
+    for (const off of traces) off();
     const done = sdk.getState()!.tick;
     const got = items(sdk.getState()!, BONES).length - before;
     trades.push({ click: t, done, ok: r.ok, ...(r.reason ? { reason: r.reason } : {}), got, prevRoll });
