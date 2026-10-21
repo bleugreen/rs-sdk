@@ -88,13 +88,24 @@ await runScript(async ({ bot, sdk }) => {
                 const arr = await waitUntil(sdk, s => (s.player?.worldZ ?? 9999) < 4000, 20);
                 const tArr = arr!.tick;
                 const open = await waitUntil(sdk, s => s.dialog.isOpen, 60);
-                const d = await talkThrough(sdk, [/./], { settleTicks: 3 });
-                result(seg, { arrivalToFirstPage: open ? open.tick - tArr : null, dialogue: { ticks: d.ticks, pages: d.pages, options: d.options }, arrivalToClose: now(sdk) - tArr - 3, stage: await stage(), transcript: d.transcript });
+                // Idris's two pages, then the queued evil-elf ambush (idris.rs2:26-71) opens
+                // more pages after the scouts walk up; keep answering until 10 quiet ticks.
+                let pages = 0, lastPage = tArr;
+                const tr: string[] = [];
+                for (let k = 0; k < 6; k++) {
+                    const d = await talkThrough(sdk, [/./], { settleTicks: 10 });
+                    if (d.pages + d.options === 0) break;
+                    pages += d.pages + d.options;
+                    tr.push(...d.transcript);
+                    lastPage = now(sdk) - 10;
+                }
+                result(seg, { arrivalToFirstPage: open ? open.tick - tArr : null, pages, arrivalToLastClose: lastPage - tArr, stage: await stage(), transcript: tr });
             } else if (seg === 'iorwerth3' || seg === 'iorwerth5' || seg === 'iorwerth10' || seg === 'iorwerth12') {
                 const st = Number(seg.replace('iorwerth', ''));
                 await setVar(sdk, 'regicide_quest', st);
                 if (st === 5) for (const it of sdk.getInventory().filter(i => /Crystal pendant/i.test(i.name))) { await sdk.sendDropItem(it.slot); await waitTicks(sdk, 1); }
-                await tele(sdk, 2206, 3251, 0);
+                await waitTicks(sdk, 4);
+                for (let k = 0; k < 3 && !(await tele(sdk, 2206, 3251, 0)); k++) await waitTicks(sdk, 3);
                 const d = await talk(sdk, /Lord Iorwerth/i, [/./]);
                 result(seg, { ...d, transcript: undefined, stage: await stage(), inv: sdk.getInventory().map(i => i.name).filter(n => /pendant|book|message/i.test(n)) });
             } else if (seg === 'tracker4' || seg === 'tracker5' || seg === 'tracker7') {
@@ -119,6 +130,7 @@ await runScript(async ({ bot, sdk }) => {
                 const t0 = now(sdk);
                 await sdk.sendInteractLoc(loc!.x, loc!.z, loc!.id, 1);
                 const r = await waitUntil(sdk, at(2188, 3168), 15);
+                await waitTicks(sdk, 5); // the stage is set after the cross-over's p_delay(3)
                 result(seg, { ticks: r ? r.tick - t0 : null, stage: await stage() });
             } else if (seg === 'barrel') {
                 await tele(sdk, 2205, 3255, 0);
