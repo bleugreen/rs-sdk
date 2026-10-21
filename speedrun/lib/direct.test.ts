@@ -1,96 +1,68 @@
-import { afterEach, describe, expect, test } from 'bun:test';
-import { type DirectConnection, type DirectLogoutResult, type DirectSession, type DirectSessionClient, directLogoutText, startDirectSession } from './direct';
+import { describe, expect, test } from 'bun:test';
+import { type DirectClient, type DirectLogoutResult, type DirectLogoutTarget, type DirectSessionEnd, directLogoutText, directProbeSdk, logoutDirect } from './direct';
 import { LOGOUT_BUTTON } from './session';
 
-const NO_TIMEOUT = 206;
-type Frame = 'tick' | 'logout';
-
 /**
- * An engine socket and lite client in one script. The test plays the server: `deliver` puts
- * frames on the socket (a PLAYER_INFO tick, or LOGOUT) and fires the message event the session
- * pumps on; `serverClose` hangs up. `wire` lists what the client flushed to the server.
+ * A scripted engine socket under a direct session. The test plays the server: `tick` decodes a
+ * PLAYER_INFO (through the real directProbeSdk adapter), `logout` delivers LOGOUT, `hangUp`
+ * closes the socket from the server side. `wire` lists what the client flushed; `closed` is
+ * whether this side closed the socket.
  */
 function scripted(opts: { inGame?: boolean } = {}) {
-    const listeners: Record<'message' | 'close', (() => void)[]> = { message: [], close: [] };
-    let closedByServer = false;
-    let closedByClient = false;
-    const inbox: Frame[] = [];
+    let onTick: ((n: number) => void) | null = null;
+    let ingame = opts.inGame ?? true;
+    let closed = false;
+    let endWith: (e: DirectSessionEnd) => void = () => {};
+    const ended = new Promise<DirectSessionEnd>(r => (endWith = r));
     const pending: string[] = [];
     const wire: string[] = [];
-    let ingame = opts.inGame ?? true;
-    let loggedOut = false;
-    let onTick: ((n: number) => void) | null = null;
-    const conn: DirectConnection = {
-        socket: { addEventListener: (type, l) => listeners[type].push(l) },
-        get isClosed() {
-            return closedByServer || closedByClient;
-        },
-        close: () => {
-            closedByClient = true;
-        },
-    };
-    const client: DirectSessionClient = {
+    const client: DirectClient & DirectLogoutTarget['client'] = {
         setOnGameTickCallback: cb => (onTick = cb),
         getPlayerPosition: () => ({ worldX: 3222, worldZ: 3218 }),
-        isInGame: () => ingame && !conn.isClosed,
-        isLoggedOut: () => loggedOut,
+        isInGame: () => ingame && !closed,
         walkTo: () => ({ moved: true }),
         flush: () => {
-            if (conn.isClosed) return;
-            wire.push(...pending.splice(0));
+            if (!closed) wire.push(...pending.splice(0));
         },
-        async pumpPackets() {
-            while (!loggedOut && inbox.length) {
-                if (inbox.shift() === 'logout') {
-                    loggedOut = true;
-                    ingame = false;
-                } else onTick?.(1);
-            }
-        },
-        tickCycle: () => {},
-        writeOpcode: op => pending.push(op === NO_TIMEOUT ? 'NO_TIMEOUT' : `op ${op}`),
-        say: () => {},
-        isModalOpen: () => false,
-        getModalInterface: () => -1,
-        acceptCharacterDesign: () => false,
         clickComponent: id => {
             if (!client.isInGame()) return false;
             pending.push(`IF_BUTTON ${id}`);
             return true;
         },
     };
-    const settle = () => Bun.sleep(2);
-    return {
-        conn,
+    const target: DirectLogoutTarget = {
+        sdk: directProbeSdk(client),
         client,
+        ended,
+        close: () => {
+            closed = true;
+            endWith({ reason: 'closed' });
+        },
+    };
+    const settle = () => Bun.sleep(1);
+    return {
+        target,
         wire,
         clicks: () => wire.filter(w => w === `IF_BUTTON ${LOGOUT_BUTTON}`).length,
-        closedByClient: () => closedByClient,
-        async deliver(...frames: Frame[]) {
-            for (const f of frames) {
-                inbox.push(f);
-                for (const l of listeners.message) l();
+        closed: () => closed,
+        settle,
+        async tick(n = 1) {
+            for (let i = 0; i < n; i++) {
+                onTick?.(1);
                 await settle();
             }
         },
-        async serverClose() {
-            closedByServer = true;
-            for (const l of listeners.close) l();
+        async logout() {
+            ingame = false;
+            endWith({ reason: 'logged-out' });
             await settle();
         },
-        settle,
+        async hangUp() {
+            endWith({ reason: 'disconnected' });
+            await settle();
+        },
     };
 }
-
-const open: DirectSession[] = [];
-function start(s: ReturnType<typeof scripted>) {
-    const session = startDirectSession(s.conn, s.client, { host: 'localhost:8960', origin: 'http://localhost:8960', noTimeoutOpcode: NO_TIMEOUT });
-    open.push(session);
-    return session;
-}
-afterEach(() => {
-    for (const s of open.splice(0)) s.close();
-});
 
 /** Track a promise's settlement so a test can assert it has not resolved yet. */
 function watch<T>(p: Promise<T>) {
@@ -99,95 +71,69 @@ function watch<T>(p: Promise<T>) {
     return w;
 }
 
-describe('direct session logout', () => {
+describe('logoutDirect', () => {
     test('clicks logout, waits for the server LOGOUT, then closes the socket itself', async () => {
         const s = scripted();
-        const session = start(s);
-        await s.deliver('tick', 'tick');
-        const out = watch(session.logout());
+        await s.tick(2);
+        const out = watch(logoutDirect(s.target));
         await s.settle();
         expect(s.wire).toEqual([`IF_BUTTON ${LOGOUT_BUTTON}`]);
-        // the server has not answered: the session must not have dropped the socket
+        // the server has not answered: the socket must still be open
         expect(out.done).toBe(false);
-        expect(s.closedByClient()).toBe(false);
+        expect(s.closed()).toBe(false);
 
-        await s.deliver('tick', 'logout');
-        expect(out.done).toBe(true);
+        await s.tick();
+        await s.logout();
         expect(out.value).toMatchObject({ ok: true, via: 'logout', clicks: 1, clickTick: 2, endTick: 3 } satisfies Partial<DirectLogoutResult>);
-        expect(s.closedByClient()).toBe(true);
+        expect(s.closed()).toBe(true);
     });
 
-    test('the server closing the socket after the click counts as out', async () => {
+    test('the server hanging up after the click counts as out', async () => {
         const s = scripted();
-        const session = start(s);
-        await s.deliver('tick');
-        const p = session.logout();
+        await s.tick();
+        const p = logoutDirect(s.target);
         await s.settle();
-        await s.serverClose();
+        await s.hangUp();
         expect(await p).toMatchObject({ ok: true, via: 'server-close', clicks: 1 });
+        expect(s.closed()).toBe(true);
     });
 
-    test('refused in the post-combat window: re-clicks after retryTicks, then out', async () => {
+    test('refused in the post-combat window: re-clicks every retryTicks, then out', async () => {
         const s = scripted();
-        const session = start(s);
-        await s.deliver('tick');
-        const out = watch(session.logout({ retryTicks: 3 }));
+        await s.tick();
+        const out = watch(logoutDirect(s.target, { retryTicks: 3 }));
         await s.settle();
-        await s.deliver('tick', 'tick');
+        await s.tick(2);
         expect(s.clicks()).toBe(1);
-        await s.deliver('tick');
+        await s.tick();
         expect(s.clicks()).toBe(2);
         expect(out.done).toBe(false);
-        await s.deliver('logout');
+        await s.logout();
         expect(out.value).toMatchObject({ ok: true, via: 'logout', clicks: 2, clickTick: 1, endTick: 4 });
     });
 
     test('never confirmed: closes at the deadline and reports it', async () => {
         const s = scripted();
-        const session = start(s);
-        await s.deliver('tick');
-        const r = await session.logout({ timeoutMs: 40 });
+        await s.tick();
+        const r = await logoutDirect(s.target, { timeoutMs: 40 });
         expect(r).toMatchObject({ ok: false, via: null, clicks: 1 });
         expect(r.reason).toMatch(/still in the world/);
-        expect(s.closedByClient()).toBe(true);
+        expect(s.closed()).toBe(true);
     });
 
-    test('a second call returns the first result and sends no second click', async () => {
-        const s = scripted();
-        const session = start(s);
-        await s.deliver('tick');
-        const a = session.logout();
-        const b = session.logout();
-        expect(b).toBe(a);
-        await s.settle();
-        await s.deliver('logout');
-        expect((await a).ok).toBe(true);
-        expect(s.clicks()).toBe(1);
-    });
-
-    test('not logged in, or the socket already gone: no click, and not ok', async () => {
+    test('not logged in, or the session already over: no click, and only a LOGOUT counts', async () => {
         const notIn = scripted({ inGame: false });
-        expect(await start(notIn).logout()).toMatchObject({ ok: false, clicks: 0, reason: 'not in game' });
-        expect(notIn.closedByClient()).toBe(true);
+        expect(await logoutDirect(notIn.target)).toMatchObject({ ok: false, clicks: 0, reason: 'not in game' });
+        expect(notIn.closed()).toBe(true);
 
         const dropped = scripted();
-        const session = start(dropped);
-        await dropped.deliver('tick');
-        await dropped.serverClose();
-        expect(await session.logout()).toMatchObject({ ok: false, clicks: 0, reason: 'socket closed by the server before the logout' });
-    });
+        await dropped.hangUp();
+        expect(await logoutDirect(dropped.target)).toMatchObject({ ok: false, clicks: 0, reason: 'session ended before a logout: disconnected' });
 
-    test('keepalives stop once the session is logged out', async () => {
-        const s = scripted();
-        const session = start(s);
-        await s.deliver('tick');
-        const p = session.logout();
-        await s.settle();
-        await s.deliver('logout');
-        await p;
-        const sent = s.wire.length;
-        await Bun.sleep(1100);
-        expect(s.wire.length).toBe(sent);
+        const already = scripted();
+        await already.logout();
+        expect(await logoutDirect(already.target)).toMatchObject({ ok: true, via: 'logout', clicks: 0 });
+        expect(already.wire).toEqual([]);
     });
 });
 
