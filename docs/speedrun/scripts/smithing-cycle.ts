@@ -178,7 +178,8 @@ await runScript(async ({ bot, sdk }) => {
     if (BANK === 'fast') {
         // Phases: bank (bank open: deposit/withdraw/use-bar) -> anvil (waiting for the smithing
         // interface) -> smith (counting xp) -> booth (re-clicking the booth until the bank opens).
-        let phase: 'bank' | 'anvil' | 'smith' | 'booth' = 'bank';
+        type Phase = 'bank' | 'anvil' | 'smith' | 'booth';
+        let phase = 'bank' as Phase;
         let cyc: Cycle | null = null;
         let useSentTick = -99;
         let freeFrom = 0; // first observed tick on which a click can be legal
@@ -187,7 +188,7 @@ await runScript(async ({ bot, sdk }) => {
         let withdrawn = false;
         let newCycle = true;
         let progressTick = s.tick;
-        let lastPhase: typeof phase = phase;
+        let lastPhase: Phase = phase;
         while (!done()) {
             s = await nextTick(sdk, s.tick);
             if (phase !== lastPhase) { lastPhase = phase; progressTick = s.tick; }
