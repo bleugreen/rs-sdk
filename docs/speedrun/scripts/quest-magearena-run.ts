@@ -137,7 +137,12 @@ await runScript(async ({ bot, sdk }) => {
     } else {
         // pool: Kolodion's spot after the fight; guardian: where pray_at_statue leaves you (Saradomin)
         if (FROM === 'pool') await tele(sdk, 2540, 4716);
-        else await tele(sdk, 2500, 4719);
+        else {
+            await cheat(sdk, 'setvar magearena 7');
+            for (const it of sdk.getInventory()) if (/shark|staff of (saradomin|guthix|zamorak)/i.test(it.name)) await bot.dropItem(it);
+            if (!sdk.findInventoryItem(/cape of/i) && !sdk.findEquipmentItem(/cape of/i)) await cheat(sdk, `give ${GOD}_cape 1`);
+            await tele(sdk, 2500, 4719);
+        }
         t0 = clock(sdk);
         tDone = t0;
     }
