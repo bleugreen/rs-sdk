@@ -6,6 +6,12 @@
 // SDKs (sdk/runner.ts scripts, sdk/cli.ts, MCP execute_code) pair with it
 // exactly as they would with a browser tab.
 //
+// Unlike BotOverlay, which runs queued actions from the draw loop, an action runs
+// the moment the gateway delivers it and its packets are flushed before anything
+// else happens, state collection included. The engine reads input once per tick,
+// so every millisecond between the frame a bot reacts to and its packet on the
+// wire comes out of the gap the reaction has to land in.
+//
 //   bun src/lite/runner.ts <botname>          # reads bots/<botname>/bot.env
 //
 // Run from server/webclient so the '#/*' import map resolves.
@@ -26,10 +32,11 @@ import {
     isFastKbdPolicyState,
 } from './fast-kbd.js';
 
-const TICK_MS = 20; // matches the browser draw loop that drives BotOverlay.tick()
+/** Paces `wait` actions and queue expiry, in browser draw-loop frames like BotOverlay.tick(). */
+const TICK_MS = 20;
 const RECONNECT_MS = 3000;
 
-class LiteGatewayRunner {
+export class LiteGatewayRunner {
     private client: LiteClient;
     private actionQueue = new BotActionQueue();
     private waitTicks = 0;
@@ -75,6 +82,7 @@ class LiteGatewayRunner {
                         this.dispatchFastKbdPrayerOn(this.fastKbdLastState);
                     }
                     this.dispatchFastKbdAttack(targetIndex);
+                    this.flushGame();
                 }
                 this.fastKbdRawWasVisible = targetIndex !== undefined;
             }
@@ -180,7 +188,9 @@ class LiteGatewayRunner {
                 reason: 'busy'
             };
             if (actionId) this.sendActionResult(actionId, result);
+            return;
         }
+        this.startQueued();
     }
 
     private tick(): void {
@@ -211,41 +221,71 @@ class LiteGatewayRunner {
 
         if (this.waitTicks > 0) {
             this.waitTicks--;
+            if (this.waitTicks > 0) return;
             const active = this.actionQueue.active;
-            if (this.waitTicks === 0 && active) {
+            if (active) {
                 this.finishAction(active, { success: true, message: 'Wait complete', phase: 'completion' });
             }
-            return;
         }
 
-        if (this.actionQueue.active) return;
+        this.startQueued();
+    }
 
-        const queued = this.actionQueue.startNext();
-        if (!queued) return;
+    /**
+     * Run queued actions until one is still in flight (an async action or a
+     * `wait`). Called when an action arrives, when one finishes, and on every
+     * runner tick. The queue keeps it to one action at a time; several arriving
+     * together run back to back, and the engine decodes 5 of their packets per
+     * tick and carries the rest to the next (NetworkPlayer.decodeIn).
+     */
+    private startQueued(): void {
+        while (this.waitTicks === 0 && !this.actionQueue.active) {
+            const queued = this.actionQueue.startNext();
+            if (!queued) return;
 
-        const action = queued.action;
-        const resultOrPromise = this.client.executeBotAction(action);
+            const action = queued.action;
+            let resultOrPromise: ReturnType<LiteClient['executeBotAction']>;
+            try {
+                resultOrPromise = this.client.executeBotAction(action);
+            } catch (e) {
+                this.flushGame();
+                this.finishAction(queued, executionError(e));
+                continue;
+            }
+            this.flushGame();
 
-        if (resultOrPromise instanceof Promise) {
-            resultOrPromise
-                .then(result => this.finishAction(queued, result))
-                .catch(e =>
-                    this.finishAction(queued, {
-                        success: false,
-                        message: `Error: ${e}`,
-                        phase: 'completion',
-                        reason: 'execution_error'
-                    })
-                );
-            return;
+            if (resultOrPromise instanceof Promise) {
+                resultOrPromise
+                    .catch(executionError)
+                    .then(result => {
+                        this.flushGame();
+                        this.finishAction(queued, result);
+                        this.startQueued();
+                    });
+                return;
+            }
+
+            if (action.type === 'wait' && resultOrPromise.success) {
+                this.waitTicks = (action as any).ticks || 1;
+                return;
+            }
+
+            this.finishAction(queued, resultOrPromise);
         }
+    }
 
-        if (action.type === 'wait' && resultOrPromise.success) {
-            this.waitTicks = (action as any).ticks || 1;
-            return;
+    /**
+     * Put queued game packets on the wire now, ahead of state collection (a few
+     * ms at p50, tens at p90) and the gateway publish. A write failure leaves
+     * the bytes queued; the session loop's own flush rethrows it and ends the
+     * session with a reason, so it is not reported twice here.
+     */
+    private flushGame(): void {
+        try {
+            this.client.flush();
+        } catch {
+            // see above
         }
-
-        this.finishAction(queued, resultOrPromise);
     }
 
     private finishAction(entry: QueuedBotAction, result: ActionResult): void {
@@ -342,6 +382,7 @@ class LiteGatewayRunner {
                 && !state.prayers.activePrayers.some(active => active)) {
                 this.fastKbdPrayerOffPending = false;
             }
+            this.flushGame();
             this.fastKbdPolicyEligible = policyEligible;
             this.fastKbdWasVisible = fastKbdVisible;
             this.fastKbdRawWasVisible = fastKbdVisible;
@@ -349,6 +390,10 @@ class LiteGatewayRunner {
         }
         this.send({ type: 'state', state });
     }
+}
+
+function executionError(e: unknown): ActionResult {
+    return { success: false, message: `Error: ${e}`, phase: 'completion', reason: 'execution_error' };
 }
 
 // ------------------------------------------------------------------ CLI entry
@@ -379,67 +424,73 @@ async function preferDirectGateway(url: string): Promise<string> {
     }
 }
 
-const botName = process.argv[2];
-if (!botName) {
-    console.error('Usage: bun src/lite/runner.ts <botname>');
-    process.exit(1);
+if (import.meta.main) {
+    await main();
 }
 
-const repoRoot = fileURLToPath(new URL('../../../../', import.meta.url));
-const envPath = `${repoRoot}bots/${botName}/bot.env`;
-const env = Object.fromEntries(
-    (await Bun.file(envPath).text())
-        .split('\n')
-        .filter(l => l.includes('=') && !l.startsWith('#'))
-        .map(l => [l.slice(0, l.indexOf('=')).trim(), l.slice(l.indexOf('=') + 1).trim()])
-);
-
-const host = env.SERVER || 'localhost';
-// No config channel from the server (see LiteClient's maxMessageLength note), so
-// mirror the server's NODE_PROFANITY_FILTER by hand: PROFANITY_FILTER=false in
-// bot.env or the process env disables local chat censoring.
-const profanityRaw = (env.PROFANITY_FILTER ?? process.env.PROFANITY_FILTER ?? '').toLowerCase();
-const session = await startSession({
-    host,
-    username: env.BOT_USERNAME!,
-    password: env.PASSWORD!,
-    profanityFilter: ['false', '0', 'off', 'no'].includes(profanityRaw) ? false : undefined,
-    quiet: true
-}).catch((err: unknown) => {
-    // A revision mismatch won't fix itself: exit 3 so a supervisor can stop restarting us
-    if (err instanceof OutdatedClientError) {
-        console.error(`[lite-runner] ${err.message}`);
-        process.exit(3);
+async function main(): Promise<void> {
+    const botName = process.argv[2];
+    if (!botName) {
+        console.error('Usage: bun src/lite/runner.ts <botname>');
+        process.exit(1);
     }
-    throw err;
-});
 
-console.log(`[lite-runner] '${env.BOT_USERNAME}' logged into ${host}`);
+    const repoRoot = fileURLToPath(new URL('../../../../', import.meta.url));
+    const envPath = `${repoRoot}bots/${botName}/bot.env`;
+    const env = Object.fromEntries(
+        (await Bun.file(envPath).text())
+            .split('\n')
+            .filter(l => l.includes('=') && !l.startsWith('#'))
+            .map(l => [l.slice(0, l.indexOf('=')).trim(), l.slice(l.indexOf('=') + 1).trim()])
+    );
 
-// SERVER doubles as game-server origin and gateway address, which breaks for
-// local hosts with an explicit web port (localhost:8888 is the engine, not the
-// gateway). GATEWAY_URL (bot.env or process env) overrides the derivation.
-const gatewayUrl = env.GATEWAY_URL || process.env.GATEWAY_URL || deriveGatewayUrl(host);
-const runtimeMode = await Bun.file(`${repoRoot}bots/logs/fleet-runtime.mode`).text()
-    .then(value => value.trim())
-    .catch(() => '');
-const fastKbdAttackEnabled = runtimeMode === FAST_KBD_RUNTIME_MODE;
-if (fastKbdAttackEnabled) {
-    console.log('[lite-runner] in-process KBD op2 enabled');
-}
-const runner = new LiteGatewayRunner(session, gatewayUrl, fastKbdAttackEnabled);
-runner.connect();
+    const host = env.SERVER || 'localhost';
+    // No config channel from the server (see LiteClient's maxMessageLength note), so
+    // mirror the server's NODE_PROFANITY_FILTER by hand: PROFANITY_FILTER=false in
+    // bot.env or the process env disables local chat censoring.
+    const profanityRaw = (env.PROFANITY_FILTER ?? process.env.PROFANITY_FILTER ?? '').toLowerCase();
+    const session = await startSession({
+        host,
+        username: env.BOT_USERNAME!,
+        password: env.PASSWORD!,
+        profanityFilter: ['false', '0', 'off', 'no'].includes(profanityRaw) ? false : undefined,
+        quiet: true
+    }).catch((err: unknown) => {
+        // A revision mismatch won't fix itself: exit 3 so a supervisor can stop restarting us
+        if (err instanceof OutdatedClientError) {
+            console.error(`[lite-runner] ${err.message}`);
+            process.exit(3);
+        }
+        throw err;
+    });
 
-process.on('SIGINT', () => {
-    console.log('\n[lite-runner] SIGINT, shutting down');
+    console.log(`[lite-runner] '${env.BOT_USERNAME}' logged into ${host}`);
+
+    // SERVER doubles as game-server origin and gateway address, which breaks for
+    // local hosts with an explicit web port (localhost:8888 is the engine, not the
+    // gateway). GATEWAY_URL (bot.env or process env) overrides the derivation.
+    const gatewayUrl = env.GATEWAY_URL || process.env.GATEWAY_URL || deriveGatewayUrl(host);
+    const runtimeMode = await Bun.file(`${repoRoot}bots/logs/fleet-runtime.mode`).text()
+        .then(value => value.trim())
+        .catch(() => '');
+    const fastKbdAttackEnabled = runtimeMode === FAST_KBD_RUNTIME_MODE;
+    if (fastKbdAttackEnabled) {
+        console.log('[lite-runner] in-process KBD op2 enabled');
+    }
+    const runner = new LiteGatewayRunner(session, gatewayUrl, fastKbdAttackEnabled);
+    runner.connect();
+
+    process.on('SIGINT', () => {
+        console.log('\n[lite-runner] SIGINT, shutting down');
+        runner.stop();
+        process.exit(0);
+    });
+
+    // One bot per process, so re-login is the supervisor's job (systemd, a shell
+    // loop, whatever launched us). Exit non-zero on anything we did not ask for, so
+    // it can tell "finished" from "died".
+    const end = await session.stopped;
+    console.log(`[lite-runner] Game session ended (${end.reason})`, end.error ?? '');
     runner.stop();
-    process.exit(0);
-});
-
-// One bot per process, so re-login is the supervisor's job (systemd, a shell
-// loop, whatever launched us). Exit non-zero on anything we did not ask for, so
-// it can tell "finished" from "died".
-const end = await session.stopped;
-console.log(`[lite-runner] Game session ended (${end.reason})`, end.error ?? '');
-runner.stop();
-process.exit(end.reason === 'stopped' ? 0 : 1);
+    process.exit(end.reason === 'stopped' ? 0 : 1);
+}
