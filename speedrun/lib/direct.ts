@@ -41,16 +41,18 @@ export interface DirectProbeSdk extends ProbeSdk {
 /**
  * Publish a state per decoded drain of server ticks. The label counts PLAYER_INFOs from the
  * adapter's creation, so it moves like the SDK's `state.tick` (a drain that held two ticks
- * moves it by two). Takes over the client's game-tick callback.
+ * moves it by two). `arrival` returns when the socket message being drained arrived
+ * (`performance.now()`), stamped on the state as `arrivalMs` so the probe scores steadiness
+ * from arrivals rather than decode times. Takes over the client's game-tick callback.
  */
-export function directProbeSdk(client: DirectClient): DirectProbeSdk {
+export function directProbeSdk(client: DirectClient, arrival?: () => number): DirectProbeSdk {
     const listeners = new Set<(s: ProbeState) => void>();
     let state: ProbeState | null = null;
     let label = 0;
     client.setOnGameTickCallback(n => {
         label += n;
         const p = client.getPlayerPosition();
-        state = { tick: label, inGame: client.isInGame(), player: p ? { worldX: p.worldX, worldZ: p.worldZ } : null };
+        state = { tick: label, inGame: client.isInGame(), player: p ? { worldX: p.worldX, worldZ: p.worldZ } : null, ...(arrival ? { arrivalMs: arrival() } : {}) };
         for (const l of [...listeners]) l(state);
     });
     return {
@@ -113,7 +115,8 @@ export async function openDirectSession(opts: DirectSessionOptions): Promise<Dir
     const locIndex = await LocIndex.load({ origin, cacheDir, versionlistCrc: checksums[5], quiet: true });
     const connection = await GameConnection.connect({ host: opts.host, secured, username: opts.username, password: opts.password, checksums });
     const client: DirectSessionClient = new LiteClient({ connection, locIndex, username: opts.username, password: opts.password });
-    const sdk = directProbeSdk(client);
+    let lastArrival = performance.now();
+    const sdk = directProbeSdk(client, () => lastArrival);
 
     // One drain at a time; a message that arrives mid-drain runs another pass after it.
     let pumping = false;
@@ -138,7 +141,10 @@ export async function openDirectSession(opts: DirectSessionOptions): Promise<Dir
         }
     };
     const socket = connection.stream.socket as WebSocket;
-    socket.addEventListener('message', () => void pump());
+    socket.addEventListener('message', () => {
+        lastArrival = performance.now();
+        void pump();
+    });
     const keepalive = setInterval(() => {
         client.writeOpcode(ClientProt.NO_TIMEOUT);
         client.flush();
