@@ -18,10 +18,13 @@
 //               (bury_bone.rs2: p_stopaction, p_delay(0)) clears the fletch and rejects R+2;
 //               R+2: [click] lands on R+3 and rolls at once (mining.rs2:83-85). The
 //               Woodcutting knifebury plan (bones-wc.ts).
-//   move        R: [knife, button, drop, walk]; R+1: [click] -> roll R+3 (tickmanip-mine.ts).
+//   move        R: [knife, button, drop, walk]; the click goes on the label the run ends (R+1 for
+//               up to 2 tiles, R+2 for 3-4) -> roll R+3 either way (tickmanip-mine.ts sends it
+//               on R+1, which on a 3-4 tile run re-paths to the nearest tile beside the rock).
 //   move+bury   a delayed player's walk is dropped (World.ts: decodeIn, then unsetMapFlag when
 //               delayed) and R+2 is rejected, so: R: [drop, bury]; R+2: [knife, button, walk]
-//               (the knife writes R+5 on the clock left at R); R+3: [click] -> roll R+5.
+//               (the knife writes R+5 on the clock left at R); the click on the label the run
+//               ends (R+3 or R+4) -> roll R+5.
 // Bones are topped up with ::give (trade cost is measured in bones-wc.ts). A roll whose xp is
 // not seen by its label + 1 is a slip: clear the schedule, wait 5 ticks, restart with a plain
 // transition.
@@ -157,7 +160,7 @@ const plan = (t: number, restart: boolean) => {
         for (const a of [...knife, walk(stand)]) add(R + 2, a);
         const land = Math.max(R + 3 + run, avail);
         add(land - 1, click(rock));
-        roll = land === R + 4 ? R + 5 : land + 2;
+        roll = land <= R + 5 ? R + 5 : land + 2;
     }
     kinds[kind] = (kinds[kind] ?? 0) + 1;
     log(`plan #${k} ${kind} ${key(pos)}->${key(stand)} rock ${key(rock)} roll@${roll}`);
