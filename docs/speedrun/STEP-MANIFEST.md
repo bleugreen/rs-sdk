@@ -105,9 +105,9 @@ section 9) puts Woodcutting (2,986) below Mining (3,116), so the two swap ranks 
 S25c's two planned relogs as tab relogs (~20 ticks each, rs/164 on the twin) moves Cooking (116)
 above Prayer and Crafting.
 
-The expected column sums to **31,716** (the steps) plus the legs' **1,382**; RUN-ORDER.md section 6
+The expected column sums to **31,708** (the steps) plus the legs' **1,382**; RUN-ORDER.md section 6
 adds the allowances (hand-offs outside the figures, level-up pages, contention, overrun, relay,
-retries, restarts) for its **34,410** knife-on expected (31,699 best), against the record of 35,916.
+retries, restarts) for its **34,402** knife-on expected (31,691 best), against the record of 35,916.
 
 **Module status** (the last column; the helper scripts and the programs the entries rely on are in
 "Module status" at the end of this section) is as of this document's commit date, and rs/158 updates
@@ -117,7 +117,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | Rank | # | Entry | Module | Steps | Expected | Best | Fallback | At stake | Mode | Code to start from | Module status |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 0 | 0 | Run chain | `speedrun/run.ts`, `runner/resume.ts` | all | boundary idle 0 m (#92); restarts ~25 each (a tab relog) | 0 | | | overlay | `runner/step.ts`, `runner/resume.ts` (main) | `run.ts`: building (rs/186, held: tenet 15); `runner/step.ts`, `resume.ts` on main (#29, #104, #146) |
-| 1 | 1 | Agility | `speedrun/skills/agility.ts` | S11a, S17 | 4,146 | 3,942 | 4,634 | ~690 | in-page | rs/97 `agility` program, `agility-course.ts` | lab-accepted (66 per Wilderness lap, 9 of 9; S11a 114; rs/155) |
+| 1 | 1 | Agility | `speedrun/skills/agility.ts` | S11a, S17 | 4,138 | 3,934 | 4,626 | ~690 | in-page | rs/97 `agility` program, `agility-course.ts` | lab-accepted (66 per Wilderness lap, 9 of 9; S11a 114; rs/155) |
 | 2 | 2 | Monkey Madness | `speedrun/quests/monkey-madness.ts` | S15 | 4,077 | 3,726 | 4,611 | ~885 | overlay | `quest-mm-*.ts` | building (rs/185, held: tenet 15) |
 | 3 | 4 | Mining | `speedrun/skills/mining.ts` | S09 | 3,116 | 3,116 | 3,765 | ~650 | in-page | rs/97 `knife-mine`, `tickmanip-mine.ts` | building (rs/153) |
 | 4 | 3 | Woodcutting, with the bury | `speedrun/skills/woodcutting.ts` | S07 (+ S25b's bones) | 2,986 | 2,969 | 3,881 | ~910 | in-page | rs/97 `knife-cycle`; rs/137's bury variant; `bones-wc.ts` | building (rs/151) |
@@ -196,11 +196,11 @@ are filed under main and held until tenet 15 is answered.
 | Helper | Gates | Module status | Notes |
 |---|---|---|---|
 | H1 mule, hand-off and quest-item giver | S01, every helper trade | on rs/41's branch (rs/49, #34) | the step packages and per-tile positioning (section 4) are rs/41's, no issue yet; quest items rs/126, rs/173 |
-| H2 stun-pack courier | S18 | building (rs/163, held: not before 15:25 PDT) | rs/163's execution 2 extends `bone-giver.ts`'s S18 on-request mode with the Charge and Fletching stacks; no `stun-courier.ts` file |
-| H3 cannon holder | S14, S27 | building (rs/189) | the role exists (rs/125: two sets, balls toward 1,400); rs/189 adds the one-trade hand-off |
-| H4 in-room essence giver | S06, S21 | building (rs/163) | `altar-giver.ts`, `altar-cue.ts`, `altar-room.ts` on rs/41's branch (rs/117, rs/141); rs/163 builds the direct-path giver (PR #144, open) |
-| H5 anvil helper | S25a | building (rs/188) | |
-| H6 log-row dropper | S03 | building (rs/187) | |
+| H2 stun-pack courier | S18 | on rs/41's branch (rs/141): `bone-giver.ts`'s S18 on-request mode; the Charge and Fletching stacks building (rs/163, held: not before 15:25 PDT) | rs/163's execution 2 extends `bone-giver.ts`; there is no `stun-courier.ts` |
+| H3 cannon holder | S14, S27 | on rs/41's branch (rs/125): `cannon.ts`; the hand-off to SCORED building (rs/189) | cairn_h92 holds two sets and 1,416 balls (rs/41, 15:00 PDT); rs/189 adds the one-trade hand-off and checks what `nulodion.rs2` restricts |
+| H4 in-room essence giver | S06, S21 | on rs/41's branch (rs/117, rs/141): `altar-giver.ts`; the direct path building (rs/163) | `altar-giver.ts`, `altar-cue.ts`, `altar-room.ts`; rs/163's direct-path transport (PR #144; lab 21 of 21, host slot 22:05Z); there is no `rc-giver.ts`. rs/163 also sizes the body-altar roster (0 nature talismans, RUN-ORDER.md section 7) |
+| H5 anvil helper | S25a | building (rs/188) | `anvil.ts`, new |
+| H6 log-row dropper | S03 | building (rs/187) | `fm-row.ts`, new, first in rs/187's queue |
 | H7 carp catcher | S20 | building (rs/173) | cairn_h97 catches the carp ahead and banks it |
 | H8 wine giver | S25c | on rs/41's branch (rs/47, rs/88) | `giveWine`; acceptance is entry 29's (rs/186) |
 | S07 bone givers b01-b04 | S07 | building (rs/163) | `bone-giver.ts` in the launcher on rs/41's branch (rs/141); rs/163 puts b01-b03 on the demo |
@@ -219,7 +219,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 | knife-cycle rename and per-log stamps (rs/159) | 3, 5 | on main, c14428fc (#132) | |
 | knife-cycle axe-aware p (rs/175) | 3 | on main, 6c58db8e (#151) | |
 | knife-cycle plain+bury | 3, 15 | building (rs/162) | S07's gate-off fallback |
-| knife-mine `bury` on `stay2` | 4 | building (rs/182) | O35, the ~85 bones placed in S09. Without it they go to the booth, **+154** (RUN-ORDER.md O35, in the stock row in force), or ~61 more dragon bones close it with no code |
+| knife-mine `bury` on `stay2` | 4 | building (rs/182) | O35, the ~85 bones placed in S09. Without it they go to the booth, **+154** (RUN-ORDER.md O35, in today's stock row, the conservative one), or ~61 more dragon bones close it with no code, as the row in force at 2026-10-23 assumes (~110 forecast by tonight) |
 | `logoutClean` tab confirmation | 0, 1 (final logout), every relog | on main, c2d9eada (#146) | |
 | Direct gate clean logout | the gate probe | on main, 9d26aa87 (#142), d83f2e86 (#152) | |
 | In-page relog `login({inPage:true})` | 0 (restarts), 29 (the wine relogs, R17) | building (rs/174) | plus rs/183, the client's second-login hang (PR #155, open) |
@@ -362,13 +362,16 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   52 (read, `wilderness_course.rs2:2`), about 10-12 sharks (`skills/README.md`), no item worth a
   player kill. Position at the pipe (3004,3938), Wilderness levels 50-56.
 - **Postconditions:** Agility 22 (S11a) or 99 (S17); food left. Items out: none.
-- **Ticks:** S11a **122** (inferred: 149.4 base at 1.22 per tick, from a 70.7-tick lap measured at
-  100 ms only; `skills/agility.md` §2-3). S17 expected **4,024** (inferred, `agility-model.ts
-  --lap=66` over a 66-tick clean lap, measured 9 of 9 at 300 ms on bbs with the fixed lite client;
+- **Ticks:** S11a **114** (measured in the lab by rs/155, PR #149: the in-page program, Gnome 1-22
+  at 300 ms; the earlier 122 was inferred, 149.4 base at 1.22 per tick from a 70.7-tick lap measured
+  at 100 ms only, `skills/agility.md` §2-3). S17 expected **4,024** (inferred, `agility-model.ts
+  --lap=66` over a 66-tick clean lap, measured 9 of 9 at 300 ms on bbs with the fixed lite client,
+  and 9 of 9 at 66 in the page at Agility 99 in rs/155's lab pass, PR #149;
   `skills/agility.md` §1-2). Best about **3,820** (inferred: the lab fell 4 times in 39 laps
   against the model's 9, so the model reads about 5% pessimistic; `skills/agility.md` §2).
   Fallback **4,512** at the 74-tick lap a relay-driven loop would pay (inferred, same section). The
-  entry total is 4,146 expected, ~3,942 best and 4,634 fallback.
+  entry total is 4,138 expected, ~3,934 best and 4,626 fallback. rs/155 priced S17 at about 4,210
+  from its lab laps; RUN-ORDER.md keeps the model's 4,024.
 - **Primitives:** `lib/programs.ts` `runProgram(sdk, 'agility', {course, untilLevel, food,
   eatBelow})` [rs/97]; the in-page probe before S17; `levelup` (dismissal is inside the program;
   verify); `session.logoutClean` for the post-combat 16-tick rule if attacked. **Missing:** an
@@ -383,7 +386,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   at **66 ticks** (tolerance +1). That figure is measured both on the lite client and in the page
   (rs/97 in-page results via main, 05:50). Gnome course from level 1 to 22: first
   **measure** it at 300 ms (the 70.7-tick lap is a 100 ms figure), then pass within 5% of that
-  measurement and of the 122 inferred.
+  measurement and of the 122 inferred (passed: 114, rs/155).
 - **Acceptance, demo (throwaway):** from Ashburn, the in-page probe at least 58 of 60, then 10
   gnome laps on a fresh throwaway (no level needed). Pass: mean lap within 1 tick of the local
   browser figure. The Wilderness course needs level 52, so it is local only.
@@ -565,7 +568,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   | 17-19 | 600 or fewer | neither holds: the six-rock lap waits one move a lap, (D + 2) / 6 = 3.17-3.50 | 3.50 m at D = 19 (mining.md:184); a seven-rock lap would hold 3.00 (i, not run, mining.md §4) |
 
   The ticks below are unchanged: 3,116 knife at the demo's count (D = 13).
-- **Bones on the `stay2` lap** (the 21:20 UTC stock; RUN-ORDER.md section 7): the ~85 babydragon
+- **Bones on the `stay2` lap** (today's 21:20 UTC stock, RUN-ORDER.md's conservative row; none on the
+  forecast at 2026-10-23, whose 554 non-stun bones all fit S07; RUN-ORDER.md section 7): the ~85 babydragon
   bones past S07's ~978 ride the lap `2603,3233>2602,3233 2605,3234>2605,3235 2605,3234>2605,3233
   2602,3235>2602,3234 2602,3235>2602,3236`, one bury per lap on the east stay at 3.052 ticks per ore
   (m, lab, `research/bones-placement.md` §4), ~0.26 per bone with its share of the loads
@@ -623,7 +627,9 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Ticks:** expected **1,995**, best **1,969** (knife: two measured runs of 2,032 and 1,978
   from 9,612 and 9,620 base, `tickmanip-cycle.ts --mode=flylumb-knife`, `skills/fishing.md` §2,
   scaled by rs/97's in-page 4.26 against the lite 4.28 ticks per catch, M0550; level-ups inside the
-  measured runs, `research/levelup-cost.md` §2). Fallback **3,410** plain (normal 5-tick cycle;
+  measured runs, `research/levelup-cost.md` §2). **Lab-accepted:** rs/152's execution 1 measured
+  **1,998** on 78-99 in the lab (store commit 28ad07aa), so RUN-ORDER.md labels the 1,995 m (lab).
+  Fallback **3,410** plain (normal 5-tick cycle;
   measured segment from 9,612 base, `fishing-rate.ts`, 673 catches at 300 ms; same section). In a visible tab, rs/82 measured 4.16 ticks per catch from 26 to 99,
   with 516 of 665 gaps at 3 (`LAB.md`). Compare the gap histogram, since ticks per catch depend on
   level.
@@ -668,7 +674,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   the pack took 1,908 / 2,098 / 1,997 at 84-93 failures, lite client, local engine,
   `stun-pack-thieve.ts`; plain 1,986, `research/stun-pack.md` §3, §11). The 12-13 top-ups are
   inside (about 0.1-0.3 each at k = 2, §5); level-up pages arrived naturally (§9). Fallback: the
-  plain pickpocket at ~1,975 with the pack's work elsewhere, about +130 (inferred, RUN-ORDER.md
+  plain pickpocket at ~1,975 with the pack's work elsewhere, about +~120 (inferred, RUN-ORDER.md
   section 7).
 - **Primitives:** `runProgram(sdk, 'pickpocket', {...})` [rs/97]; the `stunActions` and top-up
   extension (cairn://p/rs/132, from `stun-pack-thieve.ts`); `lib/trade.ts` with one press per offered
@@ -930,9 +936,10 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Parameters:** `bones` count, `mode: 'inline' | 'booth'`, `untilLevel`.
 - **Preconditions:** inline: entry 3's. Booth: the bones in the bank at Varrock west.
 - **Postconditions:** Prayer ~94 when S07 ends with every line held, 99 when S18 ends. On the 21:20
-  UTC stock ~95 when S07 ends; while `knife-mine` has no bury (RUN-ORDER.md O35, in force) ~98 when
+  UTC stock ~95 when S07 ends; while `knife-mine` has no bury (RUN-ORDER.md O35, open) ~98 when
   S18 ends and 99 at the booth in S25 with the ~85 past S07; once O35 closes ~96 after the Mining
-  lap and 99 when S18 ends, with none at the booth.
+  lap and 99 when S18 ends, with none at the booth. On the forecast at 2026-10-23 (~413 dragon,
+  assumed) ~96 when S07 ends and 99 when S18 ends, none at the booth.
 - **Ticks:** expected **95**, best **65**: 16 loads of 23 with rs/141's lab giver, 4 ticks each on
   SCORED's clock (the first 5) and refusals free (m, cairn://p/rs/141 at 732497c64), 65; +30
   inferred for the in-page stop, `receiveFrom` and restart (RUN-ORDER.md R15). rs/137 measured the
@@ -1334,7 +1341,7 @@ place before the step that needs them, and each step's precondition checks for i
 ranked by the exposure of the step they gate. The stockpiling roles (woodcutter, smelter, essence,
 bones, bidder, grapes, wine maker, coins) are supply, not step scripts; `SUPPLIES.md` covers them.
 
-### H1. Hand-off giver and quest-item giver: `speedrun/helpers/mule.ts` (exists, rs/49)
+### H1. Hand-off giver and quest-item giver: `speedrun/helpers/mule.ts` (on rs/41's branch, rs/49)
 
 - **Gates:** S01 and every helper trade in `quests/README.md` §4's last column, plus the S14/S27
   supplies and the S25 block. That is roughly 20-30 trades on SCORED's clock at 5-10 ticks each,
@@ -1347,26 +1354,31 @@ bones, bidder, grapes, wine maker, coins) are supply, not step scripts; `SUPPLIE
 - **Acceptance:** demo, the receiver ticks above (6.7 / 8 / 10) for 1 / 10 / 20 stacks at a tile away
   from Varrock west.
 
-### H2. Stun-pack courier: `speedrun/helpers/stun-courier.ts` (missing)
+### H2. Stun-pack courier: `speedrun/helpers/bone-giver.ts`, S18 on-request mode (on rs/41's branch, rs/141; the Charge and Fletching stacks building, rs/163)
 
 - **Gates:** S18 (exposure ~2,040). It stands beside the knights with bone loads (21-24 per load) and
   the Charge and Fletching stacks, and trades in a success window about every 12 stuns, 9-10 times
   (`skills/interleaving.md` §8).
-- **Builds on:** `mule.ts` `giveOpenTrade`, `lib/trade.ts` `give`. cairn://p/rs/106 measures the
-  top-up cost at route levels.
+- **Builds on:** `bone-giver.ts`'s S18 on-request mode (rs/141, merged on rs/41's branch), which
+  rs/163 extends to carry the Charge and Fletching stacks; `mule.ts` `giveOpenTrade`, `lib/trade.ts`
+  `give`. There is no separate `stun-courier.ts`. cairn://p/rs/106 measured the top-up cost at route
+  levels.
 - **Acceptance:** local, a top-up inside a success window at most 5 ticks (the trade floor) without
   breaking the next 2-tick success gap.
 
-### H3. Cannon holder: `speedrun/helpers/cannon.ts` (missing)
+### H3. Cannon holder: `speedrun/helpers/cannon.ts` (on rs/41's branch, rs/125; the hand-off to SCORED building, rs/189)
 
 - **Gates:** S14 and S27 (exposure 1,857 + ~140). Only an account that has done Dwarf Cannon can buy
   the cannon from Nulodion (read, `nulodion.rs2:2`, via the rs/41 supply list), and the ammo mould
   is untradeable (`quests/README.md` §4 step 7). So a helper runs `speedrun/quests/dwarf-cannon.ts`
   first, buys the set, makes or holds the cannonballs (about 1,000-1,300), and trades the set to
   SCORED.
+- **Status:** `cannon.ts` is on rs/41's branch (rs/125); cairn_h92 holds two sets and 1,416
+  cannonballs (rs/41, 15:00 PDT). **rs/189** adds the one-trade hand-off to SCORED and checks what
+  `nulodion.rs2` restricts.
 - **Acceptance:** demo, a throwaway completes Dwarf Cannon, buys a set and hands it over in one trade.
 
-### H4. In-room essence giver: `speedrun/helpers/rc-giver.ts` (missing)
+### H4. In-room essence giver: `speedrun/helpers/altar-giver.ts` (on rs/41's branch, rs/117 and rs/141; the direct path building, rs/163)
 
 - **Gates:** S06 and S21 (exposure 1,330, at stake ~1,340). It stands beside SCORED inside the altar
   room with 27 essence per cycle and sends its half of the schedule on predicted ticks: request on
@@ -1374,14 +1386,16 @@ bones, bidder, grapes, wine maker, coins) are supply, not step scripts; `SUPPLIE
   per cycle ("a second helper does not help", same section), but a giver holds only 27, so givers
   rotate out to restock from a mule outside.
 - **Hard requirement:** a direct path from Ashburn (finding 4). Today's helpers are lite clients
-  relayed from bbs, which lands packets 2-3 ticks late (`LAB.md`). **Missing:** a direct-path
-  transport for a helper (rs/86's in-process engine websocket, or a second browser page running an
-  rs/97 program), and the giver's half as a program.
+  relayed from bbs, which lands packets 2-3 ticks late (`LAB.md`). The giver's half is
+  `altar-giver.ts` with `altar-cue.ts` and `altar-room.ts` (rs/117, rs/141); **rs/163** builds the
+  direct-path transport (lab 21 of 21; host slot 22:05Z). There is no `rc-giver.ts`. With 0 nature
+  talismans held, every scenario row runs S21 at the body altar (RUN-ORDER.md section 7), and rs/163
+  sizes that roster.
 - **Builds on:** `runecraft-cycle.ts`'s helper side, `runecraft-lib.ts`; essence from [rs/41]
   `essence.ts`.
 - **Acceptance:** as entry 9.
 
-### H5. Anvil helper: `speedrun/helpers/anvil.ts` (missing)
+### H5. Anvil helper: `speedrun/helpers/anvil.ts` (new; building, rs/188)
 
 - **Gates:** S25a (exposure 1,147). It stands on (3187,3427), offers the next 25 bars and accepts
   SCORED's 5 products in the same trade, about 31 times (`skills/smithing.md` §1).
@@ -1389,7 +1403,7 @@ bones, bidder, grapes, wine maker, coins) are supply, not step scripts; `SUPPLIE
 - **Acceptance:** local, a turnaround of at most 10 ticks with the helper's side scripted from this
   module (the 40-tick first-trade wait in the measured run was the lab helper's own setup).
 
-### H6. Log-row dropper: `speedrun/helpers/fm-row.ts` (missing)
+### H6. Log-row dropper: `speedrun/helpers/fm-row.ts` (new; building, rs/187, first in its queue)
 
 - **Gates:** S03 (exposure 650). It drops the 157 logs in row order ahead of SCORED, paced around the
   100-tick private window so each log is revealed when SCORED reaches it and not long before
@@ -1397,14 +1411,14 @@ bones, bidder, grapes, wine maker, coins) are supply, not step scripts; `SUPPLIE
 - **Builds on:** `firemaking-drop.ts`; logs from [rs/41] `woodcutter.ts`.
 - **Acceptance:** as entry 16; no gap over 4 ticks caused by a missing log.
 
-### H7. Carp catcher: `speedrun/helpers/carp.ts` (missing)
+### H7. Carp catcher: `speedrun/helpers/carp.ts` (building, rs/173)
 
 - **Gates:** S20 (exposure 223). It enters the contest itself and leaves before its third catch with
   a raw giant carp, then trades it (`quests/README.md` §4 step 11). A drop-and-pickup saves about 4-7
   ticks over a trade (inferred, `[rs/59] research/travel-and-overhead.md`, ranked row 5).
 - **Acceptance:** demo, a throwaway produces a carp and hands it over.
 
-### H8. Wine giver: `speedrun/helpers/wine.ts` `giveWine` (exists, rs/47 and rs/88)
+### H8. Wine giver: `speedrun/helpers/wine.ts` `giveWine` (on rs/41's branch, rs/47 and rs/88)
 
 - **Gates:** S25c (exposure ~80). It waits until SCORED is in sight after the planned relog
   (`waitForPlayer`; the lib's `openTrade` gives up after 5 ticks without a sighting) and gives the
