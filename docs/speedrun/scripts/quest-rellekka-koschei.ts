@@ -45,6 +45,9 @@ const pray = args.includes('pray');
 // Defence by 2 + 10% (consume_effects.dbrow zamorak_brew_effect,
 // consume_effects.rs2:56-58), which shortens form 4.
 const brew = Number(args.find(a => a.startsWith('brew='))?.slice(5) ?? 0);
+// brew4=N drinks N doses instead as soon as form 4 starts (you do not need to
+// attack form 4, so the drinks cost nothing and Defence stays up for forms 1-3).
+const brew4 = Number(args.find(a => a.startsWith('brew4='))?.slice(6) ?? 0);
 
 // %viking_bits: Thorvald's 2-bit field starts at bit 16 (quest_viking.constant:20).
 const THORVALD_STARTED = 1 << 16;
@@ -79,7 +82,7 @@ await runScript(async ({ bot, sdk }) => {
         await L.cheat(sdk, 'setvar viking 1');
         await L.cheat(sdk, `setvar viking_bits ${THORVALD_STARTED}`);
         if (food > 0) await L.cheat(sdk, `give shark ${food}`, 2);
-        if (brew > 0) await L.cheat(sdk, `give 4dosepotionofzamorak ${Math.ceil(brew / 4)}`, 2);
+        if (brew + brew4 > 0) await L.cheat(sdk, `give 4dosepotionofzamorak ${Math.ceil((brew + brew4) / 4)}`, 2);
         await L.tele(sdk, 2667, 3693, 0);
         await sdk.waitForTicks(3);
         const out: Record<string, unknown> = { run };
@@ -142,7 +145,20 @@ await runScript(async ({ bot, sdk }) => {
                     formStart = L.tick(sdk);
                     const d = await L.talkThrough(sdk, [], { settleTicks: 1, maxTicks: 30 });
                     pages += d.pages;
-                    if (forms.length === 3) hpAtForm4 = sdk.getState()!.player!.hp;
+                    if (forms.length === 3) {
+                        hpAtForm4 = sdk.getState()!.player!.hp;
+                        let n = 0;
+                        while (n < brew4 && sdk.getState()!.player!.level === 2) {
+                            const pot = sdk.findInventoryItem(/Zamorak potion/i);
+                            if (!pot) break;
+                            await sdk.sendUseItem(pot.slot, 1);
+                            n++;
+                            await sdk.waitForTicks(2);
+                        }
+                        out.form4Doses = n;
+                        out.hpAfterForm4Brew = sdk.getState()!.player!.hp;
+                        continue;
+                    }
                 }
                 const k = sdk.findNearbyNpc(/Koschei/);
                 if (k) await bot.attack(k);
