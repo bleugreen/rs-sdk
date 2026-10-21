@@ -220,12 +220,24 @@ export interface GiveResult {
     message: string;
 }
 
+/**
+ * Wait (wall clock, free for a helper) until `name` is in sight. The lib's openTrade
+ * gives up with player_not_found when the partner is not visible within 5 ticks, and
+ * a receiver that is still logging in takes longer than that on the demo.
+ */
+export async function waitForPlayer(sdk: BotSDK, name: string, ms: number): Promise<boolean> {
+    const seen = () => sdk.getState()?.nearbyPlayers.some(p => sameName(p.name, name)) ?? false;
+    if (seen()) return true;
+    return sdk.waitForCondition(() => seen(), ms).then(() => true, () => false);
+}
+
 /** Trade `amount` (default all) noted unfermented wine to `receiver` with the burst giver. */
 export async function giveWine(ctx: Ctx, receiver: string, amount = -1, openTimeoutMs = 120_000): Promise<GiveResult> {
     const { sdk } = ctx;
     if (invCount(sdk, ITEM.wine) > 0) throw new Error('loose unfermented wine in the inventory: note it before trading');
     const before = invCount(sdk, ITEM.wineNote);
     if (before === 0) return { success: false, given: 0, ticks: 0, message: 'no noted wine held' };
+    if (!(await waitForPlayer(sdk, receiver, openTimeoutMs))) return { success: false, given: 0, ticks: 0, message: `${receiver} never came into sight` };
     const r = await give(sdk, receiver, [{ item: ITEM.wineNote, n: amount > 0 ? Math.min(amount, before) : 'all' }], { openTimeoutMs });
     return { success: r.ok, given: before - invCount(sdk, ITEM.wineNote), ticks: r.ticks, message: r.reason ?? 'ok' };
 }
@@ -292,6 +304,7 @@ export async function giveWineKit(ctx: Ctx, receiver: string, openTimeoutMs = 12
     const { sdk } = ctx;
     if (invCount(sdk, ITEM.wine) > 0) throw new Error('loose unfermented wine in the inventory: note it before trading');
     const before = invCount(sdk, ITEM.wineNote);
+    if (!(await waitForPlayer(sdk, receiver, openTimeoutMs))) return { success: false, given: 0, ticks: 0, message: `${receiver} never came into sight` };
     const r = await give(sdk, receiver, [{ item: ITEM.wineNote, n: 'all' }, { item: ITEM.grapes, n: 1 }, { item: ITEM.jugWater, n: 1 }], { openTimeoutMs });
     return { success: r.ok, given: before - invCount(sdk, ITEM.wineNote), ticks: r.ticks, message: r.reason ?? 'ok' };
 }
