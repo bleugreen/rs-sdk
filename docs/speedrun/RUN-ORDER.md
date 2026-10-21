@@ -433,6 +433,17 @@ there: relog 1 and the final logout end long sessions, and the arming relog come
 later, after the first firing at + 20 and P1, so the 2 m per relog stand. Only an unplanned logout
 within 16 ticks of a re-login was exposed, and rs/164 fixes it.
 
+**These logouts all leave from SCORED's browser tab, so `RUN_COMMIT` must include rs/164.** That
+covers both planned relogs, every shortfall or restock pause, and the final logout. Without rs/164,
+`logoutClean` cannot confirm a tab's logout: the gateway keeps `inGame: true` with status `stale`
+after the page leaves the game (m, rs/149 on the rehearsal twin, via rs/147, 2026-10-21). Each
+planned relog then risks `logoutClean`'s wait up to failure, up to ~60 ticks (i, R1's bound),
+instead of the 2 m above. On top of that is whatever run.ts does with a reported failure, which isn't
+written yet. Of that wait, the 15-tick confirmation timeout (r, `session.ts`) comes after the click,
+so it reaches the clock only if SCORED has not in fact left. This is a precondition on `RUN_COMMIT`
+(RUN-HOST.md "Credentials"; MAN entries 0 and 29), not a line in section 7. Until it holds, the
+final logout is confirmed on the host before the recording stops (RUN-HOST.md step 8).
+
 **Logout-safe pause points** (where a supply shortfall is waited out logged out, at no tick cost
 beyond the relog): S01's landing tile; after S03 and after S04 (the row's end); in the air altar room
 (S06); any Woodcutting cycle at the oaks or willows between bone loads (S07); after S08 at the
@@ -741,7 +752,7 @@ actions against ~650 slots), so the tick delta against the plan is 0 (i, SP§2, 
 
 | # | Risk | Where | Cost | The run's response |
 |---|---|---|---|---|
-| R1 | **Relog tail**: a planned relog costs 2 ticks, and about 1 in 29 stays tens of ticks in the world, on the clock (46 seen) | S25c's two relogs; any shortfall pause; a restart's relog | ~3.6 expected per relog; 46 worst seen | two planned relogs only; clear pages and leave combat 16 ticks before each click; `logoutClean` waits up to 60 ticks before reporting failure (WINE "Relog risk"); booth work in the windows leaves nothing pending at the click (0 ticks in 42 of 42 lab relogs, WW§3) |
+| R1 | **Relog tail**: a planned relog costs 2 ticks, and about 1 in 29 stays tens of ticks in the world, on the clock (46 seen) | S25c's two relogs; any shortfall pause; a restart's relog | ~3.6 expected per relog; 46 worst seen | two planned relogs only; clear pages and leave combat 16 ticks before each click; `logoutClean` waits up to 60 ticks before reporting failure (WINE "Relog risk"); booth work in the windows leaves nothing pending at the click (0 ticks in 42 of 42 lab relogs, WW§3); **depends on rs/164 on `RUN_COMMIT`**: without it `logoutClean` cannot confirm a logout from the browser tab (the gateway keeps `inGame: true`, `stale`; m, rs/149), so each relog risks that 60-tick wait instead of 2 (section 4) |
 | R2 | **Demo tick-overrun bursts**: after an overrun the next tick comes early and a reaction aimed at it misses. rs/102's per-reaction miss rate by the next tick interval (1,284 trials, m, demo-latency.md section 9 on rs/83's branch): under 150 ms 86%; 150-200 ms 18% (8 of 14 after a tick over 400 ms); 200-225 ms 2/30; 225-250 ms 5/92; 250 ms or more 3.5%. Every probe minute on the run host from 16:28 to 17:02 UTC was a burst (ARC). On rs/102's 24 samples, (c) at most 2 agreed with (a) on 22, and its two false passes (10:43 and 11:18) were caught by (a), so (a) stays a pass line; the gate's (b), publication p90, agreed with (a) on 17. Soft pairs are an in-run warning only (main's ruling, 11:05 PDT) | every reactive loop: S07, S09, S17, S18, S22; the tuned Runecraft cycle | ~600 expected (ARC, e); a whole night of failed gates +3,249 (+2,624 with rs/162's plain+bury) | tenet 12's gate (section 1); knife only while it holds, plain otherwise with periodic re-probes; the pause rule (more than ~5 catch-ups a minute pauses, under 1 resumes); predicted loops resync on observed slips (rs/96, rs/97, `hostgate.ts`); the start chosen by a 3-5 minute gate read |
 | R3 | **Browser background throttling**: a hidden or occluded tab slows timers and rAF, so every in-page and overlay reaction (M0550) | the whole run | unbounded: a throttled tab fails the knife and slows every step | section 1 setup (flags, a maximised unobscured tab on :10, power saving off); gate (d) measured ~72 loops per second p10 on the run host with RDP connected or disconnected and the capture on or off (RUN-HOST.md, "Measured"), checked continuously by the in-run monitor |
 | R4 | **Our client or network drops while the server stays up**: the player stays in the world 500 ticks (socket closed) or 1,000 (open and silent) unless something takes it over (rs/101; RES§2) | anywhere | 3-12 ticks in the world + 2 to the resumed step with the watchdog (m, RES§6) | run under the watchdog; it takes the in-world player over at once (`session.ts`, `reconnect.ts`); never leave a dead client to the timeout; in the Wilderness a dropped player stays attackable |
