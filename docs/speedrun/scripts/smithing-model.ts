@@ -1,18 +1,20 @@
 // Smithing route model (docs/speedrun/skills/smithing.md): best anvil item per level and the
 // ticks and bars from a start level to 99, for a given per-inventory overhead.
 //
-//   bun docs/speedrun/scripts/smithing-model.ts [--from 1] [--overhead 7] [--levelup 0] [--item 5]
+//   bun docs/speedrun/scripts/smithing-model.ts [--from 1] [--overhead 7] [--switch 2] [--levelup 0] [--item 5] [--table]
 //
 // Reads the content tables so it follows the content:
 //   smithing.dbrow   product, levelrequired, bar, bar_amount
 //   smithing.struct  xpperbar (tenths of base xp)
 //   smithing.inv     which products the anvil interface offers
 //   Player.ts        the level table (levelExperience, tenths of game xp)
-// Cycle model: one inventory holds 27 bars beside the hammer, so an item of b bars is made
-// n = floor(27 / b) times per inventory; every item costs --item ticks (5: p_delay(1) + p_delay(2),
-// measured) and every inventory costs --overhead more (the bank or trade turnaround, measured).
-// --levelup adds that many ticks per level gained (0 if level-up dialogs cost nothing, measured).
-// Each inventory picks the item with the most base xp per tick at the level it starts on.
+// Cycle model: one inventory holds 27 bars beside the hammer. Every item costs --item ticks
+// (5: p_delay(1) + p_delay(2), measured), every inventory after the first costs --overhead more
+// (the bank or trade turnaround, measured), and changing item within an inventory costs --switch
+// (a fresh use-bar-on-anvil and interface click, measured as make-1's 7 ticks against make-X's 5).
+// --levelup adds that many ticks per level gained (measured as 0 in the route runs).
+// Each item is the one with the most base xp per tick at the current level, charging it
+// bars/27 of the turnaround; the helper hands over whatever bar mix the plan needs.
 // Dart tips (Tourist Trap) and claws (Death Plateau) are excluded.
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -26,6 +28,7 @@ const FROM = Number(arg('from', '1'));
 const OVERHEAD = Number(arg('overhead', '7'));
 const LEVELUP = Number(arg('levelup', '0'));
 const ITEM = Number(arg('item', '5'));
+const SWITCH = Number(arg('switch', '2'));
 const CAP = 27;
 
 const ROOT = join(import.meta.dir, '../../..');
@@ -84,14 +87,14 @@ const ROWS: Row[] = [];
     flush();
 }
 
-const perInv = (r: Row) => Math.floor(CAP / r.bars);
-const rate = (r: Row) => (perInv(r) * r.xp) / (perInv(r) * ITEM + OVERHEAD);
+// Per-item cost: the item's own ticks plus its share of the inventory turnaround (bars / 27).
+const rate = (r: Row) => r.xp / (ITEM + (r.bars * OVERHEAD) / CAP);
 function best(level: number): Row {
     return ROWS.filter(r => r.level <= level).sort((a, b) => rate(b) - rate(a) || b.xp - a.xp)[0]!;
 }
 
-// ---- simulate, one inventory at a time ----
-type Band = { from: number; to: number; item: Row; items: number; invs: number; ticks: number; xp: number };
+// ---- simulate one item at a time; an inventory closes when the next item's bars do not fit ----
+type Band = { from: number; to: number; item: Row; items: number; ticks: number; xp: number };
 const bands: Band[] = [];
 let base = baseFor(FROM);
 const target = baseFor(99);
@@ -99,34 +102,40 @@ let ticks = 0;
 let level = levelFor(base);
 const bars: Record<string, number> = {};
 let levelUps = 0;
+let invs = 0;
+let switches = 0;
+let used = CAP; // force a first inventory
+let prev: Row | null = null;
 while (base < target) {
     const r = best(level);
+    let t = ITEM;
+    if (used + r.bars > CAP) {
+        if (invs > 0) t += OVERHEAD;
+        invs++;
+        used = 0;
+    } else if (prev && prev !== r) { t += SWITCH; switches++; }
+    used += r.bars;
+    prev = r;
+    base += r.xp;
+    const nl = levelFor(base);
+    if (nl > level) { levelUps += nl - level; t += LEVELUP * (nl - level); }
+    // The final item counts to its xp tick (3 ticks after the click), not to the end of its delay.
+    if (base >= target) t -= ITEM - 3;
     let band = bands[bands.length - 1];
-    if (!band || band.item !== r) { band = { from: level, to: level, item: r, items: 0, invs: 0, ticks: 0, xp: 0 }; bands.push(band); }
-    const n = perInv(r);
-    let made = 0;
-    let t = 0;
-    while (made < n && base < target) {
-        base += r.xp;
-        made++;
-        t += ITEM;
-        const nl = levelFor(base);
-        if (nl > level) { levelUps += nl - level; t += LEVELUP * (nl - level); level = nl; }
-    }
-    // The last inventory stops at the xp tick (3 ticks after the click, not 5) and has no turnaround.
-    if (base >= target) t -= ITEM - 3; else t += OVERHEAD;
-    band.items += made; band.invs++; band.ticks += t; band.xp += made * r.xp; band.to = level;
-    bars[r.bar] = (bars[r.bar] ?? 0) + made * r.bars;
+    if (!band || band.item !== r) { band = { from: level, to: level, item: r, items: 0, ticks: 0, xp: 0 }; bands.push(band); }
+    band.items++; band.ticks += t; band.xp += r.xp; band.to = Math.min(nl, 99);
+    level = nl;
+    bars[r.bar] = (bars[r.bar] ?? 0) + r.bars;
     ticks += t;
 }
 
-console.log(`Smithing ${FROM} -> 99, ${ITEM} ticks per item, ${OVERHEAD} ticks per inventory turnaround, ${LEVELUP} per level-up`);
-console.log('| Levels | Item | Bars | Base xp per item | Items | Inventories | Ticks | Base xp per tick |');
-console.log('|---|---|---|---|---|---|---|---|');
+console.log(`Smithing ${FROM} -> 99, ${ITEM} ticks per item, ${OVERHEAD} per inventory turnaround, ${SWITCH} per item switch, ${LEVELUP} per level-up`);
+console.log('| Levels | Item (unlock) | Bars | Base xp per item | Items | Ticks | Base xp per tick |');
+console.log('|---|---|---|---|---|---|---|');
 for (const b of bands) {
-    console.log(`| ${b.from}-${b.to} | ${b.item.name} (${b.item.level}) | ${b.item.bars} | ${b.item.xp} | ${b.items} | ${b.invs} | ${b.ticks} | ${(b.xp / b.ticks).toFixed(1)} |`);
+    console.log(`| ${b.from}-${b.to} | ${b.item.name} (${b.item.level}) | ${b.item.bars} | ${b.item.xp} | ${b.items} | ${b.ticks} | ${(b.xp / b.ticks).toFixed(1)} |`);
 }
-console.log(`total: ${ticks} ticks, ${bands.reduce((a, b) => a + b.invs, 0)} inventories, ${levelUps} level-ups, ${(target - baseFor(FROM)).toFixed(1)} base xp`);
+console.log(`total: ${ticks} ticks, ${invs} inventories, ${switches} in-inventory switches, ${levelUps} level-ups, ${(target - baseFor(FROM)).toFixed(1)} base xp`);
 console.log(`bars: ${Object.entries(bars).map(([k, v]) => `${k} ${v}`).join(', ')}`);
 if (argv.includes('--table')) {
     console.log('\nbest item per level:');
