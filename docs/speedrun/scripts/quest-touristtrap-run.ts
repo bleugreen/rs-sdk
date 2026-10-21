@@ -165,7 +165,7 @@ await runScript(async ({ bot, sdk }) => {
             await q.walk(3274, 3029, 1);
         });
         await seg('camp gate: leave', async () => {
-            await q.opLoc('miningcampgateclosedl', 1, () => p().worldX < 3273);
+            await q.opLoc('miningcampgateclosedl', 1, () => p().worldX <= 3273);
         });
         await seg('camp gate -> Al Shabim (walk)', async () => {
             await q.walk(3172, 3026, 2);
@@ -196,7 +196,7 @@ await runScript(async ({ bot, sdk }) => {
             await q.walk(3274, 3029, 1);
         });
         await seg('camp gate: leave', async () => {
-            await q.opLoc('miningcampgateclosedl', 1, () => p().worldX < 3273);
+            await q.opLoc('miningcampgateclosedl', 1, () => p().worldX <= 3273);
         });
         await seg('camp gate -> Al Shabim (walk)', async () => {
             await q.walk(3172, 3026, 2);
