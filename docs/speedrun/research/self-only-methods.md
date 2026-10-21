@@ -317,7 +317,7 @@ at (2674,3227), which reaches the willows at (2674,3228) and (2672,3226). The ru
 controller times each spawn from a learned spawn-to-hit delay, and on a tile with exactly two free
 cardinal sides that delay does not set the phase: each NPC's phase is the tick it first steps into
 reach (`npc_combat.rs2:62`), after a random step off the player's tile
-(`engine/entity/PathingEntity.ts:449-462`). The pairN mode of
+(`randomWalk`, `engine/entity/PathingEntity.ts:438-447`). The pairN mode of
 [`flinch-wc.ts`](../scripts/flinch-wc.ts) adds two hobgoblins on one label and keeps them if,
 24 ticks later, their hits cover two residues 2 apart mod 4. Otherwise it waits out the 500-tick
 despawn and tries again. Gaps are scored only inside the phased windows. The numbers below come
