@@ -83,6 +83,11 @@ const laps = +lapsArg;
 // Every fail branch in the course scripts prints one of these (gnome_course.rs2 has none).
 const FAIL_RE = /slip and fall|lose your footing|lost your balance|missed a hand hold|missed the rope|were hit by|stumbled|stepped on a broken/i;
 
+// Level from game xp (Player.ts level table), to tell which obstacles followed a level-up.
+const LEVEL_XP: number[] = [0, 0];
+for (let L = 1, acc = 0; L < 99; L++) { acc += Math.floor(L + Math.pow(2, L / 10) * 300); LEVEL_XP[L + 1] = Math.floor(acc / 4) * 10; }
+const levelOfXp = (xp: number) => { let L = 1; while (L < 99 && xp >= LEVEL_XP[L + 1]!) L++; return L; };
+
 async function nearestLoc(sdk: BotSDK, cands: [number, number, number][]) {
     const locs = await sdk.scanNearbyLocs(25);
     const me = pos(sdk);
@@ -137,6 +142,13 @@ await runScript(async ({ sdk }) => {
     let stuck = 0;
     let heals = 0;
     const fallRecoveryTicks: { step: string; ticks: number }[] = [];
+    // obstacle ticks split by whether the drop that ended the previous obstacle raised the level
+    const afterLevelUp: Record<string, number[]> = {};
+    const notAfterLevelUp: Record<string, number[]> = {};
+    const leveledAt = (t: number) => {
+        const evs = log.events.filter(e => e.tick === t);
+        return evs.some(e => levelOfXp(e.gameXp) > levelOfXp(e.gameXp - e.baseGain * XP_RATE));
+    };
 
     // Steps cycle; a lap is counted when its bonus drop arrives. After a fall the
     // course's resume rule says which obstacle to take next.
@@ -206,6 +218,7 @@ await runScript(async ({ sdk }) => {
                 const ev = log.events.slice(evBefore).find(e => e.baseGain >= step.xp - 0.05);
                 const doneTick = ev?.tick ?? tick(sdk);
                 (stepTicks[step.name] ??= []).push(doneTick - lastDoneTick);
+                ((leveledAt(lastDoneTick) ? afterLevelUp : notAfterLevelUp)[step.name] ??= []).push(doneTick - lastDoneTick);
                 lastDoneTick = doneTick;
                 stuck = 0;
                 i++;
@@ -243,5 +256,9 @@ await runScript(async ({ sdk }) => {
         lapTicks: summary(lapTicks), lapTicksList: lapTicks,
         stepTicks: Object.fromEntries(Object.entries(stepTicks).map(([k, v]) => [k, summary(v)])),
         attempts, fails, failDamage, fallRecoveryTicks, hpLostTotal: log.hpLost, labHeals: heals,
+        levelUpDismiss: process.env.LEVELUP_DISMISS ?? 'continue',
+        stepTicksAfterLevelUp: Object.fromEntries(Object.entries(afterLevelUp).map(([k, v]) => [k, summary(v)])),
+        stepTicksOtherwise: Object.fromEntries(Object.entries(notAfterLevelUp).map(([k, v]) => [k, summary(v)])),
     }, null, 1));
+    if (log.levelUps) console.log(log.levelUps.summary());
 }, { timeout: 3_600_000, printState: false });
