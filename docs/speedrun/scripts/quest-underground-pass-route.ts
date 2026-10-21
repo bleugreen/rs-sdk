@@ -1,16 +1,19 @@
 // Offline route planner for the Underground Pass. Dijkstra over map tiles
 // (8-way moves checked with the engine's canTravel on the SDK's bundled
 // collision data, 0.5 ticks per tile at run speed) plus every scripted
-// crossing: rockslides, broken bridges, the rope swings, pipes, levers, the
-// well, doors, stairs and the quest teleports, each at the cost in ticks set in
-// EDGE_COST (from the timed scripts where measured). Prints the cheapest
-// route between named points, the tiles walked and each crossing used.
+// crossing: rockslides, broken bridges, stone bridges, the rope swings, pipes,
+// levers, cage gates, the ledge, the well, doors, stairs and quest teleports.
+// Each crossing costs EDGE_COST ticks (its success time, measured by
+// quest-underground-pass-rolls.ts and -segments.ts where available) and
+// carries the loc to click, so quest-underground-pass-segments.ts can walk
+// the planned route.
 //
-//   bun docs/speedrun/scripts/quest-underground-pass-route.ts [leg...]
+//   bun docs/speedrun/scripts/quest-underground-pass-route.ts [leg-substring...] [--no=kind,kind]
 //
-// With no arguments every leg in LEGS is planned. Agility rolls are not
-// modelled: the cost of a crossing is its success time; see
-// docs/speedrun/quests/underground_pass.md for failure rates.
+// Prints the cheapest route for each leg in LEGS (or the matching ones): its
+// cost, the tiles walked and each crossing used. --no excludes crossing kinds
+// (for example --no=railing5 for an account below Thieving 50). Agility rolls
+// are not modelled; see docs/speedrun/quests/underground_pass.md.
 
 import * as rsmod from '../../../server/vendor/rsmod-pathfinder';
 import { CollisionType } from '../../../server/vendor/rsmod-pathfinder';
@@ -19,42 +22,27 @@ import { execSync } from 'child_process';
 
 initPathfinding();
 
-type T = [number, number, number]; // x, z, level
+export type T = [number, number, number]; // x, z, level
 const K = (t: T) => `${t[2]},${t[0]},${t[1]}`;
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 const inBox = (x: number, z: number, l: number) =>
     l === 0 ? x >= 2290 && x <= 2500 && z >= 9540 && z <= 9935 : x >= 1980 && x <= 2180 && z >= 4540 && z <= 4740;
 
-/** Crossing costs in ticks, click to standing on the far side (success). */
+/** Crossing costs in ticks, click (from the adjacent tile) to idle on the far side. */
 export const EDGE_COST: Record<string, number> = {
-    rockslide: 5,
-    bridge: 6,
-    stonebridge: 6,
-    ropeswing: 8,
-    swing2: 6,
-    pipe4: 8,
-    pipe6: 12,
-    lever_bridge: 7,
-    portcullis: 4,
-    well_down: 3,
-    mudpile_up: 3,
-    mud_dig: 4,
-    cage_pick: 6,
-    railing5: 4,
-    ledge: 8,
-    unicorn_door: 2,
-    temple_door2: 2,
-    stairs: 2,
-    rockpile: 5,
-    witch_door: 6,
+    rockslide: 3, bridge: 6, stonebridge: 3, ropeswing: 16, swing2: 6, pipe4: 8, pipe6: 12, lever_bridge: 7,
+    portcullis: 5, well_down: 3, mudpile_up: 3, mud_dig: 5, cage_pick: 5, railing5: 4, ledge: 7,
+    unicorn_door: 2, temple_door2: 2, stairs: 2, rockpile: 5, enter_cave: 5, exit_cave: 5, fire_arrow_bridge: 34,
 };
 
-interface Edge { from: T; to: T; kind: string; note: string }
+/** What to click for a crossing: op on a loc, or use an item on it. */
+export interface Click { id: number; x: number; z: number; op?: number; item?: RegExp }
+export interface Edge { from: T; to: T; kind: string; note: string; click?: Click }
 const edges = new Map<string, Edge[]>();
-const addEdge = (from: T, to: T, kind: string, note = '') => {
+const addEdge = (from: T, to: T, kind: string, note = '', click?: Click) => {
     const k = K(from);
     if (!edges.has(k)) edges.set(k, []);
-    edges.get(k)!.push({ from, to, kind, note });
+    edges.get(k)!.push({ from, to, kind, note, click });
 };
 
 const find = (kind: string, names: string) =>
@@ -63,73 +51,80 @@ const find = (kind: string, names: string) =>
         .map(m => ({ name: m![1], x: Number(m![2]), z: Number(m![3]), l: Number(m![4]) }));
 
 const walkable = (t: T) => isTileWalkable(t[2], t[0], t[1]);
-// One-tile obstacles (rockslides): cross from one neighbour to the opposite one.
+// One-tile rockslides: cross from one neighbour to the opposite one (upass_obstacles.rs2:3-31).
 for (const r of find('loc', 'rockslide2_obstacle_upass')) {
     for (const [a, b] of [[[r.x, r.z + 1], [r.x, r.z - 1]], [[r.x + 1, r.z], [r.x - 1, r.z]]] as const) {
         const ta: T = [a[0], a[1], r.l];
         const tb: T = [b[0], b[1], r.l];
         if (walkable(ta) && walkable(tb)) {
-            addEdge(ta, tb, 'rockslide', `(${r.x},${r.z})`);
-            addEdge(tb, ta, 'rockslide', `(${r.x},${r.z})`);
+            const click = { id: 3309, x: r.x, z: r.z, op: 1 };
+            addEdge(ta, tb, 'rockslide', `(${r.x},${r.z})`, click);
+            addEdge(tb, ta, 'rockslide', `(${r.x},${r.z})`, click);
         }
     }
 }
-// Three-tile broken bridges: upass_obstacles.rs2 upass_cross_bridge lands on
-// loc-1 or loc+3 along the axis the player approaches from. Map files keep
-// them on level 1, which is where Iban's cavern is.
+// Three-tile broken bridges in Iban's cavern: land on loc-1 or loc+3 along the
+// approach axis (upass_obstacles.rs2:368-407).
 for (const r of find('loc', 'bridgecollapsed1 bridgecollapsed2')) {
+    const id = r.name === 'bridgecollapsed1' ? 3254 : 3255;
     for (const [a, b] of [[[r.x, r.z - 1], [r.x, r.z + 3]], [[r.x - 1, r.z], [r.x + 3, r.z]]] as const) {
         const ta: T = [a[0], a[1], r.l];
         const tb: T = [b[0], b[1], r.l];
         if (walkable(ta) && walkable(tb)) {
-            addEdge(ta, tb, 'bridge', `(${r.x},${r.z})`);
-            addEdge(tb, ta, 'bridge', `(${r.x},${r.z})`);
+            const click = { id, x: r.x, z: r.z, op: 1 };
+            addEdge(ta, tb, 'bridge', `(${r.x},${r.z})`, click);
+            addEdge(tb, ta, 'bridge', `(${r.x},${r.z})`, click);
         }
     }
 }
-// Stone bridges in area 2 (walkway_upass_narrow_mid_top): end = loc -1/+1 along x
-// from the side the player stands on. The map stores them on level 1 with the
-// bridge flag; the collision data has them on level 0.
+// Stone bridges in area 2: land on loc-1/+1 along x (upass_obstacles.rs2:295-328).
+// The map keeps them on level 1 with the bridge flag; the engine and the
+// collision data treat them as level 0.
 for (const r of find('loc', 'walkway_upass_narrow_mid_top')) {
     const ta: T = [r.x - 1, r.z, 0];
     const tb: T = [r.x + 1, r.z, 0];
-    addEdge(ta, tb, 'stonebridge', `(${r.x},${r.z})`);
-    addEdge(tb, ta, 'stonebridge', `(${r.x},${r.z})`);
+    const click = { id: 3276, x: r.x, z: r.z, op: 1 };
+    addEdge(ta, tb, 'stonebridge', `(${r.x},${r.z})`, click);
+    addEdge(tb, ta, 'stonebridge', `(${r.x},${r.z})`, click);
 }
 
-// Scripted moves, read from the quest scripts (coordinates converted from
-// level_mx_mz_lx_lz).
-const one = (from: T, to: T, kind: string, note: string) => addEdge(from, to, kind, note);
-one([2433, 3313, 0], [2494, 9716, 0], 'enter_cave', 'quest_upass.rs2:95-97');
-one([2495, 9713, 0], [2436, 3315, 0], 'exit_cave', 'quest_upass.rs2:99-103');
-// Bridge shot from the east bank (x >= 2443, z >= 9720), upass_bridge.rs2:33-87.
-for (let x = 2444; x <= 2456; x++) for (let z = 9720; z <= 9724; z++) one([x, z, 0], [2442, 9716, 0], 'fire_arrow_bridge', 'upass_bridge.rs2:63-87');
-one([2437, 9716, 0], [2447, 9716, 0], 'lever_bridge', 'west to east only, upass_bridge.rs2:89-106');
-one([2462, 9699, 0], [2466, 9699, 0], 'ropeswing', 'needs a rope, upass_obstacles.rs2:93-128');
-one([2465, 9692, 0], [2460, 9692, 0], 'swing2', 'east to west, upass_obstacles.rs2:130-148');
-one([2451, 9688, 0], [2451, 9694, 0], 'pipe4', 'south to north, upass_obstacles.rs2:61-79');
-one([2466, 9673, 0], [2464, 9677, 0], 'portcullis', 'upass_grid.rs2:1-43');
-one([2416, 9675, 0], [2423, 9660, 0], 'well_down', 'needs the four orb bits, quest_upass.rs2:119-129');
-one([2417, 9674, 0], [2423, 9660, 0], 'well_down', 'quest_upass.rs2:119-129');
-one([2423, 9662, 0], [2418, 9674, 0], 'mudpile_up', 'quest_upass.rs2:149-154');
-one([2443, 9652, 0], [2482, 9715, 0], 'rockpile', 'upass_obstacles.rs2:50-55');
-one([2394, 9650, 0], [2392, 9646, 0], 'mud_dig', 'spade, quest_upass.rs2:210-224');
-one([2393, 9651, 0], [2392, 9646, 0], 'mud_dig', 'spade, quest_upass.rs2:210-224');
-for (const d of [[2375, 9612], [2376, 9612], [2400, 9612], [2401, 9612]]) one([d[0], d[1], 0], [2371, 9666, 0], 'unicorn_door', 'quest_upass.rs2:318-327');
-for (const d of [[2370, 9664], [2371, 9664]]) one([d[0], d[1], 0], [2376, 9610, 0], 'unicorn_door', 'at upass >= 4, quest_upass.rs2:322-323');
-for (const z of [9717, 9718, 9719]) one([2369, z, 0], [2173, 4725, 1], 'temple_door2', 'door unlocked by badges and horn, quest_upass.rs2:394-405');
-one([2173, 4724, 1], [2370, 9719, 0], 'temple_door2', 'quest_upass.rs2:396-397');
-one([2150, 4546, 1], [2336, 9794, 0], 'stairs', 'quest_upass.rs2:407-409');
-one([2113, 4729, 1], [2305, 9915, 0], 'stairs', 'quest_upass.rs2:407-409');
-one([2336, 9794, 0], [2150, 4546, 1], 'stairs', 'quest_upass.rs2:417-419');
-one([2305, 9915, 0], [2113, 4729, 1], 'stairs', 'quest_upass.rs2:417-419');
-// Pipes in the unicorn area once %upass >= 4: 3 tiles in, telejump 26, 3 out.
-one([2387, 9605, 0], [2387 + 32, 9605, 0], 'pipe6', 'upass >= 4, upass_obstacles.rs2:330-366');
-one([2412, 9605, 0], [2412 + 32, 9605, 0], 'pipe6', 'upass >= 4');
-one([2419, 9605, 0], [2419 - 32, 9605, 0], 'pipe6', 'upass >= 4');
+// Scripted moves, read from the quest scripts.
+const one = (from: T, to: T, kind: string, note: string, click?: Click) => addEdge(from, to, kind, note, click);
+one([2434, 3313, 0], [2494, 9716, 0], 'enter_cave', 'quest_upass.rs2:95-97', { id: 3213, x: 2433, z: 3313, op: 1 });
+one([2495, 9713, 0], [2436, 3315, 0], 'exit_cave', 'quest_upass.rs2:99-103', { id: 3214, x: 2496, z: 9713, op: 1 });
+// Bridge shot from the east bank, (2446,9722) measured; upass_bridge.rs2:33-87.
+one([2446, 9722, 0], [2442, 9716, 0], 'fire_arrow_bridge', 'lit arrow and bow, upass_bridge.rs2:33-87', { id: 3340, x: 2443, z: 9718, op: 1 });
+one([2437, 9716, 0], [2447, 9716, 0], 'lever_bridge', 'west to east only, upass_bridge.rs2:89-106', { id: 3241, x: 2436, z: 9716, op: 1 });
+one([2462, 9699, 0], [2466, 9699, 0], 'ropeswing', 'uses up a rope, upass_obstacles.rs2:93-128', { id: 2276, x: 2460, z: 9699, item: /^Rope$/i });
+one([2465, 9692, 0], [2460, 9692, 0], 'swing2', 'east to west, upass_obstacles.rs2:130-148', { id: 2274, x: 2461, z: 9692, op: 1 });
+one([2451, 9688, 0], [2451, 9694, 0], 'pipe4', 'south to north, upass_obstacles.rs2:61-79', { id: 3235, x: 2451, z: 9689, op: 1 });
+one([2466, 9673, 0], [2464, 9677, 0], 'portcullis', 'upass_grid.rs2:1-43', { id: 3337, x: 2466, z: 9672, op: 1 });
+one([2416, 9675, 0], [2423, 9660, 0], 'well_down', 'needs the four orb bits, quest_upass.rs2:119-129', { id: 3264, x: 2416, z: 9674, op: 1 });
+one([2423, 9662, 0], [2418, 9674, 0], 'mudpile_up', 'quest_upass.rs2:149-154', { id: 3307, x: 2423, z: 9661, op: 1 });
+one([2443, 9652, 0], [2482, 9715, 0], 'rockpile', 'upass_obstacles.rs2:50-55', { id: 3265, x: 2443, z: 9651, op: 1 });
+one([2393, 9655, 0], [2393, 9654, 0], 'cage_pick', 'thieving 128/400 roll, quest_upass.rs2:226-240', { id: 3266, x: 2393, z: 9655, op: 1 });
+one([2393, 9654, 0], [2393, 9655, 0], 'cage_pick', 'quest_upass.rs2:226-240', { id: 3266, x: 2393, z: 9655, op: 1 });
+one([2393, 9651, 0], [2392, 9646, 0], 'mud_dig', 'spade, quest_upass.rs2:210-224', { id: 3216, x: 2393, z: 9650, item: /^Spade$/i });
+one([2375, 9644, 0], [2374, 9638, 0], 'ledge', 'agility 200/260 roll, upass_obstacles.rs2:246-293', { id: 3238, x: 2374, z: 9644, op: 1 });
+one([2380, 9619, 0], [2381, 9619, 0], 'railing5', 'Thieving 50, quest_upass.rs2:247-266', { id: 3268, x: 2380, z: 9619, op: 1 });
+one([2403, 9620, 0], [2404, 9620, 0], 'railing5', 'Thieving 50, quest_upass.rs2:247-266', { id: 3268, x: 2404, z: 9620, op: 1 });
+for (const [x, id] of [[2375, 3219], [2376, 3218], [2400, 3219], [2401, 3218]]) one([x, 9612, 0], [2371, 9666, 0], 'unicorn_door', 'quest_upass.rs2:318-327', { id, x, z: 9611, op: 1 });
+for (const [x, id] of [[2370, 3218], [2371, 3219]]) one([x, 9664, 0], [2376, 9610, 0], 'unicorn_door', 'at upass >= 4, quest_upass.rs2:322-323', { id, x, z: 9665, op: 1 });
+one([2369, 9718, 0], [2173, 4725, 1], 'temple_door2', 'unlocked by badges and horn, quest_upass.rs2:394-405', { id: 3220, x: 2368, z: 9717, op: 1 });
+one([2173, 4724, 1], [2370, 9719, 0], 'temple_door2', 'quest_upass.rs2:396-397', { id: 3221, x: 2174, z: 4724, op: 1 });
+one([2150, 4546, 1], [2336, 9794, 0], 'stairs', 'quest_upass.rs2:407-409', { id: 3222, x: 2150, z: 4545, op: 1 });
+one([2113, 4729, 1], [2305, 9915, 0], 'stairs', 'quest_upass.rs2:407-409', { id: 3222, x: 2112, z: 4729, op: 1 });
+one([2336, 9794, 0], [2150, 4546, 1], 'stairs', 'quest_upass.rs2:417-419', { id: 3223, x: 2336, z: 9793, op: 1 });
+one([2305, 9915, 0], [2113, 4729, 1], 'stairs', 'quest_upass.rs2:417-419', { id: 3223, x: 2304, z: 9915, op: 1 });
+// Pipes in the unicorn area once %upass >= 4: 3 tiles in, telejump 26, 3 out (upass_obstacles.rs2:330-366).
+one([2387, 9605, 0], [2387 + 32, 9605, 0], 'pipe6', 'upass >= 4', { id: 3237, x: 2388, z: 9605, op: 1 });
+one([2412, 9605, 0], [2412 + 32, 9605, 0], 'pipe6', 'upass >= 4', { id: 3237, x: 2413, z: 9605, op: 1 });
+one([2419, 9605, 0], [2419 - 32, 9605, 0], 'pipe6', 'upass >= 4', { id: 3237, x: 2417, z: 9605, op: 1 });
 
-// Dijkstra over tiles; walking costs 0.5 per tile (run).
-function plan(src: T, dst: T, allow: (kind: string) => boolean) {
+export interface Plan { cost: number; tiles: number; crossings: string[]; steps: Array<{ t: T; edge?: Edge }>; end: T }
+
+/** Cheapest route; arrives on or next to dst. */
+export function plan(src: T, dst: T, allow: (kind: string) => boolean = () => true): Plan | null {
     const dist = new Map<string, number>();
     const prev = new Map<string, { k: string; edge?: Edge; t: T }>();
     const heap: Array<[number, T]> = [[0, src]];
@@ -162,7 +157,7 @@ function plan(src: T, dst: T, allow: (kind: string) => boolean) {
         }
         return top;
     };
-    const near = (t: T) => t[2] === dst[2] && Math.max(Math.abs(t[0] - dst[0]), Math.abs(t[1] - dst[1])) <= 1;
+    const near = (t: T) => t[2] === dst[2] && Math.max(Math.abs(t[0] - dst[0]), Math.abs(t[1] - dst[1])) <= (walkable(dst) ? 0 : 1);
     while (heap.length) {
         const [d, t] = pop();
         const k = K(t);
@@ -184,7 +179,7 @@ function plan(src: T, dst: T, allow: (kind: string) => boolean) {
                 if (s.edge) crossings.push(`${s.edge.kind}${s.edge.note ? ' ' + s.edge.note : ''}`);
                 else tiles++;
             }
-            return { cost: d, tiles, crossings, end: t };
+            return { cost: d, tiles, crossings, steps, end: t };
         }
         const [x, z, l] = t;
         for (const [dx, dz] of DIRS) {
@@ -212,11 +207,12 @@ function plan(src: T, dst: T, allow: (kind: string) => boolean) {
     return null;
 }
 
-const P: Record<string, T> = {
-    caveEntrance: [2433, 3313, 0], landing: [2494, 9716, 0], koftik2: [2449, 9716, 0], bridgeWest: [2442, 9716, 0],
+export const P: Record<string, T> = {
+    caveOutside: [2434, 3313, 0], landing: [2494, 9716, 0], koftik2: [2449, 9716, 0], shootSpot: [2446, 9722, 0], bridgeWest: [2442, 9716, 0],
     plank: [2435, 9726, 0], swingStart: [2462, 9699, 0], koftik3: [2479, 9679, 0], gridEast: [2477, 9677, 0], portcullisLever: [2466, 9673, 0],
     afterPortcullis: [2464, 9677, 0], furnace: [2454, 9682, 0], well: [2416, 9674, 0], orb1trap: [2382, 9668, 0], orb2: [2386, 9677, 0], orb3: [2385, 9685, 0], orb4: [2416, 9698, 0],
-    wellBottom: [2423, 9660, 0], mud: [2393, 9650, 0], afterMud: [2392, 9646, 0], unicornCage: [2397, 9606, 0], boulder: [2396, 9597, 0],
+    wellBottom: [2423, 9660, 0], cageGate: [2393, 9655, 0], mud: [2393, 9651, 0], afterMud: [2392, 9646, 0], ledgeTop: [2375, 9644, 0], ledgeEnd: [2374, 9638, 0],
+    pipeEast: [2419, 9605, 0], unicornArea: [2412, 9605, 0], unicornCage: [2397, 9606, 0], boulder: [2396, 9597, 0],
     smashedCage: [2371, 9603, 0], area3: [2371, 9666, 0], paladins: [2424, 9719, 0], bloodwell: [2373, 9718, 0], templeDoor2: [2369, 9718, 0],
     mainArrival: [2173, 4725, 1], stairsSouth: [2150, 4546, 1], stairsNorth: [2113, 4729, 1], dwarfStairsFoot: [2336, 9794, 0], nilhoof: [2315, 9806, 0],
     barrel: [2327, 9799, 0], tomb: [2356, 9800, 0], kalrag: [2356, 9911, 0], kalragStairs: [2305, 9915, 0],
@@ -224,22 +220,23 @@ const P: Record<string, T> = {
     doveCage: [2134, 4702, 1], disciples: [2153, 4646, 1], templeDoor: [2144, 4647, 1], ibanLanding: [2482, 9607, 0], koftik5: [2443, 9607, 0], koftikTele: [2481, 9717, 0], exit: [2495, 9713, 0],
 };
 
-const LEGS: Array<[string, string, string, string[]?]> = [
-    ['landing -> Koftik (bridge)', 'landing', 'koftik2'],
+const LEGS: Array<[string, string, string]> = [
+    ['landing -> shoot spot (bridge)', 'landing', 'shootSpot'],
     ['bridge west bank -> rope swing', 'bridgeWest', 'swingStart'],
     ['bridge west bank -> plank', 'bridgeWest', 'plank'],
     ['rope swing -> grid east edge', 'swingStart', 'gridEast'],
-    ['grid east -> portcullis lever (grid walked)', 'gridEast', 'portcullisLever'],
     ['portcullis -> furnace', 'afterPortcullis', 'furnace'],
+    ['portcullis -> orb 4', 'afterPortcullis', 'orb4'],
     ['furnace -> orb 4 (north flat rocks)', 'furnace', 'orb4'],
     ['orb 4 -> orb 3', 'orb4', 'orb3'],
     ['orb 3 -> orb 2', 'orb3', 'orb2'],
     ['orb 2 -> orb 1 trap', 'orb2', 'orb1trap'],
     ['orb 1 trap -> furnace', 'orb1trap', 'furnace'],
     ['furnace -> well', 'furnace', 'well'],
-    ['well bottom -> mud', 'wellBottom', 'mud'],
-    ['after mud -> unicorn cage', 'afterMud', 'unicornCage'],
-    ['unicorn cage -> boulder', 'unicornCage', 'boulder'],
+    ['well bottom -> cage gate', 'wellBottom', 'cageGate'],
+    ['after mud -> ledge', 'afterMud', 'ledgeTop'],
+    ['ledge end -> pipe east end', 'ledgeEnd', 'pipeEast'],
+    ['unicorn area -> unicorn cage', 'unicornArea', 'unicornCage'],
     ['smashed cage -> unicorn door (area 3)', 'smashedCage', 'area3'],
     ['area 3 -> paladins', 'area3', 'paladins'],
     ['paladins -> well of flames', 'paladins', 'bloodwell'],
@@ -262,19 +259,22 @@ const LEGS: Array<[string, string, string, string[]?]> = [
     ['main arrival -> temple door', 'mainArrival', 'templeDoor'],
     ['Iban landing -> Koftik', 'ibanLanding', 'koftik5'],
     ['Koftik teleport -> exit', 'koftikTele', 'exit'],
-    // Post-quest traversal (Regicide): orb bits, door bits and the grid answer persist.
     ['POST: landing -> temple door', 'landing', 'templeDoor'],
 ];
 
-const pick = process.argv.slice(2);
-console.log('| Leg | Cost (ticks, success) | Tiles walked | Crossings |');
-console.log('|---|---|---|---|');
-for (const [name, a, b] of LEGS) {
-    if (pick.length && !pick.some(p => name.includes(p))) continue;
-    const r = plan(P[a], P[b], () => true);
-    if (!r) {
-        console.log(`| ${name} | unreachable | | |`);
-        continue;
+if (import.meta.main) {
+    const args = process.argv.slice(2);
+    const no = new Set((args.find(a => a.startsWith('--no='))?.slice(5) ?? '').split(',').filter(Boolean));
+    const pick = args.filter(a => !a.startsWith('--'));
+    console.log(`| Leg | Cost (ticks, success) | Tiles walked | Crossings |${no.size ? ` (without ${[...no].join(', ')})` : ''}`);
+    console.log('|---|---|---|---|');
+    for (const [name, a, b] of LEGS) {
+        if (pick.length && !pick.some(p => name.includes(p))) continue;
+        const r = plan(P[a], P[b], k => !no.has(k));
+        if (!r) {
+            console.log(`| ${name} | unreachable | | |`);
+            continue;
+        }
+        console.log(`| ${name} | ${r.cost.toFixed(1)} | ${r.tiles} | ${r.crossings.join('; ') || '-'} |`);
     }
-    console.log(`| ${name} | ${r.cost.toFixed(1)} | ${r.tiles} | ${r.crossings.join('; ') || '-'} |`);
 }
