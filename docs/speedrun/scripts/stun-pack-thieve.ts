@@ -19,6 +19,7 @@
 //   --charge=in|out|off [in]   Charge inside stuns (as plan 'h' slots), outside them (3 casts
 //                              before every knight click), or not at all.
 //   --fletch=on|off [on]       arrows as plan 'h' slots.
+//   --hfirst=charge|arrows     which of the two fills 'h' slots first while both have supplies.
 //   --topup=stun|success|give [stun]  where a bone top-up trade goes: at the start of a stun, in
 //                              place of the click after a success, or a ::give stand-in (no trade).
 //   --helper=<bot>             the helper bot (needed for stun|success).
@@ -73,6 +74,7 @@ const SHARKS = Number(flag('sharks', '4'));
 const EATBELOW = Number(flag('eatbelow', String(HP - 20)));
 const MARGIN = Number(flag('margin', '1'));
 const TELE = flag('tele', '0,41,51,29,37'); // the rs/2 knight, (2653,3300)
+const HFIRST = flag('hfirst', 'charge'); // which delay-free action fills 'h' first: charge | arrows
 
 // k = 8 lands on T+10, the last stun tick. xp gained there queues a level-up page that pops on
 // T+11 and makes the player busy for the attempt (smoke run: 12 ticks to the next roll with a
@@ -364,7 +366,9 @@ function runActs(s: BotWorldState, acts: string, click: () => void): string[] {
     let tail = '';
     for (const a of acts) {
         if (a === 'h') {
-            if (CHARGE === 'in' && v.magic < 99 && v.blood >= 3 && v.air >= 3) {
+            const chargeOk = CHARGE === 'in' && v.magic < 99 && v.blood >= 3 && v.air >= 3;
+            const arrowsOk = FLETCH && v.fl < 99 && v.headless > 0 && TIERS.some(tr => tr.level <= v.fl && (tierHeads.get(tr.re) ?? 0) > 0);
+            if (chargeOk && (HFIRST === 'charge' || !arrowsOk)) {
                 void sdk.sendClickComponent(CHARGE_COM); v.blood -= 3; v.air -= 3; sent.push('C'); continue;
             }
             const tier = FLETCH && v.fl < 99 && v.headless > 0 ? TIERS.find(tr => tr.level <= v.fl && (tierHeads.get(tr.re) ?? 0) > 0) : undefined;
