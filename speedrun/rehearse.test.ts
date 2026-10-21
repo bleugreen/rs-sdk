@@ -1,11 +1,19 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { baseState, FakeSdk } from './lib/fake-sdk';
 import type { DirectVerdict, GateCheck } from './lib/hostgate';
 import type { ProgramStatus } from './lib/programs';
-import type { TickRow } from './lib/ticks';
-import { BOUNDARY_STEP } from './runner/step';
+import { LOGOUT_BUTTON, logoutClean, type Session, startWatchdog } from './lib/session';
+import { TickLog, type TickRow } from './lib/ticks';
+import { sleep, waitUntil } from './lib/wait';
+import type { Link } from './runner/resume';
+import { BOUNDARY_STEP, type Step } from './runner/step';
 import {
-    annotation, compareHiscore, DEFAULT_GATE_BOT, type DirectRead, formatPlayers, formatSummary, GATE_PLAYERS_STEP, gateRefusal, type InPageRead, kitMissing, kitWant,
-    parseArgs, parseDirectJson, parseKit, playerReads, playerSwing, ProgramTracker, ReachTracker, SessionClock, summarize, UsageError,
+    annotation, compareHiscore, DEFAULT_GATE_BOT, type DirectRead, EXIT_HOST_RESERVED, formatPlayers, formatSummary, GATE_PLAYERS_STEP, gateRefusal, type InPageRead, kitMissing, kitWant,
+    parseArgs, parseDirectJson, parseKit, PAUSE_STEP, playerReads, playerSwing, ProgramTracker, ReachTracker, readReservation, reservationPath, reservationRefusal, ReservationWatch,
+    runAttempt, SessionClock, summarize, UsageError,
 } from './rehearse';
 import type { PlayerRow } from './tools/hiscore-scrape';
 
@@ -309,5 +317,218 @@ describe('trackers', () => {
         expect(t.observe(st(3, 'running', 301)).map(s => [s.runId, s.phase])).toEqual([[2, 'replaced']]);
         expect(t.flush().map(s => [s.runId, s.phase])).toEqual([[3, 'running']]);
         expect(t.flush()).toEqual([]);
+    });
+});
+
+describe('host reservation: pre-flight', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'rehearse-reservation-'));
+    afterAll(() => rmSync(dir, { recursive: true, force: true }));
+    const at = Date.parse('2026-10-22T02:00:00Z');
+    const file = (name: string, text: string) => {
+        const p = join(dir, name);
+        writeFileSync(p, text);
+        return p;
+    };
+    const watch = (path: string) => {
+        const warnings: string[] = [];
+        return { w: new ReservationWatch(path, { now: () => at, warn: m => warnings.push(m) }), warnings };
+    };
+
+    test('the path: --host-reservation, else $SPEEDRUN_HOST_RESERVATION, else $HOME/host-reserved.json', () => {
+        expect(reservationPath(undefined, { HOME: '/home/ubuntu' })).toBe('/home/ubuntu/host-reserved.json');
+        expect(reservationPath(undefined, { HOME: '/home/ubuntu', SPEEDRUN_HOST_RESERVATION: '/tmp/r.json' })).toBe('/tmp/r.json');
+        expect(reservationPath('/x.json', { HOME: '/home/ubuntu', SPEEDRUN_HOST_RESERVATION: '/tmp/r.json' })).toBe('/x.json');
+        expect(parseArgs(['--skill=x', '--bot=b', '--host-reservation=/tmp/r.json']).hostReservation).toBe('/tmp/r.json');
+        expect(parseArgs(['--claim', '--bot=b', '--host-reservation=/tmp/r.json'], { defaultGateBot: DEFAULT_GATE_BOT }).hostReservation).toBe('/tmp/r.json');
+        expect(parseArgs(['--skill=x', '--bot=b']).hostReservation).toBeUndefined();
+    });
+
+    test('live: refused, naming owner, until and reason', () => {
+        const reservation = { owner: 'run', until: '2026-10-22T03:00:00Z', reason: 'gate and scored run' };
+        const p = file('live.json', JSON.stringify(reservation));
+        expect(readReservation(p, at)).toEqual({ state: 'live', reservation });
+        const { w, warnings } = watch(p);
+        const why = reservationRefusal(w);
+        expect(why).toContain('the host is reserved by run until 2026-10-22T03:00:00Z (gate and scored run)');
+        expect(why).toContain(p);
+        expect(warnings).toEqual([]);
+    });
+
+    test('expired: not live, also at exactly `until`', () => {
+        const p = file('expired.json', JSON.stringify({ owner: 'rs/host', until: '2026-10-22T01:59:59Z', reason: 'install' }));
+        expect(readReservation(p, at).state).toBe('expired');
+        expect(reservationRefusal(watch(p).w)).toBeNull();
+        const edge = file('edge.json', JSON.stringify({ owner: 'rs/host', until: '2026-10-22T02:00:00Z', reason: '' }));
+        expect(reservationRefusal(watch(edge).w)).toBeNull();
+    });
+
+    test('missing: not live, and silent', () => {
+        const p = join(dir, 'absent.json');
+        expect(readReservation(p, at)).toEqual({ state: 'none' });
+        const { w, warnings } = watch(p);
+        expect(reservationRefusal(w)).toBeNull();
+        expect(warnings).toEqual([]);
+    });
+
+    test('malformed: not live, with a warning once per distinct problem', () => {
+        const { w, warnings } = watch(file('torn.json', '{"owner": "run", "until": '));
+        expect(reservationRefusal(w)).toBeNull();
+        expect(reservationRefusal(w)).toBeNull();
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]).toContain('is malformed, so it is not a live reservation: not JSON');
+        expect(readReservation(file('array.json', '[]'), at)).toEqual({ state: 'malformed', error: 'not a JSON object' });
+        expect(readReservation(file('when.json', '{"owner": "run", "until": "tonight"}'), at)).toEqual({ state: 'malformed', error: '"until" is not a time ("tonight")' });
+        expect(readReservation(file('none.json', '{"owner": "run"}'), at)).toEqual({ state: 'malformed', error: '"until" is not a time (null)' });
+        // A directory where the file should be: unreadable, which is not live either.
+        const r = readReservation(dir, at);
+        expect(r.state).toBe('malformed');
+    });
+});
+
+describe('host reservation: in flight (runAttempt)', () => {
+    const prevTick = process.env.SPEEDRUN_TICK_MS;
+    beforeAll(() => { process.env.SPEEDRUN_TICK_MS = '5'; });
+    afterAll(() => { if (prevTick === undefined) delete process.env.SPEEDRUN_TICK_MS; else process.env.SPEEDRUN_TICK_MS = prevTick; });
+    const dir = mkdtempSync(join(tmpdir(), 'rehearse-inflight-'));
+    afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+    /** A lite client that ticks every 2 ms; the logout click ends its session as the lite runner does (it exits). */
+    function liteClient() {
+        const sdk = Object.assign(new FakeSdk(baseState({ tick: 10 })), { checkBotStatus: async () => ({ status: 'active', inGame: true }) });
+        const now = Date.now();
+        const s = {
+            name: 'srtest', client: 'lite', env: { BOT_USERNAME: 'srtest', PASSWORD: 'x' }, sdk, bot: {}, sessionId: 1, expectInWorld: true,
+            child: { pid: 4242 }, childExit: null as number | null, lastInWorldTick: 10, lastAdvanceAt: now, launchedAt: now - 60_000,
+            lastProgressAt: now, watchdog: null, logPath: '/dev/null',
+        };
+        const session = s as unknown as Session;
+        let online = true;
+        const timer = setInterval(() => {
+            if (!online) return;
+            const st = sdk.tick();
+            s.lastInWorldTick = st.tick;
+            s.lastAdvanceAt = Date.now();
+        }, 2);
+        sdk.onSend = a => {
+            if (a.method !== 'sendClickComponent' || a.args[0] !== LOGOUT_BUTTON) return;
+            online = false;
+            setTimeout(() => {
+                sdk.push({ inGame: false });
+                s.childExit = 1;
+            }, 4);
+        };
+        const link: Link = {
+            isLost: () => false,
+            lost: async signal => {
+                while (!signal.aborted) await sleep(2);
+                return 'stopped watching';
+            },
+            restored: async () => {},
+        };
+        const logoutClicks = () => sdk.sent.filter(x => x.method === 'sendClickComponent' && x.args[0] === LOGOUT_BUTTON).length;
+        return { sdk, session, link, logoutClicks, stop: () => clearInterval(timer) };
+    }
+
+    function chain(ran: string[], between: Record<string, () => void> = {}): Step<any>[] {
+        return ['one', 'two', 'three'].map(name => ({
+            name,
+            preconditions: s => s.inGame || 'not in game',
+            run: async ({ sdk }) => {
+                ran.push(name);
+                const t = sdk.getState()!.tick;
+                await waitUntil(sdk, st => st.tick >= t + 2, { maxTicks: 20 });
+                between[name]?.();
+            },
+            postconditions: () => true,
+            logoutSafe: true,
+        }));
+    }
+
+    const reserve = (path: string, until: string) => writeFileSync(path, JSON.stringify({ owner: 'run', until, reason: 'gate and scored run' }));
+    const inAnHour = () => new Date(Date.now() + 3_600_000).toISOString();
+
+    test('a reservation appearing between two steps: clean logout there, the pause row, exit 5, no relaunch', async () => {
+        const path = join(dir, 'appears.json');
+        const client = liteClient();
+        const calls: string[] = [];
+        const wd = startWatchdog(client.session, {
+            timer: false,
+            actions: {
+                logout: async () => { calls.push('logout'); throw new Error('unexpected'); },
+                login: async () => { calls.push('login'); },
+                relaunch: async () => { calls.push('relaunch'); },
+                reconnect: async () => { calls.push('reconnect'); },
+            },
+        });
+        const ran: string[] = [];
+        const until = inAnHour();
+        const tlog = TickLog.memory('pause');
+        const r = await runAttempt(client.session, chain(ran, { one: () => reserve(path, until) }), {
+            log: tlog, account: 'srtest', link: client.link, from: 0,
+            reservation: new ReservationWatch(path), stopAsked: () => false, gateStop: () => null,
+            logout: () => logoutClean(client.session),
+        });
+        client.stop();
+
+        expect(ran).toEqual(['one']);
+        expect(r.code).toBe(EXIT_HOST_RESERVED);
+        expect(r.paused).toEqual({ owner: 'run', until, reason: 'gate and scored run' });
+        expect(r.outcome).toContain(`PAUSED for the gate/run: the host is reserved by run until ${until} (gate and scored run); logged out before "two"`);
+        // One page-confirmed logoutClean, and the account is meant to stay out.
+        expect(client.logoutClicks()).toBe(1);
+        expect(client.session.expectInWorld).toBe(false);
+
+        const pause = tlog.rows.filter(x => x.kind === 'gate' && x.step === PAUSE_STEP);
+        expect(pause).toHaveLength(1);
+        expect(pause[0]!.ok).toBe(true);
+        expect(pause[0]!.meta).toMatchObject({ owner: 'run', until, reason: 'gate and scored run', path, before: 'two', logout: { ok: true, confirmedBy: 'child' } });
+        // The runner's own logout boundary sits before it.
+        expect(tlog.rows.some(x => x.step === BOUNDARY_STEP && x.meta?.ended === '(logout)') || tlog.rows.some(x => x.step === BOUNDARY_STEP)).toBe(true);
+
+        // The summary shows the pause.
+        const summary = summarize(tlog.rows);
+        expect(summary.pauses).toEqual([{ owner: 'run', until, reason: 'gate and scored run', sessionId: 1, tick: pause[0]!.startTick, at: pause[0]!.at, before: 'two' }]);
+        expect(formatSummary(summary, { account: 'srtest', skill: 'woodcutting', to: 15, outcome: r.outcome, gate: [], hiscore: null }))
+            .toContain(`PAUSED for the gate/run at ${pause[0]!.at}: host reserved by run until ${until} (gate and scored run); logged out at tick ${pause[0]!.startTick} of session 1, before "two"`);
+
+        // The lite runner has exited after the logout; the crash-recovery watchdog leaves it out.
+        expect(client.session.childExit).toBe(1);
+        await wd.check();
+        wd.resume();
+        await wd.check();
+        expect(calls).toEqual([]);
+        wd.stop();
+    });
+
+    test('a reservation that is already expired mid-run is ignored: the chain finishes', async () => {
+        const path = join(dir, 'expired.json');
+        const client = liteClient();
+        const ran: string[] = [];
+        const tlog = TickLog.memory('expired');
+        const r = await runAttempt(client.session, chain(ran, { one: () => reserve(path, '2026-10-21T00:00:00Z') }), {
+            log: tlog, account: 'srtest', link: client.link, from: 0,
+            reservation: new ReservationWatch(path), stopAsked: () => false, gateStop: () => null,
+            logout: () => logoutClean(client.session),
+        });
+        client.stop();
+        expect(ran).toEqual(['one', 'two', 'three']);
+        expect(r).toEqual({ outcome: 'chain done', code: 0, paused: null });
+        expect(client.logoutClicks()).toBe(0);
+        expect(tlog.rows.some(x => x.step === PAUSE_STEP)).toBe(false);
+    });
+
+    test('no file: Ctrl-C still stops at the boundary with exit 4, as before', async () => {
+        const client = liteClient();
+        const ran: string[] = [];
+        let stop = false;
+        const r = await runAttempt(client.session, chain(ran, { two: () => (stop = true) }), {
+            log: TickLog.memory('sigint'), account: 'srtest', link: client.link, from: 0,
+            reservation: new ReservationWatch(join(dir, 'never.json')), stopAsked: () => stop, gateStop: () => null,
+            logout: () => logoutClean(client.session),
+        });
+        client.stop();
+        expect(ran).toEqual(['one', 'two']);
+        expect(r).toEqual({ outcome: 'stopped before "three"; logged out', code: 4, paused: null });
+        expect(client.logoutClicks()).toBe(1);
     });
 });
