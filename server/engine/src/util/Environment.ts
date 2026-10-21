@@ -51,6 +51,11 @@ export default {
     // config channel and reads PROFANITY_FILTER from bot.env instead.
     NODE_PROFANITY_FILTER: tryParseBoolean(process.env.NODE_PROFANITY_FILTER, true),
     NODE_RANDOM_EVENTS: tryParseBoolean(process.env.NODE_RANDOM_EVENTS, false),
+    // Staff level granted to every login when no login server is configured
+    // (LOGIN_SERVER=false, i.e. a local dev engine). Opt-in for dev commands
+    // such as ::setstat / ::give / ::tele; production uses the login server and
+    // never reaches this path.
+    LOCAL_STAFF_LEVEL: tryParseInt(process.env.LOCAL_STAFF_LEVEL, 0),
     NODE_TICKRATE: tryParseInt(process.env.NODE_TICKRATE, 400),
     HISCORES_WEB_PORT: tryParseInt(process.env.HISCORES_WEB_PORT, 8889),
     // Read-only spectator feed of live players/npcs on ws /worldfeed (web/worldfeed.ts).
