@@ -32,7 +32,7 @@ const trials = Number(flag('trials') ?? 60);
 const out = flag('out') ?? join(process.env.TMPDIR ?? '/tmp', `overlay-trace-${bot}`);
 mkdirSync(out, { recursive: true });
 
-type Ev = { t: number; s: 'g' | 'w'; d: 'in' | 'out'; k: string; n: number };
+type Ev = { t: number; s: 'g' | 'w' | 'p'; d: string; k: string; n: number };
 
 const headless = process.env.HEADLESS === '1' || process.env.HEADLESS === 'true';
 const browser = await puppeteer.launch({
@@ -82,7 +82,30 @@ for (let i = 0; !(await page.evaluate(() => (window as any).gameClient?.ingame))
 }
 await new Promise(r => setTimeout(r, 3000));
 console.log(`[trace] ${headless ? 'headless' : 'headful'} tab in game; load ${loadavg().map(l => l.toFixed(1)).join(' ')}`);
-await page.evaluate(() => { (window as any).__trace.length = 0; });
+// In-page hops (socket 'p'): each executor call with the bytes then queued in `out`, and each
+// Client.flushNow call (absent before rs/113) with the bytes it found.
+await page.evaluate(() => {
+    const w = window as any;
+    const c = w.gameClient;
+    const evs = w.__trace;
+    const ex = c?.botOverlay?.executor;
+    if (ex) {
+        const execute = ex.execute.bind(ex);
+        ex.execute = (a: { type: string }) => {
+            const r = execute(a);
+            evs.push({ t: performance.now(), s: 'p', d: 'exec', k: a.type, n: c.out.pos });
+            return r;
+        };
+    }
+    if (typeof c?.flushNow === 'function') {
+        const flushNow = c.flushNow.bind(c);
+        c.flushNow = () => {
+            evs.push({ t: performance.now(), s: 'p', d: 'flush', k: c.ingame ? 'ingame' : 'off', n: c.out.pos });
+            flushNow();
+        };
+    }
+    evs.length = 0;
+});
 
 const probe = spawn('bun', ['docs/speedrun/scripts/tickmanip-latency.ts', bot, `--trials=${trials}`], { stdio: ['ignore', 'pipe', 'inherit'] });
 let probeOut = '';
@@ -131,4 +154,12 @@ console.log(`  arrival to wire   ${q3(arrival)}`);
 console.log(`  tick to state     ${q3(toState)}`);
 console.log(`  action back       ${q3(back)}`);
 console.log(`  page reaction     ${q3(reaction)}`);
+if (process.env.TRACE_EXCERPT) {
+    // The events around a few actions, relative to the action's arrival.
+    const actions = evs.map((e, i) => (e.s === 'g' && e.k === 'action' ? i : -1)).filter(i => i >= 0);
+    for (const i of actions.slice(5, 8)) {
+        console.log(`  -- around action #${actions.indexOf(i)}`);
+        for (const e of evs.slice(Math.max(0, i - 4), i + 6)) console.log(`     ${(e.t - evs[i]!.t).toFixed(2).padStart(8)} ${e.s} ${e.d} ${e.k} ${e.n}`);
+    }
+}
 process.exit(code);
