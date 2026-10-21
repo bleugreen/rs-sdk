@@ -13,6 +13,9 @@
 // segments.
 
 import { runScript } from '../../../sdk/runner';
+import { initPathfinding } from '../../../sdk/pathfinding';
+import * as rsmod from '../../../server/vendor/rsmod-pathfinder';
+import { CollisionType } from '../../../server/vendor/rsmod-pathfinder';
 import { Ledger, type Sdk, chebyshevPath, cheat, dialog, findLoc, getvar, messageSince, pos, tele, ticks, until } from './quest-pip-hm-lib';
 
 const PHASES = ['zealot', 'enter', 'mush', 'cart', 'exit', 'endcart', 'lift', 'stairs', 'boss', 'reward'] as const;
@@ -177,6 +180,58 @@ async function crossCart4(sdk: Sdk, L: Ledger) {
     await sdk.sendWalk(2738, 4529, true);
     if (!(await until(sdk, () => pos(sdk).x === 2738 && pos(sdk).z === 4529, 15))) throw new Error(`cart 4 crossing failed; at ${JSON.stringify(pos(sdk))}`);
     L.note(`cart 4 wait ${t1 - t0}, crossing ${sdk.getState()!.tick - t1}`);
+}
+
+/**
+ * Route around NPCs. The boss room's loading cranes (size 3) and mine carts
+ * are blockwalk NPCs, which neither the SDK path nor the lite client's click
+ * route knows about; a walk whose first step is a parked cart goes nowhere.
+ * Breadth-first search on static collision with NPC tiles blocked, returning
+ * the tile path (excluding the start), or null.
+ */
+function npcAwarePath(sdk: Sdk, goals: { x: number; z: number }[], ignore?: number): { x: number; z: number }[] | null {
+    initPathfinding();
+    const blocked = new Set<string>();
+    for (const n of sdk.getNearbyNpcs()) {
+        if (n.index === ignore) continue;
+        if (/loading crane/i.test(n.name)) for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) blocked.add(`${n.x + i},${n.z + j}`);
+        else if (/mine cart|treus|^ghost$/i.test(n.name)) blocked.add(`${n.x},${n.z}`);
+    }
+    const start = pos(sdk);
+    const goal = new Set(goals.map(g => `${g.x},${g.z}`));
+    const prev = new Map<string, string>([[`${start.x},${start.z}`, '']]);
+    const q: [number, number][] = [[start.x, start.z]];
+    const D = [[0, 1], [1, 0], [0, -1], [-1, 0], [1, 1], [1, -1], [-1, 1], [-1, -1]] as const;
+    while (q.length) {
+        const [x, z] = q.shift()!;
+        if (goal.has(`${x},${z}`)) {
+            const out: { x: number; z: number }[] = [];
+            let k = `${x},${z}`;
+            while (prev.get(k)) { const [a, b] = k.split(',').map(Number); out.push({ x: a!, z: b! }); k = prev.get(k)!; }
+            return out.reverse();
+        }
+        for (const [dx, dz] of D) {
+            const nx = x + dx, nz = z + dz, k = `${nx},${nz}`;
+            if (prev.has(k) || blocked.has(k) || Math.abs(nx - start.x) > 30 || Math.abs(nz - start.z) > 30) continue;
+            if (dx && dz && (blocked.has(`${x + dx},${z}`) || blocked.has(`${x},${z + dz}`))) continue;
+            if (!rsmod.canTravel(start.level, x, z, dx, dz, 1, 0, CollisionType.NORMAL)) continue;
+            prev.set(k, `${x},${z}`);
+            q.push([nx, nz]);
+        }
+    }
+    return null;
+}
+
+/** Walk an npc-aware path in short hops (each hop's own route then matches it). */
+async function walkPath(sdk: Sdk, path: { x: number; z: number }[], hop = 4): Promise<boolean> {
+    for (let i = Math.min(hop, path.length) - 1; i < path.length; i = Math.min(i + hop, path.length - 1)) {
+        const t = path[i]!;
+        await sdk.sendWalk(t.x, t.z, true);
+        const ok = await until(sdk, () => { const p = pos(sdk); return p.x === t.x && p.z === t.z; }, Math.ceil(hop / 2) + 3);
+        if (!ok) return false;
+        if (i === path.length - 1) break;
+    }
+    return true;
 }
 
 const inMap = (sdk: Sdk, mx: number, mz: number) => {
@@ -443,6 +498,7 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         const IDLE: [number, number] = [2786, 4458];
         let msgSeen = sdk.getState()!.gameMessages.length;
         let approaches = 0;
+        let approachTiles = 0;
         const atk0 = sdk.getSkill('attack')!.experience;
         let lastSwing = t0;
         let lastClick = -99;
@@ -508,15 +564,14 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
                 // the SDK path first, then attack.
                 const p = pos(sdk);
                 if (Math.abs(p.x - boss.x) + Math.abs(p.z - boss.z) !== 1) {
-                    const adj = [[0, 1], [1, 0], [-1, 0], [0, -1]]
+                    const goals = [[0, 1], [1, 0], [-1, 0], [0, -1]]
                         .map(([dx, dz]) => ({ x: boss.x + dx!, z: boss.z + dz! }))
-                        .map(t => ({ ...t, n: chebyshevPath(sdk, t.x, t.z) }))
-                        .filter(t => t.n >= 0)
-                        .sort((a, b) => a.n - b.n);
-                    if (adj[0]) {
-                        await sdk.sendWalk(adj[0].x, adj[0].z, true);
-                        approaches++;
-                        await until(sdk, () => { const q = pos(sdk); return q.x === adj[0]!.x && q.z === adj[0]!.z; }, Math.ceil(adj[0].n / 2) + 3);
+                        .filter(g => rsmod.canTravel(0, g.x, g.z, boss.x - g.x, boss.z - g.z, 1, 0, CollisionType.NORMAL));
+                    const path = npcAwarePath(sdk, goals, boss.index);
+                    approaches++;
+                    if (path) {
+                        approachTiles += path.length;
+                        await walkPath(sdk, path);
                     }
                 }
                 await sdk.sendInteractNpc(boss.index, 2);
@@ -526,7 +581,7 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
             await sdk.waitForStateUpdate();
         }
         const dealt = Math.round((sdk.getSkill('attack')!.experience - atk0) / 100); // 4 xp per damage, 25x
-        L.note(`attack clicks ${swings}, approach walks ${approaches}, fade-outs ${moves}, sharks ${eats}, damage dealt ~${dealt}, hp left ${sdk.getState()!.player!.hp}${died ? ', DIED' : ''}; hp/boss% ${hpLog.join(' ')}`);
+        L.note(`attack clicks ${swings}, approach walks ${approaches} (${approachTiles} tiles), fade-outs ${moves}, sharks ${eats}, damage dealt ~${dealt}, hp left ${sdk.getState()!.player!.hp}${died ? ', DIED' : ''}; hp/boss% ${hpLog.join(' ')}`);
         const kd = await dialog(sdk, [], { settle: 1 });
         L.add(kd);
         L.end();
