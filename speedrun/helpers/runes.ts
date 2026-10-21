@@ -665,7 +665,10 @@ export class Runes {
         for (let i = 0; i < 16 && !this.ctx.signal.aborted; i++) {
             const web = sdk.getNearbyLocs().find(l => /^web$/i.test(l.name) && l.x === PLACES.keepWeb.x && l.z === PLACES.keepWeb.z);
             if (web) {
-                await bot.interactLoc(web, /slash/i);
+                // Using the blade on the web (oplocu) needs it only carried; Slash (oploc1) needs it wielded.
+                const blade = this.state.inventory.find(i => this.o.webWeapons.some(p => p.test(i.name)));
+                const r = blade ? await bot.useItemOnLoc(blade, web) : await bot.interactLoc(web, /slash/i);
+                if (!r.success) log('lundail: web cut retry', { message: r.message });
                 await waitTicks(sdk, 3);
                 continue;
             }
@@ -698,28 +701,20 @@ export class Runes {
         const budget = purchaseBudget(lines, n => this.held(n));
         if (!inCellar(this.state) && !inWild(this.state)) {
             if (!this.sturdy('lundail')) return 'blocked';
-            // Nothing worn but the web weapon goes into the Wilderness.
+            // Nothing but coins and a blade for the keep web goes into the Wilderness.
             for (const e of bot.getEquipment()) if (!this.o.webWeapons.some(p => p.test(e.name))) await bot.unequipItem(e.name);
             await this.atBank(PLACES.ardougneBank, async () => {
-                await this.buyer.depositAllBut([]);
-                if (!bot.getEquipment().some(e => this.o.webWeapons.some(p => p.test(e.name)))) {
+                await this.buyer.depositAllBut(this.state.inventory.filter(i => this.o.webWeapons.some(p => p.test(i.name))).slice(0, 1).map(i => i.name));
+                if (!this.state.inventory.some(i => this.o.webWeapons.some(p => p.test(i.name))) && !bot.getEquipment().some(e => this.o.webWeapons.some(p => p.test(e.name)))) {
                     const bank = sdk.getBankItems();
                     const weapon = this.o.webWeapons.map(p => bank.find(i => p.test(i.name))).find(Boolean);
                     if (weapon) await bot.withdrawItem(exactly(weapon.name), 1);
                 }
                 await this.buyer.setCoins(budget);
             });
-            const wielding = () => bot.getEquipment().some(e => this.o.webWeapons.some(p => p.test(e.name)));
-            // Right after the bank closes, the inventory can still carry the bank's ops (no Wield) for a tick.
-            for (let i = 0; i < 3 && !wielding(); i++) {
-                await waitTicks(sdk, 2);
-                const weapon = this.state.inventory.find(it => this.o.webWeapons.some(p => p.test(it.name)));
-                if (!weapon) break;
-                const r = await bot.equipItem(weapon);
-                await waitUntil(sdk, () => wielding(), { maxTicks: 4 });
-                if (!wielding()) log('lundail: wield retry', { weapon: weapon.name, message: r.message, options: weapon.optionsWithIndex.map(o => o.text) });
-            }
-            if (!wielding()) {
+            // The blade is carried and used on the web (web.rs2 oplocu): wielding it isn't needed.
+            const blade = () => this.state.inventory.some(i => this.o.webWeapons.some(p => p.test(i.name))) || bot.getEquipment().some(e => this.o.webWeapons.some(p => p.test(e.name)));
+            if (!blade()) {
                 log('lundail: no weapon that can slash the keep web (a bronze axe or sword will do)');
                 await this.atBank(PLACES.ardougneBank, () => this.buyer.depositAllBut([]));
                 return 'blocked';
