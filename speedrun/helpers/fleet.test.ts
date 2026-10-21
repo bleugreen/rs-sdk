@@ -49,6 +49,13 @@ describe('fleet config', () => {
         expect(problemsOf({ maxOnline: 61, accounts: [] }).join()).toContain('maxOnline');
     });
 
+    test('never runs the scored account www_cairn_md', () => {
+        expect(FORBIDDEN_ACCOUNTS.has('www_cairn_md')).toBe(true);
+        const problems = problemsOf({ accounts: [{ account: 'www_cairn_md', role: 'feathers' }] });
+        expect(problems).toHaveLength(1);
+        expect(problems[0]).toMatch(/www_cairn_md/);
+    });
+
     test('refuses the scored account, foreign names, duplicates and bad roles, all at once', () => {
         const problems = problemsOf({
             accounts: [
