@@ -82,6 +82,7 @@ run at the measured defensive rate (5.60).
 | | (c) cannon + longrange until Defence 99, then cannon + rapid knives | 9,104 |
 | | (b) hand only: longrange until Defence 99, then rapid knives | 9,685 |
 | Same, Waterfall off as well (Strength gap 4,938 too) | (f) / (g) | **4,054** / 4,730 |
+| Package B: MM option 1 + Dragon Slayer (18,650 Str + 18,650 Def), Waterfall off: Defence gap 1,288, HP gap 4,938 | **(e) cannon + defensive melee (230), then cannon + rapid knives (1,821)**; (c) 2,120; (g) 2,180 | **2,051** |
 | With MM option 1 and Holy Grail: Defence gap 4,638, HP gap 4,938 | **(e) cannon + defensive melee until Defence 99 (828), then cannon + rapid knives (1,420)**; (g) 2,543; (c) 2,722; (b) 5,689 | **2,248** |
 | Same, plus Fremennik Trials (gaps Defence 1,826, HP 2,126) | (e) | 2,057 (**Fremennik saves 191 ticks** of combat training) |
 | Ranged only from ~54 (no gaps) | cannon + rapid knives | 2,041 |
