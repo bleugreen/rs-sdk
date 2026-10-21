@@ -119,7 +119,16 @@ export interface ReceiverCtx {
     lastAcceptTick: number;
     sawOpen: boolean;
     closedSince: number | null;
+    /** First tick the confirm screen showed an empty partner offer. */
+    confirmEmptySince?: number | null;
 }
+
+/**
+ * Ticks an empty partner offer on the confirm screen is taken as not read yet
+ * before the receiver declines. Seen on the demo: a receiver declined a correct
+ * 3-wine offer on its first confirm-screen state.
+ */
+export const CONFIRM_EMPTY_GRACE_TICKS = 3;
 
 export type ReceiverAction =
     | { action: 'wait' }
@@ -165,6 +174,10 @@ export function decideReceiver(state: BotWorldState, ctx: ReceiverCtx): { next: 
         }
         if (t.screen === 'confirm') {
             const good = ctx.want ? offerSatisfies(ctx.want, t.theirOffer) : ctx.snapshot !== null && sameOffer(ctx.snapshot, t.theirOffer);
+            if (!good && t.theirOffer.length === 0) {
+                next.confirmEmptySince = ctx.confirmEmptySince ?? state.tick;
+                if (state.tick - next.confirmEmptySince < CONFIRM_EMPTY_GRACE_TICKS) return { next, action: 'wait' };
+            }
             if (!good) return { next, action: 'decline', reason: 'confirm screen offer does not match' };
             if (canAccept) {
                 next.lastAcceptTick = state.tick;
