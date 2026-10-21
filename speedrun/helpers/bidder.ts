@@ -1,9 +1,14 @@
-// GE bidder (role `bidder`): keeps a standing Grand Exchange buy offer for one
-// item just above the competing best bid until a target quantity is held, then
-// parks. Rules, options and the holdings log: docs/speedrun/helpers/bidder.md.
+// GE bidder (role `bidder`): keeps standing Grand Exchange buy offers for a list
+// of items, each just above its competing best bid, until each line's target is
+// held, then parks. Rules, options and the holdings log: docs/speedrun/helpers/bidder.md.
 //
-//   ROLE_OPTIONS='{"item":"Grapes","target":520,"tranche":150,"maxPrice":3000}' \
+//   ROLE_OPTIONS='{"lines":[
+//       {"item":"Dragon bones","target":555,"tranche":30,"maxPrice":12000,"minPrice":6000,"step":1000,"stepAfterIdleMinutes":60},
+//       {"item":"Grapes","target":520,"tranche":150,"maxPrice":3000,"minPrice":1650}]}' \
 //     bun speedrun/helpers/bidder.ts cairn_h61
+//
+// Lines take coins in list order: once a line is short of coins, the lines after
+// it place nothing new until it is funded.
 //
 // Funding: one trip on a coin earner trades its banked coins to the bidder, which
 // accepts trades from `funders` (our helper accounts) and gives nothing back:
@@ -18,7 +23,7 @@ import { runStandalone, type Role, type RoleContext } from './role';
 
 // ------------------------------------------------------------------ options
 
-export interface BidderOptions {
+export interface LineOptions {
     /** Item name as the game spells it, or its id. */
     item: string | number;
     /** Stop bidding once this many are held (bank + inventory + uncollected fills). */
@@ -27,6 +32,23 @@ export interface BidderOptions {
     tranche: number;
     /** Hard cap per item: never bid above it. */
     maxPrice: number;
+    /**
+     * Never bid below this. The bidder also never lowers its own price: a new
+     * tranche starts at the highest price it has bid, so sellers who answered
+     * that price keep finding it.
+     */
+    minPrice: number;
+    /** How far above a competing bid we place (when `step` is not set). */
+    outbidBy: number;
+    /** Step mode: our price moves only in whole steps from our own price, never jumping. */
+    step: number | null;
+    /** Step mode: raise one step after this many minutes without a fill. */
+    stepAfterIdleMinutes: number | null;
+}
+
+export interface BidderOptions {
+    /** In priority order: earlier lines are funded first. */
+    lines: LineOptions[];
     /** Minutes between rechecks of the market. */
     recheckMinutes: number;
     /**
@@ -35,35 +57,52 @@ export interface BidderOptions {
      * requests with "busy", which would turn funders away.
      */
     fillCheckMinutes: number;
-    /** How far above the competing bid we place. */
-    outbidBy: number;
-    /**
-     * Never bid below this. The bidder also never lowers its own price: a new
-     * tranche starts at the highest price it has bid, so sellers who answered
-     * that price keep finding it.
-     */
-    minPrice: number;
     /** Accounts (login-name RegExps) whose trades are accepted as funding. */
     funders: RegExp[];
 }
 
-export function bidderOptions(raw: Record<string, unknown>): BidderOptions {
-    const num = (key: string, fallback: number | undefined, min: number): number => {
+/** Offers per line the bidder will hold at once (the server allows 6 per account). */
+export const MAX_OFFERS_PER_LINE = 2;
+
+function numberOption(raw: Record<string, unknown>, where: string) {
+    return (key: string, fallback: number | undefined, min: number): number => {
         const v = raw[key] ?? fallback;
-        if (typeof v !== 'number' || !Number.isFinite(v) || v < min) throw new Error(`bidder: option ${key} must be a number >= ${min} (got ${JSON.stringify(raw[key])})`);
+        if (typeof v !== 'number' || !Number.isFinite(v) || v < min) throw new Error(`bidder: ${where}${key} must be a number >= ${min} (got ${JSON.stringify(raw[key])})`);
         return v;
     };
+}
+
+export function lineOptions(raw: Record<string, unknown>, where = ''): LineOptions {
+    const num = numberOption(raw, where);
     const item = raw.item;
-    if (typeof item !== 'string' && typeof item !== 'number') throw new Error('bidder: option item is required (name or id)');
+    if (typeof item !== 'string' && typeof item !== 'number') throw new Error(`bidder: ${where}item is required (name or id)`);
+    const step = raw.step === undefined ? null : Math.floor(num('step', undefined, 1));
+    const idle = raw.stepAfterIdleMinutes === undefined ? null : num('stepAfterIdleMinutes', undefined, 1);
+    if (idle !== null && step === null) throw new Error(`bidder: ${where}stepAfterIdleMinutes needs step`);
     return {
         item,
         target: Math.floor(num('target', undefined, 1)),
         tranche: Math.floor(num('tranche', 150, 1)),
-        maxPrice: Math.floor(num('maxPrice', 3000, 1)),
+        maxPrice: Math.floor(num('maxPrice', undefined, 1)),
+        minPrice: Math.floor(num('minPrice', 0, 0)),
+        outbidBy: Math.floor(num('outbidBy', 25, 1)),
+        step,
+        stepAfterIdleMinutes: idle
+    };
+}
+
+/** `lines` is the list; without it, the options themselves are the one line. */
+export function bidderOptions(raw: Record<string, unknown>): BidderOptions {
+    const num = numberOption(raw, '');
+    const rawLines = raw.lines === undefined ? [raw] : raw.lines;
+    if (!Array.isArray(rawLines) || rawLines.length === 0) throw new Error('bidder: lines must be a non-empty list');
+    const lines = rawLines.map((l, i) => lineOptions(l as Record<string, unknown>, raw.lines === undefined ? '' : `lines[${i}].`));
+    const keys = lines.map(l => String(l.item).toLowerCase());
+    if (new Set(keys).size !== keys.length) throw new Error('bidder: an item appears in two lines');
+    return {
+        lines,
         recheckMinutes: num('recheckMinutes', 30, 0.5),
         fillCheckMinutes: num('fillCheckMinutes', 3, 0.5),
-        outbidBy: Math.floor(num('outbidBy', 25, 1)),
-        minPrice: Math.floor(num('minPrice', 0, 0)),
         funders: toRegExps(raw.funders ?? DEFAULT_COURIERS)
     };
 }
@@ -87,6 +126,8 @@ export interface Competition {
     tie: boolean;
     /** Our offer is the best and others rest below it: their average price (their best is at least this). */
     belowAvg: number | null;
+    /** Quantity bid by everyone else. */
+    otherQty: number;
     /** The market does not show our offer yet (its quotes lag a placement by seconds). */
     stale: boolean;
 }
@@ -99,14 +140,15 @@ export interface Competition {
  * their quantity at our price, they all sit at our price (a tie).
  */
 export function competingBid(quote: MarketView, ours: readonly OwnOffer[]): Competition {
-    const base: Competition = { competing: quote.bid, outbid: false, tie: false, belowAvg: null, stale: false };
-    if (ours.length === 0) return base;
+    const ourQty = ours.reduce((a, o) => a + o.remaining, 0);
+    const otherQty = Math.max(0, quote.buyQuantity - ourQty);
+    const base: Competition = { competing: quote.bid, outbid: false, tie: false, belowAvg: null, otherQty, stale: false };
+    if (ours.length === 0) return { ...base, otherQty: quote.buyQuantity };
     const ourPrice = Math.max(...ours.map(o => o.price));
     if (quote.bid === null) return { ...base, competing: null, stale: true };
     if (quote.bid > ourPrice) return { ...base, outbid: true };
     // Below ours: the quote predates our offer, so its best bid is someone else's.
-    if (quote.bid < ourPrice) return { ...base, stale: true };
-    const otherQty = quote.buyQuantity - ours.reduce((a, o) => a + o.remaining, 0);
+    if (quote.bid < ourPrice) return { ...base, stale: true, otherQty: quote.buyQuantity };
     const otherValue = quote.buyValue - ours.reduce((a, o) => a + o.remaining * o.price, 0);
     if (otherQty <= 0) return { ...base, competing: null };
     if (otherValue >= otherQty * ourPrice) return { ...base, competing: ourPrice, tie: true };
@@ -119,11 +161,13 @@ export interface BidInput {
     /** Our open offers for the item (openOwn). */
     ours: readonly OwnOffer[];
     quote: MarketView;
-    /** Coins we can spend now (carried + banked), excluding escrow. */
+    /** Coins this line may spend now (carried + banked), excluding escrow. */
     coins: number;
-    options: BidderOptions;
+    options: LineOptions;
     /** The highest price this bidder has bid for the item (its price never goes down). */
     floor?: number;
+    /** Minutes since this line last saw a fill (step mode's idle rule). */
+    idleMinutes?: number;
 }
 
 export interface BidDecision {
@@ -131,17 +175,17 @@ export interface BidDecision {
      * done: the target is held; cancel what still rests and stop.
      * hold: keep the book as it is.
      * place: add an offer (fresh, or a top-up at our price while we are still the best bid).
-     * replace: we are outbid; cancel ours, then re-decide with a fresh quote and place again.
+     * replace: raise (outbid, idle step, or below our floor): cancel ours, then place at `price` or above.
      * short: no offer resting and not enough coins for even one item.
      */
     action: 'done' | 'hold' | 'place' | 'replace' | 'short';
     competition: Competition;
     /** Offers to cancel first (done, replace). */
     cancel: number[];
-    /** place: the new offer's price; replace: the price the replacement aims at. */
+    /** place: the new offer's price; replace: the price the replacement starts from. */
     price: number | null;
     quantity: number;
-    /** The competing bid is at or above maxPrice: we sit at maxPrice and do not raise. */
+    /** At maxPrice and wanting to go higher: we do not raise. */
     capped: boolean;
     /** Coins missing to rest a whole tranche (0 when funded). */
     coinsShort: number;
@@ -149,18 +193,20 @@ export interface BidDecision {
 }
 
 /**
- * Our price for a new offer: just above the competing bid, never below minPrice
- * or our own earlier price (`floor`), never above maxPrice.
+ * The price for an offer that starts from `base` (our floor, or our price when
+ * outbid) and must beat `competing`: competing + outbidBy, or in step mode the
+ * first whole step from `base` above it. Never above maxPrice.
  */
-export function bidPrice(competing: number | null, quote: MarketView, o: BidderOptions, floor = 0): { price: number; capped: boolean } {
-    const wanted = competing !== null ? competing + o.outbidBy : Math.max(quote.lastPrice ?? 1, 1);
-    const price = Math.min(Math.max(wanted, o.minPrice, floor), o.maxPrice);
-    return { price, capped: competing !== null && competing >= o.maxPrice };
+export function priceAbove(competing: number | null, base: number, o: LineOptions): { price: number; capped: boolean } {
+    let wanted = base;
+    if (competing !== null && competing >= base) {
+        wanted = o.step !== null ? base + (Math.floor((competing - base) / o.step) + 1) * o.step : competing + o.outbidBy;
+    }
+    return { price: Math.min(wanted, o.maxPrice), capped: competing !== null && competing >= o.maxPrice };
 }
 
 export function decideBid(input: BidInput): BidDecision {
     const { held, quote, coins, options: o } = input;
-    const floor = input.floor ?? 0;
     const ours = input.ours.filter(x => x.side === 'buy' && x.state === 'open' && x.remaining > 0);
     const competition = competingBid(quote, ours);
     const out = (d: Partial<BidDecision> & Pick<BidDecision, 'action' | 'reason'>): BidDecision => ({ competition, cancel: [], price: null, quantity: 0, capped: false, coinsShort: 0, ...d });
@@ -170,39 +216,37 @@ export function decideBid(input: BidInput): BidDecision {
     const wanted = Math.min(o.tranche, need);
     const resting = ours.reduce((a, x) => a + x.remaining, 0);
     const escrow = ours.reduce((a, x) => a + x.remaining * x.price, 0);
+    const floorPrice = Math.min(Math.max(o.minPrice, input.floor ?? 0), o.maxPrice);
+    const replace = (price: number, capped: boolean, reason: string) =>
+        out({ action: 'replace', cancel: ours.map(x => x.id), price, quantity: Math.min(wanted, Math.floor((coins + escrow) / price)), capped, coinsShort: Math.max(0, wanted * price - coins - escrow), reason });
 
     if (ours.length > 0) {
         const ourPrice = Math.max(...ours.map(x => x.price));
         if (competition.outbid) {
             if (ourPrice >= o.maxPrice) return out({ action: 'hold', price: ourPrice, capped: true, reason: `outbid at ${competition.competing}, already at maxPrice ${o.maxPrice}` });
-            const { price, capped } = bidPrice(competition.competing, quote, o, floor);
-            const quantity = Math.min(wanted, Math.floor((coins + escrow) / price));
-            return out({
-                action: 'replace',
-                cancel: ours.map(x => x.id),
-                price,
-                quantity,
-                capped,
-                coinsShort: Math.max(0, wanted * price - coins - escrow),
-                reason: `outbid at ${competition.competing}; ours ${ourPrice}`
-            });
+            const { price, capped } = priceAbove(competition.competing, Math.max(ourPrice, floorPrice), o);
+            return replace(price, capped, `outbid at ${competition.competing}; ours ${ourPrice}`);
         }
         // Resting below our own floor (minPrice raised, or an offer from before a restart): re-price up.
-        const floorPrice = Math.min(Math.max(o.minPrice, floor), o.maxPrice);
-        if (ourPrice < floorPrice) {
-            const quantity = Math.min(wanted, Math.floor((coins + escrow) / floorPrice));
-            return out({ action: 'replace', cancel: ours.map(x => x.id), price: floorPrice, quantity, coinsShort: Math.max(0, wanted * floorPrice - coins - escrow), reason: `ours ${ourPrice} is below our floor ${floorPrice}` });
+        if (ourPrice < floorPrice) return replace(floorPrice, false, `ours ${ourPrice} is below our floor ${floorPrice}`);
+        // Step mode: no fills for a while means sellers want more; one step, never a jump.
+        if (o.step !== null && o.stepAfterIdleMinutes !== null && (input.idleMinutes ?? 0) >= o.stepAfterIdleMinutes) {
+            if (ourPrice >= o.maxPrice) return out({ action: 'hold', price: ourPrice, capped: true, reason: `no fills for ${Math.round(input.idleMinutes ?? 0)} min, already at maxPrice ${o.maxPrice}` });
+            return replace(Math.min(ourPrice + o.step, o.maxPrice), false, `no fills for ${Math.round(input.idleMinutes ?? 0)} min: one step up from ${ourPrice}`);
         }
         // Still the best bid. Top the book back up to a tranche once a quarter of it has filled.
         const topUp = wanted - resting;
         if (topUp < Math.max(1, Math.ceil(o.tranche / 4))) return out({ action: 'hold', price: ourPrice, reason: `best bid at ${ourPrice}, ${resting} resting` });
+        if (ours.length >= MAX_OFFERS_PER_LINE) return out({ action: 'hold', price: ourPrice, reason: `best bid at ${ourPrice}; ${ours.length} offers already, top up when one completes` });
         const quantity = Math.min(topUp, Math.floor(coins / ourPrice));
         const coinsShort = Math.max(0, topUp * ourPrice - coins);
         if (quantity <= 0) return out({ action: 'hold', price: ourPrice, coinsShort, reason: `best bid at ${ourPrice}; no coins to top up ${topUp}` });
         return out({ action: 'place', price: ourPrice, quantity, coinsShort, reason: `top up ${resting} resting to ${resting + quantity}` });
     }
 
-    const { price, capped } = bidPrice(competition.competing, quote, o, floor);
+    // No offer: start from our floor, or from the last trade when we have none.
+    const base = floorPrice > 0 ? floorPrice : competition.competing === null ? Math.max(quote.lastPrice ?? 1, 1) : 0;
+    const { price, capped } = priceAbove(competition.competing, base, o);
     const quantity = Math.min(wanted, Math.floor(coins / price));
     const coinsShort = Math.max(0, wanted * price - coins);
     if (quantity <= 0) return out({ action: 'short', price, capped, coinsShort, reason: `${coins} gp buys none at ${price}` });
@@ -230,19 +274,39 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
     });
 }
 
+const iso = (ms: number | null) => (ms ? new Date(ms).toISOString() : null);
+
+/** What the market showed at a recheck, to report competitor moves and trades between rechecks. */
+interface MarketMemo {
+    competing: number | null;
+    belowAvg: number | null;
+    otherQty: number;
+    lastPrice: number | null;
+    lastTradeAt: number | null;
+    volume: number;
+}
+
+interface Line {
+    o: LineOptions;
+    id: number;
+    name: string;
+    floor: number;
+    lastFillAt: number;
+    fillsSinceLog: number;
+    reached: boolean;
+    prev: MarketMemo | null;
+}
+
 export class Bidder {
     private readonly o: BidderOptions;
     private readonly buyer: Buyer;
     private readonly requests: ChatCursor;
-    private item: { id: number; name: string } = { id: 0, name: '' };
+    private lines: Line[] = [];
     private lastCycle = 0;
     private lastPeek = 0;
     private lastLog = Date.now();
-    private reached = false;
     private wantEarly = false;
-    /** Highest price bid for the item since the role started (open offers seen count too). */
-    private floor = 0;
-    private last: Record<string, unknown> = {};
+    private last: Record<string, unknown>[] = [];
 
     constructor(private readonly ctx: RoleContext) {
         this.o = bidderOptions(ctx.options);
@@ -259,9 +323,9 @@ export class Bidder {
         return this.ctx.sdk.getInventory().filter(i => i.name === 'Coins').reduce((a, i) => a + i.count, 0);
     }
 
-    private ours(): OwnOffer[] {
-        const ours = openOwn(this.ctx.sdk.getGEState()?.offers ?? [], this.item.id);
-        for (const o of ours) this.floor = Math.max(this.floor, o.price);
+    private ours(line: Line): OwnOffer[] {
+        const ours = openOwn(this.ctx.sdk.getGEState()?.offers ?? [], line.id);
+        for (const o of ours) line.floor = Math.max(line.floor, o.price);
         return ours;
     }
 
@@ -270,18 +334,26 @@ export class Bidder {
         if (!r.success) throw new Error(`openGE: ${r.message}`);
     }
 
+    private get parked(): boolean {
+        return this.lines.every(l => l.reached);
+    }
+
     async run(): Promise<void> {
         const { ctx } = this;
         await this.buyer.prepare();
         await ctx.bot.dismissBlockingUI();
         if (ctx.sdk.getTradeState().isOpen) await ctx.bot.declineTrade();
-        this.item = await this.buyer.resolveItem(this.o.item);
-        this.log('phase', { phase: 'bid', item: this.item.name, id: this.item.id, target: this.o.target, tranche: this.o.tranche, maxPrice: this.o.maxPrice, recheckMinutes: this.o.recheckMinutes });
+        const now = Date.now();
+        for (const o of this.o.lines) {
+            const { id, name } = await this.buyer.resolveItem(o.item);
+            this.lines.push({ o, id, name, floor: 0, lastFillAt: now, fillsSinceLog: 0, reached: false, prev: null });
+        }
+        this.log('phase', { phase: 'bid', lines: this.lines.map(l => ({ item: l.name, id: l.id, ...l.o })), recheckMinutes: this.o.recheckMinutes });
 
         while (!ctx.signal.aborted) {
             const due = Date.now() - this.lastCycle >= this.o.recheckMinutes * 60_000;
             const early = this.wantEarly && Date.now() - this.lastCycle >= EARLY_MIN_GAP_MS;
-            if (!this.reached && (due || early)) {
+            if (!this.parked && (due || early)) {
                 try {
                     await this.cycle();
                 } catch (e) {
@@ -292,7 +364,7 @@ export class Bidder {
             }
             try {
                 await this.acceptFunding();
-                if (!this.reached && Date.now() - this.lastPeek >= this.o.fillCheckMinutes * 60_000) {
+                if (!this.parked && Date.now() - this.lastPeek >= this.o.fillCheckMinutes * 60_000) {
                     this.lastPeek = Date.now();
                     await this.peekFills();
                 }
@@ -301,7 +373,7 @@ export class Bidder {
             }
             if (Date.now() - this.lastLog >= HEARTBEAT_MS) {
                 const nextMin = Math.max(0, Math.round((this.lastCycle + this.o.recheckMinutes * 60_000 - Date.now()) / 60_000));
-                this.log(this.reached ? 'parked' : 'waiting', { ...this.last, nextRecheckMin: this.reached ? null : nextMin });
+                this.log(this.parked ? 'parked' : 'waiting', { nextRecheckMin: this.parked ? null : nextMin, lines: this.last });
             }
             await sleep(POLL_MS, ctx.signal);
         }
@@ -310,7 +382,8 @@ export class Bidder {
     /** Between rechecks: glance at our offers and cycle early once a fill is waiting. */
     private async peekFills(): Promise<void> {
         await this.openGE();
-        const offers = (this.ctx.sdk.getGEState()?.offers ?? []).filter(o => o.item === this.item.id);
+        const ids = new Set(this.lines.map(l => l.id));
+        const offers = (this.ctx.sdk.getGEState()?.offers ?? []).filter(o => ids.has(o.item));
         await this.ctx.bot.closeInterface();
         if (offers.some(o => o.items > 0 || o.coins > 0)) this.wantEarly = true;
     }
@@ -328,16 +401,29 @@ export class Bidder {
         }
     }
 
+    /** Collect everything waiting at the open exchange, crediting each line's fills first. */
+    private async collect(): Promise<void> {
+        const offers = this.ctx.sdk.getGEState()?.offers ?? [];
+        for (const line of this.lines) {
+            const n = offers.filter(o => o.item === line.id).reduce((a, o) => a + o.items, 0);
+            if (n > 0) {
+                line.lastFillAt = Date.now();
+                line.fillsSinceLog += n;
+            }
+        }
+        await this.buyer.collectFills();
+    }
+
     /**
      * One recheck: collect fills and refunds, bank them and take every coin, decide
-     * against a fresh quote, act, collect instant fills, bank, log holdings.
+     * each line in priority order against a fresh quote, act, collect instant fills,
+     * bank, and log holdings per line.
      */
     private async cycle(): Promise<void> {
         const { bot, sdk } = this.ctx;
-        const name = this.item.name;
         // 1. Fills and refunds count only once collected.
         await this.openGE();
-        await this.buyer.collectFills();
+        await this.collect();
         await bot.closeInterface();
         // 2. Bank the produce; GE offers are paid from the inventory, so carry every coin.
         await this.buyer.atBank(VARROCK_WEST, async () => {
@@ -345,56 +431,110 @@ export class Bidder {
             const inBank = sdk.getBankItems().find(i => i.name === 'Coins')?.count ?? 0;
             await this.buyer.setCoins(this.coins() + inBank);
         });
-        // 3. Decide against a fresh quote.
+        // 3. Each line in order. A line short of coins starves the ones after it.
         await this.openGE();
-        const quote = await sdk.getMarketItem(this.item.id);
-        let d = decideBid({ held: this.buyer.held(name), ours: this.ours(), quote, coins: this.coins(), options: this.o, floor: this.floor });
-        this.log('decision', { action: d.action, reason: d.reason, price: d.price, quantity: d.quantity, cancel: d.cancel, bid: quote.bid, ask: quote.ask, ...d.competition });
-        if (d.action === 'done' || d.action === 'replace') {
-            for (const id of d.cancel) {
-                const r = await bot.cancelGEOffer(id);
-                this.log('cancel', { id, success: r.success, result: r.message });
+        let starvedBy: string | null = null;
+        const seen = new Map<Line, { quote: MarketQuote; d: BidDecision }>();
+        for (const line of this.lines) {
+            if (line.reached) continue;
+            const quote = await sdk.getMarketItem(line.id);
+            const decide = (q: MarketView) =>
+                decideBid({
+                    held: this.buyer.held(line.name),
+                    ours: this.ours(line),
+                    quote: q,
+                    coins: starvedBy ? 0 : this.coins(),
+                    options: line.o,
+                    floor: line.floor,
+                    idleMinutes: (Date.now() - line.lastFillAt) / 60_000
+                });
+            let d = decide(quote);
+            this.log('decision', { item: line.name, action: d.action, reason: d.reason, price: d.price, quantity: d.quantity, cancel: d.cancel, bid: quote.bid, ask: quote.ask, starvedBy, ...d.competition });
+            if (d.action === 'done' || d.action === 'replace') {
+                for (const id of d.cancel) {
+                    const r = await bot.cancelGEOffer(id);
+                    this.log('cancel', { item: line.name, id, success: r.success, result: r.message });
+                }
+                await this.collect();
+                if (d.action === 'replace' && d.price !== null) {
+                    // A raise sets the floor, and restarts the idle clock. Then decide again
+                    // from scratch: ours is gone from the book.
+                    line.floor = Math.max(line.floor, d.price);
+                    line.lastFillAt = Date.now();
+                    d = decide(await sdk.getMarketItem(line.id));
+                    this.log('decision', { item: line.name, action: d.action, reason: d.reason, price: d.price, quantity: d.quantity, starvedBy, ...d.competition });
+                }
             }
-            await this.buyer.collectFills();
-            if (d.action === 'replace') {
-                // Ours is gone from the book now: decide again from scratch.
-                const fresh = await sdk.getMarketItem(this.item.id);
-                d = decideBid({ held: this.buyer.held(name), ours: this.ours(), quote: fresh, coins: this.coins(), options: this.o, floor: this.floor });
-                this.log('decision', { action: d.action, reason: d.reason, price: d.price, quantity: d.quantity, bid: fresh.bid, ask: fresh.ask, ...d.competition });
+            if (d.action === 'place' && d.price !== null) {
+                const r = await bot.placeGEOffer({ item: line.id, side: 'buy', quantity: d.quantity, price: d.price });
+                if (r.success) line.floor = Math.max(line.floor, d.price);
+                this.log('offer', { item: line.name, success: r.success, result: r.message, reason: r.reason, outcome: r.outcome, id: r.offer?.id, price: d.price, quantity: d.quantity, filled: r.offer?.filled });
+                await this.collect();
             }
+            if (d.capped) this.log('capped', { item: line.name, competing: d.competition.competing, maxPrice: line.o.maxPrice, price: d.price, note: 'at maxPrice and wanting more: not raising; tell cairn://p/rs/41 with the fill history' });
+            if (d.coinsShort > 0 && d.action !== 'done') {
+                this.log('short', { item: line.name, coinsShort: d.coinsShort, price: d.price, coins: this.coins(), note: 'fund the bidder: bidder.ts <earner> fund' });
+                starvedBy ??= line.name;
+            }
+            seen.set(line, { quote, d });
         }
-        if (d.action === 'place' && d.price !== null) {
-            const r = await bot.placeGEOffer({ item: this.item.id, side: 'buy', quantity: d.quantity, price: d.price });
-            if (r.success) this.floor = Math.max(this.floor, d.price);
-            this.log('offer', { success: r.success, result: r.message, reason: r.reason, outcome: r.outcome, id: r.offer?.id, price: d.price, quantity: d.quantity, filled: r.offer?.filled });
-            await this.buyer.collectFills();
-        }
-        if (d.capped) this.log('capped', { competing: d.competition.competing, maxPrice: this.o.maxPrice, price: d.price, note: 'competitor at or past maxPrice: not raising; tell cairn://p/rs/41' });
-        if (d.coinsShort > 0) this.log('short', { coinsShort: d.coinsShort, price: d.price, coins: this.coins(), note: 'fund the bidder: bidder.ts <earner> fund' });
-        const ours = this.ours();
+        const offersNow = new Map(this.lines.map(l => [l, this.ours(l)] as const));
         await bot.closeInterface();
         // 4. Bank what came in and the leftover coins, and report.
         await this.buyer.atBank(VARROCK_WEST, () => this.buyer.depositAllBut([]));
-        const held = this.buyer.held(name);
+        this.last = [];
+        for (const line of this.lines) {
+            const s = seen.get(line);
+            if (!s) continue;
+            this.last.push(this.holdings(line, offersNow.get(line) ?? [], s.quote, s.d));
+        }
+    }
+
+    /** Log the line's holdings, with competitor moves and market trades since the last recheck. */
+    private holdings(line: Line, ours: OwnOffer[], quote: MarketQuote, d: BidDecision): Record<string, unknown> {
+        const held = this.buyer.held(line.name);
         const best = ours.slice().sort((a, b) => b.price - a.price)[0];
-        this.last = {
-            item: name,
+        const memo: MarketMemo = {
+            competing: d.competition.competing,
+            belowAvg: d.competition.belowAvg,
+            otherQty: d.competition.otherQty,
+            lastPrice: quote.lastPrice,
+            lastTradeAt: quote.lastTradeAt,
+            volume: quote.volume
+        };
+        const prev = line.prev;
+        const competitorMoved =
+            prev !== null && (prev.competing !== memo.competing || prev.belowAvg !== memo.belowAvg || prev.otherQty !== memo.otherQty)
+                ? { from: { bid: prev.competing ?? prev.belowAvg, depth: prev.otherQty }, to: { bid: memo.competing ?? memo.belowAvg, depth: memo.otherQty } }
+                : null;
+        const traded = prev === null || (memo.lastTradeAt ?? 0) > (prev.lastTradeAt ?? 0) ? { lastPrice: memo.lastPrice, at: iso(memo.lastTradeAt), volume7d: memo.volume, volumeDelta: prev ? memo.volume - prev.volume : null } : null;
+        line.prev = memo;
+        const row = {
+            item: line.name,
             held,
-            target: this.o.target,
+            target: line.o.target,
             offer: best ? best.id : null,
             price: best ? best.price : null,
             remaining: ours.reduce((a, o) => a + o.remaining, 0),
             offers: ours.length,
+            filledSinceLast: line.fillsSinceLog,
+            lastFillAt: iso(line.lastFillAt),
             competing: d.competition.competing,
             competingBelow: d.competition.belowAvg,
+            otherDepth: d.competition.otherQty,
+            competitorMoved,
+            traded,
             coins: this.buyer.held('Coins'),
             escrow: ours.reduce((a, o) => a + o.remaining * o.price, 0)
         };
-        this.log('holdings', this.last);
-        if (held >= this.o.target && ours.length === 0) {
-            this.reached = true;
-            this.log('phase', { phase: 'parked', held, target: this.o.target, note: 'target held; bidding stopped' });
+        line.fillsSinceLog = 0;
+        this.log('holdings', row);
+        if (competitorMoved) this.log('competitor', { item: line.name, ...competitorMoved, at: new Date().toISOString() });
+        if (held >= line.o.target && ours.length === 0) {
+            line.reached = true;
+            this.log('phase', { phase: this.parked ? 'parked' : 'bid', item: line.name, held, target: line.o.target, note: 'target held; this line stops bidding' });
         }
+        return row;
     }
 }
 
