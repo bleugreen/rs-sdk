@@ -636,7 +636,8 @@ async function directReadViaCli(gateBot: string, opts: { lab: boolean; runId: st
     mkdirSync(dir, { recursive: true });
     const json = join(dir, `gate-${opts.runId}.json`);
     rmSync(json, { force: true });
-    const args = ['bun', 'docs/speedrun/scripts/tickmanip-latency.ts', gateBot, '--path=direct', `--json=${json}`, ...(opts.lab ? [] : ['--no-tele'])];
+    // This process's own bun: on the host it is ~/.bun/bin/bun, not on a non-login shell's PATH.
+    const args = [process.execPath, 'docs/speedrun/scripts/tickmanip-latency.ts', gateBot, '--path=direct', `--json=${json}`, ...(opts.lab ? [] : ['--no-tele'])];
     console.log(`[gate] ${args.join(' ')}`);
     const child = Bun.spawn(args, { cwd: ROOT, stdout: 'pipe', stderr: 'inherit' });
     const kill = setTimeout(() => child.kill('SIGTERM'), 15 * 60_000);
