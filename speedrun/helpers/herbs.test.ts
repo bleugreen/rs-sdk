@@ -1,5 +1,22 @@
 import { describe, expect, test } from 'bun:test';
-import { canIdentify, herbOptions, herbTally, nextMix, unfList, UNID_HERBS } from './herbs';
+import { canIdentify, herbOptions, herbTally, nextMix, shopNeeds, unfList, UNID_HERBS } from './herbs';
+
+describe('shopNeeds', () => {
+    const list = unfList(undefined);
+    test('a vial for every herb on the list, identified or not, less the vials held', () => {
+        // 10 clean guam, 4 unidentified irit, 3 clean marrentill (not on the default list), 5 vials of water, 2 empty vials
+        const bank = [{ id: 249, count: 10 }, { id: 209, count: 4 }, { id: 251, count: 3 }, { id: 227, count: 5 }, { id: 229, count: 2 }];
+        expect(shopNeeds(bank, list).vials).toBe(7);
+    });
+    test('an eye of newt for every guam and irit, as herb or unfinished potion', () => {
+        const bank = [{ id: 249, count: 10 }, { id: 209, count: 4 }, { id: 91, count: 6 }, { id: 101, count: 1 }, { id: 255, count: 9 }, { id: 221, count: 5 }];
+        expect(shopNeeds(bank, list).eyes).toBe(16);
+    });
+    test('a fixed eye of newt target overrides the match', () => {
+        expect(shopNeeds([{ id: 221, count: 50 }], list, 432).eyes).toBe(382);
+        expect(shopNeeds([{ id: 221, count: 500 }], list, 432).eyes).toBe(0);
+    });
+});
 
 describe('nextMix', () => {
     const bank = [{ id: 249, count: 30 }, { id: 259, count: 5 }, { id: 227, count: 10 }];
@@ -9,6 +26,9 @@ describe('nextMix', () => {
     });
     test('needs vials of water', () => {
         expect(nextMix(bank.filter(i => i.id !== 227), 99, unfList(undefined))).toBeNull();
+    });
+    test('the default list is the herb-table mix, without marrentill', () => {
+        expect(unfList(undefined)).toEqual(['kwuarm', 'avantoe', 'irit', 'ranarr', 'harralander', 'tarromin', 'guam']);
     });
     test('unfList rejects unknown herbs', () => {
         expect(() => unfList(['torstol'])).toThrow();
