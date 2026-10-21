@@ -11,6 +11,7 @@
 //              non-stackable items above one are withdrawn as notes
 import { withdrawMany } from '../lib/bank';
 import { give } from '../lib/trade';
+import { inMine } from './essence';
 import { closeBank, depositAllExcept, ensureOutOfTutorial, openBank, walkNear } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
 import { waitForPlayer } from './wine';
@@ -58,6 +59,19 @@ async function one(ctx: RoleContext, h: Handover, o: ReturnType<typeof handoverO
     return r.ok;
 }
 
+/** The fleet parks essence miners wherever their trip stopped, often inside the essence mine, where no bank is in reach. */
+async function leaveEssenceMine(ctx: RoleContext): Promise<void> {
+    for (let attempt = 0; attempt < 4 && inMine(ctx.sdk.getState()); attempt++) {
+        const portal = (await ctx.sdk.scanNearbyLocs(30))
+            .filter(l => /^portal$/i.test(l.name) && l.optionsWithIndex.some(o => /use/i.test(o.text)))
+            .sort((a, b) => a.distance - b.distance)[0];
+        if (!portal) throw new Error('in the essence mine with no exit portal in sight');
+        await ctx.bot.interactLoc(portal, /use/i);
+        for (let t = 0; t < 25 && inMine(ctx.sdk.getState()); t++) await ctx.sdk.waitForTicks(1).catch(() => {});
+    }
+    if (inMine(ctx.sdk.getState())) throw new Error('the essence mine portal did not take us out');
+}
+
 export const role: Role = {
     name: 'handover',
     produces: [],
@@ -65,6 +79,7 @@ export const role: Role = {
         const o = handoverOptions(ctx.options);
         await ensureOutOfTutorial(ctx);
         await ctx.bot.dismissBlockingUI();
+        await leaveEssenceMine(ctx);
         const done: string[] = [];
         for (const h of o.handovers) {
             if (ctx.signal.aborted) break;
