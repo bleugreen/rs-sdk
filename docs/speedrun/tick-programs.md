@@ -64,9 +64,29 @@ the host gate can select with the same parameters.
 |---|---|---|---|
 | `probe` | `speedrun/lib/hostgate.ts` `probeOnTime` | `trials`, `maxWait` | n/a |
 | `knife-mine` | `tickmanip-mine.ts` | `steps` (stand>rock pairs), `respawn`, `ores`, `starter: 'knife' \| 'none'` | `starter: 'none'` (plain and adjacent-rock transitions) |
-| `knife-cycle` | `tickmanip-cycle.ts`; `bury` from `bones-wc.ts --mode=knifebury` | `method` (`fly`, `willow`, `oak`, `tree`, `cage`, or an object), `rolls` / `untilLevel` / `maxTicks`, `reanchor`, `trees` (the loc tiles reached from the standing tile), `bury` (oak and willow) | `technique: 'plain'` (no bury) |
+| `knife-cycle` | `tickmanip-cycle.ts`; `bury` from `bones-wc.ts --mode=knifebury` | `method` (`fly`, `willow`, `oak`, `tree`, `cage`, or an object), `successes` / `untilLevel` / `maxTicks`, `reanchor`, `trees` (the loc tiles reached from the standing tile), `bury` (oak and willow) | `technique: 'plain'` (no bury) |
 | `pickpocket` | `thieving-pickpocket.ts` (`--eat=auto`) | `npc`, `rolls`, `food`, `eatBelow`, `forcedBelow` | n/a: it clicks every tick |
 | `agility` | `agility-course.ts` | `course` (`gnome`, `barbarian`, `wilderness`, or an object; `agility-courses.ts`), `laps` | `technique: 'plain'` waits `settleTicks` after each obstacle |
+
+### What the knife cycle reports
+
+A **roll** is one swing of the gathering cadence: every 3 ticks with the knife locked,
+every `plainCycle` ticks on the plain loop. It succeeds with the method's catch chance p.
+The program sees only the successes (xp drops, one log or fish each), so it reports:
+
+- `successes` (counter and result) and `ticksPerSuccess`: ticks per log or fish, the mean
+  gap between xp drops outside re-bootstraps and resyncs. This is the cadence divided by p,
+  so it is **not** comparable with the 3 and 4 of the loops. The `successes` parameter stops
+  the run after that many.
+- `ticksPerExpectedRoll` (result and gauge, on methods with a `catchChance`: `tree`,
+  `fly`): the same gaps over the rolls expected for them, each success weighted 1/p at
+  the level it was rolled at, as `scripts/tickmanip-demo-report.ts` does. This is the figure
+  to set against 3 (knife) and `plainCycle` (plain); on normal trees it carries the walk to
+  the next tree as well. Willow, oak and cage carry no catch chance, so the program claims
+  no figure for them.
+
+A knife run at 8.56 ticks per log on the demo's normal trees (p near 0.46) is about 3.9 ticks
+per expected roll: it beats a plain loop, whose own ticks per log at that level sit near 8.7.
 
 Notes that differ from the lite scripts:
 

@@ -34,15 +34,15 @@ function frames() {
 describe('speedrun programs', () => {
     test('start sends one program action over the relay', async () => {
         const sdk = new PageSdk(baseState());
-        const s = await startProgram(sdk, 'knife-cycle', { method: 'fly', rolls: 100 });
-        expect(sdk.actions).toEqual([{ type: 'program', op: 'start', name: 'knife-cycle', params: { method: 'fly', rolls: 100 }, reason: 'speedrun' }]);
+        const s = await startProgram(sdk, 'knife-cycle', { method: 'fly', successes: 100 });
+        expect(sdk.actions).toEqual([{ type: 'program', op: 'start', name: 'knife-cycle', params: { method: 'fly', successes: 100 }, reason: 'speedrun' }]);
         expect(s.runId).toBe(1);
     });
 
     test('a refused start throws with the page message', async () => {
         const sdk = new PageSdk(baseState());
-        sdk.reply = () => ({ success: false, message: 'bad parameters: give rolls' });
-        await expect(startProgram(sdk, 'knife-cycle')).rejects.toThrow(/give rolls/);
+        sdk.reply = () => ({ success: false, message: 'bad parameters: give successes' });
+        await expect(startProgram(sdk, 'knife-cycle')).rejects.toThrow(/give successes/);
     });
 
     test('runProgram resolves on done, reporting progress on the way', async () => {

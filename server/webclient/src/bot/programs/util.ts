@@ -124,16 +124,19 @@ export class GapCounter {
     private total = 0;
     private readonly histogram: Record<number, number> = {};
 
-    event(tick: number): void {
+    /** Records an event and returns the gap it closed, or null when no gap counts (the first event, or one after a break). */
+    event(tick: number): number | null {
+        let counted: number | null = null;
         if (this.last !== null && !(this.lastBreak > this.last)) {
-            const g = tick - this.last;
-            this.histogram[g] = (this.histogram[g] ?? 0) + 1;
-            this.total += g;
+            counted = tick - this.last;
+            this.histogram[counted] = (this.histogram[counted] ?? 0) + 1;
+            this.total += counted;
             this.gaps++;
         }
         if (this.first === null) this.first = tick;
         this.last = tick;
         this.events++;
+        return counted;
     }
 
     /** A break at `tick` excludes the gap it falls inside. */

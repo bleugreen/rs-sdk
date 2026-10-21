@@ -419,8 +419,10 @@ The bones come from the inventory; with none left the program runs the plain kni
 the same labels and resumes burying when bones appear. Pass `trees` whenever `bury` is on: a
 click on a tree that needs a walk never rolls in a bury cycle. The status carries `buried`,
 `burySent`, `noBoneCycles`, `switches` (tree falls absorbed in the lock) and the gauges
-`bonesLeft`, `buriesPerTick`, `ticksPerRoll`, `ticksPerRollSpan` and `lastRollGap`, so a step
-script sees a lost 3-tick lock as gaps over 3. The program does not trade: a top-up is the step
+`bonesLeft`, `buriesPerTick`, `ticksPerSuccess`, `ticksPerSuccessSpan` and `lastSuccessGap`, so a
+step script sees a lost 3-tick lock as success gaps that are not multiples of 3. A success is one
+log, not one roll: ticks per success is the cadence over the catch chance (see
+`docs/speedrun/tick-programs.md`, "What the knife cycle reports"). The program does not trade: a top-up is the step
 script's (stop, `trade.ts` `receiveFrom`, start again). Measured 0.329 bones per tick at oak
 WC 60 with the knife cadence unchanged (`docs/speedrun/skills/woodcutting.md` section 9).
 
