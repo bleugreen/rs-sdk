@@ -83,6 +83,12 @@ const quests: [string, number][] = [
     ['Fight Arena + Tourist Trap x2', 2175 + 9300],
     ['Fight Arena + TT x2 + Legends x1', 2175 + 9300 + 7650],
     ['Fight Arena + TT x2 + Legends x4', 2175 + 9300 + 30600],
+    // On the planned quest route: Biohazard (quest_biohazard.rs2:159) is a prerequisite of
+    // Underground Pass. Hazeel Cult and Tribal Totem are candidates still being costed.
+    ['Fight Arena + Biohazard (on route)', 2175 + 1250],
+    ['FA + Biohazard + Hazeel Cult', 2175 + 1250 + 1500],
+    ['FA + Biohazard + Tribal Totem', 2175 + 1250 + 1775],
+    ['FA + Biohazard + Hazeel Cult + Tribal Totem', 2175 + 1250 + 1500 + 1775],
 ];
 for (const [routeName, allowed] of Object.entries(ROUTES)) {
     console.log(`\nRoute '${routeName}':`);

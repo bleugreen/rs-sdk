@@ -55,8 +55,9 @@ function route(L0: number, xp0?: number) {
 }
 
 console.log(`extra=${EXTRA} levelup=${LVLUP}`);
-for (const [name, L0, xp0] of [['level 1', 1, undefined], ["Doric's Quest (1,300 base)", 49, 1300], ['Digsite (15,300 base)', 85, 15300], ['Doric + Digsite (16,600 base)', 86, 16600]] as const) {
-    console.log(`${name}: ${route(L0, xp0).total.toFixed(0)} ticks to 99`);
+const levelOf = (xp: number) => { let L = 1; while (L < 99 && baseFor(L + 1) <= xp) L++; return L; };
+for (const [name, xp0] of [['level 1', 0], ["Doric's Quest (1,300 base)", 1300], ['Plague City (2,425 base)', 2425], ["Doric + Plague City (3,725 base, on route)", 3725], ['Digsite (15,300 base)', 15300], ['Doric + Digsite (16,600 base)', 16600]] as const) {
+    console.log(`${name}: level ${levelOf(xp0)}, ${route(levelOf(xp0), xp0).total.toFixed(0)} ticks to 99`);
 }
 const { bands } = route(1);
 for (const [a, b] of [[1, 15], [15, 41], [41, 49], [49, 63], [63, 80], [80, 86], [86, 90], [90, 99]]) {
