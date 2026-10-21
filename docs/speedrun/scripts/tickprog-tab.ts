@@ -37,12 +37,12 @@ for (const [k, v] of new URLSearchParams(flag('query') ?? '')) q.set(k, v);
 // A proxy.ts origin logs the page in with a one-time token; the engine's own page
 // (the local lab) only takes the password in the query, which browserUrl allows
 // for a loopback world alone.
-const page = { ...env, CLIENT_URL: `${origin}/bot${q.size ? `?${q}` : ''}` };
-const url = await mintLoginToken(page).then(
-    token => browserUrl(page, { token }),
+const pageEnv = { ...env, CLIENT_URL: `${origin}/bot${q.size ? `?${q}` : ''}` };
+const url = await mintLoginToken(pageEnv).then(
+    token => browserUrl(pageEnv, { token }),
     err => {
         console.log(`[tab] no login token from ${origin} (${(err as Error).message}); trying the local-lab query login`);
-        return browserUrl(page, { insecureQueryLogin: true });
+        return browserUrl(pageEnv, { insecureQueryLogin: true });
     }
 );
 
