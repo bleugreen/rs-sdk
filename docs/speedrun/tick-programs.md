@@ -74,7 +74,7 @@ the host gate can select with the same parameters.
 | `knife-mine` | `tickmanip-mine.ts` | `steps` (stand>rock pairs), `respawn`, `ores`, `starter: 'knife' \| 'none'` | `starter: 'none'` (plain and adjacent-rock transitions) |
 | `knife-cycle` | `tickmanip-cycle.ts`; `bury` from `bones-wc.ts --mode=knifebury` | `method` (`fly`, `willow`, `oak`, `tree`, `cage`, or an object), `successes` / `untilLevel` / `maxTicks`, `reanchor`, `trees` (the loc tiles reached from the standing tile), `bury` (oak and willow) | `technique: 'plain'` (no bury) |
 | `pickpocket` | `thieving-pickpocket.ts` (`--eat=auto`) | `npc`, `rolls`, `food`, `eatBelow`, `forcedBelow` | n/a: it clicks every tick |
-| `agility` | `agility-course.ts` | `course` (`gnome`, `barbarian`, `wilderness`, or an object; `agility-courses.ts`), `laps` | `technique: 'plain'` waits `settleTicks` after each obstacle |
+| `agility` | `agility-course.ts` | `course` (`gnome`, `barbarian`, `wilderness`, or an object; `agility-courses.ts`), `laps` / `maxTicks` / `untilLevel`, `startStep` (a name, or `auto`: from the tile), `food`, `eatBelow` (eaten in any phase), Wilderness watch: `pauseFor` (`none`, `threat`, `any`), `playerRadius`, `threatTargetRange`, `threatCloseTiles`, `threatCloseTicks` | `technique: 'plain'` waits `settleTicks` after each obstacle |
 
 ### What the knife cycle reports
 
@@ -101,6 +101,20 @@ set against the plain loop's 6.44 ticks per expected roll reads as the knife los
 same run is 3.94 ticks per expected roll, a win (corrected by rs/83).
 
 Notes that differ from the lite scripts:
+
+- `agility` ends with `result.ended` set to `laps`, `maxTicks`, `level`, `player`
+  (the pause rule fired), `attacked` (a player's hit), or `no-food` (HP at or below
+  `eatBelow` with nothing to eat), and faults `died` on a death or a `lifeId`
+  change. In the Wilderness it logs every player it sees (`sightings`, with
+  whether the attack rule of `pvp_combat.rs2` lets them attack us, and
+  `wouldPause` counts for both rules), and splits the damage it takes into
+  `fallDamage` (a fail message that tick), `playerDamage` and `npcDamage`. A
+  threat is a player who can attack us at this Wilderness level and is either
+  targeting a player within `threatTargetRange` tiles of us or, from off the lap
+  path, has walked `threatCloseTiles` closer within `threatCloseTicks` ticks. The
+  approach is judged by the player's own movement against our current tile, so our
+  walking along the lap does not count. `levelTicks` records the tick each level was
+  reached, so any band is priced from one run.
 
 - The knife cycle anchors its first lock on observed xp, so it needs no warm-up walk.
   An xp drop seen **off the predicted phase** (a late starter, or two ticks decoded in

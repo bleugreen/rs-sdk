@@ -2,7 +2,7 @@
 // whose dispatch records every packet with the tick it went out on.
 
 import type { ActionResult } from '../ActionExecutor.js';
-import type { BotAction, BotWorldState, GameMessage, InventoryItem, NearbyLoc, NearbyNpc } from '../types.js';
+import type { BotAction, BotWorldState, CombatEvent, GameMessage, InventoryItem, NearbyLoc, NearbyNpc, NearbyPlayer } from '../types.js';
 import { ProgramRuntime } from './runtime.js';
 import type { ProgramFactory, ProgramParams, ProgramStatus } from './types.js';
 
@@ -21,6 +21,11 @@ export interface StateSpec {
     messages?: Array<{ text: string; tick?: number; id?: number }>;
     dialogOpen?: boolean;
     inGame?: boolean;
+    combatLevel?: number;
+    players?: Array<Partial<NearbyPlayer> & { index: number; name: string; x: number; z: number }>;
+    combatEvents?: CombatEvent[];
+    lifeId?: number;
+    isDead?: boolean;
 }
 
 export function makeState(spec: StateSpec): BotWorldState {
@@ -61,18 +66,23 @@ export function makeState(spec: StateSpec): BotWorldState {
         tick: spec.tick,
         inGame: spec.inGame ?? true,
         player: {
-            name: 'cairn_test', combatLevel: 3, hp: spec.hp ?? 99, maxHp: spec.maxHp ?? 99, x: 0, z: 0,
+            name: 'cairn_test', combatLevel: spec.combatLevel ?? 3, hp: spec.hp ?? 99, maxHp: spec.maxHp ?? 99, x: 0, z: 0,
             worldX: x, worldZ: z, level: spec.level ?? 0, runEnergy: 100, runWeight: 0, animId: spec.animId ?? -1, spotanimId: -1,
-            combat: { inCombat: false, targetIndex: -1, targetType: 'none', lastDamageTick: -1 }, isDead: false, lifeId: 0, respawnCount: 0, lastDeathTick: null
+            combat: { inCombat: false, targetIndex: -1, targetType: 'none', lastDamageTick: -1 }, isDead: spec.isDead ?? false, lifeId: spec.lifeId ?? 0, respawnCount: 0, lastDeathTick: null
         },
         skills,
         inventory,
         equipment: [],
         nearbyNpcs: npcs,
-        nearbyPlayers: [],
+        nearbyPlayers: (spec.players ?? []).map(pl => ({
+            kind: 'player', combatLevel: 3, combatTargetType: 'none', combatTargetIndex: -1, inCombat: false,
+            distance: Math.max(Math.abs(pl.x - x), Math.abs(pl.z - z)),
+            ...pl
+        })),
         nearbyLocs: locs,
         groundItems: [],
         gameMessages: messages,
+        combatEvents: spec.combatEvents ?? [],
         dialog: { isOpen: spec.dialogOpen ?? false, options: [], isWaiting: false, allComponents: [] },
         interface: { isOpen: false, interfaceId: -1, options: [], inventories: [], debugInfo: [] }
     } as unknown as BotWorldState;

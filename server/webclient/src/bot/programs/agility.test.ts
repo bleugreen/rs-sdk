@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { createAgility } from './agility.js';
-import type { AgilityCourse } from './agility-courses.js';
-import { Harness, makeState } from './testkit.js';
+import type { NearbyPlayer } from '../types.js';
+import { canAttack, classifyHit, createAgility, DEFAULT_THREAT, threatOf, wildernessLevel, type Me } from './agility.js';
+import { AGILITY_COURSES, stepFromPosition, type AgilityCourse } from './agility-courses.js';
+import { Harness, makeState, type StateSpec } from './testkit.js';
 
 const COURSE: AgilityCourse = {
     start: [3000, 3000, 0],
@@ -16,7 +17,7 @@ const COURSE: AgilityCourse = {
 const DURATION: Record<number, number> = { 1: 5, 2: 7, 3: 6 };
 
 /** Each obstacle completes `DURATION[id]` ticks after its click lands; `failAt` makes that click fail. */
-function run(opts: { ticks: number; params?: Record<string, unknown>; failClick?: number }) {
+function run(opts: { ticks: number; params?: Record<string, unknown>; failClick?: number; spec?: (tick: number, xp: number) => Partial<StateSpec> }) {
     const h = new Harness('agl', createAgility);
     let tick = 50;
     let xp = 0;
@@ -30,7 +31,8 @@ function run(opts: { ticks: number; params?: Record<string, unknown>; failClick?
         tick,
         skills: { Agility: { xp: xp * 25 } },
         locs: [1, 2, 3].map(id => ({ id, x: 3000 + id, z: 3000, name: `obstacle ${id}`, options: ['Cross'] })),
-        messages: msgs.slice(-10)
+        messages: msgs.slice(-10),
+        ...opts.spec?.(tick, xp)
     });
     h.start('agl', { course: COURSE, maxTicks: opts.ticks, ...opts.params }, state());
     const pending: Array<{ at: number; id: number }> = [];
@@ -82,5 +84,148 @@ describe('agility course', () => {
     test('knows the lab courses by name', () => {
         expect(() => createAgility({ course: 'wilderness', laps: 1 })).not.toThrow();
         expect(() => createAgility({ course: 'nowhere', laps: 1 })).toThrow(/unknown course/);
+        expect(() => createAgility({ course: 'gnome' })).toThrow(/untilLevel/);
+    });
+
+    test('untilLevel ends the tick the level is reached, mid-lap, and logs each level crossed', () => {
+        // level 1 + one per 25 base xp: the lap's last obstacle (xp 20 -> 70) crosses 2 and 3, the next one (80) makes 4
+        const { h, completions } = run({ ticks: 500, params: { maxTicks: undefined, untilLevel: 4 }, spec: (_t, xp) => ({ skills: { Agility: { xp: xp * 25, level: 1 + Math.floor(xp / 25) } } }) });
+        const r = h.status.result as { ended: string; levelTicks: Record<number, number>; laps: number };
+        expect(h.status.phase).toBe('done');
+        expect(r.ended).toBe('level');
+        expect(r.laps).toBe(1);
+        expect(h.status.endedTick).toBe(completions[3]!.tick);
+        expect(r.levelTicks[2]).toBe(completions[2]!.tick);
+        expect(r.levelTicks[3]).toBe(completions[2]!.tick);
+        expect(r.levelTicks[4]).toBe(completions[3]!.tick);
+    });
+
+    test('eats while waiting on an obstacle, at most once per eat gap', () => {
+        let hp = 99;
+        const { h } = run({
+            ticks: 40,
+            params: { eatBelow: 50, food: '^cake$' },
+            spec: t => {
+                if (t === 54) hp = 40; // between clicks, inside the first obstacle's wait
+                return { hp, inventory: [{ name: 'Cake', options: ['Eat'] }] };
+            }
+        });
+        const eats = h.sent.filter(s => s.action.type === 'useInventoryItem');
+        expect(eats[0]!.tick).toBe(54);
+        expect(h.sent.some(s => s.tick === 54 && s.action.type === 'interactLoc')).toBe(false);
+        // HP never rises in this fake, so it eats again every 3 ticks
+        expect(eats.map(e => e.tick).slice(0, 3)).toEqual([54, 57, 60]);
+    });
+
+    test('ends no-food when HP is at or below eatBelow and nothing is left to eat', () => {
+        const { h } = run({ ticks: 40, params: { eatBelow: 50 }, spec: t => ({ hp: t >= 55 ? 30 : 99 }) });
+        expect(h.status.phase).toBe('done');
+        expect((h.status.result as { ended: string }).ended).toBe('no-food');
+        expect(h.status.endedTick).toBe(55);
+    });
+
+    test('a death faults the run', () => {
+        const { h } = run({ ticks: 40, spec: t => ({ lifeId: t >= 60 ? 1 : 0 }) });
+        expect(h.status.phase).toBe('fault');
+        expect(h.status.fault).toBe('died');
+    });
+
+    test('in the Wilderness: a fall hit is the fall, a hit with a skeleton beside us is npcDamage, a player hit ends the run', () => {
+        const WILD = { x: 3004, z: 3940 };
+        const hit = (tick: number, damage: number, sourceType: 'npc' | 'other_player', sourceIndex = -1) => ({ tick, type: 'damage_taken' as const, damage, sourceType, sourceIndex, targetType: 'player' as const, targetIndex: -1 });
+        const events: ReturnType<typeof hit>[] = [];
+        const { h } = run({
+            ticks: 200,
+            failClick: 1,
+            spec: t => {
+                // the fake's fall message for click 1 lands at tick 60; a hit then is the fall's
+                if (t === 60) events.push(hit(60, 2, 'npc'));
+                if (t === 80) events.push(hit(80, 3, 'npc'));
+                if (t === 100) events.push(hit(100, 4, 'other_player', 7));
+                return {
+                    ...WILD,
+                    combatEvents: events.slice(),
+                    npcs: t >= 80 && t < 90 ? [{ index: 3, name: 'Skeleton', x: WILD.x + 1, z: WILD.z, targetIndex: 32768 + 12 }] : [],
+                    players: t >= 100 ? [{ index: 7, name: 'pker', x: WILD.x + 1, z: WILD.z, combatLevel: 40, combatTargetType: 'player', inCombat: true }] : []
+                };
+            }
+        });
+        const r = h.status.result as { ended: string; fallDamage: number; npcDamage: number; attacker: { name: string } };
+        expect(r.fallDamage).toBe(2);
+        expect(r.npcDamage).toBe(3);
+        expect(r.ended).toBe('attacked');
+        expect(r.attacker.name).toBe('pker');
+        expect(h.status.endedTick).toBe(100);
+    });
+
+    test('players are logged as sightings; the pause rule decides whether one ends the run', () => {
+        const WILD = { x: 3004, z: 3940 };
+        const spec = (t: number) => ({ ...WILD, players: t >= 60 ? [{ index: 9, name: 'walker', x: WILD.x + 5, z: WILD.z, combatLevel: 20 }] : [] });
+        const none = run({ ticks: 100, spec }).h.status.result as { ended: string; sightings: Array<{ name: string; any: boolean; canAttack: boolean; threat?: string }>; wouldPause: { any: number; threat: number } };
+        expect(none.ended).toBe('maxTicks');
+        expect(none.sightings).toMatchObject([{ name: 'walker', any: true, canAttack: true }]);
+        expect(none.sightings[0]!.threat).toBeUndefined();
+        expect(none.wouldPause).toEqual({ any: 1, threat: 0 });
+        // standing still 5 tiles off is no threat; 'any' pauses for it
+        expect((run({ ticks: 100, spec, params: { pauseFor: 'threat' } }).h.status.result as { ended: string }).ended).toBe('maxTicks');
+        const any = run({ ticks: 100, spec, params: { pauseFor: 'any' } }).h;
+        expect((any.status.result as { ended: string; player: { name: string; why: string } }).player).toMatchObject({ name: 'walker', why: 'any' });
+        expect(any.status.endedTick).toBe(60);
+    });
+
+    test('startStep auto picks the step from the tile', () => {
+        const h = new Harness('agl', createAgility);
+        h.start('agl', { course: 'wilderness', laps: 1, startStep: 'auto' }, makeState({ tick: 1, x: 2994, z: 3945 }));
+        const sent = h.step(makeState({ tick: 2, x: 2994, z: 3945 }));
+        expect(sent.map(s => (s.action as { locId?: number }).locId)).toEqual([2328]); // the rocks
+    });
+});
+
+describe('Wilderness rules', () => {
+    const me: Me = { x: 3004, z: 3940, combatLevel: 3, wild: wildernessLevel(3004, 3940) };
+    const player = (o: Partial<NearbyPlayer> & { x: number; z: number }): NearbyPlayer => ({ kind: 'player', index: 1, name: 'p', combatLevel: 30, distance: Math.max(Math.abs(o.x - me.x), Math.abs(o.z - me.z)), combatTargetType: 'none', ...o });
+
+    test('levels and the attack rule', () => {
+        expect(wildernessLevel(2998, 3917)).toBe(50); // the ridge gate
+        expect(wildernessLevel(3001, 3960)).toBe(56); // the stepping stones
+        expect(wildernessLevel(3005, 10363)).toBe(56); // the pit ladder
+        expect(wildernessLevel(3222, 3218)).toBe(0);
+        expect(canAttack(3, 53, 56, 53)).toBe(true);
+        expect(canAttack(3, 53, 57, 53)).toBe(false);
+        expect(canAttack(3, 0, 3, 53)).toBe(false);
+    });
+
+    test('a threat targets a player beside us, or walks toward us from off the lap', () => {
+        const lap = AGILITY_COURSES.wilderness!.lapArea;
+        expect(threatOf(player({ x: 3005, z: 3940, combatTargetType: 'player' }), me, [], 100, DEFAULT_THREAT, lap)).toBe('targeting');
+        expect(threatOf(player({ x: 3005, z: 3940, combatTargetType: 'player', combatLevel: 99 }), me, [], 100, DEFAULT_THREAT, lap)).toBeNull();
+        // off the lap (west of the rocks), moved from 14 tiles off to 10 in 4 ticks
+        const p = player({ x: 2990, z: 3926 });
+        expect(threatOf({ ...p, x: 2994, z: 3930, distance: 10 }, me, [[96, 2990, 3926]], 100, DEFAULT_THREAT, lap)).toBe('closing');
+        // the same distances from standing still while we walk toward them: no
+        expect(threatOf({ ...p, distance: 10 }, me, [[96, 2990, 3926]], 100, DEFAULT_THREAT, lap)).toBeNull();
+        // another course user walking the lap toward us: no
+        expect(threatOf(player({ x: 3004, z: 3944 }), me, [[96, 3004, 3950]], 100, DEFAULT_THREAT, lap)).toBeNull();
+    });
+
+    test('who dealt a hit', () => {
+        const ev = (tick: number, sourceType = 'npc', sourceIndex = -1) => ({ tick, sourceType, sourceIndex });
+        expect(classifyHit(ev(100), 98, [], [], me).source).toBe('fall');
+        expect(classifyHit(ev(100), 90, [], [], me).source).toBe('npc');
+        expect(classifyHit(ev(100, 'other_player', 1), 0, [player({ x: 3005, z: 3940 })], [], me).source).toBe('player');
+        expect(classifyHit(ev(100), 0, [player({ x: 3007, z: 3940, combatTargetType: 'player' })], [{ distance: 1, targetIndex: 32770 }], me).source).toBe('npc');
+        expect(classifyHit(ev(100), 0, [player({ x: 3007, z: 3940, combatTargetType: 'player' })], [], me).source).toBe('player');
+    });
+
+    test('stepFromPosition maps the Wilderness landing tiles', () => {
+        const w = AGILITY_COURSES.wilderness!;
+        expect(stepFromPosition(w, 3004, 3937)).toBe('pipe');
+        expect(stepFromPosition(w, 2994, 3933)).toBe('pipe');
+        expect(stepFromPosition(w, 3004, 3950)).toBe('ropeswing');
+        expect(stepFromPosition(w, 3005, 3958)).toBe('stones');
+        expect(stepFromPosition(w, 2996, 3960)).toBe('log');
+        expect(stepFromPosition(w, 2994, 3945)).toBe('rocks');
+        expect(stepFromPosition(w, 3005, 10363)).toBe('stones');
+        expect(stepFromPosition(AGILITY_COURSES.gnome!, 2400, 3400)).toBe('log');
     });
 });

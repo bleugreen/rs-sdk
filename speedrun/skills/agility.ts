@@ -1,0 +1,554 @@
+// Agility step module (docs/speedrun/STEP-MANIFEST.md entry 1, rs/103's branch):
+// the Gnome Stronghold course to 52, then the Wilderness course to `to`, with the
+// in-page `agility` program (server/webclient/src/bot/programs/agility.ts).
+//
+// Steps, in order, each a no-op when its band is passed or the account is
+// already where it goes, so the module runs from any start level:
+//   agility:walk-gnome        Lumbridge to the Gnome course start (a fresh account)
+//   agility:gnome             1 -> min(to, 52)
+//   agility:walk-wilderness   the Ardougne lever, the Deserted Keep web, the ridge gate
+//   agility:wilderness        52 -> to, then the run's final clean logout
+// The run's S11a is `steps({to: 22})` (the first two); S17 arrives inside the
+// Wilderness course by leg T27-17, so only the last step does anything there.
+//
+// The Barbarian course is not used below 52: its laps are faster from 35, but
+// the walk out of the Gnome Stronghold to it and from it to the lever costs more
+// than it saves (docs/speedrun/rehearsals/agility.md, "Route").
+//
+// Wilderness policy (rs/155 plan section 3, as ruled by rs/147):
+// - nothing worth a kill is carried, and we never attack anyone;
+// - every player seen is logged; `pauseFor` decides whether one pauses the band
+//   (default 'none'): 'threat' pauses only for a player who can attack us at
+//   this Wilderness level and is targeting a player beside us or walking toward
+//   us from off the lap path, 'any' for anyone within `playerRadius`;
+// - a pause logs out at once and throws; the operator resumes with
+//   `--from=agility:wilderness` after a clear /playerpositions read. More than
+//   `maxPauses` in one band refuses to resume until the coordinator answers;
+// - a player attack ends the band: eat at `eatBelow`, step away, log out the
+//   first tick the 16-tick combat window allows, and throw (a forced retreat);
+// - a death logs out at the Lumbridge respawn at once and throws;
+// - out of food at `eatBelow` logs out and throws (no death risk taken).
+
+import { readFileSync } from 'fs';
+import type { BotWorldState } from '../../sdk/types';
+import { advance } from '../lib/dialogue';
+import { withLevelUpDismissal } from '../lib/levelup';
+import { ProgramError, runProgram, type ProgramStatus } from '../lib/programs';
+import { logoutClean, type Session } from '../lib/session';
+import { parseLog, type TickLog, type TickRow } from '../lib/ticks';
+import { nextTick, tickMs, waitUntil } from '../lib/wait';
+import type { RunnerSession, Step, StepContext } from '../runner/step';
+
+export const skill = 'agility';
+
+export type Box = [number, number, number, number];
+const inBox = (b: Box, x: number, z: number) => x >= b[0] && x <= b[2] && z >= b[1] && z <= b[3];
+const cheb = (ax: number, az: number, bx: number, bz: number) => Math.max(Math.abs(ax - bx), Math.abs(az - bz));
+
+/** The Gnome course's first obstacle (agility-courses.ts). */
+export const GNOME_START: [number, number] = [2474, 3436];
+/** Within this many tiles of GNOME_START the walk is skipped (the run's S11a arrives by the spirit tree). */
+export const GNOME_NEAR = 30;
+/**
+ * The Wilderness course north of its gate row (z 3931), and its pit
+ * (wilderness_course.rs2). The ridge and the wolf pit south of the gate are outside.
+ */
+export const WILD_AREA: Box = [2990, 3931, 3012, 3965];
+export const WILD_PIT: Box = [2985, 10330, 3025, 10390];
+/** The pipe's start tile: outside the armed skeletons' spawn + wander + hunt reach (x <= 3002) and the wolves' (z <= 3931). */
+export const SAFE_TILE: [number, number] = [3004, 3937];
+/** The ridge gate (loc 2309), entered from its south side. */
+export const RIDGE_GATE = { id: 2309, x: 2998, z: 3917, approach: [2998, 3916] as [number, number] };
+/** The Deserted Keep's only exit, the web in its north wall (mage_arena.md). */
+export const KEEP_WEB: [number, number] = [3158, 3951];
+/** The post-combat logout block (logout.rs2 p_preventlogout 16). */
+export const COMBAT_WINDOW = 16;
+
+/**
+ * Walking routes, sampled every 40-50 tiles from the SDK pathfinder's route
+ * (sdk/pathfinding.ts findLongPath, doors open). Each leg is walked with
+ * bot.walkTo from the route point nearest the player.
+ */
+export const ROUTES = {
+    // 1,011 tiles: Draynor, Falador, Taverley, White Wolf Mountain, Catherby, Ardougne's north, the Gnome gate
+    spawnToGnome: [
+        [3201, 3237], [3150, 3256], [3098, 3271], [3052, 3278], [3000, 3287], [2939, 3311], [2912, 3371], [2874, 3414], [2861, 3464],
+        [2846, 3508], [2844, 3460], [2804, 3436], [2753, 3442], [2702, 3427], [2650, 3403], [2589, 3393], [2539, 3398], [2489, 3389],
+        [2461, 3382], [2461, 3386], [2464, 3434], GNOME_START
+    ],
+    // 59 tiles to the gate, 142 on to the lever
+    gnomeToLever: [[2464, 3434], [2461, 3386], [2461, 3380], [2495, 3359], [2539, 3351], [2561, 3311]],
+    // the keep web to the ridge gate's south side: 165 tiles
+    keepToRidge: [[3158, 3953], [3111, 3955], [3057, 3949], [3006, 3911], RIDGE_GATE.approach]
+} satisfies Record<string, Array<[number, number] | readonly [number, number]>>;
+
+// ------------------------------------------------------------------ options
+
+export type PauseRule = 'none' | 'threat' | 'any';
+
+export interface AgilityOptions {
+    /** Target level (default 99). */
+    to: number;
+    /** 'auto' and 'knife' mean the in-page reaction ('react'); 'plain' is for measurement only. */
+    technique: 'react' | 'plain';
+    /** Food name pattern for the program (default its own list: fish and cakes). */
+    food?: string;
+    /** Eat at or below this HP; default ceil(0.6 x max HP) on the Wilderness course (6 at 10 HP, 60 at 99), 0 on the Gnome course. */
+    eatBelow?: number;
+    /** 'final-logout' (default when `to` is 99) waits out the combat window and logs out cleanly after the last level-up. */
+    finish: 'stay' | 'final-logout';
+    pauseFor: PauseRule;
+    playerRadius: number;
+    threatTargetRange?: number;
+    threatCloseTiles?: number;
+    threatCloseTicks?: number;
+    /** Pauses allowed in one band before it refuses to resume (rs/147: more than 3, ask the coordinator). */
+    maxPauses: number;
+    /** Set once the coordinator has answered a pause-limit stop. */
+    pauseLimitAck: boolean;
+    /** How to leave the world (default logoutClean); tests inject one. */
+    logout?: (session: RunnerSession) => Promise<unknown>;
+}
+
+const int = (v: unknown, name: string): number | undefined => {
+    if (v === undefined || v === null || v === '') return undefined;
+    const n = Number(v);
+    if (!Number.isFinite(n)) throw new Error(`agility: ${name} must be a number (got ${String(v)})`);
+    return n;
+};
+
+function pick<T extends string>(v: unknown, allowed: readonly T[], fallback: T, name: string): T {
+    if (v === undefined || v === null || v === '') return fallback;
+    if (!allowed.includes(v as T)) throw new Error(`agility: ${name} must be one of ${allowed.join(', ')} (got ${String(v)})`);
+    return v as T;
+}
+
+/** Parse `steps()` options; the harness passes `--skill-opt` values as strings. */
+export function parseOptions(raw: Record<string, unknown> = {}): AgilityOptions {
+    const to = int(raw.to, 'to') ?? 99;
+    if (to < 2 || to > 99) throw new Error(`agility: to must be 2..99 (got ${to})`);
+    const technique = pick(raw.technique, ['auto', 'knife', 'react', 'plain'] as const, 'auto', 'technique');
+    const eatBelow = int(raw.eatBelow, 'eatBelow');
+    return {
+        to,
+        technique: technique === 'plain' ? 'plain' : 'react',
+        ...(typeof raw.food === 'string' && raw.food ? { food: raw.food } : {}),
+        ...(eatBelow !== undefined ? { eatBelow } : {}),
+        finish: pick(raw.finish, ['stay', 'final-logout'] as const, to === 99 ? 'final-logout' : 'stay', 'finish'),
+        pauseFor: pick(raw.pauseFor, ['none', 'threat', 'any'] as const, 'none', 'pauseFor'),
+        playerRadius: int(raw.playerRadius, 'playerRadius') ?? 15,
+        ...(int(raw.threatTargetRange, 'threatTargetRange') !== undefined ? { threatTargetRange: int(raw.threatTargetRange, 'threatTargetRange') } : {}),
+        ...(int(raw.threatCloseTiles, 'threatCloseTiles') !== undefined ? { threatCloseTiles: int(raw.threatCloseTiles, 'threatCloseTiles') } : {}),
+        ...(int(raw.threatCloseTicks, 'threatCloseTicks') !== undefined ? { threatCloseTicks: int(raw.threatCloseTicks, 'threatCloseTicks') } : {}),
+        maxPauses: int(raw.maxPauses, 'maxPauses') ?? 3,
+        pauseLimitAck: raw.pauseLimitAck === true || raw.pauseLimitAck === 'true',
+        ...(typeof raw.logout === 'function' ? { logout: raw.logout as AgilityOptions['logout'] } : {})
+    };
+}
+
+export interface Band {
+    course: 'gnome' | 'wilderness';
+    /** The level the band's method needs (the ridge gate checks 52). */
+    from: number;
+    to: number;
+}
+
+/** The bands for a target level: Gnome to min(to, 52), then the Wilderness course to `to`. */
+export function planBands(to: number): Band[] {
+    const bands: Band[] = [{ course: 'gnome', from: 1, to: Math.min(to, 52) }];
+    if (to > 52) bands.push({ course: 'wilderness', from: 52, to });
+    return bands;
+}
+
+export function defaultEatBelow(course: Band['course'], maxHp: number): number {
+    return course === 'gnome' ? 0 : Math.ceil(0.6 * maxHp);
+}
+
+// ------------------------------------------------------------------ state readers
+
+export function agilityLevel(s: BotWorldState | null | undefined): number {
+    return s?.skills?.find(k => k.name.toLowerCase() === 'agility')?.baseLevel ?? 0;
+}
+
+export function nearGnome(s: BotWorldState | null | undefined): boolean {
+    const p = s?.player;
+    return !!p && p.level === 0 && cheb(p.worldX, p.worldZ, GNOME_START[0], GNOME_START[1]) <= GNOME_NEAR;
+}
+
+export function inWildCourse(s: BotWorldState | null | undefined): boolean {
+    const p = s?.player;
+    return !!p && (inBox(WILD_AREA, p.worldX, p.worldZ) || inBox(WILD_PIT, p.worldX, p.worldZ));
+}
+
+const atCourse = (course: Band['course'], s: BotWorldState | null | undefined) => (course === 'gnome' ? nearGnome(s) : inWildCourse(s));
+
+/** Index of the route point to walk to first: the one after the point nearest the player (or that point, when it is the last). */
+export function routeStart(route: ReadonlyArray<readonly [number, number]>, x: number, z: number): number {
+    let best = 0;
+    let bestD = Infinity;
+    route.forEach(([rx, rz], i) => {
+        const d = cheb(rx, rz, x, z);
+        if (d < bestD) {
+            bestD = d;
+            best = i;
+        }
+    });
+    return bestD <= 3 ? Math.min(best + 1, route.length - 1) : best;
+}
+
+/** Hit within the combat window, in combat, or an NPC beside us targeting a player: logging out now would be refused. */
+export function engaged(s: BotWorldState): boolean {
+    const c = s.player?.combat;
+    if (c?.inCombat) return true;
+    if (c && c.lastDamageTick >= 0 && s.tick - c.lastDamageTick <= COMBAT_WINDOW) return true;
+    return (s.nearbyNpcs ?? []).some(n => n.distance <= 2 && n.targetIndex >= 32768);
+}
+
+// ------------------------------------------------------------------ pause bookkeeping
+
+export const PAUSE_STEP = 'agility:pause';
+
+/** Pauses already taken in `band`: this process's rows, plus earlier launches' rows in the same log file. */
+export function pausesTaken(log: Pick<TickLog, 'rows'> & { path?: string | null }, band: string): number {
+    const ours = log.rows.filter(r => r.step === PAUSE_STEP && r.meta?.band === band);
+    let earlier: TickRow[] = [];
+    if (log.path) {
+        try {
+            const seen = new Set(ours.map(r => r.at));
+            earlier = parseLog(readFileSync(log.path, 'utf8')).filter(r => r.step === PAUSE_STEP && r.meta?.band === band && !seen.has(r.at));
+        } catch {
+            earlier = [];
+        }
+    }
+    return ours.length + earlier.length;
+}
+
+export class AgilityStop extends Error {
+    constructor(readonly kind: 'paused-for-player' | 'pause-limit' | 'retreat' | 'died' | 'no-food' | 'program', message: string) {
+        super(`${kind}: ${message}`);
+        this.name = 'AgilityStop';
+    }
+}
+
+// ------------------------------------------------------------------ steps
+
+interface AgilityResult {
+    ended?: 'laps' | 'maxTicks' | 'level' | 'player' | 'attacked' | 'no-food' | 'died';
+    laps: number;
+    ticksPerLap: number;
+    lapTicks: number[];
+    fails: Record<string, number>;
+    eats: number;
+    level: number;
+    levelTicks: Record<string, number>;
+    fallDamage: number;
+    npcDamage: number;
+    playerDamage: number;
+    wouldPause: { any: number; threat: number };
+    sightings: Array<Record<string, unknown>>;
+    player?: { name: string; combatLevel: number; distance: number; why: string };
+    attacker?: { name: string; combatLevel: number; distance: number; x: number; z: number } | null;
+}
+
+function row(ctx: StepContext<unknown>, step: string, tick: number, meta: Record<string, unknown>, ok = true): void {
+    ctx.log.append({
+        v: 1, runId: ctx.log.runId, account: ctx.session.name, sessionId: ctx.session.sessionId, step,
+        startTick: tick, endTick: tick, ticks: 0, wallMs: 0, ok, meta, tickMs: tickMs(), at: new Date().toISOString()
+    });
+}
+
+const stateOf = (ctx: StepContext<unknown>): BotWorldState => {
+    const s = ctx.sdk.getState();
+    if (!s?.player) throw new Error('no player state');
+    return s;
+};
+
+async function leave(ctx: StepContext<unknown>, o: AgilityOptions): Promise<void> {
+    if (o.logout) await o.logout(ctx.session);
+    else {
+        const r = await logoutClean(ctx.session as Session);
+        if (!r.ok) throw new Error(`logout failed: ${r.reason}`);
+    }
+}
+
+function foodSlot(s: BotWorldState, food: string | undefined): { slot: number; op: number } | null {
+    const re = new RegExp(food ?? '^(shark|lobster|swordfish|monkfish|tuna|salmon|trout|cake|2/3 cake|slice of cake)$', 'i');
+    const it = s.inventory.find(i => re.test(i.name));
+    if (!it) return null;
+    return { slot: it.slot, op: it.optionsWithIndex?.find(x => /^eat$/i.test(x.text))?.opIndex ?? 1 };
+}
+
+/**
+ * After a player's hit: never fight back; eat at `eatBelow`; step away from the
+ * attacker inside the course; return the first tick the combat window allows a
+ * logout (or 'died'). Bounded at 300 ticks.
+ */
+export async function retreat(
+    sdk: StepContext<unknown>['sdk'],
+    o: Pick<AgilityOptions, 'food'> & { eatBelow: number },
+    attacker: { x: number; z: number } | null
+): Promise<'clear' | 'died' | 'timeout'> {
+    const s0 = sdk.getState()!;
+    const life = s0.player!.lifeId;
+    let lastEat = -Infinity;
+    let lastWalk = -Infinity;
+    for (let k = 0; k < 300; k++) {
+        const s = sdk.getState()!;
+        const p = s.player!;
+        if (p.isDead || p.lifeId !== life) return 'died';
+        if (!engaged(s)) return 'clear';
+        if (p.hp <= o.eatBelow && s.tick - lastEat >= 3) {
+            const f = foodSlot(s, o.food);
+            if (f) {
+                void sdk.sendUseItem(f.slot, f.op);
+                lastEat = s.tick;
+            }
+        }
+        const from = (s.nearbyPlayers ?? []).find(q => attacker && cheb(q.x, q.z, attacker.x, attacker.z) <= 3) ?? attacker;
+        if (from && s.tick - lastWalk >= 4) {
+            const dx = Math.sign(p.worldX - from.x) || 1;
+            const dz = Math.sign(p.worldZ - from.z) || -1;
+            const tx = Math.min(WILD_AREA[2] - 2, Math.max(WILD_AREA[0] + 2, p.worldX + 6 * dx));
+            const tz = Math.min(3960, Math.max(3934, p.worldZ + 6 * dz));
+            void sdk.sendWalk(tx, tz, true);
+            lastWalk = s.tick;
+        }
+        await nextTick(sdk, s.tick);
+    }
+    return 'timeout';
+}
+
+/** The run's last action: out of any fight's reach, the 16-tick window waited out, a clean logout. */
+export async function finalLogout(ctx: StepContext<unknown>, o: AgilityOptions): Promise<{ waited: number; moved: boolean }> {
+    const sdk = ctx.sdk;
+    // the level-up chain closes within a tick or two (the watcher is still on)
+    await waitUntil(sdk, s => !s.dialog?.isOpen, { maxTicks: 6 });
+    const s0 = stateOf(ctx);
+    let moved = false;
+    if (engaged(s0)) {
+        moved = true;
+        void sdk.sendWalk(SAFE_TILE[0], SAFE_TILE[1], true);
+        await waitUntil(sdk, s => !!s.player && cheb(s.player.worldX, s.player.worldZ, SAFE_TILE[0], SAFE_TILE[1]) <= 1, { maxTicks: 30 });
+        await waitUntil(sdk, s => !engaged(s), { maxTicks: 60 });
+    }
+    const waited = (sdk.getState()?.tick ?? s0.tick) - s0.tick;
+    await leave(ctx, o);
+    return { waited, moved };
+}
+
+async function bandProgram(ctx: StepContext<unknown>, band: Band, o: AgilityOptions, name: string): Promise<AgilityResult> {
+    const s = stateOf(ctx);
+    const eatBelow = o.eatBelow ?? defaultEatBelow(band.course, s.player!.maxHp);
+    const params: Record<string, unknown> = {
+        course: band.course,
+        untilLevel: band.to,
+        technique: o.technique,
+        startStep: 'auto',
+        eatBelow,
+        ...(o.food ? { food: o.food } : {}),
+        ...(band.course === 'wilderness'
+            ? {
+                  pauseFor: o.pauseFor,
+                  playerRadius: o.playerRadius,
+                  ...(o.threatTargetRange !== undefined ? { threatTargetRange: o.threatTargetRange } : {}),
+                  ...(o.threatCloseTiles !== undefined ? { threatCloseTiles: o.threatCloseTiles } : {}),
+                  ...(o.threatCloseTicks !== undefined ? { threatCloseTicks: o.threatCloseTicks } : {})
+              }
+            : {})
+    };
+    let end: ProgramStatus;
+    try {
+        end = await runProgram(ctx.sdk, 'agility', params);
+    } catch (e) {
+        const st = e instanceof ProgramError ? e.status : null;
+        if (st?.fault === 'died') {
+            const r = (st.faultDetail ?? {}) as AgilityResult;
+            await leave(ctx, o);
+            row(ctx, 'agility:death', st.endedTick ?? -1, { band: name, result: compact(r) }, false);
+            throw new AgilityStop('died', `in ${name} at tick ${st.endedTick}; logged out at the respawn. Ask the coordinator before resuming (a re-kit and the trip back cost about 800 ticks)`);
+        }
+        throw e;
+    }
+    if (end.phase !== 'done') throw new AgilityStop('program', `the agility program was ${end.phase} in ${name}`);
+    const r = end.result as AgilityResult;
+    for (const [lv, tick] of Object.entries(r.levelTicks ?? {})) row(ctx, 'agility:level', tick, { band: name, level: Number(lv), course: band.course });
+    row(ctx, 'agility:program', end.endedTick ?? end.tick, { band: name, ...compact(r), eatBelow });
+    return r;
+}
+
+/** The program result without its per-lap arrays, for a ledger row. */
+function compact(r: AgilityResult): Record<string, unknown> {
+    return {
+        ended: r.ended, laps: r.laps, ticksPerLap: r.ticksPerLap, fails: r.fails, eats: r.eats, level: r.level,
+        fallDamage: r.fallDamage, npcDamage: r.npcDamage, playerDamage: r.playerDamage, wouldPause: r.wouldPause,
+        sightings: r.sightings, ...(r.player ? { player: r.player } : {}), ...(r.attacker !== undefined ? { attacker: r.attacker } : {})
+    };
+}
+
+function bandStep(band: Band, o: AgilityOptions, last: boolean): Step {
+    const name = `agility:${band.course}`;
+    let loggedOut = false;
+    const run = async (ctx: StepContext<unknown>) =>
+        withLevelUpDismissal(ctx.sdk, async () => {
+            if (agilityLevel(ctx.sdk.getState()) >= band.to) return;
+            if (band.course === 'wilderness' && !o.pauseLimitAck && pausesTaken(ctx.log, name) > o.maxPauses) {
+                throw new AgilityStop('pause-limit', `${pausesTaken(ctx.log, name)} pauses in ${name} (limit ${o.maxPauses}); message the coordinator, then resume with --skill-opt=pauseLimitAck=true`);
+            }
+            for (let attempt = 1; ; attempt++) {
+                if (attempt > 5) throw new AgilityStop('program', `${name}: the program ended 5 times below level ${band.to}`);
+                const r = await bandProgram(ctx, band, o, name);
+                if (r.ended === 'player') {
+                    await leave(ctx, o);
+                    const n = pausesTaken(ctx.log, name) + 1;
+                    row(ctx, PAUSE_STEP, ctx.sdk.getState()?.tick ?? -1, { band: name, n, player: r.player });
+                    const p = r.player!;
+                    throw new AgilityStop('paused-for-player', `${p.name} (combat ${p.combatLevel}, ${p.why}, ${p.distance} tiles) in ${name}; pause ${n} of ${o.maxPauses}. Resume with --from=${name} after at least 3 minutes offline and a clear /playerpositions`);
+                }
+                if (r.ended === 'attacked') {
+                    const st = stateOf(ctx);
+                    const eatBelow = o.eatBelow ?? defaultEatBelow(band.course, st.player!.maxHp);
+                    const out = await retreat(ctx.sdk, { ...(o.food ? { food: o.food } : {}), eatBelow }, r.attacker ? { x: r.attacker.x, z: r.attacker.z } : null);
+                    const lifeChanged = out === 'died';
+                    await leave(ctx, o);
+                    row(ctx, lifeChanged ? 'agility:death' : 'agility:retreat', ctx.sdk.getState()?.tick ?? -1, { band: name, attacker: r.attacker, out }, false);
+                    throw new AgilityStop(lifeChanged ? 'died' : 'retreat', `attacked by ${r.attacker?.name ?? 'a player'} in ${name}; ${lifeChanged ? 'died, ' : ''}logged out. Report it to the coordinator before resuming`);
+                }
+                if (r.ended === 'no-food') {
+                    await leave(ctx, o);
+                    throw new AgilityStop('no-food', `out of food at HP at or below the eat line in ${name}; logged out. Bring more food and resume with --from=${name}`);
+                }
+                if (agilityLevel(ctx.sdk.getState()) >= band.to) break;
+            }
+            if (last && o.finish === 'final-logout' && band.to >= o.to) {
+                const f = await finalLogout(ctx, o);
+                loggedOut = true;
+                row(ctx, 'agility:final-logout', ctx.sdk.getState()?.tick ?? -1, f);
+            }
+        });
+    return {
+        name,
+        preconditions: s => (agilityLevel(s) >= band.to || atCourse(band.course, s) ? true : `not at the ${band.course} course`),
+        run,
+        postconditions: s => (agilityLevel(s) >= band.to || loggedOut ? true : `agility ${agilityLevel(s)} < ${band.to}`),
+        done: o2 => agilityLevel(o2.state) >= band.to,
+        inProgress: o2 => agilityLevel(o2.state) < band.to && atCourse(band.course, o2.state),
+        logoutSafe: true
+    };
+}
+
+async function walkRoute(ctx: StepContext<unknown>, route: ReadonlyArray<readonly [number, number]>): Promise<void> {
+    const s = stateOf(ctx);
+    for (let i = routeStart(route, s.player!.worldX, s.player!.worldZ); i < route.length; i++) {
+        const [x, z] = route[i]!;
+        let r = await ctx.bot.walkTo(x, z, 2, { timeout: 90_000 });
+        if (!r.success) r = await ctx.bot.walkTo(x, z, 3, { timeout: 90_000 });
+        if (!r.success) throw new Error(`walk to (${x},${z}): ${r.message}`);
+    }
+}
+
+const walkGnome = (gnomeEnd: number): Step => ({
+    name: 'agility:walk-gnome',
+    preconditions: s => (s.player ? true : 'no player'),
+    run: async ctx => {
+        const s = stateOf(ctx);
+        if (agilityLevel(s) >= gnomeEnd || nearGnome(s)) return;
+        await walkRoute(ctx, ROUTES.spawnToGnome);
+    },
+    postconditions: s => (agilityLevel(s) >= gnomeEnd || nearGnome(s) ? true : 'not at the Gnome course'),
+    logoutSafe: true
+});
+
+/** Pull the Ardougne lever (first pull: a warning page and a choice) and wait for the Deserted Keep. */
+async function pullLever(ctx: StepContext<unknown>): Promise<void> {
+    const lever = ctx.sdk.getState()!.nearbyLocs.find(l => /lever/i.test(l.name) && l.distance <= 10);
+    if (!lever) throw new Error('no lever within 10 tiles');
+    void ctx.sdk.sendInteractLoc(lever.x, lever.z, lever.id, 1);
+    for (let k = 0; k < 6; k++) {
+        if ((ctx.sdk.getState()?.player?.worldZ ?? 0) > 3800) break;
+        const r = await advance(ctx.sdk, { choose: /^Yes I'm brave\.$/, maxTicks: 6 });
+        if (!r.ok) break;
+    }
+    const ok = await waitUntil(ctx.sdk, s => (s.player?.worldZ ?? 0) > 3800, { maxTicks: 30 });
+    if (!ok.ok) throw new Error('the lever did not teleport');
+}
+
+/** From inside the Deserted Keep, knife the north web (50% a try) and step through. */
+async function leaveKeep(ctx: StepContext<unknown>): Promise<number> {
+    const sdk = ctx.sdk;
+    let tries = 0;
+    const out = () => (sdk.getState()?.player?.worldZ ?? 0) > KEEP_WEB[1];
+    for (let k = 0; k < 20 && !out(); k++) {
+        const s = sdk.getState()!;
+        const p = s.player!;
+        if (cheb(p.worldX, p.worldZ, KEEP_WEB[0], KEEP_WEB[1] - 1) > 1) {
+            const r = await ctx.bot.walkTo(KEEP_WEB[0], KEEP_WEB[1] - 1, 1, { timeout: 30_000 });
+            if (!r.success) throw new Error(`walk to the keep web: ${r.message}`);
+            continue;
+        }
+        const web = s.nearbyLocs.find(l => /^web$/i.test(l.name) && l.options.includes('Slash') && cheb(l.x, l.z, KEEP_WEB[0], KEEP_WEB[1]) <= 1);
+        if (web) {
+            const knife = s.inventory.find(i => /^knife$/i.test(i.name));
+            if (!knife) throw new Error('no knife for the Deserted Keep web');
+            void sdk.sendUseItemOnLoc(knife.slot, web.x, web.z, web.id);
+            tries++;
+            await waitUntil(sdk, st => st.tick >= s.tick + 2, { maxTicks: 4 });
+            continue;
+        }
+        // slashed (or open): the client's static collision still blocks it, so walk server-side
+        void sdk.sendWalk(KEEP_WEB[0], KEEP_WEB[1] + 2, true);
+        await waitUntil(sdk, () => out(), { maxTicks: 8 });
+    }
+    if (!out()) throw new Error(`still inside the Deserted Keep after ${tries} slashes`);
+    return tries;
+}
+
+/** The ridge gate (52) into the course; a fail drops into the wolf pit beside it, so walk back and retry. */
+async function crossRidge(ctx: StepContext<unknown>): Promise<number> {
+    const sdk = ctx.sdk;
+    for (let tries = 1; tries <= 6; tries++) {
+        const s = sdk.getState()!;
+        const p = s.player!;
+        if (cheb(p.worldX, p.worldZ, RIDGE_GATE.approach[0], RIDGE_GATE.approach[1]) > 1) {
+            const r = await ctx.bot.walkTo(RIDGE_GATE.approach[0], RIDGE_GATE.approach[1], 1, { timeout: 30_000 });
+            if (!r.success) throw new Error(`walk to the ridge gate: ${r.message}`);
+        }
+        void sdk.sendInteractLoc(RIDGE_GATE.x, RIDGE_GATE.z, RIDGE_GATE.id, 1);
+        const r = await waitUntil(sdk, st => inWildCourse(st) || st.gameMessages.some(m => /wolf pit/i.test(m.text) && m.tick > s.tick), { maxTicks: 30 });
+        if (r.ok && inWildCourse(r.state)) return tries;
+        await waitUntil(sdk, st => st.tick >= (r.state?.tick ?? s.tick) + 3, { maxTicks: 6 });
+    }
+    throw new Error('could not cross the ridge in 6 tries');
+}
+
+const walkWilderness = (o: AgilityOptions): Step => ({
+    name: 'agility:walk-wilderness',
+    preconditions: s => (inWildCourse(s) || agilityLevel(s) >= o.to || agilityLevel(s) >= 52 ? true : `agility ${agilityLevel(s)} is below the ridge gate's 52`),
+    run: async ctx => {
+        const s = stateOf(ctx);
+        if (agilityLevel(s) >= o.to || inWildCourse(s)) return;
+        const t0 = s.tick;
+        const p = s.player!;
+        if (p.worldZ < 3800) {
+            if (p.worldX > 2700) throw new Error(`no route to the Wilderness course from (${p.worldX},${p.worldZ}); walk to the Gnome Stronghold or the Ardougne lever first`);
+            await walkRoute(ctx, ROUTES.gnomeToLever);
+            await pullLever(ctx);
+        }
+        const inKeep = (ctx.sdk.getState()?.player?.worldX ?? 0) > 3140;
+        const slashes = inKeep ? await leaveKeep(ctx) : 0;
+        const seen = (ctx.sdk.getState()?.nearbyPlayers ?? []).map(q => ({ name: q.name, combatLevel: q.combatLevel, distance: q.distance }));
+        await walkRoute(ctx, ROUTES.keepToRidge);
+        const ridge = await crossRidge(ctx);
+        row(ctx, 'agility:walk-wilderness:legs', ctx.sdk.getState()?.tick ?? -1, { ticks: (ctx.sdk.getState()?.tick ?? t0) - t0, slashes, ridgeTries: ridge, playersAtKeep: seen });
+    },
+    postconditions: s => (inWildCourse(s) || agilityLevel(s) >= o.to ? true : 'not in the Wilderness course'),
+    logoutSafe: true
+});
+
+/** The module's steps for a target level (module convention: speedrun/skills/<skill>.ts). */
+export function steps(raw: Record<string, unknown> = {}): Step[] {
+    const o = parseOptions(raw);
+    const bands = planBands(o.to);
+    const out: Step[] = [walkGnome(bands[0]!.to), bandStep(bands[0]!, o, bands.length === 1)];
+    if (bands[1]) out.push(walkWilderness(o), bandStep(bands[1], o, true));
+    return out;
+}

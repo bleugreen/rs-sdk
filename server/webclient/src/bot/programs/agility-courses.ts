@@ -23,6 +23,25 @@ export interface AgilityCourse {
     lapBonus: number;
     /** After a fall at step X, take step resume[X] next (default: retry X). */
     resume?: Record<string, string>;
+    /**
+     * Where each step is taken from, as boxes [x0, z0, x1, z1] (inclusive, first
+     * match wins): `stepFromPosition` picks the step a resumed run starts with.
+     * Tiles outside every box start at the first step.
+     */
+    zones?: Array<{ step: string; box: Box }>;
+    /** The lap path and its pits: a player inside is another course user, not an approach. */
+    lapArea?: Box[];
+}
+
+export type Box = [number, number, number, number];
+
+export function inBox(b: Box, x: number, z: number): boolean {
+    return x >= b[0] && x <= b[2] && z >= b[1] && z <= b[3];
+}
+
+/** The step to take next from tile (x, z): a resumed band picks up mid-lap. */
+export function stepFromPosition(course: AgilityCourse, x: number, z: number): string {
+    return course.zones?.find(zn => inBox(zn.box, x, z))?.step ?? course.steps[0]!.name;
 }
 
 export const AGILITY_COURSES: Record<string, AgilityCourse> = {
@@ -59,6 +78,21 @@ export const AGILITY_COURSES: Record<string, AgilityCourse> = {
         // both pits exit by the ladder at (3005,10363), which comes up north of the
         // rope swing, beside the stepping stones
         resume: { ropeswing: 'stones', log: 'stones' },
+        // Landing tiles from wilderness_course.rs2: the pipe ends at (3004,3950), the
+        // swing at (3005,3958), the stones at (2996,3960), the log at (2994,3945) and
+        // the rocks at (2994,3933). The pit ladder comes up beside the stones.
+        zones: [
+            { step: 'stones', box: [2985, 10330, 3025, 10390] },
+            { step: 'pipe', box: [2985, 3915, 3015, 3937] },
+            { step: 'ropeswing', box: [3003, 3938, 3012, 3952] },
+            { step: 'stones', box: [3002, 3953, 3012, 3965] },
+            { step: 'log', box: [2990, 3953, 3001, 3965] },
+            { step: 'rocks', box: [2985, 3938, 3000, 3952] }
+        ],
+        lapArea: [
+            [2992, 3931, 3007, 3962],
+            [2985, 10330, 3025, 10390]
+        ],
         steps: [
             { name: 'pipe', locs: [[2288, 3004, 3938]], xp: 12.5 },
             { name: 'ropeswing', locs: [[2283, 3005, 3952]], xp: 20 },

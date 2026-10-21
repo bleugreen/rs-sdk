@@ -37,6 +37,7 @@ speedrun/
     stub.ts       a stand-in skill module (chop to a level, or idle N ticks) for exercising rehearse.ts
   skills/         the run's step modules: `skill` and `steps({to, ...})` returning runner Steps
     start.ts      S00, the tutorial skip on a brand-new account's first login
+    agility.ts    Gnome course to 52, the lever to the Wilderness course, 52 -> to, final logout
   rehearse.ts     one single-skill rehearsal attempt end to end (gate, S00, kit, steps, logout, hiscore)
   lab/            local lab: never imported by lib/
     lab.sh        engine + gateway + lite runners on port block 9300
@@ -588,6 +589,45 @@ last step and can start a later band whose preconditions happen to hold.
 The ticks outside the runner are the login frames the client counts before the SDK's first
 advancing state (`openSession`); the logout click lands on the last step's end tick. Results and
 the host's command lines: `docs/speedrun/rehearsals/HARNESS.md`.
+
+## skills/agility.ts
+
+Each module exports `skill` and `steps(opts)`, returning `runner/step.ts` steps
+the scored run chains and `rehearse.ts` runs alone. Steps are level-driven: each
+reads the level and the tile at its precondition and is a no-op once its band is
+passed, so a module runs from any start level. Band steps carry `done`, are
+`logoutSafe`, and have stable names.
+
+**`agility.ts`** (STEP-MANIFEST.md entry 1). Steps `agility:walk-gnome`,
+`agility:gnome` (1 -> min(to, 52)), `agility:walk-wilderness` (the Gnome
+Stronghold gate, the Ardougne lever, the Deserted Keep web with the knife, the
+ridge gate at 52) and `agility:wilderness` (52 -> to). The run's S11a is
+`steps({to: 22})`; S17 arrives inside the Wilderness course, so only the last
+step acts. Options (strings are accepted, as `--skill-opt` passes them):
+
+- `to` (99), `technique` (`auto`/`knife` = the in-page reaction, `plain` for
+  measurement only), `food`, `eatBelow` (default ceil(0.6 x max HP) on the
+  Wilderness course: 6 at 10 HP, 60 at 99);
+- `finish`: `final-logout` (default at `to` 99) waits for the level-up chain,
+  walks to the pipe's start tile (3004,3937) if a fight is on, waits out the
+  16-tick combat window and logs out with `logoutClean`; the postcondition
+  accepts that logged-out end;
+- `pauseFor` (`none` by default, rs/147's ruling), `playerRadius` (15) and the
+  threat parameters, passed to the program (docs/speedrun/tick-programs.md);
+  `maxPauses` (3).
+
+What each Wilderness end does: a pause (`pauseFor` fired) logs out at once,
+writes an `agility:pause` row and throws `AgilityStop('paused-for-player')`;
+resume with `--from=agility:wilderness` and the same `--log`, which is where the
+pause count lives. More than `maxPauses` pauses in a band refuses to resume
+(`pause-limit`) until `--skill-opt=pauseLimitAck=true`, after the coordinator
+has answered. A player's hit (`attacked`) never fights back: it eats at the
+line, steps away from the attacker, logs out the first tick the combat window
+allows, and throws `retreat`. A death logs out at the respawn and throws
+`died`. No food at the line logs out and throws `no-food`. Ledger rows:
+`agility:level` (one per level, at its tick), `agility:program` (the band's
+program result without per-lap arrays), `agility:pause`, `agility:retreat`,
+`agility:death`, `agility:final-logout`, `agility:walk-wilderness:legs`.
 
 ## Lab
 

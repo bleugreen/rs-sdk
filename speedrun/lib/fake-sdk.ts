@@ -91,6 +91,9 @@ export class FakeSdk {
     sendDeclineTrade() { return this.record('sendDeclineTrade'); }
     sendCountDialog(value: number) { return this.record('sendCountDialog', value); }
     sendWalk(x: number, z: number, running = true) { return this.record('sendWalk', x, z, running); }
+    sendUseItem(slot: number, option = 1) { return this.record('sendUseItem', slot, option); }
+    sendInteractLoc(x: number, z: number, locId: number, option = 1) { return this.record('sendInteractLoc', x, z, locId, option); }
+    sendUseItemOnLoc(slot: number, x: number, z: number, locId: number) { return this.record('sendUseItemOnLoc', slot, x, z, locId); }
 }
 
 /** Let queued promise callbacks run. */
