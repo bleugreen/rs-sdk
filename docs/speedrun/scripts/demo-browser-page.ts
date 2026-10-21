@@ -1,7 +1,9 @@
 // Headless Chrome on the browser webclient, for the browser mode of the demo-latency
 // workflow (.github/workflows/demo-latency-probe.yml, mode=browser).
 //
-//   bun docs/speedrun/scripts/demo-browser-page.ts open --dir=DIR --url=http://127.0.0.1:8899/bot?bot=NAME
+// Run it with `bun --no-install` (see the workflow's header: auto-install breaks puppeteer's load).
+//
+//   bun --no-install docs/speedrun/scripts/demo-browser-page.ts open --dir=DIR --url=http://127.0.0.1:8899/bot?bot=NAME
 //       [--chrome=PATH] [--gateway-port=7851] [--load-only]
 //     Opens the page (served by the branch's server/webclient/proxy.ts, which adds ?server= and
 //     ?gateway=), logs BOT_USERNAME in with gameClient.autoLogin and writes DIR/ready once in
