@@ -2,7 +2,10 @@
 
 **About 2,600 ticks (13 minutes at 300 ms) at 70/70/70 melee, Agility 99, Thieving 50,
 Ranged 60, for 3,000 base Agility xp, 3,000 base Attack xp and 5 quest points.**
-At Agility 60 add about 60 ticks of expected failures, and at Agility 40 about 240. Most of the
+At Agility 60 add about 60 ticks of expected failures, at Agility 40 about 240, and at
+Agility 1-10 about 730-960, so it should not be the account's first Agility source
+(see [Very low Agility](#very-low-agility-underground-pass-as-the-first-agility-source)).
+With the fixed client the total is about 2,553, with dialogue bursts about 2,521. Most of the
 time is walking through a long cave with about 45 scripted crossings. The four big fights
 (three paladins, three demons, Kalrag) are about 550 ticks at 70 melee. This document is the
 canonical one for Underground Pass: Legends' Quest and Regicide both need it, and Regicide
@@ -211,6 +214,40 @@ Expected extra ticks from failures on the quest route (cost × (1−p)/p, summed
 Agility 70 is the threshold that matters: from 70 the rockslides, the swing and all 13
 bridges can no longer fail, and only the ledge (5% at 70) remains.
 
+### Very low Agility: Underground Pass as the first Agility source
+
+Underground Pass has no Agility check, so it could come before Grand Tree (whose Agility
+25 costs 122-159 ticks of Gnome laps for a fresh account, `docs/speedrun/skills/agility.md`
+§3 on the rs/2 branch). At Agility 1-10 the rolls fail often. Success chances below are
+from the engine formula (read, `PlayerOps.ts:591-600`; the rates measured at 40 and 60
+match it), and the failure costs are the measured ones from the table above (the bridge
+fall is the mean of the two measured, 82). The pass's own Agility xp (3 base per pipe,
+`upass_obstacles.rs2:77,366`) does not move the level meaningfully before the reward.
+
+| Obstacle (count) | Success at 1 | at 10 | Expected extra ticks at 1 | at 10 |
+|---|---|---|---|---|
+| Rockslide 160/300 (5) | 62.9% | 67.6% | 6 | 5 |
+| Rope swing 100/410 (1), ~205 per failure | 39.5% | 50.0% | 314 | 205 |
+| Ledge 200/260 (1), ~46 per failure | 78.5% | 80.1% | 13 | 11 |
+| Broken bridge 160/300 (13), ~82 per fall | 62.9% | 67.6% | 629 | 511 |
+| **Total** | | | **~960** | **~730** |
+
+(inferred: cost × (1 − p)/p per crossing.) For comparison: ~240 at Agility 40, ~60 at
+60, ~4 at 70 and above. At Agility 1 the account also expects about 7.7 bridge falls of
+25% hp + 4 each and about 1.5 failed swings, so it needs more food than the list above.
+
+The fights make an early slot worse still: at 50/50/50 they cost about 400 ticks more
+than at 70/70/70 (measured medians above), with 2-8 level-up dialogues each, and Kalrag
+at 50 once ran past 600 ticks without finishing. The demons (91), Kalrag (89) and the
+paladins (62) are not safe much below 50/50/50 even with food (inferred from the lowest
+hp seen at 50: 15-20).
+
+**Conclusion: Underground Pass before Grand Tree does not pay.** It saves 122-159 ticks of
+Gnome laps but costs about 730-960 expected ticks of falls at Agility 1-10, plus the
+low-combat fight penalty. Do Grand Tree first (its 7,900 base takes Agility to 75, where
+the pass's rolls no longer fail except the ledge at about 5%), or any other early Agility
+reward that reaches 70.
+
 ## Tick total
 
 | Part | Ticks | Basis |
@@ -225,6 +262,36 @@ bridges can no longer fail, and only the ledge (5% at 70) remains.
 | **Total, Agility 99 / Thieving 50 / Ranged 60** | **~2,610** | |
 | Expected failures at Agility 60 / 40 | +~60 / +~240 | measured rates and costs |
 | Fights at 50/50/50 instead of 70 | +~400 | measured medians |
+
+### Dialogue in three columns
+
+Columns as `CONVENTIONS.md` defines them: stock 2 ticks per page or option, fixed client
+(cairn://p/rs/22) 1, burst (up to 5 pure-continue pages per tick; a run after an option or
+a state-changing page costs 1 + ceil((k-1)/5)). Runs are read from the scripts and match
+the measured page counts. `c` is a pure continue, `opt` an option click, `state` a pause
+while a script delays or moves the player before the next page.
+
+| Step | Dialogue | Runs | Stock | Fixed | Burst |
+|---|---|---|---|---|---|
+| 1 | Lathas starts the quest (`king_lathas.rs2:92-110`) | 11c | 22 | 11 | 3 |
+| 3 | Koftik at the cave (`koftik.rs2:34-55`) | 7c, opt, 2c | 20 | 10 | 5 |
+| 5 | Koftik at the bridge (`koftik.rs2:68-87`) | 6c, opt, 2c | 18 | 9 | 5 |
+| 12 | Orb 1 log trap (`upass_obstacles.rs2:222-228`) | 1c, opt | 4 | 2 | 2 |
+| 18 | Boulder (`quest_upass.rs2:287`) | state, 1c | 2 | 1 | 1 |
+| 19 | Smashed cage (`quest_upass.rs2:309`) | 1c | 2 | 1 | 1 |
+| 27 | Nilhoof (`nilhoof.rs2:3-20`) | 9c, state (`p_delay(2)`), 1c | 20 | 10 | 3 |
+| 29 | Witch's chest (`kardia.rs2:92-107`) | 1c, state, 1c | 4 | 2 | 2 |
+| 41 | Koftik leads you out (`koftik.rs2:133-139`) | 6c | 12 | 6 | 2 |
+| 44 | Lathas hand-in (`king_lathas.rs2:81-87`) | 5c | 10 | 5 | 1 |
+| | **Total, 54 pages and 3 options** | | **114** | **57** | **25** |
+
+| Column | Quest total (Agility 99, Thieving 50, Ranged 60) | Post-quest traversal (Koftik's cloth, 3c) |
+|---|---|---|
+| Stock | ~2,610 | ~555 |
+| Fixed client | ~2,553 | ~552 |
+| Burst | ~2,521 | ~550 |
+
+(inferred: the measured stock totals minus the column differences above.)
 
 With the client fix cairn://p/rs/22 (1 tick per page) the 57 dialogue clicks save about 57
 ticks. The measured steps also include a dropped click after most forced moves: the lite client
@@ -294,6 +361,11 @@ What it still needs (read):
   closed door.
 - **Lathas** talks Regicide first once `%regicide_quest` > 0 (`king_lathas.rs2:2`), so
   Underground Pass must be handed in before Regicide is started.
+- **Logout safety:** the whole quest is logout-safe (`%upass`, `%ibanmulti` and
+  `%iban_staff_charges` are `scope=perm`, `quest_upass.varp`; the four `.vars` are
+  map-clock cooldowns on the swing and pipes). But the hand-in has a consequence for
+  Regicide: its messenger timer is armed only at the next login, and timers are not
+  saved, so the 400-1,200 ticks that follow must be one session (see `regicide.md`).
 
 ## Open questions
 
