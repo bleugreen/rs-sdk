@@ -184,6 +184,18 @@ describe('planOffers', () => {
             ['C', [28]],
         ]);
     });
+
+    test('an unstackable item (one per slot) gets a single press, never 10 then 5 on the same slot', () => {
+        const bones = Array.from({ length: 20 }, (_, s) => inv(s, 536, 'Dragon bones', 1));
+        const items = [...bones, inv(20, 385, 'Shark', 1), inv(21, 385, 'Shark', 1), inv(22, 995, 'Coins', 100)];
+        expect(planOffers(items, [{ item: 'Dragon bones', n: 15 }, { item: 'Shark', n: 1 }, { item: 'Coins', n: 15 }]).map(e => [e.name, e.amounts, e.expected])).toEqual([
+            ['Shark', [1], 1],
+            ['Coins', [10, 5], 15],
+            ['Dragon bones', [15], 15],
+        ]);
+        expect(planOffers(items, [{ item: 'Dragon bones', n: 10 }]).map(e => e.amounts)).toEqual([[10]]);
+        expect(planOffers(items, [{ item: 'Dragon bones', n: 20 }]).map(e => e.amounts)).toEqual([[-1]]);
+    });
 });
 
 test('sameName ignores case and space/underscore differences', () => {
