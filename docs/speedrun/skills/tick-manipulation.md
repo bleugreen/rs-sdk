@@ -442,9 +442,15 @@ shifting, and the packets in flight when each run's client disconnected at the e
   were not run; the same tick order applies (inferred).
 - **Respawn 13 with the knife** (settled by rs/53): 3.00 ticks per ore. Still open: a
   7-rock iron rotation at respawn 19 (planner: 3.00 ticks per ore).
-- **Demo latency:** the loops assume the demo's round trip fits inside a 300 ms tick, as
-  it did in the lab on a quiet host. `tickmanip-latency.ts` on a throwaway demo account
-  would show whether it does.
+- **Demo latency** (partly settled by rs/62): from bbs the demo reads 1-3 ticks, mostly 2.
+  From Azure eastus, main read 85% at 1 tick. A constant latency does not matter (section
+  6, "Run-time host gate"); the spread does. Still open: the knife's gain on the demo from
+  the run machine (`tickmanip-demo.sh` there).
+- **Second-run slips in the lab** (rs/62): the second open-loop iron run in one lab session
+  slipped 17-40 times in 60 ores, while the first was clean whichever script version went
+  first. Not explained. Infinite run is on by default (`NODE_INFINITE_RUN`), so run energy
+  is unlikely; rock or respawn state carried over from the first run is a candidate. The
+  closed-loop executor has not been run twice in one session.
 - **Glassblowing and leather** as menu starters for accounts without a knife or logs: same
   pattern, not measured.
 - **Fixed client (rs/22, #20):** run (rs/53): packet timing and cycles unchanged; xp
