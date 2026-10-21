@@ -122,7 +122,8 @@ await runScript(async ({ bot, sdk }) => {
             await sdk.waitForTicks(4);
             await quest('stew');
             await S.step('climb the yard fence (out)', opAt(2541, 3331, /Climb-over/), { done: () => L.pos(sdk).x <= 2541, settle: 0, maxTicks: 60 });
-            await S.walk('fence -> nurse cupboard', 2519, 3276);
+            // forceapproach=east on a cupboard placed at angle 1 means it opens from the south side.
+            await S.walk('fence -> nurse cupboard (south side)', 2518, 3275);
             await S.step('open the nurse cupboard', opAt(2517, 3276, /Open/), { done: () => sdk.getState()!.nearbyLocs.some(l => l.x === 2517 && l.z === 3276 && /Search/.test(l.options.join())), settle: 0 });
             await S.step("search: doctors' gown", opAt(2517, 3276, /Search/), { done: has(sdk, /^Doctors' gown$/i), settle: 0 });
             await S.step("wear the doctors' gown", async () => { await bot.equipItem(/^Doctors' gown$/i); }, { done: () => sdk.getEquipment().some(e => /Doctors' gown/i.test(e.name)), settle: 0 });
