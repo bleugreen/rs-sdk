@@ -35,7 +35,7 @@ import type { BotWorldState, NearbyPlayer } from '../../sdk/types';
 import { withdrawMany } from '../lib/bank';
 import { give, tradeOf } from '../lib/trade';
 import { assertUntracked, canonName, CueWatcher, cueDir, nameHash, writeJsonAtomicSync, type Cue } from './altar-cue';
-import { count, isLocalServer, pos, standOn, until, type Tile } from './altar-room';
+import { chebyshev, count, isLocalServer, labTele, pos, standOn, until, type Tile } from './altar-room';
 import { closeBank, depositAllExcept, ensureOutOfTutorial, openBank, walkNear } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
 
@@ -242,6 +242,7 @@ export class BoneGiver {
         }
         const site = o.sites[this.site]!;
         this.setPhase('travel', `site ${this.site}`);
+        if (process.env.HELPER_LAB_TELE === '1' && chebyshev(pos(this.s), site.giver) > 150) await labTele(ctx, site.giver);
         await walkNear(ctx, site.giver.x, site.giver.z, 2);
         await standOn(ctx, site.giver);
         this.setPhase('waiting', `site ${this.site}`);

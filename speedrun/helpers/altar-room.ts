@@ -178,7 +178,7 @@ export function chebyshev(a: { x: number; z: number }, b: { x: number; z: number
  * Lab only: teleport onto `to`. Helpers do it (with HELPER_LAB_TELE=1) to skip a
  * fresh lab account's walk from its spawn, so a lab run measures their own legs.
  */
-export async function labTele(ctx: Pick<RoleContext, 'sdk'>, to: Tile): Promise<void> {
+export async function labTele(ctx: Pick<RoleContext, 'sdk'>, to: Tile & { level?: number }): Promise<void> {
     const { x, z } = to;
     await cheat(ctx, `tele ${to.level ?? 0},${x >> 6},${z >> 6},${x & 63},${z & 63}`);
     await until(ctx, s => pos(s).x === x && pos(s).z === z, 10);
