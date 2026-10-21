@@ -2,7 +2,7 @@
 // reports the sustained ore rate. Offline (no server needed):
 //
 //   bun docs/speedrun/scripts/mining-rotation-plan.ts [--run 1|2] [--respawn 19]
-//       [--link 8] [--min 3] [--beam 1500] [--horizon 900] [--show x,z]
+//       [--link 8] [--min 5] [--beam 150] [--horizon 600] [--show x,z] [--only x,z]
 //
 // Timing model (rune pickaxe, 100% success at high level), all in server ticks:
 //  - A click processed on tick c on a rock the player is already beside runs the
@@ -151,7 +151,9 @@ function plan(cluster: P[]) {
 }
 
 const rows: string[] = [];
+const ONLY = arg('only', '');
 for (const c of clusters.sort((a, b) => b.length - a.length)) {
+    if (ONLY && !c.some(r => key(r) === ONLY)) continue;
     const t0 = Date.now();
     const res = plan(c);
     console.error(`planned ${c.length}-rock cluster at ${key(c[0]!)} in ${Date.now() - t0} ms`);
