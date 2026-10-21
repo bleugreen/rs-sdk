@@ -17,6 +17,8 @@ export interface StepOpts {
     settle?: number;
     done?: () => boolean;
     maxTicks?: number;
+    /** Do not re-send the action when nothing visible happens (for steps that only change hidden state). */
+    noRetry?: boolean;
 }
 
 export interface StepResult {
@@ -49,8 +51,22 @@ export class Steps {
         let levelUps = 0;
         const transcript: string[] = [];
         let note: string | undefined;
+        let retries = 0;
+        let lastPos = L.pos(sdk);
+        let lastMove = t0;
         while (L.tick(sdk) - t0 < maxTicks) {
             const s = sdk.getState()!;
+            const p = L.pos(sdk);
+            if (p.x !== lastPos.x || p.z !== lastPos.z || p.level !== lastPos.level) lastMove = s.tick;
+            lastPos = p;
+            // Nothing happened (no dialogue, no effect, standing still): the click was dropped. Click again once.
+            if (first === null && doneTick === null && retries < 1 && s.tick - lastMove >= 4 && s.tick - t0 >= 5 && !o.noRetry) {
+                retries++;
+                transcript.push(`[${s.tick}] re-click`);
+                console.log(`  ${label}: re-click after ${s.tick - t0} ticks`);
+                await act();
+                lastMove = s.tick;
+            }
             if (o.done && doneTick === null && o.done()) doneTick = s.tick;
             const d = s.dialog;
             if (d.isOpen) {
@@ -98,6 +114,7 @@ export class Steps {
         }
         if (o.done && doneTick === null) note = 'done never held';
         const end = Math.max(lastClose ?? 0, doneTick ?? 0) || L.tick(sdk);
+        if (retries) note = `${note ? note + '; ' : ''}re-clicked once`;
         const r: StepResult = { label, ticks: end - t0, pages, options, levelUps, transcript, note };
         this.rows.push(r);
         console.log(`STEP ${label}: ${r.ticks} ticks, ${pages} pages, ${options} options${levelUps ? `, ${levelUps} level-ups` : ''}${note ? ` (${note})` : ''}`);
