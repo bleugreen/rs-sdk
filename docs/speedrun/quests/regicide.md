@@ -9,6 +9,13 @@ and it must enter again at stage 11 carrying naphtha, because the only still is
 in Rimmington and the catapult only fires at stage 11. Inside Regicide the cost is
 mostly walking the Isafdar forest (it is cut into regions joined only by agility
 obstacles), the Tyras guard fight (about 200 ticks at 70 melee) and dialogue.
+With the fixed client the total is about 3,060, with dialogue bursts about 3,015.
+
+**Verdict: Regicide does not pay.** Its 13,750 Agility replaces about 2,000 ticks of
+Wilderness laps, a loss of about 1,000-1,150 ticks even when Underground Pass is already
+done for Legends' Quest; the whole four-quest chain costs about 7,400-8,100 ticks for
+about 3,200-3,550 ticks of skill training. See
+[The Regicide chain: total and verdict](#the-regicide-chain-total-and-verdict).
 
 All ticks are stock lite client (2 ticks per dialogue page, `primitives.md`). Lab:
 one engine at `NODE_TICKRATE=300`, bot `rs15rg`, Agility 56 unless stated. Scripts
@@ -304,10 +311,58 @@ route tiles (entry 1 about 845, entry 2 348) and about 400 Kandarin tiles; 8 pit
 woodsprings, 4 tripwires, 6 log balances, 26 cross-overs; 2 climbs; 1 trade. With the
 client fix (1 tick per page) the dialogue drops by about 78 ticks.
 
+### Dialogue in three columns
+
+Columns as `CONVENTIONS.md` defines them (stock 2 per page, fixed client 1, burst up to 5
+pure continues per tick, with 1 + ceil((k-1)/5) for a run after an option or a state
+change). Runs read from the scripts; the page counts match the measured ones. Regicide has
+no option clicks at all.
+
+| Row | Dialogue | Runs | Stock | Fixed | Burst |
+|---|---|---|---|---|---|
+| 1 | Messenger (`regicide_kings_messenger.rs2:28-30`) | 2c | 4 | 2 | 1 |
+| 3 | Lathas, stage 1 (`king_lathas.rs2:30-37`) | 6c | 12 | 6 | 2 |
+| 6 | Idris, then the elves (`idris.rs2:23-24`, `:59-64`) | 2c, state (queued ambush, stand still), 4c | 12 | 6 | 3 |
+| 8 | Iorwerth, stage 3 (`lord_iorwerth.rs2:110-116`) | 4c | 8 | 4 | 1 |
+| 11 | Tracker, stage 4 (`regicide_camp_tracker.rs2:34-48`) | 6c | 12 | 6 | 2 |
+| 13 | Iorwerth, pendant (`lord_iorwerth.rs2:93-107`) | 4c | 8 | 4 | 1 |
+| 16 | Tracker with the pendant (`regicide_camp_tracker.rs2:34-61`) | 13c | 26 | 13 | 3 |
+| 17 | Tracker, stage 7 (`regicide_camp_tracker.rs2:25-30`) | 4c | 8 | 4 | 1 |
+| 23 | Iorwerth, the book (`lord_iorwerth.rs2:66-72`) | 4c | 8 | 4 | 1 |
+| 32 | Lazy guard, rabbit (`regicide_tyras_lazy_guard.rs2:30-37`) | 3c | 6 | 3 | 1 |
+| 35 | Iorwerth, the message (`lord_iorwerth.rs2:40-49`) | 6c | 12 | 6 | 2 |
+| 37 | Arianwyn (`quest_regicide.rs2:792-824`) | 15 single-page queued scripts plus the scroll; each page is its own `queue(arianwyn_dialogue)` run, so a blind continue has no paused script to resume and **cannot burst** | 30 | 15 | 15 |
+| 39 | Lathas, reward (`king_lathas.rs2:8-20`) | 5c | 10 | 5 | 1 |
+| | **Total, 78 pages** | | **156** | **78** | **34** |
+
+| Column | Regicide itself | + two Underground Pass traversals | Total |
+|---|---|---|---|
+| Stock | 1,831 | ~1,316 | **~3,150** |
+| Fixed client | ~1,753 | ~1,310 | **~3,060** |
+| Burst | ~1,709 | ~1,306 | **~3,015** |
+
+(inferred: measured stock totals minus the column differences; the traversals each carry
+Koftik's 3-page cloth dialogue, `underground_pass.md`.)
+
 ## Risks and gotchas
 
-- **The still is logout-unsafe** (temporary varps); everything else persists
-  (`%regicide_quest` and `%regicide_bits` are `scope=perm`, `quest_regicide.varp`).
+- **Logout-unsafe stretches** (everything else persists: `%regicide_quest` and
+  `%regicide_bits` are `scope=perm`, `quest_regicide.varp`):
+  1. **The still (row 27), from the tar-on-still click to the naphtha**, about 33 ticks:
+     `%regicide_still_total` and `%regicide_still_settings` are temporary
+     (`primitives.md` §8). A logout mid-still loses the progress and the tar (the barrel is
+     already empty), which forces a third Underground Pass traversal for more tar. Carry
+     the spare barrel of tar.
+  2. **The messenger wait (row 0), from the login after the Underground Pass hand-in to
+     the messenger's arrival**, 400-1,200 ticks: the `spawn_kings_messenger` timer is set
+     only by `login.rs2:74`, and timers are not saved (`primitives.md` §8), so a logout
+     in that window restarts the draw. Plan it as one session of other content.
+  3. **A potion-boosted Agility 56** (base 53-55 only) during the cross-over legs
+     (rows 19-22, 31, 34): boosts reset at login (`stat_boost_login`, `login.rs2:72`), so
+     a relog there needs a fresh dose (one potion click, no quest progress lost).
+  4. **Idris (row 6)**: his ambush is a queued script; a logout before the elves'
+     pages finish leaves the stage at 2 and he only re-spawns on the next mapzone entry.
+     Short (about 18 ticks), but not a clean logout point.
 - **Idris: stand still.** After his two pages the ambush is a queued script that bails
   out if the player is more than one tile from Idris (`idris.rs2:32-35`). In both
   `traverse e1-first` runs, where the bot kept walking, the stage stayed at 2. Stage 2
@@ -331,6 +386,69 @@ client fix (1 tick per page) the dialogue drops by about 78 ticks.
   never starts Regicide until the next login.
 - Agility boosts reset at login and drain 1 per 100 ticks, so a potion-boosted 56
   must be topped up during the cross-over legs.
+
+## The Regicide chain: total and verdict
+
+The chain is Plague City → Biohazard → Underground Pass → Regicide, each the gate of the
+next (`plague_city.md`, `biohazard.md`, `underground_pass.md`). Totals at 70/70/70 melee
+and the levels each document assumes (Agility 99/Thieving 50/Ranged 60 inside the pass,
+Agility 56 in Tirannwn); every figure is the sum of the documents' labelled totals.
+
+| Quest | Stock | Fixed client | Burst | Main reward (base xp, read) | Quest points |
+|---|---|---|---|---|---|
+| Plague City (from a Camelot teleport) | 737 | 620 | ~564 | 2,425 Mining; Ardougne teleport | 1 |
+| Biohazard | 1,564 | 1,402 | ~1,323 | 1,250 Thieving | 3 |
+| Underground Pass | 2,610 | 2,553 | 2,521 | 3,000 Agility, 3,000 Attack | 5 |
+| Regicide itself | 1,831 | 1,753 | 1,709 | 13,750 Agility, 15,000 coins | 3 |
+| Two forced Underground Pass traversals | 1,316 | 1,310 | 1,306 | | |
+| **Chain** | **~8,060** | **~7,640** | **~7,420** | | **12** |
+| of which Plague City + Biohazard + Underground Pass (shared with Legends' Quest) | 4,911 | 4,575 | ~4,408 | | 9 |
+| of which Regicide's own share (itself + both traversals) | 3,147 | 3,063 | 3,015 | | 3 |
+
+At Agility below 70 inside the pass add the expected failures in `underground_pass.md`
+(about +60 at 60, +240 at 40; the two traversals add about +30 each at 60). Not included:
+the 400-1,200-tick messenger wait (free if overlapped with other content) and the walk
+from the previous quest to Camelot.
+
+**What the rewards replace** (inferred; rates from the skill-route documents on the rs/2
+branch, `docs/speedrun/skills/`):
+
+| Reward | Replaces | Basis |
+|---|---|---|
+| Regicide 13,750 Agility | **~2,000 ticks** of Wilderness laps | `agility.md` §3: the laps run at about 7.0 base per tick at the levels Regicide displaces; 1,994 ticks on top of every other Agility quest, more from a lower start |
+| Underground Pass 3,000 Agility | ~430 ticks | `agility.md` §3 |
+| Underground Pass 3,000 Attack | ~400-750 ticks (not a self-only skill; at 4-8 base per tick of melee) | inferred, combat xp is 4 base per damage point; no measured melee rate yet |
+| Plague City 2,425 Mining | ~270 ticks | `mining.md`: Doric only 4,034 → Doric + Plague City 3,765 ticks to 99 |
+| Biohazard 1,250 Thieving | ~110 ticks | `thieving.md`: 11-12 base per tick after Fight Arena |
+| **Skill total** | **~3,200-3,550 ticks** | |
+
+**Verdict.**
+
+1. **The chain does not pay for its xp.** It costs about 7,400-8,100 ticks and its
+   skill rewards replace about 3,200-3,550. The 12 quest points and the Ardougne teleport
+   would have to be worth about 4,000 ticks more for the chain to break even.
+2. **Regicide does not pay even when Underground Pass is done anyway** (for Legends'
+   Quest). Its own share is about 3,015-3,150 ticks, against about 2,000 ticks of
+   Agility it replaces, a loss of about 1,000-1,150 ticks. Most of its cost is the two
+   forced trips back through the pass (about 1,310 ticks), which the scripts make
+   unavoidable: the Arandar gate stays shut from outside until stage 13, the only still
+   is in Rimmington, and the catapult fires only at stage 11 (`regicide_arandar_gate_guard.rs2:5`,
+   `regicide_fractionalizing_still.rs2`, `quest_regicide.rs2:505`). Regicide earns its
+   place only if its 3 quest points are needed for a threshold that would otherwise cost
+   more than about 1,000 ticks, or if a later quest requires it.
+3. **Underground Pass (with Plague City and Biohazard) is worth doing only as Legends'
+   Quest's prerequisite.** Its own Agility, Attack, Mining and Thieving rewards replace
+   about 1,200-1,550 ticks against about 4,400-4,900 ticks of play. The decision
+   therefore belongs to Legends' Quest: if Legends is on the route, these three are part
+   of its cost (about 4,400-4,900 ticks); if not, drop all four.
+4. If Regicide is dropped, the route's quest Agility falls by 13,750 base, which adds
+   about 2,000 ticks of Wilderness laps (`agility.md` §3). That is already counted in
+   the comparison above.
+
+For the Agility route (cairn://p/rs/2): Regicide's checks are all boosted `stat()`
+(Agility 45 for log balances, 56 for every cross-over, Crafting 10 at the loom), the only
+Agility boost in this content is the agility potion (+3), and Underground Pass should
+come after Grand Tree, not before (`underground_pass.md`, very low Agility).
 
 ## Coordinator findings checked
 
