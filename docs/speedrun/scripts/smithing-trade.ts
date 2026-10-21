@@ -6,6 +6,7 @@
 //       --level 99 --cycles 4]          fixed product, one inventory per trade
 //   bun docs/speedrun/scripts/smithing-trade.ts <scored> --helper <bot> --from 1 --until 99
 //                                       route: the per-item plan of smithing-model.ts
+//   common: [--dispose trade|drop] [--dialog ignore|click] [--minutes 40]
 //
 // Run it through smithing-lab.sh with HELPER=<bot>. It spawns itself as the helper
 // (`--role helper`); the two processes share a plan file under $TMPDIR naming the next
@@ -41,6 +42,12 @@ const OVERHEAD = Number(arg('overhead', '7')); // plan only: per-inventory turna
 const SWITCH = Number(arg('switch', '2')); // plan only: cost of changing item in an inventory
 const PLAN_FILE = arg('planfile', `${process.env.TMPDIR ?? '/tmp'}/smithing-trade-plan.json`);
 const STALL = Number(arg('stall', '100'));
+// trade: hand finished items back inside the trade. drop: drop up to 3 with the trade click and
+// the rest with the next use-bar (5-bar items only: 25 free slots are needed for the bars).
+const DISPOSE = arg('dispose', 'trade');
+// click: dismiss level-up dialogs and wait for them to close before clicking the anvil.
+// ignore: never touch them (the next use-bar-on-anvil interaction replaces the chat modal).
+const DIALOG = arg('dialog', 'ignore');
 
 const ANVIL: [number, number] = [3188, 3426]; // Varrock west anvil (loc 2783)
 const ANVIL_ID = 2783;
@@ -182,13 +189,15 @@ if (ROLE === 'helper') {
             if ((plan as any).stop) break;
             const t = s.trade;
             if (t?.isOpen) {
-                if (!inTrade) { inTrade = true; tradingSeq = plan.seq; offeredTick = -1; }
+                if (!inTrade) { inTrade = true; tradingSeq = plan.seq; offeredTick = -99; }
                 if (t.screen === 'offer') {
                     // Offer and accept in one tick. An offer resets both accepts (trade.rs2
                     // movetotrade), so if the scored account's offer lands after ours we re-accept
                     // on the next tick that shows it accepted.
-                    if (offeredTick < 0) {
+                    const want = Object.values(plan.bars).reduce((a, b) => a + b, 0);
+                    if (t.myOffer.reduce((a, i) => a + i.count, 0) < want && s.tick > offeredTick + 1) {
                         for (const bar of Object.keys(plan.bars)) {
+                            if (count(t.myOffer, barRe(bar)) >= plan.bars[bar]!) continue;
                             const it = s.inventory.find(i => barRe(bar).test(i.name));
                             if (it) sdk.sendOfferItem(it.slot, -1).catch(() => {});
                         }
@@ -244,7 +253,7 @@ await runScript(async ({ bot, sdk }) => {
     await clearInventory(sdk, /^hammer$/i);
     if (!(sdk.getState() as BotWorldState).inventory.some(i => /^hammer$/i.test(i.name))) await sdk.sendSay('::give hammer 1');
     s = await waitTicks(sdk, 3);
-    console.log(`plan: ${PLAN.length} inventories from level ${smith(s).baseLevel}; first: ${PLAN[0]!.segs.map(g => `${g.count}x ${g.row.name}`).join(', ')}`);
+    console.log(`dispose=${DISPOSE} dialog=${DIALOG}; plan: ${PLAN.length} inventories from level ${smith(s).baseLevel}; first: ${PLAN[0]!.segs.map(g => `${g.count}x ${g.row.name}`).join(', ')}`);
     if (route) for (const [i, inv] of PLAN.entries()) if (inv.segs.length > 1 || i < 3) console.log(`  inv ${i}: ${inv.segs.map(g => `${g.count}x ${g.row.name}`).join(', ')}`);
 
     const me = s.player!.name;
@@ -274,7 +283,7 @@ await runScript(async ({ bot, sdk }) => {
     while (!done()) {
         s = await nextTick(sdk, s.tick);
         const log = logs[inv]!;
-        if (s.dialog.isOpen) { sdk.sendClickDialog(0).catch(() => {}); dialogTicks++; }
+        if (s.dialog.isOpen) { dialogTicks++; if (DIALOG === 'click') sdk.sendClickDialog(0).catch(() => {}); }
         const sk = smith(s);
         if (!levelTicks[sk.baseLevel]) levelTicks[sk.baseLevel] = s.tick;
         if (route && sk.baseLevel >= UNTIL) { reached = s.tick; log.xps.push(s.tick); break; }
@@ -310,6 +319,7 @@ await runScript(async ({ bot, sdk }) => {
             else {
                 const h = s.nearbyPlayers.find(p => p.name.toLowerCase() === HELPER.toLowerCase());
                 if (h) {
+                    if (DISPOSE === 'drop') for (const p of s.inventory.filter(i => !/^hammer$/i.test(i.name)).slice(0, 3)) sdk.sendDropItem(p.slot).catch(() => {});
                     sdk.sendTradeRequest(h.index).catch(() => {});
                     if (L.request < 0) L.request = s.tick;
                     if (firstRequest < 0) firstRequest = s.tick;
@@ -322,7 +332,7 @@ await runScript(async ({ bot, sdk }) => {
             if (t?.isOpen && t.screen === 'offer') {
                 // Offer-all once per finished item id (the trade-side inventory keeps main-inventory slots).
                 // Offer-all once per finished item id, then accept in the same tick (see the helper).
-                const products = s.inventory.filter(i => !/^hammer$/i.test(i.name) && !offered.has(i.id));
+                const products = DISPOSE === 'drop' ? [] : s.inventory.filter(i => !/^hammer$/i.test(i.name) && !offered.has(i.id));
                 for (const p of products.slice(0, 4)) { sdk.sendOfferItem(p.slot, -1).catch(() => {}); offered.add(p.id); }
                 const theirs = t.theirOffer.reduce((a, i) => a + i.count, 0);
                 if (products.length && products.length <= 4) sdk.sendAcceptTrade().catch(() => {});
@@ -335,13 +345,13 @@ await runScript(async ({ bot, sdk }) => {
                     progress = s.tick;
                     phase = 'anvil';
                     freeFrom = s.tick;
-                    writePlan(inv + 1, PLAN[inv]!.segs.reduce((a, g) => a + g.count, 0));
+                    writePlan(inv + 1, DISPOSE === 'drop' ? 0 : PLAN[inv]!.segs.reduce((a, g) => a + g.count, 0));
                 } else if (s.tick - L.tradeOpen > 10) { phase = 'free'; offered.clear(); }
             }
         }
         // A click that produced no xp (lost behind a level-up dialog) is retried.
         if (phase === 'smith' && s.tick - lastClick > 6 && s.tick - progress > 6) { phase = 'anvil'; retries++; }
-        if (phase === 'anvil' && s.tick >= freeFrom && !s.dialog.isOpen) {
+        if (phase === 'anvil' && s.tick >= freeFrom && !(DIALOG === 'click' && s.dialog.isOpen)) {
             const g = PLAN[inv]!.segs[seg]!;
             if (s.interface?.isOpen && s.interface.interfaceId === SMITHING_IF) {
                 const make = left >= 10 ? 10 : left >= 5 ? 5 : 1;
@@ -353,7 +363,13 @@ await runScript(async ({ bot, sdk }) => {
             } else {
                 const bar = s.inventory.find(i => barRe(g.row.bar).test(i.name));
                 const a = s.nearbyLocs.find(l => l.id === ANVIL_ID && l.x === ANVIL[0] && l.z === ANVIL[1]);
-                if (bar && a) sdk.sendUseItemOnLoc(bar.slot, a.x, a.z, a.id).catch(() => {});
+                if (bar && a) {
+                    sdk.sendUseItemOnLoc(bar.slot, a.x, a.z, a.id).catch(() => {});
+                    if (DISPOSE === 'drop') {
+                        const isBar = (n: string) => Object.keys(PLAN[inv]!.bars).some(b => barRe(b).test(n));
+                        for (const p of s.inventory.filter(i => !/^hammer$/i.test(i.name) && !isBar(i.name)).slice(0, 3)) sdk.sendDropItem(p.slot).catch(() => {});
+                    }
+                }
             }
         }
     }
