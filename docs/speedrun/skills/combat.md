@@ -74,6 +74,10 @@ So under Package B **no melee block remains at all**. The only melee is the 168 
 without the kit) of defensive style that ride alongside the cannon at the Wilderness spiders, and the Defence gap
 it closes is small enough that the cannon's Ranged, not Defence, sets the finish.
 
+The 8-column summary rows for rs/2's README live in each skill's own document (section 1 of
+attack.md, strength.md, defence.md, hitpoints.md and ranged.md). The finish is counted once,
+in Ranged's row; the Defence and Hitpoints rows point to it.
+
 **Alternatives, not on the route** (kept for comparison; inferred, `combat-model.ts`). Package
 A (Waterfall on, Dragon Slayer off), and no Monkey Madness at all:
 
