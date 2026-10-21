@@ -19,14 +19,50 @@ function getUrlParams(): URLSearchParams | null {
     return new URLSearchParams(window.location.search);
 }
 
+/** Credentials redeemed from a ?token= login; held in memory, never written to the URL. */
+let tokenCredentials: { username: string; password: string } | null = null;
+
 export function getBotUsername(): string {
+    if (tokenCredentials) return tokenCredentials.username;
     const params = getUrlParams();
     return params?.get('bot') || 'default';
 }
 
 export function getBotPassword(): string | null {
+    if (tokenCredentials) return tokenCredentials.password;
     const params = getUrlParams();
     return params?.get('password') || null;
+}
+
+export type LoginTokenWindow = Pick<Window, 'location' | 'history'> & { fetch: (input: string, init: RequestInit) => Promise<Response> };
+
+/**
+ * Exchange a one-time ?token= (minted by server/webclient/proxy.ts, see
+ * login-token.ts) for this account's credentials. The token leaves the address
+ * bar before the request goes out, so neither it nor the password is left in
+ * the URL, the tab list or the history; a manual reload therefore does not log
+ * in again. Resolves true once getBotPassword() has the password.
+ */
+export async function redeemLoginToken(win: LoginTokenWindow = window): Promise<boolean> {
+    const url = new URL(win.location.href);
+    const token = url.searchParams.get('token');
+    if (!token) return false;
+    url.searchParams.delete('token');
+    win.history.replaceState(win.history.state, '', url.toString());
+    const res = await win.fetch(new URL('/bot/login', url).toString(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, bot: url.searchParams.get('bot') ?? '' }),
+        cache: 'no-store'
+    });
+    if (!res.ok) {
+        console.error(`[GatewayConnection] login token refused: HTTP ${res.status} ${await res.text()}`);
+        return false;
+    }
+    const body = (await res.json()) as { bot?: unknown; password?: unknown };
+    if (typeof body.bot !== 'string' || typeof body.password !== 'string') return false;
+    tokenCredentials = { username: body.bot, password: body.password };
+    return true;
 }
 
 export class GatewayConnection {

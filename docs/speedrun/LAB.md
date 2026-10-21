@@ -131,7 +131,8 @@ with `scripts/runclient-check.ts` on both clients against one local engine (the
 
 **Against the demo.** `server/webclient/proxy.ts` serves this build's bot bundle in front
 of a remote world, and the page takes `?server=` (game socket) and `?gateway=` (overlay
-gateway) parameters (`src/util/Endpoints.ts`). From bgsrv-mac, a throwaway account logged
+gateway) parameters (`src/util/Endpoints.ts`). The page logs in with a one-time token,
+not a `?password=` (speedrun/README.md, "Logging the browser tab in"). From bgsrv-mac, a throwaway account logged
 into rs-sdk-demo.fly.dev from this build, and the probe run through a loopback gateway and
 the page's overlay read 13 at 1 tick, 46 at 2 and 1 at 3 (load 2.3). That is the relay cost
 described under "Direct path and relay" below, not a client defect. Reactive loops against

@@ -53,33 +53,102 @@ export function parseBotEnv(text: string): BotEnv {
     return env as BotEnv;
 }
 
-export function loadBotEnv(name: string): BotEnv {
-    const path = join(ROOT, 'bots', name, 'bot.env');
+export function loadBotEnv(name: string, botsDir: string = join(ROOT, 'bots')): BotEnv {
+    const path = join(botsDir, name, 'bot.env');
     if (!existsSync(path)) throw new Error(`no bot.env at ${path} (bun bots/create-bot.ts ${name})`);
     return parseBotEnv(readFileSync(path, 'utf-8'));
 }
 
 /**
- * The browser client URL for a bot (the same shape BotSDK opens). CLIENT_URL in
- * the bot.env overrides the page, for the run client served by
- * server/webclient/proxy.ts with ?server= and ?gateway= already on it.
+ * How the browser page gets the password. `token`: a one-time token from the
+ * page server (server/webclient/proxy.ts, login-token.ts), so the password is
+ * never in a URL. `insecureQueryLogin`: the password in the query, as the
+ * engine's own bot page takes it; only for a world on loopback (the local lab).
  */
-export function browserUrl(env: BotEnv): string {
-    const server = env.SERVER ?? 'localhost';
-    const q = `bot=${encodeURIComponent(env.BOT_USERNAME)}&password=${encodeURIComponent(env.PASSWORD)}`;
-    if (env.CLIENT_URL) return `${env.CLIENT_URL}${env.CLIENT_URL.includes('?') ? '&' : '?'}${q}`;
-    if (server.startsWith('localhost') || server.startsWith('127.')) {
-        const host = server.includes(':') ? server : `${server}:8888`;
-        return `http://${host}/bot?${q}`;
+export type BrowserLogin = { token: string } | { insecureQueryLogin: true };
+
+const isLoopbackHost = (host: string) => host.startsWith('localhost') || host.startsWith('127.');
+
+/** The world the page logs in to: CLIENT_URL's ?server= when it names one, else SERVER. */
+export function pageWorld(env: BotEnv): string {
+    if (env.CLIENT_URL) {
+        const server = new URL(env.CLIENT_URL).searchParams.get('server');
+        if (server) return server;
     }
-    const origin = /^wss?:\/\//.test(server) ? server.replace(/^ws/, 'http').replace(/\/gateway$/, '') : `https://${server}`;
-    return `${origin}/bot?${q}`;
+    return env.SERVER ?? 'localhost';
+}
+
+function withQuery(base: string, q: string): string {
+    return `${base}${base.includes('?') ? '&' : '?'}${q}`;
+}
+
+/**
+ * The browser client URL for a bot. CLIENT_URL in the bot.env is the page, the
+ * run client served by proxy.ts with ?server= and ?gateway= already on it; a
+ * token login needs it, because the token is only good at the server that
+ * minted it. The bot name stays in the URL: tab.ts finds the tab by it.
+ */
+export function browserUrl(env: BotEnv, login: BrowserLogin): string {
+    const bot = `bot=${encodeURIComponent(env.BOT_USERNAME)}`;
+    if ('token' in login) {
+        if (!env.CLIENT_URL) throw new Error(`${env.BOT_USERNAME}: a token login needs CLIENT_URL (the proxy.ts page) in bot.env`);
+        return withQuery(env.CLIENT_URL, `${bot}&token=${encodeURIComponent(login.token)}`);
+    }
+    const world = pageWorld(env);
+    if (!isLoopbackHost(world)) {
+        throw new Error(`${env.BOT_USERNAME}: --insecure-query-login puts the password in the URL; it is for the local lab only, not ${world}`);
+    }
+    const q = `${bot}&password=${encodeURIComponent(env.PASSWORD)}`;
+    if (env.CLIENT_URL) return withQuery(env.CLIENT_URL, q);
+    const host = world.includes(':') ? world : `${world}:8888`;
+    return `http://${host}/bot?${q}`;
+}
+
+/** Ask the page server behind CLIENT_URL for a one-time login token (POST /bot/login-token). */
+export async function mintLoginToken(env: BotEnv, fetchFn: (url: string, init: RequestInit) => Promise<Response> = fetch): Promise<string> {
+    if (!env.CLIENT_URL) throw new Error(`${env.BOT_USERNAME}: a token login needs CLIENT_URL (the proxy.ts page) in bot.env`);
+    const { loginTokenProof } = await import('../../server/webclient/login-token');
+    const endpoint = new URL('/bot/login-token', env.CLIENT_URL).toString();
+    const res = await fetchFn(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bot: env.BOT_USERNAME, proof: loginTokenProof(env.BOT_USERNAME, env.PASSWORD) }),
+    });
+    if (!res.ok) throw new Error(`${env.BOT_USERNAME}: no login token from ${endpoint}: HTTP ${res.status} ${await res.text()}`);
+    const { token } = (await res.json()) as { token?: unknown };
+    if (typeof token !== 'string' || !token) throw new Error(`${env.BOT_USERNAME}: ${endpoint} answered without a token`);
+    return token;
+}
+
+/**
+ * The browser launch: re-navigate (or open) the bot's tab over CDP to a fresh
+ * token URL. The token form needs CDP because any other way of opening a URL
+ * passes it on a command line. The query form opens the URL however it can,
+ * and only for the local lab.
+ */
+export async function openBrowserClient(env: BotEnv, opts: { cdp?: string; insecureQueryLogin?: boolean }): Promise<string> {
+    const { reloadOrOpenTab } = await import('./tab');
+    if (opts.insecureQueryLogin) {
+        const url = browserUrl(env, { insecureQueryLogin: true });
+        if (opts.cdp) return reloadOrOpenTab(opts.cdp, url, env.BOT_USERNAME);
+        await (await import('open')).default(url);
+        return 'opened';
+    }
+    if (!opts.cdp) {
+        throw new Error(
+            `${env.BOT_USERNAME}: the browser client logs in with a one-time token sent over CDP; set CDP_URL (or SPEEDRUN_CDP_URL), ` +
+                'or pass --insecure-query-login for the local lab'
+        );
+    }
+    return reloadOrOpenTab(opts.cdp, browserUrl(env, { token: await mintLoginToken(env) }), env.BOT_USERNAME);
 }
 
 export interface Session {
     readonly name: string;
     readonly client: ClientKind;
     readonly env: BotEnv;
+    /** Browser launches put the password in the URL (local lab only; see browserUrl). */
+    readonly insecureQueryLogin: boolean;
     readonly sdk: BotSDK;
     readonly bot: BotActions;
     /** Bumps on every client launch; the client's tick counter restarts with it. */
@@ -106,6 +175,12 @@ export interface OpenOptions {
     /** Warm the pathfinder before connecting (needed by bot.walkTo / bot.openBank). Default true. */
     pathfinding?: boolean;
     readyTimeoutMs?: number;
+    /**
+     * Browser client: log in with the password in the page URL instead of a
+     * one-time token. Local lab only (browserUrl refuses any other world).
+     * Defaults to whether the process was started with --insecure-query-login.
+     */
+    insecureQueryLogin?: boolean;
 }
 
 /**
@@ -133,6 +208,7 @@ export async function openSession(botName: string, opts: OpenOptions = {}): Prom
         name: env.BOT_USERNAME,
         client: opts.client ?? 'lite',
         env,
+        insecureQueryLogin: opts.insecureQueryLogin ?? process.argv.includes('--insecure-query-login'),
         sdk,
         bot: new BotActions(sdk),
         sessionId: 0,
@@ -224,15 +300,10 @@ export async function launchClient(session: Session): Promise<void> {
         });
         return;
     }
-    // With CDP the one tab is re-navigated (lib/tab.ts); without it each launch opens a tab.
+    // With CDP the one tab is re-navigated (lib/tab.ts) to a fresh token URL.
     const cdp = session.env.CDP_URL ?? process.env.SPEEDRUN_CDP_URL;
-    if (cdp) {
-        const how = await (await import('./tab')).reloadOrOpenTab(cdp, browserUrl(session.env), session.name);
-        appendFileSync(session.logPath, `[speedrun] session ${session.sessionId}: tab ${how} at ${new Date().toISOString()}\n`);
-        return;
-    }
-    const open = (await import('open')).default;
-    await open(browserUrl(session.env));
+    const how = await openBrowserClient(session.env, { cdp, insecureQueryLogin: session.insecureQueryLogin });
+    appendFileSync(session.logPath, `[speedrun] session ${session.sessionId}: tab ${how} at ${new Date().toISOString()}\n`);
 }
 
 /** Stop a lite child that is still running (recovery only; never a way to log out). */

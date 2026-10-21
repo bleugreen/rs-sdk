@@ -686,6 +686,12 @@ export class Client extends GameShell {
         super();
         this.searchParams = new URLSearchParams(window.location.search);
 
+        // rs-sdk: a ?token= page (proxy.ts) gets its credentials before the title
+        // screen's auto-login below looks for them.
+        if (ENABLE_BOT_SDK) {
+            BotSDKModule.redeemLoginToken().catch(e => console.error('[Client] login token exchange failed:', e));
+        }
+
         // rs-sdk: capture the server-configured chat cap before the undefined-guard
         // below (the guard only concerns the core three params).
         if (typeof maxMessageLength === 'number' && maxMessageLength > 0) {

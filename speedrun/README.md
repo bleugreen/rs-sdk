@@ -45,7 +45,9 @@ speedrun/
                          watchdog (docs/speedrun/research/competitors/hiscore-timestamps.md 5.1)
     measure-restart.ts   engine SIGKILL and client SIGKILL mid-run: what rolls back, reconnect
                          and resume times (docs/speedrun/RESILIENCE.md section 6)
-  tools/          upstream watch (nightly diff of watched upstream paths);
+  tools/          tab-login.ts (log an account's browser tab in with a one-time token over
+                  CDP; see "Logging the browser tab in");
+                  upstream watch (nightly diff of watched upstream paths);
                   drop-probe.ts (the dropped-client stay on the demo, with a throwaway);
                   hiscore-stamp-probe.ts (the live stamp test, plus uncached
                   page/classify reads through hiscore-scrape.ts's parser,
@@ -271,9 +273,54 @@ level with and without the watcher) has not been measured yet.
   the lab hit this once in 7 re-logins. So a client that exits before its
   first in-world tick is relaunched with backoff.
 - `launchClient` sets `LITE_LOGIN_JITTER_MS=0` for the lite runner (its 0-5 s
-  fleet jitter only delays a takeover), uses `CLIENT_URL` from the bot.env as
-  the browser page (proxy.ts with `?server=`/`?gateway=`), and with `CDP_URL`
-  re-navigates the one scored tab instead of opening another (`tab.ts`).
+  fleet jitter only delays a takeover). For the browser it uses `CLIENT_URL`
+  from the bot.env as the page (proxy.ts with `?server=`/`?gateway=`) and
+  re-navigates the one scored tab over CDP (`CDP_URL`, `tab.ts`) to a one-time
+  login token URL; see "Logging the browser tab in" below.
+
+### Logging the browser tab in
+
+The account's password never appears in a URL or a process argument. A
+password on Chrome's command line (`--app=...&password=...`) is readable by
+every user and process on the host through `ps`, and stays in shell history,
+in tmux's command line, and in Chrome's history and session files. The design
+has three parts (`server/webclient/login-token.ts` holds the full description):
+
+1. `server/webclient/proxy.ts` reads the account's `bot.env` from
+   `--bots-dir` (default `bots/`) at `<bots-dir>/<account>/bot.env`, and
+   refuses one that other users can read (it must be mode 600;
+   `bots/create-bot.ts` now creates it that way). `POST /bot/login-token`
+   mints a random token for the account. The token is single use, valid for
+   60 s, and minted only for a loopback caller that sends
+   `HMAC-SHA256(PASSWORD, account)`, so a local user without the file
+   cannot mint one.
+2. The launcher (`openBrowserClient` in session.ts, or
+   `speedrun/tools/tab-login.ts` on the command line) navigates the tab to
+   `CLIENT_URL&bot=<account>&token=<token>` over the Chrome DevTools protocol.
+   That is a websocket message to Chrome, not a command line. The token form
+   therefore requires CDP: without `CDP_URL` the launch fails rather than
+   pass the URL to `open`.
+3. The page (`GatewayConnection.ts` `redeemLoginToken`) removes the token from
+   its address bar, then redeems it at `POST /bot/login` (loopback only), and
+   keeps the credentials in memory for the title screen's auto-login. A manual
+   reload therefore does not log in again; relaunch instead. proxy.ts never
+   forwards `?token=`, `?password=` or the `Referer` to the world.
+
+`proxy.ts` refuses a page request that carries `?password=` unless it was
+started with `--insecure-query-login`, which it accepts only for a loopback
+world (the local lab). On the session side, the same flag on any script's
+command line (or `openSession(..., {insecureQueryLogin: true})`) keeps the old
+query-string login, and `browserUrl` throws for any world that is not on
+loopback.
+
+Measured on the local engine (bgsrv-ub, headless Chrome 148 with
+`--remote-debugging-port`, proxy.ts in front of the lab world, a throwaway
+account): `tab-login.ts` logged the tab in after 6.5 s, and a second run took
+the in-game session over after 6.0 s. `ps -efww`, sampled every 100 ms (167
+samples), never showed the password or a `token=` in any process, and
+afterwards the tab's URL held neither. Residual exposure: the CDP port itself
+lets any local user drive Chrome and read the page's memory, so the run host
+should stay single-user.
 - `startWatchdog` acts while the account should be in the world. A client
   whose tick stopped advancing for 17 ticks (~5 s; the demo has gone ~2 s
   without a frame and recovered), or whose gateway status is dead or
