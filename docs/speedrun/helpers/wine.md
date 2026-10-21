@@ -67,7 +67,14 @@ of 1 plus 14 singles), so the first level is reliable. At that level the
 receiver can make one wine itself, which re-arms the timer for the rest in the
 same login.
 
-Monte Carlo (40,000 trials per plan, `bun speedrun/helpers/wine-ferment.ts`):
+Monte Carlo (40,000 trials per plan, `bun speedrun/helpers/wine-ferment.ts`). It
+implements the batch rule above exactly (`fermentBank`: fifteen all-or-nothing
+rolls of floor(N/15) at the current level, then N % 15 single rolls), not
+independent per-wine rolls; that is why one firing over 450 reaches only 46%.
+Each delivery after the first is counted as fermenting in its own firing: in
+the P(first < 35) cases that firing is the next login (the two-login variant
+below), not the same one.
+
 
 | Plan (wines per firing) | P(99) | 5th percentile level | P(first firing leaves Cooking < 35) |
 |---|---|---|---|
