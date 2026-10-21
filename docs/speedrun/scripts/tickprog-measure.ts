@@ -18,6 +18,9 @@
 //                (knife modes: --successes counts xp drops, one log or fish each; the result's
 //                ticksPerExpectedRoll is the figure to set against the cadence; on the trees it
 //                needs an axe worn or carried, and the result names the one it used)
+//                fly, willow and tree take --gated: run through speedrun/lib/gated-program.ts
+//                (--technique=auto by default, --trials=20 for the gate's in-page probe,
+//                --hold=0.15 holds that share of starters one tick, --plain-per-roll=N)
 //   pickpocket   Ardougne knight, eat in windows  --level=55 --rolls=300 [--hold=1]
 //   agility      Wilderness course                --laps=10 [--course=gnome]
 //
@@ -26,6 +29,10 @@
 // the host, its load and the time. The tab must already be open (tickprog-tab.ts).
 import { hostname, loadavg } from 'os';
 import { runScript } from '../../../sdk/runner';
+import type { BotWorldState } from '../../../sdk/types';
+import { catchChance, CYCLE_METHODS } from '../../../server/webclient/src/bot/programs/knife-cycle';
+import { statRandom } from '../../../server/webclient/src/bot/programs/util';
+import { type GatedTechnique, inPageGate, runGatedProgram } from '../../../speedrun/lib/gated-program';
 import { latencyHistogram } from '../../../speedrun/lib/hostgate';
 import { awaitProgram, probeInPage, ProgramError, programStatus, runProgram, startProgram } from '../../../speedrun/lib/programs';
 
@@ -94,6 +101,42 @@ await runScript(async ({ bot: actions, sdk }) => {
         throw e;
     }
 
+    // knife-cycle under the in-page host gate: segments, the gate's decisions, the probe's cost
+    async function gated(method: string, skill: string, params: Record<string, unknown>) {
+        // success chance per roll at the player's level (willow: the rune axe's stat_random bounds, trees.dbrow)
+        const level = (s: BotWorldState | null) => s?.skills.find(k => k.name.toLowerCase() === skill)?.baseLevel ?? 99;
+        const p = (s: BotWorldState | null) => (method === 'willow' ? statRandom(level(s), 56, 175) : catchChance(CYCLE_METHODS[method]!, level(s)) ?? 1);
+        const hold = Number(flag('hold', '0'));
+        if (hold) params.hold = hold;
+        delete params.technique;
+        const say = (l: string) => console.log(`  ${l}`);
+        const gate = inPageGate(sdk, { plainTicksPerRoll: num('plain-per-roll', CYCLE_METHODS[method]!.plainCycle), trials: num('trials', 20), log: say });
+        const t0 = sdk.getState()!.tick;
+        const run = await runGatedProgram(sdk, 'knife-cycle', params, { gate, technique: flag('technique', 'auto') as GatedTechnique, rollsPerDrop: s => 1 / p(s), onProgress: progress, log: say });
+        const end = sdk.getState()!.tick;
+        console.log(`knife-cycle ${method} gated (hold ${hold}): ${where()}`);
+        let prevEnd = t0;
+        let successes = 0;
+        for (const seg of run.segments) {
+            const st = seg.status;
+            const r = (st.result ?? {}) as Record<string, unknown>;
+            const n = st.counters.successes ?? 0;
+            successes += n;
+            const span = (st.endedTick ?? st.tick) - st.startedTick;
+            console.log(
+                `segment ${seg.technique} ${st.startedTick}-${st.endedTick} (${seg.reason}): ${n} successes in ${span} ticks, ${(span / n).toFixed(2)} per success, gap mean ${r.ticksPerSuccess}, ` +
+                    `${(span / n * p(sdk.getState())).toFixed(2)} per expected roll; starters ${st.counters.starters ?? 0}, held ${st.counters.held ?? 0}, phaseResyncs ${st.counters.phaseResyncs ?? 0}, slips ${st.counters.slips ?? 0}, resyncs ${st.counters.resyncs ?? 0}; ` +
+                    `${st.startedTick - prevEnd} ticks since the previous segment or start (probe and restart); histogram ${JSON.stringify(r.histogram)}`
+            );
+            prevEnd = st.endedTick ?? st.tick;
+        }
+        for (const h of gate.history) {
+            const v = h.verdict as { status?: string } | undefined;
+            console.log(`gate T${h.tick} ${h.why}: ${h.on ? 'knife' : 'plain'}${h.switched ? ' (switch)' : ''}${h.result ? `, probe ${h.result.ticks} ticks, latency ${latencyHistogram(h.result.latencies)} of ${h.result.trials}, ${v?.status}` : ''}${h.measured ? `, measured knife ${h.measured.knife.toFixed(2)} vs plain ${h.measured.plain}` : ''}`);
+        }
+        console.log(`total: ${successes} successes in ${end - t0} ticks from the call (probes included), ${((end - t0) / successes).toFixed(2)} per success; ended ${run.ended}`);
+    }
+
     async function measure() {
     switch (mode) {
         case 'probe': {
@@ -157,6 +200,7 @@ await runScript(async ({ bot: actions, sdk }) => {
             else params.successes = num('successes', 150);
             params.maxTicks = num('maxticks', 30_000);
             if (flag('reanchor')) params.reanchor = flag('reanchor');
+            if (has('gated')) return gated(method, skill, params);
             const end = await runProgram(sdk, 'knife-cycle', params, { onProgress: progress });
             return report(`knife-cycle ${method}`, end);
         }

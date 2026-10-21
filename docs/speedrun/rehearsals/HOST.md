@@ -1,0 +1,304 @@
+# Rehearsal host: rs-ashburn-rehearsal
+
+rs/147's fastest-99 rehearsals (cairn://p/rs/tenets/13) run from a twin of the scored run's host,
+never from the run host itself. This page covers only what is particular to the twin: how to reach
+it, how it differs from the run host, the slot convention behind the two-login cap, attempt
+worktrees, teardown, how it was built, what it costs, every gate read taken on it, and how to stop
+or remove it. **The procedure is [RUN-HOST.md](../RUN-HOST.md)**: bring-up, recording, gate,
+teardown. Run its commands here with this page's ssh line and the deltas below. Figures carry
+RUN-HOST.md's labels: **m** measured (with the time), **r** read, **i** inferred.
+
+## The host
+
+| | |
+|---|---|
+| Instance | `i-0f690e919614af7b2`, tag `Name=rs-ashburn-rehearsal`, launched 2026-10-21 12:57 PDT by rs/149 |
+| Address | **54.167.144.8**, an Elastic IP, so it survives a stop. SSH and RDP admit only the operator's address (security group `sg-0f1bb560e649e85c5`, a copy of the run host's ingress). Not on the tailnet |
+| Machine | c7i.2xlarge in us-east-1c on the run host's subnet: 8 vCPU (Xeon Platinum 8488C), 15 GB, 60 GB gp3 (3000 IOPS, 125 MB/s), no GPU (m) |
+| OS | the run host's AMI `ami-02a9cdd4e98bc3c78`, Ubuntu 24.04.5 (m) |
+| Desktop | XFCE served by xrdp, user `ubuntu`, `max_bpp=24`, sesman `KillDisconnected=false`, `DisconnectedTimeLimit=0`, `IdleTimeLimit=0`; no screensaver or locker installed; `xset` no-blank autostart; logind `IdleAction=ignore` (m, read back by the setup script). The operator's first connect made the desktop on display **:10**, 1920x1080, 24 planes (m, session started 20:17:57 UTC) |
+| Tools | Google Chrome 156.0.8078.47, held at that version (`apt-mark hold`); Bun 1.4.3 at `~/.bun/bin/bun`, not on PATH for non-login ssh commands; ffmpeg 6.1.1; tmux 3.4; sysstat 12.6.1; Xvfb (m) |
+| Checkout | `/home/ubuntu/rs-sdk`, a clone of bleugreen/rs-sdk on a main commit, built as RUN-HOST.md step 0. The page server, the gateway and Chrome always run from here. Only rs/149 moves it, or rs/147's coordinator through rs/149 |
+| Gate accounts | `cairn_twin`, the default for the skill children and the harness (`--gate-bot`); `cairn_gate`, rs/149's own reads. Both are throwaways created on this host, with env files in `~/rs-sdk/bots/<name>/bot.env`, mode 600 |
+| Keys | `~/.rs-fleet/id_ed25519_rehearsal` on `bgsrv-ub` and on the Mac (`local`). These are **two different keys with the same file name**, one generated on each machine, so no private key has moved. Both are in ubuntu's `authorized_keys` |
+| known_hosts | `~/.rs-fleet/known_hosts_rehearsal` on both machines: the three host keys cloud-init printed to the EC2 console, pinned before the first connection |
+| RDP password | `~/.rs-fleet/rehearsal-rdp-password` on the Mac, mode 600. Copy it with `pbcopy < ~/.rs-fleet/rehearsal-rdp-password`; never print it |
+
+**Reaching it.** Paste on the Mac, or run from a Cairn batch on executor `bgsrv-ub` (host batches)
+or `local`:
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.167.144.8 'uptime'
+```
+
+To use a RUN-HOST.md command here, replace `id_ed25519_ashburn` with `id_ed25519_rehearsal`,
+`known_hosts_ashburn` with `known_hosts_rehearsal`, and `54.242.152.95` with `54.167.144.8`. Never
+run RUN-HOST.md's commands unchanged: they reach the run host.
+
+## How it differs from RUN-HOST.md
+
+- **Bounds.** A fastest-99 attempt runs for about 1 to 3 hours (i, from the skill docs' totals), not
+  the run's 9 h or a run rehearsal's 30 min. In every launch that RUN-HOST.md bounds with `T=9h`
+  (page server, gateway, the account's Chrome tab, recording, live view), use `T` = the
+  attempt's bound, which is the expected wall time times 1.5 (rs/147's brief). For example, `T=3h`
+  for a 2-hour estimate. The gate account's tab stays `T=15m`, the gate CLI `15m`, the sampler
+  `10m`, `tab-login.ts` `3m`, and `tab-logout.ts` `2m`.
+- **No host reservation, no gate timer.** This host has no `~/host-reserved.json`, no
+  `~/run-commit` and no rs/83 timer. The probe-slot minutes in RUN-HOST.md (:00-:03 and so on)
+  protect measurements on the run host and don't apply here. The slot files below take the
+  reservation's place.
+- **RDP** goes to the public address 54.167.144.8:3389, not to a tailnet name. Client settings are
+  RUN-HOST.md step 2's (1920x1080 fixed, Retina off, 24-bit). One desktop per user applies here too,
+  and a stop of the instance ends it.
+- **Live view.** There is no tailnet address to bind, so step 5's live view binds `127.0.0.1:8090`:
+  in its command, replace `http://100.66.164.37:8090/live.mjpg` with
+  `http://127.0.0.1:8090/live.mjpg`. The operator opens it through an ssh tunnel,
+  `ssh -N -L 8090:127.0.0.1:8090 <this page's ssh options> ubuntu@54.167.144.8`, then
+  `http://127.0.0.1:8090/live.mjpg`. On the host, `curl` received 23 JPEG parts in 6 s from it
+  (m, 20:32 UTC).
+- **Step 0** is the setup script with the commit as its argument ("Setup", below). It moves the
+  clone and rebuilds.
+- **Accounts** are fresh rehearsal accounts that main names, plus the gate throwaways. Never a fleet,
+  helper or SCORED account. Each account's `~/rs-sdk/bots/<name>/bot.env` is mode 600 and holds
+  RUN-HOST.md step 0's keys. The tab logs in with `speedrun/tools/tab-login.ts` (rs/138, #120, on
+  main). No query-string login has ever been used on this host.
+- **Xvfb.** When no RDP session exists, an agent may check things on an Xvfb display, as the whole
+  command of a tmux session in the `run` socket:
+  `tmux -L run new-session -d -s xvfb "exec timeout --kill-after=30s 40m Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp"`.
+  Label any figure taken there **Xvfb**; attempts run on the xrdp display. Xvfb has no window
+  manager, so Chrome's `--start-maximized` leaves a 945x1060 window there (m). **`tmux kill-server`
+  does not stop Xvfb**: it sends SIGHUP, which Xvfb takes as a server reset, so it kept running until
+  stopped with `pkill -TERM -x Xvfb` (m, 20:20 UTC). The teardown below does that.
+
+A new account's env file is written on the host with a fresh random password that is never printed
+(`N` is the name main assigned):
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.167.144.8 'N=NAME; D=$HOME/rs-sdk/bots/$N; [ -e $D/bot.env ] && { echo "$D/bot.env exists, stop"; exit 1; }; umask 077; mkdir -p $D && { echo BOT_USERNAME=$N; echo PASSWORD=$(openssl rand -hex 8); echo SERVER=rs-sdk-demo.fly.dev; echo GATEWAY_URL=ws://127.0.0.1:7780; echo "CLIENT_URL=http://127.0.0.1:8899/bot?server=rs-sdk-demo.fly.dev&gateway=ws://127.0.0.1:7780"; echo CDP_URL=http://127.0.0.1:9222; echo TELEMETRY=false; } >$D/bot.env && chmod 600 $D/bot.env && ls -l $D/bot.env'
+```
+
+## Slots: at most two rehearsal logins at once
+
+rs/147 allows at most two rehearsal accounts logged in at once, and its coordinator grants each
+slot (cairn://p/rs/147/1/coordinator/messages). The holder writes `~/rehearsal-slots/<owner>.json`
+(`{"owner", "until", "reason"}`, `until` in UTC) **before its first login** and removes it after its
+last clean logout. The take command refuses while two unexpired slots belong to other owners. It
+holds a lock while it counts, so two children can't both take the last slot. An expired slot
+counts for nothing, so a forgotten one blocks nobody once its time is up. `O` is the owner
+(`rs-NNN`, the issue number with a hyphen), `M` is the bound in whole minutes (the attempt's `T`
+plus margin), and `R` is the reason. Re-running it with the same `O` renews that slot. Each path
+(take, third take refused, renew, release, expired slots ignored, placeholders refused) was checked
+on the host (m, 20:07-20:09 UTC).
+
+Take a slot:
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.167.144.8 'O=rs-NNN; M=MINUTES; R="woodcutting attempt"; case "$O" in rs-[0-9]*) ;; *) echo "set O to rs-NNN"; exit 1;; esac; case "$M" in ""|*[!0-9]*) echo "set M to whole minutes"; exit 1;; esac; D=$HOME/rehearsal-slots; mkdir -p $D; exec 9>$D/.lock; flock -w 10 9 || { echo "slot lock busy"; exit 1; }; n=0; for f in $D/*.json; do [ -f "$f" ] && [ "$f" != "$D/$O.json" ] || continue; U=$(sed -n "s/.*\"until\": *\"\([^\"]*\)\".*/\1/p" "$f"); [ -n "$U" ] && [ $(date -d "$U" +%s) -gt $(date +%s) ] && n=$((n+1)); done; if [ $n -ge 2 ]; then echo "two slots held, stop:"; cat $D/*.json; exit 1; fi; printf "{\"owner\":\"%s\",\"until\":\"%s\",\"reason\":\"%s\"}\n" "$O" "$(date -u -d "now + $M minutes" +%Y-%m-%dT%H:%M:%SZ)" "$R" >$D/$O.json.tmp && mv $D/$O.json.tmp $D/$O.json && cat $D/*.json'
+```
+
+Release it (only your own), after the last clean logout and teardown:
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.167.144.8 'O=rs-NNN; D=$HOME/rehearsal-slots; rm -f $D/$O.json; cat $D/*.json 2>/dev/null || echo "no slots held"'
+```
+
+**Leftover check**, before any launch and after any teardown or bound. It is RUN-HOST.md's check with
+Xvfb added and the slot files in place of the reservation. After teardown, expect no tmux server, no
+process and none of your slots:
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.167.144.8 'for s in /tmp/tmux-$(id -u)/*; do [ -S "$s" ] && echo "tmux -L $(basename $s): $(tmux -S $s ls 2>&1 | tr "\n" " ")"; done; ps -o pid,etime,comm -p "$(pgrep -d, "^(chrome.*|ffmpeg|bun|timeout|Xvfb)$")" 2>/dev/null || echo "no chrome, ffmpeg, bun, timeout or Xvfb process"; cat ~/rehearsal-slots/*.json 2>/dev/null || echo "no slots held"'
+```
+
+## Attempt worktrees
+
+An attempt runs its own branch's code from a separate worktree, `~/rs-<issue>`. The branch comes in
+as a git bundle from bgsrv-ub, so nothing is pushed. The worktree's `bots/` is a symlink to
+`~/rs-sdk/bots`, so env files stay in one place, mode 600. The page server, the gateway and Chrome
+run from `~/rs-sdk` as RUN-HOST.md step 3 does. `~/rs-sdk` itself stays on its main commit. The
+worktree is removed after the attempt. Because the page is served from `~/rs-sdk`, a branch that
+changes an in-page program (`server/webclient/src/bot/programs/`) is not what the tab runs: ask
+rs/147's coordinator before such an attempt.
+
+On bgsrv-ub, in the branch's checkout (`I` is the issue, as `rs-NNN`):
+
+```sh
+I=rs-NNN; git bundle create /tmp/$I.bundle HEAD && scp -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no /tmp/$I.bundle ubuntu@54.167.144.8:$I.bundle && rm /tmp/$I.bundle
+```
+
+On the host, make the worktree:
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.167.144.8 'I=rs-NNN; export PATH=$HOME/.bun/bin:$PATH; cd ~/rs-sdk && git fetch -q ~/$I.bundle HEAD && git worktree add -q --detach ~/$I FETCH_HEAD && rm -rf ~/$I/bots && ln -s ~/rs-sdk/bots ~/$I/bots && cd ~/$I && bun install >/dev/null && git log -1 --oneline'
+```
+
+In the worktree, `git status` lists bots' four tracked files (`_template/`, `create-bot.ts`) as
+deleted; the symlink stands in for them, and nothing is committed there. Remove it after the attempt's
+teardown:
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.167.144.8 'I=rs-NNN; cd ~/rs-sdk && git worktree remove --force ~/$I && git worktree prune && rm -f ~/$I.bundle; git worktree list; ls ~/rs-sdk/bots'
+```
+
+`git worktree remove` deletes the symlink, not what it points to: the env files and their mode
+survived it (m, bgsrv-ub, on a scratch clone with the same layout, 20:37 UTC).
+
+## Teardown: log out first
+
+No logged-in client is ever dropped, not even a throwaway's (rs/101). A dropped client stays in the
+world for up to 500 ticks, and on a rehearsal account that is playtime. In order:
+
+1. **Log every tab out.** An attempt ends with its own `logoutClean` at 99, and then this reports
+   `no tab in game`. Every gate tab is logged out with it before its Chrome closes. Expect
+   `logged out; the page is out of game` or `no tab in game`. Exit 1 means it is not confirmed:
+   stop, and look at the tab.
+
+   ```sh
+   ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.167.144.8 'cd ~/rs-sdk && timeout --kill-after=30s 2m ~/.bun/bin/bun speedrun/tools/tab-logout.ts NAME 2>&1 | grep tab-logout'
+   ```
+
+   `speedrun/tools/tab-logout.ts` runs `logoutClean` and then confirms through the page's own
+   in-game flag over Chrome's DevTools port. `logoutClean` on its own can't confirm a browser tab:
+   once the tab logs out the page stops publishing, and the gateway keeps its last state
+   (`inGame: true`, status `stale`). So it returned "still in game after timeout" on a tab that had
+   left the world (m, cairn_twin, 20:33 UTC). rs/164 is fixing that inside `speedrun/lib/session.ts`.
+   Once its fix merges, `logoutClean` alone is enough, and `tab-logout.ts` is superseded. Until this
+   page's PR merges, the host's clone has `tab-logout.ts` as an untracked file. The setup script's
+   `checkout -f` replaces it when the clone moves to a commit that tracks it.
+2. **Stop the recording**: RUN-HOST.md step 8.
+3. **Stop the stack**, Xvfb included:
+
+   ```sh
+   ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.167.144.8 'tmux -L run has-session -t rec 2>/dev/null && { echo "recording still running: stop it first (RUN-HOST.md step 8)"; exit 1; }; tmux -L run kill-server; pkill -TERM -x Xvfb; sleep 3; { pgrep -a -f "[p]roxy.ts|[g]ateway.ts|rs-run/[c]hrome-profile"; pgrep -a -x Xvfb; } | grep . || echo "tab stack stopped"'
+   ```
+
+   Xvfb is matched by process name (`pgrep -x`), not by command line: this ssh command's own shell
+   carries `pkill -TERM -x Xvfb` in its command line, so a `-f` pattern on `[X]vfb` matched the
+   shell itself and the check never printed "tab stack stopped" (m, rs/167, 21:16 UTC).
+
+4. The leftover check, then release your slot and remove your worktree.
+
+rs/96's direct gate CLI (`tickmanip-latency.ts --path=direct`) closes its socket at the end without
+logging out, so its account stays in the world until the server's timeout. That has been reported
+to main; the CLI is not this page's to change.
+
+## Setup
+
+Two committed scripts rebuild the twin; nothing depends on remembering steps.
+
+- [`rehearsal-host-provision.sh`](../scripts/rehearsal-host-provision.sh) runs on the Mac with the
+  `bglab` profile. It reads the run host by describe calls only and copies its AMI, type, subnet,
+  root volume and ingress. It imports the Mac's key and passes other machines' public keys to
+  cloud-init. It launches the instance, attaches the Elastic IP, pins `known_hosts` from the
+  console, and sets the RDP password from stdin. It refuses while a twin exists, and ends with
+  `INSTANCE_ID=... PUBLIC_IP=...`. Run it as
+  `bash docs/speedrun/scripts/rehearsal-host-provision.sh 'ssh-ed25519 AAAA... rs-ashburn-rehearsal bgsrv-ub'`,
+  with bgsrv-ub's `~/.rs-fleet/id_ed25519_rehearsal.pub` as the argument. Then copy
+  `known_hosts_rehearsal` (public keys only) to bgsrv-ub.
+- [`rehearsal-host-setup.sh`](../scripts/rehearsal-host-setup.sh) runs on the host. It installs and
+  configures XFCE and xrdp, removes the screensavers, sets no-blank, and installs Chrome 156 (held),
+  Bun 1.4.3, ffmpeg, tmux and sysstat. It clones the fork and checks it out at the given commit
+  (with `-f`: nobody edits this clone by hand). Then it builds as step 0 and prints what it set. It
+  is idempotent, starts nothing long-lived, and restarts xrdp only while nobody is connected:
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.167.144.8 'bash -s -- origin/main' < docs/speedrun/scripts/rehearsal-host-setup.sh
+```
+
+First built 2026-10-21 12:57-13:01 PDT. The setup took about 3 minutes, at main `7c3e8c706`.
+
+## Cost
+
+On-demand prices from the AWS Pricing API (`aws pricing get-products`, us-east-1), read 2026-10-21
+12:59 PDT; the c7i price entry was published 2026-10-15:
+
+| Item | Price | Per day |
+|---|---|---|
+| c7i.2xlarge, Linux, shared tenancy | $0.357/h | $8.57 |
+| EBS gp3, 60 GB (the baseline 3000 IOPS and 125 MB/s are free) | $0.08/GB-month | $0.16 |
+| Public IPv4, the Elastic IP (in use or idle) | $0.005/h | $0.12 |
+| **Running** | | **about $8.85** (about $0.37/h) |
+| **Stopped** | | **about $0.28** (disk and address) |
+
+Data out beyond AWS's free 100 GB a month is $0.09/GB. Pulling recordings (about 3.3 GB per hour of
+recording, RUN-HOST.md step 5) is the only sizeable transfer.
+
+## Gate reads on this host
+
+Every gate read taken on the twin, newest last, all on 2026-10-21 (m). Players are the gate CLI's
+own online count where it printed one, otherwise `/playercount` right before and after.
+
+**Preconditions (RUN-HOST.md step 1)**, 20:02:12 UTC: the request id ends `-iad`; TCP connect p50
+2.4 ms, p90 2.7, max 2.9 over 20. **Pass.** `/playercount` read 23 at that moment and 1,320
+eight minutes later, so treat the 23 as a bad read of the endpoint (i).
+
+| # | UTC | Account | Display and configuration | Read | Result | Players |
+|---|---|---|---|---|---|---|
+| 1 | 20:10:55-20:12:26 | cairn_gate | none: direct path, no tab | (a)-(c), rs/96's CLI | (a) 60/60; (b) tick p90 397 ms; (c) 0 catch-ups/min; vantage iad, TCP p50 2.4 ms. **Pass** | 1,411 |
+| 2 | 20:14:20-20:19:37 | cairn_gate | **Xvfb** :99, recording on, no live view | (d), `runhost-loops.ts` 5 min | loop p10 72.0 / 72.6 / 73.2. **Pass** | 1,466 → 1,562 |
+| 3 | 20:19:58 | cairn_gate | **Xvfb** :99 | `probeInPage`, 60 trials | 60/60 on time; frame to decision p50 2 ms | 1,562 |
+| 4 | 20:22:16-20:23:45 | cairn_twin | xrdp :10, RDP disconnected, recording on, tab closed | (a)-(c) | (a) 60/60; (b) 377 ms; (c) 0/min; TCP p50 1.9 ms. **Pass** | 1,589 |
+| 5 | 20:24:06-20:29:23 | cairn_twin | xrdp :10, RDP disconnected, recording and live view on | (d) | loop p10 70.8 / 72.0 / 72.9. **Pass** | 1,596 → 1,604 |
+| 6 | 20:29:46 | cairn_twin | xrdp :10, RDP disconnected | `probeInPage`, 60 trials | 60/60 on time; frame to decision p50 2 ms; loop p10 71.9 | 1,604 |
+
+**Reads 4 to 6 are the twin's gate of record**: the run's configuration, every line passing. Main
+noted read 1 as the first fully passing gate minute recorded from an iad host. (d) is the lowest /
+median / highest 10-second p10 of 30 samples (RUN-HOST.md step 6). Read 2 is on Xvfb: no RDP
+session existed yet.
+
+CPU during (d), medians in percent of one core:
+
+| | ffmpeg (recording) | Tab renderer | GPU process | Chrome total | Xorg | Host busy (8 vCPU) | Recording |
+|---|---|---|---|---|---|---|---|
+| Read 2, Xvfb | 87 | 80 | 19 | 99 | not sampled | 24-28% | 29.86 fps, 0 dropped |
+| Read 5, xrdp | 117 | 84 | 30 | 114 | 19 | 31-33%, load at most 3.9 | 29.91 fps, 0 dropped |
+| Run host, RUN-HOST.md row 3 (for comparison) | 95 | 63 | 24 | 87 | 15 | 25% | 29.9 fps, 0 dropped |
+
+The twin spends somewhat more on the recording and the tab than the run host did. The scenes
+differed: the twin's account had just left Tutorial Island, while the run host's had stood in
+Lumbridge (i). It is still two-thirds idle.
+
+Notes on the reads:
+
+- The sampler's "run min" (the slowest single tick interval since the probe started) was 9 on Xvfb
+  and 8.2 on xrdp, from the first sample onwards, against 64-68 on the run host. Each was one stall in
+  the first 10 s. Both of those runs began with `--skip-tutorial`, which moves the account off
+  Tutorial Island and loads a new region (i). No 10-second p10 was below 70.8.
+- During read 5 no one watched the live view, so its ffmpeg waited for a viewer and cost 0-0.1% of a
+  core. The run host measured 3.7% with a viewer attached.
+- The sampler's own walk probe, which is context and not a gate line, had 1,015 on time and 1 late
+  in read 2, and 1,027 on time and 0 late in read 5, with 3 frame catch-ups in each 5 minutes.
+- `tickprog-measure.ts probe` printed `NaN` for the page's decoded-tick intervals in reads 3 and 6.
+  That line is not part of the gate.
+- Bring-up (RUN-HOST.md step 3) passed both times: the 302 redirect; `400` for a password in the
+  URL; the six flags; a 1920x1029 window at +0+24 on :10; `tab-login.ts` in game after 6-9 s; and
+  the secrets check at `0 0 0`. That check needs the corrected form now in RUN-HOST.md: the old one
+  counted its own shell and read `0 2 0` with nothing leaked (m, 20:24 UTC).
+- After each session the leftover check was clean, apart from the Xvfb that `kill-server` did not
+  stop (above), which was then stopped. cairn_gate's tab was dropped at 20:20 UTC rather than logged
+  out; that was before the logout-first teardown existed. cairn_twin was logged out cleanly at
+  20:35 UTC.
+
+## Stop, start, terminate
+
+On the Mac (`bglab`). A stop ends the desktop session, so after a start the operator connects over
+RDP again (RUN-HOST.md step 2). The address stays the same, and so do the host keys.
+
+```sh
+aws --profile bglab --region us-east-1 ec2 stop-instances --instance-ids i-0f690e919614af7b2
+aws --profile bglab --region us-east-1 ec2 start-instances --instance-ids i-0f690e919614af7b2
+aws --profile bglab --region us-east-1 ec2 describe-instances --instance-ids i-0f690e919614af7b2 --query 'Reservations[0].Instances[0].State.Name' --output text
+```
+
+**Terminate only when main says so.** Pull any recording first. Then release the address, or it bills
+$0.12 a day with nothing attached:
+
+```sh
+aws --profile bglab --region us-east-1 ec2 terminate-instances --instance-ids i-0f690e919614af7b2
+aws --profile bglab --region us-east-1 ec2 wait instance-terminated --instance-ids i-0f690e919614af7b2
+aws --profile bglab --region us-east-1 ec2 release-address --allocation-id "$(aws --profile bglab --region us-east-1 ec2 describe-addresses --public-ips 54.167.144.8 --query 'Addresses[0].AllocationId' --output text)"
+```
+
+The security group `rs-ashburn-rehearsal-sg` and the key pair `rs-ashburn-rehearsal` cost nothing,
+and the provision script reuses them. After a terminate, delete `known_hosts_rehearsal` on both
+machines; the provision script pins fresh host keys for a new instance. The keys can stay.

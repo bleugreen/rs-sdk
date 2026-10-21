@@ -98,6 +98,19 @@ function mine(opts: { starter: 'knife' | 'none'; ticks: number; respawn?: number
 const gapsOf = (t: number[]) => t.slice(1).map((v, i) => v - t[i]!);
 const sends = (h: Harness) => h.sent.map(s => `T${s.tick} ${JSON.stringify(s.action)}`);
 
+describe('knife mining: hold', () => {
+    test('hold 0 sends exactly what no hold sends; hold 1 holds every starter tick a label', () => {
+        const base = mine({ starter: 'knife', ticks: 120 });
+        expect(mine({ starter: 'knife', ticks: 120, params: { hold: 0 } }).h.timeline()).toEqual(base.h.timeline());
+        const held = mine({ starter: 'knife', ticks: 120, params: { hold: 1 } });
+        const first = base.h.sent.find(s => s.action.type === 'useItemOnItem')!.tick;
+        const bundle = (h: typeof base.h, t: number) => h.sent.filter(s => s.tick === t).map(s => s.action.type);
+        expect(bundle(held.h, first + 1).slice(0, 2)).toEqual(['useItemOnItem', 'clickComponent']);
+        expect(bundle(held.h, first)).not.toContain('useItemOnItem');
+        expect(held.h.status.counters.held).toBeGreaterThan(0);
+    });
+});
+
 describe('knife mining', () => {
     test('holds 3 ticks per ore at respawn 13 on the five-rock rotation', () => {
         const { h, rolls } = mine({ starter: 'knife', ticks: 400 });

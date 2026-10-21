@@ -94,7 +94,7 @@ export class Harness {
     /** Make dispatch reject actions of these types. */
     reject = new Set<string>();
 
-    constructor(name: string, factory: ProgramFactory, opts: { packetsPerTick?: number; stallTicks?: number } = {}) {
+    constructor(name: string, factory: ProgramFactory, opts: { packetsPerTick?: number; stallTicks?: number; random?: () => number } = {}) {
         this.runtime = new ProgramRuntime({
             dispatch: (action): ActionResult => {
                 if (this.reject.has(action.type)) return { success: false, message: 'rejected' };

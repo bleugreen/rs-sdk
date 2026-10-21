@@ -38,6 +38,13 @@ export interface ProgramContext {
     count(name: string, by?: number): void;
     /** Set a published gauge (last value wins). */
     gauge(name: string, value: number): void;
+    /**
+     * The sends that follow on this tick are a starter bundle (knife on logs and what goes
+     * with it). With the test-only `hold` start parameter the runtime holds that share of
+     * bundles and sends them first thing on the next tick, as a host that delivers them one
+     * tick late would (the lab's `--inject-late`). Otherwise it does nothing.
+     */
+    starter(): void;
     /** Stamp this tick under a named mark: an event a poller must be able to time one by one (`ProgramStatus.marks`). */
     mark(name: string): void;
     /** Mark progress: resets the runtime's stall detector. */
