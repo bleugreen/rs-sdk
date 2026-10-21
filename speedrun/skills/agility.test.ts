@@ -8,7 +8,7 @@ import type { ProgramStatus } from '../lib/programs';
 import { TickLog } from '../lib/ticks';
 import type { StepContext } from '../runner/step';
 import {
-    AgilityStop, defaultEatBelow, engaged, finalLogout, parseOptions, PAUSE_STEP, pausesTaken, planBands, retreat, routeStart, SAFE_TILE, skill, steps
+    AgilityStop, COURSE_GATE, defaultEatBelow, engaged, finalLogout, parseOptions, parseWant, PAUSE_STEP, pausesTaken, planBands, retreat, RIDGE_GATE, routeStart, SAFE_TILE, skill, steps
 } from './agility';
 
 function player(o: Partial<NonNullable<BotWorldState['player']>> & { x?: number; z?: number } = {}): BotWorldState['player'] {
@@ -185,6 +185,61 @@ describe('agility Wilderness decisions', () => {
         expect(logouts).toBe(1);
         expect(log.rows.map(r => r.step)).toEqual(['agility:final-logout']);
         expect(band.postconditions(baseState({ inGame: false }), {} as never)).toBe(true);
+    });
+
+    test('restock: low-food leaves by the course gate, trades with the courier, crosses back and laps on (once)', async () => {
+        const sdk = new PageSdk(world({ agility: 78, x: 2994, z: 3933, inventory: [cake(0)] }));
+        sdk.onSend = (a, f) => {
+            if (a.method !== 'sendInteractLoc') return;
+            if (a.args[2] === COURSE_GATE.id) setTimeout(() => f.tick(s => ({ player: { ...s.player!, worldX: 2998, worldZ: 3916 } })), 0);
+            if (a.args[2] === RIDGE_GATE.id) setTimeout(() => f.tick(s => ({ player: { ...s.player!, worldX: 2998, worldZ: 3933 } })), 0);
+        };
+        const trades: string[] = [];
+        let logouts = 0;
+        const band = step(steps({
+            restockGiver: 'courier1', restockWant: 'shark:20', restockBelow: '4',
+            logout: async () => void logouts++,
+            receive: async (_s: unknown, giver: string, want: Array<{ amount?: number }>) => {
+                trades.push(`${giver}:${want[0]!.amount}`);
+                return { ok: true, ticks: 4, received: [] };
+            }
+        }), 'agility:wilderness');
+        const log = TickLog.memory();
+        const run = band.run(ctxFor(sdk, log) as never);
+        await flush();
+        expect(sdk.starts[0]!.params).toMatchObject({ restockBelow: 4 });
+        sdk.end({ ended: 'low-food', level: 78, food: 4 });
+        for (let k = 0; k < 10 && sdk.starts.length < 2; k++) await flush();
+        expect(sdk.sent.filter(a => a.method === 'sendInteractLoc').map(a => a.args[2])).toEqual([COURSE_GATE.id, RIDGE_GATE.id]);
+        expect(trades).toEqual(['courier1:20']);
+        expect(sdk.starts.length).toBe(2);
+        expect(sdk.starts[1]!.params).not.toHaveProperty('restockBelow'); // one restock per band
+        sdk.end({ ended: 'level', level: 99 }, { skills: [{ name: 'Agility', level: 99, baseLevel: 99, experience: 0 }] });
+        await run;
+        expect(log.rows.map(r => r.step)).toEqual(['agility:restock', 'agility:final-logout']);
+        expect(log.rows[0]!.meta).toMatchObject({ giver: 'courier1', ok: true });
+        expect(logouts).toBe(1);
+    });
+
+    test('restock: no courier means no-food, logged out', async () => {
+        const sdk = new PageSdk(world({ agility: 78, x: 2994, z: 3933 }));
+        sdk.onSend = (a, f) => {
+            if (a.method === 'sendInteractLoc' && a.args[2] === COURSE_GATE.id) setTimeout(() => f.tick(s => ({ player: { ...s.player!, worldX: 2998, worldZ: 3916 } })), 0);
+        };
+        let logouts = 0;
+        const band = step(steps({ restock: { giver: 'courier1', want: 'shark:20', below: 4 }, logout: async () => void logouts++, receive: async () => ({ ok: false, ticks: 0, received: [], reason: 'no trade' }) }), 'agility:wilderness');
+        const run = band.run(ctxFor(sdk) as never);
+        await flush();
+        sdk.end({ ended: 'low-food', level: 78, food: 4 });
+        const err = await run.catch(e => e);
+        expect((err as AgilityStop).kind).toBe('no-food');
+        expect(logouts).toBe(1);
+    });
+
+    test('parseWant takes the kit syntax', () => {
+        expect(parseWant('shark:20')).toEqual([{ item: /^shark$/i, amount: 20 }]);
+        expect(parseOptions({ restockGiver: 'c', restockBelow: '3' }).restock).toEqual({ giver: 'c', want: [{ item: /^shark$/i, amount: 20 }], below: 3 });
+        expect(parseOptions().restock).toBeUndefined();
     });
 
     test('finalLogout walks to the safe tile and waits out the window when a fight is on', async () => {
