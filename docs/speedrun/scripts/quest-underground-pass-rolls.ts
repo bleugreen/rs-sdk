@@ -38,8 +38,19 @@ interface Spec {
 }
 
 await runScript(async ({ bot, sdk }) => {
-    const msgs = () => sdk.getState()?.gameMessages ?? [];
-    const since = (n: number) => msgs().slice(n).map(m => m.text);
+    // The client keeps a capped message list, so collect new messages by identity.
+    const seen = new Set<string>();
+    const log: string[] = [];
+    const keyOf = (m: { tick: number; text: string; observationId?: number }) => `${m.tick}|${m.observationId ?? ''}|${m.text}`;
+    for (const m of sdk.getState()?.gameMessages ?? []) seen.add(keyOf(m));
+    sdk.onStateUpdate(st => {
+        for (const m of st.gameMessages ?? []) {
+            const k = keyOf(m);
+            if (!seen.has(k)) { seen.add(k); log.push(m.text); }
+        }
+    });
+    const msgs = () => log;
+    const since = (n: number) => log.slice(n);
     const idle = async (max = 60) => {
         let still = 0;
         let last = L.pos(sdk);
