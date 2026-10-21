@@ -95,8 +95,8 @@ git checkout -q --detach "$COMMIT"
 bun install >/dev/null
 (cd server/webclient && bun install >/dev/null && bun run build >/dev/null)
 (cd server/gateway && bun install >/dev/null)
-# Gate (d)'s sampler, until it reaches main (it lives on rs/103's branch). Untracked; a later
-# checkout keeps it.
+# Gate (d)'s sampler is on main from 7c3e8c706; for an older COMMIT take rs/103's copy (untracked,
+# so a later checkout keeps it).
 if [ ! -f docs/speedrun/scripts/runhost-loops.ts ]; then
     git fetch -q origin agent/rs-103-coordinator-0 &&
         git show FETCH_HEAD:docs/speedrun/scripts/runhost-loops.ts >docs/speedrun/scripts/runhost-loops.ts

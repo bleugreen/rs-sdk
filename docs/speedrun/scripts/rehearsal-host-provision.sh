@@ -101,26 +101,26 @@ aws_ ec2 describe-security-groups --group-ids "$SG" \
 
 # --- Instance ---------------------------------------------------------------------------------------
 UD=$(mktemp)
-    {
-        echo '#cloud-config'
-        echo "hostname: $NAME"
-        if [ $# -gt 0 ]; then
-            echo 'ssh_authorized_keys:'
-            for k in "$@"; do
-                [ -f "$k" ] && k=$(cat "$k")
-                case $k in ssh-*) echo "  - $k" ;; *) die "not a public key: $k" ;; esac
-            done
-        fi
-    } >"$UD"
-    EBS="\"VolumeSize\":$VSIZE,\"VolumeType\":\"$VTYPE\",\"DeleteOnTermination\":true"
-    [ "$VTYPE" = gp3 ] && EBS="$EBS,\"Iops\":$VIOPS,\"Throughput\":$VTPUT"
-    ID=$(aws_ ec2 run-instances --image-id "$AMI" --instance-type "$TYPE" --subnet-id "$SUBNET" \
-        --security-group-ids "$SG" --key-name "$NAME" --user-data "file://$UD" \
-        --block-device-mappings "[{\"DeviceName\":\"$ROOTDEV\",\"Ebs\":{$EBS}}]" \
-        --metadata-options HttpTokens=required,HttpEndpoint=enabled \
-        --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$NAME},{Key=purpose,Value=rs-147-rehearsals}]" \
-        "ResourceType=volume,Tags=[{Key=Name,Value=$NAME}]" \
-        --query 'Instances[0].InstanceId' --output text)
+{
+    echo '#cloud-config'
+    echo "hostname: $NAME"
+    if [ $# -gt 0 ]; then
+        echo 'ssh_authorized_keys:'
+        for k in "$@"; do
+            [ -f "$k" ] && k=$(cat "$k")
+            case $k in ssh-*) echo "  - $k" ;; *) die "not a public key: $k" ;; esac
+        done
+    fi
+} >"$UD"
+EBS="\"VolumeSize\":$VSIZE,\"VolumeType\":\"$VTYPE\",\"DeleteOnTermination\":true"
+[ "$VTYPE" = gp3 ] && EBS="$EBS,\"Iops\":$VIOPS,\"Throughput\":$VTPUT"
+ID=$(aws_ ec2 run-instances --image-id "$AMI" --instance-type "$TYPE" --subnet-id "$SUBNET" \
+    --security-group-ids "$SG" --key-name "$NAME" --user-data "file://$UD" \
+    --block-device-mappings "[{\"DeviceName\":\"$ROOTDEV\",\"Ebs\":{$EBS}}]" \
+    --metadata-options HttpTokens=required,HttpEndpoint=enabled \
+    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$NAME},{Key=purpose,Value=rs-147-rehearsals}]" \
+    "ResourceType=volume,Tags=[{Key=Name,Value=$NAME}]" \
+    --query 'Instances[0].InstanceId' --output text)
 rm -f "$UD"
 say "launched $ID"
 aws_ ec2 wait instance-running --instance-ids "$ID"
@@ -134,8 +134,8 @@ fi
 aws_ ec2 associate-address --allocation-id "$ALLOC" --instance-id "$ID" --allow-reassociation >/dev/null
 EIP=$(aws_ ec2 describe-addresses --allocation-ids "$ALLOC" --query 'Addresses[0].PublicIp' --output text)
 
-# --- known_hosts, pinned from the console --------------------------------------------------------
-if ! grep -q "^$EIP " "$KNOWN" 2>/dev/null; then
+# --- known_hosts, pinned from the console (a new instance has new host keys, even at an old address)
+if true; then
     KEYS=
     for _ in $(seq 60); do
         KEYS=$(aws_ ec2 get-console-output --instance-id "$ID" --latest --query Output --output text 2>/dev/null | tr -d '\r' |
