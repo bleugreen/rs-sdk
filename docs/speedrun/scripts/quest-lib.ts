@@ -273,6 +273,18 @@ export async function opLoc(sdk: BotSDK, c: Counts, id: number, x: number, z: nu
     c.interactions++;
 }
 
+/** Interacts with whatever loc at (x,z) offers an option matching opRe (ladders, stairs, doors). */
+export async function opLocText(sdk: BotSDK, c: Counts, x: number, z: number, opRe: RegExp) {
+    const pick = () => sdk.getNearbyLocs().find(l => l.x === x && l.z === z && l.level === pos(sdk).level && l.optionsWithIndex.some(o => opRe.test(o.text)));
+    let loc = pick();
+    if (!loc) { await sdk.scanNearbyLocs(30); loc = pick(); }
+    if (!loc) throw new Error(`no loc at ${x},${z} with option ${opRe}; there: ${sdk.getNearbyLocs().filter(l => l.x === x && l.z === z).map(l => l.name + '[' + l.options.join('/') + ']').join(', ')}`);
+    const op = loc.optionsWithIndex.find(o => opRe.test(o.text))!;
+    const r = await sdk.sendInteractLoc(x, z, loc.id, op.opIndex);
+    if (!r.success) throw new Error(`interact ${loc.name} at ${x},${z} failed: ${r.message}`);
+    c.interactions++;
+}
+
 export async function useOnLoc(sdk: BotSDK, c: Counts, item: RegExp, id: number, x: number, z: number) {
     await ensureLoc(sdk, id, x, z);
     const r = await sdk.sendUseItemOnLoc(invSlot(sdk, item), x, z, id);
