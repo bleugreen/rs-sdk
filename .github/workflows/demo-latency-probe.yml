@@ -352,8 +352,21 @@ jobs:
             return $rc
           }
 
+          # The demo can hold the account for minutes after the previous run's client closed
+          # ("Account already logged in"), so the direct path waits and retries a few times.
+          direct_path() {
+            export BOT_USERNAME="$BOT"
+            local rc=0
+            for attempt in 1 2 3 4; do
+              rc=0; run_probe direct "$DIRECT_COMMAND" || rc=$?
+              grep -q 'Account already logged in' "$OUT/direct-full.log" || return $rc
+              echo "direct: account still logged in on the demo (attempt $attempt), retrying in 45 s"; sleep 45
+            done
+            return $rc
+          }
+
           code=0
-          case "$MODE" in pair|direct|browser) ( export BOT_USERNAME="$BOT"; run_probe direct "$DIRECT_COMMAND" ) || code=$? ;; esac
+          case "$MODE" in pair|direct|browser) ( direct_path ) || code=$? ;; esac
           # Let the server finish the logout before the next path logs the same account in.
           case "$MODE" in pair|browser) sleep 15 ;; esac
           case "$MODE" in pair|gateway) ( gateway_path ) || code=$? ;; esac
