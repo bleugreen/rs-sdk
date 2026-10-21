@@ -23,12 +23,13 @@ The speedrun's scored account (its name is chosen by the operator and kept out o
 | [essence](helpers/essence.md) | Rune/pure essence (Runecraft) | cairn_h30-h34 | cairn://p/rs/46 |
 | [grapes, jugs, wine](helpers/wine.md) | Grapes (guild, Phoenix hideout, goblins), jugs of water, noted unfermented wine (Cooking) | cairn_h40-h49 | cairn://p/rs/47. Three roles; `wine` is the Cooking-35 maker and giver. |
 | [bones](helpers/bones.md) | Dragon bones or the best Prayer xp per helper-hour | cairn_h50-h54 | cairn://p/rs/48 |
+| [herbs](helpers/herbs.md) | Unfinished potions (the herb-table mix), vials of water, eyes of newt (Herblore) | cairn_h84-h87 | cairn://p/rs/122 |
 | [mule](helpers/mule.md) | Consolidates stock, serves trades to the scored account | cairn_mule1, cairn_mule2 (stand-in receiver cairn_h05) | cairn://p/rs/49 |
 | [coins / buyer](helpers/coins.md) | Coins; Grand Exchange and shop purchases | cairn_h60-h65 | cairn://p/rs/50 |
 | [bidder](helpers/bidder.md) | Standing GE buy offers just above the competing bids, up to per-item targets (dragon bones, grapes) | cairn_h61 | cairn://p/rs/63 |
 | [ambassador](AMBASSADOR.md) | Nothing: talks with other bots at the GE, logs the conversation, daily digest | cairn_md | The only role that chats, under hard rules enforced in code (cairn://p/rs/58). |
 
-Planned without an owner yet (supply list in cairn://p/rs/41): fletcher-supplier (arrowheads, dart tips, headless arrows), herb gatherer (unfinished potions and secondaries), gem supplier (uncut dragonstones or diamonds), rune and jewellery buyer, combat-supply buyer (food, potions, gear, cannonballs), quest-item gatherer.
+Planned without an owner yet (supply list in cairn://p/rs/41): fletcher-supplier (arrowheads, dart tips, headless arrows), gem supplier (uncut dragonstones or diamonds), rune and jewellery buyer, combat-supply buyer (food, potions, gear, cannonballs), quest-item gatherer.
 
 ## Accounts
 
