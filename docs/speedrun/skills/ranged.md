@@ -18,8 +18,7 @@ measurement set, local lab, 300-400 tick windows, one run each); numbers marked
 11-18 on 16 cores that night (cairn://p/rs/main, 00:36). Read every 300 ms rate here as a
 **busy host's figure, a few percent pessimistic**: the bot reacts in wall-clock time, so a
 slow host occasionally costs a tick on a reload, retarget or knife throw. The cannon's own
-sweep is a server timer and does not depend on the host. rs/26's bbs correction factor had not
-been published when this was written (01:15), so no factor is applied.
+sweep is a server timer and does not depend on the host. rs/26 closed without a single correction factor; `docs/speedrun/LAB.md` on main (its host-latency table) names bbs the reference host and reads the Mac's figures as pessimistic, so no factor is applied.
 
 **Client.** Every number here was taken on the headless lite client against a local lab engine,
 where a reaction lands on the next tick. The scored run drives the browser webclient against the
