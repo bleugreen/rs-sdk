@@ -450,7 +450,7 @@ export function submitCountDialog(c: LiteClient, value: number): boolean {
     return true;
 }
 
-export function clickDialogOption(c: LiteClient, optionIndex = 0): boolean {
+export function clickDialogOption(c: LiteClient, optionIndex = 0, blind = false): boolean {
     if (!c.isInGame()) {
         return false;
     }
@@ -467,8 +467,9 @@ export function clickDialogOption(c: LiteClient, optionIndex = 0): boolean {
     if (optionIndex === 0) {
         // Bare "continue". The resumedPauseButton guard mirrors the engine's
         // ResumePauseButtonHandler fix: sending a second RESUME while one is
-        // pending re-picks the previous choice.
-        if (!c.resumedPauseButton && c.chatModalId !== -1 && !choicePending()) {
+        // pending re-picks the previous choice. A blind caller skips the
+        // latch and owns the guarantee that the pages are pure continues.
+        if ((blind || !c.resumedPauseButton) && c.chatModalId !== -1 && !choicePending()) {
             c.writeOpcode(ClientProt.RESUME_PAUSEBUTTON);
             c.out.p2(c.chatModalId);
             c.resumedPauseButton = true;
@@ -488,7 +489,7 @@ export function clickDialogOption(c: LiteClient, optionIndex = 0): boolean {
 
     const option = options[optionIndex - 1];
     if (option.buttonType === ButtonType.BUTTON_CONTINUE) {
-        if (c.resumedPauseButton || choicePending()) {
+        if ((!blind && c.resumedPauseButton) || choicePending()) {
             return false;
         }
         c.writeOpcode(ClientProt.RESUME_PAUSEBUTTON);

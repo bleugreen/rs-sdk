@@ -240,9 +240,11 @@ export class ActionExecutor {
                             };
                         }
                     }
+                    // Strict: only a literal true from the wire lifts the latch.
+                    const blind = action.blind === true;
                     return this.wrapBool(
-                        this.client.clickDialogOption(action.optionIndex),
-                        `Clicked dialog option ${action.optionIndex}`,
+                        this.client.clickDialogOption(action.optionIndex, blind),
+                        `Clicked dialog option ${action.optionIndex}${blind ? ' (blind)' : ''}`,
                         'Failed to click dialog option'
                     );
                 }
@@ -617,7 +619,7 @@ export function formatAction(action: BotAction): string {
         case 'dropItem': return `Drop slot ${action.slot}`;
         case 'pickupItem': return `Pickup item ${action.itemId} at (${action.x}, ${action.z})`;
         case 'interactGroundItem': return `Interact ground item ${action.itemId} at (${action.x}, ${action.z})`;
-        case 'clickDialogOption': return `Dialog option ${action.optionIndex}`;
+        case 'clickDialogOption': return `Dialog option ${action.optionIndex}${action.blind === true ? ' (blind)' : ''}`;
         case 'clickComponent': return `Click component ${action.componentId}`;
         case 'clickComponentWithOption': return `Click component ${action.componentId} option ${action.optionIndex}`;
         case 'useItemOnItem': return `Use slot ${action.sourceSlot} on ${action.targetSlot}`;

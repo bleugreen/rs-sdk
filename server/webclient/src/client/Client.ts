@@ -2533,7 +2533,7 @@ export class Client extends GameShell {
     /**
      * Click a dialog continue button or select a dialog option
      */
-    clickDialogOption(optionIndex: number = 0): boolean {
+    clickDialogOption(optionIndex: number = 0, blind: boolean = false): boolean {
         if (!this.ingame || !this.out) {
             return false;
         }
@@ -2544,11 +2544,13 @@ export class Client extends GameShell {
         // pending. Sending one anyway latched resumedPauseButton with no new
         // interface arriving to reset it, pinning the dialog against every
         // later continue click. Refuse locally instead of desyncing.
+        // A blind caller skips the resumedPauseButton latch and owns the
+        // guarantee that the pages are pure continues.
         const choicePending = (): boolean =>
             this.getDialogOptions().some(o => o.buttonType === ButtonType.BUTTON_OK);
 
         if (optionIndex === 0) {
-            if (!this.resumedPauseButton && this.chatModalId !== -1 && !choicePending()) {
+            if ((blind || !this.resumedPauseButton) && this.chatModalId !== -1 && !choicePending()) {
                 this.writePacketOpcode(ClientProt.RESUME_PAUSEBUTTON);
                 this.out.p2(this.chatModalId);
                 this.resumedPauseButton = true;
@@ -2563,7 +2565,7 @@ export class Client extends GameShell {
                 const option = dialogOptions[optionIndex - 1];
 
                 if (option.buttonType === ButtonType.BUTTON_CONTINUE) {
-                    if (!this.resumedPauseButton && !choicePending()) {
+                    if ((blind || !this.resumedPauseButton) && !choicePending()) {
                         this.writePacketOpcode(ClientProt.RESUME_PAUSEBUTTON);
                         this.out.p2(option.componentId);
                         this.resumedPauseButton = true;

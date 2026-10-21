@@ -42,6 +42,25 @@ function mountSdk(state: BotWorldState | null): { sdk: BotSDK; calls: number[]; 
     return { sdk, calls, actions };
 }
 
+describe('sendClickDialog()', () => {
+    test('unflagged payload carries no blind key', async () => {
+        const { sdk, actions } = mountSdk(null);
+        await sdk.sendClickDialog(0);
+        await sdk.sendClickDialog(1, { blind: false });
+        expect(actions).toEqual([
+            { type: 'clickDialogOption', optionIndex: 0, reason: 'SDK' },
+            { type: 'clickDialogOption', optionIndex: 1, reason: 'SDK' }
+        ]);
+        expect(actions.some(a => 'blind' in a)).toBe(false);
+    });
+
+    test('blind adds blind: true and nothing else', async () => {
+        const { sdk, actions } = mountSdk(null);
+        await sdk.sendClickDialog(0, { blind: true });
+        expect(actions).toEqual([{ type: 'clickDialogOption', optionIndex: 0, blind: true, reason: 'SDK' }]);
+    });
+});
+
 describe('clickDialogByText()', () => {
     test('sends the page token and exact component ID selected from that snapshot', async () => {
         const { sdk, actions } = mountSdk(makeState({ dialogOpen: true, options: [makeOption(2, 'Yes')] }));

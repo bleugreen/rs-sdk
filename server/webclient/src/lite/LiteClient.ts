@@ -839,8 +839,8 @@ export class LiteClient {
     submitCountDialog(value: number): boolean {
         return A.submitCountDialog(this, value);
     }
-    clickDialogOption(optionIndex?: number): boolean {
-        return A.clickDialogOption(this, optionIndex);
+    clickDialogOption(optionIndex?: number, blind?: boolean): boolean {
+        return A.clickDialogOption(this, optionIndex, blind);
     }
     getDialogOptions(): Array<{ index: number; text: string; componentId: number; buttonType: number }> {
         return A.getDialogOptions(this);
