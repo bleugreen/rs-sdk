@@ -43,8 +43,12 @@ await runScript(async ({ sdk }) => {
         await waitTicks(sdk, 2);
 
         // sail
-        const sail = await converseSeq(sdk, () => talk(sdk, /^ned$/i), [/Yep lets go/i], s => pos(s).x < 2900 && !s.dialog.isOpen && !s.modalOpen, 80);
-        run.sail = sail;
+        // Ned's two pages and the choice, then p_delay(11) on the ship_journey
+        // overlay, then three arrival pages (mesbox, Ned, player) on Crandor.
+        const tSail = now(sdk);
+        const sail = await converseSeq(sdk, () => talk(sdk, /^ned$/i), [/Yep lets go/i], s => pos(s).x < 2900, 80);
+        const arrival = await converseSeq(sdk, async () => {}, [], s => !s.dialog.isOpen, 60);
+        run.sail = { ...sail, arrival, ticks: now(sdk) - tSail };
 
         // Crandor surface: wreck to the rock opening
         t = now(sdk);
