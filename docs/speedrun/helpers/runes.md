@@ -69,4 +69,4 @@ WEB_PORT=9560 WEB_MANAGEMENT_PORT=9561 HISCORES_WEB_PORT=9562 NODE_PORT=44560 AG
   speedrun/lab/lab.sh rnlab speedrun/lab/runes-lab.ts:--only=talismans,magic,guild,lundail
 ```
 
-In the lab, strikes on the Lumbridge cows were refused with no xp and no runes used, while the same casts work on the demo. The lab's magic scenario is not yet a reliable check of training.
+The lab checks the walking, banking and shop parts (the guild scenario's capped trips work there), but not the parts that use an inventory item or a spell. On this lab setup, strikes on the cows, wielding the bronze axe and using it on the keep web were all ignored by the engine with no game message, while the same actions work on the demo. Until that is understood, Magic training and the web crossing are checked on the demo. If the crossing fails there, the role pulls the keep lever and leaves rather than staying in the Wilderness.
