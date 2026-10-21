@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { chooseBar, ironOreShort, planOreBuy, planPickaxePurchase, readOpts, type BarChoice } from './smelter';
+import { addySiteOres, chooseBar, ironOreShort, planOreBuy, planPickaxePurchase, readOpts, type BarChoice } from './smelter';
 
 const COAL = 453;
 const IRON = 440;
@@ -69,6 +69,19 @@ describe('chooseBar', () => {
         const quota = { steel: 0, iron: 9 };
         expect(chooseBar(choice({ smithing: 72, tier: 'adamant', quota, banked: bank({ [IRON]: 17 }) }))).toBeNull();
         expect(chooseBar(choice({ smithing: 72, tier: 'adamant', quota, banked: bank({ [IRON]: 18 }) }))).toBe('iron');
+    });
+});
+
+describe('addySiteOres', () => {
+    test('coal only while held coal is short of 6 per held adamantite ore plus the buffer', () => {
+        // h21 on the demo: 270 coal, 18 ore banked + 13 carried -> 186 + 60 = 246 needed: no coal.
+        expect(addySiteOres(bank({ [COAL]: 270, [ADDY]: 31 }), 0)).toEqual(['addy']);
+        expect(addySiteOres(bank({ [COAL]: 270, [ADDY]: 40 }), 0)).toEqual(['addy', 'coal']);
+        expect(addySiteOres(bank({}), 0)).toEqual(['addy', 'coal']);
+    });
+
+    test('iron while the quotas lack ore', () => {
+        expect(addySiteOres(bank({ [COAL]: 1000 }), 5)).toEqual(['addy', 'iron']);
     });
 });
 
