@@ -79,13 +79,19 @@ await runScript(async ({ sdk }) => {
             const t0 = now(sdk);
             const attempts = [];
             for (let a = 0; a < 15; a++) {
-                const r = await cross(2235, 3181, /Sticks/, 1, [[2234, 3181], [2238, 3181], [2239, 3181]], 30);
+                const loc = await findLoc(sdk, 2235, 3181, /Sticks/);
+                const ta = now(sdk);
+                const hp0 = hp();
+                const nMsg = sdk.getState()!.gameMessages.length;
+                await sdk.sendInteractLoc(loc!.x, loc!.z, loc!.id, 1);
+                const r = await waitUntil(sdk, s => (s.player?.worldX ?? 9999) <= 2234 || s.gameMessages.slice(nMsg).some(m => /set off the trap/i.test(m.text)), 30);
                 const ok = pos(sdk.getState()).x <= 2234;
-                attempts.push({ ok, ticks: r.ticks, dmg: r.dmg });
-                if (ok) break;
-                // after a failure the player is thrown back east; wait for the stumble to end
-                await waitUntil(sdk, s => !s.player?.animId || s.player.animId === -1, 10);
-                if (pos(sdk.getState()).x !== 2238) { await sdk.sendWalk(2238, 3181, true); await waitUntil(sdk, at(2238, 3181), 10); }
+                if (ok) { attempts.push({ ok, ticks: r ? r.tick - ta : null, dmg: hp0 - hp() }); break; }
+                // thrown back east (agility_exactmove + 8 damage): wait until we can act again on the start tile
+                const back = await waitUntil(sdk, at(2238, 3181), 15);
+                await waitTicks(sdk, 1);
+                attempts.push({ ok, trapAt: r ? r.tick - ta : null, backAt: back ? back.tick - ta : null, dmg: hp0 - hp() });
+                if (!back) { await tele(sdk, 2238, 3181); }
             }
             crossings.push({ attempts: attempts.length, ticks: now(sdk) - t0, detail: attempts });
             result('woodspring-crossing', crossings[crossings.length - 1]);
