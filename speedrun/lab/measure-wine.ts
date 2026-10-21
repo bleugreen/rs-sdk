@@ -77,6 +77,10 @@ await tele(receiver.sdk, VARROCK_WEST_BANK.x - 2, VARROCK_WEST_BANK.z);
 await setstat(maker.sdk, 'cooking', 35);
 await waitTicks(maker.sdk, 25); // let the login timer pass
 
+// --only=T9 skips straight to the single-login split.
+const only = arg('only', '');
+if (only !== 'T9') {
+
 // T1: does a second make within 20 ticks replace the timer?
 await give(maker.sdk, ['grapes', 'jug_water'], 2);
 await makeWines(M, 1);
@@ -184,6 +188,8 @@ await openBank(R);
 const bank8 = receiver.sdk.getBankItems().filter(i => /wine/i.test(i.name)).map(i => `${i.name} x${i.count}`);
 await closeBank(receiver.bot, receiver.sdk);
 result('T8c-ferment-big', { afterLogin: tXp8 - tR8, cooking: receiver.sdk.getSkill('Cooking'), bank: bank8 });
+
+}
 
 // T9: the single-login split. The receiver logs in at Cooking 1; the maker is
 // waiting with `big` noted wines plus one grapes and one jug of water.
