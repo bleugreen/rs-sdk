@@ -253,6 +253,130 @@ export async function receiveWine(ctx: Ctx, giver: string, opts: { depositAmount
 }
 
 /**
+ * Make sure the maker carries one grapes and one jug of water (unnoted) beside its
+ * notes: the receiver needs them to re-arm its own timer after the first firing
+ * (see splitDelivery). Opens and closes the bank if they are missing.
+ */
+export async function prepareRearmKit(ctx: Ctx): Promise<void> {
+    const { bot, sdk } = ctx;
+    if (invCount(sdk, ITEM.grapes) >= 1 && invCount(sdk, ITEM.jugWater) >= 1) return;
+    await openBank(ctx);
+    const specs = [];
+    if (invCount(sdk, ITEM.grapes) < 1) specs.push({ item: ITEM.grapes, n: 1 });
+    if (invCount(sdk, ITEM.jugWater) < 1) specs.push({ item: ITEM.jugWater, n: 1 });
+    const w = await withdrawMany(sdk, specs);
+    await closeBank(bot, sdk);
+    if (!w.ok) throw new Error(`re-arm kit: ${w.reason}`);
+}
+
+/** Trade every noted wine plus one grapes and one jug of water to `receiver` (the split-delivery kit). */
+export async function giveWineKit(ctx: Ctx, receiver: string, openTimeoutMs = 120_000): Promise<GiveResult> {
+    const { sdk } = ctx;
+    if (invCount(sdk, ITEM.wine) > 0) throw new Error('loose unfermented wine in the inventory: note it before trading');
+    const before = invCount(sdk, ITEM.wineNote);
+    const r = await give(sdk, receiver, [{ item: ITEM.wineNote, n: 'all' }, { item: ITEM.grapes, n: 1 }, { item: ITEM.jugWater, n: 1 }], { openTimeoutMs });
+    return { success: r.ok, given: before - invCount(sdk, ITEM.wineNote), ticks: r.ticks, message: r.reason ?? 'ok' };
+}
+
+export interface SplitResult {
+    received: number;
+    first: number;
+    rest: number;
+    /** Ticks are on the receiver's clock. */
+    tradeTicks: number;
+    firstBankTicks: number;
+    /** Bank (deposit the rest) plus the one re-arming make. */
+    rearmTicks: number;
+    firstFermentTick: number;
+    secondFermentTick: number;
+    levelAfterFirst: number;
+    levelAfterSecond: number;
+    rearmed: boolean;
+}
+
+/**
+ * The scored account's side of the single-login split delivery (wine.md). One
+ * firing over a big bank is 15 all-or-nothing rolls at the current level, so
+ * ferment a small first batch (default 29: 29 single-wine-sized rolls) to lift
+ * Cooking off level 1, then the rest at the higher level:
+ *
+ *  1. receive the noted wines + 1 grapes + 1 jug of water in one trade;
+ *  2. deposit `first` notes; the login-armed timer ferments them;
+ *  3. after that firing, deposit the rest and make one wine (needs Cooking 35),
+ *     which re-arms the timer; 20 ticks later it ferments the rest.
+ *
+ * Call it within the login window, before the login timer fires (login+20), and
+ * keep the account out of modals when each timer is due. If the first firing
+ * leaves Cooking below 35 (about 1% of the time for 29), the rest stays banked
+ * and ferments at the next login instead (rearmed: false).
+ * The account must stand next to a bank booth.
+ */
+export async function splitDelivery(ctx: Ctx, giver: string, opts: { first?: number; openTimeoutMs?: number; maxWaitTicks?: number } = {}): Promise<SplitResult> {
+    const { bot, sdk } = ctx;
+    const first = opts.first ?? 29;
+    const maxWait = opts.maxWaitTicks ?? 40;
+    const xp = () => sdk.getSkill('Cooking')?.experience ?? 0;
+    const before = invCount(sdk, ITEM.wineNote);
+    const r = await receiveFrom(sdk, giver, {
+        want: [
+            { item: /^unfermented wine$/i, amount: first + 1 },
+            { item: /^grapes$/i, amount: 1 },
+            { item: /^jug of water$/i, amount: 1 }
+        ],
+        openTimeoutMs: opts.openTimeoutMs ?? 120_000
+    });
+    const received = invCount(sdk, ITEM.wineNote) - before;
+    if (!r.ok || received <= first) throw new Error(`split delivery: trade failed (${r.reason ?? 'too few wines'})`);
+
+    const t1 = tick(sdk);
+    await openBank(ctx);
+    const note = sdk.getInventory().find(i => i.id === ITEM.wineNote)!;
+    await bot.depositItem(note, first);
+    await closeBank(bot, sdk);
+    const firstBankTicks = tick(sdk) - t1;
+
+    const xp0 = xp();
+    const fired = await sdk.waitForCondition(() => xp() > xp0 || bankless(sdk), (maxWait + 5) * 600).then(() => true, () => false);
+    const firstFermentTick = fired ? tick(sdk) : -1;
+    const levelAfterFirst = skillLevel(sdk, 'Cooking');
+    const rest = invCount(sdk, ITEM.wineNote);
+
+    const t2 = tick(sdk);
+    await openBank(ctx);
+    const d = await depositMatching(sdk, [ITEM.wineNote]);
+    if (!d.ok) throw new Error(`split delivery: deposit of the rest failed (${d.reason})`);
+    await closeBank(bot, sdk);
+    let rearmed = false;
+    if (levelAfterFirst >= WINE_COOKING_LEVEL) rearmed = (await makeWines(ctx, 1)).made === 1;
+    const rearmTicks = tick(sdk) - t2;
+
+    let secondFermentTick = -1;
+    if (rearmed) {
+        const xp1 = xp();
+        const ok = await sdk.waitForCondition(() => xp() > xp1, (maxWait + 5) * 600).then(() => true, () => false);
+        if (ok) secondFermentTick = tick(sdk);
+    }
+    return {
+        received,
+        first,
+        rest,
+        tradeTicks: r.ticks,
+        firstBankTicks,
+        rearmTicks,
+        firstFermentTick,
+        secondFermentTick,
+        levelAfterFirst,
+        levelAfterSecond: skillLevel(sdk, 'Cooking'),
+        rearmed
+    };
+}
+
+/** The first firing can roll every batch bad (no xp); jugs of bad wine appearing is the other sign it fired. */
+function bankless(sdk: BotSDK): boolean {
+    return sdk.getState()?.gameMessages.some(m => /ferment/i.test(m.text) && /wine/i.test(m.text) && m.tick >= (sdk.getState()?.tick ?? 0) - 1) ?? false;
+}
+
+/**
  * Accept one trade from an account matching `from` (a courier or the mule
  * bringing noted grapes and jugs of water), waiting up to `waitMs` for a request.
  * Returns the sender, or null when nobody asked.
