@@ -28,6 +28,8 @@ speedrun/
     lab.sh        engine + gateway + lite runners on port block 9300
     setup.ts      ::tele / ::give / ::setstat fixtures
     measure-*.ts  the measurements quoted below
+    probe-engine.ts      engine-rule probes (docs/speedrun/research/engine-sweep/engine.md)
+    census-delayfree.ts  static census of delay-free item/xp triggers (same doc)
   tools/          upstream watch (nightly diff of watched upstream paths)
   runs/           tick logs (gitignored)
 ```
@@ -310,6 +312,12 @@ and points their `bot.env` at the lab.
 - `LAB_BOTS="srlab3"`: extra bots with a lab `bot.env` but no runner, for
   scripts that launch and kill their own client.
 - `LAB_RUNNERS=0`: no runner for `<bot>` either.
+- `WEB_PORT`, `WEB_MANAGEMENT_PORT`, `HISCORES_WEB_PORT`, `NODE_PORT`, `AGENT_PORT`: override
+  the port block (defaults above) to run several labs side by side; give each lab its own
+  bots, because `lab.sh` points each bot's `bot.env` at its own block.
+- A bot fresh from `create-bot.ts` is still in the tutorial and has no side tabs, so the
+  server silently refuses its inventory ops and tab buttons; `probe-engine.ts` shows the fix
+  (`::setvar tutorial 1000`, teleport, relog).
 - The first boot packs the content (about 13 minutes on bgsrv-ub); later boots
   take seconds. Pin every batch to one executor so the packed content is reused.
 
