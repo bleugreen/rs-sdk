@@ -120,7 +120,7 @@ export async function runDialog(
     const texts: string[] = [];
     const startTick = now(sdk);
     while (now(sdk) - startTick < maxTicks) {
-        const s = await sdk.waitForStateUpdate();
+        const s = await nextState(sdk);
         const d = s.dialog;
         const modal = s.modalOpen && !d.isOpen;
         if (!d.isOpen) {
@@ -158,6 +158,20 @@ export async function runDialog(
     }
     if (rec?.cur) { rec.cur.pages += pages; rec.cur.options += options; }
     return { pages, options, texts };
+}
+
+/**
+ * Next published state, with a wall-clock backstop so a logged-out or
+ * stalled client fails the script instead of hanging it.
+ */
+export async function nextState(sdk: BotSDK, ms = 10_000): Promise<BotWorldState> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const stall = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`no state update for ${ms} ms at tick ${now(sdk)}`)), ms); });
+    try {
+        return await Promise.race([sdk.waitForStateUpdate(), stall]);
+    } finally {
+        clearTimeout(timer);
+    }
 }
 
 export async function walk(bot: BotActions, sdk: BotSDK, x: number, z: number, tol = 1): Promise<void> {
@@ -215,7 +229,7 @@ export async function getvar(sdk: BotSDK, name: string): Promise<number> {
     await sdk.sendSay(`::getvar ${name}`);
     const re = new RegExp(`get ${name}: (-?\\d+)`);
     for (let i = 0; i < 20; i++) {
-        await sdk.waitForStateUpdate();
+        await nextState(sdk);
         const m = (sdk.getState()?.gameMessages ?? []).filter((g: any) => g.tick >= t - 1).map((g: any) => re.exec(g.text)).find(Boolean);
         if (m) return parseInt(m[1]);
     }
@@ -280,7 +294,7 @@ export async function waitPos(sdk: BotSDK, pred: (p: { x: number; z: number; lev
     const t = now(sdk);
     while (now(sdk) - t < ticks) {
         if (pred(pos(sdk))) return true;
-        await sdk.waitForStateUpdate();
+        await nextState(sdk);
     }
     return pred(pos(sdk));
 }
@@ -291,8 +305,12 @@ export function hp(sdk: BotSDK): number {
 
 export async function setupAccount(sdk: BotSDK, bot: BotActions, stats: Record<string, number>, items: [string, number][]): Promise<void> {
     await sdk.waitForReady(60_000);
-    const r = await bot.skipTutorial();
-    console.log('[setup] tutorial', r.message, JSON.stringify(pos(sdk)));
+    const s0 = sdk.getState()!;
+    const p0 = pos(sdk);
+    if (s0.modalOpen || (p0.x < 3150 && p0.z < 3130)) {
+        const r = await bot.skipTutorial();
+        console.log('[setup] tutorial', r.message, JSON.stringify(pos(sdk)));
+    }
     for (const [s, l] of Object.entries(stats)) await cheat(sdk, `setstat ${s} ${l}`);
     for (const [i, n] of items) await cheat(sdk, `give ${i} ${n}`);
     await sdk.waitForTicks(2);
