@@ -187,6 +187,12 @@ scripts are in section 4; the shared primitives and their build order are in sec
     cannon set and ~1,170 cannonballs; the rune axe or main's decision to run without it; the budget
     (expected + fallback deltas in force under 35,916). run.ts reads them from the operator's
     checklist (`SUPPLIES.md` section 5); it does not count bones itself;
+  - **`RUN_COMMIT` includes rs/164** (`RUN-HOST.md` "Credentials" and step 0): without it
+    `logoutClean` cannot confirm a logout from the browser tab, because the gateway keeps
+    `inGame: true` with status `stale` (m, rs/149 on the rehearsal twin). Cost if not: up to ~60
+    ticks per relog (i, RUN-ORDER.md R1's bound), for both planned relogs and any pause, plus
+    whatever run.ts does on the reported failure; the final logout is then confirmed on the host
+    (`RUN-HOST.md` step 8). A precondition, not a line in the totals;
   - rs/117's helpers logged in before SCORED (`launcher.json` `helpersReady`);
   - a session that publishes advancing ticks (`openSession`, `waitAdvancingTick`); the watchdog
     started; the in-page runtime present (`startProgram(sdk, 'probe')` answers);
@@ -443,6 +449,20 @@ scripts are in section 4; the shared primitives and their build order are in sec
 - **Parameters:** `steps` (the rotation as stand>rock pairs), `respawn` (13 at about 1,260 online,
   19 on a quiet server; from the public player count, `player_count.rs2:1-4` via `skills/README.md`
   open question 4), `starter: 'knife' | 'none'`, `untilLevel: 99`.
+- **Lap choice by the observed respawn** (rs/158, relayed for rs/153's module): `steps` is chosen
+  at each band start and on resume, not fixed to the five-rock demo lap. Read D from the observed
+  respawn (an emptied rock's ticks to respawn) or from `/playercount` through
+  D = floor(20 x (4000 - min(online, 2000)) / 4000) (r: `player_count.rs2`, `NumberOps.ts`'s
+  integer `scale`, iron's base 20; `skills/mining.md` §4). Then take the lap whose period covers the
+  D + 2 ticks a rock needs between rolls: `ceil((D + 2) / 3)` rocks at 3 ticks a move (mining.md §4).
+
+  | Observed D | Online (r, the formula) | Lap | Knife ticks per ore |
+  |---|---|---|---|
+  | 13 or less | more than 1,200 | the five-rock demo lap (15 ticks) | 3.00 (m at D = 13, mining.md §4) |
+  | 14-16 | 601-1,200 | the six-rock lap (mining.md §4's quiet-server steps, 18 ticks with the knife) | 3.00 (i); the five-rock lap here would give (D + 2) / 5 = 3.20-3.60 (i) |
+  | 17-19 | 600 or fewer | neither holds: the six-rock lap waits one move a lap, (D + 2) / 6 = 3.17-3.50 | 3.50 m at D = 19 (mining.md:184); a seven-rock lap would hold 3.00 (i, not run, mining.md §4) |
+
+  The ticks below are unchanged: 3,116 knife at the demo's count (D = 13).
 - **Preconditions:** rune pickaxe, knife and about 5 normal logs, Fletching 1; Mining 64; position on
   the rotation's first standing tile. The same host-gate rule as Woodcutting.
 - **Postconditions:** Mining 99; pickaxe, knife and logs kept (no log used over 200 ores, measured,
@@ -1078,7 +1098,9 @@ scripts are in section 4; the shared primitives and their build order are in sec
 - **Preconditions:** SCORED at Varrock west bank at a planned relog, never in a first login; the wine
   giver beside the bank requesting; 520 noted unfermented wines (held, rs/118); the chisel and the
   gems for the windows banked from H21d; S25a, S25d and S25e done; level-up pages cleared and 16
-  ticks out of combat before each relog.
+  ticks out of combat before each relog; **`RUN_COMMIT` includes rs/164** (entry 0). Without it each
+  of the two relogs risks up to ~60 ticks of `logoutClean`'s unconfirmed wait (i, RUN-ORDER.md R1's
+  bound) instead of 2.
 - **Postconditions:** Cooking 99; 107 more gems cut. Items out: none.
 - **Ticks:** expected **80**, best **75** (WINE's demo run A and projection, 75-85; measured). The
   gems save 30-31 ticks of Crafting at Crafting 55 (measured, wine-window.md §2, n = 3) and about 36
