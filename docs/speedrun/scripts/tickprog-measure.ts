@@ -8,6 +8,9 @@
 //                                                --ores=200 [--starter=knife|none]
 //   fly          knife fly fishing, Lumbridge     --level=20 --until=99 | --rolls=N [--technique=plain]
 //   willow       knife willows, Draynor           --rolls=150
+//   oak          knife oaks, Taverley (2914,3494) --rolls=200 [--level=60] [--bury [--prayer=43]]
+//                --bury buries dragon bones inside the cycle; a ::give tops them up at 3 left
+//                (off the scored clock; the run's trades cost rs/105's 5 ticks per load on top)
 //   tree         knife normal trees, Lumbridge    --rolls=150 [--level=1]  (the demo loop)
 //   pickpocket   Ardougne knight, eat in windows  --level=55 --rolls=300 [--hold=1]
 //   agility      Wilderness course                --laps=10 [--course=gnome]
@@ -76,7 +79,7 @@ await runScript(async ({ bot: actions, sdk }) => {
             console.log(`in-page probe: ${where()}, server ${process.env.SERVER ?? '(bot.env)'}`);
             console.log(`latency in ticks: ${latencyHistogram(r.latencies)}  (${r.trials} trials, ${r.lost} lost, ${r.ticks} ticks)${r.reason ? `  ${r.reason}` : ''}`);
             console.log(`on time ${r.onTime}/${r.trials}; sequence ${r.latencies.join('')}`);
-            const ms = [...r.publishMs].sort((a, b) => a - b);
+            const ms = [...((r as { publishMs?: number[] }).publishMs ?? [])].sort((a, b) => a - b);
             const q = (p: number) => (ms.length ? ms[Math.min(ms.length - 1, Math.floor(p * ms.length))] : NaN);
             console.log(`decoded-tick interval ms in the page: p10 ${q(0.1)} p50 ${q(0.5)} p90 ${q(0.9)} max ${q(1)}`);
             const st = programStatus(sdk.getState());
@@ -117,6 +120,41 @@ await runScript(async ({ bot: actions, sdk }) => {
             const end = await runProgram(sdk, 'knife-cycle', params, { onProgress: progress });
             return report(`knife-cycle ${method}`, end);
         }
+        case 'oak': {
+            const bury = has('bury');
+            const level = num('level', 60);
+            if (!DEMO) {
+                await clearInventory();
+                await say(`::setstat woodcutting ${level}`);
+                await say(`::setstat prayer ${num('prayer', 43)}`);
+                await say('::give rune_axe 1');
+                await knifeKit(2);
+                if (bury) await say('::give dragon_bones 20');
+                await tele('0,45,54,34,38', 2914, 3494);
+                while (sdk.getState()?.dialog.isOpen) { await sdk.sendClickDialog(0); await sdk.waitForTicks(1); }
+            }
+            const params: Record<string, unknown> = { method: 'oak', technique: flag('technique', 'knife'), rolls: num('rolls', 200), maxTicks: num('maxticks', 30_000) };
+            // the three oaks reached from 2914,3494 (woodcutting.md section 2); --any-tree clicks the nearest oak
+            if (!has('any-tree')) params.trees = [[2912, 3491], [2914, 3495], [2915, 3492]];
+            if (bury) params.bury = '^dragon bones$';
+            const started = await startProgram(sdk, 'knife-cycle', params);
+            // Top-up stand-in: the run's helper trades at the tree (bones-placement.md section 3).
+            let giving = false;
+            const un = sdk.onStateUpdate(s => {
+                if (!bury || DEMO || giving) return;
+                const bones = s.inventory.filter(i => /^dragon bones$/i.test(i.name)).length;
+                const free = 28 - s.inventory.length;
+                if (bones > 3 || free < 6) return;
+                giving = true;
+                void sdk.sendSay(`::give dragon_bones ${free - 2}`).finally(() => sdk.waitForTicks(3).then(() => { giving = false; }));
+            });
+            try {
+                const end = await awaitProgram(sdk, started.runId, { onProgress: progress });
+                return report(`knife-cycle oak${bury ? ' bury' : ''} L${level}`, end);
+            } finally {
+                un();
+            }
+        }
         case 'pickpocket': {
             const level = num('level', 55);
             if (!DEMO) {
@@ -155,7 +193,7 @@ await runScript(async ({ bot: actions, sdk }) => {
             return report(`agility ${course}`, end);
         }
         default:
-            throw new Error(`unknown mode ${mode}: probe, mine, fly, willow, tree, pickpocket, agility`);
+            throw new Error(`unknown mode ${mode}: probe, mine, fly, willow, oak, tree, pickpocket, agility`);
     }
     }
 }, { timeout: 3 * 60 * 60_000, printState: false });

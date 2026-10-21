@@ -26,6 +26,7 @@ speedrun/
     tab.ts        the scored browser tab over the Chrome DevTools protocol (reload, not reopen)
     ticks.ts      TickLog (JSONL), measure, report; CLI: bun speedrun/lib/ticks.ts report <file>
     hostgate.ts   probeOnTime (packet latency in ticks), gateDecision, HostGate (run-time knife gate)
+    programs.ts   startProgram, awaitProgram, runProgram, probeInPage: the page's in-page tick programs
     fake-sdk.ts   scriptable BotSDK stand-in for the unit tests
   runner/
     step.ts       Step type and runSteps
@@ -347,6 +348,34 @@ predicted ticks per roll beat the plain loop's. `HostGate` probes at the start, 
 loop's lost locks and periodically while off, and switches off when the loop's measured
 ticks per drop are not faster than plain. The design and the measurements are in
 `docs/speedrun/skills/tick-manipulation.md` ("Run-time host gate").
+
+## programs.ts
+
+Drives the browser page's in-page tick programs (`server/webclient/src/bot/programs`,
+design in `docs/speedrun/tick-programs.md`) over the ordinary `sdk_action` relay:
+`startProgram(sdk, name, params)`, `awaitProgram(sdk, runId, {onProgress})` (resolves on done,
+stopped or replaced, rejects on a fault or a page that stops publishing), `runProgram`,
+`programCounters`, and `probeInPage` (the host gate's probe over the direct path). Programs:
+`probe`, `knife-cycle`, `knife-mine`, `pickpocket`, `agility`.
+
+**`knife-cycle` with bones (S07).** Knife Woodcutting that buries a bone every 3-tick cycle:
+
+```ts
+await runProgram(sdk, 'knife-cycle', {
+    method: 'oak', untilLevel: 73,
+    bury: '^dragon bones$',
+    trees: [[2912, 3491], [2914, 3495], [2915, 3492]] // the oaks reached from 2914,3494
+});
+```
+
+The bones come from the inventory; with none left the program runs the plain knife cycle on
+the same labels and resumes burying when bones appear. Pass `trees` whenever `bury` is on: a
+click on a tree that needs a walk never rolls in a bury cycle. The status carries `buried`,
+`burySent`, `noBoneCycles`, `switches` (tree falls absorbed in the lock) and the gauges
+`bonesLeft`, `buriesPerTick`, `ticksPerRoll`, `ticksPerRollSpan` and `lastRollGap`, so a step
+script sees a lost 3-tick lock as gaps over 3. The program does not trade: a top-up is the step
+script's (stop, `trade.ts` `receiveFrom`, start again). Measured 0.329 bones per tick at oak
+WC 60 with the knife cadence unchanged (`docs/speedrun/skills/woodcutting.md` section 9).
 
 ## runner/step.ts
 

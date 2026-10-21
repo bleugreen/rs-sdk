@@ -6,15 +6,24 @@ import { Harness, makeState, type StateSpec } from './testkit.js';
  * A deterministic stand-in for the engine's gathering loop (tick-manipulation.md
  * section 5): a click on an idle player rolls r0 ticks after it lands; each roll
  * re-arms the next one plainCycle later; a knife starter landing on R+1 pulls the
- * next roll to R+3. Packets sent on label c land on c + latency.
+ * next roll to R+3. The knife sets the clock 2 ahead, and a click landing on that
+ * tick rolls at once. A bury clears the interaction, rejects every packet on the
+ * next tick and gives its Prayer xp then (bones-placement.md section 2). Packets
+ * sent on label c land on c + latency.
  */
 function serverRun(opts: {
-    method: 'willow' | 'fly' | 'tree';
+    method: 'willow' | 'oak' | 'fly' | 'tree';
     technique?: 'knife' | 'plain';
     ticks: number;
     latency?: (n: number) => number;
     params?: Record<string, unknown>;
     inventory?: string[];
+    /** Dragon bones added to the inventory. */
+    bones?: number;
+    /** A non-depleting tree falls on every Nth roll and another one stands. */
+    fellEvery?: number;
+    /** Ticks after such a fall with no live tree at all (every reachable tree down). */
+    allDownFor?: number;
     spotMovesAt?: number;
     dialogAt?: number;
     logsGoneAt?: number;
@@ -38,21 +47,33 @@ function serverRun(opts: {
     let felledAt: number | null = null;
     let clickedTree = 0;
     let dialog = false;
+    let clock = -1;
+    let downUntil = -1;
+    let delayedOn = -1;
+    let prayerXp = 0;
+    let buryXpOn = -1;
     const pending: Array<{ at: number; type: string; locId?: number }> = [];
     const rollTicks: number[] = [];
-    const inventory = opts.inventory ?? ['Knife', 'Logs', 'Logs', 'Logs', 'Logs', 'Logs'];
+    const buryTicks: number[] = [];
+    const inventory: Array<string | { name: string; options: string[] }> = [
+        ...(opts.inventory ?? ['Knife', 'Logs', 'Logs', 'Logs', 'Logs', 'Logs']),
+        ...Array.from({ length: opts.bones ?? 0 }, () => ({ name: 'Dragon bones', options: ['Bury', 'Drop'] }))
+    ];
+    const treeName = opts.method === 'tree' ? 'Tree' : opts.method === 'oak' ? 'Oak' : 'Willow';
+    // successive trees stand on alternating tiles, so a fallen one still listed keeps its own tile
+    const treeX = (id: number) => 3201 + (id % 2);
     const spec = (): StateSpec => ({
         tick,
-        skills: { [skill]: { xp } },
+        skills: { [skill]: { xp }, Prayer: { xp: prayerXp } },
         inventory,
         animId: interacting ? 1 : -1,
         dialogOpen: dialog,
         npcs: m.kind === 'npc' ? [{ index: 7, name: 'Fishing spot', x: spotX, z: 3200, options: ['Lure', 'Bait'] }] : [],
         locs: m.kind === 'loc'
             ? [
-                ...Array.from({ length: opts.deadTrees ?? 0 }, (_, i) => ({ id: 900 + i, x: 3200, z: 3200 + i, name: opts.method === 'tree' ? 'Tree' : 'Willow', options: ['Chop down'] })),
-                { id: treeId, x: 3201, z: 3204, name: opts.method === 'tree' ? 'Tree' : 'Willow', options: ['Chop down'] },
-                ...(felledAt !== null ? [{ id: treeId - 1, x: 3202, z: 3204, name: 'Tree', options: ['Chop down'] }] : [])
+                ...Array.from({ length: opts.deadTrees ?? 0 }, (_, i) => ({ id: 900 + i, x: 3200, z: 3200 + i, name: treeName, options: ['Chop down'] })),
+                ...(tick > downUntil ? [{ id: treeId, x: treeX(treeId), z: 3204, name: treeName, options: ['Chop down'] }] : []),
+                ...(felledAt !== null ? [{ id: treeId - 1, x: treeX(treeId - 1), z: 3204, name: treeName, options: ['Chop down'] }] : [])
             ]
             : []
     });
@@ -63,18 +84,31 @@ function serverRun(opts: {
         tick++;
         // packets landing this tick, in the order sent
         let starter = false;
+        if (buryXpOn === tick) {
+            prayerXp += 72 * 25;
+            buryTicks.push(tick);
+            inventory.splice(inventory.findIndex(i => typeof i !== 'string' && i.name === 'Dragon bones'), 1);
+        }
         for (const p of pending.filter(p => p.at === tick)) {
-            if (p.type === 'useItemOnItem' || p.type === 'dropItem') interacting = false; // inventory ops clear the interaction
+            if (tick === delayedOn) continue; // p_delay(0) after a bury: every packet is rejected
+            if (p.type === 'useItemOnItem' || p.type === 'dropItem' || p.type === 'useInventoryItem') interacting = false; // inventory ops clear the interaction
+            if (p.type === 'useItemOnItem') clock = tick + 2;
             if (p.type === 'useItemOnItem' && tick === lastRoll + 1) starter = true;
+            if (p.type === 'useInventoryItem') {
+                delayedOn = tick + 1;
+                buryXpOn = tick + 1;
+            }
             if (p.type === 'clickDialogOption') dialog = false;
-            if (p.type === 'interactLoc' && p.locId !== treeId) {
+            if (p.type === 'interactLoc' && (p.locId !== treeId || tick <= downUntil)) {
                 interacting = false; // a dead or felled tree: nothing happens
                 continue;
             }
+            if (p.type === 'interactLoc') dialog = false; // OpLocHandler closes a level-up page
             if (p.type === 'interactLoc' || p.type === 'interactNpc') {
                 interacting = true;
                 clickedTree++;
                 if (starter) nextRoll = lastRoll + 3;
+                else if (clock === tick) nextRoll = tick; // the first-click label rolls at once on a due clock
                 else if (nextRoll === null || nextRoll < tick) nextRoll = tick + m.r0;
             }
         }
@@ -87,13 +121,19 @@ function serverRun(opts: {
             rollTicks.push(tick);
             lastRoll = tick;
             nextRoll = tick + m.plainCycle;
-            if (m.depletes) { treeId++; interacting = false; nextRoll = null; if (opts.fellLag) felledAt = tick; }
+            if (m.depletes || (opts.fellEvery && rollTicks.length % opts.fellEvery === 0)) {
+                treeId++;
+                interacting = false;
+                nextRoll = null;
+                if (opts.fellLag) felledAt = tick;
+                if (opts.allDownFor && !m.depletes) downUntil = tick + opts.allDownFor;
+            }
         }
         if (opts.merged?.(tick)) { skipped++; continue; }
         for (const s of h.step(makeState(spec()), 1 + skipped)) pending.push({ at: tick + (opts.latency?.(n++) ?? 1), type: s.action.type, locId: (s.action as { locId?: number }).locId });
         skipped = 0;
     }
-    return { h, rollTicks };
+    return { h, rollTicks, buryTicks };
 }
 
 const gapsOf = (ticks: number[]) => ticks.slice(1).map((t, i) => t - ticks[i]!);
@@ -216,9 +256,124 @@ describe('knife cycle', () => {
         expect(() => createKnifeCycle({ method: 'nope', rolls: 5 })).toThrow(/unknown method/);
     });
 
+    test('a tree that falls on a roll keeps the lock: the bundle clicks a live one', () => {
+        const { h, rollTicks } = serverRun({ method: 'oak', ticks: 200, fellEvery: 8 });
+        expect(h.status.result).toMatchObject({ resyncs: 0 });
+        expect((h.status.result as { switches: number }).switches).toBeGreaterThanOrEqual(7);
+        expect(gapsOf(rollTicks).slice(1).every(g => g === 3)).toBe(true);
+    });
+
+    test('a fallen tree still listed for a tick: the cycle re-clicks a live one before the roll', () => {
+        const { h, rollTicks } = serverRun({ method: 'oak', ticks: 200, fellEvery: 8, fellLag: 1 });
+        expect(h.status.result).toMatchObject({ resyncs: 0 });
+        expect(gapsOf(rollTicks).slice(1).every(g => g === 3)).toBe(true);
+        // the fallen tree is listed on R and R+1, so it is seen gone on R+2 and the re-click
+        // goes out then, alone, landing on the roll tick itself
+        const fell = rollTicks[7]!;
+        expect(h.sent.filter(s => s.tick === fell + 1)).toHaveLength(0);
+        expect(h.sent.filter(s => s.tick === fell + 2).map(s => s.action.type)).toEqual(['interactLoc']);
+    });
+
+    test('every tree down: no starter goes out (it would fletch the log), and the lock resumes on the respawn', () => {
+        const { h, rollTicks } = serverRun({ method: 'oak', ticks: 200, fellEvery: 8, allDownFor: 5 });
+        const fell = rollTicks[7]!;
+        const knives = h.sent.filter(s => s.action.type === 'useItemOnItem' && s.tick > fell && s.tick <= fell + 5);
+        expect(knives).toHaveLength(0);
+        expect(h.status.counters.noTarget).toBeGreaterThan(0);
+        expect(h.status.result).not.toHaveProperty('fellBack');
+        // locked again between the respawn and the next fall (roll 16)
+        const relocked = rollTicks.slice(9, 16);
+        expect(relocked[0]! - fell).toBeLessThan(20);
+        expect(gapsOf(relocked).every(g => g === 3)).toBe(true);
+    });
+
     test('the lost-lock window scales with the catch chance', () => {
         expect(lockWindow(CYCLE_METHODS.fly!, 99)).toBe(15);
         expect(lockWindow(CYCLE_METHODS.fly!, 20)).toBeGreaterThan(15);
         expect(lockWindow(CYCLE_METHODS.willow!, 1)).toBe(18);
+    });
+});
+
+describe('knife cycle: bury variant', () => {
+    const KIT = ['Knife', 'Logs', 'Oak logs', 'Oak logs'];
+    const types = (h: ReturnType<typeof serverRun>['h'], tick: number) => h.sent.filter(s => s.tick === tick).map(s => s.action.type);
+
+    test('the roll label sends knife, button, drop and bury; the click goes alone two labels later', () => {
+        const { h, rollTicks, buryTicks } = serverRun({ method: 'oak', ticks: 150, inventory: KIT, bones: 60, params: { bury: true } });
+        const gaps = gapsOf(rollTicks);
+        expect(gaps.slice(1).every(g => g === 3)).toBe(true);
+        const r = rollTicks[4]!;
+        expect(types(h, r)).toEqual(['useItemOnItem', 'clickComponent', 'dropItem', 'useInventoryItem']);
+        expect(types(h, r + 1)).toEqual([]);
+        expect(types(h, r + 2)).toEqual(['interactLoc']);
+        // one bone per roll once locked, its xp on the tick after the bury lands
+        expect(buryTicks).toContain(r + 2);
+        const res = h.status.result as { buried: number; burySent: number; resyncs: number; noBoneCycles: number };
+        expect(res.resyncs).toBe(0);
+        expect(res.noBoneCycles).toBe(0);
+        expect(res.buried).toBe(buryTicks.length);
+        expect(res.burySent - res.buried).toBeLessThanOrEqual(1);
+        expect(res.buried).toBeGreaterThanOrEqual(rollTicks.length - 3);
+        expect(h.status.gauges.buriesPerTick).toBeGreaterThan(0.3);
+        expect(h.status.gauges.lastRollGap).toBe(3);
+    });
+
+    test('when the bones run out the roll label sends the plain knife bundle and no label is lost', () => {
+        const { h, rollTicks, buryTicks } = serverRun({ method: 'oak', ticks: 150, inventory: KIT, bones: 12, params: { bury: true } });
+        expect(buryTicks).toHaveLength(12);
+        expect(gapsOf(rollTicks).slice(1).every(g => g === 3)).toBe(true);
+        const after = rollTicks.find(t => t > buryTicks[11]! + 3)!;
+        expect(types(h, after)).toEqual(['useItemOnItem', 'clickComponent', 'dropItem', 'interactLoc']);
+        expect(h.status.result).toMatchObject({ buried: 12, resyncs: 0 });
+        expect(h.status.gauges.bonesLeft).toBe(0);
+        expect(h.status.counters.noBoneCycles).toBeGreaterThan(0);
+    });
+
+    test('a level-up page: the dismiss and the bury bundle fit the 5-packet budget', () => {
+        const base = serverRun({ method: 'oak', ticks: 60, inventory: KIT, bones: 30, params: { bury: true } });
+        const r = base.rollTicks[5]!;
+        const { h, rollTicks } = serverRun({ method: 'oak', ticks: 60, inventory: KIT, bones: 30, params: { bury: true }, dialogAt: r });
+        expect(types(h, r)).toEqual(['clickDialogOption', 'useItemOnItem', 'clickComponent', 'dropItem', 'useInventoryItem']);
+        expect(h.status.deferred).toBe(0);
+        expect(gapsOf(rollTicks).slice(1).every(g => g === 3)).toBe(true);
+    });
+
+    test('a tree that falls keeps the lock: the lone click goes to a live tree', () => {
+        for (const fellLag of [0, 1]) {
+            const { h, rollTicks, buryTicks } = serverRun({ method: 'oak', ticks: 200, inventory: KIT, bones: 80, fellEvery: 8, fellLag, params: { bury: true } });
+            expect(h.status.result).toMatchObject({ resyncs: 0 });
+            expect(gapsOf(rollTicks).slice(1).every(g => g === 3)).toBe(true);
+            expect(buryTicks.length).toBeGreaterThanOrEqual(rollTicks.length - 3);
+            // no re-click: the bury cycle's click had not gone out yet
+            const fell = rollTicks[7]!;
+            expect(types(h, fell + 1)).toEqual([]);
+            expect(types(h, fell + 2)).toEqual(['interactLoc']);
+        }
+    });
+
+    test('a skipped click label (two ticks decoded at once) costs that roll and the lock comes back', () => {
+        const base = serverRun({ method: 'oak', ticks: 150, inventory: KIT, bones: 60, params: { bury: true } });
+        const r = base.rollTicks[6]!;
+        const { h, rollTicks } = serverRun({ method: 'oak', ticks: 150, inventory: KIT, bones: 60, params: { bury: true }, merged: t => t === r + 2 });
+        expect(h.status.counters.lateClicks).toBe(1);
+        const after = rollTicks.filter(t => t > r + 12);
+        expect(after.length).toBeGreaterThan(10);
+        expect(gapsOf(after).every(g => g === 3)).toBe(true);
+    });
+
+    test('trees restricts the clicks to the listed tiles', () => {
+        // a nearer dead tree off the list is never clicked
+        const { h, rollTicks } = serverRun({ method: 'oak', ticks: 120, inventory: KIT, bones: 40, deadTrees: 1, params: { bury: true, trees: [[3201, 3204], [3202, 3204]] } });
+        expect(h.sent.some(s => s.action.type === 'interactLoc' && (s.action as { x: number }).x === 3200)).toBe(false);
+        expect(gapsOf(rollTicks).slice(1).every(g => g === 3)).toBe(true);
+        expect(() => createKnifeCycle({ method: 'oak', rolls: 5, trees: [] })).toThrow(/trees/);
+        expect(() => createKnifeCycle({ method: 'oak', rolls: 5, trees: [[1, 2, 3]] })).toThrow(/trees\[0\]/);
+    });
+
+    test('bury is refused where the lock cannot carry it', () => {
+        expect(() => createKnifeCycle({ method: 'fly', rolls: 5, bury: true })).toThrow(/not supported/);
+        expect(() => createKnifeCycle({ method: 'tree', rolls: 5, bury: true })).toThrow(/not supported/);
+        expect(() => createKnifeCycle({ method: 'oak', technique: 'plain', rolls: 5, bury: true })).toThrow(/knife technique/);
+        expect(() => createKnifeCycle({ method: 'oak', rolls: 5, bury: '^dragon bones$' })).not.toThrow();
     });
 });
