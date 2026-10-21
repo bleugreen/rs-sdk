@@ -14,7 +14,7 @@ await runScript(async ({ sdk }) => {
     await tele(sdk, x!, z!, level!);
     await waitTicks(sdk, 3);
     const r = radius || 15;
-    for (const l of (await sdk.scanNearbyLocs(r)).filter(l => l.optionsWithIndex.length > 0)) {
+    for (const l of (await sdk.scanNearbyLocs(r)).filter(l => process.env.ALL || l.optionsWithIndex.length > 0)) {
         console.log(`LOC ${l.name} (${l.x},${l.z},${l.level ?? '?'}) id=${l.id} ops=${l.optionsWithIndex.map(o => o.opIndex + ':' + o.text).join('/')}`);
     }
     for (const g of await sdk.scanGroundItems(r)) console.log(`OBJ ${g.name} (${g.x},${g.z}) id=${g.id}`);
