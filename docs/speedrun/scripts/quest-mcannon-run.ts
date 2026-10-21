@@ -9,7 +9,7 @@
 import { runScript } from '../../../sdk/runner';
 import type { BotSDK } from '../../../sdk/index';
 import type { BotActions } from '../../../sdk/actions';
-import { cheat, log, pos, talkThrough, tele, tick, waitTicks, waitUntil } from './quest-unlocks-lib';
+import { cheat, clock, log, pos, talkThrough, tele, tick, waitTicks, waitUntil } from './quest-unlocks-lib';
 
 const CRAFT = Number(process.env.CRAFT ?? 60);
 const SMITH = Number(process.env.SMITH ?? 60);
@@ -58,13 +58,13 @@ await runScript(async ({ bot, sdk }) => {
     for (const it of sdk.getEquipment()) await bot.unequipItem(it);
     for (const it of sdk.getInventory()) await bot.dropItem(it);
     await tele(sdk, ARDOUGNE[0], ARDOUGNE[1]);
-    const tStart = tick(sdk);
-    let t = tick(sdk);
+    const tStart = clock(sdk);
+    let t = clock(sdk);
     const seg = (name: string, d: { pages?: number; options?: number; tiles?: number; note?: string }) => {
-        const s: Seg = { name, ticks: tick(sdk) - t, pages: d.pages ?? 0, options: d.options ?? 0, tiles: d.tiles ?? 0, note: d.note };
+        const s: Seg = { name, ticks: clock(sdk) - t, pages: d.pages ?? 0, options: d.options ?? 0, tiles: d.tiles ?? 0, note: d.note };
         segs.push(s);
         log(sdk, `SEG ${name}: ${s.ticks} ticks, ${s.pages} pages, ${s.options} options, ${s.tiles} tiles${s.note ? ', ' + s.note : ''}`, tStart);
-        t = tick(sdk);
+        t = clock(sdk);
     };
 
     // 1. Ardougne teleport landing -> Commander Lawgof, start
@@ -86,14 +86,20 @@ await runScript(async ({ bot, sdk }) => {
             const r = await bot.interactLoc(rail, 'Inspect');
             if (!r.success) throw new Error(`railing ${rx},${rz}: ${r.message}`);
             await waitUntil(sdk, () => sdk.getDialog()?.isOpen === true, 20, 'railing choice');
-            const dd = await talkThrough(sdk, ['Try to replace the railing.'], { idleMs: 800 });
+            const dd = await talkThrough(sdk, ['Try to replace the railing.'], { keepIdle: true, idleTicks: 1 });
             pages += dd.pages;
             opts += dd.options;
             tries++;
-            await waitTicks(sdk, 4);
-            const msgs = sdk.getNewChat({ types: [0] }).map((m) => m.text);
-            if (msgs.some((m) => /replace the railing with no problems/i.test(m))) break;
-            if (!msgs.some((m) => /fail and cut yourself/i.test(m))) log(sdk, `railing ${rx},${rz} attempt ${attempt}: ${JSON.stringify(msgs)}`, tStart);
+            // railings.rs2: if_close, p_delay(2), roll; success then p_delay(2) before the bit is set
+            const msgs: string[] = [];
+            await waitUntil(sdk, () => {
+                msgs.push(...sdk.getNewChat({ types: [0] }).map((m) => m.text));
+                return msgs.some((m) => /no problems|fail and cut/i.test(m));
+            }, 20, 'railing result');
+            if (msgs.some((m) => /no problems/i.test(m))) {
+                await waitTicks(sdk, 3);
+                break;
+            }
         }
     }
     seg('six railings', { pages, options: opts, note: `${tries} tries for 6 railings at Crafting ${CRAFT}` });
@@ -191,7 +197,7 @@ await runScript(async ({ bot, sdk }) => {
 
     // 6. Nulodion at the Black Guard base (3011,3453), door 3015,3453
     await tele(sdk, FALADOR[0], FALADOR[1]);
-    t = tick(sdk);
+    t = clock(sdk);
     tiles = await walk(bot, sdk, 3016, 3453, 1);
     const ndoor = await locAt(sdk, 3015, 3453, /door/i);
     if (ndoor) await bot.openDoor(ndoor);
@@ -201,7 +207,7 @@ await runScript(async ({ bot, sdk }) => {
 
     // 7. back to Lawgof, quest complete
     await tele(sdk, ARDOUGNE[0], ARDOUGNE[1]);
-    t = tick(sdk);
+    t = clock(sdk);
     tiles = await walk(bot, sdk, LAWGOF[0], LAWGOF[1] - 2, 2);
     d = await talk(bot, sdk, /dwarf commander|lawgof/i);
     await waitTicks(sdk, 3);
