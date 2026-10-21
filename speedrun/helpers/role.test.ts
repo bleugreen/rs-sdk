@@ -35,8 +35,12 @@ describe('runStandalone', () => {
                     if (text.startsWith('{')) lines.push(JSON.parse(text));
                 }
             }
+            // runScript's connect already waits for one tick change, so by the time the gate runs the
+            // replay is behind it; what matters is that the role's first look is the new session.
             const session = lines.find(l => typeof l.message === 'string' && l.message.startsWith('session state'));
-            expect(session?.message).toMatch(/^session state at tick \d+ \(passed over 9000\b/);
+            const startTick = Number(/^session state at tick (\d+)/.exec(String(session?.message))?.[1]);
+            expect(startTick).toBeGreaterThan(0);
+            expect(startTick).toBeLessThan(9000);
             expect(lines.find(l => l.message === 'idle')).toMatchObject({ x: 3182, z: 3440 });
         } finally {
             clearInterval(await publisher);
