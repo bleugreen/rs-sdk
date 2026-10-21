@@ -19,7 +19,7 @@ import { clickLoc, converseSeq, routeCounter, talk } from './quest-dragon-lib';
 
 const RUNS = Number(process.argv[3] ?? 2);
 
-await runScript(async ({ sdk }) => {
+await runScript(async ({ bot, sdk }) => {
     const runs = [];
     for (let i = 0; i < RUNS; i++) {
         for (const v of ['dragonquest 8', 'dragon_ned_hired 1', 'dragonquestvar 3']) { await cheat(sdk, 'setvar ' + v); await waitTicks(sdk, 1); }
@@ -50,30 +50,30 @@ await runScript(async ({ sdk }) => {
         const arrival = await converseSeq(sdk, async () => {}, [], s => !s.dialog.isOpen, 60);
         run.sail = { ...sail, arrival, ticks: now(sdk) - tSail };
 
-        // Crandor surface: wreck to the rock opening
+        // Crandor surface: out through the broken hull (it does not block; see
+        // quest-dragon-wreck-probe.ts) to the rock opening, and climb down.
+        // bot.walkTo costs about 0.57 ticks per tile (primitives.md section 2),
+        // so routeTiles is recorded to re-cost the walk at 0.5 for chained clicks.
         t = now(sdk);
         let rc = routeCounter(sdk);
         const surfaceStart = pos(sdk.getState());
+        const w1 = await bot.walkTo(2834, 3253, 1, { timeout: 60_000 });
+        const tWalk1 = now(sdk) - t;
         await clickLoc(sdk, /^rock opening$/i, /^climb-down$/i, undefined, { x: 2833, z: 3255, id: 2609, op: 1 });
-        r = await waitUntil(sdk, s => pos(s).z > 9000, 120);
+        r = await waitUntil(sdk, s => pos(s).z > 9000, 30);
         rc.stop();
-        if (!r) {
-            // the opening may be outside the loaded area or the route: walk closer first
-            await sdk.sendWalk(2835, 3253, true);
-            await waitUntil(sdk, s => Math.abs(pos(s).x - 2835) <= 2 && Math.abs(pos(s).z - 3253) <= 2, 80);
-            await clickLoc(sdk, /^rock opening$/i, /^climb-down$/i, undefined, { x: 2833, z: 3255, id: 2609, op: 1 });
-            r = await waitUntil(sdk, s => pos(s).z > 9000, 60);
-        }
-        run.surface = { from: surfaceStart, ticks: r ? r.tick - t : null, routeTiles: rc.tiles, at: pos(sdk.getState()), hp: sdk.getState()!.player!.hp };
+        run.surface = { from: surfaceStart, walk: w1.success ? tWalk1 : w1.message, ticks: r ? r.tick - t : null, routeTiles: rc.tiles, at: pos(sdk.getState()), hp: sdk.getState()!.player!.hp };
         await waitTicks(sdk, 1);
 
         // dungeon: to Elvarg's gate and through it
         t = now(sdk);
         rc = routeCounter(sdk);
+        const w2 = await bot.walkTo(2846, 9637, 1, { timeout: 60_000 });
+        const tWalk2 = now(sdk) - t;
         await clickLoc(sdk, /^gate$/i, /^open$/i, { x: 2847, z: 9637 }, { x: 2847, z: 9637, id: 2608, op: 1 });
-        r = await waitUntil(sdk, s => pos(s).x >= 2848 && pos(s).z > 9600 && pos(s).z < 9650, 120);
+        r = await waitUntil(sdk, s => pos(s).x >= 2847 && pos(s).x <= 2863 && pos(s).z > 9600 && pos(s).z < 9650, 30);
         rc.stop();
-        run.dungeon = { ticks: r ? r.tick - t : null, routeTiles: rc.tiles, at: pos(sdk.getState()), hp: sdk.getState()!.player!.hp, chat: sdk.getChat({ limit: 3 }).map(m => m.text) };
+        run.dungeon = { walk: w2.success ? tWalk2 : w2.message, ticks: r ? r.tick - t : null, routeTiles: rc.tiles, at: pos(sdk.getState()), hp: sdk.getState()!.player!.hp, chat: sdk.getChat({ limit: 3 }).map(m => m.text) };
 
         const segs = ['board', 'ladder', 'sail', 'surface', 'dungeon'].map(k => (run[k] as { ticks: number | null }).ticks);
         run.total = segs.every(x => x !== null) ? (segs as number[]).reduce((a, b) => a + b, 0) : null;
