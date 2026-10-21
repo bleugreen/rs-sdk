@@ -593,11 +593,11 @@ minutes with 3-9 catch-ups come and go all morning.
 **How long bursts last.**
 
 - *Severe bursts* were each seen in exactly one sample, with calm samples on both sides. The
-  tightest bounds: 04:13 lasted at most 14 minutes (calm at 04:04 and 04:18), 04:24 at most 23,
-  05:36 at most 51 and 09:51 at most 52. Only one was watched continuously: 06:10, at 19-23
-  catch-ups in each of 4 minutes, which ended with the demo's restart at 06:14. So a severe burst
-  lasts at least a few minutes and, in every case followed, was gone by the next sample 5-25
-  minutes later.
+  upper bounds, from the gaps between those calm samples: 04:13 at most 12 minutes (calm at 04:04
+  and 04:18), 04:24 at most 29, 05:36 at most 50 and 09:51 at most about 65. Only one was watched
+  continuously: 06:10, at 19-23 catch-ups in each of 4 minutes, which ended with the demo's restart
+  at 06:14. So a severe burst lasts at least a few minutes and, in every case followed, was gone by
+  the next sample, 5-52 minutes after it was seen.
 - *Simmer minutes* (3 or more catch-ups in a single minute) come in short runs: 26 runs inside the
   long windows, of which 21 closed inside a window at 1-4 minutes (median 1); the other 5 were cut
   off by a window's edge at 1-5 minutes.
@@ -639,10 +639,10 @@ that hour safe.
   only (12 scored minutes), and the fleet is about 30 of 1,650 accounts. The severe 04:13 sample sat
   in a stable stretch with no fleet logins or logouts.
 - *Restarts:* the demo restarted at 01:22 (from rs/41's fleet log), 04:53 and 06:14, and not again
-  through 12:30: the bundle hash, Fly machine and worker stayed the same all morning, and all 238
-  websocket upgrades from 07:44 returned 101. Four of the five severe bursts (04:13, 04:24, 05:36,
-  06:10) fell within 40 minutes before one of the two restarts, and in the 6.3 hours after 06:14
-  there was one severe burst (09:51) and no restart. That fits a game process that degrades before
+  through at least 12:21: the bundle hash, Fly machine and worker stayed the same all morning, the
+  player count never dropped, and all 238 websocket upgrades from 07:44 to 12:00 returned 101. Four
+  of the five severe bursts (04:13, 04:24, 05:36, 06:10) fell within 40 minutes before one of the
+  two restarts, and in the six hours after 06:14 there was one severe burst (09:51) and no restart. That fits a game process that degrades before
   it exits (for example memory growth and long garbage-collection pauses on the 4 GB machine), but
   it is inferred from two restarts and nothing on the server side has been seen. The longest silence
   without a restart was 1,987 ms, at 07:50.
@@ -674,8 +674,8 @@ fails, because jitter fills calm minutes with long-then-shortish pairs (up to 4.
 60 of 60 sample).
 
 (b), publication p90 at most 400 ms, agreed with (a) on 17 of 24. Six of its seven disagreements
-failed samples that scored 59 or 60 of 60 (04:18, 07:41, 08:36, 09:10, 09:31 and 12:02, p90
-408-455 ms with 0-1.6 catch-ups per minute), and one passed the bad 07:01 simmer at 383 ms. The p90
+failed samples that lost at most one reaction (04:18 at 10 of 10; 07:41, 08:36, 09:10, 09:31 and
+12:02 at 59-60 of 60; p90 408-455 ms with 0-1.6 catch-ups per minute), and one passed the bad 07:01 simmer at 383 ms. The p90
 drifted above 400 ms from about 07:40 without costing reactions, so (b) stays context, not a pass
 line.
 
@@ -702,8 +702,8 @@ in-run monitor can count them as a warning, not a gate.
 the player count, and severe bursts strike out of calm samples. What the night does support:
 
 - Read the gate right before starting (rs/140's timer now reads it at :00 and :30 UTC from the
-  run host). A severe reading was gone by the next sample in every case followed, so waiting 10-15
-  minutes and re-reading is the right response to one.
+  run host). A severe reading was gone by the next sample in every case followed (the quickest
+  within 5 minutes), so the response to one is to wait and re-read, not to give up on the night.
 - A simmer stretch can last hours (08:36-11:36 here). If the gate fails on simmer more than twice in
   a row, starting on a passing read is still right, with the in-run pause above about 5 per minute.
 - A severe burst that lasts more than a few minutes may precede a restart (06:10-06:14 here; 4 of 5
