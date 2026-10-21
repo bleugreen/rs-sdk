@@ -121,7 +121,7 @@ const TIERS: Array<{ re: RegExp; level: number; product: RegExp }> = [
 ];
 // Arrowheads per tier for Fletching 1-99 (fletching.md): each stack lasts to the next tier's level.
 const HEAD_LOADS = [['bronze', 60], ['iron', 90], ['steel', 135], ['mithril', 225], ['adamant', 495], ['rune', 2595]] as const;
-const TIER_BY_NAME = new Map(HEAD_LOADS.map(([n], i) => [n, TIERS[TIERS.length - 1 - i]!]));
+const TIER_BY_NAME = new Map<string, (typeof TIERS)[number]>(HEAD_LOADS.map(([n], i) => [n, TIERS[TIERS.length - 1 - i]!]));
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const skill = (s: BotWorldState, n: string) => s.skills.find(k => k.name.toLowerCase() === n)!;
 const count = (s: BotWorldState, re: RegExp) => s.inventory.filter(i => re.test(i.name)).reduce((a, i) => a + i.count, 0);
