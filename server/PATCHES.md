@@ -328,6 +328,15 @@ Upgrade hazards:
       `captureDialogToHistory`/`debugDialogComponents`, `findNpcByName`, `talkToNpc`,
       `interactNpc/Loc/Player`, `acceptCharacterDesign` (**must send IDK_SAVEDESIGN AND the
       CC_ACCEPT_DESIGN IF_BUTTON**), `setTargetedFramerate`, etc.
+- [ ] **`loadingComplete` latch** — `autoLogin` and the `?bot=` auto-login in
+      `titleScreenDraw` wait on `loadingComplete`, which upstream's `drawProgress` latches the
+      first time progress reaches 100. Not on `lastProgressPercent`: that is the loading bar's
+      display value, and every return to the title screen redraws it at 10%
+      (`loadTitleImages`, "Connecting to fileserver"), so a second login in one page would wait
+      forever. A sync that drops the latch line from `drawProgress` hangs every bot login.
+      Verify: `grep -n "loadingComplete" src/client/Client.ts` (field, `autoLogin` loop,
+      `titleScreenDraw` gate, and the latch in `drawProgress`) and
+      `bun test --isolate src/bot/ClientAutoLogin.test.ts`.
 - [ ] **Walk-before-op**: `interactLoc`, `talkToNpc`, `interactNpc`, `interactPlayer` ALL call
       `tryMove(..., type=2)` before writing OPLOC/OPNPC/OPPLAYER. 274's
       `clientRoutefinder=true` means the SERVER DOES NOT PATHFIND to interaction targets —
