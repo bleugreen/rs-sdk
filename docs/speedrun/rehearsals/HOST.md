@@ -183,9 +183,9 @@ world for up to 500 ticks, and on a rehearsal account that is playtime. In order
 
 4. The leftover check, then release your slot and remove your worktree.
 
-rs/96's direct gate CLI (`tickmanip-latency.ts --path=direct`) closes its socket at the end without
-logging out, so its account stays in the world until the server's timeout. That has been reported
-to main; the CLI is not this page's to change.
+rs/96's direct gate CLI (`tickmanip-latency.ts --path=direct`) logs out at the end (rs/168) and
+prints a `logout (direct):` line once the server confirms. A read whose last line says anything
+else has left its account in the world, so check `/playerpositions` before the next login.
 
 ## Setup
 
@@ -245,11 +245,33 @@ eight minutes later, so treat the 23 as a bad read of the endpoint (i).
 | 4 | 20:22:16-20:23:45 | cairn_twin | xrdp :10, RDP disconnected, recording on, tab closed | (a)-(c) | (a) 60/60; (b) 377 ms; (c) 0/min; TCP p50 1.9 ms. **Pass** | 1,589 |
 | 5 | 20:24:06-20:29:23 | cairn_twin | xrdp :10, RDP disconnected, recording and live view on | (d) | loop p10 70.8 / 72.0 / 72.9. **Pass** | 1,596 → 1,604 |
 | 6 | 20:29:46 | cairn_twin | xrdp :10, RDP disconnected | `probeInPage`, 60 trials | 60/60 on time; frame to decision p50 2 ms; loop p10 71.9 | 1,604 |
+| 7 | 21:00:00-21:01:27 | cairn_gate | none: direct path, no tab; twin idle | (a)-(c), paired with the run host's 21:00 timer read | (a) 60/60; (b) 405 ms, over; (c) 1 catch-up/min; TCP p50 2.2 ms. **Pass** | 1,579 |
+| 8 | 21:30:00-21:31:28 | cairn_gate | none; twin idle | (a)-(c), paired, 21:30 | (a) 59/60; (b) 390 ms; (c) 1/min; TCP p50 2.4 ms. **Pass** | 1,602 |
+| 9 | 22:00:00-22:01:26 | cairn_gate | none; **rs/174's stack running** (page server, gateway, Chrome tab, relog probe on cairn_smoke) | (a)-(c), paired, 22:00 | (a) 60/60; (b) 390 ms; (c) 0/min; TCP p50 2.0 ms. **Pass** | 1,627 |
+| 10 | 22:30:00-22:31:26 | cairn_gate | none; twin idle | (a)-(c), paired, 22:30 | (a) 60/60; (b) 380 ms; (c) 0/min; TCP p50 2.0 ms. **Pass** | 1,502 |
+| 11 | 23:00:00-23:01:27 | cairn_gate | none; twin idle | (a)-(c), paired, 23:00 | (a) 60/60; (b) 436 ms, over; (c) 0/min; TCP p50 2.3 ms. **Pass** | 1,597 |
 
 **Reads 4 to 6 are the twin's gate of record**: the run's configuration, every line passing. Main
 noted read 1 as the first fully passing gate minute recorded from an iad host. (d) is the lowest /
 median / highest 10-second p10 of 30 samples (RUN-HOST.md step 6). Read 2 is on Xvfb: no RDP
 session existed yet.
+
+**Reads 7 to 11 are paired reads** (rs/170 for rs/83). Each started on the same second as the run
+host's gate timer read (:00:00 and :30:00 UTC), so the two hosts were measured in the same minute.
+rs/83 holds the run host's side in its own `~/gate-history`, and the comparison is rs/83's call.
+Each read ran through
+[`twin-gate-pair.sh`](../scripts/twin-gate-pair.sh), fed over the ssh line above. The script runs
+the leftover check, skips when other owners' slots already hold two logins, takes its own
+`logins:1` slot, starts rs/96's direct CLI on the second under `timeout --kill-after=30s 5m`, and
+holds the slot until `/playerpositions` no longer lists the account. The CLI was rs/168's
+logout fix (`a369af7f0`); the probe itself is unchanged from rs/96. Every read logged out on the
+first click and left the world within 0-5 s. The account stood on the Lumbridge spawn
+(3223,3222, region 50_50) each time, with 38 to 65 other players within 15 tiles. The twin
+never read more than 1 catch-up/min and never fewer than 59/60 on time. Read 9 shared the twin
+within the cap with rs/174's stack, which started at 21:58:31; the other four had the twin to
+themselves. Read 11's ssh came from the Mac because bgsrv-ub was offline, and the read itself ran
+on the twin as before. The CLI's JSON (with `result.tickArrivalsMs`), its log and the
+in-world samples are in [`twin-pairs/`](twin-pairs/).
 
 CPU during (d), medians in percent of one core:
 
