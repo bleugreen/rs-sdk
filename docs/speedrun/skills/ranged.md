@@ -28,15 +28,20 @@ against **about 5,270 by knives alone**. No quest on the planned route gives Ran
 (section 3), so the post-quest start is level 1, or level ~54 after the Monkey
 Madness Jungle Demon fight.
 
-**On the Monkey Madness route** (option 1: Attack and Strength capped, gaps of
-Defence 4,638 and Hitpoints 4,938 after MM): fire the cannon for **113 ticks before
-MM** for Ranged 50 (the demon's magic shortbow). After MM, **cannon + defensive melee
-for about 830 ticks** closes the Defence gap and brings Ranged to ~80. Then **cannon +
-rapid rune knives for about 1,420 ticks** reaches Ranged 99, and Hitpoints fills as a
-by-product (about 5,500 base against the 4,938 gap). That is **about 2,250 ticks after
-MM for Ranged 99 + Defence 99 + Hitpoints 99** (inferred from measured rates,
-`ranged-model.ts`). Hand-trained Ranged alone (longrange, then rapid) needs about
-5,690.
+**On the Monkey Madness route** (rs/3 as of 22:40: MM option 1, Holy Grail off, so
+Attack and Strength are capped and the post-MM gaps are Defence 19,938 and
+Hitpoints 4,938): fire the cannon for **113 ticks before MM** for Ranged 50 (the
+demon's magic shortbow). After MM, train **defensive melee at the spiders with the
+cannon running** for about 3,460 ticks. That takes Ranged to 99 and Defence +19,370 on
+the way. Then about 60 ticks of melee alone at rs/30's ogres finish Defence, and
+Hitpoints fills as a by-product (about 6,590 base against the 4,938 gap). That is
+**about 3,520 ticks after MM for Ranged 99 + Defence 99 + Hitpoints 99** (plan (f),
+inferred from measured rates, `ranged-model.ts`). Training melee alone at the ogres
+and Ranged separately (cannon + knives) takes 4,197; hand-trained Ranged with
+longrange for Defence takes 9,685. If Waterfall leaves the route too (Strength gap
+4,938), plan (f) is 4,054 against 4,730. With Holy Grail back (Defence gap 4,638) the
+best plan is (e): cannon + defensive melee for 828 ticks, then cannon + rapid knives
+for 1,420, 2,248 in all.
 
 ### Combat comparison (the numbers the quest plan needs)
 
@@ -62,25 +67,41 @@ What this means for the plan (inferred, `ranged-model.ts`):
 
 | Scenario | Plan | Ticks |
 |---|---|---|
+Separate melee in these plans is rs/30's best single-combat target, the ogres west
+of Yanille (300 ms, `combat-rate.ts`): 9.25 Defence on defensive (8.99-10.08 Strength
+on aggressive), HP a third of that. Aggressive melee at the spiders is assumed to
+run at the measured defensive rate (5.60).
+
+| Scenario | Plan | Ticks |
+|---|---|---|
 | Ranged 1 -> 50 before MM | cannon, melee weapon wielded | **113** firing + ~10 set-up and pick-up + travel; knives only: 628 |
-| With MM option 1, from Ranged ~54 (50 + ~485 from the demon fight), Defence gap 4,638, HP gap 4,938 | (a) cannon alone for Ranged, then melee for Def/HP (8 + 2.67/tick, rs/30 preliminary) | 5,161 |
-| | (b) hand only: longrange until Defence 99, then rapid knives | 5,689 |
-| | (c) cannon + longrange until Defence 99, then cannon + rapid knives | 2,727 |
-| | (d) cannon + defensive melee throughout | 3,459 |
-| | **(e) cannon + defensive melee until Defence 99 (828), then cannon + rapid knives (1,420)** | **2,248** |
-| Same, with Fremennik Trials (gaps Defence 1,826, HP 2,126) | (e) | 2,057 (**saves 191 ticks**) |
+| **With MM option 1, Holy Grail off** (current route): from Ranged ~54 (50 + ~485 from the demon fight), Defence gap 19,938, HP gap 4,938 | **(f) cannon + defensive melee at the spiders until Ranged 99 (3,459), then melee alone at the ogres (62)** | **3,520** |
+| | (d) cannon + defensive melee at the spiders throughout | 3,560 |
+| | (g) melee alone at the ogres for Defence (2,155), then cannon + knives for Ranged (2,041) | 4,197 |
+| | (a) cannon alone for Ranged, then melee alone | 5,467 |
+| | (c) cannon + longrange until Defence 99, then cannon + rapid knives | 9,104 |
+| | (b) hand only: longrange until Defence 99, then rapid knives | 9,685 |
+| Same, Waterfall off as well (Strength gap 4,938 too) | (f) / (g) | **4,054** / 4,730 |
+| With MM option 1 and Holy Grail: Defence gap 4,638, HP gap 4,938 | **(e) cannon + defensive melee until Defence 99 (828), then cannon + rapid knives (1,420)**; (g) 2,543; (c) 2,722; (b) 5,689 | **2,248** |
+| Same, plus Fremennik Trials (gaps Defence 1,826, HP 2,126) | (e) | 2,057 (**Fremennik saves 191 ticks** of combat training) |
 | Ranged only from ~54 (no gaps) | cannon + rapid knives | 2,041 |
-| Pre-MM Ranged 70 instead of 50 (demon fight 178 instead of 267 ticks) | 463 + 178 + 2,030 | 2,670, against 2,628 for Ranged 50 first: no gain |
-| **Net value of the cannon** (MM route, to Ranged/Def/HP 99) | with: 113 + 267 + 2,248 + Dwarf Cannon 1,078 = 3,706; without: knives 628 + 267 + 5,689 = 6,584 | **saves about 2,880 ticks** |
+| Pre-MM Ranged 70 instead of 50 (demon fight 178 instead of 267 ticks), current route | 463 + 178 + 3,376 | 4,017, against 3,900 for Ranged 50 first: no gain |
+| **Net value of the cannon** (current route, to Ranged/Def/HP 99) | with: 113 + 267 + 3,520 + Dwarf Cannon 1,078 = 4,978; without: knives 628 + 267 + ogres 2,155 + knives 4,557 = 7,607 | **saves about 2,630 ticks** |
+
+**Parallel against the best single-combat melee:** at the spiders the cannon adds
+11.03 Ranged per tick while defensive melee drops from rs/30's 9.25 at the ogres to
+5.60. On the current route that trade is worth about 680 ticks ((f) 3,520 against (g)
+4,197), so the spiders win while Ranged is below 99. Once Ranged is 99 the cannon's xp
+is wasted, and the ogres are the place to finish melee.
 
 **No-MM scenario** (Strength gap 26,188, Defence 24,638, most of Hitpoints):
 longrange closes Defence at 2.63/tick (about 9,370 ticks), far behind melee
-(about 3,080 at rs/30's preliminary 8/tick). Defence should be meleed. The cheapest
-Ranged there is the cannon *in parallel* with that melee. At the spiders defensive
-melee runs at 5.60/tick with the cannon against rs/30's 8/tick at its best
-single-combat target, so Ranged 99 (about 3,460 ticks of cannon at 11.03) costs
-about 3,460 x (8 - 5.6) / 8 = **~1,040 ticks of melee time** (inferred), against 2,196
-for a dedicated cannon + knives route. The melee rate at the spiders without the
+(about 2,660 at rs/30's 9.25/tick at the ogres). Defence should be meleed. The
+cheapest Ranged there is the cannon *in parallel* with that melee. At the spiders
+defensive melee runs at 5.60/tick with the cannon against 9.25 at the ogres, so
+Ranged 99 (about 3,620 ticks of cannon at 11.03 from level 1) costs about 3,620 x
+(9.25 - 5.6) / 9.25 = **~1,430 ticks of melee time** (inferred), against 2,196 for a
+dedicated cannon + knives route. The melee rate at the spiders without the
 cannon is 6.64, so most of that penalty is the site (spiders have 52 defence), not
 the cannon.
 
