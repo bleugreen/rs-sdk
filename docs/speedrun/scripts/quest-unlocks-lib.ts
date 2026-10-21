@@ -10,9 +10,13 @@ export function tick(sdk: BotSDK): number {
     return sdk.getState()?.tick ?? -1;
 }
 
-export async function waitTicks(sdk: BotSDK, n: number): Promise<void> {
+export async function waitTicks(sdk: BotSDK, n: number, wallMs = 10_000 + n * 1000): Promise<void> {
     const target = tick(sdk) + n;
-    while (tick(sdk) < target) await sleep(20);
+    const deadline = Date.now() + wallMs;
+    while (tick(sdk) < target) {
+        if (Date.now() > deadline) throw new Error(`server ticks stopped arriving (tick ${tick(sdk)}, wanted ${target})`);
+        await sleep(20);
+    }
 }
 
 export async function cheat(sdk: BotSDK, command: string): Promise<void> {
