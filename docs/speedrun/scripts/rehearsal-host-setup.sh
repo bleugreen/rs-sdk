@@ -53,7 +53,7 @@ X-GNOME-Autostart-enabled=true
 EOF
 sudo mkdir -p /etc/systemd/logind.conf.d
 printf '[Login]\nIdleAction=ignore\n' | sudo tee /etc/systemd/logind.conf.d/rs-idle.conf >/dev/null
-sudo systemctl kill -s HUP systemd-logind
+sudo systemctl kill -s HUP systemd-logind || true
 
 # --- Google Chrome stable, the run host's major, held there ---------------------------------------
 if [ ! -f /usr/share/keyrings/google-chrome.gpg ]; then

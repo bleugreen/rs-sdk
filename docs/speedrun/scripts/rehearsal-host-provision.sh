@@ -146,7 +146,7 @@ for _ in $(seq 30); do "${SSH[@]}" true 2>/dev/null && break; sleep 5; done
 "${SSH[@]}" 'cloud-init status --wait >/dev/null; echo "provision: ssh ok: $(hostname), $(. /etc/os-release; echo $PRETTY_NAME), $(nproc) vCPU"'
 
 # --- RDP password for ubuntu ---------------------------------------------------------------------
-[ -s "$RDP_PW" ] || { LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24 >"$RDP_PW"; }
+[ -s "$RDP_PW" ] || openssl rand -base64 48 | LC_ALL=C tr -dc 'A-Za-z0-9' | cut -c1-24 >"$RDP_PW"
 chmod 600 "$RDP_PW"
 printf 'ubuntu:%s\n' "$(cat "$RDP_PW")" | "${SSH[@]}" 'sudo chpasswd && echo "provision: ubuntu password set from $HOME/.rs-fleet/rehearsal-rdp-password on the Mac"'
 
