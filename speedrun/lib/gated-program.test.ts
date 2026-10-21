@@ -102,7 +102,7 @@ function scriptedGate(page: FakePage, onTimes: number[], opts: Partial<GateOptio
     return new HostGate(page.sdk, {
         model: { plainCycle: 4 },
         direct: IN_PAGE_RULE,
-        plainTicksPerRoll: 4,
+        plainTicksPerDrop: 4,
         minProbeGapTicks: 10,
         offReprobeTicks: 1000,
         measureDrops: 10,
@@ -185,6 +185,52 @@ describe('runGatedProgram', () => {
         const off = await runWith({ measuredMargin: 0.1, measureDrops: 15 });
         expect(shape(off)).toEqual(['knife:measured', 'plain:done']);
         expect(off[0]!.status.counters.rolls).toBe(15);
+    });
+
+    test('measured switch-off at margin 0: a dead heat goes plain; strictly faster stays on', async () => {
+        const runWith = async (plainTicksPerDrop: number) => {
+            const page = new FakePage(gather({ knife: 4, plain: 4 }));
+            const gate = scriptedGate(page, [20], { plainTicksPerDrop });
+            return shape((await drive(page, runGatedProgram(page.sdk, 'knife-cycle', { method: 'willow', rolls: 30 }, { gate, technique: 'auto' }))).segments);
+        };
+        expect(await runWith(4)).toEqual(['knife:measured', 'plain:done']);
+        expect(await runWith(4.01)).toEqual(['knife:done']);
+    });
+
+    test('measured switch-off is in ticks per expected roll: each drop weighted by rollsPerDrop', async () => {
+        // 6 ticks per log at a 50% success chance is 3 ticks per expected roll, faster than
+        // plain's 4; read per log (rs/130's mix-up) it would look slower and switch off
+        const runWith = async (rollsPerDrop?: () => number) => {
+            const page = new FakePage(gather({ knife: 6, plain: 4 }));
+            const gate = scriptedGate(page, [20]);
+            const run = await drive(page, runGatedProgram(page.sdk, 'knife-cycle', { method: 'willow', rolls: 30 }, { gate, technique: 'auto', ...(rollsPerDrop ? { rollsPerDrop } : {}) }));
+            return { segs: shape(run.segments), gate };
+        };
+        expect((await runWith(() => 2)).segs).toEqual(['knife:done']);
+        const perLog = await runWith();
+        expect(perLog.segs).toEqual(['knife:measured', 'plain:done']);
+        expect(perLog.gate.history[1]!.measured).toEqual({ knife: 6, plain: 4 });
+    });
+
+    test('params may depend on the technique (a knife-only bury is left out of plain runs)', async () => {
+        const page = new FakePage(gather({ knife: 6, plain: 4 }));
+        const gate = scriptedGate(page, [20]);
+        const params = (t: 'knife' | 'plain') => ({ method: 'oak', rolls: 30, ...(t === 'knife' ? { bury: '^dragon bones$' } : {}) });
+        const run = await drive(page, runGatedProgram(page.sdk, 'knife-cycle', params, { gate, technique: 'auto' }));
+        expect(shape(run.segments)).toEqual(['knife:measured', 'plain:done']);
+        const [knife, plain] = page.runs();
+        expect(knife!.params).toMatchObject({ technique: 'knife', bury: '^dragon bones$', rolls: 30 });
+        expect(plain!.params.bury).toBeUndefined();
+        expect(plain!.params).toMatchObject({ technique: 'plain', rolls: 20 });
+    });
+
+    test("reads knife-cycle's drops as `logs` when the program counts them so (rs/159), and carries a `logs` budget", async () => {
+        const page = new FakePage(gather({ knife: 6, plain: 4 }));
+        const gate = scriptedGate(page, [20]);
+        const run = await drive(page, runGatedProgram(page.sdk, 'knife-cycle', { method: 'willow', logs: 25 }, { gate, technique: 'auto' }));
+        expect(shape(run.segments)).toEqual(['knife:measured', 'plain:done']);
+        expect(page.runs()[1]!.params.logs).toBe(15);
+        expect(total(run.segments, 'logs')).toBe(25);
     });
 
     test('abort stops the running program and resolves aborted', async () => {
