@@ -2,7 +2,12 @@
 //
 //   bun docs/speedrun/scripts/tickmanip-mine.ts <bot> --respawn=13 [--starter=eat|knife|none] [--ores=60]
 //       [--level=99] [--xplag=0] [--gate=on|off] [--plain-cycle=3.61] [--lead=auto|N]
-//       --steps 2604,3235>2605,3235 ...
+//       [--dismiss=now|watcher|burst|click|none] --steps 2604,3235>2605,3235 ...
+//
+// --dismiss: now (default) sends a continue on every label a dialog shows; the others are the
+// level-up lab's policies (levelup-dismiss.ts). click re-sends the pending rock's click only when
+// the bot already stands on its tile (a click during a walk would re-path it); otherwise the
+// scheduled click closes the page.
 //
 // --steps is one period of stand>rock pairs (rs/5's rotation format, mining.md section 4);
 // the bot teleports to the first stand. Labels are state.tick: a packet sent while label c
@@ -51,6 +56,7 @@ import { runScript } from '../../../sdk/runner';
 import { isTileWalkable } from '../../../sdk/pathfinding';
 import type { BotWorldState } from '../../../sdk/types';
 import { HostGate } from '../../../speedrun/lib/hostgate';
+import { isPolicy, LevelUpLab } from './levelup-dismiss';
 import { stepMap } from './mining-lib';
 
 type P = [number, number];
@@ -79,6 +85,8 @@ const LEAD_ARG = kv('lead', 'auto');
 // --inject-late=F sends a random fraction F of starter ticks one label late (lab stand-in for
 // a host where that share of packets is late).
 const INJECT_LATE = Number(kv('inject-late', '0'));
+const DISMISS = kv('dismiss', 'now');
+if (DISMISS !== 'now' && !isPolicy(DISMISS)) throw new Error('--dismiss=now|watcher|burst|click|none');
 const key = (p: P) => `${p[0]},${p[1]}`;
 const same = (a: P, b: P) => a[0] === b[0] && a[1] === b[1];
 const beside = (a: P, b: P) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) === 1;
@@ -225,6 +233,7 @@ await runScript(async ({ bot, sdk }) => {
     // the gate is off the loop waits for each roll's xp anyway, so only a roll whose xp is 6
     // labels overdue (a click that went nowhere) restarts it.
     let slips = 0;
+    const slipLabels: number[] = [];
     let restartAt: number | null = null;
     let rolled: number | null = null; // roll label of the xp seen since the last plan
     const xpSeen = new Set<number>();
@@ -238,6 +247,7 @@ await runScript(async ({ bot, sdk }) => {
             for (let x = p + XP_LAG; x <= p + XP_LAG + slack; x++) seen ||= xpSeen.has(x);
             if (seen) continue;
             slips++;
+            slipLabels.push(p);
             log.push(`  L${s.tick} SLIP: no xp for roll@${p}; restarting`);
             for (const q of predicted) checked.add(q); // the rest of the schedule is void
             sched.clear();
@@ -283,6 +293,15 @@ await runScript(async ({ bot, sdk }) => {
         lastXp = xpOf(s);
         rolled = null;
     };
+    const lab = isPolicy(DISMISS)
+        ? new LevelUpLab(sdk, DISMISS, 'mining', {
+              reclick: st => {
+                  if (!pendingRock || !st.player) return;
+                  if (same([st.player.worldX, st.player.worldZ], pos)) { log.push(`  L${st.tick} send re-click ${key(pendingRock)} (dismiss)`); click(pendingRock)().catch(() => {}); }
+              },
+              log: line => log.push(`  ${line}`),
+          })
+        : null;
     if (gate) await probeHost('start');
     LEAD = manip() ? leadNow() : 0;
     plan();
@@ -331,12 +350,20 @@ await runScript(async ({ bot, sdk }) => {
                 R = Number.POSITIVE_INFINITY;
             }
         }
-        if (s.dialog.isOpen) sdk.sendClickDialog(0).catch(() => {});
+        if (s.dialog.isOpen && !lab) sdk.sendClickDialog(0).catch(() => {});
         if (restartAt === null) checkSlip();
         const quietSince = Math.max(xpLabels[xpLabels.length - 1] ?? -1, probeEnd);
         if (quietSince >= 0 && s.tick - quietSince > 30) throw new Error(`stalled at L${s.tick} pos ${s.player?.worldX},${s.player?.worldZ} anim ${s.player?.animId}; messages: ${s.gameMessages.slice(-4).map(m => m.text).join(' | ')}\n${log.slice(-70).join('\n')}`);
     }
 
+    lab?.stop();
+    // Level-ups: the gap from the leveling ore's xp to the next ore, and slips of the roll after it.
+    const lvRows = (lab?.episodes ?? []).map(e => {
+        const next = xpLabels.find(x => x > e.levelTick);
+        return { level: e.level, gap: next === undefined ? NaN : next - e.levelTick, slip: slipLabels.some(p => p > e.levelTick && p <= e.levelTick + 4) };
+    });
+    const lvHist: Record<string, number> = {};
+    for (const r of lvRows) lvHist[r.gap] = (lvHist[r.gap] ?? 0) + 1;
     const steady = xpLabels.slice(5); // skip the first few: they include the bootstrap
     const gaps = steady.slice(1).map((t, i) => t - steady[i]!);
     const hist: Record<number, number> = {};
@@ -351,6 +378,14 @@ await runScript(async ({ bot, sdk }) => {
             ? `gate: ${gate.history.length} events (${gate.summary()}), switches ${gate.switches() || 'none'}, ${gate.plainTicks(s.tick)} ticks plain, ends ${gate.on ? 'manipulating' : 'plain'}, lead ${LEAD}`
             : 'gate: off',
         `steady state (from 6th ore): ${gaps.length} gaps, histogram ${Object.entries(hist).map(([g, c]) => `${g}:${c}`).join(' ')}`,
-        `ticks per ore ${(span / gaps.length).toFixed(2)}, base xp per tick ${((35 * gaps.length) / span).toFixed(2)}`
+        `ticks per ore ${(span / gaps.length).toFixed(2)}, base xp per tick ${((35 * gaps.length) / span).toFixed(2)}`,
+        `dismiss=${DISMISS}, level ${LEVEL} -> ${s.skills.find(k => k.name.toLowerCase() === 'mining')?.baseLevel}`,
+        ...(lab
+            ? [
+                  lab.summary(),
+                  `level-up gaps (leveling ore -> next ore): ${Object.entries(lvHist).map(([g, c]) => `${g}:${c}`).join(' ')}; slips on the roll after a level-up ${lvRows.filter(r => r.slip).length}`,
+                  `  ${lvRows.map(r => `L${r.level}:${r.gap}${r.slip ? 'S' : ''}`).join(' ')}`,
+              ]
+            : []),
     ].join('\n'));
 }, { timeout: 30 * 60_000, printState: false });
