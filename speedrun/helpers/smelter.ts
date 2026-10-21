@@ -11,11 +11,12 @@
 // Other options:
 //   tier        'auto' | 'mithril' | 'adamant'  which bars to smelt (auto: adamantite when
 //               the account has Smithing 70 and the ore, otherwise mithril)
-//   site        'auto' | 'guild' | 'west' | 'rimmington' | 'barbarian' | 'dwarven'   where to mine
+//   site        'auto' | 'guild' | 'west' | 'rimmington' | 'barbarian' | 'dwarven' | 'alkharid'   where to mine
 //               (auto: west or Rimmington below Mining 60, the Mining Guild from 60, the addy
 //               site once the account can make adamantite bars; barbarian is coal only)
-//   addy        'dwarven' | 'none'   where an adamant-tier account mines adamantite ore (dwarven:
-//               the Dwarven Mine through the Mining Guild's south door; none: stay in the guild)
+//   addy        'dwarven' | 'alkharid' | 'none'   where an adamant-tier account mines adamantite ore
+//               (dwarven: the Dwarven Mine through the Mining Guild's south door; alkharid: the
+//               Al Kharid mine, banking at Varrock east; none: stay in the guild)
 //   combat      combat level to train to on Lumbridge cows before using a site whose NPCs
 //               attack (default: the site's own threshold + 2)
 //   steel, iron bars of each to hold in this account's bank (default 0); the role buys the iron
@@ -89,6 +90,7 @@ type Point = { x: number; z: number };
 const BANK_EAST: Point = { x: 3013, z: 3357 }; // Falador east bank, booths on z=3354
 const BANK_WEST: Point = { x: 2946, z: 3369 }; // Falador west bank, booths on z=3367; nearest the furnace
 const BANK_EDGE: Point = { x: 3093, z: 3491 }; // Edgeville bank, booths on x=3095-3098 (no furnace here in 2004)
+const BANK_VARROCK_EAST: Point = { x: 3253, z: 3420 }; // Varrock east bank, booths on z=3419; nearest the Al Kharid mine on foot
 const FURNACE: Point = { x: 2974, z: 3370 }; // Falador furnace at 2975,3368
 const NURMOF: Point = { x: 2998, z: 9846 }; // pickaxe shop, north Dwarven Mine
 // The Dwarven Mine's north entrance (trapdoor in the Ice Mountain hut) lands among
@@ -98,7 +100,7 @@ const ICE_TRAPDOOR: Point = { x: 3019, z: 3450 };
 const LADDERS_UP = new Set([1755]); // ladder_from_cellar (guild cellar, Nurmof)
 
 interface Site {
-    name: 'guild' | 'west' | 'rimmington' | 'barbarian' | 'dwarven';
+    name: 'guild' | 'west' | 'rimmington' | 'barbarian' | 'dwarven' | 'alkharid';
     /** Underground sites: surface loc that leads down. */
     down?: { id: number; x: number; z: number };
     /**
@@ -133,6 +135,9 @@ const SITES: Record<Site['name'], Site> = {
         combat: 29,
         danger: /^king scorpion$/i
     },
+    // Al Kharid mine, reached on foot from Varrock: 2 adamantite (3298,3317 and 3300,3318), 2 mithril,
+    // 3 coal, 11 iron. 8 scorpions (level 14, cowardly) ignore combat 29+; no king scorpions.
+    alkharid: { name: 'alkharid', box: { x0: 3290, x1: 3310, z0: 3280, z1: 3322 }, centre: { x: 3299, z: 3315 }, bank: BANK_VARROCK_EAST, combat: 29 },
     // West of Falador: 2 copper, 6 tin, 3 iron, 2 coal, no NPC spawns.
     west: { name: 'west', box: { x0: 2898, x1: 2915, z0: 3348, z1: 3371 }, centre: { x: 2907, z: 3360 }, bank: BANK_WEST },
     // Rimmington: 6 iron, 5 copper, 2 tin, no NPC spawns.
@@ -142,7 +147,7 @@ const SITES: Record<Site['name'], Site> = {
     barbarian: { name: 'barbarian', box: { x0: 3082, x1: 3094, z0: 3426, z1: 3438 }, centre: { x: 3088, z: 3430 }, bank: BANK_EDGE }
 };
 const TRAINING_SITES: Site['name'][] = ['west', 'rimmington'];
-const ADDY_SITES = ['dwarven'] as const;
+const ADDY_SITES = ['dwarven', 'alkharid'] as const;
 type AddySite = (typeof ADDY_SITES)[number];
 
 const underground = (z: number) => z > 6400;
@@ -173,7 +178,7 @@ export function readOpts(o: Record<string, unknown>): Opts {
     return {
         mode: pick(o.mode, ['full', 'mine', 'smelt'] as const, 'full'),
         tier: pick(o.tier, ['auto', 'mithril', 'adamant'] as const, 'auto'),
-        site: pick(o.site, ['auto', 'guild', 'west', 'rimmington', 'barbarian', 'dwarven'] as const, 'auto'),
+        site: pick(o.site, ['auto', 'guild', 'west', 'rimmington', 'barbarian', 'dwarven', 'alkharid'] as const, 'auto'),
         addy: pick(o.addy, [...ADDY_SITES, 'none'] as const, 'dwarven'),
         combat: typeof o.combat === 'number' && o.combat > 0 ? o.combat : null,
         smeltMin: typeof o.smeltMin === 'number' && o.smeltMin > 0 ? o.smeltMin : 25,
@@ -436,7 +441,7 @@ class Smelter {
         const { x, z } = this.pos();
         if (underground(z)) return BANK_EAST;
         const d = (b: Point) => Math.hypot(x - b.x, z - b.z);
-        return [BANK_EAST, BANK_WEST, BANK_EDGE].reduce((a, b) => (d(b) < d(a) ? b : a));
+        return [BANK_EAST, BANK_WEST, BANK_EDGE, BANK_VARROCK_EAST].reduce((a, b) => (d(b) < d(a) ? b : a));
     }
 
     // ------------------------------------------------------------ main loop
