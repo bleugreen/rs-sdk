@@ -123,6 +123,18 @@ structure over patching it, so it cannot drift.
   step (a dialogue page, an option, a door, a trade) costs an extra tick.
   `LiteClient.pumpPackets` counts PLAYER_INFOs during the drain and publishes
   once at the end, after `snapEntities`; `game-tick.test.ts` pins the order.
+- **Nothing on the reaction path waits for a timer.** The engine reads input
+  once per tick, so every millisecond between a tick's frame arriving and the
+  bot's reply leaving comes out of the gap that reply has to land in (about
+  85-110 ms on the busy demo). The session loop drains the socket on its message
+  event (`GameConnection.onReceive`), and `runner.ts` executes a gateway action
+  the moment it arrives and flushes the game socket before it collects and
+  publishes state. The browser's overlay instead runs actions from its draw loop
+  and leaves the bytes for the next frame. Only the client cycle — the frame
+  counter that anim aging and the chat/combat windows count in, the keepalive
+  and the idle watchdog — keeps a fixed 20 ms cadence, because those count
+  browser frames rather than messages. `game-tick.test.ts` and `runner.test.ts`
+  cover both halves.
 - **Entity positions are snapped, not interpolated.** `LiteClient.snapEntities`
   puts `x`/`z` on `routeX[0]`/`routeZ[0]` each tick instead of easing a few
   units per frame. Cheaper, and strictly more accurate for a bot.
