@@ -41,14 +41,11 @@
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem, NearbyLoc } from '../../sdk/types';
+import { cheb, CROSSING_HITPOINTS, crossingSettings, inKandarin, TAVERLEY, trainHitpointsOnCows, travel, type Pt, type Traveller } from '../lib/kandarin';
 import type { Role, RoleContext } from './role';
 import { runStandalone } from './role';
 
 type Tier = 'normal' | 'oak' | 'willow' | 'maple' | 'yew' | 'magic';
-interface Pt {
-    x: number;
-    z: number;
-}
 
 /**
  * Best first. Levels and `respawn` (ticks) from trees.dbrow `levelrequired` and
@@ -89,10 +86,6 @@ const SELLABLE_LOGS: { name: string; cost: number }[] = [
     { name: 'Yew logs', cost: 160 },
     { name: 'Maple logs', cost: 80 }
 ];
-/** Player controls tab buttons (server/content/pack/interface.pack, player_controls.rs2). */
-const IF_AUTO_RETALIATE_OFF = 151; // controls:com_3
-const IF_RUN_ON = 153; // controls:com_5
-
 // Coordinates read from the map files (server/content/maps/*.jm2) and checked with
 // the SDK pathfinder (sdk/pathfinding.ts) from the bank stand tiles.
 const BANKS = {
@@ -102,11 +95,6 @@ const BANKS = {
 };
 type BankId = keyof typeof BANKS;
 const BOB = { x: 3230, z: 3203 }; // Bob's Brilliant Axes, npc spawn 3232,3203
-/** Legs of the Lumbridge -> Seers walk; walkTo plans each leg (Taverley is past Falador's walls). */
-const TAVERLEY = { x: 2880, z: 3410 };
-/** Inside the Lumbridge cow pen (x 3242-3265, z 3255-3298; learnings/combat.md). */
-const COW_PEN = { x: 3253, z: 3285 };
-const inCowPen = (p: Pt) => p.x >= 3242 && p.x <= 3265 && p.z >= 3255 && p.z <= 3298;
 
 interface Spot {
     id: string;
@@ -137,11 +125,8 @@ const SPOTS: Spot[] = [
     { id: 'catherby-trees', tier: 'normal', bank: 'catherby', stand: { x: 2762, z: 3462 }, radius: 10 }
 ];
 
-const inKandarin = (s: BotWorldState | null) =>
-    !!s?.player && s.player.level === 0 && s.player.worldX >= 2650 && s.player.worldX <= 2830 && s.player.worldZ >= 3370 && s.player.worldZ <= 3530;
 const onTutorialIsland = (s: BotWorldState | null) =>
     !!s?.player && s.player.worldX >= 3050 && s.player.worldX <= 3156 && s.player.worldZ >= 3056 && s.player.worldZ <= 3136;
-const cheb = (a: Pt, b: Pt) => Math.max(Math.abs(a.x - b.x), Math.abs(a.z - b.z));
 const exact = (name: string) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
 const axeRank = (name: string) => {
     const i = AXES.findIndex(a => a.name.test(name));
@@ -226,7 +211,7 @@ class Woodcutter {
         this.location = String(ctx.options.location ?? '');
         this.target = Number(ctx.options.target ?? Infinity);
         this.buyAxe = ctx.options.buyAxe !== false;
-        this.crossingHitpoints = Number(ctx.options.crossingHitpoints ?? 30);
+        this.crossingHitpoints = Number(ctx.options.crossingHitpoints ?? CROSSING_HITPOINTS);
     }
 
     // ---------------------------------------------------------------- basics
@@ -309,23 +294,13 @@ class Woodcutter {
         return spot;
     }
 
+    private get traveller(): Traveller {
+        return { bot: this.bot, sdk: this.sdk, log: this.ctx.log, checkSignal: () => this.checkSignal() };
+    }
+
     /** Walk with the SDK pathfinder, retrying from wherever the last attempt stopped. */
     private async travel(dest: Pt, tolerance = 2, what = '', timeout = 180_000): Promise<void> {
-        for (let attempt = 1; attempt <= 6; attempt++) {
-            this.checkSignal();
-            await this.bot.dismissBlockingUI();
-            if (this.state().player!.isDead) await this.sdk.waitForTicks(10);
-            if (cheb(this.pos(), dest) <= tolerance) return;
-            const r = await this.bot.walkTo(dest.x, dest.z, tolerance, { timeout });
-            if (r.success) return;
-            if (/died/i.test(r.message)) {
-                await this.travelSettings();
-                throw new Error(`died walking to ${what}`);
-            }
-            this.ctx.log('walk retry', { to: what || dest, attempt, reason: r.message, at: this.pos() });
-            await this.sdk.waitForTicks(3);
-        }
-        throw new Error(`could not reach ${what || JSON.stringify(dest)} from ${JSON.stringify(this.pos())}`);
+        await travel(this.traveller, dest, tolerance, what, timeout);
     }
 
     // ---------------------------------------------------------------- bank and shop (small, so they can switch to speedrun/lib)
@@ -475,81 +450,16 @@ class Woodcutter {
 
     // ---------------------------------------------------------------- getting set up
 
-    /**
-     * Auto-retaliate off and run on. White Wolf Mountain's wolves (level 25, and
-     * the level-73 Big Wolf, wanderrange 20) are aggressive to a combat-3 account;
-     * with auto-retaliate on, the first hit queues p_opnpc (auto_retaliate.rs2) and
-     * replaces the walk with a fight the account cannot win. Measured: 4 deaths in
-     * 4 crossings with it on.
-     */
+    /** Auto-retaliate off and run on, for White Wolf Mountain (speedrun/lib/kandarin.ts). */
     private async travelSettings(): Promise<void> {
-        for (let attempt = 1; attempt <= 3 && this.state().autoRetaliateEnabled !== false; attempt++) {
-            await this.sdk.sendClickComponent(IF_AUTO_RETALIATE_OFF);
-            try {
-                await this.sdk.waitForCondition(s => s.autoRetaliateEnabled === false, 3000);
-            } catch {
-                this.ctx.log('auto-retaliate still on', { attempt, reported: this.state().autoRetaliateEnabled });
-            }
-        }
-        // Run energy is infinite on the demo (NODE_INFINITE_RUN); the toggle makes
-        // every step a run step instead of relying on per-click run.
-        await this.sdk.sendClickComponent(IF_RUN_ON);
+        await crossingSettings(this.sdk, this.ctx.log);
     }
 
-    /**
-     * Train Hitpoints on Lumbridge cows until the account can survive White Wolf
-     * Mountain. Observed with the lite client at 10 Hitpoints, auto-retaliate off
-     * and running: the path's switchback passes the White wolf sentries twice and
-     * the wolf pack once (wolves 2-4 max, the Big Wolf 7), 10-17 damage per
-     * attempt and 6 deaths in 6. Hitpoints 30 is ~190 damage dealt (1.33 base
-     * Hitpoints xp per damage, xp 25x on the 2^(level/10) curve), ~24 cows that
-     * hit for at most 1; the Strength trained alongside speeds the kills up.
-     */
+    /** Train Hitpoints on Lumbridge cows until the account can survive White Wolf Mountain (speedrun/lib/kandarin.ts). */
     private async trainForCrossing(): Promise<void> {
-        const hp = () => this.sdk.getSkill('Hitpoints')?.baseLevel ?? 10;
-        if (hp() >= this.crossingHitpoints) return;
+        if ((this.sdk.getSkill('Hitpoints')?.baseLevel ?? 10) >= this.crossingHitpoints) return;
         this.setPhase('train-hitpoints');
-        const t0 = this.tick();
-        this.ctx.log('training hitpoints for the crossing', { hitpoints: hp(), target: this.crossingHitpoints });
-        await this.travel(COW_PEN, 4, 'Lumbridge cow pen');
-        const style = this.state().combatStyle?.styles.find(s => s.trainsSkills.includes('Strength'));
-        if (style && this.state().combatStyle?.currentStyle !== style.index) await this.sdk.sendSetCombatStyle(style.index);
-        let kills = 0;
-        while (hp() < this.crossingHitpoints) {
-            this.checkSignal();
-            await this.bot.dismissBlockingUI();
-            const s = this.state();
-            if (s.player!.isDead) throw new Error('died at the cows');
-            const me = { x: s.player!.worldX, z: s.player!.worldZ };
-            if (!inCowPen(me)) await this.travel(COW_PEN, 4, 'Lumbridge cow pen');
-            const cow = s.nearbyNpcs
-                .filter(n => /^cow$/i.test(n.name) && !n.inCombat && inCowPen(n) && n.optionsWithIndex.some(o => /attack/i.test(o.text)))
-                .sort((a, b) => a.distance - b.distance)[0];
-            if (!cow) {
-                await this.sdk.waitForTicks(2);
-                continue;
-            }
-            const r = await this.bot.attack(cow);
-            if (!r.success) {
-                await this.sdk.waitForTicks(1);
-                continue;
-            }
-            // Until the cow is gone (dead) or the fight has visibly stopped.
-            let idle = 0;
-            for (let t = 0; t < 100; t++) {
-                await this.sdk.waitForTicks(1);
-                const st = this.sdk.getState();
-                if (!st?.player) break;
-                if (st.dialog.isOpen) await this.bot.dismissBlockingUI();
-                if (!st.nearbyNpcs.some(n => n.index === cow.index && /^cow$/i.test(n.name))) {
-                    kills++;
-                    break;
-                }
-                idle = st.player.combat?.inCombat ? 0 : idle + 1;
-                if (idle >= 8) break;
-            }
-        }
-        this.ctx.log('trained for the crossing', { hitpoints: hp(), kills, ticks: this.tick() - t0, strength: this.sdk.getSkill('Strength')?.baseLevel });
+        await trainHitpointsOnCows(this.traveller, this.crossingHitpoints);
     }
 
     /** On the Lumbridge side: stash the starter kit at Draynor, sort out the axe, then walk to Seers. */
