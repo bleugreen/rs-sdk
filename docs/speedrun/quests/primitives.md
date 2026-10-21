@@ -99,6 +99,11 @@ not send a continue while a choice is pending, because the engine refuses it
 (`ResumePauseButtonHandler.ts`). Whether a blind-firing client is acceptable on
 the public server is a call for the maintainers. Plan with the stock figures.
 
+**Decision (2026-10-20, cairn://p/rs/main):** bursts are allowed, shown as their
+own column next to the stock and fixed-client figures, so the plan still works
+if the server is patched. Bursts cover pure-continue pages only. See
+`CONVENTIONS.md`, "Dialogue: three columns", for how to record and cost them.
+
 ## 2. Movement
 
 `quest-primitives-movement.ts`, on the Lumbridge-Draynor road:

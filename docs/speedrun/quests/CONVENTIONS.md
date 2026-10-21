@@ -38,7 +38,7 @@ recompute every quest if the client fix (cairn://p/rs/22) lands:
 | Primitive | Ticks (stock lite client) | Basis |
 |---|---|---|
 | Run, per route tile | 0.5 (2 tiles/tick, run energy infinite); 0.57 with `bot.walkTo` | measured, `primitives.md` §2 |
-| Dialogue page or option click | **2** (1 with the client fix) | measured, `primitives.md` §1 |
+| Dialogue page or option click | **2** (1 with the client fix); see the three dialogue columns below | measured, `primitives.md` §1 |
 | Ladder, trapdoor or stairs climb | 1-2 plus the run to it | measured, `primitives.md` §3 |
 | Door or gate open | 2 plus the run to it, then walk through | measured, `primitives.md` §3 |
 | Loc/NPC interaction with `p_delay(n)` | n + 2 from the click; each further `p_delay(m)` m + 1 | read, `PlayerOps.ts:376-380`; consistent with every delay in `primitives.md` |
@@ -50,6 +50,28 @@ recompute every quest if the client fix (cairn://p/rs/22) lands:
 So each step-list segment carries: tiles walked (or the route), dialogue pages
 and option clicks, interactions, fight ticks, forced waits (`p_delay`, timers,
 cutscenes, `~delay` style waits) and then the tick estimate.
+
+### Dialogue: three columns
+
+The plan uses dialogue bursts. The server accepts up to 5 continues per tick
+(`primitives.md` §1), and the main thread has ruled that using this is allowed
+(cairn://p/rs/main, 2026-10-20; tenet cairn://p/rs/tenets/2). It may be patched
+before the run, so every quest total gives dialogue in three columns:
+
+| Column | Pure-continue page | Option click or state-changing page |
+|---|---|---|
+| Stock client (today) | 2 ticks | 2 ticks |
+| Fixed client (cairn://p/rs/22) | 1 tick | 1 tick |
+| Burst (fixed client plus blind continues) | a run of k consecutive pure-continue pages costs ceil(k/5) ticks | 1 tick (read the state first) |
+
+A burst may only cover pure "Click here to continue" pages. Any page with
+options, any page after which the server changes state that the next action
+depends on (an item given, a varp set, an NPC spawned or moved, a teleport or
+cutscene), and any page whose count depends on state the bot hasn't read, needs
+the state read first and is costed as an option click. So for each dialogue,
+record the **runs**: e.g. `4c, opt, 6c, state, 2c` means a run of 4 continues,
+an option, 6 continues, a state-changing page, then 2 continues. Stock is
+2 x 14 = 28 ticks, fixed 14, burst 1 + 1 + 2 + 1 + 1 = 6.
 
 ## Travel
 
