@@ -281,7 +281,10 @@ describe('knife cycle', () => {
         expect(knives).toHaveLength(0);
         expect(h.status.counters.noTarget).toBeGreaterThan(0);
         expect(h.status.result).not.toHaveProperty('fellBack');
-        expect(gapsOf(rollTicks.filter(t => t > fell + 20)).every(g => g === 3)).toBe(true);
+        // locked again between the respawn and the next fall (roll 16)
+        const relocked = rollTicks.slice(9, 16);
+        expect(relocked[0]! - fell).toBeLessThan(20);
+        expect(gapsOf(relocked).every(g => g === 3)).toBe(true);
     });
 
     test('the lost-lock window scales with the catch chance', () => {
