@@ -20,23 +20,31 @@
 // Every run resets stats, inventory and the quest varp, so runs are independent
 // samples. Fight ticks run from the first attack click to: the kill (warlord,
 // demon), Morgan Le Faye's dialogue (Mordred's death hook, sir_mordred.rs2:7-14),
-// or the death teleport past the Titan (black_knight_titan.rs2:10-30).
-// Level-up dialogues are dismissed and the attack re-sent. Deaths are recorded,
-// not prevented: there is no survival cheat. Quote fight ticks from a lab run
-// at NODE_TICKRATE=300 (docs/speedrun/quests/CONVENTIONS.md).
+// or the death teleport past the Titan (black_knight_titan.rs2:10-30). The fight
+// itself is speedrun/lib/combat.ts's: level-ups dismissed with the attack re-sent
+// on the same tick, prayer / potion / food upkeep, and a re-attack when Protect
+// from Melee stalls it. Deaths are recorded, not prevented: there is no survival
+// cheat. Quote fight ticks from a lab run at NODE_TICKRATE=300
+// (docs/speedrun/quests/CONVENTIONS.md).
 
 import { runScript } from '../../../sdk/runner';
 import type { BotSDK } from '../../../sdk/index';
 import type { BotActions } from '../../../sdk/actions';
-import type { BotWorldState, NearbyNpc } from '../../../sdk/types';
-import * as L from './quest-arthur-lab';
-import { locTalkAt } from './quest-gnome-lib';
+import type { BotWorldState } from '../../../sdk/types';
+import { act, invOp, opLoc, slotOf, wield } from '../../../speedrun/lib/act';
+import { fight, prayerDoses } from '../../../speedrun/lib/combat';
+import { converse } from '../../../speedrun/lib/converse';
+import { pageText } from '../../../speedrun/lib/dialogue';
+import type { Pred } from '../../../speedrun/lib/wait';
+import { configId, findNpc, invCount, pos, skillXp, waitForNpc } from '../../../speedrun/lib/world';
+import { result, stats } from '../../../speedrun/lab/record';
+import { cheat, clearInventory, give, mustTele, setStats, setvar } from '../../../speedrun/lab/setup';
 
 const argv = process.argv.slice(3);
 const WHO = argv[0] ?? 'warlord';
 const RUNS = Number(/^\d+$/.test(argv[1] ?? '') ? argv[1] : 3);
 const kv = Object.fromEntries(argv.filter(a => a.includes('=')).map(a => a.split('=', 2) as [string, string]));
-const [ATT, STR, DEF, HP, PRAY, MAG] = (kv.stats ?? '1,1,1,10,43,51').split(',').map(Number);
+const [ATT = 1, STR = 1, DEF = 1, HP = 10, PRAY = 43, MAG = 51] = (kv.stats ?? '1,1,1,10,43,51').split(',').map(Number);
 const MODE = kv.mode ?? 'melee';
 const WEAPON = kv.weapon ?? 'rune_scimitar';
 const ARMOUR = kv.armour ?? 'none';
@@ -50,40 +58,23 @@ const CAP = Number(kv.cap ?? 1500);
 const SPELL: Record<string, number> = { fire_bolt: 1169, fire_blast: 1181 };
 const MAGIC = MODE !== 'melee';
 const SKILLS = ['Attack', 'Strength', 'Defence', 'Hitpoints', 'Magic', 'Prayer'] as const;
-
-const objName = (i: { name: string }) => i.name.toLowerCase().replace(/ /g, '_');
-const doses = (s: BotWorldState) => s.inventory.filter(i => /^Prayer potion\(\d\)$/.test(i.name)).reduce((a, i) => a + i.count * Number(/\((\d)\)/.exec(i.name)![1]), 0);
-const sharks = (s: BotWorldState) => s.inventory.filter(i => /^Shark$/i.test(i.name)).reduce((a, i) => a + i.count, 0);
-const xp = (s: BotWorldState, n: string) => s.skills.find(k => k.name === n)?.experience ?? 0;
-
-async function wield(sdk: BotSDK, g: string) {
-    const named = (i: { name: string }) => objName(i) === g;
-    if (sdk.getEquipment().some(named)) return;
-    await L.waitUntil(sdk, () => sdk.getInventory().some(named), 10);
-    const it = sdk.getInventory().find(named);
-    if (!it) throw new Error(`no ${g} to wield`);
-    const op = it.optionsWithIndex.find(o => /wear|wield/i.test(o.text));
-    await sdk.sendUseItem(it.slot, op?.opIndex ?? 2);
-    if ((await L.waitUntil(sdk, () => sdk.getEquipment().some(named), 6)) === null) throw new Error(`could not wield ${g}`);
-}
+const XP_RATE = 25; // server/engine/src/util/WorldConfig.ts:102
 
 async function reset(sdk: BotSDK, bot: BotActions) {
     await bot.deactivateAllPrayers().catch(() => {}); // a crashed earlier script may have left one on
-    for (let pass = 0; pass < 2; pass++) {
-        for (const e of sdk.getEquipment()) await sdk.sendUseEquipmentItem(e.slot, 1).catch(() => {});
-        await sdk.waitForTicks(1);
-        for (const it of sdk.getInventory()) await sdk.sendDropItem(it.slot).catch(() => {});
-        await sdk.waitForTicks(1);
-    }
-    await L.setStats(sdk, { attack: ATT, strength: STR, defence: DEF, hitpoints: HP, prayer: PRAY, magic: MAG });
+    await clearInventory(sdk);
+    await setStats(sdk, { attack: ATT, strength: STR, defence: DEF, hitpoints: HP, prayer: PRAY, magic: MAG });
     const gear = MAGIC ? ['staff_of_fire', 'amulet_of_magic'] : [WEAPON, 'amulet_of_strength'];
     if (ARMOUR === 'rune') gear.push('rune_full_helm', 'rune_chainbody', 'rune_platelegs', 'rune_kiteshield');
     if (ARMOUR === 'monk') gear.push('monkrobetop', 'monkrobebottom', 'blessedstar');
-    for (const g of gear) await L.cheat(sdk, `give ${g} 1`, 1);
-    for (const g of gear) await wield(sdk, g);
-    if (MAGIC) await L.giveItems(sdk, [['chaosrune', 300], ['deathrune', 300], ['airrune', 2000]]);
-    if (PPOTS) await L.cheat(sdk, `give 4doseprayerrestore ${PPOTS}`, 1);
-    if (FOOD) await L.cheat(sdk, `give shark ${FOOD}`, 1);
+    await give(sdk, gear);
+    for (const g of gear) if (!(await wield(sdk, configId('obj', g))).ok) throw new Error(`could not wield ${g}`);
+    if (MAGIC) {
+        await give(sdk, ['chaosrune', 'deathrune'], 300);
+        await give(sdk, 'airrune', 2000);
+    }
+    if (PPOTS) await give(sdk, '4doseprayerrestore', PPOTS);
+    if (FOOD) await give(sdk, 'shark', FOOD);
     if (!MAGIC) await sdk.sendSetCombatStyle(1); // aggressive: Strength xp, best max hit
     await sdk.waitForTicks(2);
 }
@@ -94,82 +85,57 @@ interface Sample {
     swappedAtTitanHp?: number | null; xpBase: Record<string, number>; note?: string;
 }
 
-async function fight(sdk: BotSDK, bot: BotActions, target: RegExp): Promise<Sample> {
-    let s = sdk.getState()!;
-    const xp0 = Object.fromEntries(SKILLS.map(n => [n, xp(s, n)]));
-    const doses0 = doses(s), sharks0 = sharks(s);
-    let lastHp = s.player!.hp, minHp = lastHp, damageTaken = 0;
-    let lastPts = sdk.getPrayerState()?.prayerPoints ?? PRAY, ptsUsed = 0;
-    let casts = 0, levelUps = 0, reheals = 0, lastAct = -10, lastDrink = -10, lastEat = -10;
-    let swapped: number | null = null;
-    let won = false, died = false, note: string | undefined;
-    // The nearest match is the one we fight; track it by index so a second spawn
-    // (the warlord also has a static spawn at his post) is never counted.
-    let npc: NearbyNpc | null = [...s.nearbyNpcs].filter(n => target.test(n.name)).sort((a, b) => a.distance - b.distance)[0] ?? null;
+async function runFight(sdk: BotSDK, target: RegExp): Promise<Sample> {
+    const s0 = sdk.getState()!;
+    const xp0 = Object.fromEntries(SKILLS.map(n => [n, skillXp(s0, n)]));
+    const doses0 = prayerDoses(s0), sharks0 = invCount(s0, /^Shark$/i);
+    // The nearest match is the one we fight; fight() tracks it by index so a second
+    // spawn (the warlord also has a static spawn at his post) is never counted.
+    const npc = findNpc(sdk, target);
     if (!npc) throw new Error(`no ${target} in view`);
-    const idx = npc.index;
-    const t0 = s.tick;
-    const attack = async (n: NearbyNpc) => {
-        if (MAGIC) { await sdk.sendSpellOnNpc(n.index, SPELL[MODE]!); casts++; }
-        else { const op = n.optionsWithIndex.find(o => /attack/i.test(o.text)); await sdk.sendInteractNpc(n.index, op?.opIndex ?? 2); }
-        lastAct = sdk.getState()!.tick;
-    };
-    await attack(npc);
-    while (true) {
-        // A loaded host can stall the engine past the SDK's 5 s wait; keep waiting rather than abort.
-        try { s = await sdk.waitForStateUpdate(); } catch { continue; }
-        const p = s.player!;
-        if (s.tick - t0 > CAP) { note = 'CAP'; break; }
-        if (p.isDead || p.hp <= 0) { died = true; break; }
-        if (p.hp < lastHp) damageTaken += lastHp - p.hp;
-        lastHp = p.hp; minHp = Math.min(minHp, p.hp);
-        const pts = sdk.getPrayerState()?.prayerPoints ?? lastPts;
-        if (pts < lastPts) ptsUsed += lastPts - pts;
-        lastPts = pts;
-        if (WHO === 'titan' && p.worldX < 2791) { won = true; break; }
-        npc = s.nearbyNpcs.find(n => n.index === idx && target.test(n.name)) ?? null;
-        if (s.dialog.isOpen) {
-            if (L.isLevelUpDialog(sdk)) { levelUps++; await L.dismissLevelUps(sdk); }
-            else if (WHO === 'mordred') { won = true; break; } // Morgan Le Faye: the death hook fired
-            else if (WHO === 'titan') { reheals++; await L.talkThrough(sdk, []); } // "INVINCIBLE": killed without Excalibur
-            else await sdk.sendClickDialog(0);
-            if (npc) await attack(npc);
-            continue;
-        }
-        if (WHO !== 'titan' && WHO !== 'mordred' && (!npc || npc.hp === 0)) { won = true; break; }
-        if (PROTECT && pts > 0 && !sdk.isPrayerActive('protect_from_melee') && s.tick - lastAct >= 1) await sdk.sendTogglePrayer('protect_from_melee');
-        // the prayer state can lag a fresh ::setstat by a tick or two; never drink in the first 5 ticks
-        if (pts < DRINK_BELOW && s.tick - t0 > 5 && (sdk.getSkill('Prayer')?.level ?? pts) < DRINK_BELOW && s.tick - lastDrink >= 3) {
-            const pot = s.inventory.find(i => /^Prayer potion/.test(i.name));
-            if (pot) { await sdk.sendUseItem(pot.slot, 1); lastDrink = s.tick; if (npc) await attack(npc); continue; }
-        }
-        if (p.hp < EAT_BELOW && s.tick - lastEat >= 3) {
-            const f = s.inventory.find(i => /^Shark$/i.test(i.name));
-            if (f) { await sdk.sendUseItem(f.slot, 1); lastEat = s.tick; if (npc) await attack(npc); continue; }
-        }
-        if (WHO === 'titan' && swapped === null && npc?.hp != null && npc.hp <= SWAP) {
-            const ex = s.inventory.find(i => /^Excalibur$/i.test(i.name));
-            if (ex) {
-                swapped = npc.hp;
-                const op = ex.optionsWithIndex.find(o => /wield/i.test(o.text));
-                await sdk.sendUseItem(ex.slot, op?.opIndex ?? 2);
-                await sdk.waitForTicks(1);
-                await attack(npc);
-                continue;
-            }
-        }
-        if (!npc) continue;
-        // Spells: re-send every 2 ticks (the 5-tick cast delay keeps the rate; as in quest-magearena-run.ts).
-        // Melee: re-attack only if combat has dropped.
-        if (MAGIC ? s.tick - lastAct >= 2 : (!p.combat?.inCombat && s.tick - lastAct > 6)) await attack(npc);
-    }
-    const ticks = sdk.getState()!.tick - t0;
+    const titan = WHO === 'titan';
+    // The Titan's reheal: "Puny mortal... I... Am... INVINCIBLE!!!" when the killing hit lands without Excalibur.
+    let reheals = 0;
+    let counted = false;
+    const stopCounting = titan
+        ? sdk.onStateUpdate(s => {
+              if (!s.dialog.isOpen) counted = false;
+              else if (!counted && /Puny mortal|INVINCIBLE/i.test(pageText(s.dialog))) {
+                  counted = true;
+                  reheals++;
+              }
+          })
+        : () => {};
+    let swapped: number | null = null;
+    const pastTitan: Pred = s => pos(s).x >= 0 && pos(s).x < 2791;
+    const r = await fight(sdk, npc, {
+        endOnTargetDeath: WHO !== 'mordred' && !titan,
+        ...(MAGIC ? { spell: SPELL[MODE]! } : { reattackAfter: 6 }),
+        ...(PROTECT ? { prayer: 'protect_from_melee' as const, drinkBelow: DRINK_BELOW } : {}),
+        eatBelow: EAT_BELOW,
+        food: /^Shark$/i,
+        maxTicks: CAP,
+        // Mordred: Morgan Le Faye's plea is the end. Elsewhere a non-level-up page is clicked through.
+        onDialog: WHO === 'mordred' ? 'stop' : 'continue',
+        ...(titan ? {
+            done: pastTitan,
+            onTick: async (s: BotWorldState, t: { hp: number | null } | null) => {
+                if (swapped !== null || t?.hp == null || t.hp > SWAP || !invCount(s, /^Excalibur$/i)) return false;
+                swapped = t.hp;
+                await invOp(sdk, /^Excalibur$/i, /^wield$/i);
+                return true;
+            },
+        } : {}),
+    });
+    stopCounting();
+    const won = WHO === 'mordred' ? r.end === 'dialog' : titan ? r.end === 'done' : r.ok;
     const s1 = sdk.getState()!;
-    const xpBase = Object.fromEntries(SKILLS.map(n => [n, Math.round((xp(s1, n) - xp0[n]!) / 25)]));
+    const xpBase = Object.fromEntries(SKILLS.map(n => [n, Math.round((skillXp(s1, n) - xp0[n]!) / XP_RATE)]));
     return {
-        won, died, ticks, casts, levelUps, reheals, damageTaken, minHp,
-        sharks: sharks0 - sharks(s1), prayerDoses: doses0 - doses(s1), prayerPointsUsed: ptsUsed,
-        swappedAtTitanHp: WHO === 'titan' ? swapped : undefined, xpBase, note,
+        won, died: r.died, ticks: r.ticks, casts: MAGIC ? r.attacks : 0, levelUps: r.levelUps, reheals, damageTaken: r.taken, minHp: r.minHp,
+        sharks: sharks0 - invCount(s1, /^Shark$/i), prayerDoses: doses0 - prayerDoses(s1), prayerPointsUsed: r.prayerUsed,
+        swappedAtTitanHp: titan ? swapped : undefined, xpBase,
+        ...(r.end === 'timeout' ? { note: 'CAP' } : won || r.died ? {} : { note: r.end }),
     };
 }
 
@@ -183,60 +149,59 @@ await runScript(async ({ bot, sdk }) => {
         let target: RegExp;
         if (WHO === 'warlord') {
             // He has no quest gate on attacking (quest-gnome-fights.ts); spawn one beside his post.
-            await L.tele(sdk, 2456, 3300);
-            await L.cheat(sdk, 'npcadd khazard_warlord', 2);
+            await mustTele(sdk, 2456, 3300);
+            await cheat(sdk, 'npcadd khazard_warlord', 2);
             target = /^Khazard warlord$/i;
             if (PROTECT) await bot.activatePrayer('protect_from_melee');
         } else if (WHO === 'blackdemon') {
             // Replays the Grand Tree trapdoor scene at stage 130; the demon only fights the player
             // Glough summoned it for (grandtree_black_demon.rs2:1-13).
-            await L.cheat(sdk, 'setvar grandtree 130');
-            await L.tele(sdk, 2487, 3465, 2);
-            if (PROTECT) await bot.activatePrayer('protect_from_melee');
-            await locTalkAt(sdk, 2487, 3464, /^open$/i, [], { idle: 4 });
             target = /^Black Demon$/i;
-            await L.waitUntil(sdk, () => sdk.findNearbyNpc(target) !== null, 20);
+            await setvar(sdk, 'grandtree', 130);
+            await mustTele(sdk, 2487, 3465, 2);
+            if (PROTECT) await bot.activatePrayer('protect_from_melee');
+            const conv = converse(sdk, [], { idle: 4, closeModals: true, unmatched: 'stop' });
+            await opLoc(sdk, { x: 2487, z: 3464, op: /^open$/i }, /^open$/i, s => s.dialog.isOpen || findNpc(s, target) !== null, { maxTicks: 30 });
+            await conv;
+            await waitForNpc(sdk, target, 20);
         } else if (WHO === 'mordred') {
             // %arthur 3; up the keep's two staircases from the crate landing (quest-merlins-crystal-mordred.ts).
-            await L.cheat(sdk, 'setvar arthur 3');
-            await L.tele(sdk, 2778, 3401, 0);
+            await setvar(sdk, 'arthur', 3);
+            await mustTele(sdk, 2778, 3401, 0);
             for (const lvl of [1, 2]) {
-                const st = (await sdk.scanNearbyLocs(15)).find(l => /Staircase/.test(l.name) && l.options.includes('Climb-up'));
-                await bot.interactLoc(st!, 'Climb-up');
-                await L.waitUntil(sdk, () => L.pos(sdk).level === lvl, 40);
+                const up = await opLoc(sdk, { name: /Staircase/, op: 'Climb-up', radius: 15 }, 'Climb-up', s => pos(s).level === lvl, { maxTicks: 40 });
+                if (!up.ok) throw new Error(`staircase to level ${lvl}: ${up.reason}`);
             }
             target = /^Sir Mordred$/;
-            await L.waitUntil(sdk, () => sdk.findNearbyNpc(target) !== null, 20);
+            await waitForNpc(sdk, target, 20);
             if (PROTECT) await bot.activatePrayer('protect_from_melee');
         } else if (WHO === 'titan') {
             // %grail 4, whistle in from the Karamja crossing (quest-holy-grail-realm.ts).
-            await L.cheat(sdk, 'give excalibur 1', 1);
-            await L.cheat(sdk, 'give magic_whistle 1', 1);
-            await L.cheat(sdk, 'setvar grail 4');
-            await L.tele(sdk, 2741, 3235, 0);
+            await give(sdk, ['excalibur', 'magic_whistle']);
+            await setvar(sdk, 'grail', 4);
+            await mustTele(sdk, 2741, 3235, 0);
             await sdk.waitForTicks(2);
-            await sdk.sendUseItem(sdk.findInventoryItem(/Magic whistle/i)!.slot, 1);
-            await L.waitUntil(sdk, () => L.pos(sdk).z > 4600, 30);
+            await act(sdk, () => sdk.sendUseItem(slotOf(sdk, /Magic whistle/i), 1), s => pos(s).z > 4600, { maxTicks: 30 });
             target = /^Black Knight Titan$/;
-            await L.waitUntil(sdk, () => sdk.findNearbyNpc(target) !== null, 20);
+            await waitForNpc(sdk, target, 20);
             if (PROTECT) await bot.activatePrayer('protect_from_melee');
         } else throw new Error(`unknown fight ${WHO}`);
         await sdk.waitForTicks(1);
-        const r = await fight(sdk, bot, target);
+        const r = await runFight(sdk, target);
         samples.push(r);
         console.log(`run ${run}: ${JSON.stringify(r)}`);
-        if (WHO === 'mordred' && r.won) await L.talkThrough(sdk, [/Tell me how to untrap Merlin/, /OK I will go do all that/i]);
+        if (WHO === 'mordred' && r.won) await converse(sdk, [/Tell me how to untrap Merlin/, /OK I will go do all that/i], { keep: true });
         await bot.deactivateAllPrayers().catch(() => {});
         await sdk.waitForTicks(r.died ? 15 : 4);
         await bot.dismissBlockingUI();
     }
     const won = samples.filter(x => x.won);
-    const stat = (xs: number[]) => xs.length ? { n: xs.length, min: Math.min(...xs), max: Math.max(...xs), mean: Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) } : null;
-    console.log(`RESULT ${WHO} ${JSON.stringify({
+    const stat = (xs: number[]) => (xs.length ? stats(xs) : null);
+    result(WHO, {
         tickrate: process.env.NODE_TICKRATE ?? '(lab script sets it)', stats: { ATT, STR, DEF, HP, PRAY, MAG }, mode: MODE, weapon: MAGIC ? 'staff_of_fire' : WEAPON, armour: ARMOUR, protect: PROTECT,
         runs: samples.length, wins: won.length, deaths: samples.filter(x => x.died).length, capped: samples.filter(x => x.note === 'CAP').length,
         ticks: stat(won.map(x => x.ticks)), prayerPointsUsed: stat(won.map(x => x.prayerPointsUsed)), prayerDoses: stat(won.map(x => x.prayerDoses)),
         sharks: stat(won.map(x => x.sharks)), damageTaken: stat(samples.map(x => x.damageTaken)), minHp: Math.min(...samples.map(x => x.minHp)),
         levelUps: stat(samples.map(x => x.levelUps)), hpXp: stat(won.map(x => x.xpBase.Hitpoints!)),
-    })}`);
+    });
 }, { timeout: 3 * 3_600_000, printState: false });

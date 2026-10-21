@@ -13,13 +13,17 @@
 // Run: bun docs/speedrun/scripts/quest-mm-jail.ts <botname> [runs=5] [thieving=20]
 
 import { runScript } from '../../../sdk/runner';
-import { cheat, give, now, pos, result, setstats, setvar, stats, tele, waitTicks, waitUntil } from './quest-gnome-lib';
+import { opLoc } from '../../../speedrun/lib/act';
+import { currentTick, waitTicks, waitUntil } from '../../../speedrun/lib/wait';
+import { findLoc, messagesSince, pos, type StateLike } from '../../../speedrun/lib/world';
+import { result, stats } from '../../../speedrun/lab/record';
+import { clearInventory, give, setStats, setvar, tele } from '../../../speedrun/lab/setup';
 
 const RUNS = Number(process.argv[3] ?? 5);
 const THIEVING = Number(process.argv[4] ?? 20);
 
 // Jail cell 0_43_43_18_41 .. 24_43 (mm_jail.rs2:49, mm_lumo.rs2:180); the pickable door is at (2771,2795).
-const inCell = (s: { player?: { worldX: number; worldZ: number } } & Parameters<typeof pos>[0]) => {
+const inCell = (s: StateLike) => {
     const p = pos(s);
     return p.level === 0 && p.x >= 2770 && p.x <= 2776 && p.z >= 2793 && p.z <= 2795;
 };
@@ -29,44 +33,44 @@ await runScript(async ({ bot, sdk }) => {
     for (let i = 0; i < RUNS; i++) {
         await sdk.sendCloseModal();
         await setvar(sdk, 'mm_main', 3);
-        await setstats(sdk, { hitpoints: 70, thieving: THIEVING });
-        await cheat(sdk, '~clearinv');
+        await setStats(sdk, { hitpoints: 70, thieving: THIEVING });
+        await clearInventory(sdk);
         await give(sdk, 'shark', 5);
         // The knockout leaves the player busy for a few ticks; retry the teleport until it lands.
         for (let k = 0; k < 5 && !(await tele(sdk, 2801, 2707)); k++) await waitTicks(sdk, 5);
         await waitTicks(sdk, 2);
-        if (inCell(sdk.getState()!)) { runs.push({ run: i, note: 'teleport failed' }); continue; }
+        if (inCell(sdk)) { runs.push({ run: i, note: 'teleport failed' }); continue; }
         // 1. Walk the western corridor towards the west watchtower until knocked out.
-        const t0 = now(sdk);
+        const t0 = currentTick(sdk);
         let koTick = -1;
         const unsubKo = sdk.onStateUpdate(s => {
             if (koTick < 0 && (s.player?.hp === 0 || s.player?.isDead)) koTick = s.tick;
         });
         void bot.walkTo(2713, 2767, 1, { timeout: 120_000 });
-        const woke = await waitUntil(sdk, s => inCell(s), 600);
+        const woke = await waitUntil(sdk, inCell, { maxTicks: 600 });
         unsubKo();
-        if (!woke) {
-            runs.push({ run: i, note: 'no knockout within 600 ticks', pos: JSON.stringify(pos(sdk.getState())) });
+        if (!woke.ok) {
+            runs.push({ run: i, note: 'no knockout within 600 ticks', pos: JSON.stringify(pos(sdk)) });
             continue;
         }
         const tWake = woke.tick;
         await waitTicks(sdk, 1);
         // 2. Pick the lock until outside the cell (z >= 2796), re-trying after each failure.
         let attempts = 0, rejailed = 0;
-        const door = (await sdk.scanNearbyLocs(10)).find(l => l.x === 2771 && l.z === 2795);
-        const tPick = now(sdk);
+        const door = await findLoc(sdk, { x: 2771, z: 2795, radius: 10 });
+        const tPick = currentTick(sdk);
         let out = false;
-        while (!out && now(sdk) - tPick < 300) {
-            const d = (await sdk.scanNearbyLocs(10)).find(l => l.x === 2771 && l.z === 2795 && l.optionsWithIndex.some(o => /pick/i.test(o.text)));
+        while (!out && currentTick(sdk) - tPick < 300) {
+            const d = await findLoc(sdk, { x: 2771, z: 2795, op: /pick/i, radius: 10 });
             if (d) {
                 attempts++;
-                await sdk.sendInteractLoc(d.x, d.z, d.id, d.optionsWithIndex.find(o => /pick/i.test(o.text))!.opIndex);
+                await opLoc(sdk, d, /pick/i);
             }
-            const r = await waitUntil(sdk, s => pos(s).z >= 2796 || s.gameMessages.some(m => m.tick > now(sdk) - 1 && /fail to pick/i.test(m.text)), 8);
-            if (r && pos(r.state).z >= 2796) out = true;
-            if (!out && !inCell(sdk.getState()!)) rejailed++;
+            const r = await waitUntil(sdk, s => pos(s).z >= 2796 || messagesSince(s, s.tick, /fail to pick/i).length > 0, { maxTicks: 8 });
+            if (r.ok && pos(r.state).z >= 2796) out = true;
+            if (!out && !inCell(sdk)) rejailed++;
         }
-        const tOut = now(sdk);
+        const tOut = currentTick(sdk);
         runs.push({
             run: i, toKnockout: koTick >= 0 ? koTick - t0 : 'n/a', knockoutToCell: koTick >= 0 ? tWake - koTick : 'n/a', landingToCell: tWake - t0,
             pickAttempts: attempts, pickTicks: tOut - tPick, out, rejailed, door: !!door,

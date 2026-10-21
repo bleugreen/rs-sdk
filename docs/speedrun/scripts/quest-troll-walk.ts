@@ -15,13 +15,17 @@
 // come from quest-troll-obstacles.ts.
 import { runScript } from '../../../sdk/runner';
 import type { BotSDK } from '../../../sdk/index';
-import type { BotActions } from '../../../sdk/actions';
-import { cheat, tele, give, now, pos, waitUntil, waitTicks, result } from './quest-troll-lib';
+import { opLoc, walkTo, wield } from '../../../speedrun/lib/act';
+import { currentTick, waitTicks } from '../../../speedrun/lib/wait';
+import { invItem, pos } from '../../../speedrun/lib/world';
+import { result } from '../../../speedrun/lab/record';
+import { cheat, give, mustTele, setStats, setvar } from '../../../speedrun/lab/setup';
 
 type P = { x: number; z: number; level: number };
+// `once`: click once and wait, never re-click (an action with no arrival to wait for).
 type Act =
     | { walk: [number, number, number?] }
-    | { loc: number[]; near?: [number, number]; until: (p: P) => boolean; op?: number }
+    | { loc: number[]; near?: [number, number]; until: (p: P) => boolean; op?: number; once?: boolean }
     | { tele: [number, number, number?] }
     | { cheat: string }
     | { scan: true };
@@ -147,7 +151,7 @@ const LEGS: Record<string, Act[]> = {
         { scan: true },
         { loc: [5015], until: p => p.z <= 3800 },
         { walk: [2781, 3784, 1] },
-        { loc: [5006], op: 2, until: () => false },
+        { loc: [5006], op: 2, until: () => false, once: true },
         { walk: [2785, 3772, 1] },
         { loc: [5015], until: p => p.z <= 3725 },
         { scan: true },
@@ -163,57 +167,55 @@ const LEGS: Record<string, Act[]> = {
     ],
 };
 
-async function doLoc(bot: BotActions, sdk: BotSDK, a: Extract<Act, { loc: number[] }>) {
+async function doLoc(sdk: BotSDK, a: Extract<Act, { loc: number[] }>) {
     const locs = (await sdk.scanNearbyLocs(12)).filter(l => a.loc.includes(l.id) && (!a.near || (Math.abs(l.x - a.near[0]) <= 1 && Math.abs(l.z - a.near[1]) <= 1)))
         .sort((x, y) => x.distance - y.distance);
     const l = locs[0];
     if (!l) return { ok: false, why: 'no loc' };
     if (a.loc.includes(5015)) {
         // the waxed sled is wielded from the inventory inside the sled zone (quest_troll_love.rs2:112-129)
-        const sled = sdk.getInventory().find(i => /sled/i.test(i.name));
+        const sled = invItem(sdk, /sled/i);
         if (sled) { await sdk.sendUseItem(sled.slot, 2); await waitTicks(sdk, 2); }
     }
-    await sdk.sendInteractLoc(l.x, l.z, l.id, a.op ?? 1);
-    const r = await waitUntil(sdk, s => a.until(pos(s)), 60);
-    if (!r) { await waitTicks(sdk, 4); return { ok: a.until(pos(sdk.getState())), why: `at ${JSON.stringify(pos(sdk.getState()))}`, loc: `${l.id}@${l.x},${l.z}` }; }
+    const r = await opLoc(sdk, l, a.op ?? 1, s => a.until(pos(s)), { maxTicks: 60, ...(a.once ? { resendEvery: 0 } : {}) });
+    if (!r.ok) { await waitTicks(sdk, 4); return { ok: a.until(pos(sdk)), why: `at ${JSON.stringify(pos(sdk))}`, loc: `${l.id}@${l.x},${l.z}` }; }
     return { ok: true, loc: `${l.id}@${l.x},${l.z}` };
 }
 
 await runScript(async ({ bot, sdk }) => {
     await bot.skipTutorial().catch(() => {});
-    await cheat(sdk, 'setstat agility 99');
     // The troll pass and Trollheim have aggressive trolls; a level-3 walker died in the tunnel.
-    for (const st of ['hitpoints', 'defence', 'attack', 'strength']) await cheat(sdk, `setstat ${st} 99`);
-    await cheat(sdk, 'setvar death_equiproom 80');
+    await setStats(sdk, { agility: 99, hitpoints: 99, defence: 99, attack: 99, strength: 99 });
+    await setvar(sdk, 'death_equiproom', 80);
     await give(sdk, 'death_climbingboots');
-    await bot.equipItem(/climbing boots/i).catch(e => console.log('boots', e?.message ?? e));
+    await wield(sdk, /climbing boots/i).then(r => { if (!r.ok) console.log('boots: not worn'); }, e => console.log('boots', e?.message ?? e));
     const want = process.argv.slice(3);
     for (const [name, acts] of Object.entries(LEGS)) {
         if (want.length && !want.includes(name)) continue;
         let total = 0;
         const rows: string[] = [];
         for (const a of acts) {
-            const t0 = now(sdk);
-            const p0 = pos(sdk.getState());
+            const t0 = currentTick(sdk);
+            const p0 = pos(sdk);
             let note = '';
-            if ('cheat' in a) { await cheat(sdk, a.cheat); continue; }
-            if ('tele' in a) { await tele(sdk, a.tele[0], a.tele[1], a.tele[2] ?? 0); continue; }
+            if ('cheat' in a) { await cheat(sdk, a.cheat, 2); continue; }
+            if ('tele' in a) { await mustTele(sdk, a.tele[0], a.tele[1], a.tele[2] ?? 0); continue; }
             if ('scan' in a) {
                 const ls = (await sdk.scanNearbyLocs(12)).filter(l => l.options.length && !/^(Rocks?|Tree|Bush)$/.test(l.name));
-                console.log(`  scan at ${JSON.stringify(pos(sdk.getState()))}: ${ls.slice(0, 14).map(l => `${l.id}:${l.name}@${l.x},${l.z}[${l.options.join('|')}]`).join(' ')}`);
+                console.log(`  scan at ${JSON.stringify(pos(sdk))}: ${ls.slice(0, 14).map(l => `${l.id}:${l.name}@${l.x},${l.z}[${l.options.join('|')}]`).join(' ')}`);
                 continue;
             }
             if ('walk' in a) {
                 const [x, z, tol = 0] = a.walk;
-                const r = await bot.walkTo(x, z, tol, { timeout: 120_000 }).catch(e => ({ success: false, message: String(e) }));
-                note = `walk ${x},${z} ${r.success ? 'ok' : 'FAIL ' + (r as { message?: string }).message}`;
+                const r = await walkTo(bot, sdk, x, z, tol).catch(e => ({ ok: false, message: String(e) }));
+                note = `walk ${x},${z} ${r.ok ? 'ok' : 'FAIL ' + r.message}`;
             } else if ('loc' in a) {
-                const r = await doLoc(bot, sdk, a);
+                const r = await doLoc(sdk, a);
                 note = `loc ${a.loc.join('/')} ${r.ok ? 'ok' : 'FAIL ' + r.why} ${r.loc ?? ''}`;
             }
-            const dt = now(sdk) - t0;
+            const dt = currentTick(sdk) - t0;
             total += dt;
-            const p1 = pos(sdk.getState());
+            const p1 = pos(sdk);
             rows.push(`${dt}`);
             console.log(`  ${name}: ${note} | ${p0.x},${p0.z},${p0.level} -> ${p1.x},${p1.z},${p1.level} | ${dt} ticks`);
         }

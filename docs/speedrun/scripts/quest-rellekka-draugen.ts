@@ -16,51 +16,59 @@
 // Fights with a rune scimitar and rune armour at the given stats (default 70s).
 
 import { runScript } from '../../../sdk/runner';
-import * as L from './quest-rellekka-lib';
+import { slotOf, walkTo, wield } from '../../../speedrun/lib/act';
+import { fight, type FightResult } from '../../../speedrun/lib/combat';
+import { currentTick, waitTicks } from '../../../speedrun/lib/wait';
+import { findNpc, messagesSince, pos } from '../../../speedrun/lib/world';
+import { result } from '../../../speedrun/lab/record';
+import { clearInventory, getvar, give, mustTele, setStats, setvar } from '../../../speedrun/lab/setup';
+const SIGLI_STARTED = 1 << 14; // quest_viking.constant
 
 const nums = process.argv.slice(3).filter(a => /^\d+$/.test(a)).map(Number);
-const [att, str, def, hp] = [0, 1, 2, 3].map(i => nums[i] ?? 70);
+const stat = (i: number) => nums[i] ?? 70;
+const att = stat(0), str = stat(1), def = stat(2), hp = stat(3);
 const BUTTERFLY = 1280;
 const DRAUGEN = 1279;
-const dirs: Record<string, [number, number]> = {
+const dirs: Record<string, readonly [number, number]> = {
     'north-west': [-1, 1], 'south-west': [-1, -1], 'north-east': [1, 1], 'south-east': [1, -1],
-    east: [1, 0], west: [-1, 0], south: [0, -1], north: [0, 1]
+    east: [1, 0], west: [-1, 0], south: [0, -1], north: [0, 1],
 };
+/** The in-game name of a debug obj name: rune_full_helm is "Rune full helm". */
+const display = (obj: string) => new RegExp(`^${obj.replace(/_/g, ' ')}$`, 'i');
 
 await runScript(async ({ bot, sdk }) => {
-    const out: Record<string, unknown> = {};
-    process.on('exit', () => L.report(`Draugen ${att}/${str}/${def}`, out));
-    await L.clearInv(sdk, bot);
-    await L.setStats(sdk, { attack: att, strength: str, defence: def, hitpoints: hp });
+    const out: Record<string, unknown> = { stats: `${att}/${str}/${def}` };
+    process.on('exit', () => result('rellekka-draugen', out));
+    await bot.dismissBlockingUI();
+    await clearInventory(sdk);
+    await setStats(sdk, { attack: att, strength: str, defence: def, hitpoints: hp });
     for (const g of ['rune_scimitar', 'rune_full_helm', 'rune_platebody', 'rune_platelegs', 'rune_kiteshield']) {
-        await L.give(sdk, g);
-        const it = sdk.getInventory().find(i => i.name.toLowerCase().replace(/ /g, '_') === g);
-        if (it) await bot.equipItem(it);
+        await give(sdk, g);
+        await wield(sdk, display(g));
     }
-    await L.give(sdk, 'shark', 10);
-    await L.give(sdk, 'viking_draugen_talisman_uncharged');
-    await L.cheat(sdk, 'setvar viking 1');
-    await L.cheat(sdk, `setvar viking_bits ${L.BITS.sigliStarted}`);
-    await L.tele(sdk, 2662, 3645, 0);
-    await sdk.waitForTicks(3);
+    await give(sdk, 'shark', 10);
+    await give(sdk, 'viking_draugen_talisman_uncharged');
+    await setvar(sdk, 'viking', 1);
+    await setvar(sdk, 'viking_bits', SIGLI_STARTED);
+    await mustTele(sdk, 2662, 3645, 0);
 
-    const T0 = L.tick(sdk);
-    const msgs = () => sdk.getState()!.gameMessages.slice(-3).map(m => m.text).join(' | ');
+    const T0 = currentTick(sdk);
+    const msgs = () => (sdk.getState()?.gameMessages ?? []).slice(-3).map(m => m.text).join(' | ');
     const useTalisman = async () => {
-        await sdk.sendUseItem(sdk.findInventoryItem(/Hunters' talisman/)!.slot, 1);
-        await sdk.waitForTicks(2);
+        await sdk.sendUseItem(slotOf(sdk, /Hunters' talisman/), 1);
+        await waitTicks(sdk, 2);
         return msgs();
     };
     let uses = 0;
     const trail: string[] = [];
     let found: number | null = null;
-    while (L.tick(sdk) - T0 < 1500) {
-        if (sdk.getNearbyNpcs().some(n => n.id === DRAUGEN)) break;
-        const bf = sdk.getNearbyNpcs().find(n => n.id === BUTTERFLY);
+    while (currentTick(sdk) - T0 < 1500) {
+        if (findNpc(sdk, DRAUGEN)) break;
+        const bf = findNpc(sdk, BUTTERFLY);
         if (bf) {
-            if (found === null) found = L.tick(sdk) - T0;
+            if (found === null) found = currentTick(sdk) - T0;
             if (bf.distance > 2) {
-                await bot.walkTo(bf.x, bf.z, 1);
+                await walkTo(bot, sdk, bf.x, bf.z, 1, 0);
                 continue;
             }
             uses++;
@@ -69,32 +77,30 @@ await runScript(async ({ bot, sdk }) => {
         }
         uses++;
         const m = await useTalisman();
-        trail.push(`${JSON.stringify(L.pos(sdk))} ${m}`);
-        // Newest direction message only (older ones linger in the message list).
-        const last = sdk.getState()!.gameMessages.map(x => x.text).filter(t => /guides you/.test(t)).at(-1) ?? '';
+        trail.push(`${JSON.stringify(pos(sdk))} ${m}`);
+        // The newest direction message of the hunt (older ones linger in the message list).
+        const last = messagesSince(sdk, T0, /guides you/).at(-1) ?? '';
         const dir = Object.keys(dirs).find(d => last.endsWith(`guides you ${d}.`));
-        if (!dir) { await sdk.waitForTicks(1); continue; }
-        const [dx, dz] = dirs[dir];
-        const p = L.pos(sdk);
-        await bot.walkTo(p.x + dx * 20, p.z + dz * 20, 3);
+        const step = dir === undefined ? undefined : dirs[dir];
+        if (!step) {
+            await waitTicks(sdk, 1);
+            continue;
+        }
+        const p = pos(sdk);
+        await walkTo(bot, sdk, p.x + step[0] * 20, p.z + step[1] * 20, 3, 0);
     }
-    const spawned = L.tick(sdk) - T0;
-    const f0 = L.tick(sdk);
-    let eaten = 0;
-    while (L.tick(sdk) - f0 < 600) {
-        const d = sdk.getNearbyNpcs().find(n => n.id === DRAUGEN);
-        if (!d) break;
-        const s = sdk.getState()!;
-        if (s.dialog.isOpen) { await L.dismissLevelUps(sdk); if (s.dialog.isOpen) await sdk.sendClickDialog(0); }
-        if (s.player!.hp < s.player!.maxHp / 2) { await bot.eatFood(/Shark/); eaten++; }
-        if (!s.player!.combat.inCombat || s.player!.combat.targetIndex !== d.index) await bot.attack(d);
-        await sdk.waitForStateUpdate();
-    }
-    await sdk.waitForTicks(2);
-    const bits = await L.getVar(sdk, 'viking_bits');
+    const spawned = currentTick(sdk) - T0;
+    const f0 = currentTick(sdk);
+    const draugen = findNpc(sdk, DRAUGEN);
+    // Eat below half hitpoints; any page that opens mid-fight is clicked through.
+    const f: FightResult | null = draugen
+        ? await fight(sdk, draugen, { maxTicks: 600, eatBelow: (sdk.getState()?.player?.maxHp ?? hp) / 2, food: /Shark/, onDialog: 'continue' })
+        : null;
+    await waitTicks(sdk, 2);
+    const bits = await getvar(sdk, 'viking_bits');
     Object.assign(out, {
-        uses, butterflySeenAt: found, draugenSpawnedAt: spawned, fight: L.tick(sdk) - f0, total: L.tick(sdk) - T0, eaten,
-        sigli: bits === null ? null : (bits >> 14) & 3, end: L.pos(sdk), trail
+        uses, butterflySeenAt: found, draugenSpawnedAt: spawned, fight: currentTick(sdk) - f0, fightEnd: f?.end ?? 'no target',
+        total: currentTick(sdk) - T0, eaten: f?.eats ?? 0, levelUps: f?.levelUps ?? 0,
+        sigli: bits === null ? null : (bits >> 14) & 3, end: pos(sdk), trail,
     });
-    console.log('result', JSON.stringify(out));
 }, { timeout: 900_000, printState: false });

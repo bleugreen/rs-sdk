@@ -497,4 +497,5 @@ come after Grand Tree, not before (`underground_pass.md`, very low Agility).
   offline.
 - `quest-regicide-guard.ts <bot> [att str def hp] [weapon] [runs]`: the guard fight.
 - `quest-regicide-messenger.ts <bot> out|in`: the messenger after a relog.
-- `quest-regicide-lab.ts`: shared helpers.
+- Shared helpers come from `speedrun/lib` and `speedrun/lab` (staff set-up in
+  `lab/setup.ts`, `RESULT` lines from `lab/record.ts`).

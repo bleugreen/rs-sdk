@@ -8,28 +8,29 @@
 
 import { runScript } from '../../../sdk/runner';
 import type { BotSDK } from '../../../sdk/index';
-import { at, now, pos, result, stats, tele, trace, waitTicks, waitUntil } from './quest-primitives-lib';
-
-const cheb = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.max(Math.abs(a.x - b.x), Math.abs(a.z - b.z));
+import { mustTele } from '../../../speedrun/lab/setup';
+import { result, stats, trace } from '../../../speedrun/lab/record';
+import { currentTick, waitTicks, waitUntil } from '../../../speedrun/lib/wait';
+import { at, chebyshev, pos } from '../../../speedrun/lib/world';
 
 /** One click to (x,z); per-tick displacement, first-move delay and arrival. */
 async function oneClick(sdk: BotSDK, x: number, z: number, running: boolean, maxTicks = 80) {
     const tr = trace(sdk);
-    const t0 = now(sdk);
-    const start = pos(sdk.getState());
+    const t0 = currentTick(sdk);
+    const start = pos(sdk);
     await sdk.sendWalk(x, z, running);
-    const arr = await waitUntil(sdk, at(x, z), maxTicks);
+    const arr = await waitUntil(sdk, at(x, z), { maxTicks });
     await waitTicks(sdk, 1);
     tr.stop();
     const rows = tr.rows.filter(r => r.tick >= t0);
     const steps: number[] = [];
-    for (let i = 1; i < rows.length; i++) steps.push(cheb(rows[i], rows[i - 1]));
-    const firstMove = rows.findIndex((r, i) => i > 0 && steps[i - 1] > 0);
+    for (let i = 1; i < rows.length; i++) steps.push(chebyshev(rows[i]!, rows[i - 1]!));
+    const firstMove = rows.findIndex((r, i) => i > 0 && steps[i - 1]! > 0);
     const moving = steps.filter(s => s > 0);
     return {
-        from: start, to: { x, z }, chebyshev: cheb(start, { x, z }), arrived: arr !== null,
-        clickToArrive: arr ? arr.tick - t0 : null,
-        firstMoveTick: firstMove > 0 ? rows[firstMove].tick - t0 : null,
+        from: start, to: { x, z }, chebyshev: chebyshev(start, { x, z }), arrived: arr.ok,
+        clickToArrive: arr.ok ? arr.tick - t0 : null,
+        firstMoveTick: firstMove > 0 ? rows[firstMove]!.tick - t0 : null,
         tilesWalked: moving.reduce((a, b) => a + b, 0), movingTicks: moving.length,
         tilesPerMovingTick: moving.length ? Math.round((moving.reduce((a, b) => a + b, 0) / moving.length) * 100) / 100 : 0,
         energy: { start: rows[0]?.energy, end: rows[rows.length - 1]?.energy, min: Math.min(...rows.map(r => r.energy)) },
@@ -40,19 +41,19 @@ async function oneClick(sdk: BotSDK, x: number, z: number, running: boolean, max
 // reach stays well inside the client's 104x104 loaded area: a click beyond it
 // is clamped to the area's edge (LiteClient.walkTo) and the leg stops short.
 async function eagerWalk(sdk: BotSDK, x: number, z: number, reach = 20, lead = 3) {
-    const t0 = now(sdk);
+    const t0 = currentTick(sdk);
     const tr = trace(sdk);
     let clicks = 0;
     // Route once: a global path query takes long enough to cost idle ticks if
     // repeated before every click.
     const path = await sdk.sendFindPath(x, z, 500);
     if (!path.success || !path.waypoints.length) throw new Error('no path ' + path.error);
-    const t1 = now(sdk);
+    const t1 = currentTick(sdk);
     // Waypoints are turn points that can be far apart; expand the route into
     // tiles (each leg is a straight or diagonal run) so a click target can be
     // chosen at any distance along it.
     const route: Array<{ x: number; z: number }> = [];
-    let cur = pos(sdk.getState());
+    let cur = pos(sdk);
     for (const wp of path.waypoints) {
         while (cur.x !== wp.x || cur.z !== wp.z) {
             cur = { ...cur, x: cur.x + Math.sign(wp.x - cur.x), z: cur.z + Math.sign(wp.z - cur.z) };
@@ -61,35 +62,36 @@ async function eagerWalk(sdk: BotSDK, x: number, z: number, reach = 20, lead = 3
     }
     let next = 0;
     for (let guard = 0; guard < 60; guard++) {
-        const p = pos(sdk.getState());
+        const p = pos(sdk);
         if (p.x === x && p.z === z) break;
-        let target = route[next];
-        for (let i = next; i < route.length && cheb(route[i], p) <= reach; i++) { target = route[i]; next = i; }
+        let target = route[next]!;
+        for (let i = next; i < route.length && chebyshev(route[i]!, p) <= reach; i++) { target = route[i]!; next = i; }
         await sdk.sendWalk(target.x, target.z, true);
         clicks++;
         const final = target.x === x && target.z === z;
-        await waitUntil(sdk, s => cheb(pos(s), target) <= (final ? 0 : lead), 60);
+        await waitUntil(sdk, s => chebyshev(pos(s), target) <= (final ? 0 : lead), { maxTicks: 60 });
     }
-    const arrive = now(sdk);
+    const arrive = currentTick(sdk);
     tr.stop();
     const rows = tr.rows;
     let tiles = 0;
     const hist: Record<number, number> = {};
-    for (let i = 1; i < rows.length; i++) { const d = cheb(rows[i], rows[i - 1]); tiles += d; hist[d] = (hist[d] ?? 0) + 1; }
+    for (let i = 1; i < rows.length; i++) { const d = chebyshev(rows[i]!, rows[i - 1]!); tiles += d; hist[d] = (hist[d] ?? 0) + 1; }
     return { stepHistogram: hist, clicks, ticks: arrive - t0, routeQueryTicks: t1 - t0, walkTicks: arrive - t1, tilesWalked: tiles, idealTicks: Math.ceil(tiles / 2) };
 }
 
+/** bot.walkTo itself is the primitive measured here, so it is called raw (no retry). */
 async function sdkWalk(sdk: BotSDK, bot: any, x: number, z: number) {
-    const t0 = now(sdk);
+    const t0 = currentTick(sdk);
     const tr = trace(sdk);
     const r = await bot.walkTo(x, z, 0);
-    const arrive = now(sdk);
+    const arrive = currentTick(sdk);
     tr.stop();
     let tiles = 0;
     const rows = tr.rows;
     let idle = 0;
     const hist: Record<number, number> = {};
-    for (let i = 1; i < rows.length; i++) { const d = cheb(rows[i], rows[i - 1]); tiles += d; if (d === 0) idle++; hist[d] = (hist[d] ?? 0) + 1; }
+    for (let i = 1; i < rows.length; i++) { const d = chebyshev(rows[i]!, rows[i - 1]!); tiles += d; if (d === 0) idle++; hist[d] = (hist[d] ?? 0) + 1; }
     return { stepHistogram: hist, ok: r.success, msg: r.message, ticks: arrive - t0, tilesWalked: tiles, idleTicks: idle, idealTicks: Math.ceil(tiles / 2) };
 }
 
@@ -102,14 +104,14 @@ await runScript(async ({ bot, sdk }) => {
     const A = { x: 3200, z: 3226 };
     const runs = [];
     for (let i = 0; i < (want('run20') ? 3 : 0); i++) {
-        await tele(sdk, A.x, A.z);
+        await mustTele(sdk, A.x, A.z);
         runs.push(await oneClick(sdk, A.x - 20, A.z, true));
     }
     if (runs.length) result('movement.run20', { runs, clickToArrive: stats(runs.map(r => r.clickToArrive ?? NaN)), firstMove: stats(runs.map(r => r.firstMoveTick ?? NaN)), tilesPerMovingTick: stats(runs.map(r => r.tilesPerMovingTick)) });
 
     const walks = [];
     for (let i = 0; i < (want('walk10') ? 2 : 0); i++) {
-        await tele(sdk, A.x, A.z);
+        await mustTele(sdk, A.x, A.z);
         walks.push(await oneClick(sdk, A.x - 10, A.z, false));
     }
     if (walks.length) result('movement.walk10', { walks, tilesPerMovingTick: stats(walks.map(r => r.tilesPerMovingTick)) });
@@ -117,11 +119,10 @@ await runScript(async ({ bot, sdk }) => {
     // Single-click reach: how far can one click go?
     const reach = [];
     for (const d of want('reach') ? [30, 40, 45, 50, 55, 60, 70] : []) {
-        await tele(sdk, A.x, A.z);
+        await mustTele(sdk, A.x, A.z);
         await waitTicks(sdk, 2);
         const r = await oneClick(sdk, A.x - d, A.z, true, Math.ceil(d / 2) + 10);
-        const p = pos(sdk.getState());
-        reach.push({ d, arrived: r.arrived, clickToArrive: r.clickToArrive, endedAt: p, tilesWalked: r.tilesWalked });
+        reach.push({ d, arrived: r.arrived, clickToArrive: r.clickToArrive, endedAt: pos(sdk), tilesWalked: r.tilesWalked });
     }
     if (reach.length) result('movement.singleClickReach', reach);
 
@@ -129,16 +130,16 @@ await runScript(async ({ bot, sdk }) => {
     const L = { x: 3222, z: 3218 }, D = { x: 3093, z: 3244 };
     const eager = [], sdkw = [];
     for (let i = 0; i < (want('long') ? 2 : 0); i++) {
-        await tele(sdk, L.x, L.z);
+        await mustTele(sdk, L.x, L.z);
         eager.push(await eagerWalk(sdk, D.x, D.z));
-        await tele(sdk, L.x, L.z);
+        await mustTele(sdk, L.x, L.z);
         sdkw.push(await sdkWalk(sdk, bot, D.x, D.z));
     }
-    if (eager.length) result('movement.lumbridgeToDraynor', { chebyshev: cheb(L, D), eager, sdkWalkTo: sdkw });
+    if (eager.length) result('movement.lumbridgeToDraynor', { chebyshev: chebyshev(L, D), eager, sdkWalkTo: sdkw });
 
     // Energy over a long run (both legs above plus this).
     if (!want('energy')) return;
-    await tele(sdk, L.x, L.z);
+    await mustTele(sdk, L.x, L.z);
     const tr = trace(sdk);
     await eagerWalk(sdk, D.x, D.z);
     await eagerWalk(sdk, L.x, L.z);

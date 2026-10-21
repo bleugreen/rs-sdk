@@ -9,31 +9,36 @@
 // login-to-spawn, spawn-to-first-page and the page count.
 
 import { runScript } from '../../../sdk/runner';
-import { getVar, now, result, setVar, talkThrough, waitTicks, waitUntil } from './quest-regicide-lab';
+import { converse } from '../../../speedrun/lib/converse';
+import { currentTick, waitTicks, waitUntil } from '../../../speedrun/lib/wait';
+import { invCount } from '../../../speedrun/lib/world';
+import { result } from '../../../speedrun/lab/record';
+import { getvar, setvar } from '../../../speedrun/lab/setup';
 
 const LOGOUT_BUTTON = 2458; // logout:try_logout
 const PHASE = process.argv[3] ?? 'out';
 
 await runScript(async ({ sdk }) => {
     if (PHASE === 'out') {
-        await setVar(sdk, 'upass', 10);
-        await setVar(sdk, 'regicide_quest', 0);
-        await setVar(sdk, 'regicide_bits', 0);
+        await setvar(sdk, 'upass', 10);
+        await setvar(sdk, 'regicide_quest', 0);
+        await setvar(sdk, 'regicide_bits', 0);
         await waitTicks(sdk, 20);
         await sdk.sendClickComponent(LOGOUT_BUTTON);
         await new Promise(r => setTimeout(r, 5000));
         result('messenger.out', { ok: true });
         return;
     }
-    const t0 = now(sdk);
-    const spawn = await waitUntil(sdk, () => sdk.getNearbyNpcs().some(n => /messenger/i.test(n.name)), 1400);
-    const open = await waitUntil(sdk, s => s.dialog.isOpen, 30);
-    const d = await talkThrough(sdk, [/./]);
+    const t0 = currentTick(sdk);
+    const spawn = await waitUntil(sdk, s => s.nearbyNpcs.some(n => /messenger/i.test(n.name)), { maxTicks: 1400 });
+    const open = await waitUntil(sdk, s => s.dialog.isOpen, { maxTicks: 30 });
+    const d = await converse(sdk, [/./], { keep: true });
     result('messenger.in', {
-        loginToSpawn: spawn ? spawn.tick - t0 : null,
-        spawnToFirstPage: spawn && open ? open.tick - spawn.tick : null,
-        dialogue: { ticks: d.ticks, pages: d.pages, options: d.options },
-        stage: await getVar(sdk, 'regicide_quest'),
-        scroll: sdk.getInventory().some(i => /King's message/i.test(i.name)),
+        loginToSpawn: spawn.ok ? spawn.tick - t0 : null,
+        spawnToFirstPage: spawn.ok && open.ok ? open.tick - spawn.tick : null,
+        // first page to the dialogue closing
+        dialogue: { ticks: d.opened ? d.endTick - d.firstTick : 0, pages: d.pages, options: d.options },
+        stage: await getvar(sdk, 'regicide_quest'),
+        scroll: invCount(sdk, /King's message/i) > 0,
     });
 }, { timeout: 900_000, onDisconnect: 'ignore' } as any);

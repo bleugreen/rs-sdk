@@ -207,7 +207,7 @@ The lock clicks are interface buttons, not dialogue, so many land in one tick
 (37 clicks resolved in 8 ticks, measured). A first version that used the SDK's
 high-level `interactLoc` measured 223-247 ticks: that call waits on its own
 completion heuristic (about 20 ticks on a search), so scripts here use the raw
-interaction packet (`opLoc` in `quest-rellekka-lib.ts`).
+interaction packet (`opLoc` in `speedrun/lib/act.ts`, sent without a wait).
 
 ### The merchant chain (step 44)
 
@@ -404,7 +404,7 @@ searching (inferred, not measured).
 - `docs/speedrun/scripts/quest-rellekka-draugen.ts <bot> [att str def hp]` and `quest-rellekka-draugen.sh <prefix> <count>`: the Draugen hunt on fresh bots, serially.
 - `docs/speedrun/scripts/quest-rellekka-routes.ts`: route tiles (offline).
 - `docs/speedrun/scripts/quest-rellekka-map.ts npc|loc|obj <regex>...`: coordinates from the map files (offline).
-- `docs/speedrun/scripts/quest-rellekka-lib.ts`: shared helpers (builds on `quest-arthur-lab.ts`).
+- Each trial script holds the `%viking_bits` flags it stages with ::setvar; shared helpers are `speedrun/lib` and `speedrun/lab`.
 
 Scripts that share Koschei's arena or the Draugen's butterflies must run one
 bot at a time: other players' Koschei and butterflies are visible and confuse

@@ -6,9 +6,17 @@
 // saradomin), SPELL (fire_wave|fire_blast, default fire_blast), FOOD (sharks, 20), EAT_BELOW (40),
 // FIGHT_CAP (ticks, 1500), RESET=1 sets %magearena to 0 first.
 // Setup uses staff commands (LOCAL_STAFF_LEVEL=4) and is not timed. Each timed segment logs its
-// tick count, dialogue pages, option clicks and tiles.
+// tick count, dialogue pages, option clicks and tiles. A segment ends at its last effect (a
+// teleport landing, a dialogue closing, the cape in hand), not after a dialogue's close is confirmed.
 import { runScript } from '../../../sdk/runner';
-import { cheat, clock, log, pos, talkThrough, tele, tick, waitTicks, waitUntil } from './quest-unlocks-lib';
+import type { BotWorldState, NearbyNpc } from '../../../sdk/types';
+import { opLoc, pickup, talkTo, walkTo, wield } from '../../../speedrun/lib/act';
+import { fight } from '../../../speedrun/lib/combat';
+import { converse } from '../../../speedrun/lib/converse';
+import { currentTick, waitTicks, waitUntil } from '../../../speedrun/lib/wait';
+import { findLoc, findNpc, invItem, messagesSince, npcByIndex, opIndex, pos, skillLevel, skillXp, worn } from '../../../speedrun/lib/world';
+import { Recorder } from '../../../speedrun/lab/record';
+import { clearInventory, dropMatching, getvar, give, mustTele, setStats, setvar } from '../../../speedrun/lab/setup';
 
 const MAGIC = Number(process.env.MAGIC ?? 80);
 const HP = Number(process.env.HP ?? 70);
@@ -29,190 +37,190 @@ const STATUE: Record<string, { x: number; z: number }> = {
 await runScript(async ({ bot, sdk }) => {
     await bot.skipTutorial();
     await bot.dismissBlockingUI();
+    const log = (msg: string, t0?: number) => { const t = currentTick(sdk); console.log(`[t=${t}${t0 !== undefined ? ` +${t - t0}` : ''}] ${msg}`); };
 
     // ---- untimed setup ----
     // FROM=pool resumes a run whose fight finished (%magearena = 6) at the cellar pool.
     const FROM = process.env.FROM ?? 'kolodion';
-    let t0 = clock(sdk);
-    let tDone = t0;
-    let magicXp0 = sdk.getSkill('Magic')?.experience ?? 0;
-    let hpXp0 = sdk.getSkill('Hitpoints')?.experience ?? 0;
+    const rec = new Recorder(sdk, `Mage Arena (from ${FROM}, Magic ${MAGIC}, HP ${HP}, Def ${DEF}, Prayer ${PRAYER}, ${SPELL}, ${GOD})`);
+    let t0 = currentTick(sdk);
+    let magicXp0 = skillXp(sdk, 'magic');
+    let hpXp0 = skillXp(sdk, 'hitpoints');
     if (FROM === 'kolodion') {
-    if (process.env.RESET === '1') await cheat(sdk, 'setvar magearena 0');
-    for (const it of sdk.getEquipment()) await bot.unequipItem(it);
-    for (const it of sdk.getInventory()) await bot.dropItem(it);
-    await cheat(sdk, `setstat magic ${MAGIC}`);
-    await cheat(sdk, `setstat hitpoints ${HP}`);
-    await cheat(sdk, `setstat defence ${DEF}`);
-    if (PRAYER > 0) await cheat(sdk, `setstat prayer ${PRAYER}`);
-    await cheat(sdk, 'give staff_of_fire 1');
-    await cheat(sdk, 'give bloodrune 500');
-    await cheat(sdk, 'give deathrune 500');
-    await cheat(sdk, 'give airrune 5000');
-    await cheat(sdk, 'give firerune 5000');
-    await cheat(sdk, `give shark ${Number(process.env.FOOD ?? 20)}`);
-    await waitTicks(sdk, 3);
-    await bot.equipItem(/staff of fire/i);
-    await tele(sdk, 2539, 4715);
-    await waitTicks(sdk, 5);
+        if (process.env.RESET === '1') await setvar(sdk, 'magearena', 0);
+        await clearInventory(sdk);
+        await setStats(sdk, { magic: MAGIC, hitpoints: HP, defence: DEF, ...(PRAYER > 0 ? { prayer: PRAYER } : {}) });
+        await give(sdk, 'staff_of_fire', 1);
+        await give(sdk, ['bloodrune', 'deathrune'], 500);
+        await give(sdk, ['airrune', 'firerune'], 5000);
+        await give(sdk, 'shark', Number(process.env.FOOD ?? 20));
+        await waitTicks(sdk, 3);
+        await wield(sdk, /staff of fire/i);
+        await mustTele(sdk, 2539, 4715);
+        await waitTicks(sdk, 5);
 
-    // ---- segment 1: talk to Kolodion until the arena teleport ----
-    magicXp0 = sdk.getSkill('Magic')?.experience ?? 0;
-    hpXp0 = sdk.getSkill('Hitpoints')?.experience ?? 0;
-    t0 = clock(sdk);
-    if (PRAYER >= 37) await bot.activatePrayer('protect_from_magic');
-    const kol = sdk.findNearbyNpc(/^Kolodion$/);
-    if (!kol) throw new Error('Kolodion not found near the cellar spawn');
-    await sdk.sendTalkToNpc(kol.index);
-    const d1 = await talkThrough(sdk, ['Can I fight here?', 'Yes indeedy.', "Ok, let's fight."], { keepIdle: true });
-    await waitUntil(sdk, () => pos(sdk).z < 4000, 60, 'arena teleport');
-    const tArena = clock(sdk);
-    log(sdk, `SEG talk-kolodion: ${tArena - t0} ticks, ${d1.pages} pages, ${d1.options} options`, t0);
+        // ---- segment 1: talk to Kolodion until the arena teleport ----
+        magicXp0 = skillXp(sdk, 'magic');
+        hpXp0 = skillXp(sdk, 'hitpoints');
+        t0 = currentTick(sdk);
+        rec.begin('talk-kolodion', 'dialogue');
+        if (PRAYER >= 37) await bot.activatePrayer('protect_from_magic');
+        const kol = findNpc(sdk, /^Kolodion$/);
+        if (!kol) throw new Error('Kolodion not found near the cellar spawn');
+        const d1 = await talkTo(sdk, kol, ['Can I fight here?', 'Yes indeedy.', "Ok, let's fight."], { until: s => pos(s).z < 4000 });
+        rec.interact(d1.clicks);
+        if (!d1.ok) throw new Error(`timed out waiting for: arena teleport (${d1.reason})`);
+        rec.dialogue(d1);
+        rec.end();
 
-    // ---- segment 2: the fight ----
-    let casts = 0;
-    let eats = 0;
-    let minHp = 999;
-    let lastForm = -1;
-    let stage = 0;
-    let formStart = tArena;
-    const forms: string[] = [];
-    const FIGHT_CAP = Number(process.env.FIGHT_CAP ?? 1500);
-    let lastHp = sdk.getState()?.player?.hp ?? 0;
-    sdk.getNewChat({ types: [0] });
-    while (pos(sdk).z < 4600) {
-        const p = sdk.getState()?.player;
-        if (!p || p.isDead || pos(sdk).z < 3900 || clock(sdk) - tArena > FIGHT_CAP) {
-            throw new Error(`fight aborted at +${clock(sdk) - tArena}: dead=${p?.isDead} pos=${JSON.stringify(pos(sdk))} casts=${casts}`);
-        }
-        if (PRAYER >= 37 && !sdk.isPrayerActive('protect_from_magic') && (sdk.getSkill('Prayer')?.level ?? 0) > 0) {
-            log(sdk, 'protect from magic was off; reactivating', tArena);
-            await bot.activatePrayer('protect_from_magic');
-        }
-        if (p.hp !== lastHp) {
-            log(sdk, `hp ${lastHp} -> ${p.hp}`, tArena);
-            lastHp = p.hp;
-        }
-        for (const m of sdk.getNewChat({ types: [0] })) log(sdk, `chat: ${m.text}`, tArena);
-        if (p) minHp = Math.min(minHp, p.hp);
-        if (p && p.hp > 0 && p.hp < Number(process.env.EAT_BELOW ?? 40)) {
-            const food = sdk.findInventoryItem(/shark/i);
-            if (food) {
-                await bot.eatFood(food);
-                eats++;
-            }
-        }
-        const d = sdk.getDialog();
-        if (d?.isOpen && d.options.length <= 1) await sdk.sendClickDialog(d.options[0]?.index ?? 0); // level-up box
+        // ---- segment 2: the fight ----
+        rec.begin('fight', 'fight');
+        const tArena = currentTick(sdk);
+        const FIGHT_CAP = Number(process.env.FIGHT_CAP ?? 1500);
+        const EAT_BELOW = Number(process.env.EAT_BELOW ?? 40);
+        let casts = 0;
+        let eats = 0;
+        let minHp = 999;
+        let stage = 0;
+        let lastHp = sdk.getState()?.player?.hp ?? 0;
+        const forms: string[] = [];
+        sdk.getNewChat({ types: [0] });
+        const back = (s: BotWorldState) => pos(s).z >= 4600; // finish_mage_arena teleports you to the cellar
+        const lost = (s: BotWorldState) => pos(s).z < 3900;
         // Forms in order: kolhuman 907, kologre 908, kolspider 909, kolethereal 910, koldemon 911.
         // Only the current stage's form is attackable; leftover forms from an aborted run are ignored.
-        const kols = sdk.getNearbyNpcs().filter((n) => n.name === 'Kolodion' && n.options.some((o) => /attack/i.test(o)));
-        if (!kols.some((n) => n.id === 907 + stage) && kols.some((n) => n.id === 908 + stage)) stage++;
-        const target = kols.find((n) => n.id === 907 + stage);
-        if (target) {
-            if (target.id !== lastForm) {
-                if (lastForm !== -1) forms.push(`npc ${lastForm}: ${clock(sdk) - formStart} ticks`);
-                lastForm = target.id;
-                formStart = clock(sdk);
-                log(sdk, `form npc ${target.id} lvl ${target.combatLevel}`, tArena);
+        const kolodions = (s: BotWorldState) => s.nearbyNpcs.filter((n) => n.name === 'Kolodion' && n.hp !== 0 && opIndex(n, /attack/i) !== undefined);
+        const current = (s: BotWorldState): NearbyNpc | undefined => {
+            const kols = kolodions(s);
+            if (!kols.some((n) => n.id === 907 + stage) && kols.some((n) => n.id === 908 + stage)) stage++;
+            return kols.find((n) => n.id === 907 + stage);
+        };
+        while (!back(sdk.getState()!)) {
+            const elapsed = currentTick(sdk) - tArena;
+            if (elapsed > FIGHT_CAP) throw new Error(`fight aborted at +${elapsed}: pos=${JSON.stringify(pos(sdk))} casts=${casts}`);
+            const w = await waitUntil(sdk, (s) => back(s) || current(s) !== undefined, { maxTicks: FIGHT_CAP - elapsed });
+            if (!w.ok) throw new Error(`fight aborted at +${currentTick(sdk) - tArena}: no target; stage ${stage}; kolodions ${JSON.stringify(kolodions(sdk.getState()!).map((n) => [n.id, n.x, n.z, n.hp]))} pos ${JSON.stringify(pos(sdk))}`);
+            if (back(w.state)) break;
+            const target = current(w.state)!;
+            log(`form npc ${target.id} lvl ${target.combatLevel}`, tArena);
+            const f = await fight(sdk, target, {
+                spell: SPELL_COM[SPELL], castEvery: 2,
+                food: /shark/i, eatBelow: EAT_BELOW,
+                ...(PRAYER >= 37 ? { prayer: 'protect_from_magic' as const } : {}),
+                onDialog: 'continue',
+                maxTicks: FIGHT_CAP - elapsed,
+                // also over when this form changes type in place: the next form is fought by its own id
+                done: (s) => back(s) || lost(s) || (npcByIndex(s, target.index)?.id ?? target.id) !== target.id,
+                onTick: (s, t) => {
+                    const hp = s.player?.hp ?? 0;
+                    if (hp !== lastHp) { log(`hp ${lastHp} -> ${hp}`, tArena); lastHp = hp; }
+                    for (const m of sdk.getNewChat({ types: [0] })) log(`chat: ${m.text}`, tArena);
+                    if (t && (s.tick - tArena) % 10 === 0) log(`target ${t.id} hp ${t.hp}/${t.maxHp} dist ${t.distance} magic xp ${skillXp(s, 'magic')} runes ${s.inventory.filter((i) => /rune/i.test(i.name)).map((i) => i.name + ' ' + i.count).join(',')} worn ${s.equipment.map((i) => i.name).join(',')}`, tArena);
+                },
+            });
+            casts += f.attacks;
+            eats += f.eats;
+            minHp = Math.min(minHp, f.minHp);
+            const out = back(sdk.getState()!);
+            forms.push(`npc ${target.id}: ${f.ticks} ticks${out ? ' (until teleport out)' : ''}`);
+            if (f.died || f.end === 'timeout' || lost(sdk.getState()!)) {
+                throw new Error(`fight aborted at +${currentTick(sdk) - tArena}: end=${f.end} pos=${JSON.stringify(pos(sdk))} casts=${casts}`);
             }
-            if (casts % 5 === 0) log(sdk, `target ${target.id} hp ${target.hp}/${target.maxHp} dist ${target.distance} magic xp ${sdk.getSkill('Magic')?.experience} runes ${sdk.getInventory().filter((i) => /rune/i.test(i.name)).map((i) => i.name + ' ' + i.count).join(',')} worn ${sdk.getEquipment().map((i) => i.name).join(',')}`, tArena);
-            await sdk.sendSpellOnNpc(target.index, SPELL_COM[SPELL]);
-            casts++;
-        } else if ((clock(sdk) - tArena) % 10 === 0) {
-            log(sdk, `no target; stage ${stage}; kolodions ${JSON.stringify(kols.map((n) => [n.id, n.x, n.z, n.hp]))} pos ${JSON.stringify(pos(sdk))}`, tArena);
         }
-        await waitTicks(sdk, 2);
-    }
-    if (lastForm !== -1) forms.push(`npc ${lastForm}: ${clock(sdk) - formStart} ticks (until teleport out)`);
-    const tBack = clock(sdk);
-    const prayerLeft = sdk.getSkill('Prayer')?.level;
-    if (PRAYER >= 37) await bot.deactivateAllPrayers();
-    log(sdk, `prayer points ${PRAYER} -> ${prayerLeft}`, t0);
-    log(sdk, `SEG fight: ${tBack - tArena} ticks, cast clicks ${casts}, eats ${eats}, min hp ${minHp}`, t0);
-    for (const f of forms) console.log('   ' + f);
-    // finish_mage_arena: p_delay(3) + teleport + p_delay(2), then Kolodion's congratulations
-    await waitUntil(sdk, () => sdk.getDialog()?.isOpen === true, 30, 'finish dialogue');
-    const d2 = await talkThrough(sdk, []);
-    tDone = clock(sdk);
-    log(sdk, `SEG finish-dialogue: ${tDone - tBack} ticks, ${d2.pages} pages`, t0);
+        rec.mark();
+        rec.interact(casts + eats);
+        const prayerLeft = skillLevel(sdk, 'prayer');
+        log(`prayer points ${PRAYER} -> ${prayerLeft}`, t0);
+        rec.note(`cast clicks ${casts}, eats ${eats}, min hp ${minHp}`);
+        for (const f of forms) console.log('   ' + f);
+        // finish_mage_arena: p_delay(3) + teleport + p_delay(2), then Kolodion's congratulations
+        rec.begin('finish-dialogue', 'dialogue');
+        if (PRAYER >= 37) await bot.deactivateAllPrayers();
+        const d2 = await converse(sdk, [], { openTicks: 30 });
+        if (!d2.opened) throw new Error('timed out waiting for: finish dialogue');
+        rec.dialogue(d2);
+        rec.end();
     } else {
         // pool: Kolodion's spot after the fight; guardian: where pray_at_statue leaves you (Saradomin)
-        if (FROM === 'pool') await tele(sdk, 2540, 4716);
+        if (FROM === 'pool') await mustTele(sdk, 2540, 4716);
         else {
-            await cheat(sdk, 'setvar magearena 7');
-            for (const it of sdk.getInventory()) if (/shark|staff of (saradomin|guthix|zamorak)/i.test(it.name)) await bot.dropItem(it);
-            if (!sdk.findInventoryItem(/cape of/i) && !sdk.findEquipmentItem(/cape of/i)) await cheat(sdk, `give ${GOD}_cape 1`);
-            await tele(sdk, 2500, 4719);
+            await setvar(sdk, 'magearena', 7);
+            await dropMatching(sdk, [/shark|staff of (saradomin|guthix|zamorak)/i]);
+            if (!invItem(sdk, /cape of/i) && !worn(sdk, /cape of/i)) await give(sdk, `${GOD}_cape`, 1);
+            await mustTele(sdk, 2500, 4719);
         }
-        t0 = clock(sdk);
-        tDone = t0;
+        t0 = currentTick(sdk);
     }
-    log(sdk, `dialog before pool: ${JSON.stringify(sdk.getDialog())}`);
+    log(`dialog before pool: ${JSON.stringify(sdk.getState()?.dialog)}`);
 
-    let tChamber = clock(sdk);
-    let tCape = clock(sdk);
     if (FROM !== 'guardian') {
-    // ---- segment 3: pool to the chamber ----
-    const pool = sdk.findNearbyLoc(/sparkling pool/i);
-    if (!pool) throw new Error('pool not found');
-    const from3 = pos(sdk);
-    const r3 = await bot.interactLoc(pool, 'Step-into');
-    log(sdk, `pool interact: ${JSON.stringify(r3).slice(0, 200)}`);
-    // mage_arena.rs2: a mesbox opens before the jump once %magearena >= 6
-    await waitUntil(sdk, () => sdk.getDialog()?.isOpen === true, 20, 'pool mesbox');
-    const d3 = await talkThrough(sdk, [], { keepIdle: true });
-    await waitUntil(sdk, () => pos(sdk).z < 4700, 40, 'arrive in the chamber');
-    log(sdk, `pool mesbox pages ${d3.pages}`);
-    await waitTicks(sdk, 1);
-    tChamber = clock(sdk);
-    log(sdk, `SEG pool: ${tChamber - tDone} ticks from ${JSON.stringify(from3)} to ${JSON.stringify(pos(sdk))}`, t0);
+        // ---- segment 3: pool to the chamber ----
+        rec.begin('pool', 'mixed');
+        const pool = await findLoc(sdk, { name: /sparkling pool/i });
+        if (!pool) throw new Error('pool not found');
+        const from3 = pos(sdk);
+        rec.interact();
+        // mage_arena.rs2: a mesbox opens before the jump once %magearena >= 6
+        const r3 = await opLoc(sdk, pool, 'Step-into', (s) => s.dialog.isOpen, { maxTicks: 60 });
+        log(`pool interact: ok=${r3.ok} ticks=${r3.ticks} resends=${r3.resends}`);
+        if (!r3.ok) throw new Error('timed out waiting for: pool mesbox');
+        const d3 = await converse(sdk, [], { until: (s) => pos(s).z < 4700, maxTicks: 80 });
+        if (!d3.ok) throw new Error(`timed out waiting for: arrive in the chamber (${d3.reason})`);
+        rec.dialogue(d3);
+        log(`pool mesbox pages ${d3.pages}`);
+        await waitTicks(sdk, 1);
+        rec.end(`from ${JSON.stringify(from3)} to ${JSON.stringify(pos(sdk))}`);
 
-    // ---- segment 4: pray at the statue and take the cape ----
-    const st = STATUE[GOD];
-    const statue = (await sdk.scanNearbyLocs(40)).find((l) => l.x === st.x && l.z === st.z);
-    if (!statue) throw new Error(`statue not found at ${st.x},${st.z}`);
-    const from4 = pos(sdk);
-    sdk.getNewChat({ types: [0] });
-    const r4 = await bot.interactLoc(statue, statue.options[0]);
-    await waitUntil(sdk, () => sdk.getDialog()?.isOpen === true, 60, 'statue mesbox');
-    log(sdk, `statue ${statue.id} options ${statue.options.join('/')} interact: ${JSON.stringify(r4).slice(0, 200)}`);
-    const d4 = await talkThrough(sdk, []);
-    let cape = null;
-    for (let i = 0; i < 40 && !cape; i++) {
-        cape = (await sdk.scanGroundItems(15)).find((g) => /cape of/i.test(g.name)) ?? null;
-        if (!cape) await waitTicks(sdk, 1);
-    }
-    for (const m of sdk.getNewChat({ types: [0] })) log(sdk, `chat: ${m.text}`);
-    if (!cape) {
-        log(sdk, `pos ${JSON.stringify(pos(sdk))} ground ${JSON.stringify(sdk.getGroundItems().map((g) => [g.name, g.x, g.z]))} recent dialogs ${JSON.stringify(sdk.getState()?.recentDialogs?.slice(-3))}`);
-        throw new Error('no cape on the ground');
-    }
-    await bot.pickupItem(cape);
-    await waitUntil(sdk, () => !!sdk.findInventoryItem(/cape of/i), 30, 'cape in inventory');
-    tCape = clock(sdk);
-    log(sdk, `SEG statue+cape: ${tCape - tChamber} ticks from ${JSON.stringify(from4)}, ${d4.pages} pages`, t0);
+        // ---- segment 4: pray at the statue and take the cape ----
+        rec.begin('statue+cape', 'mixed');
+        const st = STATUE[GOD];
+        if (!st) throw new Error(`unknown GOD=${GOD}`);
+        const statue = await findLoc(sdk, { x: st.x, z: st.z, radius: 40 });
+        if (!statue) throw new Error(`statue not found at ${st.x},${st.z}`);
+        const from4 = pos(sdk);
+        const t4 = currentTick(sdk);
+        rec.interact();
+        const r4 = await opLoc(sdk, statue, statue.options[0]!, (s) => s.dialog.isOpen, { maxTicks: 60 });
+        log(`statue ${statue.id} options ${statue.options.join('/')} interact: ok=${r4.ok} ticks=${r4.ticks}`);
+        if (!r4.ok) throw new Error('timed out waiting for: statue mesbox');
+        // idle 1: the cape drop follows at once, so the close is confirmed after one tick
+        rec.dialogue(await converse(sdk, [], { idle: 1 }));
+        let cape = null;
+        for (let i = 0; i < 40 && !cape; i++) {
+            cape = (await sdk.scanGroundItems(15)).find((g) => /cape of/i.test(g.name)) ?? null;
+            if (!cape) await waitTicks(sdk, 1);
+        }
+        for (const m of messagesSince(sdk, t4)) log(`chat: ${m}`);
+        if (!cape) {
+            log(`pos ${JSON.stringify(pos(sdk))} ground ${JSON.stringify(sdk.getGroundItems().map((g) => [g.name, g.x, g.z]))} recent dialogs ${JSON.stringify(sdk.getState()?.recentDialogs?.slice(-3))}`);
+            throw new Error('no cape on the ground');
+        }
+        rec.interact();
+        if (!(await pickup(sdk, /cape of/i, { maxTicks: 30 })).ok) throw new Error('timed out waiting for: cape in inventory');
+        rec.mark();
+        rec.end(`from ${JSON.stringify(from4)}`);
     }
 
     // ---- segment 5: chamber guardian hands over the staff ----
+    rec.begin('guardian', 'dialogue');
     const from5 = pos(sdk);
-    let guard = sdk.findNearbyNpc(/chamber guardian/i);
+    let guard = findNpc(sdk, /chamber guardian/i);
     if (!guard) {
-        await bot.walkTo(2506, 4699, 2);
-        guard = sdk.findNearbyNpc(/chamber guardian/i);
+        await walkTo(bot, sdk, 2506, 4699, 2);
+        guard = findNpc(sdk, /chamber guardian/i);
     }
     if (!guard) throw new Error('guardian not found');
-    await sdk.sendTalkToNpc(guard.index);
-    await waitUntil(sdk, () => sdk.getDialog()?.isOpen === true, 60, 'guardian dialogue');
-    const d5 = await talkThrough(sdk, []);
-    const staff = sdk.findInventoryItem(/staff of (saradomin|guthix|zamorak)/i);
-    const tStaff = clock(sdk);
-    log(sdk, `SEG guardian: ${tStaff - tCape} ticks from ${JSON.stringify(from5)}, ${d5.pages} pages, staff=${staff?.name}`, t0);
+    const d5 = await talkTo(sdk, guard, [], { openTicks: 60 });
+    rec.interact(d5.clicks);
+    if (!d5.opened) throw new Error('timed out waiting for: guardian dialogue');
+    rec.dialogue(d5);
+    const staff = invItem(sdk, /staff of (saradomin|guthix|zamorak)/i);
+    rec.end(`from ${JSON.stringify(from5)}, staff=${staff?.name}`);
 
-    const magicXp = (sdk.getSkill('Magic')?.experience ?? 0) - magicXp0;
-    const hpXp = (sdk.getSkill('Hitpoints')?.experience ?? 0) - hpXp0;
-    log(sdk, `TOTAL ${tStaff - t0} ticks (talk to staff). Fight xp: magic ${magicXp / 25} base, hp ${hpXp / 25} base`, t0);
-    await cheat(sdk, 'getvar magearena');
-    await waitTicks(sdk, 2);
+    const magicXp = skillXp(sdk, 'magic') - magicXp0;
+    const hpXp = skillXp(sdk, 'hitpoints') - hpXp0;
+    log(`TOTAL ${rec.total().ticks} ticks (talk to staff). Fight xp: magic ${magicXp / 25} base, hp ${hpXp / 25} base`, t0);
+    log(`magearena = ${await getvar(sdk, 'magearena')}`);
     for (const m of sdk.getNewChat({ types: [0] })) console.log('chat:', m.text);
+    rec.report();
 }, { timeout: 30 * 60_000, printState: false });

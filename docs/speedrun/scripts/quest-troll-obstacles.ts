@@ -23,7 +23,11 @@
 // the offline pathfinder claims is open beside the rockslide.
 import { runScript } from '../../../sdk/runner';
 import type { BotSDK } from '../../../sdk/index';
-import { cheat, tele, give, now, pos, waitUntil, waitTicks, lastMessages, stats, result } from './quest-troll-lib';
+import { wield } from '../../../speedrun/lib/act';
+import { currentTick, waitTicks, waitUntil } from '../../../speedrun/lib/wait';
+import { at, pos } from '../../../speedrun/lib/world';
+import { result, stats } from '../../../speedrun/lab/record';
+import { give, mustTele, setStats, setvar } from '../../../speedrun/lab/setup';
 
 const [, , , agilityArg = '15', nArg = '10'] = process.argv;
 const AGILITY = parseInt(agilityArg);
@@ -48,7 +52,7 @@ async function crossOnce(sdk: BotSDK, ob: Obstacle, msgBase: number) {
     const loc = locs[0];
     if (!loc) return { error: `no loc near ${p0.x},${p0.z}` };
     const hp0 = s0.player!.hp;
-    const t0 = now(sdk);
+    const t0 = currentTick(sdk);
     await sdk.sendInteractLoc(loc.x, loc.z, loc.id, 1);
     // settle: position unchanged for 3 ticks after having moved, or 12 ticks without moving
     let last = p0, lastMove = t0, moved = false;
@@ -71,26 +75,25 @@ async function crossOnce(sdk: BotSDK, ob: Obstacle, msgBase: number) {
 
 await runScript(async ({ bot, sdk }) => {
     await bot.skipTutorial().catch(() => {});
-    await cheat(sdk, `setstat agility ${AGILITY}`);
-    await cheat(sdk, 'setstat hitpoints 99');
-    await cheat(sdk, 'setvar troll_quest 10');
-    await cheat(sdk, 'setvar death_equiproom 80');
+    await setStats(sdk, { agility: AGILITY, hitpoints: 99 });
+    await setvar(sdk, 'troll_quest', 10);
+    await setvar(sdk, 'death_equiproom', 80);
     await give(sdk, 'death_climbingboots');
-    await bot.equipItem(/climbing boots/i).catch(e => console.log('equip boots:', e?.message ?? e));
+    await wield(sdk, /climbing boots/i).then(r => { if (!r.ok) console.log('equip boots: not worn'); }, e => console.log('equip boots:', e?.message ?? e));
 
     // Bypass test
-    await tele(sdk, 2908, 3654);
-    for (const [x, z] of [[2911, 3664], [2913, 3672], [2913, 3680], [2913, 3688], [2912, 3690]]) {
+    await mustTele(sdk, 2908, 3654);
+    for (const [x, z] of [[2911, 3664], [2913, 3672], [2913, 3680], [2913, 3688], [2912, 3690]] as [number, number][]) {
         await sdk.sendWalk(x, z, true);
-        await waitUntil(sdk, s => { const p = pos(s); return p.x === x && p.z === z; }, 20);
-        console.log(`bypass walk -> ${x},${z}: at ${JSON.stringify(pos(sdk.getState()))}`);
+        await waitUntil(sdk, at(x, z), { maxTicks: 20 });
+        console.log(`bypass walk -> ${x},${z}: at ${JSON.stringify(pos(sdk))}`);
     }
-    const bp = pos(sdk.getState());
+    const bp = pos(sdk);
     result('bypass', { reached: bp.z >= 3688, at: bp });
 
     for (const ob of OBSTACLES) {
-        await cheat(sdk, 'setstat hitpoints 99');
-        await tele(sdk, ob.start[0], ob.start[1]);
+        await setStats(sdk, { hitpoints: 99 });
+        await mustTele(sdk, ob.start[0], ob.start[1]);
         const runs: Array<Record<string, unknown>> = [];
         for (let i = 0; i < N; i++) {
             const base = (sdk.getState()!.gameMessages ?? []).length;
@@ -108,5 +111,5 @@ await runScript(async ({ bot, sdk }) => {
             failHp: stats(bad.map(r => r.hpLost as number)),
         });
     }
-    console.log('messages:', lastMessages(sdk.getState(), 5));
+    console.log('messages:', (sdk.getState()?.gameMessages ?? []).slice(-5).map(m => m.text));
 }, { timeout: 1_800_000, printState: false });

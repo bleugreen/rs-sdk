@@ -5,10 +5,13 @@
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState } from '../../sdk/types';
 import { depositAll } from '../lib/bank';
+import { matchesItem, type ItemPattern } from '../lib/items';
 import type { Session } from '../lib/session';
 import { waitTicks, waitUntil } from '../lib/wait';
+import { invCount, pos } from '../lib/world';
 
 type LabSdk = Pick<BotSDK, 'getState' | 'onStateUpdate' | 'sendSay'>;
+type ClearSdk = LabSdk & Pick<BotSDK, 'sendDropItem' | 'sendUseEquipmentItem'>;
 
 export const VARROCK_WEST_BANK = { x: 3185, z: 3436 };
 /** Next to Carla in West Ardougne: 10 pure continue pages, then a three-way choice. */
@@ -28,8 +31,10 @@ export function isLabItem(name: string, debugName: string): boolean {
     return norm(name).startsWith(norm(debugName));
 }
 
-export async function cheat(sdk: LabSdk, cmd: string): Promise<void> {
+/** Send a staff command (`::cmd`; debugprocs take a `~`, as in `~clearinv inv`), then let `settleTicks` pass. */
+export async function cheat(sdk: LabSdk, cmd: string, settleTicks = 0): Promise<void> {
     await sdk.sendSay('::' + cmd);
+    if (settleTicks > 0) await waitTicks(sdk, settleTicks);
 }
 
 export function near(s: BotWorldState | null | undefined, x: number, z: number, r = 0): boolean {
@@ -45,17 +50,97 @@ export async function tele(sdk: LabSdk, x: number, z: number, level = 0): Promis
     return r.ok;
 }
 
-/** Give each item (debug name) `n` times over, firing every command before waiting. */
-export async function give(sdk: LabSdk, names: readonly string[], n = 1): Promise<void> {
-    const before = sdk.getState()?.inventory.length ?? 0;
-    await Promise.all(names.map(name => cheat(sdk, `give ${name} ${n}`)));
-    await waitUntil(sdk, s => s.inventory.length >= Math.min(28, before + names.length), { maxTicks: Math.ceil(names.length / 2) + 10 });
+/** `tele`, throwing when the player did not land on the tile. */
+export async function mustTele(sdk: LabSdk, x: number, z: number, level = 0): Promise<void> {
+    if (!(await tele(sdk, x, z, level))) throw new Error(`tele to ${level},${x},${z} did not land (at ${JSON.stringify(pos(sdk))})`);
+}
+
+const units = (s: BotWorldState | null) => (s?.inventory ?? []).reduce((a, i) => a + i.count, 0);
+
+/**
+ * Give each item (debug name) `n` times over, firing every command before
+ * waiting. Done once the inventory holds at least one more unit per name (a
+ * stack topped up adds units, not slots), or after a few ticks when it is full.
+ */
+export async function give(sdk: LabSdk, names: string | readonly string[], n = 1): Promise<void> {
+    const list = typeof names === 'string' ? [names] : names;
+    const before = units(sdk.getState());
+    await Promise.all(list.map(name => cheat(sdk, `give ${name} ${n}`)));
+    await waitUntil(sdk, s => units(s) >= before + list.length, { maxTicks: Math.ceil(list.length / 2) + 10 });
     await waitTicks(sdk, 1);
+}
+
+/** `::give` the missing units of an item unless the inventory already holds `n` (matched by `display`). */
+export async function ensureItem(sdk: LabSdk, obj: string, display: ItemPattern, n = 1): Promise<void> {
+    const have = invCount(sdk, display);
+    if (have >= n) return;
+    await cheat(sdk, `give ${obj} ${n - have}`);
+    await waitUntil(sdk, s => invCount(s, display) >= n, { maxTicks: 10 });
 }
 
 export async function setstat(sdk: LabSdk, skill: string, level: number): Promise<void> {
     await cheat(sdk, `setstat ${skill} ${level}`);
     await waitTicks(sdk, 1);
+}
+
+/** Set several stats, firing every command before waiting (the server takes 5 per tick). */
+export async function setStats(sdk: LabSdk, stats: Record<string, number>): Promise<void> {
+    const cmds = Object.entries(stats);
+    await Promise.all(cmds.map(([k, v]) => cheat(sdk, `setstat ${k} ${v}`)));
+    await waitTicks(sdk, Math.ceil(cmds.length / 5) + 1);
+}
+
+/** `::setvar` a varp or varbit (quest stages: `setvar grandtree 130`). */
+export async function setvar(sdk: LabSdk, name: string, value: number): Promise<void> {
+    await cheat(sdk, `setvar ${name} ${value}`, 1);
+}
+
+/** Read a varp or varbit with `::getvar` (reply "get <name>: <value>"); null when no reply arrives. */
+export async function getvar(sdk: LabSdk, name: string, maxTicks = 10): Promise<number | null> {
+    const t0 = sdk.getState()?.tick ?? 0;
+    const re = new RegExp(`^get ${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: (-?\\d+)$`, 'i');
+    const key = (m: BotWorldState['gameMessages'][number]) => JSON.stringify([m.tick, m.type, m.text]);
+    const before = new Map<string, number>();
+    for (const m of sdk.getState()?.gameMessages ?? []) before.set(key(m), (before.get(key(m)) ?? 0) + 1);
+    const reply = (s: BotWorldState) => {
+        const remaining = new Map(before);
+        for (const m of s.gameMessages) {
+            const k = key(m), old = remaining.get(k) ?? 0;
+            if (old > 0) { remaining.set(k, old - 1); continue; }
+            if (m.type !== 0 || m.tick < t0) continue;
+            const match = re.exec(m.text);
+            if (match) return match;
+        }
+        return null;
+    };
+    await sdk.sendSay(`::getvar ${name}`);
+    const r = await waitUntil(sdk, s => !!reply(s), { maxTicks });
+    const m = r.ok ? reply(r.state) : null;
+    return m ? Number(m[1]) : null;
+}
+
+/**
+ * Empty the inventory and the worn slots: `::~clearinv` both, then unequip
+ * and drop whatever is left (the debugproc alone is unreliable in this lab).
+ */
+export async function clearInventory(sdk: ClearSdk): Promise<void> {
+    await cheat(sdk, '~clearinv inv');
+    await cheat(sdk, '~clearinv worn', 2);
+    for (let pass = 0; pass < 4; pass++) {
+        const s = sdk.getState();
+        if (!s || (s.inventory.length === 0 && s.equipment.length === 0)) return;
+        await Promise.all(s.equipment.map(e => sdk.sendUseEquipmentItem(e.slot, 1).catch(() => undefined)));
+        if (s.equipment.length) await waitTicks(sdk, 1);
+        await Promise.all((sdk.getState()?.inventory ?? []).map(i => sdk.sendDropItem(i.slot).catch(() => undefined)));
+        await waitTicks(sdk, 2);
+    }
+}
+
+/** Drop every inventory item matching one of `patterns` (fired at once), and wait until they are gone. */
+export async function dropMatching(sdk: ClearSdk, patterns: readonly ItemPattern[]): Promise<void> {
+    const items = (sdk.getState()?.inventory ?? []).filter(i => patterns.some(p => matchesItem(i, p)));
+    await Promise.all(items.map(i => sdk.sendDropItem(i.slot)));
+    if (items.length) await waitUntil(sdk, s => !items.some(d => s.inventory.some(i => i.slot === d.slot && i.id === d.id)), { maxTicks: 10 });
 }
 
 /**

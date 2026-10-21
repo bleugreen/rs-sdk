@@ -258,4 +258,5 @@ gate search) are split at each delay, and the ship dialogues are left at the fix
   doors to Koftik, for Underground Pass: 17 + 4 + 35 + 5 + 63 = about 124 ticks measured).
 - `docs/speedrun/scripts/quest-biohazard-routes.ts`: offline route tiles, and the check
   that Guidor's district has no entrance but the searched gate.
-- `docs/speedrun/scripts/quest-plague-city-lab.ts`: the shared step driver.
+- The step driver is shared with `quest-plague-city-segments.ts` (built on `speedrun/lib`
+  and `speedrun/lab`).

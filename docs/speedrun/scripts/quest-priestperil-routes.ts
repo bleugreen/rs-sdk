@@ -50,17 +50,18 @@ for (const [name, level, a, b] of legs) {
 
 if (process.argv[2]) {
     const { runScript } = await import('../../../sdk/runner');
-    const { cheat, getvar, tele, ticks } = await import('./quest-pip-hm-lib');
+    const { cheat, getvar, mustTele } = await import('../../../speedrun/lab/setup');
+    const { waitTicks } = await import('../../../speedrun/lib/wait');
     await runScript(async ({ sdk }) => {
-        await cheat(sdk, '~clearinv inv');
-        await cheat(sdk, 'setvar priestperilvar 0'); // never studied: seed 0
-        await cheat(sdk, 'setvar priestperil 5');
-        await cheat(sdk, 'give pipkey_gold 1');
-        await tele(sdk, 3426, 9890, 0);
+        await cheat(sdk, '~clearinv inv', 1);
+        await cheat(sdk, 'setvar priestperilvar 0', 1); // never studied: seed 0
+        await cheat(sdk, 'setvar priestperil 5', 1);
+        await cheat(sdk, 'give pipkey_gold 1', 1);
+        await mustTele(sdk, 3426, 9890, 0);
         const m = (await sdk.scanNearbyLocs(5)).find(l => l.id === 3495)!; // priestperil_grave_base3
         const t0 = sdk.getState()!.tick;
         await sdk.sendUseItemOnLoc(sdk.findInventoryItem(/golden key/i)!.slot, m.x, m.z, m.id);
-        await ticks(sdk, 5);
+        await waitTicks(sdk, 5);
         console.log(`monument 3: ${sdk.getInventory().map(i => i.name).join(',')} | ${sdk.getState()!.gameMessages.slice(-1).map(x => x.text)} | ${sdk.getState()!.tick - t0} ticks | priestperilvar ${await getvar(sdk, 'priestperilvar')}`);
     }, { timeout: 60_000 });
 }

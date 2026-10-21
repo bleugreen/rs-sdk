@@ -12,44 +12,55 @@
 //     maze key, and the oracle/goblin/shield varps).
 
 import { runScript } from '../../../sdk/runner';
-import { cheat, now, pos, result, tele, waitTicks, waitUntil } from './quest-primitives-lib';
-import { clickLoc, converseSeq, talk } from './quest-dragon-lib';
+import { mustTele, setvar } from '../../../speedrun/lab/setup';
+import { result } from '../../../speedrun/lab/record';
+import { opLoc, talkTo } from '../../../speedrun/lib/act';
+import { converse, dialogueRuns, type ConverseResult } from '../../../speedrun/lib/converse';
+import { pageText } from '../../../speedrun/lib/dialogue';
+import { currentTick, waitTicks, waitUntil } from '../../../speedrun/lib/wait';
+import { findNpc, opIndex, pos } from '../../../speedrun/lib/world';
+
+const DOOR = { name: /^door$/i, near: { x: 3191, z: 3363 } };
 
 await runScript(async ({ sdk }) => {
+    const summary = (r: ConverseResult) => ({ ok: r.ok, ticks: r.opened ? r.ticks : null, pages: r.pages, options: r.options, levelUps: r.levelUps, runs: dialogueRuns(r.transcript), ...(r.reason ? { reason: r.reason } : {}), at: pos(sdk) });
     const out: Record<string, unknown> = {};
-    for (const v of ['dragonquest 0', 'dragon_oracle 0', 'dragon_goblin 0', 'dragon_shield 0', 'qp 0']) { await cheat(sdk, 'setvar ' + v); await waitTicks(sdk, 1); }
+    for (const name of ['dragonquest', 'dragon_oracle', 'dragon_goblin', 'dragon_shield', 'qp']) await setvar(sdk, name, 0);
 
     // 1. Below 32 qp, from outside (north of the door at 3191,3363).
-    await tele(sdk, 3191, 3365);
+    await mustTele(sdk, 3191, 3365);
     await waitTicks(sdk, 3);
-    const gm = sdk.findNearbyNpc(/^guild master$/i);
+    const gm = findNpc(sdk, /^guild master$/i);
     out.guildmasterSeen = gm ? { x: gm.x, z: gm.z, distance: gm.distance } : null;
-    const t0 = now(sdk);
-    await talk(sdk, /^guild master$/i).catch(e => { out.talkError = String(e); });
-    const opened = await waitUntil(sdk, s => s.dialog.isOpen, 15);
-    out.belowQp_talkAcrossDoor = opened ? { dialogOpenedAfter: opened.tick - t0, text: opened.state.dialog.text } : 'no dialog within 15 ticks';
-    if (opened) { await sdk.sendCloseModal(); await waitTicks(sdk, 2); }
-    await tele(sdk, 3191, 3364);
-    const before = pos(sdk.getState());
-    await clickLoc(sdk, /^door$/i, /^open$/i, { x: 3191, z: 3363 });
+    // A probe of whether one Talk-to click across the door opens anything, so a raw click with no re-click.
+    const t0 = currentTick(sdk);
+    if (gm) await sdk.sendInteractNpc(gm.index, opIndex(gm, /talk/i) ?? 1);
+    else out.talkError = `npc not found /^guild master$/i near ${JSON.stringify(pos(sdk))}`;
+    const opened = await waitUntil(sdk, s => s.dialog.isOpen, { maxTicks: 15 });
+    out.belowQp_talkAcrossDoor = opened.ok ? { dialogOpenedAfter: opened.tick - t0, text: pageText(opened.state.dialog) } : 'no dialog within 15 ticks';
+    if (opened.ok) { await sdk.sendCloseModal(); await waitTicks(sdk, 2); }
+    await mustTele(sdk, 3191, 3364);
+    const before = pos(sdk);
+    await opLoc(sdk, DOOR, /^open$/i); // one click: below 32 qp the door refuses with a Guildmaster page
     await waitTicks(sdk, 6);
-    out.belowQp_door = { before, after: pos(sdk.getState()), chat: sdk.getChat({ limit: 3 }).map(m => m.text) };
-    if (sdk.getState()!.dialog.isOpen) { await sdk.sendClickDialog(0); await waitTicks(sdk, 2); }
+    out.belowQp_door = { before, after: pos(sdk), chat: sdk.getChat({ limit: 3 }).map(m => m.text) };
+    if (sdk.getState()!.dialog.isOpen) await converse(sdk, [], { maxTicks: 20 });
     result('guild.belowQp', out);
 
-    // 2. With 32 qp: door, then the Guildmaster's start dialogue.
-    await cheat(sdk, 'setvar qp 32'); await waitTicks(sdk, 1);
-    await tele(sdk, 3191, 3364);
+    // 2. With 32 qp: door, then the Guildmaster's start dialogue. At 32 qp the
+    // door opens with no dialogue (champions_guild.rs2), so it is timed from
+    // the click to standing south of it.
+    await setvar(sdk, 'qp', 32);
+    await mustTele(sdk, 3191, 3364);
     await waitTicks(sdk, 2);
-    const tDoor = now(sdk);
-    const door = await converseSeq(sdk, () => clickLoc(sdk, /^door$/i, /^open$/i, { x: 3191, z: 3363 }), [], s => pos(s).z < 3363 && !s.dialog.isOpen, 30);
-    const gmTalk = await converseSeq(sdk, () => talk(sdk, /^guild master$/i), [/Rune Plate mail/i], s => !s.dialog.isOpen && now(sdk) > tDoor + door.ticks! + 3, 60);
-    result('guild.start', { door, guildmaster: gmTalk });
+    const door = await opLoc(sdk, DOOR, /^open$/i, s => pos(s).z < 3363 && !s.dialog.isOpen, { maxTicks: 30 });
+    const gmTalk = await talkTo(sdk, /^guild master$/i, [/Rune Plate mail/i], { maxTicks: 60, unmatched: 'stop' });
+    result('guild.start', { door: { ok: door.ok, ticks: door.ok ? door.ticks : null, resends: door.resends }, guildmaster: summary(gmTalk) });
 
     // 3. Oziach, everything in one conversation.
-    await tele(sdk, 3068, 3515);
+    await mustTele(sdk, 3068, 3515);
     await waitTicks(sdk, 3);
-    const oz = await converseSeq(sdk, () => talk(sdk, /^oziach$/i), [
+    const oz = await talkTo(sdk, /^oziach$/i, [
         /Can you sell me some Rune plate mail/i,
         /guildmaster of the Champions' Guild told me/i,
         /So how am I meant to prove that/i,
@@ -60,8 +71,6 @@ await runScript(async ({ sdk }) => {
         /Where is the third piece/i,
         /antidragon shield/i,
         /Ok I'll try and get everything together/i,
-    ], s => !s.dialog.isOpen && now(sdk) > 0, 150);
-    // wait for the conversation to actually end (the predicate above can be true before the first page)
-    const end = await waitUntil(sdk, s => !s.dialog.isOpen, 150);
-    result('guild.oziach', { ...oz, endTick: end?.tick, key: sdk.getState()!.inventory.filter(i => /key/i.test(i.name)).map(i => i.name) });
+    ], { maxTicks: 150, unmatched: 'stop' });
+    result('guild.oziach', { ...summary(oz), remaining: oz.remaining.map(String), endTick: oz.endTick, key: sdk.getState()!.inventory.filter(i => /key/i.test(i.name)).map(i => i.name) });
 }, { timeout: 300_000 });

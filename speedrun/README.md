@@ -16,8 +16,14 @@ speedrun/
     items.ts      item matching and the 1/5/10/All/X button planner
     bank.ts       depositAll, depositMatching, withdrawMany (+ pure planners)
     trade.ts      give / giveAll (giver), receiveFrom (receiver) (+ pure per-tick decisions)
-    dialogue.ts   classifyPage, advance, continueBurst
-    levelup.ts    isLevelUp, startLevelUpWatcher, withLevelUpDismissal
+    dialogue.ts   classifyPage, clickOption, clickContinue, advance, continueBurst
+    converse.ts   whole conversations, choice queues, dialogueRuns and burstTicks
+    levelup.ts    isLevelUpPage, levelUpChain, isLevelUp, startLevelUpWatcher, withLevelUpDismissal
+    combat.ts     fight (one target by world index), Upkeep (prayer, potions, food)
+    world.ts      position, entity/item/skill queries, message windows and tile counters
+    paths.ts      collision-map route lengths (separate from light world queries)
+    act.ts        act, actConverse, talkTo, loc/item/door actions, walks and spell teleports
+    idle.ts       message-based idle waits and animation-based settled predicates
     session.ts    openSession, launchClient, logoutClean, waitLoggedOut, login, startWatchdog,
                   abandonClient, markProgress
     demo-status.ts  restart detector (/playercount, our logins, catch-ups): one status line +
@@ -38,7 +44,8 @@ speedrun/
     start.ts      S00, the tutorial skip on a brand-new account's first login
   lab/            local lab: never imported by lib/
     lab.sh        engine + gateway + lite runners on port block 9300
-    setup.ts      ::tele / ::give / ::setstat fixtures
+    setup.ts      staff fixtures: tele/mustTele, give/ensureItem, setStats, setvar/getvar, clearInventory
+    record.ts     Recorder segments, stats, trace and RESULT output for quest measurements
     measure-*.ts  the measurements quoted below (measure-runner.ts: runner boundary ticks)
     probe-engine.ts      engine-rule probes (docs/speedrun/research/engine-sweep/engine.md)
     census-delayfree.ts  static census of delay-free item/xp triggers (same doc)
@@ -249,6 +256,56 @@ that it needs no cooperation from the loop: stock porcelain dismisses only
 when its next wait notices the blocker, and the raw-send loops in this package
 never call `dismissBlockingUI`. A gathering-loop comparison (ticks lost per
 level with and without the watcher) has not been measured yet.
+
+## Quest actions and lab measurements
+
+Quest measurement scripts in `docs/speedrun/scripts` use this same fast layer;
+there are no quest-family copies of the generic helper libraries. Existing lib
+exports remain available. Staff fixtures and research reporting live separately
+in `lab/`, which `lib/` never imports.
+
+- `clickOption` resolves a visible option first and sends nothing if absent,
+  then uses the SDK's page-bound exact-text click. `clickContinue` uses the
+  guarded path when component metadata is available.
+- `converse` drives the open or upcoming conversation, consuming matching
+  choice patterns only after accepted clicks. `keep` makes the patterns a
+  reusable priority list; `unmatched` chooses whether to throw, stop or take
+  the first option. It separates level-up pages from quest dialogue counts,
+  waits through closed-page gaps, and records the last close rather than the
+  idle-confirmation tail. `until` gates the end of an opened conversation;
+  no page by `openTicks` is explicitly reported as `opened: false`.
+- `act` sends once and confirms an effect, re-clicking after an idle stall or
+  a fresh reachability refusal. Set `resendEvery: 0` for actions that restart
+  when clicked twice. `actConverse` composes this with dialogue handling and
+  latches a required effect, including one observed while dialogue is open.
+  It measures the later of that effect and the final close. `talkTo` handles
+  NPC discovery and retries when no conversation opens.
+- `fight` keeps one world-index target, dismisses level-up/unlock pages with
+  an attack on the same target in the same tick, and re-engages under a protect
+  prayer when outgoing damage stalls despite the client saying it is in combat.
+  A quest dialogue stops the fight unless `onDialog: 'continue'` is requested.
+  Bosses that heal or trigger a cutscene at zero hitpoints use
+  `endOnTargetDeath: false` and an explicit `done` or dialogue outcome.
+  Food and potion counters count sends, not confirmed consumption.
+- `world` queries accept a published state or the SDK; loc lookup checks the
+  published list then scans. `paths` alone loads the SDK collision map.
+  `idle` waits for movement/message/dialogue quiet and returns the last change
+  tick, leaving quest dialogue untouched. `settled` instead checks animation
+  quiet and includes its quiet tail in the successful tick.
+- `lab/setup` provides bounded staff fixtures. `tele` returns a boolean;
+  `mustTele` throws if the landing was not observed. `getvar` accepts only a
+  fresh exact engine reply, not a previous request's reply on the same tick.
+- `lab/record` records segments with explicit effect marks, dialogue shape,
+  interactions and walked tiles. `Recorder.report()` emits SEG lines, a table
+  and `RESULT <title> {total, segments}`. It is not the scored runner's
+  `TickLog`, and its totals do not include idle-confirmation tails unless a
+  caller deliberately marks them.
+
+The migration does not revise historical measurements. New runs may differ
+because retry policies, endpoint definitions and counter meanings have changed;
+rerun a measurement before quoting new numbers. See
+[`docs/speedrun/scripts/README.md`](../docs/speedrun/scripts/README.md) for the
+research-script boundary and retained quest-specific code.
 
 ## session.ts
 

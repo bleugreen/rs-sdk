@@ -5,33 +5,68 @@
 // Run: bash docs/speedrun/scripts/quest-smallskill-lab.sh <bot> docs/speedrun/scripts/quest-smallskill-doric.ts
 
 import { runScript } from '../../../sdk/runner';
-import { cheat, clearInv, getvar, give, now, pathTiles, pos, Recorder, setstats, setvar, talk, tele, teleport, waitTicks, waitUntil, walkTo, withRuns } from './quest-smallskill-lib';
+import type { BotSDK } from '../../../sdk/index';
+import { castTeleport, talkTo, walkTo, type TalkOptions } from '../../../speedrun/lib/act';
+import { pathTiles } from '../../../speedrun/lib/paths';
+import { currentTick, waitTicks, waitUntil } from '../../../speedrun/lib/wait';
+import { pos, skillXp } from '../../../speedrun/lib/world';
+import { Recorder, type Segment } from '../../../speedrun/lab/record';
+import { cheat, clearInventory, getvar, give, mustTele, setStats, setvar } from '../../../speedrun/lab/setup';
 
 const DORIC = { x: 2952, z: 3451 };
+/** Falador teleport's landing tile (skill_magic/configs/magic_spells.dbrow tele_coord). */
+const FALADOR = { x: 2965, z: 3378 };
+const XP_RATE = 25; // server/engine/src/util/WorldConfig.ts:102
+/** Chapter cards and the quest scroll are closed as a player would; a choice no pattern answers ends the talk. */
+const DLG: TalkOptions = { idle: 3, closeModals: true, unmatched: 'stop' };
+
+/**
+ * Cast Falador teleport as one recorded row. A freshly created lab account drops
+ * its first casts (the spellbook is not live yet): then staff-teleport to the
+ * landing tile and book the 4 ticks measured in primitives.md section 4.
+ */
+async function teleport(sdk: BotSDK, rec: Recorder, label: string): Promise<Segment> {
+    const r = await castTeleport(sdk, 'falador');
+    if (r.ok) return rec.add({ name: `${label} falador teleport`, ticks: r.ticks, ...(r.resends ? { note: 'recast once' } : {}) });
+    await mustTele(sdk, FALADOR.x, FALADOR.z);
+    return rec.add({ name: `${label} falador teleport`, ticks: 4, note: 'FALLBACK staff tele; 4 ticks from primitives.md' });
+}
 
 await runScript(async ({ bot, sdk }) => {
-    const rec = new Recorder('dorics_quest');
-    await clearInv(sdk);
-    await setvar(sdk, 'doricquest', 0);
-    await setstats(sdk, { magic: 99, mining: 1 });
-    for (const [o, n] of [['clay', 6], ['copper_ore', 4], ['iron_ore', 2], ['lawrune', 5], ['airrune', 15], ['waterrune', 5]] as const) await give(sdk, o, n);
-    await tele(sdk, 3222, 3218);
-    await waitTicks(sdk, 6); // a teleport cast straight after ::setstat magic is dropped
-    await cheat(sdk, '~energy');
-    await waitTicks(sdk, 2);
-    const xp0 = sdk.getSkill('mining')!.experience;
-    const T0 = now(sdk);
+    const rec = new Recorder(sdk, 'dorics_quest');
+    const walk = (label: string, x: number, z: number, tol: number) =>
+        rec.seg(label, async () => {
+            const w = await walkTo(bot, sdk, x, z, tol);
+            return w.ok ? undefined : `FAILED ${w.message}`;
+        });
+    const talk = (label: string, npc: RegExp, choices: RegExp[] = []) =>
+        rec.seg(label, async () => {
+            rec.interact();
+            const r = rec.dialogue(await talkTo(sdk, npc, choices, DLG));
+            return r.ok ? `approach ${r.firstTick - r.startTick}` : `${r.reason}`;
+        });
 
-    const tp = rec.add(await teleport(sdk, 'falador'), '1a');
-    const p1 = pos(sdk.getState());
+    await clearInventory(sdk);
+    await setvar(sdk, 'doricquest', 0);
+    await setStats(sdk, { magic: 99, mining: 1 });
+    for (const [o, n] of [['clay', 6], ['copper_ore', 4], ['iron_ore', 2], ['lawrune', 5], ['airrune', 15], ['waterrune', 5]] as const) await give(sdk, o, n);
+    await mustTele(sdk, 3222, 3218);
+    await waitTicks(sdk, 6); // a teleport cast straight after ::setstat magic is dropped
+    await cheat(sdk, '~energy', 1);
+    await waitTicks(sdk, 2);
+    const xp0 = skillXp(sdk, 'mining');
+    const T0 = currentTick(sdk);
+
+    const tp = await teleport(sdk, rec, '1a');
+    const p1 = pos(sdk);
     const route = pathTiles(0, p1.x, p1.z, DORIC.x, DORIC.z);
-    rec.add(await walkTo(bot, sdk, DORIC.x, DORIC.z, 2), `1b walk to Doric (pathfinder ${route.tiles} tiles)`);
-    rec.add(withRuns(await talk(sdk, /^Doric$/i, [/use your anvils/, /Yes, I will get you materials/], { idle: 3 })), '2 Doric start');
+    await walk(`1b walk to Doric (pathfinder ${route.tiles} tiles)`, DORIC.x, DORIC.z, 2);
+    await talk('2 Doric start', /^Doric$/i, [/use your anvils/, /Yes, I will get you materials/]);
     console.log('doricquest', await getvar(sdk, 'doricquest'));
-    rec.add(withRuns(await talk(sdk, /^Doric$/i, [], { idle: 3 })), '3 Doric hand-in');
-    await waitUntil(sdk, s => (s.skills.find(k => k.name.toLowerCase() === 'mining')?.experience ?? 0) > xp0, 20);
-    const gained = sdk.getSkill('mining')!.experience - xp0;
-    console.log('doricquest', await getvar(sdk, 'doricquest'), 'mining xp gained', gained, '=', gained / 25, 'base; teleport', tp.ticks);
-    console.log('wall ticks start->finish', now(sdk) - T0);
-    rec.summary();
+    await talk('3 Doric hand-in', /^Doric$/i);
+    await waitUntil(sdk, s => skillXp(s, 'mining') > xp0, { maxTicks: 20 });
+    const gained = skillXp(sdk, 'mining') - xp0;
+    console.log('doricquest', await getvar(sdk, 'doricquest'), 'mining xp gained', gained, '=', gained / XP_RATE, 'base; teleport', tp.ticks);
+    console.log('wall ticks start->finish', currentTick(sdk) - T0);
+    rec.report();
 }, { timeout: 300_000 });

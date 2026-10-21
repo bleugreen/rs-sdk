@@ -217,6 +217,8 @@ The clerk's expected retries (14 ticks stock) shrink in the same proportion.
 - `docs/speedrun/scripts/quest-plague-city-segments.ts <bot> [segment...]`: segments
   `start cure mud sewer west clerk bravek rescue exit`.
 - `docs/speedrun/scripts/quest-plague-city-routes.ts`: offline route tiles for every leg.
-- `docs/speedrun/scripts/quest-plague-city-lab.ts`: the step driver (click-to-effect
-  ticks, pages, options, level-ups, walks with re-clicks and a `bot.walkTo` fallback
-  through closed doors), shared with the Biohazard script.
+- The step driver (click-to-effect ticks, pages, options, level-ups, walks with re-clicks
+  and a `bot.walkTo` fallback through closed doors) lives in
+  `quest-plague-city-segments.ts`, shared with the Biohazard script, and is built on
+  `speedrun/lib` (`actConverse`, `talkTo`, `clickWalk`, `walkTo`) and the
+  `speedrun/lab/record.ts` Recorder.

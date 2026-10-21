@@ -6,7 +6,7 @@
 // which sits under one root chosen uniformly (king_narnode.rs2:70).
 // Run: bun docs/speedrun/scripts/quest-gnome-routes.ts
 
-import { pathTiles } from './quest-gnome-lib';
+import { pathTiles } from '../../../speedrun/lib/paths';
 
 type P = [number, number, number?];
 const legs: Array<[string, P, P]> = [
@@ -61,18 +61,20 @@ for (const [name, a, b] of legs) {
 // ─── Daconia roots ──────────────────────────────────────────────────────────
 // daconia_coords.enum, 0_38_154_x_z -> (2432 + x, 9856 + z). Value 0 duplicates
 // the coord of value 1; %daconia_rock_root is random_range(1, 15).
-const roots: Array<[number, number]> = [
+const roots: Array<[number, number]> = ([
     [24, 30], [25, 25], [23, 18], [11, 22], [7, 25], [12, 37], [20, 37], [33, 35],
     [36, 34], [35, 40], [41, 41], [49, 48], [53, 29], [58, 33], [35, 16],
-].map(([x, z]) => [2432 + x, 9856 + z]);
+] as Array<[number, number]>).map(([x, z]) => [2432 + x, 9856 + z]);
 const narnode: [number, number] = [2464, 9896];
 const pts = [narnode, ...roots];
 const n = pts.length;
 const d: number[][] = pts.map(() => Array(n).fill(0));
+const dist = (a: number, b: number): number => d[a]![b]!;
 for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
-        const r = pathTiles(0, pts[i][0], pts[i][1], pts[j][0], pts[j][1]);
-        d[i][j] = d[j][i] = r.reached ? r.tiles : 9999;
+        const [a, b] = [pts[i]!, pts[j]!];
+        const r = pathTiles(0, a[0], a[1], b[0], b[1]);
+        d[i]![j] = d[j]![i] = r.reached ? r.tiles : 9999;
     }
 }
 // Ticks to walk `tiles` at run speed.
@@ -81,10 +83,10 @@ const SEARCH = Number(process.env.ROOT_SEARCH_TICKS ?? 3);
 // Expected ticks from Narnode, searching roots in `order` until the rock turns up, then back to Narnode.
 function expected(order: number[]): { mean: number; worst: number } {
     let walked = 0, prev = 0, sum = 0, worst = 0;
-    for (let k = 0; k < order.length; k++) {
-        walked += t(d[prev][order[k]]);
-        prev = order[k];
-        const cost = walked + (k + 1) * SEARCH + t(d[prev][0]);
+    for (const [k, next] of order.entries()) {
+        walked += t(dist(prev, next));
+        prev = next;
+        const cost = walked + (k + 1) * SEARCH + t(dist(prev, 0));
         sum += cost;
         worst = Math.max(worst, cost);
     }
@@ -98,7 +100,7 @@ let best = Array.from({ length: n - 1 }, (_, i) => i + 1);
     let cur = 0;
     while (left.size) {
         let bi = -1;
-        for (const j of left) if (bi < 0 || d[cur][j] < d[cur][bi]) bi = j;
+        for (const j of left) if (bi < 0 || dist(cur, j) < dist(cur, bi)) bi = j;
         nn.push(bi);
         left.delete(bi);
         cur = bi;
@@ -112,7 +114,7 @@ while (improved) {
         for (let j = i + 1; j < best.length; j++) {
             const rev = [...best.slice(0, i), ...best.slice(i, j + 1).reverse(), ...best.slice(j + 1)];
             const sw = [...best];
-            [sw[i], sw[j]] = [sw[j], sw[i]];
+            [sw[i], sw[j]] = [sw[j]!, sw[i]!];
             for (const cand of [rev, sw]) {
                 if (expected(cand).mean < expected(best).mean - 1e-9) {
                     best = cand;
@@ -127,8 +129,9 @@ console.log(`\nDaconia roots, search ticks per root ${SEARCH}: expected ${e.mean
 console.log('order (root enum value @ tile, walk tiles from previous):');
 let prev = 0;
 for (const k of best) {
-    console.log(`  ${k} @ (${pts[k][0]},${pts[k][1]})  ${d[prev][k]}`);
+    const p = pts[k]!;
+    console.log(`  ${k} @ (${p[0]},${p[1]})  ${dist(prev, k)}`);
     prev = k;
 }
-const unreachable = pts.map((p, i) => (d[0][i] >= 9999 && i > 0 ? `${i}@(${p[0]},${p[1]})` : '')).filter(Boolean);
+const unreachable = pts.map((p, i) => (dist(0, i) >= 9999 && i > 0 ? `${i}@(${p[0]},${p[1]})` : '')).filter(Boolean);
 if (unreachable.length) console.log('unreachable from Narnode:', unreachable.join(' '));

@@ -1,6 +1,6 @@
 // Underground Pass: timed segments, each started from a staged quest state
 // (::setvar / ::tele / ::give) and played with real clicks. Travel follows the
-// cheapest route from quest-underground-pass-route.ts (see Lab.travel).
+// cheapest route from quest-underground-pass-route.ts (see `travel` below).
 //
 //   bun docs/speedrun/scripts/quest-underground-pass-segments.ts <bot> <segment> [--grid=342] [--thieving=50] [--agility=99]
 //
@@ -19,12 +19,23 @@
 //   swingfail / ledgefail / bridgefall   cost of a failed rope swing, ledge, broken bridge
 //   post       after completion: cave entrance to the Iban temple doors and through them
 //              (Regicide's second traversal, %upass 10, %regicide_quest 2)
-// Prints one line per step (click to idle, minus a 3-tick settle) and a RESULT line.
-// Segment TOTAL rows also count the 3-tick settle before each step; sum the steps instead.
+//
+// Each step is one segment (speedrun/lab/record.ts), from its click to the
+// player idle again: no movement, no new message and no dialogue for 3 ticks.
+// The segment ends at the last change before that settle, so the settle is not
+// counted. TOTAL rows carry a whole stretch's wall-clock span in `wallTicks`
+// and 0 in the Ticks column, so the table's Total is the sum of the steps.
 
 import { runScript } from '../../../sdk/runner';
-import { Lab, ibanmulti, BIT } from './quest-underground-pass-lib';
-import { P, type T } from './quest-underground-pass-route';
+import { act, pickup, slotOf, talkTo, wield, type ActOptions } from '../../../speedrun/lib/act';
+import { fight, Upkeep } from '../../../speedrun/lib/combat';
+import { converse } from '../../../speedrun/lib/converse';
+import { idle } from '../../../speedrun/lib/idle';
+import { currentTick, waitTicks, waitUntil, type Pred } from '../../../speedrun/lib/wait';
+import { at, chebyshev, findNpc, invCount, invItem, messagesSince, opIndex, pos, skillXp, tileCounter, waitForNpc } from '../../../speedrun/lib/world';
+import { Recorder, type Segment } from '../../../speedrun/lab/record';
+import { clearInventory, getvar, give, mustTele, setStats, setvar } from '../../../speedrun/lab/setup';
+import { P, plan, type T } from './quest-underground-pass-route';
 
 const args = process.argv.slice(3);
 const segment = args.find(a => !a.startsWith('--')) ?? 'post';
@@ -34,35 +45,324 @@ const GRID = opt('grid', 343);
 const THIEVING = opt('thieving', 50);
 const AGILITY = opt('agility', 99);
 
+/** %ibanmulti with the given bits set and the grid answer (three digits 1-5) in bits 22-31. */
+function ibanmulti(bits: number[], grid = 343): number {
+    let v = 0;
+    for (const b of bits) v |= 1 << b;
+    return (v | (grid << 22)) >>> 0;
+}
+
+const BIT = {
+    blood: 1, dove: 2, ashes: 3, shadow: 4, orb1: 5, orb2: 6, orb3: 7, orb4: 8, cat: 9, randas: 10, started: 11, crate: 12, jerro: 13,
+    badge1: 14, badge2: 15, badge3: 16, koftikInsane: 17, horn: 18, history: 19, inscription: 20, brew: 21,
+};
+
+/** Crossings whose loc can be clicked from afar (the server walks the player to it): clicked from 8 tiles out. */
+const DIRECT_CLICK = new Set(['rockslide', 'stonebridge', 'stairs', 'unicorn_door', 'temple_door2', 'well_down', 'mudpile_up', 'pipe6', 'pipe4', 'exit_cave', 'enter_cave', 'rockpile']);
+/** The failure message of each rolled crossing, plus generic refusals. */
+const CROSSING_FAIL = /slip back down|slip and tumble|fall off it|fall in to the darkness|rat pit|fail to pick|just misses|can't reach|cannot|refuses|is locked|You need|being used/i;
+
+/** A named point of the route planner. */
+function pt(name: string): T {
+    const t = P[name];
+    if (!t) throw new Error(`no route point ${name}`);
+    return t;
+}
+
 await runScript(async ({ bot, sdk }) => {
-    const lab = new Lab(sdk, bot);
-    const L_sleep = (n: number) => sdk.waitForTicks(n);
-    const L_waitGround = async (re: RegExp) => { for (let i = 0; i < 10 && !sdk.getGroundItems().some(g => re.test(g.name)); i++) await sdk.waitForTicks(1); };
-    const L_waitBoulder = async () => { for (let i = 0; i < 20 && !lab.npc(/Boulder/); i++) await sdk.waitForTicks(1); };
+    const rec = new Recorder(sdk, segment);
+    const here = (): T => {
+        const p = pos(sdk);
+        return [p.x, p.z, p.level];
+    };
+    const isAt = (t: T) => at(t[0], t[1], t[2])(sdk.getState()!);
+    const hp = () => sdk.getState()?.player?.hp ?? 0;
+    const maxHp = () => sdk.getState()?.player?.maxHp ?? 99;
+    const teleTo = (t: T) => mustTele(sdk, t[0], t[1], t[2]);
+
+    // Click builders for `step`. The item is checked when the step is set up; a
+    // re-send after the item is used up sends nothing.
+    const clickLoc = (id: number, x: number, z: number, op = 1) => () => sdk.sendInteractLoc(x, z, id, op);
+    const useOnLoc = (item: RegExp, id: number, x: number, z: number) => {
+        slotOf(sdk, item);
+        return async () => {
+            const it = invItem(sdk, item);
+            if (it) await sdk.sendUseItemOnLoc(it.slot, x, z, id);
+        };
+    };
+    const useOnItem = (a: RegExp, b: RegExp) => {
+        slotOf(sdk, a);
+        slotOf(sdk, b);
+        return async () => {
+            const x = invItem(sdk, a);
+            const y = invItem(sdk, b);
+            if (x && y) await sdk.sendUseItemOnItem(x.slot, y.slot);
+        };
+    };
+
+    const finish = (seg: Segment, hp0: number, extra: Record<string, unknown> = {}) => {
+        Object.assign(seg, { hpLost: hp0 - hp(), ...extra });
+        const msgs = messagesSince(sdk, seg.startTick).slice(0, 6);
+        const done = rec.end()!;
+        if (msgs.length) console.log(`    msgs: ${JSON.stringify(msgs)}`);
+        return done;
+    };
+
+    /**
+     * One timed step: `click`, then `done` (through act, which re-sends a click
+     * that was evidently dropped unless `resendEvery` is 0), then idle. Without
+     * `done` the click runs once.
+     */
+    const step = async (label: string, click: () => Promise<unknown>, done?: Pred, o: ActOptions = {}): Promise<Segment> => {
+        await idle(sdk, { maxTicks: 80 });
+        const hp0 = hp();
+        const seg = rec.begin(label);
+        let doneAfter: number | null = null;
+        try {
+            if (done) {
+                const r = await act(sdk, click, done, { maxTicks: 120, ...o });
+                rec.interact(1 + r.resends);
+                if (r.resends) seg.resends = r.resends;
+                if (r.ok) {
+                    doneAfter = r.ticks;
+                    rec.mark(seg.startTick + r.ticks);
+                } else rec.note(`not done after ${r.ticks} ticks`);
+            } else {
+                const r = await click();
+                rec.interact();
+                if (r && typeof r === 'object' && 'ok' in r && r.ok === false) rec.note('not done');
+            }
+        } catch (e) {
+            rec.end(`error: ${(e as Error).message}`);
+            throw e;
+        }
+        const i = await idle(sdk, { maxTicks: 80 });
+        rec.mark(i.last);
+        seg.levelUps += i.levelUps;
+        return finish(seg, hp0, { doneAfter });
+    };
+
+    /** Talk to an NPC and answer with a priority list of choices; from the first click to the dialogue closed. */
+    const talk = async (label: string, npc: RegExp, choices: RegExp[] = [/./]) => {
+        await idle(sdk, { maxTicks: 80 });
+        const hp0 = hp();
+        const seg = rec.begin(label, 'dialogue');
+        const r = await talkTo(sdk, npc, choices, { keep: true, findTicks: 20 });
+        rec.dialogue(r);
+        rec.interact(r.clicks);
+        if (!r.opened) rec.note('no dialogue opened');
+        return finish(seg, hp0, { dialogueTicks: r.opened ? r.endTick - r.firstTick : 0 });
+    };
+
+    /** Answer the dialogue that `click` opens (or that is already open), then idle. */
+    const dialogue = async (label: string, click: (() => Promise<unknown>) | null, choices: RegExp[] = [/./]) => {
+        await idle(sdk, { maxTicks: 80 });
+        const hp0 = hp();
+        const seg = rec.begin(label, 'dialogue');
+        const conv = converse(sdk, choices, { keep: true });
+        if (click) {
+            await click();
+            rec.interact();
+        }
+        const r = rec.dialogue(await conv);
+        const i = await idle(sdk, { maxTicks: 80 });
+        if (i.changed) rec.mark(i.last);
+        seg.levelUps += i.levelUps;
+        return finish(seg, hp0, { dialogueTicks: r.opened ? r.endTick - r.firstTick : 0 });
+    };
+
+    /** Fight an NPC to the end on combat.fight, eating swordfish below 40% hitpoints. */
+    const fightRow = async (label: string, re: RegExp) => {
+        await idle(sdk, { maxTicks: 80, still: 1 });
+        const npc = await waitForNpc(sdk, re, 30);
+        if (!npc) throw new Error(`no npc ${re}`);
+        const hp0 = hp();
+        const seg = rec.begin(label, 'fight');
+        const r = await fight(sdk, npc, { eatBelow: maxHp() * 0.4, food: /^Swordfish$/i, maxTicks: 600 });
+        rec.mark(seg.startTick + r.ticks);
+        rec.interact(r.attacks + r.eats);
+        seg.levelUps += r.levelUps;
+        if (!r.ok || r.end === 'dialog') rec.note(r.end);
+        return finish(seg, hp0, { fightEnd: r.end, killed: r.end === 'killed' || r.end === 'gone', hp0, minHp: r.minHp, eaten: r.eats, attacks: r.attacks, dealt: r.dealt, taken: r.taken });
+    };
+
+    /** A value read between steps (a varp, a count): a 0-tick row. */
+    const value = (label: string, extra: Record<string, unknown>) => rec.add({ name: label, ticks: 0, kind: 'value', ...extra });
+    /** A whole stretch's wall-clock span, kept out of the step total. */
+    const wall = (label: string, ticks: number, extra: Record<string, unknown> = {}) => rec.add({ name: label, ticks: 0, kind: 'total', wallTicks: ticks, note: `${ticks} ticks wall clock`, ...extra });
+
+    /**
+     * Walk the cheapest planned route to `dst` for real. Walking runs are sent
+     * as run clicks of up to `reach` tiles, the next one sent when the player
+     * is within 2 tiles of the last; each crossing is clicked on its loc. A
+     * failed crossing (an agility roll) re-plans from wherever the player
+     * lands. One segment from the first click to idle at the destination.
+     */
+    const travel = async (label: string, dst: T, opts: { allow?: (kind: string) => boolean; reach?: number } = {}) => {
+        // winding cave routes can exceed the client's 25-turn click route, so keep clicks short
+        const reach = opts.reach ?? 10;
+        await idle(sdk, { maxTicks: 80 });
+        const hp0 = hp();
+        const seg = rec.begin(label, 'travel');
+        const tiles = tileCounter(sdk);
+        // food eaten while travelling, one click each; walking continues
+        const upkeep = new Upkeep(sdk, { eatBelow: maxHp() * 0.45 });
+        const crossings: string[] = [];
+        const fails: string[] = [];
+        const detail: string[] = [];
+        let replans = 0;
+        let resends = 0;
+        let doors = 0;
+        try {
+            for (let attempt = 0; attempt < 12; attempt++) {
+                const p = plan(here(), dst, opts.allow);
+                if (!p) throw new Error(`${label}: no route from ${here()} to ${dst}`);
+                let failed = false;
+                let i = 0;
+                while (i < p.steps.length && !failed) {
+                    // gather the walking run up to the next crossing
+                    const run: T[] = [];
+                    while (i < p.steps.length && !p.steps[i]!.edge) run.push(p.steps[i++]!.t);
+                    const edge = p.steps[i]?.edge;
+                    // walk the run (all of it, unless the crossing's loc can be clicked from afar);
+                    // a loc clicked from afar is approached by the server, so keep that to the last 8 tiles
+                    const stopAt = edge && DIRECT_CLICK.has(edge.kind) && run.length > 0 ? Math.max(0, run.length - 8) : run.length;
+                    const tw = currentTick(sdk);
+                    const tiles0 = tiles.tiles;
+                    let k = 0;
+                    while (k < stopAt) {
+                        const cur = pos(sdk);
+                        let j = k;
+                        while (j + 1 < stopAt && chebyshev({ x: run[j + 1]![0], z: run[j + 1]![1] }, cur) <= reach) j++;
+                        const target = run[j]!;
+                        const final = j === stopAt - 1;
+                        await sdk.sendWalk(target[0], target[1], true);
+                        let lq = pos(sdk);
+                        let moved = currentTick(sdk);
+                        let walkResends = 0;
+                        await waitUntil(
+                            sdk,
+                            s => {
+                                upkeep.step(s);
+                                const q = pos(s);
+                                const d = chebyshev(q, { x: target[0], z: target[1] });
+                                if (final ? d === 0 : d <= 2) return true;
+                                if (q.x !== lq.x || q.z !== lq.z) moved = s.tick;
+                                lq = q;
+                                if (s.tick - moved < 2) return false;
+                                // A click during a forced move is dropped: send it again; after 6 tries
+                                // accept stopping short (an NPC standing on the tile). The planner treats
+                                // doors as open, so a stall next to a closed door opens it.
+                                if (walkResends >= 6) return true;
+                                walkResends++;
+                                moved = s.tick;
+                                const door = s.nearbyLocs.filter(l => /door/i.test(l.name) && opIndex(l, 'Open') !== undefined && chebyshev(l, q) <= 5).sort((a, b) => a.distance - b.distance)[0];
+                                if (door && walkResends <= 3) {
+                                    doors++;
+                                    void sdk
+                                        .sendInteractLoc(door.x, door.z, door.id, opIndex(door, 'Open')!)
+                                        .then(() => sdk.waitForTicks(2))
+                                        .then(() => sdk.sendWalk(target[0], target[1], true));
+                                } else {
+                                    resends++;
+                                    void sdk.sendWalk(target[0], target[1], true);
+                                }
+                                return false;
+                            },
+                            { maxTicks: 60 }
+                        );
+                        k = j + 1;
+                    }
+                    if (stopAt > 0) detail.push(`walk ${tiles.tiles - tiles0} tiles ${currentTick(sdk) - tw}t`);
+                    if (!edge) break;
+                    const te = currentTick(sdk);
+                    const c = edge.click!;
+                    const send = c.item ? useOnLoc(c.item, c.id, c.x, c.z) : clickLoc(c.id, c.x, c.z, c.op ?? 1);
+                    await send();
+                    const to = edge.to;
+                    const from = pos(sdk);
+                    // one- and two-tile crossings must land exactly; longer ones within a tile
+                    const tol = chebyshev({ x: edge.from[0], z: edge.from[1] }, { x: to[0], z: to[1] }) <= 2 ? 0 : 1;
+                    const arrived = (q: { x: number; z: number; level: number }) => (to[2] !== edge.from[2] ? q.level === to[2] : q.level === to[2] && chebyshev(q, { x: to[0], z: to[1] }) <= tol);
+                    // A click sent while a forced move is still running is dropped: re-send it
+                    // after a tick with no movement, as long as nothing has been said since the click.
+                    let lastQ = from;
+                    let quiet = te;
+                    let resent = 0;
+                    const r = await waitUntil(
+                        sdk,
+                        s => {
+                            const said = messagesSince(s, te + 1);
+                            if (said.some(t => CROSSING_FAIL.test(t))) return true;
+                            const q = pos(s);
+                            if (arrived(q)) return true;
+                            if (q.x !== lastQ.x || q.z !== lastQ.z || said.length > 0) quiet = s.tick;
+                            lastQ = q;
+                            if (s.tick - quiet >= 1 && resent < 20) {
+                                quiet = s.tick;
+                                resent++;
+                                void send();
+                            }
+                            return false;
+                        },
+                        { maxTicks: 90 }
+                    );
+                    resends += resent;
+                    const failMsg = messagesSince(sdk, te + 1).find(t => CROSSING_FAIL.test(t));
+                    if (!r.ok || failMsg) {
+                        await idle(sdk, { maxTicks: 80 });
+                        const q = pos(sdk);
+                        const moved = chebyshev(q, from) > 3 || q.level !== from.level;
+                        fails.push(`${edge.kind}${edge.note.startsWith('(') ? ' ' + edge.note : ''}: ${failMsg ?? `no arrival at ${to}, now ${here()}`}`);
+                        failed = true;
+                        if (!failMsg && !moved) throw new Error(`${label}: stuck at ${edge.kind} ${edge.note} from ${from.x},${from.z},${from.level} want ${to} now ${here()} msgs ${JSON.stringify(messagesSince(sdk, te + 1))}`);
+                        break;
+                    }
+                    if (!isAt(to)) {
+                        // landed next to the planned tile: re-plan from here
+                        await sdk.waitForTicks(1);
+                        if (chebyshev(pos(sdk), { x: to[0], z: to[1] }) > 0) {
+                            crossings.push(edge.kind);
+                            failed = true;
+                            break;
+                        }
+                    }
+                    crossings.push(edge.kind + (edge.note.startsWith('(') ? ' ' + edge.note : ''));
+                    detail.push(`${edge.kind} ${currentTick(sdk) - te}t${resent ? ` (${resent} re-clicks)` : ''}`);
+                    i++;
+                }
+                if (!failed) break;
+                replans++;
+            }
+            const i = await idle(sdk, { maxTicks: 80 });
+            rec.mark(i.last);
+            seg.levelUps += i.levelUps;
+        } finally {
+            tiles.stop();
+        }
+        rec.interact(crossings.length);
+        return finish(seg, hp0, { crossings: crossings.length, crossingList: crossings, fails, replans, resends, eaten: upkeep.eats, doors, detail, at: here() });
+    };
+
     await bot.dismissBlockingUI();
-    await lab.cheat('setvar biohazard 16'); // ^biohazard_complete, needed by the cave entrance (quest_upass.rs2:81)
+    await setvar(sdk, 'biohazard', 16); // ^biohazard_complete, needed by the cave entrance (quest_upass.rs2:81)
     // King Lathas talks Regicide first whenever %regicide_quest > 0 (king_lathas.rs2:2); only `post` sets it.
-    await lab.cheat('setvar regicide_quest 0');
-    const stats = async (s: Record<string, number>) => { for (const [k, v] of Object.entries(s)) await lab.cheat(`setstat ${k} ${v}`, 1); };
-    const clearInv = async () => { for (const it of sdk.getInventory()) { await sdk.sendDropItem(it.slot); await sdk.waitForTicks(1); } };
+    await setvar(sdk, 'regicide_quest', 0);
 
     /** Walk the trap grid on its safe strips (upass_grid.rs2:61-83), from the east edge to the lever, and pull it. */
     const grid = async (answer: number) => {
-        const d = [Math.floor(answer / 100) % 10, Math.floor(answer / 10) % 10, answer % 10];
+        const [d0, d1, d2] = [Math.floor(answer / 100) % 10, Math.floor(answer / 10) % 10, answer % 10];
         const row = (n: number) => 9673 + 2 * (n - 1);
-        const pts: T[] = [[2477, row(d[0]), 0], [2474, row(d[0]), 0], [2474, row(d[1]), 0], [2469, row(d[1]), 0], [2469, row(d[2]), 0], [2466, row(d[2]), 0], [2466, 9673, 0]];
-        await lab.act(`grid walk (answer ${answer})`, async () => {
+        const pts: T[] = [[2477, row(d0), 0], [2474, row(d0), 0], [2474, row(d1), 0], [2469, row(d1), 0], [2469, row(d2), 0], [2466, row(d2), 0], [2466, 9673, 0]];
+        await step(`grid walk (answer ${answer})`, async () => {
             for (const p of pts) {
-                if (lab.at(p)) continue;
+                if (isAt(p)) continue;
                 await sdk.sendWalk(p[0], p[1], true);
-                const ok = await new Promise<boolean>(async res => {
-                    for (let i = 0; i < 30; i++) { await sdk.waitForTicks(1); if (lab.at(p)) return res(true); if (lab.pos()[1] < 9600) return res(false); }
-                    res(false);
-                });
-                if (!ok) throw new Error(`grid: did not reach ${p} (at ${lab.pos()})`);
+                await waitUntil(sdk, s => at(p[0], p[1], p[2])(s) || pos(s).z < 9600, { maxTicks: 30 });
+                if (!isAt(p)) throw new Error(`grid: did not reach ${p} (at ${here()})`);
             }
-        }, undefined, { tiles: 'see route' });
-        await lab.act('portcullis lever', () => lab.clickLoc(3337, 2466, 9672, 1), () => lab.at([2464, 9677, 0]));
+        });
+        await step('portcullis lever', clickLoc(3337, 2466, 9672, 1), at(2464, 9677, 0));
     };
 
     /**
@@ -70,17 +370,17 @@ await runScript(async ({ bot, sdk }) => {
      * A miss costs the arrow (upass_bridge.rs2:63-71): back to Koftik for another cloth.
      */
     const crossBridge = async () => {
+        const west = pt('bridgeWest');
         for (let shot = 1; shot <= 6; shot++) {
-            if (shot > 1) await lab.travel('back to Koftik after a miss', [2448, 9716, 0]);
-            await lab.talk(`Koftik (damp cloth), shot ${shot}`, /Koftik/, [/litter/i, /./]);
-            await lab.act('wrap cloth on bronze arrow', () => lab.useItem(/^Damp cloth$/i, /^Bronze arrow$/i), () => sdk.countInventoryItems(/fire arrow/i) > 0);
-            await lab.act('light it with the tinderbox', () => lab.useItem(/^Tinderbox$/i, /fire arrow/i), () => sdk.getInventory().some(i => i.id === 942));
-            await lab.act('wield the lit arrow', () => bot.equipItem(/^Bronze fire arrows$/i), () => sdk.getEquipment().some(e => /fire arrows/i.test(e.name)));
-            await lab.travel('Koftik -> shooting spot (2446,9722)', P.shootSpot);
-            const r = await lab.act(`fire at the guide rope, shot ${shot}`, () => lab.clickLoc(3340, 2443, 9718, 1),
-                () => lab.at(P.bridgeWest) || lab.log.slice(-3).some(t => /just misses/.test(t)));
-            if (lab.at(P.bridgeWest)) return shot;
-            void r;
+            if (shot > 1) await travel('back to Koftik after a miss', [2448, 9716, 0]);
+            await talk(`Koftik (damp cloth), shot ${shot}`, /Koftik/, [/litter/i, /./]);
+            await step('wrap cloth on bronze arrow', useOnItem(/^Damp cloth$/i, /^Bronze arrow$/i), s => invCount(s, /fire arrow/i) > 0);
+            await step('light it with the tinderbox', useOnItem(/^Tinderbox$/i, /fire arrow/i), s => s.inventory.some(i => i.id === 942));
+            await step('wield the lit arrow', () => wield(sdk, /^Bronze fire arrows$/i));
+            await travel('Koftik -> shooting spot (2446,9722)', pt('shootSpot'));
+            // no re-send: the shot is a roll, and the bridge's scripted fall holds the player still
+            await step(`fire at the guide rope, shot ${shot}`, clickLoc(3340, 2443, 9718, 1), s => at(west[0], west[1], west[2])(s) || messagesSince(s, rec.cur?.startTick ?? 0, /just misses/).length > 0, { resendEvery: 0 });
+            if (isAt(west)) return shot;
         }
         throw new Error('bridge: six misses');
     };
@@ -88,241 +388,251 @@ await runScript(async ({ bot, sdk }) => {
     const ATT = opt('att', 70), STR = opt('str', 70), DEF = opt('def', 70), HP = opt('hp', 70);
     /** Melee stats, rune scimitar, rune armour (no platebody: Dragon Slayer), amulet of strength, swordfish. */
     const gear = async (food = 10) => {
-        await stats({ attack: ATT, strength: STR, defence: DEF, hitpoints: HP, agility: AGILITY, thieving: THIEVING, ranged: 60, prayer: 1 });
-        await clearInv();
+        await setStats(sdk, { attack: ATT, strength: STR, defence: DEF, hitpoints: HP, agility: AGILITY, thieving: THIEVING, ranged: 60, prayer: 1 });
+        await clearInventory(sdk);
         for (const g of ['rune_scimitar', 'rune_full_helm', 'rune_chainbody', 'rune_platelegs', 'rune_kiteshield', 'amulet_of_strength']) {
-            const named = (i: { name: string }) => i.name.toLowerCase().replace(/ /g, '_') === g;
-            if (sdk.getEquipment().some(named)) continue;
-            await lab.give(g, 1);
-            const it = sdk.getInventory().find(named);
-            if (it) await bot.equipItem(it);
+            await give(sdk, g);
+            await wield(sdk, new RegExp(`^${g.replace(/_/g, ' ')}$`, 'i'));
         }
-        await lab.give('swordfish', food);
+        await give(sdk, 'swordfish', food);
         await sdk.sendSetCombatStyle(1); // aggressive
-        await sdk.waitForTicks(2);
+        await waitTicks(sdk, 2);
     };
     const vars = async (upass: number, bits: number[]) => {
-        await lab.cheat(`setvar upass ${upass}`);
-        await lab.cheat(`setvar ibanmulti ${ibanmulti([BIT.started, BIT.koftikInsane, ...bits], GRID)}`);
+        await setvar(sdk, 'upass', upass);
+        await setvar(sdk, 'ibanmulti', ibanmulti([BIT.started, BIT.koftikInsane, ...bits], GRID));
     };
     const take = async (label: string, re: RegExp) => {
-        const n0 = sdk.countInventoryItems(re);
-        await L_waitGround(re);
-        return lab.act(label, async () => {
-            const g = sdk.getGroundItems().filter(i => re.test(i.name)).sort((a, b) => a.distance - b.distance)[0];
-            if (!g) throw new Error(`no ground item ${re}`);
-            await sdk.sendPickup(g.x, g.z, g.id);
-        }, () => sdk.countInventoryItems(re) > n0);
+        await waitUntil(sdk, s => s.groundItems.some(g => re.test(g.name)), { maxTicks: 10 });
+        return step(label, () => pickup(sdk, re));
     };
     /** Dwarf brew, Iban's ashes from the tomb, Kalrag's blood, the dove: the doll's other three parts. */
     const brewToDove = async () => {
-        await lab.travel('-> brew barrel (west side)', P.barrel);
-        await lab.act('bucket on the barrel: dwarf brew', () => lab.useOnLoc(/^Bucket$/i, 3344, 2327, 9799), () => sdk.countInventoryItems(/brew/i) > 0);
-        await lab.travel('-> Iban\'s tomb', P.tomb);
-        await lab.act('brew on the tomb', () => lab.useOnLoc(/brew/i, 3353, 2356, 9800), () => sdk.countInventoryItems(/brew/i) === 0);
-        await lab.act('tinderbox on the tomb: Iban\'s ashes', () => lab.useOnLoc(/^Tinderbox$/i, 3353, 2356, 9800), () => sdk.countInventoryItems(/ashes/i) > 0);
-        await lab.act('ashes on the doll (p_delay 7)', () => lab.useItem(/ashes/i, /doll/i), () => sdk.countInventoryItems(/ashes/i) === 0);
-        await lab.travel('tomb -> Kalrag', P.kalrag);
-        await lab.fight('fight Kalrag (lvl 89, 78 hp)', /Kalrag/, { food: /^Swordfish$/i });
-        await lab.idle(4);
-        lab.record({ label: 'ibanmulti after Kalrag', ticks: 0, value: await lab.getVar('ibanmulti') });
-        await lab.travel('Kalrag -> north stairs -> dove cage', P.doveCage);
-        await lab.act('search the cage: Iban\'s dove (bitten, no gauntlets)', () => lab.clickLoc(3351, 2134, 4702, 1), () => sdk.countInventoryItems(/dove/i) > 0);
-        await lab.act('dove on the doll', () => lab.useItem(/dove/i, /doll/i), () => sdk.countInventoryItems(/dove/i) === 0);
+        await travel('-> brew barrel (west side)', pt('barrel'));
+        await step('bucket on the barrel: dwarf brew', useOnLoc(/^Bucket$/i, 3344, 2327, 9799), s => invCount(s, /brew/i) > 0);
+        await travel('-> Iban\'s tomb', pt('tomb'));
+        await step('brew on the tomb', useOnLoc(/brew/i, 3353, 2356, 9800), s => invCount(s, /brew/i) === 0);
+        await step('tinderbox on the tomb: Iban\'s ashes', useOnLoc(/^Tinderbox$/i, 3353, 2356, 9800), s => invCount(s, /ashes/i) > 0);
+        await step('ashes on the doll (p_delay 7)', useOnItem(/ashes/i, /doll/i), s => invCount(s, /ashes/i) === 0);
+        await travel('tomb -> Kalrag', pt('kalrag'));
+        await fightRow('fight Kalrag (lvl 89, 78 hp)', /Kalrag/);
+        await idle(sdk, { maxTicks: 80, still: 4 });
+        value('ibanmulti after Kalrag', { value: await getvar(sdk, 'ibanmulti') });
+        await travel('Kalrag -> north stairs -> dove cage', pt('doveCage'));
+        await step('search the cage: Iban\'s dove (bitten, no gauntlets)', clickLoc(3351, 2134, 4702, 1), s => invCount(s, /dove/i) > 0);
+        await step('dove on the doll', useOnItem(/dove/i, /doll/i), s => invCount(s, /dove/i) === 0);
     };
     const ORBS = [BIT.orb1, BIT.orb2, BIT.orb3, BIT.orb4];
     const BADGES = [BIT.badge1, BIT.badge2, BIT.badge3, BIT.horn];
+    const ORB = /^Orb of light$/i;
 
     if (segment === 'start') {
         // King Lathas starts the quest; Koftik outside the cave sets %upass 1.
-        await stats({ ranged: 25 });
-        await lab.cheat('setvar upass 0');
-        await lab.cheat('setvar ibanmulti 0');
-        await lab.teleTo(2578, 3294, 1); // inside the throne room door (2575,3293)
-        await lab.talk('King Lathas (start, %upass 0)', /King Lathas/);
-        lab.record({ label: 'ibanmulti after Lathas', ticks: 0, value: await lab.getVar('ibanmulti') });
-        await lab.teleTo(2434, 3313, 0);
-        await lab.dialogue('cave entrance at %upass 0: Koftik first dialogue', () => lab.clickLoc(3213, 2433, 3313, 1), [/take my chances/i]);
-        lab.record({ label: 'upass after Koftik', ticks: 0, value: await lab.getVar('upass') });
-        await lab.act('cave entrance: enter', () => lab.clickLoc(3213, 2433, 3313, 1), () => lab.at(P.landing));
+        await setStats(sdk, { ranged: 25 });
+        await setvar(sdk, 'upass', 0);
+        await setvar(sdk, 'ibanmulti', 0);
+        await mustTele(sdk, 2578, 3294, 1); // inside the throne room door (2575,3293)
+        await talk('King Lathas (start, %upass 0)', /King Lathas/);
+        value('ibanmulti after Lathas', { value: await getvar(sdk, 'ibanmulti') });
+        await mustTele(sdk, 2434, 3313, 0);
+        await dialogue('cave entrance at %upass 0: Koftik first dialogue', clickLoc(3213, 2433, 3313, 1), [/take my chances/i]);
+        value('upass after Koftik', { value: await getvar(sdk, 'upass') });
+        const landing = pt('landing');
+        await step('cave entrance: enter', clickLoc(3213, 2433, 3313, 1), at(landing[0], landing[1], landing[2]));
     } else if (segment === 'entry') {
         // %upass 1: into the cave, Koftik's cloth, the bridge shot (2), the rope swing, the grid, the lever.
-        await stats({ agility: AGILITY, thieving: THIEVING, ranged: opt('ranged', 60), hitpoints: 99 });
+        await setStats(sdk, { agility: AGILITY, thieving: THIEVING, ranged: opt('ranged', 60), hitpoints: 99 });
         await vars(1, []);
-        await lab.cheat('setvar ibanmulti ' + ibanmulti([BIT.started], GRID));
-        await clearInv();
-        for (const [n, c] of [['shortbow', 1], ['bronze_arrow', 5], ['tinderbox', 1], ['rope', 2], ['spade', 1], ['swordfish', 5]] as const) await lab.give(n, c);
-        await sdk.waitForTicks(2);
-        await lab.equip(/^Shortbow$/i);
-        await lab.teleTo(2434, 3313, 0);
-        const t0 = lab.tick();
-        await lab.travel('cave entrance -> Koftik at the bridge', [2448, 9716, 0]);
+        await setvar(sdk, 'ibanmulti', ibanmulti([BIT.started], GRID));
+        await clearInventory(sdk);
+        for (const [n, c] of [['shortbow', 1], ['bronze_arrow', 5], ['tinderbox', 1], ['rope', 2], ['spade', 1], ['swordfish', 5]] as const) await give(sdk, n, c);
+        await wield(sdk, /^Shortbow$/i);
+        await mustTele(sdk, 2434, 3313, 0);
+        const t0 = currentTick(sdk);
+        await travel('cave entrance -> Koftik at the bridge', [2448, 9716, 0]);
         const shots = await crossBridge();
-        lab.record({ label: 'bridge shots needed', ticks: 0, shots, upass: await lab.getVar('upass') });
-        await lab.travel('bridge west bank -> grid east edge (rope swing)', P.gridEast);
+        value('bridge shots needed', { shots, upass: await getvar(sdk, 'upass') });
+        await travel('bridge west bank -> grid east edge (rope swing)', pt('gridEast'));
         await grid(GRID);
-        lab.record({ label: 'TOTAL cave entrance to through the portcullis (known grid)', ticks: lab.tick() - t0 });
+        wall('TOTAL cave entrance to through the portcullis (known grid)', currentTick(sdk) - t0);
     } else if (segment === 'gridfall') {
         // One wrong step on the grid: the fall, the climb out, and back at the east edge.
-        await stats({ hitpoints: 99 });
+        await setStats(sdk, { hitpoints: 99 });
         await vars(2, []);
-        await lab.teleTo(...P.gridEast);
-        const d1 = Math.floor(GRID / 100);
-        const wrong = d1 === 1 ? 2 : 1;
-        await lab.act('step onto a trapped grid tile', () => sdk.sendWalk(2475, 9673 + 2 * (wrong - 1), true), () => lab.pos()[1] < 9600);
+        await teleTo(pt('gridEast'));
+        const wrong = Math.floor(GRID / 100) === 1 ? 2 : 1;
+        await step('step onto a trapped grid tile', () => sdk.sendWalk(2475, 9673 + 2 * (wrong - 1), true), s => pos(s).z < 9600);
         // the fall lands on one of the four hand-hold tiles at random (upass_grid.rs2:94); click the one underfoot or next to it
-        const p = lab.pos();
-        const hold = [[2395, 9559], [2395, 9560], [2396, 9559], [2396, 9560]].sort((a, b) => Math.abs(a[0] - p[0]) + Math.abs(a[1] - p[1]) - Math.abs(b[0] - p[0]) - Math.abs(b[1] - p[1]))[0];
-        await lab.act(`climb the protruding rocks out of the pit (landed ${p})`, async () => {
-            for (const [x, z] of [hold, [2395, 9559], [2396, 9560], [2395, 9560], [2396, 9559]]) {
-                await lab.clickLoc(3365, x, z, 1);
-                await L_sleep(3);
-                if (lab.pos()[1] > 9600) return;
-            }
-        }, () => lab.at([2477, 9677, 0]));
+        const p = pos(sdk);
+        const holds: Array<[number, number]> = [[2395, 9559], [2395, 9560], [2396, 9559], [2396, 9560]];
+        const dist = (h: [number, number]) => Math.abs(h[0] - p.x) + Math.abs(h[1] - p.z);
+        const hold = [...holds].sort((a, b) => dist(a) - dist(b))[0]!;
+        await step(
+            `climb the protruding rocks out of the pit (landed ${p.x},${p.z},${p.level})`,
+            async () => {
+                for (const [x, z] of [hold, [2395, 9559], [2396, 9560], [2395, 9560], [2396, 9559]] as Array<[number, number]>) {
+                    await sdk.sendInteractLoc(x, z, 3365, 1);
+                    await waitTicks(sdk, 3);
+                    if (pos(sdk).z > 9600) return;
+                }
+            },
+            at(2477, 9677, 0),
+            { resendEvery: 0 }
+        );
     } else if (segment === 'swingfail') {
         // Cost of a failed rope swing: from the pit landing back to the swing with a new rope.
-        await stats({ agility: AGILITY, ranged: 60, hitpoints: 99 });
+        await setStats(sdk, { agility: AGILITY, ranged: 60, hitpoints: 99 });
         await vars(2, []);
-        await clearInv();
-        for (const [n, c] of [['shortbow', 1], ['bronze_arrow', 5], ['tinderbox', 1], ['rope', 1]] as const) await lab.give(n, c);
-        await lab.equip(/^Shortbow$/i);
-        await lab.teleTo(2485, 9649, 0);
-        const t0 = lab.tick();
-        await lab.travel('pit landing -> rock pile -> Koftik', [2448, 9716, 0]);
+        await clearInventory(sdk);
+        for (const [n, c] of [['shortbow', 1], ['bronze_arrow', 5], ['tinderbox', 1], ['rope', 1]] as const) await give(sdk, n, c);
+        await wield(sdk, /^Shortbow$/i);
+        await mustTele(sdk, 2485, 9649, 0);
+        const t0 = currentTick(sdk);
+        await travel('pit landing -> rock pile -> Koftik', [2448, 9716, 0]);
         await crossBridge();
-        await lab.travel('bridge west bank -> rope swing done', [2466, 9699, 0]);
-        lab.record({ label: 'TOTAL rope swing failure recovery (pit to across the swing)', ticks: lab.tick() - t0 });
+        await travel('bridge west bank -> rope swing done', [2466, 9699, 0]);
+        wall('TOTAL rope swing failure recovery (pit to across the swing)', currentTick(sdk) - t0);
     } else if (segment === 'ledgefail') {
-        await stats({ agility: AGILITY, thieving: THIEVING, hitpoints: 99 });
+        await setStats(sdk, { agility: AGILITY, thieving: THIEVING, hitpoints: 99 });
         await vars(3, ORBS);
-        await clearInv();
-        await lab.give('spade', 1);
-        await lab.teleTo(2373, 9641, 0);
-        await lab.travel('rat pit -> ledge top', P.ledgeTop);
+        await clearInventory(sdk);
+        await give(sdk, 'spade');
+        await mustTele(sdk, 2373, 9641, 0);
+        await travel('rat pit -> ledge top', pt('ledgeTop'));
     } else if (segment === 'bridgefall') {
-        await stats({ agility: AGILITY, hitpoints: 99 });
+        await setStats(sdk, { agility: AGILITY, hitpoints: 99 });
         await vars(7, [...ORBS, ...BADGES]);
         for (const land of [[2335, 9821, 0], [2333, 9866, 0]] as T[]) {
-            await lab.teleTo(...land);
-            await lab.travel(`bridge fall landing ${land} -> back at the bridge (2155,4718)`, [2155, 4721, 1]);
+            await teleTo(land);
+            await travel(`bridge fall landing ${land} -> back at the bridge (2155,4718)`, [2155, 4721, 1]);
         }
     } else if (segment === 'orbs') {
         // %upass 2, through the portcullis: four orbs, the furnace, the well (-> 3).
-        await stats({ agility: AGILITY, thieving: THIEVING, hitpoints: 99 });
+        await setStats(sdk, { agility: AGILITY, thieving: THIEVING, hitpoints: 99 });
         await vars(2, []);
-        await clearInv();
-        await stats({ hitpoints: HP });
-        await lab.give('swordfish', 20);
-        await lab.teleTo(...P.afterPortcullis);
-        const t0 = lab.tick();
-        await lab.travel('portcullis -> orb 1 trap (flat rock)', P.orb1trap);
-        for (let k = 0; k < 6 && sdk.countInventoryItems(/^Orb of light$/i) < 1; k++) {
-            await lab.dialogue(`disarm the log trap for orb 1, try ${k + 1}`, () => lab.clickLoc(3339, 2382, 9668, 1), [/give it a go/i]);
-            await lab.idle();
+        await clearInventory(sdk);
+        await setStats(sdk, { hitpoints: HP });
+        await give(sdk, 'swordfish', 20);
+        await teleTo(pt('afterPortcullis'));
+        const t0 = currentTick(sdk);
+        await travel('portcullis -> orb 1 trap (flat rock)', pt('orb1trap'));
+        for (let k = 0; k < 6 && invCount(sdk, ORB) < 1; k++) {
+            await dialogue(`disarm the log trap for orb 1, try ${k + 1}`, clickLoc(3339, 2382, 9668, 1), [/give it a go/i]);
+            await idle(sdk, { maxTicks: 80 });
         }
-        await lab.travel('-> orb 2', P.orb2);
-        await take('take orb 2', /^Orb of light$/i);
-        await lab.travel('-> orb 3', P.orb3);
-        await take('take orb 3', /^Orb of light$/i);
-        await lab.travel('-> orb 4', P.orb4);
-        await take('take orb 4', /^Orb of light$/i);
-        lab.record({ label: 'orbs held', ticks: 0, orbs: sdk.countInventoryItems(/^Orb of light$/i) });
-        await lab.travel('-> furnace', P.furnace);
+        await travel('-> orb 2', pt('orb2'));
+        await take('take orb 2', ORB);
+        await travel('-> orb 3', pt('orb3'));
+        await take('take orb 3', ORB);
+        await travel('-> orb 4', pt('orb4'));
+        await take('take orb 4', ORB);
+        value('orbs held', { orbs: invCount(sdk, ORB) });
+        await travel('-> furnace', pt('furnace'));
         for (let k = 0; k < 4; k++) {
-            const before = sdk.countInventoryItems(/^Orb of light$/i);
-            await lab.act(`orb ${k + 1} into the furnace`, () => lab.useOnLoc(/^Orb of light$/i, 3294, 2454, 9682), () => sdk.countInventoryItems(/^Orb of light$/i) < before);
+            const before = invCount(sdk, ORB);
+            await step(`orb ${k + 1} into the furnace`, useOnLoc(ORB, 3294, 2454, 9682), s => invCount(s, ORB) < before);
         }
-        lab.record({ label: 'ibanmulti after furnace', ticks: 0, value: await lab.getVar('ibanmulti') });
-        await lab.travel('furnace -> down the well', P.wellBottom);
-        lab.record({ label: 'TOTAL portcullis to the well bottom', ticks: lab.tick() - t0, upass: await lab.getVar('upass') });
+        value('ibanmulti after furnace', { value: await getvar(sdk, 'ibanmulti') });
+        await travel('furnace -> down the well', pt('wellBottom'));
+        wall('TOTAL portcullis to the well bottom', currentTick(sdk) - t0, { upass: await getvar(sdk, 'upass') });
     } else if (segment === 'area2') {
         // %upass 3: cage, mud, ledge, cages (Thieving 50) or stone bridges, pipe, railing, boulder (-> 4), horn, tunnel.
-        await stats({ agility: AGILITY, thieving: THIEVING, hitpoints: 99 });
+        await setStats(sdk, { agility: AGILITY, thieving: THIEVING, hitpoints: 99 });
         await vars(3, ORBS);
-        await clearInv();
-        await lab.give('spade', 1);
-        await lab.give('swordfish', 3);
-        await lab.teleTo(...P.wellBottom);
-        const t0 = lab.tick();
-        await lab.travel('well bottom -> pipe east end', P.pipeEast, { allow: k => THIEVING >= 50 || k !== 'railing5' });
-        await lab.act('squeeze through the pipe (%upass 3: 1-tile jump)', () => lab.clickLoc(3237, 2417, 9605, 1), () => lab.at([2412, 9605, 0]));
-        await lab.travel('-> unicorn cage', P.unicornCage);
-        await lab.act('search the cage: piece of railing', () => lab.clickLoc(3267, 2397, 9605, 2), () => sdk.countInventoryItems(/railing/i) > 0);
-        await lab.act('railing on the boulder (unicorn killed)', async () => {
-            await L_waitBoulder();
-            const b = lab.npc(/Boulder/)!;
-            await sdk.sendUseItemOnNpc(sdk.findInventoryItem(/railing/i)!.slot, b.index);
-        }, () => sdk.getState()!.dialog.isOpen || lab.pos()[0] < 2380);
-        await lab.dialogue('"I heard something breaking."', async () => {}, [/./]);
-        lab.record({ label: 'upass after boulder', ticks: 0, value: await lab.getVar('upass'), at: lab.pos() });
-        await lab.dialogue('search the smashed cage: unicorn horn', () => lab.clickLoc(3308, 2371, 9603, 1), [/./]);
-        await lab.travel('-> tunnel to area 3', P.area3);
-        lab.record({ label: 'TOTAL well bottom to area 3', ticks: lab.tick() - t0, horn: sdk.countInventoryItems(/horn/i) });
+        await clearInventory(sdk);
+        await give(sdk, 'spade');
+        await give(sdk, 'swordfish', 3);
+        await teleTo(pt('wellBottom'));
+        const t0 = currentTick(sdk);
+        await travel('well bottom -> pipe east end', pt('pipeEast'), { allow: k => THIEVING >= 50 || k !== 'railing5' });
+        await step('squeeze through the pipe (%upass 3: 1-tile jump)', clickLoc(3237, 2417, 9605, 1), at(2412, 9605, 0));
+        await travel('-> unicorn cage', pt('unicornCage'));
+        await step('search the cage: piece of railing', clickLoc(3267, 2397, 9605, 2), s => invCount(s, /railing/i) > 0);
+        await step(
+            'railing on the boulder (unicorn killed)',
+            async () => {
+                const b = await waitForNpc(sdk, /Boulder/, 20);
+                if (!b) throw new Error('no Boulder in view');
+                await sdk.sendUseItemOnNpc(slotOf(sdk, /railing/i), b.index);
+            },
+            s => s.dialog.isOpen || pos(s).x < 2380,
+            { resendEvery: 0 }
+        );
+        await dialogue('"I heard something breaking."', null, [/./]);
+        value('upass after boulder', { value: await getvar(sdk, 'upass'), at: here() });
+        await dialogue('search the smashed cage: unicorn horn', clickLoc(3308, 2371, 9603, 1), [/./]);
+        await travel('-> tunnel to area 3', pt('area3'));
+        wall('TOTAL well bottom to area 3', currentTick(sdk) - t0, { horn: invCount(sdk, /horn/i) });
     } else if (segment === 'paladins') {
         // %upass 4: three paladins, badges and horn into the well, the door (-> 5).
         await gear(15);
         await vars(4, ORBS);
-        await lab.give('cave_unicorn_horn', 1);
-        await lab.teleTo(...P.area3);
-        const t0 = lab.tick();
-        await lab.travel('area 3 -> paladins', [2423, 9716, 0]);
+        await give(sdk, 'cave_unicorn_horn');
+        await teleTo(pt('area3'));
+        const t0 = currentTick(sdk);
+        await travel('area 3 -> paladins', [2423, 9716, 0]);
         for (const [name, badge] of [['Sir Jerro', 1], ['Sir Carl', 2], ['Sir Harry', 3]] as const) {
-            await lab.fight(`fight ${name} (lvl 62, 57 hp)`, new RegExp(name), { food: /^Swordfish$/i });
-            await L_sleep(1);
-            await take(`pick up ${name}'s badge`, /badge/i).catch(e => lab.record({ label: `badge ${badge} missing`, ticks: 0, err: String(e) }));
+            await fightRow(`fight ${name} (lvl 62, 57 hp)`, new RegExp(name));
+            await waitTicks(sdk, 1);
+            await take(`pick up ${name}'s badge`, /badge/i).catch(e => value(`badge ${badge} missing`, { err: String(e) }));
         }
-        await lab.travel('paladins -> well of flames', P.bloodwell);
+        await travel('paladins -> well of flames', pt('bloodwell'));
         for (const it of [/badge/i, /badge/i, /badge/i, /horn/i]) {
-            const n0 = sdk.countInventoryItems(it);
-            await lab.act(`throw ${it} into the well`, () => lab.useOnLoc(it, 3305, 2373, 9718), () => sdk.countInventoryItems(it) < n0);
+            const n0 = invCount(sdk, it);
+            await step(`throw ${it} into the well`, useOnLoc(it, 3305, 2373, 9718), s => invCount(s, it) < n0);
         }
-        await lab.act('open the door to Iban\'s cavern', () => lab.clickLoc(3220, 2368, 9717, 1), () => lab.pos()[2] === 1);
-        lab.record({ label: 'TOTAL area 3 to the cavern', ticks: lab.tick() - t0, upass: await lab.getVar('upass') });
+        await step('open the door to Iban\'s cavern', clickLoc(3220, 2368, 9717, 1), s => pos(s).level === 1);
+        wall('TOTAL area 3 to the cavern', currentTick(sdk) - t0, { upass: await getvar(sdk, 'upass') });
     } else if (segment === 'cavern') {
         // %upass 5 at the cavern door: Nilhoof (6), cat, witch, chest (7), demons, shadow, brew, ashes, Kalrag, dove.
         await gear(15);
         await vars(5, [...ORBS, ...BADGES]);
-        await lab.give('bucket_empty', 1);
-        await lab.give('tinderbox', 1);
-        await lab.teleTo(...P.mainArrival);
-        const t0 = lab.tick();
-        await lab.travel('cavern arrival -> south stairs -> dwarves', P.dwarfStairsFoot);
-        await lab.travel('-> Nilhoof', P.nilhoof);
-        await lab.talk('Nilhoof (%upass 5 -> 6)', /Nilhoof/);
-        await lab.travel('Nilhoof -> stairs up', P.stairsSouth);
-        await lab.travel('-> witch\'s cat', P.cat);
-        await lab.act('pick up the cat', async () => { const c = lab.npc(/Witches cat/)!; await sdk.sendInteractNpc(c.index, 1); }, () => sdk.countInventoryItems(/cat/i) > 0);
-        await lab.travel('cat -> witch\'s door', P.witchDoor);
-        await lab.act('cat on the witch\'s door (hide, %ibanmulti bit 9)', () => lab.useOnLoc(/cat/i, 3270, 2158, 4566), () => sdk.countInventoryItems(/cat/i) === 0);
-        await lab.act('open the door', () => lab.clickLoc(3270, 2158, 4566, 1));
-        await lab.dialogue('open the chest: doll, journal, potions (%upass 7)', () => lab.clickLoc(3272, 2157, 4564, 1), [/./]);
-        lab.record({ label: 'upass after chest', ticks: 0, value: await lab.getVar('upass'), doll: sdk.countInventoryItems(/doll/i) });
+        await give(sdk, 'bucket_empty');
+        await give(sdk, 'tinderbox');
+        await teleTo(pt('mainArrival'));
+        const t0 = currentTick(sdk);
+        await travel('cavern arrival -> south stairs -> dwarves', pt('dwarfStairsFoot'));
+        await travel('-> Nilhoof', pt('nilhoof'));
+        await talk('Nilhoof (%upass 5 -> 6)', /Nilhoof/);
+        await travel('Nilhoof -> stairs up', pt('stairsSouth'));
+        await travel('-> witch\'s cat', pt('cat'));
+        await step(
+            'pick up the cat',
+            async () => {
+                const c = findNpc(sdk, /Witches cat/);
+                if (c) await sdk.sendInteractNpc(c.index, 1);
+            },
+            s => invCount(s, /cat/i) > 0
+        );
+        await travel('cat -> witch\'s door', pt('witchDoor'));
+        await step('cat on the witch\'s door (hide, %ibanmulti bit 9)', useOnLoc(/cat/i, 3270, 2158, 4566), s => invCount(s, /cat/i) === 0);
+        await step('open the door', clickLoc(3270, 2158, 4566, 1));
+        await dialogue('open the chest: doll, journal, potions (%upass 7)', clickLoc(3272, 2157, 4564, 1), [/./]);
+        value('upass after chest', { value: await getvar(sdk, 'upass'), doll: invCount(sdk, /doll/i) });
         // the door closes behind you (open_and_close_door3); open it again to leave
-        await lab.act('leave the witch\'s house', () => lab.clickLoc(3270, 2158, 4566, 1), () => lab.pos()[1] >= 4566);
-        for (const [name, amulet, at] of [['Doomion', /doomion/i, P.doomion], ['Holthion', /holthion/i, P.holthion], ['Othainian', /othanian/i, P.othainian]] as const) {
-            await lab.travel(`-> ${name}`, at);
-            await lab.fight(`fight ${name} (lvl 91, 87 hp)`, new RegExp(name), { food: /^Swordfish$/i });
-            await L_sleep(1);
-            await take(`pick up the amulet of ${name}`, amulet).catch(e => lab.record({ label: `amulet ${name} missing`, ticks: 0, err: String(e) }));
+        await step('leave the witch\'s house', clickLoc(3270, 2158, 4566, 1), s => pos(s).z >= 4566);
+        const demons: Array<[string, RegExp, T]> = [['Doomion', /doomion/i, pt('doomion')], ['Holthion', /holthion/i, pt('holthion')], ['Othainian', /othanian/i, pt('othainian')]];
+        for (const [name, amulet, where] of demons) {
+            await travel(`-> ${name}`, where);
+            await fightRow(`fight ${name} (lvl 91, 87 hp)`, new RegExp(name));
+            await waitTicks(sdk, 1);
+            await take(`pick up the amulet of ${name}`, amulet).catch(e => value(`amulet ${name} missing`, { err: String(e) }));
         }
-        await lab.travel('-> the sealed chest', P.shadowChest);
-        await lab.act('open the chest with three amulets: Iban\'s shadow', () => lab.clickLoc(3274, 2136, 4578, 1), () => sdk.countInventoryItems(/shadow/i) > 0);
-        await lab.act('shadow on the doll', () => lab.useItem(/shadow/i, /doll/i), () => sdk.countInventoryItems(/shadow/i) === 0);
-        await lab.travel('-> south stairs -> dwarves', P.dwarfStairsFoot);
+        await travel('-> the sealed chest', pt('shadowChest'));
+        await step('open the chest with three amulets: Iban\'s shadow', clickLoc(3274, 2136, 4578, 1), s => invCount(s, /shadow/i) > 0);
+        await step('shadow on the doll', useOnItem(/shadow/i, /doll/i), s => invCount(s, /shadow/i) === 0);
+        await travel('-> south stairs -> dwarves', pt('dwarfStairsFoot'));
         await brewToDove();
-        lab.record({ label: 'TOTAL cavern arrival to the doll complete', ticks: lab.tick() - t0, ibanmulti: await lab.getVar('ibanmulti') });
+        wall('TOTAL cavern arrival to the doll complete', currentTick(sdk) - t0, { ibanmulti: await getvar(sdk, 'ibanmulti') });
     } else if (segment === 'brew') {
         // resume the cavern at the dwarves: %upass 7, doll holding the shadow
         await gear(15);
         await vars(7, [...ORBS, ...BADGES, BIT.cat, BIT.shadow]);
-        await lab.give('ibandoll', 1);
-        await lab.give('bucket_empty', 1);
-        await lab.give('tinderbox', 1);
-        await lab.teleTo(...P.dwarfStairsFoot);
-        const t0 = lab.tick();
+        await give(sdk, ['ibandoll', 'bucket_empty', 'tinderbox']);
+        await teleTo(pt('dwarfStairsFoot'));
+        const t0 = currentTick(sdk);
         await brewToDove();
-        lab.record({ label: 'TOTAL dwarf stairs to the doll complete', ticks: lab.tick() - t0, ibanmulti: await lab.getVar('ibanmulti') });
+        wall('TOTAL dwarf stairs to the doll complete', currentTick(sdk) - t0, { ibanmulti: await getvar(sdk, 'ibanmulti') });
     } else if (segment === 'fights') {
         // Every fight, `--rounds` times, at --att/--str/--def/--hp, rune scimitar and rune armour.
         const rounds = opt('rounds', 2);
@@ -333,89 +643,86 @@ await runScript(async ({ bot, sdk }) => {
             ['Kalrag', /Kalrag/, [2356, 9906, 0]], ['Iban disciple', /Iban disciple/, [2153, 4646, 1]],
         ];
         for (let r = 1; r <= rounds; r++) {
-            for (const [name, re, at] of targets) {
+            for (const [name, re, where] of targets) {
                 await gear(20);
-                await lab.teleTo(...at);
-                for (let i = 0; i < 40 && !lab.npc(re); i++) await L_sleep(3); // respawn
-                if (!lab.npc(re)) { lab.record({ label: `${name}: not spawned`, ticks: 0 }); continue; }
-                await lab.fight(`round ${r}: ${name} at ${ATT}/${STR}/${DEF}, ${HP} hp`, re, { food: /^Swordfish$/i });
+                await teleTo(where);
+                await waitUntil(sdk, s => findNpc(s, re) !== null, { maxTicks: 120 }); // respawn
+                if (!findNpc(sdk, re)) {
+                    value(`${name}: not spawned`, {});
+                    continue;
+                }
+                await fightRow(`round ${r}: ${name} at ${ATT}/${STR}/${DEF}, ${HP} hp`, re);
             }
         }
-    } else if (segment === 'never') {
-        await lab.travel('-> brew barrel', P.barrel);
-        await lab.act('bucket on the barrel: dwarf brew', () => lab.useOnLoc(/^Bucket$/i, 3344, 2327, 9799), () => sdk.countInventoryItems(/brew/i) > 0);
-        await lab.travel('-> Iban\'s tomb', P.tomb);
-        await lab.act('brew on the tomb', () => lab.useOnLoc(/brew/i, 3353, 2356, 9800), () => sdk.countInventoryItems(/brew/i) === 0);
-        await lab.act('tinderbox on the tomb: Iban\'s ashes', () => lab.useOnLoc(/^Tinderbox$/i, 3353, 2356, 9800), () => sdk.countInventoryItems(/ashes/i) > 0);
-        await lab.act('ashes on the doll', () => lab.useItem(/ashes/i, /doll/i), () => sdk.countInventoryItems(/ashes/i) === 0);
-        await lab.travel('tomb -> Kalrag', P.kalrag);
-        await lab.fight('fight Kalrag (lvl 89, 78 hp)', /Kalrag/, { food: /^Swordfish$/i });
-        await lab.idle(4);
-        lab.record({ label: 'ibanmulti after Kalrag', ticks: 0, value: await lab.getVar('ibanmulti') });
-        await lab.travel('Kalrag -> north stairs -> dove cage', P.doveCage);
-        await lab.act('search the cage: Iban\'s dove (bitten, no gauntlets)', () => lab.clickLoc(3351, 2134, 4702, 1), () => sdk.countInventoryItems(/dove/i) > 0);
-        await lab.act('dove on the doll', () => lab.useItem(/dove/i, /doll/i), () => sdk.countInventoryItems(/dove/i) === 0);
-        lab.record({ label: 'TOTAL cavern arrival to the doll complete', ticks: lab.tick() - t0, ibanmulti: await lab.getVar('ibanmulti') });
     } else if (segment === 'iban') {
         // %upass 7, doll complete: a disciple's robes, wear only them, the temple, the doll in the pit (-> 9), Koftik, out.
         await gear(10);
         await vars(7, [...ORBS, ...BADGES, BIT.blood, BIT.dove, BIT.ashes, BIT.shadow]);
-        await lab.give('ibandoll', 1);
-        await lab.teleTo(...P.doveCage);
-        const t0 = lab.tick();
-        await lab.travel('dove cage -> disciples', P.disciples);
-        await lab.fight('fight an Iban disciple (lvl 13, 20 hp)', /Iban disciple/, { food: /^Swordfish$/i });
-        await L_sleep(1);
+        await give(sdk, 'ibandoll');
+        await teleTo(pt('doveCage'));
+        const t0 = currentTick(sdk);
+        await travel('dove cage -> disciples', pt('disciples'));
+        await fightRow('fight an Iban disciple (lvl 13, 20 hp)', /Iban disciple/);
+        await waitTicks(sdk, 1);
         await take('pick up a robe', /Robe of zamorak/i);
         await take('pick up the other robe', /Robe of zamorak/i).catch(() => undefined);
-        await lab.act('unequip everything', async () => { for (const e of sdk.getEquipment()) { await bot.unequipItem(e); } }, () => sdk.getEquipment().length === 0);
-        await lab.act('wear both robes', async () => { for (const r of sdk.getInventory().filter(i => /Robe of zamorak/i.test(i.name))) await bot.equipItem(r); }, () => sdk.getEquipment().length === 2);
-        await lab.travel('-> temple doors', P.templeDoor);
-        await lab.act('open the temple doors (%upass 8)', () => lab.clickLoc(3334, 2143, 4647, 1), () => lab.pos()[0] <= 2142);
-        // a use sent during the doors' forced move (or Iban's bolt knock-back) answers "I can't reach that!": send again
-        await lab.act('doll into the pit: Iban destroyed (%upass 9)', async () => {
-            for (let k = 0; k < 10; k++) {
-                const m0 = lab.log.length;
-                await lab.useOnLoc(/doll/i, 3359, 2136, 4647);
-                for (let i = 0; i < 4; i++) { await L_sleep(1); if (lab.since(m0).some(t => /throw the doll/i.test(t))) return; }
-                if (!lab.since(m0).some(t => /can't reach/i.test(t))) { for (let i = 0; i < 6; i++) { await L_sleep(1); if (lab.since(m0).some(t => /throw the doll/i.test(t))) return; } }
-            }
-        }, () => lab.pos()[2] === 0, {}, 200);
-        lab.record({ label: 'upass after the pit', ticks: 0, value: await lab.getVar('upass'), at: lab.pos(), hp: lab.hp() });
-        await lab.travel('thrown from the temple -> Koftik', P.koftik5);
-        await lab.talk('Koftik (leads you out)', /Koftik/);
-        await L_sleep(3);
-        await lab.travel('-> cave exit', P.exit);
-        await lab.act('leave the pass', () => lab.clickLoc(3214, 2496, 9713, 1), () => lab.pos()[1] < 4000);
-        lab.record({ label: 'TOTAL dove cage to outside the cave', ticks: lab.tick() - t0 });
+        await step(
+            'unequip everything',
+            async () => {
+                for (const e of sdk.getEquipment()) await bot.unequipItem(e);
+            },
+            s => s.equipment.length === 0,
+            { resendEvery: 0 }
+        );
+        await step(
+            'wear both robes',
+            async () => {
+                for (const r of (sdk.getState()?.inventory ?? []).filter(i => /Robe of zamorak/i.test(i.name))) {
+                    const o = opIndex(r, /^(wear|wield)$/i);
+                    if (o !== undefined) await sdk.sendUseItem(r.slot, o);
+                }
+            },
+            s => s.equipment.length === 2,
+            { resendEvery: 0 }
+        );
+        await travel('-> temple doors', pt('templeDoor'));
+        await step('open the temple doors (%upass 8)', clickLoc(3334, 2143, 4647, 1), s => pos(s).x <= 2142);
+        // a use sent during the doors' forced move (or Iban's bolt knock-back) answers "I can't reach that!": act sends it again
+        await step('doll into the pit: Iban destroyed (%upass 9)', useOnLoc(/doll/i, 3359, 2136, 4647), s => pos(s).level === 0, { maxTicks: 200 });
+        value('upass after the pit', { value: await getvar(sdk, 'upass'), at: here(), hp: hp() });
+        await travel('thrown from the temple -> Koftik', pt('koftik5'));
+        await talk('Koftik (leads you out)', /Koftik/);
+        await waitTicks(sdk, 3);
+        await travel('-> cave exit', pt('exit'));
+        await step('leave the pass', clickLoc(3214, 2496, 9713, 1), s => pos(s).z < 4000);
+        wall('TOTAL dove cage to outside the cave', currentTick(sdk) - t0);
     } else if (segment === 'handin') {
         await vars(9, []);
-        await lab.teleTo(2578, 3294, 1);
-        const agi0 = sdk.getSkillXp('agility');
-        await lab.talk('King Lathas (hand-in, %upass 9)', /King Lathas/);
-        await lab.idle(6);
-        lab.record({ label: 'reward', ticks: 0, upass: await lab.getVar('upass'), agilityXpGained: (sdk.getSkillXp('agility') ?? 0) - (agi0 ?? 0) });
+        await mustTele(sdk, 2578, 3294, 1);
+        const agi0 = skillXp(sdk, 'agility');
+        await talk('King Lathas (hand-in, %upass 9)', /King Lathas/);
+        await idle(sdk, { maxTicks: 80, still: 6 });
+        value('reward', { upass: await getvar(sdk, 'upass'), agilityXpGained: skillXp(sdk, 'agility') - agi0 });
     } else if (segment === 'post') {
-        await stats({ agility: AGILITY, thieving: THIEVING, ranged: 60, hitpoints: 99 });
-        await lab.cheat('setvar upass 10');
-        await lab.cheat('setvar regicide_quest 2');
-        await lab.cheat(`setvar ibanmulti ${ibanmulti([BIT.started, BIT.orb1, BIT.orb2, BIT.orb3, BIT.orb4, BIT.badge1, BIT.badge2, BIT.badge3, BIT.horn, BIT.koftikInsane], GRID)}`);
-        await clearInv();
-        for (const [n, c] of [['shortbow', 1], ['bronze_arrow', 5], ['tinderbox', 1], ['rope', 1], ['spade', 1], ['swordfish', 5]] as const) await lab.give(n, c);
-        await sdk.waitForTicks(2);
-        await lab.equip(/^Shortbow$/i);
+        await setStats(sdk, { agility: AGILITY, thieving: THIEVING, ranged: 60, hitpoints: 99 });
+        await setvar(sdk, 'upass', 10);
+        await setvar(sdk, 'regicide_quest', 2);
+        await setvar(sdk, 'ibanmulti', ibanmulti([BIT.started, BIT.orb1, BIT.orb2, BIT.orb3, BIT.orb4, BIT.badge1, BIT.badge2, BIT.badge3, BIT.horn, BIT.koftikInsane], GRID));
+        await clearInventory(sdk);
+        for (const [n, c] of [['shortbow', 1], ['bronze_arrow', 5], ['tinderbox', 1], ['rope', 1], ['spade', 1], ['swordfish', 5]] as const) await give(sdk, n, c);
+        await wield(sdk, /^Shortbow$/i);
         for (const e of sdk.getEquipment()) if (/arrow/i.test(e.name)) await bot.unequipItem(e);
-        await lab.teleTo(2434, 3313, 0);
-        const t0 = lab.tick();
-        await lab.travel('cave entrance -> Koftik at the bridge', [2448, 9716, 0]);
+        await mustTele(sdk, 2434, 3313, 0);
+        const t0 = currentTick(sdk);
+        await travel('cave entrance -> Koftik at the bridge', [2448, 9716, 0]);
         await crossBridge();
-        await lab.travel('bridge west bank -> grid east edge (rope swing)', P.gridEast);
+        await travel('bridge west bank -> grid east edge (rope swing)', pt('gridEast'));
         await grid(GRID);
-        await lab.travel('portcullis -> Iban temple doors', P.templeDoor);
-        await lab.act('temple doors (east side, %regicide_quest 2)', () => lab.clickLoc(3334, 2143, 4647, 1), () => lab.pos()[0] < 2100);
-        lab.record({ label: 'TOTAL cave entrance click to through the temple doors', ticks: lab.tick() - t0, at: lab.pos() });
+        await travel('portcullis -> Iban temple doors', pt('templeDoor'));
+        await step('temple doors (east side, %regicide_quest 2)', clickLoc(3334, 2143, 4647, 1), s => pos(s).x < 2100);
+        wall('TOTAL cave entrance click to through the temple doors', currentTick(sdk) - t0, { at: here() });
     } else {
         throw new Error(`unknown segment ${segment}`);
     }
-    lab.report(segment);
+    rec.report();
 }, { timeout: 3_600_000, printState: false });

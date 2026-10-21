@@ -8,26 +8,25 @@
 // %treequest 9 and %grandtree 160 (Tree Gnome Village and The Grand Tree done).
 
 import { runScript } from '../../../sdk/runner';
-import type { BotSDK } from '../../../sdk/index';
-import {
-    cheat, dialogue, getvar, give, invCount, locOpAt, locTalkAt, now, pos, Recorder, setvar, talk, tele,
-    useOnLocAt, waitTicks, waitUntil, walk, type Pred, type StepRecord,
-} from './quest-gnome-lib';
+import { opLoc, talkTo, walkTo } from '../../../speedrun/lib/act';
+import { converse, type ConverseResult } from '../../../speedrun/lib/converse';
+import type { OptionPattern } from '../../../speedrun/lib/dialogue';
+import { pathTiles } from '../../../speedrun/lib/paths';
+import { currentTick, waitTicks, waitUntil, type Pred } from '../../../speedrun/lib/wait';
+import { at, findNpc, pos } from '../../../speedrun/lib/world';
+import { Recorder } from '../../../speedrun/lab/record';
+import { clearInventory, getvar, give, mustTele, setvar } from '../../../speedrun/lab/setup';
 
 const FIRST = (process.argv[3] ?? 'A').toUpperCase();
 const LAST = (process.argv[4] ?? 'Z').toUpperCase();
 const ORDER = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
 const lvl = (l: number): Pred => s => pos(s).level === l;
-const near = (x: number, z: number, r = 3, l = 0): Pred => s => {
-    const p = pos(s);
-    return p.level === l && Math.abs(p.x - x) <= r && Math.abs(p.z - z) <= r;
-};
 const GLIDER_GANDIUS = 824; // glidermap:com_21 (server/content/pack/interface.pack)
 const GLIDER_TA_QUIR_PRIW = 825; // glidermap:com_22
-// reinitialisation_puzzle:com_3. Moving a tile needs OPHELD5 (cairn://p/rs/23), which both clients send for
-// sdk.sendUseItem(slot, 5, PUZZLE_TILES). sendClickComponentWithOption sends INV_BUTTON5, which has no
-// trigger there and moves nothing (runclient-check.ts, rs/116).
+// reinitialisation_puzzle:com_3. Moving a tile needs OPHELD5, sent by sendUseItem
+// with this component. sendClickComponentWithOption sends INV_BUTTON5 instead,
+// which has no trigger here and moves nothing.
 const PUZZLE_TILES = 11130;
 
 // Quest state each segment starts from (varp/varbit name -> value), its items, and its tile.
@@ -43,23 +42,61 @@ const STARTS: Record<string, Start> = {
 };
 
 await runScript(async ({ bot, sdk }) => {
-    const rec = new Recorder('monkey_madness');
-    const add = (r: StepRecord, label: string) => rec.add(r, label);
+    const rec = new Recorder(sdk, 'monkey_madness');
     const runs = (seg: string) => ORDER.indexOf(seg) >= ORDER.indexOf(FIRST) && ORDER.indexOf(seg) <= ORDER.indexOf(LAST);
-    const T0 = now(sdk);
-    const check = async (seg: string) => console.log(`-- after ${seg}: mm_main=${await getvar(sdk, 'mm_main')} mm_gnomes=${await getvar(sdk, 'mm_gnomes')} pos=${JSON.stringify(pos(sdk.getState()))} t=${now(sdk) - T0}`);
-    // Click a glider map destination and wait for the landing.
-    const glide = async (component: number, landed: Pred, label: string) => {
-        const t0 = now(sdk);
-        await waitUntil(sdk, s => s.modalOpen, 10);
-        await sdk.sendClickComponent(component);
-        const r = await waitUntil(sdk, landed, 20);
-        add({ name: `glider map click -> landed`, ticks: (r?.tick ?? NaN) - t0 }, label);
+    const T0 = currentTick(sdk);
+    const check = async (seg: string) => console.log(`-- after ${seg}: mm_main=${await getvar(sdk, 'mm_main')} mm_gnomes=${await getvar(sdk, 'mm_gnomes')} pos=${JSON.stringify(pos(sdk))} t=${currentTick(sdk) - T0}`);
+
+    // Counts and walk-up time of a conversation; with `done`, a conversation that never opened is timed to `done`.
+    const dialogueRow = async (r: ConverseResult, done?: Pred): Promise<string | undefined> => {
+        rec.dialogue(r);
+        if (r.firstTick >= 0) rec.note(`approach ${r.firstTick - r.startTick}`);
+        if (done && !r.opened) {
+            const w = await waitUntil(sdk, done, { maxTicks: 30 });
+            if (!w.ok) return 'TIMEOUT';
+            rec.mark(w.tick);
+        }
+        return r.ok ? undefined : r.reason;
     };
+    const walk = (name: string, x: number, z: number, tol: number) => rec.seg(name, async () => {
+        const p = pos(sdk);
+        const est = pathTiles(p.level, p.x, p.z, x, z);
+        const w = await walkTo(bot, sdk, x, z, tol);
+        return `${est.tiles} path tiles${w.ok ? '' : ' FAILED ' + w.message}`;
+    });
+    // Talk to an NPC. Chapter cards are closed, except where the conversation opens the glider map
+    // (closeModals false); `done` (a scripted flight or cutscene) ends the segment when it lands.
+    const talk = (name: string, npc: RegExp, choices: OptionPattern[], o: { idle?: number; done?: Pred; closeModals?: boolean } = {}) => rec.seg(name, async () => {
+        const r = await talkTo(sdk, npc, choices, { idle: o.idle ?? 3, maxTicks: 600, unmatched: 'stop', closeModals: o.closeModals ?? true, ...(o.done ? { until: o.done } : {}) });
+        rec.interact(r.clicks);
+        return dialogueRow(r, o.done);
+    });
+    // Click the loc at (x, z) and wait for `done`; a dropped click is re-sent.
+    const locStep = (name: string, x: number, z: number, op: RegExp, done: Pred, maxTicks = 20) => rec.seg(name, async () => {
+        const r = await opLoc(sdk, { x, z, op }, op, done, { maxTicks });
+        rec.interact(1 + r.resends);
+        return r.ok ? undefined : 'TIMEOUT';
+    });
+    // Click the loc at (x, z) and answer the dialogue it opens.
+    const locTalk = (name: string, x: number, z: number, op: RegExp, choices: OptionPattern[], o: { idle?: number; done?: Pred } = {}) => rec.seg(name, async () => {
+        const conv = converse(sdk, choices, { idle: o.idle ?? 3, openTicks: 60, maxTicks: 600, unmatched: 'stop', closeModals: true, ...(o.done ? { until: o.done } : {}) });
+        await opLoc(sdk, { x, z, op }, op);
+        rec.interact();
+        return dialogueRow(await conv, o.done);
+    });
+    // Click a glider map destination and wait for the landing; the segment runs from waiting for the map.
+    const glide = (name: string, component: number, landed: Pred) => rec.seg(name, async () => {
+        await waitUntil(sdk, s => s.modalOpen, { maxTicks: 10 });
+        await sdk.sendClickComponent(component);
+        rec.interact();
+        const r = await waitUntil(sdk, landed, { maxTicks: 20 });
+        if (!r.ok) return 'TIMEOUT';
+        rec.mark(r.tick);
+    });
     const treeLadder = async (from: number, to: number, label: string) => {
-        for (let l = from; l !== to; l += to > from ? 1 : -1) {
-            const op = to > from ? /^climb-up$/i : /^climb-down$/i;
-            add(await locOpAt(sdk, 2466, 3495, op, lvl(l + (to > from ? 1 : -1)), 20), `${label} ladder ${l}->${l + (to > from ? 1 : -1)}`);
+        const step = to > from ? 1 : -1;
+        for (let l = from; l !== to; l += step) {
+            await locStep(`${label} ladder ${l}->${l + step}`, 2466, 3495, step > 0 ? /^climb-up$/i : /^climb-down$/i, lvl(l + step));
         }
     };
 
@@ -68,87 +105,87 @@ await runScript(async ({ bot, sdk }) => {
         if (!st) throw new Error(`no start for segment ${FIRST}`);
         // Leave whatever an earlier run left open.
         await sdk.sendCloseModal();
-        await sdk.sendWalk(pos(sdk.getState()).x, pos(sdk.getState()).z, true);
+        await sdk.sendWalk(pos(sdk).x, pos(sdk).z, true);
         await waitTicks(sdk, 2);
-        await cheat(sdk, '~clearinv');
+        await clearInventory(sdk);
         await setvar(sdk, 'treequest', 9);
         await setvar(sdk, 'grandtree', 160);
         for (const [k, v] of Object.entries(st.vars)) await setvar(sdk, k, v);
         for (const [o, n] of st.items ?? []) await give(sdk, o, n);
-        await tele(sdk, st.at[0], st.at[1], st.at[2] ?? 0);
+        await mustTele(sdk, st.at[0], st.at[1], st.at[2] ?? 0);
         await waitTicks(sdk, 2);
     }
 
     if (runs('A')) {
         // King Narnode starts the quest and hands over the royal seal; a chapter card follows.
-        add(await talk(sdk, /^King Narnode Shareen$/i, [/^Yes$/], { idle: 4 }), 'A1 Narnode start');
+        await talk('A1 Narnode start', /^King Narnode Shareen$/i, [/^Yes$/], { idle: 4 });
         await check('A');
     }
     if (runs('B')) {
         // Gnome Air from the top of the Grand Tree to Gandius (Karamja), then Caranock.
-        add(await walk(bot, sdk, 2466, 3496, 0), 'B1 walk to ladder');
+        await walk('B1 walk to ladder', 2466, 3496, 0);
         await treeLadder(0, 3, 'B2');
-        add(await talk(sdk, /^Gnome pilot$/i, [/take me on the glider/], { idle: 2, closeModals: false }), 'B3 pilot');
-        await glide(GLIDER_GANDIUS, s => pos(s).z < 3100 && pos(s).level === 0, 'B4');
-        console.log('landed at', JSON.stringify(pos(sdk.getState())));
+        await talk('B3 pilot', /^Gnome pilot$/i, [/take me on the glider/], { idle: 2, closeModals: false });
+        await glide('B4 glider map click -> landed', GLIDER_GANDIUS, s => pos(s).z < 3100 && pos(s).level === 0);
+        console.log('landed at', JSON.stringify(pos(sdk)));
         // The glider lands south of the shipyard; the west gate opens after the worker sees the seal.
-        add(await walk(bot, sdk, 2943, 3041, 1), 'B5 walk to shipyard gate');
-        add(await locTalkAt(sdk, 2945, 3041, /^open$/i, [], { idle: 8, done: s => pos(s).x >= 2945 }), 'B6 gate: show the seal');
-        add(await walk(bot, sdk, 2956, 3024, 1), 'B7 walk to Caranock');
-        add(await talk(sdk, /Caranock$/i, [], { idle: 3 }), 'B8 Caranock');
+        await walk('B5 walk to shipyard gate', 2943, 3041, 1);
+        await locTalk('B6 gate: show the seal', 2945, 3041, /^open$/i, [], { idle: 8, done: s => pos(s).x >= 2945 });
+        await walk('B7 walk to Caranock', 2956, 3024, 1);
+        await talk('B8 Caranock', /Caranock$/i, []);
         await check('B');
     }
     if (runs('C')) {
-        add(await walk(bot, sdk, 2970, 2974, 2), 'C1 walk to Gandius glider');
-        add(await talk(sdk, /^Gnome pilot$/i, [/take me on the glider/], { idle: 2, closeModals: false }), 'C2 pilot');
-        await glide(GLIDER_TA_QUIR_PRIW, near(2465, 3501, 6, 3), 'C3');
+        await walk('C1 walk to Gandius glider', 2970, 2974, 2);
+        await talk('C2 pilot', /^Gnome pilot$/i, [/take me on the glider/], { idle: 2, closeModals: false });
+        await glide('C3 glider map click -> landed', GLIDER_TA_QUIR_PRIW, at(2465, 3501, 3, 6));
         await treeLadder(3, 0, 'C4');
-        add(await talk(sdk, /^King Narnode Shareen$/i, [], { idle: 6 }), 'C5 Narnode report + orders');
+        await talk('C5 Narnode report + orders', /^King Narnode Shareen$/i, [], { idle: 6 });
         await check('C');
     }
     if (runs('D')) {
         // Daero is on the first floor of the Grand Tree. His menu offers "Leave" only after all
         // three topics have been opened once (mm_daero.rs2:129-133).
-        add(await walk(bot, sdk, 2466, 3496, 0), 'D1 walk to ladder');
+        await walk('D1 walk to ladder', 2466, 3496, 0);
         await treeLadder(0, 1, 'D2');
-        add(await walk(bot, sdk, 2484, 3487, 1), 'D3 walk to Daero');
-        add(await talk(sdk, /^Daero$/i, [/journey/, /Return to previous/, /10th squad/, /Return to previous/, /Caranock/, /Return to previous/, /^Leave/, /Who is it/], { idle: 8, done: near(2393, 9892, 3) }), 'D4 Daero orders -> hangar');
+        await walk('D3 walk to Daero', 2484, 3487, 1);
+        await talk('D4 Daero orders -> hangar', /^Daero$/i, [/journey/, /Return to previous/, /10th squad/, /Return to previous/, /Caranock/, /Return to previous/, /^Leave/, /Who is it/], { idle: 8, done: at(2393, 9892, 0, 3) });
         await check('D');
     }
     if (runs('E')) {
-        add(await talk(sdk, /^Daero$/i, [], { idle: 4 }), 'E1 Daero + Waydar intro');
+        await talk('E1 Daero + Waydar intro', /^Daero$/i, [], { idle: 4 });
         // Reinitialisation. The lab stands in for Glough's 200,000-coin fix (mm_glough.rs2:28-29),
         // which leaves the puzzle one move from solved (mm_puzzle.rs2:33-34,73-75): the gap is next
         // to slot 24, so clicking slot 24 solves it. A bot solving the full scramble needs about
         // 63 moves at 5 per tick (quest-mm-puzzle-sim.ts); the open and the cutscene are the same.
         await setvar(sdk, 'mm_hangar_puzzle_complete', 1);
-        add(await locOpAt(sdk, 2394, 9883, /./, s => s.modalOpen, 20), 'E2 open control panel');
-        {
-            const t0 = now(sdk);
+        await locStep('E2 open control panel', 2394, 9883, /./, s => s.modalOpen);
+        await rec.seg('E3 last tile -> rumble -> hangar cutscene -> powered hangar', async () => {
             await sdk.sendUseItem(24, 5, PUZZLE_TILES);
-            const r = await waitUntil(sdk, near(2649, 4507, 3), 60);
-            add({ name: 'last tile -> rumble -> hangar cutscene -> powered hangar', ticks: (r?.tick ?? NaN) - t0 }, 'E3');
-        }
+            rec.interact();
+            const r = await waitUntil(sdk, at(2649, 4507, 0, 3), { maxTicks: 60 });
+            if (!r.ok) return 'TIMEOUT';
+            rec.mark(r.tick);
+        });
         await check('E');
     }
     if (runs('F')) {
-        add(await walk(bot, sdk, 2648, 4512, 1), 'F1 walk to Daero');
-        add(await talk(sdk, /^Daero$/i, [], { idle: 4 }), 'F2 Daero: reinitialised');
-        add(await talk(sdk, /^Waydar$/i, [/^Yes$/], { idle: 4, closeModals: false, done: near(2893, 2725, 4) }), 'F3 Waydar: fly to Crash Island');
+        await walk('F1 walk to Daero', 2648, 4512, 1);
+        await talk('F2 Daero: reinitialised', /^Daero$/i, [], { idle: 4 });
+        await talk('F3 Waydar: fly to Crash Island', /^Waydar$/i, [/^Yes$/], { idle: 4, closeModals: false, done: at(2893, 2725, 0, 4) });
         await check('F');
     }
     if (runs('G')) {
-        add(await talk(sdk, /^Waydar$/i, [], { idle: 3 }), 'G1 Waydar on Crash Island');
-        add(await talk(sdk, /^Lumdo$/i, [], { idle: 3 }), 'G2 Lumdo');
+        await talk('G1 Waydar on Crash Island', /^Waydar$/i, []);
+        await talk('G2 Lumdo', /^Lumdo$/i, []);
         {
-            const l = sdk.getState()!.nearbyNpcs.find(n => /^Lumdo$/i.test(n.name));
+            const l = findNpc(sdk, /^Lumdo$/i);
             console.log('Lumdo distance before G3:', l?.distance, l ? `${l.x},${l.z}` : 'not visible');
         }
         // Waydar orders Lumdo to ferry you (Lumdo must be within 10 tiles, mm_waydar.rs2:82); the chapter 2 cutscene follows and ends on Ape Atoll.
-        add(await talk(sdk, /^Waydar$/i, [/cannot convince Lumdo/], { idle: 12, done: near(2801, 2707, 4) }), 'G3 Waydar -> cutscene -> Ape Atoll');
+        await talk('G3 Waydar -> cutscene -> Ape Atoll', /^Waydar$/i, [/cannot convince Lumdo/], { idle: 12, done: at(2801, 2707, 0, 4) });
         await check('G');
     }
-    console.log('wall ticks', now(sdk) - T0);
-    rec.summary();
-    void dialogue; void invCount; void locTalkAt; void useOnLocAt; void (null as unknown as BotSDK);
+    console.log('wall ticks', currentTick(sdk) - T0);
+    rec.report();
 }, { timeout: 1_800_000 });

@@ -7,38 +7,39 @@
 // loaded 104x104 area, primitives.md section 2) until the bot stops moving.
 
 import { runScript } from '../../../sdk/runner';
-import { cheat, now, pos, tele, waitTicks, waitUntil } from './quest-primitives-lib';
+import { mustTele, setvar } from '../../../speedrun/lab/setup';
+import { currentTick, waitTicks } from '../../../speedrun/lib/wait';
+import { pos } from '../../../speedrun/lib/world';
 
 const [stage, from, targets] = process.argv.slice(3);
-const [fx, fz] = from.split(',').map(Number);
-const list = (targets ?? '').split(';').filter(t => /\d/.test(t)).map(t => t.split(',').map(Number));
+if (!stage || !from) throw new Error('usage: quest-regicide-probe.ts <bot> <stage> <x,z> <tx,tz>[;<tx,tz>...]');
+const [fx, fz] = from.split(',').map(Number) as [number, number];
+const list = (targets ?? '').split(';').filter(t => /\d/.test(t)).map(t => t.split(',').map(Number) as [number, number]);
 
 await runScript(async ({ sdk }) => {
-    await cheat(sdk, `setvar regicide_quest ${stage}`);
-    await waitTicks(sdk, 1);
-    await tele(sdk, fx, fz, 0);
+    await setvar(sdk, 'regicide_quest', Number(stage));
+    await mustTele(sdk, fx, fz, 0);
     if (list.length === 0 || process.argv.includes('--locs')) {
         await waitTicks(sdk, 2);
         const locs = await sdk.scanNearbyLocs(8);
-        console.log('RESULT pos', JSON.stringify(pos(sdk.getState())));
+        console.log('RESULT pos', JSON.stringify(pos(sdk)));
         console.log('RESULT locs', JSON.stringify(locs.map(l => `${l.name}#${l.id}@${l.x},${l.z},${l.level}:${l.options.join('/')}`)));
     }
     for (const [tx, tz] of list) {
-        const t0 = now(sdk);
-        let last = pos(sdk.getState());
+        const t0 = currentTick(sdk);
+        let last = pos(sdk);
         let still = 0;
-        while (still < 4 && now(sdk) - t0 < 400) {
-            const cur = pos(sdk.getState());
+        while (still < 4 && currentTick(sdk) - t0 < 400) {
+            const cur = pos(sdk);
             const clamp = (d: number) => Math.max(-40, Math.min(40, d));
             await sdk.sendWalk(cur.x + clamp(tx - cur.x), cur.z + clamp(tz - cur.z), true);
             await waitTicks(sdk, 3);
-            const p = pos(sdk.getState());
+            const p = pos(sdk);
             if (p.x === last.x && p.z === last.z) still++;
             else still = 0;
             last = p;
             if (p.x === tx && p.z === tz) break;
         }
-        console.log(`RESULT walk ${JSON.stringify({ target: [tx, tz], end: [last.x, last.z], ticks: now(sdk) - t0 })}`);
+        console.log(`RESULT walk ${JSON.stringify({ target: [tx, tz], end: [last.x, last.z], ticks: currentTick(sdk) - t0 })}`);
     }
-    void waitUntil;
 }, { timeout: 600_000 });

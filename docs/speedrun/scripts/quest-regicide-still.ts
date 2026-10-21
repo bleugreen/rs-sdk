@@ -15,7 +15,11 @@
 // log when each +2 lands.
 
 import { runScript } from '../../../sdk/runner';
-import { cheat, ensure, findLoc, getVar, invCount, now, result, setVar, tele, waitTicks, waitUntil } from './quest-regicide-lab';
+import { slotOf } from '../../../speedrun/lib/act';
+import { currentTick, waitTicks, waitUntil } from '../../../speedrun/lib/wait';
+import { findLoc, invCount } from '../../../speedrun/lib/world';
+import { result } from '../../../speedrun/lab/record';
+import { dropMatching, ensureItem, getvar, mustTele, setvar } from '../../../speedrun/lab/setup';
 
 const COM_CLOSE = 5030; // regicide_still:com_89
 const COM_COAL = 5061; // com_120
@@ -102,18 +106,18 @@ const delta = Number(argv[2] ?? 0);
 await runScript(async ({ sdk }) => {
     const out: unknown[] = [];
     for (let run = 0; run < runs; run++) {
-        await tele(sdk, 2928, 3213, 0);
-        await setVar(sdk, 'regicide_still_total', 0);
-        await ensure(sdk, 'regicide_barrel_tar', /^Barrel of coal-tar$/i, 1);
-        await ensure(sdk, 'coal', /^Coal$/i, 8);
+        await mustTele(sdk, 2928, 3213, 0);
+        await setvar(sdk, 'regicide_still_total', 0);
+        await ensureItem(sdk, 'regicide_barrel_tar', /^Barrel of coal-tar$/i, 1);
+        await ensureItem(sdk, 'coal', /^Coal$/i, 8);
         const coal0 = invCount(sdk, /^Coal$/i);
-        const still = await findLoc(sdk, 2927, 3212);
+        const still = await findLoc(sdk, { x: 2927, z: 3212 });
         if (!still) throw new Error('still not found');
-        const tar = sdk.getInventory().find(i => /^Barrel of coal-tar$/i.test(i.name))!;
-        const t0 = now(sdk);
-        await sdk.sendUseItemOnLoc(tar.slot, still.x, still.z, still.id);
-        const open = await waitUntil(sdk, s => !!(s.modalOpen || s.interface?.isOpen), 30);
-        if (!open) throw new Error('still interface never opened');
+        const tar = slotOf(sdk, /^Barrel of coal-tar$/i);
+        const t0 = currentTick(sdk);
+        await sdk.sendUseItemOnLoc(tar, still.x, still.z, still.id);
+        const open = await waitUntil(sdk, s => !!(s.modalOpen || s.interface?.isOpen), { maxTicks: 30 });
+        if (!open.ok) throw new Error('still interface never opened');
         const s0 = open.tick;
         // Before fire 1: valve up, tar up x2, coal x2 (5 events = the per-tick cap).
         await sdk.sendClickComponent(COM_VALVE_UP);
@@ -127,30 +131,29 @@ await runScript(async ({ sdk }) => {
         const coalAt = [6, 9, 12].map(k => s0 + 2 * k - 3 + delta);
         const log: Array<[number, number | null]> = [];
         let done: number | null = null;
-        while (now(sdk) - s0 < 80) {
-            const t = now(sdk);
-            while (coalAt.length && t >= coalAt[0]) {
+        while (currentTick(sdk) - s0 < 80) {
+            const t = currentTick(sdk);
+            for (let next = coalAt[0]; next !== undefined && t >= next; next = coalAt[0]) {
                 coalAt.shift();
                 await sdk.sendClickComponent(COM_COAL);
             }
             if (coalAt.length) { await waitTicks(sdk, 1); continue; }
-            const v = await getVar(sdk, 'regicide_still_total');
-            log.push([now(sdk) - s0, v]);
-            if (v !== null && v >= 26) { done = now(sdk); break; }
+            const v = await getvar(sdk, 'regicide_still_total');
+            log.push([currentTick(sdk) - s0, v]);
+            if (v !== null && v >= 26) { done = currentTick(sdk); break; }
         }
         await sdk.sendClickComponent(COM_CLOSE);
-        const got = await waitUntil(sdk, () => invCount(sdk, /^Barrel of naphtha$/i) > 0, 10);
+        const got = await waitUntil(sdk, s => invCount(s, /^Barrel of naphtha$/i) > 0, { maxTicks: 10 });
         out.push({
             run, delta,
             openTick: s0 - t0,
             totalReached26: done === null ? null : done - s0,
-            naphthaFromClick: got === null ? null : got.tick - t0,
+            naphthaFromClick: got.ok ? got.tick - t0 : null,
             coalUsed: coal0 - invCount(sdk, /^Coal$/i),
             totalLog: log,
         });
         result('still', out[out.length - 1]);
         // drop the naphtha so the next run starts clean
-        for (const it of sdk.getInventory().filter(i => /^Barrel/i.test(i.name))) { await sdk.sendDropItem(it.slot); await waitTicks(sdk, 1); }
-        void cheat;
+        await dropMatching(sdk, [/^Barrel/i]);
     }
 }, { timeout: 900_000 });

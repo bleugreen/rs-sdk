@@ -264,9 +264,10 @@ come from the staff. Whatever helpers hand over is free
   sips and per-run xp. Mordred and the Titan are wired but were not measured
   (off route).
 - `quest-arena-run.ts --from 5 --att A --str S --def D --hp H --pray yes --prayer P --ppots N --magic M --spell fire_blast`:
-  the Fight Arena chain at route levels. The shared `quest-lib.ts` `fight()`
-  gained `spell`, `prayer` and `drinkBelow` options, and it now re-attacks
-  when a protect prayer suppresses auto-retaliate. Without that fix, melee
+  the Fight Arena chain at route levels. Its fights run on the shared
+  `speedrun/lib/combat.ts` `fight()`, which has `spell`, `prayer` and
+  `drinkBelow` options and re-attacks when a protect prayer suppresses
+  auto-retaliate. Without that fix, melee
   under Protect from Melee stalled forever on the ogre.
 - `quest-premm-cannon.ts <bot> [runs] stats=a,s,d,r,hp,prayer ticks=N food=N ppots=N antipoison=N`:
   a cannon session at the spiders with no survival cheat.

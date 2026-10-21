@@ -3,7 +3,8 @@
 // Run: PROBE='x z level [radius] [varp=value ...]' bash docs/speedrun/scripts/quest-smallskill-lab.sh <bot> docs/speedrun/scripts/quest-smallskill-probe.ts
 
 import { runScript } from '../../../sdk/runner';
-import { setvar, tele, waitTicks } from './quest-smallskill-lib';
+import { waitTicks } from '../../../speedrun/lib/wait';
+import { mustTele, setvar } from '../../../speedrun/lab/setup';
 
 const args = (process.env.PROBE ?? '').trim().split(/\s+/);
 const [x, z, level, radius] = args.slice(0, 4).map(Number);
@@ -11,7 +12,7 @@ const vars = args.slice(4).filter(a => a.includes('=')).map(a => a.split('=') as
 
 await runScript(async ({ sdk }) => {
     for (const [k, v] of vars) await setvar(sdk, k, Number(v));
-    await tele(sdk, x!, z!, level!);
+    await mustTele(sdk, x!, z!, level!);
     await waitTicks(sdk, 3);
     const r = radius || 15;
     for (const l of (await sdk.scanNearbyLocs(r)).filter(l => process.env.ALL || l.optionsWithIndex.length > 0)) {

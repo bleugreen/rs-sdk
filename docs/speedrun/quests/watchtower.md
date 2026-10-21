@@ -258,6 +258,8 @@ failed in ways that fixed the geography, not the timings:
   script, phase by phase, with `FROM=<phase>` to start mid-quest via `::setvar`.
   Its start teleport and walks need the geography fixes above before it gives
   timings.
-- `docs/speedrun/scripts/quest-wtikov-lab.sh` and `quest-wtikov-lib.ts`: the lab
-  harness (engine with `BUILD_LIVE_RELOAD=false`, which avoids an EMFILE crash from
-  the dev file watcher, and the production tick rate) and the shared helpers.
+- `docs/speedrun/scripts/quest-wtikov-lab.sh`: the lab harness (engine with
+  `BUILD_LIVE_RELOAD=false`, which avoids an EMFILE crash from the dev file
+  watcher, and the production tick rate). The route script's helpers are the
+  shared `speedrun/lib` primitives and the `speedrun/lab` staff fixtures and
+  segment recorder.

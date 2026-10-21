@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import type { DialogState, SkillState } from '../../sdk/types';
-import { advance, classifyPage, continueBurst } from './dialogue';
+import { advance, classifyPage, clickOption, continueBurst } from './dialogue';
 import { baseState, FakeSdk, flush } from './fake-sdk';
-import { isLevelUp, levelUpStep, newWatcherMemory, startLevelUpWatcher } from './levelup';
+import { isLevelUp, isLevelUpPage, levelUpChain, levelUpStep, newWatcherMemory, startLevelUpWatcher } from './levelup';
 
 const cont = (pageId: string, isWaiting = false): DialogState => ({
     isOpen: true, isWaiting, pageId, options: [{ index: 1, text: 'Click here to continue', buttonType: 6, componentId: 10 }],
@@ -29,7 +29,7 @@ describe('classifyPage', () => {
 describe('advance', () => {
     test('continues a fresh page and waits for the next one before acting again', async () => {
         const sdk = new FakeSdk(baseState({ tick: 1, dialog: cont('p1') }));
-        sdk.onSend = (a, f) => { if (a.method === 'sendClickDialog') queueMicrotask(() => f.push({ dialog: cont(f.state!.dialog.pageId!, true) })); };
+        sdk.onSend = (a, f) => { if (/ClickDialog|clickDialogByText/.test(a.method)) queueMicrotask(() => f.push({ dialog: cont(f.state!.dialog.pageId!, true) })); };
         const r1 = await advance(sdk as never);
         expect(r1).toMatchObject({ ok: true, kind: 'continue' });
         const p2 = advance(sdk as never);
@@ -57,7 +57,13 @@ describe('advance', () => {
         expect(sdk.sent).toEqual([]);
         const r = await advance(sdk as never, { choose: /yes/i });
         expect(r).toMatchObject({ ok: true, kind: 'choice' });
-        expect(sdk.sent).toEqual([{ method: 'clickDialogByText', args: [/yes/i] }]);
+        expect(sdk.sent).toEqual([{ method: 'clickDialogByText', args: [/^Yes$/] }]);
+    });
+
+    test('a choice that is not on the page sends nothing', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, dialog: choice('c1') }));
+        expect(await advance(sdk as never, { choose: /maybe/i })).toMatchObject({ ok: false, kind: 'choice', reason: 'absent' });
+        expect(sdk.sent).toEqual([]);
     });
 });
 
@@ -144,6 +150,34 @@ describe('levelup', () => {
         expect(isLevelUp(baseState({ tick: 90, dialog: cont('npc'), recentDialogs: [entry] }))).toBe(false);
     });
 
+    const page = (pageId: string, ...words: string[]): DialogState => ({
+        ...cont(pageId),
+        allComponents: [...words, 'Click here to continue'].map((text, id) => ({ id, type: 4, buttonType: 0, option: '', text })),
+    });
+
+    test('isLevelUpPage judges the page by its own words, not by recent history', () => {
+        const levelUp = page('l', 'Congratulations, you just advanced an Attack level.', 'Your Attack level is now 20.');
+        expect(isLevelUpPage(baseState({ dialog: levelUp }))).toBe(true);
+        // A quest page right after a level-up: history still says level-up, the page does not.
+        const history = [{ text: ['Congratulations, you just advanced a Hitpoints level.'], tick: 100, interfaceId: 1 }];
+        const morgan = page('m', 'STOP! Please... spare my son.');
+        expect(isLevelUp(baseState({ tick: 101, dialog: morgan, recentDialogs: history }))).toBe(true);
+        expect(isLevelUpPage(baseState({ tick: 101, dialog: morgan, recentDialogs: history }))).toBe(false);
+        // No page words published (older client): fall back to history.
+        expect(isLevelUpPage(baseState({ tick: 101, dialog: cont('x'), recentDialogs: history }))).toBe(true);
+        expect(isLevelUpPage(baseState({ dialog: choice('c') }))).toBe(false);
+    });
+
+    test('levelUpChain accepts unlock pages right after a level-up only', () => {
+        const chain = levelUpChain();
+        const unlock = page('u', 'You can now mine Iron.');
+        expect(chain(baseState({ tick: 5, dialog: unlock }))).toBe(false); // no level-up before it
+        expect(chain(baseState({ tick: 10, dialog: page('l', 'Your Mining level is now 15.') }))).toBe(true);
+        expect(chain(baseState({ tick: 11, dialog: unlock }))).toBe(true);
+        expect(chain(baseState({ tick: 12, dialog: page('q', 'Who goes there?') }))).toBe(false);
+        expect(chain(baseState({ tick: 30, dialog: unlock }))).toBe(false);
+    });
+
     test('a base level rising arms the watcher; unlock pages in the chain are dismissed too', () => {
         let mem = newWatcherMemory();
         const step = (tick: number, wc: number, dialog: DialogState) => {
@@ -170,9 +204,45 @@ describe('levelup', () => {
         expect(sdk.sent).toEqual([{ method: 'sendClickDialog', args: [0] }]);
     });
 
-    test('advance sends a plain continue', async () => {
+    test('advance sends a guarded continue when the page publishes one, else a plain continue', async () => {
+        const closeOnSend = (_a: unknown, f: FakeSdk) => queueMicrotask(() => f.tick({ dialog: closed }));
         const sdk = new FakeSdk(baseState({ tick: 1, dialog: cont('only') }));
+        sdk.onSend = closeOnSend;
         await advance(sdk as never, { maxTicks: 1 });
-        expect(sdk.sent[0]).toEqual({ method: 'sendClickDialog', args: [0] });
+        expect(sdk.sent[0]).toEqual({ method: 'clickDialogByText', args: [/^Click here to continue$/] });
+        const old = new FakeSdk(baseState({ tick: 1, dialog: { isOpen: true, isWaiting: false, options: [{ index: 1, text: 'Click here to continue' }] } }));
+        old.onSend = closeOnSend;
+        await advance(old as never, { maxTicks: 1 });
+        expect(old.sent[0]).toEqual({ method: 'sendClickDialog', args: [0] });
+    });
+});
+
+describe('clickOption', () => {
+    test('resolves the option first and clicks its exact text', async () => {
+        const sdk = new FakeSdk(baseState({ dialog: choice('c') }));
+        expect(await clickOption(sdk as never, 'ye')).toEqual({ ok: true, text: 'Yes', options: ['Yes', 'No'] });
+        expect(sdk.sent).toEqual([{ method: 'clickDialogByText', args: [/^Yes$/] }]);
+    });
+
+    test('absent option or no dialog: nothing is sent', async () => {
+        const sdk = new FakeSdk(baseState({ dialog: choice('c') }));
+        expect(await clickOption(sdk as never, /maybe/)).toMatchObject({ ok: false, reason: 'absent' });
+        sdk.push({ dialog: closed });
+        expect(await clickOption(sdk as never, /yes/i)).toMatchObject({ ok: false, reason: 'no_dialog' });
+        expect(sdk.sent).toEqual([]);
+    });
+
+    test('a refusal from the page guard is reported, not hidden', async () => {
+        const sdk = new FakeSdk(baseState({ dialog: choice('c') }));
+        sdk.clickDialogByText = async () => ({ success: false, message: 'page changed', reason: 'stale_dialog' }) as never;
+        expect(await clickOption(sdk as never, /yes/i)).toMatchObject({ ok: false, text: 'Yes', reason: 'stale_dialog' });
+    });
+
+    test('option text with regex metacharacters is matched literally', async () => {
+        const sdk = new FakeSdk(baseState({ dialog: { isOpen: true, isWaiting: false, pageId: 'q', options: [{ index: 1, text: 'What? (again)', buttonType: 1, componentId: 3 }, { index: 2, text: 'No', buttonType: 1, componentId: 4 }] } }));
+        await clickOption(sdk as never, 'what?');
+        const re = sdk.sent[0]!.args[0] as RegExp;
+        expect(re.test('What? (again)')).toBe(true);
+        expect(re.test('What (again)')).toBe(false);
     });
 });

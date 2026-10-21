@@ -24,7 +24,10 @@ import puppeteer, { type Browser } from 'puppeteer';
 import { join } from 'path';
 import { BotSDK } from '../../../sdk/index';
 import type { BotWorldState } from '../../../sdk/types';
-import { at, cheat, give, locOpAt, now, pos, setvar, tele, waitTicks, waitUntil } from './quest-gnome-lib';
+import { opLoc } from '../../../speedrun/lib/act';
+import { currentTick, waitTicks, waitUntil } from '../../../speedrun/lib/wait';
+import { at, pos } from '../../../speedrun/lib/world';
+import { cheat, give, setvar, tele } from '../../../speedrun/lab/setup';
 
 const args = Object.fromEntries(process.argv.slice(2).map(a => a.replace(/^--/, '').split('=') as [string, string]));
 const CLIENT = args.client as 'browser' | 'lite';
@@ -68,7 +71,7 @@ const sdk = new BotSDK({ botUsername: BOT, password: PASSWORD, gatewayUrl: GATEW
 await sdk.connect();
 await sdk.waitForCondition(s => (s.player?.worldX ?? 0) > 0 && s.tick > 0, 180_000);
 await waitTicks(sdk, 3);
-console.log(`[${CLIENT}] in game at`, JSON.stringify(pos(sdk.getState())), 'tick', now(sdk));
+console.log(`[${CLIENT}] in game at`, JSON.stringify(pos(sdk.getState())), 'tick', currentTick(sdk));
 
 function result(check: string, data: Record<string, unknown>): void {
     console.log('RESULT ' + JSON.stringify({ client: CLIENT, check, ...data }));
@@ -92,15 +95,15 @@ async function ensureClosed(d: Door): Promise<void> {
     const leaf = openLeaf(sdk.getState(), d);
     if (!leaf) throw new Error(`${d.label}: neither the shut door nor an open leaf is visible`);
     await sdk.sendInteractLoc(leaf.x, leaf.z, leaf.id, leaf.optionsWithIndex.find(o => /^close$/i.test(o.text))!.opIndex);
-    if (!(await waitUntil(sdk, s => closedAt(s, d) !== null, 15))) throw new Error(`${d.label}: could not close the door`);
+    if (!(await waitUntil(sdk, s => closedAt(s, d) !== null, { maxTicks: 15 })).ok) throw new Error(`${d.label}: could not close the door`);
     await walkTo(d.outside, d.level, 10);
 }
 
 async function walkTo(t: [number, number], level: number, maxTicks: number) {
-    const t0 = now(sdk);
+    const t0 = currentTick(sdk);
     const sent = await sdk.sendWalk(t[0], t[1]);
-    const r = await waitUntil(sdk, at(t[0], t[1], level), maxTicks);
-    return { arrived: r !== null, ticks: r ? r.tick - t0 : null, endedAt: pos(sdk.getState()), sent: sent.success, message: sent.message };
+    const r = await waitUntil(sdk, at(t[0], t[1], level), { maxTicks });
+    return { arrived: r.ok, ticks: r.ok ? r.tick - t0 : null, endedAt: pos(sdk.getState()), sent: sent.success, message: sent.message };
 }
 
 /**
@@ -109,9 +112,9 @@ async function walkTo(t: [number, number], level: number, maxTicks: number) {
  * once. Wait for the scene, and report how long it took.
  */
 async function sceneHas(label: string, pred: (s: BotWorldState) => boolean, maxTicks = 100): Promise<number> {
-    const t0 = now(sdk);
-    const r = await waitUntil(sdk, pred, maxTicks);
-    if (!r) throw new Error(`${label}: not in the client's scene after ${maxTicks} ticks`);
+    const t0 = currentTick(sdk);
+    const r = await waitUntil(sdk, pred, { maxTicks });
+    if (!r.ok) throw new Error(`${label}: not in the client's scene after ${maxTicks} ticks`);
     return r.tick - t0;
 }
 
@@ -126,10 +129,10 @@ async function doorCheck(d: Door): Promise<void> {
     await walkTo(d.outside, d.level, 10);
 
     // 2. Open it through the overlay.
-    const t0 = now(sdk);
+    const t0 = currentTick(sdk);
     const op = shut!.optionsWithIndex.find(o => /^open$/i.test(o.text))!;
     const sent = await sdk.sendInteractLoc(d.door[0], d.door[1], d.door[2], op.opIndex);
-    const opened = await waitUntil(sdk, s => closedAt(s, d) === null && openLeaf(s, d) !== null, 15);
+    const opened = await waitUntil(sdk, s => closedAt(s, d) === null && openLeaf(s, d) !== null, { maxTicks: 15 });
     const leaf = openLeaf(sdk.getState(), d);
 
     // 3. The same routed walk, now through the open doorway.
@@ -143,9 +146,9 @@ async function doorCheck(d: Door): Promise<void> {
         door: d.label, at: d.door, level: d.level, sceneTicks,
         shutDoorVisible: shut ? { id: shut.id, options: shut.options, reachable: (shut as { reachable?: boolean }).reachable } : null,
         whileShut,
-        open: { sent: sent.success, message: sent.message, ticks: opened ? opened.tick - t0 : null, leaf: leaf ? { id: leaf.id, x: leaf.x, z: leaf.z } : null },
+        open: { sent: sent.success, message: sent.message, ticks: opened.ok ? opened.tick - t0 : null, leaf: leaf ? { id: leaf.id, x: leaf.x, z: leaf.z } : null },
         whileOpen,
-        pass: shut !== null && !whileShut.arrived && opened !== null && whileOpen.arrived,
+        pass: shut !== null && !whileShut.arrived && opened.ok && whileOpen.arrived,
     });
 }
 
@@ -163,16 +166,16 @@ const sameLayout = (a: number[] | null, b: number[] | null) => !!a && !!b && a.e
 
 async function move(kind: 'sendUseItem' | 'sendClickComponentWithOption', slot: number) {
     const before = layout(sdk.getState());
-    const t0 = now(sdk);
+    const t0 = currentTick(sdk);
     const sent = kind === 'sendUseItem' ? await sdk.sendUseItem(slot, 5, PUZZLE) : await sdk.sendClickComponentWithOption(PUZZLE, 5, slot);
-    const r = await waitUntil(sdk, s => !sameLayout(layout(s), before), 4);
+    const r = await waitUntil(sdk, s => !sameLayout(layout(s), before), { maxTicks: 4 });
     const after = layout(sdk.getState());
-    return { call: `${kind}(${kind === 'sendUseItem' ? `${slot}, 5, ${PUZZLE}` : `${PUZZLE}, 5, ${slot}`})`, sent: sent.success, gapBefore: before ? gapOf(before) : null, gapAfter: after ? gapOf(after) : null, moved: r !== null, ticks: r ? r.tick - t0 : null };
+    return { call: `${kind}(${kind === 'sendUseItem' ? `${slot}, 5, ${PUZZLE}` : `${PUZZLE}, 5, ${slot}`})`, sent: sent.success, gapBefore: before ? gapOf(before) : null, gapAfter: after ? gapOf(after) : null, moved: r.ok, ticks: r.ok ? r.tick - t0 : null };
 }
 
 async function puzzleCheck(): Promise<void> {
     await sdk.sendCloseModal();
-    await cheat(sdk, '~clearinv');
+    await cheat(sdk, '~clearinv', 1);
     const vars: Record<string, number> = {
         treequest: 9, grandtree: 160,
         // Segment E of quest-mm-full.ts after E1: Daero has started the reinitialisation
@@ -185,7 +188,7 @@ async function puzzleCheck(): Promise<void> {
     await give(sdk, 'mm_gnome_royal_seal', 1);
     if (!(await tele(sdk, 2393, 9892))) throw new Error('puzzle: tele to the hangar failed');
     await sceneHas('hangar panel', s => s.nearbyLocs.some(l => l.x === 2394 && l.z === 9883));
-    const panel = await locOpAt(sdk, 2394, 9883, /./, s => layout(s) !== null, 30);
+    const panel = await opLoc(sdk, { x: 2394, z: 9883 }, /./, s => layout(s) !== null, { maxTicks: 30 });
     const start = layout(sdk.getState());
     if (!start) throw new Error('puzzle: the panel did not open: ' + JSON.stringify(panel));
     const gap = gapOf(start);
@@ -197,17 +200,17 @@ async function puzzleCheck(): Promise<void> {
     // sendUseItem: the component-routed held op.
     const there = await move('sendUseItem', neighbour);
     const back = await move('sendUseItem', gap);
-    const t0 = now(sdk);
+    const t0 = currentTick(sdk);
     const solve = await move('sendUseItem', 24);
-    const hangar = await waitUntil(sdk, s => Math.max(Math.abs(pos(s).x - 2649), Math.abs(pos(s).z - 4507)) <= 3, 60);
+    const hangar = await waitUntil(sdk, s => Math.max(Math.abs(pos(s).x - 2649), Math.abs(pos(s).z - 4507)) <= 3, { maxTicks: 60 });
     const msgs = sdk.getState()!.gameMessages.filter(g => (g.tick ?? t0) >= t0).map(g => g.text);
 
     result('puzzle', {
         startGap: gap,
         ifButton, there, back, solve,
-        solvedToHangar: hangar ? { ticks: hangar.tick - t0, at: pos(hangar.state) } : null,
+        solvedToHangar: hangar.ok ? { ticks: hangar.tick - t0, at: pos(hangar.state) } : null,
         messages: msgs,
-        pass: !ifButton.moved && there.moved && back.moved && solve.moved && hangar !== null,
+        pass: !ifButton.moved && there.moved && back.moved && solve.moved && hangar.ok,
     });
 }
 

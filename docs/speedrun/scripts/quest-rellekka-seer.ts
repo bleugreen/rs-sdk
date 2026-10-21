@@ -20,123 +20,119 @@
 //  upstairs again by the east room's ladder: sealed vase on the frozen table
 //    (key in ice), frozen key on the range (key); down the east trapdoor; key
 //    on the exit door (2636,3667).
+//
+// Loc clicks are raw interaction packets (opLoc without a wait): the SDK's
+// interactLoc waits on its own completion heuristic, which inflates timings.
 
 import { runScript } from '../../../sdk/runner';
-import * as L from './quest-rellekka-lib';
+import { opLoc, slotOf } from '../../../speedrun/lib/act';
+import { converse } from '../../../speedrun/lib/converse';
+import { currentTick, nextTick, waitTicks, waitUntil } from '../../../speedrun/lib/wait';
+import { findLoc, invCount, invItem, messagesSince, pos, type StateLike } from '../../../speedrun/lib/world';
+import { result } from '../../../speedrun/lab/record';
+import { clearInventory, getvar, mustTele, setvar } from '../../../speedrun/lab/setup';
+const PEER_STARTED = 1 << 18; // quest_viking.constant
 
 const runs = Number(process.argv.slice(3).find(a => a.startsWith('runs='))?.slice(5) ?? 1);
+const RIDDLES = ['MIND', 'TREE', 'LIFE', 'FIRE', 'TIME', 'WIND'] as const;
+
+type Check = (s?: StateLike) => boolean;
 
 await runScript(async ({ bot, sdk }) => {
     const all: unknown[] = [];
-    process.on('exit', () => L.report(`Seer house (partial=${all.length < runs})`, { runs: all }));
+    process.on('exit', () => result('rellekka-seer', { partial: all.length < runs, runs: all }));
     for (let run = 0; run < runs; run++) {
         // Opened cupboards, chests and trapdoors revert after 300-500 ticks;
         // let them, so every run starts from the same state.
-        if (run > 0) await sdk.waitForTicks(510);
-        await L.clearInv(sdk, bot);
-        await L.cheat(sdk, 'setvar viking 1');
+        if (run > 0) await waitTicks(sdk, 510);
+        await bot.dismissBlockingUI();
+        await clearInventory(sdk);
+        await setvar(sdk, 'viking', 1);
         const riddle = run % 6;
-        await L.cheat(sdk, `setvar viking_bits ${L.BITS.peerStarted | (riddle << 3)}`);
-        await L.tele(sdk, 2631, 3669, 0);
-        await sdk.waitForTicks(3);
+        const answer = RIDDLES[riddle];
+        if (!answer) throw new Error(`no riddle ${riddle}`);
+        await setvar(sdk, 'viking_bits', PEER_STARTED | (riddle << 3));
+        await mustTele(sdk, 2631, 3669, 0);
         const steps: Array<[string, number | null]> = [];
-        const T0 = L.tick(sdk);
+        const T0 = currentTick(sdk);
         let dialoguePages = 0;
         let dialogueOptions = 0;
-        const settle = async () => {
-            await sdk.waitForTicks(1);
-            if (sdk.getState()!.dialog.isOpen) {
-                const d = await L.finishDialogue(sdk);
-                dialoguePages += d.pages;
-                dialogueOptions += d.options;
-            }
+        const finish = async () => {
+            const d = await converse(sdk, [], { keep: true, idle: 2, maxTicks: 300 });
+            dialoguePages += d.pages;
+            dialogueOptions += d.options;
         };
-        const step = async (name: string, fn: () => Promise<unknown>, done: () => boolean, max = 40) => {
-            const t0 = L.tick(sdk);
+        const settle = async () => {
+            await waitTicks(sdk, 1);
+            if (sdk.getState()?.dialog.isOpen) await finish();
+        };
+        // One raw click, then wait for `done`, answering any dialogue on the way.
+        const step = async (name: string, fn: () => Promise<unknown>, done: Check, max = 40) => {
+            const t0 = currentTick(sdk);
             await fn();
             let t: number | null = null;
-            while (L.tick(sdk) - t0 < max) {
-                if (done()) { t = L.tick(sdk) - t0; break; }
-                const d = sdk.getState()!.dialog;
-                if (d.isOpen && !d.isWaiting) {
-                    const r = await L.finishDialogue(sdk);
-                    dialoguePages += r.pages;
-                    dialogueOptions += r.options;
-                    continue;
+            while (currentTick(sdk) - t0 < max) {
+                const w = await waitUntil(sdk, s => done(s) || (s.dialog.isOpen && !s.dialog.isWaiting), { maxTicks: max - (currentTick(sdk) - t0) });
+                if (!w.ok) break;
+                if (done(w.state)) {
+                    t = w.tick - t0;
+                    break;
                 }
-                await sdk.waitForStateUpdate();
+                await finish();
             }
             steps.push([name, t]);
-            if (t === null) throw new Error(`step ${name} timed out at ${JSON.stringify(L.pos(sdk))}; inv ${sdk.getInventory().map(i => i.name).join(', ')}`);
+            if (t === null) throw new Error(`step ${name} timed out at ${JSON.stringify(pos(sdk))}; inv ${(sdk.getState()?.inventory ?? []).map(i => i.name).join(', ')}`);
             await settle();
         };
-        const has = (re: RegExp, n = 1) => () => L.invCount(sdk, re) >= n;
-        const op = (x: number, z: number, opt: string) => L.opLoc(sdk, x, z, opt);
+        const has = (re: RegExp, n = 1): Check => (s = sdk) => invCount(s, re) >= n;
+        const op = (x: number, z: number, option: string) => opLoc(sdk, { x, z, op: option, radius: 15 }, option);
+        const locAt = async (x: number, z: number, name?: RegExp) => {
+            const loc = await findLoc(sdk, { x, z, radius: 15, ...(name ? { name } : {}) });
+            if (!loc) throw new Error(`no loc at ${x},${z} (near ${JSON.stringify(pos(sdk))})`);
+            return loc;
+        };
         const useOn = async (item: RegExp, x: number, z: number, name?: RegExp) => {
-            const loc = await L.findLoc(sdk, x, z, undefined, 15, name);
-            const it = sdk.findInventoryItem(item);
-            if (!it) throw new Error(`no ${item}`);
-            await sdk.sendUseItemOnLoc(it.slot, loc.x, loc.z, loc.id);
+            const loc = await locAt(x, z, name);
+            await sdk.sendUseItemOnLoc(slotOf(sdk, item), loc.x, loc.z, loc.id);
         };
-        const onItem = async (a: RegExp, b: RegExp) => {
-            const ia = sdk.findInventoryItem(a);
-            const ib = sdk.findInventoryItem(b);
-            if (!ia || !ib) throw new Error(`missing ${a} or ${b}`);
-            await sdk.sendUseItemOnItem(ia.slot, ib.slot);
-        };
-        const level = (n: number) => () => L.pos(sdk).level === n;
-        // Open a cupboard or chest and wait until the opened loc (with `opt`) is there.
-        const openThen = async (name: string, x: number, z: number, opt: string) => {
-            const t0 = L.tick(sdk);
-            if ((await sdk.scanNearbyLocs(15)).some(q => q.x === x && q.z === z && q.options.includes(opt))) {
+        const onItem = (a: RegExp, b: RegExp) => sdk.sendUseItemOnItem(slotOf(sdk, a), slotOf(sdk, b));
+        const level = (n: number): Check => (s = sdk) => pos(s).level === n;
+        // Open a cupboard or chest and wait until the opened loc (with `option`) is there.
+        const openThen = async (name: string, x: number, z: number, option: string) => {
+            const t0 = currentTick(sdk);
+            const isOpen = () => findLoc(sdk, { x, z, op: option, radius: 15 });
+            if (await isOpen()) {
                 steps.push([`${name} already open`, 0]);
                 return;
             }
             await op(x, z, 'Open');
-            while (L.tick(sdk) - t0 < 30) {
-                const l = (await sdk.scanNearbyLocs(15)).find(q => q.x === x && q.z === z && q.options.includes(opt));
-                if (l) break;
-                await sdk.waitForStateUpdate();
-            }
-            steps.push([`${name} open`, L.tick(sdk) - t0]);
+            while (currentTick(sdk) - t0 < 30 && !(await isOpen())) await nextTick(sdk);
+            steps.push([`${name} open`, currentTick(sdk) - t0]);
         };
 
-        // Riddle and lock.
-        let text = '';
-        const r0 = L.tick(sdk);
+        // Riddle and lock: read the riddle (its pages end when the lock modal is up).
+        const r0 = currentTick(sdk);
+        const riddlePages = converse(sdk, [/Read the riddle/], { keep: true, idle: 1, maxTicks: 60, until: s => s.modalOpen });
         await op(2631, 3667, 'Open');
-        let rp = 0;
-        let ro = 0;
-        while (L.tick(sdk) - r0 < 60) {
-            const s = sdk.getState()!;
-            const d = s.dialog;
-            if (d.isOpen && !d.isWaiting) {
-                text += ' ' + [d.text ?? '', ...(d.allComponents ?? []).map(c => c.text)].join(' ');
-                if (d.options.some(o => /Read the riddle/.test(o.text))) { await sdk.clickDialogByText(/Read the riddle/); ro++; }
-                else { await sdk.sendClickDialog(0); rp++; }
-                await sdk.waitForStateUpdate();
-                await sdk.waitForStateUpdate();
-                continue;
-            }
-            if (s.modalOpen && !d.isOpen) break;
-            await sdk.waitForStateUpdate();
-        }
-        steps.push([`riddle read (${rp} pages, ${ro} option)`, L.tick(sdk) - r0]);
-        const answer = ['MIND', 'TREE', 'LIFE', 'FIRE', 'TIME', 'WIND'][riddle];
-        const c0 = L.tick(sdk);
+        const rd = await riddlePages;
+        steps.push([`riddle read (${rd.pages} pages, ${rd.options} option)`, (rd.opened ? rd.endTick : currentTick(sdk)) - r0]);
+        const c0 = currentTick(sdk);
         let clicks = 0;
         for (let w = 0; w < 4; w++) {
             const target = answer.charCodeAt(w) - 65;
             const [n, comp] = target <= 26 - target ? [target, 10052 + 48 + 2 * w] : [26 - target, 10052 + 47 + 2 * w];
-            for (let i = 0; i < n; i++) { await sdk.sendClickComponent(comp); clicks++; }
+            for (let i = 0; i < n; i++) {
+                await sdk.sendClickComponent(comp);
+                clicks++;
+            }
         }
         await sdk.sendClickComponent(10052 + 57);
         clicks++;
-        const solved = await L.waitUntil(sdk, () => sdk.getState()!.gameMessages.slice(-4).some(m => /solved the riddle|failed to solve/.test(m.text)), 200);
-        const ok = sdk.getState()!.gameMessages.slice(-4).some(m => /solved the riddle/.test(m.text));
-        steps.push([`lock ${answer} (${clicks} clicks, ${ok ? 'solved' : 'FAILED'})`, solved === null ? null : solved - c0]);
+        const solved = await waitUntil(sdk, s => messagesSince(s, c0, /solved the riddle|failed to solve/).length > 0, { maxTicks: 200 });
+        const ok = messagesSince(sdk, c0, /solved the riddle/).length > 0;
+        steps.push([`lock ${answer} (${clicks} clicks, ${ok ? 'solved' : 'FAILED'})`, solved.ok ? solved.tick - c0 : null]);
         if (!ok) throw new Error('lock not solved');
-        await step('enter', () => op(2631, 3667, 'Open'), () => L.pos(sdk).z <= 3666);
+        await step('enter', () => op(2631, 3667, 'Open'), (s = sdk) => pos(s).z <= 3666);
 
         await step('ladder up', () => op(2631, 3663, 'Climb-up'), level(2));
         await openThen('cupboard', 2629, 3660, 'Search');
@@ -162,8 +158,12 @@ await runScript(async ({ bot, sdk }) => {
         await openThen('trapdoor', 2636, 3663, 'Climb-down');
         await step('trapdoor down (east room)', () => op(2636, 3663, 'Climb-down'), level(0));
         // The mural is a wall decoration; the SDK's useItemOnLoc paths to its face.
-        const mural = async () => bot.useItemOnLoc(sdk.findInventoryItem(/Red disk/)!, await L.findLoc(sdk, 2634, 3663, undefined, 15, /mural/i));
-        await step('disk on mural', mural, () => L.invCount(sdk, /Red disk/) <= 1);
+        const mural = async () => {
+            const disk = invItem(sdk, /Red disk/);
+            if (!disk) throw new Error('no red disk');
+            return bot.useItemOnLoc(disk, await locAt(2634, 3663, /mural/i));
+        };
+        await step('disk on mural', mural, (s = sdk) => invCount(s, /Red disk/) <= 1);
         await step('disk on mural', mural, has(/Vase lid/));
         await step('lid on vase', () => onItem(/Vase lid/, /Vase of water/), has(/Sealed vase/));
         await step('ladder up', () => op(2636, 3663, 'Climb-up'), level(2));
@@ -171,16 +171,16 @@ await runScript(async ({ bot, sdk }) => {
         await step('key on range', () => useOn(/Frozen key/, 2629, 3663), has(/Seers' key/));
         // The east trapdoor stays open for 500 ticks (viking_peer.rs2:1028).
         await step('trapdoor down (east room)', () => op(2636, 3663, 'Climb-down'), level(0));
-        const v0 = L.tick(sdk);
-        await step('key on exit door', () => useOn(/Seers' key/, 2636, 3667, /Door/), () => L.invCount(sdk, /Seers' key/) === 0 && L.pos(sdk).z >= 3667, 30);
+        const v0 = currentTick(sdk);
+        await step('key on exit door', () => useOn(/Seers' key/, 2636, 3667, /Door/), (s = sdk) => invCount(s, /Seers' key/) === 0 && pos(s).z >= 3667, 30);
         await settle();
         const out = {
             run, answer, clicks,
-            total: L.tick(sdk) - T0,
-            exitToEnd: L.tick(sdk) - v0,
+            total: currentTick(sdk) - T0,
+            exitToEnd: currentTick(sdk) - v0,
             dialoguePages, dialogueOptions,
-            viking: await L.getVar(sdk, 'viking'),
-            steps
+            viking: await getvar(sdk, 'viking'),
+            steps,
         };
         console.log('run', JSON.stringify(out));
         all.push(out);

@@ -52,6 +52,12 @@ bun bots/<name>/<script>.ts                   # scripts import runScript from sd
 Lab scripts drive the lite client; the browser webclient holds the same loops (next
 section). Do not use MCP `execute_code` for rapid-fire tests.
 
+Quest measurement scripts share `speedrun/lib` for actions, dialogue, combat and
+world queries. Staff commands belong in `speedrun/lab/setup.ts`, and segment
+reporting belongs in `speedrun/lab/record.ts`; do not copy a quest helper library
+into a new probe. See [scripts/README.md](scripts/README.md) for the boundary and
+measurement-output conventions.
+
 ### Which client a number was taken on
 
 Every measured number under `docs/speedrun/skills/` was taken on the **headless lite

@@ -9,114 +9,94 @@
 // to the candle maker. Defaults: 70/70/70, 70 hp, rune scimitar, rune armour.
 
 import { runScript } from '../../../sdk/runner';
-import * as L from './quest-arthur-lab';
+import { opLoc, walkTo, wield } from '../../../speedrun/lib/act';
+import { fight } from '../../../speedrun/lib/combat';
+import { converse } from '../../../speedrun/lib/converse';
+import { currentTick } from '../../../speedrun/lib/wait';
+import { findLoc, pos, waitForNpc } from '../../../speedrun/lib/world';
+import { result } from '../../../speedrun/lab/record';
+import { clearInventory, getvar, give, mustTele, setStats, setvar } from '../../../speedrun/lab/setup';
 
 const args = process.argv.slice(3).filter(a => !a.startsWith('-'));
-const [att, str, def, hp] = [0, 1, 2, 3].map(i => Number(args[i] ?? 70));
+const stat = (i: number) => Number(args[i] ?? 70);
+const att = stat(0), str = stat(1), def = stat(2), hp = stat(3);
 const weapon = args[4] ?? 'rune_scimitar';
+/** The in-game name of a debug obj name: rune_full_helm is "Rune full helm". */
+const display = (obj: string) => new RegExp(`^${obj.replace(/_/g, ' ')}$`, 'i');
 
 await runScript(async ({ bot, sdk }) => {
     await bot.dismissBlockingUI();
-    await L.setStats(sdk, { attack: att, strength: str, defence: def, hitpoints: hp });
-    await sdk.waitForTicks(3);
-    for (const item of sdk.getInventory()) await bot.dropItem(item, 'all');
-    const gear = [weapon, 'rune_full_helm', 'rune_chainbody', 'rune_platelegs', 'rune_kiteshield', 'amulet_of_strength'];
-    for (const g of gear) {
-        if (!sdk.getEquipment().some(e => e.name.toLowerCase().replace(/ /g, '_') === g)) {
-            await L.cheat(sdk, `give ${g} 1`, 1);
-            const named = (i: { name: string }) => i.name.toLowerCase().replace(/ /g, '_') === g;
-            await L.waitUntil(sdk, () => sdk.getInventory().some(named), 10);
-            const it = sdk.getInventory().find(named);
-            const r = it ? await bot.equipItem(it) : { success: false, message: 'not given' };
-            if (!r.success) throw new Error(`could not equip ${g}: ${r.message}`);
-        }
+    await clearInventory(sdk);
+    await setStats(sdk, { attack: att, strength: str, defence: def, hitpoints: hp });
+    for (const g of [weapon, 'rune_full_helm', 'rune_chainbody', 'rune_platelegs', 'rune_kiteshield', 'amulet_of_strength']) {
+        await give(sdk, g);
+        if (!(await wield(sdk, display(g))).ok) throw new Error(`could not equip ${g}`);
     }
-    await L.cheat(sdk, 'give swordfish 10', 1);
+    await give(sdk, 'swordfish', 10);
     await sdk.sendSetCombatStyle(1); // aggressive: max strength
-    await L.cheat(sdk, 'setvar arthur 3');
-    await L.tele(sdk, 2778, 3401, 0); // ^keep_crate_coord, where the crate ride lands
-    await sdk.waitForTicks(2);
+    await setvar(sdk, 'arthur', 3);
+    await mustTele(sdk, 2778, 3401, 0); // ^keep_crate_coord, where the crate ride lands
+
+    const stairs = (op: 'Climb-up' | 'Climb-down', level: number) =>
+        opLoc(sdk, { name: /Staircase/, op, radius: 15 }, op, s => pos(s).level === level, { maxTicks: 40 });
 
     // Up two staircases to Mordred's floor.
-    let t0 = L.tick(sdk);
-    const s1 = (await sdk.scanNearbyLocs(15)).find(l => /Staircase/.test(l.name) && l.options.includes('Climb-up'));
-    await bot.interactLoc(s1!, 'Climb-up');
-    await L.waitUntil(sdk, () => L.pos(sdk).level === 1, 40);
-    const s2 = (await sdk.scanNearbyLocs(15)).find(l => /Staircase/.test(l.name) && l.options.includes('Climb-up'));
-    await bot.interactLoc(s2!, 'Climb-up');
-    await L.waitUntil(sdk, () => L.pos(sdk).level === 2, 40);
-    const climbTicks = L.tick(sdk) - t0;
-    const arrive = L.pos(sdk);
+    let t0 = currentTick(sdk);
+    await stairs('Climb-up', 1);
+    await stairs('Climb-up', 2);
+    const climbTicks = currentTick(sdk) - t0;
+    const arrive = pos(sdk);
 
-    // Fight until Morgan Le Faye interrupts (Mordred's death queue opens her dialogue).
-    await L.waitUntil(sdk, () => sdk.findNearbyNpc(/Sir Mordred/) !== null, 20);
-    const mordred = sdk.findNearbyNpc(/Sir Mordred/);
+    // Fight until Morgan Le Faye interrupts: Mordred's death queue opens her
+    // dialogue, and any page other than a level-up is hers (onDialog 'stop').
+    const mordred = await waitForNpc(sdk, /Sir Mordred/, 20);
     if (!mordred) throw new Error('Sir Mordred not found');
     const hpStart = sdk.getState()!.player!.hp;
-    const fightStart = L.tick(sdk);
-    t0 = fightStart;
-    await bot.attack(mordred);
+    const fightStart = currentTick(sdk);
     let firstHitTick: number | null = null;
-    let eaten = 0;
-    let levelUps = 0;
-    let minHp = hpStart;
-    while (L.tick(sdk) - t0 < 600) {
-        const s = sdk.getState()!;
-        if (s.dialog.isOpen) {
-            // Any dialogue other than a level-up is Morgan Le Faye's interrupt.
-            if (!L.isLevelUpDialog(sdk)) break;
-            levelUps++;
-            await L.dismissLevelUps(sdk);
-            const again = sdk.findNearbyNpc(/Sir Mordred/);
-            if (again) await bot.attack(again);
-            continue;
-        }
-        const m = s.nearbyNpcs.find(n => /Sir Mordred/.test(n.name));
-        if (firstHitTick === null && m && m.hp !== null && m.maxHp !== null && m.hp < m.maxHp) firstHitTick = s.tick;
-        minHp = Math.min(minHp, s.player!.hp);
-        if (s.player!.hp < s.player!.maxHp * 0.4) {
-            await bot.eatFood(/Swordfish/);
-            eaten++;
-            const again = sdk.findNearbyNpc(/Sir Mordred/);
-            if (again) await bot.attack(again);
-        }
-        await sdk.waitForStateUpdate();
-    }
-    const fightTicks = L.tick(sdk) - t0;
-    const morgan = await L.talkThrough(sdk, [/Tell me how to untrap Merlin/, /OK I will go do all that/i]);
-    const arthur = await L.getVar(sdk, 'arthur');
+    const f = await fight(sdk, mordred, {
+        endOnTargetDeath: false,
+        onDialog: 'stop',
+        maxTicks: 600,
+        eatBelow: sdk.getState()!.player!.maxHp * 0.4,
+        food: /Swordfish/,
+        onTick: (s, m) => {
+            if (firstHitTick === null && m?.hp != null && m.maxHp != null && m.hp < m.maxHp) firstHitTick = s.tick;
+        },
+    });
+    if (f.end !== 'dialog') throw new Error(`the Mordred fight ended ${f.end}, not on Morgan Le Faye's dialogue: ${JSON.stringify(f)}`);
+    const morgan = await converse(sdk, [/Tell me how to untrap Merlin/, /OK I will go do all that/i], { keep: true });
+    const arthur = await getvar(sdk, 'arthur');
 
     // Down and out of the front door, then to the candle maker.
-    t0 = L.tick(sdk);
-    const d2 = (await sdk.scanNearbyLocs(15)).find(l => /Staircase/.test(l.name) && l.options.includes('Climb-down'));
-    await bot.interactLoc(d2!, 'Climb-down');
-    await L.waitUntil(sdk, () => L.pos(sdk).level === 1, 40);
-    const d1 = (await sdk.scanNearbyLocs(15)).find(l => /Staircase/.test(l.name) && l.options.includes('Climb-down'));
-    await bot.interactLoc(d1!, 'Climb-down');
-    await L.waitUntil(sdk, () => L.pos(sdk).level === 0, 40);
-    const downTicks = L.tick(sdk) - t0;
-    t0 = L.tick(sdk);
-    const door = (await sdk.scanNearbyLocs(20)).find(l => /Large door/.test(l.name) && l.options.includes('Knock-at'));
-    await bot.interactLoc(door!, 'Open');
-    await L.waitUntil(sdk, () => L.pos(sdk).x <= 2763, 60);
-    const doorTicks = L.tick(sdk) - t0;
-    const outside = L.pos(sdk);
-    const walk = await L.timedWalk(sdk, bot, 2800, 3440, 1);
+    t0 = currentTick(sdk);
+    await stairs('Climb-down', 1);
+    await stairs('Climb-down', 0);
+    const downTicks = currentTick(sdk) - t0;
+    t0 = currentTick(sdk);
+    const door = await findLoc(sdk, { name: /Large door/, op: 'Knock-at', radius: 20 });
+    if (!door) throw new Error(`no keep front door near ${JSON.stringify(pos(sdk))}`);
+    await opLoc(sdk, door, 'Open', s => pos(s).x <= 2763, { maxTicks: 60 });
+    const doorTicks = currentTick(sdk) - t0;
+    const outside = pos(sdk);
+    const walk = await walkTo(bot, sdk, 2800, 3440, 1);
 
-    L.report(`Merlin's Crystal keep segment at ${att}/${str}/${def}, ${hp} hp, ${weapon}`, {
+    console.log(`Merlin's Crystal keep segment at ${att}/${str}/${def}, ${hp} hp, ${weapon}`);
+    result('merlins-crystal-keep', {
         climbTwoStaircasesTicks: climbTicks,
         arrivedAt: arrive,
-        fightTicksClickToMorgan: fightTicks,
+        fightTicksClickToMorgan: f.ticks,
         ticksToFirstDamage: firstHitTick === null ? null : firstHitTick - fightStart,
         hpStart,
-        minHp,
-        foodEaten: eaten,
-        levelUpDialogsDismissed: levelUps,
-        morganDialogue: { ticks: morgan.ticks, pages: morgan.pages, options: morgan.options },
+        minHp: f.minHp,
+        foodEaten: f.eats,
+        levelUpDialogsDismissed: f.levelUps,
+        attacks: f.attacks,
+        morganDialogue: { ticks: morgan.opened ? morgan.endTick - morgan.firstTick : 0, pages: morgan.pages, options: morgan.options },
         arthurVarpAfter: arthur,
         downTwoStaircasesTicks: downTicks,
         frontDoorTicks: doorTicks,
         outsideAt: outside,
-        walkToCandleMaker: walk
+        walkToCandleMaker: walk,
     });
 }, { timeout: 600_000, printState: false });

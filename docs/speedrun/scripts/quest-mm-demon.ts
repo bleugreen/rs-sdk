@@ -3,29 +3,38 @@
 // wears the sigil (teleport to the battle, squad, demon: mm_demon.rs2:1-165),
 // turns on Protect from Magic, steps 6 tiles away so the demon only casts wave
 // spells (melee is used within 2 tiles, mm_demon.rs2:332-340) and kills it with
-// a bow or with combat spells. Level-up pages are dismissed and the attack is
-// re-sent whenever the attack skill's xp stops rising (a level-up page stops the
-// player attacking). Prayer potions are drunk below 15 points.
+// a bow or with combat spells. The fight is speedrun/lib/combat's: level-up
+// pages are dismissed with the attack re-sent, a bow re-attacks after 8 ticks
+// without dealing damage under the prayer, spells are cast every 5 ticks, and
+// prayer potions are drunk below 15 points.
 // Run: bun docs/speedrun/scripts/quest-mm-demon.ts <bot> <bow|magic> [level=70] [runs=3]
 //   bow:   magic shortbow (base Ranged 50, tier50.rs2:6) + rune arrows.
 //   magic: Fire Blast (Magic 59) on the demon each cast; runes given.
 
 import { runScript } from '../../../sdk/runner';
-import { cheat, dialogue, give, now, pos, result, setstats, setvar, stats, tele, waitTicks, waitUntil } from './quest-gnome-lib';
 import { Spells } from '../../../sdk/spells';
+import { slotOf, wield } from '../../../speedrun/lib/act';
+import { fight } from '../../../speedrun/lib/combat';
+import { converse } from '../../../speedrun/lib/converse';
+import { waitTicks, waitUntil, currentTick } from '../../../speedrun/lib/wait';
+import { findNpc, invItem, pos, skillXp, worn } from '../../../speedrun/lib/world';
+import { result, stats } from '../../../speedrun/lab/record';
+import { clearInventory, give, mustTele, setStats, setvar } from '../../../speedrun/lab/setup';
 
 const MODE = process.argv[3] ?? 'bow';
 const LEVEL = Number(process.argv[4] ?? 70);
 const RUNS = Number(process.argv[5] ?? 3);
 const SPELL = (Spells as Record<string, number>)[process.env.SPELL ?? 'FIRE_BLAST'];
+// server/engine/src/util/WorldConfig.ts:102 (node.xpRate).
+const XP_RATE = 25;
 
 await runScript(async ({ bot, sdk }) => {
     const samples: Array<Record<string, number | boolean | string>> = [];
     for (let run = 0; run < RUNS; run++) {
         await sdk.sendCloseModal();
         await waitTicks(sdk, 2);
-        await cheat(sdk, '~clearinv');
-        await setstats(sdk, { attack: 70, strength: 70, defence: 70, hitpoints: 70, prayer: 43, ranged: MODE === 'bow' ? LEVEL : 1, magic: MODE === 'magic' ? LEVEL : 1 });
+        await clearInventory(sdk);
+        await setStats(sdk, { attack: 70, strength: 70, defence: 70, hitpoints: 70, prayer: 43, ranged: MODE === 'bow' ? LEVEL : 1, magic: MODE === 'magic' ? LEVEL : 1 });
         if (MODE === 'bow') {
             await give(sdk, 'magic_shortbow', 1);
             await give(sdk, 'rune_arrow', 300);
@@ -39,8 +48,7 @@ await runScript(async ({ bot, sdk }) => {
         await give(sdk, 'shark', 8);
         await waitTicks(sdk, 2);
         for (const re of [/shortbow/i, /rune arrow/i]) {
-            const it = sdk.getState()!.inventory.find(i => re.test(i.name));
-            if (it) await bot.equipItem(it.name);
+            if (invItem(sdk, re)) await wield(sdk, re);
         }
         await setvar(sdk, 'mm_main', 5);
         await setvar(sdk, 'mm_garkor', 6);
@@ -50,67 +58,41 @@ await runScript(async ({ bot, sdk }) => {
         // Lumbridge the sigil did not fire in the lab (mm_sigil_valid_teleport, mm_demon.rs2:7-14,
         // has no explicit return(true)).
         await sdk.sendCloseModal();
-        const worn = (sdk.getState()!.equipment ?? []).find(i => /sigil/i.test(i.name));
-        if (worn) await bot.unequipItem?.(worn.name);
-        await tele(sdk, 2801, 2707);
+        const sigilWorn = worn(sdk, /sigil/i);
+        if (sigilWorn) await bot.unequipItem(sigilWorn.name);
+        await mustTele(sdk, 2801, 2707);
         await waitTicks(sdk, 30);
         // Again: a previous kill's queued stage change (mm_demon.rs2:387-389) can land after the first set.
         await setvar(sdk, 'mm_main', 5);
         await setvar(sdk, 'mm_waiting_for_final_battle', 0);
         await give(sdk, 'mm_sigil', 1);
         await waitTicks(sdk, 2);
-        const tWear = now(sdk);
-        const sig = sdk.getState()!.inventory.find(i => /sigil/i.test(i.name))!;
-        const d = dialogue(sdk, [], { idle: 3, startTimeout: 80 });
-        await sdk.sendUseItem(sig.slot, 2);
+        const tWear = currentTick(sdk);
+        const d = converse(sdk, [], { idle: 3, openTicks: 80, closeModals: true });
+        await sdk.sendUseItem(slotOf(sdk, /sigil/i), 2);
         await d;
-        const sp = await waitUntil(sdk, s => s.nearbyNpcs.some(n => /^Jungle Demon$/i.test(n.name)), 60);
-        if (!sp) {
-            samples.push({ run, note: 'no demon', pos: JSON.stringify(pos(sdk.getState())), msgs: sdk.getState()!.gameMessages.slice(-4).map(m => m.text).join(' | '), inv: sdk.getState()!.inventory.map(i => i.name).join(',') });
+        const sp = await waitUntil(sdk, s => findNpc(s, /^Jungle Demon$/i) !== null, { maxTicks: 60 });
+        if (!sp.ok) {
+            const s = sdk.getState()!;
+            samples.push({ run, note: 'no demon', pos: JSON.stringify(pos(s)), msgs: s.gameMessages.slice(-4).map(m => m.text).join(' | '), inv: s.inventory.map(i => i.name).join(',') });
             continue;
         }
         const tSpawn = sp.tick;
         await bot.activatePrayer('protect_from_magic');
-        const dm = sdk.getState()!.nearbyNpcs.filter(n => /^Jungle Demon$/i.test(n.name)).sort((a, b) => a.distance - b.distance)[0];
-        const p = pos(sdk.getState());
+        const dm = findNpc(sdk, /^Jungle Demon$/i)!;
+        const p = pos(sdk);
         await sdk.sendWalk(p.x + (Math.sign(p.x - dm.x) || 1) * 6, p.z + (Math.sign(p.z - dm.z) || 1) * 6, true);
         await waitTicks(sdk, 4);
         const skill = MODE === 'bow' ? 'ranged' : 'magic';
-        const xp0 = sdk.getSkill(skill)!.experience;
-        const hp0 = sdk.getState()!.player!.hp;
-        let damage = 0, lastHp = hp0, lastXp = xp0, lastXpTick = now(sdk), levelUps = 0, potions = 0, food = 0, died = false;
-        const attack = async () => {
-            if (MODE === 'bow') await sdk.sendInteractNpc(dm.index, dm.optionsWithIndex.find(o => /attack/i.test(o.text))!.opIndex);
-            else await sdk.sendSpellOnNpc(dm.index, SPELL);
-        };
-        const t0 = now(sdk);
-        await attack();
-        let killed = false;
-        while (now(sdk) - t0 < 2000) {
-            await waitTicks(sdk, MODE === 'magic' ? 5 : 2);
-            const s = sdk.getState()!;
-            if (s.player?.isDead) { died = true; break; }
-            const hp = s.player?.hp ?? lastHp;
-            if (hp < lastHp) damage += lastHp - hp;
-            lastHp = hp;
-            if (!s.nearbyNpcs.some(n => n.index === dm.index)) { killed = true; break; }
-            if (s.dialog.isOpen) { levelUps++; await sdk.sendClickDialog(0); }
-            const xp = sdk.getSkill(skill)!.experience;
-            if (xp > lastXp) { lastXp = xp; lastXpTick = s.tick; }
-            if (MODE === 'magic' || s.tick - lastXpTick >= 8) await attack();
-            const pr = sdk.getSkill('prayer');
-            if (pr && pr.level < 15) {
-                const pot = s.inventory.find(i => /restore|prayer/i.test(i.name));
-                if (pot) { potions++; await sdk.sendUseItem(pot.slot, 1); }
-            }
-            if (hp < 35) {
-                const f = s.inventory.find(i => /shark/i.test(i.name));
-                if (f) { food++; await sdk.sendUseItem(f.slot, 1); }
-            }
-        }
-        const kt = now(sdk) - t0;
-        const xpBase = Math.round((sdk.getSkill(skill)!.experience - xp0) / 25);
-        samples.push({ run, killed, ticks: kt, wearToSpawn: tSpawn - tWear, damage, died, levelUps, potionDoses: potions, food, xpBase });
+        const xp0 = skillXp(sdk, skill);
+        const f = await fight(sdk, dm, {
+            ...(MODE === 'magic' ? { spell: SPELL, castEvery: 5 } : {}),
+            prayer: 'protect_from_magic', drinkBelow: 15, stallTicks: 8,
+            eatBelow: 35, food: 'shark', maxTicks: 2000, onDialog: 'continue',
+        });
+        const killed = f.end === 'killed' || f.end === 'gone';
+        const xpBase = Math.round((skillXp(sdk, skill) - xp0) / XP_RATE);
+        samples.push({ run, killed, ticks: f.ticks, wearToSpawn: tSpawn - tWear, damage: f.taken, died: f.died, levelUps: f.levelUps, potionDoses: f.prayerDoses, food: f.eats, xpBase });
         console.log(JSON.stringify(samples.at(-1)));
         await bot.deactivateAllPrayers();
         await waitTicks(sdk, 5);
