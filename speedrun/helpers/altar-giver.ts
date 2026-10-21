@@ -392,7 +392,9 @@ export class AltarGiver {
         else {
             this.started = true;
             const left = Math.max(1, judge - (this.s?.tick ?? judge));
-            const r = await give(sdk, receiver.name, [{ item: ESSENCE, n: 'all' }], { maxTicks: left, openTimeoutMs: left * tickMs() });
+            // By id: a noted stack shares the essence's name (NOTE_IDS) and must not be the offer.
+            const essence = findItem(this.s, ESSENCE)?.id ?? ESSENCE;
+            const r = await give(sdk, receiver.name, [{ item: essence, n: 'all' }], { maxTicks: left, openTimeoutMs: left * tickMs() });
             outcome = r.ok ? 'gave' : 'missed';
             if (r.reason) detail = r.reason;
         }

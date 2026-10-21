@@ -10,6 +10,7 @@
 //   tuned                 givers log in first, receiver last (after they are ready), tuned schedule
 //   tuned-receiver-first  the receiver logs in first: the givers are handled after it each tick
 //   robust-receiver-first the same login order on the robust schedule
+//   stock                 the stand-in runs the stock fallback (reacting trades); givers serve stock turns
 //   bank                  givers restock at the altar's bank (staff-made stock), so batches measure the round trip
 // Options: --altar=air|body|nature (default air; air banks at Falador east, body at Edgeville),
 //          --cycles=N (default 21), --givers=N (1-3, default 3), --essence=N (default 27),
@@ -64,7 +65,7 @@ const receiverEntry = {
         altar,
         cycles,
         givers,
-        schedule: variant.startsWith('robust') ? 'robust' : 'tuned',
+        schedule: variant.startsWith('robust') ? 'robust' : variant === 'stock' ? 'stock' : 'tuned',
         // Measure what the login order does rather than let the receiver correct for it.
         autoRobust: false,
         restock: { kind: 'cheat' }
