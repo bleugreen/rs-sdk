@@ -1,0 +1,10 @@
+demo-latency-probe ashburn-host (ip-172-31-31-189) 10/21/2026, 14:45:23 PDT -> rs-sdk-demo.fly.dev
+players online at start: 1603
+react: login 1923 ms, 516 messages, msgs/tick p10 1 p50 1 p90 1 max 89 (n=255), tick interval p10 211.5 p50 299.5 p90 378 max 639.6 (n=254)
+react delay +0 ms: ticks {"1":57,"2":3}  reactMs p10 0.2 p50 0.3 p90 7.6 max 10.6 (n=60)
+warm GET engine:443  ttfb p10 4.1 p50 101.6 p90 334.3 max 373.2 (n=27)
+  by phase since frame: 0:20.5(10) 50:194.6(8) 100:198.2(3) 150:138.9(2) 200:154.6(3) 250:101.6(1)
+warm GET gateway:7443 ttfb p10 9.6 p50 141.9 p90 780.6 max 1797.8 (n=27)
+  by phase since frame: 0:25.2(7) 50:110.1(4) 100:281.2(3) 150:311.3(8) 200:17.4(2) 250:213.9(2) 300:375.8(1)
+players online at end: 1519
+json: /home/ubuntu/rs130/out/20261021T2145-in-page-oak/direct.json
