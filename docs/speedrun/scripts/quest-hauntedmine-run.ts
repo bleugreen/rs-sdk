@@ -440,6 +440,7 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         // player's attack, while the client keeps facing it, so the combat
         // target in the bot state is no evidence of attacking: re-click
         // whenever it is attackable and we have not swung for 5 ticks.
+        const IDLE: [number, number] = [2786, 4458];
         const atk0 = sdk.getSkill('attack')!.experience;
         let lastSwing = t0;
         let lastClick = -99;
@@ -468,6 +469,16 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
             if (!boss) {
                 if (wasVisible) moves++;
                 wasVisible = false;
+                // The room is ~31 tiles north-south and the boss's six spots
+                // lie at its edges, past the 15-tile NPC view from the far
+                // side; its attacks need no line of sight. Wait near the
+                // centre (36_40 is on its run path, so stand at 34_42).
+                const ghost = sdk.getNearbyNpcs().find(n => /^ghost$/i.test(n.name));
+                const p = pos(sdk);
+                if (!ghost && (p.x !== IDLE[0] || p.z !== IDLE[1]) && s.tick - lastClick >= 3) {
+                    await sdk.sendWalk(IDLE[0], IDLE[1], true);
+                    lastClick = s.tick;
+                }
                 await sdk.waitForStateUpdate();
                 continue;
             }
