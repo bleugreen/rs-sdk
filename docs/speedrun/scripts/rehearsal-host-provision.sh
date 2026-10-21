@@ -5,9 +5,11 @@
 #
 #   bash docs/speedrun/scripts/rehearsal-host-provision.sh ['ssh-ed25519 AAAA... other-machine' ...]
 #
-# Runs on the Mac that holds the AWS profile (AWS_PROFILE_NAME, default bglab). Idempotent: each
-# resource is looked up by its name first and created only when missing, so a re-run after a
-# failure carries on where it stopped.
+# Runs on the Mac that holds the AWS profile (AWS_PROFILE_NAME, default bglab). It refuses, printing
+# the existing instance's id and address, when an instance tagged Name=rs-ashburn-rehearsal already
+# exists (pending, running, stopping or stopped): one twin at a time. The key pair, security group
+# and Elastic IP are looked up by name and reused, so after a terminate (without releasing the
+# address) a re-run builds a new twin at the same address. Ends with INSTANCE_ID=... PUBLIC_IP=...
 #
 # The run host is only READ (describe-* calls): its AMI, instance type, subnet (and so its AZ),
 # root volume and security-group ingress are copied. Nothing here stops, modifies or tags it.
@@ -39,6 +41,15 @@ die() { echo "provision: $*" >&2; exit 1; }
 say() { echo "provision: $*"; }
 umask 077
 mkdir -p "$HOME/.rs-fleet"
+
+read -r ID EIP <<<"$(aws_ ec2 describe-instances --filters "Name=tag:Name,Values=$NAME" \
+    "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+    --query 'Reservations[0].Instances[0].[InstanceId,PublicIpAddress]' --output text)"
+if [ -n "$ID" ] && [ "$ID" != None ]; then
+    say "refusing: $NAME already exists"
+    echo "INSTANCE_ID=$ID PUBLIC_IP=$EIP"
+    exit 1
+fi
 
 # --- The run host, read only -------------------------------------------------------------------
 RUN_ID=${RUN_INSTANCE_ID:-$(aws_ ec2 describe-instances --filters "Name=ip-address,Values=$RUN_IP" \
@@ -89,10 +100,7 @@ aws_ ec2 describe-security-groups --group-ids "$SG" \
     awk '{printf "provision: ingress %s %s-%s from %d IPv4 and %d IPv6 ranges\n", $1, $2, $3, $4, $5}'
 
 # --- Instance ---------------------------------------------------------------------------------------
-ID=$(aws_ ec2 describe-instances --filters "Name=tag:Name,Values=$NAME" "Name=instance-state-name,Values=pending,running,stopping,stopped" \
-    --query 'Reservations[].Instances[].InstanceId' --output text)
-if [ -z "$ID" ]; then
-    UD=$(mktemp)
+UD=$(mktemp)
     {
         echo '#cloud-config'
         echo "hostname: $NAME"
@@ -113,9 +121,8 @@ if [ -z "$ID" ]; then
         --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$NAME},{Key=purpose,Value=rs-147-rehearsals}]" \
         "ResourceType=volume,Tags=[{Key=Name,Value=$NAME}]" \
         --query 'Instances[0].InstanceId' --output text)
-    rm -f "$UD"
-    say "launched $ID"
-fi
+rm -f "$UD"
+say "launched $ID"
 aws_ ec2 wait instance-running --instance-ids "$ID"
 
 # --- Elastic IP, so the address survives a stop ---------------------------------------------------
@@ -148,6 +155,7 @@ for _ in $(seq 30); do "${SSH[@]}" true 2>/dev/null && break; sleep 5; done
 # --- RDP password for ubuntu ---------------------------------------------------------------------
 [ -s "$RDP_PW" ] || openssl rand -base64 48 | LC_ALL=C tr -dc 'A-Za-z0-9' | cut -c1-24 >"$RDP_PW"
 chmod 600 "$RDP_PW"
-printf 'ubuntu:%s\n' "$(cat "$RDP_PW")" | "${SSH[@]}" 'sudo chpasswd && echo "provision: ubuntu password set from $HOME/.rs-fleet/rehearsal-rdp-password on the Mac"'
+printf 'ubuntu:%s\n' "$(cat "$RDP_PW")" | "${SSH[@]}" 'sudo chpasswd && echo "provision: ubuntu password set (the Mac keeps it in ~/.rs-fleet/rehearsal-rdp-password)"'
 
-say "done: instance $ID, Elastic IP $EIP, $TYPE in $AZ"
+say "done: $TYPE in $AZ"
+echo "INSTANCE_ID=$ID PUBLIC_IP=$EIP"
