@@ -80,6 +80,10 @@ for (const { rock } of STEPS) {
     ids.set(key(rock), loc.id);
 }
 const rockSet = new Set(STEPS.map(s => key(s.rock)));
+// Ticks of running from a to b (2 tiles a tick). The rock click must land after the run ends:
+// a click that lands mid-run re-paths to the tile beside the rock nearest the player, which
+// rolls on time but leaves the player off the planned stand, so the next stay is not a stay.
+const runTicks = (a: P, b: P) => Math.ceil((stepMap(a, rockSet, (x, z) => isTileWalkable(0, x, z), 8).get(key(b)) ?? 8) / 2);
 for (let i = 0; i < STEPS.length; i++) {
     const a = STEPS[i]!.stand, b = STEPS[(i + 1) % STEPS.length]!.stand;
     const n = same(a, b) ? 0 : stepMap(a, rockSet, (x, z) => isTileWalkable(0, x, z), 6).get(key(b));
@@ -118,11 +122,12 @@ const plan = (t: number, restart: boolean) => {
     const move = !same(pos, stand);
     const avail = (lastRoll.get(key(rock)) ?? -1e9) + D;
     const withBury = BURY === 'all' || (BURY === 'stay' && !move);
+    const run = move ? runTicks(pos, stand) : 0;
     let kind: string, roll: number;
     if (restart) {
         kind = 'plain';
         if (move) add(t, walk(stand));
-        const land = Math.max(t + (move ? 3 : 1), avail);
+        const land = Math.max(t + 1 + run, avail);
         add(land - 1, click(rock));
         roll = land + 2;
     } else if (!move && !withBury) {
@@ -140,15 +145,17 @@ const plan = (t: number, restart: boolean) => {
     } else if (!withBury) {
         kind = 'move';
         for (const a of [...knife, drop, walk(stand)]) add(R, a);
-        const land = Math.max(R + 2, avail);
+        // walk lands R+1 and ends on R+run; the click lands R+1+run (R+2 or R+3) on the clock
+        // the knife set to R+3: a swing then the roll, or the roll at once
+        const land = Math.max(R + 1 + run, avail);
         add(land - 1, click(rock));
-        roll = land === R + 2 ? R + 3 : land + 2;
+        roll = land <= R + 3 ? R + 3 : land + 2;
     } else {
         kind = 'move+bury';
         add(R, drop);
         add(R, bury);
         for (const a of [...knife, walk(stand)]) add(R + 2, a);
-        const land = Math.max(R + 4, avail);
+        const land = Math.max(R + 3 + run, avail);
         add(land - 1, click(rock));
         roll = land === R + 4 ? R + 5 : land + 2;
     }
