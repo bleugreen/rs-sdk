@@ -154,10 +154,14 @@ await runScript(async ({ bot, sdk }) => {
             if (!gen) throw new Error('no general');
             const tgt = findNpc(sdk, /^Troll General$/)!;
             const idx = tgt.index;
-            const keyOnGround = () => (sdk.getState()?.groundItems ?? []).some(g => /prison key/i.test(g.name));
-            const f = await fight(bot, sdk, () => sdk.getState()?.nearbyNpcs.find(n => n.index === idx), keyOnGround);
+            // The general's death queue drops the key (troll_commander.rs2:4-5); done when
+            // the general is gone or at 0 hp, then scan for the key.
+            const gone = () => { const n = sdk.getState()?.nearbyNpcs.find(m => m.index === idx); return !n || n.hp === 0; };
+            const f = await fight(bot, sdk, () => sdk.getState()?.nearbyNpcs.find(n => n.index === idx), gone);
             const t1 = now(sdk);
-            const key = sdk.getState()!.groundItems.find(g => /prison key/i.test(g.name))!;
+            let key = null;
+            for (let k = 0; k < 8 && !key; k++) { key = await sdk.scanFindGroundItem(/prison key/i, 6); if (!key) await waitTicks(sdk, 1); }
+            if (!key) throw new Error(`no prison key dropped (${JSON.stringify(f)})`);
             await bot.pickupItem(key);
             await waitUntil(sdk, s => invCount(s, /prison key/i) > 0, 20);
             runs.push({ ...f, startDist: tgt.distance, pickupTicks: now(sdk) - t1, totalTicks: f.ticks + now(sdk) - t1 });
