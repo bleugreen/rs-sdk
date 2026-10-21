@@ -269,6 +269,8 @@ await runScript(async ({ bot, sdk }) => {
         await lab.act('open the door', () => lab.clickLoc(3270, 2158, 4566, 1));
         await lab.dialogue('open the chest: doll, journal, potions (%upass 7)', () => lab.clickLoc(3272, 2157, 4564, 1), [/./]);
         lab.record({ label: 'upass after chest', ticks: 0, value: await lab.getVar('upass'), doll: sdk.countInventoryItems(/doll/i) });
+        // the door closes behind you (open_and_close_door3); open it again to leave
+        await lab.act('leave the witch\'s house', () => lab.clickLoc(3270, 2158, 4566, 1), () => lab.pos()[1] >= 4566);
         for (const [name, amulet, at] of [['Doomion', /doomion/i, P.doomion], ['Holthion', /holthion/i, P.holthion], ['Othainian', /othanian/i, P.othainian]] as const) {
             await lab.travel(`-> ${name}`, at);
             await lab.fight(`fight ${name} (lvl 91, 87 hp)`, new RegExp(name), { food: /^Swordfish$/i });
@@ -309,7 +311,15 @@ await runScript(async ({ bot, sdk }) => {
         await lab.act('wear both robes', async () => { for (const r of sdk.getInventory().filter(i => /Robe of zamorak/i.test(i.name))) await bot.equipItem(r); }, () => sdk.getEquipment().length === 2);
         await lab.travel('-> temple doors', P.templeDoor);
         await lab.act('open the temple doors (%upass 8)', () => lab.clickLoc(3334, 2143, 4647, 1), () => lab.pos()[0] <= 2142);
-        await lab.act('doll into the pit: Iban destroyed (%upass 9)', () => lab.useOnLoc(/doll/i, 3359, 2136, 4647), () => lab.pos()[2] === 0, {}, 200);
+        // a use sent during the doors' forced move (or Iban's bolt knock-back) answers "I can't reach that!": send again
+        await lab.act('doll into the pit: Iban destroyed (%upass 9)', async () => {
+            for (let k = 0; k < 10; k++) {
+                const m0 = lab.log.length;
+                await lab.useOnLoc(/doll/i, 3359, 2136, 4647);
+                for (let i = 0; i < 4; i++) { await L_sleep(1); if (lab.since(m0).some(t => /throw the doll/i.test(t))) return; }
+                if (!lab.since(m0).some(t => /can't reach/i.test(t))) { for (let i = 0; i < 6; i++) { await L_sleep(1); if (lab.since(m0).some(t => /throw the doll/i.test(t))) return; } }
+            }
+        }, () => lab.pos()[2] === 0, {}, 200);
         lab.record({ label: 'upass after the pit', ticks: 0, value: await lab.getVar('upass'), at: lab.pos(), hp: lab.hp() });
         await lab.travel('thrown from the temple -> Koftik', P.koftik5);
         await lab.talk('Koftik (leads you out)', /Koftik/);
