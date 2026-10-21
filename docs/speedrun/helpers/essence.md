@@ -1,0 +1,135 @@
+# Helper role: essence miner
+
+`speedrun/helpers/essence.ts` takes a brand-new demo account through Rune
+Mysteries, then mines rune essence through Aubury's teleport in Varrock and
+banks it at Varrock east bank, forever or until a trip/stock limit. It is the
+Runecraft supply line for the scored account (cairn://p/rs/36).
+
+## What it does
+
+1. **Tutorial.** On Tutorial Island it calls `bot.skipTutorial()`. The account
+   arrives in Lumbridge with the starter kit, which includes a bronze pickaxe,
+   and 25 coins in the bank.
+2. **Rune Mysteries** (no requirements, no items). Duke Horacio (Lumbridge castle,
+   first floor) gives an air talisman; Sedridor (Wizards' Tower basement) takes it
+   and gives a research package; Aubury (Varrock rune shop) takes the package and,
+   on a second talk, gives research notes; Sedridor takes the notes, completes the
+   quest and hands the air talisman back. Scripts: `duke_horacio.rs2`,
+   `sedridor.rs2`, `aubury.rs2`, `quest_runemysteries.rs2`.
+3. **First bank visit** deposits the whole starter kit except the pickaxe, which it
+   wields. The air talisman goes to the bank too.
+4. **Mining loop.** Aubury's Teleport option (op4, no dialogue) puts the account at
+   a random spot in the essence mine. It mines the nearest of the four essence
+   rocks until the pack is full (28 with the pickaxe wielded), takes the nearest
+   exit portal (which returns it to Aubury's shop), walks to Varrock east bank,
+   deposits the essence, reports the bank, and walks back to Aubury.
+
+The quest stage is not published to the SDK, so the role reads it from what the
+account holds (talisman, package, notes) and from what the NPCs offer, which
+makes it restartable from any point: a restart near Varrock tries Aubury's
+teleport first (a few ticks), a restart near the Wizards' Tower asks Sedridor
+first, and anything else starts from the Duke, who re-issues a lost talisman
+while the quest is in progress.
+
+## Engine facts it relies on (read)
+
+- **Only rune essence exists** in this revision: obj `blankrune`, "Rune essence"
+  (`skill_mining/configs/ores.obj`). There is no pure essence, and every altar
+  binds rune essence (`skill_runecraft/scripts/runecraft.rs2`).
+- **Essence has no success roll.** `get_ore_essence` (`skill_mining/scripts/mining.rs2`)
+  adds one essence every pickaxe cycle. A cycle is `mining_rate + 1` ticks:
+  bronze 8, iron 7, steel 6, mithril 5, adamant 4, rune 3 (`pickaxes.obj`). Mining
+  level only gates which pickaxe can be used (1/1/6/21/31/41); it does not change
+  the rate.
+- **The rocks never deplete and the mine is shared, not instanced.** Four 5x5
+  rocks, each with an exit portal within about six tiles
+  (`maps/m45_75.jm2`). Many players can mine one rock at once, so accounts do not
+  contend.
+- **Mining xp is 50 base per essence** (1,250 at the demo's 25x), so a fresh
+  account passes Mining 41 within its first trip.
+- **A wielded pickaxe counts** (`pickaxe_checker.rs2` checks the right hand), which
+  frees the 28th slot. Wielding needs Attack 1/1/5/20/30/40 for
+  bronze/iron/steel/mithril/adamant/rune (`levelrequire/scripts/tier*.rs2`); an
+  unwieldable pickaxe still works from the pack (27 per trip).
+- **Random events are off on the demo** (`NODE_RANDOM_EVENTS = "false"` in
+  `fly.toml`), so nothing interrupts the loop except level-up dialogs, which the
+  role dismisses.
+
+## Measured on the demo (rs-sdk-demo.fly.dev, 300 ms ticks, bbs, loopback gateway)
+
+| What | Measured |
+|---|---|
+| Rune Mysteries, tutorial skip to quest complete | 3 min 45 s and 3 min 54 s (two fresh accounts, no retries) |
+| One trip, bronze pickaxe | 319-340 ticks (96-102 s): 21-33 to reach the mine, 232-239 mining 28 essence, 66-68 back and banking |
+| Mining time per essence, bronze | 8.3 ticks (matches 7 + 1) |
+| Essence per account-hour, bronze | see the PR for the run's final figure (about 1,000) |
+| Levels trained | Mining (about 43 after two trips, 60+ after an hour); nothing else |
+
+At 3 ticks per essence a rune pickaxe would cut a trip to about 170 ticks for 27
+essence, roughly doubling the hourly rate (inferred from the cycle formula and
+the measured overhead, not run).
+
+## Options
+
+| Option | Meaning |
+|---|---|
+| `trips` | stop after this many banked trips (default: no limit) |
+| `target` | stop once the bank holds this many essence (default: no limit) |
+
+The role uses the best pickaxe it holds or finds in the bank, so a better pickaxe
+can be upgraded by placing it in the account's bank (by trade from the mule or
+fleet). Nurmof's shop in the Dwarven Mine sells iron to rune pickaxes
+(`area_falador/configs/dwarven_mine.inv`); the GE had no rune pickaxe for sale at
+the time of writing.
+
+## Running it
+
+Standalone, from the repo root, with the account's lite client already running:
+
+    bun speedrun/helpers/essence.ts cairn_h30
+
+On bbs, behind a loopback gateway (the public gateway delivers state in bursts):
+`server/gateway/gateway.ts` with `AGENT_PORT=<port> GATEWAY_HOSTNAME=127.0.0.1`,
+and `GATEWAY_URL=ws://127.0.0.1:<port>` in the account's `bot.env` for both the
+lite runner and the role. Wrap both in restart loops: the demo server restarts
+occasionally (one logged everyone out at 04:31 UTC on 2026-10-21 and refused
+logins for about a minute), and the role resumes from wherever the account is.
+
+**How many accounts.** The mine does not contend, so the count is limited only by
+the per-IP session budget. Four accounts make about 4,000 essence per hour with
+bronze pickaxes.
+
+## Gotchas
+
+- **The SDK's collision map encloses the Wizards' Tower ladder top** (3105,3162),
+  so `bot.walkTo` finds no route out of the tower after climbing up from the
+  basement. The role takes one client-routed step (`sdk.sendWalk`) to the north
+  doorway first; the client's own router uses the live map.
+- **The SDK names the essence rock "Rocks rune essence ore"**, not "Rune Essence".
+- **Message boxes publish "Click here to continue" as a dialogue option**, so a
+  conversation loop must treat it as a continue.
+- **`recentDialogs` records a page only when the chat interface changes**
+  (newest first), so consecutive pages of the same type are missing from it.
+- Back off on wall-clock timers, not `waitForTicks`: after a dropped session no
+  ticks arrive and a tick wait throws.
+
+## Talismans for the Runecraft route (investigated, not built)
+
+- **Air talisman:** every helper that completes Rune Mysteries gets one back from
+  Sedridor (this role banks it). Goblins also drop them (`drop tables/scripts/goblin.rs2`).
+  Tradeable.
+- **Law talisman: not tradeable** (`tradeable=no`, `skill_runecraft/configs/runecraft.obj`),
+  and an untradeable item dropped on the ground is never revealed to other players
+  (`server/engine/src/engine/zone/Zone.ts`). The only sources are the Troll
+  Stronghold reward (`quest_troll.rs2`) and Dunstan in Burthorpe, who re-issues one
+  once Troll Stronghold is complete (`death_smithy.rs2`). So the scored account
+  must complete Death Plateau and Troll Stronghold itself; helpers cannot supply it.
+  There are no tiaras in this revision. The law altar is on Entrana
+  (ruins at 2858,3381; `runecraft.dbrow`), whose monk refuses weapons and armour,
+  so an essence giver there must carry no pickaxe. A helper cannot enter the law
+  altar room without its own law talisman, so a hand-off at the altar means a
+  helper waiting outside the ruins unless that helper also does Troll Stronghold.
+- **Other tradeable drops:** mind (imps, wizards), water and fire (dark wizards),
+  earth (men, farmers, rogues), body (giants, guards), fire (skeletons); chaos and
+  nature from the members rare-drop table (`shared_droptables.rs2`). No drop source
+  was found for cosmic, death, blood or soul talismans.
