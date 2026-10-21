@@ -34,8 +34,6 @@ await runScript(async ({ bot, sdk }) => {
     await bot.skipTutorial();
     const q = new QuestBot(sdk, bot);
     const S = q.S;
-    const varp = () => sdk.getState()!.player!; // position helper below
-    void varp;
 
     // ---------- setup, not timed ----------
     for (const [s, l] of [['hitpoints', 99], ['thieving', 25], ['herblore', 10], ['agility', 10], ['magic', 25]] as const) await cheat(sdk, `setstat ${s} ${l}`);
@@ -46,8 +44,6 @@ await runScript(async ({ bot, sdk }) => {
     const xp0 = sdk.getSkills().map(s => [s.name, s.experience] as const);
     const tStart = tick(sdk);
     const p = () => sdk.getState()!.player!;
-    const stage = async () => { /* stage is read from the examiner's branch; no client varp view */ };
-    void stage;
 
     await S.run('examiner: start the quest', async () => {
         await q.talk('examiner', [/Can I take an exam/]);
@@ -97,7 +93,7 @@ await runScript(async ({ bot, sdk }) => {
     await S.run('pickpocket workmen until rock sample 1 and a specimen brush', async () => {
         while (!(q.inv('rock_sample1') && q.inv('specimen_brush'))) {
             await q.makeRoom(KEEP);
-            const w = q.npc('digworkman1');
+            const w = await q.npc('digworkman1');
             const op = w.optionsWithIndex.find(o => /steal-from/i.test(o.text))!;
             const before = sdk.getInventory().map(i => `${i.id}x${i.count}`).join();
             const hp = sdk.getSkill('hitpoints')!.level;
@@ -106,10 +102,12 @@ await runScript(async ({ bot, sdk }) => {
             const t0 = tick(sdk);
             await waitUntil(sdk, () => sdk.getInventory().map(i => `${i.id}x${i.count}`).join() !== before || sdk.getSkill('hitpoints')!.level < hp || sdk.getState()!.dialog.isOpen, 30);
             picks++;
+            void t0;
             if (sdk.getSkill('hitpoints')!.level < hp) {
                 fails++;
-                // stunned for 8 ticks from the failure (digsite_workman.rs2:79-80)
-                await waitUntil(sdk, () => false, Math.max(0, 9 - (tick(sdk) - t0)));
+                // Stunned for 8 ticks from the failure (digsite_workman.rs2:79-80); the
+                // hp drop is seen about a tick after it, and a click inside the stun is dropped.
+                await waitUntil(sdk, () => false, 8);
             }
             await q.settle(() => true, 10);
         }
