@@ -45,7 +45,7 @@ await runScript(async ({ bot, sdk }) => {
         });
         await rec.seg('raft to the island + forced Hudon dialogue', 'mixed', async c => {
             await opLoc(sdk, c, RAFT, 2509, 3493, 1);
-            await waitTicksFor(sdk, s => !!s.dialog?.isOpen || inBox(s, 2510, 3476, 2514, 3485), 30);
+            await waitTicksFor(sdk, s => !!s.dialog?.isOpen, 30);
             await driveDialog(sdk, c, [], 3, 200, s => inBox(s, 2510, 3476, 2514, 3485));
             return stage();
         });
