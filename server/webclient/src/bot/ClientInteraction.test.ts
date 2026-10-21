@@ -91,6 +91,7 @@ const { BotActionQueue } = await import('./ActionQueue.js');
 const { LiteClient } = await import('../lite/LiteClient.js');
 const { dispatch } = await import('../lite/protocol/incoming.js');
 const { captureBaseInterfaces, resetBaseInterfaces } = await import('../lite/interfaces.js');
+const { useStubBaseline } = await import('../lite/test-support/stub-baseline.js');
 const { BotSDK } = await import('../../../../sdk/index.js');
 const { default: ClientBuild } = await import('../client/ClientBuild.js');
 const { default: World } = await import('#/dash3d/World.js');
@@ -116,6 +117,10 @@ function defineObj(id: number, name: string): void {
 
 // Drive real incoming decoders, state collection, SDK selection and outgoing
 // packet writers without a game connection or downloaded interface archive.
+// The lite fixtures recapture the baseline from the components they define; the
+// file's own stub baseline hands back whatever was captured before it.
+useStubBaseline();
+
 for (const kind of ['browser', 'lite'] as const) {
     describe(`${kind} guarded dialogue clicks`, () => {
         function fixture() {

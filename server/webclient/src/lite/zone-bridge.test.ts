@@ -9,13 +9,12 @@
 // closed door at map level 1 stayed in collision: the router never saw the door
 // open ("I can't reach that!"), and locSceneInfo could not find the door at all.
 //
-// Needs no network: the loc index and LocType are stubbed.
+// Needs no network: the loc index, LocType and the interface baseline are stubbed.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 import './dom-shim.js';
 
-import IfType from '#/config/IfType.js';
 import LocType from '#/config/LocType.js';
 import CollisionMap from '#/dash3d/CollisionMap.js';
 import { LocAngle } from '#/dash3d/LocAngle.js';
@@ -25,10 +24,10 @@ import { MapFlag } from '#/dash3d/MapFlag.js';
 import Packet from '#/io/Packet.js';
 import { ServerProt } from '#/io/ServerProt.js';
 
-import { captureBaseInterfaces, resetBaseInterfaces } from './interfaces.js';
 import { LiteClient } from './LiteClient.js';
 import { dispatch } from './protocol/incoming.js';
 import { zonePacket } from './protocol/zone.js';
+import { useStubBaseline } from './test-support/stub-baseline.js';
 
 const BASE_X = 3200;
 const BASE_Z = 3200;
@@ -128,27 +127,17 @@ function differingTiles(actual: CollisionMap, expected: CollisionMap): number {
 }
 
 const originalLocList = LocType.list;
-let stubbedBase = false;
+
+useStubBaseline();
 
 beforeAll(() => {
     // Every loc in these tests is a 1x1 door that blocks walking.
     (LocType as unknown as { list: (id: number) => LocType }).list = (id: number) =>
         ({ id, blockwalk: true, blockrange: true, active: true, width: 1, length: 1, forceapproach: 0 }) as LocType;
-
-    try {
-        makeClient('probe');
-    } catch {
-        IfType.list = [];
-        captureBaseInterfaces();
-        stubbedBase = true;
-    }
 });
 
 afterAll(() => {
     (LocType as unknown as { list: typeof originalLocList }).list = originalLocList;
-    if (stubbedBase) {
-        resetBaseInterfaces();
-    }
 });
 
 describe('loc changes on bridged tiles', () => {

@@ -7,23 +7,22 @@
 // the same cadence as the browser's entityAnim) retires them.
 //
 // Needs no network: SeqType/SpotType entries are synthesised at high ids and the
-// interface baseline is stubbed empty when no earlier suite loaded the cache.
+// interface baseline is this suite's own empty stub.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 import './dom-shim.js';
 
-import IfType from '#/config/IfType.js';
 import SeqType, { RestartMode } from '#/config/SeqType.js';
 import SpotType from '#/config/SpotType.js';
 import ClientNpc from '#/dash3d/ClientNpc.js';
 import Packet from '#/io/Packet.js';
 import { ServerProt } from '#/io/ServerProt.js';
 
-import { captureBaseInterfaces, resetBaseInterfaces } from './interfaces.js';
 import { LiteClient } from './LiteClient.js';
 import { applyAnimMask } from './protocol/entities.js';
 import { dispatch } from './protocol/incoming.js';
+import { useStubBaseline } from './test-support/stub-baseline.js';
 
 /** A LiteClient with no socket: nothing below touches the connection. */
 function makeClient(name: string): LiteClient {
@@ -35,21 +34,12 @@ function makeClient(name: string): LiteClient {
     });
 }
 
-// InterfaceTable needs a captured baseline. If another suite already loaded the
-// real cache, use it; otherwise stub an empty table and put things back for any
-// suite that loads the real cache later in this process.
-let stubbedBase = false;
+useStubBaseline();
+
 let savedSeqLen = 0;
 let savedSpotLen = 0;
 
 beforeAll(() => {
-    try {
-        makeClient('probe');
-    } catch {
-        IfType.list = [];
-        captureBaseInterfaces();
-        stubbedBase = true;
-    }
     savedSeqLen = SeqType.list.length;
     savedSpotLen = SpotType.list.length;
 });
@@ -57,9 +47,6 @@ beforeAll(() => {
 afterAll(() => {
     SeqType.list.length = savedSeqLen;
     SpotType.list.length = savedSpotLen;
-    if (stubbedBase) {
-        resetBaseInterfaces();
-    }
 });
 
 /** Synthesise a SeqType at a high id no real cache reaches. */
