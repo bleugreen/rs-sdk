@@ -175,6 +175,18 @@ so one account per site is the useful unit.
 The site is saturated by other players, so a second account of ours there would mostly
 race the first; the second account goes to Al Kharid instead.
 
+With coal mined in the waits (20:20-21:00 UTC), h21 kept about 20 ore per hour and
+banked 12-13 coal per inventory alongside it.
+
+### Adamantite measured at Al Kharid (h20, 2026-10-21 20:21-20:59 UTC)
+
+| What | Measured |
+|---|---|
+| Varrock east bank to first ore | under a minute, no toll gate |
+| Ore per hour | 8 in 37 minutes, **about 12 per account-hour**; 3 other players in view emptied 20 rocks in that time |
+
+Two accounts on two sites make about 30 adamantite per hour together.
+
 ### The constraint is mithril ore
 
 A mithril bar is 1 mithril ore and 4 coal. In the camped guild an account mines 10-20
