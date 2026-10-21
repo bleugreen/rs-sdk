@@ -2,8 +2,10 @@
 
 Scripts: [`fishing-rate.ts`](../scripts/fishing-rate.ts) (any rod/net/harpoon method: logs
 the server tick of every xp drop, catch, drop, click, spot move and hitpoint change, with
-drop and re-find policies) and [`fishing-karambwan.ts`](../scripts/fishing-karambwan.ts)
-(karambwan vessel cadence). Lab: [../LAB.md](../LAB.md), fishing port block. Most runs used
+drop and re-find policies), [`fishing-karambwan.ts`](../scripts/fishing-karambwan.ts)
+(karambwan vessel cadence) and, for the knife starter's 3-tick cycle,
+[`tickmanip-cycle.ts`](../scripts/tickmanip-cycle.ts) (owned by
+[tick-manipulation.md](tick-manipulation.md); its runs are at 300 ms). Lab: [../LAB.md](../LAB.md), fishing port block. Most runs used
 `NODE_TICKRATE=100`; the route totals were re-measured at `NODE_TICKRATE=300` (production
 speed), because the costs that depend on the bot's reaction time (level-up dialogs, full
 inventories) shrink when a tick is longer. Labels follow [README.md](README.md#labels).
@@ -316,10 +318,11 @@ clusters, win. The loss per move is the walk plus the 4-tick re-arm. It was the 
   (measured, `tickmanip-cycle.ts --dismiss=now`, plain `sendClickDialog(0)`, two 300 ms
   runs). The dialog opens on R+1, after that tick's starter packets, and blocks that
   tick's fishing op; the bot sees it on label R+1 and its dismissal lands on R+2, before
-  the roll on R+3. 41 of 43 dialogs from 78 up closed on the next label. Across the 38
-  level-ups from 78 to 99 that did not coincide with a spot move, the gap from the level's
-  catch to the next averaged 4.1 ticks against about 3.75 expected from the catch chance;
-  none needed a re-anchor. From level 20, 2 of 67 did: one beside a spot move, and one at
+  the roll on R+3. In the 78-99 run, 20 of 22 dialogs closed on the next label and 2 after
+  3. Across the 38 level-ups between 79 and 98 in the two runs that did not coincide with a
+  spot move, the gap from the level's catch to the next catch averaged 4.1 ticks, against
+  3.7 for all in-lock gaps of the 78-99 run: about 0.4 ticks per level-up, within the noise
+  of 38 gaps (roughly 0 to 1 tick). 26 of the 38 were 3-tick gaps. None needed a re-anchor. From level 20, 2 of 67 did: one beside a spot move, and one at
   level 35, followed by 28 ticks without a catch. A late dismissal would lose one roll at
   most: the next starter's `closeModal` clears the dialog and its absolute clock write puts
   the lock back on schedule (inferred from the read handlers).
