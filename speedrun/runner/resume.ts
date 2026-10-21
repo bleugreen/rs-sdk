@@ -124,16 +124,19 @@ export interface SessionLinkOptions {
 
 /**
  * A Link over a live Session. Lost: the lite child exited, the client publishes
- * inGame false, or the tick stopped advancing for `staleTicks`. Restored: an
- * advancing in-world tick after the loss, from whichever client the watchdog
- * (or the caller's recover) brought back.
+ * inGame false, or the tick stopped advancing for `staleTicks`, each only while
+ * the account is meant to be in the world: after an intended logout (logoutClean
+ * clears `expectInWorld`, from a step or a stop) the lite runner exits and the
+ * client goes quiet, and neither is a drop. Restored: an advancing in-world tick
+ * after the loss, from whichever client the watchdog (or the caller's recover)
+ * brought back.
  */
 export function sessionLink(session: Session, opts: SessionLinkOptions = {}): Link {
     const staleMs = () => (opts.staleTicks ?? LOST_AFTER_TICKS) * tickMs();
     const pollMs = opts.pollMs ?? 100;
     let lostAt = 0;
     const why = (): string | null => {
-        if (session.client === 'lite' && session.child && session.childExit !== null) return `client exited (${session.childExit})`;
+        if (session.client === 'lite' && session.child && session.childExit !== null && session.expectInWorld) return `client exited (${session.childExit})`;
         const s = session.sdk.getState();
         if (s && !s.inGame && session.expectInWorld) return 'client out of game';
         const since = Date.now() - session.lastAdvanceAt;

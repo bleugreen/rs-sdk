@@ -24,6 +24,7 @@ import type { Subprocess } from 'bun';
 import type { BotSDK } from '../../sdk/index';
 import type { BotActions } from '../../sdk/actions';
 import type { BotStatus, BotWorldState } from '../../sdk/types';
+import { pageInGame } from './tab';
 import { sleep, tickMs, waitUntil } from './wait';
 
 export const ROOT = join(import.meta.dir, '..', '..');
@@ -301,8 +302,7 @@ export async function launchClient(session: Session): Promise<void> {
         return;
     }
     // With CDP the one tab is re-navigated (lib/tab.ts) to a fresh token URL.
-    const cdp = session.env.CDP_URL ?? process.env.SPEEDRUN_CDP_URL;
-    const how = await openBrowserClient(session.env, { cdp, insecureQueryLogin: session.insecureQueryLogin });
+    const how = await openBrowserClient(session.env, { cdp: cdpUrl(session.env), insecureQueryLogin: session.insecureQueryLogin });
     appendFileSync(session.logPath, `[speedrun] session ${session.sessionId}: tab ${how} at ${new Date().toISOString()}\n`);
 }
 
@@ -367,6 +367,17 @@ function guardLaunched(session: Session): void {
     process.on('SIGHUP', fatal(129));
 }
 
+/** Chrome's DevTools origin for a browser session: the env's CDP_URL, else SPEEDRUN_CDP_URL. */
+export function cdpUrl(env: BotEnv): string | undefined {
+    return env.CDP_URL ?? process.env.SPEEDRUN_CDP_URL;
+}
+
+/**
+ * What showed the account had left the world: the published state (`inGame: false`), the lite
+ * child's exit, the browser page's own in-game flag read over CDP, or the gateway (lite only).
+ */
+export type LogoutSignal = 'state' | 'child' | 'page' | 'gateway';
+
 export interface LogoutResult {
     ok: boolean;
     clickTick: number;
@@ -374,6 +385,8 @@ export interface LogoutResult {
     /** Ticks from the logout click to the last tick in the world (0 = same tick). */
     latencyTicks: number;
     wallMs: number;
+    /** Set when ok. */
+    confirmedBy?: LogoutSignal;
     reason?: string;
 }
 
@@ -393,7 +406,9 @@ export async function logoutClean(session: Session, opts: { timeoutMs?: number }
     const s = sdk.getState();
     if (!s?.inGame) return { ok: false, clickTick: -1, lastInWorldTick: session.lastInWorldTick, latencyTicks: 0, wallMs: 0, reason: 'not in game' };
 
-    const combatTick = s.player?.combat?.lastDamageTick ?? -Infinity;
+    // lastDamageTick is -1 when the player was never hit (sdk/types.ts): no combat window to wait out.
+    const lastHit = s.player?.combat?.lastDamageTick ?? -1;
+    const combatTick = lastHit < 0 ? -Infinity : lastHit;
     if (s.player?.combat?.inCombat || s.tick - combatTick <= COMBAT_LOGOUT_TICKS) {
         const until = Math.max(s.tick, combatTick) + COMBAT_LOGOUT_TICKS + 1;
         await waitUntil(sdk, st => st.tick >= until && !st.player?.combat?.inCombat, { maxTicks: COMBAT_LOGOUT_TICKS + 30 });
@@ -409,37 +424,57 @@ export async function logoutClean(session: Session, opts: { timeoutMs?: number }
             continue;
         }
         const lastInWorldTick = session.lastInWorldTick;
-        const ok = out === 'out';
+        const ok = out !== 'refused' && out !== 'timeout';
         return {
             ok,
             clickTick,
             lastInWorldTick,
             latencyTicks: Math.max(0, lastInWorldTick - clickTick),
             wallMs: Date.now() - t0,
-            ...(ok ? {} : { reason: out === 'refused' ? 'logout refused (combat)' : 'still in game after timeout' }),
+            ...(ok ? { confirmedBy: out } : { reason: out === 'refused' ? 'logout refused (combat)' : 'still in game after timeout' }),
         };
     }
     throw new Error('unreachable');
 }
 
-async function waitLoggedOutSignal(session: Session, timeoutMs: number, clickTick: number): Promise<'out' | 'refused' | 'timeout'> {
+async function waitLoggedOutSignal(session: Session, timeoutMs: number, clickTick: number): Promise<LogoutSignal | 'refused' | 'timeout'> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
         const s = session.sdk.getState();
         if (s?.gameMessages.some(m => CANT_LOGOUT.test(m.text) && m.tick >= clickTick)) return 'refused';
-        if (await isLoggedOut(session)) return 'out';
+        const by = await loggedOutBy(session);
+        if (by) return by;
         await sleep(Math.min(100, tickMs() / 3));
     }
     return 'timeout';
 }
 
-/** True once the account has left the world, by the client's own exit or the gateway. */
-export async function isLoggedOut(session: Session): Promise<boolean> {
-    if (session.client === 'lite' && session.child) return session.childExit !== null;
+/**
+ * What shows the account has left the world, or null while nothing does.
+ *
+ * A browser tab is never judged by the gateway: once the page logs out it stops publishing, so the
+ * gateway keeps its last state (`inGame: true`, status `stale`) and the SDK state stays in game. The
+ * page is asked itself over CDP (`window.gameClient.ingame`). A missing tab does not count as out: a
+ * closed tab is a dropped client, which the server keeps in the world. Without CDP only a published
+ * `inGame: false` confirms a browser logout.
+ */
+export async function loggedOutBy(session: Session): Promise<LogoutSignal | null> {
+    if (session.client === 'lite' && session.child) return session.childExit !== null ? 'child' : null;
     const s = session.sdk.getState();
-    if (s && !s.inGame) return true;
+    if (s && !s.inGame) return 'state';
+    if (session.client === 'browser') {
+        const cdp = cdpUrl(session.env);
+        if (!cdp) return null;
+        const inGame = await pageInGame(cdp, session.name).catch(() => null);
+        return inGame === false ? 'page' : null;
+    }
     const status = await gatewayStatus(session);
-    return status?.status === 'dead' || status?.inGame === false;
+    return status?.status === 'dead' || status?.inGame === false ? 'gateway' : null;
+}
+
+/** True once the account has left the world (see loggedOutBy). */
+export async function isLoggedOut(session: Session): Promise<boolean> {
+    return (await loggedOutBy(session)) !== null;
 }
 
 export async function gatewayStatus(session: Session): Promise<BotStatus | null> {
