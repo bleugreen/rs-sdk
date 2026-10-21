@@ -184,7 +184,7 @@ await new Promise<void>(resolve => {
         acted = s.tick;
         const t = s.tick;
         const m = xpOf(s, 'mining'), pr = xpOf(s, 'prayer');
-        if (m > lastM) { xpLabels.push(t); xpSeen.add(t); lastSeen = t; if (predicted.includes(t)) onTime++; log(`T${t} XP +${m - lastM}`); lastM = m; }
+        if (m > lastM) { xpLabels.push(t); xpSeen.add(t); lastSeen = t; if (predicted.includes(t)) onTime++; log(`T${t} XP +${m - lastM} at ${s.player?.worldX},${s.player?.worldZ}`); lastM = m; }
         if (pr > lastP) { buries.push(t); log(`T${t} PRAYER`); lastP = pr; }
         if (xpLabels.length >= ORES || t - lastSeen > 40) { off(); resolve(); return; }
         if (s.dialog?.isOpen) fire(t, 'dismiss', sdk.sendClickDialog(0));
