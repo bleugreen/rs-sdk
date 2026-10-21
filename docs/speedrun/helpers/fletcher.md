@@ -88,27 +88,49 @@ per unit below it (`shelfPrice`).
 
 ## Camp mode: arrowheads from shop restocks
 
-Shop stock is shared by the whole server and restocks one unit per `stockrate`
-ticks whether or not anyone watches (`World.ts` processCleanup; a drained slot
-keeps restocking). The two archery shops past White Wolf Mountain:
+Shop stock is shared by the whole server. Each item restocks one unit per
+`stockrate` ticks up to its configured stock, whether or not anyone watches
+(`World.ts` processCleanup). A shelf at its configured stock stops
+restocking. The two archery shops past White Wolf Mountain:
 
-| Shop | Adamant arrowtips | Small tiers |
+| Shop | Arrowtips (configured stock, restock) | Notes |
 |---|---|---|
-| Hickton (Catherby) | 200 shelf, +1 per 40 ticks (300/h) | deep shelves of bronze to mithril at about base price |
-| Dargaud (Ranging Guild, Ranged 40 at the door) | 200 shelf, +1 per 50 ticks (240/h) | |
+| Hickton (Catherby; `archeryshop2` in catherby.inv) | bronze 1,000 / iron 800 / steel 600 / mithril 400 / adamant 200 / rune 100, each +1 per 40 ticks (300/h per item) | Rune arrows stock 0 |
+| Dargaud (Ranging Guild, Ranged 40 at the door) | adamant 200, +1 per 50 ticks (240/h) | rs/124 found its rune stock drained by an outside buyer |
 
-The price is base x (1 + 0.01 x (200 - shelf)) (`shop.rs2`, delta 10), so the
-role's cap of 41 gp (`PATIENT_ADAMANT_PRICE`) buys only off a near-full shelf.
-That yields the same restock rate as draining the shelf, at a third of the
-price: about 150k gp for all 3,735 instead of about 450k. The GE listed no
-arrowtips of any tier when checked.
+The price is base x (1 + 0.01 x (stock - shelf)) (`shop.rs2`, delta 10). The
+restock is the limit on how many a camper gets per hour whatever it pays, so
+the role's caps sit just above base and buy only off a near-full shelf
+(`PATIENT_*_PRICE`, pinned by tests):
+
+| Item | Cap | Buys from a shelf of |
+|---|---|---|
+| Adamant arrowtips | 41 | 196+ of 200 |
+| Rune arrowtips | 210 | 95+ of 100 |
+| Mithril arrowtips | 18 | 382+ of 400 |
+
+A higher cap only buys the starting shelf once and then pays more for every
+restocked unit after that: at 1.5x base, 560 rune tips would cost ~165k gp
+instead of ~117k. The GE listed no arrowtips of any tier when checked.
+
+The default Hickton list (`CAMP_LINES.hickton`, from supply-fallbacks.md
+section 3) is the small tiers, then adamant 2,075, rune 560 (the Fletching-75+
+stand-ins) and mithril 1,500 (which fill the adamant shortfall; shared with
+the Dargaud buyer of rs/124). Dargaud's default is the other 1,660 adamant,
+unused for now.
 
 A camper trains first (Hitpoints 40 on cows for the crossing; the Dargaud
 camper trains Ranged 40 with a shortbow and arrows from Lowe), collects its
-coins at Varrock west bank (waiting there for a funder's trade if short),
-crosses to Kandarin (`speedrun/lib/kandarin.ts`), then buys each line in `CAMP_LINES` and
-banks every `reportMinutes`. Hickton alone yields 300 adamant per hour, so its
-default share of 2,075 takes about 7 hours; the rest is Dargaud's share.
+coins at Varrock west bank (waiting there for a funder's trade if short), and
+crosses to Kandarin (`speedrun/lib/kandarin.ts`). There it runs passes: each
+line buys what its cap allows and waits at most `passTicks` for a restock, so
+no shelf sits full while another line waits. It banks and logs `camp holdings`
+(held, and per-item purchases per hour) every `reportMinutes`. When a line runs
+out of coins, it banks, walks back over the mountain to Varrock west bank, and
+waits there for a funder. Then it crosses again carrying `remainingBudget`,
+which is what's left at the caps, plus 5% and 500. Measured at Hickton with
+three lines: about 10 seconds per pass, each shelf taken back to its cap as
+it restocks.
 
 ## Options
 
@@ -119,8 +141,9 @@ default share of 2,075 takes about 7 hours; the rest is Dargaud's share.
 | `maxFeatherPrice` | headless | 6 | Gerrant's live price cap per feather |
 | `shop` | camp | (required) | `hickton` or `dargaud` |
 | `lines` | camp | `CAMP_LINES[shop]` | `[{ item, quantity, maxPrice? }]` |
-| `coins` | camp | `campBudget(lines)` (97,184 Hickton, 71,963 Dargaud) | Coins carried over the mountain |
+| `coins` | camp | `remainingBudget(lines)` | Coins carried over the mountain (a fixed number overrides) |
 | `crossingHitpoints` | camp | 40 | Hitpoints to train before the crossing |
+| `passTicks` | camp | 20 | How long each line waits for a restock per pass |
 | `reportMinutes` | camp | 30 | Bank and log holdings this often while camping |
 | `funders` | both | `^cairn_h\d+$` | Accounts whose trades are accepted at Varrock west bank |
 
@@ -128,7 +151,7 @@ default share of 2,075 takes about 7 hours; the rest is Dargaud's share.
 
 | Account | Job | State |
 |---|---|---|
-| cairn_h76 | Hickton camper | Small lines bought; camping 2,075 adamant arrowtips |
+| cairn_h76 | Hickton camper | Small tiers bought; camping adamant, rune and mithril arrowtips |
 | cairn_h77 | Dargaud camper | Not created: the other 1,660 adamant stay unbought unless asked for |
 | cairn_h78 | Headless line | Done: 4,245 headless arrows in its bank; logged out |
 | cairn_h79 | spare | Not created |
