@@ -30,10 +30,11 @@ because helper time is free; every SCORED-side tick is real.
   against **1,986** plain (m, 1 run, 88 failures) and thieving.md's model of 1,975. Fail counts
   alone move a run by about 100 ticks. Compared at a common 84 failures, the pack runs come to
   1,906 / 1,976 / 1,992 against plain 1,939, or about 1,854 from the second plain run's per-roll
-  costs (it died at level 87, section 3). **The pack costs Thieving about 0-60 ticks** (i), from
-  top-up stuns, level-up pages and wander noise, which this sample cannot separate further.
+  costs (it died at level 87, section 3). **The pack costs Thieving about 20-100 ticks, ~60
+  central** (i), from top-up stuns, level-up pages and wander noise, which this sample cannot
+  separate further.
 - **It replaces about 470-510 standalone ticks**: 388-426 of burying (2 per bone), ~33 of Charge
-  and ~48 of Fletching (i, section 7). **The net saving is about 410-510 ticks** (i).
+  and ~48 of Fletching (i, section 7). **The net saving is about 370-490 ticks, ~420 central** (i).
 - **3 bones per stun, not 2.** Burying at stun offsets +2, +4 and +6, each with three delay-free
   actions before it, landed 3.00 bones in every stocked stun (m, 62 + 71 + 46 stuns in three
   runs). Interleaving.md section 4 expected the third bone to land only about 2/3 of the time.
@@ -101,9 +102,10 @@ teleports, a stand-in for walking), and no stocked stun was dry. Stuns that ran 
 were, in the plain run, all knight walks (each involved SCORED changing tile); in the pack runs
 most were walks as well, some with a page resume.
 
-Pack minus plain, normalised: +19 against plain-1, +101 against plain-2's per-roll costs, and
-+53 on the means (1,958 against 1,897). With two plain samples and per-run noise of about ±50,
-**0-60 ticks** (i) is the honest range. The fixed-level variants (section 4) show the stun plan
+Pack minus plain, normalised: +52 / +37 / +53 per pack run against plain-1 (1,939) is
+-33 / +37 / +53; against plain-2's per-roll costs (1,854) it is +52 / +122 / +138; on the means,
++61 (1,958 against 1,897). With two plain samples and per-run noise of about ±50, **+20 to
++100, ~60 central** (i) is the honest range. The fixed-level variants (section 4) show the stun plan
 itself adds nothing; what remains is the top-up stuns (section 5), stuns with a level-up page
 (+0.5 to +1.5 ticks each, ~11 per run, section 9) and success gaps (2.03-2.18 against 2.02-2.08),
 where knight wandering dominates.
@@ -222,8 +224,8 @@ that is 213 (pack-b); at 80 failures, 204. The route's 196 fits with margin. Any
 | Fletching 1-99 | 240 actions | ~48 | 5 actions per tick standalone (fletching.md section 1: 50 measured) |
 | Top-ups | 12-13 trades | 0 against RUN-ORDER's 48 i | inside the Thieving figure (section 5) |
 | **Total** | | **~470-510** | i |
-| Less the pack's cost to Thieving | | 0-60 | section 3, i |
-| **Net** | | **~410-510** | i |
+| Less the pack's cost to Thieving | | 20-100 (~60) | section 3, i |
+| **Net** | | **~370-490 (~420)** | i |
 
 Level-up pages are not in the standalone column. Standalone, Fletching's 98 and Prayer's ~41
 pages would each cost at least a tick; in the stuns they cost an `h` slot (section 9).
@@ -247,8 +249,8 @@ level-ups. The page itself does arrive, so count dialog opens, not messages. A p
 109-111 page opens inside stuns and 34 outside (m, pack-a and pack-b).
 
 - Inside a stun, a page is resumed first (RESUME_PAUSEBUTTON) at the cost of one `h` slot
-  (99-104 resumes per run). Closing it underneath with Charge's `if_close` or an inventory op
-  instead wedged the account in an early run, so resume it.
+  (99-104 resumes per run). Charge's `if_close` or an inventory op would close it underneath
+  instead; resuming is the path the measured runs used, and closing was not measured cleanly.
 - Stuns in which a level-up message was seen took 12.4-13.4 ticks to the next attempt against
   11.9 for the rest (m, n = 10-12 per run): about +10 ticks per run (i).
 - Outside a stun (Thieving's own level-ups, on a success), the page is resumed in the same tick
@@ -286,7 +288,7 @@ top-ups absorbed.
 
 ## 12. Open questions
 
-- **Two plain samples are too few** to pin the pack's Thieving cost inside 0-60. A third plain
+- **Two plain samples are too few** to pin the pack's Thieving cost inside 20-100. A third plain
   run with enough sharks (`--sharks=14`) would tighten it. Wander noise is the bulk of the spread.
 - **The helper keeping up on the demo** is untested: the lab teleported the helper next to
   SCORED (57 times in pack-b) in place of walking. A walking helper that lags on a knight change
