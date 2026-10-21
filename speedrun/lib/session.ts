@@ -59,10 +59,15 @@ export function loadBotEnv(name: string): BotEnv {
     return parseBotEnv(readFileSync(path, 'utf-8'));
 }
 
-/** The browser client URL for a bot (the same shape BotSDK opens). */
+/**
+ * The browser client URL for a bot (the same shape BotSDK opens). CLIENT_URL in
+ * the bot.env overrides the page, for the run client served by
+ * server/webclient/proxy.ts with ?server= and ?gateway= already on it.
+ */
 export function browserUrl(env: BotEnv): string {
     const server = env.SERVER ?? 'localhost';
     const q = `bot=${encodeURIComponent(env.BOT_USERNAME)}&password=${encodeURIComponent(env.PASSWORD)}`;
+    if (env.CLIENT_URL) return `${env.CLIENT_URL}${env.CLIENT_URL.includes('?') ? '&' : '?'}${q}`;
     if (server.startsWith('localhost') || server.startsWith('127.')) {
         const host = server.includes(':') ? server : `${server}:8888`;
         return `http://${host}/bot?${q}`;
@@ -204,7 +209,10 @@ export async function launchClient(session: Session): Promise<void> {
             cwd: join(ROOT, 'server', 'webclient'),
             stdout: openSync(session.logPath, 'a'),
             stderr: 'inherit',
-            env: { ...process.env },
+            // The runner sleeps a random 0-5 s before logging in to a secured world
+            // (lite/session.ts) to spread fleet starts. One account gains nothing
+            // from it, and on a takeover the dropped player is in the world meanwhile.
+            env: { ...process.env, LITE_LOGIN_JITTER_MS: process.env.LITE_LOGIN_JITTER_MS ?? '0' },
             detached: true,
         } as { cwd: string; stdout: number; stderr: 'inherit'; env: Record<string, string | undefined> };
         const child = Bun.spawn(['bun', 'src/lite/runner.ts', session.name], spawnOpts);
@@ -214,6 +222,13 @@ export async function launchClient(session: Session): Promise<void> {
         void child.exited.then(code => {
             if (session.child === child) session.childExit = code ?? 137;
         });
+        return;
+    }
+    // With CDP the one tab is re-navigated (lib/tab.ts); without it each launch opens a tab.
+    const cdp = session.env.CDP_URL ?? process.env.SPEEDRUN_CDP_URL;
+    if (cdp) {
+        const how = await (await import('./tab')).reloadOrOpenTab(cdp, browserUrl(session.env), session.name);
+        appendFileSync(session.logPath, `[speedrun] session ${session.sessionId}: tab ${how} at ${new Date().toISOString()}\n`);
         return;
     }
     const open = (await import('open')).default;
@@ -439,6 +454,8 @@ export interface WatchdogInputs {
     /** Wall ms since the bot's last markProgress, and the limit; null when progress is not tracked. */
     msSinceProgress: number | null;
     progressStaleMs: number | null;
+    /** The world itself is gone (demo restart, or our network): lib/reconnect.ts. Probed only when unhealthy. */
+    serverDown: boolean;
 }
 
 /**
@@ -449,8 +466,11 @@ export interface WatchdogInputs {
  *   session"), which is the only way out faster than the 500/1000-tick timeouts.
  * - `stop`: the client is healthy but the bot stopped making progress. Log out
  *   cleanly and stay out: a live client keeps an idle player in the world forever.
+ * - `outage`: the client is gone or wedged because the server is. Nothing is on
+ *   the clock (the world died with the process) and nothing can be taken over;
+ *   wait for the world and log in once it accepts logins (reconnectAfterOutage).
  */
-export type WatchdogVerdict = 'ok' | 'wait' | 'logout' | 'relaunch' | 'stop' | 'give_up';
+export type WatchdogVerdict = 'ok' | 'wait' | 'logout' | 'relaunch' | 'stop' | 'outage' | 'give_up';
 
 /**
  * Pure decision. While the account should be in the world: a lite child that
@@ -463,11 +483,11 @@ export function watchdogDecision(i: WatchdogInputs): WatchdogVerdict {
     if (i.paused || !i.expectInWorld) return 'ok';
     if (i.childExit === 3) return 'give_up';
     const relaunch = i.now >= i.nextAttemptAt ? 'relaunch' : 'wait';
-    if (i.childExit !== null) return relaunch;
+    if (i.childExit !== null) return i.serverDown ? 'outage' : relaunch;
     // A client that is still logging in is not stale; only its exit counts.
     if (!i.tickedSinceLaunch && i.msSinceLaunch < i.launchGraceMs) return 'ok';
     const wedged = i.msSinceAdvance > i.staleMs || i.gateway === 'dead' || i.gateway === 'stale';
-    if (wedged) return i.logoutFailed ? relaunch : 'logout';
+    if (wedged) return i.serverDown ? 'outage' : i.logoutFailed ? relaunch : 'logout';
     if (i.progressStaleMs !== null && i.msSinceProgress !== null && i.msSinceProgress > i.progressStaleMs) return 'stop';
     return 'ok';
 }
@@ -485,6 +505,7 @@ export interface Watchdog {
     check(): Promise<void>;
     readonly relaunches: number;
     readonly logouts: number;
+    readonly outages: number;
     readonly gaveUp: boolean;
 }
 
@@ -500,9 +521,12 @@ export interface WatchdogActions {
     logout(session: Session, timeoutMs: number): Promise<LogoutResult>;
     login(session: Session): Promise<unknown>;
     relaunch(session: Session): Promise<void>;
+    /** Back into the world after the server went away (default reconnectAfterOutage). */
+    reconnect(session: Session): Promise<unknown>;
 }
 
 const liveActions: WatchdogActions = {
+    reconnect: async session => (await import('./reconnect')).reconnectAfterOutage(session),
     logout: (session, timeoutMs) => logoutClean(session, { timeoutMs }),
     login: session => login(session),
     relaunch: async session => {
@@ -523,6 +547,12 @@ export interface WatchdogOptions {
     /** Default true; false leaves the checks to wd.check() (tests). */
     timer?: boolean;
     actions?: Partial<WatchdogActions>;
+    /**
+     * Is the world itself gone? Asked only when the client looks unhealthy, before
+     * any logout or relaunch (reconnect.ts serverDownProbe over a DemoMonitor).
+     * Without it every drop is treated as the client's.
+     */
+    serverDown?: () => Promise<boolean>;
 }
 
 /**
@@ -545,6 +575,7 @@ export function startWatchdog(session: Session, opts: WatchdogOptions = {}): Wat
     let gaveUp = false;
     let relaunches = 0;
     let logouts = 0;
+    let outages = 0;
     let attempt = 0;
     let nextAttemptAt = 0;
     let logoutFailed = false;
@@ -568,12 +599,16 @@ export function startWatchdog(session: Session, opts: WatchdogOptions = {}): Wat
                 gateway = (await gatewayStatus(session))?.status ?? null;
             }
             const msSinceAdvance = Date.now() - session.lastAdvanceAt;
-            const verdict = watchdogDecision({
+            const decide = (serverDown: boolean) => watchdogDecision({
                 expectInWorld: session.expectInWorld, paused, now: Date.now(), msSinceAdvance, staleMs,
                 msSinceLaunch: Date.now() - session.launchedAt, tickedSinceLaunch: session.lastAdvanceAt > session.launchedAt, launchGraceMs,
                 gateway, childExit: session.child ? session.childExit : null, nextAttemptAt, logoutFailed,
-                msSinceProgress: progressStaleMs === null ? null : Date.now() - session.lastProgressAt, progressStaleMs,
+                msSinceProgress: progressStaleMs === null ? null : Date.now() - session.lastProgressAt, progressStaleMs, serverDown,
             });
+            let verdict = decide(false);
+            if ((verdict === 'logout' || verdict === 'relaunch' || verdict === 'wait') && opts.serverDown) {
+                if (await opts.serverDown().catch(() => false)) verdict = decide(true);
+            }
             if (verdict === 'ok') {
                 if (msSinceAdvance < staleMs) {
                     attempt = 0;
@@ -584,6 +619,24 @@ export function startWatchdog(session: Session, opts: WatchdogOptions = {}): Wat
             emit(verdict, `childExit=${session.childExit} sinceAdvance=${msSinceAdvance}ms gateway=${gateway}`);
             if (verdict === 'give_up') {
                 gaveUp = true;
+                return;
+            }
+            if (verdict === 'outage') {
+                outages++;
+                logoutFailed = false;
+                try {
+                    await actions.reconnect(session);
+                    attempt = 0;
+                    emit('relaunch', `back in after the outage (session ${session.sessionId})`);
+                } catch (err) {
+                    // Leave it to the next check: still down means another outage pass.
+                    session.expectInWorld = true;
+                    paused = false;
+                    backOff();
+                    emit('outage', `reconnect failed: ${err}`);
+                }
+                gateway = null;
+                lastGatewayPoll = Date.now() + 5_000;
                 return;
             }
             if (verdict === 'logout' || verdict === 'stop') {
@@ -645,6 +698,9 @@ export function startWatchdog(session: Session, opts: WatchdogOptions = {}): Wat
         },
         get logouts() {
             return logouts;
+        },
+        get outages() {
+            return outages;
         },
         get gaveUp() {
             return gaveUp;
