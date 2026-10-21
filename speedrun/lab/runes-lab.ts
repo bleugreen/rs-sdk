@@ -35,24 +35,26 @@ const scenarios: Scenario[] = [
     },
     {
         phase: 'magic',
-        secs: 600,
-        // 8 -> 10 crosses the switch from Wind Strike to Earth Strike with the staff at 9.
-        // The manifest's own air and mind are zeroed so the given runes count as spare.
-        options: { magicLevel: 10, targets: { 'Air rune': 0, 'Mind rune': 0 } },
+        secs: 900,
+        // 8 -> 10 crosses the switch from Wind Strike to Earth Strike with the staff at 9, on
+        // runes bought at Aubury in chunks of 60 casts (the carry guard sees every walk).
+        options: { magicLevel: 10, trainChunk: 60 },
         setup: async () => {
             await setstat(sdk, 'magic', 8);
-            await tele(sdk, 3093, 3245);
-            await give(sdk, ['airrune', 'mindrune'], 400);
+            await tele(sdk, 3185, 3436);
+            await cheat(sdk, 'give coins 5000');
             await cheat(sdk, 'give staff_of_earth 1');
             await waitTicks(sdk, 2);
         }
     },
     {
         phase: 'guild',
-        secs: 400,
-        options: {},
+        secs: 900,
+        // Trips of at most 60k at the caps: blood 570 alone needs three.
+        options: { maxCarry: 60_000 },
         setup: async () => {
             await setstat(sdk, 'magic', 66);
+            await setstat(sdk, 'hitpoints', 40);
             await cheat(sdk, 'give coins 250000');
             await tele(sdk, 2612, 3092);
         }
@@ -60,10 +62,12 @@ const scenarios: Scenario[] = [
     {
         phase: 'lundail',
         secs: 900,
-        // A short cellar wait: one restock at most, enough to see the buyer wait and leave.
+        // Through the keep web both ways with a bronze axe; a short cellar wait, one restock at most.
         options: { targets: { 'Cosmic rune': 22, 'Law rune': 0 }, lundailWaitTicks: 300 },
         setup: async () => {
+            await setstat(sdk, 'hitpoints', 40);
             await cheat(sdk, 'give coins 20000');
+            await cheat(sdk, 'give bronze_axe 1');
             await tele(sdk, 2655, 3286);
         }
     }
