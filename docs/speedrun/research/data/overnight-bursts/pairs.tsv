@@ -15,3 +15,12 @@ pdt	run_id	source	players_start	players_end	direct_1	direct_2	direct_3	direct_lo
 2026-10-21 06:10 PDT	39605462121	rs102	1684	1227	34	23	3	0	60	0	0	119.7	310	519.7	811.9	72		274	20/20	p10 237 p50 301 p90 364 max 409	3	eastus	https://github.com/bleugreen/rs-sdk/actions/runs/39605462121
 2026-10-21 06:37 PDT	39609432705	rs102	1647	1602	60	0	0	0	60	0	0	165.1	296.4	383.8	555.3	21		257	0/7	p10 214 p50 313 p90 412 max 449	3	eastus	https://github.com/bleugreen/rs-sdk/actions/runs/39609432705
 2026-10-21 07:01 PDT	39612921940	rs102	1636	1606	54	6	0	0	50	10	0	184.9	291.2	376.1	627	16		265	1/3	p10 151 p50 298 p90 492 max 623	2	eastus	https://github.com/bleugreen/rs-sdk/actions/runs/39612921940
+2026-10-21 07:31 PDT	39617315258	rs102	1607	1624	59	1	0	0	59	1	0	221.7	304.2	377.1	581.4	17		266	1/2	p10 240 p50 301 p90 365 max 458	3	eastus	https://github.com/bleugreen/rs-sdk/actions/runs/39617315258
+2026-10-21 07:41 PDT	39618846171	rs102	1635	1688	60	0	0	0				207.1	303.8	413.8	787.7	33		260	0/3		3	eastus	https://github.com/bleugreen/rs-sdk/actions/runs/39618846171
+2026-10-21 08:36 PDT	39627115949	rs102	1696	1723	60	0	0	0				217.6	326.9	447.2	697.7	72		262	0/1		6	eastus2	https://github.com/bleugreen/rs-sdk/actions/runs/39627115949
+2026-10-21 09:10 PDT	39632189396	agent/rs-83-coordinator-0	1701	1638	59	1	0	0				184.5	297.4	407.1	688.5	29		259	0/4		3	eastus	https://github.com/bleugreen/rs-sdk/actions/runs/39632189396
+2026-10-21 09:31 PDT	39635322380	rs102	1692	1685	60	0	0	0				178.5	290.4	411	723.9	34		259	0/3		3	eastus	https://github.com/bleugreen/rs-sdk/actions/runs/39635322380
+2026-10-21 09:51 PDT	39638307989	agent/rs-83-coordinator-0	1692	1688	53	6	1	0				165.7	309.8	464.8	745.5	54		275	5/6		2	eastus	https://github.com/bleugreen/rs-sdk/actions/runs/39638307989
+2026-10-21 10:43 PDT	39646168715	rs102	1607	1616	54	6	0	0				160.2	277.6	405.7	589.1	29		274	5/7		2	eastus	https://github.com/bleugreen/rs-sdk/actions/runs/39646168715
+2026-10-21 11:18 PDT	39651328097	rs102	1618	1621	55	5	0	0				161.7	272.8	406.4	608.3	33		275	1/8		3	eastus	https://github.com/bleugreen/rs-sdk/actions/runs/39651328097
+2026-10-21 12:02 PDT	39657939685	rs102	1518	1619	60	0	0	0				205.1	296.8	411.6	621.1	26		250	0/5		3	eastus	https://github.com/bleugreen/rs-sdk/actions/runs/39657939685
