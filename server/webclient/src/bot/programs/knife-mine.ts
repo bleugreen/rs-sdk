@@ -106,6 +106,7 @@ export function createKnifeMine(params: ProgramParams): TickProgram {
             ctx.log('no knife or logs for the starter');
             return;
         }
+        ctx.starter();
         ctx.send({ type: 'useItemOnItem', sourceSlot: knife.slot, targetSlot: logs.slot }, 'knife on logs');
         ctx.send({ type: 'clickComponent', componentId: SHAFTS_BUTTON }, `button ${SHAFTS_BUTTON}`);
     };

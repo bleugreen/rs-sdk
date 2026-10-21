@@ -246,6 +246,11 @@ export interface GateOptions {
     direct?: DirectRule;
     probe?: ProbeOptions;
     /**
+     * The probe to run in place of `probeOnTime(sdk, probe)`: `probeInPage` for an in-page
+     * loop (`gated-program.ts` `inPageGate`). `probe` is not passed to it.
+     */
+    probeWith?: () => Promise<ProbeResult>;
+    /**
      * Measured override: after this many xp drops in one manipulating stretch, compare its
      * ticks per drop with the plain loop's (`plainTicksPerDrop`, else the last measured plain
      * stretch) and switch off if the knife is not faster. Default 30.
@@ -344,7 +349,7 @@ export class HostGate {
     async probe(why: string): Promise<boolean> {
         const was = this.on;
         const first = !this.history.length;
-        const result = await probeOnTime(this.sdk, this.opts.probe);
+        const result = await (this.opts.probeWith ? this.opts.probeWith() : probeOnTime(this.sdk, this.opts.probe));
         const tick = this.sdk.getState()?.tick ?? -1;
         const verdict = hostVerdict(result, this.opts.model, this.opts.direct);
         this.on = verdict.on;
