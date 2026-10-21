@@ -15,10 +15,11 @@
 //    wooden disk (second red disk); water: bucket on tap (5), bucket on jug
 //    (2 + 3), jug on drain, bucket on jug (0 + 2), bucket on tap (5), bucket on
 //    jug (4 + 3); 4/5ths bucket on the scale chest (vase), vase on tap.
-//  downstairs via the trapdoor (2631,3663): both red disks on the mural (lid),
-//    lid on the vase.
-//  upstairs again: sealed vase on the frozen table (key in ice), frozen key on
-//    the range (key); downstairs; key on the exit door (2636,3667).
+//  downstairs into the east room via the second trapdoor (2636,3663, open it
+//    first): both red disks on the mural (lid), lid on the vase.
+//  upstairs again by the east room's ladder: sealed vase on the frozen table
+//    (key in ice), frozen key on the range (key); down the east trapdoor; key
+//    on the exit door (2636,3667).
 
 import { runScript } from '../../../sdk/runner';
 import * as L from './quest-rellekka-lib';
@@ -148,7 +149,11 @@ await runScript(async ({ bot, sdk }) => {
         await step('bucket into jug', () => onItem(/Full bucket/, /2\/3rds/), has(/4\/5ths/));
         await step('bucket on scale chest', () => useOn(/4\/5ths/, 2632, 3665), has(/^Vase$/));
         await step('vase on tap', () => useOn(/^Vase$/, 2629, 3661), has(/Vase of water/));
-        await step('trapdoor down', () => op(2631, 3663, 'Climb-down'), level(0));
+        // The ground floor is two rooms: the entry room (west, ladder up at
+        // 2631,3663) and the exit room (east, mural and exit door), reached only
+        // through the upper floor's second trapdoor at (2636,3663).
+        await openThen('trapdoor', 2636, 3663, 'Climb-down');
+        await step('trapdoor down (east room)', () => op(2636, 3663, 'Climb-down'), level(0));
         // The mural is a wall decoration; the SDK's useItemOnLoc paths to its face.
         const mural = async () => bot.useItemOnLoc(sdk.findInventoryItem(/Red disk/)!, await L.findLoc(sdk, 2634, 3663, undefined, 15, /mural/i));
         await step('disk on mural', mural, () => L.invCount(sdk, /Red disk/) <= 1);
@@ -157,7 +162,8 @@ await runScript(async ({ bot, sdk }) => {
         await step('ladder up', () => op(2636, 3663, 'Climb-up'), level(2));
         await step('vase on frozen table', () => useOn(/Sealed vase/, 2638, 3665), has(/Frozen key/));
         await step('key on range', () => useOn(/Frozen key/, 2629, 3663), has(/Seers' key/));
-        await step('trapdoor down', () => op(2631, 3663, 'Climb-down'), level(0));
+        // The east trapdoor stays open for 500 ticks (viking_peer.rs2:1028).
+        await step('trapdoor down (east room)', () => op(2636, 3663, 'Climb-down'), level(0));
         const v0 = L.tick(sdk);
         await step('key on exit door', () => useOn(/Seers' key/, 2636, 3667, /Door/), () => L.pos(sdk).z >= 3668, 30);
         await settle();
