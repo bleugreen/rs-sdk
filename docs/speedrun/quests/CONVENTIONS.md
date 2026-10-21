@@ -60,18 +60,29 @@ before the run, so every quest total gives dialogue in three columns:
 
 | Column | Pure-continue page | Option click or state-changing page |
 |---|---|---|
-| Stock client (today) | 2 ticks | 2 ticks |
-| Fixed client (cairn://p/rs/22) | 1 tick | 1 tick |
-| Burst (fixed client plus blind continues) | a run of k consecutive pure-continue pages costs ceil(k/5) ticks | 1 tick (read the state first) |
+| Stock client (historical, before cairn://p/rs/22) | 2 ticks | 2 ticks |
+| Fixed client (cairn://p/rs/22, now on main) | 1 tick | 1 tick |
+| Burst (fixed client plus `sdk.sendClickDialog(0, {blind: true})`, cairn://p/rs/51) | a run of k pure-continue pages costs ceil(k/5) ticks if it opens the dialogue, or 1 + ceil((k-1)/5) if it follows an option click or a state-changing page | 1 tick (read the state first) |
+
+All three columns are measured: read-then-act is exactly 1 tick per page on the
+fixed client, and a blind burst of Carla's 10-page dialogue took exactly 2 ticks
+(ceil(10/5)) in 5 of 5 runs (main thread, cairn://p/rs/51).
 
 A burst may only cover pure "Click here to continue" pages. Any page with
 options, any page after which the server changes state that the next action
 depends on (an item given, a varp set, an NPC spawned or moved, a teleport or
 cutscene), and any page whose count depends on state the bot hasn't read, needs
-the state read first and is costed as an option click. So for each dialogue,
-record the **runs**: e.g. `4c, opt, 6c, state, 2c` means a run of 4 continues,
-an option, 6 continues, a state-changing page, then 2 continues. Stock is
-2 x 14 = 28 ticks, fixed 14, burst 1 + 1 + 2 + 1 + 1 = 6.
+the state read first and is costed as an option click. The first continue page
+after an option click or a state-changing page is also read before bursting
+(the bot must see that the click landed), which is the 1 + ceil((k-1)/5) rule
+above. So for each dialogue, record the **runs**: e.g. `4c, opt, 6c, state, 2c`
+means a run of 4 continues, an option, 6 continues, a state-changing page, then
+2 continues. Stock is 2 x 14 = 28 ticks, fixed 14, burst
+1 + 1 + (1 + 1) + 1 + (1 + 1) = 7.
+
+Documents written before this rule (2026-10-20 21:14) used ceil(k/5) for every
+run, which undercounts by up to 1 tick per run after an option or state page.
+The README recomputes burst totals from the recorded runs with this rule.
 
 ## Travel
 
