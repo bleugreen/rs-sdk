@@ -117,8 +117,9 @@ Notes on the table:
 - The first fly-fishing watcher run (`tickmanip-flylumb-knife-lv-watcher`) stalled at level 51.
   The bot froze for about 9 ticks at load 30 and the engine logged it out as idle 500 ticks
   later. Its first 9 level-ups behaved like the rows above. It is not in the table.
-- **Gem cutting and potion mixing** were not re-measured: both `delayfree-cycle.ts` runs timed out
-  in setup. Neither loop needs a dismissal, because each OPHELDU closes the page (`crafting.md`
+- **Gem cutting and potion mixing** were not re-measured: both `delayfree-cycle.ts` runs printed their
+  plan and then hit the 60-minute script timeout (not diagnosed; load reached 60 on the host
+  during that block). Neither loop needs a dismissal, because each OPHELDU closes the page (`crafting.md`
   and `herblore.md` section 4). The cost appears only as a backlog at the bank visit: up to 5
   actions per tick can each queue a level-up, the queue pops one per tick, and every pending
   page holds the booth click for a tick. Inferred from those documents' measured end-to-end
