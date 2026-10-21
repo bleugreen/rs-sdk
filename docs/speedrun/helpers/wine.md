@@ -10,7 +10,7 @@ Code:
 
 | File | What |
 |---|---|
-| `speedrun/helpers/grapes.ts` | role `grapes`: Cooking Guild camper (`source: guild`) or Goblin Village camper (`source: goblins`), from a fresh account |
+| `speedrun/helpers/grapes.ts` | role `grapes`: Cooking Guild camper (`source: guild`), Phoenix Gang hideout camper (`source: phoenix`, joins the gang first) or Goblin Village camper (`source: goblins`), from a fresh account |
 | `speedrun/helpers/jugs.ts` | role `jugs`: buys jugs at the Varrock general store, fills them at the fountain, banks at Varrock east |
 | `speedrun/helpers/wine.ts` | role `wine` (maker), `makeNotedWine`, `giveWine` / `giveWineKit` (giver), `receiveWine` / `splitDelivery` (the scored account's side) |
 | `speedrun/helpers/wine-ferment.ts` | model of the fermentation timer and a Monte Carlo of delivery plans (`bun speedrun/helpers/wine-ferment.ts`) |
@@ -154,12 +154,12 @@ other drop table or quest reward has them.
 |---|---|---|
 | Cooking Guild spawn | 150/h for the only taker (12,000 ticks/h over 80) | **contested**: another player (Jackalopevin) camps the next tile. In h40's first 0.14 h: 18 respawns seen (mean gap 73 ticks), 13 taken by others, 5 by us, so about 36/h. The racer (stand on the tile, poll every tick when due, raw pickup) is the current version; see the stock table below for its result |
 | Phoenix Gang hideout spawn | 150/h for the only taker | not built: the door opens for Phoenix Gang members (`%phoenixgang >= joined`), the solo first half of Shield of Arrav (Reldo, the book, Baraek 20 gp, Straven, Jonny the Beard's report) |
-| Goblin Village, per account | 3/h at 1/128 | 360-415 kills per account-hour at combat about 25; 4 grapes in 825 kills over three accounts |
+| Goblin Village, per account | 3/h at 1/128 | 360-440 kills per account-hour at combat about 25; 14 grapes in about 2,500 kills over four accounts (1 in 180), so 2-4/h per account |
 | Goblin Village, all players together | about 25/h | 21 goblins, 70-tick respawn: about 3,000 kills/h for the whole village. About 8 accounts saturate it; more accounts only take kills from each other and from other players |
 | Grand Exchange | | a 1,000 gp bid for 99,536 grapes and no asks; 464 grapes have traded, all at 1,000 gp (20 trades), about 22/h flowing into that bid. We do not bid against it |
 
 Jugs are not the constraint. The `jugs` role makes about 120-146 jugs of water
-per hour from the Varrock general store (stock 2, one restock per 100 ticks,
+per hour (cairn_h42: 243 banked in its first 1.9 hours on the demo) from the Varrock general store (stock 2, one restock per 100 ticks,
 1-2 gp each) and the fountain. The guild camper picks up the guild's jug spawn
 and fills it at the sink there. 520 jugs take one account about 4 hours and
 about 700 gp.
