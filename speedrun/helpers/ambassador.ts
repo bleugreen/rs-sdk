@@ -1,0 +1,516 @@
+// Ambassador (role `ambassador`): one account standing at the Grand Exchange in
+// Varrock west bank that listens to public chat and private messages and talks with
+// the other bots, through a model. Persona, rules, logs and operation:
+// docs/speedrun/AMBASSADOR.md.
+//
+// The safety property is structural. After setup (leave the tutorial, walk to the
+// post) the conversation loop holds only an AmbassadorIO (ambassador/io.ts): read chat,
+// say one line, PM one line, look around, walk back to its own post. Chat reaches the
+// model as quoted data; the model's reply is parsed into a decision whose only effect
+// can be one line of chat, and that line must pass the output filter and the limits in
+// ambassador/policy.ts. No code path turns chat into a trade, drop, follow, movement,
+// file write outside the log directory, or a message to the fleet.
+//
+// Run standalone (lite client already running for the account):
+//   ROLE_OPTIONS='{"scoredAccount":"www_cairn_md"}' bun speedrun/helpers/ambassador.ts cairn_md
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { runStandalone, type Role, type RoleContext } from './role';
+import { createIO, type AmbassadorIO, type Post } from './ambassador/io';
+import { ChatLog, DEFAULT_LOG_DIR, ROOT, readRecords } from './ambassador/log';
+import {
+    ModelClient,
+    openerPrompt,
+    parseDecision,
+    parseOpener,
+    replyPrompt,
+    systemPrompt,
+    type ChatModel,
+    type ContextLine,
+    type ModelOptions
+} from './ambassador/model';
+import {
+    buildDenyList,
+    canon,
+    checkOutput,
+    injectionHits,
+    isOurs,
+    Limiter,
+    LIMITS,
+    parseLimiterState,
+    similarity,
+    type Channel,
+    type ChatLine,
+    type DenyList,
+    type SendKind
+} from './ambassador/policy';
+
+/** The ground tile beside the Grand Exchange table (sdk/ge-actions.ts GE_STAND). */
+export const GE_POST: Post = { x: 3181, z: 3443, tolerance: 3 };
+
+/** Names that are never said even if bots/ on this host does not hold them. */
+const ALWAYS_DENIED = ['cairn_md', 'cairn_amb', 'cairn_cam', 'cairn_dot_md', 'cairn_mule1', 'cairn_mule2'];
+
+export interface AmbassadorOptions {
+    post: Post;
+    /** Login name of the scored account the ambassador may mention (e.g. www_cairn_md); unset = never. */
+    scoredAccount?: string;
+    model: ModelOptions;
+    logDir: string;
+    /** Start conversations when chat is quiet (default true). */
+    initiate: boolean;
+    /** More strings the output filter refuses (lab canaries). */
+    denyExtra: string[];
+    /** Where account directories live; every name there is refused in output. */
+    botsDir: string;
+}
+
+export function ambassadorOptions(o: Record<string, unknown>): AmbassadorOptions {
+    const post = o.post as Partial<Post> | undefined;
+    const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+    return {
+        post: { x: num(post?.x, GE_POST.x), z: num(post?.z, GE_POST.z), tolerance: num(post?.tolerance, GE_POST.tolerance) },
+        scoredAccount: typeof o.scoredAccount === 'string' && o.scoredAccount ? o.scoredAccount : undefined,
+        model: o.model && typeof o.model === 'object' ? (o.model as ModelOptions) : {},
+        logDir: typeof o.logDir === 'string' && o.logDir ? o.logDir : DEFAULT_LOG_DIR,
+        initiate: o.initiate !== false,
+        denyExtra: Array.isArray(o.denyExtra) ? o.denyExtra.filter((s): s is string => typeof s === 'string') : [],
+        botsDir: typeof o.botsDir === 'string' && o.botsDir ? o.botsDir : join(ROOT, 'bots')
+    };
+}
+
+/** Account directories under bots/ (credentials of our own fleet). */
+export function listBotNames(dir: string): string[] {
+    try {
+        return readdirSync(dir, { withFileTypes: true })
+            .filter(e => e.isDirectory() && /^[a-z0-9][a-z0-9_]{0,11}$/.test(e.name))
+            .map(e => e.name);
+    } catch {
+        return [];
+    }
+}
+
+// ------------------------------------------------------------------ the conversation loop
+
+export const LOOP = {
+    pollMs: 1000,
+    /** Lines are gathered this long after the first one, then answered with one model call. */
+    batchMs: 3000,
+    maxBatch: 20,
+    contextLines: 30,
+    heartbeatMs: 5 * 60_000,
+    postCheckMs: 5 * 60_000,
+    /** Walk back to the post only when this far from it (and never because of chat). */
+    postRadius: 10,
+    openerRetryMs: 5 * 60_000,
+    /** A sender's line this similar to their previous one (within repeatWindowMs) is not answered. */
+    senderRepeatSimilarity: 0.8,
+    senderRepeatWindowMs: 10 * 60_000,
+    modelTimeoutMs: 30_000,
+    /** After this many model failures in a row, wait modelPauseMs before calling again. */
+    modelDownAfter: 3,
+    modelPauseMs: 2 * 60_000
+} as const;
+
+export interface Clock {
+    now(): number;
+    sleep(ms: number, signal: AbortSignal): Promise<void>;
+}
+
+export const realClock: Clock = {
+    now: () => Date.now(),
+    sleep: (ms, signal) =>
+        new Promise(resolve => {
+            if (signal.aborted) return resolve();
+            const done = () => (clearTimeout(t), resolve());
+            const t = setTimeout(done, ms);
+            signal.addEventListener('abort', done, { once: true });
+        })
+};
+
+export type ConversationLog = Pick<ChatLog, 'write' | 'muted' | 'saveState'>;
+
+export interface ConversationDeps {
+    io: AmbassadorIO;
+    model: ChatModel;
+    log: ConversationLog;
+    limiter: Limiter;
+    deny: DenyList;
+    system: string;
+    /** Our display name, so our own echoes are never answered. */
+    selfName: string;
+    post: Post;
+    initiate: boolean;
+    clock: Clock;
+    /** The fleet's ctx.log: phase lines and heartbeats (the fleet restarts a silent role). */
+    report(message: string, data?: Record<string, unknown>): void;
+    /** Recent conversation to start from (rebuilt from today's log after a restart). */
+    context?: ContextLine[];
+}
+
+interface Pending extends ChatLine {
+    patterns: string[];
+    strong: boolean;
+}
+
+export class Conversation {
+    readonly counts = { seen: 0, answered: 0, sent: 0, blocked: 0, ratelimited: 0, injections: 0, modelErrors: 0 };
+    private pending: Pending[] = [];
+    private context: ContextLine[];
+    private lastHeardAt: number;
+    private lastOpenerTryAt = 0;
+    private lastHeartbeatAt: number;
+    private lastPostCheckAt: number;
+    private failuresInRow = 0;
+    private modelPausedUntil = 0;
+    private phase = '';
+    /** Each sender's previous line, so broadcast loops ("36090 counted ... 36120 counted ...") cost no model calls. */
+    private lastLine = new Map<string, { text: string; at: number }>();
+
+    constructor(private readonly d: ConversationDeps) {
+        const now = d.clock.now();
+        this.context = [...(d.context ?? [])].slice(-LOOP.contextLines);
+        this.lastHeardAt = now;
+        this.lastHeartbeatAt = now;
+        this.lastPostCheckAt = now;
+    }
+
+    async run(signal: AbortSignal): Promise<void> {
+        this.heartbeat(this.d.clock.now(), true);
+        while (!signal.aborted) {
+            await this.step();
+            await this.d.clock.sleep(LOOP.pollMs, signal);
+        }
+    }
+
+    /** One pass: read, answer a ripe batch or maybe open, keep the post, report. */
+    async step(): Promise<void> {
+        const now = this.d.clock.now();
+        this.read(now);
+        const first = this.pending[0];
+        if (first && now - first.at >= LOOP.batchMs) await this.answer(this.pending.splice(0));
+        else if (!first) await this.maybeOpen(now);
+        await this.keepPost(this.d.clock.now());
+        this.heartbeat(this.d.clock.now());
+    }
+
+    private remember(line: ContextLine): void {
+        this.context.push(line);
+        if (this.context.length > LOOP.contextLines) this.context.splice(0, this.context.length - LOOP.contextLines);
+    }
+
+    private read(now: number): void {
+        const { io, log } = this.d;
+        for (const line of io.readNewChat()) {
+            const ours = isOurs(line.sender);
+            const me = canon(line.sender) === canon(this.d.selfName);
+            const hits = injectionHits(line.text);
+            this.counts.seen++;
+            log.write('seen', {
+                tick: line.tick,
+                sender: line.sender,
+                channel: line.channel,
+                type: line.type,
+                text: line.text,
+                ...(ours ? { ours: true } : {}),
+                ...(line.type === 1 || line.type === 7 ? { crowned: true } : {})
+            });
+            if (me || ours) continue;
+            const who = canon(line.sender);
+            const prev = this.lastLine.get(who);
+            this.lastLine.set(who, { text: line.text, at: now });
+            if (this.lastLine.size > 500) this.lastLine.delete(this.lastLine.keys().next().value!);
+            const strong = hits.some(h => h.strong);
+            if (hits.length) {
+                this.counts.injections++;
+                log.write('injection', { source: 'heuristic', sender: line.sender, channel: line.channel, text: line.text, patterns: hits.map(h => h.id), strong });
+            }
+            this.lastHeardAt = now;
+            if (prev && now - prev.at < LOOP.senderRepeatWindowMs && similarity(prev.text, line.text) >= LOOP.senderRepeatSimilarity) continue;
+            this.pending.push({ ...line, patterns: hits.map(h => h.id), strong });
+            this.remember({ sender: line.sender, channel: line.channel, text: line.text });
+        }
+        if (this.pending.length > LOOP.maxBatch) {
+            const dropped = this.pending.splice(0, this.pending.length - LOOP.maxBatch);
+            this.counts.ratelimited += dropped.length;
+            log.write('ratelimited', { reason: 'batch-overflow', dropped: dropped.length });
+        }
+    }
+
+    private modelAvailable(now: number): boolean {
+        return now >= this.modelPausedUntil;
+    }
+
+    private modelFailed(e: unknown, where: string): void {
+        this.counts.modelErrors++;
+        this.failuresInRow++;
+        this.d.log.write('error', { where, message: e instanceof Error ? e.message : String(e) });
+        if (this.failuresInRow >= LOOP.modelDownAfter) this.modelPausedUntil = this.d.clock.now() + LOOP.modelPauseMs;
+    }
+
+    private async answer(batch: Pending[]): Promise<void> {
+        const { io, log, limiter, clock, model } = this.d;
+        const now = clock.now();
+        const earlier = this.context.slice(0, Math.max(0, this.context.length - batch.length));
+        const global = limiter.globalBlocked(now);
+        if (global) {
+            this.counts.ratelimited += batch.length;
+            log.write('ratelimited', { reason: global, lines: batch.length });
+            return;
+        }
+        const open = batch.filter(l => !limiter.playerBlocked(now, l.sender));
+        if (!open.length) {
+            this.counts.ratelimited += batch.length;
+            log.write('ratelimited', { reason: 'players', lines: batch.length });
+            return;
+        }
+        if (!this.modelAvailable(now)) {
+            log.write('ratelimited', { reason: 'model-down', lines: batch.length });
+            return;
+        }
+        let raw: string;
+        try {
+            raw = await model.complete(this.d.system, replyPrompt(earlier, open, io.nearbyPlayers()), { timeoutMs: LOOP.modelTimeoutMs });
+        } catch (e) {
+            this.modelFailed(e, 'reply');
+            return;
+        }
+        this.failuresInRow = 0;
+        const ms = clock.now() - now;
+        const parsed = parseDecision(raw, open);
+        if (!parsed.ok) {
+            log.write('decision', { valid: false, error: parsed.error, raw: raw.slice(0, 300), ms });
+            return;
+        }
+        const d = parsed.value;
+        log.write('decision', {
+            valid: true,
+            respond: d.respond,
+            channel: d.channel,
+            to: d.to,
+            text: d.text,
+            injection: d.injection,
+            ...(d.injection ? { injectionFrom: d.injectionFrom, injectionReason: d.injectionReason } : {}),
+            topics: d.topics,
+            ...(d.intel ? { intel: d.intel } : {}),
+            ...(d.surprising ? { surprising: d.surprising } : {}),
+            ms
+        });
+        if (d.injection) {
+            this.counts.injections++;
+            const from = d.injectionFrom ?? d.to;
+            const line = open.find(l => l.sender === from);
+            log.write('injection', { source: 'model', sender: from, channel: line?.channel, reason: d.injectionReason, text: line?.text ?? '' });
+        }
+        if (!d.respond || !d.to) return;
+        const to = d.to;
+        const theirs = open.filter(l => l.sender === to);
+        const age = clock.now() - Math.min(...theirs.map(l => l.at));
+        if (age > LIMITS.staleMs) {
+            log.write('stale', { reason: 'slow', ageMs: age, to, text: d.text });
+            return;
+        }
+        // Answering someone who tried an injection is a decline, whatever the text says:
+        // one per player per hour, then they are ignored.
+        const suspect = (d.injection && (d.injectionFrom === null || d.injectionFrom === to)) || theirs.some(l => l.strong);
+        this.counts.answered++;
+        await this.send(suspect ? 'decline' : 'reply', d.channel, to, d.text);
+    }
+
+    private async maybeOpen(now: number): Promise<void> {
+        const { io, log, limiter, model } = this.d;
+        if (!this.d.initiate) return;
+        if (now - this.lastHeardAt < LIMITS.openerQuietMs) return;
+        if (now - this.lastOpenerTryAt < LOOP.openerRetryMs) return;
+        if (now - limiter.state.lastOpenerAt < LIMITS.openerEveryMs) return;
+        if (limiter.globalBlocked(now) || !this.modelAvailable(now)) return;
+        const nearby = io.nearbyPlayers().filter(n => !isOurs(n) && canon(n) !== canon(this.d.selfName));
+        if (!nearby.length) return;
+        this.lastOpenerTryAt = now;
+        let raw: string;
+        try {
+            raw = await model.complete(this.d.system, openerPrompt(this.context, nearby, limiter.state.openers), { timeoutMs: LOOP.modelTimeoutMs });
+        } catch (e) {
+            this.modelFailed(e, 'opener');
+            return;
+        }
+        this.failuresInRow = 0;
+        const parsed = parseOpener(raw);
+        log.write('decision', parsed.ok ? { valid: true, opener: true, respond: parsed.value.respond, text: parsed.value.text, ms: this.d.clock.now() - now } : { valid: false, opener: true, error: parsed.error, raw: raw.slice(0, 300) });
+        if (parsed.ok && parsed.value.respond) await this.send('opener', 'public', null, parsed.value.text);
+    }
+
+    private async send(kind: SendKind, channel: Channel, to: string | null, text: string): Promise<boolean> {
+        const { io, log, limiter, clock } = this.d;
+        const check = checkOutput(text, this.d.deny);
+        if (!check.ok) {
+            this.counts.blocked++;
+            log.write('blocked', { reason: check.reason, purpose: kind, channel, to, text });
+            return false;
+        }
+        const now = clock.now();
+        const why = limiter.blocked(now, kind, to, check.text);
+        if (why) {
+            const repeat = why === 'repeat' || why === 'opener-reused';
+            if (repeat) this.counts.blocked++;
+            else this.counts.ratelimited++;
+            log.write(repeat ? 'blocked' : 'ratelimited', { reason: why, purpose: kind, channel, to, text: check.text });
+            return false;
+        }
+        if (log.muted()) {
+            log.write('muted', { purpose: kind, channel, to, text: check.text });
+            return false;
+        }
+        const out = channel === 'pm' && to ? await io.pm(to, check.text) : await io.say(check.text);
+        log.write('sent', {
+            purpose: kind,
+            channel,
+            to,
+            text: check.text,
+            finalText: out.finalText,
+            ok: out.ok,
+            ...(out.filtered ? { filtered: true } : {}),
+            ...(out.truncated ? { truncated: true } : {}),
+            ...(out.ok ? {} : { message: out.message })
+        });
+        if (!out.ok) return false;
+        limiter.record(now, kind, to, check.text);
+        this.counts.sent++;
+        try {
+            log.saveState(limiter.state);
+        } catch (e) {
+            log.write('error', { where: 'state', message: e instanceof Error ? e.message : String(e) });
+        }
+        this.remember({ sender: this.d.selfName, channel, text: out.finalText || check.text, self: true });
+        return true;
+    }
+
+    private async keepPost(now: number): Promise<void> {
+        if (now - this.lastPostCheckAt < LOOP.postCheckMs) return;
+        this.lastPostCheckAt = now;
+        const me = this.d.io.self();
+        if (!me) return;
+        const away = Math.max(Math.abs(me.x - this.d.post.x), Math.abs(me.z - this.d.post.z));
+        if (away <= LOOP.postRadius && me.level === 0) return;
+        this.d.report('returning to post', { from: [me.x, me.z, me.level], tiles: away });
+        const ok = await this.d.io.returnToPost();
+        if (!ok) this.d.report('return to post failed', { from: [me.x, me.z] });
+    }
+
+    private currentPhase(now: number): string {
+        if (this.d.log.muted()) return 'muted';
+        if (!this.modelAvailable(now) || this.failuresInRow >= LOOP.modelDownAfter) return 'model-down';
+        return 'listening';
+    }
+
+    private heartbeat(now: number, force = false): void {
+        const phase = this.currentPhase(now);
+        const changed = phase !== this.phase;
+        if (!force && !changed && now - this.lastHeartbeatAt < LOOP.heartbeatMs) return;
+        this.phase = phase;
+        this.lastHeartbeatAt = now;
+        this.d.report('phase', { phase, ...this.counts });
+        this.d.log.write('heartbeat', { phase, ...this.counts });
+    }
+}
+
+// ------------------------------------------------------------------ the role
+
+function onTutorialIsland(x: number, z: number): boolean {
+    return x >= 3050 && x <= 3156 && z >= 3056 && z <= 3136;
+}
+
+async function ensureOutOfTutorial(ctx: RoleContext): Promise<void> {
+    const { sdk, bot } = ctx;
+    await sdk.waitForReady(30_000).catch(() => {});
+    for (let i = 0; i < 30; i++) {
+        const p = sdk.getState()?.player;
+        if (p && !onTutorialIsland(p.worldX, p.worldZ)) return;
+        if (i === 0) ctx.log('skipping tutorial', { x: p?.worldX, z: p?.worldZ });
+        await bot.skipTutorial();
+        await sdk.waitForTicks(2).catch(() => {});
+    }
+    throw new Error('Could not leave the tutorial');
+}
+
+async function walkToPost(ctx: RoleContext, post: Post): Promise<boolean> {
+    const away = () => {
+        const p = ctx.sdk.getState()?.player;
+        return p ? Math.max(Math.abs(p.worldX - post.x), Math.abs(p.worldZ - post.z)) + (p.level === 0 ? 0 : 1000) : Infinity;
+    };
+    for (let attempt = 0; attempt < 5 && away() > post.tolerance; attempt++) {
+        if (ctx.signal.aborted) return false;
+        const p = ctx.sdk.getState()?.player;
+        ctx.log('walking to post', { from: p ? [p.worldX, p.worldZ, p.level] : null, to: [post.x, post.z] });
+        const r = await ctx.bot.walkTo(post.x, post.z, post.tolerance, { timeout: 240_000 });
+        if (!r.success) ctx.log('walk failed', { result: r.message });
+    }
+    return away() <= post.tolerance;
+}
+
+/** The last half hour of conversation from the log, so a restart does not start cold. */
+function recentContext(dir: string, now = Date.now()): ContextLine[] {
+    const lines: ContextLine[] = [];
+    for (const r of readRecords(dir, now - 30 * 60_000, now + 1)) {
+        const channel: Channel = r.channel === 'pm' ? 'pm' : 'public';
+        if (r.kind === 'seen' && !r.ours && typeof r.text === 'string') lines.push({ sender: String(r.sender), channel, text: r.text });
+        if (r.kind === 'sent' && r.ok !== false && typeof r.text === 'string') lines.push({ sender: '(you)', channel, text: String(r.finalText || r.text), self: true });
+    }
+    return lines.slice(-LOOP.contextLines);
+}
+
+export const role: Role = {
+    name: 'ambassador',
+    produces: [],
+    readsChat: true,
+    async run(ctx) {
+        const o = ambassadorOptions(ctx.options);
+        const log = new ChatLog(o.logDir);
+        const persona = readFileSync(join(import.meta.dir, 'ambassador', 'persona.md'), 'utf8');
+        const deny = buildDenyList(listBotNames(o.botsDir), [...ALWAYS_DENIED, ...o.denyExtra]);
+        const limiter = new Limiter(parseLimiterState(log.loadState()));
+        const model = new ModelClient(o.model, { onSwitch: (from, to) => log.write('model_switch', { from, to }) });
+        const spoken = o.scoredAccount?.replace(/_/g, ' ');
+        log.write('start', { account: ctx.account, model: model.label(), post: o.post, initiate: o.initiate, muted: log.muted(), denyNames: deny.squashed.length });
+        ctx.log('phase', { phase: 'setup', model: model.label() });
+
+        await ensureOutOfTutorial(ctx);
+        if (!(await walkToPost(ctx, o.post))) ctx.log('not at post yet; listening anyway', {});
+
+        const io = createIO(ctx.sdk, ctx.bot, o.post);
+        // Chat from before this start (the SDK history since connect) is context, not something to answer.
+        const context = recentContext(o.logDir);
+        const backlog = io.readNewChat();
+        for (const line of backlog) if (!isOurs(line.sender)) context.push({ sender: line.sender, channel: line.channel, text: line.text });
+        if (backlog.length) log.write('heartbeat', { backlogLines: backlog.length });
+
+        // Load the model before the first conversation needs it: a cold load on bbs took minutes.
+        const warmStart = Date.now();
+        await model
+            .complete('Answer with the JSON object {"ok": true}.', 'ping', { timeoutMs: 300_000, maxTokens: 20 })
+            .then(() => log.write('heartbeat', { warmupMs: Date.now() - warmStart, model: model.label() }))
+            .catch(e => log.write('error', { where: 'warmup', message: e instanceof Error ? e.message : String(e) }));
+
+        const conversation = new Conversation({
+            io,
+            model,
+            log,
+            limiter,
+            deny,
+            system: systemPrompt(persona, { scoredAccount: spoken }),
+            selfName: ctx.sdk.getState()?.player?.name ?? ctx.account,
+            post: o.post,
+            initiate: o.initiate,
+            clock: realClock,
+            report: (message, data) => ctx.log(message, data),
+            context
+        });
+        try {
+            await conversation.run(ctx.signal);
+        } finally {
+            log.write('stop', { ...conversation.counts });
+        }
+    }
+};
+
+if (import.meta.main) await runStandalone(role);
