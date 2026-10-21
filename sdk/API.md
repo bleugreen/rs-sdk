@@ -576,24 +576,24 @@ interface BotWorldState {
   autoRetaliateEnabled?: boolean;
   /** Absent when the connected client predates the signal. */
   opFeedback?: OpFeedbackState;
-  /** Whitelisted transmitted varps by content name: qp (101), option_run (173), bankcert (115). Quest progress varps are server-only and never appear here. */
+  /** Whitelisted transmitted varps by content name: `qp` (101), `option_run` (173, 1 while running) and `bankcert` (115, 1 while the bank withdraws notes). Quest progress varps are server-only and never appear here; use `quests` and `questJournal`. Absent on older clients. */
   varps?: Record<string, number>;
-  /** Quest points (varp 101). */
+  /** Quest points (varp 101). Absent on older clients. */
   questPoints?: number;
-  /** Quests the quest tab shows as started or complete, by quest-list key (doric, cook, elena, mm, ...). Missing means not started. */
+  /** Quests the quest tab shows as started or complete, by quest-list key (doric, cook, elena, mm, ...). A quest missing from the map is not started. Absent on older clients. */
   quests?: Record<string, 'started' | 'complete'>;
-  /** The quest journal open now, else the last one seen open; null before any. */
+  /** The quest journal open now, else the last one seen open; null before any. Its text maps to the quest's exact stage. Absent on older clients. */
   questJournal?: QuestJournalState | null;
 }
 ```
 
 ### QuestJournalState
 
-The quest journal scroll, published while open and kept after it closes. Its text is a function of the quest's stage; speedrun/data/quest-stages.ts maps it back (docs/speedrun/quests/quest-state.md). Quest progress varps never reach a client, so the quest tab (`quests`) and this are the only quest state there is.
+The quest journal scroll, as last seen open.
 
 ```typescript
 interface QuestJournalState {
-  /** The journal's header, colour tags removed. Not always the quest's title ("The Cook's Quest"). */
+  /** The journal's header, colour tags removed. Not always the quest's title. */
   title: string;
   /** Lines as the server sent them, tags kept (@str@ marks struck-through lines); trailing empty lines dropped. */
   lines: string[];
