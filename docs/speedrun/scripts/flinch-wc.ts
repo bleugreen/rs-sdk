@@ -1,40 +1,42 @@
-// Auto-retaliate flinch as a Woodcutting starter (self-only-methods.md, row 1).
+// Auto-retaliate flinch as a Woodcutting starter (self-only-methods.md, row 1 and section 3a).
 //
-// usage (inside docs/speedrun/scripts/lab.sh from rs/2's branch, woodcutting block):
+// usage (inside docs/speedrun/scripts/woodcutting-lab.sh, woodcutting block):
 //   bun docs/speedrun/scripts/flinch-wc.ts <bot> control 60
-//   bun docs/speedrun/scripts/flinch-wc.ts <bot> npcs6 300
-//   (lab.sh form: docs/speedrun/scripts/flinch-wc.ts:npcs6:300)
+//   bun docs/speedrun/scripts/flinch-wc.ts <bot> npcs4 1200 knife 200
+//   (lab.sh form: docs/speedrun/scripts/flinch-wc.ts:npcs4:1200:knife:200)
+//   args: mode (control | npcsN), max labels, weapon (knife | none), target rolls, stand x,z
 //
-// The bot sends a log drop on every label except the one at which it first sees a new
-// hitsplat on itself; then it sends one click on the oak instead (landing on the tick
-// after the hit). Without a flinch a lone click on an expired clock only arms the roll
-// 3 ticks later (woodcut.rs2:55-60), and the drops that follow clear the chop
-// interaction (OpHeldHandler.ts:54-56) before it can roll, so nothing rolls. With NPCs attacking, a hit on a drop tick runs
-// [queue,playerhit_n_retaliate] with no interaction, which writes
-// %action_delay = map_clock + attackrate/2 (auto_retaliate.rs2:9-22); bronze thrown
-// knives have attackrate 3, so +1, and the click on the next tick rolls at once
-// (woodcut.rs2:97-99). Every xp drop in a run is therefore flinch-driven, and a 2-tick
-// gap between xp drops means two flinches in a row. Oak at level 99 succeeds on every
-// roll, so every roll is an xp drop.
+// Mechanism (traced with flinch-trace.patch): a hit on tick F runs
+// [queue,playerhit_n_retaliate] the same tick; if the player has no interaction (a drop
+// landed on F) and %action_delay < map_clock, it writes %action_delay = F + attackrate/2
+// (auto_retaliate.rs2:9-22; bronze thrown knives attackrate 3, so F+1) and sets an attack
+// interaction. A tree click landing on F+1 replaces the attack and rolls at once because
+// the clock equals map_clock (woodcut.rs2:97-99). The bot sees the hitsplat on its label
+// for tick F, so a click sent then lands on F+1.
 //
-// npcsN spawns N hobgoblins on the bot's tile with ::npcadd, two ticks apart, at the
-// multi-combat oak (2949,3314) area. Hits are read from player.combat.lastDamageTick,
-// which updates on every hitsplat including zero-damage ones (bot StateCollector).
+// npcsN: hobgoblins are added one at a time with ::npcadd on the bot's tile, each
+// attacking every 4 ticks. After each spawn the bot watches hits for 12 ticks; it stops
+// adding once the hit ticks cover two residues mod 4 that differ by 2 (a hit every 2
+// ticks on the drop ticks), or at N. Extra attackers are harmless: a hit on a click tick
+// finds the chop interaction (busy2) and writes nothing.
 //
-// Output: one line per xp drop and per hitpoint loss with the client's server tick,
-// then the gap histogram.
+// Loop, every label: if a new hitsplat is seen and the bot did not click on the previous
+// label, click the oak; otherwise drop one log. Never two clicks in a row (a click on an
+// expired clock arms it +3, woodcut.rs2:55-60). Dropping on every other label also clears
+// the retaliate attack interaction, so the player's own attack never fires while the
+// loop runs; the knife count is logged to confirm it.
+//
+// Output: one line per xp drop with the client's server tick, then the gap histogram,
+// with gaps that span a tree fell reported separately.
 import { runScript } from '../../../sdk/runner';
 import type { BotWorldState } from '../../../sdk/types';
 
 const argv = process.argv.slice(3);
 const mode = argv[0] ?? 'control';
 const labels = Number(argv[1] ?? '60');
-const npcCount = /^npcs\d+$/.test(mode) ? Number(mode.slice(4)) : 0;
-// weapon: knife (bronze thrown knives, attackrate 3, flinch +1) or none (empty hand,
-// attackrate 4, flinch +2). policy: hit (the loop below) or idle (send nothing and
-// watch whether the bot retaliates: its combat target and knife count are logged).
+const npcMax = /^npcs\d+$/.test(mode) ? Number(mode.slice(4)) : 0;
 const weapon = argv[2] ?? 'knife';
-const policy = argv[3] ?? 'hit';
+const targetRolls = Number(argv[3] ?? '200');
 const stand = (argv[4] ?? '2948,3315').split(',').map(Number);
 
 await runScript(async ({ bot, sdk }) => {
@@ -50,78 +52,91 @@ await runScript(async ({ bot, sdk }) => {
         const w = it?.optionsWithIndex.find(o => /wield/i.test(o.text));
         if (it && w) { await sdk.sendUseItem(it.slot, w.opIndex); await T(2); }
     }
-    await sdk.sendSetCombatStyle(0); // accurate: not rapid, so the flinch is +1
+    await sdk.sendSetCombatStyle(0); // accurate: not rapid, so the knife flinch is +1
     await say(`::tele 0,${stand[0] >> 6},${stand[1] >> 6},${stand[0] & 63},${stand[1] & 63}`);
     await T(2);
-    let oak = sdk.getState()!.nearbyLocs.filter(l => l.name === 'Oak').sort((a, b) => a.distance - b.distance)[0];
-    for (let i = 0; !oak && i < 10; i++) {
-        await T(1);
-        oak = sdk.getState()!.nearbyLocs.filter(l => l.name === 'Oak').sort((a, b) => a.distance - b.distance)[0];
-    }
+    const findOak = () => sdk.getState()!.nearbyLocs.filter(l => l.name === 'Oak').sort((a, b) => a.distance - b.distance)[0];
+    let oak = findOak();
+    for (let i = 0; !oak && i < 10; i++) { await T(1); oak = findOak(); }
     // fallback: the multi-combat oak south-west of Falador (loc 1281 oaktree, map m46_51)
     if (!oak) oak = { x: 2949, z: 3314, id: 1281, name: 'Oak', distance: 1 } as any;
-    const eq = sdk.getState()!.equipment.map(i => i.name).join(', ');
-    console.log(`setup: mode=${mode} at (${sdk.getState()!.player!.worldX},${sdk.getState()!.player!.worldZ}) oak@(${oak.x},${oak.z}) equipment=[${eq}]`);
-    // walk next to the oak with one ordinary chop click
+    const eq = () => sdk.getState()!.equipment.map(i => `${i.name}x${i.count}`).join(', ');
+    console.log(`setup: mode=${mode} at (${sdk.getState()!.player!.worldX},${sdk.getState()!.player!.worldZ}) oak@(${oak.x},${oak.z}) equipment=[${eq()}]`);
+    // one ordinary chop click to stand next to the oak, then stop it with a drop
     await sdk.sendInteractLoc(oak.x, oak.z, oak.id, 1);
-    await T(8);
+    await T(6);
 
-    for (let i = 0; i < npcCount; i++) { await sdk.sendSay('::npcadd hobgoblin_unarmed'); await T(2); }
-    if (npcCount) {
-        // wait until the bot has been hit at least once (or 30 ticks)
-        const hp0 = sdk.getState()!.skills.find(s => s.name.toLowerCase() === 'hitpoints')!.level;
-        for (let i = 0; i < 30; i++) {
-            const s = await T(1);
-            const hp = s.skills.find(x => x.name.toLowerCase() === 'hitpoints')!.level;
-            if (hp < hp0 || s.player?.inCombat) break;
-        }
-    }
+    const isLog = (n: string) => /logs$/i.test(n);
+    const dropLog = (s: BotWorldState) => {
+        const logs = s.inventory.filter(i => isLog(i.name));
+        const log = logs[logs.length - 1];
+        if (log) fire(sdk.sendDropItem(log.slot));
+        else console.log(`t=${s.tick} no log to drop`);
+    };
 
-    // Hit-driven loop (the OSRS method): click the oak only on the label at which a new
-    // hitsplat (any damage, including 0) is first seen, so the click lands on the tick
-    // after the hit; send a log drop on every other label, which keeps the interaction
-    // clear for the next flinch. Never click on two labels in a row: a click on an
-    // expired clock would re-arm it +3 (woodcut.rs2:55-60) and block the next flinch.
-    let lastXp = sdk.getSkillXp('woodcutting') ?? 0;
     let lastDmg = sdk.getState()!.player?.combat?.lastDamageTick ?? -1;
-    let clickedLast = false;
-    let skipNext = false;
-    let lastTarget = '';
-    const xpTicks: number[] = [];
     const hitTicks: number[] = [];
+    const seeHit = (s: BotWorldState) => {
+        const dmg = s.player?.combat?.lastDamageTick ?? -1;
+        if (dmg === lastDmg) return false;
+        lastDmg = dmg;
+        hitTicks.push(s.tick);
+        return true;
+    };
+
+    // Spawn attackers until hit residues mod 4 contain a pair 2 apart. Drops every label
+    // meanwhile, so the retaliate attack never fires.
+    const residues = () => new Set(hitTicks.slice(-12).map(t => t % 4));
+    const covered = () => { const r = residues(); return [0, 1].some(a => r.has(a) && r.has(a + 2)); };
+    for (let n = 0; n < npcMax && !covered(); n++) {
+        fire(sdk.sendSay('::npcadd hobgoblin_unarmed'));
+        for (let i = 0; i < 12; i++) { const s = await T(1); seeHit(s); dropLog(s); }
+        console.log(`spawned ${n + 1}: hit residues mod 4 = {${[...residues()].sort().join(',')}}`);
+    }
+    if (npcMax) console.log(`attackers ready: residues {${[...residues()].sort().join(',')}} covered=${covered()}`);
+
+    let lastXp = sdk.getSkillXp('woodcutting') ?? 0;
+    let clickedLast = false;
+    const xpTicks: number[] = [];
     const clickLand: number[] = [];
+    const fellAt: number[] = [];
+    let wasStump = false;
+    const knives0 = sdk.getState()!.equipment.find(i => /Bronze knife/.test(i.name))?.count ?? 0;
+    const loopHits0 = hitTicks.length;
 
     const step = (s: BotWorldState) => {
         const xp = sdk.getSkillXp('woodcutting') ?? 0;
         if (xp > lastXp) { xpTicks.push(s.tick); console.log(`X t=${s.tick} +${(xp - lastXp) / 25}`); lastXp = xp; }
-        const dmg = s.player?.combat?.lastDamageTick ?? -1;
-        const newHit = dmg !== lastDmg;
-        if (newHit) { hitTicks.push(s.tick); lastDmg = dmg; }
-        if (policy === 'idle') {
-            const c = s.player?.combat;
-            const knives = s.equipment.find(i => /Bronze knife/.test(i.name))?.count ?? 0;
-            const tgt = `${c?.targetType}:${c?.targetIndex} knives=${knives}`;
-            if (tgt !== lastTarget) { console.log(`T t=${s.tick} target=${tgt}${newHit ? ' (hit seen)' : ''}`); lastTarget = tgt; }
+        const newHit = seeHit(s);
+        const stump = s.nearbyLocs.some(l => l.x === oak.x && l.z === oak.z && l.name !== 'Oak');
+        if (stump && !wasStump) { fellAt.push(s.tick); console.log(`F t=${s.tick} oak felled`); }
+        wasStump = stump;
+        if (newHit && !clickedLast && !stump) {
+            fire(sdk.sendInteractLoc(oak.x, oak.z, oak.id, 1));
+            clickLand.push(s.tick + 1);
+            clickedLast = true;
             return;
         }
-        if (skipNext) { skipNext = false; return; } // let the chop loop run one tick
-        if (newHit && !clickedLast) {
-            const stump = s.nearbyLocs.some(l => l.x === oak.x && l.z === oak.z && l.name !== 'Oak');
-            if (!stump) { fire(sdk.sendInteractLoc(oak.x, oak.z, oak.id, 1)); clickLand.push(s.tick + 1); clickedLast = true; skipNext = true; return; }
-        }
         clickedLast = false;
-        const log = s.inventory.find(i => i.name === 'Logs');
-        if (log) fire(sdk.sendDropItem(log.slot));
-        else fire(sdk.sendSay('::give logs 27'));
+        dropLog(s);
+        if (s.inventory.filter(i => isLog(i.name)).length < 4) fire(sdk.sendSay('::give logs 10'));
     };
 
-    for (let i = 0; i < labels; i++) step(await T(1));
+    for (let i = 0; i < labels && xpTicks.length < targetRolls; i++) step(await T(1));
 
     const gaps: Record<number, number> = {};
-    for (let i = 1; i < xpTicks.length; i++) { const g = xpTicks[i] - xpTicks[i - 1]; gaps[g] = (gaps[g] ?? 0) + 1; }
+    const fellGaps: number[] = [];
+    for (let i = 1; i < xpTicks.length; i++) {
+        const g = xpTicks[i] - xpTicks[i - 1];
+        if (fellAt.some(f => f > xpTicks[i - 1] && f <= xpTicks[i])) { fellGaps.push(g); continue; }
+        gaps[g] = (gaps[g] ?? 0) + 1;
+    }
     const xpOnClick = xpTicks.filter(t => clickLand.includes(t)).length;
-    console.log(`summary: mode=${mode} labels=${labels} hitsplatsSeen=${hitTicks.length} clicks=${clickLand.length} xpDrops=${xpTicks.length} xpOnAClickTick=${xpOnClick}`);
-    console.log(`gaps between xp drops (ticks:count): ${Object.entries(gaps).map(([g, c]) => `${g}:${c}`).join(' ')}`);
+    const afterHit = xpTicks.filter(t => hitTicks.includes(t - 1)).length;
+    const knives1 = sdk.getState()!.equipment.find(i => /Bronze knife/.test(i.name))?.count ?? 0;
+    console.log(`summary: mode=${mode} weapon=${weapon} labelsHitsSeen=${hitTicks.length - loopHits0} clicks=${clickLand.length} xpDrops=${xpTicks.length} xpOnAClickTick=${xpOnClick} xpOnTickAfterSeenHit=${afterHit} fells=${fellAt.length} knives ${knives0}->${knives1}`);
+    console.log(`gaps between xp drops, no fell in between (ticks:count): ${Object.entries(gaps).map(([g, c]) => `${g}:${c}`).join(' ')}`);
+    console.log(`gaps spanning a fell: ${fellGaps.join(' ')}`);
     const span = xpTicks.length > 1 ? (xpTicks[xpTicks.length - 1] - xpTicks[0]) / (xpTicks.length - 1) : NaN;
-    console.log(`ticks per roll over the xp span: ${span.toFixed(2)}; hitsplats per tick: ${(hitTicks.length / labels).toFixed(2)}`);
+    console.log(`ticks per roll over the xp span, fells included: ${span.toFixed(2)}`);
 }, { printState: false });
