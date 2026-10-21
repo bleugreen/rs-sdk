@@ -29,6 +29,12 @@ export interface BidderOptions {
     maxPrice: number;
     /** Minutes between rechecks of the market. */
     recheckMinutes: number;
+    /**
+     * Minutes between peeks at our offers for fills waiting to be collected. The
+     * exchange is opened only for the peek: an account with it open answers trade
+     * requests with "busy", which would turn funders away.
+     */
+    fillCheckMinutes: number;
     /** How far above the competing bid we place. */
     outbidBy: number;
     /**
@@ -55,6 +61,7 @@ export function bidderOptions(raw: Record<string, unknown>): BidderOptions {
         tranche: Math.floor(num('tranche', 150, 1)),
         maxPrice: Math.floor(num('maxPrice', 3000, 1)),
         recheckMinutes: num('recheckMinutes', 30, 0.5),
+        fillCheckMinutes: num('fillCheckMinutes', 3, 0.5),
         outbidBy: Math.floor(num('outbidBy', 25, 1)),
         minPrice: Math.floor(num('minPrice', 0, 0)),
         funders: toRegExps(raw.funders ?? DEFAULT_COURIERS)
@@ -229,6 +236,7 @@ export class Bidder {
     private readonly requests: ChatCursor;
     private item: { id: number; name: string } = { id: 0, name: '' };
     private lastCycle = 0;
+    private lastPeek = 0;
     private lastLog = Date.now();
     private reached = false;
     private wantEarly = false;
@@ -284,7 +292,10 @@ export class Bidder {
             }
             try {
                 await this.acceptFunding();
-                if (!this.reached) await this.watchFills();
+                if (!this.reached && Date.now() - this.lastPeek >= this.o.fillCheckMinutes * 60_000) {
+                    this.lastPeek = Date.now();
+                    await this.peekFills();
+                }
             } catch (e) {
                 this.log('poll error', { error: String(e) });
             }
@@ -296,10 +307,11 @@ export class Bidder {
         }
     }
 
-    /** Between rechecks: keep the exchange open and cycle early once a fill is waiting. */
-    private async watchFills(): Promise<void> {
-        if (!this.ctx.sdk.getGEState()) await this.openGE();
+    /** Between rechecks: glance at our offers and cycle early once a fill is waiting. */
+    private async peekFills(): Promise<void> {
+        await this.openGE();
         const offers = (this.ctx.sdk.getGEState()?.offers ?? []).filter(o => o.item === this.item.id);
+        await this.ctx.bot.closeInterface();
         if (offers.some(o => o.items > 0 || o.coins > 0)) this.wantEarly = true;
     }
 
