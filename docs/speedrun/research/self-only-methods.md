@@ -186,7 +186,8 @@ fishing.md's read rates), against 16.7 for 3-tick fly fishing by the same read m
 
 ## 3. Lab briefs
 
-**A. Flinch 2-tick Woodcutting (row 1; worth about 700-1,000 ticks).** Setup: the woodcutting
+**A. Flinch 2-tick Woodcutting (row 1). Done: mechanism confirmed, section 3a.** The brief as
+written (its original valuation of 700-1,000 is superseded by section 2): the woodcutting
 lab block at `NODE_TICKRATE=300` on a quiet host (LAB.md). Bot Cairn with `::setstat` Woodcutting
 99, Defence 99 and Hitpoints 99, a rune axe, about 20 normal logs to drop, a stack of bronze
 thrown knives wielded on a non-rapid style, auto-retaliate on. Stand beside an oak or willow and
@@ -208,30 +209,88 @@ whether it rolled. One 100-tick run then shows which link fails: no queue run, `
 tick late. If the hitsplat is seen one label late, try an empty hand (a `+2` flinch, which a
 late click still meets) or predict the next hit from the NPC's 4-tick period.
 
-### 3a. First lab attempt (2026-10-21, negative)
+**A2. Two attackers at the two-willow tile (row 1; about 500).** In the woodcutting block at
+`NODE_TICKRATE=300`, Woodcutting 99, stand at (2674,3227) and run
+`flinch-wc.ts:npcs40:2500:knife:200:2674,3227:Willow` with `TRACE_PATCH=flinch-trace.patch`.
+First check that two attackers can engage from the east and south tiles (the two-oak tile
+engaged only one, section 3a). Then measure the steady gap histogram and the cost of a fell
+with the other willow standing, which the model assumes is 0. Success criterion: at least 80%
+of steady gaps at 2 ticks, and an overall ticks per roll within 10% of `flinch-model.ts`'s
+willow band. Then find a way to bring two real attackers there in phase, since `::npcadd` is
+staff-only.
 
-Script [`flinch-wc.ts`](../scripts/flinch-wc.ts), run inside rs/2's `lab.sh` (woodcutting
-block) on `bgsrv-mac` at `NODE_TICKRATE=300`, load average about 2.5. Bot Cairn at Woodcutting,
-Defence and Hitpoints 99, rune axe, bronze thrown knives wielded on accurate, standing at
-(2948,3315) beside the multi-combat oak (2949,3314). Hobgoblins were spawned with `::npcadd
-hobgoblin_unarmed`. Hits were read from `player.combat.lastDamageTick`, which updates on every
-hitsplat, zero-damage ones included.
+### 3a. Lab result (2026-10-21): the flinch works; the first attempt's setup did not
 
-| Run | Policy | Hitsplats seen | Clicks | Xp drops | Reading |
+**Verdict: the auto-retaliate flinch gives a 2-tick Woodcutting cycle in this revision (m).**
+Every link read in section 2 holds in the engine trace. The 2-tick cycle held on 96% of steady
+gaps over 196 rolls at level 99, and the player's own attack never fired.
+
+**Setup.** Executor `fedora` (32 cores, load average 1-4 except at the end of run 5), local
+engine at `NODE_TICKRATE=300`, headless lite client, through
+[`woodcutting-lab.sh`](../scripts/woodcutting-lab.sh) with
+`TRACE_PATCH=docs/speedrun/scripts/flinch-trace.patch`. That patch is run-only: it is applied
+for the batch and reverted on exit, and server/ is unchanged on the branch. It logs `FLTRACE`
+lines for every run of the retaliate and damage queues (with access state), for every woodcutting
+and combat script run (interaction, waypoints and `%action_delay` before and after, and
+`%option_nodef`), for every skill roll and item or loc packet, and for each player's state at the
+start and end of its tick. [`flinch-trace-summary.ts`](../scripts/flinch-trace-summary.ts)
+counts flinch writes, rolls, and attacks that fired. Bot
+[`flinch-wc.ts`](../scripts/flinch-wc.ts): Cairn at Woodcutting, Defence and Hitpoints 99,
+bronze thrown knives wielded on accurate (flinch +1), rune axe in the pack, hobgoblins added with
+`::npcadd hobgoblin_unarmed`. On every label, if a new hitsplat is seen and the previous label
+was not a click, it clicks a standing tree; otherwise it drops one log.
+
+**What the trace shows** (first run, the 3a script unchanged; ticks are server ticks). At tick
+97 a hobgoblin's swing queued `[queue,playerhit_n_retaliate]` with delay 0, and it ran the same
+tick. A drop had cleared the interaction (`inter=0 wp=0`), and `%action_delay` was 96, so
+expired. The queue wrote 98 (map_clock + 1) and set the attack interaction. The tree click sent
+on the bot's label for tick 97 landed on 98, replaced the attack, and `attempt_cut_tree` rolled
+at once with `%action_delay = map_clock`. That run gave 7 rolls, all of them flinch-driven. The
+first attempt's bot lost the rest to its setup, not to the engine:
+
+- **Attackers on adjacent ticks.** Two hobgoblins hit on ticks 1 and 2 mod 4. The second hit
+  always fell on the click tick, found the chop interaction (`busy2` true) and wrote nothing,
+  so the cycle was 4 ticks. Melee NPCs attack every 4 ticks, so a 2-tick cycle needs two
+  attackers whose hits land 2 ticks apart. A hit on a click tick is harmless.
+- **A skipped label after each click.** With no drop on the tick after the roll, `cut_tree`
+  re-armed the clock +3 (103 → 106 in the trace), and the next hit found it unexpired.
+- **No packet on the tick after a hit.** The attack interaction from `p_opnpc(2)` then fires
+  the player's own attack on the next tick (`player_ranged_attack` moving the clock +3). A drop
+  or a click on that tick prevents it, because both replace the interaction. A hit that finds
+  the clock unexpired and no interaction fires the attack the same tick, and nothing can stop
+  that. This happens when two hits come on consecutive ticks while no tree can be clicked.
+
+Why the first attempt's hit-driven runs got 0 rolls rather than a few is not settled. They ran
+on `bgsrv-mac`; a click landing a tick late (F+2) finds the +1 clock expired and arms it +3,
+which fits 0 rolls, but it was not traced.
+
+| Run (all m) | Setup | Rolls | Steady roll gaps (ticks:count) | Own attacks | Reading |
 |---|---|---|---|---|---|
-| Control, no NPCs, 60 ticks | strict drop/click alternation by tick parity | 0 | 30 | **0** (m) | As modelled: a click on an expired clock arms the roll onto a drop tick, so nothing rolls without a flinch |
-| 6 hobgoblins, 300 ticks | strict alternation | 23 hitpoint losses | 150 | 4, each on the tick after a parity swap | Invalid design: clicking every other tick keeps re-arming the clock (`woodcut.rs2:55-60`), so it is never expired on a drop tick; the 4 xp drops came from ordinary arming |
-| 6 hobgoblins, 300 ticks | click only on the tick after a seen hitsplat, drop otherwise | 144 | 75 | **0** (m) | Flinch not reproduced |
-| 1 hobgoblin, 200 ticks | same | 50 | 50 | **0** (m) | Flinch not reproduced |
-| 1 hobgoblin, idle; unarmed; knife (fresh engines) | idle and hit-driven | 0 | 0 | 0 | Invalid: the knife wield did not happen (rune axe in hand) and the hobgoblin never engaged |
+| 1 | 3a script; 2 hobgoblins; one oak, (2948,3315) | 7 | 4:5, 8:1 | 2, before the loop | Flinch works; attackers on adjacent ticks |
+| 2 | spawns 12 ticks apart | 57 | 4:26, 8:24 | 14, while spawning with no logs to drop | All four attackers on one residue mod 4 (12 is a multiple of the period) |
+| 3 | spawn controller (below) | 98 | **2:66**, 4:3 | 74, all while the oak was down | Attackers on residues 0, 2 and 3; consecutive hits during waits fired the attack; the Ranged and Hitpoints xp raised the combat level and later spawns stopped hunting |
+| 4 | two-oak tile (3002,3312); auto-retaliate off while both trees are down | 110 | 4:61, 8:15 | **0** | Only one of 10 spawned hobgoblins engaged (all hits on one residue): a tile between two trees leaves only its east and west tiles for melee attackers |
+| **5** | **one oak (2948,3315), full bot** | **196** | **2:160, 4:6** | **0** (knives 1,000 → 1,000) | **The brief A measurement.** 196 of 196 rolls on the tick after a flinch write; trace: 204 flinch writes, 0 retaliate runs blocked by `busy2`, 0 with the clock unexpired, 296 hits taken with auto-retaliate off. Oak fells: 22 (1 in 8.9 rolls), each followed by an all-down wait of 30-32 ticks at D=29, so 5.15 ticks per roll overall |
 
-What this does and does not show. The control confirms the alternation model and the
-interaction-clearing drop. The two hit-driven runs show that the simple form, a click on the
-tick after the hitsplat is seen, does not roll in this engine as driven by this bot. They do
-not show why. Candidates, none checked: the retaliate queue never runs or finds `busy2` true;
-the hitsplat appears in the bot's state a tick after the hit, so the click lands on F+2 where a
-`+1` clock has already expired; or the queue order differs from the reading in section 2. The
-engine trace in brief A answers this in one run. Until then rows 1 and 2 are conditional.
+The bot as measured in run 5:
+
+- **Spawn controller.** The delay from a spawn to the NPC's first hit is not constant mod 4
+  (m). A spawn timed for residue 2 landed on residue 3. So the bot keeps adding attackers
+  while the hits of the last 8 ticks lack two residues 2 apart. Extra attackers are harmless
+  while a tree stands, because their hits fall on click ticks. `::npcadd` NPCs despawn after
+  500 ticks (r, `ClientCheatHandler.ts:515`), and the controller re-spawns after that. After
+  about tick 1,060 of run 5, newly added hobgoblins no longer engaged, and the run stopped at
+  196 of its 200 rolls. The cause was not traced: the account's combat level was unchanged and
+  no own attack fired.
+- **Auto-retaliate off while every tree is down** (button `controls:com_3`, back on with
+  `com_2` when a tree respawns; `player_controls.rs2:4-20`). Hobgoblins are
+  `huntmode=cowardly` (r, `all.npc`), so stray attacks that raise the combat level end the
+  setup. With exactly two attackers 2 ticks apart, the toggle is not needed, because the
+  drops alone keep the attack from firing.
+
+The single-oak result prices the setup, not the mechanism. A route needs a tile that reaches
+two or more trees with room for two melee attackers, or attackers that hit from range. Section
+2 prices the variants, and brief A2 tests the best one.
 
 **B. Flinch on Mining stays (row 2; up to about 530).** First extend `mining-rotation-plan.ts`
 with a 2-tick transition for stays (the same tile, the next rock adjacent, a flinch due that
