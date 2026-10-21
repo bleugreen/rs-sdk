@@ -42,6 +42,15 @@ is exactly the configured account (display names are compared in canonical form:
 by item id and count. Any mismatch declines, and nothing changes hands.
 `receivePackage` re-checks `want` on the confirm screen.
 
+The one exception is a decline sent after our own confirm accept: the partner's
+accept can complete the trade before the decline lands. `speedrun/lib/trade.ts`
+then judges the trade by its effect, and only on the server's word: the browser
+client closes the trade screen locally the moment it declines, before the server
+has refunded anything. The giver reports failure once its offered items come
+back, success once they stay gone and the server sends "Accepted trade.", and
+an unsettled failure if neither arrives. The receiver reports success only for
+items that actually arrived.
+
 ## Measured hand-off cost (receiver's clock, 300 ms ticks)
 
 Scripts: `docs/speedrun/scripts/mule-handoff.ts` (receiver side; it reports ticks from
