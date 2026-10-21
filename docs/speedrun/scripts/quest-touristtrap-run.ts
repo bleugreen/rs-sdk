@@ -217,6 +217,9 @@ await runScript(async ({ bot, sdk }) => {
             await q.walk(3170, 3043, 1);
             await q.talk('bedabin_guard');
             await q.settle(() => p().worldZ >= 3046, 20);
+            // the guard's script ends with p_delay(3) after the teleport; a click inside it is lost
+            await waitUntil(sdk, () => false, 4);
+            S.mark();
         });
         await seg('anvil: forge the dart tip', async () => {
             while (!q.inv('thprotodarttip')) {
