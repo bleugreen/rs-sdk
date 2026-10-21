@@ -87,8 +87,14 @@ await runScript(async ({ bot, sdk }) => {
     await sdk.sendSay(`::setstat ${method.skill} ${level}`);
     for (const [obj, n] of method.give) await sdk.sendSay(`::give ${obj} ${n}`);
     if (technique === 'eat') await sdk.sendSay(`::give ${FOOD_OBJ} 18`);
-    await sdk.sendSay(`::tele ${method.tele}`);
-    await sdk.waitForTicks(6);
+    // A fresh account's tutorial exit can land after the first teleport; retry until we are there.
+    const [, mx, mz, lx, lz] = method.tele.split(',').map(Number);
+    for (let attempt = 0; attempt < 5; attempt++) {
+        await sdk.sendSay(`::tele ${method.tele}`);
+        await sdk.waitForTicks(6);
+        const p = sdk.getState()?.player;
+        if (p && Math.abs(p.worldX - (mx * 64 + lx)) <= 2 && Math.abs(p.worldZ - (mz * 64 + lz)) <= 2) break;
+    }
 
     type Target = { kind: 'loc'; x: number; z: number; id: number; op: number } | { kind: 'npc'; index: number; op: number; x: number; z: number };
     let current: Target | null = null;
