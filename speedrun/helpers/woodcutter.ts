@@ -15,10 +15,11 @@
 //                      with no matching spot fall back to every spot of that tier.
 //   target: number     stop once the bank holds this many logs of the chosen tier
 //                      ('auto' counts magic logs). Default: run until aborted.
-//   buyAxe: boolean    buy the best axe Bob (Lumbridge) sells when the account
-//                      can afford an upgrade while it is on that side of the map
-//                      (default true). Fresh accounts have 25 coins, so this only
-//                      fires when the fleet has funded the account.
+//   buyAxe: boolean    (default true) buy the best axe Bob (Lumbridge) sells that
+//                      the account can afford whenever it is on that side of the
+//                      map, and once it reaches magic trees with a worse axe than
+//                      steel, sell banked yews at Catherby for the 200 coins and
+//                      make the trip (fetchBetterAxe). false: keep the starter axe.
 //   crossingHitpoints: number  Hitpoints level to train on Lumbridge cows before
 //                      the first walk over White Wolf Mountain (default 30; see
 //                      trainForCrossing). 0 skips it.
