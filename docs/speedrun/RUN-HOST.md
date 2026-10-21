@@ -44,6 +44,7 @@ again before step 7.
 | Page server, gateway (step 3) | `T=9h` | `T=30m` |
 | Chrome, gate account's tab (steps 3 and 6) | - | `T=15m` |
 | Chrome, SCORED's tab (step 7) | `T=9h` | - |
+| `tab-login.ts`, the tab's login (steps 3, 6, 7) | `3m` | `3m` (it gives up by itself after 120 s) |
 | rs/117's helper launcher (step 4) | `T=9h` | `T=30m` |
 | Recording (step 5), SIGINT at the bound | `T=9h` | `T=30m` |
 | Live view (step 5) | `T=9h` | `T=30m` |
@@ -68,6 +69,21 @@ again before step 7.
   ffmpeg would freeze on its `q` key. All three behaviours were observed with `sleep` and `cat` under
   `tmux -L rs139` (m, 17:24-17:26 UTC). So logs are written by redirection (`>>log 2>&1`), never
   `| tee`.
+
+**Checked on the host** (m, 17:34-17:41 UTC, inside the probe-slot windows, under a `rs/139-verify`
+reservation). Each command below was taken verbatim from this page with its bound cut to 60-150 s,
+and nothing was stopped by hand:
+
+- the recording, live view and gate tab (`T=60s`) were gone within 90 s of launch;
+- the recording ended at 59.97 s with 1,799 frames, 0 dropped, `progress=end` and a playable file;
+- the gateway and page server (`T=150s`, then `T=120s`) were gone right after their bound, with
+  7780 and 8899 closed;
+- the sampler, bounded at 30 s, ended at 31 s through the SDK runner's own SIGTERM cleanup.
+
+The explicit stops still work: step 8's `q` finished a recording (17.1 s, 513 frames) and step 9's
+teardown left nothing. The gate (a)-(c) command's bound was not exercised. The host's clone
+(`85a28dc8d`) has an older `tickmanip-latency.ts` that needs an attached tab and exited by itself
+within 17 s. Afterwards the leftover check showed no tmux server, no process and no reservation.
 
 **Probe slots, while rs/96 and rs/130 measure on the host.** Nothing is tested, rehearsed or
 verified on the host in minutes :00-:03, :15-:25, :30-:33 or :45-:55 of any hour. Use :04-:14,
@@ -108,14 +124,16 @@ Remove it after teardown (only your own):
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'O=rs/NNN-rehearsal; F=$HOME/host-reserved.json; grep -q "\"owner\": *\"$O\"" $F 2>/dev/null && rm $F; cat $F 2>/dev/null || echo "no host reservation"'
 ```
 
-**Credentials: no real account's credentials, fleet or SCORED, go on the host until rs/138's launch
-is in this runbook** (main, 10:20 PDT). Step 3's Chrome launch puts the password in the tab's URL.
-From there it lands in the argument lists of `timeout` and `chrome`, which any process can read with
-`ps`, in tmux's record of the session's command, and in the page's address. That launch is **lab
-only (throwaway gate account); replaced by cairn://p/rs/138 before any real account's tab is
-opened**. Until then step 4 (the helpers log in fleet accounts) and step 7 (SCORED) are blocked. And
-while that launch exists, the checks here print process names (`comm`) or single flags
-(`grep -o`), never whole command lines (`ps -o args`, `pgrep -a`).
+**Credentials.** No password and no login token is ever a process argument, part of the URL Chrome
+starts with, or in shell history. Chrome opens a bare `?bot=<name>` page, and `tab-login.ts` logs it
+in with a one-time token over Chrome's DevTools port (cairn://p/rs/138; step 3, with a secrets check
+that expects `0 0 0`). The earlier launch put the password in the tab's URL, and so in `ps`, in tmux
+and in shell history (rs/130). It is gone from this runbook; never rebuild it.
+
+`tab-login.ts` and the page server's token endpoints exist only on rs/138's branch, so every command
+marked **requires rs/138 on RUN_COMMIT** needs step 0's `RUN_COMMIT` to include rs/138's merge.
+**Until rs/138 is merged to main, no real account's credentials, fleet or SCORED, go on the host**
+(main, 10:20 PDT). Step 4 (the helpers are fleet accounts) and step 7 (SCORED) wait for it.
 
 **Leftover check.** It lists every tmux socket on the host with its sessions, other agents' sockets
 included, plus every `chrome*`, `ffmpeg`, `bun` and `timeout` process with its age, and the host
@@ -171,13 +189,20 @@ the root `bun install` had been done (m). Put the clone on the commit main names
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'export PATH=$HOME/.bun/bin:$PATH; cd ~/rs-sdk && git fetch -q origin && git checkout -q --detach RUN_COMMIT && bun install && (cd server/webclient && bun install && bun run build) && (cd server/gateway && bun install) && mkdir -p ~/recordings ~/rs-run/chrome-profile && git log -1 --oneline && ls server/webclient/out/bot/client.js'
 ```
 
+`RUN_COMMIT` must include rs/138's merge: step 3's Chrome login (`speedrun/tools/tab-login.ts` and
+the page server's token endpoints) exists only there ("Credentials", above).
+
 Account files: the gate account (step 6) is a throwaway demo account whose name starts with
 `cairn_`, with `~/rs-sdk/bots/<gate>/bot.env` holding `BOT_USERNAME`, `PASSWORD`,
-`SERVER=rs-sdk-demo.fly.dev`, `GATEWAY_URL=ws://127.0.0.1:7780` and `TELEMETRY=false` (a demo account
-is created on its first login). SCORED's env file has the same shape and lives outside git on the
-host; its path is set on run night and written here only as `$SCORED_ENV`. **It is not put on the
-host until rs/138's launch is in this runbook** ("Credentials", above). Never use a fleet or helper
-account for the gate.
+`SERVER=rs-sdk-demo.fly.dev`, `GATEWAY_URL=ws://127.0.0.1:7780`,
+`CLIENT_URL=http://127.0.0.1:8899/bot?server=rs-sdk-demo.fly.dev&gateway=ws://127.0.0.1:7780`,
+`CDP_URL=http://127.0.0.1:9222` and `TELEMETRY=false` (a demo account is created on its first
+login). Every env file is mode 600 (`chmod 600`): the page server refuses to log in from a file other
+users can read. SCORED's env file has the same keys and mode. Its path is set on run night and
+written here only as `$SCORED_ENV`. It must be `~/rs-sdk/bots/<account>/bot.env`, with the directory
+named after `BOT_USERNAME` (`bots/*/` is gitignored, so it stays outside git): the page server and
+the run's session.ts both read accounts from `~/rs-sdk/bots`. **It is not put on the host until
+rs/138 is merged to main.** Never use a fleet or helper account for the gate.
 
 ## 1. Preconditions: Fly edge iad, TCP connect p50 at most 5 ms
 
@@ -238,26 +263,38 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o 
 ```
 
 Expect both ports listening and `302 http://127.0.0.1:8899/bot?bot=x&server=rs-sdk-demo.fly.dev&gateway=ws%3A%2F%2F127.0.0.1%3A7780`.
-
-**Chrome.** The tab's URL is
-`http://127.0.0.1:8899/bot?bot=<name>&password=<pw>&server=rs-sdk-demo.fly.dev&gateway=ws://127.0.0.1:7780`.
-The page logs in as soon as it loads, so **opening the tab is the account's login**. The launch
-builds the URL on the host from an env file, so the credentials never cross the ssh line. They do
-end up on the host's command lines, though, so this launch is:
-
-> **Lab only (throwaway gate account); replaced by cairn://p/rs/138 before any real account's tab
-> is opened.** The password is in the URL, so it is in `ps` (for both `timeout` and `chrome`), in
-> tmux's command line and in the page's address. Never point `ENV` at SCORED's or a fleet account's
-> file.
-
-Bound: `T=15m`, the gate account's tab, here and in step 6:
+Then check that the page server refuses a password in the URL (**requires rs/138 on RUN_COMMIT**).
+Expect `400`:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'T=15m; ENV=$HOME/rs-sdk/bots/GATE_ACCOUNT/bot.env; . $ENV; URL="http://127.0.0.1:8899/bot?bot=$BOT_USERNAME&password=$PASSWORD&server=rs-sdk-demo.fly.dev&gateway=ws://127.0.0.1:7780"; tmux -L run new-session -d -s chrome "exec timeout --kill-after=30s $T env DISPLAY=:10 google-chrome --user-data-dir=$HOME/rs-run/chrome-profile --no-first-run --no-default-browser-check --password-store=basic --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --start-maximized --app=\"$URL\""'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'curl -s -o /dev/null -w "%{http_code}\n" "http://127.0.0.1:8899/bot?bot=x&password=y"'
 ```
 
-SCORED's tab (step 7) is opened by rs/138's replacement, with the same flags under `T=9h`. Why each
-flag:
+**Chrome.** Chrome starts on the bare page `http://127.0.0.1:8899/bot?bot=<name>`, which carries no
+secret and waits on the title screen. **Logging in is a separate command**,
+`speedrun/tools/tab-login.ts`. It asks the page server for a one-time token (single use, 60 s,
+loopback only, minted only for a caller that holds the env file) and navigates the tab to it over
+Chrome's DevTools port. The page strips the token from its URL and exchanges it with the page server
+for the credentials, which it keeps in memory only. Neither the password nor the token is ever a
+process argument (speedrun/README.md, "Logging the browser tab in"; cairn://p/rs/138). Both commands
+**require rs/138 on RUN_COMMIT**.
+
+The tab. Bound: `T=15m` for the gate account's tab, here and in step 6; `T=9h` for SCORED's
+(step 7):
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'T=15m; ENV=$HOME/rs-sdk/bots/GATE_ACCOUNT/bot.env; NAME=$(sed -n "s/^BOT_USERNAME=//p" "$ENV"); tmux -L run new-session -d -s chrome "exec timeout --kill-after=30s $T env DISPLAY=:10 google-chrome --user-data-dir=$HOME/rs-run/chrome-profile --remote-debugging-port=9222 --no-first-run --no-default-browser-check --password-store=basic --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --start-maximized --app=\"http://127.0.0.1:8899/bot?bot=$NAME\""'
+```
+
+The login. Bound: 3 min (`tab-login.ts` gives up by itself after `--wait-ms`, 120 s by default):
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'ENV=$HOME/rs-sdk/bots/GATE_ACCOUNT/bot.env; cd ~/rs-sdk && timeout --kill-after=30s 3m ~/.bun/bin/bun speedrun/tools/tab-login.ts "$(basename "$(dirname "$ENV")")" --bots-dir="$(dirname "$(dirname "$ENV")")"'
+```
+
+Expect `[tab-login] <name>: tab reloaded with a one-time token`, then `in game after N s`, and exit
+0. A `403 ... chmod 600` means the env file's mode is too loose. **Running tab-login is the
+account's login; opening the tab is not.** Why each flag:
 
 - the three `--disable-background...` flags are tenet 11's: no timer, renderer or occlusion
   throttling;
@@ -265,18 +302,31 @@ flag:
   profile, a plain `google-chrome` only opens a window in that process and **its flags are lost**;
   a separate profile always starts a fresh browser with these flags (i: Chrome's single-instance
   behaviour per profile);
-- `--app=` opens a window with no address bar, so the URL with the password is never on screen or
-  in the recording; `--start-maximized` fills the 1920x1080 session (the window measured
-  1920x1029 below XFCE's top panel, m);
+- `--app=` opens a window with no address bar. Its URL carries only the account name.
+  `--start-maximized` fills the 1920x1080 session (the window measured 1920x1029 below XFCE's top
+  panel, m);
+- `--remote-debugging-port=9222` is how tab-login.ts navigates the one tab, and how the run's
+  session.ts does on a watchdog relaunch. It needs the separate `--user-data-dir` (Chrome ignores it
+  on the default profile). Anyone who can reach that port can drive the tab and read its memory, so
+  keep the host single-user;
 - `--password-store=basic` keeps a fresh profile from raising a keyring prompt over the tab;
   `--no-first-run --no-default-browser-check` keep the first-run dialogs away.
 
-Check the flags and the window (expect the five flag names and a window 1920 wide). The operator,
+Check the flags and the window (expect the six flag names and a window 1920 wide). The operator,
 still connected, sees the tab come up. Once this check passes, the operator **disconnects**.
 Everything from step 4 on runs disconnected:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'ps -o args= -C chrome | grep -v -- --type= | grep -o -E "disable-background-timer-throttling|disable-renderer-backgrounding|disable-backgrounding-occluded-windows|start-maximized|user-data-dir=[^ ]*"; DISPLAY=:10 xwininfo -root -tree | grep "Bot Client"; tail -2 $HOME/rs-run/gateway.log'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'ps -o args= -C chrome | grep -v -- --type= | grep -o -E "disable-background-timer-throttling|disable-renderer-backgrounding|disable-backgrounding-occluded-windows|start-maximized|remote-debugging-port=[0-9]*|user-data-dir=[^ ]*"; DISPLAY=:10 xwininfo -root -tree | grep "Bot Client"; tail -2 $HOME/rs-run/gateway.log'
+```
+
+Then run the secrets check (**requires rs/138 on RUN_COMMIT**). It feeds the password to grep
+through a file descriptor, so it is never on a command line either. The three counts are the
+processes showing the password, the processes showing a token, and the tab URLs showing either.
+Expect `0 0 0`:
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'ENV=$HOME/rs-sdk/bots/GATE_ACCOUNT/bot.env; echo "$(ps -efww | grep -c -F -f <(sed -n "s/^PASSWORD=//p" "$ENV")) $(ps -efww | grep -c "[t]oken=") $(curl -s http://127.0.0.1:9222/json/list | grep -c -F -e token= -f <(sed -n "s/^PASSWORD=//p" "$ENV"))"'
 ```
 
 ## 4. Helpers on the run machine (rs/117)
@@ -298,8 +348,8 @@ Two rules from this page apply to that launch:
   fires instead, the helpers are dropped, not logged out; whether the launcher logs out on SIGTERM
   is rs/117's to say. Neither the launcher nor HELPERS.md is on this branch or on the host's
   checkout yet (m, 17:22 UTC), so this form has not been run.
-- **Blocked until rs/138.** The helpers are fleet accounts, so their credentials stay off the host
-  until rs/138's launch is in this runbook ("Credentials").
+- **Blocked until rs/138 is merged to main.** The helpers are fleet accounts, so their credentials
+  stay off the host until then ("Credentials").
 
 ## 5. Start the recording
 
@@ -365,11 +415,9 @@ page server, Chrome, recording), rs/117's launcher with its lite runners and rol
 daemons. The `run` stack includes the live view (step 5). The drained Cairn executor's daemon (`cairn-exec`) was idle at 0.3% of a core (m, 16:15
 UTC); whether it stays up during the run is main's call. No second Chrome, no other `bun`, no other
 ffmpeg, and no tmux server but `run` (the leftover check, "Rules for every launch", lists them all).
-The list shows process names, not command lines, because the lab-only Chrome launch has a password
-in its arguments:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'uptime; ls /tmp/tmux-$(id -u)/; ps -eo pid,pcpu,etime,comm --sort=-pcpu | head -20; pgrep -c -f "chrome --type=gpu-process" | sed "s/^/Chrome GPU processes (expect 1): /"'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'uptime; ls /tmp/tmux-$(id -u)/; ps -eo pid,pcpu,etime,args --sort=-pcpu | cut -c1-160 | head -20; pgrep -c -f "chrome --type=gpu-process" | sed "s/^/Chrome GPU processes (expect 1): /"'
 ```
 
 **The gate** is measured here, on this machine, right before the run, at the real player count, and
@@ -387,8 +435,8 @@ The conditions and what to do on a failure are in RUN-ORDER.md section 1 and ten
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'cd ~/rs-sdk && timeout --kill-after=30s 15m ~/.bun/bin/bun docs/speedrun/scripts/tickmanip-latency.ts GATE_ACCOUNT --path=direct --no-tele'
 ```
 
-- **(d)**, the tab's loop rate: open the gate account's tab (step 3's Chrome command with the gate
-  account's env file), let it reach the game, then sample for five minutes with
+- **(d)**, the tab's loop rate: open the gate account's tab and log it in (step 3's Chrome and
+  tab-login commands with the gate account's env file), let it reach the game, then sample for five minutes with
   `docs/speedrun/scripts/runhost-loops.ts`. It attaches to the tab through the loopback gateway, runs
   the in-page probe (the page publishes `loops` only while a program runs), and every 10 s prints the
   page's loop rate beside each process's CPU and ffmpeg's frame counters. Closing the tab afterwards
@@ -408,14 +456,15 @@ programs run, which is what the in-run monitor reads.
 
 ## 7. SCORED's tab: the run's first login
 
-**Blocked until rs/138's launch is in this runbook.** Step 3's Chrome command is lab only and is
-never used for SCORED ("Credentials").
+**Blocked until rs/138 is merged to main and in `RUN_COMMIT`** ("Credentials").
 
-With the helpers in (step 4), the recording running (step 5) and the gate passed (step 6), open
-SCORED's tab with rs/138's launch: step 3's flags and profile, under `T=9h`. run.ts writes the run's
-host reservation (`until` = start + 9 h). The page logs SCORED in as it loads; from here the run
-scripts drive it through the gateway on 7780 (RUN-ORDER.md, STEP-MANIFEST.md). Nobody touches the
-window.
+With the helpers in (step 4), the recording running (step 5) and the gate passed (step 6), launch
+Chrome as in step 3 with `ENV=$SCORED_ENV` and `T=9h`. Then log it in with step 3's tab-login
+command, with the same `ENV`; it exits 0 once SCORED is in game. run.ts writes the run's host
+reservation (`until` = start + 9 h). From here the run scripts drive the tab through the gateway on
+7780 (RUN-ORDER.md, STEP-MANIFEST.md). Nobody touches the window. Relaunches during the run go the
+same way: session.ts mints a fresh token from `CLIENT_URL` and re-navigates the tab over
+`CDP_URL`.
 
 ## 8. Stop the recording and pull it
 
@@ -440,8 +489,12 @@ HELPERS.md says (clean logouts first). Then stop the tab's stack. The recording 
 stopped (step 8), since killing tmux under ffmpeg cuts the file short:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'tmux -L run has-session -t rec 2>/dev/null && { echo "recording still running: stop it first (step 8)"; exit 1; }; tmux -L run kill-server; sleep 2; ls /tmp/tmux-$(id -u)/; pgrep -l -f "proxy.ts|gateway.ts|rs-run/chrome-profile" || echo "tab stack stopped"'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'tmux -L run has-session -t rec 2>/dev/null && { echo "recording still running: stop it first (step 8)"; exit 1; }; tmux -L run kill-server; sleep 2; ls /tmp/tmux-$(id -u)/; pgrep -a -f "[p]roxy.ts|[g]ateway.ts|rs-run/[c]hrome-profile" || echo "tab stack stopped"'
 ```
+
+The brackets keep the pattern from matching the ssh command's own shell, whose command line contains
+it. Without them the check always found that shell and never printed `tab stack stopped` (m, 17:37
+UTC).
 
 Then run the leftover check ("Rules for every launch"). After a rehearsal, remove its host
 reservation; after the run, run.ts removes the run's. The session itself stays: nobody logs out of
@@ -451,7 +504,8 @@ XFCE. The recording stays on the host until its copy on the Mac is checked.
 
 **How it was taken.** On this host (c7i.2xlarge, 8 vCPU, no GPU), 16:28-16:52 UTC (09:28-09:52
 PDT), with the demo at about 1,690-1,700 online (the page's footer, m). Chrome 156.0.8078.47 was
-launched with step 3's flags (before the commands carried bounds): its own profile, the three throttling flags, a maximised app window of
+launched with step 3's throttling flags and profile, in an earlier launch form (before the bounds
+and rs/138's token login): its own profile, the three throttling flags, a maximised app window of
 1920x1029 in the operator's xrdp session (display :10, 1920x1080, 24 planes). The page server and
 gateway ran from the clone at main `85a28dc8d`. The tab was logged in as a throwaway `cairn_` demo
 account standing in Lumbridge and running the in-page probe (one walk to a neighbouring tile and back
