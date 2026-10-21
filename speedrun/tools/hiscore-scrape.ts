@@ -236,7 +236,9 @@ export class PoliteFetcher {
     requests = 0;
     constructor(
         private cacheDir: string,
-        readonly startedAt = new Date()
+        readonly startedAt = new Date(),
+        /** Another hiscore server (a lab engine's HISCORES_WEB_PORT), default the demo. */
+        readonly baseUrl = BASE_URL
     ) {
         mkdirSync(cacheDir, { recursive: true });
     }
@@ -251,7 +253,7 @@ export class PoliteFetcher {
             this.last = Date.now();
             this.requests++;
             try {
-                const res = await fetch(BASE_URL + path, { headers: { 'User-Agent': USER_AGENT }, signal: AbortSignal.timeout(TIMEOUT_MS) });
+                const res = await fetch(this.baseUrl + path, { headers: { 'User-Agent': USER_AGENT }, signal: AbortSignal.timeout(TIMEOUT_MS) });
                 const body = await res.text();
                 // A missing player is a 404 page with a parseable "not found" message; keep it.
                 if (res.ok || (res.status === 404 && /not found/.test(body))) {
