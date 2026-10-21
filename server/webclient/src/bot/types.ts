@@ -482,6 +482,8 @@ export interface BotWorldState extends BotState {
     fastKbdPrayerOn?: { tick: number; prayerIndices: number[] };
     /** Prayer-off packets emitted in-process on the KBD-removal publication. */
     fastKbdPrayerOff?: { tick: number; prayerIndices: number[] };
+    /** The in-page tick program running in the browser page, else the last one to run (bot/programs). */
+    program?: ProgramStatus | null;
     dialog: DialogState & {
         allComponents?: Array<{ id: number; type: number; buttonType: number; option: string; text: string }>;
     };
@@ -498,6 +500,8 @@ export interface PacketLogEntry {
     size: number;
     data: string;
 }
+
+import type { ProgramStatus } from './programs/types.js';
 
 // SDK action types - pure primitives that map to game protocol
 // Domain logic lives in BotActions (sdk/actions.ts), not here
@@ -544,4 +548,7 @@ export type BotAction =
     | { type: 'scanNearbyLocs'; radius?: number; reason: string }
     | { type: 'scanGroundItems'; radius?: number; reason: string }
     // Prayer toggle
-    | { type: 'togglePrayer'; prayerIndex: number; reason: string };
+    | { type: 'togglePrayer'; prayerIndex: number; reason: string }
+    // In-page tick programs (bot/programs): start, stop, or read the one running in the
+    // browser page. Only the browser overlay runs them; the executor refuses them.
+    | { type: 'program'; op: 'start' | 'stop' | 'status' | 'list'; name?: string; params?: Record<string, unknown>; reason: string };

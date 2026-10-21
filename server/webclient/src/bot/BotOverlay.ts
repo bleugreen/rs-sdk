@@ -10,6 +10,7 @@ import { GatewayConnection, type GatewayMessageHandler } from './GatewayConnecti
 import { OverlayUI } from './OverlayUI.js';
 import { BotActionQueue, type QueuedBotAction } from './ActionQueue.js';
 import type { ActionResult } from './ActionExecutor.js';
+import { ProgramHost } from './programs/host.js';
 
 // Global instance reference (set when overlay is created)
 let globalBotOverlay: BotOverlay | null = null;
@@ -47,6 +48,7 @@ export class BotOverlay implements GatewayMessageHandler {
     private executor: ActionExecutor;
     private gateway: GatewayConnection;
     private ui: OverlayUI;
+    private programs: ProgramHost;
 
     // Action state
     private actionQueue = new BotActionQueue();
@@ -91,6 +93,11 @@ export class BotOverlay implements GatewayMessageHandler {
         // Wire scan provider so ActionExecutor can trigger on-demand scans
         this.executor.setScanProvider(this.collector);
 
+        // In-page tick programs (bot/programs): they react in onGameTick and send
+        // through the same executor; window.rsPrograms drives them from page scripts.
+        this.programs = new ProgramHost(action => this.executor.execute(action), { search: window.location.search, loopCount: () => this.client.getClientCycle() });
+        this.programs.expose(window as unknown as Record<string, unknown>);
+
         // Connect to gateway
         this.gateway.connect();
 
@@ -119,9 +126,16 @@ export class BotOverlay implements GatewayMessageHandler {
      * fell behind) - Client.setOnGameTickCallback. In-page tick programs hook
      * in here: their packets written now leave in this game-loop pass.
      */
-    private onGameTick(ticks: number): void {
+    private onGameTick(ticks: number, arrivals: readonly number[]): void {
         this.serverTick += ticks;
-        this.sendState();
+        const connected = this.gateway.isConnected();
+        if (!connected && !this.programs.active) return;
+        const state = this.collectWorldState();
+        if (!state) return;
+        // The running program reacts to the state about to be published; what it sends
+        // leaves in this game-loop pass, and the published state carries its status.
+        this.programs.onTick(state, ticks, arrivals);
+        if (connected) this.gateway.sendState(state);
     }
 
     // ============ GatewayMessageHandler Implementation ============
@@ -334,7 +348,7 @@ export class BotOverlay implements GatewayMessageHandler {
 
         const action = queued.action;
         console.log(`[BotOverlay] Executing action: ${action.type}`);
-        const resultOrPromise = this.executor.execute(action);
+        const resultOrPromise = action.type === 'program' ? this.programs.command(action) : this.executor.execute(action);
 
         if (resultOrPromise instanceof Promise) {
             resultOrPromise.then(result => {
@@ -422,7 +436,8 @@ export class BotOverlay implements GatewayMessageHandler {
                     : []
             },
             modalOpen: this.client.isModalOpen(),
-            modalInterface: this.client.getModalInterface()
+            modalInterface: this.client.getModalInterface(),
+            program: this.programs.status()
         };
     }
 

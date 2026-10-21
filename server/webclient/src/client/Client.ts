@@ -669,9 +669,11 @@ export class Client extends GameShell {
     private loginInProgress: boolean = false;
 
     // rs-sdk: Callback fired once a server tick has been fully decoded (see drainPackets)
-    private onGameTickCallback: ((ticks: number) => void) | null = null;
+    private onGameTickCallback: ((ticks: number, arrivals: readonly number[]) => void) | null = null;
     /** PLAYER_INFOs decoded and not yet published. */
     private pendingGameTicks: number = 0;
+    /** When each of those PLAYER_INFOs' websocket messages arrived (performance.now()). */
+    private pendingTickArrivals: number[] = [];
 
     // rs-sdk: Adaptive tick speed: measures real server tick interval to scale client movement
     private lastTickTime: number = 0;
@@ -781,8 +783,10 @@ export class Client extends GameShell {
      * react to a tick in the page (in-page tick programs). It runs inside
      * gameLoop before queued SDK actions and before the cycle's flush, so
      * packets written from it leave in the same pass, on the server's next tick.
+     * `arrivals` holds when each covered tick's frame arrived, so observers can
+     * see back-to-back ticks that one pass merged.
      */
-    setOnGameTickCallback(callback: ((ticks: number) => void) | null): void {
+    setOnGameTickCallback(callback: ((ticks: number, arrivals: readonly number[]) => void) | null): void {
         this.onGameTickCallback = callback;
     }
 
@@ -8486,7 +8490,9 @@ export class Client extends GameShell {
             return;
         }
         this.pendingGameTicks = 0;
-        this.onGameTickCallback?.(ticks);
+        const arrivals = this.pendingTickArrivals;
+        this.pendingTickArrivals = [];
+        this.onGameTickCallback?.(ticks, arrivals);
     }
 
     private async tcpIn(): Promise<boolean> {
@@ -9065,6 +9071,7 @@ export class Client extends GameShell {
                 // PLAYER_INFO arrives exactly once per server tick. Count it, but
                 // publish only once the rest of the tick is decoded (drainPackets).
                 this.pendingGameTicks++;
+                this.pendingTickArrivals.push(this.stream?.receivedAt ?? now);
 
                 this.ptype = -1;
                 return true;

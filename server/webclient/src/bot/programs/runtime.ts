@@ -1,0 +1,316 @@
+// The in-page program runtime: a registry of tick programs and at most one
+// running instance, driven from the decoded-tick hook.
+//
+// One program at a time is deliberate. Every reactive step owns the player's
+// interaction and the tick's packet budget; two would fight over both. Starting
+// a program replaces the running one in the same call.
+//
+// The budget: the engine reads at most 5 user events (OPLOC, OPHELD, IF_BUTTON,
+// MOVE_CLICK, ...) per player per tick and leaves the rest in the socket for the
+// next tick (NetworkPlayer.decodeIn, ClientGameProtCategory.USER_EVENT). A sixth
+// packet would silently land a tick late, so the runtime refuses it instead and
+// counts it as `deferred`; programs order their sends by priority.
+
+import type { ActionResult } from '../ActionExecutor.js';
+import type { BotAction, BotWorldState } from '../types.js';
+import { FrameStats, LoopRate, MsHistogram } from './frames.js';
+import type { ProgramAction, ProgramCommand, ProgramContext, ProgramEnd, ProgramFactory, ProgramParams, ProgramStatus, TickProgram } from './types.js';
+
+export const USER_EVENTS_PER_TICK = 5;
+
+export interface RuntimeOptions {
+    /** Sends one action now (ActionExecutor.execute for the synchronous actions programs use). */
+    dispatch: (action: BotAction) => ActionResult | Promise<ActionResult>;
+    /** Packets per tick a program may send (default 5). */
+    packetsPerTick?: number;
+    /**
+     * Fault a program that reports no progress for this many ticks (default 60).
+     * A program can override it with the `stallTicks` start parameter.
+     */
+    stallTicks?: number;
+    now?: () => number;
+    /** The client's game-loop pass counter, for the loop rate a run publishes. */
+    loopCount?: () => number;
+    /** Every log line, prefixed with the program name (console in the page). */
+    log?: (line: string) => void;
+    /** Called once when a run ends, with its final status. */
+    onEnd?: (status: ProgramStatus) => void;
+}
+
+interface Run {
+    program: TickProgram;
+    status: ProgramStatus;
+    stallTicks: number;
+    ended: boolean;
+    tail: string[];
+    frames: FrameStats;
+    publish: FrameStats;
+    /** 1 ms buckets up to 200 ms. */
+    react: MsHistogram;
+    loops: LoopRate;
+}
+
+const LOG_TAIL = 40;
+
+export class ProgramRuntime {
+    private readonly registry = new Map<string, ProgramFactory>();
+    private run: Run | null = null;
+    /** The last run, kept after it ends so a step script can read its result. */
+    private lastStatus: ProgramStatus | null = null;
+    private nextRunId = 1;
+    private lastState: BotWorldState | null = null;
+    private readonly packetsPerTick: number;
+    private readonly defaultStallTicks: number;
+    private readonly now: () => number;
+
+    constructor(private readonly opts: RuntimeOptions) {
+        this.packetsPerTick = opts.packetsPerTick ?? USER_EVENTS_PER_TICK;
+        this.defaultStallTicks = opts.stallTicks ?? 60;
+        this.now = opts.now ?? (() => performance.now());
+    }
+
+    register(name: string, factory: ProgramFactory): this {
+        this.registry.set(name, factory);
+        return this;
+    }
+
+    names(): string[] {
+        return [...this.registry.keys()].sort();
+    }
+
+    get active(): boolean {
+        return this.run !== null && !this.run.ended;
+    }
+
+    /** The running program's status, else the last one's (null before any start). */
+    status(): ProgramStatus | null {
+        return this.run ? this.run.status : this.lastStatus;
+    }
+
+    start(name: string, params: ProgramParams = {}): ProgramStatus {
+        const factory = this.registry.get(name);
+        if (!factory) throw new Error(`unknown program '${name}' (have: ${this.names().join(', ')})`);
+        if (this.run && !this.run.ended) this.end(this.run, 'replaced');
+        const tick = this.lastState?.tick ?? -1;
+        const status: ProgramStatus = {
+            runId: this.nextRunId++,
+            name,
+            phase: 'running',
+            params,
+            startedTick: tick,
+            tick,
+            progressTick: tick,
+            counters: {},
+            gauges: {},
+            packets: 0,
+            deferred: 0,
+            skippedTicks: 0,
+            maxTickMs: 0,
+            frames: new FrameStats().summary(),
+            publish: new FrameStats().summary(),
+            react: new MsHistogram(1, 200).summary(),
+            loops: new LoopRate().summary()
+        };
+        const tail: string[] = [];
+        const log = (line: string) => this.log(status, line, tail);
+        let program: TickProgram;
+        try {
+            program = factory(params, { state: this.lastState, log });
+        } catch (e) {
+            status.phase = 'fault';
+            status.fault = `bad parameters: ${e instanceof Error ? e.message : String(e)}`;
+            status.endedTick = tick;
+            this.run = null;
+            this.lastStatus = status;
+            this.opts.onEnd?.(status);
+            return status;
+        }
+        const stall = Number(params.stallTicks ?? program.stallTicks);
+        this.run = { program, status, stallTicks: Number.isFinite(stall) && stall > 0 ? stall : this.defaultStallTicks, ended: false, tail, frames: new FrameStats(), publish: new FrameStats(), react: new MsHistogram(1, 200), loops: new LoopRate() };
+        log(`start ${JSON.stringify(params)}`);
+        return status;
+    }
+
+    stop(): ProgramStatus | null {
+        if (this.run && !this.run.ended) this.end(this.run, 'stopped');
+        return this.status();
+    }
+
+    /** The overlay action handler: start / stop / status / list. */
+    command(cmd: ProgramCommand): ActionResult {
+        try {
+            switch (cmd.op) {
+                case 'start': {
+                    if (typeof cmd.name !== 'string') return { success: false, message: 'program start needs a name', phase: 'validation', reason: 'invalid_argument' };
+                    const s = this.start(cmd.name, cmd.params ?? {});
+                    if (s.phase === 'fault') return { success: false, message: s.fault ?? 'fault', phase: 'validation', reason: 'invalid_argument', data: s };
+                    return { success: true, message: `program ${cmd.name} started (run ${s.runId})`, phase: 'dispatch', data: s };
+                }
+                case 'stop': {
+                    const s = this.stop();
+                    return { success: true, message: s ? `program ${s.name} ${s.phase}` : 'no program', phase: 'dispatch', data: s };
+                }
+                case 'status':
+                    return { success: true, message: 'program status', data: this.status() };
+                case 'list':
+                    return { success: true, message: 'programs', data: this.names() };
+                default:
+                    return { success: false, message: `unknown program op ${(cmd as { op?: unknown }).op}`, phase: 'validation', reason: 'invalid_argument' };
+            }
+        } catch (e) {
+            return { success: false, message: e instanceof Error ? e.message : String(e), phase: 'validation', reason: 'invalid_argument' };
+        }
+    }
+
+    /**
+     * Hand a decoded tick to the running program. Call it after the tick's
+     * packets are applied and before the pass flushes (BotOverlay.onGameTick).
+     * `arrivals` are the wall times (performance.now()) the frames of the decoded
+     * ticks arrived, for the run's cadence statistics.
+     */
+    onTick(state: BotWorldState, ticksAdvanced = 1, arrivals: readonly number[] = []): void {
+        this.lastState = state;
+        const run = this.run;
+        if (!run || run.ended || !state.inGame) return;
+        const st = run.status;
+        if (ticksAdvanced > 1) st.skippedTicks += ticksAdvanced - 1;
+        st.tick = state.tick;
+        if (st.startedTick < 0) {
+            st.startedTick = state.tick;
+            st.progressTick = state.tick;
+        }
+        const budget = this.packetsPerTick;
+        let sent = 0;
+        const t0 = this.now();
+        for (const at of arrivals) run.frames.add(at);
+        run.publish.add(t0);
+        if (arrivals.length) run.react.add(t0 - arrivals[arrivals.length - 1]!);
+        st.frames = run.frames.summary();
+        st.publish = run.publish.summary();
+        st.react = run.react.summary();
+        if (this.opts.loopCount) {
+            run.loops.add(t0, this.opts.loopCount());
+            st.loops = run.loops.summary();
+        }
+        const ctx: ProgramContext = {
+            state,
+            tick: state.tick,
+            ticksAdvanced,
+            nowMs: t0,
+            get budget() {
+                return Math.max(0, budget - sent);
+            },
+            send: (action: ProgramAction, what?: string) => {
+                if (run.ended) return false;
+                if (sent >= budget) {
+                    st.deferred++;
+                    this.log(st, `T${state.tick} over budget, not sent: ${what ?? action.type}`, run.tail);
+                    return false;
+                }
+                const result = this.opts.dispatch({ ...action, reason: `program ${st.name}` } as BotAction);
+                if (result instanceof Promise) {
+                    // Only synchronous actions belong in a tick program: an async one
+                    // (count dialogs) would finish in some later pass.
+                    sent++;
+                    st.packets++;
+                    void result.catch(() => {});
+                    return true;
+                }
+                if (!result.success) {
+                    st.counters.rejected = (st.counters.rejected ?? 0) + 1;
+                    this.log(st, `T${state.tick} rejected ${what ?? action.type}: ${result.message}`, run.tail);
+                    return false;
+                }
+                sent++;
+                st.packets++;
+                return true;
+            },
+            count: (name, by = 1) => {
+                st.counters[name] = (st.counters[name] ?? 0) + by;
+            },
+            gauge: (name, value) => {
+                st.gauges[name] = value;
+            },
+            progress: () => {
+                st.progressTick = state.tick;
+            },
+            log: line => this.log(st, `T${state.tick} ${line}`, run.tail),
+            done: result => {
+                if (result !== undefined) st.result = result;
+                this.end(run, 'done');
+            },
+            fault: (reason, detail) => {
+                st.fault = reason;
+                if (detail !== undefined) st.faultDetail = detail;
+                this.end(run, 'fault');
+            }
+        };
+        try {
+            run.program.onTick(ctx);
+        } catch (e) {
+            if (!run.ended) {
+                st.fault = `exception: ${e instanceof Error ? e.message : String(e)}`;
+                st.faultDetail = e instanceof Error ? e.stack : undefined;
+                this.end(run, 'fault');
+            }
+        }
+        const ms = this.now() - t0;
+        if (ms > st.maxTickMs) st.maxTickMs = Math.round(ms * 10) / 10;
+        if (!run.ended && state.tick - st.progressTick > run.stallTicks) {
+            st.fault = `stalled: no progress for ${state.tick - st.progressTick} ticks`;
+            this.end(run, 'fault');
+        }
+    }
+
+    private end(run: Run, why: ProgramEnd): void {
+        if (run.ended) return;
+        run.ended = true;
+        const st = run.status;
+        st.phase = why;
+        st.endedTick = st.tick;
+        if (st.result === undefined && run.program.snapshot) {
+            try {
+                st.result = run.program.snapshot();
+            } catch {
+                // a snapshot is a courtesy; the counters are already published
+            }
+        }
+        try {
+            run.program.onStop?.(why);
+        } catch {
+            // ignore: the run is over either way
+        }
+        this.log(st, `${why}${st.fault ? `: ${st.fault}` : ''}`, run.tail);
+        st.logTail = run.tail;
+        this.lastStatus = st;
+        if (this.run === run) this.run = null;
+        this.opts.onEnd?.(st);
+    }
+
+    private log(st: ProgramStatus, line: string, tail?: string[]): void {
+        st.last = line;
+        if (tail) {
+            tail.push(line);
+            if (tail.length > LOG_TAIL) tail.shift();
+        }
+        this.opts.log?.(`[program ${st.name}#${st.runId}] ${line}`);
+    }
+}
+
+/** Parse the `program` overlay action's payload (validated at the boundary: it comes off the wire). */
+export function parseProgramCommand(raw: unknown): ProgramCommand | string {
+    if (!raw || typeof raw !== 'object') return 'program action needs an object';
+    const r = raw as Record<string, unknown>;
+    switch (r.op) {
+        case 'start':
+            if (typeof r.name !== 'string' || !r.name) return 'program start needs a name';
+            if (r.params !== undefined && (typeof r.params !== 'object' || r.params === null || Array.isArray(r.params))) return 'program params must be an object';
+            return { op: 'start', name: r.name, params: (r.params as ProgramParams | undefined) ?? {} };
+        case 'stop':
+        case 'status':
+        case 'list':
+            return { op: r.op };
+        default:
+            return `unknown program op '${String(r.op)}' (start, stop, status, list)`;
+    }
+}

@@ -138,6 +138,12 @@ described under "Direct path and relay" below, not a client defect. Reactive loo
 the demo therefore belong in the page (cairn://p/rs/97), and the knife loops still sit
 behind the on-time probe at run time.
 
+**In-page tick programs.** `docs/speedrun/tick-programs.md` covers the page's program
+runtime: the probe, knife mining, the knife cycle (fly, willow, trees), pickpocket and
+Agility, run inside the page on the decoded tick. Its browser lab is
+`docs/speedrun/scripts/tickprog-lab.sh`, and it has the measured table (in-page vs this
+overlay vs lite, Chrome throttling, and the Ashburn row).
+
 ## Running several labs on one machine
 
 Each process takes its ports from the environment, so parallel labs only need

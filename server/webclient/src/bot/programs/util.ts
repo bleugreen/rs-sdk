@@ -1,0 +1,167 @@
+// Small readers over the published state shared by the tick programs.
+
+import type { BotWorldState, GameMessage, InventoryItem } from '../types.js';
+
+/** Game xp per base xp point (server WorldConfig xp rate). */
+export const XP_RATE = 25;
+
+export function skillOf(s: BotWorldState, skill: string) {
+    const name = skill.toLowerCase();
+    return s.skills.find(k => k.name.toLowerCase() === name);
+}
+
+export function skillXp(s: BotWorldState, skill: string): number {
+    return skillOf(s, skill)?.experience ?? 0;
+}
+
+export function baseLevel(s: BotWorldState, skill: string): number {
+    return skillOf(s, skill)?.baseLevel ?? 0;
+}
+
+export function invItem(s: BotWorldState, re: RegExp): InventoryItem | undefined {
+    return s.inventory.find(i => re.test(i.name));
+}
+
+export function invCount(s: BotWorldState, re: RegExp): number {
+    return s.inventory.filter(i => re.test(i.name)).length;
+}
+
+export function itemOp(item: InventoryItem, re: RegExp, fallback: number): number {
+    return item.optionsWithIndex.find(o => re.test(o.text))?.opIndex ?? fallback;
+}
+
+export function playerTile(s: BotWorldState): [number, number] | null {
+    return s.player ? [s.player.worldX, s.player.worldZ] : null;
+}
+
+export function regex(value: unknown, fallback: string, name: string): RegExp {
+    const src = value === undefined ? fallback : value;
+    if (typeof src !== 'string') throw new Error(`${name} must be a regular expression string`);
+    return new RegExp(src, 'i');
+}
+
+export function num(value: unknown, fallback: number, name: string): number {
+    if (value === undefined || value === null) return fallback;
+    const n = Number(value);
+    if (!Number.isFinite(n) && n !== Infinity) throw new Error(`${name} must be a number`);
+    return n;
+}
+
+export function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback: T, name: string): T {
+    if (value === undefined) return fallback;
+    if (typeof value !== 'string' || !allowed.includes(value as T)) throw new Error(`${name} must be one of ${allowed.join(', ')}`);
+    return value as T;
+}
+
+export function tile(value: unknown, name: string): [number, number] {
+    if (!Array.isArray(value) || value.length !== 2 || !value.every(v => Number.isInteger(v))) throw new Error(`${name} must be [x, z]`);
+    return [value[0], value[1]];
+}
+
+/**
+ * Yields the game messages a state carries that were not seen before. The
+ * collector keeps a rolling window, so a message is identified by its
+ * observation id when it has one, else by tick, text and repeat count.
+ */
+export class FreshMessages {
+    private readonly ids = new Set<number>();
+    private readonly texts = new Map<string, number>();
+
+    constructor(initial?: BotWorldState | null) {
+        if (initial) this.take(initial);
+    }
+
+    take(s: BotWorldState): GameMessage[] {
+        const fresh: GameMessage[] = [];
+        const counts = new Map<string, number>();
+        for (const m of s.gameMessages ?? []) {
+            if (m.observationId !== undefined) {
+                if (this.ids.has(m.observationId)) continue;
+                this.ids.add(m.observationId);
+                fresh.push(m);
+                continue;
+            }
+            const key = `${m.tick}|${m.text}`;
+            const n = (counts.get(key) ?? 0) + 1;
+            counts.set(key, n);
+            if ((this.texts.get(key) ?? 0) >= n) continue;
+            this.texts.set(key, n);
+            fresh.push(m);
+        }
+        return fresh;
+    }
+}
+
+/** stat_random (engine PlayerOps): chance out of 256 that a roll at `level` succeeds. */
+export function statRandom(level: number, lo: number, hi: number): number {
+    const l = Math.min(level, 99);
+    return Math.min(1, (Math.floor((lo * (99 - l)) / 98) + Math.floor((hi * (l - 1)) / 98) + 1) / 256);
+}
+
+export interface GapStats {
+    events: number;
+    gaps: number;
+    /** Mean gap between consecutive events not split by a break. */
+    ticksPerEvent: number;
+    histogram: Record<number, number>;
+    /** First event to last, breaks included. */
+    span: number;
+    first: number | null;
+    last: number | null;
+}
+
+/**
+ * Event ticks (xp drops, rolls, laps) and the gaps between them, skipping any
+ * gap a break falls inside (a re-bootstrap, a resync): the cadence a loop holds
+ * while it is locked. The lite scripts' summaries count gaps the same way.
+ */
+export class GapCounter {
+    private first: number | null = null;
+    private last: number | null = null;
+    private lastBreak = Number.NEGATIVE_INFINITY;
+    private events = 0;
+    private gaps = 0;
+    private total = 0;
+    private readonly histogram: Record<number, number> = {};
+
+    event(tick: number): void {
+        if (this.last !== null && !(this.lastBreak > this.last)) {
+            const g = tick - this.last;
+            this.histogram[g] = (this.histogram[g] ?? 0) + 1;
+            this.total += g;
+            this.gaps++;
+        }
+        if (this.first === null) this.first = tick;
+        this.last = tick;
+        this.events++;
+    }
+
+    /** A break at `tick` excludes the gap it falls inside. */
+    break(tick: number): void {
+        if (tick > this.lastBreak) this.lastBreak = tick;
+    }
+
+    get count(): number {
+        return this.events;
+    }
+
+    get lastTick(): number | null {
+        return this.last;
+    }
+
+    get ticksPerEvent(): number {
+        return this.gaps ? Math.round((this.total / this.gaps) * 1000) / 1000 : Number.NaN;
+    }
+
+    stats(): GapStats {
+        return {
+            events: this.events,
+            gaps: this.gaps,
+            ticksPerEvent: this.ticksPerEvent,
+            histogram: { ...this.histogram },
+            span: this.first !== null && this.last !== null ? this.last - this.first : 0,
+            first: this.first,
+            last: this.last
+        };
+    }
+}
