@@ -6,27 +6,47 @@ All tick figures are server ticks. Headline cadences were measured on a local en
 Lab: `docs/speedrun/scripts/magic-lab.sh` (port block WEB 9220, management 9221, hiscores 9222,
 node 43920, agent 8120). Scripts: `magic-cadence.ts` (ticks per cast for every candidate),
 `magic-bank.ts` (the bank cycle), `magic-route.ts` (the ladder end to end with bank visits),
-`magic-strike.ts` (1 -> 7), all under `docs/speedrun/scripts/`.
+`magic-strike.ts` (1 -> 7), `magic-boost.ts` (potion-boosted Fire Wave and Charge, the potion's
+decay, and the Mage Arena fight at base 71), all under `docs/speedrun/scripts/`.
 
 ## 1. Recommendation
 
 Wind Strike from 1 to 7. Then enchant jewellery at a bank booth: sapphire 7 -> 27, emerald
-27 -> 49, ruby 49 -> 57, diamond 57 -> 68, dragonstone 68 -> 80. Every enchant costs exactly
+27 -> 49, ruby 49 -> 57, diamond 57 -> 68, dragonstone 68 -> **71**. Every enchant costs exactly
 **3 ticks**, because the spell ends in `p_delay(1)` and the server drops any spell click while
-the player is delayed. Bank every 24-26 casts at **4 ticks of overhead** per visit. Then
-**Charge** from 80 to 99 at 5 casts per tick, measured by rs/20 in 33 ticks.
+the player is delayed. Bank every 24-26 casts at **4 ticks of overhead** per visit. At base 71,
+**fight the Mage Arena with a magic potion** (+4, so Fire Wave's 75 is met), re-sipping at each
+of the potion's 100-tick decay steps. The fight leaves the account at base 76-77. **Sip again
+and Charge** from there to 99 at 5 casts per tick: Charge needs 80 and the boosted level counts.
 
-| Start | Ticks to 99 | Basis |
+| Start | Ticks to 99 (Magic training only) | Basis |
 |---|---|---|
-| Level 1 (no quest xp) | **about 600**: 18 (strike) + about 4 (first withdraw) + 546 (7 -> 80) + 33 (Charge) | measured parts, 300 ms |
-| Level 57 (after The Grand Tree's 2,150 base) | **about 400**: about 4 + 364 (57 -> 80) + 33 | measured parts, 300 ms |
-| Level 57, Mage Arena fought at Magic 75 instead of 80 | **about 280-305** | inferred (section 5) |
+| **Level 57 (after The Grand Tree's 2,150 base), boosted route** | **about 205**: about 4 (first withdraw) + 156 (52 casts, 57 -> 71) + 4 (1 bank visit) + 41 (sip, then Charge from 76) | measured parts, 300 ms; plus about 15-35 extra fight ticks (below) |
+| **Level 1 (no quest xp), boosted route** | **about 400**: 18 (strike) + about 4 + 321 (107 casts, 7 -> 71) + 16 (4 bank visits) + 41 | measured parts, 300 ms; plus the same fight delta |
+| Level 57, Mage Arena at an unboosted 75 | about 280-305 | inferred (section 5), superseded |
+| Level 57, Mage Arena at 80 | about 400: about 4 + 364 (57 -> 80) + 33 (Charge) | measured parts, 300 ms |
+| Level 1, Mage Arena at 80 | about 600: 18 + about 4 + 546 (7 -> 80) + 33 | measured parts, 300 ms |
 
-One ordering choice is worth about 100 ticks. **Fight the Mage Arena at Magic 75, not 80.**
-The fight is on the route anyway (it unlocks Charge) and pays about 3,000 base Magic
-(`mage_arena.md`). Below 80, that xp replaces dragonstone enchanting at 26 base per tick,
-about 115 ticks of casting. Above 80, it replaces Charge at 900 base per tick, about 3 ticks.
-Fire Wave, the arena spell, needs level 75. The Charge supply is unchanged.
+The ordering is what saves the ticks. The fight is on the route anyway (it unlocks Charge) and
+pays about 3,000 base Magic. Below 80 that xp replaces dragonstone enchanting at 26 base per
+tick; above 80 it replaces Charge at 900 base per tick, worth about 3 ticks. Every spell's level
+check reads the **boosted** level (`magic.rs2:22`, `stat(magic)`), so a +4 magic potion moves
+both gates down by 4: Fire Wave (75) from base 71, Charge (80) from base 76.
+
+**Measured at 300 ms** (`magic-boost.ts`):
+
+- Fire Wave at base 71 is refused. After one sip (75/71) it casts.
+- Kolodion at base 71 + potion under Protect from Magic took **328, 320 and 346 ticks**. rs/20
+  measured 312, 314 and 322 at 300 ms with base 80 (`mage_arena.md`). Each fight used 3 doses
+  (one before the talk, 2 re-sips) and paid 2,787-3,129 base, ending at **base 76, 76 and 77**.
+- Charge from base 76 + potion took 180 casts and **41 ticks from the sip to 99**. From 77 it
+  took 175 casts and 40 ticks. Both ran 5 casts per tick with no refusal; the boosted level held
+  at 80 or 81 while base climbed to meet it.
+
+Compared with the arena at an unboosted 75, the boosted route saves 24 dragonstone casts before
+the fight and the 2-10 after it. That is about 75-100 ticks. Base 76 needs 2,379 base from the
+fight, starting from the bottom of level 71. All four measured yields clear that: three at base
+71 and rs/3's lowest at base 80 (2,404).
 
 Charge is the only Magic spell that fires more than once per tick. Every other xp spell sets
 a player delay, and the engine refuses spell, loc and inventory clicks while one is pending.
@@ -50,6 +70,11 @@ and `magic-route.ts` for the bands as run end to end). Success is 100% for every
 | **7 -> 80, end to end** | the five enchant bands, 24 rings per inventory | | | | | **170** | **546** (510 casting + 9 bank visits x 4) |
 | **57 -> 80, end to end** | diamond, dragonstone, 26 per inventory | | | | | **115** | **364** (345 casting + 19 over 5 visits) |
 | 80 -> 99 | Charge (com 1193) | Magic 80, `%magearena >= 8` (Mage Arena) | 180 | 0.2 (5 per tick) | 900 | 163 | **33** (rs/20, `quest-magearena-charge.ts`, 300 ms) |
+| **Boosted route** | | | | | | | |
+| 68 -> 71 | Enchant dragonstone ring | Magic 68 | 78 | 3 | 26.00 | 14 | 42 + banks |
+| **57 -> 71, end to end** | diamond, dragonstone, 26 per inventory | | | | | **52** | **about 164** (156 casting + first withdraw + 1 visit; inferred from the measured cadence and bank cycle) |
+| 71 -> 76/77 | Mage Arena fight: Fire Wave (com 1189) at boosted 75, Protect from Magic, re-sip at each decay step | base 60 to start (`kolodion.rs2:6`), boosted 75 for Fire Wave | 42.5 + 2 per damage | 5 (attack delay) | about 8.8 | about 50-58 (inferred from the xp) | **320-346** (3 runs, mean 331), +2,787-3,129 base (measured, 300 ms) |
+| 76/77 -> 99 | Charge after a magic-potion sip | **boosted** 80, `%magearena >= 8` | 180 | 0.2 (5 per tick) | 900 | 175-180 | **40-41 from the sip** (4 ticks of sip delay + 36-37 casting; measured, 300 ms) |
 
 "Ticks for band" counts the span from the first cast to the tick the next action can land.
 The last cast's delay is included. The end-to-end figures are measured
