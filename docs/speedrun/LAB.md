@@ -111,6 +111,22 @@ host (`skills/tick-manipulation.md` section 6). Run
 (a packet sent on label c lands on tick c+1), and the publication interval should sit
 at the tick rate. Say in the document which host each number came from.
 
+Measured on 2026-10-21 (`tickmanip-latency.ts`, 60 trials, lite client with the
+rs/22 fix):
+
+| Host and target | Load | Latency in ticks | Publication interval p50 / p90 / max | Send resolve p50 |
+|---|---|---|---|---|
+| bbs, local lab engine at 300 ms | 2.5 on 32 cores | 1: 60 of 60 | 304 / 306 / 309 ms | 20 ms |
+| bbs, demo server (rs-sdk-demo.fly.dev), private loopback gateway, fleet 20-21 of 21 online | 4.0 | 2: 25, 3: 35, none at 1 | 291 / 385 / 626 ms | 20 ms |
+
+bbs is the reference host for lab numbers. The Mac (`local`) is not: it ran at
+load 80-112 during the rs/26 runs (main measured 11-18 on 16 cores at other
+times tonight), and numbers taken there read pessimistic (the knights lost a
+third of their 2-tick success gaps). On the demo the bot's own sends are as fast
+as in the lab; the extra 1-2 ticks come after the packet leaves the host. A loop
+that reacts to observed state (Agility obstacles, dialogue) pays them on every
+step. A loop that clicks blindly every tick (pickpocketing) does not.
+
 Long-lived terminals may not be pinnable to the executor that runs your
 scripts. In that case, run the whole lab inside one pinned batch:
 `LAB_BLOCK=<block> NODE_TICKRATE=<ms> bash docs/speedrun/scripts/lab.sh <bot> <script.ts>[:arg:arg] ...`

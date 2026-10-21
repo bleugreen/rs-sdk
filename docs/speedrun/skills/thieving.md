@@ -10,15 +10,21 @@ cadence, stun, eating, end-to-end runs), [`thieving-stall.ts`](../scripts/thievi
 
 Pickpocket Knights of Ardougne in the East Ardougne market from level 55 to 99,
 clicking the knight once every server tick. A success costs 2 ticks and a
-failure 11 (measured), the knights' success chance reaches 94% at 99, and every
+failure 11 (measured at 100 ms, and confirmed at production's 300 ms on the quiet
+lab host bbs and on the demo server itself; section 4), the knights' success chance
+reaches 94% at 99, and every
 other target in the content earns less than half the knights' rate at any level
 from 55 up (section 5). From 55 to 99 takes **about 2,200 ticks** (measured
 end to end three times: 2,176 / 2,198 / 2,226). From a fresh account, Ardougne
 men to 25, warrior women to 40 and guards to 55 add about 640 ticks (inferred),
 so **1 -> 99 is about 2,840 ticks**. Fight Arena's 2,175 base xp starts the
 account at 57 and makes it **about 1,950-2,000 ticks** (measured 1,952 from 57;
-model 1,975). Sharks eaten between successes cost nothing; about 15 cover the
-whole route at 40+ HP.
+model 1,975). Those end-to-end runs are at 100 ms. Because the bot clicks blindly
+every tick instead of reacting, the cadence does not depend on packet latency, and
+the 300 ms measurements match: walking overhead of 0.23-0.26 ticks per roll on bbs
+against the model's 0.2, so `thieving-model.ts` and the totals stand. Sharks eaten
+between successes cost nothing (confirmed at 300 ms); about 15 cover the whole route
+at 40+ HP.
 
 **On the planned quest route** (cairn://p/rs/3) Fight Arena is the only Thieving quest,
 so the headline is the Fight Arena row: **about 1,950-2,000 ticks** from 57. Biohazard
@@ -31,7 +37,8 @@ Legends rows below are off the planned route.
 
 ## 2. Route by level band
 
-Base xp per tick is measured where a script and sample are named; band ticks
+Base xp per tick is measured where a script and sample are named (at 100 ms; the
+knight cadence was confirmed at 300 ms, section 4); band ticks
 from 55 up are the mean of the three measured 55 -> 99 runs
 (`thieving-pickpocket.ts --level=55 --hold=0 --until=99`, 548-558 rolls each);
 bands below 55 are from `thieving-model.ts --overhead=0.2` (inferred, with the
@@ -159,7 +166,32 @@ Measured (`thieving-pickpocket.ts`, clicking every tick):
 
 Across about 3,100 knight successes, the measured count is within 0.1% of the
 `stat_random` prediction. Gaps longer than 2 or 11 are walks after a wandering
-knight: 0.1-0.5 extra ticks per roll depending on the knight (section 6).
+knight: 0.1-0.5 extra ticks per roll depending on the knight (section 6). The
+rows above are at 100 ms on the stock lite client.
+
+At 300 ms (`thieving-pickpocket.ts`, clicking every tick; host load is the
+one-minute load average during the run):
+
+| Run | Client, host | Rolls | Success measured / predicted | Gap after success = 2 | Gap after failure = 11 | Walking overhead per roll | Rolls / tick |
+|---|---|---|---|---|---|---|---|
+| Knight 55 | fixed lite, bbs (load 2.5) | 300 | 0.583 / 0.606 | 169 / 175 | 93 / 124 | 0.26 | 0.167 |
+| Knight 99 | fixed lite, bbs (load 2.5) | 300 | 0.947 / 0.941 | 262 / 283 | 12 / 16 | 0.23 | 0.368 |
+| Knight 55 | stock lite, bbs (load 3.5) | 300 | 0.567 / 0.606 | 159 / 169 | 101 / 130 | 0.33 | 0.159 |
+| Knight 99 | stock lite, bbs (load 3.5) | 300 | 0.910 / 0.941 | 257 / 272 | 25 / 27 | 0.19 | 0.345 |
+| Man 1 -> 28 | fixed lite, **demo server** from bbs, fleet 21/21 online | 40 | 0.825 / 0.744 | 26 / 32 | 5 / 7 | | 0.253 |
+| Knight 55 | fixed lite, Mac (load 80-112) | 300 | 0.610 / 0.606 | 115 / 182 | 62 / 116 | 0.65 | 0.158 |
+| Knight 99 | fixed lite, Mac (load 80-112) | 300 | 0.927 / 0.941 | 205 / 277 | 11 / 22 | 0.50 | 0.319 |
+| Knight 55 -> 99, 40 HP | fixed lite, Mac (load 80-112) | 544 | 0.809 / 0.832 | 268 / 439 | 54 / 104 | | 2,431 ticks total |
+
+Walking overhead is the measured span minus 2 per success and 11 per failure,
+per roll. On the quiet host the 300 ms cadence is the 100 ms cadence: 92-97% of
+success gaps are 2, and the rs/22 client fix makes no difference, because no
+click waits on observed state. Rolls per tick and base xp per tick differ from
+the 100 ms rows mainly through success-rate luck (58% against 64% at 55). The
+loaded Mac shows what a busy host costs: a third of success gaps became 3 because
+clicks arrived just after the tick boundary, and the 55 -> 99 run took 2,431 ticks
+against about 2,200. A fedora run at load 29 had multi-second bot stalls (LAB.md)
+and is not used.
 
 What was measured to settle question 1:
 
@@ -233,7 +265,9 @@ measured spot checks in section 4):
   success, and at least 3 ticks after the last stun ended, leaves the 2-tick
   cadence intact: 12 of 12, 14 of 14 and 39 of 48 such eats measured (the rest
   coincided with a walk). An eat sent while the player is delayed (the tick
-  after a click) is rejected like a click.
+  after a click) is rejected like a click. Confirmed at 300 ms (stock lite,
+  fedora): 36 of 36 failure gaps with an eat 4 ticks into the stun were 14, and
+  27 of 28 intervals with a success-window eat kept the 2-tick gap.
 - **HP level.** At 40+ HP every eat can wait for a success window; the 40 and
   99 HP runs needed no forced eats. At 10 HP a failure streak forces eating
   mid-stun: 26 forced eats, about 12 of them costing 3 ticks, in the 10 HP
@@ -264,11 +298,14 @@ measured spot checks in section 4):
   paladins and heroes ignore pickpocketing.
 - **Members world only** (`pickpocket.rs2:101-104`). The demo server is
   members (`fly.toml:23`, `NODE_MEMBERS = "true"`).
-- **The bot must click every tick on production.** All measurements are on a
-  local 100 ms engine with negligible latency. On production (300 ms ticks) a
-  click that arrives one tick late turns a 2-tick success into 3. Per-tick
-  clicking tolerates jitter up to one tick, because extra clicks are only
-  rejected, never harmful.
+- **The bot must click every tick, blindly.** The cadence needs a click to land
+  in the tick after each roll and in the stun's last tick. Clicking every tick
+  without waiting on observed state makes that independent of latency: on the
+  demo a packet lands 2-3 ticks after the state it answers (LAB.md), yet 26 of 32
+  success gaps there were still 2. What costs ticks is a tick with no click: a
+  host stall, or a gap in the demo's state publications (up to 626 ms measured)
+  that leaves one tick without a click and the next with two. Extra clicks are
+  only rejected, never harmful. Run on a quiet host (LAB.md).
 
 ## 7. Helper supply list
 
@@ -281,9 +318,12 @@ Nothing else is needed: no tools, no gloves, no banking.
 
 ## 8. Open questions
 
-- **Production latency.** The 2-tick cadence depends on a click landing in the
-  tick right after each roll. A short run on the public server, logging
-  `gapAfterSuccess` with this script, would settle it.
+- **Production latency: narrowed.** A 40-roll run on the demo server (men,
+  Thieving 1 -> 28, from bbs) kept the cadence: 26 of 32 success gaps were 2 and
+  5 of 7 failure gaps 11, against 92-97% and 75-93% in the quiet lab. What is still
+  open is the cost of the demo's uneven state publications over a whole knight
+  run. A 300-roll knight run on the demo (an account at Thieving 55) would put a
+  number on it; from the sample above, expect a few percent over the lab.
 - **Getting to Ardougne.** Travel to the market (walking, or the Ardougne
   teleport, which needs Magic and Plague City) is not costed here. Fight Arena
   ends near Ardougne, so the quest route may make it free.

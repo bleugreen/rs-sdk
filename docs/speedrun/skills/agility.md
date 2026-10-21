@@ -17,26 +17,42 @@ obstacles; the obstacles themselves move the player by script (`forcemove`,
 The inferred tick totals come from
 [`agility-model.ts`](../scripts/agility-model.ts), which combines the
 measured lap and fall costs with the success-roll formula; rerun it with
-`bun docs/speedrun/scripts/agility-model.ts`.
+`bun docs/speedrun/scripts/agility-model.ts --lap=<clean lap ticks>`.
+
+**Lap cost by tick rate, client and host.** The bot clicks each obstacle after it
+sees the previous obstacle's xp, so every obstacle pays one packet latency. The
+clean Wilderness lap measured 77 ticks at 100 ms, 71 at 300 ms on the stock lite
+client and 66 at 300 ms with the rs/22 client fix, both on the quiet lab host bbs
+with 1-tick latency (9 of 9 laps each, `agility-course.ts`). On the demo server a
+packet lands 2-3 ticks after the state it answers (mean 2.58, `tickmanip-latency.ts`
+from bbs, 60 trials, LAB.md), which adds about 1.6 ticks per obstacle: **about 74
+ticks per lap on the demo (inferred)**. Unless a figure says otherwise, the tables
+below use 74 (`--lap=74`, the production estimate); the 300 ms lab figure (`--lap=66`)
+is given beside the headlines.
 
 ## 1. Recommendation
 
 **On the planned quest route** (cairn://p/rs/3): Grand Tree is the only Agility
-quest. Its 7,900 base takes the account to **level 75**, leaving **about 4,695
-ticks** of Wilderness laps to 99 (inferred, `agility-model.ts`). That makes Agility
+quest. Its 7,900 base takes the account to **level 75**, leaving **about 4,510
+ticks** of Wilderness laps to 99 on the demo server (inferred, `agility-model.ts
+--lap=74`), or 4,024 at 1-tick latency (300 ms lab, fixed lite client, 66-tick laps
+measured). On 77-tick laps at 100 ms it was 4,695. That makes Agility
 the largest of the five self-only skills on this route. Train to 22 on the Gnome
 course and drink an Agility potion for Grand Tree's level-25 check (122 ticks, below).
 Every other Agility quest is off the route because its playtime exceeds the laps it
-replaces. Saved on top of Grand Tree (inferred):
+replaces. Saved on top of Grand Tree (inferred, 74-tick laps; 66-tick in brackets):
 
-- Tourist Trap, both picks on Agility: 1,414 ticks, against 1,430-1,830 of quest plus
-  110-220 of guard handling.
-- The troll chain (Troll Romance's 8,000): 1,220, against about 2,735
+- Tourist Trap, both picks on Agility: 1,359 ticks (1,212), against 1,430-1,830 of
+  quest plus 110-220 of guard handling.
+- The troll chain (Troll Romance's 8,000): 1,172 (1,045), against about 2,735
   (`docs/speedrun/quests/troll_romance.md`).
-- The Regicide chain (Underground Pass + Regicide, 16,750): 2,509, against 7,400-8,100
-  for the chain.
-- Fremennik Trials: 436, but it also feeds Woodcutting, Fishing, Thieving and three
-  combat skills; the README weighs the whole quest.
+- The Regicide chain (Underground Pass + Regicide, 16,750): 2,411 (2,150), against
+  7,400-8,100 for the chain.
+- Fremennik Trials: 419 (373), but it also feeds Woodcutting, Fishing, Thieving and
+  three combat skills; the README weighs the whole quest.
+
+Shorter laps make every quest worth slightly less to Agility, so none of these
+decisions changes.
 
 Underground Pass before Grand Tree does not pay even when that chain is done: falls at
 Agility 1-10 cost an expected 730-960 ticks (`docs/speedrun/quests/underground_pass.md`),
@@ -45,8 +61,8 @@ against 122-159 of Gnome laps.
 **With every Agility quest:** Agility's quest rewards are Grand Tree, Regicide, Troll
 Romance and Underground Pass. Regicide requires Underground Pass, so the real
 base is **32,650 base xp (level 96)**, not the 29,650 that leaves Underground
-Pass out. From there the Wilderness course takes **about 1,035 ticks** to 99
-(inferred). Two Tourist Trap picks, or one Legends pick, or Fremennik Trials
+Pass out. From there the Wilderness course takes **about 994 ticks** to 99
+(inferred, 74-tick laps; 887 on 66-tick laps). Two Tourist Trap picks, or one Legends pick, or Fremennik Trials
 plus one Tourist Trap pick covers the remaining 7,288 base, and then Agility
 needs **no course training at all**. The account needs **no Agility training
 before the first quest** as long as Underground Pass (or Fremennik Trials, or a
@@ -55,12 +71,13 @@ for Grand Tree's tree climb: 159 ticks of Gnome laps, or 122 ticks to level 22
 plus an Agility potion.
 
 **Without quests:** Gnome Stronghold course 1 -> 52, then the Wilderness course
-52 -> 99, about **6,960 ticks** (inferred: 1,230 + 5,726). Using the Edgeville
-dungeon monkey bars for 15 -> 52 cuts this to **about 6,510 ticks**, but they
-are in level-6 Wilderness among aggressive spiders and earth warriors.
+52 -> 99, about **6,730 ticks** (inferred: 1,230 + 5,503). Using the Edgeville
+dungeon monkey bars for 15 -> 52 cuts this to **about 6,290 ticks**, but they
+are in level-6 Wilderness among aggressive spiders and earth warriors. The sub-52
+parts use laps and crossings measured at 100 ms only.
 
 The Wilderness course is the only method above level 52 that is worth
-doing. At 5.8 to 7.1 base xp per tick it is about twice the best Brimhaven
+doing. At 6.1 to 7.4 base xp per tick it is about twice the best Brimhaven
 arena trap at the same level, and three to six times anything else measured.
 It sits at Wilderness levels 50 to 56, open to player killers.
 
@@ -68,22 +85,32 @@ It sits at Wilderness levels 50 to 56, open to player killers.
 
 | Band | Method | Location | Unlock | Base xp / action | Ticks / action | Success | Base xp / tick | Ticks for band |
 |---|---|---|---|---|---|---|---|---|
-| 1 -> 15 | Gnome Stronghold course | start (2474, 3436) | none | 86.5 per lap (read: 7 obstacles 47.5 + bonus 39, `gnome_course.rs2:1-110`) | 70.7 per lap (measured, `agility-course.ts gnome`, 3 laps at 99; no fail rolls so level does not matter) | 100% (read: no fail branch) | 1.22 | 61 (inferred) |
+| 1 -> 15 | Gnome Stronghold course | start (2474, 3436) | none | 86.5 per lap (read: 7 obstacles 47.5 + bonus 39, `gnome_course.rs2:1-110`) | 70.7 per lap (measured at 100 ms, `agility-course.ts gnome`, 3 laps at 99; no fail rolls so level does not matter; not remeasured at 300 ms) | 100% (read: no fail branch) | 1.22 | 61 (inferred) |
 | 15 -> 52 | Gnome course (safe) | as above | none | 86.5 | 70.7 | 100% | 1.22 | 1,169 (inferred) |
 | 15 -> 52 | or Edgeville dungeon monkey bars, back and forth | (3120, 9964) to (3120, 9969), Wilderness level 6 | 15 Agility (read: `shortcuts.loc:30`) | 20 (read: `shortcuts.rs2:193`) | 10.1 per crossing (measured, `agility-repeat.ts`, 11 gaps at level 15) | 100% (read: fail params 256/512 always pass, `shortcuts.loc:33-34`) | 1.98 | 722 (inferred) |
-| 52 -> 70 | Wilderness course | pipe at (3004, 3938); enter through the ridge gate (2998, 3917) | 52 Agility for the ridge gate (read: `wilderness_course.rs2:2`); pipe needs 49 (`:53`) | 571.4 per lap (read: 12.5 + 20 + 20 + 20 + 0 + bonus 498.9, `wilderness_course.rs2:76-176`) | 77 per clean lap (measured, n=36 fall-free laps at levels 52-99); 99.5 expected at 52 with falls (inferred) | see section 4 | 5.84 at 52 to 6.32 at 70 (inferred) | 628 (inferred) |
-| 70 -> 85 | Wilderness course | as above | | 571.4 | 91 -> 86 expected | | 6.32 -> 6.69 | 1,507 (inferred) |
-| 85 -> 93 | Wilderness course | | | 571.4 | 86 -> 83 | | 6.69 -> 6.92 | 1,650 (inferred) |
-| 93 -> 96 | Wilderness course | | | 571.4 | 83 -> 82 | | 6.92 -> 7.02 | 876 (inferred) |
-| 96 -> 99 | Wilderness course | | | 571.4 | 82 -> 80 | | 7.02 -> 7.14 | 1,065 (inferred) |
+| 52 -> 70 | Wilderness course | pipe at (3004, 3938); enter through the ridge gate (2998, 3917) | 52 Agility for the ridge gate (read: `wilderness_course.rs2:2`); pipe needs 49 (`:53`) | 571.4 per lap (read: 12.5 + 20 + 20 + 20 + 0 + bonus 498.9, `wilderness_course.rs2:76-176`) | clean lap: 77 at 100 ms (measured, n=36, levels 52-99); 71 stock / 66 fixed lite client at 300 ms on bbs (measured, 9 of 9 each); about 74 on the demo (inferred). With falls at 52: 95.6 expected (inferred, 74) | see section 4 | 6.08 at 52 to 6.58 at 70 (inferred) | 604 (inferred) |
+| 70 -> 85 | Wilderness course | as above | | 571.4 | 88 -> 83 expected | | 6.58 -> 6.97 | 1,448 (inferred) |
+| 85 -> 93 | Wilderness course | | | 571.4 | 83 -> 80 | | 6.97 -> 7.20 | 1,586 (inferred) |
+| 93 -> 96 | Wilderness course | | | 571.4 | 80 -> 79 | | 7.20 -> 7.28 | 842 (inferred) |
+| 96 -> 99 | Wilderness course | | | 571.4 | 79 -> 77 | | 7.28 -> 7.43 | 1,023 (inferred) |
+
+Band ticks for the Wilderness rows are at 74-tick laps; at 66 they are 538, 1,292,
+1,414, 751 and 913, and at 77 (100 ms) 628, 1,507, 1,650, 876 and 1,065.
 
 Measured check on the Wilderness rate (`agility-course.ts wilderness`):
 
-| Run | Laps | Ticks | Base xp | Base xp / tick | Falls |
-|---|---|---|---|---|---|
-| set to 99 | 3 | 216 | 1,714 | 7.94 (laps of 73 and 75 ticks) | 0 |
-| set to 52 (rises to about 84 during the run) | 25 | 2,123 | 14,390 | 6.78 | 3 (2 rope swing, 1 stones) |
-| set to 75 (rises to about 80) | 15 | 1,237 | 8,624 | 6.97 | 1 (rope swing) |
+| Run | Tick rate, client, host | Laps | Ticks | Base xp | Base xp / tick | Falls |
+|---|---|---|---|---|---|---|
+| set to 99 | 100 ms, stock lite | 3 | 216 | 1,714 | 7.94 (laps of 73 and 75 ticks) | 0 |
+| set to 52 (rises to about 84 during the run) | 100 ms, stock lite | 25 | 2,123 | 14,390 | 6.78 | 3 (2 rope swing, 1 stones) |
+| set to 75 (rises to about 80) | 100 ms, stock lite | 15 | 1,237 | 8,624 | 6.97 | 1 (rope swing) |
+| set to 99 | 300 ms, fixed lite, bbs (load 2.5) | 10 | 655 | 5,714 | 8.72 (9 laps of exactly 66) | 0 |
+| set to 99 | 300 ms, stock lite, bbs (load 3.5) | 10 | about 705 | 5,714 | 8.10 (9 laps of exactly 71) | 0 |
+| set to 99 | 300 ms, stock lite, fedora (load about 29) | 15 | 1,150 | 8,624 | 7.50 (13 of 14 laps of 71; one rope-swing fall lap of 151) | 1 |
+| set to 99 | 300 ms, fixed lite, Mac (load 80-112) | 12 | 868 | 6,877 | 7.92 (laps of 66-69; one log-fall lap of 121) | 1 |
+
+A fixed-client run on fedora at load about 29 gave laps of 66-157 ticks: bot stalls
+of several seconds (LAB.md), not the course. It is not used.
 
 The lab runs fell less often than the formula predicts: 4 falls in 39 laps
 against about 9 expected at the levels involved. So the model's rates are
@@ -124,38 +151,38 @@ weigh against the 159 ticks saved.
 **Ticks to 99 by quest set** (inferred, `agility-model.ts`; quest playtime
 excluded, see `docs/speedrun/quests/`):
 
-| Quest xp in | Base xp | Start level | Ticks to 99 |
-|---|---|---|---|
-| none | 0 | 1 | 6,956 (Gnome below 52) / 6,509 (monkey bars) |
-| **Grand Tree only (planned quest route)** | **7,900** | **75** | **4,695** |
-| Grand Tree + 2 Tourist Trap picks | 17,200 | 86 | 3,281 |
-| Grand Tree + Troll Romance | 15,900 | 85 | 3,475 |
-| Grand Tree + Fremennik Trials | 10,712 | 80 | 4,259 |
-| Grand Tree + Underground Pass + Regicide | 24,650 | 92 | 2,186 |
-| ... + 1 Tourist Trap pick (off the route) | 29,300 | 94 | 1,515 |
-| ... + 2 Tourist Trap picks (off the route) | 33,950 | 96 | 850 |
-| Grand Tree + Regicide + Troll Romance | 29,650 | 94 | 1,465 |
-| ... + Underground Pass (required by Regicide) | 32,650 | 96 | 1,035 |
-| ... + Fremennik Trials | 35,462 | 97 | 634 |
-| ... + 1 Tourist Trap pick | 37,300 | 98 | 373 |
-| ... + Fremennik + 1 Tourist Trap pick, or + 2 Tourist Trap picks, or + 1 Legends pick | 40,112 / 41,950 / 40,300 | 99 | 0 |
+| Quest xp in | Base xp | Start level | Ticks to 99, demo estimate (74-tick laps) | 300 ms lab (66, measured lap) | 100 ms (77, before) |
+|---|---|---|---|---|---|
+| none | 0 | 1 | 6,733 (Gnome below 52) / 6,286 (monkey bars) | 6,138 / 5,691 | 6,956 / 6,509 |
+| **Grand Tree only (planned quest route)** | **7,900** | **75** | **4,512** | **4,024** | 4,695 |
+| Grand Tree + 2 Tourist Trap picks | 17,200 | 86 | 3,153 | 2,812 | 3,281 |
+| Grand Tree + Troll Romance | 15,900 | 85 | 3,340 | 2,979 | 3,475 |
+| Grand Tree + Fremennik Trials | 10,712 | 80 | 4,093 | 3,651 | 4,259 |
+| Grand Tree + Underground Pass + Regicide | 24,650 | 92 | 2,101 | 1,874 | 2,186 |
+| ... + 1 Tourist Trap pick (off the route) | 29,300 | 94 | 1,456 | 1,299 | 1,515 |
+| ... + 2 Tourist Trap picks (off the route) | 33,950 | 96 | 817 | 728 | 850 |
+| Grand Tree + Regicide + Troll Romance | 29,650 | 94 | 1,408 | 1,256 | 1,465 |
+| ... + Underground Pass (required by Regicide) | 32,650 | 96 | 994 | 887 | 1,035 |
+| ... + Fremennik Trials | 35,462 | 97 | 610 | 544 | 634 |
+| ... + 1 Tourist Trap pick | 37,300 | 98 | 358 | 319 | 373 |
+| ... + Fremennik + 1 Tourist Trap pick, or + 2 Tourist Trap picks, or + 1 Legends pick | 40,112 / 41,950 / 40,300 | 99 | 0 | 0 | 0 |
 
 **What each reward is worth to Agility** (inferred, ticks of Wilderness
-course it replaces):
+course it replaces, 74-tick laps):
 
 | Reward | Saved on top of GT + Regicide + TR + UP | Saved from a fresh account |
 |---|---|---|
-| Grand Tree 7,900 | 1,137 | 2,262 |
-| Regicide 13,750 | 1,994 | 3,158 |
-| Troll Romance 8,000 | 1,152 | 2,277 |
-| Underground Pass 3,000 | 430 | 1,481 |
-| Fremennik Trials 2,812 | 400 | 1,450 |
-| 1 Tourist Trap pick 4,650 | 662 | 1,749 |
-| 2 Tourist Trap picks | 1,035 (finishes 99) | |
-| 1 Legends pick 7,650 | 1,035 (finishes 99; a second pick is wasted) | 2,223 |
+| Grand Tree 7,900 | 1,093 | 2,221 |
+| Regicide 13,750 | 1,917 | 3,083 |
+| Troll Romance 8,000 | 1,107 | 2,237 |
+| Underground Pass 3,000 | 413 | 1,471 |
+| Fremennik Trials 2,812 | 385 | 1,442 |
+| 1 Tourist Trap pick 4,650 | 636 | 1,729 |
+| 2 Tourist Trap picks | 994 (finishes 99) | |
+| 1 Legends pick 7,650 | 994 (finishes 99; a second pick is wasted) | 2,184 |
 
-The picks displace Wilderness laps at about 7.0 base per tick, so a 4,650 pick
-is worth about 660 ticks and a 7,650 pick about 1,035 ticks (capped by what is
+The picks displace Wilderness laps at about 7.3 base per tick, so a 4,650 pick
+is worth about 640 ticks and a 7,650 pick about 994 ticks (capped by what is
 left to 99). That beats the roughly 400 and 600 ticks the same picks save on
 Thieving. Neither Tourist Trap nor Legends is on the planned route; whether a
 reward quest is worth doing, and where its picks go, is decided in
@@ -194,23 +221,30 @@ reward quest is worth doing, and where its picks go, is decided in
   (3005, 10363). It comes up north of the rope swing, beside the stepping
   stones, and from there the swing refuses with "You cannot do that from
   here". A rope-swing fall therefore costs a whole loop without the bonus: 88
-  extra ticks, measured as laps of 164 and 166 ticks against 77, and the loop
-  still earns 52.5 base from the stones, log and pipe. A log fall means pit,
-  ladder, stones again and back to the log: 53 ticks (measured, 1 sample). A
-  stepping-stone fall lands next to the stones and costs about 21 ticks
-  (measured, lap of 98). The model charges these costs at the formula's fall
-  rates.
+  extra ticks at 100 ms, measured as laps of 164 and 166 ticks against 77, and the
+  loop still earns 52.5 base from the stones, log and pipe. A log fall means pit,
+  ladder, stones again and back to the log: 53 ticks (measured at 100 ms, 1 sample).
+  A stepping-stone fall lands next to the stones and costs about 21 ticks
+  (measured at 100 ms, lap of 98). A fall loop is the same walking as a lap, so the
+  model scales these costs with the clean lap. At 300 ms that holds: a rope-swing
+  fall cost 80 extra ticks on 71-tick laps (scaled: 81) and a log fall 52 on
+  69-tick laps (scaled: 48, 1 sample). The model charges them at the formula's
+  fall rates.
 - **Measured ticks per Wilderness obstacle** (time from the previous
-  obstacle's xp, at 99 / at 52+): pipe, including the walk back from the rocks,
-  16.3 / 19.2; rope swing 9.0 / 9.1; stones 16.7 / 19.4; log 18.7 / 19.3;
-  rocks 11.3 / 12.3. Gnome: log 14.3, net 6.8, branch 5.5, rope 11.8, tree
-  down 5.5, net 7.8, pipe 17.8. Barbarian: rope swing 10.3, log 15.0, net 4.3,
-  ledge 9.8, ladder down 2.5, walls 11.8 / 8.0 / 8.0.
-- **Lab reaction time is included.** The bot clicks the next obstacle after it
-  sees the previous obstacle's xp, which is about one tick after the server
-  awarded it. A player who clicks earlier could save up to about 5 ticks per
-  lap, if the server accepts a click made during the obstacle's delay (not
-  tested).
+  obstacle's xp). At 100 ms, at 99 / at 52+: pipe, including the walk back from
+  the rocks, 16.3 / 19.2; rope swing 9.0 / 9.1; stones 16.7 / 19.4; log 18.7 /
+  19.3; rocks 11.3 / 12.3. At 300 ms on bbs, level 99, every lap identical: stock
+  lite client pipe 18, rope swing 8, stones 16, log 18, rocks 11 (71); fixed lite
+  client 17, 7, 15, 17, 10 (66). Gnome (100 ms): log 14.3, net 6.8, branch 5.5,
+  rope 11.8, tree down 5.5, net 7.8, pipe 17.8. Barbarian (100 ms): rope swing
+  10.3, log 15.0, net 4.3, ledge 9.8, ladder down 2.5, walls 11.8 / 8.0 / 8.0.
+- **Every obstacle pays one reaction.** The bot clicks the next obstacle after
+  it sees the previous obstacle's xp. The stock lite client published a tick's
+  state before decoding that tick's stat packets, so it saw the xp a tick late;
+  the rs/22 fix removed exactly one tick per obstacle (71 -> 66). On the demo
+  each extra tick of packet latency adds about one tick per obstacle again
+  (inferred, about 74 per lap). A player who clicks during the obstacle's delay
+  could save more, if the server accepts such a click (not tested).
 
 ## 5. Alternatives considered
 
@@ -269,16 +303,21 @@ reward quest is worth doing, and where its picks go, is decided in
 | None | | Quest route with two Tourist Trap picks or a Legends pick: no training. |
 | Sharks (or any food) | about 3 | Quest route ending at 96 (13 laps of Wilderness course), as insurance against falls and skeletons. |
 | Sharks | about 11-15 | No-quest route, 52 -> 99. |
-| Agility potion (4) | 1, optional | Only if Grand Tree must come before any other Agility reward: lets level 22 pass the 25 check (saves 37 ticks). On the course, +3 levels saves only 14 ticks from 96 and 73 from 52 (inferred), so it is not worth bringing for training. |
+| Agility potion (4) | 1, optional | Only if Grand Tree must come before any other Agility reward: lets level 22 pass the 25 check (saves 37 ticks). On the course, +3 levels saves only 13 ticks from 96 and 70 from 52 (inferred, 74-tick laps), so it is not worth bringing for training. |
 
 Nothing else is needed: no gear, no coins (the arena is not used), no tools.
 
 ## 8. Open questions
 
 - **Click timing.** Can the next obstacle be clicked during the current
-  obstacle's delay, so it starts on the first free tick? That could save about
-  5 ticks per lap (6%). Settle it with a script that clicks one tick before the
-  expected xp tick and logs whether the obstacle runs.
+  obstacle's delay, so it starts on the first free tick? On the demo, where a
+  reaction costs 2-3 ticks, that could save about 8 ticks per lap (about 11%).
+  Settle it with a script that clicks one tick before the expected xp tick and
+  logs whether the obstacle runs.
+- **Lap time on the demo.** 74 ticks is inferred from the latency probe, not
+  timed. A few laps on the demo (an account at Agility 52+), or Gnome laps from a
+  fresh account against the 100 ms Gnome figure, would pin it. The planned-route
+  total moves about 60 ticks per tick of lap.
 - **Fall rate sample.** The lab fell less than the formula predicts (4 against
   about 9). A 100-lap run at a fixed level (using `::setstat` before each lap)
   would pin the per-lap cost and check the formula against reality.
