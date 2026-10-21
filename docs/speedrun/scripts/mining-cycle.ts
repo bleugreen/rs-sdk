@@ -91,7 +91,7 @@ await runScript(async ({ bot, sdk }) => {
                 else if (target && s.tick > rollTick && !liveRock(s, target[0], target[1])) target = null;
             }
         } else {
-            if (target && (lastXpTick === s.tick || !liveRock(s, target[0], target[1]))) target = null;
+            if (target && (lastXpTick === s.tick || !liveRock(s, target[0], target[1]) || s.tick - clickTick > 8)) target = null;
             if (!target) {
                 const next = ADJ.find(p => liveRock(s, p[0], p[1]));
                 if (next) click(s, next);
