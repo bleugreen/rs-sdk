@@ -446,12 +446,14 @@ it. The one ordering rule that touches this runbook: **the helpers are logged in
 opens** (the launcher's `helpersReady`), because login order decides the 7- or 8-tick Runecraft
 cycle.
 
-**The S07 bone givers** are rs/41's three, **cairn_b01-b03**, which serve SUPPLIES.md's H4.1-H4.n
+**The S07 bone givers** are rs/41's four, **cairn_b01-b04**, which serve SUPPLIES.md's H4.1-H4.n
 at the Woodcutting trees. They take turns, and they're a role rs/141 added to the same launcher
-(rs/141's `bone-giver.ts`, rs/41's PR #135). Like the altar givers, they **log in before SCORED and
-stay in through both planned relogs** (RUN-ORDER.md section 4). There may be four if the demo round
-trip from Falador west to the Taverley trees exceeds ~200 ticks. rs/141's lab round trip was 149-170
-ticks with the bank (m, SUPPLIES.md H4.1-H4.n), and rs/163 is measuring it on the demo.
+(rs/141's `bone-giver.ts`, rs/41's PR #135). Like the altar givers, all four **log in before SCORED
+and stay in through both planned relogs** (RUN-ORDER.md section 4). The fourth is there because the
+demo round trip, Falador west bank to the oak giver tile and back with a bank visit, measured
+199-215 ticks running (178-193 at the willows; m, demo, rs/163), and three givers leave each only
+~210 ticks a trip at one load per ~70; four leave ~280. The givers run, not walk: walking it took
+321-328 ticks, which would need five (SUPPLIES.md H4.1-H4.n).
 
 Two rules from this page apply to that launch:
 
