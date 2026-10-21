@@ -128,6 +128,13 @@ Notes that differ from the lite scripts:
   loop, lead 0), so a late roll costs only its late ticks. The plain fallback's
   adjacent-rock trick needs walking distances, which the page can't compute; steps
   take an optional `tiles`, else the straight-line tile distance is used.
+- **Bury on a Mining stay** (`bury`, the same parameter and bone-selection code as
+  knife-cycle's, `util.ts`): a knife stay entered by a move of at most 2 tiles (or a
+  restart) sends knife, button, drop and a Bury on the roll label and the rock click alone
+  two labels later, so it still rolls 3 ticks on. On the `stay2` lap that is one bone per
+  15 ticks. Moves never take a bone (+2 ticks each), the stay after a 3-tile move stays
+  plain, and under `starter: 'none'` the option is inert. Schedule and reasons:
+  `research/bones-placement.md` section 4 and the knife-mine.ts header.
 - Pickpocket eats only in a success window (with the click that follows a success, at
   least 4 ticks after the stun ended), and at once only when HP is at or below
   `forcedBelow`. A bite during a stun costs 3 ticks (`thieving.md`).
@@ -167,6 +174,8 @@ rs/82's figure (LAB.md); the lite column is from the skills docs.
 | Knife iron after #90, 200 ores | 3.015 ticks per ore (193 of 194 gaps at 3), 199 of 200 on the predicted tick, 0 slips | | | 3.3-3.5 |
 | Knife iron, respawn 13, 5-rock rotation, 200 ores | **3.00 ticks per ore**, 194 of 194 gaps at 3, 200 of 200 on the predicted tick | 3.05 | 3.00 | 2.5-3.5 |
 | Same, before the closed-loop fix to one slip | 3.12 (3:191 6:2 21:1, one slip) | | | 3.1 |
+| Knife iron, respawn 13, `stay2` lap, Mining 64, rune pickaxe, 200 ores x 2 (2026-10-21 15:00-15:13 PDT) | 3.046, 3.119 ticks per ore (3:375 4:11 6:1 21:1; one slip, in the second run) | | rs/105: 3.000 over 80 ores | 4.4-6.8 |
+| Same with `bury` (dragon bones, top-up by `::give`), interleaved with the runs above, 200 ores x 2 | **3.026, 3.026** (3:382 4:4 6:2, 0 slips), **0.066 bones per tick** (80 in 1,210 ticks, one per 15.1), every bury sent landed | | rs/105: 3.052, 0.066 | 4.4-6.8 |
 | Iron, plain fallback (`starter: 'none'`), 100 ores | 4.03 (4:93 7:1) | | 4.94 (no starter) | 3.1-4.1 |
 | Knife fly, Lumbridge, level 20 to 99, 690 catches | **4.26 ticks per catch over the span** (4.10 mean gap; 3:493 6:132 9:29), 68 level-ups, 10 spot moves | 4.16 | 4.28 | 3.2-7.5 |
 | Knife willow, rune axe, level 99, 150 logs | 4.83 over the span (4.60 mean gap; 3:80 4:9 6:32 7:2 9:10 12:1 15:2 16:1) | | 4.23 (3:85 4:8 6:25 7:2 8:2 9:7 12:2) | 2.5-5.6 |

@@ -143,6 +143,13 @@ never committed and the script cache is deleted again afterwards).
     **0.066 bones per tick at 3.052 ticks per ore** over 200 ores (m6, one slip on the west
     stay, which carries no bone). The same lap with no bones held 3.000 over 80 ores (m5).
 
+**In-page** (`knife-mine` with `bury`, cairn://p/rs/182, bgsrv-mac, respawn 13 pinned,
+Mining 64, rune pickaxe, 2026-10-21 15:00-15:13 PDT): 0.066 bones per tick (80 in 1,210
+ticks) at 3.026 ticks per ore over 2 x 200 ores, 0 slips, against no-bone controls from the
+same session at 3.036 with their one slip left out (3.083 with it); no evidence of a cost to
+the ore rate (permutation test on the gaps, two-sided p = 0.55). Iron at Mining 63+ never
+misses (p = 1), so ticks per ore are ticks per roll (tick-programs.md, Measured).
+
 Over S09's ~3,134 knife ticks (Mining 64-99) that is **about 200 bones** of capacity (i). Each
 costs nothing on its own transition, a share of a 24-bone top-up (~0.21, i, from Woodcutting's
 trades), and the lap's own risk of a slip on the west stay (1 in 200 ores measured, ~10 ticks).
