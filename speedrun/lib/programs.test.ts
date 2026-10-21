@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { ActionResult } from '../../sdk/types';
-import { baseState, FakeSdk, flush } from './fake-sdk';
+import { baseState, FakeSdk, flush, type SentAction } from './fake-sdk';
 import { awaitProgram, probeInPage, ProgramError, programCounters, type ProgramStatus, runProgram, startProgram } from './programs';
 
 /** A FakeSdk with the relay the page answers: records program actions, replies like ProgramRuntime.command. */
@@ -12,9 +12,11 @@ class PageSdk extends FakeSdk {
         this.runId++;
         return { success: true, message: 'started', data: status({ runId: this.runId, name: String(a.name), params: (a.params as Record<string, unknown>) ?? {} }) };
     };
-    sendAction(a: Record<string, unknown>): Promise<ActionResult> {
-        this.actions.push(a);
-        return Promise.resolve(this.reply(a));
+    /** FakeSdk records its typed sends through here too; a `program` action is the page relay. */
+    override sendAction(a: SentAction | Record<string, unknown>): Promise<ActionResult> {
+        if ((a as { type?: unknown }).type !== 'program') return super.sendAction(a as SentAction);
+        this.actions.push(a as Record<string, unknown>);
+        return Promise.resolve(this.reply(a as Record<string, unknown>));
     }
     publish(p: Partial<ProgramStatus> | null) {
         this.tick(s => ({ program: p === null ? null : status({ runId: this.runId, ...p }) }) as never);

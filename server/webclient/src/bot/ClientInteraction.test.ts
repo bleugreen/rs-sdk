@@ -551,20 +551,21 @@ describe('browser bot overlay action dispatch', () => {
             noTimeoutTimer: 0,
             packetLogEnabled: false
         });
+        const executor = {
+            execute(action: { type: string }) {
+                ran.push(action.type);
+                client.out.p1(ran.length);
+                return execute(action);
+            }
+        };
         const o = Object.assign(Object.create(BotOverlay.prototype), {
             client,
             actionQueue: new BotActionQueue(),
             waitTicks: 0,
             serverTick: 0,
-            executor: {
-                execute(action: { type: string }) {
-                    ran.push(action.type);
-                    client.out.p1(ran.length);
-                    return execute(action);
-                }
-            },
+            executor,
             // In-page programs dispatch through the same executor.
-            programs: new ProgramHost(a => o.executor.execute(a), { log: () => {} }),
+            programs: new ProgramHost(a => executor.execute(a) as never, { log: () => {} }),
             // The state carries the tick and how many packet bytes were on the wire when collected.
             collectWorldState: () => ({ tick: o.serverTick, written: frames.flat().length }),
             gateway: {
