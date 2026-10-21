@@ -58,10 +58,27 @@ Every measured number under `docs/speedrun/skills/` was taken on the **headless 
 client** (`server/webclient/src/lite/`) unless its row says otherwise. The scored run
 will drive the **browser webclient** in a visible tab, because the recording must be
 first-person. Since cairn://p/rs/82 the browser client has the lite client's tick
-handling: it publishes a tick only after all of the tick's packets are decoded, runs the
-SDK's actions in the game loop before that cycle's flush, and drains a burst of actions in
-one cycle. The bot state reports entities at their server tile, not their eased draw
-position.
+handling: it publishes a tick only after all of the tick's packets are decoded, and the bot
+state reports entities at their server tile, not their eased draw position. Since
+cairn://p/rs/113 the overlay runs an SDK action when its gateway message arrives, not on the
+next game cycle, and flushes the game socket at the end of that task (`Client.flushNow`), so
+a burst delivered together leaves as one websocket message. It publishes the post-action
+state afterwards, in a task of its own. The game loop's own pass still drains `wait`
+actions, expiry, and anything sent while the client was off the game screen.
+
+The overlay's reaction path, measured page-side with `overlay-trace-lab.sh` (every websocket
+message the page sends or receives, on the page's clock) on bgsrv-mac, visible Chrome tab,
+local engine at `NODE_TICKRATE=300`, 60 trials each, both 60 of 60 at 1 tick, load 3.5-4.9,
+in ms p10 / p50 / p90:
+
+| Hop | Before (main, #81) | rs/113 |
+|---|---|---|
+| Action arrival to packet on the wire | 8.8 / 10.8 / 12.9 | 0.1 / 0.2 / 0.4 |
+| Tick frame in to state out | 1.8 / 8.1 / 12.3 | 3.3 / 8.2 / 11.5 |
+| State out to action in (gateway, SDK, gateway) | 2.7 / 2.9 / 3.5 | 2.7 / 2.8 / 3.1 |
+| Page reaction, tick frame in to packet out | 15.6 / 22.3 / 26.6 | 6.2 / 11.3 / 15.1 |
+
+What remains is the inbound hop: the page still decodes a tick on its game-loop cycle.
 
 The earlier warning that the browser freezes under rapid-fire input did not reproduce. In a
 visible tab on a quiet Mac, the stock client sent 4 packets per cycle at 71 fps with no
