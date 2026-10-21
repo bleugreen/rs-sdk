@@ -14,14 +14,24 @@ bun install                                   # repo root
 Run three long-lived processes (use terminals, not one-shot batches):
 
 ```sh
-cd server/engine && BUILD_VERIFY=false NODE_TICKRATE=100 LOCAL_STAFF_LEVEL=4 bun run start
+cd server/engine && BUILD_VERIFY=false BUILD_LIVE_RELOAD=false NODE_TICKRATE=100 LOCAL_STAFF_LEVEL=4 bun run start
 cd server/webclient && bun run watch
 cd server/gateway && bun run gateway
 ```
 
 - `BUILD_VERIFY=false` skips the pack checksum check (`server/PATCHES.md:178`).
+- `BUILD_LIVE_RELOAD=false` turns off the dev content watcher
+  (`server/engine/src/util/WorldConfig.ts:285`, used at `World.ts:360`). It
+  `fs.watch()`es all of `content/`, and on Linux that crashes the engine with
+  EMFILE (a Bun panic in `us_create_timer`).
 - `NODE_TICKRATE=100` runs 100 ms ticks, three times faster than production's
-  300 ms (`fly.toml:26`). Report results in ticks, never in seconds.
+  300 ms (`fly.toml:26`). Report results in ticks, never in seconds. The bot
+  reacts in wall-clock time, so anything that depends on landing a packet in a
+  specific tick can come out differently at 100 ms and 300 ms. That includes a
+  click on the tick after a roll, drops sent in the same tick as the next click,
+  eating between attempts, and combat. Confirm any such headline cadence with
+  at least one run at `NODE_TICKRATE=300`, and say in the document which rate
+  each number was measured at.
 - `LOCAL_STAFF_LEVEL=4` grants staff level 4 to every login when no login server
   is configured (`server/engine/src/server/login/LoginThread.ts`). It defaults to
   0, and production uses a login server (`fly.toml:22`), so the public server is
