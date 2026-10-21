@@ -91,6 +91,11 @@ const ROUTES: Record<Kind, Recipe[]> = {
     bones: [{ level: 1, xp: 72, a: 'dragon_bones' }],
 };
 const pick = (k: Kind, level: number) => [...ROUTES[k]].reverse().find(r => r.level <= level) ?? ROUTES[k][0]!;
+// buryCut: bones and uncut gems in one load. A bury delays the player through the next tick's
+// packets (prayer.md section 4), so cuts can only land in the bury's own tick, before it:
+// every 2 ticks carry 4 cuts and 1 bury.
+type Work = Kind | 'buryCut';
+const parts = (w: Work): Kind[] => (w === 'buryCut' ? ['gems', 'bones'] : [w]);
 
 // ---------------------------------------------------------------- state helpers
 
@@ -160,28 +165,44 @@ function perTick<T>(sdk: Session['sdk'], maxTicks: number, step: (s: BotWorldSta
 
 // ---------------------------------------------------------------- the booth worker
 
-interface Load { kind: Kind; recipe: Recipe; pairs: Array<[number, number]>; next: number }
+interface Load { kind: Work; recipe: Recipe; pairs: Array<[number, number]>; next: number }
 
 class Worker {
     sub: 'idle' | 'opening' | 'closing' | 'working' | 'empty' = 'idle';
-    kind: Kind | null = null;
+    kind: Work | null = null;
     load: Load | null = null;
     allowRefill = false;
     boothAt = -99;
     closeAt = -99;
-    refillKind: Kind | null = null;
+    lastBury = -99;
+    refillKind: Work | null = null;
 
     constructor(private log: (t: number, m: string) => void) {}
 
     /** Set the kind of work for the window. */
-    set(kind: Kind | null, allowRefill: boolean): void {
+    set(kind: Work | null, allowRefill: boolean): void {
         this.kind = kind;
         this.allowRefill = allowRefill;
         if (this.sub === 'empty' || this.sub === 'idle') this.sub = 'idle';
     }
 
     /** Append the withdraw/deposit events that load `kind` (no close) to `burst`; the bank is open. */
-    refill(s: BotWorldState, kind: Kind, burst: string[]): void {
+    refill(s: BotWorldState, kind: Work, burst: string[]): void {
+        if (kind === 'buryCut') {
+            const r = pick('gems', lvlOf(s, 'Crafting'));
+            const A = id(r.a);
+            const free = 28 - s.inventory.filter(i => RESERVED.has(i.id)).length - (cnt(s, CHISEL) === 0 ? 1 : 0);
+            const nB = Math.max(0, Math.floor(free / 4.5) - cnt(s, BONES)); // 26 free: 5 bones + 21 gems; 27: 6 + 21
+            const seen = new Set<number>();
+            for (const it of s.inventory) if (!RESERVED.has(it.id) && it.id !== A && it.id !== BONES && !seen.has(it.id)) { seen.add(it.id); f(R.sendBankDeposit(it.slot, -1)); burst.push(`dep ${it.name}`); }
+            if (cnt(s, CHISEL) === 0) { f(R.sendBankWithdraw(bankSlot(s, CHISEL)!, 1)); burst.push('wd chisel'); }
+            const bb = bankSlot(s, BONES), ab = bankSlot(s, A);
+            if (bb === undefined || ab === undefined) throw new Error('out of bones or gems in the bank');
+            for (const b of buttons(nB)) { f(R.sendBankWithdraw(bb, b)); burst.push(`wd bones ${b}`); }
+            f(R.sendBankWithdraw(ab, -1)); burst.push(`wd ${r.a} all`);
+            this.refillKind = kind;
+            return;
+        }
         const level = lvlOf(s, SKILL[kind]);
         const r = pick(kind, level);
         const A = id(r.a), B = r.b ? id(r.b) : -1;
@@ -219,7 +240,12 @@ class Worker {
     }
 
     /** Build the load from the observed inventory (after a refill, or leftovers). */
-    build(s: BotWorldState, kind: Kind): Load | null {
+    build(s: BotWorldState, kind: Work): Load | null {
+        if (kind === 'buryCut') {
+            const g = this.build(s, 'gems');
+            if (!g && cnt(s, BONES) === 0) return null;
+            return { kind, recipe: g?.recipe ?? pick('gems', lvlOf(s, 'Crafting')), pairs: g?.pairs ?? [], next: 0 };
+        }
         const r = pick(kind, lvlOf(s, SKILL[kind]));
         // Leftovers may be of the previous recipe: use whatever A the inventory holds.
         const route = ROUTES[kind].filter(x => cnt(s, id(x.a)) > 0 && (!x.b || cnt(s, id(x.b)) > 0));
@@ -241,6 +267,18 @@ class Worker {
     act(s: BotWorldState, t: number, burst: string[], max: number, guardTick: number): number {
         const L = this.load;
         if (!L) return 0;
+        if (L.kind === 'buryCut') {
+            const bone = s.inventory.filter(i => i.id === BONES).sort((a, b) => a.slot - b.slot)[0];
+            const cut = (k: number) => { let n = 0; while (n < k && L.next < L.pairs.length) { const [a, b] = L.pairs[L.next++]!; f(R.sendUseItemOnItem(a, b)); burst.push(`use ${a}->${b}`); n++; } return n; };
+            if (bone && t - this.lastBury < 2) return 0; // the bury's delayed tick: nothing lands
+            if (!bone || (GUARD && t === guardTick)) { if (bone) burst.push('bury skipped (guard)'); const n = cut(max); return n || (bone ? -1 : 0); }
+            const n = cut(Math.min(max, 5) - 1);
+            if (n === 0 && page(s)) { f(R.sendClickDialog(0, { blind: true })); burst.push('continue'); }
+            const op = bone.optionsWithIndex.find(o => /bury/i.test(o.text))?.opIndex ?? 1;
+            f(R.sendUseItem(bone.slot, op)); burst.push(`bury ${bone.slot}`);
+            this.lastBury = t;
+            return n + 1;
+        }
         if (L.kind === 'bones') {
             const bone = s.inventory.filter(i => i.id === BONES).sort((a, b) => a.slot - b.slot)[0];
             if (!bone) return 0;
@@ -263,6 +301,7 @@ class Worker {
         const L = this.load;
         if (!L) return true;
         if (L.kind === 'bones') return cnt(s, BONES) === 0;
+        if (L.kind === 'buryCut') return cnt(s, BONES) === 0 && L.next >= L.pairs.length;
         return L.next >= L.pairs.length;
     }
 
@@ -289,9 +328,10 @@ class Worker {
         }
         if (this.sub === 'idle' && this.kind) {
             const L = this.build(s, this.kind);
-            if (L && !(this.kind === 'bones' ? cnt(s, BONES) === 0 : L.pairs.length === 0)) { this.load = L; this.sub = 'working'; }
-            else if (this.allowRefill) this.sub = 'opening';
-            else this.sub = 'empty';
+            const prevLoad = this.load;
+            this.load = L;
+            if (L && !this.exhausted(s)) { this.sub = 'working'; }
+            else { this.load = prevLoad; this.sub = this.allowRefill ? 'opening' : 'empty'; }
         }
         if (this.sub === 'working') {
             if (this.load && this.kind && this.load.kind !== this.kind && this.allowRefill) {
@@ -303,7 +343,7 @@ class Worker {
                 if (!this.exhausted(s)) return;
                 if (!(this.allowRefill && this.kind)) { if (n <= 0) this.sub = 'empty'; return; }
                 // Gems and potions: the booth click goes out with the last uses (delayfree-cycle.ts).
-                if (this.load?.kind !== 'bones' && n > 0) { if (burst.length < 5) { this.booth(s, t, burst); this.sub = 'opening'; } return; }
+                if ((this.load?.kind === 'gems' || this.load?.kind === 'potions') && n > 0) { if (burst.length < 5) { this.booth(s, t, burst); this.sub = 'opening'; } return; }
                 this.sub = 'opening';
             }
         }
