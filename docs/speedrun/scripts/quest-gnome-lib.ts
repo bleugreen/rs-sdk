@@ -269,7 +269,7 @@ export interface StepRecord {
 }
 
 /** Talk to the nearest NPC matching `re` and run the dialogue. */
-export async function talk(sdk: BotSDK, re: RegExp, answers: RegExp[] = [], opts: { idle?: number; maxTicks?: number; op?: RegExp; done?: Pred } = {}): Promise<StepRecord & { run: DialogueRun }> {
+export async function talk(sdk: BotSDK, re: RegExp, answers: RegExp[] = [], opts: { idle?: number; maxTicks?: number; op?: RegExp; done?: Pred; closeModals?: boolean } = {}): Promise<StepRecord & { run: DialogueRun }> {
     let npc = findNpc(sdk, re);
     if (!npc) {
         await waitTicks(sdk, 2);

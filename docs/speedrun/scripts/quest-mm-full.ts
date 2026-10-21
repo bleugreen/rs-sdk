@@ -79,16 +79,16 @@ await runScript(async ({ bot, sdk }) => {
         // Gnome Air from the top of the Grand Tree to Gandius (Karamja), then Caranock.
         add(await walk(bot, sdk, 2466, 3496, 0), 'B1 walk to ladder');
         await treeLadder(0, 3, 'B2');
-        add(await talk(sdk, /^Gnome pilot$/i, [/take me on the glider/], { idle: 2 }), 'B3 pilot');
+        add(await talk(sdk, /^Gnome pilot$/i, [/take me on the glider/], { idle: 2, closeModals: false }), 'B3 pilot');
         await glide(GLIDER_GANDIUS, s => pos(s).z < 3100 && pos(s).level === 0, 'B4');
         console.log('landed at', JSON.stringify(pos(sdk.getState())));
         add(await walk(bot, sdk, 2956, 3024, 1), 'B5 walk to Caranock');
-        add(await talk(sdk, /^Caranock$/i, [], { idle: 3 }), 'B6 Caranock');
+        add(await talk(sdk, /Caranock$/i, [], { idle: 3 }), 'B6 Caranock');
         await check('B');
     }
     if (runs('C')) {
         add(await walk(bot, sdk, 2970, 2974, 2), 'C1 walk to Gandius glider');
-        add(await talk(sdk, /^Gnome pilot$/i, [/take me on the glider/], { idle: 2 }), 'C2 pilot');
+        add(await talk(sdk, /^Gnome pilot$/i, [/take me on the glider/], { idle: 2, closeModals: false }), 'C2 pilot');
         await glide(GLIDER_TA_QUIR_PRIW, near(2465, 3501, 6, 3), 'C3');
         await treeLadder(3, 0, 'C4');
         add(await talk(sdk, /^King Narnode Shareen$/i, [], { idle: 6 }), 'C5 Narnode report + orders');
