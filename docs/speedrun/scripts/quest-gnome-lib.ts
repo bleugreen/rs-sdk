@@ -269,7 +269,7 @@ export interface StepRecord {
 }
 
 /** Talk to the nearest NPC matching `re` and run the dialogue. */
-export async function talk(sdk: BotSDK, re: RegExp, answers: RegExp[] = [], opts: { idle?: number; maxTicks?: number; op?: RegExp } = {}): Promise<StepRecord & { run: DialogueRun }> {
+export async function talk(sdk: BotSDK, re: RegExp, answers: RegExp[] = [], opts: { idle?: number; maxTicks?: number; op?: RegExp; done?: Pred } = {}): Promise<StepRecord & { run: DialogueRun }> {
     let npc = findNpc(sdk, re);
     if (!npc) {
         await waitTicks(sdk, 2);
@@ -282,7 +282,12 @@ export async function talk(sdk: BotSDK, re: RegExp, answers: RegExp[] = [], opts
     const d = dialogue(sdk, answers, opts);
     await sdk.sendInteractNpc(npc.index, op.opIndex);
     const run = await d;
-    const end = run.endTick >= 0 ? run.endTick : now(sdk);
+    let end = run.endTick >= 0 ? run.endTick : now(sdk);
+    if (opts.done) {
+        // A scripted walk or teleport can follow the last page; count until it lands.
+        const r = await waitUntil(sdk, opts.done, 40);
+        end = r ? Math.max(end, r.tick) : NaN;
+    }
     return { name: `talk ${npc.name}`, ticks: end - t0, approach: run.firstTick >= 0 ? run.firstTick - t0 : undefined, pages: run.pages, choices: run.choices, run };
 }
 
