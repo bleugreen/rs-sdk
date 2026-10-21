@@ -24,9 +24,12 @@ const AGILITY = opt('agility', 99);
 await runScript(async ({ bot, sdk }) => {
     const lab = new Lab(sdk, bot);
     const L_sleep = (n: number) => sdk.waitForTicks(n);
+    const L_waitGround = async (re: RegExp) => { for (let i = 0; i < 10 && !sdk.getGroundItems().some(g => re.test(g.name)); i++) await sdk.waitForTicks(1); };
     const L_waitBoulder = async () => { for (let i = 0; i < 20 && !lab.npc(/Boulder/); i++) await sdk.waitForTicks(1); };
     await bot.dismissBlockingUI();
     await lab.cheat('setvar biohazard 16'); // ^biohazard_complete, needed by the cave entrance (quest_upass.rs2:81)
+    // King Lathas talks Regicide first whenever %regicide_quest > 0 (king_lathas.rs2:2); only `post` sets it.
+    await lab.cheat('setvar regicide_quest 0');
     const stats = async (s: Record<string, number>) => { for (const [k, v] of Object.entries(s)) await lab.cheat(`setstat ${k} ${v}`, 1); };
     const clearInv = async () => { for (const it of sdk.getInventory()) { await sdk.sendDropItem(it.slot); await sdk.waitForTicks(1); } };
 
@@ -89,11 +92,15 @@ await runScript(async ({ bot, sdk }) => {
         await lab.cheat(`setvar upass ${upass}`);
         await lab.cheat(`setvar ibanmulti ${ibanmulti([BIT.started, BIT.koftikInsane, ...bits], GRID)}`);
     };
-    const take = (label: string, re: RegExp) => lab.act(label, async () => {
-        const g = sdk.getGroundItems().filter(i => re.test(i.name)).sort((a, b) => a.distance - b.distance)[0];
-        if (!g) throw new Error(`no ground item ${re}`);
-        await sdk.sendPickup(g.x, g.z, g.id);
-    }, () => sdk.countInventoryItems(re) > 0);
+    const take = async (label: string, re: RegExp) => {
+        const n0 = sdk.countInventoryItems(re);
+        await L_waitGround(re);
+        return lab.act(label, async () => {
+            const g = sdk.getGroundItems().filter(i => re.test(i.name)).sort((a, b) => a.distance - b.distance)[0];
+            if (!g) throw new Error(`no ground item ${re}`);
+            await sdk.sendPickup(g.x, g.z, g.id);
+        }, () => sdk.countInventoryItems(re) > n0);
+    };
     const ORBS = [BIT.orb1, BIT.orb2, BIT.orb3, BIT.orb4];
     const BADGES = [BIT.badge1, BIT.badge2, BIT.badge3, BIT.horn];
 
@@ -134,7 +141,16 @@ await runScript(async ({ bot, sdk }) => {
         const d1 = Math.floor(GRID / 100);
         const wrong = d1 === 1 ? 2 : 1;
         await lab.act('step onto a trapped grid tile', () => sdk.sendWalk(2475, 9673 + 2 * (wrong - 1), true), () => lab.pos()[1] < 9600);
-        await lab.act('climb the protruding rocks out of the pit', () => lab.clickLoc(3365, 2395, 9559, 1), () => lab.at([2477, 9677, 0]));
+        // the fall lands on one of the four hand-hold tiles at random (upass_grid.rs2:94); click the one underfoot or next to it
+        const p = lab.pos();
+        const hold = [[2395, 9559], [2395, 9560], [2396, 9559], [2396, 9560]].sort((a, b) => Math.abs(a[0] - p[0]) + Math.abs(a[1] - p[1]) - Math.abs(b[0] - p[0]) - Math.abs(b[1] - p[1]))[0];
+        await lab.act(`climb the protruding rocks out of the pit (landed ${p})`, async () => {
+            for (const [x, z] of [hold, [2395, 9559], [2396, 9560], [2395, 9560], [2396, 9559]]) {
+                await lab.clickLoc(3365, x, z, 1);
+                await L_sleep(3);
+                if (lab.pos()[1] > 9600) return;
+            }
+        }, () => lab.at([2477, 9677, 0]));
     } else if (segment === 'swingfail') {
         // Cost of a failed rope swing: from the pit landing back to the swing with a new rope.
         await stats({ agility: AGILITY, ranged: 60, hitpoints: 99 });
@@ -167,7 +183,8 @@ await runScript(async ({ bot, sdk }) => {
         await stats({ agility: AGILITY, thieving: THIEVING, hitpoints: 99 });
         await vars(2, []);
         await clearInv();
-        await lab.give('swordfish', 5);
+        await stats({ hitpoints: HP });
+        await lab.give('swordfish', 20);
         await lab.teleTo(...P.afterPortcullis);
         const t0 = lab.tick();
         await lab.travel('portcullis -> orb 1 trap (flat rock)', P.orb1trap);

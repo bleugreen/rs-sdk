@@ -151,6 +151,7 @@ export class Lab {
         const fails: string[] = [];
         let replans = 0;
         const resends0 = this.resends;
+        const eaten0 = this.eaten;
         const detail: string[] = [];
         try {
             for (let attempt = 0; attempt < 12; attempt++) {
@@ -180,9 +181,11 @@ export class Lab {
                         let still = 0;
                         let lq = this.pos();
                         let walkResends = 0;
+                        let lastEat = -9;
                         await L.waitUntil(this.sdk, () => {
                             const q = this.pos();
                             const d = Math.max(Math.abs(q[0] - target[0]), Math.abs(q[1] - target[1]));
+                            if (this.tick() - lastEat >= 3) { const e0 = this.eaten; void this.eatIfLow().then(() => { if (this.eaten > e0) lastEat = this.tick(); }); }
                             if (final ? d === 0 : d <= 2) return true;
                             still = q[0] === lq[0] && q[1] === lq[1] ? still + 1 : 0;
                             lq = q;
@@ -258,9 +261,20 @@ export class Lab {
         } finally {
             off();
         }
-        const row = { label, ticks: this.tick() - t0 - 3, tiles, crossings: crossings.length, crossingList: crossings, fails, replans, resends: this.resends - resends0, detail, hpLost: hp0 - this.hp(), at: this.pos() };
+        const row = { label, ticks: this.tick() - t0 - 3, tiles, crossings: crossings.length, crossingList: crossings, fails, replans, resends: this.resends - resends0, eaten: this.eaten - eaten0, detail, hpLost: hp0 - this.hp(), at: this.pos() };
         this.record(row);
         return row;
+    }
+    /** food eaten while travelling (one click each; walking continues) */
+    eaten = 0;
+    async eatIfLow(threshold = 0.45) {
+        const me = this.sdk.getState()?.player;
+        if (!me || me.hp >= me.maxHp * threshold) return;
+        const food = this.sdk.getInventory().find(i => i.optionsWithIndex?.some(o => /^eat$/i.test(o.text)));
+        if (!food) return;
+        const op = food.optionsWithIndex.find(o => /^eat$/i.test(o.text))!;
+        await this.sdk.sendUseItem(food.slot, op.opIndex);
+        this.eaten++;
     }
     at(t: T) { const p = this.pos(); return p[0] === t[0] && p[1] === t[1] && p[2] === t[2]; }
 
