@@ -346,8 +346,8 @@ check (`cut_logs.rs2:83-85`) fails and nothing is written, and that roll runs at
 length. The 3-tick schedule then lands on the roll tick itself, where the knife writes
 nothing and the roll still happens. It drifts one tick per cycle until a starter lands on
 roll+1 again. So about one plain cycle is lost (measured below), no lock is lost, and the
-lost-lock window (15 ticks or more) does not fire. Fishing's first-click and continuation labels have the
-same shape (inferred). Mining used to be different: the open-loop executor planned the next
+lost-lock window (15 ticks or more) does not fire. Fishing's first-click and continuation
+labels have the same shape (inferred). Mining used to be different: the open-loop executor planned the next
 transition on the *predicted* roll label, so after a late roll its walk landed on the roll
 tick and cancelled it, and the slip check restarted the rotation (about 9 ticks). With no
 lead it now plans on the label that shows the roll's xp. On a punctual host that is the
