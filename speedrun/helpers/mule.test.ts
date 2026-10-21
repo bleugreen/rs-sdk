@@ -5,8 +5,6 @@ import {
     accountMatches,
     canonName,
     countById,
-    courierGave,
-    courierItems,
     courierPicks,
     firstSlotPerId,
     holds,
@@ -114,35 +112,10 @@ describe('offer verification', () => {
 });
 
 describe('courier', () => {
-    const picked = (p: ReturnType<typeof courierPicks>) => p.map(({ bankItem, amount }) => [bankItem.name, amount]);
-
     test('picks every matching bank stack, capped by free slots', () => {
         const b = bank([[1511, 'Logs', 100], [1521, 'Oak logs', 50], [995, 'Coins', 10], [1515, 'Yew logs', 0]]);
-        expect(picked(courierPicks(b, courierItems(['logs$']), 28))).toEqual([['Logs', 100], ['Oak logs', 50]]);
-        expect(picked(courierPicks(b, courierItems(['logs$']), 1))).toEqual([['Logs', 100]]);
-        expect(courierPicks(b, courierItems([]), 28)).toEqual([]);
-    });
-
-    test('a line with n carries at most n across its stacks', () => {
-        const b = bank([[2353, 'Steel bar', 241], [1623, 'Uncut sapphire', 12], [1621, 'Uncut emerald', 3], [1619, 'Uncut ruby', 1], [1617, 'Uncut diamond', 0]]);
-        expect(picked(courierPicks(b, courierItems([{ item: '^steel bar$', n: 290 }]), 28))).toEqual([['Steel bar', 241]]);
-        expect(picked(courierPicks(b, courierItems([{ item: '^steel bar$', n: 100 }]), 28))).toEqual([['Steel bar', 100]]);
-        expect(picked(courierPicks(b, courierItems(['^uncut (emerald|ruby|diamond)$']), 28))).toEqual([['Uncut emerald', 3], ['Uncut ruby', 1]]);
-        expect(picked(courierPicks(b, courierItems([{ item: '^uncut', n: 14 }]), 28))).toEqual([['Uncut sapphire', 12], ['Uncut emerald', 2]]);
-    });
-
-    test('a trade lowers the caps; uncapped lines stay uncapped', () => {
-        const items = courierItems([{ item: '^steel bar$', n: 290 }, 'logs$']);
-        const after = courierGave(items, [{ name: 'Steel bar', count: 200 }, { name: 'Logs', count: 50 }]);
-        expect(after.map(i => i.n)).toEqual([90, null]);
-        expect(items[0]!.n).toBe(290);
-        const b = bank([[2353, 'Steel bar', 500]]);
-        expect(picked(courierPicks(b, courierGave(after, [{ name: 'Steel bar', count: 90 }]), 28))).toEqual([]);
-    });
-
-    test('items option: strings, objects, a bad n means everything', () => {
-        const items = courierItems(['^logs$', { item: 'steel bar', n: 12.7 }, { item: 'coal', n: 'x' }]);
-        expect(items.map(i => [i.re.source, i.n])).toEqual([['^logs$', null], ['steel bar', 12], ['coal', null]]);
-        expect(items[1]!.re.test('STEEL BAR')).toBe(true);
+        expect(courierPicks(b, toRegExps(['logs$']), 28).map(i => i.name)).toEqual(['Logs', 'Oak logs']);
+        expect(courierPicks(b, toRegExps(['logs$']), 1).map(i => i.name)).toEqual(['Logs']);
+        expect(courierPicks(b, toRegExps([]), 28)).toEqual([]);
     });
 });
