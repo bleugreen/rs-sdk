@@ -378,25 +378,35 @@ scripts are in section 4; the shared primitives and their build order are in sec
   per willow log, M0550). Fallback **3,881** plain. The bury adds **110** expected / **80** best on
   Prayer's line (entry 15). The oak-to-willow walk (46 i) is a leg (entry 11). A move to a second site
   under contention costs "a few hundred" (estimated, `skills/README.md` open question 5).
-- **Primitives:** `lib/programs.ts` `runProgram(sdk, 'knife-cycle', {...})`; `probeInPage`;
-  `lib/hostgate.ts`, `hostgate-verdict.ts`. **Missing:** the bury variant in the in-page program
-  (cairn://p/rs/137); a program-side band change (a stop, a walk and a new start is fine); the
+- **In the page** (cairn://p/rs/137, `skills/woodcutting.md` section 9 on its PR): local engine,
+  300 ms, visible tab, oak at 60, 200 rolls per run: knife + bury **0.329 bones per tick** in all
+  four runs at 3.16-3.26 ticks per roll, every bury landed, 0 resyncs; the plain knife in the same
+  tab 3.20 and 3.40 (m). The bury costs the loop nothing measurable. With rs/105's trade cost, about
+  0.31 bones per tick (i). The program does not trade: the step stops it, runs `receiveFrom` and
+  restarts it, and that hand-off is **inferred** (rs/105 measured it on the lite client). The step
+  must pass **`trees`** (the reachable oak and willow tiles) with `bury`: without it a fallen tree
+  sends the click to an oak that needs a walk, each bury cancels the walk, and the rate falls to
+  0.27-0.28 bones per tick at 5.2-5.5 ticks per roll (m).
+- **Primitives:** `lib/programs.ts` `runProgram(sdk, 'knife-cycle', {..., bury, trees})`; `probeInPage`;
+  `lib/hostgate.ts`, `hostgate-verdict.ts`. **Missing:** a program-side band change (a stop, a walk and a new start is fine); the
   forced-slip test hook (section 5, item 7).
 - **Mode:** in-page.
 - **Fallback:** plain loop with the bury when the gate is off (0.230 bones per tick, 0.12-0.20 ticks
-  per bone against the plain column). If the bury variant fails in the page: the bones go to the
+  per bone against the plain column). If the bury variant fails on the demo: the bones go to the
   Mining `stay2` lap (up to ~200, entry 4) and the booth (+263 in all; +625 if all at the booth).
 - **Acceptance, local:** browser tab, lab engine at 300 ms, willows at 99: knife within 5% of
   **4.83** ticks per log over 200+ logs; plain within 5% of 5.53. Normal trees from level 1 within 5%
-  of **7.24**. **Bury:** oak at 60 with a real helper trading 23-bone loads: at least **0.29 bones
-  per tick** and base xp per tick within 7% of the no-bury knife figure (measured 0.298 and -6.9% on
-  the lite client, `bones-wc.ts`); 14 of 14 trades in 4 ticks. **Forced slip:** hold 15% of starters
+  of **7.24**. **Bury:** oak at 60, `trees` passed: at least **0.31 bones per tick** without trades
+  (0.329 measured in the page, rs/137) and ticks per roll within 5% of the no-bury knife in the same
+  tab; then with a real helper trading 23-bone loads through stop, `receiveFrom` and restart, at
+  least 0.29 bones per tick and 5 or fewer ticks per load. **Forced fallen tree:** fell the target
+  tree mid-run; pass if the rate stays at or above 0.31 (the failure mode is 0.27-0.28). **Forced slip:** hold 15% of starters
   one tick: within 5% of **5.76** and never above plain, and 3 injected overrun minutes turn the knife
   off within one probe window.
 - **Acceptance, demo (throwaway):** from Ashburn, normal trees with the starter axe, 5 rounds of 20
   logs knife and plain, alternating; then 2 rounds with the bury (any bones). Pass: probe at least 58
   of 60, knife ticks per roll within 5% of the local figure, and the bury keeps the 3-tick roll gaps.
-- **Start from:** rs/97 `programs/knife-cycle.ts`; `docs/speedrun/scripts/bones-wc.ts`
+- **Start from:** rs/97 `programs/knife-cycle.ts` with rs/137's bury variant; `docs/speedrun/scripts/bones-wc.ts`
   (`--mode=knifebury`), `tickmanip-cycle.ts`, `woodcutting-model.ts`.
 - **logoutSafe:** yes, at band boundaries and between bone loads.
 
@@ -749,31 +759,30 @@ scripts are in section 4; the shared primitives and their build order are in sec
   `quest-gnome-setup.ts`.
 - **logoutSafe:** yes at the end.
 
-### 15. Prayer: `speedrun/skills/prayer.ts` (S10a 11 bones, S25b the remaining bones)
+### 15. Prayer: inside S07 (S25b); `speedrun/skills/prayer.ts` for the booth fallback
 
-- **Serves:** S10a, 11 dragon bones buried for Prayer 43 before the warlord. S25b, the bones not
-  buried in Thieving stuns, about 348 (555 - 11 - 196; `skills/interleaving.md` §8). Where those
-  should go is cairn://p/rs/105's question, and cairn://p/rs/107 tests the wine step's idle bank
-  ticks for them.
-- **Parameters:** `bones` count, `mode: 'booth' | 'inline'`, `untilLevel`.
-- **Preconditions:** the bones (from TGV's trade in S10a; from the mule at Varrock west in S25b); a
-  bank booth for S25b.
-- **Postconditions:** Prayer 43 (S10a), 99 by the end of S25b. Items out: none.
-- **Ticks:** S10a **21** (measured, rs/33 `prayer-bury.ts`, via `quests/pre_mm_fights.md` §2). S25b
-  expected **~721** (inferred: 348 bones at the measured 58 ticks per 28-bone inventory including
-  the bank visit; `skills/prayer.md` §1). Best about **150** for S25b if the bones ride plain
-  gathering clocks (inferred, ~150-220 for Prayer's whole remainder; `skills/README.md`, Prayer
-  row); that holds only against the normal columns. Fallback **1,151** for the whole 555 if the stun
-  pack also fails (inferred, same row).
-- **Primitives:** `lib/bank.ts` `withdrawMany` with `n:'fill'`, `levelup` watcher (67 level-ups, each
-  dismissed in the tick of the next bury, `skills/prayer.md` §1).
-- **Mode:** overlay-driven. The buries go out blind every 2 ticks with one reaction per inventory.
-- **Fallback:** the stock SDK calls, 59 ticks per inventory (measured, same section).
-- **Acceptance, local:** 5 inventories at Varrock west. Pass: at most **58 ticks** per inventory +5%.
-- **Acceptance, demo (throwaway):** 2 inventories of any bones at Varrock west. Pass: at most 2 ticks
-  per bury plus one bank visit within 1 tick of the local figure.
-- **Start from:** `prayer-bury.ts --mode=fast`.
-- **logoutSafe:** yes.
+- **Serves:** S25b, Prayer to about 94 by burying 355 dragon bones inside S07's knife loop (entry 3,
+  `research/bones-placement.md` §2, §5). The other ~200 ride S18's stuns (entry 6). **S10a is
+  retired**: Prayer 43 comes from S07, which runs before S10b. `prayer.ts` survives as the booth
+  fallback (the bones there at 2.07 ticks each) and for a knife-off night with bones left over.
+- **Parameters:** `bones` count, `mode: 'inline' | 'booth'`, `untilLevel`.
+- **Preconditions:** inline: entry 3's. Booth: the bones in the bank at Varrock west.
+- **Postconditions:** Prayer ~94 when S07 ends; 99 when S18 ends.
+- **Ticks:** expected **110**, best **80** (inferred: 0.23 Woodcutting ticks per bone measured on
+  oak, almost all of it the 23-bone trades, about 0.31 with willow-style bounces and margin; best is
+  16 loads at 5 ticks; `research/bones-placement.md` §1, §6; rs/137 measured the bury itself at no
+  cost in the page). Knife off: ~110 / ~75. Fallback **735**, the 355 bones at the booth (58 ticks
+  per 28-bone inventory, `skills/prayer.md` §1).
+- **Primitives:** entry 3's; for the booth `lib/bank.ts` `withdrawMany` with `n:'fill'` and a blind
+  bury every 2 ticks.
+- **Mode:** in-page with S07; the booth is overlay-driven.
+- **Fallback:** the Mining `stay2` lap (up to ~200 bones at 3.052 ticks per ore, `research/bones-placement.md`
+  §4), then the booth.
+- **Acceptance, local:** entry 3's bury acceptance; booth, 5 inventories at Varrock west within 58 ticks
+  per inventory +5%.
+- **Acceptance, demo (throwaway):** entry 3's bury rounds.
+- **Start from:** rs/137's variant; `bones-wc.ts`; `prayer-bury.ts --mode=fast` for the booth.
+- **logoutSafe:** yes, between loads.
 
 ### 16. Firemaking: `speedrun/skills/firemaking.ts` (S03)
 
@@ -923,27 +932,26 @@ scripts are in section 4; the shared primitives and their build order are in sec
 ### 24. Magic: `speedrun/skills/magic.ts` (S02 Wind Strike 1-7, S04 enchanting 7-59)
 
 - **Serves:** S02, Wind Strike at the Lumbridge chicken coop. S04, 60 enchants (12 sapphire, 27
-  emerald, 16 ruby, 5 diamond), at a booth or inside walking legs. Charge 80-99 runs inside S18.
-- **Parameters:** `mode: 'booth' | 'walk'`, ring counts, `untilLevel: 59`.
-- **Preconditions:** S02: air and mind runes (or the starter kit's runes) and the H1 hand-off. S04: the
-  rings, 60 cosmic, 81 air, 80 fire, 50 earth, staffs of water and fire (`skills/README.md`, Magic
-  row).
-- **Postconditions:** Magic 7 (S02), 59 (S04; Fire Blast, the Ardougne teleport at 51). Items out:
-  the enchanted jewellery to a helper.
-- **Ticks:** S02 **18** (measured, 300 ms, `skills/magic.md` §1). S04 about **192**: about 4 for the
-  first withdraw, 180 for 60 casts at 3 ticks each, 8 for 2 bank visits (measured parts, inferred
-  total, same section). Best about 110 for both (estimated: about 100 cast ticks moved into walking
-  legs, from the measured mechanism in `[rs/59] research/travel-and-overhead.md` ranked row 2).
-  Fallback **~245**, the magic.md headline including a standalone Charge.
-- **Primitives:** `bank.withdrawMany`; spell-on-item sends; `travel.ts`'s walk hook for `mode:'walk'`.
-- **Mode:** overlay-driven. Enchanting is a blind 3-tick cadence; a relay-late cast costs about a tick
-  each time. An in-page cadence program is optional.
-- **Fallback:** booth mode.
-- **Acceptance, local:** 25 diamond enchants. Pass: 25 of 25 at 3-tick spacing (measured in
-  `travel-walk-enchant.ts`), standing and walking.
-- **Acceptance, demo (throwaway):** 20 sapphire enchants at a booth from Ashburn. Pass: within 2 ticks
-  of 60.
-- **Start from:** `magic-strike.ts`, `magic-bank.ts`, `magic-cadence.ts`, `travel-walk-enchant.ts` [rs/59].
+  emerald, 16 ruby, 5 diamond) standing at the Firemaking row's end, with the rings delivered in three
+  trades of 20 (H3). Charge 80-99 runs inside S18.
+- **Parameters:** ring loads, `untilLevel: 59`.
+- **Preconditions:** S02: the starter kit's air and mind runes. S04: H1's staff of water and runes
+  (cosmic 60, air 81, fire 80, earth 50) and H3's ring loads; the staff of water wielded.
+- **Postconditions:** Magic 7 (S02), 59 (S04; Fire Blast, the Ardougne teleport at 51). Items out: the
+  enchanted jewellery to a helper.
+- **Ticks:** S02 **18** (measured, 300 ms, `skills/magic.md` §1). S04 **204** (inferred: 180 cast
+  ticks measured at 3 per cast, every gap 3 with level-ups closed by the cast itself,
+  `research/levelup-cost.md` §2; plus 3 ring trades at 8 measured, `research/run-transitions.md` §3).
+  Expected and best **222**. **Not on the walk**: the walk to Doric's with the casts riding measured
+  252-258 against ~240 for casting standalone and teleporting, and 2 of 4 riding runs went wrong
+  (`research/run-transitions.md` §5). Wind Strike leaves its 5 level-up pages open: answer them
+  with a blind burst on the next label (0-7 ticks, `research/levelup-cost.md` §4).
+- **Primitives:** spell-on-item sends; `lib/trade.ts` `receiveFrom`.
+- **Mode:** overlay-driven. Enchanting is a blind 3-tick cadence; a relay-late cast costs about a tick.
+- **Fallback:** a booth at Draynor.
+- **Acceptance, local:** 25 diamond enchants. Pass: 25 of 25 at 3-tick spacing.
+- **Acceptance, demo (throwaway):** 20 sapphire enchants from Ashburn. Pass: within 2 ticks of 60.
+- **Start from:** `magic-strike.ts`, `magic-cadence.ts`.
 - **logoutSafe:** yes.
 
 ### 25. Goblin Diplomacy: `speedrun/quests/goblin-diplomacy.ts` (S24)
@@ -1010,33 +1018,42 @@ scripts are in section 4; the shared primitives and their build order are in sec
 - **Start from:** `delayfree-cycle.ts`.
 - **logoutSafe:** yes.
 
-### 29. Cooking by wine: `speedrun/skills/cooking.ts` (S25c)
+### 29. Cooking by wine: `speedrun/skills/cooking.ts` (S25c), with gems in the windows
 
-- **Serves:** S25c, Cooking 1-99 by fermenting about 450 unfermented wines in the bank across two
-  firings, armed by the run's **two planned relogs** at Varrock west bank ([rs/41]
-  `helpers/wine.md`, "Default sequence for the scored account").
-- **Parameters:** `giver`, `split: [29, 'rest']`, `relog` (the session's `relog`).
-- **Preconditions:** SCORED standing at Varrock west bank at a planned relog, never in the first login
-  (a fresh account cannot reach a bank in 19 ticks; same doc, "Where the Cooking step goes"); the
-  wine giver beside the bank requesting a trade; at least 450 noted unfermented wines (520 is the
-  target: P(99) 99.8%, same doc); level-up pages cleared before each relog.
-- **Postconditions:** Cooking 99. Items out: none.
-- **Ticks:** expected about **80** from the planned relog's click to the last page (75-85; inferred
-  from the measured demo run A, [rs/41] `helpers/wine.md`, "Demo timeline"). Best **45** active ticks
-  (measured, lab T9, 3 runs: 45, 47, 51). Each relog adds about 2 with a ~1-in-29 tail of tens
-  (measured, "Relog risk"). Fallback **131**, kebabs if grapes run short (`skills/README.md`, Cooking
-  row), or one more relog if the bank opens after login + 19.
-- **Primitives:** `splitDelivery` and `receiveWine` in `speedrun/helpers/wine-receive.ts` [rs/41]: the
-  scored side already exists, so import it rather than copying it. `lib/trade.ts` `receiveFrom`,
-  `lib/bank.ts`, `session.relog` [rs/41].
-- **Mode:** overlay-driven. The deadline is the bank opening by login + 19, with slack.
-- **Fallback:** `receiveWine`'s deadline fallback (one clean relog); kebabs.
-- **Acceptance, local:** lab T9's shape through the module, 3 runs. Pass: Cooking 99 in all 3 and
-  active ticks at most 51 +10%.
+- **Serves:** S25c, Cooking 30-99 by fermenting 520 unfermented wines in the bank across two
+  firings, armed by the run's **two planned relogs** at Varrock west bank ([rs/41] `helpers/wine.md`,
+  "Default sequence for the scored account"), with **uncut gems cut in the waits**
+  (`research/wine-window.md` §5 B; 107 gems, Crafting's share).
+- **Sequence** (wine-window.md §5 B): enter planned relog 1 holding at most 27 items; trade the
+  noted wines; bank: deposit 29, withdraw all uncut gems (the chisel held), close, by login + 19;
+  **W1** cut the load, then continue pages; first firing at login + 20; **P1** only the booth click
+  and two blind continues per tick; deposit the rest of the wine and the cut gems; relog 2; **W2**
+  the normal gem cycle with booth visits; second firing; **P2** keep cutting, which clears the
+  Cooking pages. No bury anywhere in the window.
+- **Parameters:** `giver`, `split: [29, 'rest']`, `relog` (the session's `relog`), `windowWork: 'gems'`.
+- **Preconditions:** SCORED at Varrock west bank at a planned relog, never in a first login; the wine
+  giver beside the bank requesting; 520 noted unfermented wines (held, rs/118); the chisel and the
+  gems for the windows banked from H21d; S25a, S25d and S25e done; level-up pages cleared and 16
+  ticks out of combat before each relog.
+- **Postconditions:** Cooking 99; 107 more gems cut. Items out: none.
+- **Ticks:** expected **80**, best **75** (WINE's demo run A and projection, 75-85; measured). The
+  gems save 30-31 ticks of Crafting at Crafting 55 (measured, wine-window.md §2, n = 3) and about 36
+  later in Crafting's route (inferred, §4); that saving is booked in Crafting's figure (entry 28).
+  Each relog costs about 2 with a ~1-in-29 tail of tens (measured, "Relog risk"); on the lab host the
+  arming relog went out in 0 ticks in 42 of 42 with the work in the windows (wine-window.md §3).
+  Fallback **131**, kebabs if grapes run short, or one more relog if the bank opens after login + 19.
+- **Primitives:** `splitDelivery` and `receiveWine` in `speedrun/helpers/wine-receive.ts` [rs/41];
+  `lib/trade.ts`, `lib/bank.ts`, `session.relog` [rs/41]; the gem loop from `delayfree-cycle.ts`.
+- **Mode:** overlay-driven.
+- **Fallback:** `receiveWine`'s deadline fallback (one clean relog); the plain sequence with no work in
+  the windows (Crafting then 121).
+- **Acceptance, local:** `wine-window-lab.ts --variants=plain,gems --reps=3` through the module. Pass:
+  Cooking 99 in all 3, the first firing at login + 20, and the gems variant within 2 ticks of the
+  measured 75-76 normalised.
 - **Acceptance, demo (throwaway):** the default sequence on a throwaway receiver with a wine-maker
-  throwaway, as run A (`wine-handoff.ts --mode=split`). Pass: session ticks within 10% of run A.
-- **Start from:** [rs/41] `speedrun/helpers/wine-receive.ts`, `wine-common.ts`, `wine-ferment.ts`;
-  `docs/speedrun/scripts/cooking-wine.ts`.
+  throwaway, as run A. Pass: session ticks within 10% of run A.
+- **Start from:** [rs/41] `speedrun/helpers/wine-receive.ts`; `docs/speedrun/scripts/wine-window-lab.ts`,
+  `cooking-wine.ts`.
 - **logoutSafe:** this step *is* the two planned relogs; it ends safe.
 
 ### 30. Doric's Quest: `speedrun/quests/dorics-quest.ts` (S05)
@@ -1065,60 +1082,47 @@ scripts are in section 4; the shared primitives and their build order are in sec
 
 ### 32. Fletching: `speedrun/skills/fletching.ts` (inside S18)
 
-- **Serves:** Fletching 1-99 by attaching arrowheads to headless arrows, 15 arrows per action and 5
-  actions per tick, with the rune-tier actions inside pickpocket stuns.
-- **Preconditions:** 3,600 headless arrows; arrowheads by tier (2,595 rune, scarce; adamant from 60
-  costs about 9 extra ticks; `skills/fletching.md` §1).
-- **Postconditions:** Fletching 99.
-- **Ticks:** standalone **50** (measured, 1 run, bbs; `skills/fletching.md` §1). Expected net about
-  **15** with the rune tier's ~35 ticks in stuns (inferred, ~5-20; `skills/README.md`, Fletching
-  row). Fallback 50.
-- **Primitives:** the stun-pack extension of the pickpocket program (entry 6); `bank` not needed
-  (everything stacks).
-- **Mode:** in-page with Thieving for the stun share; the standalone part can be overlay-driven.
-- **Acceptance, local:** 1 to 99 standalone. Pass: within 5% of 50, with 5 actions on at least 49 of
-  50 xp ticks (measured 49 of 49).
+- **Serves:** Fletching 1-99 inside S18's stuns (entry 6): arrowtips on headless arrows, 15 arrows
+  per action, as the `h` actions after Charge is done.
+- **Preconditions:** load 0 (H14): headless arrows 4,410, bronze 60, iron 90, steel 135, mithril 1,485;
+  adamant 2,070 and rune 570 on two top-ups, each when SCORED is down to one tier.
+- **Postconditions:** Fletching 99; **570 rune arrows kept** for S27.
+- **Ticks:** **0** inside S18 (measured: 240 actions inside the stuns in every pack run,
+  `research/stun-pack.md` §3; the 2,070 adamant + 570 rune mix is 294 actions, which fit the
+  ~7.8 delay-free slots per stun beside Charge, inferred, RUN-ORDER.md section 7). Standalone
+  fallback about **59** (294 actions at 5 per tick, `skills/fletching.md` §2).
+- **Primitives:** the stun-pack extension of the pickpocket program (entry 6, rs/132).
+- **Mode:** in-page with Thieving.
+- **Acceptance, local:** with entry 6. Standalone, 1 to 99 within 5% of 59 at 5 actions per tick.
 - **Acceptance, demo (throwaway):** bronze arrows for 20 ticks. Pass: 5 actions per tick on at least
   90% of ticks.
-- **Start from:** `delayfree-cycle.ts`.
-- **logoutSafe:** yes.
+- **Start from:** `stun-pack-thieve.ts`, `delayfree-cycle.ts`.
+- **logoutSafe:** with S18.
 
 ### 33. Hand-off H1: `speedrun/runner/handoff.ts` (S01)
 
-- **Serves:** S01, the first trade at Lumbridge (3222,3222) from the mule, and the receive side of
-  every later package hand-off. Contents are in `SUPPLIES.md` (cairn://p/rs/109).
+- **Serves:** S01, the first trade at Lumbridge (3222,3222), and the receive side of every later
+  package hand-off. Contents are in `SUPPLIES.md`.
 - **Parameters:** `giver`, `want` (the package's item list).
-- **Preconditions:** the mule beside SCORED, with the package prepared and pre-requesting
-  ([rs/41] `helpers/mule.md`).
+- **Preconditions:** the trade giver (Ashburn, rs/117) beside SCORED, with the package prepared and
+  pre-requesting. H1 carries no rings: the starter kit leaves about 10 free slots.
 - **Postconditions:** the package in SCORED's inventory, with nothing given away.
-- **Ticks:** expected about **8** (measured, our receiver against our giver: 4 ticks for 1 noted stack,
-  8 for 23; `speedrun/README.md`, "trade.ts"). Demo, receiver ticks through a loopback gateway: 6.7,
-  8 and 10 for 1, 10 and 20 stacks (measured, rs/49 via the rs/41 coordinator's notice of
-  2026-10-20 22:10).
+- **Ticks:** **8** (measured: 4 ticks for 1 noted stack, 8 for 23, 12 of 12 at each of four staging
+  tiles, `research/run-transitions.md` §3, confirming `speedrun/README.md`).
 - **Primitives:** `lib/trade.ts` `receiveFrom` with `want`; `receivePackage` in [rs/41] `mule.ts`.
 - **Mode:** overlay-driven.
-- **Acceptance:** local, within 1 tick of 4/8; demo, within 1 tick of 6.7/8/10.
-- **Start from:** `lib/trade.ts`, [rs/41] `mule.ts` `receivePackage`.
+- **Acceptance:** local, within 1 tick of 4 / 8; demo, within 1 tick of rs/49's 6.7 / 8 / 10 through a
+  loopback gateway.
+- **Start from:** `lib/trade.ts`, [rs/41] `mule.ts` `receivePackage`, `run-transitions-handoff.ts`.
 - **logoutSafe:** yes.
 
-### 34. Tutorial skip: `speedrun/skills/start.ts` (S00)
+### 34. Tutorial skip: `speedrun/skills/start.ts` (S00): done
 
-- **Serves:** S00, the first login of a brand-new account and the tutorial skip, landing at (3222,3222)
-  in Lumbridge with the starter kit (read, `tutorial.rs2:295-310`; `[rs/59] research/travel-and-overhead.md`,
-  ranked row 1).
-- **Preconditions:** an account that has never logged in. The demo still offers the skip, because
-  `NODE_PRODUCTION` is unset and `map_live` is false (read, same row): check that the guide's first
-  page offers it.
-- **Postconditions:** at (3222,3222); starter kit in the inventory; side tabs present.
-- **Ticks:** **6** (measured, `travel-walk-enchant.ts`, 1 run, 300 ms, bgsrv-mac). On the demo a new
-  account skipped by its tick 11 ([rs/41] `helpers/wine.md`, "Where the Cooking step goes").
-- **Primitives:** `bot.skipTutorial()` (stock SDK) or two guarded dialogue clicks.
-- **Mode:** overlay-driven.
-- **Fallback:** none that saves the run. If the skip is not offered, stop: the full tutorial costs far
-  more than the 547 ticks the old account already carried (same row).
-- **Acceptance, local:** a fresh lab bot. Pass: at most 7 ticks.
-- **Acceptance, demo (throwaway):** a fresh throwaway's first login. Pass: at most 11 ticks, and the
-  hiscore playtime after logout in single digits plus the logout.
+- **Serves:** S00. **Done**: SCORED was claimed with the tutorial skip and parked at 8 ticks on
+  2026-10-21 (main's arc, 08:40 PDT; rs/41). Its run login is S01's.
+- **Ticks:** **8** (measured on the demo, already on SCORED's clock).
+- **Kept for:** rehearsals and gate accounts, which need the same skip: `bot.skipTutorial()` or two
+  guarded dialogue clicks; at most 7 ticks on the lab engine, 11 on the demo.
 - **logoutSafe:** yes.
 
 ## 4. Helper-side scripts
