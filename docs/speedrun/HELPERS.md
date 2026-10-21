@@ -27,6 +27,8 @@ The speedrun's scored account (its name is chosen by the operator and kept out o
 | [mule](helpers/mule.md) | Consolidates stock, serves trades to the scored account | cairn_mule1, cairn_mule2 (stand-in receiver cairn_h05) | cairn://p/rs/49 |
 | [coins / buyer](helpers/coins.md) | Coins; Grand Exchange and shop purchases | cairn_h60-h65 | cairn://p/rs/50 |
 | [bidder](helpers/bidder.md) | Standing GE buy offers just above the competing bids, up to per-item targets (dragon bones, grapes) | cairn_h61 | cairn://p/rs/63 |
+| [altar-giver](helpers/altar-giver.md) | Rune essence into the scored account's hands inside the altar room, 27 per trade on the blind 7-tick Runecraft cycle | cairn_h70-h74 (stand-in receiver `altar-receiver` on cairn_h75) | Run machine only (see "Helpers on the run machine"), never the fleet. cairn://p/rs/117 |
+| [handover](../../speedrun/helpers/handover.ts) | Nothing: trades exact amounts of banked stock (a few talismans, a few hundred essence) to named accounts, then stops | any | For ledger moves the courier cannot make (it carries whole stacks). Ask the coordinator before moving fleet stock. |
 | [ambassador](AMBASSADOR.md) | Nothing: talks with other bots at the GE, logs the conversation, daily digest | cairn_md | The only role that chats, under hard rules enforced in code (cairn://p/rs/58). |
 
 Planned without an owner yet (supply list in cairn://p/rs/41): fletcher-supplier (arrowheads, dart tips, headless arrows), gem supplier (uncut dragonstones or diamonds), rune and jewellery buyer, combat-supply buyer (food, potions, gear, cannonballs), quest-item gatherer.
@@ -173,6 +175,44 @@ The supervisor runs as the transient systemd user unit `rs-fleet` (user lingerin
 **Merged code.** `fleetctl update <ref>` takes any branch or commit of the fork (default `main`): it fetches it, checks it out detached, runs `bun install` at the root and in `server/webclient`, and records the ref and commit in `fleet-run/deployed.json`. Then `fleetctl restart` loads it. Runtime files are gitignored and untouched. `fleetctl status` prints the code the running supervisor loaded (`code: running <ref> @ <sha>`) and says when the checkout has moved on and a restart is due.
 
 **Code not yet merged (development).** `speedrun/helpers/bbs.sh push`, run from a checkout on the Mac, rsyncs that checkout's `speedrun/` over the host's, leaving the rest (the clients, the SDK) at whatever `update` last fetched; then `fleetctl restart`. Status shows this as `+ development speedrun/`. The next `fleetctl update` puts `speedrun/` back to the fetched revision.
+
+## Helpers on the run machine
+
+A few helpers trade with the scored account on exact ticks, with no time to react: the Runecraft altar givers (the blind 7-tick cycle, `skills/runecraft.md` section 4), the trade giver that serves the scored account's hand-offs (the `mule` role) and the wine giver (the `wine` role with `receiver`, which is the same account as the trade giver). A relayed client from bbs is a tick late often enough to break those schedules, so these helpers run as lite clients **on the machine that runs the scored account**, beside its client, and not in the fleet. Everything else (gathering, crafting, buying, couriering stock to the trade giver ahead of a hand-off) stays on bbs.
+
+The launcher is `speedrun/helpers/standalone.ts`. It needs nothing but a checkout (`bun install` at the root and in `server/webclient`) and has nothing to do with `fleetctl`:
+
+    bun speedrun/helpers/standalone.ts run-machine/air.json
+
+It starts one SDK gateway on loopback (`server/gateway/gateway.ts` with `AGENT_PORT=<gatewayPort> GATEWAY_HOSTNAME=127.0.0.1`, no login server, which is why it never binds anything but 127.0.0.1). Then, for each account **in config order and one at a time**, it starts the lite client (`server/webclient/src/lite/runner.ts`, with `GATEWAY_URL` pointing at that gateway and the credentials from `<botsDir>/<account>/bot.env`), waits until the client is in the world, and starts the role as its own process (`bun speedrun/helpers/<role>.ts <account>` with `ROLE_OPTIONS`, `RC_CUE_DIR` and `LOGGED_IN_AT`). The next account logs in only after that. A client that drops is logged back in with backoff, and login refusals pause every login (the fleet's `backoff.ts` policy). It writes `<runDir>/launcher.json` every 2 s: each account's state, `loggedInAt` and login count, and `helpersReady: true` once every non-receiver account is online.
+
+**Login order is part of the schedule.** The engine handles players in login order, and the tuned 7-tick cycle needs each giver handled before the scored account in every tick (`skills/runecraft.md`, "Login order decides 7 or 8"). So the givers go first in the config, and the scored account's run script logs in only after `launcher.json` says `helpersReady`. A giver that relogs (after a drop) is handled after the scored account from then on. Its status file says so through `loggedInAt`, and the scored side gives it the robust 8-tick schedule. Measured in the lab: givers first, tuned, 21/21 at 7 ticks; scored side first, tuned, 0/21; scored side first, robust, 21/21 at 8 (`helpers/altar-giver.md`).
+
+**Stopping.** SIGINT or SIGTERM to the launcher (or the exit of a role marked `final`) stops each role, clicks logout (component 2458) through the account's own SDK connection, waits for its client to leave (once more after 16 ticks if it was in combat), and only then closes the client and the gateway. It signals only the processes it started, through their own handles, and never kills by name or pattern.
+
+**Credentials** stay out of git. `botsDir` (default `bots/`, gitignored) holds `<account>/bot.env` (`BOT_USERNAME`, `PASSWORD`, `SERVER`, no `GATEWAY_URL`). The launcher refuses a `bot.env` or a run directory that git would track, any name outside `cairn_*`, and the fleet's forbidden names. It never names the scored account: the scored client is the run script's, and the cue identifies it only by a hash. The altar givers' credentials are backed up on bbs in `~/rs-run-machine/bots/` (mode 700). New accounts get their `bot.env` from `speedrun/helpers/accounts.ts` (`createAccountEnv`) before their first login, which creates them on the demo.
+
+**Config** (JSON, paths relative to the checkout):
+
+| Key | Meaning |
+|---|---|
+| `gatewayPort` | loopback gateway port (default 7795; on bbs the fleet owns 7790-7799, so pick another there) |
+| `botsDir` | directory of `<account>/bot.env` (default `bots`) |
+| `runDir` | `launcher.json`, `logs/<account>.{lite,role}.log`, `gateway.log`, and the cue directory `rc-cue/` (default `run-machine`, gitignored) |
+| `loginSpacingMs` | pause after each login before the next (default 5000) |
+| `accounts` | `[{ account, role, options?, args?, receiver?, final?, after? }]` in login order. `receiver`: a stand-in for the scored side, not counted in `helpersReady`. `final`: when this role exits, stop everything. `after: 'ready'`: log in only once every earlier `altar-giver` reports ready |
+
+The run-machine roles and their entries:
+
+| Role | Entry | Notes |
+|---|---|---|
+| `altar-giver` | `{ account: 'cairn_h70', role: 'altar-giver', options: { altar: 'air', slot: 0 } }` | one per giver; options and the cue contract in `helpers/altar-giver.md`. The run script owns `rc-cue/cue.json` (`CueWriter` in `altar-cue.ts`) |
+| `mule` (trade giver) | `{ account: 'cairn_mule1', role: 'mule', options: { packages: [...] } }` | serves the scored account's hand-offs (`helpers/mule.md`). It calls `pointMarketAtServer` itself, so its GE calls reach the game server instead of the loopback gateway |
+| `wine` (wine giver) | `{ account: ..., role: 'wine', options: { receiver: ..., giveAmount: ... } }` | `giveWine` at Varrock west bank (`helpers/wine.md`). It makes no GE calls |
+| `altar-receiver` | `{ account: 'cairn_h75', role: 'altar-receiver', receiver: true, final: true, after: 'ready', options: { cycles: 21 } }` | test double for the scored side; prints one `RESULT` line. Never on the scored account |
+| `handover` | `{ account: 'cairn_h31', role: 'handover', options: { handovers: [...] } }` | moving a few items from a fleet account to a run-machine helper; disable that account in the fleet only for the trade |
+
+Running the givers on another machine than the scored client defeats the point: the cue is a local directory, and the tick offset between the two clients is learned from frame arrival times on one clock. Measurements and the lab driver: `helpers/altar-giver.md` and `speedrun/lab/altar-givers.ts`.
 
 ## Writing a role
 
