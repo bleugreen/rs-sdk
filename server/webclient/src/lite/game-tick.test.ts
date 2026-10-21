@@ -24,6 +24,8 @@ import IfType from '#/config/IfType.js';
 import Packet from '#/io/Packet.js';
 import { ServerProt } from '#/io/ServerProt.js';
 
+import type { BotWorldState } from '#/bot/types.js';
+
 import { captureBaseInterfaces, resetBaseInterfaces } from './interfaces.js';
 import { LiteClient } from './LiteClient.js';
 import { runPacketLoop, type PacketSocket } from './session.js';
@@ -73,7 +75,7 @@ function makeClient(name: string): { client: LiteClient; stream: FakeStream } {
     return { client, stream };
 }
 
-let stubbedBase = false;
+let stubbedBase: IfType[] | null = null;
 
 beforeAll(() => {
     try {
@@ -81,7 +83,7 @@ beforeAll(() => {
     } catch {
         IfType.list = [];
         captureBaseInterfaces();
-        stubbedBase = true;
+        stubbedBase = IfType.list;
     }
 });
 
@@ -117,6 +119,54 @@ describe('game tick publication', () => {
         await client.pumpPackets();
 
         expect(calls).toBe(0);
+    });
+
+    test('a varp, quest-tab colour and journal sent after PLAYER_INFO are in that tick\'s published state', async () => {
+        // The components the quest state reads: questlist:doric, the journal's
+        // title and qj1..qj50. The real cache has them; the stubbed one needs them.
+        if (stubbedBase) {
+            for (const id of [7336, 8134, 8144, 8145, ...Array.from({ length: 49 }, (_, i) => 8147 + i)]) {
+                stubbedBase[id] = Object.assign(Object.create(IfType.prototype) as IfType, { id, colour: 0xff0000, text: '' });
+            }
+        }
+        const { client, stream } = makeClient('quest1');
+        const published: BotWorldState[] = [];
+        client.setOnGameTickCallback(ticks => {
+            published.push(client.collectBotState(ticks));
+        });
+
+        const varpSmall = (id: number, value: number) => [ServerProt.VARP_SMALL, id >> 8, id & 0xff, value & 0xff];
+        const varpLarge = (id: number, value: number) => [ServerProt.VARP_LARGE, id >> 8, id & 0xff, (value >>> 24) & 0xff, (value >> 16) & 0xff, (value >> 8) & 0xff, value & 0xff];
+        const setColour = (com: number, rgb15: number) => [ServerProt.IF_SETCOLOUR, com >> 8, com & 0xff, rgb15 >> 8, rgb15 & 0xff];
+        const setText = (com: number, text: string) => {
+            const body = [com >> 8, com & 0xff, ...Buffer.from(text, 'latin1'), 10];
+            return [ServerProt.IF_SETTEXT, body.length >> 8, body.length & 0xff, ...body];
+        };
+        const openMain = (com: number) => [ServerProt.IF_OPENMAIN, com >> 8, com & 0xff];
+
+        stream.bytes.push(
+            ...PLAYER_INFO_EMPTY,
+            ...varpSmall(101, 1), // qp, as ~send_quest_complete's ~update_questpoints sends it
+            ...varpLarge(173, 1), // option_run
+            ...setColour(7336, 31 << 5), // questlist:doric, ^green_rgb
+            ...setText(8144, "@dre@Dorics' Quest"),
+            ...setText(8145, '@str@I have spoken to Doric.'),
+            ...setText(8147, '@dbl@Doric rewarded me for all my hard work'),
+            ...openMain(8134)
+        );
+        await client.pumpPackets();
+
+        expect(published).toHaveLength(1);
+        const s = published[0]!;
+        expect(s.varps).toEqual({ qp: 1, option_run: 1, bankcert: 0 });
+        expect(s.questPoints).toBe(1);
+        expect(s.quests).toEqual({ doric: 'complete' });
+        expect(s.questJournal).toEqual({
+            title: "Dorics' Quest",
+            lines: ['@str@I have spoken to Doric.', '@dbl@Doric rewarded me for all my hard work'],
+            open: true,
+            tick: 1
+        });
     });
 
     test('queued ticks publish once, counted, and are not replayed', async () => {
