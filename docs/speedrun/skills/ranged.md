@@ -302,33 +302,34 @@ up.
 
 ## 7. Helper supply list
 
-For the with-MM plan (113 cannon ticks before MM, then plan (e): about 2,360 cannon
-ticks, of which about 1,420 with knives). Counts are inferred from the measured
-consumption.
+For the current with-MM plan (113 cannon ticks before MM, then plan (f): about 3,460
+ticks of cannon + defensive melee, about 3,570 cannon ticks in all, no knives). The
+Holy-Grail-on plan (e) needs about 2,360 cannon ticks, 1,420 of them with knives.
+Counts are inferred from the measured consumption.
 
 | Item | Count | Where helpers get it |
 |---|---|---|
 | Dwarf multicannon set (base, stand, barrels, furnace) | 1 set | A helper who has done Dwarf Cannon buys it from Nulodion, 750,000 coins (`nulodion.rs2:68-80`) |
-| Cannonballs | ~1,500 (0.51-0.67 used per tick) | Smithing 35 with the ammo mould (the helper needs the quest), or Nulodion's shop |
-| Rune knives | ~700 (0.45 per tick; ~850 for a 1 -> 99 run without the Defence phase) | Fletching/Smithing or the GE |
+| Cannonballs | ~2,300 for plan (f), ~1,500 for plan (e) (0.51-0.67 used per tick) | Smithing 35 with the ammo mould (the helper needs the quest), or Nulodion's shop |
+| Rune knives | none for plan (f); ~700 for plan (e) (0.45 per tick); ~850 for a plain 1 -> 99 | Fletching/Smithing or the GE |
 | Rune scimitar | 1 | GE/shop |
-| Food (sharks) | ~25 (about 0.2 hp per tick taken) | Fishing helper or GE |
-| Prayer potions (4) | ~6 (about 470 prayer points at 1 per 5 ticks) | Herblore helper or GE |
+| Food (sharks) | ~45 for plan (f), ~25 for plan (e) (about 0.2-0.3 hp per tick taken) | Fishing helper or GE |
+| Prayer potions (4) | ~9 for plan (f), ~6 for plan (e) (1 prayer point per 5 ticks) | Herblore helper or GE |
 | Ranged armour / Defence gear | optional | not needed by the cannon |
 
 Cadence: everything fits in one trade (the parts take 4 slots until set-up; balls and
 knives stack). That is one adjacent-helper trade (9 ticks, 5 with the rs/22 fix) or
-about 56 stock, and no banking for the whole stretch. The knives (worn stack) and
-balls need no restock below about 700 / 1,500.
+about 56 stock. Plan (f)'s 45 sharks and 9 potions do not fit beside the parts, so
+expect one more trade mid-stretch, delivered at the spider site.
 
 ## 8. Open questions
 
 - **Cannon + knives between 40 and 70** was not measured. Measure at 50 and 60 to set
   the switch level (it would shorten the 1 -> 99 line by up to a few hundred ticks).
-- **Melee at the spiders against the best melee site.** The no-MM "~1,040 ticks" for
-  Ranged rests on rs/30's preliminary 8/tick (100 ms, moss giants); recompute with its
-  300 ms number. Also check whether Strength (aggressive) at the spiders behaves like
-  the defensive measurement.
+- **Aggressive melee at the spiders** was not measured. The Strength-gap variants
+  assume it runs at the measured defensive rate (5.60 with the cannon); the gear here
+  was a bare rune scimitar, not rs/30's full set with potions and prayers, so the
+  spider melee rates are probably low.
 - **Cannon placement:** the cannon fired on only 51-67% of ticks. A better tile in the
   spider field (more line of sight to the east and west clusters) could add a few xp
   per tick. `ranged-cannon-coverage.ts` on more tiles would settle it.
