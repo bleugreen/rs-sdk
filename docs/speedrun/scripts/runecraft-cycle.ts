@@ -20,6 +20,12 @@
 //   --mode=robust   the same, but the scored account accepts and confirms at
 //                   T+7 and crafts at T+8 (the helper confirms at T+7 and T+8).
 //                   8 ticks, works whichever player the server handles first.
+//   --mode=outside  helpers cannot enter the room: after each craft the scored
+//                   account steps through the exit portal, takes a stock trade
+//                   from a helper standing by the ruins, uses its talisman on
+//                   the ruins and clicks the altar from the room entry. Each
+//                   step is clicked once per publication until it takes
+//                   effect; per-segment ticks are reported.
 //   --altar=law|nature|air|body   room to use (default law)
 //   --level=N       Runecraft level to set (default the altar's level)
 //   --cycles=N      crafts to time (default 20)
@@ -62,7 +68,7 @@ if (!altarLoc) throw new Error('no altar visible from the room entry');
 const sTile = { x: altarLoc.x + 1, z: altarLoc.z - 1 };
 const hTile = { x: altarLoc.x + 2, z: altarLoc.z - 1 };
 for (const [sdk, t] of [[S, sTile], [H, hTile]] as const) {
-    await cheat(sdk, 'clearinv inv');
+    await cheat(sdk, '~clearinv inv');
     await tele(sdk, t.x, t.z, A.enter.level);
 }
 await cheat(S, `setstat runecraft ${LEVEL}`);
@@ -214,8 +220,46 @@ async function runScheduled(robust: boolean) {
     return failures;
 }
 
+// ---------------------------------------------------------------- outside
+const segments: Array<Record<string, number>> = [];
+async function spamUntil(sdk: BotSDK, click: () => unknown, done: () => boolean, max = 60): Promise<number> {
+    const t0 = now(sdk);
+    while (!done()) {
+        if (now(sdk) - t0 > max) throw new Error('step never took effect');
+        click();
+        const t = now(sdk);
+        await waitUntil(sdk, s => s.tick > t, 5);
+    }
+    return now(sdk) - t0;
+}
+async function runOutside() {
+    // scored keeps its talisman; helper waits beside the portal's exit tile
+    if (invCount(S.getState(), /talisman/i) === 0) { await cheat(S, `give ${TALISMAN} 1`); await waitTicks(S, 2); }
+    await tele(H, A.exit.x + 1, A.exit.z, A.exit.level);
+    const inRoom = () => (S.getState()!.player!.worldZ ?? 0) > 4000;
+    const portal = S.getNearbyLocs().find(l => /^portal$/i.test(l.name))!;
+    const altarClick = () => S.sendInteractLoc(altarLoc.x, altarLoc.z, altarLoc.id, 1);
+    // first essence: walk out and trade once
+    await spamUntil(S, () => S.sendInteractLoc(portal.x, portal.z, portal.id, 1), () => !inRoom());
+    for (let i = 0; i <= CYCLES; i++) {
+        await waitUntil(H, () => !!sp(), 10);
+        const t0 = now(S);
+        await refill();
+        if (!(await stockTrade())) throw new Error(`outside trade ${i} failed`);
+        const tTrade = now(S) - t0;
+        const ruins = S.getNearbyLocs().find(l => /mysterious ruins/i.test(l.name))!;
+        const tal = S.getState()!.inventory.find(x => /talisman/i.test(x.name))!.slot;
+        const tRuins = await spamUntil(S, () => S.sendUseItemOnLoc(tal, ruins.x, ruins.z, ruins.id), inRoom);
+        const n0 = crafts.length;
+        const tAltar = await spamUntil(S, altarClick, () => crafts.length > n0);
+        const tPortal = await spamUntil(S, () => S.sendInteractLoc(portal.x, portal.z, portal.id, 1), () => !inRoom());
+        segments.push({ trade: tTrade, ruinsToRoom: tRuins, roomToCraftSeen: tAltar, craftSeenToOutside: tPortal });
+    }
+}
+
 let failures = 0;
-if (mode === 'stock') await runStock();
+if (mode === 'outside') await runOutside();
+else if (mode === 'stock') await runStock();
 else failures = await runScheduled(mode === 'robust');
 await waitTicks(S, 3);
 
@@ -227,7 +271,8 @@ result('cycle', {
     crafts: crafts.length, failures, gapHist: hist(gaps), gap: stats(gaps),
     basePerCraft: stats(crafts.map(c => c.baseXp)),
     basePerTick: Math.round((baseTotal / ticks) * 100) / 100,
-    scoredTiles: [...positions],
+    scoredTiles: mode === 'outside' ? positions.size : [...positions],
+    ...(mode === 'outside' ? { segments: Object.fromEntries(Object.keys(segments[0]).map(k => [k, stats(segments.map(s => s[k]))])) } : {}),
 });
 await S.disconnect(); await H.disconnect();
 process.exit(0);
