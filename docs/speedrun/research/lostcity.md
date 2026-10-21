@@ -78,7 +78,7 @@ route would lose if upstream changed the behaviour; it is not a saving.
 | 6 | Weak queue cleared when a dialogue resumes, so a dismissed level-up ends a Make-X batch | Engine-TS [#125](https://github.com/LostCityRS/Engine-TS/pull/125) (in our base, merged 2026-09-30) | Yes: `Player.ts:2266-2270`; weak scripts run only when not busy (`Player.ts:878-887`), so leaving the dialog open stalls the batch too. Weak-queue Make-X skills: `cut_logs.rs2`, `smelting.rs2`, `leather/pottery/glass/jewellery/spinning/snelm.rs2`, `alchemy.rs2` (r). Authentic (OSRS level-ups stop Make-X). | Fletching and Crafting (rs/37, ~250 for four skills); smithing's anvil make-5 is not on the weak queue and was measured unaffected (rs/28 smithing.md:114-116) | **0 saved; a cost of ~2-3 ticks per level-up that lands mid-batch (i)**, bounded by the ~250-tick line and already inside rs/37's measurements on this tree (r) | none | Read; no lab |
 | 7 | Cheap ruby rings: Irksol (Lost City) sells below alch value and below Grum's buy price | rs-sdk [#56](https://github.com/MaxBittker/rs-sdk/issues/56) (open) | Yes: `area_lostcity/configs/lostcity.npc` `cheapringshop` `shop_sell_multiplier=500` (r, per the issue) | Magic enchanting, ruby band 49 -> 57 (16 casts, rs/28) | **0 scored ticks (r)**: rings are helper-supplied either way; buying saves helper crafting only. The shop is shared (stock 5), so buying it out is an economy action. **Flag for the coordinator (tenet 6).** | ~1,012 gp per ring | Not tested (economy; observational only) |
 | 8 | 289 coin dupe (Managing Miscellania coffers) | LostCityRS/Server [#21](https://github.com/LostCityRS/Server/issues/21) (open, 2026-10-20) | **Patched here**: rs-sdk `ca0fe09cc` and `fb2649716`, `managing_miscellania.rs2`; regression test `server/engine/test/miscellania-coffers.test.ts`. Upstream LostCity has not shipped its own fix yet. | none | 0 (r). **Flag (tenet 6): touches the shared economy; observational only.** | n/a | Not tested, by rule |
-| 9 | Combat refactor would change the cannon's damage cap (risk) | Content [#772](https://github.com/LostCityRS/Content/pull/772) (open) | Not in our revision. The diff keeps `~player_npc_hit_roll(%damagetype)` for the cannon (the wielded-melee-style roll the route uses) and only swaps `~npc_max_dealt(30, 0)` for `npc_param(max_dealt)`, which differs for the Horror from the Deep dagannoths (`npc_combat.rs2:401-420`, `cannon_fire.rs2:114-117`). | Ranged with the cannon (rs/28 ranged.md) | **~0 at risk (r)** for our cannon targets | none | No lab |
+| 9 | Combat refactor would change the cannon's damage cap (risk) | Content [#772](https://github.com/LostCityRS/Content/pull/772) (open) | Not in our revision. The diff keeps `~player_npc_hit_roll(%damagetype)` for the cannon (the wielded-melee-style roll the route uses) and only swaps `~npc_max_dealt(30, 0)` for `npc_param(max_dealt)`, which differs for the Horror from the Deep dagannoths (`npc_combat.rs2:401-420`, `cannon_fire.rs2:116-117`). | Ranged with the cannon (rs/28 ranged.md) | **~0 at risk (r)** for our cannon targets | none | No lab |
 | 10 | Tick eating (OSRS-style) not implemented | Content [#626](https://github.com/LostCityRS/Content/pull/626) (open) | Not in our revision: food eaten on the tick a hit lands does not save the player | Quest boss fights (rs/3) | 0 (survival only; no xp or tick effect) | none | No lab |
 
 No row is worth over ~100 ticks as an untested saving, so there are no lab briefs. Rows 1-4 are
@@ -90,11 +90,13 @@ The nightly watch (`UPSTREAM-WATCH.md`) diffs MaxBittker/rs-sdk only, so it repo
 change when rs-sdk vendors it, which has happened every two to five months (245.2 -> 254 in March,
 254 -> 274 in May, 274 -> 289 in October 2026). Specific places to watch:
 
-- **Knife starter (row 1).** `skill_fletching/scripts/cut_logs.rs2` falls under the "Fletching"
-  entry, whose stated reason is fletching xp, not the starter. The engine side is `Player.ts`
-  `closeModal`, `clearPendingAction` and `executeScript` (the weak-queue clears), watched under
-  "Player xp and level stamps" with a reason that does not mention them. A dedicated entry, or a
-  sharper reason line, would make a regression readable at a glance.
+- **Knife starter (row 1). Added to the watch on this branch.** `cut_logs.rs2` used to fall under
+  the general "Fletching" entry, whose reason was fletching xp. It now has its own entry,
+  `knife-starter`, above Magic and Fletching in `speedrun/tools/upstream-watchlist.json`, and the
+  `Player.ts` entry's reason now names the weak-queue clears in `closeModal`,
+  `clearPendingAction` and `executeScript` that the starter and Make-X batches depend on. The
+  table in `UPSTREAM-WATCH.md` was regenerated with `--write-doc`, and the watch's tests pass
+  (16 of 16).
 - **Charge (row 2).** Already a dedicated entry. Upstream's own comment names the trigger: a
   revision after Jagex added the cooldown in 2005.
 - **Wine (row 4).** Already a dedicated entry. Upstream's TODO says it will change when someone
@@ -150,6 +152,14 @@ Each of these appears in the upstream record or the era sources and was checked 
   hiscore time freeze (rs-sdk #67, superseded by `55fa26cc`).
 - **Upstream commits after our base**: content `8efdb336` (sled animation) and the 274-branch
   slayer fixes `f4e09ff4` (Slayer arrives at revision 290). Not applicable.
+- **Jagex changes after January 17, 2005 that our revision predates.** The 2005 news posts up to
+  March (runescape.wiki `2005`, "Wilderness Capes, and Changes" of 22 February, "Mountain Daughter
+  and Changes" of 7 March, "Magic and Wilderness Updates" of 14 March) change mechanics in one
+  place we could use: the magic shortbow special went from 35% to 55% of the bar. Our tree has the
+  older 35% (`skill_combat/configs/ranged/bows.obj:313`, `sa_energy=350`), but the ranged route
+  uses the cannon, and at 10% regeneration per 50 ticks a 1,000-tick phase buys about 8 extra
+  arrows, under 10 ticks (i). None of the posts mentions Charge, so its cooldown date is still
+  only "sometime in 2005".
 - **`stat_random` clamped at level 99** (Engine-TS [#110](https://github.com/LostCityRS/Engine-TS/pull/110), in base):
   boosts above 99 add nothing to success rolls. No route line boosts above 99.
 
@@ -164,6 +174,8 @@ Each of these appears in the upstream record or the era sources and was checked 
 - MaxBittker/rs-sdk: 85 issues and PRs scanned; #55, #56, #67, #73, #79 read.
 - 2004Scape news changelogs, https://2004.lostcity.rs/news/170 to /229 (scanned for exploit, dupe
   and xp items).
+- RuneScape Wiki, the `2005` update list and the posts "Wilderness Capes, and Changes",
+  "Mountain Daughter and Changes" and "Magic and Wilderness Updates".
 - 2004Scape GitHub wiki, "Runescape Patch History"
   (https://github.com/2004Scape/Server/wiki/Runescape-Patch-History).
 - Svew's Bug Abuse Notes, se7ensins, 2011
