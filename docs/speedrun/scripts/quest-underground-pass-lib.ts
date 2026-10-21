@@ -183,18 +183,28 @@ export class Lab {
                     if (c.item) await this.useOnLoc(c.item, c.id, c.x, c.z);
                     else await this.clickLoc(c.id, c.x, c.z, c.op ?? 1);
                     const to = edge.to;
+                    const from = this.pos();
+                    const failRe = /slip|fall|fail|darkness|rat pit|tumble|can't|cannot|refuses|locked|need|reach that/i;
                     const arrived = await L.waitUntil(this.sdk, () => {
                         const q = this.pos();
-                        if (q[2] !== to[2] && to[2] !== edge.from[2]) return q[2] === to[2];
-                        return q[0] === to[0] && q[1] === to[1] && q[2] === to[2];
+                        if (this.since(m0).some(t => failRe.test(t))) return true;
+                        if (to[2] !== edge.from[2]) return q[2] === to[2];
+                        return Math.max(Math.abs(q[0] - to[0]), Math.abs(q[1] - to[1])) <= 1 && q[2] === to[2];
                     }, 70);
-                    const failMsg = this.since(m0).find(t => /slip|fall|fail|darkness|rat pit|tumble|can't|cannot|refuses|locked|need/i.test(t));
-                    if (arrived === null || (failMsg && !this.at(to))) {
-                        fails.push(`${edge.kind}${edge.note.startsWith('(') ? ' ' + edge.note : ''}: ${failMsg ?? 'no arrival'}`);
-                        failed = true;
+                    const failMsg = this.since(m0).find(t => failRe.test(t));
+                    if (arrived === null || failMsg) {
                         await this.idle();
-                        if (!failMsg) throw new Error(`${label}: stuck at ${edge.kind} ${JSON.stringify(this.since(m0))}`);
+                        const q = this.pos();
+                        const moved = Math.max(Math.abs(q[0] - from[0]), Math.abs(q[1] - from[1])) > 3 || q[2] !== from[2];
+                        fails.push(`${edge.kind}${edge.note.startsWith('(') ? ' ' + edge.note : ''}: ${failMsg ?? `no arrival at ${to}, now ${q}`}`);
+                        failed = true;
+                        if (!failMsg && !moved) throw new Error(`${label}: stuck at ${edge.kind} ${edge.note} from ${from} want ${to} now ${q} msgs ${JSON.stringify(this.since(m0))}`);
                         break;
+                    }
+                    if (!this.at(to)) {
+                        // landed next to the planned tile: re-plan from here
+                        await this.sdk.waitForTicks(1);
+                        if (Math.max(Math.abs(this.pos()[0] - to[0]), Math.abs(this.pos()[1] - to[1])) > 0) { crossings.push(edge.kind); failed = true; break; }
                     }
                     crossings.push(edge.kind + (edge.note.startsWith('(') ? ' ' + edge.note : ''));
                     i++;
