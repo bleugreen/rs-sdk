@@ -339,52 +339,54 @@ export class Buyer {
         }
         const opened = await this.bot.openGE();
         if (!opened.success) return { ...report, note: `openGE: ${opened.message}` };
-        // Collect before counting: an earlier offer that filled while we were away
-        // sits in the exchange, not the inventory, and must count toward the target,
-        // or a rerun buys the same quantity again.
-        await this.collectFills();
-        const heldBefore = this.held(name);
-        report.heldBefore = heldBefore;
-        const need = line.quantity - heldBefore;
-        if (need <= 0) {
+        // Every return closes the exchange: a window left open is taken for the bank by the
+        // caller's next openBank, whose deposits and bank read then come back empty.
+        try {
+            // Collect before counting: an earlier offer that filled while we were away
+            // sits in the exchange, not the inventory, and must count toward the target,
+            // or a rerun buys the same quantity again.
+            await this.collectFills();
+            const heldBefore = this.held(name);
+            report.heldBefore = heldBefore;
+            const need = line.quantity - heldBefore;
+            if (need <= 0) return { ...report, note: 'already held' };
+
+            // An earlier run's resting offer for this item counts toward the target.
+            const existing = this.sdk.getGEState()?.offers.find(o => o.item === id && o.side === 'buy' && o.state === 'open');
+            const coinsBefore = coinsIn(this.state);
+
+            if (!existing) {
+                const quote = await this.sdk.getMarketItem(id);
+                const cap = line.maxPrice ?? Infinity;
+                let price: number;
+                if (quote.ask !== null && quote.ask <= cap) price = quote.ask;
+                else if (line.maxPrice !== undefined) price = line.maxPrice;
+                else return { ...report, note: quote.ask === null ? 'no sellers and no maxPrice' : `ask ${quote.ask} above maxPrice` };
+                const affordable = Math.floor(coinsBefore / price);
+                const quantity = Math.min(need, affordable);
+                if (quantity <= 0) return { ...report, note: `cannot afford at ${price}` };
+                const placed = await this.bot.placeGEOffer({ item: id, side: 'buy', quantity, price });
+                this.ctx.log('ge offer', { item: name, quantity, price, ask: quote.ask, askDepth: quote.sellQuantity, success: placed.success, message: placed.message });
+                if (!placed.success) return { ...report, note: `place: ${placed.reason ?? ''} ${placed.message}` };
+            }
+
+            // Fills against an existing ask are immediate; give partial fills a moment.
+            for (let i = 0; i < waitTicksForFill; i++) {
+                const o = this.sdk.getGEState()?.offers.find(x => x.item === id && x.side === 'buy');
+                if (!o || o.state !== 'open' || o.remaining === 0) break;
+                await waitTicks(this.sdk, 1);
+            }
+            await this.collectFills();
+            const offer = this.sdk.getGEState()?.offers.find(x => x.item === id && x.side === 'buy' && x.state === 'open');
+            if (offer) report.restingOffer = { id: offer.id, price: offer.price, remaining: offer.remaining };
+            report.bought = this.held(name) - heldBefore;
+            // Coins still in escrow for an offer placed now are committed, not spent
+            // (an earlier run's offer was paid for before coinsBefore was measured).
+            report.spent = coinsBefore - coinsIn(this.state) - (offer && !existing ? offer.remaining * offer.price : 0);
+            return report;
+        } finally {
             await this.bot.closeInterface();
-            return { ...report, note: 'already held' };
         }
-
-        // An earlier run's resting offer for this item counts toward the target.
-        const existing = this.sdk.getGEState()?.offers.find(o => o.item === id && o.side === 'buy' && o.state === 'open');
-        const coinsBefore = coinsIn(this.state);
-
-        if (!existing) {
-            const quote = await this.sdk.getMarketItem(id);
-            const cap = line.maxPrice ?? Infinity;
-            let price: number;
-            if (quote.ask !== null && quote.ask <= cap) price = quote.ask;
-            else if (line.maxPrice !== undefined) price = line.maxPrice;
-            else return { ...report, note: quote.ask === null ? 'no sellers and no maxPrice' : `ask ${quote.ask} above maxPrice` };
-            const affordable = Math.floor(coinsBefore / price);
-            const quantity = Math.min(need, affordable);
-            if (quantity <= 0) return { ...report, note: `cannot afford at ${price}` };
-            const placed = await this.bot.placeGEOffer({ item: id, side: 'buy', quantity, price });
-            this.ctx.log('ge offer', { item: name, quantity, price, ask: quote.ask, askDepth: quote.sellQuantity, success: placed.success, message: placed.message });
-            if (!placed.success) return { ...report, note: `place: ${placed.reason ?? ''} ${placed.message}` };
-        }
-
-        // Fills against an existing ask are immediate; give partial fills a moment.
-        for (let i = 0; i < waitTicksForFill; i++) {
-            const o = this.sdk.getGEState()?.offers.find(x => x.item === id && x.side === 'buy');
-            if (!o || o.state !== 'open' || o.remaining === 0) break;
-            await waitTicks(this.sdk, 1);
-        }
-        await this.collectFills();
-        const offer = this.sdk.getGEState()?.offers.find(x => x.item === id && x.side === 'buy' && x.state === 'open');
-        if (offer) report.restingOffer = { id: offer.id, price: offer.price, remaining: offer.remaining };
-        report.bought = this.held(name) - heldBefore;
-        // Coins still in escrow for an offer placed now are committed, not spent
-        // (an earlier run's offer was paid for before coinsBefore was measured).
-        report.spent = coinsBefore - coinsIn(this.state) - (offer && !existing ? offer.remaining * offer.price : 0);
-        await this.bot.closeInterface();
-        return report;
     }
 
     // ------------------------------------------------------------ shops

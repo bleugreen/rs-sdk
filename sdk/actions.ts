@@ -1766,8 +1766,13 @@ export class BotActions {
 
     private async _openBankOnce(timeout: number): Promise<OpenBankResult> {
         const state = this.sdk.getState();
-        if (state?.interface?.isOpen) {
+        if (state?.interface?.isOpen && state.bank?.isOpen) {
             return { success: true, message: 'Bank already open' };
+        }
+        // Any other open window (an exchange or shop left open) is not the bank: answering
+        // "already open" for it sent the caller's deposits into nothing and read the bank as empty.
+        if (state?.interface?.isOpen) {
+            await this.closeInterface();
         }
 
         await this.dismissBlockingUI();

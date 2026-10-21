@@ -601,23 +601,28 @@ export const role: Role = {
         const runCtx: RoleContext = { ...ctx, reportBank: snap => { herbalist?.noteBank(snap.items); ctx.reportBank(snap); } };
         const run = new Run(runCtx, opt.bones);
         herbalist = new Herbalist(run, ctx, opt);
-        ctx.log('start', { spot: opt.bones.spot.id, train: opt.bones.train, fish: opt.bones.fish, ritual: opt.ritual, ...run.summary(), herblore: herbalist.herblore() });
+        ctx.log('start', { spot: opt.bones.spot.id, train: opt.bones.train, food: opt.bones.food, ritual: opt.ritual, ...run.summary(), herblore: herbalist.herblore() });
         let nextReport = Date.now() + opt.reportMinutes * 60_000;
         let errors = 0;
-        while (!ctx.signal.aborted) {
-            try {
-                await herbalist.cycle();
-                errors = 0;
-            } catch (e) {
-                errors++;
-                ctx.log('cycle error', { error: String(e), errors });
-                await new Promise(r => setTimeout(r, Math.min(30_000, 1000 * errors)));
+        run.guard.start();
+        try {
+            while (!ctx.signal.aborted) {
+                try {
+                    await herbalist.cycle();
+                    errors = 0;
+                } catch (e) {
+                    errors++;
+                    ctx.log('cycle error', { error: String(e), errors });
+                    await new Promise(r => setTimeout(r, Math.min(30_000, 1000 * errors)));
+                }
+                const snap = herbalist.snapshot();
+                if (Date.now() >= nextReport) {
+                    ctx.log('herbs', { ...snap, levels: run.summary().levels });
+                    nextReport = Date.now() + opt.reportMinutes * 60_000;
+                }
             }
-            const snap = herbalist.snapshot();
-            if (Date.now() >= nextReport) {
-                ctx.log('herbs', { ...snap, levels: run.summary().levels });
-                nextReport = Date.now() + opt.reportMinutes * 60_000;
-            }
+        } finally {
+            run.guard.stop();
         }
         ctx.log('stopped', { ...herbalist.snapshot(), ...run.summary() });
     }
