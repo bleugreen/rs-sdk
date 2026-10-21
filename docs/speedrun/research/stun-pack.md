@@ -102,8 +102,8 @@ teleports, a stand-in for walking), and no stocked stun was dry. Stuns that ran 
 were, in the plain run, all knight walks (each involved SCORED changing tile); in the pack runs
 most were walks as well, some with a page resume.
 
-Pack minus plain, normalised: +52 / +37 / +53 per pack run against plain-1 (1,939) is
--33 / +37 / +53; against plain-2's per-roll costs (1,854) it is +52 / +122 / +138; on the means,
+Pack minus plain, normalised, per pack run (pack-1 / pack-a / pack-b): against plain-1 (1,939)
+-33 / +37 / +53; against plain-2's per-roll costs (1,854) +52 / +122 / +138; on the means,
 +61 (1,958 against 1,897). With two plain samples and per-run noise of about ±50, **+20 to
 +100, ~60 central** (i) is the honest range. The fixed-level variants (section 4) show the stun plan
 itself adds nothing; what remains is the top-up stuns (section 5), stuns with a level-up page
