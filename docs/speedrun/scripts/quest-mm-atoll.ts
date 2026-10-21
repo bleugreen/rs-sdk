@@ -73,22 +73,31 @@ await runScript(async ({ bot, sdk }) => {
             console.log('up at', JSON.stringify(pos(sdk.getState())));
         }
         if (seg === 'T') {
-            await reset({ mm_main: 3, mm_zooknock: 5 }, [['mm_enchanted_gold_bar', 1], ['mm_monkey_amulet_mould', 1], ['ball_of_wool', 1], ['shark', 5]], [2807, 2787]);
+            await reset({ mm_main: 3, mm_zooknock: 5 }, [['mm_enchanted_gold_bar', 1], ['mm_monkey_amulet_mould', 1], ['ball_of_wool', 1], ['shark', 5]], [2807, 2790]);
             await bot.activatePrayer('protect_from_melee');
             {
-                // The trapdoor guards attack a human at once; a click can be lost to the fight, so re-send.
+                // Five aggressive temple guards (level 167, mm_religious_trapdoor_guard) stand round the
+                // trapdoor and block the tiles next to it; clicks only land when a gap opens. Click it
+                // (open, then climb down) every 3 ticks until underground.
                 const t0 = now(sdk);
-                const loc = (await sdk.scanNearbyLocs(5)).find(l => l.x === 2807 && l.z === 2785)!;
+                let opened = -1;
+                let clicks = 0;
                 let sent = -10;
                 const r = await waitUntil(sdk, s => {
-                    if (s.gameMessages.some(m => m.tick >= t0 && /trapdoor opens/i.test(m.text))) return true;
-                    if (s.tick - sent >= 4) { sent = s.tick; void sdk.sendInteractLoc(loc.x, loc.z, loc.id, 1); }
+                    if (pos(s).z > 9000) return true;
+                    if (opened < 0 && s.gameMessages.some(m => m.tick >= t0 && /trapdoor opens/i.test(m.text))) opened = s.tick;
+                    if (s.tick - sent >= 3) {
+                        sent = s.tick;
+                        clicks++;
+                        void sdk.scanNearbyLocs(5).then(ls => {
+                            const l = ls.find(l => l.x === 2807 && l.z === 2785);
+                            if (l) void sdk.sendInteractLoc(l.x, l.z, l.id, l.optionsWithIndex[0]?.opIndex ?? 1);
+                        });
+                    }
                     return false;
-                }, 30);
-                add({ name: 'open trapdoor (under attack)', ticks: (r?.tick ?? NaN) - t0 }, 'T1');
-                console.log('after T1', JSON.stringify(pos(sdk.getState())), 'hp', sdk.getState()!.player!.hp, 'prayer', sdk.getSkill('prayer')!.level, 'msgs', sdk.getState()!.gameMessages.slice(-5).map(m => m.text).join(' | '));
+                }, 150);
+                add({ name: `trapdoor open + climb down under attack (${clicks} clicks, opened at +${opened >= 0 ? opened - t0 : '?'})`, ticks: (r?.tick ?? NaN) - t0, note: `hp ${sdk.getState()!.player!.hp}` }, 'T1');
             }
-            add(await locOpAt(sdk, 2807, 2785, /climb/i, s => pos(s).z > 9000, 30), 'T2 climb down');
             const p = pos(sdk.getState());
             console.log('temple landing', JSON.stringify(p));
             const fire = (await sdk.scanNearbyLocs(15)).filter(l => /fire|wall/i.test(l.name) || /firewall/i.test(String(l.id))).sort((a, b) => a.distance - b.distance);
