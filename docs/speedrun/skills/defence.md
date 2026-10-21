@@ -31,7 +31,7 @@ Under the alternatives (Package A, no Dragon Slayer) the gap was 19,938 base fro
 
 | Start | Ticks to 99 on ogres | HP earned | Basis |
 |---|---|---|---|
-| **On route: Package B, MM option 1 + Dragon Slayer (38,650, level 98)** | **140** on ogres; on the route, **230** at the spiders alongside the cannon (shared with Ranged) | 433 on ogres / 425 at the spiders; the HP gap is covered by the Ranged finish anyway | inferred |
+| **On route: Package B, MM option 1 + Dragon Slayer (38,650, level 98)** | **140** on ogres; on the route, **230** at the spiders alongside the cannon (shared with Ranged) | about 426 either way (a third of 1,288; 1.85 HP per tick at the spiders); the HP gap is covered by the Ranged finish anyway | inferred |
 | Package A: MM option 1 alone (20,000, level 89) | 2,121 | 6,646, more than MM's 4,938 HP gap | inferred |
 | With MM option 2 (35,000, level 97) | 525 | 1,646 | inferred |
 | No MM (0) | **4,248** | 13,313 | inferred |

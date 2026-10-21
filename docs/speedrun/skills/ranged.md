@@ -14,6 +14,13 @@ Every headline rate below was measured at `NODE_TICKRATE=300` (one batch per
 measurement set, local lab, 300-400 tick windows, one run each); numbers marked
 "100 ms" are exploration runs. All xp is base xp (game xp / 25).
 
+**Host.** The 300 ms batches ran on the Mac executor `local`, which main measured at load
+11-18 on 16 cores that night (cairn://p/rs/main, 00:36). Read every 300 ms rate here as a
+**busy host's figure, a few percent pessimistic**: the bot reacts in wall-clock time, so a
+slow host occasionally costs a tick on a reload, retarget or knife throw. The cannon's own
+sweep is a server timer and does not depend on the host. rs/26's bbs correction factor had not
+been published when this was written (01:15), so no factor is applied.
+
 ## 1. Recommendation
 
 **Use the dwarf multicannon at the Wilderness poison spiders (3288,3810),
@@ -28,20 +35,25 @@ against **about 5,270 by knives alone**. No quest on the planned route gives Ran
 (section 3), so the post-quest start is level 1, or level ~54 after the Monkey
 Madness Jungle Demon fight.
 
-**On the Monkey Madness route** (rs/3 as of 22:40: MM option 1, Holy Grail off, so
-Attack and Strength are capped and the post-MM gaps are Defence 19,938 and
-Hitpoints 4,938): fire the cannon for **113 ticks before MM** for Ranged 50 (the
-demon's magic shortbow). After MM, train **defensive melee at the spiders with the
-cannon running** for about 3,460 ticks. That takes Ranged to 99 and Defence +19,370 on
-the way. Then about 60 ticks of melee alone at rs/30's ogres finish Defence, and
-Hitpoints fills as a by-product (about 6,590 base against the 4,938 gap). That is
-**about 3,520 ticks after MM for Ranged 99 + Defence 99 + Hitpoints 99** (plan (f),
-inferred from measured rates, `ranged-model.ts`). Training melee alone at the ogres
-and Ranged separately (cannon + knives) takes 4,197; hand-trained Ranged with
-longrange for Defence takes 9,685. If Waterfall leaves the route too (Strength gap
-4,938), plan (f) is 4,054 against 4,730. With Holy Grail back (Defence gap 4,638) the
-best plan is (e): cannon + defensive melee for 828 ticks, then cannon + rapid knives
-for 1,420, 2,248 in all.
+**On the route: rs/3's Package B** (01:08; `docs/speedrun/quests/README.md` on
+cairn://p/rs/3/1/coordinator). Monkey Madness option 1, then Dragon Slayer with 15 QP of
+filler; Waterfall, Merlin's Crystal and Holy Grail off. After the quests Attack and Strength
+are capped, the Defence gap is **1,288** (MM 20,000 + Dragon Slayer 18,650) and the
+Hitpoints gap about 4,177 (combat.md Summary). Fire the cannon for **113 ticks before MM**
+for Ranged 50 (the Jungle Demon's magic shortbow), wielding the rune scimitar at Attack 99.
+After MM and Dragon Slayer, run **plan (e): cannon + defensive melee at the spiders for 230
+ticks** (Defence 99, Ranged 54 -> 67), **then cannon + rapid rune knives for 1,821** to Ranged
+99. That is **2,051 ticks after MM for Ranged 99 + Defence 99 + Hitpoints 99**, with about
+5,089 HP as a by-product (inferred from measured rates, `ranged-model.ts`). rs/3's phase model
+gives 2,023 for the same plan. The 28-tick difference is the Ranged 67-70 stretch, where
+cannon + knives is unmeasured, so **2,023-2,051** is the honest range; the on-route figure
+here is 2,051. Next best are (c) 2,120 and (g) 2,180.
+
+Alternatives, no longer on the route: **Package A** (Waterfall on, Dragon Slayer off; Defence
+gap 19,938, HP 4,938) is plan (f), cannon + defensive melee until Ranged 99 (3,459) then
+about 60 ticks of melee alone, **3,520** in all (HP by-product about 6,590). With neither
+Waterfall nor Dragon Slayer it is 4,054. With Holy Grail back (Defence gap 4,638) the best
+plan is (e) again, 828 + 1,420 = 2,248.
 
 ### Combat comparison (the numbers the quest plan needs)
 
@@ -75,19 +87,19 @@ run at the measured defensive rate (5.60).
 | Scenario | Plan | Ticks |
 |---|---|---|
 | Ranged 1 -> 50 before MM | cannon, melee weapon wielded | **113** firing + ~10 set-up and pick-up + travel; knives only: 628 |
-| **With MM option 1, Holy Grail off** (current route): from Ranged ~54 (50 + ~485 from the demon fight), Defence gap 19,938, HP gap 4,938 | **(f) cannon + defensive melee at the spiders until Ranged 99 (3,459), then melee alone at the ogres (62)** | **3,520** |
+| **Package B (current route)**: MM option 1 + Dragon Slayer (18,650 Str + 18,650 Def), Waterfall off, from Ranged ~54: Defence gap 1,288, HP gap ~4,177 (4,938 counting MM alone) | **(e) cannon + defensive melee (230), then cannon + rapid knives (1,821)**; (c) 2,120; (g) 2,180 | **2,051** |
+| Package A (superseded): MM option 1, Waterfall on, Holy Grail off: from Ranged ~54 (50 + ~485 from the demon fight), Defence gap 19,938, HP gap 4,938 | **(f) cannon + defensive melee at the spiders until Ranged 99 (3,459), then melee alone at the ogres (62)** | **3,520** |
 | | (d) cannon + defensive melee at the spiders throughout | 3,560 |
 | | (g) melee alone at the ogres for Defence (2,155), then cannon + knives for Ranged (2,041) | 4,197 |
 | | (a) cannon alone for Ranged, then melee alone | 5,467 |
 | | (c) cannon + longrange until Defence 99, then cannon + rapid knives | 9,104 |
 | | (b) hand only: longrange until Defence 99, then rapid knives | 9,685 |
 | Same, Waterfall off as well (Strength gap 4,938 too) | (f) / (g) | **4,054** / 4,730 |
-| Package B: MM option 1 + Dragon Slayer (18,650 Str + 18,650 Def), Waterfall off: Defence gap 1,288, HP gap 4,938 | **(e) cannon + defensive melee (230), then cannon + rapid knives (1,821)**; (c) 2,120; (g) 2,180 | **2,051** |
 | With MM option 1 and Holy Grail: Defence gap 4,638, HP gap 4,938 | **(e) cannon + defensive melee until Defence 99 (828), then cannon + rapid knives (1,420)**; (g) 2,543; (c) 2,722; (b) 5,689 | **2,248** |
 | Same, plus Fremennik Trials (gaps Defence 1,826, HP 2,126) | (e) | 2,057 (**Fremennik saves 191 ticks** of combat training) |
 | Ranged only from ~54 (no gaps) | cannon + rapid knives | 2,041 |
-| Pre-MM Ranged 70 instead of 50 (demon fight 178 instead of 267 ticks), current route | 463 + 178 + 3,376 | 4,017, against 3,900 for Ranged 50 first: no gain |
-| **Net value of the cannon** (current route, to Ranged/Def/HP 99) | with: 113 + 267 + 3,520 + Dwarf Cannon 1,078 = 4,978; without: knives 628 + 267 + ogres 2,155 + knives 4,557 = 7,607 | **saves about 2,630 ticks** |
+| Pre-MM Ranged 70 instead of 50 (demon fight 178 instead of 267 ticks), Package A | 463 + 178 + 3,376 | 4,017, against 3,900 for Ranged 50 first: no gain |
+| **Net value of the cannon** (Package A, to Ranged/Def/HP 99; on Package B the cannon still carries every Ranged tick of the finish) | with: 113 + 267 + 3,520 + Dwarf Cannon 1,078 = 4,978; without: knives 628 + 267 + ogres 2,155 + knives 4,557 = 7,607 | **saves about 2,630 ticks** |
 
 **Parallel against the best single-combat melee:** at the spiders the cannon adds
 11.03 Ranged per tick while defensive melee drops from rs/30's 9.25 at the ogres to
@@ -129,10 +141,12 @@ Totals:
 
 ## 3. Quest xp
 
-No quest on the planned route (rs/3, as of 21:00: Tree Gnome Village, Grand Tree,
-Waterfall, Fight Arena, Death Plateau, Holy Grail, Mage Arena, Dwarf Cannon, Monkey
-Madness option 1, the troll and Regicide chains, Sea Slug, Fishing Contest, Doric's)
-awards Ranged. The Ranged rewards in the content are all off route (read):
+No quest on the planned route awards Ranged. The route is rs/3's Package B: Doric's,
+Plague City, Tree Gnome Village, The Grand Tree, Fight Arena, Dwarf Cannon, Monkey Madness
+option 1, Mage Arena, Dragon Slayer with its filler (Goblin Diplomacy, Romeo & Juliet, Cook's
+Assistant, Druidic Ritual), Sea Slug and Fishing Contest. The pre-MM fights are cast, not
+shot (rs/3 `pre_mm_fights.md`), so the on-route start is level 1, then 50 from the cannon
+session and about 54 after the Jungle Demon. The Ranged rewards in the content are all off route (read):
 
 | Quest | Base Ranged | Source |
 |---|---|---|
@@ -270,6 +284,11 @@ up.
 - **Magic shortbow, darts, thrownaxe:** each loses to rune knives (section 4).
 - **Ranged 70 before MM** for a faster demon fight (178 against 267 ticks): no net
   gain, because the post-MM Defence phase earns that Ranged anyway (2,670 against 2,628).
+- **Interleaving** (`interleaving.md` section 8, the absorbable-fractions table): **none of
+  Ranged can be absorbed into self-only time.** The cannon needs a multi-combat site (the
+  Wilderness spiders) and the account standing at it; the training is itself the self-only
+  activity there. Whether delay-free helper actions (arrowheads, gem cutting) could ride the
+  2-tick knife clock without costing throws is unmeasured.
 
 ## 6. Gotchas
 
@@ -288,6 +307,11 @@ up.
   Melee drains 1 prayer point per 5 ticks with no prayer bonus (`prayers.enum` drain 12,
   `prayer.rs2:163-175`). The aggressive spiders retaliate against the cannon and walk to
   the player.
+- **The pre-MM session happens at Defence 1 and about 42 HP** on the route (the pre-MM
+  fights are cast). rs/56 measured it at those levels (rs/3 `pre_mm_fights.md`, 300 ms):
+  151-166 ticks for Ranged 1 -> 54-57 at 12-14 base per tick, 0 melee damage under Protect
+  from Melee, but 24-30 of 42 HP lost to poison per session (lowest HP 8-19). One
+  Antipoison(4) removed the damage entirely. Carry it.
 - **Wield the melee weapon for the cannon-only phase.** With knives in hand at low
   Ranged the cannon drops to 1.2/tick (measured).
 - **Turn auto-retaliate off** for a pure cannon phase (`controls:com_3`,
@@ -303,10 +327,20 @@ up.
 
 ## 7. Helper supply list
 
-For the current with-MM plan (113 cannon ticks before MM, then plan (f): about 3,460
-ticks of cannon + defensive melee, about 3,570 cannon ticks in all, no knives). The
-Holy-Grail-on plan (e) needs about 2,360 cannon ticks, 1,420 of them with knives.
-Counts are inferred from the measured consumption.
+For the on-route plan (Package B: 113 cannon ticks before MM, then plan (e): 230 ticks of
+cannon + defensive melee and 1,821 of cannon + rapid knives, about 2,160 cannon ticks in all).
+Package A's plan (f) needed about 3,570 cannon ticks and no knives. Counts are inferred from
+the measured consumption.
+
+| Item | Package B count (on route) |
+|---|---|
+| Cannonballs | ~1,100-1,450 (0.51-0.67 per tick over ~2,160 ticks) |
+| Rune knives | ~820 (0.45 per tick over 1,821 ticks) |
+| Sharks | ~25 (0.2-0.3 hp per tick) |
+| Prayer potions (4) | ~6 (Protect from Melee, 1 point per 5 ticks) |
+| Antipoison (4) | 1 for the pre-MM session (rs/56, above) |
+
+The table below keeps rs/31's original per-plan counts for reference.
 
 | Item | Count | Where helpers get it |
 |---|---|---|
