@@ -303,3 +303,131 @@ describe('accounts', () => {
         await expect(createAccountEnv(bots, 'cairn_dot_md')).rejects.toThrow(/refusing/);
     });
 });
+
+describe('session state after a re-login', () => {
+    // The fleet gateway's part in this, as in server/gateway/gateway.ts: it keeps a
+    // bot's last state across client sessions, replays it with its original receipt
+    // time to each SDK that connects, and stamps every newly published state with now.
+    function stubGateway() {
+        const sdks = new Set<{ send(data: string): unknown }>();
+        let last: { state: unknown; receivedAt: number } | null = null;
+        const server = Bun.serve({
+            hostname: '127.0.0.1',
+            port: 0,
+            fetch: (req, srv) => (srv.upgrade(req) ? undefined : new Response('websocket only', { status: 400 })),
+            websocket: {
+                message(ws, raw) {
+                    if (JSON.parse(String(raw)).type !== 'sdk_connect') return;
+                    sdks.add(ws);
+                    ws.send(JSON.stringify({ type: 'sdk_connected', success: true }));
+                    if (last) ws.send(JSON.stringify({ type: 'sdk_state', state: last.state, stateReceivedAt: last.receivedAt }));
+                },
+                close(ws) {
+                    sdks.delete(ws);
+                }
+            }
+        });
+        return {
+            url: `ws://127.0.0.1:${server.port}`,
+            /** A state the gateway received at `receivedAt` (default now), fanned out to connected SDKs. */
+            publish(state: unknown, receivedAt = Date.now()) {
+                last = { state, receivedAt };
+                for (const ws of sdks) ws.send(JSON.stringify({ type: 'sdk_state', state, stateReceivedAt: receivedAt }));
+            },
+            stop: () => server.stop(true)
+        };
+    }
+
+    const coins = { slot: 0, id: 995, name: 'Coins', count: 2750, optionsWithIndex: [] };
+    const kebab = { slot: 1, id: 1971, name: 'Kebab', count: 1, optionsWithIndex: [] };
+    const worldState = (tick: number, inventory: unknown[]) => ({
+        tick,
+        inGame: true,
+        player: { name: 'cairn_h05', worldX: 3185, worldZ: 3436 },
+        inventory
+    });
+
+    async function connectedSdk(url: string) {
+        const { BotSDK } = await import('../../sdk/index');
+        const sdk = new BotSDK({
+            botUsername: 'cairn_h05',
+            password: 'unused',
+            gatewayUrl: url,
+            connectionMode: 'control',
+            autoReconnect: false,
+            autoLaunchBrowser: false,
+            readyTimeout: 0
+        });
+        await sdk.connect();
+        return sdk;
+    }
+
+    /** Resolves once the SDK holds a state with `tick`, so a test can look at what it cached. */
+    const holds = (sdk: { waitForCondition(p: (s: { tick: number }) => boolean, ms: number): Promise<unknown> }, tick: number) =>
+        sdk.waitForCondition(s => s.tick === tick, 2000);
+
+    test('re-enable: a new SDK is handed the pre-trip state, and the role starts on the new session instead', async () => {
+        const { waitForSessionState } = await import('./fleet');
+        const gw = stubGateway();
+        // The account's last state in the fleet, from before it left for its trip: it still carries the coins.
+        gw.publish(worldState(9000, [coins, kebab]), Date.now() - 10 * 60_000);
+        const launchedAt = Date.now();
+        const sdk = await connectedSdk(gw.url);
+        try {
+            await holds(sdk, 9000);
+            expect(sdk.getInventory().map(i => i.name)).toEqual(['Coins', 'Kebab']); // what the role would have seen
+
+            let started = false;
+            const gate = waitForSessionState(sdk, launchedAt, 5000).then(r => ((started = true), r));
+            await Bun.sleep(50);
+            expect(started).toBe(false);
+
+            // The new client session: its tick count starts again, and the coins were given away on the trip.
+            gw.publish({ ...worldState(1, [kebab]), player: null });
+            gw.publish(worldState(2, [kebab]));
+            const { state, skipped } = await gate;
+            expect(state.tick).toBe(2);
+            expect(skipped).toBeGreaterThanOrEqual(1);
+            // The role's context reads this same SDK: from here on it sees only the new session.
+            expect(sdk.getState()!.tick).toBe(2);
+            expect(sdk.getInventory().map(i => i.name)).toEqual(['Kebab']);
+        } finally {
+            await sdk.disconnect();
+            gw.stop();
+        }
+    });
+
+    test('relaunch: an SDK kept across sessions waits past its own cached state', async () => {
+        const { waitForSessionState } = await import('./fleet');
+        const gw = stubGateway();
+        const sdk = await connectedSdk(gw.url);
+        try {
+            gw.publish(worldState(4321, [coins]));
+            await holds(sdk, 4321);
+            await Bun.sleep(5); // the old client exits; the next is launched strictly later
+            const launchedAt = Date.now();
+            const gate = waitForSessionState(sdk, launchedAt, 5000);
+            gw.publish(worldState(3, []));
+            const { state, skipped } = await gate;
+            expect([state.tick, skipped]).toEqual([3, 1]);
+            expect(sdk.getInventory()).toEqual([]);
+        } finally {
+            await sdk.disconnect();
+            gw.stop();
+        }
+    });
+
+    test('times out rather than accept a state older than the launch', async () => {
+        const { waitForSessionState } = await import('./fleet');
+        const gw = stubGateway();
+        gw.publish(worldState(9000, [coins]), Date.now() - 60_000);
+        const sdk = await connectedSdk(gw.url);
+        try {
+            await holds(sdk, 9000);
+            await expect(waitForSessionState(sdk, Date.now(), 200)).rejects.toThrow(/timed out/);
+        } finally {
+            await sdk.disconnect();
+            gw.stop();
+        }
+    });
+});
