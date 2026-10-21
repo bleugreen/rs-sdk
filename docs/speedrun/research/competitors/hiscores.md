@@ -22,7 +22,7 @@ a logout save reaches the login server, and only when the level changed. A level
 save older than version 9 has stamp 0, and its row falls back to the **logout playtime** of that
 save, which is later than the true tick. Overall is the maximum of the per-skill stamps (it falls
 back to logout playtime only when every stamp is 0). A skill has a row only from level 15.
-rs/72 confirmed this live on 2026-10-21 (write-up: `hiscore-timestamps.md` on its branch): the
+rs/72 confirmed this live on 2026-10-21 (write-up: `hiscore-timestamps.md` beside this file): the
 demo runs `55fa26cca`, deployed on or after 2026-10-19 02:31 UTC; a row stores the tick the level
 was reached; nothing is published while the player is in the world, autosave included; rows
 land at logout. **Levels reached before that deploy carry logout stamps.**
@@ -47,7 +47,7 @@ Classification used in the tables, from the pattern alone:
 |---|---|
 | One value on every row (gh_kadeski, asukalabs, sokobot, most of the top 25) | **fallback, one logout**: the whole account was trained on a pre-version-9 save and the board shows the playtime of the logout that wrote it |
 | A few values, each shared by many unrelated skills (stunbaron: 3 values over 19 skills) | **fallback, logout batches**: one batch per logout; a skill's row sits in the batch of the last logout in which its level changed |
-| Mostly distinct values (nickoverall: 15 values over 19 skills) | **probably exact reach ticks**: exact only if the levels were reached after the version-9 deploy, which the page cannot show (rs/72, `hiscore-timestamps.md`). Small identical groups can still be genuine (Attack, Defence and Strength hit 99 on the same tick under the controlled style); a tie between unrelated skills, such as nickoverall's Crafting and Herblore, is more simply a logout value |
+| Mostly distinct values (nickoverall: 16 values over 19 skills) | **probably exact reach ticks**: exact only if the levels were reached after the version-9 deploy, which the page cannot show (rs/72, `hiscore-timestamps.md`). Small identical groups can still be genuine (Attack, Defence and Strength hit 99 on the same tick under the controlled style); a tie between unrelated skills, such as nickoverall's Crafting and Herblore, is more simply a logout value |
 
 The four stun accounts and gh_kadeski, five of the six accounts ahead of our best case, are
 therefore **upper bounds**, not the tick they maxed: stunbaron's 35,916 is the playtime of a
@@ -190,7 +190,7 @@ documents, `interleaving.md`) where one exists, and the in-route figure from the
 | Crafting | nickgemcut **197** | crab26eba2 536, nickcrafti 580 | ~80 (gem cutting, `interleaving.md`) | +117 | gem cutting up to dragonstone, fed by 12 mule accounts (nickgem02-13) each holding 108 uncut dragonstones; nickcraft banks 783 sapphires | high |
 | Smithing | stunsmither **1,337** | nickcrucible 1,839 | 1,107-1,147 measured | +190 | helper-fed anvil smithing | medium |
 | Mining | stunmine **4,575** (Magic 45 at 136, QP 2 by 269) | nickquarry 6,015, lachmine003 8,374 | after Doric's Quest alone: ~3,390 with knife, ~4,060 without (`mining.md` section 2); 3,621 pure with knife | its mining after the quests (done by 269) is ≤~4,300: +240 against our no-knife figure, +910 against the knife | Doric's Quest (Mining 49) plus a second 1-QP quest (Imp Catcher fits Magic 45), then iron. **nickquarry is explained**: rs/2 `mining.md` section 4a, "The nickquarry mystery": Doric's Quest, then iron, emptying the rock at every ore on a busy server, 1.7x slower than our model. stunmine is faster than nickquarry but still slower than our no-knife model, so no gap remains | medium |
-| Herblore | stunherblore **465** (incl. Druidic Ritual, QP 4) | jackalopehl1 1,146 (QP 4 by 630) | ~89 | +376 | ranging potions (stunherblore and all four stun max accounts bank 196-210 ranging potions(3)); both competitors did Druidic Ritual first, which this server does not require (`identify.rs2`: "early osrs had no druidic ritual check"; no quest check in mixing either) | high |
+| Herblore | stunherblore **465** (incl. Druidic Ritual, QP 4) | jackalopehl1 1,146 (QP 4 by 630) | ~89 | +376 | ranging potions (stunherblore and all four stun max accounts bank 196-210 ranging potions(3)); both competitors did Druidic Ritual first. No script checks the quest (`identify.rs2`: "early osrs had no druidic ritual check"; no quest check in mixing either), but every Herblore action needs level 3 and the quest's 250 base is the only practical source, so it is mandatory for us too (measured by rs/37; `quests/README.md` section 1). Against our ~89 plus Druidic Ritual's ~239 the gap is about -135 | high |
 | Agility | stunagile **6,772** (Prayer 43 at 67) | nickagility 8,476 | 6,960 pure (inferred, `agility.md`); 4,695 after the Grand Tree | **-188** against pure | Prayer 43 first (protect prayers), which points at the Wilderness course | medium |
 | Thieving | jackalopeth8 **2,935** | stunthief 3,253, nickpilfer 3,961 | 2,840 pure (55-99 measured, 1-55 inferred) | +95 | pickpocketing; our 1-55 is unmeasured, so call it parity | medium |
 | Runecraft | stunrc **2,397** | nickaircraft 3,265 | ~1,330 helper-fed | +1,067 | not visible | low |

@@ -38,11 +38,13 @@ speedrun/
                          watchdog (docs/speedrun/research/competitors/hiscore-timestamps.md 5.1)
   tools/          upstream watch (nightly diff of watched upstream paths);
                   drop-probe.ts (the dropped-client stay on the demo, with a throwaway);
-                  hiscore-stamp-probe.ts (board reader and the live stamp test,
+                  hiscore-stamp-probe.ts (the live stamp test, plus uncached
+                  page/classify reads through hiscore-scrape.ts's parser,
                   docs/speedrun/research/competitors/hiscore-timestamps.md);
                   observe.ts, the passive in-game observer and /playerpositions tracker
                   (docs/speedrun/research/competitors/observation.md);
-                  hiscore-scrape.ts (demo hiscore snapshots and climber diffs,
+                  hiscore-scrape.ts (demo hiscore snapshots and climber diffs; the
+                  one player-page parser and stamp grouping,
                   docs/speedrun/research/competitors/hiscores.md)
   runs/           tick logs and the hiscore HTML cache (gitignored)
 ```
