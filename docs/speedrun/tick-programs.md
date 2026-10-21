@@ -72,7 +72,7 @@ the host gate can select with the same parameters.
 |---|---|---|---|
 | `probe` | `speedrun/lib/hostgate.ts` `probeOnTime` | `trials`, `maxWait` | n/a |
 | `knife-mine` | `tickmanip-mine.ts` | `steps` (stand>rock pairs), `respawn`, `ores`, `starter: 'knife' \| 'none'` | `starter: 'none'` (plain and adjacent-rock transitions) |
-| `knife-cycle` | `tickmanip-cycle.ts`; `bury` from `bones-wc.ts --mode=knifebury` | `method` (`fly`, `willow`, `oak`, `tree`, `cage`, or an object), `successes` / `untilLevel` / `maxTicks`, `reanchor`, `trees` (the loc tiles reached from the standing tile), `bury` (oak and willow) | `technique: 'plain'` (no bury) |
+| `knife-cycle` | `tickmanip-cycle.ts`; `bury` from `bones-wc.ts --mode=knifebury` | `method` (`fly`, `willow`, `oak`, `tree`, `cage`, or an object), `successes` / `untilLevel` / `maxTicks`, `reanchor`, `trees` (the loc tiles reached from the standing tile), `bury` (oak and willow) | `technique: 'plain'`; with `bury`, plain + bury |
 | `pickpocket` | `thieving-pickpocket.ts` (`--eat=auto`); `stunActions` from `stun-pack-thieve.ts` (rs/106) | `npc`, `rolls`, `food`, `eatBelow`, `forcedBelow`, `stunActions` (`bury`, `charge`, `arrows`, or action objects), `stunWindow`, `stunPerTick` | n/a: it clicks every tick |
 | `agility` | `agility-course.ts` | `course` (`gnome`, `barbarian`, `wilderness`, or an object; `agility-courses.ts`), `laps` | `technique: 'plain'` waits `settleTicks` after each obstacle |
 
@@ -122,6 +122,28 @@ Notes that differ from the lite scripts:
   roll tick itself. A bone with no tree list loses the lock whenever the nearest live tree
   needs a walk, so the variant goes with `trees`. Schedule, rules and measurements are in
   `skills/woodcutting.md` section 9.
+- **Plain + bury** (`technique: 'plain'` with `bury`, the S07 fallback when the host gate turns
+  the knife off; the gate flips `technique` only, so a step passes `bury` and `trees` to both
+  techniques). It is `bones-wc.ts --mode=plainbury`'s placement on the 4-tick clock: on the roll
+  label R, a drop and a click; on R+1, a bury (lands R+2, delays the player through R+3); on R+3,
+  the click alone, which lands on the roll tick and rolls at once. Two in-page differences from
+  the lite script:
+  - **Falls.** Nothing here writes the clock, and a roll that fells the tree leaves it on the
+    roll tick (`woodcut.rs2` `get_logs` returns without `p_oploc`). The page still lists the fallen
+    tree on R, so a click there to the same tree hits the stump, and the next live click rolls
+    3 ticks after it lands, off the lattice (measured: 16 lost bone cycles in 600 ticks at oak).
+    R's click therefore goes to another standing tree in `trees`, which re-arms the clock whether
+    or not the rolled one fell (measured: 2-3 fall restarts in 600 ticks, from moments with a single
+    tree standing). A fall seen after R sends no bone that cycle and re-anchors on the next xp.
+  - **Woodcutting level-ups.** The page shows the level-up page on R+1. The cycle answers it
+    with a dismiss and a click and carries no bone (one tick and one bone per level-up). Sending
+    the dismiss and then the bury on R+1 instead was tried and is wrong in the page: the bury
+    lands, but the chop never resumes until the no-xp restart (11 resyncs, one per level-up,
+    Woodcutting 87 logs against plain's 136 at oak in 600 ticks). The cause is not established.
+  - **Low levels.** From WC 15, where a level-up comes nearly every log, the loop also loses the
+    chop to 6-8 restarts per 600 ticks (cause not established), so it buries 0.14 bones per tick
+    at 6.3 ticks per expected roll against plain's 4.8. That is still about 1.7 Woodcutting ticks
+    per bone, under the booth's 2.07, but far from the 0.1-0.3 it costs at WC 60 and up.
 - A non-depleting tree that falls is a switch inside the lock (`switches`), not a resync.
   With every listed tree down, no starter goes out, because its fletch would use the knife's log.
 - Mining plans each transition on the label that shows the previous roll's xp (closed
@@ -209,6 +231,9 @@ rs/82's figure (LAB.md); the lite column is from the skills docs.
 | Knife willow, 500 logs | 4.68 over the span (4.59 mean gap), 59 depletions | | | 2.3-3.0 |
 | Knife oak, WC 60, the three oaks from 2914,3494, 200 rolls x 2 (2026-10-21 10:52 PDT) | **3.201, 3.402** over the span, 20-31 tree falls switched in the lock | | rs/105: 3.18 (from 11.78 base xp per tick) | 2.5-3.3 |
 | Knife oak + bury (dragon bones), same, 200 rolls x 4 | **3.16-3.26** over the span, **0.329 bones per tick**, every bury sent landed | | rs/105: 0.298 including trades | 2.0-3.3 |
+| One session, 600 ticks per run, oak WC 60 (to 75; p(L) 0.996-1.000, so Σ1/p = logs), 2026-10-21 14:06-14:20 PDT (rs/162): knife / knife + bury / plain / **plain + bury x 2** | logs per tick 0.314 / 0.304 / 0.203 / **0.235, 0.231**; ticks per expected roll 3.18 / 3.28 / 4.93 / **4.26, 4.32**; bones per tick - / 0.329 / - / **0.205, 0.201** (0.197, 0.194 with 5 ticks of trade per 25 bones, i); plain + bury gaps 4:123 5:15 and 4:121 5:14, 0 resyncs | | rs/105 plain + bury: 0.230 bones per tick including trades | 4.4-7.2 |
+| Oak from WC 15, 600 ticks per run, 2026-10-21 15:55-16:05 PDT (rs/162; p(L) 0.574 at L15 to 1.000 by L60-72): knife / knife + bury / plain / **plain + bury** | logs per tick 0.261 / 0.276 / 0.191 / **0.140**; Σ1/p 168.4 / 177.4 / 126.4 / **95.4** expected rolls, so 3.57 / 3.39 / 4.76 / **6.30** ticks per expected roll; bones per tick - / 0.329 / - / **0.143** (0.139 i). Knife + bury held through 47 Woodcutting level-ups (gaps 3 or misses, no bone lost). Plain + bury: gaps 4:44 5:28 8:1 and **8 resyncs**, with a level-up nearly every cycle; a 300-tick repeat to WC 50 had 6 resyncs. Cause not established | | | 5.1-9.1 |
+| Same session, willow WC 88 (to 92-93; p(L) 0.633-0.656, rune axe), Taverley tile 2920,3406: knife / knife + bury / plain / **plain + bury x 2** | logs per tick 0.200 / 0.213 / 0.155 / **0.161, 0.168**; Σ1/p 186.8 / 199.0 / 145.4 / **151.5, 157.7** expected rolls, so 3.22 / 3.02 / 4.13 / **3.97, 3.81** ticks per expected roll (under 4 is roll luck); bones per tick - / 0.329 / - / **0.240, 0.235** (0.229, 0.224 with trades, i) | | rs/105 plain + bury: 0.238 | 3.3-6.6 |
 | Knife normal trees, bronze axe, from Woodcutting 1, 150 logs | **7.24 ticks per log** over the span (6.80 mean gap) | | | 2.2-2.9 |
 | Normal trees, plain fallback, from level 1, 100 logs | 11.60 | | | 2.6 |
 | Knife normal trees, bronze axe, Woodcutting 64, 150 logs (the demo account's level) | **6.91** over the span (5.50 mean gap) | | | 1.6-2.8 |
