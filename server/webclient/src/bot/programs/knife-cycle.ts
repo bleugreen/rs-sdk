@@ -276,6 +276,7 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
         const knife = invItem(ctx.state, KNIFE);
         const logs = invItem(ctx.state, LOGS);
         if (!knife || !logs) return false;
+        ctx.starter();
         ctx.send({ type: 'useItemOnItem', sourceSlot: knife.slot, targetSlot: logs.slot }, 'knife on logs');
         ctx.send({ type: 'clickComponent', componentId: SHAFTS_BUTTON }, `button ${SHAFTS_BUTTON}`);
         return true;

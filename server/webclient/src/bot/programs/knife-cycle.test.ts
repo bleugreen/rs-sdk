@@ -242,6 +242,17 @@ describe('knife cycle', () => {
         expect(gaps.filter(g => g !== 3)).toEqual([4]);
     });
 
+    test('hold: a held starter bundle goes out whole on the next label; hold 0 sends exactly what no hold sends', () => {
+        const plain = serverRun({ method: 'willow', ticks: 120 });
+        expect(serverRun({ method: 'willow', ticks: 120, params: { hold: 0 } }).h.timeline()).toEqual(plain.h.timeline());
+        const held = serverRun({ method: 'willow', ticks: 120, params: { hold: 1 } });
+        const first = plain.h.sent.find(s => s.action.type === 'useItemOnItem')!.tick;
+        expect(held.h.sent.filter(s => s.tick === first)).toHaveLength(0);
+        expect(held.h.sent.filter(s => s.tick === first + 1).map(s => s.action.type)).toEqual(['useItemOnItem', 'clickComponent', 'interactLoc']);
+        expect(held.h.status.counters.held).toBe(held.h.status.counters.starters);
+        expect(held.rollTicks.length).toBeLessThan(plain.rollTicks.length);
+    });
+
     test('two ticks decoded at once (a skipped starter label) re-lock on the next roll', () => {
         const skips = new Set([1040, 1100, 1160]);
         const { h, rollTicks } = serverRun({ method: 'fly', ticks: 220, merged: t => skips.has(t) });

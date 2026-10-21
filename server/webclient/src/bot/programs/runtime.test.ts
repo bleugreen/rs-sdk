@@ -158,6 +158,81 @@ describe('ProgramRuntime', () => {
     });
 });
 
+describe('hold (the forced-slip test hook)', () => {
+    // every third tick: a marker packet, then a starter bundle of two
+    const starters = (): TickProgram => ({
+        onTick(ctx) {
+            if (ctx.tick % 3 === 0) {
+                ctx.send({ type: 'dropItem', slot: 9 });
+                ctx.starter();
+                ctx.send({ type: 'useItemOnItem', sourceSlot: 0, targetSlot: 1 });
+                ctx.send({ type: 'clickComponent', componentId: 8889 });
+            }
+            ctx.progress();
+        }
+    });
+    const runFor = (params: Record<string, unknown>, draws?: number[]) => {
+        const q = draws ? [...draws] : null;
+        const h = new Harness('s', starters, {
+            random: () => {
+                if (!q) throw new Error('drew with hold unset');
+                return q.shift() ?? 1;
+            }
+        });
+        h.start('s', params, makeState({ tick: 0 }));
+        for (let t = 1; t <= 7; t++) h.step(makeState({ tick: t }));
+        return h;
+    };
+
+    test('unset or 0: nothing is held and nothing is drawn', () => {
+        for (const params of [{}, { hold: 0 }]) {
+            const h = runFor(params);
+            expect(h.timeline()).toEqual(['T3 dropItem,useItemOnItem,clickComponent', 'T6 dropItem,useItemOnItem,clickComponent']);
+            expect(h.status.counters.held).toBeUndefined();
+        }
+    });
+
+    test('a held bundle goes out first on the next tick; sends before the marker are not held', () => {
+        const h = runFor({ hold: 1 }, [0, 0]);
+        expect(h.timeline()).toEqual(['T3 dropItem', 'T4 useItemOnItem,clickComponent', 'T6 dropItem', 'T7 useItemOnItem,clickComponent']);
+        expect(h.status.counters.held).toBe(2);
+        expect(h.status.packets).toBe(6);
+    });
+
+    test('holds the given share: a draw under hold holds that bundle', () => {
+        const h = runFor({ hold: 0.15 }, [0.1, 0.2]);
+        expect(h.timeline()).toEqual(['T3 dropItem', 'T4 useItemOnItem,clickComponent', 'T6 dropItem,useItemOnItem,clickComponent']);
+        expect(h.status.counters.held).toBe(1);
+    });
+
+    test('a held bundle counts against the next tick budget, ahead of that tick sends', () => {
+        const h = new Harness('b', () => ({
+            onTick(ctx) {
+                if (ctx.tick === 1) {
+                    ctx.starter();
+                    for (let i = 0; i < 3; i++) ctx.send({ type: 'dropItem', slot: i });
+                } else for (let i = 10; i < 14; i++) ctx.send({ type: 'dropItem', slot: i });
+                ctx.progress();
+            }
+        }), { random: () => 0 });
+        h.start('b', { hold: 1 });
+        h.step(makeState({ tick: 1 }));
+        h.step(makeState({ tick: 2 }));
+        expect(h.sent.map(s => `${s.tick}:${(s.action as { slot: number }).slot}`)).toEqual(['2:0', '2:1', '2:2', '2:10', '2:11']);
+        expect(h.status.deferred).toBe(2);
+    });
+
+    test('a hold outside [0, 1] is a bad parameter', () => {
+        for (const hold of [-0.1, 1.5, '0.2']) {
+            const rt = new ProgramRuntime({ dispatch: () => ({ success: true, message: '' }) });
+            rt.register('s', starters);
+            const r = rt.command({ op: 'start', name: 's', params: { hold } });
+            expect(r.success).toBe(false);
+            expect(r.message).toContain('hold must be');
+        }
+    });
+});
+
 describe('parseProgramCommand', () => {
     test('validates the wire payload', () => {
         expect(parseProgramCommand({ op: 'start', name: 'probe', params: { trials: 60 } })).toEqual({ op: 'start', name: 'probe', params: { trials: 60 } });
