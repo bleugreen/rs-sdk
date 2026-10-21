@@ -214,6 +214,7 @@ await runScript(async ({ bot, sdk }) => {
         await seg('tent guard: talk (plans in hand), enter the tent', async () => {
             // Talking walks you to the door and in (bedabin_nomad_guard.rs2:27-38);
             // using the plans on him only moves you one tile north.
+            await q.walk(3170, 3043, 1);
             await q.talk('bedabin_guard');
             await q.settle(() => p().worldZ >= 3046, 20);
         });
