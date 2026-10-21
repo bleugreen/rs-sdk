@@ -9,7 +9,69 @@ node 43920, agent 8120). Scripts: `magic-cadence.ts` (ticks per cast for every c
 `magic-strike.ts` (1 -> 7), `magic-boost.ts` (potion-boosted Fire Wave and Charge, the potion's
 decay, and the Mage Arena fight at base 71), all under `docs/speedrun/scripts/`.
 
+**Host.** The 300 ms batches ran on the Mac executor `local`, which main measured at load 11-18
+on 16 cores that night (cairn://p/rs/main, 00:36). Read the measured tick counts as a **busy
+host's figures, a few percent pessimistic**: the bot reacts in wall-clock time, so a slow host
+occasionally costs a tick in a bank visit or a re-sip. The 3-tick enchant floor and Charge's 5
+per tick are server rules and do not depend on the host. rs/26's bbs correction factor had not
+been published when this was written (01:15), so no factor is applied.
+
 ## 1. Recommendation
+
+**On the route (rs/3's Package B), enchant only to Magic 59, before Tree Gnome Village.**
+Under Package B the pre-MM fights are **cast, not meleed** (rs/3 `pre_mm_fights.md`): Fire
+Bolt or Fire Blast from a level-1 melee account kills the Khazard warlord, the black demon and
+the Fight Arena monsters as fast as melee at Strength 83, because none of them has magic
+defence. Those fights pay about 3,600 base Magic, and The Grand Tree pays 2,150. So the
+account reaches the Mage Arena at **base 76-77 without any further enchanting** (timeline
+below). From there:
+
+- **Fire Wave needs no potion.** Its gate is boosted 75 (`magic.rs2:22`, read), and base 76
+  meets it. Kolodion's start check is `stat_base(magic) >= 60` (read), met.
+- **Kolodion is fought at base 76-77**, between the measured base-71-plus-potion fights
+  (320-346 ticks) and rs/20's base-80 fights (312-322): about 315-340 ticks (inferred). The
+  fight is counted in rs/3's Mage Arena step, not here.
+- **The fight leaves base 80-81**, so **Charge needs no potion either**: every yield measured
+  at base 71 (2,787-3,129 base) takes 8,251 past 80's 10,686.8. Only the lowest yield ever
+  recorded (2,404, rs/3, base 80, 100 ms) would stop at 79 without the teleports' xp. Carry
+  **one** magic potion as insurance for that case (inferred).
+- **Charge 80/81 -> 99: 156-163 casts at 5 per tick, about 32-33 ticks** (rs/20 measured 163
+  casts and 33 ticks from the bottom of 80, 300 ms).
+
+The 57 -> 71 enchant ladder of the earlier plan (52 casts, about 164 ticks) is gone entirely.
+What remains is Wind Strike 1 -> 7 and **60 enchant casts, 7 -> 59** (12 sapphire, 27 emerald,
+16 ruby, 5 diamond; inferred from the read xp per cast and the level table), all before Tree
+Gnome Village.
+
+| Start | Ticks to 99 (Magic training only) | Basis |
+|---|---|---|
+| **On route (Package B): level 1, enchant to 59 before TGV, fights cast, no potions** | **about 245**: 18 (strike) + about 4 (first withdraw) + 180 (60 casts) + 8 (2 bank visits) + about 33 (Charge from 80-81) | measured parts, 300 ms; timeline inferred (below). The Mage Arena fight is in rs/3's step 10 |
+| Package B, enchant only to 51 (the Ardougne teleport gate), magic potions for Fire Wave and Charge | about 195: 18 + 4 + 126 (42 casts) + 4 (1 visit) + about 38 (sip + Charge from 78-80) + about 2 of fight sips | inferred; but the warlord takes Fire Bolt's 165 ticks instead of Fire Blast's 133 (measured, rs/56), so the route as a whole is only about 15 ticks better (section 5) |
+
+### Magic timeline under Package B
+
+Derived here from rs/3's step order (README section 4 and `pre_mm_fights.md` on
+cairn://p/rs/3/1/coordinator); rs/80, which is finalising that README, had not published its own
+timeline when this was written. Base xp from this server's curve (`Player.ts`,
+`levelExperience`: 59 = 2,468.0, 64 = 3,504.9, 67 = 4,330, 73 = 6,568.0, 76 = 8,092.7, 77 =
+8,675.5, 80 = 10,686.8, 81 = 11,455.6).
+
+| Point on the route | Magic base xp | Level | Basis |
+|---|---|---|---|
+| End of the enchant ladder, before Plague City | 2,518 | **59** | 4 Wind Strikes + 60 enchants (inferred from the read xp per cast) |
+| + Khazard warlord (TGV), Fire Blast | ~3,565 | 64 | +1,047, measured with Fire Bolt at 51 (rs/56, 6 runs); Fire Blast's yield was not logged and is assumed similar (inferred) |
+| + black demon (GT) | ~4,561 | 67 | +996, measured with Fire Bolt at 58 (rs/56, 5 runs) |
+| + The Grand Tree reward | ~6,711 | 73 | +2,150, read (`quest_grandtree.rs2:201`) |
+| + Fight Arena, Fire Blast | ~8,251 | **76** | +~1,540, inferred by rs/56 from 216 hitpoints of monsters |
+| + teleport casts before the arena | ~8,850 | 77 | +~600, inferred: about 7 Ardougne (61 base), 2 Varrock (35), 1 Camelot (55.5) and 1 Falador (48) from the rune lists in rs/3's step table (`magic_spells.dbrow`, read). The exact count is open |
+| **Mage Arena start** | **8,251-8,850** | **76-77** | |
+| After Kolodion, +2,404 to +3,129 | 10,655-11,980 | **80-81** (79 only for the lowest yield without the teleports) | yields measured (section 4; rs/3) |
+
+With the ladder stopped at 51 instead, the same steps give 58 at the demon, 70 at Fight Arena,
+**74-75 at the Mage Arena** and 78-80 after the fight (inferred), so Fire Wave needs a sip at
+74, and Charge one more.
+
+### The earlier route (pre-MM fights meleed; superseded on the route, measurements stand)
 
 Wind Strike from 1 to 7. Then enchant jewellery at a bank booth: sapphire 7 -> 27, emerald
 27 -> 49, ruby 49 -> 57, diamond 57 -> 68, dragonstone 68 -> **71**. Every enchant costs exactly
