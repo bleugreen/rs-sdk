@@ -146,6 +146,17 @@ dedicated cannon + knives route. The melee rate at the spiders without the
 cannon is 6.64, so most of that penalty is the site (spiders have 52 defence), not
 the cannon.
 
+### Summary row
+
+rs/2's columns for the Item-fed skills section of `docs/speedrun/skills/README.md`; column 5
+is "with interleaving (net)", n/a where nothing is absorbable. This is **one combined row for
+the finish**: its ticks also close Defence (168, defence.md) and Hitpoints (hitpoints.md),
+whose rows point here and are not additive.
+
+| Skill | Headline method | Start level (on-route quests) | Ticks to 99, normal | Ticks to 99, with interleaving (net) | Basis | Helper supplies | Document |
+|---|---|---|---|---|---|---|---|
+| Ranged (with Defence and Hitpoints 99) | dwarf multicannon at the Wilderness poison spiders, rune scimitar wielded, to Ranged 50 before MM; after MM rs/91's kit: cannon + defensive melee, then the cannon with rapid rune knives from 70 | 1; 50 after the pre-MM cannon session, ~54 after MM's Jungle Demon (no Ranged quests; [quests README](../quests/README.md) section 4, steps 7 and 14) | **1,970** = 113 + 1,857 (2,164-2,324 without the kit) | n/a | measured rates (rs/31, rs/91), inferred totals; busy host | cannon set (Nulodion, 750,000, from a helper with Dwarf Cannon), ~1,000-1,300 cannonballs, up to ~760 rune knives, rune scimitar, ~9 ranging doses, ~3 super antipoison, 1 dose each of super attack and super strength, glory, 1 antipoison(4) for the pre-MM session | ranged.md |
+
 ## 2. Route by level band
 
 Rates measured at 300 ms (`ranged-cannon.ts`, windows as in section 1); band ticks
