@@ -350,8 +350,10 @@ await runScript(async ({ bot, sdk }) => {
     });
     const agi0 = sdk.getSkill('agility')!.experience;
     await seg('Irena and Ana: rewards (Agility twice)', async () => {
-        await q.talk('irena', [/^Agility/, /^Agility/]);
-        await q.settle(() => sdk.getSkill('agility')!.experience >= agi0 + 2 * 116_250, 40);
+        // Ana's part closes the dialogue for a p_delay(2) before the picks (ana.rs2:9-17)
+        const picks = [/^Agility/, /^Agility/];
+        await q.talk('irena', picks, { sharedQueue: true });
+        await q.settle(() => sdk.getSkill('agility')!.experience >= agi0 + 2 * 116_250, 60, picks);
     });
 
     const xp = Object.fromEntries(sdk.getSkills().map(s => [s.name, s.experience - (xp0.find(x => x[0] === s.name)?.[1] ?? 0)]).filter(([, v]) => (v as number) > 0));

@@ -316,13 +316,13 @@ export class QuestBot {
         throw new Error(`timed out in segment ${this.S.cur?.name}; dialog ${d.isOpen ? JSON.stringify({ text: d.text, options: d.options.map(o => o.text), waiting: d.isWaiting }) : 'closed'}; chat ${JSON.stringify(chat)}`);
     }
 
-    async talk(key: string, choices: RegExp[] = [], opts: { allowUnused?: boolean } = {}) {
+    async talk(key: string, choices: RegExp[] = [], opts: { allowUnused?: boolean; sharedQueue?: boolean } = {}) {
         const n = await this.npc(key);
         const op = n.optionsWithIndex.find(o => /talk/i.test(o.text));
         if (!op) throw new Error(`${key} has no talk option`);
         this.S.action();
         await this.sdk.sendInteractNpc(n.index, op.opIndex);
-        const r = await runDialog(this.sdk, choices, { openTimeoutTicks: 60, settleTicks: 2, allowUnused: opts.allowUnused });
+        const r = await runDialog(this.sdk, choices, { openTimeoutTicks: 60, settleTicks: 2, allowUnused: opts.allowUnused || opts.sharedQueue, sharedQueue: opts.sharedQueue });
         if (r.closedAt < 0) throw new Error(`${key}: no dialogue opened`);
         this.S.dialog(r);
         return r;
