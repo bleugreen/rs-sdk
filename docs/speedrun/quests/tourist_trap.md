@@ -1,10 +1,10 @@
 # The Tourist Trap
 
 **Verdict: about 1,830 ticks on the stock client (about 1,560 with the client fix, about
-1,435 with dialogue bursts), for two picks of 4,650 base, plus a combat level of at least
+1,430 with dialogue bursts), for two picks of 4,650 base, plus a combat level of at least
 87 so the camp's Rowdy Guards leave you alone.** Spent as recommended below (one Agility
 pick, one Thieving pick), the picks save about 1,060 ticks of training, so the quest loses
-about 375-770 ticks as xp. Do it for its 2 quest points or the dart unlock, not for the
+about 370-770 ticks as xp. Do it for its 2 quest points or the dart unlock, not for the
 xp. The camp, the mine and the cart section are about 60% of the time, and four walks
 between the camp and the Bedabin tents are another 15%.
 
@@ -91,13 +91,16 @@ Agility and Thieving rolls (the cart and the lock below).
 |---|---|---|
 | Amulet of glory (charged) | 1 | teleport to Al Kharid |
 | Shantay pass | 1 | the first crossing (`shantay_pass.rs2:79-97`) |
-| Waterskin (4) | 3 | desert heat takes a sip every 150 ticks (190 in full desert clothes), else 1-10 damage (`area_desert/scripts/desert_heat.rs2:10-119`). The playthrough used about 6 sips. |
+| Waterskin (4) | 1-2 | desert heat takes a sip every 150 ticks (190 in full desert clothes), else 1-10 damage (`area_desert/scripts/desert_heat.rs2:10-119`). The playthrough used only 2 sips (measured: it ended with Waterskin(2) and two full ones), since the camp, the mine and the tents spare you most of the time (`desertheat_disabled_zones`, `desert_heat.rs2:72-75`). |
 | Desert shirt, desert robe, desert boots | 1 each | traded to the slave for his clothes (`mining_slave.rs2:145-200`); wear them from the start (+40 ticks per sip) |
 | Bronze bar | 3-6 | 2.6 expected at Smithing 20; the run used 6 |
 | Feathers | 40-80 | 10 per try, 3.2 tries expected at Fletching 10 |
 | Hammer | 1 | the experimental anvil (`quest_desertrescue.rs2:592`) |
 | A weapon (rune scimitar measured) | 1 | the captain; take it off before entering the camp |
 | Food | some | only if combat is below 87 |
+
+The run itself was given 3 waterskins, 6 bars and 80 feathers, and finished with the
+surplus.
 
 ## Step list
 
@@ -196,7 +199,7 @@ Random parts, expected (inferred from the read chances and the measured cost per
 | Random rolls | 188 | about 180 | about 180 | inferred, table above (the run drew 191) |
 | Glory teleport | 6 | 6 | 6 | measured, `primitives.md` §4 |
 | Helper trade | 9 | 5 | 5 | measured, `primitives.md` §6 |
-| **Total** | **about 1,830** | **about 1,560** | **about 1,435** | |
+| **Total** | **about 1,830** | **about 1,560** | **about 1,430** | |
 
 The measured playthrough was 1,822 ticks wall-clock (1,815 in segments), drawing bad
 luck on the bars and good luck on the lock. As with Digsite, the fixed client would also
@@ -219,7 +222,7 @@ The base xp per tick is 9,300 / 1,830 = 5.1 on the stock client.
   weapon and any armour before the gate. Desert clothes are not armour.
 - **Any piece of slave clothing at the gate, going out, with a guard within 4 tiles,
   means the cell** (`quest_desertrescue.rs2:110-117`). Take all three off before leaving,
-  and put them back on before the mine doors (13 clicks in all, about 25 ticks).
+  and put them back on before the mine doors (6 clicks, about 17 ticks, measured).
 - **The clothes trade duplicates the slave clothes** (measured): with the desert clothes
   worn, the slave's swap puts the slave clothes in the worn slots *and* a second set in
   the inventory. It is harmless here (three extra slots), but it looks like a server bug
@@ -231,7 +234,7 @@ The base xp per tick is 9,300 / 1,830 = 5.1 on the stock client.
   early. The tent guard ends with `p_delay(3)` after moving you in, and a click inside it is
   lost (measured).
 - **Clicking the camp gate from outside** answered "I can't reach that!" on the first try
-  in 3 of 4 entries (measured); the retry cost about 3 ticks. `bot.walkTo` aimed at the
+  in 2 of the 3 entries of the 300 ms run (measured); the retry cost about 3 ticks. `bot.walkTo` aimed at the
   tile in front of the mine doors opens them itself, and once routed into Siad's locked
   cell door.
 - **Logout**: both quest varps are `scope=perm`, and none of the 16 temporary quest varps
