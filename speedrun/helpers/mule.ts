@@ -237,7 +237,7 @@ export function pointMarketAtServer(sdk: BotSDK, server = process.env.SERVER): v
     config.browserLaunchUrl = /^(localhost|127\.)/.test(host) ? `http://${host}/bot` : `https://${host}/bot`;
 }
 
-async function ensureOutOfTutorial(ctx: RoleContext): Promise<void> {
+export async function ensureOutOfTutorial(ctx: RoleContext): Promise<void> {
     const { sdk, bot } = ctx;
     await sdk.waitForReady(30_000).catch(() => {});
     for (let i = 0; i < 30; i++) {
@@ -256,7 +256,7 @@ function distanceTo(sdk: BotSDK, x: number, z: number): number {
     return Math.max(Math.abs(p.worldX - x), Math.abs(p.worldZ - z));
 }
 
-async function walkNear(ctx: RoleContext, x: number, z: number, tolerance: number): Promise<boolean> {
+export async function walkNear(ctx: RoleContext, x: number, z: number, tolerance: number): Promise<boolean> {
     for (let attempt = 0; attempt < 5 && distanceTo(ctx.sdk, x, z) > tolerance; attempt++) {
         if (ctx.signal.aborted) return false;
         const p = ctx.sdk.getState()?.player;
@@ -267,7 +267,7 @@ async function walkNear(ctx: RoleContext, x: number, z: number, tolerance: numbe
     return distanceTo(ctx.sdk, x, z) <= tolerance;
 }
 
-async function openBank(ctx: RoleContext): Promise<boolean> {
+export async function openBank(ctx: RoleContext): Promise<boolean> {
     if (ctx.sdk.isBankOpen()) return true;
     for (let attempt = 0; attempt < 3; attempt++) {
         const r = await ctx.bot.openBank();
@@ -278,7 +278,7 @@ async function openBank(ctx: RoleContext): Promise<boolean> {
     return false;
 }
 
-async function closeBank(ctx: RoleContext): Promise<void> {
+export async function closeBank(ctx: RoleContext): Promise<void> {
     if (ctx.sdk.isBankOpen()) await ctx.bot.closeBank();
 }
 
