@@ -98,8 +98,9 @@ Enchanting an amulet gives the same xp as the ring (same spell row,
 | Mage Arena fight (not a quest reward) | about 2,400-3,050 from casting | `mage_arena.md` (measured 3,044 and 2,404) | yes, it unlocks Charge |
 
 - **The Grand Tree alone**: 2,150 base is level **57** (57 starts at 2,143.7 base). That is
-  exactly the diamond unlock, so the route from there is diamond -> dragonstone -> Charge, about
-  **400 ticks** (section 1). The quest itself uses the Varrock teleport (Magic 25) and the
+  exactly the diamond unlock, so the route from there is diamond -> dragonstone to 71 -> the
+  Mage Arena with a magic potion -> Charge, about **205 ticks** of Magic training (section 1;
+  about 400 with the arena at 80). The quest itself uses the Varrock teleport (Magic 25) and the
   Ardougne teleport (Magic 51, after Plague City) for its fastest legs (`grand_tree.md`).
   If the plan wants those teleports during the quest, the account needs Magic 51 first. That
   costs 1 -> 51 at about 160 ticks (inferred: Wind Strike 18, then 12 sapphire + 27 emerald + 4 ruby
