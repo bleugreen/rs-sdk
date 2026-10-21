@@ -112,6 +112,8 @@ await runScript(async ({ bot, sdk }) => {
             if (casts % 5 === 0) log(sdk, `target ${target.id} hp ${target.hp}/${target.maxHp} dist ${target.distance} magic xp ${sdk.getSkill('Magic')?.experience} runes ${sdk.getInventory().filter((i) => /rune/i.test(i.name)).map((i) => i.name + ' ' + i.count).join(',')} worn ${sdk.getEquipment().map((i) => i.name).join(',')}`, tArena);
             await sdk.sendSpellOnNpc(target.index, SPELL_COM[SPELL]);
             casts++;
+        } else if ((tick(sdk) - tArena) % 10 === 0) {
+            log(sdk, `no target; stage ${stage}; kolodions ${JSON.stringify(kols.map((n) => [n.id, n.x, n.z, n.hp]))} pos ${JSON.stringify(pos(sdk))}`, tArena);
         }
         await waitTicks(sdk, 2);
     }
