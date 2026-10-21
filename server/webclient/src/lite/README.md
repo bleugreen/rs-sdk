@@ -115,6 +115,14 @@ structure over patching it, so it cannot drift.
   `stopped` is a death. The `idle` case is a socket that is nominally open but
   has heard nothing for ~60s; the engine writes PLAYER_INFO to every player every
   tick, so silence that long is a dead socket that never sent a FIN.
+- **A tick is published after it is fully decoded.** The browser client fires
+  its game-tick callback inside the PLAYER_INFO handler, but the engine writes
+  NPC_INFO, zone updates (doors, ground items), inventories, stats and the
+  dialogue/modal opens *after* PLAYER_INFO in the same tick's message. Publishing
+  there shows a bot its own tick only partly applied, so every observe-then-act
+  step (a dialogue page, an option, a door, a trade) costs an extra tick.
+  `LiteClient.pumpPackets` counts PLAYER_INFOs during the drain and publishes
+  once at the end, after `snapEntities`; `game-tick.test.ts` pins the order.
 - **Entity positions are snapped, not interpolated.** `LiteClient.snapEntities`
   puts `x`/`z` on `routeX[0]`/`routeZ[0]` each tick instead of easing a few
   units per frame. Cheaper, and strictly more accurate for a bot.

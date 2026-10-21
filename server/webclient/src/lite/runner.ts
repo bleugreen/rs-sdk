@@ -59,12 +59,12 @@ class LiteGatewayRunner {
         this.client = session.client;
         // State collection and action execution go through the client, which
         // activates this bot's interface table first - see LiteClient.activate.
-        this.client.setOnGameTickCallback(() => {
-            this.serverTick++;
+        this.client.setOnGameTickCallback(ticks => {
+            this.serverTick += ticks;
             // Reuse the previous authoritative one-item policy snapshot and
-            // probe the newly decoded raw NPC table before full state
-            // collection. This puts KBD op2 ahead of reachability, nearby
-            // player/loc/item scans, and UI serialization.
+            // probe the raw NPC table this tick's NPC_INFO just filled before
+            // full state collection. This puts KBD op2 ahead of reachability,
+            // nearby player/loc/item scans, and UI serialization.
             if (this.fastKbdAttackEnabled) {
                 const targetIndex = this.fastKbdPolicyEligible
                     ? this.client.findNpcIndexByExactName('King black dragon')

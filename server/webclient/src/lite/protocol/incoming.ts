@@ -352,9 +352,10 @@ export function dispatch(c: LiteClient, opcode: number, buf: Packet, psize: numb
             getPlayerPos(c, buf, psize);
             c.awaitingPlayerInfo = false;
             c.sceneState = 2;
-            // PLAYER_INFO arrives exactly once per server tick - the bridge hangs
-            // its state publication off this, same as the browser client.
-            c.notifyGameTick();
+            // PLAYER_INFO arrives exactly once per server tick. Count it, but
+            // publish only after the drain (LiteClient.pumpPackets): the rest of
+            // this tick - NPC_INFO, zones, invs, stats, modals - follows it.
+            c.markGameTick();
             return;
         }
 
