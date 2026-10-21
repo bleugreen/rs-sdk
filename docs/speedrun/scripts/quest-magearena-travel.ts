@@ -11,14 +11,12 @@ import { cheat, log, pos, talkThrough, tele, tick, waitTicks, waitUntil } from '
 
 await runScript(async ({ bot, sdk }) => {
     if (!sdk.findInventoryItem(/^knife$/i)) await cheat(sdk, 'give knife 1');
-    if (process.env.FROM === 'keep') {
-        await tele(sdk, 3154, 3924);
-    } else {
-    await tele(sdk, 2661, 3301);
+    const fromKeep = process.env.FROM === 'keep';
+    await tele(sdk, fromKeep ? 3154 : 2661, fromKeep ? 3924 : 3301);
     await waitTicks(sdk, 3);
-    }
     const t0 = tick(sdk);
 
+    if (!fromKeep) {
     // 1. walk to the lever and pull it
     const lever = (await sdk.scanNearbyLocs(15)).find((l) => /lever/i.test(l.name));
     let leverLoc = lever;
