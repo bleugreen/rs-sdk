@@ -16,9 +16,9 @@
 //   free     from the tick after the inventory's last xp, trade-op the helper every tick (the
 //            helper also requests every tick; a request to a delayed player is refused,
 //            trade.rs2 [opplayer4,_], so whichever lands first opens the trade).
-//   trade    offer-all once per finished item id; accept when the helper's bars and our
-//            items are both on the screen; accept the confirm screen. The space check
-//            (trade.rs2 enough_trade_space) counts the room our own offer frees.
+//   trade    offer-all per finished item id (re-sent until the offer holds them all), then
+//            accept once the helper's bars are on the screen; accept the confirm screen. The
+//            space check (trade.rs2 enough_trade_space) counts the room our own offer frees.
 //   anvil    use-bar-on-anvil every tick until the smithing interface opens, then make-10 /
 //            make-5 / make-1 for the planned count (INV_BUTTON3/2/1).
 // Level-up dialogs are clicked through the tick they appear.
@@ -281,12 +281,13 @@ await runScript(async ({ bot, sdk }) => {
     let dialogTicks = 0; // observed ticks with a chat dialog (level-up) open
     let firstRequest = -1;
     let reached = -1;
-    const offered = new Set<number>();
+    let offerSent = -99;
     let lastClick = -99;
     let lastXpTick = -99;
     let clickArgs: [number, number, number] = [0, 1, 0];
     let retries = 0;
     let closes = 0;
+    let declines = 0; // trades that closed without the bars (re-requested)
     const end = Date.now() + Number(arg('minutes', '40')) * 60_000;
     const done = () => (route ? reached >= 0 : inv >= CYCLES) || Date.now() > end;
 
@@ -315,7 +316,6 @@ await runScript(async ({ bot, sdk }) => {
                     logs.push({ request: -1, tradeOpen: -1, barsIn: -1, clicks: [], xps: [] });
                     seg = 0;
                     left = PLAN[inv]!.segs[0]!.count;
-                    offered.clear();
                 }
             }
         }
@@ -326,7 +326,7 @@ await runScript(async ({ bot, sdk }) => {
         }
         const L = logs[inv]!;
         if (phase === 'free' && s.tick >= freeFrom) {
-            if (s.trade?.isOpen) { phase = 'trade'; L.tradeOpen = s.tick; progress = s.tick; }
+            if (s.trade?.isOpen) { phase = 'trade'; L.tradeOpen = s.tick; progress = s.tick; offerSent = -99; }
             else {
                 // An open chat modal (level-up dialog, "not enough bars" mesbox) makes us busy()
                 // (Player.ts), and the helper's trade requests bounce off until it closes.
@@ -346,12 +346,24 @@ await runScript(async ({ bot, sdk }) => {
             const want = Object.values(PLAN[inv]!.bars).reduce((a, b) => a + b, 0);
             if (t?.isOpen && t.screen === 'offer') {
                 // Offer-all once per finished item id (the trade-side inventory keeps main-inventory slots).
-                // Offer-all once per finished item id, then accept in the same tick (see the helper).
-                const products = DISPOSE === 'drop' ? [] : s.inventory.filter(i => !/^hammer$/i.test(i.name) && !offered.has(i.id));
-                for (const p of products.slice(0, 4)) { sdk.sendOfferItem(p.slot, -1).catch(() => {}); offered.add(p.id); }
+                // Offer-all per finished item id until the offer holds every item, and only then
+                // accept: accepting with items still in the inventory fails the space check
+                // (trade.rs2 enough_trade_space) and the engine cancels the trade. An offer sent on
+                // the tick the screen first shows is sometimes refused, so it is re-sent.
+                const made = DISPOSE === 'drop' || inv === 0 ? 0 : PLAN[inv - 1]!.segs.reduce((a, g) => a + g.count, 0);
+                const mine = t.myOffer.reduce((a, i) => a + i.count, 0);
                 const theirs = t.theirOffer.reduce((a, i) => a + i.count, 0);
-                if (products.length && products.length <= 4) sdk.sendAcceptTrade().catch(() => {});
-                else if (!products.length && !t.myAccepted && (theirs >= want || s.tick === L.tradeOpen)) sdk.sendAcceptTrade().catch(() => {});
+                if (mine < made) {
+                    if (s.tick > offerSent) {
+                        const ids = new Set<number>();
+                        for (const p of s.inventory) {
+                            if (/^hammer$/i.test(p.name) || ids.has(p.id) || count(t.myOffer, new RegExp(`^${p.name}$`, 'i')) > 0) continue;
+                            ids.add(p.id);
+                            sdk.sendOfferItem(p.slot, -1).catch(() => {});
+                        }
+                        offerSent = s.tick;
+                    }
+                } else if (!t.myAccepted && theirs >= want) sdk.sendAcceptTrade().catch(() => {});
             } else if (t?.isOpen && t.screen === 'confirm' && !t.myAccepted) sdk.sendAcceptTrade().catch(() => {});
             else if (!t?.isOpen) {
                 const have = Object.keys(PLAN[inv]!.bars).reduce((a, b) => a + count(s.inventory, barRe(b)), 0);
@@ -361,7 +373,7 @@ await runScript(async ({ bot, sdk }) => {
                     phase = 'anvil';
                     freeFrom = s.tick;
                     writePlan(inv + 1, DISPOSE === 'drop' ? 0 : PLAN[inv]!.segs.reduce((a, g) => a + g.count, 0));
-                } else if (s.tick - L.tradeOpen > 10) { phase = 'free'; offered.clear(); }
+                } else if (s.tick - L.tradeOpen > 10) { phase = 'free'; declines++; }
             }
         }
         // attempt_smithing starts with if_close, so while the interface is still open after a
@@ -418,7 +430,7 @@ await runScript(async ({ bot, sdk }) => {
     const gaps: Record<number, number> = {};
     for (const l of logs) for (let i = 1; i < l.xps.length; i++) { const g = l.xps[i]! - l.xps[i - 1]!; gaps[g] = (gaps[g] ?? 0) + 1; }
     console.log(`xp gap histogram (within inventories): ${JSON.stringify(gaps)}`);
-    console.log(`close-modal sends: ${closes}; interface click resends: ${retries}; ticks with a dialog open: ${dialogTicks}; levels ${Math.min(...Object.keys(levelTicks).map(Number))} -> ${smith(s).baseLevel}`);
+    console.log(`failed trades: ${declines}; close-modal sends: ${closes}; interface click resends: ${retries}; ticks with a dialog open: ${dialogTicks}; levels ${Math.min(...Object.keys(levelTicks).map(Number))} -> ${smith(s).baseLevel}`);
     if (route) {
         console.log(`route ${start} -> ${UNTIL}: first trade request ${firstRequest}, level ${UNTIL} at ${reached}: ${reached - firstRequest} ticks over ${logs.length} inventories (plan ${PLAN.length})`);
         const marks = [10, 20, 30, 33, 40, 48, 50, 60, 68, 70, 80, 88, 90, 95, 99].filter(l => levelTicks[l]);
