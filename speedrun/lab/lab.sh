@@ -15,6 +15,9 @@
 # bot.env pointed at the lab (measure-session.ts). The engine runs with
 # LOCAL_STAFF_LEVEL=4 so ::tele / ::give / ::setstat work. The first boot packs
 # the content and can take several minutes.
+#
+# LAB_FRIEND=1 also starts the friend server (FRIEND_SERVER=true, port
+# LAB_FRIEND_PORT, default 45099), which relays private messages.
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 BOT=$1; shift
@@ -33,6 +36,13 @@ wait_for() { # file phrase seconds
     for _ in $(seq 1 "$3"); do grep -q "$2" "$1" 2>/dev/null && return 0; sleep 1; done
     echo "timeout waiting for '$2' in $1"; tail -20 "$1"; return 1
 }
+
+if [ "${LAB_FRIEND:-0}" = "1" ]; then
+    export FRIEND_SERVER=true FRIEND_PORT=${LAB_FRIEND_PORT:-45099}
+    (cd "$ROOT/server/engine" && exec bun run src/friend.ts) > "$LOG/friend.log" 2>&1 &
+    PIDS+=($!)
+    sleep 2
+fi
 
 (cd "$ROOT/server/engine" && BUILD_VERIFY=false BUILD_LIVE_RELOAD=false LOCAL_STAFF_LEVEL=4 exec bun run src/app.ts) > "$LOG/engine.log" 2>&1 &
 PIDS+=($!)

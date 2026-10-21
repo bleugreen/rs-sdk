@@ -1,0 +1,37 @@
+[
+  { "name": "d1", "items": [{ "item": "Logs", "amount": 10, "noted": true }] },
+  { "name": "d10", "items": [
+    { "item": "Logs", "amount": 5, "noted": true },
+    { "item": "Tinderbox", "amount": 1, "noted": true },
+    { "item": "Small fishing net", "amount": 1, "noted": true },
+    { "item": "Shrimps", "amount": 1, "noted": true },
+    { "item": "Bucket", "amount": 1, "noted": true },
+    { "item": "Pot", "amount": 1, "noted": true },
+    { "item": "Bread", "amount": 1, "noted": true },
+    { "item": "Bronze pickaxe", "amount": 1, "noted": true },
+    { "item": "Bronze dagger", "amount": 1, "noted": true },
+    { "item": "Bronze sword", "amount": 1, "noted": true }
+  ] },
+  { "name": "d20", "items": [
+    { "item": "Logs", "amount": 5, "noted": true },
+    { "item": "Tinderbox", "amount": 1, "noted": true },
+    { "item": "Small fishing net", "amount": 1, "noted": true },
+    { "item": "Shrimps", "amount": 1, "noted": true },
+    { "item": "Bucket", "amount": 1, "noted": true },
+    { "item": "Pot", "amount": 1, "noted": true },
+    { "item": "Bread", "amount": 1, "noted": true },
+    { "item": "Bronze pickaxe", "amount": 1, "noted": true },
+    { "item": "Bronze dagger", "amount": 1, "noted": true },
+    { "item": "Bronze sword", "amount": 1, "noted": true },
+    { "item": "Wooden shield", "amount": 1, "noted": true },
+    { "item": "Shortbow", "amount": 1, "noted": true },
+    { "item": "Bronze axe", "amount": 1, "noted": true },
+    { "item": "Coins", "amount": 5 },
+    { "item": "Bronze arrow", "amount": 5 },
+    { "item": "Air rune", "amount": 5 },
+    { "item": "Mind rune", "amount": 5 },
+    { "item": "Water rune", "amount": 2 },
+    { "item": "Earth rune", "amount": 2 },
+    { "item": "Body rune", "amount": 1 }
+  ] }
+]
