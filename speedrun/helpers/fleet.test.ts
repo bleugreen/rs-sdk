@@ -6,6 +6,7 @@ import {
     activeAccounts,
     ConfigError,
     diffActive,
+    FORBIDDEN_ACCOUNTS,
     HARD_MAX_ACCOUNTS,
     parseFleetConfig
 } from './fleet-config';
