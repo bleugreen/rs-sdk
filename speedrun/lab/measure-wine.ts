@@ -212,7 +212,7 @@ result('T9-split-one-login', {
     loginTick: tR9,
     firstFermentAfterLogin: s9.firstFermentTick - tR9,
     secondFermentAfterLogin: s9.secondFermentTick - tR9,
-    receiverActionTicks: s9.tradeTicks + s9.firstBankTicks + s9.rearmTicks,
+    receiverActionTicks: s9.tradeTicks + s9.firstBankTicks + s9.levelUpTicks + s9.rearmTicks + s9.finalLevelUpTicks,
     giverTicks: (await g9).ticks
 });
 

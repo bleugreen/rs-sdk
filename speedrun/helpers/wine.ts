@@ -286,6 +286,9 @@ export interface SplitResult {
     /** Ticks are on the receiver's clock. */
     tradeTicks: number;
     firstBankTicks: number;
+    /** Dismissing the level-up dialog after the first firing, and after the second. */
+    levelUpTicks: number;
+    finalLevelUpTicks: number;
     /** Bank (deposit the rest) plus the one re-arming make. */
     rearmTicks: number;
     firstFermentTick: number;
@@ -344,6 +347,11 @@ export async function splitDelivery(ctx: Ctx, giver: string, opts: { first?: num
     const levelAfterFirst = skillLevel(sdk, 'Cooking');
     const rest = invCount(sdk, ITEM.wineNote);
 
+    // The jump in Cooking opens a level-up chat modal; banking and the make wait on it.
+    const tDlg = tick(sdk);
+    await bot.dismissBlockingUI();
+    const levelUpTicks = tick(sdk) - tDlg;
+
     const t2 = tick(sdk);
     await openBank(ctx);
     const d = await depositMatching(sdk, [ITEM.wineNote]);
@@ -354,12 +362,21 @@ export async function splitDelivery(ctx: Ctx, giver: string, opts: { first?: num
     const rearmTicks = tick(sdk) - t2;
 
     let secondFermentTick = -1;
+    let finalLevelUpTicks = 0;
     if (rearmed) {
         const xp1 = xp();
         const ok = await waitUntil(sdk, () => xp() > xp1, { maxTicks: maxWait });
-        if (ok.ok) secondFermentTick = ok.tick;
+        if (ok.ok) {
+            secondFermentTick = ok.tick;
+            await waitUntil(sdk, s => s.dialog.isOpen, { maxTicks: 2 });
+            const t3 = tick(sdk);
+            await bot.dismissBlockingUI();
+            finalLevelUpTicks = tick(sdk) - t3;
+        }
     }
     return {
+        levelUpTicks,
+        finalLevelUpTicks,
         received,
         first,
         rest,
