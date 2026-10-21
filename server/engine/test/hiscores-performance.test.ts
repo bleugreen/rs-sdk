@@ -40,7 +40,9 @@ test('cached ranks remain correct across profiles, exclusions and cache refresh'
     } finally {
         rmSync(dir, { recursive: true, force: true });
     }
-});
+    // The fixture process imports the engine's hiscore pages and database layer:
+    // about 1 s on an idle host, 2.5-6 s on a loaded 8-core one, past bun's 5 s default.
+}, 15_000);
 
 
 test('ranking requests wait for a worker with delayed startup to install its handler', () => {
