@@ -323,6 +323,17 @@ async function openNearbyDoor(ctx: Ctx): Promise<boolean> {
     return true;
 }
 
+/** The first closed door or gate standing on route tiles [from, to], by the client's loc list. */
+function doorOnRoute(sdk: BotSDK, route: { x: number; z: number }[], from: number, to: number) {
+    const locs = sdk.getState()!.nearbyLocs.filter((l) => l.optionsWithIndex.some((o) => /^open$/i.test(o.text)));
+    if (!locs.length) return null;
+    for (let j = from; j <= to && j < route.length; j++) {
+        const l = locs.find((q) => q.x === route[j].x && q.z === route[j].z);
+        if (l) return { loc: l, j };
+    }
+    return null;
+}
+
 export interface WalkOpts {
     tol?: number;
     reach?: number;
@@ -352,6 +363,7 @@ export async function walk(ctx: Ctx, dest: { x: number; z: number }, o: WalkOpts
     let target: { x: number; z: number } | null = null;
     let final = false;
     let lastPos = pos(sdk), lastMove = tick(sdk), clickTick = -99, lastCast = -99, stalls = 0;
+    let curReach = reach, lastReachPos = pos(sdk);
     const arrived = () => cheb(pos(sdk), dest) <= tol || (!!o.stopWhen && o.stopWhen(sdk.getState()!));
     let t = tick(sdk);
     while (!arrived()) {
@@ -369,6 +381,7 @@ export async function walk(ctx: Ctx, dest: { x: number; z: number }, o: WalkOpts
                 const web = (await sdk.scanNearbyLocs(3)).find((l) => /^web$/i.test(l.name));
                 if (web) await throughWebs(ctx, [[dest.x, dest.z]]);
             }
+            if (!opened) curReach = Math.max(4, Math.floor(curReach / 2));
             route = buildRoute(sdk, dest);
             idx = 0;
             t = tick(sdk);
@@ -385,7 +398,23 @@ export async function walk(ctx: Ctx, dest: { x: number; z: number }, o: WalkOpts
             if (bd > 4) { route = buildRoute(sdk, dest); best = 0; }
             idx = best;
             let ti = idx;
-            for (let i = idx; i < route.length && cheb(route[i], p) <= reach; i++) ti = i;
+            for (let i = idx; i < route.length && cheb(route[i], p) <= curReach; i++) ti = i;
+            if (cheb(p, lastReachPos) >= 8) { curReach = reach; lastReachPos = p; }
+            const door = doorOnRoute(sdk, route, idx, ti);
+            if (door) {
+                // Open it as part of the run: the server walks to the door, then opens it.
+                const d = door.loc;
+                await sdk.sendInteractLoc(d.x, d.z, d.id, d.optionsWithIndex.find((q) => /^open$/i.test(q.text))!.opIndex);
+                if (ctx.leg) { ctx.leg.clicks++; ctx.leg.doorOpens++; }
+                await waitFor(sdk, (s) => !s.nearbyLocs.some((l) => l.x === d.x && l.z === d.z && l.optionsWithIndex.some((q) => /^open$/i.test(q.text))) || (cheb({ x: s.player!.worldX, z: s.player!.worldZ }, d) <= 1 && false), Math.ceil(cheb(p, d) / 2) + 6);
+                t = tick(sdk);
+                lastMove = t;
+                clickTick = t;
+                target = null;
+                route = buildRoute(sdk, dest);
+                idx = 0;
+                continue;
+            }
             target = route[ti] ?? dest;
             final = ti >= route.length - 1;
             await sdk.sendWalk(target.x, target.z, true);
