@@ -90,8 +90,11 @@ add their rows here in the same columns.
    Woodcutting from about 3,958 to about 4,001. Fishing spots and knights do not scale.
 5. **Contention with other players.** Rocks and trees deplete, so another player on the
    zoo cluster or the Taverley oaks takes ores and logs from the rotation. Mining and
-   Woodcutting are exposed. Second sites: the Wilderness eight-rock iron cluster
-   ([mining.md](mining.md) section 5) and the second oak and willow tiles in
+   Woodcutting are exposed. Second sites: the six-rock iron cluster north of East
+   Ardougne (2710-2715, 3328-3332; planner 3.74 ticks per ore at respawn 13, measured
+   4.02-4.12 at respawn 19 without a starter; [mining.md](mining.md) section 4). The
+   Wilderness eight-rock cluster looks faster on paper but is in level-31 Wilderness and
+   its lab run stalled. For Woodcutting, the second oak and willow tiles are in
    [woodcutting.md](woodcutting.md) section 6. Fishing spots never deplete (they move on
    a timer, `fishing_movement.rs2:8-12`), and nothing in `thieving.rs2` reserves a knight
    (read, content only; engine-level interaction rules not checked), so Fishing and
