@@ -20,6 +20,7 @@ import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, GroundItem, InventoryItem, NearbyNpc } from '../../sdk/types';
 import type { Role, RoleContext } from './role';
 import { runStandalone } from './role';
+import { findLongPath, getDoorAt } from '../../sdk/pathfinding';
 
 interface Box { x1: number; z1: number; x2: number; z2: number }
 interface Tile { x: number; z: number }
@@ -75,6 +76,8 @@ interface Spot {
     requires?: RegExp;
     /** Optional upkeep run while standing in the area (e.g. fetching a key). */
     upkeep?(r: Run): Promise<void>;
+    /** Whether the player is at the spot (default: inside `area`). */
+    inside?(r: Run): boolean;
     /** Obtain `requires` when neither the inventory nor the bank has it; one step per call, true when done. */
     acquire?(r: Run): Promise<boolean>;
 }
@@ -148,7 +151,8 @@ const inVelrakCell = (t: Tile) => t.z < VELRAK_CELL_DOOR.z && t.z > 9675 && Math
 async function fetchDustyKey(r: Run): Promise<boolean> {
     if (!r.underground()) {
         if (!(await r.walk(TAVERLEY_DUNGEON_LADDER.x, TAVERLEY_DUNGEON_LADDER.z + 1, 2, 300_000))) return false;
-        return r.climb(/ladder/i, /climb-down/i, true, TAVERLEY_DUNGEON_LADDER) && false;
+        await r.climb(/ladder/i, /climb-down/i, true, TAVERLEY_DUNGEON_LADDER);
+        return false;
     }
     const cellDoor = async () => (await r.sdk.scanNearbyLocs(6)).find(l => /door/i.test(l.name) && l.x === VELRAK_CELL_DOOR.x && l.z === VELRAK_CELL_DOOR.z);
     if (!r.carrying(DUSTY_KEY)) {
@@ -193,39 +197,58 @@ async function fetchDustyKey(r: Run): Promise<boolean> {
 }
 
 /**
- * Taverley dungeon baby blue dragons: 9 spawns behind the dusty-key door at (2924, 9803),
- * level 48, 50 hp, no dragonfire, babydragon bones (30 base). Needs a dusty key
- * (Velrak, Taverley jail). Written from the map data; not yet run on the demo.
+ * True when (x, z) on level 0 reaches `to` with the door at `door` shut, i.e. the two are on the
+ * same side of it. Uses the SDK's offline collision map (already loaded for walkTo).
+ */
+function sameSideOf(door: Tile, from: Tile, to: Tile): boolean {
+    const d = getDoorAt(0, door.x, door.z);
+    const path = findLongPath(0, from.x, from.z, to.x, to.z, 500, d ? [d] : []);
+    const end = path.at(-1) ?? from;
+    return dist(end, to) <= 1;
+}
+
+/**
+ * Taverley dungeon baby blue dragons: 9 spawns at (2892-2909, 9763-9806), level 48, 50 hp,
+ * no dragonfire, cowardly, babydragon bones (30 base). Four blue dragons share the room
+ * (cowardly too; the role ignores them). The ladder bottom is walled off from the room: the
+ * way in loops north and east and comes back west through the dusty-key door (2924, 9803),
+ * entered from (2925, 9803) with the key; it opens from inside without one.
  */
 const BABY_BLUE: Spot = {
     id: 'baby_blue',
     npc: /^baby blue dragon$/i,
     bones: /^babydragon bones$/i,
-    area: { x1: 2876, z1: 9740, x2: 2912, z2: 9800 },
-    centre: { x: 2893, z: 9780 },
+    area: { x1: 2876, z1: 9740, x2: 2923, z2: 9810 },
+    centre: { x: 2898, z: 9775 },
     requires: DUSTY_KEY,
     acquire: fetchDustyKey,
+    inside(r) {
+        const p = r.pos();
+        return r.underground() && inBox(this.area, p.x, p.z) && sameSideOf(DUSTY_KEY_DOOR, p, this.centre);
+    },
     async enter(r) {
         if (!r.underground()) {
             if (!(await r.walk(TAVERLEY_DUNGEON_LADDER.x, TAVERLEY_DUNGEON_LADDER.z + 1, 2, 300_000))) return false;
             if (!(await r.climb(/ladder/i, /climb-down/i, true, TAVERLEY_DUNGEON_LADDER))) return false;
         }
-        if (r.pos().x > DUSTY_KEY_DOOR.x) {
-            if (!(await r.walk(DUSTY_KEY_DOOR.x + 1, DUSTY_KEY_DOOR.z, 1, 120_000))) return false;
-            const door = (await r.sdk.scanNearbyLocs(4)).find(l => /door/i.test(l.name) && l.x === DUSTY_KEY_DOOR.x && l.z === DUSTY_KEY_DOOR.z);
-            if (!door) return false;
+        if (!sameSideOf(DUSTY_KEY_DOOR, r.pos(), this.centre)) {
+            if (!(await r.walk(DUSTY_KEY_DOOR.x + 1, DUSTY_KEY_DOOR.z, 0, 180_000))) return false;
+            const door = (await r.sdk.scanNearbyLocs(4)).find(l => /door|gate/i.test(l.name) && l.x === DUSTY_KEY_DOOR.x && l.z === DUSTY_KEY_DOOR.z);
+            if (!door) { r.ctx.log('baby_blue: no dusty-key door', { at: [r.pos().x, r.pos().z] }); return false; }
             await r.bot.useItemOnLoc(DUSTY_KEY, door);
             await r.waitFor(s => (s.player?.worldX ?? 9999) < DUSTY_KEY_DOOR.x, 10);
+            if (r.pos().x >= DUSTY_KEY_DOOR.x) return false;
         }
         return r.walk(this.centre.x, this.centre.z, 4, 90_000);
     },
     async leave(r) {
         if (r.underground()) {
-            if (r.pos().x < DUSTY_KEY_DOOR.x) {
-                if (!(await r.walk(DUSTY_KEY_DOOR.x - 1, DUSTY_KEY_DOOR.z, 1, 90_000))) return false;
-                const door = (await r.sdk.scanNearbyLocs(4)).find(l => /door/i.test(l.name) && l.x === DUSTY_KEY_DOOR.x && l.z === DUSTY_KEY_DOOR.z);
+            if (sameSideOf(DUSTY_KEY_DOOR, r.pos(), this.centre)) {
+                if (!(await r.walk(DUSTY_KEY_DOOR.x - 1, DUSTY_KEY_DOOR.z, 0, 90_000))) return false;
+                const door = (await r.sdk.scanNearbyLocs(4)).find(l => /door|gate/i.test(l.name) && l.x === DUSTY_KEY_DOOR.x && l.z === DUSTY_KEY_DOOR.z);
                 if (door) await r.bot.interactLoc(door, /open/i);
                 await r.waitFor(s => (s.player?.worldX ?? 0) > DUSTY_KEY_DOOR.x, 10);
+                if (r.pos().x <= DUSTY_KEY_DOOR.x) return false;
             }
             if (!(await r.walk(TAVERLEY_DUNGEON_BOTTOM.x, TAVERLEY_DUNGEON_BOTTOM.z, 2, 120_000))) return false;
             if (!(await r.climb(/ladder/i, /climb-up/i, false, TAVERLEY_DUNGEON_BOTTOM))) return false;
@@ -965,7 +988,7 @@ class Run {
             return;
         }
         const p = this.pos();
-        if (!inBox(spot.area, p.x, p.z)) {
+        if (!(spot.inside ? spot.inside(this) : inBox(spot.area, p.x, p.z))) {
             if (!(await spot.enter(this))) {
                 this.ctx.log('could not reach spot', { spot: spot.id, at: [this.pos().x, this.pos().z] });
                 await this.sdk.waitForTicks(5);
