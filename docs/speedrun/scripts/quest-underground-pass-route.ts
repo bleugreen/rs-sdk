@@ -99,7 +99,14 @@ one([2462, 9699, 0], [2466, 9699, 0], 'ropeswing', 'uses up a rope, upass_obstac
 one([2465, 9692, 0], [2460, 9692, 0], 'swing2', 'east to west, upass_obstacles.rs2:130-148', { id: 2274, x: 2461, z: 9692, op: 1 });
 one([2451, 9688, 0], [2451, 9694, 0], 'pipe4', 'south to north, upass_obstacles.rs2:61-79', { id: 3235, x: 2451, z: 9689, op: 1 });
 one([2466, 9673, 0], [2464, 9677, 0], 'portcullis', 'upass_grid.rs2:1-43', { id: 3337, x: 2466, z: 9672, op: 1 });
-one([2416, 9675, 0], [2423, 9660, 0], 'well_down', 'needs the four orb bits, quest_upass.rs2:119-129', { id: 3264, x: 2416, z: 9674, op: 1 });
+// Locs used from any walkable neighbour tile.
+const around = (x: number, z: number, l: number) => {
+    const out: T[] = [];
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) if ((dx || dz) && walkable([x + dx, z + dz, l])) out.push([x + dx, z + dz, l]);
+    return out;
+};
+for (const t of around(2416, 9674, 0)) one(t, [2423, 9660, 0], 'well_down', 'needs the four orb bits, quest_upass.rs2:119-129', { id: 3264, x: 2416, z: 9674, op: 1 });
+for (const z of [9716, 9717, 9718, 9719, 9720]) for (const x of [2369, 2370]) if (walkable([x, z, 0])) one([x, z, 0], [2173, 4725, 1], 'temple_door2', 'unlocked by badges and horn, quest_upass.rs2:394-405', { id: 3220, x: 2368, z: 9717, op: 1 });
 one([2423, 9662, 0], [2418, 9674, 0], 'mudpile_up', 'quest_upass.rs2:149-154', { id: 3307, x: 2423, z: 9661, op: 1 });
 one([2443, 9652, 0], [2482, 9715, 0], 'rockpile', 'upass_obstacles.rs2:50-55', { id: 3265, x: 2443, z: 9651, op: 1 });
 one([2393, 9655, 0], [2393, 9654, 0], 'cage_pick', 'thieving 128/400 roll, quest_upass.rs2:226-240', { id: 3266, x: 2393, z: 9655, op: 1 });
