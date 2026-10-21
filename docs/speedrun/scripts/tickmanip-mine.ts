@@ -72,7 +72,13 @@ const LEVEL = Number(kv('level', '99'));
 const XP_LAG = Number(kv('xplag', '0'));
 const GATE = EAT && kv('gate', 'on') !== 'off';
 const PLAIN_CYCLE = Number(kv('plain-cycle', '3.61'));
+// A late starter in the closed loop costs the tick it was late (inferred; --inject-late
+// measures it). The open loop (a lead) slips and restarts instead: about 9 ticks.
+const MISS_COST = Number(kv('miss-cost', '1'));
 const LEAD_ARG = kv('lead', 'auto');
+// --inject-late=F sends a random fraction F of starter ticks one label late (lab stand-in for
+// a host where that share of packets is late).
+const INJECT_LATE = Number(kv('inject-late', '0'));
 const key = (p: P) => `${p[0]},${p[1]}`;
 const same = (a: P, b: P) => a[0] === b[0] && a[1] === b[1];
 const beside = (a: P, b: P) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) === 1;
@@ -107,7 +113,7 @@ await runScript(async ({ bot, sdk }) => {
 
     const log: string[] = [];
     const gate = GATE
-        ? new HostGate(sdk, { model: { plainCycle: PLAIN_CYCLE, missCost: 9 }, probe: { walkable }, log: line => { log.push(line); console.log(line); } })
+        ? new HostGate(sdk, { model: { plainCycle: PLAIN_CYCLE, missCost: MISS_COST }, probe: { walkable }, log: line => { log.push(line); console.log(line); } })
         : null;
     const manip = () => (gate ? gate.on : EAT);
     let LEAD = 0; // fixed per schedule: set at each (re)start
@@ -143,6 +149,13 @@ await runScript(async ({ bot, sdk }) => {
     let R = s.tick - 2;
     let eatsSent = 0;
     let pendingRock: P | null = null; // rock of the transition whose roll we are waiting for
+    let injected = 0;
+    // Closed loop: plan each transition on the label that shows the previous roll's xp. With
+    // no lead that is the same label the predicted loop uses on a punctual host, and a late
+    // roll then costs only its late ticks: the predicted loop would send the next walk onto the
+    // late roll's own tick, cancel it, and slip. A lead needs the open loop (it sends before
+    // the roll is visible).
+    const closedLoop = () => !manip() || LEAD === 0;
 
     const plan = () => {
         const { stand, rock } = STEPS[k % STEPS.length]!;
@@ -170,12 +183,15 @@ await runScript(async ({ bot, sdk }) => {
                 if (trick) { roll = trick.u + 2; kind = 'trick'; }
                 else { roll = plainRoll; kind = clickLand > (move ? R + 2 : R + 1) ? 'waited' : 'plain'; }
             }
+            // --inject-late: this transition's starter tick goes out one label late
+            const late = kind === 'starter' && INJECT_LATE > 0 && Math.random() < INJECT_LATE ? 1 : 0;
+            if (late) { injected++; log.push(`  inject: starter for roll@${roll} held one label`); }
             if (kind === 'starter' && STARTER === 'knife') {
-                add(R, 'knife on logs', knifeOnLogs);
-                add(R, 'button 8889', () => sdk.sendClickComponent(8889));
+                add(R + late, 'knife on logs', knifeOnLogs);
+                add(R + late, 'button 8889', () => sdk.sendClickComponent(8889));
                 eatsSent++;
             } else if (kind === 'starter') {
-                add(R, 'eat', eat);
+                add(R + late, 'eat', eat);
                 eatsSent++;
                 // Lab stand-in for restocking (a bank trip or a helper's trade): one food per move.
                 if ((s.inventory.filter(i => /^shrimps$/i.test(i.name)).length) < 6 && eatsSent % 10 === 0) add(R + 2, 'give food', () => sdk.sendSay('::give shrimp 20'));
@@ -187,9 +203,9 @@ await runScript(async ({ bot, sdk }) => {
                 add(u, `walk ${key(stand)}`, () => sdk.sendWalk(stand[0], stand[1], true));
                 add(u + 1, `click ${key(rock)}`, click(rock));
             } else {
-                add(R, 'drop ore', dropOre);
-                if (move) add(R, `walk ${key(stand)}`, () => sdk.sendWalk(stand[0], stand[1], true));
-                add(clickLand - 1, `click ${key(rock)}`, click(rock));
+                add(R + late, 'drop ore', dropOre);
+                if (move) add(R + late, `walk ${key(stand)}`, () => sdk.sendWalk(stand[0], stand[1], true));
+                add(Math.max(clickLand - 1, R + late), `click ${key(rock)}`, click(rock));
             }
         }
         kinds[kind]!++;
@@ -214,7 +230,7 @@ await runScript(async ({ bot, sdk }) => {
     const xpSeen = new Set<number>();
     const checked = new Set<number>();
     const checkSlip = () => {
-        const slack = manip() ? 1 : 6;
+        const slack = closedLoop() ? 6 : 1;
         for (const p of predicted) {
             if (checked.has(p) || s.tick < p + 2 + slack) continue;
             checked.add(p);
@@ -285,8 +301,8 @@ await runScript(async ({ bot, sdk }) => {
                 fn().catch(() => {});
             }
         }
-        if (restartAt === null && (manip() ? s.tick >= R - LEAD : rolled !== null)) {
-            if (!manip()) {
+        if (restartAt === null && (closedLoop() ? rolled !== null : s.tick >= R - LEAD)) {
+            if (closedLoop()) {
                 R = rolled!;
                 if (pendingRock) lastRoll.set(key(pendingRock), R);
             }
@@ -330,7 +346,7 @@ await runScript(async ({ bot, sdk }) => {
     console.log([
         `rotation of ${rocks.length} rocks, respawn ${D}, starter=${STARTER}, level ${LEVEL}`,
         `end inventory: logs ${(sdk.getState()?.inventory ?? []).filter(i => /^logs$/i.test(i.name)).length}, arrow shafts ${(sdk.getState()?.inventory ?? []).filter(i => /^arrow shaft/i.test(i.name)).reduce((n, i) => n + i.count, 0)}`,
-        `transitions ${JSON.stringify(kinds)}, starters sent ${eatsSent}, xp events ${xpLabels.length}, on predicted tick ${onTime}, slips ${slips}`,
+        `transitions ${JSON.stringify(kinds)}, starters sent ${eatsSent} (held a label: ${injected}), xp events ${xpLabels.length}, on predicted tick ${onTime}, slips ${slips}`,
         gate
             ? `gate: ${gate.history.length} events (${gate.summary()}), switches ${gate.switches() || 'none'}, ${gate.plainTicks(s.tick)} ticks plain, ends ${gate.on ? 'manipulating' : 'plain'}, lead ${LEAD}`
             : 'gate: off',

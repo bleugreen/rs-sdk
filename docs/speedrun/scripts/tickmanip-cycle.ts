@@ -85,6 +85,9 @@ const XP_LAG = Number(args.xplag ?? 0);
 const marks = (args.marks ?? '').split(',').filter(Boolean).map(Number);
 const dropProducts = args.drop !== 'false';
 const DEMO = args.demo === 'true';
+// --inject-late=F holds a random fraction F of starter bundles one label, so they land a tick
+// late: a lab stand-in for a host where that share of packets is late (main's Ashburn probe).
+const INJECT_LATE = Number(args['inject-late'] ?? 0);
 // A mistimed lock starves completely (each eat pushes the clock past the next click), so
 // "no xp for lockWindow ticks" means lost lock; size it so honest misses rarely trip it.
 const LOCK_WINDOW: Record<string, number> = { wc: 18, tree: 18, fly: 15, flylumb: 15, cage: 45 };
@@ -154,7 +157,7 @@ const gated = technique !== 'base' && args.gate !== 'off';
 // --lead=N sends an xp-anchored schedule N ticks early; auto (the default) takes the gate's
 // last probe (dominant latency - 1). A schedule anchored on its own send needs none.
 const LEAD_ARG = args.lead ?? 'auto';
-writeFileSync(logPath, `# tickmanip-cycle ${mode} level=${level} phase=${phase} rolls=${rollsTarget} until=${untilLevel} dismiss=${dismiss} reanchor=${reanchor} xplag=${XP_LAG} gate=${gated ? 'on' : 'off'} lead=${LEAD_ARG} demo=${DEMO} host=${hostname()} at=${new Date().toISOString()}\n`);
+writeFileSync(logPath, `# tickmanip-cycle ${mode} level=${level} phase=${phase} rolls=${rollsTarget} until=${untilLevel} dismiss=${dismiss} reanchor=${reanchor} xplag=${XP_LAG} gate=${gated ? 'on' : 'off'} lead=${LEAD_ARG} demo=${DEMO} inject-late=${INJECT_LATE} host=${hostname()} at=${new Date().toISOString()}\n`);
 const log = (line: string) => appendFileSync(logPath, line + '\n');
 
 await runScript(async ({ bot, sdk }) => {
@@ -294,7 +297,7 @@ await runScript(async ({ bot, sdk }) => {
     // compares against the last plain stretch it measured itself.
     const gate = gated
         ? new HostGate(sdk, {
-              model: { plainCycle: method.plainCycle, anchor: reanchor === 'xp' ? 'xp' : 'self' },
+              model: { plainCycle: method.plainCycle },
               plainTicksPerDrop: args['plain-rate'] ? Number(args['plain-rate']) : undefined,
               log: line => { log(line); console.log(line); },
           })
@@ -314,6 +317,8 @@ await runScript(async ({ bot, sdk }) => {
     let lastXp = startXp;
     let anchor: number | null = null; // observed tick on which the bootstrap click was sent
     let anchorLead = 0; // ticks the schedule sends early: only when anchored on an observed roll
+    let deferredTo = -1; // --inject-late: the label a held starter bundle goes out on
+    let injected = 0;
     let cooldownUntil = -1;
     let curPhase = ((phase % 3) + 3) % 3;
     let resyncs = 0;
@@ -502,14 +507,24 @@ await runScript(async ({ bot, sdk }) => {
                 if (click(s)) { anchor = t; anchorLead = 0; breaks.push(t); log(`T${t} bootstrap phase ${curPhase}`); }
                 return;
             }
-            const d = t - anchor - method.r0 - 1 - curPhase + anchorLead;
-            if (d < 0) return;
-            const k = d % 3;
-            if (k === 0) {
+            const starterBundle = () => {
                 actedTick = t;
                 if (technique === 'knife') knifeStart(s); else eat(s);
                 if (dropProducts) dropOne(s);
                 if (!method.clickOnRoll) click(s);
+            };
+            if (deferredTo === t) { deferredTo = -1; starterBundle(); return; }
+            const d = t - anchor - method.r0 - 1 - curPhase + anchorLead;
+            if (d < 0) return;
+            const k = d % 3;
+            if (k === 0) {
+                if (INJECT_LATE > 0 && Math.random() < INJECT_LATE) {
+                    deferredTo = t + 1;
+                    injected++;
+                    log(`T${t} inject: starter held to T${t + 1}`);
+                    return;
+                }
+                starterBundle();
             } else if (k === 1) {
                 if (technique === 'eat' && foodCount < 4) { actedTick = t; fire(t, 'give food', sdk.sendSay(`::give ${FOOD_OBJ} 14`)); }
             } else if (k === 2 && method.clickOnRoll) {
@@ -559,6 +574,7 @@ await runScript(async ({ bot, sdk }) => {
         `spot moves ${moves.length}: spanning gaps ${histOf(mvRows.map(r => r.gap))}`,
         `  ${mvRows.map(r => `T${r.tick}:${r.gap}`).join(' ')}`,
         `logs given during the run ${logsGiven}`,
+        `starters held a label (--inject-late=${INJECT_LATE}): ${injected}`,
         gate
             ? `gate: ${gate.history.length} events (${gate.summary()}), switches ${gate.switches() || 'none'}, ${gate.plainTicks(segEnd)} ticks plain, ends ${gate.on ? 'manipulating' : 'plain'}, lead ${lead()}`
             : 'gate: off',
