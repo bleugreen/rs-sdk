@@ -276,9 +276,9 @@ describe('FleetRoleLoop: a role that returns has finished', () => {
         const flaky: Role = {
             name: 'feathers',
             produces: [],
-            run: async () => {
+            run: async ctx => {
                 if (++n <= 2) throw new Error(`boom ${n}`);
-                await new Promise(() => {});
+                await new Promise<void>(resolve => ctx.signal.addEventListener('abort', () => resolve(), { once: true }));
             }
         };
         const h = await harness({ accounts: [acct(1)] }, { feathers: flaky });
@@ -306,10 +306,11 @@ describe('FleetRoleLoop: a role that returns has finished', () => {
         h.loop.reconfigure(parseFleetConfig({ accounts: [{ account: 'cairn_h63', role: 'coins' }] }).accounts[0]!);
         await settle();
         expect(h.runs.map(r => r.role)).toEqual(['handover', 'coins']);
-        // A reload that only changes `then` of the finished assignment does not start it again.
+        // Assigning the handover again is a new assignment: it runs (its role state still blocks repeats).
         h.loop.reconfigure(parseFleetConfig({ accounts: [handoverH63] }).accounts[0]!);
         await settle();
         expect(handoverRuns).toBe(2);
+        // A reload that only changes `then` of the finished assignment does not start it again.
         h.loop.update(parseFleetConfig({ accounts: [{ ...handoverH63, then: { role: 'idle' } }] }).accounts[0]!);
         await settle();
         expect(handoverRuns).toBe(2);
