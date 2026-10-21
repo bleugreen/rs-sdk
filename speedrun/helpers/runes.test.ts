@@ -1,6 +1,22 @@
 import { describe, expect, test } from 'bun:test';
 import { Spells } from '../../sdk/spells';
-import { castsToLevel, runesOptions, shopCost, shopList, shopUnitPrice, strikeFor, xpForLevel } from './runes';
+import type { ListLine } from './buyer';
+import {
+    castsToLevel,
+    GUILD_ITEMS,
+    inKeep,
+    limitToCarry,
+    manifestLines,
+    PLACES,
+    purchaseBudget,
+    runesOptions,
+    shopCost,
+    shopUnitPrice,
+    staffLines,
+    strikeFor,
+    trainingLines,
+    xpForLevel
+} from './runes';
 
 describe('shop prices (shop.rs2 calc_shop_value)', () => {
     test('full shelf sells at base', () => {
@@ -42,9 +58,80 @@ describe('Magic training', () => {
     });
 });
 
-describe('options and the shop list', () => {
+describe('options and the purchase lists', () => {
     test('defaults', () => {
         const o = runesOptions({});
+        expect(o.phases).toEqual(['fund', 'shops', 'talismans', 'magic', 'guild', 'lundail']);
+        expect(o.targets['Cosmic rune']).toBe(62);
+        expect(o.funders.map(String)).toEqual(['/^cairn_h47$/i']);
+        // Never stand idle in a shop by default (random events find a still account twice as often).
+        expect(o.shopWaitTicks).toBe(0);
+        expect(o.maxCarry).toBe(30_000);
+    });
+    test('unknown phases are refused', () => {
+        expect(() => runesOptions({ phases: ['shops', 'fish'] })).toThrow(/unknown phase fish/);
+    });
+    test('Zaff sells the staves; the staff of earth only while training', () => {
+        const o = runesOptions({});
+        expect(staffLines(o, true).map(l => l.item)).toEqual(['Staff of water', 'Staff of fire', 'Staff of earth']);
+        expect(staffLines(o, false).map(l => l.item)).toEqual(['Staff of water', 'Staff of fire']);
+        expect(staffLines(o, true).every(l => l.shop === 'zaff' && l.maxWaitTicks === 0)).toBe(true);
+    });
+    test('training lines: air and mind for a chunk of casts at one shop', () => {
+        const o = runesOptions({});
+        const lines = trainingLines(o, 'betty', 300);
+        expect(lines.map(l => [l.item, l.quantity, l.shop])).toEqual([
+            ['Air rune', 300, 'betty'],
+            ['Mind rune', 300, 'betty']
+        ]);
+        expect(trainingLines(o, 'aubury', 0)).toEqual([]);
+    });
+    test('the guild covers every manifest rune but cosmic', () => {
+        const lines = manifestLines(runesOptions({}), 'magicGuild', GUILD_ITEMS, 0);
+        expect(lines.map(l => l.item).sort()).toEqual(Object.keys(runesOptions({}).targets).filter(k => / rune$/.test(k) && k !== 'Cosmic rune').sort());
+        expect(lines.find(l => l.item === 'Blood rune')!.quantity).toBe(570);
+    });
+});
+
+describe('coins carried never exceed one capped purchase', () => {
+    const held = (m: Record<string, number>) => (item: string) => m[item] ?? 0;
+    const line = (item: string, quantity: number, maxPrice: number): ListLine => ({ item, quantity, maxPrice, source: 'shop', shop: 'magicGuild' });
+
+    test('the budget is every missing unit at its cap', () => {
+        expect(purchaseBudget([line('Blood rune', 570, 300), line('Law rune', 50, 120)], held({ 'Law rune': 20 }))).toBe(570 * 300 + 30 * 120);
+    });
+    test('the guild purchase is cut into trips of at most maxCarry, first lines first', () => {
+        const lines = [line('Blood rune', 570, 300), line('Law rune', 50, 120)];
+        const cut = limitToCarry(lines, held({ 'Blood rune': 10 }), 30_000);
+        expect(cut).toEqual([{ ...lines[0]!, quantity: 110 }]); // 100 more blood at 300 = 30,000
+        expect(purchaseBudget(cut, held({ 'Blood rune': 10 }))).toBe(30_000);
+    });
+    test('lines already held are dropped and a small purchase passes whole', () => {
+        const lines = [line('Air rune', 300, 12), line('Mind rune', 300, 9)];
+        expect(limitToCarry(lines, held({ 'Air rune': 300 }), 30_000)).toEqual([lines[1]!]);
+    });
+    test('for any purchase, the cut budget fits maxCarry', () => {
+        let seed = 7;
+        const rnd = (n: number) => (seed = (seed * 48271) % 2147483647) % n;
+        for (let k = 0; k < 500; k++) {
+            const lines = Array.from({ length: 1 + rnd(6) }, (_, i) => line(`Item ${i}`, rnd(2000), 1 + rnd(400)));
+            const have = held(Object.fromEntries(lines.map(l => [String(l.item), rnd(500)])));
+            const maxCarry = rnd(60_000);
+            const cut = limitToCarry(lines, have, maxCarry);
+            expect(purchaseBudget(cut, have)).toBeLessThanOrEqual(maxCarry);
+            for (const c of cut) expect(c.quantity).toBeLessThanOrEqual(lines.find(l => l.item === c.item)!.quantity);
+        }
+    });
+});
+
+describe('the Deserted Keep', () => {
+    test('the lever is inside the keep, the web is its north edge', () => {
+        expect(inKeep(PLACES.keepLever.x, PLACES.keepLever.z)).toBe(true);
+        expect(inKeep(PLACES.keepWebSouth.x, PLACES.keepWebSouth.z)).toBe(true);
+        expect(inKeep(PLACES.keepWebNorth.x, PLACES.keepWebNorth.z)).toBe(false);
+        expect(inKeep(PLACES.arenaLadder.x, PLACES.arenaLadder.z)).toBe(false);
+    });
+});
         expect(o.phases).toEqual(['fund', 'shops', 'talismans', 'magic', 'guild', 'lundail']);
         expect(o.targets['Cosmic rune']).toBe(62);
         expect(o.funders.map(String)).toEqual(['/^cairn_h03$/i']);
