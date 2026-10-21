@@ -57,17 +57,26 @@ while the quest is in progress.
 
 ## Measured on the demo (rs-sdk-demo.fly.dev, 300 ms ticks, bbs, loopback gateway)
 
+Four accounts (cairn_h30-h33) ran concurrently and unattended from 05:07 UTC on
+2026-10-21, 89 trips in the first 38 minutes with no failed cycle.
+
 | What | Measured |
 |---|---|
-| Rune Mysteries, tutorial skip to quest complete | 3 min 45 s and 3 min 54 s (two fresh accounts, no retries) |
-| One trip, bronze pickaxe | 319-340 ticks (96-102 s): 21-33 to reach the mine, 232-239 mining 28 essence, 66-68 back and banking |
-| Mining time per essence, bronze | 8.3 ticks (matches 7 + 1) |
-| Essence per account-hour, bronze | see the PR for the run's final figure (about 1,000) |
-| Levels trained | Mining (about 43 after two trips, 60+ after an hour); nothing else |
+| Rune Mysteries, tutorial skip to quest complete | 3 min 45 s and 3 min 54 s (two fresh accounts, no retries); a third finished on its own across a server restart mid-quest |
+| One trip, bronze pickaxe, 28 essence | 326 ticks on average (93-109 s): 14.5 to reach the mine, 237 mining, 74.5 leaving, banking and walking back to Aubury |
+| Mining time per essence, bronze | 8.5 ticks (engine cycle 8, plus re-clicks) |
+| Essence per account-hour, bronze | 1,024-1,026 on each of the four accounts |
+| Levels trained | Mining only: 41 during the first trip, about 69 after an hour; nothing else |
 
-At 3 ticks per essence a rune pickaxe would cut a trip to about 170 ticks for 27
-essence, roughly doubling the hourly rate (inferred from the cycle formula and
-the measured overhead, not run).
+**Mining level does not change the rate.** Ticks per essence by Mining level,
+bronze pickaxe, over 145 full trips: below 41, 9.1 (frequent level-up dialogs
+interrupt the first trip); 41-54, 8.5; 55-64, 8.5; 65 and up, 8.5.
+
+**The pickaxe does.** Projected from the cycle formula and the measured 89 ticks of
+non-mining overhead per trip, with the pickaxe carried in the pack (27 per trip,
+since a helper has Attack 1 and cannot wield adamant or rune): adamant about
+1,550 essence per account-hour, rune about 1,780 (inferred, not run).
+Wielding it (Attack 30/40) adds one essence per trip, about 1%.
 
 ## Options
 
@@ -78,9 +87,16 @@ the measured overhead, not run).
 
 The role uses the best pickaxe it holds or finds in the bank, so a better pickaxe
 can be upgraded by placing it in the account's bank (by trade from the mule or
-fleet). Nurmof's shop in the Dwarven Mine sells iron to rune pickaxes
-(`area_falador/configs/dwarven_mine.inv`); the GE had no rune pickaxe for sale at
-the time of writing.
+fleet). Nurmof's pickaxe shop in the Dwarven Mine stocks bronze to rune
+(`area_falador/configs/dwarven_mine.inv`, `[pickaxeshop]`: two adamant at 3,200 gp
+base, one rune at 32,000 gp base, restocking). The GE had no adamant or rune
+pickaxe for sale on 2026-10-21. Adamant is the cheap upgrade (+50%); the role does
+not buy pickaxes itself.
+
+**Essence is valuable on the demo market**: on 2026-10-21 rune essence traded at
+78-87 gp with about a million units of open buy orders, so one bronze account-hour
+is worth about 80,000 gp. Selling an hour's essence would buy an adamant pickaxe
+many times over, and a rune pickaxe for one account.
 
 ## Running it
 
@@ -95,9 +111,16 @@ lite runner and the role. Wrap both in restart loops: the demo server restarts
 occasionally (one logged everyone out at 04:31 UTC on 2026-10-21 and refused
 logins for about a minute), and the role resumes from wherever the account is.
 
-**How many accounts.** The mine does not contend, so the count is limited only by
-the per-IP session budget. Four accounts make about 4,000 essence per hour with
-bronze pickaxes.
+**How many accounts.** The mine does not contend: four accounts mining at once
+measured the same 1,024-1,026 essence per hour each, matching a single account,
+and the rocks never deplete. The count is limited only by the per-IP session
+budget. Four accounts make about 4,100 essence per hour with bronze pickaxes, so
+the first-pass target of 4,200 takes about an hour of four accounts.
+
+**Relogin.** If the client wrapper restarts the lite client, back off
+exponentially with jitter and wait minutes after a `Too many login attempts`
+(code 16) refusal; the role itself waits on wall-clock timers for the session to
+come back and resumes from wherever the account is.
 
 ## Gotchas
 
