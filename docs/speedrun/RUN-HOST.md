@@ -140,13 +140,18 @@ to be `96fc462a` or a descendant of it. **No real account's credentials, fleet o
 host while `~/rs-sdk` is at an older commit** (main, 10:20 PDT): step 4 (the helpers are fleet
 accounts) and step 7 (SCORED) check this first.
 
-`RUN_COMMIT` must also include **rs/164's merge** (commit named here when it lands). Until it does,
+`RUN_COMMIT` must also include **rs/164**: 3ed0cd49c (twin) / 4e0e8ae4 on rs/147's branch; main's
+commit named when rs/165's snapshot merges. 3ed0cd49c is the code that passed on the rehearsal
+twin: the page confirmed every logout in 222-324 ms, 0 ticks of latency, and because the gateway
+still said `inGame: true` afterwards, `session.ts` no longer consults it for a browser session (m,
+rs/164 on the twin, account cairn_smoke, 20:44-20:52Z 2026-10-21, via rs/147). 4e0e8ae4 is its
+squash merge (PR #143), the same code. Until `RUN_COMMIT` includes it,
 `logoutClean` (`speedrun/lib/session.ts`) cannot confirm a browser tab's logout. The gateway keeps
 `inGame: true` with status `stale` after the page leaves the game, so the check waits out its timeout
 and reports a failure (m, rs/149 on the rehearsal twin, via rs/147, 2026-10-21; cairn://p/rs/164).
 That affects SCORED's two planned relogs, every shortfall or restock pause, and the final logout that
-writes the hiscore row (RUN-ORDER.md section 4 and R1). Check it the same way as `96fc462a`:
-`git -C ~/rs-sdk merge-base --is-ancestor <rs/164's merge> "$RUN_COMMIT"`. Until then, steps 6 and 8
+writes the hiscore row (RUN-ORDER.md section 4 and R1). Check it the same way as `96fc462a`, once main's commit is named:
+`git -C ~/rs-sdk merge-base --is-ancestor <main's rs/164 commit> "$RUN_COMMIT"`. Until then, steps 6 and 8
 confirm a tab's logout with rs/149's `speedrun/tools/tab-logout.ts`, which reads the page itself over
 Chrome's DevTools port, or by seeing the login screen in the live view.
 
@@ -209,11 +214,11 @@ on main yet: they arrive with rs/83.)
 
 The run-night gate's history accumulates on this host until the scored run, without an agent. It's a systemd user timer owned by mission rs/83. `ubuntu` lingers, so the timer runs with no one logged in. The sources are in `docs/speedrun/scripts/host-gate/` and `docs/speedrun/scripts/host-gate-read.sh`. `install.sh` copies them to `~/.local/lib/rs-gate`, and the timer runs that copy.
 
-- **What fires when.** `rs-gate-read.timer` starts `rs-gate-read.service` at :00 and :30. The host clock is UTC; the minutes are the same in PDT. Each firing (1) skips while a reservation is live; (2) skips while the host is busy: ffmpeg, bun, a tmux server that still answers, or a Chrome with its own profile, app URL, headless flag or open connection; (3) checks out the commit in `~/run-commit` (written only by the runbook's step 0), detached in its own clone `~/gate/rs-sdk`, and skips with `no run-commit` if that file is missing; (4) runs the #101 gate, `tickmanip-latency.ts gate --path=direct --no-tele`, under `timeout 240`. The account is a throwaway whose credentials exist only in `~/gate/rs-sdk/bots/gate/bot.env` (mode 600). It logs in through the direct path, not through a Chrome URL. A read takes about 3 minutes, and systemd kills the unit's whole control group at 270 s. That makes the timer compliant with the reaping rule: nothing it starts outlives its own bound.
-- **History.** One file per firing, `~/gate-history/<UTC timestamp>.json`: `commit`, `status` (`ok`, `not-probed`, `timeout`, `error` or `skip`), `on`, `onTime`, `catchUpsPerMinute`, `tickP90Ms`, `players`, `edge`, with the gate's own JSON under `gate`. Skips record the reason in `note`. There's one journal line per firing: `journalctl --user -u rs-gate-read`. Check the next firing with `systemctl --user list-timers rs-gate-read.timer`.
+- **What fires when.** `rs-gate-read.timer` starts `rs-gate-read.service` at :00 and :30. The host clock is UTC; the minutes are the same in PDT. Each firing (1) skips while a reservation is live; (2) skips while the host is busy: ffmpeg, bun, a tmux server that still answers, or a Chrome with its own profile, app URL, headless flag or open connection; (2b) skips without logging in, as `restart suspected`, when fewer than 300 are online: the 20:00Z firing crashed with 38 online during the afternoon's probable restart, and this skip replaces that crash (rs/140, 14:05 PDT 2026-10-21); (3) checks out the commit in `~/run-commit` (written only by the runbook's step 0), detached in its own clone `~/gate/rs-sdk`, and skips with `no run-commit` if that file is missing; (4) runs the #101 gate, `tickmanip-latency.ts gate --path=direct --no-tele`, under `timeout 240`. The account is a throwaway whose credentials exist only in `~/gate/rs-sdk/bots/gate/bot.env` (mode 600). It logs in through the direct path, not through a Chrome URL. A read takes about 3 minutes, and systemd kills the unit's whole control group at 270 s. That makes the timer compliant with the reaping rule: nothing it starts outlives its own bound.
+- **History.** One file per firing, `~/gate-history/<UTC timestamp>.json`: `commit`, `status` (`ok`, `not-probed`, `timeout`, `error` or `skip`), `on`, `onTime`, `catchUpsPerMinute`, `tickP90Ms`, `players`, `edge`, `utc` and `endUtc`, and `preLogin` (`players`, `flyMachine`, `flyWorker`; the Fly machine id makes a restart visible as a changed machine; rs/140, 14:05 PDT), with the gate's own JSON under `gate`. Skips record the reason in `note`. There's one journal line per firing: `journalctl --user -u rs-gate-read`. Check the next firing with `systemctl --user list-timers rs-gate-read.timer`.
 - **Every 15 minutes from two hours before the start:** `bash ~/.local/lib/rs-gate/install.sh --every 15` (`--every 30` switches back).
 - **Reserving the host.** Anyone who needs the host quiet (the run script, rehearsals, a slot holder) writes `~/host-reserved.json`, e.g. `{"owner": "rs/NNN", "until": "2026-10-22T03:00:00Z", "reason": "rehearsal"}` with `until` in UTC, and removes it afterwards. While it's live every firing logs `skip: reserved by rs/NNN` and does nothing. A file whose `until` has passed is ignored. To take one read inside your own reservation: `systemctl --user set-environment RS_GATE_OWNER=rs/NNN`, then `systemctl --user start rs-gate-read.service`, then `systemctl --user unset-environment RS_GATE_OWNER`.
-- **The gate account stays in the world after each read.** rs/96's direct gate CLI (`speedrun/lib/direct.ts`'s gate, which this timer runs) closes its socket without logging out, so the account stays in the world after every read until the server's no-connection timeout (rs/149, relayed by rs/158, 2026-10-21). It's harmless to SCORED, but the account's next login (the next firing's, or step 6's tab-login after (a)-(c) on the same account) may see 'already logged in'. Main owns the fix.
+- **The gate account logs out after each read.** rs/96's direct gate CLI (`speedrun/lib/direct.ts`'s gate, which this timer runs) used to close its socket without logging out, leaving the account in the world until the server's no-connection timeout, so its next login (the next firing's, or step 6's tab-login after (a)-(c) on the same account) could see 'already logged in' (rs/149, relayed by rs/158, 2026-10-21). That is fixed by #142 (9d26aa87, rs/168: `DirectSession.logout`): the gate account logs out at the end of each read, once `~/run-commit` (which the timer checks out) is at or after 9d26aa87.
 - **Stopping and removing.** To pause, run `systemctl --user disable --now rs-gate-read.timer`; to resume, run `bash ~/.local/lib/rs-gate/install.sh`. To remove it, run `bash ~/.local/lib/rs-gate/uninstall.sh`. That stops a read in progress and keeps `~/gate-history` and the clone.
 
 **For the run script and rehearsals:** in step 0 or setup, write `~/host-reserved.json` covering the whole run with margin before anything else starts, rather than disabling the timer. A forgotten removal then costs nothing. The leftover check should not count the timer: between firings it has no process, and during one its processes belong to `rs-gate-read.service` (`systemctl --user status rs-gate-read.service`).
@@ -280,9 +285,10 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o 
 `RUN_COMMIT` must include rs/138's merge (#120, `96fc462a`): step 3's Chrome login
 (`speedrun/tools/tab-login.ts` and the page server's token endpoints) arrived with it ("Credentials",
 above). Check with `git -C ~/rs-sdk merge-base --is-ancestor 96fc462a "$RUN_COMMIT"`.
-`RUN_COMMIT` must also include rs/164's merge (commit named here when it lands), so that
-`logoutClean` can confirm a logout from the tab ("Credentials"). Check with
-`git -C ~/rs-sdk merge-base --is-ancestor <rs/164's merge> "$RUN_COMMIT"`.
+`RUN_COMMIT` must also include rs/164 (3ed0cd49c (twin) / 4e0e8ae4 on rs/147's branch; main's
+commit named when rs/165's snapshot merges), so that `logoutClean` can confirm a logout from the tab
+("Credentials"). Check with
+`git -C ~/rs-sdk merge-base --is-ancestor <main's rs/164 commit> "$RUN_COMMIT"`.
 
 Account files: the gate account (step 6) is a throwaway demo account whose name starts with
 `cairn_`, with `~/rs-sdk/bots/<gate>/bot.env` holding `BOT_USERNAME`, `PASSWORD`,
@@ -421,7 +427,7 @@ Expect `0 0 0`:
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'ENV=$HOME/rs-sdk/bots/GATE_ACCOUNT/bot.env; echo "$(ps -efww | grep -c -F -f <(sed -n "s/^PASSWORD=//p" "$ENV")) $(ps -efww | grep -c "[t]oken=") $(curl -s http://127.0.0.1:9222/json/list | grep -c -F -e "token""=" -f <(sed -n "s/^PASSWORD=//p" "$ENV"))"'
 ```
 
-Before the third grep's literal was written `"token""="`, a `2` in the middle came from the check's own command line, not a token (m, rs/149 on the rehearsal twin, via rs/147, 13:36 PDT 2026-10-21).
+Before the third grep's literal was written `"token""="`, a `2` in the middle came from the check's own command line, not a token (m, rs/149 on the rehearsal twin, via rs/147, 13:36 PDT 2026-10-21). The `2` was the remote shell plus its command-substitution subshell, both of whose command lines held the literal (m, rs/149 on rs-ashburn-rehearsal, 20:24 UTC).
 
 ## 4. Helpers on the run machine (rs/117)
 
@@ -532,8 +538,9 @@ The conditions and what to do on a failure are in RUN-ORDER.md section 1 and ten
   `docs/speedrun/scripts/tickmanip-latency.ts <gate account> --path=direct --no-tele`
   (cairn://p/rs/96, PR #101; its procedure and verdict are in `skills/tick-manipulation.md`, "Run-time
   host gate"). It logs the gate account in itself, in-process, so run it **before** the gate account's
-  tab opens, with the tab closed. It closes its socket without logging out, so (d)'s tab-login of the
-  same account may see 'already logged in' ("Gate history timer"). Bound: 15 min (its probe gives up
+  tab opens, with the tab closed. Fixed by #142 (9d26aa87): it logs the account out at the end of the
+  read, so (d)'s tab-login of the same account no longer sees 'already logged in', once `RUN_COMMIT`
+  is at or after 9d26aa87 ("Gate history timer"). Bound: 15 min (its probe gives up
   after 10):
 
 ```sh
@@ -575,7 +582,9 @@ command, with the same `ENV`; it exits 0 once SCORED is in game. run.ts checks t
 reservation is live and the run's own, and refuses to start otherwise. From here the run scripts drive the tab through the gateway on
 7780 (RUN-ORDER.md, STEP-MANIFEST.md). Nobody touches the window. Relaunches during the run go the
 same way: session.ts mints a fresh token from `CLIENT_URL` and re-navigates the tab over
-`CDP_URL`.
+`CDP_URL`. Each such relog passes ~20 ticks on SCORED's clock before the bot layer sees state (m,
+rs/164 on the twin: first state at client tick 20-22 against 3 for a fresh tab; RUN-ORDER.md
+section 4, O33).
 
 ## 8. Stop the recording and pull it
 

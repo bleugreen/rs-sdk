@@ -101,15 +101,17 @@ entries that have no exposure of their own:
 **Rank** column is the build order. The v2 figures moved five ranks: Thieving (now 2,000 measured)
 passes Fishing (now the knife's 1,995), the legs (1,382 measured) pass Runecraft and Smithing, and
 Prayer (110, now inside S07) drops from 15 to 27. Re-pricing S07's knife on O19 (RUN-ORDER.md
-section 9) puts Woodcutting (2,986) below Mining (3,116), so the two swap ranks 3 and 4.
+section 9) puts Woodcutting (2,986) below Mining (3,116), so the two swap ranks 3 and 4. Pricing
+S25c's two planned relogs as tab relogs (~20 ticks each, rs/164 on the twin) moves Cooking (116)
+above Prayer and Crafting.
 
-The expected column sums to **31,680** (the steps) plus the legs' **1,382**; RUN-ORDER.md section 6
+The expected column sums to **31,716** (the steps) plus the legs' **1,382**; RUN-ORDER.md section 6
 adds the allowances (hand-offs outside the figures, level-up pages, contention, overrun, relay,
-retries, restarts) for its **34,347** knife-on expected (31,663 best), against the record of 35,916.
+retries, restarts) for its **34,410** knife-on expected (31,699 best), against the record of 35,916.
 
 | Rank | # | Entry | Module | Steps | Expected | Best | Fallback | At stake | Mode | Code to start from |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 0 | 0 | Run chain | `speedrun/run.ts`, `runner/resume.ts` | all | boundary idle 0 m (#92); restarts ~7 each | 0 | | | overlay | `runner/step.ts`, `runner/resume.ts` (main) |
+| 0 | 0 | Run chain | `speedrun/run.ts`, `runner/resume.ts` | all | boundary idle 0 m (#92); restarts ~25 each (a tab relog) | 0 | | | overlay | `runner/step.ts`, `runner/resume.ts` (main) |
 | 1 | 1 | Agility | `speedrun/skills/agility.ts` | S11a, S17 | 4,146 | 3,942 | 4,634 | ~690 | in-page | rs/97 `agility` program, `agility-course.ts` |
 | 2 | 2 | Monkey Madness | `speedrun/quests/monkey-madness.ts` | S15 | 4,077 | 3,726 | 4,611 | ~885 | overlay | `quest-mm-*.ts` |
 | 3 | 4 | Mining | `speedrun/skills/mining.ts` | S09 | 3,116 | 3,116 | 3,765 | ~650 | in-page | rs/97 `knife-mine`, `tickmanip-mine.ts` |
@@ -136,13 +138,13 @@ retries, restarts) for its **34,347** knife-on expected (31,663 best), against t
 | 24 | 25 | Goblin Diplomacy | `speedrun/quests/goblin-diplomacy.ts` | S24 | 188 | 168 | 229 | ~61 | overlay | none (page counts only) |
 | 25 | 27 | Herblore | `speedrun/skills/herblore.ts` | S25e | 170 | 117 | ~200 e | ~83 | overlay | `delayfree-cycle.ts` |
 | 26 | 26 | Pre-MM cannon session | `speedrun/skills/ranged.ts` (`cannonSession`) | S14 | 132 | 132 | ~162 | ~30 | overlay | `quest-premm-cannon.ts`, `ranged-cannon.ts` |
-| 27 | 15 | Prayer (bones inside S07; the booth as fallback) | `speedrun/skills/woodcutting.ts` bury option; `speedrun/skills/prayer.ts` for the booth | S25b (S10a retired) | 95 | 65 | 735 (the booth) | ~670 | in-page with S07 | `bones-wc.ts`, `prayer-bury.ts` |
-| 28 | 28 | Crafting | `speedrun/skills/crafting.ts` | S25d | 91 | 85 | 121 (no gems in the windows) | ~36 | overlay | `delayfree-cycle.ts` |
-| 29 | 29 | Cooking (wine) + gems in the windows | `speedrun/skills/cooking.ts` | S25c | 80 | 75 | ~131 | ~56 | overlay | `wine-receive.ts` [rs/41], `wine-window-lab.ts` |
+| 27 | 29 | Cooking (wine) + gems in the windows | `speedrun/skills/cooking.ts` | S25c | 116 | 111 | ~131 (kebabs, supplies not held) | ~15 | overlay | `wine-receive.ts` [rs/41], `wine-window-lab.ts` |
+| 28 | 15 | Prayer (bones inside S07; the booth as fallback) | `speedrun/skills/woodcutting.ts` bury option; `speedrun/skills/prayer.ts` for the booth | S25b (S10a retired) | 95 | 65 | 735 (the booth) | ~670 | in-page with S07 | `bones-wc.ts`, `prayer-bury.ts` |
+| 29 | 28 | Crafting | `speedrun/skills/crafting.ts` | S25d | 91 | 85 | 121 (no gems in the windows) | ~36 | overlay | `delayfree-cycle.ts` |
 | 30 | 30 | Doric's Quest | `speedrun/quests/dorics-quest.ts` | S05 | 65 | 60 | 90 | ~30 | overlay | `quest-smallskill-doric.ts` |
 | 31 | 31 | Cook's Assistant | `speedrun/quests/cooks-assistant.ts` | S23 | 27 | 22 | 41 | ~19 | overlay | `quest-primitives-dialogue.ts` |
 | 32 | 33 | Hand-off H1 | `speedrun/runner/handoff.ts` | S01 | 8 | 8 | ~10 | ~2 | overlay | `lib/trade.ts`, `mule.ts` [rs/41] |
-| 33 | 34 | Tutorial skip | `speedrun/skills/start.ts` | S00 | 8 (done) | 8 | - | - | overlay | done: SCORED claimed and parked at 8 ticks |
+| 33 | 34 | Tutorial skip | `speedrun/skills/start.ts` | S00 | 8 (done) | 8 | - | - | overlay | done: SCORED claimed and parked at 8 ticks; the skip for rehearsal and gate accounts measured 3 (lab) and 4 (demo) |
 | 34 | 32 | Fletching | `speedrun/skills/fletching.ts` | S18d (inside the stun pack) | 0 | 0 | ~59 standalone | ~59 | in-page (with Thieving) | `stun-pack-thieve.ts`, `delayfree-cycle.ts` |
 
 Every figure in the table is restated with its label and source in the entry below it. Helper-side
@@ -187,8 +189,12 @@ scripts are in section 4; the shared primitives and their build order are in sec
     cannon set and ~1,170 cannonballs; the rune axe or main's decision to run without it; the budget
     (expected + fallback deltas in force under 35,916). run.ts reads them from the operator's
     checklist (`SUPPLIES.md` section 5); it does not count bones itself;
-  - **`RUN_COMMIT` includes rs/164** (`RUN-HOST.md` "Credentials" and step 0): without it
-    `logoutClean` cannot confirm a logout from the browser tab, because the gateway keeps
+  - **`RUN_COMMIT` includes rs/164** (`RUN-HOST.md` "Credentials" and step 0): 3ed0cd49c on the
+    twin, merged into rs/147's branch as 4e0e8ae4; main's commit is named when rs/165's snapshot
+    merges. With it the page confirmed every tab logout in 222-324 ms, 0 ticks of latency, and
+    `session.ts` no longer consults the gateway for a browser session, since the gateway still said
+    `inGame: true` afterwards (m, rs/164 on the rehearsal twin, cairn_smoke, 20:44-20:52Z). Without
+    it `logoutClean` cannot confirm a logout from the browser tab, because the gateway keeps
     `inGame: true` with status `stale` (m, rs/149 on the rehearsal twin). Cost if not: up to ~60
     ticks per relog (i, RUN-ORDER.md R1's bound), for both planned relogs and any pause, plus
     whatever run.ts does on the reported failure; the final logout is then confirmed on the host
@@ -215,13 +221,19 @@ scripts are in section 4; the shared primitives and their build order are in sec
 - **Ticks:** run.ts adds no actions of its own. What lands on SCORED's clock:
   - **Step-boundary idle: 0** (measured: #92 fixed `runSteps`, 2 ticks per boundary before and 0
     after; main, 08:30).
-  - **A demo restart**: ~3.6 ticks of relog + 3 to the resumed step (measured, `RESILIENCE.md`
-    section 6) + the step's resume overhead; 1-2 per run expected; progress and playtime roll back
-    together, so the redone work is score-neutral. RUN-ORDER.md carries 10.
+  - **A demo restart**: ~21.6 ticks of relog + 3 to the resumed step (measured on the local
+    engine, `RESILIENCE.md` section 6) + the step's resume overhead; 1-2 per run expected;
+    progress and playtime roll back together, so the redone work is score-neutral. The relog is a
+    tab relog: `session.ts` `login` re-navigates the tab, and the new session's first published
+    state read client tick 20-22 against 3 for a fresh tab (m, rs/164 on the twin), so ~20 ticks
+    pass before the bot sees state (i), plus the demo's 1-in-29 tail. RUN-ORDER.md carries 37.
   - **A client drop with the server up**: 3-12 ticks in the world + 2 to the resumed step with the
-    watchdog (measured, same section); without it 500-1,000 (rs/101).
-  - **Relogs:** exactly **two planned relogs**, both in S25c, about 2 ticks each with a tail of tens
-    about 1 time in 29 (measured, [rs/41] `helpers/wine.md`, "Relog risk"). **No milestone saves**
+    watchdog (measured on the lite client, same section); in the tab the takeover is a
+    re-navigated login, ~20 more (i, rs/164's twin relogs); without the watchdog 500-1,000 (rs/101).
+  - **Relogs:** exactly **two planned relogs**, both in S25c, ~20 ticks each from SCORED's tab (i:
+    first published state at client tick 20-22, m, rs/164 on the twin; 2 on the lite client), with
+    a tail of tens about 1 time in 29 (measured, [rs/41] `helpers/wine.md`, "Relog risk"). main's
+    rs/174 looks for the cause and builds the fastest relog (RUN-ORDER.md O33). **No milestone saves**
     (main, 08:55): a save relog protects 0 score ticks. Any step that adds a relog must justify it.
 - **Resumes from:** walks on every start; `--from` only overrides the first walk (`RESILIENCE.md`
   section 5).
@@ -664,7 +676,7 @@ scripts are in section 4; the shared primitives and their build order are in sec
   `cue.json`, the page supplies the beacon.
 - **Mode:** in-page.
 - **Fallback:** robust 8-tick if the processing order is wrong; the stock reacting cycle if the program
-  faults; SCORED logging out while givers restock only when it pays (~3.6 + 5 per batch).
+  faults; SCORED logging out while givers restock only when it pays (~21.6 + 5 per batch, a tab relog).
 - **Acceptance, local:** a browser tab for SCORED and a direct-path giver on the lab engine at 300 ms,
   nature altar at 44, 30 cycles. Pass: at least 28 of 30 at **7**, and robust at 8 in either login
   order.
@@ -1094,20 +1106,29 @@ scripts are in section 4; the shared primitives and their build order are in sec
   and two blind continues per tick; deposit the rest of the wine and the cut gems; relog 2; **W2**
   the normal gem cycle with booth visits; second firing; **P2** keep cutting, which clears the
   Cooking pages. No bury anywhere in the window.
+- **From a re-navigated tab** the bot first acts at ~login + 20 (m, rs/164 on the twin), so as built
+  the bank misses login + 19 after relog 1, the first firing finds no wine, and `receiveWine`'s
+  deadline relog recovers it: it banks the wine first, so the new login ferments it with no action
+  (RUN-ORDER.md R17: a third relog, W1 and W2 blind, about +25 beyond the totals). The responses
+  are RUN-ORDER.md O33: a relog that does not re-navigate the tab or the in-page host for the first
+  19 ticks (rs/174), or the 29 deposited before relog 1.
 - **Parameters:** `giver`, `split: [29, 'rest']`, `relog` (the session's `relog`), `windowWork: 'gems'`.
 - **Preconditions:** SCORED at Varrock west bank at a planned relog, never in a first login; the wine
   giver beside the bank requesting; 520 noted unfermented wines (held, rs/118); the chisel and the
   gems for the windows banked from H21d; S25a, S25d and S25e done; level-up pages cleared and 16
   ticks out of combat before each relog; **`RUN_COMMIT` includes rs/164** (entry 0). Without it each
   of the two relogs risks up to ~60 ticks of `logoutClean`'s unconfirmed wait (i, RUN-ORDER.md R1's
-  bound) instead of 2.
+  bound) on top of the tab relog's ~20.
 - **Postconditions:** Cooking 99; 107 more gems cut. Items out: none.
-- **Ticks:** expected **80**, best **75** (WINE's demo run A and projection, 75-85; measured). The
+- **Ticks:** expected **116**, best **111**: WINE's demo run A and projection, 75-85, measured at
+  80 / 75 with 2 ticks per relog on the lite client, plus 2 x 18 for the two planned relogs from
+  SCORED's tab at ~20 each (i, rs/164's twin relogs; RUN-ORDER.md section 4). The
   gems save 30-31 ticks of Crafting at Crafting 55 (measured, wine-window.md §2, n = 3) and about 36
   later in Crafting's route (inferred, §4); that saving is booked in Crafting's figure (entry 28).
-  Each relog costs about 2 with a ~1-in-29 tail of tens (measured, "Relog risk"); on the lab host the
+  Each relog's demo tail is ~1 in 29 of tens (measured, "Relog risk"); on the lab host the
   arming relog went out in 0 ticks in 42 of 42 with the work in the windows (wine-window.md §3).
-  Fallback **131**, kebabs if grapes run short, or one more relog if the bank opens after login + 19.
+  Fallback **131**, kebabs if the wine fails outright, whose ~340 kebab mixtures and ~340 pitta
+  breads are not stocked (`SUPPLIES.md` H21c); or one more relog if the bank opens after login + 19.
 - **Primitives:** `splitDelivery` and `receiveWine` in `speedrun/helpers/wine-receive.ts` [rs/41];
   `lib/trade.ts`, `lib/bank.ts`, `session.relog` [rs/41]; the gem loop from `delayfree-cycle.ts`.
 - **Mode:** overlay-driven.
@@ -1192,9 +1213,12 @@ scripts are in section 4; the shared primitives and their build order are in sec
 - **Lab measurement (rs/150):** **3 ticks** (m: lab, 3 of 3 runs, bgsrv-mac, `NODE_TICKRATE=300`, lite
   client, a fresh bot). The design accept and the guide talk go in one tick, the question page is
   continued the tick it shows, and a guarded "Yes please." goes the tick the choice shows. It fails
-  rather than falls back if the skip is not offered. The stock `bot.skipTutorial()` measured 6. The
-  demo bar stays at most 11 until rs/164's cairn_smoke reports (`docs/speedrun/rehearsals/HARNESS.md`
-  on rs/147's branch). SCORED's S00 stays done at 8; no total changes.
+  rather than falls back if the skip is not offered. The stock `bot.skipTutorial()` measured 6.
+- **Demo measurement (rs/164): 4 ticks** (m: demo, the rehearsal twin, account cairn_smoke,
+  2026-10-21 20:44-20:52Z, relayed by rs/147 at 13:53 PDT), inside the demo bar of 11
+  (`docs/speedrun/rehearsals/HARNESS.md` on rs/147's branch). The hiscore check: Overall reads 56
+  against the tick log's 57 for the account, one apart (m, same session). SCORED's S00 stays done
+  at 8; no total changes.
 - **logoutSafe:** yes.
 
 ## 4. Helper-side scripts

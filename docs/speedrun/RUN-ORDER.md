@@ -65,11 +65,13 @@ loops. A figure taken only on the lite client says so.
 | ARC | the main thread's arc, cairn://p/rs/main/arc |
 | M05xx, M06xx | main's binding notes relayed by the rs/103 coordinator on 2026-10-21 at 05:30, 05:50, 06:02, 06:06 and 06:12; M0550's rates are "rs/97 in-page results via main, 05:50" (wired branch, local engine, visible tab) |
 | C#n | comment n on cairn://p/rs/111 (the coordinator relaying main, rs/41, rs/124 and the labs) |
+| TWIN | rs/164 on the rehearsal twin, 2026-10-21 20:44-20:52Z, account cairn_smoke, at 3ed0cd49c (merged into rs/147's branch as 4e0e8ae4, the same code); relayed by rs/147 at 13:53 PDT |
 
-**Units of the in-page knife figures.** `knife-cycle`'s status fields `rolls` and `ticksPerRoll`
-count Woodcutting xp events, that is logs (`server/webclient/src/bot/programs/knife-cycle.ts`:
-`summary()` reports `rolls: g.events`, and an event is the skill's xp rising), and are being
-renamed. So every in-page knife-cycle "ticks per roll" on this page is ticks per **log**. rs/130's
+**Units of the in-page knife figures.** `knife-cycle`'s old status fields `rolls` and `ticksPerRoll`
+counted Woodcutting xp events, that is logs (`server/webclient/src/bot/programs/knife-cycle.ts`:
+`summary()` reported `rolls: g.events`, and an event is the skill's xp rising). They were renamed
+by rs/159 (#132): `ticksPerSuccess` is per log; `ticksPerExpectedRoll` is per expected roll. Every
+in-page knife-cycle "ticks per roll" on this page predates the rename and is ticks per **log**. rs/130's
 demo rows (O11) are ticks per **expected roll**: `tickmanip-demo-report.ts` weights each log by the
 1/p rolls expected at its level. On oak from Woodcutting 60, where p = 1, the two coincide; on
 willow at 99 a loop on the 3-tick lattice reads 4.36 per log and 3.00 per expected roll.
@@ -85,8 +87,8 @@ expected failures: 11,689 and 10,811 (sum of the Q§3 rows).
 
 | | Knife loops on (run gate holds) | Knife loops off all night, without rs/162 (**in force**) | Knife loops off all night, with rs/162's plain+bury |
 |---|---|---|---|
-| **Expected** | **34,347**: 1,569 under the record | **37,596**: 1,680 over | 36,971: 1,055 over |
-| **Best** | **31,663**: 4,253 under | **35,335**: 581 under | 34,675: 1,241 under |
+| **Expected** | **34,410**: 1,506 under the record | **37,659**: 1,743 over | 37,034: 1,118 over |
+| **Best** | **31,699**: 4,217 under | **35,371**: 545 under | 34,711: 1,205 under |
 
 The plain loops cannot bury today: knife-cycle's `bury` works only with the knife technique
 (rs/147, 13:19), so on a gate-off night the bones go to the booth (Prayer 735 against 110). Main
@@ -98,17 +100,22 @@ on:
 
 | Supply scenario (knife on) | Fallback deltas in force (exp / best) | Expected | Best | Against the record (exp) |
 |---|---|---|---|---|
-| Every line held: 555 dragon bones, rune axe, the full lists | 0 | 34,347 | 31,663 | -1,569 |
-| rs/41's 09:35 plan: adamantite 0 (+119), mixed gems (+88), mixed herbs (+85), 2 nature talismans with a keeper (+34), 2,070 adamant + 570 rune arrowtips (0); 555 dragon bones and the rune axe held | +326 / +326 | 34,673 | 31,989 | -1,243 |
-| As above on the bone stock at 13:10 PDT: 28 dragon, 911 babydragon, 707 big bones (the rune axe held) | +1,095 / +1,041 | 35,442 | 32,704 | -474 |
+| Every line held: 555 dragon bones, rune axe, the full lists | 0 | 34,410 | 31,699 | -1,506 |
+| rs/41's 09:35 plan: adamantite 0 (+119), mixed gems (+88), mixed herbs (+85), 2 nature talismans with a keeper (+34), 2,070 adamant + 570 rune arrowtips (0); 555 dragon bones and the rune axe held | +326 / +326 | 34,736 | 32,025 | -1,180 |
+| As above on the bone stock at 13:10 PDT: 28 dragon, 911 babydragon, 707 big bones (the rune axe held) | +1,095 / +1,041 | 35,505 | 32,740 | -411 |
 
 (i: section 7, "Supply fallbacks"; every delta is SF's line re-priced on this order.) The expected
-path now clears the record by about 4.4% with everything held, and by about 1.3% (474) on rs/41's
+path now clears the record by about 4.2% with everything held, and by about 1.1% (411) on rs/41's
 plan with the 13:10 bones. Each extra babydragon bone farmed before the start saves ~2.07 and each
 extra dragon bone ~7.87 while ~268 bones still overflow to the booth (section 7, "The stock at 13:10
 PDT"). The knife gate failing all night erases the margin on its own (+3,249 without rs/162, +2,624
 with it, R2), and so does Monkey Madness's bad-but-plausible case (+~860 beyond its expected, R5)
-on the 13:10 bones. A demo restart is no longer a score risk (about 7 ticks each, R7). The in-page willow question is settled
+on the 13:10 bones. A relog from SCORED's tab costs ~20 ticks, not 2 (TWIN), which adds +63 to the
+expected total and +36 to best: the two planned relogs and the expected restarts (section 7). A demo
+restart now costs about 25 ticks (R7), still small against the margin. The tab relog also opens a
+new risk, R17: after planned relog 1 the wine sequence needs the bank open by login + 19, which a
+re-navigated tab misses as built. The deadline relog recovers it at about +25 beyond the totals; if
+the wine failed outright, the fish route (+~890) would erase the 411. The in-page willow question is settled
 (O19, section 9): rs/97's 4.83 ticks per log was the server's chop RNG at level 99, not the client,
 so S07's knife takes the lite ratios (2,986 against #129's 3,390). The biggest open swing is now the
 knife gate itself (R2, O11).
@@ -285,23 +292,23 @@ RT's measured no-glory method (RT, "No amulet of glory").
 | S24 | I | Rusty Anchor; Taverley (stone circle, Sanfew, the dungeon cauldron); Goblin Village (2957,3511); Varrock | Goblin Diplomacy, Druidic Ritual, Romeo and Juliet | Crafting 42-45, Herblore 1-28 | 668 i (Q§3: 188 + 239 + 241) | 599 i | in: H20; out: 11 QP, 32 at the door | trade giver | treat as unsafe until rs/114's quest status covers these quests | Sheep Shearer if a point is missing (Q§7) | Druidic Ritual stays here, not beside Doric's: the dungeon at S05's Defence 1 and 10 HP is lethal (RT§7) |
 | S24 legs | M | Rusty Anchor to Kaqemeex (2924,3486); to Goblin Village; to Romeo (3211,3425) | Falador teleport + run; run; Varrock teleport | | 127.5 m (RT `L24a` 69, `L24b` 54, `L24c` 4.5; S24's quests price no travel) | 127.5 m | | | safe | | |
 | T24-25 | M | Romeo to the west anvil (3188,3426) | run | | 13 m (RT `L24e`) | 13 m | | | safe | | |
-| S25 | | Varrock west: booths (3185,3436), anvil (3188,3426) | the Varrock west block: Smithing, Crafting, Herblore, then the wine last | | 1,488 i | 1,384 i | in: H21a, H21c, H21d, H21e; out: platebodies, cut gems, potions back to helpers | trade giver and wine giver (one account, Ashburn, rs/117); bars courier (bbs) | **planned relogs 1 and 2** | per sub-step | R6 (bars, gems, herbs) |
+| S25 | | Varrock west: booths (3185,3436), anvil (3188,3426) | the Varrock west block: Smithing, Crafting, Herblore, then the wine last | | 1,524 i | 1,420 i | in: H21a, H21c, H21d, H21e; out: platebodies, cut gems, potions back to helpers | trade giver and wine giver (one account, Ashburn, rs/117); bars courier (bbs) | **planned relogs 1 and 2** | per sub-step | R6 (bars, gems, herbs); R17 |
 | S25a | M | anvil (3188,3426) | platebodies, 31 trades of 24-25 bars | Smithing 1-99 | 1,147 m (SK:smithing) | 1,107 m (helper staged) | H21a | trade giver at the anvil | safe at any trade | bank cycles, 42 ticks each m | adamantite (SF§2) |
 | S25d | I | booth | cut 257 uncut diamonds standalone; 107 more ride the wine windows (S25c) | Crafting 45-99 | 91 i (SK:crafting §7's 121 from 42, less WW§5 B's 30 m moved into the wine sequence) | 85 i (less 36 i: done later in Crafting's route, the windows leak no pages into P1, WW§4) | H21d | trade giver | safe | hard leather bodies | dragonstones unobtainable (R6); mixed gems (SF§4) |
 | S25e | I | booth | mix the supply-safe list (guam, irit) | Herblore 28-99 | 170 i (SK:herblore §7 supply-safe) | 117 i (ranging-cap list) | H21e | trade giver | safe | - | torstol unobtainable; mixed herbs (SF§5) |
-| S25c | M | booth | wine fermentation on the two planned relogs, gems cut in the waits (WW§5 B) | Cooking 30-99 | 80 m (WINE demo run A and projection, 75-85; the gems' share is in S25d) | 75 m | H21c (520 noted unfermented wine, held); the uncut gems for the windows come from H21d's stack | wine giver beside the booth at relog 1 | relog 1 at the start, holding at most 27 items; relog 2 after the first firing | the deadline fallback relog (WINE) | relog tail (R1) |
+| S25c | I | booth | wine fermentation on the two planned relogs, gems cut in the waits (WW§5 B) | Cooking 30-99 | 116 i (WINE demo run A and projection, 75-85, at 80 m with 2 m per relog; each planned relog is now a tab relog at ~20 i, +2 x 18, TWIN, section 4; the gems' share is in S25d) | 111 i (75 m + 36) | H21c (520 noted unfermented wine, held); the uncut gems for the windows come from H21d's stack | wine giver beside the booth at relog 1 | relog 1 at the start, holding at most 27 items; relog 2 after the first firing | the deadline fallback relog (WINE), which works from the tab because the wine is banked before it (R17; the fast relog is rs/174's); if the wine fails outright, kebabs 131 m (supplies not held) or fish ~980 i (SK:cooking) | relog tail (R1); the login + 19 deadline against a re-navigated tab (R17) |
 | T25-26 | M | booth to the Champions' Guild door (3191,3364) | run | | +7 m (RT `L25` 44 against Dragon Slayer's 37) | +7 m | | | safe | | |
 | S26 | I | Champions' Guild, then Q§4 step 13's route | Dragon Slayer; SCORED buys the rune chainbody and platelegs from Scavvo upstairs on arrival | Strength 99, Defence 89-98 | 966 i/e (Q§3 941; Scavvo +15-20 e and an adamant full helm +5 e, SF§12) | 945 i/e (925 + 15 + 5) | in: H22 (coins for Scavvo); out: 2 QP | - | safe (every varp permanent, r); the quest runs from stage 3 straight to 7, so no resume point between (rs/114) | - | a death on Crandor (return untested) |
 | T26-27 | M | Elvarg's exit teleport (2846,9636) to the spiders | Ardougne teleport, lever, Keep web, run | | 179 m (RT `L26L`, 1 run; agrees with `L13L`) | 179 m | | | safe until the lever | | PK |
 | S27 | I | poison spiders (3288,3810) | cannon + defensive melee to Defence 99, then cannon + rapid **magic shortbow with rune arrows** to Ranged 99, rs/91's kit without the glory | Defence 98-99, Ranged ~54-99, HP 97-99 | 1,889 i (1,857 i on rs/91's measured rates, Q§4 step 14; the bow costs nothing against knives, m, rs/124 via C#19; no glory +20 i, SF§11; mithril scimitar +12 i, SF§10) | 1,829 i (the bow's measured +4-5% at Ranged 85-99, rs/124 via C#19: -60 i) | in: H23; the 570 rune arrows SCORED fletched in S18 | cannon helper and the trade giver | **unsafe** (combat, Wilderness) | no kit 2,023-2,211 i; Battlefield of Khazard ~20-25% slower | PK (R8); balls (SF§9) |
 | T27-17 | M | spiders to the Wilderness course | run | | 185.7 m (RT§4 `LB`: 185-186) | 185.7 m | | | not a pause point (Wilderness) | | PK |
 | S17 | I | Wilderness Agility course, Wilderness 50-56 | laps, in-page obstacle program | Agility 75-99 | 4,024 i (SK:agility: 66-tick laps m; M0550 66 m; level-ups at 0, laps 66 with them, LU§2) | 3,820 i (fewer falls) | in: 12 sharks (H23) | - | safe between laps out of combat, not a pause point; **the last step**: the clean logout after the last level-up is free | relay-driven laps, 74 i: 4,512 | PK (R8); falls and skeletons |
-| | | | **Steps and legs** (without section 6's allowances), knife on | | **33,062** | **31,601** | | | | | |
+| | | | **Steps and legs** (without section 6's allowances), knife on | | **33,098** | **31,637** | | | | | |
 
-The last row is the step figures (31,680 expected, 30,219 best) and the legs (1,382 both: 1,157.5 m
-and 224.5 i, net of the arrival rows the quests count; section 6). S25's 1,488 / 1,384 is S25a + S25c +
-S25d + S25e. Section 7's best total is 30,219 + 1,382 legs + 47 hand-offs + 15 level-up pages =
-31,663.
+The last row is the step figures (31,716 expected, 30,255 best) and the legs (1,382 both: 1,157.5 m
+and 224.5 i, net of the arrival rows the quests count; section 6). S25's 1,524 / 1,420 is S25a + S25c +
+S25d + S25e. Section 7's best total is 30,255 + 1,382 legs + 47 hand-offs + 15 level-up pages =
+31,699.
 
 ## 3. Dependency graph (b)
 
@@ -397,12 +404,23 @@ flowchart TD
 
 ## 4. Login and relog plan (c)
 
-A planned relog costs **2 ticks** on the clock (m, WINE "Relog risk": 28 of 29 demo logouts left the
-world 0-2 ticks after the click, and the new session acts at its tick 1) plus a rare tail of tens of
-ticks (one logout of 29 stayed 46 ticks, on the clock). It is a delayed logout, never a delayed login,
-so the script cannot dodge it; the expected cost is about 2 + 46/29, **~3.6 ticks per relog** (i).
-On the lab host the arming relog went out in 0 ticks in 42 of 42, with booth work in the windows
-(WW§3), so the work does not add to the tail. The login tick itself is not counted (T&O row 1, via
+A planned relog from SCORED's browser tab costs **~20 ticks** on the clock (i, TWIN). rs/164
+relogged three times on the rehearsal twin through `session.ts` `login`, which re-navigates the tab
+to a fresh token over CDP. Out to back in the world took 11.9, 12.3 and 12.9 s, and the new
+session's first published state read client tick **20, 21 and 22**, against tick 3 for a first
+login on a fresh tab (m, TWIN). The client counts PLAYER_INFO, which the server sends only while
+SCORED is in the world, so ~20 ticks of playtime pass before the bot layer sees state (i). The cause
+is unmeasured; main has filed rs/174 to find it and build the fastest relog, in-page with no tab
+navigation or with the in-page program host running the first 19 ticks (O33). The logout side costs nothing with rs/164: the page confirmed every logout in
+222-324 ms, 0 ticks of latency (m, TWIN). On top sits the demo's rare tail: one logout of 29 stayed
+46 ticks in the world, on the clock (m, WINE "Relog risk"). It is a delayed logout, never a delayed
+login, so the script cannot dodge it; the expected cost is about 20 + 46/29, **~21.6 ticks per
+relog** (i). WINE's 2 ticks per relog (28 of 29 demo logouts out in 0-2 ticks, the new session
+acting at its tick 1) were taken on the lite client; they stand for the helpers, not for SCORED's
+tab. Inside S25c the ~20 ticks are not all new time: the fermentation timer fires at login + 20
+whatever the bot does, so the blind ticks cost only where the sequence needs the bot before then
+(R17). On the lab host the arming relog went out in 0 ticks in 42 of 42, with booth work in the
+windows (WW§3), so the work does not add to the tail. The login tick itself is not counted (T&O row 1, via
 playtime-audit.md). Main's rule: two planned relogs in all, and any step that adds one must show it
 pays for itself (M0530). **No milestone saves** (main, 08:55; RES§3): a save relog protects 0
 score ticks, because playtime rolls back with the progress.
@@ -416,12 +434,12 @@ is the order the 7-tick Runecraft cycle needs. A helper that relogs after SCORED
 | Event | Where | When | Cost | Notes |
 |---|---|---|---|---|
 | The claim (S00) | Tutorial Island to Lumbridge | done, 2026-10-21 | 8 m, already on the clock | SCORED has been logged out since |
-| **Run login 1** | Lumbridge landing (3222,3222) | S01 | 0 (the login tick is not counted) | after rs/117's helpers; the fermentation timer fires on an empty bank at login + 20: harmless (r, WINE) |
-| **Planned relog 1** | Varrock west bank | start of S25c, after S25a, S25d and S25e | 2 m + tail | SCORED holds at most 27 items (WW§5 step 1); the wine giver is already beside the booth requesting; if anything for S25 is still short on arrival, this relog is also the staging pause |
-| **Planned relog 2** | Varrock west bank | S25c, after the first firing's pages and the rest deposit | 2 m + tail | the arming relog; nothing pending at the click (WW§3) |
-| Shortfall pause (only if needed) | any logout-safe boundary below | when the next hand-off is not staged as SCORED reaches it | ~3.6 i | pays for itself against any logged-in wait longer than ~4 ticks |
-| Runecraft restock pauses (only if the roster cannot keep the cycle fed) | nature altar room | inside S21 | ~3.6 i each, plus a 5 m session trade (SF§7) | with the talisman keeper, 4 or more talismans need none, 2 need ~4 extra batches (+34), 1 needs ~6 (+52) (SF§7) |
-| Demo restart (not planned) | anywhere | 1-2 per run expected (RES§2) | ~3.6 relog + 3 to the resumed step + the step's resume overhead (m, RES§6) | the watchdog relogs the moment logins are accepted, helpers first; run.ts resumes from game state (`runResumable`, RES§5). Section 6 carries 10 i |
+| **Run login 1** | Lumbridge landing (3222,3222) | S01 | 0 (the login tick is not counted) | after rs/117's helpers; the fermentation timer fires on an empty bank at login + 20: harmless (r, WINE). A fresh tab publishes its first state at client tick 3 (m, TWIN), about 2 later than the lite client's tick 1 that S01's 8 m assumes: not in the totals (inside the retries' 100 e) |
+| **Planned relog 1** | Varrock west bank | start of S25c, after S25a, S25d and S25e | ~20 i + tail (TWIN) | SCORED holds at most 27 items (WW§5 step 1); the wine giver is already beside the booth requesting; if anything for S25 is still short on arrival, this relog is also the staging pause. As built, the trade and the 29 deposit need the bank open by login + 19, which the tab's ~20 blind ticks miss: the first firing finds no wine and the deadline relog recovers it (R17) |
+| **Planned relog 2** | Varrock west bank | S25c, after the first firing's pages and the rest deposit | ~20 i + tail (TWIN) | the arming relog; nothing pending at the click (WW§3). The wines are banked before the click, so the second firing needs no action from the bot (5 of 5 on the demo, WINE), but W2's gem work is blind (R17) |
+| Shortfall pause (only if needed) | any logout-safe boundary below | when the next hand-off is not staged as SCORED reaches it | ~21.6 i | pays for itself against any logged-in wait longer than ~22 ticks |
+| Runecraft restock pauses (only if the roster cannot keep the cycle fed) | nature altar room | inside S21 | ~21.6 i each, plus a 5 m session trade (SF§7) | with the talisman keeper, 4 or more talismans need none, 2 need ~4 extra batches (+34), 1 needs ~6 (+52) (SF§7) |
+| Demo restart (not planned) | anywhere | 1-2 per run expected (RES§2) | ~21.6 relog (a tab relog, TWIN) + 3 to the resumed step (m, RES§6) + the step's resume overhead | the watchdog relogs the moment logins are accepted, helpers first; run.ts resumes from game state (`runResumable`, RES§5). Section 6 carries 37 i |
 | **Final logout** | the Wilderness course | after S17's last level-up | 0 on the score | the stamp is the level-up's own tick (HT); hiscore rows are written only at a clean logout (RES§2), so wait out the 16-tick combat window and log out with `logoutClean`; never drop the socket. A death after the last level-up costs nothing; log out cleanly after the respawn |
 
 Two relogs is the whole planned count. Planned relogs need pages cleared and 16 ticks out of combat
@@ -430,16 +448,20 @@ the gems cut in the windows meet Crafting late in its route, where they leak no 
 Before rs/164, `logoutClean` (`speedrun/lib/session.ts`) read `lastDamageTick = -1` (never damaged)
 as a hit and waited 17 ticks on any logout in a session's first 16 ticks. No planned logout falls
 there: relog 1 and the final logout end long sessions, and the arming relog comes at login + 21 or
-later, after the first firing at + 20 and P1, so the 2 m per relog stand. Only an unplanned logout
-within 16 ticks of a re-login was exposed, and rs/164 fixes it.
+later, after the first firing at + 20 and P1, so that wait never fell on a planned relog. Only an
+unplanned logout within 16 ticks of a re-login was exposed, and rs/164 fixes it.
 
 **These logouts all leave from SCORED's browser tab, so `RUN_COMMIT` must include rs/164.** That
-covers both planned relogs, every shortfall or restock pause, and the final logout. Without rs/164,
+covers both planned relogs, every shortfall or restock pause, and the final logout. rs/164 passed on
+the twin: the page confirmed every logout in 222-324 ms, 0 ticks of latency, and because the gateway
+still said `inGame: true` afterwards, `session.ts` no longer consults it for a browser session (m,
+TWIN). The code that ran is 3ed0cd49c, merged into rs/147's branch as 4e0e8ae4; main's commit is
+named when rs/165's snapshot merges (RUN-HOST.md "Credentials"). With it on `RUN_COMMIT` the
+~60-tick worst case below goes away, and a relog costs the ~20 above. Without rs/164,
 `logoutClean` cannot confirm a tab's logout: the gateway keeps `inGame: true` with status `stale`
 after the page leaves the game (m, rs/149 on the rehearsal twin, via rs/147, 2026-10-21). Each
-planned relog then risks `logoutClean`'s wait up to failure, up to ~60 ticks (i, R1's bound),
-instead of the 2 m above. On top of that is whatever run.ts does with a reported failure, which isn't
-written yet. Of that wait, the 15-tick confirmation timeout (r, `session.ts`) comes after the click,
+planned relog then risks `logoutClean`'s wait up to failure, up to ~60 ticks (i, R1's bound). On
+top of that is whatever run.ts does with a reported failure, which isn't written yet. Of that wait, the 15-tick confirmation timeout (r, `session.ts`) comes after the click,
 so it reaches the clock only if SCORED has not in fact left. This is a precondition on `RUN_COMMIT`
 (RUN-HOST.md "Credentials"; MAN entries 0 and 29), not a line in section 7. Until it holds, the
 final logout is confirmed on the host before the recording stops (RUN-HOST.md step 8).
@@ -467,7 +489,7 @@ restart is entered through `runResumable` (`speedrun/runner/resume.ts`), which c
 | Plain loops, if the run gate turns the knife off | 4-tick Woodcutting: 0.230 bones per tick m (lite). **Not built in the page**: knife-cycle's `bury` needs the knife (rs/147); rs/162 adds it (O31) | the same 355 bones on the plain clock: 0.12-0.20 per bone against the plain column (~110 / ~75) | the bury goes in the roll gap | BP§1, §6 |
 | Pickpocket stuns: S18 | ~84 stuns, 3 bury slots and 9 delay-free slots each (less ~1.2 page resumes) | ~200 bones (3 per stocked stun), Charge 163-165 casts, Fletching 294 actions; top-ups at k = 2 inside the stun | helpers then bury then the click in one tick; nothing on the tick after a bury; no xp action at k = 8 (SP§2) | SP, measured end to end |
 | Walk legs | the route's walks | **nothing**: enchants are cheaper standalone (RT§5, +31 if ridden); Charge and Fletching fit in the stuns (SP§4); a bury cannot ride a walk (`p_stopaction`, T&O row 2) | | RT§5; SP§4 |
-| Wine waits: S25c | W1 ~11 ticks, W2 ~19, P2 after the second firing | **107 uncut gems** cut in W1, W2 and P2 (WW§5 B): saves 30-31 m at Crafting 55, ~36 i later in Crafting's route | no bury on login + 19; nothing but pages and the booth click in P1; the bank opens by login + 19 (WW§3) | WW, measured (lab) |
+| Wine waits: S25c | W1 ~11 ticks, W2 ~19, P2 after the second firing; from a re-navigated tab the bot is blind through W1 and W2 as built, so only P2's 27 gems are sure (R17) | **107 uncut gems** cut in W1, W2 and P2 (WW§5 B): saves 30-31 m at Crafting 55, ~36 i later in Crafting's route | no bury on login + 19; nothing but pages and the booth click in P1; the bank opens by login + 19 (WW§3) | WW, measured (lab) |
 | Page dismissals | everywhere | answer on the label that first shows the page: a blind burst of `pagesAt(level)` continues, or the loop's own next op (LU§5); never a rock re-click in the mining rotation | never burst across a choice page | LU§2, §5 |
 | Smithing, Runecraft, Agility, Firemaking | none (anvil-bound and delayed; altar room schedule; obstacle delays; each light moves the player) (IL§8, IL§4) | nothing | | |
 
@@ -497,8 +519,8 @@ audit. Every cell names its basis.
 | **Run-wide** | | | | | | |
 | Hand-offs outside the figures | | **47** (H11 8, H11r 8, H14 8, H18 5, S25 10, H23 8) | | | | RT§3 |
 | Level-up pages | | | **25 i expected, 15 best** (the cells above sum to 13-35; LU§1's "15-30") | | | LU§4, §6 |
-| Relogs | | | | | | **2 planned**, 2 m each inside S25c's 80; their tail +3 i (2 x 46/29) |
-| Demo restarts | | | | | | **+10 i**: 1-2 per run at ~3.6 + 3 m each, plus small resume overheads (RES§2, §6) |
+| Relogs | | | | | | **2 planned**, tab relogs at ~20 i each inside S25c's 116 (TWIN; run A's 80 carried 2 m each); their tail +3 i (2 x 46/29) on top |
+| Demo restarts | | | | | | **+37 i**: 1-2 per run, 1.5 expected (RES§2), at ~21.6 (a tab relog, TWIN) + 3 m (RES§6) each, plus small resume overheads; +27 against the 10 carried at ~3.6 per relog |
 | Step-boundary idle | | | | | | **0 m**: #92 measured 2 ticks per boundary before the runner fix and 0 after (main 08:30, C#12); it would have been ~100-160 over the run |
 | Overlay relay on the non-reactive steps | | | | | | +200 e: rs/98's relay landed 60:0 calm and 40:20 in the 04:13 overrun minute (ARC); #90 (overlay executes on arrival) is merged, with no demo figure yet |
 | Unmodelled retries | | | | | | +100 e: a mis-click, one dropped client (3-12 ticks in the world + 2, m, RES§6), a re-sent trade |
@@ -511,7 +533,7 @@ knife off, the knife loops' 351 drops out (250 remain). The pause rule (section 
 durations decide how much of it the run actually pays.
 
 **Totals of section 6** (expected / best, knife on): legs 1,382 / 1,382; hand-offs outside the figures
-47 / 47; level-ups 25 / 15; relog tail 3 / 0; restarts 10 / 0; contention 300 / 0; overrun 600 / 0;
+47 / 47; level-ups 25 / 15; relog tail 3 / 0; restarts 37 / 0; contention 300 / 0; overrun 600 / 0;
 relay 200 / 0; retries 100 / 0; boundary idle 0 / 0. Against v1: legs +350 (v1 estimated 1,032 i/e;
 RT measured them), hand-offs -51 (the S18 top-ups moved inside S18's figure), level-ups -124 (v1
 carried 149 e for S07, S09 and S17, all measured 0 now), boundary idle -75.
@@ -538,18 +560,19 @@ force, without rs/162; the row under the total gives it with rs/162's plain+bury
 | Smithing (51) | 1,147 / 1,107 | 1,147 / 1,107 | same | 0 | unchanged |
 | Firemaking (52) | 740 / 600 | 695 / 650 | same | -45 / +50 | trades 695 (the dropped row's pacing is not built), dropped row 650 m |
 | Runecraft (53) | 1,100 / 900 | 1,186 / 1,186 | same | +86 / +286 | 168 crafts on the tuned 7-tick cycle with the givers on the run machine (49 + 1,127 + two session trades); travel is in the overhead line |
-| Fletching + Crafting + Cooking + Herblore (54) | 370 / 285 | 341 / 277 | same | -29 / -8 | Fletching 0 (inside S18, measured); Crafting 91 / 85 (107 gems ride the wine windows, WW§5); Cooking 80 / 75 (WINE demo); Herblore 170 / 117 |
-| Overhead (55) | 1,500 / 900 | 1,483 / 1,460 | same | -17 / +560 | legs 1,382 (RT, measured, no glory), the claim 8 m, H1 8 m, hand-offs 47, level-ups 25 / 15, relog tail 3, restarts 10. Best keeps the measured legs |
+| Fletching + Crafting + Cooking + Herblore (54) | 370 / 285 | 377 / 313 | same | +7 / +28 | Fletching 0 (inside S18, measured); Crafting 91 / 85 (107 gems ride the wine windows, WW§5); Cooking 116 / 111 (WINE demo 80 / 75, + 2 x 18 for the two planned relogs from the tab, TWIN); Herblore 170 / 117 |
+| Overhead (55) | 1,500 / 900 | 1,510 / 1,460 | same | +10 / +560 | legs 1,382 (RT, measured, no glory), the claim 8 m, H1 8 m, hand-offs 47, level-ups 25 / 15, relog tail 3, restarts 37 (tab relogs, TWIN). Best keeps the measured legs |
 | Contention, retries, boundary idle (56) | 1,000 / 300 | 400 / 0 | same | -600 / -300 | contention 300 e at the two depleting sites, retries 100 e, boundary idle 0 m (#92) |
 | Demo latency and overrun (57) | 300 / 0 | 800 / 0 | 450 / 0 | +500 / 0 | overrun bursts 600 e (ARC; not in the tally) plus the overlay relay 200 e; knife off drops the knife loops' 351 |
-| **Total** | **38,742 / 31,324** | **34,347 / 31,663** | **37,596 / 35,335** | **-4,395 / +339** | |
-| Total, knife off with rs/162's plain+bury | | | 36,971 / 34,675 | | Prayer 110 / 75 (BP§6) |
+| **Total** | **38,742 / 31,324** | **34,410 / 31,699** | **37,659 / 35,371** | **-4,332 / +375** | |
+| Total, knife off with rs/162's plain+bury | | | 37,034 / 34,711 | | Prayer 110 / 75 (BP§6) |
 
 **Like for like.** The tally's expected column took the plain loops for the three knife skills, so
-its 38,742 compares with the knife-off expected in force, 37,596: 1,146 lower, mostly the quests
+its 38,742 compares with the knife-off expected in force, 37,659: 1,083 lower, mostly the quests
 (-546), contention (-600), Mining from 64 (-269) and the level-up releases, against combat (+164,
-the cannon session), +150 of overrun and Prayer at the booth (+35). With rs/162's plain+bury
-(36,971) it is 1,771 lower, Prayer then -590. The tally's best took the knife, so its 31,324 compares with the knife-on best 31,663: 339
+the cannon session), +150 of overrun, the tab relogs (+63) and Prayer at the booth (+35). With
+rs/162's plain+bury (37,034) it is 1,708 lower, Prayer then -590. The tally's best took the knife,
+so its 31,324 compares with the knife-on best 31,699: 375
 higher, mostly the measured legs inside the overhead line (+560), Runecraft (+286) and combat (+211),
 against contention (-300) and Mining (-244). Woodcutting's best is now 59 under the tally's, which
 already took the lite willow ratio: the difference is the level-up release.
@@ -558,6 +581,22 @@ already took the lite willow ratio: the difference is the level-up release.
 column); Woodcutting -972 (the knife at the lite ratios, O19, and the level-up release); Mining -918
 (from 64, the knife, the level-up release). Contention and retries (-600, a re-estimate, e) is
 fourth. The largest measured change is Prayer, -605 (BP; rs/141).
+
+**Changes since bab5dc03 (34,347 / 31,663 knife on; 37,596 / 35,335 knife off in force; 36,971 /
+34,675 with rs/162).** Expected +63, best +36, the same in every column:
+
+| Change | Line (tally id) | Expected | Best | Source |
+|---|---|---|---|---|
+| Planned relog 1 is a tab relog: ~20 i against run A's 2 m | Cooking (54): 80 / 75 to 98 / 93 | +18 | +18 | TWIN; section 4 |
+| Planned relog 2, the same | Cooking (54): to 116 / 111 | +18 | +18 | TWIN; section 4 |
+| Demo restarts: 1.5 expected at ~21.6 + 3 in place of ~3.6 + 3 (10 to 37) | Overhead (55): 1,483 to 1,510 | +27 | 0 | TWIN; RES§2, §6 |
+| The relog tail (2 x 46/29) kept on top | Overhead (55) | 0 | 0 | WINE "Relog risk" |
+| R17, the wine's login + 19 deadline against a re-navigated tab: text and sensitivity rows only (+~25 as built, beyond the totals) | - | 0 | 0 | R17; O33 |
+| rs/164 on `RUN_COMMIT` removes the ~60-tick unconfirmed-logout case: a precondition, never in the totals | - | 0 | 0 | TWIN; section 4 |
+| **Net** | | **+63** | **+36** | |
+
+The new totals: knife on **34,410 / 31,699**; knife off in force **37,659 / 35,371**; knife off with
+rs/162's plain+bury **37,034 / 34,711**. The scenario rows move by the same +63 / +36.
 
 **Changes since #129 (34,766 / 32,099 knife on; 36,971 / 34,675 knife off).** Expected -419, best
 -436 knife on; knife off below the table:
@@ -613,10 +652,13 @@ legs measured 23 more than the quest documents count).
 
 | Kind | Ticks | Share |
 |---|---|---|
-| M: measured end to end on the route's method (steps and legs) | 5,720 | 17% |
-| I: inferred (models, measured parts assembled, quests' mixed rows, composite legs, hand-offs, level-ups, relog tail, restarts) | 27,427 | 80% |
+| M: measured end to end on the route's method (steps and legs) | 5,640 | 16% |
+| I: inferred (models, measured parts assembled, quests' mixed rows, composite legs, hand-offs, level-ups, relog tail, restarts, S25c with its tab relogs) | 27,570 | 80% |
 | E: estimated allowances (contention, overrun, relay, retries) | 1,200 | 3% |
-| **Total** | **34,347** | |
+| **Total** | **34,410** | |
+
+S25c moved from M to I: run A's 80 was measured on the lite client, and the tab relogs' +36 is
+inferred from TWIN.
 
 Most of the I share rests on measured rates (the knife cycles, the lap, the pickpocket cadence, the
 Runecraft cycle, the quests' measured fights); what is inferred is the assembly into a total.
@@ -723,12 +765,13 @@ actions against ~650 slots), so the tick delta against the plan is 0 (i, SP§2, 
   Charge casts 529 against ~650 slots, and needs up to ~5,490 headless arrows against 4,410. So short
   tips cost no ticks while some tier supplies the xp, but without that xp Fletching stops at ~85.
 
-**Sensitivity of the knife-on expected 34,347** (each alone; i from the cited inputs):
+**Sensitivity of the knife-on expected 34,410** (each alone; i from the cited inputs):
 
 | Change | Ticks | Basis |
 |---|---|---|
 | Knife gate off all night | +3,249 (+2,624 with rs/162) | the knife-off columns |
 | S07's gate off alone (Mining's holds), on the 13:10 stock | +2,522 (+958 with rs/162) | S07 plain +895; its overrun share -140; the bones: with no plain+bury, the 1,246 non-stun bones past the Mining lap go to the booth (+1,767); with rs/162's 0.230 per tick S07 holds ~889 (+203) |
+| S25c's wine fails outright, fish on a range (R17) | +~890 | SK:cooking route 2b: ~980 i from Cooking 1, against S25c's 116; +30 for the window gems cut standalone (WW§5 B); -3 for the two relog tails not taken |
 | MM bad-but-plausible case | +~860 | Q§6: +1,040 against the +180 expected |
 | A mithril axe in place of the rune axe (the axe is held) | +836 | SF§13 on 2,986 (the 355 bones fit either way) |
 | The bone stock at 13:10 (28 dragon, 911 babydragon, 707 big) | +769 | 623 more bones in S07, 200 in Mining, 268 at the booth |
@@ -740,11 +783,13 @@ actions against ~650 slots), so the tick delta against the plan is 0 (i, SP§2, 
 | Runecraft on the robust 8-tick cycle | +168 | SK:runecraft §2 |
 | The stun pack fails: plain pickpocket (-25), Charge standalone (+33), Fletching standalone (+59), 200 more bones in S07 (+52) | +~120 | SP§7; BP§5 |
 | Adamantite bars none / gems by the table mix / herbs by the table mix | +119 / +88 / +85 | SF§2, §4, §5 |
+| S25c's wine fails outright, ugthanki kebabs (R17); **their supplies are not held** (~340 kebab mixtures, ~340 pitta breads; SUPPLIES.md H21c) | +~42 | SK:cooking route 2: 131 m against S25c's 116, +30 for the window gems cut standalone, -3 for the relog tails; against the old 80 it was +51 before the gems |
+| R17 as built: the deadline relog recovers the wine; a third relog, and W1 and W2 blind | +~25 | the third relog's tail (+~2, WINE); 80 of the 107 window gems (W1 26, W2 54, WW§2) back to standalone, ~80/107 of the 30-31 saved (+~23); the ~37-tick first session sits inside the +36 already carried (R17) |
 | Herblore ranging-cap list obtainable | -53 | SK:herblore §7 |
 | Nature talismans: 2 with the keeper / 1 with the keeper | +34 / +52 | SF§7 |
 | Enchant 15 sapphires on T01-02 (needs the rings in H1, after the junk is dropped) | -~30 | RT§5 |
 | A door-free route on T18-19 | -~18 | RT§9 |
-| A demo restart | ~+7 each (10 carried) | RES§2, §6 |
+| A demo restart | ~+25 each (37 carried) | RES§2, §6; TWIN |
 
 **STEP-MANIFEST.md** carries the same figure for every step (section 1 of the manifest).
 
@@ -752,13 +797,13 @@ actions against ~650 slots), so the tick delta against the plan is 0 (i, SP§2, 
 
 | # | Risk | Where | Cost | The run's response |
 |---|---|---|---|---|
-| R1 | **Relog tail**: a planned relog costs 2 ticks, and about 1 in 29 stays tens of ticks in the world, on the clock (46 seen) | S25c's two relogs; any shortfall pause; a restart's relog | ~3.6 expected per relog; 46 worst seen | two planned relogs only; clear pages and leave combat 16 ticks before each click; `logoutClean` waits up to 60 ticks before reporting failure (WINE "Relog risk"); booth work in the windows leaves nothing pending at the click (0 ticks in 42 of 42 lab relogs, WW§3); **depends on rs/164 on `RUN_COMMIT`**: without it `logoutClean` cannot confirm a logout from the browser tab (the gateway keeps `inGame: true`, `stale`; m, rs/149), so each relog risks that 60-tick wait instead of 2 (section 4) |
+| R1 | **Relog cost and tail**: a relog from SCORED's tab passes ~20 ticks in the world before the bot layer sees state (first state at client tick 20-22 against 3 for a fresh tab; m, TWIN; cause unmeasured), and about 1 in 29 logouts stays tens of ticks in the world, on the clock (46 seen) | S25c's two relogs; any shortfall pause; a restart's relog | ~21.6 expected per relog (20 + 46/29); 46 worst seen on top | two planned relogs only; clear pages and leave combat 16 ticks before each click; booth work in the windows leaves nothing pending at the click (0 ticks in 42 of 42 lab relogs, WW§3); **rs/164 on `RUN_COMMIT`**: with it a tab logout confirms in 222-324 ms, 0 ticks of latency (m, TWIN; 3ed0cd49c, merged into rs/147's branch as 4e0e8ae4), so `logoutClean`'s ~60-tick wait on an unconfirmed logout (WINE "Relog risk") goes away once it is on `RUN_COMMIT`; without it the gateway keeps `inGame: true`, `stale` (m, rs/149), and each relog risks that wait (section 4). A relog that does not re-navigate the tab would cut the ~20 (O33) |
 | R2 | **Demo tick-overrun bursts**: after an overrun the next tick comes early and a reaction aimed at it misses. rs/102's per-reaction miss rate by the next tick interval (1,284 trials, m, demo-latency.md section 9 on rs/83's branch): under 150 ms 86%; 150-200 ms 18% (8 of 14 after a tick over 400 ms); 200-225 ms 2/30; 225-250 ms 5/92; 250 ms or more 3.5%. Every probe minute on the run host from 16:28 to 17:02 UTC was a burst (ARC). On rs/102's 24 samples, (c) at most 2 agreed with (a) on 22, and its two false passes (10:43 and 11:18) were caught by (a), so (a) stays a pass line; the gate's (b), publication p90, agreed with (a) on 17. Soft pairs are an in-run warning only (main's ruling, 11:05 PDT) | every reactive loop: S07, S09, S17, S18, S22; the tuned Runecraft cycle | ~600 expected (ARC, e); a whole night of failed gates +3,249 (+2,624 with rs/162's plain+bury) | tenet 12's gate (section 1); knife only while it holds, plain otherwise with periodic re-probes; the pause rule (more than ~5 catch-ups a minute pauses, under 1 resumes); predicted loops resync on observed slips (rs/96, rs/97, `hostgate.ts`); the start chosen by a 3-5 minute gate read |
 | R3 | **Browser background throttling**: a hidden or occluded tab slows timers and rAF, so every in-page and overlay reaction (M0550) | the whole run | unbounded: a throttled tab fails the knife and slows every step | section 1 setup (flags, a maximised unobscured tab on :10, power saving off); gate (d) measured ~72 loops per second p10 on the run host with RDP connected or disconnected and the capture on or off (RUN-HOST.md, "Measured"), checked continuously by the in-run monitor |
-| R4 | **Our client or network drops while the server stays up**: the player stays in the world 500 ticks (socket closed) or 1,000 (open and silent) unless something takes it over (rs/101; RES§2) | anywhere | 3-12 ticks in the world + 2 to the resumed step with the watchdog (m, RES§6) | run under the watchdog; it takes the in-world player over at once (`session.ts`, `reconnect.ts`); never leave a dead client to the timeout; in the Wilderness a dropped player stays attackable |
+| R4 | **Our client or network drops while the server stays up**: the player stays in the world 500 ticks (socket closed) or 1,000 (open and silent) unless something takes it over (rs/101; RES§2) | anywhere | 3-12 ticks in the world + 2 to the resumed step with the watchdog (m, RES§6, lite client); in the tab the takeover is a re-navigated login, ~20 more (i, TWIN), carried in the retries' 100 e | run under the watchdog; it takes the in-world player over at once (`session.ts`, `reconnect.ts`); never leave a dead client to the timeout; in the Wilderness a dropped player stays attackable |
 | R5 | **Monkey Madness failure budget** | S15 | expected +180 inside the quest line; bad-but-plausible +1,040; MM stays ahead of no-MM until ~5,460 over (Q§6) | ladder drop (33-36 m); Protect from Melee beside the guards (Prayer ~94 from S07 lasts far longer than v1's 43); antipoison for the jungle spiders; prayer re-toggle every 4 ticks; walk the monkey back; open item (a): the route arrives at Defence 1 and ~42 HP, re-check at these levels (O14). The puzzle sends OPHELD5 through `sdk.sendUseItem` (rs/116, run client, local engine) |
 | R6 | **Supply shortfalls on the demo** | S07/S25b, S18, S25, S27 | dragon bones: 28 held at 13:10 (911 babydragon, ~3,100 big), so the Prayer floor is covered and the bones are a tick cost: +769 on that stock, with ~268 at the booth; -2.07 per extra babydragon bone and -7.87 per extra dragon bone farmed while they overflow (section 7) | **start conditions** (section 1): Prayer xp of at least 39,938 base in any mix, a cannon set and ~1,170 balls, the rune axe as a budget item; the bid ladder, baby blues, adult blues (rs/112). Grapes: 520 held (rs/118, C#16). Fletching: 2,070 adamant + 570 rune arrowtips (section 7). Gems and herbs: the table mixes. Adamantite: mithril above 88. SUPPLIES.md marks each line |
-| R7 | **Demo restarts**: process exits every 1.5-3.5 h, 1-2 per run expected; the world checkpoints every online player's save on any player's logout, every 1,500 ticks and on every GE operation, so the save is seconds old (RES§1-§2) | anywhere | **measured** (RES§6, 3 of 3 each on the local engine): progress and playtime roll back together, so the lost work is score-neutral; trades roll back on both sides or neither. Per restart: ~3.6 ticks of relog + 3 to the resumed step + that step's resume overhead (largest: re-planning an in-page program, re-opening a bank, a quest-journal probe; MAN); wall time ~4-12 min. Section 6 carries 10. A restart also empties the world, which refills to ~70% 2.5 min after the server answers and ~85% by 5 min (m, rs/102); respawn-bound steps are unaffected once SCORED is back in (O32) | the watchdog logs in the moment logins are accepted, helpers first; run.ts resumes from game state (`runResumable`, `speedrun/runner/resume.ts`); no milestone saves (RES§3). A restart inside the wine window behaves like the planned relog (fermentation re-arms at login). A restart after the last level-up costs nothing if the next session ends with a clean logout |
+| R7 | **Demo restarts**: process exits every 1.5-3.5 h, 1-2 per run expected; the world checkpoints every online player's save on any player's logout, every 1,500 ticks and on every GE operation, so the save is seconds old (RES§1-§2) | anywhere | **measured** (RES§6, 3 of 3 each on the local engine): progress and playtime roll back together, so the lost work is score-neutral; trades roll back on both sides or neither. Per restart: ~21.6 ticks of relog (a tab relog, TWIN; ~3.6 on the lite client) + 3 to the resumed step + that step's resume overhead (largest: re-planning an in-page program, re-opening a bank, a quest-journal probe; MAN); wall time ~4-12 min. Section 6 carries 37. A restart also empties the world, which refills to ~70% 2.5 min after the server answers and ~85% by 5 min (m, rs/102); respawn-bound steps are unaffected once SCORED is back in (O32) | the watchdog logs in the moment logins are accepted, helpers first; run.ts resumes from game state (`runResumable`, `speedrun/runner/resume.ts`); no milestone saves (RES§3). A restart inside the wine window behaves like the planned relog (fermentation re-arms at login), R17's deadline included. A restart after the last level-up costs nothing if the next session ends with a clean logout |
 | R8 | **Wilderness player killers** | S14 (level 37), S16 (deep Wilderness), S27 (level 37), S17 (levels 50-56, now the last step), and the legs T13-14, T14-15 to level 20, T26-27, T27-17 | a death keeps 3 items: the cannon set and the kit are lost; ~200-350 to regear and return (e); a death in S17 after its last level-up costs nothing | short exposures; a bbs lookout reports players in view before SCORED enters (no following or blocking, HELPERS.md etiquette); Protect from Melee available everywhere from S07 on (Prayer ~94); Nulodion replaces a lost cannon for its owner (SF§9); fallback cannon site the Battlefield of Khazard; for S17, relay or Gnome-course laps are the only alternatives (SK:agility). Aggressive NPCs took up to 31 of 42 HP on the Wilderness legs (RT§2): carry food |
 | R9 | **Contention** at the zoo iron and the Taverley oaks and willows | S09, S07 | +150 each expected, "a few hundred" per site move | a scout helper checks the site before SCORED arrives; second sites: the iron cluster north of East Ardougne and SK:woodcutting §6's tiles. The S07 bone giver stands on the next tile, so a second tree also needs a free tile beside it |
 | R10 | **Sea Slug's client dependency** (bridged doors) | S19 | without it the quest cannot finish; Sheep Shearer (~68 i) replaces the point and Fishing starts lower | verified on the run client by rs/116 (local engine, not demo-confirmed); wait for the door loc after a teleport; if it fails on the demo, swap in Sheep Shearer before S26 and re-cost S22 |
@@ -767,6 +812,7 @@ actions against ~650 slots), so the tick delta against the plan is 0 (i, SP§2, 
 | R13 | **Quest steps in the browser client**: every quest figure was taken on the lite client | S05-S26 | unknown; the fixed-column expected assumes one tick per page | rehearse each quest script on the run configuration; S15 and S19 are verified on the run client on a local engine (rs/116); quest state and resume through `speedrun/lib/quests.ts` (`readQuestStage`, `requireQuestStage`; on main, PR #123) |
 | R14 | **SCORED's name exposed** in the repository, logs or game chat | everywhere | a named account before the run invites interference and breaks the naming rule | SCORED never appears by name in the repository, commits or documents; rs/117's cue carries a hash, never the name; the ambassador (rs/58) will not name the scored account in game chat before the run (M0606) |
 | R15 | **The S07 bury's trades in the page**: the bury itself is measured in the tab (`knife-cycle` with `bury` and `trees`, 0.329 bones per tick in four runs, every bury landed, no measurable cost to the loop; m, #124, SK:woodcutting §9 on main). The trade itself is measured with a lite stand-in: 4 ticks per 23-bone load, refusals free (rs/141's lab giver, m; BP§3 had 5); the in-page stop, `receiveFrom` and restart is not, and the restart re-anchors on observed xp | S07 / S25b | a slow restart: a few ticks per load, ~+30 over 16 loads (i, in S25b's 95); the variant failing on the demo: +278 if the bones go to the Mining `stay2` lap and the booth, +640 all at the booth | acceptance with a real helper trading 23-bone loads (MAN entry 3); the plain loop with the bury would be its fallback, but it does not exist until rs/162 (O31), so today the fallback is the Mining `stay2` lap and the booth; always pass `trees` (without it the rate falls to 0.27-0.28, m, #124) |
+| R17 | **The wine's login + 19 deadline against a re-navigated tab.** After planned relog 1 the sequence needs the wine giver's trade and the 29 deposit with the bank open by login + 19, because the fermentation timer fires at login + 20 (WW§3: the lab opened it at login + 7). After a tab relog the bot layer first acts at ~login + 20 (m, TWIN), so the first firing finds no wine in the bank (i). SCORED is at Cooking 30 there and cannot re-arm by making a wine, which needs Cooking 35 (SK:cooking). **The deadline relog (WINE) still recovers it**: it banks the wine first and then relogs, and the new login's timer ferments the batch at its login + 20 with no further action (r, WINE "The login-timer deadline fallback"; the arming relog did the same with the wines already banked in 5 of 5 demo runs, m, WINE). So as built S25c still reaches Cooking 99 from a re-navigated tab, but its first path fails, it takes a third relog, and the bot is blind through W1 and W2 (i) | S25c | as built (i): a first session of ~37 ticks (blind to ~21, the trade ~10, the deposit ~3, the click) in place of run A's first ~15, which is about the +36 the totals already carry for the two tab relogs; plus the third relog's tail (+~2) and the gems W1 and W2 would have cut (80 of 107, WW§2: +~23 to Crafting), so **+~25 beyond the totals**. If the wine failed outright: kebabs +~42, with supplies nobody holds (SUPPLIES.md H21c); the hybrid between; fish on a range +~890 (SK:cooking route table; section 7) | three responses (O33). (a) A relog that does not re-navigate the tab: if it acts at ~tick 3 like a fresh tab's first login (m, TWIN), the as-built sequence meets the deadline again (the bank opened at + 3 to + 12 on the demo, WINE) and most of the +36 comes back. (b) The in-page program host runs the window's first 19 ticks: the trade, the 29 deposit, W1's gems. (c) Trade and deposit the 29 **before** relog 1, as SK:cooking's route 1b does before its login A (the banked wines fermented at client tick 21 with no action, m), keeping the other 491 as notes, which never ferment (r, SK:cooking). The firing then needs nothing from the bot; the trade's ~13 ticks move onto the clock and W1 and W2 stay blind, about the +36 already priced (i; not yet rehearsed). Owners: **rs/174**, main's build child for (a) and (b), which finds where the ~20 ticks go and measures the first actionable tick against login + 19 (target + 7); rs/164 and rs/147 (measurement) |
 | R16 | **The stun-pack helper on the demo**: the lab teleported the helper beside SCORED (57 times in one run); a helper 28 tiles behind cost 18 dry stuns (SP§5, §12). An offer of an unstackable item in more than one press lands only the first (rs/136) | S18 | dry stuns lose their bones (to S07 at ~0.26 each) and slow nothing else; a late top-up at k = 4 costs ~1 | the helper keeps within 3 tiles at all times; SCORED tops up early (6 bones left) when the helper is far; one press per item; rs/136 fixes `trade.ts` |
 
 ## 9. Ordering questions
@@ -799,7 +845,7 @@ actions against ~650 slots), so the tick delta against the plan is 0 (i, SP§2, 
   were natural in SP's runs (109-111 page opens inside stuns, SP§9) and the wine's page chains are
   inside WW's measured sequences (WW§2), so neither of LU§4's two watched risks is open.
 - **O13, a dropped client and a restart**: 3-12 ticks in the world + 2 with the watchdog; a restart
-  is score-neutral apart from ~7 ticks (RES§6).
+  is score-neutral apart from ~25 ticks from SCORED's tab (~7 on the lite client; RES§6, TWIN).
 - **O15, Fletching in the stuns** (not on the walk legs): it fits, 294 actions beside 163 casts in ~84
   stuns (SP§2, §4; section 7).
 - **O16, Charge in the stuns** (not on T16-17 or outside the stuns): outside, it slowed every success
@@ -858,7 +904,7 @@ actions against ~650 slots), so the tick delta against the plan is 0 (i, SP§2, 
 |---|---|---|---|---|
 | O3 | Wind Strike at the coop or at an NPC nearer (3222,3222) | T01-02 50 m; a target within ~20 tiles would save ~35 i | a site check near the landing | rs/103 coordinator (no lab assigned) |
 | O7 | The altar-giver roster N and the talisman keeper for S21 | N = ceil(restock / 7) + 1 (rs/117); 0 with 4+ talismans and the keeper, +34 with 2 (SF§ 7) | the keeper's pipeline time (R = 25 e) and the talisman count | rs/117, rs/41 |
-| O11 | The knife loops on the demo from Ashburn in the browser | **partly settled**: on the run host the in-page knife beats plain even in a burst minute (m, demo; demo-latency.md section 8 on rs/83's branch). rs/130's 12:45 PDT session (main ae6d5664, 11.7 catch-ups a minute, direct 51/60): knife-cycle **3.94 ticks per expected roll** (WC 19-52, normal trees; 8.56 per log) against plain **6.44** through the overlay (11.95 per log); the 09:51 GitHub run ~3.7 per expected roll at WC ~83. The overlay knife (8.9-9.2) is the one that loses. Gap histogram: 39 of 57 gaps on multiples of 3, 0 off-phase re-anchors, 2 lost-lock resyncs in 60 logs. These are normal trees in burst minutes, so they do not price S07's oak and willow bands. rs/130's 13:35 PDT session (20:35Z; run machine, main ae6d5664d, a burst minute: direct 41/60, 12.2 catch-ups a minute; in-page on oak with a bronze axe; ticks per expected roll = ticks / Σ 1/p, p(L) = stat_random(L, 32, 100)): knife-cycle's knife **3.25 per expected roll** (10.89 per log, WC 63-66, 19 gaps) and **the in-page plain technique 3.76** (12.28 per log, WC 66-68, 18 gaps) (m, demo; `docs/speedrun/research/data/browser-rows/host-20261021T2035-in-page-oak/` on rs/130's branch, via rs/158, 13:46 PDT). It is the first demo measurement of the plain fallback the run uses when the gate turns the knife off. Reading (i): the knife held within ~8% of its 3.0 lab cadence through a severe burst; plain's 3.76, below its own 4-tick cycle, is small-sample luck, so no knife/plain ratio is read from this pair | a calm-minute reading on the route's trees (none occurred in the 20:35Z session); the per-log catch-up correlation, which that session could not give: knife-cycle's `status()` exposes no per-log stamps mid-run, only the final result's last 40; rs/151's rehearsal | rs/130, rs/151 |
+| O11 | The knife loops on the demo from Ashburn in the browser | **partly settled**: on the run host the in-page knife beats plain even in a burst minute (m, demo; demo-latency.md section 8 on rs/83's branch). rs/130's 12:45 PDT session (main ae6d5664, 11.7 catch-ups a minute, direct 51/60): knife-cycle **3.94 ticks per expected roll** (WC 19-52, normal trees; 8.56 per log) against plain **6.44** through the overlay (11.95 per log); the 09:51 GitHub run ~3.7 per expected roll at WC ~83. The overlay knife (8.9-9.2) is the one that loses. Gap histogram: 39 of 57 gaps on multiples of 3, 0 off-phase re-anchors, 2 lost-lock resyncs in 60 logs. These are normal trees in burst minutes, so they do not price S07's oak and willow bands. rs/130's 13:35 PDT session (20:35Z; run machine, main ae6d5664d, a burst minute: direct 41/60, 12.2 catch-ups a minute; in-page on oak with a bronze axe; ticks per expected roll = ticks / Σ 1/p, p(L) = stat_random(L, 32, 100)): knife-cycle's knife **3.25 per expected roll** (10.89 per log, WC 63-66, 19 gaps) and **the in-page plain technique 3.76** (12.28 per log, WC 66-68, 18 gaps) (m, demo; `docs/speedrun/research/data/browser-rows/host-20261021T2035-in-page-oak/` on rs/130's branch, via rs/158, 13:46 PDT). It is the first demo measurement of the plain fallback the run uses when the gate turns the knife off. Reading (i): the knife held within ~8% of its 3.0 lab cadence through a severe burst; plain's 3.76, below its own 4-tick cycle, is small-sample luck, so no knife/plain ratio is read from this pair | a calm-minute reading on the route's trees (none occurred in the 20:35Z session); the per-log catch-up correlation, which that session could not give: per-log stamps are now published (rs/159, #132), and the catch-up split awaits a session that uses them; rs/151's rehearsal | rs/130, rs/151 |
 | O12 | How long overrun bursts last, and whether the start time avoids them | **mostly settled** by rs/102's overnight series (section 1, "Start time"; R2): severe bursts bounded at 12-65 min each, simmer stretches for hours, no hour clean in advance. The 600 e overrun allowance stands, still e | rs/140's gate history on the run host until the run (RUN-HOST.md, "Gate history timer") | rs/140 |
 | O14 | Monkey Madness at the route's real levels (Defence 1, ~42 HP; Prayer now ~94) | +180 expected failures | a run at those levels | Q open item (a) |
 | O17 | The tally's combat best of 1,750 | not in the sources; 1,829 used | main's basis for it | main |
@@ -868,7 +914,8 @@ actions against ~650 slots), so the tick delta against the plan is 0 (i, SP§2, 
 | O27 | Food and potions now that Prayer is ~94 from S07 on (H7's prayer potions dropped; MM's 6 and the Mage Arena's 2 kept as insurance) | not priced | the quests' fights at Prayer ~94 | rs/103 coordinator |
 | O28 | The S07 bury's trades in the page (**the loop itself is settled**: 0.329 bones per tick in the tab at no measurable cost, m, #124) | 95 / 65: the trade is measured, 4 ticks per load and refusals free with rs/141's lab giver and a lite stand-in (m); +30 i for the in-page restart | a real helper trading 23-bone loads through stop, `receiveFrom` and restart, in the tab | the S07 builder (MAN entry 3), rs/117 (the giver) |
 | O29 | H1 with rings (15 sapphires enchanted on T01-02) | not in either column; -~30 i | the starter junk dropped on the landing before H1, and the ride measured | the hand-off builder (MAN entry 33) |
-| O31 | A plain+bury mode in knife-cycle, S07's gated-off fallback | not built: knife-cycle's `bury` works only with the knife technique (rs/147, 13:19). The knife-off column without it is in force (37,596 / 35,335; 36,971 / 34,675 with it); S07's gate off alone on the 13:10 stock costs +2,522 without it, +958 with it | cairn://p/rs/162 lands and passes its lab bar: at least 0.22 bones per tick in the page with no loss of Woodcutting rate | main (rs/162; knife-cycle's options are main's to file) |
+| O31 | A plain+bury mode in knife-cycle, S07's gated-off fallback | not built: knife-cycle's `bury` works only with the knife technique (rs/147, 13:19). The knife-off column without it is in force (37,659 / 35,371; 37,034 / 34,711 with it); S07's gate off alone on the 13:10 stock costs +2,522 without it, +958 with it | cairn://p/rs/162 lands and passes its lab bar: at least 0.22 bones per tick in the page with no loss of Woodcutting rate | main (rs/162; knife-cycle's options are main's to file) |
+| O33 | A tab relog's ~20 ticks before the bot sees state, and the wine's login + 19 deadline after it (R1, R17) | ~20 i per tab relog (m, TWIN: first state at client tick 20, 21, 22 against 3 for a fresh tab); +36 carried in S25c and +27 in restarts; R17 as built +~25 beyond the totals | the cause of the ~20; a relog that does not re-navigate the tab, measured on the twin; or the in-page host running the wine window's first 19 ticks; or the 29 wines deposited before relog 1, rehearsed on the twin | rs/174 (main's build child: the cause and the fastest relog, first actionable tick against login + 19, target + 7); rs/164, rs/147 (measurement) |
 
 ## Sources
 
@@ -883,7 +930,8 @@ per-quest documents and [quests/primitives.md](quests/primitives.md);
 [speedrun/README.md](../../speedrun/README.md), `speedrun/lib/hostgate.ts`, `hostgate-verdict.ts`,
 `demo-status.ts` and `speedrun/runner/resume.ts`. On other branches: `HELPERS.md`, `helpers/wine.md`
 and `helpers/bones.md` (cairn://p/rs/41/1/coordinator); rs/114's `speedrun/lib/quests.ts`, `speedrun/data/quest-stages.ts` and `quests/quest-state.md` (on main, PR #123); rs/137's `knife-cycle` `bury` and `skills/woodcutting.md` section 9 (on main, PR #124);
-rs/124's bow measurement (relayed on cairn://p/rs/111, comment 19). The main thread's arc
+rs/124's bow measurement (relayed on cairn://p/rs/111, comment 19); rs/164's results on the
+rehearsal twin (TWIN, relayed by rs/147). The main thread's arc
 (cairn://p/rs/main/arc), its 04:20 tally, tenet 12 (cairn://p/rs/tenets/12), and main's notes relayed
 by cairn://p/rs/103/1/coordinator and on cairn://p/rs/111. Stock figures: cairn://p/rs/41 comments
 15 and 16, and rs/41's report of 09:35 via the coordinator.
