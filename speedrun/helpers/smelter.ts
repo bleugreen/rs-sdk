@@ -21,6 +21,7 @@
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem, NearbyLoc } from '../../sdk/types';
+import { pointMarketAtServer } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
 
 // ---------------------------------------------------------------- ids (server/content/pack)
@@ -41,6 +42,8 @@ const PICKAXES = [
     { id: 1265, name: 'Bronze pickaxe', level: 1, price: 1 }
 ];
 const PICKAXE_IDS = new Set(PICKAXES.map(p => p.id));
+/** Varrock west bank's exchange table; openGE() walks here itself but with a 120 s budget. */
+const GE_STAND = { x: 3181, z: 3443 };
 
 type Ore = 'copper' | 'tin' | 'iron' | 'coal' | 'mith' | 'addy';
 const ROCKS: Record<Ore, number[]> = {
@@ -120,17 +123,8 @@ function readOpts(o: Record<string, unknown>): Opts {
 
 class Abort extends Error {}
 
-/**
- * The SDK derives the HTTP origin for openGE/market calls from the gateway URL, so behind a
- * loopback gateway (GATEWAY_URL=ws://127.0.0.1:...) it asks localhost and fails. Point it at
- * the game server instead. Same one-liner as rs/49's mule.ts; move to speedrun/lib once merged.
- */
-function pointMarketAtServer(sdk: BotSDK, server = process.env.SERVER): void {
-    const config = (sdk as unknown as { config?: { browserLaunchUrl?: string } }).config;
-    if (!config || !server || config.browserLaunchUrl) return;
-    const host = server.replace(/^wss?:\/\//, '').replace(/\/.*$/, '');
-    config.browserLaunchUrl = /^(localhost|127\.)/.test(host) ? `http://${host}/bot` : `https://${host}/bot`;
-}
+/** Why mineRock stopped working a rock; counted per inventory so a slow inventory explains itself. */
+type RockOutcome = 'ore' | 'full' | 'depleted' | 'switched' | 'gaveUp' | 'timeout';
 
 // ---------------------------------------------------------------- the role
 
@@ -636,7 +630,11 @@ class Smelter {
         return i < 0 ? 0 : 10 - i;
     }
 
-    /** Pick the best live rock: value, then distance, avoiding rocks other players stand at. */
+    /**
+     * Pick the best live rock: value, then distance, avoiding rocks other players stand at.
+     * A mithril or adamantite rock with a player beside it is skipped outright: one success
+     * depletes it for 400-800 ticks, and the player already swinging usually wins it.
+     */
     private chooseRock(site: Site, wanted: Ore[]): NearbyLoc | null {
         const s = this.s();
         const players = s.nearbyPlayers ?? [];
@@ -646,7 +644,8 @@ class Smelter {
             const ore = ROCK_ORE.get(loc.id);
             if (!ore || !wanted.includes(ore) || !inBox(site.box, loc.x, loc.z) || loc.reachable === false) continue;
             const crowd = players.filter(p => Math.abs(p.x - loc.x) <= 1 && Math.abs(p.z - loc.z) <= 1).length;
-            const score = this.rockValue(ore, wanted) * 10 - loc.distance - crowd * 15;
+            if (crowd > 0 && (ore === 'mith' || ore === 'addy')) continue;
+            const score = this.rockValue(ore, wanted) * 10 - loc.distance - crowd * 40;
             if (score > bestScore) {
                 bestScore = score;
                 best = loc;
@@ -664,6 +663,8 @@ class Smelter {
         }
         const t0 = this.s().tick;
         const got: Record<string, number> = {};
+        const outcomes: Partial<Record<RockOutcome, number>> = {};
+        let waited = 0;
         let emptyTicks = 0;
         while (this.s().inventory.length < 28) {
             this.check();
@@ -687,21 +688,24 @@ class Smelter {
                     const { x, z } = this.pos();
                     if (Math.abs(x - site.centre.x) + Math.abs(z - site.centre.z) > 6) await this.walk(site.centre.x, site.centre.z, 3);
                 }
+                waited++;
                 await this.ticks(1);
                 continue;
             }
             emptyTicks = 0;
             const ore = ROCK_ORE.get(rock.id)!;
-            const n = await this.mineRock(rock, site, wanted);
+            const { n, why } = await this.mineRock(rock, site, wanted);
+            outcomes[why] = (outcomes[why] ?? 0) + 1;
             if (n > 0) got[ore] = (got[ore] ?? 0) + n;
         }
         const spent = this.s().tick - t0;
-        this.ctx.log('inventory', { site: site.name, got, ticks: spent, mining: this.lvl('mining') });
+        const pickaxe = this.bestPickaxe('inv')?.name ?? null;
+        this.ctx.log('inventory', { site: site.name, got, ticks: spent, waited, outcomes, pickaxe, players: this.s().nearbyPlayers?.length ?? 0, mining: this.lvl('mining') });
         if (spent < 2) await this.ticks(5); // never spin if the site check keeps failing
     }
 
     /** Mine one rock until it yields, depletes, or a more valuable rock appears. */
-    private async mineRock(rock: NearbyLoc, site: Site, wanted: Ore[]): Promise<number> {
+    private async mineRock(rock: NearbyLoc, site: Site, wanted: Ore[]): Promise<{ n: number; why: RockOutcome }> {
         const ore = ROCK_ORE.get(rock.id)!;
         const item = ORE_ITEM[ore];
         const before = this.inv(item);
@@ -720,10 +724,10 @@ class Smelter {
             await this.ticks(1);
             const s = this.s();
             const gained = this.inv(item) - before;
-            if (gained > 0) return gained;
-            if (s.inventory.length >= 28) return 0; // a gem filled the last slot
-            // Depleted by us or someone else: the loc at that tile changed id.
-            if (!s.nearbyLocs.some(l => l.x === rock.x && l.z === rock.z && l.id === rock.id)) return 0;
+            if (gained > 0) return { n: gained, why: 'ore' };
+            if (s.inventory.length >= 28) return { n: 0, why: 'full' }; // a gem filled the last slot
+            // Depleted by someone else: the loc at that tile changed id without our ore.
+            if (!s.nearbyLocs.some(l => l.x === rock.x && l.z === rock.z && l.id === rock.id)) return { n: 0, why: 'depleted' };
             if (s.dialog.isOpen) {
                 await click();
                 continue;
@@ -731,7 +735,7 @@ class Smelter {
             // A more valuable rock respawned: switch.
             if (value < 60) {
                 const better = this.chooseRock(site, wanted);
-                if (better && this.rockValue(ROCK_ORE.get(better.id)!, wanted) >= 60) return 0;
+                if (better && this.rockValue(ROCK_ORE.get(better.id)!, wanted) >= 60) return { n: 0, why: 'switched' };
             }
             const p = this.pos();
             const moving = p.x !== lastPos.x || p.z !== lastPos.z;
@@ -739,12 +743,12 @@ class Smelter {
             if (!moving && (s.player?.animId ?? -1) === -1) still++;
             else still = 0;
             if (still >= 4) {
-                if (++reclicks > 3) return 0;
+                if (++reclicks > 3) return { n: 0, why: 'gaveUp' };
                 still = 0;
                 await click();
             }
         }
-        return 0;
+        return { n: 0, why: 'timeout' };
     }
 
     // ------------------------------------------------------------ pickaxe upgrades
@@ -762,36 +766,42 @@ class Smelter {
 
     /**
      * With the bank open: if steel/iron bars (and, failing that, coal) can fund a better
-     * pickaxe, sell them on the Grand Exchange and buy it from Nurmof. Returns true if a
-     * trip was made (the caller re-plans from scratch).
+     * pickaxe, sell them on the Grand Exchange and buy the best one they fund from Nurmof.
+     * Returns true if a trip was made (the caller re-plans from scratch).
      */
     private async maybeUpgradePickaxe(): Promise<boolean> {
         if (Date.now() < this.shopCooldownUntil) return false;
         const m = this.lvl('mining');
         const current = PICKAXES.findIndex(p => p.level <= m && this.have(p.id) > 0);
-        // Only the big steps are worth a trip: mithril (rate 4), adamant (3), rune (2).
-        const candidates = PICKAXES.slice(0, 3).filter((p, i) => p.level <= m && (current < 0 || i < current));
+        // Only the big steps are worth a trip: rune (rate 2), adamant (3), mithril (4);
+        // from Mining 28 adamant is close enough that mithril is skipped.
+        const candidates = PICKAXES.slice(0, 3).filter(
+            (p, i) => p.level <= m && (current < 0 || i < current) && !(p.name === 'Mithril pickaxe' && m >= 28)
+        );
         if (candidates.length === 0) return false;
-        if (candidates[0]!.name === 'Mithril pickaxe' && m >= 28) return false; // adamant is close
         const coins = this.have(ITEM.coins);
-        const sell: { id: number; n: number; price: number }[] = [];
-        let funds = coins;
-        const target = candidates[0]!;
-        if (funds < target.price + 50) {
-            for (const id of [ITEM.steelBar, ITEM.ironBar, ITEM.coal]) {
-                const n = this.banked(id);
-                if (n <= 0) continue;
-                const bid = await this.bid(id);
-                if (!bid || bid <= 0) continue;
-                const need = Math.ceil((target.price + 50 - funds) / (bid * 0.95));
-                // Bars are pure surplus; coal is product, so sell only what the pickaxe needs.
-                const take = id === ITEM.coal ? Math.min(n, need) : n;
-                sell.push({ id, n: take, price: bid });
-                funds += Math.floor(take * bid * 0.95);
-                if (funds >= target.price + 50) break;
-            }
+        const afterTax = (n: number, price: number) => Math.floor(n * price * 0.95);
+        // Price every sellable once, then aim at the best pickaxe the whole lot can fund.
+        const offers: { id: number; n: number; price: number }[] = [];
+        for (const id of [ITEM.steelBar, ITEM.ironBar, ITEM.coal]) {
+            const n = this.banked(id);
+            if (n <= 0) continue;
+            const bid = await this.bid(id);
+            if (bid && bid > 0) offers.push({ id, n, price: bid });
         }
-        if (funds < target.price + 50) return false;
+        const worth = coins + offers.reduce((sum, o) => sum + afterTax(o.n, o.price), 0);
+        const target = candidates.find(p => p.price + 50 <= worth);
+        if (!target) return false;
+        const sell: typeof offers = [];
+        let funds = coins;
+        for (const o of offers) {
+            if (funds >= target.price + 50) break;
+            // Bars are pure surplus; coal is product, so sell only what the pickaxe needs.
+            const need = Math.ceil((target.price + 50 - funds) / (o.price * 0.95));
+            const take = o.id === ITEM.coal ? Math.min(o.n, need) : o.n;
+            sell.push({ ...o, n: take });
+            funds += afterTax(take, o.price);
+        }
         this.ctx.log('pickaxe trip', { target: target.name, coins, sell });
 
         // Withdraw coins and sellables (noted).
@@ -802,6 +812,8 @@ class Smelter {
         await this.bot.closeBank();
 
         if (sell.length > 0) {
+            await this.toSurface();
+            await this.walk(GE_STAND.x, GE_STAND.z, 3, 300_000);
             const ge = await this.bot.openGE();
             if (!ge.success) {
                 this.ctx.log('openGE failed', { why: ge.message });
@@ -821,7 +833,7 @@ class Smelter {
             await this.bot.closeInterface();
         }
 
-        if (!(await this.buyAtNurmof(candidates))) this.shopCooldownUntil = Date.now() + 30 * 60_000;
+        if (!(await this.buyAtNurmof(candidates.slice(candidates.indexOf(target))))) this.shopCooldownUntil = Date.now() + 30 * 60_000;
         // Next cycle banks the old pickaxe, leftover coins and notes.
         return true;
     }
