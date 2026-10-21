@@ -174,9 +174,10 @@ export interface JournalRead {
 
 /**
  * Read `key`'s exact stage: click its quest-tab entry, wait for the journal,
- * close it. A quest the tab shows as not started, or complete at its one
- * complete stage, is decided without the click. Costs two events and about
- * two ticks when it opens the journal.
+ * close it. When the quest tab alone leaves one stage (not started; complete
+ * with one complete value; started with one started value, as Cook's
+ * Assistant) it is decided without the click. Costs two events and about two
+ * ticks when it opens the journal.
  */
 export async function readQuestStage(sdk: JournalSdk, key: QuestKey, opts: ReadOptions = {}): Promise<JournalRead> {
     const t = table(key);
@@ -184,7 +185,7 @@ export async function readQuestStage(sdk: JournalSdk, key: QuestKey, opts: ReadO
     if (!s0) throw new Error('readQuestStage: no state');
     const before = questStage(s0, key);
     if (!before || !t.questList || !t.journalTitle) throw new Error(`readQuestStage: ${t.title} is not observable`);
-    if (!opts.force && before.stages.length === 1 && before.status !== 'started') return { reading: before, journal: null };
+    if (!opts.force && before.stages.length === 1) return { reading: before, journal: null };
 
     const maxTicks = opts.maxTicks ?? 5;
     const sentAt = s0.tick;
