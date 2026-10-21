@@ -71,7 +71,7 @@ await runScript(async ({ bot, sdk }) => {
             await settle();
         };
         const has = (re: RegExp, n = 1) => () => L.invCount(sdk, re) >= n;
-        const op = async (x: number, z: number, opt: string) => bot.interactLoc(await L.findLoc(sdk, x, z, opt), opt);
+        const op = (x: number, z: number, opt: string) => L.opLoc(sdk, x, z, opt);
         const useOn = async (item: RegExp, x: number, z: number, name?: RegExp) => {
             const loc = await L.findLoc(sdk, x, z, undefined, 15, name);
             const it = sdk.findInventoryItem(item);
