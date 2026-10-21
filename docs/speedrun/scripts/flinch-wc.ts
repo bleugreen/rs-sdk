@@ -2,7 +2,8 @@
 //
 // usage (inside docs/speedrun/scripts/lab.sh from rs/2's branch, woodcutting block):
 //   bun docs/speedrun/scripts/flinch-wc.ts <bot> control 60
-//   bun docs/speedrun/scripts/flinch-wc.ts <bot> npcs:6 300
+//   bun docs/speedrun/scripts/flinch-wc.ts <bot> npcs6 300
+//   (lab.sh form: docs/speedrun/scripts/flinch-wc.ts:npcs6:300)
 //
 // The bot alternates by server-tick parity: on one parity it sends only a log drop,
 // on the other only a click on the oak. Without a flinch this never rolls: a click on
@@ -16,7 +17,7 @@
 // gap between xp drops means two flinches in a row. Oak at level 99 succeeds on every
 // roll, so every roll is an xp drop.
 //
-// npcs:N spawns N hobgoblins on the bot's tile with ::npcadd, two ticks apart, at the
+// npcsN spawns N hobgoblins on the bot's tile with ::npcadd, two ticks apart, at the
 // multi-combat oak (2949,3314) area. If no xp arrives for 16 ticks the bot swaps the
 // parity once (the hits may be landing on its click ticks).
 //
@@ -28,7 +29,7 @@ import type { BotWorldState } from '../../../sdk/types';
 const argv = process.argv.slice(3);
 const mode = argv[0] ?? 'control';
 const labels = Number(argv[1] ?? '60');
-const npcCount = mode.startsWith('npcs:') ? Number(mode.split(':')[1]) : 0;
+const npcCount = /^npcs\d+$/.test(mode) ? Number(mode.slice(4)) : 0;
 const stand = (argv[2] ?? '2948,3315').split(',').map(Number);
 
 await runScript(async ({ bot, sdk }) => {
