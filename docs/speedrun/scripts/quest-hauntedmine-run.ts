@@ -15,7 +15,7 @@
 import { runScript } from '../../../sdk/runner';
 import { initPathfinding } from '../../../sdk/pathfinding';
 import * as rsmod from '../../../server/vendor/rsmod-pathfinder';
-import { CollisionFlag, CollisionType } from '../../../server/vendor/rsmod-pathfinder';
+import { CollisionType } from '../../../server/vendor/rsmod-pathfinder';
 import { Ledger, type Sdk, chebyshevPath, cheat, dialog, findLoc, getvar, messageSince, pos, tele, ticks, until } from './quest-pip-hm-lib';
 
 const PHASES = ['zealot', 'enter', 'mush', 'cart', 'exit', 'endcart', 'lift', 'stairs', 'boss', 'reward'] as const;
@@ -274,10 +274,7 @@ function lineClearOfCranes(x0: number, z0: number, x1: number, z1: number) {
     const n = Math.max(Math.abs(x1 - x0), Math.abs(z1 - z0)) * 4;
     for (let i = 1; i < n; i++) {
         const x = Math.round(x0 + ((x1 - x0) * i) / n), z = Math.round(z0 + ((z1 - z0) * i) / n);
-        // The SDK's bundled collision carries walk flags only, not the
-        // projectile blockers the server's line of sight uses, so be
-        // conservative: every tile on the line must be walkable.
-        if (craneTiles.has(`${x},${z}`) || rsmod.isFlagged(x, z, 0, CollisionFlag.WALK_BLOCKED)) return false;
+        if (craneTiles.has(`${x},${z}`)) return false;
     }
     return true;
 }
@@ -579,6 +576,7 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         let castsNoXp = 0;
         const badTiles = new Set<string>();
         const cartSeen = new Set<string>();
+        let nextLog = t0;
         let approachTiles = 0;
         const atk0 = sdk.getSkill('attack')!.experience;
         let lastSwing = t0;
@@ -597,7 +595,8 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
             if (messageSince(sdk, t0, /you are dead/i)) { died = true; break; }
             const me = s.player!;
             if (me.animId !== -1) lastSwing = s.tick;
-            if ((s.tick - t0) % 25 === 0) {
+            if (s.tick >= nextLog) {
+                nextLog = s.tick + 25;
                 const b = sdk.findNearbyNpc(/treus dayth/i) ?? sdk.getNearbyNpcs().find(n => /^ghost$/i.test(n.name));
                 const msgs = s.gameMessages.slice(msgSeen).map(m => m.text).filter(t => !/heals some|eat the/i.test(t));
                 msgSeen = s.gameMessages.length;
