@@ -165,7 +165,7 @@ await runScript(async ({ bot, sdk }) => {
         // The east trapdoor stays open for 500 ticks (viking_peer.rs2:1028).
         await step('trapdoor down (east room)', () => op(2636, 3663, 'Climb-down'), level(0));
         const v0 = L.tick(sdk);
-        await step('key on exit door', () => useOn(/Seers' key/, 2636, 3667, /Door/), () => L.pos(sdk).z >= 3668, 30);
+        await step('key on exit door', () => useOn(/Seers' key/, 2636, 3667, /Door/), () => L.invCount(sdk, /Seers' key/) === 0 && L.pos(sdk).z >= 3667, 30);
         await settle();
         const out = {
             run, answer, clicks,
