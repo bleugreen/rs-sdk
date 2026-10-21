@@ -25,6 +25,14 @@ quests give 21,649 base (level 90), leaving **about 2,010 ticks** of fly fishing
 segment, section 3). With a 3-tick cycle ([tick-manipulation.md](tick-manipulation.md)),
 1 to 99 is about 3,110 ticks and 90 to 99 about 1,190 (both inferred).
 
+**On the planned quest route** only Sea Slug and Fishing Contest are done. Tai Bwo Wannai
+Trio, Fremennik Trials and Heroes' Quest are net losses or need more than the route has
+(`docs/speedrun/quests/`, cairn://p/rs/3). Sea Slug saves 1,385 ticks and Fishing Contest
+after it 325 more (section 3 table), leaving **about 3,410 ticks** of fly fishing from
+level 78 (about 2,040 at a 3-tick cycle, inferred). **Ordering:** Sea Slug checks
+Firemaking 30 with `stat()` (`quest_seaslug.rs2:43`), so schedule it after the
+helper-fed Firemaking training passes 30 (a Firemaking boost would also satisfy it).
+
 ## 2. Route by level band
 
 | Band | Method | Location | Unlock | Base xp per catch (read) | Ticks per roll | Catch chance per roll (read) | Base xp per tick | Ticks for band |
