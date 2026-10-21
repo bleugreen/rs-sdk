@@ -142,8 +142,11 @@ export const DEFAULT_TARGETS: Record<string, number> = {
 
 /** What the Magic Guild store sells of the manifest (magic_guild.inv: 1000-3000 of each at base price). */
 export const GUILD_ITEMS = ['Blood rune', 'Law rune', 'Death rune', 'Chaos rune', 'Air rune', 'Water rune', 'Fire rune', 'Earth rune', 'Mind rune'];
-/** Lundail's lines, cosmic first: the only cosmic source. */
-export const LUNDAIL_ITEMS = ['Cosmic rune', 'Law rune'];
+/**
+ * Lundail's lines, cosmic first (the only cosmic source). He also stocks 250 law and death
+ * (mage_arena.inv), which cover what a drained guild shelf leaves short.
+ */
+export const LUNDAIL_ITEMS = ['Cosmic rune', 'Law rune', 'Death rune'];
 
 export interface RunesOptions {
     phases: Phase[];
@@ -164,6 +167,8 @@ export interface RunesOptions {
     trainOn: RegExp[];
     /** Most coins one purchase may carry; every trip is cut to fit (limitToCarry). */
     maxCarry: number;
+    /** The same for the Wilderness trip to Lundail. */
+    maxCarryWild: number;
     /** Training runes bought per shop visit, in casts. */
     trainChunk: number;
     /** Hitpoints before the account walks west over White Wolf Mountain or waits in a shop. */
@@ -213,6 +218,7 @@ export function runesOptions(raw: Record<string, unknown>): RunesOptions {
         lundailWaitTicks: num('lundailWaitTicks', 4500),
         trainOn: toRegExps(raw.trainOn ?? ['^cow$', '^cow calf$', '^chicken$', '^goblin$']),
         maxCarry: num('maxCarry', 30_000),
+        maxCarryWild: num('maxCarryWild', 15_000),
         trainChunk: num('trainChunk', 300),
         minHitpointsWest: num('minHitpointsWest', 30),
         webWeapons: toRegExps(raw.webWeapons ?? DEFAULT_WEB_WEAPONS),
@@ -738,7 +744,7 @@ export class Runes {
         if (short().length === 0) return 'skip';
         const inCellar = (s: BotWorldState) => s.player!.worldZ > 4600;
         const inWild = (s: BotWorldState) => s.player!.worldZ > 3520 && s.player!.worldZ < 4000;
-        const lines = limitToCarry(short(), n => this.held(n), this.o.maxCarry).map(l => ({
+        const lines = limitToCarry(short(), n => this.held(n), this.o.maxCarryWild).map(l => ({
             ...l,
             maxWaitTicks: l.item === 'Cosmic rune' && this.hitpoints() >= this.o.minHitpointsWest ? this.o.lundailWaitTicks : 0
         }));
