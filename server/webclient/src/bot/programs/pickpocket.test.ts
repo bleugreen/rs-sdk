@@ -329,7 +329,7 @@ describe('pickpocket stun actions', () => {
     });
 
     describe('top-up trades', () => {
-        const TOPUP = { name: 'topup', kind: 'player', player: '^helper$', fewer: [{ item: '^dragon bones$', than: 3 }] };
+        const TOPUP = { name: 'topup', kind: 'player', player: '^helper$', fewer: [{ item: '^dragon bones$', than: 3 }], window: [2, 2] };
         const run = (idleOnInterface: boolean, openTicks?: number) =>
             thieve({ ticks: 260, outcome: everyFifthFails, kit: { bones: 4, blood: 6000, air: 6000, food: 4 }, helper: { bones: 12, openTicks }, params: { stunActions: [TOPUP, 'bury', 'charge'], idleOnInterface } });
 
@@ -339,7 +339,8 @@ describe('pickpocket stun actions', () => {
             expect(r.trade.replaced).toBe(0);
             expect(r.trade.broken).toBe(0);
             expect(r.trade.done).toBeGreaterThanOrEqual(2);
-            expect(r.trade.done).toBe(r.trade.opened);
+            // the last may still be open when the run ends
+            expect(r.trade.done).toBeGreaterThanOrEqual(r.trade.opened - 1);
             expect(Object.keys(res.gapAfterFail)).toEqual(['11']);
             expect(Object.keys(res.gapAfterSuccess)).toEqual(['2']);
             for (const req of r.trade.requestedOn) {
@@ -350,9 +351,9 @@ describe('pickpocket stun actions', () => {
                 // the top-up stun buries nothing; the trade's ticks carry no packet at all
                 expect(r.landings.some(l => l.tick > req && l.tick < fail + 11 && l.name === 'Dragon bones')).toBe(false);
             }
-            expect(r.h.status.counters.interfaceTicks).toBe(4 * r.trade.opened);
-            // stuns after a top-up bury three again
-            expect(r.h.status.result && (res.stun!.byAction.bury ?? 0)).toBeGreaterThanOrEqual(3 * (res.stun!.stuns - r.trade.opened) - 6);
+            expect(r.h.status.counters.interfaceTicks).toBeGreaterThanOrEqual(4 * r.trade.done);
+            // the stuns that are not top-ups bury three (the first stun's 4 bones leave 1)
+            expect(res.stun!.byAction.bury).toBeGreaterThanOrEqual(3 * (res.stun!.stuns - r.trade.opened) - 3);
         });
 
         test('without idleOnInterface the knight click closes the trade', () => {
@@ -372,7 +373,7 @@ describe('pickpocket stun actions', () => {
 
     test('rejects a window outside the stun and unknown presets', () => {
         const h = new Harness('pp', createPickpocket);
-        for (const params of [{ stunWindow: [1, 6] }, { stunWindow: [2, 8] }, { stunWindow: [5, 3] }, { stunActions: ['juggle'] }, { stunActions: [{ kind: 'item', item: 'x' }] }, { stunActions: [] }, { stunActions: [{ kind: 'player' }] }]) {
+        for (const params of [{ stunWindow: [1, 6] }, { stunWindow: [2, 8] }, { stunWindow: [5, 3] }, { stunActions: ['juggle'] }, { stunActions: [{ kind: 'item', item: 'x' }] }, { stunActions: [] }, { stunActions: [{ kind: 'player' }] }, { stunActions: [{ kind: 'button', component: 1, window: [4, 2] }] }]) {
             const s = h.runtime.start('pp', { maxTicks: 10, stunActions: ['bury'], ...params });
             expect(s.phase).toBe('fault');
             expect(s.fault).toMatch(/bad parameters/);

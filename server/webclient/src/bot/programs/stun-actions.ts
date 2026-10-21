@@ -25,7 +25,9 @@
 // stun action and the knight click is skipped, because a click after it would replace the
 // request's interaction, and a bury before it would stop it. It fires at most once per stun and
 // only on a player standing next to the account (a stunned player cannot walk). Gate it with
-// `fewer` (e.g. fewer than 3 bones) so it goes out only when a top-up is due. The pickpocket
+// `fewer` (e.g. fewer than 3 bones) so it goes out only when a top-up is due, and give it
+// `window: [2, 4]`: rs/106's trades took 5-6 ticks from the request, so one sent later than +4
+// is still open on the attempt tick and delays the attempt. The pickpocket
 // program's `idleOnInterface` then keeps every packet back while the trade is open.
 //
 // With rs/106's list [bury, charge, arrows] and the default window this gives its measured
@@ -73,6 +75,8 @@ export interface StunActionSpec {
     /** Fires per tick (a 'tick' delay is always 1). */
     max?: number;
     delay?: StunDelay;
+    /** [from, to]: the offsets this action may fire on, inside the pack's window (a top-up: [2, 4]). */
+    window?: [number, number];
 }
 
 export interface StunTemplate {
@@ -93,6 +97,7 @@ export interface StunTemplate {
     skill?: string;
     from: number;
     below: number;
+    window: [number, number];
 }
 
 /** IF_BUTTON for Charge on the standard spellbook (stun-pack-thieve.ts). */
@@ -144,8 +149,14 @@ function parseOne(spec: StunActionSpec, at: string): StunTemplate {
         fewer: [],
         skill: spec.skill,
         from: num(spec.from, 0, `${at}.from`),
-        below: num(spec.below, Infinity, `${at}.below`)
+        below: num(spec.below, Infinity, `${at}.below`),
+        window: [-Infinity, Infinity]
     };
+    if (spec.window !== undefined) {
+        const w = spec.window;
+        if (!Array.isArray(w) || w.length !== 2 || !w.every(v => Number.isInteger(v)) || w[0] > w[1]) throw new Error(`${at}.window must be [from, to], stun offsets`);
+        t.window = [w[0], w[1]];
+    }
     if (spec.skill !== undefined && (typeof spec.skill !== 'string' || !spec.skill)) throw new Error(`${at}.skill must be a skill name`);
     if (spec.needs !== undefined) {
         if (!Array.isArray(spec.needs)) throw new Error(`${at}.needs must be a list of { item, count }`);
@@ -384,6 +395,7 @@ export class StunPack {
         let owned = false;
         for (const tpl of this.templates) {
             if (owned) break;
+            if (k < tpl.window[0] || k > tpl.window[1]) continue;
             if (tpl.kind === 'player') {
                 // only as the tick's first pick, once per stun
                 if (picks.length || this.playerSentThisStun) continue;
