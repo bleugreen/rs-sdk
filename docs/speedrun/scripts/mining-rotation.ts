@@ -121,7 +121,10 @@ await runScript(async ({ bot, sdk }) => {
 
     while (ticks.length < ORES) {
         s = await nextTick(sdk, s.tick);
-        if (s.dialog.isOpen) sdk.sendClickDialog(0).catch(() => {});
+        if (s.dialog.isOpen) {
+            log.push(`  dialog seen@${s.tick}, continue sent`);
+            sdk.sendClickDialog(0).catch(() => {});
+        }
         const xp = miningXp(s);
         if (xp > lastXp) {
             ticks.push(s.tick);
