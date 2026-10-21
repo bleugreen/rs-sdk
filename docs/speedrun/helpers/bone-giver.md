@@ -79,6 +79,17 @@ the giver would open the screens on the scored click there too (the size is read
 screens are open), which would make a top-up 4 ticks; SUPPLIES.md has SCORED request, so that
 is proposed rather than built.
 
-Not measured: the bank round trip (Falador west from the Taverley trees is ~120 tiles each way,
-longer than a load's ~77 ticks, so one giver cannot keep up from that bank alone; it needs a
-second giver or a courier at the trees), the willow site, and anything on the demo.
+**The restock round trip** (`speedrun/lab/measure-bone-trip.ts`, the SDK's pathfinding walk,
+as the role walks; 2 trials each):
+
+| Falador west bank and back | Out | Back | Round trip |
+|---|---|---|---|
+| oak giver tile (2913,3494) | 79-82 | 79 | **158-161 ticks** |
+| willow giver tile (2920,3407) | 74 | 75-78 | **149-152 ticks** |
+
+Walking only; the bank visit adds a few ticks. Run energy read 100 after every leg, so the lab
+did not drain it; on the demo a giver walking trip after trip will drain and partly walk, so
+these are lower bounds. With a load due every ~70 ticks (rs/158: ~39 loads of 23), two
+alternating givers allow 140 ticks per round trip and **three** allow 210: S07 needs three.
+
+Not measured: the willow site's trades, and anything on the demo.
