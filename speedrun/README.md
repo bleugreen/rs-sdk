@@ -31,7 +31,9 @@ speedrun/
     measure-*.ts  the measurements quoted below
   tools/          upstream watch (nightly diff of watched upstream paths);
                   hiscore-stamp-probe.ts (board reader and the live stamp test,
-                  docs/speedrun/research/competitors/hiscore-timestamps.md)
+                  docs/speedrun/research/competitors/hiscore-timestamps.md);
+                  observe.ts, the passive in-game observer and /playerpositions tracker
+                  (docs/speedrun/research/competitors/observation.md)
   runs/           tick logs (gitignored)
 ```
 

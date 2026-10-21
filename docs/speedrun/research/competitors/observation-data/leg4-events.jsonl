@@ -1,0 +1,17 @@
+{"at":"2026-10-21T09:34:42.143Z","event":"mes","tick":1,"text":"Welcome to RuneScape."}
+{"at":"2026-10-21T09:34:42.144Z","event":"login","tick":1,"me":[2725,3484,0],"modal":-1}
+{"at":"2026-10-21T09:34:42.144Z","event":"ready","tick":1,"me":[2725,3484,0]}
+{"at":"2026-10-21T09:35:34.055Z","event":"walk","spot":"ardougne_market","ok":true,"msg":"Arrived","ticks":172,"me":[2662,3308]}
+{"at":"2026-10-21T09:35:34.056Z","event":"dwell","spot":"ardougne_market","arrived":true,"tick":173}
+{"at":"2026-10-21T09:38:16.901Z","event":"walk","spot":"ardougne_north_bank","ok":true,"msg":"Arrived","ticks":37,"me":[2617,3328]}
+{"at":"2026-10-21T09:38:16.901Z","event":"dwell","spot":"ardougne_north_bank","arrived":true,"tick":711}
+{"at":"2026-10-21T09:42:07.064Z","event":"walk","spot":"fishing_guild","ok":true,"msg":"Arrived","ticks":222,"me":[2613,3386]}
+{"at":"2026-10-21T09:42:07.065Z","event":"dwell","spot":"fishing_guild","arrived":true,"tick":1477}
+{"at":"2026-10-21T09:44:57.461Z","event":"walk","spot":"seers_magic","ok":true,"msg":"Arrived","ticks":64,"me":[2701,3402]}
+{"at":"2026-10-21T09:44:57.461Z","event":"dwell","spot":"seers_magic","arrived":true,"tick":2035}
+{"at":"2026-10-21T09:48:10.865Z","event":"walk","spot":"gnome_agility","ok":false,"msg":"Path to (2484, 3440) stops 10 tiles short at (2494, 3437) - the rest is unroutable from here (locked door or separate room?)","ticks":138,"me":[2495,3435]}
+{"at":"2026-10-21T09:48:10.865Z","event":"dwell","spot":"gnome_agility","arrived":false,"tick":2678}
+{"at":"2026-10-21T09:49:14.610Z","event":"mes","tick":2891,"text":"I can't reach that!"}
+{"at":"2026-10-21T09:53:17.569Z","event":"walk","spot":"barbarian_agility","ok":false,"msg":"Stuck at (2545, 3569)","ticks":1014,"me":[2545,3569]}
+{"at":"2026-10-21T09:53:17.570Z","event":"dwell","spot":"barbarian_agility","arrived":false,"tick":3698}
+{"at":"2026-10-21T09:53:19.577Z","event":"logout","why":"tour finished","tick":3704}
