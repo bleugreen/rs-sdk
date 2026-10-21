@@ -22,6 +22,9 @@ export interface StateSpec {
     locs?: Array<Partial<NearbyLoc> & { id: number; x: number; z: number; name: string; options?: string[] }>;
     messages?: Array<{ text: string; tick?: number; id?: number }>;
     dialogOpen?: boolean;
+    /** A main modal (trade screen) is open. */
+    tradeOpen?: boolean;
+    players?: Array<{ index: number; name: string; x?: number; z?: number }>;
     inGame?: boolean;
 }
 
@@ -72,7 +75,14 @@ export function makeState(spec: StateSpec): BotWorldState {
         inventory,
         equipment: (spec.equipment ?? []).map((name, slot) => ({ slot, id: 2000 + slot, name, count: 1, optionsWithIndex: [{ text: 'Remove', opIndex: 1 }] })),
         nearbyNpcs: npcs,
-        nearbyPlayers: [],
+        nearbyPlayers: (spec.players ?? []).map(p => {
+            const px = p.x ?? x + 1;
+            const pz = p.z ?? z;
+            return { kind: 'player', index: p.index, name: p.name, combatLevel: 3, x: px, z: pz, distance: Math.max(Math.abs(px - x), Math.abs(pz - z)) };
+        }),
+        modalOpen: spec.tradeOpen ?? false,
+        modalInterface: spec.tradeOpen ? 3323 : -1,
+        trade: { isOpen: spec.tradeOpen ?? false, screen: spec.tradeOpen ? 'offer' : null, partner: null, myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false },
         nearbyLocs: locs,
         groundItems: [],
         gameMessages: messages,
