@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -215,6 +215,7 @@ describe('end to end against a local upstream', () => {
         commit('touch a watched file');
         await write('other/b.txt', 'b2\n');
         commit('touch an unwatched file');
+        mkdirSync(join(upstream, 'elsewhere'));
         git('mv', 'watched/keep.txt', 'elsewhere/keep.txt');
         commit('move a watched file out');
 
