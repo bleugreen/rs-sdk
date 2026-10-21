@@ -71,6 +71,21 @@ function watch<T>(p: Promise<T>) {
     return w;
 }
 
+/**
+ * Run `f` with every timer firing `earlyMs` before it is due. Timers may fire a little before
+ * performance.now() reaches the time they were armed for; this makes that happen every time.
+ * Bun.sleep (the scripted server's settle) does not go through setTimeout, so it is unaffected.
+ */
+async function withEarlyTimers<T>(earlyMs: number, f: () => Promise<T>): Promise<T> {
+    const real = globalThis.setTimeout;
+    globalThis.setTimeout = ((cb: () => void, ms = 0) => real(cb, Math.max(0, ms - earlyMs))) as unknown as typeof setTimeout;
+    try {
+        return await f();
+    } finally {
+        globalThis.setTimeout = real;
+    }
+}
+
 describe('logoutDirect', () => {
     test('clicks logout, waits for the server LOGOUT, then closes the socket itself', async () => {
         const s = scripted();
@@ -118,6 +133,16 @@ describe('logoutDirect', () => {
         const r = await logoutDirect(s.target, { timeoutMs: 40 });
         expect(r).toMatchObject({ ok: false, via: null, clicks: 1 });
         expect(r.reason).toMatch(/still in the world/);
+        expect(s.closed()).toBe(true);
+    });
+
+    test('never confirmed, with the deadline timer firing early: no extra click at the deadline', async () => {
+        const s = scripted();
+        await s.tick();
+        const r = await withEarlyTimers(10, () => logoutDirect(s.target, { timeoutMs: 40 }));
+        expect(r).toMatchObject({ ok: false, via: null, clicks: 1 });
+        expect(r.reason).toMatch(/still in the world/);
+        expect(s.clicks()).toBe(1);
         expect(s.closed()).toBe(true);
     });
 
