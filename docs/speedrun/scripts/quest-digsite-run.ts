@@ -44,7 +44,20 @@ await runScript(async ({ bot, sdk }) => {
     const xp0 = sdk.getSkills().map(s => [s.name, s.experience] as const);
     const tStart = tick(sdk);
     const p = () => sdk.getState()!.player!;
+    let pans = 0, picks = 0, fails = 0, digs = 0;
 
+    // `cave` (argv[3]) starts at the mine shaft permit (stage 6, talisman shown,
+    // bit 7) with the items held at that point and the liquid already identified.
+    const fromCave = process.argv[3] === 'cave';
+    if (fromCave) {
+        await cheat(sdk, 'setvar itexamlevel 6');
+        await cheat(sdk, `setvar itexam_bits ${1 << 7}`);
+        await clearInv(sdk);
+        for (const o of ['rope', 'rope', 'nitroglycerin', 'charcoal', 'pestle_and_mortar', 'tinderbox', 'trowel', 'specimen_jar', 'specimen_brush']) await give(sdk, o, 1);
+        await tele(sdk, 3370, 3427);
+    }
+
+    if (!fromCave) {
     await S.run('examiner: start the quest', async () => {
         await q.talk('examiner', [/Can I take an exam/]);
     });
@@ -75,7 +88,6 @@ await runScript(async ({ bot, sdk }) => {
         await q.talk('panning_guide');
         if (q.inv('cup_of_tea')) throw new Error('tea not taken');
     });
-    let pans = 0;
     await S.run('pan until rock sample 2', async () => {
         while (!q.inv('rock_sample2')) {
             await q.makeRoom(KEEP);
@@ -89,7 +101,6 @@ await runScript(async ({ bot, sdk }) => {
         }
         return `${pans} pans`;
     });
-    let picks = 0, fails = 0;
     await S.run('pickpocket workmen until rock sample 1 and a specimen brush', async () => {
         while (!(q.inv('rock_sample1') && q.inv('specimen_brush'))) {
             await q.makeRoom(KEEP);
@@ -165,7 +176,6 @@ await runScript(async ({ bot, sdk }) => {
     await S.run('examiner -> level 3 site (walk)', async () => {
         await q.walk(3354, 3409, 1);
     });
-    let digs = 0;
     await S.run('dig the level 3 site until the Talisman of Zaros', async () => {
         while (!q.inv('digtalisman')) {
             await q.makeRoom(KEEP);
@@ -198,6 +208,7 @@ await runScript(async ({ bot, sdk }) => {
     await S.run('workman -> private winch (walk)', async () => {
         await q.walk(3370, 3427, 1);
     });
+    }
     await S.run('private winch: tie rope, descend', async () => {
         const ropes = q.count('rope');
         await q.useOnLoc('rope', 'digwinch2', () => q.count('rope') < ropes);
