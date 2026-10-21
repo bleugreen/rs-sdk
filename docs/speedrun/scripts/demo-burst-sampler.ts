@@ -215,8 +215,17 @@ function collect(id: string, conclusion: string, source = 'rs102'): Outcome {
         tsv('attempts.tsv', ATTEMPT_COLS, [pdt(Date.now()), id, source, 'cancelled', '', '', '', '', runUrl(id)]);
         return 'cancelled';
     }
-    gh(['run', 'download', id, '-R', REPO, '-D', dest], 120_000);
-    const sub = readdirSync(dest).map(d => join(dest, d)).find(d => existsSync(join(d, 'vantage.json'))) ?? dest;
+    // The artifact can lag the run's completion by several seconds.
+    let sub: string | undefined;
+    for (let i = 0; i < 4 && !sub; i++) {
+        if (i) spawnSync('sleep', ['15']);
+        gh(['run', 'download', id, '-R', REPO, '-D', dest], 120_000);
+        sub = readdirSync(dest).map(d => join(dest, d)).find(d => existsSync(join(d, 'vantage.json')));
+    }
+    if (!sub) {
+        tsv('attempts.tsv', ATTEMPT_COLS, [pdt(Date.now()), id, source, 'no-artifacts', '', '', '', conclusion, runUrl(id)]);
+        return 'error';
+    }
     const vantage = readJson(join(sub, 'vantage.json')) ?? {};
     const direct = readJson(join(sub, 'direct.json'));
     const gwp = readJson(join(sub, 'gateway-path.json'));
@@ -314,8 +323,9 @@ async function countLoop() {
         const [c, f] = timing.split(' ').map(v => Math.round(Number(v) * 1000));
         tsv('playercount.tsv', ['pdt', 'epoch_ms', 'players', 'tcp_ms', 'ttfb_ms', 'fly_sid', 'fly_bn'], [pdt(Date.now()), Date.now(), n, c, f, fly.sid, fly.bn]);
         if (i % FINGERPRINT_EVERY === 0) {
-            const b = spawnSync('sh', ['-c', `curl -s --max-time 20 -D /dev/stderr https://${HOST}/bot/client.js | sha256sum`], { encoding: 'utf8' });
-            const hdr = (b.stderr ?? '').split(/\r?\n/);
+            const hdrFile = join(DIR, '.client-js-headers');
+            const b = spawnSync('sh', ['-c', `curl -s --max-time 20 -D ${hdrFile} https://${HOST}/bot/client.js | sha256sum`], { encoding: 'utf8' });
+            const hdr = readText(hdrFile).split(/\r?\n/);
             const h = (k: string) => hdr.find(l => l.toLowerCase().startsWith(k + ':'))?.split(':').slice(1).join(':').trim();
             tsv('fingerprint.tsv', ['pdt', 'epoch_ms', 'client_js_sha256', 'content_length', 'etag', 'last_modified', 'server'],
                 [pdt(Date.now()), Date.now(), (b.stdout ?? '').slice(0, 16), h('content-length'), h('etag'), h('last-modified'), h('server')]);
@@ -335,4 +345,13 @@ if (args.has('collect')) {
 }
 
 log(`start: ${WORKFLOW} on ${REPO} @ ${REF} (lite_ref=${LITE_REF}, direct sample ${SAMPLE_MIN} min) every ${EVERY_MIN} min until ${UNTIL === Infinity ? 'stopped' : pdt(UNTIL)}; dir ${DIR}`);
+collectOrphans();
+// An orphan still running when this process started: wait for it before the first slot.
+for (const id of mine) {
+    const r = gh(['run', 'view', id, '-R', REPO, '--json', 'status,conclusion']);
+    if (r.ok && JSON.parse(r.out).status !== 'completed') {
+        log(`orphan ${id} still running, waiting`);
+        log(`orphan ${id}: ${collect(id, await waitDone(id))}`);
+    }
+}
 await Promise.all([pairLoop(), countLoop()]);
