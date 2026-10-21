@@ -108,3 +108,23 @@ for (const L of [52, 70, 93, 96]) {
 }
 console.log(`  52->99 with a permanent +3: ${r(ticksBetween(X52, X99, L => best(L, { boost: 3 })))} vs ${r(wild52)} ticks`);
 console.log(`  ${levelOf(core)}->99 with a permanent +3: ${r(ticksBetween(core, X99, L => best(L, { boost: 3 })))} vs ${r(base)} ticks`);
+
+console.log('\nBands (no quests; best safe method in each band):');
+const bands: [number, number, string, (L: number) => number][] = [
+    [1, 15, 'gnome', () => GNOME],
+    [15, 52, 'gnome (or monkey bars)', () => GNOME],
+    [15, 52, 'monkey bars', () => MONKEYBARS],
+    [52, 70, 'wilderness', L => best(L)],
+    [70, 85, 'wilderness', L => best(L)],
+    [85, 93, 'wilderness', L => best(L)],
+    [93, 96, 'wilderness', L => best(L)],
+    [96, 99, 'wilderness', L => best(L)],
+];
+for (const [a, b, name, rate] of bands) {
+    const xp = LEVEL_BASE[b] - LEVEL_BASE[a];
+    console.log(`  ${a}->${b} ${name}: ${xp.toFixed(1)} base, ${r(ticksBetween(LEVEL_BASE[a], LEVEL_BASE[b], rate))} ticks`);
+}
+console.log(`\nCombos that finish 99 without training (core = GT+Regicide+TR+UP = ${core}, need ${(X99 - core).toFixed(1)} more):`);
+for (const [name, xp] of [['1 Legends pick', Q.legendsPick], ['2 Tourist Trap picks', 2 * Q.touristPick], ['Fremennik + 1 Tourist Trap pick', Q.fremennik + Q.touristPick], ['1 Tourist Trap pick', Q.touristPick], ['Fremennik', Q.fremennik]] as [string, number][]) {
+    console.log(`  ${name}: ${(core + xp).toFixed(1)} -> ${core + xp >= X99 ? '99, 0 ticks' : `${r(to99(core + xp))} ticks left`}`);
+}
