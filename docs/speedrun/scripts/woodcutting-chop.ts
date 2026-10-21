@@ -138,7 +138,7 @@ await runScript(async ({ bot, sdk }) => {
             rollObs = s.tick + 4;
             return;
         }
-        if (rollObs < 0 || (current === null && s.tick > rollObs)) {
+        if (rollObs < 0 || current === null) {
             // start, or every tree was down: click as soon as one is live
             if (!live.length) return;
             send(live[0]);
