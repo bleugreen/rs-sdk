@@ -11,6 +11,15 @@ rs/2's branch.
 with helper labs) at **`NODE_TICKRATE=300`** with the headless lite client, at Varrock west bank
 (booth (3186,3436), player on (3185,3436)). No figure comes from the Mac executor.
 
+**Client.** The scored run drives the browser webclient against the demo, where each reaction to
+observed state costs 1-2 more ticks through the SDK relay from home and about 0.15 from Ashburn
+(rs/2; `docs/speedrun/LAB.md` on main, "Which client a number was taken on" and the host-latency
+table under "Running several labs on one machine"). The 7-tick cycle has **1 reaction per 27
+gems**: deposit, withdraw and close go out on the tick the bank is seen open (section 4). The cuts
+are blind, 5 per tick. The lite client fills OPHELDU item ids from its own inventory view;
+whether the webclient does the same is unconfirmed (LAB.md). Totals are not re-derived for the
+webclient.
+
 ## 1. Recommendation
 
 Cut gems at a bank booth: chisel in slot 0 and 27 uncut gems, 5 cuts per tick, best gem per
@@ -33,6 +42,15 @@ realistic plan is the best line helpers can supply:
 
 With the stock SDK every line is about 3.5-4x slower (1 cut per tick plus a 5-tick bank visit,
 measured 31.9 ticks per 27-gem cycle).
+
+### Summary row
+
+rs/2's columns for the Item-fed skills section of `docs/speedrun/skills/README.md`; column 5
+is "with interleaving (net)", n/a where nothing is absorbable net (section 5).
+
+| Skill | Headline method | Start level (on-route quests) | Ticks to 99, normal | Ticks to 99, with interleaving (net) | Basis | Helper supplies | Document |
+|---|---|---|---|---|---|---|---|
+| Crafting | cut gems at a bank booth, 5 per tick, best gem per band (ruby, diamond, dragonstone from 55) | 42 after Dwarf Cannon's 750; 45 if trained after Goblin Diplomacy's 200 ([quests README](../quests/README.md) section 3, steps 6 and 12) | 101 from 42 (130 from 1) | n/a: no net absorption (one slot per gem, 57 level-ups; section 5) | measured (bbs) | chisel, 1 uncut ruby, 10 uncut diamonds, 277 uncut dragonstones (effectively unobtainable; fallback 364 uncut diamonds, about 121 ticks) | crafting.md |
 
 ## 2. Route by level band
 
@@ -69,13 +87,18 @@ End to end (measured, `delayfree-cycle.ts`):
 
 | Quest | Crafting (base, read) | Start level | On route? |
 |---|---|---|---|
-| Dwarf Cannon | 750 (`quest_mcannon.rs2:25`; `dwarf_cannon.md` on rs/3's branch) | **42** | **yes** |
+| Dwarf Cannon | 750 (`quest_mcannon.rs2:25`; [`dwarf_cannon.md`](../quests/dwarf_cannon.md)) | **42** | **yes** (quests README step 6) |
+| Goblin Diplomacy | 200 (`quest_gobdip.rs2:62`, via the [quests README](../quests/README.md) section 3) | 45 with Dwarf Cannon | **yes**, Package B filler (step 12) |
 | Shilo Village | 3,875 (`quest_zombiequeen.rs2:1632`) | 65 | off route (`legends.md`) |
 | The Fremennik Trials | 2,812.4 | 60 | off route |
 | Shades of Mort'ton | 2,000 (`quest_mortton.rs2:65`) | 56 | not costed |
 | Legends' Quest | 7,650 per pick | | off route |
 
-On the route only Dwarf Cannon applies: **start at 42, 42 -> 99 = 101 ticks** (measured). From
+On the route Dwarf Cannon applies first: **start at 42, 42 -> 99 = 101 ticks** (measured).
+Goblin Diplomacy, now Package B filler before Dragon Slayer, adds 200 more: 950 base is level
+**45** (inferred from the server's xp table, `Player.ts`) if Crafting is trained after it. That
+saves about a tick (200 base at the ruby/diamond rates, inferred); 101 stays the measured,
+slightly pessimistic figure. From
 level 1 it is 130 (measured); Dwarf Cannon saves about 29 ticks. Its railings roll on Crafting
 (`dwarf_cannon.md`: 44% at 60, 59% at 99), so training Crafting first speeds the quest a little;
 that trade belongs to the quest plan.
@@ -126,6 +149,25 @@ that trade belongs to the quest plan.
   (helper glassblowing at Crafting 46, `glass.struct:12-14`).
 - **Trading instead of banking**: an in-trade swap of 27 gems costs 5-9 ticks (`primitives.md`
   section 6) against a 1-tick bank visit plus the click. Bank wins.
+
+**Interleaving** (`interleaving.md` section 8, the absorbable-fractions table): cutting is
+delay-free and lands 3 per tick beside a gathering click (measured there), so all ~288 cuts fit
+by packets. **Net, none of it is worth absorbing**, for two costs that table's capacity figure
+(~80 standalone ticks) leaves out:
+
+- **The inventory binds.** One slot per gem, so a load is 27 gems, and refilling it away from a
+  bank is a top-up trade of 5-9 ticks (`primitives.md` section 6). Standalone, those 27 gems cost
+  the measured 7-tick bank cycle. The trade eats the whole saving. In pickpocket stuns the gems
+  would also take the bones' slots, and a stun's bones are worth more (4 standalone ticks against
+  ~1.5 for its 7 helper actions, interleaving.md section 8).
+- **Level-ups are expensive in a gathering loop.** One helper skill's early level-ups cost about
+  136 Woodcutting ticks over 29 dialog episodes (interleaving.md section 5, measured); Crafting's
+  57 from 42 would cost far more Woodcutting than its 101 standalone ticks.
+
+So column 5 of the summary row is n/a against either host loop: the plain pickpocket loop (no
+knife column) or plain 4-tick Woodcutting. rs/9's knife loop leaves even less room: it needs the
+knife and a log in the inventory and puts 4 packets on the tick after each roll
+(interleaving.md section 7, inferred).
 
 ## 6. Gotchas
 

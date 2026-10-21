@@ -10,13 +10,20 @@ block (WEB 9270, management 9271, hiscores 9272, node 43970, agent 8170). Labels
 with helper labs) at **`NODE_TICKRATE=300`** with the headless lite client, at Varrock west bank
 (booth (3186,3436), player on (3185,3436)). No figure comes from the Mac executor.
 
+**Client.** The scored run drives the browser webclient against the demo, where each reaction to
+observed state costs 1-2 more ticks through the SDK relay from home and about 0.15 from Ashburn
+(rs/2; `docs/speedrun/LAB.md` on main, "Which client a number was taken on" and the host-latency
+table under "Running several labs on one machine"). The 4-tick cycle has **1 reaction per 14
+potions**: withdraw, deposit, withdraw and close go out on the tick the bank is seen open
+(section 1). The mixes are blind, 5 per tick. Totals are not re-derived for the webclient.
+
 ## 1. Recommendation
 
 **Druidic Ritual is a hard prerequisite.** Every Herblore action needs level 3 by default, and
 nothing below level 3 gives Herblore xp except quest steps (section 3). So the scored account
 starts Herblore at **level 28** after Druidic Ritual's 250 base. rs/3 has put Druidic Ritual on the
-route for this reason; Digsite and Watchtower are off it (cairn://p/rs/3, quest README sections
-1 and 4 on `agent/rs-3-coordinator-0`). **On-route: 28 -> 99 = 112 ticks** (measured).
+route for this reason; Digsite and Watchtower are off it ([quests README](../quests/README.md)
+sections 1 and 4; Druidic Ritual is step 12). **On-route: 28 -> 99 = 112 ticks** (measured).
 
 Then mix finished potions at a bank booth, 14 unfinished potions + 14 secondaries per
 inventory, 5 mixes per tick, best potion per band (super strength 55, super defence 66,
@@ -36,6 +43,15 @@ Supply decides the top tier, not playtime (section 7). Zamorak potions need tors
 source in the content is a keyed chest. From 28, **capping at ranging potions costs about 1 cycle,
 5 ticks**; capping at super defence about 2 cycles, 10 ticks (inferred). Pick the cap by what
 helpers can actually gather.
+
+### Summary row
+
+rs/2's columns for the Item-fed skills section of `docs/speedrun/skills/README.md`; column 5
+is "with interleaving (net)", n/a where nothing is absorbable net (section 5).
+
+| Skill | Headline method | Start level (on-route quests) | Ticks to 99, normal | Ticks to 99, with interleaving (net) | Basis | Helper supplies | Document |
+|---|---|---|---|---|---|---|---|
+| Herblore | mix finished potions at a bank booth, 14 + 14 per inventory, 5 per tick | 28 after Druidic Ritual's 250 (mandatory; [quests README](../quests/README.md) step 12) | 112 from 28 (about 117 with the ranging cap) | n/a: no net absorption (two slots per potion, 71 level-ups; section 5) | measured (bbs, 1 run) | 245 unfinished potions and secondaries by band, 245 vials; torstol is effectively unobtainable, so the realistic list caps at ranging (208 dwarf weed unf + 208 wine of Zamorak) | herblore.md |
 
 ## 2. Route by level band
 
@@ -158,6 +174,16 @@ Watchtower) return to the route, train Herblore after them: 57 -> 99 is 84 ticks
 - **Identifying herbs** (`identify.rs2`, OPHELD1, delay-free, 27 per inventory): torstol 15
   base, cadantine 12.5 (`herbs.obj`). About 48-60 base per tick, a tenth of mixing (inferred).
 - **Grinding** (pestle and mortar) gives no xp (`herblore.rs2:27-36`).
+
+**Interleaving** (`interleaving.md` section 8, the absorbable-fractions table): mixing is
+delay-free, so all ~245 mixes fit by packets, but **net, none of it is worth absorbing**. Each
+potion needs two non-stackable slots, so a load is 14 potions, and a top-up trade away from a
+bank costs 5-9 ticks (`primitives.md` section 6) against the measured 4-tick bank cycle it
+replaces. The trade costs more than it saves. Herblore's 71 level-ups from 28 would also cost
+more Woodcutting than the 112 standalone ticks if they fell in a gathering loop
+(interleaving.md section 5, measured). In pickpocket stuns the potions would displace the bones,
+which are worth more per stun. Column 5 of the summary row is n/a against the plain pickpocket
+loop, plain Woodcutting and the knife loop alike.
 
 ## 6. Gotchas
 
