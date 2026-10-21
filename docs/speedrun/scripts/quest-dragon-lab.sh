@@ -29,8 +29,6 @@ sed -i -e "s#^SERVER=.*#SERVER=localhost:$W#" -e "s#^GATEWAY_URL=.*#GATEWAY_URL=
 (cd server/webclient && exec bun src/lite/runner.ts $BOT >"$LOG/runner.log" 2>&1) &
 RPID=$!; sleep 40
 grep -q 'logged into' "$LOG/runner.log" || { echo RUNNER NOT LOGGED IN; tail -20 "$LOG/runner.log"; exit 1; }
-run() { echo "===== $*"; timeout 1500 bun docs/speedrun/scripts/"$@" $BOT_ARGS 2>&1 | tee -a "$LOG/results.log" | grep -vE '^\[(Runner|SDK|BotSDK|LOGOUT)|Pathfinding|^(XP|Inv|NPCs|Objs|Ground|Pos|>) '; }
-BOT_ARGS=
 bun docs/speedrun/scripts/quest-primitives-setup.ts $BOT >/dev/null 2>&1
 args=()
 for a in "$@" --; do

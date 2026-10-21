@@ -95,8 +95,9 @@ fights and prodding dominate them.
 
 **If filler is needed:** take Sea Slug, Doric's Quest and Fishing Contest first (net zero or
 better, 3 QP), then Cook's Assistant (1), then Goblin Diplomacy (5) or Witch's House (4) for
-larger gaps. That buys 13 QP for about 520 / 440 / 395 ticks net of xp, mostly the two
-larger fillers.
+larger gaps. All six together buy 13 QP for about 1,110 / 900 / 780 ticks, and their Fishing
+and Mining xp (about 1,200 ticks of training) more than repays that: about -90 / -300 / -420
+net (inferred).
 
 ## Step lists for the recommended fillers
 
