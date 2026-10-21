@@ -106,7 +106,7 @@ await runScript(async ({ bot, sdk }) => {
             await ensure('holy_table_napkin');
             for (const it of sdk.getInventory().filter(i => /Magic whistle/i.test(i.name))) await sdk.sendDropItem(it.slot);
             await sdk.waitForTicks(2);
-            await L.tele(sdk, 3105, 3362, 2); // top of the manor staircase
+            await L.tele(sdk, 3105, 3364, 2); // where the manor staircase lands
             const t0 = L.tick(sdk);
             const door = (await sdk.scanNearbyLocs(5)).find(l => l.x === 3106 && l.z === 3361 && l.options.includes('Open'));
             if (!door) throw new Error('whistle door not found');
