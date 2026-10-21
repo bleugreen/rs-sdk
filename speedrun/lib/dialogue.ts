@@ -96,8 +96,22 @@ export async function advance(sdk: DialogueSdk, opts: { choose?: RegExp; maxTick
 export interface BurstResult {
     ok: boolean;
     mode: 'burst' | 'fallback';
+    /** Ticks until the landing was confirmed (includes the quiet tick when there is no `until`). */
     ticks: number;
+    /** Ticks until the landing page was first seen. */
+    landedTicks?: number;
     reason?: string;
+}
+
+export interface BurstOptions {
+    /**
+     * Where the burst should land, e.g. `s => classifyPage(s.dialog) === 'choice'`
+     * or `s => !s.dialog.isOpen`. With it the burst resolves the moment the
+     * landing shows. Without it the burst waits for one quiet tick after the
+     * ceil(k/5) floor: the same page, not waiting, across a tick boundary.
+     */
+    until?: (s: BotWorldState) => boolean;
+    maxTicks?: number;
 }
 
 type BlindClick = (option: number, opts: { blind: boolean }) => Promise<ActionResult>;
@@ -113,10 +127,18 @@ type BlindClick = (option: number, opts: { blind: boolean }) => Promise<ActionRe
  * remainder unsent.
  *
  * With rs/51's blind continue, all k are fired at once and the server takes 5
- * per tick. Without it, the client refuses continues 2..k locally (no server
+ * per tick. A burst fired mid-tick can split across server ticks (say 3, then
+ * 5, then 2), and the client publishes once per tick, so the pages inside a
+ * tick collapse into one and "some page moved" does not mean "k pages moved".
+ * The burst therefore returns only on the caller's `until` landing, or after a
+ * quiet tick. Returning earlier would let the caller's next continue land
+ * behind still-buffered resumes, one page past k. Pass `until` when the
+ * landing is known: it saves the quiet tick.
+ *
+ * Without blind continue, the client refuses continues 2..k locally (no server
  * event is spent), and the rest are sent one read-then-act at a time.
  */
-export async function continueBurst(sdk: DialogueSdk, k: number, opts: { maxTicks?: number } = {}): Promise<BurstResult> {
+export async function continueBurst(sdk: DialogueSdk, k: number, opts: BurstOptions = {}): Promise<BurstResult> {
     const s0 = sdk.getState();
     const t0 = s0?.tick ?? 0;
     if (!s0 || classifyPage(s0.dialog) !== 'continue' || s0.dialog.isWaiting) {
@@ -130,13 +152,15 @@ export async function continueBurst(sdk: DialogueSdk, k: number, opts: { maxTick
     acted.set(sdk, { pageId: startPage, sawWaiting: true });
 
     if (accepted >= k) {
-        const minTick = t0 + Math.ceil(k / 5);
-        const r = await waitUntil(
-            sdk,
-            s => s.tick >= minTick && (!s.dialog.isOpen || (s.dialog.pageId !== startPage && !s.dialog.isWaiting)),
-            { maxTicks: opts.maxTicks ?? Math.ceil(k / 5) + 3 }
-        );
-        return { ok: r.ok, mode: 'burst', ticks: r.tick - t0, ...(r.ok ? {} : { reason: 'dialog did not move past the burst' }) };
+        const floor = t0 + Math.ceil(k / 5);
+        const landing = burstLanding(startPage, floor, opts.until);
+        const r = await waitUntil(sdk, s => landing.step(s), { maxTicks: opts.maxTicks ?? Math.ceil(k / 5) + 5 });
+        return {
+            ok: r.ok,
+            mode: 'burst',
+            ticks: r.tick - t0,
+            ...(r.ok ? { landedTicks: landing.landedAt() - t0 } : { reason: 'dialog did not settle after the burst' }),
+        };
     }
 
     if (accepted === 0) return { ok: false, mode: 'fallback', ticks: 0, reason: acks[0]?.message ?? 'continue refused' };
@@ -149,5 +173,42 @@ export async function continueBurst(sdk: DialogueSdk, k: number, opts: { maxTick
     // Wait for the page after the last continue, so ticks cover all k pages.
     const last = acted.get(sdk)?.pageId;
     const r = await waitUntil(sdk, s => !s.dialog.isOpen || (s.dialog.pageId !== last && !s.dialog.isWaiting), { maxTicks: opts.maxTicks ?? 10 });
-    return { ok: r.ok, mode: 'fallback', ticks: r.tick - t0 };
+    return { ok: r.ok, mode: 'fallback', ticks: r.tick - t0, landedTicks: r.tick - t0 };
+}
+
+/**
+ * The burst's landing detector, fed one published state at a time. Exported
+ * for tests. A landing is a state at or past the floor tick, off the start
+ * page, not waiting; it is confirmed by `until`, or by the same landing still
+ * showing on a later tick (a quiet tick).
+ */
+export function burstLanding(startPage: string | undefined, floor: number, until?: (s: BotWorldState) => boolean) {
+    let seen: { tick: number; sig: string } | null = null;
+    let landedAt = -1;
+    return {
+        landedAt: () => landedAt,
+        step(s: BotWorldState): boolean {
+            if (s.tick < floor) return false;
+            const d = s.dialog;
+            if (d.isOpen && (d.isWaiting || d.pageId === startPage)) {
+                seen = null;
+                return false;
+            }
+            const sig = d.isOpen ? `page:${d.pageId}` : 'closed';
+            if (until) {
+                if (!until(s)) return false;
+                landedAt = s.tick;
+                return true;
+            }
+            if (seen && seen.sig === sig) {
+                if (s.tick > seen.tick) {
+                    landedAt = seen.tick;
+                    return true;
+                }
+                return false;
+            }
+            seen = { tick: s.tick, sig };
+            return false;
+        },
+    };
 }

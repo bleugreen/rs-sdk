@@ -56,7 +56,8 @@ async function handleRequests(parentPort: ParentPort, msg: any) {
                 });
                 stopTimer();
             } else {
-                // rs-sdk: never auto-grant dev staffmodlevel; a local lab opts in with LOCAL_STAFF_LEVEL.
+                // rs-sdk: non-production worlds (the public server included) take this branch, so
+                // never auto-grant staffmodlevel; only a private lab opts in with LOCAL_STAFF_LEVEL.
                 const staffmodlevel = Environment.LOCAL_STAFF_LEVEL;
 
                 const profile = Environment.node.profile;

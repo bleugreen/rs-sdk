@@ -26,11 +26,17 @@ export const LEVEL_UP_TEXT = /just advanced|level is now|hitpoints are now/i;
 export const ARM_TICKS = 4;
 export const CHAIN_TICKS = 3;
 
-/** True when a fresh continue page is showing level-up text. */
+/**
+ * True when a continue page is showing and the latest dialog-history entry is
+ * level-up text first observed within the last ARM_TICKS ticks. The lite
+ * client only records a history entry when the chat modal id changes, so an
+ * old level-up entry can stay at [0] long after its dialog closed; the age
+ * bound keeps it from matching a later, unrelated page.
+ */
 export function isLevelUp(state: BotWorldState): boolean {
     if (classifyPage(state.dialog) !== 'continue') return false;
     const latest = state.recentDialogs?.[0];
-    return !!latest && LEVEL_UP_TEXT.test(latest.text.join(' '));
+    return !!latest && latest.tick >= state.tick - ARM_TICKS && LEVEL_UP_TEXT.test(latest.text.join(' '));
 }
 
 export interface WatcherMemory {
