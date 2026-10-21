@@ -124,6 +124,14 @@ describe('agility course', () => {
         expect(h.status.endedTick).toBe(55);
     });
 
+    test('restockBelow ends low-food between obstacles when the food runs down', () => {
+        const { h } = run({ ticks: 100, params: { restockBelow: 4 }, spec: t => ({ inventory: Array.from({ length: t >= 60 ? 4 : 6 }, () => 'Shark') }) });
+        expect(h.status.phase).toBe('done');
+        expect(h.status.result).toMatchObject({ ended: 'low-food', food: 4 });
+        // never mid-obstacle: the end tick is a click tick, where the next obstacle would have been clicked
+        expect(h.sent.filter(s => s.action.type === 'interactLoc' && s.tick >= h.status.endedTick!)).toEqual([]);
+    });
+
     test('a death faults the run', () => {
         const { h } = run({ ticks: 40, spec: t => ({ lifeId: t >= 60 ? 1 : 0 }) });
         expect(h.status.phase).toBe('fault');

@@ -30,7 +30,7 @@
 import type { NearbyPlayer } from '../types.js';
 import { AGILITY_COURSES, inBox, stepFromPosition, type AgilityCourse, type AgilityStep, type Box } from './agility-courses.js';
 import type { ProgramContext, ProgramParams, TickProgram } from './types.js';
-import { baseLevel, FreshMessages, invItem, itemOp, num, oneOf, regex, skillXp, XP_RATE } from './util.js';
+import { baseLevel, FreshMessages, invCount, invItem, itemOp, num, oneOf, regex, skillXp, XP_RATE } from './util.js';
 
 /** Every fail branch in the course scripts prints one of these (gnome_course.rs2 has none). */
 const FAIL_RE = /slip and fall|lose your footing|lost your balance|missed a hand hold|missed the rope|were hit by|stumbled|stepped on a broken/i;
@@ -152,7 +152,7 @@ function parseCourse(value: unknown): AgilityCourse {
     return c;
 }
 
-export type AgilityEnd = 'laps' | 'maxTicks' | 'level' | 'player' | 'attacked' | 'no-food' | 'died';
+export type AgilityEnd = 'laps' | 'maxTicks' | 'level' | 'player' | 'attacked' | 'no-food' | 'low-food' | 'died';
 
 /** Damage splats on our own player that were not seen before (the collector keeps a rolling window). */
 class FreshHits {
@@ -193,6 +193,8 @@ export function createAgility(params: ProgramParams): TickProgram {
     const foodRe = regex(params.food, '^(shark|lobster|swordfish|monkfish|tuna|salmon|trout|shrimps|bread|cake|2/3 cake|slice of cake)$', 'food');
     const eatBelow = num(params.eatBelow, 0, 'eatBelow');
     const eatGap = num(params.eatGap, 3, 'eatGap');
+    /** End `low-food` between obstacles once this many food items or fewer are left (-1: off), for a restock. */
+    const restockBelow = num(params.restockBelow, -1, 'restockBelow');
     const stepTimeout = num(params.stepTimeout, 80, 'stepTimeout');
     const pauseFor = oneOf(params.pauseFor, ['none', 'threat', 'any'] as const, 'none', 'pauseFor');
     const rule: ThreatRule = {
@@ -488,6 +490,8 @@ export function createAgility(params: ProgramParams): TickProgram {
                     return;
                 }
             }
+
+            if (restockBelow >= 0 && p.worldZ < UNDERGROUND && invCount(s, foodRe) <= restockBelow) return end(ctx, 'low-food', { food: invCount(s, foodRe), hp: p.hp });
 
             // the click: the next obstacle, on the label that showed the last one done
             const st = stepAt(i);
