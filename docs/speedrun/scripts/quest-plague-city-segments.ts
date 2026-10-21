@@ -139,6 +139,8 @@ await runScript(async ({ bot, sdk }) => {
             // Stand east of the clerk: the stage only advances if Bravek (2536,3314) is within 7 tiles
             // of the player (clerk.rs2 .npc_find(coord, bravek, 7, 0)); from x=2528 he is 8 away.
             await S.longWalk(bot, 'plague house -> clerk (bot.walkTo)', 2529, 3316);
+            const bravekNpc = sdk.findNearbyNpc(/^Bravek$/);
+            console.log(`  before clerk: player ${JSON.stringify(L.pos(sdk))}, Bravek ${bravekNpc ? `${bravekNpc.x},${bravekNpc.z}` : 'not seen'}`);
             await S.step('clerk (24->25)', talk(sdk, /^Clerk$/), { choices: [/I need permission to enter a plague house/, /This is urgent though/] });
             await quest('clerk');
         } else if (seg === 'bravek') {
