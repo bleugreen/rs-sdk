@@ -218,6 +218,16 @@ describe('step mode (dragon bones)', () => {
     });
 });
 
+describe('top-up size', () => {
+    // Seen live: a 1-bone top-up took one of the line's two slots.
+    test('never a top-up smaller than a quarter tranche', () => {
+        const ours = [offer({ id: 16015, item: 536, price: 6000, quantity: 11, remaining: 11 })];
+        const d = decideBid({ held: 0, ours, quote: book([[1254, 5000]], ours), coins: 9900, options: bones });
+        expect(d).toMatchObject({ action: 'hold', quantity: 0 });
+        expect(d.coinsShort).toBe(19 * 6000 - 9900);
+    });
+});
+
 describe('offer slots', () => {
     test(`no top-up beyond ${MAX_OFFERS_PER_LINE} offers per line (the server has 6 slots per account)`, () => {
         const ours = [offer({ id: 1, remaining: 20 }), offer({ id: 2, remaining: 20 })];

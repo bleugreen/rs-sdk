@@ -7,8 +7,8 @@
 //       {"item":"Grapes","target":520,"tranche":150,"maxPrice":3000,"minPrice":1650}]}' \
 //     bun speedrun/helpers/bidder.ts cairn_h61
 //
-// Lines take coins in list order: once a line is short of coins, the lines after
-// it place nothing new until it is funded.
+// Lines take coins in list order: a line short of coins reserves what it is
+// missing, and later lines spend only what is above the reservations.
 //
 // Funding: one trip on a coin earner trades its banked coins to the bidder, which
 // accepts trades from `funders` (our helper accounts) and gives nothing back:
@@ -234,13 +234,15 @@ export function decideBid(input: BidInput): BidDecision {
             if (ourPrice >= o.maxPrice) return out({ action: 'hold', price: ourPrice, capped: true, reason: `no fills for ${Math.round(input.idleMinutes ?? 0)} min, already at maxPrice ${o.maxPrice}` });
             return replace(Math.min(ourPrice + o.step, o.maxPrice), false, `no fills for ${Math.round(input.idleMinutes ?? 0)} min: one step up from ${ourPrice}`);
         }
-        // Still the best bid. Top the book back up to a tranche once a quarter of it has filled.
+        // Still the best bid. Top the book back up to a tranche once a quarter of it has
+        // filled, never with less than a quarter tranche (each offer takes one of 6 slots).
+        const minTopUp = Math.max(1, Math.ceil(o.tranche / 4));
         const topUp = wanted - resting;
-        if (topUp < Math.max(1, Math.ceil(o.tranche / 4))) return out({ action: 'hold', price: ourPrice, reason: `best bid at ${ourPrice}, ${resting} resting` });
+        if (topUp < minTopUp) return out({ action: 'hold', price: ourPrice, reason: `best bid at ${ourPrice}, ${resting} resting` });
         if (ours.length >= MAX_OFFERS_PER_LINE) return out({ action: 'hold', price: ourPrice, reason: `best bid at ${ourPrice}; ${ours.length} offers already, top up when one completes` });
         const quantity = Math.min(topUp, Math.floor(coins / ourPrice));
         const coinsShort = Math.max(0, topUp * ourPrice - coins);
-        if (quantity <= 0) return out({ action: 'hold', price: ourPrice, coinsShort, reason: `best bid at ${ourPrice}; no coins to top up ${topUp}` });
+        if (quantity < minTopUp) return out({ action: 'hold', price: ourPrice, coinsShort, reason: `best bid at ${ourPrice}; coins for ${quantity} of a ${topUp} top-up` });
         return out({ action: 'place', price: ourPrice, quantity, coinsShort, reason: `top up ${resting} resting to ${resting + quantity}` });
     }
 
@@ -431,9 +433,12 @@ export class Bidder {
             const inBank = sdk.getBankItems().find(i => i.name === 'Coins')?.count ?? 0;
             await this.buyer.setCoins(this.coins() + inBank);
         });
-        // 3. Each line in order. A line short of coins starves the ones after it.
+        // 3. Each line in order. A line short of coins reserves what it is missing, and
+        // the lines after it get only the coins above all earlier reservations. A line's
+        // own refund after a cancel counts like any other coin.
         await this.openGE();
-        let starvedBy: string | null = null;
+        let reserved = 0;
+        const available = () => Math.max(0, this.coins() - reserved);
         const seen = new Map<Line, { quote: MarketQuote; d: BidDecision }>();
         for (const line of this.lines) {
             if (line.reached) continue;
@@ -443,13 +448,13 @@ export class Bidder {
                     held: this.buyer.held(line.name),
                     ours: this.ours(line),
                     quote: q,
-                    coins: starvedBy ? 0 : this.coins(),
+                    coins: available(),
                     options: line.o,
                     floor: line.floor,
                     idleMinutes: (Date.now() - line.lastFillAt) / 60_000
                 });
             let d = decide(quote);
-            this.log('decision', { item: line.name, action: d.action, reason: d.reason, price: d.price, quantity: d.quantity, cancel: d.cancel, bid: quote.bid, ask: quote.ask, starvedBy, ...d.competition });
+            this.log('decision', { item: line.name, action: d.action, reason: d.reason, price: d.price, quantity: d.quantity, cancel: d.cancel, bid: quote.bid, ask: quote.ask, coins: available(), reserved, ...d.competition });
             if (d.action === 'done' || d.action === 'replace') {
                 for (const id of d.cancel) {
                     const r = await bot.cancelGEOffer(id);
@@ -462,7 +467,7 @@ export class Bidder {
                     line.floor = Math.max(line.floor, d.price);
                     line.lastFillAt = Date.now();
                     d = decide(await sdk.getMarketItem(line.id));
-                    this.log('decision', { item: line.name, action: d.action, reason: d.reason, price: d.price, quantity: d.quantity, starvedBy, ...d.competition });
+                    this.log('decision', { item: line.name, action: d.action, reason: d.reason, price: d.price, quantity: d.quantity, coins: available(), reserved, ...d.competition });
                 }
             }
             if (d.action === 'place' && d.price !== null) {
@@ -473,8 +478,8 @@ export class Bidder {
             }
             if (d.capped) this.log('capped', { item: line.name, competing: d.competition.competing, maxPrice: line.o.maxPrice, price: d.price, note: 'at maxPrice and wanting more: not raising; tell cairn://p/rs/41 with the fill history' });
             if (d.coinsShort > 0 && d.action !== 'done') {
-                this.log('short', { item: line.name, coinsShort: d.coinsShort, price: d.price, coins: this.coins(), note: 'fund the bidder: bidder.ts <earner> fund' });
-                starvedBy ??= line.name;
+                reserved += d.coinsShort;
+                this.log('short', { item: line.name, coinsShort: d.coinsShort, price: d.price, coins: this.coins(), reserved, note: 'fund the bidder: bidder.ts <earner> fund' });
             }
             seen.set(line, { quote, d });
         }
