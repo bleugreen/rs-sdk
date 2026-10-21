@@ -398,10 +398,10 @@ scripts are in section 4; the shared primitives and their build order are in sec
   while SCORED holds 2 bones. **Tab gate (tenet 12, run.ts entry):** knife mode only while it holds;
   otherwise plain, re-probed every 500 ticks while plain (`skills/tick-manipulation.md` §5); the
   pause rule applies. The in-page program resyncs on observed slips.
-- **Lost-lock window** (rs/175, PR #151, open, not on main at this writing): the number of no-xp
+- **Lost-lock window** (rs/175, #151, on main as 6c58db8e): the number of no-xp
   ticks before knife-cycle counts the lock as lost is sized from the swinging axe's p,
   `max(18, 3 * ceil(ln 0.005 / ln(1 - p)))`, so honest misses trip it under 0.5% of the time per
-  lock (r, rs/175's `knife-cycle.ts` at 3553d915). With the rune axe at S07's bands (oak 15-73,
+  lock (r, `knife-cycle.ts` at 6c58db8e). With the rune axe at S07's bands (oak 15-73,
   willow 73-99) it is **18-21 ticks**: 21 at oak 15 (p = 147/256) and at willow 73 (p = 143/256),
   18 through the rest of both bands (i, from trees.dbrow's rune bounds, oak 112/350 and willow
   56/175). A weaker axe widens it (bronze oak at WC 60: 48). Before rs/175, oak and willow used a
@@ -443,12 +443,14 @@ scripts are in section 4; the shared primitives and their build order are in sec
   If the bury variant fails on the demo: the bones go to the Mining `stay2` lap (up to ~200, entry 4)
   and the booth (+278 in all; +640 if all at the booth).
 - **Units.** Acceptance and reporting are in **ticks per expected roll as knife-cycle reports it**
-  (`ticksPerExpectedRoll`, with the axe named in the result; rs/175, PR #151). With no axe found
+  (`ticksPerExpectedRoll`, with the axe named in the result; rs/175, #151, 6c58db8e). With no axe found
   the figure is NaN; a NaN, or an axe other than the band's kit, doesn't count toward acceptance. Ticks per log is a
-  second, labelled column. Until #151 is on `RUN_COMMIT`, knife-cycle reports no per-roll figure on
-  oak and willow, and they are weighted by `tickmanip-demo-report.ts` instead (the same 1/p per log).
+  second, labelled column. It needs `RUN_COMMIT` (and a lab or rehearsal checkout) at or after
+  6c58db8e; on an older commit knife-cycle reports no per-roll figure on oak and willow, and they are
+  weighted by `tickmanip-demo-report.ts` instead (the same 1/p per log).
 - **Reference (rs/175, lab):** willow, rune axe, from WC 40, 60 logs in each of two runs: **2.84 and
-  2.94 ticks per expected roll, 0 resyncs** (m, lab; rs/175's note on cairn://p/rs/158, 14:21 PDT).
+  2.94 ticks per expected roll, 0 false lock-losses in 120 logs** (m, lab; rs/175, #151; its note on
+  cairn://p/rs/158, 14:21 PDT, and rs/158's relay of main's summary, 14:48 PDT).
   That fits the knife's 3-tick roll cadence that S07's 2,986 assumes. Below 3 is luck at 60 logs:
   at p(40) = 103/256 the standard error is about 10% (i). It is a reference, not the acceptance run.
 - **Acceptance, local:** browser tab, lab engine at 300 ms, willows at 99, rune axe: knife within 5%
@@ -468,7 +470,7 @@ scripts are in section 4; the shared primitives and their build order are in sec
 - **Acceptance, demo (throwaway):** from Ashburn, normal trees with the starter axe, 5 rounds of 20
   logs knife and plain, alternating; then 2 rounds with the bury (any bones). Pass: probe at least 58
   of 60, knife ticks per expected roll as knife-cycle reports it, with the starter axe named
-  (`tickmanip-demo-report.ts`'s weighting until #151 is on `RUN_COMMIT`), within 5% of the local
+  (`tickmanip-demo-report.ts`'s weighting on a commit before 6c58db8e), within 5% of the local
   figure, and the bury keeps the 3-tick roll gaps.
 - **Start from:** rs/97 `programs/knife-cycle.ts` with rs/137's bury variant; `docs/speedrun/scripts/bones-wc.ts`
   (`--mode=knifebury`), `tickmanip-cycle.ts`, `woodcutting-model.ts`.
