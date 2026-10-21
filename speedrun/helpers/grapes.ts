@@ -121,6 +121,7 @@ const BARAEK: Tile = { x: 3218, z: 3435 };
 /** Jonny the Beard in the Blue Moon Inn; he always drops the intelligence report. */
 const BLUE_MOON_INN: Box = { x1: 3214, z1: 3390, x2: 3232, z2: 3404 };
 const JONNY: Tile = { x: 3223, z: 3395 };
+const ARRAV_BOOK = 757;
 const underground = (p: { z: number }) => p.z > 9000;
 
 /** A grape ground spawn and how to get to it and away from it. */
@@ -747,12 +748,13 @@ class Gatherer {
             if (underground(position(sdk))) await this.leaveHideout();
             await walkNear(this.ctx, RELDO.x, RELDO.z, 3);
             await this.converse(/^reldo$/i, [/in search of a quest/, /what do you do/]);
-            if (!sdk.getInventory().some(i => /^the shield of arrav$/i.test(i.name))) {
+            // The book shows in the inventory as "Book" (obj the_shield_of_arrav), so match its id.
+            if (!sdk.getInventory().some(i => i.id === ARRAV_BOOK)) {
                 await sdk.sendInteractLoc(ARRAV_BOOKCASE.x, ARRAV_BOOKCASE.z, ARRAV_BOOKCASE.id, 2);
-                await waitUntil(sdk, s => s.inventory.some(i => /^the shield of arrav$/i.test(i.name)), { maxTicks: 15 });
+                await waitUntil(sdk, s => s.inventory.some(i => i.id === ARRAV_BOOK), { maxTicks: 15 });
                 await bot.dismissBlockingUI();
             }
-            const book = sdk.getInventory().find(i => /^the shield of arrav$/i.test(i.name));
+            const book = sdk.getInventory().find(i => i.id === ARRAV_BOOK);
             if (book) {
                 await sdk.sendUseItem(book.slot, 1);
                 await sdk.waitForTicks(3);
@@ -772,6 +774,8 @@ class Gatherer {
                 checkAbort(this.ctx);
                 await this.eatIfLow();
                 const r = await this.fightOne(/^jonny the beard$/i, BLUE_MOON_INN, JONNY, /^intelligence report$/i);
+                const jonny = sdk.getState()?.nearbyNpcs.filter(n => /jonny/i.test(n.name)).map(n => ({ x: n.x, z: n.z, hp: n.hp, inCombat: n.inCombat, reachable: n.reachable, options: n.optionsWithIndex.map(o => o.text) }));
+                if (attempt % 5 === 0 || r === 'killed') this.ctx.log('jonny', { attempt, result: r, at: position(sdk), jonny, report: report() });
                 if (r === 'low') await this.rest();
                 if (r === 'none') await sdk.waitForTicks(5);
             }
