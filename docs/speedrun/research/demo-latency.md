@@ -947,6 +947,63 @@ machine is the stand-in for (a) and item 3, and `demo-latency-analyze.ts` over i
 for (c), count catch-ups over the probe's decoded tick timeline (`react.ticks` in the JSON), as
 rs/102 does.
 
+### Gate history timer
+
+The gate's own history (the gate of tenet 12) accumulates on the run host
+(`ubuntu@54.242.152.95`) until the scored run, without an agent. It's a systemd user timer owned by
+mission rs/83. The user lingers, so the timer runs with no one logged in. The units and scripts are
+in `docs/speedrun/scripts/host-gate/`, and the read itself is `docs/speedrun/scripts/host-gate-read.sh`.
+`install.sh` copies all of them to `~/.local/lib/rs-gate` on the host, and the timer runs that copy.
+
+- **What fires when.** `rs-gate-read.timer` starts `rs-gate-read.service` at :00 and :30. The host
+  clock is UTC, and the minutes are the same in PDT. Each firing:
+  1. skips while a reservation is live;
+  2. skips while the host is busy: a Chrome with its own profile, app URL, headless flag or open
+     connection, ffmpeg, bun, or a tmux server that still answers;
+  3. pins the gate's code. It reads `~/run-commit` (one full commit hash, written only by the
+     runbook's step 0) and checks that commit out detached in the timer's own clone,
+     `~/gate/rs-sdk`, so moving `~/rs-sdk` never changes the gate mid-series. If `~/run-commit` is
+     missing, the firing skips with `no run-commit`;
+  4. checks the server without logging in. It reads the public `/playercount`, with Fly's machine
+     (`sid`) and worker (`bn`) from the `flyio-debug` header. Under 300 online, or no answer, it
+     skips with `restart suspected (players N)`: a server refilling after a restart doesn't
+     reflect the run's conditions, and a login would only add to its rush. The 20:00Z read on
+     21 October crashed with 38 online, a restart inferred from the count alone;
+  5. runs the #101 gate, `tickmanip-latency.ts gate --path=direct --no-tele`, under
+     `timeout 240`.
+
+  The account is a throwaway whose name and password exist only in the clone's `bots/gate/bot.env`
+  (mode 600, on the host). The wrapper redacts the name and password from everything it keeps. A read takes
+  about 3 minutes. If it hangs, systemd kills the unit's whole control group at 270 s, so nothing
+  is left running.
+- **Where the history lives.** Each firing writes one file, `~/gate-history/<UTC timestamp>.json`.
+  A read's file starts with `utc` and `endUtc`, `commit`, `status` (`ok`, `not-probed`, `timeout`
+  or `error`), `on`, `onTime`, `catchUpsPerMinute`, `tickP90Ms`, `players` and `edge`, then
+  `preLogin` (players, `flyMachine`, `flyWorker` from step 4), with the gate's own JSON under
+  `gate`. A change of `flyMachine` between files marks a redeploy or machine swap. A skip writes `status: skip` and its reason in `note`. A broken read (`error`, `timeout`,
+  `not-probed`) puts its first error line in `note` and the last 40 lines of the probe's output in
+  `outputTail`, with the account name and password redacted. The journal keeps one line per
+  firing: `journalctl --user -t rs-gate-read`. Use `-t`, not `-u`: `-u` can miss the summary line,
+  which is printed as the read exits; `-u` shows systemd's own start, failure and kill lines. Check
+  the next firing with
+  `systemctl --user list-timers rs-gate-read.timer`.
+- **Every 15 minutes from two hours before the start.** On the host, run
+  `bash ~/.local/lib/rs-gate/install.sh --every 15`. It moves the timer to :00, :15, :30 and :45 in
+  place, and `--every 30` switches it back.
+- **Reserving the host.** Anyone who needs the host quiet (the run script, rehearsals, a slot
+  holder) writes `~/host-reserved.json` and removes it afterwards:
+  `{"owner": "rs/NNN", "until": "2026-10-22T03:00:00Z", "reason": "rehearsal"}`, with `until` in
+  UTC. Until then every firing logs `skip: reserved by rs/NNN` and does nothing. A stale file whose
+  `until` has passed is ignored, so a forgotten removal costs nothing. This is how the run keeps the
+  host quiet without anyone having to remember the timer. A slot holder that wants one read inside
+  its own reservation fires it with `systemctl --user set-environment RS_GATE_OWNER=rs/NNN`, then
+  `systemctl --user start rs-gate-read.service`, then
+  `systemctl --user unset-environment RS_GATE_OWNER`.
+- **Stopping and removing.** To pause, run `systemctl --user disable --now rs-gate-read.timer`; to
+  resume, run `bash ~/.local/lib/rs-gate/install.sh`. To remove it, run
+  `bash ~/.local/lib/rs-gate/uninstall.sh`. That also stops a read in progress, and it keeps
+  `~/gate-history` and the clone.
+
 ## 11. Open questions
 
 1. **The operator's Ashburn VM row.** (The Ashburn burst and blind distributions are in, from
