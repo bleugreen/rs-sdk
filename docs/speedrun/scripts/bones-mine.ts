@@ -1,6 +1,11 @@
 // Dragon bones on the knife iron rotation (docs/speedrun/research/bones-placement.md, section 4).
 //
-//   bun docs/speedrun/scripts/bones-mine.ts <bot> --rot=demo|stay --bury=none|stay|all [--respawn=13]
+//   bun docs/speedrun/scripts/bones-mine.ts <bot> --rot=demo|stay|stay2 --bury=none|stay|short|all [--respawn=13]
+//
+//   --bury=stay buries on every stay; --bury=short only on a stay entered by a knife move of at
+//   most 2 tiles (or a plain restart). Measured (bones-placement.md section 4): a stay+bury after
+//   a 3-tile knife move never rolls (93 of 93), after a 2-tile move it always does; the cause is
+//   not established.
 //       [--ores=200] [--level=99] [--prayer=43] [--tag=x]
 //
 // A stripped-down tickmanip-mine.ts (open loop, knife starter, no host gate: the lab answers
@@ -48,7 +53,7 @@ const ROTS: Record<string, string> = {
 };
 const ROT = kv('rot', 'stay');
 const BURY = kv('bury', 'stay');
-if (!ROTS[ROT] || !['none', 'stay', 'all'].includes(BURY)) { console.error('--rot=demo|stay --bury=none|stay|all'); process.exit(2); }
+if (!ROTS[ROT] || !['none', 'stay', 'short', 'all'].includes(BURY)) { console.error('--rot=demo|stay|stay2 --bury=none|stay|short|all'); process.exit(2); }
 const STEPS = ROTS[ROT]!.split(' ').map(s => { const [a, b] = s.split('>'); return { stand: a!.split(',').map(Number) as P, rock: b!.split(',').map(Number) as P }; });
 const D = Number(kv('respawn', '13'));
 const ORES = Number(kv('ores', '200'));
@@ -121,12 +126,13 @@ const kinds: Record<string, number> = {};
 let pos: P = STEPS[0]!.stand;
 let k = 0;
 let R = 0;
+let lastRun = 0; // run ticks of the move that brought the player to its stand (0 after a plain restart)
 const plan = (t: number, restart: boolean) => {
     const { stand, rock } = STEPS[k % STEPS.length]!;
     k++;
     const move = !same(pos, stand);
     const avail = (lastRoll.get(key(rock)) ?? -1e9) + D;
-    const withBury = BURY === 'all' || (BURY === 'stay' && !move);
+    const withBury = BURY === 'all' || (BURY === 'stay' && !move) || (BURY === 'short' && !move && lastRun <= 1);
     const run = move ? runTicks(pos, stand) : 0;
     let kind: string, roll: number;
     if (restart) {
@@ -167,6 +173,7 @@ const plan = (t: number, restart: boolean) => {
     kinds[kind] = (kinds[kind] ?? 0) + 1;
     log(`plan #${k} ${kind} ${key(pos)}->${key(stand)} rock ${key(rock)} roll@${roll}`);
     pos = stand;
+    if (move) lastRun = restart ? 0 : run;
     lastRoll.set(key(rock), roll);
     predicted.push(roll);
     R = roll;
