@@ -304,32 +304,63 @@ that to matter, so it is recomputed (r21).
 
 ## 4. Recommended order
 
-The order follows the coordinator's provisional route (the rs/56 brief), less Merlin's
-Crystal and Holy Grail. rs/56 may move the early fights, or Waterfall, once it has measured
-them at the route's real levels. "Logout-unsafe" marks the stretches where a logout loses
+The order is the coordinator's provisional route as amended by cairn://p/rs/56
+([pre_mm_fights.md](pre_mm_fights.md) §5) and Package B: Waterfall out, Dragon Slayer and
+its filler after Monkey Madness. "Logout-unsafe" marks the stretches where a logout loses
 progress (primitives.md §8, each document's risks). Everything else is a clean logout
 point: the scored account can log out while helpers gather and lose nothing. Logout is
 always refused within 16 ticks of combat (m). Ticks are fixed-client figures.
 
 | # | Step | Fixed ticks | Logout-unsafe stretch | Helper trade (tradeable items only) |
 |---|---|---|---|---|
-| 0 | Skill prep, not quests. Magic to ~51 on the enchant ladder (~160 i, counted in Magic's route). Prayer 43 by burying ~11 dragon bones (21 m + a trade, counted in Prayer's route) before step 3. Firemaking 30 (helper-fed) any time before Sea Slug. Gnome course to Agility 22 (122 i) before Grand Tree's climb | | | rings and runes; dragon bones; logs |
+| 0 | Skill prep, not quests. **Magic to 59** on the enchant ladder (2,468 base, r from `Player.ts`; the Magic route's own casts, done earlier: 51 is enough for the teleport and Fire Bolt, 59 gives Fire Blast). **Prayer 43 by burying 11 dragon bones** (21 m, rs/33; counted in Prayer's route) before step 3, from step 3's trade. Firemaking 30 (helper-fed) any time before Sea Slug. Gnome course to Agility 22 (122 i) before Grand Tree's climb | | | rings and runes; logs |
 | 1 | Doric's Quest | 65 | none | 6 clay, 4 copper ore, 2 iron ore, Falador runes (can ride on another trade) |
 | 2 | Plague City (Camelot teleport in); **read the magic scroll** (`%elenaquest` 30) | 620 | none | dwellberries, 4 buckets of water, spade, rope, chocolate dust, milk, snape grass, Camelot runes |
-| 3 | Tree Gnome Village (Ardougne teleport to the maze); warlord under Protect from Melee, *pending rs/56* | 927 | Bolren's closing ceremony (step 23), until the quest scroll shows | 6 logs (for the whole gnome chain), rune scimitar, prayer potions, food |
-| 4 | The Grand Tree (village tree in; Ardougne teleport for Hazelmere); Agility potion if under 25; black demon under Protect from Melee, *pending rs/56* | 1,660 | **trapdoor to black demon kill** (segment N): the demon deletes itself on logout or beyond 17 tiles | rune scimitar, 3-4 prayer potions (Prayer 43 is ~200 ticks of the prayer), food, Varrock and Ardougne runes, Agility potion |
-| 5 | Waterfall (spirit-tree variant; Golrie's dungeon can fold into the gnome visit if Waterfall's steps 1-6 come first). **Conditional**, pending rs/56. If it is on, doing it before the fights gives them its Strength sooner; rs/56 decides where | 888 | the rope crossing (steps 27-28, 8-tick temporary locs) | rope, 6 air/earth/water runes (dropped before the tombstone), teleport runes, glory |
-| 6 | Fight Arena, before any Thieving training; Khazard need not be killed. Fights *pending rs/56* (Bouncer took 83-142 hp at 50-70 melee) | 771 | the arena fights (combat lock; the death hooks need you inside the arena) | 5 coins, weapon, shield, legs, amulet, ~15 swordfish, Ardougne runes |
-| 7 | Dwarf Cannon | 976 | none (all varps permanent) | runes for 2 Ardougne + 1 Falador teleports |
-| 8 | Cannon session, Ranged 1 to 50, wielding a melee weapon (Attack 99 from steps 3-6) at the Wilderness poison spiders (3288,3810) | 113 m + ~10 set-up + travel | combat; Wilderness level 37 (section 7) | cannon set and cannonballs from a helper who has **also done Dwarf Cannon** (the mould is untradeable), melee weapon, antipoison, food |
-| 9 | Monkey Madness, option 1 at Daero | 3,865 success, 4,645 expected | **the hangar puzzle's last tile to the powered hangar** (timer); **the three chapter cutscenes** (Lumdo's ride to the atoll, the Karamja gree-gree, Garkor's sigil; `mm_cutscene_part` is temporary); **sigil to Jungle Demon kill** (the battle deletes itself) | gold bar, ball of wool, monkey bones, 5 bananas, magic shortbow + 100 rune arrows, 4-6 prayer potions, ~15 food, Varrock and Ardougne runes, antipoison (open lead) |
-| 10 | Magic: enchant 57 to 71 (~164 i), sip, Mage Arena (Kolodion ~331 m under Protect from Magic, ~54-62 prayer points, so 1-2 prayer potions at Prayer 43), sip on the exit walk, Charge 76 to 99 (~41 m). It can move earlier: any time after Plague City, Prayer 37 and Magic 71 | 581 | the arena fight (combat; no teleport from the Wilderness legs, so leave from the cellar or chamber) | staff of fire, ~70 blood + 400 air runes, 489 blood + 489 air for Charge, a knife (webs), 2 magic potions (Herblore 76 brew or the Grand Exchange), prayer potions, Ardougne runes |
-| 11 | Sea Slug (once rs/54 merges; Firemaking 30) | 394 | none | swamp paste, unlit torch, Ardougne runes |
-| 12 | Fishing Contest (helper carp), if fly fishing stays on the normal cycle | 223 | inside the contest fence, steps 7-9: leaving through the gate resets the contest; logout inside was not tested | raw giant carp (a helper leaves the contest before its third catch), rod, 1 bait, 5 coins, 3 Camelot casts |
-| 13 | Combat finish after MM (Package A): cannon + defensive melee until Ranged 99 (~3,459 i), then defensive melee to Defence 99 (~62 i at rs/30's measured ~9.3); Hitpoints fills as a by-product (~6,400 against the 4,938 gap). Package B: Dragon Slayer and its filler go here instead of Waterfall, and the finish is cannon + defensive melee (~231) then cannon + rapid knives (~1,792) | ~3,520 (B: ~2,020) | combat | cannonballs, food, antipoison |
+| 3 | Tree Gnome Village (Ardougne teleport to the maze). **Warlord by Fire Blast** at 1/1/1 and 10 HP, 133 m (Fire Bolt at Magic 51: 165 m). Protect from Melee on before he attacks; sip below ~10 points (one Fire Bolt run used 46 points, m) | 896 | Bolren's closing ceremony (step 23), until the quest scroll shows | **the pre-MM trade** (pre_mm_fights.md §4): 6 logs (whole gnome chain), 11 dragon bones, staff of fire, amulet of magic, **2 Prayer potion(4)** (~115-125 points needed against 43, m), **1 Antipoison(4)** (for step 7), 2 sharks, and runes: ~25-40 Fire Blast casts per fight (1 death + 4 air each) or ~55-115 Fire Bolt casts (1 chaos + 3 air), i from the cast counts |
+| 4 | The Grand Tree (village tree in; Ardougne teleport for Hazelmere); Agility potion if under 25. **Black demon by Fire Bolt** at 80/1/1 and 28 HP, 153 m (Fire Blast is available from Magic ~64 after the warlord, unmeasured). Protect from Melee on **before opening Glough's trapdoor**: the demon attacks inside the scene | 1,576 | **trapdoor to black demon kill** (segment N): the demon deletes itself on logout or beyond 17 tiles | Varrock and Ardougne runes, Agility potion (prayer potions from step 3) |
+| 5 | Fight Arena, before any Thieving training; Khazard need not be killed. **Fire Blast** at Magic ~73 (i; measured at 65, 281 m), Protect from Melee on for each fight, and **left on after Bouncer dies until you are out of the arena door**: General Khazard attacks at stage 12 (m: the only damage taken in the melee runs, up to 15, came from him with prayer off) | 645 | the arena fights (combat lock; the death hooks need you inside the arena) | 5 coins, Ardougne runes, a few sharks as insurance (without prayer the chain took 14 swordfish, m) |
+| 6 | Dwarf Cannon | 976 | none (all varps permanent) | runes for 2 Ardougne + 1 Falador teleports |
+| 7 | Cannon session, Ranged 1 to 50 or a little past, **wielding the rune scimitar** (Attack 99 from steps 3-5), auto-retaliate off, at the Wilderness poison spiders (3288,3810). **Drink antipoison at the first poisoning**: 0 damage (m, n=1); without it the poison takes 24-30 of 42 HP per session (m, n=4) | 113 m to Ranged 50 (rs/31) + ~10 set-up + travel; rs/56's sessions ran 151-153 to Ranged 54-57 (m) | combat; Wilderness level 37, and at 42 HP and Defence 1 a player kill is likely if anyone tries (section 7) | cannon set and cannonballs from a helper who has **also done Dwarf Cannon** (the mould is untradeable), rune scimitar, the step 3 antipoison and sharks |
+| 8 | Monkey Madness, option 1 at Daero. The account arrives at **Defence 1, ~42 HP, Strength 1, Magic ~76** (i; rs/56 timeline), not the 70s its hazards were measured at (open item (a)) | 3,865 success, 4,645 expected | **the hangar puzzle's last tile to the powered hangar** (timer); **the three chapter cutscenes** (Lumdo's ride to the atoll, the Karamja gree-gree, Garkor's sigil; `mm_cutscene_part` is temporary); **sigil to Jungle Demon kill** (the battle deletes itself) | gold bar, ball of wool, monkey bones, 5 bananas, magic shortbow + 100 rune arrows, 4-6 prayer potions, ~15 food, Varrock and Ardougne runes, **a second Antipoison(4)** for the jungle spiders (the cannon session used ~2 doses of the first, m) |
+| 9 | Mage Arena at **base Magic ~76** (i, timeline below): Fire Wave needs 75, so no enchanting and no magic potion. Kolodion under Protect from Magic (~54-62 prayer points, so 1-2 prayer potions at Prayer 43), ~300-330 i (331 m at 71 + potion, rs/52). The fight's ~2,800-3,100 Magic (m) lands base ~80-81, so **Charge 80 to 99 needs no potion** (~33 m, rs/20). It can move earlier: any time after Fight Arena | 581 (i, upper) | the arena fight (combat; no teleport from the Wilderness legs, so leave from the cellar or chamber) | staff of fire, ~70 blood + 400 air runes, ~500 blood + ~500 air for ~165 Charge casts (i), a knife (webs), **1 magic potion as insurance** (i: none needed if the timeline holds), prayer potions, Ardougne runes |
+| 10 | Sea Slug (once rs/54 merges; Firemaking 30) | 394 | none | swamp paste, unlit torch, Ardougne runes |
+| 11 | Fishing Contest (helper carp), if fly fishing stays on the normal cycle | 223 | inside the contest fence, steps 7-9: leaving through the gate resets the contest; logout inside was not tested | raw giant carp (a helper leaves the contest before its third catch), rod, 1 bait, 5 coins, 3 Camelot casts |
+| 12 | **Filler, 15 QP, all before Dragon Slayer** (the door needs 32: 17 from steps 1-11 + 15). A travel order (i, unmeasured as a chain): Lumbridge teleport, **Cook's Assistant** (cook at (3209,3215), 27); glory to Draynor and ~60 tiles to the Rusty Anchor in Port Sarim (3045,3257) for **Goblin Diplomacy**'s first stage; Falador teleport to Taverley for **Witch's House** (boy (2928,3456), 163); then ~60 tiles north-east to Goblin Village (2957,3511) for Goblin Diplomacy's four visits, dyeing a mail before visits 2 and 3 (188 standalone); Varrock teleport for **Romeo & Juliet** (241), which leaves the account in Varrock beside the Champions' Guild | 619 i | Witch's House: the witch's sight line resets the stage (a replay, not a logout risk); filler varp scopes not checked | egg, bucket of milk, pot of flour; 3 goblin mail, orange and blue dye; cheese; Romeo & Juliet's items (no step list in quest_points.md) |
+| 13 | **Dragon Slayer**: walk to the Champions' Guild door (3191,3363), then dragon_slayer.md's step list (Oziach, Oracle, Ice Mountain, Duke, Melzar's Maze, Wormbrain, the ship, Ned, the voyage). Elvarg at Attack 99 / Strength ~97 / Defence ~89 and ~97 HP with the Dragonfire shield: 64-75 m at 99 | 941 i | none: every varp is permanent (r). A death on Crandor is expensive (the return route is untested) | 12,000 coins, wizard's mind bomb, silk, lobster pot, unfired bowl, 3 planks, 12 steel nails, hammer, rune scimitar, rune full helm, chainbody and platelegs, amulet of strength, ~10 sharks, glory, Varrock, Lumbridge and Falador runes |
+| 14 | Combat finish (Package B): cannon + defensive melee at the spiders until Defence 99 (230, Ranged to 67), then cannon + rapid rune knives to Ranged 99 (1,821); Hitpoints fills as a by-product (5,089 against a gap of at most 4,938). rs/31's model on measured rates | **2,023-2,051** | combat | cannonballs, rune knives, food, antipoison |
 
-Sea Slug and Fishing Contest can go anywhere after Plague City. Doing them before Fishing
-training starts is what the marginal values assume.
+Sea Slug and Fishing Contest can go anywhere after Plague City, but before Dragon Slayer:
+they carry two of its 32 quest points. Doing them before Fishing training starts is what the
+marginal values assume.
+
+**Magic timeline** (i: base xp from the quest documents and rs/56's measured fight xp, levels
+from the server's table in `server/engine/src/engine/entity/Player.ts`). rs/81, on rs/28's
+side, is updating `magic.md` from the same order.
+
+| Point in the route | Base Magic | Level | Source of the step |
+|---|---|---|---|
+| Before Tree Gnome Village | 2,468 | 59 | enchant ladder (Magic route) |
+| After the warlord | 3,515-3,705 | 64 | +1,047 m by Fire Bolt (rs/56); ~+1,240 i by Fire Blast (2 per damage on 170 hp, 34.5 per cast, ~26 casts) |
+| After the black demon | 4,511-4,701 | 67-68 | +996 m by Fire Bolt |
+| After Grand Tree's reward | 6,661-6,851 | 73 | +2,150 r |
+| After Fight Arena (and so at Mage Arena) | **8,201-8,391** | **76** (77 needs 8,675) | ~+1,540 i (rs/56) |
+| After Kolodion | 10,988-11,520 | **80-81** | +2,787-3,129 m (rs/52) |
+
+Fire Wave (75) is castable at base 76 and Charge (80) at base 80 without a boost. If the
+Fight Arena figure is short and the account reaches Mage Arena at 75, Fire Wave still casts;
+only a fight that pays at the very bottom of rs/52's range and an arrival below ~7,900
+would leave Charge at 79, which the insurance potion covers.
+
+```mermaid
+flowchart LR
+  P0(["Prep: Magic 59, Prayer 43 from bones"]) --> DOR["Doric's"] --> PC["Plague City"]
+  PC --> TGV["TGV: warlord, Fire Blast"] --> GT["Grand Tree: demon, Fire Bolt"]
+  GT --> FA["Fight Arena: Fire Blast, prayer until out"] --> DC["Dwarf Cannon"]
+  DC --> CAN(["Cannon session + antipoison"]) --> MM["Monkey Madness opt. 1"]
+  MM --> MA["Mage Arena at ~76, Charge from ~80"] --> SS["Sea Slug"] --> FC["Fishing Contest"]
+  FC --> FILL["Cook's, Goblin Diplomacy, Witch's House, Romeo & Juliet"]
+  FILL --> Q32(["32 QP"]) --> DS["Dragon Slayer"] --> FIN(["Finish 2,023-2,051"])
+```
 
 ## 5. Not worth doing
 
