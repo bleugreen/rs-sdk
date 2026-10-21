@@ -32,9 +32,7 @@ import { gunzipSync, unzipSync } from 'fflate';
 import { loadCache } from '../cache.js';
 import { buildCollision } from './CollisionBuilder.js';
 import { LocIndex } from './LocIndex.js';
-
-const ORIGIN = process.env.LITE_TEST_ORIGIN ?? 'https://rs-sdk-demo.fly.dev';
-const CACHE_DIR = process.env.LITE_TEST_CACHE ?? '/tmp/rs-sdk-lite-test-cache';
+import { LITE_CACHE_DIR, LITE_ORIGIN, liteOriginReachable } from '../test-support/lite-origin.js';
 
 // Both default to TRUE, but the engine serves the bot client with lowmem=0
 // (engine/src/web/pages/client.ts), so the real client DOES load locs on levels
@@ -61,20 +59,12 @@ const REGIONS: Array<[string, number, number]> = [
     ['alkharid', 410, 391]
 ];
 
-describe('CollisionBuilder matches the browser client', () => {
+describe.skipIf(!liteOriginReachable)('CollisionBuilder matches the browser client', () => {
     test('byte-identical collision flags across regions and levels', async () => {
-        // Reachability is checked inside the test, not at module scope: a
-        // top-level await runs after bun:test has already collected suites.
-        const reachable = await fetch(`${ORIGIN}/crc`).then(r => r.ok).catch(() => false);
-        if (!reachable) {
-            console.warn(`[lite] skipping collision oracle test - ${ORIGIN} unreachable`);
-            return;
-        }
+        const { checksums } = await loadCache({ origin: LITE_ORIGIN, cacheDir: LITE_CACHE_DIR, quiet: true });
+        const index = await LocIndex.load({ origin: LITE_ORIGIN, cacheDir: LITE_CACHE_DIR, versionlistCrc: checksums[5], quiet: true });
 
-        const { checksums } = await loadCache({ origin: ORIGIN, cacheDir: CACHE_DIR, quiet: true });
-        const index = await LocIndex.load({ origin: ORIGIN, cacheDir: CACHE_DIR, versionlistCrc: checksums[5], quiet: true });
-
-        const versionlist = new JagFile(await get(`${ORIGIN}/versionlist${checksums[5]}`));
+        const versionlist = new JagFile(await get(`${LITE_ORIGIN}/versionlist${checksums[5]}`));
         const mapIndex = versionlist.read('map_index');
         expect(mapIndex).toBeTruthy();
 
@@ -88,7 +78,7 @@ describe('CollisionBuilder matches the browser client', () => {
             buf.g1();
         }
 
-        const zip = unzipSync(await get(`${ORIGIN}/ondemand.zip`));
+        const zip = unzipSync(await get(`${LITE_ORIGIN}/ondemand.zip`));
 
         for (const [name, centreZoneX, centreZoneZ] of REGIONS) {
             const baseX = (centreZoneX - 6) * 8;

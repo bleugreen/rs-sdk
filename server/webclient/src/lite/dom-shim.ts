@@ -7,6 +7,14 @@
 // have to survive construction - they never have to work.
 //
 // Import this before anything under '#/'. See main.ts.
+//
+// Every test file that loads client modules imports this itself, and none assigns
+// window, document, navigator or fetch on its own. The root `bun run test` passes
+// --isolate, so each file gets a fresh global object and module registry: a file
+// can neither borrow a shim an earlier file installed nor leave stubs, mocks or
+// config tables behind for a later one. Without it, MobileKeyboard.ts and
+// tinymidipcm.js initialised against whichever partial stub happened to be in
+// place when the first file reached them - and file order differs between machines.
 
 type AnyRecord = Record<string, unknown>;
 

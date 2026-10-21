@@ -1,4 +1,6 @@
-import { afterAll, describe, expect, mock, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
+
+import '../lite/dom-shim.js';
 
 import { CollisionFlag } from '#/dash3d/CollisionFlag.js';
 import { LocAngle } from '#/dash3d/LocAngle.js';
@@ -6,76 +8,6 @@ import { LocShape } from '#/dash3d/LocShape.js';
 import { MapFlag } from '#/dash3d/MapFlag.js';
 import { ClientProt } from '#/io/ClientProt.js';
 import { ServerProt } from '#/io/ServerProt.js';
-
-mock.module('#3rdparty/tinymidipcm.js', () => ({
-    stopMidi() {},
-    setMidiVolume() {},
-    playMidi() {}
-}));
-mock.module('#/client/MobileKeyboard.js', () => ({
-    default: {
-        draw() {},
-        show() {},
-        hide() {},
-        isDisplayed: () => false,
-        isWithinCanvasKeyboard: () => false,
-        captureMouseDown() {},
-        captureMouseUp() {},
-        notifyTouchMove() {}
-    }
-}));
-
-(globalThis as any).window = {
-    audioContext: {
-        currentTime: 0,
-        destination: {},
-        createGain() {
-            return {
-                gain: { setValueAtTime() {}, linearRampToValueAtTime() {} },
-                connect() {}
-            };
-        },
-        createBuffer() {
-            return { copyToChannel() {} };
-        },
-        createBufferSource() {
-            return { connect() {}, start() {}, stop() {} };
-        }
-    }
-};
-(globalThis as any).navigator = { userAgent: 'bun-test' };
-(globalThis as any).fetch = async () => ({
-    arrayBuffer: async () => new ArrayBuffer(0)
-});
-(globalThis as any).document = {
-    hidden: false,
-    body: { appendChild() {}, removeChild() {} },
-    addEventListener() {},
-    removeEventListener() {},
-    getElementById() { return null; },
-    createElement(tag: string) {
-        const element = {
-            style: {},
-            setAttribute() {},
-            addEventListener() {},
-            removeEventListener() {},
-            dispatchEvent() {},
-            focus() {},
-            blur() {}
-        };
-        if (tag === 'canvas') {
-            return {
-                ...element,
-                getContext: () => ({
-                    clearRect() {},
-                    drawImage() {},
-                    getImageData() { return {}; }
-                })
-            };
-        }
-        return element;
-    }
-};
 
 const { Client } = await import('../client/Client.js');
 const { default: LocType } = await import('#/config/LocType.js');

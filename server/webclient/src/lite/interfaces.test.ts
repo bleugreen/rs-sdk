@@ -21,9 +21,7 @@ import { ServerProt } from '#/io/ServerProt.js';
 import { loadCache } from './cache.js';
 import { LiteClient } from './LiteClient.js';
 import { dispatch } from './protocol/incoming.js';
-
-const ORIGIN = process.env.LITE_TEST_ORIGIN ?? 'https://rs-sdk-demo.fly.dev';
-const CACHE_DIR = process.env.LITE_TEST_CACHE ?? '/tmp/rs-sdk-lite-test-cache';
+import { LITE_CACHE_DIR, LITE_ORIGIN, liteOriginReachable, NETWORK_WARMUP_MS } from './test-support/lite-origin.js';
 
 /** The inventory tab's component id - what UPDATE_INV_FULL targets in game. */
 const INV_COMPONENT = 3214;
@@ -31,13 +29,15 @@ const INV_COMPONENT = 3214;
 let available = false;
 
 beforeAll(async () => {
+    if (!liteOriginReachable) return;
     try {
-        await loadCache({ origin: ORIGIN, cacheDir: CACHE_DIR, quiet: true });
+        await loadCache({ origin: LITE_ORIGIN, cacheDir: LITE_CACHE_DIR, quiet: true });
         available = true;
-    } catch {
+    } catch (err) {
+        console.warn(`[skip] loading the cache from ${LITE_ORIGIN} failed: ${err}`);
         available = false;
     }
-});
+}, NETWORK_WARMUP_MS);
 
 /** A LiteClient with no socket: nothing below touches the connection. */
 function makeClient(name: string): LiteClient {
@@ -63,10 +63,9 @@ function invPacket(componentId: number, items: Array<[number, number]>): Packet 
     return Object.assign(buf, { psize: size });
 }
 
-describe('per-client interface tables', () => {
+describe.skipIf(!liteOriginReachable)('per-client interface tables', () => {
     test('two clients keep separate inventories', () => {
         if (!available) {
-            console.warn(`[skip] ${ORIGIN} unreachable`);
             return;
         }
 

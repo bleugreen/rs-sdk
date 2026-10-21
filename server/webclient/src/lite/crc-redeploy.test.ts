@@ -20,26 +20,26 @@ import { invalidateCache, loadCache } from './cache.js';
 import { LoginError } from './net/GameConnection.js';
 import { startSession } from './session.js';
 import { LocIndex } from './world/LocIndex.js';
-
-const ORIGIN = process.env.LITE_TEST_ORIGIN ?? 'https://rs-sdk-demo.fly.dev';
-const CACHE_DIR = process.env.LITE_TEST_CACHE ?? '/tmp/rs-sdk-lite-test-cache';
+import { LITE_CACHE_DIR, LITE_ORIGIN, liteOriginReachable, NETWORK_WARMUP_MS } from './test-support/lite-origin.js';
 
 let available = false;
 let realChecksums: number[] = [];
 
 beforeAll(async () => {
+    if (!liteOriginReachable) return;
     try {
         // Warm the disk caches from the real origin so the mock server below
         // only ever has to serve /crc and the login handshake: the archive and
         // locindex fetches are keyed by CRC and will hit disk.
-        const { checksums } = await loadCache({ origin: ORIGIN, cacheDir: CACHE_DIR, quiet: true });
+        const { checksums } = await loadCache({ origin: LITE_ORIGIN, cacheDir: LITE_CACHE_DIR, quiet: true });
         realChecksums = checksums;
-        await LocIndex.load({ origin: ORIGIN, cacheDir: CACHE_DIR, versionlistCrc: checksums[5], quiet: true });
+        await LocIndex.load({ origin: LITE_ORIGIN, cacheDir: LITE_CACHE_DIR, versionlistCrc: checksums[5], quiet: true });
         available = true;
-    } catch {
+    } catch (err) {
+        console.warn(`[skip] loading the cache from ${LITE_ORIGIN} failed: ${err}`);
         available = false;
     }
-});
+}, NETWORK_WARMUP_MS);
 
 afterAll(() => {
     // Don't leak the mock's checksums into later test files in this process.
@@ -125,7 +125,7 @@ function trySession(port: number): Promise<unknown> {
         host: `localhost:${port}`,
         username: 'crctest',
         password: 'x',
-        cacheDir: CACHE_DIR,
+        cacheDir: LITE_CACHE_DIR,
         quiet: true
     }).then(
         () => null,
@@ -136,7 +136,7 @@ function trySession(port: number): Promise<unknown> {
 /** What the server's CRCs become after the simulated redeploy. */
 let redeployed: number[] = [];
 
-describe('startSession recovery from login response 6', () => {
+describe.skipIf(!liteOriginReachable)('startSession recovery from login response 6', () => {
     test('re-fetches /crc and retries with the new checksums', async () => {
         if (!available) {
             return;

@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+
+import '../lite/dom-shim.js';
+
 import { ActionExecutor } from './ActionExecutor.js';
 
 describe('ActionExecutor interaction routing', () => {
