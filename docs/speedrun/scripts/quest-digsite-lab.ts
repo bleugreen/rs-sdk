@@ -257,11 +257,16 @@ export class QuestBot {
         return i;
     }
 
-    npc(key: string) {
+    /** Nearest NPC of a config; waits a few ticks, since the NPC list lags a teleport. */
+    async npc(key: string, waitTicks = 10) {
         const id = this.id(this.NPC, key);
-        const l = this.sdk.getNearbyNpcs().filter(n => n.id === id).sort((a, b) => a.distance - b.distance);
-        if (!l.length) throw new Error(`no ${key} in view at ${JSON.stringify(pos(this.sdk))}`);
-        return l[0];
+        const t0 = tick(this.sdk);
+        for (;;) {
+            const l = this.sdk.getNearbyNpcs().filter(n => n.id === id).sort((a, b) => a.distance - b.distance);
+            if (l.length) return l[0];
+            if (tick(this.sdk) - t0 >= waitTicks) throw new Error(`no ${key} in view at ${JSON.stringify(pos(this.sdk))}`);
+            await this.sdk.waitForStateUpdate();
+        }
     }
 
     async loc(key: string, near?: [number, number]) {
@@ -292,7 +297,7 @@ export class QuestBot {
     }
 
     async talk(key: string, choices: RegExp[] = []) {
-        const n = this.npc(key);
+        const n = await this.npc(key);
         const op = n.optionsWithIndex.find(o => /talk/i.test(o.text));
         if (!op) throw new Error(`${key} has no talk option`);
         this.S.action();
@@ -304,7 +309,7 @@ export class QuestBot {
     }
 
     async useOnNpc(obj: string, key: string, until: () => boolean = () => true, choices: RegExp[] = []) {
-        const n = this.npc(key);
+        const n = await this.npc(key);
         this.S.action();
         await this.sdk.sendUseItemOnNpc(this.need(obj).slot, n.index);
         await this.waitForReaction();
