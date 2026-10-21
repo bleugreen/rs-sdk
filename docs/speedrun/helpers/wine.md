@@ -154,7 +154,7 @@ other drop table or quest reward has them.
 | Source | Ceiling | Measured on the demo (2026-10-21 UTC) |
 |---|---|---|
 | Cooking Guild spawn | 150/h for the only taker (12,000 ticks/h over 80) | **contested**: another player (Jackalopevin) camps the next tile. The first version got about 36/h. The racer (stand on the tile, poll every tick when due, raw pickup) holds **60/h**: cairn_h40, 60 grapes in its first hour, 107 of 167 respawns taken by the other camper |
-| Phoenix Gang hideout spawn | 150/h for the only taker | Lab: 21 grapes in 0.25 h including joining the gang; camping alone it takes every respawn. Demo: cairn_h46 joined in about 11 minutes from Goblin Village (one Jonny kill), then **75/h** in its first 0.23 h; also contested, another player took 10 of 27 respawns |
+| Phoenix Gang hideout spawn | 150/h for the only taker | Lab: 21 grapes in 0.25 h including joining the gang; camping alone it takes every respawn. Demo: cairn_h46 joined in about 11 minutes from Goblin Village (one Jonny kill), then **about 100/h** (30 grapes in its first 0.29 h, bank trips included); also contested, another player took 10 of the first 27 respawns |
 | Goblin Village, per account | 3/h at 1/128 | 360-440 kills per account-hour at combat about 25; 14 grapes in about 2,500 kills over four accounts (1 in 180), so 2-4/h per account |
 | Goblin Village, all players together | about 25/h | 21 goblins, 70-tick respawn: about 3,000 kills/h for the whole village. About 8 accounts saturate it; more accounts only take kills from each other and from other players |
 | Grand Exchange | | a 1,000 gp bid for 99,536 grapes and no asks; 464 grapes have traded, all at 1,000 gp (20 trades), about 22/h flowing into that bid. We do not bid against it |
@@ -173,8 +173,8 @@ started, every time the "It's just too hot here" option is picked
 | Setup | Grapes/h | Hours to 520 |
 |---|---|---|
 | Guild racer only, contested as measured | 60 | ~8.7 |
-| Guild racer + Phoenix camper, both contested as measured | 135 | ~3.9 |
-| The same + 4 goblin campers (as run on 2026-10-21) | ~145 | ~3.6 |
+| Guild racer + Phoenix camper, both contested as measured | ~160 | ~3.3 |
+| The same + 3 goblin campers (as run on 2026-10-21) | ~170 | ~3.1 |
 | Guild + Phoenix, both uncontested | up to 300 | ~1.7 |
 
 On 2026-10-21 rs/41 decided to buy the 520 on the Grand Exchange (rs/63's
@@ -221,6 +221,45 @@ Roles run like every rs/41 helper (`speedrun/helpers/role.ts`). Options:
   jugs of water from couriers or the mule (`speedrun/helpers/mule.ts` courier
   role), banks them, keeps making noted wine, and gives it to `receiver` when
   that account is in sight.
+
+### Stopping and handing over to the fleet
+
+The dev setup on bbs (`~/rs-dev/wine`, control scripts in `~/rs-dev/wine-ctl`)
+runs one lite client and one role loop per account on the private tmux server
+`rs41-wine`, with its own gateway on 127.0.0.1:8540. Stop it with
+
+```sh
+ssh bleu@bbs 'bash ~/rs-dev/wine/docs/speedrun/scripts/wine-stop.sh'            # every account
+ssh bleu@bbs 'bash ~/rs-dev/wine/docs/speedrun/scripts/wine-stop.sh cairn_h47'  # one account
+```
+
+Per account it writes the stop file (so neither loop restarts), closes the
+role window, logs the account out through the logout button while its client
+is still connected (`wine-logout.ts`, the lib's `logoutClean`, which waits out
+combat), and only then lets the client go. Closing the clients first would leave
+the accounts idle in the world for up to 500 ticks and block the fleet's next
+login. A failed logout leaves that client running and makes the script exit 1;
+rerun it for that account. When no account is left it stops the tmux server and
+the gateway with it. Tested on cairn_h47 mid-fight on 2026-10-21: out of the
+world in the click's tick, 11 s for the whole stop.
+
+Then adopt the accounts (credentials are already in `~/rs-fleet/bots/`):
+
+```sh
+F=~/rs-fleet/speedrun/helpers/fleetctl
+$F assign cairn_h40 grapes --options '{"source":"guild"}'
+$F assign cairn_h46 grapes --options '{"source":"phoenix"}'
+$F assign cairn_h41 grapes --options '{"source":"goblins"}'
+$F assign cairn_h45 grapes --options '{"source":"goblins"}'
+$F assign cairn_h47 grapes --options '{"source":"goblins"}'
+$F assign cairn_h42 jugs --options '{"target":600}'
+$F reload
+```
+
+cairn_h40 is also the wine maker (Cooking 35). When the wine is due, reassign it
+(`$F assign cairn_h40 wine --options '{"acceptFrom":"^cairn_(h\\d+|mule\\d)$","receiver":"<scored account>"}'`)
+and deliver the bought grapes and the jugs of water to it by trade at Varrock
+west bank. cairn_h44 is the test receiver; it stays logged out.
 
 Gotchas found on the demo:
 
