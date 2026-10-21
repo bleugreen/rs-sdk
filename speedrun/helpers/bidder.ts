@@ -31,7 +31,11 @@ export interface BidderOptions {
     recheckMinutes: number;
     /** How far above the competing bid we place. */
     outbidBy: number;
-    /** Never bid below this (used when nobody else is bidding). */
+    /**
+     * Never bid below this. The bidder also never lowers its own price: a new
+     * tranche starts at the highest price it has bid, so sellers who answered
+     * that price keep finding it.
+     */
     minPrice: number;
     /** Accounts (login-name RegExps) whose trades are accepted as funding. */
     funders: RegExp[];
@@ -111,6 +115,8 @@ export interface BidInput {
     /** Coins we can spend now (carried + banked), excluding escrow. */
     coins: number;
     options: BidderOptions;
+    /** The highest price this bidder has bid for the item (its price never goes down). */
+    floor?: number;
 }
 
 export interface BidDecision {
@@ -135,15 +141,19 @@ export interface BidDecision {
     reason: string;
 }
 
-/** Our price for a new offer: just above the competing bid, never below minPrice or above maxPrice. */
-export function bidPrice(competing: number | null, quote: MarketView, o: BidderOptions): { price: number; capped: boolean } {
+/**
+ * Our price for a new offer: just above the competing bid, never below minPrice
+ * or our own earlier price (`floor`), never above maxPrice.
+ */
+export function bidPrice(competing: number | null, quote: MarketView, o: BidderOptions, floor = 0): { price: number; capped: boolean } {
     const wanted = competing !== null ? competing + o.outbidBy : Math.max(quote.lastPrice ?? 1, 1);
-    const price = Math.min(Math.max(wanted, o.minPrice), o.maxPrice);
+    const price = Math.min(Math.max(wanted, o.minPrice, floor), o.maxPrice);
     return { price, capped: competing !== null && competing >= o.maxPrice };
 }
 
 export function decideBid(input: BidInput): BidDecision {
     const { held, quote, coins, options: o } = input;
+    const floor = input.floor ?? 0;
     const ours = input.ours.filter(x => x.side === 'buy' && x.state === 'open' && x.remaining > 0);
     const competition = competingBid(quote, ours);
     const out = (d: Partial<BidDecision> & Pick<BidDecision, 'action' | 'reason'>): BidDecision => ({ competition, cancel: [], price: null, quantity: 0, capped: false, coinsShort: 0, ...d });
@@ -158,7 +168,7 @@ export function decideBid(input: BidInput): BidDecision {
         const ourPrice = Math.max(...ours.map(x => x.price));
         if (competition.outbid) {
             if (ourPrice >= o.maxPrice) return out({ action: 'hold', price: ourPrice, capped: true, reason: `outbid at ${competition.competing}, already at maxPrice ${o.maxPrice}` });
-            const { price, capped } = bidPrice(competition.competing, quote, o);
+            const { price, capped } = bidPrice(competition.competing, quote, o, floor);
             const quantity = Math.min(wanted, Math.floor((coins + escrow) / price));
             return out({
                 action: 'replace',
@@ -170,6 +180,12 @@ export function decideBid(input: BidInput): BidDecision {
                 reason: `outbid at ${competition.competing}; ours ${ourPrice}`
             });
         }
+        // Resting below our own floor (minPrice raised, or an offer from before a restart): re-price up.
+        const floorPrice = Math.min(Math.max(o.minPrice, floor), o.maxPrice);
+        if (ourPrice < floorPrice) {
+            const quantity = Math.min(wanted, Math.floor((coins + escrow) / floorPrice));
+            return out({ action: 'replace', cancel: ours.map(x => x.id), price: floorPrice, quantity, coinsShort: Math.max(0, wanted * floorPrice - coins - escrow), reason: `ours ${ourPrice} is below our floor ${floorPrice}` });
+        }
         // Still the best bid. Top the book back up to a tranche once a quarter of it has filled.
         const topUp = wanted - resting;
         if (topUp < Math.max(1, Math.ceil(o.tranche / 4))) return out({ action: 'hold', price: ourPrice, reason: `best bid at ${ourPrice}, ${resting} resting` });
@@ -179,7 +195,7 @@ export function decideBid(input: BidInput): BidDecision {
         return out({ action: 'place', price: ourPrice, quantity, coinsShort, reason: `top up ${resting} resting to ${resting + quantity}` });
     }
 
-    const { price, capped } = bidPrice(competition.competing, quote, o);
+    const { price, capped } = bidPrice(competition.competing, quote, o, floor);
     const quantity = Math.min(wanted, Math.floor(coins / price));
     const coinsShort = Math.max(0, wanted * price - coins);
     if (quantity <= 0) return out({ action: 'short', price, capped, coinsShort, reason: `${coins} gp buys none at ${price}` });
@@ -216,6 +232,8 @@ export class Bidder {
     private lastLog = Date.now();
     private reached = false;
     private wantEarly = false;
+    /** Highest price bid for the item since the role started (open offers seen count too). */
+    private floor = 0;
     private last: Record<string, unknown> = {};
 
     constructor(private readonly ctx: RoleContext) {
@@ -234,7 +252,9 @@ export class Bidder {
     }
 
     private ours(): OwnOffer[] {
-        return openOwn(this.ctx.sdk.getGEState()?.offers ?? [], this.item.id);
+        const ours = openOwn(this.ctx.sdk.getGEState()?.offers ?? [], this.item.id);
+        for (const o of ours) this.floor = Math.max(this.floor, o.price);
+        return ours;
     }
 
     private async openGE(): Promise<void> {
@@ -316,7 +336,7 @@ export class Bidder {
         // 3. Decide against a fresh quote.
         await this.openGE();
         const quote = await sdk.getMarketItem(this.item.id);
-        let d = decideBid({ held: this.buyer.held(name), ours: this.ours(), quote, coins: this.coins(), options: this.o });
+        let d = decideBid({ held: this.buyer.held(name), ours: this.ours(), quote, coins: this.coins(), options: this.o, floor: this.floor });
         this.log('decision', { action: d.action, reason: d.reason, price: d.price, quantity: d.quantity, cancel: d.cancel, bid: quote.bid, ask: quote.ask, ...d.competition });
         if (d.action === 'done' || d.action === 'replace') {
             for (const id of d.cancel) {
@@ -327,12 +347,13 @@ export class Bidder {
             if (d.action === 'replace') {
                 // Ours is gone from the book now: decide again from scratch.
                 const fresh = await sdk.getMarketItem(this.item.id);
-                d = decideBid({ held: this.buyer.held(name), ours: this.ours(), quote: fresh, coins: this.coins(), options: this.o });
+                d = decideBid({ held: this.buyer.held(name), ours: this.ours(), quote: fresh, coins: this.coins(), options: this.o, floor: this.floor });
                 this.log('decision', { action: d.action, reason: d.reason, price: d.price, quantity: d.quantity, bid: fresh.bid, ask: fresh.ask, ...d.competition });
             }
         }
         if (d.action === 'place' && d.price !== null) {
             const r = await bot.placeGEOffer({ item: this.item.id, side: 'buy', quantity: d.quantity, price: d.price });
+            if (r.success) this.floor = Math.max(this.floor, d.price);
             this.log('offer', { success: r.success, result: r.message, reason: r.reason, outcome: r.outcome, id: r.offer?.id, price: d.price, quantity: d.quantity, filled: r.offer?.filled });
             await this.buyer.collectFills();
         }

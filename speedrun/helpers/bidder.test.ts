@@ -112,6 +112,32 @@ describe('decideBid', () => {
     });
 });
 
+describe('our price never goes down', () => {
+    // Seen live: #15914 at 1,650 filled, and the next tranche went in at 1,025
+    // (1,000 + 25) while a seller was asking 1,650.
+    test('a new tranche after a fill starts at our earlier price, not just above a lower competitor', () => {
+        const d = decideBid({ held: 161, ours: [], quote: book([[99_508, 1000]], [], { ask: 1650 }), coins: 400_000, options: opts, floor: 1650 });
+        expect(d).toMatchObject({ action: 'place', price: 1650, quantity: 150 });
+    });
+
+    test('minPrice is a floor too', () => {
+        const o = bidderOptions({ item: 'Grapes', target: 520, minPrice: 1650 });
+        expect(decideBid({ held: 161, ours: [], quote: book([[99_508, 1000]]), coins: 400_000, options: o })).toMatchObject({ price: 1650 });
+    });
+
+    test('an open offer below the floor is re-priced up', () => {
+        const ours = [offer({ id: 15945, price: 1025, quantity: 1, remaining: 1, filled: 0 })];
+        const o = bidderOptions({ item: 'Grapes', target: 520, minPrice: 1650 });
+        const d = decideBid({ held: 161, ours, quote: book([[99_508, 1000]], ours), coins: 400_000, options: o });
+        expect(d).toMatchObject({ action: 'replace', cancel: [15945], price: 1650 });
+    });
+
+    test('the floor never lifts a bid past the cap', () => {
+        const d = decideBid({ held: 0, ours: [], quote: book([[10, 1000]]), coins: 1_000_000, options: opts, floor: 3500 });
+        expect(d.price).toBe(3000);
+    });
+});
+
 describe('the 3,000 gp cap', () => {
     test('a competitor past the cap: replace at exactly maxPrice, flagged capped', () => {
         const ours = [offer({ remaining: 100 })];
