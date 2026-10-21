@@ -37,8 +37,8 @@ route reaches it with **no spare point** (section 7). Waterfall and Witch's Hous
 
 | Whole on-route set | Stock | Fixed | Burst | Basis |
 |---|---|---|---|---|
-| Success path | **~13,160** | **~11,480** | **~10,600** | sum of the rows in section 3; about 65% measured, the rest i |
-| With Monkey Madness's expected failures (+780) | ~13,940 | **~12,260** | ~11,380 | i, `monkey_madness.md` |
+| Success path | **~13,190** | **~11,510** | **~10,630** | sum of the rows in section 3; about 65% measured, the rest i |
+| With Monkey Madness's expected failures (+180) | ~13,370 | **~11,690** | ~10,810 | i, `monkey_madness.md` (with rs/59's trapdoor ladder drop, section 6) |
 | Without Monkey Madness (also drops Tree Gnome Village, Dwarf Cannon, Dragon Slayer and the filler; keeps Waterfall and Druidic Ritual) | ~5,970 | ~5,230 | ~4,870 | i; section 6 shows what it costs in training |
 
 The cannon session (~123 fixed) is counted in the combat training of section 6, not in
@@ -59,9 +59,9 @@ combat line, because only damage the account deals itself gives Hitpoints. That 
 about **13,900 ticks** of combat training after the quests (plus Waterfall's 888, which the
 no-MM route keeps). With it, Tree Gnome Village, Monkey Madness, Dwarf Cannon, Dragon Slayer
 with its filler, the cannon session and the cannon-led combat finish together cost
-**~9,280-9,310** (success path) or **~10,060-10,090** (expected), against ~14,790. These are
+**~9,310-9,340** (success path) or **~9,490-9,520** (expected), against ~14,790. These are
 fixed-column figures from a model over rs/30's and rs/31's measured rates (section 6). The
-margin of about 4,700 expected ticks survives every failure case measured on Ape Atoll, but
+margin of about 5,270 expected ticks survives every failure case measured on Ape Atoll, but
 those were measured at 70/70/70 and the route arrives at Defence 1 and ~42 Hitpoints
 (open item (a)). Monkey Madness needs the rs/23 client fix (merged). Sea Slug needs
 cairn://p/rs/54 (PR #31, open); while it is blocked, the route is one quest point short of
@@ -275,7 +275,7 @@ client; see its row). The old figures are in [Superseded figures](#superseded-fi
 | The Grand Tree (Ardougne teleport for B and C) | 1,846 i / 1,576 i / 1,441 (r21); black demon **153 m** by Fire Bolt at 80/1/1, 28 HP, Protect from Melee (rs/56, n=5) in place of 237 at 70/70/70: -84 | 18,400 Attack, 7,900 Agility, 2,150 Magic, 5 QP, stronghold tree, Gnome Air (r) | ~2,228 i: Agility 2,143 (rs/2 `agility.md`: 6,960 without quests, 4,695 + 122 with), Magic ~85 (26 base/tick enchanting, `magic.md`), Attack 0 | **+652** | 18.1 | DO | [grand_tree.md](grand_tree.md) |
 | Fight Arena | 720 i / 645 i / 598 i (pm); chain (keys to stage 12) **281 m** by Fire Blast at 94/1/1, 36 HP, Protect from Melee per fight (rs/56, n=1, current client) in place of 435 m stock at 70/70/70, which is ~407 once its 28 chain pages cost 1 tick: -126 in every column | 12,175 Attack, 2,175 Thieving, 2 QP (r) | Thieving ~865 i (rs/2 `thieving.md`: 2,840 from 1, ~1,975 from 57); Attack 0 | **+220** | 22.2 | DO, while Thieving is low | [fight_arena.md](fight_arena.md) |
 | Dwarf Cannon | 1,078 m / 976 i / 920 (r21) | 750 Crafting, 1 QP, the multicannon (r) | ~3,070 i in Package B: a hand-only combat line (rune knives to Ranged 50 before MM ~600, then ~4,480 of knives from Ranged ~55 to 99 at rs/31's measured 8.1-8.75, and ~140 of Defence melee) is ~5,220 against the cannon's 123 + 2,023-2,051 (rs/31). Package A, with Defence starting at 20,000, gave ~4,090 | **+2,090** (A: +3,110) | 0.8 | DO (Monkey Madness route only, section 6) | [dwarf_cannon.md](dwarf_cannon.md) |
-| Monkey Madness, option 1 | success 4,399 / 3,865 / 3,514 (r21); expected 5,179 / 4,645 / 4,295; ~60% m, its hazards at 70/70/70 (open item (a)) | 35,000 Strength, 35,000 Hitpoints, 20,000 Attack, 20,000 Defence, 3 QP (r, `mm_daero.rs2:294-302`) | ~10,250 i: the scenario difference in section 6 (no-MM ~14,790 including Waterfall, minus the with-MM lines: Dwarf Cannon 976, Dragon Slayer 941, filler 456, cannon session 123, finish ~2,037) | **+5,490** success, **+4,710** expected (after Tree Gnome Village's 896) | 28.5 | DO | [monkey_madness.md](monkey_madness.md) |
+| Monkey Madness, option 1 | success 4,431 / 3,897 / 3,546 (r21, with rs/59's temple ladder drop -68 m and the walked zoo return +100 i); expected 4,611 / 4,077 / 3,726; ~60% m, its hazards at 70/70/70 (open item (a)) | 35,000 Strength, 35,000 Hitpoints, 20,000 Attack, 20,000 Defence, 3 QP (r, `mm_daero.rs2:294-302`) | ~10,250 i: the scenario difference in section 6 (no-MM ~14,790 including Waterfall, minus the with-MM lines: Dwarf Cannon 976, Dragon Slayer 941, filler 456, cannon session 123, finish ~2,037) | **+5,458** success, **+5,278** expected (after Tree Gnome Village's 896) | 28.2 | DO | [monkey_madness.md](monkey_madness.md) |
 | Mage Arena (base Magic ~76, no potion) | 606 i / 581 i / 574 (r21); fight 331 m at base 71 + potion (rs/52), likely ~300-330 at base 76 (i, between that and rs/20's base-80 timing); the totals keep 581 | Charge (0 xp reward; the fight gives ~2,800-3,100 Magic, m) (r, m) | ~1,260 i: Magic 76 to 99 by enchanting is ~1,300 (~110 to 80, then ~1,190 from 80 as in `magic.md`), against Charge's ~33 from base ~80 (m, rs/20). The arrival level ~76 comes from the pre-MM spells (open item (c)) | **+680** | n/a | DO; Protect from Magic from bones, plus prayer potions | [mage_arena.md](mage_arena.md) |
 | Sea Slug | 495 i / 394 m / 340 i | 7,175 Fishing, 1 QP (r) | 955 i given Fishing Contest (rs/2 `fishing.md` §3); 586 i on the 3-tick cycle | **+561** (+192 on the 3-tick cycle) | 18.2 | DO, after rs/54 merges; before Dragon Slayer (one of the 32 QP) | [sea_slug.md](sea_slug.md) |
 | Fishing Contest (helper carp) | 276 i / 223 m / 200 i | 2,437 Fishing, 1 QP (r) | 325 i given Sea Slug; 186 i on the 3-tick cycle | **+102** (-37 on the 3-tick cycle, but see section 7: dropping it costs a 1-QP replacement) | 10.9 | DO, if fly fishing stays on the normal cycle; before Dragon Slayer | [fishing_contest.md](fishing_contest.md) |
@@ -339,7 +339,7 @@ always refused within 16 ticks of combat (m). Ticks are fixed-client figures.
 | 5 | Fight Arena, before any Thieving training; Khazard need not be killed. **Fire Blast** at Magic ~73 (i; measured at 65, 281 m), Protect from Melee on for each fight, and **left on after Bouncer dies until you are out of the arena door**: General Khazard attacks at stage 12 (m: the only damage taken in the melee runs, up to 15, came from him with prayer off) | 645 | the arena fights (combat lock; the death hooks need you inside the arena) | 5 coins, Ardougne runes, a few sharks as insurance (without prayer the chain took 14 swordfish, m) |
 | 6 | Dwarf Cannon | 976 | none (all varps permanent) | runes for 2 Ardougne + 1 Falador teleports |
 | 7 | Cannon session, Ranged 1 to 50 or a little past, **wielding the rune scimitar** (Attack 99 from steps 3-5), auto-retaliate off, at the Wilderness poison spiders (3288,3810). **Drink antipoison at the first poisoning**: 0 damage (m, n=1); without it the poison takes 24-30 of 42 HP per session (m, n=4) | 113 m to Ranged 50 (rs/31) + ~10 set-up + travel; rs/56's sessions ran 151-153 to Ranged 54-57 (m) | combat; Wilderness level 37, and at 42 HP and Defence 1 a player kill is likely if anyone tries (section 7) | cannon set and cannonballs from a helper who has **also done Dwarf Cannon** (the mould is untradeable), rune scimitar, the step 3 antipoison and sharks |
-| 8 | Monkey Madness, option 1 at Daero. The account arrives at **Defence 1, ~42 HP, Strength 1, Magic ~76** (i; rs/56 timeline), not the 70s its hazards were measured at (open item (a)) | 3,865 success, 4,645 expected | **the hangar puzzle's last tile to the powered hangar** (timer); **the three chapter cutscenes** (Lumdo's ride to the atoll, the Karamja gree-gree, Garkor's sigil; `mm_cutscene_part` is temporary); **sigil to Jungle Demon kill** (the battle deletes itself) | gold bar, ball of wool, monkey bones, 5 bananas, magic shortbow + 100 rune arrows, 4-6 prayer potions, ~15 food, Varrock and Ardougne runes, **a second Antipoison(4)** for the jungle spiders (the cannon session used ~2 doses of the first, m) |
+| 8 | Monkey Madness, option 1 at Daero. The account arrives at **Defence 1, ~42 HP, Strength 1, Magic ~76** (i; rs/56 timeline), not the 70s its hazards were measured at (open item (a)). **Temple trapdoor by the ladder drop** (south bamboo ladder (2794,2773) up, floor 1 to (2806,2785,1), east ladder down onto the access tile; 33-36 m, rs/59), Protect from Melee beside the guards. **Walk the monkey back from the zoo** or use the glider or glory: spirit trees delete it (`spirit_tree.rs2:74-76`) | 3,897 success, 4,077 expected | **the hangar puzzle's last tile to the powered hangar** (timer); **the three chapter cutscenes** (Lumdo's ride to the atoll, the Karamja gree-gree, Garkor's sigil; `mm_cutscene_part` is temporary); **sigil to Jungle Demon kill** (the battle deletes itself) | gold bar, ball of wool, monkey bones, 5 bananas, magic shortbow + 100 rune arrows, 4-6 prayer potions, ~15 food, Varrock and Ardougne runes, **a second Antipoison(4)** for the jungle spiders (the cannon session used ~2 doses of the first, m) |
 | 9 | Mage Arena at **base Magic ~76** (i, timeline below): Fire Wave needs 75, so no enchanting and no magic potion. Kolodion under Protect from Magic (~54-62 prayer points, so 1-2 prayer potions at Prayer 43), ~300-330 i (331 m at 71 + potion, rs/52). The fight's ~2,800-3,100 Magic (m) lands base ~80-81, so **Charge 80 to 99 needs no potion** (~33 m, rs/20). It can move earlier: any time after Fight Arena | 581 (i, upper) | the arena fight (combat; no teleport from the Wilderness legs, so leave from the cellar or chamber) | staff of fire, ~70 blood + 400 air runes, ~500 blood + ~500 air for ~165 Charge casts (i), a knife (webs), **1 magic potion as insurance** (i: none needed if the timeline holds), prayer potions, Ardougne runes |
 | 10 | Sea Slug (once rs/54 merges; Firemaking 30) | 394 | none | swamp paste, unlit torch, Ardougne runes |
 | 11 | Fishing Contest (helper carp), if fly fishing stays on the normal cycle | 223 | inside the contest fence, steps 7-9: leaving through the gate resets the contest; logout inside was not tested | raw giant carp (a helper leaves the contest before its third catch), rod, 1 bait, 5 coins, 3 Camelot casts |
@@ -490,7 +490,7 @@ Package A is kept as the alternative.
 | Line | With MM option 1 (Package B) | Without MM |
 |---|---|---|
 | Tree Gnome Village | 896 | not done (Grand Tree does not require it) |
-| Monkey Madness | 3,865 success (m/r/i mix), 4,645 expected | not done |
+| Monkey Madness | 3,897 success (m/r/i mix), 4,077 expected | not done |
 | Dwarf Cannon | 976 | **not done**: Hitpoints binds, and cannon xp gives no Hitpoints, so the cannon shortens nothing (the model's best cannon plan is ~13,260 + 976 for the quest, against ~13,900 with knives and no quest: about even, and the knives need no Wilderness) |
 | Waterfall | not done | 888: kept. Without MM its Attack and Strength save only the ~9,400 xp that lies above the Hitpoints floor, ~1,000 ticks of melee at ~9.3 against 888: about even (i) |
 | Dragon Slayer + filler | 941 + 456 | not done: Hitpoints binds (decision 4) |
@@ -498,10 +498,10 @@ Package A is kept as the alternative.
 | Strength and Defence | Strength 0; Defence's last 1,288 inside the cannon phase | Strength 83 to 99 at the banded rates, **~2,860**; Defence 1 to 99 at ~9.3 with Strength 99, **~4,300** |
 | **Hitpoints (its own line)** | 0 extra: the finish produces 5,089 (rs/31) against a gap of ~4,220 | The Strength, Defence and Ranged training above yields 35,355 HP, leaving 4,583. That needs 13,749 more combat xp in a capped skill: **~1,480** at ~9.3 |
 | Combat training after the quests | **~2,146-2,174** (123 + 2,023-2,051) | **~13,900** (2,862 + 4,295 + 5,270 + 1,478) |
-| **Block total** | **~9,280-9,310 success, ~10,060-10,090 expected** | **~14,790** (888 + 13,900) |
+| **Block total** | **~9,310-9,340 success, ~9,490-9,520 expected** | **~14,790** (888 + 13,900) |
 
-**MM option 1 wins by about 5,480-5,510 ticks on the success path and 4,700-4,730
-expected.** Package A, the alternative, gives the same block with Waterfall 888 and the
+**MM option 1 wins by about 5,450-5,480 ticks on the success path and 5,270-5,300
+expected** (with rs/59's trapdoor ladder drop; before it, 4,700-4,730 expected). Package A, the alternative, gives the same block with Waterfall 888 and the
 3,520 finish in place of Dragon Slayer, its filler and the 2,023-2,051 finish:
 ~10,220-10,250 success (after rs/56's measured S of 15-47), so MM wins by ~4,540 there and
 Package B is ~910-970 better.
@@ -538,23 +538,30 @@ for the route's real levels):
 
 | Item | Ticks (fixed) |
 |---|---|
-| Success path, after Plague City (Ardougne teleport on the zoo leg), trade included | ~3,865 |
-| Expected extra: temple trapdoor +600, the monkey's aunt +120, Jungle Demon deaths +60 | +780 |
-| **Expected total** | **~4,645** |
+| Success path, after Plague City (Ardougne teleport on the zoo leg), trade included, with rs/59's temple ladder drop (-68, m) and the walked zoo return (+100, i) | ~3,897 |
+| Expected extra: the monkey's aunt +120, Jungle Demon deaths +60 (the temple trapdoor's former +600 is gone with the ladder drop: 4 of 4 clean runs, m) | +180 |
+| **Expected total** | **~4,077** |
 | Per failure: trapdoor stuck (walk out, eat, drink a prayer dose) | ~30 plus another ~110-tick try |
 | Per failure: death at the trapdoor | ~340; ~990 if the enchanted bar is lost (only 3 items are kept) |
 | Per failure: the aunt calls the guards (a jail cycle) | ~90-120 |
 | Per failure: death to the Jungle Demon | ~60 (the sigil teleports you back) |
 | Per failure: death in the Ape Atoll dungeon traps (none seen; not in the expected figure) | ~340 |
-| **Bad-but-plausible worst case**: 6 trapdoor tries with 2 deaths (one losing the bar), the aunt twice, the demon twice, one dungeon death | +~2,650, so **~6,500** |
+| **Bad-but-plausible worst case**: the aunt twice, the demon twice, one dungeon death, and one failed ladder approach (stuck or a death, the bar kept) | +~1,040, so **~4,940** (before the ladder drop it was +~2,650 with six trapdoor tries) |
 
 **Retry tolerance.** MM stays ahead of no-MM until its overrun over the success path reaches
-about **5,490** fixed ticks under Package B: roughly **16 trapdoor deaths** with the bar kept,
+about **5,460** fixed ticks under Package B: roughly **16 deaths** of ~340 with the bar kept,
 or 5 with it lost (Package A's margin of ~4,540 gave ~13 and 4). The bad-but-plausible worst
-case (+2,650) is well inside that. The open leads would shrink the trapdoor's +600: an
-antipoison, since the deaths may be jungle-spider poison through the prayer, and timing the
-guards' one-tile wander. A logout inside a cutscene zone completes the cutscene on the next
-login (`mm_login`, unmeasured, worth up to ~150).
+case (+1,040) is well inside that. The trapdoor's former +600 is gone: rs/59 measured the
+ladder drop at 33-36 ticks in 4 of 4 runs (`quest-mm-temple-ladder.ts`), which lands on the
+access tile inside the guard box instead of fighting through it. A logout inside a cutscene
+zone completes the cutscene on the next login (`mm_login`, unmeasured, rs/59 puts it at
+~40-80). Further rs/59 leads, untested: the cannon on the Jungle Demon (~100-170), skipping
+Kruk with a fire push east of the Elder Guard (~40-70), and walking away from dialogues'
+trailing pages (~20-50 burst). **Prayer re-toggle:** switching the protect prayer off and on
+in the same tick every 4 ticks drained 1 point in 100 ticks against 20 held (m, rs/59,
+`prayer.rs2:30-44`), so 'prayer ran out' stops being a failure mode; each toggle clears the
+attack target (`protectfrommelee.rs2:9`), and re-sending the attack while toggling is
+untested, so keep the prayer potions in the trades as insurance.
 
 ## 7. Conditional calls
 
@@ -655,8 +662,8 @@ raised:
    ticks" line has the same gap: cannon xp gives no Hitpoints. **Witch's House** (6,325 HP,
    ~163 fixed, unmeasured) is a no-MM-only candidate.
 5. **Monkey Madness option 1 rechecked without Holy Grail**, on measured melee rates: still
-   better than option 2 by ~3,130 ticks (section 6). MM itself beats no-MM by ~4,700
-   expected under Package B (~3,760 under A with the measured fights), and only a melee rate of ~20 base/tick would
+   better than option 2 by ~3,130 ticks (section 6). MM itself beats no-MM by ~5,270
+   expected under Package B (~4,700 before rs/59's trapdoor ladder drop) (~3,760 under A with the measured fights), and only a melee rate of ~20 base/tick would
    flip it.
 6. **Druidic Ritual: ON, mandatory** (coordinator, 2026-10-21, on rs/37's measurement via
    rs/28). Every Herblore action needs level 3, so without the quest's 250 base Herblore
@@ -668,8 +675,10 @@ raised:
 - **(a) Monkey Madness at the route's real levels is unmeasured.** The account arrives at
   **Defence 1, ~42 Hitpoints, Strength 1 and Magic ~76** (i; rs/56 timeline, Magic from the
   section 4 timeline). Its temple-trapdoor guards and the jungle-spider poison were measured
-  at 70/70/70 with ~70 HP (`monkey_madness.md`), so the failure budget (+780 expected) may be
-  optimistic: a trapdoor death is likelier at 42 HP. The Jungle Demon is fought under
+  at 70/70/70 with ~70 HP (`monkey_madness.md`). rs/59's ladder drop removes the trapdoor
+  scrum (~5 ticks beside the guards, 0-1 HP taken, m), so the main remaining exposure at 42 HP
+  is the jungle-spider poison and the dungeon traps; the failure budget (+180 expected) may
+  still be optimistic there. The Jungle Demon is fought under
   Protect from Magic, so Defence does not matter there. The retry tolerance is **~16
   trapdoor deaths** under Package B (~13 under A; 5 and 4 if the bar is lost). An
   antipoison likely removes the poison deaths, since the cannon session showed all damage

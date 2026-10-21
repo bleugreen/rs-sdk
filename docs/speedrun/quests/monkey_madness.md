@@ -9,6 +9,25 @@
 > slide is the same OPHELD5. Everything below assumes the rs/23 fix; the puzzle
 > segment was **measured with the rs/23 fix (lab client)**.
 
+> **Two corrections from cairn://p/rs/59 (2026-10-21; evidence in
+> `docs/speedrun/research/quest-speedrun.md` on agent/rs-59-coordinator-0, row 1 and row 3).**
+> (1) **Temple trapdoor (step H): use the ladder drop.** Climb the temple's south bamboo
+> ladder (2794,2773), walk on floor 1 to (2806,2785,1) and climb down the east ladder
+> (2805,2785): the ladder top drops you on your own tile one floor down
+> (`quest_mm.rs2:766-771`), which is the trapdoor's only access tile inside the guard box.
+> **33-36 ticks, mean 33.75, 4 of 4 runs (m, `quest-mm-temple-ladder.ts` segment L)** from the
+> same start as the 102 below, with Protect from Melee for the ~5 ticks beside the guards
+> (5-9 prayer points, 0-1 HP). This replaces the scrum in the Random steps table: success
+> path -68, and the trapdoor's ~+600 expected extra goes to ~0.
+> (2) **Step J: walk the monkey back from the zoo.** Spirit trees run `~post_tele_checks`
+> (`spirit_tree.rs2:74-76`), which deletes the monkey in the backpack
+> (`teleport.rs2:109-112`); the glider, Daero's blindfold, Lumdo's boat and the amulet of
+> glory keep it. The young-tree hops below must be replaced by walking (~300-350 route tiles,
+> unmeasured) or the glider: **about +100 (i)**.
+> **Net: success path ~+32; expected ~-568.** Corrected totals: success ~4,431 stock /
+> ~3,897 fixed / ~3,546 burst; expected (aunt +120, demon +60) ~4,611 / ~4,077 / ~3,726.
+> The figures below are the original ones.
+
 **Verdict: about 4,500 ticks (stock client), about 3,950 with 1-tick pages,
 about 3,600 with dialogue bursts, for 110,000 base combat xp.** At the combat
 rate (about 14 base xp per tick, README) that xp is worth about 7,850 ticks, so the
