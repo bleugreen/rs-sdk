@@ -35,8 +35,8 @@ tick manipulation" means the knife-on-logs starter ([tick-manipulation.md](tick-
 | **Total** | | | **about 17,580** | **about 14,570** | Sum of the rows (Agility at 67-tick laps plus its 122 pre-quest ticks; Thieving at 1,975) | | |
 
 The tick-manipulation column saves about 3,010 ticks: Fishing about 1,410, Woodcutting
-about 930, Mining about 670. It is **not yet measured on the demo server**; see the first
-open question.
+about 930, Mining about 670. It holds only from a host with Ashburn-like latency to the
+demo; from bbs the knife measured no gain on the demo. See the first open question.
 
 Decisions this table rests on:
 
@@ -72,11 +72,22 @@ unless that row says it fits the knife loop.
    the next tick. From bbs to the demo, 0 of 60 probe trials did (25 at 2 ticks, 35 at
    3); from Azure eastus (Ashburn), 51 of 60 did and 9 took 2 ticks (`tickmanip-latency.ts`,
    [../LAB.md](../LAB.md)). A constant latency cancels for the self-anchored knife loops;
-   the **spread** breaks the lock. Whether the knife beats the plain loop on the demo is
-   being measured by cairn://p/rs/62 on a throwaway account. Its run-time gate
-   (`speedrun/lib/hostgate.ts`) switches the knife off whenever it does not, so the run
-   can never do worse than the normal column. The run host (Ashburn is proposed) decides
-   which column applies.
+   the **spread** matters. A late starter costs about one plain cycle and does not lose
+   the lock (read in `cut_logs.rs2:83-85`; measured by holding 15% of starters one tick:
+   willows 5.76 ticks per log against 5.03 on time and 5.84 plain, fly 4.92 against 3.86
+   and 6.61, iron 3.51 against 3.53; [tick-manipulation.md](tick-manipulation.md),
+   "Run-time host gate"). So the knife beats plain when the share of packets at the
+   dominant latency exceeds about 0.75 for Woodcutting, 0.60 for fly fishing and 0.39 for
+   iron (inferred from those measurements). Ashburn's 85% clears all three. **Measured on
+   the demo from bbs** (throwaway account, normal trees, 5 rounds x 20 logs per condition,
+   2026-10-21): 70% of 480 probe trials at the dominant 2 ticks, and the forced knife read
+   5.44 ticks per expected roll against 5.67 plain, within noise (both 5.5 without the
+   first round). The run-time gate (`speedrun/lib/hostgate.ts`, merged from
+   cairn://p/rs/62) keeps the knife off there, re-probes every 500 ticks, and switches it
+   off after 30 drops that do not beat plain, so the run can never do worse than the normal
+   column. Still open: the knife on the demo **from the run host**. Run
+   `bash docs/speedrun/scripts/tickmanip-demo.sh <bot>` (about 25 minutes) there before
+   counting on the tick-manipulation column.
 2. **Browser client.** All figures are on the headless lite client. The run drives the
    browser webclient, which froze under rapid-fire input in this lab and lacks the #20
    tick-publication fix. Main's cairn://p/rs/82 is porting the fix and proving the knife
