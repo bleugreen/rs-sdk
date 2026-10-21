@@ -107,9 +107,8 @@ path now clears the record by about 4.4% with everything held, and by about 1.3%
 plan with the 13:10 bones. Each extra babydragon bone farmed before the start saves ~2.07 and each
 extra dragon bone ~7.87 while ~268 bones still overflow to the booth (section 7, "The stock at 13:10
 PDT"). The knife gate failing all night erases the margin on its own (+3,249 without rs/162, +2,624
-with it, R2), and so does
-Monkey Madness's bad-but-plausible case (+~860 beyond its expected, R5) on the 13:10 bones. A demo
-restart is no longer a score risk (about 7 ticks each, R7). The in-page willow question is settled
+with it, R2), and so does Monkey Madness's bad-but-plausible case (+~860 beyond its expected, R5)
+on the 13:10 bones. A demo restart is no longer a score risk (about 7 ticks each, R7). The in-page willow question is settled
 (O19, section 9): rs/97's 4.83 ticks per log was the server's chop RNG at level 99, not the client,
 so S07's knife takes the lite ratios (2,986 against #129's 3,390). The biggest open swing is now the
 knife gate itself (R2, O11).
