@@ -813,6 +813,9 @@ rate by the next tick interval'.
 | 18:10 | run host, gate timer's first (hand) read | 1,587 | 54/60 | 3.97 | fail |
 | 19:45 | run host, rs/130's reference row | 1,679-1,624 | 51/60 | 11.7 | fail |
 | 20:12 | rs/147's twin (same zone and image), Xvfb with recording | 1,411 | 60/60; in-page probe 60/60 | 0 | **pass** (loop p10 72-73/s) |
+| 20:22 | rs/147's twin in the run-night configuration: RDP disconnected, on-host recording at 29.9 fps with 0 dropped, xrdp display 1920x1080 | 1,589-1,604 | 60/60; in-page probe 60/60 at 20:29 | 0 (tick p90 377) | **pass** ((d) loop p10 70.8-72.9/s over 30 samples; host 31-33% busy) |
+
+The twin's reads of record are kept in `docs/speedrun/rehearsals/HOST.md` (rs/147, rs/149).
 
 The 20:12 pass came about 12 minutes after the probable 20:00 restart, and 05:09 (60/60, 16
 minutes after the 04:53 restart) was calm too, but 05:36 (43 minutes after it) was a severe burst.
