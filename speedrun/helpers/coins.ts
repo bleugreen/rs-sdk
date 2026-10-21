@@ -199,11 +199,17 @@ class CoinEarner {
         // toll is 10 gp each way, so earn it on the men if the account is broke.
         const needFood = spot.name !== 'man' && foodIn(s).length === 0;
         const wantEast = spot.name === 'warrior' || needFood;
+        const need = 10 + (needFood ? this.o.kebabs : 0);
+        if (spot.name !== 'man' && coinsIn(s) < need && (needFood || wantEast !== inAlKharid(s))) {
+            // Short of toll/kebab money: take it from the bank if there is any
+            // (a restarted earner usually banked everything), else earn it on
+            // the Lumbridge men.
+            if (!this.bankEmpty && (await this.withdrawCoins(inAlKharid(s) ? SPOTS.warrior.bank! : SPOTS.guard.bank!))) return;
+            if (dist(s, SPOTS.man.stand) > SPOTS.man.radius) await this.walk(SPOTS.man.stand);
+            else await this.thieve(SPOTS.man, st => coinsIn(st) >= need);
+            return;
+        }
         if (spot.name !== 'man' && wantEast !== inAlKharid(s)) {
-            if (coinsIn(s) < 10) {
-                await this.thieve(SPOTS.man, st => coinsIn(st) >= 10 + this.o.kebabs);
-                return;
-            }
             if (wantEast) await this.walk(TOLL_WEST);
             const r = await crossTollGate(this.bot, this.sdk, wantEast, this.ctx.log);
             this.spent += r.paid;
@@ -368,6 +374,27 @@ class CoinEarner {
             await waitTicks(this.sdk, 1);
         }
         this.ctx.log('kebabs', { bought, carried: foodIn(this.state).length });
+    }
+
+    /** Set once a bank visit finds no coins to withdraw; earning then starts from the men. */
+    private bankEmpty = false;
+
+    /** Withdraw up to keepCoins at `bank`. Returns whether any coins were taken. */
+    private async withdrawCoins(bank: Tile): Promise<boolean> {
+        await this.walk(bank);
+        const opened = await this.bot.openBank();
+        if (!opened.success) {
+            this.ctx.log('bank failed', { message: opened.message });
+            return false;
+        }
+        const inBank = this.sdk.getBankItems().find(i => i.name === 'Coins')?.count ?? 0;
+        const take = Math.min(inBank, this.o.keepCoins - coinsIn(this.state));
+        if (take > 0) await this.bot.withdrawItem(/^coins$/i, take);
+        this.ctx.reportBank({ items: this.sdk.getBankItems().map(i => ({ id: i.id, name: i.name, count: i.count })) });
+        await this.bot.closeBank();
+        if (take <= 0) this.bankEmpty = true;
+        this.ctx.log('withdrew coins', { take, carried: coinsIn(this.state) });
+        return take > 0;
     }
 
     private async bankCoins(spot: Spot): Promise<void> {
