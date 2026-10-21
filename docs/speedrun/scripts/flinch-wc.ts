@@ -4,7 +4,17 @@
 //   bun docs/speedrun/scripts/flinch-wc.ts <bot> control 60
 //   bun docs/speedrun/scripts/flinch-wc.ts <bot> npcs4 1200 knife 200
 //   (lab.sh form: docs/speedrun/scripts/flinch-wc.ts:npcs4:1200:knife:200)
-//   args: mode (control | npcsN), max labels, weapon (knife | none), target rolls, stand x,z
+//   args: mode (control | npcsN), max labels, weapon (knife | none), target rolls, stand x,z,
+//         tree name (Oak | Willow). Every tree of that name within 3 tiles of the stand tile
+//         is a target; the bot clicks the first one standing. Multi-combat tiles reaching
+//         two trees: oaks (3002,3312), willows (2674,3227) (woodcutting-spots.ts + multiway.csv).
+//
+// While every target tree is down, the bot turns auto-retaliate off (controls:com_3) and
+// back on (com_2) when one respawns. Without that, two hits on consecutive ticks during the
+// wait let the player's own attack fire (the second hit finds the clock unexpired, writes
+// nothing, and its p_opnpc(2) runs the attack label on a clock equal to map_clock); the
+// Ranged and Hitpoints xp then lift the combat level until the cowardly hobgoblins stop
+// hunting.
 //
 // Mechanism (traced with flinch-trace.patch): a hit on tick F runs
 // [queue,playerhit_n_retaliate] the same tick; if the player has no interaction (a drop
@@ -39,7 +49,8 @@ const labels = Number(argv[1] ?? '60');
 const npcMax = /^npcs\d+$/.test(mode) ? Number(mode.slice(4)) : 0;
 const weapon = argv[2] ?? 'knife';
 const targetRolls = Number(argv[3] ?? '200');
-const stand = (argv[4] ?? '2948,3315').split(',').map(Number);
+const stand = (argv[4] ?? '3002,3312').split(',').map(Number);
+const treeName = argv[5] ?? 'Oak';
 
 await runScript(async ({ bot, sdk }) => {
     await bot.skipTutorial();
@@ -57,16 +68,14 @@ await runScript(async ({ bot, sdk }) => {
     await sdk.sendSetCombatStyle(0); // accurate: not rapid, so the knife flinch is +1
     await say(`::tele 0,${stand[0] >> 6},${stand[1] >> 6},${stand[0] & 63},${stand[1] & 63}`);
     await T(2);
-    const findOak = () => sdk.getState()!.nearbyLocs.filter(l => l.name === 'Oak').sort((a, b) => a.distance - b.distance)[0];
-    let oak = findOak();
-    for (let i = 0; !oak && i < 10; i++) { await T(1); oak = findOak(); }
-    // fallback: the multi-combat oak south-west of Falador (loc 1281 oaktree, map m46_51)
-    if (!oak) oak = { x: 2949, z: 3314, id: 1281, name: 'Oak', distance: 1 } as any;
+    const findTrees = () => sdk.getState()!.nearbyLocs.filter(l => l.name === treeName && l.distance <= 3);
+    let trees = findTrees();
+    for (let i = 0; !trees.length && i < 10; i++) { await T(1); trees = findTrees(); }
     const eq = () => sdk.getState()!.equipment.map(i => `${i.name}x${i.count}`).join(', ');
-    console.log(`setup: mode=${mode} at (${sdk.getState()!.player!.worldX},${sdk.getState()!.player!.worldZ}) oak@(${oak.x},${oak.z}) equipment=[${eq()}]`);
-    // one ordinary chop click to stand next to the oak, then stop it with a drop
-    await sdk.sendInteractLoc(oak.x, oak.z, oak.id, 1);
-    await T(6);
+    const p = sdk.getState()!.player!;
+    console.log(`setup: mode=${mode} at (${p.worldX},${p.worldZ}) trees=${trees.map(t => `${t.name}@(${t.x},${t.z})`).join(' ')} equipment=[${eq()}] autoRetaliate=${p.combat?.autoRetaliateEnabled}`);
+    if (!trees.length) throw new Error('no target tree in reach');
+    const standing = (s: BotWorldState) => trees.filter(t => s.nearbyLocs.some(l => l.x === t.x && l.z === t.z && l.name === treeName));
 
     const isLog = (n: string) => /logs$/i.test(n);
     const dropLog = (s: BotWorldState) => {
@@ -113,7 +122,9 @@ await runScript(async ({ bot, sdk }) => {
     const xpTicks: number[] = [];
     const clickLand: number[] = [];
     const fellAt: number[] = [];
-    let wasStump = false;
+    const allDown: number[] = [];
+    let wasUp = new Set(trees.map(t => `${t.x},${t.z}`));
+    let retOff = false;
     const knives0 = sdk.getState()!.equipment.find(i => /Bronze knife/.test(i.name))?.count ?? 0;
     const loopHits0 = hitTicks.length;
 
@@ -122,11 +133,16 @@ await runScript(async ({ bot, sdk }) => {
         if (xp > lastXp) { xpTicks.push(s.tick); console.log(`X t=${s.tick} +${(xp - lastXp) / 25}`); lastXp = xp; }
         const newHit = seeHit(s);
         controller(s, newHit);
-        const stump = s.nearbyLocs.some(l => l.x === oak.x && l.z === oak.z && l.name !== 'Oak');
-        if (stump && !wasStump) { fellAt.push(s.tick); console.log(`F t=${s.tick} oak felled`); }
-        wasStump = stump;
-        if (newHit && !clickedLast && !stump) {
-            fire(sdk.sendInteractLoc(oak.x, oak.z, oak.id, 1));
+        const up = standing(s);
+        const upKeys = new Set(up.map(t => `${t.x},${t.z}`));
+        for (const k of wasUp) if (!upKeys.has(k)) { fellAt.push(s.tick); console.log(`F t=${s.tick} felled ${k}, ${up.length} standing`); }
+        wasUp = upKeys;
+        if (!up.length) allDown.push(s.tick);
+        if (!up.length && !retOff) { fire(sdk.sendClickComponent(151)); retOff = true; console.log(`R t=${s.tick} auto-retaliate off`); }
+        if (up.length && retOff) { fire(sdk.sendClickComponent(150)); retOff = false; console.log(`R t=${s.tick} auto-retaliate on`); }
+        if (newHit && !clickedLast && up.length) {
+            const tree = up[0];
+            fire(sdk.sendInteractLoc(tree.x, tree.z, tree.id, 1));
             clickLand.push(s.tick + 1);
             clickedLast = true;
             return;
@@ -143,20 +159,22 @@ await runScript(async ({ bot, sdk }) => {
     }
 
     const gaps: Record<number, number> = {};
-    const fellGaps: number[] = [], spawnGaps: number[] = [];
+    const waitGaps: number[] = [], switchGaps: number[] = [], spawnGaps: number[] = [];
     for (let i = 1; i < xpTicks.length; i++) {
-        const g = xpTicks[i] - xpTicks[i - 1];
-        const inGap = (ts: number[], lead: number) => ts.some(f => f > xpTicks[i - 1] - lead && f <= xpTicks[i]);
-        if (inGap(fellAt, 0)) { fellGaps.push(g); continue; }
-        if (inGap(spawnTicks, 8)) { spawnGaps.push(g); continue; }
+        const a = xpTicks[i - 1], b = xpTicks[i], g = b - a;
+        // a fell is seen on the label of the roll that felled the tree, so it opens the gap after it
+        if (allDown.some(t => t >= a && t < b)) { waitGaps.push(g); continue; }
+        if (spawnTicks.some(t => t > a - 8 && t <= b)) { spawnGaps.push(g); continue; }
+        if (fellAt.some(t => t >= a && t < b)) { switchGaps.push(g); continue; }
         gaps[g] = (gaps[g] ?? 0) + 1;
     }
     const xpOnClick = xpTicks.filter(t => clickLand.includes(t)).length;
     const afterHit = xpTicks.filter(t => hitTicks.includes(t - 1)).length;
     const knives1 = sdk.getState()!.equipment.find(i => /Bronze knife/.test(i.name))?.count ?? 0;
     console.log(`summary: mode=${mode} weapon=${weapon} labelsHitsSeen=${hitTicks.length - loopHits0} clicks=${clickLand.length} xpDrops=${xpTicks.length} xpOnAClickTick=${xpOnClick} xpOnTickAfterSeenHit=${afterHit} fells=${fellAt.length} knives ${knives0}->${knives1}`);
-    console.log(`gaps between xp drops, no fell in between (ticks:count): ${Object.entries(gaps).map(([g, c]) => `${g}:${c}`).join(' ')}`);
-    console.log(`gaps spanning a fell: ${fellGaps.join(' ')}`);
+    console.log(`steady gaps between xp drops (ticks:count): ${Object.entries(gaps).map(([g, c]) => `${g}:${c}`).join(' ')}`);
+    console.log(`gaps after a fell with another tree standing: ${switchGaps.join(' ')}`);
+    console.log(`gaps spanning an all-down wait: ${waitGaps.join(' ')} (${allDown.length} labels all down)`);
     console.log(`gaps spanning a (re)spawn (from 8 ticks before it): ${spawnGaps.join(' ')}; spawns at ${spawnTicks.join(',')}`);
     const span = xpTicks.length > 1 ? (xpTicks[xpTicks.length - 1] - xpTicks[0]) / (xpTicks.length - 1) : NaN;
     console.log(`ticks per roll over the xp span, fells included: ${span.toFixed(2)}`);
