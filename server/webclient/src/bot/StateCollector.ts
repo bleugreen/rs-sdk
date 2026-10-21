@@ -951,6 +951,7 @@ export class BotStateCollector implements ScanProvider {
 
         if (!player) return npcs;
 
+        const playerPos = serverPos(player);
         const npcArray = c.npc || [];
         const npcIds = c.npcIds || [];
         const npcCount = c.npcCount || 0;
@@ -1058,6 +1059,7 @@ export class BotStateCollector implements ScanProvider {
 
         if (!localPlayer) return players;
 
+        const localPos = serverPos(localPlayer);
         const playerArray = c.players || [];
         const playerIds = c.playerIds || [];
         const playerCount = c.playerCount || 0;
