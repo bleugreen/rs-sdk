@@ -67,8 +67,8 @@ if (holdP > 0) {
     const proxyPort = Number(arg('proxy-port', String(Number(port) + 7)));
     const envPath = join(ROOT, 'bots', name, 'bot.env');
     if (!existsSync(envPath)) {
-        const made = Bun.spawnSync(['bun', 'bots/create-bot.ts', name, '--local', '--no-chat'], { cwd: ROOT });
-        if (made.exitCode !== 0) throw new Error(`create-bot ${name}: ${made.stderr?.toString() ?? ''}`);
+        const made = Bun.spawnSync(['bun', 'bots/create-bot.ts', name, '--local', '--no-chat'], { cwd: ROOT, stdout: 'ignore', stderr: 'pipe' });
+        if (made.exitCode !== 0) throw new Error(`create-bot ${name}: ${String(made.stderr ?? '')}`);
     }
     const text = readFileSync(envPath, 'utf-8')
         .replace(/^SERVER=.*$/m, `SERVER=localhost:${proxyPort}`)
