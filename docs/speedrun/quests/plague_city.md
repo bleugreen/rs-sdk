@@ -1,5 +1,23 @@
 # Plague City
 
+**Verdict: do it, before The Grand Tree.** Cost about 620 ticks on the fixed client
+(737 stock, about 564 with dialogue bursts), measured from a Camelot teleport. Its value is
+about 915-930 ticks (inferred): 2,425 base Mining is worth 269 ticks on the demo server
+(285 on a quiet one), because Doric's Quest alone leaves 4,034 ticks of mining to 99 and
+Doric's plus Plague City leaves 3,765 (rs/2 `docs/speedrun/skills/mining.md` §2). The Ardougne
+teleport it unlocks saves about 644 ticks in other documents' legs: Grand Tree ~290
+(`grand_tree.md`, steps B and C), Mage Arena ~185 (`mage_arena.md`), Monkey Madness ~100
+(`monkey_madness.md`, the Ape Atoll to the zoo leg), Waterfall ~38 (`waterfall.md`, 241
+route tiles from Ardougne against 317 from Camelot) and Holy Grail ~31 (`holy_grail.md`
+step 13, ~95 against 126). Fight Arena and Dwarf Cannon gain about nothing: the Khazard
+spirit tree and Camelot are about as close (`fight_arena.md`, `dwarf_cannon.md`).
+Watchtower would gain too, but it is a skip. Net about +300 ticks (fixed) or +350 (burst).
+Conditions: the savings count only for quests done after Plague City (Grand Tree's ~290
+is the largest), and the teleport needs **Magic 51**, checked with boosted `stat()`
+(`skill_magic/scripts/magic.rs2:22`), plus 2 law and 2 water runes per cast from helpers.
+Read the magic scroll at the end (`%elenaquest` 30, below), or the teleport stays locked.
+Without the teleport uses, Mining alone (~270) does not cover the ~620.
+
 **About 740 ticks (about 3.7 minutes at 300 ms) from a Camelot teleport, for 1 quest
 point and 2,425 base Mining xp, and the gate to Biohazard and the Ardougne teleport.**
 About 610 of those ticks are inside East and West Ardougne. Dialogue is the largest

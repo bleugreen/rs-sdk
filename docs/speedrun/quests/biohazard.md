@@ -1,5 +1,9 @@
 # Biohazard
 
+**Verdict: skip.** Its only route value is as the gate to Underground Pass, which is off
+the route along with Legends' Quest and Regicide; see
+[the chain verdict](regicide.md#the-regicide-chain-total-and-verdict).
+
 **About 1,560 ticks (about 7.8 minutes at 300 ms), for 3 quest points and 1,250 base
 Thieving xp, and the gate to Underground Pass.** Two thirds of the playtime is travel,
 and most of that is one forced stretch: the plague sample is destroyed by any teleport

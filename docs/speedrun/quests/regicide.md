@@ -1,5 +1,9 @@
 # Regicide
 
+**Verdict: skip.** 13,750 Agility replaces about 2,000 ticks against about 3,015-3,150
+ticks of its own play, and no quest-point gate needs its 3 points (`quest_points.md`); see
+[the chain verdict](#the-regicide-chain-total-and-verdict).
+
 **About 1,830 ticks of Regicide itself (about 9 minutes at 300 ms) plus two forced
 Underground Pass traversals of about 635 and 680 ticks, so about 3,150 ticks
 (16 minutes) in all, at Agility 56 and 70/70/70 melee, for 13,750 base Agility and

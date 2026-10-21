@@ -1,5 +1,9 @@
 # Underground Pass
 
+**Verdict: skip.** It pays only as a Legends' Quest prerequisite, and Legends is off the
+route; see [the chain verdict](regicide.md#the-regicide-chain-total-and-verdict). If it is
+ever done, do it after Grand Tree (see the very-low-Agility section).
+
 **About 2,600 ticks (13 minutes at 300 ms) at 70/70/70 melee, Agility 99, Thieving 50,
 Ranged 60, for 3,000 base Agility xp, 3,000 base Attack xp and 5 quest points.**
 At Agility 60 add about 60 ticks of expected failures, at Agility 40 about 240, and at

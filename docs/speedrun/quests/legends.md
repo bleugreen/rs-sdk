@@ -108,7 +108,7 @@ graph TD
 | Quest | QP | Gates on this server (read) | Owner |
 |---|---|---|---|
 | Waterfall | 1 | none | rs/14 (Waterfall, Fight Arena, Knight's Sword) |
-| Underground Pass | 5 | Biohazard; `stat(thieving) < 50` at `quest_upass.rs2:248` | rs/15 (Regicide chain) |
+| Underground Pass | 5 | Biohazard (`king_lathas.rs2:73`); **Ranged 25 by real level**, `stat_base(ranged) < 25` at `king_lathas.rs2:95`, so a potion does not help. (Corrected by rs/15: an earlier version listed `stat(thieving) < 50` at `quest_upass.rs2:248` as a gate. That check only opens two optional cage doors in area 2, `quest_upass.rs2:247-251`; without Thieving 50 the route crosses five stone bridges instead, about 11 ticks longer. See `underground_pass.md`.) | rs/15 (Regicide chain) |
 | Dragon Slayer | 2 | 32 QP | rs/11 |
 | Merlin's Crystal | 6 | | rs/12 |
 | Family Crest | 1 | no quest or `stat()` gate in `quest_crest/`. Chronozon must be hit by all four blast spells (`crest_chronozon.rs2:3`), so Fire Blast's Magic level applies | **none, this document** |
