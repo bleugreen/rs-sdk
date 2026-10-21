@@ -254,3 +254,27 @@ describe('travelPlan', () => {
         }
     });
 });
+
+// rs/87: cairn_h54 collected 87 sharks, hit 'cannot afford', and walked off with the exchange
+// open; its next openBank took that window for the bank and read the bank as empty.
+describe('Buyer.buyAtGE leaves the exchange closed on every return', () => {
+    test('cannot afford', async () => {
+        const { buyer, sdk } = setup([]);
+        const r = await buyer.buyAtGE({ item: 'Grapes', quantity: 10, source: 'ge', maxPrice: 1_000_000_000 }, 0);
+        expect(r.note).toMatch(/^cannot afford/);
+        expect(sdk.geOpen).toBe(false);
+    });
+    test('no sellers and no maxPrice', async () => {
+        const { buyer, sdk } = setup([]);
+        const r = await buyer.buyAtGE({ item: 'Grapes', quantity: 10, source: 'ge' }, 0);
+        expect(r.note).toBe('no sellers and no maxPrice');
+        expect(sdk.geOpen).toBe(false);
+    });
+    test('already held and a placed offer', async () => {
+        for (const quantity of [100, 194]) {
+            const { buyer, sdk } = setup([{ id: 15804, state: 'completed', quantity: 100, filled: 100, items: 100 }]);
+            await buyer.buyAtGE({ item: 'Grapes', quantity, source: 'ge', maxPrice: 1050 }, 0);
+            expect(sdk.geOpen).toBe(false);
+        }
+    });
+});

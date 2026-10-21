@@ -1,13 +1,15 @@
 # Bone collector (`speedrun/helpers/bones.ts`)
 
 The bone collector supplies the scored account's Prayer. A helper kills monsters for
-their bones and also loots coins and small valuables. It catches and cooks its own food,
-banks, and reports the bank after every visit through `ctx.reportBank`. The role
-produces `/bones$/` (role name `bones`).
+their bones and also loots coins and small valuables. It buys its food at the Grand
+Exchange (baby blue dragons) or catches and cooks it (hill giants), banks, and reports the
+bank after every visit through `ctx.reportBank`. The role produces `/bones$/` (role name
+`bones`).
 
 ```
 bun speedrun/helpers/bones.ts <account>                                  # standalone
 ROLE_OPTIONS='{"spot":"hill_giants","train":50}' bun speedrun/helpers/bones.ts <account>
+ROLE_OPTIONS='{"spot":"baby_blue","coinsFrom":"^cairn_h(6\\d|5[1-4])$"}' bun speedrun/helpers/bones.ts <account>
 ```
 
 Labels: **read** (from the content or engine), **measured** (on rs-sdk-demo.fly.dev,
@@ -68,7 +70,7 @@ minute, so about 20 points per kill: two kills per altar visit at Prayer 43.
 | Method | Requirement | Fresh helper to requirement | Bones per account-hour | Base xp per account-hour | Account-hours per 1,000 base | Scored ticks per 1,000 base | Risk | Status |
 |---|---|---|---:|---:|---:|---:|---|---|
 | **Hill giants**, Edgeville dungeon (12 spawns, level 28) | Melee about 50, food | **0.42 h measured** (20 min to 50/50/50 on cows, 4.5 min fishing/cooking kit) | **161-166 measured** (117 in a fresh account's first hour) | 2,475 | 0.40 | 146.7 | None | **Built; ran 3 accounts unattended** |
-| **Baby blue dragons**, Taverley dungeon | Dusty key (3 min to fetch, measured), melee about 60 | About 1 h (giants from 50 to 60, inferred) | **about 60 measured** (45 min probe: 10-15 bones per trip, food-bound) | 1,800 | 0.56 | 73.3 | One death on the walk in (the role does not eat while walking) | **Built; probed on cairn_h51** |
+| **Baby blue dragons**, Taverley dungeon, GE sharks | Dusty key (3 min to fetch), melee 75+ (food cost below), coins | 1 h on cows to 60 (measured); 75+ cheapest on hill giants | **about 98 measured** at 90 combat alone (bag-bound: 20-24 bones a trip); see the 4-account run below | 2,940 | 0.34 | 73.3 | Aggressive monsters on the approach; two bootstrap deaths recorded (see below) | **Built; 4 accounts run (rs/87)** |
 | Baby red dragons, Brimhaven dungeon | 875 gp, axe and Woodcutting, Agility 12 | About 1.5 h (inferred) | about 50 inferred | 1,500 | 0.67 | 73.3 | Low | Not built |
 | Blue dragons with Protect from Magic, Taverley | Prayer 43 (about 28 babydragon bones buried by the helper), dusty key, melee about 85 | About 2 h (inferred) | about 20-25 inferred (2 kills per altar trip) | 1,600 | 0.6 | 30.6 | Dragonfire up to 10 per breath | Not built |
 | Green dragons, wilderness | As above, plus PvP | | about 20 inferred | | | 30.6 | **PvP** and a 280-tile wilderness walk | Not built |
@@ -98,10 +100,15 @@ Costs and capacity:
 
 - **GE.** 555 bones cost 3.3M gp at 6,000, up to 6.7M at the 12,000 cap: 17-33 hours of
   coin earners at ~200k gp per hour.
-- **Baby blues.** At the measured ~60 an hour, 4 accounts make about 240 an hour (7,200
-  base), so they could cover the whole target alone in about 5.5 hours. Before scaling
-  them, the follow-up should add eating while walking (the probe's one death) and GE food
-  instead of fishing.
+- **Baby blues.** About 98 an hour from a 90-combat account (measured, rs/87), at about
+  0.3 sharks per bone. 1,332 babydragon bones (the whole target with no dragon bones)
+  would be about 14 account-hours at 90 combat. The food is the cost: see 'Baby blue
+  dragons with GE food' below.
+- **Coins per Prayer xp** (rs/87): baby blues at 0.25-0.35 sharks per bone and ~900 gp a
+  shark cost **about 8-10 gp per base xp** from a 90-combat helper, rising to about 30
+  from a 65-combat one. GE dragon bones at 5,000-6,000 gp cost 70-83 gp per xp. Per coin,
+  baby blues buy 3-10x more Prayer xp. Per scored tick, dragon bones still win (30.6
+  against 73.3 scored ticks per 1,000 base).
 - **No farmed dragon bones tonight.** Every 72-xp dragon breathes fire. The anti-dragon
   shield needs Dragon Slayer (32 quest points). Protect from Magic drains about 20 points a
   kill. Green dragons are in PvP wilderness. If the GE dries up before the early 11 arrive,
@@ -154,9 +161,35 @@ we win is one they don't.
    about 210 tiles past aggressive zombies and skeletons, which took a fresh 30-combat
    helper to 10 hp.
 
-At the spot the helper fights the nearest free giant. An NPC already attacking it comes
-first, and targets in another player's fight are skipped. It eats below 55% and flees
-below 35% with no food. It loots big bones, coins, law/nature/cosmic/death/chaos/blood/soul
+## Eating: the eat guard (`speedrun/helpers/eat-guard.ts`)
+
+The role eats whenever hitpoints are below `eatAt` (55%), whatever it is doing: walking,
+looting, fighting, waiting at a bank or the exchange. An `EatGuard` watches every published
+state for the whole session and sends the Eat option on the first carried food (never a
+banknote) when hitpoints are low. It holds off while a bank, shop, trade or exchange window
+is open, because the engine's OPHELD handler closes the window, and eats as soon as the
+window closes. After an eat it waits 3 ticks: `consume.rs2` refuses an eat within 2 ticks
+of the last one. If hitpoints are still low (poison, a missed eat), it eats again.
+A client tick-counter rollback clears the cooldown, so reconnecting cannot suppress food
+until the previous session's tick number is reached. Logged-out states never trigger eating.
+
+Engine facts it relies on (read, `OpHeldHandler.ts`, `Player.clearPendingAction`): eating
+keeps the walk queue, so a walk carries on; and it clears the current interaction, so the
+fight loop re-attacks its target when the guard's eat count changes. Eating adds 3 ticks to
+the attack timer and sets no player delay, so the re-attack is accepted at once and swings
+3 ticks later.
+
+**Why.** rs/48's probe ate only at the top of a cycle and inside the fight loop. On
+2026-10-21 at 08:12:01 UTC cairn_h51 died at (2901, 9800), just inside the dusty-key door,
+1 minute 49 seconds after leaving the Barbarian Village fire. One cycle's `spot.enter`
+covered the whole walk (Falador, Taverley, the dungeon loop past aggressive poison
+scorpions and chaos dwarves) without a single eat. `eat-guard.test.ts` replays that walk
+with `speedrun/lib/fake-sdk.ts`: hitpoints fall while nothing but the guard runs, and it
+must eat.
+
+At the spot the helper fights the nearest free target. An NPC already attacking it comes
+first, and targets in another player's fight are skipped. The guard eats below 55%; the
+helper flees below 35% with no food. It loots big bones, coins, law/nature/cosmic/death/chaos/blood/soul
 runes, grimy herbs, limpwurt roots, uncut gems and talismans. It equips dropped melee
 upgrades it has the level for (iron/steel kiteshields, full helms, longswords so far). With
 a full bag it drops a spare fish for each bone, keeping `minFood + spareFood`, rather than
@@ -165,16 +198,139 @@ at the spot. Every `banked` line records `why` (full, out of food, fled, low hp/
 fetch net/coins/requirement, first look), what was `carried` (slots used, food, bones),
 the bank's bone stock, and the session summary.
 
+## Baby blue dragons with GE food
+
+`food: "ge"` buys sharks through the shared `Buyer`, which uses
+`pointMarketAtServer` to route market reads to `SERVER`, not the loopback gateway.
+Before buying, the role collects existing fills; it buys toward `buyFood` (150 held),
+limited by available coins and `maxFoodPrice` (900 gp). It banks notes and withdraws
+10 edible sharks per trip. Bought food is never dropped to make room for bones.
+Normal baby-blue deposits use **Falador West**; buying and receiving funds use
+**Varrock West**. Every successful bank visit calls `reportBank`; bank stock is shared
+between locations.
+
+**Market observation:** the demo `/api/market/items/385` at 17:22 UTC on 2026-10-21
+quoted a shark ask of **676 gp**, with 3,588 offered. This is a dated quote, not a
+standing price guarantee. Sharks heal 20 hp and save inventory slots; the measured
+high-level trips use roughly 0.25–0.35 per bone. At that quote, food alone costs about
+5.6–7.9 gp per base Prayer xp. The earlier 900-gp budget estimate above is conservative.
+
+Food is obtained **before** attempting the Jailer/key route. If neither food nor enough
+coins remain, an account with `coinsFrom` waits at Varrock West for up to `coinWaitMin`
+(20 minutes), then fishes for 30 minutes before retrying GE food. This fallback keeps it
+productive but is not evidence of a funded GE-food run. If fishing equipment is missing,
+the role keeps GE buying and coin receiving enabled and backs off fishing retries for
+30 minutes; without an approved donor it waits at a bank, rather than entering combat
+without a replenishable food source. Funding shortages must be
+reported to the coordinator rather than silently borrowing another role's account.
+
+The receiver accepts only coins or its configured food, never offers anything, and
+checks an anchored login-name pattern. The current approved receivers use
+`^cairn_(h(6\d|5[1-4])|e\d\d)$`. Permissions to move funds remain account-specific:
+a matching name is not authorization to commandeer it. The approved 2026-10-21 top-ups
+were e06→h53 at 17:39:49, e04→h51 at 17:45:10, and e08→h52 at 17:46:12 UTC,
+**50,000 coins each**. Each earner was disabled through `fleetctl`, borrowed for its
+coins-only bidder-fund trip, logged out cleanly, then re-enabled and checked. Temporary
+credential symlinks were removed; no earner credentials remain in the dev copy.
+See [mule/courier](mule.md) for the transfer protocol.
+
+### Recovering a missing key
+
+The requested spot remains immutable. Missing-key recovery waits for the shared
+`speedrun/lib/fresh-state.ts` guarantee, then opens the bank and withdraws the key before
+attempting acquisition. A cached empty bank or failed bank action is not proof that the
+key is lost. The 30-minute acquisition budget starts when recovery begins, not when the
+role process started. If it expires, the helper makes one hill-giant trip, preserves any
+preferred-spot key, and retries baby blues after banking. Each downgrade logs inventory,
+bank stock and reason. Routing exits the dungeon actually occupied before entering a
+different one, including escape from Velrak's cell and the brass-key house.
+
+Previously a late stale inventory read could permanently replace the requested spot
+with hill giants. That explains why the baby-bone total stayed at 470 while big bones
+kept accumulating. Regression tests cover stale inventory, banked keys, late recovery,
+retry after a fallback bank, cross-dungeon routing and the brass-house door tile.
+
+### Scaling observations
+
+All intervals below are on the demo on 2026-10-21 UTC. Counts are **bank deposits**:
+last bank before the start to last bank before the exclusive end, divided by the entire
+wall-clock interval. Bones carried across either boundary are not inventory-adjusted.
+`stats.ts` includes the first in-window deposit; the old first-to-last-in-window estimator
+incorrectly discarded it and used different denominators for each account.
+
+| Active accounts | Window (UTC) | Deposits per account | Total | Total/hour | Mean/account-hour |
+|---|---|---|---:|---:|---:|
+| 1 (h51) | 09:16:00–09:53:10 | 61 | 61 | 98.48 | 98.48 |
+| 2 (h53, h54) | 17:50–18:10 | 44, 24 | 68 | 204 | 102 |
+| 3 (h51–h53) | 10:01:00–10:27:51 | 24, 27, 14 | 65 | 145.25 | 48.42 |
+| 4 (h51–h54), historical | 10:40–11:40 | 91, 63, 20, 49 | 223 | 223 | 55.75 |
+| **4 (h51–h54), unattended** | **18:15–19:15** | **72, 59, 70, 88** | **289** | **289** | **72.25** |
+
+These are operational observations, **not a controlled scaling curve**. The one-account
+window includes a gate-fix restart. The three-account window includes h53's bootstrap;
+its individual rates were 53.63, 60.34 and 31.28/h. In the historical four-account hour,
+h53 ran short of food and h54 received manual funding at 11:39; despite zero logged
+deaths it does **not** satisfy uninterrupted unattended acceptance. The two-account
+window had no deaths, restarts or funding interventions, at 132/h for h53 and 72/h for
+h54. Levels and trip boundaries differ between cohorts, so these numbers cannot prove
+that three accounts are worse than two or identify an optimal count.
+
+For the two-account window, completed fight invocations (attack through loot, **not
+weapon attack cadence**) took p10/p50/p90 **53/78/103 ticks** for h53 (31 samples) and
+**55/77/100 ticks** for h54 (40 samples). The measured complete trips took 11.4 and
+11.9 minutes, including 9.4 and 10.2 minutes in the room, and deposited 23 and 24 bones.
+The engine attack and eat delays are separate from this end-to-end distribution.
+
+**Unattended acceptance, 18:15–19:15 UTC:** all four original role processes remained
+alive, with zero logged deaths, cycle errors, downgrades, starts/stops or manual funding.
+Automatic GE purchases are part of the role, not interventions. Bank stock grew from
+622 to **911 baby bones** (348/199/162/202 on h51/h52/h53/h54). The hour deposited
+**289 bones**, or **72.25 per account-hour**. Live process and advancing fight events
+were checked again at 19:15:57. No clients or roles were restarted during the window.
+
+| Account | Deposits/hour | Bank visits | Fight samples | Fight ticks p10/p50/p90 | Complete-trip minutes p10/p50/p90 |
+|---|---:|---:|---:|---|---|
+| h51 | 72 | 6 | 103 | 50 / 71 / 97 | 5.1 / 12 / 18.2 |
+| h52 | 59 | 5 | 109 | 47 / 73 / 103 | 10.3 / 16.6 / 16.6 |
+| h53 | 70 | 3 | 111 | 51 / 71 / 102 | 13.5 / 18.3 / 25 |
+| h54 | 88 | 4 | 109 | 47 / 71 / 98 | 13.1 / 17.4 / 18.8 |
+
+Bank visits include food purchases and partial deposits; trip quantiles exclude the
+first trip after a process restart and zero-kill trips. Fight samples are attack-through-loot
+invocations; multiple helpers can observe a disappearing target, so they are **not**
+independent confirmed kills. Banked bones, not those fight counts, determine throughput.
+
+**Recommendation: retain four funded accounts**, which delivered 289 total/hour against
+204/hour in the two-account observation. The gain is about 42% for twice the accounts;
+this is an operational recommendation, not proof of an optimal count. Do not add a fifth
+on these data. All four tend to meet in the southern room, and trace logs show waits for
+occupied targets. Ordinary-player etiquette remains mandatory: skip occupied targets and
+observe contention. A nearby combat flag alone never makes another player's NPC our
+target; only the player's exact active NPC target gets that exception.
+
+**Runtime provenance:** h51/h52 resumed at 18:11:54 with the cooldown-reset fix;
+h53/h54 retained their 17:46 processes. All four ran the preferred-key recovery/routing
+and food-before-key changes. Shared freshness integration was deployed to disk during
+the hour without restarting them. The later failed-fishing fallback and stricter logout
+fixes were unit-tested separately; this hour does not exercise those failure paths.
+The acceptance observation is complete and is not being extended to hide these differences.
+
 ## Options (`ROLE_OPTIONS` JSON)
 
 | Option | Default | Meaning |
 |---|---|---|
-| `spot` | `hill_giants` | `hill_giants`, or `baby_blue` (fetches its own dusty key; falls back to hill giants if that fails for 30 minutes; banks at Falador West) |
+| `spot` | `hill_giants` | `hill_giants`, or `baby_blue` (withdraws or fetches its dusty key; a 30-minute acquisition failure uses hill giants for one trip, then retries; banks at Falador West) |
 | `train` | 50 | Attack/Strength/Defence target on cows before the spot |
-| `fish` | true | Catch and cook own food; false means rest at the bank when hurt (about 30 s per hp: useless in practice) |
+| `food` | `ge` for `baby_blue`, else `fish` | `ge`: buy `foodItem` at the Grand Exchange (below); `fish`: catch and cook trout/salmon; `none`: rest at the bank when hurt (about 30 s per hp: useless in practice) |
+| `foodItem` | `Shark` | GE food: the item bought and eaten |
+| `foodPerTrip` | 10 | GE food: taken out of the bank per trip |
+| `buyFood` | 150 | GE food: how many to hold after an exchange visit, coins permitting |
+| `maxFoodPrice` | 900 | GE food: never pay more per item; above it a bid rests at this price |
+| `coinsFrom` | none | GE food: login-name RegExp of accounts whose coins (or `foodItem`) this account accepts by trade while it waits at Varrock West. Nothing else is accepted, and nothing is given |
+| `coinWaitMin` | 20 | GE food: minutes to wait for coins before catching fish for 30 minutes |
 | `fishPerTrip` | 10 | Raw fish per food run |
 | `minFood` | 2 | Fetch food below this |
-| `spareFood` | 3 | With a full bag, drop food for bones while more than `minFood + spareFood` are carried |
+| `spareFood` | 3 | Fish only: with a full bag, drop food for bones while more than `minFood + spareFood` are carried (bought food is never dropped) |
 | `feathers` | 300 | Feathers per chicken run |
 | `eatAt` / `fleeAt` / `restUntil` | 0.55 / 0.35 / 0.9 | Hitpoint fractions |
 | `loot` | runes, herbs, gems, talismans, coins, keys | Extra loot regex on top of the spot's bones |
@@ -241,9 +397,55 @@ The role never relogs; whatever runs the lite client must, with exponential jitt
 backoff. Development used a loop that waits at least 300 s after `Too many login attempts
 (code 16)`. The fleet supervisor (cairn://p/rs/43) owns that in production.
 
+**Development harness (`docs/speedrun/scripts/bones-dev/`).** The baby blue accounts ran
+outside the fleet from a dev copy on bbs (`~/rs-dev/babyblue`, `BONES_DEV`), with a
+loopback gateway on 127.0.0.1:7782 and everything in the private tmux server
+`tmux -L rs41-babyblue`:
+
+| Script | What |
+|---|---|
+| `start.sh ACCOUNT...` | Gateway (if down), plus per account a relogin loop (`lite-loop.sh`, jittered backoff, at least 300 s after code 16) and a role loop (`role-loop.sh`, options from `run/ACCOUNT.options.json`, paused while `run/pause-ACCOUNT` exists) |
+| `stop.sh [ACCOUNT...]` | Per account: SIGINT the role, log out with the logout button while the client is still connected (`logout.ts` waits out combat and eats if hurt), then let the client loop exit; refuses to stop a live client if logout is unconfirmed. With no account left, stop the gateway and the tmux server. Only recorded PIDs are signalled |
+| `give.ts FROM TO Coins=N Shark=M` | Hand coins and banknoted items between dev accounts at Varrock West (FROM paused; TO waiting for coins) |
+| `peek.ts ACCOUNT...` | Read-only look (observe mode) |
+| `stats.ts SINCE_ISO UNTIL_ISO [bone name] [accounts...]` | Fixed-window bank deposits, trip and fight-tick distributions; unknown if no baseline or stock was withdrawn |
+
 **How many accounts.** The giants' room has 12 spawns and few other players. Three
 helpers shared it without starving each other (see the measurements). A fourth is likely
 fine; more than about five would crowd a public spot, which the etiquette rules out.
+
+### Adopt h51–h54 into the fleet
+
+The development accounts are left **running** in `~/rs-dev/babyblue`, private tmux
+socket `rs41-babyblue`, gateway port 7782. The operator should first deploy the merged
+role to the fleet, then stop the dev cohort cleanly:
+
+```sh
+cd ~/rs-dev/babyblue
+bash docs/speedrun/scripts/bones-dev/stop.sh cairn_h51 cairn_h52 cairn_h53 cairn_h54
+```
+
+A successful stop requires a fresh account-specific server LOGOUT line in the lite log,
+then runner exit and loop shutdown. A missing runner, reconnect backoff, disconnect,
+old logout line or replaced/truncated log is not enough. If the script exits nonzero,
+do not start a second client. Preserve any existing connection and inspect the result.
+For a partial cohort stop, retry **only the remaining accounts**; do not re-certify an
+already stopped account from an old log. If logout was never acknowledged, investigate
+or re-establish the dev client before trying again. Only after all four have individually
+printed clean-logout success, run these on bbs (using the fleet's existing credentials):
+
+```sh
+F=~/rs-fleet/speedrun/helpers/fleetctl
+$F assign cairn_h51 bones --options '{"spot":"baby_blue","food":"ge","foodPerTrip":10,"buyFood":150,"coinsFrom":"^cairn_(h(6\\d|5[1-4])|e\\d\\d)$","trace":true}'
+$F assign cairn_h52 bones --options '{"spot":"baby_blue","food":"ge","foodPerTrip":10,"buyFood":150,"coinsFrom":"^cairn_(h(6\\d|5[1-4])|e\\d\\d)$","trace":true}'
+$F assign cairn_h53 bones --options '{"spot":"baby_blue","food":"ge","foodPerTrip":10,"buyFood":150,"coinsFrom":"^cairn_(h(6\\d|5[1-4])|e\\d\\d)$","trace":true,"train":60}'
+$F assign cairn_h54 bones --options '{"spot":"baby_blue","food":"ge","foodPerTrip":10,"buyFood":150,"coinsFrom":"^cairn_(h(6\\d|5[1-4])|e\\d\\d)$","trace":true,"train":60}'
+$F reload
+```
+
+Do not include h50. It is outside this cohort. The adoption gap should be minutes, not a
+second simultaneous login. Check the first fresh-session line and subsequent baby-blue
+`banked` snapshots in each fleet log after reload.
 
 ## Gotchas
 
@@ -268,7 +470,23 @@ fine; more than about five would crowd a public spot, which the etiquette rules 
   when it carries none and drops spare copies and the spent jail key.
 - The baby blue room is walled off from the Taverley ladder. The role decides which side
   of the dusty-key door it is on by offline reachability (`findLongPath` with the door
-  shut), not by a coordinate box.
+  shut), not by a coordinate box, and the gate tile (2924, 9803) itself counts as outside
+  (`inBabyBlueRoom`). A helper leaving with a full bag once stopped on the gate tile
+  ("The gate locks shut behind you"). It took itself for still inside and tried to walk
+  back to (2923, 9803) through the locked gate, looping there while an aggressive lesser
+  demon hit it; the eat guard kept it alive until it got out.
+- **Food before the key.** A fresh account at 60 combat with no food went for its dusty key
+  first: cairn_h53 died to the Jailer on 2026-10-21 at 09:54 UTC (it had nothing to lose
+  but its bronze starter sword and wooden shield). GE food is now fetched before the
+  spot's requirement.
+- **Uncollected exchange fills.** `Buyer.buyAtGE` counts bank and inventory, not items
+  waiting in the exchange, and a filled offer no longer counts as open, so a second visit
+  would buy the whole lot again. The role collects first, then buys toward a held target.
+- The shared trade giver offers one inventory slot per item id. Sharks withdrawn as notes
+  can leave both ordinary sharks and banknotes (two ids) in the pack, so `give.ts` gives
+  every id carried under a name.
+- A courier that starts in Al Kharid gets stuck at the toll gate (its walk does not pay).
+  The first funding trip crossed it with `crossTollGate` (now `speedrun/lib/toll-gate.ts`).
 - Bank calls are still the stock `bot.depositItem` per item name, about 10 names a visit.
   Switching to `speedrun/lib/bank.ts` `depositMatching` would save a few seconds per
   visit; the 78-tile walk dominates, so it was left for later.

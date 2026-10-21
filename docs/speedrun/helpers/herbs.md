@@ -10,7 +10,7 @@ potions, clean leaves, vials of water and eyes of newt.
 
 ```
 bun speedrun/helpers/herbs.ts <account>                                         # standalone
-ROLE_OPTIONS='{"spot":"chaos_druids_taverley","fish":false}' bun speedrun/helpers/herbs.ts <account>
+ROLE_OPTIONS='{"spot":"chaos_druids_taverley","food":"none"}' bun speedrun/helpers/herbs.ts <account>
 ```
 
 Labels: **read** (from the content or engine), **measured** (local engine on bbs at the demo's
@@ -50,7 +50,7 @@ Chosen afresh from observed state every cycle, so a restart resumes where the ac
 
 ## Options
 
-The bone collector's options (`train`, `fish`, `eatAt`, `styleCap`, `trace`, ...) plus:
+The bone collector's options (`train`, `food`, `eatAt`, `styleCap`, `trace`, ...) plus:
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -120,7 +120,7 @@ Accounts are cairn_h84-h87 (`HELPERS.md`). The fleet loads a role by file name, 
 account is
 
 ```
-fleetctl assign cairn_h84 herbs --options '{"spot":"chaos_druids_taverley","fish":false}'
+fleetctl assign cairn_h84 herbs --options '{"spot":"chaos_druids_taverley","food":"none"}'
 fleetctl reload
 ```
 
