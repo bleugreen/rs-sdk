@@ -121,6 +121,8 @@ describe('readOpts', () => {
         expect(o.combat).toBe(40);
         expect(o.site).toBe('dwarven');
         expect(readOpts({ addy: 'wilderness', steel: -3 }).addy).toBe('dwarven');
+        expect(readOpts({ addy: 'alkharid' }).addy).toBe('alkharid');
+        expect(readOpts({ site: 'alkharid' }).site).toBe('alkharid');
     });
 });
 
