@@ -44,7 +44,7 @@ else is a link pinned to the commit that was read.
 | Upstream commits since 2026-06 | `git log`, plus `server/PATCHES.md` (the list of local server modifications, which credits reporters). | Section 5 and section 6. |
 | GitHub search | `gh search repos` and `gh search code` for rs-sdk-demo, rs-sdk-demo.fly.dev, runebench, "2004scape bot", "rs-sdk bot", every account name above, and the GitHub users of the same names. | Repos: RuneBench and its forks, rs-fleet, rs-sdk-dashboard, CScape, rs-sdk-fleet. Code hits: only markeljan's dashboard names a listed account (sokobot, SOKO, 0hyl8LmRi). Users named kadeski, asukalabs, sokobot, nickai, syn, vends, zayne, soko and codexastra exist on GitHub; only kadeski is active on rs-sdk. |
 | Web | Exa searches for the record, the account names, maxing writeups, Max Bittker's posts; his X feed via a nitter mirror; the Hacker News threads on rs-sdk (Feb) and on his RuneBench talk (Oct 18); lostcity.rs. | Max's posts are about RuneBench and the economy, not the speedrun board. His talk ("RuneScape Bench: MMOs for Agents", Recurse Center, 2026-10-17) has no transcript the reader can fetch. The lostcity.rs "2004Scape Speedrunning" thread is behind a CAPTCHA. Neither HN thread mentions maxing times. |
-| Discord | Not read directly: we have no account there and joining is contact. GoonMachine's repo publishes a read-only sample of the rs-sdk Discord taken 2026-08-15 (section 4.3). | Second-hand only. |
+| Discord | Not read directly: reading needs an account in the server, which is left to the operator (section 9). GoonMachine's repo publishes a read-only sample of the rs-sdk Discord taken 2026-08-15 (section 4.3). | Second-hand only. |
 
 The deepwiki MCP was not needed: every repo of interest was small enough to clone and read.
 
@@ -56,7 +56,7 @@ The deepwiki MCP was not needed: every repo of interest was small enough to clon
 | gh_kadeski | **kadeski** (Kaden Staker) | [rs-world](https://github.com/kadeski/rs-world), a live 3D viewer of the demo's world feed; [rs-sdk-upstream](https://github.com/kadeski/rs-sdk-upstream), an unmodified mirror of upstream at 2012ab67; [skills](https://github.com/kadeski/skills), Claude Code plugins unrelated to the game. Upstream PR #73 (Miscellania coffers, section 6) and issue #72 (world feed in Safari). | None. |
 | nickai, nickai3, nickwins, nickoverall... | Unknown. A Discord user "Nick" described combat farmers who bank at three items (GoonMachine's sample, section 4.3). GitHub user nickai has been inactive since 2018. | Nothing. | None. |
 | simplereally | GitHub user Simplereally makes web tools; nothing rs-sdk related. On 2026-08-15 simplereally held the fastest max at **143h 52m** ([GoonMachine `owner-context.md:228`](https://github.com/GoonMachine/rs-sdk/blob/a2c13e8a76285d1aa95cf8343c4fbec667c30ee7/learnings/owner-context.md#L228)). | Nothing. | None. |
-| vends | Appears only on the equipment board in GoonMachine's 08-15 snapshot. | Nothing. | None. |
+| vends, eja620 | Named among the maxed accounts in the top 10 on 2026-08-15 (with nickai and claude46), and vends 4th on the equipment board (GoonMachine `owner-context.md:228`, `top-players.md`). GitHub users Vends and eja620 are unrelated or absent. | Nothing. | None. |
 | All other listed names | No trace on GitHub or the web beyond the demo's own hiscore pages. | Nothing. | None. |
 
 The record history is the one useful fact here. The fastest max was 143h 52m on 2026-08-15 and
