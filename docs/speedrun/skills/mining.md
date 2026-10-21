@@ -37,7 +37,7 @@ with the read success formula and pickaxe rates.
 
 | Band | Method | Location | Unlock | Base xp per ore (read) | Ticks per roll | Success (read) | Base xp per tick | Ticks for band (demo / quiet) |
 |---|---|---|---|---|---|---|---|---|
-| 1-15 | Copper or tin, one rock, iron pickaxe | any copper/tin rock | none | 17.5 | 8 with iron pickaxe (rate 6 + p_delay; inferred) | 50% at 1, 65% at 15 | 1.1-1.4 (inferred) | 61 / 61 |
+| 1-15 | Copper or tin, one rock, iron pickaxe | any copper/tin rock | none | 17.5 | 8 with iron pickaxe (rate 6 + p_delay; inferred) | 50% at 1, 65% at 15 | 1.1 at 1, 1.5 at 10 (inferred) | 61 / 61 |
 | 15-41 | Iron rotation, steel/mithril/adamant pickaxe as levels allow | zoo cluster | Mining 15 | 35 | rate + 1 | 52% at 15, 78% at 41 | 2.9 at 15 -> 7.8 at 41 (inferred) | 142 / 146 |
 | 41-63 | Iron rotation, rune pickaxe | zoo cluster | Mining 41 (rune pickaxe) | 35 | 3 | 78% at 41, 86% at 49, 92% at 55, 100% from 63 | 7.8 -> 9.7 (inferred) | 301 / 318 |
 | 63-99 | Iron rotation, rune pickaxe | zoo cluster, steps in section 4 | | 35 | 3 | 100% (1 roll in 256 hits the gem table, no xp) | **9.69** demo (measured, emulated respawn 13); **9.12** quiet server (measured, respawn 19) | 3,813 / 4,054 |
@@ -109,7 +109,9 @@ Ticks from level 1 and from each post-quest level are in the totals table above.
   roll can be no earlier than R+D+2. Measured: one standing tile with 3 iron rocks (Al
   Kharid, 3295,3310) gives gaps 3, 3 then 16 at D=19 (`mining-cycle.ts`, 40 ores) and 3, 3
   then 10 at the demo's D=13 (30 ores, player count emulated). That is 22 and 16 ticks per 3
-  ores: **4.77 and 6.56 base xp per tick**, the most a stationary bot can get.
+  ores: **4.77 and 6.56 base xp per tick**. That bot clicks a respawned rock once it sees
+  it; clicking blind on the respawn tick would give D+2 = 21 and 15 ticks, so 5.0 and 7.0
+  (inferred). Either way that is the ceiling for a bot that never moves.
 - A sustained 3-tick cycle therefore needs (D+2)/3 rocks: 5 on the demo, 7 on a quiet
   server.
 
@@ -177,8 +179,8 @@ Hypotheses, in the order checked:
 
 1. **Their profile (read).** Total level 126 = Mining 99 + 17 skills at 1 + Hitpoints 10:
    nothing else was trained. Quest points: 1, stamped at tick 764 (exact counts from the
-   pages' hover titles). The only 1-point quest with Mining xp is Doric's (1,300 base). No
-   Digsite (2 more points and Digsite's other requirements). From 1,300 to 39,938 base in
+   pages' hover titles). The only 1-point quest with Mining xp is Doric's (1,300 base), and
+   a single quest point rules out Digsite. From 1,300 to 39,938 base in
    6,015 - 764 = 5,251 ticks is **7.36 base xp per tick** (inferred).
    The Time column is `levelPlaytime`, the account's `playtime` stamped on the tick the
    level was reached (`Player.ts:1904-1905`, written by `LoginServer.ts:162-181`,
@@ -203,8 +205,9 @@ Hypotheses, in the order checked:
    the Rellekka cluster at D=19 and 3.48 on the zoo cluster (inferred, untested, blocked by
    the client hang in cairn://p/rs/1).
 4. **Server differences (read).** The demo reports revision 289 (`/api/version`), the same
-   engine as this fork. The SDK's tracked `collision-data.json` is the demo's own export,
-   and the iron tiles in it match this fork's maps. xp rate 25 (`fly.toml:27`). The one
+   engine as this fork. The SDK's tracked `collision-data.json` is the demo's own export
+   (`sdk/fetch-collision-data.ts`), and rotations planned on it ran tick-exact in this
+   fork's lab. xp rate 25 (`fly.toml:27`). The one
    real difference is load: 1,262 players online make respawn 13 ticks instead of 19.
    That is worth 6% on the best rotation (3.84 -> 3.61) and 38% for a stationary bot
    (4.77 -> 6.56).
@@ -252,8 +255,8 @@ cluster or a simple rotation without chosen tiles or starters, on a busy server.
 - **Wilderness.** The 8-rock core is in about level 31 Wilderness; the lab run there did
   not complete, most likely because aggressive monsters pulled the bot into combat (not
   diagnosed).
-- **Respawn varies with load.** At 201-400 players online D is 18, at 1,000-1,200 it is
-  14, and at 1,201-1,400 it is 13. Pick the step list for the current count (re-run the
+- **Respawn varies with load.** D is 19 at 1-200 players online, 18 at 201-400, 15 at
+  801-1,000, 14 at 1,001-1,200 and 13 at 1,201-1,400 (inferred from the formula). Pick the step list for the current count (re-run the
   planner with `--respawn D`). Woodcutting and Thieving use the same scaling
   (`woodcut.rs2`, `thieving.rs2`).
 - **Other players** on the same rocks break the schedule; the zoo cluster is a quiet spot,
@@ -269,7 +272,8 @@ cluster or a simple rotation without chosen tiles or starters, on a busy server.
 | Rune pickaxe | 1 | Usable from Mining 41, so straight after Doric's Quest |
 | Iron, steel, mithril, adamant pickaxes | 1 each | Only if skipping Doric's Quest |
 
-No food: nothing near the zoo cluster attacks (lab runs took no damage).
+No food expected: the Ardougne-north runs ended at full HP with bears nearby. The zoo
+cluster was not checked for aggressive NPCs.
 
 ## 8. Open questions
 
