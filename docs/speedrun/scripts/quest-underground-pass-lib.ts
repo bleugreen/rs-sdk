@@ -14,7 +14,7 @@ export interface Row { label: string; ticks: number; [k: string]: unknown }
 
 export class Lab {
     rows: Row[] = [];
-    /** clicks re-sent because the first was dropped during a forced move */
+    /** clicks re-sent (one per quiet tick) because the first was dropped during a forced move */
     resends = 0;
     log: string[] = [];
     private seen = new Set<string>();
@@ -190,7 +190,8 @@ export class Lab {
                     await send();
                     const to = edge.to;
                     const from = this.pos();
-                    const failRe = /slip|fall|fail|darkness|rat pit|tumble|can't|cannot|refuses|locked|need|reach that/i;
+                    // the failure message of each rolled crossing, plus generic refusals
+                    const failRe = /slip back down|slip and tumble|fall off it|fall in to the darkness|rat pit|fail to pick|just misses|can't reach|cannot|refuses|is locked|You need|being used/i;
                     // A click sent while a forced move is still running is dropped: re-send if
                     // nothing has moved or been said for 3 ticks.
                     let quiet = 0;
@@ -202,7 +203,7 @@ export class Lab {
                         if (to[2] !== edge.from[2] ? q[2] === to[2] : Math.max(Math.abs(q[0] - to[0]), Math.abs(q[1] - to[1])) <= 1 && q[2] === to[2]) return true;
                         quiet = q[0] === lastQ[0] && q[1] === lastQ[1] && this.log.length === m0 ? quiet + 1 : 0;
                         lastQ = q;
-                        if (quiet >= 3 && resent < 6) { quiet = 0; resent++; void send(); }
+                        if (quiet >= 1 && resent < 20) { quiet = 0; resent++; void send(); }
                         return false;
                     }, 90);
                     this.resends += resent;
@@ -292,7 +293,7 @@ export class Lab {
 }
 
 /** %ibanmulti with the given bits set and the grid answer (three digits 1-5) in bits 22-31. */
-export function ibanmulti(bits: number[], grid = 342): number {
+export function ibanmulti(bits: number[], grid = 343): number {
     let v = 0;
     for (const b of bits) v |= 1 << b;
     return (v | (grid << 22)) >>> 0;

@@ -16,7 +16,8 @@ import { P, type T } from './quest-underground-pass-route';
 const args = process.argv.slice(3);
 const segment = args.find(a => !a.startsWith('--')) ?? 'post';
 const opt = (name: string, d: number) => Number(args.find(a => a.startsWith(`--${name}=`))?.split('=')[1] ?? d);
-const GRID = opt('grid', 342);
+// Grid answers are three digits 1-5, each within 1 of the previous (upass_grid.rs2:47-58).
+const GRID = opt('grid', 343);
 const THIEVING = opt('thieving', 50);
 const AGILITY = opt('agility', 99);
 
