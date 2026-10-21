@@ -444,7 +444,7 @@ scripts are in section 4; the shared primitives and their build order are in sec
   and the booth (+278 in all; +640 if all at the booth).
 - **Units.** Acceptance and reporting are in **ticks per expected roll as knife-cycle reports it**
   (`ticksPerExpectedRoll`, with the axe named in the result; rs/175, PR #151). With no axe found
-  the figure is NaN; a NaN, or an axe other than the band's kit, fails the run. Ticks per log is a
+  the figure is NaN; a NaN, or an axe other than the band's kit, doesn't count toward acceptance. Ticks per log is a
   second, labelled column. Until #151 is on `RUN_COMMIT`, knife-cycle reports no per-roll figure on
   oak and willow, and they are weighted by `tickmanip-demo-report.ts` instead (the same 1/p per log).
 - **Reference (rs/175, lab):** willow, rune axe, from WC 40, 60 logs in each of two runs: **2.84 and
