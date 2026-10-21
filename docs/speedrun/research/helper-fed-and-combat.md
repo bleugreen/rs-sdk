@@ -11,8 +11,9 @@ All xp is base xp (game xp / 25). Route figures come from the rs/28 skill docume
 (`docs/speedrun/skills/*.md` on `agent/rs-28-coordinator-0`) and the rs/3 quest README
 (`docs/speedrun/quests/README.md` on `agent/rs-3-coordinator-0`, sections 4, 6 and 7).
 
-**Status: first ranked draft, 2026-10-21.** Nothing on this page has been lab-tested yet; every
-saving is inferred from read mechanics and measured rates.
+**Status: ranked draft, 2026-10-21.** Zero-drain prayer flicking (row 2) was measured on the local
+engine at 300 ms (section 2). Every other saving is inferred from read mechanics and measured
+rates.
 
 ## Summary
 
@@ -36,15 +37,17 @@ efficiency practices apply on top, and the scripts allow all three:
 2. **Prayer flicking costs zero prayer points here.** The drain is a 5-tick timer that starts when
    a prayer is switched on from all-off and is cleared when the last prayer goes off
    (`prayer.rs2:30-34, 39-44, 159-175`). Switching all prayers off and on again at least every 4
-   ticks means the timer never fires (r). This makes the boost prayers free, and removes about 38
+   ticks means the timer never fires (r). Measured at 300 ms: holding Protect from Melee,
+   Ultimate Strength and Incredible Reflexes for 150 ticks used 90 points; flicking all three
+   every 4 ticks used 0 (m, `prayer-flick.ts`). This makes the boost prayers free, and removes about 38
    prayer-potion sips that the 3,520 figure leaves out (it was measured at Prayer 99; the route
    has Prayer 43).
 3. **Super antipoison instead of sharks.** Most of the damage taken at the spiders is poison
    (`ranged.md` section 6). One super antipoison dose gives about 600 ticks of immunity
    (`anti_poison.rs2:15`, `poison.rs2:20-30, 72-75`), which replaces the route's ~45 sharks.
 
-Together these cut the Package A finish from about 3,520 to about **2,900-3,050 ticks (i)**, a
-saving of roughly **470-610 ticks**, plus about 70 from the antipoison. On Package B a ranging
+Together these cut the Package A finish from about 3,520 to about **2,940-3,030 ticks (i)**, a
+saving of roughly **500-580 ticks**, plus about 70 from the antipoison. On Package B a ranging
 potion and glory in the 1,792-tick cannon-plus-knives phase add about **210-240 (i)**. The
 boosted rates are untested; lab brief A below is the test.
 
@@ -62,8 +65,8 @@ combat-finish packages (README section 7).
 
 | # | Technique | Source | Present in revision | Route line affected | Ticks saved (label) | Cost | Test status |
 |---|---|---|---|---|---|---|---|
-| 1 | Full efficiency kit at the spider cannon site: super attack + super strength, amulet of glory, Ultimate Strength + Incredible Reflexes (kept up by flicking, row 2) | OSRS Wiki *Dwarf multicannon* (Accuracy) and *Pay-to-play Ranged training*; LostCity forum t/3058 ("boosts & prot if you align attack with a 4t monster") | **yes**: `cannon_fire.rs2:116` -> `player_combat.rs2:52-68` reads `%com_slashattack`, built by `player_combat_stat.rs2` with the prayer multipliers; prayers `prayers/ultimatestrength.rs2`, `incrediblereflexes.rs2` (levels 31 and 34, under the route's Prayer 43) | Package A finish, ~3,520 | **~470-610 (i)**, arithmetic in section 1 | 2 super attack + 2 super strength doses per ~1,000 ticks (`combat.md` section 6); 1 glory; packet schedule for flicks | untested: lab brief A |
-| 2 | Zero-drain prayer flicking (all prayers off and on within one or two ticks, at least every 4 ticks) | microgrind.io *Prayer flicking explained tick by tick*; OSRS Wiki *Prayer points*; LostCity forum t/3058, t/3391 | **yes**, by reading: drain only runs from `[timer,prayer_drain]`, set for 5 ticks when a prayer goes on from all-off and cleared when the last goes off (`prayer.rs2:30-34, 39-44, 159-175`). Each toggle runs `p_clearpendingaction` (`prayers/*.rs2`), the LostCity March 2025 change, so the attack must be re-sent | Package A finish (the ~38 sips the 3,520 omits); Package B (~21 sips); Mage Arena (1-2 sips) | **~75 (i)** on A, ~40 on B; it is also what makes row 1 affordable: without it the three prayers drain 0.6 points per tick, ~106 doses and ~210 ticks of sip stalls over the finish (i) | 4-6 extra IF_BUTTON packets per 4 ticks plus a re-attack; no prayer potions at all | untested: in brief A |
+| 1 | Full efficiency kit at the spider cannon site: super attack + super strength, amulet of glory, Ultimate Strength + Incredible Reflexes (kept up by flicking, row 2) | OSRS Wiki *Dwarf multicannon* (Accuracy) and *Pay-to-play Ranged training*; LostCity forum t/3058 ("boosts & prot if you align attack with a 4t monster") | **yes**: `cannon_fire.rs2:116` -> `player_combat.rs2:52-68` reads `%com_slashattack`, built by `player_combat_stat.rs2` with the prayer multipliers; prayers `prayers/ultimatestrength.rs2`, `incrediblereflexes.rs2` (levels 31 and 34, under the route's Prayer 43) | Package A finish, ~3,520 | **~500-580 (i)**, arithmetic in section 1 | 2 super attack + 2 super strength doses per ~1,000 ticks (`combat.md` section 6); 1 glory; packet schedule for flicks | rates untested: lab brief A (the flick itself is measured, row 2) |
+| 2 | Zero-drain prayer flicking (all prayers off and on within one or two ticks, at least every 4 ticks) | microgrind.io *Prayer flicking explained tick by tick*; OSRS Wiki *Prayer points*; LostCity forum t/3058, t/3391 | **yes**, by reading: drain only runs from `[timer,prayer_drain]`, set for 5 ticks when a prayer goes on from all-off and cleared when the last goes off (`prayer.rs2:30-34, 39-44, 159-175`). Each toggle runs `p_clearpendingaction` (`prayers/*.rs2`), the LostCity March 2025 change, so the attack must be re-sent | Package A finish (the ~38 sips the 3,520 omits); Package B (~21 sips); Mage Arena (1-2 sips) | **~75 (i)** on A, ~40 on B; it is also what makes row 1 affordable: without it the three prayers drain 0.6 points per tick, ~106 doses and ~210 ticks of sip stalls over the finish (i) | 4-6 extra IF_BUTTON packets per 4 ticks plus a re-attack; no prayer potions at all | **measured** (300 ms, 150 ticks per mode): hold 90 points, flick 0-1 (section 2); the effect on the melee cadence is in brief A |
 | 3 | Ranging potion + amulet of glory in the cannon + rapid knives phase | OSRS Wiki *Dwarf multicannon* (ranged weapons use the ranged roll, "can be boosted") | **yes**: ranging potion +4 +10% (`consume_effects.dbrow:57-63`); glory +10 ranged attack (`enchanted_jewelry.obj`); cannon uses `%com_rangeattack` with knives wielded (`player_combat.rs2:76`). No ranged prayers exist in this revision (15 prayers, `skill_prayer/scripts/prayers/`) | Package B finish (1,792 ticks of cannon + knives); Package A's boosted tail (~230-360 ticks) | **~210-240 (i)** on B; ~30-45 on A | ~1 ranging potion dose per ~1,000 ticks (it decays 1 level per 100 ticks, re-sip at half), 1 glory | untested: lab brief B |
 | 4 | Super antipoison schedule instead of ~45 sharks at the spiders | standard practice; the 2004scape forum's cannon thread lists constant poisoning as the cost of poisonous sites (t/14198) | **yes**: super antipoison sets `%poison` to -20, and the 30-tick poison timer counts it up by 1, so ~600 ticks of immunity (`anti_poison.rs2:11-16`, `poison.rs2:12-30, 72-75`); spiders still poison through Protect from Melee because poison is applied on the accuracy roll (`npc_combat_melee.rs2:24-30`) | Package A finish; Package B | **~70 (i)** on A (45 sharks x 3 melee ticks of attack delay, `consume.rs2:3,129-131`, less ~6 doses x 2 stall ticks); ~40 on B | ~6 super antipoison doses per 3,500 ticks (Herblore helper or GE) | untested: in brief A |
 | 5 | Cannon from a safespot in a single-combat area | OSRS Wiki *Dwarf multicannon* ("the cannon fires at multiple monsters ... as long as the player is never attacked") | **yes**: `~player_in_combat_check` blocks a target only if an NPC attacked the player in the last 8 ticks (`player_combat.rs2:106-122`); `%lastcombat` is set only when an NPC swings at the player (`npc_combat.rs2:377-380`) | Package B cannon + knives phase; the pre-MM cannon session (113 ticks) | **0 to ~150 (i)**, uncertain; the main value is moving the Ranged block out of level-37 Wilderness | a safespot tile within cannon range; knives still need line of sight | untested: lab brief C |
@@ -91,7 +94,9 @@ ranged 14, 64 hitpoints. So D is 4,941 against slash and 4,758 against ranged.
 
 The cannon's xp per ball scales with the hit chance, because its damage is 0-30 whatever the
 levels (`cannon_fire.rs2:117`). So the kit multiplies the cannon's Ranged rate by 0.855 / 0.788 =
-**1.085 (i)**: 11.03 becomes about 12.0 per tick.
+1.085 (i). The measured flick schedule leaves Incredible Reflexes off on one tick in four
+(section 2), when the hit chance is glory-only (0.806), so the average is about 0.843 and the
+factor **1.07 (i)**: 11.03 becomes about 11.8 per tick.
 
 Melee max hit, defensive style, rune scimitar (+44 strength), from
 floor((effective strength x (bonus + 64) + 320) / 640) (`combat.rs2:7-8`):
@@ -111,19 +116,20 @@ measured the same kit against no potions, no prayers and no amulet at about x1.4
 Start: Ranged 1,790 base, so 38,148 to go; Defence gap 19,938; Hitpoints gap 4,938 (covered by
 the melee's one-third Hitpoints share, 6,646).
 
-- **Defence 7.2, cannon 12.0.** Cannon + defensive melee until Defence 99: 19,938 / 7.2 = 2,769
-  ticks, which also gives 33,228 Ranged (35,018 base, level 97-98). The rest, 4,920 base, at about
+- **Defence 7.2, cannon 11.8.** Cannon + defensive melee until Defence 99: 19,938 / 7.2 = 2,769
+  ticks, which also gives 32,674 Ranged (34,464 base, level 97-98). The rest, 5,474 base, at about
   21.5 per tick with cannon + rapid knives (interpolated from the measured 18.69 at 85 and 22.72 at
-  99): 229. **Total 2,998, saving 522.**
-- **Defence 7.8, cannon 12.0.** 2,556 + 7,476 / 21 = 356. **Total 2,912, saving 608.**
-- **Cannon boost only** (Incredible Reflexes and glory, melee unchanged at 5.60): 38,148 / 12.0 =
-  3,179 ticks, Defence then 17,802, the last 2,136 at the ogres at 9.3 = 230. **Total 3,409,
-  saving 111.** So most of row 1's value is the melee damage boost, not the cannon's.
+  99): 255. **Total 3,024, saving 496.**
+- **Defence 7.8, cannon 11.8.** 2,556 ticks (30,161 Ranged), then 7,987 / 21 = 380. **Total
+  2,936, saving 584.**
+- **Cannon boost only** (Incredible Reflexes and glory, melee unchanged at 5.60): 38,148 / 11.8 =
+  3,233 ticks, Defence then 18,105, the last 1,833 at the ogres at 9.3 = 197. **Total 3,430,
+  saving 90.** So most of row 1's value is the melee damage boost, not the cannon's.
 
 After the kit, Defence is the binding skill: Ranged is nearly done when Defence reaches 99. That
 is why a better cannon tile (row 6) is worth less than it was. With the cannon at 14.0 instead of
-12.0, Ranged finishes at tick 2,725, and the last 318 Defence take 34 ticks at the ogres: 2,759,
-only 240 below the 2,998 case.
+11.8, Ranged finishes at tick 2,725, and the last 318 Defence take 34 ticks at the ogres: 2,759,
+about 265 below the 3,024 case.
 
 ### Prayer drain with and without flicking (r, i)
 
@@ -139,7 +145,7 @@ prayer potion dose restores 7 + 25% of 43 = 17 points.
   drained 80 points and needed no sip, so the 3,520 figure does not include them.
 - **Row 1's three prayers, no flicking:** 0.6 points per tick, about 106 doses, about 210 ticks of
   stalls (i). The kit is only worth it with flicking.
-- **Flicking:** 0 points (r). The packet cost: turning all three off clears the timer, and the
+- **Flicking:** 0 points (r, then m in section 2). The packet cost: turning all three off clears the timer, and the
   first one turned back on restarts it for 5 ticks. With the interleaving rule of at most 4 user
   events per tick (`interleaving.md` rule 2), one schedule is tick A: three offs and one on; tick
   A+1: the other two ons and the re-attack. Two prayers are then off for one tick in four. Put
@@ -163,15 +169,33 @@ On Package B's 1,792 ticks that is about 1,792 x (1 - 1 / 1.13) = **~210-240 tic
 dragonhide would add more ranged attack; whether its body needs Dragon Slayer here (which
 Package B includes) was not checked.
 
-## 2. Lab briefs
+## 2. Lab check: zero-drain flicking (measured)
+
+`docs/speedrun/scripts/prayer-flick.ts` on `docs/speedrun/scripts/research-lab.sh` (port block
+9290/9291/9292/43990/8190, `NODE_TICKRATE=300`, practice account Cairn on the local engine,
+Prayer set to 99 so nothing ran out, no combat). One run of 150 ticks per mode:
+
+| Mode | Packets | Prayer points used | Ticks each prayer showed active |
+|---|---|---|---|
+| Hold Protect from Melee + Ultimate Strength + Incredible Reflexes | none after activation | **90** (0.60 per tick, as read) | 1.00 / 1.00 / 1.00 |
+| Flick Protect from Melee alone: off and on in one tick, every 4 ticks | 2 per 4 ticks | **1** | 0.99 |
+| Flick all three: tick A off x3 + on Protect, tick A+1 on x2, every 4 ticks | 6 per 4 ticks | **0** | 0.94 / 0.74 / 0.74 |
+
+So the drain timer never fires under a 4-tick flick (m). The two boost prayers are off on one tick
+in four, exactly the schedule's tick A (the 0.94 for Protect from Melee is the state publication
+catching the tick between its off and on). Not measured here: the flick's effect on the melee
+cadence, since every prayer toggle runs `p_clearpendingaction` and the attack must be re-sent or
+resumed by auto-retaliate. That belongs to brief A.
+
+## 3. Lab briefs
 
 **Brief A: the full kit at the spider cannon site, with zero-drain flicks and super antipoison
-(worth about 540-680 ticks on Package A with row 4; over the 300-tick bar).** On the local engine
+(worth about 570-650 ticks on Package A with row 4; over the 300-tick bar).** On the local engine
 (practice account Cairn, `LOCAL_STAFF_LEVEL`, the ranged lab block of `ranged-lab.sh`:
 9210/9211/9212/43910/8110, `NODE_TICKRATE=300`), set the route's post-MM stats with `::setstat`
 (Attack 99, Strength 99, Defence 89, Hitpoints 97, Prayer 43, Ranged 54) and run
 `ranged-cannon.ts` at the poison spiders (3288,3810) with defensive melee in four 400-tick
-configurations: (1) rs/31's control, bare scimitar, Protect from Melee, sipping prayer potions as
+configurations (the flick schedule itself is already measured, section 2): (1) rs/31's control, bare scimitar, Protect from Melee, sipping prayer potions as
 needed at Prayer 43; (2) control plus zero-drain flicks of Protect from Melee alone, re-attacking
 after each flick; (3) the full kit (super attack, super strength, glory, Ultimate Strength,
 Incredible Reflexes, Protect from Melee) with the flick schedule in section 1; (4) as 3 plus one
@@ -201,7 +225,7 @@ sight for knives, then run cannon + rapid knives for 300 ticks against the spide
 17.3-22.7. rs/31's earlier single-combat test (0 xp in 60 ticks) had a goblin attacking the
 player, which is the one case the rule blocks.
 
-## 3. Checked and not applicable
+## 4. Checked and not applicable
 
 **Combat**
 
@@ -295,7 +319,7 @@ per hour from the cannon alone, about 6.7 base per tick at OSRS rates. Our spide
 11.5 is well above it, consistent with rs/31 having already found an unusually dense site.
 Competitor timelines are rs/60's.
 
-## 4. Sources
+## 5. Sources
 
 All accessed 2026-10-21.
 
