@@ -122,6 +122,8 @@ export function roleEnv(base: Record<string, string | undefined>, botEnv: Record
         GATEWAY_URL: gatewayUrl,
         ROLE_OPTIONS: JSON.stringify(e.options),
         RC_CUE_DIR: base.RC_CUE_DIR ?? join(runDir, 'rc-cue'),
+        // The role's RoleState (role.ts): what a handover already gave survives a role restart.
+        ROLE_STATE_DIR: base.ROLE_STATE_DIR ?? join(runDir, 'role-state'),
         LOGGED_IN_AT: String(loggedInAt)
     };
 }

@@ -85,7 +85,8 @@ usage: fleetctl <command>
   follow [fleet|gateway|ACCOUNT]     tail -F a log
   journal [N]                   the unit's journal
   add RANGE [--count N] [--role R] [--options JSON]   new credentials (and fleet.json entries)
-  assign ACCOUNT ROLE [--options JSON] [--disable]    put an existing account in fleet.json
+  assign ACCOUNT ROLE [--options JSON] [--then ROLE [--then-options JSON] | --return] [--disable]
+                                put an existing account in fleet.json; --then/--return: where it goes when ROLE finishes
   reload                        apply fleet.json to the running fleet
   peek ACCOUNT                  position, levels, inventory, last game messages (read-only)
   update [REF]                  check out a branch or commit of origin (default main) and bun install
