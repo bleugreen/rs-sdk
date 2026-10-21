@@ -307,7 +307,11 @@ function onScored(s: BotWorldState) {
         else if (d.action === 'closed') { tu.ok = false; tu.reason = 'closed'; rctx = null; ev.push('t-closed'); }
         else if (!rctx.sawOpen && t - rctxStart > 4) { tu.ok = false; tu.reason = 'did not open'; rctx = null; ev.push('t-noopen'); }
         else if (t - rctxStart > 25) { void sdk.sendDeclineTrade(); tu.ok = false; tu.reason = 'timeout'; rctx = null; ev.push('t-timeout'); }
-        if (rctx || ev.some(e => e.startsWith('t-'))) { log({ t, k: t - f, lvl: th.baseLevel, hp, ev, msgs: msgs.map(m => m.text) }); if (rctx) return; }
+        if (rctx || ev.some(e => e.startsWith('t-'))) {
+            const tv = tradeOf(s);
+            log({ t, k: t - f, lvl: th.baseLevel, hp, ev, msgs: msgs.map(m => m.text), trade: { open: tv.isOpen, screen: tv.screen, theirs: tv.theirOffer.map(i => `${i.name}x${i.count}`), mine: tv.myOffer.length, acc: [tv.myAccepted, tv.partnerAccepted] }, want: stagedLoad, free: 28 - s.inventory.length });
+            if (rctx) return;
+        }
         if (tradeOf(s).isOpen) { log({ t, ev: ['trade still open'] }); return; }
     }
 
