@@ -137,8 +137,12 @@ requested you opens both screens at once, so `openTrade` just requests (and
 re-requests every 8 s).
 
 **Giver** (`give` / `giveAll`, helper side). The moment the offer screen is
-open it fires every offer (one Offer-All per item id, `planOffers` pure) and
-the accept behind them in one burst. FIFO puts the accept after the last
+open it fires every offer (`planOffers`, pure: one entry per item id, Offer-All
+unless `give` asks for a count) and the accept behind them in one burst. A
+count uses the same buttons as a withdraw, except that an unstackable item
+(an id held in more than one inventory slot) gets a single press: 1, 5, 10 or
+X. Each press names a slot and the server takes that slot's item first, so a
+second press on the same slot would find it empty and offer nothing. FIFO puts the accept after the last
 offer on the server. On the confirm screen it accepts only if both offers are
 exactly as planned (the partner's is empty by default, or matches
 `expectTheirs`). If an offer change resets its accept, it re-accepts at most
