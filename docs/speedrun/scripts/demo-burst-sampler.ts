@@ -10,6 +10,7 @@
 //
 //   bun docs/speedrun/scripts/demo-burst-sampler.ts --dir=/tmp/rs102-sampler [--until=12:00]
 //       [--every-min=30] [--ref=agent/rs-83-coordinator-0] [--lite-ref=main] [--yield-min=10]
+//   bun docs/speedrun/scripts/demo-burst-sampler.ts --dir=... --collect=<run id>,...   (backfill, no dispatch)
 //
 // The workflow shares one concurrency group (and one demo account) with other dispatchers, and
 // GitHub keeps only one pending run per group: a newer pending run cancels an older one. So a
@@ -262,6 +263,15 @@ async function countLoop() {
         tsv('playercount.tsv', ['pdt', 'epoch_ms', 'players', 'tcp_ms', 'ttfb_ms'], [pdt(Date.now()), Date.now(), n, c, f]);
         await sleep(COUNT_S * 1000);
     }
+}
+
+// --collect=ID,ID: classify and log finished runs (a backfill of earlier pairs), then exit.
+if (args.has('collect')) {
+    for (const id of args.get('collect')!.split(',').filter(Boolean)) {
+        const r = gh(['run', 'view', id, '-R', REPO, '--json', 'conclusion']);
+        log(`collect ${id}: ${collect(id, r.ok ? JSON.parse(r.out).conclusion : 'error')}`);
+    }
+    process.exit(0);
 }
 
 log(`start: ${WORKFLOW} on ${REPO} @ ${REF} (lite_ref=${LITE_REF}) every ${EVERY_MIN} min until ${UNTIL === Infinity ? 'stopped' : pdt(UNTIL)}; dir ${DIR}`);
