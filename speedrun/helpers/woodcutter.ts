@@ -9,9 +9,10 @@
 //       The tier to stockpile. 'auto' (default) always chops the best tier the
 //       level allows. A fixed tier above the account's level trains on 'auto'
 //       until the level is reached, then chops only that tier.
-//   location: string   spot-id prefix: 'seers' (default), 'catherby', or one spot
-//                      id such as 'seers-magic-north' (see SPOTS). Tiers with no
-//                      matching spot fall back to every spot of that tier.
+//   location: string   spot-id prefix restricting where to chop: '' (default, every
+//                      spot in SPOTS order), 'seers', 'catherby', or one spot id
+//                      such as 'seers-magic-north' to pin an account to it. Tiers
+//                      with no matching spot fall back to every spot of that tier.
 //   target: number     stop once the bank holds this many logs of the chosen tier
 //                      ('auto' counts magic logs). Default: run until aborted.
 //   buyAxe: boolean    buy the best axe Bob (Lumbridge) sells when the account
@@ -215,7 +216,7 @@ class Woodcutter {
         const tree = String(ctx.options.tree ?? 'auto');
         if (tree !== 'auto' && !TIERS.some(t => t.tier === tree)) throw new Error(`unknown tree option '${tree}'`);
         this.wantTier = tree as Tier | 'auto';
-        this.location = String(ctx.options.location ?? 'seers');
+        this.location = String(ctx.options.location ?? '');
         this.target = Number(ctx.options.target ?? Infinity);
         this.buyAxe = ctx.options.buyAxe !== false;
         this.crossingHitpoints = Number(ctx.options.crossingHitpoints ?? 30);
