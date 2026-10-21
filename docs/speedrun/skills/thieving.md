@@ -19,10 +19,12 @@ end to end three times: 2,176 / 2,198 / 2,226). From a fresh account, Ardougne
 men to 25, warrior women to 40 and guards to 55 add about 640 ticks (inferred),
 so **1 -> 99 is about 2,840 ticks**. Fight Arena's 2,175 base xp starts the
 account at 57 and makes it **about 1,950-2,000 ticks** (measured 1,952 from 57;
-model 1,975). Those end-to-end runs are at 100 ms. Because the bot clicks blindly
-every tick instead of reacting, the cadence does not depend on packet latency, and
-the 300 ms measurements match: walking overhead of 0.23-0.26 ticks per roll on bbs
-against the model's 0.2, so `thieving-model.ts` and the totals stand. Sharks eaten
+model 1,975). Those end-to-end runs are at 100 ms. At production's 300 ms on the
+quiet lab host bbs, 55 -> 99 took **1,999 ticks** (measured, 1 run, fixed lite
+client, 92 failures), inside the 100 ms spread. Because the bot clicks blindly
+every tick instead of reacting, the cadence does not depend on packet latency:
+walking overhead at 300 ms on bbs was 0.09-0.38 ticks per roll against the model's
+0.2, so `thieving-model.ts` and the totals stand. Sharks eaten
 between successes cost nothing (confirmed at 300 ms); about 15 cover the whole route
 at 40+ HP.
 
@@ -59,7 +61,7 @@ Totals:
 | Start | Ticks to 99 | Basis |
 |---|---|---|
 | Level 1, no quests | ~2,840 | 641 inferred (1-55) + 2,200 measured (55-99) |
-| Level 55 | 2,200 (runs: 2,176 / 2,198 / 2,226) | measured, 3 runs |
+| Level 55 | 2,200 (runs: 2,176 / 2,198 / 2,226 at 100 ms; 1,999 at 300 ms on bbs) | measured, 4 runs |
 | Fight Arena, level 57 (2,175 base) | ~1,950-2,000 (run: 1,952 from 57.0) | measured, 1 run; model 1,975 |
 | FA + Fremennik Trials (4,987 base, level 69) | ~1,715-1,880 | inferred: model 1,715 |
 | FA + Hazeel Cult (3,675 base, level 64) | ~1,830-2,000 | inferred: model 1,829 |
@@ -176,12 +178,13 @@ one-minute load average during the run):
 |---|---|---|---|---|---|---|---|
 | Knight 55 | fixed lite, bbs (load 2.5) | 300 | 0.583 / 0.606 | 169 / 175 | 93 / 124 | 0.26 | 0.167 |
 | Knight 99 | fixed lite, bbs (load 2.5) | 300 | 0.947 / 0.941 | 262 / 283 | 12 / 16 | 0.23 | 0.368 |
-| Knight 55 | stock lite, bbs (load 3.5) | 300 | 0.567 / 0.606 | 159 / 169 | 101 / 130 | 0.33 | 0.159 |
-| Knight 99 | stock lite, bbs (load 3.5) | 300 | 0.910 / 0.941 | 257 / 272 | 25 / 27 | 0.19 | 0.345 |
+| Knight 55 | stock lite, bbs (load 3.5) | 300 | 0.567 / 0.606 | 159 / 169 | 101 / 130 | 0.38 | 0.159 |
+| Knight 99 | stock lite, bbs (load 3.5) | 300 | 0.910 / 0.941 | 257 / 272 | 25 / 27 | 0.09 | 0.345 |
+| **Knight 55 -> 99, 40 HP, sharks** | fixed lite, bbs (load 2.4-3.6) | 544 | 0.831 / 0.830 | 434 / 451 | 72 / 92 | 0.13 | **1,999 ticks total**; 12 eats, all in 2-tick gaps |
 | Man 1 -> 28 | fixed lite, **demo server** from bbs, fleet 21/21 online | 40 | 0.825 / 0.744 | 26 / 32 | 5 / 7 | | 0.253 |
-| Knight 55 | fixed lite, Mac (load 80-112) | 300 | 0.610 / 0.606 | 115 / 182 | 62 / 116 | 0.65 | 0.158 |
-| Knight 99 | fixed lite, Mac (load 80-112) | 300 | 0.927 / 0.941 | 205 / 277 | 11 / 22 | 0.50 | 0.319 |
-| Knight 55 -> 99, 40 HP | fixed lite, Mac (load 80-112) | 544 | 0.809 / 0.832 | 268 / 439 | 54 / 104 | | 2,431 ticks total |
+| Knight 55 | fixed lite, Mac (load 80-112) | 300 | 0.610 / 0.606 | 115 / 182 | 62 / 117 | 0.80 | 0.158 |
+| Knight 99 | fixed lite, Mac (load 80-112) | 300 | 0.927 / 0.941 | 205 / 277 | 11 / 22 | 0.47 | 0.319 |
+| Knight 55 -> 99, 40 HP | fixed lite, Mac (load 80-112) | 544 | 0.809 / 0.832 | 268 / 439 | 54 / 103 | | 2,431 ticks total |
 
 Walking overhead is the measured span minus 2 per success and 11 per failure,
 per roll. On the quiet host the 300 ms cadence is the 100 ms cadence: 92-97% of
@@ -190,7 +193,7 @@ click waits on observed state. Rolls per tick and base xp per tick differ from
 the 100 ms rows mainly through success-rate luck (58% against 64% at 55). The
 loaded Mac shows what a busy host costs: a third of success gaps became 3 because
 clicks arrived just after the tick boundary, and the 55 -> 99 run took 2,431 ticks
-against about 2,200. A fedora run at load 29 had multi-second bot stalls (LAB.md)
+against 1,999 on bbs. A fedora run at load 29 had multi-second bot stalls (LAB.md)
 and is not used.
 
 What was measured to settle question 1:
