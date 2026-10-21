@@ -55,7 +55,7 @@ function mine(opts: { starter: 'knife' | 'none'; ticks: number; respawn?: number
         if (delayedTo === tick) {
             bones--;
             prayerXp += 1800;
-            buries.push(tick - 1);
+            buries.push(tick - 2); // the label the bury went out on
         }
         for (const p of pending.filter(p => p.at === tick)) {
             if (tick <= delayedTo) {
