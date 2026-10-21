@@ -29,9 +29,10 @@ The speedrun's scored account (its name is chosen by the operator and kept out o
 | [bidder](helpers/bidder.md) | Standing GE buy offers just above the competing bids, up to per-item targets (dragon bones, grapes) | cairn_h61 | cairn://p/rs/63 |
 | [altar-giver](helpers/altar-giver.md) | Rune essence into the scored account's hands inside the altar room, 27 per trade on the blind 7-tick Runecraft cycle | cairn_h70-h74 (stand-in receiver `altar-receiver` on cairn_h75) | Run machine only (see "Helpers on the run machine"), never the fleet. cairn://p/rs/117 |
 | [handover](../../speedrun/helpers/handover.ts) | Nothing: trades exact amounts of banked stock (a few talismans, a few hundred essence) to named accounts, then stops | any | For ledger moves the courier cannot make (it carries whole stacks). Ask the coordinator before moving fleet stock. |
+| [jeweller](helpers/jeweller.md) | Enchanting rings and strung amulets from uncut gems and its own gold bars (Crafting, Magic); the chisel | cairn_h80-h83 | cairn://p/rs/121 |
 | [ambassador](AMBASSADOR.md) | Nothing: talks with other bots at the GE, logs the conversation, daily digest | cairn_md | The only role that chats, under hard rules enforced in code (cairn://p/rs/58). |
 
-Planned without an owner yet (supply list in cairn://p/rs/41): fletcher-supplier (arrowheads, dart tips, headless arrows), gem supplier (uncut dragonstones or diamonds), rune and jewellery buyer, combat-supply buyer (food, potions, gear, cannonballs), quest-item gatherer.
+Planned without an owner yet (supply list in cairn://p/rs/41): fletcher-supplier (arrowheads, dart tips, headless arrows), gem supplier (uncut dragonstones or diamonds; not reachable without Shilo Village, see [jeweller.md](helpers/jeweller.md)), rune and jewellery buyer, combat-supply buyer (food, potions, gear, cannonballs), quest-item gatherer.
 
 ## Accounts
 
