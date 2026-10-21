@@ -161,12 +161,23 @@ await runScript(async ({ bot, sdk }) => {
             const idx = tgt.index;
             // The general's death queue drops the key (troll_commander.rs2:4-5); done when
             // the general is gone or at 0 hp, then scan for the key.
-            const gone = () => { const n = sdk.getState()?.nearbyNpcs.find(m => m.index === idx); return !n || n.hp === 0; };
+            let missing = 0, missingTick = -1;
+            const gone = () => {
+                const st = sdk.getState()!;
+                const n = st.nearbyNpcs.find(m => m.index === idx);
+                if (n && n.hp === 0 && n.maxHp) return true;
+                if (!n && st.tick !== missingTick) { missing++; missingTick = st.tick; }
+                if (n) missing = 0;
+                return missing >= 3;
+            };
             const f = await fight(bot, sdk, () => sdk.getState()?.nearbyNpcs.find(n => n.index === idx), gone);
             const t1 = now(sdk);
             let key = null;
-            for (let k = 0; k < 8 && !key; k++) { key = await sdk.scanFindGroundItem(/prison key/i, 6); if (!key) await waitTicks(sdk, 1); }
-            if (!key) throw new Error(`no prison key dropped (${JSON.stringify(f)})`);
+            for (let k = 0; k < 15 && !key; k++) { key = await sdk.scanFindGroundItem(/prison key/i, 8); if (!key) await waitTicks(sdk, 1); }
+            if (!key) {
+                console.log('  ground:', (await sdk.scanGroundItems(8)).map(g => `${g.name}@${g.x},${g.z}`).join(' '), '| general:', JSON.stringify(sdk.getState()!.nearbyNpcs.find(m => m.index === idx) ?? null).slice(0, 200));
+                throw new Error(`no prison key dropped (${JSON.stringify(f)})`);
+            }
             await bot.pickupItem(key);
             await waitUntil(sdk, s => invCount(s, /prison key/i) > 0, 20);
             runs.push({ ...f, startDist: tgt.distance, pickupTicks: now(sdk) - t1, totalTicks: f.ticks + now(sdk) - t1 });
