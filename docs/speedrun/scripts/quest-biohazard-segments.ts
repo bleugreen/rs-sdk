@@ -127,8 +127,9 @@ await runScript(async ({ bot, sdk }) => {
             await S.step('open the nurse cupboard', opAt(2517, 3276, /Open/), { done: () => sdk.getState()!.nearbyLocs.some(l => l.x === 2517 && l.z === 3276 && /Search/.test(l.options.join())), settle: 0 });
             await S.step("search: doctors' gown", opAt(2517, 3276, /Search/), { done: has(sdk, /^Doctors' gown$/i), settle: 0 });
             await S.step("wear the doctors' gown", async () => { await bot.equipItem(/^Doctors' gown$/i); }, { done: () => sdk.getEquipment().some(e => /Doctors' gown/i.test(e.name)), settle: 0 });
-            await S.walk('nurse -> HQ door', 2551, 3328);
-            await S.step('HQ door ("In you go doc")', opAt(2551, 3328, /Open/), { done: () => L.pos(sdk).z <= 3327 });
+            // Front door from the street; (2551,3328) joins the yard to the HQ instead.
+            await S.walk('nurse -> HQ front door', 2551, 3320);
+            await S.step('HQ front door ("In you go doc")', opAt(2551, 3320, /Open/), { done: () => L.pos(sdk).z >= 3321 });
             await S.walk('HQ -> spiral stairs', 2543, 3325);
             await S.step('spiral stairs up', opAt(2542, 3324, /Climb-up/), { done: atLevel(sdk, 1), settle: 0 });
             await S.walk('stairs -> upstairs door', 2546, 3325);
