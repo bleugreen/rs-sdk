@@ -53,16 +53,24 @@ function cdpCommand(wsUrl: string, method: string, params: Record<string, unknow
     });
 }
 
-/** Whether this bot's tab shows a client that is in game (window.gameClient.ingame); false with no tab. */
-export async function tabInGame(cdpOrigin: string, botName: string): Promise<boolean> {
+/**
+ * The page's own in-game flag (window.gameClient.ingame) in this bot's tab, or null when there is
+ * no such tab. Throws when Chrome's DevTools port does not answer.
+ */
+export async function pageInGame(cdpOrigin: string, botName: string): Promise<boolean | null> {
     const base = cdpOrigin.replace(/\/+$/, '');
     const [tab] = botTabs((await (await fetch(`${base}/json/list`)).json()) as CdpTarget[], botName);
-    if (!tab?.webSocketDebuggerUrl) return false;
+    if (!tab?.webSocketDebuggerUrl) return null;
     const out = (await cdpCommand(tab.webSocketDebuggerUrl, 'Runtime.evaluate', {
         expression: '!!(window.gameClient && window.gameClient.ingame)',
         returnByValue: true,
     })) as { result?: { value?: unknown } };
     return out.result?.value === true;
+}
+
+/** Whether this bot's tab shows a client that is in game; false with no tab. */
+export async function tabInGame(cdpOrigin: string, botName: string): Promise<boolean> {
+    return (await pageInGame(cdpOrigin, botName)) === true;
 }
 
 /**
