@@ -126,8 +126,10 @@ browser_path() {
     # 3203,3246, each sized in ticks (about 2.8 per second in bursts) from the time left: the knife
     # takes 62% after setup, plain the rest (sized at 2.6 per second, so it ends inside its timeout). Every 2.5 s the poll records the program's tick, its
     # success count with the last 12 success ticks (marks.successes; a stamp's index is count - 12 + i),
-    # and the counters that classify resyncs (phaseResyncs, slips, resyncs, levelUps, switches).
-    export KPROG='(() => { const s = rsPrograms.status(); if (!s) return null; const m = (s.marks && s.marks.successes) || { count: 0, ticks: [] }; const c = s.counters || {}; return { id: s.runId, ph: s.phase, t: s.tick, n: m.count, k: m.ticks.slice(-12), pr: c.phaseResyncs || 0, sl: c.slips || 0, rs: c.resyncs || 0, lu: c.levelUps || 0, sw: c.switches || 0 }; })()'
+    # the counters that classify resyncs (phaseResyncs, slips, resyncs, levelUps, switches), and the
+    # program's own frame counters (fc catch-ups, fu under 150 ms, fo over 350 ms, fn intervals), which
+    # are fed from each PLAYER_INFO message's arrival: the page's true tick timeline, glued pairs included.
+    export KPROG='(() => { const s = rsPrograms.status(); if (!s) return null; const m = (s.marks && s.marks.successes) || { count: 0, ticks: [] }; const c = s.counters || {}; const f = s.frames || {}; return { id: s.runId, ph: s.phase, t: s.tick, n: m.count, k: m.ticks.slice(-12), pr: c.phaseResyncs || 0, sl: c.slips || 0, rs: c.resyncs || 0, lu: c.levelUps || 0, sw: c.switches || 0, fc: f.catchUps, fu: f.under150, fo: f.over350, fn: f.n }; })()'
     kpage='bun --no-install docs/speedrun/scripts/demo-browser-page.ts eval --dir="$OUT/page" --every=2.5 --progress="$KPROG"'
     local oaks='trees: [[3203, 3240], [3203, 3246]]'
     local kt=$(( ( t - 40 ) * 62 / 100 * 28 / 10 )); [ $kt -gt 900 ] && kt=900; [ $kt -lt 150 ] && kt=150
