@@ -17,7 +17,8 @@
 // - the probe's on-time / late / lost walk trials and frame catch-ups in the interval
 //   (context only: gate (a)-(c) are measured with rs/96's probe, not this);
 // - CPU per process group as a percentage of one core, from utime+stime deltas in
-//   /proc/<pid>/stat over the interval (what `pidstat -u` reports): ffmpeg, Chrome
+//   /proc/<pid>/stat over the interval (what `pidstat -u` reports): ffmpeg (the recording),
+//   the MJPEG live view (an x11grab ffmpeg writing mpjpeg), Chrome
 //   (browser, the busiest renderer = the tab, other renderers, GPU process, utilities;
 //   the tree under the Chrome whose --user-data-dir is --profile), the page server
 //   (proxy.ts), the gateway (gateway.ts), the session's Xorg (--display) and xrdp;
@@ -71,7 +72,7 @@ function classify(procs: Map<number, Proc>): Map<number, string> {
         return false;
     };
     for (const p of procs.values()) {
-        if (p.comm === 'ffmpeg' && p.args.includes('x11grab')) groups.set(p.pid, 'ffmpeg');
+        if (p.comm === 'ffmpeg' && p.args.includes('x11grab')) groups.set(p.pid, p.args.includes('mpjpeg') ? 'liveView' : 'ffmpeg');
         else if (chromeRoot && inChrome(p)) {
             const type = p.args.match(/--type=([a-z-]+)/)?.[1];
             groups.set(p.pid, !type ? 'chrome.browser' : type === 'renderer' ? 'chrome.renderer' : type === 'gpu-process' ? 'chrome.gpu' : 'chrome.other');
@@ -156,14 +157,14 @@ await runScript(async ({ bot, sdk }) => {
             label, i, at: new Date().toISOString(),
             loopsLast: st2.loops.last, loopsP10: st2.loops.p10Last10s, loopsMin: st2.loops.min,
             onTime: d('onTime'), late: d('late'), lost: d('lost'), catchUps: st2.frames.catchUps - st.frames.catchUps,
-            ffmpeg: r1(cpu.ffmpeg ?? 0), chromeTab: r1(cpu['chrome.tab']), chromeGpu: r1(cpu['chrome.gpu'] ?? 0),
+            ffmpeg: r1(cpu.ffmpeg ?? 0), liveView: r1(cpu.liveView ?? 0), chromeTab: r1(cpu['chrome.tab']), chromeGpu: r1(cpu['chrome.gpu'] ?? 0),
             chromeBrowser: r1(cpu['chrome.browser'] ?? 0), chromeOther: r1((cpu['chrome.other'] ?? 0) + cpu['chrome.otherRenderers']), chromeAll: r1(chromeAll),
             pageServer: r1(cpu.pageServer ?? 0), gateway: r1(cpu.gateway ?? 0), xorg: r1(cpu.xorg ?? 0), xrdp: r1(cpu.xrdp ?? 0),
             totalBusyPct: r1(totalBusy), load1: r1(loadavg()[0]!),
             ffFrame: ff ? Number(ff.frame) : null, ffFps: ff ? Number(ff.fps) : null, ffDrop: ff ? Number(ff.drop_frames) : null, ffDup: ff ? Number(ff.dup_frames) : null, ffSpeed: ff?.speed ?? null
         };
         samples.push(sample);
-        console.log(`${String(i).padStart(2)} loops/s last ${sample.loopsLast} p10 ${sample.loopsP10} min ${sample.loopsMin} | trials ${sample.onTime}/${sample.late}/${sample.lost} catch-ups ${sample.catchUps} | cpu% ffmpeg ${sample.ffmpeg} tab ${sample.chromeTab} gpu ${sample.chromeGpu} chrome ${sample.chromeAll} page ${sample.pageServer} gw ${sample.gateway} xorg ${sample.xorg} xrdp ${sample.xrdp} | total ${sample.totalBusyPct}% load ${sample.load1}` +
+        console.log(`${String(i).padStart(2)} loops/s last ${sample.loopsLast} p10 ${sample.loopsP10} min ${sample.loopsMin} | trials ${sample.onTime}/${sample.late}/${sample.lost} catch-ups ${sample.catchUps} | cpu% ffmpeg ${sample.ffmpeg} live ${sample.liveView} tab ${sample.chromeTab} gpu ${sample.chromeGpu} chrome ${sample.chromeAll} page ${sample.pageServer} gw ${sample.gateway} xorg ${sample.xorg} xrdp ${sample.xrdp} | total ${sample.totalBusyPct}% load ${sample.load1}` +
             (ff ? ` | ffmpeg frame ${sample.ffFrame} fps ${sample.ffFps} drop ${sample.ffDrop} dup ${sample.ffDup} speed ${sample.ffSpeed}` : ' | ffmpeg not recording'));
         if (out) appendFileSync(out, JSON.stringify(sample) + '\n');
         procs = procs2; tot = tot2; st = st2; t = now;
@@ -174,7 +175,7 @@ await runScript(async ({ bot, sdk }) => {
         return v.length ? `${v[0]} / ${v[Math.floor((v.length - 1) / 2)]} / ${v[v.length - 1]}` : '-';
     };
     console.log(`summary ${label} (min / median / max over ${samples.length} samples): loops p10 ${stats('loopsP10')}; run min ${end?.loops.min ?? '-'}; ` +
-        `cpu% ffmpeg ${stats('ffmpeg')}, tab ${stats('chromeTab')}, gpu ${stats('chromeGpu')}, chrome ${stats('chromeAll')}, page server ${stats('pageServer')}, gateway ${stats('gateway')}, xorg ${stats('xorg')}, xrdp ${stats('xrdp')}; ` +
+        `cpu% ffmpeg ${stats('ffmpeg')}, live view ${stats('liveView')}, tab ${stats('chromeTab')}, gpu ${stats('chromeGpu')}, chrome ${stats('chromeAll')}, page server ${stats('pageServer')}, gateway ${stats('gateway')}, xorg ${stats('xorg')}, xrdp ${stats('xrdp')}; ` +
         `total busy ${stats('totalBusyPct')}%, load ${stats('load1')}; probe on time ${end?.counters.onTime ?? 0}, late ${end?.counters.late ?? 0}, lost ${end?.counters.lost ?? 0}; frames p90 ${end?.frames.p90} ms, catch-ups ${end?.frames.catchUps}` +
         (samples.some(s => s.ffFps !== null) ? `; ffmpeg fps ${stats('ffFps')}, dropped at end ${samples.at(-1)?.ffDrop}, duplicated at end ${samples.at(-1)?.ffDup}` : ''));
 }, { timeout: (minutes + 2) * 60_000 + intervalS * 1000, printState: false });
