@@ -39,6 +39,41 @@ await runScript(async ({ bot, sdk }) => {
     for (const slot of sdk.getEquipment()) await sdk.sendUseEquipmentItem(slot.slot, 1);
     await waitUntil(sdk, () => false, 3);
     const xp0 = sdk.getSkills().map(s => [s.name, s.experience] as const);
+
+    // Rowdy Guards (level 43, huntmode cowardly, huntrange 1) attack a player
+    // who passes next to them unless the player is too strong for them. If
+    // one has, kill it and report the cost.
+    const rowdy: { segment: string; ticks: number; hpLost: number }[] = [];
+    const defend = async () => {
+        const me = sdk.getState()!.player!;
+        const hit = me.combat?.inCombat || (me.combat?.lastDamageTick ?? -1) >= tick(sdk) - 6;
+        const g = sdk.getNearbyNpcs().filter(n => n.id === q.id(q.NPC, 'rowdymineguard') && n.distance <= 2)[0];
+        if (!hit || !g) return false;
+        const t0 = tick(sdk), hp0 = hp();
+        while (sdk.getNearbyNpcs().some(n => n.index === g.index) && tick(sdk) - t0 < 400) {
+            if (sdk.getState()!.dialog.isOpen) await q.settle(() => true, 10);
+            const atk = sdk.getNearbyNpcs().find(n => n.index === g.index)?.optionsWithIndex.find(o => /attack/i.test(o.text));
+            if (atk && !sdk.getState()!.player!.combat?.inCombat) await sdk.sendInteractNpc(g.index, atk.opIndex);
+            await waitUntil(sdk, () => false, 3);
+        }
+        rowdy.push({ segment: S.cur?.name ?? '?', ticks: tick(sdk) - t0, hpLost: hp0 - hp() });
+        console.log(`  rowdy guard fight in ${S.cur?.name}: ${tick(sdk) - t0} ticks`);
+        S.mark();
+        return true;
+    };
+    /** S.run, but if a Rowdy Guard interrupts, kill it and run `retry` (default fn). */
+    const seg = (name: string, fn: () => Promise<void | string>, retry?: () => Promise<void | string>) =>
+        S.run(name, async () => {
+            try {
+                const r = await fn();
+                await defend();
+                return r;
+            } catch (e) {
+                if (await defend()) return await (retry ?? fn)();
+                throw e;
+            }
+        });
+    void seg;
     let lockTries = 0, bars = 0, featherTries = 0, cartTries = 0, fightTicks = 0, fightHpLost = 0;
 
     if (FROM === 'start') {
@@ -98,13 +133,16 @@ await runScript(async ({ bot, sdk }) => {
         await S.run('gate -> slave (walk)', async () => {
             await q.walk(3301, 3031, 1);
         });
-        await S.run('slave: talk, pick the lock, trade clothes', async () => {
-            const retry = /Yeah I'll give it another go|Yes, I'll trade/;
-            const r = await q.talk('mining_slave_male', [/I've just arrived/, /that sounds interesting/, /What's that then/, /I can try to undo them/, /funny you should say that/, /let's give it a go/, ...Array(12).fill(retry)], { allowUnused: true });
-            lockTries = r.transcript.filter(t => /another go|Yes, I'll trade/.test(t)).length;
+        const retry = /Yeah I'll give it another go|Yes, I'll trade|let's give it a go/;
+        const slaveTalk = async (choices: RegExp[]) => {
+            const r = await q.talk('mining_slave_male', [...choices, ...Array(12).fill(retry)], { allowUnused: true });
+            lockTries += r.transcript.filter(t => /another go/.test(t)).length;
             if (!q.worn('slave_robe')) throw new Error('no slave clothes');
-            return `${lockTries} lock attempts after the first`;
-        });
+            return `${lockTries} lock retries`;
+        };
+        await seg('slave: talk, pick the lock, trade clothes',
+            () => slaveTalk([/I've just arrived/, /that sounds interesting/, /What's that then/, /I can try to undo them/, /funny you should say that/, /let's give it a go/]),
+            () => slaveTalk([]));
         await S.run('slave -> mine doors (walk)', async () => {
             await q.walk(3301, 3035, 1);
         });
