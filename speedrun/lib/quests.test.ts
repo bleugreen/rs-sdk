@@ -5,6 +5,13 @@ import { QUESTS, ROUTE_QUESTS } from '../data/quest-stages';
 import { baseState, FakeSdk } from './fake-sdk';
 import { journalProbeName, questDone, questStage, questStatus, readQuestStage, requireQuestStage, stagesFromJournal } from './quests';
 
+/** FakeSdk plus the close readQuestStage sends (FakeSdk gains sendCloseModal with rs/41; then this can go). */
+class JournalFake extends FakeSdk {
+    sendCloseModal() {
+        return this.sendAction({ method: 'sendCloseModal', args: [] });
+    }
+}
+
 /** Lines as the server wraps them: arbitrary breaks, colour tags kept. */
 function journal(title: string, text: string, tick = 100, open = true): QuestJournalState {
     const words = text.split(' ');
@@ -103,7 +110,7 @@ test('questDone reads the tab from an observation', () => {
 
 describe('readQuestStage', () => {
     test('clicks the quest-tab entry, reads the journal, closes it', async () => {
-        const sdk = new FakeSdk(baseState({ tick: 50, quests: { elena: 'started' }, questJournal: null }));
+        const sdk = new JournalFake(baseState({ tick: 50, quests: { elena: 'started' }, questJournal: null }));
         sdk.onSend = (a, f) => {
             if (a.method === 'sendClickComponent') {
                 expect(a.args).toEqual([QUESTS.elena.questList.componentId]);
@@ -118,7 +125,7 @@ describe('readQuestStage', () => {
     });
 
     test('clicks once more when the server dropped the first click', async () => {
-        const sdk = new FakeSdk(baseState({ tick: 50, quests: { elena: 'started' }, questJournal: null }));
+        const sdk = new JournalFake(baseState({ tick: 50, quests: { elena: 'started' }, questJournal: null }));
         let clicks = 0;
         sdk.onSend = (a, f) => {
             if (a.method === 'sendClickComponent' && ++clicks === 1) {
@@ -136,7 +143,7 @@ describe('readQuestStage', () => {
     });
 
     test('no click when the tab alone leaves one stage', async () => {
-        const sdk = new FakeSdk(baseState({ quests: { cook: 'started' } }));
+        const sdk = new JournalFake(baseState({ quests: { cook: 'started' } }));
         const r = await readQuestStage(sdk as never, 'cook');
         expect(r.journal).toBeNull();
         expect(r.reading.stages.map(x => x.name)).toEqual(['started']);
