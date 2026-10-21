@@ -155,7 +155,7 @@ say();
 say('| PDT | source | vantage | online | direct 1:2:3 | relay 1:2 | p90 / max ms | late >450 /min | catch-ups /min | (a) | (b) | (c) |');
 say('|---|---|---|---|---|---|---|---|---|---|---|---|');
 const agree = { n: 0, aEqB: 0, aEqC: 0 };
-for (const seg of segments) {
+for (const seg of segments.filter(s => !(s.kind === 'pair-window' && s.exact))) { // a pair without a sample phase is its pair row
     const s = score(seg.ticks);
     const mins = s.n * 0.3 / 60;
     // 58/60 scaled to runs with other trial counts
