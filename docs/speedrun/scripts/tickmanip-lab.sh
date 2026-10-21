@@ -35,7 +35,8 @@ wait_for() { # file phrase seconds
     BUILD_VERIFY=false BUILD_LIVE_RELOAD=false NODE_TICKRATE=$TICKRATE LOCAL_STAFF_LEVEL=4 \
     exec bun run src/app.ts) >"$LOGDIR/engine.log" 2>&1 &
 ENG=$!
-wait_for "$LOGDIR/engine.log" 'World ready' 600
+# A cold cache pack on a busy machine has taken over 600 s.
+wait_for "$LOGDIR/engine.log" 'World ready' "${LAB_READY_SECS:-1200}"
 
 (cd server/gateway && AGENT_PORT=7860 WEB_MANAGEMENT_PORT=8961 exec bun run gateway.ts) >"$LOGDIR/gateway.log" 2>&1 &
 GW=$!
