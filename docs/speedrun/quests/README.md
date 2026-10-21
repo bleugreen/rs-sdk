@@ -49,9 +49,10 @@ take ~241 off Tree Gnome Village, Grand Tree and Fight Arena. The post-MM combat
 falls by ~1,470-1,500 at the same time (3,520 to 2,023-2,051, rs/31), which is why the
 trade pays (section 7). With rs/91's measured efficiency kit (Protect from Melee flicked,
 ranging potion and glory, super antipoison in place of food; section 4 step 14) the Package B
-finish is **1,857**, and 2,023-2,211 is the no-kit fallback. The package comparisons in
-sections 6 and 7 stay on no-kit rates for every package, so they compare like with like.
-The kit shortens Package A's and C's cannon finishes too.
+finish is **~1,857** (i, on measured rates), and 2,023-2,211 is the no-kit fallback: the same
+lab's no-kit control gives 2,211, so rs/31's 2,051 may be ~160 optimistic. The package
+comparisons in sections 6 and 7 are given on no-kit rates for every package, with the
+kit-on-both-sides figures beside them. The kit shortens Package A's and C's cannon finishes too.
 
 The main thread's rough estimate was ~21,000 fixed. The difference is that the route
 shrank as quests were valued: the troll chain, the Regicide chain, Waterfall, Haunted
@@ -64,7 +65,10 @@ about **13,900 ticks** of combat training after the quests (plus Waterfall's 888
 no-MM route keeps). With it, Tree Gnome Village, Monkey Madness, Dwarf Cannon, Dragon Slayer
 with its filler, the cannon session and the cannon-led combat finish together cost
 **~9,310-9,340** (success path) or **~9,490-9,520** (expected), against ~14,790. These are
-fixed-column figures from a model over rs/30's and rs/31's measured rates (section 6). The
+fixed-column figures from a model over rs/30's and rs/31's measured rates (section 6).
+With rs/91's efficiency kit on the finish (~1,857 instead of 2,023-2,051) they are ~9,140
+and ~9,320 (i); the no-MM line was not re-costed with the kit, so the margin below is kept
+like for like. The
 margin of about 5,270 expected ticks survives every failure case measured on Ape Atoll, but
 those were measured at 70/70/70 and the route arrives at Defence 1 and ~42 Hitpoints
 (open item (a)). Monkey Madness needs the rs/23 client fix (merged). Sea Slug needs
@@ -116,7 +120,7 @@ flowchart TD
   Q32(["32 QP at the Champions' Guild door: 17 route + 4 Druidic Ritual + 11 filler, no spare"])
   HERB(["Herblore training on the scored account"])
   DS["Dragon Slayer"]
-  FIN(["Combat finish: cannon + defensive melee, then cannon + knives, 1,857 with the kit (2,023-2,211 without)"])
+  FIN(["Combat finish: cannon + defensive melee, then cannon + knives, ~1,857 with the kit (2,023-2,211 without)"])
 
   PC --> TELE
   M59 --> TELE
@@ -349,7 +353,7 @@ always refused within 16 ticks of combat (m). Ticks are fixed-client figures.
 | 11 | Fishing Contest (helper carp), if fly fishing stays on the normal cycle | 223 | inside the contest fence, steps 7-9: leaving through the gate resets the contest; logout inside was not tested | raw giant carp (a helper leaves the contest before its third catch), rod, 1 bait, 5 coins, 3 Camelot casts |
 | 12 | **Druidic Ritual and the 11 QP of filler, all before Dragon Slayer** (the door needs 32: 17 from steps 1-11 + 4 + 11). A travel order (i, unmeasured as a chain): Lumbridge teleport, **Cook's Assistant** (cook at (3209,3215), 27); glory to Draynor and ~60 tiles to the Rusty Anchor in Port Sarim (3045,3257) for **Goblin Diplomacy**'s first stage; Falador teleport to Taverley for **Druidic Ritual** (Kaqemeex at the stone circle, Sanfew in Taverley, the cauldron in Taverley Dungeon; 239); then ~35 tiles from the stone circle to Goblin Village (2957,3511) for Goblin Diplomacy's four visits, dyeing a mail before visits 2 and 3 (188 standalone); Varrock teleport for **Romeo & Juliet** (241), which leaves the account in Varrock beside the Champions' Guild. Xp on the way: Cook's Assistant gives 300 Cooking (level 30) and Goblin Diplomacy 200 Crafting, which puts Crafting at 45 instead of Dwarf Cannon's 42 if Crafting is trained after this step (r, `quest_cook.rs2:89`, `quest_gobdip.rs2:62`). Both skills are helper-fed, so neither moves the route by more than a tick (`cooking.md`, `crafting.md`). Doric's Quest (step 1) is also beside Taverley; moving Druidic Ritual there would save a Falador teleport, but its dungeon at 10 HP and Defence 1 is unchecked | 695 i (filler 456 + Druidic Ritual 239) | Druidic Ritual's and the filler's varp scopes not checked | egg, bucket of milk, pot of flour; 3 goblin mail, orange and blue dye; raw rat meat, raw bear meat, raw beef, raw chicken (the enchanted meats are untradeable, r); Romeo & Juliet's items (no step list in quest_points.md) |
 | 13 | **Dragon Slayer**: walk to the Champions' Guild door (3191,3363), then dragon_slayer.md's step list (Oziach, Oracle, Ice Mountain, Duke, Melzar's Maze, Wormbrain, the ship, Ned, the voyage). Elvarg at Attack 99 / Strength ~97 / Defence ~89 and ~97 HP with the Dragonfire shield: 64-75 m at 99 | 941 i | none: every varp is permanent (r). A death on Crandor is expensive (the return route is untested) | 12,000 coins, wizard's mind bomb, silk, lobster pot, unfired bowl, 3 planks, 12 steel nails, hammer, rune scimitar, rune full helm, chainbody and platelegs, amulet of strength, ~10 sharks, glory, Varrock, Lumbridge and Falador runes |
-| 14 | Combat finish (Package B) with rs/91's efficiency kit: super attack, super strength and glory, with Protect from Melee, Ultimate Strength and Incredible Reflexes flicked every 4 ticks. Cannon + defensive melee at the spiders until Defence 99 (168; 13.66 Ranged + 7.65 Defence per tick, m). Then the cannon with the rune scimitar to Ranged 70, and cannon + rapid rune knives with a ranging potion and super antipoison in place of food to Ranged 99 (1,688; 21.95 Ranged per tick at 85 against the control's 18.56, m). Hitpoints fills as a by-product: ~5,440 against a gap of **~4,220** (section 6). The earlier "at most 4,938" counted MM's 35,000 alone and left out the ~720 HP from the pre-MM spell fights. Measured rates (rs/31, rs/91), inferred total (`cannon-kit-model.ts`; `docs/speedrun/research/helper-fed-and-combat.md` section 3 on cairn://p/rs/91/1/builder; [ranged.md](../skills/ranged.md) section 1, gotchas in its section 6). **Without the kit:** 2,023-2,051 on rs/31's rates (cannon + defensive melee 230, then cannon + knives 1,821; phase model 2,023), or 2,211 on rs/91's control (Prayer 43, real sips and food) | **1,857** (no kit: 2,023-2,211) | combat | cannonballs, rune knives, ~9 ranging doses, ~3 super antipoison, 1 dose each of super attack and super strength, glory; no sharks or prayer potions with the kit (food, antipoison and prayer potions without it) |
+| 14 | Combat finish (Package B) with the efficiency kit (rs/91, `docs/speedrun/research/helper-fed-and-combat.md` section 3, `cannon-kit-model.ts`): cannon + defensive melee at the spiders until Defence 99 with super attack, super strength, glory and Protect from Melee + Ultimate Strength + Incredible Reflexes flicked (168, m rates: 13.66 Ranged + 7.65 Defence per tick); then the cannon with the scimitar to Ranged 70, then cannon + rapid rune knives to 99 with Protect from Melee flicked, a ranging potion re-sipped at half boost (~every 210 ticks) and one super antipoison per ~600 ticks (1,688; m rates: 21.95 Ranged per tick at 85 against 18.56 for the held-prayer control). Flicks cost 0 prayer points (m, 15 runs); Hitpoints fills as a by-product: ~5,440 (i) against a gap of **~4,220** (section 6). The earlier "at most 4,938" counted MM's 35,000 alone and left out the ~720 HP from the pre-MM spell fights. Gotchas also in [ranged.md](../skills/ranged.md) section 6. **Route-script rules:** send every sip in the same tick as the prayer flick, after the toggles (a sip blocks prayer buttons for the next two ticks, r/m); top up the cannon only from beside it (a re-attack cancels the walk back and the cannon runs dry, m). Without the kit: 2,051 (rs/31's rates) or 2,211 (rs/91's same-lab control at Prayer 43 with real food and sips) | **~1,857 i** (no kit: 2,023-2,211) | combat | cannonballs, rune knives, rune scimitar, amulet of glory, ~9 ranging potion doses, ~3 super antipoison doses, 1 super attack and 1 super strength dose; no sharks and no prayer potions (the kit replaces them) |
 
 Sea Slug and Fishing Contest can go anywhere after Plague City, but before Dragon Slayer:
 they carry two of its 32 quest points. Doing them before Fishing training starts is what the
@@ -381,7 +385,7 @@ flowchart LR
   DC --> CAN(["Cannon session + antipoison"]) --> MM["Monkey Madness opt. 1"]
   MM --> MA["Mage Arena at ~76, Charge from ~80"] --> SS["Sea Slug"] --> FC["Fishing Contest"]
   FC --> FILL["Cook's, Druidic Ritual, Goblin Diplomacy, Romeo & Juliet"]
-  FILL --> Q32(["32 QP"]) --> DS["Dragon Slayer"] --> FIN(["Finish 1,857 with the kit (2,023-2,211 without)"])
+  FILL --> Q32(["32 QP"]) --> DS["Dragon Slayer"] --> FIN(["Finish ~1,857 with the kit (2,023-2,211 without)"])
 ```
 
 ## 5. Not worth doing
@@ -498,22 +502,22 @@ Package A is kept as the alternative.
 | Dwarf Cannon | 976 | **not done**: Hitpoints binds, and cannon xp gives no Hitpoints, so the cannon shortens nothing (the model's best cannon plan is ~13,260 + 976 for the quest, against ~13,900 with knives and no quest: about even, and the knives need no Wilderness) |
 | Waterfall | not done | 888: kept. Without MM its Attack and Strength save only the ~9,400 xp that lies above the Hitpoints floor, ~1,000 ticks of melee at ~9.3 against 888: about even (i) |
 | Dragon Slayer + filler | 941 + 456 | not done: Hitpoints binds (decision 4) |
-| Ranged method | **cannon**: 113 m firing (+~10 set-up) for Ranged 50 before MM, wielding a melee weapon. After Dragon Slayer, cannon + defensive melee at the spiders until Defence 99 (230, Ranged to 67), then cannon + rapid rune knives to Ranged 99 (1,821) (rs/31, on m rates) | **rapid rune knives**, ~5,270 from level 1 (`ranged.md`; 8.1-8.75 Ranged + ~2.7-2.9 HP per tick, m). Longrange is no use: 2.63/tick to each of Ranged and Defence (m) |
+| Ranged method | **cannon**: 113 m firing (+~10 set-up) for Ranged 50 before MM, wielding a melee weapon. After Dragon Slayer, cannon + defensive melee at the spiders until Defence 99 (230, Ranged to 67), then cannon + rapid rune knives to Ranged 99 (1,821) (rs/31, on m rates); with rs/91's efficiency kit, 168 + 1,688 (step 14) | **rapid rune knives**, ~5,270 from level 1 (`ranged.md`; 8.1-8.75 Ranged + ~2.7-2.9 HP per tick, m). Longrange is no use: 2.63/tick to each of Ranged and Defence (m) |
 | Strength and Defence | Strength 0; Defence's last 1,288 inside the cannon phase | Strength 83 to 99 at the banded rates, **~2,860**; Defence 1 to 99 at ~9.3 with Strength 99, **~4,300** |
-| **Hitpoints (its own line)** | 0 extra: the finish produces 5,089 (rs/31) against a gap of ~4,220 | The Strength, Defence and Ranged training above yields 35,355 HP, leaving 4,583. That needs 13,749 more combat xp in a capped skill: **~1,480** at ~9.3 |
-| Combat training after the quests | **~2,146-2,174** (123 + 2,023-2,051); ~1,980 with rs/91's kit (123 + 1,857, step 14) | **~13,900** (2,862 + 4,295 + 5,270 + 1,478) |
-| **Block total** | **~9,310-9,340 success, ~9,490-9,520 expected** | **~14,790** (888 + 13,900) |
+| **Hitpoints (its own line)** | 0 extra: the finish produces 5,089 (rs/31), ~5,440 with the kit (i, rs/91), against a gap of ~4,220 | The Strength, Defence and Ranged training above yields 35,355 HP, leaving 4,583. That needs 13,749 more combat xp in a capped skill: **~1,480** at ~9.3 |
+| Combat training after the quests | **~2,146-2,174** (123 + 2,023-2,051); ~1,980 with the kit (123 + 1,857, i) | **~13,900** (2,862 + 4,295 + 5,270 + 1,478) |
+| **Block total** | **~9,310-9,340 success, ~9,490-9,520 expected**; ~9,140 and ~9,320 with the kit (i) | **~14,790** (888 + 13,900) |
 
 **MM option 1 wins by about 5,450-5,480 ticks on the success path and 5,270-5,300
 expected** (with rs/59's trapdoor ladder drop; before it, 4,700-4,730 expected). Package A, the alternative, gives the same block with Waterfall 888 and the
 3,520 finish in place of Dragon Slayer, its filler and the 2,023-2,051 finish:
 ~10,220-10,250 success (after rs/56's measured S of 15-47), so MM wins by ~4,540 there and
-Package B is ~910-970 better.
-
-**With rs/91's kit** (step 14), Package B's finish is 1,857, 166-194 below 2,023-2,051. Its
-block is then **~9,145 success, ~9,325 expected** (combat training after the quests ~1,980 =
-123 + 1,857). The no-MM column is left on no-kit rates. Its knives would also gain from the
-ranging potion, so the margin above is not recomputed, and MM option 1 wins either way.
+Package B is ~910-970 better. These margins price every line on rs/31's no-kit rates. With
+the kit (step 14), Package B's block is **~9,140 success, ~9,320 expected** (combat training
+after the quests ~1,980 = 123 + 1,857); the no-MM column was not re-costed with the kit, and
+MM option 1 wins either way. The
+kit shortens the other lines too (Package A's finish to ~2,720, i, section 7), so they are
+not re-stated with the kit on the MM line alone.
 
 **Option 1 against option 2, rechecked without Holy Grail** (same model, measured rates).
 Option 2 (35,000 Attack and Defence, 20,000 Strength and Hitpoints) leaves Defence 4,938,
@@ -569,8 +573,12 @@ Kruk with a fire push east of the Elder Guard (~40-70), and walking away from di
 trailing pages (~20-50 burst). **Prayer re-toggle:** switching the protect prayer off and on
 in the same tick every 4 ticks drained 1 point in 100 ticks against 20 held (m, rs/59,
 `prayer.rs2:30-44`), so 'prayer ran out' stops being a failure mode; each toggle clears the
-attack target (`protectfrommelee.rs2:9`), and re-sending the attack while toggling is
-untested, so keep the prayer potions in the trades as insurance.
+attack target (`protectfrommelee.rs2:9`). Re-sending the attack in the same tick, after the
+toggles, is now measured in combat (rs/91, `helper-fed-and-combat.md` section 3): 0 points
+in 15 runs of 400 ticks, a full 4-tick melee cadence, and slightly more knife throws than
+holding the prayer. Sips must go out in the flick tick, after the toggles: a sip blocks
+prayer buttons for the next two ticks. Keep a few prayer potions in the trades as insurance
+until the flick has run on Ape Atoll itself.
 
 ## 7. Conditional calls
 
@@ -581,13 +589,16 @@ untested, so keep the prayer potions in the trades as insurance.
 
   | Package | Quests | Filler | Post-MM finish | Total of the differing lines |
   |---|---|---|---|---|
-  | **B** (decided): Waterfall off, Dragon Slayer on after MM | Dragon Slayer ~941 (i: Elvarg at 99, m) | 11 QP, ~456 (i, unmeasured: Goblin Diplomacy 188, Romeo & Juliet 241, Cook's Assistant 27) | **2,023-2,051** (rs/31 2,051: cannon + defensive melee 230, then cannon + rapid knives 1,821; phase model 2,023); **1,857 with rs/91's kit** (step 14) | **~3,420-3,448** (~3,254 with the kit) |
+  | **B** (decided): Waterfall off, Dragon Slayer on after MM | Dragon Slayer ~941 (i: Elvarg at 99, m) | 11 QP, ~456 (i, unmeasured: Goblin Diplomacy 188, Romeo & Juliet 241, Cook's Assistant 27) | **2,023-2,051** (rs/31 2,051: cannon + defensive melee 230, then cannon + rapid knives 1,821; phase model 2,023); **~1,857 with rs/91's kit** (step 14) | **~3,420-3,448**; ~3,254 with the kit |
   | A: Waterfall on, Dragon Slayer off | Waterfall 888 | none | 3,520 (rs/31: cannon + defensive melee 3,459, then melee 62) | ~4,408 - S = **~4,361-4,393** (S = 15-47, m) |
   | C: both | 888 + 941 | 10 QP, ~429 (Cook's drops) | 2,023-2,051 | ~4,281-4,309 - S = ~4,234-4,294 |
   | Neither | | none | 4,054 (rs/31; phase model 4,006) | ~4,006-4,054 |
 
-  The totals compare the packages on no-kit rates. rs/91's kit (step 14) shortens every
-  package's cannon finish, so B stays the decision; with the kit, B's finish is 1,857.
+  **With the efficiency kit on both sides** (rs/91, i, on measured rates): Package A's finish
+  falls to ~2,720 (cannon + defensive melee at the kit's 7.65 Defence and 13.66 Ranged per
+  tick for ~2,606 ticks, then ~110 of cannon + knives), so A totals ~3,561-3,593 against B's
+  ~3,254, and C ~4,068-4,100. **B still wins, by ~310-340 over A** instead of ~910-970,
+  because the kit's melee boost helps A's long melee stretch more than B's short one.
 
   Dragon Slayer's 18,650 Strength caps Strength, and its 18,650 Defence leaves only a
   1,288 Defence gap. The cannon phase then ends in ~230 ticks and the rest is cannon + rapid
@@ -655,8 +666,8 @@ raised:
 1. **Waterfall against Dragon Slayer: Package B** (2026-10-21 01:07, on rs/56). Waterfall's
    pre-MM Strength saves 15-47 ticks (m) against a threshold of ~800-830 (now ~960-990), so
    Waterfall is OFF and Dragon Slayer is ON after Monkey Madness with 11 QP of filler
-   (section 7). The finish is 2,023-2,051 (rs/31 confirmed 2,051), or **1,857 with rs/91's
-   measured kit**, the recommended line (step 14, `ranged.md` section 1). Package A stays as the
+   (section 7). The finish is 2,023-2,051 (rs/31 confirmed 2,051), ~1,857 with rs/91's
+   efficiency kit (step 14); with the kit on both packages B still wins, by ~310-340. Package A stays as the
    documented alternative (section 6). Without MM both are worth ~0 (Hitpoints binds).
 2. **Merlin's Crystal + Holy Grail: OFF** (after rs/33's measured Prayer rate). See
    section 5. Defence ~1,270 (this page's model on measured rates; the coordinator's ~1,312 was
@@ -726,19 +737,15 @@ melee at the spiders 230, Ranged to 67; then cannon + rapid rune knives 1,821; H
 5,089). This page's phase model gave ~2,023; the 28-tick gap is the Ranged 67-70 stretch,
 where cannon + knives is unmeasured, so **2,023-2,051** is the honest range.
 
-**rs/91's efficiency kit (2026-10-21, measured at 300 ms at the spiders, Prayer 43; under
-rs/59):** cannon + rapid knives at Ranged 85, 3 runs each: control 18.56, Protect from Melee
-flicked 19.41, plus ranging potion and glory 20.17, plus super antipoison in place of food
-**21.95** (+18%). At Ranged 70 the rate goes from 17.40 to 19.46; at 99 from 19.88 (2 runs) to
-24.47 (1 clean run). With the scimitar kit, cannon + defensive melee gives 13.66 Ranged + 7.65
-Defence. Plan (e) with the kit is **1,857**. It is 2,051 on rs/31's rates, but 2,211 on
-rs/91's own control, which ran below rs/31's at Ranged 99. The kit's gain is measured against
-that control, so 1,857 stands. Two gotchas: top the cannon up only from beside it, because
-under a flick schedule the re-attack cancels the walk back and the cannon runs dry; and send
-each sip in the flick tick after the toggles, because a sip blocks the prayer buttons for two
-ticks. Source: `docs/speedrun/research/helper-fed-and-combat.md` section 3 on
-cairn://p/rs/91/1/builder (scripts `cannon-kit.ts`, `cannon-kit-model.ts`) and
-[ranged.md](../skills/ranged.md).
+**Package B's finish with the efficiency kit, measured by rs/91 (2026-10-21,
+`docs/speedrun/research/helper-fed-and-combat.md` section 3, `cannon-kit.ts`,
+`cannon-kit-model.ts`):** **~1,857** (i, on 300 ms rates measured at Prayer 43 with real food
+and potions): melee phase 168 (13.66 Ranged + 7.65 Defence per tick with super attack, super
+strength, glory and three flicked prayers), then 1,688 of cannon and knives (21.95 Ranged per
+tick at Ranged 85 with Protect from Melee flicked, a ranging potion, glory and super
+antipoison, against 18.56 for the held-prayer control, 3 runs each). The same lab's control
+puts the no-kit finish at 2,211, so rs/31's 2,051 (Prayer 99, survival by cheat) may be
+~160 optimistic. Step 14 carries the kit, its supplies and the two route-script rules.
 
 **rs/30's final melee figures (23:30, measured at 300 ms; `docs/speedrun/skills/combat.md`
 at 3beddb4b on agent/rs-30-builder-0, being re-ported to a clean branch by rs/28):** the
@@ -763,7 +770,7 @@ These older documents are left as written. Use the replacements below.
 |---|---|---|
 | "Combat rate about 14 base xp per tick (README)". No README ever carried this; it was the per-skill estimate that main later labelled inferred | `monkey_madness.md`, `tree_gnome_village.md`, `grand_tree.md`, `dragon_slayer.md`, `quest_points.md` rs/30's measured 300 ms rates, 4.1-10.1 by Strength band and ~9.3 for Defence at Strength 99 (via rs/28; table in section 6). Combat is valued through the scenario arithmetic in section 6 |
 | Ranged worth ~0 ("the cannon makes it free") | `temple_of_ikov.md` (~10-50), `horror_from_the_deep.md` (~63) | Ranged priced through rs/31's cannon plan: quest Ranged shortens the cannon phase, so Ikov's 10,500 is worth ~550 against ~750 (still OFF) and Horror ~300 against 800-1,000 (still OFF) |
-| MM-route combat finish 2,248 (Defence gap 4,638) | `ranged.md` | 3,520 (rs/31) with Holy Grail off (Defence gap 19,938); in Package B, the route, **1,857** with rs/91's kit (2,023-2,211 without) |
+| MM-route combat finish 2,248 (Defence gap 4,638) | `ranged.md` | 3,520 (rs/31) with Holy Grail off (Defence gap 19,938); **2,023-2,051** in Package B, the route, and **~1,857** with rs/91's efficiency kit (step 14) |
 | Dragon Slayer "skip", worth ~330 with MM | `dragon_slayer.md` | **ON** (Package B): with Waterfall and Holy Grail off it shortens the finish by ~2,000 against neither, ~1,500 against Package A (section 7) |
 | Plan holds 46-49 QP; "no quest-point filler needed" | `quest_points.md`, `dragon_slayer.md` | 34 on the route, and the 32-QP door binds with none spare: 11 QP of filler (decision 3) |
 | Goblin Diplomacy ~115 "on the Dragon Slayer route" | `quest_points.md` | ~188 standalone: its points are needed at the guild door, before Dragon Slayer's Port Sarim and Ice Mountain legs |

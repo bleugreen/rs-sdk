@@ -7,7 +7,7 @@
 #   LAB_BLOCK=<block> [NODE_TICKRATE=300] bash docs/speedrun/scripts/lab.sh <bot> <script.ts>[:arg:arg...] ...
 #
 # <block> is a row of the LAB.md port table (agility, mining, woodcutting,
-# fishing, thieving, tickmanip; default agility). NODE_TICKRATE defaults to 100.
+# fishing, thieving, tickmanip, travel; default agility). NODE_TICKRATE defaults to 100.
 # Each script is run as `bun <script> <bot> <args...>`; arguments are joined to
 # the path with colons, e.g. "docs/speedrun/scripts/agility-course.ts:wilderness:10"
 # runs `bun docs/speedrun/scripts/agility-course.ts <bot> wilderness 10`.
@@ -23,6 +23,7 @@ case "$BLOCK" in
     fishing) N=4 ;;
     thieving) N=5 ;;
     tickmanip) N=6 ;;
+    travel) N=8 ;;
     *) echo "unknown LAB_BLOCK '$BLOCK'"; exit 2 ;;
 esac
 export WEB_PORT=$((8900 + 10 * N)) WEB_MANAGEMENT_PORT=$((8901 + 10 * N)) HISCORES_WEB_PORT=$((8902 + 10 * N))

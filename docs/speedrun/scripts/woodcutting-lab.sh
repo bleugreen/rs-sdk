@@ -10,7 +10,9 @@
 #
 # WC_TRACE=1 applies woodcutting-trace.patch to the engine for this run and reverts
 # it on exit, so the engine log ($LAB_LOG/engine.log) carries `WCTRACE <tick> ...`
-# lines (see woodcutting-trace-summary.ts). NODE_TICKRATE defaults to 100.
+# lines (see woodcutting-trace-summary.ts). TRACE_PATCH=<path> applies another
+# run-only patch the same way (flinch-trace.patch logs `FLTRACE <tick> ...`).
+# NODE_TICKRATE defaults to 100.
 # Each script's output is preceded by `=== <script> engine-line=<N> ===`, the engine
 # log's line count when it started, to cut the trace per run.
 set -u
@@ -20,12 +22,21 @@ LOG=${LAB_LOG:-${TMPDIR:-/tmp}/wclab}
 mkdir -p "$LOG"
 
 export WEB_PORT=8930 WEB_MANAGEMENT_PORT=8931 HISCORES_WEB_PORT=8932 NODE_PORT=43630 AGENT_PORT=7830
+for p in $WEB_PORT $WEB_MANAGEMENT_PORT $HISCORES_WEB_PORT $NODE_PORT $AGENT_PORT; do
+    if command -v lsof >/dev/null; then lsof -ti tcp:$p | xargs kill 2>/dev/null; else fuser -k $p/tcp 2>/dev/null; fi
+done
+# A fresh executor slot may not have dependencies yet.
+for d in . server/engine server/webclient server/gateway; do
+    [ -d "$ROOT/$d/node_modules" ] || (cd "$ROOT/$d" && bun install --silent > /dev/null 2>&1)
+done
+PATCH=${TRACE_PATCH:-}
+[ -z "$PATCH" ] && [ "${WC_TRACE:-0}" = 1 ] && PATCH=docs/speedrun/scripts/woodcutting-trace.patch
 PIDS=()
 PATCHED=0
 cleanup() {
     for p in "${PIDS[@]}"; do kill "$p" 2>/dev/null; done; sleep 1
     for p in "${PIDS[@]}"; do kill -9 "$p" 2>/dev/null; done
-    if [ "$PATCHED" = 1 ]; then (cd "$ROOT" && git apply -R docs/speedrun/scripts/woodcutting-trace.patch); fi
+    if [ "$PATCHED" = 1 ]; then (cd "$ROOT" && git apply -R "$PATCH"); fi
 }
 trap cleanup EXIT
 
@@ -34,14 +45,15 @@ wait_for() { # file phrase seconds
     echo "timeout waiting for '$2' in $1"; tail -20 "$1"; return 1
 }
 
-if [ "${WC_TRACE:-0}" = 1 ]; then
-    (cd "$ROOT" && git apply docs/speedrun/scripts/woodcutting-trace.patch) || exit 1
+if [ -n "$PATCH" ]; then
+    (cd "$ROOT" && git apply "$PATCH") || exit 1
     PATCHED=1
 fi
 
 (cd "$ROOT/server/engine" && BUILD_VERIFY=false BUILD_LIVE_RELOAD=false NODE_TICKRATE=${NODE_TICKRATE:-100} LOCAL_STAFF_LEVEL=4 exec bun run src/app.ts) > "$LOG/engine.log" 2>&1 &
 PIDS+=($!)
 wait_for "$LOG/engine.log" 'World ready' 900 || exit 1
+sleep 8 # the web listener comes up a few seconds after 'World ready'
 
 (cd "$ROOT/server/gateway" && exec bun run gateway.ts) > "$LOG/gateway.log" 2>&1 &
 PIDS+=($!)
