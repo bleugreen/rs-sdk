@@ -73,7 +73,7 @@ the host gate can select with the same parameters.
 | `probe` | `speedrun/lib/hostgate.ts` `probeOnTime` | `trials`, `maxWait` | n/a |
 | `knife-mine` | `tickmanip-mine.ts` | `steps` (stand>rock pairs), `respawn`, `ores`, `starter: 'knife' \| 'none'` | `starter: 'none'` (plain and adjacent-rock transitions) |
 | `knife-cycle` | `tickmanip-cycle.ts`; `bury` from `bones-wc.ts --mode=knifebury` | `method` (`fly`, `willow`, `oak`, `tree`, `cage`, or an object), `successes` / `untilLevel` / `maxTicks`, `reanchor`, `trees` (the loc tiles reached from the standing tile), `bury` (oak and willow) | `technique: 'plain'` (no bury) |
-| `pickpocket` | `thieving-pickpocket.ts` (`--eat=auto`) | `npc`, `rolls`, `food`, `eatBelow`, `forcedBelow` | n/a: it clicks every tick |
+| `pickpocket` | `thieving-pickpocket.ts` (`--eat=auto`); `stunActions` from `stun-pack-thieve.ts` (rs/106) | `npc`, `rolls`, `food`, `eatBelow`, `forcedBelow`, `stunActions` (`bury`, `charge`, `arrows`, or action objects), `stunWindow`, `stunPerTick` | n/a: it clicks every tick |
 | `agility` | `agility-course.ts` | `course` (`gnome`, `barbarian`, `wilderness`, or an object; `agility-courses.ts`), `laps` | `technique: 'plain'` waits `settleTicks` after each obstacle |
 
 ### What the knife cycle reports
@@ -140,6 +140,26 @@ Notes that differ from the lite scripts:
 - Pickpocket eats only in a success window (with the click that follows a success, at
   least 4 ticks after the stun ended), and at once only when HP is at or below
   `forcedBelow`. A bite during a stun costs 3 ticks (`thieving.md`).
+- **Stun actions** (`stunActions`, off by default, so the program is unchanged without
+  them): rs/106's stun pack (`research/stun-pack.md`). On each failure the program sends,
+  ahead of its knight click, actions resolved from that tick's inventory and skills, on the
+  window `stunWindow` = [from, to] of offsets k from the tick whose state shows the failure
+  (default [2, 7]; k 0 and 1 land while delayed, and xp from k 8 opens a level-up page on the
+  attempt tick). The list is a priority order filling up to `stunPerTick` slots (default 4,
+  one packet of the 5 stays for the click). Each template is an item option (`item`,
+  `option`), item on item (`item`, `on`), spell on item (`spell`, `on`) or a button
+  (`component`), with optional `needs` (other items, e.g. runes), `uses` (per fire), a skill
+  gate (`skill`, `from`, `below`) and `delay`: `none`, `tick` (p_delay(0), as Bury: sent
+  last in its tick, and the next tick sends none) or `action` (writes the action delay, as
+  eating: it fires and counts as costly). Presets: `bury`, `charge` (Charge while Magic is
+  below 99 and runes last) and `arrows` (the best arrowhead tier the Fletching level allows,
+  on headless arrows). `['bury', 'charge']` reproduces rs/106's measured plan: three Charges
+  and a bury on k 2, 4 and 6, nothing on 3, 5 and 7; with no bones, four Charges on every
+  window tick. An open page is resumed first and takes one slot; an open interface (a trade)
+  skips the tick's actions. Nothing is remembered between stuns but the failure's tick, so a
+  restarted program picks the pack up from game state. The status counts `stunFired`,
+  `stunRejected`, `stunCostly` and `stun:<name>`, and the result carries a `stun` summary
+  (stuns, dry stuns, fired per stun, by action). Template code: `programs/stun-actions.ts`.
 
 ## Lab
 
@@ -155,6 +175,10 @@ finished run, read from `rsPrograms.history`, and samples rendering once a secon
 LAB_BLOCK=tickmanip NODE_TICKRATE=300 bash docs/speedrun/scripts/tickprog-lab.sh tp97 \
   probe:--trials=60 mine:--ores=200 fly:--level=20:--until=99 pickpocket:--level=55:--rolls=300 agility:--laps=10
 ```
+
+`pickpocket:...:--pack=bury,charge[,arrows]` runs the stun pack with a `::give` kit (dragon
+bones, runes, staff of fire, Magic 80 held, Mage Arena set; rune arrowheads at Fletching 75
+held for `arrows`) and tops bones and sharks up by `::give`, off the scored clock.
 
 Respawn 13 (the demo at about 1,262 online) needs `player_count.rs2` pinned locally,
 which is lab-only and never committed (`mining.md` section 4).
@@ -190,7 +214,20 @@ rs/82's figure (LAB.md); the lite column is from the skills docs.
 | Knife normal trees, bronze axe, Woodcutting 64, 150 logs (the demo account's level) | **6.91** over the span (5.50 mean gap) | | | 1.6-2.8 |
 | Normal trees, plain, Woodcutting 64, 100 logs | 9.92 | | | 1.7-2.4 |
 | Pickpocket, Knight of Ardougne, level 55 held, 300 rolls | **0.173 rolls per tick**; after a success 2 ticks on 171 of 188; after a fail 11 on 79 of 111; 15 eats, 2 forced | 0.170 | 0.167 | 4.8-7.5 |
+| Pickpocket, level 55 held, 300 rolls, plain then `stunActions: ['bury', 'charge']`, one session, 2026-10-21 15:14-15:32 PDT (rs/132) | plain **0.1785** rolls per tick (success 0.640; mean success gap 2.15, failure to next roll 11.80, 11 on 79 of 107); pack **0.1656** (success 0.600; 2.16 and **11.83**, 11 on 84 of 120). At the predicted 0.607 success both are 0.168. Pack: **3.00 bones and 8.04 Charges per stun** (360 and 965, all landed by xp), 0 refused, 0 costly, 0 dry stuns | | | 5.2-7.3 |
+| Same, plain then `stunActions: ['bury', 'arrows']` (rune arrowheads on headless arrows, Fletching 75 held), 2026-10-21 15:35-15:54 PDT | plain **0.1613** (success 0.573; success gap 2.18, failure to next roll 11.65, 11 on 97 of 127); pack **0.1657** (success 0.580; 2.09 and **11.53**, 11 on 101 of 125). Pack: **7.97 arrow actions** (about 120 arrows) **and 2.98 bones per stun** over 126 stuns (1,004 and 375, all landed by xp), 0 refused, 0 costly, 0 dry | | | 4.4-5.2 |
 | Agility, Wilderness course, level 99, 10 laps | **66 ticks per lap** on all 9 measured laps | | 66 | 3.8-6.1 |
+
+Reading the stun-pack rows: rolls per tick differ by the success-rate draw (0.64 against
+0.60 over 300 rolls), not the pack; the per-roll costs, 2.15 against 2.16 after a success
+and 11.80 against 11.83 after a failure, are the same. The pack run's 14-tick failures (10
+against 2) include its 5 forced eats inside a stun (+3 each): the lab kit carried 6 sharks at
+40 HP with a `::give` top-up that lagged, a lab setting rather than the program. Magic held at
+80 by `::setstat` (reset at each 99) and Prayer from 43 put many level-up pages into the run;
+they did not move the failure-to-next figure. The `arrows` preset does not fire beside
+`charge` while Magic is held below 99 (Charge fills every delay-free slot first), so it has its
+own row: the Fletching half of the pack, as it runs once Charge reaches 99. Its headless
+arrows are given, as in rs/106's plan; making them is not part of the stun pack.
 
 Reading the willow row: both runs hold the 3-tick lock, and nearly every gap is a
 multiple of 3. The difference is how many 3-tick rolls yield a log. Fitting a

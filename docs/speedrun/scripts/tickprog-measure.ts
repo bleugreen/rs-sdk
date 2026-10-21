@@ -19,6 +19,14 @@
 //                ticksPerExpectedRoll is the figure to set against the cadence; on the trees it
 //                needs an axe worn or carried, and the result names the one it used)
 //   pickpocket   Ardougne knight, eat in windows  --level=55 --rolls=300 [--hold=1]
+//                [--pack=bury,charge[,arrows]] runs rs/106's stun pack (stunActions) with a
+//                ::give kit: dragon bones, blood and air runes, staff of fire, Magic 80 held
+//                (Mage Arena set), and for arrows rune arrowheads at Fletching 75 held. Bones
+//                and sharks are topped up by ::give (off the scored clock, like oak --bury)
+//                [--helper=<bot>] tops bones up by trade instead (HELPER=<bot> in tickprog-lab.sh):
+//                the program requests at stun +2..+4 when under 3 bones and idles while the
+//                trade is open; the helper (a lite client teleported beside the account)
+//                offers --load=9 bones with one press; this script accepts for the account
 //   agility      Wilderness course                --laps=10 [--course=gnome]
 //
 // The page reacts on its own decoded tick; this script only sets up, starts the program
@@ -28,6 +36,8 @@ import { hostname, loadavg } from 'os';
 import { runScript } from '../../../sdk/runner';
 import { latencyHistogram } from '../../../speedrun/lib/hostgate';
 import { awaitProgram, probeInPage, ProgramError, programStatus, runProgram, startProgram } from '../../../speedrun/lib/programs';
+import { openSession, closeSession, type Session } from '../../../speedrun/lib/session';
+import { decideGiver, decideReceiver, newGiverCtx, newReceiverCtx, planOffers, sameName, tradeOf, type GiverCtx, type OfferEntry, type ReceiverCtx } from '../../../speedrun/lib/trade';
 
 const bot = process.argv[2];
 const mode = process.argv[3];
@@ -189,27 +199,136 @@ await runScript(async ({ bot: actions, sdk }) => {
         }
         case 'pickpocket': {
             const level = num('level', 55);
+            const pack = flag('pack')?.split(',').filter(Boolean) ?? [];
+            const arrows = pack.includes('arrows');
+            const SHARKS = pack.length ? 6 : 26;
+            const HELPER = flag('helper');
+            const LOAD = num('load', 9);
+            if (HELPER && !pack.includes('bury')) throw new Error('--helper tops up bones: give --pack=bury,...');
+            let helper: Session | null = null;
+            if (HELPER && !DEMO) {
+                helper = await openSession(HELPER, { launch: true, pathfinding: false });
+                await helper.bot.skipTutorial().catch(() => {});
+                for (const item of [...(helper.sdk.getState()?.inventory ?? [])]) await helper.sdk.sendDropItem(item.slot);
+            }
             if (!DEMO) {
                 await tele('0,41,51,29,37', 2653, 3301);
+                await clearInventory();
                 await say('::setstat hitpoints 40');
                 await say(`::setstat thieving ${level}`);
-                await say('::give shark 26');
+                await say(`::give shark ${SHARKS}`);
+                if (pack.length) {
+                    await say('::setstat magic 80');
+                    await say('::setstat prayer 43');
+                    await say('::setvar magearena 8');
+                    await say('::give staff_of_fire 1');
+                    await sdk.waitForTicks(2);
+                    const staff = sdk.getState()?.inventory.find(i => /^staff of fire$/i.test(i.name));
+                    if (staff) { await sdk.sendUseItem(staff.slot, staff.optionsWithIndex.find(o => /wield/i.test(o.text))?.opIndex ?? 2); await sdk.waitForTicks(2); }
+                    await say('::give bloodrune 60000');
+                    await say('::give airrune 60000');
+                    if (arrows) { await say('::setstat fletching 75'); await say('::give headless_arrow 60000'); await say('::give rune_arrowheads 60000'); }
+                    await say(`::give dragon_bones ${helper ? 4 : 28 - (sdk.getState()?.inventory.length ?? 28) - 1}`);
+                }
+                if (helper) {
+                    const p = sdk.getState()!.player!;
+                    await helper.sdk.sendSay(`::tele 0,${(p.worldX + 1) >> 6},${p.worldZ >> 6},${(p.worldX + 1) & 63},${p.worldZ & 63}`);
+                    await helper.sdk.sendSay(`::give dragon_bones ${LOAD}`);
+                    await sdk.waitForTicks(4);
+                }
             }
             // Hold the level like the lite lab script (--hold): the cheat goes over the relay
             // beside the program's own clicks, so the sample stays at one level.
             const hold = !DEMO && flag('hold', '1') !== '0';
-            const started = await startProgram(sdk, 'pickpocket', { rolls: num('rolls', 300), food: '^shark$', heal: 20 });
+            const params: Record<string, unknown> = { rolls: num('rolls', 300), food: '^shark$', heal: 20 };
+            if (pack.length) params.stunActions = pack;
+            if (helper) {
+                const name = helper.name.replace(/[ _]/g, '[ _]');
+                params.stunActions = [{ name: 'topup', kind: 'player', player: `^${name}$`, fewer: [{ item: '^dragon bones$', than: 3 }], window: [2, 4] }, ...pack];
+                params.idleOnInterface = true;
+            }
+            // Top-up bookkeeping, timed on the account's ticks: failures, rolls, trade opens, burials.
+            const fails: number[] = [], rollTicks: number[] = [], openTicks: number[] = [], buryTicks: number[] = [];
+            const trades: Array<{ open: number; done?: number; ok: boolean; why?: string }> = [];
+            let rctx: ReceiverCtx | null = null, lastScoredTick = -1, wasOpen = false;
+            const seenMsg = new Set<string>();
+            const stopHelper = helper ? runHelper(helper, LOAD) : () => {};
+            const started = await startProgram(sdk, 'pickpocket', params);
             let last = level;
+            // What the pack's actions did, from the skills' xp (only rises: a ::setstat hold lowers it)
+            const xpOf = (s: { skills: Array<{ name: string; experience: number }> }, n: string) => s.skills.find(k => k.name === n)?.experience ?? 0;
+            const s0 = sdk.getState()!;
+            const prev = { Prayer: xpOf(s0, 'Prayer'), Magic: xpOf(s0, 'Magic'), Fletching: xpOf(s0, 'Fletching') };
+            const gained = { Prayer: 0, Magic: 0, Fletching: 0 };
+            let refilling = false;
             const un = sdk.onStateUpdate(s => {
                 const lv = s.skills.find(k => k.name === 'Thieving')?.baseLevel ?? level;
                 if (hold && lv !== level && lv !== last) void sdk.sendSay(`::setstat thieving ${level}`);
                 last = lv;
+                if (!pack.length || DEMO) return;
+                const newTick = s.tick !== lastScoredTick;
+                lastScoredTick = s.tick;
+                for (const m of s.gameMessages ?? []) {
+                    const key = m.observationId !== undefined ? `o${m.observationId}` : `${m.tick}|${m.text}`;
+                    if (seenMsg.has(key)) continue;
+                    seenMsg.add(key);
+                    if (/You fail to pick/i.test(m.text)) { fails.push(s.tick); rollTicks.push(s.tick); }
+                    else if (/^You pick the/i.test(m.text)) rollTicks.push(s.tick);
+                }
+                for (const n of ['Prayer', 'Magic', 'Fletching'] as const) {
+                    const xp = xpOf(s, n);
+                    if (xp > prev[n]) {
+                        gained[n] += xp - prev[n];
+                        if (n === 'Prayer') for (let b = 0; b < Math.round((xp - prev[n]) / 1800); b++) buryTicks.push(s.tick);
+                    }
+                    prev[n] = xp;
+                }
+                if (helper && newTick) {
+                    // The account's side of the trade: the program idles while it is open.
+                    const tr = tradeOf(s);
+                    if (tr.isOpen && !wasOpen) { openTicks.push(s.tick); trades.push({ open: s.tick, ok: false }); }
+                    wasOpen = tr.isOpen;
+                    if (tr.isOpen && !rctx) rctx = newReceiverCtx(helper.name, s.inventory, [{ item: /^dragon bones$/i, amount: LOAD }]);
+                    if (rctx) {
+                        const d = decideReceiver(s, rctx);
+                        rctx = d.next;
+                        const cur = trades[trades.length - 1]!;
+                        if (d.action === 'accept') void sdk.sendAcceptTrade();
+                        else if (d.action === 'decline') { void sdk.sendDeclineTrade(); cur.why = d.reason; rctx = null; }
+                        else if (d.action === 'done') { cur.ok = true; cur.done = s.tick; rctx = null; }
+                        else if (d.action === 'closed') { cur.why = 'closed'; rctx = null; }
+                        else if (tr.isOpen && s.tick - cur.open > 20) { void sdk.sendDeclineTrade(); cur.why = 'timeout'; rctx = null; }
+                    }
+                }
+                const lvl = (n: string) => s.skills.find(k => k.name === n)?.baseLevel ?? 0;
+                if (lvl('Magic') >= 99) void sdk.sendSay('::setstat magic 80');
+                if (arrows && lvl('Fletching') >= 99) void sdk.sendSay('::setstat fletching 75');
+                if (refilling) return;
+                const bones = s.inventory.filter(i => /^dragon bones$/i.test(i.name)).length;
+                const sharks = s.inventory.filter(i => /^shark$/i.test(i.name)).length;
+                const free = 28 - s.inventory.length;
+                if (tradeOf(s).isOpen) return;
+                if ((!helper && pack.includes('bury') && bones <= 3 && free >= 6) || sharks <= 2) {
+                    refilling = true;
+                    const give = async () => {
+                        if (sharks <= 2) await sdk.sendSay(`::give shark ${Math.min(4, free)}`);
+                        const left = free - (sharks <= 2 ? Math.min(4, free) : 0) - 1;
+                        if (!helper && pack.includes('bury') && left > 0) await sdk.sendSay(`::give dragon_bones ${left}`);
+                        await sdk.waitForTicks(3);
+                    };
+                    void give().finally(() => { refilling = false; });
+                }
             });
             try {
                 const end = await awaitProgram(sdk, started.runId, { onProgress: progress });
-                return report('pickpocket', end);
+                report(pack.length ? `pickpocket +${pack.join('+')}` : 'pickpocket', end);
+                if (pack.length) console.log(`pack: ${(gained.Prayer / (72 * 25)).toFixed(0)} bones buried (Prayer xp), ${(gained.Magic / (180 * 25)).toFixed(0)} Charges (Magic xp), ${(gained.Fletching / (12.5 * 25 * 15)).toFixed(0)} rune arrow actions (Fletching xp)`);
+                if (helper) console.log(`top-ups: ${JSON.stringify(topupReport(fails, rollTicks, openTicks, buryTicks, trades))}`);
+                return;
             } finally {
                 un();
+                stopHelper();
+                if (helper) await closeSession(helper);
             }
         }
         case 'agility': {
@@ -228,4 +347,75 @@ await runScript(async ({ bot: actions, sdk }) => {
             throw new Error(`unknown mode ${mode}: probe, mine, fly, willow, oak, tree, pickpocket, agility`);
     }
     }
+
+    /**
+     * The helper's side (a lab stand-in: teleports beside the account, its stock by ::give).
+     * It answers the account's request at once and offers the whole load with one press.
+     */
+    function runHelper(h: Session, load: number): () => void {
+        let gctx: GiverCtx | null = null, plan: OfferEntry[] = [], lastTick = -1, lastTele = -100, lastReq = -100, lastStock = -100;
+        const seen = new Set<string>();
+        return h.sdk.onStateUpdate(hs => {
+            if (!hs?.inGame || hs.tick === lastTick) return;
+            lastTick = hs.tick;
+            const s = sdk.getState();
+            const scoredName = s?.player?.name ?? bot;
+            const fresh = (hs.gameMessages ?? []).filter(m => {
+                const key = m.observationId !== undefined ? `o${m.observationId}` : `${m.tick}|${m.text}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+            const tr = tradeOf(hs);
+            if (gctx) {
+                const d = decideGiver(hs, gctx);
+                gctx = d.next;
+                if (d.action === 'burst') { for (const e of plan) for (const a of e.amounts) void h.sdk.sendOfferItem(e.slot, a); void h.sdk.sendAcceptTrade(); }
+                else if (d.action === 'accept') void h.sdk.sendAcceptTrade();
+                else if (d.action === 'decline') { void h.sdk.sendDeclineTrade(); gctx = null; }
+                else if (d.action === 'done' || d.action === 'closed') gctx = null;
+                return;
+            }
+            if (tr.isOpen) {
+                plan = planOffers(hs.inventory, [{ item: /^dragon bones$/i, n: 'all' }]);
+                gctx = newGiverCtx(scoredName, hs.inventory, plan);
+                const d = decideGiver(hs, gctx);
+                gctx = d.next;
+                if (d.action === 'burst') { for (const e of plan) for (const a of e.amounts) void h.sdk.sendOfferItem(e.slot, a); void h.sdk.sendAcceptTrade(); }
+                return;
+            }
+            const have = hs.inventory.filter(i => /^dragon bones$/i.test(i.name)).length;
+            if (have < load && hs.tick - lastStock > 6) { void h.sdk.sendSay(`::give dragon_bones ${load - have}`); lastStock = hs.tick; }
+            const idx = hs.nearbyPlayers.find(p => sameName(p.name, scoredName))?.index;
+            if (idx !== undefined && fresh.some(m => /wishes to trade/i.test(m.text)) && hs.tick - lastReq >= 2) {
+                void h.sdk.sendTradeRequest(idx);
+                lastReq = hs.tick;
+                return;
+            }
+            const me = hs.player, p = s?.player;
+            if (me && p && Math.abs(me.worldX - p.worldX) + Math.abs(me.worldZ - p.worldZ) !== 1 && hs.tick - lastTele >= 6) {
+                void h.sdk.sendSay(`::tele 0,${(p.worldX + 1) >> 6},${p.worldZ >> 6},${(p.worldX + 1) & 63},${p.worldZ & 63}`);
+                lastTele = hs.tick;
+            }
+        });
+    }
 }, { timeout: 3 * 60 * 60_000, printState: false });
+
+/** Per stun (failure to next roll): top-up stuns against the rest, and what each buried. */
+function topupReport(fails: number[], rolls: number[], opens: number[], buries: number[], trades: Array<{ open: number; done?: number; ok: boolean; why?: string }>) {
+    const rows = fails.map(f => {
+        const next = rolls.find(r => r > f);
+        return { f, gap: next === undefined ? null : next - f, topup: opens.some(o => o >= f && (next === undefined || o < next)), bones: buries.filter(b => b > f && (next === undefined || b <= next)).length };
+    }).filter(r => r.gap !== null);
+    const sum = (rs: typeof rows) => {
+        const hist: Record<number, number> = {};
+        for (const r of rs) hist[r.gap!] = (hist[r.gap!] ?? 0) + 1;
+        return { stuns: rs.length, meanGap: rs.length ? +(rs.reduce((a, r) => a + r.gap!, 0) / rs.length).toFixed(2) : null, hist, bonesPerStun: rs.length ? +(rs.reduce((a, r) => a + r.bones, 0) / rs.length).toFixed(2) : null };
+    };
+    return {
+        trades: { opened: trades.length, done: trades.filter(t => t.ok).length, failed: trades.filter(t => !t.ok).map(t => t.why ?? 'open at end'), openToDone: trades.filter(t => t.done !== undefined).map(t => t.done! - t.open) },
+        topupStuns: sum(rows.filter(r => r.topup)),
+        otherStuns: sum(rows.filter(r => !r.topup)),
+        topupOpenAtK: rows.filter(r => r.topup).map(r => opens.find(o => o >= r.f)! - r.f)
+    };
+}

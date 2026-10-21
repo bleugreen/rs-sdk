@@ -15,13 +15,16 @@ export interface StateSpec {
     maxHp?: number;
     animId?: number;
     skills?: Record<string, { xp: number; level?: number }>;
-    inventory?: Array<string | { name: string; options?: string[] }>;
+    inventory?: Array<string | { name: string; options?: string[]; count?: number }>;
     /** Worn items, by name. */
     equipment?: string[];
     npcs?: Array<Partial<NearbyNpc> & { index: number; name: string; options?: string[] }>;
     locs?: Array<Partial<NearbyLoc> & { id: number; x: number; z: number; name: string; options?: string[] }>;
     messages?: Array<{ text: string; tick?: number; id?: number }>;
     dialogOpen?: boolean;
+    /** A main modal (trade screen) is open. */
+    tradeOpen?: boolean;
+    players?: Array<{ index: number; name: string; x?: number; z?: number }>;
     inGame?: boolean;
 }
 
@@ -31,7 +34,8 @@ export function makeState(spec: StateSpec): BotWorldState {
     const inventory: InventoryItem[] = (spec.inventory ?? []).map((it, slot) => {
         const name = typeof it === 'string' ? it : it.name;
         const options = typeof it === 'string' ? ['Use', 'Drop'] : (it.options ?? ['Use', 'Drop']);
-        return { slot, id: 1000 + slot, name, count: 1, optionsWithIndex: options.map((text, i) => ({ text, opIndex: i + 1 })) };
+        const count = typeof it === 'string' ? 1 : (it.count ?? 1);
+        return { slot, id: 1000 + slot, name, count, optionsWithIndex: options.map((text, i) => ({ text, opIndex: i + 1 })) };
     });
     const npcs = (spec.npcs ?? []).map(n => {
         const options = n.options ?? ['Talk-to'];
@@ -71,7 +75,14 @@ export function makeState(spec: StateSpec): BotWorldState {
         inventory,
         equipment: (spec.equipment ?? []).map((name, slot) => ({ slot, id: 2000 + slot, name, count: 1, optionsWithIndex: [{ text: 'Remove', opIndex: 1 }] })),
         nearbyNpcs: npcs,
-        nearbyPlayers: [],
+        nearbyPlayers: (spec.players ?? []).map(p => {
+            const px = p.x ?? x + 1;
+            const pz = p.z ?? z;
+            return { kind: 'player', index: p.index, name: p.name, combatLevel: 3, x: px, z: pz, distance: Math.max(Math.abs(px - x), Math.abs(pz - z)) };
+        }),
+        modalOpen: spec.tradeOpen ?? false,
+        modalInterface: spec.tradeOpen ? 3323 : -1,
+        trade: { isOpen: spec.tradeOpen ?? false, screen: spec.tradeOpen ? 'offer' : null, partner: null, myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false },
         nearbyLocs: locs,
         groundItems: [],
         gameMessages: messages,

@@ -13,8 +13,35 @@
 // window once HP is at or below `eatBelow`, and at once only when HP is at or
 // below `forcedBelow` (the next failure's damage could kill), re-sending each tick
 // until HP rises.
+//
+// Stun actions (`stunActions`, off by default): rs/106's stun pack. On the ticks of the window
+// after a failure (`stunWindow`, offsets from the tick that shows it) the program sends actions
+// resolved from the inventory, ahead of the knight click: bury, Charge, arrowheads on headless
+// arrows, or any item, item-on-item, spell-on-item or button template. Timing, costs and the
+// template shape are in stun-actions.ts. The click still goes out every tick, last.
+//
+// Top-up trades (stun-pack.md section 5). The knight click goes out on every tick, stun ticks
+// included, and a click closes an open trade, as do an inventory op and Charge's if_close; a
+// click sent after a trade request in the same tick also replaces the request's interaction.
+// Two ways to run a top-up inside a stun:
+//
+// - In the program (preferred): a `player` stun action sends the request, gated with `fewer`
+//   (e.g. fewer than 3 bones) and placed first in `stunActions`, so it goes out at offset +2.
+//   It owns its tick (no click, no other stun action), the program sends nothing more until
+//   the trade opens (at most REQUEST_HOLD ticks), and with `idleOnInterface: true` the
+//   program sends nothing at all while the trade is open (no page resume, no eat, no stun
+//   action, no click), resuming on the first tick it is closed. The step module only accepts
+//   the offer and confirm screens. rs/106's trades requested at +2 completed at +7 or +8, so
+//   the click sent on +9, which lands on T+11, keeps the next attempt on time; a trade still
+//   open then delays the attempt by the ticks it stays open.
+// - Stop and restart: the module stops the program before its own request and restarts it once
+//   the trade is done, by +9 at the latest. The restarted program has not seen that failure,
+//   so it sends no stun actions for the rest of that stun (a top-up stun buries nothing in
+//   rs/106's plan either). Stopping targets come from game state (untilLevel, maxTicks), so a
+//   restart loses nothing but `rolls`, which counts from the restart.
 
 import type { NearbyNpc } from '../types.js';
+import { modalOpen, StunPack } from './stun-actions.js';
 import type { ProgramParams, TickProgram } from './types.js';
 import { baseLevel, FreshMessages, invItem, itemOp, num, oneOf, regex, skillXp } from './util.js';
 
@@ -31,6 +58,8 @@ export function createPickpocket(params: ProgramParams): TickProgram {
     const heal = num(params.heal, 12, 'heal');
     const forcedBelow = num(params.forcedBelow, 3, 'forcedBelow');
     const eatBelowParam = params.eatBelow === undefined ? undefined : num(params.eatBelow, 0, 'eatBelow');
+    const idleOnInterface = params.idleOnInterface === true;
+    const stun = params.stunActions === undefined ? null : new StunPack({ actions: params.stunActions, window: params.stunWindow, perTick: params.stunPerTick });
 
     const messages = new FreshMessages();
     let started = false;
@@ -77,7 +106,8 @@ export function createPickpocket(params: ProgramParams): TickProgram {
         gapAfterFail,
         eats,
         forcedEats,
-        baseXp: (xpNow - startXp) / 25
+        baseXp: (xpNow - startXp) / 25,
+        ...(stun ? { stun: stun.summary() } : {})
     });
 
     return {
@@ -110,6 +140,7 @@ export function createPickpocket(params: ProgramParams): TickProgram {
                 } else if (/You fail to pick/i.test(m.text)) {
                     roll(t, false);
                     ctx.count('fails');
+                    stun?.failure(t);
                 } else if (/You've been stunned/i.test(m.text)) {
                     lastStunEnd = t + 8;
                 } else if (/during combat/i.test(m.text)) {
@@ -126,6 +157,17 @@ export function createPickpocket(params: ProgramParams): TickProgram {
 
             if (rolls >= rollsTarget || t - startTick > maxTicks || (untilLevel && baseLevel(s, 'thieving') >= untilLevel)) return ctx.done(summary());
             if (hp <= 0 || s.player.isDead) return ctx.fault('died', summary());
+
+            if (stun?.holding(t, s)) {
+                // a trade request waits for its trade: any packet would replace or close it
+                ctx.count('requestHoldTicks');
+                return;
+            }
+            if (idleOnInterface && modalOpen(s)) {
+                // a trade (or another modal) owns the account: any packet would close it
+                ctx.count('interfaceTicks');
+                return;
+            }
 
             if (s.dialog?.isOpen) ctx.send({ type: 'clickDialogOption', optionIndex: 0 }, 'dismiss dialog');
 
@@ -147,6 +189,10 @@ export function createPickpocket(params: ProgramParams): TickProgram {
             } else if (eat === 'window' && !food && hp <= eatBelow) {
                 ctx.count('outOfFood');
             }
+
+            // After the page resume and any eat, before the click (an arrow action clears the
+            // interaction). A trade request owns its tick: a click after it would replace it.
+            if (stun?.act(ctx)) return;
 
             const cur = target;
             target = cur && s.nearbyNpcs.some(n => n.index === cur.index)
