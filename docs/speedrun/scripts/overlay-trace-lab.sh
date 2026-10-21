@@ -68,4 +68,5 @@ if [ ! -f "$ROOT/bots/$BOT/bot.env" ]; then
 fi
 sed -i.bak -e "s#^SERVER=.*#SERVER=localhost:$WEB_PORT#" -e "s#^GATEWAY_URL=.*#GATEWAY_URL=ws://localhost:$AGENT_PORT#" -e 's#^TELEMETRY=.*#TELEMETRY=false#' "$ROOT/bots/$BOT/bot.env"
 
-(cd "$ROOT" && bun docs/speedrun/scripts/overlay-trace.ts "$BOT" --origin="http://localhost:$WEB_PORT" --gateway="ws://localhost:$AGENT_PORT" --out="$LOG/$REV" "$@")
+# LAB_TAB_SCRIPT=overlay-render-check.ts runs the render check instead of the trace.
+(cd "$ROOT" && bun "docs/speedrun/scripts/${LAB_TAB_SCRIPT:-overlay-trace.ts}" "$BOT" --origin="http://localhost:$WEB_PORT" --gateway="ws://localhost:$AGENT_PORT" --out="$LOG/$REV" "$@")
