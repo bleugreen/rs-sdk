@@ -109,10 +109,13 @@ adamantite):
 | Al Kharid, 3298-3305, 3299-3318 | 3, 2, 2 | Scorpions |
 | Dwarven Mine south, 3035-3052, 9760-9777 | 8, 2, 3 | Scorpions (h20 died here) |
 | Crandor, 2819-2838, 3242-3247 | 3, 7, 3 | Behind Dragon Slayer, aggressive monsters |
-| Underground 3312-3324, 9462-9468 | 0, 6, 6 | Access not yet identified |
-| Heroes' Guild and Gnome Stronghold dungeons | 11, 2, 2-3 each | Quest-gated |
+| Underground 3312-3324, 9462-9468 (under the Desert Mining Camp) | 0, 6, 6 | Probably behind Tourist Trap; access not verified |
+| Underground 2915-2942, 9888-9917 (under the Heroes' Guild area) | 11, 2, 2 | Probably the Heroes' Guild basement (quest-gated); not verified |
+| Underground 2472-2494, 9905-9917 (under the Grand Tree) | 11, 2, 3 | Probably behind The Grand Tree; not verified |
+| Edgeville dungeon, 3134-3143, 9868-9878 | 6, 1, 2 | Next to hill giants; not tried |
 
-The 6-mithril, 6-adamantite cluster is the one worth identifying next.
+The locations under other areas are inferred from `maps/labels.txt` (nearest surface
+label), not visited. The 6-mithril, 6-adamantite cluster is the one worth checking next.
 
 ### Routes compared
 
