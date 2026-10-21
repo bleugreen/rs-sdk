@@ -25,14 +25,23 @@ PIDS=()
 cleanup() { for p in "${PIDS[@]}"; do kill "$p" 2>/dev/null; done; sleep 1; for p in "${PIDS[@]}"; do kill -9 "$p" 2>/dev/null; done; }
 trap cleanup EXIT
 
-wait_for() { # file phrase seconds
-    for _ in $(seq 1 "$3"); do grep -q "$2" "$1" 2>/dev/null && return 0; sleep 1; done
+# A fresh executor slot may not have dependencies yet.
+for d in . server/engine server/webclient server/gateway; do
+    [ -d "$ROOT/$d/node_modules" ] || (cd "$ROOT/$d" && bun install --silent > /dev/null 2>&1)
+done
+
+wait_for() { # file phrase seconds [pid]: gives up early if the process has exited
+    for _ in $(seq 1 "$3"); do
+        grep -q "$2" "$1" 2>/dev/null && return 0
+        [ -n "${4:-}" ] && ! kill -0 "$4" 2>/dev/null && break
+        sleep 1
+    done
     echo "timeout waiting for '$2' in $1"; tail -20 "$1"; return 1
 }
 
 (cd "$ROOT/server/engine" && BUILD_VERIFY=false BUILD_LIVE_RELOAD=false NODE_TICKRATE=${NODE_TICKRATE:-100} LOCAL_STAFF_LEVEL=4 exec bun run src/app.ts) > "$LOG/engine.log" 2>&1 &
 PIDS+=($!)
-wait_for "$LOG/engine.log" 'World ready' 900 || exit 1
+wait_for "$LOG/engine.log" 'World ready' 900 "${PIDS[0]}" || exit 1
 sleep 8 # the web listener comes up a few seconds after 'World ready'
 
 (cd "$ROOT/server/gateway" && exec bun run gateway.ts) > "$LOG/gateway.log" 2>&1 &
