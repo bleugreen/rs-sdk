@@ -572,6 +572,7 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         let msgSeen = sdk.getState()!.gameMessages.length;
         let approaches = 0;
         let levelUpPages = 0;
+        let killPages = 0;
         let lastXp = sdk.getSkill('magic')!.experience;
         let castsNoXp = 0;
         const badTiles = new Set<string>();
@@ -588,7 +589,8 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
             if (messageSince(sdk, t0, /killing strike/i) || /killing strike/i.test(s.dialog?.text ?? '')) break;
             if (s.dialog?.isOpen) {
                 // level-up messages interrupt the fight; click through
-                const d = await dialog(sdk, [], { settle: 0, stopWhen: () => /killing strike/i.test(sdk.getState()!.dialog?.text ?? '') });
+                const d = await dialog(sdk, [], { settle: 0 });
+                if (d.texts.some(t => /killing strike|machinery/i.test(t))) { killPages = d.pages; break; }
                 levelUpPages += d.pages;
                 continue;
             }
