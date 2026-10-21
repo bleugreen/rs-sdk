@@ -38,6 +38,10 @@ const CHOICE_2 = 2472; // multi3:com_2, the second option of ~p_choice3
 const BARB_FLY = { x: 48 * 64 + 31, z: 53 * 64 + 38 }; // Barbarian Village lure spots
 const JACKIE = { x: 2810, z: 3192 }; // agilityarena_tickettrader spawns at (2811,3192), m43_49.jm2
 const HASSAN = { x: 3302, z: 3164 }; // Hassan at (3302,3163), m51_49.jm2
+// Obj ids where names collide (good and bad kebabs are both "Ugthanki kebab").
+const BOWL = 1923, ONION = 1957, TOMATO = 1982, MEAT = 1861, CHOPPED_ONION = 1871, ONION_TOMATO = 1875;
+const KEBAB_MIX = 1881, PITTA = 1865, KEBAB = 1885, KEBAB_BAD = 1883;
+const LANTADYME_UNF = 2483, POTATO_CACTUS = 3138, MAGIC_POTION = 3042;
 
 // ---- per-tick record of every published state ----
 const byTick = new Map<number, BotWorldState>();
@@ -45,8 +49,11 @@ sdk.onStateUpdate(s => byTick.set(s.tick, s));
 
 const xp = (s: BotWorldState | null | undefined, skill: string) => s?.skills.find(k => k.name.toLowerCase() === skill)?.experience ?? 0;
 const lvl = (s: BotWorldState | null | undefined, skill: string) => s?.skills.find(k => k.name.toLowerCase() === skill)?.baseLevel ?? 0;
-const count = (s: BotWorldState | null | undefined, re: RegExp) => (s?.inventory ?? []).filter(i => re.test(i.name)).reduce((a, i) => a + i.count, 0);
-const items = (s: BotWorldState | null | undefined, re: RegExp) => (s?.inventory ?? []).filter(i => re.test(i.name)).sort((a, b) => a.slot - b.slot);
+/** An item matcher: a name pattern, or obj ids (server/content/pack/obj.pack) where names collide. */
+type M = RegExp | number | number[];
+const hit = (i: InventoryItem, m: M) => typeof m === 'number' ? i.id === m : Array.isArray(m) ? m.includes(i.id) : m.test(i.name);
+const count = (s: BotWorldState | null | undefined, m: M) => (s?.inventory ?? []).filter(i => hit(i, m)).reduce((a, i) => a + i.count, 0);
+const items = (s: BotWorldState | null | undefined, m: M) => (s?.inventory ?? []).filter(i => hit(i, m)).sort((a, b) => a.slot - b.slot);
 const opOf = (i: InventoryItem, re: RegExp) => i.optionsWithIndex.find(o => re.test(o.text))?.opIndex;
 const unid = (s: BotWorldState | null | undefined) => items(s, /./).filter(i => opOf(i, /^identify/i) !== undefined);
 /** Base xp: published xp is stat_advance tenths x NODE_XPRATE (25) / 10. */
@@ -182,13 +189,14 @@ async function probeTickets() {
 }
 
 // ---- generic delay-free pair burst: k pairs (a[i], b[i]) fired at once ----
-async function pairBurst(label: string, skill: string, give: string[], a: RegExp, b: RegExp, product: RegExp, extra: Record<string, unknown> = {}) {
+async function pairBurst(label: string, skill: string, give: string[], a: M, b: M, product: M, extra: Record<string, unknown> = {}) {
     await fresh(...give);
     const s0 = await nextTick(sdk);
     const as = items(s0, a), bs = items(s0, b);
     const k = Math.min(as.length, bs.length);
     for (let i = 0; i < k; i++) fire(label, sdk.sendUseItemOnItem(bs[i]!.slot, as[i]!.slot));
-    const s1 = await waitUntil(sdk, s => count(s, product) >= k || items(s, a).length === 0, { maxTicks: Math.ceil(k / 5) + 6 });
+    if (k === 0) result(`${label} inventory`, s0.inventory.map(i => `${i.id}:${i.name}`));
+    const s1 = await waitUntil(sdk, s => items(s, a).length === 0 || items(s, b).length === 0, { maxTicks: Math.ceil(k / 5) + 6 });
     const end = (await waitTicks(sdk, 2)).tick;
     const perTick = deltas(s0.tick, end, s => count(s, product));
     const ticks = Object.keys(perTick).map(Number);
@@ -215,9 +223,9 @@ async function probeKebab() {
         for (let n = 0; n < N; n++) {
             await setstat(sdk, 'cooking', level);
             await dismissAll();
-            const r = await pairBurst('kebab', 'cooking', ['give bowl_oniontomugthanki 13', 'give pitta_bread 13'], /kebab mix|onion.*tomato.*ugthanki|ugthanki.*mix/i, /^pitta bread$/i, /kebab/i);
+            const r = await pairBurst('kebab', 'cooking', ['give bowl_oniontomugthanki 13', 'give pitta_bread 13'], KEBAB_MIX, PITTA, [KEBAB, KEBAB_BAD]);
             const end = sdk.getState();
-            result(`kebab x13 from Cooking ${level}`, { ...r, good: count(end, /^ugthanki kebab$/i), bad: r.made - count(end, /^ugthanki kebab$/i), levelAfter: lvl(end, 'cooking') });
+            result(`kebab x13 from Cooking ${level}`, { ...r, good: count(end, KEBAB), bad: count(end, KEBAB_BAD), levelAfter: lvl(end, 'cooking') });
             await dismissAll();
         }
     }
@@ -225,23 +233,23 @@ async function probeKebab() {
     for (let n = 0; n < N; n++) {
         await fresh('give bowl_empty 5', 'give onion 5', 'give tomato 5', 'give cooked_ugthanki_meat 5');
         const s0 = await nextTick(sdk);
-        const bowls = items(s0, /^bowl$/i), on = items(s0, /^onion$/i), to = items(s0, /^tomato$/i), me = items(s0, /ugthanki meat/i);
-        // the bowl's slot holds the mixture through all three steps
+        const bowls = items(s0, BOWL), on = items(s0, ONION), to = items(s0, TOMATO), me = items(s0, MEAT);
+        // the mixture stays in the bowl's slot through all three steps
         for (let i = 0; i < bowls.length; i++) fire('onion', sdk.sendUseItemOnItem(on[i]!.slot, bowls[i]!.slot));
         await nextTick(sdk);
         const s1 = await nextTick(sdk);
-        const mix1 = items(s1, /onion/i).filter(i => /bowl|mixture/i.test(i.name) || i.name.toLowerCase() !== 'onion');
+        const mix1 = items(s1, CHOPPED_ONION);
         for (let i = 0; i < Math.min(mix1.length, to.length); i++) fire('tomato', sdk.sendUseItemOnItem(to[i]!.slot, mix1[i]!.slot));
         await nextTick(sdk);
         const s2 = await nextTick(sdk);
-        const mix2 = items(s2, /tomato/i).filter(i => i.name.toLowerCase() !== 'tomato');
+        const mix2 = items(s2, ONION_TOMATO);
         for (let i = 0; i < Math.min(mix2.length, me.length); i++) fire('meat', sdk.sendUseItemOnItem(me[i]!.slot, mix2[i]!.slot));
         const s3 = await waitTicks(sdk, 3);
         result('kebab mixture 3 steps x5', {
-            afterOnion: items(s1, /./).filter(i => !/^(onion|tomato|bowl)$/i.test(i.name) && !/meat/i.test(i.name)).map(i => i.name)[0],
-            onionStepMade: mix1.length, tomatoStepMade: mix2.length,
-            finished: items(s3, /./).filter(i => /ugthanki/i.test(i.name) && !/meat/i.test(i.name)).length,
-            finalName: items(s3, /./).filter(i => /ugthanki/i.test(i.name) && !/meat/i.test(i.name))[0]?.name,
+            onionStep: mix1.length, tomatoStep: mix2.length, kebabMix: count(s3, KEBAB_MIX),
+            perTickOnion: deltas(s0.tick, s1.tick, s => count(s, CHOPPED_ONION)),
+            perTickMeat: deltas(s2.tick, s3.tick, s => count(s, KEBAB_MIX)),
+            cookingXp: base(xp(s3, 'cooking') - xp(s0, 'cooking')),
         });
         flushRefusals('kebab mixture');
     }
@@ -398,6 +406,24 @@ async function probeMakex() {
             identifiedPerTick: deltas(c0.tick, cend, s => -unid(s).length),
         });
         flushRefusals('makex control');
+        // B: the same two completions with nothing behind them, so no later op clears the weak-queued fletch
+        for (const twice of [true, false]) {
+            await fresh('give knife 1', 'give logs 2');
+            const b0 = await nextTick(sdk);
+            const kn = items(b0, /^knife$/i)[0]!, lg = items(b0, /^logs$/i);
+            fire('knife', sdk.sendUseItemOnItem(kn.slot, lg[0]!.slot));
+            fire('make1', sdk.sendClickComponent(SHAFTS_MAKE1));
+            if (twice) {
+                fire('knife', sdk.sendUseItemOnItem(kn.slot, lg[1]!.slot));
+                fire('make1', sdk.sendClickComponent(SHAFTS_MAKE1));
+            }
+            const bend = (await waitTicks(sdk, 12)).tick;
+            result(`makex ${twice ? 'two completions' : 'one completion'}, nothing after`, {
+                logsUsedPerTick: deltas(b0.tick, bend, s => -count(s, /^logs$/i)),
+                fletchXpTicks: Object.keys(deltas(b0.tick, bend, s => xp(s, 'fletching'))).map(Number),
+            });
+            flushRefusals('makex B');
+        }
     }
 }
 
@@ -406,7 +432,7 @@ async function probeMagicpot() {
     await setstat(sdk, 'herblore', 76);
     await dismissAll();
     for (let n = 0; n < N; n++) {
-        result('magicpot x14 at Herblore 76', await pairBurst('mix', 'herblore', ['give lantadymevial 14', 'give cactus_potato 14'], /lantadyme/i, /potato cactus|cactus/i, /magic potion/i));
+        result('magicpot x14 at Herblore 76', await pairBurst('mix', 'herblore', ['give lantadymevial 14', 'give cactus_potato 14'], LANTADYME_UNF, POTATO_CACTUS, MAGIC_POTION));
         await dismissAll();
     }
 }
