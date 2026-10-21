@@ -282,9 +282,74 @@ computable exactly from the xp gained, since every success of a 29-wine firing
 adds the same 2,750 xp). That would save about 16 ticks, but a misjudged chain
 lets the timer fire before the rest is banked, and it is not measured.
 
-### Demo timeline
+### Demo timeline (the default sequence, n = 5)
 
-DEMO-TIMELINE-PENDING
+`docs/speedrun/scripts/wine-handoff.ts cairn_h40 cairn_h48 --mode=split
+--launch-maker --trace` (relog arming), rs-sdk-demo.fly.dev over a loopback
+gateway on bbs, 2026-10-21 09:35-09:48 UTC. Maker cairn_h40 (Cooking 35) made
+74 noted wines in 7 rounds (93 + 18 maker ticks). Receiver cairn_h48, created
+for this (Cooking 1). Run A is the real shape: 29 + 30 wines from Cooking 1.
+Runs B-E repeat the sequence with 2 + 1 wines at Cooking 70-73, to price the
+steps again and re-prove the second login's firing without spending grapes:
+their first firings queue no pages. Every tick is on the receiver's own clock;
+each login's counter starts at 1.
+
+**Run A, step by step** (all measured on the demo):
+
+| Step | Session tick | Scored ticks |
+|---|---|---|
+| 1. Planned relog at the bank (click -> last in-world tick) | | 1 |
+| First state of the new session | 1 | |
+| 2. Trade: window open at 4, confirm screen at 8, 59 notes in the inventory at 10 | 1-10 | |
+| 3. Bank open (deadline 19: 7 ticks spare), 29 deposited (10,10,5,1,1,1,1), closed | 12, 14, 15 | |
+| 4. Idle until the login timer | 15-21 | |
+| First firing: Cooking 1 -> 56 (18 level-ups, 56 is no unlock level) | 21 | |
+| 5. Level-up pages: a fresh page every tick 21-40 but 22 and 39 (18 scripts in 20 ticks, 0.9 per tick) | 21-41 | |
+| 6. Bank open in the tick of the last page; rest (30) deposited and closed in one burst | 41, 43 | |
+| 7. Arming relog: no page open at the click; click -> last in-world tick | 43 -> 44 | session 1: **44** |
+| 8. Second login: idle until its timer | 1-21 | |
+| Second firing with the wines in the bank and none in the inventory: Cooking 56 -> 70 | 21 | |
+| Final pages: 13 scripts in 13 ticks | 21-34 | session 2: **35** |
+| **Whole sequence, both relogs included** | | **80** |
+
+**All five runs:**
+
+| Run | Cooking before | Wines | Trade | Bank open after login | First firing after login | Pages after it | Arming relog: click -> out | Second firing after the new login | Total scored ticks |
+|---|---|---|---|---|---|---|---|---|---|
+| A | 1 | 29 + 30 | 8 | +11 | +20 | 18 in 20 ticks | 1 | +20 | **80** |
+| B | 70 | 2 + 1 | 8 | +12 | +20 | 0 | 1 | +20 | 49 |
+| C | 71 | 2 + 1 | (held from a trade the receiver had misread as declined) | +3 | +20 | 0 | **46** | +20 | 94 |
+| D | 71 | 2 + 1 | 7 | +10 | +20 | 1 | 1 | +20 | 49 |
+| E | 72 | 2 + 1 | 8 | +10 | +20 | 1 | 0 | +20 | 46 |
+
+- **The second login re-arms the timer with the wines already banked: 5 of 5**
+  (and lab T9), always at the new login + 20. The make fallback was not needed.
+- **The deadline held in all runs**: the bank opened at login + 3 to + 12
+  against the + 19 limit; the fallback relog never fired on the demo (it is
+  unit-tested).
+- **Pages per tick on the demo: 0.9** (18 scripts in 20 ticks, run A); the lab
+  gives 1.0. A missing tick is a round trip that landed late; the blind
+  continues keep the pipe full, so it does not compound.
+- **Relog tail.** 19 demo logouts in all (8 in the relog-cost run, 11 here): 18
+  left the world within 1 tick of the click, one (run C's arming relog) 46 ticks
+  later, with no page, modal or trade open. The likeliest cause is the engine's
+  removal budget (`World.ts` processLogouts removes at most 10 players a tick
+  and defers the rest while a world checkpoint runs), i.e. a busy demo server;
+  not confirmed. Main should carry 2 ticks per relog and know the tail exists.
+- One trade (not in the table) was reported declined on the confirm screen
+  although its 3 notes arrived. The receiver now counts a trade by the notes
+  that arrived, and `speedrun/lib/trade.ts` waits 3 ticks on an empty confirm
+  offer before declining (`CONFIRM_EMPTY_GRACE_TICKS`).
+
+**Projected for 29 + 421 on the demo:** session 1 as in run A, 44 ticks with
+18 level-up scripts (the first firing queues 13-21 scripts in most firings,
+one tick each with the burst; an unlock landing level costs no more); session
+2 as in run A, 35 ticks (the second firing of 421 queues 13 scripts, the same as
+30 did); plus the planned relog's 1-2. **About 80 scored ticks from the planned
+relog's click to the last page (75-85 across the usual page counts)**, of which
+about 26 are idle waits that need no actions. Before rs/88 (lab T9, make
+arming): 73-77 ticks from login to the second firing plus the final pages,
+about 90 in all, with 28-31 for the second bank visit alone.
 
 ### Where the Cooking step goes in the run
 
