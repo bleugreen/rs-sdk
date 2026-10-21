@@ -1,7 +1,7 @@
 // Packet latency of the bot, in server ticks, and the host gate's verdict for one path
 // (docs/speedrun/skills/tick-manipulation.md, "Run-time host gate").
 //
-//   bun docs/speedrun/scripts/tickmanip-latency.ts <bot> [--path=relay|direct] [--trials=60] [--no-tele]
+//   bun docs/speedrun/scripts/tickmanip-latency.ts <bot> [--path=relay|direct] [--trials=60] [--no-tele] [--bot=NAME]
 //       relay only:  [--plain=4] [--miss=4]
 //       direct only: [--steady=60] [--edge=iad|any] [--max-connect=5] [--floor=58] [--p90=400]
 //                    [--catchups=2] [--json=PATH]
@@ -23,6 +23,12 @@
 // (a) on time >= 58/60, (b) tick p90 <= 400 ms, (c) <= 2 catch-ups per minute ((d), the page's
 // loop rate, is the in-page probe's; not measured here). Exit 0 when the loops may start, 1
 // when not. Needs server/webclient's dependencies (`cd server/webclient && bun install`).
+// --bot=NAME overrides <bot>: under lab.sh, whose runner holds <bot>, the direct probe logs
+// in a second account.
+//
+//   LAB_BLOCK=tickmanip NODE_TICKRATE=300 bash docs/speedrun/scripts/lab.sh <bot> \
+//       docs/speedrun/scripts/tickmanip-latency.ts \
+//       docs/speedrun/scripts/tickmanip-latency.ts:--path=direct:--bot=<second bot>
 //
 // Run night: run --path=direct on the run machine itself, just before the run, at the real
 // player count. Steadiness read from any other machine is not evidence (demo-latency.md,
@@ -39,7 +45,7 @@ import { loadBotEnv } from '../../../speedrun/lib/session';
 
 const flag = (name: string) => process.argv.find(a => a.startsWith(`--${name}=`))?.split('=')[1];
 const num = (name: string) => (flag(name) !== undefined ? Number(flag(name)) : undefined);
-const BOT = process.argv.slice(2).find(a => !a.startsWith('--'));
+const BOT = flag('bot') ?? process.argv.slice(2).find(a => !a.startsWith('--'));
 const PATH = flag('path') ?? 'relay';
 const N = Number(flag('trials') ?? 60);
 const TELE = !process.argv.includes('--no-tele');
