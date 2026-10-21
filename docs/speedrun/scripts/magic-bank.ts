@@ -95,12 +95,12 @@ await runScript(async ({ bot, sdk }) => {
                     steps.push(`${tick(sdk) - tb}:booth`);
                     await sdk.sendInteractLoc(booth.x, booth.z, booth.id, bankOp.opIndex);
                 } else {
+                    // Blind: the target jewellery is bank slot 0 (the bank was cleared, then stocked
+                    // with it first), so do not wait for the SDK to publish the bank's contents,
+                    // which lags the open by 1-2 ticks.
                     const out = sdk.getInventory().find((x) => !item.test(x.name) && x.count === 1 && !/staff/i.test(x.name));
-                    const bankSlot = sdk.getBankItems().find((b) => item.test(b.name));
-                    if (out && bankSlot) {
-                        steps.push(`${tick(sdk) - tb}:dep+wd+close`);
-                        await Promise.all([sdk.sendBankDeposit(out.slot, -1), sdk.sendBankWithdraw(bankSlot.slot, -1), sdk.sendCloseModal()]);
-                    } else steps.push(`${tick(sdk) - tb}:wait(out=${out?.name},bank=${bankSlot?.name})`);
+                    steps.push(`${tick(sdk) - tb}:dep+wd+close`);
+                    await Promise.all([out ? sdk.sendBankDeposit(out.slot, -1) : Promise.resolve(), sdk.sendBankWithdraw(0, -1), sdk.sendCloseModal()]);
                 }
                 t = await nextTick(sdk, t);
             }
@@ -113,8 +113,10 @@ await runScript(async ({ bot, sdk }) => {
     const gains = rec.gains(t0, tick(sdk));
     const all = gains.slice(1).map((g, i) => g.tick - gains[i]!.tick);
     // gap i is between cast i and cast i+1; the bank sits after every `free` casts
+    // the CYCLES largest gaps are the bank visits
+    const cut = [...all].sort((a, b) => b - a)[CYCLES - 1] ?? Infinity;
     const inner: number[] = [];
-    all.forEach((g, i) => ((i + 1) % free === 0 ? gaps : inner).push(g));
+    for (const g of all) (g >= cut && gaps.length < CYCLES ? gaps : inner).push(g);
     const casts = gains.length;
     const span = gains.at(-1)!.tick - gains[0]!.tick;
     const hist = inner.reduce((m: Record<number, number>, g) => ((m[g] = (m[g] ?? 0) + 1), m), {});
