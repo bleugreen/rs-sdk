@@ -279,7 +279,7 @@ The main table is in the Summary. Variants (inferred, `combat-model.ts`):
 
 | Variant | Melee left | Ticks | HP left after it |
 |---|---|---|---|
-| **Package B (on route): MM option 1 + Dragon Slayer, Waterfall off** | Defence 1,288 | 140 on ogres alone; on the route it is the 230 cannon-alongside ticks instead (Summary) | 0 (quests, Witch's House) |
+| **Package B (on route): MM option 1 + Dragon Slayer, Waterfall off** | Defence 1,288 | 140 on ogres alone; on the route it is the 230 cannon-alongside ticks instead (Summary) | 4,177 before the finish; covered by its 5,089 HP by-product |
 | MM option 1, Waterfall dropped | Strength 4,938 + Defence 19,938 | 522 + 2,121 = 2,643 | 0 |
 | MM option 2 (Attack/Defence 35,000, Strength/HP 20,000) + Waterfall | Strength 6,188 + Defence 4,938 | 656 + 525 = 1,181 | 16,229 (about 13,300 of it covered if Ranged is trained by combat) |
 | MM option 2, Waterfall dropped | Strength 19,938 + Defence 4,938 | 2,171 + 525 = 2,696 | 11,646 |
