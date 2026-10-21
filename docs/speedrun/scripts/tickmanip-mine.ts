@@ -144,7 +144,7 @@ await runScript(async ({ bot, sdk }) => {
         const { stand, rock } = STEPS[k % STEPS.length]!;
         k++;
         const avail = (lastRoll.get(key(rock)) ?? -1e9) + D;
-        const clickLand = Math.max(s.tick + 2, avail);
+        const clickLand = Math.max(s.tick + 3, avail); // up to 4 tiles of running before the click lands
         add(s.tick, `walk ${key(stand)}`, () => sdk.sendWalk(stand[0], stand[1], true));
         add(clickLand - 1, `click ${key(rock)}`, click(rock));
         const roll = clickLand + 2;
