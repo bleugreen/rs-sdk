@@ -85,7 +85,7 @@ await runScript(async ({ sdk }) => {
             const e = s.nearbyNpcs.find(n => /^elvarg$/i.test(n.name));
             if (!e || (e.hp === 0)) { killTick = now(sdk); break; }
             if (s.player!.isDead) break;
-            const fighting = s.player!.combat?.inCombat || (s.player as any).combat?.targetIndex === e.index;
+            const fighting = s.player!.combat.targetType === 'npc' && s.player!.combat.targetIndex === e.index;
             if (!fighting && !s.dialog.isOpen && attacks < 200) {
                 const op = e.optionsWithIndex.find(o => /attack/i.test(o.text));
                 if (op) { await sdk.sendInteractNpc(e.index, op.opIndex); attacks++; }
@@ -93,7 +93,7 @@ await runScript(async ({ sdk }) => {
             await waitTicks(sdk, 1);
         }
         // the quest completes on the kill and teleports the player to (2846,9636)
-        const done = await waitUntil(sdk, s => s.varps?.dragonquest !== 9 || pos(s).x <= 2846, 15);
+        const done = await waitUntil(sdk, s => pos(s).x <= 2846, 15);
         unsub(); chatUnsub();
         await waitTicks(sdk, 3);
         const xp1 = Object.fromEntries(sdk.getState()!.skills.map(s => [s.name.toLowerCase(), s.experience]));
