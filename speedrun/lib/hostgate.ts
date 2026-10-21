@@ -10,11 +10,23 @@
 // ends on the tile it started from. The walks clear the current interaction and close any
 // modal, so call it where the loop is about to re-bootstrap anyway.
 //
+// The probe runs over anything with `getState`, `onStateUpdate` and `sendWalk`: the SDK (the
+// relay path: runner, gateway, lite client) or `direct.ts`'s adapter over the engine
+// websocket (the direct path). The adapter says which path it is, and the result records it.
+// While it runs, the probe records when each tick arrived (the adapter stamps the socket
+// message; otherwise the publication time) and scores the stream's steadiness: interval p90,
+// a 50 ms histogram, and catch-up ticks (`tickSteadiness`).
+//
 // `HostGate` turns probes into an on/off decision for a loop: probe before the first lock,
 // again after the loop reports a lost lock (its xp-drop signal, not a second detector), and
 // periodically while off so a host that quietens down gets the manipulation back. The
-// decision is a cost model (`gateDecision`: does the predicted knife cycle beat the plain
-// one?), overridden by the loop's measured ticks per drop (`drop`).
+// decision follows the probe's path (`hostgate-verdict.ts`): on the direct path, the run's
+// go/no-go (on time at least 58 of 60, tick p90, catch-ups, loop rate); on the relay path, a
+// cost model (`gateDecision`: does the predicted knife cycle beat the plain one?). Either is
+// overridden by the loop's measured ticks per drop (`drop`).
+//
+// `measureVantage` reads the preconditions for the direct path (Fly edge and TCP connect),
+// which `vantageDecision` checks before anything logs in.
 //
 // A constant latency costs nothing: a loop anchored on its own bootstrap send shifts every
 // roll by the same amount, and a loop anchored on an observed roll sends `mode - 1` ticks
@@ -25,11 +37,32 @@
 // with --inject-late). So the model takes p = `modeFraction` and a miss cost of one plain
 // cycle unless the loop says otherwise.
 
-import type { BotSDK } from '../../sdk/index';
-import type { BotWorldState } from '../../sdk/types';
+import { spawnSync } from 'node:child_process';
+import { type CycleModel, type DirectRule, type HostVerdict, hostVerdict, latencyHistogram, type ProbePath, type ProbeSummary, steadinessHistogram, summarizeProbe, type TickSteadiness, tickSteadiness, type VantageReading, verdictText } from './hostgate-verdict';
 import { tickMs } from './wait';
 
-export type ProbeSdk = Pick<BotSDK, 'getState' | 'onStateUpdate' | 'sendWalk'>;
+export * from './hostgate-verdict';
+
+/** The part of a state the probe reads. `BotWorldState` has it. */
+export interface ProbeState {
+    tick: number;
+    inGame: boolean;
+    player: { worldX: number; worldZ: number } | null;
+    /**
+     * `performance.now()` when the socket message that completed this tick arrived. The direct
+     * adapter sets it; without it the probe stamps the state's publication instead.
+     */
+    arrivalMs?: number;
+}
+
+/** What the probe drives: the SDK (relay), or `direct.ts`'s adapter, which sets `path: 'direct'`. */
+export interface ProbeSdk {
+    /** Absent means the SDK, the relay path. */
+    readonly path?: ProbePath;
+    getState(): ProbeState | null;
+    onStateUpdate(listener: (s: ProbeState) => void): () => void;
+    sendWalk(x: number, z: number, running?: boolean): Promise<unknown>;
+}
 
 export interface ProbeOptions {
     /** Counted trials (default 20: about 20 ticks, 6 s at 300 ms, on a quiet host). */
@@ -38,67 +71,34 @@ export interface ProbeOptions {
     maxWait?: number;
     /** Pre-filter for the neighbour tiles tried, in order +x, -x, +z, -z. */
     walkable?: (x: number, z: number) => boolean;
-}
-
-export interface ProbeSummary {
-    trials: number;
-    onTime: number;
-    /** onTime / trials; 0 when no trial ran. */
-    fraction: number;
-    /** How many ticks late each late trial was (1 = processed on c+2); a lost trial reads maxWait. */
-    lateTicks: number[];
-    /** Trials per latency in ticks, e.g. {1: 0, 2: 25, 3: 35}. */
-    counts: Record<number, number>;
-    /** The most common latency (the smaller on a tie); 0 when no trial ran. */
-    mode: number;
-    /** Share of trials at `mode`: the chance a starter lands on its tick once the loop is in phase. */
-    modeFraction: number;
-    /** Share of consecutive trials with the same latency (reported; how bursty the jitter is). */
-    sameAsPrevious: number;
+    /**
+     * After the trials, keep reading tick arrivals until they span this long, so steadiness
+     * is scored over a whole probe minute (the run-night gate passes 60000). Default 0.
+     */
+    steadyMs?: number;
 }
 
 export interface ProbeResult extends ProbeSummary {
+    /** The path the probe's packets took, from the probed object (`ProbeSdk.path`). */
+    path: ProbePath;
     /** Per counted trial: label of the step minus label sent (1 = on time; maxWait+1 = lost). */
     latencies: number[];
     lost: number;
     /** Labels from the probe's start to its end. */
     ticks: number;
-    /** Wall-clock gaps between fresh labels, and how long each walk send took to resolve. */
-    publishMs: number[];
+    /**
+     * When each tick label arrived (`performance.now()` ms, one entry per label: a state that
+     * moved the label by two adds two entries with one time), and its steadiness.
+     */
+    tickArrivals: number[];
+    steadiness: TickSteadiness;
+    /** How long each walk send took to resolve, ms. */
     sendMs: number[];
     /** Set when the probe could not run its trials (no player, no walkable neighbour). */
     reason?: string;
 }
 
 const NEIGHBOURS: ReadonlyArray<readonly [number, number]> = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-
-export function summarizeProbe(latencies: number[]): ProbeSummary {
-    const n = latencies.length;
-    const onTime = latencies.filter(l => l <= 1).length;
-    const counts: Record<number, number> = {};
-    for (const l of latencies) counts[l] = (counts[l] ?? 0) + 1;
-    let mode = 0;
-    for (const [l, c] of Object.entries(counts)) if (c > (counts[mode] ?? 0) || (c === counts[mode] && Number(l) < mode)) mode = Number(l);
-    let same = 0;
-    for (let i = 1; i < n; i++) if (latencies[i] === latencies[i - 1]) same++;
-    return {
-        trials: n,
-        onTime,
-        fraction: n ? onTime / n : 0,
-        lateTicks: latencies.filter(l => l > 1).map(l => l - 1),
-        counts,
-        mode,
-        modeFraction: n ? (counts[mode] ?? 0) / n : 0,
-        sameAsPrevious: n > 1 ? same / (n - 1) : 0,
-    };
-}
-
-/** `1:18 2:2` - a histogram of latencies in ticks, for logs. */
-export function latencyHistogram(latencies: number[]): string {
-    const h = new Map<number, number>();
-    for (const l of latencies) h.set(l, (h.get(l) ?? 0) + 1);
-    return [...h].sort((a, b) => a[0] - b[0]).map(([k, c]) => `${k}:${c}`).join(' ');
-}
 
 /**
  * Measure how many walk packets land on the tick after the label they were sent on.
@@ -107,9 +107,11 @@ export function latencyHistogram(latencies: number[]): string {
 export function probeOnTime(sdk: ProbeSdk, opts: ProbeOptions = {}): Promise<ProbeResult> {
     const trials = opts.trials ?? 20;
     const maxWait = opts.maxWait ?? 8;
+    const steadyMs = opts.steadyMs ?? 0;
+    const path = sdk.path ?? 'relay';
     return new Promise<ProbeResult>((resolve, reject) => {
         const s0 = sdk.getState();
-        const empty = (reason: string): ProbeResult => ({ ...summarizeProbe([]), latencies: [], lost: 0, ticks: 0, publishMs: [], sendMs: [], reason });
+        const empty = (reason: string): ProbeResult => ({ ...summarizeProbe([]), path, latencies: [], lost: 0, ticks: 0, tickArrivals: [], steadiness: tickSteadiness([]), sendMs: [], reason });
         if (!s0?.inGame || !s0.player) {
             resolve(empty('not in game'));
             return;
@@ -118,16 +120,17 @@ export function probeOnTime(sdk: ProbeSdk, opts: ProbeOptions = {}): Promise<Pro
         const homeKey = `${home[0]},${home[1]}`;
         const dirs = NEIGHBOURS.filter(([dx, dz]) => !opts.walkable || opts.walkable(home[0] + dx, home[1] + dz));
         const latencies: number[] = [];
-        const publishMs: number[] = [];
+        const tickArrivals: number[] = [];
         const sendMs: number[] = [];
         let dir = 0;
         let dirProven = false; // a step toward or from the current neighbour has been seen
         let lost = 0;
         let returning = false;
+        let settling = false; // trials done and home; reading arrivals until steadyMs
         let pending: { label: number; from: string } | null = null;
         let lastTick = s0.tick;
-        let lastPub = 0;
         let done = false;
+        const span = () => (tickArrivals.length > 1 ? tickArrivals[tickArrivals.length - 1]! - tickArrivals[0]! : 0);
         let wall: ReturnType<typeof setTimeout> | undefined;
         const armWall = () => {
             clearTimeout(wall);
@@ -146,21 +149,29 @@ export function probeOnTime(sdk: ProbeSdk, opts: ProbeOptions = {}): Promise<Pro
         const finish = (endTick: number, reason?: string) => {
             if (done) return;
             stop();
-            resolve({ ...summarizeProbe(latencies), latencies, lost, ticks: endTick - s0.tick, publishMs, sendMs, ...(reason ? { reason } : {}) });
+            resolve({ ...summarizeProbe(latencies), path, latencies, lost, ticks: endTick - s0.tick, tickArrivals, steadiness: tickSteadiness(tickArrivals), sendMs, ...(reason ? { reason } : {}) });
         };
-        const walk = (s: BotWorldState, x: number, z: number) => {
+        const trialsDone = (tick: number) => {
+            if (span() >= steadyMs) return finish(tick);
+            settling = true;
+        };
+        const walk = (s: ProbeState, x: number, z: number) => {
             pending = { label: s.tick, from: `${s.player!.worldX},${s.player!.worldZ}` };
             const t0 = performance.now();
             sdk.sendWalk(x, z, false).then(() => sendMs.push(performance.now() - t0)).catch(() => {});
         };
-        const onState = (s: BotWorldState) => {
+        const onState = (s: ProbeState) => {
             if (done || !s?.inGame || !s.player || s.tick === lastTick) return;
             if (s.tick < lastTick) return fail(new Error(`probeOnTime: tick went back from ${lastTick} to ${s.tick} (client relaunched?)`));
             armWall();
-            const now = performance.now();
-            if (lastPub) publishMs.push(now - lastPub);
-            lastPub = now;
+            const at = s.arrivalMs ?? performance.now();
+            // the first fresh label after s0 has no known start: one entry, then one per label
+            for (let k = tickArrivals.length ? s.tick - lastTick : 1; k > 0; k--) tickArrivals.push(at);
             lastTick = s.tick;
+            if (settling) {
+                if (span() >= steadyMs) finish(s.tick);
+                return;
+            }
             const pos = `${s.player.worldX},${s.player.worldZ}`;
             if (pending) {
                 const dt = s.tick - pending.label;
@@ -180,7 +191,7 @@ export function probeOnTime(sdk: ProbeSdk, opts: ProbeOptions = {}): Promise<Pro
                 } else return;
             }
             if (latencies.length >= trials) {
-                if (pos === homeKey) return finish(s.tick);
+                if (pos === homeKey) return trialsDone(s.tick);
                 returning = true;
                 return walk(s, home[0], home[1]);
             }
@@ -195,49 +206,44 @@ export function probeOnTime(sdk: ProbeSdk, opts: ProbeOptions = {}): Promise<Pro
 }
 
 /**
- * What a loop gains and risks, in ticks per roll (tick-manipulation.md, "Run-time host gate").
- * A starter that lands off its tick costs `missCost` on top of the knife cycle.
+ * Read the vantage preconditions from this machine, as rs/86's workflow does: one request
+ * with `flyio-debug: doit` for Fly's routing fields, then `samples` fresh connections
+ * `gapMs` apart (not a burst) for TCP connect, and `/playercount`. Needs curl on PATH.
  */
-export interface CycleModel {
-    /** The plain loop's ticks per roll (woodcutting 4, fly 5, lobster 6; iron rotation 3.61). */
-    plainCycle: number;
-    /** The manipulated cycle (3). */
-    knifeCycle?: number;
-    /**
-     * Extra ticks a starter off the dominant latency costs. Default: one plain cycle (measured
-     * with --inject-late: willow 3.2, fly 5.3; tick-manipulation.md "Run-time host gate").
-     * The closed-loop mining executor loses only the late tick: 1.
-     */
-    missCost?: number;
+export async function measureVantage(host: string, opts: { samples?: number; gapMs?: number } = {}): Promise<VantageReading> {
+    const samples = opts.samples ?? 20;
+    const gapMs = opts.gapMs ?? 1000;
+    const url = `https://${host}/cairn-vantage-probe-${Date.now()}`;
+    const curl = (args: string[]) => spawnSync('curl', ['-s', '-o', '/dev/null', '-m', '10', ...args, url], { encoding: 'utf8' }).stdout ?? '';
+    let fly: Record<string, unknown> = {};
+    try {
+        fly = JSON.parse(/^flyio-debug:\s*(.*)$/im.exec(curl(['-D', '-', '-H', 'flyio-debug: doit']))?.[1] ?? '{}');
+    } catch {}
+    const connectMs: number[] = [];
+    for (let i = 0; i < samples; i++) {
+        const t = Number(curl(['-w', '%{time_connect}']));
+        if (t > 0) connectMs.push(Math.round(t * 1e4) / 10);
+        if (i < samples - 1) await new Promise(r => setTimeout(r, gapMs));
+    }
+    let players: number | null = null;
+    try {
+        const j = (await (await fetch(`https://${host}/playercount`, { signal: AbortSignal.timeout(5000) })).json()) as { count?: number };
+        players = typeof j.count === 'number' ? j.count : null;
+    } catch {}
+    const str = (v: unknown) => (typeof v === 'string' && v ? v : null);
+    return { edge: str(fly.nr), app: str(fly.sr), meshHop: str(fly.mhn), connectMs, players };
 }
 
-export interface GateVerdict {
-    on: boolean;
-    /** Probability a starter lands on its tick, from the probe. */
-    p: number;
-    /** Predicted ticks per roll with the knife: knifeCycle + (1 - p) * missCost. */
-    knife: number;
-    plain: number;
-    /** Ticks to send early on an xp-anchored schedule: mode - 1. */
-    lead: number;
-}
-
-/** Manipulate when the predicted knife cycle beats the plain one. A probe with no trials says no. */
-export function gateDecision(r: ProbeSummary, model: CycleModel): GateVerdict {
-    const knifeCycle = model.knifeCycle ?? 3;
-    const missCost = model.missCost ?? model.plainCycle;
-    const p = r.modeFraction;
-    const knife = knifeCycle + (1 - p) * missCost;
-    return { on: r.trials > 0 && knife < model.plainCycle, p, knife, plain: model.plainCycle, lead: Math.max(0, r.mode - 1) };
-}
-
-/** One probe, one decision. */
-export async function shouldManipulate(sdk: ProbeSdk, model: CycleModel, opts: ProbeOptions = {}): Promise<GateVerdict> {
-    return gateDecision(await probeOnTime(sdk, opts), model);
+/** One probe, one decision, by the probe's path. */
+export async function shouldManipulate(sdk: ProbeSdk, model: CycleModel, opts: ProbeOptions = {}, direct?: DirectRule): Promise<HostVerdict> {
+    return hostVerdict(await probeOnTime(sdk, opts), model, direct);
 }
 
 export interface GateOptions {
+    /** The relay path's cost model. */
     model: CycleModel;
+    /** The direct path's criterion (default 60 of 60, floor 58). */
+    direct?: DirectRule;
     probe?: ProbeOptions;
     /**
      * Measured override: after this many xp drops in one manipulating stretch, compare its
@@ -262,7 +268,7 @@ export interface GateEvent {
     switched: boolean;
     /** Set for probes. */
     result?: ProbeResult;
-    verdict?: GateVerdict;
+    verdict?: HostVerdict;
     /** Set for a measured switch-off: ticks per drop of the knife stretch and of plain. */
     measured?: { knife: number; plain: number };
 }
@@ -340,7 +346,7 @@ export class HostGate {
         const first = !this.history.length;
         const result = await probeOnTime(this.sdk, this.opts.probe);
         const tick = this.sdk.getState()?.tick ?? -1;
-        const verdict = gateDecision(result, this.opts.model);
+        const verdict = hostVerdict(result, this.opts.model, this.opts.direct);
         this.on = verdict.on;
         this.lead = verdict.lead;
         this.slipPending = false;
@@ -349,10 +355,12 @@ export class HostGate {
         const switched = !first && was !== this.on;
         this.history.push({ tick, why, on: this.on, switched, result, verdict });
         const mode = (on: boolean) => (on ? 'manipulate' : 'plain');
+        const st = result.steadiness;
         this.opts.log?.(
-            `T${tick} gate (${why}): latency ${latencyHistogram(result.latencies) || '-'} of ${result.trials}` +
+            `T${tick} gate (${why}${result.path === 'direct' ? ', direct' : ''}): latency ${latencyHistogram(result.latencies) || '-'} of ${result.trials}` +
                 `${result.reason ? ` (${result.reason})` : ''}, same as previous ${result.sameAsPrevious.toFixed(2)}, in ${result.ticks} ticks;` +
-                ` p ${verdict.p.toFixed(2)}, predicted knife ${verdict.knife.toFixed(2)} vs plain ${verdict.plain.toFixed(2)}, lead ${verdict.lead} -> ` +
+                ` ticks p50 ${st.p50} p90 ${st.p90} max ${st.max} ms, ${st.catchUps} catch-ups (${steadinessHistogram(st) || '-'});` +
+                ` ${verdictText(verdict)} -> ` +
                 (switched ? `SWITCH ${mode(was)} -> ${mode(this.on)}` : mode(this.on))
         );
         return this.on;

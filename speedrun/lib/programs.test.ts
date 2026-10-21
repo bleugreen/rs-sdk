@@ -94,9 +94,11 @@ describe('speedrun programs', () => {
         const sdk = new PageSdk(baseState());
         const p = probeInPage(sdk, { trials: 4 });
         await flush();
-        sdk.publish({ name: 'probe', phase: 'done', result: { trials: 4, latencies: [1, 1, 2, 1], lost: 0, ticks: 6, tickMs: [300, 301] } });
+        sdk.publish({ name: 'probe', phase: 'done', result: { trials: 4, latencies: [1, 1, 2, 1], lost: 0, ticks: 6, tickMs: [300, 301, 460, 120] } });
         const r = await p;
-        expect(r).toMatchObject({ path: 'direct', source: 'in-page', trials: 4, onTime: 3, mode: 1, modeFraction: 0.75, publishMs: [300, 301] });
+        expect(r).toMatchObject({ path: 'direct', source: 'in-page', trials: 4, onTime: 3, mode: 1, modeFraction: 0.75, tickArrivals: [0, 300, 601, 1061, 1181] });
+        // the page's tick gaps are scored like any probe's arrivals: 460 then 120 is a catch-up
+        expect(r.steadiness).toMatchObject({ n: 4, max: 460, catchUps: 1 });
         expect(sdk.actions[0]).toMatchObject({ op: 'start', name: 'probe', params: { trials: 4, maxWait: 8 } });
     });
 });

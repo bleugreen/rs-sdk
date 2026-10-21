@@ -13,7 +13,7 @@
 
 import type { BotSDK } from '../../sdk/index';
 import type { ActionResult, BotWorldState } from '../../sdk/types';
-import { type ProbeResult, summarizeProbe } from './hostgate';
+import { type ProbeResult, summarizeProbe, tickSteadiness } from './hostgate';
 import { tickMs } from './wait';
 
 /** The page's published program status (server/webclient/src/bot/programs/types.ts). */
@@ -203,12 +203,15 @@ export async function probeInPage(sdk: ProgramSdk, opts: { trials?: number; maxW
     const end = await runProgram(sdk, 'probe', { trials, maxWait: opts.maxWait ?? 8 }, { timeoutMs: opts.timeoutMs ?? (trials * 3 + 60) * tickMs() });
     const r = end.result as InPageProbeResult | undefined;
     if (!r) throw new ProgramError('probe ended without a result', end);
+    // the page reports gaps between decoded ticks; the gate scores arrivals
+    const tickArrivals = r.tickMs.reduce<number[]>((a, ms) => [...a, a[a.length - 1]! + ms], [0]);
     return {
         ...summarizeProbe(r.latencies),
         latencies: r.latencies,
         lost: r.lost,
         ticks: r.ticks,
-        publishMs: r.tickMs,
+        tickArrivals,
+        steadiness: tickSteadiness(tickArrivals),
         sendMs: [],
         ...(r.reason ? { reason: r.reason } : {}),
         path: 'direct',

@@ -1,0 +1,37 @@
+=== run 1 2026-10-21T16:31:02Z
+vantage: edge iad, app iad, mesh hop none, TCP connect p50 2.1 ms (20 samples), 1694 online
+probe (direct) from ip-172-31-31-189 at 2026-10-21T16:32:38.105Z, server rs-sdk-demo.fly.dev
+latency in ticks (label of the step - label sent): 1:49 2:10 3:1  (60 trials, 0 lost, 191 ticks)
+on time 49/60; dominant 1 ticks (82%, lead 0); consecutive trials agree 83%
+sequence: 211111111111111111111121222221211111111111111111111111112231
+tick arrival interval ms over 60.3 s: p10 155.4 p50 329 p90 453.1 max 723; 81 over 350, 19 under 150, 14 catch-ups (13.93/min)
+tick interval histogram (50 ms buckets): 0:9 50:7 100:3 150:8 200:15 250:34 300:33 350:37 400:24 450:11 500:5 600:2 650:1 700:1
+send resolve ms: p50 0 p90 0 max 1
+gate (direct): (a) on time 49/60, pass 60, floor 58 FAIL; (b) tick p90 453.1 ms <= 400 FAIL; (c) catch-ups 13.93/min <= 2 FAIL; (d) loop p10 >= 50 not measured: re-measure -> do not start: overrun period, re-measure (tick p90 453.1 ms over 400, 13.93 catch-ups per minute over 2); on time 49/60, under the floor of 58
+wrote /home/ubuntu/rs96-out/ashburn-1.json
+=== exit 1
+=== run 2 2026-10-21T16:34:08Z
+vantage: edge iad, app iad, mesh hop none, TCP connect p50 2.3 ms (20 samples), 1697 online
+probe (direct) from ip-172-31-31-189 at 2026-10-21T16:35:34.626Z, server rs-sdk-demo.fly.dev
+latency in ticks (label of the step - label sent): 1:54 2:5 3:1  (60 trials, 0 lost, 174 ticks)
+on time 54/60; dominant 1 ticks (90%, lead 0); consecutive trials agree 85%
+sequence: 111111111212111111111111111111111111111111111111121223111111
+tick arrival interval ms over 60.2 s: p10 196.8 p50 341.8 p90 527.8 max 871.2; 81 over 350, 11 under 150, 8 catch-ups (7.97/min)
+tick interval histogram (50 ms buckets): 0:5 50:5 100:1 150:7 200:26 250:27 300:21 350:18 400:23 450:15 500:10 550:7 600:5 650:1 800:1 850:1
+send resolve ms: p50 0 p90 0 max 1
+gate (direct): (a) on time 54/60, pass 60, floor 58 FAIL; (b) tick p90 527.8 ms <= 400 FAIL; (c) catch-ups 7.97/min <= 2 FAIL; (d) loop p10 >= 50 not measured: re-measure -> do not start: overrun period, re-measure (tick p90 527.8 ms over 400, 7.97 catch-ups per minute over 2); on time 54/60, under the floor of 58
+wrote /home/ubuntu/rs96-out/ashburn-2.json
+=== exit 1
+=== run 3 2026-10-21T16:37:04Z
+vantage: edge iad, app iad, mesh hop none, TCP connect p50 2.1 ms (20 samples), 1685 online
+probe (direct) from ip-172-31-31-189 at 2026-10-21T16:38:47.065Z, server rs-sdk-demo.fly.dev
+latency in ticks (label of the step - label sent): 1:46 2:14  (60 trials, 0 lost, 182 ticks)
+on time 46/60; dominant 1 ticks (77%, lead 0); consecutive trials agree 69%
+sequence: 111111111111111112211222111211112111111211111112211221211211
+tick arrival interval ms over 60.1 s: p10 162.8 p50 336.3 p90 500.2 max 638.7; 84 over 350, 16 under 150, 14 catch-ups (13.97/min)
+tick interval histogram (50 ms buckets): 0:9 50:6 100:1 150:7 200:19 250:25 300:30 350:31 400:22 450:12 500:10 550:5 600:4
+send resolve ms: p50 0 p90 0 max 1
+gate (direct): (a) on time 46/60, pass 60, floor 58 FAIL; (b) tick p90 500.2 ms <= 400 FAIL; (c) catch-ups 13.97/min <= 2 FAIL; (d) loop p10 >= 50 not measured: re-measure -> do not start: overrun period, re-measure (tick p90 500.2 ms over 400, 13.97 catch-ups per minute over 2); on time 46/60, under the floor of 58
+wrote /home/ubuntu/rs96-out/ashburn-3.json
+=== exit 1
+ALLDONE
