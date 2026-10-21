@@ -83,6 +83,8 @@ const scen: [string, number][] = [
     // Planned quest route (cairn://p/rs/3): the troll chain is off, UP + Regicide pending rs/15.
     ['GT + UP + Regicide (on route)', Q.grandTree + Q.undergroundPass + Q.regicide],
     ['GT only (if the Regicide chain drops)', Q.grandTree],
+    ['GT + UP + Regicide + 1 Tourist Trap pick', Q.grandTree + Q.undergroundPass + Q.regicide + Q.touristPick],
+    ['GT + UP + Regicide + 2 Tourist Trap picks', Q.grandTree + Q.undergroundPass + Q.regicide + 2 * Q.touristPick],
     ['GT + Regicide + TR', Q.grandTree + Q.regicide + Q.trollRomance],
     ['GT + Regicide + TR + UP', Q.grandTree + Q.regicide + Q.trollRomance + Q.undergroundPass],
     ['... + Fremennik', Q.grandTree + Q.regicide + Q.trollRomance + Q.undergroundPass + Q.fremennik],
