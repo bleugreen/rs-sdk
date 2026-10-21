@@ -61,6 +61,10 @@ await runScript(async ({ bot, sdk }) => {
     {
         const st = STARTS[FIRST];
         if (!st) throw new Error(`no start for segment ${FIRST}`);
+        // Leave whatever an earlier run left open.
+        await sdk.sendCloseModal();
+        await sdk.sendWalk(pos(sdk.getState()).x, pos(sdk.getState()).z, true);
+        await waitTicks(sdk, 2);
         await cheat(sdk, '~clearinv');
         await setvar(sdk, 'treequest', 9);
         await setvar(sdk, 'grandtree', 160);
