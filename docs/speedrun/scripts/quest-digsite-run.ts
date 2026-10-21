@@ -139,6 +139,9 @@ await runScript(async ({ bot, sdk }) => {
         await q.talk('examiner', EXAM1);
         if (!q.inv('trowel')) throw new Error('exam 1 not passed');
     });
+    await S.run('examiner -> barrel (walk)', async () => {
+        await q.walk(3364, 3377, 1);
+    });
     await S.run('barrel: open with trowel, fill vial', async () => {
         await q.useOnLoc('trowel', 'digbarrelclosed', () => true, { near: [3364, 3378], dialog: true });
         await q.useOnLoc('vial_empty', 'digbarrelclosed', () => !!q.inv('unidentified_liquid'), { near: [3364, 3378] });
