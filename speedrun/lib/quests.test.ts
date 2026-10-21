@@ -123,7 +123,7 @@ describe('readQuestStage', () => {
         sdk.onSend = (a, f) => {
             if (a.method === 'sendClickComponent' && ++clicks === 1) {
                 // Busy: the click is skipped, and the ticks go by.
-                queueMicrotask(() => { for (let i = 0; i < 4; i++) f.tick(); });
+                setTimeout(() => { for (let i = 0; i < 4; i++) f.tick(); }, 0);
             } else if (a.method === 'sendClickComponent') {
                 queueMicrotask(() => f.tick(s => ({ questJournal: journal('Plague City', ELENA_MUD, s.tick + 1) })));
             } else if (a.method === 'sendCloseModal') {
