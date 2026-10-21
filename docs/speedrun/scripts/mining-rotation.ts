@@ -3,12 +3,14 @@
 //
 //   bun docs/speedrun/scripts/mining-rotation.ts <bot> --rocks 2710,3328 2711,3329 ...
 //       [--start 2710,3329] [--ores 120] [--level 99] [--respawn 19] [--trick on|off]
-//       [--agility 99] [--min-energy 9000] [--loghead 40]
+//       [--agility 99] [--min-energy 9000] [--loghead 40] [--xplag 0]
 //
 // --rocks is the order rocks are mined in, repeated cyclically (take it from the
 // planner's --show output). Ticks below are state.tick labels; a click sent while
 // label c is current is processed on server tick c+1, and xp from a roll on server
-// tick R is first visible at label R+1 (see mining-cycle.ts).
+// tick R is first visible at label R + xplag: 0 on the lite client since #20 (a tick is
+// published after it is fully decoded), 1 on older clients (published at PLAYER_INFO,
+// before the tick's stats; see mining-cycle.ts).
 //
 // For each next rock the script takes whichever lands the roll earliest:
 //   stay   the rock is beside us: click it; roll 2 ticks after the click lands.
@@ -48,6 +50,7 @@ const TRICK = arg('trick', 'on') === 'on';
 const RUNSTEP = 2;
 const AGILITY = Number(arg('agility', '1'));
 const MIN_ENERGY = Number(arg('min-energy', '0'));
+const XP_LAG = Number(arg('xplag', '0'));
 
 const uniq = [...new Map(ROCKS.map(r => [`${r[0]},${r[1]}`, r])).values()];
 const beside = (pos: P, r: P) => Math.abs(pos[0] - r[0]) + Math.abs(pos[1] - r[1]) === 1;
@@ -169,7 +172,10 @@ await runScript(async ({ bot, sdk }) => {
             if (last) sdk.sendInteractLoc(last.rock[0], last.rock[1], locId(s, last.rock), 1).catch(() => {});
             levelUps++;
             log.push(`  level ${lvl} seen@${s.tick} during a walk: click re-sent, plan kept`);
-        } else if (lvl > lastLevel && lastLevel > 0) {
+        } else if (lvl > lastLevel && lastLevel > 0 && XP_LAG === 1) {
+            // Written for the pre-#20 client (xplag 1); with xplag 0 the level is seen on the
+            // roll label itself, before the next transition is planned, and this re-plan would
+            // pop the roll that just landed. Level-ups only happen below 99.
             // A level-up from the roll on R (seen now, at R+1) queued [advancestat] in the ENGINE
             // queue, which runs on R+1 before interactions (World.ts processPlayers) and opens a
             // chat modal, so the click that landed on R+1 was blocked (Player.canAccess). Drop the
@@ -193,11 +199,11 @@ await runScript(async ({ bot, sdk }) => {
         if (xp > lastXp) {
             ticks.push(s.tick);
             xps.push(xp - lastXp);
-            log.push(`  xp +${xp - lastXp} seen@${s.tick} (roll ${s.tick - 1})`);
+            log.push(`  xp +${xp - lastXp} seen@${s.tick} (roll ${s.tick - XP_LAG})`);
         }
         for (let i = pending.length - 1; i >= 0; i--) {
             const pr = pending[i]!;
-            if (pr.roll + 1 !== s.tick) continue;
+            if (pr.roll + XP_LAG !== s.tick) continue;
             pending.splice(i, 1);
             if (xp > lastXp) onTime++;
             else {

@@ -1,12 +1,15 @@
 // Iron-rock rotation with the eat starter (docs/speedrun/skills/tick-manipulation.md).
 //
 //   bun docs/speedrun/scripts/tickmanip-mine.ts <bot> --respawn=13 [--starter=eat|knife|none] [--ores=60]
-//       [--level=99] --steps 2604,3235>2605,3235 2602,3235>2602,3236 ...
+//       [--level=99] [--xplag=0] --steps 2604,3235>2605,3235 2602,3235>2602,3236 ...
 //
 // --steps is one period of stand>rock pairs (rs/5's rotation format, mining.md section 4);
 // the bot teleports to the first stand. Labels are state.tick: a packet sent while label c
 // is current is processed on server tick c+1, and xp from a roll on server tick R is first
-// visible at label R+1. At level 63+ every iron roll succeeds, so the schedule is open-loop.
+// visible at label R + xplag. The lite client publishes a tick only after decoding all of
+// it (#20), so stats from tick R are in the state labelled R: xplag 0. Clients older than
+// #20 published at PLAYER_INFO, before that tick's stats: pass --xplag=1 for those.
+// At level 63+ every iron roll succeeds, so the schedule is open-loop.
 //
 // Per transition after a roll on R (the rock is now depleted, the interaction has ended and
 // %action_delay == R is left as is, mining.rs2:202-212):
@@ -40,6 +43,7 @@ if (!['eat', 'knife', 'none'].includes(STARTER)) throw new Error('--starter=eat|
 const EAT = STARTER !== 'none';
 const ORES = Number(kv('ores', '60'));
 const LEVEL = Number(kv('level', '99'));
+const XP_LAG = Number(kv('xplag', '0'));
 const key = (p: P) => `${p[0]},${p[1]}`;
 const same = (a: P, b: P) => a[0] === b[0] && a[1] === b[1];
 
@@ -136,16 +140,16 @@ await runScript(async ({ bot, sdk }) => {
 
     // Slip recovery. A packet that lands a tick late misses its roll, and the next eat then
     // adds 3 to a clock that was never consumed: from there every first swing finds the clock
-    // ahead and nothing rolls. Every roll at 63+ succeeds, so no xp by label P+2 for a roll
-    // predicted on P means a slip: drop the schedule, let the clock expire, and restart with
-    // one plain transition from where the bot actually stands.
+    // ahead and nothing rolls. Every roll at 63+ succeeds, so no xp by label P+xplag+1 for a
+    // roll predicted on P means a slip (one label of slack): drop the schedule, let the clock
+    // expire, and restart with one plain transition from where the bot actually stands.
     let slips = 0;
     let restartAt: number | null = null;
     const xpSeen = new Set<number>();
     const checkSlip = () => {
         const due = predicted.filter(p => p + 2 < s.tick && p + 2 >= s.tick - 1);
         for (const p of due) {
-            if (xpSeen.has(p + 1) || xpSeen.has(p + 2)) continue;
+            if (xpSeen.has(p + XP_LAG) || xpSeen.has(p + XP_LAG + 1)) continue;
             slips++;
             log.push(`  L${s.tick} SLIP: no xp for roll@${p}; restarting`);
             sched.clear();
@@ -194,8 +198,8 @@ await runScript(async ({ bot, sdk }) => {
         if (xp > lastXp) {
             xpLabels.push(s.tick);
             xpSeen.add(s.tick);
-            if (predicted.includes(s.tick - 1)) onTime++;
-            log.push(`  L${s.tick} XP +${xp - lastXp} (roll ${s.tick - 1})`);
+            if (predicted.includes(s.tick - XP_LAG)) onTime++;
+            log.push(`  L${s.tick} XP +${xp - lastXp} (roll ${s.tick - XP_LAG})`);
             lastXp = xp;
         }
         if (s.dialog.isOpen) sdk.sendClickDialog(0).catch(() => {});
