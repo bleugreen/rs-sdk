@@ -91,7 +91,7 @@ await runScript(async ({ bot, sdk }) => {
         out.ladderDown = down === null ? null : down - t0;
         let dosesDrunk = 0;
         while (dosesDrunk < brew && sdk.findNearbyNpc(/Koschei/) === null) {
-            const pot = sdk.findInventoryItem(/Zamorak brew|Potion of zamorak/i);
+            const pot = sdk.findInventoryItem(/Zamorak potion/i);
             if (!pot) break;
             await sdk.sendUseItem(pot.slot, 1);
             dosesDrunk++;
