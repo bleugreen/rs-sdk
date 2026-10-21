@@ -106,6 +106,14 @@ function defineComponent(id: number, com: Record<string, unknown>): void {
     IfType.list[id] = { id, ...com } as never;
 }
 
+/** Register an item definition ObjType.list() will hand back untouched. */
+function defineObj(id: number, name: string): void {
+    const obj = Object.assign(Object.create(ObjType.prototype), { id, name });
+    ObjType.recent = [obj];
+    ObjType.idx = new Int32Array(id + 1) as never;
+    ObjType.dat = {} as never;
+}
+
 // Drive real incoming decoders, state collection, SDK selection and outgoing
 // packet writers without a game connection or downloaded interface archive.
 for (const kind of ['browser', 'lite'] as const) {
@@ -898,14 +906,6 @@ describe('loc routing', () => {
         expect(args).toMatchObject({ locWidth: 2, locLength: 2, locAngle: 0, locShape: 0 });
     });
 
-    /** Register an item definition ObjType.list() will hand back untouched. */
-    function defineObj(id: number, name: string): void {
-        const obj = Object.assign(Object.create(ObjType.prototype), { id, name });
-        ObjType.recent = [obj];
-        ObjType.idx = new Int32Array(id + 1) as never;
-        ObjType.dat = {} as never;
-    }
-
     test('interactLoc dispatches OPLOC even when routing fails', () => {
         // Waterfall's "Swim to" rock is an aploc op: the trigger tile is never
         // routable, so aborting on a failed route strands the bot with no packet
@@ -1042,9 +1042,13 @@ describe('loc changes on bridged tiles', () => {
     }
 
     function bridgedScene() {
-        // Every loc here is a 1x1 door that blocks walking.
+        // Every loc here is a 1x1 door that blocks walking. The scene keeps a
+        // wall only when it has a model, so each gets a placeholder.
         (LocType as unknown as { list: (id: number) => unknown }).list = (id: number) =>
-            Object.assign(new LocType(), { id, blockwalk: true, blockrange: true, active: true, width: 1, length: 1 });
+            Object.assign(new LocType(), {
+                id, blockwalk: true, blockrange: true, active: true, width: 1, length: 1,
+                getModel: () => ({})
+            });
 
         const size = BuildArea.SIZE;
         const groundh = Array.from({ length: 4 }, () => Array.from({ length: size + 1 }, () => new Int32Array(size + 1)));
