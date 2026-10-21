@@ -82,8 +82,11 @@ await runScript(async ({ bot, sdk }) => {
         add(await talk(sdk, /^Gnome pilot$/i, [/take me on the glider/], { idle: 2, closeModals: false }), 'B3 pilot');
         await glide(GLIDER_GANDIUS, s => pos(s).z < 3100 && pos(s).level === 0, 'B4');
         console.log('landed at', JSON.stringify(pos(sdk.getState())));
-        add(await walk(bot, sdk, 2956, 3024, 1), 'B5 walk to Caranock');
-        add(await talk(sdk, /Caranock$/i, [], { idle: 3 }), 'B6 Caranock');
+        // The glider lands south of the shipyard; the west gate opens after the worker sees the seal.
+        add(await walk(bot, sdk, 2943, 3041, 1), 'B5 walk to shipyard gate');
+        add(await locTalkAt(sdk, 2945, 3041, /^open$/i, [], { idle: 8, done: s => pos(s).x >= 2945 }), 'B6 gate: show the seal');
+        add(await walk(bot, sdk, 2956, 3024, 1), 'B7 walk to Caranock');
+        add(await talk(sdk, /Caranock$/i, [], { idle: 3 }), 'B8 Caranock');
         await check('B');
     }
     if (runs('C')) {
