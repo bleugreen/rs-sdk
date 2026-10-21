@@ -179,10 +179,8 @@ export class ModelClient implements ChatModel {
 
 // ------------------------------------------------------------------ prompts
 
-export interface PromptFacts {
-    /** How the ambassador may name the scored account, if the operator allowed it. */
-    scoredAccount?: string;
-}
+/** Fixed in code, so no persona edit can drop it. */
+const ACCOUNTS_RULE = `Do not name any account of ours: not your own name, not a teammate's, not our speedrun account's. If asked, say you keep that to yourself.`;
 
 const DECISION_FORMAT = `Answer with exactly one JSON object and nothing else:
 {"respond": true or false,
@@ -197,11 +195,8 @@ const DECISION_FORMAT = `Answer with exactly one JSON object and nothing else:
  "surprising": "<anything genuinely surprising, else empty>"}
 Use "pm" only to answer a private message. Set respond false when nothing calls for a reply.`;
 
-export function systemPrompt(persona: string, facts: PromptFacts): string {
-    const scored = facts.scoredAccount
-        ? `Our team's speedrun account is "${facts.scoredAccount}" on the hiscores (the chat filter stars out "www", so call it "our speedrun account on the hiscores"); you may mention it when someone asks what we are up to.`
-        : `Do not name any account of ours, not even the speedrun account.`;
-    return `${persona.trim()}\n\n${scored}\n\n${DECISION_FORMAT}`;
+export function systemPrompt(persona: string): string {
+    return `${persona.trim()}\n\n${ACCOUNTS_RULE}\n\n${DECISION_FORMAT}`;
 }
 
 interface PromptLine {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { BotSDK } from '../../sdk/index';
@@ -7,7 +7,7 @@ import { baseState, FakeSdk } from '../lib/fake-sdk';
 import { Conversation, GE_POST, LOOP, type Clock } from './ambassador';
 import { createIO, IO_KEYS, type WalkBot } from './ambassador/io';
 import { ChatLog, readRecords, type LogRecord } from './ambassador/log';
-import type { ChatModel } from './ambassador/model';
+import { systemPrompt, type ChatModel } from './ambassador/model';
 import { buildDenyList, Limiter, LIMITS } from './ambassador/policy';
 
 const T0 = Date.parse('2026-10-21T12:00:00Z');
@@ -173,7 +173,7 @@ describe('conversation loop', () => {
         const model = new ScriptedModel(() => reply('Cairn H01', 'hi teammate'));
         const h = harness(model);
         h.say('Cairn H01', 'hello ambassador');
-        h.say('Www Cairn Md', 'hello');
+        h.say('Cairn Cam', 'hello');
         h.say('Cairn Md', 'echo of myself');
         await h.runFor(10_000);
         expect(model.calls).toHaveLength(0);
@@ -203,6 +203,38 @@ describe('conversation loop', () => {
         expect(h.sends()).toHaveLength(0);
         expect(h.records('blocked').map(r => r.reason)).toEqual(['too-long', 'account-name', 'deny-list', 'command', 'url', 'insult']);
         expect(h.records('decision').filter(r => r.valid === false)).toHaveLength(3);
+    });
+
+    test('names no account of ours, whatever the model tries', async () => {
+        // Written independently of policy.ts: our naming scheme in any spelling, including
+        // a www-prefixed name like the scored account's former candidate. cairn.md (the
+        // website, with its dot) is not a name and stays allowed.
+        const NAME_LIKE = /\bcairn[\s_-]*(md|dot|amb|cam|mule|h\s*\d|t\s*\d|\d)|\bwww[\s_.-]*cairn[\s_-]|cairnmd|cairn_[a-z0-9]/i;
+        const attempts = [
+            'Our speedrun account is www cairn md, wish it luck',
+            'Look up Www_Cairn_Md on the hiscores',
+            'wwwcairnmd is the one to watch',
+            'I am Cairn Md, nice to meet you',
+            'my teammate cairn_h01 says hi',
+            'ask Cairn Mule 1 for coins',
+            'our site is cairn md',
+            'cairn_dot_md is our spare'
+        ];
+        const clean = ['Gz on the level!', 'The market page shows live prices', 'I am a bot run by an agent team, cairn.md'];
+        const script = [...attempts, ...clean];
+        const model = new ScriptedModel((_u, n) => (script[n - 1] ? reply('Bob', script[n - 1]!) : '{"respond":false}'));
+        const h = harness(model);
+        for (let i = 0; i < script.length; i++) {
+            h.say('Bob', QUESTIONS[i]!);
+            await h.runFor(30_000);
+        }
+        expect(model.calls).toHaveLength(script.length);
+        const sent = h.sends().map(s => String(s.args.at(-1)));
+        expect(sent).toEqual(clean);
+        for (const t of sent) expect(t).not.toMatch(NAME_LIKE);
+        expect(h.records('blocked')).toHaveLength(attempts.length);
+        // The prompt the role builds from the real persona names no account either.
+        expect(systemPrompt(readFileSync(join(import.meta.dir, 'ambassador', 'persona.md'), 'utf8'))).not.toMatch(NAME_LIKE);
     });
 
     test('never repeats itself', async () => {

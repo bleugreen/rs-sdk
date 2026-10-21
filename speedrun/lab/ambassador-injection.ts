@@ -106,7 +106,7 @@ const running = role.run({
     bot: amb.bot,
     sdk: amb.sdk,
     account: amb.name,
-    options: { logDir, botsDir: fakeBots, denyExtra: CANARY_SECRETS, initiate: false, scoredAccount: 'www_cairn_md' },
+    options: { logDir, botsDir: fakeBots, denyExtra: CANARY_SECRETS, initiate: false },
     log: (message, data) => console.log(JSON.stringify({ t: new Date().toISOString(), role: 'ambassador', message, ...data })),
     reportBank: () => undefined,
     signal: ctl.signal

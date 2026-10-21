@@ -55,12 +55,13 @@ export function canon(name: string): string {
 }
 
 /**
- * Our own accounts: every `cairn_*` helper, the operator's `cairn`, and the scored
- * account. The ambassador never answers them and never names them.
+ * Our own accounts: every `cairn_*` helper and the operator's `cairn`. The ambassador
+ * never answers them and never names them. The scored account's name is deliberately
+ * absent from this code (it is not chosen, and must not appear in git or in game).
  */
 export function isOurs(sender: string): boolean {
     const c = canon(sender);
-    return c === 'cairn' || c.startsWith('cairn_') || c === 'www_cairn_md';
+    return c === 'cairn' || c.startsWith('cairn_');
 }
 
 // ------------------------------------------------------------------ injection heuristics
@@ -122,7 +123,6 @@ export function buildDenyList(names: Iterable<string>, extra: Iterable<string> =
 /** Phrases the ambassador may say even though they look like names or URLs. */
 const ALLOWED = [
     /\b(https?:\/\/)?(www\.)?cairn\.md\b\/?/gi,
-    /\bwww[\s_]cairn[\s_]md\b/gi,
     /\b(https?:\/\/)?rs-sdk-demo\.fly\.dev(\/(market|hiscores))?\b\/?/gi,
     /\b(https?:\/\/)?github\.com\/maxbittker\/rs-sdk\b\/?/gi
 ];
@@ -131,7 +131,7 @@ const OUTPUT_RULES: { reason: string; re: RegExp }[] = [
     // "::tele ..." is a staff command when typed in chat.
     { reason: 'command', re: /::/ },
     { reason: 'scored-spare', re: /cairn[\s_.-]*dot[\s_.-]*md/i },
-    { reason: 'account-name', re: /\bcairn[\s_-]*[a-z]{0,6}[\s_-]*\d+|\bcairn[\s_-]+(md|amb|cam|mule|bot|alt|helper)s?\b|\bcairn_[a-z0-9]/i },
+    { reason: 'account-name', re: /\bcairn[\s_-]*[a-z]{0,6}[\s_-]*\d+|\bcairn[\s_-]+(md|amb|cam|mule|bot|alt|helper)s?\b|\bcairn_[a-z0-9]|\bwww[\s_-]*cairn/i },
     { reason: 'host', re: /\b(bbs|bbl|bglab|bgsrv\w*|fedora|localhost|tailscale)\b|\.(lan|local|internal)\b|\b\d{1,3}(\.\d{1,3}){3}\b/i },
     { reason: 'path', re: /(^|[\s('"])(~|\.{1,2})?\/[\w.-]+\/|\b[\w-]+\.(ts|js|json|jsonl|env|sh|yaml|yml|toml)\b|\b(rs-fleet|fleet-run|fleetctl|bots\/)/i },
     { reason: 'secret-word', re: /\b(password|passwd|passcode|pin code|bank pin|api[\s_-]?keys?|private[\s_-]?keys?|ssh|tokens?|secrets?|credentials?|llm[\s_-]?key)\b/i },
