@@ -17,6 +17,7 @@ BOT=$1; shift
 BLOCK=${LAB_BLOCK:-tickmanip}
 case "$BLOCK" in
     agility) N=1 ;; mining) N=2 ;; woodcutting) N=3 ;; fishing) N=4 ;; thieving) N=5 ;; tickmanip) N=6 ;;
+    [0-9]|[1-9][0-9]) N=$BLOCK ;; # a free row past the table (ports 8900 + 10 N, ...), for a lab beside the per-skill ones
     *) echo "unknown LAB_BLOCK '$BLOCK'"; exit 2 ;;
 esac
 export WEB_PORT=$((8900 + 10 * N)) WEB_MANAGEMENT_PORT=$((8901 + 10 * N)) HISCORES_WEB_PORT=$((8902 + 10 * N))

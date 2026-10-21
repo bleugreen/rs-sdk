@@ -126,7 +126,7 @@ function serverRun(opts: {
         }
         if (opts.spotMovesAt === tick) { spotX = 3205; interacting = false; nextRoll = null; }
         if (opts.dialogAt === tick) dialog = true;
-        if (opts.logsGoneAt === tick) inventory.splice(0, inventory.length, 'Knife');
+        if (opts.logsGoneAt === tick) for (let j = inventory.length - 1; j >= 0; j--) if (inventory[j] === 'Logs') inventory.splice(j, 1);
         if (felledAt !== null && tick > felledAt + (opts.fellLag ?? 0)) felledAt = null;
         if (interacting && nextRoll === tick) {
             lastRoll = tick;
@@ -543,7 +543,121 @@ describe('knife cycle: bury variant', () => {
     test('bury is refused where the lock cannot carry it', () => {
         expect(() => createKnifeCycle({ method: 'fly', successes: 5, bury: true })).toThrow(/not supported/);
         expect(() => createKnifeCycle({ method: 'tree', successes: 5, bury: true })).toThrow(/not supported/);
-        expect(() => createKnifeCycle({ method: 'oak', technique: 'plain', successes: 5, bury: true })).toThrow(/knife technique/);
+        expect(() => createKnifeCycle({ method: 'fly', technique: 'plain', successes: 5, bury: true })).toThrow(/not supported/);
+        expect(() => createKnifeCycle({ method: 'oak', technique: 'plain', successes: 5, bury: true })).not.toThrow();
         expect(() => createKnifeCycle({ method: 'oak', successes: 5, bury: '^dragon bones$' })).not.toThrow();
+    });
+});
+
+describe('knife cycle: plain + bury', () => {
+    const PACK = ['Rune axe', 'Oak logs'];
+    const types = (h: ReturnType<typeof serverRun>['h'], tick: number) => h.sent.filter(s => s.tick === tick).map(s => s.action.type);
+    type Res = { buried: number; burySent: number; resyncs: number; noBoneCycles: number; lateClicks: number; technique: string };
+
+    test('R drops and clicks, R+1 buries, R+3 clicks alone and lands on the roll: a bone every plain cycle', () => {
+        const { h, rollTicks, buryTicks } = serverRun({ method: 'oak', technique: 'plain', ticks: 160, inventory: PACK, bones: 60, params: { bury: true } });
+        expect(gapsOf(rollTicks).every(g => g === 4)).toBe(true);
+        for (const r of rollTicks.slice(1, -1)) {
+            expect(types(h, r)).toEqual(['dropItem', 'interactLoc']);
+            expect(types(h, r + 1)).toEqual(['useInventoryItem']);
+            expect(types(h, r + 2)).toEqual([]);
+            expect(types(h, r + 3)).toEqual(['interactLoc']);
+            // the bone's xp comes on the tick after the bury lands, before the click's roll
+            expect(buryTicks).toContain(r + 3);
+        }
+        const res = h.status.result as Res;
+        expect(res).toMatchObject({ technique: 'plain', resyncs: 0, noBoneCycles: 0, lateClicks: 0 });
+        expect(res.buried).toBe(buryTicks.length);
+        expect(res.buried).toBeGreaterThanOrEqual(rollTicks.length - 2);
+        expect(h.status.gauges.buriesPerTick).toBeGreaterThan(0.22);
+        expect(h.status.gauges.lastSuccessGap).toBe(4);
+    });
+
+    test('when the bones run out the cycle is the plain one: no label is lost', () => {
+        const { h, rollTicks, buryTicks } = serverRun({ method: 'oak', technique: 'plain', ticks: 160, inventory: PACK, bones: 10, params: { bury: true } });
+        expect(buryTicks).toHaveLength(10);
+        expect(gapsOf(rollTicks).every(g => g === 4)).toBe(true);
+        const after = rollTicks.filter(t => t > buryTicks[9]! + 4);
+        expect(after.length).toBeGreaterThan(5);
+        for (const r of after.slice(0, -1)) {
+            expect(types(h, r)).toEqual(['dropItem', 'interactLoc']);
+            expect(types(h, r + 1)).toEqual([]);
+            expect(types(h, r + 3)).toEqual([]);
+        }
+        expect(h.status.counters.noBoneCycles).toBeGreaterThan(0);
+        expect(h.status.gauges.bonesLeft).toBe(0);
+    });
+
+    test('plain without bury is the plain loop: one click, no bones touched', () => {
+        const { h, rollTicks } = serverRun({ method: 'oak', technique: 'plain', ticks: 100, inventory: [], bones: 20 });
+        expect(gapsOf(rollTicks).every(g => g === 4)).toBe(true);
+        expect(h.sent.map(s => s.action.type)).toEqual(['interactLoc']);
+        expect(h.status.result).not.toHaveProperty('buried');
+    });
+
+    test('a level-up page on R+1 is answered with a click and that cycle carries no bone', () => {
+        const base = serverRun({ method: 'oak', technique: 'plain', ticks: 80, inventory: PACK, bones: 40, params: { bury: true } });
+        const r = base.rollTicks[4]!;
+        const { h, rollTicks, buryTicks } = serverRun({ method: 'oak', technique: 'plain', ticks: 80, inventory: PACK, bones: 40, params: { bury: true }, dialogAt: r + 1 });
+        expect(types(h, r + 1)).toEqual(['clickDialogOption', 'interactLoc']);
+        expect(types(h, r + 3)).toEqual([]);
+        expect(buryTicks).not.toContain(r + 3);
+        expect(gapsOf(rollTicks).every(g => g === 4)).toBe(true);
+        expect(types(h, r + 5)).toEqual(['useInventoryItem']);
+        expect(h.status.result).toMatchObject({ resyncs: 0 });
+    });
+
+    test('a tree that falls, seen on its roll label: the click there re-arms the clock and the lattice holds', () => {
+        const { h, rollTicks, buryTicks } = serverRun({ method: 'oak', technique: 'plain', ticks: 200, inventory: PACK, bones: 80, fellEvery: 8, params: { bury: true } });
+        expect(h.status.result).toMatchObject({ resyncs: 0, switches: 0 });
+        expect(gapsOf(rollTicks).every(g => g === 4)).toBe(true);
+        const fell = rollTicks[7]!;
+        expect((h.sent.find(s => s.tick === fell && s.action.type === 'interactLoc')!.action as { locId: number }).locId).toBe(2);
+        expect(buryTicks.length).toBeGreaterThanOrEqual(rollTicks.length - 2);
+    });
+
+    test('a fallen tree still listed on its roll label: the click there goes to the standing one and the lattice holds', () => {
+        const { h, rollTicks, buryTicks } = serverRun({ method: 'oak', technique: 'plain', ticks: 200, inventory: PACK, bones: 80, fellEvery: 8, fellLag: 1, params: { bury: true } });
+        const fell = rollTicks[7]!;
+        expect(h.sent.filter(s => s.tick === fell).map(s => [s.action.type, (s.action as { locId?: number }).locId])).toEqual([['dropItem', undefined], ['interactLoc', 2]]);
+        expect(gapsOf(rollTicks).every(g => g === 4)).toBe(true);
+        expect(h.status.result).toMatchObject({ resyncs: 0, switches: 0 });
+        expect(buryTicks.length).toBeGreaterThanOrEqual(rollTicks.length - 2);
+    });
+
+    test('no other tree standing on the roll label: the bone cycle clicks the respawned one and re-anchors on its first roll', () => {
+        const { h, rollTicks, buryTicks } = serverRun({ method: 'oak', technique: 'plain', ticks: 200, inventory: PACK, bones: 80, fellEvery: 8, fellLag: 1, allDownFor: 2, params: { bury: true } });
+        const fell = rollTicks[7]!;
+        // R's click went to the stump; the bury already out delays the player through R+3, so the
+        // click on the live tree lands on R+4 and, the clock left on R, rolls r0 later
+        const lone = h.sent.filter(s => s.tick === fell + 3);
+        expect(lone.map(s => s.action.type)).toEqual(['interactLoc']);
+        expect((lone[0]!.action as { locId: number }).locId).toBe(2);
+        expect(rollTicks[8]! - fell).toBe(7);
+        // no bone goes out while the schedule waits for that roll
+        expect(h.sent.filter(s => s.tick > fell + 3 && s.tick < rollTicks[8]! && s.action.type === 'useInventoryItem')).toHaveLength(0);
+        const falls = Math.floor(rollTicks.length / 8);
+        expect(h.status.result).toMatchObject({ resyncs: 0, switches: falls });
+        expect(gapsOf(rollTicks).filter(g => g !== 4)).toEqual(Array(falls).fill(7));
+        expect(buryTicks.length).toBeGreaterThanOrEqual(rollTicks.length - 3);
+    });
+
+    test('a skipped click label (two ticks decoded at once) costs that roll and the cycle comes back', () => {
+        const base = serverRun({ method: 'oak', technique: 'plain', ticks: 150, inventory: PACK, bones: 60, params: { bury: true } });
+        const r = base.rollTicks[6]!;
+        const { h, rollTicks } = serverRun({ method: 'oak', technique: 'plain', ticks: 150, inventory: PACK, bones: 60, params: { bury: true }, merged: t => t === r + 3 });
+        expect(h.status.counters.lateClicks).toBe(1);
+        const after = rollTicks.filter(t => t > r + 4);
+        expect(after.length).toBeGreaterThan(10);
+        expect(gapsOf(after).every(g => g === 4)).toBe(true);
+        expect(h.status.result).toMatchObject({ resyncs: 0 });
+    });
+
+    test('the knife running out of logs falls back to plain + bury, still burying', () => {
+        const { h, rollTicks, buryTicks } = serverRun({ method: 'oak', ticks: 200, inventory: ['Knife', 'Logs', 'Oak logs', 'Oak logs'], bones: 80, params: { bury: true }, logsGoneAt: 1060 });
+        expect(h.status.result).toMatchObject({ technique: 'knife->plain', fellBack: 'out of logs' });
+        const late = rollTicks.filter(t => t > 1080);
+        expect(gapsOf(late).every(g => g === 4)).toBe(true);
+        expect(buryTicks.filter(t => t > 1080).length).toBeGreaterThanOrEqual(late.length - 2);
     });
 });

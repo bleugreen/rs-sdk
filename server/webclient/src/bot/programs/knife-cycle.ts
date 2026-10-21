@@ -41,6 +41,23 @@
 // Plain (`technique: 'plain'`): click the target, re-click only when it is gone,
 // the player went idle, or after dropping a full inventory.
 //
+// Plain + bury (`technique: 'plain'` with `bury`, the knife-off fallback the host gate
+// switches to): the plain clock with a bone in its idle ticks, as bones-wc.ts `plainbury`
+// measured it (bones-placement.md section 1). Anchored on the label R that shows a roll: R
+// sends a drop and a click (the drop clears the interaction, the click restores it), R+1 a
+// bury, which lands on R+2, clears the interaction and delays the player through R+3, and
+// R+3 the click alone, which lands on the roll tick R+4 itself, where the first-click label
+// finds the clock due and rolls at once (woodcut.rs2:97-98). A level-up page seen on R+1 is
+// answered with a dismiss and a click instead, and that cycle carries no bone; with no bone
+// in the pack the cycle is the plain one. Every observed roll re-anchors the schedule, and a
+// player idle for two cycles, or no xp for the lock window, restarts it from a click. Unlike
+// the knife, nothing here writes the clock, and a roll that fells the tree leaves it on the roll
+// tick, and the page still lists the fallen tree on R (it is gone on R+1). So R's click goes to
+// another standing tree among `trees`, which re-arms the clock whether or not the one that
+// rolled fell. With a single tree standing it goes to that one, and when that turns out to have
+// fallen (seen gone after R) the cycle sends no bone, clicks a live tree as early as the bury
+// allows (its first roll is r0 after it lands) and re-anchors on that roll's xp.
+//
 // Report: a roll is one swing of the cadence (every 3 ticks locked, `plainCycle` plain), and
 // it succeeds with the method's catch chance. `successes` counts the xp drops, one log or
 // fish each, and `ticksPerSuccess` is the mean gap between them, so it sits above the cadence
@@ -185,7 +202,6 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
     // When the product is the knife's own log, keep a few for the starter.
     const keepProducts = num(params.keepProducts, productRe.test('Logs') ? 3 : 0, 'keepProducts');
     const bonesRe = bonesParam(params.bury);
-    if (bonesRe && technique !== 'knife') throw new Error('bury needs the knife technique (a plain loop with a bury is not implemented)');
     if (bonesRe && !method.buryOnRoll) throw new Error(`bury is not supported for this method: its first click does not roll on a due clock (presets that allow it: ${Object.keys(CYCLE_METHODS).filter(k => CYCLE_METHODS[k]!.buryOnRoll).join(', ')})`);
 
     let plain = technique === 'plain';
@@ -231,13 +247,16 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
     const locKey = (l: { x: number; z: number; id: number }) => `${l.x},${l.z},${l.id}`;
     const avoided = (l: { x: number; z: number; id: number }) => (avoid.get(locKey(l)) ?? -1) >= lastTick;
 
-    const findTarget = (s: BotWorldState): Target | null => {
+    /** The current target while it stands; with `other`, the nearest tree that is not it, when one stands. */
+    const findTarget = (s: BotWorldState, other = false): Target | null => {
         if (method.kind === 'loc') {
-            const locs = s.nearbyLocs
+            const cur = current;
+            const isCur = (l: { x: number; z: number; id: number }) => cur?.kind === 'loc' && l.x === cur.x && l.z === cur.z && l.id === cur.id;
+            let locs = s.nearbyLocs
                 .filter(l => targetRe.test(l.name) && !avoided(l) && (!trees || trees.has(`${l.x},${l.z}`)) && l.optionsWithIndex.some(o => optionRe.test(o.text)))
                 .sort((a, b) => a.distance - b.distance);
-            const cur = current;
-            if (cur?.kind === 'loc' && locs.some(l => l.x === cur.x && l.z === cur.z && l.id === cur.id)) return cur;
+            if (other && locs.some(l => !isCur(l))) locs = locs.filter(l => !isCur(l));
+            else if (locs.some(isCur)) return cur;
             const l = locs[0];
             return l ? { kind: 'loc', x: l.x, z: l.z, id: l.id, op: l.optionsWithIndex.find(o => optionRe.test(o.text))!.opIndex } : null;
         }
@@ -253,9 +272,9 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
     const sameTarget = (a: Target | null, b: Target | null) =>
         !!a && !!b && (a.kind === 'loc' && b.kind === 'loc' ? a.x === b.x && a.z === b.z && a.id === b.id : a.kind === 'npc' && b.kind === 'npc' && a.index === b.index);
 
-    const click = (ctx: ProgramContext): boolean => {
+    const click = (ctx: ProgramContext, other = false): boolean => {
         const s = ctx.state;
-        current = findTarget(s);
+        current = findTarget(s, other);
         if (!current) {
             ctx.log(`no target at ${s.player?.worldX},${s.player?.worldZ}`);
             ctx.count('noTarget');
@@ -288,6 +307,106 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
         return true;
     };
     const breakAt = (t: number) => successes.break(t);
+    /** Answer an open dialog once, and again if it is still open 3 labels on. */
+    const answerDialog = (ctx: ProgramContext, t: number): boolean => {
+        if (!ctx.state.dialog?.isOpen || t === lastDismiss || (dialogOpenSince !== t && t - lastDismiss < 3)) return false;
+        lastDismiss = t;
+        ctx.send({ type: 'clickDialogOption', optionIndex: 0 }, 'dismiss dialog');
+        return true;
+    };
+
+    /**
+     * The tree this cycle's roll-label click went to was seen gone after that label: it fell to the
+     * roll, and the click (on its stump) did not re-arm the clock, which a fall leaves on the roll
+     * tick (woodcut.rs2 get_logs returns without p_oploc). The next click on a live tree rolls r0
+     * after it lands, off the lattice, so the schedule waits for that roll's xp.
+     */
+    const treeFell = () => {
+        switches++;
+        anchor = null;
+        awaitXpSince = lastTick;
+        breakAt(lastTick);
+    };
+
+    /** One label of the plain + bury loop (header). `anchor` is the last roll's label; `clickDue` the bury cycle's click. */
+    const plainBury = (ctx: ProgramContext, t: number, xpNow: boolean, targetGone: boolean, lvl: number) => {
+        const s = ctx.state;
+        const dialog = !!s.dialog?.isOpen;
+        if (xpNow) {
+            anchor = t;
+            awaitXpSince = null;
+        }
+        if (clickDue !== null) {
+            if (t < clickDue) return; // the bury delays the player through the next tick: nothing may land then
+            if (t > clickDue) {
+                // The click's label was never seen (two ticks decoded in one pass): the roll it was
+                // for is gone; click now and the next xp re-anchors.
+                lateClicks++;
+                ctx.count('lateClicks');
+                ctx.log('bury click label skipped: re-click');
+            }
+            clickDue = null;
+            click(ctx); // also closes a level-up page (OpLocHandler)
+            if (targetGone) treeFell();
+            return;
+        }
+        const restart = (why: string) => {
+            answerDialog(ctx, t);
+            current = null;
+            anchor = null;
+            if (click(ctx)) {
+                awaitXpSince = t;
+                breakAt(t);
+            }
+            ctx.log(`plain + bury: click and wait for xp (${why})`);
+        };
+        // The lock window counts rolls at the plain cadence. A bury cycle leaves the player idle for
+        // about 3 labels, so only two whole idle cycles since the last click or roll mean a click did not take.
+        const window = windowOverride || Math.ceil(lockWindow(method, lvl) / 3) * method.plainCycle;
+        const idle = (since: number) => idleTicks > 2 * method.plainCycle && t - since > 2 * method.plainCycle;
+        if (anchor === null) {
+            if (awaitXpSince === null) restart('start');
+            else if (targetGone || idle(awaitXpSince) || t - awaitXpSince > window || answerDialog(ctx, t)) restart('no roll yet');
+            return;
+        }
+        if (idle(anchor) || t - anchor > window) {
+            resyncs++;
+            ctx.count('resyncs');
+            ctx.count('slips');
+            restart(t - anchor > window ? 'no xp' : 'idle');
+            return;
+        }
+        const k = (t - anchor) % method.plainCycle;
+        if (k !== 0 && targetGone) {
+            // seen gone after the roll label: no bone this cycle, the click goes to a live tree now
+            restart('tree fell');
+            treeFell();
+            return;
+        }
+        if (k === 1) {
+            if (dialog) {
+                // a level-up page from this roll: a bury would not clear it, a click does; skip this bone
+                answerDialog(ctx, t);
+                click(ctx);
+                return;
+            }
+            if (buryOne(ctx)) {
+                clickDue = t + 2;
+                return;
+            }
+            noBoneCycles++;
+            ctx.count('noBoneCycles');
+        }
+        if (k === 0) {
+            const p = dropProducts ? droppable(s)[0] : undefined;
+            const answered = answerDialog(ctx, t);
+            if (p) ctx.send({ type: 'dropItem', slot: p.slot }, `drop ${p.name}`);
+            // to another standing tree: the one that just rolled may have fallen, still listed (header)
+            if (p || answered || targetGone) click(ctx, method.kind === 'loc');
+            return;
+        }
+        if (targetGone || answerDialog(ctx, t)) click(ctx);
+    };
 
     const summary = () => {
         const g = successes.stats();
@@ -401,6 +520,7 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
             const targetGone = current !== null && !sameTarget(current, findTarget(s));
             if (xpNow || targetGone) ctx.log(`${xpNow ? 'xp' : ''}${xpNow && targetGone ? ', ' : ''}${targetGone ? 'target gone' : ''} (anchor ${anchor ?? '-'}, awaiting xp since ${awaitXpSince ?? '-'})`);
 
+            if (plain && bonesRe) return plainBury(ctx, t, xpNow, targetGone, lvl);
             if (plain) {
                 if (s.inventory.length >= 28 && dropProducts) {
                     for (const p of droppable(s).slice(0, ctx.budget)) ctx.send({ type: 'dropItem', slot: p.slot }, `drop ${p.name}`);

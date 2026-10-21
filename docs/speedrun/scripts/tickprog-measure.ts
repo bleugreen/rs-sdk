@@ -11,9 +11,12 @@
 //                bones-placement.md section 4, the stay2 lap); topped up as in oak
 //   fly          knife fly fishing, Lumbridge     --level=20 --until=99 | --successes=N [--technique=plain]
 //   willow       knife willows, Draynor           --successes=150
-//   oak          knife oaks, Taverley (2914,3494) --successes=200 [--level=60] [--bury [--prayer=43]]
-//                --bury buries dragon bones inside the cycle; a ::give tops them up at 3 left
-//                (off the scored clock; the run's trades cost rs/105's 5 ticks per load on top)
+//   oak          knife oaks, Taverley (2914,3494) --successes=200 [--level=60] [--bury [--prayer=43]] [--technique=plain]
+//   tav-willow   the same at the Taverley willow tile (2920,3406), --level=88
+//                --bury buries dragon bones every cycle (knife: inside the 3-tick cycle; plain:
+//                plain + bury); a ::give tops them up at 3 left (off the scored clock; the run's
+//                trades cost rs/105's 5 ticks per load on top). Reports logs per tick, p(L) and
+//                Σ1/p over the logs (ticks per expected roll), and bones per tick.
 //   tree         knife normal trees, Lumbridge    --successes=150 [--level=1]  (the demo loop)
 //                (knife modes: --successes counts xp drops, one log or fish each; the result's
 //                ticksPerExpectedRoll is the figure to set against the cadence; on the trees it
@@ -36,6 +39,7 @@ import { hostname, loadavg } from 'os';
 import { runScript } from '../../../sdk/runner';
 import { latencyHistogram } from '../../../speedrun/lib/hostgate';
 import { awaitProgram, probeInPage, ProgramError, programStatus, runProgram, startProgram } from '../../../speedrun/lib/programs';
+import { statRandom } from '../../../server/webclient/src/bot/programs/util';
 import { openSession, closeSession, type Session } from '../../../speedrun/lib/session';
 import { decideGiver, decideReceiver, newGiverCtx, newReceiverCtx, planOffers, sameName, tradeOf, type GiverCtx, type OfferEntry, type ReceiverCtx } from '../../../speedrun/lib/trade';
 
@@ -170,9 +174,16 @@ await runScript(async ({ bot: actions, sdk }) => {
             const end = await runProgram(sdk, 'knife-cycle', params, { onProgress: progress });
             return report(`knife-cycle ${method}`, end);
         }
-        case 'oak': {
+        case 'oak':
+        case 'tav-willow': {
+            // rs/105's standing tiles and the three trees reached from each (bones-placement.md section 3,
+            // woodcutting.md section 2); `chance` is the rune axe's stat_random bounds (trees.dbrow)
+            const site = mode === 'oak'
+                ? { method: 'oak', level: 60, tele: '0,45,54,34,38', at: [2914, 3494], trees: [[2912, 3491], [2914, 3495], [2915, 3492]], chance: [112, 350] }
+                : { method: 'willow', level: 88, tele: '0,45,53,40,14', at: [2920, 3406], trees: [[2918, 3405], [2919, 3407], [2921, 3405]], chance: [56, 175] };
             const bury = has('bury');
-            const level = num('level', 60);
+            const technique = flag('technique', 'knife');
+            const level = num('level', site.level);
             if (!DEMO) {
                 await clearInventory();
                 await say(`::setstat woodcutting ${level}`);
@@ -180,21 +191,54 @@ await runScript(async ({ bot: actions, sdk }) => {
                 await say('::give rune_axe 1');
                 await knifeKit(2);
                 if (bury) await say('::give dragon_bones 20');
-                await tele('0,45,54,34,38', 2914, 3494);
+                await tele(site.tele, site.at[0]!, site.at[1]!);
                 while (sdk.getState()?.dialog.isOpen) { await sdk.sendClickDialog(0); await sdk.waitForTicks(1); }
             }
-            const params: Record<string, unknown> = { method: 'oak', technique: flag('technique', 'knife'), successes: num('successes', 200), maxTicks: num('maxticks', 30_000) };
-            // the three oaks reached from 2914,3494 (woodcutting.md section 2); --any-tree clicks the nearest oak
-            if (!has('any-tree')) params.trees = [[2912, 3491], [2914, 3495], [2915, 3492]];
+            const params: Record<string, unknown> = { method: site.method, technique, successes: num('successes', 200), maxTicks: num('maxticks', 30_000) };
+            // --any-tree clicks the nearest tree instead of the three reachable ones
+            if (!has('any-tree')) params.trees = site.trees;
             if (bury) params.bury = '^dragon bones$';
             const started = await startProgram(sdk, 'knife-cycle', params);
+            // Σ1/p: each log stands for 1/p(L) rolls at the level it was cut at (tickmanip-demo-report.ts).
+            const wc = (s: NonNullable<ReturnType<typeof sdk.getState>>) => s.skills.find(k => k.name === 'Woodcutting');
+            const s0 = sdk.getState()!;
+            let lastXp = wc(s0)?.experience ?? 0;
+            let lastLevel = wc(s0)?.baseLevel ?? level;
+            const levels = { first: lastLevel, last: lastLevel };
+            let unit = 0;
+            let logs = 0;
+            let expectedRolls = 0;
             // Top-up stand-in: the run's helper trades at the tree (bones-placement.md section 3).
-            const un = bury ? topUpBones() : () => {};
+            const unTopUp = bury ? topUpBones() : () => {};
+            const un = sdk.onStateUpdate(s => {
+                const k = wc(s);
+                if (k && k.experience > lastXp) {
+                    const d = k.experience - lastXp;
+                    unit = unit ? Math.min(unit, d) : d;
+                    const n = Math.max(1, Math.round(d / unit));
+                    logs += n;
+                    expectedRolls += n / statRandom(lastLevel, site.chance[0]!, site.chance[1]!);
+                    lastXp = k.experience;
+                    lastLevel = k.baseLevel;
+                    levels.last = lastLevel;
+                }
+            });
             try {
                 const end = await awaitProgram(sdk, started.runId, { onProgress: progress });
-                return report(`knife-cycle oak${bury ? ' bury' : ''} L${level}`, end);
+                const r = (end.result ?? {}) as { ticks?: number; buried?: number };
+                const ticks = r.ticks ?? 0;
+                const p = (l: number) => statRandom(l, site.chance[0]!, site.chance[1]!).toFixed(3);
+                const per = (n: number) => (ticks ? (n / ticks).toFixed(3) : 'n/a');
+                report(`knife-cycle ${site.method} ${technique}${bury ? ' bury' : ''} L${level}`, end);
+                console.log(`  logs ${logs} over ${ticks} ticks = ${per(logs)} per tick; p(L) ${p(levels.first)} at L${levels.first} to ${p(levels.last)} at L${levels.last}; Σ1/p ${expectedRolls.toFixed(1)} expected rolls = ${(ticks / expectedRolls).toFixed(3)} ticks per expected roll`);
+                if (bury) {
+                    const b = r.buried ?? 0;
+                    console.log(`  bones ${b} = ${per(b)} per tick; with the run's trades (5 ticks per 25-bone load, i) ${(b / (ticks + b / 5)).toFixed(3)} per tick`);
+                }
+                return;
             } finally {
                 un();
+                unTopUp();
             }
         }
         case 'pickpocket': {
@@ -344,7 +388,7 @@ await runScript(async ({ bot: actions, sdk }) => {
             return report(`agility ${course}`, end);
         }
         default:
-            throw new Error(`unknown mode ${mode}: probe, mine, fly, willow, oak, tree, pickpocket, agility`);
+            throw new Error(`unknown mode ${mode}: probe, mine, fly, willow, oak, tav-willow, tree, pickpocket, agility`);
     }
     }
 
