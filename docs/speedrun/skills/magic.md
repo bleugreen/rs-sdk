@@ -16,6 +16,16 @@ occasionally costs a tick in a bank visit or a re-sip. The 3-tick enchant floor 
 per tick are server rules and do not depend on the host. rs/26's bbs correction factor had not
 been published when this was written (01:15), so no factor is applied.
 
+**Client.** Every number here was taken on the headless lite client against a local lab engine,
+where a reaction lands on the next tick. The scored run drives the browser webclient against the
+demo, where each reaction to observed state costs 1-2 more ticks through the SDK relay from home
+and about 0.15 from Ashburn (rs/2; `docs/speedrun/LAB.md` on main, "Which client a number was
+taken on" and the host-latency table under "Running several labs on one machine"). The reactions
+here: the enchant casts and Charge go out on a fixed schedule (no reaction), and each enchant
+bank visit waits once on the bank interface opening (1 reaction per 24-26 casts, inside the
+measured 4-tick overhead). Kolodion's fight reacts to each of his forms and to each re-sip, and is
+counted in the quest plan. Totals are not re-derived for the webclient.
+
 ## 1. Recommendation
 
 **On the route (rs/3's Package B), enchant only to Magic 59, before Tree Gnome Village.**
@@ -23,14 +33,16 @@ Under Package B the pre-MM fights are **cast, not meleed** (rs/3 `pre_mm_fights.
 Bolt or Fire Blast from a level-1 melee account kills the Khazard warlord, the black demon and
 the Fight Arena monsters as fast as melee at Strength 83, because none of them has magic
 defence. Those fights pay about 3,600 base Magic, and The Grand Tree pays 2,150. So the
-account reaches the Mage Arena at **base 76-77 without any further enchanting** (timeline
-below). From there:
+account reaches the Mage Arena at **base 76 without any further enchanting** (timeline below;
+[quests README](../quests/README.md) section 4; 77 only if the ~600 base of teleport casts is
+counted, which the README's timeline leaves out). From there:
 
 - **Fire Wave needs no potion.** Its gate is boosted 75 (`magic.rs2:22`, read), and base 76
   meets it. Kolodion's start check is `stat_base(magic) >= 60` (read), met.
-- **Kolodion is fought at base 76-77**, between the measured base-71-plus-potion fights
-  (320-346 ticks) and rs/20's base-80 fights (312-322): about 315-340 ticks (inferred). The
-  fight is counted in rs/3's Mage Arena step, not here.
+- **Kolodion is fought at base 76**, between the measured base-71-plus-potion fights
+  (320-346 ticks) and rs/20's base-80 fights (312-322): about 300-330 ticks by the README's
+  step 9 (inferred; this document's own interpolation gave 315-340). The fight is counted in
+  the README's Mage Arena step, not here.
 - **The fight leaves base 80-81**, so **Charge needs no potion either**: every yield measured
   at base 71 (2,787-3,129 base) takes 8,251 past 80's 10,686.8. Only the lowest yield ever
   recorded (2,404, rs/3, base 80, 100 ms) would stop at 79 without the teleports' xp. Carry
@@ -45,15 +57,17 @@ Gnome Village.
 
 | Start | Ticks to 99 (Magic training only) | Basis |
 |---|---|---|
-| **On route (Package B): level 1, enchant to 59 before TGV, fights cast, no potions** | **about 245**: 18 (strike) + about 4 (first withdraw) + 180 (60 casts) + 8 (2 bank visits) + about 33 (Charge from 80-81) | measured parts, 300 ms; timeline inferred (below). The Mage Arena fight is in rs/3's step 10 |
+| **On route (Package B): level 1, enchant to 59 before TGV, fights cast, no potions** | **about 245**: 18 (strike) + about 4 (first withdraw) + 180 (60 casts) + 8 (2 bank visits) + about 33 (Charge from 80-81) | measured parts, 300 ms; timeline inferred (below). The Mage Arena fight is in the README's step 9 |
 | Package B, enchant only to 51 (the Ardougne teleport gate), magic potions for Fire Wave and Charge | about 195: 18 + 4 + 126 (42 casts) + 4 (1 visit) + about 38 (sip + Charge from 78-80) + about 2 of fight sips | inferred; but the warlord takes Fire Bolt's 165 ticks instead of Fire Blast's 133 (measured, rs/56), so the route as a whole is only about 15 ticks better (section 5) |
 
 ### Magic timeline under Package B
 
-Derived here from rs/3's step order (README section 4 and `pre_mm_fights.md` on
-cairn://p/rs/3/1/coordinator). rs/80, which is finalising that README, reached the same
-timeline independently (59 before TGV, 76 at the Mage Arena, 80-81 after Kolodion, one potion as
-insurance; relayed by the rs/28 coordinator, 01:30). Base xp from this server's curve (`Player.ts`,
+Derived here from the canonical step order ([quests README](../quests/README.md) section 4)
+and [`pre_mm_fights.md`](../quests/pre_mm_fights.md). The README's own Magic timeline (section
+4, below its step table; rs/80) agrees: 59 before TGV, 8,201-8,391 base (level 76) at the Mage
+Arena, 80-81 after Kolodion, one potion as insurance. Its range is wider at the warlord because
+it credits Fire Blast with ~1,240 (inferred) where this table keeps Fire Bolt's measured 1,047,
+and it counts no teleport xp. Base xp from this server's curve (`Player.ts`,
 `levelExperience`: 59 = 2,468.0, 64 = 3,504.9, 67 = 4,322.7, 73 = 6,568.0, 76 = 8,092.7, 77 =
 8,675.5, 80 = 10,686.8, 81 = 11,455.6).
 
@@ -65,7 +79,7 @@ insurance; relayed by the rs/28 coordinator, 01:30). Base xp from this server's 
 | + The Grand Tree reward | ~6,711 | 73 | +2,150, read (`quest_grandtree.rs2:201`) |
 | + Fight Arena, Fire Blast | ~8,251 | **76** | +~1,540, inferred by rs/56 from 216 hitpoints of monsters |
 | + teleport casts before the arena | ~8,850 | 77 | +~600, inferred: about 7 Ardougne (61 base), 2 Varrock (35), 1 Camelot (55.5) and 1 Falador (48) from the rune lists in rs/3's step table (`magic_spells.dbrow`, read). The exact count is open |
-| **Mage Arena start** | **8,251-8,850** | **76-77** | |
+| **Mage Arena start** | **8,251** (README: 8,201-8,391) | **76** (77 only with the teleports' ~600, which the README does not count) | README section 4 |
 | After Kolodion, +2,404 to +3,129 | 10,655-11,980 | **80-81** (79 only for the lowest yield without the teleports) | yields measured (section 4; rs/3) |
 
 With the ladder stopped at 51 instead, the same steps give 58 at the demon, 70 at Fight Arena,
@@ -115,6 +129,15 @@ Charge is the only Magic spell that fires more than once per tick. Every other x
 a player delay, and the engine refuses spell, loc and inventory clicks while one is pending.
 So nothing below 80 can be stacked the way Charge is, and the 1 -> 80 cost is set by casts x 3.
 
+### Summary row
+
+rs/2's columns for the Item-fed skills section of `docs/speedrun/skills/README.md`; column 5
+is "with interleaving (net)".
+
+| Skill | Headline method | Start level (on-route quests) | Ticks to 99, normal | Ticks to 99, with interleaving (net) | Basis | Helper supplies | Document |
+|---|---|---|---|---|---|---|---|
+| Magic | Wind Strike 1 -> 7, enchant 7 -> 59 before TGV; the cast pre-MM fights, Grand Tree and Kolodion carry it to 80-81; Charge to 99 | 1; 59 by enchanting, 76 at the Mage Arena, 80-81 after Kolodion (Grand Tree 2,150 and ~3,600 from the cast fights; [quests README](../quests/README.md) section 4 timeline) | ~245 | **~215**: Charge's ~33 ride the pickpocket stuns beside the bones, clean (Thieving has no knife column). On plain 4-tick Woodcutting instead, it applies only against Woodcutting's normal column (knife loop unmeasured) | measured cadences, inferred timeline; busy host | 12/27/16/5 sapphire/emerald/ruby/diamond rings, 60 cosmic + 81 air + 80 fire + 50 earth, staffs of water and fire, amulet of magic, fight runes (stock ~T/5 casts per fight), Kolodion ~70 blood + 400 air, Charge ~490 blood + 490 air, 1 magic potion (insurance) | magic.md |
+
 ## 2. Route by level band
 
 All at a bank booth (measured at Varrock west bank, booth (3186,3436), player on (3185,3436)).
@@ -141,8 +164,8 @@ and `magic-route.ts` for the bands as run end to end). Success is 100% for every
 | **Package B route (on route)** | | | | | | | |
 | 1 -> 7 | Wind Strike on chickens | Magic 1 | 7.5 typical | 5 | about 1.5 | 4 | 16-20 (measured) |
 | 7 -> 59 | Enchant sapphire 12, emerald 27, ruby 16, diamond 5, before Tree Gnome Village | Magic 7 / 27 / 49 / 57 | 17.5-67 | 3 | 5.8-22.3 | **60** | **about 192** (180 casting + first withdraw + 2 bank visits; inferred from the measured cadence and bank cycle) |
-| 59 -> 76/77 | The pre-MM fights by spell, The Grand Tree's reward, teleports | Fire Bolt 35, Fire Blast 59 | | | | | 0 Magic-training ticks: counted in rs/3's quest steps (timeline in section 1) |
-| 76/77 -> 80/81 | Mage Arena fight, Fire Wave, no potion | base 60, boosted 75 | | | | | 0 here: rs/3's step 10 (about 315-340, inferred) |
+| 59 -> 76 | The pre-MM fights by spell, The Grand Tree's reward, teleports | Fire Bolt 35, Fire Blast 59 | | | | | 0 Magic-training ticks: counted in rs/3's quest steps (timeline in section 1) |
+| 76 -> 80/81 | Mage Arena fight, Fire Wave, no potion | base 60, boosted 75 | | | | | 0 here: README step 9 (about 300-330, inferred) |
 | 80/81 -> 99 | Charge, no sip | 80, `%magearena >= 8` | 180 | 0.2 | 900 | 156-163 | **about 32-33** (rs/20 measured 33 from 80, 300 ms) |
 
 "Ticks for band" counts the span from the first cast to the tick the next action can land.
@@ -311,13 +334,27 @@ point (`combat.rs2`, `style_magic_normal`). The spell attack delay is 5 ticks
   only inside pickpocket stuns, about 2 per stun. On Package B **none of the 60 enchants can
   go there**: all of them come before Tree Gnome Village, and Thieving is trained only after
   Fight Arena, whose 2,175 Thieving is worth most while Thieving is low (rs/3 README section
-  4). **Charge 80 -> 99 (about 33 standalone ticks) is absorbable** into any gathering session
-  after the arena: it is an IF_BUTTON, needs no re-click, and landed 4.73 casts per tick during
-  Woodcutting (measured, 300 ms). Woodcutting fell from 11.1 to 9.8 base per tick while it ran
-  (measured), about 4 Woodcutting ticks over the ~34 ticks of Charge. interleaving.md rates
-  Charge's 19 level-ups harmless; that is unmeasured for Charge itself. So about 30 of Magic's
-  ~245 ticks can be absorbed, and the ~210 of Wind Strike and enchanting before Tree Gnome
-  Village cannot (inferred).
+  4). **Charge 80 -> 99 (about 33 standalone ticks) is absorbable**: it is a delay-free
+  IF_BUTTON that needs no re-click. Which self-only loop it rides decides whether the net
+  figure is clean:
+  - **Pickpocket stuns, beside the bones (preferred, clean).** A stun carried 1.96 bones and
+    7.3 delay-free helper actions at once (measured, interleaving.md section 4), so the ~163
+    casts fill about 22 of Thieving's ~100 stuns without displacing a bone. Thieving has no
+    knife column (no tick-manipulation variant), so this nets against nothing. The 2 rune
+    stacks take 2 slots of each bone load (the staff of fire is wielded). It needs Thieving to
+    fall after the Mage Arena, which the README allows: the arena can move anywhere after Fight
+    Arena (step 9).
+  - **Plain 4-tick Woodcutting (measured).** Charge landed 4.73 casts per tick with no
+    re-click, and Woodcutting fell from 11.1 to 9.8 base per tick while it ran, about 4
+    Woodcutting ticks over the ~34 ticks of Charge. This **applies only against Woodcutting's
+    normal column.** Against rs/9's knife loop (knife-on-logs, the button, a drop and a
+    re-click on the tick after each roll), the casts would go on the two ticks the knife
+    leaves empty, which fits the packet budget and the inventory by reading, but it is
+    unmeasured whether they disturb the predicted packets.
+
+  interleaving.md rates Charge's 19 level-ups harmless; that is unmeasured for Charge itself.
+  So about 30 of Magic's ~245 ticks can be absorbed, net **~215**, and the ~210 of Wind Strike
+  and enchanting before Tree Gnome Village cannot (inferred).
 
 The items below were costed for the earlier route (no Magic from the pre-MM fights).
 
@@ -418,7 +455,7 @@ potions needed** (counts inferred from the cast plan in section 1 and the read r
 | Fire rune | 80 | ruby (5 per cast) | rune shops |
 | Earth rune | 50 | diamond (10 per cast) | rune shops |
 | Staff of fire, amulet of magic | 1 each | the pre-MM fights, Kolodion and Charge (fire runes from the staff) | Zaff; Magic Guild; GE |
-| Pre-MM fight runes | **about 200 chaos + 600 air** for the warlord and demon on Fire Bolt, **about 40 death + 160 air** for Fight Arena on Fire Blast | rs/3 `pre_mm_fights.md` section 4 (inferred there from cast counts). With the warlord on Fire Blast at 59, his share becomes death + air (1 death, 4 air per cast, read), about 30 death + 120 air in place of about 30 chaos + 90 air (inferred from 133 ticks at a 5-tick spell delay) | Magic Guild; GE |
+| Pre-MM fight runes | **about 200 chaos + 600 air** for the warlord and demon on Fire Bolt, **about 40 death + 160 air** for Fight Arena on Fire Blast | rs/3 `pre_mm_fights.md` section 4 (inferred there from cast counts); README step 3 now flags these counts as unverified and stocks ~T/5 casts per fight plus a margin (warlord 133 m -> ~27, demon 153 m -> ~31). With the warlord on Fire Blast at 59, his share becomes death + air (1 death, 4 air per cast, read), about 30 death + 120 air in place of about 30 chaos + 90 air (inferred from 133 ticks at a 5-tick spell delay) | Magic Guild; GE |
 | Kolodion | about 70 blood + 400 air | Fire Wave, with the staff of fire (`mage_arena.md`) | as above |
 | Charge | about 490 blood + 490 air | 156-163 casts from base 80-81 (3 of each per cast; fire from the staff) | Magic Guild (blood, 1,000 stock); rune shops |
 | Magic potion | **1, insurance only** | a sip for Charge if Kolodion pays under ~2,436 base (section 1) | helper Herblore 76 or the GE (no shop) |
@@ -500,21 +537,23 @@ with 4 rune slots), 5 from 57 (26 per inventory).
   use).
 - **Package B timeline inputs that were not measured** (section 1): the warlord's and Fight
   Arena's Magic yield on Fire Blast (only Fire Bolt's yields were logged, and Fight Arena's
-  ~1,540 is inferred), the number of teleports before the arena (~600 base assumed), and the
-  Kolodion fight's length at base 76-77 (inferred 315-340 between the base-71 and base-80
+  ~1,540 is inferred), the number of teleports before the arena (~600 base assumed here; the README's
+  timeline counts none), and the Kolodion fight's length at base 76 (inferred: 300-330 in
+  README step 9, 315-340 here, between the base-71 and base-80
   measurements). None can move the arena level below 76 unless the fights pay ~500 base less
   than assumed.
 - **The pre-MM fights' rune counts look generous.** `pre_mm_fights.md` quotes Fire Bolt at
   55-114 casts per fight, but a 165-tick fight at the 5-tick spell attack delay
   (`player_magic.rs2:188`) allows at most about 33 casts. The supply list above keeps rs/3's
-  figures as an upper bound; the real count belongs in rs/3's document.
+  figures as an upper bound; README step 3 now carries the same caveat (stock ~T/5 casts per fight plus a margin until a
+  run logs actual casts).
 - **Ladder to 59 or to 51 (open).** Section 5 puts the two within about 15 ticks of each
   other either way (inferred). It turns on the black demon at Magic 64 on Fire Blast, which
   was not measured; one run of `quest-premm-fight.ts <bot> blackdemon stats=80,1,1,28,43,64
   mode=fire_blast` on rs/3's branch would settle it. 59 stays recommended until then because
   it needs no magic potion.
-- **rs/80's timeline** agrees with section 1 (rs/28 coordinator, 01:30). If its final README
-  section 4 moves a fight or the enchanting, re-run the timeline table.
+- **The README's Magic timeline** ([quests README](../quests/README.md) section 4) agrees with
+  section 1. If a later revision moves a fight or the enchanting, re-run the timeline table.
 - **Whether the decay phase can be steered.** The restore timer is aligned to login
   (`login.rs2:36`). A sip right after a decay step holds a full 100 ticks; the measured fights
   needed 2 re-sips. Logging in so that a decay step falls just before the fight would save at
