@@ -9,10 +9,11 @@
 // client restarts its tick counter, so login-relative ticks are counted from the
 // first in-world state of the new session.
 import type { BotWorldState } from '../../sdk/types';
-import { giveWine, giveWineKit, makeNotedWine, makeWines, prepareRearmKit, receiveWine, splitDelivery } from '../helpers/wine';
+import { giveWine, giveWineKit, makeNotedWine, makeWines, prepareRearmKit } from '../helpers/wine';
 import { ITEM, closeBank, invCount, openBank, prepare, tick } from '../helpers/wine-common';
+import { receiveWine, splitDelivery } from '../helpers/wine-receive';
 import { depositAll } from '../lib/bank';
-import { login, logoutClean, openSession, type Session } from '../lib/session';
+import { login, logoutClean, openSession, relog as relogSession, type Session } from '../lib/session';
 import { waitTicks } from '../lib/wait';
 import { arg, botArg, result } from './common';
 import { give, setstat, tele, VARROCK_WEST_BANK } from './setup';
@@ -46,22 +47,13 @@ async function waitXp(s: Session, xp0: number, from: number, max: number): Promi
     return -1;
 }
 
-/**
- * Clean logout, a short wall-clock wait (free: no ticks pass for the account), and
- * a fresh login. Returns the tick of the new session's first in-world state.
- */
+/** Clean logout, 3 s offline (free: no ticks pass for the account), fresh login; the new session's first in-world tick. */
 async function relog(s: Session): Promise<number> {
-    const out = await logoutClean(s);
-    if (!out.ok) throw new Error(`${s.name}: logout failed: ${out.reason}`);
-    await Bun.sleep(3_000);
-    let first: number | null = null;
-    const unsub = s.sdk.onStateUpdate((st: BotWorldState) => {
-        if (first === null && st.inGame && (st.player?.worldX ?? 0) > 0) first = st.tick;
-    });
-    await login(s);
-    unsub();
-    return first ?? tick(s.sdk);
+    return (await relogSession(s, { offlineMs: 3_000 })).loginTick;
 }
+
+/** Outside any login window: receiveWine deposits, finds the window missed, and relogs (the T5/T8 shape). */
+const NO_WINDOW = -1_000_000;
 
 /** Bank `n` grapes and `n` jugs of water, given as notes (the bank unnotes them). */
 async function stockIngredients(s: Session, n: number): Promise<void> {
@@ -123,9 +115,9 @@ result('T4-notes-after-relog', { loginTick: tL, notes: invCount(maker.sdk, ITEM.
 
 // T5: hand-off to a Cooking-1 receiver; deposit; ferment at its next login
 const xp0 = receiver.sdk.getSkill('Cooking')?.experience ?? 0;
-const [g5, r5] = await Promise.all([giveWine(M, receiver.name), receiveWine(R, maker.name)]);
+const [g5, r5] = await Promise.all([giveWine(M, receiver.name), receiveWine(R, maker.name, { loginTick: NO_WINDOW, relog: () => relog(receiver) })]);
 result('T5-trade-and-deposit', { giverTicks: g5.ticks, given: g5.given, receiverTradeTicks: r5.tradeTicks, receiverBankTicks: r5.bankTicks, deposited: r5.deposited });
-const tR = await relog(receiver);
+const tR = r5.loginTick;
 const tXp = await waitXp(receiver, xp0, tR, 60);
 await openBank(R);
 const bank5 = receiver.sdk.getBankItems().filter(i => /wine/i.test(i.name)).map(i => `${i.name} x${i.count}`);
@@ -146,7 +138,7 @@ const unsub = receiver.sdk.onStateUpdate(st => {
 });
 await login(receiver);
 unsub();
-const r6 = await receiveWine(R, maker.name);
+const r6 = await receiveWine(R, maker.name, { loginTick: tR2, relog: () => relog(receiver) });
 const tXp2 = await waitXp(receiver, xp1, tR2, 80);
 result('T6-login-window', {
     loginTick: tR2,
@@ -178,10 +170,10 @@ const t8 = tick(maker.sdk);
 const mBig = await makeNotedWine(M, big);
 result('T8-make-big-noted', { ...mBig, wallTicks: tick(maker.sdk) - t8, perWine: Number((mBig.ticks / Math.max(1, mBig.made)).toFixed(2)) });
 await setstat(receiver.sdk, 'cooking', 1);
-const [g8, r8] = await Promise.all([giveWine(M, receiver.name), receiveWine(R, maker.name)]);
-result('T8b-trade-and-deposit', { given: g8.given, giverTicks: g8.ticks, receiverTradeTicks: r8.tradeTicks, receiverBankTicks: r8.bankTicks, deposited: r8.deposited });
 const xp8 = receiver.sdk.getSkill('Cooking')?.experience ?? 0;
-const tR8 = await relog(receiver);
+const [g8, r8] = await Promise.all([giveWine(M, receiver.name), receiveWine(R, maker.name, { loginTick: NO_WINDOW, relog: () => relog(receiver) })]);
+result('T8b-trade-and-deposit', { given: g8.given, giverTicks: g8.ticks, receiverTradeTicks: r8.tradeTicks, receiverBankTicks: r8.bankTicks, deposited: r8.deposited });
+const tR8 = r8.loginTick;
 const tXp8 = await waitXp(receiver, xp8, tR8, 60);
 await waitTicks(receiver.sdk, 3);
 await openBank(R);
@@ -209,13 +201,12 @@ const unsub9 = receiver.sdk.onStateUpdate(st => {
 });
 await login(receiver);
 unsub9();
-const s9 = await splitDelivery(R, maker.name, { first: Number(arg('first', '29')) });
+const s9 = await splitDelivery(R, maker.name, { loginTick: tR9, first: Number(arg('first', '29')), relog: () => relog(receiver) });
 result('T9-split-one-login', {
     ...s9,
-    loginTick: tR9,
-    firstFermentAfterLogin: s9.firstFermentTick - tR9,
-    secondFermentAfterLogin: s9.secondFermentTick - tR9,
-    receiverActionTicks: s9.tradeTicks + s9.firstBankTicks + s9.levelUpTicks + s9.rearmTicks + s9.finalLevelUpTicks,
+    firstFermentAfterLogin: s9.firstFermentTick - s9.loginTick,
+    secondFermentAfterLogin: s9.secondFermentTick - s9.loginTick,
+    receiverActionTicks: s9.tradeTicks + s9.firstBankTicks + s9.secondBankTicks + 1 + s9.finalPagesTicks,
     giverTicks: (await g9).ticks
 });
 
