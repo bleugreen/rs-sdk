@@ -124,7 +124,7 @@ if (import.meta.main) {
     const trials = Number(process.argv[2] ?? 20_000);
     const rate = Number(process.env.NODE_XPRATE ?? 25);
     console.log(`xp rate ${rate}: ${perfectWinesFor99(rate)} perfect wines reach 99; ${trials} trials per plan`);
-    const plans = [[400], [450], [520], [600], [10, 440], [15, 435], [20, 430], [30, 420], [30, 490], [45, 405], [60, 390], [15, 60, 375], [30, 120, 300]];
+    const plans = [[400], [450], [520], [600], [14, 436], [15, 435], [29, 421], [30, 420], [44, 406], [60, 390], [29, 491], [14, 60, 376], [29, 120, 301]];
     console.log('plan | wines | P(99) | mean level | 5th pct level | first firing: mean / min level | P(first < 35)');
     for (const p of plans) {
         const s = simulate(p, rate, trials);
