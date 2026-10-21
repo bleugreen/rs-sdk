@@ -72,12 +72,13 @@ export function clock(sdk: BotSDK): number {
 /**
  * Click through chat dialogs until none is open, choosing options by text when offered.
  * A dialogue counts as finished once none has been open for `idleTicks` server ticks (default 4);
- * those confirmation ticks go to the idle ledger that clock() subtracts.
+ * those confirmation ticks go to the idle ledger that clock() subtracts, unless `keepIdle` is set
+ * because the caller next waits for a server event that overlaps them.
  */
 export async function talkThrough(
     sdk: BotSDK,
     choices: (string | RegExp)[] = [],
-    opts: { maxPages?: number; idleTicks?: number; idleMs?: number } = {}
+    opts: { maxPages?: number; idleTicks?: number; idleMs?: number; keepIdle?: boolean } = {}
 ): Promise<{ pages: number; options: number }> {
     const maxPages = opts.maxPages ?? 80;
     const idleLimit = opts.idleTicks ?? 4;
@@ -90,7 +91,8 @@ export async function talkThrough(
         if (!d || !d.isOpen) {
             if (closedAt < 0) closedAt = tick(sdk);
             if (tick(sdk) - closedAt >= idleLimit) {
-                idleTicks += tick(sdk) - closedAt;
+                // keepIdle: a server-side wait (teleport, p_delay) overlaps these ticks; keep them
+                if (!opts.keepIdle) idleTicks += tick(sdk) - closedAt;
                 break;
             }
             await sleep(10);
