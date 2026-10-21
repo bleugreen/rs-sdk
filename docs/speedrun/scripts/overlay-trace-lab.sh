@@ -2,7 +2,11 @@
 # One-batch lab for overlay-trace.ts: the engine and gateway on one port block
 # (docs/speedrun/LAB.md), the browser bundle, then the traced tab and probe, then stop.
 #
-#   [BUNDLE_REV=<rev>] LAB_BLOCK=tickmanip NODE_TICKRATE=300 bash docs/speedrun/scripts/overlay-trace-lab.sh <bot> [--trials=60]
+#   [BUNDLE_REV=<rev>] [LAB_BLOCK=overlay] NODE_TICKRATE=300 bash docs/speedrun/scripts/overlay-trace-lab.sh <bot> [--trials=60]
+#
+# The default block, overlay (web 9110, agent 8010), is its own so a long-lived lab on a
+# shared block (rs/97 keeps one on tickmanip) cannot serve its bundle to this tab; the script
+# refuses to start if any of its ports is already listening.
 #
 # BUNDLE_REV builds the page from server/webclient at another revision (for a before/after
 # pair) in a scratch copy, then serves it from this checkout's out/; the default builds
@@ -10,13 +14,18 @@
 set -u
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
 BOT=$1; shift
-BLOCK=${LAB_BLOCK:-tickmanip}
+BLOCK=${LAB_BLOCK:-overlay}
 case "$BLOCK" in
-    agility) N=1 ;; mining) N=2 ;; woodcutting) N=3 ;; fishing) N=4 ;; thieving) N=5 ;; tickmanip) N=6 ;;
+    agility) N=1 ;; mining) N=2 ;; woodcutting) N=3 ;; fishing) N=4 ;; thieving) N=5 ;; tickmanip) N=6 ;; overlay) N=21 ;;
     *) echo "unknown LAB_BLOCK '$BLOCK'"; exit 2 ;;
 esac
 export WEB_PORT=$((8900 + 10 * N)) WEB_MANAGEMENT_PORT=$((8901 + 10 * N)) HISCORES_WEB_PORT=$((8902 + 10 * N))
 export NODE_PORT=$((43600 + 10 * N)) AGENT_PORT=$((7800 + 10 * N))
+for port in $WEB_PORT $WEB_MANAGEMENT_PORT $HISCORES_WEB_PORT $NODE_PORT $AGENT_PORT; do
+    if (echo > "/dev/tcp/127.0.0.1/$port") 2> /dev/null; then
+        echo "port $port is already listening; another lab holds block $BLOCK"; exit 2
+    fi
+done
 export NODE_TICKRATE=${NODE_TICKRATE:-300}
 LOG=${LAB_LOG:-${TMPDIR:-/tmp}/overlay-trace-$BLOCK}
 mkdir -p "$LOG"
