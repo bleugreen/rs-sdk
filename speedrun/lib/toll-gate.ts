@@ -16,6 +16,10 @@
 // player's side stands within 1 tile of the player, and the guards wander, so
 // the crossing talks to the guard itself and uses the gate only when no guard
 // is in view. Talking to either guard works from anywhere on its side.
+//
+// `travelTo` is the walk for roles that may start on either side: it crosses
+// first when the destination is across the fence, and reports failure instead
+// of stalling, so a caller can refuse to open whatever bank happens to be near.
 
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
@@ -37,6 +41,18 @@ export const TOLL_EAST: Tile = { x: 3268, z: 3227 };
 export const isEastOfTollGate = (t: Tile): boolean => t.x >= TOLL_EAST.x && t.z < 3240 && t.z > 3100;
 
 export const inAlKharid = (s: BotWorldState): boolean => isEastOfTollGate({ x: s.player!.worldX, z: s.player!.worldZ });
+
+const chebyshev = (a: Tile, b: Tile) => Math.max(Math.abs(a.x - b.x), Math.abs(a.z - b.z));
+
+/**
+ * A step west, clear of the toll gate. From the gate's west side the SDK
+ * pathfinder (which takes the gate for a door) routes some west-side
+ * destinations, the Varrock east bank among them, back through Al Kharid and
+ * sticks at the gate; from here none of the fleet's banks or shops do
+ * (sdk/pathfinding.ts findLongPath).
+ */
+export const WEST_OF_GATE: Tile = { x: 3255, z: 3228 };
+export const besideGateWest = (t: Tile): boolean => !isEastOfTollGate(t) && chebyshev(t, TOLL_WEST) <= 6;
 
 const coinsIn = (s: BotWorldState) => s.inventory.filter(i => i.name === 'Coins').reduce((a, i) => a + i.count, 0);
 const NOT_ENOUGH = /enough money/i;
@@ -135,4 +151,66 @@ async function closeDialog(sdk: TollGateSdk): Promise<void> {
         await sdk.sendClickDialog(0);
         await waitTicks(sdk, 1);
     }
+}
+
+export interface TravelResult {
+    /** The player stands within the tolerance of the destination. */
+    ok: boolean;
+    /** Toll paid on the way. */
+    paid: number;
+    /** Why it failed: 'toll gate: <crossTollGate reason>', 'cant reach', 'aborted', 'no player state'. */
+    reason?: string;
+}
+
+export interface TravelOptions {
+    tolerance?: number;
+    /** walkTo calls toward the destination before giving up. */
+    attempts?: number;
+    log?: (m: string, d?: Record<string, unknown>) => void;
+    signal?: AbortSignal;
+}
+
+/**
+ * Walk to within `tolerance` of `to` (Chebyshev), crossing the toll gate first
+ * when `to` is on the other side of the fence, then stepping clear of the gate
+ * on the west side. Never asks walkTo for a destination across the fence.
+ * Success is read from where the player stands, not from walkTo's answer.
+ */
+export async function travelTo(bot: TollGateBot, sdk: TollGateSdk, to: Tile, opts: TravelOptions = {}): Promise<TravelResult> {
+    const tolerance = opts.tolerance ?? 3;
+    const log = opts.log ?? (() => {});
+    const here = (): Tile | null => {
+        const p = sdk.getState()?.player;
+        return p ? { x: p.worldX, z: p.worldZ } : null;
+    };
+    const start = here();
+    if (!start) return { ok: false, paid: 0, reason: 'no player state' };
+    if (chebyshev(start, to) <= tolerance) return { ok: true, paid: 0 };
+
+    let paid = 0;
+    const toEast = isEastOfTollGate(to);
+    if (isEastOfTollGate(start) !== toEast) {
+        if (opts.signal?.aborted) return { ok: false, paid, reason: 'aborted' };
+        const r = await crossTollGate(bot, sdk, toEast, log);
+        paid = r.paid;
+        if (!r.ok) return { ok: false, paid, reason: `toll gate: ${r.reason}` };
+    }
+
+    const walk = async (t: Tile, tol: number): Promise<boolean> => {
+        for (let attempt = 0; attempt < (opts.attempts ?? 5); attempt++) {
+            const p = here();
+            if (!p || chebyshev(p, t) <= tol) break;
+            if (opts.signal?.aborted) return false;
+            log('walking', { from: [p.x, p.z], to: [t.x, t.z] });
+            const r = await bot.walkTo(t.x, t.z, tol);
+            if (!r.success) log('walk failed', { x: t.x, z: t.z, result: r.message });
+        }
+        const p = here();
+        return p !== null && chebyshev(p, t) <= tol;
+    };
+
+    const p = here()!;
+    if (besideGateWest(p) && !toEast && !besideGateWest(to)) await walk(WEST_OF_GATE, 2);
+    if (await walk(to, tolerance)) return { ok: true, paid };
+    return { ok: false, paid, reason: opts.signal?.aborted ? 'aborted' : 'cant reach' };
 }
