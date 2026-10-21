@@ -1236,14 +1236,40 @@ export class BotSDK {
      * which also binds the click to its observed dialogue page. This low-level
      * index method does not bind the click to a page.
      *
+     * **blind**: `{ blind: true }` skips only the client's wait-for-next-page
+     * latch on a continue click, so several continues can be in flight at
+     * once and the engine resumes up to 5 of them per tick. The click is
+     * still refused when no dialog is open or while a choice is displayed,
+     * and the flag has no effect on option (IF_BUTTON) clicks.
+     *
+     * **Warning:** with `blind` the caller guarantees that every page the
+     * burst covers is a pure "Click here to continue" page, and that none of
+     * them follows a server-side state change the script depends on (an item
+     * given, a varp set, an NPC spawned or moved, a teleport or cutscene).
+     * Extra continues that reach a choice page are refused by the engine and
+     * wasted. The click is not bound to a page (no guard), and a guarded
+     * second click would be rejected as stale anyway because the page
+     * signature includes the waiting state, so do not combine `blind` with
+     * `clickDialogByText()`.
+     *
      * @example
      * ```ts
      * const opt = sdk.getDialog()?.options.find(o => /yes/i.test(o.text));
      * await sdk.sendClickDialog(opt?.index ?? 0);  // ← .index, NOT array position
      * ```
+     *
+     * @example
+     * ```ts
+     * // Read the first continue page, then clear k known continue pages at once.
+     * await Promise.all(Array.from({ length: k }, () => sdk.sendClickDialog(0, { blind: true })));
+     * ```
      */
-    async sendClickDialog(option: number = 0): Promise<ActionResult> {
-        return this.sendAction({ type: 'clickDialogOption', optionIndex: option, reason: 'SDK' });
+    async sendClickDialog(option: number = 0, opts: { blind?: boolean } = {}): Promise<ActionResult> {
+        return this.sendAction({
+            type: 'clickDialogOption', optionIndex: option,
+            ...(opts.blind ? { blind: true } : {}),
+            reason: 'SDK'
+        });
     }
 
     /**
