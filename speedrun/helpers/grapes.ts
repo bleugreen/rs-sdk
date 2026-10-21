@@ -4,6 +4,8 @@
 //
 //   guild    Cooking Guild top floor, (3144,3450) level 2: 1 grape, respawn 80 ticks
 //            (wine.obj respawnrate=80), so at most ~135 an hour for one camper.
+//            The grape lies on a table (bigtable, 3144,3449-3450) that blocks its
+//            tile, so the camper stands west of it at (3143,3450).
 //            The door needs Cooking 32 and a worn chef's hat (cooking_guild.rs2).
 //            A jug spawns on the same floor (3141,3447) and the ground-floor sink
 //            (3146,3451) fills it, so the camper also supplies jugs of water.
@@ -21,9 +23,16 @@
 //
 //   ROLE_OPTIONS='{"source":"guild"}' bun speedrun/helpers/grapes.ts <account>
 //
-// Options: source ('guild' | 'goblins'), cooking (Cooking level to train before
+// Every start reads where the account is and what it has and resumes from there
+// (situation / choosePhase): a camper restarted at its spawn camps again, and a
+// phase that works on the surface first climbs out of the hideout or the guild.
+// A cycle that fails backs off (5, 10, 20 ... 200 ticks); five failures in a row
+// log the phase 'stuck' until a cycle succeeds again.
+//
+// Options: source ('guild' | 'phoenix' | 'goblins'), cooking (Cooking level to train before
 // camping, default 35), bankAt (grapes held before banking, default 26), fightLevel
 // (Attack/Strength/Defence trained on chickens before goblins, default 10).
+import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, GroundItem, NearbyLoc, NearbyNpc } from '../../sdk/types';
 import { advance } from '../lib/dialogue';
 import { waitUntil } from '../lib/wait';
@@ -103,6 +112,10 @@ const GUILD_WEST_YARD: Box = { x1: 3136, z1: 3427, x2: 3148, z2: 3443 };
 const EAST_HOUSE: Box = { x1: 3149, z1: 3434, x2: 3155, z2: 3441 };
 const EAST_HOUSE_DOOR = { x: 3155, z: 3438, id: 1533 };
 const GUILD_GRAPES = { x: 3144, z: 3450, level: 2 };
+/** The grape lies on bigtable (loc 594, m49_53.jm2 level 2, rotated over 3144,3449-3450); the camper stands west of it. */
+const GUILD_STAND = { x: 3143, z: 3450, level: 2 };
+/** The guild's upper floors, where every way out is the stairs and the ladder. */
+const GUILD_FLOORS: Box = { x1: 3137, z1: 3444, x2: 3150, z2: 3455 };
 const GUILD_JUG = { x: 3141, z: 3447, level: 2 };
 const GUILD_SINK = { x: 3146, z: 3451 };
 const GRAPE_RESPAWN_TICKS = 80;
@@ -115,6 +128,13 @@ const PHOENIX_STAND = { x: 3237, z: 9762, level: 0 };
 /** Ladder down (loc 1754, m50_52.jm2) in the VTAM building, south-east Varrock. */
 const PHOENIX_LADDER_DOWN = { x: 3244, z: 3383, id: 1754 };
 const PHOENIX_DOOR = { x: 3247, z: 9779, id: 2397 };
+/**
+ * The walled room around the spawn (oldwall_blackback, m50_152.jm2). It is only
+ * reached through the members' door, so an account standing in it is a member.
+ */
+const PHOENIX_SPAWN_ROOM: Box = { x1: 3232, z1: 9760, x2: 3243, z2: 9773 };
+/** The whole hideout map square: underground here, the only way up is the ladder. */
+const PHOENIX_HIDEOUT: Box = { x1: 3200, z1: 9728, x2: 3263, z2: 9791 };
 const VARROCK_EAST_BANK: Tile = { x: 3253, z: 3420 };
 const RELDO: Tile = { x: 3209, z: 3495 };
 /** questbookcase (loc 2402) in the palace library: op2 Search gives the book while the quest is started. */
@@ -156,6 +176,94 @@ const COOKED_CHICKEN = 2140;
 const FOOD = /^(cooked chicken|shrimps|bread)$/i;
 /** Cooked chickens kept as food; the rest are dropped when the inventory fills. */
 const KEEP_FOOD = 12;
+/** Cooked chickens an account carries before it starts a fight phase. */
+const MIN_FOOD = 6;
+/** Worn-inventory slot of the weapon (wearpos right hand). */
+const WEAPON_SLOT = 3;
+
+export type Source = 'guild' | 'phoenix' | 'goblins';
+export type Phase = 'camp-guild' | 'camp-phoenix' | 'fetch-kit' | 'chickens' | 'goblin-village' | 'phoenix-quest' | 'hat-hunt';
+
+/** What the start of a cycle knows about the account: where it is and what it has. */
+export interface Situation {
+    source: Source;
+    at: { x: number; z: number; level: number };
+    cooking: number;
+    /** Cooking the source needs before it gathers (the guild door's 32, or the wine maker's 35); 0 for the others. */
+    cookTo: number;
+    /** Attack, Strength and Defence all at the fight level. */
+    combatOk: boolean;
+    food: number;
+    /** Chef's hat worn. */
+    hat: boolean;
+    /** A weapon worn, or the tutorial sword or shield carried. */
+    armed: boolean;
+    /** Jonny the Beard's intelligence report carried: the gang's door is one talk away. */
+    report: boolean;
+    /** Phoenix Gang membership: observed at the door, inferred from standing in the spawn room, or unknown. */
+    phoenixMember: boolean | null;
+}
+
+export function inPhoenixSpawnRoom(p: { x: number; z: number; level: number }): boolean {
+    return p.level === 0 && inBox(PHOENIX_SPAWN_ROOM, p.x, p.z);
+}
+
+/** Read the account's situation. `phoenixMember` is what this run has seen at the door (null before it has tried). */
+export function situation(sdk: BotSDK, source: Source, opts: { cooking: number; fightLevel: number }, phoenixMember: boolean | null): Situation {
+    const at = position(sdk);
+    const equipment = sdk.getEquipment();
+    const inventory = sdk.getInventory();
+    return {
+        source,
+        at,
+        cooking: skillLevel(sdk, 'Cooking'),
+        cookTo: source === 'guild' ? Math.max(32, opts.cooking) : 0,
+        combatOk: ['Attack', 'Strength', 'Defence'].every(s => skillLevel(sdk, s) >= opts.fightLevel),
+        food: invCount(sdk, COOKED_CHICKEN),
+        hat: equipment.some(e => e.id === ITEM.chefsHat),
+        armed: equipment.some(e => e.slot === WEAPON_SLOT) || inventory.some(i => /^(bronze sword|wooden shield)$/i.test(i.name)),
+        report: inventory.some(i => i.id === INTELLIGENCE_REPORT),
+        phoenixMember: phoenixMember ?? (source === 'phoenix' && inPhoenixSpawnRoom(at) ? true : null)
+    };
+}
+
+/**
+ * The phase a cycle runs, from the situation alone, so a restart anywhere resumes.
+ * Campers camp as soon as they can; only the phases that fight (chickens, the hat
+ * hunt, goblins, Jonny the Beard) need the tutorial kit, food and the fight level.
+ * A Phoenix account of unknown membership that can fight goes to the camp: the
+ * gang's door decides (a refusal records it as not a member).
+ */
+export function choosePhase(s: Situation, kitTried: boolean): Phase {
+    if (s.source === 'guild' && s.hat && s.cooking >= s.cookTo) return 'camp-guild';
+    if (s.source === 'phoenix') {
+        if (s.phoenixMember === true || (s.phoenixMember === null && s.combatOk)) return 'camp-phoenix';
+        if (s.report) return 'phoenix-quest';
+    }
+    if (!s.armed && !kitTried) return 'fetch-kit';
+    if (s.cooking < s.cookTo || !s.combatOk || s.food < MIN_FOOD) return 'chickens';
+    if (s.source === 'goblins') return 'goblin-village';
+    if (s.source === 'phoenix') return 'phoenix-quest';
+    return 'hat-hunt';
+}
+
+/**
+ * The npc to attack: one already fighting us (a restart mid-fight finishes it),
+ * else the nearest idle one in the area.
+ */
+export function pickTarget(s: BotWorldState, npc: RegExp, area: Box): NearbyNpc | null {
+    const c = s.nearbyNpcs.filter(n => npc.test(n.name) && n.hp !== 0 && inBox(area, n.x, n.z) && n.optionsWithIndex.some(o => /attack/i.test(o.text)) && n.reachable !== false);
+    const onMe = c.filter(n => n.inCombat && n.distance <= 2 && s.player!.combat.inCombat);
+    if (onMe.length) return onMe.sort((a, b) => a.distance - b.distance)[0]!;
+    return c.filter(n => !n.inCombat).sort((a, b) => a.distance - b.distance)[0] ?? null;
+}
+
+/** Consecutive failed cycles before the role reports the phase 'stuck'. */
+export const STUCK_AFTER = 5;
+/** Ticks to wait after the n-th consecutive failed cycle: 5, 10, 20 ... capped at 200 (two minutes). */
+export function retryDelayTicks(failures: number): number {
+    return Math.min(200, 5 * 2 ** Math.max(0, failures - 1));
+}
 
 interface Stats {
     startedAt: number;
@@ -236,14 +344,6 @@ class Gatherer {
 
     // ---- fighting (a compact version of bones.ts's loop) ----
 
-    pickTarget(npc: RegExp, area: Box): NearbyNpc | null {
-        const s = this.state();
-        const c = s.nearbyNpcs.filter(n => npc.test(n.name) && n.hp !== 0 && inBox(area, n.x, n.z) && n.optionsWithIndex.some(o => /attack/i.test(o.text)) && n.reachable !== false);
-        const onMe = c.filter(n => n.inCombat && n.distance <= 2 && s.player!.combat.inCombat);
-        if (onMe.length) return onMe.sort((a, b) => a.distance - b.distance)[0]!;
-        return c.filter(n => !n.inCombat).sort((a, b) => a.distance - b.distance)[0] ?? null;
-    }
-
     /** Kill one npc in `area` and loot items matching `loot` within 2 tiles of it. */
     async fightOne(npc: RegExp, area: Box, centre: Tile, loot: RegExp): Promise<'killed' | 'none' | 'lost' | 'low'> {
         if (this.hpFrac() < 0.4) return 'low';
@@ -252,7 +352,7 @@ class Gatherer {
             await walkNear(this.ctx, centre.x, centre.z, 4);
             return 'none';
         }
-        const target = this.pickTarget(npc, area);
+        const target = pickTarget(this.state(), npc, area);
         if (!target) {
             if (dist(p, centre) > 6) await walkNear(this.ctx, centre.x, centre.z, 4);
             else await this.sdk.waitForTicks(3);
@@ -557,7 +657,15 @@ class Gatherer {
             p = position(this.sdk);
         }
         if (p.level === 1) await this.climb(true);
-        await this.bot.walkTo(GUILD_GRAPES.x, GUILD_GRAPES.z, 1);
+        const w = await this.bot.walkTo(GUILD_STAND.x, GUILD_STAND.z, 0);
+        if (!w.success) throw new Error(`guild: could not reach the stand tile: ${w.message}`);
+    }
+
+    /** Out of the hideout or down out of the guild, for a phase that works on the surface. */
+    async toSurface(): Promise<void> {
+        const p = position(this.sdk);
+        if (underground(p) && inBox(PHOENIX_HIDEOUT, p.x, p.z)) await this.leaveHideout();
+        else if (p.level > 0 && inBox(GUILD_FLOORS, p.x, p.z)) await this.leaveGuild();
     }
 
     async leaveGuild(): Promise<void> {
@@ -586,6 +694,7 @@ class Gatherer {
     readonly guild: Spawn = {
         name: 'guild',
         tile: GUILD_GRAPES,
+        stand: GUILD_STAND,
         jug: GUILD_JUG,
         bank: VARROCK_WEST_BANK,
         inside: () => position(this.sdk).level > 0,
@@ -623,7 +732,12 @@ class Gatherer {
             const q = position(this.sdk);
             return q.x === stand.x && q.z === stand.z && q.level === stand.level;
         };
-        if (!onSpawn()) await this.bot.walkTo(stand.x, stand.z, 0);
+        // A walk to the stand that fails throws, so the cycle backs off instead of re-walking every tick.
+        const toStand = async () => {
+            const w = await this.bot.walkTo(stand.x, stand.z, 0);
+            if (!w.success) throw new Error(`${spawn.name}: could not reach the stand tile ${stand.x},${stand.z}: ${w.message}`);
+        };
+        if (!onSpawn()) await toStand();
         let lastGone = tick(this.sdk);
         let visibleSince = -1;
         while (invCount(this.sdk, ITEM.grapes) < bankAt && freeSlots(this.sdk) > 1) {
@@ -662,10 +776,10 @@ class Gatherer {
                 const before = invCount(this.sdk, ITEM.jugEmpty);
                 await this.bot.pickupItem(jug);
                 this.s.jugs += invCount(this.sdk, ITEM.jugEmpty) - before;
-                await this.bot.walkTo(spot.x, spot.z, 0);
+                await toStand();
                 continue;
             }
-            if (!onSpawn() && !due) await this.bot.walkTo(stand.x, stand.z, 0);
+            if (!onSpawn() && !due) await toStand();
             await this.sdk.waitForTicks(due ? 1 : Math.min(5, GRAPE_RESPAWN_TICKS - 15 - since));
         }
     }
