@@ -227,7 +227,7 @@ that to matter, so it is recomputed (r21).
 
 | Quest | Ticks stock / fixed / burst | Reward | Training replaced (marginal) | Net (fixed) | Verdict | Doc |
 |---|---|---|---|---|---|---|
-| Merlin's Crystal + Holy Grail | 820 m + 1,240 i = 2,060 / 703 + 1,152 = 1,855 i / 647 + 1,115 = 1,762 i (pm); the Mordred and Titan fights would also need re-costing at route levels | 15,300 Defence, 11,000 Prayer, 8 QP (r) | Defence ~1,281 i (the MM-route combat finish is ~2,250 with it, ~3,530 without; rs/31's rates). Prayer ~150-350: ~350 m standalone (rs/33: dragon bones at 2 ticks each, ~34.8 base/tick with banking) down to ~150 m if the ~153 bones are buried in the idle ticks of 4-tick Woodcutting or 5-tick fly fishing (rs/38). The protect prayers do not need it (above) | **about -224 to -424** | OFF (coordinator, after rs/33) | [merlins_crystal.md](merlins_crystal.md), [holy_grail.md](holy_grail.md) |
+| Merlin's Crystal + Holy Grail | 820 m + 1,240 i = 2,060 / 703 + 1,152 = 1,855 i / 647 + 1,115 = 1,762 i (pm); the Mordred and Titan fights would also need re-costing at route levels | 15,300 Defence, 11,000 Prayer, 8 QP (r) | Defence ~1,272 i (the MM-route combat finish is ~2,249 with it, ~3,521 without; measured rates). Prayer ~150-350: ~350 m standalone (rs/33: dragon bones at 2 ticks each, ~34.8 base/tick with banking) down to ~150 m if the ~153 bones are buried in the idle ticks of 4-tick Woodcutting or 5-tick fly fishing (rs/38). The protect prayers do not need it (above) | **about -224 to -424** | OFF (coordinator, after rs/33) | [merlins_crystal.md](merlins_crystal.md), [holy_grail.md](holy_grail.md) |
 | Legends' Quest (with its chain and ~41 QP of filler) | ~22,500 i (15,000-35,000) | 4 picks of 7,650 (r) | ~3,600 i (with Heroes' along the way) | **about -19,000** | OFF | [legends.md](legends.md) |
 | Heroes' Quest | ~3,000 i (2,000-5,000), plus the 55-QP gate | small xp in 13 skills (r) | ~800 i | about -2,200 | OFF: needs a live helper partner and Fishing/Cooking 53 for the untradeable lava eel | [legends.md](legends.md) |
 | Dragon Slayer | 1,120 / 1,010 / 970 (~370 m; burst pre-rule) | 18,650 Strength, 18,650 Defence, 2 QP (r) | with MM, in place of Waterfall (Package B): its Strength and Defence shrink the post-MM finish from ~3,520 to ~2,020 (i, phase model), and Waterfall's 888 is saved; needs 15 QP of filler (546 fixed i). Without MM: little or nothing, because Hitpoints binds (section 6) | Package B is ~830 better than Package A before Waterfall's pre-MM saving | **CONDITIONAL with MM, pending rs/56** (section 7); OFF without MM | [dragon_slayer.md](dragon_slayer.md) |
@@ -495,7 +495,7 @@ the cutscene on the next login (`mm_login`, unmeasured, worth up to ~150).
   non-Wilderness fallback is the **Battlefield of Khazard** (2523,3239): cannon alone 9.13
   Ranged per tick against 11.52 (m), and cannon + defensive melee 8.88 Ranged + 3.37 Defence
   against 11.03 + 5.60 (m). That is about 20-25% slower. The pre-MM session goes from ~113
-  to ~143 ticks, and the ~3,530 finish to roughly 4,300-4,500 (i).
+  to ~143 ticks, and the ~3,520 finish to roughly 4,300-4,500 (i).
 - **Pre-MM fights at route levels (cairn://p/rs/56).** Every fight above was measured at
   70/70/70 with ~70 Hitpoints. The route reaches the Khazard warlord, the black demon and
   Fight Arena with Hitpoints near 10, Prayer 43 from bones, and Strength near 1 unless
@@ -562,5 +562,5 @@ inputs: rs/2's `docs/speedrun/skills/{mining,fishing,thieving,agility}.md` (bran
 `agent/rs-2-coordinator-0`), rs/6's Woodcutting model via the board, `ranged.md` and
 `ranged-model.ts` on `agent/rs-31-builder-0`, `magic.md` (rs/28's children), and, as
 recorded on cairn://p/rs/3/1/coordinator/board and in its messages: rs/52's Magic-boost
-measurements, rs/33's Prayer rate, rs/38's interleaving result and rs/30's preliminary
+measurements, rs/33's Prayer rate, rs/38's interleaving result and rs/30's measured
 melee rate.
