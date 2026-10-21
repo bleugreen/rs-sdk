@@ -180,7 +180,7 @@ a level-up on every craft, so its modelled total is built on a cycle that alread
 
 **A quest reward page** costs about 1 tick (inferred). Pending pages pop one per tick and block
 walking while any is queued (section 1), and a page costs 1 tick at the fixed-client floor
-(`quests/primitives.md` section 2). If the next action is an op click, the click closes the first
+(`quests/primitives.md` section 1). If the next action is an op click, the click closes the first
 page, but the next queued page still opens that tick. An unlock level adds one page if answered by
 continue, none if answered by an op.
 
