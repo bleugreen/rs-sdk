@@ -83,7 +83,6 @@ export class FakeSdk {
     sendBankDeposit(slot: number, amount = 1) { return this.record('sendBankDeposit', slot, amount); }
     sendBankWithdraw(slot: number, amount = 1) { return this.record('sendBankWithdraw', slot, amount); }
     sendClickComponent(componentId: number) { return this.record('sendClickComponent', componentId); }
-    sendCloseModal() { return this.record('sendCloseModal'); }
     sendClickDialog(...args: unknown[]) { return this.record('sendClickDialog', ...(args.length ? args : [0])); }
     clickDialogByText(pattern: string | RegExp) { return this.record('clickDialogByText', pattern); }
     sendTradeRequest(playerIndex: number) { return this.record('sendTradeRequest', playerIndex); }
@@ -91,6 +90,7 @@ export class FakeSdk {
     sendAcceptTrade() { return this.record('sendAcceptTrade'); }
     sendDeclineTrade() { return this.record('sendDeclineTrade'); }
     sendCountDialog(value: number) { return this.record('sendCountDialog', value); }
+    sendCloseModal() { return this.record('sendCloseModal'); }
     sendWalk(x: number, z: number, running = true) { return this.record('sendWalk', x, z, running); }
 }
 
