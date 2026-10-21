@@ -667,10 +667,12 @@ export class Runes {
             if (web) {
                 // Using the blade on the web (oplocu) needs it only carried; Slash (oploc1) needs it wielded.
                 const blade = this.state.inventory.find(i => this.o.webWeapons.some(p => p.test(i.name)));
-                const r = blade ? await bot.useItemOnLoc(blade, web) : await bot.interactLoc(web, /slash/i);
-                if (!r.success) log('lundail: web cut retry', { message: r.message });
-                await waitTicks(sdk, 3);
-                continue;
+                const since = this.state.tick;
+                const r = blade ? await bot.useItemOnLoc(blade, web, { timeout: 3000 }) : await bot.interactLoc(web, /slash/i);
+                const said = this.state.gameMessages.filter(m => m.tick >= since && m.type === 0).map(m => m.text);
+                log('lundail: web cut', { ok: r.success, message: r.message, said });
+                if (said.some(t => /only a sharp blade/i.test(t))) throw new Error('lundail: the web refuses this blade');
+                // A cut changes the loc for 100 ticks, but the scene can lag behind: try the step either way.
             }
             await sdk.sendWalk(dest.x, dest.z);
             const w = await waitUntil(sdk, s => !!s.player && across(s), { maxTicks: 6 });
