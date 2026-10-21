@@ -20,9 +20,10 @@
 // roll by the same amount, and a loop anchored on an observed roll sends `mode - 1` ticks
 // early (the lead). What costs is a starter whose latency differs from the dominant one. In
 // the cycle loops a starter that lands late writes nothing (the loop has re-armed the clock),
-// that roll runs at the plain length, and the fixed 3-tick schedule drifts back into phase
-// within three cycles: about one knife cycle lost, no lock lost. So the model takes
-// p = `modeFraction` and a miss cost of one knife cycle unless the loop says otherwise.
+// that roll runs at the plain length, and the fixed 3-tick schedule drifts back into phase:
+// no lock is lost, and the measured cost is about one plain cycle (willow 3.2 ticks, fly 5.3,
+// with --inject-late). So the model takes p = `modeFraction` and a miss cost of one plain
+// cycle unless the loop says otherwise.
 
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState } from '../../sdk/types';
@@ -203,9 +204,9 @@ export interface CycleModel {
     /** The manipulated cycle (3). */
     knifeCycle?: number;
     /**
-     * Extra ticks a starter off the dominant latency costs. Default: one knife cycle (the roll it
-     * should have started is lost and the schedule re-locks; measured with --inject-late,
-     * tick-manipulation.md "Run-time host gate").
+     * Extra ticks a starter off the dominant latency costs. Default: one plain cycle (measured
+     * with --inject-late: willow 3.2, fly 5.3; tick-manipulation.md "Run-time host gate").
+     * The closed-loop mining executor loses only the late tick: 1.
      */
     missCost?: number;
 }
@@ -224,7 +225,7 @@ export interface GateVerdict {
 /** Manipulate when the predicted knife cycle beats the plain one. A probe with no trials says no. */
 export function gateDecision(r: ProbeSummary, model: CycleModel): GateVerdict {
     const knifeCycle = model.knifeCycle ?? 3;
-    const missCost = model.missCost ?? knifeCycle;
+    const missCost = model.missCost ?? model.plainCycle;
     const p = r.modeFraction;
     const knife = knifeCycle + (1 - p) * missCost;
     return { on: r.trials > 0 && knife < model.plainCycle, p, knife, plain: model.plainCycle, lead: Math.max(0, r.mode - 1) };

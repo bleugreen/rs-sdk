@@ -160,24 +160,28 @@ describe('gateDecision', () => {
         expect(gateDecision(summarizeProbe(Array(20).fill(3)), wc)).toMatchObject({ on: true, p: 1, knife: 3, lead: 2 });
     });
     test('the threshold on p follows from the plain cycle and the miss cost', () => {
-        // knife 3 + (1-p) * miss < plain. Default miss 3: woodcutting p > 2/3, fly p > 1/3.
-        // A miss cost of 9 (a slip and restart): iron p > 0.93.
-        expect(gateDecision(dist(14), wc).on).toBe(true);
-        expect(gateDecision(dist(13), wc).on).toBe(false);
-        // fly's line is below one half, so spread the rest over three offsets
-        const spread = (a: number, b: number, c: number, d: number) => summarizeProbe([...Array(a).fill(1), ...Array(b).fill(2), ...Array(c).fill(3), ...Array(d).fill(4)]);
-        expect(gateDecision(spread(7, 5, 5, 3), fly)).toMatchObject({ on: true, p: 0.35 });
-        expect(gateDecision(spread(6, 5, 5, 4), fly)).toMatchObject({ on: false, p: 0.3 });
+        // knife 3 + (1-p) * miss < plain. Default miss = plain: woodcutting p > 3/4, fly p > 3/5.
+        // A miss cost of 9 (an open-loop slip and restart): iron p > 0.93.
+        expect(gateDecision(dist(16), wc).on).toBe(true);
+        expect(gateDecision(dist(15), wc).on).toBe(false);
+        expect(gateDecision(dist(13), fly)).toMatchObject({ on: true, p: 0.65 });
+        expect(gateDecision(dist(12), fly)).toMatchObject({ on: false, p: 0.6 });
         expect(gateDecision(dist(19), mine).on).toBe(true);
         expect(gateDecision(dist(18), mine).on).toBe(false);
+        // the closed-loop mining executor loses only the late tick
+        expect(gateDecision(dist(8), { plainCycle: 3.61, missCost: 1 }).on).toBe(true);
     });
-    test('Ashburn-like data passes, bbs-like data is close to the line', () => {
+    test('Ashburn-like data passes, bbs-like data does not for woodcutting', () => {
         // main's Azure eastus probe: 51 at 1, 9 at 2 (85% at the dominant offset)
         expect(gateDecision(dist(51, 60), wc)).toMatchObject({ on: true, lead: 0 });
-        // rs/26 from bbs: 25 at 2, 35 at 3 (58%): woodcutting stays plain, fly manipulates
-        const bbs = summarizeProbe([...Array(25).fill(2), ...Array(35).fill(3)]);
-        expect(gateDecision(bbs, wc)).toMatchObject({ on: false, lead: 2 });
+        // rs/62's probes from bbs: 139 at 1, 336 at 2, 5 at 3 (70%): woodcutting plain, fly on
+        const bbs = summarizeProbe([...Array(139).fill(1), ...Array(336).fill(2), ...Array(5).fill(3)]);
+        expect(gateDecision(bbs, wc)).toMatchObject({ on: false, lead: 1 });
         expect(gateDecision(bbs, fly).on).toBe(true);
+        // rs/26 from bbs: 25 at 2, 35 at 3 (58%): plain for both
+        const rs26 = summarizeProbe([...Array(25).fill(2), ...Array(35).fill(3)]);
+        expect(gateDecision(rs26, wc)).toMatchObject({ on: false, lead: 2 });
+        expect(gateDecision(rs26, fly).on).toBe(false);
     });
     test('an empty probe says no', () => {
         expect(gateDecision(summarizeProbe([]), wc).on).toBe(false);
