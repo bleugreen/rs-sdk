@@ -67,6 +67,17 @@ await runScript(async ({ bot, sdk }) => {
             console.log(`sigil: worn -> arrival ${tArrive - t0} ticks, -> demon spawned ${(r?.tick ?? NaN) - t0} ticks`);
             if (PRAYER) await bot.activatePrayer('protect_from_magic');
             target = /^Jungle Demon$/i;
+            if (/bow/.test(process.env.WEAPON ?? '')) {
+                // Ranged: step 6 tiles away from the demon first, so it stays on wave spells (melee only
+                // within 2 tiles, mm_demon.rs2:332) and Protect from Magic stops all of its damage.
+                const dm = sdk.getState()!.nearbyNpcs.find(n => /^Jungle Demon$/i.test(n.name));
+                if (dm) {
+                    const p = pos(sdk.getState());
+                    const dx = Math.sign(p.x - dm.x) || 1, dz = Math.sign(p.z - dm.z) || 1;
+                    await sdk.sendWalk(p.x + dx * 6, p.z + dz * 6, true);
+                    await waitTicks(sdk, 4);
+                }
+            }
         } else {
             throw new Error(`fight ${WHO} not wired yet`);
         }
@@ -81,11 +92,17 @@ await runScript(async ({ bot, sdk }) => {
             }
         });
         const pr0 = sdk.getSkill('prayer')!.level;
+        const diag = sdk.onStateUpdate(s => {
+            if (s.tick % 20 !== 0) return;
+            const t = s.nearbyNpcs.find(n => target.test(n.name));
+            console.log(`  t${s.tick} hp=${s.player?.hp} prayer=${sdk.getSkill('prayer')?.level} active=${JSON.stringify((s as unknown as { prayers?: unknown }).prayers ?? '')} targetDist=${t?.distance} targetHp=${t?.hp}`);
+        });
         const f = await fight(sdk, bot, target, { eatBelow: Math.max(20, Math.round(HP * 0.5)) });
         const s = sdk.getState()!;
         const prayerUsed = pr0 - (sdk.getSkill('prayer')!.level);
         samples.push({ ticks: f.ticks, damage: f.damageTaken, food: f.food, prayerUsed, died: f.died, hpLeft: s.player?.hp ?? -1 });
         unsubPray();
+        diag();
         console.log(`run ${run}: ${JSON.stringify(samples.at(-1))}`);
         await bot.deactivateAllPrayers();
         // Let any death/respawn or loot settle.
