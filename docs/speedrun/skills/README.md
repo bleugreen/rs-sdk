@@ -59,7 +59,12 @@ Decisions this table rests on:
 ### Item-fed skills
 
 The other skills, those fed by helper-supplied items, are owned by cairn://p/rs/28. They
-add their rows here in the same columns.
+add their rows here in the same columns, except that column 5 is "Ticks to 99, with
+interleaving (net)": item-fed actions done inside self-only training ticks. Interleaving
+and the knife starter compete for the same ticks, the same 5 user-event packets per tick
+(`ClientGameProtCategory.ts:6`) and the same inventory, so each interleaved row names the
+self-only loop it rides on. Do not add an interleaving saving to a knife-column total
+unless that row says it fits the knife loop.
 
 ## Open questions
 
