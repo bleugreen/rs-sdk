@@ -507,51 +507,216 @@ describe('browser game tick publication', () => {
 });
 
 describe('browser bot overlay action dispatch', () => {
-    function overlay(execute: (action: { type: string }) => unknown) {
+    const ok = { success: true, message: 'ok' };
+    /** Let the overlay's posted tasks run (post-action state, the drain behind an async action). */
+    const tasks = () => new Promise(resolve => setTimeout(resolve, 5));
+    /** Let the end-of-task microtask flush run. */
+    const endOfTask = () => Promise.resolve();
+
+    // A real Client.flushNow over a socket that records each websocket message.
+    // Every executed action writes one byte, its execution order from 1.
+    function overlay(execute: (action: { type: string }) => unknown, { inGame = true } = {}) {
+        const ran: string[] = [];
+        const frames: number[][] = [];
         const results: Array<[string, boolean]> = [];
+        const states: Array<{ tick: number; written: number }> = [];
+        const client = Object.assign(Object.create(Client.prototype), {
+            ingame: inGame,
+            idleTimer: 0,
+            out: new Packet(new Uint8Array(64)),
+            stream: { write: (data: Uint8Array, length: number) => frames.push(Array.from(data.subarray(0, length))) },
+            flushError: null,
+            noTimeoutTimer: 0,
+            packetLogEnabled: false
+        });
         const o = Object.assign(Object.create(BotOverlay.prototype), {
-            client: { idleTimer: 0 },
+            client,
             actionQueue: new BotActionQueue(),
             waitTicks: 0,
-            executor: { execute },
+            serverTick: 0,
+            executor: {
+                execute(action: { type: string }) {
+                    ran.push(action.type);
+                    client.out.p1(ran.length);
+                    return execute(action);
+                }
+            },
+            // The state carries the tick and how many packet bytes were on the wire when collected.
+            collectWorldState: () => ({ tick: o.serverTick, written: frames.flat().length }),
             gateway: {
-                isConnected: () => false,
+                isConnected: () => true,
+                sendState: (state: { tick: number; written: number }) => states.push(state),
                 sendActionResult: (id: string, r: { success: boolean }) => results.push([id, r.success])
             },
             ui: { logAction() {} }
         });
-        const send = (type: string) => o.onAction({ type, reason: 't' }, type);
-        return { o, results, send };
+        const send = (type: string, extra: Record<string, unknown> = {}) => o.onAction({ type, reason: 't', ...extra }, type);
+        return { o, client, ran, frames, results, states, send };
     }
 
-    test('runs a burst of queued actions in one cycle', () => {
-        const ran: string[] = [];
-        const { o, results, send } = overlay(a => { ran.push(a.type); return { success: true, message: 'ok' }; });
-        // knife on logs, the menu button, a drop and a click: one tick's burst
-        for (const type of ['useItemOnItem', 'clickComponent', 'dropItem', 'interactNpc']) send(type);
+    test('executes an action on arrival and has it on the wire before the next game cycle', async () => {
+        const { o, ran, frames, results, states, send } = overlay(() => ok);
+
+        send('interactNpc');
+        expect(ran).toEqual(['interactNpc']);
+        expect(results).toEqual([['interactNpc', true]]);
+        await endOfTask();
+        // No game-loop cycle (o.tick) has run.
+        expect(frames).toEqual([[1]]);
+
+        // The state follows in its own task, collected after the flush.
+        expect(states).toEqual([]);
+        await tasks();
+        expect(states).toEqual([{ tick: 0, written: 1 }]);
 
         o.tick();
-        expect(ran).toEqual(['useItemOnItem', 'clickComponent', 'dropItem', 'interactNpc']);
-        expect(results.map(([id]) => id)).toEqual(ran);
+        expect(ran).toEqual(['interactNpc']);
+    });
+
+    test('a burst of 5 delivered together lands in one flush, followed by one state', async () => {
+        const { ran, frames, results, states, send } = overlay(() => ok);
+        // knife on logs, the menu button, a drop, a click and a walk: one tick's burst
+        const burst = ['useItemOnItem', 'clickComponent', 'dropItem', 'interactNpc', 'walkTo'];
+        for (const type of burst) send(type);
+
+        expect(ran).toEqual(burst);
+        await endOfTask();
+        expect(frames).toEqual([[1, 2, 3, 4, 5]]);
+        expect(results.map(([id]) => id)).toEqual(burst);
+        await tasks();
+        expect(states).toEqual([{ tick: 0, written: 5 }]);
+    });
+
+    test('separate deliveries each flush at the end of their own task', async () => {
+        const { frames, send } = overlay(() => ok);
+
+        send('first');
+        await endOfTask();
+        send('second');
+        await endOfTask();
+        expect(frames).toEqual([[1], [2]]);
+    });
+
+    test('the per-pass cap holds when a queue is released at once', async () => {
+        let settle!: (r: unknown) => void;
+        const { o, client, ran, frames, send } = overlay(a =>
+            a.type === 'slow' ? new Promise(r => { settle = r; }) : ok);
+        send('slow');
+        for (let i = 0; i < 12; i++) send(`fast${i}`);
+        await endOfTask();
+        expect(ran).toEqual(['slow']);
+        expect(frames).toEqual([[1]]);
+
+        // Settling releases the queue in a task of its own: ten run, in one frame.
+        settle(ok);
+        await tasks();
+        expect(ran).toHaveLength(11);
+        expect(frames).toEqual([[1], [2, 3, 4, 5, 6, 7, 8, 9, 10, 11]]);
+
+        // The game loop drains the rest before its own flush.
+        o.tick();
+        client.flushNow();
+        expect(ran).toHaveLength(13);
+        expect(frames.at(-1)).toEqual([12, 13]);
+    });
+
+    test('holds actions off the game screen for the game loop to drain in one cycle', async () => {
+        const { o, client, ran, frames, results, send } = overlay(() => ok, { inGame: false });
+        const burst = ['useItemOnItem', 'clickComponent', 'dropItem', 'interactNpc'];
+        for (const type of burst) send(type);
+        await endOfTask();
+        expect(ran).toEqual([]);
+        expect(frames).toEqual([]);
+
+        client.ingame = true;
+        o.tick();
+        expect(ran).toEqual(burst);
+        expect(results.map(([id]) => id)).toEqual(burst);
     });
 
     test('stops the burst at an asynchronous action until it settles', async () => {
-        const ran: string[] = [];
         let settle!: (r: unknown) => void;
-        const { o, send } = overlay(a => {
-            ran.push(a.type);
-            return a.type === 'slow' ? new Promise(r => { settle = r; }) : { success: true, message: 'ok' };
-        });
+        const { o, ran, send } = overlay(a =>
+            a.type === 'slow' ? new Promise(r => { settle = r; }) : ok);
         for (const type of ['fast', 'slow', 'after']) send(type);
 
         o.tick();
         o.tick();
         expect(ran).toEqual(['fast', 'slow']);
         settle({ success: true, message: 'done' });
-        await Promise.resolve();
-        await Promise.resolve();
-        o.tick();
+        // Without a game cycle: the next action starts once the async one settles.
+        await tasks();
         expect(ran).toEqual(['fast', 'slow', 'after']);
+    });
+
+    test('a wait holds the queue for its cycles, then the same cycle drains what queued behind it', async () => {
+        const { o, ran, results, send } = overlay(() => ok);
+        send('wait', { ticks: 2 });
+        send('after');
+        expect(ran).toEqual(['wait']);
+
+        o.tick();
+        expect(ran).toEqual(['wait']);
+        o.tick();
+        expect(ran).toEqual(['wait', 'after']);
+        expect(results).toEqual([['wait', true], ['after', true]]);
+    });
+
+    test('a tick decoded after an action publishes at once, and every state after it reflects the action', async () => {
+        const { o, states, send } = overlay(() => ok);
+        send('interactNpc');
+        await endOfTask();
+
+        // The next tick is decoded before the post-action state's task runs.
+        o.onGameTick(1);
+        expect(states).toEqual([{ tick: 1, written: 1 }]);
+        await tasks();
+        expect(states).toEqual([{ tick: 1, written: 1 }, { tick: 1, written: 1 }]);
+    });
+});
+
+describe('Client.flushNow', () => {
+    function flushClient(write: (data: Uint8Array, length: number) => void, ingame = true) {
+        const client = Object.assign(Object.create(Client.prototype), {
+            ingame,
+            out: new Packet(new Uint8Array(16)),
+            stream: { write },
+            flushError: null,
+            noTimeoutTimer: 0,
+            packetLogEnabled: false
+        });
+        client.out.p1(7);
+        return client;
+    }
+
+    test('writes the queued packets as one message and counts it as keepalive traffic', () => {
+        const frames: number[][] = [];
+        const client = flushClient((data, length) => frames.push(Array.from(data.subarray(0, length))));
+        client.out.p1(8);
+        client.flushNow();
+        expect(frames).toEqual([[7, 8]]);
+        expect(client.out.pos).toBe(0);
+        expect(client.noTimeoutTimer).toBeGreaterThan(0);
+        client.flushNow();
+        expect(frames).toHaveLength(1);
+    });
+
+    test('sends nothing off the game screen', () => {
+        const frames: number[][] = [];
+        const client = flushClient((data, length) => frames.push(Array.from(data.subarray(0, length))), false);
+        client.flushNow();
+        expect(frames).toEqual([]);
+        expect(client.out.pos).toBe(1);
+    });
+
+    test('holds a write failure for the game loop, which owns lostCon', () => {
+        const failure = new Error('socket gone');
+        let writes = 0;
+        const client = flushClient(() => { writes++; throw failure; });
+        expect(() => client.flushNow()).not.toThrow();
+        expect(client.flushError).toBe(failure);
+        client.flushNow();
+        expect(writes).toBe(1);
     });
 });
 
