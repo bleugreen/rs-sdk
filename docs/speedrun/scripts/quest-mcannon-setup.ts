@@ -31,7 +31,12 @@ await runScript(async ({ bot, sdk }) => {
     await waitTicks(sdk, 2);
     const t0 = clock(sdk);
     await sdk.sendUseItem(base().slot, 1);
-    await waitUntil(sdk, () => !sdk.findInventoryItem(/cannon base/i), 20, 'base placed');
+    try {
+        await waitUntil(sdk, () => !sdk.findInventoryItem(/cannon base/i), 20, 'base placed');
+    } catch (e) {
+        for (const m of sdk.getNewChat({ types: [0] })) log(sdk, `chat: ${m.text}`);
+        throw e;
+    }
     log(sdk, `base placed at +${clock(sdk) - t0}`);
     const steps: [RegExp, RegExp][] = [
         [/cannon stand/i, /cannon base/i],
