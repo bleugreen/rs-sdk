@@ -35,8 +35,8 @@
 //
 // pairN (brief A2, the two-willow tile): a tile with exactly two free cardinal neighbours
 // takes two melee attackers, and each one's phase is the tick it first steps into reach
-// (npc_combat.rs2:62; it leaves the player's tile by a random naive step,
-// randomWalk, PathingEntity.ts:438-447), so a spawn cannot be timed. Each attempt adds two hobgoblins
+// (npc_combat.rs2:62; it leaves the player's tile by a random cardinal step,
+// randomWalk at PathingEntity.ts:438-447), so a spawn cannot be timed. Each attempt adds two hobgoblins
 // on the same label; 24 labels later it keeps them if their hits cover two residues 2
 // apart mod 4, and otherwise waits for both to despawn (spawn + 500) and tries again, up to
 // N attempts. The loop chops throughout; gaps are reported separately inside the phased
