@@ -1,6 +1,8 @@
 // Agility route model: turns the measured lap times and fall costs into ticks per
 // level band. Every constant is labelled with where it came from; rerun with
-//   bun docs/speedrun/scripts/agility-model.ts
+//   bun docs/speedrun/scripts/agility-model.ts [--lap=66]
+// --lap is the clean Wilderness lap in ticks (default: the 300 ms measurement below).
+const argv = process.argv.slice(2);
 
 // ---- level curve (server/engine/src/engine/entity/Player.ts:77-85), base xp = fine / 10 / 25
 const LEVEL_BASE: number[] = [0, 0]; // LEVEL_BASE[L] = base xp needed for level L
@@ -22,11 +24,22 @@ const succ = (lo: number, hi: number, L: number) => {
 
 // ---- Wilderness course (wilderness_course.rs2:76-176), measured with agility-course.ts
 const WILD_LAP_XP = 12.5 + 20 + 20 + 20 + 498.9; // 571.4 base, read
-const WILD_CLEAN_LAP = 77; // ticks, measured: mean of fall-free laps (n=36, levels 52-99)
-const ROPE_FALL_TICKS = 88; // measured: laps with one rope fall took 164-166 vs 77 clean
+// Clean lap, measured with agility-course.ts. The bot clicks each obstacle after it sees the
+// previous one's xp, so the lap carries one packet latency per obstacle:
+//   77 at 100 ms (n=36 fall-free laps, levels 52-99);
+//   71 at 300 ms, stock lite client (13 of 14 laps, fedora);
+//   66 at 300 ms, lite client with the rs/22 publish fix, 1-tick latency (9 of 9, bbs).
+// On the demo server packets land 2-3 ticks after the state they answer
+// (tickmanip-latency.ts from bbs), so about 71-76 there (inferred: +1 tick per obstacle per tick).
+const WILD_CLEAN_LAP = Number(argv.find(a => a.startsWith('--lap='))?.slice(6) ?? '66');
+// The fall costs were measured on 77-tick laps. A fall loop is the same walking at the same
+// pace, so they scale with the lap (checked at 300 ms: a rope-swing fall cost 80 extra ticks on
+// 71-tick laps, scaled 81; a log fall 52 on 69-tick laps, scaled 48, n=1).
+const FALL_SCALE = WILD_CLEAN_LAP / 77;
+const ROPE_FALL_TICKS = 88 * FALL_SCALE; // measured at 100 ms: laps with one rope fall took 164-166 vs 77 clean
 const ROPE_FALL_XP = 52.5; // inferred: stones+log+pipe are redone (20+20+12.5), bonus waits a loop
-const STONE_FALL_TICKS = 21; // measured: lap with one stones fall took 98
-const LOG_FALL_TICKS = 53; // measured (n=1): pit, ladder, redo stones, back to the log
+const STONE_FALL_TICKS = 21 * FALL_SCALE; // measured at 100 ms: lap with one stones fall took 98
+const LOG_FALL_TICKS = 53 * FALL_SCALE; // measured at 100 ms (n=1): pit, ladder, redo stones, back to the log
 const LOG_FALL_XP = 20; // stones redone
 
 function wildRate(L: number) {
@@ -63,6 +76,7 @@ const X99 = LEVEL_BASE[99];
 const X52 = LEVEL_BASE[52];
 const r = (x: number) => Math.round(x);
 
+console.log(`clean Wilderness lap ${WILD_CLEAN_LAP} ticks (fall costs x${FALL_SCALE.toFixed(3)})`);
 console.log('level table check: 52 =', LEVEL_BASE[52].toFixed(1), '93 =', LEVEL_BASE[93].toFixed(1), '99 =', X99.toFixed(1));
 console.log('\nWilderness expected rate by level (inferred):');
 for (const L of [52, 55, 60, 65, 70, 75, 80, 85, 90, 93, 95, 97, 99]) {
