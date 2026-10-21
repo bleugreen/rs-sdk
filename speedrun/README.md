@@ -28,6 +28,7 @@ speedrun/
     hostgate.ts   probeOnTime (packet latency in ticks), gateDecision, HostGate (run-time knife gate)
     programs.ts   startProgram, awaitProgram, runProgram, probeInPage: the page's in-page tick programs
     gated-program.ts  runGatedProgram, inPageGate: an in-page knife program under the host gate
+    xp.ts         the engine's level curve in state (game xp) units: xpForLevel, levelForXp, baseToXp
     fake-sdk.ts   scriptable BotSDK stand-in for the unit tests
   runner/
     step.ts       Step type and runSteps
@@ -38,6 +39,7 @@ speedrun/
     stub.ts       a stand-in skill module (chop to a level, or idle N ticks) for exercising rehearse.ts
   skills/         the run's step modules: `skill` and `steps({to, ...})` returning runner Steps
     start.ts      S00, the tutorial skip on a brand-new account's first login
+    fishing.ts    S22 fly fishing under the gated knife loop, and the from-1 net and walk bands
   rehearse.ts     one single-skill rehearsal attempt end to end (gate, S00, kit, steps, logout, hiscore)
   lab/            local lab: never imported by lib/
     lab.sh        engine + gateway + lite runners on port block 9300
@@ -494,6 +496,33 @@ for a fresh label and walks home; lab, 300 ms).
 **Forced slip** (test only): the start parameter `hold: 0.15` makes the page runtime hold that
 share of starter bundles one tick, as the lab's `--inject-late` does. The status counts them
 in `held`. Without the parameter nothing changes.
+
+## skills/fishing.ts
+
+STEP-MANIFEST.md entry 5 (S22) as five level-driven steps that run from any start level:
+`fishing:to-draynor`, `fishing:net-1-20` (small net, plain), `fishing:to-river`,
+`fishing:fly-20-78` (fly up to S22's 9,612 base) and `fishing:fly-78-99` (the run's band, with
+its own gate probe and measure row). Each band reads level and xp from the state, so one already
+passed is a no-op; the bands are the resume walk's milestones, and each band's preconditions
+include its standing tile, so a restart away from the spot walks first.
+
+```ts
+import { steps } from '../skills/fishing';
+await runSteps(session, steps({ to: 99, technique: 'auto' }), { log, c: {} });
+```
+
+The fly bands run `knife-cycle` `fly` through `lib/gated-program.ts` `runGatedProgram`, with a
+fresh `inPageGate` per band. The gate judges in ticks per expected roll: the plain reference
+is `PLAIN_TICKS_PER_ROLL` (5.35, measured) and each catch is weighted by one over the catch
+chance at the current level. Every catch is dropped on the label that shows it, by the knife
+bundle or by the plain loop's `dropEach`, and plain follows a moved spot by its tile. The
+roll model (`rollYield`, `expectedRolls`, from `fishing.struct`) predicts 680 catches for
+20-99 against the 673-677 measured, and sizes the feather precondition (`feathersNeeded`, 15%
+margin: 783 for 20-99, 595 for 78-99). Each gated segment and a band summary
+(`summarizeBand`: ticks per expected roll first, then per catch, the gap histogram and gap-3
+share, spot-move costs, resyncs and slips) go to the tick log as 0-tick rows tagged
+`fishing:<band>:segment` and `:summary`. Running out of feathers stops the band with an error
+that names the level reached.
 
 ## runner/step.ts
 

@@ -244,9 +244,9 @@ interface CycleResult {
     levelUps?: number;
 }
 
-/** knife-cycle's xp-drop counter (a catch): `rolls`, which rs/159 renames `logs`. */
+/** knife-cycle's xp-drop counter: `successes`, one catch each. */
 export function catchesOf(status: ProgramStatus): number {
-    return status.counters.logs ?? status.counters.rolls ?? 0;
+    return status.counters.successes ?? 0;
 }
 
 export interface SegmentSummary {
