@@ -21,11 +21,23 @@
 // Slip recovery: no xp for a predicted roll within 6 labels (a click that went
 // nowhere) drops the schedule, lets the clock expire (5 ticks) and restarts with
 // one plain transition from where the player stands.
+//
+// Bury (`bury`, the knife-cycle parameter): a knife stay takes a bone. The roll label R
+// sends knife on logs, button 8889, drop ore and a bone's Bury, and R+2 the rock click
+// alone. The knife sets the clock to R+3, the bury lands after it on R+1, closes the
+// fletch and delays the player through R+2 (bury_bone.rs2: p_stopaction, p_delay(0)),
+// and the click lands on R+3, where a due clock rolls at once (mining.rs2:83-85): the
+// stay keeps its 3 ticks (docs/speedrun/research/bones-placement.md section 4). Only a
+// stay entered by a move of at most 2 tiles, or by a restart, takes one: in the lite lab a
+// stay+bury after a 3-tile move never rolled (cause not established), so that stay stays
+// plain. On the `stay2` lap that is one bone per 15 ticks. A move takes no bone (a
+// delayed player's walk is dropped: +2 ticks, the booth's price), and the plain fallback
+// has no stay with an idle tick, so `bury` is inert under `starter: 'none'`.
 
 import type { BotWorldState } from '../types.js';
 import { SHAFTS_BUTTON } from './knife-cycle.js';
 import type { ProgramContext, ProgramParams, TickProgram } from './types.js';
-import { baseLevel, GapCounter, invItem, num, oneOf, skillXp, tile } from './util.js';
+import { baseLevel, bonesParam, buryable, buryBone, GapCounter, invItem, num, oneOf, skillXp, tile } from './util.js';
 
 type P = [number, number];
 export interface MineStep {
@@ -42,6 +54,8 @@ const MINE = /^mine$/i;
 const key = (p: P) => `${p[0]},${p[1]}`;
 const same = (a: P, b: P) => a[0] === b[0] && a[1] === b[1];
 const beside = (a: P, b: P) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) === 1;
+/** The longest move into a stay that may carry a bone (header). */
+const BURY_ENTRY_TILES = 2;
 
 /** `2604,3235>2605,3235` or `{stand, rock, tiles?}`. */
 export function parseMineSteps(value: unknown): MineStep[] {
@@ -73,6 +87,8 @@ export function createKnifeMine(params: ProgramParams): TickProgram {
     const manip = starter === 'knife';
     // A lead needs the open loop (it sends before the roll is visible).
     const closedLoop = !manip || LEAD === 0;
+    const bonesRe = bonesParam(params.bury);
+    if (bonesRe && !closedLoop) throw new Error('bury needs lead 0: a bury that lands before the roll stops the swing');
 
     const rocks = [...new Map(STEPS.map(st => [key(st.rock), st.rock])).values()];
     const ids = new Map<string, { id: number; op: number }>();
@@ -112,6 +128,31 @@ export function createKnifeMine(params: ProgramParams): TickProgram {
     const dropOre = (ctx: ProgramContext) => {
         const ore = ctx.state.inventory.find(i => ORE.test(i.name));
         if (ore) ctx.send({ type: 'dropItem', slot: ore.slot }, `drop ${ore.name}`);
+    };
+    // Bury: tiles of the move that brought the player to its stand (0 at the start and after a restart).
+    let entryTiles = 0;
+    let burySent = 0;
+    let buried = 0;
+    let noBoneStays = 0;
+    let longEntryStays = 0;
+    let lastPrayerXp = 0;
+    const bury = (ctx: ProgramContext) => {
+        if (!buryBone(ctx, bonesRe!)) return;
+        burySent++;
+        ctx.count('burySent');
+    };
+    /** A knife stay landing by R+3 carries a bone when it was entered short and the pack holds one. */
+    const boneFits = (ctx: ProgramContext): boolean => {
+        if (entryTiles > BURY_ENTRY_TILES) {
+            longEntryStays++;
+            return false;
+        }
+        if (!buryable(ctx.state, bonesRe!).length) {
+            noBoneStays++;
+            ctx.count('noBoneStays');
+            return false;
+        }
+        return true;
     };
 
     const lastRoll = new Map<string, number>();
@@ -156,7 +197,10 @@ export function createKnifeMine(params: ProgramParams): TickProgram {
             add(t + LEAD, `click ${key(rock)}`, click(rock));
         } else {
             let trick: { st: P; u: number } | null = null;
-            if (!move && clickLand === R + 1) {
+            if (bonesRe && manip && !move && clickLand <= R + 3 && boneFits(ctx)) {
+                roll = R + 3;
+                kind = 'stay+bury';
+            } else if (!move && clickLand === R + 1) {
                 roll = R + 3;
                 kind = 'stay';
             } else if (manip && clickLand <= R + 3) {
@@ -179,7 +223,7 @@ export function createKnifeMine(params: ProgramParams): TickProgram {
                     kind = clickLand > (move ? R + 2 : R + 1) ? 'waited' : 'plain';
                 }
             }
-            if (kind === 'starter') {
+            if (kind === 'starter' || kind === 'stay+bury') {
                 add(R, 'knife on logs', knifeOnLogs);
                 startersSent++;
                 ctx.count('starters');
@@ -190,6 +234,11 @@ export function createKnifeMine(params: ProgramParams): TickProgram {
                 add(u, 'drop ore', dropOre);
                 add(u, `walk ${key(stand)}`, walk(stand));
                 add(u + 1, `click ${key(rock)}`, click(rock));
+            } else if (kind === 'stay+bury') {
+                add(R, 'drop ore', dropOre);
+                add(R, 'bury', bury);
+                // nothing may land on R+2, when the bury delays the player
+                add(R + 2, `click ${key(rock)}`, click(rock));
             } else {
                 add(R, 'drop ore', dropOre);
                 if (move) add(R, `walk ${key(stand)}`, walk(stand));
@@ -198,6 +247,7 @@ export function createKnifeMine(params: ProgramParams): TickProgram {
         }
         kinds[kind] = (kinds[kind] ?? 0) + 1;
         ctx.log(`plan #${k} ${kind} ${key(pos)}->${key(stand)} rock ${key(rock)} roll@${roll}`);
+        if (move) entryTiles = tiles;
         pos = stand;
         predict(roll, rock);
     };
@@ -216,6 +266,7 @@ export function createKnifeMine(params: ProgramParams): TickProgram {
         const roll = clickLand + 2;
         ctx.log(`restart #${k} ${key(pos)}->${key(stand)} rock ${key(rock)} roll@${roll}`);
         kinds.plain!++;
+        entryTiles = 0;
         pos = stand;
         predict(roll, rock);
     };
@@ -254,7 +305,10 @@ export function createKnifeMine(params: ProgramParams): TickProgram {
             transitions: { ...kinds },
             starters: startersSent,
             onPredictedTick: onTime,
-            slips
+            slips,
+            ...(bonesRe
+                ? { buried, burySent, bonesPerTick: t > startTick ? Math.round((buried / (t - startTick)) * 1000) / 1000 : 0, noBoneStays, longEntryStays }
+                : {})
         };
     };
 
@@ -278,6 +332,8 @@ export function createKnifeMine(params: ProgramParams): TickProgram {
                 }
                 if (manip && (!invItem(s, KNIFE) || !invItem(s, LOGS))) return ctx.fault('the knife starter needs a knife and normal logs');
                 lastXp = skillXp(s, 'mining');
+                lastPrayerXp = skillXp(s, 'prayer');
+                if (bonesRe && !manip) ctx.log('bury is inert on the plain lap: no stay there has an idle tick');
                 R = t - 2;
                 ctx.progress();
                 const here: P = [s.player.worldX, s.player.worldZ];
@@ -298,6 +354,16 @@ export function createKnifeMine(params: ProgramParams): TickProgram {
                     ctx.gauge('ticksPerOre', steady.ticksPerEvent);
                     ctx.progress();
                     lastXp = xp;
+                }
+                if (bonesRe) {
+                    // one bury per Prayer xp drop (the xp comes on the tick after the bury lands)
+                    const pxp = skillXp(s, 'prayer');
+                    if (pxp > lastPrayerXp) {
+                        buried++;
+                        ctx.count('buried');
+                        lastPrayerXp = pxp;
+                    }
+                    ctx.gauge('bonesLeft', buryable(s, bonesRe).length);
                 }
                 if (s.dialog?.isOpen) ctx.send({ type: 'clickDialogOption', optionIndex: 0 }, 'dismiss dialog');
                 if (restartAt === null) checkSlip(ctx);
