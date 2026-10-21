@@ -11,10 +11,16 @@
 // --stand   tile to teleport to; every tree in --trees must be in reach from it
 // --trees   SW-corner coords of the trees to use (woodcutting-spots.ts output)
 // --logs    stop after this many logs (or after --maxticks)
-// --click   react:  click the current tree only when needed (start, after a drop,
-//                   after the tree depletes)
-//           rotate: every tick, click the next live tree in the list (a different one
-//                   from last tick), so a depletion never leaves the player idle
+// --click   react:   click the current tree only when needed (start, after a drop,
+//                    after the tree depletes)
+//           rotate:  every tick, click the next live tree in the list (a different one
+//                    from last tick), so a depletion never leaves the player idle
+//           predict: on every predicted roll tick, send the drops and then a click on
+//                    another live tree, without waiting to see the roll's result.
+//                    The click lands on the tick after the roll, where the chop loop
+//                    would have restarted the 4-tick timer anyway (woodcut.rs2:55-60),
+//                    so neither a depletion nor a drop costs a tick. --drop is ignored.
+//                    A level-up re-click is sent as soon as the new level is seen.
 // --dropdelay N  wait N observed ticks after a log appears before dropping it (default 0)
 // --drop    each:    drop every log once as it arrives (with a click in the same batch)
 //           full:    let the inventory fill, then drop 4 logs + click per tick
@@ -42,7 +48,7 @@ const hold = flag('hold');
 const stand = opt('stand')?.split(',').map(Number);
 const trees = (opt('trees') ?? '').split(';').filter(Boolean).map(s => s.split(',').map(Number) as [number, number]);
 const targetLogs = Number(opt('logs', '100'));
-const clickMode = opt('click', 'react') as 'react' | 'rotate';
+const clickMode = opt('click', 'react') as 'react' | 'rotate' | 'predict';
 const dropMode = opt('drop', 'each') as 'each' | 'full' | 'noclick';
 const maxTicks = Number(opt('maxticks', String(targetLogs * 40 + 200)));
 const verbose = flag('verbose');
@@ -108,13 +114,52 @@ await runScript(async ({ bot, sdk }) => {
         current = t;
     };
 
+    // predict mode. A click sent on observed tick c is processed on server tick c+1; if
+    // the timer is stale it sets the roll for c+4 (woodcut.rs2:55-60). The state for tick
+    // k shows the results of server tick k-1, so a log seen at k came from the roll that
+    // the click sent at k-1 should have followed.
+    let rollObs = -1;
+    let lastLevel = sdk.getSkill('woodcutting')?.baseLevel ?? 0;
+    let predictClicks = 0, levelClicks = 0, resyncs = 0;
+    const predictStep = (s: BotWorldState, gotLog: boolean, levelUp: boolean) => {
+        const live = trees.filter(t => alive(s, t));
+        if (gotLog && rollObs >= 0 && rollObs !== s.tick + 3) { resyncs++; rollObs = s.tick + 3; }
+        const drops = s.inventory.filter(i => /logs/i.test(i.name) && !(droppedAt.has(i.slot) && s.tick - droppedAt.get(i.slot)! < 4)).slice(0, 3);
+        const send = (t: [number, number]) => {
+            for (const i of drops) { fire(sdk.sendDropItem(i.slot)); droppedAt.set(i.slot, s.tick); events.push({ k: 'P', t: s.tick }); }
+            click(s, t);
+            events.push({ k: 'C', t: s.tick });
+        };
+        if (levelUp && live.length) {
+            // the level-up box blocks the click that landed on the tick after the roll;
+            // this one closes it, and the timer is stale, so the grid moves to c+4
+            send(live.find(t => key(t) === lastClicked) ?? live[0]);
+            levelClicks++;
+            rollObs = s.tick + 4;
+            return;
+        }
+        if (rollObs < 0 || (current === null && s.tick > rollObs)) {
+            // start, or every tree was down: click as soon as one is live
+            if (!live.length) return;
+            send(live[0]);
+            rollObs = s.tick + 4;
+            return;
+        }
+        if (s.tick < rollObs) return;
+        // on the roll tick: switch to another live tree (the current one may just have
+        // depleted, which we cannot see until next tick)
+        const next = live.find(t => key(t) !== lastClicked) ?? live[0];
+        if (next) { send(next); predictClicks++; }
+        rollObs += 4;
+    };
+
     await new Promise<void>(resolve => {
         const off = sdk.onStateUpdate(s => {
             if (s.tick === lastTick) return; // one pass per server tick
             lastTick = s.tick;
             if (startTick < 0) { startTick = s.tick; startMs = Date.now(); }
             endMs = Date.now();
-            if (s.dialog.isOpen) fire(sdk.sendClickDialog(0));
+            if (s.dialog.isOpen && clickMode !== 'predict') fire(sdk.sendClickDialog(0));
 
             // A log is counted from its 'You get some ...' message (one per success); xp
             // deltas would miss a log that lands on the same tick as a --hold level reset.
@@ -145,6 +190,13 @@ await runScript(async ({ bot, sdk }) => {
             if (current && !alive(s, current)) current = null;
             if (logs >= targetLogs || s.tick - startTick > maxTicks) { off(); resolve(); return; }
 
+            if (clickMode === 'predict') {
+                const levelUp = wc.baseLevel > lastLevel && !hold;
+                lastLevel = wc.baseLevel;
+                if (!trees.some(t => alive(s, t))) allDeadTicks++;
+                predictStep(s, gotLog, levelUp);
+                return;
+            }
             const live = trees.filter(t => alive(s, t));
             if (!live.length) { allDeadTicks++; return; }
             const needTree = !current;
@@ -206,7 +258,8 @@ await runScript(async ({ bot, sdk }) => {
         meanLossAfterDepletionMod4: +(deplGaps.reduce((n, g) => n + (g.gap % 4), 0) / (deplGaps.length || 1)).toFixed(3),
         ticksWithAllTreesDown: allDeadTicks,
         respawnTicks: respawns,
-        interruptions,
+        interruptions, predictClicks, levelClicks, resyncs,
+        observedTicks: lastTick - startTick, firstObservedTick: startTick, lastObservedTick: lastTick,
         wallMsPerCountedTick: +((endMs - startMs) / (lastTick - startTick)).toFixed(1),
         baseXpPerTick: +(((xs.length - 1) * XP_PER_LOG[treeName]) / span).toFixed(3),
         idealBaseXpPerTick: +((XP_PER_LOG[treeName] * expected) / 4).toFixed(3),
