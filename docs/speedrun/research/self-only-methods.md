@@ -14,7 +14,7 @@ ticks, which is how the community's xp/hour figures are converted below.
 
 ## Summary
 
-**The headline is a mechanism the route documents rule out.** rs/2's
+**The headline is a mechanism the route documents rule out, and the lab confirms it.** rs/2's
 `tick-manipulation.md` (section 4) and `mining.md` (section 4a) argue that no gathering roll can
 come faster than every 3 ticks, because no inventory action writes `%action_delay` below
 `map_clock + 2`. That is true of inventory actions, but the OSRS community's 2-tick methods use
@@ -25,15 +25,22 @@ auto-retaliate is on and the player has no interaction runs
 auto_retaliate.rs2:9-22`). With a thrown knife or dart (attackrate 3, r, `skill_combat/configs`)
 that is `map_clock + 1`, the exact write the argument says does not exist. On reading, a drop on
 the tick after a roll clears the interaction, a hit that tick flinches, and a tree or rock click
-on the next tick rolls at once: a **2-tick Woodcutting and Mining cycle**. Valued against the
-knife route: **about 700-1,000 ticks of Woodcutting** (i) and **up to about 500 of Mining** (i,
-limited by rock respawns). It needs a hit every 2 ticks, from a helper attacking the scored
-account in the Wilderness or from two NPCs in a multi-combat zone. **A first lab attempt did not
-reproduce it** (section 3a): a control run behaved exactly as modelled, but 125 tree clicks sent on
-the tick after an observed hitsplat produced no roll. Either the flinch does not fire in this
-setup or the bot's view of the hit is a tick off; neither is settled. So the value above is
-conditional, and lab brief A, now with an engine trace step, is the most valuable test this page
-proposes. Do not change rs/2's route on the strength of this row until it passes.
+on the next tick rolls at once: a **2-tick Woodcutting and Mining cycle**. **Measured (section
+3a): 196 rolls at Woodcutting 99, 160 of 166 steady gaps at 2 ticks, every roll on the tick after
+a flinch write, and the player's own attack never fired** (m, engine trace, `NODE_TICKRATE=300`).
+The first attempt's failure was the setup: its two attackers hit on adjacent ticks, and the bot
+skipped the label after each click.
+
+What it is worth depends on keeping a tree standing and a hit arriving every 2 ticks. On one tree
+the fells cost more than the flinch saves: 5.15 ticks per roll overall (m), slower than the knife.
+Priced with the route model (i, `flinch-model.ts`, demo respawn), the flinch saves **about 500
+ticks of Woodcutting** with two melee NPCs phased 2 ticks apart at the two-willow tile south-east
+of East Ardougne from level 73, and about 580 if two-oak tiles are used below 73 too. **A helper
+in the Wilderness saves nothing**: no Wilderness tile reaches two oaks and the Wilderness has no
+willows. That is down from the 700-1,000 read earlier. The NPC variant is not yet shown end to
+end. At the two-oak tile the lab tried, only one of ten spawned hobgoblins could reach the player,
+and an attacker's phase cannot be set directly. Brief A2 (section 3) is that test. Do not change
+rs/2's route until it passes.
 
 Everything else is small. Agility, the largest line, has no faster method in this revision: the
 Ape Atoll course (OSRS's 9.2 base/tick, 25% better than the Wilderness course) was released in
@@ -51,16 +58,15 @@ exists here.
 
 | # | Technique | Source | Present in revision | Route line affected | Ticks saved (label) | Cost | Test status |
 |---|---|---|---|---|---|---|---|
-| 1 | **2-tick Woodcutting by auto-retaliate flinch.** Drop (or any inventory op) on the tick after a roll; a hit that tick flinches the clock to `map_clock + 1`; click the tree next tick and it rolls at once. | [OSRS wiki: Tick manipulation, 2-tick Woodcutting](https://oldschool.runescape.wiki/w/Tick_manipulation#2-tick_Woodcutting); [Flinching](https://oldschool.runescape.wiki/w/Flinching) ("Flinching is also used for skilling"); [Woodcutting training](https://oldschool.runescape.wiki/w/Woodcutting_training) | Yes (r): flinch write `auto_retaliate.rs2:9-22` (PvP: `:37-50`); gate `busy2` = `hasInteraction() \|\| hasWaypoints()` (`engine/script/handlers/PlayerOps.ts:956-958`); NPC hit queues it with delay 0 (`npc_combat_melee.rs2:48`), PvP on every swing hit or miss (`pvp_melee.rs2:40`); tick order packets, NPCs, players (`engine/World.ts:402,414,425`); a delay-0 queue runs the same tick (`engine/entity/Player.ts:960-961`); queues run before interactions (`World.ts:785,801`); drops clear the interaction (`OpHeldHandler.ts:54-56`); woodcutting first click rolls at once on equality (`woodcut.rs2:97-99`) | Woodcutting, ~3,028 with the knife (woodcutting.md section 2) | **~700** (oaks in the level-1 Wilderness, helper attacking) to **~1,000** (willows from 73 with two NPC attackers) (i, section 2) | A hit source every 2 ticks: one helper with thrown knives or darts on rapid (2-tick attacks) inside the Wilderness and within its combat-level window, or two attackrate-4 NPCs offset by 2 ticks in a multi-combat zone. A harmless inventory op every cycle. Player-killer exposure in the Wilderness. | Read only; **first lab attempt negative** (section 3a: 0 rolls from 125 clicks after hits). Brief A, with an engine trace. |
-| 2 | **2-tick Mining on stays by the same flinch**, mixed with knife starters on moves | as row 1, and [OSRS wiki: 3-tick Mining](https://oldschool.runescape.wiki/w/Tick_manipulation#3-tick_Mining) | Yes (r): the first swing rolls at once on equality (`mining.rs2:83-85`); everything else as row 1. Walking sets waypoints, so the flinch tick must be a stay | Mining 63-99 band, ~3,173 with the knife at respawn 13 (mining.md section 2) | **0 to ~530** (i): the zoo cluster's 6 rocks cap it at 2.5 ticks/ore (6 rocks per 15-tick respawn window) against 3.00 now; 3,173 x (1 - 2.5/3) = 529 | No iron rock lies in a multi-combat zone (r, map scan in section 2), so the hit source is one NPC at the cluster (a flinch every 4 ticks only) or a helper at the Wilderness iron cluster (level 31) | Untested; depends on brief A. Brief B (planner first). |
+| 1 | **2-tick Woodcutting by auto-retaliate flinch.** Drop (or any inventory op) on the tick after a roll; a hit that tick flinches the clock to `map_clock + 1`; click the tree next tick and it rolls at once. | [OSRS wiki: Tick manipulation, 2-tick Woodcutting](https://oldschool.runescape.wiki/w/Tick_manipulation#2-tick_Woodcutting); [Flinching](https://oldschool.runescape.wiki/w/Flinching) ("Flinching is also used for skilling"); [Woodcutting training](https://oldschool.runescape.wiki/w/Woodcutting_training) | Yes (r): flinch write `auto_retaliate.rs2:9-22` (PvP: `:37-50`); gate `busy2` = `hasInteraction() \|\| hasWaypoints()` (`engine/script/handlers/PlayerOps.ts:956-958`); NPC hit queues it with delay 0 (`npc_combat_melee.rs2:48`), PvP on every swing hit or miss (`pvp_melee.rs2:40`); tick order packets, NPCs, players (`engine/World.ts:402,414,425`); a delay-0 queue runs the same tick (`engine/entity/Player.ts:960-961`); queues run before interactions (`World.ts:785,801`); drops clear the interaction (`OpHeldHandler.ts:54-56`); woodcutting first click rolls at once on equality (`woodcut.rs2:97-99`) | Woodcutting, ~3,028 with the knife (woodcutting.md section 2) | **~500** (two NPC attackers at the two-willow tile (2674,3227) from 73) to **~580** (two-oak tiles below 73 as well); **0** with a Wilderness helper (i, `flinch-model.ts`, demo D=20, against the same model's 3,016 for the knife; section 2) | Two melee NPCs on free cardinal tiles of a multi-combat tile reaching two trees, attacking 2 ticks apart; a drop on every other tick; auto-retaliate off while every tree is down (section 3a). One attacker gives a roll every 4 ticks (m), slower than the knife. | **Mechanism confirmed (m, section 3a)**: 196 rolls at 99, 2-tick on 160 of 166 steady gaps, 196 of 196 rolls on the tick after a flinch write, 0 own attacks. Not yet measured: two attackers at a two-tree tile (brief A2). |
+| 2 | **2-tick Mining on stays by the same flinch**, mixed with knife starters on moves | as row 1, and [OSRS wiki: 3-tick Mining](https://oldschool.runescape.wiki/w/Tick_manipulation#3-tick_Mining) | Yes (r): the first swing rolls at once on equality (`mining.rs2:83-85`); everything else as row 1. Walking sets waypoints, so the flinch tick must be a stay | Mining 63-99 band, ~3,173 with the knife at respawn 13 (mining.md section 2) | **0 to ~530** (i): the zoo cluster's 6 rocks cap it at 2.5 ticks/ore (6 rocks per 15-tick respawn window) against 3.00 now; 3,173 x (1 - 2.5/3) = 529 | No iron rock lies in a multi-combat zone (r, map scan in section 2), so the hit source is one NPC at the cluster (a flinch every 4 ticks only) or a helper at the Wilderness iron cluster (level 31) | Mechanism confirmed by brief A (section 3a); value unchanged. A single attacker flinches only every 4 ticks (m, section 3a), so the zoo cluster's one NPC is worth nothing; only a Wilderness helper at the level-31 iron cluster remains, untested. Brief B planner not run. |
 | 3 | **Predicted obstacle clicks and chosen entry tiles on the Wilderness course** | [OSRS wiki: Wilderness Agility Course](https://oldschool.runescape.wiki/w/Wilderness_Agility_Course) (theoretical lap 67 ticks, against our measured 73-77); rs/2 agility.md section 8 open question | Clicks during an obstacle are dropped, not queued (r, `network/game/client/handler/OpLocHandler.ts:14-18`), so the gain is only reaction latency and walking. The rope swing charges `p_delay(distance)` from the trigger tile to its start tile (r, `wilderness_course.rs2:80-88`) | Agility, ~4,695 from level 75 (agility.md section 1) | **~60** (rope-swing tile alone, 1 tick x ~57 laps) to **~340** (6 ticks x ~57 laps if the bot still pays a reaction tick per obstacle) (i) | Bot work only | Untested. Brief C. |
 | 4 | **Pin a Knight of Ardougne** by standing helpers on its free neighbouring tiles | [andromack: Setting up a sticky Ardy knight](https://andromack.com/blog/setting-up-a-sticky-ardy-knight) (OSRS uses a splasher); [Autumn Elegy, Efficient 1-99 Thieving Guide, 2004Scape, 7:35 "How to lure the knight"](https://www.youtube.com/watch?v=2QYqNvLwB1g&t=455s) | Yes (r): NPC steps respect player occupancy unless `passthru` (`engine/entity/Npc.ts:406-413`); players set the flag (`engine/entity/PathingEntity.ts:175-179`); a still NPC off its spawn teleports home after 501 ticks, one on its spawn never does (`Npc.ts:729-735`) | Thieving, ~1,975 from Fight Arena (thieving.md section 2) | **~85** (i): rs/2 measured 0.16 ticks per roll of walking at the best knight; x 536 rolls (57-99 run) = 86. Up to ~250 if the route's knight is the worst one (0.47 per roll) | 2-4 helper accounts standing still for the session; pin on the spawn tile | Untested. Brief D. |
 | 5 | **Knight multiskilling**: delay-free helper-fed actions in the stun ticks | [Autumn Elegy guide, 11:09 "Knight multiskilling"](https://www.youtube.com/watch?v=2QYqNvLwB1g&t=669s) | A failure leaves the player stunned but not delayed for 7 of its 11 ticks (r, thieving.md section 4: clicks at T+4 to T+10 pass the packet check) | Fletching + Herblore + Crafting + Cooking, ~250 (rs/37, interleaving.md) | **up to ~250** (i), bounded by the delay-free helper-fed work; about 100 failures x 7 free ticks = ~700 free ticks on the knights | Owned by rs/38's interleaving plan; listed so it is not lost | Cross-reference only |
 
-Rows 1 and 2 are ranked first on their value if the mechanism holds, which the first lab
-attempt did not show (section 3a). Rows 1 and 2 share one mechanism; if brief A confirms it,
-brief B is a planner run plus one
-measurement.
+Rows 1 and 2 are ranked first on value. The mechanism is confirmed (section 3a). Row 1 still
+needs its attacker setup measured at a two-tree tile (brief A2), and row 2 is a planner run
+plus one measurement (brief B).
 
 ## 2. The flinch, in detail (rows 1 and 2)
 
@@ -123,30 +129,48 @@ They change nothing.
 
 ### Valuing it
 
-Woodcutting (woodcutting.md section 2, demo respawn 20): the knife route is 3,028 ticks, of which
-the oak band 15-73 is about 609 (796 x 0.765) and the willow band 73-99 about 2,406 (3,145 x
-0.765).
+Woodcutting (woodcutting.md section 2, demo respawn 20): the knife route is 3,028 ticks. The
+first reading here took the cycle from 3 ticks to 2 and ignored fells, which gave 700-1,000. That
+was too high. At a 2-tick cycle a tree fells every 8 successes, about every 16 ticks on oak at
+100% success, so the number of trees reachable from the tile decides the value. On one oak the
+lab measured 5.15 ticks per roll overall (m, section 3a), slower than the knife.
 
-- **Two NPC attackers on willows** (2-tick from 73): the cycle goes from 3 ticks to 2, so the
-  willow band becomes about 2,406 x 2/3 = 1,604, saving about 800; flinching the oak band too
-  saves about 200 more. **About 1,000 (i)**, an upper bound, since fells and all-down waits
-  come more often at a faster cycle. Three willows at a 20-tick respawn still cover a fell every
-  23 ticks (1 in 8 successes at 68.75% success). Willows inside a multi-combat zone (r, map scan
-  of `maps/multiway.csv` against loc 1308 `willowtree`): (2659,3243), (2665,3250), (2670,3227),
-  (2672,3226), (2674,3228), (2675,3240), south-east of East Ardougne. The only NPCs spawning
-  within 14 tiles are a Necromancer and Invrigar (r, map NPC sections), so two attackers would
-  have to be led there.
-- **One helper attacking in the Wilderness** (single-way combat is enough with one attacker,
-  since thrown knives or darts on rapid attack every 2 ticks): the Wilderness has no willows but
-  has oaks at levels 1-2, for example (3157,3525), (3192,3524), (3225,3521), (3266,3527),
-  (3267,3521) (r, map scan of loc 1281 `oaktree`). Oak succeeds on every roll from level 60
-  (woodcutting.md section 4), so 2-tick oak is 37.5 / 2 = 18.75 base per tick, above 3-tick
-  willow at 99 (about 16 measured). Oak for the whole route: 15-60 about 185 ticks (2,573 base at
-  about 14 per tick) plus 60-99 about 1,989 (37,290 / 18.75), about 2,175, plus about 5% for
-  level-ups and fells, **about 2,300 against 3,028: about 700 saved (i)**. The helper's combat
-  level must be within the Wilderness level of the scored account's (`pvp_combat.rs2:35-41`),
-  which at level 1 means within one combat level; doing Woodcutting before the combat block, or
-  keeping a helper at a matching combat level, settles that.
+`flinch-model.ts` reruns woodcutting-model.ts's simulator with flinch bands. It uses the measured
+2-tick cycle (4 ticks on 3.6% of steady gaps) and the measured all-down cost (the next roll comes
+2 ticks after the respawn). Two things are inferred: a fell with another tree at the same tile
+costs nothing, and a 2-tile walk to the next tree costs 4 ticks. The model reproduces the route
+document's 4-tick total (3,962 against 3,958) and gives 3,016 for the knife at 3 ticks, against
+the document's 3,031 (0.765 x 4-tick).
+
+| Variant (i, `flinch-model.ts`, 400 runs) | Ticks to 99, demo D=20 | Quiet D=29 | Against the knife's 3,016 / 3,083 |
+|---|---|---|---|
+| Knife oaks to 73, then two NPCs at the two-willow tile (2674,3227) | 2,516 | 2,737 | **-500** / -346 |
+| Two NPCs at two-tree tiles throughout (two-oak tile (3002,3312) to 73, then willows) | 2,436 | 2,715 | **-580** / -368 |
+| Two NPCs at the two-oak tile to 73, then knife willows | 2,927 | 3,046 | -89 / -37 |
+| Wilderness helper on two oaks a 2-tile walk apart, 15-73, then knife willows | 3,005 | 3,112 | -11 / +29 |
+| Wilderness helper on oaks to 99 | 3,456 | 3,876 | +440 / +793 |
+| One oak (the lab tile) to 99 | 4,972 | 6,174 | +1,956 / +3,091 |
+
+- **Two NPC attackers at willows from 73 is the variant worth having: about 500 (i).**
+  Multi-combat tiles that reach two willows (r, `woodcutting-spots.ts` against
+  `maps/multiway.csv`): (2672,3228) and (2674,3227), south-east of East Ardougne. Two-oak
+  multi-combat tiles: (3002,3312), (2658,3409), (3099,3410), and two beside the jail guards near
+  Draynor. Willows are 2x2 locs, so at (2674,3227) the west and north sides are tree and the
+  east and south tiles are the only places a melee attacker can stand. The NPCs that spawn
+  within 14 tiles are a Necromancer and Invrigar (r, map NPC sections), so the attackers would
+  have to be led there or be ranged or magic attackers, whose hit queues when the projectile
+  lands (`npc_combat_magic.rs2:120`, `npc_combat_ranged.rs2:54`).
+- **A helper in the Wilderness is worth nothing.** The Wilderness has oaks at levels 1-2
+  (3157,3525), (3192,3524), (3225,3521), (3266,3527), (3267,3521) (r, map scan of loc 1281) and
+  no willows. No tile there reaches two oaks (r, `woodcutting-spots.ts`), so every fell means a
+  walk, and the closest pair, (3266,3527) and (3267,3521), is 2 tiles apart at its nearest tiles.
+  That only matches the knife below 73 and loses badly above it. The combat-level window
+  (`pvp_combat.rs2:35-41`) and player-killer exposure come on top.
+- **Reaction path.** The loop reacts to a hitsplat within one tick: the bot sees the hit on its
+  label for tick F, and the click must land on F+1. In the lab that held on 196 of 196 rolls (m,
+  local engine). Against the demo through the SDK relay, reactions land 2-3 ticks late
+  (LAB.md), so the loop must run in the page like the knife loops (cairn://p/rs/97), or click
+  on hit ticks predicted from the attackers' fixed 4-tick period.
 
 Mining (mining.md sections 2 and 4): the flinch only helps a stay, because walking sets
 waypoints. At respawn 13 a rock can roll again 15 ticks after its last roll, so a 6-rock
