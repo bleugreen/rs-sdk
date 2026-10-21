@@ -47,7 +47,9 @@ const box = (await (await page.$('canvas'))!.boundingBox())!;
 
 const scenes = new Map<string, string[]>();
 const meta: string[] = [];
-async function shot(scene: string, name: string): Promise<void> {
+// The 3D viewport inside the canvas, for scenes whose detail is small (a projectile).
+const viewport = { x: box.x + 4, y: box.y + 4, width: 512, height: 334 };
+async function shot(scene: string, name: string, clip = box): Promise<void> {
     const file = join(framesDir, `${name}.jpg`);
     const info = await page.evaluate(() => {
         const c = (window as any).gameClient;
@@ -55,13 +57,13 @@ async function shot(scene: string, name: string): Promise<void> {
         const p = c?.localPlayer;
         return { loop: C?.loopCycle, draw: C?.drawCycle, fps: c?.fps, x: p ? (p.x >> 7) + c.mapBuildBaseX : -1, z: p ? (p.z >> 7) + c.mapBuildBaseZ : -1 };
     });
-    await page.screenshot({ path: file, type: 'jpeg', quality: 75, clip: box });
+    await page.screenshot({ path: file, type: 'jpeg', quality: 75, clip });
     meta.push(JSON.stringify({ name, t: Date.now(), ...info }));
     scenes.set(scene, [...(scenes.get(scene) ?? []), file]);
 }
-async function sequence(scene: string, frames: number, gapMs: number): Promise<void> {
+async function sequence(scene: string, frames: number, gapMs: number, clip = box): Promise<void> {
     for (let i = 0; i < frames; i++) {
-        await shot(scene, `${scene}-${i}`);
+        await shot(scene, `${scene}-${i}`, clip);
         await sleep(gapMs);
     }
 }
@@ -110,15 +112,18 @@ await runScript(async ({ bot: b, sdk }) => {
     } else {
         console.log('[render] no attackable NPC in view; no fight frames');
     }
-    await sdk.sendWalk(sdk.getState()!.player!.worldX, sdk.getState()!.player!.worldZ, false);
-    await sdk.waitForTicks(4);
-
-    // A Wind Strike projectile, frames 100 ms apart from the cast.
+    // A Wind Strike projectile, cast from a few tiles off with no dialogue open, viewport
+    // frames 80 ms apart from the cast.
+    const me = sdk.getState()!.player!;
+    await sdk.sendWalk(me.worldX - 5, me.worldZ, false);
+    await sdk.waitForTicks(6);
+    await b.dismissBlockingUI();
+    await sdk.waitForTicks(1);
     const mark = foe();
     if (mark) {
         await sdk.sendSpellOnNpc(mark.index, WIND_STRIKE);
-        await sleep(400);
-        await sequence('spell', 8, 100);
+        await sleep(150);
+        await sequence('spell', 12, 80, viewport);
     } else {
         console.log('[render] no NPC to cast at; no spell frames');
     }
@@ -128,10 +133,12 @@ await runScript(async ({ bot: b, sdk }) => {
     const sheet = await browser.newPage();
     await sheet.setViewport({ width: Math.ceil(box.width / 2) * 4 + 40, height: 400 });
     for (const [scene, files] of scenes) {
+        // Viewport crops (the spell) at three quarters, whole-canvas frames at half size.
+        const width = scene === 'spell' ? Math.ceil(viewport.width * 0.66) : Math.ceil(box.width / 2);
         const cells = files.map(f => {
             const name = f.split('/').pop()!.replace('.jpg', '');
             const src = `data:image/jpeg;base64,${readFileSync(f).toString('base64')}`;
-            return `<figure><img src="${src}" width="${Math.ceil(box.width / 2)}"><figcaption>${name}</figcaption></figure>`;
+            return `<figure><img src="${src}" width="${width}"><figcaption>${name}</figcaption></figure>`;
         }).join('');
         await sheet.setContent(`<style>body{margin:4px;background:#222;color:#ddd;font:11px sans-serif;display:flex;flex-wrap:wrap;gap:6px}figure{margin:0}</style>${cells}`);
         await sheet.screenshot({ path: join(out, `sheet-${scene}.jpg`), type: 'jpeg', quality: 80, fullPage: true });
