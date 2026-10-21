@@ -25,8 +25,9 @@ const near = (x: number, z: number, r = 3, l = 0): Pred => s => {
 };
 const GLIDER_GANDIUS = 824; // glidermap:com_21 (server/content/pack/interface.pack)
 const GLIDER_TA_QUIR_PRIW = 825; // glidermap:com_22
-// reinitialisation_puzzle:com_3. Moving a tile needs OPHELD5, which the stock lite client cannot send for
-// this component (cairn://p/rs/23): E3 only works with a client that does.
+// reinitialisation_puzzle:com_3. Moving a tile needs OPHELD5 (cairn://p/rs/23), which both clients send for
+// sdk.sendUseItem(slot, 5, PUZZLE_TILES). sendClickComponentWithOption sends INV_BUTTON5, which has no
+// trigger there and moves nothing (runclient-check.ts, rs/116).
 const PUZZLE_TILES = 11130;
 
 // Quest state each segment starts from (varp/varbit name -> value), its items, and its tile.
@@ -124,7 +125,7 @@ await runScript(async ({ bot, sdk }) => {
         add(await locOpAt(sdk, 2394, 9883, /./, s => s.modalOpen, 20), 'E2 open control panel');
         {
             const t0 = now(sdk);
-            await sdk.sendClickComponentWithOption(PUZZLE_TILES, 5, 24);
+            await sdk.sendUseItem(24, 5, PUZZLE_TILES);
             const r = await waitUntil(sdk, near(2649, 4507, 3), 60);
             add({ name: 'last tile -> rumble -> hangar cutscene -> powered hangar', ticks: (r?.tick ?? NaN) - t0 }, 'E3');
         }
