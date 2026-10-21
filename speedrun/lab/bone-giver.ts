@@ -6,7 +6,7 @@
 //   NODE_TICKRATE=300 LAB_RUNNERS=0 WEB_PORT=9480 WEB_MANAGEMENT_PORT=9481 HISCORES_WEB_PORT=9482 NODE_PORT=44180 AGENT_PORT=8480 \
 //     speedrun/lab/lab.sh bonelab speedrun/lab/bone-giver.ts:--loads=10
 //
-// Options: --loads=N (default 10), --pages=2,5 (loads followed by a held level-up page), --hold=6,
+// Options: --asks=15,21,... (S18 on-request top-ups of those sizes), --loads=N (default 10), --pages=2,5 (loads followed by a held level-up page), --hold=6,
 //   --order=giver-first (default, the run's order) | receiver-first
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -18,6 +18,8 @@ const arg = (k: string, d: string) => process.argv.find(a => a.startsWith(`--${k
 const loads = Number(arg('loads', '10'));
 const pages = arg('pages', '2,5').split(',').filter(Boolean).map(Number);
 const hold = Number(arg('hold', '6'));
+// --asks=15,21,17: S18's top-ups (the giver in mode on-request) instead of S07's standing loads.
+const asks = arg('asks', '').split(',').filter(Boolean).map(Number);
 const webPort = process.env.WEB_PORT ?? '9300';
 
 const base = mkdtempSync(join(tmpdir(), 'bone-lab-'));
@@ -42,8 +44,9 @@ const config = {
     // Login order decides who the engine handles first each tick. On the run every helper is in
     // before the scored account (SUPPLIES.md section 5); --order=receiver-first measures the reverse.
     accounts: (() => {
-        const g = { account: giver, role: 'bone-giver', options: { restock: { kind: 'cheat' }, sites: [{ giver: { x: 2913, z: 3494 }, receiver: { x: 2914, z: 3494 } }], trades: loads } };
-        const r = { account: receiver, role: 'bone-receiver', receiver: true, final: true, options: { giver, loads, pageLoads: pages, holdTicks: hold } };
+        const sites = [{ giver: { x: 2913, z: 3494 }, receiver: { x: 2914, z: 3494 } }];
+        const g = { account: giver, role: 'bone-giver', options: asks.length ? { mode: 'on-request', restock: { kind: 'cheat' }, sites } : { restock: { kind: 'cheat' }, sites, trades: loads } };
+        const r = { account: receiver, role: 'bone-receiver', receiver: true, final: true, options: asks.length ? { giver, asks, pageLoads: [] } : { giver, loads, pageLoads: pages, holdTicks: hold } };
         return arg('order', 'giver-first') === 'receiver-first' ? [r, g] : [g, r];
     })()
 };
