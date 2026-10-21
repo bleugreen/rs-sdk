@@ -33,7 +33,6 @@ import { BotActions } from '../../sdk/actions';
 import { abortable, executionContext } from '../../sdk/execution-context';
 import { BotSDK } from '../../sdk/index';
 import { initPathfinding } from '../../sdk/pathfinding';
-import type { BotWorldState } from '../../sdk/types';
 import { createAccountEnv, listAccounts, nextAccountName, parseBotEnv, parseRange } from './accounts';
 import { COMBAT_LOGOUT_TICKS, LOGOUT_BUTTON } from '../lib/session';
 import { Backoff, LoginLimiter, loginFailurePolicy } from './backoff';
@@ -49,6 +48,7 @@ import {
     type FleetConfig
 } from './fleet-config';
 import { LedgerWriter, readLedger, writeJsonAtomic, type Ledger } from './ledger';
+import { describeFreshState, waitForFreshState } from '../lib/fresh-state';
 import type { BankSnapshot, Role, RoleContext } from './role';
 
 const ROOT = resolve(fileURLToPath(new URL('../../', import.meta.url)));
@@ -278,40 +278,9 @@ export function loadRole(name: string): Promise<Role> {
     return p;
 }
 
-function stackSummary(items: { name: string; count: number }[]): string {
-    const top = [...items].sort((a, b) => b.count - a.count).slice(0, 4);
-    return `${items.length} stacks; ${top.map(i => `${i.name} x${i.count}`).join(', ')}`;
-}
-
-const bankSummary = (snapshot: BankSnapshot) => stackSummary(snapshot.items);
-
-/**
- * Wait for the first in-game state published by the client launched at
- * `launchedAt` (ms, this host's clock), counting the older states passed over.
- *
- * After a re-login the SDK can hold a state from before the account's previous
- * session ended: the fleet gateway keeps each bot's last state across client
- * sessions and replays it to every SDK as it connects, and an SDK kept across a
- * relaunch still holds the old session's state. Such a state passes any shape
- * check, and a changed tick proves nothing either, since every client session
- * starts its tick count again. What tells them apart is the time the gateway
- * received the state (`stateReceivedAt`, passed through to the SDK unchanged,
- * replays included): the gateway runs on this host, and once this client is
- * launched no other client publishes for the account, so a state received at
- * or after the launch came from this session.
- */
-export async function waitForSessionState(
-    sdk: Pick<BotSDK, 'waitForCondition' | 'getStateReceivedAt'>,
-    launchedAt: number,
-    timeoutMs: number
-): Promise<{ state: BotWorldState; skipped: number }> {
-    let skipped = 0;
-    const state = await sdk.waitForCondition(s => {
-        if (sdk.getStateReceivedAt() >= launchedAt) return !!s.player;
-        skipped++;
-        return false;
-    }, timeoutMs);
-    return { state, skipped };
+function bankSummary(snapshot: BankSnapshot): string {
+    const top = [...snapshot.items].sort((a, b) => b.count - a.count).slice(0, 4);
+    return `${snapshot.items.length} stacks; ${top.map(i => `${i.name} x${i.count}`).join(', ')}`;
 }
 
 // ------------------------------------------------------------------ one account
@@ -492,7 +461,6 @@ class AccountRunner {
         this.state = 'logging-in';
         this.stats.logins++;
         this.note(`[fleet] logging in to ${creds.server}`);
-        const launchedAt = Date.now();
         const child = Bun.spawn([process.execPath, 'src/lite/runner.ts', this.account], {
             cwd: join(ROOT, 'server', 'webclient'),
             env: { ...process.env, GATEWAY_URL: this.fleet.gatewayUrl, LITE_LOGIN_JITTER_MS: '0' },
@@ -541,7 +509,7 @@ class AccountRunner {
         this.state = 'attaching';
         try {
             await this.attachSdk(creds.password, creds.server);
-            await this.waitForLiveState(launchedAt);
+            await this.waitForLiveState();
         } catch (e) {
             await this.killChild('attach failed');
             this.child = null;
@@ -601,11 +569,13 @@ class AccountRunner {
         this.bot = new BotActions(sdk);
     }
 
-    /** The role starts on this session's state, never on one cached from before it (see waitForSessionState). */
-    private async waitForLiveState(launchedAt: number): Promise<void> {
-        const { state, skipped } = await waitForSessionState(this.sdk!, launchedAt, LIVE_STATE_TIMEOUT_MS);
-        const ignored = skipped ? ` (ignored ${skipped} cached from before this launch)` : '';
-        this.note(`[fleet] session state at tick ${state.tick}${ignored}: inventory ${stackSummary(state.inventory)}`);
+    /**
+     * The role starts on this client session's state, never on the one the gateway
+     * replays from before it or the SDK kept across a relaunch (lib/fresh-state.ts).
+     */
+    private async waitForLiveState(): Promise<void> {
+        const fresh = await waitForFreshState(this.sdk!, { timeoutMs: LIVE_STATE_TIMEOUT_MS, signal: this.stopCtl.signal });
+        this.note(`[fleet] session state at ${describeFreshState(fresh)}`);
     }
 
     private watch(): void {
