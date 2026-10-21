@@ -661,8 +661,7 @@ Resyncs split the same way in all three knife runs. Every 'resync (no xp)' (`cou
 5) is matched by a gap of 21 ticks or more with no phase resync on its end log (6, 4, 5): honest miss
 runs, which at p about 0.33 are expected on (1-p)^6, about 9% of logs (5.7, 2.4, 4.2 expected). The
 timing class, a 4-tick gap or an off-phase roll (`phaseResyncs`), counted 4, 3 and 4 (phase resyncs
-2, 0, 4), and does not follow the catch-ups either (13, 4, 2 in those runs). Gaps of exactly 3, the
-locked cadence's lucky case, held no gate-rule catch-up inside them in any run. So on oak the
+2, 0, 4), and does not follow the program catch-ups either (13, 4, 2 in those runs). So on oak the
 knife's slips are the 18-tick lock window tripping on honest misses, which rs/175's longer window
 addresses, not timing lost to overruns.
 
