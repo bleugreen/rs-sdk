@@ -442,6 +442,7 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         // whenever it is attackable and we have not swung for 5 ticks.
         const IDLE: [number, number] = [2786, 4458];
         let msgSeen = sdk.getState()!.gameMessages.length;
+        let approaches = 0;
         const atk0 = sdk.getSkill('attack')!.experience;
         let lastSwing = t0;
         let lastClick = -99;
@@ -505,14 +506,31 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
             const reappeared = !wasVisible;
             wasVisible = true;
             if (reappeared || (s.tick - lastSwing >= 5 && s.tick - lastClick >= 3)) {
+                // The lite client's click route fails for most of the boss's
+                // spots (cranes and carts are NPCs in the way), and then the
+                // server does not move the player at all. Walk next to it on
+                // the SDK path first, then attack.
+                const p = pos(sdk);
+                if (Math.abs(p.x - boss.x) + Math.abs(p.z - boss.z) !== 1) {
+                    const adj = [[0, 1], [1, 0], [-1, 0], [0, -1]]
+                        .map(([dx, dz]) => ({ x: boss.x + dx!, z: boss.z + dz! }))
+                        .map(t => ({ ...t, n: chebyshevPath(sdk, t.x, t.z) }))
+                        .filter(t => t.n >= 0)
+                        .sort((a, b) => a.n - b.n);
+                    if (adj[0]) {
+                        await sdk.sendWalk(adj[0].x, adj[0].z, true);
+                        approaches++;
+                        await until(sdk, () => { const q = pos(sdk); return q.x === adj[0]!.x && q.z === adj[0]!.z; }, Math.ceil(adj[0].n / 2) + 3);
+                    }
+                }
                 await sdk.sendInteractNpc(boss.index, 2);
                 swings++;
-                lastClick = s.tick;
+                lastClick = sdk.getState()!.tick;
             }
             await sdk.waitForStateUpdate();
         }
         const dealt = Math.round((sdk.getSkill('attack')!.experience - atk0) / 100); // 4 xp per damage, 25x
-        L.note(`attack clicks ${swings}, fade-outs ${moves}, sharks ${eats}, damage dealt ~${dealt}, hp left ${sdk.getState()!.player!.hp}${died ? ', DIED' : ''}; hp/boss% ${hpLog.join(' ')}`);
+        L.note(`attack clicks ${swings}, approach walks ${approaches}, fade-outs ${moves}, sharks ${eats}, damage dealt ~${dealt}, hp left ${sdk.getState()!.player!.hp}${died ? ', DIED' : ''}; hp/boss% ${hpLog.join(' ')}`);
         const kd = await dialog(sdk, [], { settle: 1 });
         L.add(kd);
         L.end();
