@@ -22,3 +22,4 @@ if (mode === 'consecutive') {
 } else {
     throw new Error(`Unknown runner lifecycle mode: ${mode}`);
 }
+console.log(`FINISHED_AT:${Date.now()}`);

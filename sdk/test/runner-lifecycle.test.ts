@@ -33,7 +33,6 @@ async function runChild(mode: string) {
             }
         }
     });
-    const start = Date.now();
     const child = Bun.spawn({
         cmd: [process.execPath, join(import.meta.dir, 'fixtures/runner-lifecycle.ts'), mode],
         env: {
@@ -47,12 +46,17 @@ async function runChild(mode: string) {
     // A leaked 60-second script deadline must fail promptly, not stall CI.
     const watchdog = setTimeout(() => child.kill(), 12_000);
     try {
-        const [stdout, stderr, exitCode] = await Promise.all([
+        const [stdout, stderr, [exitCode, exitedAt]] = await Promise.all([
             new Response(child.stdout).text(),
             new Response(child.stderr).text(),
-            child.exited
+            child.exited.then(code => [code, Date.now()] as const)
         ]);
-        return { stdout, stderr, exitCode, duration: Date.now() - start };
+        // Time from the run finishing to the process exiting. Spawn-to-exit would
+        // also count bun startup and SDK loading, which takes seconds on a loaded
+        // host; a leaked timer instead holds the process for the 10 s disconnect
+        // bound or the 60 s script deadline (cut at 12 s by the watchdog).
+        const finishedAt = Number(stdout.match(/^FINISHED_AT:(\d+)$/m)?.[1]);
+        return { stdout, stderr, exitCode, shutdown: exitedAt - finishedAt };
     } finally {
         clearTimeout(watchdog);
         server.stop(true);
@@ -71,12 +75,12 @@ test('a completed managed script exits naturally without the disconnect deadline
     const result = await runChild('success');
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain('RUN_FINISHED:true');
-    expect(result.duration).toBeLessThan(4000);
+    expect(result.shutdown).toBeLessThan(4000);
 }, 15_000);
 
 test('a failed managed script clears its deadline and retains a nonzero exit code', async () => {
     const result = await runChild('failure');
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toContain('RUN_FINISHED:false:expected script failure');
-    expect(result.duration).toBeLessThan(4000);
+    expect(result.shutdown).toBeLessThan(4000);
 }, 15_000);
