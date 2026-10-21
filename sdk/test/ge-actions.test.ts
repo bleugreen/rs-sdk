@@ -24,7 +24,7 @@ function setup(ge: GEState | null = state()) {
     const world = {
         ge,
         modalOpen: !!ge,
-        interface: { isOpen: !!ge, interfaceId: 40000, options: [] },
+        interface: { isOpen: !!ge, interfaceId: 40000, options: [], inventories: [] },
         dialog: { isOpen: false },
     } as any;
     (sdk as any).state = world;

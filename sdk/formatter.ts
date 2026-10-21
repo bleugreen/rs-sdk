@@ -236,6 +236,16 @@ export function formatWorldState(
                 lines.push(`  ${opt.index}. ${opt.text}`);
             }
         }
+        // Shop, bank and trade inventories have their own sections below.
+        if (!state.shop?.isOpen && !state.bank?.isOpen && !state.trade?.isOpen) {
+            for (const inv of state.interface.inventories ?? []) {
+                lines.push(`Inventory ${inv.componentId} (${inv.items.length}/${inv.size} slots filled; act with sdk.sendUseItem(slot, opIndex, ${inv.componentId})):`);
+                for (const item of inv.items) {
+                    const ops = item.optionsWithIndex.map(o => `${o.opIndex}:${o.text}`).join(', ');
+                    lines.push(`  slot ${item.slot}: ${item.name} (id ${item.id})${ops ? ` [${ops}]` : ''}`);
+                }
+            }
+        }
         if (state.trade?.isOpen) {
             lines.push('(This is the player-trade window - see the Trade section below. Drive it with bot.trade()/offerTradeItems()/acceptTrade(); closing it would DECLINE the trade.)');
         } else if (!state.shop?.isOpen && !state.bank?.isOpen && !state.ge?.isOpen) {
