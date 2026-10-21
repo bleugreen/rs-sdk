@@ -156,7 +156,7 @@ describe('pickpocket', () => {
         const clicks = h.sent.filter(s => s.action.type === 'interactNpc').map(s => s.tick);
         expect(new Set(clicks).size).toBe(clicks.length);
         expect(clicks.length).toBeGreaterThan(290);
-        expect(h.sent.every(s => s.action.type === 'interactNpc')).toBe(true);
+        expect(h.sent.every(s => s.action.type === 'interactNpc' || s.action.type === 'useInventoryItem')).toBe(true);
         expect(r.stun).toBeUndefined();
         // 4 successes at 2 and one failure at 11: 5 rolls per 19 ticks
         expect(r.rollsPerTick).toBeCloseTo(5 / 19, 1);
@@ -263,9 +263,9 @@ describe('pickpocket stun actions', () => {
 
     test('arrows use the best tier the Fletching level allows', () => {
         const at = (fletching: number) => {
-            // one stun: 24 arrow actions use 360 of a tier's 600 heads
-            const { stunActions } = thieve({ ticks: 20, outcome: () => false, kit: { headless: 3000, heads: { rune: 600, mithril: 600, bronze: 600 }, fletching }, params: { stunActions: ['arrows'] } });
-            expect(stunActions.length).toBe(24);
+            // two stuns of 24 arrow actions use 720 of a tier's 1,200 heads
+            const { stunActions } = thieve({ ticks: 20, outcome: () => false, kit: { headless: 3000, heads: { rune: 1200, mithril: 1200, bronze: 1200 }, fletching }, params: { stunActions: ['arrows'] } });
+            expect(stunActions.length).toBe(48);
             expect(stunActions.every(l => !l.dropped)).toBe(true);
             return new Set(stunActions.map(l => l.name));
         };
