@@ -83,6 +83,15 @@ const scen: [string, number][] = [
     // Planned quest route (cairn://p/rs/3): the troll chain is off, UP + Regicide pending rs/15.
     ['GT + UP + Regicide (on route)', Q.grandTree + Q.undergroundPass + Q.regicide],
     ['GT only (if the Regicide chain drops)', Q.grandTree],
+    // Grand Tree is the only Agility quest left on the route once the Regicide chain is off;
+    // these price each candidate (and their combinations) on top of it.
+    ['GT + 2 Tourist Trap picks', Q.grandTree + 2 * Q.touristPick],
+    ['GT + Troll Romance', Q.grandTree + Q.trollRomance],
+    ['GT + Fremennik', Q.grandTree + Q.fremennik],
+    ['GT + 2 TT picks + Troll Romance', Q.grandTree + 2 * Q.touristPick + Q.trollRomance],
+    ['GT + 2 TT picks + Fremennik', Q.grandTree + 2 * Q.touristPick + Q.fremennik],
+    ['GT + Troll Romance + Fremennik', Q.grandTree + Q.trollRomance + Q.fremennik],
+    ['GT + 2 TT picks + Troll Romance + Fremennik', Q.grandTree + 2 * Q.touristPick + Q.trollRomance + Q.fremennik],
     ['GT + UP + Regicide + 1 Tourist Trap pick', Q.grandTree + Q.undergroundPass + Q.regicide + Q.touristPick],
     ['GT + UP + Regicide + 2 Tourist Trap picks', Q.grandTree + Q.undergroundPass + Q.regicide + 2 * Q.touristPick],
     ['GT + Regicide + TR', Q.grandTree + Q.regicide + Q.trollRomance],

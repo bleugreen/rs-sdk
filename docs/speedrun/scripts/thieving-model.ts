@@ -89,6 +89,12 @@ const quests: [string, number][] = [
     ['FA + Biohazard + Hazeel Cult', 2175 + 1250 + 1500],
     ['FA + Biohazard + Tribal Totem', 2175 + 1250 + 1775],
     ['FA + Biohazard + Hazeel Cult + Tribal Totem', 2175 + 1250 + 1500 + 1775],
+    // Without the Regicide chain (no Biohazard): Fight Arena plus each candidate.
+    ['FA + Fremennik (2,812.4)', 2175 + 2812.4],
+    ['FA + Hazeel Cult', 2175 + 1500],
+    ['FA + Tribal Totem', 2175 + 1775],
+    ['FA + Hazeel Cult + Tribal Totem', 2175 + 1500 + 1775],
+    ['FA + 2 Tourist Trap picks', 2175 + 9300],
 ];
 for (const [routeName, allowed] of Object.entries(ROUTES)) {
     console.log(`\nRoute '${routeName}':`);
