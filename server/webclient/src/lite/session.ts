@@ -1,9 +1,12 @@
-// One bot session: bootstrap the cache, log in, and pump packets on a timer.
+// One bot session: bootstrap the cache, log in, and pump packets.
 //
 // The loop is deliberately dumb compared to GameShell.run(): there is no redraw
-// to pace against, so we just drain the socket every LOOP_MS. The 274 server
-// ticks at 300-600ms, so 20ms polling is far below the noise floor while costing
-// almost nothing.
+// to pace against. It drains the socket as soon as a message arrives, because a
+// tick's state reaches the bot - and the bot's reaction reaches the engine - only
+// as fast as the drain runs, and the engine reads input once per tick: a polled
+// drain spent up to a full LOOP_MS of the gap a reaction has to land in. The
+// client frame counter, keepalive and idle watchdog still step every LOOP_MS,
+// because they count client cycles (the browser's 20ms frames), not messages.
 //
 // Death policy. A session that ends never resumes itself - reconnecting is the
 // caller's call, because it owns whatever state was mid-flight. What this file
@@ -22,6 +25,7 @@ import { LocIndex } from './world/LocIndex.js';
 import { ClientProt } from '#/io/ClientProt.js';
 import WordFilter from '#/wordfilter/WordFilter.js';
 
+/** One client cycle: the browser's 50Hz frame, which SeqType delays are denominated in. */
 const LOOP_MS = 20;
 /** Engine drops a socket after TIMEOUT_NO_RESPONSE; NO_TIMEOUT keeps it alive. */
 const KEEPALIVE_CYCLES = 50;
@@ -84,6 +88,149 @@ export interface LiteSession {
     client: LiteClient;
     stop(): void;
     stopped: Promise<SessionEnd>;
+}
+
+/** What the packet loop needs from the game socket. GameConnection is the real one. */
+export interface PacketSocket {
+    /** Call `listener` after each inbound message has been buffered for reading. */
+    onReceive(listener: () => void): void;
+    close(): void;
+}
+
+export interface PacketLoop {
+    stop(): void;
+    stopped: Promise<SessionEnd>;
+}
+
+/**
+ * The packet loop's wait: resolves when the next client cycle is due, or as soon
+ * as the socket delivers data. A message that lands while the loop is busy
+ * draining is remembered, so the next wait returns at once rather than sleeping
+ * on bytes that already arrived.
+ */
+class PacketWake {
+    private pending = false;
+    private waiter: (() => void) | null = null;
+
+    readonly notify = (): void => {
+        const waiter = this.waiter;
+        if (waiter) {
+            this.waiter = null;
+            waiter();
+        } else {
+            this.pending = true;
+        }
+    };
+
+    wait(ms: number): Promise<void> {
+        if (this.pending) {
+            this.pending = false;
+            return Promise.resolve();
+        }
+        return new Promise(resolve => {
+            const timer = setTimeout(() => {
+                this.waiter = null;
+                resolve();
+            }, Math.max(0, ms));
+            this.waiter = () => {
+                clearTimeout(timer);
+                resolve();
+            };
+        });
+    }
+}
+
+/**
+ * Drive a logged-in client until its session ends: drain and flush whenever the
+ * socket delivers, and step the client cycle (frame counter, keepalive, idle
+ * watchdog) every LOOP_MS whether or not anything arrived. A stall drops the
+ * cycles it missed instead of replaying them in a burst.
+ */
+export function runPacketLoop(
+    client: LiteClient,
+    socket: PacketSocket,
+    opts: { username: string; onEnd?(end: SessionEnd): void }
+): PacketLoop {
+    let running = true;
+    const wake = new PacketWake();
+    socket.onReceive(wake.notify);
+
+    const loop = async (): Promise<SessionEnd> => {
+        let end: SessionEnd = { reason: 'stopped' };
+        let cycles = 0;
+        let idle = 0;
+        let seenPackets = 0;
+        let nextCycleAt = performance.now();
+
+        while (running) {
+            if (client.isLoggedOut()) {
+                end = { reason: 'logged-out' };
+                break;
+            }
+            if (!client.isInGame()) {
+                end = { reason: 'disconnected' };
+                break;
+            }
+
+            let cycled = false;
+            try {
+                await client.pumpPackets();
+
+                const now = performance.now();
+                if (now >= nextCycleAt) {
+                    cycled = true;
+                    nextCycleAt = now - nextCycleAt < LOOP_MS ? nextCycleAt + LOOP_MS : now + LOOP_MS;
+                    if (++cycles % KEEPALIVE_CYCLES === 0) {
+                        client.writeOpcode(ClientProt.NO_TIMEOUT);
+                    }
+                }
+                client.flush();
+                if (cycled) {
+                    client.tickCycle();
+                }
+            } catch (err) {
+                if (!running) {
+                    break;
+                }
+                // Individual bad packets are contained in handlePacket, so a throw
+                // that reaches here is the stream or the socket, not one handler.
+                end = client.isInGame() ? { reason: 'error', error: err } : { reason: 'disconnected' };
+                break;
+            }
+
+            if (client.packetsReceived !== seenPackets) {
+                seenPackets = client.packetsReceived;
+                idle = 0;
+            } else if (cycled && ++idle > IDLE_CYCLES) {
+                end = { reason: 'idle' };
+                break;
+            }
+
+            await wake.wait(nextCycleAt - performance.now());
+        }
+
+        socket.close();
+        // Say so on the way out: a bot that dies quietly in a fleet just looks idle.
+        if (end.reason !== 'stopped') {
+            console.error(`[lite] ${opts.username}: session ended (${end.reason})`, end.error ?? '');
+        }
+        try {
+            opts.onEnd?.(end);
+        } catch (err) {
+            console.error(`[lite] ${opts.username}: onEnd handler threw:`, err);
+        }
+        return end;
+    };
+
+    const stopped = loop();
+    return {
+        stop(): void {
+            running = false;
+            socket.close();
+            wake.notify();
+        },
+        stopped
+    };
 }
 
 /** The server's game revision from /api/version, or null if it doesn't say (older server, network). */
@@ -161,78 +308,6 @@ export async function startSession(opts: SessionOptions): Promise<LiteSession> {
         maxMessageLength: opts.maxMessageLength
     });
 
-    let running = true;
-    let cycles = 0;
-    let idle = 0;
-    let seenPackets = 0;
-    let resolveStopped: (end: SessionEnd) => void;
-    const stopped = new Promise<SessionEnd>(resolve => {
-        resolveStopped = resolve;
-    });
-
-    const loop = async (): Promise<void> => {
-        let end: SessionEnd = { reason: 'stopped' };
-
-        while (running) {
-            if (client.isLoggedOut()) {
-                end = { reason: 'logged-out' };
-                break;
-            }
-            if (!client.isInGame()) {
-                end = { reason: 'disconnected' };
-                break;
-            }
-
-            try {
-                await client.pumpPackets();
-
-                if (++cycles % KEEPALIVE_CYCLES === 0) {
-                    client.writeOpcode(ClientProt.NO_TIMEOUT);
-                }
-                client.flush();
-                client.tickCycle();
-            } catch (err) {
-                if (!running) {
-                    break;
-                }
-                // Individual bad packets are contained in handlePacket, so a throw
-                // that reaches here is the stream or the socket, not one handler.
-                end = client.isInGame() ? { reason: 'error', error: err } : { reason: 'disconnected' };
-                break;
-            }
-
-            if (client.packetsReceived !== seenPackets) {
-                seenPackets = client.packetsReceived;
-                idle = 0;
-            } else if (++idle > IDLE_CYCLES) {
-                end = { reason: 'idle' };
-                break;
-            }
-
-            await Bun.sleep(LOOP_MS);
-        }
-
-        connection.close();
-        // Say so on the way out: a bot that dies quietly in a fleet just looks idle.
-        if (end.reason !== 'stopped') {
-            console.error(`[lite] ${opts.username}: session ended (${end.reason})`, end.error ?? '');
-        }
-        try {
-            opts.onEnd?.(end);
-        } catch (err) {
-            console.error(`[lite] ${opts.username}: onEnd handler threw:`, err);
-        }
-        resolveStopped(end);
-    };
-
-    void loop();
-
-    return {
-        client,
-        stop(): void {
-            running = false;
-            connection.close();
-        },
-        stopped
-    };
+    const loop = runPacketLoop(client, connection, { username: opts.username, onEnd: opts.onEnd });
+    return { client, stop: loop.stop, stopped: loop.stopped };
 }

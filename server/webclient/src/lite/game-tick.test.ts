@@ -6,6 +6,12 @@
 // every reaction a tick late, so LiteClient.pumpPackets publishes after the
 // drain instead.
 //
+// And it is published when it arrives. The session's packet loop drains on the
+// socket's message event rather than on its 20ms cycle, because the engine reads
+// input once per tick and a polled drain spent up to a cycle of the gap a
+// reaction has to land in. The cycle itself (frame counter, keepalive, idle
+// watchdog) keeps its 20ms cadence however often the socket wakes the loop.
+//
 // Drives the real framing path (handlePacket via pumpPackets over a fake socket).
 // Needs no network: the interface baseline is stubbed empty when no earlier
 // suite loaded the cache.
@@ -20,6 +26,7 @@ import { ServerProt } from '#/io/ServerProt.js';
 
 import { captureBaseInterfaces, resetBaseInterfaces } from './interfaces.js';
 import { LiteClient } from './LiteClient.js';
+import { runPacketLoop, type PacketSocket } from './session.js';
 
 /** A socket that hands back a byte script, which tests can extend between pumps. */
 class FakeStream {
@@ -54,9 +61,10 @@ function makeClient(name: string): { client: LiteClient; stream: FakeStream } {
         connection: {
             stream,
             in: Packet.alloc(1),
-            out: Packet.alloc(1),
+            out: Object.assign(Packet.alloc(1), { random: { nextInt: 0 } }),
             randomIn: { nextInt: 0 },
-            isClosed: false
+            isClosed: false,
+            flush() {}
         } as never,
         locIndex: {} as never,
         username: name,
@@ -126,5 +134,92 @@ describe('game tick publication', () => {
         stream.bytes.push(...PLAYER_INFO_EMPTY);
         await client.pumpPackets();
         expect(seen).toEqual([2, 1]);
+    });
+});
+
+/** Stands in for GameConnection: delivering bytes fires the receive listener, as the socket does. */
+class FakeSocket implements PacketSocket {
+    private listener: (() => void) | null = null;
+    closed = false;
+
+    constructor(private readonly stream: FakeStream) {}
+
+    onReceive(listener: () => void): void {
+        this.listener = listener;
+    }
+
+    close(): void {
+        this.closed = true;
+    }
+
+    deliver(bytes: number[]): void {
+        this.stream.bytes.push(...bytes);
+        this.listener?.();
+    }
+}
+
+function startLoop(name: string): { client: LiteClient; socket: FakeSocket; loop: ReturnType<typeof runPacketLoop> } {
+    const { client, stream } = makeClient(name);
+    client.ingame = true;
+    const socket = new FakeSocket(stream);
+    return { client, socket, loop: runPacketLoop(client, socket, { username: name }) };
+}
+
+describe('session packet loop', () => {
+    test('a tick is published when it arrives, not on the next 20ms cycle', async () => {
+        const { client, socket, loop } = startLoop('loop1');
+        const delays: number[] = [];
+        let sentAt = 0;
+        client.setOnGameTickCallback(() => {
+            delays.push(performance.now() - sentAt);
+        });
+
+        try {
+            // Land frames at assorted phases of the cycle. A polled drain would
+            // publish each one 0-20ms late (median ~10); an event-driven one at once.
+            for (let i = 0; i < 15; i++) {
+                await Bun.sleep(7 + ((i * 5) % 13));
+                sentAt = performance.now();
+                socket.deliver(PLAYER_INFO_EMPTY);
+            }
+            await Bun.sleep(25);
+        } finally {
+            loop.stop();
+            await loop.stopped;
+        }
+
+        expect(delays.length).toBe(15);
+        const median = [...delays].sort((a, b) => a - b)[7];
+        expect(median).toBeLessThan(4);
+    });
+
+    test('the client cycle keeps its 20ms cadence however often the socket wakes the loop', async () => {
+        const { client, socket, loop } = startLoop('loop2');
+
+        try {
+            const start = performance.now();
+            while (performance.now() - start < 200) {
+                socket.deliver([]);
+                await Bun.sleep(1);
+            }
+        } finally {
+            loop.stop();
+            await loop.stopped;
+        }
+
+        // ~11 cycles in 200ms (one at start, then every 20ms), not one per wake.
+        expect(client.loopCycle).toBeGreaterThanOrEqual(6);
+        expect(client.loopCycle).toBeLessThanOrEqual(13);
+    });
+
+    test('stop ends the loop with reason stopped and closes the socket', async () => {
+        const { socket, loop } = startLoop('loop3');
+        await Bun.sleep(5);
+
+        loop.stop();
+        const end = await loop.stopped;
+
+        expect(end.reason).toBe('stopped');
+        expect(socket.closed).toBe(true);
     });
 });

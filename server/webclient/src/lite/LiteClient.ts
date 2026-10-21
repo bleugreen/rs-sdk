@@ -326,8 +326,9 @@ export class LiteClient {
      * tick of its 50Hz shell loop - i.e. one step per ~20ms, with
      * `Client.loopCycle` advancing at the same cadence. SeqType per-frame delays
      * (and the ANIM mask's start delay) are denominated in those 20ms client
-     * ticks. Our session loop runs every LOOP_MS=20ms and calls tickCycle() once,
-     * so `c.cycle.value` advances at the same ~20ms cadence - one ageAnims() call
+     * ticks. Our session loop steps a client cycle every LOOP_MS=20ms (however
+     * often packets wake it) and calls tickCycle() once per cycle, so
+     * `c.cycle.value` advances at the same ~20ms cadence - one ageAnims() call
      * per cycle steps exactly like the browser. Server game ticks (600ms vanilla,
      * 300ms on prod) are 30/15 of these cycles and only enter via
      * tickSpeedMultiplier, which both clients derive from the measured

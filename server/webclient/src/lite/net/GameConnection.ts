@@ -96,9 +96,12 @@ export class GameConnection {
     readonly staffModLevel: number;
     readonly mouseTracked: boolean;
 
+    /** The raw socket under `stream`, kept for `onReceive`. */
+    private readonly socket: WebSocket;
     private closed = false;
 
-    private constructor(stream: ClientStream, randomIn: Isaac, staffModLevel: number, mouseTracked: boolean) {
+    private constructor(socket: WebSocket, stream: ClientStream, randomIn: Isaac, staffModLevel: number, mouseTracked: boolean) {
+        this.socket = socket;
         this.stream = stream;
         this.randomIn = randomIn;
         this.staffModLevel = staffModLevel;
@@ -113,7 +116,8 @@ export class GameConnection {
             throw new LoginError(-1, 'Password must be 1-20 characters');
         }
 
-        const stream = new ClientStream(await ClientStream.openSocket(opts.host, opts.secured));
+        const socket = await ClientStream.openSocket(opts.host, opts.secured);
+        const stream = new ClientStream(socket);
 
         try {
             const out = Packet.alloc(1);
@@ -193,7 +197,7 @@ export class GameConnection {
             const staffModLevel = await stream.read();
             const mouseTracked = (await stream.read()) === 1;
 
-            const game = new GameConnection(stream, conn.decoder, staffModLevel, mouseTracked);
+            const game = new GameConnection(socket, stream, conn.decoder, staffModLevel, mouseTracked);
             game.out.random = conn.encoder;
             game.out.pos = 0;
             return game;
@@ -206,6 +210,17 @@ export class GameConnection {
     /** Closed by us, or hung up on by the server - either way there is no session left. */
     get isClosed(): boolean {
         return this.closed || this.stream.isClosed;
+    }
+
+    /**
+     * Call `listener` each time a message arrives, after `stream` has buffered it.
+     *
+     * ClientStream's reader owns `socket.onmessage` and registered it when the
+     * stream was built, before any caller can get here; a listener added later
+     * runs after it, so `stream.available` already counts the new bytes.
+     */
+    onReceive(listener: () => void): void {
+        this.socket.addEventListener('message', () => listener());
     }
 
     /** Flush the outbound buffer if it has anything queued. */
