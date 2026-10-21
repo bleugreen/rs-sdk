@@ -330,7 +330,28 @@ async function countLoop() {
             tsv('fingerprint.tsv', ['pdt', 'epoch_ms', 'client_js_sha256', 'content_length', 'etag', 'last_modified', 'server'],
                 [pdt(Date.now()), Date.now(), (b.stdout ?? '').slice(0, 16), h('content-length'), h('etag'), h('last-modified'), h('server')]);
         }
+        // The login path: a websocket upgrade on the game socket (no login; closed at once). The engine
+        // answers 101 from its tick thread, so during an outage this fails separately from /playercount.
+        if (i % 3 === 0) {
+            const w = spawnSync('curl', ['-s', '--http1.1', '--max-time', '4', '-o', '/dev/null', '-w', '%{http_code} %{time_starttransfer}',
+                '-H', 'Connection: Upgrade', '-H', 'Upgrade: websocket', '-H', 'Sec-WebSocket-Version: 13', '-H', 'Sec-WebSocket-Key: cmVzZWFyY2gtcHJvYmUtMTA=', '-H', 'Sec-WebSocket-Protocol: binary',
+                `https://${HOST}/`], { encoding: 'utf8' });
+            const [code, t] = (w.stdout ?? '').split(' ');
+            tsv('wsupgrade.tsv', ['pdt', 'epoch_ms', 'http_code', 'ms'], [pdt(Date.now()), Date.now(), code, Math.round(Number(t) * 1000)]);
+        }
         await sleep(COUNT_S * 1000);
+    }
+}
+
+// Runs this sampler dispatched that finished while it was not running (a restart): collect them now.
+function collectOrphans() {
+    const logged = new Set(readText(join(DIR, 'attempts.tsv')).split('\n').map(l => l.split('\t')[1]).filter(Boolean));
+    for (const id of mine) {
+        if (logged.has(id)) continue;
+        const r = gh(['run', 'view', id, '-R', REPO, '--json', 'status,conclusion']);
+        if (!r.ok) continue;
+        const j = JSON.parse(r.out);
+        if (j.status === 'completed') log(`orphan ${id}: ${collect(id, j.conclusion)}`);
     }
 }
 
