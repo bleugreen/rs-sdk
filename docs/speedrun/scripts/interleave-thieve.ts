@@ -141,6 +141,9 @@ await runScript(async ({ bot, sdk }) => {
             if (uses('b') && low(/^dragon bones$/i)) { sdk.sendSay('::give dragon_bones 8').catch(() => {}); refills++; }
             if (uses('e') && low(/^sapphire ring$/i)) { sdk.sendSay('::give sapphire_ring 8').catch(() => {}); refills++; }
             if (uses('a') && low(/^iron bar$/i)) { sdk.sendSay('::give iron_bar 6').catch(() => {}); refills++; }
+            // Enchanted rings are products: drop one per tick so the inventory never fills.
+            const product = slotOf(s, /^ring of recoil$/i);
+            if (product) { sdk.sendDropItem(product.slot).catch(() => {}); sent.push('drop'); }
             const n = Math.min(OUTSIDE, knight.distance > 1 ? 2 : 3);
             for (let i = 0; i < n; i++) helper();
             sdk.sendInteractNpc(knight.index, op).catch(() => {});
