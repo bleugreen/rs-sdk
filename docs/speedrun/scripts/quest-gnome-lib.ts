@@ -298,6 +298,71 @@ export async function locOp(sdk: BotSDK, re: RegExp, opRe: RegExp, done: Pred, m
     return { name: `${op.text} ${loc.name}`, ticks: (r?.tick ?? NaN) - t0, note: r ? undefined : 'TIMEOUT' };
 }
 
+type LocLike = { x: number; z: number; id: number; name: string; optionsWithIndex: { text: string; opIndex: number }[] };
+
+async function locAt(sdk: BotSDK, x: number, z: number, opRe: RegExp): Promise<LocLike> {
+    const all = await sdk.scanNearbyLocs(25);
+    const loc = all.find(l => l.x === x && l.z === z && l.optionsWithIndex.some(o => opRe.test(o.text)));
+    if (!loc) throw new Error(`no loc with ${opRe} at (${x},${z}); near: ${all.filter(l => Math.abs(l.x - x) + Math.abs(l.z - z) <= 2).map(l => `${l.name}@${l.x},${l.z}[${l.optionsWithIndex.map(o => o.text).join('/')}]`).join(' ')}`);
+    return loc as LocLike;
+}
+
+/** Interact with the loc at (x, z) and wait for `done`; re-sends the click every 6 ticks (clicks during p_delay are dropped). */
+export async function locOpAt(sdk: BotSDK, x: number, z: number, opRe: RegExp, done: Pred, maxTicks = 60): Promise<StepRecord> {
+    const loc = await locAt(sdk, x, z, opRe);
+    const op = loc.optionsWithIndex.find(o => opRe.test(o.text))!;
+    const t0 = now(sdk);
+    await sdk.sendInteractLoc(loc.x, loc.z, loc.id, op.opIndex);
+    let sent = t0;
+    let moved = false;
+    const p0 = pos(sdk.getState());
+    const r = await waitUntil(sdk, s => {
+        if (done(s)) return true;
+        const p = pos(s);
+        if (p.x !== p0.x || p.z !== p0.z) moved = true;
+        // Only re-send while the player is idle where it started: a walking player has the click.
+        if (!moved && !s.dialog.isOpen && s.tick - sent >= 6) {
+            sent = s.tick;
+            void sdk.sendInteractLoc(loc.x, loc.z, loc.id, op.opIndex);
+        }
+        return false;
+    }, maxTicks);
+    return { name: `${op.text} ${loc.name} (${x},${z})`, ticks: (r?.tick ?? NaN) - t0, note: r ? undefined : 'TIMEOUT' };
+}
+
+/** Interact with the loc at (x, z), answer the dialogue it opens, and wait for `done` (if given). */
+export async function locTalkAt(sdk: BotSDK, x: number, z: number, opRe: RegExp, answers: RegExp[], opts: { idle?: number; maxTicks?: number; done?: Pred } = {}): Promise<StepRecord & { run: DialogueRun }> {
+    const loc = await locAt(sdk, x, z, opRe);
+    const op = loc.optionsWithIndex.find(o => opRe.test(o.text))!;
+    const t0 = now(sdk);
+    const d = dialogue(sdk, answers, opts);
+    await sdk.sendInteractLoc(loc.x, loc.z, loc.id, op.opIndex);
+    const run = await d;
+    let end = run.endTick >= 0 ? run.endTick : now(sdk);
+    if (opts.done) {
+        const r = await waitUntil(sdk, opts.done, 30);
+        end = Math.max(end, r?.tick ?? NaN);
+    }
+    return { name: `${op.text} ${loc.name} (${x},${z})`, ticks: end - t0, approach: run.firstTick >= 0 ? run.firstTick - t0 : undefined, pages: run.pages, choices: run.choices, run };
+}
+
+/** Use the first inventory item matching `item` (name regex or obj id) on the loc at (x, z). */
+export async function useOnLocAt(sdk: BotSDK, item: RegExp | number, x: number, z: number, done: Pred, opts: { maxTicks?: number; answers?: RegExp[] } = {}): Promise<StepRecord> {
+    const inv = sdk.getState()!.inventory;
+    const it = inv.find(i => (typeof item === 'number' ? i.id === item : item.test(i.name)));
+    if (!it) throw new Error(`no inventory item ${item}`);
+    const all = await sdk.scanNearbyLocs(25);
+    const loc = all.find(l => l.x === x && l.z === z);
+    if (!loc) throw new Error(`no loc at (${x},${z})`);
+    const t0 = now(sdk);
+    const d = dialogue(sdk, opts.answers ?? [], { startTimeout: 15 });
+    await sdk.sendUseItemOnLoc(it.slot, loc.x, loc.z, loc.id);
+    const r = await waitUntil(sdk, done, opts.maxTicks ?? 40);
+    const run = await d;
+    const end = Math.max(r?.tick ?? NaN, run.endTick);
+    return { name: `use ${it.name} on ${loc.name} (${x},${z})`, ticks: end - t0, pages: run.pages, note: r ? undefined : 'TIMEOUT' };
+}
+
 /** Open the door at (x, z) and wait until it no longer offers Open (the opened door moves to the next tile). */
 export async function openDoorAt(sdk: BotSDK, x: number, z: number, maxTicks = 30): Promise<StepRecord> {
     const isClosed = (l: { x: number; z: number; name: string; optionsWithIndex: { text: string }[] }) => l.x === x && l.z === z && /door|gate/i.test(l.name) && l.optionsWithIndex.some(o => /^open$/i.test(o.text));
