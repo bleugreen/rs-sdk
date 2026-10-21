@@ -205,6 +205,35 @@ export function probeOnTime(sdk: ProbeSdk, opts: ProbeOptions = {}): Promise<Pro
     });
 }
 
+/**
+ * Read the vantage preconditions from this machine, as rs/86's workflow does: one request
+ * with `flyio-debug: doit` for Fly's routing fields, then `samples` fresh connections
+ * `gapMs` apart (not a burst) for TCP connect, and `/playercount`. Needs curl on PATH.
+ */
+export async function measureVantage(host: string, opts: { samples?: number; gapMs?: number } = {}): Promise<VantageReading> {
+    const samples = opts.samples ?? 20;
+    const gapMs = opts.gapMs ?? 1000;
+    const url = `https://${host}/cairn-vantage-probe-${Date.now()}`;
+    const curl = (args: string[]) => spawnSync('curl', ['-s', '-o', '/dev/null', '-m', '10', ...args, url], { encoding: 'utf8' }).stdout ?? '';
+    let fly: Record<string, unknown> = {};
+    try {
+        fly = JSON.parse(/^flyio-debug:\s*(.*)$/im.exec(curl(['-D', '-', '-H', 'flyio-debug: doit']))?.[1] ?? '{}');
+    } catch {}
+    const connectMs: number[] = [];
+    for (let i = 0; i < samples; i++) {
+        const t = Number(curl(['-w', '%{time_connect}']));
+        if (t > 0) connectMs.push(Math.round(t * 1e4) / 10);
+        if (i < samples - 1) await new Promise(r => setTimeout(r, gapMs));
+    }
+    let players: number | null = null;
+    try {
+        const j = (await (await fetch(`https://${host}/playercount`, { signal: AbortSignal.timeout(5000) })).json()) as { count?: number };
+        players = typeof j.count === 'number' ? j.count : null;
+    } catch {}
+    const str = (v: unknown) => (typeof v === 'string' && v ? v : null);
+    return { edge: str(fly.nr), app: str(fly.sr), meshHop: str(fly.mhn), connectMs, players };
+}
+
 /** One probe, one decision, by the probe's path. */
 export async function shouldManipulate(sdk: ProbeSdk, model: CycleModel, opts: ProbeOptions = {}, direct?: DirectRule): Promise<HostVerdict> {
     return hostVerdict(await probeOnTime(sdk, opts), model, direct);
@@ -326,9 +355,11 @@ export class HostGate {
         const switched = !first && was !== this.on;
         this.history.push({ tick, why, on: this.on, switched, result, verdict });
         const mode = (on: boolean) => (on ? 'manipulate' : 'plain');
+        const st = result.steadiness;
         this.opts.log?.(
             `T${tick} gate (${why}${result.path === 'direct' ? ', direct' : ''}): latency ${latencyHistogram(result.latencies) || '-'} of ${result.trials}` +
                 `${result.reason ? ` (${result.reason})` : ''}, same as previous ${result.sameAsPrevious.toFixed(2)}, in ${result.ticks} ticks;` +
+                ` ticks p50 ${st.p50} p90 ${st.p90} max ${st.max} ms, ${st.catchUps} catch-ups (${steadinessHistogram(st) || '-'});` +
                 ` ${verdictText(verdict)} -> ` +
                 (switched ? `SWITCH ${mode(was)} -> ${mode(this.on)}` : mode(this.on))
         );
