@@ -284,6 +284,8 @@ What it still needs (read):
   (finding 4 does not apply here). Do not let anyone else out-damage the scored account.
 - **Level-up dialogues** interrupt fights at 25x xp (2-8 per fight at 50/50/50; none
   measured at 70).
+- **Weapon swaps are not in the step list**: wield the bow before the shot and the
+  scimitar again before the paladins (two clicks, about 4 ticks, inferred).
 - **The witch's house door closes behind you**; open it again to leave.
 - **The brew barrel only works from its west side** (2326,9799), inside a house with a
   closed door.
