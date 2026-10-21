@@ -36,7 +36,7 @@ function state(o: { level?: number; xp?: number; at?: { x: number; z: number }; 
 
 function status(p: Partial<ProgramStatus> = {}): ProgramStatus {
     const frames = { n: 0, p50: 0, p90: 0, max: 0, under150: 0, over350: 0, catchUps: 0, catchUpsLastMinute: 0, catchUpsPerMinute: 0 };
-    return { runId: 1, name: 'knife-cycle', phase: 'done', params: {}, startedTick: 1000, tick: 1100, progressTick: 1100, counters: {}, gauges: {}, packets: 0, deferred: 0, skippedTicks: 0, maxTickMs: 0, frames, publish: frames, react: { n: 0, p50: 0, p90: 0, max: 0 }, loops: { last: 0, p10Last10s: 0, min: 0 }, ...p };
+    return { runId: 1, name: 'knife-cycle', phase: 'done', params: {}, startedTick: 1000, tick: 1100, progressTick: 1100, counters: {}, gauges: {}, marks: {}, packets: 0, deferred: 0, skippedTicks: 0, maxTickMs: 0, frames, publish: frames, react: { n: 0, p50: 0, p90: 0, max: 0 }, loops: { last: 0, p10Last10s: 0, min: 0 }, ...p };
 }
 
 interface Call {
