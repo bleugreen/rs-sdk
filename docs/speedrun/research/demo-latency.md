@@ -413,9 +413,11 @@ lost 18% (49/11).
 In a calmer minute (04:55, main 5575f37a5 with #81 and #78, 1,122-1,482 online, gate failing only
 on 2 catch-ups), the overlay landed **57 of 60** next to the direct path's 59 of 60, with the same
 22 ms page-side turnaround (p90 26). So the overlay to a loopback gateway is close to direct in a
-calm minute and loses badly in a burst. Knife woodcutting over it in that run still read 8.17
-ticks per expected roll (59 logs at Woodcutting 64 and up), well behind rs/62's knife and plain
-figures from bbs. The in-page row is pending (rs/97).
+calm minute and loses badly in a burst. Knife woodcutting over it in that run read 13.49 ticks per
+log, 8.17 per expected roll (59 logs at Woodcutting 64 and up, in a window with 2.1 catch-ups per
+minute and one 1.87 s gap), **control pending**: rs/95 is adding a plain-woodcutting control in
+the same session, so the figure is not yet comparable with rs/62's. The in-page row is pending
+(rs/97).
 
 ## 8. Knife-loop analysis (question 4)
 
@@ -506,14 +508,14 @@ raw output is in `data/fedora-0400.json` and `data/fedora-samples.log`.
 | 04:13 eastus | 40/16/4 | 486 ms | 22.6 | **no** |
 | 04:24 eastus2 (rs/95, probe minute) | 49/11/0 | 391 ms | 14 | **no** (fails a, c) |
 | 04:47 eastus (rs/95) | 60/0/0 | 350 ms | 3.3 (4 in 1.2 min) | **no** (b by 4 ms, c) |
-| 04:55 eastus (rs/95) | 59/0/0 | 346 ms | 1.7 (2 in 1.2 min) | **no** (c only) |
+| 04:55 eastus (rs/95) | 59/0/0 (1 lost) | 346 ms | 1.5 | **no** (c only, narrowly) |
 
 A cap on the maximum interval does not separate good minutes from bad: single long ticks are common
 and harmless on their own, and a 600 ms cap rejected the minutes at 02:43, 03:17 and 04:04 that
 scored 60 of 60. The p90 and catch-up criteria do, on this data. rs/95's 04:24 session shows why
 the catch-up count is needed as well as p90: its p90 of 391 ms passes, but 14 catch-ups per minute
 cost the direct path 11 of 60. The limit of 1 per minute is conservative: at 04:47 and 04:55 the
-direct path landed 60 and 59 of 60 with 3.3 and 1.7 catch-ups per minute. A few isolated catch-ups
+direct path landed 60 and 59 of 60 with 3.3 and 1.5 catch-ups per minute. A few isolated catch-ups
 cost little; what costs is a burst of them. rs/102's overnight series should calibrate the limit.
 
 **Should the run go at a quiet hour?** Not settled, and home data cannot settle it. Overruns are
@@ -615,8 +617,9 @@ rs/102 does.
    lower than `mrtt` suggests, or each account's frame leaves at a different point in the
    engine's output batch. A sweep from two accounts at once from Ashburn would separate them.
 8. **The browser in-page row** (rs/95 on rs/97's branch) is pending. Both overlay rows are in: a
-   burst minute at 04:24 (33/27) and a calmer one at 04:55 (57/3). Why the knife over the overlay
-   reads about 8.2 ticks per expected roll even in the calmer minute is open.
+   burst minute at 04:24 (33/27) and a calmer one at 04:55 (57/3). The knife-over-overlay figures
+   (about 8.2 ticks per expected roll) await rs/95's plain-woodcutting control from the same
+   session.
 9. **When overruns happen.** They took the Ashburn direct path from 60/60 at 04:04 to 40/16/4 at
    04:13 with about the same player count. rs/102's overnight Ashburn series should show whether
    they cluster by hour, by player count, or by something else on the demo (saves every 15 minutes
