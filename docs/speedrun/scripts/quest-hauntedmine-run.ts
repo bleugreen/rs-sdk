@@ -603,7 +603,9 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
             }
             await sdk.waitForStateUpdate();
         }
-        const dealt = Math.round((sdk.getSkill('attack')!.experience - atk0) / 100); // 4 xp per damage, 25x
+        // melee: 4 xp per damage at 25x; magic: game xp gained, reported raw
+        const gained = sdk.getSkill(STYLE === 'magic' ? 'magic' : 'attack')!.experience - xp0;
+        const dealt = STYLE === 'magic' ? `${gained} magic xp` : Math.round(gained / 100);
         L.note(`attack clicks ${swings}, approach walks ${approaches} (${approachTiles} tiles), fade-outs ${moves}, sharks ${eats}, damage dealt ~${dealt}, hp left ${sdk.getState()!.player!.hp}${died ? ', DIED' : ''}; hp/boss% ${hpLog.join(' ')}`);
         const kd = await dialog(sdk, [], { settle: 1 });
         L.add(kd);
