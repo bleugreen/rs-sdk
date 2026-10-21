@@ -81,8 +81,8 @@ Both sets ran to `done` unattended on 2026-10-21, each from a fresh account with
 | cairn_h94 | southwest | 42 min, including one restart for a code fix | knife 2, bucket of water 5, bucket of milk 3, egg 2, logs 7, pot of flour 2, banana 6, raw beef 2, raw chicken 2, fishing rod 2, fishing bait 5, lobster pot 2, copper ore 5, iron ore 3, clay 7, soft clay 1, wizard's mind bomb 2, unfired bowl 2, silk 2, cadava berries 2, orange dye 2, blue dye 2 | one "Mining operation was rejected" on iron, one barmaid dialogue that did not open |
 | cairn_h96 | drops | 26 min | goblin mail 4, raw rat meat 2, raw bear meat 2, snape grass 2 | none |
 
-The fourth goblin mail took 154 goblin kills (about 6 expected; the drop is 5 in 128), which
-left the account at about 46 Attack, Strength and Defence. The rats, bears and snape grass
+The four goblin mails took 154 goblin kills, an unlucky run (at 5 in 128 four mails average
+about 102 kills), which left the account at about 46 Attack, Strength and Defence. The rats, bears and snape grass
 then took under three minutes together.
 
 ## Gotchas
