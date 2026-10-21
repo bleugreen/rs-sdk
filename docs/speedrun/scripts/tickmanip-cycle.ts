@@ -97,6 +97,9 @@ await runScript(async ({ bot, sdk }) => {
     for (const item of [...(sdk.getState()?.inventory ?? [])]) await sdk.sendDropItem(item.slot);
     await sdk.waitForTicks(2);
     await sdk.sendSay(`::setstat ${method.skill} ${level}`);
+    // Dark wizards beside the Draynor willows attack a level-3 bot and kill it within about
+    // 40 ticks; eating hides this by healing. Raise combat so they ignore or bounce off it.
+    for (const stat of ['hitpoints', 'defence', 'attack', 'strength']) await sdk.sendSay(`::setstat ${stat} 70`);
     for (const [obj, n] of method.give) await sdk.sendSay(`::give ${obj} ${n}`);
     if (technique === 'eat') await sdk.sendSay(`::give ${FOOD_OBJ} 18`);
     // Spare logs: a cycle whose click slips lets the queued fletch run and use one log.
