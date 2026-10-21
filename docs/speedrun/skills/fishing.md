@@ -136,9 +136,10 @@ Hero Heroes' Quest, Contest Fishing Contest.
 | all five | 21,649.4 | 90 | 2,008 | 1,191 |
 
 A quest's saving inside a plan is the difference between two rows that differ only by
-that quest. For example, Fremennik Trials saves 755 ticks alone (5,120 - 4,365... no:
-5,120 - 4,318 = 802) but only 341 on top of SS+TBWT (2,928 - 2,587), because later xp is
-dearer per level and cheaper per tick to replace.
+that quest. For example, Fremennik Trials saves 802 ticks alone (5,120 - 4,318) but only
+341 on top of SS+TBWT (2,928 - 2,587). Its 2,812.4 base replaces slow low-level fishing
+when it comes first, and fast high-level fishing (about 8-9 base per tick) when it comes
+last.
 
 Fishing Trawler is a minigame, not a reward: about 20 catch rolls per player per
 1,000-tick game (`trawler_control.rs2:149-162`, `trawler_win.rs2:108-156`), roughly 1 base
