@@ -577,6 +577,14 @@ class Mule {
     private lastPreRequest = 0;
     private lastGeCollect = 0;
     private readonly geDone = new Set<string>();
+    private current = 'start';
+
+    /** What the mule is doing: idle, consolidate (taking courier stock in), serve (preparing or giving a package), ge. */
+    private phase(to: 'idle' | 'consolidate' | 'serve' | 'ge'): void {
+        if (to === this.current) return;
+        this.ctx.log('phase', { from: this.current, to });
+        this.current = to;
+    }
 
     constructor(private readonly ctx: RoleContext) {
         this.o = muleOptions(ctx.options);
@@ -658,6 +666,7 @@ class Mule {
         if (Date.now() - this.lastPreRequest > 20_000 && distanceTo(sdk, this.o.stand.x, this.o.stand.z) > 3 && !sdk.getTradeState().isOpen) {
             await walkNear(ctx, this.o.stand.x, this.o.stand.z, 3);
         }
+        this.phase('idle');
         await nextTick(sdk);
     }
 
@@ -699,6 +708,7 @@ class Mule {
     private async bankCycle(): Promise<void> {
         const { ctx } = this;
         const { sdk, bot } = ctx;
+        this.phase(this.wantsPackage() ? 'serve' : 'consolidate');
         if (sdk.getTradeState().isOpen) return;
         if (!(await openBank(ctx))) return;
         const keep = this.packageReady() ? this.held! : new Map<number, number>();
@@ -748,6 +758,7 @@ class Mule {
     private async serveTrade(name: string): Promise<void> {
         const { ctx } = this;
         const { sdk, bot } = ctx;
+        this.phase(this.packageReady() ? 'serve' : 'consolidate');
         if (!this.packageReady()) {
             // Nothing to give: take what the scored account hands back.
             await this.receiveFrom(name);
@@ -783,6 +794,7 @@ class Mule {
 
     private async courierTrade(name: string): Promise<void> {
         const { ctx } = this;
+        this.phase('consolidate');
         // Room for a full courier load: bank the held package if it crowds the inventory.
         if (freeSlots(ctx.sdk) < 24 && !ctx.sdk.getTradeState().isOpen) {
             if (await openBank(ctx)) {
@@ -820,6 +832,7 @@ class Mule {
     private async geCycle(): Promise<void> {
         const { ctx } = this;
         const { sdk, bot } = ctx;
+        this.phase('ge');
         this.lastGeCollect = Date.now();
         if (sdk.getTradeState().isOpen) return;
         await closeBank(ctx);
