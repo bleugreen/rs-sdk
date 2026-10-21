@@ -402,9 +402,21 @@ export class QuestBot {
         await this.settle(() => this.count(obj) > before);
     }
 
+    /** bot.walkTo, checked: retries once, then throws if the bot is not within tolerance + 1. */
     async walk(x: number, z: number, tolerance = 1) {
-        await this.bot.walkTo(x, z, tolerance);
-        this.S.mark();
+        const off = () => {
+            const p = pos(this.sdk);
+            return Math.max(Math.abs(p.x - x), Math.abs(p.z - z));
+        };
+        for (let attempt = 0; attempt < 2; attempt++) {
+            await this.bot.walkTo(x, z, tolerance);
+            if (off() <= tolerance + 1) {
+                this.S.mark();
+                return;
+            }
+            console.log(`  walk to ${x},${z} ended at ${JSON.stringify(pos(this.sdk))}; retrying`);
+        }
+        throw new Error(`walk to ${x},${z} failed, at ${JSON.stringify(pos(this.sdk))}`);
     }
 
     /** Give a use-on-NPC click time to open its dialogue before settle() checks the predicate. */
