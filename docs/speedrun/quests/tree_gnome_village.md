@@ -121,23 +121,44 @@ row; the dialogue text of every page is printed with `GNOME_DEBUG=1`.
 | Minimum safe stats | any, with Protect from Melee (Prayer 43); the time grows as accuracy and max hit fall |
 | Combat xp gained | about 680 base in the trained style plus 227 Hitpoints (inferred: 170 hp x 4 and x 1.33) |
 
+## Dialogue runs
+
+CONVENTIONS notation (`c` continue, `opt`, `state` = a page after which the script
+does something before the next page). Taken from the measured page logs: a page
+followed by a gap of more than 2 ticks is a state page.
+
+| Dialogue | Runs | Clicks | Stock | Fixed | Burst |
+|---|---|---|---|---|---|
+| Bolren start | 5c, opt, 8c, opt, 5c | 20 | 40 | 20 | 6 |
+| Montai 1 | 7c, opt, 2c | 10 | 20 | 10 | 4 |
+| Montai 2 | 4c | 4 | 8 | 4 | 1 |
+| Montai 3 | 8c, opt, 4c | 13 | 26 | 13 | 4 |
+| Elkoy in (twice) | 4c, opt, 3c / 5c, opt, 3c | 8 + 9 | 34 | 17 | 6 |
+| Bolren orb | 12c, opt, 4c | 17 | 34 | 17 | 5 |
+| Bolren finish | 7c, state, 3c, state, 2c, state, 1c | 16 | 32 | 16 | 8 |
+| Ballista (an interaction) | 1c, opt, opt, opt, state, 1c | 6 | 12 | 6 | 6 |
+
+All clicks plus 2-3 ticks of approach per talk are in the measured stock figures.
+
 ## Tick total
 
-| Part | Measured (`bot.walkTo`) | Tile model (0.5/tile + 1 per walk) | Raw counts | Basis |
-|---|---|---|---|---|
-| Travel | 451 | 391 | 760 tiles in 9 walks | measured, `quest-tree-full.ts` |
-| Dialogue | 213 | 213 | 89 pages, 7 choices | measured |
-| Interactions | 79 | 79 | railing x3, ballista, wall, door, 2 ladders, chest x2 | measured |
-| Fight | 164 | 164 | warlord | measured, `quest-gnome-fights.ts` |
-| Waits | 17 | 17 | the chant | measured |
-| **Total** | **924** | **864** | | |
+Stock = the measured run; fixed = 1 tick per page (cairn://p/rs/22); burst = runs
+of k continues cost ceil(k/5) (CONVENTIONS). Travel is given both as measured
+(`bot.walkTo`) and as the tile model (0.5 per tile + 1 per walk).
+
+| Part | Stock | Fixed | Burst | Raw counts | Basis |
+|---|---|---|---|---|---|
+| Travel | 451 (tile model 391) | same | same | 760 tiles in 9 walks | measured, `quest-tree-full.ts` |
+| Dialogue | 213 | 116 | 53 | 89 pages, 8 options (97 clicks) | measured |
+| Interactions | 79 | 71 | 71 | railing x3, ballista, wall, door, 2 ladders, chest x2 (8 clicks) | measured |
+| Fight | 164 | 164 | 164 | warlord | measured, `quest-gnome-fights.ts` |
+| Waits | 17 | 17 | 17 | the chant | measured |
+| **Total** | **924** (tile model **864**) | **819** (759) | **756** (696) | | |
 
 Not included: getting to the maze entrance (see Travel) and the helper trade (9).
-The single full run measured 944 ticks of steps (with the slower no-prayer
-warlord kill of 184); the table uses the 5-kill mean.
-
-With the fixed lite client (cairn://p/rs/22, 1 tick per page), dialogue drops
-from 213 to about 120.
+The single full run measured 944 ticks of steps (with the slower no-prayer warlord
+kill of 184); the table uses the 5-kill mean. The lab ran at 100 ms ticks: the
+warlord fight is reaction-dependent and was **not re-run at 300 ms**.
 
 ## Risks and gotchas
 
@@ -151,7 +172,10 @@ from 213 to about 120.
 - **Bolren's dialogue ends with an automatic teleport out of the village**
   (steps 3 and 17). That is a saving: walking out through the maze would cost about
   100 ticks.
-- No logout-unsafe steps: `treequest` is a permanent varp.
+- **Logout-unsafe stretches:** none. `treequest` is a permanent varp and no step
+  uses a temporary one (primitives.md §8). Logging out mid-dialogue just ends the
+  dialogue; Bolren's completion is queued, so do not log out during the ceremony
+  (step 23) until the scroll appears.
 
 ## Open questions
 
