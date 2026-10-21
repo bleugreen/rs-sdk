@@ -163,6 +163,13 @@ async function pipeLines(stream: ReadableStream<Uint8Array>, onLine: (line: stri
     if (buf) onLine(buf);
 }
 
+// Every child gets its own process group, so a terminal's Ctrl-C (SIGINT to the
+// whole foreground group) reaches only the launcher, which then stops the roles
+// and logs each account out before closing its client. Without it the clients
+// die with the launcher and the accounts linger in the world until the server
+// times them out. Bun 1.3 honours `detached` though its types don't declare it.
+const OWN_GROUP = { detached: true } as {};
+
 async function exitedWithin(child: Subprocess, ms: number): Promise<boolean> {
     return Promise.race([child.exited.then(() => true), sleep(ms).then(() => false)]);
 }
@@ -273,6 +280,7 @@ class Launcher {
         if (await this.probe()) throw new Error(`something already answers on 127.0.0.1:${this.cfg.gatewayPort}; pick another gatewayPort`);
         const logPath = join(this.logDir, 'gateway.log');
         const child = Bun.spawn([process.execPath, 'server/gateway/gateway.ts'], {
+            ...OWN_GROUP,
             cwd: ROOT,
             env: {
                 ...process.env,
@@ -370,6 +378,7 @@ class AccountRun {
             this.logins++;
             this.L.log(`[launcher] ${this.entry.account}: logging in to ${this.botEnv.SERVER}`);
             const child = Bun.spawn([process.execPath, 'src/lite/runner.ts', this.entry.account], {
+                ...OWN_GROUP,
                 cwd: join(ROOT, 'server', 'webclient'),
                 env: { ...process.env, LITE_BOT_ENV: this.envPath, GATEWAY_URL: this.L.gatewayUrl, LITE_LOGIN_JITTER_MS: '0' },
                 stdin: 'ignore',
@@ -445,7 +454,7 @@ class AccountRun {
         while (!this.L.isStopping) {
             const started = Date.now();
             const env = roleEnv(process.env, this.botEnv, e, this.L.gatewayUrl, this.L.cfg.runDir, this.loggedInAt ?? Date.now());
-            const child = Bun.spawn([process.execPath, `speedrun/helpers/${e.role}.ts`, e.account, ...e.args], { cwd: ROOT, env, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' });
+            const child = Bun.spawn([process.execPath, `speedrun/helpers/${e.role}.ts`, e.account, ...e.args], { ...OWN_GROUP, cwd: ROOT, env, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' });
             this.roleProc = child;
             this.L.log(`[launcher] ${e.account}: role ${e.role} started (pid ${child.pid})`);
             const onLine = (line: string) => {
@@ -457,6 +466,11 @@ class AccountRun {
             if (this.L.isStopping) return;
             if (e.final) {
                 this.L.onStop(`${e.account}: final role ${e.role} exited with code ${child.exitCode}`, child.exitCode ?? 1);
+                return;
+            }
+            if (child.exitCode === 0) {
+                // The role finished its job (handover, a bounded giver run); the account stays logged in until the stop.
+                this.L.log(`[launcher] ${e.account}: role ${e.role} finished; not restarting it`);
                 return;
             }
             const wait = this.roleBackoff.failure(started, Date.now());
