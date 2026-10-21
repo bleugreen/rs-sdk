@@ -19,8 +19,16 @@ describe('patchMethod', () => {
         calls.length = 0;
         await sdk.sendClickComponent(2);
         expect(calls).toEqual([]);
-        expect(Object.prototype.hasOwnProperty.call(sdk, 'sendAction')).toBe(false);
         expect(sdk.sent.map(s => s.args[0])).toEqual([1, 2]);
+    });
+
+    test('in-order unwinds leave the instance as it was', () => {
+        const sdk = new FakeSdk(baseState());
+        const unA = patchMethod(sdk, 'sendAction', send => send);
+        const unB = patchMethod(sdk, 'sendAction', send => send);
+        unB();
+        unA();
+        expect(Object.prototype.hasOwnProperty.call(sdk, 'sendAction')).toBe(false);
     });
 });
 
