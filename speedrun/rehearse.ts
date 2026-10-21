@@ -36,7 +36,7 @@ import { directDecision, type DirectVerdict, verdictText } from './lib/hostgate'
 import { probeInPage, programStatus, type ProgramStatus } from './lib/programs';
 import { reconnectAfterOutage, serverDownProbe } from './lib/reconnect';
 import { type ClientKind, closeSession, loadBotEnv, logoutClean, type LogoutResult, openSession, ROOT, type Session, startWatchdog } from './lib/session';
-import { formatReport, newRunId, report, type RowKind, type StepReport, TickLog, type TickRow } from './lib/ticks';
+import { formatReport, newRunId, parseLog, report, type RowKind, type StepReport, TickLog, type TickRow } from './lib/ticks';
 import { receiveFrom, type WantSpec } from './lib/trade';
 import { tickMs, waitUntil } from './lib/wait';
 import { DROP_STEP, RESUME_STEP, runResumable, sessionLink } from './runner/resume';
@@ -606,6 +606,8 @@ async function main(argv: string[]): Promise<number> {
     const mod = await loadSkillModule(a.skill);
     const start = await import('./skills/start');
     const runId = newRunId();
+    // A resumed attempt appends to the same log; its earlier sessions count toward the summary and the hiscore check.
+    const earlier = a.log && existsSync(a.log) ? parseLog(readFileSync(a.log, 'utf-8')) : [];
     const log = TickLog.open(`rehearse-${mod.skill}-${runId}`, a.log);
     const account = env.BOT_USERNAME;
     const origin = demoOrigin(env.SERVER);
@@ -771,7 +773,7 @@ async function main(argv: string[]): Promise<number> {
         await closeSession(gateTab);
     }
 
-    const summary = summarize(log.rows);
+    const summary = summarize([...earlier, ...log.rows]);
     let checks: HiscoreCheck[] | null = null;
     const hiscoreOrigin = local ? (process.env.HISCORES_WEB_PORT ? `http://localhost:${process.env.HISCORES_WEB_PORT}` : null) : origin;
     if (hiscoreOrigin && !session.expectInWorld) {
