@@ -84,14 +84,21 @@ await runScript(async ({ sdk }) => {
                 const hp0 = hp();
                 const nMsg = sdk.getState()!.gameMessages.length;
                 await sdk.sendInteractLoc(loc!.x, loc!.z, loc!.id, 1);
-                const r = await waitUntil(sdk, s => (s.player?.worldX ?? 9999) <= 2234 || s.gameMessages.slice(nMsg).some(m => /set off the trap/i.test(m.text)), 30);
+                // Success: forcemove to 2234. Failure: weakqueue p_walk onto the trigger
+                // tile 2237, the softtimer springs the trap and agility_exactmove throws
+                // the player back to 2238 with 8 damage (quest_regicide.rs2:79-134).
+                let left = false;
+                const r = await waitUntil(sdk, s => {
+                    const x = s.player?.worldX ?? 9999;
+                    if (x === 2237 || x === 2236) left = true;
+                    return x <= 2234 || (left && x === 2238) || hp() < hp0;
+                }, 20);
                 const ok = pos(sdk.getState()).x <= 2234;
                 if (ok) { attempts.push({ ok, ticks: r ? r.tick - ta : null, dmg: hp0 - hp() }); break; }
-                // thrown back east (agility_exactmove + 8 damage): wait until we can act again on the start tile
                 const back = await waitUntil(sdk, at(2238, 3181), 15);
-                await waitTicks(sdk, 1);
-                attempts.push({ ok, trapAt: r ? r.tick - ta : null, backAt: back ? back.tick - ta : null, dmg: hp0 - hp() });
+                attempts.push({ ok, failSeenAt: r ? r.tick - ta : null, backAt: back ? back.tick - ta : null, dmg: hp0 - hp() });
                 if (!back) { await tele(sdk, 2238, 3181); }
+                void nMsg;
             }
             crossings.push({ attempts: attempts.length, ticks: now(sdk) - t0, detail: attempts });
             result('woodspring-crossing', crossings[crossings.length - 1]);
