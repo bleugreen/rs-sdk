@@ -198,7 +198,7 @@ are filed under main and held until tenet 15 is answered.
 | H1 mule, hand-off and quest-item giver | S01, every helper trade | on rs/41's branch (rs/49, #34) | the step packages and per-tile positioning (section 4) are rs/41's, no issue yet; quest items rs/126, rs/173 |
 | H2 stun-pack courier | S18 | on rs/41's branch (rs/141): `bone-giver.ts`'s S18 on-request mode; the Charge and Fletching stacks building (rs/163, held: not before 15:25 PDT) | rs/163's execution 2 extends `bone-giver.ts`; there is no `stun-courier.ts` |
 | H3 cannon holder | S14, S27 | on rs/41's branch (rs/125): `cannon.ts`; the hand-off to SCORED building (rs/189) | cairn_h92 holds two sets and 1,416 balls (rs/41, 15:00 PDT); rs/189 adds the one-trade hand-off and checks what `nulodion.rs2` restricts |
-| H4 in-room essence giver | S06, S21 | on rs/41's branch (rs/117, rs/141): `altar-giver.ts`; the direct path building (rs/163) | `altar-giver.ts`, `altar-cue.ts`, `altar-room.ts`; rs/163's direct-path transport (PR #144; lab 21 of 21, host slot 22:05Z); there is no `rc-giver.ts`. rs/163 also sizes the body-altar roster (0 nature talismans, RUN-ORDER.md section 7) |
+| H4 in-room essence giver | S06, S21 | on rs/41's branch (rs/117, rs/141): `altar-giver.ts`; the direct path building (rs/163) | `altar-giver.ts`, `altar-cue.ts`, `altar-room.ts`; rs/163's direct-path transport (PR #144; lab 21 of 21, host slot 22:05Z); there is no `rc-giver.ts`. rs/163 sized the body-altar roster at 14 givers on 15 body talismans, no keeper (0 nature talismans; a ~90-tick round trip, e; RUN-ORDER.md section 7) |
 | H5 anvil helper | S25a | building (rs/188) | `anvil.ts`, new |
 | H6 log-row dropper | S03 | building (rs/187) | `fm-row.ts`, new, first in rs/187's queue |
 | H7 carp catcher | S20 | building (rs/173) | cairn_h97 catches the carp ahead and banks it |
@@ -1389,8 +1389,9 @@ bones, bidder, grapes, wine maker, coins) are supply, not step scripts; `SUPPLIE
   relayed from bbs, which lands packets 2-3 ticks late (`LAB.md`). The giver's half is
   `altar-giver.ts` with `altar-cue.ts` and `altar-room.ts` (rs/117, rs/141); **rs/163** builds the
   direct-path transport (lab 21 of 21; host slot 22:05Z). There is no `rc-giver.ts`. With 0 nature
-  talismans held, every scenario row runs S21 at the body altar (RUN-ORDER.md section 7), and rs/163
-  sizes that roster.
+  talismans held, every scenario row runs S21 at the body altar (RUN-ORDER.md section 7): 14 givers on 15
+  body talismans, no keeper (rs/163, on an estimated ~90-tick round trip that its execution 2
+  measures).
 - **Builds on:** `runecraft-cycle.ts`'s helper side, `runecraft-lib.ts`; essence from [rs/41]
   `essence.ts`.
 - **Acceptance:** as entry 9.
