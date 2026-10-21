@@ -111,11 +111,12 @@ unsub();
 if (mode === 'split') {
     for (let k = 0; k < runs; k++) {
         // Run k > 0: the planned relog at the bank, with the giver already waiting.
-        let relog1: RelogRow | null = null;
+        // Run 0's planned relog is the logout after the preparation and the login above.
+        let relog1: RelogRow | null = k === 0 ? { clickTick: out.clickTick, lastInWorldTick: out.lastInWorldTick, out: out.lastInWorldTick - out.clickTick, loginTick, dialogOpenAtClick: false } : null;
         if (k > 0) {
-            giving = startGiving(k);
             loginTick = await relogReceiver();
             relog1 = relogs[relogs.length - 1]!;
+            giving = startGiving(k);
         }
         const nRelogs = relogs.length;
         const level0 = receiver.sdk.getSkill('Cooking')?.baseLevel;
