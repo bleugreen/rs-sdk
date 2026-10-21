@@ -109,9 +109,12 @@ zoo iron and the Taverley oaks before S09 and S07, reporting players in view (RU
 
 **The nature altar roster (H17).** A roster needs no SCORED relog: a giver that has traded leaves,
 banks, takes 27 essence and comes back in. Without a glory the round trip is the Brimhaven ship,
-about 160 ticks each way from Ardougne (run-transitions.md section 6), so roughly 330 or more ticks per
-round trip and about 330 / 7 + 1 = 48 givers cycling, or fewer with a bank nearer the ruins (i). **N is
-rs/117's to set** (RUN-ORDER.md O7). Talismans are not consumed: with the keeper, 4 or more talismans
+about 160 ticks each way from Ardougne (run-transitions.md section 6). A giver that banks in Ardougne
+therefore needs roughly 330 or more ticks per round trip, and the roster about 330 / 7 + 1 = 48 givers
+(i). Givers that restock from essence couriers waiting outside the ruins need only the keeper's
+pipeline, about 25 ticks per entry (supply-fallbacks.md section 7, e), so about 5 givers: the
+couriers' own trips to the bank are helper time and free. **N and the restock method are rs/117's to
+set** (RUN-ORDER.md O7). Talismans are not consumed: with the keeper, 4 or more talismans
 run the cycle continuously; 2 cost ~+34 and 1 ~+52 in extra batches staged while SCORED is logged
 out (supply-fallbacks.md section 7). The givers must not log out and back in during S21: a giver that
 logs in after SCORED drops to the robust 8-tick schedule for its own trades.
