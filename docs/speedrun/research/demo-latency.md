@@ -593,18 +593,22 @@ Preconditions:
 2. `flyio-debug` shows `nr=iad`, `sr=iad`, no mesh hop; TCP connect p50 under 5 ms (rs/86's
    workflow refuses to log in above 10 ms).
 
-**The gate**, over the probe's minute, all three measured from the run machine itself (a distant
-vantage adds path jitter that looks like overruns, section 9):
+**The gate** (cairn://p/rs/tenets/11), measured from the run machine itself, since a distant
+vantage adds path jitter that looks like overruns (section 9):
 
+- **(c), primary:** **at most 1 catch-up per minute** over a 3-5 minute window, a catch-up being an
+  interval under 150 ms immediately after one over 350 ms, counted from decoded ticks (not from raw
+  frames grouped 60 ms apart, which hides them; section 3). Over rs/102's 15 Ashburn samples it
+  agreed with (a) on 14.
 - **(a)** the direct in-page probe lands **at least 58 of 60** reactions on the next tick;
-- **(b)** tick publication interval **p90 <= 400 ms**;
-- **(c)** **at most 1 catch-up per minute**, a catch-up being an interval under 150 ms immediately
-  after one over 350 ms, counted from decoded ticks (not from raw frames grouped 60 ms apart, which
-  hides them; section 3).
+- **(d)** the tab's machine meets item 4 below.
+- **(b), reported as context, not a pass line:** tick publication interval p90. It agreed with (a)
+  on 13 of 15 and passes the 'simmer' regime (1-6 catch-ups per minute) that still costs reactions.
 
-If any fails, wait and re-measure; do not start on a minute of overruns. No cap on the maximum
-interval: it rejects minutes that scored 60 of 60. Keep checking during the run: a reactive loop
-that sees a catch-up should expect its next reaction to miss.
+If (a), (c) or (d) fails, wait and re-measure; do not start on a minute of overruns. No cap on the
+maximum interval: it rejects minutes that scored 60 of 60. Keep checking during the run: a reactive
+loop that sees a catch-up should expect its next reaction to miss, and reactive and knife steps
+pause while catch-ups run above about 5 per minute (rs/102's in-run rule).
 
 Also before starting:
 
