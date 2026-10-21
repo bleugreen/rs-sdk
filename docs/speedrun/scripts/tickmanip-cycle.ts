@@ -150,7 +150,7 @@ await runScript(async ({ bot, sdk }) => {
 
     const click = (s: BotWorldState): boolean => {
         current = findTarget(s);
-        if (!current) { log(`T${s.tick} no target; npcs=${s.nearbyNpcs.slice(0, 6).map(n => n.name + ':' + n.options.join('/')).join(', ')} locs=${s.nearbyLocs.slice(0, 6).map(l => l.name).join(', ')}`); return false; }
+        if (!current) { log(`T${s.tick} no target at ${s.player?.worldX},${s.player?.worldZ}; npcs=${s.nearbyNpcs.slice(0, 6).map(n => n.name + ':' + n.options.join('/')).join(', ')} locs=${s.nearbyLocs.slice(0, 6).map(l => l.name).join(', ')}`); return false; }
         if (current.kind === 'loc') fire(s.tick, `click loc ${current.id}@${current.x},${current.z} op${current.op}`, sdk.sendInteractLoc(current.x, current.z, current.id, current.op));
         else fire(s.tick, `click npc #${current.index}@${current.x},${current.z} op${current.op}`, sdk.sendInteractNpc(current.index, current.op));
         return true;
@@ -227,7 +227,7 @@ await runScript(async ({ bot, sdk }) => {
                 lastXp = xp;
             }
             if (s.dialog?.isOpen) {
-                if (dialogOpenSince === null) { dialogOpenSince = t; dialogsSeen++; log(`T${t} DIALOG open: ${(s.dialog.text ?? '').slice(0, 60)}`); }
+                if (dialogOpenSince === null) { dialogOpenSince = t; dialogsSeen++; log(`T${t} DIALOG open at ${s.player?.worldX},${s.player?.worldZ}: ${(s.dialog.text ?? '').slice(0, 60)}`); }
             } else if (dialogOpenSince !== null) {
                 log(`T${t} DIALOG closed (open ${t - dialogOpenSince} ticks)`);
                 dialogOpenSince = null;
