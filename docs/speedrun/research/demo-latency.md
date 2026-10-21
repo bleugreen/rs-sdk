@@ -266,6 +266,7 @@ Home (Mac or fedora, Los Angeles edge) at about 1,650 online, and what changes i
 | Output flush | once, near cycle end | same | fixed | `World.ts` |
 | Client turnaround, direct in-process | 0.3-0.6 ms p50, under 25 ms max | same | fixed | probe `reactMs` |
 | Client turnaround, private SDK relay, before rs/98's fix | 73 ms p50 (p10 46, p90 511) | same | fixed by client code; tails by host load | relay trace below |
+| Client turnaround, browser tab overlay to a loopback gateway (rs/82 @ 8f98807c7) | 22 ms p50 (28 p90): state out 7, gateway and SDK round trip 6, overlay drain to packet out 10 | same | fixed by the page's ~20 ms game loop | rs/95, Chrome DevTools frame times |
 | Client turnaround, private SDK relay, after rs/98's fix | 1.7 ms p50 (2.0 p90) frame to wire, local lab; state collection (3 ms p50, 40 ms p90) now runs after the send | same | fixed by client code | "After the relay fix (rs/98)" below |
 | Public gateway wait | +340-2,000 ms per request | same | load on the demo | section 4 |
 
@@ -396,6 +397,16 @@ pickpocket re-click, Agility obstacles, the probe) run inside the page on the ga
 (cairn://p/rs/82 and cairn://p/rs/97). The SDK drives only the non-reactive steps through the
 loopback gateway. rs/82 owns the implementation.
 
+**The overlay path, measured (rs/95, Ashburn, 04:24-04:37).** With rs/82's build (8f98807c7, =
+#81) the tab's overlay talks to a loopback gateway, and a script drove it with
+`tickmanip-latency.ts --no-tele`. The page-side reaction is a steady 22 ms at the median (28 ms
+p90): 7 ms from the tick's frame to the state going out, 6 ms for the gateway and SDK round trip,
+and 10 ms from the action arriving to the game packet going out, the first and last tied to the
+page's ~20 ms game loop. On-time and late trials took the same time (21 against 24 ms), so the
+misses came from the minute's overruns (5.3 catch-ups per minute), not from slow hops. Still, in
+that minute 22 ms was enough to lose a tick 45% of the time (33/27) where the 0.3 ms direct path
+lost 18% (49/11). A calm-minute overlay row is pending.
+
 ## 8. Knife-loop analysis (question 4)
 
 Not re-measured here. rs/62 (merged, PR #71) built the run-time host gate
@@ -430,6 +441,13 @@ What the distributions measured here do to a loop aimed at R+1:
 | Ashburn, relay, 02:45: 32/28/0 | 0.53 at 1 | fails | fails | passes |
 | Ashburn, direct, sending on the frame: 180/0/0 over three runs | 1.00 at 1 | passes, full gain | passes, full gain | passes, full gain |
 | Ashburn, direct, during overruns, 04:13: 40/16/4 | 0.67 at 1 | fails: 3 + 0.33 x 4 = 4.3 > 4 | passes narrowly: 4.7 vs 5 | passes |
+
+Measured on the browser overlay path (rs/95, Ashburn eastus2, 04:27-04:37, in the burst minute
+above; knife woodcutting with the gate off, normal trees west of Lumbridge castle, Woodcutting
+33-64): 127 logs at 15.55 ticks per log, **8.28 ticks per expected roll**, against rs/62's 5.44
+(knife) and 5.67 (plain) from bbs. 210 arrow shafts were fletched, a sign of starter bundles split
+across ticks (section 6). In an overrun minute, through the overlay, the knife is far worse than
+plain, which is what the gate is for.
 
 Overruns therefore matter for the knife as well: in a minute like 04:13 even the in-page direct
 path falls under Woodcutting's line. That is what the steadiness check in the run-night gate
