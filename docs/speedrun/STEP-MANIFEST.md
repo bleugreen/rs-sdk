@@ -259,7 +259,8 @@ scripts are in section 4; the shared primitives and their build order are in sec
 
 - **Serves:** S11a, laps of the Gnome Stronghold course to 22 before The Grand Tree, whose only
   Agility check is `stat(agility) < 25` (read, `quest_grandtree.rs2:25`; an Agility potion covers
-  the last 3). And S17, Wilderness course laps from 75 to 99 right after the Mage Arena.
+  the last 3). And S17, Wilderness course laps from 75 to 99 as the run's last step, after S27's
+  combat finish (leg T27-17, 185.7 ticks measured; RUN-ORDER.md O1, `research/run-transitions.md` §4).
 - **Parameters:** `course: 'gnome' | 'wilderness'`, `untilLevel` (22 / 99), `food` and `eatBelow`,
   `technique: 'react' | 'plain'` (the rs/97 program's switch), `startStep`.
 - **Preconditions:** S11a: Tree Gnome Village complete (the village spirit tree reaches the
@@ -295,8 +296,11 @@ scripts are in section 4; the shared primitives and their build order are in sec
   browser figure. The Wilderness course needs level 52, so it is local only.
 - **Start from:** rs/97 `programs/agility.ts` and `agility-courses.ts` (gnome, barbarian and
   wilderness as data); `docs/speedrun/scripts/agility-course.ts`, `agility-model.ts`.
-- **logoutSafe:** S11a yes. S17 no: it ends in level 50+ Wilderness, so the step's last segment is
-  the exit, and the leg out is part of the step.
+- **logoutSafe:** S11a yes. S17 is safe between laps out of combat but is not a pause point. It is
+  the last step, so there is no leg out: after the last level-up, wait out the 16-tick combat window
+  and log out with `logoutClean` (the only hiscore write; never drop the socket). A death after the
+  last level-up costs nothing; log out cleanly after the respawn (RUN-ORDER.md section 4, "Final
+  logout").
 
 ### 2. Monkey Madness: `speedrun/quests/monkey-madness.ts` (S15)
 
