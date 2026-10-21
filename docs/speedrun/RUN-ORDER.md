@@ -641,44 +641,100 @@ carried 149 e for S07, S09 and S17, all measured 0 now), boundary idle -75.
 Against the main thread's 04:20 tally (cairn://p/rs/main, table tally, ids 42-57). Each line is the
 sum of section 2's rows and section 6's cells that belong to it, knife on and knife off side by side
 (M0602). Five lines differ between the two: the three knife skills, Prayer (at the booth while the plain
-loop cannot bury, O31) and the overrun share of the knife loops. The knife-off column is the one in
-force, without rs/162; the row under the total gives it with rs/162's plain+bury.
+loop cannot bury on main, O31) and the overrun share of the knife loops. The knife-off column is the one in
+force, without rs/162 (PR #165 open); the bracketed cells and the row under the total give it with
+rs/162's plain + bury (PB).
 
 | Line (tally id) | Tally (exp / best) | Knife on (exp / best) | Knife off (exp / best) | Knife on minus tally | Why |
 |---|---|---|---|---|---|
 | Quests (42) | 12,260 / 10,700 | **11,714 / 10,831** | same | -546 / +131 | Q§1 after rs/59's temple ladder drop: MM's trapdoor failures are gone (11,689 / 10,811, the Q§3 rows); +25 / +20 for S26's Scavvo armour and adamant helm (SF§12). The tally's 12,260 is the old success path plus the old +780 failure budget; its 10,700 could not be reconstructed |
 | Agility (43) | 4,146 / 4,024 | 4,327 / 3,934 | same | +181 / -90 | S11a measured 114 in the lab against the 122 inferred; S17 at rs/155's lab pace, 4,213 (75-85 858 m, 85-99 3,355 i scaled by the chain's 1.09), with its 66-tick lap confirmed 9 of 9 (rs/155, PR #149); the tally's best left out S11a's pre-quest ticks; best takes 3,820 with fewer falls; laps are 66 with level-ups in them (LU§2), so no allowance |
 | Mining (44) | 4,034 / 3,360 | 3,116 / 3,116 | 4,170 / 4,170 | -918 / -244 | from 64, not 49 (Plague City's 2,425 base, SK:mining §2): -269 plain, -226 knife; level-ups measured 0 in the rotation, -18 (LU§6); knife-on expected takes the knife (-631); knife off is the in-page plain loop's 4.00 ticks per ore (m, lab, MP), not the lite adjacent-rock 3.61: 3,765 to 4,170 (+405) |
-| Woodcutting (45) | 3,958 / 3,028 | 2,986 / 2,969 | 3,881 / 3,881 | -972 / -59 | O19 settled: the in-page timing matches lite, so the knife takes the lite ratios by band (willow 0.765; oak 0.783, best 0.761, from the in-page oak at WC 60; normal trees plain; S07's row); level-ups measured 0, -77 plain (LU§6); the tally's best is the uniform 0.765 on 3,958, so best differs only by the level-up release; knife-on expected takes the knife |
+| Woodcutting (45) | 3,958 / 3,028 | 3,027 / 2,969 | 4,121 / 4,121 (4,025 / 4,025 with rs/162) | -931 / -59 | O19 settled: the in-page timing matches lite, so willow takes the lite ratio 0.765 (knife + bury measured 3.02 per expected roll at WC 88-93, PB); oak 15-73 is 627, knife + bury measured from WC 15 to L72 in 600 ticks (m, lab, PB) and its last level at that run's rate (27 i), against 586 at the WC 60 ratio; best keeps 0.761 on oak (569); normal trees plain; S07's row. **Knife off at the in-page plain rates** (PB): oak plain alone 891, willow 4.13 per expected roll, 3,216; with rs/162 the 355 bones ride the willow band's first ~1,570 ticks at 3.89, so 3,120 (the lite model's 3,881 took drops as free; level-ups measured 0, LU§6); the tally's best is the uniform 0.765 on 3,958; knife-on expected takes the knife |
 | Fishing (46) | 3,410 / 2,000 | 1,995 / 1,969 | 3,410 / 3,410 | -1,415 / -31 | knife-on takes the knife; the two measured runs scaled by M0550's 4.26 against 4.28 ticks per catch; rs/152's lab band 78-99 measured 1,998, so the figure is m (lab) (store commit 28ad07aa) |
 | Thieving (47) | 1,975 / 1,975 | 2,000 / 1,908 | same | +25 / -67 | SP§3's three end-to-end runs with the pack: the pack costs Thieving 20-100, and replaces S18d's 20 and v1's 48 of top-ups (SP§11) |
 | Combat (48) | 1,857 / 1,750 | 2,021 / 1,961 | same | +164 / +211 | the pre-MM cannon session (132) is in no tally line (Q§1; M0530); S27 1,889 / 1,829: the bow for the knives (0 m expected, -60 i best, rs/124), no glory +20, mithril scimitar +12 (SF§10-§11). No source supports the tally's 1,750 best (O17) |
 | Magic (49) | 245 / 245 | 222 / 222 | same | -23 / -23 | Wind Strike 18 m + enchants 204 i (3 ring trades); Charge rides the stuns (0); the walk ride is off (RT§5) |
-| Prayer (50) | 700 / 150 | **95 / 65** | **735 / 735** (110 / 75 with rs/162) | -605 / -85 | **the bones ride S07's knife loop**: 16 loads at rs/141's measured 4 ticks (the first 5, refusals free; lab), +30 i for the in-page restart (R15); ~200 ride the stuns (0). Knife off: the plain loop cannot bury and Mining's `stay2` lap is a knife lap, so the 355 go to the booth (SK:prayer §1, 58 ticks per 28) until rs/162; with it, BP§6's plain-loop figure. The tally's 150 best double-counted plain-loop idle ticks against knife figures (main confirmed, 05:30); BP restores the saving honestly |
+| Prayer (50) | 700 / 150 | **95 / 65** | **735 / 735** (95 / 65 with rs/162) | -605 / -85 | **the bones ride S07's knife loop**: 16 loads at rs/141's measured 4 ticks (the first 5, refusals free; lab), +30 i for the in-page restart (R15); ~200 ride the stuns (0). Knife off: the plain loop cannot bury and Mining's `stay2` lap is a knife lap, so the 355 go to the booth (SK:prayer §1, 58 ticks per 28) until #165 is merged; with it, the same 16 loads' trades and restarts, the bury itself at no Woodcutting cost in the willow band (PB; it replaces BP§6's lite 110 / 75). The tally's 150 best double-counted plain-loop idle ticks against knife figures (main confirmed, 05:30); BP restores the saving honestly |
 | Smithing (51) | 1,147 / 1,107 | 1,147 / 1,107 | same | 0 | unchanged |
 | Firemaking (52) | 740 / 600 | 695 / 650 | same | -45 / +50 | trades 695 (the dropped row's pacing is not built), dropped row 650 m |
-| Runecraft (53) | 1,100 / 900 | 1,186 / 1,186 | same | +86 / +286 | 168 crafts on the tuned 7-tick cycle with the givers on the run machine (49 + 1,127 + two session trades); travel is in the overhead line |
+| Runecraft (53) | 1,100 / 900 | 1,192 / 1,192 | same | +92 / +292 | 168 crafts on the tuned 7-tick cycle with the givers on the run machine: S06 58 m (lab, RCM); S21 1,134, 161 x 7 (the first trade's 7 and 160 gaps, measured at 7 on the body altar) + ~7 of step overhead (m, RCM); travel is in the overhead line |
 | Fletching + Crafting + Cooking + Herblore (54) | 370 / 285 | 341 / 277 | same | -29 / -8 | Fletching 0 (inside S18, measured); Crafting 91 / 85 (107 gems ride the wine windows, WW§5); Cooking 80 / 75 (WINE demo 80 / 75 with 2 m per relog; rs/174's fixed tab relog is ~2 m, R174); Herblore 170 / 117 |
-| Overhead (55) | 1,500 / 900 | 1,481 / 1,460 | same | -19 / +560 | legs 1,382 (RT, measured, no glory), the claim 8 m, H1 8 m, hand-offs 47, level-ups 25 / 15, relog tail 3, restarts 8 (in-page relogs after a restart, R174). Best keeps the measured legs |
+| Overhead (55) | 1,500 / 900 | 1,483 / 1,462 | same | -17 / +562 | legs 1,382 (RT, measured, no glory), the claim 8 m, H1 8 m, hand-offs 49 (with S06's air-rune drop on T06-07, 2 i), level-ups 25 / 15, relog tail 3, restarts 8 (in-page relogs after a restart, R174). Best keeps the measured legs |
 | Contention, retries, boundary idle (56) | 1,000 / 300 | 400 / 0 | same | -600 / -300 | contention 300 e at the two depleting sites, retries 100 e, boundary idle 0 m (#92) |
 | Demo latency and overrun (57) | 300 / 0 | 800 / 0 | 450 / 0 | +500 / 0 | overrun bursts 600 e (ARC; not in the tally) plus the overlay relay 200 e; knife off drops the knife loops' 351 |
-| **Total** | **38,742 / 31,324** | **34,526 / 31,655** | **38,180 / 35,732** | **-4,216 / +331** | |
-| Total, knife off with rs/162's plain+bury | | | 37,555 / 35,072 | | Prayer 110 / 75 (BP§6) |
+| **Total** | **38,742 / 31,324** | **34,575 / 31,663** | **38,428 / 35,980** | **-4,167 / +339** | |
+| Total, knife off with rs/162's plain + bury | | | 37,692 / 35,214 | | Woodcutting 4,025, Prayer 95 / 65 (PB) |
 
 **Like for like.** The tally's expected column took the plain loops for the three knife skills, so
-its 38,742 compares with the knife-off expected in force, 38,180: 562 lower, mostly the quests
+its 38,742 compares with the knife-off expected in force, 38,428: 314 lower, mostly the quests
 (-546) and contention (-600), against Agility (+181: S17 at rs/155's lab pace), combat (+164, the
-cannon session), +150 of overrun, Mining (+136: from 64, -269, but the in-page plain loop at 4.00,
-+405) and Prayer at the booth (+35). With rs/162's plain+bury (37,555) it is 1,187 lower, Prayer
-then -590. The tally's best took the knife, so its 31,324 compares with the knife-on best 31,655:
-331 higher, mostly the measured legs inside the overhead line (+560), Runecraft (+286) and combat (+211),
+cannon session), Woodcutting (+163: the in-page plain loop, PB), +150 of overrun, Mining (+136: from
+64, -269, but the in-page plain loop at 4.00, +405), Runecraft (+92) and Prayer at the booth (+35).
+With rs/162's plain + bury (37,692) it is 1,050 lower, Prayer then -605 and Woodcutting +67. The
+tally's best took the knife, so its 31,324 compares with the knife-on best 31,663: 339 higher,
+mostly the measured legs inside the overhead line (+562), Runecraft (+292) and combat (+211),
 against contention (-300) and Mining (-244). Woodcutting's best is now 59 under the tally's, which
 already took the lite willow ratio: the difference is the level-up release.
 
 **The three largest changes against the 04:20 tally** (knife on, expected): Fishing -1,415 (the knife
-column); Woodcutting -972 (the knife at the lite ratios, O19, and the level-up release); Mining -918
+column); Woodcutting -931 (the knife at the lite ratios, O19, the level-up release, and the oak band
+measured from WC 15, PB); Mining -918
 (from 64, the knife, the level-up release). Contention and retries (-600, a re-estimate, e) is
 fourth. The largest measured change is Prayer, -605 (BP; rs/141).
+
+**Changes since 3fd84ea9 (fold-in 9, rs/206; 34,526 / 31,655 knife on; 38,180 / 35,732 knife off in
+force; 37,555 / 35,072 with rs/162).** Knife on: expected +49, best +8. Knife off in force +248 /
++248; with rs/162 +137 / +142:
+
+| Change | Line (tally id) | Expected | Best | Source |
+|---|---|---|---|---|
+| S07's oak band, knife on, measured end to end: knife + bury from WC 15 to L72 in 600 ticks (177.4 expected rolls, 0.329 bones a tick, 198 of 198 buried, a level-up costing neither a tick nor a bone), its last level at that run's 3.38 (27 i): **627 against 586**, +41, past rs/158's ~30-tick threshold, so adopted; ~12 of it may be the lab's slower oak respawn (i); best keeps 569 | Woodcutting (45): 2,986 to 3,027 | +41 | 0 | PB; rs/158, 16:09 PDT |
+| S06 measured in the lab: 58 in two runs against 54 (the first trade is 7 under the program, not 5, and ~9 of walk to the stand tile sits outside it); Kind I to M | Runecraft (53) | +4 | +4 | RCM |
+| S21 on the measured parts: 161 x 7 already holds the first trade's 7 (30 crafts took 210), plus ~7 of step overhead, against 161 x 7 + 5; the body altar's +205 is per craft and travel, so unchanged | Runecraft (53): 1,186 to 1,192 | +2 | +2 | RCM |
+| S06's 594 air runes dropped on T06-07 (rs/158's decision) | Overhead (55): hand-offs 47 to 49 | +2 | +2 | rs/158, 16:28 PDT |
+| S07's plain at the in-page rates: oak plain alone 891 band-weighted (600 m from WC 15 to L67, the rest at 4.93), willow 4.13 per expected roll, against the lite model's 3,881 | Woodcutting (45), the knife-off cells: 3,881 to 4,121 (4,025 with rs/162) | 0 (knife off +240; +144 with rs/162) | 0 (the same) | PB |
+| Knife-off Prayer with rs/162: the 16 loads' trades and restarts, the bury itself at no Woodcutting cost in the willow band, against BP§6's lite 110 / 75 | Prayer (50), the cell with rs/162 | 0 (with rs/162 -15) | 0 (with rs/162 -10) | PB |
+| Knife + bury cross-check, no change: 3.28 per expected roll on oak at WC 60-75 against the 3.247 per log S07's oak basis took at WC 60; 3.02 on willow at 88-93 against the lite ratio's 3.06 | - | 0 | 0 | PB |
+| R2 and section 6's 600 e overrun allowance restated on rs/176's run-host data; no re-price | - | 0 | 0 | DH |
+| rs/207 (#170, e5d8a058) and rs/132's stun actions (#163, 6e86a656) on main; `RUN_COMMIT` at or after 6e86a656 | - | 0 | 0 | rs/158, cairn://p/rs/206 |
+| The nature-talisman sensitivity: rs/194 projects ~4 by midday on the 22nd and ~10 by the 23rd (i); the body altar stays in force | - | 0 | 0 | rs/194, 16:35 PDT |
+| **Net, knife on** | | **+49** | **+8** | |
+
+The new totals: knife on **34,575 / 31,663**; knife off in force **38,428 / 35,980**; knife off with
+rs/162's plain + bury **37,692 / 35,214**. The row in force (the forecast at 2026-10-23, +430 / +413)
+is **35,005 / 32,076**, 911 under the record; today's stock (conservative, +717 / +653) is 35,292 /
+32,316, 624 under, and 35,411 / 32,444 (505 under) with its ~85 bones at the booth. The M / I / E
+split is 9,345 / 22,555 / 2,675 (below). `docs/speedrun/scripts/s07-knife-off.ts` re-sums every
+column of the table above and the split.
+
+**S07's bone capacity on the measured oak band** (i): 0.329 bones a tick over 627 + 2,386 knife ticks
+is ~991, not ~978. The scenario rows keep ~978 and the ~85 past it: 13 more bones in S07 would move
+13 off the Mining lap (~72 there), about -2 ticks in the conservative row, inside its rounding.
+
+**Knife off, by scenario row** (rs/158's rule, PB; i). Under plain, S07 buries in the willow band
+(~0.226 bones a tick with trades over ~3,030 plain + bury ticks: ~686 bones), and in oak only from WC
+60 if the willow band cannot hold them (~0.195 over ~450 ticks: ~88), never below WC 50: from WC 15
+plain + bury measured 0.143 bones a tick at 6.30 ticks per expected roll, ~1.7 Woodcutting ticks a
+bone (31 expected rolls lost for 86 bones), only just under the booth's 2.07, with 6-8 unexplained
+chop stalls per 600 ticks (open in PR #165); measured and not used. Mining's `stay2` bury is inert
+under plain, so a knife-off night sends the rest to the booth:
+
+| Row | Non-stun bones | Knife off, without rs/162 (in force) | Knife off, with rs/162 |
+|---|---|---|---|
+| Every line held (the column) | 355 | all 355 at the booth: 38,428 | 355 in the willow band, none at the booth: 37,692 |
+| Forecast at 2026-10-23 (in force) | 554 | all 554 at the booth, +412: **39,218** | all 554 in the willow band, none at the booth: +52 of trades and -55 of Woodcutting (a longer stretch at 3.89), -3: **38,067** |
+| Today's stock (conservative) | 1,063 | all 1,063 at the booth, +1,466: **40,391** | 774 in S07 (~686 willow, ~88 oak from WC 60), **289 at the booth**: +109 of trades, +598 at the booth, -91 for the willow band at 3.89 throughout and -59 for oak's 60-73 stretch at 4.29 against 4.93, +558: **38,747** |
+
+Each row also carries its other lines (+378 on the forecast, +497 on the conservative row). The
+bury stretches run faster than the plain loop alone, so with rs/162 more bones in S07 cost less
+Woodcutting, not more; whether the plain + bury loop keeps its cadence once the bones run out is not
+measured, so the rest of each band is priced at the plain loop's rate. The rates with trades size
+the capacity conservatively: the trades sit on Prayer's line, and the loop's own rates are ~5%
+higher. **The oak band's level coverage:** the oak plain + bury rates were measured at WC 60-75 only.
+S07's oak band runs 15-73, and below 60 level-ups come more often (37 in the 600 ticks from WC 15,
+against 15 at 60-75), each giving up that cycle's bone, so oak's bones a tick below 60 are lower
+(0.143 from WC 15; i), which is why the rule never buries there.
 
 **Changes since 7e02b455 (fold-in 8, rs/203; 34,402 / 31,691 knife on; 37,651 / 35,363 knife off in
 force; 37,026 / 34,703 with rs/162).** Knife on: expected +124, best -36. Knife off, with and
@@ -699,9 +755,9 @@ without rs/162: +529 / +369 (the same changes, and S09's in-page plain rate):
 | rs/207 lab-passed: a `knife-mine` start on a depleted rock faults instead of slipping forever, so every S09 knife (re)start waits out the 13-tick respawn; the ~85-bone `stay2` case adds ~2 lap switches, ~+30 (inside the +220 above); R18 | - | 0 | 0 | rs/207 (2c9e4da2; main, 16:12 PDT) |
 | **Net, knife on** | | **+124** | **-36** | |
 
-The new totals: knife on **34,526 / 31,655**; knife off in force **38,180 / 35,732**; knife off with
-rs/162's plain+bury **37,555 / 35,072**. The row in force (the forecast at 2026-10-23, +430 / +413)
-is **34,956 / 32,068**, 960 under the record; today's stock (conservative, O35 closed by #159; +717 /
+The totals then: knife on 34,526 / 31,655; knife off in force 38,180 / 35,732; knife off with
+rs/162's plain+bury 37,555 / 35,072. The row in force (the forecast at 2026-10-23, +430 / +413)
+was 34,956 / 32,068, 960 under the record; today's stock (conservative, O35 closed by #159; +717 /
 +653) is 35,243 / 32,308, 673 under, and 35,362 / 32,436 (554 under) with its ~85 bones at the booth. The M /
 I / E split is 8,687 / 23,164 / 2,675 (below).
 
@@ -795,12 +851,14 @@ legs measured 23 more than the quest documents count).
 
 | Kind | Ticks | Share |
 |---|---|---|
-| M: measured end to end on the route's method (steps and legs; S17's 75-85 band) | 8,687 | 25% |
-| I: inferred (models, measured parts assembled, quests' mixed rows including S15's measured segments, S17's 85-99, composite legs, hand-offs, level-ups, relog tail, restarts) | 23,164 | 67% |
+| M: measured end to end on the route's method (steps and legs; S17's 75-85 band; S07's oak band from WC 15 to L72) | 9,345 | 27% |
+| I: inferred (models, measured parts assembled, quests' mixed rows including S15's measured segments, S17's 85-99, the rest of S07, composite legs, hand-offs, level-ups, relog tail, restarts) | 22,555 | 65% |
 | E: estimated allowances (contention, overrun, relay, retries) and S15's never-measured Ape Atoll rows (~1,475) | 2,675 | 8% |
-| **Total** | **34,526** | |
+| **Total** | **34,575** | |
 
-Against fold-in 7's split (7,749 / 25,453 / 1,200): M +938, I -2,289, E +1,475. S25c is back in M
+Against fold-in 8's split (8,687 / 23,164 / 2,675): M +658, I -609, E 0. S06 (58) is M on rs/196's
+lab runs (RCM); S07's oak band from WC 15 to L72 (600) is M on rs/162's lab run (PB), and its last
+level (27) and the rest of S07 stay I; S21 (+2) and the T06-07 drop (+2) are I. Fold-in 8, against fold-in 7's split (7,749 / 25,453 / 1,200): M +938, I -2,289, E +1,475. S25c is back in M
 at 80 (WINE run A, with rs/174's ~2-tick tab relog, R174). S17's 75-85 band (858) is M on rs/155's
 lab chain, and its 85-99 (3,355) is I. S15's Ape Atoll rows that `monkey_madness.md` tags R, T or I
 (~1,475) move from I to E: they were page-counted or tile-modelled and never run (rs/185); its
