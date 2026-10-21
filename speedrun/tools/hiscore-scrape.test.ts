@@ -36,6 +36,11 @@ describe('parsePlayer', () => {
         expect(rows.find(r => r.skill === 'Attack')).toMatchObject({ rank: null, level: null, ticks: null });
     });
 
+    test('row links of any profile parse the same', () => {
+        const html = fixture('hiscore/player-stunbaron.html');
+        expect(parsePlayer(html.replaceAll('profile=main', 'profile=lab'))).toEqual(parsePlayer(html));
+    });
+
     test('a missing player is null', () => {
         expect(parsePlayer(fixture('hiscore/player-missing.html'))).toBeNull();
     });
@@ -76,6 +81,24 @@ describe('analyzeAccount', () => {
         ]);
         expect(a.batches).toEqual([{ ticks: 300, skills: ['Fishing', 'Firemaking'] }]);
         expect(a.laterThanOverall).toEqual([]);
+    });
+
+    test('Quest Points joins the batch it shares a stamp with; Overall never does (stunbaron page)', () => {
+        const a = analyzeAccount(parsePlayer(fixture('hiscore/player-stunbaron.html'))!);
+        expect(a).toMatchObject({ total: 1881, overallTicks: 35_916, laterThanOverall: [] });
+        expect(a.batches.map(b => [b.ticks, b.skills.length])).toEqual([[12_006, 4], [17_697, 6], [35_916, 10]]);
+        expect(a.batches[0]!.skills).toEqual(['Prayer', 'Woodcutting', 'Fishing', 'Mining']);
+        expect(a.batches[1]!.skills).toEqual(['Fletching', 'Firemaking', 'Crafting', 'Smithing', 'Herblore', 'Quest Points']);
+        expect(a.stamps.every(s => s.batched)).toBe(true);
+    });
+
+    test('distinct stamps stay unbatched; unranked skills are skipped (nickquarry page)', () => {
+        const a = analyzeAccount(parsePlayer(fixture('hiscore/player-nickquarry.html'))!);
+        expect(a.stamps.map(s => [s.skill, s.ticks, s.batched])).toEqual([
+            ['Quest Points', 764, false],
+            ['Mining', 6_015, false]
+        ]);
+        expect(a.batches).toEqual([]);
     });
 
     test('a skill stamped after the overall stamp can only be a logout fallback', () => {

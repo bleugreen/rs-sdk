@@ -99,10 +99,15 @@ export interface PlayerRow {
     ticks: number | null;
 }
 
+/** A row that exists on the page: a level and a stamp (skills under level 15 have neither). */
+export const isStamped = (r: PlayerRow): boolean => r.level !== null && r.ticks !== null;
+
+/** Every row of a player page (Overall, each skill, Quest Points), in page order; null for a missing player. */
 export function parsePlayer(html: string): PlayerRow[] | null {
     if (/Player "[^"]*" not found/.test(html)) return null;
     const rows: PlayerRow[] = [];
-    const re = /<a href="\/hiscores\?category=(\d+)&profile=main"[^>]*>(?:<img[^>]*>)?([^<]+)<\/a><\/td>\s*<td align="right">([^<]*)<\/td>\s*<td align="right">([^<]*)<\/td>\s*<td align="right">([\s\S]*?)<\/td>/g;
+    // Row links carry whichever profile the page was requested with.
+    const re = /<a href="\/hiscores\?category=(\d+)&profile=[^"&]*"[^>]*>(?:<img[^>]*>)?([^<]+)<\/a><\/td>\s*<td align="right">([^<]*)<\/td>\s*<td align="right">([^<]*)<\/td>\s*<td align="right">([\s\S]*?)<\/td>/g;
     for (const m of html.matchAll(re)) {
         const rank = m[3]!.trim();
         const level = m[4]!.trim();
@@ -188,10 +193,14 @@ export interface AccountAnalysis {
     laterThanOverall: string[];
 }
 
-/** Sorts every stamped row (skills and Quest Points) and groups identical stamps. */
+/**
+ * Sorts every stamped row and groups identical stamps (docs/speedrun/research/competitors/hiscore-timestamps.md).
+ * Quest Points takes part: its stamp is always a save-time playtime, so a skill sharing it is a logout value.
+ * Overall does not: it always equals the largest stamp, so it would join every account's last batch.
+ */
 export function analyzeAccount(rows: PlayerRow[]): AccountAnalysis {
     const overall = rows.find(r => r.category === OVERALL);
-    const stamped = rows.filter(r => r.category !== OVERALL && r.ticks !== null && r.level !== null);
+    const stamped = rows.filter(r => r.category !== OVERALL && isStamped(r));
     const byTicks = new Map<number, string[]>();
     for (const r of stamped) byTicks.set(r.ticks!, [...(byTicks.get(r.ticks!) ?? []), r.skill]);
     const sorted = [...stamped].sort((a, b) => a.ticks! - b.ticks! || a.category - b.category);
@@ -260,7 +269,7 @@ export class PoliteFetcher {
 }
 
 const boardPath = (category: number, rank = 1) => `/hiscores?category=${category}&profile=main${rank > 1 ? `&rank=${rank}` : ''}`;
-const playerPath = (name: string) => `/hiscores/player/${encodeURIComponent(name)}?profile=main`;
+export const playerPath = (name: string) => `/hiscores/player/${encodeURIComponent(name)}?profile=main`;
 
 export interface PlayerSnapshot {
     fetchedAt: string;
