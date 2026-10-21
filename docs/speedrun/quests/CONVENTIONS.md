@@ -30,17 +30,22 @@ item only the player can pick up), must be done by the scored account and counte
 ## Record raw counts as well as ticks
 
 The tick cost of the timing primitives (a dialogue page, a door, a ladder, a
-teleport, a boat ride) is being measured once, by the timing-primitives child.
-Until it lands, use the provisional values below, but **also record the raw
-counts** per segment, so the README can recompute every quest with the measured
-primitives:
+teleport, a boat ride, a trade) is **measured** in `primitives.md`, which has the
+full tables, the scripts and the floor figures for a fixed client. Use the
+values below, and **also record the raw counts** per segment, so the README can
+recompute every quest if the client fix (cairn://p/rs/22) lands:
 
-| Primitive | Provisional ticks | Basis |
+| Primitive | Ticks (stock lite client) | Basis |
 |---|---|---|
-| Run, per tile | 0.5 (2 tiles/tick, infinite run energy assumed) | inferred |
-| Dialogue page or option click | 1 | inferred |
-| Loc/NPC interaction with `p_delay(n)` | n + 2 | read, `PlayerOps.ts:376-380` (see cairn://p/rs/main/task/per-skill) |
-| Teleport spell or jewellery | about 5 | inferred |
+| Run, per route tile | 0.5 (2 tiles/tick, run energy infinite); 0.57 with `bot.walkTo` | measured, `primitives.md` §2 |
+| Dialogue page or option click | **2** (1 with the client fix) | measured, `primitives.md` §1 |
+| Ladder, trapdoor or stairs climb | 1-2 plus the run to it | measured, `primitives.md` §3 |
+| Door or gate open | 2 plus the run to it, then walk through | measured, `primitives.md` §3 |
+| Loc/NPC interaction with `p_delay(n)` | n + 2 from the click; each further `p_delay(m)` m + 1 | read, `PlayerOps.ts:376-380`; consistent with every delay in `primitives.md` |
+| Teleport spell | 4 | measured, `primitives.md` §4 |
+| Amulet of glory / games necklace | 6 / 8 | measured, `primitives.md` §4 |
+| Ship ride (talk to sailor to ashore) | 21-32 by route | measured, `primitives.md` §5 |
+| Trade from an adjacent helper | 9 (5 with the client fix) | measured, `primitives.md` §6 |
 
 So each step-list segment carries: tiles walked (or the route), dialogue pages
 and option clicks, interactions, fight ticks, forced waits (`p_delay`, timers,
