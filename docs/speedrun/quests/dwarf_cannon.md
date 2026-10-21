@@ -1,7 +1,8 @@
 # Dwarf Cannon (the multicannon unlock)
 
-**About 1,080 ticks (about 5.4 minutes at 300 ms) for 750 base Crafting, 1 quest
-point and the right to set up a multicannon. There is no shortcut: the set-up
+**About 1,080 ticks on today's client (about 980 with the dialogue fix, about 920
+with dialogue bursts) for 750 base Crafting, 1 quest point and the right to set up
+a multicannon. There is no shortcut: the set-up
 checks for the completed quest, stage 11.** Half the time is walking (about 930
 route tiles); the railings are the variable part, a Crafting roll at about 14
 ticks a try (44% success at Crafting 60, 59% at 99). The cannon itself, the
@@ -128,20 +129,47 @@ Raw counts from the 300 ms run; ticks measured.
     (`lawgof2.rs2:182-203`, `quest_mcannon.rs2:23-27`). 189 tiles, 12 pages:
     **142**.
 
+## Dialogue runs (CONVENTIONS "Dialogue: three columns")
+
+Read from the scripts; the totals match the measured counts (81 pages and 21
+option clicks in the 300 ms run, with 14 railing tries). `c` is a pure continue,
+`opt` an option click, `wait` a forced server delay inside the dialogue.
+
+| Dialogue | Runs | Stock (2/click) | Fixed (1/click) | Burst |
+|---|---|---|---|---|
+| Lawgof start (`lawgof2.rs2:17-42`) | `4c, opt, 6c` | 22 | 11 | 1 + 1 + 2 = 4 |
+| Lawgof railings done (`:44-58`) | `9c` | 18 | 9 | 2 |
+| Lawgof remains (`:71-92`) | `12c` | 24 | 12 | 3 |
+| Lollk (`dwarfchildtw1.rs2:4-9`) | `5c` | 10 | 5 | 1 |
+| Lawgof tool kit (`lawgof2.rs2:106-126`) | `7c, opt, 2c` | 20 | 10 | 2 + 1 + 1 = 4 |
+| Shed (`mcannon_broken_cannon.rs2:3,10,24-31`) | `1c`, then 4 part options (one per inspect), then `1c` | 12 | 6 | 6 |
+| Lawgof repaired (`lawgof2.rs2:142-173`) | `4c, wait, 6c, opt, 4c` | 30 | 15 | 1 + 2 + 1 + 1 = 5 |
+| Nulodion (`nulodion.rs2:15-29`) | `8c` | 16 | 8 | 2 |
+| Lawgof complete (`lawgof2.rs2:182-203`) | `12c` | 24 | 12 | 3 |
+| Railings | 1 option per try (14 here, 13.5 expected at Crafting 60) | 28 | 14 | 14 |
+| **Total** | 81 pages, 21 options | **204** | **102** | **44** |
+
+Every state change (railings given, varps set, tool kit, notes and mould) happens
+before the last pages of its dialogue, so no page in a run gates the bot's next
+action; the only in-dialogue wait is Lawgof inspecting the shed (`if_close`, two
+`p_delay(1)`), which a burst cannot cross.
+
 ## Tick total
 
-| Part | Raw counts | Ticks | Basis |
-|---|---|---|---|
-| Travel | 3 teleports; about 930 route tiles over 9 walks | 12 + about 560 | teleport primitive; walks measured |
-| Dialogue | 81 pages, 5 options (stock: 2 ticks each) | about 170 | measured inside the segments |
-| Interactions | 6 railings (14 tries), 4 climbs, 1 pickup, cave, crate, mud pile, 2 doors, 6 inspects + 4 fixes | about 330 | measured |
-| Fights | none | 0 | |
-| **Total** | | **1,066 + 12 = 1,078** | measured, `quest-mcannon-run.ts` |
+| Part | Raw counts | Stock | Fixed | Burst | Basis |
+|---|---|---|---|---|---|
+| Travel | 3 teleports; about 930 route tiles over 9 walks | 12 + about 560 | same | same | teleport primitive; walks measured |
+| Dialogue | 81 pages, 21 options (above) | 204 | 102 | 44 | read runs; stock measured inside the segments |
+| Interactions and waits | 14 railing tries (the `p_delay`s and roll), 4 climbs, 1 pickup, cave, crate, mud pile, 2 doors, 6 inspects + 4 fixes, Lawgof's shed wait | about 300 | same | same | measured (the remainder) |
+| Fights | none | 0 | 0 | 0 | |
+| **Total** | | **1,078** | **about 976** | **about 918** | stock measured, `quest-mcannon-run.ts` (1,066 + 12); fixed and burst = stock minus the dialogue saving |
 
-(The travel, dialogue and interaction split is approximate, since the segments
-mix them; the total and the per-step figures above are what was measured.) With
-Crafting 99 the railings drop to about 150 (inferred from the per-try time), for
-about 1,010 in total; with Crafting 1 they rise to about 365, for about 1,230.
+(The travel and interaction split is approximate, since the segments mix them;
+the stock total and the per-step figures above are what was measured.) With
+Crafting 99 the railings drop to about 150 stock (inferred from the per-try time),
+for about 1,010 stock; with Crafting 1 they rise to about 365, for about 1,230.
+Each railing try is about 15 ticks stock and 14 with either client fix (one option
+click saved).
 
 ## Using the cannon (measured after the quest)
 
