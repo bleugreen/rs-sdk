@@ -44,11 +44,20 @@ export const ACCOUNT_NAME_RE = /^cairn_[a-z0-9_]{1,6}$/;
 /** Role ids are module names under speedrun/helpers/. */
 export const ROLE_NAME_RE = /^[a-z][a-z0-9-]*$/;
 
-export interface AccountConfig {
-    account: string;
-    /** Role id; the fleet imports speedrun/helpers/<role>.ts and runs its exported `role`. */
+/** A role and its options: what an account does. */
+export interface Assignment {
     role: string;
     options: Record<string, unknown>;
+}
+
+export interface AccountConfig extends Assignment {
+    account: string;
+    /**
+     * Where the account goes when its role finishes (run() returns, role.ts): the
+     * fleet rewrites this entry to this role and options and starts it. Set by
+     * `fleetctl assign ... --then ROLE` or `--return`.
+     */
+    then?: Assignment;
     /** false keeps the entry (and its ledger rows) but logs the account out. */
     enabled: boolean;
     /** Restart the role if it has not logged for this long. */
@@ -138,7 +147,7 @@ export function parseFleetConfig(raw: unknown): FleetConfig {
                 problems.push(`${where} must be an object`);
                 return;
             }
-            const allowed = new Set(['account', 'role', 'options', 'enabled', 'stallMinutes']);
+            const allowed = new Set(['account', 'role', 'options', 'enabled', 'stallMinutes', 'then']);
             for (const key of Object.keys(entry)) {
                 if (!allowed.has(key)) problems.push(`${where}: unknown key "${key}"`);
             }
@@ -162,13 +171,29 @@ export function parseFleetConfig(raw: unknown): FleetConfig {
             if (typeof enabled !== 'boolean') problems.push(`${where}: enabled must be true or false`);
             const stallMinutes = entry.stallMinutes ?? CONFIG_DEFAULTS.stallMinutes;
             if (!intIn(stallMinutes, 1, 24 * 60)) problems.push(`${where}: stallMinutes must be an integer from 1 to 1440`);
+            let then: Assignment | undefined;
+            if (entry.then !== undefined) {
+                const t = entry.then;
+                if (!isRecord(t)) {
+                    problems.push(`${where}: then must be { "role", "options"? }`);
+                } else {
+                    for (const key of Object.keys(t)) {
+                        if (key !== 'role' && key !== 'options') problems.push(`${where}.then: unknown key "${key}"`);
+                    }
+                    if (typeof t.role !== 'string' || !ROLE_NAME_RE.test(t.role)) problems.push(`${where}.then: role must match ${ROLE_NAME_RE} (got ${JSON.stringify(t.role)})`);
+                    const thenOptions = t.options ?? {};
+                    if (!isRecord(thenOptions)) problems.push(`${where}.then: options must be an object`);
+                    then = { role: String(t.role), options: isRecord(thenOptions) ? thenOptions : {} };
+                }
+            }
 
             accounts.push({
                 account: String(account),
                 role: String(role),
                 options: isRecord(options) ? options : {},
                 enabled: enabled === true,
-                stallMinutes: Number(stallMinutes)
+                stallMinutes: Number(stallMinutes),
+                ...(then ? { then } : {})
             });
         });
         const enabledCount = accounts.filter(a => a.enabled).length;
@@ -202,6 +227,38 @@ export interface ConfigDiff {
     start: AccountConfig[];
     stop: string[];
     changed: AccountConfig[];
+}
+
+/** Same role with the same options. */
+export function sameAssignment(a: Assignment, b: Assignment): boolean {
+    return a.role === b.role && JSON.stringify(a.options) === JSON.stringify(b.options);
+}
+
+/**
+ * The fleet.json that moves `finished.account` on to its `then`, as the file
+ * holds it now: the entry keeps everything but `then`, and takes the `then`
+ * role and options exactly. A string says why not: the file no longer assigns
+ * the role that finished (someone reassigned it; their reload decides), or it
+ * has no `then`, or the result would not validate.
+ */
+export function returnAssignment(raw: unknown, finished: Pick<AccountConfig, 'account' | 'role' | 'options'>): { config: Record<string, unknown>; next: AccountConfig } | string {
+    if (!isRecord(raw) || !Array.isArray(raw.accounts)) return 'fleet.json has no accounts list';
+    const i = raw.accounts.findIndex(a => isRecord(a) && a.account === finished.account);
+    if (i < 0) return `${finished.account} is no longer in fleet.json`;
+    const entry = raw.accounts[i] as Record<string, unknown>;
+    const onDisk = { role: String(entry.role), options: isRecord(entry.options) ? entry.options : {} };
+    if (!sameAssignment(onDisk, finished)) return `fleet.json now assigns ${finished.account} ${onDisk.role} ${JSON.stringify(onDisk.options)}; leaving it to the next reload`;
+    if (!isRecord(entry.then)) return `fleet.json gives ${finished.account} no "then"`;
+    const { then, ...rest } = entry as Record<string, unknown> & { then: Record<string, unknown> };
+    const accounts = [...raw.accounts];
+    accounts[i] = { ...rest, role: then.role, options: then.options ?? {} };
+    const config = { ...raw, accounts };
+    try {
+        const next = parseFleetConfig(config).accounts.find(a => a.account === finished.account)!;
+        return { config, next };
+    } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+    }
 }
 
 export function diffActive(before: AccountConfig[], after: AccountConfig[]): ConfigDiff {
