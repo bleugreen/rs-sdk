@@ -16,6 +16,8 @@ interface Step {
     plane?: number;
     /** option index to use (default 1) */
     op?: number;
+    /** also done (without xp) when the player arrives on this z, off-plane z excluded */
+    endZ?: number;
 }
 
 interface Course {
@@ -66,7 +68,9 @@ const COURSES: Record<string, Course> = {
             { name: 'ropeswing', locs: [[2283, 3005, 3952]], xp: 20 },
             { name: 'stones', locs: [[2311, 3001, 3960]], xp: 20 },
             { name: 'log', locs: [[2297, 3001, 3945]], xp: 20 },
-            { name: 'rocks', locs: [[2328, 2994, 3936], [2328, 2993, 3936], [2328, 2995, 3936]], xp: 498.9 },
+            // the rocks award nothing themselves (wilderness_course.rs2:151-158); a lap
+            // whose progress was broken by a fall ends here without the bonus
+            { name: 'rocks', locs: [[2328, 2994, 3936], [2328, 2993, 3936], [2328, 2995, 3936]], xp: 498.9, endZ: 3933 },
         ],
     },
 };
@@ -192,13 +196,17 @@ await runScript(async ({ sdk }) => {
                 // falls into a pit (wilderness/barbarian) land underground
                 if ((p?.worldZ ?? 0) > 6400 && p0.z < 6400) failed = true;
                 if (failed) return true;
+                if (step.endZ !== undefined && p?.worldZ === step.endZ && p0.z !== step.endZ) return true;
                 return log.events.slice(evBefore).some(e => e.baseGain >= step.xp - 0.05);
             }, 80);
             const gained = log.events.slice(evBefore).some(e => e.baseGain >= step.xp - 0.05);
-            if (gained) {
-                const ev = log.events.slice(evBefore).find(e => e.baseGain >= step.xp - 0.05)!;
-                (stepTicks[step.name] ??= []).push(ev.tick - lastDoneTick);
-                lastDoneTick = ev.tick;
+            const arrived = step.endZ !== undefined && pos(sdk).z === step.endZ && p0.z !== step.endZ;
+            if (gained || arrived) {
+                if (!gained) await sdk.waitForTicks(1); // a bonus would land on the same tick
+                const ev = log.events.slice(evBefore).find(e => e.baseGain >= step.xp - 0.05);
+                const doneTick = ev?.tick ?? tick(sdk);
+                (stepTicks[step.name] ??= []).push(doneTick - lastDoneTick);
+                lastDoneTick = doneTick;
                 stuck = 0;
                 i++;
                 continue;
