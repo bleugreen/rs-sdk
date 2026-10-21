@@ -101,6 +101,22 @@ await runScript(async ({ bot, sdk }) => {
             await sdk.sendPickup(g.x, g.z, g.id);
         }, () => sdk.countInventoryItems(re) > n0);
     };
+    /** Dwarf brew, Iban's ashes from the tomb, Kalrag's blood, the dove: the doll's other three parts. */
+    const brewToDove = async () => {
+        await lab.travel('-> brew barrel (west side)', P.barrel);
+        await lab.act('bucket on the barrel: dwarf brew', () => lab.useOnLoc(/^Bucket$/i, 3344, 2327, 9799), () => sdk.countInventoryItems(/brew/i) > 0);
+        await lab.travel('-> Iban\'s tomb', P.tomb);
+        await lab.act('brew on the tomb', () => lab.useOnLoc(/brew/i, 3353, 2356, 9800), () => sdk.countInventoryItems(/brew/i) === 0);
+        await lab.act('tinderbox on the tomb: Iban\'s ashes', () => lab.useOnLoc(/^Tinderbox$/i, 3353, 2356, 9800), () => sdk.countInventoryItems(/ashes/i) > 0);
+        await lab.act('ashes on the doll (p_delay 7)', () => lab.useItem(/ashes/i, /doll/i), () => sdk.countInventoryItems(/ashes/i) === 0);
+        await lab.travel('tomb -> Kalrag', P.kalrag);
+        await lab.fight('fight Kalrag (lvl 89, 78 hp)', /Kalrag/, { food: /^Swordfish$/i });
+        await lab.idle(4);
+        lab.record({ label: 'ibanmulti after Kalrag', ticks: 0, value: await lab.getVar('ibanmulti') });
+        await lab.travel('Kalrag -> north stairs -> dove cage', P.doveCage);
+        await lab.act('search the cage: Iban\'s dove (bitten, no gauntlets)', () => lab.clickLoc(3351, 2134, 4702, 1), () => sdk.countInventoryItems(/dove/i) > 0);
+        await lab.act('dove on the doll', () => lab.useItem(/dove/i, /doll/i), () => sdk.countInventoryItems(/dove/i) === 0);
+    };
     const ORBS = [BIT.orb1, BIT.orb2, BIT.orb3, BIT.orb4];
     const BADGES = [BIT.badge1, BIT.badge2, BIT.badge3, BIT.horn];
 
@@ -281,6 +297,20 @@ await runScript(async ({ bot, sdk }) => {
         await lab.act('open the chest with three amulets: Iban\'s shadow', () => lab.clickLoc(3274, 2136, 4578, 1), () => sdk.countInventoryItems(/shadow/i) > 0);
         await lab.act('shadow on the doll', () => lab.useItem(/shadow/i, /doll/i), () => sdk.countInventoryItems(/shadow/i) === 0);
         await lab.travel('-> south stairs -> dwarves', P.dwarfStairsFoot);
+        await brewToDove();
+        lab.record({ label: 'TOTAL cavern arrival to the doll complete', ticks: lab.tick() - t0, ibanmulti: await lab.getVar('ibanmulti') });
+    } else if (segment === 'brew') {
+        // resume the cavern at the dwarves: %upass 7, doll holding the shadow
+        await gear(15);
+        await vars(7, [...ORBS, ...BADGES, BIT.cat, BIT.shadow]);
+        await lab.give('ibandoll', 1);
+        await lab.give('bucket_empty', 1);
+        await lab.give('tinderbox', 1);
+        await lab.teleTo(...P.dwarfStairsFoot);
+        const t0 = lab.tick();
+        await brewToDove();
+        lab.record({ label: 'TOTAL dwarf stairs to the doll complete', ticks: lab.tick() - t0, ibanmulti: await lab.getVar('ibanmulti') });
+    } else if (segment === 'never') {
         await lab.travel('-> brew barrel', P.barrel);
         await lab.act('bucket on the barrel: dwarf brew', () => lab.useOnLoc(/^Bucket$/i, 3344, 2327, 9799), () => sdk.countInventoryItems(/brew/i) > 0);
         await lab.travel('-> Iban\'s tomb', P.tomb);

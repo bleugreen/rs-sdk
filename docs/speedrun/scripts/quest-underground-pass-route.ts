@@ -248,7 +248,7 @@ export const P: Record<string, T> = {
     pipeEast: [2419, 9605, 0], unicornArea: [2412, 9605, 0], unicornCage: [2397, 9606, 0], boulder: [2396, 9597, 0],
     smashedCage: [2371, 9603, 0], area3: [2371, 9666, 0], paladins: [2424, 9719, 0], bloodwell: [2373, 9718, 0], templeDoor2: [2369, 9718, 0],
     mainArrival: [2173, 4725, 1], stairsSouth: [2150, 4546, 1], stairsNorth: [2113, 4729, 1], dwarfStairsFoot: [2336, 9794, 0], nilhoof: [2315, 9806, 0],
-    barrel: [2327, 9799, 0], tomb: [2356, 9800, 0], kalrag: [2356, 9911, 0], kalragStairs: [2305, 9915, 0],
+    barrel: [2326, 9799, 0], // the brew barrel (2327,9799) is only usable from its west side tomb: [2356, 9800, 0], kalrag: [2356, 9911, 0], kalragStairs: [2305, 9915, 0],
     cat: [2131, 4602, 1], witchDoor: [2158, 4566, 1], doomion: [2134, 4565, 1], holthion: [2132, 4554, 1], othainian: [2122, 4562, 1], shadowChest: [2136, 4578, 1],
     doveCage: [2134, 4702, 1], disciples: [2153, 4646, 1], templeDoor: [2144, 4647, 1], ibanLanding: [2482, 9607, 0], koftik5: [2443, 9607, 0], koftikTele: [2481, 9717, 0], exit: [2495, 9713, 0],
 };
