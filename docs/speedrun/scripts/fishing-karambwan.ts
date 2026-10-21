@@ -38,8 +38,11 @@ await runScript(async ({ bot, sdk }) => {
 
     const refill = async () => {
         for (const it of sdk.getInventory()) await within(sdk.sendDropItem(it.slot));
-        await sdk.sendSay('::give tbwt_karambwan_vessel_loaded_with_karambwanji 27');
-        await sdk.waitForCondition(s => s.inventory.length >= 27, 5000).catch(() => undefined);
+        // Each catch adds a raw karambwan and the empty vessel keeps its slot, so the inventory
+        // grows by one per catch and the attempt refuses once it is full (tbwt.rs2). 14 loaded
+        // vessels always fit: 14 + 13 catches = 27 slots before the last attempt.
+        await sdk.sendSay('::give tbwt_karambwan_vessel_loaded_with_karambwanji 14');
+        await sdk.waitForCondition(s => s.inventory.length >= 14, 5000).catch(() => undefined);
     };
     await refill();
     const loadedId = sdk.getInventory()[0].id;
