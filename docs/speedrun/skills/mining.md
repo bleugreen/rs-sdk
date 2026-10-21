@@ -63,7 +63,7 @@ respawn 13, 60 ores at respawn 19, every roll on its predicted tick); without it
 bands below 63 come from `mining-model.ts` (inferred), which combines the measured rotation
 cost of a successful ore with the read success formula and pickaxe rates. The knife's
 level-up cost in Mining was not measured; the model keeps half a tick per level-up
-(Fishing measured about 0.4 with the knife, [fishing.md](fishing.md) section 6).
+(Fishing measured about 0.5 with the knife, [fishing.md](fishing.md) section 6).
 
 | Band | Method | Location | Unlock | Base xp per ore (read) | Ticks per roll | Success (read) | Base xp per tick | Ticks for band, demo: knife / adjacent-rock |
 |---|---|---|---|---|---|---|---|---|
