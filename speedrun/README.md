@@ -31,6 +31,7 @@ speedrun/
     measure-*.ts  the measurements quoted below
     probe-engine.ts      engine-rule probes (docs/speedrun/research/engine-sweep/engine.md)
     census-delayfree.ts  static census of delay-free item/xp triggers (same doc)
+    measure-sweep.ts     top-ten verification (docs/speedrun/research/engine-sweep.md section 8)
   tools/          upstream watch (nightly diff of watched upstream paths)
   runs/           tick logs (gitignored)
 ```
@@ -324,6 +325,10 @@ and points their `bot.env` at the lab.
 - `LAB_BOTS="srlab3"`: extra bots with a lab `bot.env` but no runner, for
   scripts that launch and kill their own client.
 - `LAB_RUNNERS=0`: no runner for `<bot>` either.
+- A helper that a script relogs (`logoutClean` + `login`) must not also have a `lab.sh` runner:
+  the two clients fight over the account and the script's sends fail with "Connection closed".
+  Name it in `LAB_BOTS` and open it with `openSession(name, {launch: true})`
+  (`measure-sweep.ts` does).
 - `WEB_PORT`, `WEB_MANAGEMENT_PORT`, `HISCORES_WEB_PORT`, `NODE_PORT`, `AGENT_PORT`: override
   the port block (defaults above) to run several labs side by side; give each lab its own
   bots, because `lab.sh` points each bot's `bot.env` at its own block.
