@@ -140,7 +140,10 @@ The trial: on a fresh tick, walk one tile, and count the ticks until the step sh
 | Ashburn VM (operator) | direct and relay | pending | | | | | | | | placeholder |
 | Ashburn (Azure eastus2) | direct lite probe, reference for the row below | 04:24-04:26 | iad | none; TCP 6-7 ms | 1,670-1,677 | 60 | 49 | 11 | 0 | [rs/95](https://github.com/bleugreen/rs-sdk/actions/runs/39591572716) |
 | Ashburn (Azure eastus2) | **browser tab, overlay to a loopback gateway** (rs/82 @ 8f98807c7, = #81); **overlay, burst minute: gate failed** (5.3 catch-ups per minute) | 04:26-04:27 | iad | none; TCP 6-7 ms | 1,670-1,677 | 60 | 33 | 27 | 0 | rs/95, same run; calm row pending |
-| Ashburn | browser tab, in-page program (rs/97's branch) | pending | | | | | | | | rs/95; calm row pending |
+| Ashburn (Azure eastus) | direct lite probe, reference for the row below | 04:47 | iad | none; TCP 3 ms | 1,685 | 60 | 60 | 0 | 0 | [rs/95](https://github.com/bleugreen/rs-sdk/actions/runs/39594411731); the in-page attempt itself produced no row (rs/97's pushed head lacked the page wiring) |
+| Ashburn (Azure eastus) | direct lite probe, reference for the row below | 04:55 | iad | none; TCP 3 ms | 1,122-1,482 | 60 | 59 | 0 | 0 (1 lost) | [rs/95](https://github.com/bleugreen/rs-sdk/actions/runs/39595481831) |
+| Ashburn (Azure eastus) | **browser tab, overlay to a loopback gateway, main 5575f37a5 (#81 + #78)**; gate failed on (c) only | 04:55 | iad | none; TCP 3 ms | 1,122-1,482 | 60 | **57** | 3 | 0 | rs/95, same run; page-side reaction p50 22 / p90 26 ms |
+| Ashburn | browser tab, in-page program (rs/97's branch) | pending | | | | | | | | rs/95 |
 
 Runs 2, 4 and 7 used the same relay path from the same region; 51/9, 32/28 and 40/20 show how
 much that path varies between draws. Across the three paired Ashburn runs the direct path landed
@@ -405,7 +408,14 @@ and 10 ms from the action arriving to the game packet going out, the first and l
 page's ~20 ms game loop. On-time and late trials took the same time (21 against 24 ms), so the
 misses came from the minute's overruns (5.3 catch-ups per minute), not from slow hops. Still, in
 that minute 22 ms was enough to lose a tick 45% of the time (33/27) where the 0.3 ms direct path
-lost 18% (49/11). A calm-minute overlay row is pending.
+lost 18% (49/11).
+
+In a calmer minute (04:55, main 5575f37a5 with #81 and #78, 1,122-1,482 online, gate failing only
+on 2 catch-ups), the overlay landed **57 of 60** next to the direct path's 59 of 60, with the same
+22 ms page-side turnaround (p90 26). So the overlay to a loopback gateway is close to direct in a
+calm minute and loses badly in a burst. Knife woodcutting over it in that run still read 8.17
+ticks per expected roll (59 logs at Woodcutting 64 and up), well behind rs/62's knife and plain
+figures from bbs. The in-page row is pending (rs/97).
 
 ## 8. Knife-loop analysis (question 4)
 
@@ -494,13 +504,17 @@ raw output is in `data/fedora-0400.json` and `data/fedora-samples.log`.
 | 03:17 eastus | 60/0/0 | 373 ms | 0 | yes |
 | 04:04 eastus | 60/0/0 | 372 ms | 0 | yes |
 | 04:13 eastus | 40/16/4 | 486 ms | 22.6 | **no** |
-| 04:24-04:37 eastus2 (rs/95's page session) | 49/11/0 | 395 ms | 5.3 | **no** (catch-ups) |
+| 04:24 eastus2 (rs/95, probe minute) | 49/11/0 | 391 ms | 14 | **no** (fails a, c) |
+| 04:47 eastus (rs/95) | 60/0/0 | 350 ms | 3.3 (4 in 1.2 min) | **no** (b by 4 ms, c) |
+| 04:55 eastus (rs/95) | 59/0/0 | 346 ms | 1.7 (2 in 1.2 min) | **no** (c only) |
 
 A cap on the maximum interval does not separate good minutes from bad: single long ticks are common
 and harmless on their own, and a 600 ms cap rejected the minutes at 02:43, 03:17 and 04:04 that
 scored 60 of 60. The p90 and catch-up criteria do, on this data. rs/95's 04:24 session shows why
-the catch-up count is needed as well as p90: its p90 of 395 ms passes, but 5.3 catch-ups per minute
-cost the direct path 11 of 60.
+the catch-up count is needed as well as p90: its p90 of 391 ms passes, but 14 catch-ups per minute
+cost the direct path 11 of 60. The limit of 1 per minute is conservative: at 04:47 and 04:55 the
+direct path landed 60 and 59 of 60 with 3.3 and 1.7 catch-ups per minute. A few isolated catch-ups
+cost little; what costs is a burst of them. rs/102's overnight series should calibrate the limit.
 
 **Should the run go at a quiet hour?** Not settled, and home data cannot settle it. Overruns are
 load-dependent, but 04:04 (1,673 online) had none while 04:13 (1,645-1,669) had many, so the player
@@ -600,8 +614,9 @@ rs/102 does.
    between the home and Ashburn delay sweeps (section 3): either the game socket's home RTT is
    lower than `mrtt` suggests, or each account's frame leaves at a different point in the
    engine's output batch. A sweep from two accounts at once from Ashburn would separate them.
-8. **The browser-path rows** (rs/95). The overlay row is in, from a burst minute that failed the
-   gate (section 3); a calm-minute overlay row and both in-page rows are pending.
+8. **The browser in-page row** (rs/95 on rs/97's branch) is pending. Both overlay rows are in: a
+   burst minute at 04:24 (33/27) and a calmer one at 04:55 (57/3). Why the knife over the overlay
+   reads about 8.2 ticks per expected roll even in the calmer minute is open.
 9. **When overruns happen.** They took the Ashburn direct path from 60/60 at 04:04 to 40/16/4 at
    04:13 with about the same player count. rs/102's overnight Ashburn series should show whether
    they cluster by hour, by player count, or by something else on the demo (saves every 15 minutes
