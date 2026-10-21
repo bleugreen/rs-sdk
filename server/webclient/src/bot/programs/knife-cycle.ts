@@ -48,6 +48,15 @@
 // 1/p rolls at the level it was rolled at (as tickmanip-demo-report.ts does); that is the
 // figure to set against 3 and `plainCycle`. The status carries every success's tick while the
 // run goes (`marks.successes`), so a poller can time each log or fish.
+//
+// Catch chance and the lock window: p is stat_random's chance at the base level L,
+// (floor(lo*(99-L)/98) + floor(hi*(L-1)/98) + 1)/256 (engine PlayerOps.ts STAT_RANDOM). The
+// Woodcutting presets carry trees.dbrow's lo/hi for every axe, and the program uses the axe
+// woodcutting_axe_checker would swing: the best one worn or carried, rune first
+// (woodcut.rs2). A locked cadence rolls every 3 ticks, so k misses in a row come with
+// probability (1-p)^k; the lock window is 3k ticks for the least k with (1-p)^k <= 0.005,
+// never below the method's `lockWindow`. With no axe seen there is no p: the window stays at
+// `lockWindow` and `ticksPerExpectedRoll` is NaN.
 
 import type { BotWorldState, InventoryItem } from '../types.js';
 import type { ProgramContext, ProgramParams, TickProgram } from './types.js';
@@ -70,20 +79,34 @@ export interface CycleMethod {
     lockWindow: number;
     /** The target is gone after every successful roll (normal trees). */
     depletes?: boolean;
-    /** Success chance per roll: stat_random bounds, or 'fly' (salmon from 30, then trout). */
-    catchChance?: 'fly' | [number, number];
+    /** Success chance per roll: stat_random bounds, bounds per axe (Woodcutting), or 'fly' (salmon from 30, then trout). */
+    catchChance?: 'fly' | [number, number] | AxeChance;
     /** A click landing on the roll tick rolls at once, so a bury can take the starter's click slot (see `bury`). */
     buryOnRoll?: boolean;
 }
 
+/** woodcutting_axe_checker's order (woodcut.rs2): the first of these worn or carried is the axe that swings. */
+export const AXES = ['rune', 'adamant', 'mithril', 'black', 'steel', 'iron', 'bronze'] as const;
+export type Axe = (typeof AXES)[number];
+/** stat_random bounds for each axe on one tree type. */
+export type AxeChance = Record<Axe, [number, number]>;
+
+/** trees.dbrow successchance, per tree table and axe. */
+export const TREE_CHANCE: Record<'tree' | 'oak' | 'willow', AxeChance> = {
+    tree: { bronze: [64, 200], iron: [96, 300], steel: [128, 400], black: [144, 450], mithril: [160, 500], adamant: [192, 600], rune: [224, 700] },
+    oak: { bronze: [32, 100], iron: [48, 150], steel: [64, 200], black: [72, 225], mithril: [80, 250], adamant: [96, 300], rune: [112, 350] },
+    willow: { bronze: [16, 50], iron: [24, 75], steel: [32, 100], black: [36, 112], mithril: [40, 125], adamant: [48, 150], rune: [56, 175] }
+};
+
 /** Presets (tickmanip-cycle.ts METHODS, minus the lab teleports and kit). */
 export const CYCLE_METHODS: Record<string, CycleMethod> = {
-    willow: { skill: 'woodcutting', kind: 'loc', target: '^willow', option: '^chop', product: '^willow logs$', clickOnRoll: false, r0: 3, plainCycle: 4, lockWindow: 18, buryOnRoll: true },
+    willow: { skill: 'woodcutting', kind: 'loc', target: '^willow', option: '^chop', product: '^willow logs$', clickOnRoll: false, r0: 3, plainCycle: 4, lockWindow: 18, buryOnRoll: true, catchChance: TREE_CHANCE.willow },
     // A normal tree always falls on its first log, so each log re-bootstraps on the next tree.
-    tree: { skill: 'woodcutting', kind: 'loc', target: '^(tree|dead tree|evergreen)$', option: '^chop', product: '^logs$', clickOnRoll: false, r0: 3, plainCycle: 4, lockWindow: 18, depletes: true, catchChance: [64, 200] },
-    oak: { skill: 'woodcutting', kind: 'loc', target: '^oak$', option: '^chop', product: '^oak logs$', clickOnRoll: false, r0: 3, plainCycle: 4, lockWindow: 18, buryOnRoll: true },
+    tree: { skill: 'woodcutting', kind: 'loc', target: '^(tree|dead tree|evergreen)$', option: '^chop', product: '^logs$', clickOnRoll: false, r0: 3, plainCycle: 4, lockWindow: 18, depletes: true, catchChance: TREE_CHANCE.tree },
+    oak: { skill: 'woodcutting', kind: 'loc', target: '^oak$', option: '^chop', product: '^oak logs$', clickOnRoll: false, r0: 3, plainCycle: 4, lockWindow: 18, buryOnRoll: true, catchChance: TREE_CHANCE.oak },
     fly: { skill: 'fishing', kind: 'npc', target: '^fishing spot$', option: '^lure$', product: '^raw ', clickOnRoll: false, r0: 4, plainCycle: 5, lockWindow: 15, catchChance: 'fly' },
-    cage: { skill: 'fishing', kind: 'npc', target: '^fishing spot$', option: '^cage$', product: '^raw ', clickOnRoll: true, r0: 4, plainCycle: 6, lockWindow: 45 }
+    // fishing.struct fishing_struct_lobster
+    cage: { skill: 'fishing', kind: 'npc', target: '^fishing spot$', option: '^cage$', product: '^raw ', clickOnRoll: true, r0: 4, plainCycle: 6, lockWindow: 45, catchChance: [6, 95] }
 };
 
 /** skill_multi3:make1_a, arrow shafts from normal logs (interface.pack). */
@@ -95,7 +118,14 @@ const BURY = /^bury$/i;
 /** Any buryable bones; the run's are dragon bones. */
 export const DEFAULT_BONES = 'bones$';
 
-export function catchChance(method: CycleMethod, level: number): number | undefined {
+/** The axe woodcutting_axe_checker swings: the best one worn or carried. */
+export function axeOf(s: BotWorldState): Axe | undefined {
+    const names = new Set([...s.equipment, ...s.inventory].map(i => i.name.toLowerCase()));
+    return AXES.find(a => names.has(`${a} axe`));
+}
+
+/** The chance one roll succeeds; per-axe bounds need the axe, and without one there is no chance to give. */
+export function catchChance(method: CycleMethod, level: number, axe?: Axe): number | undefined {
     const c = method.catchChance;
     if (!c) return undefined;
     if (c === 'fly') {
@@ -104,12 +134,13 @@ export function catchChance(method: CycleMethod, level: number): number | undefi
         const salmon = statRandom(level, 16, 96);
         return salmon + (1 - salmon) * trout;
     }
-    return statRandom(level, c[0], c[1]);
+    const b = Array.isArray(c) ? c : axe ? c[axe] : undefined;
+    return b ? statRandom(level, b[0], b[1]) : undefined;
 }
 
-/** No xp for this many ticks means a lost lock; honest misses at the level trip it under 0.5% of the time. */
-export function lockWindow(method: CycleMethod, level: number): number {
-    const p = catchChance(method, level);
+/** No xp for this many ticks means a lost lock; honest misses at the level trip it under 0.5% of the time (header). */
+export function lockWindow(method: CycleMethod, level: number, axe?: Axe): number {
+    const p = catchChance(method, level, axe);
     if (!p || p >= 1) return method.lockWindow;
     return Math.max(method.lockWindow, 3 * Math.ceil(Math.log(0.005) / Math.log(1 - p)));
 }
@@ -168,6 +199,7 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
     let currentTile: [number, number] | null = null;
     let lastXp = 0;
     let lastLevel = 0;
+    let axe: Axe | undefined;
     const successes = new GapCounter();
     // The gaps `successes` counts, in ticks and in rolls expected at the catch chance.
     let gapTicks = 0;
@@ -271,6 +303,7 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
             ticks: lastTick - startTick,
             ticksPerSuccess: g.ticksPerEvent,
             ...(method.catchChance ? { ticksPerExpectedRoll: ticksPerExpectedRoll() } : {}),
+            ...(method.catchChance && method.catchChance !== 'fly' && !Array.isArray(method.catchChance) ? { axe: axe ?? null } : {}),
             gaps: g.gaps,
             histogram: g.histogram,
             span: g.span,
@@ -306,13 +339,14 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
                 if (!plain && !invItem(s, LOGS)) return ctx.fault('no normal logs in the inventory');
             }
 
+            axe = axeOf(s);
             const xp = skillXp(s, method.skill);
             let xpNow = false;
             if (xp > lastXp) {
                 const prev = successes.lastTick;
                 const gap = successes.event(t);
                 // rolled at the level before any level-up this xp brings (lastLevel is updated below)
-                const p = catchChance(method, lastLevel);
+                const p = catchChance(method, lastLevel, axe);
                 if (gap !== null && p) {
                     gapTicks += gap;
                     gapExpectedRolls += 1 / p;
@@ -410,7 +444,7 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
                 }
             }
 
-            const lost = anchor !== null && t - Math.max(anchor + method.r0 + 1, lastXpTick) > (windowOverride || lockWindow(method, lvl));
+            const lost = anchor !== null && t - Math.max(anchor + method.r0 + 1, lastXpTick) > (windowOverride || lockWindow(method, lvl, axe));
             // A non-depleting tree that fell is not a lost lock (header): the schedule's next click picks a live tree.
             const switchTree = targetGone && !moved && !lost && anchor !== null && method.kind === 'loc' && !method.depletes;
             if (switchTree) {

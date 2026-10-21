@@ -86,12 +86,19 @@ The program sees only the successes (xp drops, one log or fish each), so it repo
   gap between xp drops outside re-bootstraps and resyncs. This is the cadence divided by p,
   so it is **not** comparable with the 3 and 4 of the loops. The `successes` parameter stops
   the run after that many.
-- `ticksPerExpectedRoll` (result and gauge, on methods with a `catchChance`: `tree`,
-  `fly`): the same gaps over the rolls expected for them, each success weighted 1/p at
-  the level it was rolled at, as `scripts/tickmanip-demo-report.ts` does. This is the figure
-  to set against 3 (knife) and `plainCycle` (plain); on normal trees it carries the walk to
-  the next tree as well. Willow, oak and cage carry no catch chance, so the program claims
-  no figure for them.
+- `ticksPerExpectedRoll` (result and gauge, on every preset): the same gaps over the rolls
+  expected for them, each success weighted 1/p at the level it was rolled at, as
+  `scripts/tickmanip-demo-report.ts` does. This is the figure to set against 3 (knife) and
+  `plainCycle` (plain); on normal trees it carries the walk to the next tree as well. The
+  Woodcutting presets carry `trees.dbrow`'s bounds for every axe and take p from the axe the
+  game would swing (the best one worn or carried, rune first, as `woodcutting_axe_checker`
+  picks it), reported as `axe`; with no axe seen the figure is NaN. `cage` uses lobster's
+  bounds and `fly` salmon's then trout's.
+- The lost-lock window comes from the same p: a locked cadence rolls every 3 ticks, so the
+  window is 3k ticks for the least k with (1-p)^k at most 0.005, never below the preset's
+  `lockWindow`. A preset whose p was missing or too high (oak and willow on a fixed 18 ticks
+  before the axe tables) trips on honest misses: a bronze axe on oak at level 60 has p 0.285,
+  so 6 misses in a row, 13% of the time, read as a lost lock; its window is now 48 ticks.
 - `marks.successes`: the tick of every success while the run goes (count and last 64
   ticks), so a host poller can stamp each log or fish, for example to price the loop in
   catch-up minutes against calm ones.
