@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { DIRECT_IN_WORLD, DIRECT_IN_WORLD_RE, DIRECT_REFUSED_RE } from './role';
 import { checkBotEnv, helpersReady, parseLaunchConfig, RoleLoop, type RoleProcess, roleEnv } from './standalone';
 
 const gw = 'ws://127.0.0.1:7795';
@@ -15,8 +16,19 @@ describe('launcher config', () => {
         expect(c.gatewayPort).toBe(7795);
         expect(c.loginSpacingMs).toBe(5000);
         expect(c.accounts.map(a => a.account)).toEqual(['cairn_h70', 'cairn_h75']);
-        expect(c.accounts[1]).toMatchObject({ receiver: true, final: true, after: 'ready', args: [] });
+        expect(c.accounts[1]).toMatchObject({ receiver: true, final: true, after: 'ready', args: [], path: 'relay' });
         expect(c.runDir.endsWith('run-machine')).toBe(true);
+    });
+
+    test('path: relay by default, direct per account, nothing else', () => {
+        const c = parseLaunchConfig({
+            accounts: [
+                { account: 'cairn_h70', role: 'altar-giver', path: 'direct' },
+                { account: 'cairn_h71', role: 'altar-giver' }
+            ]
+        });
+        expect(c.accounts.map(a => a.path)).toEqual(['direct', 'relay']);
+        expect(() => parseLaunchConfig({ accounts: [{ account: 'cairn_h70', role: 'idle', path: 'gateway' }] })).toThrow(/path must be relay or direct/);
     });
 
     test('roles that already run standalone are accepted, with extra args', () => {
@@ -57,11 +69,24 @@ describe('credentials and role environment', () => {
         const r = roleEnv({ PATH: '/bin', GATEWAY_URL: 'wss://public' }, { ...env, GATEWAY_URL: 'wss://x' }, e, gw, '/tmp/run', 123);
         expect(r).toMatchObject({ PATH: '/bin', BOT_USERNAME: 'cairn_h70', PASSWORD: 'pw', SERVER: 'rs-sdk-demo.fly.dev', GATEWAY_URL: gw, LOGGED_IN_AT: '123', RC_CUE_DIR: '/tmp/run/rc-cue', SHOW_CHAT: 'false' });
         expect(JSON.parse(r.ROLE_OPTIONS!)).toEqual({ slot: 1 });
+        expect(r.HELPER_PATH).toBe('relay');
+    });
+
+    test('a direct-path role is told so, and gets its credentials by environment only', () => {
+        const e = parseLaunchConfig({ accounts: [{ account: 'cairn_h70', role: 'altar-giver', path: 'direct' }] }).accounts[0]!;
+        const r = roleEnv({ PATH: '/bin' }, env, e, gw, '/tmp/run', 123);
+        expect(r).toMatchObject({ HELPER_PATH: 'direct', BOT_USERNAME: 'cairn_h70', PASSWORD: 'pw', SERVER: 'rs-sdk-demo.fly.dev' });
+        expect(e.args).toEqual([]);
+    });
+
+    test("the direct role's in-world and refusal lines are the ones the launcher matches", () => {
+        expect(DIRECT_IN_WORLD_RE.test(DIRECT_IN_WORLD('cairn_h70', 'localhost:9470'))).toBe(true);
+        expect(DIRECT_REFUSED_RE.exec('[direct] login refused (code 5): Your account is already logged in.')?.[1]).toBe('5');
     });
 });
 
 describe('helpersReady', () => {
-    const a = (account: string, state: 'online' | 'logging-in', receiver = false) => ({ account, role: 'r', receiver, state, loggedInAt: null, logins: 1 });
+    const a = (account: string, state: 'online' | 'logging-in', receiver = false) => ({ account, role: 'r', receiver, path: 'relay' as const, state, loggedInAt: null, logins: 1 });
     test('every helper online; receivers do not count', () => {
         expect(helpersReady([a('cairn_h70', 'online'), a('cairn_h75', 'logging-in', true)])).toBe(true);
         expect(helpersReady([a('cairn_h70', 'online'), a('cairn_h71', 'logging-in')])).toBe(false);
@@ -92,7 +117,7 @@ class FakeRole implements RoleProcess {
     }
 }
 
-function harness(entry: { final?: boolean; ignoreTerm?: boolean } = {}) {
+function harness(entry: { final?: boolean; ignoreTerm?: boolean; beforeSpawn?: () => Promise<void> } = {}) {
     const procs: FakeRole[] = [];
     const lines: string[] = [];
     const finals: string[] = [];
@@ -100,6 +125,7 @@ function harness(entry: { final?: boolean; ignoreTerm?: boolean } = {}) {
     const loop = new RoleLoop(
         { account: 'cairn_h70', role: 'altar-giver', final: entry.final ?? false },
         {
+            ...(entry.beforeSpawn ? { beforeSpawn: entry.beforeSpawn } : {}),
             spawn: () => {
                 const p = new FakeRole(100 + procs.length, entry.ignoreTerm);
                 procs.push(p);
@@ -187,5 +213,43 @@ describe('RoleLoop: restart on client relaunch', () => {
         h.procs[0]!.exit(143);
         await h.loop.done;
         expect(h.procs.length).toBe(1);
+    });
+});
+
+describe('RoleLoop: a start that is a login (direct path)', () => {
+    test('every start waits for beforeSpawn first', async () => {
+        let open: () => void = () => {};
+        let calls = 0;
+        const h = harness({
+            beforeSpawn: () => {
+                calls++;
+                return new Promise<void>(r => (open = r));
+            }
+        });
+        void h.loop.start();
+        await h.tick();
+        expect(calls).toBe(1);
+        expect(h.procs.length).toBe(0); // waiting for its login slot
+        open();
+        await h.tick();
+        expect(h.procs.length).toBe(1);
+        await h.loop.relaunched();
+        await h.tick();
+        expect(calls).toBe(2);
+        expect(h.procs.length).toBe(1);
+        open();
+        await h.tick();
+        expect(h.procs.length).toBe(2);
+    });
+
+    test('a stop while waiting for a login slot starts nothing', async () => {
+        let open: () => void = () => {};
+        const h = harness({ beforeSpawn: () => new Promise<void>(r => (open = r)) });
+        const done = h.loop.start();
+        await h.tick();
+        h.stop();
+        open();
+        await done;
+        expect(h.procs.length).toBe(0);
     });
 });

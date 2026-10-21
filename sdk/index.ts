@@ -220,7 +220,8 @@ export class BotSDK {
             reconnectMaxRetries: config.reconnectMaxRetries ?? Infinity,
             reconnectBaseDelay: config.reconnectBaseDelay ?? 1000,
             reconnectMaxDelay: config.reconnectMaxDelay ?? 30000,
-            showChat: config.showChat ?? true
+            showChat: config.showChat ?? true,
+            openSocket: config.openSocket ?? (url => new WebSocket(url))
         };
         this.sdkClientId = `sdk-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     }
@@ -269,7 +270,7 @@ export class BotSDK {
                 reject(new Error('Disconnected while connecting'));
                 return;
             }
-            this.ws = new WebSocket(url);
+            this.ws = this.config.openSocket(url);
 
             // One deadline for the whole handshake - socket open AND the
             // gateway's sdk_connected/sdk_error answer. The old timer was

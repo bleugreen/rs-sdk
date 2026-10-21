@@ -776,6 +776,13 @@ export interface SDKConfig {
     reconnectMaxDelay?: number;
     /** Show other players' chat messages (default: false for safety) */
     showChat?: boolean;
+    /**
+     * Open the gateway socket (default: `new WebSocket(url)`). An in-process
+     * client supplies an object with the same API that speaks the gateway's
+     * SDK protocol itself, so no gateway sits between the SDK and the game
+     * client (speedrun/lib/direct.ts).
+     */
+    openSocket?: (url: string) => WebSocket;
 }
 
 /** Session status from gateway diagnostics */

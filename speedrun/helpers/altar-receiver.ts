@@ -12,11 +12,14 @@
 // givers' restock round trips and the login order.
 //
 // Role options:
-//   altar        'air' (default) or 'nature'
+//   altar        'air' (default), 'body' or 'nature'; in the local lab the stand-in raises
+//                its Runecraft to the altar's level
 //   cycles       turns to take (default 20)
 //   givers       giver accounts to wait for (default: any ready giver in sight)
 //   batch        most turns per batch (default: every ready giver)
-//   schedule     'tuned' (default) or 'robust'
+//   schedule     'tuned' (default), 'robust', or 'stock': the scored side's reacting fallback,
+//                one stock turn per giver (T three ticks ahead), a reacting receive
+//                (lib/trade.ts receiveFrom, 30 ticks) and a craft, as the Runecraft step's stock rung does
 //   autoRobust   use robust for a giver that logged in after us (default true)
 //   open         K (default 5)
 //   keepTalisman keep the entry talisman (default false: dropped, as the scored account does,
@@ -25,6 +28,7 @@
 //   gapMs        wait after a frame before sending (default 0)
 //   cueDir       as altar-giver
 import type { BotWorldState, NearbyLoc, NearbyPlayer } from '../../sdk/types';
+import { receiveFrom } from '../lib/trade';
 import { tickMs } from '../lib/wait';
 import {
     canonName,
@@ -42,7 +46,7 @@ import {
     type ScoredAction,
     type Turn
 } from './altar-cue';
-import { altarData, count, ESSENCE, enterRoom, findAltar, findItem, inRoom, pos, restock, roomTiles, standOn, until, type RestockOptions, type Tile } from './altar-room';
+import { altarData, cheat, count, ESSENCE, enterRoom, findAltar, findItem, inRoom, isLocalServer, pos, restock, roomTiles, standOn, until, type RestockOptions, type Tile } from './altar-room';
 import { ensureOutOfTutorial } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
 
@@ -88,6 +92,15 @@ export function planTurns(batch: readonly Candidate[], T0: number, open: number)
     });
 }
 
+function rcLevel(st: BotWorldState | null | undefined): number {
+    return st?.skills.find(k => /runecraft/i.test(k.name))?.baseLevel ?? 1;
+}
+
+/** The blind schedule a batch is chosen for; stock turns pick their givers the same way. */
+function blindSchedule(s: Schedule | 'stock'): Schedule {
+    return s === 'stock' ? 'robust' : s;
+}
+
 export function histogram(xs: readonly (number | string)[]): Record<string, number> {
     const h: Record<string, number> = {};
     for (const x of xs) h[String(x)] = (h[String(x)] ?? 0) + 1;
@@ -97,7 +110,7 @@ export function histogram(xs: readonly (number | string)[]): Record<string, numb
 interface TurnLog {
     giver: string;
     T: number;
-    schedule: Schedule;
+    schedule: Schedule | 'stock';
     ok: boolean;
     craftTick: number | null;
 }
@@ -127,7 +140,7 @@ class Receiver {
             cycles: Number(r.cycles ?? 20),
             names: Array.isArray(r.givers) ? (r.givers as string[]) : undefined,
             batch: r.batch === undefined ? undefined : Number(r.batch),
-            schedule: (r.schedule === 'robust' ? 'robust' : 'tuned') as Schedule,
+            schedule: (r.schedule === 'robust' || r.schedule === 'stock' ? r.schedule : 'tuned') as Schedule | 'stock',
             autoRobust: r.autoRobust !== false,
             open: Number(r.open ?? DEFAULT_OPEN),
             keepTalisman: r.keepTalisman === true,
@@ -196,6 +209,11 @@ class Receiver {
         await ensureOutOfTutorial(ctx);
         await ctx.bot.dismissBlockingUI();
         if (ctx.sdk.getTradeState().isOpen) await ctx.sdk.sendDeclineTrade();
+        // A fresh lab account is Runecraft 1; the scored account brings the altar's level.
+        if (isLocalServer() && rcLevel(this.s) < this.altar.level) {
+            await cheat(ctx, `setstat runecraft ${this.altar.level}`);
+            await until(ctx, st => rcLevel(st) >= this.altar.level, 10);
+        }
         if (!inRoom(this.s, this.altar)) {
             const r = (ctx.options.restock ?? {}) as Partial<RestockOptions>;
             await restock(ctx, this.altar, { kind: 'bank', ...r, essence: 0 }, d => ctx.log('restock', { detail: d }));
@@ -237,7 +255,7 @@ class Receiver {
                     this.tradedAt.delete(s.account);
                 }
             }
-            batch = chooseBatch(statuses, this.s?.nearbyPlayers ?? [], this.me, { ...o, myLoggedInAt: this.loggedInAt, now: Date.now() });
+            batch = chooseBatch(statuses, this.s?.nearbyPlayers ?? [], this.me, { ...o, schedule: blindSchedule(o.schedule), myLoggedInAt: this.loggedInAt, now: Date.now() });
             // Everyone we wait for, or after two minutes whoever is there.
             if (batch.length >= wantN || (batch.length > 0 && Date.now() - waitStart > 120_000)) break;
             await Bun.sleep(250);
@@ -246,6 +264,7 @@ class Receiver {
         if (this.s?.dialog.isOpen) await ctx.bot.dismissBlockingUI();
         // Beacons are our recent frames: a receiver that starts in place may not have seen any yet.
         await until(ctx, () => this.frames.recent().length >= 4, 10);
+        if (o.schedule === 'stock') return this.stockTurns(batch);
 
         const now = this.s!.tick;
         // A virtual T for the first turn: its first packets go on frame T+K-1, at least three frames out.
@@ -264,7 +283,7 @@ class Receiver {
             const current: Candidate = c;
             await this.runTurn(turn, current, () => {
                 if (i + 1 >= (o.batch ?? Infinity) || this.turns.length + 1 >= o.cycles) return;
-                const ready = chooseBatch(readStatuses(o.dir), this.s?.nearbyPlayers ?? [], this.me, { ...o, myLoggedInAt: this.loggedInAt, now: Date.now() });
+                const ready = chooseBatch(readStatuses(o.dir), this.s?.nearbyPlayers ?? [], this.me, { ...o, schedule: blindSchedule(o.schedule), myLoggedInAt: this.loggedInAt, now: Date.now() });
                 const pick = ready.find(r => r.giver !== current.giver);
                 if (!pick) return;
                 next = { c: pick, turn: { giver: pick.giver, T: nextT, schedule: pick.schedule } };
@@ -296,6 +315,45 @@ class Receiver {
             if (n) turn = n.turn;
         }
         this.writer.stop(this.frames.recent());
+        await ctx.sdk.waitForTicks(4).catch(() => {});
+    }
+
+    /**
+     * The stock fallback over one batch: per giver, a stock turn in the cue with T three ticks
+     * ahead, a reacting receive, then the craft. Gaps are craft to craft within the batch.
+     */
+    private async stockTurns(batch: readonly Candidate[]): Promise<void> {
+        const { ctx } = this;
+        const o = this.o;
+        let prevCraft: number | null = null;
+        for (const c of batch) {
+            if (ctx.signal.aborted || this.turns.length >= o.cycles) break;
+            if (this.s?.dialog.isOpen) await ctx.bot.dismissBlockingUI();
+            const nCrafts = this.crafts.length;
+            const turn: Turn = { giver: c.giver, T: this.s!.tick + 3, schedule: 'stock' };
+            const written = this.writer.current?.stop ? [] : (this.writer.current?.turns ?? []);
+            this.writer.write({ beacons: this.frames.recent(), turns: [...written, turn], schedule: 'robust', open: o.open });
+            const r = await receiveFrom(ctx.sdk, c.giver, { want: [{ item: ESSENCE }], maxTicks: 30, openTimeoutMs: 30 * tickMs() });
+            if (r.ok) {
+                const level = rcLevel(this.s);
+                await ctx.sdk.sendInteractLoc(this.altarLoc.x, this.altarLoc.z, this.altarLoc.id, 1);
+                await until(ctx, () => this.crafts.length > nCrafts, 8);
+                // A level-up page opens when the craft's delay ends, about 4 ticks on, and makes us
+                // "busy" to the next giver's request: wait for it and answer it, as the run's step does.
+                if (rcLevel(this.s) > level && (await until(ctx, st => st.dialog.isOpen, 6))) await ctx.bot.dismissBlockingUI();
+            }
+            const ok = this.crafts.length > nCrafts;
+            const craftTick = ok ? this.crafts[this.crafts.length - 1]! : null;
+            this.turns.push({ giver: c.giver, T: turn.T, schedule: 'stock', ok, craftTick });
+            this.tradedAt.set(c.giver, Date.now());
+            const gap = craftTick !== null && prevCraft !== null ? craftTick - prevCraft : null;
+            if (gap !== null) this.gaps.push(gap);
+            prevCraft = craftTick;
+            ctx.log('turn', { giver: c.giver, schedule: 'stock', ok, gap, ...(r.ok ? { tradeTicks: r.ticks } : { reason: r.reason }) });
+            if (!ok) break;
+        }
+        this.writer.stop(this.frames.recent());
+        if (ctx.sdk.getTradeState().isOpen) await ctx.sdk.sendDeclineTrade();
         await ctx.sdk.waitForTicks(4).catch(() => {});
     }
 
