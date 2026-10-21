@@ -458,7 +458,7 @@ other drop table or quest reward has them.
 
 | Source | Ceiling | Measured on the demo (2026-10-21 UTC) |
 |---|---|---|
-| Cooking Guild spawn | 150/h for the only taker (12,000 ticks/h over 80) | **contested**: another player (Jackalopevin) camps the next tile. The first version got about 36/h. The racer (stand on the tile, poll every tick when due, raw pickup) holds **60/h**: cairn_h40, 60 grapes in its first hour, 107 of 167 respawns taken by the other camper |
+| Cooking Guild spawn | 150/h for the only taker (12,000 ticks/h over 80) | **contested**: another player (Jackalopevin) camps the next tile. The first version got about 36/h. The racer (stand beside the table the grape lies on, poll every tick when due, raw pickup) holds **60/h**: cairn_h40, 60 grapes in its first hour, 107 of 167 respawns taken by the other camper |
 | Phoenix Gang hideout spawn | 150/h for the only taker | Lab: 21 grapes in 0.25 h including joining the gang; camping alone it takes every respawn. Demo: cairn_h46 joined in about 11 minutes from Goblin Village (one Jonny kill), then **about 100/h** (30 grapes in its first 0.29 h, bank trips included); also contested, another player took 10 of the first 27 respawns |
 | Goblin Village, per account | 3/h at 1/128 | 360-440 kills per account-hour at combat about 25; 14 grapes in about 2,500 kills over four accounts (1 in 180), so 2-4/h per account |
 | Goblin Village, all players together | about 25/h | 21 goblins, 70-tick respawn: about 3,000 kills/h for the whole village. About 8 accounts saturate it; more accounts only take kills from each other and from other players |
@@ -517,8 +517,42 @@ Roles run like every rs/41 helper (`speedrun/helpers/role.ts`). Options:
   spawn: etiquette, and each spawn is a race) or `{"source":"goblins"}` (up to
   about 8 accounts in the village). The Phoenix camper joins the gang first and
   needs 20 coins for Baraek and enough combat for Jonny the Beard (level 2).
-  Both spawn campers bank at Varrock east.
+  The guild camper banks at Varrock west, the Phoenix camper at Varrock east.
   Optional `cooking` (default 35), `bankAt` (26), `fightLevel` (10).
+
+### Restarts
+
+The fleet restarts a role wherever its account happens to be, so `grapes`
+decides every cycle from what it observes, never from what an earlier run did
+(`situation` and `choosePhase` in `grapes.ts`, unit-tested in `grapes.test.ts`):
+
+- A camper that can camp camps: the guild source with its hat worn and the
+  Cooking it needs, and the Phoenix source when it is a member. Food, the
+  tutorial kit and the fight level gate only the phases that fight (chickens,
+  the hat hunt, goblins, Jonny the Beard), and Cooking gates only the guild.
+- Phoenix Gang membership is a varp the SDK does not expose. An account in the
+  spawn room (3232-3243, 9760-9773) is a member, because the members' door is
+  the only way in. Elsewhere, an account that can fight goes to camp and the
+  door decides: Straven stopping it marks it a non-member, which sends it to
+  the quest. One carrying Jonny's report goes straight back to Straven.
+- A phase that works on the surface first climbs out of the hideout or down out
+  of the guild.
+- A goblin camper restarted mid-fight finishes the goblin already on it
+  before it picks a new one.
+
+A failed cycle waits 5, 10, 20, ... ticks, capped at 200. After 5 failures in
+a row the role logs the phase `stuck` (with the phase it was trying and the
+error), which `fleetctl status` shows until a cycle succeeds again. `walkNear`
+does not retry a route the SDK's offline map calls unreachable (another plane)
+or blocked; other walk failures are retried 3, 6 and 12 ticks apart.
+
+Verified on the demo on 2026-10-21 (standalone, loopback gateway): cairn_h40
+(guild) restarted three times at its stand and once on the walk back from the
+bank, and cairn_h46 (Phoenix) twice at the spawn and once on the walk back from
+the bank. Every restart was camping within 1 to 17 s and took a grape after it.
+The fleet had sent h46, restarted at the spawn, to the chicken pen (no food,
+membership unknown), and h40 had been trying every tick to walk onto the
+table.
 - `jugs`: `{"target":600}`. It needs coins in its bank (a fresh account sells its
   starter kit for the first few).
 - `wine`: `{"acceptFrom":"^cairn_(h\\d+|mule\\d)$","receiver":"..."}` on the
@@ -578,8 +612,14 @@ Gotchas found on the demo:
 - Quest items go by their display names: the Shield of Arrav book shows as
   "Book" and Jonny the Beard's intelligence report as "Scroll", so the role
   matches them by id (757, 761).
-- The hideout grapes lie on a table (loc 595) that blocks their tile; a walk
-  to it fails as "destination tile is blocked", so the camper stands on
-  3237,9762 and picks up from there.
+- Both spawns' grapes lie on tables that block their tiles, so a walk to the
+  grape fails as "destination tile is blocked". In the hideout (loc 595) the
+  camper stands on 3237,9762. In the guild, bigtable (loc 594, rotated)
+  covers 3144,3449-3450, and the camper stands on 3143,3450.
+- The guild door's script moves the player through and puts an invisible wall
+  in the doorway while the door swings, also when another player passes. The
+  SDK's `openDoor` reports success once the door is gone, so the role instead
+  waits until it is inside the guild, and if the door is mid-swing it waits
+  and asks again.
 - The SDK's offline map treats doors as open, so a closed door shows up as "no
   path" or as a server walk that does not move.
