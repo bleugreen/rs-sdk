@@ -61,7 +61,7 @@ spent on the gift and the buyer runs rather than earning.
 |---|---|---|
 | Varrock guards with kebab runs (`auto` at 99) | **73,500** measured; about 88,000 between restocks | default |
 | Al-Kharid warriors | 57,300 measured | simplest, no travel |
-| Knights of Ardougne | not run; estimate about 120,000 | 50 gp on the same success curve as guards (1.67x), but a fresh account must cross White Wolf Mountain or take two boats, and Ardougne sells no cheap food, so it needs sharks (732-907 gp each on the GE, about 440 hp per hour eaten at 99, so about 16,000-20,000 gp of sharks an hour). The research route in docs/speedrun/skills/thieving.md is the starting point. |
+| Knights of Ardougne | not run; estimate 110,000-125,000 | 50 gp on the same success curve as guards (1.67x the guards' 73,500-88,000), but a fresh account must cross White Wolf Mountain or take two boats, and Ardougne sells no cheap food, so it needs sharks: 732-907 gp each on the GE, and the guard accounts ate about 450-500 hp an hour at 99 (110 kebabs in 0.9 h), so 16,000-23,000 gp of sharks an hour. The research route in docs/speedrun/skills/thieving.md is the starting point. |
 | Lumbridge men | about 4,000 at 99 | levelling only |
 | Rune essence sold into the GE bid | 80,000-95,000 (rs/46's trip time x 79 gp net) | competitive and needs only Rune Mysteries, but every essence sold is one the scored account's 4,200 does not get |
 | Coal or grapes into their bids | not run | the deepest bids on the server (coal 150 gp for 6.85M, grapes 1,000 for 99,591), but both are supply lines we need ourselves (market.md) |
@@ -109,8 +109,9 @@ eats, deaths and `gpPerTick`, plus `toll gate`, `kebabs`, `withdrew coins` and
 - **Accounts worth running:** any number up to the IP budget. Nine
   Al-Kharid warriors and six palace guards spawn (map files), and other players
   do not block a target (two bots on one knight both kept the 2-tick cadence in
-  the research lab), so 3-4 earners per spot is reasonable. Most players seen
-  near the Varrock palace and Al-Kharid were other bots; none interfered.
+  the research lab), so 3-4 earners per spot is reasonable. Other players'
+  presence at either spot was not measured; nothing in the runs suggested
+  interference (the rates were steady from cycle to cycle).
 - **Logging out.** Stop the role, then click logout (component 2458) out of
   combat; killing the lite client only drops the socket and leaves the account
   in the world for up to 1,000 ticks. `speedrun/lib/session.ts` `logoutClean`
