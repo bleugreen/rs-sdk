@@ -356,6 +356,16 @@ for (const kind of ['browser', 'lite'] as const) {
                 expect(f.bytes()).toEqual(resume(9230));
             });
 
+            test('a guard still refuses a blind click while a continue is in flight', async () => {
+                const f = continueFixture();
+                await f.receive(ServerProt.IF_OPENCHAT, 9230);
+                const guard = { pageId: f.snapshot().pageId, componentId: 9231 };
+                const action = { type: 'clickDialogOption' as const, optionIndex: 1, reason: 'test', blind: true, guard };
+                expect(f.executor.execute(action)).toMatchObject({ success: true });
+                expect(f.executor.execute(action)).toMatchObject({ success: false, reason: 'stale_dialog' });
+                expect(f.bytes()).toEqual(resume(9231));
+            });
+
             test('only a literal true lifts the latch', async () => {
                 const f = continueFixture();
                 await f.receive(ServerProt.IF_OPENCHAT, 9230);

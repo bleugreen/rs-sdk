@@ -1248,9 +1248,8 @@ export class BotSDK {
      * given, a varp set, an NPC spawned or moved, a teleport or cutscene).
      * Extra continues that reach a choice page are refused by the engine and
      * wasted. The click is not bound to a page (no guard), and a guarded
-     * second click would be rejected as stale anyway because the page
-     * signature includes the waiting state, so do not combine `blind` with
-     * `clickDialogByText()`.
+     * click is refused as stale while any continue is in flight, so do not
+     * combine `blind` with `clickDialogByText()`.
      *
      * @example
      * ```ts
