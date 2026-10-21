@@ -1,11 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { FakeSdk } from './fake-sdk';
+import { FakeSdk, flush } from './fake-sdk';
 import { loginTokenProof } from '../../server/webclient/login-token';
 import {
     LOGOUT_BUTTON,
     abandonClient,
     backoffMs,
     browserUrl,
+    logoutClean,
     mintLoginToken,
     openBrowserClient,
     parseBotEnv,
@@ -275,6 +276,52 @@ describe('abandonClient', () => {
         const { session, child } = fakeSession();
         await abandonClient(session, 50);
         expect(child.killed).toEqual(['SIGKILL']);
+    });
+});
+
+describe('logoutClean and the post-combat window', () => {
+    const combat = (lastDamageTick: number) => ({ player: { combat: { inCombat: false, targetIndex: -1, targetType: 'none', lastDamageTick } } as never });
+    /** A lite session whose child exits on the logout click; records the tick of the click. */
+    function atTick(tick: number, lastDamageTick: number) {
+        const f = fakeSession({ lastInWorldTick: tick });
+        f.sdk.state = { ...f.sdk.state!, tick, ...combat(lastDamageTick) };
+        const clicks: number[] = [];
+        f.sdk.onSend = (a, sdk) => {
+            if (a.method === 'sendClickComponent' && a.args[0] === LOGOUT_BUTTON) {
+                clicks.push(sdk.state!.tick);
+                f.child.exit(0);
+            }
+        };
+        return { ...f, clicks };
+    }
+
+    test('never damaged (lastDamageTick -1): the click goes out at once, even in the first 16 ticks', async () => {
+        const { session, clicks } = atTick(6, -1);
+        const r = await logoutClean(session, { timeoutMs: 1_000 });
+        expect(r.ok).toBe(true);
+        expect(r.clickTick).toBe(6);
+        expect(clicks).toEqual([6]);
+    });
+
+    test('a hit within 16 ticks waits out the window: the click is on hit + 17', async () => {
+        const { session, sdk, clicks } = atTick(100, 95);
+        const out = logoutClean(session, { timeoutMs: 1_000 });
+        for (let t = 101; t <= 111; t++) {
+            await flush();
+            sdk.tick();
+            expect(clicks).toEqual([]);
+        }
+        await flush();
+        sdk.tick(); // 112 = 95 + 16 + 1
+        const r = await out;
+        expect(clicks).toEqual([112]);
+        expect(r).toMatchObject({ ok: true, clickTick: 112 });
+    });
+
+    test('a hit longer ago than 16 ticks does not wait', async () => {
+        const { session, clicks } = atTick(100, 83);
+        expect((await logoutClean(session, { timeoutMs: 1_000 })).ok).toBe(true);
+        expect(clicks).toEqual([100]);
     });
 });
 

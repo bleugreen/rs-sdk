@@ -393,7 +393,9 @@ export async function logoutClean(session: Session, opts: { timeoutMs?: number }
     const s = sdk.getState();
     if (!s?.inGame) return { ok: false, clickTick: -1, lastInWorldTick: session.lastInWorldTick, latencyTicks: 0, wallMs: 0, reason: 'not in game' };
 
-    const combatTick = s.player?.combat?.lastDamageTick ?? -Infinity;
+    // lastDamageTick is -1 when the player was never hit (sdk/types.ts): no combat window to wait out.
+    const lastHit = s.player?.combat?.lastDamageTick ?? -1;
+    const combatTick = lastHit < 0 ? -Infinity : lastHit;
     if (s.player?.combat?.inCombat || s.tick - combatTick <= COMBAT_LOGOUT_TICKS) {
         const until = Math.max(s.tick, combatTick) + COMBAT_LOGOUT_TICKS + 1;
         await waitUntil(sdk, st => st.tick >= until && !st.player?.combat?.inCombat, { maxTicks: COMBAT_LOGOUT_TICKS + 30 });
