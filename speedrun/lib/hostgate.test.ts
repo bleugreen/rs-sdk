@@ -164,8 +164,10 @@ describe('gateDecision', () => {
         // A miss cost of 9 (a slip and restart): iron p > 0.93.
         expect(gateDecision(dist(14), wc).on).toBe(true);
         expect(gateDecision(dist(13), wc).on).toBe(false);
-        expect(gateDecision(dist(7), fly).on).toBe(true);
-        expect(gateDecision(dist(6), fly).on).toBe(false);
+        // fly's line is below one half, so spread the rest over three offsets
+        const spread = (a: number, b: number, c: number, d: number) => summarizeProbe([...Array(a).fill(1), ...Array(b).fill(2), ...Array(c).fill(3), ...Array(d).fill(4)]);
+        expect(gateDecision(spread(7, 5, 5, 3), fly)).toMatchObject({ on: true, p: 0.35 });
+        expect(gateDecision(spread(6, 5, 5, 4), fly)).toMatchObject({ on: false, p: 0.3 });
         expect(gateDecision(dist(19), mine).on).toBe(true);
         expect(gateDecision(dist(18), mine).on).toBe(false);
     });
