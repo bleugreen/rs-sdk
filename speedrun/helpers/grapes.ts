@@ -440,7 +440,7 @@ class Gatherer {
 
     /** The tutorial kit (bronze sword, wooden shield) is banked by skipTutorial: fetch and wear it once. */
     async ensureKit(): Promise<boolean> {
-        if (this.sdk.getEquipment().some(e => /bronze sword/i.test(e.name))) return true;
+        if (this.sdk.getEquipment().some(e => e.slot === WEAPON_SLOT)) return true;
         const inInv = this.sdk.getInventory().filter(i => /^(bronze sword|wooden shield)$/i.test(i.name));
         if (inInv.length) {
             for (const i of inInv) await this.bot.equipItem(i);
@@ -926,76 +926,87 @@ class Gatherer {
         if (r === 'low') await this.rest();
         if (r === 'killed' && this.s.kills % 25 === 0) this.ctx.log('goblins', summary(this.s));
     }
+
+    async runPhase(phase: Phase, bankAt: number): Promise<void> {
+        switch (phase) {
+            case 'camp-guild':
+                return this.camp(bankAt, this.guild);
+            case 'camp-phoenix':
+                try {
+                    await this.camp(bankAt, this.phoenix);
+                } catch (e) {
+                    if (!(e instanceof NotPhoenixMember)) throw e;
+                }
+                return;
+            case 'phoenix-quest':
+                return this.joinPhoenixGang();
+        }
+        await this.toSurface();
+        if (!(await this.ensureKit())) return;
+        switch (phase) {
+            case 'fetch-kit':
+                return;
+            case 'chickens':
+                return this.chickens();
+            case 'goblin-village':
+                return this.goblins(bankAt);
+            case 'hat-hunt':
+                return this.getHat();
+        }
+    }
 }
 
-/** Sources that fight before they gather: goblin campers, the Phoenix route (Jonny the Beard), and the guild camper's hat hunt. */
-function needsFight(source: string, g: Gatherer): boolean {
-    if (source === 'goblins') return true;
-    if (source === 'phoenix') return g.phoenixMember !== true;
-    return !g.wearingHat();
-}
 
 export const role: Role = {
     name: 'grapes',
     produces: [/^grapes$/i, /^jug of water$/i],
     async run(ctx) {
         await prepare(ctx);
-        const source = typeof ctx.options.source === 'string' ? ctx.options.source : 'guild';
+        const source = (typeof ctx.options.source === 'string' ? ctx.options.source : 'guild') as Source;
         const cooking = typeof ctx.options.cooking === 'number' ? ctx.options.cooking : 35;
         const bankAt = typeof ctx.options.bankAt === 'number' ? ctx.options.bankAt : 26;
         const fightLevel = typeof ctx.options.fightLevel === 'number' ? ctx.options.fightLevel : 10;
         if (!['guild', 'phoenix', 'goblins'].includes(source)) throw new Error(`grapes: unknown source '${source}'`);
         const g = new Gatherer(ctx);
-        ctx.log('start', { source, cooking: ctx.sdk.getSkill('Cooking'), hat: g.wearingHat() });
-        let errors = 0;
+        const first = situation(ctx.sdk, source, { cooking, fightLevel }, null);
+        ctx.log('start', { source, at: first.at, cooking: first.cooking, hat: first.hat, armed: first.armed, food: first.food, phoenixMember: first.phoenixMember, equipment: ctx.sdk.getEquipment().map(e => `${e.slot}:${e.name}`) });
+        let failures = 0;
+        let stuck = false;
         let phase = '';
         const levels = () => Object.fromEntries(['Attack', 'Strength', 'Defence', 'Hitpoints', 'Cooking'].map(s => [s, skillLevel(ctx.sdk, s)]));
-        const enter = (to: string) => {
-            if (to !== phase) ctx.log('phase', { from: phase || null, to, levels: levels(), hat: g.wearingHat(), ...summary(g.s) });
+        const enter = (to: string, extra: Record<string, unknown> = {}) => {
+            if (to !== phase) ctx.log('phase', { from: phase || null, to, ...extra, at: position(ctx.sdk), levels: levels(), hat: g.wearingHat(), ...summary(g.s) });
             phase = to;
         };
         while (!ctx.signal.aborted) {
             const cycleStart = tick(ctx.sdk);
+            let next: Phase | null = null;
             try {
                 await dismissDialogs(ctx.bot, ctx.sdk);
                 if (ctx.sdk.isBankOpen() || ctx.sdk.getState()?.shop?.isOpen) await ctx.bot.closeInterface();
-                const cookTo = source === 'guild' ? Math.max(32, cooking) : 0;
-                const fightReady = g.combatLevelOk(fightLevel) && invCount(ctx.sdk, COOKED_CHICKEN) >= 6;
-                if (source === 'guild' && g.wearingHat() && skillLevel(ctx.sdk, 'Cooking') >= cookTo) {
-                    enter('camp-guild');
-                    await g.camp(bankAt);
-                } else if (!(await g.ensureKit())) {
-                    enter('fetch-kit');
-                } else if (skillLevel(ctx.sdk, 'Cooking') < cookTo || (!fightReady && needsFight(source, g))) {
-                    enter('chickens');
-                    await g.chickens();
-                } else if (source === 'goblins') {
-                    enter('goblin-village');
-                    await g.goblins(bankAt);
-                } else if (source === 'phoenix') {
-                    if (g.phoenixMember === false) {
-                        enter('phoenix-quest');
-                        await g.joinPhoenixGang();
-                    } else {
-                        enter('camp-phoenix');
-                        try {
-                            await g.camp(bankAt, g.phoenix);
-                        } catch (e) {
-                            if (!(e instanceof NotPhoenixMember)) throw e;
-                        }
-                    }
-                } else {
-                    enter('hat-hunt');
-                    await g.getHat();
+                const s = situation(ctx.sdk, source, { cooking, fightLevel }, g.phoenixMember);
+                g.phoenixMember = s.phoenixMember;
+                next = choosePhase(s, g.kitTried);
+                // While stuck the phase stays 'stuck' until a cycle gets through.
+                if (!stuck) enter(next);
+                await g.runPhase(next, bankAt);
+                if (stuck) {
+                    stuck = false;
+                    enter(next, { recoveredAfter: failures });
                 }
-                errors = 0;
+                failures = 0;
                 // A cycle that changed nothing must not spin the loop.
                 if (tick(ctx.sdk) === cycleStart) await ctx.sdk.waitForTicks(1);
             } catch (e) {
                 if (ctx.signal.aborted) break;
-                errors++;
-                ctx.log('cycle error', { error: String(e), errors, at: position(ctx.sdk) });
-                await ctx.sdk.waitForTicks(Math.min(60, 3 * errors)).catch(() => {});
+                failures++;
+                const wait = retryDelayTicks(failures);
+                ctx.log('cycle error', { error: String(e), errors: failures, phase: next, at: position(ctx.sdk), retryInTicks: wait });
+                if (failures >= STUCK_AFTER && !stuck) {
+                    stuck = true;
+                    enter('stuck', { while: next, error: String(e) });
+                }
+                await ctx.sdk.waitForTicks(wait).catch(() => {});
             }
         }
         ctx.log('stopped', summary(g.s));

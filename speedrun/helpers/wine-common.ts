@@ -91,16 +91,29 @@ export async function dismissDialogs(bot: BotActions, sdk: BotSDK): Promise<void
     if (sdk.getState()?.dialog.isOpen) await bot.dismissBlockingUI();
 }
 
+/**
+ * Pathfinder verdicts from the SDK's offline collision map that no retry from the
+ * same tile can change: another plane (underground, upstairs) or a blocked tile.
+ */
+export function walkCannotSucceed(message: string): boolean {
+    return /unreachable|destination tile is blocked/i.test(message);
+}
+
+/** Walk to within `tolerance` of a ground-level tile: up to 4 tries, 3, 6 and 12 ticks apart; a hopeless route throws at once. */
 export async function walkNear(ctx: Pick<RoleContext, 'bot' | 'sdk' | 'log'>, x: number, z: number, tolerance = 3): Promise<void> {
     const here = position(ctx.sdk);
     if (Math.abs(here.x - x) <= tolerance && Math.abs(here.z - z) <= tolerance && here.level === 0) return;
+    let last = '';
     for (let attempt = 0; attempt < 4; attempt++) {
         const r = await ctx.bot.walkTo(x, z, tolerance, { timeout: 180_000 });
         if (r.success) return;
-        ctx.log('walk retry', { x, z, attempt, detail: r.message });
-        await ctx.sdk.waitForTicks(3);
+        last = r.message;
+        if (walkCannotSucceed(r.message)) break;
+        const wait = 3 * 2 ** attempt;
+        ctx.log('walk retry', { x, z, attempt, detail: r.message, retryInTicks: wait });
+        await ctx.sdk.waitForTicks(wait);
     }
-    throw new Error(`could not walk to ${x},${z}`);
+    throw new Error(`could not walk to ${x},${z} from ${JSON.stringify(position(ctx.sdk))}: ${last}`);
 }
 
 /** Open the nearest bank (walking to `at` first if no booth or banker is near). */
