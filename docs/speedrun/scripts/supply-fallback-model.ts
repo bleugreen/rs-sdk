@@ -56,7 +56,7 @@ if (on('prayer')) {
         }
         // Prayer 43 before TGV (S10a): best bones first, buried on the spot at 2 ticks each, 2n-1 (m: 11 bones 21 ticks)
         let x = 0, early = 0;
-        for (const k of ['dragon', 'baby', 'big'] as const) while (x < XP43 && early < used.dragon + used.baby + used.big && (k === 'dragon' ? used.dragon : k === 'baby' ? used.baby : used.big) > (k === 'dragon' ? early : k === 'baby' ? early - used.dragon : early - used.dragon - used.baby)) { x += BONE[k]; early++; }
+        for (const k of ['dragon', 'baby', 'big'] as const) for (let i = 0; i < used[k] && x < XP43; i++) { x += BONE[k]; early++; }
         const booth = Math.max(0, bones - STUN - early);
         const s10a = 2 * early - 1;
         const s25b = booth * BOOTH;
@@ -164,7 +164,6 @@ if (on('crafting')) {
     table(['Uncut diamonds held', 'Rest in rubies', 'Rest in emeralds', 'Rest in sapphires', 'Rest in the drop-table mix'], rows);
     const HL = Math.ceil(need / 35); // r, hard leather body 35 base
     console.log(`Hard leather bodies only: ${HL} bodies at 26 per ~7.5-tick inventory (i, crafting.md section 2) = ${f0(HL / 26 * 7.5)} ticks, ${sgn(HL / 26 * 7.5 - 121)}.\n`);
-    const tableDrops = (gems: number, d: number) => gems; void tableDrops;
     console.log(`Gem-table drops behind each plan (i): 364 diamonds alone = ${f0(364 * 64)} jewel-table drops (2 in 128); the mix needs ${f0(fill(0, mixXp) * 128 / 58)} drops for ${fill(0, mixXp)} gems.\n`);
 }
 
