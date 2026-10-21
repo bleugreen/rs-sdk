@@ -134,8 +134,10 @@ per published state:
 | 23 noted stacks | 29 | **8** (giver clock 10, 24 events) |
 
 In both cases the giver requested first and the receiver clicked after seeing
-the request, as a helper hand-off would run. Before rs/22, main measured stock
-at 14 and 56.
+the request, as a helper hand-off would run. The comparison is our giver and
+receiver against stock on both sides, so part of the receiver-clock gain comes
+from the giver offering everything in one burst. Before rs/22, main measured
+stock at 14 and 56.
 
 ## dialogue.ts
 
@@ -146,9 +148,18 @@ at 14 and 56.
   or the same id after it was seen waiting. A choice page needs `choose` and
   is answered with the guarded `clickDialogByText`, which refuses rather than
   mis-clicks if the page changed.
-- `continueBurst(sdk, k)` fires k `sendClickDialog(0, {blind: true})` at once
-  (rs/51). The server advances one page per continue synchronously, so k
-  pure continue pages cost ceil(k/5) ticks. **Contract:** the caller
+- `continueBurst(sdk, k, {until?})` fires k `sendClickDialog(0, {blind: true})`
+  at once (rs/51). The server advances one page per continue synchronously,
+  so k pure continue pages cost ceil(k/5) ticks when the burst lands within
+  one tick's budget. A burst fired mid-tick can split across server ticks,
+  and the client publishes once per tick (the pages inside a tick collapse
+  into one), so the burst returns only on the caller's `until` landing (say,
+  "on the choice page" or "closed"), or after one quiet tick (the same page,
+  not waiting, across a tick boundary past the floor). Returning earlier
+  would let the caller's next continue land behind still-buffered resumes,
+  one page past k. Pass `until` when the landing is known: it saves the
+  quiet tick. The result reports `landedTicks` and the confirmed `ticks`.
+  **Contract:** the caller
   guarantees the current page and the next k-1 are pure continue pages and
   that none follows a server-side state change. A burst never crosses a
   choice page (the engine refuses a bare resume while a choice is pending).
@@ -163,12 +174,21 @@ The blind flag is cairn://p/rs/51 (main PR #24).
 | `advance`, 10 pages (read-then-act) | 10: **1 per page** |
 | `continueBurst` k=5, fallback mode (pre-rs/51) | 5 |
 | `continueBurst` k=10, fallback mode (pre-rs/51) | 10 |
-| `continueBurst` k=5, burst mode (with rs/51) | **1** |
-| `continueBurst` k=10, burst mode (with rs/51) | **2** |
 
-The burst rows ran with rs/51's client and SDK diff applied on top of main @
-18b05c31 (the rs/51 branch tip 7255c41de, which merged as main PR #24),
-3 samples each. The other rows ran without it.
+Burst mode, with rs/51. Every sample checked the landing: k=10 ended on the
+choice page, and k=5 left exactly 5 continue pages before it (3 of 3 each).
+
+| Burst | Landed (ticks) | Confirmed (ticks) |
+|---|---|---|
+| k=5, quiet-tick confirm, fired on a tick boundary | **1** | 2 |
+| k=10, `until` choice page, fired on a tick boundary | **2** | **2** |
+| k=10, `until` choice page, fired mid-tick | 3 | 3 |
+| k=10, quiet-tick confirm, fired mid-tick | 3 | 4 |
+
+Fired mid-tick, the 10 events split across three server ticks: that is the
+case the quiet-tick rule guards against. The burst rows ran with rs/51's
+client and SDK diff applied on top of main @ 18b05c31 (the rs/51 branch tip
+7255c41de, which merged as main PR #24). The other rows ran without it.
 
 ## levelup.ts
 
@@ -179,7 +199,9 @@ tick, so `startLevelUpWatcher` arms when a skill's base level rises and sends
 one continue per fresh continue page for the next few ticks; after each
 dismissal it stays armed for 3 ticks to catch the unlock pages. The level-up
 text in `recentDialogs` is a backup signal (`dialog.text` is never filled
-in). Choice pages are never touched. An NPC continue page that opens within
+in), and it only counts while that history entry is at most 4 ticks old: the
+lite client records an entry only when the chat modal id changes, so an old
+level-up entry can sit at the head of the history long after its dialog closed. Choice pages are never touched. An NPC continue page that opens within
 the armed window would be clicked too, so don't wrap a loop that starts a
 conversation right after leveling.
 
@@ -224,13 +246,15 @@ level with and without the watcher) has not been measured yet.
 
 | Measurement (`lab/measure-session.ts`) | Result |
 |---|---|
-| Logout click to not in world | **0 ticks**: last in-world tick = click tick (3 of 3) |
+| Logout click to not in world | **0 ticks** as the client sees it: the last in-world tick is the tick the click was sent in (3 of 3); the server applies the click while processing the next tick, and no state for that tick is published |
 | Re-login after a clean logout, wall time (free) | 4.4-6.0 s, 1 attempt each |
 | Watchdog: `kill -9` the lite runner mid-world, to playing again | 3.5-4.1 s; exit noticed in 0.1-0.2 s; 1 relaunch each |
 | Ticks the dropped player stays in the world meanwhile | about 12-14 (wall time / 300 ms) |
 
 **Crash recovery.** A fresh login is accepted while the dropped player is still
-in the world, on the first attempt, in all 3 samples. The engine's takeover
+in the world, on the first attempt, in all 3 samples (judged by the new lite
+runner logging in and its tick advancing in the world; the raw login response
+code was not captured). The engine's takeover
 path (`World.ts`, "kick the existing session and transfer their state to the
 new login") removes the old player and loads the new login from its live
 state; the account came back on the same tile. So a crash costs about the
@@ -300,8 +324,9 @@ LAB_HELPERS=srlab2 LAB_BOTS=srlab3 speedrun/lab/lab.sh srlab1 \
 ```
 
 `LOCAL_STAFF_LEVEL` (engine, `Environment.ts`) grants that staff level to
-every login when there is no login server. It defaults to 0; production uses
-the login server and never reaches that path.
+every login on a world without a login server. Non-production worlds,
+including a public one run that way, take that path, so set it only on a
+private lab engine. It defaults to 0, which grants nothing.
 
 ## Re-run list
 
