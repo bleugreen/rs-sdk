@@ -1,7 +1,8 @@
 // Run a helper role on the lab for a while, after staff-command fixtures.
 //
 //   LAB_PORTS="9540 9541 9542 44540 8540" speedrun/lab/lab.sh <bot> \
-//     'speedrun/lab/role-smoke.ts:--role=grapes:--secs=600:--options={"source":"guild"}:--cheats=setstat cooking 35;tele 0,49,53,15,58'
+//     'speedrun/lab/role-smoke.ts:--role=grapes:--secs=600:--cheats=setstat cooking 35;tele 0,49,53,15,58'
+// with ROLE_OPTIONS='{"source":"guild"}' in the environment (or --options=... when it has no ':').
 //
 // --cheats is a ';'-separated list of staff commands without '::'. Prints the
 // role's log lines and bank snapshots, then the final inventory and position.
@@ -15,7 +16,8 @@ import { cheat } from './setup';
 const name = botArg();
 const roleName = arg('role', '');
 const secs = Number(arg('secs', '300'));
-const options = JSON.parse(arg('options', '{}')) as Record<string, unknown>;
+// lab.sh splits script arguments on ':', so JSON options can also come from ROLE_OPTIONS.
+const options = JSON.parse(arg('options', process.env.ROLE_OPTIONS ?? '{}')) as Record<string, unknown>;
 const s = await openSession(name);
 const log = (message: string, data?: Record<string, unknown>) => console.log(JSON.stringify({ t: s.sdk.getState()?.tick, message, ...data }));
 await prepare({ bot: s.bot, sdk: s.sdk, log });
