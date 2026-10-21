@@ -37,3 +37,8 @@ server/engine/data/market.sqlite*
 
 # Dashboard state is live host data, not source.
 /dashboard-max/data/
+
+# Helper fleet runtime state on the fleet host (speedrun/helpers/fleet.ts).
+/fleet.json
+/stockpile.json
+/fleet-run/
