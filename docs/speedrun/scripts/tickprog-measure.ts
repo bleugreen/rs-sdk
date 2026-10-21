@@ -193,9 +193,12 @@ await runScript(async ({ bot: actions, sdk }) => {
             if (!DEMO) {
                 await say(`::setstat agility ${num('level', 99)}`);
                 await say(`::setstat hitpoints ${num('hp', 99)}`);
-                if (flag('cakes')) {
+                if (flag('defence')) await say(`::setstat defence ${num('defence', 1)}`);
+                if (flag('prayer')) await say(`::setstat prayer ${num('prayer', 1)}`);
+                if (flag('cakes') || flag('sharks')) {
                     await clearInventory();
                     for (let i = 0; i < num('cakes', 0); i++) await say('::give cake 1');
+                    for (let i = 0; i < num('sharks', 0); i++) await say('::give shark 1');
                 }
                 const [x, z] = flag('start') ? (flag('start')!.split(',').map(Number) as [number, number]) : start[course]!;
                 await tele(teleSpec(x, z), x, z);
@@ -206,6 +209,8 @@ await runScript(async ({ bot: actions, sdk }) => {
             if (flag('eat-below')) params.eatBelow = num('eat-below', 0);
             if (flag('food')) params.food = flag('food');
             if (flag('pause-for')) params.pauseFor = flag('pause-for');
+            if (flag('protect')) params.protect = flag('protect');
+            if (flag('flick-gap')) params.flickGap = num('flick-gap', 4);
             const t0 = sdk.getState()!.tick;
             const end = await runProgram(sdk, 'agility', params, { onProgress: progress });
             console.log(`agility: ${end.tick - t0} ticks from the start call to the end; hp ${sdk.getState()?.player?.hp}/${sdk.getState()?.player?.maxHp}`);
