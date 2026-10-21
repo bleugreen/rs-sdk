@@ -109,7 +109,7 @@ const lines: [string, number, number, number, number, number, number][] = [
     ['Fletching + Crafting + Cooking + Herblore (54)', 341, 277, 341, 277, 341, 277],
     ['Overhead (55)', 1483, 1462, 1483, 1462, 1483, 1462],
     ['Contention, retries, boundary idle (56)', 400, 0, 400, 0, 400, 0],
-    ['Demo latency and overrun (57)', 800, 0, 449, 0, 449, 0],
+    ['Demo latency and overrun (57)', 800, 0, 450, 0, 450, 0],
 ];
 const col = (i: number) => lines.reduce((s, l) => s + (l[i] as number), 0);
 console.log(`section 7 table sums: knife on ${col(1)} / ${col(2)}; knife off ${col(3)} / ${col(4)}; with rs/162 ${col(5)} / ${col(6)}`);
