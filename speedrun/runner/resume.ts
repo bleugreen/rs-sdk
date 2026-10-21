@@ -27,7 +27,7 @@ import type { Session } from '../lib/session';
 import { tickSpan, type TickLog } from '../lib/ticks';
 import { currentTick, nextTick, sleep, tickMs } from '../lib/wait';
 import { Fence } from './fence';
-import { runSteps, type Observed, type RunnerSession, type RunStepsOptions, type RunStepsResult, type Step } from './step';
+import { resolveStart, runSteps, type Observed, type RunnerSession, type RunStepsOptions, type RunStepsResult, type Step } from './step';
 
 export type Probe = (session: RunnerSession) => Promise<unknown>;
 
@@ -91,7 +91,7 @@ export async function resolveResume<C>(steps: ReadonlyArray<Step<C>>, obs: Obser
         await obs.ensure(s.probes);
         if (s.inProgress?.(obs, c)) return point(j, 'resume', `${s.name} is in progress`);
         const pre = s.preconditions(obs.state, c);
-        if (pre === true) return point(j, 'run', `${s.name} can start${j < firstUndone && j !== top ? '' : ''}`);
+        if (pre === true) return point(j, 'run', `${s.name} can start`);
         why.push({ step: s.name, why: pre });
     }
     throw new ResumeError(why, lastDone, firstUndone);
@@ -221,7 +221,6 @@ export async function runResumable<C>(session: RunnerSession, steps: ReadonlyArr
             const obs = new Observation(state, opts.probes, session);
             let point: ResumePoint;
             if (attempt === 1 && opts.from !== undefined) {
-                const { resolveStart } = await import('./step');
                 const index = resolveStart(steps, opts.from);
                 point = { index, mode: 'run', step: steps[index]?.name ?? null, lastDone: -1, firstUndone: -1, reason: 'operator --from', observed: obs };
             } else {
