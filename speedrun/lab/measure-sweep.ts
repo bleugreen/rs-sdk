@@ -144,7 +144,8 @@ async function probeTickets() {
         await waitTicks(sdk, 2);
     }
     if (!helperName) { result('tickets trade', { skipped: 'no --helper' }); return; }
-    const helper = await openSession(helperName);
+    // the helper gets its own client from this script (lab.sh LAB_BOTS, no runner), so a relog never races a second client
+    const helper = await openSession(helperName, { launch: true });
     await ensureTabs(helper);
     for (let n = 0; n < N; n++) {
         await teleTo(helper, JACKIE.x + 1, JACKIE.z);
@@ -157,9 +158,10 @@ async function probeTickets() {
         const them = sdk.getState()!.nearbyPlayers.find(p => p.name.toLowerCase().replace(/[ _]/g, '') === helper.name.toLowerCase().replace(/[ _]/g, ''));
         if (!me || !them) { result('tickets trade', { error: 'players not visible' }); break; }
         fire('req h', helper.sdk.sendTradeRequest(me.index));
-        await waitTicks(sdk, 2);
+        const asked = await waitUntil(sdk, s => s.gameMessages.some(m => m.type === 4), { maxTicks: 10 });
         fire('req m', sdk.sendTradeRequest(them.index));
         const open = await waitUntil(helper.sdk, s => !!s.trade?.isOpen, { maxTicks: 15 });
+        result('tickets trade open', { mainSawRequest: asked.ok, open: open.ok, helperMsgs: helper.sdk.getState()!.gameMessages.slice(-3).map(m => `${m.type}:${m.text}`), mainMsgs: sdk.getState()!.gameMessages.slice(-3).map(m => `${m.type}:${m.text}`) });
         const hs = helper.sdk.getState()!;
         const ticket = items(hs, /agility arena ticket/i)[0];
         const coins = items(hs, /^coins$/i)[0];
