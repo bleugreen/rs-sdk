@@ -514,20 +514,20 @@ best -226:
 
 | Change | Expected | Best | Source |
 |---|---|---|---|
-| Prayer: the bones ride S07 (742 / 583 to 110 / 80) | -632 | -503 | BPÂ§6 |
-| Legs measured, no glory, S17 last (1,032 to 1,382) | +350 | +350 | RTÂ§2, Â§4 |
-| Level-ups: allowances 149 e to 25 i (best 0 to 15), and the model releases in S07 (-70) and S09 (-18) | -212 | -73 | LUÂ§4, Â§6 |
-| S18 one measured row (Thieving +25 / -42), v1's top-ups (48 / 40) now inside it | -23 | -82 | SPÂ§11 |
-| Fletching inside S18, measured (20 / 5 to 0) | -20 | -5 | SPÂ§3 |
-| Other hand-offs outside the figures (50 to 47) and H1 (best 4 to 8) | -3 | +1 | RTÂ§3 |
-| Wine windows cut gems | -30 | -36 | WWÂ§5 B |
+| Prayer: the bones ride S07 (742 / 583 to 110 / 80) | -632 | -503 | BP§6 |
+| Legs measured, no glory, S17 last (1,032 to 1,382) | +350 | +350 | RT§2, §4 |
+| Level-ups: allowances 149 e to 25 i (best 0 to 15), and the model releases in S07 (-70) and S09 (-18) | -212 | -73 | LU§4, §6 |
+| S18 one measured row (Thieving +25 / -42), v1's top-ups (48 / 40) now inside it | -23 | -82 | SP§11 |
+| Fletching inside S18, measured (20 / 5 to 0) | -20 | -5 | SP§3 |
+| Other hand-offs outside the figures (50 to 47) and H1 (best 4 to 8) | -3 | +1 | RT§3 |
+| Wine windows cut gems | -30 | -36 | WW§5 B |
 | Boundary idle (75 to 0) | -75 | 0 | #92 |
-| Combat: mithril scimitar, no glory, the bow | +41 | -19 | SFÂ§10-Â§11; rs/124 |
-| S26 armour from Scavvo | +25 | +20 | SFÂ§12 |
-| S04 ring loads by trade (3; H1 has no room) | +12 | +12 | RTÂ§3 |
-| The enchant walk ride dropped from best (v1's best had -107) | 0 | +107 | RTÂ§5 |
+| Combat: mithril scimitar, no glory, the bow | +41 | -19 | SF§10-§11; rs/124 |
+| S26 armour from Scavvo | +25 | +20 | SF§12 |
+| S04 ring loads by trade (3; H1 has no room) | +12 | +12 | RT§3 |
+| The enchant walk ride dropped from best (v1's best had -107) | 0 | +107 | RT§5 |
 | The claim at 8 m (6 m before) | +2 | +2 | ARC |
-| Demo restarts | +10 | 0 | RESÂ§2 |
+| Demo restarts | +10 | 0 | RES§2 |
 | **Net** | **-555** | **-226** | |
 
 **Main's tally row 59 (about 36,690) double-counts the legs.** It added rs/104's 1,365 uncounted legs
