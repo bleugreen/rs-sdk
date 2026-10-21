@@ -458,8 +458,9 @@ Measured on the browser overlay path (rs/95, Ashburn eastus2, 04:27-04:37, in th
 above; knife woodcutting with the gate off, normal trees west of Lumbridge castle, Woodcutting
 33-64): 127 logs at 15.55 ticks per log, **8.28 ticks per expected roll**, against rs/62's 5.44
 (knife) and 5.67 (plain) from bbs. 210 arrow shafts were fletched, a sign of starter bundles split
-across ticks (section 6). In an overrun minute, through the overlay, the knife is far worse than
-plain, which is what the gate is for.
+across ticks (section 6). **Control pending:** rs/95 is adding a plain-woodcutting control in the
+same session, so how much of the gap is the overlay and the overrun minute, rather than the trees
+and levels, is not yet known.
 
 Overruns therefore matter for the knife as well: in a minute like 04:13 even the in-page direct
 path falls under Woodcutting's line. That is what the steadiness check in the run-night gate
