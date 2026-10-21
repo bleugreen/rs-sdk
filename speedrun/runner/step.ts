@@ -19,6 +19,7 @@
 
 import type { BotWorldState } from '../../sdk/types';
 import type { Session } from '../lib/session';
+import { startRunTickMonitor, type TickMonitorSetting } from '../lib/tick-monitor';
 import { measure, tickSpan, type TickLog } from '../lib/ticks';
 import { currentTick, nextTick, tickMs, type StateSource } from '../lib/wait';
 import { meterDispatch, TickWindow, type WindowSnapshot } from './budget';
@@ -100,6 +101,12 @@ export interface RunStepsOptions<C> {
     observed?: Observed;
     /** Checked before each step and before a stop's logout: once aborted, return without starting anything. */
     signal?: AbortSignal;
+    /**
+     * The in-run tick-cadence monitor (lib/tick-monitor.ts), on by default for the call: a
+     * `tickmon` row per minute in `log`. false turns it off (runResumable runs one across its
+     * attempts instead); an object overrides its thresholds.
+     */
+    tickMonitor?: TickMonitorSetting;
 }
 
 export interface RunStepsResult {
@@ -185,6 +192,7 @@ export async function runSteps<C>(session: RunnerSession, steps: ReadonlyArray<S
     const window = new TickWindow(currentTick(sdk), sdk.getStateReceivedAt?.() || Date.now());
     const unsubscribe = sdk.onStateUpdate(s => window.observe(s.tick, Date.now()));
     const unmeter = meterDispatch(sdk, window);
+    const monitor = startRunTickMonitor(session, opts.log, opts.tickMonitor);
     try {
         let boundary = openBoundary(session, '(start)');
         for (let i = start; i < steps.length; i++) {
@@ -239,6 +247,7 @@ export async function runSteps<C>(session: RunnerSession, steps: ReadonlyArray<S
         if (start < steps.length) closeBoundary(opts.log, session, boundary, '(end)', steps.length);
         return { completed: steps.length - start };
     } finally {
+        monitor?.stop();
         unmeter();
         unsubscribe();
         if (installed) process.off('SIGINT', onSigint);

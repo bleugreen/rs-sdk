@@ -24,6 +24,7 @@
 
 import type { BotWorldState } from '../../sdk/types';
 import type { Session } from '../lib/session';
+import { startRunTickMonitor } from '../lib/tick-monitor';
 import { tickSpan, type TickLog } from '../lib/ticks';
 import { currentTick, nextTick, sleep, tickMs } from '../lib/wait';
 import { Fence } from './fence';
@@ -227,6 +228,8 @@ function row(log: TickLog, session: RunnerSession, step: string, startTick: numb
 export async function runResumable<C>(session: RunnerSession, steps: ReadonlyArray<Step<C>>, opts: ResumableOptions<C>): Promise<ResumableResult> {
     const fence = new Fence();
     const unfence = fence.install(session.sdk);
+    // One monitor across every attempt, so its minutes run on through a drop.
+    const monitor = startRunTickMonitor(session, opts.log, opts.tickMonitor);
     const points: Omit<ResumePoint, 'observed'>[] = [];
     let drops = 0;
     try {
@@ -260,7 +263,7 @@ export async function runResumable<C>(session: RunnerSession, steps: ReadonlyArr
                 ...(s.resume ? { resume: (ctx: Parameters<Step<C>['run']>[0]) => ((running = i), s.resume!.call(s, ctx)) } : {}),
             }));
             const run = fence
-                .run(a, () => runSteps(session, tracked, { ...opts, from: point.index, startMode: point.mode === 'resume' ? 'resume' : 'run', observed: point.observed, signal: a.signal }))
+                .run(a, () => runSteps(session, tracked, { ...opts, tickMonitor: false, from: point.index, startMode: point.mode === 'resume' ? 'resume' : 'run', observed: point.observed, signal: a.signal }))
                 .then(r => ({ result: r }) as const, (e: unknown) => ({ error: e }) as const);
             const first = await Promise.race([run, lost]);
             watch.abort();
@@ -293,6 +296,7 @@ export async function runResumable<C>(session: RunnerSession, steps: ReadonlyArr
             opts.onEvent?.({ kind: 'restored', attempt, wallMs: Date.now() - r0 });
         }
     } finally {
+        monitor?.stop();
         unfence();
     }
 }
