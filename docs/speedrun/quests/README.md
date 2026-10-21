@@ -458,12 +458,12 @@ applied above; each needs a decision.
    11,000 (or the protect prayers it gates) to be worth ~550 ticks of helper-fed bone
    training. rs/28's Prayer rate is not published.
 3. **Quest-point count.** `quest_points.md` and `dragon_slayer.md` say the plan has 46-49
-   QP. That total includes quests now off the route. The on-route set has **26** (21 without
+   QP. That total includes quests now off the route. The on-route set has **26** (20 without
    MM, Tree Gnome Village and Dwarf Cannon). No gate binds while Dragon Slayer is off, but
    any QP-gated quest would now need filler.
 4. **No-MM Dragon Slayer.** `dragon_slayer.md`'s "+1,545 if MM is dropped" leaves out the
    Hitpoints caveat that the document itself raises. Without MM, Hitpoints binds, so its
-   Strength and Defence replace ~0, and it would also need ~11 QP of filler. It stays off in
+   Strength and Defence replace ~0, and it would also need ~12 QP of filler. It stays off in
    both scenarios. In the same way, `ranged.md`'s no-MM "cannon in parallel, ~1,040 ticks"
    leaves out that cannon xp gives no Hitpoints.
 5. **Stale rate assumptions in older documents.** `monkey_madness.md`, `tree_gnome_village.md`,
