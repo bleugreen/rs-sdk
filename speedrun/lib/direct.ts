@@ -172,28 +172,33 @@ export async function logoutDirect(s: DirectLogoutTarget, opts: DirectLogoutOpti
         if (s.client.clickComponent(LOGOUT_BUTTON)) clicks++;
         s.client.flush();
         const sent = label();
-        await until(s, () => end !== null || label() >= sent + retryTicks, deadline);
+        const timedOut = await until(s, () => end !== null || label() >= sent + retryTicks, deadline);
         if (end) return verdict(end, clicks);
+        // a timer can fire before performance.now() reaches the deadline: trust the timeout, not the clock
+        if (timedOut) break;
     }
     return result(null, clicks, `still in the world after ${Math.round(performance.now() - t0)} ms`);
 }
 
-/** Resolve once `done()` holds after a tick or the session's end, or at `deadline`. */
-function until(s: DirectLogoutTarget, done: () => boolean, deadline: number): Promise<void> {
-    return new Promise<void>(resolve => {
-        if (done()) return resolve();
+/**
+ * Resolve once `done()` holds after a tick or the session's end, or at `deadline`. Resolves
+ * true when it ended at the deadline.
+ */
+function until(s: DirectLogoutTarget, done: () => boolean, deadline: number): Promise<boolean> {
+    return new Promise<boolean>(resolve => {
+        if (done()) return resolve(false);
         let settled = false;
-        const finish = () => {
+        const finish = (timedOut: boolean) => {
             if (settled) return;
             settled = true;
             clearTimeout(timer);
             offTick();
-            resolve();
+            resolve(timedOut);
         };
         const check = () => {
-            if (done()) finish();
+            if (done()) finish(false);
         };
-        const timer = setTimeout(finish, Math.max(0, deadline - performance.now()));
+        const timer = setTimeout(() => finish(true), Math.max(0, deadline - performance.now()));
         const offTick = s.sdk.onStateUpdate(check);
         // after logoutDirect's own then() on ended, so `end` is set when check runs
         void s.ended.then(() => queueMicrotask(check));
