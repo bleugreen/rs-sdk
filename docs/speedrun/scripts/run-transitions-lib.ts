@@ -333,6 +333,8 @@ export interface WalkOpts {
     stopWhen?: (s: BotWorldState) => boolean;
     /** Enchant while walking: cast every 3 ticks, never in a walk click's tick. */
     cast?: () => Promise<boolean>;
+    /** Eat a shark below 15 hp (Wilderness legs at the route's low Defence). */
+    eat?: boolean;
 }
 
 /**
@@ -356,6 +358,7 @@ export async function walk(ctx: Ctx, dest: { x: number; z: number }, o: WalkOpts
         if (tick(sdk) - start > maxTicks) throw new Error(`walk to ${dest.x},${dest.z} exceeded ${maxTicks} ticks at ${JSON.stringify(pos(sdk))}`);
         const p = pos(sdk);
         if (p.x !== lastPos.x || p.z !== lastPos.z) { lastPos = p; lastMove = t; }
+        if (o.eat && t !== clickTick) await eatIfLow(ctx);
         let needClick = target === null || (!final && cheb(p, target) <= lead);
         if (!needClick && t - lastMove >= 3 && t - clickTick >= 3) {
             // stalled: door, web, or a combat interruption
