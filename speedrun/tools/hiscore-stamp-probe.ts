@@ -200,12 +200,28 @@ async function boardAfterLogout(log: ProbeLog, before: BoardRow[], ms: number): 
     log.write('board', { label: 'after-logout', changed: !same(rows, before), waitedMs: Date.now() - t0, rows: rows.map(r => ({ c: r.category, name: r.name, level: r.level, ticks: r.ticks })) });
 }
 
+/**
+ * A login soon after a logout can be accepted and then dropped before the first
+ * tick (session.ts, login); the lite child then exits. Back off and launch again.
+ */
+async function openWithRetry(botName: string, log: ProbeLog): Promise<Session> {
+    for (let attempt = 1; ; attempt++) {
+        try {
+            return await openSession(botName, { client: 'lite', launch: true, readyTimeoutMs: 60_000 });
+        } catch (err) {
+            log.write('login-failed', { attempt, error: String(err) });
+            if (attempt >= 4) throw err;
+            await sleep(20_000 * attempt);
+        }
+    }
+}
+
 async function live(botName: string, phase: string): Promise<void> {
     const log = new ProbeLog(process.env.PROBE_LOG ?? join(ROOT, 'speedrun', 'runs', `hiscore-probe-${botName}.jsonl`), botName, phase);
     const before = present(await fetchPlayer(botName).catch(() => null));
     log.write('board', { label: 'before-login', rows: before });
 
-    const session = await openSession(botName, { client: 'lite', launch: true });
+    const session = await openWithRetry(botName, log);
     const s0 = session.sdk.getState()!;
     log.write('login', { tick: s0.tick, pos: s0.player && { x: s0.player.worldX, z: s0.player.worldZ }, skills: skillLevels(s0), inv: s0.inventory.map(i => i.name), worn: s0.equipment.map(i => i.name), modal: s0.modalOpen, dialog: s0.dialog.isOpen });
     const stopWatch = watchLevels(session, log);
