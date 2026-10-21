@@ -40,6 +40,10 @@ export default abstract class GameShell {
     protected tfps: number = 50;
     private absMouseX: number = 0;
     private absMouseY: number = 0;
+    /** rs-sdk: ends the run loop's current sleep early (wake). */
+    private wakeSleep: (() => void) | null = null;
+    /** rs-sdk: a wake came while no sleep was pending; the next one returns at once. */
+    private wakePending: boolean = false;
 
     private readonly resizeHandler = (): void => {
         if (this.resizeToFit) {
@@ -50,6 +54,43 @@ export default abstract class GameShell {
     private readonly touchEndHandler = (e: TouchEvent): void => {
         e.preventDefault();
     };
+
+    /**
+     * rs-sdk: start the next frame now instead of when the run loop's sleep ends.
+     * The client decodes server packets at the start of a game-loop pass, so the
+     * game socket calls this as each message arrives: the tick is decoded,
+     * published and reacted to on arrival rather than up to a frame later, and
+     * without waiting on a timer, which a background tab throttles. A wake that
+     * comes while a pass is running makes the next sleep return at once. run()
+     * paces itself from measured frame times, so an early frame moves the loop's
+     * phase, not its rate.
+     */
+    protected wake(): void {
+        const resolve = this.wakeSleep;
+        if (resolve) {
+            this.wakeSleep = null;
+            resolve();
+        } else {
+            this.wakePending = true;
+        }
+    }
+
+    private async nap(ms: number): Promise<void> {
+        if (this.wakePending) {
+            this.wakePending = false;
+            return;
+        }
+        await new Promise<void>(resolve => {
+            const timer = setTimeout(() => {
+                this.wakeSleep = null;
+                resolve();
+            }, ms);
+            this.wakeSleep = () => {
+                clearTimeout(timer);
+                resolve();
+            };
+        });
+    }
 
     protected async maininit() { }
     protected mainquit() { }
@@ -180,7 +221,7 @@ export default abstract class GameShell {
                 delta = this.mindel;
             }
 
-            await sleep(delta);
+            await this.nap(delta);
 
             while (count < 256) {
                 this.mouseClickButton = this.nextMouseClickButton;
@@ -206,7 +247,7 @@ export default abstract class GameShell {
             if (this.tfps < 50) {
                 const tfps: number = 1000 / this.tfps - (performance.now() - ntime);
                 if (tfps > 0) {
-                    await sleep(tfps);
+                    await this.nap(tfps);
                 }
             }
 

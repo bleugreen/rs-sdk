@@ -4204,6 +4204,8 @@ export class Client extends GameShell {
             const world = worldEndpoint();
             this.stream = new ClientStream(await ClientStream.openSocket(world.host, world.secured));
             this.flushError = null;
+            // Decode each server message when it arrives: wake the run loop for a pass now.
+            this.stream.onReceive(() => this.wake());
 
             const userhash = JString.toUserhash(username);
             const loginServer = Number(userhash >> 16n) & 0x1f;
@@ -4541,6 +4543,9 @@ export class Client extends GameShell {
         }
 
         await this.drainPackets();
+        // rs-sdk: what the decoded-tick callback wrote (an in-page program's
+        // reaction) leaves now rather than after the rest of this pass.
+        this.flushNow();
 
         const now = performance.now();
 
