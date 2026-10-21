@@ -71,7 +71,7 @@ interface Method {
 }
 
 const METHODS: Record<string, Method> = {
-    wc: { skill: 'woodcutting', tele: '0,48,50,15,34', give: [['rune_axe', 1]], kind: 'loc', target: /^willow/i, option: /^chop/i, product: /logs$/i, clickOnRoll: false, r0: 3 },
+    wc: { skill: 'woodcutting', tele: '0,48,50,15,34', give: [['rune_axe', 1]], kind: 'loc', target: /^willow/i, option: /^chop/i, product: /^willow logs$/i, clickOnRoll: false, r0: 3 },
     fly: { skill: 'fishing', tele: '0,48,53,31,38', give: [['fly_fishing_rod', 1], ['feather', 5000]], kind: 'npc', target: /^fishing spot$/i, option: /^lure$/i, product: /^raw /i, clickOnRoll: false, r0: 4 },
     cage: { skill: 'fishing', tele: '0,44,53,34,41', give: [['lobster_pot', 1]], kind: 'npc', target: /^fishing spot$/i, option: /^cage$/i, product: /^raw /i, clickOnRoll: true, r0: 4 }
 };
@@ -108,6 +108,7 @@ await runScript(async ({ bot, sdk }) => {
 
     type Target = { kind: 'loc'; x: number; z: number; id: number; op: number } | { kind: 'npc'; index: number; op: number; x: number; z: number };
     let current: Target | null = null;
+    let packetsSent = 0;
 
     const skillXp = (s: BotWorldState) => s.skills.find(k => k.name.toLowerCase() === method.skill)?.experience ?? 0;
 
@@ -139,6 +140,7 @@ await runScript(async ({ bot, sdk }) => {
 
     const fire = (tick: number, what: string, p: Promise<{ success: boolean; message?: string }>) => {
         log(`T${tick} send ${what}`);
+        packetsSent++;
         p.then(r => { if (!r.success) log(`T${tick} FAIL ${what}: ${r.message}`); }).catch(e => log(`T${tick} ERR ${what}: ${e}`));
     };
 
@@ -299,6 +301,8 @@ await runScript(async ({ bot, sdk }) => {
     await done;
 
     // ---- summary ------------------------------------------------------------
+    const endInv = sdk.getState()?.inventory ?? [];
+    const countOf = (re: RegExp) => endInv.filter(i => re.test(i.name)).reduce((n, i) => n + i.count, 0);
     const gaps: number[] = [];
     for (let i = 1; i < xpTicks.length; i++) {
         const a = xpTicks[i - 1], b = xpTicks[i];
@@ -318,6 +322,7 @@ await runScript(async ({ bot, sdk }) => {
         `min gap ${minGap}, gcd of gaps ${cycle}, span ${span} ticks, ticks per xp event ${(span / Math.max(1, xpTicks.length - 1)).toFixed(2)}`,
         `rolls in span at cycle ${cycle || '?'}: ${cycle ? span / cycle : '?'}; success fraction ${cycle ? ((xpTicks.length - 1) / (span / cycle)).toFixed(3) : '?'}`,
         `game xp ${gameXp} (base ${gameXp / 25}), base xp per tick over span ${(span ? gameXp / 25 / span : 0).toFixed(2)}`,
+        `end inventory: logs ${countOf(/^logs$/i)}, arrow shafts ${countOf(/^arrow shaft/i)}, shrimps ${countOf(FOOD)}, packets sent ${packetsSent}`,
         `log ${logPath}`
     ].join('\n');
     log(summary);
