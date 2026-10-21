@@ -109,9 +109,9 @@ await runScript(async ({ bot, sdk }) => {
         const c = cannonLoc(/multicannon|cannon/i, /pick-up/i);
         if (c) { await bot.interactLoc(c, 'Pick-up'); await waitTicks(3); }
     }
-    await say('~clearinv');
+    await say('::~clearinv');
     for (const e of sdk.getEquipment()) { await sdk.sendUseEquipmentItem(e.slot, 1); await waitTicks(1); }
-    await say('~clearinv');
+    await say('::~clearinv');
     await say('::setvar mcannon 11');
     await say('::setvar ownedmcannon -1'); // cannon_setup.rs2:59-63 refuses a second cannon
     await say('::setvar rockthrower 0');
@@ -278,10 +278,10 @@ await runScript(async ({ bot, sdk }) => {
                 const boost = (k: string) => { const s = sk(state, k); return s.level - s.baseLevel; };
                 let use: { re: RegExp; what: string } | null = null;
                 if (FOOD && hp < EAT_BELOW && find(/^shark$/i)) use = { re: /^shark$/i, what: 'shark' };
-                else if (ANTIPOISON && !doses.superantipoison && find(/super anti/i)) use = { re: /super anti/i, what: 'superantipoison' };
+                else if (ANTIPOISON && !doses.superantipoison && find(/super ?anti/i)) use = { re: /super ?anti/i, what: 'superantipoison' };
                 else if (RANGING && boost('ranged') <= (4 + Math.floor(sk(state, 'ranged').baseLevel * 0.1)) / 2 && find(/ranging/i)) use = { re: /ranging/i, what: 'ranging' };
-                else if (SUPERS && boost('strength') <= (5 + Math.floor(sk(state, 'strength').baseLevel * 0.15)) / 2 && find(/super strength/i)) use = { re: /super strength/i, what: 'superstrength' };
-                else if (SUPERS && boost('attack') <= (5 + Math.floor(sk(state, 'attack').baseLevel * 0.15)) / 2 && find(/super attack/i)) use = { re: /super attack/i, what: 'superattack' };
+                else if (SUPERS && boost('strength') <= (5 + Math.floor(sk(state, 'strength').baseLevel * 0.15)) / 2 && find(/super ?str/i)) use = { re: /super ?str/i, what: 'superstrength' };
+                else if (SUPERS && boost('attack') <= (5 + Math.floor(sk(state, 'attack').baseLevel * 0.15)) / 2 && find(/super ?att/i)) use = { re: /super ?att/i, what: 'superattack' };
                 else if (CONFIG === 1 && pts <= PRAY - (7 + Math.floor(PRAY / 4)) && find(/prayer potion/i)) use = { re: /prayer potion/i, what: 'prayerpotion' };
                 else if (FLICK.length > 0 && pts < 10 && find(/prayer potion/i)) use = { re: /prayer potion/i, what: 'prayerpotion' };
                 if (use) {
