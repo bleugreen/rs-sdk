@@ -100,7 +100,7 @@ export class LoginLimiter {
         let at = Math.max(this.now(), this.updatedAt, this.lastGrant + this.policy.minSpacingMs, this.pausedUntil);
         let tokens = Math.min(this.policy.burst, this.tokens + (at - this.updatedAt) * ratePerMs);
         if (tokens < 1) {
-            at += Math.ceil((1 - tokens) / ratePerMs);
+            at += Math.ceil((1 - tokens) / ratePerMs - 1e-6); // the epsilon absorbs float error, not real time
             tokens = 1;
         }
         this.tokens = tokens - 1;
