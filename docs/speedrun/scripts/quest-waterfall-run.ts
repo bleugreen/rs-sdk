@@ -94,10 +94,16 @@ await runScript(async ({ bot, sdk }) => {
             await waitTicksFor(sdk, s => (s.player?.worldZ ?? 0) >= 9576, 20);
         });
         await rec.seg('Golrie: pebble', 'dialogue', async c => {
-            await talk(sdk, c, /golrie/i);
+            await talk(sdk, c, /golrie/i, [], 1, () => invCount(sdk, /pebble/i) > 0);
+            await driveDialog(sdk, c, [], 4);
             return `pebble=${invCount(sdk, /pebble/i)}`;
         });
-        await rec.seg('gate out, walk to ladder (2533,9555)', 'travel', async c => {
+        await rec.seg('walk to the gate, open it from inside', 'interaction', async c => {
+            await walk(bot, sdk, c, 2515, 9576, 0);
+            await opLoc(sdk, c, GOLRIE_GATE, 2515, 9575, 1);
+            await waitTicksFor(sdk, s => (s.player?.worldZ ?? 9999) <= 9575, 15);
+        });
+        await rec.seg('walk to ladder (2533,9555)', 'travel', async c => {
             await walk(bot, sdk, c, 2533, 9556, 1);
         });
         await rec.seg('ladder up', 'interaction', async c => {
