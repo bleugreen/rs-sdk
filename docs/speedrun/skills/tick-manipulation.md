@@ -337,6 +337,70 @@ relay-driven knife loop on the demo. On the direct path the gate's criterion is 
 tick (floor 58), probed on the run machine right before the run at the real player count
 (path-aware probe: cairn://p/rs/96). The cost model below is the **relay fallback**.
 
+**One probe, two paths.** `probeOnTime(sdk)` runs over anything with `getState`,
+`onStateUpdate` and `sendWalk`, and records the path in its result (`ProbeResult.path`). The
+SDK is the relay path. [`speedrun/lib/direct.ts`](../../../speedrun/lib/direct.ts) is the
+direct path: `openDirectSession({host, username, password})` logs a lite client into the
+engine websocket in-process and pumps it on every socket message, with no runner or gateway
+(the session core of rs/85 and rs/86's `demo-latency-probe.ts`, which read 60 of 60 from
+Ashburn), and its `sdk` (`directProbeSdk`) marks itself `path: 'direct'`. `HostGate` picks
+the rule by the probe's path: `directDecision` on the direct path, `gateDecision` on the
+relay. In the scored run the in-page probe is rs/97's (`programs/probe.ts`, the same walk
+trial in the page); the rules live in
+[`speedrun/lib/hostgate-verdict.ts`](../../../speedrun/lib/hostgate-verdict.ts), which imports
+nothing, so the page or the SDK side can call them on the page's numbers.
+
+**Direct-path go/no-go** (cairn://p/rs/tenets/11), measured on the run machine itself, just
+before the run, at the real player count:
+
+| Check | Default | Configurable as | On failure |
+|---|---|---|---|
+| Preconditions: Fly edge `nr` and app `sr` both iad, no mesh hop (`mhn`), TCP connect p50 | iad, iad, none, 5 ms | `VantageRule` `edge`, `app`, `maxConnectP50Ms` | named; the probe does not run |
+| (a) reactions on the next tick | at least 58 of 60 (60 is a clean pass; 58-59 starts as `marginal`) | `DirectRule` `floor`, `pass`, `trials` | `investigate` |
+| (b) tick arrival interval p90 over the probe minute | at most 400 ms | `maxTickP90Ms` | `re-measure` (overrun period) |
+| (c) catch-up ticks per probe minute | at most 2 | `maxCatchUpsPerMinute` | `re-measure` (overrun period) |
+| (d) the tab's game-loop rate p10 over the probe minute | at least 50 per second | `minLoopRateP10` | `throttled` |
+
+A catch-up is an interval under 150 ms immediately after one over 350 ms: the server ran
+late and, on its fixed 300 ms grid, ran the next tick at once, so a reaction to the long tick
+misses about half the time (`docs/speedrun/research/demo-latency.md` on rs/83's branch,
+sections 2 and 9). `tickSteadiness(arrivals)` scores it from one arrival time per tick label.
+It groups nothing: a 60 ms grouping window, or a bare count of intervals under 200 ms, merges
+the catch-up tick into the one before it, and arrival jitter alone puts 6-18 intervals under
+200 ms into every clean minute. The probe stamps each tick with the socket message's arrival
+on the direct path (publication time on the relay, which is reference only), and
+`ProbeOptions.steadyMs` keeps it reading ticks after the trials until a whole minute is in.
+Under a minute, the raw count stands against the per-minute limit. The limit of 2 is the
+working value (1 failed a 60 of 60 sample at 1.6 per minute; 2 agreed with (a) on all 15
+Ashburn samples); rs/102 calibrates the final one. The status names the most specific cause:
+(b) or (c) failing reads `re-measure` even when (a) failed with them, because overruns explain
+the misses, and the demo flips in and out of such minutes. (a) failing alone on a steady
+server is a broken host or client, not a cost to model: don't start the knife loops, and
+investigate. (d) is the page's (rs/97 reports its loop rate). An in-process probe has no page
+loop, so `directDecision` reads (d), like (b) and (c) without arrivals, as not measured
+rather than as passed or failed. The pure functions are `directDecision({onTime, trials,
+steadiness: {p90, catchUpsPerMinute}, loopRateP10}, rule)` and `vantageDecision(reading,
+rule)`. `measureVantage(host)` takes the reading with curl, the same request and spacing as
+rs/86's workflow.
+
+Run-machine setup the gate assumes: power saving and screensaver off, the remote-desktop
+session kept connected and the tab visible, and Chrome started with
+`--disable-background-timer-throttling --disable-renderer-backgrounding
+--disable-backgrounding-occluded-windows`. Chrome throttles timers and animation frames in
+hidden or occluded tabs, which turns every in-page reaction into a miss while (a)-(c) can
+still pass; (d) is there to catch it.
+
+**CLI.** `bun docs/speedrun/scripts/tickmanip-latency.ts <bot> --path=direct` checks the
+preconditions against a remote host (and exits 2 naming the failed one, without logging in),
+probes 60 trials in-process, reads ticks until a minute of arrivals is in, and prints the
+latency histogram, the tick interval quantiles and 50 ms histogram, the catch-ups and the
+go/no-go (exit 0 when the loops may start). `--json=PATH` writes the per-tick arrivals for
+rs/102's kind of check. `--path=relay` (the default) is the SDK probe with the cost model's
+verdict. **Run night:** run `--path=direct` on the run machine just before the run; any other
+machine's steadiness is not evidence, since home paths add hiccups that look exactly like an
+overrun and its catch-up. In-run, the gate re-probes after a slip and every 500 ticks while
+off, and the scored tab's own frame arrivals, not a second client, carry the steadiness.
+
 **Probe.** `probeOnTime(sdk, {trials})` walks one tile and back, sending each walk on the
 fresh state label that showed the previous step, the same send-on-a-fresh-label pattern the
 loops use. Each trial records the label the step appears on minus the label the walk was
@@ -344,8 +408,8 @@ sent on: 1 when the packet is processed on the next server tick. The result has 
 per offset, the dominant offset and its share (`mode`, `modeFraction`), the on-time share,
 and how often consecutive trials agree. The default 20 trials take about 20 ticks (6 s) on
 a punctual host and end on the starting tile. The walks clear the current interaction, so
-the loops probe where they re-bootstrap anyway. The probe uses only the SDK (`state.tick`,
-the player's position, `sendWalk`). The browser webclient publishes a state per
+the loops probe where they re-bootstrap anyway. The probe uses only `state.tick`, the
+player's position and `sendWalk`, on either path (above). The browser webclient publishes a state per
 PLAYER_INFO once the positions are decoded (`Client.ts`), as the lite client does since #20,
 so the probe should read the same on both. That is read from the code, not measured; the
 browser tick-publication fix is cairn://p/rs/82's and the in-page probe cairn://p/rs/97's. `tickmanip-latency.ts` is the CLI over it.
@@ -389,7 +453,7 @@ into phase (fly gaps of 5 and 10). With 15% held, the knife stays well ahead of 
 fly (26%). On willows it only just stays ahead, because tree depletion and re-bootstraps
 already dilute its per-roll gain.
 
-**Decision.** `gateDecision(probe, {plainCycle, knifeCycle = 3, missCost})` turns the
+**Decision on the relay path.** `gateDecision(probe, {plainCycle, knifeCycle = 3, missCost})` turns the
 manipulation on when knifeCycle + (1 - modeFraction) × missCost < plainCycle. The miss
 cost defaults to one plain cycle (measured above); the mining loop passes 1, because it
 runs closed-loop. The resulting thresholds on the share at the dominant offset:
