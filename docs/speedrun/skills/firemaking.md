@@ -12,6 +12,13 @@ accounts). Lab: [../LAB.md](../LAB.md). Labels follow
 [README.md](README.md#labels). **Every headline cadence below was measured at
 `NODE_TICKRATE=300`** unless it says 100 ms.
 
+**Host.** These batches were not pinned. The ones traced landed on **bgsrv-mac**, a second Mac
+(user `dev`), not on the operator's Mac `local` that main measured at load 11-18 on 16 cores
+(cairn://p/rs/main, 00:36). bgsrv-mac's load was not recorded at the time (rs/56 later saw
+~2.5 there), so the busy-host caveat probably does not apply in full. Treat the end-to-end
+runs as at most a few percent pessimistic. The 4-tick roll chain itself is a server rule. rs/26's
+bbs correction factor had not been published when this was written (01:15).
+
 ## 1. Recommendation
 
 Light logs with a tinderbox, always the highest tier unlocked, from level 1
@@ -40,8 +47,10 @@ The dropped row is about 45 ticks faster than trades. It needs helpers to
 pace their drops around the 100-tick private window of a dropped item
 (section 6). Use trades if that pacing isn't built.
 
-**Ordering constraint: Sea Slug needs Firemaking 30** (`quest_seaslug.rs2:43`,
-`stat()`, boostable, but no Firemaking boost exists in this content). The
+**Ordering constraint, if Sea Slug is on the route: it needs Firemaking 30**
+(`quest_seaslug.rs2:43`, `stat()`, boostable, but no Firemaking boost exists in this content).
+Sea Slug depends on the rs/54 client fix; if it stays blocked, rs/3 replaces it with Sheep
+Shearer and this constraint disappears. The
 whole route is short enough to finish before Sea Slug. If it has to be
 split, 1 -> 30 is **6 logs (2 normal, 4 oak) and about 50 ticks** plus one
 5-tick trade, and it can be lit wherever the account stands (inferred, model
@@ -248,6 +257,16 @@ The questions in the brief:
   branches). Lighting a funeral pyre gives 404.5 base for magic pyre logs
   (`pyre_fm_experience`), but needs shade remains and a 49-tick pyre per
   burn. Not competitive.
+
+**Interleaving** (`interleaving.md` section 8, the absorbable-fractions table): **none of
+Firemaking can be absorbed into self-only time.** The line is location-bound in its own way:
+each success `p_teleport`s the player one tile and `p_delay(0)`s (section 4), so it would pull
+the account off a tree, fishing spot or knight. Lighting is an inventory use, so it would also
+cancel a gathering interaction (interleaving.md rule 1). And it runs on `%action_delay`, the
+same varp a pickpocket stun sets to `map_clock + 8` (interleaving.md section 4), so it cannot
+share a stun either (inferred from the read scripts; not measured). The reverse, using the
+line's 3 idle ticks per fire as a host for bury or delay-free actions, is an open question in
+interleaving.md section 9.
 
 ## 6. Gotchas
 

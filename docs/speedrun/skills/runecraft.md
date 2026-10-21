@@ -13,6 +13,13 @@ comma-separated bot list and logs the bots in in that order). Lab:
 `NODE_TICKRATE=300`; the 100 ms runs were exploration only (section 6 says why
 they are not usable for blind schedules).
 
+**Host.** The 300 ms batches ran on the Mac executor `local`, which main measured at load 11-18
+on 16 cores that night (cairn://p/rs/main, 00:36). Read the measured cycles as a **busy host's
+figures, a few percent pessimistic**. The tuned 7-tick cycle is a blind schedule, so a loaded
+host shows up as missed cycles (the one 14-tick gap in section 8 may be that), not as a
+slower cycle. rs/26's bbs correction factor had not been published when this was written
+(01:15).
+
 ## 1. Recommendation
 
 The scored account stands next to the altar inside the altar room and never
@@ -242,6 +249,13 @@ at law (inferred). That is still three times the in-room 7.
   cosmic. Never better than staying at air for the low band.
 - **Death (65, 10.0 per essence).** Not reachable here (section 4).
 - **Law with helpers outside the room.** 4,960 ticks (section 2).
+
+**Interleaving** (`interleaving.md` section 8, the absorbable-fractions table): **none of
+Runecraft can be absorbed into self-only time.** It is location-bound: the account crafts
+inside the altar room, which it enters with a talisman, so it cannot be at a tree, a fishing
+spot or a knight at the same time. Inside the room every tick of the 7-tick cycle is either the
+craft's `p_delay(3)` (which drops packets) or the trade that refills it (section 4), so the
+room has no idle ticks to host other helper-fed actions either.
 
 ## 6. Gotchas
 
