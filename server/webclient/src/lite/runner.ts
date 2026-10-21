@@ -436,7 +436,8 @@ async function main(): Promise<void> {
     }
 
     const repoRoot = fileURLToPath(new URL('../../../../', import.meta.url));
-    const envPath = `${repoRoot}bots/${botName}/bot.env`;
+    // LITE_BOT_ENV lets a launcher keep credentials outside the checkout (speedrun/helpers/standalone.ts).
+    const envPath = process.env.LITE_BOT_ENV || `${repoRoot}bots/${botName}/bot.env`;
     const env = Object.fromEntries(
         (await Bun.file(envPath).text())
             .split('\n')

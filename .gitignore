@@ -16,6 +16,10 @@ backups/
 bots/*/
 !bots/_template/
 
+# Run-machine runtime files (speedrun/helpers/standalone.ts, altar-cue.ts): live
+# run state, logs and cue files; never committed.
+run-machine/
+
 # Daemon type checker temp file
 sdk/__exec_check.ts
 

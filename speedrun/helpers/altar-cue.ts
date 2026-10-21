@@ -1,0 +1,437 @@
+// The cue between the scored account's Runecraft step and its essence givers
+// (role altar-giver), all on one machine. The scored side owns cue.json and says
+// which giver trades on which tick; each giver owns giver-<account>.json and says
+// whether it is loaded and how its last turn went. Contract and rationale:
+// docs/speedrun/helpers/altar-giver.md; the cycle it implements:
+// docs/speedrun/skills/runecraft.md section 4 ("The tuned cycle").
+//
+// Files, not sockets: every write replaces the whole file (tmp + rename), readers
+// watch the directory and poll, and either side can restart and re-read. The
+// directory must not be tracked by git: nothing in it names the receiver (it is
+// identified by a hash of its name), but status files describe a live run.
+//
+// Clock. `state.tick` counts the frames one client received, so the scored
+// account's tick T means nothing to a giver directly. Every cue carries beacons:
+// recent scored frames with the wall-clock time each was seen. A giver matches
+// them against its own frames' arrival times (both clients get each server frame
+// within a few ms on one machine) and so learns a constant offset between the
+// two numberings. Each side then fires on its own frame arrivals; the cue only has
+// to arrive ahead of time, and no relay hop sits on the reaction path.
+import { spawnSync } from 'node:child_process';
+import { createHash, randomBytes } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, watch, writeFileSync, type FSWatcher } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
+
+export const CUE_VERSION = 1;
+export const CUE_FILE = 'cue.json';
+/** Trade screen buttons (trademain:accept, tradeconfirm:accept). */
+export const TRADE_ACCEPT = 3420;
+export const TRADE_CONFIRM = 3546;
+/** Ticks from the craft to the first tick the scored account is not delayed (runecraft.md section 4). */
+export const DEFAULT_OPEN = 5;
+
+export type Schedule = 'tuned' | 'robust';
+
+/** One frame of a client: its tick count and Date.now() when the frame was seen decoded. */
+export interface Beacon {
+    tick: number;
+    ms: number;
+}
+
+export interface Turn {
+    /** Giver account (login name). */
+    giver: string;
+    /** Tick the scored account's craft lands on, in the scored account's numbering. The trade opens on T + open. */
+    T: number;
+    /** Overrides the cue's schedule for this turn, e.g. robust for a giver that logged in after the scored account. */
+    schedule?: Schedule;
+}
+
+export interface Cue {
+    v: typeof CUE_VERSION;
+    /** Changes on every scored login; a giver's bookkeeping (offset, turns done) is per session. */
+    session: string;
+    /** Increases on every write. */
+    seq: number;
+    /** The account the givers trade: sha256 of its canonical name (canonName). Never the name itself. */
+    receiver: { sha256: string };
+    /** Recent scored frames, oldest first (at least one). */
+    beacons: Beacon[];
+    schedule: Schedule;
+    /** K: the trade request lands on T + K. */
+    open: number;
+    /** Every turn of this session so far; a giver acts on the newest one naming it. */
+    turns: Turn[];
+    /** The batch is over: armed givers stand down. */
+    stop?: boolean;
+    /** Date.now() of the write. */
+    ms: number;
+}
+
+export type GiverPhase = 'start' | 'restock' | 'travel' | 'ready' | 'armed' | 'fault' | 'off';
+/**
+ * gave: the essence left. missed: the schedule ran and the essence is still held.
+ * late: the turn arrived after its first packet's frame. clock: no tick offset
+ * could be resolved. not-ready: named while restocking. no-receiver: nobody in
+ * sight matches the receiver hash. cancelled: stop or a new session before the first packet.
+ */
+export type Outcome = 'gave' | 'missed' | 'late' | 'clock' | 'not-ready' | 'no-receiver' | 'cancelled';
+
+export interface TurnResult {
+    session: string;
+    T: number;
+    outcome: Outcome;
+    /** The giver's own tick numbering for T, when known. */
+    myT?: number;
+    detail?: string;
+    ms: number;
+}
+
+export interface GiverStatus {
+    v: typeof CUE_VERSION;
+    account: string;
+    phase: GiverPhase;
+    /** Date.now() of this client's login, so the scored side can tell whether the giver is handled before it (tuned needs that). */
+    loggedInAt: number | null;
+    essence: number;
+    tile: { x: number; z: number; level: number } | null;
+    inRoom: boolean;
+    /** Ready since (Date.now()); the scored side can queue givers in this order. */
+    readyAt: number | null;
+    armed?: { session: string; seq: number; T: number; myT: number; schedule: Schedule };
+    last?: TurnResult;
+    /** Trades given since the role started. */
+    gave: number;
+    detail?: string;
+    /** Heartbeat: rewritten at least every 2 s. */
+    ms: number;
+}
+
+// ------------------------------------------------------------------ names
+
+/** Login names and display names compare equal in this form (Cairn H05 == cairn_h05). */
+export function canonName(name: string): string {
+    return name.trim().toLowerCase().replace(/[\s_]+/g, '_');
+}
+
+export function nameHash(name: string): string {
+    return createHash('sha256').update(canonName(name)).digest('hex');
+}
+
+// ------------------------------------------------------------------ schedule
+
+export type GiverAction = 'request' | 'offer-accept' | 'confirm';
+export type ScoredAction = 'request' | 'accept' | 'confirm' | 'craft';
+
+/** A packet group landing on server tick `land`; it is sent on arrival of the frame for land - 1. */
+export interface Step<A> {
+    land: number;
+    actions: A[];
+}
+
+/**
+ * The giver's half of one cycle, with the craft landing on T:
+ * request on T+K, offer everything and accept on T+K+1, confirm on T+K+2, and
+ * on the robust schedule a second confirm on T+K+3 (runecraft-cycle.ts runScheduled).
+ */
+export function giverSteps(T: number, open: number, schedule: Schedule): Step<GiverAction>[] {
+    const o = T + open;
+    const steps: Step<GiverAction>[] = [
+        { land: o, actions: ['request'] },
+        { land: o + 1, actions: ['offer-accept'] },
+        { land: o + 2, actions: ['confirm'] }
+    ];
+    if (schedule === 'robust') steps.push({ land: o + 3, actions: ['confirm'] });
+    return steps;
+}
+
+/**
+ * The scored account's half. Tuned: request T+K, accept T+K+1 (after the
+ * giver's offer, which needs the giver handled first in the tick), confirm and
+ * craft T+K+2. Robust: request T+K, accept and confirm T+K+2, craft T+K+3.
+ */
+export function scoredSteps(T: number, open: number, schedule: Schedule): Step<ScoredAction>[] {
+    const o = T + open;
+    if (schedule === 'tuned') {
+        return [
+            { land: o, actions: ['request'] },
+            { land: o + 1, actions: ['accept'] },
+            { land: o + 2, actions: ['confirm', 'craft'] }
+        ];
+    }
+    return [
+        { land: o, actions: ['request'] },
+        { land: o + 2, actions: ['accept', 'confirm'] },
+        { land: o + 3, actions: ['craft'] }
+    ];
+}
+
+/** Ticks from one craft to the next: 7 tuned, 8 robust at K = 5. */
+export function cycleTicks(open: number, schedule: Schedule): number {
+    return open + (schedule === 'tuned' ? 2 : 3);
+}
+
+/** The giver's last scheduled landing tick plus one: by this frame a completed trade has left its inventory. */
+export function judgeTick(T: number, open: number, schedule: Schedule): number {
+    return T + open + (schedule === 'tuned' ? 4 : 5);
+}
+
+// ------------------------------------------------------------------ clock
+
+export type OffsetResult = { offset: number; errorMs: number } | { error: string };
+
+/**
+ * The offset (mine - theirs) between two clients' tick numberings, from their
+ * frames' arrival times. For each candidate offset (any own frame within
+ * `toleranceMs` of a beacon), the mean |arrival difference| over every beacon whose shifted tick
+ * this client has; the best must be within `toleranceMs` and clearly better
+ * than the runner-up, so a pair of back-to-back frames (a server catch-up
+ * after an overrun) cannot be mismatched silently.
+ */
+export function resolveOffset(mine: readonly Beacon[], theirs: readonly Beacon[], toleranceMs = 100): OffsetResult {
+    if (theirs.length === 0) return { error: 'no beacons' };
+    if (mine.length === 0) return { error: 'no frames of our own yet' };
+    const byTick = new Map(mine.map(f => [f.tick, f.ms]));
+    const candidates = new Set<number>();
+    for (const b of theirs) for (const f of mine) if (Math.abs(f.ms - b.ms) <= toleranceMs) candidates.add(f.tick - b.tick);
+    const scored: { offset: number; errorMs: number; n: number }[] = [];
+    for (const offset of candidates) {
+        const errs = theirs.flatMap(b => {
+            const ms = byTick.get(b.tick + offset);
+            return ms === undefined ? [] : [Math.abs(ms - b.ms)];
+        });
+        if (errs.length) scored.push({ offset, errorMs: errs.reduce((a, e) => a + e, 0) / errs.length, n: errs.length });
+    }
+    scored.sort((a, b) => a.errorMs - b.errorMs);
+    const [best, second] = scored;
+    if (!best || best.errorMs > toleranceMs) return { error: `no frame of ours within ${toleranceMs} ms of the beacons` };
+    if (second && second.errorMs - best.errorMs < 50 && second.n >= best.n) {
+        return { error: `ambiguous: offsets ${best.offset} and ${second.offset} both fit (${Math.round(best.errorMs)} / ${Math.round(second.errorMs)} ms)` };
+    }
+    return { offset: best.offset, errorMs: Math.round(best.errorMs) };
+}
+
+/** A client's recent frames, for resolveOffset (and for the scored side's beacons). */
+export class FrameLog {
+    private readonly frames: Beacon[] = [];
+    constructor(private readonly keep = 200) {}
+
+    /**
+     * Record a publication. The client republishes after every executed action
+     * within a tick, so only the first arrival of each tick counts ('new'); a
+     * lower tick means the client restarted its count ('reset': a relog).
+     */
+    add(tick: number, ms = Date.now()): 'new' | 'dup' | 'reset' {
+        const last = this.frames[this.frames.length - 1];
+        let kind: 'new' | 'reset' = 'new';
+        if (last && tick <= last.tick) {
+            if (tick === last.tick) return 'dup';
+            this.frames.length = 0;
+            kind = 'reset';
+        }
+        this.frames.push({ tick, ms });
+        if (this.frames.length > this.keep) this.frames.splice(0, this.frames.length - this.keep);
+        return kind;
+    }
+
+    recent(n = 8): Beacon[] {
+        return this.frames.slice(-n);
+    }
+
+    all(): readonly Beacon[] {
+        return this.frames;
+    }
+
+    clear(): void {
+        this.frames.length = 0;
+    }
+}
+
+// ------------------------------------------------------------------ turns
+
+export type TurnChoice =
+    | { kind: 'arm'; turn: Turn; myT: number; schedule: Schedule; key: string }
+    | { kind: 'late'; turn: Turn; myT: number; key: string }
+    | { kind: 'none' };
+
+export function turnKey(session: string, T: number): string {
+    return `${session}:${T}`;
+}
+
+/**
+ * What a giver should do with the cue now. The newest turn naming it that is
+ * not done: armed if its first packet (the request, sent on the frame for
+ * T+K-1 in the giver's numbering) is still at least one frame ahead, late if
+ * that frame has already arrived (a late turn is reported, never half-fired),
+ * and ignored once it is long past.
+ */
+export function chooseTurn(cue: Cue, account: string, offset: number, myNow: number, done: ReadonlySet<string>): TurnChoice {
+    if (cue.stop) return { kind: 'none' };
+    const me = canonName(account);
+    for (let i = cue.turns.length - 1; i >= 0; i--) {
+        const turn = cue.turns[i]!;
+        if (canonName(turn.giver) !== me) continue;
+        const key = turnKey(cue.session, turn.T);
+        if (done.has(key)) return { kind: 'none' };
+        const myT = turn.T + offset;
+        const schedule = turn.schedule ?? cue.schedule;
+        const firstSend = myT + cue.open - 1;
+        if (myNow < firstSend) return { kind: 'arm', turn, myT, schedule, key };
+        if (myNow < judgeTick(myT, cue.open, schedule)) return { kind: 'late', turn, myT, key };
+        return { kind: 'none' };
+    }
+    return { kind: 'none' };
+}
+
+// ------------------------------------------------------------------ files
+
+export function writeJsonAtomicSync(path: string, value: unknown): void {
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+    const tmp = `${path}.tmp-${process.pid}`;
+    writeFileSync(tmp, JSON.stringify(value) + '\n', { mode: 0o600 });
+    renameSync(tmp, path);
+}
+
+export function readJson<T>(path: string): T | null {
+    try {
+        return JSON.parse(readFileSync(path, 'utf8')) as T;
+    } catch {
+        return null;
+    }
+}
+
+const ROOT = resolve(import.meta.dir, '..', '..');
+
+/** Default home of the run machine's runtime files (gitignored). */
+export const RUN_DIR = join(ROOT, 'run-machine');
+
+export function cueDir(env: Record<string, string | undefined> = process.env): string {
+    return resolve(env.RC_CUE_DIR || join(RUN_DIR, 'rc-cue'));
+}
+
+/**
+ * Throw if `dir` would be tracked by git: inside a work tree and not ignored.
+ * The cue and status files describe a live run and must never be committed.
+ */
+export function assertUntracked(dir: string): void {
+    let probe = resolve(dir);
+    while (!existsSync(probe) && dirname(probe) !== probe) probe = dirname(probe);
+    const top = spawnSync('git', ['-C', probe, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
+    if (top.status !== 0) return; // not in a work tree
+    const root = top.stdout.trim();
+    const rel = relative(root, resolve(dir)) || '.';
+    const ignored = spawnSync('git', ['-C', root, 'check-ignore', '-q', '--no-index', `${rel}/`], { encoding: 'utf8' });
+    if (ignored.status !== 0) {
+        throw new Error(`${dir} is inside the git work tree ${root} and not ignored; the run machine's runtime files must not be committable (use run-machine/ or set RC_CUE_DIR outside the checkout)`);
+    }
+}
+
+export function statusPath(dir: string, account: string): string {
+    return join(dir, `giver-${canonName(account)}.json`);
+}
+
+export function readCue(dir: string): Cue | null {
+    const cue = readJson<Cue>(join(dir, CUE_FILE));
+    return cue && cue.v === CUE_VERSION && Array.isArray(cue.turns) && Array.isArray(cue.beacons) ? cue : null;
+}
+
+export function writeStatus(dir: string, status: GiverStatus): void {
+    writeJsonAtomicSync(statusPath(dir, status.account), status);
+}
+
+export function readStatuses(dir: string): GiverStatus[] {
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir)
+        .filter(f => /^giver-.+\.json$/.test(f))
+        .map(f => readJson<GiverStatus>(join(dir, f)))
+        .filter((s): s is GiverStatus => !!s && s.v === CUE_VERSION);
+}
+
+/** The scored side's handle on cue.json. One writer per session. */
+export class CueWriter {
+    readonly session: string;
+    private seq = 0;
+    private cue: Cue | null = null;
+
+    constructor(
+        readonly dir: string,
+        private readonly receiverName: string,
+        session = `${Date.now().toString(36)}-${randomBytes(3).toString('hex')}`
+    ) {
+        assertUntracked(dir);
+        this.session = session;
+    }
+
+    /** Write the cue with `turns` replaced (pass the full list) and fresh beacons. */
+    write(fields: { beacons: Beacon[]; turns: Turn[]; schedule?: Schedule; open?: number; stop?: boolean }): Cue {
+        if (fields.beacons.length === 0) throw new Error('a cue needs at least one beacon');
+        this.cue = {
+            v: CUE_VERSION,
+            session: this.session,
+            seq: ++this.seq,
+            receiver: { sha256: nameHash(this.receiverName) },
+            beacons: fields.beacons,
+            schedule: fields.schedule ?? this.cue?.schedule ?? 'tuned',
+            open: fields.open ?? this.cue?.open ?? DEFAULT_OPEN,
+            turns: fields.turns,
+            ...(fields.stop ? { stop: true } : {}),
+            ms: Date.now()
+        };
+        writeJsonAtomicSync(join(this.dir, CUE_FILE), this.cue);
+        return this.cue;
+    }
+
+    /** Append one turn to the session's list. */
+    addTurn(turn: Turn, beacons: Beacon[]): Cue {
+        return this.write({ beacons, turns: [...(this.cue?.turns ?? []), turn] });
+    }
+
+    stop(beacons: Beacon[]): Cue {
+        return this.write({ beacons, turns: this.cue?.turns ?? [], stop: true });
+    }
+
+    get current(): Cue | null {
+        return this.cue;
+    }
+}
+
+/**
+ * Calls `onCue` with every new cue (new session or higher seq). Watches the
+ * directory and polls as well: fs.watch can coalesce or miss renames on some
+ * platforms, and a poll every `pollMs` bounds the delay either way.
+ */
+export class CueWatcher {
+    private last: { session: string; seq: number } | null = null;
+    private timer: ReturnType<typeof setInterval> | null = null;
+    private watcher: FSWatcher | null = null;
+
+    constructor(
+        private readonly dir: string,
+        private readonly onCue: (cue: Cue) => void,
+        pollMs = 20
+    ) {
+        mkdirSync(dir, { recursive: true, mode: 0o700 });
+        try {
+            this.watcher = watch(dir, () => this.check());
+        } catch {
+            this.watcher = null;
+        }
+        this.timer = setInterval(() => this.check(), pollMs);
+        this.check();
+    }
+
+    check(): void {
+        const cue = readCue(this.dir);
+        if (!cue) return;
+        if (this.last && this.last.session === cue.session && this.last.seq >= cue.seq) return;
+        this.last = { session: cue.session, seq: cue.seq };
+        this.onCue(cue);
+    }
+
+    close(): void {
+        if (this.timer) clearInterval(this.timer);
+        this.watcher?.close();
+        this.timer = null;
+        this.watcher = null;
+    }
+}
