@@ -79,3 +79,16 @@ Lab (local engine at `NODE_TICKRATE=300`, the launcher with 3 givers and the sta
 | tuned, real restock (portal, Falador east bank, 27 essence, ruins) | givers first | 21/21 in 7 batches of 3 | 14 in-batch gaps, all 7 |
 
 Restock round trip at the air altar via Falador east bank: 91-93 ticks (mean 91.7, n=18).
+
+Demo (rs-sdk-demo.fly.dev, 2026-10-21 16:27-16:36 UTC, the launcher on bgsrv-ub, San Diego, 14 ms TCP connect; 3 givers logged in before the stand-in; 26 essence per trade so the stand-in can keep its talisman):
+
+| Variant | Turns given |
+|---|---|
+| tuned | 1/21 |
+| robust | 0/9 |
+
+The relay is the cause, not the schedule or the login order. `docs/speedrun/scripts/tickmanip-latency.ts` through the same loopback gateway and lite client landed 9 of 60 packets on the tick after the state they were sent on and 51 a tick later (the demo published ticks at a median 309 ms). A blind turn needs about six packets on exact ticks across the two sides, so one late packet anywhere loses the turn. The lab passes because its engine is on loopback. Processing order is not the cause either: the engine processes players in 8 buckets keyed by the client's IP (on the demo, the `fly-client-ip` header) and in login order within a bucket, so clients on one host share a bucket and login order holds. Robust failed too.
+
+So a giver driven through the SDK relay is tick-exact only where that relay is: measure it on the run machine with the same probe before trusting the tuned or the robust schedule. Where it isn't, the giver's schedule has to fire on raw frame arrival inside the client process (the counterpart of the scored side's in-page programs).
+
+**Notes are not a load.** A supply trade of 200 rune essence arrives as one noted stack with the essence's name, so restock checks count only the item ids themselves (`NOTE_IDS` in `altar-room.ts`). Before that fix a giver walked into the room with 200 notes it could not hand over.
