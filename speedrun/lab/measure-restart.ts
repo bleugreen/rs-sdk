@@ -15,6 +15,12 @@
 //   S5 level-2   woodcutting +2                       milestone: woodcutting >= L0+2
 //   S6 idle      wait, SIGKILL the engine the first time, then woodcutting +3
 //
+// Then the client-only drop (server up): one step that SIGKILLs SCORED's lite
+// runner the first time through; the watchdog takes the session over with a
+// fresh login (rs/101) and the runner resumes the step. The takeover
+// checkpoints the world (World.ts "Save current state on reconnect"), which
+// gives the dropped player's unobserved ticks in the world.
+//
 // The oracle is the save the next login loads: the GE checkpoint row
 // (server/engine/data/market.sqlite, accounts.save; PlayerLoading.ts prefers it
 // to the .sav), playtime as a g4s at byte 24 and woodcutting xp in the stat
@@ -198,6 +204,7 @@ async function main(): Promise<void> {
             run: async () => {
                 const out = await logoutClean(churn);
                 if (!out.ok) throw new Error(`churn logout: ${out.reason}`);
+                await closeSession(churn);
                 await sleep(500);
                 c1 = { saved: checkpointOf(SCORED), partner: checkpointOf(PARTNER), tick: scored.sdk.getState()!.tick, session: scored.sessionId };
                 result('checkpoint-by-other-logout', c1);
@@ -265,7 +272,45 @@ async function main(): Promise<void> {
         });
     }
     if (resumedRow) result('resumed-step', { step: resumedRow.step, ticks: resumedRow.ticks, sessionId: resumedRow.sessionId });
-    result('resume-rows', log.rows.filter(row => row.step.startsWith('(')).map(row => ({ step: row.step, ticks: row.ticks, wallMs: row.wallMs, meta: row.meta })));
+    result('resume-rows', log.rows.filter(row => row.step.startsWith('(') && row.step !== '(boundary)').map(row => ({ step: row.step, ticks: row.ticks, wallMs: row.wallMs, meta: row.meta })));
+
+    // ---- client-only drop, server up
+    let k2: { tick: number; at: number } | null = null;
+    let takeover: { saved: Saved | null; tick: number; at: number } | null = null;
+    const log2 = TickLog.open(`lab-clientdrop-${newRunId()}`);
+    const idle2: Step<C> = {
+        name: 'idle-2', preconditions: always, postconditions: always, logoutSafe: true, done: o => wc(o.state) >= L0 + 4,
+        run: async () => {
+            await waitTicks(scored.sdk, 20);
+            if (!k2) {
+                k2 = { tick: scored.sdk.getState()!.tick, at: Date.now() };
+                scored.child?.kill('SIGKILL');
+                await waitTicks(scored.sdk, 5); // throws: the client is gone
+            }
+            await levelTo(L0 + 4)();
+        },
+    };
+    await runResumable(scored, [idle2], {
+        log: log2, c: {}, link: sessionLink(scored), shouldStop: () => false, logout: async () => {},
+        onEvent: e => {
+            console.log(`[resume] ${JSON.stringify(e)}`);
+            if (e.kind === 'restored') takeover = { saved: checkpointOf(SCORED), tick: scored.sdk.getState()!.tick, at: Date.now() };
+        },
+    });
+    const kk = k2 as { tick: number; at: number } | null;
+    const tk = takeover as { saved: Saved | null; tick: number; at: number } | null;
+    if (kk && tk?.saved && end.saved) {
+        // Same session from the end checkpoint to the kill, so playtime at the kill is known exactly.
+        const atKill = end.saved.playtime + (kk.tick - end.tick);
+        const drop = log2.rows.find(row => row.step === '(drop)');
+        result('client-drop', {
+            killToRestoredMs: tk.at - kk.at,
+            // The takeover checkpoints at the new login's first tick: ticks the dropped player stayed in the world.
+            droppedInWorldTicks: tk.saved.playtime - atKill - tk.tick,
+            newSessionTicksBeforeResume: drop?.ticks,
+            resumedAt: log2.rows.find(row => row.step === '(resume)' && row.meta?.attempt === 2)?.meta?.step,
+        });
+    }
 
     wdS.stop();
     wdP.stop();

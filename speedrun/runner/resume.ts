@@ -157,7 +157,8 @@ export function sessionLink(session: Session, opts: SessionLinkOptions = {}): Li
                 const s = session.sdk.getState();
                 if (s?.inGame && session.expectInWorld && session.lastAdvanceAt > since && why() === null) {
                     if (first === null) first = session.sessionId * 1e9 + s.tick;
-                    if (session.sessionId * 1e9 + s.tick !== first || session.launchedAt > since) return;
+                    const relaunched = session.launchedAt > since && session.lastAdvanceAt > session.launchedAt;
+                    if (relaunched || session.sessionId * 1e9 + s.tick !== first) return;
                 }
                 await sleep(Math.min(pollMs, 20));
             }
