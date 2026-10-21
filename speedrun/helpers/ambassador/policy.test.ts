@@ -54,7 +54,7 @@ describe('output filter', () => {
         expect(reason('try ::give coins')).toBe('command');
     });
     test('our account names in any spelling', () => {
-        for (const t of ['ask cairn_h01', 'Cairn H01 is mine', 'cairn h 01', 'talk to cairn mule', 'I am Cairn Md', 'cairn_t27 knows', 'cairnt27', 'our speedrun account is www cairn md', 'see Www_Cairn on the hiscores', 'our site is cairn md']) {
+        for (const t of ['ask cairn_h01', 'Cairn H01 is mine', 'cairn h 01', 'talk to cairn mule', 'I am Cairn Md', 'cairn_t27 knows', 'cairnt27', 'our speedrun account is www cairn run', 'see Www_Cairn on the hiscores', 'our site is cairn md']) {
             expect(reason(t)).not.toBeNull();
         }
         expect(reason('the cairn dot md account')).toBe('scored-spare');
