@@ -257,7 +257,7 @@ The questions in the brief:
   second log on the tile, and the second log can't be lit there afterwards.
   At 100 ms the bot's 2-tick round trip made resends premature.
   At 300 ms, waiting one tick for the inventory to change was exact (1.000
-  logs per success over 211 fires). On production, resend only after the
+  logs per success over 368 fires). On production, resend only after the
   state shows the log still in the inventory.
 - **The light must land by R+4.** That is a 3-tick window after the roll at R.
   A light landing at R+5 restarts the clock (+3 ticks). This tolerates up to
@@ -301,10 +301,10 @@ exactly 157).
 Trade cadence: 6 hand-overs of 27 (the account holds a tinderbox).
 1: 2 logs + 4 oak + 7 willow + 13 maple + 1 yew. 2: 23 yew + 4 magic. 3-5:
 27 magic each. 6: 22 magic. Each is 5 ticks for the account. If 1 -> 30
-happens before Sea Slug, the first hand-over is just 2 logs + 4 oak. The
-rest follows the same order, which comes to 7 yew + 25 maple... no, rebuild
-it with the model: `firemaking-model.ts --from=30` gives 7 willow, 13
-maple, 25 yew, 106 magic, because 1 -> 30 overshoots level 30 slightly.
+happens before Sea Slug, the first hand-over is just 2 logs + 4 oak, and
+30 -> 99 later takes 151 more, the same tiers in the same order (model:
+7 willow, 13 maple, 25 yew, 106 magic, depending on how far past 30 the
+oak logs land; `firemaking-model.ts --from=<level>` gives the exact list).
 
 For dropped rows the same 157 logs go on the ground in this order along the
 snake, one per tile.
