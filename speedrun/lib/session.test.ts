@@ -29,6 +29,7 @@ const healthy: WatchdogInputs = {
     logoutFailed: false,
     msSinceProgress: null,
     progressStaleMs: null,
+    serverDown: false,
 };
 
 describe('watchdogDecision', () => {
@@ -55,6 +56,15 @@ describe('watchdogDecision', () => {
     test('a dead lite child is relaunched at once: there is no socket to log out on', () => {
         expect(watchdogDecision({ ...healthy, childExit: 1 })).toBe('relaunch');
         expect(watchdogDecision({ ...healthy, childExit: 137, nextAttemptAt: 12_000 })).toBe('wait');
+    });
+
+    test('server gone: an exited or wedged client waits for the world instead of a takeover', () => {
+        expect(watchdogDecision({ ...healthy, childExit: 1, serverDown: true })).toBe('outage');
+        expect(watchdogDecision({ ...healthy, msSinceAdvance: 5_000, serverDown: true })).toBe('outage');
+        expect(watchdogDecision({ ...healthy, msSinceAdvance: 5_000, logoutFailed: true, nextAttemptAt: 60_000, serverDown: true })).toBe('outage');
+        // A healthy client is left alone whatever the probe says, and exit 3 still gives up.
+        expect(watchdogDecision({ ...healthy, serverDown: true })).toBe('ok');
+        expect(watchdogDecision({ ...healthy, childExit: 3, serverDown: true })).toBe('give_up');
     });
 
     test('never relaunches an outdated client (exit 3)', () => {
@@ -157,6 +167,11 @@ function recorder(logoutOk: boolean) {
             relaunch: async () => {
                 calls.push('relaunch');
             },
+            reconnect: async (s: Session) => {
+                calls.push('reconnect');
+                s.expectInWorld = true;
+                s.watchdog?.resume();
+            },
         },
     };
 }
@@ -201,6 +216,33 @@ describe('startWatchdog response', () => {
         expect(rec.calls).toEqual(['relaunch']);
     });
 
+    test('a client that died with the server is reconnected, never killed, logged out or relaunched', async () => {
+        const { session, child } = fakeSession();
+        child.exit(1);
+        await child.exited;
+        const rec = recorder(true);
+        let probes = 0;
+        const wd = startWatchdog(session, { timer: false, actions: rec.actions, serverDown: async () => (probes++, true) });
+        await wd.check();
+        expect(rec.calls).toEqual(['reconnect']);
+        expect(wd.outages).toBe(1);
+        expect(wd.relaunches).toBe(0);
+        expect(probes).toBe(1);
+    });
+
+    test('the server probe is asked only when the client looks unhealthy, and an up server keeps the takeover path', async () => {
+        const { session } = fakeSession();
+        const rec = recorder(true);
+        let probes = 0;
+        const wd = startWatchdog(session, { timer: false, actions: rec.actions, serverDown: async () => (probes++, false) });
+        await wd.check();
+        expect(probes).toBe(0);
+        session.lastAdvanceAt = Date.now() - 10_000;
+        await wd.check();
+        expect(probes).toBe(1);
+        expect(rec.calls).toEqual(['logout', 'login']);
+    });
+
     test('a stalled bot is logged out and left out', async () => {
         const { session } = fakeSession({ lastProgressAt: Date.now() - 600_000 });
         const rec = recorder(true);
@@ -243,4 +285,7 @@ test('parseBotEnv and browserUrl', () => {
     expect(browserUrl(env)).toBe('http://localhost:9300/bot?bot=srlab1&password=p%20w');
     expect(browserUrl({ ...env, SERVER: 'rs-sdk-demo.fly.dev' })).toBe('https://rs-sdk-demo.fly.dev/bot?bot=srlab1&password=p%20w');
     expect(() => parseBotEnv('SERVER=x')).toThrow();
+    // The run client through proxy.ts: the page URL already carries ?server= and ?gateway=.
+    expect(browserUrl({ ...env, CLIENT_URL: 'http://127.0.0.1:8889/bot?server=rs-sdk-demo.fly.dev&gateway=ws://127.0.0.1:7780' }))
+        .toBe('http://127.0.0.1:8889/bot?server=rs-sdk-demo.fly.dev&gateway=ws://127.0.0.1:7780&bot=srlab1&password=p%20w');
 });
