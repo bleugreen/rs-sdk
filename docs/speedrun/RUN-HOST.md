@@ -51,6 +51,7 @@ again before step 7.
 | Gate (a)-(c), rs/96's CLI (step 6) | - | `15m` (its probe gives up after 10 min) |
 | Gate (d), the sampler (step 6) | - | `10m` (a 5 min sample; the script's own limit is 7 min 10 s) |
 | SIGKILL after the bound, every launch | 30 s | 30 s |
+| rs/83's gate history timer read (not ours; "Gate history timer") | skipped while the reservation holds | `timeout 240`; systemd kills the unit at 270 s |
 
 **Why `timeout` in each command, not a host-side reaper.**
 
@@ -98,16 +99,16 @@ leave it alone and wait.
 {"owner":"<issue or run>","until":"<RFC3339, UTC>","reason":"..."}
 ```
 
-rs/83's systemd user timer honours it. The timer runs the gate read (#101) at :00 and :30, and every
-15 minutes from two hours before the run's start, with no agent alive. It writes each read to
-`~/gate-history/<utc>.json`, which rs/83's docs child harvests. It skips any read while `until` is in
-the future. A stale reservation (owner gone, `until` passed) is ignored, so nothing needs cleaning by
-hand (r: main via rs/103, 10:45 PDT; at 17:22 UTC neither the timer nor `~/gate-history` was on the
-host yet, m). The timer runs from its own clone, `~/gate/rs-sdk`, checked out at the commit in
-`~/run-commit` (step 0), never from `~/rs-sdk` (r: main via rs/103). Who writes it:
+rs/83's gate history timer honours it ("Gate history timer", below "The host"): every firing skips
+while `until` is in the future, and a reservation whose `until` has passed (owner gone) is ignored,
+so a forgotten removal costs nothing and nothing needs cleaning by hand (r: main via rs/103, 10:45
+PDT). The timer runs from its own clone, `~/gate/rs-sdk`, at the commit in `~/run-commit` (step 0),
+never from `~/rs-sdk`. Who writes it:
 
-- **the run**: run.ts writes it at the start with `until` = start + 9 h (the run bound above), and
-  removes it after SCORED's final clean logout;
+- **the run**: step 0, on run night, before anything else starts, with `until` covering setup, the
+  9 h run bound above and an hour's margin; the run never disables the timer instead. run.ts refuses
+  to start unless the reservation is live and the run's own, and removes it after SCORED's final
+  clean logout;
 - **a rehearsal**: by hand, before anything starts, with `until` = now + the rehearsal's bound
   (30 min); removed after teardown;
 - **any other slot holder** (a measurement child, a probe, a check of these commands): for its slot;
@@ -139,11 +140,15 @@ marked **requires rs/138 on RUN_COMMIT** needs step 0's `RUN_COMMIT` to include 
 
 **Leftover check.** It lists every tmux socket on the host with its sessions, other agents' sockets
 included, plus every `chrome*`, `ffmpeg`, `bun` and `timeout` process with its age, and the host
-reservation. Run it before any launch and after any teardown or bound. After teardown expect
-`no server running` on every socket, no processes and none of your reservations:
+reservation. It does not count the gate history timer's processes: they run in
+`rs-gate-read.service`'s own control group (none between firings) and are reaped by its 270 s bound.
+It prints the timer's state on its own line instead; `gate timer read: active` means a firing is in
+progress, so wait for `inactive` before a launch. Run it before any launch and after any teardown or
+bound. After teardown expect `no server running` on every socket, no processes and none of your
+reservations:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'for s in /tmp/tmux-$(id -u)/*; do [ -S "$s" ] && echo "tmux -L $(basename $s): $(tmux -S $s ls 2>&1 | tr "\n" " ")"; done; ps -o pid,etime,comm -p "$(pgrep -d, "^(chrome.*|ffmpeg|bun|timeout)$")" 2>/dev/null || echo "no chrome, ffmpeg, bun or timeout process"; cat ~/host-reserved.json 2>/dev/null || echo "no host reservation"'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'for s in /tmp/tmux-$(id -u)/*; do [ -S "$s" ] && echo "tmux -L $(basename $s): $(tmux -S $s ls 2>&1 | tr "\n" " ")"; done; L=; for p in $(pgrep "^(chrome.*|ffmpeg|bun|timeout)$"); do grep -q rs-gate-read.service /proc/$p/cgroup 2>/dev/null || L="$L,$p"; done; if [ -n "$L" ]; then ps -o pid,etime,comm -p "${L#,}"; else echo "no chrome, ffmpeg, bun or timeout process outside the gate timer"; fi; echo "gate timer read: $(systemctl --user is-active rs-gate-read.service)"; cat ~/host-reserved.json 2>/dev/null || echo "no host reservation"'
 ```
 
 ## The host
@@ -179,9 +184,67 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o 
 | Chrome profile for the run tab | `/home/ubuntu/rs-run/chrome-profile` |
 | Recordings | `/home/ubuntu/recordings/` |
 | Host reservation (rs/83's timer skips while it holds) | `/home/ubuntu/host-reserved.json` |
+| Run commit (written only by step 0) | `/home/ubuntu/run-commit` |
+| Gate history timer (rs/83): its copy, its clone, its history | `~/.local/lib/rs-gate`, `~/gate/rs-sdk`, `~/gate-history/` |
 | X display of the operator's session | `:10` when it is the first session since boot; read it in step 2 |
 
+### Gate history timer
+
+(r: main via rs/103, 2026-10-21; rs/140 installed it for mission rs/83, first firing 20:00Z;
+`docs/speedrun/research/demo-latency.md` section 10, on rs/140's branch, PR into rs/83. The scripts
+it names, `docs/speedrun/scripts/host-gate/` and `docs/speedrun/scripts/host-gate-read.sh`, are not
+on main yet: they arrive with rs/83.)
+
+The run-night gate's history accumulates on this host until the scored run, without an agent. It's a systemd user timer owned by mission rs/83. `ubuntu` lingers, so the timer runs with no one logged in. The sources are in `docs/speedrun/scripts/host-gate/` and `docs/speedrun/scripts/host-gate-read.sh`. `install.sh` copies them to `~/.local/lib/rs-gate`, and the timer runs that copy.
+
+- **What fires when.** `rs-gate-read.timer` starts `rs-gate-read.service` at :00 and :30. The host clock is UTC; the minutes are the same in PDT. Each firing (1) skips while a reservation is live; (2) skips while the host is busy: ffmpeg, bun, a tmux server that still answers, or a Chrome with its own profile, app URL, headless flag or open connection; (3) checks out the commit in `~/run-commit` (written only by the runbook's step 0), detached in its own clone `~/gate/rs-sdk`, and skips with `no run-commit` if that file is missing; (4) runs the #101 gate, `tickmanip-latency.ts gate --path=direct --no-tele`, under `timeout 240`. The account is a throwaway whose credentials exist only in `~/gate/rs-sdk/bots/gate/bot.env` (mode 600). It logs in through the direct path, not through a Chrome URL. A read takes about 3 minutes, and systemd kills the unit's whole control group at 270 s. That makes the timer compliant with the reaping rule: nothing it starts outlives its own bound.
+- **History.** One file per firing, `~/gate-history/<UTC timestamp>.json`: `commit`, `status` (`ok`, `not-probed`, `timeout`, `error` or `skip`), `on`, `onTime`, `catchUpsPerMinute`, `tickP90Ms`, `players`, `edge`, with the gate's own JSON under `gate`. Skips record the reason in `note`. There's one journal line per firing: `journalctl --user -u rs-gate-read`. Check the next firing with `systemctl --user list-timers rs-gate-read.timer`.
+- **Every 15 minutes from two hours before the start:** `bash ~/.local/lib/rs-gate/install.sh --every 15` (`--every 30` switches back).
+- **Reserving the host.** Anyone who needs the host quiet (the run script, rehearsals, a slot holder) writes `~/host-reserved.json`, e.g. `{"owner": "rs/NNN", "until": "2026-10-22T03:00:00Z", "reason": "rehearsal"}` with `until` in UTC, and removes it afterwards. While it's live every firing logs `skip: reserved by rs/NNN` and does nothing. A file whose `until` has passed is ignored. To take one read inside your own reservation: `systemctl --user set-environment RS_GATE_OWNER=rs/NNN`, then `systemctl --user start rs-gate-read.service`, then `systemctl --user unset-environment RS_GATE_OWNER`.
+- **Stopping and removing.** To pause, run `systemctl --user disable --now rs-gate-read.timer`; to resume, run `bash ~/.local/lib/rs-gate/install.sh`. To remove it, run `bash ~/.local/lib/rs-gate/uninstall.sh`. That stops a read in progress and keeps `~/gate-history` and the clone.
+
+**For the run script and rehearsals:** in step 0 or setup, write `~/host-reserved.json` covering the whole run with margin before anything else starts, rather than disabling the timer. A forgotten removal then costs nothing. The leftover check should not count the timer: between firings it has no process, and during one its processes belong to `rs-gate-read.service` (`systemctl --user status rs-gate-read.service`).
+
+The same commands in this page's ssh form. The journal, the next firing and the latest history file:
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'journalctl --user -u rs-gate-read -n 20 --no-pager; systemctl --user list-timers rs-gate-read.timer --no-pager; ls -t ~/gate-history | head -1 | sed "s|^|$HOME/gate-history/|" | xargs -r cat'
+```
+
+Every 15 minutes from two hours before the start (`--every 30` switches back):
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'bash ~/.local/lib/rs-gate/install.sh --every 15'
+```
+
+One read inside your own reservation (`O` is its owner; it waits for the read, at most 270 s):
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'O=rs/NNN; systemctl --user set-environment RS_GATE_OWNER=$O && systemctl --user start rs-gate-read.service; systemctl --user unset-environment RS_GATE_OWNER; ls -t ~/gate-history | head -1'
+```
+
+Pause, resume and remove:
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'systemctl --user disable --now rs-gate-read.timer'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'bash ~/.local/lib/rs-gate/install.sh'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'bash ~/.local/lib/rs-gate/uninstall.sh'
+```
+
 ## 0. Prepare the checkout (once per run commit)
+
+**On run night, step 0 starts with the run's host reservation**, before anything else on this page
+starts, even when the checkout is already on `RUN_COMMIT` ("Gate history timer"; main via rs/103).
+It covers the whole run with margin, and the run never disables the timer instead. `M` is the minutes
+from now to the planned start plus 600 (the 9 h bound and an hour's margin). It refuses if another
+owner holds a live reservation:
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'O=run; M=MINUTES; case "$M" in ""|*[!0-9]*) echo "set M to whole minutes"; exit 1;; esac; F=$HOME/host-reserved.json; if [ -f $F ]; then U=$(sed -n "s/.*\"until\": *\"\([^\"]*\)\".*/\1/p" $F); if [ -n "$U" ] && [ $(date -d "$U" +%s) -gt $(date +%s) ] && ! grep -q "\"owner\": *\"$O\"" $F; then echo "host reserved, stop: $(cat $F)"; exit 1; fi; fi; printf "{\"owner\":\"%s\",\"until\":\"%s\",\"reason\":\"%s\"}\n" "$O" "$(date -u -d "now + $M minutes" +%Y-%m-%dT%H:%M:%SZ)" "scored run" >$F.tmp && mv $F.tmp $F && cat $F'
+```
+
+A firing that began before the write still finishes (within 270 s). Run the leftover check until it
+prints `gate timer read: inactive` before anything below starts.
 
 The page server needs the browser bundle, and the gateway its own dependencies; on 2026-10-21 only
 the root `bun install` had been done (m). Main names the run's commit (`RUN_COMMIT`). Step 0 first
@@ -427,6 +490,8 @@ page server, Chrome, recording), rs/117's launcher with its lite runners and rol
 daemons. The `run` stack includes the live view (step 5). The drained Cairn executor's daemon (`cairn-exec`) was idle at 0.3% of a core (m, 16:15
 UTC); whether it stays up during the run is main's call. No second Chrome, no other `bun`, no other
 ffmpeg, and no tmux server but `run` (the leftover check, "Rules for every launch", lists them all).
+The gate history timer is quiet: step 0's reservation makes every firing skip, so no
+`rs-gate-read.service` process should appear here.
 
 ```sh
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'uptime; ls /tmp/tmux-$(id -u)/; ps -eo pid,pcpu,etime,args --sort=-pcpu | cut -c1-160 | head -20; pgrep -c -f "chrome --type=gpu-process" | sed "s/^/Chrome GPU processes (expect 1): /"'
@@ -472,8 +537,8 @@ programs run, which is what the in-run monitor reads.
 
 With the helpers in (step 4), the recording running (step 5) and the gate passed (step 6), launch
 Chrome as in step 3 with `ENV=$SCORED_ENV` and `T=9h`. Then log it in with step 3's tab-login
-command, with the same `ENV`; it exits 0 once SCORED is in game. run.ts writes the run's host
-reservation (`until` = start + 9 h). From here the run scripts drive the tab through the gateway on
+command, with the same `ENV`; it exits 0 once SCORED is in game. run.ts checks that step 0's host
+reservation is live and the run's own, and refuses to start otherwise. From here the run scripts drive the tab through the gateway on
 7780 (RUN-ORDER.md, STEP-MANIFEST.md). Nobody touches the window. Relaunches during the run go the
 same way: session.ts mints a fresh token from `CLIENT_URL` and re-navigates the tab over
 `CDP_URL`.
