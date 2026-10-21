@@ -9,7 +9,7 @@
 // 3 ticks per cook (p_delay(n) = n + 2 from the click).
 //   --mode=fast   re-send item-on-range every observed tick on the first raw item.
 //   --mode=stock  bot.useItemOnLoc, awaited, then wait for the inventory to change.
-// Range: the one in the house south-west of Varrock west bank, (3160,3427), loc 2728.
+// Range: Al Kharid (3271,3180), loc 2728. Fire: lit by the bot on the Varrock main road.
 import { runScript } from '../../../sdk/runner';
 import type { BotWorldState } from '../../../sdk/types';
 import { readFileSync } from 'fs';
@@ -43,11 +43,14 @@ await runScript(async ({ bot, sdk }) => {
     for (const it of [...(sdk.getState()?.inventory ?? [])]) await sdk.sendDropItem(it.slot);
     await sdk.sendSay(`::setstat cooking ${LEVEL}`);
     await sdk.sendSay('::setstat firemaking 99');
+    // Range: Al Kharid, range loc at (3271,3180) (maps/m51_49.jm2), player on (3273,3180).
+    // Fire: open ground on the Varrock main road, (3206,3428).
+    const [tx, tz] = WHERE === 'fire' ? [3206, 3428] : [3273, 3180];
     for (let attempt = 0; attempt < 5; attempt++) {
-        await sdk.sendSay('::tele 0,49,53,32,35'); // (3168,3427), east of the house
+        await sdk.sendSay(`::tele 0,${tx >> 6},${tz >> 6},${tx & 63},${tz & 63}`);
         await sdk.waitForTicks(4);
         const p = sdk.getState()?.player;
-        if (p && Math.abs(p.worldX - 3168) <= 2 && Math.abs(p.worldZ - 3427) <= 2) break;
+        if (p && Math.abs(p.worldX - tx) <= 2 && Math.abs(p.worldZ - tz) <= 2) break;
     }
     let target: { x: number; z: number; id: number; name: string } | undefined;
     if (WHERE === 'fire') {
@@ -57,9 +60,9 @@ await runScript(async ({ bot, sdk }) => {
         const lit = await bot.burnLogs();
         console.log(`fire: ${lit.message}`);
         await sdk.waitForTicks(2);
-        target = sdk.getState()!.nearbyLocs.filter(l => /^fire$/i.test(l.name)).sort((a, b) => a.distance - b.distance)[0];
+        target = sdk.getState()!.nearbyLocs.filter(l => /^fire$/i.test(l.name) && (l as any).reachable !== false).sort((a, b) => a.distance - b.distance)[0];
     } else {
-        target = sdk.getState()!.nearbyLocs.filter(l => [2728, 2729, 2730, 2731].includes(l.id)).sort((a, b) => a.distance - b.distance)[0];
+        target = sdk.getState()!.nearbyLocs.filter(l => [2728, 2729, 2730, 2731].includes(l.id) && (l as any).reachable !== false).sort((a, b) => a.distance - b.distance)[0];
     }
     if (!target) throw new Error(`no ${WHERE} nearby: ${sdk.getState()!.nearbyLocs.slice(0, 10).map(l => `${l.name}#${l.id}@${l.x},${l.z}`).join(' ')}`);
     await sdk.sendSay(`::give ${FOOD} ${N}`);
