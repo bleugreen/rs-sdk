@@ -208,7 +208,7 @@ export function runesOptions(raw: Record<string, unknown>): RunesOptions {
         maxPrice: { ...DEFAULT_MAX_PRICE, ...((raw.maxPrice as Record<string, number>) ?? {}) },
         shopWaitTicks: num('shopWaitTicks', 0),
         lundailWaitTicks: num('lundailWaitTicks', 4500),
-        trainOn: toRegExps(raw.trainOn ?? ['^cow$', '^cow calf$', '^chicken$']),
+        trainOn: toRegExps(raw.trainOn ?? ['^cow$', '^cow calf$', '^chicken$', '^goblin$']),
         maxCarry: num('maxCarry', 30_000),
         trainChunk: num('trainChunk', 300),
         minHitpointsWest: num('minHitpointsWest', 30),
@@ -558,6 +558,11 @@ export class Runes {
         const start = this.magic();
         let casts = 0;
         let failures = 0;
+        // The cow field is shared: other players' fights are refused ("Someone else is fighting
+        // that.") and the SDK reports that as no evidence of a cast. Keep to our own target, pick
+        // only NPCs nobody is fighting, and set a refused one aside for a while.
+        let current: number | null = null;
+        const busyUntil = new Map<number, number>();
         await withLevelUpDismissal(sdk, async () => {
             while (!this.ctx.signal.aborted && this.magic().level < this.o.magicLevel && this.inv('Mind rune') > 0 && this.inv('Air rune') > 0) {
                 const strike = strikeFor(this.magic().level);
@@ -565,21 +570,28 @@ export class Runes {
                     const staff = this.state.inventory.find(i => sameName(i.name, strike.staff!));
                     if (staff) await bot.equipItem(staff);
                 }
-                const target = sdk
+                const now = this.state.tick;
+                const candidates = sdk
                     .getNearbyNpcs()
-                    .filter(n => this.o.trainOn.some(p => p.test(n.name)) && n.reachable !== false && (n.hp ?? 1) > 0 && (!n.inCombat || n.targetIndex >= 0))
-                    .sort((a, b) => a.distance - b.distance)[0];
+                    .filter(n => this.o.trainOn.some(p => p.test(n.name)) && n.reachable !== false && (n.hp ?? 1) > 0 && (busyUntil.get(n.index) ?? 0) <= now);
+                const target = candidates.find(n => n.index === current) ?? candidates.filter(n => !n.inCombat).sort((a, b) => a.distance - b.distance)[0];
                 if (!target) {
                     await this.walk(PLACES.cows, 'the Lumbridge cow field');
                     await waitTicks(sdk, 5);
                     continue;
                 }
+                const castTick = this.state.tick;
                 const r = await bot.castSpell(target, strike.spell, 6000);
                 if (r.success) {
                     casts++;
                     failures = 0;
+                    current = target.index;
+                } else if (this.state.gameMessages.some(m => m.tick >= castTick && /someone else is fighting/i.test(m.text))) {
+                    busyUntil.set(target.index, this.state.tick + 50);
+                    if (current === target.index) current = null;
                 } else {
                     failures++;
+                    current = null;
                     if (r.reason === 'no_runes') break;
                     if (failures > 20) throw new Error(`magic: 20 failed casts in a row (${r.reason}: ${r.message})`);
                     await waitTicks(sdk, 2);
