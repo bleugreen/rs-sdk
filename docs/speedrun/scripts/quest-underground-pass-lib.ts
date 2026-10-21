@@ -222,7 +222,10 @@ export class Lab {
                     const arrived = await L.waitUntil(this.sdk, () => {
                         const q = this.pos();
                         if (this.since(m0).some(t => failRe.test(t))) return true;
-                        if (to[2] !== edge.from[2] ? q[2] === to[2] : Math.max(Math.abs(q[0] - to[0]), Math.abs(q[1] - to[1])) <= 1 && q[2] === to[2]) return true;
+                        // one- and two-tile crossings must land exactly; longer ones within a tile
+                        const span = Math.max(Math.abs(edge.from[0] - to[0]), Math.abs(edge.from[1] - to[1]));
+                        const tol = span <= 2 ? 0 : 1;
+                        if (to[2] !== edge.from[2] ? q[2] === to[2] : Math.max(Math.abs(q[0] - to[0]), Math.abs(q[1] - to[1])) <= tol && q[2] === to[2]) return true;
                         quiet = q[0] === lastQ[0] && q[1] === lastQ[1] && this.log.length === m0 ? quiet + 1 : 0;
                         lastQ = q;
                         if (quiet >= 1 && resent < 20) { quiet = 0; resent++; void send(); }
