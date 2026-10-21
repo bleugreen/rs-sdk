@@ -68,7 +68,7 @@ if (holdP > 0) {
     const envPath = join(ROOT, 'bots', name, 'bot.env');
     if (!existsSync(envPath)) {
         const made = Bun.spawnSync(['bun', 'bots/create-bot.ts', name, '--local', '--no-chat'], { cwd: ROOT });
-        if (made.exitCode !== 0) throw new Error(`create-bot ${name}: ${made.stderr.toString()}`);
+        if (made.exitCode !== 0) throw new Error(`create-bot ${name}: ${made.stderr?.toString() ?? ''}`);
     }
     const text = readFileSync(envPath, 'utf-8')
         .replace(/^SERVER=.*$/m, `SERVER=localhost:${proxyPort}`)
