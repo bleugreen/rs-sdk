@@ -12,6 +12,7 @@
 //       [--every-min=30] [--ref=agent/rs-83-coordinator-0] [--lite-ref=main] [--yield-min=10]
 //       [--sample-minutes=6]   (0: the workflow's default react-only direct probe)
 //       [--reserve=30-45]      (minutes past each PDT hour reserved for this sampler)
+//       [--long-minutes=17 --long-idle-min=30]  (a direct-only long sample when the runner has been free)
 //       [--foreign-since-min=60] (collect other dispatchers' finished runs from this far back)
 //   bun docs/speedrun/scripts/demo-burst-sampler.ts --dir=... --collect=<run id>,...   (backfill, no dispatch)
 //
@@ -42,8 +43,14 @@ const COUNT_S = Number(args.get('count-s') ?? 20);
 // --sample-minutes of tick steadiness in the same session, because only a vantage next to the app
 // sees the server's tick spacing cleanly (a home path adds its own late-then-early pairs).
 const SAMPLE_MIN = Number(args.get('sample-minutes') ?? 6);
-const DIRECT_COMMAND = args.get('direct-command') ??
-    `bun docs/speedrun/scripts/demo-latency-probe.ts --label=gha-$RUNNER_AZURE_REGION --out=$OUT/direct.json --phases=react${SAMPLE_MIN > 0 ? ',sample' : ''} --trials=$TRIALS --react-delay=0 --minutes=${SAMPLE_MIN}`;
+const directCommand = (minutes: number) => args.get('direct-command') ??
+    `bun docs/speedrun/scripts/demo-latency-probe.ts --label=gha-$RUNNER_AZURE_REGION --out=$OUT/direct.json --phases=react${minutes > 0 ? ',sample' : ''} --trials=$TRIALS --react-delay=0 --minutes=${minutes}`;
+// Long sample: when no other dispatcher has used the runner for LONG_IDLE_MIN, a slot runs the direct
+// probe alone (mode=direct) with LONG_MIN of sample in one session, to see a burst's onset and end.
+// The workflow kills a probe at 1200 s, so react (~1.5 min) plus 17 min is the longest that fits.
+const LONG_MIN = Number(args.get('long-minutes') ?? 0);
+const LONG_IDLE_MIN = Number(args.get('long-idle-min') ?? 30);
+const FINGERPRINT_EVERY = Number(args.get('fingerprint-every') ?? 15); // count polls between bundle hashes
 // A window each hour (minutes past the PDT hour) agreed with the other dispatcher, in which this
 // sampler dispatches as soon as the workflow is idle instead of yielding to recent foreign runs.
 const RESERVE_FROM = args.has('reserve') ? Number(args.get('reserve')!.split('-')[0]) : null;
@@ -150,9 +157,10 @@ async function waitIdle(deadline: number): Promise<boolean> {
     return false;
 }
 
-function dispatch(): string | null {
+function dispatch(long: boolean): string | null {
     const t0 = Date.now();
-    const r = gh(['workflow', 'run', WORKFLOW, '-R', REPO, '--ref', REF, '-f', `lite_ref=${LITE_REF}`, '-f', `direct_command=${DIRECT_COMMAND}`]);
+    const r = gh(['workflow', 'run', WORKFLOW, '-R', REPO, '--ref', REF, '-f', `lite_ref=${LITE_REF}`,
+        '-f', `mode=${long ? 'direct' : 'pair'}`, '-f', `direct_command=${directCommand(long ? LONG_MIN : SAMPLE_MIN)}`]);
     if (!r.ok) {
         log(`dispatch failed: ${r.out.trim()}`);
         return null;
@@ -257,12 +265,14 @@ async function slot(slotStart: number) {
     const deadline = slotStart + SLOT_BUDGET_MIN * 60_000;
     for (let attempt = 1; Date.now() < deadline; attempt++) {
         if (!(await waitIdle(deadline))) break;
-        const id = dispatch();
+        const runs = listRuns() ?? [];
+        const long = LONG_MIN > 0 && !runs.some(r => !mine.has(String(r.databaseId)) && Date.now() - Date.parse(r.updatedAt) < LONG_IDLE_MIN * 60_000);
+        const id = dispatch(long);
         if (!id) {
             await sleep(60_000);
             continue;
         }
-        log(`slot ${pdt(slotStart)} attempt ${attempt}: dispatched ${id}`);
+        log(`slot ${pdt(slotStart)} attempt ${attempt}: dispatched ${id} (${long ? `long direct, ${LONG_MIN} min sample` : `pair, ${SAMPLE_MIN} min sample`})`);
         const conclusion = await waitDone(id);
         const outcome = collect(id, conclusion);
         log(`run ${id}: ${conclusion}, ${outcome}`);
@@ -284,16 +294,32 @@ async function pairLoop() {
     log('pairs: past --until, stopping');
 }
 
+// The public player count, and a fingerprint of what serves it: the Fly machine (sid) and worker
+// (bn) on every poll, and every FINGERPRINT_EVERY polls a hash of the web client bundle. A deploy
+// changes the bundle (and usually the machine's image); a crash or out-of-memory exit changes neither.
 async function countLoop() {
-    while (Date.now() < UNTIL) {
-        const r = spawnSync('curl', ['-s', '--max-time', '8', '-w', '\n%{time_connect} %{time_starttransfer}', `https://${HOST}/playercount`], { encoding: 'utf8' });
-        const [body, timing] = (r.stdout ?? '').split('\n');
+    for (let i = 0; Date.now() < UNTIL; i++) {
+        const r = spawnSync('curl', ['-s', '--max-time', '8', '-H', 'flyio-debug: doit', '-D', '-', '-w', '\n%{time_connect} %{time_starttransfer}', `https://${HOST}/playercount`], { encoding: 'utf8' });
+        const lines = (r.stdout ?? '').split(/\r?\n/);
+        const timing = lines.at(-1) ?? '';
+        const body = lines.at(-2) ?? '';
         let n: number | null = null;
         try {
-            n = JSON.parse(body ?? '').count ?? null;
+            n = JSON.parse(body).count ?? null;
         } catch {}
-        const [c, f] = (timing ?? '').split(' ').map(v => Math.round(Number(v) * 1000));
-        tsv('playercount.tsv', ['pdt', 'epoch_ms', 'players', 'tcp_ms', 'ttfb_ms'], [pdt(Date.now()), Date.now(), n, c, f]);
+        let fly: any = {};
+        try {
+            fly = JSON.parse(lines.find(l => /^flyio-debug:/i.test(l))?.replace(/^flyio-debug:\s*/i, '') ?? '{}');
+        } catch {}
+        const [c, f] = timing.split(' ').map(v => Math.round(Number(v) * 1000));
+        tsv('playercount.tsv', ['pdt', 'epoch_ms', 'players', 'tcp_ms', 'ttfb_ms', 'fly_sid', 'fly_bn'], [pdt(Date.now()), Date.now(), n, c, f, fly.sid, fly.bn]);
+        if (i % FINGERPRINT_EVERY === 0) {
+            const b = spawnSync('sh', ['-c', `curl -s --max-time 20 -D /dev/stderr https://${HOST}/bot/client.js | sha256sum`], { encoding: 'utf8' });
+            const hdr = (b.stderr ?? '').split(/\r?\n/);
+            const h = (k: string) => hdr.find(l => l.toLowerCase().startsWith(k + ':'))?.split(':').slice(1).join(':').trim();
+            tsv('fingerprint.tsv', ['pdt', 'epoch_ms', 'client_js_sha256', 'content_length', 'etag', 'last_modified', 'server'],
+                [pdt(Date.now()), Date.now(), (b.stdout ?? '').slice(0, 16), h('content-length'), h('etag'), h('last-modified'), h('server')]);
+        }
         await sleep(COUNT_S * 1000);
     }
 }
