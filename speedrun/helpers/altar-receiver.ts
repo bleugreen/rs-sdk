@@ -12,7 +12,8 @@
 // givers' restock round trips and the login order.
 //
 // Role options:
-//   altar        'air' (default) or 'nature'
+//   altar        'air' (default), 'body' or 'nature'; in the local lab the stand-in raises
+//                its Runecraft to the altar's level
 //   cycles       turns to take (default 20)
 //   givers       giver accounts to wait for (default: any ready giver in sight)
 //   batch        most turns per batch (default: every ready giver)
@@ -42,7 +43,7 @@ import {
     type ScoredAction,
     type Turn
 } from './altar-cue';
-import { altarData, count, ESSENCE, enterRoom, findAltar, findItem, inRoom, pos, restock, roomTiles, standOn, until, type RestockOptions, type Tile } from './altar-room';
+import { altarData, cheat, count, ESSENCE, enterRoom, findAltar, findItem, inRoom, isLocalServer, pos, restock, roomTiles, standOn, until, type RestockOptions, type Tile } from './altar-room';
 import { ensureOutOfTutorial } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
 
@@ -196,6 +197,12 @@ class Receiver {
         await ensureOutOfTutorial(ctx);
         await ctx.bot.dismissBlockingUI();
         if (ctx.sdk.getTradeState().isOpen) await ctx.sdk.sendDeclineTrade();
+        // A fresh lab account is Runecraft 1; the scored account brings the altar's level.
+        const rcLevel = (st: BotWorldState | null) => st?.skills.find(k => /runecraft/i.test(k.name))?.baseLevel ?? 1;
+        if (isLocalServer() && rcLevel(this.s) < this.altar.level) {
+            await cheat(ctx, `setstat runecraft ${this.altar.level}`);
+            await until(ctx, st => rcLevel(st) >= this.altar.level, 10);
+        }
         if (!inRoom(this.s, this.altar)) {
             const r = (ctx.options.restock ?? {}) as Partial<RestockOptions>;
             await restock(ctx, this.altar, { kind: 'bank', ...r, essence: 0 }, d => ctx.log('restock', { detail: d }));

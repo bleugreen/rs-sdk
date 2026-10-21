@@ -11,7 +11,7 @@
 // the bbs fleet: the blind schedule has no slack for a relayed client.
 //
 // Role options (ROLE_OPTIONS):
-//   altar      'air' (default) or 'nature'
+//   altar      'air' (default), 'body' or 'nature'
 //   slot       0 east (default), 1 west, 2 south of the receiver's tile
 //   essence    essence per trade (default 27; the talisman takes the 28th slot)
 //   schedule   'robust' forces the 8-tick schedule for every turn; default follows the cue

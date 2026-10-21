@@ -10,8 +10,12 @@
 //   tuned                 givers log in first, receiver last (after they are ready), tuned schedule
 //   tuned-receiver-first  the receiver logs in first: the givers are handled after it each tick
 //   robust-receiver-first the same login order on the robust schedule
-//   bank                  givers restock at Falador east bank (staff-made stock), so batches measure the round trip
-// Options: --cycles=N (default 21), --givers=N (1-3, default 3), --essence=N (default 27)
+//   bank                  givers restock at the altar's bank (staff-made stock), so batches measure the round trip
+// Options: --altar=air|body|nature (default air; air banks at Falador east, body at Edgeville),
+//          --cycles=N (default 21), --givers=N (1-3, default 3), --essence=N (default 27),
+//          --path=relay|direct|mixed (default relay): how the givers reach their clients; mixed
+//          alternates by slot (slot 0 direct, slot 1 relay, slot 2 direct), so both paths give
+//          turns in the same minutes. The stand-in receiver always uses the relay.
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -23,6 +27,10 @@ const variant = arg('variant', 'tuned');
 const cycles = Number(arg('cycles', '21'));
 const n = Number(arg('givers', '3'));
 const essence = Number(arg('essence', '27'));
+const altar = arg('altar', 'air');
+const path = arg('path', 'relay');
+if (!['relay', 'direct', 'mixed'].includes(path)) throw new Error(`--path must be relay, direct or mixed (got ${path})`);
+const giverPath = (slot: number) => (path === 'mixed' ? (slot % 2 === 0 ? 'direct' : 'relay') : path);
 const webPort = process.env.WEB_PORT ?? '9300';
 
 const base = mkdtempSync(join(tmpdir(), 'altar-lab-'));
@@ -43,7 +51,8 @@ const receiverFirst = variant.endsWith('receiver-first');
 const giverEntries = givers.map((account, slot) => ({
     account,
     role: 'altar-giver',
-    options: { slot, essence, restock: variant === 'bank' ? { kind: 'bank', labStock: true } : { kind: 'cheat' } }
+    path: giverPath(slot),
+    options: { altar, slot, essence, restock: variant === 'bank' ? { kind: 'bank', labStock: true } : { kind: 'cheat' } }
 }));
 const receiverEntry = {
     account: receiver,
@@ -52,6 +61,7 @@ const receiverEntry = {
     final: true,
     ...(receiverFirst ? {} : { after: 'ready' }),
     options: {
+        altar,
         cycles,
         givers,
         schedule: variant.startsWith('robust') ? 'robust' : 'tuned',
@@ -69,7 +79,7 @@ const config = {
 };
 const configPath = join(base, 'launch.json');
 writeFileSync(configPath, JSON.stringify(config, null, 2));
-console.log(`variant ${variant}: ${givers.length} givers, ${cycles} turns, run files in ${base}`);
+console.log(`variant ${variant}, ${altar} altar: ${givers.length} givers (${givers.map((g, i) => `${g} ${giverPath(i)}`).join(', ')}), ${cycles} turns, run files in ${base}`);
 
 const child = Bun.spawn([process.execPath, 'speedrun/helpers/standalone.ts', configPath], {
     cwd: ROOT,
@@ -89,6 +99,8 @@ for (const f of readdirSync(logDir).filter(f => f.endsWith('.role.log')).sort())
         const m = /"message":"turn".*?"outcome":"(\w[\w-]*)"/.exec(line);
         if (m) outcomes[m[1]!] = (outcomes[m[1]!] ?? 0) + 1;
     }
-    if (Object.keys(outcomes).length) console.log(`giver ${f.replace('.role.log', '')} ${JSON.stringify(outcomes)}`);
+    const account = f.replace('.role.log', '');
+    const slot = givers.indexOf(account);
+    if (Object.keys(outcomes).length) console.log(`giver ${account}${slot >= 0 ? ` (${giverPath(slot)})` : ''} ${JSON.stringify(outcomes)}`);
 }
 process.exit(code);
