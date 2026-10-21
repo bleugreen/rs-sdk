@@ -135,7 +135,9 @@ await runScript(async ({ bot, sdk }) => {
     tDone = tick(sdk);
     log(sdk, `SEG finish-dialogue: ${tDone - tBack} ticks, ${d2.pages} pages`, t0);
     } else {
-        await tele(sdk, 2540, 4716);
+        // pool: Kolodion's spot after the fight; guardian: where pray_at_statue leaves you (Saradomin)
+        if (FROM === 'pool') await tele(sdk, 2540, 4716);
+        else await tele(sdk, 2500, 4719);
         t0 = tick(sdk);
         tDone = t0;
     }
