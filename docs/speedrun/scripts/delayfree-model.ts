@@ -82,6 +82,73 @@ if (cmd === 'wine') {
     }
 }
 
+if (cmd === 'cook') {
+    // No-wine Cooking: raw food on a range, one item per click, 3 ticks per cook (measured,
+    // cooking-range.ts, bbs 300 ms: 25 of 25 gaps were 3 on a range and on a fire, fast and stock).
+    // Success = stat_random(cooking, lo, hi) with the range pair where the row has one
+    // (cooking.rs2:117-150, cooking_generic.dbrow). A burnt item gives no xp.
+    // Bank trip per 28 items: Al Kharid range (3271,3180) to the Al Kharid bank booths
+    // (about 13 tiles, about 7 ticks running each way) plus a bank visit; --trip sets the total.
+    const TRIP = flag('trip', 18);
+    const foods = [
+        { name: 'shrimp', level: 1, xp: 30, lo: 128, hi: 512 },
+        { name: 'sardine', level: 1, xp: 40, lo: 118, hi: 492 },
+        { name: 'herring', level: 5, xp: 50, lo: 108, hi: 472 },
+        { name: 'trout', level: 15, xp: 70, lo: 88, hi: 432 },
+        { name: 'salmon', level: 25, xp: 90, lo: 68, hi: 392 },
+        { name: 'tuna', level: 30, xp: 100, lo: 58, hi: 372 },
+        { name: 'lobster', level: 40, xp: 120, lo: 38, hi: 332 },
+        { name: 'swordfish', level: 45, xp: 140, lo: 30, hi: 310 },
+        { name: 'shark', level: 80, xp: 210, lo: 1, hi: 232 },
+        { name: 'sea turtle', level: 82, xp: 211.3, lo: 1, hi: 222 },
+        { name: 'manta ray', level: 91, xp: 216.3, lo: 1, hi: 222 }
+    ];
+    const extra = [
+        { name: 'cake (helper-made)', level: 40, xp: 180, lo: 38, hi: 332 },
+        { name: 'pizza (helper-made, plain)', level: 35, xp: 143, lo: 48, hi: 352 }
+    ];
+    const best = (level: number, list: typeof foods) => list.filter(f => f.level <= level)
+        .map(f => ({ ...f, exp: f.xp * chance(level, f.lo, f.hi) }))
+        .sort((a, b) => b.exp - a.exp)[0]!;
+    const route = (startXp: number, list: typeof foods) => {
+        let xp = startXp, cooks = 0;
+        const used: Record<string, number> = {};
+        while (xp < LEVEL_XP[99]!) {
+            const f = best(levelOf(xp), list);
+            used[f.name] = (used[f.name] ?? 0) + 1;
+            cooks++;
+            xp += f.exp * 25; // expected value; burn variance averages out over hundreds of cooks
+        }
+        const ticks = Math.round(cooks * 3 + Math.ceil(cooks / 28) * TRIP);
+        return { cooks, ticks, used };
+    };
+    console.log(`best fish by level (expected base xp per cook on a range):`);
+    for (const l of [1, 15, 25, 30, 40, 45, 60, 70, 80, 85, 90, 95, 99]) {
+        const f = best(l, foods), c = best(l, [...foods, ...extra]);
+        console.log(`  ${String(l).padStart(2)}: ${f.name} ${f.exp.toFixed(1)} (${(chance(l, f.lo, f.hi) * 100).toFixed(0)}% success)${c.name !== f.name ? `; with helper-made food: ${c.name} ${c.exp.toFixed(1)}` : ''}`);
+    }
+    for (const [label, list] of [['raw fish only', foods], ['fish + cake/pizza', [...foods, ...extra]]] as const) {
+        console.log(`\n${label}, 3 ticks per cook + ${TRIP} ticks per 28-item trip:`);
+        for (const start of [1, 30, 45, 60, 65, 70, 80]) {
+            const r = route(LEVEL_XP[start]!, list as typeof foods);
+            console.log(`  from ${String(start).padStart(2)}: ${r.cooks} cooks, ${r.ticks} ticks; ${Object.entries(r.used).map(([k, v]) => `${k} ${v}`).join(', ')}`);
+        }
+    }
+    // Hybrid: k single-rolled wines at one login (bank <= 29 rolls singly, inventory always
+    // singly), then raw fish from the level reached.
+    console.log('\nhybrid: a few single-rolled wines at one login, then raw fish (mean over trials):');
+    const T = flag('trials', 5000);
+    for (const [bank, inv] of [[0, 0], [14, 0], [29, 0], [29, 14], [29, 28]] as const) {
+        let lv = 0, tk = 0;
+        for (let t = 0; t < T; t++) {
+            const xp = ferment(0, bank, inv);
+            lv += levelOf(xp);
+            tk += route(xp, foods).ticks;
+        }
+        console.log(`  ${bank} bank + ${inv} inventory wines (${bank + inv}): mean level after ${(lv / T).toFixed(1)}, then fish ${Math.round(tk / T)} ticks`);
+    }
+}
+
 if (cmd === 'routes') {
     // Per-inventory cycle, ticks (open-to-open), measured on bbs at 300 ms with delayfree-cycle.ts.
     // fast = tick-driven fire-and-forget script on the stock lite client; stock = SDK porcelain.
