@@ -1,0 +1,218 @@
+// Mage Arena, measured end to end from Kolodion's spot in the cellar to the god staff in hand.
+//
+//   bun docs/speedrun/scripts/quest-magearena-run.ts <botname>
+//
+// Env (all optional): MAGIC (default 80), HP (70), DEF (70), GOD (saradomin|guthix|zamorak, default
+// saradomin), SPELL (fire_wave|fire_blast, default fire_blast), FOOD (sharks, 20), EAT_BELOW (40),
+// FIGHT_CAP (ticks, 1500), RESET=1 sets %magearena to 0 first.
+// Setup uses staff commands (LOCAL_STAFF_LEVEL=4) and is not timed. Each timed segment logs its
+// tick count, dialogue pages, option clicks and tiles.
+import { runScript } from '../../../sdk/runner';
+import { cheat, clock, log, pos, talkThrough, tele, tick, waitTicks, waitUntil } from './quest-unlocks-lib';
+
+const MAGIC = Number(process.env.MAGIC ?? 80);
+const HP = Number(process.env.HP ?? 70);
+const DEF = Number(process.env.DEF ?? 70);
+const GOD = process.env.GOD ?? 'saradomin';
+// Kolodion's Flames of Zamorak drains Magic by 1 + 5% per hit, stacking, so without Protect from
+// Magic Fire Wave (75) is refused after two hits at 80 Magic. Every Kolodion attack is a spell, so
+// PRAYER >= 37 (Protect from Magic) blocks all damage and drains. PRAYER=0 fights without it.
+const PRAYER = Number(process.env.PRAYER ?? 70);
+const SPELL = process.env.SPELL ?? (PRAYER >= 37 ? 'fire_wave' : 'fire_blast');
+const SPELL_COM: Record<string, number> = { fire_wave: 1189, fire_blast: 1181 };
+const STATUE: Record<string, { x: number; z: number }> = {
+    saradomin: { x: 2500, z: 4721 },
+    guthix: { x: 2507, z: 4724 },
+    zamorak: { x: 2516, z: 4721 },
+};
+
+await runScript(async ({ bot, sdk }) => {
+    await bot.skipTutorial();
+    await bot.dismissBlockingUI();
+
+    // ---- untimed setup ----
+    // FROM=pool resumes a run whose fight finished (%magearena = 6) at the cellar pool.
+    const FROM = process.env.FROM ?? 'kolodion';
+    let t0 = clock(sdk);
+    let tDone = t0;
+    let magicXp0 = sdk.getSkill('Magic')?.experience ?? 0;
+    let hpXp0 = sdk.getSkill('Hitpoints')?.experience ?? 0;
+    if (FROM === 'kolodion') {
+    if (process.env.RESET === '1') await cheat(sdk, 'setvar magearena 0');
+    for (const it of sdk.getEquipment()) await bot.unequipItem(it);
+    for (const it of sdk.getInventory()) await bot.dropItem(it);
+    await cheat(sdk, `setstat magic ${MAGIC}`);
+    await cheat(sdk, `setstat hitpoints ${HP}`);
+    await cheat(sdk, `setstat defence ${DEF}`);
+    if (PRAYER > 0) await cheat(sdk, `setstat prayer ${PRAYER}`);
+    await cheat(sdk, 'give staff_of_fire 1');
+    await cheat(sdk, 'give bloodrune 500');
+    await cheat(sdk, 'give deathrune 500');
+    await cheat(sdk, 'give airrune 5000');
+    await cheat(sdk, 'give firerune 5000');
+    await cheat(sdk, `give shark ${Number(process.env.FOOD ?? 20)}`);
+    await waitTicks(sdk, 3);
+    await bot.equipItem(/staff of fire/i);
+    await tele(sdk, 2539, 4715);
+    await waitTicks(sdk, 5);
+
+    // ---- segment 1: talk to Kolodion until the arena teleport ----
+    magicXp0 = sdk.getSkill('Magic')?.experience ?? 0;
+    hpXp0 = sdk.getSkill('Hitpoints')?.experience ?? 0;
+    t0 = clock(sdk);
+    if (PRAYER >= 37) await bot.activatePrayer('protect_from_magic');
+    const kol = sdk.findNearbyNpc(/^Kolodion$/);
+    if (!kol) throw new Error('Kolodion not found near the cellar spawn');
+    await sdk.sendTalkToNpc(kol.index);
+    const d1 = await talkThrough(sdk, ['Can I fight here?', 'Yes indeedy.', "Ok, let's fight."], { keepIdle: true });
+    await waitUntil(sdk, () => pos(sdk).z < 4000, 60, 'arena teleport');
+    const tArena = clock(sdk);
+    log(sdk, `SEG talk-kolodion: ${tArena - t0} ticks, ${d1.pages} pages, ${d1.options} options`, t0);
+
+    // ---- segment 2: the fight ----
+    let casts = 0;
+    let eats = 0;
+    let minHp = 999;
+    let lastForm = -1;
+    let stage = 0;
+    let formStart = tArena;
+    const forms: string[] = [];
+    const FIGHT_CAP = Number(process.env.FIGHT_CAP ?? 1500);
+    let lastHp = sdk.getState()?.player?.hp ?? 0;
+    sdk.getNewChat({ types: [0] });
+    while (pos(sdk).z < 4600) {
+        const p = sdk.getState()?.player;
+        if (!p || p.isDead || pos(sdk).z < 3900 || clock(sdk) - tArena > FIGHT_CAP) {
+            throw new Error(`fight aborted at +${clock(sdk) - tArena}: dead=${p?.isDead} pos=${JSON.stringify(pos(sdk))} casts=${casts}`);
+        }
+        if (PRAYER >= 37 && !sdk.isPrayerActive('protect_from_magic') && (sdk.getSkill('Prayer')?.level ?? 0) > 0) {
+            log(sdk, 'protect from magic was off; reactivating', tArena);
+            await bot.activatePrayer('protect_from_magic');
+        }
+        if (p.hp !== lastHp) {
+            log(sdk, `hp ${lastHp} -> ${p.hp}`, tArena);
+            lastHp = p.hp;
+        }
+        for (const m of sdk.getNewChat({ types: [0] })) log(sdk, `chat: ${m.text}`, tArena);
+        if (p) minHp = Math.min(minHp, p.hp);
+        if (p && p.hp > 0 && p.hp < Number(process.env.EAT_BELOW ?? 40)) {
+            const food = sdk.findInventoryItem(/shark/i);
+            if (food) {
+                await bot.eatFood(food);
+                eats++;
+            }
+        }
+        const d = sdk.getDialog();
+        if (d?.isOpen && d.options.length <= 1) await sdk.sendClickDialog(d.options[0]?.index ?? 0); // level-up box
+        // Forms in order: kolhuman 907, kologre 908, kolspider 909, kolethereal 910, koldemon 911.
+        // Only the current stage's form is attackable; leftover forms from an aborted run are ignored.
+        const kols = sdk.getNearbyNpcs().filter((n) => n.name === 'Kolodion' && n.options.some((o) => /attack/i.test(o)));
+        if (!kols.some((n) => n.id === 907 + stage) && kols.some((n) => n.id === 908 + stage)) stage++;
+        const target = kols.find((n) => n.id === 907 + stage);
+        if (target) {
+            if (target.id !== lastForm) {
+                if (lastForm !== -1) forms.push(`npc ${lastForm}: ${clock(sdk) - formStart} ticks`);
+                lastForm = target.id;
+                formStart = clock(sdk);
+                log(sdk, `form npc ${target.id} lvl ${target.combatLevel}`, tArena);
+            }
+            if (casts % 5 === 0) log(sdk, `target ${target.id} hp ${target.hp}/${target.maxHp} dist ${target.distance} magic xp ${sdk.getSkill('Magic')?.experience} runes ${sdk.getInventory().filter((i) => /rune/i.test(i.name)).map((i) => i.name + ' ' + i.count).join(',')} worn ${sdk.getEquipment().map((i) => i.name).join(',')}`, tArena);
+            await sdk.sendSpellOnNpc(target.index, SPELL_COM[SPELL]);
+            casts++;
+        } else if ((clock(sdk) - tArena) % 10 === 0) {
+            log(sdk, `no target; stage ${stage}; kolodions ${JSON.stringify(kols.map((n) => [n.id, n.x, n.z, n.hp]))} pos ${JSON.stringify(pos(sdk))}`, tArena);
+        }
+        await waitTicks(sdk, 2);
+    }
+    if (lastForm !== -1) forms.push(`npc ${lastForm}: ${clock(sdk) - formStart} ticks (until teleport out)`);
+    const tBack = clock(sdk);
+    const prayerLeft = sdk.getSkill('Prayer')?.level;
+    if (PRAYER >= 37) await bot.deactivateAllPrayers();
+    log(sdk, `prayer points ${PRAYER} -> ${prayerLeft}`, t0);
+    log(sdk, `SEG fight: ${tBack - tArena} ticks, cast clicks ${casts}, eats ${eats}, min hp ${minHp}`, t0);
+    for (const f of forms) console.log('   ' + f);
+    // finish_mage_arena: p_delay(3) + teleport + p_delay(2), then Kolodion's congratulations
+    await waitUntil(sdk, () => sdk.getDialog()?.isOpen === true, 30, 'finish dialogue');
+    const d2 = await talkThrough(sdk, []);
+    tDone = clock(sdk);
+    log(sdk, `SEG finish-dialogue: ${tDone - tBack} ticks, ${d2.pages} pages`, t0);
+    } else {
+        // pool: Kolodion's spot after the fight; guardian: where pray_at_statue leaves you (Saradomin)
+        if (FROM === 'pool') await tele(sdk, 2540, 4716);
+        else {
+            await cheat(sdk, 'setvar magearena 7');
+            for (const it of sdk.getInventory()) if (/shark|staff of (saradomin|guthix|zamorak)/i.test(it.name)) await bot.dropItem(it);
+            if (!sdk.findInventoryItem(/cape of/i) && !sdk.findEquipmentItem(/cape of/i)) await cheat(sdk, `give ${GOD}_cape 1`);
+            await tele(sdk, 2500, 4719);
+        }
+        t0 = clock(sdk);
+        tDone = t0;
+    }
+    log(sdk, `dialog before pool: ${JSON.stringify(sdk.getDialog())}`);
+
+    let tChamber = clock(sdk);
+    let tCape = clock(sdk);
+    if (FROM !== 'guardian') {
+    // ---- segment 3: pool to the chamber ----
+    const pool = sdk.findNearbyLoc(/sparkling pool/i);
+    if (!pool) throw new Error('pool not found');
+    const from3 = pos(sdk);
+    const r3 = await bot.interactLoc(pool, 'Step-into');
+    log(sdk, `pool interact: ${JSON.stringify(r3).slice(0, 200)}`);
+    // mage_arena.rs2: a mesbox opens before the jump once %magearena >= 6
+    await waitUntil(sdk, () => sdk.getDialog()?.isOpen === true, 20, 'pool mesbox');
+    const d3 = await talkThrough(sdk, [], { keepIdle: true });
+    await waitUntil(sdk, () => pos(sdk).z < 4700, 40, 'arrive in the chamber');
+    log(sdk, `pool mesbox pages ${d3.pages}`);
+    await waitTicks(sdk, 1);
+    tChamber = clock(sdk);
+    log(sdk, `SEG pool: ${tChamber - tDone} ticks from ${JSON.stringify(from3)} to ${JSON.stringify(pos(sdk))}`, t0);
+
+    // ---- segment 4: pray at the statue and take the cape ----
+    const st = STATUE[GOD];
+    const statue = (await sdk.scanNearbyLocs(40)).find((l) => l.x === st.x && l.z === st.z);
+    if (!statue) throw new Error(`statue not found at ${st.x},${st.z}`);
+    const from4 = pos(sdk);
+    sdk.getNewChat({ types: [0] });
+    const r4 = await bot.interactLoc(statue, statue.options[0]);
+    await waitUntil(sdk, () => sdk.getDialog()?.isOpen === true, 60, 'statue mesbox');
+    log(sdk, `statue ${statue.id} options ${statue.options.join('/')} interact: ${JSON.stringify(r4).slice(0, 200)}`);
+    const d4 = await talkThrough(sdk, []);
+    let cape = null;
+    for (let i = 0; i < 40 && !cape; i++) {
+        cape = (await sdk.scanGroundItems(15)).find((g) => /cape of/i.test(g.name)) ?? null;
+        if (!cape) await waitTicks(sdk, 1);
+    }
+    for (const m of sdk.getNewChat({ types: [0] })) log(sdk, `chat: ${m.text}`);
+    if (!cape) {
+        log(sdk, `pos ${JSON.stringify(pos(sdk))} ground ${JSON.stringify(sdk.getGroundItems().map((g) => [g.name, g.x, g.z]))} recent dialogs ${JSON.stringify(sdk.getState()?.recentDialogs?.slice(-3))}`);
+        throw new Error('no cape on the ground');
+    }
+    await bot.pickupItem(cape);
+    await waitUntil(sdk, () => !!sdk.findInventoryItem(/cape of/i), 30, 'cape in inventory');
+    tCape = clock(sdk);
+    log(sdk, `SEG statue+cape: ${tCape - tChamber} ticks from ${JSON.stringify(from4)}, ${d4.pages} pages`, t0);
+    }
+
+    // ---- segment 5: chamber guardian hands over the staff ----
+    const from5 = pos(sdk);
+    let guard = sdk.findNearbyNpc(/chamber guardian/i);
+    if (!guard) {
+        await bot.walkTo(2506, 4699, 2);
+        guard = sdk.findNearbyNpc(/chamber guardian/i);
+    }
+    if (!guard) throw new Error('guardian not found');
+    await sdk.sendTalkToNpc(guard.index);
+    await waitUntil(sdk, () => sdk.getDialog()?.isOpen === true, 60, 'guardian dialogue');
+    const d5 = await talkThrough(sdk, []);
+    const staff = sdk.findInventoryItem(/staff of (saradomin|guthix|zamorak)/i);
+    const tStaff = clock(sdk);
+    log(sdk, `SEG guardian: ${tStaff - tCape} ticks from ${JSON.stringify(from5)}, ${d5.pages} pages, staff=${staff?.name}`, t0);
+
+    const magicXp = (sdk.getSkill('Magic')?.experience ?? 0) - magicXp0;
+    const hpXp = (sdk.getSkill('Hitpoints')?.experience ?? 0) - hpXp0;
+    log(sdk, `TOTAL ${tStaff - t0} ticks (talk to staff). Fight xp: magic ${magicXp / 25} base, hp ${hpXp / 25} base`, t0);
+    await cheat(sdk, 'getvar magearena');
+    await waitTicks(sdk, 2);
+    for (const m of sdk.getNewChat({ types: [0] })) console.log('chat:', m.text);
+}, { timeout: 30 * 60_000, printState: false });
