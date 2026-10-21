@@ -76,6 +76,15 @@ cd server/gateway && AGENT_PORT=7820 WEB_MANAGEMENT_PORT=8921 bun run gateway
 All of a lab's processes and scripts must run on the same machine; pin every
 batch to one executor.
 
+Long-lived terminals may not be pinnable to the executor that runs your
+scripts. In that case, run the whole lab inside one pinned batch:
+`docs/speedrun/scripts/agility-lab.sh <bot> <script.ts>[:arg:arg] ...` starts the
+engine and gateway, waits for `World ready`, creates or repoints the bot, runs
+the scripts in order, then stops everything. It hard-codes the agility port
+block (`agility-lab.sh:18,39`), so copy it as `<skill>-lab.sh` and change those
+lines for another block. Give the batch a long timeout, because the first boot
+packs the content.
+
 ## Measuring
 
 - Log the server tick of every xp change and report the gaps; that is the cycle
