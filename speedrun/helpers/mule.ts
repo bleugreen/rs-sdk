@@ -954,7 +954,7 @@ export async function courierTrip(ctx: RoleContext): Promise<{ trades: number; c
             timeout: 60_000,
             retryOnBusy: true
         });
-        ctx.log('courier: trade', { success: r.success, message: r.message, gave: r.gave.map(i => `${i.name} x${i.count}`) });
+        ctx.log('courier: trade', { success: r.success, result: r.message, gave: r.gave.map(i => `${i.name} x${i.count}`) });
         if (!r.success) break;
         trades++;
         carried.push(...r.gave.map(i => `${i.name} x${i.count}`));
