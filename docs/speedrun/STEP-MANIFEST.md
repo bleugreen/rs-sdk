@@ -167,9 +167,6 @@ scripts are in section 4; the shared primitives and their build order are in sec
 
 ### Module status
 
-The status is as of this document's commit date (2026-10-21); rs/158 updates it with each fold-in.
-Earliest plausible run date: **2026-10-23, more likely the 24th or later** (main, 14:54 PDT).
-
 **Values.** `none`: nothing is building it. `building (rs/N)`: an issue is building it, with
 `held: <gate>` when its execution is held. `lab-accepted (ticks, rs/N)`: a lab pass against the
 entry's acceptance, with the measured ticks. `on main (commit, #PR)`. Helper roles add one more:
