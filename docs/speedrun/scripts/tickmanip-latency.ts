@@ -6,7 +6,7 @@
 // sent while state label c is current is processed on server tick c+1. It prints the trials
 // per latency, the dominant offset, how often consecutive trials agree, the wall-clock gap
 // between state publications, how long each send took to resolve, and the gate's verdict
-// for a loop whose plain cycle is --plain ticks (default 4, woodcutting) with both anchors.
+// for a loop whose plain cycle is --plain ticks (default 4, woodcutting).
 // Lab only by default: it teleports to open ground in the Lumbridge castle courtyard first
 // (staff cheat); --no-tele probes where the bot stands (the demo).
 import { hostname } from 'os';
@@ -28,15 +28,12 @@ await runScript(async ({ bot, sdk }) => {
     const at = new Date().toISOString();
     const r = await probeOnTime(sdk, { trials: N });
     const q = (xs: number[], p: number) => { const a = [...xs].sort((u, v) => u - v); return a.length ? a[Math.min(a.length - 1, Math.floor(p * a.length))]!.toFixed(0) : '-'; };
-    const verdict = (anchor: 'self' | 'xp') => {
-        const v = gateDecision(r, { plainCycle: PLAIN, missCost: MISS, anchor });
-        return `${anchor}-anchored p ${v.p.toFixed(2)}, knife ${v.knife.toFixed(2)} vs plain ${v.plain} -> ${v.on ? 'manipulate' : 'plain loop'}`;
-    };
+    const v = gateDecision(r, { plainCycle: PLAIN, missCost: MISS });
     console.log(`probe from ${hostname()} at ${at}, server ${process.env.SERVER ?? '(bot.env)'}`);
     console.log(`latency in ticks (label of the step - label sent): ${latencyHistogram(r.latencies)}  (${r.trials} trials, ${r.lost} lost, ${r.ticks} ticks)${r.reason ? `  ${r.reason}` : ''}`);
     console.log(`on time ${r.onTime}/${r.trials}; dominant ${r.mode} ticks (${(r.modeFraction * 100).toFixed(0)}%, lead ${Math.max(0, r.mode - 1)}); consecutive trials agree ${(r.sameAsPrevious * 100).toFixed(0)}%`);
     console.log(`sequence: ${r.latencies.join('')}`);
-    console.log(`gate at plain cycle ${PLAIN}: ${verdict('self')}; ${verdict('xp')}`);
+    console.log(`gate at plain cycle ${PLAIN}: p ${v.p.toFixed(2)}, predicted knife ${v.knife.toFixed(2)} vs plain ${v.plain} -> ${v.on ? 'manipulate' : 'plain loop'}, lead ${v.lead}`);
     console.log(`state publication interval ms: p10 ${q(r.publishMs, 0.1)} p50 ${q(r.publishMs, 0.5)} p90 ${q(r.publishMs, 0.9)} max ${q(r.publishMs, 1)}`);
     console.log(`send resolve ms: p50 ${q(r.sendMs, 0.5)} p90 ${q(r.sendMs, 0.9)} max ${q(r.sendMs, 1)}`);
 }, { timeout: 10 * 60_000, printState: false });
