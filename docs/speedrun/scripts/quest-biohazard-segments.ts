@@ -23,7 +23,7 @@ import { runScript } from '../../../sdk/runner';
 import * as L from './quest-arthur-lab';
 import { Steps, atLevel, dropAll, ensure, has, near, opLoc, talk, useOnLoc, varp } from './quest-plague-city-lab';
 
-const all = ['east', 'west', 'rimmington', 'varrock', 'finale'];
+const all = ['east', 'west', 'hq', 'rimmington', 'varrock', 'finale'];
 const args = process.argv.slice(3);
 const picked = args.filter(a => !a.startsWith('-'));
 const segments = picked.length ? picked : all;
