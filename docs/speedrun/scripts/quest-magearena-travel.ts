@@ -54,14 +54,25 @@ await runScript(async ({ bot, sdk }) => {
             webs.sort((a, b) => a.distance - b.distance);
             const web = webs[0];
             if (!web) {
-                log(sdk, `no path to ${gx},${gz} and no unslashed web nearby (${JSON.stringify(p).slice(0, 120)})`, t0);
+                // The client's static collision still holds slashed webs; let the server path it.
+                log(sdk, `client finds no path to ${gx},${gz}; sending a direct walk`, t0);
+                await sdk.sendWalk(gx, gz, true);
+                await waitUntil(sdk, () => Math.abs(pos(sdk).x - gx) <= 1 && Math.abs(pos(sdk).z - gz) <= 1, 80, `walk to ${gx},${gz}`);
                 break;
             }
             const knife = sdk.findInventoryItem(/^knife$/i)!;
-            const u = await bot.useItemOnLoc(knife, web);
+            sdk.getNewChat({ types: [0] });
+            await bot.useItemOnLoc(knife, web);
             slashTries++;
-            log(sdk, `knife on web at ${web.x},${web.z}: ${u.message}`, t0);
             await waitTicks(sdk, 2);
+            const ok = sdk.getNewChat({ types: [0] }).some((m) => /slash the web apart/i.test(m.text));
+            log(sdk, `knife on web at ${web.x},${web.z}: ${ok ? 'slashed' : 'failed'}`, t0);
+            if (ok) {
+                // step through the slashed web with a server-side walk
+                await sdk.sendWalk(gx, gz, true);
+                await waitUntil(sdk, () => Math.abs(pos(sdk).x - gx) <= 1 && Math.abs(pos(sdk).z - gz) <= 1, 80, `walk to ${gx},${gz}`);
+                break;
+            }
         }
     }
     log(sdk, `web slash attempts: ${slashTries}`, t0);
