@@ -18,7 +18,7 @@ import type { BotWorldState, InventoryItem } from '../../sdk/types';
 import { closeSession, openSession } from '../lib/session';
 import { nextTick, waitTicks, waitUntil } from '../lib/wait';
 import { arg, botArg, result } from './common';
-import { cheat, near, setstat, tele, VARROCK_WEST_BANK } from './setup';
+import { cheat, setstat, tele, VARROCK_WEST_BANK } from './setup';
 
 const session = await openSession(botArg());
 const { sdk, bot } = session;
@@ -154,8 +154,6 @@ async function probeCharge() {
         if (!spot) throw new Error('no lure spot');
         const lure = spot.optionsWithIndex.find(o => /^lure/i.test(o.text))!.opIndex;
         fire('lure', sdk.sendInteractNpc(spot.index, lure));
-        const first = await waitUntil(sdk, s => xp(s, 'fishing') > xp(sdk.getState(), 'fishing') - 0 && false, { maxTicks: 0 }).catch(() => null);
-        void first;
         const f0 = xp(sdk.getState(), 'fishing');
         const caught = await waitUntil(sdk, s => xp(s, 'fishing') > f0, { maxTicks: 40 });
         if (!caught.ok) { result('charge+fish', { error: 'no first catch' }); continue; }
