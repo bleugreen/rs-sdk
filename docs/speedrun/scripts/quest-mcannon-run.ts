@@ -202,12 +202,13 @@ await runScript(async ({ bot, sdk }) => {
         if (!cannon) throw new Error('broken cannon not found');
         sdk.getNewChat({ types: [0] });
         const msgs: string[] = [];
-        await bot.interactLoc(cannon, 'Inspect');
+        const ri = await bot.interactLoc(cannon, 'Inspect');
+        if (!ri.success) log(sdk, `inspect: ${ri.message} at ${JSON.stringify(pos(sdk))}`, tStart);
         inspects++;
         await waitUntil(sdk, () => {
             msgs.push(...sdk.getNewChat({ types: [0] }).map((m) => m.text));
             return sdk.getDialog()?.isOpen === true || msgs.some((m) => /can't quite find/i.test(m));
-        }, 15, 'cannon inspect result');
+        }, 40, 'cannon inspect result');
         if (msgs.some((m) => /can't quite find/i.test(m))) {
             findFails++;
             continue;
