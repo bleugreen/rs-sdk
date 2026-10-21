@@ -11,6 +11,8 @@
 //   bun docs/speedrun/scripts/demo-burst-sampler.ts --dir=/tmp/rs102-sampler [--until=12:00]
 //       [--every-min=30] [--ref=agent/rs-83-coordinator-0] [--lite-ref=main] [--yield-min=10]
 //       [--sample-minutes=6]   (0: the workflow's default react-only direct probe)
+//       [--reserve=30-45]      (minutes past each PDT hour reserved for this sampler)
+//       [--foreign-since-min=60] (collect other dispatchers' finished runs from this far back)
 //   bun docs/speedrun/scripts/demo-burst-sampler.ts --dir=... --collect=<run id>,...   (backfill, no dispatch)
 //
 // The workflow shares one concurrency group (and one demo account) with other dispatchers, and
@@ -42,6 +44,15 @@ const COUNT_S = Number(args.get('count-s') ?? 20);
 const SAMPLE_MIN = Number(args.get('sample-minutes') ?? 6);
 const DIRECT_COMMAND = args.get('direct-command') ??
     `bun docs/speedrun/scripts/demo-latency-probe.ts --label=gha-$RUNNER_AZURE_REGION --out=$OUT/direct.json --phases=react${SAMPLE_MIN > 0 ? ',sample' : ''} --trials=$TRIALS --react-delay=0 --minutes=${SAMPLE_MIN}`;
+// A window each hour (minutes past the PDT hour) agreed with the other dispatcher, in which this
+// sampler dispatches as soon as the workflow is idle instead of yielding to recent foreign runs.
+const RESERVE_FROM = args.has('reserve') ? Number(args.get('reserve')!.split('-')[0]) : null;
+const RESERVE_TO = args.has('reserve') ? Number(args.get('reserve')!.split('-')[1]) : null;
+const inReserve = (ms: number) => {
+    if (RESERVE_FROM === null) return false;
+    const m = Number(pdtParts(ms).minute);
+    return m >= RESERVE_FROM && m < RESERVE_TO!;
+};
 const LOGIN_COOLDOWN_MS = 3 * 60_000; // the demo holds a session ~3 min after logout
 const HOST = 'rs-sdk-demo.fly.dev';
 
@@ -65,6 +76,7 @@ function untilMs(s: string | undefined): number {
     return t;
 }
 const UNTIL = untilMs(args.get('until'));
+const SINCE = Date.now() - Number(args.get('foreign-since-min') ?? 60) * 60_000;
 
 mkdirSync(join(DIR, 'runs'), { recursive: true });
 mkdirSync(join(DIR, 'pairs'), { recursive: true });
@@ -106,9 +118,23 @@ function busyReason(): string | null {
     if (!runs) return 'gh run list failed';
     const active = runs.filter(r => r.status !== 'completed');
     if (active.length) return `active run ${active.map(r => `${r.databaseId} (${r.status}, ${r.headBranch})`).join(', ')}`;
+    collectForeign(runs);
     const recent = runs.filter(r => !mine.has(String(r.databaseId)) && Date.now() - Date.parse(r.updatedAt) < YIELD_MIN * 60_000);
-    if (recent.length) return `yielding to ${recent.map(r => r.databaseId).join(', ')} (${r0(recent)} ago)`;
+    if (recent.length && !inReserve(Date.now())) return `yielding to ${recent.map(r => r.databaseId).join(', ')} (${r0(recent)} ago)`;
     return null;
+}
+// Other dispatchers' runs on the same runner carry a direct-probe row too (rs/95's browser mode
+// runs one as its reference): collect every finished one once, so each Ashburn row is in the series.
+const SEEN = join(DIR, 'seen.txt');
+const seen = new Set(existsSync(SEEN) ? readFileSync(SEEN, 'utf8').split('\n').filter(Boolean) : []);
+function collectForeign(runs: RunRow[]) {
+    for (const r of runs) {
+        const id = String(r.databaseId);
+        if (r.status !== 'completed' || mine.has(id) || seen.has(id) || Date.parse(r.createdAt) < SINCE) continue;
+        seen.add(id);
+        appendFileSync(SEEN, id + '\n');
+        log(`foreign run ${id} (${r.headBranch}): ${collect(id, r.conclusion, r.headBranch.startsWith('agent/rs-95') ? 'rs95' : r.headBranch)}`);
+    }
 }
 const r0 = (rs: RunRow[]) => `${Math.round((Date.now() - Math.max(...rs.map(r => Date.parse(r.updatedAt)))) / 60_000)} min`;
 
@@ -173,12 +199,12 @@ const readText = (p: string) => (existsSync(p) ? readFileSync(p, 'utf8') : '');
 type Outcome = 'gated' | 'gate-skip' | 'probe-fail' | 'cancelled' | 'error';
 
 /** Download the run's artifacts and classify it; a gated run is logged to pairs.tsv. */
-function collect(id: string, conclusion: string): Outcome {
+function collect(id: string, conclusion: string, source = 'rs102'): Outcome {
     const dest = join(DIR, 'runs', id);
     rmSync(dest, { recursive: true, force: true });
     mkdirSync(dest, { recursive: true });
     if (conclusion === 'cancelled') {
-        tsv('attempts.tsv', ATTEMPT_COLS, [pdt(Date.now()), id, 'cancelled', '', '', '', '', runUrl(id)]);
+        tsv('attempts.tsv', ATTEMPT_COLS, [pdt(Date.now()), id, source, 'cancelled', '', '', '', '', runUrl(id)]);
         return 'cancelled';
     }
     gh(['run', 'download', id, '-R', REPO, '-D', dest], 120_000);
@@ -187,7 +213,7 @@ function collect(id: string, conclusion: string): Outcome {
     const direct = readJson(join(sub, 'direct.json'));
     const gwp = readJson(join(sub, 'gateway-path.json'));
     const skipped = readText(join(sub, 'skipped.txt')).trim();
-    const base = [vantage.time_pdt ?? pdt(Date.now()), id];
+    const base = [vantage.time_pdt ?? pdt(Date.now()), id, source];
     const where = [vantage.edge_region, vantage.http_ms?.tcp_connect?.p50, vantage.runner?.azure?.location];
     if (skipped) {
         tsv('attempts.tsv', ATTEMPT_COLS, [...base, 'gate-skip', ...where, skipped.replace(/^.*?::notice::/, ''), runUrl(id)]);
@@ -209,7 +235,7 @@ function collect(id: string, conclusion: string): Outcome {
     const relay = gwp?.reaction_ticks ?? {};
     const missCatch = t0.filter(t => t.nextIntervalMs !== null && t.nextIntervalMs < 200);
     tsv('pairs.tsv', PAIR_COLS, [
-        vantage.time_pdt, id, vantage.players_online ?? direct.playercountStart, direct.playercountEnd,
+        vantage.time_pdt, id, source, vantage.players_online ?? direct.playercountStart, direct.playercountEnd,
         count(1), count(2), count(3), t0.filter(t => t.ticks === 99 || t.ticks > 3).length,
         relay['1'] ?? (gwp ? 0 : ''), relay['2'] ?? (gwp ? 0 : ''), relay['3'] ?? (gwp ? 0 : ''),
         iv.p10, iv.p50, iv.p90, iv.max, fr.over400, fr.under200, fr.n,
@@ -217,14 +243,14 @@ function collect(id: string, conclusion: string): Outcome {
         gwp?.publication_interval_ms ?? '', vantage.http_ms?.tcp_connect?.p50, vantage.runner?.azure?.location, runUrl(id)
     ]);
     // Keep what the analysis needs (trials, raw frames, ticks, vantage); drop the warm-GET samples.
-    const keep = { ...direct, vantage, gatewayPath: gwp, runUrl: runUrl(id), react: { ...direct.react, warm: undefined } };
+    const keep = { ...direct, vantage, gatewayPath: gwp, runUrl: runUrl(id), dispatchedBy: source, react: { ...direct.react, warm: undefined } };
     writeFileSync(join(DIR, 'pairs', `pair-${String(vantage.time_pdt ?? '').replace(/\D/g, '').slice(0, 12)}-${id}.json`), JSON.stringify(keep));
     log(`gated ${id}: direct ${count(1)}:${count(2)}:${count(3)} relay ${relay['1'] ?? '-'}:${relay['2'] ?? '-'} pub p90 ${iv.p90} max ${iv.max} >400 ${fr.over400} <200 ${fr.under200}, ${vantage.players_online} online`);
     return 'gated';
 }
 const runUrl = (id: string) => `https://github.com/${REPO}/actions/runs/${id}`;
-const ATTEMPT_COLS = ['pdt', 'run_id', 'outcome', 'edge', 'tcp_p50_ms', 'azure_region', 'detail', 'url'];
-const PAIR_COLS = ['pdt', 'run_id', 'players_start', 'players_end', 'direct_1', 'direct_2', 'direct_3', 'direct_lost', 'relay_1', 'relay_2', 'relay_3',
+const ATTEMPT_COLS = ['pdt', 'run_id', 'source', 'outcome', 'edge', 'tcp_p50_ms', 'azure_region', 'detail', 'url'];
+const PAIR_COLS = ['pdt', 'run_id', 'source', 'players_start', 'players_end', 'direct_1', 'direct_2', 'direct_3', 'direct_lost', 'relay_1', 'relay_2', 'relay_3',
     'pub_p10', 'pub_p50', 'pub_p90', 'pub_max', 'over400', 'under200', 'n_intervals', 'miss_given_catchup', 'relay_publication', 'tcp_p50_ms', 'azure_region', 'url'];
 
 async function slot(slotStart: number) {
@@ -275,8 +301,9 @@ async function countLoop() {
 // --collect=ID,ID: classify and log finished runs (a backfill of earlier pairs), then exit.
 if (args.has('collect')) {
     for (const id of args.get('collect')!.split(',').filter(Boolean)) {
-        const r = gh(['run', 'view', id, '-R', REPO, '--json', 'conclusion']);
-        log(`collect ${id}: ${collect(id, r.ok ? JSON.parse(r.out).conclusion : 'error')}`);
+        const r = gh(['run', 'view', id, '-R', REPO, '--json', 'conclusion,headBranch']);
+        const j = r.ok ? JSON.parse(r.out) : { conclusion: 'error', headBranch: '' };
+        log(`collect ${id}: ${collect(id, j.conclusion, args.get('source') ?? (j.headBranch.startsWith('agent/rs-95') ? 'rs95' : 'rs102'))}`);
     }
     process.exit(0);
 }
