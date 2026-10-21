@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { baseState, FakeSdk } from '../lib/fake-sdk';
-import { report, TickLog } from '../lib/ticks';
-import { resolveStart, runSteps, StepError, type RunnerSession, type Step } from './step';
+import { report, TickLog, type TickRow } from '../lib/ticks';
+import { sleep } from '../lib/wait';
+import { BOUNDARY_STEP, resolveStart, runSteps, StepError, type RunnerSession, type Step } from './step';
 
 const prevTick = process.env.SPEEDRUN_TICK_MS;
 beforeAll(() => { process.env.SPEEDRUN_TICK_MS = '5'; });
@@ -9,13 +10,21 @@ afterAll(() => { if (prevTick === undefined) delete process.env.SPEEDRUN_TICK_MS
 
 /** A session whose fake client ticks every 2 ms while the test runs. */
 function fakeSession(): { session: RunnerSession; sdk: FakeSdk; stop: () => void } {
-    const sdk = new FakeSdk(baseState({ tick: 0 }));
+    const { session, sdk } = manualSession(0);
     const timer = setInterval(() => sdk.tick(), 2);
-    const session = { sdk, bot: {}, name: 'lab', sessionId: 0 } as unknown as RunnerSession;
     return { session, sdk, stop: () => clearInterval(timer) };
 }
 
-function step(name: string, over: Partial<Step<{ trace: string[] }>> = {}): Step<{ trace: string[] }> {
+/** A session whose fake client ticks only when the test says so. */
+function manualSession(tick: number): { session: RunnerSession; sdk: FakeSdk } {
+    const sdk = new FakeSdk(baseState({ tick }));
+    const session = { sdk, bot: {}, name: 'lab', sessionId: 0 } as unknown as RunnerSession;
+    return { session, sdk };
+}
+
+type C = { trace: string[] };
+
+function step(name: string, over: Partial<Step<C>> = {}): Step<C> {
     return {
         name,
         preconditions: () => true,
@@ -26,6 +35,10 @@ function step(name: string, over: Partial<Step<{ trace: string[] }>> = {}): Step
     };
 }
 
+const stepRows = (rows: TickRow[]) => rows.filter(r => r.step !== BOUNDARY_STEP);
+const boundaries = (rows: TickRow[]) => rows.filter(r => r.step === BOUNDARY_STEP);
+const fake = (sdk: unknown) => sdk as FakeSdk;
+
 describe('runSteps', () => {
     test('runs every step in order and logs one row each', async () => {
         const { session, stop } = fakeSession();
@@ -35,7 +48,7 @@ describe('runSteps', () => {
         stop();
         expect(r).toEqual({ completed: 2 });
         expect(c.trace).toEqual(['a', 'b']);
-        expect(report(log.rows).steps.map(s => [s.step, s.count, s.failures])).toEqual([['a', 1, 0], ['b', 1, 0]]);
+        expect(report(stepRows(log.rows)).steps.map(s => [s.step, s.count, s.failures])).toEqual([['a', 1, 0], ['b', 1, 0]]);
     });
 
     test('a failed precondition stops before run is called', async () => {
@@ -57,7 +70,7 @@ describe('runSteps', () => {
         await expect(p).rejects.toThrow('postcondition failed: inventory not empty');
         stop();
         expect(c.trace).toEqual(['a']);
-        expect(log.rows.map(r => [r.step, r.ok])).toEqual([['a', true], ['a:postcondition', false]]);
+        expect(stepRows(log.rows).map(r => [r.step, r.ok])).toEqual([['a', true], ['a:postcondition', false]]);
     });
 
     test('a stop request waits for the next logoutSafe step, then logs out with the resume index', async () => {
@@ -76,6 +89,7 @@ describe('runSteps', () => {
         expect(c.trace).toEqual(['a', 'b']);
         expect(r).toEqual({ completed: 2, resumeAt: 2 });
         expect(loggedOut).toBe(1);
+        expect(boundaries(log.rows).map(r => r.meta?.to)).toEqual(['a', 'b', '(logout)']);
     });
 
     test('from resumes at an index or a step name', async () => {
@@ -87,5 +101,142 @@ describe('runSteps', () => {
         await runSteps(session, [step('a'), step('b')], { log: TickLog.memory(), c, from: 'b', shouldStop: () => false });
         stop();
         expect(c.trace).toEqual(['b']);
+    });
+});
+
+// These sessions tick only from inside the steps (or a timer a step sets), so
+// any wait the runner should not take hangs the test instead of passing by luck.
+describe('runSteps boundaries', () => {
+    beforeAll(() => { process.env.SPEEDRUN_TICK_MS = '1000'; });
+    afterAll(() => { process.env.SPEEDRUN_TICK_MS = '5'; });
+
+    test('a three-step chain whose steps end mid-tick spends 0 boundary ticks', async () => {
+        const { session, sdk } = manualSession(10);
+        const log = TickLog.memory('t');
+        const c = { trace: [] as string[] };
+        // Each step sends one action, sees two ticks pass, and returns mid-tick.
+        const walk = (name: string) => step(name, {
+            run: async ({ sdk, c }) => {
+                c.trace.push(name);
+                await fake(sdk).sendWalk(1, 1);
+                fake(sdk).tick();
+                fake(sdk).tick();
+            },
+        });
+        const r = await runSteps(session, [walk('a'), walk('b'), walk('c')], { log, c, shouldStop: () => false });
+        expect(r).toEqual({ completed: 3 });
+        expect(c.trace).toEqual(['a', 'b', 'c']);
+        expect(stepRows(log.rows).map(r => [r.step, r.startTick, r.ticks])).toEqual([['a', 10, 2], ['b', 12, 2], ['c', 14, 2]]);
+        expect(boundaries(log.rows).map(r => [r.meta?.from, r.meta?.to, r.ticks, r.meta?.waits])).toEqual([
+            ['(start)', 'a', 0, []],
+            ['a', 'b', 0, []],
+            ['b', 'c', 0, []],
+            ['c', '(end)', 0, []],
+        ]);
+        expect(report(log.rows).totalTicks).toBe(sdk.getState()!.tick - 10);
+    });
+
+    test('a failing precondition waits exactly one tick, then is checked again', async () => {
+        const { session } = manualSession(10);
+        const log = TickLog.memory('t');
+        const seen: number[] = [];
+        const steps = [
+            step('a', { run: async ({ sdk }) => { fake(sdk).tick(); } }),
+            step('b', {
+                preconditions: s => {
+                    seen.push(s.tick);
+                    if (s.tick >= 12) return true;
+                    setTimeout(() => session.sdk.getState() && (session.sdk as unknown as FakeSdk).tick(), 1);
+                    return 'door not open yet';
+                },
+            }),
+        ];
+        await runSteps(session, steps, { log, c: { trace: [] }, shouldStop: () => false });
+        expect(seen).toEqual([11, 12]);
+        const ab = boundaries(log.rows).find(r => r.meta?.from === 'a')!;
+        expect([ab.ticks, ab.meta?.waits]).toEqual([1, ['pre-recheck']]);
+    });
+
+    test('a precondition that still fails after the one-tick re-check throws, checked exactly twice', async () => {
+        const { session, sdk } = manualSession(10);
+        const log = TickLog.memory('t');
+        const c = { trace: [] as string[] };
+        const seen: number[] = [];
+        const p = runSteps(session, [step('a', {
+            preconditions: s => {
+                seen.push(s.tick);
+                setTimeout(() => sdk.tick(), 1);
+                return 'not at the bank';
+            },
+        })], { log, c, shouldStop: () => false });
+        await expect(p).rejects.toThrow('precondition failed: not at the bank');
+        expect(seen).toEqual([10, 11]);
+        expect(c.trace).toEqual([]);
+        expect(log.rows.map(r => r.step)).toEqual(['a:precondition']);
+    });
+
+    test('a postcondition that holds a tick late passes on the re-check', async () => {
+        const { session, sdk } = manualSession(10);
+        const log = TickLog.memory('t');
+        const steps = [step('a', {
+            run: async () => { setTimeout(() => sdk.tick(), 1); },
+            postconditions: s => (s.tick >= 11 ? true : 'not landed'),
+        })];
+        await runSteps(session, steps, { log, c: { trace: [] }, shouldStop: () => false });
+        const end = boundaries(log.rows).find(r => r.meta?.to === '(end)')!;
+        expect([end.ticks, end.meta?.waits]).toEqual([1, ['post-recheck']]);
+    });
+
+    test('a step that spent the tick\'s 5 user events hands off on the next tick, not later', async () => {
+        const { session, sdk } = manualSession(10);
+        const log = TickLog.memory('t');
+        let bSawTick = -1;
+        const steps = [
+            step('a', {
+                run: async ({ sdk }) => {
+                    await Promise.all([1, 2, 3, 4, 5].map(i => fake(sdk).sendBankDeposit(i, 1)));
+                    setTimeout(() => sdk.getState() && fake(sdk).tick(), 1);
+                },
+            }),
+            step('b', { run: async ({ sdk }) => { bSawTick = sdk.getState()!.tick; } }),
+        ];
+        await runSteps(session, steps, { log, c: { trace: [] }, shouldStop: () => false });
+        expect(bSawTick).toBe(11);
+        const ab = boundaries(log.rows).find(r => r.meta?.from === 'a')!;
+        expect([ab.ticks, ab.meta?.waits]).toEqual([1, ['budget']]);
+        expect(ab.meta?.budget).toMatchObject({ tick: 10, sent: 5, pending: 0, free: 0 });
+        expect(sdk.sent.length).toBe(5);
+    });
+
+    test('with room left in the tick\'s budget the next step starts in the same tick', async () => {
+        const { session } = manualSession(10);
+        const log = TickLog.memory('t');
+        const steps = [
+            step('a', { run: async ({ sdk }) => { await Promise.all([1, 2, 3, 4].map(i => fake(sdk).sendBankDeposit(i, 1))); } }),
+            step('b'),
+        ];
+        await runSteps(session, steps, { log, c: { trace: [] }, shouldStop: () => false });
+        const ab = boundaries(log.rows).find(r => r.meta?.from === 'a')!;
+        expect([ab.ticks, ab.meta?.waits]).toEqual([0, []]);
+        expect(ab.meta?.budget).toMatchObject({ sent: 4, free: 1 });
+    });
+});
+
+describe('runSteps on a stale state', () => {
+    beforeAll(() => { process.env.SPEEDRUN_TICK_MS = '20'; });
+    afterAll(() => { process.env.SPEEDRUN_TICK_MS = '5'; });
+
+    test('a state older than one tick of wall time is waited past before the next check', async () => {
+        const { session, sdk } = manualSession(10);
+        const log = TickLog.memory('t');
+        const seen: number[] = [];
+        const steps = [
+            step('a', { run: async () => { sdk.tick(); setTimeout(() => sdk.tick(), 70); await sleep(40); } }),
+            step('b', { preconditions: s => { seen.push(s.tick); return true; } }),
+        ];
+        await runSteps(session, steps, { log, c: { trace: [] }, shouldStop: () => false });
+        expect(seen).toEqual([12]);
+        const ab = boundaries(log.rows).find(r => r.meta?.from === 'a')!;
+        expect([ab.ticks, ab.meta?.waits]).toEqual([1, ['stale']]);
     });
 });
