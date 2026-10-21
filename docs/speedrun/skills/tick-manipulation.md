@@ -12,8 +12,14 @@ Shared by [woodcutting.md](woodcutting.md), [fishing.md](fishing.md) and
   Ardougne zoo cluster, with a starter (`eat`, `knife` or `none`) on every move.
 - [`tickmanip-lab.sh`](../scripts/tickmanip-lab.sh): boots the tickmanip port block
   (LAB.md), logs one bot in, runs the given commands and tears everything down.
-- [`tickmanip-latency.ts`](../scripts/tickmanip-latency.ts): checks that a packet sent on
-  state label c is processed on server tick c+1, the assumption every loop here rests on.
+- [`tickmanip-latency.ts`](../scripts/tickmanip-latency.ts): the latency probe as a CLI.
+  It reports how many packets sent on state label c are processed on server tick c+1, c+2,
+  and so on. The probe and the run-time gate built on it live in
+  [`speedrun/lib/hostgate.ts`](../../../speedrun/lib/hostgate.ts) (section 6, "Run-time
+  host gate").
+- [`tickmanip-demo.sh`](../scripts/tickmanip-demo.sh): the same knife test on the demo server
+  from whichever host runs it (setup in `tickmanip-demo-setup.ts`, summary in
+  `tickmanip-demo-report.ts`).
 
 Every measurement is at `NODE_TICKRATE=300` (the production rate), unless a row says 100 ms.
 The rs/9 rows used the **stock** lite client. The rows marked rs/53 (respawn 13, level-ups)
@@ -243,6 +249,11 @@ Recovery: if no xp arrives for a predicted roll, stop sending starters, let the 
 expire (about 5 ticks), and bootstrap again with one plain click. Both scripts implement
 this (`resync` in `tickmanip-cycle.ts`, `SLIP` in `tickmanip-mine.ts`).
 
+Host gate: probe the host's packet latency before the first bootstrap, again after every
+lost lock, and every 500 ticks while running plain. Manipulate only while the predicted
+knife cycle beats the plain one and the measured rate agrees (section 6, "Run-time host
+gate"). Both scripts do this by default (`--gate=off` forces the starter).
+
 ## 6. Interactions and failure modes
 
 - **Supplies (knife):** knife and one normal log (2 slots) plus spares. A slipped cycle
@@ -280,8 +291,8 @@ this (`resync` in `tickmanip-cycle.ts`, `SLIP` in `tickmanip-mine.ts`).
   (`tickmanip-latency.ts`). Knife iron at respawn 13 then measured 8.6-8.8 ticks per ore
   with every log fletched, the adjacent-rock rotation 14.3, and Lumbridge fly 78-99 7.7
   ticks per catch, all worse than not manipulating. The same scripts on a quiet host
-  (load 2-6, 110 of 110 probes on time) gave the rows above. Probe the host before a timed
-  run, and on the demo, before trusting a schedule.
+  (load 2-6, 110 of 110 probes on time) gave the rows above. The loops now probe the host
+  themselves and fall back to the plain loop ("Run-time host gate", below).
 - **Combat:** being attacked starts auto-retaliate, which replaces the gathering
   interaction and breaks the lock. Train where nothing aggressive reaches the account, or
   outlevel the local aggressors (measured at the Draynor willows, section 4).
@@ -300,6 +311,115 @@ this (`resync` in `tickmanip-cycle.ts`, `SLIP` in `tickmanip-mine.ts`).
   plus the new tree's first 3-4 ticks).
 - **100 ms labs:** packet timing differs from 300 ms (LAB.md). The eat starter lost far
   more locks at 100 ms. Trust the 300 ms numbers.
+
+### Run-time host gate
+
+[`speedrun/lib/hostgate.ts`](../../../speedrun/lib/hostgate.ts) (cairn://p/rs/62) lets
+the scored run's loops decide on the night whether the knife pays.
+
+**Probe.** `probeOnTime(sdk, {trials})` walks one tile and back, sending each walk on the
+fresh state label that showed the previous step, the same send-on-a-fresh-label pattern the
+loops use. Each trial records the label the step appears on minus the label the walk was
+sent on: 1 when the packet is processed on the next server tick. The result has the counts
+per offset, the dominant offset and its share (`mode`, `modeFraction`), the on-time share,
+and how often consecutive trials agree. The default 20 trials take about 20 ticks (6 s) on
+a punctual host and end on the starting tile. The walks clear the current interaction, so
+the loops probe where they re-bootstrap anyway. The probe uses only the SDK (`state.tick`,
+the player's position, `sendWalk`). The browser webclient publishes a state per
+PLAYER_INFO once the positions are decoded (`Client.ts`), as the lite client does since #20,
+so the probe should read the same on both. That is read from the code, not measured; the
+browser client is rs/82's. `tickmanip-latency.ts` is the CLI over it.
+
+**A constant latency costs nothing.** The cycle loops anchor their schedule on their own
+bootstrap click: every starter goes out a whole number of cycles after it. If every packet
+takes L ticks, the bootstrap lands L-1 ticks later too, and so do the rolls and every
+starter, so the lock holds at any L. The mining executor plans the same way, on its own
+bootstrap click. What breaks a lock is a starter whose latency differs from the rest. Only
+a schedule anchored on an *observed* roll (`--reanchor=xp`, or mining with `--lead`) has
+to send early, by the lead: the dominant offset minus 1. On normal trees each log
+re-bootstraps from the label that shows it, so no lead is possible or needed there.
+
+**A late starter misses one cycle; it does not break the lock (read, then measured).** In
+woodcutting, a starter meant for R+1 that lands on R+2 finds the loop's continuation has
+already re-armed the clock to R+4 (`woodcut.rs2`, `cut_tree`). So the knife's expired-clock
+check (`cut_logs.rs2:83-85`) fails and nothing is written, and that roll runs at the plain
+length. The 3-tick schedule then lands on the roll tick itself, where the knife writes
+nothing and the roll still happens. It drifts one tick per cycle until a starter lands on
+roll+1 again. So about one knife cycle is lost, no lock is lost, and the lost-lock window
+(15 ticks or more) does not fire. Fishing's first-click and continuation labels have the
+same shape (inferred). Mining used to be different: the open-loop executor planned the next
+transition on the *predicted* roll label, so after a late roll its walk landed on the roll
+tick and cancelled it, and the slip check restarted the rotation (about 9 ticks). With no
+lead it now plans on the label that shows the roll's xp. On a punctual host that is the
+same label, and a late roll costs only its late ticks. Measured on the bbs lab (300 ms,
+load 3-4 of 32 cores) by holding a random 15% of starter bundles one label
+(`--inject-late=0.15`, main's Ashburn distribution):
+
+| Loop | Starters on time | 15% held one label | Plain |
+|---|---|---|---|
+| Iron rotation, knife, respawn 19, 80 ores | 3.53 ticks/ore, 0 slips | **3.51**, 11 held, 0 slips | 3.84 (rs/5) |
+| Willow, knife, 100 logs | 5.03 ticks/log | **5.76**, 23 held (about 3.2 ticks each) | 5.84 |
+| Fly, knife, 100 catches | 3.86 ticks/catch | FLY15 | FLYBASE |
+
+The iron rotation absorbed the held starters entirely: at respawn 19 the 6-rock lap has
+slack, so a held starter mostly used up a wait (at respawn 13, with no slack, about 3.15 is
+expected; inferred). Each held willow starter cost about one knife cycle, as read. But with
+15% held the knife only just stays ahead of plain on willows, because tree depletion and
+re-bootstraps already dilute its per-roll gain.
+
+**Decision.** `gateDecision(probe, {plainCycle, knifeCycle = 3, missCost})` turns the
+manipulation on when knifeCycle + (1 - modeFraction) × missCost < plainCycle. The miss
+cost defaults to one knife cycle (measured above); the mining loop passes 1, because it
+runs closed-loop. The resulting thresholds on the share at the dominant offset:
+woodcutting (plain 4) needs more than 2/3, fly (5) more than 1/3, the iron rotation (3.61,
+miss 1) more than 0.39, and lobster (6) passes any distribution. Main's Ashburn probe (51
+of 60 at 1 tick, 85%) passes everywhere. rs/26's probe from bbs (25 at 2, 35 at 3, 58%)
+passes for fly and fails for woodcutting. This replaced a first rule of "95% of trials at 1
+tick" (from rs/53's quiet 110 of 110 against loaded 23 of 60) once the demo showed that
+even a good host reads 2.
+
+**Measured override.** The loops report every xp drop to the gate (`gate.drop`). After
+30 drops in one manipulating stretch, the gate compares that stretch's ticks per drop with
+plain's (`--plain-rate`, or the last plain stretch it measured). If the knife is not
+faster, it switches off and stays off for 3,000 ticks. A per-roll model cannot see
+per-target costs such as walking to the next tree, and the measurement can.
+
+**Re-probe.** At the start; after every lost lock the loops already detect
+(`tickmanip-cycle.ts`'s no-xp resync, `tickmanip-mine.ts`'s SLIP), at most once per 100
+ticks; and every 500 ticks while off. Every probe and every switch is logged as
+`T<tick> gate (<why>): latency 1:18 2:2 of 20, ... -> SWITCH manipulate -> plain`.
+
+**Fallback.** `tickmanip-cycle.ts` runs its base technique. `tickmanip-mine.ts` runs rs/5's
+adjacent-rock transitions (the `trick` of `mining-rotation.ts`), closed-loop. It does not
+run `mining-rotation.ts` itself: that script is open-loop, and on rs/53's loaded host it
+measured 14.3 ticks per ore, worse than the knife's 8.6 there.
+
+**Lab check** (bbs, 300 ms, load about 4 of 32 cores): 60 of 60 probes at 1 tick. The gate
+stayed on: knife iron at respawn 19 gave 3.50 ticks per ore with 0 slips (as rs/53), and
+knife fly gave 3.68 per catch.
+
+**Demo check** (bbs to rs-sdk-demo.fly.dev, 2026-10-21 08:52-09:16 UTC; throwaway account
+`cairn_tm62`; normal trees west of Lumbridge castle, bronze axe). Five rounds of plain, knife
+forced on, and knife behind the gate, 20 logs each, with a 30-trial probe before every
+block. The gate in this run used an earlier model (consecutive agreement, with a miss
+costing a plain cycle). The demo's xp rate took the account from level 20 to 75 over the
+run, so the report weights each log by the rolls expected at its level
+(`stat_random(64, 200)`). The walk to the next tree is in both columns.
+
+| Condition | Logs | Ticks per log | Ticks per expected roll |
+|---|---|---|---|
+| Plain | 95 | 10.36 | 5.67 |
+| Knife forced on | 95 | 9.44 | 5.44 |
+| Knife behind the gate (on in rounds 2, 4 and 5, off in 3, switched off in 1) | 95 | 8.87 | 5.27 |
+
+The probes before the 15 blocks, in order (counts at 1, 2 and 3 ticks): 13/16/1, 0/30/0,
+13/17/0; 1/28/1, 3/27/0, 9/21/0; 7/23/0, 13/17/0, 6/24/0; 20/9/1, 10/19/1, 15/15/0;
+3/27/0, 10/20/0, 8/21/1. In total 139 / 336 / 5 of 480: dominant 2 ticks at 70%, just over
+woodcutting's line. On this host the knife is at best a few percent ahead of plain, and
+the 20-log blocks are too noisy to separate them; excluding round 1, the forced knife and
+plain both read 5.5 per expected roll. This is the pessimistic bound. The same command
+from the run machine (`bash docs/speedrun/scripts/tickmanip-demo.sh <bot>`) gives the real
+number.
 
 ## 7. The fletch-menu path (cairn://p/rs/1)
 
