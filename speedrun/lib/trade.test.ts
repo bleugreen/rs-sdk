@@ -340,6 +340,27 @@ describe('trade completion race: cairn_h30 gives cairn_h71 a talisman and 200 no
         expect(r.gave.map(i => [i.id, i.count]).sort()).toEqual([[1437, 200], [1438, 1]]);
     });
 
+    test('openTrade (via receiveFrom) re-sends a refused request on the frame that shows the refusal, not 8 s later', async () => {
+        const near = { nearbyPlayers: [{ index: 7, name: 'cairn_h30', combatLevel: 3, x: 0, z: 0, distance: 1 }] } as unknown as Partial<BotWorldState>;
+        const sdk = new FakeSdk(baseState({ tick: 1, ...near }));
+        const t0 = Date.now();
+        const result = receiveFrom(sdk as unknown as TradeSdk, 'cairn_h30', { maxTicks: 5 });
+        await flush();
+        expect(sdk.sent.filter(a => a.method === 'sendTradeRequest')).toHaveLength(1);
+        sdk.push({ tick: 2, gameMessages: [{ type: 0, text: 'Cairn_h30 is busy at the moment.', sender: '', tick: 2, fromSelf: false }] });
+        await flush();
+        expect(sdk.sent.filter(a => a.method === 'sendTradeRequest')).toHaveLength(2);
+        // the same refusal on the next frame is not a second refusal
+        sdk.push({ tick: 3 });
+        await flush();
+        expect(sdk.sent.filter(a => a.method === 'sendTradeRequest')).toHaveLength(2);
+        sdk.push({ tick: 4, trade: { isOpen: true, screen: 'offer', partner: 'cairn_h30', myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false } });
+        await flush();
+        sdk.push({ tick: 20, trade: undefined });
+        await result;
+        expect(Date.now() - t0).toBeLessThan(2_000);
+    });
+
     test('receiveFrom() reports a trade that completed as its decline landed as received', async () => {
         const sdk = new FakeSdk(frame(1, fromH30({ theirOffer: offer, partnerAccepted: true })));
         const result = receiveFrom(sdk as unknown as TradeSdk, 'cairn_h30');
