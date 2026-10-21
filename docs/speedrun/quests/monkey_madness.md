@@ -16,6 +16,37 @@ quest nets roughly 3,300-4,250 ticks. It is the most valuable quest in the chain
 but it carries real risk on Ape Atoll (the temple guards and two forced jailings,
 see Risks).
 
+**Those totals are the success path.** Three steps are random and can fail; with the
+failure costs below, the **expected total is about 5,270 ticks stock, about 4,740
+fixed, about 4,370 burst (inferred, mostly from 3-sample observations)**.
+
+### Random steps: success rates, failure costs, expected ticks
+
+| Step | Observed | Failure and what recovers it | Failure cost | Expected extra over the success path |
+|---|---|---|---|---|
+| Temple trapdoor (H): reach the one access tile (2806,2785) past the 2x2 `blockwalk=all` guards and click | **1 of 3 tries got down** (102 ticks); 1 still pinned after 150 ticks at 5 hp; 1 **died** (measured, lab probe, Protect from Melee on, auto-retaliate off) | **Stuck**: walk out west, eat, drink a prayer dose, try again (about 30 ticks plus the next try). **Death**: respawn in Lumbridge; Varrock teleport, young tree, village tree, stronghold, Daero's blindfold, Waydar, Lumdo, a jail cycle, walk to the temple (about 330); regear by trade (9). This assumes the enchanted bar is among the 3 kept items (it is the most valuable quest item; the stock death rules keep the 3 most valuable). If it is lost, remaking it is about 650 more (another jail and cellar trip for the mould, two dungeon passes, Zooknock) | stuck about 30 + retry; death about 340 (about 990 if the bar is lost) | **about +600** (inferred: with p = 1/3 per outcome, a try costs about 110 + 30/3 + 340/3 = 233 and takes 3 tries on average, about 700, against 102 on the success path) |
+| The monkey child (H) while the aunt is near | **1 of 1 talk sequence jailed** (the aunt called guards on the second of four talks, measured) | jail cycle (wake + lock), walk back 44 tiles, repeat the interrupted talk | about 120 | **about +120** (inferred, observed 1 of 1) |
+| Jungle demon (L), bow from 6+ tiles | controlled setup 3 of 3 clean kills; an earlier, less controlled batch had 2 deaths in 3 (one 22 ticks after the spawn, before stepping away; one at 242 ticks after the demon got within 2 tiles) | death: respawn in Lumbridge, re-wear the sigil (it teleports you straight back, 44 ticks), regear by trade | about 60 | **about +60** (inferred, about 1 death in 6) |
+| Both knockouts (H) and the cell lock | always succeed; only the time varies (55-73 and 15-43 ticks, measured) | | | 0 (the means are already in the total) |
+| Dungeon traps (H, 4 passes) | no death in the measured pass (lowest 31 of 70 hp, 5 sharks) | death costs as for the temple | | not included |
+
+Leads for making the temple deterministic (open, not measured; evidence only):
+
+- **Poison, not the guards, may be what kills.** A jungle spider stood among the
+  guards in every logged attempt (`Spider@2801,2782` and `@2805,2784` in the probe
+  log). Ape Atoll wildlife poisons on about 1 hit in 10 (`aa_wildlife.rs2:1-39`), and
+  poison is not blocked by Protect from Melee. A helper-supplied antipoison could
+  remove the death outcome.
+- **The trapdoor guards wander only 1 tile** (`wanderrange=1`, `maxrange=2`) around
+  spawns at (2803,2785), (2805,2783) and (2805,2786) (`quest_mm.npc`,
+  `[mm_religious_trapdoor_guard]`), so the access tile opens on a cycle.
+  Waiting just outside their 2-tile hunt range and stepping in when (2806,2785) is
+  free could make it a timing step instead of a scrum. In the success, the tile came
+  free about 94 ticks in.
+- **Killing one trapdoor guard** frees the tile for its 25-tick respawn
+  (`respawnrate=25`), but at defence 200 and 130 hp (healing 24 below 30 hp,
+  `aa_monkey_guard.rs2:45-56`) that is probably slower than waiting.
+
 How the numbers were made. The gnome half (steps A-G) was played on the lab by
 `docs/speedrun/scripts/quest-mm-full.ts <bot> [first] [last]`. The Ape Atoll half
 was measured segment by segment, because two of its steps are random and can kill
@@ -229,8 +260,9 @@ cost ceil(k/5), options and state pages 1.
 | Waits | 336 | 336 | 336 | 2 knockouts to the cell (63 + 63), child timer (100), hangar cutscene (21), sigil (44), chatter | M + R |
 | **Total** | **about 4,490** | **about 3,960** | **about 3,590** | | 2,670 M, 980 R, 790 T, 50 I |
 
-Not included: the helper trade (9), and the random extras in Risks (another jail
-cycle is about 90; a temple retry 100+).
+Not included: the helper trade (9), and the random failures. With them the expected
+total is about **5,270 stock / 4,740 fixed / 4,370 burst** (inferred; see Random
+steps near the top).
 
 ## Risks and gotchas
 
