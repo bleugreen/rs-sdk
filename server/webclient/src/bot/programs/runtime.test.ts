@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { MARK_TAIL, parseProgramCommand, ProgramRuntime } from './runtime.js';
-import { Harness, makeState } from './testkit.js';
+import { declared, Harness, makeState } from './testkit.js';
 import type { TickProgram } from './types.js';
 
 const burst = (n: number): TickProgram => ({
@@ -12,7 +12,7 @@ const burst = (n: number): TickProgram => ({
 
 describe('ProgramRuntime', () => {
     test('runs the program once per decoded tick and publishes counters', () => {
-        const h = new Harness('count', () => ({ onTick: ctx => { ctx.count('ticks'); ctx.progress(); if (ctx.tick === 12) ctx.done({ ok: true }); } }));
+        const h = new Harness('count', declared(() => ({ onTick: ctx => { ctx.count('ticks'); ctx.progress(); if (ctx.tick === 12) ctx.done({ ok: true }); } }), ['a']));
         const s = h.start('count', { a: 1 }, makeState({ tick: 9 }));
         expect(s.phase).toBe('running');
         expect(s.startedTick).toBe(9);
@@ -46,7 +46,7 @@ describe('ProgramRuntime', () => {
     test('starting replaces the running program in one call', () => {
         const stopped: string[] = [];
         const h = new Harness('a', () => ({ onTick: c => c.progress(), onStop: why => stopped.push(why) }));
-        h.runtime.register('b', () => ({ onTick: c => c.progress() }));
+        h.runtime.register('b', declared(() => ({ onTick: c => c.progress() })));
         const a = h.start('a');
         const b = h.runtime.start('b');
         expect(stopped).toEqual(['replaced']);
@@ -120,7 +120,7 @@ describe('ProgramRuntime', () => {
     test('publishes frame cadence from raw arrivals and publication cadence from passes', () => {
         let now = 0;
         const rt = new ProgramRuntime({ dispatch: () => ({ success: true, message: '' }), now: () => now });
-        rt.register('a', () => ({ onTick: c => c.progress() }));
+        rt.register('a', declared(() => ({ onTick: c => c.progress() })));
         rt.start('a');
         rt.onTick(makeState({ tick: 1 }), 1, [0]);
         now = 300;
@@ -139,11 +139,45 @@ describe('ProgramRuntime', () => {
 
     test('a factory that throws reports bad parameters as a fault', () => {
         const rt = new ProgramRuntime({ dispatch: () => ({ success: true, message: '' }) });
-        rt.register('x', () => { throw new Error('trials must be a number'); });
+        rt.register('x', declared(() => { throw new Error('trials must be a number'); }));
         const r = rt.command({ op: 'start', name: 'x', params: {} });
         expect(r.success).toBe(false);
         expect(r.message).toContain('trials must be a number');
         expect(rt.active).toBe(false);
+    });
+
+    test('a start with declared keys runs; one undeclared key faults naming the key and the program', () => {
+        const made: unknown[] = [];
+        const factory = declared(p => { made.push(p); return { onTick: c => c.progress() }; }, ['trials', 'maxWait']);
+        const rt = new ProgramRuntime({ dispatch: () => ({ success: true, message: '' }) });
+        rt.register('p', factory);
+        expect(rt.start('p', { trials: 3, maxWait: 2, stallTicks: 9 }).phase).toBe('running');
+        expect(made).toEqual([{ trials: 3, maxWait: 2, stallTicks: 9 }]);
+        rt.stop();
+        const r = rt.command({ op: 'start', name: 'p', params: { trials: 3, untilXp: 1 } });
+        expect(r.success).toBe(false);
+        expect(r.message).toContain('untilXp');
+        expect(r.message).toContain('p does not declare');
+        expect(rt.status()?.phase).toBe('fault');
+        expect(rt.status()?.fault).toContain('untilXp');
+        expect(rt.active).toBe(false);
+        // the factory never saw the faulted start
+        expect(made).toHaveLength(1);
+    });
+
+    test('an undeclared key on a start replaces the running program and faults, like any bad parameter', () => {
+        const h = new Harness('a', () => ({ onTick: c => c.progress() }));
+        const first = h.start('a');
+        const second = h.runtime.start('a', { dropEach: true });
+        expect(first.phase).toBe('replaced');
+        expect(second.phase).toBe('fault');
+        expect(second.fault).toBe('bad parameters: a does not declare dropEach (accepts: stallTicks)');
+    });
+
+    test('registering a factory without a declaration is refused', () => {
+        const rt = new ProgramRuntime({ dispatch: () => ({ success: true, message: '' }) });
+        const bare = (() => ({ onTick: () => {} })) as unknown as Parameters<ProgramRuntime['register']>[1];
+        expect(() => rt.register('bare', bare)).toThrow(/declares no parameter keys/);
     });
 
     test('unknown program names are refused', () => {
