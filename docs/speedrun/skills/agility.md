@@ -21,18 +21,26 @@ measured lap and fall costs with the success-roll formula; rerun it with
 
 ## 1. Recommendation
 
-**On the planned quest route** (cairn://p/rs/3): Grand Tree, Underground Pass and
-Regicide give **24,650 base xp (level 92)**, leaving **about 2,186 ticks** of
-Wilderness laps to 99 (inferred, `agility-model.ts`). Underground Pass and
-Regicide are provisional until the Regicide-chain quest document lands; with
-Grand Tree alone it is 4,695 ticks from level 75. The troll chain (Death Plateau,
-Troll Stronghold, Troll Romance) is off the route: Troll Romance's 8,000 base saves
-about 1,150 ticks of laps here, against about 2,735 ticks for the chain on the
-fixed client (`docs/speedrun/quests/troll_romance.md`). Tourist Trap is off too: two
-Agility picks would save about 1,336 ticks (2,186 to 850) against 1,430-1,830 ticks of
-quest. Do Underground Pass before Grand Tree to skip the 122-159 ticks of
-pre-quest training below, unless its failable obstacles at low Agility cost more
-quest time than that.
+**On the planned quest route** (cairn://p/rs/3): Grand Tree is the only Agility
+quest. Its 7,900 base takes the account to **level 75**, leaving **about 4,695
+ticks** of Wilderness laps to 99 (inferred, `agility-model.ts`). That makes Agility
+the largest of the five self-only skills on this route. Train to 22 on the Gnome
+course and drink an Agility potion for Grand Tree's level-25 check (122 ticks, below).
+Every other Agility quest is off the route because its playtime exceeds the laps it
+replaces. Saved on top of Grand Tree (inferred):
+
+- Tourist Trap, both picks on Agility: 1,414 ticks, against 1,430-1,830 of quest plus
+  110-220 of guard handling.
+- The troll chain (Troll Romance's 8,000): 1,220, against about 2,735
+  (`docs/speedrun/quests/troll_romance.md`).
+- The Regicide chain (Underground Pass + Regicide, 16,750): 2,509, against 7,400-8,100
+  for the chain.
+- Fremennik Trials: 436, but it also feeds Woodcutting, Fishing, Thieving and three
+  combat skills; the README weighs the whole quest.
+
+Underground Pass before Grand Tree does not pay even when that chain is done: falls at
+Agility 1-10 cost an expected 730-960 ticks (`docs/speedrun/quests/underground_pass.md`),
+against 122-159 of Gnome laps.
 
 **With every Agility quest:** Agility's quest rewards are Grand Tree, Regicide, Troll
 Romance and Underground Pass. Regicide requires Underground Pass, so the real
@@ -119,8 +127,11 @@ excluded, see `docs/speedrun/quests/`):
 | Quest xp in | Base xp | Start level | Ticks to 99 |
 |---|---|---|---|
 | none | 0 | 1 | 6,956 (Gnome below 52) / 6,509 (monkey bars) |
-| Grand Tree only | 7,900 | 75 | 4,695 |
-| **Grand Tree + Underground Pass + Regicide (planned quest route)** | **24,650** | **92** | **2,186** |
+| **Grand Tree only (planned quest route)** | **7,900** | **75** | **4,695** |
+| Grand Tree + 2 Tourist Trap picks | 17,200 | 86 | 3,281 |
+| Grand Tree + Troll Romance | 15,900 | 85 | 3,475 |
+| Grand Tree + Fremennik Trials | 10,712 | 80 | 4,259 |
+| Grand Tree + Underground Pass + Regicide | 24,650 | 92 | 2,186 |
 | ... + 1 Tourist Trap pick (off the route) | 29,300 | 94 | 1,515 |
 | ... + 2 Tourist Trap picks (off the route) | 33,950 | 96 | 850 |
 | Grand Tree + Regicide + Troll Romance | 29,650 | 94 | 1,465 |

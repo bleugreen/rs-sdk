@@ -20,14 +20,14 @@ account at 57 and makes it **about 1,950-2,000 ticks** (measured 1,952 from 57;
 model 1,975). Sharks eaten between successes cost nothing; about 15 cover the
 whole route at 40+ HP.
 
-**On the planned quest route** the account also completes Biohazard (1,250 base Thieving,
-`quest_biohazard.rs2:159`), a prerequisite of Underground Pass in the Regicide chain
-(cairn://p/rs/3). Fight Arena plus Biohazard start Thieving at 63 (3,425 base), leaving
-**about 1,850-2,030 ticks** (inferred: model 1,852, up to x1.096 for the measured-vs-model
-gap). Two quests still being costed by the quest plan would take off more: Hazeel Cult
-(1,500 base) saves about 130 ticks, Tribal Totem (1,775) about 150, and both about 270
-(model, `thieving-model.ts`). Each is worth doing only if it takes fewer ticks than that.
-The Fremennik Trials, Tourist Trap and Legends rows below are off the planned route.
+**On the planned quest route** (cairn://p/rs/3) Fight Arena is the only Thieving quest,
+so the headline is the Fight Arena row: **about 1,950-2,000 ticks** from 57. Biohazard
+(1,250, `quest_biohazard.rs2:159`) left the route with the Regicide chain. Candidates still
+being costed, saved on top of Fight Arena (model, `thieving-model.ts`): Hazeel Cult
+(1,500 base) about 145 ticks, Tribal Totem (1,775) about 175, both about 295, and
+Fremennik Trials' 2,812.4 about 260. Each is worth doing for Thieving only if it takes
+fewer ticks than that; Fremennik also feeds other skills. The Biohazard, Tourist Trap and
+Legends rows below are off the planned route.
 
 ## 2. Route by level band
 
@@ -54,7 +54,11 @@ Totals:
 | Level 1, no quests | ~2,840 | 641 inferred (1-55) + 2,200 measured (55-99) |
 | Level 55 | 2,200 (runs: 2,176 / 2,198 / 2,226) | measured, 3 runs |
 | Fight Arena, level 57 (2,175 base) | ~1,950-2,000 (run: 1,952 from 57.0) | measured, 1 run; model 1,975 |
-| **Fight Arena + Biohazard (3,425 base, level 63), the planned quest route** | **~1,850-2,030** | inferred: model 1,852, up to x1.096 for the measured-vs-model gap |
+| FA + Fremennik Trials (4,987 base, level 69) | ~1,715-1,880 | inferred: model 1,715 |
+| FA + Hazeel Cult (3,675 base, level 64) | ~1,830-2,000 | inferred: model 1,829 |
+| FA + Tribal Totem (3,950 base, level 65) | ~1,800-1,975 | inferred: model 1,802 |
+| FA + Hazeel Cult + Tribal Totem (5,450 base, level 70) | ~1,680-1,840 | inferred: model 1,679 |
+| Fight Arena + Biohazard (3,425 base, level 63; off the route with the Regicide chain) | ~1,850-2,030 | inferred: model 1,852, up to x1.096 for the measured-vs-model gap |
 | ... + Hazeel Cult (4,925 base, level 68) | ~1,720-1,890 | inferred: model 1,721 |
 | ... + Tribal Totem (5,200 base, level 69) | ~1,700-1,860 | inferred: model 1,699 |
 | ... + both (6,700 base, level 73) | ~1,580-1,730 | inferred: model 1,583 |
@@ -74,7 +78,7 @@ The Fremennik Trials, so the Ardougne-only route is recommended.
 | Quest | Thieving reward (base, read) | Start level it gives |
 |---|---|---|
 | Fight Arena | 2,175 (`quest_arena.rs2:270-271`) | 57 |
-| Biohazard | 1,250 (`quest_biohazard.rs2:159`); on the route as an Underground Pass prerequisite | 63 with Fight Arena |
+| Biohazard | 1,250 (`quest_biohazard.rs2:159`); off the route with the Regicide chain | 63 with Fight Arena |
 | Hazeel Cult, Tribal Totem | 1,500 and 1,775 (cairn://p/rs/3 scan); candidates being costed | 68, 69, or 73 with both |
 | Tourist Trap | 4,650 per pick, 2 picks among Fletching, Agility, Smithing, Thieving (`irena.rs2:77-91`) | FA + 1 pick: 73; FA + 2 picks: 81 |
 | Legends' Quest | 7,650 per pick, 4 picks (`radimus_erkle.rs2:74-122`) | FA + TT2 + 1 pick: 88 |
