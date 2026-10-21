@@ -1,7 +1,8 @@
 # Mage Arena (the Charge unlock)
 
-**About 580 ticks (about 3 minutes at 300 ms) with Plague City done, and it buys
-the Charge spell, which takes Magic from 80 to 99 in 163 casts: 33 ticks.**
+**About 575 ticks on today's client (about 550 with the dialogue fix, 540 with
+dialogue bursts) with Plague City done, and it buys the Charge spell, which takes
+Magic from 80 to 99 in 163 casts: 33 ticks at the server's 5 casts per tick.**
 Charge is the only check that matters, `%magearena >= 8`, and it does not look at
 the god staff or cape. The fight against Kolodion's five forms is about 300 ticks,
 and it needs **Protect from Magic (Prayer 37, for example from Holy Grail)**:
@@ -126,18 +127,37 @@ measurements.
 12. **Teleport out**: 4 ticks (any teleport; the chamber is outside the
     wilderness).
 
+## Dialogue runs (CONVENTIONS "Dialogue: three columns")
+
+Read from the scripts. `c` is a pure continue, `opt` an option click, `state` a
+page after which the server does something the next action depends on (here,
+always a teleport).
+
+| Dialogue | Runs | Stock (2/click) | Fixed (1/click) | Burst |
+|---|---|---|---|---|
+| Lever warning (`wilderness_lever.rs2:5-15`, first pull only) | `1c, opt` (the option starts the teleport) | 4 | 2 | 2 |
+| Kolodion (`kolodion.rs2:1-99`) | `2c, opt, 3c, opt, 4c, opt, 3c, state` | 32 | 16 | 1+1+1+1+1+1+1+1 = 8 |
+| Pool mesbox (`mage_arena.rs2:47-50`) | `state` | 2 | 1 | 1 |
+| Statue (`chamber.rs2:14-22`) | `state, 1c` (the cape is on the ground before the second box) | 4 | 2 | 2 |
+| Guardian (`chamber_guardian.rs2:10-16`) | `5c` (staff and stage 8 come before the last box) | 10 | 5 | 1 |
+| **Total** | 13 + 1 + 2 + 5 + 1 pages... 22 pages, 4 options | **52** | **26** | **14** |
+
+Kolodion's congratulations after the fight (`mage_arena.rs2:154-156`,
+`kolodion.rs2:114-118`) reads as `5c`, but the measured runs saw no page to click
+(2-5 ticks from landing to the pool click), so it is left at its measured cost.
+
 ## Tick total
 
-| Part | Raw counts | Ticks | Basis |
-|---|---|---|---|
-| Travel in (Ardougne route) | 1 teleport, about 166 tiles, 1 lever (1 page, 1 option), 3 webs (about 6 knife tries), 1 ladder | 4 + 61 + 15 + 75 + 3 = **158** | measured (`quest-magearena-travel.ts`, 300 ms: 172 with 12 web tries), teleport primitive |
-| Travel in without Plague City | glory to Edgeville, about 470 tiles north, 2 webs, 1 ladder | 6 + **335** = 341 | measured (`FROM=edgeville`, 5 web tries), glory primitive |
-| Talk to Kolodion | 13 pages, 3 options, arena teleport | **39** | measured |
-| Fight | about 60 casts, 150 clicks | **about 300** (240-354) | measured, 7 runs |
-| Congratulations, pool, statue and cape, guardian | 1 + 2 + 2 + 5 pages, about 50 tiles, 1 pickup | 3 + 13 + 32 + 26 = **74** | measured |
-| Teleport out | 1 teleport | **4** | primitive |
-| **Total, Ardougne route** | | **about 575** | |
-| **Total, Edgeville route** | | **about 760** | |
+| Part | Raw counts | Stock | Fixed | Burst | Basis |
+|---|---|---|---|---|---|
+| Travel in (Ardougne route) | 1 teleport, about 166 tiles, 1 lever (`1c, opt`), 3 webs (about 6 knife tries), 1 ladder | 4 + 61 + 15 + 75 + 3 = **158** | 156 | 156 | measured (`quest-magearena-travel.ts`, 300 ms: 172 with 12 web tries), teleport primitive |
+| Travel in without Plague City | glory to Edgeville, about 470 tiles north, 2 webs, 1 ladder | 6 + 335 = **341** | same | same | measured (`FROM=edgeville`, 5 web tries), glory primitive |
+| Talk to Kolodion | 16 clicks (above) plus the arena teleport's `p_delay`s (about 7) | **39** | 23 | 15 | stock measured |
+| Fight | about 60 casts, 150 clicks | **about 300** (240-354) | same | same | measured, 7 runs |
+| Congratulations, pool, statue and cape, guardian | 8 pages (above), about 50 tiles, 1 pickup | 3 + 13 + 32 + 26 = **74** | 66 | 62 | stock measured |
+| Teleport out | 1 teleport | **4** | 4 | 4 | primitive |
+| **Total, Ardougne route** | | **about 575** | **about 550** | **about 540** | |
+| **Total, Edgeville route** | | **about 760** | **about 735** | **about 725** | |
 
 The unlock (talk to staff) measured 421, 430 and 430 ticks at 300 ms. Then Charge: 163
 casts in **33 ticks** for Magic 80 to 99 (below), so the Mage Arena route costs
