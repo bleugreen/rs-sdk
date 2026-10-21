@@ -343,7 +343,10 @@ SDK is the relay path. [`speedrun/lib/direct.ts`](../../../speedrun/lib/direct.t
 direct path: `openDirectSession({host, username, password})` logs a lite client into the
 engine websocket in-process and pumps it on every socket message, with no runner or gateway
 (the session core of rs/85 and rs/86's `demo-latency-probe.ts`, which read 60 of 60 from
-Ashburn), and its `sdk` (`directProbeSdk`) marks itself `path: 'direct'`. `HostGate` picks
+Ashburn), and its `sdk` (`directProbeSdk`) marks itself `path: 'direct'`. A direct session
+ends with `session.logout()`: it clicks logout, waits for the server's LOGOUT (or its close
+of the socket), re-clicks through a post-combat refusal, then closes. A bare `close()` is a
+dropped client that the server keeps in the world for 500 ticks. `HostGate` picks
 the rule by the probe's path: `directDecision` on the direct path, `gateDecision` on the
 relay. In the scored run the in-page probe is rs/97's (`programs/probe.ts`, the same walk
 trial in the page); the rules live in
