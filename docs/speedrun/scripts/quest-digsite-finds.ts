@@ -34,12 +34,18 @@ await runScript(async ({ bot, sdk }) => {
         await cheat(sdk, 'setvar itexamlevel 2');
         await tele(sdk, 3360, 3393);
         drainChat(sdk);
+        if (t === 0) console.log('near workman:', sdk.getNearbyNpcs().slice(0, 8).map(n => `${n.name}[${n.optionsWithIndex.map(o => o.text).join('/')}]`).join(', '));
         let attempts = 0, successes = 0;
         const t0 = tick(sdk);
         let last = t0;
+        let misses = 0;
         while (!(has(sdk, /^Rock sample 1$/) && has(sdk, /^Specimen brush$/))) {
-            const w = findNpcWithOp(sdk, /^Digsite workman$/, /pickpocket/i);
-            if (!w) { await sdk.waitForTicks(1); continue; }
+            const w = findNpcWithOp(sdk, /workman/i, /pick.?pocket/i);
+            if (!w) {
+                if (++misses > 30) throw new Error('no workman with a pickpocket option in view');
+                await sdk.waitForTicks(1);
+                continue;
+            }
             await sdk.sendInteractNpc(w.npc.index, w.opIndex);
             const m = await waitForMessage(sdk, [/You steal|You find a specimen|You fail to pick/], 40);
             if (!m) continue;
