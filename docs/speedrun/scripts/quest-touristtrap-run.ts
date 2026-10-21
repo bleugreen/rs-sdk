@@ -144,7 +144,7 @@ await runScript(async ({ bot, sdk }) => {
             () => slaveTalk([/I've just arrived/, /that sounds interesting/, /What's that then/, /I can try to undo them/, /funny you should say that/, /let's give it a go/]),
             () => slaveTalk([]));
         await seg('slave -> mine doors (walk)', async () => {
-            await q.walk(3301, 3035, 1);
+            await q.walk(3301, 3033, 0);
         });
         await seg('mine doors: enter the mine', async () => {
             await q.opLoc('thttmineentrancel', 1, () => p().worldZ > 9000);
@@ -246,7 +246,7 @@ await runScript(async ({ bot, sdk }) => {
     }
 
     await seg('gate -> mine doors (walk)', async () => {
-        await q.walk(3301, 3035, 1);
+        await q.walk(3301, 3033, 0);
     });
     await seg('mine doors: enter the mine', async () => {
         await q.opLoc('thttmineentrancel', 1, () => p().worldZ > 9000);
