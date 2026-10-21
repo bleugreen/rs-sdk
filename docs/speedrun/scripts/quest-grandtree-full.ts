@@ -154,7 +154,7 @@ await runScript(async ({ bot, sdk }) => {
     }
     if (runs('H')) {
         // Glough calls the guards: walk, jail, Charlie, Narnode lets you out.
-        add(await talk(sdk, /^Glough$/i, [], { idle: 12 }), 'H1 Glough -> jail -> released');
+        add(await talk(sdk, /^Glough$/i, [], { idle: 20 }), 'H1 Glough -> jail -> released');
         await check('H');
     }
     if (runs('I')) {
