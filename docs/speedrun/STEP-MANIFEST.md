@@ -157,100 +157,99 @@ scripts are in section 4; the shared primitives and their build order are in sec
 
 ### 0. `speedrun/run.ts` and the runner (all steps)
 
-- **Serves:** every step, S00-S27, the legs between them, and the hand-offs. It holds the ordered
-  `Step` list, opens SCORED's session, and chains the steps.
+- **Serves:** every step, S01-S27 (S00 is done), the legs between them, and the hand-offs. It holds
+  the ordered `Step` list, opens SCORED's session, and chains the steps through `runResumable`.
 - **Chaining contract** (`speedrun/runner/step.ts`, read): a step is `{name, preconditions(state, c),
-  run(ctx), postconditions(state, c), logoutSafe}`. `runSteps(session, steps, {log, c, from,
-  shouldStop, logout})` takes a fresh tick and checks the preconditions, failing before `run`. It
-  runs the step inside `measure`, takes the next tick and checks the postconditions; a failure is
-  logged and fatal. After a `logoutSafe` step, if a stop was requested (SIGINT by default), it
-  calls `logoutClean` and returns `resumeAt`. A stop during an unsafe step waits for the next safe
-  boundary.
-- **Parameters:** `--from=<step name or index>` (resume point; `resolveStart`), `--until=<step>`,
-  `--client=browser` (default for the run; `lite` for lab dry runs), `--bot=<env name>` (the
-  gitignored `bots/<name>/bot.env`; the name is never logged; log rows carry `SCORED`),
-  `--log=<path>`, `--dry-run` (evaluate every precondition against the live state and stop),
-  `--lab` (accept staff fixtures).
-- **Preconditions:** a session that publishes advancing ticks (`openSession`, `waitAdvancingTick`);
-  watchdog started; the in-page runtime present when the client is the browser (
-  `startProgram(sdk, 'probe')` answers); the **tab gate** passed (section 5, item 5) before any
-  in-page step starts in its fast mode. The gate has four conditions: the direct in-page probe at
-  least 58 of 60; publication p90 at most 400 ms over the probe minute; at most 1 catch-up interval
-  (< 200 ms) per minute; and a tab loop rate p10 of at least about 50 loops per second (main,
-  05:50, via the rs/103 coordinator).
-- **Run-machine setup** (a precondition the operator checks before S00; main, 05:50): power saving
-  and the screensaver off; the remote-desktop session kept connected; the tab visible and
-  unobscured; Chrome launched with `--disable-background-timer-throttling
-  --disable-renderer-backgrounding --disable-backgrounding-occluded-windows`. Chrome throttles
-  hidden or occluded tabs, and intensively after about 5 minutes, which would stall every in-page
-  program. run.ts re-checks the loop rate between steps and refuses an in-page step's fast mode
-  while it is low.
-- **Postconditions:** total level 1,881. The tick log closed with a session-level row (below).
-- **Ticks:** run.ts adds no actions of its own, but three things land on SCORED's clock.
-  - **Step-boundary idle.** `runSteps` calls `nextTick` before the preconditions and again after
-    `run`, and `nextTick` waits for a tick strictly after the current one (`lib/wait.ts`, read). So
-    SCORED stands idle for about 1-2 ticks between steps, and those ticks fall outside every
-    `measure` row: about 50-100 over the ~28 steps and ~25 legs (inferred from the read code).
-    **Fix in the runner** (a `speedrun/runner/step.ts` change, section 5): check preconditions on
-    the latest published state when it is from the current tick, and let the next step's first
-    sends go out in the tick the previous step's last effect was observed. Only a postcondition
-    that depends on the last action's effect should wait for it.
-  - **Crash recovery.** A watchdog relaunch after `kill -9` was back in the world in 3.5-4.1 s, and
-    the dropped player stayed in the world about 12-14 ticks meanwhile (measured,
-    `lab/measure-session.ts`, `speedrun/README.md` "session.ts"). A dropped login with nothing to
-    relaunch it stayed in the world about **4,600** unobserved ticks on the demo (cairn://p/rs/101,
-    the rs/72 incident). rs/101 owns the measured drop-to-leave figures and the watchdog policy.
-  - **Relogs.** The plan has **exactly two planned relogs**, both in the wine step (S25c). Each
-    costs about 2 ticks, with a tail of tens of ticks about 1 time in 29 (measured, 29 demo
-    relogs, one at 46 ticks; [rs/41] `helpers/wine.md`, "Relog risk"). That tail is on the
-    scored clock and no timing removes it. **Any step that adds a relog must justify it against
-    that figure.** An operator stop at a `logoutSafe` boundary is not a planned relog, but it
-    costs the same.
-- **Resume at step.** `runSteps` returns `resumeAt` after a clean stop, but nothing persists it, and
-  the quest preconditions cannot be checked on the demo (finding 1). run.ts therefore needs a
-  **run ledger** (`speedrun/runner/ledger.ts`, missing). It writes
-  `speedrun/runs/<runId>.ledger.json` after every step and every quest segment: the step and
-  segment completed, the quest stages SCORED reached, and the observed levels, inventory, equipment
-  and tile. `--from` defaults to the ledger's next step, and each step's preconditions read the
-  ledger for quest state and live state for everything observable. Long quests expose their
-  segments as resumable sub-steps (`S15.H`), the way `quest-mm-full.ts` has a `STARTS` table per
-  segment. A crash inside a logout-unsafe stretch resumes at that stretch's first segment.
+  run(ctx), postconditions(state, c), logoutSafe}`, plus rs/127's `done(observed)`,
+  `inProgress(observed)`, `resume(ctx)` and `probes` (`speedrun/runner/resume.ts`). run.ts calls
+  **`runResumable`**, not `runSteps`: on every start, operator restarts included, it walks the
+  manifest against the game, finds the first milestone that is not `done`, and enters the latest
+  step that can start (its `resume` if `inProgress`, else `run`), so a restart resumes from game
+  state (`RESILIENCE.md` section 5). A stop requested during an unsafe step waits for the next
+  `logoutSafe` boundary. `fence.ts` abandons a lost attempt so it cannot act on the reconnected
+  session.
+- **Parameters:** `--from=<step name or index>` (overrides the first resume walk only),
+  `--until=<step>`, `--client=browser` (default for the run; `lite` for lab dry runs),
+  `--bot=<env name>` (the gitignored `bots/<name>/bot.env`; the name is never logged; log rows carry
+  `SCORED`), `--log=<path>`, `--dry-run` (evaluate every precondition against the live state and
+  stop), `--lab` (accept staff fixtures).
+- **Preconditions, before SCORED's run login** (RUN-ORDER.md section 1):
+  - **the host reservation**: run.ts writes `~/host-reserved.json` with owner the run and `until` =
+    start + 9 h (the run bound in `RUN-HOST.md`, cairn://p/rs/139), so rs/83's gate timer skips;
+  - **main's start conditions** (09:30): Prayer xp in hand of at least 39,938 base in any bone mix; a
+    cannon set and ~1,170 cannonballs; the rune axe or main's decision to run without it; the budget
+    (expected + fallback deltas in force under 35,916). run.ts reads them from the operator's
+    checklist (`SUPPLIES.md` section 5); it does not count bones itself;
+  - rs/117's helpers logged in before SCORED (`launcher.json` `helpersReady`);
+  - a session that publishes advancing ticks (`openSession`, `waitAdvancingTick`); the watchdog
+    started; the in-page runtime present (`startProgram(sdk, 'probe')` answers);
+  - **the tab gate (tenet 12)** passed before any in-page step starts in its fast mode: (a) the direct
+    in-page probe at least 58 of 60; (b) publication p90 reported, not a pass line; (c) at most 2
+    catch-up ticks per probe minute (a failure means re-measure); (d) the tab loop rate p10 at least
+    50 per second (`speedrun/lib/hostgate-verdict.ts`, `tickSteadiness`). The start time is chosen
+    by a 3-5 minute gate read, not by the clock.
+- **In-run pause rule** (rs/102, main 07:45): a reactive or knife step pauses when catch-ups exceed
+  about 5 per minute and resumes when they fall under 1 per minute; `demo-status.ts`'s
+  `restartLikely` (at least ~10 a minute for 2 minutes) triggers the same pause, never a save.
+- **Run-machine setup** (a precondition the operator checks; `RUN-HOST.md`, tenet 12): power saving
+  and the screensaver off; the operator's remote desktop **disconnected** for the run (live view
+  instead); the tab maximised and unobscured on :10; Chrome launched with
+  `--disable-background-timer-throttling --disable-renderer-backgrounding
+  --disable-backgrounding-occluded-windows`. run.ts re-checks the loop rate between steps and
+  refuses an in-page step's fast mode while it is low.
+- **Postconditions:** total level 1,881; the final clean logout after S17's last level-up (the only
+  hiscore write, `RESILIENCE.md` section 2); **the host reservation removed** after it.
+- **Ticks:** run.ts adds no actions of its own. What lands on SCORED's clock:
+  - **Step-boundary idle: 0** (measured: #92 fixed `runSteps`, 2 ticks per boundary before and 0
+    after; main, 08:30).
+  - **A demo restart**: ~3.6 ticks of relog + 3 to the resumed step (measured, `RESILIENCE.md`
+    section 6) + the step's resume overhead; 1-2 per run expected; progress and playtime roll back
+    together, so the redone work is score-neutral. RUN-ORDER.md carries 10.
+  - **A client drop with the server up**: 3-12 ticks in the world + 2 to the resumed step with the
+    watchdog (measured, same section); without it 500-1,000 (rs/101).
+  - **Relogs:** exactly **two planned relogs**, both in S25c, about 2 ticks each with a tail of tens
+    about 1 time in 29 (measured, [rs/41] `helpers/wine.md`, "Relog risk"). **No milestone saves**
+    (main, 08:55): a save relog protects 0 score ticks. Any step that adds a relog must justify it.
+- **Resumes from:** walks on every start; `--from` only overrides the first walk (`RESILIENCE.md`
+  section 5).
+- **The run ledger** (`speedrun/runner/ledger.ts`) is **reporting only**: resume reads game state,
+  never the ledger. The ledger keeps the per-step `measure` rows, the `(boundary)`, `(resume)` and
+  `(drop)` rows, and a session row from the first in-world tick to the logout click.
 - **Watchdog.** `startWatchdog(session)` wraps the whole run, paused around intended logouts
-  (`speedrun/lib/session.ts`). It relaunches when the client exits, when ticks stop for 10, or when
-  the gateway reports the bot dead (read). The relaunch is a takeover login, which the engine
-  accepts while the dropped player is still in the world (measured, 3 of 3, `speedrun/README.md`).
-  **Policy per cairn://p/rs/101:** never kill a client to log it out. Leave the world through
-  `logoutClean`, or through a takeover login when the tab is wedged, so the character leaves within
-  the relog budget and not after the server's idle timeout. For the browser client the relaunch
-  opens a fresh tab at `browserUrl(env)`. `awaitProgram`'s `staleMs` (20 ticks) rejects a wedged
-  page first, so the step fails cleanly and the watchdog takes over.
+  (`speedrun/lib/session.ts`, `reconnect.ts`). It relaunches when the client exits, when ticks stop
+  for 10, or when the gateway reports the bot dead. After a demo restart it logs in the moment logins
+  are accepted, helpers first. The relaunch is a takeover login, which the engine accepts while the
+  dropped player is still in the world. **Policy per cairn://p/rs/101:** never kill a client to log
+  it out; leave through `logoutClean`, or a takeover when the tab is wedged. A new SCORED session
+  cancels armed Runecraft givers (rs/117's cue contract), so the givers must be back in before
+  SCORED.
 - **Tick log.** `TickLog` JSONL (`speedrun/lib/ticks.ts`): one `measure` row per step with
-  `sessionId`, and `crossedSession` when the step spanned a relaunch (its ticks are then a lower
-  bound). run.ts adds two things: a **session row** from the first in-world tick to the logout
-  click, so boundary ticks are counted, and per-program rows from `ProgramStatus`. Those carry the
-  counters, `skippedTicks`, `deferred`, `frames` and `publish` summaries, and are what the host
-  gate and the fold-in read. `bun speedrun/lib/ticks.ts report <file>` prints the table. The
-  check after the run is the public hiscore playtime.
-- **Primitives:** `runner/step.ts`, `lib/session.ts` (`openSession`, `launchClient`, `logoutClean`,
-  `login`, `startWatchdog`), `lib/ticks.ts` (`measure`, `report`), `lib/programs.ts` [rs/97],
-  `lib/hostgate.ts`. **Missing:** the run ledger; the quest-state observation; the boundary fix in
-  `runSteps`; `relog` (on the [rs/41] branch of `session.ts`, not on main); the browser-tab
-  relaunch path under rs/101's policy.
+  `sessionId`, `crossedSession` when the step spanned a relaunch, per-program rows from
+  `ProgramStatus`, and the session row. `bun speedrun/lib/ticks.ts report <file>` prints the table.
+  The check after the run is the public hiscore playtime.
+- **Primitives:** `runner/step.ts`, `runner/resume.ts`, `runner/fence.ts`, `lib/session.ts`
+  (`openSession`, `launchClient`, `logoutClean`, `login`, `startWatchdog`), `lib/reconnect.ts`,
+  `lib/demo-status.ts`, `lib/ticks.ts`, `lib/programs.ts`, `lib/hostgate.ts`,
+  `lib/hostgate-verdict.ts`, rs/114's `lib/quests.ts` (pending its merge). **Missing:** the
+  reservation write and removal; the start-condition checklist read; `relog` (on the [rs/41] branch
+  of `session.ts`).
 - **Mode:** overlay-driven. It only starts, awaits and stops.
-- **Fallback:** on a precondition failure, stop at the boundary with the ledger written and do not
-  improvise. On a run failure inside an unsafe stretch, re-run from that stretch's first segment
-  if the ledger and the live state allow it, otherwise stop for the operator.
-- **Acceptance, local:** `speedrun/lab/lab.sh srlab1 'speedrun/run.ts:--lab:--client=lite:--from=S00:--until=S02'`
-  on a fresh bot. Pass: three steps logged, and the session row's ticks minus the sum of the step
-  rows is **at most 1 tick per boundary** after the boundary fix (2 before it). Then kill the
-  client mid-S02. The watchdog must be back in the world in under 5 s (3.5-4.1 s measured), and
-  `--from` (from the ledger) must resume S02 with its preconditions true. Then a SIGINT during an
-  unsafe step must log out only at the next `logoutSafe` boundary.
-- **Acceptance, demo (throwaway):** S00-S02 on a brand-new throwaway in the browser webclient
-  through `proxy.ts` with `?server=` and `?gateway=`. Pass: the session row matches the public
-  hiscore playtime after logout within 2 ticks, and one deliberate SIGINT stop and resume costs at
-  most 2 + 2 ticks beyond the steps (the relog figure above).
-- **Start from:** `speedrun/runner/step.ts`, `speedrun/runner/example-bank.ts`, `speedrun/lib/session.ts`.
+- **Fallback:** on a precondition failure, stop at the boundary and do not improvise. On a failure
+  inside an unsafe stretch, `runResumable` re-enters from game state if a step qualifies, otherwise
+  it stops for the operator with every candidate's reason.
+- **Acceptance, local:** `speedrun/lab/lab.sh srlab1 'speedrun/run.ts:--lab:--client=lite:--until=S04'`
+  on a fresh bot. Pass: every boundary row at 0 ticks; kill the client mid-S02 and the watchdog is
+  back in under 5 s and the walk resumes S02; SIGKILL the engine mid-S03 and the walk resumes from
+  the checkpoint with S03's `inProgress` true; a SIGINT during an unsafe step logs out only at the
+  next `logoutSafe` boundary.
+- **Acceptance, reservation:** on a throwaway rehearsal, `~/host-reserved.json` exists with the run
+  as owner while it runs and the gate timer's `~/gate-history` shows no read in that window; the file
+  is gone after the final logout.
+- **Acceptance, demo (throwaway):** S01-S04 on a throwaway (after its own tutorial skip) in the
+  browser webclient through `proxy.ts` with `?server=` and `?gateway=`. Pass: the session row
+  matches the public hiscore playtime after logout within 2 ticks.
+- **Start from:** `speedrun/runner/resume.ts`, `speedrun/runner/step.ts`,
+  `speedrun/runner/example-bank.ts`, `speedrun/lib/session.ts`.
 
 ## 3. Scored-account steps, by exposure
 
