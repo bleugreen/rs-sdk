@@ -400,24 +400,27 @@ for (const kind of ['browser', 'lite'] as const) {
 }
 
 describe('browser game tick publication', () => {
-    test('publishes decoded player state after PLAYER_INFO completes', async () => {
-        // Teleport the local player to plane 1, tile (55, 56), with a hitmark.
-        // No old/new visible players; 2047 terminates the new-player bit list.
-        const bits = '1' + '11' + '01' + '0110111' + '0111000' + '1' + '1'
-            + '00000000' + '11111111111';
-        const payload = Uint8Array.from([
-            ...bits.match(/.{8}/g)!.map(byte => parseInt(byte, 2)),
-            PlayerUpdate.HITMARK, 7, 1, 23, 30
-        ]);
-        const wire = Uint8Array.from([ServerProt.PLAYER_INFO, 0, payload.length, ...payload]);
+    const bytesOf = (bits: string) => bits.padEnd(Math.ceil(bits.length / 8) * 8, '0').match(/.{8}/g)!.map(byte => parseInt(byte, 2));
+    // Teleport the local player to plane 1, tile (55, 56), with a hitmark.
+    // No old/new visible players; 2047 terminates the new-player bit list.
+    const teleportPayload = [
+        ...bytesOf('1' + '11' + '01' + '0110111' + '0111000' + '1' + '1' + '00000000' + '11111111111'),
+        PlayerUpdate.HITMARK, 7, 1, 23, 30
+    ];
+    // A tick in which nothing about the local player changed.
+    const idlePayload = bytesOf('0' + '00000000' + '11111111111');
+    const playerInfo = (payload: number[]) => [ServerProt.PLAYER_INFO, 0, payload.length, ...payload];
+    const runEnergy = (value: number) => [ServerProt.UPDATE_RUNENERGY, value];
+
+    // Retain the real packet framing and decoders; only the socket is replaced
+    // so these regressions need no game server or browser.
+    function browserClient(wireBytes: number[]) {
+        const wire = Uint8Array.from(wireBytes);
         let readPos = 0;
         const player = new ClientPlayer();
         player.teleport(true, 50, 50);
         player.health = 30;
         player.totalHealth = 30;
-
-        // Retain the real packet framing and player decoders; only the socket
-        // is replaced so this regression needs no game server or browser.
         const client = Object.assign(Object.create(Client.prototype), {
             stream: {
                 get available() { return wire.length - readPos; },
@@ -439,28 +442,65 @@ describe('browser game tick publication', () => {
             entityRemovalIds: new Int32Array(2048),
             entityUpdateIds: new Int32Array(2048),
             minusedlevel: 0,
+            runenergy: 0,
             awaitingPlayerInfo: true,
-            lastTickTime: 0
+            lastTickTime: 0,
+            pendingGameTicks: 0
         });
-        const published: unknown[] = [];
-        client.setOnGameTickCallback(() => published.push({
+        const published: Array<Record<string, unknown>> = [];
+        client.setOnGameTickCallback((ticks: number) => published.push({
+            ticks,
             health: player.health,
             x: player.routeX[0],
             z: player.routeZ[0],
             level: client.minusedlevel,
-            awaitingPlayerInfo: client.awaitingPlayerInfo,
-            packetPosition: client.in.pos
+            runenergy: client.runenergy,
+            awaitingPlayerInfo: client.awaitingPlayerInfo
         }));
+        return { client, published, unread: () => wire.length - readPos };
+    }
 
-        expect(await client.tcpIn()).toBe(true);
+    test('publishes a tick once, after the packets that follow its PLAYER_INFO', async () => {
+        // The engine sends PLAYER_INFO before the tick's inventories, stats and
+        // modals. Six more packets than the vanilla 5-per-cycle cap allows.
+        const { client, published, unread } = browserClient([
+            ...playerInfo(teleportPayload),
+            ...[10, 20, 30, 40, 50, 60].flatMap(runEnergy)
+        ]);
+
+        await client.drainPackets();
         expect(published).toEqual([{
-            health: 23, x: 55, z: 56, level: 1,
-            awaitingPlayerInfo: false, packetPosition: payload.length
+            ticks: 1, health: 23, x: 55, z: 56, level: 1, runenergy: 60, awaitingPlayerInfo: false
         }]);
-        expect(readPos).toBe(wire.length);
+        expect(unread()).toBe(0);
         expect(client.ptype).toBe(-1);
-        expect(await client.tcpIn()).toBe(false);
+
+        await client.drainPackets();
         expect(published).toHaveLength(1);
+    });
+
+    test('keeps the vanilla 5-packet cap when no tick is pending', async () => {
+        const { client, published, unread } = browserClient([1, 2, 3, 4, 5, 6, 7].flatMap(runEnergy));
+
+        await client.drainPackets();
+        expect(client.runenergy).toBe(5);
+        expect(unread()).toBe(2 * 2);
+        expect(published).toHaveLength(0);
+    });
+
+    test('counts every tick a backed-up cycle decodes in one publication', async () => {
+        const { client, published, unread } = browserClient([
+            ...playerInfo(teleportPayload),
+            ...runEnergy(10),
+            ...playerInfo(idlePayload),
+            ...runEnergy(20)
+        ]);
+
+        await client.drainPackets();
+        expect(published).toEqual([{
+            ticks: 2, health: 23, x: 55, z: 56, level: 1, runenergy: 20, awaitingPlayerInfo: false
+        }]);
+        expect(unread()).toBe(0);
     });
 });
 
