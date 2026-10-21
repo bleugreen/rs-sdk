@@ -339,6 +339,15 @@ describe('knife cycle: bury variant', () => {
         expect(gapsOf(after).every(g => g === 3)).toBe(true);
     });
 
+    test('trees restricts the clicks to the listed tiles', () => {
+        // a nearer dead tree off the list is never clicked
+        const { h, rollTicks } = serverRun({ method: 'oak', ticks: 120, inventory: KIT, bones: 40, deadTrees: 1, params: { bury: true, trees: [[3201, 3204], [3202, 3204]] } });
+        expect(h.sent.some(s => s.action.type === 'interactLoc' && (s.action as { x: number }).x === 3200)).toBe(false);
+        expect(gapsOf(rollTicks).slice(1).every(g => g === 3)).toBe(true);
+        expect(() => createKnifeCycle({ method: 'oak', rolls: 5, trees: [] })).toThrow(/trees/);
+        expect(() => createKnifeCycle({ method: 'oak', rolls: 5, trees: [[1, 2, 3]] })).toThrow(/trees\[0\]/);
+    });
+
     test('bury is refused where the lock cannot carry it', () => {
         expect(() => createKnifeCycle({ method: 'fly', rolls: 5, bury: true })).toThrow(/not supported/);
         expect(() => createKnifeCycle({ method: 'tree', rolls: 5, bury: true })).toThrow(/not supported/);

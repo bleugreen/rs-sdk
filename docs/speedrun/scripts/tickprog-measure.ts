@@ -134,6 +134,8 @@ await runScript(async ({ bot: actions, sdk }) => {
                 while (sdk.getState()?.dialog.isOpen) { await sdk.sendClickDialog(0); await sdk.waitForTicks(1); }
             }
             const params: Record<string, unknown> = { method: 'oak', technique: flag('technique', 'knife'), rolls: num('rolls', 200), maxTicks: num('maxticks', 30_000) };
+            // the three oaks reached from 2914,3494 (woodcutting.md section 2); --any-tree clicks the nearest oak
+            if (!has('any-tree')) params.trees = [[2912, 3491], [2914, 3495], [2915, 3492]];
             if (bury) params.bury = '^dragon bones$';
             const started = await startProgram(sdk, 'knife-cycle', params);
             // Top-up stand-in: the run's helper trades at the tree (bones-placement.md section 3).

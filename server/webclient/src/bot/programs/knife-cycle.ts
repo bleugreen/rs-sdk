@@ -43,7 +43,7 @@
 
 import type { BotWorldState, InventoryItem } from '../types.js';
 import type { ProgramContext, ProgramParams, TickProgram } from './types.js';
-import { baseLevel, GapCounter, invCount, invItem, itemOp, num, oneOf, regex, skillXp, statRandom } from './util.js';
+import { baseLevel, GapCounter, invCount, invItem, itemOp, num, oneOf, regex, skillXp, statRandom, tile } from './util.js';
 
 export interface CycleMethod {
     skill: string;
@@ -139,6 +139,11 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
     const reanchor = oneOf(params.reanchor, ['xp', 'click'] as const, 'xp', 'reanchor');
     const dropProducts = params.drop !== false;
     const windowOverride = params.window === undefined ? 0 : num(params.window, 0, 'window');
+    // The loc tiles the player reaches from where it stands. The page can't compute reach, and a
+    // click on a tree that needs a walk never rolls inside a bury cycle: the next bury's
+    // p_stopaction cancels the walk every cycle.
+    if (params.trees !== undefined && (!Array.isArray(params.trees) || params.trees.length === 0)) throw new Error('trees must be a non-empty list of [x, z]');
+    const trees = params.trees === undefined ? null : new Set((params.trees as unknown[]).map((v, i) => tile(v, `trees[${i}]`).join(',')));
     const targetRe = regex(method.target, '', 'method.target');
     const optionRe = regex(method.option, '', 'method.option');
     const productRe = regex(method.product, '', 'method.product');
@@ -188,7 +193,9 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
 
     const findTarget = (s: BotWorldState): Target | null => {
         if (method.kind === 'loc') {
-            const locs = s.nearbyLocs.filter(l => targetRe.test(l.name) && !avoided(l) && l.optionsWithIndex.some(o => optionRe.test(o.text))).sort((a, b) => a.distance - b.distance);
+            const locs = s.nearbyLocs
+                .filter(l => targetRe.test(l.name) && !avoided(l) && (!trees || trees.has(`${l.x},${l.z}`)) && l.optionsWithIndex.some(o => optionRe.test(o.text)))
+                .sort((a, b) => a.distance - b.distance);
             const cur = current;
             if (cur?.kind === 'loc' && locs.some(l => l.x === cur.x && l.z === cur.z && l.id === cur.id)) return cur;
             const l = locs[0];
@@ -388,7 +395,8 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
             if (switchTree) {
                 switches++;
                 ctx.count('switches');
-                ctx.log('tree gone: the next click goes to a live one');
+                const next = findTarget(s);
+                ctx.log(`tree gone: the next click goes to ${next?.kind === 'loc' ? `${next.x},${next.z}` : 'none live'} (player at ${s.player?.worldX},${s.player?.worldZ})`);
                 current = null;
             } else if (method.depletes && xpNow && (anchor !== null || awaitXpSince !== null)) {
                 // The target fell to the roll just seen (a normal tree always falls on its first
