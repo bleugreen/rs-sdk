@@ -9,8 +9,11 @@ import {
     FORBIDDEN_ACCOUNTS,
     HARD_MAX_ACCOUNTS,
     parseForbiddenList,
-    parseFleetConfig
+    parseFleetConfig,
+    returnAssignment,
+    type AccountConfig
 } from './fleet-config';
+import { memoryRoleState, openRoleState, type Role, type RoleContext } from './role';
 import { applyBankReport, emptyLedger, LedgerWriter, parseLedger, readLedger } from './ledger';
 import { Backoff, backoffDelay, LoginLimiter, loginFailurePolicy } from './backoff';
 import { parseEvents, summariseEvents, type FleetEvent } from './events';
@@ -102,6 +105,234 @@ describe('fleet config', () => {
         expect(d.start.map(a => a.account)).toEqual(['cairn_h04']);
         expect(d.stop).toEqual(['cairn_h03']);
         expect(d.changed.map(a => a.account)).toEqual(['cairn_h02']);
+    });
+});
+
+describe('then: where an account goes when its role finishes', () => {
+    const coinsOptions = { mode: 'earn', spot: { x: 3290, z: 3170 }, keep: [1, 2] };
+    const handoverEntry = (extra: Record<string, unknown> = {}) => ({
+        account: 'cairn_h63',
+        role: 'handover',
+        options: { handovers: [{ to: 'cairn_h53', items: [{ item: 'Coins', n: 100_000 }] }] },
+        then: { role: 'coins', options: coinsOptions },
+        stallMinutes: 30,
+        ...extra
+    });
+
+    test('parsed and validated', () => {
+        const c = parseFleetConfig({ accounts: [handoverEntry(), acct(1)] });
+        expect(c.accounts[0]!.then).toEqual({ role: 'coins', options: coinsOptions });
+        expect(c.accounts[1]!.then).toBeUndefined();
+        expect(parseFleetConfig({ accounts: [handoverEntry({ then: { role: 'coins' } })] }).accounts[0]!.then).toEqual({ role: 'coins', options: {} });
+        const problems = problemsOf({ accounts: [handoverEntry({ then: { role: '../x', option: {} } }), handoverEntry({ account: 'cairn_h64', then: 'coins' })] });
+        expect(problems.join('\n')).toMatch(/then: role must match/);
+        expect(problems.join('\n')).toMatch(/then: unknown key "option"/);
+        expect(problems.join('\n')).toMatch(/then must be/);
+    });
+
+    test('returnAssignment: the entry takes the then role and options exactly and keeps its other settings', () => {
+        const raw = { maxOnline: 30, accounts: [acct(1), handoverEntry()] };
+        const finished = parseFleetConfig(raw).accounts[1]!;
+        const r = returnAssignment(raw, finished);
+        if (typeof r === 'string') throw new Error(r);
+        expect(r.config.maxOnline).toBe(30);
+        expect((r.config.accounts as unknown[])[0]).toEqual(acct(1));
+        expect((r.config.accounts as unknown[])[1]).toEqual({ account: 'cairn_h63', role: 'coins', options: coinsOptions, stallMinutes: 30 });
+        expect(r.next).toEqual({ account: 'cairn_h63', role: 'coins', options: coinsOptions, enabled: true, stallMinutes: 30 });
+        // The input is not modified.
+        expect(raw.accounts[1]).toEqual(handoverEntry());
+    });
+
+    test('returnAssignment leaves an entry someone reassigned, or one with no then, alone', () => {
+        const finished = parseFleetConfig({ accounts: [handoverEntry()] }).accounts[0]!;
+        expect(returnAssignment({ accounts: [handoverEntry({ role: 'woodcutter' })] }, finished)).toMatch(/now assigns cairn_h63 woodcutter/);
+        expect(returnAssignment({ accounts: [handoverEntry({ options: { handovers: [] } })] }, finished)).toMatch(/now assigns/);
+        expect(returnAssignment({ accounts: [handoverEntry({ then: undefined })] }, finished)).toMatch(/no "then"/);
+        expect(returnAssignment({ accounts: [] }, finished)).toMatch(/no longer in fleet.json/);
+    });
+
+    test('a then-only change is not a reassignment on reload', () => {
+        const before = parseFleetConfig({ accounts: [handoverEntry()] }).accounts;
+        const after = parseFleetConfig({ accounts: [handoverEntry({ then: { role: 'idle' } })] }).accounts;
+        expect(diffActive(before, after)).toEqual({ start: [], stop: [], changed: [] });
+    });
+});
+
+describe('FleetRoleLoop: a role that returns has finished', () => {
+    const settle = async () => {
+        for (let i = 0; i < 20; i++) await new Promise(r => setTimeout(r, 0));
+    };
+    /** A role that runs until its signal aborts, like a gathering loop. */
+    const forever = (name: string): Role => ({
+        name,
+        produces: [],
+        run: ctx => new Promise<void>(resolve => ctx.signal.addEventListener('abort', () => resolve(), { once: true }))
+    });
+
+    async function harness(raw: { accounts: Record<string, unknown>[] }, roles: Record<string, Role>) {
+        const { FleetRoleLoop } = await import('./fleet');
+        const runs: { role: string; options: Record<string, unknown> }[] = [];
+        const notes: string[] = [];
+        const events: Record<string, unknown>[] = [];
+        const attention: string[] = [];
+        const delays: number[] = [];
+        const disk = { raw: raw as unknown };
+        let stopping = false;
+        const loop = new FleetRoleLoop(parseFleetConfig(raw).accounts[0]!, {
+            load: async name => roles[name] ?? Promise.reject(new Error(`no role ${name}`)),
+            context: async (cfg, signal) => ({ account: cfg.account, options: cfg.options, signal, state: memoryRoleState(), log: () => {} }) as unknown as RoleContext,
+            run: (role, ctx) => {
+                runs.push({ role: role.name, options: ctx.options });
+                return role.run(ctx);
+            },
+            started: () => {},
+            failed: () => {},
+            attention: text => attention.push(text),
+            note: text => notes.push(text),
+            event: (type, fields) => events.push({ type, ...fields }),
+            returnTo: async (finished: AccountConfig) => {
+                const r = returnAssignment(disk.raw, finished);
+                if (typeof r === 'string') return null;
+                disk.raw = r.config;
+                return r.next;
+            },
+            isStopping: () => stopping,
+            sleep: async ms => {
+                delays.push(ms);
+            }
+        });
+        return { loop, runs, notes, events, attention, delays, disk, stop: () => (stopping = true) };
+    }
+
+    const handoverH63 = { account: 'cairn_h63', role: 'handover', options: { handovers: [{ to: 'cairn_h53', items: [{ item: 'Coins', n: 100_000 }] }] } };
+    let handoverRuns = 0;
+    const handover: Role = {
+        name: 'handover',
+        produces: [],
+        run: async () => {
+            handoverRuns++;
+        }
+    };
+
+    test('2026-10-21 21:32 h63: handover finished and the supervisor must not run it again, this session or the next', async () => {
+        handoverRuns = 0;
+        const h = await harness({ accounts: [handoverH63] }, { handover });
+        const session = new AbortController();
+        const running = h.loop.run(session.signal);
+        await settle();
+        expect(handoverRuns).toBe(1);
+        expect(h.loop.finished).toBe(true);
+        expect(h.notes).toContain('[fleet] role handover finished; not restarting it');
+        expect(h.notes.some(n => /restarting it in/.test(n))).toBe(false);
+        expect(h.events).toEqual([{ type: 'role_finished', then: null }]);
+        session.abort(new Error('game session ended'));
+        await running;
+
+        // A re-login starts a new session on the same loop: still finished.
+        const next = new AbortController();
+        const again = h.loop.run(next.signal);
+        await settle();
+        expect(handoverRuns).toBe(1);
+        next.abort();
+        await again;
+    });
+
+    test('with then: the account goes back to its previous role with its exact options, written to fleet.json first', async () => {
+        handoverRuns = 0;
+        const coinsOptions = { mode: 'earn', spot: { x: 3290, z: 3170 }, keep: ['Coins', 'Lobster'] };
+        const h = await harness({ accounts: [{ ...handoverH63, then: { role: 'coins', options: coinsOptions }, stallMinutes: 30 }] }, { handover, coins: forever('coins') });
+        const session = new AbortController();
+        const running = h.loop.run(session.signal);
+        await settle();
+        expect(h.runs).toEqual([
+            { role: 'handover', options: handoverH63.options },
+            { role: 'coins', options: coinsOptions }
+        ]);
+        expect((h.disk.raw as { accounts: unknown[] }).accounts).toEqual([{ account: 'cairn_h63', role: 'coins', options: coinsOptions, stallMinutes: 30 }]);
+        expect(h.loop.cfg).toMatchObject({ role: 'coins', options: coinsOptions });
+        expect(h.loop.cfg.then).toBeUndefined();
+        expect(h.loop.finished).toBe(false);
+        expect(h.delays).toEqual([]);
+        session.abort();
+        await running;
+    });
+
+    test('an uncertain outcome also finishes, asks for a person, and still returns the account', async () => {
+        const uncertain: Role = { name: 'handover', produces: [], run: async () => ({ attention: 'handover uncertain to cairn_h53: check the receiver before giving again' }) };
+        const h = await harness({ accounts: [{ ...handoverH63, then: { role: 'coins' } }] }, { handover: uncertain, coins: forever('coins') });
+        const session = new AbortController();
+        const running = h.loop.run(session.signal);
+        await settle();
+        expect(h.runs.map(r => r.role)).toEqual(['handover', 'coins']);
+        expect(h.attention).toEqual(['handover uncertain to cairn_h53: check the receiver before giving again']);
+        expect(h.events[0]).toMatchObject({ type: 'role_finished', then: 'coins', needsAttention: true });
+        expect(h.notes.some(n => n.includes('!!! ATTENTION'))).toBe(true);
+        session.abort();
+        await running;
+    });
+
+    test('a role that throws is restarted with backoff; one stopped by a stall is restarted at once', async () => {
+        let n = 0;
+        const flaky: Role = {
+            name: 'feathers',
+            produces: [],
+            run: async () => {
+                if (++n <= 2) throw new Error(`boom ${n}`);
+                await new Promise(() => {});
+            }
+        };
+        const h = await harness({ accounts: [acct(1)] }, { feathers: flaky });
+        const session = new AbortController();
+        const running = h.loop.run(session.signal);
+        await settle();
+        expect(n).toBe(3);
+        expect(h.delays.length).toBe(2);
+        expect(h.delays[0]!).toBeGreaterThanOrEqual(15_000);
+        expect(h.loop.finished).toBe(false);
+        h.loop.ctl!.abort(new Error('stalled'));
+        await settle();
+        expect(h.delays[2]).toBe(3_000);
+        session.abort();
+        await running;
+    });
+
+    test('a finished account idles until reassigned, then runs the new role', async () => {
+        handoverRuns = 0;
+        const h = await harness({ accounts: [handoverH63] }, { handover, coins: forever('coins') });
+        const session = new AbortController();
+        const running = h.loop.run(session.signal);
+        await settle();
+        expect(h.loop.finished).toBe(true);
+        h.loop.reconfigure(parseFleetConfig({ accounts: [{ account: 'cairn_h63', role: 'coins' }] }).accounts[0]!);
+        await settle();
+        expect(h.runs.map(r => r.role)).toEqual(['handover', 'coins']);
+        // A reload that only changes `then` of the finished assignment does not start it again.
+        h.loop.reconfigure(parseFleetConfig({ accounts: [handoverH63] }).accounts[0]!);
+        await settle();
+        expect(handoverRuns).toBe(2);
+        h.loop.update(parseFleetConfig({ accounts: [{ ...handoverH63, then: { role: 'idle' } }] }).accounts[0]!);
+        await settle();
+        expect(handoverRuns).toBe(2);
+        expect(h.loop.finished).toBe(true);
+        session.abort();
+        await running;
+    });
+});
+
+describe('role state on disk', () => {
+    test('survives a reopen; a corrupt file refuses to open rather than read as empty', async () => {
+        const dir = await mkdtemp(join(tmpdir(), 'role-state-'));
+        const path = join(dir, 'sub', 'cairn_h63.json');
+        const a = await openRoleState(path);
+        expect(a.get('handover/x/0')).toBeUndefined();
+        await Promise.all([a.set('handover/x/0', { outcome: 'giving' }), a.set('handover/x/1', { outcome: 'delivered' })]);
+        await a.set('handover/x/0', { outcome: 'uncertain' });
+        const b = await openRoleState(path);
+        expect([b.get('handover/x/0'), b.get('handover/x/1')]).toEqual([{ outcome: 'uncertain' }, { outcome: 'delivered' }]);
+        await b.set('handover/x/1', undefined);
+        expect((await openRoleState(path)).get('handover/x/1')).toBeUndefined();
+        await writeFile(path, '{"torn');
+        await expect(openRoleState(path)).rejects.toThrow(/not a JSON object/);
     });
 });
 
