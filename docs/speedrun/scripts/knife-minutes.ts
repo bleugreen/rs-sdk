@@ -72,6 +72,12 @@ for (const phase of phases) {
     let final: any = null;
     let text: string;
     try { text = readFileSync(join(dir, `${phase}-full.log`), 'utf8'); } catch { console.log(`${phase}: no log`); continue; }
+    // The log's result line is cut at 4000 characters; <phase>.json holds the whole final status.
+    try {
+        const whole = readFileSync(join(dir, `${phase}.json`), 'utf8').trim();
+        const at = text.match(/^(\S+Z) result /m)?.[1];
+        if (at) text = text.replace(/^\S+Z result .*$/m, '') + `\n${at} result ${whole}\n`;
+    } catch { /* no json: the log's line it is */ }
     for (const l of text.split('\n')) {
         const m = l.match(/^(\S+Z) (progress|result) (\{.*\})\s*$/);
         if (!m) continue;
