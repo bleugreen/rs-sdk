@@ -224,6 +224,19 @@ function bankSnapshot(sdk: BotSDK) {
     return { items: sdk.getBankItems().map(b => ({ id: b.id, name: b.name, count: b.count })) };
 }
 
+/**
+ * The SDK derives its HTTP origin for GE availability and market reads from the
+ * gateway URL (sdk/index.ts buildClientUrl), so behind a loopback gateway, as the
+ * fleet runs, it asks localhost:8888 and every GE action fails with "Unable to
+ * connect". Point it at the game server named by SERVER instead.
+ */
+export function pointMarketAtServer(sdk: BotSDK, server = process.env.SERVER): void {
+    const config = (sdk as unknown as { config?: { browserLaunchUrl?: string } }).config;
+    if (!config || !server || config.browserLaunchUrl) return;
+    const host = server.replace(/^wss?:\/\//, '').replace(/\/.*$/, '');
+    config.browserLaunchUrl = /^(localhost|127\.)/.test(host) ? `http://${host}/bot` : `https://${host}/bot`;
+}
+
 async function ensureOutOfTutorial(ctx: RoleContext): Promise<void> {
     const { sdk, bot } = ctx;
     await sdk.waitForReady(30_000).catch(() => {});
@@ -604,6 +617,7 @@ class Mule {
 
     async run(): Promise<void> {
         const { ctx } = this;
+        pointMarketAtServer(ctx.sdk);
         await ensureOutOfTutorial(ctx);
         await ctx.bot.dismissBlockingUI();
         if (ctx.sdk.getTradeState().isOpen) await ctx.bot.declineTrade();
