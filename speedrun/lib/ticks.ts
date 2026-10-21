@@ -16,10 +16,11 @@ import { tickMs } from './wait';
  * Annotation rows describe the run rather than one stretch of it, so they overlap the step rows:
  * `session` (client tick 0 to the logout click), `program` (an in-page program's final status),
  * `gate` (a gate reading taken before or during the run), `reach` (the tick a level was first
- * observed). `report` lists them apart and never sums them into the total. A row without a kind
- * is a step, boundary or runner row, and the step and boundary rows together cover the run.
+ * observed), `hiscore` (the public row read after logout, against the log). `report` lists them
+ * apart and never sums them into the total. A row without a kind is a step, boundary or runner
+ * row, and the step and boundary rows together cover the run.
  */
-export type RowKind = 'session' | 'program' | 'gate' | 'reach';
+export type RowKind = 'session' | 'program' | 'gate' | 'reach' | 'hiscore';
 
 export interface TickRow {
     v: 1;
