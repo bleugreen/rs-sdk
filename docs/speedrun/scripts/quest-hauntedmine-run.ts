@@ -451,7 +451,10 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
             if (messageSince(sdk, t0, /you are dead/i)) { died = true; break; }
             const me = s.player!;
             if (me.animId !== -1) lastSwing = s.tick;
-            if ((s.tick - t0) % 25 === 0) hpLog.push(`${s.tick - t0}:${me.hp}/${sdk.findNearbyNpc(/treus dayth/i)?.healthPercent ?? '?'}%`);
+            if ((s.tick - t0) % 25 === 0) {
+                const b = sdk.findNearbyNpc(/treus dayth/i) ?? sdk.getNearbyNpcs().find(n => /^ghost$/i.test(n.name));
+                hpLog.push(`${s.tick - t0}:${me.hp}/${b ? `${b.name}@${b.x},${b.z} ${b.healthPercent ?? '?'}%` : 'none'} me@${me.worldX},${me.worldZ}`);
+            }
             if (me.hp <= 30) {
                 const food = sdk.findInventoryItem(/shark/i);
                 if (food) {
