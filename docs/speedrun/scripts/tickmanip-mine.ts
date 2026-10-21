@@ -100,7 +100,12 @@ await runScript(async ({ bot, sdk }) => {
             if (!move && clickLand === R + 1) { roll = R + 3; kind = 'stay'; }
             else if (EAT && clickLand <= R + 3) { roll = R + 3; kind = 'eat'; useEat = true; }
             else { roll = clickLand + 2; kind = clickLand > (move ? R + 2 : R + 1) ? 'waited' : 'plain'; }
-            if (useEat) { add(R, 'eat', eat); eatsSent++; }
+            if (useEat) {
+                add(R, 'eat', eat);
+                eatsSent++;
+                // Lab stand-in for restocking (a bank trip or a helper's trade): one food per move.
+                if ((s.inventory.filter(i => /^shrimps$/i.test(i.name)).length) < 6 && eatsSent % 10 === 0) add(R + 2, 'give food', () => sdk.sendSay('::give shrimp 20'));
+            }
             add(R, 'drop ore', dropOre);
             if (move) add(R, `walk ${key(stand)}`, () => sdk.sendWalk(stand[0], stand[1], true));
             add(clickLand - 1, `click ${key(rock)}`, click(rock));
