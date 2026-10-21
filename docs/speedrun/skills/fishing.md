@@ -314,15 +314,16 @@ clusters, win. The loss per move is the walk plus the 4-tick re-arm. It was the 
   is open (`Player.ts:878-888`). Measured: 1.3 ticks lost per level-up at 300 ms, about 2 at
   100 ms, with `sendClickDialog(0)` sent as soon as the dialog appears. 1 to 99 has 98
   level-ups (about 130 ticks); a quest start removes most of them.
-  **With the knife starter** a level-up costs about 0.4 ticks and does not break the lock
+  **With the knife starter** a level-up costs about half a tick and does not break the lock
   (measured, `tickmanip-cycle.ts --dismiss=now`, plain `sendClickDialog(0)`, two 300 ms
   runs). The dialog opens on R+1, after that tick's starter packets, and blocks that
   tick's fishing op; the bot sees it on label R+1 and its dismissal lands on R+2, before
   the roll on R+3. In the 78-99 run, 20 of 22 dialogs closed on the next label and 2 after
   3. Across the 38 level-ups between 79 and 98 in the two runs that did not coincide with a
-  spot move, the gap from the level's catch to the next catch averaged 4.1 ticks, against
-  3.7 for all in-lock gaps of the 78-99 run: about 0.4 ticks per level-up, within the noise
-  of 38 gaps (roughly 0 to 1 tick). 26 of the 38 were 3-tick gaps. None needed a re-anchor. From level 20, 2 of 67 did: one beside a spot move, and one at
+  spot move, the gap from the level's catch to the next catch averaged 4.2 ticks (3.7 in the
+  first run, 4.65 in the second), against 3.7 for all in-lock gaps of the 78-99 run: about
+  0.5 ticks per level-up, within the noise of 38 gaps (roughly 0 to 1 tick). 25 of the 38
+  were 3-tick gaps. None needed a re-anchor. From level 20, 2 of 67 did: one beside a spot move, and one at
   level 35, followed by 28 ticks without a catch. A late dismissal would lose one roll at
   most: the next starter's `closeModal` clears the dialog and its absolute clock write puts
   the lock back on schedule (inferred from the read handlers).
