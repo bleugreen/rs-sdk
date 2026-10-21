@@ -488,8 +488,8 @@ class Gatherer {
         await this.escapeHouse();
         // Go round by the south-west: a direct walk from Varrock routes through the
         // house east of the guild, whose door can be shut behind us.
-        const p = position(this.sdk);
-        if (!inBox(GUILD_WEST_YARD, p.x, p.z)) {
+        const start = position(this.sdk);
+        if (!inBox(GUILD_WEST_YARD, start.x, start.z)) {
             for (const w of [GUILD_APPROACH_SOUTH, GUILD_APPROACH_SW, GUILD_APPROACH_WEST]) await this.walkOrOpen(w, 2);
         }
         await this.walkOrOpen(GUILD_OUTSIDE, 0);
