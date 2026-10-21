@@ -11,12 +11,17 @@ import { cheat, clock, log, pos, talkThrough, tele, tick, waitTicks, waitUntil }
 
 await runScript(async ({ bot, sdk }) => {
     if (!sdk.findInventoryItem(/^knife$/i)) await cheat(sdk, 'give knife 1');
-    const fromKeep = process.env.FROM === 'keep';
-    await tele(sdk, fromKeep ? 3154 : 2661, fromKeep ? 3924 : 3301);
+    // FROM=keep starts at the lever's landing; FROM=edgeville at the glory's Edgeville landing
+    // (no Plague City, so no Ardougne teleport) and walks north to the ladder.
+    const FROM = process.env.FROM ?? 'ardougne';
+    const fromKeep = FROM === 'keep';
+    const fromEdge = FROM === 'edgeville';
+    const start = fromKeep ? [3154, 3924] : fromEdge ? [3087, 3496] : [2661, 3301];
+    await tele(sdk, start[0], start[1]);
     await waitTicks(sdk, 3);
     const t0 = clock(sdk);
 
-    if (!fromKeep) {
+    if (!fromKeep && !fromEdge) {
     // 1. walk to the lever and pull it
     const lever = (await sdk.scanNearbyLocs(15)).find((l) => /lever/i.test(l.name));
     let leverLoc = lever;
@@ -40,7 +45,9 @@ await runScript(async ({ bot, sdk }) => {
     // The keep's only exit is the web at 3158,3951 (north wall); two more webs guard the ladder.
     // Walk toward each goal; when the path is blocked, knife the nearest web (50% per try).
     let slashTries = 0;
-    const goals: [number, number][] = [[3158, 3950], [3158, 3953], [3096, 3957], [3094, 3957], [3092, 3957]];
+    const goals: [number, number][] = fromEdge
+        ? [[3096, 3957], [3094, 3957], [3092, 3957]]
+        : [[3158, 3950], [3158, 3953], [3096, 3957], [3094, 3957], [3092, 3957]];
     for (const [gx, gz] of goals) {
         for (let attempt = 0; attempt < 12; attempt++) {
             if (Math.abs(pos(sdk).x - gx) <= 1 && Math.abs(pos(sdk).z - gz) <= 1) break;
