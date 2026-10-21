@@ -6,7 +6,8 @@
 //   NODE_TICKRATE=300 LAB_RUNNERS=0 WEB_PORT=9480 WEB_MANAGEMENT_PORT=9481 HISCORES_WEB_PORT=9482 NODE_PORT=44180 AGENT_PORT=8480 \
 //     speedrun/lab/lab.sh bonelab speedrun/lab/bone-giver.ts:--loads=10
 //
-// Options: --loads=N (default 10), --pages=2,5 (loads followed by a held level-up page), --hold=6
+// Options: --loads=N (default 10), --pages=2,5 (loads followed by a held level-up page), --hold=6,
+//   --order=giver-first (default, the run's order) | receiver-first
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -38,11 +39,13 @@ const config = {
     botsDir,
     runDir,
     loginSpacingMs: 2000,
-    accounts: [
-        // The receiver first, so its cue (its name hash) is written before the giver looks for it.
-        { account: receiver, role: 'bone-receiver', receiver: true, final: true, options: { giver, loads, pageLoads: pages, holdTicks: hold } },
-        { account: giver, role: 'bone-giver', options: { restock: { kind: 'cheat' }, sites: [{ giver: { x: 2913, z: 3494 }, receiver: { x: 2914, z: 3494 } }], trades: loads } }
-    ]
+    // Login order decides who the engine handles first each tick. On the run every helper is in
+    // before the scored account (SUPPLIES.md section 5); --order=receiver-first measures the reverse.
+    accounts: (() => {
+        const g = { account: giver, role: 'bone-giver', options: { restock: { kind: 'cheat' }, sites: [{ giver: { x: 2913, z: 3494 }, receiver: { x: 2914, z: 3494 } }], trades: loads } };
+        const r = { account: receiver, role: 'bone-receiver', receiver: true, final: true, options: { giver, loads, pageLoads: pages, holdTicks: hold } };
+        return arg('order', 'giver-first') === 'receiver-first' ? [r, g] : [g, r];
+    })()
 };
 const configPath = join(base, 'launch.json');
 writeFileSync(configPath, JSON.stringify(config, null, 2));
