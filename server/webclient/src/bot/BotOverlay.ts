@@ -83,7 +83,11 @@ export class BotOverlay implements GatewayMessageHandler {
         }
     }
 
-    // Called once the client has decoded a whole server tick (or several, if it fell behind)
+    /**
+     * Called once the client has decoded a whole server tick (or several, if it
+     * fell behind) - Client.setOnGameTickCallback. In-page tick programs hook
+     * in here: their packets written now leave in this game-loop pass.
+     */
     private onGameTick(ticks: number): void {
         this.serverTick += ticks;
         this.sendState();
@@ -212,7 +216,10 @@ export class BotOverlay implements GatewayMessageHandler {
     }
 
     /**
-     * Start the next queued action. True when it completed synchronously, so
+     * Start the next queued action - the overlay's action entry point: every
+     * SDK action (and any new one, such as starting or stopping an in-page
+     * program) is dispatched here through ActionExecutor.execute, and its result
+     * and a fresh state go back through finishAction. True when it completed synchronously, so
      * the following one may run in the same cycle; false when the queue is
      * empty or an asynchronous action or a wait now holds it.
      */

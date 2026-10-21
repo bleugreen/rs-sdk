@@ -774,6 +774,11 @@ export class Client extends GameShell {
      * PLAYER_INFOs it covers: normally 1, more when the page fell behind and
      * several ticks' messages were queued, which observers should count rather
      * than replay.
+     *
+     * This is the decoded-tick hook, the entry point for anything that must
+     * react to a tick in the page (in-page tick programs). It runs inside
+     * gameLoop before queued SDK actions and before the cycle's flush, so
+     * packets written from it leave in the same pass, on the server's next tick.
      */
     setOnGameTickCallback(callback: ((ticks: number) => void) | null): void {
         this.onGameTickCallback = callback;
