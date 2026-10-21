@@ -31,7 +31,7 @@ export interface StepResult {
 
 export class Steps {
     rows: StepResult[] = [];
-    constructor(private sdk: BotSDK) {}
+    constructor(private sdk: BotSDK, private bot?: BotActions) {}
 
     async step(label: string, act: () => Promise<unknown>, o: StepOpts = {}): Promise<StepResult> {
         const sdk = this.sdk;
@@ -106,6 +106,20 @@ export class Steps {
 
     /** One run click to (x,z); measured until the observed tile is (x,z) and still. */
     async walk(label: string, x: number, z: number): Promise<StepResult> {
+        const r = await this.runClicks(label, x, z);
+        const p = L.pos(this.sdk);
+        if (this.bot && (p.x !== x || p.z !== z)) {
+            // A run click cannot path through a closed door; bot.walkTo opens doors on the way.
+            const t0 = L.tick(this.sdk);
+            const w = await L.timedWalk(this.sdk, this.bot, x, z, 0);
+            r.ticks += L.tick(this.sdk) - t0;
+            r.note = `${r.note ? r.note + '; ' : ''}finished with bot.walkTo (doors), ${w.tiles} tiles${w.success ? '' : ' ' + w.message}`;
+            console.log(`  walk ${label}: total ${r.ticks} ticks (${r.note})`);
+        }
+        return r;
+    }
+
+    private async runClicks(label: string, x: number, z: number): Promise<StepResult> {
         const sdk = this.sdk;
         const t0 = L.tick(sdk);
         let last = L.pos(sdk);
@@ -120,7 +134,7 @@ export class Steps {
                 last = p;
                 if (p.x === x && p.z === z) return true;
                 if (t - lastMove >= 3 && t - t0 >= 3) {
-                    if (clicks < 4) {
+                    if (clicks < 3) {
                         // stalled short (click clamped or dropped): click again, as a real client would
                         clicks++;
                         lastMove = t;

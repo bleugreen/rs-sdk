@@ -36,7 +36,7 @@ const ERRAND_ALL_CORRECT = (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5) 
 
 await runScript(async ({ bot, sdk }) => {
     await bot.dismissBlockingUI();
-    const S = new Steps(sdk);
+    const S = new Steps(sdk, bot);
     const out: Record<string, unknown> = {};
     const stage = (v: number) => L.cheat(sdk, `setvar biohazard ${v}`);
     const quest = async (label: string) => {

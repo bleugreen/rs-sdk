@@ -44,7 +44,7 @@ const LOC = {
 
 await runScript(async ({ bot, sdk }) => {
     await bot.dismissBlockingUI();
-    const S = new Steps(sdk);
+    const S = new Steps(sdk, bot);
     const varps: Record<string, unknown> = {};
     const setStage = (v: number) => L.cheat(sdk, `setvar elenaquest ${v}`);
     const quest = async (label: string) => {
