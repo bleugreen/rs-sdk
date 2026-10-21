@@ -169,7 +169,8 @@ Totals:
 
 ## 3. Quest xp
 
-No quest on the planned route awards Ranged. The route is rs/3's Package B: Doric's,
+No quest on the planned route awards Ranged. The route is rs/3's Package B
+([`README.md`](../quests/README.md) section 4): Doric's,
 Plague City, Tree Gnome Village, The Grand Tree, Fight Arena, Dwarf Cannon, Monkey Madness
 option 1, Mage Arena, Dragon Slayer with its filler (Goblin Diplomacy, Romeo & Juliet, Cook's
 Assistant) and Druidic Ritual, Sea Slug if rs/54 unblocks it (Sheep Shearer otherwise), and
@@ -316,8 +317,14 @@ up.
 - **Interleaving** (`interleaving.md` section 8, the absorbable-fractions table): **none of
   Ranged can be absorbed into self-only time.** The cannon needs a multi-combat site (the
   Wilderness spiders) and the account standing at it; the training is itself the self-only
-  activity there. Whether delay-free helper actions (arrowheads, gem cutting) could ride the
-  2-tick knife clock without costing throws is unmeasured.
+  activity there, so column 5 of the summary row is n/a. The packet budget is the other
+  limit (rs/91, measured): the three-prayer melee flick sends exactly 5 user events on 100 of
+  its 400 ticks, the cap, so the defensive-melee phase has no room at all. The knives phase
+  peaks at 3 per tick, which leaves 2. But every inventory use there competes with the attack
+  loop (each consume ends in `p_delay(1)` and pauses the cannon, `consume_effects.rs2:123-126`,
+  read), and the account stands in level-37 Wilderness with the kit in its slots. Whether
+  delay-free helper actions (arrowheads, gem cutting) could ride the knives' spare ticks
+  without costing throws is unmeasured.
 
 ## 6. Gotchas
 
@@ -335,7 +342,19 @@ up.
   60-115 damage per 300-400 ticks (about 0.2-0.3 per tick, mostly poison). Protect from
   Melee drains 1 prayer point per 5 ticks with no prayer bonus (`prayers.enum` drain 12,
   `prayer.rs2:163-175`). The aggressive spiders retaliate against the cannon and walk to
-  the player.
+  the player. **rs/91's kit removes both costs** (measured): one super antipoison dose kept
+  damage at 0 for 400 ticks in 9 of 9 runs, and flicking every prayer off and on at least
+  every 4 ticks left the points unchanged in every flicked run (the drain timer clears when
+  the last prayer goes off, `prayer.rs2:30-44, 159-175`, read).
+- **With the kit, top up the cannon only while standing beside it** (rs/91, measured). Under
+  a flick schedule the re-attack cancels the walk back to the cannon, and the cannon runs dry:
+  it happened in two of rs/91's three kit runs at Ranged 99 (6 "out of ammo" messages in one).
+  Load from beside it, or hold the re-attack until "You load the cannon" appears.
+- **Send each potion sip in the flick tick, after the prayer toggles** (rs/91, measured). A
+  sip ends in `p_delay(1)`, and prayer buttons are dropped on the next two ticks; a sip on the
+  tick before a flick left the boost prayers half-toggled and the drain fired. In the flick
+  tick, the two blocked ticks fall on the free ticks of the 4-tick cycle. Every sip also pauses
+  the cannon for about 2 ticks (read, `cannon_fire.rs2:91`, rs/59).
 - **The pre-MM session happens at Defence 1 and about 42 HP** on the route (the pre-MM
   fights are cast). rs/56 measured it at those levels (rs/3 `pre_mm_fights.md`, 300 ms):
   151-166 ticks for Ranged 1 -> 54-57 at 12-14 base per tick, 0 melee damage under Protect
@@ -356,18 +375,23 @@ up.
 
 ## 7. Helper supply list
 
-For the on-route plan (Package B: 113 cannon ticks before MM, then plan (e): 230 ticks of
-cannon + defensive melee and 1,821 of cannon + rapid knives, about 2,160 cannon ticks in all).
-Package A's plan (f) needed about 3,570 cannon ticks and no knives. Counts are inferred from
-the measured consumption.
+For the on-route plan (Package B: 113 cannon ticks before MM, then plan (e)). With rs/91's kit
+that is 168 ticks of cannon + defensive melee and 1,688 of cannon, knives from Ranged 70, about
+1,970 cannon ticks in all. Without it, 230 + 1,821, about 2,160. Package A's plan (f) needed
+about 3,570 cannon ticks and no knives. Counts are inferred from the measured consumption
+(rs/91's kit list is its own inference from its measured sip and dose rates).
 
-| Item | Package B count (on route) |
-|---|---|
-| Cannonballs | ~1,100-1,450 (0.51-0.67 per tick over ~2,160 ticks) |
-| Rune knives | ~820 (0.45 per tick over 1,821 ticks) |
-| Sharks | ~25 (0.2-0.3 hp per tick) |
-| Prayer potions (4) | ~6 (Protect from Melee, 1 point per 5 ticks) |
-| Antipoison (4) | 1 for the pre-MM session (rs/56, above) |
+| Item | Package B with rs/91's kit (recommended) | Package B without the kit |
+|---|---|---|
+| Cannonballs | ~1,000-1,300 (0.51-0.67 per tick over ~1,970 ticks) | ~1,100-1,450 (over ~2,160) |
+| Rune knives | up to ~760 (0.45 per tick over at most 1,688 ticks) | ~820 (0.45 per tick over 1,821) |
+| Ranging potion doses | ~9 (one at Ranged 70, then one per ~210 ticks) | 0 |
+| Super antipoison doses | ~3 (one per ~600 ticks) | 0 |
+| Super attack, super strength | 1 dose each (the 168-tick melee phase) | 0 |
+| Amulet of glory | 1 | 0 |
+| Sharks | 0 | ~25 (0.2-0.3 hp per tick) |
+| Prayer potions (4) | 0 (flicked) | ~6 (Protect from Melee, 1 point per 5 ticks) |
+| Antipoison (4) | 1 for the pre-MM session (rs/56, above) | same |
 
 The table below keeps rs/31's original per-plan counts for reference.
 
@@ -387,6 +411,20 @@ about 56 stock. Plan (f)'s 45 sharks and 9 potions do not fit beside the parts, 
 expect one more trade mid-stretch, delivered at the spider site.
 
 ## 8. Open questions
+
+- **The kit at Ranged 99 rests on one clean run** (24.47 per tick, rs/91); the other two ran
+  the cannon dry and only their knife figures were kept. A repeat with the top-up fix (section
+  6) would settle the last ~400 ticks of the 1,857.
+- **rs/91's control ran below rs/31 at 99** (19.88 over two runs against 22.72 from one). The
+  kit's gain is measured against its own control, so 1,857 stands; what the no-kit baseline
+  really is (2,051 or 2,211) matters only if the kit is not carried.
+- **The kit before MM** (super attack, glory, Incredible Reflexes and Protect from Melee
+  flicked for the cannon session at Strength 1, Defence 1, ~42 HP) is unmeasured: the ~96
+  ticks in section 1 is scaled from the post-MM cannon-only rate. The cannon's damage is fixed
+  at 0-30, so super strength and Ultimate Strength add nothing there.
+- **There are no ranged prayers in this revision** (15 prayers, `skill_prayer/scripts/prayers/`,
+  read; rs/59). In the knives phase flicking therefore saves only Protect from Melee's budget;
+  the boost to the cannon there comes from the ranging potion and glory.
 
 - **Cannon + knives between 40 and 70** was not measured. Measure at 50 and 60 to set
   the switch level (it would shorten the 1 -> 99 line by up to a few hundred ticks).
