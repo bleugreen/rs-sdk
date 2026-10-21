@@ -25,10 +25,11 @@ test('a page without ?token= makes no request', async () => {
     expect(calls).toEqual([]);
 });
 
-test('a refused token leaves no credentials', async () => {
-    const { win } = fakeWindow('http://127.0.0.1:8899/bot?bot=srtok&token=spent', () => new Response('{"error":"login token unknown"}', { status: 403 }));
+test('a refused token is still gone from the address bar', async () => {
+    const { win, calls } = fakeWindow('http://127.0.0.1:8899/bot?bot=srtok&token=spent', () => new Response('{"error":"login token unknown"}', { status: 403 }));
     expect(await redeemLoginToken(win)).toBe(false);
-    expect(getBotPassword()).toBeNull();
+    expect(calls).toHaveLength(1);
+    expect(win.location.href).toBe('http://127.0.0.1:8899/bot?bot=srtok');
 });
 
 test('?token= leaves the address bar before it is redeemed, and the password lives only in memory', async () => {
