@@ -39,8 +39,9 @@ dungeon monkey bars for 15 -> 52 cuts this to **about 6,510 ticks**, but they
 are in level-6 Wilderness among aggressive spiders and earth warriors.
 
 The Wilderness course is the only method above level 52 that is worth
-doing. It is 2.9 to 5.7 times faster than anything else measured, and it sits
-at Wilderness level 50 to 56, open to player killers.
+doing. At 5.8 to 7.1 base xp per tick it is about twice the best Brimhaven
+arena trap at the same level, and three to six times anything else measured.
+It sits at Wilderness levels 50 to 56, open to player killers.
 
 ## 2. Route by level band
 
@@ -87,7 +88,7 @@ Agility check that comes early. Its 7,900 base takes a fresh account to level
 required for Regicide anyway and gives 3,000 base (level 61) with no Agility
 check, so **doing Underground Pass before Grand Tree makes the pre-quest
 training zero**. Fremennik Trials (level 60) or a Tourist Trap Agility pick
-(4,650, level 67) would do the same. Troll Stronghold's 15 must also be met
+(4,650, level 68) would do the same. Troll Stronghold's 15 must also be met
 whenever it is done, so it should come after one of those rewards too. If none
 of them comes first, train to 25 on the Gnome course (194.5 base, 159 ticks,
 inferred), or to 22 and drink an Agility potion (+3, read:
