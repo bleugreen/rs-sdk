@@ -92,6 +92,10 @@ export function planTurns(batch: readonly Candidate[], T0: number, open: number)
     });
 }
 
+function rcLevel(st: BotWorldState | null | undefined): number {
+    return st?.skills.find(k => /runecraft/i.test(k.name))?.baseLevel ?? 1;
+}
+
 /** The blind schedule a batch is chosen for; stock turns pick their givers the same way. */
 function blindSchedule(s: Schedule | 'stock'): Schedule {
     return s === 'stock' ? 'robust' : s;
@@ -206,7 +210,6 @@ class Receiver {
         await ctx.bot.dismissBlockingUI();
         if (ctx.sdk.getTradeState().isOpen) await ctx.sdk.sendDeclineTrade();
         // A fresh lab account is Runecraft 1; the scored account brings the altar's level.
-        const rcLevel = (st: BotWorldState | null) => st?.skills.find(k => /runecraft/i.test(k.name))?.baseLevel ?? 1;
         if (isLocalServer() && rcLevel(this.s) < this.altar.level) {
             await cheat(ctx, `setstat runecraft ${this.altar.level}`);
             await until(ctx, st => rcLevel(st) >= this.altar.level, 10);
@@ -332,8 +335,12 @@ class Receiver {
             this.writer.write({ beacons: this.frames.recent(), turns: [...written, turn], schedule: 'robust', open: o.open });
             const r = await receiveFrom(ctx.sdk, c.giver, { want: [{ item: ESSENCE }], maxTicks: 30, openTimeoutMs: 30 * tickMs() });
             if (r.ok) {
+                const level = rcLevel(this.s);
                 await ctx.sdk.sendInteractLoc(this.altarLoc.x, this.altarLoc.z, this.altarLoc.id, 1);
                 await until(ctx, () => this.crafts.length > nCrafts, 8);
+                // A level-up page opens when the craft's delay ends, about 4 ticks on, and makes us
+                // "busy" to the next giver's request: wait for it and answer it, as the run's step does.
+                if (rcLevel(this.s) > level && (await until(ctx, st => st.dialog.isOpen, 6))) await ctx.bot.dismissBlockingUI();
             }
             const ok = this.crafts.length > nCrafts;
             const craftTick = ok ? this.crafts[this.crafts.length - 1]! : null;
