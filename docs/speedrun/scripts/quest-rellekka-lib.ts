@@ -65,6 +65,17 @@ export async function findLoc(sdk: BotSDK, x: number, z: number, op?: string, ra
     return loc;
 }
 
+/**
+ * Click a loc option with the raw interaction packet. The SDK's interactLoc
+ * waits for its own completion heuristics (up to about 20 ticks on a search
+ * with no visible effect), which would inflate the timings.
+ */
+export async function opLoc(sdk: BotSDK, x: number, z: number, opt: string, name?: RegExp) {
+    const loc = await findLoc(sdk, x, z, opt, 15, name);
+    const o = loc.optionsWithIndex.find(q => q.text === opt)!;
+    await sdk.sendInteractLoc(loc.x, loc.z, loc.id, o.opIndex);
+}
+
 export function invCount(sdk: BotSDK, re: RegExp): number {
     return sdk.getInventory().filter(i => re.test(i.name)).reduce((a, i) => a + i.count, 0);
 }
