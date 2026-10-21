@@ -271,9 +271,10 @@ section 6) and a deposit of about 2 ticks (inferred, not measured; the lab used
   was ordinary: no dialog, bones in the inventory, bank closed. Main judges
   them host load (00:36): the labs ran on loaded executors (fedora here; the
   Mac at 11-18 on 16 cores for most of rs/28's skills), while bbs sits at ~3 on
-  32 cores. rs/26 is re-timing one Thieving session on bbs for a correction
-  factor; until it is published, treat the measured runs as a few percent
-  pessimistic and the 58-tick stall-free cycle as the clean rate.
+  32 cores. rs/26 re-timed Thieving on bbs but published no single correction
+  factor; `docs/speedrun/LAB.md` on main names bbs the reference host. Treat
+  the measured runs as a few percent pessimistic and the 58-tick stall-free
+  cycle as the clean rate.
 - **Priest in Peril**: off route per the brief, but `haunted_mine.md` says
   Haunted Mine requires it. If it lands on the route, Prayer saves 19 bones
   (about 40 ticks).
