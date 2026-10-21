@@ -14,7 +14,7 @@
 
 import { runScript } from '../../../sdk/runner';
 import type { BotSDK } from '../../../sdk/index';
-import { clearInv, cheat, dialogue, getvar, give, invCount, locId, now, pos, Recorder, setstats, setvar, talk, tele, teleport, useOnLoc, waitTicks, waitUntil, walkTo, withRuns } from './quest-smallskill-lib';
+import { clearInv, cheat, dialogue, getvar, give, invCount, locId, now, pos, Recorder, setstats, setvar, talk, tele, teleport, useOnLocAt, waitTicks, waitUntil, walkTo, withRuns } from './quest-smallskill-lib';
 
 const SELF = process.env.VARIANT === 'self';
 const STAIRS = { x: 2820, z: 3484, id: 55 };  // tunnelstairstop, next to the tunnel dwarf (2820,3487)
@@ -70,7 +70,7 @@ await runScript(async ({ bot, sdk }) => {
 
     // 2. Through Morris's gate, (garlic in the pipe), pay Bonzo, one catch, Bonzo again.
     rec.add(withRuns(await locId(sdk, GATE.x, GATE.z, GATE.id, 1, s => pos(s).x <= GATE.x, { label: 'gate: Morris checks the pass', maxTicks: 30 })), '4b');
-    if (SELF) rec.add(await useOnLoc(sdk, /^garlic$/i, PIPE.id, PIPE.x, PIPE.z, s => invCount(s, /^garlic$/i) === 0), '4c garlic in the pipe');
+    if (SELF) rec.add(await useOnLocAt(sdk, /^garlic$/i, PIPE.x, PIPE.z, s => invCount(s, /^garlic$/i) === 0), '4c garlic in the pipe');
     rec.add(withRuns(await talk(sdk, /^Bonzo$/i, [/enter the competition/i], { idle: 4 })), '5 Bonzo: pay and get a spot');
     console.log('stage', await stage(sdk), 'comp', await getvar(sdk, 'hemenster_comp_stage'));
     {
