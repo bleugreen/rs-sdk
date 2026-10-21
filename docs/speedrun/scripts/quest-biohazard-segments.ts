@@ -152,15 +152,23 @@ await runScript(async ({ bot, sdk }) => {
             out.mourner = { combatLevel: target.combatLevel, at: [target.x, target.z] };
             await bot.attack(target);
             let levelUps = 0;
+            let attacks = 1;
+            let lastHit = L.tick(sdk);
+            let firstHit: number | null = null;
             while (L.tick(sdk) - t0 < 200 && !has(sdk, /^Key$/i)()) {
-                if (L.isLevelUpDialog(sdk)) {
-                    levelUps += await L.dismissLevelUps(sdk);
-                    const again = sdk.getNearbyNpcs().find(n => n.index === target.index);
-                    if (again) await bot.attack(again);
+                if (L.isLevelUpDialog(sdk)) levelUps += await L.dismissLevelUps(sdk);
+                const mourners = sdk.getNearbyNpcs().filter(n => /^Mourner$/.test(n.name));
+                if (mourners.some(n => n.hp !== null && n.maxHp !== null && n.hp < n.maxHp)) {
+                    lastHit = L.tick(sdk);
+                    if (firstHit === null) firstHit = lastHit - t0;
+                }
+                if (L.tick(sdk) - lastHit >= 4 && !sdk.getState()!.player!.combat.inCombat) {
+                    const next = mourners.sort((a, b) => a.distance - b.distance)[0];
+                    if (next) { await bot.attack(next); attacks++; lastHit = L.tick(sdk); }
                 }
                 await sdk.waitForStateUpdate();
             }
-            const fight = { ticks: L.tick(sdk) - t0, key: has(sdk, /^Key$/i)(), levelUps };
+            const fight = { ticks: L.tick(sdk) - t0, key: has(sdk, /^Key$/i)(), levelUps, attacks, firstHit };
             out.fight = fight;
             S.rows.push({ label: 'fight a sick mourner: attack click to key', ticks: fight.ticks, pages: 0, options: 0, levelUps, transcript: [] });
             console.log(`STEP fight: ${JSON.stringify(fight)}`);
