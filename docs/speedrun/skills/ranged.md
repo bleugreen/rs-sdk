@@ -102,6 +102,22 @@ with Protect from Melee, and a rune scimitar unless a ranged weapon is listed.
 | **Longrange rune knives alone** (moss giants), Ranged/Defence 70 | **2.63** | **2.63** | 0 | 1.74 | 300 ticks |
 | Cannon alone, Battlefield of Khazard (non-Wilderness fallback) | 9.13 | 0 | 0 | 0 | 400 ticks; 16.3 xp/ball (22 hp targets) |
 | Cannon + defensive melee, Battlefield of Khazard | 8.88 | 3.37 | 0 | 1.12 | 400 ticks |
+| **Cannon + rapid magic shortbow, rune arrows** (rs/124), Ranged 70 / 85 / 99 | **15.77 / 19.02 / 20.43** | 0 | 0 | 2.10 / 2.07 / 2.28 | 300 ticks each, 1 run each, bbs at 300 ms; cannon's share 9.47 / 12.80 / 13.58 |
+| Cannon + rapid rune knives, same session as the bow (rs/124 control) | 15.67 / 18.29 / 19.45 | 0 | 0 | 2.09 / 2.31 / 2.62 | 300 ticks each, 1 run each; cannon's share 9.40 / 11.34 / 11.58; 0.42-0.46 knives per tick |
+
+**The magic shortbow with rune arrows matches rune knives beside the cannon** (rs/124,
+measured, same host and session, `ranged-cannon.ts --mode=hand --style=1 --hold=1`):
++0.6% at Ranged 70, +4% at 85 and +5% at 99. The bow's own hits earn less than the knives'
+(it fires every 3 ticks on rapid, the default attackrate 4 minus 1, against the knives' 2),
+but the cannon rolls with the wielded weapon's style and bonus (section 4), and the bow's
++69 ranged attack against the knife's lower bonus lifts the cannon's share by 1.4-2.0 per
+tick from 85. Arrows used were not counted by the script; at one shot per 3 ticks and the
+knives' measured 87% of their ideal cadence, about 0.29-0.33 per tick (inferred), so ~490-560
+for the 1,688-tick phase from 70. This session's knife control read lower than the rows
+above (17.34 / 18.69 / 22.72, another host and day), so compare the two rs/124 rows with
+each other, not with those. Rune arrows come from Dargaud's in the Ranging Guild at ~405 gp
+(`docs/speedrun/helpers/rune-arrows.md`); no shop sells knives and the Grand Exchange has no
+sellers.
 
 What this means for the plan (inferred, `ranged-model.ts`).
 Separate melee in these plans is rs/30's best single-combat target, the ogres west
