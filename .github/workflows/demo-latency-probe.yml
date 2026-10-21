@@ -120,11 +120,20 @@ jobs:
       GATEWAY_PORT: '7851'
       PAGE_PORT: '8899'
     steps:
-      - name: Check the browser-mode inputs
-        if: inputs.mode == 'browser' && inputs.browser_ref == ''
+      # Resolved before the vantage gate, so a bad ref fails before an Ashburn runner is spent;
+      # actions/checkout takes a branch, a tag or a full sha, so a short sha becomes a full one.
+      - name: Resolve browser_ref
+        id: browser
+        if: inputs.mode == 'browser'
+        env:
+          BROWSER_REF: ${{ inputs.browser_ref }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          echo '::error::mode=browser needs browser_ref (the branch or sha whose browser webclient to run)'
-          exit 1
+          set -euo pipefail
+          if [ -z "$BROWSER_REF" ]; then echo '::error::mode=browser needs browser_ref (the branch or sha whose browser webclient to run)'; exit 1; fi
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$BROWSER_REF" -q .sha) || { echo "::error::browser_ref '$BROWSER_REF' is not a commit of $GITHUB_REPOSITORY"; exit 1; }
+          echo "browser_ref $BROWSER_REF is $sha"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v4
         with:
@@ -219,7 +228,7 @@ jobs:
       - uses: actions/checkout@v4
         if: inputs.mode == 'browser' && steps.vantage.outputs.probe == 'true'
         with:
-          ref: ${{ inputs.browser_ref }}
+          ref: ${{ steps.browser.outputs.sha }}
           path: browser-under-test
           persist-credentials: false
 
