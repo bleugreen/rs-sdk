@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { checkBotEnv, helpersReady, parseLaunchConfig, roleEnv } from './standalone';
+import { checkBotEnv, helpersReady, parseLaunchConfig, RoleLoop, type RoleProcess, roleEnv } from './standalone';
 
 const gw = 'ws://127.0.0.1:7795';
 
@@ -66,5 +66,126 @@ describe('helpersReady', () => {
         expect(helpersReady([a('cairn_h70', 'online'), a('cairn_h75', 'logging-in', true)])).toBe(true);
         expect(helpersReady([a('cairn_h70', 'online'), a('cairn_h71', 'logging-in')])).toBe(false);
         expect(helpersReady([a('cairn_h75', 'online', true)])).toBe(false);
+    });
+});
+
+/** A role process the test ends by hand; it ends itself on SIGTERM unless told to ignore it. */
+class FakeRole implements RoleProcess {
+    exitCode: number | null = null;
+    signals: string[] = [];
+    readonly exited: Promise<number | null>;
+    private end!: (code: number | null) => void;
+    constructor(
+        readonly pid: number,
+        private readonly ignoreTerm = false
+    ) {
+        this.exited = new Promise(r => (this.end = r));
+    }
+    exit(code: number): void {
+        if (this.exitCode !== null) return;
+        this.exitCode = code;
+        this.end(code);
+    }
+    kill(signal: 'SIGTERM' | 'SIGKILL'): void {
+        this.signals.push(signal);
+        if (signal === 'SIGKILL' || !this.ignoreTerm) this.exit(143);
+    }
+}
+
+function harness(entry: { final?: boolean; ignoreTerm?: boolean } = {}) {
+    const procs: FakeRole[] = [];
+    const lines: string[] = [];
+    const finals: string[] = [];
+    let stopping = false;
+    const loop = new RoleLoop(
+        { account: 'cairn_h70', role: 'altar-giver', final: entry.final ?? false },
+        {
+            spawn: () => {
+                const p = new FakeRole(100 + procs.length, entry.ignoreTerm);
+                procs.push(p);
+                return p;
+            },
+            isStopping: () => stopping,
+            log: l => lines.push(l),
+            onFinal: why => finals.push(why),
+            killGraceMs: 20
+        }
+    );
+    const tick = () => new Promise(r => setTimeout(r, 0));
+    return { loop, procs, lines, finals, tick, stop: () => (stopping = true) };
+}
+
+describe('RoleLoop: restart on client relaunch', () => {
+    test('a relaunch terminates the running role and starts a fresh one at once', async () => {
+        const h = harness();
+        void h.loop.start();
+        await h.tick();
+        expect(h.procs.length).toBe(1);
+        await h.loop.relaunched();
+        await h.tick();
+        expect(h.procs[0]!.signals).toEqual(['SIGTERM']);
+        expect(h.procs.length).toBe(2);
+        expect(h.loop.running).toBe(h.procs[1]!);
+        expect(h.lines.some(l => /client relaunched; restarting role altar-giver/.test(l))).toBe(true);
+        expect(h.lines.some(l => /restarting in/.test(l))).toBe(false);
+    });
+
+    test('a role that ignores SIGTERM is killed after the grace', async () => {
+        const h = harness({ ignoreTerm: true });
+        void h.loop.start();
+        await h.tick();
+        await h.loop.relaunched();
+        await h.tick();
+        expect(h.procs[0]!.signals).toEqual(['SIGTERM', 'SIGKILL']);
+        expect(h.procs.length).toBe(2);
+    });
+
+    test('a final role terminated for a relaunch does not stop the launcher', async () => {
+        const h = harness({ final: true });
+        void h.loop.start();
+        await h.tick();
+        await h.loop.relaunched();
+        await h.tick();
+        expect(h.finals).toEqual([]);
+        expect(h.procs.length).toBe(2);
+        h.procs[1]!.exit(0);
+        await h.tick();
+        expect(h.finals).toEqual(['cairn_h70: final role altar-giver exited with code 0']);
+    });
+
+    test('a relaunch during the failure backoff starts the role without waiting it out', async () => {
+        const h = harness();
+        void h.loop.start();
+        await h.tick();
+        h.procs[0]!.exit(1);
+        await h.tick();
+        expect(h.lines.some(l => /restarting in 15s/.test(l))).toBe(true);
+        expect(h.procs.length).toBe(1);
+        await h.loop.relaunched();
+        await h.tick();
+        expect(h.procs.length).toBe(2);
+    });
+
+    test('a role that finished its job is not restarted by a relaunch', async () => {
+        const h = harness();
+        const done = h.loop.start();
+        await h.tick();
+        h.procs[0]!.exit(0);
+        await done;
+        await h.loop.relaunched();
+        await h.tick();
+        expect(h.procs.length).toBe(1);
+        expect(h.procs[0]!.signals).toEqual([]);
+    });
+
+    test('nothing restarts once the launcher is stopping', async () => {
+        const h = harness();
+        void h.loop.start();
+        await h.tick();
+        h.stop();
+        await h.loop.relaunched();
+        h.procs[0]!.exit(143);
+        await h.loop.done;
+        expect(h.procs.length).toBe(1);
     });
 });
