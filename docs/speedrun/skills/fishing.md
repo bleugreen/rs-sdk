@@ -75,10 +75,10 @@ the normal cycle (279 ticks): the small net cannot take the knife (section 4).
 
 The read model without overheads gives 4,525 ticks for 20-99 at the normal cycle and
 2,715 at 3 ticks. The knife run took 2,896, 7% above its model: rolls lost inside the lock
-(the 3-tick gaps that are not catch failures), 7 spot moves at about 8 ticks each, and
-re-anchoring (section 6). The two runs from level 78 differ by 3%, mostly in spot moves (5
-in the first, 4 in the second's segment), which come at random (section 4); the PR-level
-figure for the route is about 2,000.
+(the 3-tick gaps that are not catch failures), 7 spot moves at about 8-9 ticks each, and
+re-anchoring (section 6). The two runs from level 78 differ by 3% with 5 spot moves each;
+the second lost more after level-ups (section 6) and to catch luck. Take about 2,000 for
+the route.
 
 The 1-20 band is small whichever way it is done. Baiting sardines and herring from level
 5 is slightly faster (5 to 20 in 152 ticks, measured with 5 catches; 133 ticks for 1 to 20
@@ -331,8 +331,8 @@ clusters, win. The loss per move is the walk plus the 4-tick re-arm. It was the 
   `tickmanip-cycle.ts` watches its tile; on a move it re-clicks the nearest spot and
   anchors the 3-tick schedule on the first catch after the click (`--reanchor=xp`): after a
   roll on R the normal loop rolls on R+5, so the first starter goes out then. The gap
-  spanning a move measured 9-22 ticks over 12 moves (median 12), about 8 ticks lost per move
-  against the in-lock gap; moves came 2.4-2.5 per 1,000 ticks.
+  spanning a move measured 9-22 ticks over 12 moves (median 12, mean 13.3), so about 8-9
+  ticks lost per move against an in-lock gap near 4; moves came 2.4-2.5 per 1,000 ticks.
 - **Spot moves** every 280-529 ticks (section 4). Re-click the nearest matching spot at
   once; never rely on the server to follow.
 - **Hostile NPCs** (read, `all.hunt` and `all.npc`): none that matter at Lumbridge (giant
