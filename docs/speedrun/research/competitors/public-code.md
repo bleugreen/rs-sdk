@@ -62,8 +62,9 @@ The deepwiki MCP was not needed: every repo of interest was small enough to clon
 The record history is the one useful fact here. The fastest max was 143h 52m on 2026-08-15 and
 is 2h 59m now, so every account in today's top group maxed in the last two months, almost
 certainly with an exploit-heavy route like ours, and none of them has published it. Stamps
-written before 2026-10-18 are logout times, so they can only overstate how long an account took
-(section 5). rs/69 and rs/72 reconstruct the timings.
+for levels reached before 55fa26cca was deployed (some time between 2026-10-19 02:31 and
+2026-10-21 08:33 UTC; `hiscore-timestamps.md` section 1) are logout times, so they can only
+overstate how long an account took (section 5). rs/69 and rs/72 reconstruct the timings.
 
 ## 4. Sources with game content
 
@@ -179,9 +180,10 @@ What this means for us:
 - Under 55fa26cca, our total-level stamp is the tick of our last 99. Logging out promptly
   after maxing no longer matters. Logging out during waits still does, because playtime counts
   every logged-in tick.
-- Stamps of accounts that maxed before 2026-10-18 fall back to their logout playtime, so they
-  are **upper bounds**, possibly hours above the true level-up tick. Whether 55fa26cca is live
-  on the demo is rs/72's question.
+- Stamps of levels reached before 55fa26cca was deployed fall back to their logout playtime, so
+  they are **upper bounds**, possibly hours above the true level-up tick. rs/72 confirmed live
+  that 55fa26cca is on the demo, deployed between 2026-10-19 02:31 and 2026-10-21 08:33 UTC
+  (`hiscore-timestamps.md` sections 1 and 2).
 
 ## 6. Other facts from public sources
 

@@ -106,7 +106,7 @@ Rule used:
   dates them.
 
 Pages read 2026-10-21 10:50 UTC with `hiscore-stamp-probe.ts classify` (one request a second).
-They agree with rs/69's 08:04 snapshot (`hiscores.md`, `data/` on the rs/69 branch); no listed
+They agree with rs/69's 08:04 snapshot (`hiscores.md` and `data/` beside this file); no listed
 account changed in between.
 
 | # | Account | Overall (ticks) | Distinct stamps over 19 skills | QP (level @ ticks) | Classification |
