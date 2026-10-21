@@ -100,7 +100,11 @@ with every command. In order:
   desktop session per user: disconnect, never log out);
 - start the page server, the tab's loopback gateway and Chrome under `tmux -L run`. Chrome gets its own
   profile, tenet 11's three throttling flags and a maximised app window, and stays maximised and
-  unobscured on display :10 for the whole run;
+  unobscured on display :10 for the whole run. Every launch on the host is reaped by its own hard
+  timeout (9 h for the run), so nothing depends on an agent or a person being alive to stop it;
+  teardown still stops everything explicitly. No real account's credentials (fleet or SCORED) go on
+  the host until cairn://p/rs/138 replaces the current Chrome launch, which carries the password in
+  its URL and is lab only (RUN-HOST.md, "Rules for every launch on the host");
 - log rs/117's helpers in;
 - start the recording on the VM (ffmpeg x11grab, 1920x1080, 30 fps, libx264 veryfast crf 20);
 - check that nothing else runs;
