@@ -23,6 +23,7 @@ const AGILITY = opt('agility', 99);
 await runScript(async ({ bot, sdk }) => {
     const lab = new Lab(sdk, bot);
     await bot.dismissBlockingUI();
+    await lab.cheat('setvar biohazard 16'); // ^biohazard_complete, needed by the cave entrance (quest_upass.rs2:81)
     const stats = async (s: Record<string, number>) => { for (const [k, v] of Object.entries(s)) await lab.cheat(`setstat ${k} ${v}`, 1); };
     const clearInv = async () => { for (const it of sdk.getInventory()) { await sdk.sendDropItem(it.slot); await sdk.waitForTicks(1); } };
 
