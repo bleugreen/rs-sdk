@@ -249,7 +249,7 @@ async function walkNear(ctx: RoleContext, x: number, z: number, tolerance: numbe
         const p = ctx.sdk.getState()?.player;
         ctx.log('walking', { from: p ? [p.worldX, p.worldZ] : null, to: [x, z] });
         const r = await ctx.bot.walkTo(x, z, tolerance);
-        if (!r.success) ctx.log('walk failed', { x, z, message: r.message });
+        if (!r.success) ctx.log('walk failed', { x, z, result: r.message });
     }
     return distanceTo(ctx.sdk, x, z) <= tolerance;
 }
@@ -259,7 +259,7 @@ async function openBank(ctx: RoleContext): Promise<boolean> {
     for (let attempt = 0; attempt < 3; attempt++) {
         const r = await ctx.bot.openBank();
         if (r.success) return true;
-        ctx.log('openBank failed', { message: r.message });
+        ctx.log('openBank failed', { result: r.message });
         await ctx.sdk.waitForTicks(2).catch(() => {});
     }
     return false;
@@ -726,7 +726,7 @@ class Mule {
                     const r = await bot.withdrawItem(w.bankItem, w.amount, { asNote: w.noted });
                     if (!r.success) {
                         ok = false;
-                        ctx.log('withdraw failed', { item: w.bankItem.name, amount: w.amount, message: r.message });
+                        ctx.log('withdraw failed', { item: w.bankItem.name, amount: w.amount, result: r.message });
                         break;
                     }
                 }
@@ -751,7 +751,7 @@ class Mule {
         if (t.isOpen && canonName(t.partner ?? '') === canonName(name)) return true;
         await closeBank(this.ctx);
         const r = await bot.tradeWith(playerPattern(name), 15_000, { retryOnBusy: true });
-        if (!r.success) this.ctx.log('trade open failed', { with: name, message: r.message });
+        if (!r.success) this.ctx.log('trade open failed', { with: name, result: r.message });
         return r.success;
     }
 
@@ -838,13 +838,13 @@ class Mule {
         await closeBank(ctx);
         const opened = await bot.openGE();
         if (!opened.success) {
-            ctx.log('GE open failed', { message: opened.message });
+            ctx.log('GE open failed', { result: opened.message });
             return;
         }
         const offers = sdk.getGEState()?.offers ?? [];
         if (offers.some(o => o.items > 0 || o.coins > 0)) {
             const c = await bot.collectGE();
-            ctx.log('GE collected', { success: c.success, items: c.items, coins: c.coins, message: c.message });
+            ctx.log('GE collected', { success: c.success, items: c.items, coins: c.coins, result: c.message });
             this.needsBank = true;
         }
         const listed = new Set(
@@ -891,18 +891,18 @@ class Mule {
         ctx.reportBank(bankSnapshot(sdk));
         await closeBank(ctx);
         if (!w.success) {
-            ctx.log('GE: withdraw failed', { item: order.item, message: w.message });
+            ctx.log('GE: withdraw failed', { item: order.item, result: w.message });
             this.needsBank = true;
             return;
         }
         const opened = await bot.openGE();
         if (!opened.success) {
-            ctx.log('GE open failed', { message: opened.message });
+            ctx.log('GE open failed', { result: opened.message });
             this.needsBank = true;
             return;
         }
         const placed = await bot.placeGEOffer({ item: bankItem.id, side: 'sell', quantity: w.amountWithdrawn ?? quantity, price: order.price });
-        ctx.log('GE sell', { item: order.item, quantity: w.amountWithdrawn ?? quantity, price: order.price, success: placed.success, outcome: placed.outcome, message: placed.message });
+        ctx.log('GE sell', { item: order.item, quantity: w.amountWithdrawn ?? quantity, price: order.price, success: placed.success, outcome: placed.outcome, result: placed.message });
         if (placed.success) this.geDone.add(key);
         await bot.closeInterface();
         this.needsBank = true;
@@ -969,7 +969,7 @@ export async function courierTrip(ctx: RoleContext): Promise<{ trades: number; c
         }
         for (const b of picks) {
             const r = await bot.withdrawItem(b, -1, { asNote: true });
-            if (!r.success) ctx.log('courier: withdraw failed', { item: b.name, message: r.message });
+            if (!r.success) ctx.log('courier: withdraw failed', { item: b.name, result: r.message });
         }
         ctx.reportBank(bankSnapshot(sdk));
         await closeBank(ctx);
