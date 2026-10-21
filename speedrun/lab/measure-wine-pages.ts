@@ -68,7 +68,7 @@ async function reset(): Promise<void> {
     const open = await openBankThroughPages(sdk);
     if (!open.ok) throw new Error(`reset: ${open.reason}`);
     if (sdk.getBankItems().some(i => i.id === ITEM.wine)) await withdrawMany(sdk, [{ item: ITEM.wine, n: 'all', asNote: true }]);
-    await depositMatching(sdk, [ITEM.jugWine, ITEM.badWine, ITEM.jugEmpty, ITEM.wine]);
+    await depositMatching(sdk, [ITEM.jugWine, ITEM.badWine, ITEM.jugEmpty, ITEM.wine, ITEM.grapes, ITEM.jugWater]);
     await closeBank(bot, sdk);
 }
 
@@ -80,7 +80,7 @@ async function arm(bankWines: number, restNotes: number): Promise<number> {
     const open = await openBankThroughPages(sdk);
     if (!open.ok) throw new Error(`arm: ${open.reason}`);
     await depositNotes(sdk, bankWines, { close: true });
-    await give(sdk, ['grapes', 'jug_water'], 2);
+    await give(sdk, ['grapes', 'jug_water'], 1);
     await setstat(sdk, 'cooking', 35);
     const mk = await makeOneWine(sdk);
     if (!mk.ok) throw new Error(`arm: ${mk.reason}`);
@@ -130,7 +130,7 @@ for (let rep = 0; rep < n; rep++) {
 
     if (only.includes('E')) {
         // Continues per tick: does a burst clear more than one queued level-up per tick?
-        for (const perTick of [1, 5, 2]) {
+        for (const perTick of arg('per-tick', '1,5,2').split(',').map(Number)) {
             const due = await arm(29, 30);
             const f = await awaitFiring(sdk, due);
             tracing = `E${perTick}`;
