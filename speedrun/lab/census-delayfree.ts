@@ -6,7 +6,8 @@
 //
 // Reads server/content/scripts/**/*.rs2 only. It follows @label, jump(label) and
 // ~proc calls (transitively, without branching analysis), so a trigger is reported as
-// "delay-free" only when NO reachable block contains a tick-costing command. That is
+// "delay-free" only when NO reachable block contains a tick-costing command (a message box
+// alone does not count: it is tagged FREE+box, see BOX below). That is
 // conservative in one direction: a trigger whose delay sits on a rarely taken branch is
 // reported as gated. Gated rows are printed with --all.
 import { readdirSync, readFileSync, statSync } from 'fs';
@@ -17,7 +18,10 @@ const TRIGGERS = /^(opheld[1-5]|opheldu|opheldt|if_button|inv_button[1-5])$/;
 const EFFECT = /\b(inv_add|inv_changeslot|inv_setslot|inv_moveitem|inv_moveitem_cert|inv_moveitem_uncert|inv_moveitem_tobank|inv_movefromslot|inv_movetoslot|both_moveinv|stat_advance)\b/;
 const DELAY = /\b(p_delay|p_arrivedelay)\b/;
 const QUEUE = /\b(queue|weakqueue|strongqueue|longqueue)\*?\s*\(/;
-const PAUSE = /\b(p_pausebutton|p_countdialog)\b|~(chatnpc|chatplayer|mesbox|objbox|doubleobjbox|p_choice[0-9]|skill_multi[0-9]|chatnpcnoturn)\b/;
+// A make-X menu or a conversation sits on the success path; a message box is almost always
+// a refusal branch ("You need a Cooking level of ..."), so it is reported separately.
+const MENU = /\bp_countdialog\b|~(chatnpc|chatplayer|chatnpcnoturn|p_choice[0-9]|skill_multi[0-9]|multi[0-9])\b/;
+const BOX = /\bp_pausebutton\b|~(mesbox|objbox|doubleobjbox|objboxnoclose)\b/;
 
 type Block = { kind: string; name: string; file: string; line: number; body: string };
 
@@ -78,7 +82,8 @@ for (const b of blocks) {
         for (const m of x.body.matchAll(new RegExp(EFFECT, 'g'))) effect.add(m[1]);
         if (DELAY.test(x.body)) gate.add('delay');
         if (QUEUE.test(x.body)) gate.add('queue');
-        if (PAUSE.test(x.body)) gate.add('dialog');
+        if (MENU.test(x.body)) gate.add('menu');
+        if (BOX.test(x.body)) gate.add('box');
     }
     if (effect.size === 0) continue;
     rows.push({ trigger: `[${b.kind},${b.name}]`, file: b.file, line: b.line, effect: [...effect].sort(), gate: [...gate].sort() });
@@ -88,9 +93,11 @@ const all = process.argv.includes('--all');
 if (process.argv.includes('--json')) {
     console.log(JSON.stringify(rows, null, 1));
 } else {
-    const free = rows.filter(r => r.gate.length === 0);
-    console.log(`# ${rows.length} triggers with an item/xp effect; ${free.length} with no delay, queue or dialog on any reachable path`);
+    const isFree = (r: Row) => r.gate.every(g => g === 'box');
+    const free = rows.filter(isFree);
+    console.log(`# ${rows.length} triggers with an item/xp effect; ${free.length} with no delay, queue or menu on any reachable path ('FREE+box': a message box is reachable, usually a refusal branch)`);
     for (const r of all ? rows : free) {
-        console.log(`${r.gate.length ? r.gate.join('+') : 'FREE'}\t${r.trigger}\t${r.file}:${r.line}\t${r.effect.join(',')}`);
+        const tag = isFree(r) ? (r.gate.length ? 'FREE+box' : 'FREE') : r.gate.join('+');
+        console.log(`${tag}\t${r.trigger}\t${r.file}:${r.line}\t${r.effect.join(',')}`);
     }
 }
