@@ -97,7 +97,11 @@ export async function freshKit(sdk: BotSDK, bot: BotActions, staff?: string): Pr
         await cheat(sdk, `give ${staff} 1`);
         await waitUntil(sdk, () => sdk.getInventory().length > 0, 10, 'staff in inventory');
         const r = await bot.equipItem(sdk.getInventory()[0]!);
-        if (!r.success) throw new Error(`could not wield ${staff}: ${r.message}`);
+        if (!r.success) {
+            const p = sdk.getState()?.player;
+            const chat = sdk.getNewChat().map((m) => m.text).slice(-5).join(' | ');
+            throw new Error(`could not wield ${staff}: ${r.message} at (${p?.worldX},${p?.worldZ}); chat: ${chat}`);
+        }
         await cheat(sdk, 'clearinv inv');
     }
 }
