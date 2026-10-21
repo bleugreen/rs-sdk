@@ -110,6 +110,7 @@ export class Steps {
         const t0 = L.tick(sdk);
         let last = L.pos(sdk);
         let lastMove = t0;
+        let clicks = 1;
         return this.step(label, () => sdk.sendWalk(x, z, true), {
             // Arrived, or no tile change for 4 ticks (blocked); state updates can repeat within a tick.
             done: () => {
@@ -118,7 +119,14 @@ export class Steps {
                 if (p.x !== last.x || p.z !== last.z) lastMove = t;
                 last = p;
                 if (p.x === x && p.z === z) return true;
-                if (t - lastMove >= 4 && t - t0 >= 4) {
+                if (t - lastMove >= 3 && t - t0 >= 3) {
+                    if (clicks < 4) {
+                        // stalled short (click clamped or dropped): click again, as a real client would
+                        clicks++;
+                        lastMove = t;
+                        void sdk.sendWalk(x, z, true);
+                        return false;
+                    }
                     console.log(`  walk ${label} stopped at ${p.x},${p.z}`);
                     return true;
                 }
