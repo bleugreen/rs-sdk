@@ -4,7 +4,8 @@ Shared measurement, mechanics and gear: [combat.md](combat.md). Scripts:
 [`combat-rate.ts`](../scripts/combat-rate.ts), [`combat-model.ts`](../scripts/combat-model.ts).
 Labels follow `docs/speedrun/skills/README.md` (rs/2). Host: the measured rates are
 combat.md's, taken at 300 ms on the Mac executor `local` at load 11-18 on 16 cores, so they are
-**busy-host figures, a few percent pessimistic** (combat.md header).
+**busy-host figures, a few percent pessimistic** (combat.md header). Client: the headless lite
+client; the reactions per cycle and the webclient caveat are in combat.md's client line.
 
 ## 1. Recommendation
 
@@ -27,6 +28,15 @@ at 95-99**, plus a third of that to Hitpoints.
 | MM option 1 alone, neither Waterfall nor Dragon Slayer (35,000) | 522 | inferred |
 | No MM (Waterfall 13,750, level 83) | **2,901**, yields 8,729 HP | inferred |
 | Level 1 (Attack 99) | **4,898** | inferred |
+
+### Summary row
+
+rs/2's columns for the Item-fed skills section of `docs/speedrun/skills/README.md`; column 5
+is "with interleaving (net)", n/a where nothing is absorbable.
+
+| Skill | Headline method | Start level (on-route quests) | Ticks to 99, normal | Ticks to 99, with interleaving (net) | Basis | Helper supplies | Document |
+|---|---|---|---|---|---|---|---|
+| Strength | none: quest-capped | 99 after Dragon Slayer: MM option 1 35,000 + Dragon Slayer 18,650 = 53,650; Strength 1 until MM ([quests README](../quests/README.md) sections 4 and 6) | 0 | n/a | read | none | strength.md |
 
 ## 2. Route by level band
 

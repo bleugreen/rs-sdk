@@ -4,7 +4,8 @@ Shared measurement, mechanics and gear: [combat.md](combat.md). Scripts:
 [`combat-rate.ts`](../scripts/combat-rate.ts), [`combat-model.ts`](../scripts/combat-model.ts).
 Labels follow `docs/speedrun/skills/README.md` (rs/2). Host: the measured rates are
 combat.md's and ranged.md's, taken at 300 ms on the Mac executor `local` at load 11-18 on 16
-cores, so they are **busy-host figures, a few percent pessimistic**.
+cores, so they are **busy-host figures, a few percent pessimistic**. Client: the headless lite
+client; the reactions per cycle and the webclient caveat are in combat.md's client line.
 
 ## 1. Recommendation
 
@@ -17,11 +18,13 @@ every sample). Plan it as a by-product:
   The pre-MM fights are cast by spell and still give Hitpoints at 1.33 per damage: warlord
   226 (measured), demon 209 (measured), Fight Arena ~287 (inferred), about 722, so about
   42 HP at Monkey Madness (rs/3 `pre_mm_fights.md`). MM option 1 adds 35,000: **35,761**
-  in all (level 97), a gap of **4,177**. Dragon Slayer and the filler quests give no HP.
-  The post-MM cannon finish (cannon + defensive melee, then cannon + rapid knives, 2,051
-  ticks) yields about **5,089 HP** as a by-product (rs/31, `ranged.md`; inferred from
-  measured rates), which covers the gap. rs/3's README quotes the gap as 4,938 because it
-  counts MM alone.
+  in all (level 97), a gap of 4,177. Dragon Slayer and the filler quests give no HP.
+  **The canonical figure is the README's ~4,220** ([quests README](../quests/README.md)
+  section 6: 35,000 + ~720 from the pre-MM spell fights). The 41-base difference is the
+  account's starting 39.2, which the README leaves out; its step 14 also quotes "at most
+  4,938", MM alone. The post-MM cannon finish yields about **5,440 HP** with rs/91's kit
+  (1,857 ticks; `ranged.md` section 1) or 5,089 without it (rs/31, 2,051 ticks), inferred
+  from measured rates, which covers any of the three figures.
 - **Package A (Waterfall on, no Dragon Slayer):** MM gives 35,000, and the 4,938 gap is
   covered by the Defence training's 6,646 HP (2,121 ticks on ogres) or by Ranged combat.
   0 extra ticks.
@@ -31,6 +34,15 @@ every sample). Plan it as a by-product:
   inferred). On melee alone, the 17,857 is **about 5,683 ticks**.
 - **From level 10 with nothing else:** about 12,700 ticks of melee (inferred).
   Nobody should do this.
+
+### Summary row
+
+rs/2's columns for the Item-fed skills section of `docs/speedrun/skills/README.md`; column 5
+is "with interleaving (net)", n/a where nothing is absorbable.
+
+| Skill | Headline method | Start level (on-route quests) | Ticks to 99, normal | Ticks to 99, with interleaving (net) | Basis | Helper supplies | Document |
+|---|---|---|---|---|---|---|---|
+| Hitpoints | by-product of the cannon finish | 97: start 39.2 + ~720 from the pre-MM spell fights + MM option 1 35,000; gap ~4,220 ([quests README](../quests/README.md) section 6) | 0 (the finish yields ~5,440 with the kit, 5,089 without) | n/a | read + measured; by-product inferred | none | hitpoints.md |
 
 ## 2. Route by level band
 
@@ -79,5 +91,6 @@ The no-MM melee-only remainder (5,683 ticks) needs 34 prayer potions, 3 super at
 
 - How much HP Ranged training actually yields on rs/31's chosen method (the cannon's
   hits give none; see `ranged.md`). That decides the no-MM remainder. On the route, the
-  5,089 by-product against the 4,177 gap leaves about 900 base of margin (inferred).
+  by-product against the ~4,220 gap leaves about 1,200 base of margin with the kit (5,440) and
+  about 870 without it (5,089) (inferred).
 - Monkey Madness at ~42 HP with Defence 1 is unmeasured (combat.md section 9).

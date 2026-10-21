@@ -4,7 +4,8 @@ Shared measurement, mechanics and gear: [combat.md](combat.md). Scripts:
 [`combat-rate.ts`](../scripts/combat-rate.ts), [`combat-model.ts`](../scripts/combat-model.ts).
 Labels follow `docs/speedrun/skills/README.md` (rs/2). Host: the measured rates are
 combat.md's, taken at 300 ms on the Mac executor `local` at load 11-18 on 16 cores, so they are
-**busy-host figures, a few percent pessimistic** (combat.md header).
+**busy-host figures, a few percent pessimistic** (combat.md header). Client: the headless lite
+client; the reactions per cycle and the webclient caveat are in combat.md's client line.
 
 ## 1. Recommendation
 
@@ -25,6 +26,15 @@ west of Yanille with Strength 99: 9.0-9.4 base xp per tick from Attack 70 up
 (inferred, calibrated to 300 ms samples). That is **about 4,390 ticks from level 1**.
 The one real constraint is order: the rune scimitar needs base Attack 40, and Holy
 Grail's Black Knight Titan needs Attack 20 for Excalibur if that quest returns.
+
+### Summary row
+
+rs/2's columns for the Item-fed skills section of `docs/speedrun/skills/README.md`; column 5
+is "with interleaving (net)", n/a where nothing is absorbable.
+
+| Skill | Headline method | Start level (on-route quests) | Ticks to 99, normal | Ticks to 99, with interleaving (net) | Basis | Helper supplies | Document |
+|---|---|---|---|---|---|---|---|
+| Attack | none: quest-capped | 99 before the cannon session: TGV 11,450 + GT 18,400 + Fight Arena 12,175 = 42,025; MM option 1 adds 20,000 (62,025) ([quests README](../quests/README.md) sections 4 and 6) | 0 | n/a | read | none | attack.md |
 
 ## 2. Route by level band
 
