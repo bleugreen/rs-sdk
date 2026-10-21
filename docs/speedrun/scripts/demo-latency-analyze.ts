@@ -41,14 +41,26 @@ for (const f of files) {
     const trials = (r.react?.trials ?? []).filter((t: any) => t.delay === 0 && t.ticks !== 99);
     const short = { n: 0, miss: 0 };
     const other = { n: 0, miss: 0 };
+    const buckets: Record<string, { n: number; miss: number }> = { '<50': { n: 0, miss: 0 }, '50-200': { n: 0, miss: 0 }, '>=200': { n: 0, miss: 0 } };
+    const longPrev = { n: 0, miss: 0 };
     for (const t of trials) {
         if (t.nextIntervalMs === null || t.nextIntervalMs === undefined) continue;
         const b = t.nextIntervalMs < 200 ? short : other;
         b.n++;
         if (t.ticks > 1) b.miss++;
+        const k = t.nextIntervalMs < 50 ? '<50' : t.nextIntervalMs < 200 ? '50-200' : '>=200';
+        buckets[k]!.n++;
+        if (t.ticks > 1) buckets[k]!.miss++;
+        if (t.nextIntervalMs >= 200 && (t.prevIntervalMs ?? 0) > 400) {
+            longPrev.n++;
+            if (t.ticks > 1) longPrev.miss++;
+        }
     }
     agg.short.n += short.n; agg.short.miss += short.miss; agg.other.n += other.n; agg.other.miss += other.miss;
-    if (short.n + other.n) lines.push(`  +0 ms trials: next interval < 200 ms: ${short.miss}/${short.n} missed; otherwise: ${other.miss}/${other.n} missed`);
+    if (short.n + other.n) {
+        lines.push(`  +0 ms trials: next interval < 200 ms: ${short.miss}/${short.n} missed; otherwise: ${other.miss}/${other.n} missed`);
+        lines.push(`  by next interval: ${Object.entries(buckets).map(([k, v]) => `${k} ms ${v.miss}/${v.n}`).join(', ')}; next >= 200 but previous > 400 ms: ${longPrev.miss}/${longPrev.n}`);
+    }
     for (const [name, raw] of [['react session', r.react?.frames?.raw], ['sample phase', r.sample?.frames?.raw]] as const) {
         if (!raw?.length) continue;
         const ts = tickTimes(raw);
