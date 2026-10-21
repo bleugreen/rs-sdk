@@ -1,0 +1,112 @@
+diff --git a/server/engine/src/engine/World.ts b/server/engine/src/engine/World.ts
+index 4cc1b0b4c..778929aab 100644
+--- a/server/engine/src/engine/World.ts
++++ b/server/engine/src/engine/World.ts
+@@ -799,6 +799,7 @@ class World {
+                 // - interactions
+                 // - movement
+                 player.processInteraction();
++                if (player.stepsTaken > 0) console.log(`WCTRACE ${this.currentTick} moved pos=${player.x},${player.z}`);
+                 // After movement: face a loc/obj target if we walked over and held still (needs stepsTaken).
+                 player.reorient();
+                 if (!player.busy() && !player.delayed && !player.loggingOut) player.recoverItems();
+diff --git a/server/engine/src/engine/entity/Player.ts b/server/engine/src/engine/entity/Player.ts
+index d087fa34a..184f6859c 100644
+--- a/server/engine/src/engine/entity/Player.ts
++++ b/server/engine/src/engine/entity/Player.ts
+@@ -1876,6 +1876,7 @@ export default class Player extends PathingEntity {
+     }
+ 
+     addXp(stat: number, xp: number, allowMulti: boolean = true) {
++        console.log(`WCTRACE ${World.currentTick} xp stat=${stat} fine=${xp}`);
+         // require xp is >= 0. there is no reason for a requested addXp to be negative.
+         if (xp < 0) {
+             throw new Error(`Invalid xp parameter for addXp call: Stat was: ${stat}, Exp was: ${xp}`);
+diff --git a/server/engine/src/engine/script/handlers/LocOps.ts b/server/engine/src/engine/script/handlers/LocOps.ts
+index 2740486e7..b2a86ffee 100644
+--- a/server/engine/src/engine/script/handlers/LocOps.ts
++++ b/server/engine/src/engine/script/handlers/LocOps.ts
+@@ -63,6 +63,7 @@ const LocOps: CommandHandlers = {
+         check(duration, DurationValid);
+         check(id, LocTypeValid);
+ 
++        console.log(`WCTRACE ${World.currentTick} locchange at=${state.activeLoc.x},${state.activeLoc.z} to=${id} duration=${duration}`);
+         World.changeLoc(state.activeLoc, id, state.activeLoc.shape, state.activeLoc.angle, duration);
+     },
+ 
+diff --git a/server/engine/src/engine/script/handlers/PlayerOps.ts b/server/engine/src/engine/script/handlers/PlayerOps.ts
+index dde2bfc29..e3bb5cac9 100644
+--- a/server/engine/src/engine/script/handlers/PlayerOps.ts
++++ b/server/engine/src/engine/script/handlers/PlayerOps.ts
+@@ -597,6 +597,7 @@ const PlayerOps: CommandHandlers = {
+         const chance = Math.floor(JavaRandom.nextDouble() * 256);
+ 
+         state.pushInt(value > chance ? 1 : 0);
++        console.log(`WCTRACE ${World.currentTick} roll lvl=${clampedLevel} lo=${low} hi=${high} v=${value} c=${chance} ok=${value > chance ? 1 : 0} pos=${state.activePlayer.x},${state.activePlayer.z}`);
+     },
+ 
+     [ScriptOpcode.SPOTANIM_PL]: state => {
+diff --git a/server/engine/src/network/game/client/handler/OpHeldHandler.ts b/server/engine/src/network/game/client/handler/OpHeldHandler.ts
+index 5c6dd8990..a42f6b21d 100644
+--- a/server/engine/src/network/game/client/handler/OpHeldHandler.ts
++++ b/server/engine/src/network/game/client/handler/OpHeldHandler.ts
+@@ -8,6 +8,7 @@ import ClientGameMessageHandler from '#/network/game/client/ClientGameMessageHan
+ import OpHeld from '#/network/game/client/model/OpHeld.js';
+ import { LoggerEventType } from '#/server/logger/LoggerEventType.js';
+ import Environment from '#/util/Environment.js';
++import World from '#/engine/World.js';
+ 
+ export default class OpHeldHandler extends ClientGameMessageHandler<OpHeld> {
+     handle(message: OpHeld, player: Player): boolean {
+@@ -15,6 +16,7 @@ export default class OpHeldHandler extends ClientGameMessageHandler<OpHeld> {
+ 
+         if (player.delayed) {
+             // normal: cannot interact while delayed
++            console.log(`WCTRACE ${World.currentTick} opheld op=${message.op} slot=${slot} rejected=delayed`);
+             return false;
+         }
+ 
+@@ -39,6 +41,7 @@ export default class OpHeldHandler extends ClientGameMessageHandler<OpHeld> {
+             return false;
+         } else if (!inv.hasAt(slot, objId)) {
+             // bad client or lag: item does not exist in inventory
++            console.log(`WCTRACE ${World.currentTick} opheld op=${message.op} slot=${slot} rejected=noitem`);
+             return false;
+         }
+ 
+@@ -48,6 +51,7 @@ export default class OpHeldHandler extends ClientGameMessageHandler<OpHeld> {
+             return false;
+         }
+ 
++        console.log(`WCTRACE ${World.currentTick} opheld op=${message.op} slot=${slot} ok`);
+         player.lastItem = objId;
+         player.lastSlot = slot;
+ 
+diff --git a/server/engine/src/network/game/client/handler/OpLocHandler.ts b/server/engine/src/network/game/client/handler/OpLocHandler.ts
+index 42e589a68..467f1d746 100644
+--- a/server/engine/src/network/game/client/handler/OpLocHandler.ts
++++ b/server/engine/src/network/game/client/handler/OpLocHandler.ts
+@@ -13,6 +13,7 @@ export default class OpLocHandler extends ClientGameMessageHandler<OpLoc> {
+ 
+         if (player.delayed) {
+             // normal: cannot interact while delayed
++            console.log(`WCTRACE ${World.currentTick} oploc at=${x},${z} rejected=delayed`);
+             player.write(new UnsetMapFlag());
+             return false;
+         }
+@@ -30,6 +31,7 @@ export default class OpLocHandler extends ClientGameMessageHandler<OpLoc> {
+         const loc = World.getLoc(x, z, player.level, locId);
+         if (!loc) {
+             // bad client or lag: loc does not exist
++            console.log(`WCTRACE ${World.currentTick} oploc at=${x},${z} rejected=noloc`);
+             player.write(new UnsetMapFlag());
+             return false;
+         }
+@@ -53,6 +55,7 @@ export default class OpLocHandler extends ClientGameMessageHandler<OpLoc> {
+         player.clearPendingAction();
+         player.setInteraction(Interaction.ENGINE, loc, trigger);
+         player.opcalled = true;
++        console.log(`WCTRACE ${World.currentTick} oploc at=${x},${z} ok pos=${player.x},${player.z}`);
+         return true;
+     }
+ }
