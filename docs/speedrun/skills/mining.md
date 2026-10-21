@@ -21,7 +21,11 @@ base xp per tick** at level 99 (measured, 60 ores, with the server's player coun
 emulated). Mining from 49 to 99 then takes **about 4,030 ticks**, and from level 1 about
 4,320 (inferred from the measured rates, section 2). Doric's Quest therefore saves about
 280 ticks of mining for roughly 30 ticks of dialogue on the road west from Falador. With
-Digsite as well (16,600 base, level 86), mining needs **about 2,420 ticks**.
+Digsite as well (16,600 base, level 86), mining needs **about 2,420 ticks**, but Digsite
+itself takes about 2,180 ticks of playtime (measured on the stock client, p90 about 2,600;
+`docs/speedrun/quests/digsite.md`, cairn://p/rs/16) to save about 1,612 ticks of mining.
+It is a net loss for Mining alone; do it only if the quest plan needs it for another
+reason, such as its quest points.
 
 The earlier "about 3,500 ticks" model assumed a 3-tick cycle could run forever. It
 cannot: every ore depletes its rock, so a 3-tick cycle needs 5 rocks on the demo (7 on a
@@ -64,7 +68,7 @@ account, against about 4,030 + 30 + travel for this route.
 | Quest | Base Mining xp (read) | Source | Level after | Notes |
 |---|---|---|---|---|
 | Doric's Quest | 1,300 | `quest_doric.rs2:99` (`stat_advance(mining, 13000)`) | 49 (49 needs 1,214.7, 50 needs 1,304.8) | 1 quest point. Needs 6 clay, 4 copper ore, 2 iron ore (`quest_doric.rs2:70`), all tradeable. Doric stands at (2952,3451), north of Falador. No other requirement. |
-| Digsite | 15,300 | `quest_itexam.rs2:41` | 85 alone, 86 after Doric | Duration belongs to cairn://p/rs/16. |
+| Digsite | 15,300 (measured 382,500 game xp at the hand-in, rs/16) | `quest_itexam.rs2:41` | 85 alone, 86 after Doric | About 2,180 ticks of playtime on the stock client, 1,930 with the client fix, 1,790 with burst inputs; p90 about 2,600 (measured, `docs/speedrun/quests/digsite.md`, cairn://p/rs/16). Also gives 2,000 base Herblore, a helper-fed skill. Saves about 1,612 mining ticks after Doric (4,034 to 2,422), so it costs about 570 ticks net on median and about 1,000 at p90. |
 
 Doric's dialogue is about 14 pages (start: greeting, two choices, five lines; hand-in:
 five lines and the quest scroll; `quest_doric.rs2:34-101`). At the stock lite client's 2
