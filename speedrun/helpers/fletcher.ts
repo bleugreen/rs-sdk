@@ -25,17 +25,24 @@
 // mode 'camp' (Kandarin): buy from one archery shop's restocks.
 //   shop: 'hickton' | 'dargaud'
 //   lines: [{ item, quantity, maxPrice? }]   default CAMP_LINES[shop]
-//   coins: coins to carry over White Wolf Mountain (default campBudget(lines))
+//   coins: coins to carry over White Wolf Mountain (default remainingBudget(lines))
 //   crossingHitpoints: Hitpoints to train before the crossing, default 40
-//   reportMinutes: bank and report this often while camping, default 30
+//   passTicks: how long each line waits for a restock per pass, default 20
+//   reportMinutes: bank and log holdings this often while camping, default 30
 //   Shop stock is shared by the whole server and restocks one unit per
-//   `stockrate` ticks whether or not anyone watches (World.ts processCleanup;
-//   a drained slot keeps restocking, Inventory.remove). Hickton's adamant
-//   arrowtips: 200 shelf, +1 per 40 ticks (300/h); Dargaud's: 200, +1 per 50
-//   (240/h). The price is base x (1 + 0.01 x (200 - shelf)) (shop.rs2, delta
-//   10), so a cap of 41 buys only off a near-full shelf: the same 540 per hour
-//   as draining it, at a third of the price. Dargaud is inside the Ranging
-//   Guild (Ranged 40 at the door), so that camper trains Ranged on cows first.
+//   `stockrate` ticks up to its configured stock, whether or not anyone watches
+//   (World.ts processCleanup). Hickton (archeryshop2, catherby.inv) restocks
+//   mithril (400), adamant (200) and rune (100) arrowtips at +1 per 40 ticks
+//   each, 300/h per item; Dargaud's adamant is 200, +1 per 50 (240/h). The price
+//   is base x (1 + 0.01 x (stock - shelf)) (shop.rs2, delta 10), so a cap just
+//   above base buys only off a near-full shelf: the same 300/h as draining it
+//   (the restock is the limit), without paying up the drained shelf. A shelf
+//   at its configured stock stops restocking, so the camper cycles through all
+//   its lines with short waits (`passTicks`) and banks only every
+//   `reportMinutes`. Out of coins, it walks back to Varrock west bank and waits
+//   there for a funder, then crosses again with the budget for what is left.
+//   Dargaud is inside the Ranging Guild (Ranged 40 at the door), so that
+//   camper trains Ranged on cows first.
 //
 // Both modes accept funding trades (coins, or feathers in headless mode) from
 // `funders` (default our helper accounts) while waiting at Varrock west bank,
@@ -44,7 +51,7 @@ import { TRADE_REQUEST_CHAT_TYPE } from '../../sdk/types';
 import type { BotWorldState, InventoryItem } from '../../sdk/types';
 import { receiveFrom } from '../lib/trade';
 import { BANKS, Buyer, SHOPS } from './buyer';
-import { cheb, crossingSettings, crossToKandarin, inKandarin, trainHitpointsOnCows, trainOnCows, travel, type Pt, type Traveller } from '../lib/kandarin';
+import { cheb, crossFromKandarin, crossingSettings, crossToKandarin, inKandarin, trainHitpointsOnCows, trainOnCows, travel, type Pt, type Traveller } from '../lib/kandarin';
 import { accountMatches, ChatCursor, DEFAULT_COURIERS, toRegExps } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
 
@@ -63,6 +70,7 @@ export const BASE_COST: Record<string, number> = {
     'steel arrowtips': 6,
     'mithril arrowtips': 16,
     'adamant arrowtips': 40,
+    'rune arrowtips': 200,
     'bronze arrow': 1,
     feather: 2
 };
@@ -73,21 +81,29 @@ export function shelfPrice(base: number, shelf: number, stock: number, delta = 1
     return Math.floor((Math.max(100, 1000 - shift) * base) / 1000);
 }
 
-/** A cap of 41 on adamant arrowtips (base 40) buys only from a shelf of 196 or more (of 200). */
+/** Patient caps: each buys only from a near-full shelf (shelfPrice; tests pin the shelf each allows). */
+/** Adamant arrowtips (base 40, stock 200): a shelf of 196 or more. */
 export const PATIENT_ADAMANT_PRICE = 41;
+/** Rune arrowtips (base 200, stock 100 at Hickton): a shelf of 95 or more. */
+export const PATIENT_RUNE_PRICE = 210;
+/** Mithril arrowtips (base 16, stock 400 at Hickton): a shelf of 382 or more. */
+export const PATIENT_MITHRIL_PRICE = 18;
 
 /**
- * Default split of the adamant-cap list between the two shops, in proportion to
- * their restock rates (300 and 240 per hour) so both finish together; the small
- * tiers come from Hickton's deep shelves at about base price.
+ * Default shopping lists (supply-fallbacks.md section 3, via rs/103): adamant
+ * split between the shops in proportion to their restock rates; at Hickton
+ * also rune arrowtips (Fletching 75+ stand-ins) and mithril arrowtips (which
+ * fill the adamant shortfall; the 1,500 is shared with the Dargaud buyer of
+ * rs/124). The small tiers come from Hickton's deep shelves at about base.
  */
 export const CAMP_LINES: Record<'hickton' | 'dargaud', CampLine[]> = {
     hickton: [
         { item: 'Bronze arrowtips', quantity: 60 },
         { item: 'Iron arrowtips', quantity: 90 },
         { item: 'Steel arrowtips', quantity: 135 },
-        { item: 'Mithril arrowtips', quantity: 225 },
-        { item: 'Adamant arrowtips', quantity: 2075, maxPrice: PATIENT_ADAMANT_PRICE }
+        { item: 'Adamant arrowtips', quantity: 2075, maxPrice: PATIENT_ADAMANT_PRICE },
+        { item: 'Rune arrowtips', quantity: 560, maxPrice: PATIENT_RUNE_PRICE },
+        { item: 'Mithril arrowtips', quantity: 1500, maxPrice: PATIENT_MITHRIL_PRICE }
     ],
     dargaud: [{ item: 'Adamant arrowtips', quantity: 1660, maxPrice: PATIENT_ADAMANT_PRICE }]
 };
@@ -100,6 +116,11 @@ export function campBudget(lines: readonly CampLine[]): number {
         sum += l.quantity * (l.maxPrice ?? Math.ceil(base * 1.5));
     }
     return Math.ceil(sum * 1.05) + 500;
+}
+
+/** The budget for what is still to buy, given how many of each item are held (bank + pack). */
+export function remainingBudget(lines: readonly CampLine[], held: (item: string) => number): number {
+    return campBudget(lines.map(l => ({ ...l, quantity: Math.max(0, l.quantity - held(l.item)) })));
 }
 
 export interface HeadlessCounts {
@@ -486,7 +507,9 @@ class Fletcher {
     }
 
     /** On the Lumbridge side: train what the shop and the crossing need, collect the coins, cross. */
-    private async reachKandarin(shop: 'hickton' | 'dargaud', budget: number, crossingHp: number): Promise<void> {
+    private async reachKandarin(shop: 'hickton' | 'dargaud', budgetOf: () => number, crossingHp: number): Promise<void> {
+        // Evaluated after each bank visit, when the holdings are known.
+        let budget = budgetOf();
         const hp = () => this.sdk.getSkill('Hitpoints')?.baseLevel ?? 10;
         const ranged = () => this.sdk.getSkill('Ranged')?.baseLevel ?? 1;
         const needRanged = shop === 'dargaud' ? 40 : 1;
@@ -495,6 +518,7 @@ class Fletcher {
         const collectCoins = async () => {
             await this.atBank(BANKS.varrockWest, async () => {
                 await this.buyer.depositAllBut(['Shortbow', 'Bronze arrow', 'Bronze sword', 'Coins']);
+                budget = budgetOf();
                 await this.buyer.setCoins(Math.min(budget, this.held(COINS)));
             });
             if (coinsCarried() < budget) {
@@ -534,14 +558,27 @@ class Fletcher {
         const shop = String(this.ctx.options.shop ?? '') as 'hickton' | 'dargaud';
         if (shop !== 'hickton' && shop !== 'dargaud') throw new Error(`fletcher camp: options.shop must be 'hickton' or 'dargaud', not '${shop}'`);
         const lines = (this.ctx.options.lines as CampLine[] | undefined) ?? CAMP_LINES[shop];
-        const budget = Number(this.ctx.options.coins ?? campBudget(lines));
+        const fixedCoins = this.ctx.options.coins === undefined ? null : Number(this.ctx.options.coins);
+        const budget = () => fixedCoins ?? remainingBudget(lines, item => this.buyer.held(item));
         const crossingHp = Number(this.ctx.options.crossingHitpoints ?? 40);
+        const passTicks = Number(this.ctx.options.passTicks ?? 20);
         const reportTicks = Math.round(Number(this.ctx.options.reportMinutes ?? 30) * 200);
         const spec = SHOPS[shop]!;
         const remaining = () => lines.filter(l => this.buyer.held(l.item) < l.quantity);
-        this.ctx.log('start', { mode: 'camp', shop, lines, budget, crossingHp });
+        const holdings = () => Object.fromEntries(lines.map(l => [l.item, this.buyer.held(l.item)]));
+        this.ctx.log('start', { mode: 'camp', shop, lines, crossingHp, passTicks });
         await crossingSettings(this.sdk, this.ctx.log);
         let banked = false;
+        // Per-item purchase rates since the first bank visit in Kandarin.
+        let since: { tick: number; held: Record<string, number> } | null = null;
+        let lastReport = 0;
+        const report = () => {
+            const held = holdings();
+            const hours = since ? Math.max(((this.tick() - since.tick) * 0.6) / 3600, 1e-6) : 0;
+            const perHour = since ? Object.fromEntries(lines.map(l => [l.item, Math.round((held[l.item]! - since!.held[l.item]!) / hours)])) : {};
+            this.ctx.log('camp holdings', { held, perHour, hours: +hours.toFixed(2), coins: this.held(COINS) });
+            lastReport = this.tick();
+        };
         for (;;) {
             this.checkSignal();
             await this.bot.dismissBlockingUI();
@@ -558,28 +595,36 @@ class Fletcher {
                 if (shop === 'dargaud') await this.useGuildDoor(false);
                 await this.atBank(spec.bank, () => this.buyer.depositAllBut(['Coins']));
                 banked = true;
+                if (!since) since = { tick: this.tick(), held: holdings() };
+                report();
             }
             const todo = remaining();
             if (todo.length === 0) break;
             if (shop === 'dargaud') await this.useGuildDoor(true);
             this.setPhase('camp', { shop });
+            // One pass: every line buys what its cap allows and waits at most passTicks for a restock,
+            // so no shelf sits full (and stops restocking) while another line waits.
             let shortOfCoins = false;
             for (const line of todo) {
-                const r = await this.buyer.buyAtShop({ item: line.item, quantity: line.quantity, source: 'shop', shop, maxPrice: line.maxPrice, maxWaitTicks: reportTicks });
-                this.ctx.log('camp line', { ...r, coins: this.inv(COINS) });
+                const r = await this.buyer.buyAtShop({ item: line.item, quantity: line.quantity, source: 'shop', shop, maxPrice: line.maxPrice, maxWaitTicks: passTicks });
+                if (r.bought > 0) this.ctx.log('camp line', { item: r.item, bought: r.bought, spent: r.spent, held: this.buyer.held(r.item), coins: this.inv(COINS) });
                 if (r.note === 'out of coins') shortOfCoins = true;
             }
-            if (shop === 'dargaud') await this.useGuildDoor(false);
-            await this.atBank(spec.bank, () => this.buyer.depositAllBut(['Coins']));
-            this.ctx.log('camp holdings', { held: Object.fromEntries(lines.map(l => [l.item, this.buyer.held(l.item)])), coins: this.held(COINS) });
-            if (shortOfCoins && this.held(COINS) < 500) {
-                // Coins live on the Lumbridge side; crossing back costs a trip and a death risk. Say so and wait.
-                this.ctx.log('out of coins', { note: 'camping stopped: fund this account (it must cross back to Varrock west) or end the line', held: Object.fromEntries(lines.map(l => [l.item, this.buyer.held(l.item)])) });
-                await this.sdk.waitForTicks(2000);
+            if (shortOfCoins || this.tick() - lastReport >= reportTicks || remaining().length === 0) {
+                if (shop === 'dargaud') await this.useGuildDoor(false);
+                await this.atBank(spec.bank, () => this.buyer.depositAllBut(['Coins']));
+                report();
+            }
+            if (shortOfCoins) {
+                // Coins arrive only at Varrock west bank: go back, wait for a funder there, and cross
+                // again with the budget for what is left (reachKandarin, next time round the loop).
+                this.ctx.log('out of coins', { note: 'walking back to Varrock west bank for funding', budget: fixedCoins ?? remainingBudget(remaining(), item => this.buyer.held(item)), held: holdings() });
+                this.setPhase('cross-back');
+                await crossFromKandarin(this.traveller, BANKS.varrockWest, 'Varrock west bank');
             }
         }
         this.setPhase('done');
-        this.ctx.log('done', { mode: 'camp', shop, held: Object.fromEntries(lines.map(l => [l.item, this.buyer.held(l.item)])) });
+        this.ctx.log('done', { mode: 'camp', shop, held: holdings() });
     }
 
     async run(): Promise<void> {
