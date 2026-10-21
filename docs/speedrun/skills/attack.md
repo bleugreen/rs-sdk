@@ -2,16 +2,23 @@
 
 Shared measurement, mechanics and gear: [combat.md](combat.md). Scripts:
 [`combat-rate.ts`](../scripts/combat-rate.ts), [`combat-model.ts`](../scripts/combat-model.ts).
-Labels follow `docs/speedrun/skills/README.md` (rs/2).
+Labels follow `docs/speedrun/skills/README.md` (rs/2). Host: the measured rates are
+combat.md's, taken at 300 ms on the Mac executor `local` at load 11-18 on 16 cores, so they are
+**busy-host figures, a few percent pessimistic** (combat.md header).
 
 ## 1. Recommendation
 
-**Do not train Attack.** On rs/3's route it is quest-capped in both scenarios:
+**Do not train Attack.** On rs/3's route (Package B: Waterfall off, Dragon Slayer on after
+Monkey Madness option 1) it is quest-capped before the cannon session:
 
-- No MM: The Grand Tree 18,400 + Waterfall 13,750 + Fight Arena 12,175 = 44,325
-  base, past 99's 39,938.
-- With MM: Tree Gnome Village 11,450 and Monkey Madness 20,000 come on top, for
-  75,775.
+- Tree Gnome Village 11,450 + The Grand Tree 18,400 + Fight Arena 12,175 = **42,025** base
+  (read), past 99's 39,938. That is what the cannon needs: its hit roll uses the wielded
+  melee style, so Attack 99 must come before the pre-MM cannon session (`ranged.md`).
+- Monkey Madness option 1 adds 20,000, for **62,025**. Dragon Slayer and its filler give no
+  Attack. **0 ticks of Attack training.**
+
+Alternatives (not on the route): Package A (Waterfall on) adds 13,750 for 75,775; without
+MM, The Grand Tree + Fight Arena give 30,575 (level 96), or 44,325 with Waterfall.
 
 If the route changes and Attack has to be trained, use accurate style on the ogres
 west of Yanille with Strength 99: 9.0-9.4 base xp per tick from Attack 70 up
@@ -36,11 +43,15 @@ Incredible Reflexes (`combat-model.ts`).
 
 | Quest | Attack (base, read) | Scenario |
 |---|---|---|
-| The Grand Tree | 18,400 (`quest_grandtree.rs2:200`) | both |
-| Waterfall | 13,750 (`quest_waterfall.rs2:491`) | both (conditional, rs/56) |
-| Fight Arena | 12,175 (`quest_arena.rs2:270`) | both |
-| Tree Gnome Village | 11,450 (`quest_tree.rs2:98`) | MM only |
-| Monkey Madness option 1 / 2 | 20,000 / 35,000 (`mm_daero.rs2:295,304`) | MM |
+| The Grand Tree | 18,400 (`quest_grandtree.rs2:200`) | on route |
+| Waterfall | 13,750 (`quest_waterfall.rs2:491`) | **off route** (Package A only) |
+| Fight Arena | 12,175 (`quest_arena.rs2:270`) | on route |
+| Tree Gnome Village | 11,450 (`quest_tree.rs2:98`) | on route (the MM gate) |
+| Monkey Madness option 1 / 2 | 20,000 / 35,000 (`mm_daero.rs2:295,304`) | option 1 on route |
+| **Package B total** | **62,025** (42,025 before the cannon session) | |
+
+The pre-MM fights are cast, not meleed (rs/3 `pre_mm_fights.md`), so they add no Attack;
+Attack goes 1 -> 80 -> 94 -> 99 on the three quest rewards alone.
 
 Without Waterfall and without MM, Attack is 30,575 (level 96), leaving 9,363:
 about 1,000 ticks (inferred). The earlier the quests come, the less Attack the
@@ -60,6 +71,9 @@ fast as aggressive trains Strength (7.62 against 7.51 measured).
   Defence on the scimitar's weak stab bonus: 6.83 total, 2.28 each (measured, 100
   ms). Never worth it with any of the three capped.
 - **Other targets:** combat.md section 1.
+- **Interleaving** (`interleaving.md` section 8): nothing to absorb on the route, and if
+  Attack were trained, melee is location-bound self-only time that cannot be folded into
+  another skill's clock (combat.md section 6).
 
 ## 6. Gotchas
 
@@ -74,5 +88,6 @@ combat.md section 6.
 
 ## 8. Open questions
 
-- Whether Waterfall stays (rs/56). Without it and without MM, about 1,000 ticks of
-  Attack come back.
+- Settled: Waterfall is off (rs/3 Package B), and Attack is still capped by Tree Gnome
+  Village + The Grand Tree + Fight Arena. Only a route without MM *and* without Waterfall
+  would bring back about 1,000 ticks of Attack.
