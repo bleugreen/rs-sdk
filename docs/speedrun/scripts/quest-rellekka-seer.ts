@@ -149,8 +149,10 @@ await runScript(async ({ bot, sdk }) => {
         await step('bucket on scale chest', () => useOn(/4\/5ths/, 2632, 3665), has(/^Vase$/));
         await step('vase on tap', () => useOn(/^Vase$/, 2629, 3661), has(/Vase of water/));
         await step('trapdoor down', () => op(2631, 3663, 'Climb-down'), level(0));
-        await step('disk on mural', () => useOn(/Red disk/, 2634, 3663), () => L.invCount(sdk, /Red disk/) <= 1);
-        await step('disk on mural', () => useOn(/Red disk/, 2634, 3663), has(/Vase lid/));
+        // The mural is a wall decoration; the SDK's useItemOnLoc paths to its face.
+        const mural = async () => bot.useItemOnLoc(sdk.findInventoryItem(/Red disk/)!, await L.findLoc(sdk, 2634, 3663));
+        await step('disk on mural', mural, () => L.invCount(sdk, /Red disk/) <= 1);
+        await step('disk on mural', mural, has(/Vase lid/));
         await step('lid on vase', () => onItem(/Vase lid/, /Vase of water/), has(/Sealed vase/));
         await step('ladder up', () => op(2636, 3663, 'Climb-up'), level(2));
         await step('vase on frozen table', () => useOn(/Sealed vase/, 2638, 3665), has(/Frozen key/));
