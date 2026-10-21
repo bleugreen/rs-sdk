@@ -11,10 +11,11 @@
 // Cooking 35, and drops Cooking to 1, so the firing rolls 29 wines at level 1
 // as the scored account's first firing does. TRACE lines show every state
 // change (dialog: - closed, O open, W waiting for the server after a continue).
-import { clearDialogs } from '../helpers/wine';
+import type { BotSDK } from '../../sdk/index';
 import { ITEM, closeBank, invCount, openBank, prepare, tick } from '../helpers/wine-common';
 import { awaitFiring, depositNotes, drainChat, FERMENT_TIMER_TICKS, makeOneWine, openBankThroughPages } from '../helpers/wine-receive';
 import { depositMatching, withdrawMany } from '../lib/bank';
+import { advance, classifyPage } from '../lib/dialogue';
 import { isLoggedOut, LOGOUT_BUTTON, login, logoutClean, openSession, relog } from '../lib/session';
 import { sleep, waitTicks, waitUntil } from '../lib/wait';
 import { arg, botArg, result } from './common';
@@ -37,6 +38,29 @@ sdk.onStateUpdate(st => {
     if (row !== lastRow) console.log(`TRACE ${tracing} t=${st.tick} ${row}`);
     lastRow = row;
 });
+
+/**
+ * The old splitDelivery's dismissal (before rs/88), kept to reproduce the "before"
+ * numbers: read-then-act on each page, until the chat stays closed for two ticks.
+ */
+async function clearDialogs(sdk: BotSDK, maxTicks = 40): Promise<number> {
+    let pages = 0;
+    let closedSince = -1;
+    const start = tick(sdk);
+    while (tick(sdk) - start < maxTicks) {
+        const d = sdk.getState()?.dialog;
+        if (d?.isOpen && classifyPage(d) === 'continue') {
+            closedSince = -1;
+            if ((await advance(sdk, { maxTicks: 3 })).ok) pages++;
+            continue;
+        }
+        if (d?.isOpen) return pages;
+        if (closedSince < 0) closedSince = tick(sdk);
+        else if (tick(sdk) - closedSince >= 2) return pages;
+        await sdk.waitForTicks(1);
+    }
+    return pages;
+}
 
 /** No unfermented wine left in the bank (a previous experiment's rest), no pages open. */
 async function reset(): Promise<void> {
@@ -105,7 +129,8 @@ for (let rep = 0; rep < n; rep++) {
     }
 
     if (only.includes('C')) {
-        // A logout click alone with a level-up page open, then the burst, then what a relog leaves.
+        // A logout click with level-up pages queued: the engine runs the queue out (one
+        // script per in-world tick) before it removes the player. Then what a relog leaves.
         const due = await arm(29, 0);
         const f = await awaitFiring(sdk, due);
         await waitUntil(sdk, st => st.dialog.isOpen, { maxTicks: 4 });
@@ -117,7 +142,7 @@ for (let rep = 0; rep < n; rep++) {
         result('C1-logout-click-with-page-open', { firedAt: f.tick, level: f.level, clickTick, loggedOutWithin8Ticks: outAlone });
         if (!outAlone) {
             const lo = await logoutClean(s);
-            result('C2-logout-burst', { ok: lo.ok, latencyTicks: lo.latencyTicks, reason: lo.reason });
+            result('C2-logout-clean', { ok: lo.ok, latencyTicks: lo.latencyTicks, reason: lo.reason });
         }
         tracing = '';
         await sleep(3_000);
