@@ -38,10 +38,18 @@ export function runsOf(run: DialogueRun): string {
 /** Cast a teleport spell from the spellbook and wait until the player has jumped. */
 export async function teleport(sdk: BotSDK, spell: keyof typeof SPELL): Promise<StepRecord> {
     const p0 = pos(sdk.getState());
+    const far = (s: Parameters<Pred>[0]) => { const p = pos(s); return Math.abs(p.x - p0.x) + Math.abs(p.z - p0.z) > 30; };
     const t0 = now(sdk);
-    await sdk.sendClickComponent(SPELL[spell]);
-    const r = await waitUntil(sdk, s => { const p = pos(s); return Math.abs(p.x - p0.x) + Math.abs(p.z - p0.z) > 30; }, 20);
-    return { name: `${spell} teleport -> ${JSON.stringify(pos(r?.state ?? sdk.getState()))}`, ticks: (r?.tick ?? NaN) - t0, note: r ? undefined : 'TIMEOUT' };
+    const m0 = sdk.getState()!.gameMessages.length;
+    const res = await sdk.sendClickComponent(SPELL[spell]);
+    let r = await waitUntil(sdk, far, 10);
+    let note: string | undefined;
+    if (!r) {
+        note = `RETRIED (first click ${res.success ? 'sent' : 'failed: ' + res.message}; msgs: ${sdk.getState()!.gameMessages.slice(m0).map(m => m.text).join(' | ')})`;
+        await sdk.sendClickComponent(SPELL[spell]);
+        r = await waitUntil(sdk, far, 15);
+    }
+    return { name: `${spell} teleport -> ${JSON.stringify(pos(r?.state ?? sdk.getState()))}`, ticks: (r?.tick ?? NaN) - t0, note: r ? note : 'TIMEOUT ' + (note ?? '') };
 }
 
 /** Pick up the ground item matching `re` and wait until it is in the inventory. */
