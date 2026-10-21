@@ -135,7 +135,11 @@ export async function openSession(botName: string, opts: OpenOptions = {}): Prom
     sdk.onStateUpdate(s => track(session, s));
     if (opts.launch) await launchClient(session);
     await sdk.connect();
-    await waitAdvancingTick(session, opts.readyTimeoutMs ?? 120_000);
+    // A launched client is still logging in (3-8 s on the demo) while the gateway
+    // may already serve its previous session's last state, so the tick gets the
+    // whole ready timeout to advance.
+    const ready = opts.readyTimeoutMs ?? 120_000;
+    await waitAdvancingTick(session, ready, opts.launch ? ready : undefined);
     return session;
 }
 
@@ -148,11 +152,11 @@ function track(session: Session, s: BotWorldState): void {
 }
 
 /** Wait until the client publishes in-game state with a tick that advances. */
-export async function waitAdvancingTick(session: Session, timeoutMs: number): Promise<BotWorldState> {
+export async function waitAdvancingTick(session: Session, timeoutMs: number, advanceTimeoutMs = Math.max(5_000, 20 * tickMs())): Promise<BotWorldState> {
     const first = await waitFor(session.sdk, s => s.inGame, timeoutMs);
     if (!first) throw new Error(`${session.name}: no in-game state within ${timeoutMs} ms`);
     const t = first.tick;
-    const next = await waitFor(session.sdk, s => s.inGame && s.tick !== t, Math.max(5_000, 20 * tickMs()));
+    const next = await waitFor(session.sdk, s => s.inGame && s.tick !== t, advanceTimeoutMs);
     if (!next) throw new Error(`${session.name}: tick did not advance (no live client?)`);
     return next;
 }
