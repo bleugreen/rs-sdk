@@ -401,6 +401,18 @@ machine's steadiness is not evidence, since home paths add hiccups that look exa
 overrun and its catch-up. In-run, the gate re-probes after a slip and every 500 ticks while
 off, and the scored tab's own frame arrivals, not a second client, carry the steadiness.
 
+Measured with the CLI on 2026-10-21 from bbs (load about 4 of 32 cores, cairn://p/rs/96):
+
+| Target | Path | Reactions 1 / 2 ticks | Tick p50 / p90 / max | Catch-ups | Verdict |
+|---|---|---|---|---|---|
+| Lab engine, 300 ms, tickmanip block, 07:49 PDT | relay | 60 / 0 | 300 / 303 / 307 ms (publication, 18 s) | 0 | manipulate (cost model) |
+| Lab engine, same session | direct | 60 / 0 | 300 / 303 / 314 ms (60 s) | 0 | pass |
+| Demo, 1,686 online, 07:51 PDT | direct | not probed | | | preconditions refused: edge `lax`, mesh hop, TCP connect p50 19.9 ms |
+| Demo, same minute, `--edge=any` (home vantage, reference only) | direct | 16 / 44 | 308 / 406 / 635 ms (60 s) | 2 | re-measure (p90), and (a) under the floor |
+
+The home row's p90 is the home path's own jitter, which is why the preconditions come first.
+The run-machine read is still to come (from Ashburn, cairn://p/rs/83's workflow or the run VM).
+
 **Probe.** `probeOnTime(sdk, {trials})` walks one tile and back, sending each walk on the
 fresh state label that showed the previous step, the same send-on-a-fresh-label pattern the
 loops use. Each trial records the label the step appears on minus the label the walk was
