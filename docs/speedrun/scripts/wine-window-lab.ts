@@ -295,14 +295,13 @@ class Worker {
                 this.sub = 'opening'; // switch kinds at the next bank visit
             } else {
                 const n = this.act(s, t, burst, 5, guardTick);
-                if (n === 0 && page(s)) { f(R.sendClickDialog(0, { blind: true })); f(R.sendClickDialog(0, { blind: true })); burst.push('continue x2'); }
-                if (this.exhausted(s) && n <= 0) {
-                    this.sub = this.allowRefill && this.kind ? 'opening' : 'empty';
-                } else if (this.load?.kind !== 'bones' && this.exhausted(s) && this.allowRefill && this.kind && burst.length < 5) {
-                    this.booth(s, t, burst);
-                    this.sub = 'opening';
-                    return;
-                } else return;
+                if (n <= 0 && page(s) && this.load?.kind !== 'bones') { f(R.sendClickDialog(0, { blind: true })); f(R.sendClickDialog(0, { blind: true })); burst.push('continue x2'); }
+                if (n < 0 && page(s) && this.load?.kind === 'bones') { f(R.sendClickDialog(0, { blind: true })); burst.push('continue'); }
+                if (!this.exhausted(s)) return;
+                if (!(this.allowRefill && this.kind)) { if (n <= 0) this.sub = 'empty'; return; }
+                // Gems and potions: the booth click goes out with the last uses (delayfree-cycle.ts).
+                if (this.load?.kind !== 'bones' && n > 0) { if (burst.length < 5) { this.booth(s, t, burst); this.sub = 'opening'; } return; }
+                this.sub = 'opening';
             }
         }
         if (this.sub === 'opening') {
@@ -344,7 +343,10 @@ async function clearDialogs(s: Session): Promise<void> {
 }
 
 async function fixture(plan: Plan, rep: number): Promise<void> {
-    for (const s of [giver, recv]) { await s.bot.skipTutorial?.().catch?.(() => {}); await clearDialogs(s); }
+    for (const s of [giver, recv]) {
+        try { await (s.bot as unknown as { skipTutorial?: () => Promise<unknown> }).skipTutorial?.(); } catch { /* already done */ }
+        await clearDialogs(s);
+    }
     if (!(await tele(R, VARROCK_WEST_BANK.x, VARROCK_WEST_BANK.z))) throw new Error('receiver tele failed');
     if (!(await tele(giver.sdk, VARROCK_WEST_BANK.x - 2, VARROCK_WEST_BANK.z))) throw new Error('giver tele failed');
     const usesGems = plan.W1 === 'gems' || plan.W2 === 'gems' || plan.after[0] === 'gems';
@@ -544,41 +546,50 @@ async function runRep(name: string, plan: Plan, rep: number) {
     prev = R.getState()!;
     const cookB = xpOf(prev, 'Cooking');
     const S2 = { F2: -1, cook2: 0, E: -1, end: -1, segs: [] as Array<{ kind: Kind; start: number; end: number }> };
+    const plain = !plan.W1 && !plan.W2;
     let segStart = -1;
-    worker.set(plan.W2, true);
     let quiet = -1;
+    worker.set(plan.W2, true);
     await perTick(R, 900, s => {
         const t = s.tick;
         observe(s, t);
         const burst: string[] = [];
         if (S2.F2 < 0 && xpOf(s, 'Cooking') > cookB) { S2.F2 = t; S2.cook2 = lvlOf(s, 'Cooking'); win = 'P2'; }
-        // E: the final Cooking pages are gone (plain: chat closed for a tick; work: the bank opened).
-        if (S2.F2 >= 0 && S2.E < 0) {
-            if (plan.W2 || plan.after.length && win !== 'P2') { if (s.bank.isOpen && t > S2.F2) S2.E = t; }
-            else if (!page(s)) { if (quiet < 0) quiet = t; else if (t - quiet >= 1) S2.E = quiet; } else quiet = -1;
-        }
-        const pending = [...quotaKinds].filter(k => !done[k]);
-        if (S2.F2 >= 0 && S2.E >= 0 && pending.length === 0) { S2.end = Math.max(...[...quotaKinds].map(k => done[k]!.t), S2.E); line(s, t, burst, ' END'); return true; }
-        if (!plan.W2 && S2.E < 0) {
-            // plain: idle, then the final pages
+        const pending = plan.after.filter(k => !done[k]);
+        if (plain) {
+            if (S2.E < 0) {
+                // The final pages, clicked through as wine-receive.ts drainChat does: chat closed for a tick.
+                if (S2.F2 >= 0) { if (!page(s)) { if (quiet < 0) quiet = t; else S2.E = quiet; } else quiet = -1; }
+                if (S2.E < 0) { worker.tick(s, t, burst); line(s, t, burst); return undefined; }
+                win = 'seg';
+                segStart = S2.E;
+            }
+            // Standalone segments, one per kind, in plan.after order.
+            const next = pending[0] ?? null;
+            if (worker.kind && worker.kind !== next && done[worker.kind]) {
+                S2.segs.push({ kind: worker.kind, start: segStart, end: done[worker.kind]!.t });
+                segStart = done[worker.kind]!.t;
+            }
+            if (!next) { S2.end = segStart; line(s, t, burst, ' END'); return true; }
+            if (worker.kind !== next) worker.set(next, true);
             worker.tick(s, t, burst);
-        } else {
-            if (!plan.W2 && win === 'P2') { win = 'seg'; segStart = t; }
-            // pick the kind: the window's, then the after-list in order
-            const next = (win === 'W2' || win === 'P2') && plan.W2 && !done[plan.W2] ? plan.W2 : pending.find(k => plan.after.includes(k)) ?? pending[0] ?? null;
-            if (win === 'P2' && S2.E >= 0) win = 'after';
-            if (win === 'seg' && worker.kind && worker.kind !== next && done[worker.kind]) { S2.segs.push({ kind: worker.kind, start: segStart, end: done[worker.kind]!.t }); segStart = t; }
-            if (next !== worker.kind) worker.set(next, true);
-            worker.tick(s, t, burst, S2.F2 < 0 ? D2 - 1 : -99);
+            line(s, t, burst);
+            return undefined;
         }
+        // Work variants. E (proxy): the first bank opening after the second firing, which needs an
+        // empty engine queue, so every final Cooking page is gone by then.
+        if (S2.F2 >= 0 && S2.E < 0 && s.bank.isOpen && t > S2.F2) { S2.E = t; win = 'after'; }
+        const left = [...quotaKinds].filter(k => !done[k]);
+        if (S2.F2 >= 0 && left.length === 0) { S2.end = Math.max(S2.F2, ...[...quotaKinds].map(k => done[k]!.t)); line(s, t, burst, ' END'); return true; }
+        const next = S2.F2 < 0 && plan.W2 && !done[plan.W2] ? plan.W2 : (pending[0] ?? left[0] ?? null);
+        if (next !== worker.kind) worker.set(next, true);
+        worker.tick(s, t, burst, S2.F2 < 0 ? D2 - 1 : -99);
         line(s, t, burst);
         return undefined;
     });
-    if (win === 'seg' && worker.kind && done[worker.kind]) S2.segs.push({ kind: worker.kind, start: segStart, end: done[worker.kind]!.t });
 
     const relog0 = r0.lastTick - r0.clickTick;
     const sess1 = r1.lastTick - L1 + 1;
-    const seqEnd = plan.W2 || plan.W1 ? S2.end : S2.E;
     const out = {
         variant: name, rep, levels: LEVEL, p1work: plan.P1, guard: GUARD,
         relog0: { clickToOut: relog0, firstTick: L1, wallMs: r0.wallMs },
@@ -595,7 +606,6 @@ async function runRep(name: string, plan: Plan, rep: number) {
         levelUps: ups,
         log: logFile,
     };
-    void seqEnd;
     console.log(`RESULT ${JSON.stringify(out)}`);
     return out;
 }
