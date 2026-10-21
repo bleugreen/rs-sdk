@@ -42,11 +42,14 @@ for (const file of walk(ROOT)) {
     let cur: Block | null = null;
     lines.forEach((l, i) => {
         const m = l.match(/^\[([a-z_0-9]+),([^\]]+)\]/);
-        if (m) {
-            cur = { kind: m[1], name: m[2], file: relative(ROOT, file), line: i + 1, body: '' };
-            blocks.push(cur);
-            if (m[1] === 'label' || m[1] === 'proc') byName.set(`${m[1]}:${m[2]}`, cur);
-            cur.body += l.slice(m[0].length) + '\n';
+        const kind = m?.[1];
+        const name = m?.[2];
+        if (m && kind !== undefined && name !== undefined) {
+            const block: Block = { kind, name, file: relative(ROOT, file), line: i + 1, body: '' };
+            blocks.push(block);
+            if (kind === 'label' || kind === 'proc') byName.set(`${kind}:${name}`, block);
+            block.body += l.slice(m[0].length) + '\n';
+            cur = block;
         } else if (cur) {
             cur.body += l.replace(/\/\/.*$/, '') + '\n';
         }
@@ -79,7 +82,7 @@ for (const b of blocks) {
     const effect = new Set<string>();
     const gate = new Set<string>();
     for (const x of all) {
-        for (const m of x.body.matchAll(new RegExp(EFFECT, 'g'))) effect.add(m[1]);
+        for (const m of x.body.matchAll(new RegExp(EFFECT, 'g'))) if (m[1] !== undefined) effect.add(m[1]);
         if (DELAY.test(x.body)) gate.add('delay');
         if (QUEUE.test(x.body)) gate.add('queue');
         if (MENU.test(x.body)) gate.add('menu');

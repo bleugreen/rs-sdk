@@ -67,7 +67,11 @@ async function fresh(...cmds: string[]) {
 }
 
 async function teleRetry(spec: string) {
-    const [level, mx, mz, lx, lz] = spec.split(',').map(Number);
+    const parts = spec.split(',').map(Number);
+    const [level, mx, mz, lx, lz] = parts;
+    if (parts.length !== 5 || level === undefined || mx === undefined || mz === undefined || lx === undefined || lz === undefined) {
+        throw new Error(`malformed tele spec ${spec}: want level,mx,mz,lx,lz`);
+    }
     for (let i = 0; i < 5; i++) {
         if (await tele(sdk, mx * 64 + lx, mz * 64 + lz, level)) return;
     }
