@@ -365,10 +365,10 @@ class Worker {
 
 // ---------------------------------------------------------------- plans
 
-interface Plan { W1: Kind | null; P1: boolean; W2: Kind | null; after: Kind[] }
+interface Plan { W1: Work | null; P1: boolean; W2: Work | null; after: Kind[] }
 function parsePlan(spec: string): Plan {
     const m = Object.fromEntries(spec.split(',').map(p => p.split(':') as [string, string]));
-    const k = (v?: string) => (v && v !== '-' ? (v as Kind) : null);
+    const k = (v?: string) => (v && v !== '-' ? (v as Work) : null);
     return { W1: k(m.W1), P1: m.P1 === '1' || (m.P1 !== undefined && m.P1 !== '-' && m.P1 !== '0'), W2: k(m.W2), after: (m.after ?? '').split('+').filter(x => x && x !== '-') as Kind[] };
 }
 const PLANS: Record<string, Plan> = {
@@ -376,7 +376,7 @@ const PLANS: Record<string, Plan> = {
     gems: { W1: 'gems', P1: P1WORK, W2: 'gems', after: ['gems'] },
     potions: { W1: 'potions', P1: P1WORK, W2: 'potions', after: ['potions'] },
     bones: { W1: 'bones', P1: false, W2: 'bones', after: ['bones'] },
-    mix: parsePlan(arg('mix', 'W1:gems,P1:-,W2:bones,after:gems+bones')),
+    mix: parsePlan(arg('mix', 'W1:buryCut,P1:-,W2:buryCut,after:gems+bones')),
 };
 
 // ---------------------------------------------------------------- fixture (not timed)
@@ -392,8 +392,8 @@ async function fixture(plan: Plan, rep: number): Promise<void> {
     }
     if (!(await tele(R, VARROCK_WEST_BANK.x, VARROCK_WEST_BANK.z))) throw new Error('receiver tele failed');
     if (!(await tele(giver.sdk, VARROCK_WEST_BANK.x - 2, VARROCK_WEST_BANK.z))) throw new Error('giver tele failed');
-    const usesGems = plan.W1 === 'gems' || plan.W2 === 'gems' || plan.after[0] === 'gems';
-    const kinds = new Set<Kind>([...(plan.W1 ? [plan.W1] : []), ...(plan.W2 ? [plan.W2] : []), ...plan.after]);
+    const usesGems = [plan.W1, plan.W2, plan.after[0]].some(w => w === 'gems' || w === 'buryCut');
+    const kinds = new Set<Kind>([...(plan.W1 ? parts(plan.W1) : []), ...(plan.W2 ? parts(plan.W2) : []), ...plan.after]);
     // Stocks: what every recipe the quotas can reach needs, plus spares.
     const need = new Map<number, number>();
     for (const k of kinds) for (const r of ROUTES[k]) if (r.level <= 99 && pick(k, LEVEL[SKILL[k].toLowerCase() as keyof typeof LEVEL]).level <= r.level) {
@@ -460,7 +460,8 @@ async function runRep(name: string, plan: Plan, rep: number) {
     const acts: Record<string, number> = {};
     const ups: Record<string, number> = {};
     const done: Partial<Record<Kind, { session: number; t: number }>> = {};
-    const quotaKinds = new Set<Kind>([...(plan.W1 ? [plan.W1] : []), ...(plan.W2 ? [plan.W2] : []), ...plan.after]);
+    const quotaKinds = new Set<Kind>([...(plan.W1 ? parts(plan.W1) : []), ...(plan.W2 ? parts(plan.W2) : []), ...plan.after]);
+    const isDone = (w: Work) => parts(w).every(k => done[k]);
     const total: Record<Kind, number> = { gems: 0, potions: 0, bones: 0 };
     let prev: BotWorldState | null = null;
     const observe = (s: BotWorldState, t: number) => {
@@ -478,8 +479,16 @@ async function runRep(name: string, plan: Plan, rep: number) {
         }
         prev = s;
     };
+    // Which skill's level-up page is showing (levelup.dbrow: "you just advanced a cooking level").
+    let lastSkill = '';
+    const pageSkill = (s: BotWorldState) => {
+        if (!page(s)) return '';
+        const m = JSON.stringify(s.dialog).match(/advanced an? (\w+) level/i);
+        if (m) lastSkill = m[1]!.toLowerCase();
+        return m ? lastSkill : `${lastSkill || '?'}-unlock`;
+    };
     const line = (s: BotWorldState, t: number, burst: string[], extra = '') =>
-        log(t, `${win} dlg=${page(s) ? 1 : 0} bank=${s.bank.isOpen ? 1 : 0} cook=${lvlOf(s, 'Cooking')} cr=${lvlOf(s, 'Crafting')} he=${lvlOf(s, 'Herblore')} pr=${lvlOf(s, 'Prayer')} notes=${cnt(s, WINE_NOTE)} [${burst.join(', ')}]${extra}`);
+        log(t, `${win} dlg=${page(s) ? 1 : 0}${page(s) ? `(${pageSkill(s)})` : ''} bank=${s.bank.isOpen ? 1 : 0} cook=${lvlOf(s, 'Cooking')} cr=${lvlOf(s, 'Crafting')} he=${lvlOf(s, 'Herblore')} pr=${lvlOf(s, 'Prayer')} notes=${cnt(s, WINE_NOTE)} [${burst.join(', ')}]${extra}`);
 
     // ---- relog 0: the run's planned relog at the bank; the helper waits for SCORED to come back
     const giving = (async () => {
@@ -505,7 +514,7 @@ async function runRep(name: string, plan: Plan, rep: number) {
     prev = s0;
 
     // ---- session 1: deposit 29, W1, firing 1, P1, deposit the rest
-    const S1 = { bankOpen: -1, depDone: -1, F1: -1, cook1: 0, p1BankOpen: -1, p1Pages: 0, restDone: -1 };
+    const S1 = { bankOpen: -1, depDone: -1, F1: -1, cook1: 0, p1BankOpen: -1, p1Pages: 0, p1PagesBySkill: {} as Record<string, number>, restDone: -1 };
     let phase: 'dep1' | 'w1' | 'p1' | 'rest' = 'dep1';
     let dep1Sent = false;
     let boothAt = -99;
@@ -550,7 +559,7 @@ async function runRep(name: string, plan: Plan, rep: number) {
             }
         }
         if (phase === 'p1') {
-            if (page(s)) { S1.p1Pages++; lastPage = t; }
+            if (page(s)) { S1.p1Pages++; lastPage = t; const k = pageSkill(s).replace(/-unlock$/, ''); S1.p1PagesBySkill[k] = (S1.p1PagesBySkill[k] ?? 0) + 1; }
             if (s.bank.isOpen) {
                 S1.p1BankOpen = t;
                 const note = s.inventory.find(i => i.id === WINE_NOTE);
@@ -564,7 +573,7 @@ async function runRep(name: string, plan: Plan, rep: number) {
                 phase = 'rest';
             } else {
                 const k = worker.load?.kind;
-                const n = plan.P1 && k && k !== 'bones' ? worker.act(s, t, burst, 4, -99) : 0;
+                const n = plan.P1 && (k === 'gems' || k === 'potions') ? worker.act(s, t, burst, 4, -99) : 0;
                 if (n > 0) booth(s, t, burst); // each use clears the pending booth click; re-send it last
                 else {
                     if (page(s)) { f(R.sendClickDialog(0, { blind: true })); f(R.sendClickDialog(0, { blind: true })); burst.push('continue x2'); }
@@ -625,7 +634,10 @@ async function runRep(name: string, plan: Plan, rep: number) {
         if (S2.F2 >= 0 && S2.E < 0 && s.bank.isOpen && t > S2.F2) { S2.E = t; win = 'after'; }
         const left = [...quotaKinds].filter(k => !done[k]);
         if (S2.F2 >= 0 && left.length === 0) { S2.end = Math.max(S2.F2, ...[...quotaKinds].map(k => done[k]!.t)); line(s, t, burst, ' END'); return true; }
-        const next = S2.F2 < 0 && plan.W2 && !done[plan.W2] ? plan.W2 : (pending[0] ?? left[0] ?? null);
+        // Keep the window's work through the final pages while its load lasts: a kind switch needs
+        // the bank, which stays shut until the last page goes.
+        const keepW2 = plan.W2 && !isDone(plan.W2) && (S2.F2 < 0 || (worker.kind === plan.W2 && worker.sub === 'working'));
+        const next = keepW2 ? plan.W2 : (pending[0] ?? left[0] ?? null);
         if (next !== worker.kind) worker.set(next, true);
         worker.tick(s, t, burst, S2.F2 < 0 ? D2 - 1 : -99);
         line(s, t, burst);
@@ -642,7 +654,7 @@ async function runRep(name: string, plan: Plan, rep: number) {
         trade: { receiverTicks: tr.ticks, endAfterLogin: tradeEnd - L1, giverTicks: gv.ticks },
         s1: {
             bankOpenAfterLogin: S1.bankOpen - L1, deadlineMarginTicks: D1 - 1 - S1.bankOpen, depositDoneAfterLogin: S1.depDone - L1,
-            firing1AfterLogin: S1.F1 - L1, cookingAfter1: S1.cook1, p1Ticks: S1.p1BankOpen - S1.F1, p1PageTicks: S1.p1Pages,
+            firing1AfterLogin: S1.F1 - L1, cookingAfter1: S1.cook1, p1Ticks: S1.p1BankOpen - S1.F1, p1PageTicks: S1.p1Pages, p1PagesBySkill: S1.p1PagesBySkill,
             restDoneAfterLogin: S1.restDone - L1, ticks: sess1,
         },
         relog1: { clickToOut: r1.lastTick - r1.clickTick, firstTick: L2, wallMs: r1.wallMs },
