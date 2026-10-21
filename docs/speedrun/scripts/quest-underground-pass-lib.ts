@@ -197,7 +197,7 @@ export class Lab {
                                 if (walkResends >= 6) return true;
                                 walkResends++;
                                 still = 0;
-                                const door = (this.sdk.getState()?.nearbyLocs ?? []).filter(l => /door/i.test(l.name) && l.options.includes('Open') && Math.max(Math.abs(l.x - q[0]), Math.abs(l.z - q[1])) <= 2).sort((a, b) => a.distance - b.distance)[0];
+                                const door = (this.sdk.getState()?.nearbyLocs ?? []).filter(l => /door/i.test(l.name) && l.options.includes('Open') && Math.max(Math.abs(l.x - q[0]), Math.abs(l.z - q[1])) <= 5).sort((a, b) => a.distance - b.distance)[0];
                                 if (door && walkResends <= 3) {
                                     const op = door.optionsWithIndex.find(o => o.text === 'Open')!;
                                     this.doors++;
