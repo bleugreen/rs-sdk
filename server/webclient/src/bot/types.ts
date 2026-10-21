@@ -122,15 +122,24 @@ export interface NearbyNpc {
 export interface NearbyPlayer {
     /** Discriminator so npc and player targets can share one API. */
     kind: 'player';
-    /** World slot of this player - what OPPLAYER1-5 and OPPLAYERT address. */
+    /** World slot of this player - what interact/spell packets address. */
     index: number;
     name: string;
     combatLevel: number;
     x: number;
     z: number;
+    /** Alias of `x` (filled in by the SDK; some callers expect worldX/worldZ). */
+    worldX?: number;
+    /** Alias of `z`. */
+    worldZ?: number;
     distance: number;
     /** See NearbyNpc.reachable. */
     reachable?: boolean;
+    /** Current client-observed combat target. This is populated only while the
+     * target is corroborated by the entity's combat cycle. */
+    combatTargetType?: 'npc' | 'player' | 'none';
+    combatTargetIndex?: number;
+    inCombat?: boolean;
 }
 
 export interface GroundItem {
