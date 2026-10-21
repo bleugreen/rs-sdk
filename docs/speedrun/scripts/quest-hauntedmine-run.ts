@@ -15,7 +15,7 @@
 import { runScript } from '../../../sdk/runner';
 import { initPathfinding } from '../../../sdk/pathfinding';
 import * as rsmod from '../../../server/vendor/rsmod-pathfinder';
-import { CollisionType } from '../../../server/vendor/rsmod-pathfinder';
+import { CollisionFlag, CollisionType } from '../../../server/vendor/rsmod-pathfinder';
 import { Ledger, type Sdk, chebyshevPath, cheat, dialog, findLoc, getvar, messageSince, pos, tele, ticks, until } from './quest-pip-hm-lib';
 
 const PHASES = ['zealot', 'enter', 'mush', 'cart', 'exit', 'endcart', 'lift', 'stairs', 'boss', 'reward'] as const;
@@ -274,7 +274,10 @@ function lineClearOfCranes(x0: number, z0: number, x1: number, z1: number) {
     const n = Math.max(Math.abs(x1 - x0), Math.abs(z1 - z0)) * 4;
     for (let i = 1; i < n; i++) {
         const x = Math.round(x0 + ((x1 - x0) * i) / n), z = Math.round(z0 + ((z1 - z0) * i) / n);
-        if (craneTiles.has(`${x},${z}`)) return false;
+        // The SDK's bundled collision carries walk flags only, not the
+        // projectile blockers the server's line of sight uses, so be
+        // conservative: every tile on the line must be walkable.
+        if (craneTiles.has(`${x},${z}`) || rsmod.isFlagged(x, z, 0, CollisionFlag.WALK_BLOCKED)) return false;
     }
     return true;
 }
