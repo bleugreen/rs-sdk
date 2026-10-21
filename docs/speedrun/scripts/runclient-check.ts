@@ -48,7 +48,9 @@ if (CLIENT === 'browser') {
         executablePath: CHROME,
         defaultViewport: null,
         userDataDir: join(process.env.TMPDIR ?? '/tmp', `runclient-check-${BOT}`),
-        args: ['--window-size=800,680', '--mute-audio', '--no-first-run', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'],
+        // A sandboxed executor cannot start Chrome's own sandbox, and its GPU process dies without these.
+        args: ['--no-sandbox', '--disable-gpu-sandbox', '--disable-crash-reporter', '--disable-breakpad',
+            '--window-size=800,680', '--mute-audio', '--no-first-run', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'],
         protocolTimeout: 120_000,
     });
     const page = await browser.newPage();
@@ -170,8 +172,9 @@ async function puzzleCheck(): Promise<void> {
     await cheat(sdk, '~clearinv');
     const vars: Record<string, number> = {
         treequest: 9, grandtree: 160,
-        // Segment E of quest-mm-full.ts: Daero has sent you to the hangar.
-        mm_main: 1, mm_narnode: 7, mm_caranock: 3, mm_daero: 4, mm_daero_option_bit_one: 1, mm_daero_option_bit_two: 1, mm_daero_option_bit_three: 1,
+        // Segment E of quest-mm-full.ts after E1: Daero has started the reinitialisation
+        // (^daero_started_reinit = 5), the state in which the panel opens the puzzle (quest_mm.rs2).
+        mm_main: 1, mm_narnode: 7, mm_caranock: 3, mm_daero: 5, mm_daero_option_bit_one: 1, mm_daero_option_bit_two: 1, mm_daero_option_bit_three: 1,
         // Glough's shortcut state: the panel opens one slide from solved (mm_puzzle.rs2).
         mm_hangar_puzzle_complete: 1,
     };
@@ -211,7 +214,11 @@ try {
     if (CHECKS.includes('puzzle')) await puzzleCheck();
 } finally {
     await sdk.disconnect().catch(() => {});
-    await browser?.close().catch(() => {});
+    if (browser) {
+        const proc = browser.process();
+        await Promise.race([browser.close().catch(() => {}), Bun.sleep(5_000)]);
+        proc?.kill('SIGKILL');
+    }
     liteChild?.kill();
 }
 process.exit(0);
