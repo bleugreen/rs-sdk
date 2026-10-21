@@ -252,6 +252,11 @@ export async function disembark(ctx: Ctx) {
     if (!(await waitFor(sdk, (s) => s.player!.level !== lv, 20))) throw new Error('gangplank not crossed');
 }
 
+/** Step log for diagnosing a leg (set RT_DEBUG=1). */
+export function dbg(sdk: BotSDK, msg: string) {
+    if (process.env.RT_DEBUG) console.log(`[t=${tick(sdk)}] ${msg}`);
+}
+
 // ---------- webs (Mage Arena / Deserted Keep; quest-magearena-travel.ts)
 
 /**
@@ -264,6 +269,7 @@ export async function throughWebs(ctx: Ctx, goals: [number, number][]) {
         for (let attempt = 0; attempt < 16; attempt++) {
             if (cheb(pos(sdk), { x: gx, z: gz }) <= 1) break;
             const p = sdk.findPath(gx, gz);
+            dbg(sdk, `webs: goal ${gx},${gz} from ${JSON.stringify(pos(sdk))} path ${p.success}/${p.reachedDestination}/${p.waypoints.length}`);
             if (p.success && p.reachedDestination && p.waypoints.length < 40) {
                 await walk(ctx, { x: gx, z: gz }, { tol: 1, noWebs: true });
                 continue;
@@ -283,7 +289,9 @@ export async function throughWebs(ctx: Ctx, goals: [number, number][]) {
             await sdk.sendUseItemOnLoc(knife.slot, web.x, web.z, web.id);
             if (ctx.leg) { ctx.leg.clicks++; ctx.leg.webTries++; }
             await waitTicks(sdk, Math.max(2, Math.ceil(web.distance / 2) + 1));
-            const ok = sdk.getNewChat({ types: [0] }).some((m) => /slash the web apart/i.test(m.text));
+            const msgs = sdk.getNewChat({ types: [0] });
+            const ok = msgs.some((m) => /slash the web apart/i.test(m.text));
+            dbg(sdk, `webs: knife on ${web.x},${web.z} d${web.distance}: ${ok ? 'slashed' : 'failed'} [${msgs.map((m) => m.text).join(' | ')}]`);
             if (ok) {
                 await sdk.sendWalk(gx, gz, true);
                 if (ctx.leg) ctx.leg.clicks++;
@@ -376,6 +384,7 @@ export async function walk(ctx: Ctx, dest: { x: number; z: number }, o: WalkOpts
         if (!needClick && t - lastMove >= 3 && t - clickTick >= 3) {
             // stalled: door, web, or a combat interruption
             stalls++;
+            dbg(sdk, `walk: stall ${stalls} at ${JSON.stringify(p)} target ${JSON.stringify(target)}`);
             if (stalls > 12) throw new Error(`walk to ${dest.x},${dest.z} stalled 12 times at ${JSON.stringify(p)}`);
             const opened = await openNearbyDoor(ctx);
             if (!opened && !o.noWebs) {
@@ -407,6 +416,7 @@ export async function walk(ctx: Ctx, dest: { x: number; z: number }, o: WalkOpts
                 doorTries.set(doorKey, (doorTries.get(doorKey) ?? 0) + 1);
                 // Open it as part of the run: the server walks to the door, then opens it.
                 const d = door.loc;
+                dbg(sdk, `walk: door ${d.name}#${d.id} at ${d.x},${d.z} d${d.distance} from ${JSON.stringify(p)}`);
                 await sdk.sendInteractLoc(d.x, d.z, d.id, d.optionsWithIndex.find((q) => /^open$/i.test(q.text))!.opIndex);
                 if (ctx.leg) { ctx.leg.clicks++; ctx.leg.doorOpens++; }
                 await waitFor(sdk, (s) => !s.nearbyLocs.some((l) => l.x === d.x && l.z === d.z && l.optionsWithIndex.some((q) => /^open$/i.test(q.text))), Math.ceil(cheb(p, d) / 2) + 6);
@@ -422,6 +432,7 @@ export async function walk(ctx: Ctx, dest: { x: number; z: number }, o: WalkOpts
             target = route[ti] ?? dest;
             final = ti >= route.length - 1;
             await sdk.sendWalk(target.x, target.z, true);
+            dbg(sdk, `walk: click ${target.x},${target.z} from ${p.x},${p.z}`);
             if (ctx.leg) ctx.leg.clicks++;
             clickTick = t;
             if (o.cast) lastCast = t - 2; // next cast on the following tick
