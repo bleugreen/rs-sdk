@@ -334,4 +334,28 @@ So resupply is under 1% of any block. No banking: ogre drops are ignored.
 
 ## Ranged
 
-See [ranged.md](ranged.md) (owned by the Ranged sibling, cairn://p/rs/31).
+Ranged is owned by the Ranged sibling (cairn://p/rs/31) in [ranged.md](ranged.md).
+The numbers below are cited from its section 1 ("Recommendation" and "Parallel
+against the best single-combat melee"), measured at 300 ms there or inferred by
+`ranged-model.ts`; they are not re-measured here.
+
+- **Cannon + defensive melee at the Wilderness poison spiders** (multi-combat,
+  rune scimitar wielded): 11.03 Ranged + 5.60 Defence + 1.85 HP base per tick
+  (cited, ranged.md section 1, measured 300 ms).
+- **With MM option 1, Ranged/Defence/HP 99 take about 3,520 ticks** after MM by
+  rs/31's plan (f): cannon + defensive melee at the spiders until Ranged 99, then
+  melee alone at the ogres. Ogres for Defence and then cannon + knives for Ranged,
+  trained separately, take 4,197 (cited, inferred). That separate plan prices the
+  Defence gap at 2,155 ticks from a flat 9.25 per tick, where section 4 here
+  integrates the level curve to 2,121.
+- **The cannon is worth about 2,630 ticks** net of the Dwarf Cannon quest, to
+  Ranged/Defence/HP 99 on the current route (cited, inferred).
+- **Ranged 1 -> 50 before MM takes 113 ticks** of cannon fire (cited, inferred from
+  the measured 11.52 per tick).
+- **Longrange is a poor Defence top-up:** longrange rune knives give 2.63 Defence
+  per tick (cited, measured 300 ms), against 9.25-9.40 for defensive melee at the
+  ogres.
+
+So on the MM route, the Summary's "Defence 19,938 on ogres = 2,121 ticks" is
+superseded by the cannon plan whenever Ranged is still training. The ogre figure
+stands for melee done after Ranged is 99, and for the no-MM melee block.
