@@ -44,7 +44,7 @@ both gates down by 4: Fire Wave (75) from base 71, Charge (80) from base 76.
   at 80 or 81 while base climbed to meet it.
 
 Compared with the arena at an unboosted 75, the boosted route saves 24 dragonstone casts before
-the fight and the 2-10 after it. That is about 75-100 ticks. Base 76 needs 2,379 base from the
+the fight and the 2-10 after it, less 8 ticks of slower Charge. That is about 70-100 ticks. Base 76 needs 2,379 base from the
 fight, starting from the bottom of level 71. All four measured yields clear that: three at base
 71 and rs/3's lowest at base 80 (2,404).
 
@@ -176,20 +176,64 @@ waits for its own timeout, and that wait is most of the stock overhead. With the
 7 -> 80 ladder is about 510 + 9 x 14 = **about 636 ticks** (inferred). At the packet floor it
 is 510 + 9 x 2 = **about 528**.
 
+**Boosts (read, then measured with `magic-boost.ts` at 300 ms).**
+
+- **Gates read the boosted level.** `~check_spell_requirements` tests `stat(magic)`
+  (`magic.rs2:22`). Charge calls it after the `%magearena` check (`charge.rs2:4-15`). The client
+  lights the icons the same way. Fire Wave tests `stat_level,magic > 74` and Charge
+  `> 79` (`magic.if`). `stat_level` is opcode 1, `statEffectiveLevel` (`PackShared.ts`,
+  `Client.ts`), so the spells are not greyed out when boosted (read; the lite client draws no UI).
+- **Magic potion: +4 flat** (`consume_effects.dbrow:337-343`). `stat_boost` caps at base + boost
+  (`PlayerOps.ts`, `STAT_BOOST`), so a second sip only restores, never stacks. A potion has no
+  eat delay and adds nothing to the attack clock (`consume.rs2:97-107`). But it does run
+  **`p_delay(1)`** (`consume_messages.dbrow:766-773`, `consume_effects.rs2:123-126`), and a
+  delayed player's OPNPCT is dropped (`OpNpcTHandler.ts`) and Charge's `p_finduid` fails.
+  Measured: the first Charge lands **4 ticks after the sip is sent**. A single Fire Wave click
+  sent 1 tick after a sip got no response.
+- **Decay: 1 point per 100 ticks.** The `stat_boost_restore` soft timer runs every 100 ticks
+  from login (`login.rs2:36`, `stat.rs2:45-56`). Measured after a sip at base 71: first drop
+  77 ticks later, then 100, 100, 100. So the first drop comes 1-100 ticks after any sip,
+  depending on where the login clock is.
+- **A level-up does not move a boosted level.** `addXp` only raises the current level when it
+  equals the base (`Player.ts:1898-1910`). Measured during Charge: 80/76, 80/77, 80/78, 80/79,
+  81/81. So the boost shrinks from below as base rises, and once base passes the boosted level
+  the two move together.
+- **Wizard's mind bomb: +2 + 2%** with Attack, Strength and Defence drains
+  (`consume_effects.dbrow:72-78`). That is +3 at bases 70-72 (`(2 + 1.4..1.44) | 0`). It is an
+  alcoholic drink, so it costs 3 ticks of `%action_delay` (`consume.rs2:13`). Measured: base 70
+  + potion + mind bomb is 74 in either order, and Fire Wave is refused. Base 71 + mind bomb is
+  74, refused. Base 72 + mind bomb is 75 and casts.
+- **Kolodion at base 71 + potion** (3 runs, Prayer 80, staff of fire, Fire Wave clicked every
+  2 ticks, re-sip on the tick after a cast lands once the boost is below 75): fights of 328,
+  320 and 346 ticks. Forms took 14-29 (human), 37-77 (ogre), 52-70 (spider), 52-63 (ethereal)
+  and 84-154 (demon) ticks. Prayer went 80 -> 18-26, so 54-62 points against Holy Grail's 80.
+  There was 1 refused Fire Wave in 3 runs (a decay step landed between a cast and the re-sip).
+  Boost trace from run 1: 75/71 at the talk, 74 at +16 and re-sip; 74/72 at +114 and re-sip to
+  76; 75/74 at +214; base 76 reached 76 at +278 (no further sip needed).
+
 **1 -> 7.** Wind Strike: 5.5 base on the cast (`player_magic.rs2:170`) plus 2 base per damage
 point (`combat.rs2`, `style_magic_normal`). The spell attack delay is 5 ticks
 (`player_magic.rs2:188`). Measured 4 casts, 16 and 20 ticks (`magic-strike.ts`, 300 ms).
 
 ## 5. Alternatives considered
 
-- **Fight the Mage Arena at 75 instead of 80 (recommended, inferred).** From 57: diamond to 68
-  (38 casts), dragonstone to 75 (38 casts), about 2 bank visits and the first withdraw. That is
-  about 240 ticks. The fight's about 3,000 base takes 75 (7,549 base) to about 10,550, so 2 more
-  dragonstone casts reach 80. After the lower 2,404 measured fight it would take 10 casts, so
-  6-30 ticks. Then Charge 33. Total **about 280-305**, against about 400 with the arena at 80.
-  Caveat: `mage_arena.md` measured the fight at Magic 80. At 75 the accuracy is a little lower
-  and the fight a little longer (not measured). Under Protect from Magic there are no Magic
-  drains, so Fire Wave stays castable.
+- **Mage Arena at an unboosted 75 (the previous recommendation, superseded by the boosted
+  route).** From 57: diamond to 68 (38 casts), dragonstone to 75 (38 casts), about 2 bank visits
+  and the first withdraw. That is about 240 ticks. The fight's about 3,000 base takes 75 (7,549
+  base) to about 10,550, so 2 more dragonstone casts reach 80; after a low 2,404 fight it would
+  take 10. That is 6-30 ticks. Then Charge 33. Total about 280-305. The fight itself runs at the
+  same effective level 75 as the boosted route, so it costs the same as the measured 320-346
+  (inferred). It needs no potions.
+- **Mage Arena at 80**: the fight measured 312-322 at 300 ms (rs/20), about 15-30 ticks faster
+  than at base 71 + potion. It costs about 115 more enchant casts, so it loses by about 200.
+- **Wizard's mind bomb instead of the magic potion**: +3, so Fire Wave from base 72 (measured).
+  That is one level later, about 5 more dragonstone casts. It adds 3 ticks of attack delay per
+  drink and drains Attack, Strength and Defence (harmless under the prayer). It never stacks
+  with the potion (measured), and +3 cannot reach Charge before base 77. Use it only if no magic
+  potion is available: the mind bomb is sold in pubs and needs no Herblore.
+- **A lower spell at a lower base** (Fire Blast, 59): the fight is slower (`mage_arena.md`, inferred)
+  and the xp per cast lower, so it trades enchant casts for fight ticks at a worse rate. Not
+  measured.
 - **Diamond only, 57 -> 80** (if dragonstones are scarce): 128 casts at 67 base instead of 38
   diamond + 77 dragonstone. That is +13 casts, about +39 ticks, plus about 1 more bank visit
   (inferred).
@@ -234,6 +278,17 @@ point (`combat.rs2`, `style_magic_normal`). The spell attack delay is 5 ticks
   bank's side panel hides it.
 - **Band changes leave unconverted items** of the old tier in the inventory. Deposit them with
   the products; one deposit-all per item type.
+- **A potion sip delays you 2 ticks.** Spell clicks are dropped until 4 ticks after the sip is
+  sent. In the fight, sip on the tick after a Fire Wave lands, inside its 5-tick attack delay.
+  Before Charge, sip while something else is waiting anyway (inferred: the boost holds up to 100
+  ticks).
+- **Re-sip at every decay step while the boost is all that meets the gate.** At base 71 the
+  first decay step drops 75 to 74 and Fire Wave is refused. At base 76 it drops 80 to 79 and
+  Charge is refused (measured, then cast again after the re-sip). The step is every 100 ticks on
+  the login clock, so a bot learns its phase from the first drop.
+- **Do not sip before Kolodion's talk and then click at once**: the talk click is dropped while
+  delayed. Sip, then talk 2 ticks later (what `magic-boost.ts` timed: 40-41 ticks, against
+  rs/20's 39).
 - Level-up boxes need no handling while enchanting (section 4). Wind Strike does not close them;
   `magic-strike.ts` dismisses them.
 - Wind Strike kills chickens in one or two casts; retarget at once.
