@@ -246,7 +246,8 @@ async function runDirect(role: Role): Promise<never> {
         await executionContext.run({ signal: controller.signal }, async () => {
             const fresh = await waitForFreshState(sdk, { timeoutMs: 60_000, signal: controller.signal });
             line({ message: `session state at ${describeFreshState(fresh)}` });
-            await abortable(
+            const state = await openRoleState(join(standaloneStateDir(), `${account}.json`));
+            const finish = await abortable(
                 role.run({
                     bot,
                     sdk,
@@ -254,9 +255,11 @@ async function runDirect(role: Role): Promise<never> {
                     options,
                     log: (message, data) => line({ message, ...data }),
                     reportBank: snapshot => line({ bank: snapshot.items }),
-                    signal: controller.signal
+                    signal: controller.signal,
+                    state
                 })
             );
+            if (finish?.attention) line({ message: 'ATTENTION', attention: finish.attention });
         });
     } catch (e) {
         if (!stopping) {
