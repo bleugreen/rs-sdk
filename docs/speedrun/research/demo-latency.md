@@ -408,7 +408,8 @@ and 10 ms from the action arriving to the game packet going out, the first and l
 page's ~20 ms game loop. On-time and late trials took the same time (21 against 24 ms), so the
 misses came from the minute's overruns (5.3 catch-ups per minute), not from slow hops. Still, in
 that minute 22 ms was enough to lose a tick 45% of the time (33/27) where the 0.3 ms direct path
-lost 18% (49/11).
+lost 18% (49/11). cairn://p/rs/113 makes the overlay execute on arrival and decode on arrival,
+which removes the game-loop part of that 22 ms; these rows predate it.
 
 In a calmer minute (04:55, main 5575f37a5 with #81 and #78, 1,122-1,482 online, gate failing only
 on 2 catch-ups), the overlay landed **57 of 60** next to the direct path's 59 of 60, with the same
@@ -557,10 +558,30 @@ through the relay) into 1. On the route:
   From Ashburn on the direct path they run at lab rates: about **3,000 ticks** across Mining,
   Fishing and Woodcutting by rs/2's estimates, which a home host through the relay does not reliably
   get.
-- Level-up dismissals, re-clicks after a felled tree or a stun, pickpocket re-clicks, trades,
-  bank steps and quest dialogue each pay one reaction. rs/3's quest README models dialogue at
-  fixed ticks per page; a reaction that lands a tick late adds a tick per page or click. The
-  route-wide count of those steps is not tallied here (open question 5).
+- Level-up dismissals, re-clicks, quest dialogue, trades and bank steps each pay one reaction.
+  A bounded route-wide estimate follows.
+
+**Route-wide estimate of the other reaction-paying steps** (inferred, order of magnitude). Method:
+count or bound the reactions by class from rs/2's `docs/speedrun/skills/` and rs/3's
+`docs/speedrun/quests/README.md`, then price each at what the two placements cost. Home through
+the unfixed relay lands a reaction in 2-3 ticks (0/25/35 to 3/56/1, section 3); Ashburn direct
+lands it in 1. So each reaction saves 1-2 ticks. Every rs/2 and rs/3 figure was taken with
+1-tick reactions, so these savings are what the run keeps by sitting in Ashburn, not gains on
+top of those tables.
+
+| Class | Reactions on the route (low-high) | How counted | Ticks saved at 1-2 each |
+| --- | --- | --- | --- |
+| Quest dialogue pages and option clicks | 800-1,680 | rs/3's whole on-route set is ~13,190 ticks at 2 per page (stock) against ~11,510 at 1 per page (fixed), so about 1,680 read-then-act pages and clicks. The burst column (~10,630) cuts that to about 800 reactions, since a blind burst of continues needs one reaction per run. | 800-3,360 |
+| Level-ups to dismiss | 700-1,130 | Levels gained by training, not by quest jumps, from rs/2's start levels: self-only skills 256 (Agility 1-22 and 75-99, Mining 49-99, Woodcutting 1-99, Fishing 78-99, Thieving 57-99); item-fed skills about 870 (Ranged, Prayer, Smithing, Firemaking, Runecraft and Fletching 98 each, Magic about 85, Herblore 71, Cooking 69, Crafting 57, Defence and Hitpoints 3). The low end allows for several levels gained in one tick or one login (Fletching and Crafting at 5 actions per tick, Cooking's single firing). rs/2 measured 5 ticks per Woodcutting level-up against the 1 it models. | 700-2,260 |
+| Trades and bank turnarounds | 700-1,300 | Runecraft trades 27 essence per 7-tick cycle (~170 cycles of ~1,180 ticks); Smithing trades 25 bars in and 5 products out per cycle (~31 cycles); bank loads for Prayer (555 bones), Herblore (245 potions), Crafting, Magic's enchanting and cannonball refills; at 2-4 reactions per trade or turnaround. | 700-2,600 |
+| Re-clicks outside the in-page loops | 100-200 | Felled trees (1 in 8 logs, about 90-150 over Woodcutting) and fishing-spot moves. Rock transitions, pickpocket stuns and Agility obstacles belong to the in-page tick programs and are counted with them. | 100-400 |
+| **Total** | **2,300-4,300** | | **2,300-8,600** |
+
+With Agility's ~490 and the knife loops' ~3,010, **sitting in Ashburn with direct reactions saves
+roughly 5,800-12,100 ticks** against home through the unfixed relay, on a route whose rs/2 and rs/3
+tables sum to roughly 36,000 ticks (about 17,520 self-only, 6,800 item-fed, 11,510 quests). The
+range is wide because both the per-reaction cost from home (1 or 2 extra ticks) and the reaction
+counts are bounded, not tallied. The exact tally is open question 5.
 
 **What the run-night probe must read before starting**, from the run machine, on the run's own
 route (local webclient build, loopback gateway, in-page probe; cairn://p/rs/96 and rs/97), at the
@@ -587,9 +608,18 @@ that sees a catch-up should expect its next reaction to miss.
 
 Also before starting:
 
-3. The blind sender lands at least 95% on the aimed tick, and a burst of the knife's bundle lands
-   on one tick.
-4. If the SDK drives any step that reacts, the relay probe for that step, gated by
+3. **Bundles and timing.** Every multi-packet bundle (the knife's starter and button, for example)
+   goes out as one flush on the frame's arrival, and the burst check lands it on one tick. No
+   program sends on a free-running clock. The blind sender's on-aim share is diagnostic only: it
+   tops out at about 76% even from Ashburn when sent within 50 ms of the frame, and 23% free-running
+   (section 6), so it cannot be a pass/fail line.
+4. **The tab's machine** (proposed by rs/83, pending main). Until cairn://p/rs/113's
+   decode-on-arrival lands, an in-page reaction includes up to one game-loop period (about
+   13.5 ms at 74 loops per second), and Chrome throttles hidden or occluded tabs. So: the tab's
+   loop rate p10 at least about 50 per second; the remote-desktop session connected; screensaver
+   and sleep off; Chrome started with `--disable-background-timer-throttling
+   --disable-renderer-backgrounding --disable-backgrounding-occluded-windows`.
+5. If the SDK drives any step that reacts, the relay probe for that step, gated by
    `speedrun/lib/hostgate.ts`.
 
 Until the in-page probe exists, `demo-latency-probe.ts --phases=react,burst,blind` from the run
@@ -599,7 +629,8 @@ rs/102 does.
 
 ## 11. Open questions
 
-1. **The Ashburn VM row** and the Ashburn burst and blind distributions (rs/86 is running them).
+1. **The operator's Ashburn VM row.** (The Ashburn burst and blind distributions are in, from
+   rs/86 run 5, section 6.)
 2. **The relay fix's tail.** rs/98's fixed lite runner landed 60 of 60 from Ashburn (section 5).
    State collection's tail (40 ms p90 on a loaded host) is the remaining risk; run-night
    re-measures keep testing it.
@@ -609,8 +640,9 @@ rs/102 does.
 4. **The HTTP wait.** Ashburn's 404 waits run up to about 380 ms, longer than the reaction data
    allows for the engine's busy time. Other work served between cycles is the likely cause
    (inferred); it does not affect the run's route.
-5. **A route-wide count of reactive steps** (level-ups, re-clicks, dialogue pages, trades, bank
-   steps) to price the run exactly.
+5. **An exact route-wide tally of reactive steps** (level-ups, re-clicks, dialogue pages, trades,
+   bank steps). Section 10 bounds it at about 2,300-4,300 reactions; a tally per step script
+   would narrow the 2,300-8,600 tick range.
 6. **The public-relay path** from home and from Ashburn, for completeness. The gateway's HTTP
    numbers already show it is the worst path, and the run does not use it.
 7. **Websocket ping** as a cross-check on the one-way latency estimates, and the related mismatch
@@ -620,7 +652,9 @@ rs/102 does.
 8. **The browser in-page row** (rs/95 on rs/97's branch) is pending. Both overlay rows are in: a
    burst minute at 04:24 (33/27) and a calmer one at 04:55 (57/3). The knife-over-overlay figures
    (about 8.2 ticks per expected roll) await rs/95's plain-woodcutting control from the same
-   session.
+   session. cairn://p/rs/113 makes the overlay execute actions on arrival and decode on arrival;
+   that changes whether the overlay's steady ~22 ms stays, so the overlay rows should be re-taken
+   once it lands.
 9. **When overruns happen.** They took the Ashburn direct path from 60/60 at 04:04 to 40/16/4 at
    04:13 with about the same player count. rs/102's overnight Ashburn series should show whether
    they cluster by hour, by player count, or by something else on the demo (saves every 15 minutes
