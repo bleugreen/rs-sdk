@@ -79,6 +79,7 @@ export function parseMineSteps(value: unknown): MineStep[] {
 
 type Act = [string, (ctx: ProgramContext) => void];
 
+createKnifeMine.params = ['steps', 'respawn', 'starter', 'ores', 'maxTicks', 'untilLevel', 'xpLag', 'lead', 'bury'] as const;
 export function createKnifeMine(params: ProgramParams): TickProgram {
     const STEPS = parseMineSteps(params.steps);
     const D = num(params.respawn, 13, 'respawn');

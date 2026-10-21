@@ -178,6 +178,7 @@ function parseMethod(value: unknown): CycleMethod {
     throw new Error('method is required (a preset name or a method object)');
 }
 
+createKnifeCycle.params = ['method', 'technique', 'successes', 'untilLevel', 'maxTicks', 'xpLag', 'lead', 'dismiss', 'reanchor', 'drop', 'window', 'trees', 'keepProducts', 'bury', 'phase'] as const;
 export function createKnifeCycle(params: ProgramParams): TickProgram {
     const method = parseMethod(params.method);
     const technique = oneOf(params.technique, ['knife', 'plain'] as const, 'knife', 'technique');

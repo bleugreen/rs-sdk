@@ -39,6 +39,7 @@ type Phase =
     | { kind: 'recover'; until: number }
     | { kind: 'climb'; since: number; tries: number };
 
+createAgility.params = ['course', 'laps', 'maxTicks', 'technique', 'settleTicks', 'food', 'eatBelow', 'stepTimeout', 'startStep'] as const;
 export function createAgility(params: ProgramParams): TickProgram {
     const course = parseCourse(params.course);
     const laps = num(params.laps, Infinity, 'laps');
