@@ -88,7 +88,8 @@ function killEngine(): number {
 /** Start a replacement engine the way lab.sh does; resolves at 'World ready'. */
 async function startEngine(): Promise<number> {
     const t0 = Date.now();
-    const log = join(LAB_LOG, `engine-restart-${++restarts}.log`);
+    // A fresh file per start: an appended one still holds the last run's 'World ready'.
+    const log = join(LAB_LOG, `engine-restart-${process.pid}-${++restarts}.log`);
     engineChild = Bun.spawn(['bun', 'run', 'src/app.ts'], {
         cwd: join(ROOT, 'server', 'engine'),
         env: { ...process.env, BUILD_VERIFY: 'false', BUILD_LIVE_RELOAD: 'false', LOCAL_STAFF_LEVEL: '4' },
