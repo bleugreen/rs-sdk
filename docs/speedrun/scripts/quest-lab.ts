@@ -1,7 +1,7 @@
 // Shared helpers for the quest measurement scripts. Every timing is in server
 // ticks read from the world state (state.tick), never in wall-clock time.
 import type { BotSDK } from '../../../sdk/index';
-import type { BotWorldState, GameMessage, NearbyLoc, NearbyNpc } from '../../../sdk/types';
+import type { BotWorldState, NearbyLoc, NearbyNpc } from '../../../sdk/types';
 
 export const tick = (sdk: BotSDK) => sdk.getState()?.tick ?? -1;
 
@@ -38,13 +38,19 @@ export function drainChat(sdk: BotSDK) {
     sdk.getNewChat({ types: [0], includeSelf: true });
 }
 
-/** Wait for a game message (chat type 0) matching any pattern; returns it or null on timeout. */
-export async function waitForMessage(sdk: BotSDK, patterns: RegExp[], timeoutTicks = 30): Promise<GameMessage | null> {
+/**
+ * Wait for a game message (chat type 0) or an open dialogue's text matching
+ * any pattern; returns the matching text or null on timeout. Item boxes
+ * (~objbox) announce some results without a chat line, hence the dialogue check.
+ */
+export async function waitForMessage(sdk: BotSDK, patterns: RegExp[], timeoutTicks = 30): Promise<{ text: string } | null> {
     const start = tick(sdk);
     while (tick(sdk) - start < timeoutTicks) {
         for (const m of sdk.getNewChat({ types: [0], includeSelf: true })) {
             if (patterns.some(p => p.test(m.text))) return m;
         }
+        const d = sdk.getState()?.dialog;
+        if (d?.isOpen && d.text && patterns.some(p => p.test(d.text!))) return { text: d.text };
         await sdk.waitForStateUpdate();
     }
     return null;
@@ -83,7 +89,13 @@ export async function runDialog(
             const page = d.pageId ?? `${d.text}|${d.options.map(o => o.text).join('/')}`;
             if (!d.isWaiting && page !== lastPage) {
                 lastPage = page;
-                if (d.options.length > 0) {
+                const onlyContinue = d.options.length > 0 && d.options.every(o => /click here to continue/i.test(o.text));
+                if (onlyContinue) {
+                    out.pages++;
+                    out.transcript.push((d.text ?? '').slice(0, 70));
+                    if (opts.log) console.log(`  [${s.tick}] ${(d.text ?? '').slice(0, 70)}`);
+                    await sdk.clickDialogByText(d.options[0].text);
+                } else if (d.options.length > 0) {
                     const want = queue[0];
                     const opt = want ? d.options.find(o => want.test(o.text)) : undefined;
                     if (!opt) throw new Error(`no option for ${want} among: ${d.options.map(o => o.text).join(' | ')}`);
