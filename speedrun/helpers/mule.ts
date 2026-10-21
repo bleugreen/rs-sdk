@@ -730,7 +730,9 @@ class Mule {
         if (!(await this.openTradeWith(name))) return;
         const pkg = this.pending!;
         const items = sdk.getInventory().filter(i => this.held!.has(i.id));
-        const r = await giveOpenTrade(sdk, bot, this.o.serve!, items, this.o.giver);
+        // 30 s, not 60: a pre-request can open a trade the scored account did not ask for
+        // yet (it accepts a stale request of theirs), and that screen must not linger.
+        const r = await giveOpenTrade(sdk, bot, this.o.serve!, items, this.o.giver, 30_000);
         ctx.log('hand-off', {
             to: name,
             package: pkg.name,
@@ -738,7 +740,7 @@ class Mule {
             giverTicks: r.ticks,
             stacks: this.held!.size,
             mode: this.o.giver,
-            message: r.message,
+            result: r.message,
             received: r.received.map(i => `${i.name} x${i.count}`)
         });
         if (r.success) {
@@ -780,7 +782,7 @@ class Mule {
         ctx.log('received', {
             from: name,
             success: r.success,
-            message: r.message,
+            result: r.message,
             received: r.received.map(i => `${i.name} x${i.count}`),
             gave: r.gave.map(i => `${i.name} x${i.count}`)
         });
