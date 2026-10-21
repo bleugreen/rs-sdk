@@ -256,7 +256,8 @@ rs/31's 11.52 cannon-only rate; cannon only, 13.64 per tick (m). The swing caden
 with Defence xp, 62 of the gaps between them exactly 4 ticks and 14 exactly 8 (a miss between two
 hits) (m), so about 100 swings in 400 ticks (i), the 4-tick ideal. The Defence rate sits at the top
 of section 1's inferred 7.2-7.8, which would have put Package A's finish near 2,720 ticks (i);
-Package A is retired.
+Package A is retired. With the kit on both packages, B still beats A, by ~310-340 ticks (i)
+instead of the ~910-970 the quest README priced on rs/31's no-kit rates (README section 7).
 
 **What the runs show:**
 
