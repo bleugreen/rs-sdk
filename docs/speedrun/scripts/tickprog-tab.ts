@@ -6,7 +6,9 @@
 //       [--debug-port=9397]
 //
 // Headful by default (the scored run is a visible tab); HEADLESS=1 for a runner
-// without a display. The password comes from bots/<bot>/bot.env. Prints TAB-READY once
+// without a display. The password comes from bots/<bot>/bot.env: through a proxy.ts
+// origin as a one-time login token (the bot.env must be mode 600), on the local
+// lab's engine page in the query. Prints TAB-READY once
 // the page is in game, and one `[program] end {json}` line per finished program run,
 // read from the page's window.rsPrograms.history (the production bundle strips console
 // calls, so the page's own log lines appear only in a dev build). Once a second it appends a render
@@ -16,7 +18,7 @@
 import { appendFileSync, mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import puppeteer from 'puppeteer';
-import { loadBotEnv } from '../../../speedrun/lib/session';
+import { browserUrl, loadBotEnv, mintLoginToken } from '../../../speedrun/lib/session';
 
 const bot = process.argv[2];
 if (!bot) throw new Error('usage: tickprog-tab.ts <bot> [--origin=...] [--gateway=...] [--server=...] [--query=...]');
@@ -28,11 +30,21 @@ mkdirSync(out, { recursive: true });
 const stats = join(out, 'stats.log');
 writeFileSync(stats, '');
 
-const q = new URLSearchParams({ bot: env.BOT_USERNAME, password: env.PASSWORD });
+const q = new URLSearchParams();
 if (flag('gateway')) q.set('gateway', flag('gateway')!);
 if (flag('server')) q.set('server', flag('server')!);
 for (const [k, v] of new URLSearchParams(flag('query') ?? '')) q.set(k, v);
-const url = `${origin}/bot?${q}`;
+// A proxy.ts origin logs the page in with a one-time token; the engine's own page
+// (the local lab) only takes the password in the query, which browserUrl allows
+// for a loopback world alone.
+const page = { ...env, CLIENT_URL: `${origin}/bot${q.size ? `?${q}` : ''}` };
+const url = await mintLoginToken(page).then(
+    token => browserUrl(page, { token }),
+    err => {
+        console.log(`[tab] no login token from ${origin} (${(err as Error).message}); trying the local-lab query login`);
+        return browserUrl(page, { insecureQueryLogin: true });
+    }
+);
 
 const headless = process.env.HEADLESS === '1' || process.env.HEADLESS === 'true';
 // Chrome throttles timers and frames in a hidden, minimised or covered tab, and a
@@ -71,7 +83,7 @@ await page.evaluateOnNewDocument(() => {
     };
     requestAnimationFrame(raf);
 });
-console.log(`[tab] ${headless ? 'headless' : 'headful'} ${url.replace(/password=[^&]*/, 'password=***')}`);
+console.log(`[tab] ${headless ? 'headless' : 'headful'} ${url.replace(/(password|token)=[^&]*/, '$1=***')}`);
 await page.goto(url, { waitUntil: 'domcontentloaded' });
 
 let ready = false;

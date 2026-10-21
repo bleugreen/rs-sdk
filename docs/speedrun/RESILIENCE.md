@@ -167,9 +167,13 @@ outage):
   bot.env (or `SPEEDRUN_CDP_URL`); every launch then re-navigates the one tab
   (`tab.ts`, closing duplicates that would fight for the account) instead of
   opening another. `CLIENT_URL` in the bot.env names the page served by
-  `server/webclient/proxy.ts`, with `?server=` and `?gateway=` on it. Without CDP a
-  launch opens a new tab. The browser path is unit-tested (`botTabs`, the URL),
-  not yet run against a live Chrome.
+  `server/webclient/proxy.ts`, with `?server=` and `?gateway=` on it. Each
+  launch navigates to a fresh one-time login token rather than the password
+  (speedrun/README.md, "Logging the browser tab in"), so CDP is required: without
+  it the launch fails instead of putting the token on a command line. The
+  launch and a relaunch over a live session (the takeover) were run against a
+  live headless Chrome on the local engine through `speedrun/tools/tab-login.ts`,
+  which calls the same `openBrowserClient`.
 
 ### Handing back
 
