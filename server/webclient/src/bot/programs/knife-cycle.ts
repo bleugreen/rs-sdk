@@ -493,6 +493,13 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
             }
             const k = d % 3;
             if (k === 0) {
+                if (!method.clickOnRoll && !(bonesRe && bones(s).length) && !findTarget(s)) {
+                    // Every tree is down. A starter with no click behind it leaves the fletching menu
+                    // open, so the fletch completes and uses the knife's log; send nothing and keep the
+                    // phase for the respawn. (A bury closes the menu, so a bury cycle still goes out.)
+                    ctx.count('noTarget');
+                    return;
+                }
                 if (!knifeStart(ctx)) {
                     fellBack = invCount(s, KNIFE) ? 'out of logs' : 'no knife';
                     ctx.log(`${fellBack}: falling back to the plain loop`);

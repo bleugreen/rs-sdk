@@ -22,6 +22,8 @@ function serverRun(opts: {
     bones?: number;
     /** A non-depleting tree falls on every Nth roll and another one stands. */
     fellEvery?: number;
+    /** Ticks after such a fall with no live tree at all (every reachable tree down). */
+    allDownFor?: number;
     spotMovesAt?: number;
     dialogAt?: number;
     logsGoneAt?: number;
@@ -46,6 +48,7 @@ function serverRun(opts: {
     let clickedTree = 0;
     let dialog = false;
     let clock = -1;
+    let downUntil = -1;
     let delayedOn = -1;
     let prayerXp = 0;
     let buryXpOn = -1;
@@ -69,7 +72,7 @@ function serverRun(opts: {
         locs: m.kind === 'loc'
             ? [
                 ...Array.from({ length: opts.deadTrees ?? 0 }, (_, i) => ({ id: 900 + i, x: 3200, z: 3200 + i, name: treeName, options: ['Chop down'] })),
-                { id: treeId, x: treeX(treeId), z: 3204, name: treeName, options: ['Chop down'] },
+                ...(tick > downUntil ? [{ id: treeId, x: treeX(treeId), z: 3204, name: treeName, options: ['Chop down'] }] : []),
                 ...(felledAt !== null ? [{ id: treeId - 1, x: treeX(treeId - 1), z: 3204, name: treeName, options: ['Chop down'] }] : [])
             ]
             : []
@@ -96,7 +99,7 @@ function serverRun(opts: {
                 buryXpOn = tick + 1;
             }
             if (p.type === 'clickDialogOption') dialog = false;
-            if (p.type === 'interactLoc' && p.locId !== treeId) {
+            if (p.type === 'interactLoc' && (p.locId !== treeId || tick <= downUntil)) {
                 interacting = false; // a dead or felled tree: nothing happens
                 continue;
             }
@@ -118,7 +121,13 @@ function serverRun(opts: {
             rollTicks.push(tick);
             lastRoll = tick;
             nextRoll = tick + m.plainCycle;
-            if (m.depletes || (opts.fellEvery && rollTicks.length % opts.fellEvery === 0)) { treeId++; interacting = false; nextRoll = null; if (opts.fellLag) felledAt = tick; }
+            if (m.depletes || (opts.fellEvery && rollTicks.length % opts.fellEvery === 0)) {
+                treeId++;
+                interacting = false;
+                nextRoll = null;
+                if (opts.fellLag) felledAt = tick;
+                if (opts.allDownFor && !m.depletes) downUntil = tick + opts.allDownFor;
+            }
         }
         if (opts.merged?.(tick)) { skipped++; continue; }
         for (const s of h.step(makeState(spec()), 1 + skipped)) pending.push({ at: tick + (opts.latency?.(n++) ?? 1), type: s.action.type, locId: (s.action as { locId?: number }).locId });
@@ -263,6 +272,16 @@ describe('knife cycle', () => {
         const fell = rollTicks[7]!;
         expect(h.sent.filter(s => s.tick === fell + 1)).toHaveLength(0);
         expect(h.sent.filter(s => s.tick === fell + 2).map(s => s.action.type)).toEqual(['interactLoc']);
+    });
+
+    test('every tree down: no starter goes out (it would fletch the log), and the lock resumes on the respawn', () => {
+        const { h, rollTicks } = serverRun({ method: 'oak', ticks: 200, fellEvery: 8, allDownFor: 5 });
+        const fell = rollTicks[7]!;
+        const knives = h.sent.filter(s => s.action.type === 'useItemOnItem' && s.tick > fell && s.tick <= fell + 5);
+        expect(knives).toHaveLength(0);
+        expect(h.status.counters.noTarget).toBeGreaterThan(0);
+        expect(h.status.result).not.toHaveProperty('fellBack');
+        expect(gapsOf(rollTicks.filter(t => t > fell + 20)).every(g => g === 3)).toBe(true);
     });
 
     test('the lost-lock window scales with the catch chance', () => {
