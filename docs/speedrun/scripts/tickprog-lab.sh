@@ -47,10 +47,11 @@ wait_for "$LOG/engine.log" 'World ready' 900 || exit 1
 PIDS+=($!)
 sleep 2
 
-if [ ! -f "$ROOT/bots/$BOT/bot.env" ]; then
-    (cd "$ROOT" && bun bots/create-bot.ts "$BOT" --local --no-chat > /dev/null)
-fi
-sed -i.bak -e "s#^SERVER=.*#SERVER=localhost:$WEB_PORT#" -e "s#^GATEWAY_URL=.*#GATEWAY_URL=ws://localhost:$AGENT_PORT#" -e 's#^TELEMETRY=.*#TELEMETRY=false#' "$ROOT/bots/$BOT/bot.env"
+# HELPER=<bot> sets up a second account for the modes that trade with one (pickpocket --helper)
+for b in "$BOT" ${HELPER:-}; do
+    [ -f "$ROOT/bots/$b/bot.env" ] || (cd "$ROOT" && bun bots/create-bot.ts "$b" --local --no-chat > /dev/null)
+    sed -i.bak -e "s#^SERVER=.*#SERVER=localhost:$WEB_PORT#" -e "s#^GATEWAY_URL=.*#GATEWAY_URL=ws://localhost:$AGENT_PORT#" -e 's#^TELEMETRY=.*#TELEMETRY=false#' "$ROOT/bots/$b/bot.env"
+done
 
 # TAB_FLAGS=--stock-chrome keeps Chrome's background throttling (tickprog-tab.ts)
 (cd "$ROOT" && exec bun docs/speedrun/scripts/tickprog-tab.ts "$BOT" --origin="http://localhost:$WEB_PORT" --gateway="ws://localhost:$AGENT_PORT" --out="$LOG/tab" --debug-port=$((9390 + N)) ${TAB_FLAGS:-}) > "$LOG/tab.log" 2>&1 &
