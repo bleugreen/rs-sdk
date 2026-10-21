@@ -49,14 +49,18 @@ interface Pt {
     z: number;
 }
 
-/** Best first. Levels from trees.dbrow `levelrequired`; names from the .loc configs. */
-const TIERS: { tier: Tier; level: number; tree: RegExp; log: RegExp }[] = [
-    { tier: 'magic', level: 75, tree: /^magic tree$/i, log: /^magic logs$/i },
-    { tier: 'yew', level: 60, tree: /^yew$/i, log: /^yew logs$/i },
-    { tier: 'maple', level: 45, tree: /^maple tree$/i, log: /^maple logs$/i },
-    { tier: 'willow', level: 30, tree: /^willow$/i, log: /^willow logs$/i },
-    { tier: 'oak', level: 15, tree: /^oak$/i, log: /^oak logs$/i },
-    { tier: 'normal', level: 1, tree: /^(tree|dead tree|evergreen)$/i, log: /^logs$/i }
+/**
+ * Best first. Levels and `respawn` (ticks) from trees.dbrow `levelrequired` and
+ * `respawnrate` (normal trees say 0; 30 is used so a bare spot still gets a pause);
+ * names from the .loc configs.
+ */
+const TIERS: { tier: Tier; level: number; respawn: number; tree: RegExp; log: RegExp }[] = [
+    { tier: 'magic', level: 75, respawn: 400, tree: /^magic tree$/i, log: /^magic logs$/i },
+    { tier: 'yew', level: 60, respawn: 200, tree: /^yew$/i, log: /^yew logs$/i },
+    { tier: 'maple', level: 45, respawn: 120, tree: /^maple tree$/i, log: /^maple logs$/i },
+    { tier: 'willow', level: 30, respawn: 30, tree: /^willow$/i, log: /^willow logs$/i },
+    { tier: 'oak', level: 15, respawn: 30, tree: /^oak$/i, log: /^oak logs$/i },
+    { tier: 'normal', level: 1, respawn: 30, tree: /^(tree|dead tree|evergreen)$/i, log: /^logs$/i }
 ];
 const ANY_LOGS = /^(logs|oak logs|willow logs|maple logs|yew logs|magic logs)$/i;
 const AXE = /^(bronze|iron|steel|black|mithril|adamant|rune) axe$/i;
@@ -206,6 +210,8 @@ class Woodcutter {
     private avoid = new Map<string, number>();
     /** fetchBetterAxe runs at most once per process, so a sold-out Bob cannot loop it. */
     private upgradeTried = false;
+    /** Spot id -> tick it was last given up as bare or crowded. */
+    private gaveUp = new Map<string, number>();
     /** Axes the server refused to wield (the Attack level is short); they work from the pack. */
     private unwieldable = new Set<string>();
 
@@ -680,8 +686,11 @@ class Woodcutter {
 
     /**
      * The index (into spotsFor(tier)) of the next other spot that has a standing
-     * tree, or that is too far away to see. The lite client's scene spans the
-     * loaded map region, so a 40-tile scan covers both Seers magic clusters.
+     * tree, or that is out of sight and was not given up within one respawn time.
+     * The lite client's scene spans the loaded map region, so a 40-tile scan covers
+     * both Seers magic clusters; Catherby is out of sight from Seers, and without
+     * the respawn memory an account ping-pongs between two bare yew spots. Records
+     * the current spot as given up when it returns a move.
      */
     private async spotWithStandingTree(tier: (typeof TIERS)[number], current: Spot): Promise<number | undefined> {
         const SCAN = 40;
@@ -693,8 +702,14 @@ class Woodcutter {
         for (let k = 1; k < spots.length; k++) {
             const i = (start + k) % spots.length;
             const spot = spots[i]!;
-            if (cheb(me, spot.stand) + spot.radius > SCAN) return i;
-            if (this.treesAt(spot, locs, tier.tree).some(t => (this.avoid.get(`${t.x},${t.z}`) ?? 0) < now)) return i;
+            const visible = cheb(me, spot.stand) + spot.radius <= SCAN;
+            const go = visible
+                ? this.treesAt(spot, locs, tier.tree).some(t => (this.avoid.get(`${t.x},${t.z}`) ?? 0) < now)
+                : now - (this.gaveUp.get(spot.id) ?? -Infinity) >= tier.respawn;
+            if (go) {
+                this.gaveUp.set(current.id, now);
+                return i;
+            }
         }
         return undefined;
     }
