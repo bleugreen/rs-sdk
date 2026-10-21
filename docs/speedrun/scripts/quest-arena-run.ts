@@ -137,7 +137,7 @@ await runScript(async ({ bot, sdk }) => {
     });
     if (FROM < 9) await rec.seg('ogre dead: General dialogue + cell cutscene', 'mixed', async c => {
         await waitTicksFor(sdk, s => !!s.dialog?.isOpen, 20);
-        await driveDialog(sdk, c, [], 3, 400, s => inBox(s, 2586, 3139, 2601, 3143));
+        await driveDialog(sdk, c, [], 10, 400, s => s.player?.worldX === 2600 && s.player?.worldZ === 3142);
         return `stage ${await getvar(sdk, 'arenaquest')} at ${JSON.stringify(pos(sdk))}`;
     });
     await rec.seg('Hengrad: talk, guard escorts you to the arena', 'mixed', async c => {

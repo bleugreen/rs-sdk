@@ -136,7 +136,7 @@ export class Recorder {
         const p0 = pos(this.sdk);
         const startTick = tick(this.sdk);
         const note = await fn(c);
-        const endTick = tick(this.sdk);
+        const endTick = c.end ?? tick(this.sdk);
         const p1 = pos(this.sdk);
         const s: Segment = {
             label, kind, startTick, endTick, ticks: endTick - startTick,
@@ -161,6 +161,8 @@ export class Recorder {
 }
 
 export class Counts {
+    /** Set by driveDialog: the tick the segment's real work ended (excludes idle detection). */
+    end?: number;
     pages = 0;
     options = 0;
     interactions = 0;
@@ -181,6 +183,8 @@ export async function driveDialog(sdk: BotSDK, c: Counts, choices: (string | Reg
     let closedFor = 0;
     let lastPage = '';
     let lastClickTick = -1;
+    let closedAt = -1;
+    let untilAt = -1;
     const start = tick(sdk);
     let s = sdk.getState()!;
     while (s.tick - start < maxTicks) {
@@ -188,10 +192,16 @@ export async function driveDialog(sdk: BotSDK, c: Counts, choices: (string | Reg
         const d = s.dialog;
         if (process.env.QDEBUG) console.log(`  [dlg] t=${s.tick} at ${s.player?.worldX},${s.player?.worldZ} open=${d?.isOpen} wait=${d?.isWaiting} text=${(d?.text ?? '').slice(0, 70)} opts=${d?.options.map(o => o.text).join('/')}`);
         if (!d?.isOpen) {
-            if (++closedFor >= idleTicks && (!until || until(s))) return;
+            if (closedFor === 0) closedAt = s.tick;
+            if (until && until(s)) { if (untilAt < 0) untilAt = s.tick; } else untilAt = -1;
+            if (++closedFor >= idleTicks && (!until || until(s))) {
+                c.end = Math.max(closedAt, untilAt, start);
+                return;
+            }
             continue;
         }
         closedFor = 0;
+        untilAt = -1;
         if (d.isWaiting) continue;
         const page = (d.pageId ?? '') + '|' + (d.text ?? '') + '|' + d.options.map(o => o.text).join('/');
         if (page === lastPage && s.tick - lastClickTick < 3) continue; // our click has not been processed yet
