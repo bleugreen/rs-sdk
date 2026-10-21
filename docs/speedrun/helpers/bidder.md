@@ -158,6 +158,14 @@ the fleet for the trip (`fleetctl assign <earner> coins --disable && fleetctl
 reload`), logged in standalone, and put back afterwards. Each trip costs the
 earner about 5 minutes.
 
+The trip also funds any other receiver that accepts trades at Varrock west
+bank (the fletcher's camper, for one), and with `item` it carries a stackable
+item instead of coins, with `amount` and `keep` counted in that item:
+
+```sh
+ROLE_OPTIONS='{"bidder":"cairn_h78","item":"Feather","amount":4245}' bun speedrun/helpers/bidder.ts cairn_h01 fund
+```
+
 An account with the exchange open answers trade requests with "busy". That is
 why the bidder only opens the exchange for rechecks and short peeks and doesn't
 keep it open between them. The funder retries its request every 8 seconds for 3
