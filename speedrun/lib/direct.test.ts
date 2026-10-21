@@ -113,7 +113,7 @@ describe('DirectBridge', () => {
         let release: (r: ActionResult) => void = () => {};
         const f = fakeClient();
         const exec = f.client.executeBotAction;
-        f.client.executeBotAction = a => (a.type === 'countDialog' ? new Promise<ActionResult>(r => (release = r)) : exec(a));
+        f.client.executeBotAction = a => (a.type === 'submitCountDialog' ? new Promise<ActionResult>(r => (release = r)) : exec(a));
         const { sdk } = await connected(f.client);
         f.calls.push('-');
         const a = sdk.sendCountDialog(23);
