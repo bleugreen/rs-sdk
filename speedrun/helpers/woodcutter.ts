@@ -614,8 +614,18 @@ class Woodcutter {
         await this.travel(spot.stand, Math.min(4, spot.radius), spot.id);
         let bareSince = 0;
         let crowdedSince = 0;
+        let heartbeat = this.tick();
         while (this.freeSlots() > 0) {
             this.checkSignal();
+            // A magic trip can run 40+ minutes; the fleet restarts a role that logs
+            // nothing for 20 (HELPERS.md, stallMinutes), so report every 10.
+            if (this.tick() - heartbeat >= 2000) {
+                heartbeat = this.tick();
+                const carried = Object.fromEntries(
+                    TIERS.map(t => [t.tier, this.sdk.countInventoryItems(t.log)] as const).filter(([, n]) => n > 0)
+                );
+                this.ctx.log('chopping', { spot: spot.id, carried, woodcutting: this.wc(), playersNear: this.state().nearbyPlayers.length - 1 });
+            }
             if (this.tierNow().tier !== tier.tier) return; // levelled into a new tier: go to its spot with what we carry
             const s = this.state();
             if (s.player!.isDead) throw new Error('died at the trees');
