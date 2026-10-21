@@ -23,8 +23,8 @@ says which count this page took.
   the #78 relay fix, logged in before SCORED's run login and staying in through its planned relogs,
   clean logout, independent of `fleetctl`, documented in HELPERS.md. They are the altar givers of the
   7-tick Runecraft cycle (S06, S21), the **trade giver** that serves SCORED's hand-offs, the **bone
-  giver** beside the tree in S07 (its request lands on a roll label, so it is tick-relevant,
-  bones-placement.md section 3), the **stun-pack giver** beside the knights in S18 (the trade giver
+  givers** beside the tree in S07, three alternating (cairn_b01-b03, separate from the altar givers;
+  their request lands on a roll label, so it is tick-relevant, bones-placement.md section 3), the **stun-pack giver** beside the knights in S18 (the trade giver
   pool), and the wine giver (S25c), which is the same account as the trade giver (main, 06:12). The
   altar givers follow rs/117's cue contract. **Everything else stays on the bbs fleet**: it gathers,
   crafts and buys, and couriers stock to the Ashburn givers ahead of each hand-off (helper-to-helper
@@ -77,7 +77,7 @@ fleet's hands as of the date given.
 | H2 | S03 | the Firemaking row beside the chicken coop (3233,3295) | dropped at least 100 ticks before SCORED reaches each log (a drop is private to the dropper for 100 ticks, then public); staged before the run login | woodcutter, bbs fleet | 157 logs on the ground along the snake, one per tile, in order: logs 2, oak 4, willow 7, maple 13, yew 24, magic 107. Fallback: 6 trades of 27 unnoted by the trade giver (1: 2 + 4 oak + 7 willow + 13 maple + 1 yew; 2: 23 yew + 4 magic; 3-5: 27 magic; 6: 22 magic) |
 | H3 | S04 | the row's end | during S03 | trade giver, Ashburn (rs/117) | three ring loads of 20, unnoted: sapphire ring 12 + emerald ring 8; emerald ring 19 + ruby ring 1; ruby ring 15 + diamond ring 5 |
 | H4 | S05 | Doric's house (2951,3451) | during S03-S04 | trade giver, Ashburn (rs/117); stocked by the quest-item gatherer | clay 6, copper ore 4, iron ore 2; Falador teleport runes for 3 casts (T04-05, T05-06, T06-07: 3 law, 9 air, 3 water); SCORED's air talisman 1; Woodcutting and Mining kits: **rune axe 1** (budget item, section 5), rune pickaxe 1, knife 1, normal logs 6 |
-| **H4.1-H4.16** | S07 (S25b's bones) | the oak tile (2914,3494), giver on (2913,3494); later the willow tile (2920,3406), giver on (2920,3407) | the first load before S07 reaches the oaks, then whenever SCORED holds 2 bones (about every 77 ticks) | **bone giver, Ashburn (rs/117)**; bones from the bones role and the bidder, bbs fleet | **dragon bones, unnoted, 23 per load, 355 in all** (15 loads of 23 and one of 10) **[scarce]**. The giver requests first, on the label before a roll; on a "busy" refusal (a level-up page) it re-requests on the next tick (bones-placement.md section 3) |
+| **H4.1-H4.n** | S07 (S25b's bones) | the oak tile (2914,3494), giver on (2913,3494); later the willow tile (2920,3406), giver on (2920,3407) | the first load before S07 reaches the oaks, then whenever SCORED holds 2 bones (about every 70 ticks at 0.329 bones per tick) | **three bone givers alternating, cairn_b01-b03, Ashburn (rs/117, rs/141's `bone-giver.ts`)**, logged in before SCORED, each walking Falador west to the trees and back between its loads (rs/141's lab round trip: 158-161 ticks at the oaks, 149-152 at the willows, ~160-170 with the bank, over the ~140 two givers allow; a fourth if the demo walk exceeds ~200); bones from the bones role and the bidder, bbs fleet | **bones, unnoted, 23 per load (any type)**. n is S07's non-stun bones / 23: with every line held, **355 dragon bones, n = 16** (15 loads of 23 and one of 10); on the 13:10 stock, **~978 bones, n = ~43** (28 dragon and 911 babydragon first, then big), with ~200 more for the S09 `stay2` lap and ~268 at the booth (RUN-ORDER.md section 7) **[scarce]**. The giver keeps a request standing and re-sends on the tick after a "busy" refusal; refusals cost SCORED 0, a load 4 ticks (the first 5) (m, lab, cairn://p/rs/141) |
 | H5 | S06 | air altar room, beside (2844,4832) | givers in the room and logged in before SCORED's run login; staged during S04-S05 | 7 altar givers, Ashburn (rs/117), following the cue contract | each giver: air talisman 1 + rune essence 27, unnoted (189 essence in all) |
 | H6 | S08 | Plague City's start (after the Camelot teleport) | during S07 | trade giver, Ashburn (rs/117) | dwellberries, 4 buckets of water, spade, rope, chocolate dust, bucket of milk, snape grass (quests/README.md step 2); Camelot runes 1 cast (1 law, 5 air); Ardougne runes 1 cast (2 law, 2 water) |
 | H7 | S10b | maze entrance, Elkoy (2504,3191) | during S09 | trade giver, Ashburn (rs/117) | **the pre-MM trade**: logs 6; staff of fire 1; amulet of magic 1; antipoison(4) 1; shark 2; fight runes: death rune 110, chaos rune 40, air rune 550 (section 4). No dragon bones and no prayer potions: Prayer is ~94 when S07 ends |
@@ -97,7 +97,7 @@ fleet's hands as of the date given.
 | H19 | S23 | Lumbridge castle kitchen (3209,3215) | during S22 | trade giver, Ashburn (rs/117) | egg 1, bucket of milk 1, pot of flour 1; Falador runes 1 cast (T23-24) |
 | H20 | S24 | **the Rusty Anchor, Port Sarim (3045,3257)** | during S23 | trade giver, Ashburn (rs/117); stocked by the quest-item gatherer | goblin mail 3, orange dye 1, blue dye 1 (Goblin Diplomacy); raw rat meat, raw bear meat, raw beef, raw chicken, 1 each (Druidic Ritual; the enchanted meats are **[untradeable]**, SCORED dips them); **cadava berries 1** (Romeo and Juliet's only item: the apothecary makes the potion from them, r `apothecary.rs2:61-65`; rs/126 owns the full list); Falador runes 1 cast (to Kaqemeex) and Varrock runes 1 cast (to Romeo) |
 | H21a | S25a | Varrock west anvil (3188,3426) | staged before S25 | trade giver, Ashburn (rs/117), at the anvil; bars from the bars role, bbs fleet | hammer 1; then 31 trades of 24-25 unnoted bars, each taking the 5 platebodies back: bronze bar 15, iron 39, steel 120, mithril 305, adamantite 365 (including one spare inventory of the top three tiers) **[scarce: GE not viable]**. Fallback with no adamantite: mithril platebodies above 88, about +425 mithril bars (supply-fallbacks.md section 2) |
-| H21b | - | - | - | - | **retired**: the booth bones now ride S07 (H4.1-H4.16) |
+| H21b | - | - | - | - | **retired** with every line held: the booth bones ride S07 (H4.1-H4.n). On the 13:10 bone stock ~268 bones overflow to the Varrock west booth again (RUN-ORDER.md section 7) and would be staged there with S25's hand-offs |
 | H21c | S25c | Varrock west booth | the giver is beside the booth, requesting, as planned relog 1 lands; SCORED enters relog 1 holding **at most 27 items** (wine-window.md section 5) | wine giver = the trade giver, Ashburn (rs/117); wine from the wine maker, bbs fleet | unfermented wine, **noted**, one slot: **520 [held]**, unbanked by the wine giver (rs/118, 10:10 PDT 2026-10-21). Fallback for the make arming only: grapes 1, jug of water 1 |
 | H21d | S25d, S25c | Varrock west booth | before S25 | trade giver, Ashburn (rs/117); gems from the gem supplier, bbs fleet | chisel 1; uncut diamond 391, noted (364 + one spare inventory). **107 of them are cut in the wine windows**: SCORED withdraws all uncut gems in the burst that deposits the first 29 wines (wine-window.md section 5 B). Fallback: the gem-table mix (2-4 noted stacks, supply-fallbacks.md section 4) |
 | H21e | S25e | Varrock west booth | before S25 | trade giver, Ashburn (rs/117); herbs from the herb gatherer, bbs fleet | supply-safe list, noted: guam potion (unf) 41, irit potion (unf) 405, eye of newt 432 (27, 391, 418 plus one spare inventory of 14 each). Fallback: the herb-table mix (10-14 stacks; the helpers need Herblore 50 and 55; supply-fallbacks.md section 5). H21d and H21e go in one trade |
@@ -123,7 +123,7 @@ logs in after SCORED drops to the robust 8-tick schedule for its own trades.
 
 | Item | Total | Hand-offs | Source of the count | Scarcity |
 |---|---|---|---|---|
-| Dragon bones | **555** (355 unnoted in 16 loads for S07 + ~200 unnoted in load 0 and 12-13 top-ups for S18) | H4.1-H4.16, H14, H14.1-H14.13 | `prayer.md` section 7; split by bones-placement.md section 5 and stun-pack.md section 6 | **[scarce]**: 0 held at main's 10:25 count (470 babydragon, ~900 big). The floor is Prayer xp in any mix (section 5); any bone type rides the same slots at the same cost per bone, so a mix only adds bones (RUN-ORDER.md section 7) |
+| Dragon bones | **555** (355 unnoted in 16 loads for S07 + ~200 unnoted in load 0 and 12-13 top-ups for S18) | H4.1-H4.n, H14, H14.1-H14.13 | `prayer.md` section 7; split by bones-placement.md section 5 and stun-pack.md section 6 | **[scarce]**: 28 held at 13:10 (18 banked, ~10 from rs/112), with 911 babydragon and ~3,100 big, so the Prayer floor is covered and the bones are a tick cost. On that stock the fewest bones are 28 dragon + 911 babydragon + 707 big: ~978 to S07 (~43 loads), ~200 to the stuns, ~200 to the S09 `stay2` lap (which needs `stay2` adopted as S09's lap, bones-placement.md section 4) and ~268 at the Varrock west booth, +769 against every line held (RUN-ORDER.md section 7). Any bone type rides the same slots at the same cost per bone, so a mix only adds bones |
 | Unfermented wine, noted | **520 [held]** | H21c | `helpers/wine.md` (29 + 491, P(99) 99.83%) | held by the wine giver (rs/118) |
 | Rune essence | **4,536** (189 + 4,347) | H5, H17 | `runecraft.md` section 7 | **[contested]** on the GE; gathered (~1,000 per account-hour, `helpers/essence.md`) |
 | Logs for Firemaking | 157: logs 2, oak 4, willow 7, maple 13, yew 24, magic 107 | H2 | `firemaking.md` section 7 (exact) | magic logs from the woodcutter role |
@@ -198,21 +198,21 @@ Main adopted rs/129's start policy at 09:30 (supply-fallbacks.md, "Recommended p
 section 1).
 
 1. **Hard: Prayer xp in hand of at least 39,938 base**, in any bone mix (dragon 72, babydragon 30, big
-   15 per bone). On 470 babydragon and 673 big bones that is **at least 219 dragon bones**; on 470 and
-   ~900 big bones, about 172. Every adult blue bone (rs/112) counts as a dragon bone.
+   15 per bone). Covered several times over at rs/41's 13:10 count (28 dragon, 911 babydragon, ~3,100
+   big), so the bones are now a tick cost, not readiness. Every adult blue bone (rs/112) counts as a
+   dragon bone.
 2. **Hard: a cannon set and at least ~1,170 cannonballs** (rs/125's helper).
-3. **Budget item: the rune axe** in H4 (bid ladder to 1M). Without it Woodcutting costs +441
-   (adamant) or +941 (mithril).
+3. **Budget item: the rune axe** in H4: held at 13:10 (rs/41). Without it Woodcutting would cost
+   +388 (adamant) or +836 (mithril) with the knife.
 4. **Budget:** the expected total plus the fallback deltas in force is under 35,916 (RUN-ORDER.md's
-   headline scenario table: +326 for rs/41's 09:35 plan, +242 on today's bone floor, +441 without the
-   rune axe).
+   headline scenario table: +326 for rs/41's 09:35 plan, +769 more on the 13:10 bone stock).
 5. **Held already:** 520 noted unfermented wines with the wine giver (rs/118); 70 sharks (rs/41, 10:10).
 6. **To buy for Fletching:** 570 rune arrowheads (Hickton's), 2,070 adamant arrowheads, 1,485 mithril
    arrowheads, and the bronze, iron and steel stacks; 4,410 headless arrows. **Finished rune arrows:
    100 only** (MM).
 7. The rest of section 2, with the scarce lines first: 774 bars plus margin (or the mithril fallback),
    4,536 essence, the gems and herbs (or their table mixes), 60 cosmic runes, ~126,000 coins in H22.
-8. rs/117's helpers on the run machine (the trade-giver pool, the S07 bone giver, the 7 air altar
+8. rs/117's helpers on the run machine (the trade-giver pool, the three S07 bone givers, the 7 air altar
    givers, the N nature altar givers and the talisman keeper) are logged in, before SCORED.
 9. H1-H5 and H4.1 are staged (H1 at the landing tile, H2's row dropped and past its reveal, H4 at
    Doric's, H4.1 at the oak tile, H5's seven givers in the air altar room or ready to enter).
