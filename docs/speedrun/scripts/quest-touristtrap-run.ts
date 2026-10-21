@@ -137,6 +137,7 @@ await runScript(async ({ bot, sdk }) => {
         const slaveTalk = async (choices: RegExp[]) => {
             const r = await q.talk('mining_slave_male', [...choices, ...Array(12).fill(retry)], { allowUnused: true });
             lockTries += r.transcript.filter(t => /another go/.test(t)).length;
+            console.log('  worn after the trade:', sdk.getEquipment().map(e => e.name).join(', '));
             if (!q.worn('slave_robe')) throw new Error('no slave clothes');
             return `${lockTries} lock retries`;
         };
@@ -149,7 +150,9 @@ await runScript(async ({ bot, sdk }) => {
         await seg('mine doors: enter the mine', async () => {
             await q.opLoc('thttmineentrancel', 1, () => p().worldZ > 9000);
         });
+        console.log('  worn after entering the mine:', sdk.getEquipment().map(e => e.name).join(', '), '| inv:', sdk.getInventory().map(i => i.name).join(', '));
         await seg('cave guard: ask for another area (pineapple errand)', async () => {
+            await q.walk(3279, 9418, 1);
             await q.talk('desertminingmercenary2', [/mine in a different area/, /quite right sir/, /understand each other perfectly/]);
         });
         await seg('mine exit doors: back to the surface', async () => {
@@ -252,6 +255,7 @@ await runScript(async ({ bot, sdk }) => {
         await q.opLoc('thttmineentrancel', 1, () => p().worldZ > 9000);
     });
     await seg('cave guard: hand over the pineapple', async () => {
+        await q.walk(3279, 9418, 1);
         await q.talk('desertminingmercenary2');
         if (q.inv('tentipineapple')) throw new Error('pineapple not taken');
     });
