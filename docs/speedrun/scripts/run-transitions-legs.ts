@@ -64,6 +64,8 @@ async function exitToSpell(c: Ctx, log: LegLog, dest: { x: number; z: number }, 
 async function leverOut(c: Ctx, log: LegLog) {
     await log.seg('walk to the keep web', async () => { await walk(c, { x: 3158, z: 3953 }, { tol: 1, eat: true }); });
     await log.seg('keep web', () => throughWebs(c, [[3158, 3950]]));
+    // the out-lever stands beside the in-lever's landing (3154,3924), 26 tiles south of the web
+    await log.seg('walk to the lever', async () => { await walk(c, { x: 3154, z: 3926 }, { tol: 3, eat: true }); });
     await log.seg('lever out', () => opLoc(c, { id: 1815 }, (s) => s.player!.worldZ < 3400, 40));
 }
 async function treesToStronghold(c: Ctx, log: LegLog, young: { x: number; z: number }) {
