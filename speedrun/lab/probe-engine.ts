@@ -15,7 +15,7 @@
 //   bankheld  OPHELD (bury) on the inventory tab while the bank is open: accepted or dropped?
 import type { ActionResult } from '../../sdk/index';
 import type { BotWorldState, InventoryItem } from '../../sdk/types';
-import { closeSession, openSession } from '../lib/session';
+import { closeSession, login, logoutClean, openSession } from '../lib/session';
 import { nextTick, waitTicks, waitUntil } from '../lib/wait';
 import { arg, botArg, result } from './common';
 import { cheat, setstat, tele, VARROCK_WEST_BANK } from './setup';
@@ -236,8 +236,23 @@ async function probeBankHeld() {
     }
 }
 
+// A bot made by create-bot is still in the tutorial: its side tabs (inventory, magic, ...) are
+// unset, so the server refuses every held op and tab button as "component not visible"
+// (Player.ts isComponentVisible). Tabs are set at login off Tutorial Island (login.rs2
+// ~initalltabs), so finish the tutorial, leave the island and log in again.
+async function ensureTabs() {
+    await cheat(sdk, 'setvar tutorial 1000');
+    await waitTicks(sdk, 2);
+    if (!(await tele(sdk, VARROCK_WEST_BANK.x, VARROCK_WEST_BANK.z))) throw new Error('tele bank');
+    const out = await logoutClean(session);
+    result('setup logout', out);
+    await login(session);
+    await waitTicks(sdk, 5);
+}
+
 const table: Record<string, () => Promise<void>> = { bury: probeBury, held: probeHeld, charge: probeCharge, wine: probeWine, bankheld: probeBankHeld };
 result('probe-engine start', { probes, n: N, host: process.env.HOSTNAME ?? '', tickrate: process.env.NODE_TICKRATE ?? '' });
+if (arg('setup', '1') !== '0') await ensureTabs();
 for (const p of probes) {
     try {
         await table[p]!();
