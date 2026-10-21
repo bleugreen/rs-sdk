@@ -126,4 +126,8 @@ if (open.ok) {
 result('maker-left', { notes: invCount(maker.sdk, ITEM.wineNote) });
 const lo = await logoutClean(receiver);
 result('receiver-logout', { ok: lo.ok, reason: lo.reason });
+if (args.includes('--launch-maker')) {
+    const lm = await logoutClean(maker);
+    result('maker-logout', { ok: lm.ok, reason: lm.reason });
+}
 process.exit(0);
