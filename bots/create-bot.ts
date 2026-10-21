@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { cp, readFile, writeFile, readdir } from 'fs/promises';
+import { chmod, cp, readFile, writeFile, readdir } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 
@@ -71,6 +71,8 @@ async function createBot(username?: string, serverOverride?: string, hideChat?: 
     }
 
     const envPath = join(botDir, 'bot.env');
+    // Only the owner reads the password; proxy.ts refuses to log in from a looser file.
+    await chmod(envPath, 0o600);
 
     // Override server if --local or --server= was passed
     if (serverOverride) {

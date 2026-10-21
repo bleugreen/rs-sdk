@@ -6,8 +6,9 @@
 // CDP_URL=http://127.0.0.1:9222 in the bot.env (or SPEEDRUN_CDP_URL). The page
 // auto-logs in once per load (Client.ts titleScreenDraw), and after a failed
 // reconnect it sits on the title screen, so a fresh navigation is the only
-// login path the SDK has. Without CDP the session falls back to opening the
-// URL, which opens a new tab.
+// login path the SDK has. CDP is also what keeps the login secret off every
+// command line: the navigation to a one-time token URL (session.ts
+// openBrowserClient) is a websocket message to Chrome, not a process argument.
 
 export interface CdpTarget {
     id: string;
@@ -52,8 +53,20 @@ function cdpCommand(wsUrl: string, method: string, params: Record<string, unknow
     });
 }
 
+/** Whether this bot's tab shows a client that is in game (window.gameClient.ingame); false with no tab. */
+export async function tabInGame(cdpOrigin: string, botName: string): Promise<boolean> {
+    const base = cdpOrigin.replace(/\/+$/, '');
+    const [tab] = botTabs((await (await fetch(`${base}/json/list`)).json()) as CdpTarget[], botName);
+    if (!tab?.webSocketDebuggerUrl) return false;
+    const out = (await cdpCommand(tab.webSocketDebuggerUrl, 'Runtime.evaluate', {
+        expression: '!!(window.gameClient && window.gameClient.ingame)',
+        returnByValue: true,
+    })) as { result?: { value?: unknown } };
+    return out.result?.value === true;
+}
+
 /**
- * Navigate this bot's tab to `url` (a full reload with the credentials, which
+ * Navigate this bot's tab to `url` (a full reload with a login token, which
  * triggers the page's one auto-login), closing any duplicate tab that would
  * fight it for the account; open one if there is none.
  */
