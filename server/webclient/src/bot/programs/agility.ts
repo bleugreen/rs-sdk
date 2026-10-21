@@ -475,7 +475,8 @@ export function createAgility(params: ProgramParams): TickProgram {
                     ctx.progress();
                     phase = { kind: 'click' };
                 } else {
-                    if (t === phase.since || t - phase.since >= 40) {
+                    // a click that lands inside the fall's p_delay is dropped, so retry soon
+                    if (t === phase.since || t - phase.since >= 12) {
                         if (++phase.tries > 5) return ctx.fault('could not climb out of the pit', summary());
                         phase.since = t;
                         if (!clickByOption(ctx, /climb-up/i)) {

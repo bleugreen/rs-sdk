@@ -173,6 +173,16 @@ describe('agility course', () => {
         expect(any.status.endedTick).toBe(60);
     });
 
+    test('in the pit with no ladder listed yet, it clicks the known pit ladder', () => {
+        const h = new Harness('agl', createAgility);
+        h.start('agl', { course: 'wilderness', laps: 1 }, makeState({ tick: 1, x: 3001, z: 10357 }));
+        const first = h.step(makeState({ tick: 2, x: 3001, z: 10357 }));
+        expect(first.map(s => s.action)).toMatchObject([{ type: 'interactLoc', locId: 1755, x: 3005, z: 10363, optionIndex: 1 }]);
+        expect(h.status.phase).toBe('running');
+        // still in the pit 12 ticks later: try again
+        expect(h.step(makeState({ tick: 14, x: 3001, z: 10357 })).length).toBe(1);
+    });
+
     test('startStep auto picks the step from the tile', () => {
         const h = new Harness('agl', createAgility);
         h.start('agl', { course: 'wilderness', laps: 1, startStep: 'auto' }, makeState({ tick: 1, x: 2994, z: 3945 }));
