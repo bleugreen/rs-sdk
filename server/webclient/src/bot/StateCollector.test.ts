@@ -216,6 +216,23 @@ describe('BotStateCollector combat state', () => {
     });
 });
 
+describe('BotStateCollector positions', () => {
+    test('reports where the server put entities, not where they are drawn', () => {
+        const client = createClient();
+        // The server stepped the player from tile (1,1) to (2,1) and the rat from
+        // (2,1) to (3,1); the browser is still easing both sprites across the
+        // old tiles. The lite client snaps x/z to the server tile instead.
+        Object.assign(client.localPlayer, { x: 128 + 64 + 40, z: 192, routeX: Int32Array.of(2), routeZ: Int32Array.of(1), size: 1 });
+        Object.assign(client.npc[7], { x: 256 + 64 + 40, z: 192, routeX: Int32Array.of(3), routeZ: Int32Array.of(1), size: 1 });
+        const collector = new BotStateCollector(client);
+
+        const player = (collector as any).collectPlayerState(1, 100);
+        expect([player.worldX, player.worldZ, player.x]).toEqual([3202, 3201, 2 * 128 + 64]);
+        const [rat] = (collector as any).collectNearbyNpcs(100);
+        expect([rat.x, rat.z, rat.distance]).toEqual([3203, 3201, 1]);
+    });
+});
+
 describe('BotStateCollector op feedback', () => {
     test('counts a map-flag unset as a rejection only while the player stands still', () => {
         const client = createClient();

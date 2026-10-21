@@ -49,23 +49,48 @@ cd server/webclient && bun src/lite/runner.ts <name>   # headless client, leave 
 bun bots/<name>/<script>.ts                   # scripts import runScript from sdk/runner
 ```
 
-Do not use the browser client or MCP `execute_code` for rapid-fire tests; the
-browser freezes. Scripts drive the lite client.
+Lab scripts drive the lite client; the browser webclient holds the same loops (next
+section). Do not use MCP `execute_code` for rapid-fire tests.
 
 ### Which client a number was taken on
 
 Every measured number under `docs/speedrun/skills/` was taken on the **headless lite
 client** (`server/webclient/src/lite/`) unless its row says otherwise. The scored run
 will drive the **browser webclient** in a visible tab, because the recording must be
-first-person. The two clients do not share their tick handling: the #20 fix (publish a
-tick after it is fully decoded) is in the lite client. The browser client has frozen under
-rapid-fire input in this lab (above). So no figure here has yet been confirmed in the run
-configuration. The figures most at risk are those that depend on landing a packet on a
-predicted tick: the knife-starter loops (`tick-manipulation.md`) and the 2-tick
-pickpocket (`thieving.md`). Pure server cadences (a 4-tick woodcutting roll, 5-tick fly
-fishing, lap obstacles) do not depend on the client. Rehearsals in the exact run
-configuration settle this. Until then, gate the knife loops at run time with the
-on-time probe (`tickmanip-latency.ts`) and fall back to the plain loops when it fails.
+first-person. Since cairn://p/rs/82 the browser client has the lite client's tick
+handling: it publishes a tick only after all of the tick's packets are decoded, runs the
+SDK's actions in the game loop before that cycle's flush, and drains a burst of actions in
+one cycle. The bot state reports entities at their server tile, not their eased draw
+position.
+
+The earlier warning that the browser freezes under rapid-fire input did not reproduce. In a
+visible tab on a quiet Mac, the stock client sent 4 packets per cycle at 71 fps with no
+event-loop stall over 50 ms. What the stock client did have was a tick of extra latency on
+every reaction, the same defect #20 fixed in lite. Measured 2026-10-21 in a visible Chrome
+tab on bgsrv-mac (16 cores), local engine at `NODE_TICKRATE=300`, with the load average
+beside each number:
+
+| Measure | Browser, rs/82 | Browser, stock | Lite (skills docs) | Load |
+|---|---|---|---|---|
+| `tickmanip-latency.ts`, 60 trials | 60 at 1 tick | 58 at 2, 2 at 3 | 60 at 1 | 10-12 (fixed), 3 (stock) |
+| 5-packet burst every tick, 3,000 ticks | 3,000 walks land on the next tick, 0 unresolved, 71 fps, no stall over 50 ms | | | 3 |
+| Knife mining, respawn 13, 200 ores | 3.05 ticks per ore (192 of 194 gaps at 3) | | 3.00 | 15-17 |
+| Knife fly fishing, Lumbridge, level 26 to 99 | 4.16 ticks per catch over 674 catches, gap 3 on 516 of 665 | | about 5.1 | 13-15 |
+| Pickpocket, Knight of Ardougne, level 55 | after a success 2 ticks on 170 of 181; after a fail 11 on 90 of 118 | | 2 / 11 | 4 |
+| Pickpocket, level 99 | 2 ticks on 261 of 276; 0.35 rolls per tick | | 2 / 11 | 3 |
+
+Ticks per catch depends on level (catch chance), so compare the fishing row's gap
+histogram (the 3-tick knife cadence) rather than its average. The speedrun/lib watchdog
+still catches a wedged tab: it relaunched 3.1 s after the wedge.
+
+**Against the demo.** `server/webclient/proxy.ts` serves this build's bot bundle in front
+of a remote world, and the page takes `?server=` (game socket) and `?gateway=` (overlay
+gateway) parameters (`src/util/Endpoints.ts`). From bgsrv-mac, a throwaway account logged
+into rs-sdk-demo.fly.dev from this build, and the probe run through a loopback gateway and
+the page's overlay read 13 at 1 tick, 46 at 2 and 1 at 3 (load 2.3). That is the relay cost
+described under "Direct path and relay" below, not a client defect. Reactive loops against
+the demo therefore belong in the page (cairn://p/rs/97), and the knife loops still sit
+behind the on-time probe at run time.
 
 ## Running several labs on one machine
 

@@ -29,8 +29,16 @@ export class BotOverlay implements GatewayMessageHandler {
     private actionQueue = new BotActionQueue();
     private waitTicks: number = 0;
 
-    // Server tick counter - increments once per PLAYER_INFO packet (~420ms)
+    // Server tick counter - advances by one per decoded PLAYER_INFO (one per server tick)
     private serverTick: number = 0;
+
+    /**
+     * Most queued actions run in one game cycle. A script that sends a burst
+     * (knife on logs, the menu button, a drop and a click in one tick) gets it
+     * out in one websocket frame whatever the frame rate; the cap only bounds a
+     * runaway queue's cost to a single cycle.
+     */
+    private static readonly MAX_ACTIONS_PER_CYCLE = 10;
 
     // Activity tracking for favicon
     private lastActionTime: number = 0;
@@ -55,9 +63,8 @@ export class BotOverlay implements GatewayMessageHandler {
         // Connect to gateway
         this.gateway.connect();
 
-        // Register for game tick callback - sync state on actual server ticks
-        // This fires when PLAYER_INFO packet is received (~420ms intervals)
-        (this.client as any).setOnGameTickCallback(this.onGameTick.bind(this));
+        // Publish state once per server tick, after the client has decoded all of it
+        this.client.setOnGameTickCallback(this.onGameTick.bind(this));
 
         // Start activity check interval for favicon state
         this.activityCheckInterval = setInterval(() => this.checkActivity(), 500);
@@ -76,9 +83,13 @@ export class BotOverlay implements GatewayMessageHandler {
         }
     }
 
-    // Called when server tick is received (PLAYER_INFO packet processed)
-    private onGameTick(): void {
-        this.serverTick++;
+    /**
+     * Called once the client has decoded a whole server tick (or several, if it
+     * fell behind) - Client.setOnGameTickCallback. In-page tick programs hook
+     * in here: their packets written now leave in this game-loop pass.
+     */
+    private onGameTick(ticks: number): void {
+        this.serverTick += ticks;
         this.sendState();
     }
 
@@ -159,6 +170,7 @@ export class BotOverlay implements GatewayMessageHandler {
 
     // ============ Main Tick Loop ============
 
+    /** Called once per game cycle by Client.gameLoop, before it flushes outgoing packets. */
     tick(): void {
         for (const expired of this.actionQueue.expirePending()) {
             const result: ActionResult = {
@@ -198,47 +210,56 @@ export class BotOverlay implements GatewayMessageHandler {
             return;
         }
 
+        for (let n = 0; n < BotOverlay.MAX_ACTIONS_PER_CYCLE; n++) {
+            if (!this.runNextAction()) return;
+        }
+    }
+
+    /**
+     * Start the next queued action - the overlay's action entry point: every
+     * SDK action (and any new one, such as starting or stopping an in-page
+     * program) is dispatched here through ActionExecutor.execute, and its result
+     * and a fresh state go back through finishAction. True when it completed synchronously, so
+     * the following one may run in the same cycle; false when the queue is
+     * empty or an asynchronous action or a wait now holds it.
+     */
+    private runNextAction(): boolean {
         // Never overlap an asynchronous action with the next queued action.
-        if (this.actionQueue.active) return;
+        if (this.actionQueue.active) return false;
 
         const queued = this.actionQueue.startNext();
-        if (queued) {
-            const action = queued.action;
-            console.log(`[BotOverlay] Executing action: ${action.type}`);
-            const resultOrPromise = this.executor.execute(action);
+        if (!queued) return false;
 
-            // Handle async actions if any
-            if (resultOrPromise instanceof Promise) {
-                resultOrPromise.then(result => {
-                    console.log(`[BotOverlay] Async action result: ${result.success ? 'success' : 'failed'} - ${result.message}`);
-                    this.finishAction(queued, result);
-                }).catch(e => {
-                    console.error(`[BotOverlay] Async action error:`, e);
-                    this.finishAction(queued, {
-                        success: false,
-                        message: `Error: ${e}`,
-                        phase: 'completion',
-                        reason: 'execution_error'
-                    });
+        const action = queued.action;
+        console.log(`[BotOverlay] Executing action: ${action.type}`);
+        const resultOrPromise = this.executor.execute(action);
+
+        if (resultOrPromise instanceof Promise) {
+            resultOrPromise.then(result => {
+                console.log(`[BotOverlay] Async action result: ${result.success ? 'success' : 'failed'} - ${result.message}`);
+                this.finishAction(queued, result);
+            }).catch(e => {
+                console.error(`[BotOverlay] Async action error:`, e);
+                this.finishAction(queued, {
+                    success: false,
+                    message: `Error: ${e}`,
+                    phase: 'completion',
+                    reason: 'execution_error'
                 });
-                return;
-            }
-
-            const result = resultOrPromise;
-            console.log(`[BotOverlay] Action result: ${result.success ? 'success' : 'failed'} - ${result.message}`);
-
-            // Handle wait action specially
-            if (action.type === 'wait' && result.success) {
-                this.waitTicks = action.ticks || 1;
-                return;
-            }
-
-            this.finishAction(queued, result);
-            return;
+            });
+            return false;
         }
 
-        // Note: Regular state sync now happens via onGameTick() callback
-        // which fires when PLAYER_INFO packet arrives (once per server tick)
+        const result = resultOrPromise;
+        console.log(`[BotOverlay] Action result: ${result.success ? 'success' : 'failed'} - ${result.message}`);
+
+        if (action.type === 'wait' && result.success) {
+            this.waitTicks = action.ticks || 1;
+            return false;
+        }
+
+        this.finishAction(queued, result);
+        return true;
     }
 
     // ============ State Collection ============
@@ -383,7 +404,7 @@ export class BotOverlay implements GatewayMessageHandler {
         this.gateway.disconnect();
 
         // Clean up callbacks
-        (this.client as any).setOnGameTickCallback(null);
+        this.client.setOnGameTickCallback(null);
         if (this.ui.isPacketLoggingEnabled()) {
             this.client.setPacketLogCallback(null);
         }
