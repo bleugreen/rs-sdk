@@ -138,8 +138,9 @@ The trial: on a fresh tick, walk one tile, and count the ticks until the step sh
 | Ashburn | private relay, lite on main after #78 | 04:13 | iad | none | 1,645-1,669 | 60 | 40 | 20 | 0 | same run |
 | Home (Mac) | direct, +0 ms, **host loaded** | 03:46 | lax | 56-86 ms | 1,674 | 15 | 0 | 14 | 1 | hour sample; probe turnaround p50 10 ms, p90 76 ms (normally under 1 ms), so not a clean reading |
 | Ashburn VM (operator) | direct and relay | pending | | | | | | | | placeholder |
-| Browser tab, overlay path (rs/82's branch) | browser | pending | | | | | | | | rs/95 |
-| Browser tab, in-page program (rs/97's branch) | browser | pending | | | | | | | | rs/95 |
+| Ashburn (Azure eastus2) | direct lite probe, reference for the row below | 04:24-04:26 | iad | none; TCP 6-7 ms | 1,670-1,677 | 60 | 49 | 11 | 0 | [rs/95](https://github.com/bleugreen/rs-sdk/actions/runs/39591572716) |
+| Ashburn (Azure eastus2) | **browser tab, overlay to a loopback gateway** (rs/82 @ 8f98807c7, = #81); **overlay, burst minute: gate failed** (5.3 catch-ups per minute) | 04:26-04:27 | iad | none; TCP 6-7 ms | 1,670-1,677 | 60 | 33 | 27 | 0 | rs/95, same run; calm row pending |
+| Ashburn | browser tab, in-page program (rs/97's branch) | pending | | | | | | | | rs/95; calm row pending |
 
 Runs 2, 4 and 7 used the same relay path from the same region; 51/9, 32/28 and 40/20 show how
 much that path varies between draws. Across the three paired Ashburn runs the direct path landed
@@ -171,7 +172,19 @@ from the trigger frame to the next frame:
 | 200 ms or more after | 6 of 171 | 6 of 46 (the calm runs: 0 of 125) |
 
 So P(miss | next interval under 200 ms) = 14/29 = 48% (100% at 04:13), against P(miss | otherwise)
-= 6/171 = 3.5%, all from the overloaded run. The misses at 04:13 that followed a normal interval
+= 6/171 = 3.5%, all from the overloaded run. cairn://p/rs/102's finer cut over 255 trials puts the
+edge at about 150 ms: next interval under 50 ms, 5 of 5 missed; 50-100, 4 of 4; 100-150, 3 of 4;
+150-200, 2 of 16; 200-250, 1 of 21; 250 or more, 9 of 205. A bare count of intervals under 200 ms
+is no use as a signal (clean minutes have 6-18 of them from arrival jitter alone); the signal is a
+**catch-up**: an interval under 150 ms immediately after one over 350 ms.
+
+**Counting ticks from raw frames needs care.** The demo sends small non-tick frames (1-4 bytes)
+between ticks, and a catch-up tick can arrive within a few ms of the one before it. Grouping
+frames 60 ms apart into ticks, as the probe's `frameStats` first did (its old `under200` field),
+hides catch-up ticks inside their predecessors. The scripts now group frames of at least 5 bytes
+that arrive under 8 ms apart, which rs/102 measured recovering 99.4% of decoded ticks. Even so,
+raw-frame reconstruction is noisy by about one catch-up per minute (it reads 0.8-1.6 per minute
+in runs that rs/102's decoded ticks count as 0), so a gate should count from decoded ticks. The misses at 04:13 that followed a normal interval
 mostly came after a long previous tick (2 of the 5 trials whose previous interval exceeded 400 ms).
 The Quebec runner's 4 misses all followed normal intervals; its 24 ms connect, not overruns,
 explains them.
@@ -438,34 +451,48 @@ the gate would correctly keep the knife off on trees and fly.
 | 02:45-02:50 | Mac, direct session | 1,567-1,660 | 118 / 259 / 357 / 580 ms | `data/mac-0247.json` |
 | 02:43 | Ashburn, direct session | ~1,655 | p50 245 / p90 348 / max 879 ms | rs/86 run 4 |
 | 01:54-02:45 | GitHub runners, relay publication | 1,549-1,663 | p10 224-245 / p50 289-306 / p90 368-388 / max 486-670 ms | rs/86 runs 1-4 |
-| 03:47-03:57 | Mac, one session, 10 min, no input | 1,576-1,680 | 179 / 299 / 404 / 803 ms; 210 of 2,021 intervals over 400 ms (10%) | hour sample |
-| 04:00-04:12 | fedora, one session, 10 min (load 19 of 32 cores) | 1,623-1,675 | 171 / 291 / 394 / 794 ms; 194 of 2,071 over 400 ms (9%). Direct reactions from home: +0 ms 1/14/0, +25 ms 1/14/0 | fedora sampler 1 |
+| 03:47-03:57 | Mac, one session, 10 min, no input. *Home vantage, reference only: inflated by path jitter* | 1,576-1,680 | 179 / 299 / 404 / 803 ms | hour sample |
+| 04:00-04:12 | fedora, one session, 10 min. *Home vantage, reference only: inflated by path jitter* | 1,623-1,675 | 171 / 291 / 394 / 794 ms. Direct reactions from home: +0 ms 1/14/0, +25 ms 1/14/0 | [`data/fedora-0400.json`](data/fedora-0400.json), [`data/fedora-samples.log`](data/fedora-samples.log) |
 
-The interval p10 of 118 ms from home is the engine's catch-up after a long tick (`World.ts` lets
-the next cycle start early to recover up to two ticks of backlog). Samples at other hours are
-still to come (open question 3).
+The interval p10 of about 120 ms is the engine's catch-up after a long tick (section 2).
 
-**How often would a steadiness gate pass?** Over 1-minute windows of tick arrivals
-(`demo-latency-analyze.ts --window-min=1`):
+**Home windows cannot score overruns.** cairn://p/rs/102 aligned the fedora 04:00 window tick by
+tick with the Ashburn pair at 04:04 that ran inside it. Home sees the same ticks 63-73 ms later
+(223 of 245 matched within 15 ms, interval correlation 0.67), and it does see the server's real
+overruns, but the home path adds single-tick hiccups of its own that look exactly like an overrun
+and its catch-up (480 then 101 ms at home where Ashburn saw 273 then 307). Over the same 1.2
+minutes, home counted 13 catch-ups and Ashburn 0; ticks over 450 ms, 14 against 8. So every home
+steadiness number above is reference only, and the steadiness gate must be measured from the run
+machine (section 10). The fedora sampler was stopped after its first sample for that reason; its
+raw output is in `data/fedora-0400.json` and `data/fedora-samples.log`.
 
-| Series | Windows passing p90 <= 400 ms | Passing p90 <= 400 and max <= 600 ms |
-| --- | --- | --- |
-| Ashburn direct sessions, 02:43-04:13 (one window each, plus three at 02:48) | 7 of 8; the one failure is 04:13 | 2 of 8; rejects the three 60/60 runs at 02:43, 03:17 and 04:04 |
-| fedora, 10-minute sample at 04:00, 1,623-1,675 online | 11 of 19 | 1 of 19 |
+**Steadiness from Ashburn**, per direct session (one minute or so each; p90 from
+`demo-latency-analyze.ts`, catch-ups per minute counted by rs/102 from decoded ticks):
 
-The max criterion does not separate good minutes from bad: single long ticks are common and
-harmless on their own. The p90 criterion does, on this data: it passes every Ashburn session that
-landed 60 of 60 and fails the one that did not. At 04:00 a little over half the minutes would
-pass.
+| Session | Direct result | Tick p90 | Catch-ups per minute | Passes p90 <= 400 and catch-ups <= 1 |
+| --- | --- | --- | --- | --- |
+| 02:43 eastus | 60/0/0 | 374 ms | 0 | yes |
+| 03:05 Quebec | 56/4/0 | 386 ms | 0.8 | yes (its misses come from its 24 ms connect) |
+| 03:17 eastus | 60/0/0 | 373 ms | 0 | yes |
+| 04:04 eastus | 60/0/0 | 372 ms | 0 | yes |
+| 04:13 eastus | 40/16/4 | 486 ms | 22.6 | **no** |
+| 04:24-04:37 eastus2 (rs/95's page session) | 49/11/0 | 395 ms | 5.3 | **no** (catch-ups) |
 
-**Should the run go at a quiet hour?** Not settled. Overruns are load-dependent, so a quieter
-hour may have fewer of them, but 04:04 (1,673 online) had none while 04:13 (1,645-1,669) had many,
-so the player count alone does not predict them. A quieter hour also costs elsewhere: rocks and
-trees respawn faster with more players online
-(`server/content/scripts/general/scripts/player_count.rs2:1-4`, capped at 2,000), and rs/2 costs
-Mining at about 4,034 ticks at 1,260 online against about 4,288 at a quiet hour. The fedora sampler
-(one session, 45 minutes apart) is collecting the hour series; until it shows a pattern, start at
-a normal hour and let the run-night gate decide minute by minute (section 10).
+A cap on the maximum interval does not separate good minutes from bad: single long ticks are common
+and harmless on their own, and a 600 ms cap rejected the minutes at 02:43, 03:17 and 04:04 that
+scored 60 of 60. The p90 and catch-up criteria do, on this data. rs/95's 04:24 session shows why
+the catch-up count is needed as well as p90: its p90 of 395 ms passes, but 5.3 catch-ups per minute
+cost the direct path 11 of 60.
+
+**Should the run go at a quiet hour?** Not settled, and home data cannot settle it. Overruns are
+load-dependent, but 04:04 (1,673 online) had none while 04:13 (1,645-1,669) had many, so the player
+count alone does not predict them. A quieter hour also costs elsewhere: rocks and trees respawn
+faster with more players online (`server/content/scripts/general/scripts/player_count.rs2:1-4`,
+capped at 2,000), and rs/2 costs Mining at about 4,034 ticks at 1,260 online against about 4,288 at
+a quiet hour. cairn://p/rs/102 samples the Ashburn pair overnight, with about 7.5 continuous minutes
+of tick spacing per pair (`--phases=react,sample --minutes=6`); its section on overrun bursts will
+follow in its own change. Until then: start at a normal hour and let the run-night gate decide
+minute by minute (section 10).
 
 ## 10. Run-host recommendation
 
@@ -504,22 +531,36 @@ through the relay) into 1. On the route:
 route (local webclient build, loopback gateway, in-page probe; cairn://p/rs/96 and rs/97), at the
 real player count:
 
+Preconditions:
+
 1. `GET /playercount`, recorded.
 2. `flyio-debug` shows `nr=iad`, `sr=iad`, no mesh hop; TCP connect p50 under 5 ms (rs/86's
    workflow refuses to log in above 10 ms).
-3. The direct in-page probe lands **60 of 60 on the next tick (floor 58)**.
-4. The blind sender lands at least 95% on the aimed tick, and a burst of the knife's bundle lands
+
+**The gate**, over the probe's minute, all three measured from the run machine itself (a distant
+vantage adds path jitter that looks like overruns, section 9):
+
+- **(a)** the direct in-page probe lands **at least 58 of 60** reactions on the next tick;
+- **(b)** tick publication interval **p90 <= 400 ms**;
+- **(c)** **at most 1 catch-up per minute**, a catch-up being an interval under 150 ms immediately
+  after one over 350 ms, counted from decoded ticks (not from raw frames grouped 60 ms apart, which
+  hides them; section 3).
+
+If any fails, wait and re-measure; do not start on a minute of overruns. No cap on the maximum
+interval: it rejects minutes that scored 60 of 60. Keep checking during the run: a reactive loop
+that sees a catch-up should expect its next reaction to miss.
+
+Also before starting:
+
+3. The blind sender lands at least 95% on the aimed tick, and a burst of the knife's bundle lands
    on one tick.
-5. **Tick steadiness over the probe's minute: publication interval p90 <= 400 ms.** If it fails,
-   wait and re-measure; do not start on a minute of overruns. A cap on the maximum interval (for
-   example 600 ms) is not recommended: on the data so far it rejects the minutes that scored 60
-   of 60. Keep checking during the run; a reactive loop that sees back-to-back ticks (an interval
-   under 50 ms) should expect its next reaction to miss.
-6. If the SDK drives any step that reacts, the relay probe for that step, gated by
+4. If the SDK drives any step that reacts, the relay probe for that step, gated by
    `speedrun/lib/hostgate.ts`.
 
 Until the in-page probe exists, `demo-latency-probe.ts --phases=react,burst,blind` from the run
-machine is the stand-in for items 3 and 4.
+machine is the stand-in for (a) and item 3, and `demo-latency-analyze.ts` over its JSON gives (b);
+for (c), count catch-ups over the probe's decoded tick timeline (`react.ticks` in the JSON), as
+rs/102 does.
 
 ## 11. Open questions
 
@@ -527,9 +568,9 @@ machine is the stand-in for items 3 and 4.
 2. **The relay fix's tail.** rs/98's fixed lite runner landed 60 of 60 from Ashburn (section 5).
    State collection's tail (40 ms p90 on a loaded host) is the remaining risk; run-night
    re-measures keep testing it.
-3. **Other hours.** The reaction distribution and tick intervals at two or three other hours and
-   player counts. The sampler command: `demo-latency-probe.ts --phases=react,sample
-   --react-delay=0,25 --trials=15 --minutes=10`.
+3. **Other hours.** The reaction distribution and tick steadiness at other hours and player
+   counts, from Ashburn: cairn://p/rs/102's overnight sampler (`--phases=react,sample --minutes=6`
+   per pair). Home samples cannot answer this (section 9).
 4. **The HTTP wait.** Ashburn's 404 waits run up to about 380 ms, longer than the reaction data
    allows for the engine's busy time. Other work served between cycles is the likely cause
    (inferred); it does not affect the run's route.
@@ -541,13 +582,12 @@ machine is the stand-in for items 3 and 4.
    between the home and Ashburn delay sweeps (section 3): either the game socket's home RTT is
    lower than `mrtt` suggests, or each account's frame leaves at a different point in the
    engine's output batch. A sweep from two accounts at once from Ashburn would separate them.
-8. **The browser-path rows** (rs/95): the tab's overlay on rs/82's branch and the in-page program
-   on rs/97's branch.
-
+8. **The browser-path rows** (rs/95). The overlay row is in, from a burst minute that failed the
+   gate (section 3); a calm-minute overlay row and both in-page rows are pending.
 9. **When overruns happen.** They took the Ashburn direct path from 60/60 at 04:04 to 40/16/4 at
-   04:13 with about the same player count. The fedora sampler's hour series, with tick p90 per
-   window, should show whether they cluster by hour, by player count, or by something else on the
-   demo (saves every 15 minutes at `World.PLAYER_SAVERATE`, other users' load).
+   04:13 with about the same player count. rs/102's overnight Ashburn series should show whether
+   they cluster by hour, by player count, or by something else on the demo (saves every 15 minutes
+   at `World.PLAYER_SAVERATE`, other users' load).
 
 Corrected: an earlier draft ruled out long server ticks as a cause. They are a cause, through the
 engine's catch-up scheduling (sections 2 and 3).
