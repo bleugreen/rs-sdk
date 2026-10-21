@@ -77,7 +77,9 @@ for (let i = 0; i < n; i++) {
     const out = r.logout.lastInWorldTick - r.logout.clickTick;
     const cost = out + probeTick;
     costs.push(cost);
-    result('relog', { i, clickTick: r.logout.clickTick, lastInWorldTick: r.logout.lastInWorldTick, out, firstStateTick: newFirst, loginTick: r.loginTick, in: probeTick, cost, effect: openTick - probeTick, bankOpenTick: openTick, loginWallMs: r.loginWallMs, attempts: r.attempts });
+    // out counts in-world ticks after the click (scored); logoutWallMs and
+    // loginWallMs are wall time, of which only the logout's overlaps in-world ticks.
+    result('relog', { i, clickTick: r.logout.clickTick, lastInWorldTick: r.logout.lastInWorldTick, out, logoutWallMs: r.logout.wallMs, firstStateTick: newFirst, loginTick: r.loginTick, in: probeTick, cost, effect: openTick - probeTick, bankOpenTick: openTick, loginWallMs: r.loginWallMs, attempts: r.attempts, at: new Date().toISOString() });
 }
 const sorted = [...costs].sort((a, b) => a - b);
 result('relog-cost', { n: costs.length, costs, min: sorted[0], median: sorted[Math.floor((sorted.length - 1) / 2)], max: sorted[sorted.length - 1], mean: Number((costs.reduce((a, b) => a + b, 0) / costs.length).toFixed(2)) });
