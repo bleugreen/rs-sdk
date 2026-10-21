@@ -10,7 +10,8 @@ import {
     parseFleetConfig
 } from './fleet-config';
 import { applyBankReport, emptyLedger, LedgerWriter, parseLedger, readLedger } from './ledger';
-import { Backoff, backoffDelay, LoginGate } from './backoff';
+import { Backoff, backoffDelay, LoginLimiter, loginFailurePolicy } from './backoff';
+import { parseEvents, summariseEvents, type FleetEvent } from './events';
 import { createAccountEnv, generatePassword, nextAccountName, parseBotEnv, parseRange, rangeNames } from './accounts';
 
 const acct = (n: number, extra: Record<string, unknown> = {}): Record<string, unknown> => ({
@@ -168,16 +169,82 @@ describe('backoff', () => {
         expect(d).toBeLessThanOrEqual(15_000);
     });
 
-    test('login gate spaces turns across callers', async () => {
+});
+
+describe('login limiter', () => {
+    const policy = { perMinute: 4, burst: 3, minSpacingMs: 4000 };
+
+    test('a burst, then the sustained rate, never closer than the spacing', () => {
+        const limiter = new LoginLimiter(policy, () => 0);
+        // 3 tokens spaced 4 s, then one token per 15 s (4 per minute).
+        expect(Array.from({ length: 6 }, () => limiter.reserve())).toEqual([0, 4000, 8000, 15000, 30000, 45000]);
+    });
+
+    test('a whole fleet dropping at once comes back gradually', () => {
+        const limiter = new LoginLimiter(policy, () => 0);
+        const slots = Array.from({ length: 40 }, () => limiter.reserve());
+        // 40 accounts take about 9.5 minutes, and no minute holds more than burst + rate.
+        expect(slots.at(-1)!).toBeGreaterThan(9 * 60_000);
+        for (let m = 0; m < 10; m++) {
+            expect(slots.filter(t => t >= m * 60_000 && t < (m + 1) * 60_000).length).toBeLessThanOrEqual(policy.burst + policy.perMinute);
+        }
+    });
+
+    test('the bucket refills while idle, up to the burst', () => {
         let clock = 0;
-        const waits: number[] = [];
-        const gate = new LoginGate(4000, () => clock, async ms => {
-            waits.push(ms);
+        const limiter = new LoginLimiter(policy, () => clock);
+        for (let i = 0; i < 3; i++) limiter.reserve();
+        clock = 10 * 60_000;
+        expect([limiter.reserve(), limiter.reserve(), limiter.reserve(), limiter.reserve()].map(t => t - clock)).toEqual([0, 4000, 8000, 15000]);
+    });
+
+    test('a pause holds every login, including callers already waiting', async () => {
+        let clock = 0;
+        const limiter = new LoginLimiter(policy, () => clock, async ms => {
+            clock += ms;
+            if (clock >= 4000 && clock < 5000) limiter.pause(120_000); // a refusal lands while this caller waits
         });
-        await Promise.all([gate.turn(), gate.turn(), gate.turn()]);
-        expect(waits).toEqual([4000, 8000]);
-        clock = 20_000;
-        expect(await gate.turn()).toBe(0);
+        await limiter.take(); // t=0
+        await limiter.take(); // booked for 4000, paused meanwhile
+        expect(clock).toBeGreaterThanOrEqual(120_000);
+    });
+
+    test('refusal policy: code 16 backs off hard and pauses the fleet; credentials need a person', () => {
+        expect(loginFailurePolicy(16)).toEqual({ accountDelayMs: 300_000, fleetPauseMs: 120_000, needsAttention: false });
+        expect(loginFailurePolicy(16, 2).accountDelayMs).toBe(600_000);
+        expect(loginFailurePolicy(16, 9).accountDelayMs).toBe(1_200_000);
+        expect(loginFailurePolicy(8).fleetPauseMs).toBe(60_000);
+        expect(loginFailurePolicy(3).needsAttention).toBe(true);
+        expect(loginFailurePolicy(5)).toEqual({ accountDelayMs: 0, fleetPauseMs: 0, needsAttention: false });
+    });
+});
+
+describe('events', () => {
+    const at = (iso: string, type: FleetEvent['type'], account?: string, extra: Record<string, unknown> = {}): FleetEvent => ({ t: iso, type, ...(account ? { account } : {}), ...extra });
+
+    test('clusters are minutes where trouble hit two or more accounts, or the gateway', () => {
+        const events = [
+            at('2026-10-21T05:04:10Z', 'sdk_stall', 'cairn_h50'),
+            at('2026-10-21T05:04:40Z', 'sdk_stall', 'cairn_h51'),
+            at('2026-10-21T05:10:00Z', 'session_end', 'cairn_h01'),
+            at('2026-10-21T05:20:05Z', 'gateway_exit', undefined, { code: 130 }),
+            at('2026-10-21T05:21:00Z', 'login_error', 'cairn_h02', { code: 16 }),
+            at('2026-10-21T05:21:30Z', 'login_error', 'cairn_h03', { code: 16 }),
+            at('2026-10-21T05:22:00Z', 'login', 'cairn_h02'),
+            at('2026-10-21T03:00:00Z', 'session_end', 'cairn_h09') // outside the hour
+        ];
+        const s = summariseEvents(events, Date.parse('2026-10-21T05:30:00Z'));
+        expect(s.counts).toEqual({ sdk_stall: 2, session_end: 1, gateway_exit: 1, login_error: 2, login: 1 });
+        expect(s.loginErrors).toEqual({ '16': 2 });
+        expect(s.clusters.map(c => [c.minute, c.accounts])).toEqual([
+            ['2026-10-21T05:21:00.000Z', ['cairn_h02', 'cairn_h03']],
+            ['2026-10-21T05:20:00.000Z', []],
+            ['2026-10-21T05:04:00.000Z', ['cairn_h50', 'cairn_h51']]
+        ]);
+    });
+
+    test('a torn last line is skipped', () => {
+        expect(parseEvents('{"t":"2026-10-21T05:00:00Z","type":"login"}\n{"t":"2026-')).toHaveLength(1);
     });
 });
 
