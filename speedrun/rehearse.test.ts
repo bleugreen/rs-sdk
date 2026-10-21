@@ -29,7 +29,7 @@ describe('parseArgs', () => {
         expect(parseArgs(['--skill=x', '--bot=b', '--gate-bot=g', '--client=lite']).gateProbeTrials).toBe(0);
         expect(parseArgs(['--skill=x', '--bot=b', '--gate-bot=g', '--gate-probe-trials=20']).gateProbeTrials).toBe(20);
         expect(() => parseArgs(['--skill=x', '--bot=b', '--gate-probe-trials=20'])).toThrow('needs --gate-bot');
-        expect(() => parseArgs(['--skill=x', '--bot=b', '--gate-bot=b'])).toThrow('separate gate account');
+        expect(() => parseArgs(['--skill=x', '--bot=b', '--gate-bot=b'])).toThrow('(--gate-bot, b) must be separate');
     });
 
     test('off a local world the gate account defaults to cairn_twin, with its tab probes', () => {
