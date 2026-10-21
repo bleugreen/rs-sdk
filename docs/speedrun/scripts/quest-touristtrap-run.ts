@@ -22,6 +22,8 @@ import { cheat, clearInv, give, QuestBot, tele, tick, waitUntil } from './quest-
 const FROM = process.argv[3] ?? 'start';
 const THIEVING = parseInt(process.argv[4] ?? '25');
 const MELEE = parseInt(process.argv[5] ?? '70');
+// `pray` (argv[6]): Prayer 43, and Protect from Melee switched on whenever a Rowdy Guard attacks
+const PRAY = process.argv[6] === 'pray';
 
 await runScript(async ({ bot, sdk }) => {
     await sdk.waitForReady(60_000);
@@ -33,6 +35,7 @@ await runScript(async ({ bot, sdk }) => {
 
     // ---------- setup, not timed ----------
     const statsSet: [string, number][] = [['hitpoints', MELEE], ['attack', MELEE], ['strength', MELEE], ['defence', MELEE], ['thieving', THIEVING], ['smithing', 20], ['fletching', 10], ['agility', 1]];
+    if (PRAY) statsSet.push(['prayer', 43]);
     for (const [s, l] of statsSet) await cheat(sdk, `setstat ${s} ${l}`);
     await cheat(sdk, 'setvar desertrescue_map_mechanisms 0');
     await clearInv(sdk);
@@ -43,21 +46,30 @@ await runScript(async ({ bot, sdk }) => {
     // Rowdy Guards (level 43, huntmode cowardly, huntrange 1) attack a player
     // who passes next to them unless the player is too strong for them. If
     // one has, kill it and report the cost.
-    const rowdy: { segment: string; ticks: number; hpLost: number }[] = [];
+    const rowdy: { segment: string; ticks: number; hpLost: number; prayerUsed: number }[] = [];
+    const prayerPts = () => sdk.getPrayerState()?.prayerPoints ?? 0;
     const defend = async () => {
         const me = sdk.getState()!.player!;
         const hit = me.combat?.inCombat || (me.combat?.lastDamageTick ?? -1) >= tick(sdk) - 6;
         const g = sdk.getNearbyNpcs().filter(n => n.id === q.id(q.NPC, 'rowdymineguard') && n.distance <= 2)[0];
         if (!hit || !g) return false;
-        const t0 = tick(sdk), hp0 = hp();
+        const t0 = tick(sdk), hp0 = hp(), pr0 = prayerPts();
+        if (PRAY) {
+            S.action();
+            await sdk.sendTogglePrayer('protect_from_melee');
+        }
         while (sdk.getNearbyNpcs().some(n => n.index === g.index) && tick(sdk) - t0 < 400) {
             if (sdk.getState()!.dialog.isOpen) await q.settle(() => true, 10);
             const atk = sdk.getNearbyNpcs().find(n => n.index === g.index)?.optionsWithIndex.find(o => /attack/i.test(o.text));
             if (atk && !sdk.getState()!.player!.combat?.inCombat) await sdk.sendInteractNpc(g.index, atk.opIndex);
             await waitUntil(sdk, () => false, 3);
         }
-        rowdy.push({ segment: S.cur?.name ?? '?', ticks: tick(sdk) - t0, hpLost: hp0 - hp() });
-        console.log(`  rowdy guard fight in ${S.cur?.name}: ${tick(sdk) - t0} ticks`);
+        if (PRAY && sdk.getActivePrayers().includes('protect_from_melee')) {
+            S.action();
+            await sdk.sendTogglePrayer('protect_from_melee');
+        }
+        rowdy.push({ segment: S.cur?.name ?? '?', ticks: tick(sdk) - t0, hpLost: hp0 - hp(), prayerUsed: pr0 - prayerPts() });
+        console.log(`  rowdy guard fight in ${S.cur?.name}: ${tick(sdk) - t0} ticks, ${hp0 - hp()} hp, ${pr0 - prayerPts()} prayer`);
         S.mark();
         return true;
     };
@@ -357,5 +369,5 @@ await runScript(async ({ bot, sdk }) => {
     });
 
     const xp = Object.fromEntries(sdk.getSkills().map(s => [s.name, s.experience - (xp0.find(x => x[0] === s.name)?.[1] ?? 0)]).filter(([, v]) => (v as number) > 0));
-    console.log('SUMMARY ' + JSON.stringify({ from: FROM, thieving: THIEVING, melee: MELEE, wallTicks: tick(sdk) - tStart, segmentTotal: S.total(), lockTries, bars, featherTries, cartTries, fightTicks, fightHpLost, hpLeft: hp(), gameXp: xp }, null, 2));
+    console.log('SUMMARY ' + JSON.stringify({ from: FROM, thieving: THIEVING, melee: MELEE, pray: PRAY, rowdy, prayerLeft: prayerPts(), wallTicks: tick(sdk) - tStart, segmentTotal: S.total(), lockTries, bars, featherTries, cartTries, fightTicks, fightHpLost, hpLeft: hp(), gameXp: xp }, null, 2));
 }, { timeout: 3_600_000 });
