@@ -293,9 +293,14 @@ export async function throughWebs(ctx: Ctx, goals: [number, number][]) {
             const ok = msgs.some((m) => /slash the web apart/i.test(m.text));
             dbg(sdk, `webs: knife on ${web.x},${web.z} d${web.distance}: ${ok ? 'slashed' : 'failed'} [${msgs.map((m) => m.text).join(' | ')}]`);
             if (ok) {
-                await sdk.sendWalk(gx, gz, true);
-                if (ctx.leg) ctx.leg.clicks++;
-                await waitFor(sdk, (s) => cheb({ x: s.player!.worldX, z: s.player!.worldZ }, { x: gx, z: gz }) <= 1, 60);
+                // A success runs p_delay(1) (web.rs2), and a move click sent while delayed is
+                // refused (MoveClickHandler), so re-send the step until the player moves.
+                for (let k = 0; k < 5; k++) {
+                    await sdk.sendWalk(gx, gz, true);
+                    if (ctx.leg) ctx.leg.clicks++;
+                    if (await waitFor(sdk, (s) => cheb({ x: s.player!.worldX, z: s.player!.worldZ }, { x: gx, z: gz }) <= 1, 3)) break;
+                }
+                dbg(sdk, `webs: stepped through to ${JSON.stringify(pos(sdk))}`);
                 break;
             }
         }
@@ -364,7 +369,8 @@ export interface WalkOpts {
  */
 export async function walk(ctx: Ctx, dest: { x: number; z: number }, o: WalkOpts = {}) {
     const { sdk } = ctx;
-    const tol = o.tol ?? 0, reach = o.reach ?? 20, lead = o.lead ?? 3, maxTicks = o.maxTicks ?? 900;
+    // While casting, a click can wait up to 2 ticks for a free slot, so re-click earlier.
+    const tol = o.tol ?? 0, reach = o.reach ?? 20, lead = o.lead ?? (o.cast ? 8 : 3), maxTicks = o.maxTicks ?? 900;
     const start = tick(sdk);
     let route = buildRoute(sdk, dest);
     let idx = 0;
