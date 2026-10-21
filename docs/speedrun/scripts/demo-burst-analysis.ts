@@ -172,6 +172,12 @@ for (const seg of segments.filter(s => !(s.kind === 'pair-window' && s.exact))) 
 }
 say();
 say(`Ashburn pairs where (b) agrees with (a): ${agree.aEqB}/${agree.n}; where (c) agrees with (a): ${agree.aEqC}/${agree.n}.`);
+// Calibrate (c): agreement with (a) for each catch-up threshold, over the probe's own span.
+const graded = segments.filter(s => s.kind === 'pair' && s.vantage === 'ashburn' && s.direct?.n).map(s => ({ a: s.direct!.onTime / s.direct!.n >= 58 / 60, rate: score(s.ticks).catchPerMin }));
+say(`(c) threshold calibration (agreement with (a), false passes, false fails): ${[1, 2, 3, 4, 5].map(th => {
+    const fp = graded.filter(g => g.rate <= th && !g.a).length, ff = graded.filter(g => g.rate > th && g.a).length;
+    return `<= ${th}/min ${graded.length - fp - ff}/${graded.length} (${fp}, ${ff})`;
+}).join('; ')}.`);
 
 // ---------------------------------------------------------------- P(miss | next interval)
 const B = [[0, 50], [50, 100], [100, 150], [150, 200], [200, 250], [250, Infinity]] as const;
