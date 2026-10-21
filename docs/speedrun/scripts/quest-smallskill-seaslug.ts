@@ -8,7 +8,7 @@
 
 import { runScript } from '../../../sdk/runner';
 import type { BotSDK } from '../../../sdk/index';
-import { cheat, clearInv, getvar, give, invCount, invOp, locId, msgSince, now, pickup, pos, Recorder, setstats, setvar, talk, tele, teleport, useOnItem, waitTicks, waitUntil, walkTo, withRuns } from './quest-smallskill-lib';
+import { cheat, clearInv, clickWalk, getvar, give, invCount, invOp, locId, msgSince, now, pickup, pos, Recorder, setstats, setvar, talk, tele, teleport, useOnItem, waitTicks, waitUntil, walkTo, withRuns } from './quest-smallskill-lib';
 
 // Loc ids and tiles from server/content/maps/m43_51.jm2 (quest-smallskill-locate.ts).
 // The platform's ground floor is server level 0, its upper floor level 1.
@@ -47,10 +47,11 @@ await runScript(async ({ bot, sdk }) => {
 
     // Platform, first visit: glass and damp sticks, dry them, then Kennith upstairs.
     // The glass is in the west room behind the door at (2765,3277); open it from the pier tile beside it.
-    rec.add(await walkTo(bot, sdk, 2766, 3277, 0), '5a walk to the glass room door');
+    rec.add(await clickWalk(sdk, 2766, 3277, 0), '5a walk to the glass room door');
+    await waitTicks(sdk, 1);
     rec.add(await locId(sdk, 2765, 3277, 1533, 1, s => (s.nearbyLocs ?? []).some(l => l.id === 1534 && Math.abs(l.x - 2765) <= 1 && Math.abs(l.z - 3277) <= 1), { label: 'open door', maxTicks: 30 }), '5b open the door');
     rec.add(await pickup(sdk, /^broken glass$/i), '5c');
-    rec.add(await walkTo(bot, sdk, 2784, 3289, 0), '5d walk to damp sticks');
+    rec.add(await clickWalk(sdk, 2784, 3289, 0), '5d walk to damp sticks');
     rec.add(await pickup(sdk, /^damp sticks$/i), '5e');
     rec.add(await useOnItem(sdk, /^broken glass$/i, /^damp sticks$/i, s => invCount(s, /^dry sticks$/i) > 0), '5f dry the sticks');
     rec.add(await locId(sdk, LADDER_UP.x, LADDER_UP.z, LADDER_UP.id, 1, lvl(1), { label: 'climb up' }), '6a');
@@ -77,7 +78,7 @@ await runScript(async ({ bot, sdk }) => {
     console.log('stage', await stage(sdk), 'panel done', await s9());
     rec.add(withRuns(await locId(sdk, KWALL.x, KWALL.z, KWALL.id, 1, () => false, { label: 'Kennith through the wall', maxTicks: 40 })), '13 Kennith 3');
     console.log('stage', await stage(sdk));
-    rec.add(await walkTo(bot, sdk, CRANE.x, CRANE.z + 3, 0), '14a stand north of the crane');
+    rec.add(await clickWalk(sdk, CRANE.x, CRANE.z + 3, 0), '14a stand north of the crane');
     rec.add(await locId(sdk, CRANE.x, CRANE.z, CRANE.id, 1, msgSince(/row boat waiting below/i, now(sdk)), { label: 'crane', maxTicks: 20, idle: 1 }), '14b crane');
     console.log('stage', await stage(sdk));
     rec.add(await locId(sdk, LADDER_DOWN.x, LADDER_DOWN.z, LADDER_DOWN.id, 1, lvl(0), { label: 'climb down' }), '15a');
