@@ -54,7 +54,7 @@ function ensureBotEnv(): void {
 
 async function overallTicks(): Promise<number | null> {
     const rows = await fetchPlayer(bot!).catch(() => null);
-    return rows?.find(r => r.name === 'Overall')?.ticks ?? null;
+    return rows?.find(r => r.skill === 'Overall')?.ticks ?? null;
 }
 
 async function boardChange(from: number | null, ms: number): Promise<number | null> {
