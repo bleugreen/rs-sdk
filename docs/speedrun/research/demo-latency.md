@@ -633,19 +633,24 @@ Preconditions:
 vantage adds path jitter that looks like overruns (section 9):
 
 - **(c), primary:** **at most 2 catch-ups per minute** over a 3-5 minute window (tenet 12;
-  at most 2 agreed with (a) on all 17 Ashburn samples, at most 1 wrongly failed 05:09 at 60/60 and
-  1.6 per minute, and at most 4 passed the bad 07:01 minute), a catch-up being an
+  over 24 Ashburn samples (02:43-12:02), at most 2 agreed with (a) on 22 with no false fails; its
+  two false passes, 10:43 and 11:18 (54 and 55 of 60 at 1.6 and 0.8 per minute), were caught by
+  (a), which is why (a) stays a pass line; at most 1 also failed 05:09 and 12:02 at 60 of 60, and
+  at most 4 passed 07:01; section 9, 'Overrun bursts overnight'), a catch-up being an
   interval under 150 ms immediately after one over 350 ms, counted from decoded ticks (not from raw
   frames grouped 60 ms apart, which hides them; section 3).
 - **(a)** the direct in-page probe lands **at least 58 of 60** reactions on the next tick;
 - **(d)** the tab's machine meets item 4 below.
 - **(b), reported as context, not a pass line:** tick publication interval p90. It agreed with (a)
-  on 13 of 15 and passes the 'simmer' regime (1-6 catch-ups per minute) that still costs reactions.
+  on 17 of 24. Six of its seven disagreements failed samples that lost at most one reaction (p90
+  408-455 ms), and the seventh passed the 07:01 simmer minute that lost six.
 
 If (a), (c) or (d) fails, wait and re-measure; do not start on a minute of overruns. No cap on the
 maximum interval: it rejects minutes that scored 60 of 60. Keep checking during the run: a reactive
 loop that sees a catch-up should expect its next reaction to miss, and reactive and knife steps
-pause while catch-ups run above about 5 per minute (rs/102's in-run rule).
+pause while catch-ups run above about 5 per minute (rs/102's in-run rule). Per-reaction miss rates
+by the next tick interval, which the programs' resync logic should expect, are in section 9, 'Miss
+rate by the next tick interval'.
 
 Also before starting:
 
