@@ -1,11 +1,17 @@
 // Haunted Mine, scored-account route, measured segment by segment (lab only).
 //
-//   bun docs/speedrun/scripts/quest-hauntedmine-run.ts <botname> [--from=<phase>] [--to=<phase>] [--stats=<n>]
+//   bun docs/speedrun/scripts/quest-hauntedmine-run.ts <botname> [--from=<phase>] [--to=<phase>]
+//       [--stats=<n>] [--style=melee|magic] [--food=<sharks>] [--diag]
 //
 // Phases: zealot, enter, mush, cart, exit, endcart, lift, stairs, boss, reward.
 // --from sets up the quest varps, inventory and position for that phase with
 // staff commands, so any phase can be re-measured on its own. --stats sets
-// Attack/Strength/Defence/Hitpoints (default 70) and gives a rune scimitar.
+// Attack/Strength/Defence/Hitpoints (default 70), and Magic with
+// --style=magic (Crumble Undead, runes given at the fight); a rune scimitar
+// and --food sharks (default 20) are given. --diag stops a stalled Treus
+// Dayth fight early and prints what blocks it.
+//
+// Results and the reasoning behind each workaround: docs/speedrun/quests/haunted_mine.md.
 //
 // Known lab-only step: the cart puzzle's lever state is read with ::getvar
 // (a production bot has no staff access; see haunted_mine.md for the
