@@ -22,14 +22,22 @@ first walk cost about 450 ticks.
 
 Quest rewards are the large lever. Sea Slug alone gives 7,175 base (level 74), and five
 quests give 21,649 base (level 90), leaving **about 2,010 ticks** of fly fishing (measured
-segment, section 3). With a 3-tick cycle ([tick-manipulation.md](tick-manipulation.md)),
-1 to 99 is about 3,110 ticks and 90 to 99 about 1,190 (both inferred).
+segment, section 3).
+
+**With the knife starter** ([tick-manipulation.md](tick-manipulation.md)), every cycle is 3
+ticks instead of 5: on the tick after each roll send knife on logs, the "15 Arrow Shafts"
+button, the fish drop and a re-click of the spot. It needs a knife, a normal log, a members
+world and Fletching 1. Measured at production tick speed, 20 to 99 takes **2,896 ticks**
+(`tickmanip-cycle.ts --mode=flylumb-knife --level=20 --until=99`, 677 catches, 67
+level-ups, 7 spot moves; 40% faster than 4,837), so level 1 to 99 is about 3,175 with the
+normal-cycle 1-20 band and walk, and 90 to 99 about 1,204 (measured segment).
 
 **On the planned quest route** only Sea Slug and Fishing Contest are done. Tai Bwo Wannai
 Trio, Fremennik Trials and Heroes' Quest are net losses or need more than the route has
 (`docs/speedrun/quests/`, cairn://p/rs/3). Sea Slug saves 1,385 ticks and Fishing Contest
 after it 325 more (section 3 table), leaving **about 3,410 ticks** of fly fishing from
-level 78 (about 2,040 at a 3-tick cycle, inferred). **Ordering:** Sea Slug checks
+level 78, or **about 2,000 with the knife starter** (measured 2,032 and 1,978 ticks in two
+300 ms runs, section 2). **Ordering:** Sea Slug checks
 Firemaking 30 with `stat()` (`quest_seaslug.rs2:43`), so schedule it after the
 helper-fed Firemaking training passes 30 (a Firemaking boost would also satisfy it).
 
@@ -45,22 +53,30 @@ Time inside the 20-99 band (measured, 300 ms run, ticks from the first click): l
 303, 60 at 488, 70 at 875, 80 at 1,543, 90 at 2,813, 95 at 3,793, 99 at 4,837. Over 40%
 of the band is spent above level 90.
 
-Totals from each starting point (normal cycle measured; 3-tick inferred as the read model
-for a 3-tick cycle plus the measured overheads of 1.3 ticks per level-up and 11 ticks per
-spot move at 3.7 moves per 1,000 ticks):
+Totals from each starting point. Both cycles are measured at 300 ms ticks on the Lumbridge
+spots: the normal cycle with `fishing-rate.ts` (673 catches), the 3-tick cycle with the
+knife starter and `tickmanip-cycle.ts --mode=flylumb-knife --level=20 --until=99
+--reanchor=xp --dismiss=now` (677 catches, 67 level-ups, 7 spot moves; lite client with
+the #20 fix, on a quiet host, `bgsrv-mac`). Quest starts are segments of those runs from
+the tick at which they passed that xp. The level-1 rows add the 1-20 band and the walk at
+the normal cycle (279 ticks): the small net cannot take the knife (section 4).
 
-| Start | Base xp | Level | Normal cycle | 3-tick cycle |
+| Start | Base xp | Level | Normal cycle | Knife, 3-tick cycle (measured) |
 |---|---|---|---|---|
-| Level 1, no quests | 0 | 1 | about 5,120 (201 + 78 + 4,837) | about 3,110 |
-| Level 20 | 124.2 | 20 | 4,837 | about 2,930 |
-| Sea Slug | 7,175 | 74 | 3,735 | about 2,230 |
-| Sea Slug + Tai Bwo Wannai Trio | 13,675 | 83 | 2,928 | about 1,740 |
-| ... + Fremennik Trials | 16,487.4 | 86 | 2,587 | about 1,550 |
-| ... + Heroes' Quest + Fishing Contest (all five) | 21,649.4 | 90 | 2,008 | about 1,190 |
+| Level 1, no quests | 0 | 1 | about 5,120 (201 + 78 + 4,837) | about 3,175 (279 + 2,896) |
+| Level 20 | 124.2 | 20 | 4,837 | 2,896 |
+| Sea Slug | 7,175 | 74 | 3,735 | 2,173 |
+| Sea Slug + Fishing Contest (the planned route) | 9,612 | 78 | 3,410 | 2,032 (a second run from 9,620: 1,978) |
+| Sea Slug + Tai Bwo Wannai Trio | 13,675 | 83 | 2,928 | 1,754 |
+| ... + Fremennik Trials | 16,487.4 | 86 | 2,587 | 1,556 |
+| ... + Heroes' Quest + Fishing Contest (all five) | 21,649.4 | 90 | 2,008 | 1,204 |
 
-The normal-cycle figures for quest starts are segments of the measured 20-99 run, from
-the tick at which it passed that xp (measured). The read model without overheads gives
-4,525 ticks for 20-99 at the normal cycle and 2,715 at 3 ticks.
+The read model without overheads gives 4,525 ticks for 20-99 at the normal cycle and
+2,715 at 3 ticks. The knife run took 2,896, 7% above its model: rolls lost inside the lock
+(the 3-tick gaps that are not catch failures), 7 spot moves at about 8 ticks each, and
+re-anchoring (section 6). The two runs from level 78 differ by 3%, mostly in spot moves (5
+in the first, 4 in the second's segment), which come at random (section 4); the PR-level
+figure for the route is about 2,000.
 
 The 1-20 band is small whichever way it is done. Baiting sardines and herring from level
 5 is slightly faster (5 to 20 in 152 ticks, measured with 5 catches; 133 ticks for 1 to 20
@@ -95,7 +111,8 @@ from level 20; a quest-first account also skips the roughly 280-tick 1-20 band a
 - Fremennik Trials after those two: 341 more.
 - Heroes' Quest and Fishing Contest after those three: 579 more together.
 
-At a 3-tick cycle every saving shrinks to about 60% of that. Quest durations belong to
+With the knife's 3-tick cycle every saving shrinks to about two thirds of that (Sea Slug
+saves 723 ticks from level 20 instead of 1,102; measured segments). Quest durations belong to
 `docs/speedrun/quests/`; each quest pays only if its own playtime is below these figures.
 
 Remaining Fishing ticks for every subset of the five quests, to combine with quest
@@ -105,43 +122,47 @@ Hero Heroes' Quest, Contest Fishing Contest.
 - **Normal cycle:** a measured segment of the 300 ms run (`fly20to99-lumb-300ms`), from the
   tick it passed that xp to level 99. Every subset starts above level 20, so it skips the
   1-20 band and the Draynor walk. The "none" row is the 1-99 total from section 2.
-- **3-tick cycle:** inferred, read model plus 1.3 ticks per level-up and 11 ticks per spot
-  move at 3.7 moves per 1,000 ticks.
+- **Knife, 3-tick cycle:** a measured segment of the 300 ms knife run from level 20
+  (`tickmanip-cycle.ts --mode=flylumb-knife --level=20 --until=99 --marks=...`, section 2),
+  from the tick it passed that xp to level 99. A segment starts on a catch, so it can be up
+  to one gap (3-4 ticks) short of a fresh start; a real start also pays one bootstrap,
+  about 5 ticks. The "none" row adds the normal-cycle 1-20 band and walk (279 ticks).
+  The inferred figures this replaces were within 3% of every row.
 
-| Quests done | Base xp | Level | Fishing ticks, normal cycle | Fishing ticks, 3-tick |
+| Quests done | Base xp | Level | Fishing ticks, normal cycle | Fishing ticks, knife 3-tick (measured) |
 |---|---|---|---|---|
-| none | 0 | 1 | 5,120 | 3,110 |
-| Contest | 2,437 | 58 | 4,365 | 2,626 |
-| Hero | 2,725 | 60 | 4,323 | 2,598 |
-| Frem | 2,812.4 | 60 | 4,318 | 2,591 |
-| Hero+Contest | 5,162 | 69 | 3,982 | 2,387 |
-| Frem+Contest | 5,249.4 | 69 | 3,977 | 2,380 |
-| Frem+Hero | 5,537.4 | 70 | 3,930 | 2,356 |
-| TBWT | 6,500 | 72 | 3,808 | 2,280 |
-| SS | 7,175 | 74 | 3,735 | 2,226 |
-| Frem+Hero+Contest | 7,974.4 | 75 | 3,636 | 2,165 |
-| TBWT+Contest | 8,937 | 77 | 3,476 | 2,091 |
-| TBWT+Hero | 9,225 | 77 | 3,441 | 2,070 |
-| TBWT+Frem | 9,312.4 | 78 | 3,436 | 2,062 |
-| SS+Contest | 9,612 | 78 | 3,410 | 2,040 |
-| SS+Hero | 9,900 | 78 | 3,360 | 2,019 |
-| SS+Frem | 9,987.4 | 79 | 3,355 | 2,011 |
-| TBWT+Hero+Contest | 11,662 | 81 | 3,181 | 1,889 |
+| none | 0 | 1 | 5,120 | 3,175 |
+| Contest | 2,437 | 58 | 4,365 | 2,555 |
+| Hero | 2,725 | 60 | 4,323 | 2,534 |
+| Frem | 2,812.4 | 60 | 4,318 | 2,528 |
+| Hero+Contest | 5,162 | 69 | 3,982 | 2,339 |
+| Frem+Contest | 5,249.4 | 69 | 3,977 | 2,321 |
+| Frem+Hero | 5,537.4 | 70 | 3,930 | 2,294 |
+| TBWT | 6,500 | 72 | 3,808 | 2,225 |
+| SS | 7,175 | 74 | 3,735 | 2,173 |
+| Frem+Hero+Contest | 7,974.4 | 75 | 3,636 | 2,128 |
+| TBWT+Contest | 8,937 | 77 | 3,476 | 2,071 |
+| TBWT+Hero | 9,225 | 77 | 3,441 | 2,053 |
+| TBWT+Frem | 9,312.4 | 78 | 3,436 | 2,050 |
+| SS+Contest | 9,612 | 78 | 3,410 | 2,032 (second run: 1,978) |
+| SS+Hero | 9,900 | 78 | 3,360 | 2,011 |
+| SS+Frem | 9,987.4 | 79 | 3,355 | 2,002 |
+| TBWT+Hero+Contest | 11,662 | 81 | 3,181 | 1,888 |
 | TBWT+Frem+Contest | 11,749.4 | 81 | 3,171 | 1,882 |
-| TBWT+Frem+Hero | 12,037.4 | 81 | 3,131 | 1,862 |
-| SS+Hero+Contest | 12,337 | 82 | 3,094 | 1,839 |
-| SS+Frem+Contest | 12,424.4 | 82 | 3,089 | 1,833 |
-| SS+Frem+Hero | 12,712.4 | 82 | 3,049 | 1,813 |
-| SS+TBWT | 13,675 | 83 | 2,928 | 1,744 |
-| TBWT+Frem+Hero+Contest | 14,474.4 | 84 | 2,816 | 1,687 |
-| SS+Frem+Hero+Contest | 15,149.4 | 85 | 2,736 | 1,638 |
-| SS+TBWT+Contest | 16,112 | 85 | 2,624 | 1,572 |
-| SS+TBWT+Hero | 16,400 | 86 | 2,592 | 1,551 |
-| SS+TBWT+Frem | 16,487.4 | 86 | 2,587 | 1,545 |
-| SS+TBWT+Hero+Contest | 18,837 | 88 | 2,309 | 1,382 |
-| SS+TBWT+Frem+Contest | 18,924.4 | 88 | 2,299 | 1,376 |
-| SS+TBWT+Frem+Hero | 19,212.4 | 88 | 2,270 | 1,357 |
-| all five | 21,649.4 | 90 | 2,008 | 1,191 |
+| TBWT+Frem+Hero | 12,037.4 | 81 | 3,131 | 1,864 |
+| SS+Hero+Contest | 12,337 | 82 | 3,094 | 1,838 |
+| SS+Frem+Contest | 12,424.4 | 82 | 3,089 | 1,832 |
+| SS+Frem+Hero | 12,712.4 | 82 | 3,049 | 1,814 |
+| SS+TBWT | 13,675 | 83 | 2,928 | 1,754 |
+| TBWT+Frem+Hero+Contest | 14,474.4 | 84 | 2,816 | 1,697 |
+| SS+Frem+Hero+Contest | 15,149.4 | 85 | 2,736 | 1,658 |
+| SS+TBWT+Contest | 16,112 | 85 | 2,624 | 1,586 |
+| SS+TBWT+Hero | 16,400 | 86 | 2,592 | 1,568 |
+| SS+TBWT+Frem | 16,487.4 | 86 | 2,587 | 1,556 |
+| SS+TBWT+Hero+Contest | 18,837 | 88 | 2,309 | 1,381 |
+| SS+TBWT+Frem+Contest | 18,924.4 | 88 | 2,299 | 1,372 |
+| SS+TBWT+Frem+Hero | 19,212.4 | 88 | 2,270 | 1,354 |
+| all five | 21,649.4 | 90 | 2,008 | 1,204 |
 
 A quest's saving inside a plan is the difference between two rows that differ only by
 that quest. For example, Fremennik Trials saves 802 ticks alone (5,120 - 4,318) but only
@@ -220,7 +241,8 @@ continue from that state (read):
   so a click at `+2` does nothing. Example: `rarefish.rs2:164-180`.
 
 So the 3-tick numbers in this document apply to fly fishing, the method the route uses.
-Testing the trick is owned by [tick-manipulation.md](tick-manipulation.md).
+The trick itself is owned by [tick-manipulation.md](tick-manipulation.md); the route
+figures in sections 1-3 were measured with it through level-ups and spot moves.
 
 ### Spot movement (read, then measured)
 
@@ -290,6 +312,23 @@ clusters, win. The loss per move is the walk plus the 4-tick re-arm. It was the 
   is open (`Player.ts:878-888`). Measured: 1.3 ticks lost per level-up at 300 ms, about 2 at
   100 ms, with `sendClickDialog(0)` sent as soon as the dialog appears. 1 to 99 has 98
   level-ups (about 130 ticks); a quest start removes most of them.
+  **With the knife starter** a level-up costs about 0.4 ticks and does not break the lock
+  (measured, `tickmanip-cycle.ts --dismiss=now`, plain `sendClickDialog(0)`, two 300 ms
+  runs). The dialog opens on R+1, after that tick's starter packets, and blocks that
+  tick's fishing op; the bot sees it on label R+1 and its dismissal lands on R+2, before
+  the roll on R+3. 41 of 43 dialogs from 78 up closed on the next label. Across the 38
+  level-ups from 78 to 99 that did not coincide with a spot move, the gap from the level's
+  catch to the next averaged 4.1 ticks against about 3.75 expected from the catch chance;
+  none needed a re-anchor. From level 20, 2 of 67 did: one beside a spot move, and one at
+  level 35, followed by 28 ticks without a catch. A late dismissal would lose one roll at
+  most: the next starter's `closeModal` clears the dialog and its absolute clock write puts
+  the lock back on schedule (inferred from the read handlers).
+- **Spot moves with the knife.** The spot keeps its NPC index when it teleports, so
+  `tickmanip-cycle.ts` watches its tile; on a move it re-clicks the nearest spot and
+  anchors the 3-tick schedule on the first catch after the click (`--reanchor=xp`): after a
+  roll on R the normal loop rolls on R+5, so the first starter goes out then. The gap
+  spanning a move measured 9-22 ticks over 12 moves (median 12), about 8 ticks lost per move
+  against the in-lock gap; moves came 2.4-2.5 per 1,000 ticks.
 - **Spot moves** every 280-529 ticks (section 4). Re-click the nearest matching spot at
   once; never rely on the server to follow.
 - **Hostile NPCs** (read, `all.hunt` and `all.npc`): none that matter at Lumbridge (giant
@@ -316,9 +355,11 @@ clusters, win. The loss per move is the walk plus the 4-tick re-arm. It was the 
   the demo, internet round-trips may push some re-clicks one tick later: a level-up
   dismissal, or a drop and re-click that lands on the roll tick. A timed run on a
   throwaway demo account would settle it.
-- **3-tick totals** are inferred. They assume the knife-on-log trick runs every cycle
-  without a lost roll and that the 300 ms overheads carry over. Settled by
-  tick-manipulation.md once cairn://p/rs/1 lands.
+- **3-tick totals** are measured, but on one run from level 20 and a second from 78 (3%
+  apart). They also assume a quiet host: on a machine at load 100+ the same loop measured
+  7.1-7.7 ticks per catch, worse than the normal cycle, because its packets landed a tick
+  late (tick-manipulation.md section 6). The demo's own latency is still the open
+  question above.
 - **The sea methods' failure under a 3-tick re-click** is read, not tested. It does not
   affect the route.
 - **Heroes' Quest's lava eel**: whether helpers can supply it (it would spare the 53

@@ -9,8 +9,9 @@
 //  - pickaxe mining_rate by level: iron 6 (lvl 1), steel 5 (6), mithril 4 (21),
 //    adamant 3 (31), rune 2 (41) (pickaxes.obj, read)
 //  - iron ticks per ore = (rate + extra) + (rate + 1) * (1 - p) / p, where rate + extra
-//    is the measured rotation cost of a successful ore with a rune pickaxe (extra 1.61 on
-//    the 6-rock zoo cluster at the demo's respawn 13, 1.84 at respawn 19; mining-rotation.ts)
+//    is the measured rotation cost of a successful ore with a rune pickaxe on the zoo cluster:
+//    knife starter 1.00 at the demo's respawn 13 and 1.50 at respawn 19 (tickmanip-mine.ts),
+//    adjacent-rock starter 1.61 and 1.84 (mining-rotation.ts)
 //    and a failed roll costs rate + 1 (one more swing; measured cycle 3 at rate 2)
 //  - copper/tin below 15: stay on one rock, (rate + 2) / p ticks per ore (the success's
 //    p_delay(0) rejects the next click for a tick; read, mining.rs2 + OpLocHandler.ts)
