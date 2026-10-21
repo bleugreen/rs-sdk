@@ -401,6 +401,8 @@ interface Options {
     maxPlayersNearTarget: number;
     /** Stop training a combat skill at this level (the style picker skips it). */
     styleCap: number;
+    /** Log every fight at the spot (outcome, game ticks, position, live targets in view): for measuring kill rates. */
+    trace: boolean;
 }
 
 export function parseOptions(o: Record<string, unknown>): Options {
@@ -421,7 +423,8 @@ export function parseOptions(o: Record<string, unknown>): Options {
         restUntil: num('restUntil', 0.9),
         loot: typeof o.loot === 'string' ? new RegExp(o.loot, 'i') : DEFAULT_LOOT,
         maxPlayersNearTarget: num('maxPlayersNearTarget', 0),
-        styleCap: num('styleCap', 99)
+        styleCap: num('styleCap', 99),
+        trace: o.trace === true
     };
 }
 
@@ -1072,7 +1075,15 @@ export class Run {
             return;
         }
         await spot.upkeep?.(this);
+        const tick0 = this.state().tick;
         const out = await this.fight({ npc: spot.npc, area: spot.area, centre: spot.centre, loot: new RegExp(`${spot.bones.source}|${this.opt.loot.source}`, 'i') });
+        if (this.opt.trace) {
+            const live = this.state().nearbyNpcs.filter(n => spot.npc.test(n.name) && n.hp !== 0 && inBox(spot.area, n.x, n.z));
+            this.ctx.log('fight', {
+                out, ticks: this.state().tick - tick0, at: [this.pos().x, this.pos().z], hp: Number(this.hpFrac().toFixed(2)),
+                live: live.length, busy: live.filter(n => n.inCombat).length, players: this.state().nearbyPlayers.length
+            });
+        }
         if (out === 'none') {
             // Everything is dead or taken; drift back to the centre and wait for respawns.
             if (dist(this.pos(), spot.centre) > 6) await this.walk(spot.centre.x, spot.centre.z, 4, 60_000);
