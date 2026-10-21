@@ -86,7 +86,7 @@ await new Promise<void>(resolve => {
         const t = s.tick;
         const f = xpOf(s, 'fishing'), pr = xpOf(s, 'prayer');
         let rolled = false;
-        if (f > lastF) { catches.push(t); lastF = f; rolled = true; log(`T${t} FISH +${(f - lastF) / 25}`); }
+        if (f > lastF) { catches.push(t); log(`T${t} FISH +${(f - lastF) / 25}`); lastF = f; rolled = true; }
         if (pr > lastP) { buries.push(t); lastP = pr; log(`T${t} PRAYER`); }
         if (t - startTick >= TICKS) { off(); resolve(); return; }
         if (acted === t) return;
