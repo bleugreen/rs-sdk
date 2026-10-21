@@ -5,7 +5,10 @@
 // modes (lab setup by staff cheats; --demo uses none and expects the kit in place):
 //   probe        in-page latency probe            --trials=60 [--no-tele]
 //   mine         knife iron rotation at respawn 13 (player_count pinned locally)
-//                                                --ores=200 [--starter=knife|none]
+//                                                --ores=200 [--starter=knife|none] [--steps=d13|stay2|<pairs>]
+//                                                [--level=99] [--bury [--prayer=43]]
+//                --bury buries dragon bones on the lap's short-entry stay (knife-mine `bury`;
+//                bones-placement.md section 4, the stay2 lap); topped up as in oak
 //   fly          knife fly fishing, Lumbridge     --level=20 --until=99 | --successes=N [--technique=plain]
 //   willow       knife willows, Draynor           --successes=150
 //   oak          knife oaks, Taverley (2914,3494) --successes=200 [--level=60] [--bury [--prayer=43]]
@@ -36,6 +39,11 @@ const where = () => `host ${hostname()} load ${loadavg().map(l => l.toFixed(1)).
 
 // rs/5's zoo-cluster rotation at respawn 13 (tickmanip-mine-run.sh, mining.md section 4)
 const D13 = '2604,3235>2605,3235 2602,3235>2602,3236 2603,3234>2602,3234 2603,3233>2602,3233 2605,3234>2605,3233';
+// bones-placement.md section 4: the east stay follows a 2-tile move and carries the bone
+const ROTATIONS: Record<string, string> = {
+    d13: D13,
+    stay2: '2603,3233>2602,3233 2605,3234>2605,3235 2605,3234>2605,3233 2602,3235>2602,3234 2602,3235>2602,3236'
+};
 
 await runScript(async ({ bot: actions, sdk }) => {
     const say = async (cmd: string) => { if (!DEMO) { await sdk.sendSay(cmd); await sdk.waitForTicks(1); } };
@@ -57,6 +65,18 @@ await runScript(async ({ bot: actions, sdk }) => {
     const knifeKit = async (logs = 10) => { await say('::give knife 1'); for (let i = 0; i < logs; i++) await say('::give logs 1'); };
     const progress = (s: { counters: Record<string, number>; gauges: Record<string, number>; tick: number; deferred: number }) => {
         if (s.tick % 100 === 0) console.log(`  T${s.tick} ${JSON.stringify(s.counters)} ${JSON.stringify(s.gauges)}${s.deferred ? ` deferred ${s.deferred}` : ''}`);
+    };
+    // Top-up stand-in for the run's helper trade (bones-placement.md section 3): a ::give at 3 bones left.
+    const topUpBones = () => {
+        let giving = false;
+        return sdk.onStateUpdate(s => {
+            if (DEMO || giving) return;
+            const bones = s.inventory.filter(i => /^dragon bones$/i.test(i.name)).length;
+            const free = 28 - s.inventory.length;
+            if (bones > 3 || free < 6) return;
+            giving = true;
+            void sdk.sendSay(`::give dragon_bones ${free - 2}`).finally(() => sdk.waitForTicks(3).then(() => { giving = false; }));
+        });
     };
     const report = (name: string, end: { result?: unknown; packets: number; deferred: number; skippedTicks: number; maxTickMs: number; counters: Record<string, number> }) => {
         console.log(`${name}: ${where()}`);
@@ -90,13 +110,30 @@ await runScript(async ({ bot: actions, sdk }) => {
             return;
         }
         case 'mine': {
+            const steps = ROTATIONS[flag('steps', 'd13')!] ?? flag('steps')!;
+            const [sx, sz] = steps.trim().split(/\s+/)[0]!.split('>')[0]!.split(',').map(Number) as [number, number];
+            const bury = has('bury');
+            const level = num('level', 99);
             await clearInventory();
-            await say('::setstat mining 99');
+            await say(`::setstat mining ${level}`);
+            if (bury) await say(`::setstat prayer ${num('prayer', 43)}`);
             await say('::give rune_pickaxe 1');
-            await knifeKit();
-            await tele('0,40,50,44,35', 2604, 3235);
-            const end = await runProgram(sdk, 'knife-mine', { steps: flag('steps', D13), respawn: num('respawn', 13), starter: flag('starter', 'knife'), ores: num('ores', 200) }, { onProgress: progress });
-            return report('knife-mine', end);
+            await knifeKit(bury ? 2 : 10);
+            if (bury) await say('::give dragon_bones 20');
+            await tele(`0,${sx >> 6},${sz >> 6},${sx & 63},${sz & 63}`, sx, sz);
+            // every rock respawned from a previous run (the program takes each rock's id at its start)
+            if (!DEMO) await sdk.waitForTicks(14);
+            while (sdk.getState()?.dialog.isOpen) { await sdk.sendClickDialog(0); await sdk.waitForTicks(1); }
+            const params: Record<string, unknown> = { steps, respawn: num('respawn', 13), starter: flag('starter', 'knife'), ores: num('ores', 200) };
+            if (bury) params.bury = '^dragon bones$';
+            const started = await startProgram(sdk, 'knife-mine', params);
+            const un = bury ? topUpBones() : () => {};
+            try {
+                const end = await awaitProgram(sdk, started.runId, { onProgress: progress });
+                return report(`knife-mine ${flag('steps', 'd13')} L${level}${bury ? ' bury' : ''}`, end);
+            } finally {
+                un();
+            }
         }
         case 'fly':
         case 'willow':
@@ -142,15 +179,7 @@ await runScript(async ({ bot: actions, sdk }) => {
             if (bury) params.bury = '^dragon bones$';
             const started = await startProgram(sdk, 'knife-cycle', params);
             // Top-up stand-in: the run's helper trades at the tree (bones-placement.md section 3).
-            let giving = false;
-            const un = sdk.onStateUpdate(s => {
-                if (!bury || DEMO || giving) return;
-                const bones = s.inventory.filter(i => /^dragon bones$/i.test(i.name)).length;
-                const free = 28 - s.inventory.length;
-                if (bones > 3 || free < 6) return;
-                giving = true;
-                void sdk.sendSay(`::give dragon_bones ${free - 2}`).finally(() => sdk.waitForTicks(3).then(() => { giving = false; }));
-            });
+            const un = bury ? topUpBones() : () => {};
             try {
                 const end = await awaitProgram(sdk, started.runId, { onProgress: progress });
                 return report(`knife-cycle oak${bury ? ' bury' : ''} L${level}`, end);
