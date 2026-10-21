@@ -88,6 +88,14 @@ cd server/gateway && AGENT_PORT=7820 WEB_MANAGEMENT_PORT=8921 bun run gateway
 All of a lab's processes and scripts must run on the same machine; pin every
 batch to one executor.
 
+Pick a quiet one for anything tick-exact. A loaded host delays state publications and
+pushes the bot's packets a tick late, and predicted loops collapse: on a Mac at load
+average 100+ the knife iron rotation measured 8.6 ticks per ore against 3.00 on a quiet
+host (`skills/tick-manipulation.md` section 6). Run
+`bun docs/speedrun/scripts/tickmanip-latency.ts <bot>` first: every trial should read 1
+(a packet sent on label c lands on tick c+1), and the publication interval should sit
+at the tick rate. Say in the document which host each number came from.
+
 Long-lived terminals may not be pinnable to the executor that runs your
 scripts. In that case, run the whole lab inside one pinned batch:
 `LAB_BLOCK=<block> NODE_TICKRATE=<ms> bash docs/speedrun/scripts/lab.sh <bot> <script.ts>[:arg:arg] ...`

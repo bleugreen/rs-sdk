@@ -280,7 +280,7 @@ this (`resync` in `tickmanip-cycle.ts`, `SLIP` in `tickmanip-mine.ts`).
   (`tickmanip-latency.ts`). Knife iron at respawn 13 then measured 8.6-8.8 ticks per ore
   with every log fletched, the adjacent-rock rotation 14.3, and Lumbridge fly 78-99 7.7
   ticks per catch, all worse than not manipulating. The same scripts on a quiet host
-  (load 2-6, 50 of 50 probes on time) gave the rows above. Probe the host before a timed
+  (load 2-6, 110 of 110 probes on time) gave the rows above. Probe the host before a timed
   run, and on the demo, before trusting a schedule.
 - **Combat:** being attacked starts auto-retaliate, which replaces the gathering
   interaction and breaks the lock. Train where nothing aggressive reaches the account, or
