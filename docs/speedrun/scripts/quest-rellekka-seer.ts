@@ -85,6 +85,10 @@ await runScript(async ({ bot, sdk }) => {
         // Open a cupboard or chest and wait until the opened loc (with `opt`) is there.
         const openThen = async (name: string, x: number, z: number, opt: string) => {
             const t0 = L.tick(sdk);
+            if ((await sdk.scanNearbyLocs(15)).some(q => q.x === x && q.z === z && q.options.includes(opt))) {
+                steps.push([`${name} already open`, 0]);
+                return;
+            }
             await op(x, z, 'Open');
             while (L.tick(sdk) - t0 < 30) {
                 const l = (await sdk.scanNearbyLocs(15)).find(q => q.x === x && q.z === z && q.options.includes(opt));
