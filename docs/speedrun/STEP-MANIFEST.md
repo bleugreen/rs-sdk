@@ -9,9 +9,12 @@ primitives the builders need first.
 
 The scored account is called **SCORED** everywhere. Its real name lives only in its gitignored
 `bots/<name>/bot.env`; no script, log line, commit or document names it. The sibling
-`RUN-ORDER.md` (cairn://p/rs/109) carries the step table, relog plan and reconciled total from the
-same order. A later fold-in (cairn://p/rs/111) reconciles the tick figures here with it and with
-the lab siblings rs/104-108, which were still running when this was written.
+`RUN-ORDER.md` carries the step table, relog plan and reconciled total for the same order.
+cairn://p/rs/111 reconciled the two with the labs rs/104-108 (run-transitions, bones-placement,
+stun-pack, wine-window, levelup-cost under `research/`), rs/129's supply fallbacks and rs/127's
+`RESILIENCE.md`: **every step's expected and best here is RUN-ORDER.md v2's figure**, and the
+moves are the same (S17 last, after S27; the bones in S07's knife loop; S18 one measured row; gems in
+the wine windows).
 
 ## How to read an entry
 
@@ -21,14 +24,15 @@ Gnome Village.
 
 **Three tick figures** per entry, all on SCORED's clock (in-world ticks at 300 ms):
 
-- **Expected** is what the canonical source charges the step on the run's setup. For a quest that
-  is the fixed-client column with its failure budget (`quests/README.md` §3). For a knife skill it
-  is the **normal** column, because the knife is not yet proven in the page against the demo and
-  the demo has tick-overrun minutes (cairn://p/rs/102). That matches the main thread's tally,
-  which counts the knife only on its best path.
+- **Expected** is RUN-ORDER.md v2's knife-on expected for the step. For a quest that is the
+  fixed-client column with its failure budget (`quests/README.md` §3). For a knife skill it is the
+  **knife** figure at rs/97's in-page rates, the column RUN-ORDER.md's headline uses while the run
+  gate holds; the plain loop is the step's fallback, and RUN-ORDER.md shows the knife-off total
+  beside it.
 - **Best** is the fast path as measured on the direct path: the knife column, the burst-dialogue
   column, the rs/91 kit, and so on.
-- **Fallback** is what the step costs when its fast path fails. For a quest it is the stock column,
+- **Fallback** is what the step costs when its fast path fails: for a knife skill the plain loop
+  (the knife-off column). For a quest it is the stock column,
   because read-then-act through the SDK relay costs about the stock client's 2 ticks per page (a
   relay reaction lands a tick late about half the time, cairn://p/rs/86 via `skills/README.md`,
   open question 1).
@@ -68,82 +72,86 @@ part is level-free, and says so.
 **`logoutSafe`** is the `Step` field from `speedrun/runner/step.ts`: true when SCORED can log out
 right after the step and resume at the next one.
 
+**Resumes from** (every entry): the game state `runResumable` (`speedrun/runner/resume.ts`, rs/127)
+checks after a restart or a drop: the step's `done` test, its `inProgress` test and resume entry,
+and any probes, from `RESILIENCE.md` section 5. Quest state comes from rs/114's
+`speedrun/lib/quests.ts` and `docs/speedrun/quests/quest-state.md` (`questDone`, `questStatus`,
+`questStage`, `questPoints`, `requireQuestStage(view, key, stage, {atLeast?})`, `readQuestStage`,
+`journalProbe(key)`; PR #123, **pending rs/114's merge**). Route quest varps are not transmitted to
+the client: status comes from the quest-list colours and the exact stage from a journal read, which
+re-clicks if the journal has not opened within 3 ticks. The Mage Arena is not on the quest list; its
+postcondition is items and messages.
+
 ## 1. Exposure and build order
 
 **How exposure was computed.** Exposure is the entry's **expected** ticks on SCORED's clock, as
-defined above, from the source each entry cites. Entries are ranked by exposure. **At stake** is
-fallback minus best: the ticks a good build wins over a failed fast path. It is shown beside
-exposure, and it moves one entry: Runecraft is ranked by exposure but carries the largest at-stake
-of any item-fed step, so its in-page program should start early. Two rules place the entries
-that have no exposure of their own:
+defined above: RUN-ORDER.md v2's figure for its steps. Entries are ranked by exposure. **At stake**
+is fallback minus best: the ticks a good build wins over a failed fast path. Two rules place the
+entries that have no exposure of their own:
 
 - `run.ts` and its runner come first, because nothing can be accepted without them.
 - Helper-side scripts (section 4) are ranked by the exposure of the step they gate. No step
   passes its demo acceptance without its helper.
 
-The expected column sums to about **36,400** (inferred: the sum of the rows below). That excludes
-the step-boundary idle described under `run.ts`, level-up pages that the sources do not already
-include (cairn://p/rs/108 is auditing which ones do), and contention. The record is 35,916.
-`RUN-ORDER.md` owns the reconciled total.
+**Entry numbers are stable ids**, cited by `RESILIENCE.md` section 5 and by section 4 here; the
+**Rank** column is the build order. The v2 figures moved five ranks: Thieving (now 2,000 measured)
+passes Fishing (now the knife's 1,995), the legs (1,382 measured) pass Runecraft and Smithing, and
+Prayer (110, now inside S07) drops from 15 to 27.
 
-| Rank | Entry | Module | Steps | Expected | Best | Fallback | At stake | Mode | Code to start from |
-|---|---|---|---|---|---|---|---|---|---|
-| 0 | Run chain | `speedrun/run.ts` | all | boundary idle ~50-100 i | ~0 | +12-14 per crash | | overlay | `runner/step.ts` (main) |
-| 1 | Agility | `speedrun/skills/agility.ts` | S11a, S17 | 4,146 | ~3,945 | 4,634 | ~690 | in-page | rs/97 `agility` program, `agility-course.ts` |
-| 2 | Monkey Madness | `speedrun/quests/monkey-madness.ts` | S15 | 4,077 | 3,546 | 4,611 | ~1,065 | overlay | `quest-mm-*.ts` |
-| 3 | Woodcutting | `speedrun/skills/woodcutting.ts` | S07 | 3,958 | ~3,460 in-page (3,028 lite) | 3,958+ | ~500 | in-page | rs/97 `knife-cycle`, `tickmanip-cycle.ts` |
-| 4 | Mining | `speedrun/skills/mining.ts` | S09 | 3,765 | 3,134 | ~4,000 | ~870 | in-page | rs/97 `knife-mine`, `tickmanip-mine.ts` |
-| 5 | Fishing | `speedrun/skills/fishing.ts` | S22 | 3,410 | 1,978 | 3,410 | ~1,430 | in-page | rs/97 `knife-cycle`, `tickmanip-cycle.ts` |
-| 6 | Thieving and the stun pack | `speedrun/skills/thieving.ts` | S18 | ~2,040 | ~2,000 | ~2,040 + ~480 elsewhere | ~480 | in-page | rs/97 `pickpocket`, `thieving-pickpocket.ts` |
-| 7 | Combat finish | `speedrun/skills/ranged.ts` (`combatFinish`) | S27 | 1,857 | 1,857 | 2,211 | ~354 | overlay | `cannon-kit.ts` [rs/59] |
-| 8 | The Grand Tree | `speedrun/quests/grand-tree.ts` | S11b | 1,576 | 1,441 | 1,846 | ~405 | overlay | `quest-grandtree-full.ts` |
-| 9 | Runecraft | `speedrun/skills/runecraft.ts` | S06, S21 | 1,330 | 1,330 | ~2,670 | ~1,340 | in-page | `runecraft-cycle.ts` (no program yet) |
-| 10 | Smithing | `speedrun/skills/smithing.ts` | S25a | 1,147 | 1,107 | 1,330 | ~223 | overlay | `smithing-trade.ts` |
-| 11 | Transition legs | `speedrun/runner/legs.ts` + `speedrun/lib/travel.ts` | between steps | ~1,000 e | ~800 e | ~1,300 e | ~500 e | overlay | `quest-primitives-*.ts`, `travel-walk-enchant.ts` [rs/59] |
-| 12 | Dwarf Cannon | `speedrun/quests/dwarf-cannon.ts` | S13 | 976 | 920 | 1,078 | ~158 | overlay | `quest-mcannon-*.ts` |
-| 13 | Dragon Slayer | `speedrun/quests/dragon-slayer.ts` | S26 | 941 | 925 | 1,051 | ~126 | overlay | `quest-dragon-*.ts` |
-| 14 | Tree Gnome Village | `speedrun/quests/tree-gnome-village.ts` | S10b | 896 | 842 | 1,005 | ~163 | overlay | `quest-tree-full.ts`, `quest-premm-fight.ts` |
-| 15 | Prayer | `speedrun/skills/prayer.ts` | S10a, S25b | ~742 | ~170 | 1,151 | ~980 | overlay | `prayer-bury.ts` |
-| 16 | Firemaking | `speedrun/skills/firemaking.ts` | S03 | 650 | 634 | 735 | ~100 | overlay | `firemaking-line.ts` |
-| 17 | Fight Arena | `speedrun/quests/fight-arena.ts` | S12 | 645 | 598 | 720 | ~122 | overlay | `quest-arena-run.ts` |
-| 18 | Plague City | `speedrun/quests/plague-city.ts` | S08 | 620 | 564 | 737 | ~173 | overlay | `quest-plague-city-*.ts` |
-| 19 | Mage Arena | `speedrun/quests/mage-arena.ts` | S16 | 581 | 574 | 606 | ~32 | overlay | `quest-magearena-*.ts` |
-| 20 | Sea Slug | `speedrun/quests/sea-slug.ts` | S19 | 394 | 340 | 495 | ~155 | overlay | `quest-smallskill-seaslug.ts` |
-| 21 | Romeo & Juliet | `speedrun/quests/romeo-juliet.ts` | S24 | 241 | 211 | 301 | ~90 | overlay | none (page counts only) |
-| 22 | Druidic Ritual | `speedrun/quests/druidic-ritual.ts` | S24 | 239 | 220 | 284 | ~64 | overlay | none (page counts only) |
-| 23 | Fishing Contest | `speedrun/quests/fishing-contest.ts` | S20 | 223 | 200 | 276 | ~76 | overlay | `quest-smallskill-fishingcompo.ts` |
-| 24 | Magic (strike, enchant) | `speedrun/skills/magic.ts` | S02, S04 | ~210 | ~110 e | ~245 | ~135 | overlay | `magic-strike.ts`, `magic-bank.ts`, `travel-walk-enchant.ts` |
-| 25 | Goblin Diplomacy | `speedrun/quests/goblin-diplomacy.ts` | S24 | 188 | 168 | 229 | ~61 | overlay | none (page counts only) |
-| 26 | Pre-MM cannon session | `speedrun/skills/ranged.ts` (`cannonSession`) | S14 | ~123-153 | 113 | ~153 | ~40 | overlay | `quest-premm-cannon.ts`, `ranged-cannon.ts` |
-| 27 | Herblore | `speedrun/skills/herblore.ts` | S25 | 112 | 112 | ~150 e | ~40 | overlay | `delayfree-cycle.ts` |
-| 28 | Crafting | `speedrun/skills/crafting.ts` | S25 | 101 | ~95 | ~130 e | ~35 | overlay | `delayfree-cycle.ts` |
-| 29 | Cooking (wine) | `speedrun/skills/cooking.ts` | S25c | ~80 | 45 | ~131 | ~86 | overlay | `wine-receive.ts` [rs/41] |
-| 30 | Doric's Quest | `speedrun/quests/dorics-quest.ts` | S05 | 65 | 60 | 90 | ~30 | overlay | `quest-smallskill-doric.ts` |
-| 31 | Cook's Assistant | `speedrun/quests/cooks-assistant.ts` | S23 | 27 | 22 | 41 | ~19 | overlay | `quest-primitives-dialogue.ts` |
-| 32 | Fletching | `speedrun/skills/fletching.ts` | S18 (inside the stun pack) | ~15 | ~5 | 50 | ~45 | in-page (with Thieving) | `delayfree-cycle.ts` |
-| 33 | Hand-off H1 | `speedrun/runner/handoff.ts` | S01 | ~8 | 4 | ~10 | ~6 | overlay | `lib/trade.ts`, `mule.ts` [rs/41] |
-| 34 | Tutorial skip | `speedrun/skills/start.ts` | S00 | 6 | 6 | ~11 | ~5 | overlay | `travel-walk-enchant.ts` [rs/59] |
+The expected column sums to **32,099** (the steps) plus the legs' **1,382**; RUN-ORDER.md section 6
+adds the allowances (hand-offs outside the figures, level-up pages, contention, overrun, relay,
+retries, restarts) for its **34,766** knife-on expected (32,099 best), against the record of 35,916.
+
+| Rank | # | Entry | Module | Steps | Expected | Best | Fallback | At stake | Mode | Code to start from |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 0 | 0 | Run chain | `speedrun/run.ts`, `runner/resume.ts` | all | boundary idle 0 m (#92); restarts ~7 each | 0 | | | overlay | `runner/step.ts`, `runner/resume.ts` (main) |
+| 1 | 1 | Agility | `speedrun/skills/agility.ts` | S11a, S17 | 4,146 | 3,942 | 4,634 | ~690 | in-page | rs/97 `agility` program, `agility-course.ts` |
+| 2 | 2 | Monkey Madness | `speedrun/quests/monkey-madness.ts` | S15 | 4,077 | 3,726 | 4,611 | ~885 | overlay | `quest-mm-*.ts` |
+| 3 | 3 | Woodcutting, with the bury | `speedrun/skills/woodcutting.ts` | S07 (+ S25b's bones) | 3,390 | 3,390 | 3,881 | ~490 | in-page | rs/97 `knife-cycle`; rs/137's bury variant; `bones-wc.ts` |
+| 4 | 4 | Mining | `speedrun/skills/mining.ts` | S09 | 3,116 | 3,116 | 3,765 | ~650 | in-page | rs/97 `knife-mine`, `tickmanip-mine.ts` |
+| 5 | 6 | Thieving and the stun pack | `speedrun/skills/thieving.ts` | S18 (S18b-d inside) | 2,000 | 1,908 | 1,975 + ~130 elsewhere | ~200 | in-page | rs/97 `pickpocket`; rs/132's `stunActions`; `stun-pack-thieve.ts` |
+| 6 | 5 | Fishing | `speedrun/skills/fishing.ts` | S22 | 1,995 | 1,969 | 3,410 | ~1,440 | in-page | rs/97 `knife-cycle`, `tickmanip-cycle.ts` |
+| 7 | 7 | Combat finish | `speedrun/skills/ranged.ts` (`combatFinish`) | S27 | 1,889 | 1,829 | 2,023-2,211 | ~380 | overlay | `cannon-kit.ts` (rs/59, on main) |
+| 8 | 8 | The Grand Tree | `speedrun/quests/grand-tree.ts` | S11b | 1,576 | 1,441 | 1,846 | ~405 | overlay | `quest-grandtree-full.ts` |
+| 9 | 11 | Transition legs | `speedrun/runner/legs.ts` + `speedrun/lib/travel.ts` | between steps | 1,382 | 1,382 | ~1,520 i | ~140 | overlay | `run-transitions-legs.ts`, `run-transitions-lib.ts` |
+| 10 | 9 | Runecraft | `speedrun/skills/runecraft.ts` | S06, S21 | 1,186 | 1,186 | ~2,530 | ~1,340 | in-page | rs/131's `rc-cycle`; `runecraft-cycle.ts` |
+| 11 | 10 | Smithing | `speedrun/skills/smithing.ts` | S25a | 1,147 | 1,107 | 1,330 | ~223 | overlay | `smithing-trade.ts` |
+| 12 | 12 | Dwarf Cannon | `speedrun/quests/dwarf-cannon.ts` | S13 | 976 | 920 | 1,078 | ~158 | overlay | `quest-mcannon-*.ts` |
+| 13 | 13 | Dragon Slayer | `speedrun/quests/dragon-slayer.ts` | S26 | 966 | 945 | 1,076 | ~131 | overlay | `quest-dragon-*.ts` |
+| 14 | 14 | Tree Gnome Village | `speedrun/quests/tree-gnome-village.ts` | S10b | 896 | 842 | 1,005 | ~163 | overlay | `quest-tree-full.ts`, `quest-premm-fight.ts` |
+| 15 | 16 | Firemaking | `speedrun/skills/firemaking.ts` | S03 | 695 | 650 | 735 | ~85 | overlay | `firemaking-line.ts` |
+| 16 | 17 | Fight Arena | `speedrun/quests/fight-arena.ts` | S12 | 645 | 598 | 720 | ~122 | overlay | `quest-arena-run.ts` |
+| 17 | 18 | Plague City | `speedrun/quests/plague-city.ts` | S08 | 620 | 564 | 737 | ~173 | overlay | `quest-plague-city-*.ts` |
+| 18 | 19 | Mage Arena | `speedrun/quests/mage-arena.ts` | S16 | 581 | 574 | 606 | ~32 | overlay | `quest-magearena-*.ts` |
+| 19 | 20 | Sea Slug | `speedrun/quests/sea-slug.ts` | S19 | 394 | 340 | 495 | ~155 | overlay | `quest-smallskill-seaslug.ts` |
+| 20 | 21 | Romeo & Juliet | `speedrun/quests/romeo-juliet.ts` | S24 | 241 | 211 | 301 | ~90 | overlay | none (page counts only) |
+| 21 | 22 | Druidic Ritual | `speedrun/quests/druidic-ritual.ts` | S24 | 239 | 220 | 284 | ~64 | overlay | none (page counts only) |
+| 22 | 23 | Fishing Contest | `speedrun/quests/fishing-contest.ts` | S20 | 223 | 200 | 276 | ~76 | overlay | `quest-smallskill-fishingcompo.ts` |
+| 23 | 24 | Magic (strike, enchant) | `speedrun/skills/magic.ts` | S02, S04 | 222 | 222 | ~250 | ~28 | overlay | `magic-strike.ts`, `magic-cadence.ts` |
+| 24 | 25 | Goblin Diplomacy | `speedrun/quests/goblin-diplomacy.ts` | S24 | 188 | 168 | 229 | ~61 | overlay | none (page counts only) |
+| 25 | 27 | Herblore | `speedrun/skills/herblore.ts` | S25e | 170 | 117 | ~200 e | ~83 | overlay | `delayfree-cycle.ts` |
+| 26 | 26 | Pre-MM cannon session | `speedrun/skills/ranged.ts` (`cannonSession`) | S14 | 132 | 132 | ~162 | ~30 | overlay | `quest-premm-cannon.ts`, `ranged-cannon.ts` |
+| 27 | 15 | Prayer (bones inside S07; the booth as fallback) | `speedrun/skills/woodcutting.ts` bury option; `speedrun/skills/prayer.ts` for the booth | S25b (S10a retired) | 110 | 80 | 735 (the booth) | ~655 | in-page with S07 | `bones-wc.ts`, `prayer-bury.ts` |
+| 28 | 28 | Crafting | `speedrun/skills/crafting.ts` | S25d | 91 | 85 | 121 (no gems in the windows) | ~36 | overlay | `delayfree-cycle.ts` |
+| 29 | 29 | Cooking (wine) + gems in the windows | `speedrun/skills/cooking.ts` | S25c | 80 | 75 | ~131 | ~56 | overlay | `wine-receive.ts` [rs/41], `wine-window-lab.ts` |
+| 30 | 30 | Doric's Quest | `speedrun/quests/dorics-quest.ts` | S05 | 65 | 60 | 90 | ~30 | overlay | `quest-smallskill-doric.ts` |
+| 31 | 31 | Cook's Assistant | `speedrun/quests/cooks-assistant.ts` | S23 | 27 | 22 | 41 | ~19 | overlay | `quest-primitives-dialogue.ts` |
+| 32 | 33 | Hand-off H1 | `speedrun/runner/handoff.ts` | S01 | 8 | 8 | ~10 | ~2 | overlay | `lib/trade.ts`, `mule.ts` [rs/41] |
+| 33 | 34 | Tutorial skip | `speedrun/skills/start.ts` | S00 | 8 (done) | 8 | - | - | overlay | done: SCORED claimed and parked at 8 ticks |
+| 34 | 32 | Fletching | `speedrun/skills/fletching.ts` | S18d (inside the stun pack) | 0 | 0 | ~59 standalone | ~59 | in-page (with Thieving) | `stun-pack-thieve.ts`, `delayfree-cycle.ts` |
 
 Every figure in the table is restated with its label and source in the entry below it. Helper-side
 scripts are in section 4; the shared primitives and their build order are in section 5.
 
-**Four findings that change the plan, raised here for main:**
+**The four findings this manifest first raised, and where they stand:**
 
-1. **Quest state is not observable on the demo.** `BotWorldState` publishes no varps and no quest
-   points (`sdk/types.ts`), and the lab reads varps only through the staff command `::getvar`
-   (`quest-gnome-lib.ts`). Every quest step's pre- and postconditions, and resume after a crash,
-   need a new primitive (section 5, item 1).
-2. **`runSteps` idles SCORED at every boundary.** It waits for a fresh tick before the
-   preconditions and another after `run` (`runner/step.ts`, `nextTick` in `lib/wait.ts`). That is
-   about 1-2 in-world ticks per boundary, and the `measure` rows do not count them (read; about
-   50-100 over ~50 boundaries, inferred). See the `run.ts` entry.
-3. **Order v1 labels S09 "Mining 49-99", but S08 Plague City comes first**, and its 2,425 Mining
-   (`quest_elena.rs2:12`, read via `skills/mining.md` §1) starts Mining at **64**. The entry below
-   uses 64.
-4. **The tuned Runecraft cycle schedules the helper's packets too** (trade on T+5, offer and accept
-   on T+6, confirm on T+7; `skills/runecraft.md` §4, "The tuned cycle"). So the in-room essence
-   helper must also be on a direct path from Ashburn. A relayed helper breaks the 7-tick cycle
-   just as a relayed SCORED would.
+1. **Quest state on the demo**: rs/114's `speedrun/lib/quests.ts` (quest-list status, journal
+   stage, `questPoints`; PR #123, pending its merge).
+2. **`runSteps` idled SCORED at every boundary**: fixed (#92, measured 2 ticks per boundary before
+   and 0 after; main, 08:30).
+3. **S09 starts at Mining 64**, not 49 (Plague City's 2,425 base): accepted by main (M0602).
+4. **The tuned Runecraft cycle needs a direct-path giver**: the givers run on the Ashburn machine
+   through rs/117's launcher; rs/131 builds the scored side's in-page cycle.
 
 ## 2. The run chain
 
