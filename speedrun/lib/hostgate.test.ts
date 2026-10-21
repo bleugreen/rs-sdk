@@ -270,16 +270,16 @@ describe('HostGate', () => {
     });
 
     test('measured override without a configured plain rate uses the last measured plain stretch', async () => {
-        const w = walkWorld(n => n % 2);
+        let jitter = true;
+        const w = walkWorld(n => (jitter ? n % 2 : 0));
         const gate = new HostGate(w.sdk as never, { model: { plainCycle: 4 }, probe: { trials: 4 }, measureDrops: 3, offReprobeTicks: 0, minProbeGapTicks: 0 });
         await drive(w, gate.probe('start')); // jittery: off
         const t = w.sdk.state!.tick;
         for (const d of [0, 4, 8]) gate.drop(t + d); // plain 4 ticks per drop
-        const w2 = walkWorld();
-        (gate as unknown as { sdk: unknown }).sdk = w2.sdk;
-        await drive(w2, gate.probe('periodic')); // quiet now: on
+        jitter = false;
+        await drive(w, gate.probe('periodic')); // quiet now: on
         expect(gate.on).toBe(true);
-        const t2 = w2.sdk.state!.tick;
+        const t2 = w.sdk.state!.tick;
         expect([0, 3].map(d => gate.drop(t2 + d))).toEqual([false, false]);
         expect(gate.drop(t2 + 6)).toBe(false); // 3 per drop beats 4
         expect(gate.on).toBe(true);
