@@ -161,14 +161,20 @@ await runScript(async ({ bot, sdk }) => {
     const statue = (await sdk.scanNearbyLocs(40)).find((l) => l.x === st.x && l.z === st.z);
     if (!statue) throw new Error(`statue not found at ${st.x},${st.z}`);
     const from4 = pos(sdk);
-    await bot.interactLoc(statue, statue.options[0]);
+    sdk.getNewChat({ types: [0] });
+    const r4 = await bot.interactLoc(statue, statue.options[0]);
+    log(sdk, `statue ${statue.id} options ${statue.options.join('/')} interact: ${JSON.stringify(r4).slice(0, 200)}`);
     const d4 = await talkThrough(sdk, [], { idleMs: 1500 });
     let cape = null;
     for (let i = 0; i < 40 && !cape; i++) {
-        cape = sdk.findGroundItem(/cape of/i);
+        cape = (await sdk.scanGroundItems(15)).find((g) => /cape of/i.test(g.name)) ?? null;
         if (!cape) await waitTicks(sdk, 1);
     }
-    if (!cape) throw new Error('no cape on the ground');
+    for (const m of sdk.getNewChat({ types: [0] })) log(sdk, `chat: ${m.text}`);
+    if (!cape) {
+        log(sdk, `pos ${JSON.stringify(pos(sdk))} ground ${JSON.stringify(sdk.getGroundItems().map((g) => [g.name, g.x, g.z]))} recent dialogs ${JSON.stringify(sdk.getState()?.recentDialogs?.slice(-3))}`);
+        throw new Error('no cape on the ground');
+    }
     await bot.pickupItem(cape);
     await waitUntil(sdk, () => !!sdk.findInventoryItem(/cape of/i), 30, 'cape in inventory');
     const tCape = tick(sdk);
