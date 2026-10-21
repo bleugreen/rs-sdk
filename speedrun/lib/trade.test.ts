@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { BotWorldState, InventoryItem, TradeItem, TradeState } from '../../sdk/types';
-import { baseState } from './fake-sdk';
-import { decideGiver, decideReceiver, newGiverCtx, newReceiverCtx, planOffers, sameName, type GiverCtx, type ReceiverCtx } from './trade';
+import { baseState, FakeSdk, flush } from './fake-sdk';
+import { decideGiver, decideReceiver, give, newGiverCtx, newReceiverCtx, planOffers, receiveFrom, sameName, type GiverCtx, type ReceiverCtx, type TradeSdk } from './trade';
 
 const inv = (slot: number, id: number, name: string, count = 1): InventoryItem => ({ slot, id, name, count, optionsWithIndex: [] });
 const ti = (id: number, name: string, count: number): TradeItem => ({ slot: 0, id, name, count });
@@ -168,6 +168,117 @@ describe('decideGiver', () => {
             frame(1, { partner: 'receiver' }, items),
             frame(2, { partner: 'receiver', screen: 'confirm', myOffer: [mine[1]!] }),
         ])).toEqual(['burst', 'decline']);
+    });
+});
+
+// The confirm accept that completes a trade runs [if_close,tradeconfirm], whose
+// inv_stoptransmit packets go out mid-tick, ahead of the tick's inventory update
+// and close. One published state then shows the confirm screen open with both
+// lists empty and the inventory unchanged. On the demo (2026-10-21 16:04 UTC)
+// cairn_h30's give() declined on that state and reported a trade that completed.
+describe('trade completion race: cairn_h30 gives cairn_h71 a talisman and 200 noted essence', () => {
+    const kit = [inv(0, 1438, 'Air talisman', 1), inv(1, 1437, 'Rune essence', 200)];
+    const offer = [ti(1438, 'Air talisman', 1), ti(1437, 'Rune essence', 200)];
+    const specs = [{ item: 'Air talisman', n: 1 }, { item: 'Rune essence', n: 200 }];
+    const giverCtx = (): GiverCtx => newGiverCtx('cairn_h71', kit, planOffers(kit, specs));
+    const toH71 = (t: Partial<TradeState>) => ({ partner: 'cairn_h71', ...t });
+    const fromH30 = (t: Partial<TradeState>) => ({ partner: 'cairn_h30', ...t });
+
+    function decisions<C>(decide: (s: BotWorldState, c: C) => { next: C; action: string }, ctx: C, frames: BotWorldState[]) {
+        return frames.map(f => {
+            const d = decide(f, ctx);
+            ctx = d.next;
+            return d;
+        });
+    }
+
+    // While offered, the giver's items sit in the trade, not its inventory.
+    const giverFrames = (completion: Partial<TradeState>) => [
+        frame(1, toH71({}), kit),
+        frame(2, toH71({ myOffer: offer, myAccepted: true }), []),
+        frame(3, toH71({ screen: 'confirm', myOffer: offer }), []),
+        frame(4, toH71({ screen: 'confirm', ...completion }), []),
+        frame(5, null, []),
+    ];
+
+    test('giver: the emptied confirm screen is waited out, and the close shows the items gone', () => {
+        expect(decisions(decideGiver, giverCtx(), giverFrames({ myOffer: [], theirOffer: [] })).map(d => d.action))
+            .toEqual(['burst', 'wait', 'accept', 'wait', 'done']);
+    });
+
+    test('giver: a decline after our confirm accept settles on the inventory', () => {
+        const ds = decisions(decideGiver, giverCtx(), giverFrames({ myOffer: [offer[1]!] }));
+        expect(ds.map(d => d.action)).toEqual(['burst', 'wait', 'accept', 'decline', 'done']);
+        expect(ds[3]).toMatchObject({ reason: 'my confirm offer is not what was planned', settle: true });
+    });
+
+    test('giver: a settled decline whose items come back is a failure carrying the decline reason', () => {
+        const ds = decisions(decideGiver, giverCtx(), [
+            frame(1, toH71({}), kit),
+            frame(2, toH71({ screen: 'confirm', myOffer: offer }), []),
+            frame(3, toH71({ screen: 'confirm', myOffer: [offer[1]!] }), []),
+            frame(4, toH71({ screen: 'confirm', myOffer: [offer[1]!] }), []),
+            frame(5, toH71({ screen: 'confirm', myOffer: [offer[1]!] }), []),
+            frame(6, toH71({ screen: 'confirm', myOffer: [offer[1]!] }), []), // still open: decline again
+            frame(7, null, kit),
+            frame(8, null, kit),
+            frame(9, null, kit),
+        ]);
+        expect(ds.map(d => d.action)).toEqual(['burst', 'accept', 'decline', 'wait', 'wait', 'decline', 'wait', 'wait', 'closed']);
+        expect(ds[8]).toMatchObject({ reason: 'my confirm offer is not what was planned' });
+    });
+
+    test('giver: a decline before our confirm accept is final', () => {
+        const ds = decisions(decideGiver, giverCtx(), [
+            frame(1, toH71({}), kit),
+            frame(2, toH71({ screen: 'confirm', myOffer: [offer[1]!] }), []),
+        ]);
+        expect(ds[1]).toMatchObject({ action: 'decline', settle: false });
+    });
+
+    test('receiver: the emptied confirm screen is waited out, and the close shows the items arrived', () => {
+        expect(decisions(decideReceiver, newReceiverCtx('cairn_h30', []), [
+            frame(1, fromH30({ theirOffer: offer, partnerAccepted: true })),
+            frame(2, fromH30({ screen: 'confirm', theirOffer: offer })),
+            frame(3, fromH30({ screen: 'confirm', theirOffer: [] })),
+            frame(4, null, kit),
+        ]).map(d => d.action)).toEqual(['accept', 'accept', 'wait', 'done']);
+    });
+
+    test('receiver: a decline after our confirm accept settles on the inventory', () => {
+        const ds = decisions(decideReceiver, newReceiverCtx('cairn_h30', []), [
+            frame(1, fromH30({ theirOffer: offer, partnerAccepted: true })),
+            frame(2, fromH30({ screen: 'confirm', theirOffer: offer })),
+            frame(3, fromH30({ screen: 'confirm', theirOffer: [offer[0]!] })),
+            frame(4, null, kit),
+        ]);
+        expect(ds.map(d => d.action)).toEqual(['accept', 'accept', 'decline', 'done']);
+        expect(ds[2]).toMatchObject({ settle: true });
+    });
+
+    test('give() reports the completed trade as given, without declining', async () => {
+        const sdk = new FakeSdk(frame(1, toH71({}), kit));
+        const result = give(sdk as unknown as TradeSdk, 'cairn_h71', specs);
+        await flush();
+        for (const f of giverFrames({ myOffer: [], theirOffer: [] }).slice(1)) sdk.push(f);
+        const r = await result;
+        expect(r.ok).toBe(true);
+        expect(r.gave.map(i => [i.id, i.count]).sort()).toEqual([[1437, 200], [1438, 1]]);
+        expect(sdk.sent.map(a => a.method)).not.toContain('sendDeclineTrade');
+    });
+
+    test('receiveFrom() reports a trade that completed as its decline landed as received', async () => {
+        const sdk = new FakeSdk(frame(1, fromH30({ theirOffer: offer, partnerAccepted: true })));
+        const result = receiveFrom(sdk as unknown as TradeSdk, 'cairn_h30');
+        await flush();
+        sdk.push(frame(2, fromH30({ screen: 'confirm', theirOffer: offer })));
+        sdk.push(frame(3, fromH30({ screen: 'confirm', theirOffer: [offer[0]!] })));
+        sdk.push(frame(4, null, kit));
+        const r = await result;
+        expect(r.ok).toBe(true);
+        expect(r.reason).toBe('completed as the decline landed: confirm screen offer does not match');
+        expect(r.received.map(i => [i.id, i.count]).sort()).toEqual([[1437, 200], [1438, 1]]);
+        expect(sdk.sent.map(a => a.method)).toContain('sendDeclineTrade');
     });
 });
 
