@@ -16,21 +16,32 @@ const SMITH = Number(process.env.SMITH ?? 60);
 const ARDOUGNE = [2661, 3301];
 const FALADOR = [2965, 3378];
 const LAWGOF = [2571, 3463];
-// railing locs mcannonrailing1..6 (bits 5..10 of %mcannonmulti), from map m39_54 / m40_54
-const RAILINGS: [number, number][] = [[2556, 3475], [2558, 3472], [2557, 3464], [2559, 3462], [2564, 3460], [2572, 3460]];
+// railing locs mcannonrailing1..6 (loc ids 15..20, bits 5..10 of %mcannonmulti), from maps m39_54 / m40_54
+const RAILINGS: [number, number, number][] = [[2556, 3475, 15], [2558, 3472, 16], [2557, 3464, 17], [2559, 3462, 18], [2564, 3460, 19], [2572, 3460, 20]];
 
 type Seg = { name: string; ticks: number; pages: number; options: number; tiles: number; note?: string };
 const segs: Seg[] = [];
 
 async function routeTiles(sdk: BotSDK, x: number, z: number): Promise<number> {
     const p = sdk.findPath(x, z);
-    return p.success ? p.waypoints.length : -1;
+    if (!p.success) return -1;
+    // waypoints are turn points: sum the Chebyshev steps between them
+    let { x: px, z: pz } = pos(sdk);
+    let n = 0;
+    for (const w of p.waypoints) {
+        n += Math.max(Math.abs(w.x - px), Math.abs(w.z - pz));
+        px = w.x;
+        pz = w.z;
+    }
+    return n;
 }
 
 async function walk(bot: BotActions, sdk: BotSDK, x: number, z: number, tol = 1): Promise<number> {
     const tiles = await routeTiles(sdk, x, z);
+    const e0 = sdk.getState()?.player?.runEnergy;
     const r = await bot.walkTo(x, z, tol);
     if (!r.success) throw new Error(`walk to ${x},${z} failed: ${r.message}`);
+    log(sdk, `walk to ${x},${z}: ${tiles} route tiles, run energy ${e0} -> ${sdk.getState()?.player?.runEnergy}`);
     return tiles;
 }
 
@@ -78,9 +89,9 @@ await runScript(async ({ bot, sdk }) => {
     let pages = 0;
     let opts = 0;
     tiles = 0;
-    for (const [rx, rz] of RAILINGS) {
+    for (const [rx, rz, rid] of RAILINGS) {
         for (let attempt = 0; attempt < 12; attempt++) {
-            const rail = await locAt(sdk, rx, rz, /railing/i);
+            const rail = (await sdk.scanNearbyLocs(25)).find((l) => l.x === rx && l.z === rz && l.id === rid) ?? null;
             if (!rail) throw new Error(`railing not found at ${rx},${rz}`);
             sdk.getNewChat({ types: [0] });
             const r = await bot.interactLoc(rail, 'Inspect');
