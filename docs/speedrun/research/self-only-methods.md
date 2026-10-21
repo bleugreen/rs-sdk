@@ -3,7 +3,7 @@
 Issue: cairn://p/rs/74 (under cairn://p/rs/59). Skills: Agility, Woodcutting, Mining, Fishing,
 Thieving, the five the scored account must train itself. Every candidate below was checked
 against this server's scripts and engine, then valued in ticks against the route line it
-would replace, using that line's own document on rs/2's branch
+would replace, using that line's own document under `docs/speedrun/skills/` (rs/2; on main since PR #72)
 (`docs/speedrun/skills/{agility,woodcutting,mining,fishing,thieving,tick-manipulation}.md`).
 
 Labels follow `docs/speedrun/skills/README.md`: **r** read from a script or engine file

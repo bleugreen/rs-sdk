@@ -36,7 +36,11 @@ not assumed from a release date.
 | [travel-and-overhead.md](travel-and-overhead.md) | Teleports, transport, logout tricks, starting position, supply staging | rs/79 |
 
 Lab follow-ups for candidates worth about 300 ticks or more: **rs/90** (2-tick Woodcutting by
-the auto-retaliate flinch) and **rs/91** (the boosted Package B combat finish).
+the auto-retaliate flinch, running) and **rs/91** (the boosted Package B combat finish, measured;
+[helper-fed-and-combat.md](helper-fed-and-combat.md) §3).
+
+The self-only skill routes (`skills/*.md`, rs/2) are on main since PR #72; cite main's
+`docs/speedrun/skills/README.md`, not rs/2's branch.
 
 ## Summary
 
@@ -50,8 +54,8 @@ No upstream-documented bug is live and worth ticks.
 
 What is left is concrete. **About 1,200 ticks are measured** (a fresh account, the Monkey
 Madness temple ladder). **~700-1,500 are conditional** on one mechanism, the 2-tick flinch,
-whose first lab attempt was negative. A long tail of 50-300-tick items, the boosted combat
-finish among them, adds roughly **800-1,500** more. The single largest finding was not a
+whose first lab attempt was negative. The boosted combat finish is now measured at **~194** against
+the route's figure (rs/91). A long tail of 50-300-tick items adds roughly **800-1,500** more. The single largest finding was not a
 technique: the scored account has already spent **~547 ticks** of its counter, and a fresh account
 skips the tutorial in 6.
 
@@ -67,7 +71,7 @@ document an adopted item changes, so the run-order pass can apply it directly.
 | 2 | **Monkey Madness temple: ladder drop onto the trapdoor tile** (up the south bamboo ladder, down the east one, inside the guard box) | OSRS wiki, MM quick guide ([quest-speedrun.md](quest-speedrun.md) row 1) | Yes: `quest_mm.rs2:766-771`, ladders and trapdoor in `maps/m43_43.jm2`; no quest-stage checks | MM step H (102 on success, ~600 expected failure budget) | **~670 expected, ~68 success path (i on m)** | none; 5-9 prayer points | **Measured**, 33-36 ticks, 4 of 4 (`quest-mm-temple-ladder.ts`); folded into the quest route, MM now ~3,897 success / ~4,077 expected | `quests/monkey_madness.md` step H, `quests/README.md` (rs/3): **adopted** at `663b4814` |
 | 3 | **Start the scored run on a fresh account and skip the tutorial** | OSRS speedrun timing convention ([travel-and-overhead.md](travel-and-overhead.md) row 1; [free-xp.md](free-xp.md)) | Yes: the skip is offered when `map_live` is false (`runescape_guide.rs2:11-18`, `ServerOps.ts:24-26`); the demo leaves `NODE_PRODUCTION` unset | The final score: `www_cairn_md` already carries ~547 ticks (public hiscore, Overall 28 at 2m 44s) | **~540 (m)** | A new account name; the helper roster trades to it | **Measured**: skip in 6 ticks. Adopted by the main thread | Run plan (main thread): **decided yes**; helpers and docs take the scored name from an env value |
 | 4 | 2-tick Mining on stays by the same flinch | as row 1 ([self-only-methods.md](self-only-methods.md) row 2) | as row 1; `mining.rs2:83-85` | Mining 63-99, ~3,173 | **0-530 (i), conditional** | as row 1; no iron rock is multi-combat | After rs/90, a planner run first (brief B there) | `skills/mining.md` (rs/2) |
-| 5 | **Boosted Package B combat finish**: ranging potion and glory in the cannon plus knives phase; zero-drain Protect from Melee flicks instead of prayer potions; super antipoison instead of sharks. The cannon's accuracy is the wielded style's, boosts included | OSRS wiki, *Dwarf multicannon*; LostCity forum t/3058, t/14198 ([helper-fed-and-combat.md](helper-fed-and-combat.md) rows 2-4) | Yes: `cannon_fire.rs2:116`, `player_combat.rs2:52-79`; ranging potion `consume_effects.dbrow:57-63`; drain timer `prayer.rs2:30-44,159-175`; `anti_poison.rs2:11-16`. No ranged prayers exist (15 prayers) | Package B finish, ~2,020 | **~290-320 (i)**: potion and glory ~210-240, flicks ~40, antipoison ~40 | ~1 ranging dose per 1,000 ticks, 1 glory, ~6 antipoison doses; flick packets inside the 5-per-tick cap | Flick drain measured (90 points held vs 0 flicked in 150 ticks); rates untested: **rs/91**, which also tests rs/28's scimitar-wielded cannon alternative | `skills/ranged.md`, `skills/combat.md`, `skills/prayer.md` (rs/28); `quests/README.md` §7 (rs/3) |
+| 5 | **Boosted Package B combat finish**: ranging potion and glory in the cannon plus knives phase; zero-drain Protect from Melee flicks instead of prayer potions; super antipoison instead of sharks. The cannon's accuracy is the wielded style's, boosts included | OSRS wiki, *Dwarf multicannon*; LostCity forum t/3058, t/14198 ([helper-fed-and-combat.md](helper-fed-and-combat.md) rows 2-4) | Yes: `cannon_fire.rs2:116`, `player_combat.rs2:52-79`; ranging potion `consume_effects.dbrow:57-63`; drain timer `prayer.rs2:30-44,159-175`; `anti_poison.rs2:11-16`. No ranged prayers exist (15 prayers) | Package B finish, 2,051 (rs/31's rates) | **~194 against the route's 2,051; ~354 like for like against the same lab's control, 2,211 (rates m, finish i)**: 1,857 with the kit | ~9 ranging doses, ~3 super antipoison doses, 1 super attack, 1 super strength, 1 glory; no sharks or prayer potions; at most 5 packets per tick (the three-prayer flick tick) | **Measured, rs/91**: at Ranged 85, 21.95 against 18.56 base Ranged per tick (+18%, no overlap); 0 prayer points in 15 flicked runs. A scimitar throughout is slower (2,794) | `quests/README.md` §7 and step 14: **adopted** at `c4066d82`; `skills/ranged.md` (rs/28) |
 | 6 | Predicted obstacle clicks and chosen entry tiles on the Wilderness Agility course | OSRS wiki, *Wilderness Agility Course* (67-tick theoretical lap against our 73-77) | Yes: clicks during an obstacle are dropped (`OpLocHandler.ts:14-18`); the rope swing charges `p_delay(distance)` (`wilderness_course.rs2:80-88`) | Agility, ~4,695 | **~60-340 (i)** | bot work | Untested; brief C on the topic page | `skills/agility.md` (rs/2) |
 | 7 | **Skill while running**: enchant, Charge and delay-free helper skills during walking legs (the community's "alch while running") | OSRS speedrunning guide; Sal's forum ([travel-and-overhead.md](travel-and-overhead.md) row 2) | Yes: a delayed player keeps moving (`World.ts:801`, `Player.ts:727-751`); spell-on-item leaves the walk queue (`Player.ts:1026-1030`); bury stops it (`bury_bone.rs2:8`) | Magic enchanting (~300 casting ticks), Charge, Fletching, Herblore, Crafting | **~100-300 (i on m)** | rings and runes carried on the leg; never re-click the walk in a cast's tick (that stops the run, m) | Mechanism measured (25 of 25 casts on slot, identical movement); route count is brief B there | `skills/magic.md`, `skills/interleaving.md` (rs/28); the run order's walking legs |
 | 8 | Login and logout hygiene: last action and logout in one tick; first action after login sent blind | OSRS speedrunning guide; `playtime-audit.md` | Yes: the joining tick is uncounted, the logout tick counted | every logout cycle (~60-200 on the route) | **~60-400 (i)** | bot work | Untested; brief C on the travel page | speedrun/lib logout and login primitives (rs/40); `playtime-audit.md` |
@@ -86,6 +90,8 @@ document an adopted item changes, so the run-order pass can apply it directly.
 | 21 | Ape Atoll stall thieving during the Monkey Madness visit | OSRS wiki, *Ape Atoll* | Yes: `aa_market.rs2:11-14` | Thieving | **0-30 (i)** | Thieving 65 before MM | not worth a lab | none (not adopted) |
 | - | **Correction (a cost): walk the monkey back from the zoo**; spirit trees delete it | OSRS wiki, MM quick guide | Yes: `spirit_tree.rs2:74-76` -> `teleport.rs2:109-112` | MM step J | **about -100 (i)** | none | Read; route tile count needed | `quests/monkey_madness.md` step J (rs/3): **adopted** at `663b4814` |
 
+With the kit on both packages, Package A's finish falls to ~2,720 (i, rs/91 config 5), so
+Package B still wins, but by ~310-340 rather than ~910-970 (`quests/README.md` §7, decision 1).
 The melee-boost kit (super attack and strength, glory, Ultimate Strength and Incredible Reflexes on
 flicks) was worth ~500-580 on the retired Package A. On Package B it applies only to the
 ~231-tick cannon plus defensive melee phase, worth a few tens of ticks. Knight multiskilling
@@ -129,15 +135,14 @@ ticks.
    2 ticks, and the player's own attack never fires. If it holds, Mining stays (row 4) follow
    through a planner run. If it cannot hold, the trace gives the file and line that says why, and
    rows 1 and 4 close.
-4. **Boosted Package B combat finish (~290-320, lab running as rs/91).** *Brief:* on the local
-   engine at 300 ms, set the post-MM and Dragon Slayer stats (Attack and Strength 99, Defence ~97,
-   Ranged ~54, the route's Prayer). Run rs/31's `ranged-cannon.ts` at the poison spiders, 400 ticks
-   per configuration: cannon plus rapid rune knives with sipped Protect from Melee; plus
-   zero-drain flicks; plus a ranging potion kept above half and a glory; plus super antipoison
-   instead of sharks; and rs/28's alternative of a rune scimitar wielded throughout, so the cannon
-   fires at melee accuracy. Measure Ranged, Defence and Hitpoints xp per tick, cannon hit rate,
-   sips, food and packet-cap hits. *Success:* the best configuration beats the control by at least
-   10% in Ranged xp per tick, and the Package B finish is recomputed from it.
+4. **Boosted Package B combat finish (~194 against the route, measured by rs/91; adopted).**
+   Flicked Protect from Melee, a ranging potion, a glory and super antipoison with no food
+   raise cannon-plus-knives from 18.56 to 21.95 base Ranged per tick at Ranged 85 (m, 3 runs
+   each). The finish falls to ~1,857 (i), against the route's 2,051 and the same lab's control of
+   2,211. So rs/31's no-kit rate may be ~160 optimistic, and the like-for-like saving is ~354.
+   Two route-script rules come with it: drink in the flick's tick, after the toggles, and refill
+   the cannon only while standing beside it. The quest README carries the kit, rules and totals
+   (§7, step 14). Full results: [helper-fed-and-combat.md](helper-fed-and-combat.md) §3.
 5. **Skill while running (~100-300, mechanism measured).** Move enchanting, Charge and the
    delay-free helper skills (including their level-ups, which do not stop a queued walk) into
    the route's walking legs. *Brief:* count the route's walking ticks on legs with 20 or more
@@ -163,6 +168,11 @@ the Jungle Demon (row 11).
 - **Prayer drains nothing if all prayers are toggled off and on at least every 4 ticks**
   (measured twice, by rs/75 and rs/77). This changes the prayer-potion budgets in every quest
   fight and in the combat finish.
+- **A sip or an eat blocks prayer buttons for the next two ticks** (m, rs/91): the engine decodes
+  client input before it clears an expired delay (`World.ts`). Drink or eat in the same tick as a
+  flick, after the toggles.
+- **The route's no-kit cannon-plus-knives rate may be ~160 ticks optimistic** (m, rs/91): its
+  same-lab control gives 2,211 for the finish against rs/31's 2,051.
 - **There are no ranged prayers in this revision** (15 prayers in `skill_prayer/scripts/prayers/`).
 - **A dismissed level-up ends a Make-X batch on the weak queue** (Engine-TS #125, in our base).
   This affects Fletching and Crafting, not anvil smithing.
@@ -175,7 +185,7 @@ updated for Package B. The topic pages take exact figures from the documents nam
 | Route line | Ticks | Document |
 |---|---|---|
 | Quests on the route (Monkey Madness option 1; Package B: Waterfall off, Dragon Slayer on), fixed client, expected | ~11,750 before Package B's swap | `quests/README.md` (rs/3) |
-| Combat finish after Monkey Madness and Dragon Slayer (Package B) | ~2,020 (~231 cannon and melee, ~1,792 cannon and knives) | `quests/README.md` §7, `skills/ranged.md` (rs/28) |
+| Combat finish after Monkey Madness and Dragon Slayer (Package B) | ~2,020 (~231 cannon and melee, ~1,792 cannon and knives); now ~1,857 with rs/91's kit | `quests/README.md` §7, `skills/ranged.md` (rs/28) |
 | Agility: Grand Tree to 75, Wilderness laps to 99 | ~4,700 | `skills/agility.md` (rs/2) |
 | Woodcutting 1-99 | ~3,960, ~3,030 with knife manipulation | `skills/woodcutting.md` (rs/2) |
 | Mining after Doric's Quest and Plague City | ~3,765 (knife iron 3.00 ticks per ore at respawn 13) | `skills/mining.md` (rs/2) |
