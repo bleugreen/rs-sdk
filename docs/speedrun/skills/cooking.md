@@ -15,6 +15,15 @@ just-in-time hand-off) is rs/47's; its lab figures are cited here as **measured 
 **Host and rate.** Every figure measured here was taken on **bbs** (Linux, shared with helper
 labs) at **`NODE_TICKRATE=300`**. No figure comes from the Mac executor.
 
+**Client.** Every figure here was taken on the headless lite client. The scored run drives the
+browser webclient against the demo, where each reaction to observed state costs 1-2 more ticks
+through the SDK relay from home and about 0.15 from Ashburn (rs/2; `docs/speedrun/LAB.md` on
+main, "Which client a number was taken on" and the host-latency table under "Running several
+labs on one machine"). The one-login wine route has **about 5-6 reactions** in its 45-51 active
+ticks: the two trade screens, the bank opening twice, the level-up dismissal and the re-arming
+make. The fermentation itself is a server timer. The kebab cycle has 1 reaction per 14 kebabs
+(the bank seen open). Totals are not re-derived for the webclient.
+
 ## 1. Recommendation
 
 Three routes, side by side (scored-account ticks):
@@ -43,6 +52,15 @@ and 28 loose wines held in the inventory across the logout. **If grapes are unob
 no sellers), use **ugthanki kebabs**: 131 ticks, no Cooking level needed, and every input can be
 gathered or bought. Fish on a range is the last resort at about 980 ticks. Each 100 wines short
 of 364 good wines costs about 36 ticks of kebabs or about 200 of sharks (inferred).
+
+### Summary row
+
+rs/2's columns for the Item-fed skills section of `docs/speedrun/skills/README.md`; column 5
+is "with interleaving (net)", n/a where nothing is absorbable (section 5).
+
+| Skill | Headline method | Start level (on-route quests) | Ticks to 99, normal | Ticks to 99, with interleaving (net) | Basis | Helper supplies | Document |
+|---|---|---|---|---|---|---|---|
+| Cooking | rs/47's one-login wine bank fermentation (deposit 29, let the login timer fire, deposit 421, make one wine) | 30 after Cook's Assistant ([quests README](../quests/README.md) step 12), else 1; irrelevant, one firing covers 1 -> 99 | 45-51 active ticks (73-77 from login to 99; the two 20-tick waits are idle) | n/a | measured by rs/47 (3 runs, all 99; P(99) 98.3% in one login) | 450 unfermented wines as notes, 1 grapes, 1 jug of water | cooking.md |
 
 ## 2. Route by level band
 
@@ -107,13 +125,15 @@ ticks. With any kebab supply at all, kebabs replace the fish.
 
 | Quest | Cooking (base, read) | On route? |
 |---|---|---|
-| Cook's Assistant | 300 (`quest_cook.rs2:89`) | no |
+| Cook's Assistant | 300 (`quest_cook.rs2:89`) | **yes**: Package B filler before Dragon Slayer ([quests README](../quests/README.md) step 12) |
 | Big Chompy Bird Hunting | 1,470 (`quest_chompybird.rs2:47`) | no |
 | Gertrude's Cat | 1,525 (`quest_fluffs.rs2:316`) | no |
 | Heroes' Quest | 2,825 (`quest_hero.rs2:35`); also needs Cooking 53 for the lava eel | no (`legends.md`) |
 
-No planned quest gives Cooking, so the **on-route start is 1**. Quest xp cannot matter for the wine
-route in any case: one firing covers 1 -> 99.
+Cook's Assistant is now on the route as Dragon Slayer filler, so the on-route start is **30**
+(300 base, inferred from the server's xp table, `Player.ts`) if the wine login falls after it,
+and 1 before it. Quest xp cannot matter for the wine route in any case: one firing covers
+1 -> 99, and the re-arming make's Cooking 35 is reached by the first firing either way.
 
 ## 4. Mechanics
 
@@ -192,6 +212,16 @@ from the click). Measured (`cooking-range.ts`, 26 lobsters each): range, fast sc
   Cooking-20 receiver refused) and 450 makes plus banking. Not worth it.
 - **Trading kebab inputs instead of banking**: an in-trade swap costs 5-9 ticks per 14 against a
   1-tick bank visit (inferred). Bank wins.
+
+**Interleaving** (`interleaving.md` section 8, the absorbable-fractions table, which lists
+Cooking as location-bound): **none of the wine route can be absorbed into self-only time.** Its
+active ticks are a trade, bank deposits and one make, at a bank and at a login boundary
+(section 4), so nothing in it is portable to a pickpocket stun or a gathering loop. Column 5 of
+the summary row is n/a. The reverse is possible: the two 20-tick waits are idle, and other
+self-only work can run in them, because a delay or modal only holds the timer until it clears
+(section 6; inferred). The kebab fallback is delay-free but needs two non-stackable slots per
+kebab and a bank, so, like Herblore, a top-up trade (5-9 ticks) per 14 costs more than the
+1-tick bank visit it replaces.
 
 ## 6. Gotchas
 

@@ -10,6 +10,13 @@ Scripts: [`delayfree-cycle.ts`](../scripts/delayfree-cycle.ts) (actions per tick
 shared host also running helper labs) at **`NODE_TICKRATE=300`** with the headless lite
 client. No figure here comes from the Mac executor.
 
+**Client.** The scored run drives the browser webclient against the demo, where each reaction to
+observed state costs 1-2 more ticks through the SDK relay from home and about 0.15 from Ashburn
+(rs/2; `docs/speedrun/LAB.md` on main, "Which client a number was taken on" and the host-latency
+table under "Running several labs on one machine"). Fletching has **no reactions in its loop**:
+the 5 actions per tick use fixed slots and go out blind (section 4). The one supply trade
+accepts two screens. Totals are not re-derived for the webclient.
+
 ## 1. Recommendation
 
 Attach arrowheads to headless arrows, 15 arrows per action, 5 actions in every server tick,
@@ -24,6 +31,15 @@ observed tick) the same work is 1 action per tick: **75 -> 99 took 173 ticks** (
 Supply is the real constraint, not playtime: a 1 -> 99 run eats about 2,600 rune arrowheads,
 and shops hold 250. **Adamant arrowheads from 60 cost only about 9 extra ticks** (283 actions
 instead of 240, inferred), so they are the practical default unless rune arrowheads are cheap.
+
+### Summary row
+
+rs/2's columns for the Item-fed skills section of `docs/speedrun/skills/README.md`; column 5
+is "with interleaving (net)". The loop conditions are in section 5.
+
+| Skill | Headline method | Start level (on-route quests) | Ticks to 99, normal | Ticks to 99, with interleaving (net) | Basis | Helper supplies | Document |
+|---|---|---|---|---|---|---|---|
+| Fletching | arrowheads on headless arrows, 15 arrows per action, 5 actions per tick, no bank | 1 (no on-route quest gives Fletching; [quests README](../quests/README.md) section 4) | 50 (about 57 with the adamant cap) | **~5-20**: the 173 rune-tier actions and their level-ups ride ~24 pickpocket stuns beside the bones, clean (Thieving has no knife column); the 67 low-tier actions standalone (~14) or as extra stacks; one trade unless it rides a bone top-up | measured (bbs); interleaving inferred | 3,600 headless arrows; arrowheads 60 bronze, 90 iron, 135 steel, 225 mithril, 495 adamant, 2,595 rune (rune scarce) | fletching.md |
 
 ## 2. Route by level band
 
@@ -113,6 +129,29 @@ Fletching quest reward should be chosen for its Fletching xp. **On-route start: 
 - **Ogre arrows** (`ogre_arrows.rs2`): need Big Chompy Bird Hunting, lower xp. Not considered.
 - **Trading per inventory**: not needed; everything stacks.
 
+**Interleaving** (`interleaving.md` section 8, the absorbable-fractions table): **Fletching is
+the delay-free skill that absorbs cleanly**, because all its inputs stack. The host is the
+**plain pickpocket loop**, inside the stuns:
+
+- **Packets.** A stun carried 1.96 bones and 7.3 delay-free helper actions at once without
+  slowing the next attempt (12.2 ticks from failure to next attempt against 12.3 with nothing,
+  measured, interleaving.md section 4). The 173 rune-tier actions fill about 24 of Thieving's
+  ~100 stuns; with Charge's ~22 (magic.md section 5) that is under half of them.
+- **Inventory.** Headless arrows and the current arrowhead tier are 2 stacks in the bone load
+  (prayer.md section 5 counts the slots). The low tiers change every few actions, so fletch the
+  67 actions to Fletching 75 standalone (about 14 ticks) or carry their stacks for a few stuns.
+- **Level-ups.** Fletching's 98 level-ups are the reason not to use a gathering loop: one
+  helper skill's early levels cost about 136 Woodcutting ticks over 29 dialog episodes
+  (interleaving.md section 5, measured), far more than Fletching's 50 standalone ticks. Inside a
+  stun the dialog blocks nothing: the next pickpocket click closes it, as OPHELDU does here
+  (inferred, not measured in a stun).
+- **Knife column.** Thieving has no tick-manipulation variant, so the share nets against
+  nothing. rs/9's Woodcutting knife loop is no host: it is itself a Fletching action on logs
+  and fills the tick after each roll (interleaving.md section 7).
+
+Net: about 5-20 ticks left on the scored account's clock (the low tiers, plus one 5-tick trade
+of 7-8 stacks unless it rides a bone top-up), against 50 standalone (inferred).
+
 ## 6. Gotchas
 
 - **Members only** (`arrows.rs2:51-53`). The demo is members (`fly.toml`, `NODE_MEMBERS`).
@@ -157,7 +196,9 @@ account can fletch wherever it stands, for example while waiting at a quest loca
 
 - **Interleaving.** Fletching has no cycle of its own, so its 240 actions could ride in spare
   packet slots of other skills' ticks (rs/38 measured 3.8-3.9 helper arrows per tick inside
-  gathering loops). If that holds on production, Fletching costs close to zero dedicated ticks.
+  gathering loops). Section 5 now plans it into the pickpocket stuns instead (gathering loops pay
+  for Fletching's level-ups), for about 5-20 net ticks. The stun level-up behaviour is
+  unmeasured.
 - **Production latency.** A burst of 5 must reach the server inside one 300 ms tick. On the
   demo server a late packet only spills into the next tick (it is queued, not dropped), so the
   worst case is a few extra ticks. Not measured on production.
