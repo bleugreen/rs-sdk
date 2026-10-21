@@ -9,10 +9,12 @@
 // The result is four sorted key/value arrays - about 8 bytes per loc - shared by
 // every bot in the process and cached on disk so it's built once per machine.
 //
-// Placement note: ClientBuild.loadLocations computes a `currentLevel` for the
-// LinkBelow bridge adjustment but passes the RAW file `level` to addLoc - the
-// adjustment only picks a collision map. So scene placement needs no land data
-// at all, which is why this index reads loc files only.
+// Placement note: locs are keyed by their RAW map-file level, as
+// ClientBuild.loadLocations passes them to addLoc. The browser scene does not
+// stay that way on bridges - finishBuild then pushes every LinkBelow tile down a
+// level (World.pushDown) - so SceneLite translates the player's level to the map
+// level using the terrain flags kept here, and CollisionBuilder applies the
+// bridge rule loadLocations uses to pick a collision map.
 
 import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';

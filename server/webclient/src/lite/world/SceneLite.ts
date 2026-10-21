@@ -11,8 +11,17 @@
 // All five are answered from the static index plus an overlay of the loc mutations
 // the server streams in zone packets. Coordinates coming in are BUILD-AREA tiles
 // (0..103) relative to mapBuildBase*, matching what the real World stores.
+//
+// Levels coming in are SCENE levels (the player's minusedlevel), and they are not
+// the map-file levels the index is keyed by. ClientBuild.finishBuild calls
+// World.pushDown on every tile whose level-1 mapl has LinkBelow, so on a bridge,
+// pier or platform the browser's scene level L holds what the map files put on
+// level L+1. `mapLevel` makes that translation once, for queries and zone
+// mutations alike, so the overlay is keyed exactly like the index and the
+// CollisionBuilder's own bridge shift moves both to the same collision map.
 
 import { LocLayer } from '#/dash3d/LocLayer.js';
+import { MapFlag } from '#/dash3d/MapFlag.js';
 import LocType from '#/config/LocType.js';
 
 import { LocIndex, valueAngle, valueLocId, valueShape } from './LocIndex.js';
@@ -92,21 +101,15 @@ export class SceneLite {
 
     /** LOC_ADD_CHANGE: server placed or replaced a loc at a world coord. */
     addLoc(level: number, worldX: number, worldZ: number, locId: number, shape: number, angle: number): void {
-        const layer = layerOf(shape);
-        this.overlay.set(overlayKey(layer, level, worldX, worldZ), (locId << 7) | ((shape & 0x1f) << 2) | (angle & 0x3));
+        const key = overlayKey(layerOf(shape), this.mapLevel(level, worldX, worldZ), worldX, worldZ);
+        this.overlay.set(key, (locId << 7) | ((shape & 0x1f) << 2) | (angle & 0x3));
         this.collisionDirty = true;
     }
 
     /** LOC_DEL: server removed whatever loc of this shape's layer was here. */
     delLoc(level: number, worldX: number, worldZ: number, shape: number): void {
-        this.overlay.set(overlayKey(layerOf(shape), level, worldX, worldZ), DELETED);
+        this.overlay.set(overlayKey(layerOf(shape), this.mapLevel(level, worldX, worldZ), worldX, worldZ), DELETED);
         this.collisionDirty = true;
-    }
-
-    /** Static loc id at a world coord, ignoring the overlay - for LOC_DEL bookkeeping. */
-    staticLocIdAt(layer: LocLayer, level: number, worldX: number, worldZ: number): number {
-        const value = this.index.lookup(layer, level, worldX, worldZ);
-        return value ? valueLocId(value) : 0;
     }
 
     /**
@@ -134,7 +137,7 @@ export class SceneLite {
         for (const layer of [LocLayer.WALL, LocLayer.WALL_DECOR, LocLayer.GROUND, LocLayer.GROUND_DECOR]) {
             for (let x = worldX; x < worldX + 8; x++) {
                 for (let z = worldZ; z < worldZ + 8; z++) {
-                    if (this.overlay.delete(overlayKey(layer, level, x, z))) {
+                    if (this.overlay.delete(overlayKey(layer, this.mapLevel(level, x, z), x, z))) {
                         removed = true;
                     }
                 }
@@ -146,16 +149,31 @@ export class SceneLite {
         }
     }
 
-    /** Read-only view for CollisionBuilder, which must see the same overrides. */
+    /**
+     * Read-only view for CollisionBuilder, which must see the same overrides.
+     * Keyed by map level, like the index, so the builder can treat both alike.
+     */
     get overlayEntries(): ReadonlyMap<number, number> {
         return this.overlay;
     }
 
     // ------------------------------------------------------------------ internals
 
-    private valueAt(layer: LocLayer, level: number, sceneX: number, sceneZ: number): number {
+    /**
+     * Scene level -> map level at a world tile: one up on a bridged tile, the
+     * same `level + 1` rule Client.ts applies to a server loc change there.
+     */
+    private mapLevel(level: number, worldX: number, worldZ: number): number {
+        if (level < 3 && (this.index.mapFlags(1, worldX, worldZ) & MapFlag.LinkBelow) !== 0) {
+            return level + 1;
+        }
+        return level;
+    }
+
+    private valueAt(layer: LocLayer, sceneLevel: number, sceneX: number, sceneZ: number): number {
         const worldX = this.baseX + sceneX;
         const worldZ = this.baseZ + sceneZ;
+        const level = this.mapLevel(sceneLevel, worldX, worldZ);
 
         const override = this.overlay.get(overlayKey(layer, level, worldX, worldZ));
         if (override !== undefined) {

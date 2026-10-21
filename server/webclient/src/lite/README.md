@@ -135,6 +135,13 @@ structure over patching it, so it cannot drift.
   The browser client instead patches collision flags incrementally
   (`Client.locChangeUnchecked`); rebuilding from the overlay can't drift out of
   sync over a long session, which matters more here than the latency.
+- **Bridged tiles shift a level.** The browser scene pushes every tile whose
+  level-1 map flags have `LinkBelow` down a level, so on a bridge, pier or
+  platform the player's level-0 scene holds the map's level-1 locs. `LocIndex`
+  keeps raw map levels, so `SceneLite` maps the player's level to the map level
+  for every query and every overlay write. Skip that and a door the server opens
+  on a bridged floor is recorded a level too low, which the collision builder
+  drops: the router keeps the door shut forever.
 - **A sent op is not an accepted op.** Not lite-specific — it bites the browser
   client identically — but it bites a swarm hardest, because a fleet making zero
   progress still looks perfectly healthy. The engine refuses ops it will not run
