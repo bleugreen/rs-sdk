@@ -1,0 +1,10 @@
+=== sample 1 2026-10-21 04:00:05 PDT load: 19.39, 9.58, 12.39
+react: login 2653 ms, 421 messages, msgs/tick p10 1 p50 1 p90 1 max 217 (n=189), tick interval p10 121.1 p50 263.7 p90 385.8 max 604.6 (n=188)
+react delay +0 ms: ticks {"1":1,"2":14}  reactMs p10 0.2 p50 0.3 p90 0.4 max 1 (n=15)
+react delay +25 ms: ticks {"1":1,"2":14}  reactMs p10 25 p50 25.1 p90 25.2 max 25.3 (n=15)
+warm GET engine:443  ttfb p10 191.9 p50 299 p90 402.7 max 402.7 (n=9)
+  by phase since frame: 0:273.8(3) 50:376.1(2) 100:299(1) 150:191.9(1) 250:204.7(1) 300:300.8(1)
+warm GET gateway:7443 ttfb p10 111.3 p50 1848.3 p90 3838.6 max 3838.6 (n=8)
+  by phase since frame: 0:2003.8(4) 50:587.5(1) 100:111.3(1) 200:3838.6(2)
+sample 10 min: players 1623-1675, tick interval p10 171 p50 290.6 p90 394.2 max 794.2 (n=2071), >400 ms: 194/2071
+players online at end: 1626
