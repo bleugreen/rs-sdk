@@ -109,18 +109,18 @@ browser_path() {
     # Oaks fall on 1 log in 8 (woodcut.rs2), so neither loop walks between most logs. Both run as
     # the in-page knife-cycle program (technique knife, then plain) on the oaks at 3203,3240 and
     # 3203,3246, each sized in ticks (about 2.8 per second in bursts) from the time left: the knife
-    # takes 55% after setup, plain the rest. Every 2.5 s the poll records the program's tick, its
+    # takes 62% after setup, plain the rest (sized at 2.6 per second, so it ends inside its timeout). Every 2.5 s the poll records the program's tick, its
     # success count with the last 12 success ticks (marks.successes; a stamp's index is count - 12 + i),
     # and the counters that classify resyncs (phaseResyncs, slips, resyncs, levelUps, switches).
     export KPROG='(() => { const s = rsPrograms.status(); if (!s) return null; const m = (s.marks && s.marks.successes) || { count: 0, ticks: [] }; const c = s.counters || {}; return { id: s.runId, ph: s.phase, t: s.tick, n: m.count, k: m.ticks.slice(-12), pr: c.phaseResyncs || 0, sl: c.slips || 0, rs: c.resyncs || 0, lu: c.levelUps || 0, sw: c.switches || 0 }; })()'
     kpage='bun --no-install docs/speedrun/scripts/demo-browser-page.ts eval --dir="$OUT/page" --every=2.5 --progress="$KPROG"'
     local oaks='trees: [[3203, 3240], [3203, 3246]]'
-    local kt=$(( ( t - 40 ) * 55 / 100 * 28 / 10 )); [ $kt -gt 900 ] && kt=900; [ $kt -lt 150 ] && kt=150
+    local kt=$(( ( t - 40 ) * 62 / 100 * 28 / 10 )); [ $kt -gt 900 ] && kt=900; [ $kt -lt 150 ] && kt=150
     kn="$setup && $kpage"' --json="$OUT/knife.json" --timeout-min=10 "rsPrograms.run(\"knife-cycle\", { method: \"oak\", '"$oaks"', maxTicks: '"$kt"' })"'
     echo "knife: maxTicks $kt, $t s left in the slot"
     run_probe knife "$kn" $t || rc=$?
     t=$(( $(left) - 25 )); [ $t -lt 30 ] && t=30
-    local pt=$(( ( t - 8 ) * 28 / 10 )); [ $pt -lt 60 ] && pt=60
+    local pt=$(( ( t - 8 ) * 26 / 10 )); [ $pt -lt 60 ] && pt=60
     plain="$kpage"' --json="$OUT/plain.json" --timeout-min=10 "rsPrograms.run(\"knife-cycle\", { method: \"oak\", technique: \"plain\", '"$oaks"', maxTicks: '"$pt"' })"'
     echo "plain control: maxTicks $pt, $t s left in the slot"
   else
