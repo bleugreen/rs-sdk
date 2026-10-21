@@ -132,27 +132,3 @@ describe('the Deserted Keep', () => {
         expect(inKeep(PLACES.arenaLadder.x, PLACES.arenaLadder.z)).toBe(false);
     });
 });
-        expect(o.phases).toEqual(['fund', 'shops', 'talismans', 'magic', 'guild', 'lundail']);
-        expect(o.targets['Cosmic rune']).toBe(62);
-        expect(o.funders.map(String)).toEqual(['/^cairn_h03$/i']);
-    });
-    test('unknown phases are refused', () => {
-        expect(() => runesOptions({ phases: ['shops', 'fish'] })).toThrow(/unknown phase fish/);
-    });
-    test('training adds air, mind and a staff of earth; Betty repeats the rune lines as a second shelf', () => {
-        const o = runesOptions({ targets: { 'Air rune': 100, 'Mind rune': 4 } });
-        const list = shopList(o, 50);
-        const air = list.filter(l => l.item === 'Air rune');
-        expect(air.map(l => l.shop)).toEqual(['aubury', 'betty']);
-        expect(air.every(l => l.quantity === 150)).toBe(true);
-        expect(list.find(l => l.item === 'Mind rune')!.quantity).toBe(54);
-        expect(list.find(l => l.item === 'Staff of earth')!.shop).toBe('zaff');
-        // Shop-less lines never reach the buyer.
-        expect(list.some(l => /cosmic|blood|law|talisman/i.test(String(l.item)))).toBe(false);
-    });
-    test('no training: no staff of earth', () => {
-        const list = shopList(runesOptions({}), 0);
-        expect(list.some(l => l.item === 'Staff of earth')).toBe(false);
-        expect(list.find(l => l.item === 'Air rune')!.quantity).toBe(1650);
-    });
-});
