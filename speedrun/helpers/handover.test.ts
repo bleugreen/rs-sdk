@@ -5,8 +5,8 @@ import type { FakeSdk } from '../lib/fake-sdk';
 import { borderGuard, guard, pathfinder, tollWorld } from '../lib/fake-toll-gate';
 import { inAlKharid, isEastOfTollGate, type Tile } from '../lib/toll-gate';
 import type { GiveResult } from '../lib/trade';
-import { gameIo, giveOutcome, runHandovers, tollsAfterBank, withdrawSpecs, type Handover, type HandoverIo, type HandoverOptions } from './handover';
-import type { RoleContext } from './role';
+import { finishOf, gameIo, giveOutcome, handoverKey, handoverOptions, runHandovers, tollsAfterBank, withdrawSpecs, type Handover, type HandoverIo, type HandoverOptions } from './handover';
+import { memoryRoleState, type RoleContext, type RoleState } from './role';
 
 const AL_KHARID = { x: 3290, z: 3170 };
 const AL_KHARID_BANK = { x: 3270, z: 3167 };
@@ -43,14 +43,21 @@ const delivered = (items: Handover['items']): GiveResult => ({ ok: true, ticks: 
  * pathfinder that stalls at the gate, and the real travel (travelTo). The bank
  * and the trade are stubs that record where they were used.
  */
-function setup(at: Tile, carried: number, give?: (fake: FakeSdk, items: Handover['items']) => GiveResult) {
+function setup(
+    at: Tile,
+    carried: number,
+    give?: (fake: FakeSdk, items: Handover['items'], to: string) => GiveResult,
+    run: { state?: RoleState & { data: Record<string, unknown> }; abort?: AbortController } = {}
+) {
+    const state = run.state ?? memoryRoleState();
+    const abort = run.abort ?? new AbortController();
     const fake = tollWorld(at, carried, { nearbyNpcs: [guard(4, 3269, 2), guard(2, 3266, 2)] });
     (fake as unknown as { getBankItems: () => [] }).getBankItems = () => [];
     borderGuard(fake);
     ticker = setInterval(() => fake.tick(), 1);
     const { bot, calls } = pathfinder(fake);
     const logs: string[] = [];
-    const ctx = { bot, sdk: fake, account: 'cairn_h41', options: {}, log: (m: string) => logs.push(m), reportBank: () => {}, signal: new AbortController().signal } as unknown as RoleContext;
+    const ctx = { bot, sdk: fake, account: 'cairn_h41', options: {}, log: (m: string) => logs.push(m), reportBank: () => {}, signal: abort.signal, state } as unknown as RoleContext;
     const here = () => `${fake.state!.player!.worldX},${fake.state!.player!.worldZ}`;
     const events: string[] = [];
     const withdrawn: WithdrawSpec[][] = [];
@@ -72,12 +79,12 @@ function setup(at: Tile, carried: number, give?: (fake: FakeSdk, items: Handover
         give: async (_, to, items) => {
             events.push(`give ${to} ${here()}`);
             given.push(items);
-            if (give) return give(fake, items);
+            if (give) return give(fake, items, to);
             for (const it of items) drop(fake, it.item, it.n);
             return delivered(items);
         }
     };
-    return { fake, ctx, io, events, withdrawn, given, logs, walks: calls };
+    return { fake, ctx, io, events, withdrawn, given, logs, walks: calls, state, abort };
 }
 
 const coinsTo76 = (n: number, o: Partial<HandoverOptions> = {}): HandoverOptions => ({ bank: VARROCK_WEST_BANK, meet: VARROCK_WEST_MEET, handovers: [{ to: H76, items: [{ item: 'Coins', n }] }], ...o });
@@ -161,11 +168,13 @@ describe('trade outcomes are never doubled', () => {
         expect(t.given).toHaveLength(1);
     });
 
-    test('the partner never answered and nothing left: retried up to three times', async () => {
+    test('the partner never answered and nothing left: retried up to three times, and left runnable', async () => {
         const t = setup(LUMBRIDGE, 50, () => ({ ok: false, ticks: 0, gave: [], sent: 0, reason: 'no_response' }));
         const report = await runHandovers(t.ctx, coinsTo76(145_000), t.io);
         expect(report.failed).toEqual([H76]);
         expect(t.given).toHaveLength(3);
+        // Nothing moved, so nothing is recorded: running the list again tries again.
+        expect(t.state.data).toEqual({});
     });
 
     test('giveOutcome', () => {
@@ -176,6 +185,99 @@ describe('trade outcomes are never doubled', () => {
         expect(giveOutcome({ ok: false, ticks: 0, gave: [], sent: 0, reason: 'player_not_found' }, items, none)).toBe('retry');
         expect(giveOutcome({ ok: false, ticks: 5, gave: [], sent: 2, reason: 'partner confirm offer is not acceptable' }, items, none)).toBe('retry');
         expect(giveOutcome({ ok: false, ticks: 5, gave: [], sent: 2, reason: 'closed before completing' }, items, new Map([['coins', 145_000]]))).toBe('uncertain');
+    });
+});
+
+describe('a handover list is never repeated by a restarted run', () => {
+    const H53 = 'cairn_h53';
+    const H54 = 'cairn_h54';
+    const H55 = 'cairn_h55';
+    const coins = (...to: string[]): HandoverOptions => ({
+        bank: VARROCK_WEST_BANK,
+        meet: VARROCK_WEST_MEET,
+        handovers: to.map(name => ({ to: name, items: [{ item: 'Coins', n: 100_000 }] }))
+    });
+    const receivers = (given: { to: string }[]) => given.map(g => g.to);
+
+    test('2026-10-21 h63: the list ran to the end and was started again; nothing is withdrawn or given twice', async () => {
+        const first = setup(VARROCK_WEST_BANK, 0);
+        expect(await runHandovers(first.ctx, coins(H53, H54), first.io)).toEqual({ done: [H53, H54], uncertain: [], failed: [] });
+        expect(first.withdrawn.flat().map(s => s.n)).toEqual([100_000, 100_000]);
+
+        // The supervisor's rerun, 17 s later: same account, same options, same role state.
+        const again = setup(VARROCK_WEST_BANK, 0, undefined, { state: first.state });
+        const report = await runHandovers(again.ctx, coins(H53, H54), again.io);
+        expect(report).toEqual({ done: [H53, H54], uncertain: [], failed: [] });
+        expect(again.withdrawn).toEqual([]);
+        expect(again.given).toEqual([]);
+        expect(again.logs.filter(m => m.startsWith('handover: already delivered'))).toHaveLength(2);
+    });
+
+    test('restart mid-list: the delivered one is skipped, the one killed mid-trade is uncertain, the rest go out once', async () => {
+        const tos: string[] = [];
+        // The role dies inside the trade with h54 (a crash, a supervisor restart): give never returns an outcome.
+        const first = setup(VARROCK_WEST_BANK, 0, (fake, items, to) => {
+            tos.push(to);
+            if (to === H54) throw new Error('killed mid-trade');
+            for (const it of items) drop(fake, it.item, it.n);
+            return delivered(items);
+        });
+        await expect(runHandovers(first.ctx, coins(H53, H54, H55), first.io)).rejects.toThrow('killed mid-trade');
+        expect(tos).toEqual([H53, H54]);
+        expect(first.state.data[handoverKey(coins(H53, H54, H55), 1)]).toMatchObject({ outcome: 'giving', to: H54 });
+
+        const again = setup(VARROCK_WEST_BANK, 0, (fake, items, to) => {
+            tos.push(to);
+            for (const it of items) drop(fake, it.item, it.n);
+            return delivered(items);
+        }, { state: first.state });
+        const report = await runHandovers(again.ctx, coins(H53, H54, H55), again.io);
+        expect(tos).toEqual([H53, H54, H55]);
+        expect(report).toEqual({ done: [H53, H55], uncertain: [H54], failed: [] });
+        expect(again.state.data[handoverKey(coins(H53, H54, H55), 1)]).toMatchObject({ outcome: 'uncertain', to: H54 });
+        expect(again.logs.some(m => m.includes('stopped during this trade'))).toBe(true);
+        expect(finishOf(report).attention).toContain(H54);
+    });
+
+    test('stopped between two handovers (a stall, a re-login): the rerun gives only the one left', async () => {
+        const abort = new AbortController();
+        const first = setup(VARROCK_WEST_BANK, 0, (fake, items) => {
+            for (const it of items) drop(fake, it.item, it.n);
+            abort.abort(new Error('stalled'));
+            return delivered(items);
+        }, { abort });
+        await runHandovers(first.ctx, coins(H53, H54), first.io);
+        expect(receivers(first.given.map((_, i) => ({ to: [H53, H54][i]! })))).toEqual([H53]);
+
+        const again = setup(VARROCK_WEST_BANK, 0, undefined, { state: first.state });
+        const report = await runHandovers(again.ctx, coins(H53, H54), again.io);
+        expect(again.events.filter(e => e.startsWith('give')).map(e => e.split(' ')[1])).toEqual([H54]);
+        expect(report.done).toEqual([H53, H54]);
+    });
+
+    test('an uncertain trade stays uncertain on every rerun, and asks for a person', async () => {
+        const first = setup(VARROCK_WEST_BANK, 0, (fake, items) => {
+            for (const it of items) drop(fake, it.item, it.n);
+            return { ok: false, ticks: 100, gave: [], sent: 2, reason: 'timeout' };
+        });
+        const report = await runHandovers(first.ctx, coins(H53), first.io);
+        expect(finishOf(report)).toEqual({ attention: `handover uncertain to ${H53}: check the receiver before giving again` });
+        const again = setup(VARROCK_WEST_BANK, 0, undefined, { state: first.state });
+        expect((await runHandovers(again.ctx, coins(H53), again.io)).uncertain).toEqual([H53]);
+        expect(again.given).toEqual([]);
+        expect(finishOf({ done: [H53], uncertain: [], failed: [] })).toEqual({});
+    });
+
+    test('the same transfer on purpose takes a new id', async () => {
+        const first = setup(VARROCK_WEST_BANK, 0);
+        await runHandovers(first.ctx, coins(H53), first.io);
+        const again = setup(VARROCK_WEST_BANK, 0, undefined, { state: first.state });
+        await runHandovers(again.ctx, { ...coins(H53), id: 'second-100k' }, again.io);
+        expect(again.given).toHaveLength(1);
+        expect(handoverKey(coins(H53), 0)).toBe(handoverKey(coins(H53), 0));
+        expect(handoverKey(coins(H53), 0)).not.toBe(handoverKey(coins(H54), 0));
+        expect(handoverKey({ ...coins(H53), id: 'x' }, 2)).toBe('handover/x/2');
+        expect(() => handoverOptions({ id: 'no spaces', handovers: [{ to: H53, items: [{ item: 'Coins', n: 1 }] }] })).toThrow(/options.id/);
     });
 });
 
