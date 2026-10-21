@@ -70,6 +70,9 @@ loops. A figure taken only on the lite client says so.
 | R174 | rs/174's tab-relog fix, measured on the twin against the demo, 21:58-22:08Z 2026-10-21, 1,618-1,629 online, 3 relogs per path, session ticks with login + 1 the first in-world tick (`tab.ts` `reloadOrOpenTab` closes the old page's gateway socket before navigating; `login(s, {inPage: true})`); PR #164 (head a2a1564cf, merging in main's 16:45 PDT window with rs/183's client fix, #155); the relog after an engine kill measured in the lab (16:11 PDT); relayed by rs/158 on cairn://p/rs/203 |
 | BA | rs/163's body-altar roster (m, lab, bgsrv-mac, 300 ms, 23:12-23:17Z 2026-10-21, `speedrun/lab/altar-givers.ts --variant=bank --altar=body --cycles=12`; `ROUTE_ALTARS.body` in `speedrun/helpers/altar-room.ts` on agent/rs-163-builder-1 at f604077ba, 2bc114ac3): 12 of 12 tuned turns given, all 8 measurable craft-to-craft gaps 7 ticks; restock round trip (trade given, exit portal, Edgeville bank (3094,3491), 27 essence, the body ruins, back on its tile) **139-142 ticks, mean 140.8, n = 9**, so **N = ceil(142 / 7) + 1 = 22 givers on 23 body talismans** (22 + SCORED's 1, no keeper). The lab bank held no essence, so the givers got it by a staff give (as for the air altar's 91-93); a real withdraw is a few ticks either way, and 142 has 6 ticks of headroom before N = 23 (at 148). Relayed by rs/158 on cairn://p/rs/203, 16:17 PDT |
 | MP | rs/153's in-page Mining lab via rs/147 (15:46 PDT 2026-10-21), relayed by rs/158 on cairn://p/rs/203: D = 13, Mining 99, the in-page knife 3.00 and the in-page plain loop **4.00** ticks per ore |
+| PB | rs/162's in-page plain and plain + bury lab (cairn://p/rs/162, PR #165): local engine at 300 ms, a visible tab on bgsrv-mac, probe 60/60, rune axe, 600 ticks a run, `::give` top-ups, per-roll figures weighted by the sum of 1/p at each log's level (`tickprog-measure.ts oak\|tav-willow --technique=plain --bury`; `tick-programs.md` "Measured" on #165); relayed by rs/158 at 15:50 and 16:09 PDT 2026-10-21. The trades are not in the figures; "with trades" adds rs/105's 5 ticks per 25-bone load (i). Selection: `technique: 'plain'` with `bury` and `trees` (no new key) |
+| DH | rs/176's run-host knife and plain sessions (oak, bronze axe, the in-page knife-cycle at c14428fc5; per-minute catch-up bins and whole runs; `demo-latency.md` section 8, PR into `agent/rs-83-coordinator-0`), relayed by rs/158 on cairn://p/rs/206 at 16:00 PDT |
+| RCM | rs/196's Runecraft module lab (local engine at 300 ms, bgsrv-mac, rs/131's in-page `rc-cycle` in a visible tab, 3 production altar givers via `standalone.ts`; `runecraft.md` section 9 on rs/196's branch), relayed by rs/158 on cairn://p/rs/206 at 16:28 PDT |
 
 **Units of the in-page knife figures.** `knife-cycle`'s old status fields `rolls` and `ticksPerRoll`
 counted Woodcutting xp events, that is logs (`server/webclient/src/bot/programs/knife-cycle.ts`:
@@ -92,13 +95,16 @@ expected failures: 11,689 and 10,811 (sum of the Q§3 rows).
 
 | | Knife loops on (run gate holds) | Knife loops off all night, without rs/162 (**in force**) | Knife loops off all night, with rs/162's plain+bury |
 |---|---|---|---|
-| **Expected** | **34,526**: 1,390 under the record | **38,180**: 2,264 over | 37,555: 1,639 over |
-| **Best** | **31,655**: 4,261 under | **35,732**: 184 under | 35,072: 844 under |
+| **Expected** | **34,575**: 1,341 under the record | **38,428**: 2,512 over | 37,692: 1,776 over |
+| **Best** | **31,663**: 4,253 under | **35,980**: 64 under | 35,214: 702 under |
 
-The plain loops cannot bury today: knife-cycle's `bury` works only with the knife technique
-(rs/147, 13:19), so on a gate-off night the bones go to the booth (Prayer 735 against 110). Main
-filed cairn://p/rs/162 for a plain+bury mode; until it lands and passes its lab bar, the column
-without it is in force (O31).
+The plain loops cannot bury on main today: knife-cycle refuses `bury` with the plain technique, so
+on a gate-off night the bones go to the booth (Prayer 735 against 95). rs/162's plain + bury (PR
+#165, open, in main's 16:45 PDT merge batch) is lab-measured (PB): willow passes rs/158's bar at
+~0.226 bones a tick with trades, oak falls short at ~0.195 and is accepted as measured, and
+Woodcutting is no slower with the bury than the plain loop alone. Until #165 is merged the column
+without it is in force (O31). Both knife-off columns now price S07's plain Woodcutting at the
+in-page rates (PB), not the lite model: 4,121 without rs/162 and 4,025 with it, against 3,881.
 
 That is with every supply line held. Main's ruling (14:55 PDT): the earliest plausible run date is
 **2026-10-23** (more likely the 24th or later), so the row in force prices the time-dependent supply
@@ -107,15 +113,15 @@ Knife on:
 
 | Supply scenario (knife on) | Fallback deltas (exp / best) | Expected | Best | Against the record (exp) |
 |---|---|---|---|---|
-| **Forecast at 2026-10-23 (in force)**: ~413 dragon bones (assumed: ~14 an hour from 22:00 UTC to a start at 00:00 UTC on the 23rd) and 341 babydragon, all 554 non-stun bones in S07 (+52 / +35; the bones close O35); 0 nature talismans, so S21 at the body altar on the fleet's 57 body talismans (+205); mixed gems (+88), mixed herbs (+85); forecast complete (0): arrowtips, cannonballs, 365 adamantite bars, essence; the rune axe held | +430 / +413 | **34,956** | **32,068** | **-960** |
-| Every line held: 555 dragon bones, rune axe, the full lists | 0 | 34,526 | 31,655 | -1,390 |
-| rs/41's 09:35 plan (history): adamantite 0 (+119), mixed gems (+88), mixed herbs (+85), 2 nature talismans with a keeper (+34), 2,070 adamant + 570 rune arrowtips (0); 555 dragon bones and the rune axe held | +326 / +326 | 34,852 | 31,981 | -1,064 |
-| **Today's stock (conservative)**: the bones at 21:20 UTC (49 dragon and 1,214 of the 1,411 babydragon, no big bones), the ~85 past S07 on the Mining `stay2` lap by `knife-mine`'s bury (on main, #159; a run-commit requirement, so O35 is closed), at ~0.21 a bone in trades, at most +0.02 a Mining ore and ~2 lap switches that each wait out the respawn (~+30, rs/207) (+220 / +156); 0 nature talismans, the body altar (+205); the 09:35 plan's adamantite 0 (+119), gems (+88) and herbs (+85); the rune axe held | +717 / +653 | **35,243** | **32,308** | **-673** |
-| Today's stock with the ~85 at the booth instead: the Mining bury cannot fire (iron respawning slower than 13 ticks, or a run commit without #159) (+339 / +284) | +836 / +781 | 35,362 | 32,436 | -554 |
+| **Forecast at 2026-10-23 (in force)**: ~413 dragon bones (assumed: ~14 an hour from 22:00 UTC to a start at 00:00 UTC on the 23rd) and 341 babydragon, all 554 non-stun bones in S07 (+52 / +35; the bones close O35); 0 nature talismans, so S21 at the body altar on the fleet's 57 body talismans (+205); mixed gems (+88), mixed herbs (+85); forecast complete (0): arrowtips, cannonballs, 365 adamantite bars, essence; the rune axe held | +430 / +413 | **35,005** | **32,076** | **-911** |
+| Every line held: 555 dragon bones, rune axe, the full lists | 0 | 34,575 | 31,663 | -1,341 |
+| rs/41's 09:35 plan (history): adamantite 0 (+119), mixed gems (+88), mixed herbs (+85), 2 nature talismans with a keeper (+34), 2,070 adamant + 570 rune arrowtips (0); 555 dragon bones and the rune axe held | +326 / +326 | 34,901 | 31,989 | -1,015 |
+| **Today's stock (conservative)**: the bones at 21:20 UTC (49 dragon and 1,214 of the 1,411 babydragon, no big bones), the ~85 past S07 on the Mining `stay2` lap by `knife-mine`'s bury (on main, #159; a run-commit requirement, so O35 is closed), at ~0.21 a bone in trades, at most +0.02 a Mining ore and ~2 lap switches that each wait out the respawn (~+30, rs/207) (+220 / +156); 0 nature talismans, the body altar (+205); the 09:35 plan's adamantite 0 (+119), gems (+88) and herbs (+85); the rune axe held | +717 / +653 | **35,292** | **32,316** | **-624** |
+| Today's stock with the ~85 at the booth instead: the Mining bury cannot fire (iron respawning slower than 13 ticks, or a run commit without #159) (+339 / +284) | +836 / +781 | 35,411 | 32,444 | -505 |
 
 (i: section 7, "Supply fallbacks"; every delta is SF's line re-priced on this order.) **In force**,
-on rs/41's forecast for 2026-10-23, the expected path clears the record by about **2.7% (960)**,
-best by 3,848; with every line held, by about 3.9% (1,390). The forecast's bones are an assumption
+on rs/41's forecast for 2026-10-23, the expected path clears the record by about **2.5% (911)**,
+best by 3,840; with every line held, by about 3.7% (1,341). The forecast's bones are an assumption
 until rs/112's firm forecast (due 16:00 PDT): ~14 dragon bones an hour from 22:00 UTC on the 21st
 to a run starting at 00:00 UTC on the 23rd, 49 + 364 = **~413**, with 341 babydragon to reach
 Prayer 99. All 554 non-stun bones then fit S07 (+52), and the ~110 dragon bones forecast for
@@ -125,23 +131,25 @@ rs/41 holds none (a GE bid of 6 at 30,025 has never filled), so S21 moves to the
 on the fleet's 57 body talismans (F23), with 22 givers on 23 body talismans and no keeper (m, lab, BA); main made it the S21 plan at 15:17 PDT. The nature altar is
 a sensitivity row only: with the keeper, 2 or 4 or more nature talismans would save 171 or 205, but
 it needs ~52 tick-exact givers on the run host (rs/163's measured ~355-tick round trip) and at least 30 fleet accounts logged out under the
-80-login cap (O38), so the decision waits for rs/194's talisman report (17:00 PDT) and rs/163's run-host slot (22:05Z). Adamantite (365 by ~12:00
+80-login cap (O38). rs/194 (16:35 PDT) holds none but projects ~4 by midday on the 22nd and ~10 by
+the 23rd (i, a farm measured at ~0.25 an hour), so 4 or more now look likely by the run date; the
+open conditions are the ~52 givers' machine load (rs/163's run-host slot, 22:05Z) and main's decision. Adamantite (365 by ~12:00
 UTC on the 22nd), the arrowtips, the cannonballs and the essence are forecast complete; diamonds
 (+88) and herbs (+85) stay deltas.
 
 **Today's stock (conservative)** keeps the 21:20 UTC bones and, line by line, the worse of rs/41's
-09:35 plan and today's count: **673 under the record (1.9%)**. On that stock 49 dragon and 1,214
+09:35 plan and today's count: **624 under the record (1.7%)**. On that stock 49 dragon and 1,214
 babydragon reach Prayer 99 with ~197 babydragon to spare, so another babydragon bone is worth ~0.
 S07 holds 978 of the 1,063 non-stun bones; the other ~85 ride the Mining `stay2` lap on
 `knife-mine`'s bury, on main since #159 (15:52 PDT; O35 closed by its option (a), and a run-commit
 requirement). If the bury cannot fire, because iron respawns slower than 13 ticks or the run commit
-lacks #159, they go to the booth: +119, 554 under, and another dragon bone is then worth ~2.9 until
+lacks #159, they go to the booth: +119, 505 under, and another dragon bone is then worth ~2.9 until
 ~61 more are held (section 7, "Today's stock").
 
-The knife gate failing all night erases the margin on its own (+3,654 without rs/162, +3,029 with
-it, R2; S09's plain fallback is now the in-page loop's measured 4.00 ticks per ore, not the lite
-3.61, MP). Monkey Madness's bad-but-plausible case (+~860 beyond its expected, R5) would leave only
-~100 under the record on the row in force, ~187 over on today's stock (~306 over with its bones at
+The knife gate failing all night erases the margin on its own (+3,853 without rs/162, +3,117 with
+it, R2; S09's plain fallback is the in-page loop's measured 4.00 ticks per ore, not the lite
+3.61, MP, and S07's the in-page plain rates, PB). Monkey Madness's bad-but-plausible case (+~860 beyond its expected, R5) would leave only
+~51 under the record on the row in force, ~236 over on today's stock (~355 over with its bones at
 the booth).
 It was priced before any Ape Atoll run: S15's atoll half has never run as one route, ~1,475 of
 S15's 4,077 was never measured (e), and **S15 is now the critical path for the run date** (O36).
@@ -149,10 +157,11 @@ A relog from SCORED's tab is back to about **2 ticks** (m, R174): the ~20 that T
 old page's gateway socket outliving the navigation, which rs/174 now closes first. The two planned
 relogs and the expected restarts give back the +63 / +36 fold-in 3 added and 2 more (section 7), a
 demo restart costs about 5 (R7), and the wine's login + 19 deadline is met at login + 3 to + 6 (R17, now
-low-likelihood). If the wine failed outright, the fish route (+~927) would leave the run ~33 under
-on the row in force (~254 over on today's stock, ~373 with its bones at the booth). The in-page willow
+low-likelihood). If the wine failed outright, the fish route (+~927) would leave the run ~16 over the record
+on the row in force (~303 over on today's stock, ~422 with its bones at the booth). The in-page willow
 question is settled (O19, section 9): rs/97's 4.83 ticks per log was the server's chop RNG at level
-99, not the client, so S07's knife takes the lite ratios (2,986 against #129's 3,390). The biggest
+99, not the client, so S07's willow knife takes the lite ratio, and its oak band is now measured from WC 15 (PB): 3,027
+against #129's 3,390. The biggest
 open swings are the knife gate itself (R2, O11) and S15's unrun atoll half (O36).
 
 ## 1. Run-machine setup and the run gate
@@ -253,8 +262,8 @@ ruling of 14:55 PDT prices them at the earliest plausible run date, 2026-10-23 (
   bury (#159), +339 if its ~85 go to the booth (section 7).
 - **Hard:** a cannon set and about **1,170 cannonballs** (SF§9): **met**. cairn_h92 holds two sets
   and 1,416 balls (F23).
-- **Budget item:** the rune axe: **held** (rs/41, 13:10). Without it Woodcutting would cost +388
-  (adamant) or +836 (mithril) with the knife (+505 / +1,087 plain), which no other purchase recovers
+- **Budget item:** the rune axe: **held** (rs/41, 13:10). Without it Woodcutting would cost +394
+  (adamant) or +848 (mithril) with the knife (+536 / +1,154 plain), which no other purchase recovers
   (SF§13 re-priced, section 7).
 - **Supply lines at the 23rd (F23).** Forecast complete, 0 in the row in force: rune arrowtips (570
   of 570 now), mithril (h76's 750 complete; h91 buying ~735 at ~450 an hour), adamant (1,220 of
@@ -272,7 +281,7 @@ ruling of 14:55 PDT prices them at the earliest plausible run date, 2026-10-23 (
   IPs to evade it is what gets accounts banned. The S21 givers log in before SCORED, so the peak is
   at the run login, not in S21 (O38).
 - **Budget:** start only when the expected total plus the fallback deltas in force is under 35,916
-  (the scenario table above: 34,956 on the forecast row in force, 35,243 on today's stock);
+  (the scenario table above: 35,005 on the forecast row in force, 35,292 on today's stock);
   otherwise wait, and main decides the bet.
 
 ## 2. Step table (a)
