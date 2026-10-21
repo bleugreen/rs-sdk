@@ -61,7 +61,7 @@ function harness(start: BotWorldState, opts: Partial<FishingOptions> = {}, scrip
         const toXp = typeof params.untilXp === 'number' ? params.untilXp : xpForLevel(params.untilLevel as number);
         const endLevel = typeof params.untilLevel === 'number' ? params.untilLevel : f.baseLevel;
         sdk.push({ tick: s.tick + 500, skills: [{ ...f, experience: toXp, level: endLevel, baseLevel: endLevel }, ...s.skills.filter(k => k !== f)] });
-        const seg: GatedSegment = { technique: o.technique === 'plain' ? 'plain' : 'knife', reason: 'done', status: status({ startedTick: s.tick, tick: s.tick + 500, endedTick: s.tick + 500, counters: { rolls: 100 }, result: { rolls: 100, histogram: { 3: 90, 6: 9 }, moves: 1, moveGaps: [12] } }) };
+        const seg: GatedSegment = { technique: o.technique === 'plain' ? 'plain' : 'knife', reason: 'done', status: status({ startedTick: s.tick, tick: s.tick + 500, endedTick: s.tick + 500, counters: { successes: 100 }, result: { successes: 100, histogram: { 3: 90, 6: 9 }, moves: 1, moveGaps: [12] } }) };
         o.onSegment?.(seg);
         return { segments: [seg], ended: 'done' };
     }) as unknown as FishingOptions['runGated'];
@@ -273,7 +273,7 @@ describe('fishing: resume from game state (runner/resume.ts)', () => {
 describe('fishing: summarizeBand', () => {
     const seg = (technique: 'knife' | 'plain', reason: GatedSegment['reason'], fromXp: number, toXp: number, ticks: number, catches: number, extra: Record<string, unknown> = {}, counters: Record<string, number> = {}): BandSegment => ({
         technique, reason, fromXp, toXp,
-        status: status({ startedTick: 1000, endedTick: 1000 + ticks, tick: 1000 + ticks, counters: { rolls: catches, ...counters }, result: { rolls: catches, ...extra } })
+        status: status({ startedTick: 1000, endedTick: 1000 + ticks, tick: 1000 + ticks, counters: { successes: catches, ...counters }, result: { successes: catches, ...extra } })
     });
 
     test('ticks per expected roll first, per catch second, per segment, per technique and for the band', () => {
@@ -301,8 +301,8 @@ describe('fishing: summarizeBand', () => {
         expect(s.switches).toEqual(['knife->plain (probe)']);
     });
 
-    test('reads rs/159\'s renamed counter when it lands', () => {
-        const renamed: BandSegment = { ...seg('knife', 'done', S22, xpForLevel(99), 2000, 0), status: status({ startedTick: 0, endedTick: 2000, counters: { logs: 517 } }) };
-        expect(summarizeBand('fly', [renamed]).catches).toBe(517);
+    test('catches are read from knife-cycle\'s successes counter, with no result', () => {
+        const bare: BandSegment = { ...seg('knife', 'done', S22, xpForLevel(99), 2000, 0), status: status({ startedTick: 0, endedTick: 2000, counters: { successes: 517 } }) };
+        expect(summarizeBand('fly', [bare]).catches).toBe(517);
     });
 });
