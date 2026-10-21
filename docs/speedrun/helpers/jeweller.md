@@ -89,8 +89,11 @@ from couriers, the GE, or the role's own random gems while it mines gold.
 ## Getting gems and coins to it
 
 The receive step accepts trades from `couriers` and gives nothing back, so any account
-that can walk to Varrock west bank can deliver. For a fleet account the delivery is one
-trip outside the fleet: take the account out (`fleetctl assign <acct> <role> --disable`,
+that can walk to Varrock west bank can deliver. For exact amounts from a fleet account the
+simplest route stays inside the fleet: assign it the `handover` role
+(`speedrun/helpers/handover.ts`, `{meet:{x:3184,z:3438}, handovers:[{to:"cairn_h80",
+items:[{item:"Uncut emerald",n:9}]}]}`), then give it its role back. For whole stacks or
+coin funding, the delivery is one trip outside the fleet: take the account out (`fleetctl assign <acct> <role> --disable`,
 `reload`), log it in on another gateway, run `courierTrip` (mule.ts; options
 `{mule:"cairn_h80", items:["^uncut "]}`) or `fundTrip` (bidder.ts; options
 `{bidder:"cairn_h80", keep:1000}`), log it out with `logoutClean`, and give it its role
