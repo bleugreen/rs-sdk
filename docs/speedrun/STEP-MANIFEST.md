@@ -657,7 +657,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Parameters:** `steps` (the rotation as stand>rock pairs), `respawn` (13 at about 1,260 online,
   19 on a quiet server; from the public player count, `player_count.rs2:1-4` via `skills/README.md`
   open question 4), `starter: 'knife' | 'none'`, `untilLevel: 99`.
-- **Lap choice by the observed respawn** (rs/158, relayed for rs/153's module): `steps` is chosen
+- **Lap choice by the observed respawn** (rs/158, relayed for the module, now rs/212's): `steps` is chosen
   at each band start and on resume, not fixed to the five-rock demo lap. Read D from the observed
   respawn (an emptied rock's ticks to respawn) or from `/playercount` through
   D = floor(20 x (4000 - min(online, 2000)) / 4000) (r: `player_count.rs2`, `NumberOps.ts`'s
@@ -673,7 +673,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   The ticks below are unchanged: 3,116 knife at the demo's count (D = 13). **The table is the
   conservative bound** (rs/153 via rs/147, 15:46 PDT): `knife-mine`'s own rule holds 3.00 per ore
   while 3 x rocks is at least D, which would hold the five-rock lap to D = 15 and the six-rock lap to
-  D = 18. The table stands until rs/153's D = 15 lab run (RUN-ORDER.md O39).
+  D = 18. The table stands until a D = 15 lab run in rs/212's module (RUN-ORDER.md O39).
 - **Bones on the `stay2` lap** (today's 21:20 UTC stock, RUN-ORDER.md's conservative row; none on the
   forecast at 2026-10-23, whose 554 non-stun bones all fit S07; RUN-ORDER.md section 7): the ~85
   babydragon bones past S07's ~978 ride the lap `2603,3233>2602,3233 2605,3234>2605,3235
@@ -696,14 +696,14 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   (2.07 - 0.32)); above that, `stay2` wins.
 - **Knife (re)starts and rs/207.** A depleted iron rock (`rocks.loc` 450-453, still op1 Mine) passed
   the program's start check, so a (re)start during depletion slipped forever (rs/153's 19620b53).
-  **rs/207** (lab-passed, rebased on f9b5ef44 at 2c9e4da2, merging at 16:45 PDT) makes it fault: 3 of
+  **rs/207** (on main as e5d8a058, #170) makes it fault: 3 of
   3 depletion restarts fault at +1 tick, and post-respawn laps run at 3.00 per ore, 200 of 200 (m,
   lab; main, 16:12 PDT). On a running lap 4 of 5 rotation rocks are depleted at any moment, so any
   knife (re)start in S09 (a relog, a lock loss, rs/156's switch from measuring back to the knife,
   each `stay2` and five-rock lap switch) waits out the respawn (13 ticks at respawn 13) or faults:
   **+13 plus the start cost** each (i). The step's resume waits for a live rock rather than
   retrying. Without rs/207 the knife cadence is lost for the rest of the step, up to ~+1,054
-  (RUN-ORDER.md R18), so `RUN_COMMIT` must be at or after its merge commit (named when it lands;
+  (RUN-ORDER.md R18), so `RUN_COMMIT` must be at or after e5d8a058 (the 6e86a656 floor covers it;
   entry 0).
 - **Preconditions:** rune pickaxe, knife and about 5 normal logs, Fletching 1; Mining 64; position on
   the rotation's first standing tile. The same host-gate rule as Woodcutting.
@@ -927,11 +927,36 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   ceil(142 / 7) + 1, 12 of 12 turns at 7 ticks, so S21's ticks do not change; supply-fallbacks.md §7: 194 crafts, 5,238 essence, +205 in every RUN-ORDER.md
   scenario row). The nature altar below is the every-line-held baseline and a sensitivity row; the
   module takes `altar: 'body'` as well.
-- **Postconditions:** Runecraft 44 (S06) or 99 (S21). Items out: the rune stacks.
-- **Ticks:** expected and best **1,186**: S06 **54** (7 x 7 measured, 8 of 8 at air 1 with a level-up
-  every craft, + a 5-tick session trade) and S21 **1,132** (161 x 7 + 5; 13 of 14 measured cycles at
-  nature 44); totals inferred (`skills/runecraft.md` §1-2). Travel is in entry 11 (T05-06 61 m,
-  T20-21 161.5 m). Robust schedule +168. Fallback **~2,530**, the stock 15-tick reacting cycle.
+- **Postconditions:** Runecraft 44 (S06) or 99 (S21). Items out: the rune stacks; S06's air runes
+  are dropped on T06-07 (below).
+- **Ticks:** expected and best **1,192**: S06 **58**, measured in the lab (rs/196: 7 of 7 given, 6
+  gaps of 7, 58 in two runs; RUN-ORDER.md RCM), and S21 **1,134** (161 x 7 + ~7, inferred from
+  measured parts). Under the program a session of N crafts takes 7N ticks: the first trade's 7 (8
+  robust; the old 5 was the lite trade) and N - 1 gaps of 7 (30-cycle runs, 30 of 30 given: body and
+  nature with givers first, 29 gaps of 7, 210 ticks). The step adds ~5-9 outside the program, the
+  walk from where the ruins drop SCORED (3-4 tiles) to the stand tile, with the last craft's
+  level-up dialog inside the craft's delay: 217 against 210, and 58 against 49 for S06. The body
+  altar in force adds 33 crafts at the same 7 and its own travel (+205, RUN-ORDER.md section 7),
+  which these per-step parts do not change. Travel is in entry 11 (T05-06 61 m, T20-21 161.5 m).
+  Robust schedule +1 a craft, +168 (66 for S06 with SCORED first, m). A clean logout between cycles
+  plus the resume walk costs ~2 in-world ticks (m). Fallback **~2,530**, the stock 15-tick
+  reacting cycle.
+- **Lab (rs/196, RUN-ORDER.md RCM):** auto with givers first chose tuned (29 x 7, step 217 on nature
+  and 215 on body); robust ran 29 x 8 in either login order (step 247); auto with SCORED first chose
+  robust, 29 x 8. **Resume:** a page reload after 8 crafts was resumed by `runResumable`, and the
+  remaining 12 ran at 7, the resumed first trade again at 7 (m). **Fault:** with 6 trades forced to
+  fail, the program restarted robust and recovered at 8 a craft (m).
+- **Pending change that S21's 7-tick pricing depends on:** the module's auto rule picks tuned only
+  for givers that logged in before SCORED. Under main's bucket rule (givers on a lower bucket, logged
+  in after SCORED) it would wrongly choose robust, +1 a craft (~+161 on S21). rs/196 switches it to a
+  'handled before SCORED' field published by the giver side once rs/131 confirms the rule
+  (RUN-ORDER.md R12, O38).
+- **S06's air runes:** SCORED drops the 594 air runes S06 makes (crafts at Runecraft 1, 20, 28, 34,
+  37, 40 and 43, floor(level / 11) + 1 a essence, r, `runecraft.rs2`) on T06-07, ~1-2 ticks (i;
+  rs/158's decision). S21 refuses to start while they are held, because a 27-essence trade plus the
+  talisman fills every slot, and keeping them would cost a slot in every S07 bone load (23 to 22, ~2
+  more loads). If a two-way trade primitive lands (rs/201's H12 needs one too), handing the stack to a
+  helper at an existing hand-off replaces the drop (`SUPPLIES.md`, the air rune line).
 - **Primitives:** the in-page `rc-cycle` program (cairn://p/rs/131): request on T+5, accept on T+6,
   confirm and click the altar on T+7, re-anchoring on the observed craft; run.ts's Runecraft step owns
   `cue.json`, the page supplies the beacon.
@@ -1102,7 +1127,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   bury itself at no cost in the page, 0.329 bones per tick (#124). On a stock that needs more bones,
   each extra bone in S07 costs ~0.26 (0.17 best), S07 holds ~978 non-stun bones, and the rest go to
   the Mining `stay2` lap and the booth (RUN-ORDER.md section 7). Knife off: **735** at the booth
-  until rs/162's plain+bury exists, ~110 / ~75 with it. Fallback **735**, the 355 bones at the
+  until rs/162's #165 is merged; **95 / 65** with it, the same loads' trades and restarts, with the
+  bury riding the plain loop's willow band at no Woodcutting cost (entry 3). Fallback **735**, the 355 bones at the
   booth (58 ticks per 28-bone inventory, `skills/prayer.md` §1).
 - **Primitives:** entry 3's; for the booth `lib/bank.ts` `withdrawMany` with `n:'fill'` and a blind
   bury every 2 ticks.
