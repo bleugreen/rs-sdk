@@ -213,6 +213,10 @@ export class Client extends GameShell {
     private errorMessage: string | null = null;
     private lastProgressPercent: number = 0;
     private lastProgressMessage: string = '';
+    // Latched the first time loading reaches 100%. lastProgressPercent is only the loading bar's
+    // display value: every return to the title screen redraws it at 10% (loadTitleImages), so it
+    // cannot tell a later login whether the client has loaded.
+    private loadingComplete: boolean = false;
 
     ingame: boolean = false;
 
@@ -921,7 +925,7 @@ export class Client extends GameShell {
 
         // Wait for loading to complete (100%) before triggering login
         // This prevents a race condition where login completes while assets are still unpacking
-        while (this.lastProgressPercent < 100) {
+        while (!this.loadingComplete) {
             await sleep(100);
         }
 
@@ -3948,7 +3952,7 @@ export class Client extends GameShell {
 
     private async titleScreenDraw(): Promise<void> {
         // Auto-login from URL params when bot SDK is enabled
-        if (ENABLE_BOT_SDK && !this.botAutoLoginAttempted && this.lastProgressPercent >= 100) {
+        if (ENABLE_BOT_SDK && !this.botAutoLoginAttempted && this.loadingComplete) {
             const botUsername = BotSDKModule.getBotUsername();
             const botPassword = BotSDKModule.getBotPassword();
             if (botUsername !== 'default' && botPassword) {
@@ -6412,6 +6416,9 @@ export class Client extends GameShell {
 
         this.lastProgressPercent = progress;
         this.lastProgressMessage = message;
+        if (progress >= 100) {
+            this.loadingComplete = true;
+        }
 
         await this.prepareTitle();
 
