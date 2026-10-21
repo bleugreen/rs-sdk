@@ -1,0 +1,73 @@
+pdt	run_id	source	outcome	edge	tcp_p50_ms	azure_region	detail	url
+2026-10-21 02:39 PDT	39578579952	rs83	gate-skip	ord	31	westcentralus	Fly edge is 'ord', not 'iad': no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39578579952
+2026-10-21 02:41 PDT	39578736569	rs83	gate-skip	lax	10	westus	Fly edge is 'lax', not 'iad': no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39578736569
+2026-10-21 02:42 PDT	39578933926	rs83	gate-skip	lax	9	WestUS3	Fly edge is 'lax', not 'iad': no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39578933926
+2026-10-21 02:43 PDT	39579095329	rs83	gated	iad	2	eastus		https://github.com/bleugreen/rs-sdk/actions/runs/39579095329
+2026-10-21 02:48 PDT	39579740957	rs83	gated	iad	3	eastus		https://github.com/bleugreen/rs-sdk/actions/runs/39579740957
+2026-10-21 02:59 PDT	39581116028	rs83	gate-skip	lax	15	WestUS3	Fly edge is 'lax', not 'iad': no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39581116028
+2026-10-21 03:00 PDT	39581263854	rs83	gate-skip	ord	26	centralus	Fly edge is 'ord', not 'iad': no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39581263854
+2026-10-21 03:02 PDT	39581434296	rs83	gate-skip	lax	10	westus	Fly edge is 'lax', not 'iad': no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39581434296
+2026-10-21 03:03 PDT	39581591835	rs83	gate-skip	lax	10	WestUS3	Fly edge is 'lax', not 'iad': no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39581591835
+2026-10-21 03:04 PDT	39581748053	rs83	gate-skip	lax	10	westus	Fly edge is 'lax', not 'iad': no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39581748053
+2026-10-21 03:05 PDT	39581904913	rs83	gated	iad	24	CanadaEast		https://github.com/bleugreen/rs-sdk/actions/runs/39581904913
+2026-10-21 03:14 PDT	39582947271	rs83	gate-skip	ord	32	westcentralus	Fly edge is 'ord', not 'iad'; TCP connect p50 is 32 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39582947271
+2026-10-21 03:15 PDT	39583146524	rs83	gate-skip	lax	12	WestUS3	Fly edge is 'lax', not 'iad'; TCP connect p50 is 12 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39583146524
+2026-10-21 03:17 PDT	39583303736	rs83	gated	iad	3	eastus		https://github.com/bleugreen/rs-sdk/actions/runs/39583303736
+2026-10-21 03:47 PDT	39587062447	rs83	gate-skip	lax	32	westus2	Fly edge is 'lax', not 'iad'; TCP connect p50 is 32 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39587062447
+2026-10-21 03:51 PDT	39587341731	rs83	gate-skip	ord	24	centralus	Fly edge is 'ord', not 'iad'; TCP connect p50 is 24 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39587341731
+2026-10-21 03:57 PDT	39588258339	rs83	gate-skip	lax	33	westus2	Fly edge is 'lax', not 'iad'; TCP connect p50 is 33 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39588258339
+2026-10-21 04:03 PDT	39588933689	rs83	gate-skip	lax	9	westus	Fly edge is 'lax', not 'iad': no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39588933689
+2026-10-21 04:04 PDT	39589100761	rs83	gated	iad	3	eastus		https://github.com/bleugreen/rs-sdk/actions/runs/39589100761
+2026-10-21 04:11 PDT	39590017259	rs83	gate-skip	lax	10	westus	Fly edge is 'lax', not 'iad': no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39590017259
+2026-10-21 04:13 PDT	39590172234	rs83	gated	iad	3	eastus		https://github.com/bleugreen/rs-sdk/actions/runs/39590172234
+2026-10-21 03:40 PDT	39586222595	rs95	gate-skip	lax	33	westus2	Fly edge is 'lax', not 'iad'; TCP connect p50 is 33 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39586222595
+2026-10-21 03:43 PDT	39586498824	rs95	gate-skip	ord	24	centralus	Fly edge is 'ord', not 'iad'; TCP connect p50 is 24 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39586498824
+2026-10-21 03:44 PDT	39586633572	rs95	gate-skip	lax	10	WestUS3	Fly edge is 'lax', not 'iad': no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39586633572
+2026-10-21 03:45 PDT	39586767778	rs95	gate-skip	ord	25	centralus	Fly edge is 'ord', not 'iad'; TCP connect p50 is 25 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39586767778
+2026-10-21 03:46 PDT	39586908991	rs95	gate-skip	lax	10	WestUS3	Fly edge is 'lax', not 'iad': no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39586908991
+2026-10-21 03:48 PDT	39587080554	rs95	gate-skip	lax	10	westus	Fly edge is 'lax', not 'iad': no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39587080554
+2026-10-21 03:50 PDT	39587340436	rs95	gate-skip	ord	22	centralus	Fly edge is 'ord', not 'iad'; TCP connect p50 is 22 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39587340436
+2026-10-21 03:52 PDT	39587472313	rs95	gate-skip	ord	24	centralus	Fly edge is 'ord', not 'iad'; TCP connect p50 is 24 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39587472313
+2026-10-21 03:53 PDT	39587741342	rs95	gate-skip	lax	32	westus2	Fly edge is 'lax', not 'iad'; TCP connect p50 is 32 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39587741342
+2026-10-21 03:54 PDT	39587910183	rs95	gate-skip	lax	10	westus	Fly edge is 'lax', not 'iad': no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39587910183
+2026-10-21 03:56 PDT	39588075965	rs95	gate-skip	lax	10	westus	Fly edge is 'lax', not 'iad': no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39588075965
+2026-10-21 03:58 PDT	39588301856	rs95	gate-skip	ord	36	southcentralus	Fly edge is 'ord', not 'iad'; TCP connect p50 is 36 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39588301856
+2026-10-21 04:00 PDT	39588565752	rs95	gate-skip	lax	10	WestUS3	Fly edge is 'lax', not 'iad': no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39588565752
+2026-10-21 04:01 PDT	39588702337	rs95	error	iad	3	eastus		https://github.com/bleugreen/rs-sdk/actions/runs/39588702337
+2026-10-21 04:08 PDT	39589581311	rs95	error	lax	11	westus	190 |                 throw new LoginError(response, LOGIN_RESPONSE[response] ?? `Login rejected (${response})`); | LoginError: Account already logged in | 190 |                 throw new LoginError(response, LOGIN_RESPONSE[response] ?? `Login rejected (${response})`);	https://github.com/bleugreen/rs-sdk/actions/runs/39589581311
+2026-10-21 04:17 PDT	39590766611	rs95	gated	iad	3	eastus		https://github.com/bleugreen/rs-sdk/actions/runs/39590766611
+2026-10-21 04:24 PDT	39591572716	rs95	gated	iad	6	eastus2		https://github.com/bleugreen/rs-sdk/actions/runs/39591572716
+2026-10-21 04:44 PDT	39594067434	rs95	gate-skip	lax	32	westus2	Fly edge is 'lax', not 'iad'; TCP connect p50 is 32 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39594067434
+2026-10-21 04:46 PDT	39594236987	rs95	gate-skip	lax	32	westus2	Fly edge is 'lax', not 'iad'; TCP connect p50 is 32 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39594236987
+2026-10-21 04:47 PDT	39594411731	rs95	gated	iad	2	eastus		https://github.com/bleugreen/rs-sdk/actions/runs/39594411731
+2026-10-21 04:52 PDT	39595061321	rs95	gate-skip	lax	10	WestUS3	Fly edge is 'lax', not 'iad': no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39595061321
+2026-10-21 04:54 PDT	39595244093	rs95	gate-skip	lax	33	westus2	Fly edge is 'lax', not 'iad'; TCP connect p50 is 33 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39595244093
+2026-10-21 04:55 PDT	39595481831	rs95	gated	iad	3	eastus		https://github.com/bleugreen/rs-sdk/actions/runs/39595481831
+2026-10-21 05:04 PDT	39596645580	rs95	gate-skip	ord	22	centralus	Fly edge is 'ord', not 'iad'; TCP connect p50 is 22 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39596645580
+2026-10-21 05:06 PDT	39596835973	rs95	gate-skip	ord	27	centralus	Fly edge is 'ord', not 'iad'; TCP connect p50 is 27 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39596835973
+2026-10-21 05:07 PDT	39597024103	rs95	gate-skip	ord	24	centralus	Fly edge is 'ord', not 'iad'; TCP connect p50 is 24 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39597024103
+2026-10-21 05:09 PDT	39597212101	rs95	gated	iad	2	eastus		https://github.com/bleugreen/rs-sdk/actions/runs/39597212101
+2026-10-21 05:19 PDT	39598512725	rs95	gate-skip	ord	36	southcentralus	Fly edge is 'ord', not 'iad'; TCP connect p50 is 36 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39598512725
+2026-10-21 05:20 PDT	39598698080	rs95	gate-skip	iad	17	northcentralus	TCP connect p50 is 17 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39598698080
+2026-10-21 05:22 PDT	39598880448	rs95	gate-skip	lax	10	WestUS3	Fly edge is 'lax', not 'iad': no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39598880448
+2026-10-21 05:23 PDT	39599071170	rs95	gate-skip	lax	12	WestUS3	Fly edge is 'lax', not 'iad'; TCP connect p50 is 12 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39599071170
+2026-10-21 05:26 PDT	39599445583	rs95	gate-skip	lax	10	westus	Fly edge is 'lax', not 'iad': no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39599445583
+2026-10-21 05:24 PDT	39599253106	rs95	gate-skip	ord	37	southcentralus	Fly edge is 'ord', not 'iad'; TCP connect p50 is 37 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39599253106
+2026-10-21 05:29 PDT	39599808213	rs95	gate-skip	ord	31	westcentralus	Fly edge is 'ord', not 'iad'; TCP connect p50 is 31 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39599808213
+2026-10-21 05:27 PDT	39599626650	rs95	gate-skip	ord	36	southcentralus	Fly edge is 'ord', not 'iad'; TCP connect p50 is 36 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39599626650
+2026-10-21 05:30 PDT	39600002457	rs95	gate-skip	lax	32	westus2	Fly edge is 'lax', not 'iad'; TCP connect p50 is 32 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39600002457
+2026-10-21 05:31 PDT	39600195300	rs102	gate-skip	ord	25	centralus	Fly edge is 'ord', not 'iad'; TCP connect p50 is 25 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39600195300
+2026-10-21 05:34 PDT	39600522358	rs95	gate-skip	lax	9	WestUS3	Fly edge is 'lax', not 'iad': no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39600522358
+2026-10-21 05:32 PDT	39600195646	rs95	gate-skip	ord	38	southcentralus	Fly edge is 'ord', not 'iad'; TCP connect p50 is 38 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39600195646
+2026-10-21 05:47 PDT	39600713286	rs102	gate-skip	ord	31	westcentralus	Fly edge is 'ord', not 'iad'; TCP connect p50 is 31 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39600713286
+2026-10-21 05:35 PDT	39600705668	rs95	gated	iad	3	eastus		https://github.com/bleugreen/rs-sdk/actions/runs/39600705668
+2026-10-21 05:57 PDT	39603726628	rs102	gate-skip	lax	32	westus2	Fly edge is 'lax', not 'iad'; TCP connect p50 is 32 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39603726628
+2026-10-21 05:59 PDT	39603932981	rs102	gate-skip	iad	24	CanadaEast	TCP connect p50 is 24 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39603932981
+2026-10-21 06:00 PDT	39604098048	rs102	gated	iad	2	eastus		https://github.com/bleugreen/rs-sdk/actions/runs/39604098048
+2026-10-21 06:10 PDT	39605462121	rs102	gated	iad	3	eastus		https://github.com/bleugreen/rs-sdk/actions/runs/39605462121
+2026-10-21 06:31 PDT	39608529122	rs102	gate-skip	lax	32	westus2	Fly edge is 'lax', not 'iad'; TCP connect p50 is 32 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39608529122
+2026-10-21 06:32 PDT	39608763891	rs102	gate-skip	lax	10	WestUS3	Fly edge is 'lax', not 'iad': no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39608763891
+2026-10-21 06:34 PDT	39608983146	rs102	gate-skip	lax	10	WestUS3	Fly edge is 'lax', not 'iad': no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39608983146
+2026-10-21 06:35 PDT	39609209405	rs102	gate-skip	ord	25	centralus	Fly edge is 'ord', not 'iad'; TCP connect p50 is 25 ms, over 10: no login, dispatch again for another runner	https://github.com/bleugreen/rs-sdk/actions/runs/39609209405
+2026-10-21 06:37 PDT	39609432705	rs102	gated	iad	3	eastus		https://github.com/bleugreen/rs-sdk/actions/runs/39609432705
+2026-10-21 07:01 PDT	39612921940	rs102	gated	iad	2	eastus		https://github.com/bleugreen/rs-sdk/actions/runs/39612921940
