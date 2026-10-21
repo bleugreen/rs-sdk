@@ -1,6 +1,6 @@
 // Iron-rock rotation with the eat starter (docs/speedrun/skills/tick-manipulation.md).
 //
-//   bun docs/speedrun/scripts/tickmanip-mine.ts <bot> --respawn=13 [--eat=on|off] [--ores=60]
+//   bun docs/speedrun/scripts/tickmanip-mine.ts <bot> --respawn=13 [--starter=eat|knife|none] [--ores=60]
 //       [--level=99] --steps 2604,3235>2605,3235 2602,3235>2602,3236 ...
 //
 // --steps is one period of stand>rock pairs (rs/5's rotation format, mining.md section 4);
@@ -15,6 +15,9 @@
 //                swing finds the clock ahead (swing, roll at R+3) or equal (roll at once,
 //                mining.rs2:81-85). Works for any move whose first swing comes by R+3: up to
 //                4 tiles with run.
+//   knife        the same with [knife on logs, button 8889] in place of the eat: the fletching
+//                writer sets map_clock+2 = R+3 when the clock has expired (cut_logs.rs2:83-85);
+//                the walk's clearPendingAction closes the menu and clears the queued fletch.
 //   plain        walk, click; the first swing on an expired clock sets map_clock+2
 //                (mining.rs2:76-79), so a move costs a tick: roll at click-landing+2.
 // A rock rolled on R accepts clicks landing from R+respawn (mining.md section 4).
@@ -32,7 +35,9 @@ for (let i = si + 1; si >= 0 && i < argv.length && !argv[i]!.startsWith('--'); i
 }
 if (!STEPS.length) throw new Error('--steps stand>rock ... required');
 const D = Number(kv('respawn', '19'));
-const EAT = kv('eat', 'on') === 'on';
+const STARTER = kv('starter', 'eat');
+if (!['eat', 'knife', 'none'].includes(STARTER)) throw new Error('--starter=eat|knife|none');
+const EAT = STARTER !== 'none';
 const ORES = Number(kv('ores', '60'));
 const LEVEL = Number(kv('level', '99'));
 const key = (p: P) => `${p[0]},${p[1]}`;
@@ -44,7 +49,8 @@ await runScript(async ({ bot, sdk }) => {
     for (const item of [...(sdk.getState()?.inventory ?? [])]) await sdk.sendDropItem(item.slot);
     await sdk.sendSay(`::setstat mining ${LEVEL}`);
     await sdk.sendSay('::give rune_pickaxe 1');
-    await sdk.sendSay('::give shrimp 20');
+    if (STARTER === 'eat') await sdk.sendSay('::give shrimp 20');
+    if (STARTER === 'knife') { await sdk.sendSay('::give knife 1'); for (let i = 0; i < 10; i++) await sdk.sendSay('::give logs 1'); }
     const [sx, sz] = STEPS[0]!.stand;
     for (let attempt = 0; attempt < 5; attempt++) {
         await sdk.sendSay(`::tele 0,${sx >> 6},${sz >> 6},${sx & 63},${sz & 63}`);
@@ -73,6 +79,12 @@ await runScript(async ({ bot, sdk }) => {
         const food = sdk.getState()?.inventory.find(i => /^shrimps$/i.test(i.name));
         return food ? sdk.sendUseItem(food.slot, 1) : Promise.resolve({ success: false, message: 'no food' });
     };
+    const knifeOnLogs = () => {
+        const inv = sdk.getState()?.inventory ?? [];
+        const knife = inv.find(i => /^knife$/i.test(i.name));
+        const logs = inv.find(i => /^logs$/i.test(i.name));
+        return knife && logs ? sdk.sendUseItemOnItem(knife.slot, logs.slot) : Promise.resolve({ success: false, message: 'no knife/logs' });
+    };
     const dropOre = () => {
         const ore = sdk.getState()?.inventory.find(i => /ore$|^uncut/i.test(i.name));
         return ore ? sdk.sendDropItem(ore.slot) : Promise.resolve();
@@ -100,7 +112,11 @@ await runScript(async ({ bot, sdk }) => {
             if (!move && clickLand === R + 1) { roll = R + 3; kind = 'stay'; }
             else if (EAT && clickLand <= R + 3) { roll = R + 3; kind = 'eat'; useEat = true; }
             else { roll = clickLand + 2; kind = clickLand > (move ? R + 2 : R + 1) ? 'waited' : 'plain'; }
-            if (useEat) {
+            if (useEat && STARTER === 'knife') {
+                add(R, 'knife on logs', knifeOnLogs);
+                add(R, 'button 8889', () => sdk.sendClickComponent(8889));
+                eatsSent++;
+            } else if (useEat) {
                 add(R, 'eat', eat);
                 eatsSent++;
                 // Lab stand-in for restocking (a bank trip or a helper's trade): one food per move.
@@ -194,8 +210,9 @@ await runScript(async ({ bot, sdk }) => {
     const span = steady[steady.length - 1]! - steady[0]!;
     console.log(log.slice(0, Number(kv('loghead', '30'))).join('\n'));
     console.log([
-        `rotation of ${new Set(STEPS.map(st => key(st.rock))).size} rocks, respawn ${D}, eat=${EAT ? 'on' : 'off'}, level ${LEVEL}`,
-        `transitions ${JSON.stringify(kinds)}, eats sent ${eatsSent}, xp events ${xpLabels.length}, on predicted tick ${onTime}, slips ${slips}`,
+        `rotation of ${new Set(STEPS.map(st => key(st.rock))).size} rocks, respawn ${D}, starter=${STARTER}, level ${LEVEL}`,
+        `end inventory: logs ${(sdk.getState()?.inventory ?? []).filter(i => /^logs$/i.test(i.name)).length}, arrow shafts ${(sdk.getState()?.inventory ?? []).filter(i => /^arrow shaft/i.test(i.name)).reduce((n, i) => n + i.count, 0)}`,
+        `transitions ${JSON.stringify(kinds)}, starters sent ${eatsSent}, xp events ${xpLabels.length}, on predicted tick ${onTime}, slips ${slips}`,
         `steady state (from 6th ore): ${gaps.length} gaps, histogram ${Object.entries(hist).map(([g, c]) => `${g}:${c}`).join(' ')}`,
         `ticks per ore ${(span / gaps.length).toFixed(2)}, base xp per tick ${((35 * gaps.length) / span).toFixed(2)}`
     ].join('\n'));

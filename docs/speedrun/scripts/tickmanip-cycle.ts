@@ -76,7 +76,10 @@ const METHODS: Record<string, Method> = {
     cage: { skill: 'fishing', tele: '0,44,53,34,41', give: [['lobster_pot', 1]], kind: 'npc', target: /^fishing spot$/i, option: /^cage$/i, product: /^raw /i, clickOnRoll: true, r0: 4 }
 };
 
-const method = METHODS[methodName];
+const method = METHODS[methodName] ? { ...METHODS[methodName]! } : undefined;
+// --click=same|roll overrides when the target is re-clicked: with the starter (same) or on
+// the predicted roll tick (roll). Used to test a method against the other timing.
+if (method && args.click) method.clickOnRoll = args.click === 'roll';
 if (!method || !['base', 'eat', 'knife'].includes(technique!)) {
     console.error(`unknown mode ${mode}; methods ${Object.keys(METHODS).join(', ')}; techniques base, eat, knife`);
     process.exit(2);
