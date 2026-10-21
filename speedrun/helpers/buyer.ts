@@ -26,7 +26,7 @@
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState } from '../../sdk/types';
-import { crossTollGate, inAlKharid } from '../lib/toll-gate';
+import { crossTollGate, inAlKharid, isEastOfTollGate, TOLL_GP, TOLL_WEST } from '../lib/toll-gate';
 import { pointMarketAtServer } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
 
@@ -42,6 +42,15 @@ export interface ShopSpec {
     stand: Tile;
     /** Nearest bank booth area, for non-stackable purchases and the final deposit. */
     bank: Tile;
+    /** Underground shops: where the way down is on the surface, and the ladder back up below. */
+    below?: Below;
+}
+
+export interface Below {
+    /** Surface tile beside the trapdoor or ladder that leads down. */
+    down: Tile;
+    /** Underground tile beside the ladder that leads back up. */
+    up: Tile;
 }
 
 export const BANKS = {
@@ -50,11 +59,16 @@ export const BANKS = {
     draynor: { x: 3092, z: 3245 },
     alKharid: { x: 3270, z: 3167 },
     faladorWest: { x: 2946, z: 3369 },
+    faladorEast: { x: 3013, z: 3357 },
+    edgeville: { x: 3093, z: 3491 },
     catherby: { x: 2809, z: 3439 },
     seers: { x: 2725, z: 3491 }
 } satisfies Record<string, Tile>;
 
-/** Shops the buyer knows how to reach. Prices and stock: docs/speedrun/helpers/market.md. */
+/**
+ * Shops the buyer knows how to reach. Prices and stock: docs/speedrun/helpers/market.md;
+ * stands are the shopkeepers' spawns in wiki/shops/*.md.
+ */
 export const SHOPS: Record<string, ShopSpec> = {
     aubury: { npc: /^aubury$/i, stand: { x: 3253, z: 3401 }, bank: BANKS.varrockEast },
     gerrant: { npc: /^gerrant$/i, stand: { x: 3014, z: 3224 }, bank: BANKS.draynor },
@@ -62,6 +76,16 @@ export const SHOPS: Record<string, ShopSpec> = {
     lumbridgeGeneral: { npc: /^shop (keeper|assistant)$/i, stand: { x: 3211, z: 3246 }, bank: BANKS.draynor },
     varrockGeneral: { npc: /^shop (keeper|assistant)$/i, stand: { x: 3217, z: 3413 }, bank: BANKS.varrockWest },
     zeke: { npc: /^zeke$/i, stand: { x: 3287, z: 3188 }, bank: BANKS.alKharid },
+    /** Rune pickaxe, stock 1. North Dwarven Mine, by the Ice Mountain trapdoor: the south entrance lands among aggressive scorpions. */
+    nurmof: { npc: /^nurmof$/i, stand: { x: 2998, z: 9846 }, bank: BANKS.faladorEast, below: { down: { x: 3019, z: 3449 }, up: { x: 3019, z: 9849 } } },
+    /** Adamant chainbody, stock 1. */
+    wayne: { npc: /^wayne$/i, stand: { x: 2973, z: 3312 }, bank: BANKS.faladorEast },
+    /** Adamant full helm, stock 1 (Barbarian Village). */
+    peksa: { npc: /^peksa$/i, stand: { x: 3076, z: 3429 }, bank: BANKS.edgeville },
+    /** Knife, stock 10; outside the pass gate, so no Shantay pass is needed. */
+    shantay: { npc: /^shantay$/i, stand: { x: 3304, z: 3123 }, bank: BANKS.alKharid },
+    /** Adamant platelegs, stock 1. */
+    louie: { npc: /^louie legs$/i, stand: { x: 3316, z: 3175 }, bank: BANKS.alKharid },
     lowe: { npc: /^lowe$/i, stand: { x: 3231, z: 3423 }, bank: BANKS.varrockEast },
     // Kandarin, past White Wolf Mountain (speedrun/lib/kandarin.ts). Dargaud is inside the
     // Ranging Guild, whose door needs Ranged 40 and which walkTo cannot path
@@ -69,6 +93,37 @@ export const SHOPS: Record<string, ShopSpec> = {
     hickton: { npc: /^hickton$/i, stand: { x: 2821, z: 3442 }, bank: BANKS.catherby },
     dargaud: { npc: /^bow and arrow salesman$/i, stand: { x: 2672, z: 3434 }, bank: BANKS.seers }
 };
+
+/**
+ * A step west, clear of the toll gate. From the gate's west side the SDK
+ * pathfinder (which takes the gate for a door) routes the Varrock east bank
+ * back through Al Kharid and sticks at the gate; from here no west-side
+ * destination does (sdk/pathfinding.ts findLongPath, checked for the banks and
+ * shops above).
+ */
+const WEST_OF_GATE: Tile = { x: 3255, z: 3228 };
+const besideGateWest = (t: Tile) => !isEastOfTollGate(t) && Math.max(Math.abs(t.x - TOLL_WEST.x), Math.abs(t.z - TOLL_WEST.z)) <= 6;
+
+/** Underground maps sit 6,400 tiles north of the surface they belong to. */
+export const isUnderground = (t: Tile): boolean => t.z > 6400;
+
+export type Leg = 'climb-up' | 'toll-east' | 'toll-west' | 'climb-down' | 'walk';
+
+/**
+ * What a trip from `from` to `to` has to do besides walking, in order: leave the
+ * underground, cross the Al Kharid toll gate (pathfinding cannot pay it), go down.
+ * Underground tiles count as west of the gate.
+ */
+export function travelPlan(from: Tile, to: Tile): Leg[] {
+    const legs: Leg[] = [];
+    if (isUnderground(from) && !isUnderground(to)) legs.push('climb-up');
+    const fromEast = isEastOfTollGate(from);
+    const toEast = isEastOfTollGate(to);
+    if (fromEast !== toEast) legs.push(toEast ? 'toll-east' : 'toll-west');
+    if (!isUnderground(from) && isUnderground(to)) legs.push('climb-down');
+    legs.push('walk');
+    return legs;
+}
 
 export interface ListLine {
     /** Item name as the game spells it ("Feather", "Cosmic rune") or its id. */
@@ -109,6 +164,10 @@ export class Buyer {
     private readonly bot: BotActions;
     private readonly sdk: BotSDK;
     private bankCounts = new Map<string, number>();
+    /** The way down last taken, so the walk back knows which ladder leads up. */
+    private below: Below | null = null;
+    /** Per shop and item, the last measured price of the next unit and the shelf count it was measured at (buyAtShop). */
+    private readonly shopPrices = new Map<string, { unitPrice: number; priceAtCount: number }>();
     readonly reports: LineReport[] = [];
 
     constructor(private readonly ctx: RoleContext) {
@@ -125,7 +184,67 @@ export class Buyer {
         return s;
     }
 
-    async walk(t: Tile): Promise<boolean> {
+    private get here(): Tile {
+        const p = this.state.player!;
+        return { x: p.worldX, z: p.worldZ };
+    }
+
+    /** Walk to `t`, climbing and paying the toll gate on the way as travelPlan says. `below` is needed to go underground. */
+    async walk(t: Tile, below?: Below): Promise<boolean> {
+        for (const leg of travelPlan(this.here, t)) {
+            if (this.ctx.signal.aborted) return false;
+            if (leg === 'climb-up' && !(await this.climbOut())) return false;
+            if (leg === 'toll-east' || leg === 'toll-west') {
+                const r = await crossTollGate(this.bot, this.sdk, leg === 'toll-east', this.ctx.log);
+                if (!r.ok) return false;
+            }
+            if (leg === 'climb-down') {
+                if (!below) {
+                    this.ctx.log('walk: no way down known', { to: t });
+                    return false;
+                }
+                if (!(await this.climbDown(below))) return false;
+            }
+        }
+        if (besideGateWest(this.here) && !isEastOfTollGate(t) && !besideGateWest(t)) await this.walkHere(WEST_OF_GATE);
+        return this.walkHere(t);
+    }
+
+    /** Use the nearest loc named `name` with an option matching `option`, until `arrived` holds. */
+    private async useLoc(name: RegExp, option: RegExp, near: Tile, arrived: () => boolean): Promise<boolean> {
+        for (let attempt = 0; attempt < 4 && !arrived() && !this.ctx.signal.aborted; attempt++) {
+            const loc = this.state.nearbyLocs
+                .filter(l => name.test(l.name) && l.optionsWithIndex.some(o => option.test(o.text) || /^open$/i.test(o.text)))
+                .sort((a, b) => Math.hypot(a.x - near.x, a.z - near.z) - Math.hypot(b.x - near.x, b.z - near.z))[0];
+            if (!loc) {
+                this.ctx.log('loc not in view', { name: String(name), at: this.here });
+                await waitTicks(this.sdk, 2);
+                continue;
+            }
+            // A closed trapdoor offers only Open; the next attempt climbs.
+            const op = loc.optionsWithIndex.find(o => option.test(o.text)) ?? loc.optionsWithIndex.find(o => /^open$/i.test(o.text))!;
+            await this.bot.interactLoc(loc, op.text);
+            await this.sdk.waitForCondition(() => arrived(), 10_000).catch(() => undefined);
+            await waitTicks(this.sdk, 1);
+        }
+        return arrived();
+    }
+
+    private async climbDown(below: Below): Promise<boolean> {
+        if (!(await this.walkHere(below.down))) return false;
+        const ok = await this.useLoc(/trapdoor|ladder|stair/i, /climb-down|climb down/i, below.down, () => isUnderground(this.here));
+        if (ok) this.below = below;
+        return ok;
+    }
+
+    private async climbOut(): Promise<boolean> {
+        const up = this.below?.up;
+        if (up && Math.max(Math.abs(this.here.x - up.x), Math.abs(this.here.z - up.z)) > 4) await this.walkHere(up);
+        return this.useLoc(/ladder|stair/i, /climb-up|climb up/i, up ?? this.here, () => !isUnderground(this.here));
+    }
+
+    /** Plain pathfinding with retries; no ladders or toll gate. */
+    private async walkHere(t: Tile): Promise<boolean> {
         for (let i = 0; i < 5 && !this.ctx.signal.aborted; i++) {
             const r = await this.bot.walkTo(t.x, t.z, 2);
             const p = this.state.player!;
@@ -138,7 +257,9 @@ export class Buyer {
 
     /** Open the bank at `at`, run `body` with it open, report the bank, close it. */
     async atBank<T>(at: Tile, body: () => Promise<T>): Promise<T> {
-        await this.walk(at);
+        // openBank opens the NEAREST bank, so a failed walk (an unpaid toll gate)
+        // would otherwise silently bank on the wrong side.
+        if (!(await this.walk(at))) throw new Error(`bank: could not reach (${at.x}, ${at.z}) from (${this.here.x}, ${this.here.z})`);
         const opened = await this.bot.openBank();
         if (!opened.success) throw new Error(`bank: ${opened.message}`);
         await this.sdk.waitForCondition(s => s.bank?.isOpen === true, 5000).catch(() => undefined);
@@ -197,7 +318,10 @@ export class Buyer {
             this.ctx.log('tutorial', { success: r.success, result: r.message });
             await waitTicks(this.sdk, 3);
         }
-        if (inAlKharid(this.state)) await crossTollGate(this.bot, this.sdk, false, this.ctx.log);
+        if (!inAlKharid(this.state)) return;
+        // A run that ended in Al Kharid banked every coin there: take the toll first.
+        if (coinsIn(this.state) < TOLL_GP) await this.atBank(BANKS.alKharid, () => this.setCoins(TOLL_GP));
+        await crossTollGate(this.bot, this.sdk, false, this.ctx.log);
     }
 
     // ------------------------------------------------------------ Grand Exchange
@@ -219,6 +343,10 @@ export class Buyer {
     async buyAtGE(line: ListLine, waitTicksForFill = 20): Promise<LineReport> {
         const { id, name } = await this.resolveItem(line.item);
         const report: LineReport = { item: name, source: 'ge', target: line.quantity, heldBefore: this.held(name), bought: 0, spent: 0 };
+        // openGE walks with plain pathfinding, which cannot pay the toll gate or climb.
+        if (travelPlan(this.here, BANKS.varrockWest).length > 1 && !(await this.walk(BANKS.varrockWest))) {
+            return { ...report, note: `could not reach the Grand Exchange from (${this.here.x}, ${this.here.z})` };
+        }
         const opened = await this.bot.openGE();
         if (!opened.success) return { ...report, note: `openGE: ${opened.message}` };
         // Collect before counting: an earlier offer that filled while we were away
@@ -286,14 +414,18 @@ export class Buyer {
         // price at the shop's CONFIGURED stock (StateCollector computes it with a
         // stock difference of 0), and a drained shop charges up to 6x that. So
         // probe with one unit, then track the price from what each step costs.
-        let unitPrice: number | null = null;
+        // The measurement outlives the call, so a caller that waits on a restocking
+        // shop in several calls probes once instead of paying blind each time.
+        const priceKey = `${line.shop}:${name.toLowerCase()}`;
+        const known = this.shopPrices.get(priceKey);
+        let unitPrice: number | null = known?.unitPrice ?? null;
         /** Shelf count when unitPrice was measured; each unit restocked since lowers the price by `rise`. */
-        let priceAtCount = 0;
+        let priceAtCount = known?.priceAtCount ?? 0;
         while (!this.ctx.signal.aborted) {
             const remaining = line.quantity - this.held(name);
             if (remaining <= 0) break;
             if (!this.state.shop.isOpen) {
-                await this.walk(shop.stand);
+                await this.walk(shop.stand, shop.below);
                 const opened = await this.bot.openShop(shop.npc);
                 if (!opened.success) {
                     report.note = `openShop: ${opened.message}`;
@@ -341,6 +473,7 @@ export class Buyer {
                 const average = (coinsBefore - coinsIn(this.state)) / got;
                 unitPrice = average + (rise * (got - 1)) / 2 + rise; // estimate for the next unit
                 priceAtCount = this.state.shop.shopItems.find(i => i.id === item.id)?.count ?? 0;
+                this.shopPrices.set(priceKey, { unitPrice, priceAtCount });
                 if (heldBefore === this.held(name) - got) this.ctx.log('shop price', { item: name, paid: average, nextUnit: +unitPrice.toFixed(2), cap, stock: item.count });
             } else {
                 this.ctx.log('shop buy failed', { item: name, step, message: r.message });
