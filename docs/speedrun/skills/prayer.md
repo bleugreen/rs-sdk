@@ -14,8 +14,7 @@ heavily shared that night: up to nine of rs/28's labs plus rs/53's (rs/2 coordin
 00:22), and rs/56 recorded load ~25 there. The 12-89-tick bot stalls below are the ones main
 attributes to host load rather than the game (cairn://p/rs/main, 00:36). So read the measured
 end-to-end runs as a **busy host's figures, a few percent pessimistic**. The stall-free
-58-tick cycle, and the 1,151 inferred from it, is the clean figure. rs/26's bbs correction
-factor had not been published when this was written (01:15).
+58-tick cycle, and the 1,151 inferred from it, is the clean figure. rs/26 closed without a single correction factor; `docs/speedrun/LAB.md` on main (its host-latency table) names bbs the reference host and reads the Mac's figures as pessimistic, so no factor is applied.
 
 **Client.** Every number here was taken on the headless lite client against a local lab engine,
 where a reaction lands on the next tick. The scored run drives the browser webclient against the

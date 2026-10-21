@@ -16,8 +16,7 @@ accounts). Lab: [../LAB.md](../LAB.md). Labels follow
 (user `dev`), not on the operator's Mac `local` that main measured at load 11-18 on 16 cores
 (cairn://p/rs/main, 00:36). bgsrv-mac's load was not recorded at the time (rs/56 later saw
 ~2.5 there), so the busy-host caveat probably does not apply in full. Treat the end-to-end
-runs as at most a few percent pessimistic. The 4-tick roll chain itself is a server rule. rs/26's
-bbs correction factor had not been published when this was written (01:15).
+runs as at most a few percent pessimistic. The 4-tick roll chain itself is a server rule. rs/26 closed without a single correction factor; `docs/speedrun/LAB.md` on main (its host-latency table) names bbs the reference host and reads the Mac's figures as pessimistic, so no factor is applied.
 
 **Client.** Every number here was taken on the headless lite client against a local lab engine,
 where a reaction lands on the next tick. The scored run drives the browser webclient against the

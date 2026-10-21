@@ -14,8 +14,7 @@ on 16 cores that night (cairn://p/rs/main, 00:36). Read the measured rates as a 
 figures, a few percent pessimistic**. That matters more here than elsewhere: the phase-locked
 plans and the 4-events-per-tick budget depend on packets landing on predicted ticks, and a
 loaded host pushes some of them a tick late (the Fishing lock losses in section 2 and the
-~1-tick enchant recovery in section 4 may partly be that). rs/26's bbs correction factor had not
-been published when this was written (01:15).
+~1-tick enchant recovery in section 4 may partly be that). rs/26 closed without a single correction factor; `docs/speedrun/LAB.md` on main (its host-latency table) names bbs the reference host and reads the Mac's figures as pessimistic, so no factor is applied.
 
 **Client.** Every number here was taken on the headless lite client against a local lab engine,
 where a reaction lands on the next tick. The scored run drives the browser webclient against the

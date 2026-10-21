@@ -13,8 +13,7 @@ decay, and the Mage Arena fight at base 71), all under `docs/speedrun/scripts/`.
 on 16 cores that night (cairn://p/rs/main, 00:36). Read the measured tick counts as a **busy
 host's figures, a few percent pessimistic**: the bot reacts in wall-clock time, so a slow host
 occasionally costs a tick in a bank visit or a re-sip. The 3-tick enchant floor and Charge's 5
-per tick are server rules and do not depend on the host. rs/26's bbs correction factor had not
-been published when this was written (01:15), so no factor is applied.
+per tick are server rules and do not depend on the host. rs/26 closed without a single correction factor; `docs/speedrun/LAB.md` on main (its host-latency table) names bbs the reference host and reads the Mac's figures as pessimistic, so no factor is applied.
 
 **Client.** Every number here was taken on the headless lite client against a local lab engine,
 where a reaction lands on the next tick. The scored run drives the browser webclient against the
