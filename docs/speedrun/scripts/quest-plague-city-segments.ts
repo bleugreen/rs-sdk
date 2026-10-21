@@ -147,10 +147,19 @@ await runScript(async ({ bot, sdk }) => {
             await setStage(24);
             await L.tele(sdk, 2529, 3316);
             await sdk.waitForTicks(2);
-            const b = sdk.findNearbyNpc(/^Bravek$/);
-            console.log(`  before clerk: player ${JSON.stringify(L.pos(sdk))}, Bravek ${b ? `${b.x},${b.z}` : 'not seen'}`);
-            await S.step('clerk alone (24->25)', talk(sdk, /^Clerk$/), { choices: [/I need permission to enter a plague house/, /This is urgent though/] });
-            await quest('clerkAlone');
+            // The stage only advances if Bravek is within 7 tiles of the player when the clerk's
+            // last page runs (clerk.rs2 .npc_find(coord, bravek, 7, 0)). Bravek wanders around
+            // (2536,3314) and the player cannot stand east of x=2529, so measure the hit rate.
+            const tries = Number(process.env.CLERK_TRIES ?? 8);
+            const where = () => { const b = sdk.findNearbyNpc(/^Bravek$/); return b ? `${b.x},${b.z}` : 'not seen'; };
+            for (let i = 1; i <= tries; i++) {
+                await setStage(24);
+                const before = where();
+                await S.step(`clerk try ${i} (24->25)`, talk(sdk, /^Clerk$/), { choices: [/I need permission to enter a plague house/, /This is urgent though/] });
+                const v = await varp(sdk, 'elenaquest');
+                console.log(`  clerk try ${i}: Bravek ${before} -> ${where()}, stage ${v}`);
+                varps[`clerk${i}`] = { before, after: where(), stage: v };
+            }
         } else if (seg === 'bravek') {
             await setStage(25);
             await ensure(sdk, 'hangover_cure', /^Hangover cure$/i);
