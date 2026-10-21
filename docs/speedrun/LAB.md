@@ -20,10 +20,12 @@ cd server/gateway && bun run gateway
 ```
 
 - `BUILD_VERIFY=false` skips the pack checksum check (`server/PATCHES.md:178`).
-- `BUILD_LIVE_RELOAD=false` turns off the dev content watcher
-  (`server/engine/src/util/WorldConfig.ts:285`, used at `World.ts:360`). It
-  `fs.watch()`es all of `content/`, and on Linux that crashes the engine with
-  EMFILE (a Bun panic in `us_create_timer`).
+- `BUILD_LIVE_RELOAD=false` is required on every executor. It turns off the dev
+  content watcher (`server/engine/src/util/WorldConfig.ts:285`, used at
+  `World.ts:360`), which `fs.watch()`es every directory under `content/`
+  (`server/engine/src/cache/DevThread.ts:79`). That exceeds the executors'
+  8,192 open-file cap and crashes the engine with EMFILE (a Bun panic in
+  `us_create_timer`).
 - `NODE_TICKRATE=100` runs 100 ms ticks, three times faster than production's
   300 ms (`fly.toml:26`). Report results in ticks, never in seconds. The bot
   reacts in wall-clock time, so anything that depends on landing a packet in a
@@ -78,7 +80,7 @@ Example (mining block):
 
 ```sh
 cd server/engine && WEB_PORT=8920 WEB_MANAGEMENT_PORT=8921 HISCORES_WEB_PORT=8922 NODE_PORT=43620 \
-  BUILD_VERIFY=false NODE_TICKRATE=100 LOCAL_STAFF_LEVEL=4 bun run start
+  BUILD_VERIFY=false BUILD_LIVE_RELOAD=false NODE_TICKRATE=100 LOCAL_STAFF_LEVEL=4 bun run start
 cd server/gateway && AGENT_PORT=7820 WEB_MANAGEMENT_PORT=8921 bun run gateway
 # bots/<name>/bot.env: SERVER=localhost:8920 and GATEWAY_URL=ws://localhost:7820
 ```
@@ -102,6 +104,9 @@ packs the content.
   (`server/engine/src/util/WorldConfig.ts:102`), so base xp = game xp / 25.
 - Level-up chat dialogs freeze gathering loops; dismiss them
   (`sdk.sendClickDialog(0)`) as soon as they appear.
+- The lite client does not list locs on bridge-flagged levels (for example the
+  Lady Lumbridge gangplank). Interact with those by tile and loc id instead of
+  looking them up in the nearby-loc list.
 - Commit measurement scripts under `docs/speedrun/scripts/<skill>-<what>.ts` so
   a number labelled measured names a script someone can rerun. They import
   `runScript` from `../../../sdk/runner` and take the bot name as an argument:
