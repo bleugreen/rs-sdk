@@ -21,40 +21,54 @@ continues, cairn://p/rs/51).
 
 ## 1. Summary
 
-**On the route: 10 quests and the Mage Arena miniquest**, in this order: Doric's Quest,
-Plague City, Tree Gnome Village, The Grand Tree, Waterfall (conditional), Fight Arena, Dwarf
-Cannon, Monkey Madness (reward option 1), Mage Arena, Sea Slug and Fishing Contest. They give
-18 quest points. No quest-point gate binds, because Dragon Slayer is off.
+**On the route: 14 quests, the Mage Arena miniquest and one cannon session**, in this
+order: Doric's Quest, Plague City, Tree Gnome Village, The Grand Tree, Fight Arena, Dwarf
+Cannon, the pre-MM cannon session (Ranged 1 to 50), Monkey Madness (reward option 1), Mage
+Arena, Sea Slug, Fishing Contest, the four filler quests (Cook's Assistant, Goblin
+Diplomacy, Witch's House, Romeo & Juliet), then Dragon Slayer. They give **34 quest points**
+(r, `quest.constant`): 17 from the route's own quests, 15 of filler, 2 from Dragon Slayer.
+The one gate that binds is the Champions' Guild door (32 QP) at the start of Dragon Slayer,
+and the route reaches it with **no spare point** (section 7). Waterfall is off.
 
 | Whole on-route set | Stock | Fixed | Burst | Basis |
 |---|---|---|---|---|
-| Success path | **~12,410** | **~10,970** | **~10,170** | sum of the rows in section 3; about 70% measured, the rest i |
-| With Monkey Madness's expected failures (+780) | ~13,190 | **~11,750** | ~10,950 | i, `monkey_madness.md` |
-| Success path without Waterfall (if rs/56 drops it) | ~11,490 | ~10,080 | ~9,290 | i |
-| Without Monkey Madness (also drops Tree Gnome Village and Dwarf Cannon) | ~5,900 | ~5,200 | ~4,860 | i; section 6 shows what it costs in training |
+| Success path | **~13,050** | **~11,400** | **~10,540** | sum of the rows in section 3; about 65% measured, the rest i |
+| With Monkey Madness's expected failures (+780) | ~13,830 | **~12,180** | ~11,320 | i, `monkey_madness.md` |
+| Without Monkey Madness (also drops Tree Gnome Village, Dwarf Cannon, Dragon Slayer and the filler; keeps Waterfall) | ~5,690 | ~4,990 | ~4,650 | i; section 6 shows what it costs in training |
+
+The cannon session (~123 fixed) is counted in the combat training of section 6, not in
+these totals, as before. Against the previous Package A totals (Waterfall on, ~10,970
+fixed) the quest ticks rise by ~430: Waterfall's 888 comes out, Dragon Slayer (~941) and
+the filler (~619) go in, and the measured pre-MM fights take ~240 off Tree Gnome Village,
+Grand Tree and Fight Arena. The post-MM combat finish falls by ~1,470-1,500 at the same
+time (3,520 to 2,023-2,051, rs/31), which is why the trade pays (section 7).
 
 The main thread's rough estimate was ~21,000 fixed. The difference is that the route
-shrank as quests were valued: the troll chain, the Regicide chain, Dragon Slayer, Haunted
+shrank as quests were valued: the troll chain, the Regicide chain, Waterfall, Haunted
 Mine, and Merlin's Crystal with Holy Grail are all off.
 
 **Headline recommendation.** Do Monkey Madness with option 1 (35,000 Strength and Hitpoints).
 It is the largest single lever on the route. Without it, Hitpoints becomes the binding
 combat line, because only damage the account deals itself gives Hitpoints. That leaves
-about **13,900 ticks** of combat training after the quests. With it, Tree Gnome Village,
-Monkey Madness, Dwarf Cannon and the cannon-led combat finish together cost **~9,410**
-(success path) or **~10,190** (expected). These are fixed-column figures from a model over
-rs/30's and rs/31's measured rates (section 6). The margin of about 3,700 expected ticks
-survives every failure case measured on Ape Atoll. Monkey Madness needs
-the rs/23 client fix (merged). Sea Slug needs cairn://p/rs/54 (PR #31, open). Fishing Contest
-is conditional on the fly-fishing cycle (cairn://p/rs/53).
+about **13,900 ticks** of combat training after the quests (plus Waterfall's 888, which the
+no-MM route keeps). With it, Tree Gnome Village, Monkey Madness, Dwarf Cannon, Dragon Slayer
+with its filler, the cannon session and the cannon-led combat finish together cost
+**~9,440-9,470** (success path) or **~10,220-10,250** (expected), against ~14,790. These are
+fixed-column figures from a model over rs/30's and rs/31's measured rates (section 6). The
+margin of about 4,550 expected ticks survives every failure case measured on Ape Atoll, but
+those were measured at 70/70/70 and the route arrives at Defence 1 and ~42 Hitpoints
+(open item (a)). Monkey Madness needs the rs/23 client fix (merged). Sea Slug needs
+cairn://p/rs/54 (PR #31, open). Fishing Contest is conditional on the fly-fishing cycle
+(cairn://p/rs/53); dropping either costs the route its 32nd quest point.
 
-**Waterfall or Dragon Slayer: one decision pending cairn://p/rs/56.** Both fill MM option
-1's Strength gap. **Package A** (current: Waterfall on, Dragon Slayer off) is what the totals
-above assume. **Package B** (Waterfall off; Dragon Slayer after MM plus 15 QP of filler) is
-about **830 fixed ticks cheaper** after MM, because Dragon Slayer's Defence also fills most
-of the Defence gap. But B gives up Waterfall's Strength in the pre-MM fights. **Rule: take B
-unless rs/56 measures that Waterfall's Strength saves more than ~830 ticks across the pre-MM
-fights** ([section 7](#7-conditional-calls)).
+**Waterfall or Dragon Slayer: decided, Package B** (coordinator, 2026-10-21 01:07, on
+cairn://p/rs/56). Both fill MM option 1's Strength gap. cairn://p/rs/56 measured
+([pre_mm_fights.md](pre_mm_fights.md), 300 ms) that Waterfall's Strength saves only
+**~15-47 ticks** in the pre-MM fights (m): the warlord, the black demon and the Fight Arena
+monsters have no magic defence, so spells from a level-1 melee account kill them as fast as
+melee at Strength 83. The threshold was ~800-830. So **Waterfall is off, and Dragon Slayer
+is on after Monkey Madness with 15 QP of filler**: about **750-810 fixed ticks cheaper** than
+Package A (section 7).
 
 ## 2. Dependency graph
 
@@ -64,60 +78,73 @@ levels or unlocks, not quests. Hexagons are client fixes.
 
 ```mermaid
 flowchart TD
-  M51(["Magic 51, enchant ladder ~160 ticks"])
+  M59(["Magic 59 on the enchant ladder (51 is enough for the teleport and Fire Bolt)"])
   FM30(["Firemaking 30, helper-fed"])
   AGI(["Agility 22 + potion, 122 ticks of laps"])
-  PRAY(["Prayer 43 for Protect from Melee / Magic: ~11 dragon bones, 21 ticks + a trade"])
+  PRAY(["Prayer 43 from 11 dragon bones, 21 ticks, in TGV's helper trade; 2 prayer potion(4)"])
+  AP(["1 Antipoison(4) in the same trade"])
   DOR["Doric's Quest"]
   PC["Plague City"]
   TELE(["Ardougne teleport (read the scroll)"])
-  TGV["Tree Gnome Village"]
-  GT["The Grand Tree"]
-  WF["Waterfall (conditional)"]
-  FA["Fight Arena"]
-  ATK(["Attack 99 = TGV+GT+WF+FA, 55,775"])
+  TGV["Tree Gnome Village: warlord by Fire Blast"]
+  GT["The Grand Tree: demon by Fire Bolt"]
+  FA["Fight Arena: Fire Blast"]
+  ATK(["Attack 99 = TGV+GT+FA, 42,025"])
   DC["Dwarf Cannon"]
-  CAN(["Cannon session: Ranged 1 to 50, 113 ticks"])
+  CAN(["Cannon session: Ranged 1 to 50+, 113-153 ticks"])
   RS23{{"rs/23 OPHELD fix, merged"}}
   MM["Monkey Madness, option 1"]
-  M71(["Magic 71 + magic potion"])
+  M76(["Magic ~76 from M59 + the pre-MM spells + GT's 2,150 (i)"])
   MA["Mage Arena"]
-  CH(["Charge from 76 + potion, ~41 ticks"])
+  CH(["Charge from base ~80, ~33 ticks, no potion"])
   RS54{{"rs/54 bridged-door fix, PR #31"}}
   SS["Sea Slug"]
   FC["Fishing Contest, helper carp"]
-  FIN(["Combat finish: cannon + defensive melee, ~3,520"])
+  FILL["Filler, 15 QP: Cook's Assistant, Goblin Diplomacy, Witch's House, Romeo & Juliet"]
+  Q32(["32 QP at the Champions' Guild door: 17 route + 15 filler, no spare"])
+  DS["Dragon Slayer"]
+  FIN(["Combat finish: cannon + defensive melee, then cannon + knives, 2,023-2,051"])
 
   PC --> TELE
-  M51 --> TELE
+  M59 --> TELE
+  M59 -. Fire Blast .-> TGV
   TELE -.-> GT
-  TELE -.-> WF
   TELE -.-> MM
   TELE -.-> MA
   TELE -.-> SS
-  PRAY -.-> TGV
-  PRAY -.-> GT
+  PRAY --> TGV
+  PRAY --> GT
+  PRAY -.-> FA
   PRAY --> MM
   PRAY --> MA
+  AP -.-> CAN
+  AP -.-> MM
   AGI --> GT
   TGV --> MM
   GT --> MM
-  TGV -. village spirit tree .-> WF
-  GT -. stronghold spirit tree .-> WF
   TGV --> ATK
   GT --> ATK
-  WF --> ATK
   FA --> ATK
   ATK -.-> CAN
   DC --> CAN
   CAN --> MM
   RS23 --> MM
-  M71 --> MA
+  TGV --> M76
+  GT --> M76
+  FA --> M76
+  M76 --> MA
   MA --> CH
   FM30 --> SS
   RS54 --> SS
   SS -. either order .- FC
+  SS --> Q32
+  FC --> Q32
+  MM --> Q32
+  FILL --> Q32
+  Q32 --> DS
+  MM -. Elvarg at 99 .-> DS
   MM --> FIN
+  DS --> FIN
   DC --> FIN
   DOR -. either order .- PC
 ```
@@ -127,26 +154,41 @@ What the edges rest on:
 - **Monkey Madness needs Tree Gnome Village and The Grand Tree** (r, `king_narnode.rs2:7-10`),
   the stock-client blocker fixed by rs/23, Ranged 50 *base* for the magic shortbow against
   the Jungle Demon (r, `tier50.rs2:6`), and Protect from Magic. Melee died 2 of 2 (m).
-- **A protect prayer before every protect-prayer fight.** The Khazard warlord, the black
-  demon and the Jungle Demon are survivable only under a protect prayer (m), and Kolodion is
-  fatal without Protect from Magic (m, 2 deaths). With Holy Grail off, the prayers come from
-  helper-supplied dragon bones: Protect from Magic (Prayer 37) is 8 bones and 15 ticks,
-  Protect from Melee (Prayer 43) 11 bones and 21 ticks, plus one trade (m, cairn://p/rs/33).
-  Prayer 43 gives only 43 prayer points. The black demon (up to ~334 ticks), the Jungle
-  Demon (2-3 doses) and Kolodion (~54-62 points) therefore need prayer potions, unless the
-  Prayer route has gone further by then.
+- **Protect from Melee before the first fight.** The route reaches the Khazard warlord, the
+  black demon and Fight Arena at **Defence 1 and 10, 28 and 36 Hitpoints** (m, rs/56
+  timeline). Under Protect from Melee all three took **0 damage in 20 fights** (m,
+  [pre_mm_fights.md](pre_mm_fights.md)); without it the warlord and the demon are deaths (i,
+  their max hits against 10-28 HP) and Fight Arena costs 14 swordfish (m, n=1). The Jungle
+  Demon is survivable only under Protect from Magic (m), and Kolodion is fatal without it
+  (m, 2 deaths). With Holy Grail off, the prayers come from helper-supplied dragon bones:
+  Prayer 43 (both protect prayers) is 11 bones and 21 ticks of burying (m, rs/33), and the
+  bones ride Tree Gnome Village's helper trade (pre_mm_fights.md §2). Prayer 43 gives only
+  43 points: the pre-MM fights and the cannon session use ~115-125 (m), so the same trade
+  carries **2 Prayer potion(4)**. The Jungle Demon (2-3 doses) and Kolodion (~54-62 points)
+  need more potions later, unless the Prayer route has gone further by then.
+- **Spells, not melee, for the pre-MM fights.** None of the three has magic defence (r,
+  pre_mm_fights.md), and Strength is 1 until Monkey Madness. Fire Bolt needs Magic 35 and
+  Fire Blast 59 (`stat()`); the staff of fire supplies the fire runes.
 - **Plague City before the teleport users.** The teleport needs `%elenaquest` 30 and Magic 51
   (`stat()`, so boostable) (r, `teleport.rs2:22-38`). The savings count only for quests done
-  after it: Grand Tree ~290, Mage Arena ~185, Monkey Madness ~100 and Waterfall ~38 (i, tile
-  model).
+  after it: Grand Tree ~290, Mage Arena ~185 and Monkey Madness ~100 (i, tile model).
 - **Attack 99 before the cannon session, and the cannon session before Monkey Madness.**
   The cannon's hit roll uses the *wielded* style (r, `cannon_fire.rs2:116`), so a melee
   weapon at Attack 99 earns 11.5 Ranged per tick from Ranged 1 (m, `ranged.md` on rs/31's
-  branch). Tree Gnome Village + Grand Tree + Fight Arena give 42,025 (r), enough without
-  Waterfall; with Waterfall it is 55,775.
-- **Mage Arena at base Magic 71 + a magic potion, then Charge from base 76 + potion** (m,
-  rs/52 `magic-boost.ts`). Kolodion's start check is `stat_base(magic) >= 60` (r); Fire Wave
-  and Charge check boosted `stat()` (r, `magic.rs2:22`).
+  branch). Tree Gnome Village + Grand Tree + Fight Arena give 42,025 (r), which is enough.
+  At the route's 42 Hitpoints the spiders' poison takes 24-30 HP per session; one
+  antipoison dose at the first poisoning makes it 0 (m, rs/56).
+- **Mage Arena at base Magic ~76, with no potion for Fire Wave, then Charge from base ~80
+  with no potion** (i, the Magic timeline in section 4 step 9, on the server's xp table,
+  `Player.ts`). Kolodion's start check is `stat_base(magic) >= 60` (r); Fire Wave (75) and
+  Charge (80) check boosted `stat()` (r, `magic.rs2:22`), so a magic potion is the fallback
+  if the timeline falls short (rs/52 measured both boosts).
+- **Dragon Slayer after the 32nd quest point and after Monkey Madness.** The Champions'
+  Guild door needs 32 QP (r, `champions_guild.rs2:2`; m, the door refuses at 0), and the
+  Guildmaster inside is the quest's first step, so all 15 filler points come first. After
+  MM the account is at Attack 99 / Strength ~97 / Defence ~89, which wears rune armour (base
+  Defence 40, r) and kills Elvarg in 64-75 ticks (m at 99) against 102-166 at 70.
+  Every Dragon Slayer varp is permanent (r).
 - **Grand Tree's only Agility check is `stat(agility) < 25`** (r, `quest_grandtree.rs2:25`):
   22 plus a potion passes.
 - **Sea Slug** needs Firemaking 30 (`stat()`, r, `quest_seaslug.rs2:43`) and the rs/54 client
@@ -156,7 +198,8 @@ What the edges rest on:
 - **Doric's Quest and Plague City** have no prerequisites. Their combined Mining saving is
   the same in either order (i, rs/2 `mining.md` §2).
 
-Off-route chains, for reference (every node here is skipped; section 5):
+Off-route chains, for reference (every node here is skipped except Dragon Slayer, which is
+now on the route; section 5):
 
 ```mermaid
 flowchart LR
@@ -167,7 +210,7 @@ flowchart LR
   TS --> ER["Eadgar's Ruse"]
   DR["Druidic Ritual"] --> ER
   PIP["Priest in Peril"] --> HM["Haunted Mine"]
-  Q32(["32 QP"]) --> DS["Dragon Slayer"]
+  DS["Dragon Slayer (on the route)"]
   Q55(["55 QP"]) --> HQ["Heroes' Quest"]
   DS --> HQ
   LC["Lost City"] --> HQ
