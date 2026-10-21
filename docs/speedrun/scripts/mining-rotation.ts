@@ -70,6 +70,7 @@ await runScript(async ({ bot, sdk }) => {
     let onTime = 0, failed = 0, levelUps = 0;
     let prevAvail = -Infinity;
     let lastLevel = 0;
+    let lastKind = '';
     const ticks: number[] = [];
     const xps: number[] = [];
     const kinds: Record<string, number> = { stay: 0, trick: 0, walk: 0 };
@@ -102,6 +103,7 @@ await runScript(async ({ bot, sdk }) => {
         options.sort((a, b) => a.roll - b.roll || (a.kind === 'stay' ? -1 : 1));
         const o = options[0]!;
         kinds[o.kind]!++;
+        lastKind = o.kind;
         for (const [t, p] of o.sendsAt) sends.set(Math.max(t, s.tick), p);
         prevAvail = av(r);
         avail.set(`${r[0]},${r[1]}`, o.roll + RESPAWN);
@@ -126,7 +128,15 @@ await runScript(async ({ bot, sdk }) => {
         s = await nextTick(sdk, s.tick);
         const xp = miningXp(s);
         const lvl = s.skills.find(k => k.name.toLowerCase() === 'mining')?.baseLevel ?? 0;
-        if (lvl > lastLevel && lastLevel > 0) {
+        if (lvl > lastLevel && lastLevel > 0 && lastKind === 'walk') {
+            // Walking continues while the modal is open (processInteraction still moves us), and the op
+            // only fires after arrival; re-sending the same click now closes the modal before then, so
+            // the planned roll tick stands.
+            const last = pending[pending.length - 1];
+            if (last) sdk.sendInteractLoc(last.rock[0], last.rock[1], locId(s, last.rock), 1).catch(() => {});
+            levelUps++;
+            log.push(`  level ${lvl} seen@${s.tick} during a walk: click re-sent, plan kept`);
+        } else if (lvl > lastLevel && lastLevel > 0) {
             // A level-up from the roll on R (seen now, at R+1) queued [advancestat] in the ENGINE
             // queue, which runs on R+1 before interactions (World.ts processPlayers) and opens a
             // chat modal, so the click that landed on R+1 was blocked (Player.canAccess). Drop the
