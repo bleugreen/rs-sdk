@@ -152,6 +152,7 @@ console.log(`  knives-only HP by-product 1->99: ${knivesHP.toFixed(0)} base`);
 const R0 = LEVEL_XP[50] + 485;
 show(`with MM option 1, Holy Grail off (Ranged from ${R0.toFixed(0)} = level ${levelOf(R0)}, Def gap 19,938, HP gap 4,938)`, plans(R0, 19938, 4938));
 show('same, Waterfall off too (Strength gap 4,938 as well)', plans(R0, 19938, 4938, 4938));
+show('Package B: MM option 1 + Dragon Slayer (Def gap 1,288, HP gap 4,938, Str 0)', plans(R0, 1288, 4938));
 show('with MM option 1 and Holy Grail (Def gap 4,638, HP gap 4,938)', plans(R0, 4638, 4938));
 show('with MM + Holy Grail + Fremennik Trials (Def gap 1,826, HP gap 2,126)', plans(R0, 1826, 2126));
 show('Ranged only, from the with-MM start (no Def/HP gap)', plans(R0, 0, 0));
