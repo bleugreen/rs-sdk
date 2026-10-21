@@ -150,7 +150,7 @@ describe('probeOnTime', () => {
         w.step();
         await flush();
         // two ticks decoded from one read: the label jumps 2, the second interval is 0
-        w.sdk.tick({ tick: w.sdk.state!.tick + 1, arrivalMs: 900 } as Partial<BotWorldState>);
+        w.sdk.tick({ tick: w.sdk.state!.tick + 2, arrivalMs: 900 } as Partial<BotWorldState>);
         const r = await drive(w, p);
         expect(r.tickArrivals.slice(0, 3)).toEqual([300, 900, 900]);
     });
