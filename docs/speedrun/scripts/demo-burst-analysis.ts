@@ -18,6 +18,12 @@
 //       followed by one that starts almost at once and leaves no idle window for a reaction.
 // A sample (a pair's direct probe, ~1.3 min) is scored the same way over its whole span, and
 // against (a) direct >= 58/60 at +0 ms.
+//
+// Only an Ashburn vantage (edge iad, TCP p50 <= 10 ms) counts toward the gate, the bursts and the
+// correlations. A home vantage behind another Fly edge sees the same ticks 60-70 ms later, but its
+// path adds single-tick hiccups that read exactly like an overrun and its catch-up (aligned tick
+// by tick at 04:04 PDT: 13 catch-ups at home, 0 at Ashburn over the same 245 ticks), so home
+// windows are listed for reference only.
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 
@@ -60,7 +66,7 @@ function rebuildTicks(raw: [number, number][]): number[] {
     return out;
 }
 
-interface Segment { source: string; kind: 'pair' | 'window' | 'window-react'; ticks: number[]; exact: boolean; direct?: { onTime: number; n: number; hist: Record<string, number> }; relay?: Record<string, number>; url?: string; trials?: any[]; players?: number | null }
+interface Segment { source: string; kind: 'pair' | 'pair-window' | 'window' | 'window-react'; vantage: 'ashburn' | 'east' | 'home'; ticks: number[]; exact: boolean; direct?: { onTime: number; n: number; hist: Record<string, number> }; relay?: Record<string, number>; url?: string; trials?: any[]; players?: number | null }
 const segments: Segment[] = [];
 
 const pairsDir = args.get('pairs');
@@ -71,14 +77,18 @@ if (pairsDir && existsSync(pairsDir)) {
         const trials = (r.react?.trials ?? []).filter((t: any) => t.delay === 0);
         const hist: Record<string, number> = {};
         for (const t of trials) hist[t.ticks] = (hist[t.ticks] ?? 0) + 1;
-        segments.push({ source: f, kind: 'pair', ticks, exact: true, trials, url: r.runUrl, players: r.vantage?.players_online ?? r.playercountStart,
+        const vantage = r.vantage?.edge_region === 'iad' && (r.vantage?.http_ms?.tcp_connect?.p50 ?? 99) <= 10 ? 'ashburn' : 'east';
+        segments.push({ source: f, kind: 'pair', vantage, ticks, exact: true, trials, url: r.runUrl, players: r.vantage?.players_online ?? r.playercountStart,
             direct: { onTime: trials.filter((t: any) => t.ticks === 1).length, n: trials.length, hist }, relay: r.gatewayPath?.reaction_ticks });
+        // The same session's sample phase, when the dispatch asked for one: one continuous window.
+        const sampleTicks = r.sample?.frames?.raw?.length ? rebuildTicks(r.sample.frames.raw).filter(t => t > ticks.at(-1)! + 150) : [];
+        segments.push({ source: f, kind: 'pair-window', vantage, ticks: [...ticks, ...sampleTicks], exact: !sampleTicks.length, players: r.vantage?.players_online ?? r.playercountStart });
     }
 }
 for (const f of (args.get('windows') ?? '').split(',').filter(Boolean)) {
     const r = JSON.parse(readFileSync(f, 'utf8'));
-    if (r.sample?.frames?.raw?.length) segments.push({ source: basename(f), kind: 'window', ticks: rebuildTicks(r.sample.frames.raw), exact: false, players: r.playercountStart });
-    if (r.react?.ticks?.length) segments.push({ source: basename(f), kind: 'window-react', ticks: r.react.ticks.map((t: number[]) => t[1]!), exact: true, players: r.playercountStart });
+    if (r.sample?.frames?.raw?.length) segments.push({ source: basename(f), kind: 'window', vantage: 'home', ticks: rebuildTicks(r.sample.frames.raw), exact: false, players: r.playercountStart });
+    if (r.react?.ticks?.length) segments.push({ source: basename(f), kind: 'window-react', vantage: 'home', ticks: r.react.ticks.map((t: number[]) => t[1]!), exact: true, players: r.playercountStart });
 }
 segments.sort((a, b) => a.ticks[0]! - b.ticks[0]!);
 
@@ -123,7 +133,8 @@ const fleetNear = (t: number) => {
 // ---------------------------------------------------------------- per-minute series
 interface Minute { minute: number; source: string; kind: string; exact: boolean; players: number | null; s: ReturnType<typeof score>; fleet: ReturnType<typeof fleetNear> }
 const minutes: Minute[] = [];
-for (const seg of segments) {
+// The per-minute series uses each pair's whole session (pair-window), Ashburn only.
+for (const seg of segments.filter(s => s.kind === 'pair-window' && s.vantage === 'ashburn')) {
     const byMin = new Map<number, number[]>();
     for (const t of seg.ticks) {
         const m = Math.floor(t / 60_000);
@@ -141,29 +152,30 @@ const say = (s = '') => out.push(s);
 // ---------------------------------------------------------------- samples (pairs)
 say('## Samples');
 say();
-say('| PDT | source | online | direct 1:2:3 | relay 1:2 | p90 / max ms | late >450 /min | catch-ups /min | (a) | (b) | (c) |');
-say('|---|---|---|---|---|---|---|---|---|---|---|');
-const agree = { bc: 0, b: 0, c: 0, a: 0, n: 0, aEqB: 0, aEqC: 0 };
+say('| PDT | source | vantage | online | direct 1:2:3 | relay 1:2 | p90 / max ms | late >450 /min | catch-ups /min | (a) | (b) | (c) |');
+say('|---|---|---|---|---|---|---|---|---|---|---|---|');
+const agree = { n: 0, aEqB: 0, aEqC: 0 };
 for (const seg of segments) {
     const s = score(seg.ticks);
     const mins = s.n * 0.3 / 60;
-    const a = seg.direct ? seg.direct.onTime >= 58 && seg.direct.n >= 60 : null;
-    if (a !== null) {
+    // 58/60 scaled to runs with other trial counts
+    const a = seg.direct && seg.direct.n ? seg.direct.onTime / seg.direct.n >= 58 / 60 : null;
+    if (a !== null && seg.vantage === 'ashburn') {
         agree.n++;
         if (a === s.b) agree.aEqB++;
         if (a === s.c) agree.aEqC++;
     }
     const h = seg.direct?.hist ?? {};
-    say(`| ${pdt(seg.ticks[0]!).slice(5)} | ${seg.kind}${seg.exact ? '' : ' (rebuilt)'} | ${playersAt(seg.ticks[0]!, seg.players) ?? ''} | ${seg.direct ? `${h['1'] ?? 0}:${h['2'] ?? 0}:${h['3'] ?? 0}` : ''} | ${seg.relay ? `${seg.relay['1'] ?? 0}:${seg.relay['2'] ?? 0}` : ''} | ${s.p90.toFixed(0)} / ${s.max.toFixed(0)} | ${(s.late / mins).toFixed(1)} | ${s.catchPerMin.toFixed(1)} | ${a === null ? '' : a ? 'pass' : 'FAIL'} | ${s.b ? 'pass' : 'FAIL'} | ${s.c ? 'pass' : 'FAIL'} |`);
+    say(`| ${pdt(seg.ticks[0]!).slice(5)} | ${seg.kind}${seg.exact ? '' : ' (rebuilt)'} | ${seg.vantage} | ${playersAt(seg.ticks[0]!, seg.players) ?? ''} | ${seg.direct ? `${h['1'] ?? 0}:${h['2'] ?? 0}:${h['3'] ?? 0}` : ''} | ${seg.relay ? `${seg.relay['1'] ?? 0}:${seg.relay['2'] ?? 0}` : ''} | ${s.p90.toFixed(0)} / ${s.max.toFixed(0)} | ${(s.late / mins).toFixed(1)} | ${s.catchPerMin.toFixed(1)} | ${a === null ? '' : a ? 'pass' : 'FAIL'} | ${s.b ? 'pass' : 'FAIL'} | ${s.c ? 'pass' : 'FAIL'} |`);
 }
 say();
-say(`Pairs where (b) agrees with (a): ${agree.aEqB}/${agree.n}; where (c) agrees with (a): ${agree.aEqC}/${agree.n}.`);
+say(`Ashburn pairs where (b) agrees with (a): ${agree.aEqB}/${agree.n}; where (c) agrees with (a): ${agree.aEqC}/${agree.n}.`);
 
 // ---------------------------------------------------------------- P(miss | next interval)
 const B = [[0, 50], [50, 100], [100, 150], [150, 200], [200, 250], [250, Infinity]] as const;
 const bins = B.map(() => ({ n: 0, miss: 0 }));
 const after = { catch: { n: 0, miss: 0 }, other: { n: 0, miss: 0 } };
-for (const seg of segments) for (const t of seg.trials ?? []) {
+for (const seg of segments.filter(s => s.vantage === 'ashburn')) for (const t of seg.trials ?? []) {
     if (t.ticks === 99 || t.nextIntervalMs === null || t.nextIntervalMs === undefined) continue;
     const i = B.findIndex(([lo, hi]) => t.nextIntervalMs >= lo && t.nextIntervalMs < hi);
     bins[i]!.n++;
@@ -173,7 +185,7 @@ for (const seg of segments) for (const t of seg.trials ?? []) {
     if (t.ticks > 1) k.miss++;
 }
 say();
-say('## P(miss) by the next tick interval (direct probe, +0 ms trials)');
+say('## P(miss) by the next tick interval (Ashburn direct probe, +0 ms trials)');
 say();
 say('| next interval ms | ' + B.map(([lo, hi]) => (hi === Infinity ? `>= ${lo}` : `${lo}-${hi}`)).join(' | ') + ' |');
 say('|---|' + B.map(() => '---').join('|') + '|');
@@ -217,7 +229,7 @@ say(`Bursts: ${bursts.length} (${closed.length} closed, lengths ${closed.sort((a
 say();
 say('## Bursts across samples');
 say();
-const seq = segments.filter(s => s.kind !== 'window-react').map(s => ({ t0: s.ticks[0]!, t1: s.ticks.at(-1)!, fail: !score(s.ticks).c, kind: s.kind }));
+const seq = segments.filter(s => s.kind === 'pair-window' && s.vantage === 'ashburn').map(s => ({ t0: s.ticks[0]!, t1: s.ticks.at(-1)!, fail: !score(s.ticks).c, kind: s.kind }));
 for (let i = 0; i < seq.length;) {
     if (!seq[i]!.fail) { i++; continue; }
     let j = i;
