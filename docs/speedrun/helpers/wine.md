@@ -105,6 +105,17 @@ after the make) cost no actions, and the scored account can do anything there
 that opens no modal. The re-run that separates the level-up dismissal from the
 bank and make is recorded below as T9b when it lands.
 
+**On the demo** (rs-sdk-demo.fly.dev over a loopback gateway on bbs, 2026-10-21
+07:14 UTC, `docs/speedrun/scripts/wine-handoff.ts cairn_h40 cairn_h44 --mode=window`):
+the maker (cairn_h40, Cooking 35) made 17 noted wines in 25 ticks (2 rounds);
+the receiver (cairn_h44, Cooking 1) logged in at the bank, its trade started at
+login+1, took 8 ticks, the deposit 6, done at login+15, and the login timer
+fermented them at login+20 with no extra relog: 6 good, 11 bad, Cooking 1 -> 40.
+The giver's side took 9 ticks. The giver must wait until the receiver is in
+sight before it opens the trade (`waitForPlayer` in wine.ts): the lib's
+`openTrade` gives up after 5 ticks without a sighting, and a demo login takes
+longer, which failed the first demo attempt and the lab on slow hosts.
+
 **Two-login variant** (no grapes and jug in the trade): the same first part,
 and the rest is deposited at any later login the route already makes. Its
 receiver cost is the trade (4) + deposit (3-5) + a second deposit (3) at the
