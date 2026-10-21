@@ -42,36 +42,57 @@ const p = (t: Tree, L: number) => Math.min(Math.floor((t.lo * (99 - L)) / 98) + 
 type Band = { from: number; tree: Tree; cycle: 'four' | 'knife' | 'flinch'; trees: number; switchCost: number };
 type Route = { name: string; bands: Band[] };
 
-function simulate(route: Route, players: number, rng: () => number) {
+// The trees reachable from the standing tile and the clock, carried across rolls of one band.
+type Spot = { t: number; deadUntil: number[]; lastTree: number };
+const newSpot = (band: Band, t: number): Spot => ({ t, deadUntil: new Array(band.trees).fill(0), lastTree: -1 });
+
+// One roll at level L: waits out an all-down, pays a switch, advances the clock by the cycle
+// step (and a fell's tick on normal trees). Returns whether the roll gave a log.
+function roll(spot: Spot, band: Band, L: number, players: number, rng: () => number): boolean {
     const scale = (r: number) => Math.floor((r * (4000 - Math.min(players, 2000))) / 4000);
-    let xp = 0, t = 0, L = 1;
+    const { tree, cycle } = band;
+    const allDownExtra = cycle === 'four' ? 4 : cycle === 'knife' ? 3 : 2;
+    let live = spot.deadUntil.findIndex(d => d <= spot.t);
+    if (live < 0 && !tree.fellsEveryLog) {
+        const first = Math.min(...spot.deadUntil);
+        spot.t = Math.max(spot.t, first);
+        live = spot.deadUntil.indexOf(first);
+    }
+    if (spot.lastTree >= 0 && live !== spot.lastTree) spot.t += band.switchCost;
+    spot.lastTree = live;
+    let step = cycle === 'four' ? 4 : cycle === 'knife' ? 3 : (rng() < 0.964 ? 2 : 4);
+    const ok = rng() < p(tree, L);
+    if (ok) {
+        if (tree.fellsEveryLog) step += 1;
+        else if (rng() < 1 / 8) spot.deadUntil[live] = spot.t + scale(tree.respawn) + allDownExtra;
+    }
+    spot.t += step;
+    return ok;
+}
+
+function simulate(route: Route, players: number, rng: () => number) {
+    let xp = 0, L = 1;
     let band = route.bands[0]!;
-    let deadUntil: number[] = new Array(band.trees).fill(0);
-    let lastTree = -1;
+    let spot = newSpot(band, 0);
     while (L < 99) {
         const nb = [...route.bands].reverse().find(b => L >= b.from)!;
-        if (nb !== band) { band = nb; deadUntil = new Array(band.trees).fill(0); lastTree = -1; }
-        const { tree, cycle } = band;
-        const allDownExtra = cycle === 'four' ? 4 : cycle === 'knife' ? 3 : 2;
-        let live = deadUntil.findIndex(d => d <= t);
-        if (live < 0 && !tree.fellsEveryLog) {
-            const first = Math.min(...deadUntil);
-            t = Math.max(t, first);
-            live = deadUntil.indexOf(first);
-        }
-        if (lastTree >= 0 && live !== lastTree) t += band.switchCost;
-        lastTree = live;
-        let step = cycle === 'four' ? 4 : cycle === 'knife' ? 3 : (rng() < 0.964 ? 2 : 4);
-        if (rng() < p(tree, L)) {
-            xp += tree.xp;
-            if (tree.fellsEveryLog) step += 1;
-            else if (rng() < 1 / 8) deadUntil[live] = t + scale(tree.respawn) + allDownExtra;
+        if (nb !== band) { band = nb; spot = newSpot(band, spot.t); }
+        if (roll(spot, band, L, players, rng)) {
+            xp += band.tree.xp;
             const nL = levelOf(xp);
-            if (nL > L) { step += 1; L = nL; }
+            if (nL > L) { spot.t += 1; L = nL; }
         }
-        t += step;
     }
-    return t;
+    return spot.t;
+}
+
+// Ticks per roll and per log of one band held at a fixed level (the lab's condition).
+function bandRate(band: Band, L: number, players: number, rolls = 200_000) {
+    const rng = mulberry32(777);
+    const spot = newSpot(band, 0);
+    let logs = 0;
+    for (let i = 0; i < rolls; i++) if (roll(spot, band, L, players, rng)) logs++;
+    return { perRoll: spot.t / rolls, perLog: spot.t / logs };
 }
 
 function mulberry32(a: number) { return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let x = Math.imul(a ^ (a >>> 15), 1 | a); x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x; return ((x ^ (x >>> 14)) >>> 0) / 4294967296; }; }
@@ -95,3 +116,14 @@ console.log('|---|---|---|');
 for (const r of routes) console.log(`| ${r.name} | ${mean(r, 1260).toFixed(0)} | ${mean(r, 1).toFixed(0)} |`);
 const four = routes[0]!;
 console.log(`\nknife as the docs price it (0.765 x 4-tick): demo ${(mean(four, 1260) * 0.765).toFixed(0)}, quiet ${(mean(four, 1) * 0.765).toFixed(0)}`);
+
+// The willow band at level 99, the condition flinch-wc.ts measures (brief A2's comparison).
+console.log('\n| Band at Woodcutting 99 | Ticks per roll, local (D=29) | per log | Ticks per roll, demo (D=20) | per log |');
+console.log('|---|---|---|---|---|');
+for (const [name, band] of [
+    ['Willow, two trees, flinch', { from: 73, tree: T.willow!, cycle: 'flinch', trees: 2, switchCost: 0 }],
+    ['Willow, three trees, knife', { from: 73, tree: T.willow!, cycle: 'knife', trees: 3, switchCost: 0 }],
+] as [string, Band][]) {
+    const q = bandRate(band, 99, 1), d = bandRate(band, 99, 1260);
+    console.log(`| ${name} | ${q.perRoll.toFixed(2)} | ${q.perLog.toFixed(2)} | ${d.perRoll.toFixed(2)} | ${d.perLog.toFixed(2)} |`);
+}

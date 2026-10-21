@@ -37,7 +37,8 @@ not assumed from a release date.
 
 Lab follow-ups for candidates worth about 300 ticks or more: **rs/90** (2-tick Woodcutting by
 the auto-retaliate flinch: mechanism confirmed, [self-only-methods.md](self-only-methods.md)
-§3a; its attacker setup is brief A2, still to run) and **rs/91** (the boosted Package B combat
+§3a; its attacker setup, brief A2, passed in the lab and is not applicable on the demo, §3b,
+rs/128) and **rs/91** (the boosted Package B combat
 finish, measured; [helper-fed-and-combat.md](helper-fed-and-combat.md) §3).
 
 The self-only skill routes (`skills/*.md`, rs/2) are on main since PR #72; cite main's
@@ -54,10 +55,11 @@ floors for Runecraft, Smithing, Firemaking, Prayer and Magic match the route tic
 No upstream-documented bug is live and worth ticks.
 
 What is left is concrete. **About 1,200 ticks are measured** (a fresh account, the Monkey
-Madness temple ladder). **~500-1,100 are conditional** on one mechanism, the 2-tick flinch.
-rs/90 confirmed it in the lab (196 rolls at 2 ticks, self-only-methods.md section 3a), but its
-Woodcutting value is ~500 and needs two NPC attackers at a two-willow tile, which is not yet
-measured. The boosted combat finish is now measured at **~194** against
+Madness temple ladder). **Up to ~530 is conditional** on one mechanism, the 2-tick flinch, and
+only for Mining with a Wilderness helper (row 4). rs/90 confirmed the mechanism (196 rolls at 2
+ticks, self-only-methods.md section 3a). rs/128 measured its Woodcutting setup, two attackers at
+the two-willow tile, at 93% of steady gaps at 2 ticks. But no NPC on the demo can attack a player
+there and random events are off, so its Woodcutting value on the demo is 0 (section 3b). The boosted combat finish is now measured at **~194** against
 the route's figure (rs/91). A long tail of 50-300-tick items adds roughly **800-1,500** more. The single largest finding was not a
 technique: the scored account has already spent **~547 ticks** of its counter, and a fresh account
 skips the tutorial in 6.
@@ -70,7 +72,7 @@ document an adopted item changes, so the run-order pass can apply it directly.
 
 | # | Technique | Source | Present in revision | Route line | Ticks saved | Cost | Test status | Route document it changes |
 |---|---|---|---|---|---|---|---|---|
-| 1 | **2-tick Woodcutting by the auto-retaliate flinch**: drop on the tick after a roll; a hit that tick sets `%action_delay = map_clock + 1`; the next tree click rolls at once | OSRS wiki, *Tick manipulation* and *Flinching* ([self-only-methods.md](self-only-methods.md) row 1) | Read yes: `auto_retaliate.rs2:9-22`, `PlayerOps.ts:956-958`, `woodcut.rs2:97-99` | Woodcutting, ~3,028 with the knife | **~500-580 (i)** with two NPCs at two-tree multi-combat tiles; **0** with a Wilderness helper (no two-oak tile, no willows) | Two melee NPCs attacking 2 ticks apart beside a tile reaching two trees | **Mechanism confirmed (m, rs/90)**: 196 rolls at 99, 2 ticks on 160 of 166 steady gaps, own attack never fired. Attacker setup at the two-willow tile untested (brief A2) | `skills/woodcutting.md`, `skills/tick-manipulation.md` (rs/2) |
+| 1 | **2-tick Woodcutting by the auto-retaliate flinch**: drop on the tick after a roll; a hit that tick sets `%action_delay = map_clock + 1`; the next tree click rolls at once | OSRS wiki, *Tick manipulation* and *Flinching* ([self-only-methods.md](self-only-methods.md) row 1) | Read yes: `auto_retaliate.rs2:9-22`, `PlayerOps.ts:956-958`, `woodcut.rs2:97-99` | Woodcutting, ~3,028 with the knife | **0 on the demo (r)**: no NPC there can attack a player on a two-willow tile, and random events are off; ~500-580 (i) only with attackers spawned by staff command. 0 with a Wilderness helper (no two-oak tile, no willows). Kept as row 1 so references stay valid | Two melee NPCs attacking 2 ticks apart beside a tile reaching two trees; the demo has none | **Measured, rs/128 (m)**: two staff-spawned hobgoblins at (2674,3227), 252 of 272 steady roll gaps at 2 ticks, 2.50 ticks per roll at 99 (model 2.72), own attack never fired. **Not applicable on the demo** ([self-only-methods.md](self-only-methods.md) §3b) | None: rs/2's knife route in `skills/woodcutting.md` stands |
 | 2 | **Monkey Madness temple: ladder drop onto the trapdoor tile** (up the south bamboo ladder, down the east one, inside the guard box) | OSRS wiki, MM quick guide ([quest-speedrun.md](quest-speedrun.md) row 1) | Yes: `quest_mm.rs2:766-771`, ladders and trapdoor in `maps/m43_43.jm2`; no quest-stage checks | MM step H (102 on success, ~600 expected failure budget) | **~670 expected, ~68 success path (i on m)** | none; 5-9 prayer points | **Measured**, 33-36 ticks, 4 of 4 (`quest-mm-temple-ladder.ts`); folded into the quest route, MM now ~3,897 success / ~4,077 expected | `quests/monkey_madness.md` step H, `quests/README.md` (rs/3): **adopted** at `663b4814` |
 | 3 | **Start the scored run on a fresh account and skip the tutorial** | OSRS speedrun timing convention ([travel-and-overhead.md](travel-and-overhead.md) row 1; [free-xp.md](free-xp.md)) | Yes: the skip is offered when `map_live` is false (`runescape_guide.rs2:11-18`, `ServerOps.ts:24-26`); the demo leaves `NODE_PRODUCTION` unset | The final score: `www_cairn_md` already carries ~547 ticks (public hiscore, Overall 28 at 2m 44s) | **~540 (m)** | A new account name; the helper roster trades to it | **Measured**: skip in 6 ticks. Adopted by the main thread | Run plan (main thread): **decided yes**; helpers and docs take the scored name from an env value |
 | 4 | 2-tick Mining on stays by the same flinch | as row 1 ([self-only-methods.md](self-only-methods.md) row 2) | as row 1; `mining.rs2:83-85` | Mining 63-99, ~3,173 | **0-530 (i), conditional** | as row 1; no iron rock is multi-combat, and one attacker only flinches every 4 ticks (m, rs/90) | Mechanism confirmed by rs/90; needs a Wilderness helper at the level-31 iron cluster; planner run first (brief B there) | `skills/mining.md` (rs/2) |
@@ -129,23 +131,21 @@ ticks.
    `monkey_madness.md` and the quest README at `663b4814`, together with the zoo-leg correction
    (walk the monkey back from the zoo, about +100). MM is now ~3,897 success and ~4,077 expected
    (fixed client). No lab is needed.
-3. **2-tick Woodcutting by the flinch (mechanism confirmed by rs/90; worth ~500 with two NPC
-   attackers at the two-willow tile, 0 with a Wilderness helper; self-only-methods.md section
-   3a and brief A2).** *Result (m):* the engine trace showed the first attempt failed on setup
-   (attackers on adjacent ticks, and a skipped label after each click), not on the mechanism. With
-   that fixed: 196 rolls at Woodcutting 99, 160 of 166 steady gaps at 2 ticks, every roll on the
-   tick after a flinch write, and the player's own attack never fired. On one tree the fells make it
-   5.15 ticks per roll, slower than the knife, so the value needs a tile that reaches two trees:
-   ~500 at the two-willow multi-combat tile (2674,3227) from level 73, ~580 with two-oak tiles
-   below 73 too, and 0 with a Wilderness helper (no such tile there). A single attacker flinches
-   only every 4 ticks, which also leaves Mining (row 4) needing a Wilderness helper.
-   *Next, brief A2 (self-only-methods.md §3):* at (2674,3227), check that two attackers engage
-   from the east and south tiles (at the two-oak tile only 1 of 10 did), measure the steady gap
-   histogram and the cost of a fell with the other willow standing, and *succeed* on at least 80%
-   of steady gaps at 2 ticks and ticks per roll within 10% of `flinch-model.ts`. Then the
-   practical question: `::npcadd` is staff-only, so the demo needs two naturally spawning
-   attackers that can be brought to that tile 2 ticks out of phase. Do not change rs/2's
-   Woodcutting route until A2 passes.
+3. **2-tick Woodcutting by the flinch (measured end to end by rs/128; not applicable on the
+   demo, worth 0 there; self-only-methods.md sections 3a and 3b).** *Mechanism (m, rs/90):* 196
+   rolls at Woodcutting 99, 160 of 166 steady gaps at 2 ticks, every roll on the tick after a
+   flinch write, and the player's own attack never fired. On one tree the fells make it 5.15 ticks
+   per roll, slower than the knife, so the value needs a tile reaching two trees. *Brief A2 (m,
+   rs/128):* two staff-spawned hobgoblins on the east and south tiles of the two-willow tile
+   (2674,3227) held the cycle on 252 of 272 steady roll gaps, at 2.50 ticks per roll against
+   `flinch-model.ts`'s 2.72, and a fell with the other willow standing cost about 0.2 ticks. Both
+   success criteria pass, and with such attackers the model's ~500 stands. *But the demo has no
+   attackers for it (r):* the necromancer and moss giants near the tile cannot hold a target that
+   far from their spawns (`Npc.ts:659-668`). The necromancer's summoned zombies last 200 ticks
+   and take about 67 to gather, more than the ~41 a pair can save (i). The tree-spirit random
+   event is off on the demo (`fly.toml:25`). The remaining oak tiles are worth at most ~89 (i),
+   and their natural attackers hit every 5 or 6 ticks. No change to rs/2's Woodcutting route. A
+   single attacker flinches only every 4 ticks, so Mining (row 4) still needs a Wilderness helper.
 4. **Boosted Package B combat finish (~194 against the route, measured by rs/91; adopted).**
    Flicked Protect from Melee, a ranging potion, a glory and super antipoison with no food
    raise cannon-plus-knives from 18.56 to 21.95 base Ranged per tick at Ranged 85 (m, 3 runs
