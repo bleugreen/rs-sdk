@@ -44,8 +44,8 @@ both gates down by 4: Fire Wave (75) from base 71, Charge (80) from base 76.
   at 80 or 81 while base climbed to meet it.
 
 Compared with the arena at an unboosted 75, the boosted route saves 24 dragonstone casts before
-the fight and the 2-10 after it, less 8 ticks of slower Charge. That is about 70-100 ticks. Base 76 needs 2,379 base from the
-fight, starting from the bottom of level 71. All four measured yields clear that: three at base
+the fight and the 2-10 after it, less 8 ticks of slower Charge. That is about 70-100 ticks.
+Base 76 needs 2,379 base from the fight, starting from the bottom of level 71. All four measured yields clear that: three at base
 71 and rs/3's lowest at base 80 (2,404).
 
 Charge is the only Magic spell that fires more than once per tick. Every other xp spell sets
