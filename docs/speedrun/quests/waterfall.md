@@ -156,7 +156,7 @@ counts are map estimates, not routes.
 - **The falls dungeon is the fire giant dungeon.** Fire giants (level 86),
   shadow spiders (they drain Prayer) and skeleton mages attacked the lab account on
   the way from the ledge door to the puzzle room; a 40-hitpoint account with no
-  armour lost 12-15 hitpoints there. The scored account cannot wear armour into
+  armour lost 9-15 hitpoints there. The scored account cannot wear armour into
   Glarial's tomb, but it can put armour on again after the tomb (another trade or
   carry it... it must not be in the inventory at the tombstone either), so plan
   enough Hitpoints or food for steps 29-36.
