@@ -88,7 +88,7 @@ tunnel needs Fishing Contest, which can only be done on the far side.
 |---|---|
 | 10 HP, auto-retaliate on | 4 deaths in 4: a hit queues `p_opnpc` and replaces the walk with a fight |
 | 10 HP, auto-retaliate off, running | 2 deaths in 2 (10-17 damage per attempt, observed tick by tick) |
-| 30 HP, auto-retaliate off, running | 10 successes, 3 deaths (arriving with 7-24 HP), including 4 axe-upgrade return trips |
+| 30 HP, auto-retaliate off, running | 12 successes, 2 deaths (arriving with 7-24 HP): 4 fresh treks (2 deaths among them) and 4 axe-upgrade round trips (no deaths either way) |
 
 A death costs about 2 minutes and keeps the axe (the starter kit is banked
 first). Training 10 -> 30 HP on cows took 661-1,488 ticks (19-31 kills). More
@@ -114,23 +114,39 @@ ping-ponging between bare yew spots (since fixed).
 | Tier | Axe | Rate | Contention |
 |---|---|---|---|
 | magic | bronze | 21-36 | 15-22 other players within 5 tiles of the cluster |
-| magic | steel | **55-74** (three 27-log trips: 56, 74, 55) | 12-27 others within 5 tiles; up to 26 on one tree |
+| magic | steel | **38-74**, about 55 on average (27-log trips: 74, 72 overall for h10's first two, 56, 55, 38) | 12-27 others within 5 tiles, 45-71 distinct players per trip; up to 26 on one tree |
 | yew | bronze | 72-133 at Seers; 332 and 892 at Catherby when nobody else was on the tree | Seers 33-43 others around the 3 trees; Catherby went from empty to 60-80 players within half an hour |
 | willow / maple | bronze | 200-340 (training trips) | |
 
 The steel-axe upgrade trip took 5.8-6 minutes (4 runs: h10, h11, h12, h13).
+
+### Stock left in the banks (2026-10-21 07:17 UTC, all four logged out)
+
+| Account | Magic | Yew | Maple | Willow | Oak | Logs | Options it ran with |
+|---|---|---|---|---|---|---|---|
+| cairn_h10 | 63 | 25 | 17 | 10 | 6 | 3 | `{"location":"seers-magic-north"}` |
+| cairn_h11 | 60 | 24 | 17 | 10 | 6 | 3 | `{"location":"seers-magic-north"}` |
+| cairn_h12 | 59 | 23 | 17 | 10 | 6 | 3 | `{"location":"seers-magic-south"}` |
+| cairn_h13 | 12 | 24 | 17 | 10 | 6 | 3 | `{}` |
+| **Total** | **194** | **96** | **68** | **40** | **24** | **12** | |
+
+Each account is Woodcutting 75-90 with Hitpoints 30, carries a steel axe in
+the pack (bronze worn), and was left logged out at the Seers or Catherby bank.
+The banks also hold the starter kit and 2-35 gp.
 
 ### Contention at the magic trees
 
 The Seers magic trees are camped: 15-27 other players stand at each cluster,
 and nearly every regrown tree is felled within a minute. Each log goes to
 whoever's roll lands first, so an account's share of a tree is roughly its
-`chopChance` over everyone's. The seven trees produce at most about 8 logs per
-regrowth, around 1,600 magic logs an hour for the whole server, and our three
-steel accounts took about 180 of them. While our accounts are a small part of
-the crowd, each extra one adds roughly its own 55-75 per hour rather than
-taking from ours, so they do not meaningfully contend with each other, and the
-north and south clusters measured the same.
+`chopChance` over everyone's. The seven trees produce about 8 logs per regrowth (a model from the 1/8
+depletion and the 400-tick respawn, not measured), at most around 1,600 magic
+logs an hour for the whole server, and our three or four steel accounts took
+150-200 of them. While our accounts are a small part of the crowd, each extra
+one adds roughly its own share rather than taking from ours, so they do not
+meaningfully contend with each other. The rate moves with the crowd rather than
+with the cluster: north and south measured alike, and every account dropped
+from 55-74 to 30-40 per hour after 06:50 UTC as the clusters filled up.
 
 For the fleet: **2-4 woodcutters on magic, split across the clusters with
 `location`** (`seers-magic-north`, `seers-magic-south`). More would crowd a
