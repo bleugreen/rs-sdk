@@ -10,7 +10,7 @@
 
 import * as rsmod from '../../../server/vendor/rsmod-pathfinder';
 import { CollisionType } from '../../../server/vendor/rsmod-pathfinder';
-import { initPathfinding } from '../../../sdk/pathfinding';
+import { initPathfinding, isTileWalkable } from '../../../sdk/pathfinding';
 import { execSync } from 'child_process';
 
 initPathfinding();
@@ -19,16 +19,21 @@ const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -
 const can = (l: number, x: number, z: number, dx: number, dz: number) => rsmod.canTravel(l, x, z, dx, dz, 1, 0, CollisionType.NORMAL);
 const key = (l: number, x: number, z: number) => `${l},${x},${z}`;
 
+// The dungeon's two map blocks: level 0 (areas 1-2 and the dwarf caves) and
+// level 1 (Iban's cavern and its post-quest copy).
+const inBox = (l: number, x: number, z: number) =>
+    l === 0 ? x >= 2290 && x <= 2500 && z >= 9540 && z <= 9935 : x >= 1980 && x <= 2180 && z >= 4540 && z <= 4740;
+
 /** BFS from one tile; returns step counts to every reachable tile within the box. */
-export function bfs(l: number, sx: number, sz: number, limit = 6000): Map<string, number> {
+export function bfs(l: number, sx: number, sz: number): Map<string, number> {
     const dist = new Map<string, number>([[key(l, sx, sz), 0]]);
     const q: Array<[number, number]> = [[sx, sz]];
-    for (let i = 0; i < q.length && dist.size < limit * 10; i++) {
+    for (let i = 0; i < q.length; i++) {
         const [x, z] = q[i];
         const d = dist.get(key(l, x, z))!;
         for (const [dx, dz] of DIRS) {
             const k = key(l, x + dx, z + dz);
-            if (dist.has(k) || !can(l, x, z, dx, dz)) continue;
+            if (dist.has(k) || !inBox(l, x + dx, z + dz) || !can(l, x, z, dx, dz)) continue;
             dist.set(k, d + 1);
             q.push([x + dx, z + dz]);
         }
@@ -66,13 +71,9 @@ if (mode === 'dist') {
     const label = (l: number, x: number, z: number): number | undefined => {
         const k = key(l, x, z);
         if (region.has(k)) return region.get(k);
+        // a loc's own footprint is not part of any region
+        if (!isTileWalkable(l, x, z) || !inBox(l, x, z)) return undefined;
         const d = bfs(l, x, z);
-        if (d.size <= 1) {
-            // isolated or blocked tile: no region
-            let open = false;
-            for (const [dx, dz] of DIRS) if (can(l, x, z, dx, dz)) open = true;
-            if (!open) return undefined;
-        }
         const id = sizes.length;
         sizes.push(d.size);
         for (const kk of d.keys()) region.set(kk, id);
