@@ -211,10 +211,11 @@ await runScript(async ({ bot, sdk }) => {
         await seg('Al Shabim: show the plans', async () => {
             await q.useOnNpc('thcaptplans', 'al_shabim', () => true, [/Yes, I'm very interested/, /kind of curious/]);
         });
-        await seg('tent guard: show the plans, enter the tent', async () => {
-            await q.walk(3170, 3044, 1);
-            const z0 = p().worldZ;
-            await q.useOnNpc('thcaptplans', 'bedabin_guard', () => p().worldZ > z0 + 1);
+        await seg('tent guard: talk (plans in hand), enter the tent', async () => {
+            // Talking walks you to the door and in (bedabin_nomad_guard.rs2:27-38);
+            // using the plans on him only moves you one tile north.
+            await q.talk('bedabin_guard');
+            await q.settle(() => p().worldZ >= 3046, 20);
         });
         await seg('anvil: forge the dart tip', async () => {
             while (!q.inv('thprotodarttip')) {
