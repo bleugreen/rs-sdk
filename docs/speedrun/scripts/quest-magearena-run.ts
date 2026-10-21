@@ -8,7 +8,7 @@
 // Setup uses staff commands (LOCAL_STAFF_LEVEL=4) and is not timed. Each timed segment logs its
 // tick count, dialogue pages, option clicks and tiles.
 import { runScript } from '../../../sdk/runner';
-import { cheat, log, pos, talkThrough, tele, tick, waitTicks, waitUntil } from './quest-unlocks-lib';
+import { cheat, clock, log, pos, talkThrough, tele, tick, waitTicks, waitUntil } from './quest-unlocks-lib';
 
 const MAGIC = Number(process.env.MAGIC ?? 80);
 const HP = Number(process.env.HP ?? 70);
@@ -33,7 +33,7 @@ await runScript(async ({ bot, sdk }) => {
     // ---- untimed setup ----
     // FROM=pool resumes a run whose fight finished (%magearena = 6) at the cellar pool.
     const FROM = process.env.FROM ?? 'kolodion';
-    let t0 = tick(sdk);
+    let t0 = clock(sdk);
     let tDone = t0;
     const magicXp0 = sdk.getSkill('Magic')?.experience ?? 0;
     const hpXp0 = sdk.getSkill('Hitpoints')?.experience ?? 0;
@@ -57,14 +57,14 @@ await runScript(async ({ bot, sdk }) => {
     await waitTicks(sdk, 5);
 
     // ---- segment 1: talk to Kolodion until the arena teleport ----
-    t0 = tick(sdk);
+    t0 = clock(sdk);
     if (PRAYER >= 37) await bot.activatePrayer('protect_from_magic');
     const kol = sdk.findNearbyNpc(/^Kolodion$/);
     if (!kol) throw new Error('Kolodion not found near the cellar spawn');
     await sdk.sendTalkToNpc(kol.index);
-    const d1 = await talkThrough(sdk, ['Can I fight here?', 'Yes indeedy.', "Ok, let's fight."]);
+    const d1 = await talkThrough(sdk, ['Can I fight here?', 'Yes indeedy.', "Ok, let's fight."], { keepIdle: true });
     await waitUntil(sdk, () => pos(sdk).z < 4000, 60, 'arena teleport');
-    const tArena = tick(sdk);
+    const tArena = clock(sdk);
     log(sdk, `SEG talk-kolodion: ${tArena - t0} ticks, ${d1.pages} pages, ${d1.options} options`, t0);
 
     // ---- segment 2: the fight ----
@@ -80,8 +80,8 @@ await runScript(async ({ bot, sdk }) => {
     sdk.getNewChat({ types: [0] });
     while (pos(sdk).z < 4600) {
         const p = sdk.getState()?.player;
-        if (!p || p.isDead || pos(sdk).z < 3900 || tick(sdk) - tArena > FIGHT_CAP) {
-            throw new Error(`fight aborted at +${tick(sdk) - tArena}: dead=${p?.isDead} pos=${JSON.stringify(pos(sdk))} casts=${casts}`);
+        if (!p || p.isDead || pos(sdk).z < 3900 || clock(sdk) - tArena > FIGHT_CAP) {
+            throw new Error(`fight aborted at +${clock(sdk) - tArena}: dead=${p?.isDead} pos=${JSON.stringify(pos(sdk))} casts=${casts}`);
         }
         if (PRAYER >= 37 && !sdk.isPrayerActive('protect_from_magic') && (sdk.getSkill('Prayer')?.level ?? 0) > 0) {
             log(sdk, 'protect from magic was off; reactivating', tArena);
@@ -109,21 +109,21 @@ await runScript(async ({ bot, sdk }) => {
         const target = kols.find((n) => n.id === 907 + stage);
         if (target) {
             if (target.id !== lastForm) {
-                if (lastForm !== -1) forms.push(`npc ${lastForm}: ${tick(sdk) - formStart} ticks`);
+                if (lastForm !== -1) forms.push(`npc ${lastForm}: ${clock(sdk) - formStart} ticks`);
                 lastForm = target.id;
-                formStart = tick(sdk);
+                formStart = clock(sdk);
                 log(sdk, `form npc ${target.id} lvl ${target.combatLevel}`, tArena);
             }
             if (casts % 5 === 0) log(sdk, `target ${target.id} hp ${target.hp}/${target.maxHp} dist ${target.distance} magic xp ${sdk.getSkill('Magic')?.experience} runes ${sdk.getInventory().filter((i) => /rune/i.test(i.name)).map((i) => i.name + ' ' + i.count).join(',')} worn ${sdk.getEquipment().map((i) => i.name).join(',')}`, tArena);
             await sdk.sendSpellOnNpc(target.index, SPELL_COM[SPELL]);
             casts++;
-        } else if ((tick(sdk) - tArena) % 10 === 0) {
+        } else if ((clock(sdk) - tArena) % 10 === 0) {
             log(sdk, `no target; stage ${stage}; kolodions ${JSON.stringify(kols.map((n) => [n.id, n.x, n.z, n.hp]))} pos ${JSON.stringify(pos(sdk))}`, tArena);
         }
         await waitTicks(sdk, 2);
     }
-    if (lastForm !== -1) forms.push(`npc ${lastForm}: ${tick(sdk) - formStart} ticks (until teleport out)`);
-    const tBack = tick(sdk);
+    if (lastForm !== -1) forms.push(`npc ${lastForm}: ${clock(sdk) - formStart} ticks (until teleport out)`);
+    const tBack = clock(sdk);
     const prayerLeft = sdk.getSkill('Prayer')?.level;
     if (PRAYER >= 37) await bot.deactivateAllPrayers();
     log(sdk, `prayer points ${PRAYER} -> ${prayerLeft}`, t0);
@@ -132,19 +132,19 @@ await runScript(async ({ bot, sdk }) => {
     // finish_mage_arena: p_delay(3) + teleport + p_delay(2), then Kolodion's congratulations
     await waitUntil(sdk, () => sdk.getDialog()?.isOpen === true, 30, 'finish dialogue');
     const d2 = await talkThrough(sdk, [], { idleMs: 3000 });
-    tDone = tick(sdk);
+    tDone = clock(sdk);
     log(sdk, `SEG finish-dialogue: ${tDone - tBack} ticks, ${d2.pages} pages`, t0);
     } else {
         // pool: Kolodion's spot after the fight; guardian: where pray_at_statue leaves you (Saradomin)
         if (FROM === 'pool') await tele(sdk, 2540, 4716);
         else await tele(sdk, 2500, 4719);
-        t0 = tick(sdk);
+        t0 = clock(sdk);
         tDone = t0;
     }
     log(sdk, `dialog before pool: ${JSON.stringify(sdk.getDialog())}`);
 
-    let tChamber = tick(sdk);
-    let tCape = tick(sdk);
+    let tChamber = clock(sdk);
+    let tCape = clock(sdk);
     if (FROM !== 'guardian') {
     // ---- segment 3: pool to the chamber ----
     const pool = sdk.findNearbyLoc(/sparkling pool/i);
@@ -154,11 +154,11 @@ await runScript(async ({ bot, sdk }) => {
     log(sdk, `pool interact: ${JSON.stringify(r3).slice(0, 200)}`);
     // mage_arena.rs2: a mesbox opens before the jump once %magearena >= 6
     await waitUntil(sdk, () => sdk.getDialog()?.isOpen === true, 20, 'pool mesbox');
-    const d3 = await talkThrough(sdk, [], { idleMs: 400 });
+    const d3 = await talkThrough(sdk, [], { keepIdle: true });
     await waitUntil(sdk, () => pos(sdk).z < 4700, 40, 'arrive in the chamber');
     log(sdk, `pool mesbox pages ${d3.pages}`);
     await waitTicks(sdk, 1);
-    tChamber = tick(sdk);
+    tChamber = clock(sdk);
     log(sdk, `SEG pool: ${tChamber - tDone} ticks from ${JSON.stringify(from3)} to ${JSON.stringify(pos(sdk))}`, t0);
 
     // ---- segment 4: pray at the statue and take the cape ----
@@ -182,7 +182,7 @@ await runScript(async ({ bot, sdk }) => {
     }
     await bot.pickupItem(cape);
     await waitUntil(sdk, () => !!sdk.findInventoryItem(/cape of/i), 30, 'cape in inventory');
-    tCape = tick(sdk);
+    tCape = clock(sdk);
     log(sdk, `SEG statue+cape: ${tCape - tChamber} ticks from ${JSON.stringify(from4)}, ${d4.pages} pages`, t0);
     }
 
@@ -197,7 +197,7 @@ await runScript(async ({ bot, sdk }) => {
     await sdk.sendTalkToNpc(guard.index);
     const d5 = await talkThrough(sdk, [], { idleMs: 2000 });
     const staff = sdk.findInventoryItem(/staff of (saradomin|guthix|zamorak)/i);
-    const tStaff = tick(sdk);
+    const tStaff = clock(sdk);
     log(sdk, `SEG guardian: ${tStaff - tCape} ticks from ${JSON.stringify(from5)}, ${d5.pages} pages, staff=${staff?.name}`, t0);
 
     const magicXp = (sdk.getSkill('Magic')?.experience ?? 0) - magicXp0;
