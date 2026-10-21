@@ -191,7 +191,7 @@ giants (50 -> 75 in an hour).
 | cairn_h50 | 260 | 2,163 | law, nature, cosmic, death runes; limpwurt roots; uncut sapphires, emerald; body talisman |
 | cairn_h51 | 279, plus **34 babydragon bones** from the probe (bank at Falador West) | 1,920 | law, nature, cosmic, chaos, death runes; 24 limpwurt roots; 7 body talismans; uncut diamond |
 | cairn_h52 | 134 | 1,142 | law, nature, cosmic, chaos, death runes; limpwurt roots; uncut rubies, sapphire |
-| **Total** | **673** (10,095 base Prayer xp, 35% of 28,938) | 5,225 | |
+| **Total** | **673 big + 34 babydragon** (11,115 base Prayer xp, 28% of 39,938) | 5,225 | |
 
 **Baby blue dragon probe** (cairn_h51, 85 combat, `spot: 'baby_blue'`, 07:47-08:33 UTC):
 Varrock West to the dusty key in 3 minutes (walk, Jailer kill, jail key, Velrak's cell,
