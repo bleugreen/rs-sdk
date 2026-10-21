@@ -137,9 +137,17 @@ trade fails, and walks back to where it started. Restarting it at any point is s
 an open trade is declined (both sides keep their items) and the bank is the source of
 truth for what is left.
 
-Options: `{ mule: 'cairn_mule1', items: ['^logs$', 'oak logs'], minStacks?: 1, returnHome?: true }`.
-`items` are case-insensitive RegExp sources matched against item names. The mule
-accepts couriers whose login name matches `couriers` (default `^cairn_h\d+$`).
+Options: `{ mule: 'cairn_mule1', items: ['^logs$', 'oak logs'], minStacks?: 1, returnHome?: true, at?: {x, z}, waitMs?: 0 }`.
+`items` are case-insensitive RegExp sources matched against item names, or
+`{ item, n }` to carry at most `n` across that line's bank stacks; each trade lowers
+the caps by what it gave. The mule accepts couriers whose login name matches
+`couriers` (default `^cairn_h\d+$`).
+
+The same trip delivers to any account that accepts the trade, not only the mule:
+`mule` names the receiver, `at` the bank tile to meet at (default Varrock west), and
+`waitMs` how long to wait there for the receiver to come into sight. For example, a
+smelter handing 290 steel bars to a cannonball maker at Falador west bank:
+`{ mule: 'cairn_h92', items: [{ item: '^steel bar$', n: 290 }], at: { x: 2946, z: 3369 }, waitMs: 1800000, returnHome: false }`.
 
 Cadence: consolidation only matters for what the scored account will take from the
 mule, since the ledger already counts every helper's bank. Run each gatherer's
