@@ -785,7 +785,17 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         await opLoc(sdk, L, /stairs/i, [2812, 4452], 1, () => inMap(sdk, 42, 69), 80);
         L.end();
         L.begin('flooded level west -> west stairs down to the crystal chamber');
-        await opLoc(sdk, L, /stairs/i, [2692, 4436], 1, () => inMap(sdk, 43, 69), 120);
+        // the west stairs are ~58 tiles away, outside the loc scan: walk first
+        for (let i = 0; i < 6 && Math.abs(pos(sdk).x - 2694) > 3; i++) {
+            const p0 = pos(sdk);
+            L.add({ tiles: Math.max(0, chebyshevPath(sdk, 2694, 4437)) });
+            await sdk.sendWalk(2694, 4437, true);
+            await until(sdk, () => Math.abs(pos(sdk).x - 2694) <= 3 && Math.abs(pos(sdk).z - 4437) <= 3, 40);
+            if (pos(sdk).x === p0.x && pos(sdk).z === p0.z) break;
+        }
+        const west = await findLoc(sdk, /stairs/i, { x: 2692, z: 4436 }, 15);
+        if (!west || Math.abs(west.x - 2692) > 2) throw new Error(`west stairs not found near 2692,4436; at ${JSON.stringify(pos(sdk))}`);
+        await opLoc(sdk, L, /stairs/i, [2692, 4436], 1, () => inMap(sdk, 43, 69), 60);
         L.end();
         L.begin('reward door (sets stage 10)');
         let doorOps = 0;
