@@ -48,7 +48,7 @@ await runScript(async ({ bot, sdk }) => {
     // Platform, first visit: glass and damp sticks, dry them, then Kennith upstairs.
     // The glass is in the west room behind the door at (2765,3277); open it from the pier tile beside it.
     rec.add(await walkTo(bot, sdk, 2766, 3277, 0), '5a walk to the glass room door');
-    rec.add(await locId(sdk, 2765, 3277, 1533, 1, s => !(s.nearbyLocs ?? []).some(l => l.x === 2765 && l.z === 3277 && l.id === 1533), { label: 'open door', maxTicks: 30 }), '5b open the door');
+    rec.add(await locId(sdk, 2765, 3277, 1533, 1, s => (s.nearbyLocs ?? []).some(l => l.id === 1534 && Math.abs(l.x - 2765) <= 1 && Math.abs(l.z - 3277) <= 1), { label: 'open door', maxTicks: 30 }), '5b open the door');
     rec.add(await pickup(sdk, /^broken glass$/i), '5c');
     rec.add(await walkTo(bot, sdk, 2784, 3289, 0), '5d walk to damp sticks');
     rec.add(await pickup(sdk, /^damp sticks$/i), '5e');
