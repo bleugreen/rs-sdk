@@ -341,7 +341,6 @@ async function fightOnce(sdk: BotSDK, bot: BotActions, run: number) {
         // Re-sip once the boosted level is below Fire Wave's 75. The sip's p_delay(1) drops spell
         // clicks for 2 ticks, so sip on the tick after a cast lands (inside the 5-tick attack delay,
         // player_magic.rs2:188) when possible; if no cast has landed for 6 ticks, sip anyway.
-        if (m.xpTick === undefined) m.xpTick = -99;
         if (m.experience !== lastXp) {
             lastXp = m.experience;
             lastXpTick = tick(sdk);
