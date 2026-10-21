@@ -26,8 +26,9 @@
 //   --ess=N         essence per trade (default 27: the helper also carries
 //                   the talisman it entered with)
 //   --scored=<name> which bot is the scored account (default the last one)
-//   --open=K        tuned/robust: send the trade requests K publications after
-//                   the craft click's (default 4, landing on T+5)
+//   --open=K        tuned/robust: the trade requests land on T+K (default 5;
+//                   the craft lands on the tick after the publication its
+//                   click is sent from, and so does every later click)
 //   --gap=MS        tuned/robust: wall-clock wait after a publication before
 //                   firing (default 25), so each client has applied that tick
 
@@ -44,7 +45,7 @@ const A = ALTARS[altarName];
 const LEVEL = Number(arg('level', String(A.level)));
 const CYCLES = Number(arg('cycles', '20'));
 const ESS = Number(arg('ess', '27'));
-const OPEN = Number(arg('open', '4'));
+const OPEN = Number(arg('open', '5'));
 const GAP = Number(arg('gap', '25'));
 const TALISMAN = `${altarName}_talisman`;
 
@@ -68,6 +69,8 @@ await cheat(S, `setstat runecraft ${LEVEL}`);
 await cheat(H, `give ${TALISMAN} 1`);
 await cheat(H, `give blankrune ${ESS}`);
 await waitTicks(S, 3);
+console.log('helper inventory', JSON.stringify(H.getState()!.inventory.map(i => `${i.slot}:${i.name}x${i.count}`)));
+console.log('scored inventory', JSON.stringify(S.getState()!.inventory.map(i => `${i.slot}:${i.name}x${i.count}`)));
 const hp = () => S.getNearbyPlayers().find(p => p.name.toLowerCase() === helperName.toLowerCase())!;
 const sp = () => H.getNearbyPlayers().find(p => p.name.toLowerCase() === scoredName.toLowerCase())!;
 if (!hp() || !sp()) throw new Error('bots cannot see each other');
@@ -166,26 +169,29 @@ function at(t: number, fn: () => void): Promise<void> {
 async function runScheduled(robust: boolean) {
     if (!(await stockTrade())) throw new Error('first trade failed');
     let failures = 0;
-    // k = the publication after which the craft click is sent; the craft is on k+1
-    let k = now(S);
-    await at(k, () => { craftClick(); });
+    // A click sent after publication p lands on server tick p+1 (in the scored
+    // account's numbering). T = the tick the craft lands on; clicks for tick
+    // T+j are sent after publication T+j-1.
+    let T = now(S) + 1;
+    await at(T - 1, () => { craftClick(); });
     for (let i = 0; i < CYCLES; i++) {
         const n0 = crafts.length;
         // refill the helper while the scored account is delayed
-        await at(k + 2, () => { refill(); });
-        await at(k + OPEN, () => { H.sendTradeRequest(sp().index); S.sendTradeRequest(hp().index); });
-        await at(k + OPEN + 1, () => {
+        await at(T + 1, () => { refill(); });
+        await at(T + OPEN - 1, () => { H.sendTradeRequest(sp().index); S.sendTradeRequest(hp().index); });
+        await at(T + OPEN, () => {
             H.sendOfferItem(essSlot(H), -1).then(() => H.sendClickComponent(3420));
             if (!robust) S.sendClickComponent(3420);
         });
         if (!robust) {
-            await at(k + OPEN + 2, () => { H.sendClickComponent(3546); S.sendClickComponent(3546).then(() => craftClick()); });
-            k = k + OPEN + 2;
+            await at(T + OPEN + 1, () => { H.sendClickComponent(3546); S.sendClickComponent(3546).then(() => craftClick()); });
+            T = T + OPEN + 2;
         } else {
-            await at(k + OPEN + 2, () => { H.sendClickComponent(3546); S.sendClickComponent(3420).then(() => S.sendClickComponent(3546)); });
-            await at(k + OPEN + 3, () => { H.sendClickComponent(3546); craftClick(); });
-            k = k + OPEN + 3;
+            await at(T + OPEN + 1, () => { H.sendClickComponent(3546); S.sendClickComponent(3420).then(() => S.sendClickComponent(3546)); });
+            await at(T + OPEN + 2, () => { H.sendClickComponent(3546); craftClick(); });
+            T = T + OPEN + 3;
         }
+        const k = T - 1;
         const ok = await waitUntil(S, () => crafts.length > n0, 8);
         if (!ok || crafts[crafts.length - 1].tick > k + 3) {
             failures++;
@@ -195,8 +201,8 @@ async function runScheduled(robust: boolean) {
                 await S.sendCloseModal(); await H.sendCloseModal();
                 await waitTicks(S, 2); await refill();
                 if (!(await stockTrade())) throw new Error('resync trade failed');
-                k = now(S);
-                await at(k, () => { craftClick(); });
+                T = now(S) + 1;
+                await at(T - 1, () => { craftClick(); });
             }
         }
     }
