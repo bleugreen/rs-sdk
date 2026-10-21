@@ -31,6 +31,8 @@ export interface AgilityCourse {
     zones?: Array<{ step: string; box: Box }>;
     /** The lap path and its pits: a player inside is another course user, not an approach. */
     lapArea?: Box[];
+    /** The pit's ladder [id, x, z], clicked when the scene list does not show it yet (right after the fall). */
+    pitExit?: [number, number, number];
 }
 
 export type Box = [number, number, number, number];
@@ -89,6 +91,7 @@ export const AGILITY_COURSES: Record<string, AgilityCourse> = {
             { step: 'log', box: [2990, 3953, 3001, 3965] },
             { step: 'rocks', box: [2985, 3938, 3000, 3952] }
         ],
+        pitExit: [1755, 3005, 10363], // m46_161.jm2
         lapArea: [
             [2992, 3931, 3007, 3962],
             [2985, 10330, 3025, 10390]

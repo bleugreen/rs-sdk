@@ -478,7 +478,11 @@ export function createAgility(params: ProgramParams): TickProgram {
                     if (t === phase.since || t - phase.since >= 40) {
                         if (++phase.tries > 5) return ctx.fault('could not climb out of the pit', summary());
                         phase.since = t;
-                        if (!clickByOption(ctx, /climb-up/i)) return ctx.fault('no climb-up loc in the pit', summary());
+                        if (!clickByOption(ctx, /climb-up/i)) {
+                            const exit = course.pitExit;
+                            if (!exit) return ctx.fault('no climb-up loc in the pit', summary());
+                            ctx.send({ type: 'interactLoc', x: exit[1], z: exit[2], locId: exit[0], optionIndex: 1 }, 'climb-up (pit ladder)');
+                        }
                     }
                     return;
                 }

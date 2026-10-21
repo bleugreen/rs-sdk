@@ -451,6 +451,31 @@ function eatWhileWalking(sdk: StepContext<unknown>['sdk'], o: AgilityOptions): (
     });
 }
 
+/**
+ * Click the nearest closed gate or door. The Gnome Stronghold gate's script
+ * (gnome_gate.rs2) swaps the gate out for 5 ticks and force-moves the player 3
+ * tiles through, so it never shows a Close option: wait for that move, or for a
+ * plain door's loc to change, before walking on (a walk sent mid-script is dropped).
+ */
+async function passGate(ctx: StepContext<unknown>): Promise<boolean> {
+    const s = stateOf(ctx);
+    const p = s.player!;
+    const gate = s.nearbyLocs
+        .filter(l => /gate|door/i.test(l.name) && l.distance <= 6 && l.optionsWithIndex.some(o => /^open$/i.test(o.text)))
+        .sort((a, b) => a.distance - b.distance)[0];
+    if (!gate) return false;
+    void ctx.sdk.sendInteractLoc(gate.x, gate.z, gate.id, gate.optionsWithIndex.find(o => /^open$/i.test(o.text))!.opIndex);
+    let goneAt = -1;
+    await waitUntil(ctx.sdk, st => {
+        const q = st.player;
+        if (q && cheb(q.worldX, q.worldZ, p.worldX, p.worldZ) >= 2) return true;
+        if (goneAt < 0 && !st.nearbyLocs.some(l => l.id === gate.id && l.x === gate.x && l.z === gate.z)) goneAt = st.tick;
+        return goneAt >= 0 && st.tick >= goneAt + 4;
+    }, { maxTicks: 20 });
+    await nextTick(ctx.sdk);
+    return true;
+}
+
 async function walkRoute(ctx: StepContext<unknown>, route: ReadonlyArray<readonly [number, number]>, o: AgilityOptions): Promise<void> {
     const s = stateOf(ctx);
     const stopEating = eatWhileWalking(ctx.sdk, o);
@@ -458,12 +483,9 @@ async function walkRoute(ctx: StepContext<unknown>, route: ReadonlyArray<readonl
         for (let i = routeStart(route, s.player!.worldX, s.player!.worldZ); i < route.length; i++) {
             const [x, z] = route[i]!;
             let r = await ctx.bot.walkTo(x, z, 2, { timeout: 90_000 });
-            // the SDK pathfinder has no route through a closed gate (the Gnome Stronghold's): open the nearest one
-            if (!r.success && /no path|no waypoints/i.test(r.message)) {
-                const door = await ctx.bot.openDoor(/gate|door/i);
-                if (!door.success) throw new Error(`walk to (${x},${z}): ${r.message}; and no gate to open: ${door.message}`);
-                const t = ctx.sdk.getState()?.tick ?? 0;
-                await waitUntil(ctx.sdk, st => st.tick >= t + 2, { maxTicks: 4 });
+            // the SDK pathfinder has no route through a closed gate (the Gnome Stronghold's): go through it
+            if (!r.success && /no path|no waypoints/i.test(r.message) && !(await passGate(ctx))) {
+                throw new Error(`walk to (${x},${z}): ${r.message}; and no gate to open`);
             }
             if (!r.success) r = await ctx.bot.walkTo(x, z, 3, { timeout: 90_000 });
             if (!r.success) throw new Error(`walk to (${x},${z}): ${r.message}`);
