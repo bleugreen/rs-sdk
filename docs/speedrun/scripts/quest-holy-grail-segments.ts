@@ -101,7 +101,7 @@ await runScript(async ({ bot, sdk }) => {
             await L.cheat(sdk, 'setvar grail 4');
             for (const it of sdk.getInventory().filter(i => /napkin/i.test(i.name))) await sdk.sendDropItem(it.slot);
             await L.tele(sdk, 2612, 3476, 0);
-            results.galahad = { ...(await talk(/Brother Galahad/, [/I seek an item from the realm/])), napkin: sdk.countInventoryItems(/napkin/i) };
+            results.galahad = { ...(await talk(/^Galahad$/, [/I seek an item from the realm/])), napkin: sdk.countInventoryItems(/napkin/i) };
         } else if (seg === 'whistles') {
             await ensure('holy_table_napkin');
             for (const it of sdk.getInventory().filter(i => /Magic whistle/i.test(i.name))) await sdk.sendDropItem(it.slot);
