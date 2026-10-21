@@ -56,8 +56,9 @@ async function handleRequests(parentPort: ParentPort, msg: any) {
                 });
                 stopTimer();
             } else {
-                // rs-sdk: do not auto-grant dev staffmodlevel on non-production worlds (public server)
-                const staffmodlevel = 0;
+                // rs-sdk: non-production worlds (the public server included) take this branch, so
+                // never auto-grant staffmodlevel; only a private lab opts in with LOCAL_STAFF_LEVEL.
+                const staffmodlevel = Environment.LOCAL_STAFF_LEVEL;
 
                 const profile = Environment.node.profile;
                 if (!fs.existsSync(`data/players/${profile}`)) {
