@@ -129,9 +129,9 @@ the defaults belong to cairn://p/rs/1):
 | Digsite and Tourist Trap | 9070 | 9071 | 9072 | 43770 | 7970 |
 | Watchtower and Temple of Ikov | 9080 | 9081 | 9082 | 43780 | 7980 |
 | Troll chain (Death Plateau, Troll Stronghold, Troll Romance) | 9090 | 9091 | 9092 | 43790 | 7990 |
-| Legends' Quest | 9100 | 9101 | 9102 | 43800 | 8000 |
+| Fremennik Trials and Horror from the Deep (Legends' Quest's block, now finished) | 9100 | 9101 | 9102 | 43800 | 8000 |
 | Mage Arena and Dwarf Cannon | 9110 | 9111 | 9112 | 43810 | 8010 |
-| Timing primitives | 9120 | 9121 | 9122 | 43820 | 8020 |
+| Eadgar's Ruse, Elemental Workshop and Nature Spirit (the timing primitives' block, now finished) | 9120 | 9121 | 9122 | 43820 | 8020 |
 
 ## Shared prerequisite quests
 
