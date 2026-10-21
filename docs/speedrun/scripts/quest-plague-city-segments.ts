@@ -103,7 +103,13 @@ await runScript(async ({ bot, sdk }) => {
             await S.step('Edmond in the sewer: pull the grill (9->10)', talk(sdk, /^Edmond$/));
             await quest('edmondSewer');
             await S.walk('Edmond -> pipe', 2530, 9702);
-            await S.step('wear the gas mask', async () => { await bot.equipItem(/^Gas mask$/i); }, { done: () => sdk.getEquipment().some(e => /^Gas mask$/i.test(e.name)), settle: 0 });
+            console.log('  inventory before wearing:', sdk.getInventory().map(i => i.name).join(', '));
+            await S.step('wear the gas mask', async () => {
+                const mask = sdk.findInventoryItem(/^Gas mask$/i);
+                const r = mask ? await sdk.sendUseItem(mask.slot, 2) : { success: false, message: 'no mask' };
+                console.log('  wear:', JSON.stringify(r));
+            }, { done: () => sdk.getEquipment().some(e => /^Gas mask$/i.test(e.name)), settle: 0, maxTicks: 20 });
+            console.log('  equipment:', sdk.getEquipment().map(i => i.name).join(', '));
             await S.step('climb through the pipe to West Ardougne', loc('pipe'), { done: () => L.pos(sdk).z < 9000 });
             varps.westArrival = L.pos(sdk);
         } else if (seg === 'west') {
