@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { bidderOptions, competingBid, decideBid, lineOptions, MAX_OFFERS_PER_LINE, openOwn, type MarketView, type OwnOffer } from './bidder';
+import { bidderOptions, competingBid, decideBid, fundPlan, lineOptions, MAX_OFFERS_PER_LINE, openOwn, type MarketView, type OwnOffer } from './bidder';
 
 const GRAPES = 1987;
 const opts = lineOptions({ item: 'Grapes', target: 520, tranche: 150, maxPrice: 3000 });
@@ -267,5 +267,23 @@ describe('options', () => {
         expect(bidderOptions({ item: 'Grapes', target: 520, maxPrice: 3000 }).lines).toHaveLength(1);
         expect(() => bidderOptions({ lines: [{ item: 'Grapes', target: 1, maxPrice: 1 }, { item: 'grapes', target: 2, maxPrice: 1 }] })).toThrow(/two lines/);
         expect(() => bidderOptions({ lines: [{ item: 'Grapes', target: 1 }] })).toThrow(/lines\[0\]\.maxPrice/);
+    });
+});
+
+describe('fundPlan (the fund trip)', () => {
+    test('defaults to coins: all of them, less keep', () => {
+        expect(fundPlan({}, 50_000)).toEqual({ item: 'Coins', count: 50_000 });
+        expect(fundPlan({ keep: 1000 }, 50_000)).toEqual({ item: 'Coins', count: 49_000 });
+    });
+    test('amount caps the trip, keep still applies', () => {
+        expect(fundPlan({ amount: 100_000 }, 309_396)).toEqual({ item: 'Coins', count: 100_000 });
+        expect(fundPlan({ amount: 100_000, keep: 250_000 }, 309_396)).toEqual({ item: 'Coins', count: 59_396 });
+    });
+    test('an item instead of coins (feathers)', () => {
+        expect(fundPlan({ item: 'Feather', amount: 4245 }, 8365)).toEqual({ item: 'Feather', count: 4245 });
+        expect(fundPlan({ item: 'Feather', amount: 4245 }, 3000)).toEqual({ item: 'Feather', count: 3000 });
+    });
+    test('never negative', () => {
+        expect(fundPlan({ keep: 1000 }, 200)).toEqual({ item: 'Coins', count: 0 });
     });
 });

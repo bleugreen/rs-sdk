@@ -49,7 +49,9 @@ export const BANKS = {
     varrockEast: { x: 3253, z: 3421 },
     draynor: { x: 3092, z: 3245 },
     alKharid: { x: 3270, z: 3167 },
-    faladorWest: { x: 2946, z: 3369 }
+    faladorWest: { x: 2946, z: 3369 },
+    catherby: { x: 2809, z: 3439 },
+    seers: { x: 2725, z: 3491 }
 } satisfies Record<string, Tile>;
 
 /** Shops the buyer knows how to reach. Prices and stock: docs/speedrun/helpers/market.md. */
@@ -59,7 +61,13 @@ export const SHOPS: Record<string, ShopSpec> = {
     betty: { npc: /^betty$/i, stand: { x: 3013, z: 3258 }, bank: BANKS.draynor },
     lumbridgeGeneral: { npc: /^shop (keeper|assistant)$/i, stand: { x: 3211, z: 3246 }, bank: BANKS.draynor },
     varrockGeneral: { npc: /^shop (keeper|assistant)$/i, stand: { x: 3217, z: 3413 }, bank: BANKS.varrockWest },
-    zeke: { npc: /^zeke$/i, stand: { x: 3287, z: 3188 }, bank: BANKS.alKharid }
+    zeke: { npc: /^zeke$/i, stand: { x: 3287, z: 3188 }, bank: BANKS.alKharid },
+    lowe: { npc: /^lowe$/i, stand: { x: 3231, z: 3423 }, bank: BANKS.varrockEast },
+    // Kandarin, past White Wolf Mountain (speedrun/lib/kandarin.ts). Dargaud is inside the
+    // Ranging Guild, whose door needs Ranged 40 and which walkTo cannot path
+    // through: fletcher.ts enters and leaves it before using this entry.
+    hickton: { npc: /^hickton$/i, stand: { x: 2821, z: 3442 }, bank: BANKS.catherby },
+    dargaud: { npc: /^bow and arrow salesman$/i, stand: { x: 2672, z: 3434 }, bank: BANKS.seers }
 };
 
 export interface ListLine {

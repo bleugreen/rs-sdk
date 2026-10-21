@@ -560,36 +560,50 @@ export const role: Role = {
 // ------------------------------------------------------------------ funding trip
 
 export interface FundOptions {
-    /** The bidder account to give coins to. */
+    /** The account to give to (the bidder, or any receiver waiting at Varrock west bank). */
     bidder: string;
-    /** Coins to give (default: all, less `keep`). */
+    /** A stackable item to give instead of coins, by exact name (default 'Coins'), e.g. 'Feather'. */
+    item?: string;
+    /** How many to give (default: all, less `keep`). */
     amount?: number;
-    /** Coins left in this account's bank (default 0). */
+    /** How many to leave in this account's bank (default 0). */
     keep?: number;
 }
 
-/** One trip: walk to Varrock west bank, withdraw coins, trade them to the bidder, bank anything left. */
+/** What a fund trip carries, given how many the giver holds (bank + pack): `item` (default Coins), all of it less `keep`, at most `amount`. */
+export function fundPlan(o: Pick<FundOptions, 'item' | 'amount' | 'keep'>, held: number): { item: string; count: number } {
+    return { item: o.item ?? 'Coins', count: Math.max(0, Math.min(o.amount ?? Infinity, held - (o.keep ?? 0))) };
+}
+
+/** One trip: walk to Varrock west bank, withdraw coins (or `item`), trade them to the receiver, bank anything left. */
 export async function fundTrip(ctx: RoleContext): Promise<{ ok: boolean; gave: number }> {
     const o = ctx.options as unknown as FundOptions;
     if (!o.bidder) throw new Error('fund: options.bidder is required');
+    const item = fundPlan(o, 0).item;
     const buyer = new Buyer(ctx);
     await buyer.prepare();
     await ctx.bot.dismissBlockingUI();
     if (ctx.sdk.getTradeState().isOpen) await ctx.bot.declineTrade();
-    const coins = () => ctx.sdk.getInventory().filter(i => i.name === 'Coins').reduce((a, i) => a + i.count, 0);
+    const carriedNow = () => ctx.sdk.getInventory().filter(i => i.name === item).reduce((a, i) => a + i.count, 0);
     let carried = 0;
     await buyer.atBank(VARROCK_WEST, async () => {
-        await buyer.depositAllBut(['Coins']);
-        const total = coins() + (ctx.sdk.getBankItems().find(i => i.name === 'Coins')?.count ?? 0);
-        carried = await buyer.setCoins(Math.max(0, Math.min(o.amount ?? Infinity, total - (o.keep ?? 0))));
+        await buyer.depositAllBut([item]);
+        const total = carriedNow() + (ctx.sdk.getBankItems().find(i => i.name === item)?.count ?? 0);
+        const want = fundPlan(o, total).count;
+        if (item === 'Coins') carried = await buyer.setCoins(want);
+        else {
+            if (carriedNow() > want) await ctx.bot.depositItem(item, carriedNow() - want);
+            if (carriedNow() < want) await ctx.bot.withdrawItem(item, want - carriedNow());
+            carried = carriedNow();
+        }
     });
     if (carried <= 0) {
-        ctx.log('fund: no coins to give');
+        ctx.log('fund: nothing to give', { item });
         return { ok: false, gave: 0 };
     }
-    ctx.log('fund: trading', { bidder: o.bidder, coins: carried });
-    const r = await give(ctx.sdk, o.bidder, [{ item: /^coins$/i, n: carried }], { openTimeoutMs: 180_000 });
-    const gave = r.gave.filter(i => i.name === 'Coins').reduce((a, i) => a + i.count, 0);
+    ctx.log('fund: trading', { bidder: o.bidder, item, count: carried });
+    const r = await give(ctx.sdk, o.bidder, [{ item, n: carried }], { openTimeoutMs: 180_000 });
+    const gave = r.gave.filter(i => i.name === item).reduce((a, i) => a + i.count, 0);
     ctx.log('fund: trade', { ok: r.ok, reason: r.reason, gave, ticks: r.ticks });
     // A failed trade leaves the coins carried: put them back.
     await buyer.atBank(VARROCK_WEST, () => buyer.depositAllBut([]));
