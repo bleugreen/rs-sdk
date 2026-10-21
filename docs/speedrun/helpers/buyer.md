@@ -41,7 +41,8 @@ sellers and never chases the book upwards; any quantity beyond the ask's depth
 rests at the ask price. With no ask, or an ask above `maxPrice`, it places a
 resting bid at `maxPrice` only if `maxPrice` was given, and skips the line
 otherwise (`no sellers and no maxPrice`). A resting offer from an earlier run
-counts toward the target and is collected by the next run; offers fill while
+counts toward the target and is collected by the next run (fills are collected
+before holdings are counted, so a filled but uncollected offer is not bought twice); offers fill while
 the account is offline. Coins in escrow for a resting offer are reported as
 committed, not spent.
 

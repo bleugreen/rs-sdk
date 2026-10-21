@@ -44,7 +44,7 @@ export interface ShopSpec {
     bank: Tile;
 }
 
-const BANKS = {
+export const BANKS = {
     varrockWest: { x: 3185, z: 3438 },
     varrockEast: { x: 3253, z: 3421 },
     draynor: { x: 3092, z: 3245 },
@@ -181,18 +181,50 @@ export class Buyer {
         return { id: exact.id, name: exact.name };
     }
 
+    /** Wait for the player, leave the tutorial, and come out of Al-Kharid: every run starts here. */
+    async prepare(): Promise<void> {
+        await this.sdk.waitForCondition(s => (s.player?.worldX ?? 0) > 0, 60_000);
+        if (inTutorial(this.state)) {
+            const r = await this.bot.skipTutorial();
+            this.ctx.log('tutorial', { success: r.success, result: r.message });
+            await waitTicks(this.sdk, 3);
+        }
+        if (inAlKharid(this.state)) await crossTollGate(this.bot, this.sdk, false, this.ctx.log);
+    }
+
     // ------------------------------------------------------------ Grand Exchange
+
+    /**
+     * Collect every claim waiting at the open exchange (fills as notes, refunds as
+     * coins) into the inventory. Skipped when nothing is waiting. Returns what came in.
+     */
+    async collectFills(): Promise<{ items: number; coins: number }> {
+        const waiting = this.sdk.getGEState()?.offers.filter(o => o.items > 0 || o.coins > 0) ?? [];
+        if (waiting.length === 0) return { items: 0, coins: 0 };
+        const r = await this.bot.collectGE();
+        this.ctx.log('ge collect', { success: r.success, items: r.items ?? 0, coins: r.coins ?? 0, result: r.message });
+        await waitTicks(this.sdk, 2);
+        return { items: r.items ?? 0, coins: r.coins ?? 0 };
+    }
 
     /** Buy toward `line.quantity` at the Varrock west Grand Exchange; coins must be carried. */
     async buyAtGE(line: ListLine, waitTicksForFill = 20): Promise<LineReport> {
         const { id, name } = await this.resolveItem(line.item);
-        const heldBefore = this.held(name);
-        const report: LineReport = { item: name, source: 'ge', target: line.quantity, heldBefore, bought: 0, spent: 0 };
-        const need = line.quantity - heldBefore;
-        if (need <= 0) return { ...report, note: 'already held' };
-
+        const report: LineReport = { item: name, source: 'ge', target: line.quantity, heldBefore: this.held(name), bought: 0, spent: 0 };
         const opened = await this.bot.openGE();
         if (!opened.success) return { ...report, note: `openGE: ${opened.message}` };
+        // Collect before counting: an earlier offer that filled while we were away
+        // sits in the exchange, not the inventory, and must count toward the target,
+        // or a rerun buys the same quantity again.
+        await this.collectFills();
+        const heldBefore = this.held(name);
+        report.heldBefore = heldBefore;
+        const need = line.quantity - heldBefore;
+        if (need <= 0) {
+            await this.bot.closeInterface();
+            return { ...report, note: 'already held' };
+        }
+
         // An earlier run's resting offer for this item counts toward the target.
         const existing = this.sdk.getGEState()?.offers.find(o => o.item === id && o.side === 'buy' && o.state === 'open');
         const coinsBefore = coinsIn(this.state);
@@ -218,13 +250,13 @@ export class Buyer {
             if (!o || o.state !== 'open' || o.remaining === 0) break;
             await waitTicks(this.sdk, 1);
         }
-        await this.bot.collectGE();
-        await waitTicks(this.sdk, 2);
+        await this.collectFills();
         const offer = this.sdk.getGEState()?.offers.find(x => x.item === id && x.side === 'buy' && x.state === 'open');
         if (offer) report.restingOffer = { id: offer.id, price: offer.price, remaining: offer.remaining };
         report.bought = this.held(name) - heldBefore;
-        // Coins still in escrow for a resting offer are committed, not spent.
-        report.spent = coinsBefore - coinsIn(this.state) - (offer ? offer.remaining * offer.price : 0);
+        // Coins still in escrow for an offer placed now are committed, not spent
+        // (an earlier run's offer was paid for before coinsBefore was measured).
+        report.spent = coinsBefore - coinsIn(this.state) - (offer && !existing ? offer.remaining * offer.price : 0);
         await this.bot.closeInterface();
         return report;
     }
@@ -330,13 +362,7 @@ export class Buyer {
     }
 
     async run(list: ListLine[]): Promise<LineReport[]> {
-        await this.sdk.waitForCondition(s => (s.player?.worldX ?? 0) > 0, 60_000);
-        if (inTutorial(this.state)) {
-            const r = await this.bot.skipTutorial();
-            this.ctx.log('tutorial', { success: r.success, result: r.message });
-            await waitTicks(this.sdk, 3);
-        }
-        if (inAlKharid(this.state)) await crossTollGate(this.bot, this.sdk, false, this.ctx.log);
+        await this.prepare();
         // Start at Varrock west: learn holdings, withdraw the whole budget once.
         let budget = 0;
         await this.atBank(BANKS.varrockWest, async () => {
