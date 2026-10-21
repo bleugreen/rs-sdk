@@ -14,9 +14,9 @@ else is a link pinned to the commit that was read.
   asukalabs/asukalabs1, zayne/zaynelab06, claudefable5, codexastra, skylordafk, inaribot1, syn,
   eja620 or lachmine003. The account-to-owner links that do exist (soko and 0hyl8lmri to
   markeljan, gh_kadeski to kadeski) lead to tooling, not training code (section 3).
-- **Nothing published beats our route.** All the public speed work is slower than ours by
-  orders of magnitude (msalmeida's Fishing 99 in 2h40m against our 3,410 ticks, about 17
-  minutes; UberMouse's iron at about 5 base xp per tick against our measured 11.67), or it is
+- **Nothing published beats our route.** All the public speed work is far slower than ours
+  (msalmeida's Fishing 99 in 2h40m against our 3,410 ticks, about 17 minutes; UberMouse's iron
+  at about 5 base xp per tick against our measured 11.67), or it is
   about other goals: gold farming, King of the Hill, quests for their own sake, benchmarks. No
   public source uses any of our exploits (wine without a level check, Charge without a
   cooldown, dialogue bursts, knife-on-log tick manipulation, five-packet interleaving).
@@ -83,7 +83,7 @@ Anything measured before that date was on different content scripts.
 | [samheutmaker/lumbridge-ai](https://github.com/samheutmaker/lumbridge-ai) (`210b7ac`) | Sam Heutmaker, 2026-08-17 | Their own server (250 ms ticks), a swarm agent and a website | own server | None for the demo | - | n/a |
 | [MaxBittker/runebench](https://github.com/MaxBittker/runebench) and forks ([Skyvern-AI/jevscape](https://github.com/Skyvern-AI/jevscape)) | Max Bittker; Skyvern, 2026-02 to 10 | Benchmark: peak xp in a 15-second window over 15- or 30-minute tasks on a private server, with model trajectories | private server | "Bank then burst" processing, as named in GoonMachine's notes | Yes (our helper-fed blocks) | 0 |
 | [chrisbremmer/rs-fleet](https://github.com/chrisbremmer/rs-fleet), [singulocity/rs-sdk](https://github.com/singulocity/rs-sdk), [Kudretg/rs-sdk](https://github.com/Kudretg/rs-sdk) `feature/multibot`, [Acquiredl/rs-sdk](https://github.com/Acquiredl/rs-sdk) `acquiredl` | 2026-04 to 10 | Fleet orchestration, a 100-bot local fleet, a multi-bot runner, chat "guild" bots | various | Supervision only | Ours exists (rs/43) | 0 |
-| [markeljan/rs-sdk-dashboard](https://github.com/markeljan/rs-sdk-dashboard), [kadeski/rs-world](https://github.com/kadeski/rs-world) | 2026-10 | Spectator tooling (section 3) | 289 | Live world feed (6.4) | Not used yet | 0 (helps observation) |
+| [markeljan/rs-sdk-dashboard](https://github.com/markeljan/rs-sdk-dashboard), [kadeski/rs-world](https://github.com/kadeski/rs-world) | 2026-10 | Spectator tooling (section 3) | 289 | Live world feed and `/playerpositions` (6.4) | Not used yet | 0 (helps observation) |
 
 ### 4.1 rs2b0t's quest pitfalls (same revision as the demo)
 
@@ -225,19 +225,30 @@ the scored account's player count nears 250.
 
 ### 6.4 Live world feed and position endpoints (for rs/71)
 
-The demo runs a read-only `/worldfeed` WebSocket of every player and NPC
-([68ff9ebf](https://github.com/MaxBittker/rs-sdk/commit/68ff9ebf), off unless
-`WORLD_FEED=true`, token optional). Max links a public viewer of it,
-[maxbittker.github.io/rs-world](https://maxbittker.github.io/rs-world/) (built on kadeski's
-rs-world). GoonMachine reads live tiles from `/playerpositions`. Either lets rs/71 watch where
-top accounts train without logging an observer in, which is passive and inside tenet 6. 0 ticks,
-but it is the cheapest way to see what the stun and nick accounts do now.
+Two public, read-only endpoints show where every online player is:
+
+- **`https://rs-sdk-demo.fly.dev/playerpositions`** returns JSON with `{x, z, level, name}`
+  for every online player, cached for one second
+  ([`worldfeed.ts` `getPlayerPositionsJson`](https://github.com/MaxBittker/rs-sdk/blob/b565f2d920bf6f5ec427bc6f66dc6fd64a2e15c1/server/engine/src/web/worldfeed.ts#L619-L627),
+  routed in `web/index.ts:133`). GoonMachine polled it for live tiles.
+- **`/worldfeed`**, a WebSocket of every player and NPC per tick
+  ([68ff9ebf](https://github.com/MaxBittker/rs-sdk/commit/68ff9ebf8263d03d62dec817363948c0f71a857f);
+  the demo's `fly.toml` caps it at 128 clients with a two-minute idle timeout). Max links a
+  public viewer of it, [maxbittker.github.io/rs-world](https://maxbittker.github.io/rs-world/)
+  (built on kadeski's rs-world).
+
+Polling `/playerpositions` once every few seconds lets rs/71 log where named top accounts are,
+and how long they stay, with no observer logged in. This is passive and inside tenet 6, but
+stay at a polite rate: one request per few seconds, not per tick. 0 ticks, but it is the cheapest
+way to see what the stun and nick accounts do now, including which helper names cluster around
+them.
 
 ### 6.5 Settings that bound helper swarms
 
 The demo allows **100 game sessions per IP**, keyed on `Fly-Client-IP`
 ([2fdb019b](https://github.com/MaxBittker/rs-sdk/commit/2fdb019b3edc20e758c2738c8c6d8eb039b1dd93),
-2026-10-04; the earlier caps were 200 and 400). PR #79 (wheredidmyantsgo, a toggle that skips the
+2026-10-04; `MAX_PLAYERS_PER_IP = "100"` in the demo's `fly.toml`, where the code default is
+200; earlier caps were 200 and 400). PR #79 (wheredidmyantsgo, a toggle that skips the
 level-up interface) is open and the demo default keeps the interface, so our level-up
 dismissal (rs/40) stays necessary.
 
