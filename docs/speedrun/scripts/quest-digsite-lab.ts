@@ -174,6 +174,8 @@ export interface Segment {
     pages: number;
     options: number;
     actions: number; // clicks on npcs, locs, items and ground items (not dialogue, not walking)
+    runs: string; // dialogue shape, e.g. "4c,opt,6c | 2c": continue runs and option clicks, one group per dialogue
+    burst: number; // dialogue ticks if up to 5 continues go per tick: ceil(run/5) per run, 1 per option
     note?: string;
 }
 
@@ -190,7 +192,7 @@ export class Segments {
     constructor(private sdk: BotSDK) {}
 
     async run(name: string, fn: () => Promise<void | string>) {
-        this.cur = { name, ticks: 0, pages: 0, options: 0, actions: 0 };
+        this.cur = { name, ticks: 0, pages: 0, options: 0, actions: 0, runs: '', burst: 0 };
         this.start = tick(this.sdk);
         this.end = this.start;
         const note = await fn();
@@ -214,10 +216,23 @@ export class Segments {
         this.cur.pages += r.pages;
         this.cur.options += r.options;
         if (r.closedAt >= 0) this.mark(r.closedAt);
+        const parts: string[] = [];
+        let c = 0;
+        for (const t of r.transcript) {
+            if (t.startsWith('> ')) {
+                if (c) parts.push(`${c}c`);
+                this.cur.burst += Math.ceil(c / 5) + 1;
+                c = 0;
+                parts.push('opt');
+            } else c++;
+        }
+        if (c) parts.push(`${c}c`);
+        this.cur.burst += Math.ceil(c / 5);
+        if (parts.length) this.cur.runs += (this.cur.runs ? ' | ' : '') + parts.join(',');
     }
 
     total() {
-        return this.list.reduce((a, s) => ({ ticks: a.ticks + s.ticks, pages: a.pages + s.pages, options: a.options + s.options, actions: a.actions + s.actions }), { ticks: 0, pages: 0, options: 0, actions: 0 });
+        return this.list.reduce((a, s) => ({ ticks: a.ticks + s.ticks, pages: a.pages + s.pages, options: a.options + s.options, actions: a.actions + s.actions, burst: a.burst + s.burst }), { ticks: 0, pages: 0, options: 0, actions: 0, burst: 0 });
     }
 }
 

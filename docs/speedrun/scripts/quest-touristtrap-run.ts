@@ -325,7 +325,6 @@ await runScript(async ({ bot, sdk }) => {
         await q.opLoc('thminecaver', 1, () => p().worldX <= 3280, { near: [3283, 9415] });
     });
     await seg('mine exit doors: back to the surface', async () => {
-        await q.walk(3278, 9424, 1);
         await q.opLoc('thttmineexitl', 1, () => p().worldZ < 9000);
     });
     await seg('mine doors -> surface winch (walk)', async () => {
