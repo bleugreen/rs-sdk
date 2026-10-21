@@ -53,10 +53,24 @@ sub-issue is spawned.** The reasons, in order of how much they cover:
    kebabs (Cooking) are real, measured fallbacks for when dragonstones or grapes run short;
    the magic potion saves 2-5 ticks in Herblore. None changes the route while supply holds.
 
-**What changes in the route:** nothing structural. Three small things to adopt: skip the
-separate close before an inventory op at the bank (top ten #5), send speculative continues and
-retries freely because refused packets do not spend the 5-event budget (#6), and plan Hassan's
-free jug of water as the wine helpers' jug source (#9, economy finding 1).
+**What changes in the route:** nothing structural. The lab (section 8) turns three engine
+readings into rules the scripts can rely on, and one economy reading into a helper plan:
+
+- **Over-send freely.** A refused packet does not spend one of the 5 USER slots (measured: 10
+  refused buttons ahead of 10 identifies still identify 5 + 5). Blind continues past the last
+  page and retries into a delay cost nothing but client-side pacing (#6).
+- **Level-ups never stall a delay-free burst.** A 27-gem burst that crossed 31 levels cut at
+  exactly the rate of a level-99 control (#4). Only weak-queue Make-X lines stop on a level-up
+  (rs/59 `lostcity.md` row 6).
+- **Never answer two make-X menus in one tick.** The second completion throws away the first
+  one's product and drops every packet for the rest of that tick and the next (#7).
+- **Hassan's jug of water costs one tick per jug** on a helper with a blind burst (#9): about
+  5,000 jugs per helper-hour including the bank walk, so rs/47's ~520 jugs are a few helper
+  minutes.
+
+One engine reading does **not** pay with our client: the server accepts an inventory op with
+the bank open, but skipping the close saved 0 ticks per bank cycle (#5), because the lite client
+cannot address the withdrawn items until its inventory view updates a tick later.
 
 **Closed leads:** Agility Arena tickets (untradeable); pyre logs (measured and set aside by
 rs/28: 5 per tick from Firemaking 1, about 430 ticks to 99 against 650-700 for lines, but they
@@ -214,7 +228,7 @@ current routes already work; the rows with another named weakness come first wit
 | Thieving: Ape Atoll stalls; zoo-monkey release | 3.3 | `quests/quest_mm/scripts/aa_market.rs2:14,74-75`; `mm_zoo_monkey.rs2:98` | no quest varp, only the Thieving level | none: 65-tick stall respawn; one monkey at a time |
 | Quest varps written relative to themselves (Fight Arena, Legends, Tourist Trap) or not by the reward (Priest in Peril, Gertrude) | n/a | C section 2b | would multiply a reward if the trigger could re-enter | none: the triggers are single-shot (C) |
 | Engine: refused USER events | n/a | `server/engine/src/engine/entity/NetworkPlayer.ts:141-147` | a refused event spends a CLIENT slot (20), not a USER slot (5) | #6: over-sending is free |
-| Engine: inventory op with the bank open | n/a | `Player.ts:2185-2187` (tabs stay visible), `OpHeldHandler.ts:54-56` | the server closes the bank and runs the op; `sdk/index.ts:1183-1186` says it is dropped | #5: one packet less per bank cycle |
+| Engine: inventory op with the bank open | n/a | `Player.ts:2185-2187` (tabs stay visible), `OpHeldHandler.ts:54-56` | the server closes the bank and runs the op; `sdk/index.ts:1183-1186` says it is dropped | #5: 0 ticks per bank cycle with the lite client (measured) |
 | Engine: IF_BUTTON, RESUME_* and CLOSE_MODAL have no delay check | n/a | `IfButtonHandler.ts`, `ResumePauseButtonHandler.ts:7-21`, `CloseModalHandler.ts:13` | overlay-tab buttons run during a delay; continues carry no page id | KNOWN (Charge, dialogue bursts) |
 | Engine: OPPLAYER op not validated; RESUME_P_COUNTDIALOG takes any signed int | n/a | `OpPlayerHandler.ts:34`; `ResumePCountDialogHandler.ts:12-17` | content decides | none found |
 
@@ -271,7 +285,7 @@ triggers of 944 with an effect).
 - **One make-X completion per tick**: a second completion in the same tick pays `p_delay(0)`
   (`interface_chat/scripts/chat.rs2:734-738, 1101-1119`; measured in section 8, #7).
 - **Inventory ops are accepted with the bank open** (the server closes the bank and runs the op;
-  measured by D and costed in #5).
+  measured by D). Worth 0 ticks per bank cycle with the lite client (#5).
 
 Overlap paths (D section 3.3), the ones that matter:
 
@@ -340,17 +354,44 @@ live in revision 289. Each live item against this sweep:
 
 ## 8. Top ten, verified (lab, `NODE_TICKRATE=300`, 3 samples each)
 
-Script: `speedrun/lab/measure-sweep.ts`. Host and method at the end of this section.
+Script: [`speedrun/lab/measure-sweep.ts`](../../../speedrun/lab/measure-sweep.ts) (one probe per
+row, `--probe=` to pick). "Tick k" counts published client ticks from the burst's tick; xp is
+base xp (published xp / 25). All 3 samples agreed unless a range is shown.
 
-| # | Candidate | Measured | Route step it would replace | Ticks saved | Basis |
+| # | Candidate | Measured (3 samples) | Route step it would replace | Ticks saved | Basis |
 |---|---|---|---|---|---|
-| 1 | Agility Arena tickets | *pending* | none (Agility is rs/2's Wilderness course, 7.4 base/tick) | 0: closed (untradeable) | read; lab pending |
-| 2 | Battlestaves (Crafting fallback) | *pending* | rs/37 `crafting.md` dragonstone line from 55 | *pending* | |
-| 3 | Ugthanki kebab | *pending* | rs/37 `cooking.md` route 1 (wine) | *pending* | |
-| 4 | Level-up dialogs in delay-free bursts | *pending* | every rs/37 burst | *pending* | |
-| 5 | Inventory op with the bank open | *pending* | the close in every banked burst cycle (rs/37) | *pending* | |
-| 6 | Refused USER events on the CLIENT budget | *pending* | speculative sends | *pending* | |
-| 7 | One make-X completion per tick | *pending* | knife-on-log starter (rs/2) | *pending* | |
-| 8 | Magic potion, Herblore 76+ | *pending* | rs/37 `herblore.md` ranging band | *pending* | |
-| 9 | Hassan's jug of water | *pending* | rs/47 jug sourcing | helper time only | |
-| 10 | Wine from Cooking 1 | *pending* | rs/37 `cooking.md` route 1 | 0 (confirms canon) | |
+| 1 | **Agility Arena tickets** | 5 presses of the 100-ticket button with 600 tickets in hand: all 5 landed on tick 1, 500 tickets spent, 140,000 base Agility in one tick (2 of 3; the third sample's trader interface did not open, a setup miss, so nothing was pressed). A trade offer of tickets was refused with "You can't trade this item." while coins in the same trade went through (3 of 3). A dropped ticket was visible to the dropper and not to the other player standing beside it (3 of 3) | none: Agility is rs/2's Wilderness course (7.4 base per tick) | **0, closed.** The button burst is real but supply is the scored account's own tags, one per 98-tick pillar move: about 2.9 base per tick of arena time, below the course | measured (burst, trade, drop); read (supply, `agilityarena_clerk.rs2:78-87`) |
+| 2 | **Battlestaves** (air orb on battlestaff) | 14 fired at once: 5, 5, 4 per tick; 137.5 base each, so 687.5 base per tick inside the burst | rs/37 `crafting.md` dragonstone line from 55 (86 ticks 55 -> 99) | **0 while dragonstones are supplied.** rs/37 already measured the air-staff cycle (4.78 ticks per 14, 90 ticks 66 -> 99) and lists it as the fallback. It pays about 17 ticks over the diamond line (about 104 against about 121 from 42, rs/37) when dragonstones are unobtainable, which rs/37 says they are, provided helpers can supply 276 battlestaves and 276 orbs (828 cosmic runes) | measured (burst); route figures rs/37 |
+| 3 | **Ugthanki kebab** | 13 fired at once: 5, 5, 3 per tick at both levels. Cooking 1: 11, 13 and 2 good of 13 (the roll `ugthanki_kebab.rs2:127` runs at the level reached so far, so one lucky early roll snowballs). Cooking 37: 13 of 13 good, 1,560 base, so 600 base per tick inside the burst. The three mixture steps (onion, tomato, meat into a bowl) each ran 5 a tick with no level and no xp | rs/37 `cooking.md` route 1 (wine, about 15-25 ticks); kebabs are its route 2 (131 ticks) | **0 while grapes hold.** One packet per kebab at the main when helpers make the mixture (4 if the main makes it). Per 100 wines short of 364 good ones, kebabs cost about 36 ticks against about 200 for sharks (rs/37), so they save about 160 ticks per 100 wines short over fish | measured |
+| 4 | **Level-up dialogs in a delay-free burst** | 27 sapphires fired at once from Crafting 20: 5, 5, 5, 5, 5, 2 per tick, 31 levels gained, a level-up chat open on every tick of the burst. The Crafting 99 control cut on exactly the same ticks | every rs/37 delay-free burst | **0: nothing to save.** Each OPHELDU closes the open level-up chat (`clearPendingAction` -> `closeModal`) and runs, so a burst never stalls. rs/37's 14-23 tick bank gaps come from level-ups still pending at the booth, not from the burst | measured |
+| 5 | **Inventory op with the bank open** | 27-gem bank cycle (deposit-All cut, withdraw-All uncut, 27 cuts, booth click in the last burst): **7, 7, 7 ticks** with a CLOSE_MODAL and **7, 7, 7** without (3 samples x 3 cycles each). Without the close the first cut closed the bank and ran, as D measured | the close in rs/37's bank cycle (`crafting.md` section 4) | **0 with the lite client.** The client fills OPHELDU item ids from its own inventory view, which shows the withdrawn gems a tick after the bank tick, so the first cut cannot ride in the bank tick either way, and the close only uses a spare slot (3 of 5) in a tick that has them. A client that wrote item ids blind could put 3 cuts in the bank tick and save about 1 tick per cycle (about 11-19 cycles per rs/37 skill), but that means changing the client under `server/`, which tenet 6 rules out | measured; saving with a raw client inferred |
+| 6 | **Refused USER events on the CLIENT budget** | k refused IF_BUTTONs (the bank note toggle, component 5386, with the bank closed: "component not visible") fired ahead of 10 herb identifies. **At `NODE_TICKRATE=2000`: 5 + 5 identifies for k = 0, 5 and 10** (3 of 3 each). At 300 ms: 5 + 5 for k = 0 and 5; k = 10 split 1-2, 5, 3-4, because the lite client spaces its sends about 20 ms apart and 20 packets outlast a 300 ms tick | speculative sends (blind continues, retries into a delay) | **0 directly**; it licenses over-sending. Refusals cost CLIENT slots (20 a tick), not USER slots (5) (`NetworkPlayer.ts:141-147`) | measured. The 2,000 ms tick replaces the raw socket the brief asked for: the count rule does not depend on tick length, and a long tick lets 20 paced sends land in one decode |
+| 7 | **One make-X completion per tick** | knife on logs, make-1, knife on logs, make-1 in one tick, then one identify a tick: the identifies sent on that tick and the next were **dropped**, the one two ticks later was accepted, and only **one** log was fletched (xp on tick 3, as in the one-completion control). Same at 300 ms and 2,000 ms (3 of 3 each) | rs/2's knife-on-log starter, which already answers one menu per tick | **0; it confirms the rule.** A second completion in the same tick costs its `p_delay(0)`: packets dropped for the rest of that tick and the next (`chat.rs2:734-738`, armed by `if_close` at `:1101-1119`). And the first completion's product is lost, because the second knife's `clearPendingAction` empties the weak queue its fletch was waiting in | measured |
+| 8 | **Magic potion, Herblore 76+** | 14 fired at once at Herblore 76: 5, 5, 4 per tick; 172.5 base each (2,415 per 14), 862.5 base per tick inside the burst | rs/37 `herblore.md` ranging band (162.5) | **About 2-5 ticks.** If Zamorak potions are supplied it covers only 76-78: 7 potions instead of 8, under 1 tick. With the realistic ranging cap (no torstol) it replaces ranging from 76 to 99: 185 potions instead of 196, 11 fewer mixes (about 2 ticks) and up to one fewer 14-potion bank cycle (about 4-5 ticks). Needs about 185 potato cactus, whose supply E did not cost | measured (burst); xp arithmetic from the level table (`Player.ts:77-85`) |
+| 9 | **Hassan's jug of water** | after one read-then-act pass to learn the pages (greeting, three-way choice, player line, NPC line, item box), a blind burst each tick of [continue, IF_BUTTON 2472 (`multi3:com_2`, "It's just too hot here"), continue, continue, Talk-to Hassan]: **1 jug per tick**, 10 jugs in 10 bursts, first to last 9 ticks (3 of 3). The Talk-to closes the item box and starts the next greeting in the same tick | rs/47's jug sourcing (economy.md finding 1: about 520 jugs at about 100 an hour from shops and spawns) | **0 scored ticks; about 5 helper-hours saved.** 27 jugs take about 28 ticks of dialogue; with the Al Kharid bank trip (about 33 tiles each way, inferred about 37 ticks with the bank tick) a cycle is about 65 ticks, so about **5,000 jugs per helper-hour**, linear in helpers. The choice cannot be answered by `sendClickDialog(0, {blind: true})` (a blind continue never answers a choice); it needs the raw IF_BUTTON on the static component | measured (dialogue); bank trip inferred |
+| 10 | **Wine fermentation from Cooking 1** | 27 unfermented wines in the bank, Cooking set to 1, relog: fermented 19 published ticks after login (server tick 20); 17, 16 and 18 good; **base xp exactly 110 x good** in all three (1,870, 1,760, 1,980); level 1 -> 54-55. Beside fly fishing at Cooking 99 (no level-up chat), the timer fired 21 ticks after the wine was made while the loop, never re-clicked, kept catching after it in 2 of 3 samples (in the third the loop had stopped at tick 11, before the timer, consistent with the spot moving) | rs/37 `cooking.md` route 1 | **0: it confirms the canon.** No Cooking check at fermentation is now measured, not only read (D could not read the xp cleanly). O4 holds: a normal timer and a gathering loop grant in the same run | measured |
+
+Also checked: **Dragon Slayer wall** (C finding 1). Standing at (2836,9599) with
+`%dragon_wall` = 0, "Open" on loc 2606 at (2836,9600) gave "Nothing interesting happens." and
+the player stayed on (2836,9599) (3 of 3). The ship is mandatory, as C read.
+
+**Host and method.** Executor bgsrv-mac (macOS arm64), stock headless lite client, this branch
+(rs/61 base plus rs/92's lab script), `speedrun/lab/lab.sh` on port block 9350 (web 9350,
+management 9351, hiscores 9352, node 44050, gateway 8350), `LOCAL_STAFF_LEVEL=4`. Bots `srlab92a`
+(measured) and `srlab92b` (trade and drop partner, own client launched by the script). Commands:
+
+```
+LAB_BOTS=srlab92b NODE_TICKRATE=300 WEB_PORT=9350 WEB_MANAGEMENT_PORT=9351 HISCORES_WEB_PORT=9352 \
+  NODE_PORT=44050 AGENT_PORT=8350 speedrun/lab/lab.sh srlab92a 'speedrun/lab/measure-sweep.ts:--n=3:--helper=srlab92b'
+NODE_TICKRATE=2000 ... speedrun/lab/lab.sh srlab92a 'speedrun/lab/measure-sweep.ts:--probe=refused,makex:--n=3'
+```
+
+Lab gotchas found on the way (measured):
+
+- `sdk.sendUseItemOnItem` refuses client-side while the bank is open (`sdk/index.ts:1188-1194`);
+  probe #5 sends the same client action without that guard. The server accepts it.
+- A helper relaunched by a script while `lab.sh` also runs a lite runner for it ends in
+  "Connection closed": give the helper `LAB_BOTS` (no runner) and launch its client from the
+  script.
+- `::give` of a name shared by two objs (good and bad ugthanki kebabs are both "Ugthanki kebab")
+  must be counted by obj id; the script does.
