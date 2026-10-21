@@ -38,7 +38,7 @@ const STARTS: Record<string, Start> = {
     D: { vars: { mm_main: 1, mm_narnode: 7, mm_caranock: 3 }, items: [['mm_gnome_royal_seal', 1], ['mm_narnode_orders', 1]], at: [2465, 3496] },
     E: { vars: { mm_main: 1, mm_narnode: 7, mm_caranock: 3, mm_daero: 4, mm_daero_option_bit_one: 1, mm_daero_option_bit_two: 1, mm_daero_option_bit_three: 1 }, items: [['mm_gnome_royal_seal', 1]], at: [2393, 9892] },
     F: { vars: { mm_main: 2, mm_narnode: 7, mm_caranock: 3, mm_daero: 6 }, items: [['mm_gnome_royal_seal', 1]], at: [2649, 4508] },
-    G: { vars: { mm_main: 2, mm_narnode: 7, mm_caranock: 3, mm_daero: 7 }, items: [['mm_gnome_royal_seal', 1]], at: [2893, 2726] },
+    G: { vars: { mm_main: 2, mm_narnode: 7, mm_caranock: 3, mm_daero: 7, mm_waydar: 0, mm_lumdo: 0 }, items: [['mm_gnome_royal_seal', 1]], at: [2893, 2726] },
 };
 
 await runScript(async ({ bot, sdk }) => {
@@ -139,7 +139,11 @@ await runScript(async ({ bot, sdk }) => {
     if (runs('G')) {
         add(await talk(sdk, /^Waydar$/i, [], { idle: 3 }), 'G1 Waydar on Crash Island');
         add(await talk(sdk, /^Lumdo$/i, [], { idle: 3 }), 'G2 Lumdo');
-        // Waydar orders Lumdo to ferry you; the chapter 2 cutscene follows and ends on Ape Atoll.
+        {
+            const l = sdk.getState()!.nearbyNpcs.find(n => /^Lumdo$/i.test(n.name));
+            console.log('Lumdo distance before G3:', l?.distance, l ? `${l.x},${l.z}` : 'not visible');
+        }
+        // Waydar orders Lumdo to ferry you (Lumdo must be within 10 tiles, mm_waydar.rs2:82); the chapter 2 cutscene follows and ends on Ape Atoll.
         add(await talk(sdk, /^Waydar$/i, [/cannot convince Lumdo/], { idle: 12, done: near(2801, 2707, 4) }), 'G3 Waydar -> cutscene -> Ape Atoll');
         await check('G');
     }
