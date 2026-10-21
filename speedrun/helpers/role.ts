@@ -31,6 +31,13 @@ export interface Role {
     name: string;
     /** Bank items this role produces (matched against item names) so the ledger can attribute stock. */
     produces: RegExp[];
+    /**
+     * Set true for a role that reads player chat (public chat and private messages).
+     * The fleet's SDK hides player chat by default (showChat: false), which also hides
+     * private messages from getNewChat and waitForChat; this turns it on while the role
+     * runs. Roles that never chat leave it unset.
+     */
+    readsChat?: boolean;
     run(ctx: RoleContext): Promise<void>;
 }
 
@@ -53,6 +60,8 @@ export async function runStandalone(role: Role): Promise<void> {
         console.log(JSON.stringify({ t: new Date().toISOString(), account, role: role.name, ...data }));
     await runScript(
         async ({ bot, sdk }) => {
+            // A helper's bot.env carries SHOW_CHAT=false, which runScript honours.
+            if (role.readsChat) sdk.config.showChat = true;
             await role.run({
                 bot,
                 sdk,

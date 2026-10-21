@@ -6,7 +6,7 @@ The speedrun's scored account (`www_cairn_md`, displayed as 'Www Cairn Md') is r
 
 | Piece | Where | What |
 |---|---|---|
-| Role contract | `speedrun/helpers/role.ts` | A role is a restartable loop for one account: `run(ctx)` with `ctx.bot`, `ctx.sdk`, `ctx.options`, `ctx.log`, `ctx.reportBank`, `ctx.signal`. Every role also runs standalone: `bun speedrun/helpers/<role>.ts <account>`. |
+| Role contract | `speedrun/helpers/role.ts` | A role is a restartable loop for one account: `run(ctx)` with `ctx.bot`, `ctx.sdk`, `ctx.options`, `ctx.log`, `ctx.reportBank`, `ctx.signal`. A role that reads player chat or private messages sets `readsChat: true`; the fleet hides player chat from every other role's SDK. Every role also runs standalone: `bun speedrun/helpers/<role>.ts <account>`. |
 | Roles | `speedrun/helpers/<role>.ts` | One module per role, exporting `role`. The fleet imports it by name. |
 | Supervisor | `speedrun/helpers/fleet.ts` | Keeps the accounts in `fleet.json` logged in and running their roles; writes `stockpile.json`. |
 | Host control | `speedrun/helpers/fleetctl` | start/stop/status/logs/update on the fleet host, as a systemd user unit. |
@@ -26,13 +26,14 @@ The speedrun's scored account (`www_cairn_md`, displayed as 'Www Cairn Md') is r
 | [mule](helpers/mule.md) | Consolidates stock, serves trades to the scored account | cairn_mule1, cairn_mule2 (stand-in receiver cairn_h05) | cairn://p/rs/49 |
 | [coins / buyer](helpers/coins.md) | Coins; Grand Exchange and shop purchases | cairn_h60-h65 | cairn://p/rs/50 |
 | [bidder](helpers/bidder.md) | Standing GE buy offers just above the competing bids, up to per-item targets (dragon bones, grapes) | cairn_h61 | cairn://p/rs/63 |
+| [ambassador](AMBASSADOR.md) | Nothing: talks with other bots at the GE, logs the conversation, daily digest | cairn_md | The only role that chats, under hard rules enforced in code (cairn://p/rs/58). |
 
 Planned without an owner yet (supply list in cairn://p/rs/41): fletcher-supplier (arrowheads, dart tips, headless arrows), herb gatherer (unfinished potions and secondaries), gem supplier (uncut dragonstones or diamonds), rune and jewellery buyer, combat-supply buyer (food, potions, gear, cannonballs), quest-item gatherer.
 
 ## Accounts
 
 - **Names.** Helpers are `cairn_hNN` (two digits), mules `cairn_mule1` and `cairn_mule2`. Usernames are at most 12 characters, lower-case letters, digits and underscore; the fleet refuses anything that does not start with `cairn_`, and always refuses `www_cairn_md` (the scored account), `cairn_dot_md` (its claimed spare, never to be named or used) and `cairn` (the operator's).
-- **Ranges.** fleet h01-h04 · mule child h05 · woodcutter h10-h14 · bars h20-h24 · essence h30-h34 · wine h40-h49 · bones h50-h54 · coins/buyer h60-h65 (h61 is the grape bidder). `cairn_t01`-`t27` are load-test accounts from the fleet's capacity measurement: logged out, unused, nothing in their banks. Their env files stay in `~/rs-fleet/bots/` so the names are never reused by accident; they are not strays.
+- **Ranges.** fleet h01-h04 · mule child h05 · woodcutter h10-h14 · bars h20-h24 · essence h30-h34 · wine h40-h49 · bones h50-h54 · coins/buyer h60-h65 (h61 is the grape bidder) · ambassador `cairn_md`. `cairn_t01`-`t27` are load-test accounts from the fleet's capacity measurement: logged out, unused, nothing in their banks. Their env files stay in `~/rs-fleet/bots/` so the names are never reused by accident; they are not strays.
 - **Credentials** live only on the fleet host, in `~/rs-fleet/bots/<account>/bot.env` (`BOT_USERNAME`, `PASSWORD`, `SERVER=rs-sdk-demo.fly.dev`; directory 700, file 600). `bots/*/` is gitignored. A demo account is created by its first login with whatever password is sent, so the env file is written before that login and is never overwritten: `fleetctl add` opens it with O_EXCL. A `bot.env` must not set `GATEWAY_URL`; the fleet refuses one that would bypass its gateway.
 - **Hand-over.** A role child leaves its accounts logged out with their env files in `~/rs-fleet/bots/`; adopting them is one `fleetctl assign` per account and a `fleetctl reload`.
 
@@ -86,7 +87,7 @@ So an account costs about 128 MB and 3-4% of a core, nearly all of it in its own
 
 ## Etiquette
 
-Helpers are ordinary players gathering resources: no chat, no following or blocking players, no PvP, no crowding a contested spawn with many accounts (spread them with role options), no load near the server's limits. Never log in as `www_cairn_md` (the scored account: any login adds to its ranked playtime), `cairn_dot_md` or `Cairn`.
+Helpers are ordinary players gathering resources: no chat (the [ambassador](AMBASSADOR.md) is the one exception, and its pacing and rules are enforced in code), no following or blocking players, no PvP, no crowding a contested spawn with many accounts (spread them with role options), no load near the server's limits. Never log in as `www_cairn_md` (the scored account: any login adds to its ranked playtime), `cairn_dot_md` or `Cairn`.
 
 ## The ledger: `~/rs-fleet/stockpile.json`
 
@@ -174,4 +175,4 @@ The supervisor runs as the transient systemd user unit `rs-fleet` (user lingerin
 
 ## Writing a role
 
-The contract and the rules every role follows are in `speedrun/helpers/role.ts` and the shared brief on cairn://p/rs/41: self-sufficient from a fresh account, restartable from any state, gate every action on an observed effect, dismiss level-up dialogs, call `ctx.reportBank` after every bank visit, check `ctx.signal`, never chat. Inside the fleet, a role is told about nothing else: re-logins, crashes and stalls are the supervisor's job, and the role simply starts again from wherever the account is. Log something at least every `stallMinutes`. When the role moves between stages, log it as `ctx.log('phase', { phase: 'gather' })` (or `ctx.log('phase gather')`): `fleetctl status` shows each account's latest phase and its age, which is how you tell an account that is training from one that is gathering. Write `docs/speedrun/helpers/<role>.md` and add the role to the table above.
+The contract and the rules every role follows are in `speedrun/helpers/role.ts` and the shared brief on cairn://p/rs/41: self-sufficient from a fresh account, restartable from any state, gate every action on an observed effect, dismiss level-up dialogs, call `ctx.reportBank` after every bank visit, check `ctx.signal`, never chat (only the ambassador does). Inside the fleet, a role is told about nothing else: re-logins, crashes and stalls are the supervisor's job, and the role simply starts again from wherever the account is. Log something at least every `stallMinutes`. When the role moves between stages, log it as `ctx.log('phase', { phase: 'gather' })` (or `ctx.log('phase gather')`): `fleetctl status` shows each account's latest phase and its age, which is how you tell an account that is training from one that is gathering. Write `docs/speedrun/helpers/<role>.md` and add the role to the table above.
