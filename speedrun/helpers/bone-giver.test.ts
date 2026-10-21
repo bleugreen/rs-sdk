@@ -4,7 +4,7 @@ import { baseState } from '../lib/fake-sdk';
 import { boneGiverOptions, decideRequest, newRequestCtx, S07_SITES, type RequestCtx } from './bone-giver';
 
 const o = { noReplyTicks: 3, resendTicks: 100 };
-const msg = (tick: number, text: string): GameMessage => ({ type: 0, text, sender: '', tick });
+const msg = (tick: number, text: string): GameMessage => ({ type: 0, text, sender: '', tick, fromSelf: false });
 const BUSY = 'Cairnsup is busy at the moment.';
 const SENT = 'Sending trade offer...';
 
@@ -54,7 +54,7 @@ describe('decideRequest: a standing request', () => {
     });
 
     test('player chat that happens to match is ignored (only game messages answer)', () => {
-        const chat: GameMessage = { type: 2, text: BUSY, sender: 'someone', tick: 11 };
+        const chat: GameMessage = { type: 2, text: BUSY, sender: 'someone', tick: 11, fromSelf: false };
         expect(run([frame(10), frame(11, [chat])]).actions).toEqual(['send:first', 'wait']);
     });
 
