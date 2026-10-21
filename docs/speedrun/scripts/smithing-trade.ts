@@ -282,6 +282,7 @@ await runScript(async ({ bot, sdk }) => {
     let firstRequest = -1;
     let reached = -1;
     let offerSent = -99;
+    let closedAt = -1;
     let lastClick = -99;
     let lastXpTick = -99;
     let clickArgs: [number, number, number] = [0, 1, 0];
@@ -326,7 +327,7 @@ await runScript(async ({ bot, sdk }) => {
         }
         const L = logs[inv]!;
         if (phase === 'free' && s.tick >= freeFrom) {
-            if (s.trade?.isOpen) { phase = 'trade'; L.tradeOpen = s.tick; progress = s.tick; offerSent = -99; }
+            if (s.trade?.isOpen) { phase = 'trade'; L.tradeOpen = s.tick; progress = s.tick; offerSent = -99; closedAt = -1; }
             else {
                 // An open chat modal (level-up dialog, "not enough bars" mesbox) makes us busy()
                 // (Player.ts), and the helper's trade requests bounce off until it closes.
@@ -373,7 +374,9 @@ await runScript(async ({ bot, sdk }) => {
                     phase = 'anvil';
                     freeFrom = s.tick;
                     writePlan(inv + 1, DISPOSE === 'drop' ? 0 : PLAN[inv]!.segs.reduce((a, g) => a + g.count, 0));
-                } else if (s.tick - L.tradeOpen > 10) { phase = 'free'; declines++; }
+                } else if (closedAt < 0) closedAt = s.tick;
+                // Closed without the bars (declined): re-request at once.
+                else if (s.tick - closedAt >= 2) { phase = 'free'; declines++; }
             }
         }
         // attempt_smithing starts with if_close, so while the interface is still open after a
