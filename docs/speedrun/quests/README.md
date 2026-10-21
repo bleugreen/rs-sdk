@@ -330,7 +330,7 @@ always refused within 16 ticks of combat (m). Ticks are fixed-client figures.
 
 | # | Step | Fixed ticks | Logout-unsafe stretch | Helper trade (tradeable items only) |
 |---|---|---|---|---|
-| 0 | Skill prep, not quests. **Magic to 59** on the enchant ladder (2,468 base, r from `Player.ts`; the Magic route's own casts, done earlier: 51 is enough for the teleport and Fire Bolt, 59 gives Fire Blast). **Prayer 43 by burying 11 dragon bones** (21 m, rs/33; counted in Prayer's route) before step 3, from step 3's trade. Firemaking 30 (helper-fed) any time before Sea Slug. Gnome course to Agility 22 (122 i) before Grand Tree's climb | | | rings and runes; logs |
+| 0 | Skill prep, not quests. **Magic to 59** on the enchant ladder (2,468 base, r from `Player.ts`; the Magic route's own casts, done earlier: 51 is enough for the teleport and Fire Bolt, 59 gives Fire Blast). **Prayer 43 by burying 11 dragon bones** (21 m, rs/33; counted in Prayer's route) at the start of step 3, from that step's trade, before the warlord. Firemaking 30 (helper-fed) any time before Sea Slug. Gnome course to Agility 22 (122 i) before Grand Tree's climb | | | rings and runes; logs |
 | 1 | Doric's Quest | 65 | none | 6 clay, 4 copper ore, 2 iron ore, Falador runes (can ride on another trade) |
 | 2 | Plague City (Camelot teleport in); **read the magic scroll** (`%elenaquest` 30) | 620 | none | dwellberries, 4 buckets of water, spade, rope, chocolate dust, milk, snape grass, Camelot runes |
 | 3 | Tree Gnome Village (Ardougne teleport to the maze). **Warlord by Fire Blast** at 1/1/1 and 10 HP, 133 m (Fire Bolt at Magic 51: 165 m). Protect from Melee on before he attacks; sip below ~10 points (one Fire Bolt run used 46 points, m) | 896 | Bolren's closing ceremony (step 23), until the quest scroll shows | **the pre-MM trade** (pre_mm_fights.md §4): 6 logs (whole gnome chain), 11 dragon bones, staff of fire, amulet of magic, **2 Prayer potion(4)** (~115-125 points needed against 43, m), **1 Antipoison(4)** (for step 7), 2 sharks, and runes: ~25-40 Fire Blast casts per fight (1 death + 4 air each) or ~55-115 Fire Bolt casts (1 chaos + 3 air), i from the cast counts |
@@ -655,7 +655,7 @@ raised:
    ~163 fixed, unmeasured) is a no-MM-only candidate.
 5. **Monkey Madness option 1 rechecked without Holy Grail**, on measured melee rates: still
    better than option 2 by ~3,130 ticks (section 6). MM itself beats no-MM by ~4,700
-   expected under Package B (~3,710 under A), and only a melee rate of ~20 base/tick would
+   expected under Package B (~3,760 under A with the measured fights), and only a melee rate of ~20 base/tick would
    flip it.
 6. **Druidic Ritual: ON, mandatory** (coordinator, 2026-10-21, on rs/37's measurement via
    rs/28). Every Herblore action needs level 3, so without the quest's 250 base Herblore
