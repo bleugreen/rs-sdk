@@ -5,6 +5,7 @@
 //
 //   bun docs/speedrun/scripts/demo-burst-analysis.ts --pairs=DIR/pairs --windows=a.json,b.json
 //       [--playercount=DIR/playercount.tsv] [--fleet=fleet-minutes.csv] [--minutes-out=minutes.tsv]
+//       [--catch-max=2]
 //
 // Tick times: a pair's direct.json carries decoded tick labels (react.ticks), which are exact. A
 // sample phase keeps only raw [t, bytes] websocket messages; ticks are rebuilt from messages of
@@ -13,7 +14,7 @@
 //
 // Per minute, with intervals between consecutive ticks:
 //   (b) interval p90 <= 400 ms
-//   (c) catch-ups <= 1 per minute, a catch-up being an interval < 150 ms right after one > 350 ms:
+//   (c) catch-ups <= --catch-max per minute (2, demo-latency.md section 10), a catch-up being an interval < 150 ms right after one > 350 ms:
 //       the engine runs a fixed 300 ms grid with catch-up (World.ts cycle()), so an overrun tick is
 //       followed by one that starts almost at once and leaves no idle window for a reaction.
 // A sample (a pair's direct probe, ~1.3 min) is scored the same way over its whole span, and
@@ -33,7 +34,7 @@ for (const a of process.argv.slice(2)) {
     if (m) args.set(m[1]!, m[2] ?? 'true');
 }
 const P90_MAX = 400;
-const CATCH_MAX_PER_MIN = 1;
+const CATCH_MAX_PER_MIN = Number(args.get('catch-max') ?? 2);
 // Two regimes: a severe burst costs 11-26 of 60 reactions, a simmer of 1-6 catch-ups/min up to ~6.
 const SEVERE_PER_MIN = 10;
 const LATE_MS = 450;
@@ -172,6 +173,10 @@ for (const seg of segments.filter(s => !(s.kind === 'pair-window' && s.exact))) 
 }
 say();
 say(`Ashburn pairs where (b) agrees with (a): ${agree.aEqB}/${agree.n}; where (c) agrees with (a): ${agree.aEqC}/${agree.n}.`);
+// Which way each (b) disagreement went: a false pass lets a costly minute through, a false fail
+// turns away a minute that cost nothing.
+const bWrong = segments.filter(s => s.kind === 'pair' && s.vantage === 'ashburn' && s.direct?.n).map(s => ({ s, sc: score(s.ticks), a: s.direct!.onTime / s.direct!.n >= 58 / 60 })).filter(x => x.a !== x.sc.b);
+say(`(b) disagreements: ${bWrong.map(x => `${hhmm(x.s.ticks[0]!)} ${x.sc.b ? 'passed a bad sample' : 'failed a good one'} (${x.s.direct!.onTime}/${x.s.direct!.n}, p90 ${x.sc.p90.toFixed(0)}, ${x.sc.catchPerMin.toFixed(1)} catch-ups/min)`).join('; ') || 'none'}.`);
 // Calibrate (c): agreement with (a) for each catch-up threshold, over the probe's own span.
 const graded = segments.filter(s => s.kind === 'pair' && s.vantage === 'ashburn' && s.direct?.n).map(s => ({ a: s.direct!.onTime / s.direct!.n >= 58 / 60, rate: score(s.ticks).catchPerMin }));
 say(`(c) threshold calibration (agreement with (a), false passes, false fails): ${[1, 2, 3, 4, 5].map(th => {
@@ -229,7 +234,20 @@ for (const [k, ms] of segMins) {
 say();
 say('Legend: . passes both, b fails (b) only, c fails (c) only, X fails both.');
 const closed = bursts.filter(b => !b.censored).map(b => b.len);
-say(`Bursts: ${bursts.length} (${closed.length} closed, lengths ${closed.sort((a, b) => a - b).join(', ') || 'none'} min; censored ${bursts.filter(b => b.censored).map(b => `>=${b.len}`).join(', ') || 'none'}).`);
+say(`Bursts failing (c) at <= ${CATCH_MAX_PER_MIN}/min: ${bursts.length} (${closed.length} closed, lengths ${closed.sort((a, b) => a - b).join(', ') || 'none'} min; censored ${bursts.filter(b => b.censored).map(b => `>=${b.len}`).join(', ') || 'none'}).`);
+// Severe runs (>= SEVERE_PER_MIN in a minute) inside the same windows, censored the same way.
+const severeRuns: string[] = [];
+for (const [, ms] of segMins) {
+    if (ms.length < 3) continue;
+    for (let i = 0; i < ms.length;) {
+        if (ms[i]!.s.catchPerMin < SEVERE_PER_MIN) { i++; continue; }
+        let j = i;
+        while (j + 1 < ms.length && ms[j + 1]!.s.catchPerMin >= SEVERE_PER_MIN) j++;
+        severeRuns.push(`${hhmm(ms[i]!.minute)} ${i === 0 || j === ms.length - 1 ? '>=' : ''}${j - i + 1} min`);
+        i = j + 1;
+    }
+}
+say(`Severe runs (>= ${SEVERE_PER_MIN} catch-ups in a minute) inside windows: ${severeRuns.join(', ') || 'none'}.`);
 
 // ---------------------------------------------------------------- bursts across samples
 // Consecutive samples in time (pairs and windows, each scored on (c) over its span): a run of
@@ -305,11 +323,15 @@ if (withP.length >= 6) {
     say(`Pearson r (players, catch-ups/min) over ${withP.length} minutes: ${r.toFixed(2)}.`);
 }
 if (fleet.size) {
-    const busy = minutes.filter(m => (m.fleet.churn5 ?? 0) >= 3);
-    const nearRestart = minutes.filter(m => m.fleet.sinceRestartMin !== null && m.fleet.sinceRestartMin <= 10);
+    // Only minutes the fleet series covers; outside it a quiet fleet and a missing row look alike.
+    const covered = minutes.filter(m => fleet.has(Math.floor(m.minute / 60_000)));
+    const busy = covered.filter(m => (m.fleet.churn5 ?? 0) >= 3);
+    const nearRestart = covered.filter(m => m.fleet.sinceRestartMin !== null && m.fleet.sinceRestartMin <= 10);
+    const span = [...fleet.keys()].sort((a, b) => a - b);
     say();
-    say(`Fleet: minutes with >= 3 fleet logins/logouts in the 5 min before: failing (c) ${rate(busy)}; others ${rate(minutes.filter(m => !busy.includes(m)))}.`);
-    say(`Within 10 min after a fleet restart: failing (c) ${rate(nearRestart)}; others ${rate(minutes.filter(m => !nearRestart.includes(m)))}.`);
+    say(`Fleet series ${hhmm(span[0]! * 60_000)}-${hhmm(span.at(-1)! * 60_000)} PDT covers ${covered.length} of ${minutes.length} scored minutes.`);
+    say(`Fleet: minutes with >= 3 fleet logins/logouts in the 5 min before: failing (c) ${rate(busy)}; others ${rate(covered.filter(m => !busy.includes(m)))}.`);
+    say(`Within 10 min after a fleet restart: failing (c) ${rate(nearRestart)}; others ${rate(covered.filter(m => !nearRestart.includes(m)))}.`);
 }
 
 console.log(out.join('\n'));
