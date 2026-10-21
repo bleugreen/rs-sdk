@@ -65,6 +65,9 @@ await runScript(async ({ bot, sdk }) => {
     // pending sends: label -> rock to click (and whether to drop ore with it)
     const sends = new Map<number, P>();
     const predicted: number[] = [];
+    // Rolls awaiting their xp; a roll on server tick R shows xp at label R+1.
+    const pending: { roll: number; rock: P }[] = [];
+    let onTime = 0, failed = 0;
     const ticks: number[] = [];
     const xps: number[] = [];
     const kinds: Record<string, number> = { stay: 0, trick: 0, walk: 0 };
@@ -100,6 +103,7 @@ await runScript(async ({ bot, sdk }) => {
         for (const [t, p] of o.sendsAt) sends.set(Math.max(t, s.tick), p);
         avail.set(`${r[0]},${r[1]}`, o.roll + RESPAWN);
         predicted.push(o.roll);
+        pending.push({ roll: o.roll, rock: r });
         log.push(`plan #${step} ${o.kind} rock ${r.join(',')} from ${pos.join(',')} roll@${o.roll}`);
         R = o.roll;
         planUntil = o.roll;
@@ -122,9 +126,21 @@ await runScript(async ({ bot, sdk }) => {
         if (xp > lastXp) {
             ticks.push(s.tick);
             xps.push(xp - lastXp);
-            log.push(`  xp +${xp - lastXp} seen@${s.tick} (roll ${s.tick - 1}, predicted ${predicted[ticks.length - 1]})`);
-            lastXp = xp;
+            log.push(`  xp +${xp - lastXp} seen@${s.tick} (roll ${s.tick - 1})`);
         }
+        for (let i = pending.length - 1; i >= 0; i--) {
+            const pr = pending[i]!;
+            if (pr.roll + 1 !== s.tick) continue;
+            pending.splice(i, 1);
+            if (xp > lastXp) onTime++;
+            else {
+                // Failed roll (or a model miss): the rock did not deplete, so it is clickable now.
+                failed++;
+                avail.set(`${pr.rock[0]},${pr.rock[1]}`, -Infinity);
+                log.push(`  no xp for roll@${pr.roll} on ${pr.rock.join(',')}`);
+            }
+        }
+        lastXp = xp;
         flush(s);
         // Plan the next rock on the roll tick itself: our position is current (PLAYER_INFO
         // carries this tick's movement) and the next click must go out on this label.
@@ -135,11 +151,8 @@ await runScript(async ({ bot, sdk }) => {
         }
         if (s.tick > planUntil + 40) throw new Error(`stalled; log:\n${log.slice(-12).join('\n')}`);
     }
-    const off = ticks.map((t, i) => t - 1 - predicted[i]!);
-    const offHist: Record<number, number> = {};
-    for (const o of off) offHist[o] = (offHist[o] ?? 0) + 1;
     console.log(log.slice(0, Number(arg('loghead', '40'))).join('\n'));
-    console.log(`\ntransitions: ${JSON.stringify(kinds)}  observed-minus-predicted roll tick: ${JSON.stringify(offHist)}`);
+    console.log(`\ntransitions: ${JSON.stringify(kinds)}  rolls with xp on the predicted tick: ${onTime}, rolls without xp: ${failed}, xp events: ${ticks.length}`);
     summarize(`rotation of ${uniq.length} rocks, trick=${TRICK}`, ticks.slice(10), xps.slice(10));
     console.log(`run energy now: ${s.player?.runEnergy}`);
 }, { timeout: 30 * 60_000 });
