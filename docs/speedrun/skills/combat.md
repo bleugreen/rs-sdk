@@ -17,6 +17,15 @@ host occasionally costs a tick on a re-attack or retarget. The quiet reference h
 rs/26's bbs correction factor had not been published when this was written (01:15), so no
 factor is applied.
 
+**Client.** Every number here was taken on the headless lite client against a local lab engine,
+where a reaction lands on the next tick. The scored run drives the browser webclient against the
+demo, where each reaction to observed state costs 1-2 more ticks through the SDK relay from home
+and about 0.15 from Ashburn (rs/2; `docs/speedrun/LAB.md` on main, "Which client a number was
+taken on" and the host-latency table under "Running several labs on one machine"). The melee
+loop's reactions: one retarget per kill (about one per 6 swings at the ogres), one re-attack after
+each eat or drink, one dismissal per level-up. The swing repeats on the server's 4-tick clock
+without a click. Totals are not re-derived for the webclient.
+
 Per-skill documents: [attack.md](attack.md), [strength.md](strength.md),
 [defence.md](defence.md), [hitpoints.md](hitpoints.md).
 
@@ -42,12 +51,12 @@ plan assumed. The gap has three causes, all read from source and confirmed by th
   ticks per kill on top of the 4-tick swing (measured mean gap from the killing
   hitsplat to the next hitsplat: 4.7-6.7).
 
-**On the route: rs/3's Package B** (`docs/speedrun/quests/README.md` and
-`pre_mm_fights.md` on cairn://p/rs/3/1/coordinator; decided 01:08, README being finalised by
-cairn://p/rs/80). Waterfall is off. Dragon Slayer is on after Monkey Madness option 1, with the
-quest points it needs from Goblin Diplomacy, Romeo & Juliet and Cook's Assistant (the filler) plus
-Druidic Ritual (counted separately, as Herblore's mandatory unlock; it displaced Witch's House
-at 01:20). Merlin's Crystal and Holy Grail are off. The pre-MM fights (Khazard warlord, black demon, Fight Arena)
+**On the route: rs/3's Package B** ([`docs/speedrun/quests/README.md`](../quests/README.md)
+sections 4 and 6, the canonical quest order, and [`pre_mm_fights.md`](../quests/pre_mm_fights.md)).
+Waterfall is off. Dragon Slayer is on after Monkey Madness option 1, behind 11 QP of filler
+(Goblin Diplomacy, Romeo & Juliet, Cook's Assistant) plus Druidic Ritual's 4, Herblore's
+mandatory unlock, which displaced Witch's House (README step 12). Merlin's Crystal and Holy
+Grail are off. The pre-MM fights (Khazard warlord, black demon, Fight Arena)
 are **cast, not meleed**, so they give Magic and Hitpoints but no Strength or Defence
 (`pre_mm_fights.md` section 1). The account reaches the cannon session and MM at Attack 99,
 Strength 1, Defence 1, about 42 HP.
@@ -56,13 +65,13 @@ Strength 1, Defence 1, about 42 HP.
 |---|---|---|---|---|
 | Attack | TGV 11,450 + GT 18,400 + Fight Arena 12,175 = **42,025** before the cannon session (already 99), + MM 20,000 = **62,025** | 0 | **0** | read |
 | Strength | MM 35,000 + Dragon Slayer 18,650 = **53,650** | 0 | **0** | read |
-| Defence | MM 20,000 + Dragon Slayer 18,650 = **38,650** (level 98) | **1,288** | **230**, inside the cannon finish (cannon + defensive melee at 5.60 Defence per tick, `ranged.md` plan (e)); 140 on ogres alone at 9.18 (inferred), but that forgoes the cannon's 11 Ranged per tick | inferred from measured rates |
-| Hitpoints | start 39.2 + the pre-MM fights' ~722 (warlord 226 m, demon 209 m, Fight Arena ~287 i, `pre_mm_fights.md`) + MM 35,000 = **~35,761** (level 97) | **4,177** | **0**: the cannon finish's own by-product, 5,089 HP (rs/31, `ranged.md` Package B row), covers it | read + measured; by-product inferred from measured rates. rs/3's README quotes a 4,938 gap because it counts MM alone. With Witch's House gone from the filler, no quest adds Hitpoints |
-| Ranged | none from quests; ~54 after MM's Jungle Demon fight (1,790 base, `ranged.md` section 3) | 38,148 | **113** before MM (Ranged 1 -> 50) + **2,051** after (cannon + defensive melee 230, then cannon + rapid knives 1,821) | inferred from measured rates (`ranged-model.ts`, rs/31) |
-| **Combat after the quests** | | | **2,051** after MM (+113 before it) | rs/3's own phase model gives 2,023; the 28-tick difference is the unmeasured Ranged 67-70 stretch, so 2,023-2,051 is the honest range |
+| Defence | MM 20,000 + Dragon Slayer 18,650 = **38,650** (level 98) | **1,288** | **168** with rs/91's kit, inside the cannon finish (cannon + defensive melee at 7.65 Defence per tick, measured, `ranged.md` section 1); **230** without the kit (5.60, rs/31's plan (e)); 140 on ogres alone at 9.18 (inferred), but that forgoes the cannon's Ranged | inferred from measured rates |
+| Hitpoints | start 39.2 + the pre-MM fights' ~722 (warlord 226 m, demon 209 m, Fight Arena ~287 i, `pre_mm_fights.md`) + MM 35,000 = **~35,761** (level 97) | **~4,220** (README section 6, which leaves out the starting 39.2; 4,177 with it) | **0**: the cannon finish's own by-product covers it, ~5,440 HP with the kit (rs/91) or 5,089 without (rs/31) | read + measured; by-product inferred from measured rates. README step 14 quotes "at most 4,938", MM alone. With Witch's House gone from the filler, no quest adds Hitpoints |
+| Ranged | none from quests; ~54 after MM's Jungle Demon fight (1,790 base, `ranged.md` section 3) | 38,148 | **113** before MM (Ranged 1 -> 50) + **1,857** after with rs/91's kit (cannon + defensive melee 168, then the cannon with knives from 70, 1,688) = **1,970**. Without the kit 2,051 (rs/31's rates) to 2,211 (rs/91's Prayer-43 control) after MM | measured rates, inferred totals (`cannon-kit-model.ts`, rs/91; `ranged-model.ts`, rs/31) |
+| **Combat after the quests** | | | **1,857** after MM with the kit (+113 before it); 2,051-2,211 without | The kit is measured against its own control (2,211), a ~354-tick gain like for like. README step 14 still quotes the no-kit 2,023-2,051 (rs/3's phase model gives 2,023 on rs/31's rates) |
 
-So under Package B **no melee block remains at all**. The only melee is the 230 ticks of
-defensive style that ride alongside the cannon at the Wilderness spiders, and the Defence gap
+So under Package B **no melee block remains at all**. The only melee is the 168 ticks (230
+without the kit) of defensive style that ride alongside the cannon at the Wilderness spiders, and the Defence gap
 it closes is small enough that the cannon's Ranged, not Defence, sets the finish.
 
 **Alternatives, not on the route** (kept for comparison; inferred, `combat-model.ts`). Package
@@ -279,7 +288,7 @@ The main table is in the Summary. Variants (inferred, `combat-model.ts`):
 
 | Variant | Melee left | Ticks | HP left after it |
 |---|---|---|---|
-| **Package B (on route): MM option 1 + Dragon Slayer, Waterfall off** | Defence 1,288 | 140 on ogres alone; on the route it is the 230 cannon-alongside ticks instead (Summary) | 4,177 before the finish; covered by its 5,089 HP by-product |
+| **Package B (on route): MM option 1 + Dragon Slayer, Waterfall off** | Defence 1,288 | 140 on ogres alone; on the route it is the 168 kit ticks (230 without) alongside the cannon instead (Summary) | ~4,220 before the finish (README section 6); covered by its by-product, ~5,440 with the kit, 5,089 without |
 | MM option 1, Waterfall dropped | Strength 4,938 + Defence 19,938 | 522 + 2,121 = 2,643 | 0 |
 | MM option 2 (Attack/Defence 35,000, Strength/HP 20,000) + Waterfall | Strength 6,188 + Defence 4,938 | 656 + 525 = 1,181 | 16,229 (about 13,300 of it covered if Ranged is trained by combat) |
 | MM option 2, Waterfall dropped | Strength 19,938 + Defence 4,938 | 2,171 + 525 = 2,696 | 11,646 |
@@ -309,7 +318,7 @@ Per block:
 
 | Block | Ticks | Prayer potions | Super attack | Super strength | Sharks | Inventories | Resupply trades |
 |---|---|---|---|---|---|---|---|
-| Package B (on route): Defence 98 -> 99 | 230, alongside the cannon | in `ranged.md` section 7 (the cannon finish's list) | | | | | |
+| Package B (on route): Defence 98 -> 99 | 168 with rs/91's kit (230 without), alongside the cannon | in `ranged.md` section 7 (the cannon finish's list) | | | | | |
 | Package A: Defence 89 -> 99 (HP covered) | 2,121 | 12 | 2 | 2 | 4 | 1 (20 slots) | 0 |
 | No MM: Strength 83 -> 99 + Defence 1 -> 99 | 7,149 | 42 | 4 | 5 | 12 | 3 | 2 |
 | No MM: remaining HP on melee alone | 5,683 | 34 | 3 | 3 | 10 | 2-3 | 2 |
@@ -326,7 +335,10 @@ So resupply is under 1% of any block. No banking: ogre drops are ignored.
 combat training can be absorbed into self-only time.** Combat is itself the self-only activity
 at a fixed site (the ogres, the Wilderness spiders), and every eat or drink already costs a
 re-attack (section 2), so helper-fed inventory actions would compete with the attack loop.
-Whether delay-free helper actions could ride the cannon + knives phase is unmeasured.
+Column 5 of each combat summary row is therefore n/a. On the route the packet budget closes
+the question for the melee phase: rs/91's three-prayer flick with a re-attack sent exactly 5 user
+events on 100 of its 400 ticks, the cap (measured). Whether delay-free helper actions could ride
+the cannon + knives phase, which peaks at 3 per tick, is unmeasured (`ranged.md` section 5).
 
 ## 7. Quest xp (read)
 
@@ -359,6 +371,8 @@ Whether delay-free helper actions could ride the cannon + knives phase is unmeas
 - **Single-combat:** an NPC that attacked the player in the last 8 ticks blocks
   attacking another one (`player_combat.rs2:114-121`). Kills reset this
   (`npc_death.rs2` clears `%lastcombat`), and ogres don't aggro.
+- **At the cannon with rs/91's kit**: top up the cannon only from beside it, and send every
+  sip in the flick tick after the prayer toggles (`ranged.md` section 6; measured by rs/91).
 - **Quest gates on gear:** the rune platebody needs Dragon Slayer, the climbing
   boots Death Plateau, the Warrior helm The Fremennik Trials. The level checks use
   base levels (`levelrequire.rs2`).
@@ -373,6 +387,17 @@ Whether delay-free helper actions could ride the cannon + knives phase is unmeas
   may be optimistic. The Jungle Demon itself is fought under Protect from Magic, where Defence
   does not matter. Open on rs/3's side (`pre_mm_fights.md` open questions; cairn://p/rs/80
   item (a)); not measured here. The likely mitigation is food and an antipoison in MM's trade.
+- **rs/59's levers, now measured by rs/91** (`docs/speedrun/research/helper-fed-and-combat.md`:
+  the research on agent/rs-59-coordinator-0, rs/91's lab in its section 3 on
+  cairn://p/rs/91/1/builder). (a) Prayer drain is zero if every prayer goes off and on again
+  at least every 4 ticks (read, `prayer.rs2:30-44, 159-175`; rs/77 held 90 points over 150
+  ticks, and every flicked rs/91 run ended on 43 points). This revision has no ranged prayers,
+  so in the knives phase flicking saves only Protect from Melee's budget; in the melee phase it
+  also keeps Ultimate Strength and Incredible Reflexes up for free. (b) Every potion sip pauses
+  the cannon (`p_delay(1)`, read) and drops prayer buttons for two ticks (measured). (c) Super
+  antipoison replaces the sharks at the spiders (0 damage in 9 of 9 runs, measured). Together
+  with the ranging potion and supers they make the 1,857 finish. Still open: the Ranged-99 kit
+  rate is one clean run (`ranged.md` section 8).
 
 - **Production latency.** The cadence assumes the re-attack lands within 2 ticks of
   a drink, and the retarget within 1-2 ticks of a kill. A short run on
@@ -394,10 +419,11 @@ against the best single-combat melee"), measured at 300 ms there or inferred by
 - **Cannon + defensive melee at the Wilderness poison spiders** (multi-combat,
   rune scimitar wielded): 11.03 Ranged + 5.60 Defence + 1.85 HP base per tick
   (cited, ranged.md section 1, measured 300 ms).
-- **On the route (Package B), Ranged/Defence/HP 99 take 2,051 ticks after MM** by
-  rs/31's plan (e): cannon + defensive melee at the spiders for 230 ticks (Defence 1,288
-  closed, Ranged to 67), then cannon + rapid rune knives for 1,821 (cited, inferred from
-  measured rates; rs/3's phase model gives 2,023).
+- **On the route (Package B), Ranged/Defence/HP 99 take 1,857 ticks after MM with rs/91's
+  kit**: plan (e) with supers, glory, three prayers flicked and super antipoison, cannon +
+  defensive melee for 168 ticks (7.65 Defence + 13.66 Ranged per tick, measured), then the
+  cannon with knives from Ranged 70 for 1,688 (cited, measured rates, inferred total). Without
+  the kit, plan (e) is 230 + 1,821 = 2,051 on rs/31's rates and 2,211 on rs/91's control.
 - **Package A (Waterfall on, Dragon Slayer off) took about 3,520 ticks** after MM by
   rs/31's plan (f): cannon + defensive melee at the spiders until Ranged 99, then
   melee alone at the ogres. Ogres for Defence and then cannon + knives for Ranged,
@@ -407,7 +433,8 @@ against the best single-combat melee"), measured at 300 ms there or inferred by
 - **The cannon is worth about 2,630 ticks** net of the Dwarf Cannon quest, to
   Ranged/Defence/HP 99 on the current route (cited, inferred).
 - **Ranged 1 -> 50 before MM takes 113 ticks** of cannon fire (cited, inferred from
-  the measured 11.52 per tick).
+  the measured 11.52 per tick); about 96 with super attack, glory and Incredible Reflexes
+  (inferred from rs/91's cannon-only 13.64, unmeasured at the pre-MM levels).
 - **Longrange is a poor Defence top-up:** longrange rune knives give 2.63 Defence
   per tick (cited, measured 300 ms), against 9.25-9.40 for defensive melee at the
   ogres.
