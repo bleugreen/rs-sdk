@@ -214,7 +214,7 @@ await runScript(async ({ bot, sdk }) => {
     let lastSeenTick = -1;
     let dialogsSeen = 0;
     let dialogOpenSince: number | null = null;
-    const seenMsgs = new Set<string>((startState.gameMessages ?? []).map(m => `${(m as any).tick ?? ''}|${m.text}`));
+    const seenMsgs = new Set<string>((startState.gameMessages ?? []).map(m => `${m.tick ?? ''}|${m.text}`));
     let lastHp = -2;
 
     const done = new Promise<void>(resolve => {
@@ -232,7 +232,7 @@ await runScript(async ({ bot, sdk }) => {
             const msgs = s.gameMessages ?? [];
             for (const m of msgs.slice(Math.max(0, msgs.length - 5))) {
                 const key = `${m.tick ?? ''}|${m.text}`;
-                if (!seenMsgs.has(key)) { seenMsgs.add(key); if (seenMsgs.size > 1) log(`T${t} MSG ${m.text}`); }
+                if (!seenMsgs.has(key)) { seenMsgs.add(key); log(`T${t} MSG ${m.text}`); }
             }
             const hp = s.skills.find(k => k.name.toLowerCase() === 'hitpoints')?.level ?? -1;
             if (hp !== lastHp) { if (lastHp !== -2) log(`T${t} HP ${lastHp} -> ${hp} at ${s.player?.worldX},${s.player?.worldZ}`); lastHp = hp; }
