@@ -30,6 +30,9 @@ await runScript(async ({ bot, sdk }) => {
     const all: unknown[] = [];
     process.on('exit', () => L.report(`Seer house (partial=${all.length < runs})`, { runs: all }));
     for (let run = 0; run < runs; run++) {
+        // Opened cupboards, chests and trapdoors revert after 300-500 ticks;
+        // let them, so every run starts from the same state.
+        if (run > 0) await sdk.waitForTicks(510);
         await L.clearInv(sdk, bot);
         await L.cheat(sdk, 'setvar viking 1');
         const riddle = run % 6;
