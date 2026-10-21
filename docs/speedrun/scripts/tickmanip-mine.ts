@@ -143,7 +143,7 @@ await runScript(async ({ bot, sdk }) => {
             lastXp = xp;
         }
         if (s.dialog.isOpen) sdk.sendClickDialog(0).catch(() => {});
-        if (xpLabels.length && s.tick - xpLabels[xpLabels.length - 1]! > 30) throw new Error(`stalled\n${log.slice(-15).join('\n')}`);
+        if (xpLabels.length && s.tick - xpLabels[xpLabels.length - 1]! > 30) throw new Error(`stalled at L${s.tick} pos ${s.player?.worldX},${s.player?.worldZ} anim ${s.player?.animId}; messages: ${s.gameMessages.slice(-4).map(m => m.text).join(' | ')}\n${log.slice(-70).join('\n')}`);
     }
 
     const steady = xpLabels.slice(5); // skip the first few: they include the bootstrap
