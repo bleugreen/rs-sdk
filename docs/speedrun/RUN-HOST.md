@@ -400,10 +400,13 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o 
 Then run the secrets check (**requires rs/138 on RUN_COMMIT**). It feeds the password to grep
 through a file descriptor, so it is never on a command line either. The three counts are the
 processes showing the password, the processes showing a token, and the tab URLs showing either.
-Expect `0 0 0`:
+The literal is written `"token""="` so that the check's own shell, whose command line holds it,
+doesn't count itself. Written as `token=`, the middle count read 2 with no token anywhere: the
+remote shell and its command-substitution subshell (m, rs-ashburn-rehearsal, 20:24 UTC). Expect
+`0 0 0`:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'ENV=$HOME/rs-sdk/bots/GATE_ACCOUNT/bot.env; echo "$(ps -efww | grep -c -F -f <(sed -n "s/^PASSWORD=//p" "$ENV")) $(ps -efww | grep -c "[t]oken=") $(curl -s http://127.0.0.1:9222/json/list | grep -c -F -e token= -f <(sed -n "s/^PASSWORD=//p" "$ENV"))"'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'ENV=$HOME/rs-sdk/bots/GATE_ACCOUNT/bot.env; echo "$(ps -efww | grep -c -F -f <(sed -n "s/^PASSWORD=//p" "$ENV")) $(ps -efww | grep -c "[t]oken=") $(curl -s http://127.0.0.1:9222/json/list | grep -c -F -e "token""=" -f <(sed -n "s/^PASSWORD=//p" "$ENV"))"'
 ```
 
 ## 4. Helpers on the run machine (rs/117)
@@ -518,13 +521,14 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o 
   tab-login commands with the gate account's env file), let it reach the game, then sample for five minutes with
   `docs/speedrun/scripts/runhost-loops.ts`. It attaches to the tab through the loopback gateway, runs
   the in-page probe (the page publishes `loops` only while a program runs), and every 10 s prints the
-  page's loop rate beside each process's CPU and ffmpeg's frame counters. Closing the tab afterwards
-  drops the gate account's client; a throwaway account left in the world until the server's
-  no-connection timeout costs nothing. Bounds: the tab `T=15m` (step 3's command), the sampler
-  10 min. If the ssh line dies before the closing `kill-session`, the tab's own bound closes it.
+  page's loop rate beside each process's CPU and ffmpeg's frame counters. Afterwards
+  `speedrun/tools/tab-logout.ts` logs the tab out cleanly (`logoutClean`), and only then is Chrome
+  closed. No logged-in client is ever dropped, not even a throwaway's (rs/101). Bounds: the tab
+  `T=15m` (step 3's command), the sampler 10 min, the logout 2 min. If the ssh line dies before
+  the closing `kill-session`, the tab's own bound closes it.
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'cd ~/rs-sdk && timeout --kill-after=30s 10m ~/.bun/bin/bun docs/speedrun/scripts/runhost-loops.ts GATE_ACCOUNT --label=gate --minutes=5 --display=:10 --out=$HOME/rs-run/gate-loops.jsonl 2>&1 | grep -v -E "^\[(Runner|BotSDK)\]|Pathfinding|LOGOUT DEBUG"; tmux -L run kill-session -t chrome'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'cd ~/rs-sdk && timeout --kill-after=30s 10m ~/.bun/bin/bun docs/speedrun/scripts/runhost-loops.ts GATE_ACCOUNT --label=gate --minutes=5 --display=:10 --out=$HOME/rs-run/gate-loops.jsonl 2>&1 | grep -v -E "^\[(Runner|BotSDK)\]|Pathfinding|LOGOUT DEBUG"; timeout --kill-after=30s 2m ~/.bun/bin/bun speedrun/tools/tab-logout.ts GATE_ACCOUNT && tmux -L run kill-session -t chrome'
 ```
 
 Read (d) from the summary line's `loops p10` (lowest / median / highest 10-second sample). **Pass**:

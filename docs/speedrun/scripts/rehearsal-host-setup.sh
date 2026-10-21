@@ -91,7 +91,9 @@ fi
 export PATH=$HOME/.bun/bin:$PATH
 cd "$HOME/rs-sdk"
 git fetch -q origin
-git checkout -q --detach "$COMMIT"
+# -f: the host clone is never edited by hand, and a stopgap copy of a not-yet-merged file
+# (untracked) must not block moving to a commit that tracks it.
+git checkout -q -f --detach "$COMMIT"
 bun install >/dev/null
 (cd server/webclient && bun install >/dev/null && bun run build >/dev/null)
 (cd server/gateway && bun install >/dev/null)
