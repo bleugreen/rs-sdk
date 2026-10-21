@@ -194,6 +194,8 @@ describe('HostGate', () => {
         expect(lines[1]).toMatch(/^T\d+ gate \(slip\): 0\/4 on time, latency 2:4, \d+ ticks -> SWITCH manipulate -> plain$/);
         expect(lines[2]).toMatch(/SWITCH plain -> manipulate$/);
         expect(gate.switches()).toMatch(/^T\d+ manipulate->plain T\d+ plain->manipulate$/);
+        const [, off, on] = gate.history;
+        expect(gate.plainTicks(on!.tick + 1000)).toBe(on!.tick - off!.tick);
     });
 
     test('a host that starts bad is off from the first probe, and that is not a switch', async () => {

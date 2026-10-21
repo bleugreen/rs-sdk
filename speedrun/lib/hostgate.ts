@@ -250,6 +250,20 @@ export class HostGate {
         return this.on;
     }
 
+    /** Ticks spent with the gate off, from the first probe to `now`. */
+    plainTicks(now: number): number {
+        let total = 0;
+        let offSince: number | null = null;
+        for (const h of this.history) {
+            if (!h.on && offSince === null) offSince = h.tick;
+            if (h.on && offSince !== null) {
+                total += h.tick - offSince;
+                offSince = null;
+            }
+        }
+        return offSince === null ? total : total + Math.max(0, now - offSince);
+    }
+
     /** `T120 plain->manipulate T880 manipulate->plain` for summaries. */
     switches(): string {
         return this.history.filter(h => h.switched).map(h => `T${h.tick} ${h.on ? 'plain->manipulate' : 'manipulate->plain'}`).join(' ');
