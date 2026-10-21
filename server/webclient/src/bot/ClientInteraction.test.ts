@@ -1106,28 +1106,45 @@ describe('loc changes on bridged tiles', () => {
         return n;
     }
 
+    /**
+     * Wall off everything around the door tile and the tile west of it, so the
+     * only way from one to the other is through the doorway.
+     */
+    function enclose(map: { blockGround(x: number, z: number): void }): void {
+        for (let x = DOOR_X - 2; x <= DOOR_X + 1; x++) {
+            for (let z = DOOR_Z - 1; z <= DOOR_Z + 1; z++) {
+                if (z !== DOOR_Z || (x !== DOOR_X && x !== DOOR_X - 1)) {
+                    map.blockGround(x, z);
+                }
+            }
+        }
+    }
+
     test('a bridged loc is in the player-level scene and routes as closed', () => {
         const { client, collision } = bridgedScene();
 
         expect(client.locSceneInfo(DOOR_X, DOOR_Z, CLOSED_DOOR)).toEqual({ shape: LocShape.WALL_STRAIGHT, angle: LocAngle.WEST });
         expect(differingTiles(collision[0], expectedCollision([[DOOR_X, DOOR_Z, LocAngle.WEST]]))).toBe(0);
         expect(differingTiles(collision[1], expectedCollision([]))).toBe(0);
+
+        enclose(collision[0]);
+        expect(new ReachProbe(client).canReachTile(DOOR_X - 1, DOOR_Z)).toBe(false);
     });
 
     test('a door the server opens on a bridged floor opens for routing', () => {
         const { client, collision } = bridgedScene();
-        const probe = new ReachProbe(client);
-        client.localPlayer = { routeX: [DOOR_X], routeZ: [DOOR_Z] };
-        // The tile behind the closed leaf is reachable only around the door
-        // before it opens, so test the wall edge directly.
-        expect(collision[0].flags[CollisionMap.index(DOOR_X, DOOR_Z)] & CollisionFlag.WALL_WEST).not.toBe(0);
+        expect(collision[0].flags[CollisionMap.index(DOOR_X, DOOR_Z)] & CollisionFlag.W_W).not.toBe(0);
 
         openDoor(client);
 
+        // The closed leaf is gone from both the scene and the router; the open
+        // leaf is in both.
         expect(client.locSceneInfo(DOOR_X, DOOR_Z, CLOSED_DOOR)).toBeNull();
         expect(client.locSceneInfo(DOOR_X - 1, DOOR_Z, OPEN_DOOR)).toEqual({ shape: LocShape.WALL_STRAIGHT, angle: LocAngle.NORTH });
         expect(differingTiles(collision[0], expectedCollision([[DOOR_X - 1, DOOR_Z, LocAngle.NORTH]]))).toBe(0);
-        expect(probe.canReachTile(DOOR_X - 1, DOOR_Z)).toBe(true);
+
+        enclose(collision[0]);
+        expect(new ReachProbe(client).canReachTile(DOOR_X - 1, DOOR_Z)).toBe(true);
     });
 });
 
