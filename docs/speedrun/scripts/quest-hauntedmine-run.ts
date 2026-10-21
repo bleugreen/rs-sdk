@@ -234,6 +234,35 @@ const CART_ZONES: [number, number, number, number][] = [
 ].map(([a, b, c, d]) => [2752 + a!, 4416 + b!, 2752 + c!, 4416 + d!]);
 const inCartZone = (x: number, z: number) => CART_ZONES.some(([x1, z1, x2, z2]) => x >= x1 && x <= x2 && z >= z1 && z <= z2);
 
+/**
+ * Tiles a cart can never cut off: reachable from the hub (2788,4454) with
+ * every cart-zone tile, every tile a cart has been seen on, and the cranes
+ * blocked. Standing outside this region is how a bot gets shut in a pocket
+ * by a parked cart while the boss keeps hitting it.
+ */
+function safeRegion(sdk: Sdk, cartSeen: Set<string>): Set<string> {
+    initPathfinding();
+    const blocked = new Set<string>(cartSeen);
+    for (const n of sdk.getNearbyNpcs()) {
+        if (/loading crane/i.test(n.name)) for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) blocked.add(`${n.x + i},${n.z + j}`);
+        if (/mine cart/i.test(n.name)) blocked.add(`${n.x},${n.z}`);
+    }
+    for (const [x1, z1, x2, z2] of CART_ZONES) for (let x = x1; x <= x2; x++) for (let z = z1; z <= z2; z++) blocked.add(`${x},${z}`);
+    const seen = new Set<string>(['2788,4454']);
+    const q: [number, number][] = [[2788, 4454]];
+    while (q.length) {
+        const [x, z] = q.shift()!;
+        for (const [dx, dz] of [[0, 1], [1, 0], [0, -1], [-1, 0]] as const) {
+            const nx = x + dx, nz = z + dz, k = `${nx},${nz}`;
+            if (seen.has(k) || blocked.has(k) || Math.abs(nx - 2788) > 16 || Math.abs(nz - 4454) > 18) continue;
+            if (!rsmod.canTravel(0, x, z, dx, dz, 1, 0, CollisionType.NORMAL)) continue;
+            seen.add(k);
+            q.push([nx, nz]);
+        }
+    }
+    return seen;
+}
+
 /** A tile to cast from: in range, line of sight, out of every cart zone. */
 function castTile(bx: number, bz: number) {
     return (x: number, z: number) =>
@@ -531,6 +560,7 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         let lastXp = sdk.getSkill('magic')!.experience;
         let castsNoXp = 0;
         const badTiles = new Set<string>();
+        const cartSeen = new Set<string>();
         let approachTiles = 0;
         const atk0 = sdk.getSkill('attack')!.experience;
         let lastSwing = t0;
@@ -605,7 +635,11 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
                 if (xpNow > lastXp) { lastXp = xpNow; castsNoXp = 0; }
                 const bossKey = `${boss.x},${boss.z}`;
                 if (castsNoXp >= 2) { badTiles.add(`${bossKey}>${p.x},${p.z}`); castsNoXp = 0; }
-                const ok = (x: number, z: number) => castTile(boss.x, boss.z)(x, z) && !badTiles.has(`${bossKey}>${x},${z}`);
+                for (const n of sdk.getNearbyNpcs()) if (/mine cart/i.test(n.name)) cartSeen.add(`${n.x},${n.z}`);
+                const safe = safeRegion(sdk, cartSeen);
+                const okAny = (x: number, z: number) => castTile(boss.x, boss.z)(x, z) && !badTiles.has(`${bossKey}>${x},${z}`);
+                const okSafe = (x: number, z: number) => safe.has(`${x},${z}`) && okAny(x, z);
+                const ok = [...safe].some(k => { const [x, z] = k.split(',').map(Number); return okAny(x!, z!); }) ? okSafe : okAny;
                 if (!ok(p.x, p.z)) {
                     const path = npcAwarePath(sdk, ok, boss.index);
                     approaches++;
