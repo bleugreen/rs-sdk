@@ -26,6 +26,9 @@ const nums = args.filter(a => /^\d+$/.test(a)).map(Number);
 const [att, str, def, hp] = [0, 1, 2, 3].map(i => nums[i] ?? 70);
 const runs = Number(args.find(a => a.startsWith('runs='))?.slice(5) ?? 1);
 const style = Number(args.find(a => a.startsWith('style='))?.slice(6) ?? 1);
+// food=N gives N sharks (food is not on the trial's forbidden list) and eats one
+// below half hitpoints during forms 1-3; never during form 4, which must kill you.
+const food = Number(args.find(a => a.startsWith('food='))?.slice(5) ?? 0);
 
 // %viking_bits: Thorvald's 2-bit field starts at bit 16 (quest_viking.constant:20).
 const THORVALD_STARTED = 1 << 16;
@@ -44,6 +47,7 @@ await runScript(async ({ bot, sdk }) => {
         await L.setStats(sdk, { attack: att, strength: str, defence: def, hitpoints: hp, prayer: 1 });
         await L.cheat(sdk, 'setvar viking 1');
         await L.cheat(sdk, `setvar viking_bits ${THORVALD_STARTED}`);
+        if (food > 0) await L.cheat(sdk, `give shark ${food}`, 2);
         await L.tele(sdk, 2667, 3693, 0);
         await sdk.waitForTicks(3);
         const out: Record<string, unknown> = { run };
@@ -61,6 +65,7 @@ await runScript(async ({ bot, sdk }) => {
         let formStart = L.tick(sdk);
         let pages = 0;
         let levelUps = 0;
+        let eaten = 0;
         let minHp = sdk.getState()!.player!.hp;
         let hpAtForm4: number | null = null;
         await bot.attack(sdk.findNearbyNpc(/Koschei/)!);
@@ -93,6 +98,14 @@ await runScript(async ({ bot, sdk }) => {
                 if (k) await bot.attack(k);
                 continue;
             }
+            if (p.isDead) break;
+            if (forms.length < 3 && p.hp < p.maxHp * 0.5 && sdk.countInventoryItems(/Shark/) > 0) {
+                await bot.eatFood(/Shark/);
+                eaten++;
+                const k2 = sdk.findNearbyNpc(/Koschei/);
+                if (k2) await bot.attack(k2);
+                continue;
+            }
             const k = sdk.findNearbyNpc(/Koschei/);
             if (k && !p.combat.inCombat && L.tick(sdk) % 5 === 0) await bot.attack(k);
             await sdk.waitForStateUpdate();
@@ -102,6 +115,8 @@ await runScript(async ({ bot, sdk }) => {
             forms,
             pages,
             levelUps,
+            eaten,
+            died: sdk.getState()!.player!.isDead || L.pos(sdk).z < 3400,
             minHp,
             hpAtForm4,
             done,
