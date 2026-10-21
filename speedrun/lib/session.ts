@@ -18,6 +18,7 @@ import type { Subprocess } from 'bun';
 import type { BotSDK } from '../../sdk/index';
 import type { BotActions } from '../../sdk/actions';
 import type { BotStatus, BotWorldState } from '../../sdk/types';
+import { classifyPage } from './dialogue';
 import { sleep, tickMs, waitUntil } from './wait';
 
 export const ROOT = join(import.meta.dir, '..', '..');
@@ -206,11 +207,32 @@ export interface LogoutResult {
 const CANT_LOGOUT = /can't log out/i;
 
 /**
+ * The packets of one logout attempt. A paused continue page (a level-up, an
+ * NPC line) holds protected access, and the engine ignores the logout button
+ * while it does, without a message. So a continue page is dismissed in the
+ * same burst: both packets land in the same tick, and the click runs before
+ * the engine queue can open the next queued level-up page. A choice page is
+ * left alone (dismissing it would answer it).
+ */
+export function logoutBurst(s: BotWorldState | null | undefined): Array<'continue' | 'logout'> {
+    return classifyPage(s?.dialog) === 'continue' ? ['continue', 'logout'] : ['logout'];
+}
+
+function sendLogoutBurst(sdk: BotSDK): void {
+    for (const p of logoutBurst(sdk.getState())) {
+        if (p === 'continue') void sdk.sendClickDialog(0, { blind: true });
+        else void sdk.sendClickComponent(LOGOUT_BUTTON);
+    }
+}
+
+/**
  * Log out with the logout button, verified. Waits out the post-combat window
  * first; if the server still refuses, waits the remaining ticks and retries
- * once. Verification: no in-game tick after the click, and the lite child
- * exited (session end) or the gateway reports the bot dead / the browser
- * publishes inGame:false.
+ * once. An open continue page is dismissed in the same burst as the click
+ * (logoutBurst), and the burst is repeated while the account stays in the
+ * world with a page showing. Verification: no in-game tick after the click,
+ * and the lite child exited (session end) or the gateway reports the bot dead /
+ * the browser publishes inGame:false.
  */
 export async function logoutClean(session: Session, opts: { timeoutMs?: number } = {}): Promise<LogoutResult> {
     const { sdk } = session;
@@ -228,7 +250,7 @@ export async function logoutClean(session: Session, opts: { timeoutMs?: number }
     session.expectInWorld = false;
     for (let attempt = 0; attempt < 2; attempt++) {
         const clickTick = sdk.getState()?.tick ?? -1;
-        void sdk.sendClickComponent(LOGOUT_BUTTON);
+        sendLogoutBurst(sdk);
         const out = await waitLoggedOutSignal(session, opts.timeoutMs ?? Math.max(5_000, 15 * tickMs()), clickTick);
         if (out === 'refused' && attempt === 0) {
             await waitUntil(sdk, () => false, { maxTicks: COMBAT_LOGOUT_TICKS + 1 });
@@ -248,12 +270,20 @@ export async function logoutClean(session: Session, opts: { timeoutMs?: number }
     throw new Error('unreachable');
 }
 
+/** Ticks to wait for a logout before re-sending the burst when a continue page still shows. */
+const LOGOUT_RETRY_TICKS = 4;
+
 async function waitLoggedOutSignal(session: Session, timeoutMs: number, clickTick: number): Promise<'out' | 'refused' | 'timeout'> {
     const deadline = Date.now() + timeoutMs;
+    let lastBurst = clickTick;
     while (Date.now() < deadline) {
         const s = session.sdk.getState();
         if (s?.gameMessages.some(m => CANT_LOGOUT.test(m.text) && m.tick >= clickTick)) return 'refused';
         if (await isLoggedOut(session)) return 'out';
+        if (s?.inGame && s.tick - lastBurst >= LOGOUT_RETRY_TICKS && logoutBurst(s)[0] === 'continue') {
+            lastBurst = s.tick;
+            sendLogoutBurst(session.sdk);
+        }
         await sleep(Math.min(100, tickMs() / 3));
     }
     return 'timeout';
@@ -309,6 +339,43 @@ export async function login(session: Session, opts: { timeoutMs?: number; attemp
             throw new Error(`${session.name}: login failed after ${attempt} attempt(s) (${outcome}, exit ${session.childExit})`);
         }
         await sleep(backoffMs(attempt));
+    }
+}
+
+export interface RelogResult {
+    logout: LogoutResult;
+    /**
+     * Tick of the new session's first in-world state. The client's tick counter
+     * restarts with the launch and counts the ticks the account has been in the
+     * world, so this is also the in-world ticks the login cost before the state
+     * was visible.
+     */
+    loginTick: number;
+    loginWallMs: number;
+    attempts: number;
+}
+
+/**
+ * Clean logout, `offlineMs` of wall time (no in-world ticks pass while logged
+ * out; a little of it spares the login a retry while the old session's save
+ * flushes), and a fresh login. A relog re-arms the login timers (wine's
+ * fermentation among them) and drops the engine queue (pending level-up pages).
+ */
+export async function relog(session: Session, opts: { offlineMs?: number; loginTimeoutMs?: number } = {}): Promise<RelogResult> {
+    const logout = await logoutClean(session);
+    if (!logout.ok) throw new Error(`${session.name}: logout failed: ${logout.reason}`);
+    if (opts.offlineMs ?? 2_000) await sleep(opts.offlineMs ?? 2_000);
+    const before = Date.now();
+    let first: number | null = null;
+    const unsub = session.sdk.onStateUpdate(st => {
+        // Only states from the relaunched client count; it starts after `before`.
+        if (first === null && session.launchedAt >= before && st.inGame && (st.player?.worldX ?? 0) > 0) first = st.tick;
+    });
+    try {
+        const r = await login(session, { timeoutMs: opts.loginTimeoutMs });
+        return { logout, loginTick: first ?? session.sdk.getState()?.tick ?? 0, loginWallMs: r.wallMs, attempts: r.attempts };
+    } finally {
+        unsub();
     }
 }
 
