@@ -78,7 +78,12 @@ const LEGS: Leg[] = [
                 if (!ring) {
                     if (refills >= 2 || sent >= 60) return false;
                     refills++;
-                    void c.sdk.sendSay('::give sapphire_ring 26'); // stands in for a helper top-up (costed from the hand-off table)
+                    // Stands in for a helper top-up (costed from the hand-off table): the recoil
+                    // rings fill the inventory, so swap them out by staff command. Chat does not stop the run.
+                    void c.sdk.sendSay('::~clearinv inv');
+                    void c.sdk.sendSay('::give cosmicrune 100');
+                    void c.sdk.sendSay('::give waterrune 100');
+                    void c.sdk.sendSay('::give sapphire_ring 26');
                     return true;
                 }
                 if (sent >= 60) return false;
@@ -140,7 +145,8 @@ const LEGS: Leg[] = [
         run: async (c, log) => {
             await log.seg('return pool', () => opLoc(c, { id: 2879 }, near(2542, 4718, 3), 40));
             await log.seg('cellar ladder up', () => opLoc(c, { id: 2872 }, (s) => s.player!.worldZ < 4000, 30));
-            await log.seg('mage bank webs', () => throughWebs(c, [[3094, 3957], [3096, 3957]]));
+            // Only the web east of the ladder (3093,3957) stands between the ladder and the way west.
+            await log.seg('mage bank web', () => throughWebs(c, [[3094, 3957]]));
             await enterCourse(c, log);
         },
     },
@@ -198,6 +204,9 @@ const ids = which === 'all' ? LEGS.map((l) => l.id) : which.split(',');
 await runScript(async ({ bot, sdk }) => {
     const c: Ctx = { sdk, bot };
     await ensureOffIsland(c);
+    // warm-up: one untimed setup so the first counted leg does not start on a just-loaded login
+    await setup(c, { at: [3222, 3218] });
+    await waitTicks(sdk, 5);
     const summary: Record<string, number[]> = {};
     for (const id of ids) {
         const leg = LEGS.find((l) => l.id === id);
