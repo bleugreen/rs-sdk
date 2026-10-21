@@ -70,19 +70,34 @@ await runScript(async ({ bot, sdk }) => {
             const d = await bot.depositItem(/ring of wealth|amulet of glory|ring of|amulet of/i, -1);
             if (!d.success) throw new Error(`deposit: ${d.message}`);
             const w = await bot.withdrawItem(item, -1);
-            if (!w.success) throw new Error(`withdraw: ${w.message}`);
+            // withdraw-all reports "x26 of N requested" as a failure when the bank holds more
+            if (!sdk.getInventory().some((x) => item.test(x.name))) throw new Error(`withdraw: ${w.message}`);
             await bot.closeBank();
         } else {
+            // One decision per server tick from the latest state: open, then deposit+withdraw+close.
             let t = tick(sdk);
-            while (!sdk.isBankOpen()) {
-                await sdk.sendInteractLoc(booth.x, booth.z, booth.id, bankOp.opIndex);
+            const steps: string[] = [];
+            for (let guard = 0; guard < 30; guard++) {
+                const have = sdk.getInventory().some((x) => item.test(x.name));
+                const open = sdk.isBankOpen();
+                if (have && !open) break;
+                if (have && open) {
+                    steps.push(`${tick(sdk) - tb}:close`);
+                    await sdk.sendCloseModal();
+                } else if (!open) {
+                    steps.push(`${tick(sdk) - tb}:booth`);
+                    await sdk.sendInteractLoc(booth.x, booth.z, booth.id, bankOp.opIndex);
+                } else {
+                    const out = sdk.getInventory().find((x) => !item.test(x.name) && x.count === 1 && !/staff/i.test(x.name));
+                    const bankSlot = sdk.getBankItems().find((b) => item.test(b.name));
+                    if (out && bankSlot) {
+                        steps.push(`${tick(sdk) - tb}:dep+wd+close`);
+                        await Promise.all([sdk.sendBankDeposit(out.slot, -1), sdk.sendBankWithdraw(bankSlot.slot, -1), sdk.sendCloseModal()]);
+                    } else steps.push(`${tick(sdk) - tb}:wait(out=${out?.name},bank=${bankSlot?.name})`);
+                }
                 t = await nextTick(sdk, t);
             }
-            const out = sdk.getInventory().find((x) => !item.test(x.name) && x.count === 1 && !/staff/i.test(x.name));
-            const bankSlot = sdk.getBankItems().find((b) => item.test(b.name));
-            if (!out || !bankSlot) throw new Error(`bank state: out=${out?.name} bank=${bankSlot?.name}`);
-            await Promise.all([sdk.sendBankDeposit(out.slot, -1), sdk.sendBankWithdraw(bankSlot.slot, -1), sdk.sendCloseModal()]);
-            await waitUntil(sdk, () => sdk.getInventory().some((x) => item.test(x.name)) && !sdk.isBankOpen(), 10, 'restocked');
+            log(sdk, `   steps ${steps.join(' ')}`);
         }
         log(sdk, `cycle ${c}: bank part took ${tick(sdk) - tb} ticks as seen by the bot`);
         await sleep(1);
