@@ -166,12 +166,18 @@ a navigation, so a relog's first SDK state is at login + 1, not + 19 to + 20; on
 a navigated relog pays the twin's ~19-tick gateway takeover (m, rs/174 on the twin against the demo,
 21:58-22:08Z; RUN-ORDER.md section 4). The client's second-login fix it builds on is already on main
 (#155). **#159**, `knife-mine`'s `stay2` bury (rs/182, merged on main at 15:52 PDT), which today's
-stock row prices (RUN-ORDER.md O35). **rs/207's merge commit** (named when it lands; its rebased
-head is 2c9e4da2, merging at 16:45 PDT): `knife-mine` faults instead of slipping forever when a
-restart lands on a depleted iron rock (RUN-ORDER.md R18).
-Main's commits for #155 and #159 are not yet in this repository's store, so each is checked by its
-merge commit once named, the same way as c2d9eada:
-`git -C ~/rs-sdk merge-base --is-ancestor <commit> "$RUN_COMMIT"`.
+stock row prices (RUN-ORDER.md O35). **rs/207**, on main as **`e5d8a058`** (#170): `knife-mine`
+faults instead of slipping forever when a restart lands on a depleted iron rock (RUN-ORDER.md R18).
+Main's **`6e86a656`** (#163, rs/132's stun-window actions, which S18's stun pack runs on) descends
+from e5d8a058, #159 (`93ae0738`) and #155 (`faae9b13`), so **`RUN_COMMIT` at or after 6e86a656**
+covers all three: `git -C ~/rs-sdk merge-base --is-ancestor 6e86a656 "$RUN_COMMIT"`. rs/174's merge
+commit is checked the same way once named.
+
+**#165** (rs/162's plain + bury in knife-cycle; open, in main's 16:45 PDT merge batch) is not a
+requirement yet. Knife-cycle on main refuses `bury` with the plain technique, so RUN-ORDER.md prices
+a knife-off night without it, its bones at the booth (O31). Once #165 merges, `RUN_COMMIT` at or after
+its merge commit makes the knife-off line with rs/162 the one in force (S07's gate-off bones buried
+in the willow band), checked the same way; RUN-ORDER.md names the commit at the next fold-in.
 
 **Leftover check.** It lists every tmux socket on the host with its sessions, other agents' sockets
 included, plus every `chrome*`, `ffmpeg`, `bun` and `timeout` process with its age, and the host
@@ -308,8 +314,9 @@ rs/147's branch and 3ed0cd49c on the twin), so that `logoutClean` can confirm a 
 ("Credentials"). Check with
 `git -C ~/rs-sdk merge-base --is-ancestor c2d9eada "$RUN_COMMIT"`. c2d9eada descends from
 96fc462a, so this check alone covers both requirements; the `96fc462a` line stays beside it so a
-failure says which one is missing. `RUN_COMMIT` must also include rs/174's merge commit, #159 and
-rs/207's merge commit ("Credentials"); check each the same way once its commit is named.
+failure says which one is missing. `RUN_COMMIT` must also be at or after `6e86a656` (which contains
+#159, rs/207's `e5d8a058` and #155) and rs/174's merge commit, and, for the knife-off line with
+rs/162, #165's ("Credentials"); check each the same way once its commit is named.
 
 Account files: the gate account (step 6) is a throwaway demo account whose name starts with
 `cairn_`, with `~/rs-sdk/bots/<gate>/bot.env` holding `BOT_USERNAME`, `PASSWORD`,
