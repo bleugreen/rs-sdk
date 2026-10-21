@@ -256,11 +256,14 @@ describe('trade completion race: cairn_h30 gives cairn_h71 a talisman and 200 no
         expect(ds[2]).toMatchObject({ settle: true });
     });
 
+    // FakeSdk.push merges into the last state; a closed frame has to clear `trade`.
+    const show = (sdk: FakeSdk, f: BotWorldState) => sdk.push({ ...f, trade: f.trade });
+
     test('give() reports the completed trade as given, without declining', async () => {
         const sdk = new FakeSdk(frame(1, toH71({}), kit));
         const result = give(sdk as unknown as TradeSdk, 'cairn_h71', specs);
         await flush();
-        for (const f of giverFrames({ myOffer: [], theirOffer: [] }).slice(1)) sdk.push(f);
+        for (const f of giverFrames({ myOffer: [], theirOffer: [] }).slice(1)) show(sdk, f);
         const r = await result;
         expect(r.ok).toBe(true);
         expect(r.gave.map(i => [i.id, i.count]).sort()).toEqual([[1437, 200], [1438, 1]]);
@@ -271,9 +274,9 @@ describe('trade completion race: cairn_h30 gives cairn_h71 a talisman and 200 no
         const sdk = new FakeSdk(frame(1, fromH30({ theirOffer: offer, partnerAccepted: true })));
         const result = receiveFrom(sdk as unknown as TradeSdk, 'cairn_h30');
         await flush();
-        sdk.push(frame(2, fromH30({ screen: 'confirm', theirOffer: offer })));
-        sdk.push(frame(3, fromH30({ screen: 'confirm', theirOffer: [offer[0]!] })));
-        sdk.push(frame(4, null, kit));
+        show(sdk, frame(2, fromH30({ screen: 'confirm', theirOffer: offer })));
+        show(sdk, frame(3, fromH30({ screen: 'confirm', theirOffer: [offer[0]!] })));
+        show(sdk, frame(4, null, kit));
         const r = await result;
         expect(r.ok).toBe(true);
         expect(r.reason).toBe('completed as the decline landed: confirm screen offer does not match');
