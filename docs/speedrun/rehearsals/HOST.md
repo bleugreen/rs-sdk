@@ -250,13 +250,15 @@ eight minutes later, so treat the 23 as a bad read of the endpoint (i).
 | 9 | 22:00:00-22:01:26 | cairn_gate | none; **rs/174's stack running** (page server, gateway, Chrome tab, relog probe on cairn_smoke) | (a)-(c), paired, 22:00 | (a) 60/60; (b) 390 ms; (c) 0/min; TCP p50 2.0 ms. **Pass** | 1,627 |
 | 10 | 22:30:00-22:31:26 | cairn_gate | none; twin idle | (a)-(c), paired, 22:30 | (a) 60/60; (b) 380 ms; (c) 0/min; TCP p50 2.0 ms. **Pass** | 1,502 |
 | 11 | 23:00:00-23:01:27 | cairn_gate | none; twin idle | (a)-(c), paired, 23:00 | (a) 60/60; (b) 436 ms, over; (c) 0/min; TCP p50 2.3 ms. **Pass** | 1,597 |
+| 12 | 23:30:00-23:31:27 | cairn_gate | none; twin idle | (a)-(c), paired, 23:30, the run host on its new address | (a) 60/60; (b) 383 ms; (c) 1/min; TCP p50 2.3 ms. **Pass** | 1,545 |
 
 **Reads 4 to 6 are the twin's gate of record**: the run's configuration, every line passing. Main
 noted read 1 as the first fully passing gate minute recorded from an iad host. (d) is the lowest /
 median / highest 10-second p10 of 30 samples (RUN-HOST.md step 6). Read 2 is on Xvfb: no RDP
 session existed yet.
 
-**Reads 7 to 11 are paired reads** (rs/170 for rs/83). Each started on the same second as the run
+**Reads 7 to 12 are paired reads** (rs/170 for rs/83; read 12 for the host thread, the first
+pair after the run host moved to a new address, 3.209.186.185, at 23:11 UTC). Each started on the same second as the run
 host's gate timer read (:00:00 and :30:00 UTC), so the two hosts were measured in the same minute.
 rs/83 holds the run host's side in its own `~/gate-history`, and the comparison is rs/83's call.
 Each read ran through
@@ -268,9 +270,9 @@ logout fix (`a369af7f0`); the probe itself is unchanged from rs/96. Every read l
 first click and left the world within 0-5 s. The account stood on the Lumbridge spawn
 (3223,3222, region 50_50) each time, with 38 to 65 other players within 15 tiles. The twin
 never read more than 1 catch-up/min and never fewer than 59/60 on time. Read 9 shared the twin
-within the cap with rs/174's stack, which started at 21:58:31; the other four had the twin to
-themselves. Read 11's ssh came from the Mac because bgsrv-ub was offline, and the read itself ran
-on the twin as before. The CLI's JSON (with `result.tickArrivalsMs`), its log and the
+within the cap with rs/174's stack, which started at 21:58:31; the others had the twin to
+themselves. The ssh for reads 11 and 12 came from the Mac because bgsrv-ub was offline, and the
+reads themselves ran on the twin as before. The CLI's JSON (with `result.tickArrivalsMs`), its log and the
 in-world samples are in [`twin-pairs/`](twin-pairs/).
 
 CPU during (d), medians in percent of one core:
