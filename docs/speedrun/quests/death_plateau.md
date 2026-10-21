@@ -1,5 +1,9 @@
 # Death Plateau
 
+**Verdict: skip on the current route.** This quest is only worth doing as part of
+the troll chain, and the chain is skipped: see the verdict at the top of
+[troll_romance.md](troll_romance.md).
+
 **About 816 ticks on the fixed client (1,007 stock, 704 with dialogue bursts) for
 3,000 base Attack and 1 quest point.** No fight and no skill check. It is three
 fetch loops around Burthorpe with 173 dialogue pages and options, so dialogue is

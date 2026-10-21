@@ -1,13 +1,15 @@
 # Troll Romance
 
-**About 1,260 ticks on the fixed client (1,350 stock, 1,208 burst) at 70 melee with
-Protect from Melee, for 8,000 base Agility, 4,000 base Strength and 2 quest
-points.** It needs Troll Stronghold (which needs Death Plateau), so the chain costs
-**about 2,735 ticks (3,039 stock, 2,562 burst)**. The Agility alone does not pay
-for the chain. With the Strength, Death Plateau's Attack and the fights' own melee
-xp it is roughly break-even. Do it if the plan needs the 4 quest points or Eadgar's
-Ruse (which needs Death Plateau and Troll Stronghold too); then Troll Romance's own
-1,260 ticks clearly pay. See [Chain verdict](#chain-verdict).
+**Verdict: SKIP the whole chain on the current route** (settled with the
+quest-route coordinator, cairn://p/rs/3). Troll Romance needs Troll Stronghold,
+which needs Death Plateau, so the 8,000 base Agility costs **about 2,735 ticks on
+the fixed client (3,039 stock, 2,562 burst)** and returns about 1,150 ticks of
+Agility training. Nothing else in the chain has value on the current route: Monkey
+Madness option 1 already puts Strength and Attack past 99, Eadgar's Ruse is off
+(cairn://p/rs/25 closed), and no quest-point gate needs the chain's 4 points. The
+arithmetic is in [Chain verdict](#chain-verdict). Troll Romance on its own is about
+1,260 ticks (1,350 stock, 1,208 burst) at 70 melee with Protect from Melee, for
+8,000 Agility, 4,000 Strength and 2 quest points.
 
 Fight and travel figures are measured at `NODE_TICKRATE=300` with
 `docs/speedrun/scripts/quest-troll-lab.sh` (`quest-troll-fights.ts`,
@@ -145,30 +147,43 @@ Minimum I would call safe: 70 melee with Protect from Melee, or 99 without it.
 carries the one trade the chain needs after Death Plateau's own trade, which is not
 included: add 9.)
 
-**What the chain returns**
+**Verdict: skip.**
 
-| Reward | Base xp | Worth in training ticks | Basis |
+On the current route (Monkey Madness option 1, no Eadgar's Ruse, no quest-point
+need):
+
+| Reward | Base xp | Worth on this route | Basis |
 |---|---|---|---|
-| Troll Romance Agility | 8,000 | about 1,150 (on top of Grand Tree, Regicide and Underground Pass); 2,280 from a fresh account | `docs/speedrun/skills/agility.md` §3 on cairn://p/rs/2's branch |
-| Troll Romance Strength | 4,000 | about 700-1,000 | inferred: 4-6 base xp per tick, the rate our own Dad and General fights produced (101-145 damage in 100-125 ticks at 4 base xp per damage) |
-| Death Plateau Attack | 3,000 | about 500-750 | same inferred rate |
-| Melee xp from the chain's fights | about 1,600 + 530 Hitpoints | the 379 fight ticks are themselves melee training | inferred, about 400 damage |
-| Quest points | 4 | | |
-| Unlocks | | Eadgar's Ruse (needs both Death Plateau and Troll Stronghold, `sanfew.rs2:102`); Troll Romance itself | |
+| Troll Romance Agility | 8,000 | about 1,150 ticks | Wilderness-course ticks replaced on top of Grand Tree, Regicide and Underground Pass (`docs/speedrun/skills/agility.md` §3, cairn://p/rs/2) |
+| Troll Romance Strength | 4,000 | 0 | Strength is already past 99: Monkey Madness 35,000 + Waterfall 13,750 = 48,750 (coordinator, from the quest documents) |
+| Death Plateau Attack | 3,000 | 0 | Attack is already past 99: Tree Gnome Village 11,450 + Grand Tree 18,400 + Waterfall 13,750 + Fight Arena 12,175 |
+| Melee xp from the chain's fights | about 1,600 + 530 Hitpoints | 0 | melee is capped by quests |
+| Quest points | 4 | 0 | the Champions' Guild door is the only quest-point gate and Dragon Slayer is skipped (`quest_points.md`) |
+| Unlocks | | 0 | Eadgar's Ruse is off (rs/25 closed: Herblore is helper-fed) |
 
-**Verdict.**
+**About 1,150 ticks of value against 2,735 ticks of quest (fixed client): a loss of
+about 1,585 ticks** (about 1,890 on the stock client, 1,410 with dialogue bursts).
 
-1. **For the 8,000 Agility alone: no.** 2,735 ticks (fixed client) buy about 1,150
-   ticks of Wilderness-course Agility.
-2. **Counting everything: about break-even.** Subtract the 379 fight ticks as melee
-   training and the chain costs about 2,350; the Agility, Strength and Attack are
-   worth about 2,350-2,900 at the inferred melee rate. If the plan trains melee much
-   faster than 4-6 base per tick (or reaches 99 melee from other quests), the chain
-   loses.
-3. **If Eadgar's Ruse or the quest points are on the route, do all three.** Death
-   Plateau and Troll Stronghold are then paid for, and Troll Romance's own 1,260
-   ticks (about 1,120 without the Arrg fight's training time) return about 1,150
-   Agility ticks plus 700-1,000 Strength ticks and 2 quest points.
+**Without Monkey Madness** it is still a loss. Attack is still past 99 without
+Death Plateau (44,325 base from the other quests), so its 3,000 Attack is worth 0.
+The 4,000 Strength replaces about 280 ticks at main's inferred 14.4 base Strength
+per tick at 99 (super strength, Ultimate Strength, +76 strength bonus;
+cairn://p/rs/main/task/per-skill/return). That training would also have produced
+about 1,330 base Hitpoints (1.33 per damage), which the quest reward does not give.
+So the chain returns about 1,150 + 280 = 1,430 ticks against 2,735: **a loss of
+about 1,300** (inferred).
+
+I first valued Strength and Attack at 4-6 base xp per tick. That is the rate the
+chain's own fights produced (101-145 damage in 100-125 ticks at 70-99 melee against
+high-defence bosses, with knockbacks and eating). It is a quest-fight rate, not a
+training rate, so the verdict uses main's 14.4 instead.
+
+**When to revisit:** if the plan adopts Eadgar's Ruse (which needs Death Plateau and
+Troll Stronghold, `sanfew.rs2:102`) or needs quest points, Death Plateau and Troll
+Stronghold become sunk cost. Troll Romance's own 1,260 ticks would then still buy
+only about 1,150 Agility ticks plus whatever the Strength is worth on that route,
+roughly break-even. The end state, logout and death-hook notes below are kept for
+that case.
 
 For the Agility route (cairn://p/rs/2's Agility child): this chain checks Agility 15
 (`stat()`, three obstacles on the way to the arena and two to six more crossings

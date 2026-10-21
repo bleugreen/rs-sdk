@@ -1,5 +1,9 @@
 # Troll Stronghold
 
+**Verdict: skip on the current route.** This quest is only worth doing as part of
+the troll chain, and the chain is skipped: see the verdict at the top of
+[troll_romance.md](troll_romance.md).
+
 **About 659 ticks on the fixed client (682 stock, 650 burst) at 70 melee with
 Protect from Melee, for 1 quest point and no xp at all.** This server's completion
 queue gives only a law talisman and the quest point (read,
