@@ -526,9 +526,9 @@ block to ~12,580. That makes it a no-MM-only candidate.
 **Sensitivity to the melee rate.** With the knives fixed at ~5,270, the no-MM block is about
 5,270 + 79,876 / (melee rate): ~15,250 at 8, ~13,860 at 9.3 (measured, Defence at Strength
 99), ~13,260 at 10 and ~11,930 at 12. The MM block hardly depends on the melee rate; only
-the 230 ticks of cannon + defensive melee are melee at all. No-MM would only draw level with
-MM's expected ~10,075 at well over **16 base xp per tick** of melee, against rs/30's
-measured 9-10 at these levels.
+the 230 ticks of cannon + defensive melee are melee at all. No-MM (with Waterfall's 888)
+would only draw level with MM's expected ~10,075 at about **20 base xp per tick** of melee
+(i: 888 + 5,270 + 79,876 / rate), against rs/30's measured 9-10 at these levels.
 
 ### Monkey Madness's failure budget
 
@@ -557,100 +557,137 @@ login (`mm_login`, unmeasured, worth up to ~150).
 
 ## 7. Conditional calls
 
-- **Waterfall or Dragon Slayer (Package A or B), pending cairn://p/rs/56.** Both fill MM
-  option 1's Strength gap, so they compete. Fixed ticks, from the phase model on measured
-  rates (i). Every package includes the same MM block; only the lines that differ are shown.
+- **Waterfall or Dragon Slayer: decided, Package B** (coordinator, 2026-10-21 01:07, on
+  cairn://p/rs/56). Both fill MM option 1's Strength gap, so they compete. Fixed ticks;
+  every package includes the same MM block and Druidic Ritual (mandatory, so its 4 QP count
+  in all of them); only the lines that differ are shown.
 
   | Package | Quests | Filler | Post-MM finish | Total of the differing lines |
   |---|---|---|---|---|
-  | **A** (current): Waterfall on, Dragon Slayer off | Waterfall 888 | none | ~3,521 (cannon + defensive melee 3,459, then melee 62) | **~4,409** minus Waterfall's pre-MM saving |
-  | **B**: Waterfall off, Dragon Slayer on after MM | Dragon Slayer ~1,010 | 15 QP, 546 | ~2,023 (cannon + defensive melee 231, then cannon + rapid knives 1,792) | **~3,579** |
-  | **C**: both | 888 + ~1,010 | 14 QP, 519 | ~2,023 | **~4,440** minus Waterfall's pre-MM saving |
-  | Neither | | none | ~4,006 (adds 490 of Strength melee) | **~4,006** |
+  | **B** (decided): Waterfall off, Dragon Slayer on after MM | Dragon Slayer ~941 (i: Elvarg at 99, m) | 11 QP, ~456 (i, unmeasured: Goblin Diplomacy 188, Romeo & Juliet 241, Cook's Assistant 27) | **2,023-2,051** (rs/31 2,051: cannon + defensive melee 230, then cannon + rapid knives 1,821; phase model 2,023) | **~3,420-3,448** |
+  | A: Waterfall on, Dragon Slayer off | Waterfall 888 | none | 3,520 (rs/31: cannon + defensive melee 3,459, then melee 62) | ~4,408 - S = **~4,361-4,393** (S = 15-47, m) |
+  | C: both | 888 + 941 | 10 QP, ~429 (Cook's drops) | 2,023-2,051 | ~4,281-4,309 - S = ~4,234-4,294 |
+  | Neither | | none | 4,054 (rs/31; phase model 4,006) | ~4,006-4,054 |
 
   Dragon Slayer's 18,650 Strength caps Strength, and its 18,650 Defence leaves only a
-  1,288 Defence gap. The cannon phase then ends in ~231 ticks and the rest is cannon + rapid
+  1,288 Defence gap. The cannon phase then ends in ~230 ticks and the rest is cannon + rapid
   knives, which is why B's finish is ~1,500 shorter than A's, not just the ~1,100 that
-  pricing the two gaps separately gives. The filler is the cheapest set in
-  `quest_points.md`'s ranking, fixed column, inferred (unmeasured): **Goblin Diplomacy** (5 QP,
-  ~115 on the Dragon Slayer route, which shares its Port Sarim and Ice Mountain legs; ~188
-  alone), **Witch's House** (4 QP, ~163), **Romeo & Juliet** (5 QP, ~241) and **Cook's
-  Assistant** (1 QP, ~27): 15 QP for ~546. The route without Waterfall has 17 QP, and the
-  Champions' Guild door needs 32 to start Dragon Slayer. Package C needs only 14 (Cook's
-  Assistant drops: ~519). Witch's House's 6,325 Hitpoints is worth **0** here, because the
-  finish's Hitpoints by-product already covers the 4,938 gap (the model gives the same finish
-  with or without it). The next-cheapest 15-QP set swaps Cook's Assistant for Sheep Shearer
-  (~587). Dragon Slayer's ~1,010 assumes Elvarg at 70s melee (102-166 ticks); after MM, at
-  99, it is 64-75 (m), so ~60 less.
+  pricing the two gaps separately gives. The filler is the cheapest 11-QP set in
+  `quest_points.md`'s ranking once Druidic Ritual's 4 are counted: the route's xp quests
+  give 17, Druidic Ritual 4, and the Champions' Guild door needs 32. **Goblin Diplomacy is
+  priced standalone (~188), not at quest_points.md's ~115 "on the Dragon Slayer route"**:
+  its 5 points must be held at the guild door, which is Dragon Slayer's first step, so it
+  cannot share the later Port Sarim and Ice Mountain legs. Witch's House (4 QP, ~163) was the
+  fourth filler quest until Druidic Ritual replaced it; its 6,325 Hitpoints were worth 0
+  here, because the finish's Hitpoints by-product already covers the gap.
 
-  **Decision rule.** Let *S* be the fixed ticks that Waterfall's Strength saves across the
-  pre-MM fights (warlord, black demon, Fight Arena; rs/56 measures them with and without
-  it). **If S < ~830, take Package B. If S > ~830, take Package A.** Package C never beats A
-  by more than about 30 ticks, so it is not worth Dragon Slayer's extra risk; B also beats
-  doing neither by ~430. B does not win plainly. The fights total ~650 ticks at 70 Strength,
-  and Waterfall moves Strength from ~1 to 83 before them, so an S of ~830 is plausible if
-  low-Strength kills take a few times longer. However, Strength also rises from the fights'
-  own xp at 25x. rs/56's measurement settles it. If B is chosen, the quest-route totals in
-  section 1 change by -888 (Waterfall) + 1,010 (Dragon Slayer) + 546 (filler) = **+668 fixed**,
-  and the post-MM training falls by ~1,498, so the net is ~-830.
+  **Decision.** Let *S* be the fixed ticks that Waterfall's Strength saves across the pre-MM
+  fights. rs/56 measured **S = 15-47** (m, 300 ms): the warlord is 118 by melee at Strength
+  83 against 133 by Fire Blast or 165 by Fire Bolt, and the demon (157 against 153) and Fight
+  Arena (278-281 against 281) do not move, because none of them has magic defence. With
+  Magic 59 before Tree Gnome Village, S is ~15. The threshold was ~800-830 when this page
+  priced the filler at 546; with Druidic Ritual's points and Goblin Diplomacy standalone it
+  is ~960-990. **Package B wins by ~910-970 fixed** over A, ~810-870 over C and ~560-630
+  over doing neither. Against the previous Package A totals, the quest-route totals in
+  section 1 change by -888 (Waterfall) + 941 (Dragon Slayer) + 456 (filler) = **+509 fixed**
+  before Druidic Ritual and the measured fights, and the post-MM training falls by
+  ~1,470-1,500.
 
-- **Fishing Contest depends on the fly-fishing cycle (cairn://p/rs/53).** On the normal
-  cycle it saves 325 ticks given Sea Slug against 223 fixed (+102), with the helper-caught
-  carp that main allowed (tenet 2). Done entirely on the scored account it costs ~367 and
-  loses. If the run fly fishes on the 3-tick knife cycle, the same xp saves only 186, so it
-  is -37 fixed: drop it. Sea Slug stays positive on either cycle (+561 normal, +192 knife).
-  rs/53 is measuring the knife cycle through level-ups; its result decides this row.
+- **Quest points at the guild door: exactly 32, none spare.** 17 from the xp quests
+  (Doric's 1, Plague City 1, Tree Gnome Village 2, Grand Tree 5, Fight Arena 2, Dwarf Cannon
+  1, Monkey Madness 3, Sea Slug 1, Fishing Contest 1; r, `quest.constant`), Druidic Ritual 4,
+  Goblin Diplomacy 5, Romeo & Juliet 5 and Cook's Assistant 1. Any point lost before Dragon
+  Slayer needs a 1-QP replacement first: **Sheep Shearer** (~68 fixed, i,
+  `quest_points.md`) is the cheapest left, then Imp Catcher (~94).
+- **Fishing Contest and the fly-fishing cycle (cairn://p/rs/53).** On the normal cycle it
+  saves 325 ticks given Sea Slug against 223 fixed (+102), with the helper-caught carp that
+  main allowed (tenet 2). Done entirely on the scored account it costs ~367 and loses. On the
+  3-tick knife cycle the same xp saves only 186 (-37 fixed), **but dropping it now costs the
+  32nd quest point**, and Sheep Shearer's ~68 is more than the 37 saved. So **Fishing Contest
+  stays on either cycle** while Dragon Slayer is on (i). Sea Slug stays positive on either
+  cycle (+561 normal, +192 knife).
 - **Sea Slug depends on cairn://p/rs/54** (PR #31, open). The lite client keeps bridged
   doors closed for routing, so the bot cannot reach the broken glass or Kennith. With the
   fix applied in the lab it ran end to end twice (394 fixed, m). Until rs/54 merges, Sea
-  Slug is blocked, and Fishing Contest's value without it rises to 755 (alone, from level 1).
-- **The Wilderness spider site.** The cannon sessions (step 8 and the post-MM finish) are
+  Slug is blocked, Fishing Contest's value without it rises to 755 (alone, from level 1),
+  and the route is one quest point short of the guild door (add Sheep Shearer, above).
+- **The Wilderness spider site.** The cannon sessions (step 7 and the post-MM finish) are
   costed at the poison spiders (3288,3810), Wilderness level 37. There, players within 37
-  combat levels can attack, a death keeps only 3-4 items, and the spiders poison for
-  ~0.2-0.3 hp per tick through Protect from Melee (`ranged.md`). Step 8 happens before MM,
-  at the route's low Hitpoints, so rs/56's timeline should check the poison. The
+  combat levels can attack, and a death keeps only 3-4 items. rs/56 measured the pre-MM
+  session at the route's levels (99/1/1, 42 HP, Prayer 43): Protect from Melee stops every
+  spider hit, the poison takes 24-30 HP per session (lowest HP 8-19; m, n=4), and one
+  antipoison dose at the first poisoning makes it 0 (m, n=1). At combat ~52 with 42 HP and
+  Defence 1, a player kill is likely if anyone tries; that is not measurable locally. The
   non-Wilderness fallback is the **Battlefield of Khazard** (2523,3239): cannon alone 9.13
   Ranged per tick against 11.52 (m), and cannon + defensive melee 8.88 Ranged + 3.37 Defence
   against 11.03 + 5.60 (m). That is about 20-25% slower. The pre-MM session goes from ~113
-  to ~143 ticks, and the ~3,520 finish to roughly 4,300-4,500 (i).
-- **Pre-MM fights at route levels (cairn://p/rs/56).** Every fight above was measured at
-  70/70/70 with ~70 Hitpoints. The route reaches the Khazard warlord, the black demon and
-  Fight Arena with Hitpoints near 10, Prayer 43 from bones, and Strength near 1 unless
-  Waterfall comes first. rs/56 is costing those fights with and without Waterfall's
-  Strength, which decides Waterfall. Slot `pre_mm_fights.md` into the Tree Gnome Village,
-  Grand Tree, Waterfall and Fight Arena rows when it lands. Its Mordred and Titan figures
-  are no longer needed for the route.
+  to ~143 ticks, and the 2,023-2,051 finish to roughly 2,450-2,600 (i).
+- **Pre-MM fights at route levels: measured** (cairn://p/rs/56,
+  [pre_mm_fights.md](pre_mm_fights.md)). Slotted into the Tree Gnome Village, Grand Tree and
+  Fight Arena rows and into the order. Its open questions (Monkey Madness at these levels,
+  Fight Arena's prayer points, the single antipoison sample) are carried below.
 
 ## Decisions and pending items
 
 The coordinator's decisions (cairn://p/rs/3, 22:27 and after) on the points this synthesis
 raised:
 
-1. **Waterfall against Dragon Slayer: pending rs/56** (the package rule in section 7). After
-   MM, Waterfall alone is worth ~485 ticks of Strength melee at the measured 9-10/tick (the
-   finish rises from ~3,521 to ~4,006 without it) against ~888 fixed. Before MM it is the only
-   Strength source. Dragon Slayer with 15 QP of filler (Package B) fills the same Strength gap
-   and most of the Defence gap, and is ~830 cheaper after MM. So **Waterfall stays (Package
-   A) only if its pre-MM fight saving exceeds ~830**. Without MM both are worth ~0
-   (Hitpoints binds).
+1. **Waterfall against Dragon Slayer: Package B** (2026-10-21 01:07, on rs/56). Waterfall's
+   pre-MM Strength saves 15-47 ticks (m) against a threshold of ~800-830 (now ~960-990), so
+   Waterfall is OFF and Dragon Slayer is ON after Monkey Madness with 11 QP of filler
+   (section 7). The finish is 2,023-2,051 (rs/31 confirmed 2,051). Package A stays as the
+   documented alternative (section 6). Without MM both are worth ~0 (Hitpoints binds).
 2. **Merlin's Crystal + Holy Grail: OFF** (after rs/33's measured Prayer rate). See
    section 5. Defence ~1,270 (this page's model on measured rates; the coordinator's ~1,312 was
    the earlier estimate) plus Prayer ~150-350, against 1,855 fixed: about -230 to -430. Taking them off
    removes Plague City's ~31 Holy Grail saving and the base-Attack-20 constraint, and moves
-   the protect prayers to dragon bones.
-3. **Quest points.** The on-route set gives **18** (12 without MM, Tree Gnome Village and
-   Dwarf Cannon; 1 fewer without Waterfall). Nothing binds while Dragon Slayer is off.
-   `quest_points.md` and `dragon_slayer.md` quote 46-49 because they counted quests that
-   have since dropped off the route.
-4. **No-MM Dragon Slayer: OFF** (with MM it is Package B's candidate, item 1). Without MM, Hitpoints binds, so its
-   Strength and Defence replace little or nothing (section 6), and it would also need ~20 QP
-   of filler. `dragon_slayer.md`'s "+1,545 if MM is dropped" leaves out that Hitpoints
+   the protect prayers to dragon bones. Under Package B Holy Grail's Defence is worth even
+   less, because Dragon Slayer leaves only a 1,288 Defence gap.
+3. **Quest points.** The on-route set gives **34**: 17 from the xp quests, 4 from Druidic
+   Ritual, 11 of filler and 2 from Dragon Slayer. The guild door's 32 binds with **none
+   spare** (section 7). `quest_points.md` and `dragon_slayer.md` quote 46-49 because they
+   counted quests that have since dropped off the route.
+4. **No-MM Dragon Slayer: OFF** (with MM it is on, item 1). Without MM, Hitpoints binds, so its
+   Strength and Defence replace little or nothing (section 6), and it would also need filler.
+   `dragon_slayer.md`'s "+1,545 if MM is dropped" leaves out that Hitpoints
    caveat, which the document itself raises. `ranged.md`'s no-MM "cannon in parallel, ~1,040
    ticks" line has the same gap: cannon xp gives no Hitpoints. **Witch's House** (6,325 HP,
    ~163 fixed, unmeasured) is a no-MM-only candidate.
 5. **Monkey Madness option 1 rechecked without Holy Grail**, on measured melee rates: still
-   better than option 2 by ~3,130 ticks (section 6). MM itself beats no-MM by ~3,710 expected,
-   and only a melee rate of ~16 base/tick would flip it.
+   better than option 2 by ~3,130 ticks (section 6). MM itself beats no-MM by ~4,700
+   expected under Package B (~3,710 under A), and only a melee rate of ~20 base/tick would
+   flip it.
+6. **Druidic Ritual: ON, mandatory** (coordinator, 2026-10-21, on rs/37's measurement via
+   rs/28). Every Herblore action needs level 3, so without the quest's 250 base Herblore
+   never leaves level 1. It is listed as a mandatory unlock, not as Dragon Slayer's cost;
+   its 4 QP replace Witch's House in the filler (Witch's House OFF).
+
+**Open items**
+
+- **(a) Monkey Madness at the route's real levels is unmeasured.** The account arrives at
+  **Defence 1, ~42 Hitpoints, Strength 1 and Magic ~76** (i; rs/56 timeline, Magic from the
+  section 4 timeline). Its temple-trapdoor guards and the jungle-spider poison were measured
+  at 70/70/70 with ~70 HP (`monkey_madness.md`), so the failure budget (+780 expected) may be
+  optimistic: a trapdoor death is likelier at 42 HP. The Jungle Demon is fought under
+  Protect from Magic, so Defence does not matter there. The retry tolerance is **~16
+  trapdoor deaths** under Package B (~13 under A; 5 and 4 if the bar is lost). An
+  antipoison likely removes the poison deaths, since the cannon session showed all damage
+  under Protect from Melee was poison and one dose made it 0 (m, rs/56); the order carries a
+  second Antipoison(4) for this. A re-check at these levels, or a food and antipoison budget
+  in MM's trade, is the next step.
+- **(b) The filler, Druidic Ritual and Dragon Slayer at post-MM levels are inferred.** The
+  four filler and unlock quests are unmeasured page-count estimates (`quest_points.md`),
+  and the travel chain in step 12 is a map estimate. Dragon Slayer is ~300 measured; Elvarg
+  was measured at 99/99/99 (64-75, n=2) and at 70 (102-166), and the route meets her at
+  99/~97/~89 with ~97 HP. Melzar's Maze is inferred at 70s melee and should be faster at 99.
+- **(c) The pre-MM fights give ~3,600 base Magic before Mage Arena** (m: warlord 1,047 and
+  demon 996 by Fire Bolt; i: Fight Arena ~1,540), which overlaps rs/52's enchant ladder 57 to
+  71 almost exactly (3,570 base, r from `Player.ts`). With Grand Tree's 2,150 the account
+  reaches Mage Arena at base ~76 (section 4), so the 57-to-71 enchanting and the magic
+  potions drop out of the Magic route. The Magic route owners were informed (rs/28 and rs/32
+  by rs/56; rs/81 is updating `magic.md` from this order).
+- **(d) No spare quest point at the guild door** (section 7): if Sea Slug stays blocked or
+  any route quest drops, add Sheep Shearer before Dragon Slayer.
 
 **Confirmed by rs/31 (2026-10-20 23:02, `ranged-model.ts` on measured 300 ms rates,
 `ranged.md` section 1 on agent/rs-31-builder-0):** the Package A finish is **3,520** ticks
@@ -664,8 +701,7 @@ including Dwarf Cannon's 1,078. Pushing Ranged to 70 before Monkey Madness does 
 **Package B's finish, also confirmed by rs/31 (23:03):** **2,051** (cannon + defensive
 melee at the spiders 230, Ranged to 67; then cannon + rapid rune knives 1,821; HP by-product
 5,089). This page's phase model gave ~2,023; the 28-tick gap is the Ranged 67-70 stretch,
-where cannon + knives is unmeasured, so **2,023-2,051** is the honest range, and the
-Package A-vs-B threshold for Waterfall's pre-MM saving is **~800-830** ticks.
+where cannon + knives is unmeasured, so **2,023-2,051** is the honest range.
 
 **rs/30's final melee figures (23:30, measured at 300 ms; `docs/speedrun/skills/combat.md`
 at 3beddb4b on agent/rs-30-builder-0, being re-ported to a clean branch by rs/28):** the
@@ -678,10 +714,9 @@ page's larger margins (section 6) come from the cannon-led finish: the cannon tr
 with no HP, which makes Hitpoints bind harder without MM and under option 2. Both models
 recommend MM with option 1.
 
-Still to slot in: `pre_mm_fights.md` (rs/56: the pre-MM fights, and with them Package A
-against B), rs/30's `combat.md` once re-ported
-(its rates are quoted here from rs/28), rs/53 (Fishing Contest), and the rs/54 merge (Sea
-Slug).
+Still to slot in: rs/30's `combat.md` once re-ported (its rates are quoted here from rs/28),
+rs/53 (the fly-fishing cycle; Fishing Contest now stays either way), the rs/54 merge (Sea
+Slug), and rs/81's `magic.md` update (open item (c)).
 
 ## Superseded figures
 
@@ -691,11 +726,16 @@ These older documents are left as written. Use the replacements below.
 |---|---|---|
 | "Combat rate about 14 base xp per tick (README)". No README ever carried this; it was the per-skill estimate that main later labelled inferred | `monkey_madness.md`, `tree_gnome_village.md`, `grand_tree.md`, `dragon_slayer.md`, `quest_points.md` rs/30's measured 300 ms rates, 4.1-10.1 by Strength band and ~9.3 for Defence at Strength 99 (via rs/28; table in section 6). Combat is valued through the scenario arithmetic in section 6 |
 | Ranged worth ~0 ("the cannon makes it free") | `temple_of_ikov.md` (~10-50), `horror_from_the_deep.md` (~63) | Ranged priced through rs/31's cannon plan: quest Ranged shortens the cannon phase, so Ikov's 10,500 is worth ~550 against ~750 (still OFF) and Horror ~300 against 800-1,000 (still OFF) |
-| MM-route combat finish 2,248 (Defence gap 4,638) | `ranged.md` | ~3,520 i with Holy Grail off (Defence gap 19,938); ~2,020 i in Package B |
-| Dragon Slayer worth ~330 with MM | `dragon_slayer.md` | Package B: with Waterfall off and Holy Grail off, it shortens the finish by ~1,500 (section 7) |
-| Plan holds 46-49 QP | `quest_points.md`, `dragon_slayer.md` | 18 on the route (decision 3) |
+| MM-route combat finish 2,248 (Defence gap 4,638) | `ranged.md` | 3,520 (rs/31) with Holy Grail off (Defence gap 19,938); **2,023-2,051** in Package B, the route |
+| Dragon Slayer "skip", worth ~330 with MM | `dragon_slayer.md` | **ON** (Package B): with Waterfall and Holy Grail off it shortens the finish by ~2,000 against neither, ~1,500 against Package A (section 7) |
+| Plan holds 46-49 QP; "no quest-point filler needed" | `quest_points.md`, `dragon_slayer.md` | 34 on the route, and the 32-QP door binds with none spare: 11 QP of filler (decision 3) |
+| Goblin Diplomacy ~115 "on the Dragon Slayer route" | `quest_points.md` | ~188 standalone: its points are needed at the guild door, before Dragon Slayer's Port Sarim and Ice Mountain legs |
 | Dragon Slayer "+1,545 if MM is dropped" | `dragon_slayer.md` | little or nothing: Hitpoints binds without MM (decision 4) |
-| Plague City's teleport savings include Holy Grail ~31 | `plague_city.md` | Holy Grail is off: ~613 of savings remain |
+| Plague City's teleport savings include Holy Grail ~31 and Waterfall ~38 | `plague_city.md` | both are off: ~575 of savings remain |
+| Khazard warlord 164, black demon 237, Fight Arena chain 435, all at 70/70/70 melee | `tree_gnome_village.md`, `grand_tree.md`, `fight_arena.md` | at the route's levels by spell under Protect from Melee (rs/56, 300 ms): warlord 133 (Fire Blast) or 165 (Fire Bolt), demon 153, Fight Arena chain 281 |
+| 2-4 prayer potions for the black demon; ~15 swordfish for Fight Arena | `grand_tree.md`, `fight_arena.md` | 2 Prayer potion(4) cover all three pre-MM fights and the cannon session; no food needed under prayer (rs/56) |
+| Mage Arena at base 71 + a magic potion after enchanting 57 to 71; Charge from 76 + a second potion | rs/52 via the board; this page's earlier order | base ~76 at the arena and ~80 after it, so no enchanting and no potion (section 4 Magic timeline, i) |
+| Waterfall "Package A" (on, pending rs/56) and Package B's filler at ~546 | this page's previous version | Waterfall OFF; filler ~456 for 11 QP after Druidic Ritual (section 7) |
 | Troll Romance Agility ~1,150; Tourist Trap picks 1,060-1,336 | `troll_romance.md`, `tourist_trap.md` | 1,220 and 1,414, from rs/2's rerun with Grand Tree as the only Agility quest |
 
 ## Source documents
@@ -705,5 +745,6 @@ inputs: rs/2's `docs/speedrun/skills/{mining,fishing,thieving,agility}.md` (bran
 `agent/rs-2-coordinator-0`), rs/6's Woodcutting model via the board, `ranged.md` and
 `ranged-model.ts` on `agent/rs-31-builder-0`, `magic.md` (rs/28's children), and, as
 recorded on cairn://p/rs/3/1/coordinator/board and in its messages: rs/52's Magic-boost
-measurements, rs/33's Prayer rate, rs/38's interleaving result and rs/30's measured
-melee rate.
+measurements, rs/33's Prayer rate, rs/38's interleaving result, rs/30's measured
+melee rate and rs/37's Herblore level-3 finding (via rs/28). The pre-MM fights are
+[pre_mm_fights.md](pre_mm_fights.md) (cairn://p/rs/56).
