@@ -53,7 +53,10 @@ await runScript(async ({ bot, sdk }) => {
             await setvar(sdk, 'mm_main', 5);
             await setvar(sdk, 'mm_garkor', 6);
             await setvar(sdk, 'mm_waiting_for_final_battle', 0);
+            // Leave the battle zone long enough for a previous run's squad and demon to despawn
+            // (they delete themselves when their player is out of the zone, mm_demon.rs2:212-220,272-279).
             await tele(sdk, 2805, 2759);
+            await waitTicks(sdk, 30);
             await give(sdk, 'mm_sigil', 1);
             await waitTicks(sdk, 2);
             const t0 = now(sdk);
@@ -63,7 +66,7 @@ await runScript(async ({ bot, sdk }) => {
             await waitUntil(sdk, s => pos(s).z > 9100 && pos(s).level === 1, 60);
             const tArrive = now(sdk);
             await d;
-            const r = await waitUntil(sdk, s => s.nearbyNpcs.some(n => /^Jungle Demon$/i.test(n.name)), 40);
+            const r = await waitUntil(sdk, s => s.nearbyNpcs.some(n => /^Jungle Demon$/i.test(n.name)), 60);
             console.log(`sigil: worn -> arrival ${tArrive - t0} ticks, -> demon spawned ${(r?.tick ?? NaN) - t0} ticks`);
             if (PRAYER) await bot.activatePrayer('protect_from_magic');
             target = /^Jungle Demon$/i;
