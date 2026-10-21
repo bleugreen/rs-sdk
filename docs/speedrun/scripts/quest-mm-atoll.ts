@@ -73,7 +73,7 @@ await runScript(async ({ bot, sdk }) => {
             console.log('up at', JSON.stringify(pos(sdk.getState())));
         }
         if (seg === 'T') {
-            await reset({ mm_main: 3, mm_zooknock: 5 }, [['mm_enchanted_gold_bar', 1], ['mm_monkey_amulet_mould', 1], ['ball_of_wool', 1], ['shark', 5]], [2807, 2790]);
+            await reset({ mm_main: 3, mm_zooknock: 5 }, [['mm_enchanted_gold_bar', 1], ['mm_monkey_amulet_mould', 1], ['ball_of_wool', 1], ['shark', 5]], [2795, 2786]);
             await bot.activatePrayer('protect_from_melee');
             {
                 // Five aggressive temple guards (level 167, mm_religious_trapdoor_guard) stand round the
