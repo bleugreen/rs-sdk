@@ -192,7 +192,7 @@ async function crossCart4(sdk: Sdk, L: Ledger) {
  * Breadth-first search on static collision with NPC tiles blocked, returning
  * the tile path (excluding the start), or null.
  */
-function npcAwarePath(sdk: Sdk, goals: { x: number; z: number }[], ignore?: number): { x: number; z: number }[] | null {
+function npcAwarePath(sdk: Sdk, goals: { x: number; z: number }[] | ((x: number, z: number) => boolean), ignore?: number): { x: number; z: number }[] | null {
     initPathfinding();
     const blocked = new Set<string>();
     for (const n of sdk.getNearbyNpcs()) {
@@ -201,13 +201,14 @@ function npcAwarePath(sdk: Sdk, goals: { x: number; z: number }[], ignore?: numb
         else if (/mine cart|treus|^ghost$/i.test(n.name)) blocked.add(`${n.x},${n.z}`);
     }
     const start = pos(sdk);
-    const goal = new Set(goals.map(g => `${g.x},${g.z}`));
+    const goalSet = Array.isArray(goals) ? new Set(goals.map(g => `${g.x},${g.z}`)) : null;
+    const isGoal = (x: number, z: number) => (goalSet ? goalSet.has(`${x},${z}`) : (goals as (x: number, z: number) => boolean)(x, z));
     const prev = new Map<string, string>([[`${start.x},${start.z}`, '']]);
     const q: [number, number][] = [[start.x, start.z]];
     const D = [[0, 1], [1, 0], [0, -1], [-1, 0], [1, 1], [1, -1], [-1, 1], [-1, -1]] as const;
     while (q.length) {
         const [x, z] = q.shift()!;
-        if (goal.has(`${x},${z}`)) {
+        if (isGoal(x, z)) {
             const out: { x: number; z: number }[] = [];
             let k = `${x},${z}`;
             while (prev.get(k)) { const [a, b] = k.split(',').map(Number); out.push({ x: a!, z: b! }); k = prev.get(k)!; }
@@ -223,6 +224,20 @@ function npcAwarePath(sdk: Sdk, goals: { x: number; z: number }[], ignore?: numb
         }
     }
     return null;
+}
+
+// Boss-room cart track zones (hauntedmine_boss_ghost.rs2:136-142, local
+// 43_69 coords): standing in one makes the boss send that track's cart at us,
+// which moves carts into the room's corridors.
+const CART_ZONES: [number, number, number, number][] = [
+    [30, 40, 32, 40], [31, 30, 31, 37], [33, 31, 33, 36], [39, 31, 39, 36], [41, 30, 41, 37], [39, 40, 42, 40], [29, 46, 43, 46]
+].map(([a, b, c, d]) => [2752 + a!, 4416 + b!, 2752 + c!, 4416 + d!]);
+const inCartZone = (x: number, z: number) => CART_ZONES.some(([x1, z1, x2, z2]) => x >= x1 && x <= x2 && z >= z1 && z <= z2);
+
+/** A tile to cast from: in range, line of sight, out of every cart zone. */
+function castTile(bx: number, bz: number) {
+    return (x: number, z: number) =>
+        Math.max(Math.abs(x - bx), Math.abs(z - bz)) <= 8 && !inCartZone(x, z) && rsmod.hasLineOfSight(0, x, z, bx, bz, 1, 1, 1, 1, 0);
 }
 
 /** Walk an npc-aware path in short hops (each hop's own route then matches it). */
@@ -572,6 +587,16 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
             const reappeared = !wasVisible;
             wasVisible = true;
             if (STYLE === 'magic') {
+                const p = pos(sdk);
+                if (!castTile(boss.x, boss.z)(p.x, p.z)) {
+                    const path = npcAwarePath(sdk, castTile(boss.x, boss.z), boss.index);
+                    approaches++;
+                    if (path) {
+                        approachTiles += path.length;
+                        await walkPath(sdk, path);
+                    } else await sdk.waitForStateUpdate();
+                    continue;
+                }
                 if (reappeared || s.tick - lastClick >= 5) {
                     await sdk.sendSpellOnNpc(boss.index, CRUMBLE_UNDEAD);
                     swings++;
