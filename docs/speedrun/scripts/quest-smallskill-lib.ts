@@ -75,7 +75,7 @@ export async function pickup(sdk: BotSDK, re: RegExp, maxTicks = 40): Promise<St
     const r = await waitUntil(sdk, s => {
         const n = (s.inventory ?? []).filter(i => re.test(i.name)).reduce((a, i) => a + i.count, 0);
         if (n > before) return true;
-        if (s.tick - sent >= 8) { sent = s.tick; void sdk.sendPickup(it.x, it.z, it.id); }
+        if (s.tick - sent >= 3 && !s.player?.isMoving) { sent = s.tick; void sdk.sendPickup(it.x, it.z, it.id); }
         return false;
     }, maxTicks);
     return { name: `take ${it.name} (${it.x},${it.z})`, ticks: (r?.tick ?? NaN) - t0, note: r ? undefined : 'TIMEOUT' };
