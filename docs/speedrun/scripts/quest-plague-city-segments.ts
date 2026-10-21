@@ -136,7 +136,9 @@ await runScript(async ({ bot, sdk }) => {
             await S.step('plague house door: the mourner (23->24)', loc('plagueDoor'), { choices: [/I fear not a mere plague/] });
             await quest('plagueDoor');
             // A run click from the door tile right after the mourner's dialogue does not move the bot; bot.walkTo does.
-            await S.longWalk(bot, 'plague house -> clerk (bot.walkTo)', 2528, 3316);
+            // Stand east of the clerk: the stage only advances if Bravek (2536,3314) is within 7 tiles
+            // of the player (clerk.rs2 .npc_find(coord, bravek, 7, 0)); from x=2528 he is 8 away.
+            await S.longWalk(bot, 'plague house -> clerk (bot.walkTo)', 2529, 3316);
             await S.step('clerk (24->25)', talk(sdk, /^Clerk$/), { choices: [/I need permission to enter a plague house/, /This is urgent though/] });
             await quest('clerk');
         } else if (seg === 'bravek') {
