@@ -18,6 +18,7 @@ const [, levelArg = '99', attemptsArg = '200'] = args;
 const opts = Object.fromEntries(args.slice(3).map(a => a.split('=') as [string, string]));
 const level = Number(levelArg);
 const target = Number(attemptsArg);
+const verbose = opts.verbose === '1';
 const out = opts.out ?? `${process.env.TMPDIR ?? '/tmp'}/fishing-karambwan-${level}.jsonl`;
 writeFileSync(out, '');
 const log = (ev: Record<string, unknown>) => appendFileSync(out, JSON.stringify(ev) + '\n');
@@ -92,9 +93,10 @@ await runScript(async ({ bot, sdk }) => {
             const spot = s.nearbyNpcs.filter(n => n.name === 'Fishing spot').sort((a, b) => a.distance - b.distance)[0];
             if (spot && !using) {
                 using = true;
-                within(sdk.sendUseItemOnNpc(loaded(s)[0].slot, spot.index)).then(r => {
-                    const res = r as { success?: boolean; message?: string } | undefined;
-                    if (res && !res.success) log({ ev: 'use-failed', tick: s.tick, msg: res.message });
+                const slot = loaded(s)[0].slot;
+                within(sdk.sendUseItemOnNpc(slot, spot.index)).then(r => {
+                    const res = r as { success?: boolean; message?: string; reason?: string } | undefined;
+                    if (verbose || (res && !res.success)) log({ ev: 'use', tick: s.tick, slot, spot: spot.index, dist: spot.distance, ok: res?.success, msg: res?.message, reason: res?.reason });
                 }).finally(() => (using = false));
             }
         });
