@@ -1,0 +1,247 @@
+{
+  "upstream": {
+    "url": "https://github.com/MaxBittker/rs-sdk.git",
+    "branch": "main",
+    "web": "https://github.com/MaxBittker/rs-sdk"
+  },
+  "hiscores": { "url": "https://rs-sdk-demo.fly.dev/hiscores" },
+  "entries": [
+    {
+      "id": "fly",
+      "title": "Demo deploy settings",
+      "paths": ["fly.toml"],
+      "why": "The demo's live settings: 25x xp, 300 ms ticks, 100 sessions per IP and the hidden hiscore names. Every tick and xp estimate in the plan assumes these values, and an edit here also redeploys the demo."
+    },
+    {
+      "id": "boot",
+      "title": "Demo build and boot",
+      "paths": ["server/Dockerfile", "server/start.ts"],
+      "why": "What the demo actually builds and starts. A change can switch the live server's startup flags or content build without touching any game code."
+    },
+    {
+      "id": "patches",
+      "title": "Upstream patch checklist",
+      "paths": ["server/PATCHES.md"],
+      "why": "Upstream's own list of the server's custom behaviour patches. An edit here usually announces that one of those behaviours was added, changed or dropped."
+    },
+    {
+      "id": "config",
+      "title": "Server config defaults",
+      "paths": ["server/engine/src/util/Environment.ts", "server/engine/src/util/WorldConfig.ts"],
+      "why": "The defaults and environment parsing that the fly.toml values pass through (xp rate 25, tick rate). A changed default or a renamed variable changes the live server even when fly.toml stays the same."
+    },
+    {
+      "id": "player",
+      "title": "Player xp and level stamps",
+      "paths": ["server/engine/src/engine/entity/Player.ts"],
+      "why": "The xp table, the 25x multiplier applied to every xp drop, and the stamp of the tick each level was reached, which is what the hiscores rank us by. Every route's tick estimate and the scored time depend on them."
+    },
+    {
+      "id": "player-save",
+      "title": "Player save format",
+      "paths": ["server/engine/src/engine/entity/PlayerLoading.ts"],
+      "why": "How playtime and the per-skill level-reached ticks are saved and loaded. A format change can reset or shift the times the hiscores show for our account."
+    },
+    {
+      "id": "world",
+      "title": "World tick loop and limits",
+      "paths": ["server/engine/src/engine/World.ts"],
+      "why": "The tick loop, the playtime counter that adds one per logged-in tick (the scored clock), the per-IP session cap our helper accounts rely on, and the idle and no-response logout timers."
+    },
+    {
+      "id": "packet-budget",
+      "title": "Packet-per-tick enforcement",
+      "paths": ["server/engine/src/engine/entity/NetworkPlayer.ts"],
+      "why": "Stops decoding a client's packets after 5 successful user events in a tick. The run's batched banking, trading and level-up dismissal are planned around exactly that floor."
+    },
+    {
+      "id": "packet-limits",
+      "title": "Packet-per-tick limits",
+      "paths": ["server/engine/src/network/game/client/ClientGameProtCategory.ts"],
+      "why": "The budget values themselves: 5 user events, 20 client events and 2 restricted events per tick. Lowering the user-event limit slows every batched action in the run."
+    },
+    {
+      "id": "packet-categories",
+      "title": "Packet categories",
+      "paths": ["server/engine/src/network/game/client/model/**"],
+      "why": "Which budget each client packet counts against. Moving a packet we send in bulk into the user or restricted budget slows the run's batched actions."
+    },
+    {
+      "id": "packet-handlers",
+      "title": "Packet handlers",
+      "paths": ["server/engine/src/network/game/client/handler/**"],
+      "why": "How the server handles item, interface-button, object and NPC clicks and dialogue resumes, and which of them count as successful. The SDK's actions and our fast paths send exactly these packets."
+    },
+    {
+      "id": "script-ops",
+      "title": "Player script ops",
+      "paths": ["server/engine/src/engine/script/handlers/PlayerOps.ts"],
+      "why": "p_delay, which sets how many ticks scripted actions hold the player, and stat_random, the level-scaled success roll behind every gathering action and every wine."
+    },
+    {
+      "id": "login",
+      "title": "Login server and hiscore writes",
+      "paths": ["server/engine/src/server/login/LoginServer.ts", "server/engine/src/server/login/LoginThread.ts"],
+      "why": "Accounts are created automatically on first login, which is how our helper accounts come to exist, and logout and autosave write the hiscore rows with each level's reached tick."
+    },
+    {
+      "id": "hiscores",
+      "title": "Hiscores ranking and page",
+      "paths": ["server/engine/src/web/pages/RankedHiscores*.ts", "server/engine/src/web/pages/hiscores.ts"],
+      "why": "The ranking rule (highest level first, then lowest time) that decides whether we beat #1, and the page markup this watch parses to read the current #1."
+    },
+    {
+      "id": "market",
+      "title": "Grand Exchange",
+      "paths": ["server/engine/src/engine/market/**", "server/engine/src/web/pages/market.ts", "server/engine/src/engine/entity/tracking/TradeLedger.ts"],
+      "why": "Grand Exchange order matching, escrow and the trade ledger. Any supply the run buys or sells instead of gathering goes through this code."
+    },
+    {
+      "id": "wine",
+      "title": "Wine fermentation",
+      "paths": ["server/content/scripts/skill_cooking/scripts/cooking_inv/scripts/wine/wine.rs2"],
+      "why": "Unfermented wine ferments on a timer, including every jug sitting in the bank, and each good wine pays Cooking xp with no level check beyond the 35 needed to mix it. The cooking route gets its Cooking levels from banked wine this way."
+    },
+    {
+      "id": "charge",
+      "title": "Charge spell",
+      "paths": ["server/content/scripts/skill_magic/scripts/spells/charge.rs2"],
+      "why": "Charge has no recast cooldown (the 'your current Charge is too strong' check is commented out), so it can be cast back to back for Magic xp."
+    },
+    {
+      "id": "magic",
+      "title": "Magic",
+      "paths": ["server/content/scripts/skill_magic/**"],
+      "why": "Spell data, rune costs and xp for every spell, including jewellery enchanting and alchemy. The Magic route's casts per level come from these numbers."
+    },
+    {
+      "id": "player-count",
+      "title": "Player-count scaling",
+      "paths": ["server/content/scripts/general/scripts/player_count.rs2"],
+      "why": "Scales tree, rock and thieving respawn timers by how many players are online. A change alters gathering rates on a busy world."
+    },
+    {
+      "id": "jewellery-lamps",
+      "title": "Teleport jewellery and xp lamps",
+      "paths": ["server/content/scripts/general/scripts/enchanted_jewellry/**", "server/content/scripts/general/scripts/xplamp/**"],
+      "why": "What enchanted jewellery does when worn or rubbed (glory, dueling, games necklace, recoil, forging) and how xp lamps pay out. Routes can use these for travel and free xp."
+    },
+    {
+      "id": "levels",
+      "title": "Level requirements and level-up",
+      "paths": ["server/content/scripts/levelrequire/**", "server/content/scripts/levelup/**"],
+      "why": "Which items and actions need which level, and the level-up dialog that interrupts the player. The run dismisses that dialog immediately and plans its unlocks around these levels."
+    },
+    {
+      "id": "cooking",
+      "title": "Cooking",
+      "paths": ["server/content/scripts/skill_cooking/**"],
+      "why": "Cooking actions, burn rolls and xp per item outside wine. Any cooking the route does besides wine is measured against these scripts."
+    },
+    {
+      "id": "woodcutting",
+      "title": "Woodcutting",
+      "paths": ["server/content/scripts/skill_woodcutting/**"],
+      "why": "Chop success rolls, tree depletion and respawn, and xp per log. The woodcutting route's measured xp per tick comes from these scripts."
+    },
+    {
+      "id": "fishing",
+      "title": "Fishing",
+      "paths": ["server/content/scripts/skill_fishing/**"],
+      "why": "Catch rolls, fishing spot behaviour and xp per catch. The measured fly-fishing route at Lumbridge depends on these numbers."
+    },
+    {
+      "id": "mining",
+      "title": "Mining",
+      "paths": ["server/content/scripts/skill_mining/**"],
+      "why": "Mining success rolls, rock depletion and respawn, and xp per ore. The mining route's xp per tick comes from these scripts."
+    },
+    {
+      "id": "thieving",
+      "title": "Thieving",
+      "paths": ["server/content/scripts/skill_thieving/**"],
+      "why": "Pickpocket and stall success rolls, stun times and xp. The thieving route's xp per tick, and how long a failed attempt costs, come from these scripts."
+    },
+    {
+      "id": "agility",
+      "title": "Agility",
+      "paths": ["server/content/scripts/skill_agility/**"],
+      "why": "Course obstacles, their tick lengths, fail chances and xp. The agility route's laps per level come from these scripts."
+    },
+    {
+      "id": "fletching",
+      "title": "Fletching",
+      "paths": ["server/content/scripts/skill_fletching/**"],
+      "why": "Fletching recipes, items made per action and xp. The fletching route's xp per tick comes from these scripts."
+    },
+    {
+      "id": "herblore",
+      "title": "Herblore",
+      "paths": ["server/content/scripts/skill_herblore/**"],
+      "why": "Herb cleaning and potion mixing, their delays and xp. The herblore route's xp per tick comes from these scripts."
+    },
+    {
+      "id": "crafting",
+      "title": "Crafting",
+      "paths": ["server/content/scripts/skill_crafting/**"],
+      "why": "Crafting recipes, including jewellery, with their delays and xp. The crafting route's xp per tick comes from these scripts."
+    },
+    {
+      "id": "smithing",
+      "title": "Smithing",
+      "paths": ["server/content/scripts/skill_smithing/**"],
+      "why": "Smelting and anvil smithing, their delays, success rolls and xp. The smithing route's xp per tick comes from these scripts."
+    },
+    {
+      "id": "firemaking",
+      "title": "Firemaking",
+      "paths": ["server/content/scripts/skill_firemaking/**"],
+      "why": "Lighting rolls, the step after each fire and xp per log. The firemaking route's xp per tick comes from these scripts."
+    },
+    {
+      "id": "prayer",
+      "title": "Prayer",
+      "paths": ["server/content/scripts/skill_prayer/**"],
+      "why": "Bone burying delay and xp per bone. The prayer route's xp per tick comes from these scripts."
+    },
+    {
+      "id": "runecraft",
+      "title": "Runecraft",
+      "paths": ["server/content/scripts/skill_runecraft/**"],
+      "why": "Altar access, runes made per essence and xp. The runecraft route's xp per trip comes from these scripts."
+    },
+    {
+      "id": "combat",
+      "title": "Combat, ranged and combat magic",
+      "paths": ["server/content/scripts/skill_combat/**"],
+      "why": "Hit rolls, attack speeds, ranged and combat-spell data and combat xp. Every combat level and quest fight in the run, including Elvarg, is timed against these scripts."
+    },
+    {
+      "id": "quests",
+      "title": "Quests",
+      "paths": ["server/content/scripts/quests/**"],
+      "groupBy": 4,
+      "why": "Quest requirements, steps and xp rewards. The measured quest routes and the quest-point total were planned against these scripts; changes are grouped by quest."
+    },
+    {
+      "id": "trade-bank",
+      "title": "Trade and bank interfaces",
+      "paths": ["server/content/scripts/interface_trade/**", "server/content/scripts/interface_bank/**"],
+      "why": "How trade offers and bank deposits accept items. The run's batched deposit and batched trade fast paths were measured against these interfaces."
+    },
+    {
+      "id": "webclient",
+      "title": "Bot webclient",
+      "paths": ["server/webclient/src/lite/**", "server/webclient/src/bot/**"],
+      "diff": "stat",
+      "why": "The client our bots run, including the state collector that produces the state the SDK reads. A change here can break our bots or need merging into the fork."
+    },
+    {
+      "id": "sdk",
+      "title": "SDK",
+      "paths": ["sdk/**"],
+      "diff": "stat",
+      "why": "The SDK our speedrun code imports. An upstream change here means merge work for the fork and may change the bot helpers our routes call."
+    }
+  ]
+}
