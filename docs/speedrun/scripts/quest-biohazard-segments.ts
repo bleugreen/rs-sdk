@@ -56,6 +56,8 @@ await runScript(async ({ bot, sdk }) => {
     };
     const teleport = () => S.step('Ardougne teleport', () => sdk.sendClickComponent(ARDOUGNE_TELEPORT), { done: near(sdk, 2661, 3301, 3), settle: 0 });
 
+    // Free inventory space: Elena only hands over each vial while more than one slot is free.
+    await dropAll(sdk, /^(Bronze .*|Tinderbox|Small fishing net|Shrimps|Pot|Bread|Wooden shield|Shortbow|Mind rune|Body rune|Picture|Book|Warrant|A small key|A scruffy note|Hangover cure|Spade|Rope|Bucket.*|Chocolaty milk|Chocolate dust|Snape grass|Dwellberries)$/i);
     await L.cheat(sdk, 'setvar elenaquest 30');
     await L.cheat(sdk, 'setvar regicide_quest 0');
     await ensure(sdk, 'coins', /^Coins$/i, 100);
@@ -179,11 +181,14 @@ await runScript(async ({ bot, sdk }) => {
             await dropAll(sdk, /^(Ethanea|Liquid honey|Sulphuric broline)$/i);
             await ensure(sdk, 'plaguesample', /^Plague sample$/i);
             await ensure(sdk, 'touch_paper', /^Touch paper$/i);
-            for (const g of ['priest_gown', 'priest_robe']) {
-                if (sdk.getEquipment().some(e => /^Priest gown$/i.test(e.name) && (g === 'priest_gown' ? true : true)) && sdk.getEquipment().filter(e => /^Priest gown$/i.test(e.name)).length >= 2) break;
-                await L.cheat(sdk, `give ${g} 1`, 2);
+            // Both halves are named "Priest gown" (quest_biohazard.obj); Guidor's door checks both worn.
+            if (sdk.getEquipment().filter(e => /^Priest gown$/i.test(e.name)).length < 2) {
+                for (const g of ['priest_gown', 'priest_robe']) await L.cheat(sdk, `give ${g} 1`, 2);
+                for (const it of sdk.getInventory().filter(i => /^Priest gown$/i.test(i.name))) {
+                    await sdk.sendUseItem(it.slot, 2);
+                    await sdk.waitForTicks(2);
+                }
             }
-            for (const it of sdk.getInventory().filter(i => /^Priest gown$/i.test(i.name))) await bot.equipItem(it);
             await L.tele(sdk, 3262, 3405);
             await S.step('Varrock gate: the search', opAt(3264, 3405, /Open/), { done: () => L.pos(sdk).x >= 3265, settle: 4 });
             await S.walk('gate -> Hops', 3268, 3390);
