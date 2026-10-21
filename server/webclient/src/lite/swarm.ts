@@ -135,8 +135,8 @@ class PickpocketBot {
         this.unreachablePiles.clear();
         this.myDrops.clear();
 
-        this.client.setOnGameTickCallback(() => {
-            this.tick++;
+        this.client.setOnGameTickCallback(ticks => {
+            this.tick += ticks;
             this.onTick().catch(e => console.error(`[${this.name}] tick error:`, e));
         });
     }

@@ -177,7 +177,7 @@ export class LiteClient {
      * Adaptive animation speed, mirroring the browser's PLAYER_INFO branch
      * (Client.ts ~8775): anims are authored for the vanilla 600ms tick, so a
      * server ticking faster replays them proportionally faster. Updated once per
-     * server tick in notifyGameTick; ageEntityAnim consumes it.
+     * server tick in markGameTick; ageEntityAnim consumes it.
      */
     tickSpeedMultiplier = 1;
     private measuredTickInterval = 420;
@@ -203,7 +203,9 @@ export class LiteClient {
     readonly interfaces: InterfaceTable = new InterfaceTable();
     private readonly loginPass: string;
     private readonly maxMessageLength: number;
-    private onGameTickCallback: (() => void) | null = null;
+    private onGameTickCallback: ((ticks: number) => void) | null = null;
+    /** PLAYER_INFOs decoded by the current drain and not yet published. */
+    private pendingGameTicks = 0;
     private loggedOut = false;
     private collector: BotStateCollector | null = null;
     private executor: ActionExecutor | null = null;
@@ -250,6 +252,15 @@ export class LiteClient {
      * Drain everything the socket has. Called once per client cycle; unlike the
      * browser shell there is no redraw to interleave with, so we just loop until
      * the socket is dry.
+     *
+     * Game ticks are published here, after the drain, not from the PLAYER_INFO
+     * handler. The engine writes a tick as one websocket message in the order map
+     * update, PLAYER_INFO, NPC_INFO, zones, inventories, stats, interface
+     * opens/closes (World.processClientsOut, NetworkPlayer.encodeOut), so state
+     * read at PLAYER_INFO misses the rest of its own tick - the npc moves, doors,
+     * items and dialogue page a bot reacts to - and every reaction lands a tick
+     * late. Publishing after snapEntities also gives observers this tick's
+     * positions rather than the previous tick's.
      */
     async pumpPackets(): Promise<void> {
         let guard = 0;
@@ -259,6 +270,7 @@ export class LiteClient {
             }
         }
         this.snapEntities();
+        this.publishGameTicks();
     }
 
     /**
@@ -416,11 +428,19 @@ export class LiteClient {
         return this.cycle.value;
     }
 
-    setOnGameTickCallback(cb: (() => void) | null): void {
+    /**
+     * `cb` runs once per pumpPackets drain that decoded at least one server tick,
+     * with every packet of those ticks applied. `ticks` is how many PLAYER_INFOs
+     * the drain held: normally 1, more when the loop fell behind and several
+     * ticks' messages were queued, which observers should count rather than
+     * replay.
+     */
+    setOnGameTickCallback(cb: ((ticks: number) => void) | null): void {
         this.onGameTickCallback = cb;
     }
 
-    notifyGameTick(): void {
+    /** A PLAYER_INFO was decoded: one server tick. Published by pumpPackets. */
+    markGameTick(): void {
         // Measure the real server tick interval off PLAYER_INFO (which arrives
         // exactly once per tick), same EMA and clamp as Client.ts ~8775, so
         // ageEntityAnim replays anims at the speed the browser client would.
@@ -432,7 +452,16 @@ export class LiteClient {
         }
         this.lastTickTime = now;
 
-        this.onGameTickCallback?.();
+        this.pendingGameTicks++;
+    }
+
+    private publishGameTicks(): void {
+        const ticks = this.pendingGameTicks;
+        if (ticks === 0) {
+            return;
+        }
+        this.pendingGameTicks = 0;
+        this.onGameTickCallback?.(ticks);
     }
 
     isInGame(): boolean {
