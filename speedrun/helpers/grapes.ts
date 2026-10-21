@@ -82,9 +82,15 @@ const GOBLIN_VILLAGE: Box = { x1: 2940, z1: 3488, x2: 2972, z2: 3520 };
 const GOBLIN_VILLAGE_CENTRE: Tile = { x: 2956, z: 3504 };
 /** Falador west bank, the nearest to Goblin Village. */
 const FALADOR_WEST_BANK: Tile = { x: 2946, z: 3368 };
-/** Outside the guild's south door, and the ground-floor tile just inside it. */
-const GUILD_OUTSIDE: Tile = { x: 3143, z: 3442 };
+/**
+ * The guild's door (chefdoor, loc 2712) is on the south edge of (3143,3444), so
+ * (3143,3443) is outside and (3143,3444) inside (m49_53.jm2). Spiral stairs
+ * (3144,3447) lead to level 1, a ladder (3144,3446) to level 2.
+ */
+const GUILD_DOOR: Tile = { x: 3143, z: 3444 };
+const GUILD_OUTSIDE: Tile = { x: 3143, z: 3443 };
 const GUILD_INSIDE: Tile = { x: 3143, z: 3445 };
+const GUILD_GROUND: Box = { x1: 3137, z1: 3444, x2: 3150, z2: 3455 };
 const GUILD_GRAPES = { x: 3144, z: 3450, level: 2 };
 const GUILD_JUG = { x: 3141, z: 3447, level: 2 };
 const GUILD_SINK = { x: 3146, z: 3451 };
@@ -429,13 +435,33 @@ class Gatherer {
         if (position(this.sdk).level !== want) throw new Error(`climb ${up ? 'up' : 'down'} failed`);
     }
 
+    /** Walk to a tile; if no path exists (shut in behind a closed door), open the nearest door and retry once. */
+    async walkOrOpen(t: Tile, tolerance: number): Promise<void> {
+        try {
+            await walkNear(this.ctx, t.x, t.z, tolerance);
+        } catch (e) {
+            const r = await this.bot.openDoor();
+            this.ctx.log('walk blocked; opened a door', { to: t, at: position(this.sdk), door: r.message });
+            await walkNear(this.ctx, t.x, t.z, tolerance);
+        }
+    }
+
+    async enterGuild(): Promise<void> {
+        await this.walkOrOpen(GUILD_OUTSIDE, 0);
+        const door = (await this.sdk.scanNearbyLocs(4)).find(l => l.x === GUILD_DOOR.x && l.z === GUILD_DOOR.z && /door/i.test(l.name));
+        if (door?.optionsWithIndex.some(o => /^open$/i.test(o.text))) {
+            const r = await this.bot.openDoor(door);
+            if (!r.success) throw new Error(`guild door: ${r.message} (Cooking ${skillLevel(this.sdk, 'Cooking')}, hat ${this.wearingHat()})`);
+        }
+        const w = await this.bot.walkTo(GUILD_INSIDE.x, GUILD_INSIDE.z, 0);
+        const p = position(this.sdk);
+        if (!inBox(GUILD_GROUND, p.x, p.z)) throw new Error(`could not enter the guild: ${w.message}`);
+    }
+
     async goToSpawn(): Promise<void> {
         let p = position(this.sdk);
         if (p.level === 0) {
-            if (!inBox({ x1: 3138, z1: 3444, x2: 3149, z2: 3455 }, p.x, p.z)) {
-                await walkNear(this.ctx, GUILD_OUTSIDE.x, GUILD_OUTSIDE.z, 2);
-                await walkNear(this.ctx, GUILD_INSIDE.x, GUILD_INSIDE.z, 1);
-            }
+            if (!inBox(GUILD_GROUND, p.x, p.z)) await this.enterGuild();
             await this.climb(true);
             p = position(this.sdk);
         }
@@ -454,7 +480,12 @@ class Gatherer {
                 if (!(await this.sdk.waitForCondition(() => invCount(this.sdk, ITEM.jugEmpty) < before, 3_000).then(() => true, () => false))) break;
             }
         }
-        await walkNear(this.ctx, GUILD_OUTSIDE.x, GUILD_OUTSIDE.z, 2);
+        const door = (await this.sdk.scanNearbyLocs(6)).find(l => l.x === GUILD_DOOR.x && l.z === GUILD_DOOR.z && /door/i.test(l.name));
+        if (door?.optionsWithIndex.some(o => /^open$/i.test(o.text))) {
+            await this.bot.walkTo(GUILD_DOOR.x, GUILD_DOOR.z, 0);
+            await this.bot.openDoor(door);
+        }
+        await walkNear(this.ctx, GUILD_OUTSIDE.x, GUILD_OUTSIDE.z, 1);
     }
 
     groundAt(t: { x: number; z: number }, id: number): GroundItem | undefined {
