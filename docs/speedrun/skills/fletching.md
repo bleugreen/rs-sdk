@@ -100,11 +100,16 @@ Fletching quest reward should be chosen for its Fletching xp. **On-route start: 
 
 - **Adamant or mithril as the top tier**: +43 or +126 actions, about +9 or +25 ticks (inferred).
   Use them if rune arrowheads cost more helper time than 9 or 25 scored ticks are worth.
-- **Bows (cut logs, string bows)**: `cut_logs.rs2` and `bows.rs2` use make-X menus with queued
-  2-tick actions (read). At best 1 action per 2 ticks; magic longbow stringing at 91.5 base per
-  2 ticks is about 46 base per tick against arrows' 937.5. Loses by a factor of 20.
-- **Bolts** (`bolts.rs2`): this revision's bolts are 10 per action at lower xp (read). They
-  lose to arrows.
+- **Stringing bows** is also delay-free: one bow per OPHELDU, no delay or queue
+  (`bows.rs2:18-42`). But it is one bow per action, magic longbow 91.5 base at level 85
+  (`bows.dbrow:78-83`), and unstrung bows and bow strings do not stack, so it runs 14 per
+  inventory with a bank visit: about 91.5 x 14 / 5 ticks = 256 base per tick at the herblore
+  cycle (inferred) against rune arrows' 937.5. Loses by a factor of about 3.6.
+- **Cutting logs** (`cut_logs.rs2`) goes through a make-X menu and a queued action (read).
+  Slower still.
+- **Bolts** (`bolts.rs2:49-88`): tipping is delay-free and 10 per action, but the best row,
+  barbed bolts at 51, is 95 base per action (`bolts.dbrow:38-43`), below mithril arrows'
+  112.5 at 45. Loses to arrows at every level.
 - **Ogre arrows** (`ogre_arrows.rs2`): need Big Chompy Bird Hunting, lower xp. Not considered.
 - **Trading per inventory**: not needed; everything stacks.
 
