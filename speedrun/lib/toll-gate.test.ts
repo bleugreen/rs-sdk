@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { BotWorldState, NearbyLoc, NearbyNpc } from '../../sdk/types';
 import { baseState, FakeSdk, type SentAction } from './fake-sdk';
-import { crossTollGate, inAlKharid, pickBorderGuard, TOLL_EAST, TOLL_WEST, type TollGateBot, type TollGateSdk } from './toll-gate';
+import { crossTollGate, inAlKharid, isEastOfTollGate, pickBorderGuard, TOLL_EAST, TOLL_WEST, travelTo, WEST_OF_GATE, type TollGateBot, type TollGateSdk } from './toll-gate';
 
 const coins = (count: number) => ({ slot: 0, id: 995, name: 'Coins', count, optionsWithIndex: [] });
 const guard = (index: number, x: number, distance: number): NearbyNpc =>
@@ -118,5 +118,88 @@ describe('crossTollGate', () => {
         run(fake);
         const r = await crossTollGate(bot, asSdk(fake), true);
         expect(r).toEqual({ ok: false, paid: 0, reason: 'no guard or gate' });
+    });
+});
+
+/**
+ * A walkTo with the SDK pathfinder's toll gate behaviour: it arrives anywhere on
+ * the player's own side, and a destination across the fence ends at the gate.
+ */
+export function pathfinder(fake: FakeSdk) {
+    const calls: { to: [number, number]; fromEast: boolean }[] = [];
+    const bot: TollGateBot = {
+        walkTo: async (x: number, z: number) => {
+            const s = fake.state!;
+            const fromEast = inAlKharid(s);
+            calls.push({ to: [x, z], fromEast });
+            if (isEastOfTollGate({ x, z }) !== fromEast) {
+                const gate = fromEast ? TOLL_EAST : TOLL_WEST;
+                fake.push({ player: { ...s.player!, worldX: gate.x, worldZ: gate.z } });
+                return { success: false, message: `Stuck at (${gate.x}, ${gate.z})` };
+            }
+            fake.push({ player: { ...s.player!, worldX: x, worldZ: z } });
+            return { success: true, message: 'ok' };
+        }
+    };
+    return { bot, calls };
+}
+
+const VARROCK_WEST_BANK = { x: 3185, z: 3436 };
+const AL_KHARID_BANK = { x: 3270, z: 3167 };
+const LUMBRIDGE = { x: 3222, z: 3218 };
+
+describe('travelTo', () => {
+    test('from Al Kharid to Varrock west bank: pays the toll, steps clear of the gate, then walks', async () => {
+        const fake = world({ x: 3290, z: 3170 }, 1566, { nearbyNpcs: [guard(4, 3269, 2)] });
+        borderGuard(fake);
+        run(fake);
+        const { bot, calls } = pathfinder(fake);
+        const r = await travelTo(bot, asSdk(fake), VARROCK_WEST_BANK);
+        expect(r).toEqual({ ok: true, paid: 10 });
+        expect(fake.sent.find(a => a.method === 'sendInteractNpc')?.args[0]).toBe(4);
+        // Up to the gate on the east side, then only west-side destinations from the west side.
+        expect(calls).toEqual([
+            { to: [TOLL_EAST.x, TOLL_EAST.z], fromEast: true },
+            { to: [WEST_OF_GATE.x, WEST_OF_GATE.z], fromEast: false },
+            { to: [VARROCK_WEST_BANK.x, VARROCK_WEST_BANK.z], fromEast: false }
+        ]);
+        expect(fake.state!.player).toMatchObject({ worldX: VARROCK_WEST_BANK.x, worldZ: VARROCK_WEST_BANK.z });
+    });
+
+    test('from the west into Al Kharid: pays the toll eastward, no westward step', async () => {
+        const fake = world(LUMBRIDGE, 30, { nearbyNpcs: [guard(2, 3266, 2)] });
+        borderGuard(fake);
+        run(fake);
+        const { bot, calls } = pathfinder(fake);
+        const r = await travelTo(bot, asSdk(fake), AL_KHARID_BANK);
+        expect(r).toEqual({ ok: true, paid: 10 });
+        expect(calls.map(c => c.to)).toEqual([[TOLL_WEST.x, TOLL_WEST.z], [AL_KHARID_BANK.x, AL_KHARID_BANK.z]]);
+        expect(calls.every(c => isEastOfTollGate({ x: c.to[0], z: c.to[1] }) === c.fromEast)).toBe(true);
+    });
+
+    test('fewer than 10 coins: fails before any walk toward the other side', async () => {
+        const fake = world({ x: 3290, z: 3170 }, 5, { nearbyNpcs: [guard(4, 3269, 2)] });
+        const { bot, calls } = pathfinder(fake);
+        const r = await travelTo(bot, asSdk(fake), VARROCK_WEST_BANK);
+        expect(r).toEqual({ ok: false, paid: 0, reason: 'toll gate: no toll' });
+        expect(calls).toEqual([]);
+        expect(fake.sent).toEqual([]);
+    });
+
+    test('same side: just walks, no toll', async () => {
+        const fake = world(LUMBRIDGE, 0);
+        const { bot, calls } = pathfinder(fake);
+        expect(await travelTo(bot, asSdk(fake), VARROCK_WEST_BANK)).toEqual({ ok: true, paid: 0 });
+        expect(calls.map(c => c.to)).toEqual([[VARROCK_WEST_BANK.x, VARROCK_WEST_BANK.z]]);
+        expect(fake.sent).toEqual([]);
+    });
+
+    test('a walk that never arrives reports cant reach after its attempts', async () => {
+        const fake = world(LUMBRIDGE, 0);
+        let n = 0;
+        const stuck: TollGateBot = { walkTo: async () => (n++, { success: false, message: 'no path' }) };
+        const r = await travelTo(stuck, asSdk(fake), VARROCK_WEST_BANK, { attempts: 4 });
+        expect(r).toEqual({ ok: false, paid: 0, reason: 'cant reach' });
+        expect(n).toBe(4);
     });
 });
