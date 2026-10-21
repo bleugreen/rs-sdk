@@ -61,6 +61,17 @@ the time, and the reactive steps are worth roughly 3,000 ticks over the route.
   `probeInPage`. With no SDK at all, `window.rsPrograms.run(name, params)` resolves
   with the final status and `rsPrograms.history` keeps ended runs. A page opened with
   `?program=<name>&programArgs=<json>` starts that program 5 in-game ticks after login.
+- **Undeclared parameter keys fault.** Each factory declares the start keys it reads
+  (`createKnifeCycle.params = [...]`, just above the factory), and the runtime adds its
+  own `stallTicks`. A start carrying any other top-level key faults through the
+  bad-parameters path, naming the keys and the program (`bad parameters: knife-cycle does
+  not declare dropEach (accepts: ...)`), before the factory runs. An unknown key is
+  either a typo or a page built from a commit without that program change (rs/211: a
+  twin served from main would have dropped mission-branch opt-ins and run the plain
+  program), and either way the run is not the one asked for. `register` refuses a factory
+  without a declaration, and `index.test.ts` checks each declaration against the
+  `params.<key>` reads in its program's module, so a new opt-in is declared or the test
+  fails. Nested values (a `method` or `course` object) are the factory's own to validate.
 
 ## Programs
 
