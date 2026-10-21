@@ -1,0 +1,49 @@
+Pathfinding initialized in 192ms (136704 zones + 297 mainland fill, 1268350 tiles, 2691 doors masked, 5 one-way doors blocked)
+[Runner] Connecting to bot "cairn_r130"...
+[BotSDK] Waiting for game state to be ready...
+[BotSDK] Game state ready!
+[BotSDK] Connected and game state ready
+[Runner] Connected to bot "cairn_r130"
+start at 3247,3239, inventory: Bronze axe, Knife, Arrow shaft, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs
+walk to the trees: Arrived (at 3194,3232)
+ready at 3194,3232: knife true, logs 23, woodcutting 63, 13 trees within 10 tiles
+[Runner] Disconnecting bot "cairn_r130"...
+[LOGOUT DEBUG] SDK WebSocket closed - autoReconnect=true, intentionalDisconnect=true
+2026-10-21T20:37:44.660Z eval rsPrograms.run("knife-cycle", { method: "oak", maxTicks: 320 })
+2026-10-21T20:37:47.672Z progress {"t":149,"x":[]}
+2026-10-21T20:37:50.680Z progress {"t":160,"x":[]}
+2026-10-21T20:37:53.688Z progress {"t":170,"x":[]}
+2026-10-21T20:37:56.700Z progress {"t":180,"r":1,"x":[]}
+2026-10-21T20:37:59.708Z progress {"t":190,"r":1,"x":[]}
+2026-10-21T20:38:02.718Z progress {"t":201,"r":2,"x":[]}
+2026-10-21T20:38:05.733Z progress {"t":210,"r":2,"x":[]}
+2026-10-21T20:38:08.747Z progress {"t":220,"r":3,"x":[]}
+2026-10-21T20:38:11.759Z progress {"t":231,"r":4,"x":[]}
+2026-10-21T20:38:14.767Z progress {"t":240,"r":4,"x":[]}
+2026-10-21T20:38:17.777Z progress {"t":249,"r":6,"x":[]}
+2026-10-21T20:38:20.793Z progress {"t":261,"r":6,"x":[]}
+2026-10-21T20:38:23.798Z progress {"t":271,"r":6,"x":[]}
+2026-10-21T20:38:26.804Z progress {"t":280,"r":8,"x":[]}
+2026-10-21T20:38:29.814Z progress {"t":290,"r":9,"x":[]}
+2026-10-21T20:38:32.823Z progress {"t":301,"r":10,"x":[]}
+2026-10-21T20:38:35.834Z progress {"t":309,"r":10,"x":[]}
+2026-10-21T20:38:38.840Z progress {"t":320,"r":11,"x":[]}
+2026-10-21T20:38:41.860Z progress {"t":330,"r":11,"x":[]}
+2026-10-21T20:38:44.868Z progress {"t":340,"r":12,"x":[]}
+2026-10-21T20:38:47.875Z progress {"t":351,"r":14,"x":[]}
+2026-10-21T20:38:50.889Z progress {"t":360,"r":15,"x":[]}
+2026-10-21T20:38:53.908Z progress {"t":371,"r":17,"x":[]}
+2026-10-21T20:38:56.914Z progress {"t":379,"r":17,"x":[]}
+2026-10-21T20:38:59.921Z progress {"t":391,"r":19,"x":[]}
+2026-10-21T20:39:02.927Z progress {"t":400,"r":20,"x":[]}
+2026-10-21T20:39:05.943Z progress {"t":410,"r":20,"x":[]}
+2026-10-21T20:39:08.954Z progress {"t":421,"r":21,"x":[]}
+2026-10-21T20:39:11.962Z progress {"t":430,"r":23,"x":[]}
+2026-10-21T20:39:15.013Z progress {"t":440,"r":23,"x":[]}
+2026-10-21T20:39:18.026Z progress {"t":450,"r":24,"x":[]}
+2026-10-21T20:39:21.034Z progress {"t":460,"r":25,"x":[]}
+2026-10-21T20:39:22.037Z result {"runId":2,"name":"knife-cycle","phase":"done","params":{"method":"oak","maxTicks":320},"startedTick":140,"tick":462,"progressTick":453,"counters":{"rolls":25,"starters":77,"phaseResyncs":4,"slips":4,"resyncs":6,"levelUps":3,"rejected":2},"gauges":{"ticksPerRoll":8.444},"packets":265,"deferred":0,"skippedTicks":0,"maxTickMs":0.9,"frames":{"n":321,"p50":300,"p90":450,"max":681,"under150":31,"over350":109,"catchUps":20,"catchUpsLastMinute":11,"catchUpsPerMinute":12.41},"publish":{"n":321,"p50":300,"p90":450,"max":681,"under150":31,"over350":109,"catchUps":20,"catchUpsLastMinute":11,"catchUpsPerMinute":12.41},"react":{"n":322,"p50":2,"p90":2,"max":1.6},"loops":{"last":75,"p10Last10s":69.7,"min":51.9},"last":"done","result":{"method":"oak","technique":"knife","rolls":25,"ticks":321,"ticksPerRoll":8.444,"gaps":18,"histogram":{"3":3,"4":4,"6":2,"7":2,"12":2,"13":3,"15":1,"23":1},"span":282,"ticksPerRollOverSpan":11.75,"starters":77,"resyncs":6,"moves":0,"levelUps":3,"phase":0},"endedTick":462,"logTail":["T246 xp (anchor 215, awaiting xp since -)","T265 resync (no xp)","T275 xp (anchor -, awaiting xp since 265)","T275 anchored on xp (roll 275)","T279 xp (anchor 275, awaiting xp since -)","T285 xp (anchor 275, awaiting xp since -)","T286 target gone (anchor 275, awaiting xp since -)","T286 resync (target gone)","T298 xp (anchor -, awaiting xp since 286)","T298 anchored on xp (roll 298)","T311 level 65","T311 xp (anchor 298, awaiting xp since -)","T330 resync (no xp)","T338 xp (anchor -, awaiting xp since 330)","T338 anchored on xp (roll 338)","T345 xp (anchor 338, awaiting xp since -)","T349 xp (anchor 338, awaiting xp since -)","T349 roll off phase: re-anchored on it","T355 xp (anchor 345, awaiting xp since -)","T368 xp (anchor 345, awaiting xp since -)","T368 roll off phase: re-anchored on it","T369 rejected dismiss dialog: Failed to click dialog option","T371 xp (anchor 364, awaiting xp since -)","T383 xp (anchor 364, awaiting xp since -)","T387 level 66","T387 xp (anchor 364, awaiting xp since -)","T387 roll off phase: re-anchored on it","T388 rejected dismiss dialog: Failed to click dialog option","T399 xp (anchor 383, awaiting xp since -)","T400 target gone (anchor 383, awaiting xp since -)","T400 resync (target gone)","T418 xp (anchor -, awaiting xp since 400)","T418 anchored on xp (roll 418)","T422 xp (anchor 418, awaiting xp since -)","T425 xp (anchor 418, awaiting xp since -)","T444 resync (no xp)","T446 xp (anchor -, awaiting xp since 444)","T446 anchored on xp (roll 446)","T453 xp (anchor 446, awaiting xp since -)","done"]}
+knife-cycle: 25 rolls, 321 ticks, 8.44 ticks per roll (mean gap), 11.75 over the span of 282; gaps {"3":3,"4":4,"6":2,"7":2,"12":2,"13":3,"15":1,"23":1}; starters 77, resyncs 6, moves 0, level-ups 3
+server frame interval ms in the page: p50 300 p90 450 max 681, catch-ups 20 (12.4/min), under 150 31, over 350 109
+page publication interval ms: p50 300 p90 450 max 681
+program knife-cycle done: deferred 0, skippedTicks 0, maxTickMs 0.9, packets 265
