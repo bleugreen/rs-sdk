@@ -98,8 +98,10 @@ that match a played-through cutscene and at least 15 fewer logged-in ticks per c
 - **Tracker gnomes in Tree Gnome Village**: the ballista coordinates are fixed here
   (`quest_tree.rs2:6-8,20-26`), as `tree_gnome_village.md` already uses.
 - **Ardougne cloak, ring of dueling, stamina and energy potions, explorer's ring** (OSRS wiki
-  [S1] item lists): either absent in this content (the ring of dueling does not teleport,
-  `primitives.md` §4) or useless because run energy is infinite (`primitives.md` §2).
+  [S1] item lists): absent in this content, or useless because run energy is infinite
+  (`primitives.md` §2). The ring of dueling does teleport here, to the Duel Arena or Castle
+  Wars (`ring_of_dueling.rs2:1-34`, `travel-and-overhead.md` row 7), but neither destination is
+  on a quest leg, so it saves nothing.
 - **Gorilla statues to restore prayer in the temple** (OSRS wiki [S1]): unnecessary with row 4.
 - **Monkey bones from a Karamja monkey** (OSRS wiki [S1]): helpers already supply them.
 - **Logging out when the monkey's aunt calls the guards** (OSRS wiki [S1]: "log out or hop
