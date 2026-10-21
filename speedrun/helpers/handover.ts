@@ -11,6 +11,7 @@
 //              non-stackable items above one are withdrawn as notes
 import { withdrawMany } from '../lib/bank';
 import { give } from '../lib/trade';
+import { altarData, inRoom, leaveRoom, ROUTE_ALTARS, type AltarName } from './altar-room';
 import { inMine } from './essence';
 import { closeBank, depositAllExcept, ensureOutOfTutorial, openBank, walkNear } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
@@ -59,8 +60,16 @@ async function one(ctx: RoleContext, h: Handover, o: ReturnType<typeof handoverO
     return r.ok;
 }
 
-/** The fleet parks essence miners wherever their trip stopped, often inside the essence mine, where no bank is in reach. */
-async function leaveEssenceMine(ctx: RoleContext): Promise<void> {
+/**
+ * Get to where a bank is reachable on foot. The fleet parks essence miners
+ * wherever their trip stopped, often inside the essence mine, and an altar
+ * helper may be parked in an altar room; both are left by their portal.
+ */
+async function leaveEnclosure(ctx: RoleContext): Promise<void> {
+    for (const name of Object.keys(ROUTE_ALTARS) as AltarName[]) {
+        const altar = altarData(name);
+        if (inRoom(ctx.sdk.getState(), altar)) await leaveRoom(ctx, altar);
+    }
     for (let attempt = 0; attempt < 4 && inMine(ctx.sdk.getState()); attempt++) {
         const portal = (await ctx.sdk.scanNearbyLocs(30))
             .filter(l => /^portal$/i.test(l.name) && l.optionsWithIndex.some(o => /use/i.test(o.text)))
@@ -79,7 +88,7 @@ export const role: Role = {
         const o = handoverOptions(ctx.options);
         await ensureOutOfTutorial(ctx);
         await ctx.bot.dismissBlockingUI();
-        await leaveEssenceMine(ctx);
+        await leaveEnclosure(ctx);
         const done: string[] = [];
         for (const h of o.handovers) {
             if (ctx.signal.aborted) break;
