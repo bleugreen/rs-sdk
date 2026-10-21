@@ -308,12 +308,18 @@ const stateOf = (ctx: StepContext<unknown>): BotWorldState => {
     return s;
 };
 
+/**
+ * Log out. An unconfirmed logout is reported, not thrown: logoutClean cannot yet
+ * confirm a browser tab (the gateway keeps its last inGame state; rs/164), and
+ * docs/speedrun/rehearsals/HOST.md's teardown confirms the tab with tab-logout.ts.
+ */
 async function leave(ctx: StepContext<unknown>, o: AgilityOptions): Promise<void> {
-    if (o.logout) await o.logout(ctx.session);
-    else {
-        const r = await logoutClean(ctx.session as Session);
-        if (!r.ok) throw new Error(`logout failed: ${r.reason}`);
+    if (o.logout) {
+        await o.logout(ctx.session);
+        return;
     }
+    const r = await logoutClean(ctx.session as Session);
+    if (!r.ok) console.warn(`[agility] logout click on tick ${r.clickTick} not confirmed: ${r.reason}`);
 }
 
 function foodSlot(s: BotWorldState, food: string | undefined): { slot: number; op: number } | null {
