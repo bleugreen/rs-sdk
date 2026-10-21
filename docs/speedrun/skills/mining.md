@@ -27,6 +27,12 @@ itself takes about 2,180 ticks of playtime (measured on the stock client, p90 ab
 It is a net loss for Mining alone; do it only if the quest plan needs it for another
 reason, such as its quest points.
 
+**On the planned quest route** the account also completes Plague City (2,425 base Mining,
+`quest_elena.rs2:12`), which is in the Regicide chain and is done for that reason
+(cairn://p/rs/3). With Doric's Quest and Plague City, Mining starts at level 64 (3,725 base),
+with **about 3,765 ticks** of mining left on the demo and about 4,000 on a quiet server
+(inferred, `mining-model.ts`).
+
 The earlier "about 3,500 ticks" model assumed a 3-tick cycle could run forever. It
 cannot: every ore depletes its rock, so a 3-tick cycle needs 5 rocks on the demo (7 on a
 quiet server) all reachable without losing a tick, and no iron cluster in this content
@@ -53,6 +59,8 @@ server; half a tick per level-up, section 6):
 |---|---|---|
 | Level 1, no quests | 4,316 | 4,578 |
 | Doric's Quest, 1,300 base (level 49) | 4,034 | 4,288 |
+| Plague City, 2,425 base (level 58) | 3,904 | 4,150 |
+| **Doric + Plague City, 3,725 base (level 64), the planned quest route** | **3,765** | **4,003** |
 | Digsite, 15,300 base (level 85) | 2,557 | 2,718 |
 | Doric + Digsite, 16,600 base (level 86) | 2,422 | 2,575 |
 
@@ -68,6 +76,7 @@ account, against about 4,030 + 30 + travel for this route.
 | Quest | Base Mining xp (read) | Source | Level after | Notes |
 |---|---|---|---|---|
 | Doric's Quest | 1,300 | `quest_doric.rs2:99` (`stat_advance(mining, 13000)`) | 49 (49 needs 1,214.7, 50 needs 1,304.8) | 1 quest point. Needs 6 clay, 4 copper ore, 2 iron ore (`quest_doric.rs2:70`), all tradeable. Doric stands at (2952,3451), north of Falador. No other requirement. |
+| Plague City | 2,425 | `quest_elena.rs2:12` | 58 alone, 64 after Doric | On the route as a Regicide-chain prerequisite (cairn://p/rs/3), so its Mining xp is free for this skill. |
 | Digsite | 15,300 (measured 382,500 game xp at the hand-in, rs/16) | `quest_itexam.rs2:41` | 85 alone, 86 after Doric | About 2,180 ticks of playtime on the stock client, 1,930 with the client fix, 1,790 with burst inputs; p90 about 2,600 (measured, `docs/speedrun/quests/digsite.md`, cairn://p/rs/16). Also gives 2,000 base Herblore, a helper-fed skill. Saves about 1,612 mining ticks after Doric (4,034 to 2,422), so it costs about 570 ticks net on median and about 1,000 at p90. |
 
 Doric's dialogue is about 14 pages (start: greeting, two choices, five lines; hand-in:
