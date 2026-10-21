@@ -23,8 +23,8 @@ ticks).
   66,193 to 85,063 game xp, which is 18,750 for the quest (= 750 × 25) plus 120
   for the four cannon repairs (`stat_advance(crafting, 12)` each,
   `mcannon_broken_cannon.rs2:70`).
-- 1 quest point (read, `general/configs/quest.constant:110`) and 200 cannonballs
-  are shown on the scroll (`quest_mcannon.rs2:27`; the scroll item only).
+- 1 quest point (read, `general/configs/quest.constant:110`; the scroll shows a
+  cannonball model, `quest_mcannon.rs2:27`; no items are given).
 - **The multicannon unlock.** `[opheld1,twpart1]` (Set-up on the cannon base)
   refuses with "You can't set up this cannon. You need to complete the Dwarf
   Cannon quest." while `%mcannon < ^mcannon_complete` (read,
@@ -57,7 +57,7 @@ ticks).
 | Crafting | Railing success | Expected tries for 6 | Expected railing ticks |
 |---|---|---|---|
 | 1 | 61/256 = 24% | 25 | about 365 |
-| 30 | 85/256 = 33% | 18 | about 260 |
+| 30 | 87/256 = 34% | 17.7 | about 260 |
 | 60 | 114/256 = 45% | 13.5 | about 195 |
 | 99 | 151/256 = 59% | 10.2 | about 150 |
 
