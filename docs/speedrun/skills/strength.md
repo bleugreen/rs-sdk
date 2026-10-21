@@ -2,11 +2,18 @@
 
 Shared measurement, mechanics and gear: [combat.md](combat.md). Scripts:
 [`combat-rate.ts`](../scripts/combat-rate.ts), [`combat-model.ts`](../scripts/combat-model.ts).
-Labels follow `docs/speedrun/skills/README.md` (rs/2).
+Labels follow `docs/speedrun/skills/README.md` (rs/2). Host: the measured rates are
+combat.md's, taken at 300 ms on the Mac executor `local` at load 11-18 on 16 cores, so they are
+**busy-host figures, a few percent pessimistic** (combat.md header).
 
 ## 1. Recommendation
 
-Train Strength on the ogres west of Yanille, aggressive style, with Attack already
+**On the route, Strength is quest-capped: 0 ticks.** Under rs/3's Package B, Monkey Madness
+option 1 gives 35,000 and Dragon Slayer (after MM) 18,650, so 53,650 base against 99's
+39,938 (read). The pre-MM fights are cast, not meleed (rs/3 `pre_mm_fights.md`), so the
+account sits at Strength 1 until MM; nothing on the route needs Strength before then.
+
+If Strength ever has to be trained, train it on the ogres west of Yanille, aggressive style, with Attack already
 99. Use the rune scimitar, amulet of strength, super attack and super strength
 kept above half boost, and Ultimate Strength + Incredible Reflexes.
 
@@ -15,8 +22,9 @@ at 95-99**, plus a third of that to Hitpoints.
 
 | Start | Ticks to 99 | Basis |
 |---|---|---|
-| With MM option 1 (48,750 base with Waterfall) | **0** | capped |
-| With MM option 1, no Waterfall (35,000) | 522 | inferred |
+| **On route: Package B, MM option 1 + Dragon Slayer (53,650)** | **0** | capped (read) |
+| Package A: MM option 1 + Waterfall (48,750) | 0 | capped |
+| MM option 1 alone, neither Waterfall nor Dragon Slayer (35,000) | 522 | inferred |
 | No MM (Waterfall 13,750, level 83) | **2,901**, yields 8,729 HP | inferred |
 | Level 1 (Attack 99) | **4,898** | inferred |
 
@@ -37,11 +45,12 @@ ms, 1,000 ticks each, from `combat-rate.ts <bot> ogre ticks=1000 att=99 str=<L>`
 
 | Quest | Strength (base, read) | Start level |
 |---|---|---|
-| Waterfall | 13,750 (`quest_waterfall.rs2:492`) | 83 |
-| Monkey Madness option 1 | 35,000 (`mm_daero.rs2:297`) | 97 (99 with Waterfall) |
+| Waterfall (**off route**, Package A only) | 13,750 (`quest_waterfall.rs2:492`) | 83 |
+| Monkey Madness option 1 (**on route**) | 35,000 (`mm_daero.rs2:297`) | 97 (99 with Waterfall or Dragon Slayer) |
+| **Dragon Slayer (on route, Package B, after MM)** | 18,650 (`quest_dragon.rs2:33`) | **99 with MM option 1: 35,000 + 18,650 = 53,650** |
 | Monkey Madness option 2 | 20,000 (`mm_daero.rs2:306`) | 89; 96 with Waterfall (656 ticks left) |
 | Haunted Mine (candidate) | 22,000 (`hauntedmine_crystals.rs2:54`) | 97 with Waterfall (443 ticks left) |
-| Dragon Slayer (off route) | 18,650 (`quest_dragon.rs2:33`) | 95 with Waterfall (801 ticks left) |
+| Dragon Slayer without MM (alternative) | 18,650 | 95 with Waterfall (801 ticks left) |
 | Troll Romance (off route) | 4,000 (`quest_troll_love.rs2:304`) | |
 
 Half of the xp to 99 lies above level 93, where melee runs at 9-10 base xp per tick.
@@ -61,6 +70,9 @@ See [combat.md](combat.md) section 2. The max hit is what Strength buys: 22 at 7
 - **The troll camps** are off the route or lethal. All in combat.md section 1.
 - **Without potions and prayers:** 7.58 at Strength 95-97 against 10.08 (100 ms and
   300 ms samples), a 25% loss.
+- **Interleaving** (`interleaving.md` section 8): nothing to absorb on the route. If
+  Strength were trained, melee is location-bound self-only time; it cannot ride another
+  skill's clock (combat.md section 6).
 
 ## 6. Gotchas
 
@@ -79,10 +91,11 @@ For the no-MM block, Strength 83 -> 99 (2,901 ticks, inferred):
 | Super attack (4) | 2 | Herblore or GE |
 | Shark | 6 | Fishing or GE |
 
-One inventory, no resupply. With MM option 1 and Waterfall: nothing.
+One inventory, no resupply. On the route (Package B): nothing.
 
 ## 8. Open questions
 
 - Production latency on the re-attack after drinks and kills (combat.md section 9).
-- Whether Waterfall stays (rs/56): without it, MM option 1 leaves 522 ticks of
-  Strength.
+- Settled: Waterfall is off and Dragon Slayer is on (rs/3 Package B), which caps Strength.
+  If Dragon Slayer were dropped too, MM option 1 would leave 522 ticks of Strength.
+- Monkey Madness at Strength 1, Defence 1 and ~42 HP is unmeasured (combat.md section 9).
