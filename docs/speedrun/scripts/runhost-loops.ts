@@ -2,7 +2,7 @@
 // recording's frame counters (docs/speedrun/RUN-HOST.md, "Gate (d)").
 //
 //   cd ~/rs-sdk && ~/.bun/bin/bun docs/speedrun/scripts/runhost-loops.ts <bot> --label=NAME
-//       [--minutes=5] [--interval=10] [--profile=$HOME/rs-run/chrome-profile]
+//       [--minutes=5] [--interval=10] [--display=:10] [--profile=$HOME/rs-run/chrome-profile]
 //       [--progress=$HOME/recordings/ffmpeg-progress.log] [--out=FILE.jsonl] [--skip-tutorial] [--logout]
 //
 // Runs on the run host. Attaches to the bot's tab through the loopback gateway named by
@@ -22,7 +22,7 @@
 //   /proc/<pid>/stat over the interval (what `pidstat -u` reports): ffmpeg, Chrome
 //   (browser, the busiest renderer = the tab, other renderers, GPU process, utilities;
 //   the tree under the Chrome whose --user-data-dir is --profile), the page server
-//   (proxy.ts), the gateway (gateway.ts), Xorg and xrdp;
+//   (proxy.ts), the gateway (gateway.ts), the session's Xorg (--display) and xrdp;
 // - total CPU busy across all cores from /proc/stat, and the load average;
 // - ffmpeg's frame, fps, drop_frames and dup_frames from its -progress file.
 // At the end it prints a summary line per figure (min / median / max over the samples).
@@ -37,6 +37,7 @@ const label = flag('label', 'unlabelled')!;
 const minutes = Number(flag('minutes', '5'));
 const intervalS = Number(flag('interval', '10'));
 const profile = flag('profile', `${HOME}/rs-run/chrome-profile`)!;
+const display = flag('display', ':10')!;
 const progressFile = flag('progress', `${HOME}/recordings/ffmpeg-progress.log`)!;
 const out = flag('out');
 const CLK_TCK = 100; // Linux USER_HZ
@@ -78,7 +79,7 @@ function classify(procs: Map<number, Proc>): Map<number, string> {
             groups.set(p.pid, !type ? 'chrome.browser' : type === 'renderer' ? 'chrome.renderer' : type === 'gpu-process' ? 'chrome.gpu' : 'chrome.other');
         } else if (p.args.includes('proxy.ts')) groups.set(p.pid, 'pageServer');
         else if (p.args.includes('gateway.ts')) groups.set(p.pid, 'gateway');
-        else if (p.comm === 'Xorg' && p.args.includes(':10')) groups.set(p.pid, 'xorg');
+        else if (p.comm === 'Xorg' && p.args.split(' ').includes(display)) groups.set(p.pid, 'xorg');
         else if (p.comm === 'xrdp' || p.comm === 'xrdp-chansrv') groups.set(p.pid, 'xrdp');
     }
     return groups;
@@ -118,7 +119,7 @@ await runScript(async ({ bot, sdk }) => {
     const before = programStatus(sdk.getState());
     if (before?.phase === 'running') throw new Error(`program ${before.name} is running in the tab; stop it first (this sampler starts its own probe)`);
     const started = await startProgram(sdk, 'probe', { trials: 1_000_000, stallTicks: 100_000 });
-    const header = `runhost-loops: ${label}, host ${hostname()} (${cpus().length} cpus), ${new Date().toISOString()}, probe run ${started.runId}, ${minutes} min every ${intervalS} s`;
+    const header = `runhost-loops: ${label}, host ${hostname()} (${cpus().length} cpus), display ${display}, ${new Date().toISOString()}, probe run ${started.runId}, ${minutes} min every ${intervalS} s`;
     console.log(header);
 
     // let the page's 10 s loop window fill with this run before the first sample
