@@ -1,5 +1,17 @@
 import { describe, expect, test } from 'bun:test';
-import { CAMP_LINES, campBudget, DRAYNOR_APPROACH, headlessStep, jailBypass, LUMBRIDGE_WOODS, PATIENT_ADAMANT_PRICE, shelfPrice } from './fletcher';
+import {
+    CAMP_LINES,
+    campBudget,
+    DRAYNOR_APPROACH,
+    headlessStep,
+    jailBypass,
+    LUMBRIDGE_WOODS,
+    PATIENT_ADAMANT_PRICE,
+    PATIENT_MITHRIL_PRICE,
+    PATIENT_RUNE_PRICE,
+    remainingBudget,
+    shelfPrice
+} from './fletcher';
 import { BANKS } from './buyer';
 
 describe('shelfPrice (shop.rs2 calc_shop_value, delta 10)', () => {
@@ -8,9 +20,17 @@ describe('shelfPrice (shop.rs2 calc_shop_value, delta 10)', () => {
         expect(shelfPrice(40, 1, 200)).toBe(119);
         expect(shelfPrice(40, 0, 200)).toBe(120);
     });
-    test('the patient cap buys from a shelf of 196 or more', () => {
+    test('the patient adamant cap buys from a shelf of 196 or more', () => {
         expect(shelfPrice(40, 196, 200)).toBeLessThanOrEqual(PATIENT_ADAMANT_PRICE);
         expect(shelfPrice(40, 195, 200)).toBeGreaterThan(PATIENT_ADAMANT_PRICE);
+    });
+    test('the patient rune cap buys from a shelf of 95 or more (Hickton stock 100)', () => {
+        expect(shelfPrice(200, 95, 100)).toBeLessThanOrEqual(PATIENT_RUNE_PRICE);
+        expect(shelfPrice(200, 94, 100)).toBeGreaterThan(PATIENT_RUNE_PRICE);
+    });
+    test('the patient mithril cap buys from a shelf of 382 or more (Hickton stock 400)', () => {
+        expect(shelfPrice(16, 382, 400)).toBeLessThanOrEqual(PATIENT_MITHRIL_PRICE);
+        expect(shelfPrice(16, 381, 400)).toBeGreaterThan(PATIENT_MITHRIL_PRICE);
     });
     test('feathers at Gerrant (base 2, shelf 1000): 6 gp at 800', () => {
         expect(shelfPrice(2, 1000, 1000)).toBe(2);
@@ -22,17 +42,28 @@ describe('shelfPrice (shop.rs2 calc_shop_value, delta 10)', () => {
 });
 
 describe('CAMP_LINES', () => {
-    test('the two shops together cover the adamant-cap list', () => {
+    test('the two shops together cover the shopping list (supply-fallbacks.md section 3)', () => {
         const sum = (item: string) => [...CAMP_LINES.hickton, ...CAMP_LINES.dargaud].filter(l => l.item === item).reduce((a, l) => a + l.quantity, 0);
         expect(sum('Adamant arrowtips')).toBe(3735);
-        expect(sum('Mithril arrowtips')).toBe(225);
+        expect(sum('Rune arrowtips')).toBe(560);
+        expect(sum('Mithril arrowtips')).toBe(1500);
         expect(sum('Steel arrowtips')).toBe(135);
         expect(sum('Iron arrowtips')).toBe(90);
         expect(sum('Bronze arrowtips')).toBe(60);
     });
     test('budgets: lines at their caps or 1.5x base, plus 5% and 500', () => {
-        expect(campBudget(CAMP_LINES.hickton)).toBe(97184);
+        // 60x2 + 90x3 + 135x9 + 2075x41 + 560x210 + 1500x18 = 231,280
+        expect(campBudget(CAMP_LINES.hickton)).toBe(Math.ceil(231280 * 1.05) + 500);
         expect(campBudget(CAMP_LINES.dargaud)).toBe(71963);
+    });
+    test('remainingBudget counts only what is still to buy', () => {
+        const lines = [
+            { item: 'Adamant arrowtips', quantity: 2075, maxPrice: 41 },
+            { item: 'Rune arrowtips', quantity: 560, maxPrice: 210 }
+        ];
+        const held: Record<string, number> = { 'Adamant arrowtips': 2000, 'Rune arrowtips': 600 };
+        expect(remainingBudget(lines, i => held[i] ?? 0)).toBe(Math.ceil(75 * 41 * 1.05) + 500);
+        expect(remainingBudget(lines, () => 0)).toBe(campBudget(lines));
     });
 });
 
