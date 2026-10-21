@@ -204,7 +204,7 @@ The boss switches to the faded type on half of the hits it takes (`:244-245`,
 `:264-303`). The engine consumes a due NPC queue entry even when the current type
 has no handler for it (`server/engine/src/engine/entity/Npc.ts:561-583`), and
 `npc_default_damage` stops damaging an NPC at 0 hitpoints
-(`skill_combat/scripts/npc/npc_combat.rs2:78-80`). So a death that comes due
+(`skill_combat/scripts/npc/npc_combat.rs2:80-82`). So a death that comes due
 while the boss is faded is lost, and the boss stays at 0 HP until it despawns.
 That matches the 3 stuck runs (inferred; I didn't capture the queue order in the
 lab). Fix: an `[ai_queue3,hauntedmine_boss_ghost_faded]` that jumps to the same
