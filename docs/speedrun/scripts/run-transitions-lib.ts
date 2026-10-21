@@ -98,6 +98,7 @@ export class LegLog {
     doorOpens = 0;
     webTries = 0;
     casts = 0;
+    dismissals = 0;
     hpMin: number;
     private last: P;
     private lastTick: number;
@@ -127,7 +128,7 @@ export class LegLog {
     }
     finish() {
         this.unsub();
-        return { ticks: tick(this.sdk) - this.t0, segs: this.segs, tiles: this.tiles, movingTicks: this.movingTicks, clicks: this.clicks, doorOpens: this.doorOpens, webTries: this.webTries, casts: this.casts, hpMin: this.hpMin, end: pos(this.sdk) };
+        return { ticks: tick(this.sdk) - this.t0, segs: this.segs, tiles: this.tiles, movingTicks: this.movingTicks, clicks: this.clicks, doorOpens: this.doorOpens, webTries: this.webTries, casts: this.casts, dismissals: this.dismissals, hpMin: this.hpMin, end: pos(this.sdk) };
     }
 }
 
@@ -379,6 +380,7 @@ export async function walk(ctx: Ctx, dest: { x: number; z: number }, o: WalkOpts
     let lastPos = pos(sdk), lastMove = tick(sdk), clickTick = -99, lastCast = -99, stalls = 0;
     let curReach = reach, lastReachPos = pos(sdk);
     const doorTries = new Map<string, number>();
+    let lastDismissed = '';
     const arrived = () => cheb(pos(sdk), dest) <= tol || (!!o.stopWhen && o.stopWhen(sdk.getState()!));
     let t = tick(sdk);
     while (!arrived()) {
@@ -386,6 +388,15 @@ export async function walk(ctx: Ctx, dest: { x: number; z: number }, o: WalkOpts
         const p = pos(sdk);
         if (p.x !== lastPos.x || p.z !== lastPos.z) { lastPos = p; lastMove = t; }
         if (o.eat && t !== clickTick) await eatIfLow(ctx);
+        if (o.cast && t !== clickTick) {
+            // Level-up pages from the casts: dismiss each once (a chat modal blocks the client's walk clicks).
+            const d = sdk.getState()!.dialog;
+            if (d.isOpen && !d.isWaiting && d.options.length <= 1 && d.pageId && d.pageId !== lastDismissed) {
+                lastDismissed = d.pageId;
+                void sdk.sendClickDialog(0);
+                if (ctx.leg) ctx.leg.dismissals++;
+            }
+        }
         let needClick = target === null || (!final && cheb(p, target) <= lead);
         if (!needClick && t - lastMove >= 3 && t - clickTick >= 3) {
             // stalled: door, web, or a combat interruption
