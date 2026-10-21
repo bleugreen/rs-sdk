@@ -89,7 +89,7 @@ await runScript(async ({ bot, sdk }) => {
                     if (s.tick - sent >= 3) {
                         sent = s.tick;
                         clicks++;
-                        void sdk.scanNearbyLocs(5).then(ls => {
+                        void sdk.scanNearbyLocs(20).then(ls => {
                             const l = ls.find(l => l.x === 2807 && l.z === 2785);
                             if (l) void sdk.sendInteractLoc(l.x, l.z, l.id, l.optionsWithIndex[0]?.opIndex ?? 1);
                         });
