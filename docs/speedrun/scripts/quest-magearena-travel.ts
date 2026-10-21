@@ -11,8 +11,12 @@ import { cheat, log, pos, talkThrough, tele, tick, waitTicks, waitUntil } from '
 
 await runScript(async ({ bot, sdk }) => {
     if (!sdk.findInventoryItem(/^knife$/i)) await cheat(sdk, 'give knife 1');
+    if (process.env.FROM === 'keep') {
+        await tele(sdk, 3154, 3924);
+    } else {
     await tele(sdk, 2661, 3301);
     await waitTicks(sdk, 3);
+    }
     const t0 = tick(sdk);
 
     // 1. walk to the lever and pull it
@@ -29,25 +33,40 @@ await runScript(async ({ bot, sdk }) => {
     await bot.interactLoc(leverLoc, leverLoc.options[0]);
     const d1 = await talkThrough(sdk, ["Yes I'm brave."], { idleMs: 600 });
     await waitUntil(sdk, () => pos(sdk).z > 3800, 30, 'arrive at the Deserted Keep');
+    log(sdk, `SEG lever: ${tick(sdk) - tWalk1} ticks, ${d1.pages} pages, ${d1.options} options, now ${JSON.stringify(pos(sdk))}`, t0);
+    }
     const tKeep = tick(sdk);
-    log(sdk, `SEG lever: ${tKeep - tWalk1} ticks, ${d1.pages} pages, ${d1.options} options, now ${JSON.stringify(pos(sdk))}`, t0);
 
     // 2. Deserted Keep -> ladder at 3091,3957; webs at 3093/3095,3957 and 3158,3951
     const from2 = pos(sdk);
-    let route = sdk.findPath ? sdk.findPath(3092, 3957) : null;
-    log(sdk, `path keep->ladder: ${JSON.stringify(route)?.slice(0, 200)}`, t0);
-    for (let attempt = 0; attempt < 6; attempt++) {
-        const r = await bot.walkTo(3092, 3957, 1);
-        log(sdk, `walk to ladder attempt ${attempt}: ${JSON.stringify(r).slice(0, 160)} at ${JSON.stringify(pos(sdk))}`, t0);
-        if (Math.abs(pos(sdk).x - 3092) <= 1 && Math.abs(pos(sdk).z - 3957) <= 1) break;
-        const web = (await sdk.scanNearbyLocs(3)).find((l) => /^web$/i.test(l.name));
-        if (web) {
+    // The keep's only exit is the web at 3158,3951 (north wall); two more webs guard the ladder.
+    // Walk toward each goal; when the path is blocked, knife the nearest web (50% per try).
+    let slashTries = 0;
+    const goals: [number, number][] = [[3158, 3950], [3158, 3953], [3092, 3957]];
+    for (const [gx, gz] of goals) {
+        for (let attempt = 0; attempt < 12; attempt++) {
+            if (Math.abs(pos(sdk).x - gx) <= 1 && Math.abs(pos(sdk).z - gz) <= 1) break;
+            const p = sdk.findPath(gx, gz);
+            if (p.success && p.reachedDestination) {
+                const r = await bot.walkTo(gx, gz, 1);
+                log(sdk, `walk to ${gx},${gz}: ${r.message} at ${JSON.stringify(pos(sdk))}`, t0);
+                continue;
+            }
+            const webs = (await sdk.scanNearbyLocs(12)).filter((l) => /^web$/i.test(l.name) && l.options.includes('Slash'));
+            webs.sort((a, b) => a.distance - b.distance);
+            const web = webs[0];
+            if (!web) {
+                log(sdk, `no path to ${gx},${gz} and no unslashed web nearby (${JSON.stringify(p).slice(0, 120)})`, t0);
+                break;
+            }
             const knife = sdk.findInventoryItem(/^knife$/i)!;
             const u = await bot.useItemOnLoc(knife, web);
-            log(sdk, `knife on web at ${web.x},${web.z}: ${JSON.stringify(u).slice(0, 120)}`, t0);
-            await waitTicks(sdk, 3);
+            slashTries++;
+            log(sdk, `knife on web at ${web.x},${web.z}: ${u.message}`, t0);
+            await waitTicks(sdk, 2);
         }
     }
+    log(sdk, `web slash attempts: ${slashTries}`, t0);
     const tLadder = tick(sdk);
     log(sdk, `SEG keep->ladder: ${tLadder - tKeep} ticks from ${JSON.stringify(from2)} to ${JSON.stringify(pos(sdk))}`, t0);
 
