@@ -57,7 +57,10 @@ function openChat(comId: number): number[] {
     return [ServerProt.IF_OPENCHAT, (comId >> 8) & 0xff, comId & 0xff];
 }
 
-function makeClient(name: string): { client: LiteClient; stream: FakeStream } {
+/** A world index with nothing in it, for tests that collect the whole state (the scene reads it). */
+const EMPTY_WORLD = new Proxy({}, { get: () => () => 0 });
+
+function makeClient(name: string, locIndex: object = {}): { client: LiteClient; stream: FakeStream } {
     const stream = new FakeStream();
     const client = new LiteClient({
         connection: {
@@ -68,7 +71,7 @@ function makeClient(name: string): { client: LiteClient; stream: FakeStream } {
             isClosed: false,
             flush() {}
         } as never,
-        locIndex: {} as never,
+        locIndex: locIndex as never,
         username: name,
         password: 'x'
     });
@@ -129,7 +132,7 @@ describe('game tick publication', () => {
                 stubbedBase[id] = Object.assign(Object.create(IfType.prototype) as IfType, { id, colour: 0xff0000, text: '' });
             }
         }
-        const { client, stream } = makeClient('quest1');
+        const { client, stream } = makeClient('quest1', EMPTY_WORLD);
         const published: BotWorldState[] = [];
         client.setOnGameTickCallback(ticks => {
             published.push(client.collectBotState(ticks));
