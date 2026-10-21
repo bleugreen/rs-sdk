@@ -47,8 +47,7 @@ plan assumed. The gap has three causes, all read from source and confirmed by th
 cairn://p/rs/80). Waterfall is off. Dragon Slayer is on after Monkey Madness option 1, with the
 quest points it needs from Goblin Diplomacy, Romeo & Juliet and Cook's Assistant (the filler) plus
 Druidic Ritual (counted separately, as Herblore's mandatory unlock; it displaced Witch's House
-at 01:20). Merlin's
-Crystal and Holy Grail are off. The pre-MM fights (Khazard warlord, black demon, Fight Arena)
+at 01:20). Merlin's Crystal and Holy Grail are off. The pre-MM fights (Khazard warlord, black demon, Fight Arena)
 are **cast, not meleed**, so they give Magic and Hitpoints but no Strength or Defence
 (`pre_mm_fights.md` section 1). The account reaches the cannon session and MM at Attack 99,
 Strength 1, Defence 1, about 42 HP.

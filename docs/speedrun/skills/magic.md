@@ -51,8 +51,9 @@ Gnome Village.
 ### Magic timeline under Package B
 
 Derived here from rs/3's step order (README section 4 and `pre_mm_fights.md` on
-cairn://p/rs/3/1/coordinator); rs/80, which is finalising that README, had not published its own
-timeline when this was written. Base xp from this server's curve (`Player.ts`,
+cairn://p/rs/3/1/coordinator). rs/80, which is finalising that README, reached the same
+timeline independently (59 before TGV, 76 at the Mage Arena, 80-81 after Kolodion, one potion as
+insurance; relayed by the rs/28 coordinator, 01:30). Base xp from this server's curve (`Player.ts`,
 `levelExperience`: 59 = 2,468.0, 64 = 3,504.9, 67 = 4,322.7, 73 = 6,568.0, 76 = 8,092.7, 77 =
 8,675.5, 80 = 10,686.8, 81 = 11,455.6).
 
@@ -512,9 +513,8 @@ with 4 rune slots), 5 from 57 (26 per inventory).
   was not measured; one run of `quest-premm-fight.ts <bot> blackdemon stats=80,1,1,28,43,64
   mode=fire_blast` on rs/3's branch would settle it. 59 stays recommended until then because
   it needs no magic potion.
-- **rs/80's timeline.** rs/80 (finalising rs/3's README) plans the arena at about base 76 with
-  no potion for Fire Wave and one potion for Charge. This document finds Charge needs no
-  potion for any yield measured at base 71; reconcile once rs/80 lands.
+- **rs/80's timeline** agrees with section 1 (rs/28 coordinator, 01:30). If its final README
+  section 4 moves a fight or the enchanting, re-run the timeline table.
 - **Whether the decay phase can be steered.** The restore timer is aligned to login
   (`login.rs2:36`). A sip right after a decay step holds a full 100 ticks; the measured fights
   needed 2 re-sips. Logging in so that a decay step falls just before the fight would save at
