@@ -72,7 +72,13 @@ await runScript(async ({ bot, sdk }) => {
     const seenAt = new Map<number, number>();
     let s = sdk.getState()!;
     const tiles = Array.from({ length: N }, (_, i) => snakeTile(i));
-    while (seenAt.size < N && s.tick - t0 < 600) {
+    // Hand over to the lighting run as soon as the first log is public and the
+    // helper is done: the helper drops one log per ~2 ticks and lighting takes
+    // 4, so lighting never catches up with the reveal, and waiting for every
+    // log would let the first ones run into their 300-tick despawn.
+    let helperDone = false;
+    void child.exited.then(() => { helperDone = true; });
+    while (!(helperDone && seenAt.size > 0) && s.tick - t0 < 600) {
         s = await nextTick(s.tick);
         tiles.forEach(([x, z], i) => {
             if (!seenAt.has(i) && s.groundItems.some(g => g.x === x && g.z === z && logName.test(g.name))) seenAt.set(i, s.tick - t0);
