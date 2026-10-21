@@ -345,25 +345,38 @@ Each of these was costed and dropped on the board. Section 3 has the numbers.
 
 ## 6. Scenarios: Monkey Madness option 1 against no Monkey Madness
 
-The inputs are the melee rate from cairn://p/rs/30, **~8 base xp per tick to the trained
-skill** (preliminary, measured at 100 ms; its 300 ms confirmation is not published yet),
-and the Ranged rates from `ranged.md` and `ranged-model.ts` on rs/31's branch (measured at
-300 ms). The combat facts are read: every point of damage gives 4 base xp to the trained
-style and 1.33 Hitpoints (`combat.rs2:146-167`), so **Hitpoints is one third of all
-personally earned combat xp**. The cannon's xp is Ranged only (`cannon_fire.rs2:119`). Quest
-xp lands where the quest says. All rows are fixed-client ticks and inferred unless marked.
-The combat-finish figures come from a phase model over rs/31's measured rates. The model
-reproduces rs/31's published 2,248 for the old case with Holy Grail (2,249). The new
-no-Holy-Grail case is not yet confirmed by rs/31.
+The melee inputs are **rs/30's measured rates** (via rs/28, `NODE_TICKRATE=300`; ogres near
+Yanille, rune scimitar, super attack and strength potions, Ultimate Strength and Incredible
+Reflexes, 1,000-tick samples; `combat.md` is still to land). Base xp per tick to the trained
+skill, with Hitpoints a third on top:
 
-### Combat state after the quests (Waterfall included)
+| Trained | Band | Base xp/tick |
+|---|---|---|
+| Strength (Attack 40) | 40 to 62 | 4.14 |
+| Strength | 70 to 82 | 7.58 |
+| Strength | 90 to 95 | 8.99 |
+| Strength | 95 to 99 | 10.08 |
+| Defence, defensive style, Strength 99 | 85 to 91 / 95 to 98 | 9.34 / 9.18 |
+
+The Ranged and cannon rates are from `ranged.md` and `ranged-model.ts` on rs/31's branch
+(measured at 300 ms). The combat facts are read: every point of damage gives 4 base xp to the
+trained style and 1.33 Hitpoints (`combat.rs2:146-167`), so **Hitpoints is one third of all
+personally earned combat xp**. The cannon's xp is Ranged only (`cannon_fire.rs2:119`). Quest
+xp lands where the quest says. The totals come from a phase model that integrates these
+measured rates over the xp curve, so they are **inferred, on measured rates**, in the fixed
+column. The model reproduces rs/31's published 2,248 for the old case with Holy Grail (2,249).
+rs/28's quick check of the with-MM Defence gap alone, ~2,150 ticks of defensive melee at
+~9.3 with ~6,600 HP as a by-product, agrees. The ~3,520 below covers Ranged and Defence
+together.
+
+### Combat state after the quests (Package A: Waterfall on)
 
 | Skill | With MM option 1 | Without MM (no Tree Gnome Village either) |
 |---|---|---|
 | Attack | 75,775: capped (r) | 44,325 (GT + Waterfall + Fight Arena): capped (r) |
-| Strength | 48,750: capped (r) | 13,750: gap 26,188 |
-| Defence | 20,000: gap 19,938 | 0: gap 39,938 |
-| Hitpoints | 35,000: gap 4,938 | ~0: gap ~39,900 |
+| Strength | 48,750: capped (r) | 13,750 (level 83): gap 26,188 |
+| Defence | 20,000 (level 89): gap 19,938 | 0: gap 39,938 |
+| Hitpoints | 35,000 (level 97): gap 4,938 | ~0: gap ~39,900 |
 | Ranged | ~54 after the demon fight (50 from the cannon session + ~485 from the fight, m) | 1: gap 39,938 |
 
 ### Side by side
@@ -372,35 +385,35 @@ no-Holy-Grail case is not yet confirmed by rs/31.
 |---|---|---|
 | Tree Gnome Village | 927 | not done (Grand Tree does not require it) |
 | Monkey Madness | 3,865 success (m/r/i mix), 4,645 expected | not done |
-| Dwarf Cannon | 976 | **not done**: Hitpoints binds, and cannon xp gives no Hitpoints, so the cannon shortens nothing (see the Hitpoints line) |
+| Dwarf Cannon | 976 | **not done**: Hitpoints binds, and cannon xp gives no Hitpoints, so the cannon shortens nothing (the model's best cannon plan is ~13,260 + 976 for the quest, against ~13,900 with knives and no quest: about even, and the knives need no Wilderness) |
 | Ranged method | **cannon**: 113 m firing (+~10 set-up) for Ranged 50 before MM, wielding a melee weapon. After MM, cannon + defensive melee at the spiders until Ranged 99 (~3,459; 11.03 Ranged + 5.60 Defence + 1.85 HP per tick, m rates) | **rapid rune knives**, ~5,270 from level 1 (`ranged.md`; 8.1-8.75 Ranged + ~2.7-2.9 HP per tick, m). Longrange is no use: 2.63/tick to each of Ranged and Defence (m) |
-| Strength and Defence | Defence: 19,371 inside the cannon phase, then ~71 of melee alone for the last ~570; Strength 0 | 66,126 by melee at ~8/tick: **~8,270** |
-| **Hitpoints (its own line)** | 0 extra: the cannon phase's defensive melee produces ~6,400 against the 4,938 gap | The Strength, Defence and Ranged training above yields 35,355 HP, leaving 4,583. That needs 13,749 more combat xp in a capped skill: **~1,720** |
-| Combat training after the quests | **~3,653** (123 + 3,530) | **~15,255** (8,266 + 5,270 + 1,719) |
-| **Block total** | **~9,420 success, ~10,200 expected** | **~15,255** |
+| Strength and Defence | Defence: 19,371 inside the cannon phase, then ~62 of melee alone for the last ~570; Strength 0 | Strength 83 to 99 at the banded rates, **~2,860**; Defence 1 to 99 at ~9.3 with Strength 99 (the Defence level does not change the hit rate), **~4,300** |
+| **Hitpoints (its own line)** | 0 extra: the cannon phase's defensive melee produces ~6,400 against the 4,938 gap | The Strength, Defence and Ranged training above yields 35,355 HP, leaving 4,583. That needs 13,749 more combat xp in a capped skill: **~1,480** at ~9.3 |
+| Combat training after the quests | **~3,644** (123 + 3,521) | **~13,900** (2,862 + 4,295 + 5,270 + 1,478) |
+| **Block total** | **~9,410 success, ~10,190 expected** | **~13,900** |
 
-**MM option 1 wins by about 5,830 ticks on the success path and 5,050 expected.**
+**MM option 1 wins by about 4,490 ticks on the success path and 3,710 expected.**
 
-**Option 1 against option 2, rechecked without Holy Grail** (same model). Option 2 (35,000
-Attack and Defence, 20,000 Strength and Hitpoints) leaves Defence 4,938, Strength 6,188 and
-Hitpoints 19,938, and Attack is capped either way. Hitpoints then binds: it needs ~59,800
-more combat xp of personal damage. The finish is ~7,180 ticks against ~3,530 for option 1,
-so **option 1 stays better by ~3,650**. Without Waterfall it is ~7,310 against ~4,150.
+**Option 1 against option 2, rechecked without Holy Grail** (same model, measured rates).
+Option 2 (35,000 Attack and Defence, 20,000 Strength and Hitpoints) leaves Defence 4,938,
+Strength 6,188 and Hitpoints 19,938, and Attack is capped either way. Hitpoints then binds,
+with ~3,590 ticks of top-up alone. The finish is ~6,650 ticks against ~3,520 for option 1,
+so **option 1 stays better by ~3,130**. Without Waterfall it is ~6,700 against ~4,010.
 
 Why no-MM is so expensive: Hitpoints needs 39,938, which is one third of 119,814 base of
 personal combat xp, and the uncapped gaps (Strength, Defence, Ranged) add up to 106,064.
-So the no-MM block is close to 119,814 divided by the combat rate, whichever skill the xp
-goes into. That also means that **without MM, the Strength and Defence from Waterfall and
+So the no-MM block is close to that xp divided by the combat rates, whichever skill the
+xp goes into. That also means that **without MM, the Strength and Defence from Waterfall and
 Dragon Slayer replace little or nothing**: most of that xp would have been trained anyway to
 reach Hitpoints 99. Hitpoints quests are the ones that help. Witch's House (6,325 HP,
-~163 fixed in `quest_points.md`, unmeasured) would cut the block to ~13,700, which makes it a
-no-MM-only candidate.
+~163 fixed in `quest_points.md`, unmeasured) removes the ~1,480-tick top-up, cutting the
+block to ~12,580. That makes it a no-MM-only candidate.
 
-**Sensitivity to the melee rate.** The no-MM block scales as 119,814 / rate: 15,000 at 8,
-12,000 at 10, 10,000 at 12, and 8,320 at the old unmeasured 14.4. The MM block hardly
-depends on the melee rate; only the last ~71 ticks are melee alone. No-MM would only draw
-level with MM's expected ~10,200 at about **11.7 base xp per tick**, 1.5 times rs/30's
-preliminary figure. rs/30's 300 ms number should be slotted in here when it lands.
+**Sensitivity to the melee rate.** With the knives fixed at ~5,270, the no-MM block is about
+5,270 + 79,876 / (melee rate): ~15,250 at 8, ~13,860 at 9.3 (measured, Defence at Strength
+99), ~13,260 at 10 and ~11,930 at 12. The MM block hardly depends on the melee rate; only
+the last ~62 ticks are melee alone. No-MM would only draw level with MM's expected ~10,190
+at about **16 base xp per tick** of melee, against rs/30's measured 9-10 at these levels.
 
 ### Monkey Madness's failure budget
 
@@ -418,14 +431,51 @@ From `monkey_madness.md` (3-sample observations, so inferred):
 | Per failure: death in the Ape Atoll dungeon traps (none seen; not in the expected figure) | ~340 |
 | **Bad-but-plausible worst case**: 6 trapdoor tries with 2 deaths (one losing the bar), the aunt twice, the demon twice, one dungeon death | +~2,650, so **~6,500** |
 
-**Retry tolerance.** MM stays ahead of no-MM until its overrun reaches about 5,800 fixed
-ticks: roughly 17 trapdoor deaths with the bar kept, or 6 with it lost. A run plan can
-retry the temple freely. The open leads would shrink the trapdoor's +600: an antipoison,
-since the deaths may be jungle-spider poison through the prayer, and timing the guards'
-one-tile wander. A logout inside a cutscene zone completes the cutscene on the next login
-(`mm_login`, unmeasured, worth up to ~150).
+**Retry tolerance.** MM stays ahead of no-MM until its overrun over the success path reaches
+about 4,490 fixed ticks: roughly 13 trapdoor deaths with the bar kept, or 4 with it lost.
+The bad-but-plausible worst case (+2,650) is well inside that. The open leads would shrink
+the trapdoor's +600: an antipoison, since the deaths may be jungle-spider poison through the
+prayer, and timing the guards' one-tile wander. A logout inside a cutscene zone completes
+the cutscene on the next login (`mm_login`, unmeasured, worth up to ~150).
 
 ## 7. Conditional calls
+
+- **Waterfall or Dragon Slayer (Package A or B), pending cairn://p/rs/56.** Both fill MM
+  option 1's Strength gap, so they compete. Fixed ticks, from the phase model on measured
+  rates (i). Every package includes the same MM block; only the lines that differ are shown.
+
+  | Package | Quests | Filler | Post-MM finish | Total of the differing lines |
+  |---|---|---|---|---|
+  | **A** (current): Waterfall on, Dragon Slayer off | Waterfall 888 | none | ~3,521 (cannon + defensive melee 3,459, then melee 62) | **~4,409** minus Waterfall's pre-MM saving |
+  | **B**: Waterfall off, Dragon Slayer on after MM | Dragon Slayer ~1,010 | 15 QP, 546 | ~2,023 (cannon + defensive melee 231, then cannon + rapid knives 1,792) | **~3,579** |
+  | **C**: both | 888 + ~1,010 | 14 QP, 519 | ~2,023 | **~4,440** minus Waterfall's pre-MM saving |
+  | Neither | | none | ~4,006 (adds 490 of Strength melee) | **~4,006** |
+
+  Dragon Slayer's 18,650 Strength caps Strength, and its 18,650 Defence leaves only a
+  1,288 Defence gap. The cannon phase then ends in ~231 ticks and the rest is cannon + rapid
+  knives, which is why B's finish is ~1,500 shorter than A's, not just the ~1,100 that
+  pricing the two gaps separately gives. The filler is the cheapest set in
+  `quest_points.md`'s ranking, fixed column, inferred (unmeasured): **Goblin Diplomacy** (5 QP,
+  ~115 on the Dragon Slayer route, which shares its Port Sarim and Ice Mountain legs; ~188
+  alone), **Witch's House** (4 QP, ~163), **Romeo & Juliet** (5 QP, ~241) and **Cook's
+  Assistant** (1 QP, ~27): 15 QP for ~546. The route without Waterfall has 17 QP, and the
+  Champions' Guild door needs 32 to start Dragon Slayer. Package C needs only 14 (Cook's
+  Assistant drops: ~519). Witch's House's 6,325 Hitpoints is worth **0** here, because the
+  finish's Hitpoints by-product already covers the 4,938 gap (the model gives the same finish
+  with or without it). The next-cheapest 15-QP set swaps Cook's Assistant for Sheep Shearer
+  (~587). Dragon Slayer's ~1,010 assumes Elvarg at 70s melee (102-166 ticks); after MM, at
+  99, it is 64-75 (m), so ~60 less.
+
+  **Decision rule.** Let *S* be the fixed ticks that Waterfall's Strength saves across the
+  pre-MM fights (warlord, black demon, Fight Arena; rs/56 measures them with and without
+  it). **If S < ~830, take Package B. If S > ~830, take Package A.** Package C never beats A
+  by more than about 30 ticks, so it is not worth Dragon Slayer's extra risk; B also beats
+  doing neither by ~430. B does not win plainly. The fights total ~650 ticks at 70 Strength,
+  and Waterfall moves Strength from ~1 to 83 before them, so an S of ~830 is plausible if
+  low-Strength kills take a few times longer. However, Strength also rises from the fights'
+  own xp at 25x. rs/56's measurement settles it. If B is chosen, the quest-route totals in
+  section 1 change by -888 (Waterfall) + 1,010 (Dragon Slayer) + 546 (filler) = **+668 fixed**,
+  and the post-MM training falls by ~1,498, so the net is ~-830.
 
 - **Fishing Contest depends on the fly-fishing cycle (cairn://p/rs/53).** On the normal
   cycle it saves 325 ticks given Sea Slug against 223 fixed (+102), with the helper-caught
@@ -459,16 +509,13 @@ one-tile wander. A logout inside a cutscene zone completes the cutscene on the n
 The coordinator's decisions (cairn://p/rs/3, 22:27 and after) on the points this synthesis
 raised:
 
-1. **Waterfall: conditional, pending rs/56.** After MM: with MM option 1, Attack is over
-   99 without Waterfall (Tree Gnome Village + Grand Tree + Fight Arena = 42,025 before MM,
-   62,025 after). Strength without it is 35,000, a 4,938 gap: ~618 ticks of melee at ~8/tick.
-   Pairing it with the cannon gains nothing, because the cannon's Ranged is already used up
-   in the Defence phase (the model's finish rises from ~3,530 to ~4,150 without Waterfall).
-   Against ~888 fixed that is -270. **Before MM**, Waterfall is the only Strength source.
-   Without it Strength stays near 1 until MM, so the warlord, the black demon and the Fight
-   Arena fights run at a minimal max hit. **Waterfall is ON only if rs/56's pre-MM fight
-   saving from its Strength exceeds ~270 ticks.** Without MM it is worth ~0 (Hitpoints
-   binds).
+1. **Waterfall against Dragon Slayer: pending rs/56** (the package rule in section 7). After
+   MM, Waterfall alone is worth ~485 ticks of Strength melee at the measured 9-10/tick (the
+   finish rises from ~3,521 to ~4,006 without it) against ~888 fixed. Before MM it is the only
+   Strength source. Dragon Slayer with 15 QP of filler (Package B) fills the same Strength gap
+   and most of the Defence gap, and is ~830 cheaper after MM. So **Waterfall stays (Package
+   A) only if its pre-MM fight saving exceeds ~830**. Without MM both are worth ~0
+   (Hitpoints binds).
 2. **Merlin's Crystal + Holy Grail: OFF** (after rs/33's measured Prayer rate). See
    section 5. Defence ~1,281 (this page's model; the coordinator's ~1,312 was the earlier
    estimate) plus Prayer ~150-350, against 1,855 fixed: about -220 to -420. Taking them off
@@ -478,18 +525,20 @@ raised:
    Dwarf Cannon; 1 fewer without Waterfall). Nothing binds while Dragon Slayer is off.
    `quest_points.md` and `dragon_slayer.md` quote 46-49 because they counted quests that
    have since dropped off the route.
-4. **No-MM Dragon Slayer: OFF in both scenarios.** Without MM, Hitpoints binds, so its
+4. **No-MM Dragon Slayer: OFF** (with MM it is Package B's candidate, item 1). Without MM, Hitpoints binds, so its
    Strength and Defence replace little or nothing (section 6), and it would also need ~20 QP
    of filler. `dragon_slayer.md`'s "+1,545 if MM is dropped" leaves out that Hitpoints
    caveat, which the document itself raises. `ranged.md`'s no-MM "cannon in parallel, ~1,040
    ticks" line has the same gap: cannon xp gives no Hitpoints. **Witch's House** (6,325 HP,
    ~163 fixed, unmeasured) is a no-MM-only candidate.
-5. **Monkey Madness option 1 rechecked without Holy Grail**: still better than option 2 by
-   ~3,650 ticks (section 6).
+5. **Monkey Madness option 1 rechecked without Holy Grail**, on measured melee rates: still
+   better than option 2 by ~3,130 ticks (section 6). MM itself beats no-MM by ~3,710 expected,
+   and only a melee rate of ~16 base/tick would flip it.
 
-Still to slot in: `pre_mm_fights.md` (rs/56: the pre-MM fights and Waterfall), rs/31's
-confirmation of the ~3,530 finish without Holy Grail, rs/30's 300 ms melee rate (section 6),
-rs/53 (Fishing Contest), and the rs/54 merge (Sea Slug).
+Still to slot in: `pre_mm_fights.md` (rs/56: the pre-MM fights, and with them Package A
+against B), rs/31's confirmation of the ~3,520 and ~2,020 finishes, rs/30's `combat.md`
+(its rates are quoted here from rs/28), rs/53 (Fishing Contest), and the rs/54 merge (Sea
+Slug).
 
 ## Superseded figures
 
@@ -497,9 +546,10 @@ These older documents are left as written. Use the replacements below.
 
 | Figure | Where | Replacement |
 |---|---|---|
-| "Combat rate about 14 base xp per tick (README)". No README ever carried this; it was the per-skill estimate that main later labelled inferred | `monkey_madness.md`, `tree_gnome_village.md`, `grand_tree.md`, `dragon_slayer.md`, `quest_points.md` | ~8 base xp per tick to the trained skill (cairn://p/rs/30, preliminary, 100 ms; 300 ms pending). Combat is valued through the scenario arithmetic in section 6 |
+| "Combat rate about 14 base xp per tick (README)". No README ever carried this; it was the per-skill estimate that main later labelled inferred | `monkey_madness.md`, `tree_gnome_village.md`, `grand_tree.md`, `dragon_slayer.md`, `quest_points.md` rs/30's measured 300 ms rates, 4.1-10.1 by Strength band and ~9.3 for Defence at Strength 99 (via rs/28; table in section 6). Combat is valued through the scenario arithmetic in section 6 |
 | Ranged worth ~0 ("the cannon makes it free") | `temple_of_ikov.md` (~10-50), `horror_from_the_deep.md` (~63) | Ranged priced through rs/31's cannon plan: quest Ranged shortens the cannon phase, so Ikov's 10,500 is worth ~550 against ~750 (still OFF) and Horror ~300 against 800-1,000 (still OFF) |
-| MM-route combat finish 2,248 (Defence gap 4,638) | `ranged.md` | ~3,530 i with Holy Grail off (Defence gap 19,938) |
+| MM-route combat finish 2,248 (Defence gap 4,638) | `ranged.md` | ~3,520 i with Holy Grail off (Defence gap 19,938); ~2,020 i in Package B |
+| Dragon Slayer worth ~330 with MM | `dragon_slayer.md` | Package B: with Waterfall off and Holy Grail off, it shortens the finish by ~1,500 (section 7) |
 | Plan holds 46-49 QP | `quest_points.md`, `dragon_slayer.md` | 18 on the route (decision 3) |
 | Dragon Slayer "+1,545 if MM is dropped" | `dragon_slayer.md` | little or nothing: Hitpoints binds without MM (decision 4) |
 | Plague City's teleport savings include Holy Grail ~31 | `plague_city.md` | Holy Grail is off: ~613 of savings remain |
