@@ -40,6 +40,11 @@ const eatAtArg = args.find(a => a.startsWith('eatAt='));
 const boost = args.includes('boost');
 const amulet = args.find(a => a.startsWith('amulet='))?.slice(7);
 const pray = args.includes('pray');
+// brew=N drinks N Zamorak brew doses during the forced wait before Koschei
+// spawns. Each dose deals 12% of current hitpoints (never lethal) and drains
+// Defence by 2 + 10% (consume_effects.dbrow zamorak_brew_effect,
+// consume_effects.rs2:56-58), which shortens form 4.
+const brew = Number(args.find(a => a.startsWith('brew='))?.slice(5) ?? 0);
 
 // %viking_bits: Thorvald's 2-bit field starts at bit 16 (quest_viking.constant:20).
 const THORVALD_STARTED = 1 << 16;
@@ -74,6 +79,7 @@ await runScript(async ({ bot, sdk }) => {
         await L.cheat(sdk, 'setvar viking 1');
         await L.cheat(sdk, `setvar viking_bits ${THORVALD_STARTED}`);
         if (food > 0) await L.cheat(sdk, `give shark ${food}`, 2);
+        if (brew > 0) await L.cheat(sdk, `give 4dosepotionofzamorak ${Math.ceil(brew / 4)}`, 2);
         await L.tele(sdk, 2667, 3693, 0);
         await sdk.waitForTicks(3);
         const out: Record<string, unknown> = { run };
@@ -83,6 +89,17 @@ await runScript(async ({ bot, sdk }) => {
         await bot.interactLoc(ladder, 'Climb-down');
         const down = await L.waitUntil(sdk, () => L.pos(sdk).z > 9000, 20);
         out.ladderDown = down === null ? null : down - t0;
+        let dosesDrunk = 0;
+        while (dosesDrunk < brew && sdk.findNearbyNpc(/Koschei/) === null) {
+            const pot = sdk.findInventoryItem(/Zamorak brew|Potion of zamorak/i);
+            if (!pot) break;
+            await sdk.sendUseItem(pot.slot, 1);
+            dosesDrunk++;
+            await sdk.waitForTicks(3);
+        }
+        out.dosesDrunk = dosesDrunk;
+        out.hpAfterBrew = sdk.getState()!.player!.hp;
+        out.defAfterBrew = sdk.getSkill('Defence')?.level;
         const spawned = await L.waitUntil(sdk, () => sdk.findNearbyNpc(/Koschei/) !== null, 90);
         out.spawnWait = spawned === null ? null : spawned - (down ?? t0);
         if (spawned === null) throw new Error('Koschei never spawned');
@@ -140,7 +157,7 @@ await runScript(async ({ bot, sdk }) => {
                 continue;
             }
             const k = sdk.findNearbyNpc(/Koschei/);
-            if (k && !p.combat.inCombat && L.tick(sdk) % 5 === 0) await bot.attack(k);
+            if (k && (!p.combat.inCombat || p.combat.targetIndex !== k.index) && L.tick(sdk) % 3 === 0) await bot.attack(k);
             await sdk.waitForStateUpdate();
         }
         Object.assign(out, {
