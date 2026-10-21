@@ -115,7 +115,8 @@ await runScript(async ({ bot, sdk }) => {
         } else if (seg === 'west') {
             await setStage(10);
             await ensure(sdk, 'elena_picture', /^Picture$/i);
-            if (L.pos(sdk).z > 9000 || Math.abs(L.pos(sdk).x - 2529) > 3) await L.tele(sdk, 2529, 3304);
+            const p = L.pos(sdk);
+            if (p.level !== 0 || p.x !== 2529 || p.z !== 3304) await L.tele(sdk, 2529, 3304);
             await S.walk('manhole -> Jethick', 2539, 3305);
             await S.step('Jethick: picture -> book (10->20)', talk(sdk, /^Jethick$/), { choices: [/looking for a woman from East Ardougne/] });
             await quest('jethick');
