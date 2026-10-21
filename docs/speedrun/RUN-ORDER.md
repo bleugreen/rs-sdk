@@ -90,17 +90,25 @@ logout, independent of `fleetctl`, documented in HELPERS.md. The altar givers fo
 contract (cairn://p/rs/97/messages, 04:59). Everything else in the fleet stays on bbs. SUPPLIES.md
 marks every giver's host.
 
-**Setup (M0550).** Chrome throttles timers and `requestAnimationFrame` for a hidden or occluded tab
-(minimised, remote desktop disconnected, screen locked, window covered; intensively after about 5
-minutes), which slows the game loop and every in-page and overlay reaction. So, for the whole run:
+**Setup (M0550; the host since 2026-10-21).** The run machine is an AWS c7i.2xlarge in us-east-1c
+(8 vCPU, no GPU, Ubuntu 24.04, XFCE over xrdp). [RUN-HOST.md](RUN-HOST.md) is its run-night runbook,
+with every command. In order:
 
-- power saving and the screensaver are off;
-- the remote-desktop session stays connected, and the tab stays visible and unobscured;
-- Chrome is launched with `--disable-background-timer-throttling --disable-renderer-backgrounding
-  --disable-backgrounding-occluded-windows`;
-- nothing runs on the machine but the tab, the overlay's gateway and rs/117's helpers;
-- the bbs fleet is online and every hand-off of the first block (H1-H5) is staged before the first
-  login.
+- check Fly edge iad and TCP connect p50 of at most 5 ms;
+- the operator connects over RDP at a fixed 1920x1080, 24 bpp (one desktop session per user:
+  disconnect, never log out);
+- start the page server, the tab's loopback gateway and Chrome under `tmux -L run`. Chrome gets its own
+  profile, tenet 11's three throttling flags and a maximised app window;
+- log rs/117's helpers in;
+- start the recording on the VM (ffmpeg x11grab, 1920x1080, 30 fps, libx264 veryfast crf 20);
+- check that nothing else runs;
+- measure the gate on a throwaway gate account;
+- only then open SCORED's tab, which is its first login;
+- the bbs fleet is online and H1-H5 are staged before that login.
+
+Gate (d) was measured there on 2026-10-21 at about 1,700 online. The tab's loop-rate p10 was 70.6-73.3
+per second with RDP connected or disconnected and the capture on or off. The capture costs about
+0.75-0.95 of a core. Chrome was not throttled with RDP disconnected (m, RUN-HOST.md, "Measured").
 
 **The run gate, and the knife switching rule (M0530, M0550; ARC).** The knife is on only while all
 four hold, measured on the run machine from SCORED's own tab:
