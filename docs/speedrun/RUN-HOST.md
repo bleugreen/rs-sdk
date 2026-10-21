@@ -19,6 +19,113 @@ RDP is used only before the run: to create the desktop session at the right geom
 bring-up by eye. With RDP disconnected the tab runs exactly as fast as with it connected, and the
 recording is smooth. A connected session costs the recording about a fifth of its frames.
 
+## Rules for every launch on the host
+
+**Every launch is reaped by its own hard timeout.** Nothing on the host may depend on an agent, an
+ssh session or a person being alive to stop it (main, 10:20 PDT 2026-10-21, after rs/134's last
+measurement condition outlived its issue: a Chrome logged in to the gate account and two ffmpegs
+under `tmux -L rs134`, stopped by hand). Every long-lived process here is started as
+`exec timeout --kill-after=30s <bound> <command>`, as the whole command of its own tmux session.
+Every foreground measurement runs as `timeout --kill-after=30s <bound> <command>`. At the bound,
+`timeout` sends SIGTERM (SIGINT for the recording, so ffmpeg finishes the file as it does on `q`),
+then SIGKILL 30 s later. **Teardown (step 9) still stops everything explicitly; the timeout is the
+backstop** for the teardown that never happens.
+
+**The run bound is 9 h.** A full run is about 36,000 ticks at 0.6 s, about 6 h, and steps 3 to 7
+take under an hour, so 9 h leaves about two hours of margin (i). The same 9 h bounds the run's host
+reservation (below). Each run launch below begins `T=9h;`, the only place the figure appears in a
+command. A rehearsal replaces it with `T=30m`. The gate account's tab and the measurement commands
+carry their own short bounds, stated with each command. A bound counts from its own launch. If
+SCORED's login (step 7) slips more than two hours past step 3, tear the stack down and bring it up
+again before step 7.
+
+| Launch | Run | Rehearsal or measurement |
+|---|---|---|
+| Page server, gateway (step 3) | `T=9h` | `T=30m` |
+| Chrome, gate account's tab (steps 3 and 6) | - | `T=15m` |
+| Chrome, SCORED's tab (step 7) | `T=9h` | - |
+| rs/117's helper launcher (step 4) | `T=9h` | `T=30m` |
+| Recording (step 5), SIGINT at the bound | `T=9h` | `T=30m` |
+| Live view (step 5) | `T=9h` | `T=30m` |
+| Gate (a)-(c), rs/96's CLI (step 6) | - | `15m` (its probe gives up after 10 min) |
+| Gate (d), the sampler (step 6) | - | `10m` (a 5 min sample; the script's own limit is 7 min 10 s) |
+| SIGKILL after the bound, every launch | 30 s | 30 s |
+
+**Why `timeout` in each command, not a host-side reaper.**
+
+- The bound is part of the command that starts the process, so nothing can be started without one,
+  and there is no second thing to start, remember or cancel. A reaper such as
+  `systemd-run --user --on-active=9h tmux -L run kill-server` bounds only that one tmux socket, not
+  the foreground measurements or another socket. It is as easy to forget as teardown is, and a
+  rehearsal's leftover timer fires into whatever runs on the same socket next. `timeout` also needs
+  nothing beyond coreutils, while the host's user systemd manager reports `degraded` (m, 17:19 UTC).
+- **`exec` is load-bearing.** It makes `timeout` the tmux pane's own process, heading the pane's
+  foreground process group. At the bound its signal reaches the whole group: a loop's shell and the
+  ffmpeg inside it, and Chrome's child processes. Teardown's `tmux kill-session` or `kill-server`
+  reaches `timeout` and everything under it. Without `exec`, as in `timeout ... cmd | tee log`,
+  `timeout` moves to a background process group. `tmux kill-session` then leaves it running until
+  its bound, and a program in it that reads the terminal is stopped by the kernel (SIGTTIN), so
+  ffmpeg would freeze on its `q` key. All three behaviours were observed with `sleep` and `cat` under
+  `tmux -L rs139` (m, 17:24-17:26 UTC). So logs are written by redirection (`>>log 2>&1`), never
+  `| tee`.
+
+**Probe slots, while rs/96 and rs/130 measure on the host.** Nothing is tested, rehearsed or
+verified on the host in minutes :00-:03, :15-:25, :30-:33 or :45-:55 of any hour. Use :04-:14,
+:26-:29, :34-:44 and :56-:59, and fit the whole thing, bound included, inside one window (r: main via
+rs/103, 2026-10-21). Run the leftover check (below) first. If anything is running that isn't yours,
+leave it alone and wait.
+
+**Host reservation.** The reservation is the file `/home/ubuntu/host-reserved.json`:
+
+```json
+{"owner":"<issue or run>","until":"<RFC3339, UTC>","reason":"..."}
+```
+
+rs/83's systemd user timer honours it. The timer runs the gate read (#101) at :00 and :30, and every
+15 minutes from two hours before the run's start, with no agent alive. It writes each read to
+`~/gate-history/<utc>.json`, which rs/83's docs child harvests. It skips any read while `until` is in
+the future. A stale reservation (owner gone, `until` passed) is ignored, so nothing needs cleaning by
+hand (r: main via rs/103, 10:45 PDT; at 17:22 UTC neither the timer nor `~/gate-history` was on the
+host yet, m). Who writes it:
+
+- **the run**: run.ts writes it at the start with `until` = start + 9 h (the run bound above), and
+  removes it after SCORED's final clean logout;
+- **a rehearsal**: by hand, before anything starts, with `until` = now + the rehearsal's bound
+  (30 min); removed after teardown;
+- **any other slot holder** (a measurement child, a probe, a check of these commands): for its slot;
+  removed afterwards.
+
+Write it (`O` is the owner, `M` the bound in minutes). It refuses if someone else holds a reservation
+that has not expired:
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'O=rs/NNN-rehearsal; M=30; F=$HOME/host-reserved.json; if [ -f $F ]; then U=$(sed -n "s/.*\"until\": *\"\([^\"]*\)\".*/\1/p" $F); if [ -n "$U" ] && [ $(date -d "$U" +%s) -gt $(date +%s) ] && ! grep -q "\"owner\": *\"$O\"" $F; then echo "host reserved, stop: $(cat $F)"; exit 1; fi; fi; printf "{\"owner\":\"%s\",\"until\":\"%s\",\"reason\":\"%s\"}\n" "$O" "$(date -u -d "now + $M minutes" +%Y-%m-%dT%H:%M:%SZ)" "rehearsal" >$F.tmp && mv $F.tmp $F && cat $F'
+```
+
+Remove it after teardown (only your own):
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'O=rs/NNN-rehearsal; F=$HOME/host-reserved.json; grep -q "\"owner\": *\"$O\"" $F 2>/dev/null && rm $F; cat $F 2>/dev/null || echo "no host reservation"'
+```
+
+**Credentials: no real account's credentials, fleet or SCORED, go on the host until rs/138's launch
+is in this runbook** (main, 10:20 PDT). Step 3's Chrome launch puts the password in the tab's URL.
+From there it lands in the argument lists of `timeout` and `chrome`, which any process can read with
+`ps`, in tmux's record of the session's command, and in the page's address. That launch is **lab
+only (throwaway gate account); replaced by cairn://p/rs/138 before any real account's tab is
+opened**. Until then step 4 (the helpers log in fleet accounts) and step 7 (SCORED) are blocked. And
+while that launch exists, the checks here print process names (`comm`) or single flags
+(`grep -o`), never whole command lines (`ps -o args`, `pgrep -a`).
+
+**Leftover check.** It lists every tmux socket on the host with its sessions, other agents' sockets
+included, plus every `chrome*`, `ffmpeg`, `bun` and `timeout` process with its age, and the host
+reservation. Run it before any launch and after any teardown or bound. After teardown expect
+`no server running` on every socket, no processes and none of your reservations:
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'for s in /tmp/tmux-$(id -u)/*; do [ -S "$s" ] && echo "tmux -L $(basename $s): $(tmux -S $s ls 2>&1 | tr "\n" " ")"; done; ps -o pid,etime,comm -p "$(pgrep -d, "^(chrome.*|ffmpeg|bun|timeout)$")" 2>/dev/null || echo "no chrome, ffmpeg, bun or timeout process"; cat ~/host-reserved.json 2>/dev/null || echo "no host reservation"'
+```
+
 ## The host
 
 | | | |
@@ -51,6 +158,7 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o 
 | rs/117's helper gateway | `127.0.0.1:7795` by default (HELPERS.md, "Helpers on the run machine") |
 | Chrome profile for the run tab | `/home/ubuntu/rs-run/chrome-profile` |
 | Recordings | `/home/ubuntu/recordings/` |
+| Host reservation (rs/83's timer skips while it holds) | `/home/ubuntu/host-reserved.json` |
 | X display of the operator's session | `:10` when it is the first session since boot; read it in step 2 |
 
 ## 0. Prepare the checkout (once per run commit)
@@ -67,8 +175,9 @@ Account files: the gate account (step 6) is a throwaway demo account whose name 
 `cairn_`, with `~/rs-sdk/bots/<gate>/bot.env` holding `BOT_USERNAME`, `PASSWORD`,
 `SERVER=rs-sdk-demo.fly.dev`, `GATEWAY_URL=ws://127.0.0.1:7780` and `TELEMETRY=false` (a demo account
 is created on its first login). SCORED's env file has the same shape and lives outside git on the
-host; its path is set on run night and written here only as `$SCORED_ENV`. Never use a fleet or
-helper account for the gate.
+host; its path is set on run night and written here only as `$SCORED_ENV`. **It is not put on the
+host until rs/138's launch is in this runbook** ("Credentials", above). Never use a fleet or helper
+account for the gate.
 
 ## 1. Preconditions: Fly edge iad, TCP connect p50 at most 5 ms
 
@@ -122,10 +231,10 @@ What does not change: Chrome stays maximised and unobscured on :10 with the thro
 ## 3. Bring up the page server, the gateway and Chrome
 
 Gateway and page server (the page server redirects a bare `/bot` to `?server=` the demo and
-`?gateway=` the loopback gateway):
+`?gateway=` the loopback gateway). Bound: `T=9h` for the run, `T=30m` for a rehearsal:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'B=$HOME/.bun/bin/bun; tmux -L run new-session -d -s gateway -c ~/rs-sdk/server/gateway "AGENT_PORT=7780 GATEWAY_HOSTNAME=127.0.0.1 $B run gateway.ts 2>&1 | tee -a $HOME/rs-run/gateway.log"; tmux -L run new-session -d -s page -c ~/rs-sdk/server/webclient "$B run proxy.ts --world=https://rs-sdk-demo.fly.dev --port=8899 --gateway=ws://127.0.0.1:7780 2>&1 | tee -a $HOME/rs-run/page.log"; sleep 4; ss -ltn | grep -E ":(7780|8899) "; curl -s -o /dev/null -w "%{http_code} %{redirect_url}\n" "http://127.0.0.1:8899/bot?bot=x"'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'T=9h; B=$HOME/.bun/bin/bun; tmux -L run new-session -d -s gateway -c ~/rs-sdk/server/gateway "exec timeout --kill-after=30s $T env AGENT_PORT=7780 GATEWAY_HOSTNAME=127.0.0.1 $B run gateway.ts >>$HOME/rs-run/gateway.log 2>&1"; tmux -L run new-session -d -s page -c ~/rs-sdk/server/webclient "exec timeout --kill-after=30s $T $B run proxy.ts --world=https://rs-sdk-demo.fly.dev --port=8899 --gateway=ws://127.0.0.1:7780 >>$HOME/rs-run/page.log 2>&1"; sleep 4; ss -ltn | grep -E ":(7780|8899) "; curl -s -o /dev/null -w "%{http_code} %{redirect_url}\n" "http://127.0.0.1:8899/bot?bot=x"'
 ```
 
 Expect both ports listening and `302 http://127.0.0.1:8899/bot?bot=x&server=rs-sdk-demo.fly.dev&gateway=ws%3A%2F%2F127.0.0.1%3A7780`.
@@ -133,13 +242,22 @@ Expect both ports listening and `302 http://127.0.0.1:8899/bot?bot=x&server=rs-s
 **Chrome.** The tab's URL is
 `http://127.0.0.1:8899/bot?bot=<name>&password=<pw>&server=rs-sdk-demo.fly.dev&gateway=ws://127.0.0.1:7780`.
 The page logs in as soon as it loads, so **opening the tab is the account's login**. The launch
-builds the URL on the host from an env file, so the credentials never cross the ssh line:
+builds the URL on the host from an env file, so the credentials never cross the ssh line. They do
+end up on the host's command lines, though, so this launch is:
+
+> **Lab only (throwaway gate account); replaced by cairn://p/rs/138 before any real account's tab
+> is opened.** The password is in the URL, so it is in `ps` (for both `timeout` and `chrome`), in
+> tmux's command line and in the page's address. Never point `ENV` at SCORED's or a fleet account's
+> file.
+
+Bound: `T=15m`, the gate account's tab, here and in step 6:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'ENV=$HOME/rs-sdk/bots/GATE_ACCOUNT/bot.env; . $ENV; URL="http://127.0.0.1:8899/bot?bot=$BOT_USERNAME&password=$PASSWORD&server=rs-sdk-demo.fly.dev&gateway=ws://127.0.0.1:7780"; tmux -L run new-session -d -s chrome "DISPLAY=:10 google-chrome --user-data-dir=$HOME/rs-run/chrome-profile --no-first-run --no-default-browser-check --password-store=basic --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --start-maximized --app=\"$URL\""'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'T=15m; ENV=$HOME/rs-sdk/bots/GATE_ACCOUNT/bot.env; . $ENV; URL="http://127.0.0.1:8899/bot?bot=$BOT_USERNAME&password=$PASSWORD&server=rs-sdk-demo.fly.dev&gateway=ws://127.0.0.1:7780"; tmux -L run new-session -d -s chrome "exec timeout --kill-after=30s $T env DISPLAY=:10 google-chrome --user-data-dir=$HOME/rs-run/chrome-profile --no-first-run --no-default-browser-check --password-store=basic --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --start-maximized --app=\"$URL\""'
 ```
 
-(For SCORED in step 7, `ENV=$SCORED_ENV`.) Why each flag:
+SCORED's tab (step 7) is opened by rs/138's replacement, with the same flags under `T=9h`. Why each
+flag:
 
 - the three `--disable-background...` flags are tenet 11's: no timer, renderer or occlusion
   throttling;
@@ -171,19 +289,32 @@ it. The one ordering rule that touches this runbook: **the helpers are logged in
 opens** (the launcher's `helpersReady`), because login order decides the 7- or 8-tick Runecraft
 cycle.
 
+Two rules from this page apply to that launch:
+
+- **Bound.** Whatever command HELPERS.md gives starts as the whole command of its own tmux
+  session, `exec timeout --kill-after=30s $T <launcher command> >>$HOME/rs-run/helpers.log 2>&1`,
+  with `T=9h` for the run and `T=30m` for a rehearsal ("Rules for every launch"), unless rs/117
+  gives the launcher its own hard bound. Its clean logouts are HELPERS.md's teardown. If the bound
+  fires instead, the helpers are dropped, not logged out; whether the launcher logs out on SIGTERM
+  is rs/117's to say. Neither the launcher nor HELPERS.md is on this branch or on the host's
+  checkout yet (m, 17:22 UTC), so this form has not been run.
+- **Blocked until rs/138.** The helpers are fleet accounts, so their credentials stay off the host
+  until rs/138's launch is in this runbook ("Credentials").
+
 ## 5. Start the recording
 
 The recording is captured on the VM itself, not over RDP: ffmpeg grabs the session's X display
 (r: main, 09:13; rejected: recording at the Mac end over RDP). Start it **before SCORED's first
 login**, which is before step 7, and before the gate so the gate is measured with the capture
-running, as in the run:
+running, as in the run. Bound: `T=9h` for the run, `T=30m` for a rehearsal. At the bound `timeout`
+sends SIGINT, which ffmpeg treats like `q`: it finishes the file:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'mkdir -p ~/recordings; rm -f ~/recordings/ffmpeg-progress.log; F=$HOME/recordings/run-$(date -u +%Y%m%dT%H%M%SZ).mkv; tmux -L run new-session -d -s rec "ffmpeg -hide_banner -loglevel warning -f x11grab -draw_mouse 1 -framerate 30 -video_size 1920x1080 -i :10.0+0,0 -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -progress $HOME/recordings/ffmpeg-progress.log $F 2>&1 | tee -a $HOME/recordings/ffmpeg.log"; sleep 5; echo $F; grep -E "^(fps|drop_frames|speed)=" ~/recordings/ffmpeg-progress.log | tail -3; df -h / | tail -1'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'T=9h; mkdir -p ~/recordings; rm -f ~/recordings/ffmpeg-progress.log; F=$HOME/recordings/run-$(date -u +%Y%m%dT%H%M%SZ).mkv; tmux -L run new-session -d -s rec "exec timeout -s INT --kill-after=30s $T ffmpeg -hide_banner -loglevel warning -f x11grab -draw_mouse 1 -framerate 30 -video_size 1920x1080 -i :10.0+0,0 -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -progress $HOME/recordings/ffmpeg-progress.log $F 2>>$HOME/recordings/ffmpeg.log"; sleep 5; echo $F; grep -E "^(fps|drop_frames|speed)=" ~/recordings/ffmpeg-progress.log | tail -3; df -h / | tail -1'
 ```
 
 The line is main's decision (x11grab, 1920x1080, 30 fps, libx264 `-preset veryfast -crf 20`) plus
-three choices made here:
+three choices made here (and the bound, above):
 
 - **`.mkv`**: a Matroska file stays playable if ffmpeg or the machine dies mid-run, where an MP4 is
   unreadable without the index written at the end (i). Remux on the Mac if MP4 is wanted:
@@ -214,10 +345,12 @@ viewer and exits when that viewer leaves, so it runs in a loop; a reload reconne
 tailnet address only, never the public one. It is a **separate low-rate grab, not a second output of
 the recording's ffmpeg**: an HTTP `-listen` output blocks its process until a viewer connects and
 fails when the viewer leaves. Inside the recording's process that would hold up or end the
-recording (i). As its own process, it can come and go without touching the recording file:
+recording (i). As its own process, it can come and go without touching the recording file. Bound:
+`T=9h` for the run, `T=30m` for a rehearsal; at the bound the signal reaches the loop's shell and
+the ffmpeg inside it (`-nostdin` keeps a stray key in the pane away from ffmpeg):
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'tmux -L run new-session -d -s live "while true; do ffmpeg -hide_banner -loglevel warning -f x11grab -draw_mouse 1 -framerate 3 -video_size 1920x1080 -i :10.0+0,0 -vf scale=960:540 -c:v mjpeg -q:v 8 -f mpjpeg -listen 1 http://100.66.164.37:8090/live.mjpg; sleep 1; done"'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'T=9h; tmux -L run new-session -d -s live "exec timeout --kill-after=30s $T bash -c \"while true; do ffmpeg -nostdin -hide_banner -loglevel warning -f x11grab -draw_mouse 1 -framerate 3 -video_size 1920x1080 -i :10.0+0,0 -vf scale=960:540 -c:v mjpeg -q:v 8 -f mpjpeg -listen 1 http://100.66.164.37:8090/live.mjpg; sleep 1; done\""'
 ```
 
 It costs 3.7% of one core (m: `pidstat` over 40 s, 16:53 UTC, ~150 kbit/s), and the recording
@@ -231,10 +364,12 @@ the rest of the stack (or `tmux -L run kill-session -t live` on its own).
 page server, Chrome, recording), rs/117's launcher with its lite runners and roles, and system
 daemons. The `run` stack includes the live view (step 5). The drained Cairn executor's daemon (`cairn-exec`) was idle at 0.3% of a core (m, 16:15
 UTC); whether it stays up during the run is main's call. No second Chrome, no other `bun`, no other
-ffmpeg.
+ffmpeg, and no tmux server but `run` (the leftover check, "Rules for every launch", lists them all).
+The list shows process names, not command lines, because the lab-only Chrome launch has a password
+in its arguments:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'uptime; ls /tmp/tmux-$(id -u)/; ps -eo pid,pcpu,etime,args --sort=-pcpu | cut -c1-160 | head -20; pgrep -c -f "chrome --type=gpu-process" | sed "s/^/Chrome GPU processes (expect 1): /"'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'uptime; ls /tmp/tmux-$(id -u)/; ps -eo pid,pcpu,etime,comm --sort=-pcpu | head -20; pgrep -c -f "chrome --type=gpu-process" | sed "s/^/Chrome GPU processes (expect 1): /"'
 ```
 
 **The gate** is measured here, on this machine, right before the run, at the real player count, and
@@ -253,10 +388,11 @@ The conditions and what to do on a failure are in RUN-ORDER.md section 1 and ten
   the in-page probe (the page publishes `loops` only while a program runs), and every 10 s prints the
   page's loop rate beside each process's CPU and ffmpeg's frame counters. Closing the tab afterwards
   drops the gate account's client; a throwaway account left in the world until the server's
-  no-connection timeout costs nothing.
+  no-connection timeout costs nothing. Bounds: the tab `T=15m` (step 3's command), the sampler
+  10 min. If the ssh line dies before the closing `kill-session`, the tab's own bound closes it.
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'cd ~/rs-sdk && ~/.bun/bin/bun docs/speedrun/scripts/runhost-loops.ts GATE_ACCOUNT --label=gate --minutes=5 --display=:10 --out=$HOME/rs-run/gate-loops.jsonl 2>&1 | grep -v -E "^\[(Runner|BotSDK)\]|Pathfinding|LOGOUT DEBUG"; tmux -L run kill-session -t chrome'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'cd ~/rs-sdk && timeout --kill-after=30s 10m ~/.bun/bin/bun docs/speedrun/scripts/runhost-loops.ts GATE_ACCOUNT --label=gate --minutes=5 --display=:10 --out=$HOME/rs-run/gate-loops.jsonl 2>&1 | grep -v -E "^\[(Runner|BotSDK)\]|Pathfinding|LOGOUT DEBUG"; tmux -L run kill-session -t chrome'
 ```
 
 Read (d) from the summary line's `loops p10` (lowest / median / highest 10-second sample). **Pass**:
@@ -267,8 +403,12 @@ programs run, which is what the in-run monitor reads.
 
 ## 7. SCORED's tab: the run's first login
 
-With the helpers in (step 4), the recording running (step 5) and the gate passed (step 6), launch
-Chrome as in step 3 with `ENV=$SCORED_ENV`. The page logs SCORED in as it loads; from here the run
+**Blocked until rs/138's launch is in this runbook.** Step 3's Chrome command is lab only and is
+never used for SCORED ("Credentials").
+
+With the helpers in (step 4), the recording running (step 5) and the gate passed (step 6), open
+SCORED's tab with rs/138's launch: step 3's flags and profile, under `T=9h`. run.ts writes the run's
+host reservation (`until` = start + 9 h). The page logs SCORED in as it loads; from here the run
 scripts drive it through the gateway on 7780 (RUN-ORDER.md, STEP-MANIFEST.md). Nobody touches the
 window.
 
@@ -290,21 +430,23 @@ mkdir -p ~/Movies/rs-run && scp -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-
 
 ## 9. Teardown
 
-Stop rs/117's helpers as HELPERS.md says (clean logouts first). Then stop the tab's stack; the
-recording must already be stopped (step 8), since killing tmux under ffmpeg cuts the file short:
+Teardown stops everything explicitly; the bounds are only the backstop. Stop rs/117's helpers as
+HELPERS.md says (clean logouts first). Then stop the tab's stack. The recording must already be
+stopped (step 8), since killing tmux under ffmpeg cuts the file short:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'tmux -L run has-session -t rec 2>/dev/null && { echo "recording still running: stop it first (step 8)"; exit 1; }; tmux -L run kill-server; sleep 2; ls /tmp/tmux-$(id -u)/; pgrep -a -f "proxy.ts|gateway.ts|rs-run/chrome-profile" || echo "tab stack stopped"'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'tmux -L run has-session -t rec 2>/dev/null && { echo "recording still running: stop it first (step 8)"; exit 1; }; tmux -L run kill-server; sleep 2; ls /tmp/tmux-$(id -u)/; pgrep -l -f "proxy.ts|gateway.ts|rs-run/chrome-profile" || echo "tab stack stopped"'
 ```
 
-The session itself stays: nobody logs out of XFCE. The recording stays on the host until its copy on
-the Mac is checked.
+Then run the leftover check ("Rules for every launch"). After a rehearsal, remove its host
+reservation; after the run, run.ts removes the run's. The session itself stays: nobody logs out of
+XFCE. The recording stays on the host until its copy on the Mac is checked.
 
 ## Measured: gate (d) on this host, 2026-10-21
 
 **How it was taken.** On this host (c7i.2xlarge, 8 vCPU, no GPU), 16:28-16:52 UTC (09:28-09:52
 PDT), with the demo at about 1,690-1,700 online (the page's footer, m). Chrome 156.0.8078.47 was
-launched exactly as in step 3: its own profile, the three throttling flags, a maximised app window of
+launched with step 3's flags (before the commands carried bounds): its own profile, the three throttling flags, a maximised app window of
 1920x1029 in the operator's xrdp session (display :10, 1920x1080, 24 planes). The page server and
 gateway ran from the clone at main `85a28dc8d`. The tab was logged in as a throwaway `cairn_` demo
 account standing in Lumbridge and running the in-page probe (one walk to a neighbouring tile and back
