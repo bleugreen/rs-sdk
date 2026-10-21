@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { fakeCdp } from './fake-cdp';
 import { FakeSdk, flush } from './fake-sdk';
 import { loginTokenProof } from '../../server/webclient/login-token';
 import {
@@ -7,6 +8,7 @@ import {
     backoffMs,
     browserUrl,
     loggedOutBy,
+    login,
     logoutClean,
     mintLoginToken,
     openBrowserClient,
@@ -327,29 +329,6 @@ describe('logoutClean and the post-combat window', () => {
 });
 
 describe('logoutClean on a browser tab: the page confirms, never the gateway', () => {
-    /** A stand-in for Chrome's DevTools port: /json/list and a websocket that answers Runtime.evaluate. */
-    function fakeCdp(bot: string) {
-        const page = { tab: true, inGame: true, evaluations: 0 };
-        const server = Bun.serve({
-            port: 0,
-            hostname: '127.0.0.1',
-            fetch(req, srv) {
-                if (new URL(req.url).pathname === '/json/list') {
-                    return Response.json(page.tab ? [{ id: 't1', type: 'page', url: `http://127.0.0.1:8899/bot?bot=${bot}`, webSocketDebuggerUrl: `ws://127.0.0.1:${srv.port}/devtools/page/t1` }] : []);
-                }
-                return srv.upgrade(req) ? undefined : new Response('not found', { status: 404 });
-            },
-            websocket: {
-                message(ws, m) {
-                    page.evaluations++;
-                    const msg = JSON.parse(String(m)) as { id: number };
-                    ws.send(JSON.stringify({ id: msg.id, result: { result: { type: 'boolean', value: page.inGame } } }));
-                },
-            },
-        });
-        return { page, origin: `http://127.0.0.1:${server.port}`, stop: () => server.stop(true) };
-    }
-
     /** A browser session whose SDK state stays in game and whose gateway says `gateway`. */
     function browserSession(cdp: string | undefined, gateway: { status: string; inGame: boolean }) {
         const f = fakeSession({ client: 'browser', child: null, lastInWorldTick: 40 } as Partial<Session>);
@@ -470,5 +449,108 @@ describe('browserUrl', () => {
 
     test('a browser launch without CDP refuses the token form rather than put it on a command line', async () => {
         await expect(openBrowserClient(proxied, {})).rejects.toThrow(/CDP/);
+    });
+});
+
+describe('login with inPage: the tab logs back in where it is', () => {
+    const PASSWORD = 's3cr3t-Pw9';
+
+    /** A logged-out browser session whose SDK still holds the old session's last state (tick 40). */
+    function pageSession(cdp: ReturnType<typeof fakeCdp>) {
+        const f = fakeSession({ client: 'browser', child: null, lastInWorldTick: 40, expectInWorld: false } as Partial<Session>);
+        (f.session as { env: Record<string, string> }).env = { BOT_USERNAME: 'srtest', PASSWORD, CDP_URL: cdp.origin, CLIENT_URL: cdp.clientUrl };
+        f.sdk.state = { ...f.sdk.state!, tick: 40 };
+        // openSession's tracker, which fakeSession does not install.
+        f.sdk.onStateUpdate(s => {
+            if (s.inGame && s.tick !== f.session.lastInWorldTick) {
+                f.session.lastInWorldTick = s.tick;
+                f.session.lastAdvanceAt = Date.now();
+            }
+        });
+        cdp.client.ingame = false;
+        cdp.client.botOverlay!.serverTick = 40;
+        return f;
+    }
+
+    /** The server accepts the login: the page is in game, then publishes two ticks. */
+    function getsIn(cdp: ReturnType<typeof fakeCdp>, sdk: FakeSdk, first?: number) {
+        setTimeout(() => {
+            cdp.client.ingame = true;
+            cdp.client.loginInProgress = false;
+            if (first === undefined) sdk.tick();
+            else sdk.push({ tick: first });
+            setTimeout(() => sdk.tick(), 30);
+        }, 30);
+    }
+
+    test('no navigation, one token redeemed in the page, and the new session counts on from the page tick', async () => {
+        const cdp = fakeCdp('srtest', PASSWORD);
+        try {
+            const { session, sdk } = pageSession(cdp);
+            cdp.hooks.onAutoLogin = () => getsIn(cdp, sdk);
+            const r = await login(session, { inPage: true, timeoutMs: 3_000 });
+            expect(r).toMatchObject({ via: 'page', attempts: 1, tickBase: 40 });
+            expect(session).toMatchObject({ sessionId: 2, tickBase: 40, expectInWorld: true });
+            expect(sdk.state!.tick - session.tickBase).toBe(2);
+            expect(cdp.page.navigations).toEqual([]);
+            expect(cdp.page.minted).toHaveLength(1);
+            expect(cdp.page.redeemed).toEqual(cdp.page.minted);
+            for (const e of cdp.page.expressions) expect(e).not.toContain(PASSWORD);
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    test('an in-page login that ends on the title screen is retried by navigating the tab', async () => {
+        const cdp = fakeCdp('srtest', PASSWORD);
+        try {
+            const { session, sdk } = pageSession(cdp);
+            cdp.hooks.onAutoLogin = () => {
+                setTimeout(() => {
+                    cdp.client.loginInProgress = false;
+                    cdp.client.loginMes1 = 'Your account is already logged in.';
+                    cdp.client.loginMes2 = 'Try again in 60 secs...';
+                }, 30);
+            };
+            cdp.hooks.onNavigate = () => getsIn(cdp, sdk, 1);
+            const r = await login(session, { inPage: true, timeoutMs: 5_000 });
+            expect(r).toMatchObject({ via: 'launch', attempts: 2, tickBase: 0 });
+            expect(cdp.page.autoLogins).toHaveLength(1);
+            expect(cdp.page.navigations).toHaveLength(1);
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    test('a page that cannot log itself in is navigated instead, and the fresh client counts from 0', async () => {
+        const cdp = fakeCdp('srtest', PASSWORD);
+        try {
+            const { session, sdk } = pageSession(cdp);
+            cdp.page.hasClient = false;
+            cdp.hooks.onNavigate = () => getsIn(cdp, sdk, 1);
+            const r = await login(session, { inPage: true, timeoutMs: 3_000 });
+            expect(r).toMatchObject({ via: 'launch', attempts: 1, tickBase: 0 });
+            expect(cdp.page.navigations).toHaveLength(1);
+            expect(cdp.page.navigations[0]).toContain('token=');
+            expect(cdp.page.autoLogins).toEqual([]);
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    test('without inPage a browser login still navigates the tab (unchanged default)', async () => {
+        const cdp = fakeCdp('srtest', PASSWORD);
+        try {
+            const { session, sdk } = pageSession(cdp);
+            cdp.hooks.onNavigate = () => getsIn(cdp, sdk, 1);
+            const r = await login(session, { timeoutMs: 3_000 });
+            expect(r).toMatchObject({ via: 'launch', tickBase: 0 });
+            expect(cdp.page.navigations).toHaveLength(1);
+            expect(cdp.page.expressions.some(e => e.includes('autoLogin'))).toBe(false);
+            // The old page's gateway socket is closed for good before the navigation.
+            expect(cdp.client.botOverlay!.gateway).toMatchObject({ connected: false, preventReconnect: true });
+        } finally {
+            cdp.stop();
+        }
     });
 });
