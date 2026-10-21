@@ -163,7 +163,7 @@ await runScript(async ({ bot, sdk }) => {
         add(await walk(bot, sdk, 2943, 3041, 1), 'I2 walk to shipyard gate');
         add(await locTalkAt(sdk, 2945, 3041, /^open$/i, [/Glough sent me/, /^Ka\.$/, /^Lu\.$/, /^Min\.$/], { idle: 3, done: s => pos(s).x >= 2945 }), 'I3 gate + password');
         add(await walk(bot, sdk, 2998, 3043, 2), 'I4 walk to foreman');
-        add(await talk(sdk, /^Foreman$/i, [/no longer with us/, /worm holes/, /^Anita/], { idle: 4 }), 'I5 foreman');
+        add(await talk(sdk, /^Foreman$/i, [/no longer with us/, /worm holes/, /^Anita/], { idle: 20 }), 'I5 foreman');
         await check('I');
     }
     if (runs('J')) {
