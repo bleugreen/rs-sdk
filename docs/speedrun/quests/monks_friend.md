@@ -85,13 +85,13 @@ Quest varp `%drunkmonkquest` (perm): 0, 10, 20, 30, 40, 50, 60, 70, 80
 
 ## Risks and gotchas
 
-- **The party is a forced 34-tick wait.** Logging out there would cut it short: the party
-  is a running script, and the completion is a `queue` at its end, so stay logged in
-  until the quest-complete scroll.
+- **The party is a forced 34-tick wait.** It cannot be dodged by logging out: a logout
+  waits while the player is delayed (`primitives.md` section 8), and the completion is
+  a `queue` at the party's end.
 - **Omad and Cedric wander.** In one run Omad's approach took 17 ticks instead of 2.
 - **The thieves' cave** has two thieves and a head thief near the blanket
   (`maps/m40_150.jm2`); none attacked a 70-combat lab account in two runs.
-- **Logout-safe** except the party: `%drunkmonkquest` is `scope=perm`. The ladder is a
+- **Logout-safe:** `%drunkmonkquest` is `scope=perm`. The ladder is a
   temporary loc added by a timer that runs only after Omad's first talk
   (`brother_omad.rs2:36`); after a logout the timer is gone, so talk to Omad again or
   check the ladder before relying on it.
