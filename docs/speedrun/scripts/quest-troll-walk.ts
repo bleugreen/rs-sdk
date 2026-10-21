@@ -27,11 +27,29 @@ type Act =
     | { scan: true };
 
 const LEGS: Record<string, Act[]> = {
-    // Troll Stronghold, out: Death Plateau rocks -> arena -> pass -> Trollheim -> stronghold door
+    // Troll Stronghold, out, two ways onto the plateau: Burthorpe's main path
+    // (no boots) or the Death Plateau climbing rocks (boots worn). Both join the
+    // Sherpa path south of the rockslide at 2856,3612, which needs climbing boots
+    // from that side (quest_troll.rs2:11), then Agility-15 climbing rocks at
+    // 2859-2860,3626 and 2878-2879,3622 to the arena's west door.
+    plateau_main: [
+        { tele: [2896, 3529] },
+        { walk: [2856, 3611, 0] },
+    ],
+    plateau_dp_rocks: [
+        { tele: [2896, 3529] },
+        { walk: [2880, 3593, 0] },
+        { loc: [3723], until: p => p.z >= 3596 },
+        { walk: [2856, 3611, 0] },
+    ],
     ts_out: [
         { cheat: 'setvar troll_quest 20' }, { cheat: 'setvar troll_varbit 0' },
-        { tele: [2880, 3593] },
-        { loc: [3723], until: p => p.z >= 3596 },
+        { tele: [2856, 3611] },
+        { loc: [3748], near: [2856, 3612], until: p => p.z >= 3613 },
+        { walk: [2858, 3626, 0] },
+        { loc: [3790, 3791], near: [2859, 3626], until: p => p.x >= 2861 },
+        { walk: [2877, 3622, 0] },
+        { loc: [3790, 3791], near: [2878, 3622], until: p => p.x >= 2880 },
         { walk: [2896, 3618, 0] },
         { loc: [3782, 3783], until: p => p.x >= 2898 },
         { walk: [2916, 3628, 0] },
@@ -58,12 +76,10 @@ const LEGS: Record<string, Act[]> = {
         { walk: [2823, 10049, 1] },
         { loc: [3761], until: p => p.z < 9000 },
     ],
-    // Secret exit -> Sherpa path rockslides -> stile -> Dunstan
+    // Secret exit -> rockslides at 2833,3628 and 2856,3612 -> stile -> Dunstan
     secret_to_dunstan: [
         { cheat: 'setvar troll_quest 40' },
         { tele: [2827, 3646] },
-        { walk: [2821, 3636, 0] },
-        { loc: [3748], near: [2821, 3635], until: p => p.z <= 3634 },
         { walk: [2833, 3629, 0] },
         { loc: [3748], near: [2833, 3628], until: p => p.z <= 3627 },
         { walk: [2856, 3613, 0] },
@@ -81,16 +97,15 @@ const LEGS: Record<string, Act[]> = {
         { loc: [3748], near: [2856, 3612], until: p => p.z >= 3613 },
         { walk: [2833, 3627, 0] },
         { loc: [3748], near: [2833, 3628], until: p => p.z >= 3629 },
-        { walk: [2821, 3634, 0] },
-        { loc: [3748], near: [2821, 3635], until: p => p.z >= 3636 },
         { walk: [2827, 3646, 1] },
         { loc: [3762], until: p => p.z > 9000 },
         { walk: [2851, 10061, 1] },
         { loc: [3788], until: p => p.level === 1 },
         { walk: [2827, 10065, 1] },
+        { walk: [2828, 10102, 1] },
     ],
-    // Arrg's arena (where his fight leaves you) -> west exit -> rocks -> secret door
-    arena_to_secret: [
+    // Arrg's arena (where his fight leaves you) -> west door -> climbing rocks -> secret door -> Ug
+    arena_to_ug: [
         { cheat: 'setvar troll_quest 50' },
         { tele: [2914, 3611] },
         { walk: [2898, 3618, 0] },
@@ -101,10 +116,11 @@ const LEGS: Record<string, Act[]> = {
         { loc: [3790, 3791], near: [2860, 3626], until: p => p.x <= 2858 },
         { walk: [2833, 3627, 0] },
         { loc: [3748], near: [2833, 3628], until: p => p.z >= 3629 },
-        { walk: [2821, 3634, 0] },
-        { loc: [3748], near: [2821, 3635], until: p => p.z >= 3636 },
         { walk: [2827, 3646, 1] },
         { loc: [3762], until: p => p.z > 9000 },
+        { walk: [2851, 10061, 1] },
+        { loc: [3788], until: p => p.level === 1 },
+        { walk: [2827, 10065, 1] },
     ],
     // Trollweiss: stronghold top door -> Trollheim ice cave -> crevasse -> sled 1 -> flower -> sled 2 -> Rellekka
     trollweiss: [
@@ -130,6 +146,7 @@ const LEGS: Record<string, Act[]> = {
     // Games necklace arrival (primitives.md §4: about 2208,4941) -> way out
     games_room: [
         { tele: [2208, 4941] },
+        { loc: [4622], until: p => p.level === 1 },
         { scan: true },
     ],
 };
