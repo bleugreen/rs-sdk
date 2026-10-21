@@ -105,7 +105,7 @@ the lowest open sell and its total quantity.
 | Rune dart tip (824), Adamant dart tip (823) | none | none | 0 | none | Make. |
 | Headless arrow (53) | none | none | 0 | none | **Make** from arrow shafts and feathers. |
 | Arrow shaft (52) | none | 26 x205 | 21 | Dargaud's (Ranging Guild, Ranged 40) 1 gp, stock 1,000 | Fletch from logs, or buy at Dargaud's. |
-| Feather (314) | none | 70 x673 | 442 | **Gerrant (Port Sarim) 2 gp, stock 1,000**; Fishing Guild 1,500; Shantay Pass 500 | **Buy from shops.** 35x cheaper than the GE ask. Buyer: `{"item":"Feather","source":"shop","shop":"gerrant","maxPrice":6}`. |
+| Feather (314) | none | 70 x673 | 442 | **Gerrant (Port Sarim) 2 gp, stock 1,000**; Fishing Guild 1,500; Shantay Pass 500 | **Both.** Gerrant's: 200 cost 640 gp (3.2 each, measured), over 20x cheaper than the GE ask; buyer line `{"item":"Feather","source":"shop","shop":"gerrant","maxPrice":6}`. For thousands, the `feathers` role (chickens near Lumbridge, free) avoids draining the shop's price up. |
 | Bow string (1777) | 1 x1,418,258 | 146 x870 | 0 | none | Gather/spin if needed (not on the list). |
 
 ### Herbs and secondaries
