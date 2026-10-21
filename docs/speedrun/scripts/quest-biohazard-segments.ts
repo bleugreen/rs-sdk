@@ -129,6 +129,17 @@ await runScript(async ({ bot, sdk }) => {
             await S.step("wear the doctors' gown", async () => { await bot.equipItem(/^Doctors' gown$/i); }, { done: () => sdk.getEquipment().some(e => /Doctors' gown/i.test(e.name)), settle: 0 });
             // Front door from the street; (2551,3328) joins the yard to the HQ instead.
             await S.walk('nurse -> HQ front door', 2551, 3320);
+        } else if (seg === 'hq') {
+            if (((await varp(sdk, 'biohazard')) ?? 0) !== 6) await stage(6);
+            await dropAll(sdk, /^(Key|Distillator)$/i);
+            if (!sdk.getEquipment().some(e => /Doctors' gown/i.test(e.name))) {
+                await ensure(sdk, 'doctor_gown', /^Doctors' gown$/i);
+                await sdk.sendUseItem(sdk.findInventoryItem(/^Doctors' gown$/i)!.slot, 2);
+                await sdk.waitForTicks(2);
+            }
+            await L.setStats(sdk, STATS);
+            const p = L.pos(sdk);
+            if (p.level !== 0 || p.x !== 2551 || p.z !== 3320) await L.tele(sdk, 2551, 3320);
             await S.step('HQ front door ("In you go doc")', opAt(2551, 3320, /Open/), { done: () => L.pos(sdk).z >= 3321 });
             await S.walk('HQ -> spiral stairs', 2543, 3325);
             await S.step('spiral stairs up', opAt(2542, 3324, /Climb-up/), { done: atLevel(sdk, 1), settle: 0 });
