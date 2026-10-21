@@ -576,6 +576,31 @@ interface BotWorldState {
   autoRetaliateEnabled?: boolean;
   /** Absent when the connected client predates the signal. */
   opFeedback?: OpFeedbackState;
+  /** Whitelisted transmitted varps by content name: qp (101), option_run (173), bankcert (115). Quest progress varps are server-only and never appear here. */
+  varps?: Record<string, number>;
+  /** Quest points (varp 101). */
+  questPoints?: number;
+  /** Quests the quest tab shows as started or complete, by quest-list key (doric, cook, elena, mm, ...). Missing means not started. */
+  quests?: Record<string, 'started' | 'complete'>;
+  /** The quest journal open now, else the last one seen open; null before any. */
+  questJournal?: QuestJournalState | null;
+}
+```
+
+### QuestJournalState
+
+The quest journal scroll, published while open and kept after it closes. Its text is a function of the quest's stage; speedrun/data/quest-stages.ts maps it back (docs/speedrun/quests/quest-state.md). Quest progress varps never reach a client, so the quest tab (`quests`) and this are the only quest state there is.
+
+```typescript
+interface QuestJournalState {
+  /** The journal's header, colour tags removed. Not always the quest's title ("The Cook's Quest"). */
+  title: string;
+  /** Lines as the server sent them, tags kept (@str@ marks struck-through lines); trailing empty lines dropped. */
+  lines: string[];
+  /** True while the scroll is the open modal. */
+  open: boolean;
+  /** Last tick it was open. The text was current then and may be stale since. */
+  tick: number;
 }
 ```
 
