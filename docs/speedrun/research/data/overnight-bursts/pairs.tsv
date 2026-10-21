@@ -1,0 +1,17 @@
+pdt	run_id	source	players_start	players_end	direct_1	direct_2	direct_3	direct_lost	relay_1	relay_2	relay_3	pub_p10	pub_p50	pub_p90	pub_max	over400	under200	n_intervals	miss_given_catchup	relay_publication	tcp_p50_ms	azure_region	url
+2026-10-21 02:43 PDT	39579095329	rs83	1651	1663	60	0	0	0	32	28	0	116	245	348.3	879.2	14	120	318	0/0	p10 206 p50 306 p90 387 max 508	2	eastus	https://github.com/bleugreen/rs-sdk/actions/runs/39579095329
+2026-10-21 02:48 PDT	39579740957	rs83	1564	1672	15	0	0	0	7	8	0	117.7	255.1	350.7	710.9	26	204	607	0/0	p10 247 p50 308 p90 408 max 488	3	eastus	https://github.com/bleugreen/rs-sdk/actions/runs/39579740957
+2026-10-21 03:05 PDT	39581904913	rs83	1649	1653	56	4	0	0	36	24	0	119.8	248.2	362.7	677.1	16	118	314	0/5	p10 206 p50 306 p90 369 max 630	24	CanadaEast	https://github.com/bleugreen/rs-sdk/actions/runs/39581904913
+2026-10-21 03:17 PDT	39583303736	rs83	1658	1668	60	0	0	0	40	20	0	110.6	238.4	351.1	612.3	9	124	317	0/5	p10 186 p50 307 p90 387 max 473	3	eastus	https://github.com/bleugreen/rs-sdk/actions/runs/39583303736
+2026-10-21 04:04 PDT	39589100761	rs83	1673	1674	60	0	0	0	60	0	0	124	243.1	344.7	604.5	10	129	312	0/5	p10 239 p50 286 p90 351 max 464	3	eastus	https://github.com/bleugreen/rs-sdk/actions/runs/39589100761
+2026-10-21 04:13 PDT	39590172234	rs83	1645	1669	40	16	4	0	40	20	0	110.4	276.9	425.9	739.6	44	116	314	14/14	p10 136 p50 305 p90 513 max 824	3	eastus	https://github.com/bleugreen/rs-sdk/actions/runs/39590172234
+2026-10-21 04:17 PDT	39590766611	rs95	1686	1660	10	0	0	0				129.8	251.1	359.7	462.7	3	21	63	0/0		3	eastus	https://github.com/bleugreen/rs-sdk/actions/runs/39590766611
+2026-10-21 04:24 PDT	39591572716	rs95	1670	1701	49	11	0	0				112.2	256.8	395.2	817.4	29	111	327	5/6		6	eastus2	https://github.com/bleugreen/rs-sdk/actions/runs/39591572716
+2026-10-21 04:47 PDT	39594411731	rs95	1684	1683	60	0	0	0				114.1	234.4	350.4	604.6	13	139	335	0/6		2	eastus	https://github.com/bleugreen/rs-sdk/actions/runs/39594411731
+2026-10-21 04:55 PDT	39595481831	rs95	1122	1415	59	0	0	1				93.6	251.8	351.4	512.8	7	86	313	0/2		3	eastus	https://github.com/bleugreen/rs-sdk/actions/runs/39595481831
+2026-10-21 05:09 PDT	39597212101	rs95	1442	1467	60	0	0	0				92.8	237.2	338.6	493.2	6	128	326	0/6		2	eastus	https://github.com/bleugreen/rs-sdk/actions/runs/39597212101
+2026-10-21 05:35 PDT	39600705668	rs95	1717	1721	36	22	1	1				109.6	303.1	505.9	1458	55		269	12/13		3	eastus	https://github.com/bleugreen/rs-sdk/actions/runs/39600705668
+2026-10-21 06:00 PDT	39604098048	rs102	1594	1684	60	0	0	0	59	1	0	168.9	290.7	369	636.4	14		262	0/7	p10 217 p50 293 p90 399 max 543	2	eastus	https://github.com/bleugreen/rs-sdk/actions/runs/39604098048
+2026-10-21 06:10 PDT	39605462121	rs102	1684	1227	34	23	3	0	60	0	0	119.7	310	519.7	811.9	72		274	20/20	p10 237 p50 301 p90 364 max 409	3	eastus	https://github.com/bleugreen/rs-sdk/actions/runs/39605462121
+2026-10-21 06:37 PDT	39609432705	rs102	1647	1602	60	0	0	0	60	0	0	165.1	296.4	383.8	555.3	21		257	0/7	p10 214 p50 313 p90 412 max 449	3	eastus	https://github.com/bleugreen/rs-sdk/actions/runs/39609432705
+2026-10-21 07:01 PDT	39612921940	rs102	1636	1606	54	6	0	0	50	10	0	184.9	291.2	376.1	627	16		265	1/3	p10 151 p50 298 p90 492 max 623	2	eastus	https://github.com/bleugreen/rs-sdk/actions/runs/39612921940
