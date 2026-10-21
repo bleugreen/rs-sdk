@@ -114,11 +114,16 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -
 
 An attempt runs its own branch's code from a separate worktree, `~/rs-<issue>`. The branch comes in
 as a git bundle from bgsrv-ub, so nothing is pushed. The worktree's `bots/` is a symlink to
-`~/rs-sdk/bots`, so env files stay in one place, mode 600. The page server, the gateway and Chrome
-run from `~/rs-sdk` as RUN-HOST.md step 3 does. `~/rs-sdk` itself stays on its main commit. The
-worktree is removed after the attempt. Because the page is served from `~/rs-sdk`, a branch that
-changes an in-page program (`server/webclient/src/bot/programs/`) is not what the tab runs: ask
-rs/147's coordinator before such an attempt.
+`~/rs-sdk/bots`, so env files stay in one place, mode 600. The gateway and Chrome run from
+`~/rs-sdk` as RUN-HOST.md step 3 does, but **the page server (`proxy.ts`) runs from the attempt
+worktree**, so the tab runs the branch's in-page programs (`server/webclient/src/bot/programs/`).
+The skill modules pass program parameters that reach main only with their snapshot (for example
+knife-cycle's `untilXp`, `followSpot` and plain `dropEach`), and a program ignores a parameter it
+doesn't know without any error: served from main, the attempt would run a different program from
+the one it was priced on. Before the attempt account logs in, confirm the served page carries the
+branch's programs: grep what the page server serves for one parameter the module passes, and record
+the check in the attempt's log. `~/rs-sdk` itself stays on its main commit, and the worktree is
+removed after the attempt.
 
 On bgsrv-ub, in the branch's checkout (`I` is the issue, as `rs-NNN`):
 
