@@ -22,6 +22,13 @@ const chain: Array<[string, RegExp]> = [
     ['yrsa', /Yrsa/], ['olaf', /Olaf/], ['sailor', /^Sailor$/], ['sigmund', /Sigmund/]
 ];
 
+// Spawn tiles (quest-rellekka-map.ts npc ...).
+const spawn: Record<string, [number, number]> = {
+    sailor: [2629, 3693], olaf: [2673, 3683], yrsa: [2625, 3675], brundt: [2659, 3669], sigli: [2660, 3653],
+    skulgrimen: [2663, 3694], fisherman: [2641, 3699], swensen: [2646, 3660], peer: [2634, 3668], thorvald: [2666, 3693],
+    manni: [2660, 3673], thora: [2662, 3673], askeladden: [2658, 3660], sigmund: [2641, 3680]
+};
+
 await runScript(async ({ bot, sdk }) => {
     const legs: unknown[] = [];
     process.on('exit', () => L.report('Merchant chain', { legs }));
@@ -37,8 +44,14 @@ await runScript(async ({ bot, sdk }) => {
     for (const [name, re] of chain) {
         const p0 = L.pos(sdk);
         const t0 = L.tick(sdk);
-        // Find the NPC even when it is beyond the loaded view: walk towards its spawn first.
-        if (!sdk.findNearbyNpc(re)) throw new Error(`${name} not in view from ${JSON.stringify(p0)}`);
+        // NPCs out of view: walk towards the spawn tile first (counted in the leg).
+        const npcVisible = () => { const n = sdk.findNearbyNpc(re); return n !== null && n.distance <= 12; };
+        if (!npcVisible()) {
+            const [sx, sz] = spawn[name];
+            await bot.walkTo(sx, sz, 4);
+            await L.waitUntil(sdk, npcVisible, 10);
+        }
+        if (!sdk.findNearbyNpc(re)) throw new Error(`${name} not in view from ${JSON.stringify(L.pos(sdk))}`);
         const t = await L.talk(sdk, bot, re, [/Merchant's trial/, /^Yes$/]);
         const p1 = L.pos(sdk);
         pages += t.pages;
