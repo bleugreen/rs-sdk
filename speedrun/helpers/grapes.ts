@@ -606,15 +606,15 @@ class Gatherer {
             await spawn.goTo();
             return;
         }
-        const GUILD_GRAPES = spawn.tile;
+        const spot = spawn.tile;
         // The spawn is a race (other players camp it too): stand on the spawn tile, watch
         // every tick from shortly before the respawn is due, and send the pickup packet
         // the tick the grape appears. The jug spawn is only visited when no grape is due.
         const onSpawn = () => {
             const q = position(this.sdk);
-            return q.x === GUILD_GRAPES.x && q.z === GUILD_GRAPES.z && q.level === GUILD_GRAPES.level;
+            return q.x === spot.x && q.z === spot.z && q.level === spot.level;
         };
-        if (!onSpawn()) await this.bot.walkTo(GUILD_GRAPES.x, GUILD_GRAPES.z, 0);
+        if (!onSpawn()) await this.bot.walkTo(spot.x, spot.z, 0);
         let lastGone = tick(this.sdk);
         let visibleSince = -1;
         while (invCount(this.sdk, ITEM.grapes) < bankAt && freeSlots(this.sdk) > 1) {
@@ -622,7 +622,7 @@ class Gatherer {
             await dismissDialogs(this.bot, this.sdk);
             const since = tick(this.sdk) - lastGone;
             const due = since >= GRAPE_RESPAWN_TICKS - 15;
-            const g = this.groundAt(GUILD_GRAPES, ITEM.grapes);
+            const g = this.groundAt(spot, ITEM.grapes);
             if (g) {
                 if (visibleSince < 0) {
                     visibleSince = tick(this.sdk);
@@ -631,12 +631,12 @@ class Gatherer {
                 }
                 const before = invCount(this.sdk, ITEM.grapes);
                 await this.sdk.sendPickup(g.x, g.z, g.id);
-                await waitUntil(this.sdk, () => invCount(this.sdk, ITEM.grapes) > before || !this.groundAt(GUILD_GRAPES, ITEM.grapes), { maxTicks: 4 });
+                await waitUntil(this.sdk, () => invCount(this.sdk, ITEM.grapes) > before || !this.groundAt(spot, ITEM.grapes), { maxTicks: 4 });
                 const got = invCount(this.sdk, ITEM.grapes) - before;
                 if (got > 0) {
                     this.s.grapes += got;
                     if (this.s.grapes % 10 === 0) this.ctx.log('grapes', summary(this.s));
-                } else if (!this.groundAt(GUILD_GRAPES, ITEM.grapes)) this.s.takenByOthers++;
+                } else if (!this.groundAt(spot, ITEM.grapes)) this.s.takenByOthers++;
                 else continue; // still there: our packet did not land yet, try again
                 lastGone = tick(this.sdk);
                 visibleSince = -1;
@@ -653,10 +653,10 @@ class Gatherer {
                 const before = invCount(this.sdk, ITEM.jugEmpty);
                 await this.bot.pickupItem(jug);
                 this.s.jugs += invCount(this.sdk, ITEM.jugEmpty) - before;
-                await this.bot.walkTo(GUILD_GRAPES.x, GUILD_GRAPES.z, 0);
+                await this.bot.walkTo(spot.x, spot.z, 0);
                 continue;
             }
-            if (!onSpawn() && !due) await this.bot.walkTo(GUILD_GRAPES.x, GUILD_GRAPES.z, 0);
+            if (!onSpawn() && !due) await this.bot.walkTo(spot.x, spot.z, 0);
             await this.sdk.waitForTicks(due ? 1 : Math.min(5, GRAPE_RESPAWN_TICKS - 15 - since));
         }
     }
@@ -800,6 +800,13 @@ class Gatherer {
     }
 }
 
+/** Sources that fight before they gather: goblin campers, the Phoenix route (Jonny the Beard), and the guild camper's hat hunt. */
+function needsFight(source: string, g: Gatherer): boolean {
+    if (source === 'goblins') return true;
+    if (source === 'phoenix') return g.phoenixMember !== true;
+    return !g.wearingHat();
+}
+
 export const role: Role = {
     name: 'grapes',
     produces: [/^grapes$/i, /^jug of water$/i],
@@ -809,7 +816,7 @@ export const role: Role = {
         const cooking = typeof ctx.options.cooking === 'number' ? ctx.options.cooking : 35;
         const bankAt = typeof ctx.options.bankAt === 'number' ? ctx.options.bankAt : 26;
         const fightLevel = typeof ctx.options.fightLevel === 'number' ? ctx.options.fightLevel : 10;
-        if (!['guild', 'goblins'].includes(source)) throw new Error(`grapes: unknown source '${source}'`);
+        if (!['guild', 'phoenix', 'goblins'].includes(source)) throw new Error(`grapes: unknown source '${source}'`);
         const g = new Gatherer(ctx);
         ctx.log('start', { source, cooking: ctx.sdk.getSkill('Cooking'), hat: g.wearingHat() });
         let errors = 0;
@@ -831,12 +838,24 @@ export const role: Role = {
                     await g.camp(bankAt);
                 } else if (!(await g.ensureKit())) {
                     enter('fetch-kit');
-                } else if (skillLevel(ctx.sdk, 'Cooking') < cookTo || (!fightReady && (source === 'goblins' || !g.wearingHat()))) {
+                } else if (skillLevel(ctx.sdk, 'Cooking') < cookTo || (!fightReady && needsFight(source, g))) {
                     enter('chickens');
                     await g.chickens();
                 } else if (source === 'goblins') {
                     enter('goblin-village');
                     await g.goblins(bankAt);
+                } else if (source === 'phoenix') {
+                    if (g.phoenixMember === false) {
+                        enter('phoenix-quest');
+                        await g.joinPhoenixGang();
+                    } else {
+                        enter('camp-phoenix');
+                        try {
+                            await g.camp(bankAt, g.phoenix);
+                        } catch (e) {
+                            if (!(e instanceof NotPhoenixMember)) throw e;
+                        }
+                    }
                 } else {
                     enter('hat-hunt');
                     await g.getHat();
