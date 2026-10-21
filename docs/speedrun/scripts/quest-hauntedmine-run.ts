@@ -25,6 +25,9 @@ const arg = (k: string, d: string) => process.argv.find(a => a.startsWith(`--${k
 const FROM = arg('from', 'zealot') as Phase;
 const TO = arg('to', 'reward') as Phase;
 const STATS = parseInt(arg('stats', '70'), 10);
+// --style=magic fights Treus Dayth with Crumble Undead (Magic set to --stats)
+const STYLE = arg('style', 'melee') as 'melee' | 'magic';
+const CRUMBLE_UNDEAD = 1171; // magic:crumble_undead
 
 // hauntedmine_bits
 const BIT = { b: 1, a: 2, c: 3, d: 4, e: 5, i: 6, j: 7, k: 8, endcartFungus: 9, heardAboutKey: 10, puzzleStarted: 21 };
@@ -244,6 +247,7 @@ async function setup(sdk: Sdk, phase: Phase) {
     await cheat(sdk, `setstat strength ${STATS}`);
     await cheat(sdk, `setstat defence ${STATS}`);
     await cheat(sdk, `setstat hitpoints ${STATS}`);
+    if (STYLE === 'magic') await cheat(sdk, `setstat magic ${STATS}`);
     await cheat(sdk, '~clearinv inv');
     await until(sdk, () => sdk.getInventory().length === 0, 10);
     await cheat(sdk, 'give chisel 1');
@@ -495,7 +499,17 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         // player's attack, while the client keeps facing it, so the combat
         // target in the bot state is no evidence of attacking: re-click
         // whenever it is attackable and we have not swung for 5 ticks.
-        const IDLE: [number, number] = [2786, 4458];
+        // (2788,4454): the fight's start tile, reachable from every spot,
+        // within 10 tiles of all six boss spots, and in the 35_35 crane's
+        // zone, so the boss uses the crane attack (max 10) rather than the
+        // pickaxe (max 15) on us.
+        const IDLE: [number, number] = [2788, 4454];
+        if (STYLE === 'magic') {
+            await cheat(sdk, 'give airrune 500');
+            await cheat(sdk, 'give earthrune 500');
+            await cheat(sdk, 'give chaosrune 200');
+        }
+        const xp0 = sdk.getSkill(STYLE === 'magic' ? 'magic' : 'attack')!.experience;
         let msgSeen = sdk.getState()!.gameMessages.length;
         let approaches = 0;
         let approachTiles = 0;
@@ -557,6 +571,15 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
             }
             const reappeared = !wasVisible;
             wasVisible = true;
+            if (STYLE === 'magic') {
+                if (reappeared || s.tick - lastClick >= 5) {
+                    await sdk.sendSpellOnNpc(boss.index, CRUMBLE_UNDEAD);
+                    swings++;
+                    lastClick = sdk.getState()!.tick;
+                }
+                await sdk.waitForStateUpdate();
+                continue;
+            }
             if (reappeared || (s.tick - lastSwing >= 5 && s.tick - lastClick >= 3)) {
                 // The lite client's click route fails for most of the boss's
                 // spots (cranes and carts are NPCs in the way), and then the
@@ -624,6 +647,6 @@ await runScript(async ({ sdk }) => {
         console.log(`--- phase ${PHASES[i]} (tick ${sdk.getState()!.tick}, stage ${await getvar(sdk, 'hauntedmine')})`);
         await phases[PHASES[i]!](sdk, L);
     }
-    L.report(`Haunted Mine ${FROM}..${TO} at ${STATS} melee`);
+    L.report(`Haunted Mine ${FROM}..${TO} at ${STATS} ${STYLE}`);
     console.log('final stage', await getvar(sdk, 'hauntedmine'));
 }, { timeout: 1_800_000 });
