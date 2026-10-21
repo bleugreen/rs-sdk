@@ -102,8 +102,9 @@ Receiver ticks (lab T9, 450 wines): trade 4, first deposit 5, then 36 for the
 level-up dismissal, the second deposit and the make, so 45 active ticks out of
 76 from login to 99. The waits in between (login+8 to +20 and the 20 ticks
 after the make) cost no actions, and the scored account can do anything there
-that opens no modal. The re-run that separates the level-up dismissal from the
-bank and make is recorded below as T9b when it lands.
+that opens no modal. Two re-runs meant to time the level-up dismissal apart from
+the bank and make (T9b) died on a slow lab host before the hand-off (the client
+stopped publishing state), so the 36 ticks are not split further.
 
 **On the demo** (rs-sdk-demo.fly.dev over a loopback gateway on bbs, 2026-10-21
 07:14 UTC, `docs/speedrun/scripts/wine-handoff.ts cairn_h40 cairn_h44 --mode=window`):
@@ -152,8 +153,8 @@ other drop table or quest reward has them.
 
 | Source | Ceiling | Measured on the demo (2026-10-21 UTC) |
 |---|---|---|
-| Cooking Guild spawn | 150/h for the only taker (12,000 ticks/h over 80) | **contested**: another player (Jackalopevin) camps the next tile. In h40's first 0.14 h: 18 respawns seen (mean gap 73 ticks), 13 taken by others, 5 by us, so about 36/h. The racer (stand on the tile, poll every tick when due, raw pickup) is the current version; see the stock table below for its result |
-| Phoenix Gang hideout spawn | 150/h for the only taker | not built: the door opens for Phoenix Gang members (`%phoenixgang >= joined`), the solo first half of Shield of Arrav (Reldo, the book, Baraek 20 gp, Straven, Jonny the Beard's report) |
+| Cooking Guild spawn | 150/h for the only taker (12,000 ticks/h over 80) | **contested**: another player (Jackalopevin) camps the next tile. The first version got about 36/h. The racer (stand on the tile, poll every tick when due, raw pickup) holds **60/h**: cairn_h40, 60 grapes in its first hour, 107 of 167 respawns taken by the other camper |
+| Phoenix Gang hideout spawn | 150/h for the only taker | Lab: 21 grapes in 0.25 h including joining the gang; camping alone it takes every respawn. Demo: cairn_h46 joined in about 11 minutes from Goblin Village (one Jonny kill), then **75/h** in its first 0.23 h; also contested, another player took 10 of 27 respawns |
 | Goblin Village, per account | 3/h at 1/128 | 360-440 kills per account-hour at combat about 25; 14 grapes in about 2,500 kills over four accounts (1 in 180), so 2-4/h per account |
 | Goblin Village, all players together | about 25/h | 21 goblins, 70-tick respawn: about 3,000 kills/h for the whole village. About 8 accounts saturate it; more accounts only take kills from each other and from other players |
 | Grand Exchange | | a 1,000 gp bid for 99,536 grapes and no asks; 464 grapes have traded, all at 1,000 gp (20 trades), about 22/h flowing into that bid. We do not bid against it |
@@ -162,16 +163,22 @@ Jugs are not the constraint. The `jugs` role makes about 120-146 jugs of water
 per hour (cairn_h42: 243 banked in its first 1.9 hours on the demo) from the Varrock general store (stock 2, one restock per 100 ticks,
 1-2 gp each) and the fountain. The guild camper picks up the guild's jug spawn
 and fills it at the sink there. 520 jugs take one account about 4 hours and
-about 700 gp.
+about 700 gp. A faster free source, not built or measured here: Hassan in the
+Al Kharid palace hands a jug of water to anyone whose Prince Ali Rescue is not
+started, every time the "It's just too hot here" option is picked
+(`hassan.rs2`), so jugs cost only dialogue pages there.
 
 ### Hours to 520 grapes (450 + 15%)
 
 | Setup | Grapes/h | Hours to 520 |
 |---|---|---|
-| Guild camper only, contested as measured | ~36 | ~14 |
-| Guild camper + 8 goblin campers (village saturated) | ~36 + ~20 | ~9 |
-| Guild + Phoenix campers, uncontested | up to ~280 | ~2 |
-| Guild + Phoenix, both contested like the guild | ~70 | ~7.5 |
+| Guild racer only, contested as measured | 60 | ~8.7 |
+| Guild racer + Phoenix camper, both contested as measured | 135 | ~3.9 |
+| The same + 4 goblin campers (as run on 2026-10-21) | ~145 | ~3.6 |
+| Guild + Phoenix, both uncontested | up to 300 | ~1.7 |
+
+On 2026-10-21 rs/41 decided to buy the 520 on the Grand Exchange (rs/63's
+bidder on cairn_h61) and keep the gatherers running as the reserve on top.
 
 The lever is the second spawn. Main's estimate of 30-60 goblin helpers for 50-100
 grapes/h doesn't hold: the village's 70-tick respawn caps everyone together
@@ -201,8 +208,11 @@ here; cairn://p/rs/37 owns that comparison.
 
 Roles run like every rs/41 helper (`speedrun/helpers/role.ts`). Options:
 
-- `grapes`: `{"source":"guild"}` (one account only: etiquette, and the spawn
-  is a race) or `{"source":"goblins"}` (up to about 8 accounts in the village).
+- `grapes`: `{"source":"guild"}` or `{"source":"phoenix"}` (one account per
+  spawn: etiquette, and each spawn is a race) or `{"source":"goblins"}` (up to
+  about 8 accounts in the village). The Phoenix camper joins the gang first and
+  needs 20 coins for Baraek and enough combat for Jonny the Beard (level 2).
+  Both spawn campers bank at Varrock east.
   Optional `cooking` (default 35), `bankAt` (26), `fightLevel` (10).
 - `jugs`: `{"target":600}`. It needs coins in its bank (a fresh account sells its
   starter kit for the first few).
@@ -221,5 +231,11 @@ Gotchas found on the demo:
   south-west and opens that house's door if it ever finds itself inside.
 - A fresh account's tutorial kit fills the inventory together with 12 cooked
   chickens; the role banks the kit then (it used to spin forever).
+- Quest items go by their display names: the Shield of Arrav book shows as
+  "Book" and Jonny the Beard's intelligence report as "Scroll", so the role
+  matches them by id (757, 761).
+- The hideout grapes lie on a table (loc 595) that blocks their tile; a walk
+  to it fails as "destination tile is blocked", so the camper stands on
+  3237,9762 and picks up from there.
 - The SDK's offline map treats doors as open, so a closed door shows up as "no
   path" or as a server walk that does not move.
