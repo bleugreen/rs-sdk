@@ -21,6 +21,13 @@
 // per-tick ledger of what the tick's earlier picks will use, and never a position remembered in
 // the list, so a program restarted mid-run picks up from game state (rs/127).
 //
+// A `player` action (a trade request, OPPLAYER4 by default) owns its tick: it is the tick's only
+// stun action and the knight click is skipped, because a click after it would replace the
+// request's interaction, and a bury before it would stop it. It fires at most once per stun and
+// only on a player standing next to the account (a stunned player cannot walk). Gate it with
+// `fewer` (e.g. fewer than 3 bones) so it goes out only when a top-up is due. The pickpocket
+// program's `idleOnInterface` then keeps every packet back while the trade is open.
+//
 // With rs/106's list [bury, charge, arrows] and the default window this gives its measured
 // plan: k = 2, 4 and 6 carry three delay-free actions and a bury, k = 3, 5 and 7 rest behind the
 // bury, and with no bones left every window tick carries four delay-free actions.
@@ -30,7 +37,7 @@ import type { ProgramAction, ProgramContext } from './types.js';
 import { baseLevel, num } from './util.js';
 
 export type StunDelay = 'none' | 'tick' | 'action';
-export type StunKind = 'item' | 'itemOnItem' | 'spellOnItem' | 'button';
+export type StunKind = 'item' | 'itemOnItem' | 'spellOnItem' | 'button' | 'player';
 
 /** A stun action as a caller writes it (a `stunActions` entry). Regular expressions are case-insensitive strings. */
 export interface StunActionSpec {
@@ -49,10 +56,16 @@ export interface StunActionSpec {
     spell?: number;
     /** The button's component for `button` (IF_BUTTON). */
     component?: number;
+    /** The player's name for `player`. */
+    player?: string;
+    /** The player op for `player` (default 4, trade). */
+    op?: number;
     /** Taken from `item` and `on` per fire (default 1; 15 for an arrow action). */
     uses?: number;
     /** Other items each fire needs and uses, e.g. a spell's runes. */
     needs?: Array<{ item: string; count: number }>;
+    /** Fire only while the inventory holds fewer than `than` of each item (a top-up that is due). */
+    fewer?: Array<{ item: string; than: number }>;
     /** Fire only while `from` <= base level of `skill` < `below` (game state, not a counter). */
     skill?: string;
     from?: number;
@@ -72,8 +85,11 @@ export interface StunTemplate {
     on?: RegExp;
     spell?: number;
     component?: number;
+    player?: RegExp;
+    op?: number;
     uses: number;
     needs: Array<{ re: RegExp; count: number }>;
+    fewer: Array<{ re: RegExp; than: number }>;
     skill?: string;
     from: number;
     below: number;
@@ -95,7 +111,7 @@ export const STUN_PRESETS: Record<string, StunActionSpec[]> = {
     arrows: ARROW_TIERS.map(([tier, level]) => ({ name: `arrows:${tier}`, kind: 'itemOnItem' as const, item: `^${tier} arrow(head|tip)s$`, on: '^headless arrows?$', uses: 15, skill: 'fletching', from: level, below: 99 }))
 };
 
-const KINDS: readonly StunKind[] = ['item', 'itemOnItem', 'spellOnItem', 'button'];
+const KINDS: readonly StunKind[] = ['item', 'itemOnItem', 'spellOnItem', 'button', 'player'];
 const DELAYS: readonly StunDelay[] = ['none', 'tick', 'action'];
 
 function re(value: unknown, name: string): RegExp | undefined {
@@ -125,6 +141,7 @@ function parseOne(spec: StunActionSpec, at: string): StunTemplate {
         on: re(spec.on, `${at}.on`),
         uses: count(spec.uses, 1, `${at}.uses`),
         needs: [],
+        fewer: [],
         skill: spec.skill,
         from: num(spec.from, 0, `${at}.from`),
         below: num(spec.below, Infinity, `${at}.below`)
@@ -134,6 +151,11 @@ function parseOne(spec: StunActionSpec, at: string): StunTemplate {
         if (!Array.isArray(spec.needs)) throw new Error(`${at}.needs must be a list of { item, count }`);
         t.needs = spec.needs.map((n, i) => ({ re: re(n?.item, `${at}.needs[${i}].item`)!, count: count(n?.count, 1, `${at}.needs[${i}].count`) }));
         if (t.needs.some(n => !n.re)) throw new Error(`${at}.needs entries need an item`);
+    }
+    if (spec.fewer !== undefined) {
+        if (!Array.isArray(spec.fewer)) throw new Error(`${at}.fewer must be a list of { item, than }`);
+        t.fewer = spec.fewer.map((n, i) => ({ re: re(n?.item, `${at}.fewer[${i}].item`)!, than: count(n?.than, 1, `${at}.fewer[${i}].than`) }));
+        if (t.fewer.some(n => !n.re)) throw new Error(`${at}.fewer entries need an item`);
     }
     switch (kind) {
         case 'item':
@@ -149,6 +171,12 @@ function parseOne(spec: StunActionSpec, at: string): StunTemplate {
         case 'button':
             if (!Number.isInteger(spec.component)) throw new Error(`${at}: a button action needs component (a component id)`);
             t.component = spec.component;
+            break;
+        case 'player':
+            t.player = re(spec.player, `${at}.player`);
+            if (!t.player) throw new Error(`${at}: a player action needs player (a name)`);
+            t.op = count(spec.op, 4, `${at}.op`);
+            t.max = 1;
             break;
     }
     return t;
@@ -219,6 +247,7 @@ function resolve(t: StunTemplate, s: BotWorldState, ledger: Ledger): Pick | null
         if (lvl < t.from || lvl >= t.below) return null;
     }
     if (t.needs.some(n => ledger.total(n.re) < n.count)) return null;
+    if (t.fewer.some(n => ledger.total(n.re) >= n.than)) return null;
     let pick: Pick;
     let used: InventoryItem[] = [];
     switch (t.kind) {
@@ -248,6 +277,12 @@ function resolve(t: StunTemplate, s: BotWorldState, ledger: Ledger): Pick | null
         case 'button':
             pick = { t, action: { type: 'clickComponent', componentId: t.component! }, what: `${t.name}: button ${t.component}` };
             break;
+        case 'player': {
+            const p = s.nearbyPlayers.find(q => t.player!.test(q.name) && q.distance <= 1);
+            if (!p) return null;
+            pick = { t, action: { type: 'interactPlayer', playerIndex: p.index, optionIndex: t.op! }, what: `${t.name}: op ${t.op} on ${p.name}` };
+            break;
+        }
     }
     for (const it of used) ledger.take(it.slot, t.uses);
     for (const n of t.needs) ledger.takeAll(n.re, n.count);
@@ -275,6 +310,13 @@ export interface StunSummary {
     byAction: Record<string, number>;
     /** Window ticks skipped because an interface (a trade) was open. */
     modalTicks: number;
+    /** Ticks a `player` action owned (the knight click skipped). */
+    ownedTicks: number;
+}
+
+/** A main modal (a trade, a bank) is open: an inventory op, a button or a click would close it. */
+export function modalOpen(s: BotWorldState): boolean {
+    return !!(s.modalOpen || s.trade?.isOpen);
 }
 
 /** The stun pack's state through a run: the current stun's offset and what fired. */
@@ -292,6 +334,8 @@ export class StunPack {
     private rejected = 0;
     private costly = 0;
     private modalTicks = 0;
+    private ownedTicks = 0;
+    private playerSentThisStun = false;
     private readonly byAction: Record<string, number> = {};
 
     constructor(opts: StunPackOptions) {
@@ -309,31 +353,47 @@ export class StunPack {
         this.close();
         this.failTick = t;
         this.firedThisStun = 0;
+        this.playerSentThisStun = false;
         this.stuns++;
     }
 
-    /** Send this tick's stun actions; call it after any page resume or eat, before the knight click. */
-    act(ctx: ProgramContext): void {
-        if (this.failTick === null) return;
+    /**
+     * Send this tick's stun actions; call it after any page resume or eat, before the knight
+     * click. True when a `player` action went out and owns the tick: send no click after it.
+     */
+    act(ctx: ProgramContext): boolean {
+        if (this.failTick === null) return false;
         const t = ctx.tick;
         const k = t - this.failTick;
         if (k > this.to) {
             this.close();
-            return;
+            return false;
         }
-        if (k < this.from || t === this.restTick) return;
+        if (k < this.from || t === this.restTick) return false;
         const s = ctx.state;
-        if (s.interface?.isOpen) {
-            // an open trade closes on any inventory op or button, and owns the tick
+        if (modalOpen(s)) {
+            // an open trade closes on any inventory op or button
             this.modalTicks++;
             ctx.count('stunModal');
-            return;
+            return false;
         }
         const slots = Math.min(this.perTick, ctx.budget - 1);
-        if (slots <= 0) return;
+        if (slots <= 0) return false;
         const ledger = new Ledger(s.inventory);
         const picks: Pick[] = [];
+        let owned = false;
         for (const tpl of this.templates) {
+            if (owned) break;
+            if (tpl.kind === 'player') {
+                // only as the tick's first pick, once per stun
+                if (picks.length || this.playerSentThisStun) continue;
+                const p = resolve(tpl, s, ledger);
+                if (p) {
+                    picks.push(p);
+                    owned = true;
+                }
+                continue;
+            }
             for (let n = 0; n < tpl.max && picks.length < slots; n++) {
                 if (tpl.delay === 'tick' && picks.some(p => p.t.delay === 'tick')) break;
                 const p = resolve(tpl, s, ledger);
@@ -359,7 +419,13 @@ export class StunPack {
                 this.costly++;
                 ctx.count('stunCostly');
             }
+            if (p.t.kind === 'player') this.playerSentThisStun = true;
         }
+        if (owned) {
+            this.ownedTicks++;
+            return true;
+        }
+        return false;
     }
 
     /** End the current stun's record (its window has passed, or a new failure came). */
@@ -379,7 +445,8 @@ export class StunPack {
             costly: this.costly,
             firedPerStun: this.stuns ? Math.round((this.fired / this.stuns) * 100) / 100 : 0,
             byAction: { ...this.byAction },
-            modalTicks: this.modalTicks
+            modalTicks: this.modalTicks,
+            ownedTicks: this.ownedTicks
         };
     }
 }
