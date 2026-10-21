@@ -60,25 +60,43 @@ export function log(sdk: BotSDK, msg: string, t0?: number): void {
     console.log(`[t=${t}${t0 !== undefined ? ` +${t - t0}` : ''}] ${msg}`);
 }
 
-/** Click through chat dialogs until none is open, choosing options by text when offered. */
+// Ticks the scripts spend only confirming that a dialogue has really ended. A real run would act on
+// the next step at once, so segment timings use clock(), which excludes them.
+let idleTicks = 0;
+
+/** Server tick minus the idle ticks talkThrough spent confirming dialogues had closed. */
+export function clock(sdk: BotSDK): number {
+    return tick(sdk) - idleTicks;
+}
+
+/**
+ * Click through chat dialogs until none is open, choosing options by text when offered.
+ * A dialogue counts as finished once none has been open for `idleTicks` server ticks (default 4);
+ * those confirmation ticks go to the idle ledger that clock() subtracts.
+ */
 export async function talkThrough(
     sdk: BotSDK,
     choices: (string | RegExp)[] = [],
-    opts: { maxPages?: number; idleMs?: number } = {}
+    opts: { maxPages?: number; idleTicks?: number; idleMs?: number } = {}
 ): Promise<{ pages: number; options: number }> {
     const maxPages = opts.maxPages ?? 80;
-    const idleMs = opts.idleMs ?? 1500;
+    const idleLimit = opts.idleTicks ?? 4;
     let pages = 0;
     let options = 0;
-    let idleSince = Date.now();
+    let closedAt = -1;
     const queue = [...choices];
     while (pages + options < maxPages) {
         const d = sdk.getDialog();
         if (!d || !d.isOpen) {
-            if (Date.now() - idleSince > idleMs) break;
-            await sleep(30);
+            if (closedAt < 0) closedAt = tick(sdk);
+            if (tick(sdk) - closedAt >= idleLimit) {
+                idleTicks += tick(sdk) - closedAt;
+                break;
+            }
+            await sleep(10);
             continue;
         }
+        closedAt = -1;
         const isContinue = d.options?.length === 1 && /continue/i.test(d.options[0].text);
         if (isContinue) {
             await sdk.sendClickDialog(d.options[0].index);
@@ -104,7 +122,6 @@ export async function talkThrough(
             if (tick(sdk) > t && (!nd?.isOpen || nd.pageId !== page)) break;
             await sleep(10);
         }
-        idleSince = Date.now();
     }
     return { pages, options };
 }
