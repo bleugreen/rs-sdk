@@ -49,7 +49,7 @@ const out = opts.out ?? `${process.env.TMPDIR ?? '/tmp'}/fishing-${methodName}-$
 const until = opts.until ? Number(opts.until) : 0;
 const watchdogTicks = Number(opts.watchdog ?? 30);
 // Equipment and bait are never dropped; everything else in the inventory is catch.
-const KEEP = /fishing rod|feather|fishing bait|^net$|big net|harpoon|lobster pot/i;
+const KEEP = /fishing rod|feather|fishing bait|fishing net|big net|harpoon|lobster pot/i;
 // An action whose result never comes back must not stall the loop.
 const within = <T>(p: Promise<T>, ms = 1500) => Promise.race([p, new Promise(r => setTimeout(r, ms))]);
 writeFileSync(out, '');
@@ -63,12 +63,16 @@ const tileOf = (n: NearbyNpc) => [n.tileX ?? n.x, n.tileZ ?? n.z] as const;
 
 await runScript(async ({ bot, sdk }) => {
     await bot.skipTutorial();
-    await sdk.sendSay('::clearinv inv');
+    // ::clearinv does nothing here, so empty the inventory by hand: the starter kit and
+    // leftovers from earlier runs would otherwise eat the slots the catch needs.
+    for (const it of sdk.getInventory()) await within(sdk.sendDropItem(it.slot));
+    await sdk.waitForTicks(2);
     await sdk.sendSay(`::setstat fishing ${level}`);
     await sdk.sendSay(`::give ${method.tool} 1`);
     if (method.bait) await sdk.sendSay(`::give ${method.bait} 20000`);
     await sdk.sendSay(teleCmd(tele[0], tele[1]));
     await sdk.waitForTicks(3);
+    log({ ev: 'inv', items: sdk.getInventory().map(i => `${i.name}x${i.count}`) });
 
 
     let target: NearbyNpc | null = null;
