@@ -1,14 +1,21 @@
 // Runes: buys and makes the scored run's magic supplies on one helper account:
-// the shop runes (Aubury, Betty), the staves (Zaff), spare air talismans (Duke
-// Horacio), then Magic 66 so it can shop at the Magic Guild (blood runes), then
-// cosmic and law runes from Lundail in the Mage Arena cellar. Sources, rates and
-// costs: docs/speedrun/helpers/runes.md.
+// the staves (Zaff), spare air talismans (Duke Horacio), Magic 66 on training
+// runes from Aubury and Betty, then every rune line at the Magic Guild (blood,
+// law, death, chaos and the elementals), then cosmic runes (and laws if still
+// short) from Lundail in the Mage Arena cellar. Sources, rates, costs and the
+// hazards that shaped this: docs/speedrun/helpers/runes.md.
 //
-//   ROLE_OPTIONS='{"funders":["^cairn_h03$"]}' bun speedrun/helpers/runes.ts cairn_h88
+//   ROLE_OPTIONS='{"funders":["^cairn_h47$"]}' bun speedrun/helpers/runes.ts cairn_h88
 //
-// Every target is a holding (bank + inventory), so a restart, a death or a second
-// run only does what is still missing. Phases run in order and the role loops
-// over them until every phase reports done, or a phase can't progress.
+// Every target is a holding (bank + inventory + worn), so a restart, a death or a
+// second run only does what is still missing. Phases run in order and the role
+// loops over them until every phase reports done, or a phase can't progress.
+//
+// Coins: the account never walks carrying more than one purchase, and a purchase
+// is capped at `maxCarry` (limitToCarry); walk() refuses to move while carrying
+// more than the current purchase allows. A death drops everything carried, and a
+// low-level helper dies easily: combat random events (Swarm, Triffid) fire on any
+// player every few hours, and the only road west crosses White Wolf Mountain.
 import { TRADE_REQUEST_CHAT_TYPE } from '../../sdk/types';
 import type { BotWorldState, InventoryItem } from '../../sdk/types';
 import { Spells } from '../../sdk/spells';
@@ -39,10 +46,23 @@ export const PLACES = {
     /** East Ardougne lever <-> Deserted Keep lever (the only Wilderness lever pair in this revision). */
     ardougneLever: { x: 2562, z: 3311 },
     keepLever: { x: 3154, z: 3923 },
+    /**
+     * The Deserted Keep's only way out is north through a spider web (bigweb_slashable,
+     * m49_61), cut with a wielded slash weapon (web.rs2, slash_checker.rs2). It regrows
+     * 100 ticks after it is cut, so the walk back cuts it again.
+     */
+    keepWeb: { x: 3158, z: 3951 },
+    keepWebSouth: { x: 3158, z: 3950 },
+    keepWebNorth: { x: 3158, z: 3952 },
     /** Mage Arena: the cellar ladder outside Kolodion's barrier, and Lundail in the cellar. */
     arenaLadder: { x: 3091, z: 3956 },
     lundail: { x: 2536, z: 4718 }
 } satisfies Record<string, Tile>;
+
+/** Inside the Deserted Keep, south of its web. */
+export function inKeep(x: number, z: number): boolean {
+    return x >= 3140 && x <= 3175 && z >= 3910 && z <= 3950;
+}
 
 // The buyer walks to `stand` on whatever plane the account is on, so the two
 // shops reached by stairs or a ladder are only used after this role climbs.
@@ -117,6 +137,11 @@ export const DEFAULT_TARGETS: Record<string, number> = {
     'Air talisman': 3
 };
 
+/** What the Magic Guild store sells of the manifest (magic_guild.inv: 1000-3000 of each at base price). */
+export const GUILD_ITEMS = ['Blood rune', 'Law rune', 'Death rune', 'Chaos rune', 'Air rune', 'Water rune', 'Fire rune', 'Earth rune', 'Mind rune'];
+/** Lundail's lines, cosmic first: the only cosmic source. */
+export const LUNDAIL_ITEMS = ['Cosmic rune', 'Law rune'];
+
 export interface RunesOptions {
     phases: Phase[];
     funders: RegExp[];
@@ -126,26 +151,37 @@ export interface RunesOptions {
     targets: Record<string, number>;
     magicLevel: number;
     xpRate: number;
-    /** Highest price paid per unit for each item; above it the buyer waits for restocks. */
+    /** Highest price paid per unit for each item; above it the buyer leaves and a later round comes back. */
     maxPrice: Record<string, number>;
-    /** Ticks the buyer waits at a shop for restocks before moving on. */
+    /** Ticks the buyer may wait at a shop for restocks. 0: never stand idle in a shop. */
     shopWaitTicks: number;
-    /** Ticks to wait in Lundail's cellar for cosmic restocks (1 per 100 ticks). */
+    /** Ticks to wait in Lundail's cellar for cosmic restocks (1 per 100 ticks); only at `minHitpointsWest`. */
     lundailWaitTicks: number;
     /** NPC names to train Magic on near PLACES.cows. */
     trainOn: RegExp[];
+    /** Most coins one purchase may carry; every trip is cut to fit (limitToCarry). */
+    maxCarry: number;
+    /** Training runes bought per shop visit, in casts. */
+    trainChunk: number;
+    /** Hitpoints before the account walks west over White Wolf Mountain or waits in a shop. */
+    minHitpointsWest: number;
+    /** Weapons that can slash the Deserted Keep web, in order of preference (bank names). */
+    webWeapons: RegExp[];
+    /** Passes over the phase list before giving up. */
+    rounds: number;
 }
 
 export const DEFAULT_MAX_PRICE: Record<string, number> = {
-    // Base cost x ~1.5-2: above it the shop is drained, and restocks are cheaper than paying up.
-    'Air rune': 8,
-    'Mind rune': 6,
-    'Fire rune': 8,
-    'Water rune': 8,
-    'Earth rune': 8,
-    'Death rune': 45,
-    'Chaos rune': 23,
-    'Law rune': 60,
+    // About 3x base: a drained Aubury or Betty shelf climbs to 6x, and leaving to come back
+    // after restocks is cheaper than paying up. The guild's 3000-deep shelves sell at base.
+    'Air rune': 12,
+    'Mind rune': 9,
+    'Fire rune': 12,
+    'Water rune': 12,
+    'Earth rune': 12,
+    'Death rune': 90,
+    'Chaos rune': 45,
+    'Law rune': 120,
     'Cosmic rune': 30,
     // Blood at the guild is still far below the GE (~600) at the 6x cap.
     'Blood rune': 300,
@@ -154,54 +190,83 @@ export const DEFAULT_MAX_PRICE: Record<string, number> = {
     'Staff of earth': 1600
 };
 
+export const DEFAULT_WEB_WEAPONS = ['^bronze axe$', '^bronze sword$', '^bronze scimitar$', '^iron (axe|sword|scimitar)$', '^steel (axe|sword|scimitar)$'];
+
 export function runesOptions(raw: Record<string, unknown>): RunesOptions {
     const num = (k: string, d: number) => (typeof raw[k] === 'number' && Number.isFinite(raw[k]) ? (raw[k] as number) : d);
     const phases = Array.isArray(raw.phases) ? (raw.phases as string[]) : ALL_PHASES;
     for (const p of phases) if (!ALL_PHASES.includes(p as Phase)) throw new Error(`runes: unknown phase ${p}`);
     return {
         phases: phases as Phase[],
-        funders: toRegExps(raw.funders ?? '^cairn_h03$'),
+        funders: toRegExps(raw.funders ?? '^cairn_h47$'),
         minCoins: num('minCoins', 0),
         fundWaitMinutes: num('fundWaitMinutes', 60),
         targets: { ...DEFAULT_TARGETS, ...((raw.targets as Record<string, number>) ?? {}) },
         magicLevel: num('magicLevel', 66),
         xpRate: num('xpRate', 25),
         maxPrice: { ...DEFAULT_MAX_PRICE, ...((raw.maxPrice as Record<string, number>) ?? {}) },
-        shopWaitTicks: num('shopWaitTicks', 600),
+        shopWaitTicks: num('shopWaitTicks', 0),
         lundailWaitTicks: num('lundailWaitTicks', 4500),
-        trainOn: toRegExps(raw.trainOn ?? ['^cow$', '^cow calf$', '^chicken$'])
+        trainOn: toRegExps(raw.trainOn ?? ['^cow$', '^cow calf$', '^chicken$']),
+        maxCarry: num('maxCarry', 30_000),
+        trainChunk: num('trainChunk', 300),
+        minHitpointsWest: num('minHitpointsWest', 30),
+        webWeapons: toRegExps(raw.webWeapons ?? DEFAULT_WEB_WEAPONS),
+        rounds: num('rounds', 8)
     };
 }
 
-/** Which shop sells what, in visiting order, for the `shops` phase. */
-const SHOP_LINES: { shop: string; items: string[] }[] = [
-    { shop: 'aubury', items: ['Death rune', 'Chaos rune', 'Fire rune', 'Water rune', 'Earth rune', 'Mind rune', 'Air rune'] },
-    { shop: 'zaff', items: ['Staff of water', 'Staff of fire', 'Staff of earth'] },
-    // Betty restocks the same elemental lines: a second shelf for what Aubury's couldn't cover.
-    { shop: 'betty', items: ['Death rune', 'Chaos rune', 'Mind rune', 'Air rune'] }
-];
+/** Coins a list of shop lines can cost at worst: every unit still missing at its cap. */
+export function purchaseBudget(lines: ListLine[], held: (item: string) => number): number {
+    return lines.reduce((a, l) => a + Math.max(0, l.quantity - held(String(l.item))) * (l.maxPrice ?? 0), 0);
+}
 
 /**
- * The shop phase's buyer list. Targets are holdings; the Magic training runes
- * (one air and one mind per cast) and the staff of earth are added while the
- * account is below `magicLevel`.
+ * Cut a purchase to what `maxCarry` coins can pay for at the lines' caps, in line
+ * order: the first lines are filled first, the last one may be partial, lines that
+ * don't fit are dropped. Quantities stay holding targets (held + units to buy). The
+ * result's purchaseBudget never exceeds maxCarry, so neither do the coins carried.
  */
-export function shopList(o: RunesOptions, trainingCasts: number): ListLine[] {
-    const want: Record<string, number> = { ...o.targets };
-    if (trainingCasts > 0) {
-        want['Air rune'] = (want['Air rune'] ?? 0) + trainingCasts;
-        want['Mind rune'] = (want['Mind rune'] ?? 0) + trainingCasts;
-        want['Staff of earth'] = Math.max(want['Staff of earth'] ?? 0, 1);
+export function limitToCarry(lines: ListLine[], held: (item: string) => number, maxCarry: number): ListLine[] {
+    const out: ListLine[] = [];
+    let left = maxCarry;
+    for (const l of lines) {
+        const have = held(String(l.item));
+        const need = Math.max(0, l.quantity - have);
+        if (need === 0) continue;
+        const price = Math.max(1, l.maxPrice ?? 1);
+        const n = Math.min(need, Math.floor(left / price));
+        if (n <= 0) break;
+        out.push({ ...l, quantity: have + n });
+        left -= n * price;
     }
-    const lines: ListLine[] = [];
-    for (const { shop, items } of SHOP_LINES) {
-        for (const item of items) {
-            const quantity = want[item] ?? 0;
-            if (quantity <= 0) continue;
-            lines.push({ item, quantity, source: 'shop', shop, maxPrice: o.maxPrice[item], maxWaitTicks: o.shopWaitTicks });
-        }
-    }
-    return lines;
+    return out;
+}
+
+/** Zaff's lines for the `shops` phase: the manifest's staves, and the staff of earth while training. */
+export function staffLines(o: RunesOptions, training: boolean): ListLine[] {
+    const want: Record<string, number> = { 'Staff of water': o.targets['Staff of water'] ?? 0, 'Staff of fire': o.targets['Staff of fire'] ?? 0 };
+    if (training) want['Staff of earth'] = Math.max(o.targets['Staff of earth'] ?? 0, 1);
+    return Object.entries(want)
+        .filter(([, n]) => n > 0)
+        .map(([item, quantity]) => ({ item, quantity, source: 'shop' as const, shop: 'zaff', maxPrice: o.maxPrice[item], maxWaitTicks: 0 }));
+}
+
+/**
+ * One shop's training-rune lines: air and mind to hold `casts` of each (a strike
+ * costs one of each). Training spends every air and mind it holds; the guild phase
+ * buys the manifest's own elementals afterwards.
+ */
+export function trainingLines(o: RunesOptions, shop: 'aubury' | 'betty', casts: number): ListLine[] {
+    if (casts <= 0) return [];
+    return ['Air rune', 'Mind rune'].map(item => ({ item, quantity: casts, source: 'shop' as const, shop, maxPrice: o.maxPrice[item], maxWaitTicks: o.shopWaitTicks }));
+}
+
+/** Lines for one shop's manifest items that are still short. */
+export function manifestLines(o: RunesOptions, shop: string, items: string[], maxWaitTicks: number): ListLine[] {
+    return items
+        .filter(item => (o.targets[item] ?? 0) > 0)
+        .map(item => ({ item, quantity: o.targets[item]!, source: 'shop' as const, shop, maxPrice: o.maxPrice[item], maxWaitTicks }));
 }
 
 // ------------------------------------------------------------------ the role
@@ -209,12 +274,14 @@ export function shopList(o: RunesOptions, trainingCasts: number): ListLine[] {
 type Status = 'done' | 'skip' | 'blocked';
 
 const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+const exactly = (name: string) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
 
 export class Runes {
     readonly o: RunesOptions;
     private readonly buyer: Buyer;
     private readonly requests: ChatCursor;
-    private bank = new Map<string, number>();
+    /** Coins walk() lets the account carry: the current purchase's budget, 0 between purchases. */
+    private carryLimit = 0;
 
     constructor(private readonly ctx: RoleContext) {
         this.o = runesOptions(ctx.options);
@@ -241,10 +308,10 @@ export class Runes {
         return this.state.inventory.filter(i => (typeof name === 'string' ? sameName(i.name, name) : name.test(i.name))).reduce((a, i) => a + i.count, 0);
     }
 
-    /** Bank + inventory + worn, from the last bank snapshot. */
+    /** Bank (as of the last bank visit, the buyer's included) + inventory + worn. */
     held(name: string): number {
         const worn = this.ctx.bot.getEquipment().filter(i => sameName(i.name, name)).length;
-        return (this.bank.get(name.toLowerCase()) ?? 0) + this.inv(name) + worn;
+        return this.buyer.held(name) + worn;
     }
 
     private magic(): { level: number; xp: number } {
@@ -252,7 +319,20 @@ export class Runes {
         return { level: s?.baseLevel ?? 1, xp: s?.experience ?? 0 };
     }
 
+    private hitpoints(): number {
+        return this.state.skills.find(k => /^hitpoints$/i.test(k.name))?.baseLevel ?? 10;
+    }
+
+    private coins(): number {
+        return this.inv('Coins');
+    }
+
+    /** Walk, refusing to move while carrying more coins than the current purchase allows. */
     private async walk(t: Tile, what: string, timeout = 300_000): Promise<void> {
+        if (this.coins() > this.carryLimit) {
+            this.ctx.log('carry guard', { carrying: this.coins(), limit: this.carryLimit, to: what });
+            throw new Error(`carry guard: ${this.coins()} coins carried, the purchase allows ${this.carryLimit}`);
+        }
         for (let i = 0; i < 4 && !this.ctx.signal.aborted; i++) {
             const r = await this.ctx.bot.walkTo(t.x, t.z, 2, { timeout });
             if (r.success || this.near(t)) return;
@@ -262,17 +342,19 @@ export class Runes {
         if (!this.near(t)) throw new Error(`could not reach ${what}`);
     }
 
-    /** Open the bank at `at`, run `body`, snapshot and report the bank, close it. */
+    /** Open the bank at `at`, run `body`, report the bank (the buyer's counts), close it. */
     private async atBank<T>(at: Tile, body: () => Promise<T>): Promise<T> {
-        return this.buyer.atBank(at, async () => {
-            const r = await body();
-            this.bank = new Map(this.ctx.sdk.getBankItems().map(i => [i.name.toLowerCase(), i.count]));
-            return r;
-        });
+        return this.buyer.atBank(at, body);
     }
 
-    private coins(): number {
-        return this.inv('Coins');
+    /** Run `body` with walk() allowing `limit` coins; the limit drops back to 0 after. */
+    private async carrying<T>(limit: number, body: () => Promise<T>): Promise<T> {
+        this.carryLimit = limit;
+        try {
+            return await body();
+        } finally {
+            this.carryLimit = 0;
+        }
     }
 
     /** Climb a ladder or stairs (a loc offering `option`) until the plane or position changes. */
@@ -340,6 +422,13 @@ export class Runes {
         )[0]!;
     }
 
+    /** Whether the account may cross White Wolf Mountain (aggressive wolves) or stand still somewhere. */
+    private sturdy(what: string): boolean {
+        if (this.hitpoints() >= this.o.minHitpointsWest) return true;
+        this.ctx.log(`${what}: waits for Hitpoints ${this.o.minHitpointsWest} (Magic training raises it)`, { hitpoints: this.hitpoints() });
+        return false;
+    }
+
     // ------------------------------------------------------------ phases
 
     /** Wait at Varrock west bank for coins from a funder until the account holds `minCoins`. */
@@ -347,9 +436,8 @@ export class Runes {
         const { sdk, log } = this.ctx;
         if (this.o.minCoins <= 0) return 'skip';
         await this.atBank(PLACES.varrockWestBank, () => this.buyer.depositAllBut([]));
-        const total = () => (this.bank.get('coins') ?? 0) + this.coins();
-        if (total() >= this.o.minCoins) return 'done';
-        log('fund: waiting for coins', { have: total(), want: this.o.minCoins, funders: this.o.funders.map(String) });
+        if (this.held('Coins') >= this.o.minCoins) return 'done';
+        log('fund: waiting for coins', { have: this.held('Coins'), want: this.o.minCoins, funders: this.o.funders.map(String) });
         const deadline = Date.now() + this.o.fundWaitMinutes * 60_000;
         while (Date.now() < deadline && !this.ctx.signal.aborted) {
             const senders = [...new Set(this.requests.next().map(m => m.sender))].filter(n => this.o.funders.some(p => accountMatches(n, p)));
@@ -358,26 +446,21 @@ export class Runes {
                 const r = await receiveFrom(sdk, from, { openTimeoutMs: 20_000 });
                 log('funded', { from, ok: r.ok, reason: r.reason, received: r.received.map(i => `${i.name} x${i.count}`), gained: this.coins() - before });
                 if (r.ok) await this.atBank(PLACES.varrockWestBank, () => this.buyer.depositAllBut([]));
+                log('fund: bank coins', { coins: this.held('Coins') });
             }
-            if (total() >= this.o.minCoins) return 'done';
+            if (this.held('Coins') >= this.o.minCoins) return 'done';
             await waitTicks(sdk, 5);
         }
-        return total() > 0 ? 'done' : 'blocked';
+        return this.held('Coins') > 0 ? 'done' : 'blocked';
     }
 
-    /** Aubury, Zaff and Betty, through the buyer: the manifest's shop runes, staves and the training runes. */
+    /** Zaff's staves (the manifest's two, and the staff of earth for training). One shop: one purchase. */
     async shops(): Promise<Status> {
-        const m = this.magic();
-        const casts = m.level >= this.o.magicLevel ? 0 : castsToLevel(m.xp, this.o.magicLevel, this.o.xpRate);
-        const list = shopList(this.o, casts);
-        const reports = await this.buyer.run(list);
-        await this.atBank(BANKS.varrockEast, async () => undefined);
-        const short = reports.filter(r => r.heldBefore + r.bought < r.target && r.note !== 'already held');
-        this.ctx.log('shops: done', { short: short.map(r => ({ item: r.item, shop: r.source, held: r.heldBefore + r.bought, target: r.target, note: r.note })) });
-        // Lines Aubury left short are retried at Betty (same item, later in the list), so only a
-        // shortfall after both shops counts; the loop comes back here after the other phases.
-        const stillShort = Object.entries(this.o.targets).filter(([item, n]) => !/talisman|cosmic|blood|law/i.test(item) && this.held(item) < n);
-        return stillShort.length === 0 ? 'done' : 'blocked';
+        const training = this.magic().level < this.o.magicLevel;
+        const lines = staffLines(this.o, training).filter(l => this.held(String(l.item)) < l.quantity);
+        if (lines.length === 0) return 'skip';
+        await this.buyer.run(limitToCarry(lines, n => this.held(n), this.o.maxCarry));
+        return staffLines(this.o, training).every(l => this.held(String(l.item)) >= l.quantity) ? 'done' : 'blocked';
     }
 
     /** Duke Horacio gives an air talisman whenever the account holds none (duke_horacio.rs2): drop, ask, pick up. */
@@ -385,12 +468,10 @@ export class Runes {
         const { bot, sdk, log } = this.ctx;
         const target = this.o.targets['Air talisman'] ?? 0;
         if (this.held('Air talisman') >= target) return 'skip';
+        // Free the inventory (the duke's mesbox needs one slot per talisman), and take every
+        // banked talisman out: the Duke only hands one over when none is held anywhere.
         await this.atBank(BANKS.draynor, async () => {
-            // Free the inventory (the duke's mesbox needs one slot per talisman) and count the bank.
             await this.buyer.depositAllBut([]);
-        });
-        // Every talisman must be out of the bank for the Duke to hand another over.
-        await this.atBank(BANKS.draynor, async () => {
             const banked = sdk.getBankItems().find(i => sameName(i.name, 'Air talisman'))?.count ?? 0;
             if (banked > 0) await bot.withdrawItem(/^air talisman$/i, banked);
         });
@@ -430,27 +511,44 @@ export class Runes {
         return this.held('Air talisman') >= target ? 'done' : 'blocked';
     }
 
-    /** Strike cows east of Lumbridge until `magicLevel`, one air and one mind rune per cast. */
+    /**
+     * Magic to `magicLevel` in chunks: buy one chunk of air and mind at Aubury (then
+     * Betty for what Aubury's shelf couldn't give), strike cows with all of it, repeat.
+     * A chunk that buys nothing (drained shelves, no coins) ends the phase for this round.
+     */
     async train(): Promise<Status> {
+        const { log } = this.ctx;
+        while (!this.ctx.signal.aborted && this.magic().level < this.o.magicLevel) {
+            const casts = Math.min(this.o.trainChunk, castsToLevel(this.magic().xp, this.o.magicLevel, this.o.xpRate));
+            for (const shop of ['aubury', 'betty'] as const) {
+                const lines = trainingLines(this.o, shop, casts).filter(l => this.held(String(l.item)) < l.quantity);
+                if (lines.length) await this.buyer.run(limitToCarry(lines, n => this.held(n), this.o.maxCarry));
+            }
+            const runes = Math.min(this.held('Air rune'), this.held('Mind rune'));
+            if (runes <= 0) {
+                log('magic: no air and mind runes to cast (shelves above the caps, or no coins); a later round comes back');
+                return 'blocked';
+            }
+            const before = this.magic().xp;
+            await this.castAll();
+            if (this.magic().xp <= before) return 'blocked';
+        }
+        return this.magic().level >= this.o.magicLevel ? 'done' : 'blocked';
+    }
+
+    /** Strike cows east of Lumbridge with every air and mind rune held, then bank. */
+    private async castAll(): Promise<void> {
         const { bot, sdk, log } = this.ctx;
-        if (this.magic().level >= this.o.magicLevel) return 'skip';
-        // Take only the runes above the manifest's own air and mind targets.
-        let spare = { air: 0, mind: 0 };
         await this.atBank(BANKS.draynor, async () => {
             await this.buyer.depositAllBut([]);
             const inBank = (n: string) => sdk.getBankItems().find(i => sameName(i.name, n))?.count ?? 0;
-            spare = { air: inBank('Air rune') - (this.o.targets['Air rune'] ?? 0), mind: inBank('Mind rune') - (this.o.targets['Mind rune'] ?? 0) };
-            const casts = Math.min(spare.air, spare.mind);
+            const casts = Math.min(inBank('Air rune'), inBank('Mind rune'));
             if (casts > 0) {
                 await bot.withdrawItem(/^air rune$/i, casts);
                 await bot.withdrawItem(/^mind rune$/i, casts);
             }
-            if (inBank('Staff of earth') > 0) await bot.withdrawItem(/^staff of earth$/i, 1);
+            if (inBank('Staff of earth') > 0 && !bot.getEquipment().some(i => sameName(i.name, 'Staff of earth'))) await bot.withdrawItem(/^staff of earth$/i, 1);
         });
-        if (Math.min(spare.air, spare.mind) <= 0) {
-            log('magic: no spare air and mind runes; the shops phase buys them');
-            return 'blocked';
-        }
         await this.walk(PLACES.cows, 'the Lumbridge cow field');
         const start = this.magic();
         let casts = 0;
@@ -481,13 +579,12 @@ export class Runes {
                     if (failures > 20) throw new Error(`magic: 20 failed casts in a row (${r.reason}: ${r.message})`);
                     await waitTicks(sdk, 2);
                 }
-                if (casts % 100 === 0 && r.success) log('magic: progress', { level: this.magic().level, xp: this.magic().xp, casts, mind: this.inv('Mind rune'), air: this.inv('Air rune') });
+                if (casts % 100 === 0 && r.success) log('magic: progress', { level: this.magic().level, xp: this.magic().xp, hitpoints: this.hitpoints(), casts, mind: this.inv('Mind rune'), air: this.inv('Air rune') });
             }
         });
         const end = this.magic();
-        log('magic: session', { from: start.level, to: end.level, casts, xpPerCast: casts ? Math.round((end.xp - start.xp) / casts / this.o.xpRate) : null });
+        log('magic: session', { from: start.level, to: end.level, hitpoints: this.hitpoints(), casts, xpPerCast: casts ? Math.round((end.xp - start.xp) / casts / this.o.xpRate) : null });
         await this.atBank(BANKS.draynor, () => this.buyer.depositAllBut([]));
-        return end.level >= this.o.magicLevel ? 'done' : 'blocked';
     }
 
     /** Read every shelf of an open shop into the log (live stock is the measurement this role exists to make). */
@@ -496,97 +593,144 @@ export class Runes {
         this.ctx.log('shelf', { shop: where, items });
     }
 
-    private shopLine(item: string, shop: string, waitTicksForRestock: number): ListLine | null {
-        const quantity = this.o.targets[item] ?? 0;
-        if (quantity <= 0 || this.held(item) >= quantity) return null;
-        return { item, quantity, source: 'shop', shop, maxPrice: this.o.maxPrice[item], maxWaitTicks: waitTicksForRestock };
-    }
-
-    /** Magic Guild store (Yanille, plane 1): blood, plus law/death/chaos if still short. */
+    /**
+     * Magic Guild store (Yanille, plane 1): every manifest rune line, in trips of at
+     * most `maxCarry` coins from Yanille bank (the guild is a short walk away).
+     */
     async guild(): Promise<Status> {
         const { bot, log } = this.ctx;
         if (this.magic().level < 66) return 'blocked';
-        const items = ['Blood rune', 'Law rune', 'Death rune', 'Chaos rune'];
-        if (items.every(i => this.held(i) >= (this.o.targets[i] ?? 0))) return 'skip';
-        // Worst case every unit at the 6x cap; the bank keeps the rest.
-        const budget = items.reduce((a, i) => a + Math.max(0, (this.o.targets[i] ?? 0) - this.held(i)) * (this.o.maxPrice[i] ?? 0), 0);
-        await this.atBank(PLACES.yanilleBank, async () => {
-            await this.buyer.depositAllBut([]);
-            await this.buyer.setCoins(budget);
-        });
-        if (this.plane === 0) {
-            await this.walk(PLACES.guildDoorOutside, 'the Magic Guild door');
-            await bot.openDoor(/door/i);
-            await this.walk(PLACES.guildStairs, 'the Magic Guild stairs');
-            await this.climb(/^staircase$/i, /climb-up/i, s => s.player!.level === 1, 'climb to the guild store');
+        const short = () => manifestLines(this.o, 'magicGuild', GUILD_ITEMS, 0).filter(l => this.held(String(l.item)) < l.quantity);
+        if (short().length === 0) return 'skip';
+        if (!this.sturdy('guild')) return 'blocked';
+        for (let trip = 1; trip <= 12 && !this.ctx.signal.aborted && short().length > 0; trip++) {
+            const lines = limitToCarry(short(), n => this.held(n), this.o.maxCarry);
+            const budget = purchaseBudget(lines, n => this.held(n));
+            const heldBefore = lines.map(l => this.held(String(l.item)));
+            await this.atBank(PLACES.yanilleBank, async () => {
+                await this.buyer.depositAllBut([]);
+                await this.buyer.setCoins(budget);
+            });
+            log('guild: trip', { trip, budget, carried: this.coins(), lines: lines.map(l => `${l.item} to ${l.quantity}`) });
+            await this.carrying(budget, async () => {
+                if (this.plane === 0) {
+                    await this.walk(PLACES.guildDoorOutside, 'the Magic Guild door');
+                    await bot.openDoor(/door/i);
+                    await this.walk(PLACES.guildStairs, 'the Magic Guild stairs');
+                    await this.climb(/^staircase$/i, /climb-up/i, s => s.player!.level === 1, 'climb to the guild store');
+                }
+                const opened = await bot.openShop(/^magic store owner$/i);
+                if (!opened.success) throw new Error(`guild shop: ${opened.message}`);
+                this.logShelf('magic guild');
+                await bot.closeShop();
+                for (const line of lines) log('guild: line', { ...(await this.buyer.buyAtShop(line, 0)) });
+                await this.climb(/^staircase$/i, /climb-down/i, s => s.player!.level === 0, 'climb down from the guild store');
+            });
+            await this.atBank(PLACES.yanilleBank, () => this.buyer.depositAllBut([]));
+            if (lines.every((l, i) => this.held(String(l.item)) <= heldBefore[i]!)) {
+                log('guild: a trip bought nothing (shelves above the caps); a later round comes back');
+                break;
+            }
         }
-        const opened = await bot.openShop(/^magic store owner$/i);
-        if (!opened.success) throw new Error(`guild shop: ${opened.message}`);
-        this.logShelf('magic guild');
-        await bot.closeShop();
-        for (const item of items) {
-            const line = this.shopLine(item, 'magicGuild', 0);
-            if (!line) continue;
-            const rep = await this.buyer.buyAtShop(line, 0);
-            log('guild: line', { ...rep });
+        return short().length === 0 ? 'done' : 'blocked';
+    }
+
+    /**
+     * Cut the Deserted Keep's web and step through it, `north` (out of the keep) or
+     * south (back in, to the lever). Slashing succeeds half the time (web.rs2).
+     */
+    private async crossWeb(to: 'north' | 'south'): Promise<void> {
+        const { bot, sdk, log } = this.ctx;
+        const [from, dest] = to === 'north' ? [PLACES.keepWebSouth, PLACES.keepWebNorth] : [PLACES.keepWebNorth, PLACES.keepWebSouth];
+        const across = (s: BotWorldState) => (to === 'north' ? s.player!.worldZ >= dest.z : s.player!.worldZ <= dest.z);
+        if (across(this.state)) return;
+        await this.walk(from, 'the keep web');
+        for (let i = 0; i < 16 && !this.ctx.signal.aborted; i++) {
+            const web = sdk.getNearbyLocs().find(l => /^web$/i.test(l.name) && l.x === PLACES.keepWeb.x && l.z === PLACES.keepWeb.z);
+            if (web) {
+                await bot.interactLoc(web, /slash/i);
+                await waitTicks(sdk, 3);
+                continue;
+            }
+            await sdk.sendWalk(dest.x, dest.z);
+            const w = await waitUntil(sdk, s => !!s.player && across(s), { maxTicks: 6 });
+            if (w.ok) {
+                log('lundail: through the web', { to, tries: i + 1 });
+                return;
+            }
         }
-        await this.climb(/^staircase$/i, /climb-down/i, s => s.player!.level === 0, 'climb down from the guild store');
-        await this.atBank(PLACES.yanilleBank, () => this.buyer.depositAllBut([]));
-        return items.every(i => this.held(i) >= (this.o.targets[i] ?? 0)) ? 'done' : 'blocked';
+        throw new Error(`lundail: could not get ${to} through the keep web`);
     }
 
     /**
      * Lundail (Mage Arena cellar): cosmic runes, and laws if still short. The walk
      * from the Deserted Keep lever to the cellar ladder is Wilderness level ~51-55;
-     * the cellar itself is outside every wilderness_zones rectangle. Carries coins only.
+     * the cellar itself is outside every wilderness_zones rectangle. Carries coins
+     * and a wielded slash weapon for the keep's web, nothing else.
      */
     async lundail(): Promise<Status> {
         const { bot, sdk, log } = this.ctx;
-        const items = ['Cosmic rune', 'Law rune'];
-        if (items.every(i => this.held(i) >= (this.o.targets[i] ?? 0))) return 'skip';
-        const budget = items.reduce((a, i) => a + Math.max(0, (this.o.targets[i] ?? 0) - this.held(i)) * (this.o.maxPrice[i] ?? 0), 0);
+        const short = () => manifestLines(this.o, 'lundail', LUNDAIL_ITEMS, 0).filter(l => this.held(String(l.item)) < l.quantity);
+        if (short().length === 0) return 'skip';
         const inCellar = (s: BotWorldState) => s.player!.worldZ > 4600;
         const inWild = (s: BotWorldState) => s.player!.worldZ > 3520 && s.player!.worldZ < 4000;
+        const lines = limitToCarry(short(), n => this.held(n), this.o.maxCarry).map(l => ({
+            ...l,
+            maxWaitTicks: l.item === 'Cosmic rune' && this.hitpoints() >= this.o.minHitpointsWest ? this.o.lundailWaitTicks : 0
+        }));
+        const budget = purchaseBudget(lines, n => this.held(n));
         if (!inCellar(this.state) && !inWild(this.state)) {
+            if (!this.sturdy('lundail')) return 'blocked';
+            // Nothing worn but the web weapon goes into the Wilderness.
+            for (const e of bot.getEquipment()) if (!this.o.webWeapons.some(p => p.test(e.name))) await bot.unequipItem(e.name);
             await this.atBank(PLACES.ardougneBank, async () => {
                 await this.buyer.depositAllBut([]);
+                if (!bot.getEquipment().some(e => this.o.webWeapons.some(p => p.test(e.name)))) {
+                    const bank = sdk.getBankItems();
+                    const weapon = this.o.webWeapons.map(p => bank.find(i => p.test(i.name))).find(Boolean);
+                    if (weapon) await bot.withdrawItem(exactly(weapon.name), 1);
+                }
                 await this.buyer.setCoins(budget);
             });
-            // Nothing but coins goes into the Wilderness.
-            if (this.state.inventory.some(i => i.name !== 'Coins') || bot.getEquipment().length > 0) {
-                for (const e of bot.getEquipment()) await bot.unequipItem(e.name);
-                await this.atBank(PLACES.ardougneBank, () => this.buyer.depositAllBut(['Coins']));
+            const weapon = this.state.inventory.find(i => this.o.webWeapons.some(p => p.test(i.name)));
+            if (weapon) await bot.equipItem(weapon);
+            if (!bot.getEquipment().some(e => this.o.webWeapons.some(p => p.test(e.name)))) {
+                log('lundail: no weapon that can slash the keep web (a bronze axe or sword will do)');
+                await this.atBank(PLACES.ardougneBank, () => this.buyer.depositAllBut([]));
+                return 'blocked';
             }
-            await this.walk(PLACES.ardougneLever, 'the Ardougne lever');
+        }
+        await this.carrying(Math.max(budget, this.coins()), async () => {
+            if (!inCellar(this.state) && !inWild(this.state)) {
+                await this.walk(PLACES.ardougneLever, 'the Ardougne lever');
+                await bot.interactLoc(/^lever$/i, /pull/i);
+                // The first pull warns (a mesbox, then a three-way choice): "Yes I'm brave."
+                await waitUntil(sdk, s => s.dialog.isOpen || inWild(s), { maxTicks: 6 });
+                if (sdk.getState()?.dialog.isOpen) await this.pageThrough([/brave/i], s => !!s.player && inWild(s), 5);
+                const w = await waitUntil(sdk, s => !!s.player && inWild(s), { maxTicks: 15 });
+                if (!w.ok) throw new Error('lundail: the Ardougne lever did not teleport');
+                log('lundail: in the Wilderness', { at: { x: this.state.player!.worldX, z: this.state.player!.worldZ }, carried: this.coins() });
+            }
+            if (!inCellar(this.state)) {
+                if (inKeep(this.state.player!.worldX, this.state.player!.worldZ)) await this.crossWeb('north');
+                await this.walk(PLACES.arenaLadder, 'the Mage Arena cellar ladder');
+                await this.climb(/^ladder$/i, /climb-down/i, inCellar, 'climb down to Lundail');
+            }
+            const opened = await bot.openShop(/^lundail$/i);
+            if (!opened.success) throw new Error(`lundail: ${opened.message}`);
+            this.logShelf('lundail');
+            await bot.closeShop();
+            for (const line of lines) log('lundail: line', { ...(await this.buyer.buyAtShop(line, line.maxWaitTicks)) });
+            await this.climb(/^ladder$/i, /climb-up/i, s => !inCellar(s), 'climb out of the cellar');
+            await this.walk(PLACES.keepWebNorth, 'the keep web');
+            await this.crossWeb('south');
+            await this.walk(PLACES.keepLever, 'the Deserted Keep lever');
             await bot.interactLoc(/^lever$/i, /pull/i);
-            // The first pull warns (a mesbox, then a three-way choice): "Yes I'm brave."
-            await waitUntil(sdk, s => s.dialog.isOpen || inWild(s), { maxTicks: 6 });
-            if (sdk.getState()?.dialog.isOpen) await this.pageThrough([/brave/i], s => !!s.player && inWild(s), 5);
-            const w = await waitUntil(sdk, s => !!s.player && inWild(s), { maxTicks: 15 });
-            if (!w.ok) throw new Error('lundail: the Ardougne lever did not teleport');
-            log('lundail: in the Wilderness', { at: { x: this.state.player!.worldX, z: this.state.player!.worldZ } });
-        }
-        if (!inCellar(this.state)) {
-            await this.walk(PLACES.arenaLadder, 'the Mage Arena cellar ladder');
-            await this.climb(/^ladder$/i, /climb-down/i, inCellar, 'climb down to Lundail');
-        }
-        const opened = await bot.openShop(/^lundail$/i);
-        if (!opened.success) throw new Error(`lundail: ${opened.message}`);
-        this.logShelf('lundail');
-        await bot.closeShop();
-        for (const item of items) {
-            const line = this.shopLine(item, 'lundail', item === 'Cosmic rune' ? this.o.lundailWaitTicks : 0);
-            if (!line) continue;
-            const rep = await this.buyer.buyAtShop(line, line.maxWaitTicks);
-            log('lundail: line', { ...rep });
-        }
-        await this.climb(/^ladder$/i, /climb-up/i, s => !inCellar(s), 'climb out of the cellar');
-        await this.walk(PLACES.keepLever, 'the Deserted Keep lever');
-        await bot.interactLoc(/^lever$/i, /pull/i);
-        const out = await waitUntil(sdk, s => !!s.player && s.player.worldZ < 3520, { maxTicks: 15 });
-        if (!out.ok) throw new Error('lundail: the keep lever did not teleport');
+            const out = await waitUntil(sdk, s => !!s.player && s.player.worldZ < 3520, { maxTicks: 15 });
+            if (!out.ok) throw new Error('lundail: the keep lever did not teleport');
+        });
         await this.atBank(PLACES.ardougneBank, () => this.buyer.depositAllBut([]));
-        return items.every(i => this.held(i) >= (this.o.targets[i] ?? 0)) ? 'done' : 'blocked';
+        return short().length === 0 ? 'done' : 'blocked';
     }
 
     // ------------------------------------------------------------ loop
@@ -621,9 +765,9 @@ export class Runes {
         if (ctx.sdk.getTradeState().isOpen) await ctx.bot.declineTrade();
         await this.toGround().catch(e => ctx.log('could not get back to plane 0', { error: String(e) }));
         // Learn the bank's contents at the nearest booth (banks are shared, so any booth will do).
-        await this.atBank(this.nearestBank(), async () => undefined).catch(e => ctx.log('first bank visit failed', { error: String(e) }));
+        await this.atBank(this.nearestBank(), () => this.buyer.depositAllBut([])).catch(e => ctx.log('first bank visit failed', { error: String(e) }));
         const status = new Map<Phase, Status>();
-        for (let round = 1; round <= 5 && !ctx.signal.aborted; round++) {
+        for (let round = 1; round <= this.o.rounds && !ctx.signal.aborted; round++) {
             for (const p of this.o.phases) {
                 if (ctx.signal.aborted || status.get(p) === 'done' || status.get(p) === 'skip') continue;
                 try {
@@ -634,7 +778,7 @@ export class Runes {
                     ctx.log('phase failed', { phase: p, error: String(e) });
                     await ctx.bot.dismissBlockingUI().catch(() => undefined);
                 }
-                ctx.log('phase', { phase: p, status: status.get(p), round, holdings: this.holdings(), magic: this.magic() });
+                ctx.log('phase', { phase: p, status: status.get(p), round, holdings: this.holdings(), magic: this.magic(), hitpoints: this.hitpoints() });
             }
             if (this.o.phases.every(p => status.get(p) === 'done' || status.get(p) === 'skip')) break;
         }
