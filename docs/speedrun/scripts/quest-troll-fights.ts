@@ -131,12 +131,18 @@ await runScript(async ({ bot, sdk }) => {
             await cheat(sdk, 'setvar troll_varbit 0');
             await tele(sdk, 2903, 3616);
             await waitUntil(sdk, () => !!findNpc(sdk, /^Dad$/) && (findNpc(sdk, /^Dad$/)!.hp ?? 120) >= 100, 120);
-            let surrendered = -1;
-            const f = await fight(bot, sdk, () => findNpc(sdk, /^Dad$/), () => /Stop! You win/.test(dialogText(sdk.getState())));
-            surrendered = now(sdk);
-            await waitUntil(sdk, s => s.dialog.isOpen && s.dialog.options.length > 0, 10);
-            await sdk.clickDialogByText(/going now/i).catch(() => sdk.sendClickDialog(0));
-            await waitUntil(sdk, s => !/going now/.test(dialogText(s)), 5);
+            // Dad surrenders below 20 hp (troll_champion.rs2:116): his hp drops under 20,
+            // then the "Stop! You win" page and a two-way choice open.
+            const won = () => { const d = findNpc(sdk, /^Dad$/); return (d?.hp != null && d.hp < 20) || /Stop! You win/.test(dialogText(sdk.getState())); };
+            const f = await fight(bot, sdk, () => findNpc(sdk, /^Dad$/), won);
+            const surrendered = now(sdk);
+            for (let k = 0; k < 6; k++) {
+                const r = await waitUntil(sdk, s => s.dialog.isOpen && !s.dialog.isWaiting, 6);
+                if (!r) break;
+                console.log(`  dialog t${r.tick}: ${JSON.stringify({ text: r.state.dialog.text, opts: r.state.dialog.options.map(o => o.text), comps: (r.state.dialog.allComponents ?? []).map(c => c.text).filter(Boolean) })}`);
+                if (r.state.dialog.options.length) { await sdk.clickDialogByText(/going now/i); f.pages++; await waitUntil(sdk, s => s.tick > r.tick, 3); }
+                else { await sdk.sendClickDialog(0); f.pages++; await waitUntil(sdk, s => s.tick > r.tick, 3); }
+            }
             runs.push({ ...f, surrenderTick: surrendered, totalTicks: now(sdk) - surrendered + f.ticks });
         } else if (fightArg === 'general') {
             await cheat(sdk, 'setvar troll_quest 10');

@@ -93,7 +93,8 @@ export async function findLoc(sdk: BotSDK, id: number, x?: number, z?: number): 
 export function dialogText(s: BotWorldState | null | undefined): string {
     const d = s?.dialog;
     if (!d?.isOpen) return '';
-    return (d.text ?? '') + (d.options.length ? ' | ' + d.options.map(o => `${o.index}:${o.text}`).join(' / ') : '');
+    const body = d.text || (d.allComponents ?? []).map(c => c.text).filter(Boolean).join(' ');
+    return body + (d.options.length ? ' | ' + d.options.map(o => `${o.index}:${o.text}`).join(' / ') : '');
 }
 
 export function lastMessages(s: BotWorldState | null | undefined, n = 5): string[] {
