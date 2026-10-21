@@ -181,6 +181,7 @@ if (ROLE === 'helper') {
         let seenSeq = -1;
         let seenTick = -1;
         let stagedSeq = -1;
+        let stagedAt = -1;
         let offeredTick = -1;
         let gaveTick = -99;
         let plan: PlanMsg | null = null;
@@ -234,7 +235,8 @@ if (ROLE === 'helper') {
                 }
                 continue;
             }
-            if (stagedSeq !== plan.seq) { stagedSeq = plan.seq; console.log(`HELPER seq ${plan.seq}: plan seen ${seenTick}, staged ${s.tick}`); }
+            if (stagedSeq === plan.seq && s.tick - stagedAt === 25 && !s.trade?.isOpen) console.log(`HELPER waiting seq ${plan.seq} at ${s.tick}: pos ${s.player?.worldX},${s.player?.worldZ} msgs ${s.gameMessages.slice(-5).map(m => `${m.tick}:${m.text}`).join(' | ')}`);
+            if (stagedSeq !== plan.seq) { stagedAt = s.tick; } stagedSeq = plan.seq; console.log(`HELPER seq ${plan.seq}: plan seen ${seenTick}, staged ${s.tick}`); }
             const p = s.nearbyPlayers.find(x => x.name.toLowerCase() === partner);
             if (p) sdk.sendTradeRequest(p.index).catch(() => {});
         }
@@ -329,6 +331,7 @@ await runScript(async ({ bot, sdk }) => {
                 // An open chat modal (level-up dialog, "not enough bars" mesbox) makes us busy()
                 // (Player.ts), and the helper's trade requests bounce off until it closes.
                 if (s.dialog.isOpen || s.modalOpen) { sdk.sendCloseModal().catch(() => {}); closes++; }
+                if (L.request > 0 && s.tick - L.request === 8) console.log(`SLOW OPEN inv ${inv} at ${s.tick}: pos ${s.player?.worldX},${s.player?.worldZ} helper ${JSON.stringify(s.nearbyPlayers.map(p => [p.name, p.x, p.z]))} msgs ${s.gameMessages.slice(-5).map(m => `${m.tick}:${m.text}`).join(' | ')}`);
                 const h = s.nearbyPlayers.find(p => p.name.toLowerCase() === HELPER.toLowerCase());
                 if (h) {
                     if (DISPOSE === 'drop') for (const p of s.inventory.filter(i => !/^hammer$/i.test(i.name)).slice(0, 3)) sdk.sendDropItem(p.slot).catch(() => {});
