@@ -440,7 +440,7 @@ await runScript(async ({ bot, sdk }) => {
                     anchor = null;
                     return;
                 }
-                if (s.dialog?.isOpen && !lab) { actedTick = t; fire(t, 'dismiss dialog', sdk.sendClickDialog(0)); breaks.push(t); anchor = null; return; }
+                if (s.dialog?.isOpen && (!lab || lab.policy === 'none')) { actedTick = t; fire(t, 'dismiss dialog', sdk.sendClickDialog(0)); breaks.push(t); anchor = null; return; }
                 const stalled = anchor !== null && t - Math.max(anchor, lastXpTick) > 12 && idleTicks >= 2;
                 if (anchor === null || targetGone || stalled) {
                     actedTick = t;
