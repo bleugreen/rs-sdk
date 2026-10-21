@@ -262,6 +262,8 @@ export class Client extends GameShell {
     private ptype: number = 0;
     private timeoutTimer: number = 0;
     private noTimeoutTimer: number = 0;
+    /** rs-sdk: a flushNow write failure on the current stream, rethrown by gameLoop's flush. */
+    private flushError: unknown = null;
     private logoutTimer: number = 0;
     private ptype0: number = 0;
     private ptype1: number = 0;
@@ -670,8 +672,6 @@ export class Client extends GameShell {
     private onGameTickCallback: ((ticks: number) => void) | null = null;
     /** PLAYER_INFOs decoded and not yet published. */
     private pendingGameTicks: number = 0;
-    /** A flushNow write failure, rethrown by gameLoop's flush. */
-    private flushError: unknown = null;
 
     // rs-sdk: Adaptive tick speed: measures real server tick interval to scale client movement
     private lastTickTime: number = 0;
@@ -4203,6 +4203,7 @@ export class Client extends GameShell {
 
             const world = worldEndpoint();
             this.stream = new ClientStream(await ClientStream.openSocket(world.host, world.secured));
+            this.flushError = null;
 
             const userhash = JString.toUserhash(username);
             const loginServer = Number(userhash >> 16n) & 0x1f;
