@@ -40,7 +40,8 @@ await runScript(async ({ bot, sdk }) => {
                 ['sigli', /Sigli/, 2660, 3654, yes],
                 ['swensen', /Swensen/, 2646, 3661, yes],
                 ['thorvald', /Thorvald/, 2666, 3692, yes],
-                ['peer', /Peer the Seer/, 2634, 3669, yes],
+                // With Thorvald's trial started Peer first asks which topic (viking_peer.rs2:11).
+                ['peer', /Peer the Seer/, 2634, 3669, [/Ask about becoming a Fremennik/, ...yes]],
                 ['olaf', /Olaf/, 2672, 3683, yes],
                 ['sigmund', /Sigmund/, 2641, 3681, yes]
             ];

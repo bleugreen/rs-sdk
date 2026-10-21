@@ -81,6 +81,17 @@ await runScript(async ({ bot, sdk }) => {
             await sdk.sendUseItemOnItem(ia.slot, ib.slot);
         };
         const level = (n: number) => () => L.pos(sdk).level === n;
+        // Open a cupboard or chest and wait until the opened loc (with `opt`) is there.
+        const openThen = async (name: string, x: number, z: number, opt: string) => {
+            const t0 = L.tick(sdk);
+            await op(x, z, 'Open');
+            while (L.tick(sdk) - t0 < 30) {
+                const l = (await sdk.scanNearbyLocs(15)).find(q => q.x === x && q.z === z && q.options.includes(opt));
+                if (l) break;
+                await sdk.waitForStateUpdate();
+            }
+            steps.push([`${name} open`, L.tick(sdk) - t0]);
+        };
 
         // Riddle and lock.
         let text = '';
@@ -120,9 +131,9 @@ await runScript(async ({ bot, sdk }) => {
         await step('enter', () => op(2631, 3667, 'Open'), () => L.pos(sdk).z <= 3666);
 
         await step('ladder up', () => op(2631, 3663, 'Climb-up'), level(2));
-        await step('cupboard open', () => op(2629, 3660, 'Open'), () => false, 3).catch(() => steps.pop());
+        await openThen('cupboard', 2629, 3660, 'Search');
         await step('cupboard search', () => op(2629, 3660, 'Search'), has(/Empty bucket/));
-        await step('chest open', () => op(2635, 3660, 'Open'), () => false, 3).catch(() => steps.pop());
+        await openThen('chest', 2635, 3660, 'Search');
         await step('chest search', () => op(2635, 3660, 'Search'), has(/Empty jug/));
         await step('unicorn head', () => op(2632, 3660, 'Study'), has(/Red disk/));
         await step('bull head', () => op(2634, 3660, 'Study'), has(/Wooden disk/));
