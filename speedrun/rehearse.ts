@@ -3,7 +3,8 @@
 //
 //   bun speedrun/rehearse.ts --skill=<name|module.ts> --bot=<env name> [--to=99] [--client=browser|lite]
 //       [--kit-from=<giver> --kit=<item:n,...>] [--technique=auto|knife|plain] [--skill-opt=<key>=<value> ...]
-//       [--gate-bot=<gate account env>] [--gate-json=<file>] [--gate-probe-trials=60] [--probe-trials=0]
+//       [--gate-bot=<gate account env, default cairn_twin off a local world>] [--gate-json=<file>]
+//       [--gate-probe-trials=60] [--probe-trials=0]
 //       [--force-gate] [--from=<step name or index>] [--log=<file>] [--lab] [--insecure-query-login]
 //
 // A thin layer over runner/resume.ts runResumable (runSteps with resume from game state) and
@@ -13,6 +14,7 @@
 //    ((a)-(c), rs/96's CLI docs/speedrun/scripts/tickmanip-latency.ts run on the gate account with
 //    --gate-bot, or the --json file it wrote with --gate-json); and the in-page probe on the gate
 //    account's own tab (--gate-probe-trials, browser). Each is a `gate` header row in the tick log.
+//    Off a local world the gate account is cairn_twin unless --gate-bot or --gate-json says otherwise.
 //    It refuses to start when (c) fails (an overrun period: wait and re-read), when the world does
 //    not answer, or when a non-lab world has no direct read; --force-gate overrides.
 // 2. It launches the rehearsal client and runs, under the watchdog (rs/101's policy: a wedged
@@ -20,8 +22,11 @@
 //    optional in-page probe on this account (--probe-trials, on the clock), an optional kit
 //    receive (S01: lib/trade.ts receiveFrom with `want`; on the lab, --kit alone uses ::give),
 //    then the skill module's steps({to, technique, ...}).
+//    /playercount is read every 10 minutes through the attempt and once after the logout (a
+//    `players` row each; a background HTTP GET, no game packets).
 // 3. logoutClean the moment the chain ends (a last step that logged out by itself is fine), the
-//    session rows, the gate tab's after-probe, the public hiscore row against the log, a summary.
+//    session rows, the gate tab's after-probe, the public hiscore row against the log, a summary
+//    (with a warning line when the player count swung by more than half: a demo restart and refill).
 //
 // Stop: the first Ctrl-C stops at the next logoutSafe boundary with logoutClean; a second logs
 // out at once. SIGTERM (a `timeout` bound) logs out at once too. A re-run walks from game state
@@ -31,7 +36,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'fs';
 import { isAbsolute, join } from 'path';
 import type { BotWorldState } from '../sdk/types';
-import { DemoMonitor, demoOrigin, samplePlayerCount } from './lib/demo-status';
+import { clock, DemoMonitor, demoOrigin, samplePlayerCount } from './lib/demo-status';
 import { directDecision, type DirectVerdict, verdictText } from './lib/hostgate';
 import { probeInPage, programStatus, type ProgramStatus } from './lib/programs';
 import { reconnectAfterOutage, serverDownProbe } from './lib/reconnect';
@@ -85,9 +90,13 @@ const VALUE_FLAGS = new Set(['skill', 'bot', 'client', 'to', 'log', 'kit-from', 
 // --insecure-query-login is read by lib/session.ts from process.argv (lab-only browser login).
 const SWITCHES = new Set(['lab', 'force-gate', 'insecure-query-login']);
 
+/** The twin's gate account (rs/147): the gate tab and every direct gate read off a local world. */
+export const DEFAULT_GATE_BOT = 'cairn_twin';
+
 export const USAGE = `usage: bun speedrun/rehearse.ts --skill=<name|module.ts> --bot=<env name> [--to=99] [--client=browser|lite]
     [--kit-from=<giver> --kit=<item:n,...>] [--technique=auto|knife|plain] [--skill-opt=<key>=<value> ...]
-    [--gate-bot=<gate account env>] [--gate-json=<file>] [--gate-probe-trials=60] [--probe-trials=0]
+    [--gate-bot=<gate account env, default ${DEFAULT_GATE_BOT} off a local world>] [--gate-json=<file>]
+    [--gate-probe-trials=60] [--probe-trials=0]
     [--force-gate] [--from=<step name or index>] [--log=<file>] [--lab] [--insecure-query-login]`;
 
 function wholeNumber(key: string, raw: string, min: number, max = Number.MAX_SAFE_INTEGER): number {
@@ -96,8 +105,12 @@ function wholeNumber(key: string, raw: string, min: number, max = Number.MAX_SAF
     return n;
 }
 
-/** Parse argv (without `bun` and the script). The bot may also come positionally, as lab.sh passes it. */
-export function parseArgs(argv: readonly string[]): RehearseArgs {
+/**
+ * Parse argv (without `bun` and the script). The bot may also come positionally, as lab.sh passes it.
+ * `defaultGateBot` is the gate account when neither --gate-bot nor --gate-json is given
+ * (DEFAULT_GATE_BOT off a local world; none on the lab).
+ */
+export function parseArgs(argv: readonly string[], opts: { defaultGateBot?: string } = {}): RehearseArgs {
     const v = new Map<string, string>();
     const skillOpts: Record<string, string> = {};
     const positional: string[] = [];
@@ -144,8 +157,8 @@ export function parseArgs(argv: readonly string[]): RehearseArgs {
     if (kitFrom && !kitSpec) throw new UsageError('--kit-from needs --kit=<item:n,...> (the trade\'s want)');
     if (kitSpec && !kitFrom && !lab) throw new UsageError('--kit without --kit-from gives the kit with ::give, which only the lab allows (--lab)');
 
-    const gateBot = v.get('gate-bot');
-    if (gateBot === bot) throw new UsageError('--gate-bot must be a separate gate account, never the rehearsal account (RUN-HOST.md step 6)');
+    const gateBot = v.get('gate-bot') ?? (v.has('gate-json') ? undefined : opts.defaultGateBot);
+    if (gateBot === bot) throw new UsageError(`the gate account (${v.has('gate-bot') ? '--gate-bot' : 'the default'}, ${gateBot}) must be separate, never the rehearsal account (RUN-HOST.md step 6)`);
     const gateProbeTrials = v.has('gate-probe-trials') ? wholeNumber('gate-probe-trials', v.get('gate-probe-trials')!, 0) : gateBot && client === 'browser' ? 60 : 0;
     if (gateProbeTrials > 0 && !gateBot) throw new UsageError('--gate-probe-trials runs on the gate account\'s tab: it needs --gate-bot');
     const probeTrials = v.has('probe-trials') ? wholeNumber('probe-trials', v.get('probe-trials')!, 0) : 0;
@@ -294,6 +307,74 @@ export function gateRefusal(i: { direct: DirectRead | null; inPage: readonly InP
     return out;
 }
 
+// ------------------------------------------------------------------ player count through the attempt
+
+/** /playercount is read this often during an attempt (rs/158). */
+export const PLAYERS_EVERY_MS = 10 * 60_000;
+/** A swing of more than this share of the attempt's highest count is a demo restart and refill. */
+export const PLAYERS_MOVED_SHARE = 0.5;
+export const GATE_PLAYERS_STEP = '(gate) players';
+
+export interface PlayerRead {
+    /** Wall ms. */
+    at: number;
+    /** null: /playercount did not answer. */
+    players: number | null;
+}
+
+export interface PlayerSwing {
+    reads: number;
+    unanswered: number;
+    first: PlayerRead | null;
+    last: PlayerRead | null;
+    min: PlayerRead | null;
+    max: PlayerRead | null;
+    /** (highest - lowest) / highest over the answered reads; 0 with no spread or a highest of 0. */
+    swing: number;
+    /** swing > PLAYERS_MOVED_SHARE. */
+    moved: boolean;
+}
+
+/** The attempt's /playercount reads, in log order: the gate's read before the login and every `players` row. */
+export function playerReads(rows: readonly TickRow[]): PlayerRead[] {
+    return rows
+        .filter(r => r.kind === 'players' || (r.kind === 'gate' && r.step === GATE_PLAYERS_STEP))
+        .map(r => ({ at: Date.parse(typeof r.meta?.at === 'string' ? r.meta.at : r.at), players: typeof r.meta?.players === 'number' ? r.meta.players : null }));
+}
+
+export function playerSwing(reads: readonly PlayerRead[]): PlayerSwing {
+    const answered = reads.filter((r): r is PlayerRead & { players: number } => r.players !== null);
+    let min: (typeof answered)[number] | null = null;
+    let max: (typeof answered)[number] | null = null;
+    for (const r of answered) {
+        if (!min || r.players < min.players) min = r;
+        if (!max || r.players > max.players) max = r;
+    }
+    const swing = min && max && max.players > 0 ? (max.players - min.players) / max.players : 0;
+    return {
+        reads: reads.length, unanswered: reads.length - answered.length,
+        first: answered[0] ?? null, last: answered[answered.length - 1] ?? null, min, max,
+        swing, moved: swing > PLAYERS_MOVED_SHARE,
+    };
+}
+
+export function formatPlayers(p: PlayerSwing): string[] {
+    if (!p.reads) return [];
+    const n = (r: PlayerRead | null) => (r?.players == null ? '?' : r.players.toLocaleString('en-US'));
+    const at = (r: PlayerRead | null) => (r && Number.isFinite(r.at) ? ` (${clock(r.at)} PDT)` : '');
+    const lines = [
+        `players: ${n(p.first)} at the start, ${n(p.last)} at the end; lowest ${n(p.min)}${at(p.min)}, highest ${n(p.max)}${at(p.max)}; ` +
+            `${p.reads} read${p.reads === 1 ? '' : 's'}${p.unanswered ? `, ${p.unanswered} unanswered` : ''}`,
+    ];
+    if (p.moved) {
+        lines.push(
+            `  MOVED ${Math.round(p.swing * 100)}% during the attempt (over ${PLAYERS_MOVED_SHARE * 100}%): a demo restart and refill; ` +
+                'respawn-bound bands ran in two regimes, so price each at its own count'
+        );
+    }
+    return lines;
+}
+
 // ------------------------------------------------------------------ trackers (fed every published state)
 
 /** Per client session (lib/session.ts sessionId): first and last in-world tick seen. */
@@ -412,6 +493,8 @@ export interface Summary {
     steps: StepReport[];
     /** Every level gained, at the account's playtime (sessions before it, plus its client tick). */
     reach: { skill: string; level: number; playtime: number }[];
+    /** /playercount over the attempt: the gate read and the `players` rows. */
+    players: PlayerSwing;
     lowerBound: boolean;
 }
 
@@ -453,6 +536,7 @@ export function summarize(rows: readonly TickRow[]): Summary {
         overheadPerBoundary: boundary.length ? Math.round(((sessionTicks - stepTicks) / boundary.length) * 100) / 100 : null,
         steps: rep.steps,
         reach,
+        players: playerSwing(playerReads(rows)),
         lowerBound: rep.lowerBound || sessions.some(s => s.lowerBound),
     };
 }
@@ -518,6 +602,7 @@ export function formatSummary(
     );
     const target = [...s.reach].reverse().find(r => r.skill === o.skill.toLowerCase());
     if (target) lines.push(`reach: ${o.skill} ${target.level} at playtime ${target.playtime}`);
+    lines.push(...formatPlayers(s.players));
     if (o.hiscore) {
         for (const h of o.hiscore) {
             const mark = h.ok === null ? '' : h.ok ? ' ok' : ` OFF by ${h.diff}`;
@@ -599,9 +684,9 @@ async function readHiscore(account: string, origin: string, runId: string): Prom
 }
 
 async function main(argv: string[]): Promise<number> {
-    const a = parseArgs(argv);
-    const env = loadBotEnv(a.bot);
+    const env = loadBotEnv(parseArgs(argv).bot);
     const local = isLocalWorld(env.SERVER);
+    const a = local ? parseArgs(argv) : parseArgs(argv, { defaultGateBot: DEFAULT_GATE_BOT });
     if (a.lab && !local) throw new UsageError(`--lab accepts staff fixtures, and ${env.SERVER} is not a local lab`);
     const mod = await loadSkillModule(a.skill);
     const start = await import('./skills/start');
@@ -615,7 +700,7 @@ async function main(argv: string[]): Promise<number> {
 
     // 1. The gate, off the clock.
     const players = (await samplePlayerCount(origin)).players;
-    log.append(annotation(log, account, 'gate', '(gate) players', { meta: { players, origin } }));
+    log.append(annotation(log, account, 'gate', GATE_PLAYERS_STEP, { meta: { players, origin } }));
     let direct: DirectRead | null = null;
     if (a.gateJson) direct = parseDirectJson(JSON.parse(readFileSync(a.gateJson, 'utf-8')), 'gate-json');
     else if (a.gateBot) direct = await directReadViaCli(a.gateBot, { lab: a.lab, runId });
@@ -669,6 +754,17 @@ async function main(argv: string[]): Promise<number> {
         for (const r of reach.observe(s)) log.append(annotation(log, account, 'reach', `(reach) ${r.skill} ${r.level}`, { sessionId: session.sessionId, startTick: r.tick, meta: { skill: r.skill, level: r.level } }));
         for (const st of programs.observe(programStatus(s))) log.append(programRow(log, account, session.sessionId, st));
     });
+    // /playercount through the attempt (rs/158): an HTTP GET beside the game socket, no game packets.
+    const readPlayers = async (label: 'during' | 'end') => {
+        const smp = await samplePlayerCount(origin);
+        const st = session.sdk.getState();
+        log.append(annotation(log, account, 'players', `(players) ${label}`, {
+            sessionId: session.sessionId, ...(st?.inGame ? { startTick: st.tick } : {}),
+            meta: { players: smp.players, at: new Date(smp.at).toISOString(), ms: smp.ms, ...(smp.error ? { error: smp.error } : {}) },
+        }));
+        console.log(`[players] ${smp.players ?? `no answer (${smp.error})`}`);
+    };
+    const playersTimer = setInterval(() => void readPlayers('during'), PLAYERS_EVERY_MS);
     const monitor = local ? null : new DemoMonitor(origin);
     const wd = startWatchdog(session, {
         onEvent: e => console.log(`[watchdog] ${e.verdict}: ${e.reason}`),
@@ -752,6 +848,7 @@ async function main(argv: string[]): Promise<number> {
 
     // 3. Out of the world at once, then everything that costs no ticks.
     if (session.expectInWorld && !leaving) await leave();
+    clearInterval(playersTimer);
     wd.stop();
     monitor?.stop();
     process.off('SIGINT', onSigint);
@@ -760,6 +857,7 @@ async function main(argv: string[]): Promise<number> {
     const out = lastLogout as LogoutResult | null;
     // A step that logged out itself: its click was on the last in-world tick (logout latency 0).
     closeSessionRow(session.sessionId, 'logout', out?.ok ? out.lastInWorldTick : session.lastInWorldTick, out ?? undefined);
+    await readPlayers('end');
 
     if (gateTab) {
         try {
