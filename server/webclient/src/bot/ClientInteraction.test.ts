@@ -298,6 +298,94 @@ for (const kind of ['browser', 'lite'] as const) {
             expect(f.executor.execute({ type: 'clickDialogOption', optionIndex: 2, reason: 'test' })).toMatchObject({ success: true });
             expect(Array.from(f.out.data.subarray(0, f.out.pos))).toEqual([ClientProt.IF_BUTTON, 9202 >> 8, 9202 & 255]);
         });
+
+        describe(`${kind} blind dialogue continue`, () => {
+            const BUTTON_CONTINUE = 6;
+
+            /** 9230: a pure continue page. 9240: a continue beside a pending choice. */
+            function continueFixture() {
+                const f = fixture();
+                defineComponent(9230, { children: [9231] });
+                defineComponent(9231, { buttonType: BUTTON_CONTINUE, buttonText: 'Continue', text: '' });
+                defineComponent(9240, { children: [9241, 9242] });
+                defineComponent(9241, { buttonType: BUTTON_CONTINUE, buttonText: 'Continue', text: '' });
+                defineComponent(9242, { buttonType: BUTTON_OK, buttonText: 'Select', text: 'Maybe' });
+                if (kind === 'lite') {
+                    for (const id of [9230, 9231, 9240, 9241, 9242]) f.client.interfaces.list[id] = IfType.list[id];
+                }
+                const click = (optionIndex: number, blind?: unknown) => f.executor.execute({
+                    type: 'clickDialogOption', optionIndex, reason: 'test',
+                    ...(blind === undefined ? {} : { blind: blind as boolean })
+                });
+                const bytes = () => Array.from(f.out.data.subarray(0, f.out.pos));
+                return { ...f, click, bytes };
+            }
+
+            const resume = (id: number) => [ClientProt.RESUME_PAUSEBUTTON, id >> 8, id & 255];
+
+            for (const [optionIndex, id] of [[0, 9230], [1, 9231]] as const) {
+                test(`unflagged option ${optionIndex} still waits for the next page`, async () => {
+                    const f = continueFixture();
+                    await f.receive(ServerProt.IF_OPENCHAT, 9230);
+                    expect(f.click(optionIndex)).toMatchObject({ success: true });
+                    expect(f.click(optionIndex)).toMatchObject({ success: false, reason: 'client_rejected' });
+                    expect(f.bytes()).toEqual(resume(id));
+                });
+
+                test(`blind option ${optionIndex} sends a second RESUME without a new page`, async () => {
+                    const f = continueFixture();
+                    await f.receive(ServerProt.IF_OPENCHAT, 9230);
+                    expect(f.click(optionIndex, true)).toMatchObject({ success: true, message: `Clicked dialog option ${optionIndex} (blind)` });
+                    expect(f.click(optionIndex, true)).toMatchObject({ success: true });
+                    expect(f.bytes()).toEqual([...resume(id), ...resume(id)]);
+                    expect(f.client.isWaitingForDialog()).toBe(true);
+                });
+
+                test(`blind option ${optionIndex} is refused with no chat modal`, () => {
+                    const f = continueFixture();
+                    expect(f.click(optionIndex, true)).toMatchObject({ success: false });
+                    expect(f.out.pos).toBe(0);
+                });
+            }
+
+            test('an unflagged click after a blind one is still latched', async () => {
+                const f = continueFixture();
+                await f.receive(ServerProt.IF_OPENCHAT, 9230);
+                expect(f.click(0, true)).toMatchObject({ success: true });
+                expect(f.click(0)).toMatchObject({ success: false });
+                expect(f.bytes()).toEqual(resume(9230));
+            });
+
+            test('only a literal true lifts the latch', async () => {
+                const f = continueFixture();
+                await f.receive(ServerProt.IF_OPENCHAT, 9230);
+                expect(f.click(0, 'yes')).toMatchObject({ success: true, message: 'Clicked dialog option 0' });
+                expect(f.click(0, 1)).toMatchObject({ success: false });
+                expect(f.bytes()).toEqual(resume(9230));
+            });
+
+            test('blind continue is refused while a choice is displayed', async () => {
+                const f = continueFixture();
+                await f.receive(ServerProt.IF_OPENCHAT, 9200);
+                expect(f.click(0, true)).toMatchObject({ success: false });
+                expect(f.out.pos).toBe(0);
+            });
+
+            test('blind continue beside a pending choice is refused', async () => {
+                const f = continueFixture();
+                await f.receive(ServerProt.IF_OPENCHAT, 9240);
+                expect(f.click(1, true)).toMatchObject({ success: false });
+                expect(f.click(0, true)).toMatchObject({ success: false });
+                expect(f.out.pos).toBe(0);
+            });
+
+            test('blind has no effect on an IF_BUTTON option', async () => {
+                const f = continueFixture();
+                await f.receive(ServerProt.IF_OPENCHAT, 9200);
+                expect(f.click(2, true)).toMatchObject({ success: true });
+                expect(f.bytes()).toEqual([ClientProt.IF_BUTTON, 9202 >> 8, 9202 & 255]);
+            });
+        });
     });
 }
 
