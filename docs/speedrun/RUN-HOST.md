@@ -45,7 +45,7 @@ again before step 7.
 | Chrome, gate account's tab (steps 3 and 6) | - | `T=15m` |
 | Chrome, SCORED's tab (step 7) | `T=9h` | - |
 | `tab-login.ts`, the tab's login (steps 3, 6, 7) | `3m` | `3m` (it gives up by itself after 120 s) |
-| `tab-logout.ts`, the tab's logout (steps 6 and 8) | `3m` | `3m` (20 s to attach, `logoutClean`'s waits, 15 s to confirm) |
+| The tab's logout, `logoutClean` attached to the tab (steps 6 and 8) | `3m` | `3m` (30 s to attach, `logoutClean`'s waits, 15 s to confirm) |
 | rs/117's helper launcher (step 4) | `T=9h` | `T=30m` |
 | Recording (step 5), SIGINT at the bound | `T=9h` | `T=30m` |
 | Live view (step 5) | `T=9h` | `T=30m` |
@@ -140,20 +140,25 @@ to be `96fc462a` or a descendant of it. **No real account's credentials, fleet o
 host while `~/rs-sdk` is at an older commit** (main, 10:20 PDT): step 4 (the helpers are fleet
 accounts) and step 7 (SCORED) check this first.
 
-`RUN_COMMIT` must also include **rs/164**: 3ed0cd49c (twin) / 4e0e8ae4 on rs/147's branch; main's
-commit named when rs/165's snapshot merges. 3ed0cd49c is the code that passed on the rehearsal
-twin: the page confirmed every logout in 222-324 ms, 0 ticks of latency, and because the gateway
-still said `inGame: true` afterwards, `session.ts` no longer consults it for a browser session (m,
-rs/164 on the twin, account cairn_smoke, 20:44-20:52Z 2026-10-21, via rs/147). 4e0e8ae4 is its
-squash merge (PR #143), the same code. Until `RUN_COMMIT` includes it,
-`logoutClean` (`speedrun/lib/session.ts`) cannot confirm a browser tab's logout. The gateway keeps
-`inGame: true` with status `stale` after the page leaves the game, so the check waits out its timeout
-and reports a failure (m, rs/149 on the rehearsal twin, via rs/147, 2026-10-21; cairn://p/rs/164).
-That affects SCORED's two planned relogs, every shortfall or restock pause, and the final logout that
-writes the hiscore row (RUN-ORDER.md section 4 and R1). Check it the same way as `96fc462a`, once main's commit is named:
-`git -C ~/rs-sdk merge-base --is-ancestor <main's rs/164 commit> "$RUN_COMMIT"`. Until then, steps 6 and 8
-confirm a tab's logout with rs/149's `speedrun/tools/tab-logout.ts`, which reads the page itself over
-Chrome's DevTools port, or by seeing the login screen in the live view.
+`RUN_COMMIT` must also include **rs/164**, which is on main as **`c2d9eada`** (#146, "Snapshot
+rs/147's scored-run pieces to main"). It is byte-identical to 4e0e8ae4 on rs/147's branch (rs/164's
+squash merge, PR #143), whose code is 3ed0cd49c, the commit that passed on the rehearsal twin: the
+page confirmed every logout in 222-324 ms, 0 ticks of latency, and because the gateway still said
+`inGame: true` afterwards, `session.ts` no longer consults it for a browser session (m, rs/164 on the
+twin, account cairn_smoke, 20:44-20:52Z 2026-10-21, via rs/147). From c2d9eada on, `logoutClean`
+(`speedrun/lib/session.ts`) treats `lastDamageTick < 0` as never damaged, and for a browser session
+it confirms the logout through the page's own in-game flag over Chrome's DevTools port
+(`speedrun/lib/tab.ts` `pageInGame`), never the gateway's `inGame` (r, c2d9eada). On an older
+commit it cannot confirm a tab's logout: the gateway keeps `inGame: true` with status `stale` after
+the page leaves the game, so the check waits out its timeout and reports a failure (m, rs/149 on the
+rehearsal twin, via rs/147, 2026-10-21; cairn://p/rs/164). That would affect SCORED's two planned
+relogs, every shortfall or restock pause, and the final logout that writes the hiscore row
+(RUN-ORDER.md section 4 and R1). Check it the same way as `96fc462a`:
+`git -C ~/rs-sdk merge-base --is-ancestor c2d9eada "$RUN_COMMIT"`. c2d9eada descends from 96fc462a,
+so this one check covers rs/138 as well; step 0 keeps both lines so that a failure names the missing
+requirement. rs/149's `speedrun/tools/tab-logout.ts`, the interim confirm, reached rs/147's branch
+(#140) but not main, since #146 did not carry it. Steps 6 and 8 therefore confirm a tab's logout with
+`logoutClean` itself and the login screen in the live view.
 
 **Leftover check.** It lists every tmux socket on the host with its sessions, other agents' sockets
 included, plus every `chrome*`, `ffmpeg`, `bun` and `timeout` process with its age, and the host
@@ -285,10 +290,12 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o 
 `RUN_COMMIT` must include rs/138's merge (#120, `96fc462a`): step 3's Chrome login
 (`speedrun/tools/tab-login.ts` and the page server's token endpoints) arrived with it ("Credentials",
 above). Check with `git -C ~/rs-sdk merge-base --is-ancestor 96fc462a "$RUN_COMMIT"`.
-`RUN_COMMIT` must also include rs/164 (3ed0cd49c (twin) / 4e0e8ae4 on rs/147's branch; main's
-commit named when rs/165's snapshot merges), so that `logoutClean` can confirm a logout from the tab
+`RUN_COMMIT` must also include rs/164, on main as `c2d9eada` (#146; the same code as 4e0e8ae4 on
+rs/147's branch and 3ed0cd49c on the twin), so that `logoutClean` can confirm a logout from the tab
 ("Credentials"). Check with
-`git -C ~/rs-sdk merge-base --is-ancestor <main's rs/164 commit> "$RUN_COMMIT"`.
+`git -C ~/rs-sdk merge-base --is-ancestor c2d9eada "$RUN_COMMIT"`. c2d9eada descends from
+96fc462a, so this check alone covers both requirements; the `96fc462a` line stays beside it so a
+failure says which one is missing.
 
 Account files: the gate account (step 6) is a throwaway demo account whose name starts with
 `cairn_`, with `~/rs-sdk/bots/<gate>/bot.env` holding `BOT_USERNAME`, `PASSWORD`,
@@ -439,12 +446,14 @@ it. The one ordering rule that touches this runbook: **the helpers are logged in
 opens** (the launcher's `helpersReady`), because login order decides the 7- or 8-tick Runecraft
 cycle.
 
-**The S07 bone givers** are rs/41's three, **cairn_b01-b03**, which serve SUPPLIES.md's H4.1-H4.n
+**The S07 bone givers** are rs/41's four, **cairn_b01-b04**, which serve SUPPLIES.md's H4.1-H4.n
 at the Woodcutting trees. They take turns, and they're a role rs/141 added to the same launcher
-(rs/141's `bone-giver.ts`, rs/41's PR #135). Like the altar givers, they **log in before SCORED and
-stay in through both planned relogs** (RUN-ORDER.md section 4). There may be four if the demo round
-trip from Falador west to the Taverley trees exceeds ~200 ticks. rs/141's lab round trip was 149-170
-ticks with the bank (m, SUPPLIES.md H4.1-H4.n), and rs/163 is measuring it on the demo.
+(rs/141's `bone-giver.ts`, rs/41's PR #135). Like the altar givers, all four **log in before SCORED
+and stay in through both planned relogs** (RUN-ORDER.md section 4). The fourth is there because the
+demo round trip, Falador west bank to the oak giver tile and back with a bank visit, measured
+199-215 ticks running (178-193 at the willows; m, demo, rs/163), and three givers leave each only
+~210 ticks a trip at one load per ~70; four leave ~280. The givers run, not walk: walking it took
+321-328 ticks, which would need five (SUPPLIES.md H4.1-H4.n).
 
 Two rules from this page apply to that launch:
 
@@ -552,18 +561,24 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o 
   `docs/speedrun/scripts/runhost-loops.ts`. It attaches to the tab through the loopback gateway, runs
   the in-page probe (the page publishes `loops` only while a program runs), and every 10 s prints the
   page's loop rate beside each process's CPU and ffmpeg's frame counters. **Before Chrome is stopped,
-  the gate account's tab is logged out** with rs/149's `speedrun/tools/tab-logout.ts`, so the account
-  doesn't linger in the world. It confirms the logout from the page over Chrome's DevTools port,
-  because `logoutClean`'s own confirmation can't be trusted from a tab until rs/164 is on
-  `RUN_COMMIT` ("Credentials"). It exits 0 once the page is out of game and 1 when it isn't
-  confirmed, and the command below stops Chrome only on 0. tab-logout.ts arrives with rs/147's
-  snapshot. Until `RUN_COMMIT` includes it, drop it from the command and check in the live view that
-  the tab shows the login screen before the `kill-session`. Bounds: the tab `T=15m` (step 3's
-  command), the sampler 10 min, tab-logout 3 min. If the ssh line dies, or tab-logout does not
-  confirm, before the closing `kill-session`, the tab's own bound closes it.
+  the gate account's tab is logged out** with `logoutClean`, so the account doesn't linger in the
+  world. The command below attaches to the running tab through the gateway (`openSession` with
+  `client: 'browser'`, which does not relaunch it) and calls `logoutClean`, the same call a run
+  script makes. With `RUN_COMMIT` at or after `c2d9eada` that call confirms the logout from the
+  page's own in-game flag over Chrome's DevTools port, so it is trustworthy from the tab
+  ("Credentials"). It exits 0 once the page is out of game and 1 when it isn't confirmed, and the
+  command stops Chrome only on 0. It also exits 1 when the tab is already out, because there is no
+  advancing tick to attach to. Then check in the live view that the tab shows the login screen.
+  This attach-and-logout command is new with c2d9eada and has not yet run on the twin, where
+  rs/149's tab-logout.ts did this job (not on main, "Credentials"). Bounds: the tab `T=15m`
+  (step 3's command), the sampler 10 min, the logout 3 min. **Never kill the tab while the
+  account is in game.** If the ssh line dies or the logout isn't confirmed, look at the live view and
+  re-run the logout part of the command until it shows the login screen. Only then close the tab
+  with `kill-session`. The tab's own bound is the last resort: it closes the tab at `T=15m` and
+  leaves the account to the server's no-connection timeout.
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'cd ~/rs-sdk && timeout --kill-after=30s 10m ~/.bun/bin/bun docs/speedrun/scripts/runhost-loops.ts GATE_ACCOUNT --label=gate --minutes=5 --display=:10 --out=$HOME/rs-run/gate-loops.jsonl 2>&1 | grep -v -E "^\[(Runner|BotSDK)\]|Pathfinding|LOGOUT DEBUG"; timeout --kill-after=30s 3m ~/.bun/bin/bun speedrun/tools/tab-logout.ts GATE_ACCOUNT && tmux -L run kill-session -t chrome'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'cd ~/rs-sdk && timeout --kill-after=30s 10m ~/.bun/bin/bun docs/speedrun/scripts/runhost-loops.ts GATE_ACCOUNT --label=gate --minutes=5 --display=:10 --out=$HOME/rs-run/gate-loops.jsonl 2>&1 | grep -v -E "^\[(Runner|BotSDK)\]|Pathfinding|LOGOUT DEBUG"; B=GATE_ACCOUNT timeout --kill-after=30s 3m ~/.bun/bin/bun -e "const m = await import(\"./speedrun/lib/session.ts\"); const s = await m.openSession(process.env.B, { client: \"browser\", pathfinding: false, readyTimeoutMs: 30000 }); const r = await m.logoutClean(s); console.log(r.ok ? \"logged out; the page is out of game\" : \"not confirmed: \" + r.reason); await m.closeSession(s); process.exit(r.ok ? 0 : 1);" && tmux -L run kill-session -t chrome'
 ```
 
 Read (d) from the summary line's `loops p10` (lowest / median / highest 10-second sample). **Pass**:
@@ -590,21 +605,23 @@ section 4, O33).
 
 After SCORED's final clean logout (the run script's `logoutClean`), and only once that logout is
 confirmed, stop ffmpeg with `q`, so it finishes the file, and check what it wrote. The final logout
-is what writes SCORED's hiscore row (RUN-ORDER.md section 4, "Final logout"). Until `RUN_COMMIT`
-includes rs/164's merge, `logoutClean`'s confirmation can't be trusted from the tab
-("Credentials"). Confirm the logout here with `tab-logout.ts` on SCORED's account, or by seeing
-the login screen in the live view. tab-logout.ts exits 0 with `no tab in game` when the page is already out.
-If SCORED is still in game, it logs SCORED out cleanly itself. **Never kill the tab while SCORED is
-in game.** `ENV` is `$SCORED_ENV`, as in step 7. Bound: 3 min. Like tab-login, it prints the
+is what writes SCORED's hiscore row (RUN-ORDER.md section 4, "Final logout"). With `RUN_COMMIT` at
+or after `c2d9eada` ("Credentials"), `logoutClean` confirms the logout from the page's own in-game
+flag, so its own result is trustworthy from the tab. The confirmation is both of these: the run
+script's final `logoutClean` result reads `ok: true` with `confirmedBy: 'page'`, and the live view
+shows the login screen. If the result is not `ok`, or the live view still shows SCORED in game, log
+SCORED out with step 6's attach-and-logout command on SCORED's account (below). It calls the same
+`logoutClean` and exits 0 once the page is out of game. **Never kill the tab while SCORED is in
+game.** `ENV` is `$SCORED_ENV`, as in step 7. Bound: 3 min. Its error messages can carry the
 account's name, so keep its output out of chat and logs:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'ENV=SCORED_ENV; cd ~/rs-sdk && timeout --kill-after=30s 3m ~/.bun/bin/bun speedrun/tools/tab-logout.ts "$(basename "$(dirname "$ENV")")"'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'ENV=SCORED_ENV; cd ~/rs-sdk && B="$(basename "$(dirname "$ENV")")" timeout --kill-after=30s 3m ~/.bun/bin/bun -e "const m = await import(\"./speedrun/lib/session.ts\"); const s = await m.openSession(process.env.B, { client: \"browser\", pathfinding: false, readyTimeoutMs: 30000 }); const r = await m.logoutClean(s); console.log(r.ok ? \"logged out; the page is out of game\" : \"not confirmed: \" + r.reason); await m.closeSession(s); process.exit(r.ok ? 0 : 1);"'
 ```
 
-Expect `no tab in game; nothing to log out` or `logged out; the page is out of game`, and exit 0.
-On exit 1 (`not confirmed`), look at the tab in the live view. Stop nothing until it shows the login
-screen. Then stop the recording:
+Expect `logged out; the page is out of game`, and exit 0. On exit 1 (`not confirmed`, or no
+advancing tick to attach to, which is also what a tab already out of game gives), look at the tab in
+the live view. Stop nothing until it shows the login screen. Then stop the recording:
 
 ```sh
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'tmux -L run send-keys -t rec q; sleep 5; tmux -L run has-session -t rec 2>/dev/null && echo "ffmpeg still running"; for f in ~/recordings/run-*.mkv; do ffprobe -v error -show_entries format=duration,size:stream=width,height,pix_fmt -of compact "$f"; done; grep -E "^(frame|drop_frames)=" ~/recordings/ffmpeg-progress.log | tail -2'
