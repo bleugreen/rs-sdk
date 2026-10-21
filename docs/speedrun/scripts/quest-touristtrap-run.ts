@@ -80,6 +80,11 @@ await runScript(async ({ bot, sdk }) => {
         await cheat(sdk, 'setvar desertrescue 0');
         for (const [o, n] of [['water_skin4', 1], ['water_skin4', 1], ['water_skin4', 1], ['shantay_pass', 1], ['desert_shirt', 1], ['desert_robe', 1], ['desert_boots', 1], ['bronze_bar', 1], ['bronze_bar', 1], ['feather', 30], ['hammer', 1], ['rune_scimitar', 1]] as const) await give(sdk, o, n);
         await tele(sdk, 3293, 3163); // glory: Al Kharid landing, +6 ticks
+    } else if (FROM === 'shabim') {
+        // stage 10 (pineapple errand), just outside the camp gate, slave clothes carried
+        await cheat(sdk, 'setvar desertrescue 10');
+        for (const [o, n] of [['water_skin4', 1], ['water_skin4', 1], ['slave_shirt', 1], ['slave_robe', 1], ['slave_boots', 1], ['metal_key', 1], ['bronze_bar', 1], ['bronze_bar', 1], ['feather', 30], ['hammer', 1]] as const) await give(sdk, o, n);
+        await tele(sdk, 3272, 3029);
     } else {
         await cheat(sdk, 'setvar desertrescue 16');
         for (const [o, n] of [['water_skin4', 1], ['water_skin4', 1], ['slave_shirt', 1], ['slave_robe', 1], ['slave_boots', 1], ['metal_key', 1], ['tentipineapple', 1]] as const) await give(sdk, o, n);
@@ -167,6 +172,8 @@ await runScript(async ({ bot, sdk }) => {
         await seg('camp gate: leave', async () => {
             await q.opLoc('miningcampgateclosedl', 1, () => p().worldX <= 3273);
         });
+    }
+    if (FROM === 'start' || FROM === 'shabim') {
         await seg('camp gate -> Al Shabim (walk)', async () => {
             await q.walk(3172, 3026, 2);
         });
