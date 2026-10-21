@@ -45,11 +45,13 @@ These are main's rules (cairn://p/rs/41), and the role enforces them per line:
    (never past it). After that, every recheck logs `capped` and holds. A human
    decides what happens next; post it on cairn://p/rs/41 with the fill history
    from the holdings lines.
-6. **Coins go to lines in list order.** A line short of coins for its tranche
-   reserves what it is missing, and the lines after it spend only the coins
-   above all earlier reservations. A line that is merely waiting for a free
-   slot reserves nothing. Put the line that matters most first (dragon bones,
-   by main's call).
+6. **Coins go to lines in list order.** Each line reserves the coins it wants
+   beyond what it has placed: the unfunded part of its tranche, or a top-up
+   that is waiting for a free slot or for enough coins. The lines after it
+   spend only the coins above all earlier reservations. Put the line that
+   matters most first (dragon bones, by main's call). On the demo, before
+   slot-waiting top-ups reserved anything, grapes took a whole 215k funding
+   round while bones waited for a slot.
 7. **Collect promptly.** Fills count only once collected. Every recheck
    collects and banks first. Between rechecks the bidder peeks at its offers
    every `fillCheckMinutes` (default 3) and runs an early cycle (at most one
