@@ -441,6 +441,7 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         // target in the bot state is no evidence of attacking: re-click
         // whenever it is attackable and we have not swung for 5 ticks.
         const IDLE: [number, number] = [2786, 4458];
+        let msgSeen = sdk.getState()!.gameMessages.length;
         const atk0 = sdk.getSkill('attack')!.experience;
         let lastSwing = t0;
         let lastClick = -99;
@@ -454,7 +455,11 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
             if (me.animId !== -1) lastSwing = s.tick;
             if ((s.tick - t0) % 25 === 0) {
                 const b = sdk.findNearbyNpc(/treus dayth/i) ?? sdk.getNearbyNpcs().find(n => /^ghost$/i.test(n.name));
-                hpLog.push(`${s.tick - t0}:${me.hp}/${b ? `${b.name}@${b.x},${b.z} ${b.healthPercent ?? '?'}%` : 'none'} me@${me.worldX},${me.worldZ}`);
+                const msgs = s.gameMessages.slice(msgSeen).map(m => m.text).filter(t => !/heals some|eat the/i.test(t));
+                msgSeen = s.gameMessages.length;
+                const near = sdk.getNearbyNpcs().filter(n => Math.max(Math.abs(n.x - me.worldX), Math.abs(n.z - me.worldZ)) <= 6 && !/treus/i.test(n.name)).map(n => `${n.name}@${n.x},${n.z}`);
+                hpLog.push(`${s.tick - t0}:${me.hp}/${b ? `${b.name}@${b.x},${b.z} ${b.healthPercent ?? '?'}%` : 'none'} me@${me.worldX},${me.worldZ}${msgs.length ? ` msgs[${msgs.join('; ')}]` : ''}${near.length ? ` npcs[${near.join(' ')}]` : ''}`);
+                if (process.argv.includes('--diag') && s.tick - t0 >= 150) break;
             }
             if (me.hp <= 30) {
                 const food = sdk.findInventoryItem(/shark/i);
