@@ -93,7 +93,7 @@ await runScript(async ({ bot, sdk }) => {
     await sdk.sendSay(`::tele 0,${sx >> 6},${sz >> 6},${sx & 63},${sz & 63}`);
     await waitTicks(3);
     if (LEVEL) { await sdk.sendSay(`::setstat firemaking ${LEVEL}`); await waitTicks(2); }
-    await sdk.sendSay('::~clearinv'); await waitTicks(2);
+    await sdk.sendSay('::~clearinv inv'); await waitTicks(2);
     await sdk.sendSay('::give tinderbox 1'); await waitTicks(2);
     if (MODE === 'inv') { await sdk.sendSay(`::give ${LOGS} 27`); await waitTicks(3); }
     while (sdk.getState()?.dialog.isOpen) { await sdk.sendClickDialog(0); await waitTicks(1); }
