@@ -45,10 +45,14 @@ await runScript(async ({ bot, sdk }) => {
         await setvar(sdk, 'mm_main', 5);
         await setvar(sdk, 'mm_garkor', 6);
         await setvar(sdk, 'mm_waiting_for_final_battle', 0);
-        // Out of the battle zone long enough for an earlier run's squad and demon to despawn. The sigil
-        // works from anywhere outside the Wilderness; Lumbridge avoids the atoll's guards (a human
-        // next to Garkor gets knocked out into the jail).
-        await tele(sdk, 3222, 3218);
+        // Out of the battle zone long enough for an earlier run's squad and demon to despawn. Wait at
+        // the Ape Atoll landing: a human next to Garkor gets knocked out into the jail, and from
+        // Lumbridge the sigil did not fire in the lab (mm_sigil_valid_teleport, mm_demon.rs2:7-14,
+        // has no explicit return(true)).
+        await sdk.sendCloseModal();
+        const worn = (sdk.getState()!.equipment ?? []).find(i => /sigil/i.test(i.name));
+        if (worn) await bot.unequipItem?.(worn.name);
+        await tele(sdk, 2801, 2707);
         await waitTicks(sdk, 30);
         // Again: a previous kill's queued stage change (mm_demon.rs2:387-389) can land after the first set.
         await setvar(sdk, 'mm_main', 5);
