@@ -2,14 +2,14 @@
 // (cairn://p/rs/47; results in docs/speedrun/helpers/wine.md).
 //
 //   LAB_PORTS="9540 9541 9542 44540 8540" LAB_RUNNERS=0 LAB_BOTS=winercv1 \
-//     speedrun/lab/lab.sh winemkr1 speedrun/lab/measure-wine.ts:--receiver=winercv1[:--big=450]
+//     speedrun/lab/lab.sh winemkr1 speedrun/lab/measure-wine.ts:--receiver=winercv1[:--big=450][:--first=29][:--only=T9]
 //
 // Launches and relogs both clients itself (LAB_RUNNERS=0). Prints one RESULT line
 // per test; every tick count is on the named bot's own clock, and a relaunched
 // client restarts its tick counter, so login-relative ticks are counted from the
 // first in-world state of the new session.
 import type { BotWorldState } from '../../sdk/types';
-import { giveWine, makeNotedWine, makeWines, receiveWine } from '../helpers/wine';
+import { giveWine, giveWineKit, makeNotedWine, makeWines, prepareRearmKit, receiveWine, splitDelivery } from '../helpers/wine';
 import { ITEM, closeBank, invCount, openBank, prepare, tick } from '../helpers/wine-common';
 import { depositAll } from '../lib/bank';
 import { login, logoutClean, openSession, type Session } from '../lib/session';
@@ -184,6 +184,31 @@ await openBank(R);
 const bank8 = receiver.sdk.getBankItems().filter(i => /wine/i.test(i.name)).map(i => `${i.name} x${i.count}`);
 await closeBank(receiver.bot, receiver.sdk);
 result('T8c-ferment-big', { afterLogin: tXp8 - tR8, cooking: receiver.sdk.getSkill('Cooking'), bank: bank8 });
+
+// T9: the single-login split. The receiver logs in at Cooking 1; the maker is
+// waiting with `big` noted wines plus one grapes and one jug of water.
+await setstat(receiver.sdk, 'cooking', 1);
+await stockIngredients(maker, big + 1);
+await makeNotedWine(M, big);
+await prepareRearmKit(M);
+await logoutClean(receiver);
+await Bun.sleep(3_000);
+const g9 = giveWineKit(M, receiver.name);
+let tR9 = -1;
+const unsub9 = receiver.sdk.onStateUpdate(st => {
+    if (tR9 < 0 && st.inGame && (st.player?.worldX ?? 0) > 0) tR9 = st.tick;
+});
+await login(receiver);
+unsub9();
+const s9 = await splitDelivery(R, maker.name, { first: Number(arg('first', '29')) });
+result('T9-split-one-login', {
+    ...s9,
+    loginTick: tR9,
+    firstFermentAfterLogin: s9.firstFermentTick - tR9,
+    secondFermentAfterLogin: s9.secondFermentTick - tR9,
+    receiverActionTicks: s9.tradeTicks + s9.firstBankTicks + s9.rearmTicks,
+    giverTicks: (await g9).ticks
+});
 
 for (const s of [maker, receiver]) {
     await s.bot.dismissBlockingUI();

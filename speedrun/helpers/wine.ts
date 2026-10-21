@@ -28,6 +28,7 @@ import type { BotSDK } from '../../sdk/index';
 import type { InventoryItem } from '../../sdk/types';
 import { depositMatching, withdrawMany } from '../lib/bank';
 import { give, receiveFrom, sameName } from '../lib/trade';
+import { waitUntil } from '../lib/wait';
 import type { Role, RoleContext } from './role';
 import { runStandalone } from './role';
 import {
@@ -335,9 +336,11 @@ export async function splitDelivery(ctx: Ctx, giver: string, opts: { first?: num
     await closeBank(bot, sdk);
     const firstBankTicks = tick(sdk) - t1;
 
+    // An all-bad firing gives no xp and no message (wine.rs2): then the wait runs out
+    // and the level stays below 35, so the rest is left for the next login.
     const xp0 = xp();
-    const fired = await sdk.waitForCondition(() => xp() > xp0 || bankless(sdk), (maxWait + 5) * 600).then(() => true, () => false);
-    const firstFermentTick = fired ? tick(sdk) : -1;
+    const fired = await waitUntil(sdk, () => xp() > xp0, { maxTicks: maxWait });
+    const firstFermentTick = fired.ok ? fired.tick : -1;
     const levelAfterFirst = skillLevel(sdk, 'Cooking');
     const rest = invCount(sdk, ITEM.wineNote);
 
@@ -353,8 +356,8 @@ export async function splitDelivery(ctx: Ctx, giver: string, opts: { first?: num
     let secondFermentTick = -1;
     if (rearmed) {
         const xp1 = xp();
-        const ok = await sdk.waitForCondition(() => xp() > xp1, (maxWait + 5) * 600).then(() => true, () => false);
-        if (ok) secondFermentTick = tick(sdk);
+        const ok = await waitUntil(sdk, () => xp() > xp1, { maxTicks: maxWait });
+        if (ok.ok) secondFermentTick = ok.tick;
     }
     return {
         received,
@@ -369,11 +372,6 @@ export async function splitDelivery(ctx: Ctx, giver: string, opts: { first?: num
         levelAfterSecond: skillLevel(sdk, 'Cooking'),
         rearmed
     };
-}
-
-/** The first firing can roll every batch bad (no xp); jugs of bad wine appearing is the other sign it fired. */
-function bankless(sdk: BotSDK): boolean {
-    return sdk.getState()?.gameMessages.some(m => /ferment/i.test(m.text) && /wine/i.test(m.text) && m.tick >= (sdk.getState()?.tick ?? 0) - 1) ?? false;
 }
 
 /**
