@@ -9,6 +9,14 @@ block: WEB_PORT 9230, AGENT_PORT 8130). Labels follow
 number below was measured at `NODE_TICKRATE=300`. The 100 ms runs were
 exploration only and are called out where they differ.
 
+**Host.** The 300 ms batches ran on **fedora** (Linux, 32 cores), not the Mac. fedora was
+heavily shared that night: up to nine of rs/28's labs plus rs/53's (rs/2 coordinator to rs/26,
+00:22), and rs/56 recorded load ~25 there. The 12-89-tick bot stalls below are the ones main
+attributes to host load rather than the game (cairn://p/rs/main, 00:36). So read the measured
+end-to-end runs as a **busy host's figures, a few percent pessimistic**. The stall-free
+58-tick cycle, and the 1,151 inferred from it, is the clean figure. rs/26's bbs correction
+factor had not been published when this was written (01:15).
+
 ## 1. Recommendation
 
 Bury **dragon bones** (72 base, `bones.obj:82`) from level 1 to 99 at any bank
@@ -23,6 +31,9 @@ including the bank visit, takes **58 ticks** with a one-click-per-tick loop and
   were bot stalls, not game mechanics (measured, `prayer-bury.ts --mode=fast`,
   300 ms, 555 bones). No on-route quest gives Prayer xp: rs/3 dropped Holy
   Grail from the route on 2026-10-20, so the post-quest start *is* level 1.
+  That still holds under rs/3's final **Package B** (01:08): Dragon Slayer and its filler
+  (Goblin Diplomacy, Romeo & Juliet, Cook's Assistant, Druidic Ritual) give no Prayer
+  (read, `quest_dragon.rs2:33-34`; rs/3 `quest_points.md`).
 - **Only if Holy Grail returns** (11,000 base, level 80): 402 dragon bones,
   835 ticks (inferred). A measured run from level 80 (10,687 base, so 407
   bones) took **872 ticks**, including one 28-tick stall; its clean model is
@@ -31,7 +42,14 @@ including the bank visit, takes **58 ticks** with a one-click-per-tick loop and
   (Protect from Melee, which also covers Protect from Magic at 37), traded
   unnoted and buried on the spot. That is **21 ticks** of burying plus the trade,
   about 30 in all. Prayer 37 alone is 8 bones and 15 ticks. These bones are
-  part of the 555, so the only extra cost is the separate trade.
+  part of the 555, so the only extra cost is the separate trade. Package B
+  confirms the need: the pre-MM fights are cast at Defence 1 and are survivable
+  only under Protect from Melee, which took 0 damage in 20 measured fights (rs/3
+  `pre_mm_fights.md`). The bones ride the helper trade before Tree Gnome Village,
+  with 2 prayer potion(4) for the ~115-125 points the four fights use. Burying
+  more early (Prayer 70 is 74 bones, ~150 ticks) removes the potions, not any
+  damage, and only reorders ticks this route spends anyway (`pre_mm_fights.md`
+  section 2).
 
 ## 2. Route by level band
 
@@ -152,6 +170,29 @@ bones before the quest.
 | Delivering 28 unnoted bones per trade instead of banking | 72 | trade 9 ticks (5 with the rs/22 fix, `primitives.md` section 6) against a 4-tick bank gap | lower | The bank wins by 1-5 ticks per inventory, and the helper doesn't need to stand by. |
 | Genie lamp | any skill | n/a | n/a | Random-event reward, untradeable (`xplamp.obj:12`), and random events are off in production (`fly.toml:25`). |
 
+**Interleaving: most of Prayer can be absorbed into self-only time** (`interleaving.md`
+section 8, the absorbable-fractions table; per-stun and per-clock figures measured there at
+300 ms, the totals here inferred). Burying is a 2-tick delayed action, so it fits in three
+hosts: a pickpocket stun (1.96 bones per stun measured), the wait ticks of an un-manipulated
+4-tick Woodcutting clock (1 bone per 4 ticks) and of 5-tick fly fishing (1 per 5).
+
+- **Pickpocket stuns.** Under Package B the Magic enchants no longer compete for the stuns:
+  they all happen before Tree Gnome Village, and Thieving starts after Fight Arena
+  (`magic.md` section 5). So all of Thieving's ~100 stuns go to bones: **~196 bones, ~392 bury
+  ticks plus ~7 bank visits (~28), so ~420 standalone ticks absorbed**. Bones take a slot
+  each, so a load of ~24 lasts ~12 stuns, and ~8 top-up trades (5 ticks fixed client, 9
+  stock) are not absorbed.
+- **Gathering clocks.** The other ~348 bones (555 - 11 early - 196) fit 4-tick Woodcutting or
+  5-tick fly fishing at one per cycle, about 1,400-1,750 gathering ticks, but only where those
+  skills are not on rs/9's 3-tick cycles, which remove the free tick. Top-ups come every
+  ~50-100 gathering ticks.
+
+| Plan | Prayer's own ticks to 99 | Basis |
+|---|---|---|
+| Standalone (bank booth) | **1,151** (measured run 1,221 with stalls) | section 2 |
+| Stuns only: 11 early + 196 in stuns + 348 standalone | **about 800** (21 + 723 + 40-72 of top-ups) | inferred |
+| Stuns + un-manipulated WC/fishing clocks | **about 150-220** (21 early + ~23 top-up trades) | inferred; rs/3's README quotes ~150 for the gathering-clock case |
+
 ## 6. Gotchas
 
 - **Level-up dialogs**: 67 over 1 -> 99. A click sent while the dialog is up is
@@ -167,7 +208,8 @@ bones before the quest.
 - **Bot stalls at 300 ms.** Every long run had a few multi-tick gaps with
   nothing in the game to explain them: 12-28 ticks in the fast runs and 33-89
   in the stock run. One 300 ms batch timed out outright and was rerun. They add
-  about 6% to the fast run, and their cause is not known (section 8).
+  about 6% to the fast run. Main attributes them to host load on the lab
+  machines, not to the game (cairn://p/rs/main, 00:36; section 8).
 - **Inventory**: the account carries nothing but the 28 bones. Deposit
   everything before the first cycle. Withdraw-all into a full inventory just
   prints "You don't have enough inventory space" and does no harm.
@@ -196,10 +238,13 @@ section 6) and a deposit of about 2 ticks (inferred, not measured; the lab used
 - **The raw-packet floor** (3-tick bank gap, about 20 ticks over the skill) is
   inferred. It needs a client that sends Bury for a slot it has not seen
   filled yet. That belongs in `speedrun/lib/`, if it is ever worth it.
-- **The bot stalls** (12-89-tick gaps at 300 ms) are not diagnosed. The game
-  state at each stall was ordinary: no dialog, bones in the inventory, bank
-  closed. They probably come from the SDK/gateway/client chain and would hit
-  every skill. Logging per-hop timestamps would settle it.
+- **The bot stalls** (12-89-tick gaps at 300 ms). The game state at each stall
+  was ordinary: no dialog, bones in the inventory, bank closed. Main judges
+  them host load (00:36): the labs ran on loaded executors (fedora here; the
+  Mac at 11-18 on 16 cores for most of rs/28's skills), while bbs sits at ~3 on
+  32 cores. rs/26 is re-timing one Thieving session on bbs for a correction
+  factor; until it is published, treat the measured runs as a few percent
+  pessimistic and the 58-tick stall-free cycle as the clean rate.
 - **Priest in Peril**: off route per the brief, but `haunted_mine.md` says
   Haunted Mine requires it. If it lands on the route, Prayer saves 19 bones
   (about 40 ticks).
