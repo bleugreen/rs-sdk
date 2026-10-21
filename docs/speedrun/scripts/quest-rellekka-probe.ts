@@ -13,6 +13,20 @@ await runScript(async ({ bot, sdk }) => {
     const locs = (await sdk.scanNearbyLocs(6)).filter(l => Math.abs(l.x - Number(x)) <= 2 && Math.abs(l.z - Number(z)) <= 2);
     for (const l of locs) console.log('loc', l.name, l.id, l.x, l.z, JSON.stringify(l.options));
     console.log('pos', JSON.stringify(L.pos(sdk)), 'inv', sdk.getInventory().map(i => i.name).join(', '));
+    if (item === 'reach') {
+        // Walk to each neighbour of (x,z) and try the loc's first option there.
+        for (const [dx, dz] of [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, 1], [-1, 1], [1, -1]]) {
+            await bot.walkTo(Number(x) + dx, Number(z) + dz, 0);
+            const loc = (await sdk.scanNearbyLocs(6)).find(l => l.x === Number(x) && l.z === Number(z) && (!locName || new RegExp(locName, 'i').test(l.name)))!;
+            const n0 = sdk.getState()!.gameMessages.length;
+            await sdk.sendInteractLoc(loc.x, loc.z, loc.id, 1);
+            await sdk.waitForTicks(4);
+            const msgs = sdk.getState()!.gameMessages.slice(n0).map(m => m.text);
+            console.log('from', JSON.stringify(L.pos(sdk)), 'dialog', sdk.getState()!.dialog.isOpen || sdk.getState()!.modalOpen, JSON.stringify(msgs));
+            await bot.dismissBlockingUI();
+        }
+        return;
+    }
     if (item) {
         const loc = locs.find(l => l.x === Number(x) && l.z === Number(z) && (!locName || new RegExp(locName, 'i').test(l.name)))!;
         const it = sdk.findInventoryItem(new RegExp(item, 'i'))!;
