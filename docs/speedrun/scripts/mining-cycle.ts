@@ -77,7 +77,8 @@ await runScript(async ({ bot, sdk }) => {
         }
         if ((DROP === 'mid' || DROP === 'midclick') && target && s.tick === clickTick + 1) {
             const junk = s.inventory.find(i => !/pickaxe/i.test(i.name));
-            if (junk) sdk.sendDropItem(junk.slot).catch(() => {});
+            if (!junk) break;
+            sdk.sendDropItem(junk.slot).catch(() => {});
             const loc = liveRock(s, target[0], target[1]);
             if (DROP === 'midclick' && loc) sdk.sendInteractLoc(loc.x, loc.z, loc.id, mineOp(loc)).catch(() => {});
             midDrops++;
