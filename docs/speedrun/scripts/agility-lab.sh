@@ -25,7 +25,7 @@ wait_for() { # file phrase seconds
     echo "timeout waiting for '$2' in $1"; tail -20 "$1"; return 1
 }
 
-(cd "$ROOT/server/engine" && BUILD_VERIFY=false NODE_TICKRATE=100 LOCAL_STAFF_LEVEL=4 exec bun run src/app.ts) > "$LOG/engine.log" 2>&1 &
+(cd "$ROOT/server/engine" && BUILD_VERIFY=false BUILD_LIVE_RELOAD=false NODE_TICKRATE=${NODE_TICKRATE:-100} LOCAL_STAFF_LEVEL=4 exec bun run src/app.ts) > "$LOG/engine.log" 2>&1 &
 PIDS+=($!)
 wait_for "$LOG/engine.log" 'World ready' 900 || exit 1
 
