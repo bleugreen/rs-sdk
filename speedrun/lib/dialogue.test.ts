@@ -132,10 +132,10 @@ describe('continueBurst', () => {
 
 describe('levelup', () => {
     test('isLevelUp reads the level-up text of a continue page', () => {
-        const s = baseState({ dialog: cont('l'), recentDialogs: [{ text: ['Congratulations, you just advanced a woodcutting level.', 'Your woodcutting level is now 15.'], tick: 1, interfaceId: 1 }] });
+        const s = baseState({ tick: 100, dialog: cont('l'), recentDialogs: [{ text: ['Congratulations, you just advanced a woodcutting level.', 'Your woodcutting level is now 15.'], tick: 100, interfaceId: 1 }] });
         expect(isLevelUp(s)).toBe(true);
         expect(isLevelUp({ ...s, dialog: choice('c') })).toBe(false);
-        expect(isLevelUp({ ...s, recentDialogs: [{ text: ['Hello there'], tick: 1, interfaceId: 2 }] })).toBe(false);
+        expect(isLevelUp({ ...s, recentDialogs: [{ text: ['Hello there'], tick: 100, interfaceId: 2 }] })).toBe(false);
     });
 
     test('an old level-up history entry does not match a later page', () => {
