@@ -17,6 +17,9 @@
 // section 6). When every helper is in, <runDir>/launcher.json says
 // helpersReady: true; the scored account's run script logs in after that.
 //
+// A client that exits is logged in again with backoff, and its role is then
+// restarted (RoleLoop.relaunched) so that it re-reads the new session's state.
+//
 // Stop with SIGINT or SIGTERM (or let a `final` role exit): roles are stopped,
 // each account clicks logout (component 2458) and only then is its client
 // closed. Processes are only ever signalled through their own child handles.
@@ -170,8 +173,121 @@ async function pipeLines(stream: ReadableStream<Uint8Array>, onLine: (line: stri
 // times them out. Bun 1.3 honours `detached` though its types don't declare it.
 const OWN_GROUP = { detached: true } as {};
 
-async function exitedWithin(child: Subprocess, ms: number): Promise<boolean> {
+async function exitedWithin(child: { exited: Promise<unknown> }, ms: number): Promise<boolean> {
     return Promise.race([child.exited.then(() => true), sleep(ms).then(() => false)]);
+}
+
+/** What RoleLoop needs of a role process (a Bun Subprocess, or a fake in tests). */
+export interface RoleProcess {
+    readonly pid: number;
+    readonly exitCode: number | null;
+    readonly exited: Promise<number | null>;
+    kill(signal: 'SIGTERM' | 'SIGKILL'): void;
+}
+
+export interface RoleLoopHooks {
+    /** Start the role process. Called afresh for every start, so its environment carries the current login. */
+    spawn(): RoleProcess;
+    isStopping(): boolean;
+    log(line: string): void;
+    /** A `final` role exited on its own: stop everything. */
+    onFinal(why: string, code: number): void;
+    /** Grace before SIGKILL when a relaunch terminates the role (default 15 s). */
+    killGraceMs?: number;
+}
+
+/**
+ * One account's role process: started once its client is in the world,
+ * restarted with backoff when it fails, left alone once it finishes (exit 0),
+ * and restarted at once on every client relaunch. A relaunched client is a new
+ * session behind the same loopback gateway, but the SDK connection the old role
+ * holds keeps reporting the old session's state with inGame true and no
+ * reconnect signal; only a fresh role start passes through runStandalone's
+ * fresh-state gate. Roles are restartable by contract, so restarting is safe.
+ */
+export class RoleLoop {
+    private proc: RoleProcess | null = null;
+    private relaunch = false;
+    private ended = false;
+    private wake: (() => void) | null = null;
+    private readonly backoff = new Backoff({ initialMs: 15_000, maxMs: 5 * 60_000, resetAfterMs: 10 * 60_000 });
+    done: Promise<void> = Promise.resolve();
+
+    constructor(
+        readonly entry: Pick<LaunchEntry, 'account' | 'role' | 'final'>,
+        private readonly h: RoleLoopHooks
+    ) {}
+
+    get running(): RoleProcess | null {
+        return this.proc;
+    }
+
+    start(): Promise<void> {
+        this.done = this.loop().finally(() => {
+            this.ended = true;
+        });
+        return this.done;
+    }
+
+    private async loop(): Promise<void> {
+        const { account, role, final } = this.entry;
+        while (!this.h.isStopping()) {
+            const started = Date.now();
+            const child = this.h.spawn();
+            this.proc = child;
+            this.h.log(`[launcher] ${account}: role ${role} started (pid ${child.pid})`);
+            await child.exited;
+            this.proc = null;
+            if (this.h.isStopping()) return;
+            if (this.takeRelaunch()) continue;
+            if (final) {
+                this.h.onFinal(`${account}: final role ${role} exited with code ${child.exitCode}`, child.exitCode ?? 1);
+                return;
+            }
+            if (child.exitCode === 0) {
+                // The role finished its job (handover, a bounded giver run); the account stays logged in until the stop.
+                this.h.log(`[launcher] ${account}: role ${role} finished; not restarting it`);
+                return;
+            }
+            const wait = this.backoff.failure(started, Date.now());
+            this.h.log(`[launcher] ${account}: role exited with code ${child.exitCode}; restarting in ${Math.round(wait / 1000)}s`);
+            await this.pause(wait);
+            this.takeRelaunch();
+        }
+    }
+
+    private takeRelaunch(): boolean {
+        if (!this.relaunch) return false;
+        this.relaunch = false;
+        this.backoff.reset();
+        this.h.log(`[launcher] ${this.entry.account}: client relaunched; restarting role ${this.entry.role}`);
+        return true;
+    }
+
+    private pause(ms: number): Promise<void> {
+        return new Promise(resolve => {
+            const done = () => {
+                clearTimeout(timer);
+                clearInterval(poll);
+                this.wake = null;
+                resolve();
+            };
+            const timer = setTimeout(done, ms);
+            const poll = setInterval(() => this.h.isStopping() && done(), 500);
+            this.wake = done;
+        });
+    }
+
+    /** The account's client was relaunched and is in the world again: restart the role now, without backoff. */
+    async relaunched(): Promise<void> {
+        if (this.ended || this.h.isStopping()) return;
+        this.relaunch = true;
+        const p = this.proc;
+        if (p && p.exitCode === null) {
+            p.kill('SIGTERM');
+            if (!(await exitedWithin(p, this.h.killGraceMs ?? 15_000))) p.kill('SIGKILL');
+        } else this.wake?.();
+    }
 }
 
 class Launcher {
@@ -323,17 +439,22 @@ class AccountRun {
     loggedInAt: number | null = null;
     logins = 0;
     private lite: Subprocess<'ignore', 'pipe', 'pipe'> | null = null;
-    private roleProc: Subprocess<'ignore', 'pipe', 'pipe'> | null = null;
     private botEnv: Record<string, string> = {};
     private readonly relogin = new Backoff({ initialMs: 10_000, maxMs: 60_000, resetAfterMs: 5 * 60_000 });
-    private readonly roleBackoff = new Backoff({ initialMs: 15_000, maxMs: 5 * 60_000, resetAfterMs: 10 * 60_000 });
     private supervising: Promise<void> | null = null;
-    private roleLoop: Promise<void> | null = null;
+    private readonly roles: RoleLoop;
 
     constructor(
         private readonly L: Launcher,
         readonly entry: LaunchEntry
-    ) {}
+    ) {
+        this.roles = new RoleLoop(entry, {
+            spawn: () => this.spawnRole(),
+            isStopping: () => this.L.isStopping,
+            log: line => this.L.log(line),
+            onFinal: (why, code) => this.L.onStop(why, code)
+        });
+    }
 
     private get envPath(): string {
         return join(this.L.cfg.botsDir, this.entry.account, 'bot.env');
@@ -369,8 +490,7 @@ class AccountRun {
     async start(): Promise<void> {
         const first = await this.session();
         this.supervising = this.supervise(first);
-        this.roleLoop = this.runRole();
-        await Promise.race([sleep(1000), this.roleLoop]);
+        await Promise.race([sleep(1000), this.roles.start()]);
     }
 
     /** One login: resolves once the client is in the world, with a promise for the session's end. */
@@ -450,38 +570,28 @@ class AccountRun {
             await this.backoff(exit, this.loggedInAt);
             if (this.L.isStopping) return;
             s = await this.session();
+            if (this.state === 'online' && !this.L.isStopping) await this.roles.relaunched();
         }
     }
 
-    private async runRole(): Promise<void> {
+    /** One role process, its output piped to <account>.role.log; it resolves `exited` only once that output is drained. */
+    private spawnRole(): RoleProcess {
         const e = this.entry;
-        while (!this.L.isStopping) {
-            const started = Date.now();
-            const env = roleEnv(process.env, this.botEnv, e, this.L.gatewayUrl, this.L.cfg.runDir, this.loggedInAt ?? Date.now());
-            const child = Bun.spawn([process.execPath, `speedrun/helpers/${e.role}.ts`, e.account, ...e.args], { ...OWN_GROUP, cwd: ROOT, env, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' });
-            this.roleProc = child;
-            this.L.log(`[launcher] ${e.account}: role ${e.role} started (pid ${child.pid})`);
-            const onLine = (line: string) => {
-                this.note('role', line);
-                if (line.startsWith('RESULT ')) this.L.log(`[${e.account}] ${line}`);
-            };
-            await Promise.all([pipeLines(child.stdout, onLine), pipeLines(child.stderr, onLine), child.exited]);
-            this.roleProc = null;
-            if (this.L.isStopping) return;
-            if (e.final) {
-                this.L.onStop(`${e.account}: final role ${e.role} exited with code ${child.exitCode}`, child.exitCode ?? 1);
-                return;
-            }
-            if (child.exitCode === 0) {
-                // The role finished its job (handover, a bounded giver run); the account stays logged in until the stop.
-                this.L.log(`[launcher] ${e.account}: role ${e.role} finished; not restarting it`);
-                return;
-            }
-            const wait = this.roleBackoff.failure(started, Date.now());
-            this.L.log(`[launcher] ${e.account}: role exited with code ${child.exitCode}; restarting in ${Math.round(wait / 1000)}s`);
-            const until = Date.now() + wait;
-            while (Date.now() < until && !this.L.isStopping) await sleep(500);
-        }
+        const env = roleEnv(process.env, this.botEnv, e, this.L.gatewayUrl, this.L.cfg.runDir, this.loggedInAt ?? Date.now());
+        const child = Bun.spawn([process.execPath, `speedrun/helpers/${e.role}.ts`, e.account, ...e.args], { ...OWN_GROUP, cwd: ROOT, env, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' });
+        const onLine = (line: string) => {
+            this.note('role', line);
+            if (line.startsWith('RESULT ')) this.L.log(`[${e.account}] ${line}`);
+        };
+        const exited = Promise.all([pipeLines(child.stdout, onLine), pipeLines(child.stderr, onLine), child.exited]).then(() => child.exitCode);
+        return {
+            pid: child.pid,
+            get exitCode() {
+                return child.exitCode;
+            },
+            exited,
+            kill: signal => child.kill(signal)
+        };
     }
 
     /** Role first (it may be mid-trade), then logout by the button, then the client. */
@@ -491,12 +601,12 @@ class AccountRun {
             return;
         }
         this.state = 'stopping';
-        const role = this.roleProc;
+        const role = this.roles.running;
         if (role && role.exitCode === null) {
             role.kill('SIGTERM');
             if (!(await exitedWithin(role, 15_000))) role.kill('SIGKILL');
         }
-        await this.roleLoop?.catch(() => undefined);
+        await this.roles.done.catch(() => undefined);
         const lite = this.lite;
         if (lite && lite.exitCode === null) {
             const out = await this.logout(lite).catch(e => {
