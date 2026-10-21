@@ -160,6 +160,31 @@ export function msgSince(re: RegExp, since: number): Pred {
     return s => s.gameMessages.some(m => re.test(m.text) && ((m as { tick?: number }).tick ?? since) >= since);
 }
 
+/**
+ * Walk by clicking the destination tile (the client's own router), re-clicking
+ * until within `tol`. For areas the SDK's precomputed long-path map does not
+ * cover, such as the bridged fishing platform, where bot.walkTo finds no waypoints.
+ */
+export async function clickWalk(sdk: BotSDK, x: number, z: number, tol = 0, maxTicks = 60): Promise<StepRecord & { tiles: number }> {
+    const p0 = pos(sdk.getState());
+    let last = p0;
+    let tiles = 0;
+    const t0 = now(sdk);
+    let sent = t0;
+    await sdk.sendWalk(x, z);
+    const r = await waitUntil(sdk, s => {
+        const p = pos(s);
+        const d = Math.max(Math.abs(p.x - last.x), Math.abs(p.z - last.z));
+        if (p.level === last.level && d <= 2) tiles += d;
+        const moved = d > 0;
+        last = p;
+        if (p.level === p0.level && Math.max(Math.abs(p.x - x), Math.abs(p.z - z)) <= tol) return true;
+        if (!moved && s.tick - sent >= 3) { sent = s.tick; void sdk.sendWalk(x, z); }
+        return false;
+    }, maxTicks);
+    return { name: `click-walk (${p0.x},${p0.z},${p0.level})->(${x},${z})`, ticks: (r?.tick ?? NaN) - t0, tiles, note: `${tiles} tiles stepped${r ? '' : ' TIMEOUT at ' + JSON.stringify(pos(sdk.getState()))}` };
+}
+
 /** Print the dialogue runs of a talk/locTalk record and pass it through. */
 export function withRuns<T extends StepRecord & { run?: DialogueRun }>(r: T): T {
     if (r.run) r.note = [r.note, `runs ${runsOf(r.run)}`].filter(Boolean).join('; ');
