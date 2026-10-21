@@ -84,7 +84,7 @@ histogram (the 3-tick knife cadence) rather than its average. The speedrun/lib w
 still catches a wedged tab: it relaunched 3.1 s after the wedge.
 
 Two lite-client fixes the quest route depends on hold on the browser client too, checked
-with `scripts/runclient-check.ts` on both clients against one local engine (bgsrv-less
+with `scripts/runclient-check.ts` on both clients against one local engine (the
 `local` Mac, `NODE_TICKRATE=300`, load 150-190 on 16 cores, 2026-10-21, cairn://p/rs/116):
 
 - **Sea Slug's bridged doors** (cairn://p/rs/54). For both platform doors, `loc_1533`
