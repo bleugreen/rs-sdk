@@ -1,7 +1,7 @@
 // Lab only (LOCAL_STAFF_LEVEL=4, docs/speedrun/LAB.md): teleport to Varrock west bank and,
 // with --stock, give this account 1,000 noted of each of the 23 item types in
-// mule-lab-packages.json and bank them.
-//   bun docs/speedrun/scripts/mule-lab-stock.ts <bot> [--stock]
+// mule-lab-packages.json and bank them; --empty only banks the inventory.
+//   bun docs/speedrun/scripts/mule-lab-stock.ts <bot> [--stock|--empty]
 import { runScript } from '../../../sdk/runner';
 import { depositAllExcept, MULE_STAND } from '../../../speedrun/helpers/mule';
 
@@ -20,8 +20,16 @@ if (import.meta.main) {
             if (p && p.worldX >= 3050 && p.worldX <= 3156 && p.worldZ >= 3056 && p.worldZ <= 3136) await bot.skipTutorial();
             await sdk.sendSay(tele(MULE_STAND.x, MULE_STAND.z));
             await sdk.waitForTicks(3);
-            if (process.argv.includes('--stock')) {
-                for (const name of LAB_ITEMS) {
+            const stock = process.argv.includes('--stock');
+            if (stock || process.argv.includes('--empty')) {
+                // Bank the pack first (a fresh account carries 18 starter items), so the gives fit.
+                if (sdk.getInventory().length) {
+                    const opened = await bot.openBank();
+                    if (!opened.success) throw new Error(opened.message);
+                    await depositAllExcept(sdk);
+                    await bot.closeBank();
+                }
+                for (const name of stock ? LAB_ITEMS : []) {
                     await sdk.sendSay(`::give cert_${name} 1000`);
                     await sdk.waitForTicks(1);
                 }
