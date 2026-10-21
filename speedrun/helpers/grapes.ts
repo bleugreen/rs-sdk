@@ -25,6 +25,7 @@
 // camping, default 35), bankAt (grapes held before banking, default 26), fightLevel
 // (Attack/Strength/Defence trained on chickens before goblins, default 10).
 import type { BotWorldState, GroundItem, NearbyLoc, NearbyNpc } from '../../sdk/types';
+import { advance } from '../lib/dialogue';
 import { waitUntil } from '../lib/wait';
 import type { Role, RoleContext } from './role';
 import { runStandalone } from './role';
@@ -105,6 +106,40 @@ const GUILD_GRAPES = { x: 3144, z: 3450, level: 2 };
 const GUILD_JUG = { x: 3141, z: 3447, level: 2 };
 const GUILD_SINK = { x: 3146, z: 3451 };
 const GRAPE_RESPAWN_TICKS = 80;
+
+// Phoenix Gang hideout (m50_152.jm2, underground) and the solo half of Shield of Arrav
+// that opens its door (quest_blackarmgang.rs2 phoenixdoor: %phoenixgang >= joined).
+const PHOENIX_GRAPES = { x: 3237, z: 9761, level: 0 };
+/** Ladder down (loc 1754, m50_52.jm2) in the VTAM building, south-east Varrock. */
+const PHOENIX_LADDER_DOWN = { x: 3244, z: 3383, id: 1754 };
+const PHOENIX_DOOR = { x: 3247, z: 9779, id: 2397 };
+const VARROCK_EAST_BANK: Tile = { x: 3253, z: 3420 };
+const RELDO: Tile = { x: 3209, z: 3495 };
+/** questbookcase (loc 2402) in the palace library: op2 Search gives the book while the quest is started. */
+const ARRAV_BOOKCASE = { x: 3212, z: 3493, id: 2402 };
+const BARAEK: Tile = { x: 3218, z: 3435 };
+/** Jonny the Beard in the Blue Moon Inn; he always drops the intelligence report. */
+const BLUE_MOON_INN: Box = { x1: 3214, z1: 3390, x2: 3232, z2: 3404 };
+const JONNY: Tile = { x: 3223, z: 3395 };
+const underground = (p: { z: number }) => p.z > 9000;
+
+/** A grape ground spawn and how to get to it and away from it. */
+interface Spawn {
+    name: string;
+    tile: { x: number; z: number; level: number };
+    jug?: { x: number; z: number; level: number };
+    bank: Tile;
+    /** True when the account is in the spawn's building (and must leave before banking). */
+    inside(): boolean;
+    goTo(): Promise<void>;
+    leave(): Promise<void>;
+}
+
+class NotPhoenixMember extends Error {
+    constructor() {
+        super('not a Phoenix Gang member yet');
+    }
+}
 
 /** Tutorial kit pieces this role uses: weapon and shield worn, axe and tinderbox for a fallback fire. */
 const STARTER_GEAR = /^(bronze sword|wooden shield|bronze axe|tinderbox)$/i;
@@ -541,17 +576,37 @@ class Gatherer {
         return this.state().groundItems.find(g => g.id === id && g.x === t.x && g.z === t.z);
     }
 
-    async camp(bankAt: number): Promise<void> {
+    readonly guild: Spawn = {
+        name: 'guild',
+        tile: GUILD_GRAPES,
+        jug: GUILD_JUG,
+        bank: VARROCK_WEST_BANK,
+        inside: () => position(this.sdk).level > 0,
+        goTo: () => this.goToSpawn(),
+        leave: () => this.leaveGuild()
+    };
+
+    readonly phoenix: Spawn = {
+        name: 'phoenix',
+        tile: PHOENIX_GRAPES,
+        bank: VARROCK_EAST_BANK,
+        inside: () => underground(position(this.sdk)),
+        goTo: () => this.enterHideout(),
+        leave: () => this.leaveHideout()
+    };
+
+    async camp(bankAt: number, spawn: Spawn = this.guild): Promise<void> {
         if (invCount(this.sdk, ITEM.grapes) >= bankAt || freeSlots(this.sdk) <= 1) {
-            if (position(this.sdk).level > 0) await this.leaveGuild();
-            await this.bank(VARROCK_WEST_BANK, null, false);
+            if (spawn.inside()) await spawn.leave();
+            await this.bank(spawn.bank, null, false);
             return;
         }
         const p = position(this.sdk);
-        if (p.level !== GUILD_GRAPES.level || dist(p, GUILD_GRAPES) > 4) {
-            await this.goToSpawn();
+        if (p.level !== spawn.tile.level || dist(p, spawn.tile) > 4 || (spawn.name === 'phoenix' && !underground(p))) {
+            await spawn.goTo();
             return;
         }
+        const GUILD_GRAPES = spawn.tile;
         // The spawn is a race (other players camp it too): stand on the spawn tile, watch
         // every tick from shortly before the respawn is due, and send the pickup packet
         // the tick the grape appears. The jug spawn is only visited when no grape is due.
@@ -593,7 +648,7 @@ class Gatherer {
                 lastGone = tick(this.sdk);
                 visibleSince = -1;
             }
-            const jug = this.groundAt(GUILD_JUG, ITEM.jugEmpty);
+            const jug = spawn.jug ? this.groundAt(spawn.jug, ITEM.jugEmpty) : undefined;
             if (!due && jug && freeSlots(this.sdk) > 2) {
                 const before = invCount(this.sdk, ITEM.jugEmpty);
                 await this.bot.pickupItem(jug);
@@ -604,6 +659,130 @@ class Gatherer {
             if (!onSpawn() && !due) await this.bot.walkTo(GUILD_GRAPES.x, GUILD_GRAPES.z, 0);
             await this.sdk.waitForTicks(due ? 1 : Math.min(5, GRAPE_RESPAWN_TICKS - 15 - since));
         }
+    }
+
+    // ---- the Phoenix Gang hideout spawn ----
+
+    phoenixMember: boolean | null = null;
+
+    async enterHideout(): Promise<void> {
+        if (!underground(position(this.sdk))) {
+            await walkNear(this.ctx, PHOENIX_LADDER_DOWN.x, PHOENIX_LADDER_DOWN.z, 2);
+            const ladder = (await this.sdk.scanNearbyLocs(6)).find(l => l.id === PHOENIX_LADDER_DOWN.id || (l.x === PHOENIX_LADDER_DOWN.x && l.z === PHOENIX_LADDER_DOWN.z));
+            if (ladder) await this.bot.interactLoc(ladder, /climb-down|climb down|climb/i);
+            else await this.sdk.sendInteractLoc(PHOENIX_LADDER_DOWN.x, PHOENIX_LADDER_DOWN.z, PHOENIX_LADDER_DOWN.id, 1);
+            const down = await waitUntil(this.sdk, s => (s.player?.worldZ ?? 0) > 9000, { maxTicks: 20 });
+            if (!down.ok) throw new Error(`could not climb down into the hideout from ${JSON.stringify(position(this.sdk))}`);
+        }
+        // Through the gang's door (open only to members), then to the spawn.
+        const reach = await this.bot.walkTo(PHOENIX_GRAPES.x, PHOENIX_GRAPES.z, 0);
+        if (dist(position(this.sdk), PHOENIX_GRAPES) <= 1) {
+            this.phoenixMember = true;
+            return;
+        }
+        await walkNear(this.ctx, PHOENIX_DOOR.x - 1, PHOENIX_DOOR.z + 1, 1).catch(() => {});
+        await this.sdk.sendInteractLoc(PHOENIX_DOOR.x, PHOENIX_DOOR.z, PHOENIX_DOOR.id, 1);
+        await this.sdk.waitForTicks(4);
+        if (this.sdk.getState()?.dialog.isOpen) {
+            // Straven stopped us: not a member.
+            await this.bot.dismissBlockingUI();
+            this.phoenixMember = false;
+            throw new NotPhoenixMember();
+        }
+        await this.bot.walkTo(PHOENIX_GRAPES.x, PHOENIX_GRAPES.z, 0);
+        if (dist(position(this.sdk), PHOENIX_GRAPES) > 1) throw new Error(`hideout: could not reach the spawn (${reach.message})`);
+        this.phoenixMember = true;
+    }
+
+    async leaveHideout(): Promise<void> {
+        await this.bot.walkTo(PHOENIX_LADDER_DOWN.x, 9783, 1);
+        const up = (await this.sdk.scanNearbyLocs(8)).find(l => /ladder/i.test(l.name) && l.optionsWithIndex.some(o => /climb/i.test(o.text)));
+        if (up) await this.bot.interactLoc(up, /climb-up|climb up|climb/i);
+        const r = await waitUntil(this.sdk, s => (s.player?.worldZ ?? 0) < 9000, { maxTicks: 20 });
+        if (!r.ok) throw new Error('could not climb out of the hideout');
+    }
+
+    /**
+     * Talk to an npc and walk its dialogue: on a choice page take the first option
+     * matching one of `prefer` (in the option list's order), else the last option
+     * (an exit such as "Why not?"); continue pages are clicked through.
+     */
+    async converse(npc: RegExp, prefer: RegExp[]): Promise<string[]> {
+        const said: string[] = [];
+        const t = await this.bot.talkTo(npc);
+        if (!t.success) throw new Error(`talk to ${npc}: ${t.message}`);
+        const choose = new RegExp(prefer.map(p => p.source).join('|'), 'i');
+        for (let i = 0; i < 60; i++) {
+            const r = await advance(this.sdk, { choose, maxTicks: 6 });
+            if (!r.ok && r.reason === 'no fresh page' && !this.sdk.getState()?.dialog.isOpen) break;
+            if (r.text) said.push(r.text.slice(0, 120));
+            if (!r.ok && r.kind === 'choice') {
+                const opts = this.sdk.getState()?.dialog.options ?? [];
+                const last = opts[opts.length - 1];
+                if (last) await this.sdk.sendClickDialog(last.index);
+                await this.sdk.waitForTicks(1);
+            }
+        }
+        this.ctx.log('conversation', { npc: npc.source, said: said.slice(-6) });
+        return said;
+    }
+
+    /**
+     * Join the Phoenix Gang: the solo first half of Shield of Arrav. Every step is safe
+     * to repeat (the quest options only appear at their stage), so a restart replays
+     * the chain from the top; the intelligence report in the inventory skips to the end.
+     */
+    async joinPhoenixGang(): Promise<void> {
+        const { sdk, bot } = this;
+        const report = () => sdk.getInventory().some(i => /^intelligence report$/i.test(i.name));
+        if (!report()) {
+            if (invCount(sdk, ITEM.coins) < 20) {
+                await walkNear(this.ctx, VARROCK_WEST_BANK.x, VARROCK_WEST_BANK.z, 3);
+                await openBank(this.ctx);
+                const c = sdk.getBankItems().find(i => i.id === ITEM.coins);
+                if (c) await bot.withdrawItem(c, -1);
+                await closeBank(bot, sdk);
+                if (invCount(sdk, ITEM.coins) < 20) throw new Error('Phoenix route: Baraek wants 20 coins and there are not 20');
+            }
+            if (underground(position(sdk))) await this.leaveHideout();
+            await walkNear(this.ctx, RELDO.x, RELDO.z, 3);
+            await this.converse(/^reldo$/i, [/in search of a quest/, /what do you do/]);
+            if (!sdk.getInventory().some(i => /^the shield of arrav$/i.test(i.name))) {
+                await sdk.sendInteractLoc(ARRAV_BOOKCASE.x, ARRAV_BOOKCASE.z, ARRAV_BOOKCASE.id, 2);
+                await waitUntil(sdk, s => s.inventory.some(i => /^the shield of arrav$/i.test(i.name)), { maxTicks: 15 });
+                await bot.dismissBlockingUI();
+            }
+            const book = sdk.getInventory().find(i => /^the shield of arrav$/i.test(i.name));
+            if (book) {
+                await sdk.sendUseItem(book.slot, 1);
+                await sdk.waitForTicks(3);
+                await bot.closeInterface().catch(() => undefined);
+            }
+            await this.converse(/^reldo$/i, [/what do you do/]);
+            await walkNear(this.ctx, BARAEK.x, BARAEK.z, 3);
+            await this.converse(/^baraek$/i, [/find the phoenix gang/, /have 20 gold coins/, /in search of a quest/]);
+            await this.enterHideout().catch(e => {
+                if (!(e instanceof NotPhoenixMember)) throw e;
+            });
+            if (this.phoenixMember) return;
+            await this.converse(/^straven$/i, [/i know who you are/, /offer you my services/, /why not/]);
+            await this.leaveHideout();
+            // Kill Jonny the Beard for his report.
+            for (let attempt = 0; attempt < 40 && !report(); attempt++) {
+                checkAbort(this.ctx);
+                await this.eatIfLow();
+                const r = await this.fightOne(/^jonny the beard$/i, BLUE_MOON_INN, JONNY, /^intelligence report$/i);
+                if (r === 'low') await this.rest();
+                if (r === 'none') await sdk.waitForTicks(5);
+            }
+            if (!report()) throw new Error('Phoenix route: no intelligence report from Jonny the Beard');
+        }
+        await this.enterHideout().catch(e => {
+            if (!(e instanceof NotPhoenixMember)) throw e;
+        });
+        if (this.phoenixMember) return;
+        await this.converse(/^straven$/i, [/intelligence report/]);
+        this.ctx.log('phoenix', { joined: !report() });
     }
 
     // ---- goblins: the drop-table source ----
