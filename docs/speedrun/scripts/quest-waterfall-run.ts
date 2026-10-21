@@ -186,8 +186,15 @@ await runScript(async ({ bot, sdk }) => {
             await opLoc(sdk, c, BAX_CRATE, 2589, 9888, 1);
             await waitTicksFor(sdk, () => invCount(sdk, /key/i) > 0, 20);
         });
+        await rec.seg('walk to corridor door (2568,9893)', 'travel', async c => {
+            await walk(bot, sdk, c, 2568, 9893, 0);
+        });
+        await rec.seg('key on corridor door, walk through', 'interaction', async c => {
+            await useOnLoc(sdk, c, /key/i, BAX_DOOR2, 2568, 9893);
+            await waitTicksFor(sdk, s => (s.player?.worldZ ?? 0) >= 9894, 20);
+        });
         await rec.seg('walk to puzzle-room door (2566,9901)', 'travel', async c => {
-            await walk(bot, sdk, c, 2566, 9900, 0);
+            await walk(bot, sdk, c, 2566, 9901, 0);
         });
         await rec.seg('key on door: into the puzzle room', 'interaction', async c => {
             await useOnLoc(sdk, c, /key/i, BAX_DOOR2, 2566, 9901);
