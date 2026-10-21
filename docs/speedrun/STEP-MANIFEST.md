@@ -351,62 +351,54 @@ scripts are in section 4; the shared primitives and their build order are in sec
   `quest-gnome-lib.ts` (being folded into `speedrun/lib` by rs/94).
 - **logoutSafe:** no for the step as a whole; segment boundaries outside the three stretches are safe.
 
-### 3. Woodcutting: `speedrun/skills/woodcutting.ts` (S07)
+### 3. Woodcutting: `speedrun/skills/woodcutting.ts` (S07, with S25b's bones)
 
 - **Serves:** S07, Woodcutting 1-99 near Taverley: normal trees to 15, oaks 15-73 from (2914,3494),
-  willows 73-99 from (2920,3406) (`skills/woodcutting.md` §1).
+  willows 73-99 from (2920,3406) (`skills/woodcutting.md` §1). **It also carries S25b**: 355 dragon
+  bones buried inside the knife loop, which takes Prayer to ~94 before S10b
+  (`research/bones-placement.md` §2, §5). S10a is retired.
 - **Parameters:** `band` table (method preset `tree` / `oak` / `willow` and its standing tile),
-  `technique: 'knife' | 'plain'` (chosen by the host gate, not by hand), `reanchor: 'xp'`,
-  `dismiss: 'now'`, `keepProducts`, `respawnD` (felled-tree wait, from the observed player count).
-- **Preconditions:** rune axe (any level, `skills/woodcutting.md` §1), knife and at least 1 normal
-  log, Fletching 1, members world (the demo is one, `fly.toml:23`). Free inventory except the kit.
-  Position on the band's tile. **Tab gate (main, 05:30 and 05:50, via the rs/103 coordinator):**
-  knife mode only when the direct in-page probe reads at least **58 of 60**, state publication p90
-  is at most **400 ms** over the probe minute, there is at most **1 catch-up interval (< 200 ms) per
-  minute**, and the tab loop rate p10 is at least about **50 loops per second**. Otherwise plain, re-probed periodically (every 500 ticks while plain,
-  `skills/tick-manipulation.md` §5). The in-page program resyncs on observed slips (rs/96, rs/97,
-  rs/102).
-- **Postconditions:** Woodcutting 99; axe, knife and logs kept (the knife loop consumes no logs in
-  steady state; measured, all 10 logs kept over 150 willow logs, `skills/tick-manipulation.md` §1).
-  Items out: none (products are dropped).
-- **Ticks:** expected **3,958** (normal 4-tick cycle, demo respawn D=20; inferred,
-  `woodcutting-model.ts`, 400 simulated runs; `skills/woodcutting.md` §2). Best **3,028** (inferred:
-  ×0.765, the knife ratio measured on willows at 99, 5.53 to 4.23 ticks per log, `tickmanip-cycle.ts`;
-  applying it to oak is inferred; `skills/woodcutting.md` §2). **In the page the knife measured
-  4.83 ticks per willow log** against the lite client's 4.23 (rs/97 in-page results via main,
-  05:50). At that ratio (4.83 / 5.53 = 0.873) the best is about **3,460** (inferred), and the knife
-  is worth about 500 rather than 930. The fold-in (rs/111) should take the in-page figure and ask
-  rs/97 why willows lose about 0.6 ticks per log in the page when iron and fly match the lite
-  client. Fallback 3,958, plus a few hundred
-  for one move to a second site under contention (estimated in `skills/README.md`, open question 5).
-  Quiet server: 4,001 normal and 3,061 knife (inferred, same table).
-- **Primitives:** `lib/programs.ts` `runProgram(sdk, 'knife-cycle', {method, technique, untilLevel,
-  reanchor, dismiss})` [rs/97]; `probeInPage`; `lib/hostgate.ts` (`HostGate`, which needs the
-  run-night rule, section 5 item 5). **Missing:** a program-side band change (oak to willow at 73
-  means a stop, a walk and a new start; fine as three steps in the module); the forced-slip test
-  hook (section 5, item 7).
-- **Mode:** in-page. The starter goes out on R+1 and the target click must land in the tick after
-  the roll (`skills/tick-manipulation.md` §5).
-- **Fallback:** plain loop through the same program (`technique: 'plain'`) when the gate is off.
-  The program re-anchors itself on a roll seen off phase. A late starter costs about one plain
-  cycle and does not lose the lock (read, `cut_logs.rs2:83-85`; measured by holding 15% of
-  starters a tick: willows **5.76** ticks per log against 5.03 on time and 5.84 plain;
-  `skills/README.md`, open question 1).
-- **Acceptance, local:** browser tab, lab engine at 300 ms, willows at 99: knife within 5% of **4.83**
-  ticks per log, rs/97's in-page figure (and the target is 4.23, the lite figure, if rs/97 finds
-  the gap), over 200+ logs; plain within 5% of 5.53. Normal trees from level 1: within 5% of
-  **7.24** ticks per log (in-page). **Forced slip:** hold 15% of starters
-  one tick. Pass: within 5% of **5.76** and never above plain, plus a second run with 3 injected
-  overrun minutes (publication gaps > 400 ms followed by a < 200 ms catch-up) where the gate turns
-  the knife off within one probe window. Oaks 65-74: within 5% of the measured **8.41** base xp
-  per tick (`skills/woodcutting.md` §2).
-- **Acceptance, demo (throwaway):** from Ashburn, a throwaway with the starter bronze axe at normal
-  trees, 5 rounds of 20 logs knife and plain, alternating (the shape of the demo relay run in
-  `skills/README.md`, open question 1). Pass: in-page probe at least 58 of 60, and knife ticks per
-  expected roll within 5% of the local figure at the same level and tree.
-- **Start from:** rs/97 `programs/knife-cycle.ts` (presets `tree`, `oak`, `willow`); `tickmanip-cycle.ts`,
-  `woodcutting-chop.ts --click predict`, `woodcutting-model.ts`.
-- **logoutSafe:** yes, at band boundaries.
+  `technique: 'knife' | 'plain'` (chosen by the host gate, not by hand), `bury: boolean` (the bury
+  variant), `reanchor: 'xp'`, `dismiss: 'burst' | 'click'`, `respawnD` (felled-tree wait, from the
+  observed player count), `bones` (the giver; loads of 23).
+- **Preconditions:** rune axe (H4; the adamant axe is the priced fallback, +441), knife and at least
+  1 normal log, Fletching 1, members world. Free inventory except the kit. Position on the band's tile.
+  **The bone giver** (Ashburn, rs/117) on the next tile, (2913,3494) or (2920,3407), requesting first
+  while SCORED holds 2 bones. **Tab gate (tenet 12, run.ts entry):** knife mode only while it holds;
+  otherwise plain, re-probed every 500 ticks while plain (`skills/tick-manipulation.md` §5); the
+  pause rule applies. The in-page program resyncs on observed slips.
+- **The bury variant** (`research/bones-placement.md` §2): on the label of roll R send `[knife on
+  logs, button 8889, drop, bury]`; on R+2 send only the tree click, which lands on R+3 and rolls at
+  once. Accept a trade on a roll label once the last bone is buried, then bootstrap the knife cycle
+  again (5 ticks per load, roll gap 8 instead of 3).
+- **Postconditions:** Woodcutting 99; Prayer about 94; axe, knife and logs kept. Items out: none.
+- **Ticks:** expected and best **3,390** knife (inferred: `skills/woodcutting.md` §2's 3,958 plain
+  less the model's ~77 ticks of level-ups, measured 0 when the page is answered on the next label,
+  `research/levelup-cost.md` §2, §6; then the knife at rs/97's in-page 4.83 against plain 5.53 ticks
+  per willow log, M0550). Fallback **3,881** plain. The bury adds **110** expected / **80** best on
+  Prayer's line (entry 15). The oak-to-willow walk (46 i) is a leg (entry 11). A move to a second site
+  under contention costs "a few hundred" (estimated, `skills/README.md` open question 5).
+- **Primitives:** `lib/programs.ts` `runProgram(sdk, 'knife-cycle', {...})`; `probeInPage`;
+  `lib/hostgate.ts`, `hostgate-verdict.ts`. **Missing:** the bury variant in the in-page program
+  (cairn://p/rs/137); a program-side band change (a stop, a walk and a new start is fine); the
+  forced-slip test hook (section 5, item 7).
+- **Mode:** in-page.
+- **Fallback:** plain loop with the bury when the gate is off (0.230 bones per tick, 0.12-0.20 ticks
+  per bone against the plain column). If the bury variant fails in the page: the bones go to the
+  Mining `stay2` lap (up to ~200, entry 4) and the booth (+263 in all; +625 if all at the booth).
+- **Acceptance, local:** browser tab, lab engine at 300 ms, willows at 99: knife within 5% of
+  **4.83** ticks per log over 200+ logs; plain within 5% of 5.53. Normal trees from level 1 within 5%
+  of **7.24**. **Bury:** oak at 60 with a real helper trading 23-bone loads: at least **0.29 bones
+  per tick** and base xp per tick within 7% of the no-bury knife figure (measured 0.298 and -6.9% on
+  the lite client, `bones-wc.ts`); 14 of 14 trades in 4 ticks. **Forced slip:** hold 15% of starters
+  one tick: within 5% of **5.76** and never above plain, and 3 injected overrun minutes turn the knife
+  off within one probe window.
+- **Acceptance, demo (throwaway):** from Ashburn, normal trees with the starter axe, 5 rounds of 20
+  logs knife and plain, alternating; then 2 rounds with the bury (any bones). Pass: probe at least 58
+  of 60, knife ticks per roll within 5% of the local figure, and the bury keeps the 3-tick roll gaps.
+- **Start from:** rs/97 `programs/knife-cycle.ts`; `docs/speedrun/scripts/bones-wc.ts`
+  (`--mode=knifebury`), `tickmanip-cycle.ts`, `woodcutting-model.ts`.
+- **logoutSafe:** yes, at band boundaries and between bone loads.
 
 ### 4. Mining: `speedrun/skills/mining.ts` (S09)
 
@@ -485,92 +477,81 @@ scripts are in section 4; the shared primitives and their build order are in sec
 - **Start from:** rs/97 `knife-cycle.ts` preset `fly`; `tickmanip-cycle.ts`, `fishing-rate.ts`.
 - **logoutSafe:** yes.
 
-### 6. Thieving and the stun pack: `speedrun/skills/thieving.ts` (S18)
+### 6. Thieving and the stun pack: `speedrun/skills/thieving.ts` (S18, with S18b-d inside)
 
 - **Serves:** S18, pickpocketing Knights of Ardougne in the East Ardougne market from 57 to 99, with
-  the stun pack: dragon bones buried in stuns, Charge 80-99 and Fletching (rune-tier actions)
-  inside the stun windows, and top-up trades beside the knights (`skills/interleaving.md` §8,
-  "Stun allocation on rs/3's Package B route").
-- **Parameters:** `npc: 'Knight of Ardougne'`, `untilLevel: 99`, `eat: 'window'`, `food`,
-  `eatBelow`, `forcedBelow`, and for the pack `stunActions` (bones at stun +2, +4, +6; Charge casts;
-  fletch actions; at most 5 packets per tick) and `topUpEvery` (about 12 stuns).
-- **Preconditions:** Thieving 57 (Fight Arena's 2,175 base, read via `skills/thieving.md` §1). Base
-  Magic 80 for Charge (after the Mage Arena; `skills/magic.md` §1). Charge runes (about 490 blood +
-  490 air; the staff can stand in for air), about 21-24 dragon bones per load, arrowheads and
-  headless arrows, about 15-20 sharks (`skills/README.md`). HP 40+.
-- **Postconditions:** Thieving 99, Magic 99 (Charge), Fletching 99 if the stun pack carries the whole
-  route. Prayer raised by about 196 bones. Items out: coins and loot, to a helper or the bank.
-- **Ticks:** Thieving expected **~2,040**: 1,975 (inferred, `thieving-model.ts`, from 57) plus about
-  9-10 top-up trades at 5-9 each (~65, inferred, `skills/interleaving.md` §8). Best about 2,000: the
-  run from 57 measured **1,952** at 100 ms (1 run, `thieving-pickpocket.ts`), and 55 to 99 measured
-  **1,999** at 300 ms on bbs (1 run; `skills/thieving.md` §1). Fallback: the pickpocket cadence does
-  not depend on latency because it clicks blindly every tick (`skills/thieving.md` §1), so a
-  failed stun pack leaves Thieving at ~1,975 but moves **~470-490** standalone ticks of bones,
-  Charge and Fletching to other steps (inferred, `skills/interleaving.md` §8).
-- **Primitives:** `runProgram(sdk, 'pickpocket', {...})` [rs/97]; `lib/trade.ts` `receiveFrom` for
-  top-ups in the success windows. **Missing:** rs/97's `pickpocket` program has no stun-window
-  actions (its parameters are `npc`, `option`, `rolls`, `untilLevel`, `maxTicks`, `every`, `eat`,
-  `food`, `heal`, `forcedBelow`, `eatBelow`). The stun pack needs a `stunActions` extension that
-  sends the bury, Charge and fletch packets inside the stun and keeps the 2-tick success cadence
-  (section 5, item 6). cairn://p/rs/106 measures the pack at route levels.
-- **Mode:** in-page. The 2-tick re-click and the stun-window packets are on predicted ticks.
-- **Fallback:** the plain pickpocket program with no stun actions. The bones then go to S25b and the
-  Charge casts to a bank booth (33 ticks at 5 per tick, measured by rs/20 via `skills/magic.md` §1).
+  the stun pack measured end to end by rs/106 (`research/stun-pack.md`): in each stun three
+  delay-free actions and a bury at offsets +2, +4 and +6 (Charge until Magic 99, then arrow actions,
+  then dropping a finished lower-tier stack), knight clicks at +7 and +8, nothing on the tick after
+  a bury, no xp action at +8.
+- **Parameters:** `npc: 'Knight of Ardougne'`, `untilLevel: 99`, `eat: 'window'` (at or below 77
+  HP, at least 4 ticks after a stun, in a success window), `forcedBelow` (6 HP, inside a stun),
+  `stunActions` (the plan above; at most 4 packets per tick), `topUp` (request at k = 2, or k = 4 if
+  the giver is not adjacent; when fewer than 3 bones are held; early, at 6, when the giver is far).
+- **Preconditions:** Thieving 57 (Fight Arena's 2,175 base). Charge: Mage Arena stage 8, the god
+  staff given (rs/114, `quests/quest-state.md`), base Magic 80. Staff of fire wielded. Load 0 (H14):
+  500 blood + 500 air runes (489 needed), 4,410 headless arrows, bronze 60, iron 90, steel 135,
+  mithril 1,485 arrowheads, 2 sharks, ~16 dragon bones. The trade giver (Ashburn, rs/117) within 3
+  tiles at all times. HP 40+.
+- **Postconditions:** Thieving 99, Magic 99, Fletching 99, Prayer 99 (~200 bones from ~94); **570
+  rune arrows kept** for S27. Items out: coins and loot, to a helper.
+- **Ticks:** expected **2,000**, best **1,908** (measured: three end-to-end runs from 57 to 99 with
+  the pack took 1,908 / 2,098 / 1,997 at 84-93 failures, lite client, local engine,
+  `stun-pack-thieve.ts`; plain 1,986, `research/stun-pack.md` §3, §11). The 12-13 top-ups are
+  inside (about 0.1-0.3 each at k = 2, §5); level-up pages arrived naturally (§9). Fallback: the
+  plain pickpocket at ~1,975 with the pack's work elsewhere, about +130 (inferred, RUN-ORDER.md
+  section 7).
+- **Primitives:** `runProgram(sdk, 'pickpocket', {...})` [rs/97]; the `stunActions` and top-up
+  extension (cairn://p/rs/132, from `stun-pack-thieve.ts`); `lib/trade.ts` with one press per offered
+  item (cairn://p/rs/136).
+- **Mode:** in-page.
+- **Fallback:** the plain pickpocket program; the bones then go to Mining's `stay2` lap or the booth,
+  and Charge and Fletching run standalone (33 and ~59 ticks).
 - **Acceptance, local:** browser tab, 300 ms. At 55, within 5% of **0.173** rolls per tick (rs/97
-  in-page results via main, 05:50; lite 0.167); at 99, 0.35 rolls per tick (rs/82's tab, `LAB.md`). 57 to 99 within 5% of
-  **1,975** with no stun actions. With the stun pack, rs/106's measured figures within 5%: at least
-  1.96 bones per stun (measured, `skills/interleaving.md` §8) and no loss of the 2-tick success gap
-  (at least 94% of success gaps at 2, against the tab's 170 of 181 at 55).
-- **Acceptance, demo (throwaway):** knights need Thieving 55, which a throwaway can reach in about 641
-  ticks (inferred, `skills/thieving.md` §2). Cheaper: Ardougne men at level 1 from Ashburn, 300
-  rolls. Pass: success gaps at 2 ticks on at least 94% (the cadence is the same rule for every
-  target), and a stun-window bury lands at stun +2 at least 9 times in 10.
-- **Start from:** rs/97 `programs/pickpocket.ts`; `thieving-pickpocket.ts`, `interleave-thieve.ts`,
-  `thieving-model.ts`.
-- **logoutSafe:** yes, outside a stun (a stun is a delay, and logout waits while the player is
-  delayed, `quests/primitives.md` §8).
+  in-page); with the pack from 57, within 5% of **2,000** at 84-93 failures, 3.00 bones in every
+  stocked stun, and 13 of 13 top-ups completed (pack-b's figures).
+- **Acceptance, demo (throwaway):** Ardougne men at level 1 from Ashburn, 300 rolls. Pass: success
+  gaps at 2 ticks on at least 94%, a stun-window bury landing at +2 at least 9 times in 10, and one
+  top-up at k = 2 by a walking giver.
+- **Start from:** rs/97 `programs/pickpocket.ts`; `docs/speedrun/scripts/stun-pack-thieve.ts`,
+  `stun-pack-probe.ts`, `stun-pack-summary.ts`.
+- **logoutSafe:** yes, at an attempt boundary outside a stun and never while a trade is open.
 
 ### 7. Combat finish: `speedrun/skills/ranged.ts`, `combatFinish` (S27)
 
-- **Serves:** S27, the last step: the cannon plus defensive melee at the Wilderness poison spiders
-  (3288,3810) until Defence 99, then the cannon with the rune scimitar to Ranged 70, then the cannon
-  plus rapid rune knives to Ranged 99. Hitpoints fills as a by-product (`quests/README.md` §4 step
-  14).
+- **Serves:** S27: the cannon plus defensive melee at the Wilderness poison spiders (3288,3810) until
+  Defence 99, then the cannon with the mithril scimitar to Ranged 70, then the cannon plus a rapid
+  **magic shortbow with rune arrows** to Ranged 99 (knives are unobtainable; rs/124). Hitpoints fills
+  as a by-product. S17 now follows it (RUN-ORDER.md O1), so it is no longer the last step.
 - **Parameters:** `phase` thresholds (Defence 99, Ranged 70, Ranged 99); `flickEvery: 4` (3 when
-  relay-driven, below); potion thresholds (super attack and super strength kept above half boost);
-  `knives` per withdraw; `site`.
-- **Preconditions:** Dwarf Cannon complete (ledger) and the cannon set from the cannon holder
-  (section 4); about 1,000-1,300 cannonballs, up to about 760 rune knives, rune scimitar, about 9
-  ranging doses, about 3 super antipoison, 1 dose each of super attack and super strength, a glory,
-  1 antipoison(4) (`skills/README.md`, Ranged row). Prayer 43 at least (rs/91's kit flicks Protect
-  from Melee, Ultimate Strength and Incredible Reflexes). Levels after Dragon Slayer: Attack 99,
-  Strength 99, Defence gap 1,288 base, Hitpoints gap ~4,220 (`quests/README.md` §1, §6).
-- **Postconditions:** Ranged, Defence and Hitpoints 99: total level 1,881. The run's last level-up is
-  the score, so no exit leg is needed (`[rs/59] research/travel-and-overhead.md`, ranked row 4).
-- **Ticks:** expected and best **1,857** (inferred from measured rates: 168 to Defence 99 at 13.66
-  Ranged + 7.65 Defence per tick, then 1,688 to Ranged 99 at 21.95 Ranged per tick at 85;
-  `cannon-kit-model.ts`; `quests/README.md` §4 step 14; `[rs/59] research/helper-fed-and-combat.md`
-  §3). Fallback **2,023-2,211** without the kit (inferred from rs/31's rates, or rs/91's control;
-  same step).
-- **Primitives:** rs/94 `combat.ts` (fight loop, upkeep of prayer, potions and food); `lib/bank.ts`
-  not used (no bank in the Wilderness). **Missing:** `speedrun/lib/cannon.ts` (set-up in about 5
-  steps, reload every ~20 ticks, pick-up; from `ranged-cannon.ts` and `cannon-kit.ts`). A zero-drain
-  flick scheduler (from `prayer-flick.ts` [rs/59]; each toggle runs `p_clearpendingaction`, so the
-  attack is re-sent blind, `skills/ranged.md` §1).
-- **Mode:** overlay-driven. The cannon's sweep and the knife clock are server timers, and the reload
-  and retarget tolerate a relay tick. The flicks are the one predicted-tick part: drain runs from a
-  5-tick timer, so a 4-tick flick that slips one tick risks a point. Through the relay, flick every
-  3 ticks (an extra packet, within the 5 per tick). An in-page `flick` program is optional.
-- **Fallback:** no kit (2,023-2,211). If prayer runs dry, fall back to rs/91's control with Protect
-  from Melee held and potions sipped.
-- **Acceptance, local:** `cannon-kit.ts` configurations 3 and 4 re-run through the module at the
-  post-Dragon Slayer stats. Pass: within 5% of the measured 13.66 + 7.65 per tick (melee phase) and
-  21.95 Ranged per tick at 85 (knives phase), with prayer points flat over 400 ticks.
-- **Acceptance, demo (throwaway):** not feasible (needs Dwarf Cannon, Attack 99 and Wilderness level
-  37). Demo coverage comes from the cannon-holder helper's demo test (section 4).
-- **Start from:** `cannon-kit.ts`, `cannon-kit-model.ts`, `prayer-flick.ts` [rs/59]; `ranged-cannon.ts`,
-  `ranged-model.ts`.
-- **logoutSafe:** no (combat, Wilderness); it is the last step.
+  relay-driven); potion thresholds; `site`.
+- **Preconditions:** `questDone` for Dwarf Cannon (rs/114) and the cannon set (H23); ~1,100
+  cannonballs; the magic shortbow (H12) and SCORED's own 570 rune arrows from S18 plus MM's
+  leftovers; the mithril scimitar; ~9 ranging doses, ~3 super antipoison, 1 dose each of super
+  attack and super strength, 1 antipoison(4) (H23; no glory, rs/123); 12 sharks for S17 carried
+  through. Prayer ~99 (rs/91's kit flicks Protect from Melee, Ultimate Strength and Incredible
+  Reflexes). Levels after Dragon Slayer: Attack 99, Strength 99, Defence gap 1,288 base, Hitpoints gap
+  ~4,220.
+- **Postconditions:** Ranged, Defence and Hitpoints 99. Items out: the cannon is left or picked up as
+  the inventory needs; S17 needs only the sharks.
+- **Ticks:** expected **1,889** (inferred: 1,857 on rs/91's measured rates, `cannon-kit-model.ts`,
+  `quests/README.md` §4 step 14; the bow costs nothing against knives, measured by rs/124 at 15.77 /
+  19.02 / 20.43 Ranged per tick at 70 / 85 / 99 against knives' 15.67 / 18.29 / 19.45 (relayed on
+  cairn://p/rs/111, comment 19); no glory +20 and the mithril scimitar +12, inferred,
+  `research/supply-fallbacks.md` §10-§11). Best **1,829** (the bow's +4-5% at 85-99 on the
+  1,688-tick phase, -60 i). Fallback **2,023-2,211** without the kit.
+- **Primitives:** rs/94 `combat.ts`; **missing** `speedrun/lib/cannon.ts` (set-up, reload every ~20
+  ticks, pick-up) and the zero-drain flick scheduler (from `prayer-flick.ts`).
+- **Mode:** overlay-driven; the flicks are the one predicted-tick part (flick every 3 through the
+  relay).
+- **Fallback:** no kit (2,023-2,211); if prayer runs dry, rs/91's control with Protect from Melee held.
+- **Acceptance, local:** `cannon-kit.ts` configurations 3 and 4 through the module at the
+  post-Dragon Slayer stats with the bow from 70. Pass: within 5% of 13.66 + 7.65 per tick in the
+  melee phase and of rs/124's bow rate in the ranged phase, with prayer points flat over 400 ticks.
+- **Acceptance, demo (throwaway):** not feasible (Dwarf Cannon, Attack 99, Wilderness 37).
+- **Start from:** `cannon-kit.ts`, `cannon-kit-model.ts`, `prayer-flick.ts` (rs/59, on main);
+  `ranged-cannon.ts`, `ranged-model.ts`.
+- **logoutSafe:** no (combat, Wilderness).
 
 ### 8. The Grand Tree: `speedrun/quests/grand-tree.ts` (S11b)
 
@@ -606,41 +587,33 @@ scripts are in section 4; the shared primitives and their build order are in sec
 ### 9. Runecraft: `speedrun/skills/runecraft.ts` (S06 air altar 1-44, S21 nature altar 44-99)
 
 - **Serves:** S06, 7 crafts at the air altar; S21, 161 crafts at the nature altar. SCORED stands at
-  the altar inside the room and never leaves; a helper beside it trades 27 rune essence per cycle
+  the altar inside the room and never leaves; a giver beside it trades 27 rune essence per cycle
   (`skills/runecraft.md` §1).
-- **Parameters:** `altar: 'air' | 'nature'`, `schedule: 'tuned' | 'robust'` (7 or 8 ticks),
-  `giver` (the helper's display name), `untilLevel`.
-- **Preconditions:** the talisman (air or nature; tradeable) for entry; S21 needs Runecraft 44 and a
-  charged glory to Karamja. Standing tile (2844,4832) air or (2400,4839) nature. The in-room
-  helper inside the room and on a direct path. The **tuned** schedule also needs the helper
-  processed before SCORED in the tick ("helper first", `skills/runecraft.md` §4; the lab sets that
-  order by login order, `runecraft-lab.sh`); otherwise use **robust**.
-- **Postconditions:** Runecraft 44 (S06) or 99 (S21). Items out: the rune stacks (air, nature) stay
-  in one slot each, or go to a helper. Talisman kept.
-- **Ticks:** expected and best **1,330**: crafting 1,176 at 7 ticks (49 air + 1,127 nature;
-  measured cycle, 8 of 8 at air 1 and 13 of 14 at nature 44, totals inferred; `skills/runecraft.md`
-  §1-2) plus about 150 of travel (inferred, same doc §6). Robust schedule 1,344 + 150 = 1,494
-  (inferred, §2). Fallback **~2,670**, the stock SDK's 15-tick reacting cycle (2,520 + 150;
-  measured cycle, inferred total, §2). Busy-host caveat: measured on the Mac at load 11-18.
-- **Primitives:** **Missing in-page program** `rc-cycle`. rs/97 registers only `probe`,
-  `knife-cycle`, `knife-mine`, `pickpocket` and `agility` [rs/97 `programs/index.ts`]. The scored
-  side sends the trade request on T+5, accepts on T+6, confirms and clicks the altar on T+7,
-  re-anchoring on the observed craft. `lib/trade.ts`'s pure `decideReceiver` can supply the
-  confirm-screen safety check.
-- **Mode:** in-page. It is a blind schedule whose packets must each land on their tick, which the
-  relay's 2-3 ticks would break (`skills/runecraft.md`, "Client"). The helper side has the same
-  constraint (finding 4).
-- **Fallback:** the robust 8-tick schedule if the processing order is wrong; the stock reacting cycle
-  (15) if the page program faults; helpers outside the room (25 ticks per cycle, 4,200 for nature;
-  measured, §2) only as a last resort.
-- **Acceptance, local:** a browser tab for SCORED and a direct-path helper on the lab engine at 300
-  ms, nature altar at 44, 30 cycles. Pass: at least 28 of 30 cycles at **7** (measured 13 of 14),
-  and robust at 8 in either login order.
-- **Acceptance, demo (throwaway):** air altar on two throwaways (an air talisman, essence from the
-  helper stock), both from Ashburn on the direct path, 20 cycles. Pass: at least 18 of 20 at 7, or
-  at 8 under robust.
-- **Start from:** `runecraft-cycle.ts` (`--mode=tuned|robust`, two bots), `runecraft-lib.ts`,
-  `runecraft-model.ts`, `runecraft-probe.ts`.
+- **Parameters:** `altar: 'air' | 'nature'`, `schedule: 'tuned' | 'robust'` (7 or 8 ticks), `untilLevel`;
+  the cue file per rs/117's contract (`RC_CUE_DIR` under `run-machine/`, gitignored; `cue.json` with
+  the anchor tick T and the next giver; the receiver identified by a hash of its name, never the name).
+- **Preconditions:** the talisman (air or nature) for entry; S21 needs Runecraft 44. SCORED reaches
+  the nature ruins by the Ardougne-Brimhaven ship (entry 11, T20-21; no glory). Standing tile
+  (2844,4832) air or (2400,4839) nature. The givers in the room, on the run machine (rs/117), logged
+  in before SCORED (`helpersReady`); for S21, the roster and the talisman keeper at the ruins
+  (`research/supply-fallbacks.md` §7). Otherwise use **robust**.
+- **Postconditions:** Runecraft 44 (S06) or 99 (S21). Items out: the rune stacks.
+- **Ticks:** expected and best **1,186**: S06 **54** (7 x 7 measured, 8 of 8 at air 1 with a level-up
+  every craft, + a 5-tick session trade) and S21 **1,132** (161 x 7 + 5; 13 of 14 measured cycles at
+  nature 44); totals inferred (`skills/runecraft.md` §1-2). Travel is in entry 11 (T05-06 61 m,
+  T20-21 161.5 m). Robust schedule +168. Fallback **~2,530**, the stock 15-tick reacting cycle.
+- **Primitives:** the in-page `rc-cycle` program (cairn://p/rs/131): request on T+5, accept on T+6,
+  confirm and click the altar on T+7, re-anchoring on the observed craft; run.ts's Runecraft step owns
+  `cue.json`, the page supplies the beacon.
+- **Mode:** in-page.
+- **Fallback:** robust 8-tick if the processing order is wrong; the stock reacting cycle if the program
+  faults; SCORED logging out while givers restock only when it pays (~3.6 + 5 per batch).
+- **Acceptance, local:** a browser tab for SCORED and a direct-path giver on the lab engine at 300 ms,
+  nature altar at 44, 30 cycles. Pass: at least 28 of 30 at **7**, and robust at 8 in either login
+  order.
+- **Acceptance, demo (throwaway):** air altar on two throwaways from Ashburn, 20 cycles. Pass: at least
+  18 of 20 at 7, or at 8 under robust.
+- **Start from:** `runecraft-cycle.ts`, `runecraft-lib.ts`, `runecraft-model.ts`, `runecraft-probe.ts`.
 - **logoutSafe:** yes between cycles.
 
 ### 10. Smithing: `speedrun/skills/smithing.ts` (S25a)
@@ -676,36 +649,35 @@ scripts are in section 4; the shared primitives and their build order are in sec
 
 ### 11. Transition legs: `speedrun/runner/legs.ts` on `speedrun/lib/travel.ts` (between steps)
 
-- **Serves:** every move between two steps that is not inside a quest's own travel. A leg is a `Step`
-  built from data, `leg(from, to, method)`, so legs are logged and resumable like steps. The legs
-  deserve one module because there are about 25 of them and they share every primitive.
-- **Parameters:** per leg: method (spell teleport, glory, chained run, spirit tree, glider, lever),
-  destination tile and tolerance, the runes or jewellery used, `enchantWhileWalking` (S04's rings).
-- **Preconditions:** the runes or charges for the method; outside combat if the next step needs a
-  logout boundary; Wilderness level at most 20 for spells and 30 for the glory (measured,
-  `quests/primitives.md` §4).
+- **Serves:** every move between two steps that is not inside a quest's own travel: the 25 legs of
+  RUN-ORDER.md section 2 (T01-02 to T27-17, plus S24's three inner legs and T07a inside S07). A leg is
+  a `Step` built from data, `leg(from, to, method)`, so legs are logged and resumable like steps.
+- **Parameters:** per leg: method (spell teleport, chained run, spirit tree, lever, ship), destination
+  tile and tolerance, the runes used. **No glory** (unobtainable, rs/123) and **no enchanting while
+  walking** (`research/run-transitions.md` §5: ~31 slower than casting standalone and teleporting).
+- **Preconditions:** the runes for the method; outside combat if the next step needs a logout
+  boundary; Wilderness level at most 20 for spells (`quests/primitives.md` §4); food on T13-14,
+  T14-15 and the Wilderness legs (aggressive NPCs took up to 31 of 42 HP, run-transitions.md §2);
+  30 coins for the Brimhaven ship.
 - **Postconditions:** within the tolerance of the destination tile.
-- **Ticks:** about **1,000** for the whole order (estimated: the v1 legs priced on the travel matrix
-  of `[rs/59] research/travel-and-overhead.md`, at a cast of 4 measured or a glory of 6 measured
-  plus 0.5 per Chebyshev tile, with real routes about 28% longer as measured once in
-  `quests/primitives.md` §2). Best about 800 (estimated, at the matrix's straight-line lower
-  bounds). Fallback about 1,300 (estimated: `bot.walkTo` at 0.57 per tile, measured, same §2).
-  cairn://p/rs/104 measures every leg; its figures replace these in the fold-in.
-- **Primitives:** **missing** `speedrun/lib/travel.ts`: `teleport(spell)` (4 ticks, measured),
-  `glory(dest)` (6, measured), `runTo(tile)` with chained clicks re-sent 3 tiles before each
-  leg ends (84-85 ticks for 165 tiles, measured, `quests/primitives.md` §2), spirit tree, glider (13,
-  measured), the Ardougne lever, and the walk's "skill while running" hook (a cast never re-clicks
-  the walk in its own tick; `[rs/59] research/travel-and-overhead.md`, ranked row 2).
+- **Ticks:** **1,382** for the order, net of the arrival rows the quests already count (measured
+  end to end except T02-03 5 i, T07a 46 i and T14-15 173.5 i; `research/run-transitions.md` §2, §4,
+  §6; RUN-ORDER.md section 2 has every leg). Fallback about **1,520** (inferred: `bot.walkTo` at 0.57
+  per tile against the walker's 0.51, `quests/primitives.md` §2).
+- **Primitives:** `speedrun/lib/travel.ts` (**missing** in `speedrun/lib`): `teleport(spell)` (4 ticks,
+  measured), `runTo(tile)` with chained clicks re-sent 3 tiles before each leg ends, doors opened on the
+  way and a knife on webs (the walker of `run-transitions-lib.ts`), spirit tree, the Ardougne lever,
+  Captain Barnaby's ship (13 ticks for the dialogue and ride, gangplank 3, measured).
 - **Mode:** overlay-driven.
 - **Fallback:** walk the route when a teleport is refused.
-- **Acceptance, local:** each leg within 10% of rs/104's measured figure.
-- **Acceptance, demo (throwaway):** a throwaway with runes runs the level-free legs (Lumbridge to
-  Varrock west, the Falador teleport to Taverley, the Ardougne teleport legs once it has Plague City
-  are optional). Pass: within 10% of the local figure. The demo measured 159 ticks for a new
-  account's walk from Lumbridge to Varrock west bank ([rs/41] `helpers/wine.md`, "Where the Cooking
-  step goes").
-- **Start from:** `quest-primitives-movement.ts`, `quest-primitives-teleports.ts`,
-  `quest-primitives-transport.ts`, `travel-walk-enchant.ts` [rs/59], `quest-magearena-travel.ts`.
+- **Acceptance, local:** each leg within 10% of run-transitions.md's measured mean (`run-transitions-legs.ts`
+  is the catalogue; rerun a leg by its id).
+- **Acceptance, demo (throwaway):** a throwaway with runes runs the level-free legs (T01-02, T06-07 from
+  Falador, T21-22, T23-24 and S24's inner legs once it has the runes). Pass: within 10% of the local
+  figure; record each door's state.
+- **Start from:** `docs/speedrun/scripts/run-transitions-legs.ts`, `run-transitions-lib.ts`,
+  `run-transitions-probe.ts`; `quest-primitives-movement.ts`, `quest-primitives-teleports.ts`,
+  `quest-primitives-transport.ts`.
 - **logoutSafe:** yes, except legs inside or out of the Wilderness above level 20.
 
 ### 12. Dwarf Cannon: `speedrun/quests/dwarf-cannon.ts` (S13)
