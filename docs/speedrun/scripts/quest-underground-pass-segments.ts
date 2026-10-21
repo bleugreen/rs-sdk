@@ -310,6 +310,24 @@ await runScript(async ({ bot, sdk }) => {
         const t0 = lab.tick();
         await brewToDove();
         lab.record({ label: 'TOTAL dwarf stairs to the doll complete', ticks: lab.tick() - t0, ibanmulti: await lab.getVar('ibanmulti') });
+    } else if (segment === 'fights') {
+        // Every fight, `--rounds` times, at --att/--str/--def/--hp, rune scimitar and rune armour.
+        const rounds = opt('rounds', 2);
+        await vars(7, [...ORBS, ...BADGES]);
+        const targets: Array<[string, RegExp, T]> = [
+            ['Sir Jerro', /Sir Jerro/, [2423, 9719, 0]], ['Sir Carl', /Sir Carl/, [2421, 9717, 0]], ['Sir Harry', /Sir Harry/, [2425, 9717, 0]],
+            ['Doomion', /Doomion/, [2136, 4567, 1]], ['Holthion', /Holthion/, [2134, 4556, 1]], ['Othainian', /Othainian/, [2124, 4562, 1]],
+            ['Kalrag', /Kalrag/, [2356, 9906, 0]], ['Iban disciple', /Iban disciple/, [2153, 4646, 1]],
+        ];
+        for (let r = 1; r <= rounds; r++) {
+            for (const [name, re, at] of targets) {
+                await gear(20);
+                await lab.teleTo(...at);
+                for (let i = 0; i < 40 && !lab.npc(re); i++) await L_sleep(3); // respawn
+                if (!lab.npc(re)) { lab.record({ label: `${name}: not spawned`, ticks: 0 }); continue; }
+                await lab.fight(`round ${r}: ${name} at ${ATT}/${STR}/${DEF}, ${HP} hp`, re, { food: /^Swordfish$/i });
+            }
+        }
     } else if (segment === 'never') {
         await lab.travel('-> brew barrel', P.barrel);
         await lab.act('bucket on the barrel: dwarf brew', () => lab.useOnLoc(/^Bucket$/i, 3344, 2327, 9799), () => sdk.countInventoryItems(/brew/i) > 0);
