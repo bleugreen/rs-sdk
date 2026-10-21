@@ -22,6 +22,8 @@ interface Course {
     start: [number, number, number]; // x, z, plane
     steps: Step[];
     lapBonus: number;
+    /** after a fall at step X, take step resume[X] next (default: retry X) */
+    resume?: Record<string, string>;
 }
 
 // Loc ids from server/content/pack/loc.pack, positions from server/content/maps.
@@ -56,6 +58,9 @@ const COURSES: Record<string, Course> = {
     wilderness: {
         start: [3004, 3937, 0],
         lapBonus: 498.9,
+        // both pits exit by the ladder at (3005,10363), which comes up north of the
+        // rope swing, beside the stepping stones
+        resume: { ropeswing: 'stones', log: 'stones' },
         steps: [
             { name: 'pipe', locs: [[2288, 3004, 3938]], xp: 12.5 },
             { name: 'ropeswing', locs: [[2283, 3005, 3952]], xp: 20 },
@@ -90,7 +95,7 @@ async function nearestLoc(sdk: BotSDK, cands: [number, number, number][]) {
 }
 
 async function clickByOption(sdk: BotSDK, re: RegExp) {
-    const locs = await sdk.scanNearbyLocs(10);
+    const locs = await sdk.scanNearbyLocs(25);
     const me = pos(sdk);
     const loc = locs
         .filter(l => l.optionsWithIndex.some(o => re.test(o.text)))
@@ -127,12 +132,28 @@ await runScript(async ({ sdk }) => {
     let lastDoneTick = t0;
     let stuck = 0;
     let heals = 0;
+    const fallRecoveryTicks: { step: string; ticks: number }[] = [];
 
-    for (let lap = 0; lap < laps; lap++) {
-        let i = 0;
-        const lapStart = tick(sdk);
-        while (i < course.steps.length) {
-            const step = course.steps[i];
+    // Steps cycle; a lap is counted when its bonus drop arrives. After a fall the
+    // course's resume rule says which obstacle to take next.
+    let i = 0;
+    let lap = 0;
+    let lapStart = tick(sdk);
+    let bonusSeen = 0;
+    const n = course.steps.length;
+    while (bonusSeen < laps) {
+        const lapBonuses = log.events.filter(e => e.baseGain >= course.lapBonus - 0.05).length;
+        if (lapBonuses > bonusSeen) {
+            bonusSeen = lapBonuses;
+            lap = bonusSeen;
+            lapStart = tick(sdk);
+            const bonus = log.events.filter(e => e.baseGain >= course.lapBonus - 0.05);
+            if (bonus.length >= 2) lapTicks.push(bonus[bonus.length - 1].tick - bonus[bonus.length - 2].tick);
+            console.log(`lap ${lap} done at tick ${lastDoneTick} (${tick(sdk) - t0} since start), hp ${sdk.getState()?.player?.hp}, hp lost so far ${log.hpLost}`);
+            if (bonusSeen >= laps) break;
+        }
+        {
+            const step = course.steps[i % n];
             attempts[step.name] = (attempts[step.name] ?? 0) + 1;
             const evBefore = log.events.length;
             const hpBefore = sdk.getState()?.player?.hp ?? 0;
@@ -149,7 +170,7 @@ await runScript(async ({ sdk }) => {
             const target = await nearestLoc(sdk, step.locs);
             if (!target) {
                 console.log(`  lap ${lap} ${step.name}: no candidate loc visible from`, pos(sdk));
-                if (++stuck > 5) throw new Error('stuck');
+                if (++stuck > 8) throw new Error('stuck');
                 if (i > 0) i--;
                 continue;
             }
@@ -189,19 +210,21 @@ await runScript(async ({ sdk }) => {
                 fails[step.name] = (fails[step.name] ?? 0) + 1;
                 failDamage.push({ step: step.name, hpBefore, dmg: hpBefore - hpNow });
                 if (pos(sdk).z > 6400) await climbOutOfPit(sdk);
+                await sdk.waitForTicks(1);
+                fallRecoveryTicks.push({ step: step.name, ticks: tick(sdk) - clickTick });
                 console.log(`  lap ${lap} ${step.name}: FAIL at tick ${clickTick}, -${hpBefore - hpNow}hp, now at`, pos(sdk));
                 if (sdk.getState()!.player!.hp < +hpArg * 0.4) { await cheat(sdk, `setstat hitpoints ${hpArg}`); heals++; }
-                // progress varp is kept, so retry the same obstacle
+                const resume = course.resume?.[step.name];
+                if (resume) i = i - (i % n) + course.steps.findIndex(s => s.name === resume) + (course.steps.findIndex(s => s.name === resume) < (i % n) ? n : 0);
                 continue;
             }
             console.log(`  lap ${lap} ${step.name}: no xp after click (ok=${ok}, moved=${moved}) at`, pos(sdk), msgs.slice(-3));
             if (sdk.getState()!.player!.hp < +hpArg * 0.4) { await cheat(sdk, `setstat hitpoints ${hpArg}`); heals++; }
-            if (++stuck > 5) throw new Error('stuck');
+            if (++stuck > 8) throw new Error('stuck');
+            // refused from this side: carry on around the course (this lap's bonus is lost)
+            if (msgs.some(m => /from here|from this side/i.test(m))) { i++; continue; }
             if (!moved && i > 0) i--; // unreachable from here: redo the previous obstacle
         }
-        const bonus = log.events.filter(e => e.baseGain >= course.lapBonus - 0.05);
-        if (bonus.length >= 2) lapTicks.push(bonus[bonus.length - 1].tick - bonus[bonus.length - 2].tick);
-        console.log(`lap ${lap + 1} done at tick ${lastDoneTick} (${tick(sdk) - t0} since start), run energy ${sdk.getState()?.player?.runEnergy}, hp ${sdk.getState()?.player?.hp}, hp lost so far ${log.hpLost}`);
     }
     const total = tick(sdk) - t0;
     const xp = (agilityXp(sdk.getState()) - startXp) / XP_RATE;
@@ -211,6 +234,6 @@ await runScript(async ({ sdk }) => {
         baseXpPerTick: +(xp / total).toFixed(2),
         lapTicks: summary(lapTicks), lapTicksList: lapTicks,
         stepTicks: Object.fromEntries(Object.entries(stepTicks).map(([k, v]) => [k, summary(v)])),
-        attempts, fails, failDamage, hpLostTotal: log.hpLost, labHeals: heals,
+        attempts, fails, failDamage, fallRecoveryTicks, hpLostTotal: log.hpLost, labHeals: heals,
     }, null, 1));
 }, { timeout: 3_600_000, printState: false });
