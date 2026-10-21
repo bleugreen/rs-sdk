@@ -278,6 +278,7 @@ The main table is in the Summary. Variants (inferred, `combat-model.ts`):
 
 | Variant | Melee left | Ticks | HP left after it |
 |---|---|---|---|
+| **Package B (on route): MM option 1 + Dragon Slayer, Waterfall off** | Defence 1,288 | 140 on ogres alone; on the route it is the 230 cannon-alongside ticks instead (Summary) | 0 (quests, Witch's House) |
 | MM option 1, Waterfall dropped | Strength 4,938 + Defence 19,938 | 522 + 2,121 = 2,643 | 0 |
 | MM option 2 (Attack/Defence 35,000, Strength/HP 20,000) + Waterfall | Strength 6,188 + Defence 4,938 | 656 + 525 = 1,181 | 16,229 (about 13,300 of it covered if Ranged is trained by combat) |
 | MM option 2, Waterfall dropped | Strength 19,938 + Defence 4,938 | 2,171 + 525 = 2,696 | 11,646 |
@@ -307,7 +308,8 @@ Per block:
 
 | Block | Ticks | Prayer potions | Super attack | Super strength | Sharks | Inventories | Resupply trades |
 |---|---|---|---|---|---|---|---|
-| MM route: Defence 89 -> 99 (HP covered) | 2,121 | 12 | 2 | 2 | 4 | 1 (20 slots) | 0 |
+| Package B (on route): Defence 98 -> 99 | 230, alongside the cannon | in `ranged.md` section 7 (the cannon finish's list) | | | | | |
+| Package A: Defence 89 -> 99 (HP covered) | 2,121 | 12 | 2 | 2 | 4 | 1 (20 slots) | 0 |
 | No MM: Strength 83 -> 99 + Defence 1 -> 99 | 7,149 | 42 | 4 | 5 | 12 | 3 | 2 |
 | No MM: remaining HP on melee alone | 5,683 | 34 | 3 | 3 | 10 | 2-3 | 2 |
 
@@ -319,18 +321,27 @@ from a helper standing at the ogres:
 
 So resupply is under 1% of any block. No banking: ogre drops are ignored.
 
+**Interleaving** (`interleaving.md` section 8, the absorbable-fractions table): **none of the
+combat training can be absorbed into self-only time.** Combat is itself the self-only activity
+at a fixed site (the ogres, the Wilderness spiders), and every eat or drink already costs a
+re-attack (section 2), so helper-fed inventory actions would compete with the attack loop.
+Whether delay-free helper actions could ride the cannon + knives phase is unmeasured.
+
 ## 7. Quest xp (read)
 
 | Quest | Reward (base) | Source |
 |---|---|---|
 | Monkey Madness option 1 | Strength 35,000, HP 35,000, Attack 20,000, Defence 20,000 | `mm_daero.rs2:295-298` |
 | Monkey Madness option 2 | Attack 35,000, Defence 35,000, Strength 20,000, HP 20,000 | `mm_daero.rs2:304-307` |
-| Waterfall | Attack 13,750, Strength 13,750 | `quest_waterfall.rs2:491-492` |
+| Waterfall (off route under Package B) | Attack 13,750, Strength 13,750 | `quest_waterfall.rs2:491-492` |
 | The Grand Tree | Attack 18,400 | `quest_grandtree.rs2:200` |
 | Fight Arena | Attack 12,175 | `quest_arena.rs2:270` |
 | Tree Gnome Village | Attack 11,450 | `quest_tree.rs2:98` |
-| Holy Grail (now off route) | Defence 15,300 | `quest_grail.rs2:117` |
-| Dragon Slayer (off route) | Strength 18,650, Defence 18,650 | `quest_dragon.rs2:33-34` |
+| Holy Grail (off route) | Defence 15,300 | `quest_grail.rs2:117` |
+| Dragon Slayer (**on route**, Package B, after MM) | Strength 18,650, Defence 18,650 | `quest_dragon.rs2:33-34` |
+| Witch's House (**on route**, Package B filler) | Hitpoints 6,325 | `quest_ball.rs2:202` (via rs/3 `quest_points.md`) |
+| Goblin Diplomacy, Romeo & Juliet, Cook's Assistant (Package B filler) | no combat xp | rs/3 `quest_points.md` |
+| Pre-MM fights by spell (not quest rewards) | Hitpoints ~722 in all (warlord 226 m, demon 209 m, Fight Arena ~287 i); no Attack, Strength or Defence | rs/3 `pre_mm_fights.md` section 1 |
 | Haunted Mine | Strength 22,000 | `hauntedmine_crystals.rs2:54` |
 | Death Plateau, Troll Romance (off route) | Attack 3,000; Strength 4,000 | `quest_death.rs2:221`, `quest_troll_love.rs2:304` |
 | The Fremennik Trials (off route) | 2,812.4 each to Attack, Defence, Strength, HP | `quest_viking.rs2:135-138` |
@@ -353,6 +364,15 @@ So resupply is under 1% of any block. No banking: ogre drops are ignored.
 
 ## 9. Open questions
 
+- **Monkey Madness at the route's real levels is unmeasured: Attack 99, Strength 1, Defence
+  1, about 42 Hitpoints** (Prayer 43, Ranged 50, Magic ~76). Package B reaches MM with the
+  pre-MM fights cast, so nothing has trained Strength or Defence. MM's hazards (the temple
+  trapdoor guards, the jungle spiders that poison through prayer, the Ape Atoll dungeon
+  traps) were measured at 70/70/70 with ~70 HP (`monkey_madness.md`), so its failure budget
+  may be optimistic. The Jungle Demon itself is fought under Protect from Magic, where Defence
+  does not matter. Open on rs/3's side (`pre_mm_fights.md` open questions; cairn://p/rs/80
+  item (a)); not measured here. The likely mitigation is food and an antipoison in MM's trade.
+
 - **Production latency.** The cadence assumes the re-attack lands within 2 ticks of
   a drink, and the retarget within 1-2 ticks of a kill. A short run on
   rs-sdk-demo.fly.dev with `combat-rate.ts` would confirm it.
@@ -373,7 +393,11 @@ against the best single-combat melee"), measured at 300 ms there or inferred by
 - **Cannon + defensive melee at the Wilderness poison spiders** (multi-combat,
   rune scimitar wielded): 11.03 Ranged + 5.60 Defence + 1.85 HP base per tick
   (cited, ranged.md section 1, measured 300 ms).
-- **With MM option 1, Ranged/Defence/HP 99 take about 3,520 ticks** after MM by
+- **On the route (Package B), Ranged/Defence/HP 99 take 2,051 ticks after MM** by
+  rs/31's plan (e): cannon + defensive melee at the spiders for 230 ticks (Defence 1,288
+  closed, Ranged to 67), then cannon + rapid rune knives for 1,821 (cited, inferred from
+  measured rates; rs/3's phase model gives 2,023).
+- **Package A (Waterfall on, Dragon Slayer off) took about 3,520 ticks** after MM by
   rs/31's plan (f): cannon + defensive melee at the spiders until Ranged 99, then
   melee alone at the ogres. Ogres for Defence and then cannon + knives for Ranged,
   trained separately, take 4,197 (cited, inferred). That separate plan prices the
@@ -387,6 +411,6 @@ against the best single-combat melee"), measured at 300 ms there or inferred by
   per tick (cited, measured 300 ms), against 9.25-9.40 for defensive melee at the
   ogres.
 
-So on the MM route, the Summary's "Defence 19,938 on ogres = 2,121 ticks" is
+So on any MM route, the alternative table's "Defence 19,938 on ogres = 2,121 ticks" is
 superseded by the cannon plan whenever Ranged is still training. The ogre figure
 stands for melee done after Ranged is 99, and for the no-MM melee block.
