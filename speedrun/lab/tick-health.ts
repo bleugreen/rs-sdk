@@ -48,6 +48,14 @@ sdk.onStateUpdate(st => {
     if (now - minute.start >= 60_000) flush();
 });
 
+// A measurement usually ends before the window does: report the partial minute on the way out.
+for (const sig of ['SIGTERM', 'SIGINT'] as const) {
+    process.on(sig, () => {
+        flush();
+        process.exit(0);
+    });
+}
+
 await Bun.sleep(Number(secs) * 1000);
 flush();
 process.exit(0);
