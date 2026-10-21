@@ -30,7 +30,8 @@ name: Demo latency probe
 # gateway (the 'browser relay' column); variant=in-page reacts inside the page on
 # the decoded tick (rsPrograms, the 'browser direct' column). Each runs the probe,
 # then readies the account at the normal trees west of Lumbridge castle
-# (tickmanip-demo-setup.ts) and runs `cycles` logs of the knife woodcutting loop.
+# (tickmanip-demo-setup.ts), runs `cycles` logs of the knife woodcutting loop, and
+# then the same number of plain woodcutting logs as the control.
 # The driver (docs/speedrun/scripts/demo-browser-page.ts) records every websocket
 # frame of the page, and the summary breaks each reaction into its hops. It runs as
 # `bun --no-install`: with the root bunfig's auto-install, debug's optional
@@ -350,13 +351,19 @@ jobs:
             fi
             if [ "$KNIFE_COMMAND" = auto ]; then
               case "$VARIANT" in
-                overlay) KNIFE_COMMAND="$setup"' && mkdir -p "$OUT/knife" && bun docs/speedrun/scripts/tickmanip-cycle.ts "$BOT" --mode=tree-knife --gate=off --demo --rolls="$CYCLES" --log="$OUT/knife/r1-knife.log" && bun docs/speedrun/scripts/tickmanip-demo-report.ts "$OUT/knife"' ;;
+                overlay) KNIFE_COMMAND="$setup"' && bun docs/speedrun/scripts/tickmanip-cycle.ts "$BOT" --mode=tree-knife --gate=off --demo --rolls="$CYCLES" --log="$OUT/knife/r1-knife.log"' ;;
                 in-page) KNIFE_COMMAND="$setup && $page"' --json="$OUT/knife.json" --timeout-min=30 "rsPrograms.run(\"knife-cycle\", { method: \"tree\", rolls: $CYCLES, maxTicks: 6000 })"' ;;
               esac
             fi
+            # The control: plain woodcutting (click, re-click when idle) at the same trees for the same
+            # number of logs, right after the knife loop in the same session, over the overlay in both
+            # variants. tickmanip-demo-report.ts weights every log by the rolls expected at its level.
+            local plain='bun docs/speedrun/scripts/tickmanip-cycle.ts "$BOT" --mode=tree-base --demo --rolls="$CYCLES" --log="$OUT/knife/r1-plain.log" && bun docs/speedrun/scripts/tickmanip-demo-report.ts "$OUT/knife"'
+            mkdir -p "$OUT/knife"
             local rc=0
             run_probe browser-probe "$BROWSER_PROBE_COMMAND" || rc=$?
             run_probe knife "$KNIFE_COMMAND" 2100 || rc=$?
+            run_probe plain "$plain" 1500 || rc=$?
             curl -s --max-time 5 "https://$DEMO/playercount" | jq -r '.count // ""' > "$OUT/players-end.txt" 2>/dev/null || true
             return $rc
           }
@@ -396,7 +403,7 @@ jobs:
 
           # Where the time goes on the page's sockets, per browser-mode command (marks.tsv spans).
           if [ -s "$OUT/page/frames.jsonl" ]; then
-            for f in browser-probe knife; do
+            for f in browser-probe knife plain; do
               read -r _ t0 t1 < <(grep "^$f " "$OUT/marks.tsv") || continue
               bun --no-install docs/speedrun/scripts/demo-browser-page.ts frames --dir="$OUT/page" --from="$t0" --to="$t1" > "$OUT/frames-$f.txt" 2>&1 || true
             done
@@ -420,10 +427,13 @@ jobs:
           if [ -s "$OUT/gateway-path.txt" ]; then ticks_json gateway-path > "$OUT/gateway-path-ticks.json"; fi
           if [ -s "$OUT/browser-probe.txt" ]; then ticks_json browser-probe > "$OUT/browser-probe-ticks.json"; fi
           for f in gateway-path-ticks browser-probe-ticks direct; do [ -s "$OUT/$f.json" ] || echo null > "$OUT/$f.json"; done
-          # The knife loop's per-cycle figures: tickmanip-demo-report.ts's ALL line (overlay) or
-          # the in-page program's knife-cycle line, plus the cycle script's own segment and gaps.
-          knife=$(grep -m1 -E '^(ALL |knife-cycle:)' "$OUT/knife.txt" 2>/dev/null | sed -E 's/^ALL +//' || true)
-          knife_detail=$(grep -E '^(segment:|gap histogram|program )' "$OUT/knife.txt" 2>/dev/null || true)
+          # The knife loop's and the plain control's per-log figures: tickmanip-demo-report.ts's ALL
+          # lines (printed after the control) and the in-page program's knife-cycle line, each with the
+          # catch-ups its window saw on the page's game socket.
+          catchups() { grep -m1 -oE 'catch-ups [0-9]+ in [0-9.]+ min' "$OUT/frames-$1.txt" 2>/dev/null || true; }
+          knife=$({ grep -m1 -E '^knife-cycle:' "$OUT/knife.txt"; grep -E '^ALL ' "$OUT/plain.txt"; } 2>/dev/null | sed -E 's/^ALL +//; s/ +/ /g' | paste -sd ';' - || true)
+          knife="${knife:+$knife; }knife window $(catchups knife), plain window $(catchups plain)"
+          knife_detail=$(grep -hE '^(segment:|gap histogram|program |r[0-9]+ )' "$OUT/knife.txt" "$OUT/plain.txt" 2>/dev/null || true)
           jq -n --slurpfile v "$OUT/vantage.json" --slurpfile g "$OUT/gateway-path-ticks.json" --slurpfile d "$OUT/direct.json" \
             --slurpfile b "$OUT/browser-probe-ticks.json" \
             --arg run "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
@@ -484,18 +494,18 @@ jobs:
                    (if .browser then
                      "| browser variant (column) | \(.browser.variant) (\(if .browser.variant == "overlay" then "browser relay" else "browser direct" end)) |",
                      "| page, bundle and gateway from | \(.browser.ref) @ \(.browser.sha[0:9]) |",
-                     "| browser probe PDT / knife PDT | \($bspan) / \($kspan) |",
+                     "| browser probe PDT / knife PDT / plain PDT | \($bspan) / \($kspan) / \($pspan) |",
                      "| players online, end of browser path | \(.browser.players_online_end) |",
                      "| reaction ticks, browser \(.browser.variant)\($burst) | \(.browser.probe.reaction_ticks // {} | to_entries | map("\(.key):\(.value)") | join(" ")) |",
-                     "| knife loop, \(.browser.knife.cycles) logs (trees west of Lumbridge castle) | \(.browser.knife.metric | gsub("\\|"; "/")) |"
+                     "| knife loop and plain control, \(.browser.knife.cycles) logs each (trees west of Lumbridge castle) | \(.browser.knife.metric | gsub("\\|"; "/")) |"
                    else empty end)' --arg direct "$direct_ticks" \
               --arg online_end "$online_end" --arg mode "$MODE" --arg dspan "$(span direct)" --arg gspan "$(span gateway-path)" \
-              --arg bspan "$(span browser-probe)" --arg kspan "$(span knife)" --arg pub "$pub_row" --arg gate "$gate" --arg burst "$burst" "$OUT/result.json"
+              --arg bspan "$(span browser-probe)" --arg kspan "$(span knife)" --arg pspan "$(span plain)" --arg pub "$pub_row" --arg gate "$gate" --arg burst "$burst" "$OUT/result.json"
             echo "$gate" > "$OUT/gate.txt"
-            for f in frames-browser-probe frames-knife; do
+            for f in frames-browser-probe frames-knife frames-plain; do
               if [ -s "$OUT/$f.txt" ]; then echo; echo "### where the time goes on the page's sockets: ${f#frames-}"; echo '```'; cat "$OUT/$f.txt"; echo '```'; fi
             done
-            for f in skipped direct gateway-path browser-probe knife; do
+            for f in skipped direct gateway-path browser-probe knife plain; do
               if [ -s "$OUT/$f.txt" ]; then echo; echo "### $f"; echo '```'; cat "$OUT/$f.txt"; echo '```'; fi
             done
           } >> "$GITHUB_STEP_SUMMARY"
