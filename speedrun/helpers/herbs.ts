@@ -450,7 +450,7 @@ class Herbalist {
         const need = shopNeeds(this.bankItems ?? [], this.opt.unf, this.opt.eyes);
         const open = await bot.openBank();
         if (!open.success) { this.ctx.log('supply: bank did not open', { reason: open.message }); return; }
-        for (const name of [...new Set(this.inv().map(i => i.name))]) await bot.depositItem(new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'), -1);
+        await this.depositAll();
         const coins = sdk.getBankItems().find(i => i.id === COINS);
         if (coins) await bot.withdrawItem(coins, coins.count);
         if (what === 'vials') {
@@ -483,11 +483,19 @@ class Herbalist {
         await this.run.walk(FALADOR_WEST_BANK.x, FALADOR_WEST_BANK.z, 3, 300_000);
         const back = await bot.openBank();
         if (!back.success) return;
-        for (const name of [...new Set(this.inv().map(i => i.name))]) await bot.depositItem(new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'), -1);
+        await this.depositAll();
         this.noteBank(sdk.getBankItems().map(i => ({ id: i.id, name: i.name, count: i.count })));
         this.ctx.reportBank({ items: this.bankItems! });
         await bot.closeBank();
         this.ctx.log('supply', { what, bought: this.bought, filled: this.filled, need: shopNeeds(this.bankItems!, this.opt.unf, this.opt.eyes) });
+    }
+
+    /** With the bank open, deposit every carried stack. */
+    async depositAll(): Promise<void> {
+        for (const id of [...new Set(this.inv().map(i => i.id))]) {
+            const it = this.inv().find(i => i.id === id);
+            if (it) await this.run.bot.depositItem(it, -1);
+        }
     }
 
     /** Fill every carried empty vial at the Taverley fountain: the first use walks there, then one packet per vial. */
