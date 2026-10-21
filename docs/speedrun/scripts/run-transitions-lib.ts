@@ -364,6 +364,7 @@ export async function walk(ctx: Ctx, dest: { x: number; z: number }, o: WalkOpts
     let final = false;
     let lastPos = pos(sdk), lastMove = tick(sdk), clickTick = -99, lastCast = -99, stalls = 0;
     let curReach = reach, lastReachPos = pos(sdk);
+    const doorTries = new Map<string, number>();
     const arrived = () => cheb(pos(sdk), dest) <= tol || (!!o.stopWhen && o.stopWhen(sdk.getState()!));
     let t = tick(sdk);
     while (!arrived()) {
@@ -401,12 +402,15 @@ export async function walk(ctx: Ctx, dest: { x: number; z: number }, o: WalkOpts
             for (let i = idx; i < route.length && cheb(route[i], p) <= curReach; i++) ti = i;
             if (cheb(p, lastReachPos) >= 8) { curReach = reach; lastReachPos = p; }
             const door = doorOnRoute(sdk, route, idx, ti);
-            if (door) {
+            const doorKey = door ? `${door.loc.x},${door.loc.z}` : '';
+            if (door && (doorTries.get(doorKey) ?? 0) < 2) {
+                doorTries.set(doorKey, (doorTries.get(doorKey) ?? 0) + 1);
                 // Open it as part of the run: the server walks to the door, then opens it.
                 const d = door.loc;
                 await sdk.sendInteractLoc(d.x, d.z, d.id, d.optionsWithIndex.find((q) => /^open$/i.test(q.text))!.opIndex);
                 if (ctx.leg) { ctx.leg.clicks++; ctx.leg.doorOpens++; }
-                await waitFor(sdk, (s) => !s.nearbyLocs.some((l) => l.x === d.x && l.z === d.z && l.optionsWithIndex.some((q) => /^open$/i.test(q.text))) || (cheb({ x: s.player!.worldX, z: s.player!.worldZ }, d) <= 1 && false), Math.ceil(cheb(p, d) / 2) + 6);
+                await waitFor(sdk, (s) => !s.nearbyLocs.some((l) => l.x === d.x && l.z === d.z && l.optionsWithIndex.some((q) => /^open$/i.test(q.text))), Math.ceil(cheb(p, d) / 2) + 6);
+                await nextTick(sdk);
                 t = tick(sdk);
                 lastMove = t;
                 clickTick = t;
