@@ -118,11 +118,50 @@ await runScript(async ({ bot, sdk }) => {
         R = roll;
     };
 
+    // Slip recovery. A packet that lands a tick late misses its roll, and the next eat then
+    // adds 3 to a clock that was never consumed: from there every first swing finds the clock
+    // ahead and nothing rolls. Every roll at 63+ succeeds, so no xp by label P+2 for a roll
+    // predicted on P means a slip: drop the schedule, let the clock expire, and restart with
+    // one plain transition from where the bot actually stands.
+    let slips = 0;
+    let restartAt: number | null = null;
+    const xpSeen = new Set<number>();
+    const checkSlip = () => {
+        const due = predicted.filter(p => p + 2 < s.tick && p + 2 >= s.tick - 1);
+        for (const p of due) {
+            if (xpSeen.has(p + 1) || xpSeen.has(p + 2)) continue;
+            slips++;
+            log.push(`  L${s.tick} SLIP: no xp for roll@${p}; restarting`);
+            sched.clear();
+            restartAt = s.tick + 5;
+            R = Number.POSITIVE_INFINITY;
+            return;
+        }
+    };
+    const restart = () => {
+        restartAt = null;
+        pos = [s.player!.worldX, s.player!.worldZ];
+        const { stand, rock } = STEPS[k % STEPS.length]!;
+        k++;
+        const avail = (lastRoll.get(key(rock)) ?? -1e9) + D;
+        const clickLand = Math.max(s.tick + 2, avail);
+        add(s.tick, `walk ${key(stand)}`, () => sdk.sendWalk(stand[0], stand[1], true));
+        add(clickLand - 1, `click ${key(rock)}`, click(rock));
+        const roll = clickLand + 2;
+        log.push(`restart #${k} ${key(pos)}->${key(stand)} rock ${key(rock)} roll@${roll}`);
+        kinds.plain!++;
+        pos = stand;
+        lastRoll.set(key(rock), roll);
+        predicted.push(roll);
+        R = roll;
+    };
+
     const xpLabels: number[] = [];
     let lastXp = xpOf(s);
     let onTime = 0;
     plan();
     while (xpLabels.length < ORES) {
+        if (restartAt !== null && s.tick >= restartAt) restart();
         // run everything due, then plan the next transition on the roll label itself
         for (const [label, acts] of [...sched].sort((a, b) => a[0] - b[0])) {
             if (label > s.tick) continue;
@@ -138,11 +177,13 @@ await runScript(async ({ bot, sdk }) => {
         const xp = xpOf(s);
         if (xp > lastXp) {
             xpLabels.push(s.tick);
+            xpSeen.add(s.tick);
             if (predicted.includes(s.tick - 1)) onTime++;
             log.push(`  L${s.tick} XP +${xp - lastXp} (roll ${s.tick - 1})`);
             lastXp = xp;
         }
         if (s.dialog.isOpen) sdk.sendClickDialog(0).catch(() => {});
+        if (restartAt === null) checkSlip();
         if (xpLabels.length && s.tick - xpLabels[xpLabels.length - 1]! > 30) throw new Error(`stalled at L${s.tick} pos ${s.player?.worldX},${s.player?.worldZ} anim ${s.player?.animId}; messages: ${s.gameMessages.slice(-4).map(m => m.text).join(' | ')}\n${log.slice(-70).join('\n')}`);
     }
 
@@ -154,7 +195,7 @@ await runScript(async ({ bot, sdk }) => {
     console.log(log.slice(0, Number(kv('loghead', '30'))).join('\n'));
     console.log([
         `rotation of ${new Set(STEPS.map(st => key(st.rock))).size} rocks, respawn ${D}, eat=${EAT ? 'on' : 'off'}, level ${LEVEL}`,
-        `transitions ${JSON.stringify(kinds)}, eats sent ${eatsSent}, xp events ${xpLabels.length}, on predicted tick ${onTime}`,
+        `transitions ${JSON.stringify(kinds)}, eats sent ${eatsSent}, xp events ${xpLabels.length}, on predicted tick ${onTime}, slips ${slips}`,
         `steady state (from 6th ore): ${gaps.length} gaps, histogram ${Object.entries(hist).map(([g, c]) => `${g}:${c}`).join(' ')}`,
         `ticks per ore ${(span / gaps.length).toFixed(2)}, base xp per tick ${((35 * gaps.length) / span).toFixed(2)}`
     ].join('\n'));
