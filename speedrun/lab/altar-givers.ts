@@ -73,7 +73,7 @@ console.log(`variant ${variant}: ${givers.length} givers, ${cycles} turns, run f
 
 const child = Bun.spawn([process.execPath, 'speedrun/helpers/standalone.ts', configPath], {
     cwd: ROOT,
-    env: { ...process.env, ALTAR_LAB_TELE: '1', RC_CUE_DIR: join(runDir, 'rc-cue') },
+    env: { ...process.env, HELPER_LAB_TELE: '1', RC_CUE_DIR: join(runDir, 'rc-cue') },
     stdout: 'inherit',
     stderr: 'inherit'
 });

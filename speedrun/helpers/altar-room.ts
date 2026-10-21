@@ -112,13 +112,8 @@ export function findAltar(ctx: Pick<RoleContext, 'sdk'>): NearbyLoc | undefined 
 /** Walk to the ruins and use the talisman on them (runecraft.rs2: p_delay(1), then the teleport). */
 export async function enterRoom(ctx: RoleContext, altar: Altar): Promise<void> {
     if (inRoom(ctx.sdk.getState(), altar)) return;
-    const here = pos(ctx.sdk.getState());
-    if (process.env.ALTAR_LAB_TELE === '1' && isLocalServer() && Math.max(Math.abs(here.x - altar.ruins.x), Math.abs(here.z - altar.ruins.z)) > 150) {
-        // Lab only: a fresh account spawns far away; skip that walk, not the bank-to-ruins one.
-        const { x, z, level } = altar.exit;
-        await cheat(ctx, `tele ${level},${x >> 6},${z >> 6},${x & 63},${z & 63}`);
-        await until(ctx, s => pos(s).x === x && pos(s).z === z, 10);
-    }
+    // Lab: skip a fresh account's walk from its spawn, not the bank-to-ruins one.
+    if (process.env.HELPER_LAB_TELE === '1' && chebyshev(pos(ctx.sdk.getState()), altar.ruins) > 150) await labTele(ctx, altar.exit);
     if (!(await walkNear(ctx, altar.ruins.x, altar.ruins.z, 5))) throw new Error('could not reach the ruins');
     for (let attempt = 0; attempt < 4 && !ctx.signal.aborted; attempt++) {
         const ruins = nearestLoc(ctx, /mysterious ruins/i);
@@ -169,9 +164,24 @@ export interface RestockOptions {
     labStock?: boolean;
 }
 
-async function cheat(ctx: RoleContext, cmd: string): Promise<void> {
+/** A staff command; refused anywhere but the local lab. */
+export async function cheat(ctx: Pick<RoleContext, 'sdk'>, cmd: string): Promise<void> {
     if (!isLocalServer()) throw new Error('staff commands are for the local lab only');
     await ctx.sdk.sendSay(`::${cmd}`);
+}
+
+export function chebyshev(a: { x: number; z: number }, b: { x: number; z: number }): number {
+    return Math.max(Math.abs(a.x - b.x), Math.abs(a.z - b.z));
+}
+
+/**
+ * Lab only: teleport onto `to`. Helpers do it (with HELPER_LAB_TELE=1) to skip a
+ * fresh lab account's walk from its spawn, so a lab run measures their own legs.
+ */
+export async function labTele(ctx: Pick<RoleContext, 'sdk'>, to: Tile): Promise<void> {
+    const { x, z } = to;
+    await cheat(ctx, `tele ${to.level ?? 0},${x >> 6},${z >> 6},${x & 63},${z & 63}`);
+    await until(ctx, s => pos(s).x === x && pos(s).z === z, 10);
 }
 
 /** Make sure exactly the talisman and `essence` rune essence are carried, by the configured route. Leaves the room first if needed. */
