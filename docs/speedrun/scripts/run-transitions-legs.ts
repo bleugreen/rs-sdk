@@ -55,6 +55,17 @@ async function exitToGlory(c: Ctx, log: LegLog, dest: { x: number; z: number }) 
     await log.seg('walk to wilderness level 30', async () => { await walk(c, dest, { tol: 0, eat: true, stopWhen: (s) => wildLevel(s.player!.worldZ) <= 30 }); });
     await log.seg('glory to Edgeville', () => rubGlory(c, /Edgeville/i));
 }
+/** No glory (rs/123: charged glories are unobtainable on the demo): walk to Wilderness level 20, then a spell. */
+async function exitToSpell(c: Ctx, log: LegLog, dest: { x: number; z: number }, spell: 'varrock' | 'ardougne') {
+    await log.seg('walk to wilderness level 20', async () => { await walk(c, dest, { tol: 0, eat: true, stopWhen: (s) => wildLevel(s.player!.worldZ) <= 20 }); });
+    await log.seg(`${spell} teleport`, () => castTele(c, spell));
+}
+/** No glory: into the Deserted Keep by its north web, then the lever out to Ardougne (2562,3311). */
+async function leverOut(c: Ctx, log: LegLog) {
+    await log.seg('walk to the keep web', async () => { await walk(c, { x: 3158, z: 3953 }, { tol: 1, eat: true }); });
+    await log.seg('keep web', () => throughWebs(c, [[3158, 3950]]));
+    await log.seg('lever out', () => opLoc(c, { id: 1815 }, (s) => s.player!.worldZ < 3400, 40));
+}
 async function treesToStronghold(c: Ctx, log: LegLog, young: { x: number; z: number }) {
     await log.seg('walk to the young tree', async () => { await walk(c, young, { tol: 1 }); });
     await log.seg('young tree to the village tree', () => opLoc(c, { id: 1317 }, near(2542, 3169, 6), 40, [/Yes please/i]));
@@ -137,6 +148,10 @@ const LEGS: Leg[] = [
     { id: 'L13G', from: 'S13', to: 'S14', method: 'glory to Edgeville + walk to the spiders', setup: { at: [2571, 3463], stats: WILD1, vars: VARS, items: [['amulet_of_glory_4', 1], ...WILD_KIT] }, run: async (c, log) => { await log.seg('glory', () => rubGlory(c, /Edgeville/i)); await log.seg('walk to the spiders', async () => { await walk(c, SPIDERS, { tol: 2, eat: true }); }); } },
     { id: 'L26L', from: 'S26', to: 'S27', method: 'Ardougne teleport from the Elvarg exit tile + lever + walk to the spiders', runs: 1, setup: { at: [2846, 9636], stats: FINAL, vars: VARS, items: [...TELE_RUNES, ...WILD_KIT] }, run: async (c, log) => { await log.seg('teleport', () => castTele(c, 'ardougne')); await leverToSpiders(c, log); } },
     { id: 'X14', from: 'S14 (spiders)', to: 'out', method: 'walk to wilderness level 30 + glory to Edgeville', runs: 3, setup: { at: [SPIDERS.x, SPIDERS.z], stats: WILD1, vars: VARS, items: [['amulet_of_glory_4', 1], ...WILD_KIT] }, run: async (c, log) => { await exitToGlory(c, log, { x: 3288, z: 3740 }); } },
+    { id: 'X14n', from: 'S14 (spiders)', to: 'out', method: 'no glory: walk to wilderness level 20 + Varrock teleport', runs: 3, setup: { at: [SPIDERS.x, SPIDERS.z], stats: WILD1, vars: VARS, items: [...TELE_RUNES, ...WILD_KIT] }, run: async (c, log) => { await exitToSpell(c, log, { x: 3288, z: 3660 }, 'varrock'); } },
+    { id: 'X14l', from: 'S14 (spiders)', to: 'out', method: 'no glory: walk to the Deserted Keep, web, lever out to Ardougne', setup: { at: [SPIDERS.x, SPIDERS.z], stats: WILD1, vars: VARS, items: WILD_KIT }, run: async (c, log) => { await leverOut(c, log); } },
+    { id: 'L14nv', from: 'S14 (Varrock landing)', to: 'S15', method: 'walk to the Varrock young tree, two tree rides, walk to the Grand Tree door', setup: { at: [3213, 3424], stats: WILD1, vars: VARS }, run: async (c, log) => { await treesToStronghold(c, log, { x: 3179, z: 3507 }); } },
+    { id: 'L14nl', from: 'S14 (lever landing)', to: 'S15', method: 'walk from the Ardougne lever to the Khazard young tree, two tree rides, walk to the door', setup: { at: [2562, 3311], stats: WILD1, vars: VARS }, run: async (c, log) => { await treesToStronghold(c, log, { x: 2555, z: 3259 }); } },
     { id: 'L14v', from: 'S14 (Edgeville)', to: 'S15', method: 'walk to the Varrock young tree, two tree rides, walk to the Grand Tree door', setup: { at: [3087, 3496], stats: WILD1, vars: VARS }, run: async (c, log) => { await treesToStronghold(c, log, { x: 3179, z: 3507 }); } },
     { id: 'L14a', from: 'S14 (Edgeville)', to: 'S15', method: 'Ardougne teleport, Khazard young tree, two tree rides, walk to the door', setup: { at: [3087, 3496], stats: WILD1, vars: VARS, items: TELE_RUNES }, run: async (c, log) => { await log.seg('teleport', () => castTele(c, 'ardougne')); await treesToStronghold(c, log, { x: 2555, z: 3259 }); } },
     {
@@ -160,6 +175,30 @@ const LEGS: Leg[] = [
             });
             await exitToGlory(c, log, { x: 2998, z: 3740 });
             await log.seg('teleport', () => castTele(c, 'ardougne'));
+            await log.seg('walk to the knights', async () => { await walk(c, KNIGHTS, { tol: 3 }); });
+        },
+    },
+    {
+        id: 'L17n', from: 'S17', to: 'S18', method: 'no glory: course gate out, walk to wilderness level 20, Ardougne teleport, walk to the knights', runs: 3,
+        setup: { at: [2994, 3933], stats: COURSE, vars: VARS, items: [...TELE_RUNES, ...WILD_KIT] },
+        run: async (c, log) => {
+            await log.seg('course gate and ridge out', async () => {
+                const id = (await c.sdk.scanNearbyLocs(8)).some((l) => l.id === 2307) ? 2307 : 2308;
+                return opLoc(c, { id }, (s) => s.player!.worldZ <= 3919 && !s.dialog.isOpen, 40);
+            });
+            await exitToSpell(c, log, { x: 2998, z: 3660 }, 'ardougne');
+            await log.seg('walk to the knights', async () => { await walk(c, KNIGHTS, { tol: 3 }); });
+        },
+    },
+    {
+        id: 'L17nl', from: 'S17', to: 'S18', method: 'no glory: course gate out, walk to the Deserted Keep, web, lever out, walk to the knights',
+        setup: { at: [2994, 3933], stats: COURSE, vars: VARS, items: WILD_KIT },
+        run: async (c, log) => {
+            await log.seg('course gate and ridge out', async () => {
+                const id = (await c.sdk.scanNearbyLocs(8)).some((l) => l.id === 2307) ? 2307 : 2308;
+                return opLoc(c, { id }, (s) => s.player!.worldZ <= 3919 && !s.dialog.isOpen, 40);
+            });
+            await leverOut(c, log);
             await log.seg('walk to the knights', async () => { await walk(c, KNIGHTS, { tol: 3 }); });
         },
     },
@@ -187,9 +226,23 @@ const LEGS: Leg[] = [
             await log.seg('talisman entry', () => useItemOnLoc(c, /nature talisman/i, { id: 2460 }, underground));
         },
     },
+    {
+        id: 'L20P', from: 'S20', to: 'S21', method: 'no glory: Falador teleport, walk to Port Sarim, ship to Musa Point, walk + talisman',
+        setup: { at: [2820, 3487], stats: LATE, vars: VARS, items: [...TELE_RUNES, ['coins', 100], ['nature_talisman', 1]] },
+        run: async (c, log) => {
+            await log.seg('teleport', () => castTele(c, 'falador'));
+            await log.seg('walk to the sailors', async () => { await walk(c, { x: 3029, z: 3217 }, { tol: 2 }); });
+            await log.seg('ship to the deck', () => talkNpc(c, /^(seaman lorris|seaman thresnor|captain tobias)$/i, [/^Yes please/i], (s) => s.player!.level === 1 || cheb({ x: s.player!.worldX, z: s.player!.worldZ }, { x: 3029, z: 3217 }) > 40, 60));
+            await log.seg('disembark', () => disembark(c));
+            await log.seg('walk to the ruins', async () => { await walk(c, { x: 2869, z: 3021 }, { tol: 2 }); });
+            await log.seg('talisman entry', () => useItemOnLoc(c, /nature talisman/i, { id: 2460 }, underground));
+        },
+    },
     { id: 'L21', from: 'S21', to: 'S22', method: 'Lumbridge teleport from the nature altar room + walk to the fly spots', setup: { at: [2400, 4835], stats: LATE, items: TELE_RUNES }, run: async (c, log) => { await log.seg('teleport', () => castTele(c, 'lumbridge')); await log.seg('walk', async () => { await walk(c, { x: 3241, z: 3248 }, { tol: 0 }); }); } },
     { id: 'L22', from: 'S22', to: 'S23', method: 'walk the river to the castle cook', setup: { at: [3241, 3248], stats: LATE }, run: async (c) => { await walk(c, { x: 3209, z: 3215 }, { tol: 1 }); } },
     { id: 'L23', from: 'S23', to: 'S24', method: 'glory to Draynor + walk to the Rusty Anchor', setup: { at: [3209, 3215], stats: LATE, items: [['amulet_of_glory_4', 1]] }, run: async (c, log) => { await log.seg('glory', () => rubGlory(c, /Draynor/i)); await log.seg('walk', async () => { await walk(c, { x: 3045, z: 3257 }, { tol: 1 }); }); } },
+    { id: 'L23w', from: 'S23', to: 'S24', method: 'no glory: walk the castle to the Rusty Anchor', setup: { at: [3209, 3215], stats: LATE }, run: async (c) => { await walk(c, { x: 3045, z: 3257 }, { tol: 1 }); } },
+    { id: 'L23f', from: 'S23', to: 'S24', method: 'no glory: Falador teleport + walk to the Rusty Anchor', setup: { at: [3209, 3215], stats: LATE, items: TELE_RUNES }, run: async (c, log) => { await log.seg('teleport', () => castTele(c, 'falador')); await log.seg('walk', async () => { await walk(c, { x: 3045, z: 3257 }, { tol: 1 }); }); } },
     { id: 'L24a', from: 'S24 Port Sarim', to: 'S24 Taverley', method: 'Falador teleport + walk to Kaqemeex', setup: { at: [3045, 3257], stats: LATE, items: TELE_RUNES }, run: async (c, log) => { await log.seg('teleport', () => castTele(c, 'falador')); await log.seg('walk', async () => { await walk(c, { x: 2924, z: 3486 }, { tol: 1 }); }); } },
     { id: 'L24b', from: 'S24 Taverley', to: 'S24 Goblin Village', method: 'walk Kaqemeex to the generals', setup: { at: [2924, 3486], stats: LATE }, run: async (c) => { await walk(c, { x: 2957, z: 3511 }, { tol: 1 }); } },
     { id: 'L24d', from: 'S24 Port Sarim', to: 'S24 Goblin Village', method: 'Falador teleport + walk to the generals (Druidic Ritual moved to S05)', setup: { at: [3045, 3257], stats: LATE, items: TELE_RUNES }, run: async (c, log) => { await log.seg('teleport', () => castTele(c, 'falador')); await log.seg('walk', async () => { await walk(c, { x: 2957, z: 3511 }, { tol: 1 }); }); } },
