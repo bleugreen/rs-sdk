@@ -59,7 +59,10 @@ await runScript(async ({ bot, sdk }) => {
         await sdk.sendUseItem(sig.slot, 2);
         await d;
         const sp = await waitUntil(sdk, s => s.nearbyNpcs.some(n => /^Jungle Demon$/i.test(n.name)), 60);
-        if (!sp) { samples.push({ run, note: 'no demon' }); continue; }
+        if (!sp) {
+            samples.push({ run, note: 'no demon', pos: JSON.stringify(pos(sdk.getState())), msgs: sdk.getState()!.gameMessages.slice(-4).map(m => m.text).join(' | '), inv: sdk.getState()!.inventory.map(i => i.name).join(',') });
+            continue;
+        }
         const tSpawn = sp.tick;
         await bot.activatePrayer('protect_from_magic');
         const dm = sdk.getState()!.nearbyNpcs.filter(n => /^Jungle Demon$/i.test(n.name)).sort((a, b) => a.distance - b.distance)[0];
