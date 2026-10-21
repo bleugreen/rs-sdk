@@ -135,19 +135,49 @@ With Plague City done before this quest, B and C save about 290 ticks together
 | Minimum safe stats | any, with Protect from Melee **and prayer potions**; time scales with accuracy and max hit |
 | Combat xp | about 628 base in the trained style plus 209 Hitpoints (inferred: 157 x 4, x 1.33) |
 
+## Dialogue runs
+
+CONVENTIONS notation, from the measured page logs (a page followed by more than 2
+ticks is a state page). The foreman's are from the per-tick dump of his scene.
+
+| Dialogue | Runs | Clicks | Burst |
+|---|---|---|---|
+| A Narnode start | 3c, opt, 3c, state, 8c, opt, 13c | 30 | 10 |
+| B Hazelmere | 9c | 9 | 2 |
+| C Elkoy jump | 2c, opt, 3c | 6 | 3 |
+| C village spirit tree | 2c, opt, state, state, 1c, opt, 1c | 8 | 7 |
+| C Narnode translation | 4c, opt, 2c, opt, opt, opt, 1c, opt, 1c, opt, state, 8c | 23 | 13 |
+| D Glough | 10c | 10 | 2 |
+| E Narnode | 7c | 7 | 2 |
+| F Charlie | 11c | 11 | 3 |
+| H Glough's arrest | 4c, state, state, 7c, state, state, 5c | 20 | 8 |
+| I pilot and crash | 5c, opt, 1c, state, 1c | 9 | 5 |
+| I gate password | 3c, opt, 4c, opt, 1c, opt, 1c, opt, 2c | 15 | 9 |
+| I foreman | 6c, state, 3c, opt, 3c, opt, 2c, opt, 12c, state, 1c | 32 | 14 |
+| J young tree / village tree | 2c, opt, 2c / 2c, opt, 3c, opt, 1c | 5 + 8 | 3 + 5 |
+| J Charlie | 9c | 9 | 2 |
+| K Anita | 6c, state, 4c | 11 | 4 |
+| L Narnode twigs | 9c | 9 | 2 |
+| N trapdoor scene | state, 4c | 5 | 2 |
+| O Narnode and guards | 3c, state, state, state, 1c, state, 8c, state, 1c | 18 | 10 |
+| P Narnode finish | 17c, state, 4c | 22 | 6 |
+
 ## Tick total
 
-| Part | Measured | Tile model | Raw counts | Basis |
-|---|---|---|---|---|
-| Travel | 997 | 892 | 1,718 tiles in 25 walks | measured, `quest-grandtree-full.ts` |
-| Dialogue | 733 | 733 | 245 pages, 22 choices (includes the scripted walks inside Narnode's, Glough's and the foreman's scenes) | measured |
-| Interactions | 176 | 176 | 2 doors per visit, 21 ladder/stair climbs, gate, crates, 4 twigs, teleport | measured |
-| Fight | 237 | 237 | black demon | measured, `quest-gnome-fights.ts` |
-| Waits | 77 | 77 | Daconia search (expected) | inferred from measured parts |
-| **Total, on foot** | **2,220** | **2,115** | | |
-| With the Ardougne teleport for B and C | about 1,930 | about 1,825 | | inferred |
+Stock = measured; fixed = 1 tick per page (cairn://p/rs/22); burst per CONVENTIONS.
 
-With the fixed lite client (cairn://p/rs/22) dialogue drops by about 270 ticks.
+| Part | Stock | Fixed | Burst | Raw counts | Basis |
+|---|---|---|---|---|---|
+| Travel | 997 (tile model 892) | same | same | 1,718 tiles in 25 walks | measured, `quest-grandtree-full.ts` |
+| Dialogue | 733 | 466 | 311 | 245 pages, 22 options (267 clicks); includes the scripted walks inside Narnode's, Glough's and the foreman's scenes | measured |
+| Interactions | 176 | 173 | 173 | 2 doors per visit, 21 ladder/stair climbs, gate, crates, 4 twigs, teleport (3 clicks) | measured |
+| Fight | 237 | 237 | 237 | black demon | measured, `quest-gnome-fights.ts` |
+| Waits | 77 | 77 | 77 | Daconia search (expected) | inferred from measured parts |
+| **Total, on foot** | **2,220** (tile model **2,115**) | **1,950** (1,845) | **1,795** (1,690) | | |
+| With the Ardougne teleport for B and C | about 1,930 | about 1,660 | about 1,505 | | inferred |
+
+The lab ran at 100 ms ticks: the black demon fight is reaction-dependent and was
+**not re-run at 300 ms**.
 
 ## Risks and gotchas
 
@@ -161,8 +191,13 @@ With the fixed lite client (cairn://p/rs/22) dialogue drops by about 270 ticks.
 - **The demon trapdoor scene** spawns Glough next to you; talking to him resets
   nothing but costs pages.
 - **Wrong translation answers** restart the five choices (`king_narnode.rs2:415-418`).
-- No logout-unsafe stage varps (`grandtree` is permanent), apart from the demon
-  itself.
+- **Logout-unsafe stretch: the black demon (segment N).** The demon deletes itself
+  when its player is not found or is more than 17 tiles away
+  (`grandtree_black_demon.rs2:15-22`), and the stage moves only on the kill; a
+  logout between the trapdoor and the kill means opening the trapdoor again (stage
+  130 replays Glough's scene). Everything else is a permanent varp (`grandtree`,
+  `daconia_rock_root`, `femi_help` are `scope=perm`), so any other point is a clean
+  logout point.
 
 ## Agility: comparison with the Agility child
 
