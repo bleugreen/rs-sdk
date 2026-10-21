@@ -8,9 +8,16 @@ import { Conversation, GE_POST, LOOP, type Clock } from './ambassador';
 import { createIO, IO_KEYS, type WalkBot } from './ambassador/io';
 import { ChatLog, readRecords, type LogRecord } from './ambassador/log';
 import { systemPrompt, type ChatModel } from './ambassador/model';
-import { buildDenyList, Limiter, LIMITS } from './ambassador/policy';
+import { buildDenyList, checkOutput, Limiter, LIMITS } from './ambassador/policy';
 
 const T0 = Date.parse('2026-10-21T12:00:00Z');
+
+// Written independently of policy.ts: our naming scheme in any spelling, including
+// a www-prefixed name like the scored account's former candidate. cairn.md (the
+// website, with its dot) is not a name and stays allowed.
+const NAME_LIKE = /\bcairn[\s_-]*(md|dot|amb|cam|mule|h\s*\d|t\s*\d|\d)|\bwww[\s_.-]*cairn[\s_-]|cairnmd|cairn_[a-z0-9]/i;
+
+const PERSONA = readFileSync(join(import.meta.dir, 'ambassador', 'persona.md'), 'utf8');
 
 function player(name: string) {
     return { kind: 'player' as const, index: 1, name, combatLevel: 3, x: GE_POST.x + 1, z: GE_POST.z, distance: 1 };
@@ -206,10 +213,6 @@ describe('conversation loop', () => {
     });
 
     test('names no account of ours, whatever the model tries', async () => {
-        // Written independently of policy.ts: our naming scheme in any spelling, including
-        // a www-prefixed name like the scored account's former candidate. cairn.md (the
-        // website, with its dot) is not a name and stays allowed.
-        const NAME_LIKE = /\bcairn[\s_-]*(md|dot|amb|cam|mule|h\s*\d|t\s*\d|\d)|\bwww[\s_.-]*cairn[\s_-]|cairnmd|cairn_[a-z0-9]/i;
         const attempts = [
             'Our speedrun account is www cairn run, wish it luck',
             'Look up Www_Cairn_Zz on the hiscores',
@@ -234,7 +237,33 @@ describe('conversation loop', () => {
         for (const t of sent) expect(t).not.toMatch(NAME_LIKE);
         expect(h.records('blocked')).toHaveLength(attempts.length);
         // The prompt the role builds from the real persona names no account either.
-        expect(systemPrompt(readFileSync(join(import.meta.dir, 'ambassador', 'persona.md'), 'utf8'))).not.toMatch(NAME_LIKE);
+        expect(systemPrompt(PERSONA)).not.toMatch(NAME_LIKE);
+    });
+
+    test("the persona's standing buy request can be said: a price, the GE, no account", async () => {
+        const section = PERSONA.split(/\n\s*\n/).find(block => block.startsWith('Standing request'));
+        expect(section).toBeDefined();
+        // The request carries a price and the way to complete it.
+        expect(section).toMatch(/nature talisman/i);
+        expect(section).toMatch(/\b\d+k\b/);
+        expect(section).toMatch(/Grand Exchange|\bGE\b/);
+        const examples = [...section!.matchAll(/"([^"]+)"/g)].map(m => m[1]!);
+        expect(examples.length).toBeGreaterThanOrEqual(2);
+        const deny = buildDenyList(['cairn_h61', 'cairn_md', 'cairn_h53'], []);
+        for (const line of examples) {
+            expect(checkOutput(line, deny)).toEqual({ ok: true, text: line });
+            expect(line).not.toMatch(NAME_LIKE);
+            expect(line).toMatch(/\b\d+k\b/);
+            expect(line).toMatch(/\bGE\b/);
+        }
+        // Voiced by the model, the loop sends it unchanged under the normal limits.
+        const model = new ScriptedModel((_u, n) => (n <= examples.length ? reply('Bob', examples[n - 1]!) : '{"respond":false}'));
+        const h = harness(model);
+        h.say('Bob', 'anyone buying talismans?');
+        await h.runFor(30_000);
+        h.say('Bob', 'what do you pay for a nature talisman');
+        await h.runFor(30_000);
+        expect(h.sends().map(s => String(s.args.at(-1)))).toEqual(examples.slice(0, 2));
     });
 
     test('never repeats itself', async () => {
