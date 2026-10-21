@@ -6,21 +6,26 @@
 //  - The progress varps themselves are server-only. None of them is declared
 //    `transmit=yes`, and the engine only sends VARP_SMALL/VARP_LARGE for
 //    transmitted varps, so `varp` below is reference data, never read live.
-//  - BotWorldState.quests[key]: not_started / started / complete, from the quest
-//    tab's colours (`questList` is the component whose colour carries it).
+//  - BotWorldState.quests[key]: started / complete, from the quest tab's
+//    colours (`questList` is the component whose colour carries it); a quest
+//    missing from the map is not started.
 //  - BotWorldState.questPoints: the transmitted `qp` varp (101).
-//  - The exact stage, on demand: open the journal and match `journal` markers
-//    (speedrun/lib/quests.ts readQuestStage).
+//  - The exact stage, on demand: open the journal (BotWorldState.questJournal)
+//    and match `journal` markers (speedrun/lib/quests.ts).
 //
 // Paths in `source` are relative to server/content/scripts/.
 //
 // Journal markers: `journal` is a phrase from the stage's journal text with
 // colour tags (@dbl@, @str@, ...) and line breaks removed and whitespace
-// collapsed. It must appear in that stage's text and in no other stage's
-// text, whatever the inventory holds (several journals strike items through
-// as they are collected, so markers avoid those lines). A stage without a
-// marker shares its journal text with a neighbour, and readQuestStage reports
-// the range. Markers are matched case-sensitively as substrings.
+// collapsed. It appears in the text of every stage that carries it, whatever
+// the inventory holds (several journals strike items through as they are
+// collected, so markers avoid those lines), and in no other stage's text.
+// Stages whose journal text is identical carry the same marker, so a match
+// names exactly the stages that text can mean. A started stage without a
+// marker matches nothing: its whole text reappears at a later stage, or it
+// switches on something other than the quest varp (each quest's `notes` say
+// which). Markers are matched case-sensitively as substrings, ignoring
+// whitespace, because the server wraps the text into lines at its own breaks.
 
 export interface QuestStage {
     /** The content constant's name without the quest prefix, e.g. `started`. */
