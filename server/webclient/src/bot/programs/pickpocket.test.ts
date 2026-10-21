@@ -236,12 +236,12 @@ describe('pickpocket stun actions', () => {
         const { h, stunActions, rolls } = thieve({ ticks: 200, outcome: everyFifthFails, kit: { blood: 6000, air: 6000 }, params: { stunActions: ['bury', 'charge'] } });
         const r = h.status.result as Result;
         expect(Object.keys(r.gapAfterFail)).toEqual(['11']);
-        // k 2..7: 6 ticks of 4
-        expect(r.stun!.firedPerStun).toBe(24);
         expect(stunActions.every(l => !l.dropped && l.sinceFail! >= 4 && l.sinceFail! <= 9)).toBe(true);
-        // each of those ticks sends 4 + the click: the whole budget
-        const fail = rolls.find(x => !x.ok)!.tick;
-        expect(h.sent.filter(s => s.tick === fail + 2).length).toBe(5);
+        // k 2..7 each send 4 Charges and the click, the whole budget; k 0, 1 and 8 the click alone
+        for (const fail of rolls.filter(x => !x.ok).map(x => x.tick).slice(0, -1)) {
+            const perK = [0, 1, 2, 3, 4, 5, 6, 7, 8].map(k => h.sent.filter(s => s.tick === fail + k).length);
+            expect(perK).toEqual([1, 1, 5, 5, 5, 5, 5, 5, 1]);
+        }
         expect(h.status.deferred).toBe(0);
     });
 
@@ -251,8 +251,9 @@ describe('pickpocket stun actions', () => {
         expect(charges.length).toBe(3);
         const st = (h.status.result as Result).stun!;
         expect(st.fired).toBe(3);
-        // the rest of the stuns found nothing to do
-        expect(st.dry).toBe(st.stuns - 1);
+        // the rest of the stuns found nothing to do (the run may end inside the last one's window)
+        expect(st.dry).toBeGreaterThanOrEqual(st.stuns - 2);
+        expect(st.dry).toBeLessThanOrEqual(st.stuns - 1);
     });
 
     test('stops a skill-gated action at its level: no Charge at Magic 99', () => {
@@ -262,7 +263,9 @@ describe('pickpocket stun actions', () => {
 
     test('arrows use the best tier the Fletching level allows', () => {
         const at = (fletching: number) => {
-            const { h, stunActions } = thieve({ ticks: 40, outcome: () => false, kit: { headless: 3000, heads: { rune: 600, mithril: 600, bronze: 600 }, fletching }, params: { stunActions: ['arrows'] } });
+            // one stun: 24 arrow actions use 360 of a tier's 600 heads
+            const { stunActions } = thieve({ ticks: 20, outcome: () => false, kit: { headless: 3000, heads: { rune: 600, mithril: 600, bronze: 600 }, fletching }, params: { stunActions: ['arrows'] } });
+            expect(stunActions.length).toBe(24);
             expect(stunActions.every(l => !l.dropped)).toBe(true);
             return new Set(stunActions.map(l => l.name));
         };
@@ -272,13 +275,10 @@ describe('pickpocket stun actions', () => {
     });
 
     test('a level-up page is resumed first, at the cost of one delay-free slot', () => {
-        let fail = -1;
-        const { h, rolls } = thieve({ ticks: 60, outcome: n => n !== 1, ...PACK, dialogAt: t => fail > 0 && t === fail + 2 });
-        fail = rolls.find(x => !x.ok)?.tick ?? -1;
-        // re-run with the failure's tick known
-        const again = thieve({ ticks: 60, outcome: n => n !== 1, ...PACK, dialogAt: t => t === fail + 2 });
-        void h;
-        const sends = again.h.sent.filter(s => s.tick === fail + 2).map(s => s.action.type);
+        // the model is deterministic: find the failure's tick, then open a page on its k = 2
+        const fail = thieve({ ticks: 60, outcome: n => n !== 1, ...PACK }).rolls.find(x => !x.ok)!.tick;
+        const { h } = thieve({ ticks: 60, outcome: n => n !== 1, ...PACK, dialogAt: t => t === fail + 2 });
+        const sends = h.sent.filter(s => s.tick === fail + 2).map(s => s.action.type);
         expect(sends).toEqual(['clickDialogOption', 'clickComponent', 'clickComponent', 'useInventoryItem', 'interactNpc']);
     });
 
