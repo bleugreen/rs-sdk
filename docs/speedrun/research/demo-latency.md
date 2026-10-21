@@ -596,8 +596,9 @@ minutes with 3-9 catch-ups come and go all morning.
   upper bounds, from the gaps between those calm samples: 04:13 at most 12 minutes (calm at 04:04
   and 04:18), 04:24 at most 29, 05:36 at most 50 and 09:51 at most about 65. Only one was watched
   continuously: 06:10, at 19-23 catch-ups in each of 4 minutes, which ended with the demo's restart
-  at 06:14. So a severe burst lasts at least a few minutes and, in every case followed, was gone by
-  the next sample, 5-52 minutes after it was seen.
+  at 06:14. So a severe burst lasts at least the 1.4 minutes of a probe (4 minutes the one time it
+  was watched throughout) and, in every case followed, was gone by the next sample, 5-52 minutes
+  after it was seen.
 - *Simmer minutes* (3 or more catch-ups in a single minute) come in short runs: 26 runs inside the
   long windows, of which 21 closed inside a window at 1-4 minutes (median 1); the other 5 were cut
   off by a window's edge at 1-5 minutes.
