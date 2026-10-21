@@ -13,7 +13,6 @@ export default class OpLocHandler extends ClientGameMessageHandler<OpLoc> {
 
         if (player.delayed) {
             // normal: cannot interact while delayed
-            console.log(`WCTRACE ${World.currentTick} oploc at=${x},${z} rejected=delayed`);
             player.write(new UnsetMapFlag());
             return false;
         }
@@ -31,7 +30,6 @@ export default class OpLocHandler extends ClientGameMessageHandler<OpLoc> {
         const loc = World.getLoc(x, z, player.level, locId);
         if (!loc) {
             // bad client or lag: loc does not exist
-            console.log(`WCTRACE ${World.currentTick} oploc at=${x},${z} rejected=noloc`);
             player.write(new UnsetMapFlag());
             return false;
         }
@@ -55,7 +53,6 @@ export default class OpLocHandler extends ClientGameMessageHandler<OpLoc> {
         player.clearPendingAction();
         player.setInteraction(Interaction.ENGINE, loc, trigger);
         player.opcalled = true;
-        console.log(`WCTRACE ${World.currentTick} oploc at=${x},${z} ok pos=${player.x},${player.z}`);
         return true;
     }
 }

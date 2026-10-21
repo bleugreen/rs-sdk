@@ -799,7 +799,6 @@ class World {
                 // - interactions
                 // - movement
                 player.processInteraction();
-                if (player.stepsTaken > 0) console.log(`WCTRACE ${this.currentTick} moved pos=${player.x},${player.z}`);
                 // After movement: face a loc/obj target if we walked over and held still (needs stepsTaken).
                 player.reorient();
                 if (!player.busy() && !player.delayed && !player.loggingOut) player.recoverItems();

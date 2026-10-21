@@ -8,7 +8,6 @@ import ClientGameMessageHandler from '#/network/game/client/ClientGameMessageHan
 import OpHeld from '#/network/game/client/model/OpHeld.js';
 import { LoggerEventType } from '#/server/logger/LoggerEventType.js';
 import Environment from '#/util/Environment.js';
-import World from '#/engine/World.js';
 
 export default class OpHeldHandler extends ClientGameMessageHandler<OpHeld> {
     handle(message: OpHeld, player: Player): boolean {
@@ -16,7 +15,6 @@ export default class OpHeldHandler extends ClientGameMessageHandler<OpHeld> {
 
         if (player.delayed) {
             // normal: cannot interact while delayed
-            console.log(`WCTRACE ${World.currentTick} opheld op=${message.op} slot=${slot} rejected=delayed`);
             return false;
         }
 
@@ -41,7 +39,6 @@ export default class OpHeldHandler extends ClientGameMessageHandler<OpHeld> {
             return false;
         } else if (!inv.hasAt(slot, objId)) {
             // bad client or lag: item does not exist in inventory
-            console.log(`WCTRACE ${World.currentTick} opheld op=${message.op} slot=${slot} rejected=noitem`);
             return false;
         }
 
@@ -51,7 +48,6 @@ export default class OpHeldHandler extends ClientGameMessageHandler<OpHeld> {
             return false;
         }
 
-        console.log(`WCTRACE ${World.currentTick} opheld op=${message.op} slot=${slot} ok`);
         player.lastItem = objId;
         player.lastSlot = slot;
 

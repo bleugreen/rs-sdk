@@ -597,7 +597,6 @@ const PlayerOps: CommandHandlers = {
         const chance = Math.floor(JavaRandom.nextDouble() * 256);
 
         state.pushInt(value > chance ? 1 : 0);
-        console.log(`WCTRACE ${World.currentTick} roll lvl=${clampedLevel} lo=${low} hi=${high} v=${value} c=${chance} ok=${value > chance ? 1 : 0} pos=${state.activePlayer.x},${state.activePlayer.z}`);
     },
 
     [ScriptOpcode.SPOTANIM_PL]: state => {

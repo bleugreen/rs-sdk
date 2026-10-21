@@ -1876,7 +1876,6 @@ export default class Player extends PathingEntity {
     }
 
     addXp(stat: number, xp: number, allowMulti: boolean = true) {
-        console.log(`WCTRACE ${World.currentTick} xp stat=${stat} fine=${xp}`);
         // require xp is >= 0. there is no reason for a requested addXp to be negative.
         if (xp < 0) {
             throw new Error(`Invalid xp parameter for addXp call: Stat was: ${stat}, Exp was: ${xp}`);
