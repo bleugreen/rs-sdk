@@ -139,15 +139,28 @@ await runScript(async ({ bot, sdk }) => {
     out.walkToBell = { ...walk, withPickup: L.tick(sdk) - t0 };
     const bellItem = sdk.findInventoryItem(/Grail bell/i);
     if (!bellItem) throw new Error(`no Grail bell; so far ${JSON.stringify(out)}`);
-    // The bell only works with a Grail maiden within 4 tiles (quest_grail.rs2:54), and they wander.
+    // The bell only works with a Grail maiden within 4 tiles, Chebyshev
+    // (npc_find(coord, grail_maiden, 4, 0), quest_grail.rs2:54). The maidens
+    // wander inside the castle walls, so walking towards one from outside does
+    // not help: stay on the bell tile and ring once one is in range.
+    const maidenInRange = () => {
+        const p = L.pos(sdk);
+        return sdk.getState()!.nearbyNpcs.some(n => /Grail maiden/i.test(n.name) && Math.max(Math.abs(n.x - p.x), Math.abs(n.z - p.z)) <= 4);
+    };
     t0 = L.tick(sdk);
-    const maiden = sdk.getState()!.nearbyNpcs.filter(n => /Grail maiden/i.test(n.name)).sort((a, b) => a.distance - b.distance)[0];
-    if (maiden && maiden.distance > 2) await bot.walkTo(maiden.x, maiden.z, 2);
-    out.toMaiden = { ticks: L.tick(sdk) - t0, maidenDistanceBefore: maiden?.distance ?? null };
+    await L.waitUntil(sdk, maidenInRange, 100);
+    out.waitForMaiden = L.tick(sdk) - t0;
     t0 = L.tick(sdk);
-    await sdk.sendUseItem(bellItem.slot, 1);
-    const ring = await L.talkThrough(sdk, []);
-    out.ringBell = { ticks: ring.ticks, pages: ring.pages, total: L.tick(sdk) - t0 - 3, insideAt: L.pos(sdk) };
+    let rings = 0;
+    let ring: L.DialogueResult | null = null;
+    while (rings < 5 && L.pos(sdk).z > 4692) {
+        await L.waitUntil(sdk, maidenInRange, 100);
+        await sdk.sendUseItem(sdk.findInventoryItem(/Grail bell/i)!.slot, 1);
+        ring = await L.talkThrough(sdk, []);
+        rings++;
+    }
+    out.ringBell = { rings, ticks: ring?.ticks, pages: ring?.pages, total: L.tick(sdk) - t0 - 3, insideAt: L.pos(sdk) };
+    if (L.pos(sdk).z > 4692) throw new Error('the bell never let us in');
 
     // Up to the Fisher King.
     t0 = L.tick(sdk);
