@@ -322,9 +322,9 @@ export class QuestBot {
         await this.withReachRetry(() => this.sdk.sendInteractLoc(l.x, l.z, l.id, op), until, opts.dialog, opts.choices);
     }
 
-    async useOnLoc(obj: string, key: string, until: () => boolean, opts: { near?: [number, number]; dialog?: boolean } = {}) {
+    async useOnLoc(obj: string, key: string, until: () => boolean, opts: { near?: [number, number]; dialog?: boolean; choices?: RegExp[] } = {}) {
         const l = await this.loc(key, opts.near);
-        await this.withReachRetry(() => this.sdk.sendUseItemOnLoc(this.need(obj).slot, l.x, l.z, l.id), until, opts.dialog);
+        await this.withReachRetry(() => this.sdk.sendUseItemOnLoc(this.need(obj).slot, l.x, l.z, l.id), until, opts.dialog, opts.choices);
     }
 
     /** Send a loc click; if the server answers "I can't reach that!", log it and click again. */
