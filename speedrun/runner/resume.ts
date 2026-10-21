@@ -109,8 +109,15 @@ export interface Link {
     isLost(): boolean;
 }
 
+/**
+ * The demo can go silent for ~2 s with nothing wrong (1,987 ms with no frames,
+ * 07:50 PDT, rs/102), so silence alone counts only past ~5 s. A real drop is
+ * seen sooner through the socket closing (the lite runner exits at once).
+ */
+export const LOST_AFTER_TICKS = 17;
+
 export interface SessionLinkOptions {
-    /** Ticks without an advancing in-world tick before the session counts as lost (default 10, the watchdog's). */
+    /** Ticks without an advancing in-world tick before the session counts as lost (default LOST_AFTER_TICKS). */
     staleTicks?: number;
     pollMs?: number;
 }
@@ -122,7 +129,7 @@ export interface SessionLinkOptions {
  * (or the caller's recover) brought back.
  */
 export function sessionLink(session: Session, opts: SessionLinkOptions = {}): Link {
-    const staleMs = () => (opts.staleTicks ?? 10) * tickMs();
+    const staleMs = () => (opts.staleTicks ?? LOST_AFTER_TICKS) * tickMs();
     const pollMs = opts.pollMs ?? 100;
     let lostAt = 0;
     const why = (): string | null => {
@@ -168,6 +175,9 @@ export function sessionLink(session: Session, opts: SessionLinkOptions = {}): Li
 }
 
 // ------------------------------------------------------------------ runner
+
+/** How lib/programs.ts awaitProgram says the page under a program was replaced. */
+const RELOADED = /page reloaded/i;
 
 export const RESUME_STEP = '(resume)';
 export const DROP_STEP = '(drop)';
@@ -237,6 +247,7 @@ export async function runResumable<C>(session: RunnerSession, steps: ReadonlyArr
             if (point.mode === 'finished') return { completed: 0, drops, points };
 
             const a = fence.open();
+            const attemptSession = session.sessionId;
             const watch = new AbortController();
             const lost = opts.link.lost(watch.signal).then(reason => ({ lost: reason }) as const);
             let running = point.index;
@@ -256,8 +267,13 @@ export async function runResumable<C>(session: RunnerSession, steps: ReadonlyArr
                 if (!first.result.aborted) return { ...first.result, drops, points };
                 reason = a.reason || 'aborted';
             } else if ('error' in first) {
-                if (!opts.link.isLost()) throw first.error;
-                reason = `step failed while the link was lost: ${first.error instanceof Error ? first.error.message : String(first.error)}`;
+                // A drop can surface as the step's own error, sometimes after the
+                // link is already back: rs/97's awaitProgram rejects "page reloaded"
+                // once the reloaded page publishes. Those resume; anything else is real.
+                const msg = first.error instanceof Error ? first.error.message : String(first.error);
+                const cut = opts.link.isLost() || session.sessionId !== attemptSession || RELOADED.test(msg);
+                if (!cut) throw first.error;
+                reason = `step cut by the drop: ${msg}`;
             } else {
                 reason = first.lost;
             }

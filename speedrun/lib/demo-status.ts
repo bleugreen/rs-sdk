@@ -74,6 +74,8 @@ export interface RestartRecord {
 }
 
 export interface TrackerOptions {
+    /** Consecutive unanswered samples before an outage opens (default 2: one miss can be a stall or a blip). */
+    missesToDown?: number;
     /** A count under this share of the recent running count is a restart (default 0.1). */
     collapseShare?: number;
     /** Only a running count of at least this many can collapse (default 50; the lab has ~1). */
@@ -115,9 +117,12 @@ export class RestartTracker {
     private current: RestartRecord | null = null;
     private last: RestartRecord | null;
     private minutes: number[] = [];
+    private misses = 0;
+    private firstMissAt: number | null = null;
 
     constructor(readonly origin: string, opts: TrackerOptions = {}, seed: RestartRecord | null = null) {
         this.o = {
+            missesToDown: opts.missesToDown ?? 2,
             collapseShare: opts.collapseShare ?? 0.1,
             collapseFloor: opts.collapseFloor ?? 50,
             recoveredShare: opts.recoveredShare ?? 0.5,
@@ -134,10 +139,18 @@ export class RestartTracker {
         const cur = this.current;
         if (!cur) {
             const collapsed = s.players !== null && this.running !== null && this.running >= this.o.collapseFloor && s.players < this.running * this.o.collapseShare;
-            if (s.players === null || collapsed) {
+            if (s.players === null) {
+                this.misses++;
+                this.firstMissAt ??= s.at;
                 // Unreachable before any good sample: down, but no restart time to report.
-                if (this.phase === 'unknown' && s.players === null) this.phase = 'down';
-                else this.beginOutage(s.at, s.players);
+                if (this.phase === 'unknown') this.phase = 'down';
+                else if (this.misses >= this.o.missesToDown) this.beginOutage(this.firstMissAt, null);
+                return;
+            }
+            this.misses = 0;
+            this.firstMissAt = null;
+            if (collapsed) {
+                this.beginOutage(s.at, s.players);
                 return;
             }
             this.phase = 'up';
@@ -185,6 +198,11 @@ export class RestartTracker {
         const n = this.o.burstMinutes;
         if (this.minutes.length < n) return false;
         return this.minutes.slice(-n).every(c => c >= this.o.burstPerMinute);
+    }
+
+    /** Unanswered samples in a row so far (an outage opens at missesToDown). */
+    get pendingMisses(): number {
+        return this.misses;
     }
 
     get inOutage(): boolean {

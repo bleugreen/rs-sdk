@@ -536,7 +536,11 @@ const liveActions: WatchdogActions = {
 };
 
 export interface WatchdogOptions {
-    /** Ticks without an advancing in-world tick before the client counts as wedged (default 10). */
+    /**
+     * Ticks without an advancing in-world tick before the client counts as wedged
+     * (default 17, ~5 s: the demo has gone ~2 s without a frame and recovered,
+     * rs/102; a dead client is seen at once through its exit, not this).
+     */
     staleTicks?: number;
     launchGraceMs?: number;
     /** How long the clean logout of a wedged client may take before it counts as not landing (default 8 ticks, at least 2 s). */
@@ -565,7 +569,7 @@ export interface WatchdogOptions {
  * relaunch.
  */
 export function startWatchdog(session: Session, opts: WatchdogOptions = {}): Watchdog {
-    const staleMs = (opts.staleTicks ?? 10) * tickMs();
+    const staleMs = (opts.staleTicks ?? 17) * tickMs();
     const launchGraceMs = opts.launchGraceMs ?? 30_000;
     const logoutTimeoutMs = opts.logoutTimeoutMs ?? Math.max(2_000, 8 * tickMs());
     const progressStaleMs = opts.progressStaleTicks === undefined ? null : opts.progressStaleTicks * tickMs();
