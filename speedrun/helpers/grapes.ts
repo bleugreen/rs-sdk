@@ -91,6 +91,9 @@ const GUILD_DOOR: Tile = { x: 3143, z: 3444 };
 const GUILD_OUTSIDE: Tile = { x: 3143, z: 3443 };
 const GUILD_INSIDE: Tile = { x: 3143, z: 3445 };
 const GUILD_GROUND: Box = { x1: 3137, z1: 3444, x2: 3150, z2: 3455 };
+/** The door is reached from the south-west, around the fence east of the guild (SDK route from Varrock west bank). */
+const GUILD_APPROACH_SOUTH: Tile = { x: 3152, z: 3422 };
+const GUILD_APPROACH_WEST: Tile = { x: 3142, z: 3436 };
 const GUILD_GRAPES = { x: 3144, z: 3450, level: 2 };
 const GUILD_JUG = { x: 3141, z: 3447, level: 2 };
 const GUILD_SINK = { x: 3146, z: 3451 };
@@ -435,15 +438,32 @@ class Gatherer {
         if (position(this.sdk).level !== want) throw new Error(`climb ${up ? 'up' : 'down'} failed`);
     }
 
-    /** Walk to a tile; if no path exists (shut in behind a closed door), open the nearest door and retry once. */
+    /**
+     * Walk to a tile. The SDK's offline collision map can leave a tile with no route
+     * out (it happened on the strip east of the guild, x 3149+, z 3428-3441), so on
+     * failure send raw walks and let the server's pathfinder move us (first toward the
+     * target, then via the approach south-west of the guild), then retry.
+     */
     async walkOrOpen(t: Tile, tolerance: number): Promise<void> {
         try {
             await walkNear(this.ctx, t.x, t.z, tolerance);
+            return;
         } catch (e) {
-            const r = await this.bot.openDoor();
-            this.ctx.log('walk blocked; opened a door', { to: t, at: position(this.sdk), door: r.message });
-            await walkNear(this.ctx, t.x, t.z, tolerance);
+            this.ctx.log('walk blocked; trying server-side walks', { to: t, at: position(this.sdk) });
         }
+        for (const step of [t, GUILD_APPROACH_SOUTH, GUILD_APPROACH_WEST, t]) {
+            const from = position(this.sdk);
+            await this.sdk.sendWalk(step.x, step.z);
+            await this.sdk.waitForTicks(12);
+            this.ctx.log('server walk', { to: step, from, now: position(this.sdk) });
+            try {
+                await walkNear(this.ctx, t.x, t.z, tolerance);
+                return;
+            } catch {
+                // keep stepping
+            }
+        }
+        throw new Error(`could not reach ${t.x},${t.z} from ${JSON.stringify(position(this.sdk))}`);
     }
 
     async enterGuild(): Promise<void> {
