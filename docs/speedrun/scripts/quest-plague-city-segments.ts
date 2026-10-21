@@ -131,7 +131,7 @@ await runScript(async ({ bot, sdk }) => {
             const top = (await sdk.scanNearbyLocs(6)).find(l => /stair/i.test(l.name));
             if (!top) throw new Error('Rehnison stairs top not found');
             await S.step('Rehnison stairs down', () => sdk.sendInteractLoc(top.x, top.z, top.id, 1), { done: atLevel(sdk, 0), settle: 0 });
-            await S.walk('Rehnison house -> outside door', 2531, 3327);
+            await S.step('Rehnison door (out)', loc('rehnisonDoor'), { done: () => L.pos(sdk).z <= 3328, settle: 0 });
             await S.walk('Rehnison door -> plague house door', 2533, 3273);
             await S.step('plague house door: the mourner (23->24)', loc('plagueDoor'), { choices: [/I fear not a mere plague/] });
             await quest('plagueDoor');

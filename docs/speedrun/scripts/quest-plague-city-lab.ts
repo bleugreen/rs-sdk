@@ -107,14 +107,22 @@ export class Steps {
     /** One run click to (x,z); measured until the observed tile is (x,z) and still. */
     async walk(label: string, x: number, z: number): Promise<StepResult> {
         const sdk = this.sdk;
-        let still = 0;
+        const t0 = L.tick(sdk);
         let last = L.pos(sdk);
+        let lastMove = t0;
         return this.step(label, () => sdk.sendWalk(x, z, true), {
+            // Arrived, or no tile change for 4 ticks (blocked); state updates can repeat within a tick.
             done: () => {
                 const p = L.pos(sdk);
-                still = p.x === last.x && p.z === last.z ? still + 1 : 0;
+                const t = L.tick(sdk);
+                if (p.x !== last.x || p.z !== last.z) lastMove = t;
                 last = p;
-                return (p.x === x && p.z === z) || still >= 4;
+                if (p.x === x && p.z === z) return true;
+                if (t - lastMove >= 4 && t - t0 >= 4) {
+                    console.log(`  walk ${label} stopped at ${p.x},${p.z}`);
+                    return true;
+                }
+                return false;
             },
             settle: 0,
             maxTicks: 150,
