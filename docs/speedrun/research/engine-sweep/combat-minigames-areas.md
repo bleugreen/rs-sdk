@@ -8,6 +8,28 @@ engine) or **inferred** (derived from read code plus an assumption that is named
 measured route rates quoted for comparison come from `agent/rs-28-coordinator-0`
 (`docs/speedrun/skills/*.md`).
 
+## Correction (rs/92): the Agility Arena ticket trader is not a route
+
+The first version of this file ranked the ticket trader as its top finding ("Agility 1 -> 99
+from 147 tickets traded in by helpers"). That is wrong: the grant is unguarded, but the
+tickets cannot reach the scored account from anyone else (read):
+
+- The trader checks only the ticket count: no level, no delay, no cap
+  (`agilityarena_tickettrader.rs2:60-68`).
+- `agilityarena_ticket` is `tradeable=no` (`agilityarena.obj:15`). The trade screen refuses it
+  (`interface_trade/scripts/trade.rs2:338-341`); an untradeable drop is visible only to the
+  player who dropped it (`server/engine/src/engine/script/handlers/InvOps.ts:724-726`); the GE
+  refuses untradeables (`server/engine/src/engine/market/MarketCatalog.ts:4`,
+  `GrandExchange.ts:62`).
+- Tickets come one per tagged pillar, and only after the first pillar of a streak
+  (`agilityarena.rs2:53-84`). The flashing pillar moves every 98 ticks on one global NPC
+  clock (`agilityarena_clerk.rs2:78-87`), so the scored account earns at most one ticket per
+  98 ticks of its own arena time: at most 280 base (100-pack rate) or 320 (1,000-pack rate) per
+  98 ticks, about **2.9-3.3 base xp per tick**, against 7.4 for rs/2's Wilderness course.
+
+The button burst itself is real (5 buys a tick, measured by rs/92 in `engine-sweep.md`), but
+there is nothing to burst with. Closed lead; the rows below carry the corrected rates.
+
 ## Units and engine facts used throughout (read)
 
 - `stat_advance(stat, N)` adds `N * xpRate` to the stored stat, which is kept in tenths of
@@ -110,15 +132,10 @@ the real cost and is named in Notes.
 
 | Skill | Action (product) | Base xp per action | Level req (checked? where) | Trigger (opheld/opheldu/oploc/opnpc/if_button/resume_p/timer/queue/softtimer) | Item / location guards | Delay: kind (p_delay n / p_arrivedelay / weakqueue / queue n / none) and BEFORE or AFTER the grant | Busy/interface guard | Re-triggerable within a tick? | Actions per tick (max) | Base xp per tick | Source file:line (grant) + file:line (guard) | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Agility | Ticket trader, 1,000-ticket button | 320,000 | none | if_button (`agilityarena_trade:com_99/105`) | 1,000 `agilityarena_ticket` in inv; trade interface visible (Jackie `opnpc3` opens it) | none | none: no `p_finduid`; protected access fails only while delayed | yes | 5 (read) | 1,600,000 while tickets last (read) | `agilityarena_tickettrader.rs2:67`; `:61` (ticket count), `:48-49` | One click is 8x a full 99. Consumes 1,000 tickets. |
-| Agility | Ticket trader, 100-ticket button | 28,000 | none | if_button (`com_98/104`) | 100 tickets | none | none | yes | 5 (read) | 140,000 (read) | `agilityarena_tickettrader.rs2:67`; `:61`, `:45-46` | 280 base per ticket |
-| Agility | Ticket trader, 25-ticket button | 6,500 | none | if_button (`com_97/103`) | 25 tickets | none | none | yes | 5 (read) | 32,500 (read) | `:67`; `:61`, `:42-43` | 260 per ticket |
-| Agility | Ticket trader, 10-ticket button | 2,480 | none | if_button (`com_96/102`) | 10 tickets | none | none | yes | 5 (read) | 12,400 (read) | `:67`; `:61`, `:39-40` | 248 per ticket |
 | Fishing | Sea Slug reward (Caroline) | 7,175 once | quest state only | opnpc1 dialogue | `%seaslugquest` at the saved-Kennith stage | none | dialogue | no: var set before the grant | once | about 2,400 over about 3 claim ticks (inferred) | `caroline.rs2:45`; `:42` | Reaches level 74 from 0. Cost is the Sea Slug quest. |
 | Fishing | Tai Bwo Wannai Trio reward (Tiadeche) | 5,000 once | quest state only | opnpc1 dialogue | `%tbwt_tiadeche = complete` | none | dialogue | no: var set first | once | about 1,700 over about 3 claim ticks (inferred) | `tbwt_tiadeche_final.rs2:21`; `:2-4`, `:20` | Level 69 from 0. Cost is the quest. |
 | Cooking | Tai Bwo Wannai Trio reward (Tinsay) | 5,000 once | quest state only | opnpc1 dialogue | `%tbwt_tinsay = complete` | none | dialogue | no | once | about 1,700 (inferred) | `tbwt_tinsay_final.rs2:16`; `:2-4`, `:15` | Level 69. Cost is the quest. |
 | Attack + Strength | Tai Bwo Wannai Trio reward (Tamayu) | 2,500 + 2,500 once | quest state only | opnpc1 dialogue (or opnpc3 redirect) | `%tbwt_tamayu = complete`; also gives the rune spear (kp) | none | dialogue | no | once | about 1,700 combined (inferred) | `tbwt_tamayu_final.rs2:22-23`; `:2-4`, `:21` | Level 59 in each. |
-| Agility | Ticket trader, 1-ticket button | 240 | none | if_button (`com_94/95`) | 1 ticket | none | none | yes | 5 (read) | 1,200 (read) | `:67`; `:61`, `:36-37` | |
 | Magic | Charge | 180 | 80, checked (`magic.rs2:22` via `charge.rs2:15`); members | if_button (`magic:charge`) | 3 fire + 3 blood + 3 air (a staff can replace one element, `magic.rs2:53-88`); `%magearena >= staff_given` (`charge.rs2:4`) | none (`settimer(charge,2)` is the buff only) | `p_finduid` (`charge.rs2:3`) | yes | 5 (read; measured by rs-28) | 900 (measured, rs-28 `magic.md`) | `charge.rs2:26`; `:3`, `:4`, `:15` | Recast guard commented out `:9-12`. Already the route above 80. |
 | Firemaking | Make magic or yew pyre logs (sacred oil on logs) | 60 | **none** for making (Firemaking checked only when adding to a pyre, `mortton_pyre.rs2:75`) | opheldu (`_category_111`, oil on `category_22` logs) | oil with >= 4 doses (`:22`); `%morttonquest >= mortton_created_sacred_oil` (`:6`) | none | none (dropped only while delayed) | yes | 5 (inferred from the handler) | 300 burst; about 100 sustained with banks (inferred: 14 log + oil pairs per inventory) | `mortton_pyre.rs2:42`; `:6`, `:22`; `flamtaer_pyre.struct:51,63` | Consumes 1 magic or yew log + 1 sacred oil (4). Oiled logs are `category_2050`, so no re-oil loop (`mortton.obj:171-258`). |
 | Firemaking | Make maple or willow pyre logs | 40 | none | opheldu | 3 doses | none | none | yes | 5 (inferred) | 200 burst (inferred) | `mortton_pyre.rs2:42`; `flamtaer_pyre.struct:27,39` | |
@@ -130,6 +147,11 @@ the real cost and is named in Notes.
 | Attack/Strength/Defence | Melee hit | 4 per damage + 1.33 HP | weapon level on equip | opnpc2 / apnpc2 | | `%action_delay` attackrate, set AFTER the grant (`player_melee.rs2:56-60`), checked at `:8` | combat checks | no | 1 per 4 ticks (scimitar) | 9-10 near 99 (measured, rs-28 `combat.md`) | `combat.rs2:146-167`; `player_melee.rs2:8` | Specials share the gate (`player_special_attack.rs2:9-17`). |
 | Firemaking + Prayer | Light a funeral pyre (magic pyre logs + Fiyr remains) | 404.5 FM + 100 Prayer (90 shade + 10 bonus) | Firemaking checked when adding logs (`mortton_pyre.rs2:75`) | oplocu logs, oplocu remains, oploc1/oplocu light then oploc4 | shade not above the log tier (`:253-260`); one pyre per player (`%pyre_loc`) | `%action_delay` +3 before the light roll (`:165-176`); then `queue*(funeral_pyre_reward,2)` blocks a new pyre (`:63,104,129,147`) | none | no | 1 pyre per about 7-9 ticks (inferred) | about 50 FM + 12 Prayer (inferred) | `mortton_pyre.rs2:201-202`; `:75`, `:173`, `:63` | FM 50-404.5 by log tier (`flamtaer_pyre.struct:4-64`); shade Prayer 25-90 (`mortton.obj:14-82`). |
 | Agility | Agility Arena traps (spikes, pressure pad, saw blades, darts) | 24 / 26 / 28 / 30 | 20 / 20 / 40 / 40, checked (`agilityarena_zones.rs2:117,154,205,265`) | timer (1-tick timer set on entering trap tiles, `:3-26`) | standing on the trap tile; success roll | p_delay(0) before (spikes, pad, saws); darts p_delay(0) + p_delay(6) before | none | no | 1 per trap crossing | about 2.5-7 while crossing (inferred) | `agilityarena_zones.rs2:146,186,236,285` | Traps are sparse; walking dominates. |
+| Agility | Ticket trader, 1,000-ticket button | 320,000 | none | if_button (`agilityarena_trade:com_99/105`) | 1,000 `agilityarena_ticket` in inv; trade interface visible (Jackie `opnpc3` opens it) | none | none: no `p_finduid`; protected access fails only while delayed | yes | 5 a tick (read), but only as many clicks as the account holds tickets for | at most 2.9 sustained (read: the scored account's own tickets only, 1 per 98-tick pillar move; see the correction above); 3.3 per ticket-tick at this button | `agilityarena_tickettrader.rs2:67`; `:61` (ticket count), `:48-49` | 320 base per ticket. `agilityarena_ticket` is `tradeable=no` (`agilityarena.obj:15`): tickets cannot be traded, dropped for another player or sold on the GE. |
+| Agility | Ticket trader, 100-ticket button | 28,000 | none | if_button (`com_98/104`) | 100 tickets | none | none | yes | 5 (read), ticket-bound | at most 2.9 sustained (read: the scored account's own tickets only, 1 per 98-tick pillar move; see the correction above) | `agilityarena_tickettrader.rs2:67`; `:61`, `:45-46` | 280 base per ticket; untradeable as above |
+| Agility | Ticket trader, 25-ticket button | 6,500 | none | if_button (`com_97/103`) | 25 tickets | none | none | yes | 5 (read), ticket-bound | at most 2.9 sustained (read: the scored account's own tickets only, 1 per 98-tick pillar move; see the correction above) | `:67`; `:61`, `:42-43` | 260 per ticket |
+| Agility | Ticket trader, 10-ticket button | 2,480 | none | if_button (`com_96/102`) | 10 tickets | none | none | yes | 5 (read), ticket-bound | at most 2.9 sustained (read: the scored account's own tickets only, 1 per 98-tick pillar move; see the correction above) | `:67`; `:61`, `:39-40` | 248 per ticket |
+| Agility | Ticket trader, 1-ticket button | 240 | none | if_button (`com_94/95`) | 1 ticket | none | none | yes | 5 (read), ticket-bound | at most 2.9 sustained (read: the scored account's own tickets only, 1 per 98-tick pillar move; see the correction above) | `:67`; `:61`, `:36-37` | 240 per ticket |
 | Crafting | Repair Flamtaer temple | resources / 2: 3.5-4.5, up to 35 at Crafting 99 | 20, checked (`flamtaer_temple.rs2:10`) | oploc1 then oploc3 loop | hammer; `%temple_resources >= 100` (800 per plank + 5 paste + brick, `:274-278`); quest stage (`:3`) | `%action_delay` +3 (`:46`) | none | no | 1 per 3 ticks | 1.2-11.7 (inferred) | `flamtaer_temple.rs2:136`; `:10`, `:21-25`, `:56-59` | A failed roll does not return (`:56-59`), so every attempt grants. |
 | Agility | Yanille dungeon ledge / pipe | 22.5 / 7.5 | 40 / 49, checked (`agility_dungeon.rs2:31,2`) | oploc1 | start tile; obstacle-in-use vars (`:17-21,53-57`) | p_delay(0) before (`:79`, `:24`) | none | no | 1 per crossing | about 3.7 / 1.5 (inferred) | `agility_dungeon.rs2:82,28` | |
 | Ranged | Ranging Guild target shot | points / 2: 0-50 | none | aploc1 | `%targetcount` 1-10 (`target.rs2:9`); 5+ tiles away (`:24`); bow and arrows only enforced near the judge (`:10-23`) | p_delay(2) BEFORE (`:34`) | none | no | 1 per 4 ticks | up to 12.5, about 3-5 typical (inferred) | `target.rs2:42`; `:9`, `:24` | 10 shots per competition. |
@@ -149,7 +171,7 @@ the real cost and is named in Notes.
 
 | Grant | Weakness | Evidence | Exploit shape | Label |
 |---|---|---|---|---|
-| Agility Arena ticket trader | No level check, no delay, no `p_finduid`, no var cap; tickets are stackable and tradeable | `agilityarena_tickettrader.rs2:36-68`; `agilityarena.obj:1-13` (no `tradeable=no`) | Helpers tag pillars (1 ticket per 98-tick pillar move per account, `agilityarena_clerk.rs2:85`, `agilityarena.rs2:53-84`) and trade the tickets over; the main buys Agility 1 -> 99 with 147 tickets in 6 clicks | read (rates); inferred (helper supply) |
+| Agility Arena ticket trader | No level check, no delay, no `p_finduid`, no var cap. **But** tickets are `tradeable=no`, so only the account's own tags count | `agilityarena_tickettrader.rs2:60-68`; `agilityarena.obj:15`; `trade.rs2:338-341`; `InvOps.ts:724-726`; `MarketCatalog.ts:4` | None for the route: one ticket per 98-tick pillar move on the scored account itself (`agilityarena_clerk.rs2:78-87`, `agilityarena.rs2:53-84`), about 2.9 base xp per tick (corrected by rs/92) | read |
 | Charge | No delay, no recast guard | `charge.rs2:1-26`, guard commented out `:9-12` | 5 casts a tick | read; measured by rs-28 |
 | Pyre-log creation | No delay; no Firemaking level check (only at the pyre, `mortton_pyre.rs2:75`) | `mortton_pyre.rs2:1-42` | 5 creations a tick from Firemaking 1; 666 magic pyre logs to 99 | read; 5 a tick inferred |
 | Gnome restaurant hand-in | No Cooking level check; dishes tradeable; delivery chains into the next job; dialogue paced, no delay | `gnome_restaurant.rs2:377-403` | Helpers cook the dishes; the main only delivers, 210 base Cooking per job on average | inferred |
@@ -166,7 +188,8 @@ the real cost and is named in Notes.
 
 No `p_delay`, `p_arrivedelay`, queue or `%action_delay` before or after the grant:
 
-- Agility Arena ticket trader, all five buttons (`agilityarena_tickettrader.rs2:67`), if_button.
+- Agility Arena ticket trader, all five buttons (`agilityarena_tickettrader.rs2:67`), if_button
+  (supply-bound: tickets are untradeable, see the correction).
 - Charge (`charge.rs2:26`), if_button.
 - Pyre-log creation (`mortton_pyre.rs2:42`), opheldu.
 - Gnome restaurant hand-in (`gnome_restaurant.rs2:402`), dialogue.
@@ -184,12 +207,12 @@ Firemaking about 59 (157 logs in 650-700 ticks, rs-28 `firemaking.md`), Prayer 3
 (rs-28 `prayer.md`). rs-28 has no Agility, Cooking or Fishing route doc, so those
 candidates are compared against level-1 training cost.
 
-1. **Agility 1 -> 99 from 147 Agility Arena tickets.** One 100-pack, one 25-pack, two
-   10-packs and two singles give 39,940 base. That is 6 button clicks, 2 ticks at 5 a tick,
-   after opening Jackie's interface (`opnpc3`, one click). Verify: tickets trade between
-   accounts, and 5 buys land in one tick. Supply is helper time: 147 tags, each needing a
-   consecutive-pillar streak, 1 per 98 ticks per helper. On the main this costs the trip to
-   Brimhaven and a trade. Members only (`agilityarena.obj:12`). **Top finding.**
+1. **Agility Arena tickets: closed (corrected by rs/92).** The first version called this the top
+   finding on the assumption that helpers could trade tickets in. They cannot: tickets are
+   `tradeable=no` (`agilityarena.obj:15`; trade refusal `trade.rs2:338-341`; drops visible only to
+   the dropper, `InvOps.ts:724-726`; GE refusal `MarketCatalog.ts:4`). The scored account's own
+   tagging earns at most one ticket per 98-tick pillar move (`agilityarena_clerk.rs2:78-87`), about
+   2.9 base xp per tick, below rs/2's Wilderness course (7.4). See the correction at the top.
 2. **Firemaking from pyre-log creation.** 666 magic pyre logs, 60 base each, no Firemaking
    level, 5 a tick. Inferred about 48 inventories of 14 at 3 ticks of clicks plus a bank
    visit: about 340-430 ticks against the route's 650-700, before the cost of reaching
