@@ -68,6 +68,29 @@ for (const [cx, cz] of [[2209, 3203], [2267, 3203], [2274, 3174], [2277, 3262]] 
     crossings.push({ kind: 'pitfall', a: [cx - 2, cz], b: [cx + 2, cz], note: `pitfall ${cx},${cz} E-W` });
     crossings.push({ kind: 'pitfall', a: [cx, cz - 2], b: [cx, cz + 2], note: `pitfall ${cx},${cz} N-S` });
 }
+// Woodsprings ("Sticks", op Pass, stat_random(agility,30,155)), :31-77. Landing
+// tiles per angle: east crosses x to loc+2 / loc-1, west to loc-1 / loc+3,
+// north z to loc+3 / loc-1, south z to loc-1 / loc+3. Walking onto the trigger
+// tiles (regicide_zones.rs2) springs the trap and throws the player back.
+const woodsprings: Array<[number, number, number]> = [
+    [2181, 3209, 3], [2200, 3169, 2], [2235, 3181, 0], [2257, 3227, 2], [2275, 3163, 2], [2295, 3214, 1],
+];
+for (const [x, z, angle] of woodsprings) {
+    const note = `woodspring (${x},${z})`;
+    if (angle === 2) crossings.push({ kind: 'woodspring', a: [x - 1, z], b: [x + 2, z], note });
+    else if (angle === 0) crossings.push({ kind: 'woodspring', a: [x - 1, z], b: [x + 3, z], note });
+    else if (angle === 1) crossings.push({ kind: 'woodspring', a: [x, z - 1], b: [x, z + 3], note });
+    else crossings.push({ kind: 'woodspring', a: [x, z - 1], b: [x, z + 3], note });
+}
+// Tripwires (op Step-over, length 2), :136-188: crossed 2 tiles perpendicular to
+// the wire; walking into one also carries the player across (with poison and
+// two 5-damage hits) via [timer,regicide_tripwire].
+const tripwires: Array<[number, number, number]> = [[2215, 3154, 2], [2220, 3153, 0], [2251, 3168, 3], [2285, 3188, 3], [2294, 3243, 0]];
+for (const [x, z, angle] of tripwires) {
+    const note = `tripwire (${x},${z})`;
+    if (angle === 0 || angle === 2) crossings.push({ kind: 'tripwire', a: [x, z - 1], b: [x, z + 1], note });
+    else crossings.push({ kind: 'tripwire', a: [x - 1, z], b: [x + 1, z], note });
+}
 // Cross-overs (angle from the map; 0 west, 1 north, 2 east, 3 south), :430-455.
 const crossOvers: Array<[string, number, number, number]> = [
     ['cross_over1', 2232, 3148, 3], ['cross_over1', 2233, 3218, 1], ['cross_over1', 2237, 3248, 3], ['cross_over1', 2272, 3191, 1],
@@ -127,11 +150,14 @@ function walkTiles(a: P, b: P): number | null {
 
 // Crossing cost in tile-equivalents (0.5 tick per tile) for ranking only; the
 // document applies measured ticks per crossing type.
-const crossCost: Record<string, number> = { log: 14, pitfall: 10, crossover: 12 };
+const crossCost: Record<string, number> = { log: 14, pitfall: 10, crossover: 12, woodspring: 30, tripwire: 16 };
 
 export function solve(from: P, to: P, allowCrossovers: boolean) {
     const nodes: P[] = [from, to];
     const nodeKey = (p: P) => key(p[0], p[1]);
+    // Snap an endpoint that lands on a blocked or one-tile pocket to the
+    // nearest tile of a real region (within 2 tiles).
+    void nodes;
     const usable = crossings.filter(c => allowCrossovers || c.kind !== 'crossover');
     for (const c of usable) { nodes.push(c.a, c.b); }
     const uniq = new Map<string, P>();
