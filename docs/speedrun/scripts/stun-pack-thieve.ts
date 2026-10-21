@@ -86,7 +86,7 @@ const PLANS: Record<number, string> = {
 };
 const PLAN_SRC = flag('plan', PLANS[BONES] ?? PLANS[3]!);
 const plan = new Map<number, string>();
-for (const part of PLAN_SRC.split(',').filter(Boolean)) { const [k, acts] = part.split(':'); plan.set(Number(k), acts === '-' ? '' : acts!); }
+for (const part of PLAN_SRC.split(',').filter(Boolean)) { const [k, acts] = part.split(/[:_]/); plan.set(Number(k), acts === '-' ? '' : acts!); }
 const BPS = [...plan.values()].join('').split('').filter(c => c === 'b').length;
 const ARM_AT = Math.max(BPS * 2, 2); // pre-arm the helper this many bones ahead
 
