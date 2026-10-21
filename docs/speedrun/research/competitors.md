@@ -116,8 +116,11 @@ our Overall stamp will be our exact last-99 tick, so time after it is free; a st
 version 9 could show a lower time than its current one by the slack between its last 99 and that
 logout; an interim logout publishes our rows to anyone watching, so the run stays in the world and
 is monitored from our own tick log. The dropped-login incident found during the probe (about
-4,600 unobserved ticks in the world after a failed login) is being run down as a lab check in
-**cairn://p/rs/101** (in progress), which will extend that document's incidents section.
+4,600 unobserved ticks in the world after a failed login) was an orphaned lite runner that kept
+the session alive, not the server. After a drop the player stays 500 ticks if the socket closed,
+1,000 if it stayed open but silent, and indefinitely while a client with nothing driving it keeps
+sending keepalives. `startWatchdog` now logs a wedged client out cleanly within about 10 ticks
+([hiscore-timestamps.md](competitors/hiscore-timestamps.md) section 5.1; cairn://p/rs/101).
 
 ## 3. Per-account ordering reconstructions
 
@@ -293,9 +296,10 @@ spawn.
 6. **Run hygiene from the timestamp work: 0 ticks, but it protects the score.** Stay in the world
    until the last 99 and then log out cleanly, so interim rows do not publish our progress. Run
    exactly one process per scored account, since a second login kicks the first
-   ([public-code.md](competitors/public-code.md) section 6.2). Run under the watchdog with a
-   clean-logout policy, because a dropped login left a throwaway in the world for ~4,600 ticks
-   (cairn://p/rs/101, in progress).
+   ([public-code.md](competitors/public-code.md) section 6.2). Run under the watchdog with its
+   clean-logout policy, because a dropped login left a throwaway in the world for ~4,600 ticks:
+   an orphaned runner holds the player indefinitely, a closed socket for 500 ticks
+   ([hiscore-timestamps.md](competitors/hiscore-timestamps.md) section 5.1; cairn://p/rs/101).
 7. **Below the ~300 bar; fold into existing work rather than a lab:** the rs2b0t pitfall review
    (~100-200, into the run-order dry run of the on-route quests); Firemaking (~34, by folding
    rs/35's measured figure into the tally); Cooking (~42, check whether jackalopeck3's 38 means
@@ -367,8 +371,11 @@ exists, and `woodcutting.md` carries the result.
 6. **Will the stun operator re-run under version 9?** A re-run would publish exact stamps and
    could lower the record by its logout slack, which the page cannot show today. A rule to watch
    the board for new stun names (rs/29's upstream and record watch) would catch it.
-7. **How many ticks does a dropped login cost the scored account?** In progress as
-   cairn://p/rs/101.
+7. **How many ticks does a dropped login cost the scored account?** Answered by
+   cairn://p/rs/101: 500 (socket closed), 1,000 (socket silent), unbounded (client alive, nothing
+   driving it); about 10 under the watchdog's clean logout. Open residue: a SIGKILLed controller
+   cannot run its exit guard, and a browser-client tab is not a child process
+   ([hiscore-timestamps.md](competitors/hiscore-timestamps.md) section 5.1).
 8. **Unread public sources.** The rs-sdk Discord (`99str-contest`, `share-progress`,
    `agent-techniques`) needs an account; reading it is the operator's call. Max Bittker's
    2026-10-17 RuneBench talk has no fetchable transcript
