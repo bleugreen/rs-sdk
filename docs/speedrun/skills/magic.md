@@ -208,8 +208,9 @@ is 510 + 9 x 2 = **about 528**.
   320 and 346 ticks. Forms took 14-29 (human), 37-77 (ogre), 52-70 (spider), 52-63 (ethereal)
   and 84-154 (demon) ticks. Prayer went 80 -> 18-26, so 54-62 points against Holy Grail's 80.
   There was 1 refused Fire Wave in 3 runs (a decay step landed between a cast and the re-sip).
-  Boost trace from run 1: 75/71 at the talk, 74 at +16 and re-sip; 74/72 at +114 and re-sip to
-  76; 75/74 at +214; base 76 reached 76 at +278 (no further sip needed).
+  Boost trace from run 1, in ticks after the arena teleport: 75/71 at the start; a decay step
+  to 74 at +16, then a re-sip; another to 74/72 at +114, then a re-sip to 76; a step to 75/74
+  at +214, still enough; base reached the boosted 76 at +278, with no further sip needed.
 
 **1 -> 7.** Wind Strike: 5.5 base on the cast (`player_magic.rs2:170`) plus 2 base per damage
 point (`combat.rs2`, `style_magic_normal`). The spell attack delay is 5 ticks
@@ -230,7 +231,8 @@ point (`combat.rs2`, `style_magic_normal`). The spell attack delay is 5 ticks
   That is one level later, about 5 more dragonstone casts. It adds 3 ticks of attack delay per
   drink and drains Attack, Strength and Defence (harmless under the prayer). It never stacks
   with the potion (measured), and +3 cannot reach Charge before base 77. Use it only if no magic
-  potion is available: the mind bomb is sold in pubs and needs no Herblore.
+  potion is available: the mind bomb is sold in shops (`burthorpe.inv`, `viking.inv`) and
+  needs no Herblore.
 - **A lower spell at a lower base** (Fire Blast, 59): the fight is slower (`mage_arena.md`, inferred)
   and the xp per cast lower, so it trades enchant casts for fight ticks at a worse rate. Not
   measured.
@@ -322,6 +324,24 @@ if the bank-slot trick above is used (the spares come back).
 
 Add the Mage Arena fight's own runes from `mage_arena.md` (about 70 blood and 400 air for Fire
 Wave, with a staff of fire).
+
+**Boosted route (recommended), from level 57 (after The Grand Tree)**
+
+| Item | Quantity | Used for | Where helpers get it |
+|---|---|---|---|
+| Diamond ring | 38 | 57 -> 68 | Crafting 43; GE |
+| Dragonstone ring | 14 | 68 -> 71 | Crafting 55 |
+| Cosmic rune | 52 | 1 per enchant | as above |
+| Earth rune | 590 | diamond 10 x 38 + dragonstone 15 x 14 | as above |
+| Staff of water | 1 | enchanting | as above |
+| **Magic potion** | **2 potions (3 doses each)**: 3 doses measured for the fight + 1 for Charge, plus 1-2 spare for a badly phased decay step | Fire Wave at base 71, Charge at base 76-77 | **No shop sells it** (no `.inv` lists `*dose1magic`). Helper Herblore **76**: lantadyme potion (unf) + potato cactus makes a 3-dose potion, 172.5 base Herblore (`brew_potion.struct:278-284`); or the GE. Members item |
+| Staff of fire | 1 | the fight and Charge | as above |
+| Blood rune, air rune | about 70 and 400 | the fight (`mage_arena.md`) | as above |
+| Blood rune, air rune | 540 each | Charge, 177-180 casts from base 76 (522 from 77) | as above |
+
+From level 1 the boosted route adds 4 air and mind runes (Wind Strike), sapphire 12, emerald 27
+and ruby 16 rings, 55 more cosmic runes (107 in all), 81 air (emerald) and 80 fire (ruby). The
+diamond, dragonstone, earth and Charge figures are as above.
 
 **From level 57 (after The Grand Tree)**: diamond rings 38, dragonstone rings 77, cosmic 115,
 earth 1,535 (380 + 1,155), staff of water. Charge as above. **With the arena at 75**: diamond
