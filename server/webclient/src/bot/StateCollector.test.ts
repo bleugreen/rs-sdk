@@ -264,6 +264,52 @@ describe('BotStateCollector op feedback', () => {
     });
 });
 
+describe('BotStateCollector modal inventories', () => {
+    const LAYER = 0;
+    const INV = 2;
+
+    function inv(id: number, slots: number[], extra: Record<string, unknown>) {
+        const linkObjType = new Int32Array(25);
+        const linkObjNumber = new Int32Array(25);
+        for (const slot of slots) {
+            linkObjType[slot] = 1000 + slot + 1; // wire value is obj id + 1
+            linkObjNumber[slot] = 1;
+        }
+        (IfType.list as any)[id] = { id, type: INV, linkObjType, linkObjNumber, objOps: false, iop: null, ...extra };
+    }
+
+    test('publishes every visible inventory in the open modal with its slot layout', () => {
+        const modal = 61000;
+        (IfType.list as any)[modal] = { id: modal, type: LAYER, hide: false, children: [61001, 61002, 61003] };
+        inv(61001, [0, 1, 23], { objOps: true }); // a sliding-puzzle grid: slot 24 is the gap
+        inv(61002, [4], { iop: ['Deposit 1', null, null, null, 'Deposit X'] });
+        (IfType.list as any)[61003] = { id: 61003, type: LAYER, hide: true, children: [61004] };
+        inv(61004, [0], {}); // inside a hidden layer: not shown to the player
+
+        const client = createClient();
+        client.mainModalId = modal;
+        const state = (new BotStateCollector(client) as any).collectInterfaceState();
+
+        expect(state.inventories.map((i: any) => i.componentId)).toEqual([61001, 61002]);
+
+        const [grid, side] = state.inventories;
+        expect(grid.size).toBe(25);
+        expect(grid.items.map((item: any) => [item.slot, item.id])).toEqual([[0, 1000], [1, 1001], [23, 1023]]);
+
+        // Without objOps the menu offers the component's own options (INV_BUTTON).
+        expect(side.items[0].optionsWithIndex).toEqual([
+            { text: 'Deposit 1', opIndex: 1 },
+            { text: 'Deposit X', opIndex: 5 }
+        ]);
+    });
+
+    test('publishes no inventories when no modal is open', () => {
+        const client = createClient();
+        client.mainModalId = -1;
+        expect((new BotStateCollector(client) as any).collectInterfaceState().inventories).toEqual([]);
+    });
+});
+
 describe('BotStateCollector combat styles', () => {
     const SELECT_BUTTON = 5;
 
