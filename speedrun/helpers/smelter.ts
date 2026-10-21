@@ -121,14 +121,18 @@ interface Site {
 }
 const SITES: Record<Site['name'], Site> = {
     // miningguildladder (Mining 60) -> ladder_from_cellar. 5 mithril, ~37 coal, only dwarves.
-    guild: { name: 'guild', down: { id: 2113, x: 3019, z: 3339 }, box: { x0: 3014, x1: 3058, z0: 9728, z1: 9755 }, centre: { x: 3042, z: 9740 }, bank: BANK_EAST }, // the ladder lands at 3017,9739
+    // z1 is the guild door's own row: see the dwarven door below.
+    guild: { name: 'guild', down: { id: 2113, x: 3019, z: 3339 }, box: { x0: 3014, x1: 3058, z0: 9728, z1: 9756 }, centre: { x: 3042, z: 9740 }, bank: BANK_EAST }, // the ladder lands at 3017,9739
     // North Dwarven Mine, through the guild's south door (miningguilddoor, Mining 60, walks the
     // player through and shuts). 3 adamantite, 2 mithril, 5 iron, 10 coal. 10 scorpions (level
     // 14, hunt range 2, wander 12) ignore combat 29+; the 2 king scorpions (32, spawns 3040,9775
     // and 3048,9770, wander 8) attack below 65 and sit beside two of the adamantite rocks.
     dwarven: {
         name: 'dwarven',
-        door: { from: 'guild', id: 2112, at: { x: 3046, z: 9756 }, outside: { x: 3046, z: 9755 }, inside: { x: 3046, z: 9757 } },
+        // The door is a wall on its own tile, and that tile is the guild side: clicking from it
+        // walks the player to 9757, clicking from 9757 walks them back onto it (open_and_close_door
+        // with check_axis). Exiting therefore ends on 3046,9756, which must count as the guild.
+        door: { from: 'guild', id: 2112, at: { x: 3046, z: 9756 }, outside: { x: 3046, z: 9756 }, inside: { x: 3046, z: 9757 } },
         box: { x0: 3030, x1: 3056, z0: 9757, z1: 9779 },
         centre: { x: 3039, z: 9766 },
         bank: BANK_EAST,
