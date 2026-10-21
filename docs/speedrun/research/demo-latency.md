@@ -600,8 +600,7 @@ vantage adds path jitter that looks like overruns (section 9):
   pending rs/102's final recommendation; at most 2 agreed with (a) on all 15 Ashburn samples to
   07:35, while at most 1 wrongly failed 05:09 at 60/60 and 1.6 per minute), a catch-up being an
   interval under 150 ms immediately after one over 350 ms, counted from decoded ticks (not from raw
-  frames grouped 60 ms apart, which hides them; section 3). Over rs/102's 15 Ashburn samples it
-  agreed with (a) on 14.
+  frames grouped 60 ms apart, which hides them; section 3).
 - **(a)** the direct in-page probe lands **at least 58 of 60** reactions on the next tick;
 - **(d)** the tab's machine meets item 4 below.
 - **(b), reported as context, not a pass line:** tick publication interval p90. It agreed with (a)
