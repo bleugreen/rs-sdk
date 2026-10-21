@@ -25,7 +25,7 @@ The speedrun's scored account (`www_cairn_md`, displayed as 'Www Cairn Md') is r
 | [bones](helpers/bones.md) | Dragon bones or the best Prayer xp per helper-hour | cairn_h50-h54 | cairn://p/rs/48 |
 | [mule](helpers/mule.md) | Consolidates stock, serves trades to the scored account | cairn_mule1, cairn_mule2 (stand-in receiver cairn_h05) | cairn://p/rs/49 |
 | [coins / buyer](helpers/coins.md) | Coins; Grand Exchange and shop purchases | cairn_h60-h65 | cairn://p/rs/50 |
-| [bidder](helpers/bidder.md) | Standing GE buy offer just above the competing bid, up to a target (grapes) | cairn_h61 | cairn://p/rs/63 |
+| [bidder](helpers/bidder.md) | Standing GE buy offers just above the competing bids, up to per-item targets (dragon bones, grapes) | cairn_h61 | cairn://p/rs/63 |
 
 Planned without an owner yet (supply list in cairn://p/rs/41): fletcher-supplier (arrowheads, dart tips, headless arrows), herb gatherer (unfinished potions and secondaries), gem supplier (uncut dragonstones or diamonds), rune and jewellery buyer, combat-supply buyer (food, potions, gear, cannonballs), quest-item gatherer.
 
