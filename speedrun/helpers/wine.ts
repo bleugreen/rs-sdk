@@ -305,8 +305,10 @@ export interface SplitResult {
     /** Dismissing the level-up dialog after the first firing, and after the second. */
     levelUpTicks: number;
     finalLevelUpTicks: number;
-    /** Bank (deposit the rest) plus the one re-arming make. */
+    /** Bank (deposit the rest) plus the one re-arming make, and the two parts. */
     rearmTicks: number;
+    rearmBankTicks: number;
+    rearmMakeTicks: number;
     firstFermentTick: number;
     secondFermentTick: number;
     levelAfterFirst: number;
@@ -373,8 +375,14 @@ export async function splitDelivery(ctx: Ctx, giver: string, opts: { first?: num
     const d = await depositMatching(sdk, [ITEM.wineNote]);
     if (!d.ok) throw new Error(`split delivery: deposit of the rest failed (${d.reason})`);
     await closeBank(bot, sdk);
+    const rearmBankTicks = tick(sdk) - t2;
     let rearmed = false;
-    if (levelAfterFirst >= WINE_COOKING_LEVEL) rearmed = (await makeWines(ctx, 1)).made === 1;
+    let rearmMakeTicks = 0;
+    if (levelAfterFirst >= WINE_COOKING_LEVEL) {
+        const mk = await makeWines(ctx, 1);
+        rearmed = mk.made === 1;
+        rearmMakeTicks = mk.ticks;
+    }
     const rearmTicks = tick(sdk) - t2;
 
     let secondFermentTick = -1;
@@ -393,6 +401,8 @@ export async function splitDelivery(ctx: Ctx, giver: string, opts: { first?: num
     return {
         levelUpTicks,
         finalLevelUpTicks,
+        rearmBankTicks,
+        rearmMakeTicks,
         received,
         first,
         rest,
