@@ -109,7 +109,7 @@ await runScript(async ({ bot, sdk }) => {
         await stats({ ranged: 25 });
         await lab.cheat('setvar upass 0');
         await lab.cheat('setvar ibanmulti 0');
-        await lab.teleTo(2577, 3291, 1);
+        await lab.teleTo(2578, 3294, 1); // inside the throne room door (2575,3293)
         await lab.talk('King Lathas (start, %upass 0)', /King Lathas/);
         lab.record({ label: 'ibanmulti after Lathas', ticks: 0, value: await lab.getVar('ibanmulti') });
         await lab.teleTo(2434, 3313, 0);
@@ -319,7 +319,7 @@ await runScript(async ({ bot, sdk }) => {
         lab.record({ label: 'TOTAL dove cage to outside the cave', ticks: lab.tick() - t0 });
     } else if (segment === 'handin') {
         await vars(9, []);
-        await lab.teleTo(2577, 3291, 1);
+        await lab.teleTo(2578, 3294, 1);
         const agi0 = sdk.getSkillXp('agility');
         await lab.talk('King Lathas (hand-in, %upass 9)', /King Lathas/);
         await lab.idle(6);
