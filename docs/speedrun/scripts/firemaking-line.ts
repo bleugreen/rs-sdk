@@ -9,7 +9,12 @@
  *
  * Flags:
  *   --logs=NAME     log debugname for ::give (logs, oak_logs, willow_logs,
- *                   maple_logs, yew_logs, magic_logs; default magic_logs)
+ *                   maple_logs, yew_logs, magic_logs; default magic_logs), or
+ *                   auto: restock with the model's helper inventories (mixed
+ *                   tiers, then magic) and light the best unlocked log first.
+ *                   Use with --hold=0 --until=99 for an end-to-end run; the
+ *                   summary reports ticksExcludingRestock, the run with each
+ *                   lab restock gap cut to the 4-tick chain it replaced.
  *   --level=N       ::setstat firemaking N first
  *   --hold=1|0      re-set the level after every level-up (default 1)
  *   --until=N       stop when Firemaking reaches level N (use with --hold=0)
@@ -63,7 +68,16 @@ const SEND = Number(flag('send', '0'));
 const RETRY = Number(flag('retry', '1'));
 const RESTOCK = flag('restock', 'give')!;
 const OUT = flag('out', `${process.env.TMPDIR ?? '/tmp'}/firemaking-line-${BOT}-${LOGS}-${LEVEL}-${MODE}.jsonl`)!;
-const logName = LOGS === 'logs' ? /^logs$/i : new RegExp(`^${LOGS.replace('_logs', '').replace(/_/g, ' ')} logs$`, 'i');
+const AUTO = LOGS === 'auto';
+const logName = AUTO ? /^(logs|oak logs|willow logs|maple logs|yew logs|magic logs)$/i
+    : LOGS === 'logs' ? /^logs$/i : new RegExp(`^${LOGS.replace('_logs', '').replace(/_/g, ' ')} logs$`, 'i');
+// --logs=auto: the helper inventories firemaking-model.ts prescribes for 1 -> 99
+// (157 logs), handed over in order; the best unlocked log is always lit first.
+const AUTO_INVS: Array<Array<[string, number]>> = [
+    [['logs', 2], ['oak_logs', 4], ['willow_logs', 7], ['maple_logs', 13], ['yew_logs', 1]],
+    [['yew_logs', 23], ['magic_logs', 4]],
+];
+const TIERS: Array<[RegExp, number]> = [[/^magic logs$/i, 75], [/^yew logs$/i, 60], [/^maple logs$/i, 45], [/^willow logs$/i, 30], [/^oak logs$/i, 15], [/^logs$/i, 1]];
 
 /** stat_random(firemaking, 64, 512) success chance (PlayerOps.ts STAT_RANDOM). */
 const chance = (l: number) => Math.min(1, (Math.floor((64 * (99 - l)) / 98) + Math.floor((512 * (l - 1)) / 98) + 1) / 256);
@@ -95,7 +109,13 @@ await runScript(async ({ bot, sdk }) => {
     if (LEVEL) { await sdk.sendSay(`::setstat firemaking ${LEVEL}`); await waitTicks(2); }
     await sdk.sendSay('::~clearinv inv'); await waitTicks(2);
     await sdk.sendSay('::give tinderbox 1'); await waitTicks(2);
-    if (MODE === 'inv') { await sdk.sendSay(`::give ${LOGS} 27`); await waitTicks(3); }
+    let invNo = 0;
+    const restock = async () => {
+        if (!AUTO) { await sdk.sendSay(`::give ${LOGS} 27`); return; }
+        for (const [name, n] of AUTO_INVS[invNo] ?? [['magic_logs', 27]]) await sdk.sendSay(`::give ${name} ${n}`);
+        invNo++;
+    };
+    if (MODE === 'inv') { await restock(); await waitTicks(3); }
     while (sdk.getState()?.dialog.isOpen) { await sdk.sendClickDialog(0); await waitTicks(1); }
 
     let state = sdk.getState()!;
@@ -117,6 +137,7 @@ await runScript(async ({ bot, sdk }) => {
     let sendsThisFire = 0;
 
     let lastProgress = state.tick, walkStart = -1, skipped = 0;
+    const restockAfter = new Set<number>();   // success counts after which the lab restocked
     while (successes < FIRES && !(UNTIL && fm(state).baseLevel >= UNTIL)) {
         state = await nextTick(state.tick);
         const t = state.tick;
@@ -159,7 +180,7 @@ await runScript(async ({ bot, sdk }) => {
             const onTarget = me[0] === target[0] && me[1] === target[1];
             if (MODE === 'inv') {
                 if (!logsNow) {
-                    if (RESTOCK === 'give') { await sdk.sendSay(`::give ${LOGS} 27`); restocks++; ev.push('restock'); notBefore = t + 2; }
+                    if (RESTOCK === 'give') { await restock(); restocks++; restockAfter.add(successes); ev.push('restock'); notBefore = t + 2; }
                     else break;
                 } else if (!onTarget && walkStart >= 0 && t - walkStart > 4) {
                     ev.push(`skip(${target})`); skipped++; idx++; walkStart = -1;
@@ -168,7 +189,8 @@ await runScript(async ({ bot, sdk }) => {
                     if (t - walkedAt >= RETRY) { await sdk.sendWalk(target[0], target[1], true); walks++; walkedAt = t; ev.push(`walk(${target})`); }
                 } else if (tinder) {
                     walkStart = -1;
-                    const lg = state.inventory.find(i => logName.test(i.name))!;
+                    const lg = (AUTO ? TIERS.filter(([, req]) => req <= level).map(([re]) => state.inventory.find(i => re.test(i.name))).find(Boolean) : undefined)
+                        ?? state.inventory.find(i => logName.test(i.name))!;
                     await sdk.sendUseItemOnItem(tinder.slot, lg.slot);
                     sends++; sendsThisFire++; sentAt = t; logsBefore = logsNow; phase = 'pending'; ev.push('light');
                 }
@@ -199,7 +221,7 @@ await runScript(async ({ bot, sdk }) => {
         // fresh start: roll at +3, then every 4; chained: roll at +4, then every 4
         const k = prev.kind === 'start' ? Math.round((g - 3) / 4) : Math.round(g / 4) - 1;
         failures += Math.max(0, k);
-        const p = chance(e.level);
+        const p = chance(LEVEL && HOLD ? LEVEL : e.level);
         expectedFails += (1 - p) / p;
     }
     const starts = evs.filter(e => e.kind === 'start').length;
@@ -210,7 +232,8 @@ await runScript(async ({ bot, sdk }) => {
         logs: LOGS, mode: MODE, level: LEVEL, hold: HOLD, row: [RX, RZ, RLEN], rows: ROWS, send: SEND,
         successes: succ.length, starts, refused, failuresInferred: failures,
         rolls: succ.length + failures, successRate: +(succ.length / Math.max(1, succ.length + failures)).toFixed(4),
-        predictedRate: +(succ.reduce((a, e) => a + chance(e.level), 0) / Math.max(1, succ.length)).toFixed(4),
+        predictedRate: +(succ.reduce((a, e) => a + chance(LEVEL && HOLD ? LEVEL : e.level), 0) / Math.max(1, succ.length)).toFixed(4),
+        ticksExcludingRestock: (state.tick - startTick) - succ.reduce((a, e, i) => a + (i && restockAfter.has(i) ? Math.max(0, e.t - succ[i - 1].t - 4) : 0), 0),
         expectedFails: +expectedFails.toFixed(1),
         gapBetweenSuccesses: gaps, ticksFirstToLastSuccess: span,
         ticksPerFire: span ? +(span / (succ.length - 1)).toFixed(3) : null,
