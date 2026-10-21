@@ -84,6 +84,20 @@ S.onStateUpdate(s => {
 const positions = new Set<string>();
 S.onStateUpdate(s => positions.add(`${s.player?.worldX},${s.player?.worldZ}`));
 
+// --debug: one line per publication per bot (trade screen and accepts,
+// essence held, dialog, new messages)
+if (process.argv.includes('--debug')) {
+    for (const [tag, sdk] of [['S', S], ['H', H]] as const) {
+        let seen = 0;
+        sdk.onStateUpdate(s => {
+            const msgs = s.gameMessages.filter(m => (m.observationId ?? 0) > seen);
+            for (const m of msgs) seen = Math.max(seen, m.observationId ?? 0);
+            const t = s.trade;
+            console.log(`${tag} ${s.tick} trade=${t?.isOpen ? `${t.screen}${t.myAccepted ? '+me' : ''}${t.partnerAccepted ? '+them' : ''} mine=${t.myOffer.length} theirs=${t.theirOffer.length}` : '-'} ess=${invCount(s, /rune essence/i)} xp=${rcXp(s)} dlg=${s.dialog.isOpen ? 1 : 0} ${msgs.map(m => `[${m.type}:${m.text}]`).join(' ')}`);
+        });
+    }
+}
+
 async function refill() {
     if (invCount(H.getState(), /rune essence/i) < ESS) await cheat(H, `give blankrune ${ESS - invCount(H.getState(), /rune essence/i)}`);
 }
