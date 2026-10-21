@@ -20,6 +20,8 @@
 //   useloc:item:loc[:x,z]    use an inventory item on a loc
 //   usenpc:item:npc          use an inventory item on an NPC
 //   useitem:a:b              use item a on item b
+//   rawloc:id:x,z[:op]       interact by loc id (bridge-flag locs the client does not list)
+//   rawuse:item:id:x,z       use an item on a loc by id
 //   take:regex               pick up a ground item
 //   wait:n                   wait n ticks, printing position changes
 //   inv / equip              print inventory / equipment
@@ -139,6 +141,18 @@ await runScript(async ({ bot, sdk }) => {
                 }
                 await settle(60);
                 show(step, t0, `${loc.name}@(${loc.x},${loc.z})`);
+            } else if (cmd === 'rawloc' || cmd === 'rawuse') {
+                // rawloc:id:x,z:opIndex / rawuse:item:id:x,z - for bridge-flag locs the client does not list
+                const [id, where, op] = cmd === 'rawloc' ? [a[0], a[1], a[2]] : [a[1], a[2], null];
+                const [x, z] = where.split(',').map(Number);
+                if (cmd === 'rawloc') await sdk.sendInteractLoc(x, z, Number(id), Number(op ?? 1));
+                else {
+                    const it = sdk.findInventoryItem(re(a[0]));
+                    if (!it) throw new Error(`no item ${a[0]}`);
+                    await sdk.sendUseItemOnLoc(it.slot, x, z, Number(id));
+                }
+                await settle(60);
+                show(step, t0);
             } else if (cmd === 'npc' || cmd === 'usenpc') {
                 const npcRe = cmd === 'npc' ? a[0] : a[1];
                 const n = sdk.getNearbyNpcs().filter(m => re(npcRe).test(m.name)).sort((p, q) => (p.distance ?? 0) - (q.distance ?? 0))[0];
