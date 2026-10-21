@@ -85,7 +85,7 @@ await runScript(async ({ bot, sdk }) => {
             if (s?.trade?.isOpen && s.trade.screen === 'offer') { await sdk.sendAcceptTrade(); s = await until(st => !st.trade?.isOpen || st.trade.screen === 'confirm', 60); }
             if (s?.trade?.isOpen && s.trade.screen === 'confirm') await sdk.sendAcceptTrade();
             await until(st => !st.trade?.isOpen, 60);
-            await waitTicks(3);
+            await waitTicks(10); // let the scored account reset its inventory first
         }
         return;
     }
@@ -97,11 +97,13 @@ await runScript(async ({ bot, sdk }) => {
         const helper = Bun.spawn(['bun', import.meta.path, HELPER, '--role=helper', `--partner=${me}`, `--n=${N}`, `--swap=${SWAP ? 1 : 0}`], { stdout: 'inherit', stderr: 'inherit' });
         const want = SWAP ? /^yew logs$/i : /^magic logs$/i;
         for (let i = 0; i < N; i++) {
-            await sdk.sendSay('::~clearinv inv'); await waitTicks(1);
-            await sdk.sendSay('::give tinderbox 1'); await waitTicks(1);
-            if (SWAP) { await sdk.sendSay('::give yew_logs_pyre 14'); await waitTicks(1); await sdk.sendSay('::give vial_empty 14'); }
-            await waitTicks(2);
+            // A request may arrive while the inventory is reset below; count it.
             const t00 = sdk.getState()!.tick;
+            await sdk.sendSay('::~clearinv inv'); await waitTicks(1);
+            // Pyre-log making needs no tinderbox, so the swap uses all 28 slots.
+            if (SWAP) { await sdk.sendSay('::give yew_logs_pyre 14'); await waitTicks(1); await sdk.sendSay('::give vial_empty 14'); }
+            else await sdk.sendSay('::give tinderbox 1');
+            await waitTicks(2);
             const req = await until(s => s.gameMessages.some(m => m.type === 4 && m.tick > t00 && /wishes to trade/i.test(m.text)), 300);
             if (!req) throw new Error('no trade request');
             await waitTicks(1);
