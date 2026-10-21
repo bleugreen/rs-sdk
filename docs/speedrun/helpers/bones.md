@@ -13,62 +13,103 @@ ROLE_OPTIONS='{"spot":"hill_giants","train":50}' bun speedrun/helpers/bones.ts <
 Labels: **read** (from the content or engine), **measured** (on rs-sdk-demo.fly.dev,
 300 ms ticks, 25x xp, from bbs over a loopback gateway), **inferred** (estimated, not run).
 
-## How much Prayer needs (read)
+## How much Prayer needs
 
-- Base xp per bone (`skill_prayer/configs/bones.obj`, `bone_exp` in tenths): dragon 72,
+- Base xp per bone (read, `skill_prayer/configs/bones.obj`, `bone_exp` in tenths): dragon 72,
   babydragon 30, big 15 (jogre bones are also 15), normal, bat and wolf 4.5.
-  `bury_bone.rs2` buries one bone per click after `p_delay(0)`, so the scored account
-  pays about 2 ticks per bone whatever the bone (cairn://p/rs/33 measures the exact
-  cadence).
-- This server uses a `2^(level/10)` curve where 99 is 39,938 base xp (cairn://p/rs/33).
-  Holy Grail gives 11,000 base, so the scored account needs **28,938 base** after it.
+- This server uses a `2^(level/10)` curve where 99 is 39,938 base. Holy Grail is off the
+  route (rs/3), so the scored account buries the whole 39,938. The 673 big bones banked on
+  2026-10-21 cover 10,095 of it, which leaves **29,843 base**.
+- Cadence (measured by cairn://p/rs/33, PR `cairn://p/rs/33/1/builder/create-pr`): 2 ticks
+  per bury is a hard floor for every bone (`bury_bone.rs2`, `p_delay(0)`). A 28-bone bank
+  cycle costs 58 ticks, and 555 dragon bones took 1,221 ticks from level 1 to 99, about
+  **2.2 scored ticks per bone all-in**.
 
-| Bone | Bones for 28,938 base | Scored-account bury ticks (2 each) | Inventories of 28 | Bury ticks per 1,000 base |
-|---|---:|---:|---:|---:|
-| Dragon (72) | 402 | 804 | 15 | 27.8 |
-| Babydragon (30) | 965 | 1,930 | 35 | 66.7 |
-| Big (15) | 1,930 | 3,860 | 69 | 133.3 |
-| Normal (4.5) | 6,431 | 12,862 | 230 | 444.4 |
+| Bone | Bones for the remaining 29,843 base | Scored ticks (2.2 per bone) | Scored ticks per 1,000 base |
+|---|---:|---:|---:|
+| Dragon (72) | 415 | about 913 | 30.6 |
+| Babydragon (30) | 995 | about 2,189 | 73.3 |
+| Big (15) | 1,990 | about 4,378 | 146.7 |
 
-The score is the scored account's ticks, so the bone type matters far more than its xp
-ratio suggests. Burying big bones instead of dragon bones costs that account about
-3,056 more ticks (15 minutes) and 54 more bank cycles. Helper hours are free on the
-scoreboard; they cost only wall clock.
+Helper hours are free on the scoreboard; the scored account's ticks are not. The tier is a
+5x lever: 415 dragon bones cost about 3,465 fewer scored ticks than 1,990 big bones. The
+673 big bones already banked will cost about 1,481 ticks to bury, against about 308 ticks
+for the 140 dragon bones that give the same 10,095 base.
+
+## Where each tier comes from (read: npc configs, map spawns, scripts)
+
+Every dragon drops its bones on every kill (`death_drop`), and every dragon is cowardly
+(it doesn't attack first) and respawns after 60 ticks. Spawn counts come from the
+`==== NPC ====` sections of `server/content/maps/m<X>_<Z>.jm2` (world x = 64X + x).
+
+| Monster (bones) | Where | Spawns | Access | Danger |
+|---|---|---:|---|---|
+| Baby blue dragon (30), level 48, 50 hp | Taverley dungeon (2892-2909, 9763-9806) | 9 | Dusty key: kill the Jailer (2933, 9693), take the jail key (it always drops), unlock Velrak's cell (2931, 9690) and accept his key (`velrak_the_explorer.rs2`). The room is behind the dusty-key door (2924, 9803), entered from the east after a loop round the dungeon from the ladder | No fire. Hits a 85-defence helper about one fish's worth per kill. The route passes aggressive poison scorpions and chaos dwarves |
+| Baby red dragon (30), level 65, 65 hp | Brimhaven dungeon (2696-2708, 9500-9524), among 6 red dragons | 8 | 875 gp to Saniboch once; vines need an axe and a Woodcutting level; stepping stones need Agility 12 (`karam_dungeon.rs2`) | No fire; red dragons nearby are cowardly |
+| Blue dragon (72), level 111, 105 hp | Taverley dungeon, in the baby blues' room; under the Ogre enclave south of Yanille (2568-2590, 9437-9461) | 4; 6 | As for baby blues; the Ogre enclave is not checked | Dragonfire |
+| Green dragon (72), level 79 | Wilderness (3078-3098, 3810-3821), level 35-39 | 5 | Walk-in | Dragonfire; **PvP is live**: anyone within the wilderness level of your combat level can attack (`pvp_combat.rs2`) |
+| Red dragon (72), level 152 | Brimhaven dungeon; deep wilderness (3181-3223, 3819-3850) | 6; 4 | As for baby reds; wilderness | Dragonfire; PvP |
+| Black dragon (72), level 227 | Taverley dungeon (2829-2835, 9824-9826); wilderness dungeon | 2; 2 | | Dragonfire |
+| King Black Dragon (72) | Wilderness lair | 1 | | Out of reach |
+
+Dragonfire (read, `npc/scripts/dragon.rs2`): one attack in four, max 30, or 50 when the
+dragon's magic roll beats the player's defence. Protect from Magic (`%prayer12`) caps it at
+10, the anti-dragon shield at 5, and an antifire potion takes 15 off. The Duke gives the
+shield only after Oziach has told you about it in Dragon Slayer, or after the quest
+(`duke_horacio.rs2`), and Dragon Slayer needs 32 quest points to start. Protect from Magic
+drains 1 point per 3 seconds (`prayer.rs2`: a 5-tick timer, drain effect 12 against a base
+resistance of 60). A blue dragon takes an 85-combat helper with a steel longsword about a
+minute, so about 20 points per kill: two kills per altar visit at Prayer 43.
 
 ## Method comparison (per account-hour and per 1,000 base xp)
 
-| Method | Requirement | Fresh helper to requirement | Bones per account-hour | Base xp per account-hour | Account-hours per 1,000 base | Account-hours for 28,938 base | Risk | Status |
+| Method | Requirement | Fresh helper to requirement | Bones per account-hour | Base xp per account-hour | Account-hours per 1,000 base | Scored ticks per 1,000 base | Risk | Status |
 |---|---|---|---:|---:|---:|---:|---|---|
-| **Hill giants**, Edgeville dungeon (12 spawns, level 28) | Melee about 50, food | **0.42 h measured** (20 min to 50/50/50 on cows, 4.5 min fishing/cooking kit) | **161-166 measured** (117 in a fresh account's first hour) | 2,475 | 0.40 | 11.7 (about 4 h wall clock on 3 accounts) | None: no PvP, giants hit up to about 4 | **Built and running** |
-| Baby blue dragons, Taverley dungeon (9 spawns, level 48, 50 hp, no fire) | Dusty key (Velrak, Taverley jail; the Jailer drops the jail key), melee about 60 | about 0.8 h inferred (giants to 60, plus the key) | about 60 inferred | about 1,800 | about 0.56 | about 16 | Low | Spot written (`spot: 'baby_blue'`), key fetch not written, never run |
-| Blue dragons, Taverley dungeon (3 spawns; Brimhaven has 7) | Anti-dragon shield (the Duke gives it once Dragon Slayer is started, 32 quest points) or Protect from Magic, melee about 75 | Many hours (quest points) | about 20-30 inferred | 1,400-2,200 | 0.5-0.7 | 13-20 | Dragonfire max 30-50 unprotected (`dragon.rs2`) | Infeasible tonight |
-| Green dragons, wilderness level 35-39 (5 spawns) | As for blue dragons, melee about 70 | Many hours, or Prayer 37 (about 36 big bones buried by the helper) for Protect from Magic, which drains during fights | about 20-30 inferred | 1,400-2,200 | 0.5-0.7 | 13-20 | **PvP is live**: anyone within the wilderness level of your combat level can attack (`pvp_combat.rs2`); a 280-tile wilderness walk to Edgeville bank | Not built |
-| Moss giants, Varrock sewers (4 spawns, level 42) | Melee about 40 | about 0.35 h | below hill giants (a third of the spawns) | | | | None | Not built |
-| **GE: dragon bones** (536) | Coins | | 0: **no sellers**; 1,455 wanted at a 5,000 gp bid (16 trades ever, all at 5,000) | | | | | Not a source |
-| **GE: big bones** (532), babydragon (534) | Coins | | 0: never traded, no orders | | | | | Not a source |
-| GE: bones (526) | Coins | | 3 wanted at 150 gp, no sellers | | | | | Not a source |
+| **Hill giants**, Edgeville dungeon (12 spawns, level 28) | Melee about 50, food | **0.42 h measured** (20 min to 50/50/50 on cows, 4.5 min fishing/cooking kit) | **161-166 measured** (117 in a fresh account's first hour) | 2,475 | 0.40 | 146.7 | None | **Built; ran 3 accounts unattended** |
+| **Baby blue dragons**, Taverley dungeon | Dusty key (3 min to fetch, measured), melee about 60 | About 1 h (giants from 50 to 60, inferred) | **about 60 measured** (45 min probe: 10-15 bones per trip, food-bound) | 1,800 | 0.56 | 73.3 | One death on the walk in (the role does not eat while walking) | **Built; probed on cairn_h51** |
+| Baby red dragons, Brimhaven dungeon | 875 gp, axe and Woodcutting, Agility 12 | About 1.5 h (inferred) | about 50 inferred | 1,500 | 0.67 | 73.3 | Low | Not built |
+| Blue dragons with Protect from Magic, Taverley | Prayer 43 (about 28 babydragon bones buried by the helper), dusty key, melee about 85 | About 2 h (inferred) | about 20-25 inferred (2 kills per altar trip) | 1,600 | 0.6 | 30.6 | Dragonfire up to 10 per breath | Not built |
+| Green dragons, wilderness | As above, plus PvP | | about 20 inferred | | | 30.6 | **PvP** and a 280-tile wilderness walk | Not built |
+| **GE: dragon bones** (536) | Coins | | **Sell flow about 15 an hour** (below) | | | 30.6 | Price competition | Not yet bought |
+| GE: big bones (532), babydragon bones (534) | Coins | | 0: never traded | | | | | Not a source |
 
-GE data read from `/api/market/items/<id>` at 05:50 UTC on 2026-10-21. Selling
-is the opposite story: a dragon bone fetches 5,000 gp, which matters to the coin-earner
-(cairn://p/rs/50), not to Prayer.
+**GE: dragon bones**, read from `/api/market/items/536` and `/history` at 08:30 UTC on
+2026-10-21. There is never a standing ask, because sellers fill the highest bid at once. A
+standing bid of 5,000 gp for 1,374 more (someone else's) has absorbed every sale:
+118 dragon bones in the last 8 hours, in lots of 9-41 (hours starting 23:00, 03:00, 04:00,
+06:00 and 07:00 UTC), all at 5,000 gp. At ~200k gp per coin-earner hour, 415 bones at
+5,000-5,500 gp cost 2.1-2.3M gp, about 11 coin-earner hours. Babydragon and big bones
+have never traded.
 
-Dragonfire mechanics (read, `npc/scripts/dragon.rs2`): one attack in four is fire,
-with a max of 30, or 50 when the dragon's magic roll beats the player's defence. Protect
-from Magic (`%prayer12`) caps it at 10, the anti-dragon shield at 5, and an antifire
-potion takes off 15 more. Under 25x xp, Prayer 37 is cheap for a helper (about 535 base,
-36 big bones). Prayer points drain during a minute-long dragon fight, though, so without
-prayer potions Protect from Magic doesn't sustain a farm.
+## Tier choice
 
-**Recommendation.** Hill giants now. They're the only method that runs unattended
-tonight with no risk, and 3-4 accounts cover the 1,930 big bones in a few wall-clock
-hours. The worthwhile stage 2 is baby blue dragons, behind the dusty key. By estimate they
-cost about 40% more helper-hours per xp than the measured giants, but they halve the
-scored account's bury ticks and bank cycles relative to big bones (1,930 fewer ticks for
-the 28,938 base). Since helper time is free on the scoreboard, that trade is worth taking
-once the giants' stock covers the first pass. Real dragon bones would save another 1,126 ticks over
-babydragon bones. That needs Dragon Slayer quest points or a prayer-potion supply on a
-helper, plus wilderness exposure for greens, and is not worth building before the
-scored-account route says it is.
+**Dragon bones from the GE first, and baby blue dragons farmed in parallel as the hedge.
+No more big bones.**
+
+1. **The early 11 dragon bones (Prayer 43).** Place a bid now for 11 at about 6,000 gp,
+   above the standing 5,000 so the next seller fills us first. On the observed flow (a lot
+   most hours, 9-41 bones each) that fills within a few hours, well before morning. There is
+   no farmed dragon-bone source tonight. If the GE stays dry, the backstop is a helper with
+   Prayer 43 from its own babydragon bones killing the four Taverley blue dragons under
+   Protect from Magic, two kills per altar visit: a follow-up, not built.
+2. **The bulk: bid for 415 at about 5,500 gp** (or 555 if the big bones are to be replaced:
+   that saves about 1,173 scored ticks for about 0.8M gp more). On the observed flow of
+   about 15 an hour, by morning (about 8 hours) expect about 120. That's more if our higher
+   bid draws extra sellers, and fewer if the other buyer outbids us. The GE buyer role
+   (cairn://p/rs/50) and the mule (cairn://p/rs/49) place and collect the offers.
+3. **Farm baby blue dragons on 4 accounts** (9 spawns; more would crowd them). At the
+   measured ~60 an hour each, 4 accounts make about 240 an hour, 7,200 base per hour, so
+   the whole 995 in about 4 hours. Whatever the GE delivers is subtracted: babydragon bones
+   needed = (29,843 - 72 x dragon bones bought) / 30. The four existing helpers (h50-h52 at
+   75-85 combat, plus h53 fresh) can start within an hour. One fix comes first:
+   **eat while walking**. cairn_h51 died on the way in and lost its key and kit; the role
+   recovered by itself, but it cost about 8 minutes. Buying sharks (about 900 gp on the GE)
+   instead of fishing would roughly double trip length and the rate.
+4. **The 673 big bones** stay banked as a backstop. Bury them only if dragon and babydragon
+   supply falls short: they cost about 1,481 scored ticks for their 10,095 base.
+
+Accounts under the fleet's 40-online cap: 4 baby blue farmers, the GE buyer, and the coin
+earners that fund about 11 hours of buying.
 
 ## Stages (re-chosen from observed state every cycle; each change logged as `phase`)
 
