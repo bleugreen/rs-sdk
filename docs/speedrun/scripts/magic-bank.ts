@@ -50,9 +50,11 @@ await runScript(async ({ bot, sdk }) => {
     const castAll = async () => {
         let t = tick(sdk);
         while (true) {
-            const next = sdk.getInventory().find((x) => item.test(x.name));
-            if (!next) return;
-            await sdk.sendSpellOnItem(next.slot, s.com);
+            // two clicks per tick on different slots: the server takes at most one per p_delay
+            // window (magic-cadence.ts), and the spare covers a click that misses its tick
+            const next = sdk.getInventory().filter((x) => item.test(x.name)).slice(0, 2);
+            if (next.length === 0) return;
+            await Promise.all(next.map((x) => sdk.sendSpellOnItem(x.slot, s.com)));
             t = await nextTick(sdk, t);
         }
     };
@@ -65,8 +67,13 @@ await runScript(async ({ bot, sdk }) => {
         if (c === CYCLES) break;
         const tb = tick(sdk);
         if (mode === 'stock') {
-            r = await bot.openBank();
-            if (!r.success) throw new Error(`openBank: ${r.message}`);
+            // the stock helper's booth click is dropped while the last cast's p_delay holds
+            // (OpLocHandler), and it then waits out its own timeout; retry like a stock bot would
+            for (let a = 0; ; a++) {
+                r = await bot.openBank(3000);
+                if (r.success) break;
+                if (a === 3) throw new Error(`openBank: ${r.message}`);
+            }
             const d = await bot.depositItem(/ring of wealth|amulet of glory|ring of|amulet of/i, -1);
             if (!d.success) throw new Error(`deposit: ${d.message}`);
             const w = await bot.withdrawItem(item, -1);
@@ -105,9 +112,12 @@ await runScript(async ({ bot, sdk }) => {
     await waitTicks(sdk, 3);
     const gains = rec.gains(t0, tick(sdk));
     const all = gains.slice(1).map((g, i) => g.tick - gains[i]!.tick);
-    for (const g of all) if (g > 4) gaps.push(g);
+    // gap i is between cast i and cast i+1; the bank sits after every `free` casts
+    const inner: number[] = [];
+    all.forEach((g, i) => ((i + 1) % free === 0 ? gaps : inner).push(g));
     const casts = gains.length;
     const span = gains.at(-1)!.tick - gains[0]!.tick;
-    log(sdk, `mode=${mode} NODE_TICKRATE=${process.env.NODE_TICKRATE ?? '?'}: ${casts} casts in ${span} ticks (first to last cast); inventory-to-inventory gaps ${JSON.stringify(gaps)} => bank overhead ${JSON.stringify(gaps.map((g) => g - 3))} ticks; in-inventory gaps ${JSON.stringify(all.filter((g) => g <= 4).reduce((m: Record<number, number>, g) => ((m[g] = (m[g] ?? 0) + 1), m), {}))}`);
+    const hist = inner.reduce((m: Record<number, number>, g) => ((m[g] = (m[g] ?? 0) + 1), m), {});
+    log(sdk, `mode=${mode} NODE_TICKRATE=${process.env.NODE_TICKRATE ?? '?'}: ${casts} casts in ${span} ticks (first to last cast); bank gaps (last cast to next first cast) ${JSON.stringify(gaps)} => overhead over a plain 3-tick cast ${JSON.stringify(gaps.map((g) => g - 3))}; in-inventory gaps ${JSON.stringify(hist)}`);
     rec.off();
 }, { timeout: 30 * 60_000, printState: false });
