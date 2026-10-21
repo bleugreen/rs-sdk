@@ -162,6 +162,8 @@ export function helpersReady(accounts: LauncherStatus['accounts']): boolean {
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 const iso = () => new Date().toISOString();
 const LOGIN_TIMEOUT_MS = 90_000;
+/** A direct-path role's logout: 8 s for the click, a 17-tick combat wait, 8 s again. */
+const DIRECT_STOP_GRACE_MS = 40_000;
 
 async function pipeLines(stream: ReadableStream<Uint8Array>, onLine: (line: string) => void): Promise<void> {
     const decoder = new TextDecoder();
@@ -467,7 +469,10 @@ class AccountRun {
         readonly entry: LaunchEntry
     ) {
         this.roles = new RoleLoop(entry, {
+            beforeSpawn: () => this.beforeRoleStart(),
             spawn: () => this.spawnRole(),
+            // A direct-path role logs out before it exits, which can take a combat timer.
+            ...(entry.path === 'direct' ? { killGraceMs: DIRECT_STOP_GRACE_MS } : {}),
             isStopping: () => this.L.isStopping,
             log: line => this.L.log(line),
             onFinal: (why, code) => this.L.onStop(why, code)
@@ -479,7 +484,7 @@ class AccountRun {
     }
 
     summary(): LauncherStatus['accounts'][number] {
-        return { account: this.entry.account, role: this.entry.role, receiver: this.entry.receiver, state: this.state, loggedInAt: this.loggedInAt, logins: this.logins };
+        return { account: this.entry.account, role: this.entry.role, receiver: this.entry.receiver, path: this.entry.path, state: this.state, loggedInAt: this.loggedInAt, logins: this.logins };
     }
 
     private note(stream: 'lite' | 'role', line: string): void {
@@ -506,9 +511,38 @@ class AccountRun {
 
     /** Log in (waiting for it), start the role, and keep both running in the background. */
     async start(): Promise<void> {
+        if (this.entry.path === 'direct') return this.startDirect();
         const first = await this.session();
         this.supervising = this.supervise(first);
         await Promise.race([sleep(1000), this.roles.start()]);
+    }
+
+    private markIn: (() => void) | null = null;
+    private refusal: number | null = null;
+
+    /** Direct path: the role process is the client. Resolves once it says it is in the world (or gives up waiting). */
+    private async startDirect(): Promise<void> {
+        const inWorld = new Promise<'in'>(r => (this.markIn = () => r('in')));
+        const first = await Promise.race([inWorld, this.roles.start().then(() => 'ended' as const), sleep(LOGIN_TIMEOUT_MS).then(() => 'timeout' as const)]);
+        if (first === 'timeout') this.L.log(`[launcher] ${this.entry.account}: not in the world after ${LOGIN_TIMEOUT_MS / 1000}s; starting the next account, this one keeps trying`);
+    }
+
+    /** Before each direct-path start (a login): honour a refusal's delay, then take a login slot. */
+    private async beforeRoleStart(): Promise<void> {
+        if (this.entry.path !== 'direct') return;
+        if (this.refusal !== null) {
+            const p = loginFailurePolicy(this.refusal);
+            if (p.fleetPauseMs) this.L.pauseLogins(p.fleetPauseMs, `${this.entry.account} refused with code ${this.refusal}`);
+            if (p.needsAttention) this.L.log(`[launcher] ${this.entry.account}: login refused with code ${this.refusal}; check its credentials`);
+            this.refusal = null;
+            const until = Date.now() + p.accountDelayMs;
+            while (Date.now() < until && !this.L.isStopping) await sleep(500);
+        }
+        if (this.L.isStopping) return;
+        await this.L.takeLogin();
+        this.state = 'logging-in';
+        this.logins++;
+        this.L.log(`[launcher] ${this.entry.account}: logging in to ${this.botEnv.SERVER} (direct)`);
     }
 
     /** One login: resolves once the client is in the world, with a promise for the session's end. */
@@ -600,8 +634,26 @@ class AccountRun {
         const onLine = (line: string) => {
             this.note('role', line);
             if (line.startsWith('RESULT ')) this.L.log(`[${e.account}] ${line}`);
+            if (e.path !== 'direct') return;
+            if (DIRECT_IN_WORLD_RE.test(line)) {
+                this.loggedInAt = Date.now();
+                this.state = 'online';
+                this.L.log(`[launcher] ${e.account}: in the world (login ${this.logins}, direct)`);
+                this.L.writeStatus();
+                this.markIn?.();
+            }
+            const refused = DIRECT_REFUSED_RE.exec(line);
+            if (refused) this.refusal = Number(refused[1]);
         };
-        const exited = Promise.all([pipeLines(child.stdout, onLine), pipeLines(child.stderr, onLine), child.exited]).then(() => child.exitCode);
+        const exited = Promise.all([pipeLines(child.stdout, onLine), pipeLines(child.stderr, onLine), child.exited]).then(() => {
+            if (e.path === 'direct' && this.state !== 'stopping') {
+                // The client went with the process: offline until the next start logs in again.
+                this.state = child.exitCode === 0 ? 'stopped' : 'backoff';
+                if (child.exitCode === 3) this.L.onStop(`${e.account}: client revision is older than the server's (exit 3)`, 3);
+                this.L.writeStatus();
+            }
+            return child.exitCode;
+        });
         return {
             pid: child.pid,
             get exitCode() {
@@ -622,7 +674,7 @@ class AccountRun {
         const role = this.roles.running;
         if (role && role.exitCode === null) {
             role.kill('SIGTERM');
-            if (!(await exitedWithin(role, 15_000))) role.kill('SIGKILL');
+            if (!(await exitedWithin(role, this.entry.path === 'direct' ? DIRECT_STOP_GRACE_MS : 15_000))) role.kill('SIGKILL');
         }
         await this.roles.done.catch(() => undefined);
         const lite = this.lite;
