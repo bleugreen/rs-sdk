@@ -330,7 +330,9 @@ export async function walk(bot: BotActions, sdk: BotSDK, c: Counts, x: number, z
         last = { x: p.worldX, z: p.worldZ, level: p.level };
     });
     try {
-        const r = await bot.walkTo(x, z, tol, { timeout: 600_000 });
+        let r = await bot.walkTo(x, z, tol, { timeout: 600_000 });
+        // walkTo occasionally reports 'Stuck' on open ground (a wandering npc, a stale route); click on
+        for (let retry = 0; retry < 3 && !r.success && /stuck/i.test(r.message ?? ''); retry++) r = await bot.walkTo(x, z, tol, { timeout: 600_000 });
         if (!r.success) throw new Error(`walk to ${x},${z} failed: ${r.message}`);
     } finally {
         unsub();
