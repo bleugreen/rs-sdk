@@ -25,6 +25,7 @@ import type { BotSDK } from '../../sdk/index';
 import { offerSatisfies } from '../../sdk/trade-helpers';
 import type { BankItem, GameMessage, InventoryItem, TradeItem, TradeItemSpec } from '../../sdk/types';
 import { TRADE_REQUEST_CHAT_TYPE } from '../../sdk/types';
+import { travelTo } from '../lib/toll-gate';
 import { runStandalone, type Role, type RoleContext } from './role';
 
 // ============ Places ============
@@ -256,15 +257,9 @@ function distanceTo(sdk: BotSDK, x: number, z: number): number {
     return Math.max(Math.abs(p.worldX - x), Math.abs(p.worldZ - z));
 }
 
+/** Walk near (x, z), paying the Al Kharid toll gate when it stands between (speedrun/lib/toll-gate.ts). */
 export async function walkNear(ctx: RoleContext, x: number, z: number, tolerance: number): Promise<boolean> {
-    for (let attempt = 0; attempt < 5 && distanceTo(ctx.sdk, x, z) > tolerance; attempt++) {
-        if (ctx.signal.aborted) return false;
-        const p = ctx.sdk.getState()?.player;
-        ctx.log('walking', { from: p ? [p.worldX, p.worldZ] : null, to: [x, z] });
-        const r = await ctx.bot.walkTo(x, z, tolerance);
-        if (!r.success) ctx.log('walk failed', { x, z, result: r.message });
-    }
-    return distanceTo(ctx.sdk, x, z) <= tolerance;
+    return (await travelTo(ctx.bot, ctx.sdk, { x, z }, { tolerance, log: ctx.log, signal: ctx.signal })).ok;
 }
 
 export async function openBank(ctx: RoleContext): Promise<boolean> {
