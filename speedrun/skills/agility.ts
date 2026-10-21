@@ -121,6 +121,12 @@ export interface AgilityOptions {
      * logs out and throws `no-food`.
      */
     restock?: Restock;
+    /**
+     * A food top-up at the start, after `drop` (rehearsal only): the harness's kit
+     * trade comes before the steps, when a fresh account has 10 free slots, so the
+     * rest of the food arrives here.
+     */
+    topUp?: { giver: string; want: WantSpec[] };
     /** How to leave the world (default logoutClean); tests inject one. */
     logout?: (session: RunnerSession) => Promise<unknown>;
     /** The trade (default receiveFrom); tests inject one. */
@@ -186,6 +192,7 @@ export function parseOptions(raw: Record<string, unknown> = {}): AgilityOptions 
         maxPauses: int(raw.maxPauses, 'maxPauses') ?? 3,
         pauseLimitAck: raw.pauseLimitAck === true || raw.pauseLimitAck === 'true',
         ...(parseRestock(raw) ? { restock: parseRestock(raw)! } : {}),
+        ...(raw.topUpGiver ? { topUp: { giver: String(raw.topUpGiver), want: parseWant(raw.topUpWant ?? 'shark:16') } } : {}),
         ...(typeof raw.logout === 'function' ? { logout: raw.logout as AgilityOptions['logout'] } : {}),
         ...(typeof raw.receive === 'function' ? { receive: raw.receive as AgilityOptions['receive'] } : {})
     };
@@ -596,6 +603,12 @@ const walkGnome = (gnomeEnd: number, o: AgilityOptions): Step => ({
         const s = stateOf(ctx);
         if (agilityLevel(s) >= gnomeEnd || nearGnome(s)) return;
         if (o.drop) await dropMatching(ctx, o.drop);
+        if (o.topUp) {
+            const receive = o.receive ?? ((sd, giver, want) => receiveFrom(sd, giver, { want }));
+            const r = await receive(ctx.sdk, o.topUp.giver, o.topUp.want);
+            row(ctx, 'agility:top-up', ctx.sdk.getState()?.tick ?? -1, { giver: o.topUp.giver, ok: r.ok, tradeTicks: r.ticks, ...(r.reason ? { reason: r.reason } : {}) }, r.ok);
+            if (!r.ok) throw new Error(`food top-up from ${o.topUp.giver} failed: ${r.reason}`);
+        }
         await walkRoute(ctx, ROUTES.spawnToGnome, o);
     },
     postconditions: s => (agilityLevel(s) >= gnomeEnd || nearGnome(s) ? true : 'not at the Gnome course'),

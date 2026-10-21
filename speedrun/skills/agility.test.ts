@@ -236,6 +236,25 @@ describe('agility Wilderness decisions', () => {
         expect(logouts).toBe(1);
     });
 
+    test('walk-gnome drops the starter items, then takes the food top-up, before walking', async () => {
+        const inv = ['Bronze axe', 'Tinderbox', 'Shrimps', 'Bread', 'Air rune', 'Knife'].map((name, slot) => ({ slot, id: slot, name, count: 1, optionsWithIndex: [] })) as unknown as BotWorldState['inventory'];
+        const sdk = new FakeSdk(world({ agility: 1, x: 3222, z: 3222, inventory: inv }));
+        (sdk as unknown as { sendDropItem: (slot: number) => Promise<unknown> }).sendDropItem = slot => {
+            sdk.sent.push({ method: 'sendDropItem', args: [slot] });
+            setTimeout(() => sdk.tick(s => ({ inventory: s.inventory.filter(i => i.slot !== slot) })), 0);
+            return Promise.resolve({ success: true, message: 'ok' });
+        };
+        const order: string[] = [];
+        const ctx = ctxFor(sdk);
+        (ctx.bot as unknown as { walkTo: () => Promise<unknown> }).walkTo = async () => { order.push('walk'); return { success: true, message: 'ok' }; };
+        const walk = step(steps({ drop: '^(bronze .*|tinderbox|.* rune)$', topUpGiver: 'cairn_mule2', topUpWant: 'shark:16', receive: async (_s: unknown, g: string, w: Array<{ amount?: number }>) => { order.push(`trade ${g} ${w[0]!.amount}`); return { ok: true, ticks: 4, received: [] }; } }), 'agility:walk-gnome');
+        await walk.run(ctx as never);
+        expect(sdk.sent.filter(a => a.method === 'sendDropItem').map(a => a.args[0])).toEqual([0, 1, 4]);
+        expect(sdk.getState()!.inventory.map(i => i.name)).toEqual(['Shrimps', 'Bread', 'Knife']);
+        expect(order[0]).toBe('trade cairn_mule2 16');
+        expect(order.slice(1).every(x => x === 'walk')).toBe(true);
+    });
+
     test('parseWant takes the kit syntax', () => {
         expect(parseWant('shark:20')).toEqual([{ item: /^shark$/i, amount: 20 }]);
         expect(parseOptions({ restockGiver: 'c', restockBelow: '3' }).restock).toEqual({ giver: 'c', want: [{ item: /^shark$/i, amount: 20 }], below: 3 });
