@@ -68,8 +68,8 @@ await runScript(async ({ bot, sdk }) => {
         };
         const has = (re: RegExp, n = 1) => () => L.invCount(sdk, re) >= n;
         const op = async (x: number, z: number, opt: string) => bot.interactLoc(await L.findLoc(sdk, x, z, opt), opt);
-        const useOn = async (item: RegExp, x: number, z: number) => {
-            const loc = await L.findLoc(sdk, x, z);
+        const useOn = async (item: RegExp, x: number, z: number, name?: RegExp) => {
+            const loc = await L.findLoc(sdk, x, z, undefined, 15, name);
             const it = sdk.findInventoryItem(item);
             if (!it) throw new Error(`no ${item}`);
             await sdk.sendUseItemOnLoc(it.slot, loc.x, loc.z, loc.id);
@@ -150,7 +150,7 @@ await runScript(async ({ bot, sdk }) => {
         await step('vase on tap', () => useOn(/^Vase$/, 2629, 3661), has(/Vase of water/));
         await step('trapdoor down', () => op(2631, 3663, 'Climb-down'), level(0));
         // The mural is a wall decoration; the SDK's useItemOnLoc paths to its face.
-        const mural = async () => bot.useItemOnLoc(sdk.findInventoryItem(/Red disk/)!, await L.findLoc(sdk, 2634, 3663));
+        const mural = async () => bot.useItemOnLoc(sdk.findInventoryItem(/Red disk/)!, await L.findLoc(sdk, 2634, 3663, undefined, 15, /mural/i));
         await step('disk on mural', mural, () => L.invCount(sdk, /Red disk/) <= 1);
         await step('disk on mural', mural, has(/Vase lid/));
         await step('lid on vase', () => onItem(/Vase lid/, /Vase of water/), has(/Sealed vase/));
@@ -159,7 +159,7 @@ await runScript(async ({ bot, sdk }) => {
         await step('key on range', () => useOn(/Frozen key/, 2629, 3663), has(/Seers' key/));
         await step('trapdoor down', () => op(2631, 3663, 'Climb-down'), level(0));
         const v0 = L.tick(sdk);
-        await step('key on exit door', () => useOn(/Seers' key/, 2636, 3667), () => L.pos(sdk).z >= 3668, 30);
+        await step('key on exit door', () => useOn(/Seers' key/, 2636, 3667, /Door/), () => L.pos(sdk).z >= 3668, 30);
         await settle();
         const out = {
             run, answer, clicks,
