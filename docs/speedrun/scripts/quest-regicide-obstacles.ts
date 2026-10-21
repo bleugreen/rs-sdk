@@ -26,8 +26,12 @@ await runScript(async ({ sdk }) => {
     const hp = () => sdk.getState()?.player?.hp ?? -1;
 
     // Click a loc from where we stand and wait for one of the landing tiles.
+    // The log balances are level-1 locs over bridge tiles; the client's scan only
+    // lists the player's plane, so they are addressed by config id (loc.pack).
+    const LOG_IDS: Record<string, number> = { '2197,3237': 3931, '2201,3237': 3931, '2259,3250': 3932, '2263,3250': 3932, '2290,3233': 3933, '2290,3238': 3933 };
     const cross = async (lx: number, lz: number, name: RegExp, op: number, lands: Array<[number, number]>, max = 40) => {
-        const loc = await findLoc(sdk, lx, lz, name);
+        const fixed = LOG_IDS[`${lx},${lz}`];
+        const loc = fixed ? { x: lx, z: lz, id: fixed } : await findLoc(sdk, lx, lz, name);
         if (!loc) throw new Error(`loc ${name} at ${lx},${lz} not found (have ${(await sdk.scanNearbyLocs(4)).map(l => `${l.name}@${l.x},${l.z}`).join(' ')})`);
         const t0 = now(sdk);
         const hp0 = hp();
@@ -41,9 +45,9 @@ await runScript(async ({ sdk }) => {
         for (let i = 0; i < reps; i++) {
             await tele(sdk, 2196, 3237);
             rows.push({ dir: 'W->E', ...(await cross(2197, 3237, /Log balance/, 1, [[2202, 3237]])) });
-            await waitTicks(sdk, 2);
+            await waitTicks(sdk, 3);
             rows.push({ dir: 'E->W', ...(await cross(2201, 3237, /Log balance/, 1, [[2196, 3237]])) });
-            await waitTicks(sdk, 2);
+            await waitTicks(sdk, 3);
         }
         result('log1', rows);
     } else if (segment === 'log3') {
@@ -115,10 +119,18 @@ await runScript(async ({ sdk }) => {
         const rows = [];
         for (let i = 0; i < reps; i++) {
             await tele(sdk, 2231, 3149);
-            rows.push({ dir: 'W->E', ...(await cross(2232, 3148, /Dense forest/, 1, [[2234, 3149]])) });
-            await waitTicks(sdk, 2);
-            rows.push({ dir: 'E->W', ...(await cross(2232, 3148, /Dense forest/, 1, [[2231, 3149]])) });
-            await waitTicks(sdk, 2);
+            // landing shows after 2 ticks, but the script holds p_delay(3) after the
+            // exactmove; time until the player can act again by clicking straight back.
+            const a = await cross(2232, 3148, /Dense forest/, 1, [[2234, 3149]]);
+            const tBack = now(sdk);
+            let b = null;
+            for (let k = 0; k < 8 && !b; k++) {
+                const loc = await findLoc(sdk, 2232, 3148, /Dense forest/);
+                await sdk.sendInteractLoc(loc!.x, loc!.z, loc!.id, 1);
+                b = await waitUntil(sdk, at(2231, 3149), 3);
+            }
+            rows.push({ dir: 'W->E', ...a, backLandedAfter: b ? b.tick - tBack : null });
+            await waitTicks(sdk, 6);
         }
         result('crossover', rows);
     } else if (segment === 'teleport') {
