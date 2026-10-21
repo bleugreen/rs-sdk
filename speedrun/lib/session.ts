@@ -223,9 +223,8 @@ export async function logoutClean(session: Session, opts: { timeoutMs?: number }
     session.expectInWorld = false;
     for (let attempt = 0; attempt < 2; attempt++) {
         const clickTick = sdk.getState()?.tick ?? -1;
-        const refusedAfter = sdk.getState()?.gameMessages.length ?? 0;
         void sdk.sendClickComponent(LOGOUT_BUTTON);
-        const out = await waitLoggedOutSignal(session, opts.timeoutMs ?? Math.max(5_000, 15 * tickMs()), refusedAfter);
+        const out = await waitLoggedOutSignal(session, opts.timeoutMs ?? Math.max(5_000, 15 * tickMs()), clickTick);
         if (out === 'refused' && attempt === 0) {
             await waitUntil(sdk, () => false, { maxTicks: COMBAT_LOGOUT_TICKS + 1 });
             continue;
@@ -244,13 +243,11 @@ export async function logoutClean(session: Session, opts: { timeoutMs?: number }
     throw new Error('unreachable');
 }
 
-async function waitLoggedOutSignal(session: Session, timeoutMs: number, msgBaseline: number): Promise<'out' | 'refused' | 'timeout'> {
+async function waitLoggedOutSignal(session: Session, timeoutMs: number, clickTick: number): Promise<'out' | 'refused' | 'timeout'> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
         const s = session.sdk.getState();
-        if (s?.gameMessages.slice(0).some(m => CANT_LOGOUT.test(m.text)) && (s.gameMessages.length !== msgBaseline || s.gameMessages.some(m => CANT_LOGOUT.test(m.text) && m.tick >= session.lastInWorldTick - 1))) {
-            return 'refused';
-        }
+        if (s?.gameMessages.some(m => CANT_LOGOUT.test(m.text) && m.tick >= clickTick)) return 'refused';
         if (await isLoggedOut(session)) return 'out';
         await sleep(Math.min(100, tickMs() / 3));
     }
