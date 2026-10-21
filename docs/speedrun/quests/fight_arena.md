@@ -142,7 +142,7 @@ At 70/70/70, General left alive, from the measured full run (steps 1-31 without
 
 | Part | Ticks | Label |
 |---|---|---|
-| Travel | 210 (390 route tiles) + 74 way in | measured; way in inferred |
+| Travel | 210 (340 route tiles) + 74 way in | measured; way in inferred |
 | Dialogue (69 pages, 2 options, standalone conversations and the cutscene pages) | 147 | measured (91 standalone, 56 inside cutscenes at 2 per page) |
 | Interactions (chest, wearing, doors) | 40 | measured |
 | Fights (from first hitsplat to the kill) | 253 | measured |
@@ -164,7 +164,7 @@ him). At 50/50/50 add about 80 for the slower chain. With the client fix
   retry that only fires while you are inside the arena zone
   (`khazard_ogre.rs2:1-12`, `khazard_scorpion.rs2`, `bouncer.rs2`,
   `quest_arena.constant:15-16`). Do not run out of the arena the moment the
-  monster dies. I saw no lost hook in 7 chains.
+  monster dies. No lab run lost a hook.
 - **Leftover spawns.** The ogre, scorpion and Bouncer are spawned for 500 ticks
   (`quest_arena.rs2:207,244`, `jeremy_servil.rs2:107`). Two players doing the
   quest within that window share them; a lab account rerunning the chain met the
