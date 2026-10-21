@@ -147,7 +147,11 @@ export function npc(sdk: BotSDK, re: RegExp) {
     return n;
 }
 
-export const talk = (sdk: BotSDK, re: RegExp) => () => sdk.sendTalkToNpc(npc(sdk, re).index);
+/** Talk-to; after a climb or teleport the NPC list can lag a tick or two, so wait up to 6 ticks for it. */
+export const talk = (sdk: BotSDK, re: RegExp) => async () => {
+    await L.waitUntil(sdk, () => sdk.findNearbyNpc(re) !== null, 6);
+    return sdk.sendTalkToNpc(npc(sdk, re).index);
+};
 export const opLoc = (sdk: BotSDK, x: number, z: number, id: number, op = 1) => () => sdk.sendInteractLoc(x, z, id, op);
 
 export function slot(sdk: BotSDK, re: RegExp): number {
