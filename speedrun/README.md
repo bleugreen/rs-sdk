@@ -163,7 +163,12 @@ The blind flag is cairn://p/rs/51 (main PR #24).
 | `advance`, 10 pages (read-then-act) | 10: **1 per page** |
 | `continueBurst` k=5, fallback mode (pre-rs/51) | 5 |
 | `continueBurst` k=10, fallback mode (pre-rs/51) | 10 |
-| `continueBurst` k=5 / k=10, burst mode | pending: re-run on main with rs/51 (expected 1 / 2; main measured 10 pages in 2 ticks) |
+| `continueBurst` k=5, burst mode (with rs/51) | **1** |
+| `continueBurst` k=10, burst mode (with rs/51) | **2** |
+
+The burst rows ran with rs/51's client and SDK diff applied on top of main @
+18b05c31 (the rs/51 branch tip 7255c41de, which merged as main PR #24),
+3 samples each. The other rows ran without it.
 
 ## levelup.ts
 
@@ -302,8 +307,8 @@ the login server and never reaches that path.
 
 The numbers above are already post-rs/22. Re-run these when the client changes:
 
-- **After rs/51 (blind continue) is on this branch:** `lab/measure-dialogue.ts`
-  (the burst rows).
+- **Once main with rs/51 is the base:** `lab/measure-dialogue.ts`, to replace
+  the burst rows' patched-client provenance with a plain main sha.
 - **After any change to the client's publish timing or action cadence:** every
   observe-then-act row, meaning dialogue `advance`, the level-up rows, the
   trade rows (both clocks), and the bank rows (their confirm wait is one
