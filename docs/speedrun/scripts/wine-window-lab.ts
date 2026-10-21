@@ -376,6 +376,8 @@ const PLANS: Record<string, Plan> = {
     gems: { W1: 'gems', P1: P1WORK, W2: 'gems', after: ['gems'] },
     potions: { W1: 'potions', P1: P1WORK, W2: 'potions', after: ['potions'] },
     bones: { W1: 'bones', P1: false, W2: 'bones', after: ['bones'] },
+    gemsP1: { W1: 'gems', P1: true, W2: 'gems', after: ['gems'] },
+    potionsP1: { W1: 'potions', P1: true, W2: 'potions', after: ['potions'] },
     mix: parsePlan(arg('mix', 'W1:buryCut,P1:-,W2:buryCut,after:gems+bones')),
 };
 
