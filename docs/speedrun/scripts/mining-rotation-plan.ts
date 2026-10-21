@@ -112,7 +112,6 @@ function plan(cluster: P[]) {
         const next: S[] = [];
         for (const s of beam) {
             const R = s.t;
-            const starters = adj[s.pos]!.filter(ri => s.avail[ri]! <= R + 1);
             // --free-starter: something other than a rock sets %action_delay = map_clock + 2 on the
             // tick after each roll (e.g. knife on logs, cut_logs.rs2:83-85; owned by rs/9), so every
             // one-tick move can use the timer trick.
@@ -138,7 +137,6 @@ function plan(cluster: P[]) {
                     next.push(ns);
                 }
             }
-            void starters;
         }
         if (!next.length) break;
         // keep the states furthest ahead in ores per elapsed tick, dedup by (pos, t)
