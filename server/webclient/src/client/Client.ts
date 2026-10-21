@@ -62,6 +62,7 @@ import PixFont from '#/graphics/PixFont.js';
 import PixMap from '#/graphics/PixMap.js';
 
 import ClientStream from '#/io/ClientStream.js';
+import { worldEndpoint } from '#/util/Endpoints.js';
 import { ClientProt } from '#/io/ClientProt.js';
 import Database from '#/io/Database.js';
 import Isaac from '#/io/Isaac.js';

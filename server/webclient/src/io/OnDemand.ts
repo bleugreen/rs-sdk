@@ -9,6 +9,7 @@ import type JagFile from '#/io/JagFile.js';
 import OnDemandProvider from '#/io/OnDemandProvider.js';
 import OnDemandRequest from '#/io/OnDemandRequest.js';
 import Packet from '#/io/Packet.js';
+import { worldEndpoint } from '#/util/Endpoints.js';
 
 export default class OnDemand extends OnDemandProvider {
     versions: number[][] = [];
