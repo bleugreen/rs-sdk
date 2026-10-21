@@ -75,6 +75,7 @@ await runScript(async ({ bot, sdk }) => {
     rec.add(await clickWalk(sdk, 2784, 3289, 0), '5d walk to damp sticks');
     rec.add(await pickup(sdk, /^damp sticks$/i), '5e');
     rec.add(await useOnItem(sdk, /^broken glass$/i, /^damp sticks$/i, s => invCount(s, /^dry sticks$/i) > 0), '5f dry the sticks');
+    rec.add(await clickWalk(sdk, LADDER_UP.x, LADDER_UP.z - 1, 0), '6a walk to the ladder');
     rec.add(await locId(sdk, LADDER_UP.x, LADDER_UP.z, LADDER_UP.id, 1, lvl(1), { label: 'climb up' }), '6a');
     rec.add(await viaDoor(sdk, [2765, 3285], KDOOR, [KWALL.x, KWALL.z - 1]), 'into the room by Kennith\'s wall 1');
     rec.add(withRuns(await locId(sdk, KWALL.x, KWALL.z, KWALL.id, 1, () => false, { label: 'Kennith through the wall', maxTicks: 40 })), '6b Kennith 1');
@@ -83,6 +84,7 @@ await runScript(async ({ bot, sdk }) => {
     rec.add(await locId(sdk, LADDER_DOWN.x, LADDER_DOWN.z, LADDER_DOWN.id, 1, lvl(0), { label: 'climb down' }), '6c');
 
     // Holgart takes you to Kent's island.
+    rec.add(await clickWalk(sdk, 2782, 3277, 1), '7a walk to Holgart (the npc click routes badly on the bridged floor)');
     rec.add(withRuns(await talk(sdk, /^Holgart$/i, [], { idle: 6, done: s => pos(s).z > 3310 && !s.dialog.isOpen })), '7 Holgart on the platform, sail to the island');
     console.log('stage', await stage(sdk), pos(sdk.getState()));
     rec.add(withRuns(await talk(sdk, /^Kent$/i, [], { idle: 6 })), '8 Kent');
@@ -93,7 +95,8 @@ await runScript(async ({ bot, sdk }) => {
     // Light the torch, then Kennith, the panel, Kennith again and the crane.
     rec.add(await invOp(sdk, /^dry sticks$/i, /rub/i, s => invCount(s, /^lit torch$|^torch$/i) > 0 && invCount(s, /unlit torch/i) === 0), '10 rub the sticks');
     console.log('stage', await stage(sdk), sdk.getState()!.inventory.map(i => i.name));
-    rec.add(await locId(sdk, LADDER_UP.x, LADDER_UP.z, LADDER_UP.id, 1, lvl(1), { label: 'climb up with the torch' }), '11a');
+    rec.add(await clickWalk(sdk, LADDER_UP.x, LADDER_UP.z - 1, 0), '11a walk to the ladder');
+    rec.add(await locId(sdk, LADDER_UP.x, LADDER_UP.z, LADDER_UP.id, 1, lvl(1), { label: 'climb up with the torch' }), '11b');
     rec.add(await viaDoor(sdk, [2765, 3285], KDOOR, [KWALL.x, KWALL.z - 1]), 'into the room by Kennith\'s wall 2');
     rec.add(withRuns(await locId(sdk, KWALL.x, KWALL.z, KWALL.id, 1, () => false, { label: 'Kennith through the wall', maxTicks: 40 })), '11b Kennith 2');
     console.log('stage', await stage(sdk));
@@ -109,6 +112,7 @@ await runScript(async ({ bot, sdk }) => {
     console.log('stage', await stage(sdk));
     rec.add(await clickWalk(sdk, LADDER_DOWN.x, LADDER_DOWN.z - 1, 1), 'walk to the ladder');
     rec.add(await locId(sdk, LADDER_DOWN.x, LADDER_DOWN.z, LADDER_DOWN.id, 1, lvl(0), { label: 'climb down' }), '15a');
+    rec.add(await clickWalk(sdk, 2782, 3277, 1), '15b walk to Holgart');
     rec.add(withRuns(await talk(sdk, /^Holgart$/i, [], { idle: 6, done: s => pos(s).x < 2760 && !s.dialog.isOpen })), '15b Holgart, back to shore');
     console.log('stage', await stage(sdk), pos(sdk.getState()));
     rec.add(await walkTo(bot, sdk, 2717, 3303, 1), '16a walk to Caroline');
