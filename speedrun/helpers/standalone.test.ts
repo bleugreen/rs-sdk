@@ -159,7 +159,7 @@ describe('RoleLoop: restart on client relaunch', () => {
         await h.tick();
         h.procs[0]!.exit(1);
         await h.tick();
-        expect(h.lines.some(l => /restarting in 15s/.test(l))).toBe(true);
+        expect(h.lines.some(l => /role exited with code 1; restarting in \d+s/.test(l))).toBe(true);
         expect(h.procs.length).toBe(1);
         await h.loop.relaunched();
         await h.tick();
