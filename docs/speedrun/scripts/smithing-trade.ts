@@ -260,7 +260,7 @@ await runScript(async ({ bot, sdk }) => {
     let progress = s.tick;
     const logs: InvLog[] = [{ request: -1, tradeOpen: -1, barsIn: -1, clicks: [], xps: [] }];
     const levelTicks: Record<number, number> = {};
-    let levelUpDialogs = 0;
+    let dialogTicks = 0; // observed ticks with a chat dialog (level-up) open
     let firstRequest = -1;
     let reached = -1;
     const offered = new Set<number>();
@@ -270,7 +270,7 @@ await runScript(async ({ bot, sdk }) => {
     while (!done()) {
         s = await nextTick(sdk, s.tick);
         const log = logs[inv]!;
-        if (s.dialog.isOpen) { sdk.sendClickDialog(0).catch(() => {}); levelUpDialogs++; }
+        if (s.dialog.isOpen) { sdk.sendClickDialog(0).catch(() => {}); dialogTicks++; }
         const sk = smith(s);
         if (!levelTicks[sk.baseLevel]) levelTicks[sk.baseLevel] = s.tick;
         if (route && sk.baseLevel >= UNTIL) { reached = s.tick; log.xps.push(s.tick); break; }
@@ -316,11 +316,13 @@ await runScript(async ({ bot, sdk }) => {
             const t = s.trade;
             const want = Object.values(PLAN[inv]!.bars).reduce((a, b) => a + b, 0);
             if (t?.isOpen && t.screen === 'offer') {
+                // Offer-all once per finished item id (the trade-side inventory keeps main-inventory slots).
                 const products = s.inventory.filter(i => !/^hammer$/i.test(i.name) && !offered.has(i.id));
                 for (const p of products.slice(0, 5)) { sdk.sendOfferItem(p.slot, -1).catch(() => {}); offered.add(p.id); }
                 const theirs = t.theirOffer.reduce((a, i) => a + i.count, 0);
-                const leftInInv = s.inventory.filter(i => !/^hammer$/i.test(i.name)).length;
-                if (!t.myAccepted && theirs >= want && leftInInv === 0 && !products.length) sdk.sendAcceptTrade().catch(() => {});
+                const mine = t.myOffer.reduce((a, i) => a + i.count, 0);
+                const made = inv > 0 ? PLAN[inv - 1]!.segs.reduce((a, g) => a + g.count, 0) : 0;
+                if (!t.myAccepted && theirs >= want && mine >= made) sdk.sendAcceptTrade().catch(() => {});
             } else if (t?.isOpen && t.screen === 'confirm' && !t.myAccepted) sdk.sendAcceptTrade().catch(() => {});
             else if (!t?.isOpen) {
                 const have = Object.keys(PLAN[inv]!.bars).reduce((a, b) => a + count(s.inventory, barRe(b)), 0);
@@ -329,9 +331,7 @@ await runScript(async ({ bot, sdk }) => {
                     progress = s.tick;
                     phase = 'anvil';
                     freeFrom = s.tick;
-                    const madeLast = inv > 0 ? PLAN[inv - 1]!.segs.reduce((a, g) => a + g.count, 0) : 0;
                     writePlan(inv + 1, PLAN[inv]!.segs.reduce((a, g) => a + g.count, 0));
-                    void madeLast;
                 } else if (s.tick - L.tradeOpen > 10) { phase = 'free'; offered.clear(); }
             }
         }
@@ -368,7 +368,7 @@ await runScript(async ({ bot, sdk }) => {
     const gaps: Record<number, number> = {};
     for (const l of logs) for (let i = 1; i < l.xps.length; i++) { const g = l.xps[i]! - l.xps[i - 1]!; gaps[g] = (gaps[g] ?? 0) + 1; }
     console.log(`xp gap histogram (within inventories): ${JSON.stringify(gaps)}`);
-    console.log(`level-up dialog clicks: ${levelUpDialogs}`);
+    console.log(`ticks with a dialog open: ${dialogTicks}; levels ${Math.min(...Object.keys(levelTicks).map(Number))} -> ${smith(s).baseLevel}`);
     if (route) {
         console.log(`route ${start} -> ${UNTIL}: first trade request ${firstRequest}, level ${UNTIL} at ${reached}: ${reached - firstRequest} ticks over ${logs.length} inventories (plan ${PLAN.length})`);
         const marks = [10, 20, 30, 33, 40, 48, 50, 60, 68, 70, 80, 88, 90, 95, 99].filter(l => levelTicks[l]);
