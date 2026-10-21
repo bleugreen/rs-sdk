@@ -429,8 +429,11 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         // levers 1-5 sit together; 6-8 are in the northern alcove
         for (const b of pulls.sort((x, y) => (x <= 5 ? 0 : 1) - (y <= 5 ? 0 : 1))) {
             const [x, z] = LEVERS[b]!;
-            const t0 = sdk.getState()!.tick;
-            await opLoc(sdk, L, /lever/i, [x, z], 1, () => messageSince(sdk, t0, /old points creak/i), 80);
+            // detect this pull's own message by position: a tick-based check can
+            // match the previous pull's message, and the next click would then
+            // replace this pull before it happens
+            const m0 = sdk.getState()!.gameMessages.length;
+            await opLoc(sdk, L, String(4949 + b), [x, z], 1, () => sdk.getState()!.gameMessages.slice(m0).some(m => /old points creak/i.test(m.text)), 80);
         }
         L.end();
         L.begin('points settings: send the cart (success animation)');
