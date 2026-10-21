@@ -34,7 +34,7 @@
       "id": "player",
       "title": "Player xp and level stamps",
       "paths": ["server/engine/src/engine/entity/Player.ts"],
-      "why": "The xp table, the 25x multiplier applied to every xp drop, and the stamp of the tick each level was reached, which is what the hiscores rank us by. Every route's tick estimate and the scored time depend on them."
+      "why": "The xp table, the 25x multiplier applied to every xp drop, and the stamp of the tick each level was reached, which is what the hiscores rank us by. Every route's tick estimate and the scored time depend on them. It also holds the weak-queue clears in closeModal, clearPendingAction and executeScript: the knife-on-logs starter needs the drop or re-click to clear the queued fletch, and a dismissed level-up ends any Make-X batch."
     },
     {
       "id": "player-save",
@@ -107,6 +107,12 @@
       "title": "Charge spell",
       "paths": ["server/content/scripts/skill_magic/scripts/spells/charge.rs2"],
       "why": "Charge has no recast cooldown (the 'your current Charge is too strong' check is commented out), so it can be cast back to back for Magic xp."
+    },
+    {
+      "id": "knife-starter",
+      "title": "Knife-on-logs tick starter",
+      "paths": ["server/content/scripts/skill_fletching/scripts/cut_logs.rs2"],
+      "why": "Knife on logs plus the arrow-shaft button sets %action_delay to map_clock + 2 when it has expired, which moves the next woodcutting, fishing or mining roll to 3 ticks after the last. The gathering routes' 3-tick cycles (about 3,100 ticks over Woodcutting, Fishing and Mining) depend on that write."
     },
     {
       "id": "magic",
