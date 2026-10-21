@@ -99,6 +99,7 @@ export class FakeSdk {
     sendAcceptTrade() { return this.record('sendAcceptTrade'); }
     sendDeclineTrade() { return this.record('sendDeclineTrade'); }
     sendCountDialog(value: number) { return this.record('sendCountDialog', value); }
+    sendInteractNpc(npcIndex: number, option = 1) { return this.record('sendInteractNpc', npcIndex, option); }
     sendInteractLoc(x: number, z: number, locId: number, option = 1) { return this.record('sendInteractLoc', x, z, locId, option); }
     sendCloseModal() { return this.record('sendCloseModal'); }
     sendUseItemOnItem(sourceSlot: number, targetSlot: number) { return this.record('sendUseItemOnItem', sourceSlot, targetSlot); }

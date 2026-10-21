@@ -26,6 +26,7 @@
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState } from '../../sdk/types';
+import { crossTollGate, inAlKharid } from '../lib/toll-gate';
 import { pointMarketAtServer } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
 
@@ -83,48 +84,6 @@ export interface LineReport {
     /** GE only: an offer left resting for the remainder. */
     restingOffer?: { id: number; price: number; remaining: number };
     note?: string;
-}
-
-/** East of the Al-Kharid toll gate fence and south of the Lumbridge-Varrock road. */
-export const inAlKharid = (s: BotWorldState) => s.player!.worldX >= 3268 && s.player!.worldZ < 3240 && s.player!.worldZ > 3100;
-
-/**
- * Cross the Al-Kharid toll gate (10 gp, either direction; walkTo cannot path
- * through it because the guard's dialog has to be answered). The gate stands
- * on the edge between x=3267 and x=3268. Returns whether the player ended on
- * the requested side, and the coins it cost.
- */
-export async function crossTollGate(bot: BotActions, sdk: BotSDK, toEast: boolean, log: (m: string, d?: Record<string, unknown>) => void): Promise<{ ok: boolean; paid: number }> {
-    const onTargetSide = () => inAlKharid(sdk.getState()!) === toEast;
-    const approach = toEast ? { x: 3267, z: 3227 } : { x: 3268, z: 3227 };
-    const before = coinsIn(sdk.getState()!);
-    for (let attempt = 0; attempt < 3 && !onTargetSide(); attempt++) {
-        await bot.walkTo(approach.x, approach.z, 1);
-        const gate = sdk.getState()!.nearbyLocs
-            .filter(l => /gate/i.test(l.name) && l.x >= 3267 && l.x <= 3268 && l.z >= 3226 && l.z <= 3228)
-            .sort((a, b) => a.distance - b.distance)[0];
-        const op = gate?.optionsWithIndex.find(o => /pay|open/i.test(o.text)) ?? gate?.optionsWithIndex[0];
-        if (!gate || !op) {
-            log('toll gate not found', { attempt });
-            await waitTicks(sdk, 3);
-            continue;
-        }
-        await sdk.sendInteractLoc(gate.x, gate.z, gate.id, op.opIndex);
-        for (let i = 0; i < 40 && !onTargetSide(); i++) {
-            const s = await waitTicks(sdk, 1);
-            if (!s.dialog.isOpen) continue;
-            const yes = s.dialog.options.find(o => /^yes/i.test(o.text));
-            await sdk.sendClickDialog(yes ? yes.index : 0);
-        }
-    }
-    while (sdk.getState()!.dialog.isOpen) {
-        await sdk.sendClickDialog(0);
-        await waitTicks(sdk, 1);
-    }
-    const s = sdk.getState()!;
-    const paid = Math.max(0, before - coinsIn(s));
-    log('toll gate', { toEast, ok: onTargetSide(), paid, x: s.player!.worldX, z: s.player!.worldZ });
-    return { ok: onTargetSide(), paid };
 }
 
 const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();

@@ -27,13 +27,8 @@
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem, NearbyNpc } from '../../sdk/types';
-import { crossTollGate, inAlKharid } from './buyer';
+import { crossTollGate, inAlKharid, isEastOfTollGate, TOLL_GP, type Tile } from '../lib/toll-gate';
 import { runStandalone, type Role, type RoleContext } from './role';
-
-interface Tile {
-    x: number;
-    z: number;
-}
 
 interface Spot {
     name: TargetName;
@@ -61,9 +56,72 @@ const SPOTS: Record<TargetName, Spot> = {
     guard: { name: 'guard', npc: /^guard$/i, level: 40, damage: 2, gp: 30, stand: { x: 3210, z: 3462 }, radius: 14, bank: { x: 3185, z: 3438 } }
 };
 
-const TOLL_WEST: Tile = { x: 3267, z: 3227 };
 const KEBAB_SELLER: Tile = { x: 3273, z: 3180 };
 const FOOD = /^(kebab|shark|lobster|swordfish|tuna|salmon|trout|cake|2\/3 cake|slice of cake|bread|meat pie|half a meat pie|cooked meat|cooked chicken|shrimps)$/i;
+/**
+ * Eat in a success window once hp is this far below max. A kebab heals 3 hp
+ * 20 times in 32 and 7 hp 8 times in 32 (kebab.rs2), so at 4 below max the
+ * common heal is never wasted and hp stays clear of the forced-eat floor.
+ */
+const EAT_BELOW_MAX = 4;
+
+// ---------------------------------------------------------------- errands
+
+/** What the earner does next; `planErrand` decides from a snapshot. */
+export type Errand =
+    | { do: 'cross'; toEast: boolean }
+    /** Take coins from the bank on the player's side of the toll gate. */
+    | { do: 'withdraw'; east: boolean }
+    /** Pickpocket without food until `until` coins are carried. */
+    | { do: 'earn'; on: 'man' | 'warrior'; until: number }
+    | { do: 'kebabs' }
+    | { do: 'bank' }
+    | { do: 'go' }
+    | { do: 'thieve' }
+    /** In Al-Kharid with no coins anywhere and too low for the warriors. */
+    | { do: 'stranded' };
+
+export interface PlanInput {
+    target: TargetName;
+    /** In Al-Kharid (east of the toll gate). */
+    east: boolean;
+    coins: number;
+    food: number;
+    thieving: number;
+    /** A bank visit this session found no coins. */
+    bankEmpty: boolean;
+    /** Within the target's radius of its stand tile. */
+    atStation: boolean;
+    kebabs: number;
+    bankAt: number;
+}
+
+/**
+ * The next errand. Food targets eat kebabs, which only Al-Kharid sells, so a
+ * food target with no food heads east first. The toll is charged only for a
+ * crossing that is actually needed, and once in Al-Kharid any coin buys a
+ * kebab, so an earner never walks back west for money it does not need. Money
+ * that is short comes from the bank, else from pickpocketing on the side the
+ * player is already on: the Lumbridge men in the west, the warriors in the east.
+ */
+export function planErrand(i: PlanInput): Errand {
+    const needFood = i.target !== 'man' && i.food === 0;
+    const wantEast = i.target === 'warrior' || needFood;
+    if (wantEast !== i.east) {
+        const need = TOLL_GP + (wantEast && needFood ? i.kebabs : 0);
+        return i.coins >= need ? { do: 'cross', toEast: wantEast } : shortOf(i, need);
+    }
+    if (needFood) return i.coins >= 1 ? { do: 'kebabs' } : shortOf(i, i.kebabs);
+    if (i.target !== 'man' && i.coins >= i.bankAt) return { do: 'bank' };
+    return i.atStation ? { do: 'thieve' } : { do: 'go' };
+}
+
+function shortOf(i: PlanInput, need: number): Errand {
+    if (!i.bankEmpty) return { do: 'withdraw', east: i.east };
+    if (!i.east) return { do: 'earn', on: 'man', until: need };
+    if (i.thieving >= SPOTS.warrior.level) return { do: 'earn', on: 'warrior', until: need };
+    return { do: 'stranded' };
+}
 
 interface Options {
     target: 'auto' | TargetName;
@@ -192,43 +250,68 @@ class CoinEarner {
         return 'warrior';
     }
 
-    /** One pass: travel, restock, bank, then thieve until something needs doing. */
+    /** One errand: cross, restock, bank, travel, or thieve until something needs doing. */
     private async cycle(spot: Spot): Promise<void> {
         const s = this.state;
-        // Every target above men eats kebabs, which only Al-Kharid sells; the
-        // toll is 10 gp each way, so earn it on the men if the account is broke.
-        const needFood = spot.name !== 'man' && foodIn(s).length === 0;
-        const wantEast = spot.name === 'warrior' || needFood;
-        const need = 10 + (needFood ? this.o.kebabs : 0);
-        if (spot.name !== 'man' && coinsIn(s) < need && (needFood || wantEast !== inAlKharid(s))) {
-            // Short of toll/kebab money: take it from the bank if there is any
-            // (a restarted earner usually banked everything), else earn it on
-            // the Lumbridge men.
-            if (!this.bankEmpty && (await this.withdrawCoins(inAlKharid(s) ? SPOTS.warrior.bank! : SPOTS.guard.bank!))) return;
-            if (dist(s, SPOTS.man.stand) > SPOTS.man.radius) await this.walk(SPOTS.man.stand);
-            else await this.thieve(SPOTS.man, st => coinsIn(st) >= need);
-            return;
+        const e = planErrand({
+            target: spot.name,
+            east: inAlKharid(s),
+            coins: coinsIn(s),
+            food: foodIn(s).length,
+            thieving: thievingOf(s)?.baseLevel ?? 1,
+            bankEmpty: this.bankEmpty,
+            atStation: dist(s, spot.stand) <= spot.radius,
+            kebabs: this.o.kebabs,
+            bankAt: this.o.bankAt
+        });
+        switch (e.do) {
+            case 'cross': {
+                const r = await crossTollGate(this.bot, this.sdk, e.toEast, this.ctx.log);
+                this.spent += r.paid;
+                if (!r.ok) await waitTicks(this.sdk, 5);
+                return;
+            }
+            case 'withdraw':
+                await this.withdrawCoins(e.east ? SPOTS.warrior.bank! : SPOTS.guard.bank!);
+                return;
+            case 'earn': {
+                const at = SPOTS[e.on];
+                if (dist(s, at.stand) > at.radius) {
+                    await this.walk(at.stand);
+                    return;
+                }
+                this.ctx.log('earning', { on: e.on, until: e.until, coins: coinsIn(s) });
+                const reason = await this.thieve(at, { stop: st => coinsIn(st) >= e.until, noFood: true });
+                if (reason === 'rest') await this.rest(at);
+                return;
+            }
+            case 'kebabs':
+                await this.buyKebabs();
+                return;
+            case 'bank':
+                await this.bankCoins(spot);
+                return;
+            case 'go':
+                await this.walk(spot.stand);
+                return;
+            case 'stranded':
+                this.ctx.log('stranded in Al-Kharid', { coins: coinsIn(s), thieving: thievingOf(s)?.baseLevel });
+                await waitTicks(this.sdk, 100);
+                return;
+            case 'thieve': {
+                const reason = await this.thieve(spot);
+                if (reason) this.ctx.log('session end', { target: spot.name, reason, coins: coinsIn(this.state), hp: this.state.player!.hp });
+                return;
+            }
         }
-        if (spot.name !== 'man' && wantEast !== inAlKharid(s)) {
-            if (wantEast) await this.walk(TOLL_WEST);
-            const r = await crossTollGate(this.bot, this.sdk, wantEast, this.ctx.log);
-            this.spent += r.paid;
-            return;
-        }
-        if (needFood) {
-            await this.buyKebabs();
-            return;
-        }
-        if (spot.bank && coinsIn(s) >= this.o.bankAt) {
-            await this.bankCoins(spot);
-            return;
-        }
-        if (dist(s, spot.stand) > spot.radius) {
-            await this.walk(spot.stand);
-            return;
-        }
-        const reason = await this.thieve(spot);
-        if (reason) this.ctx.log('session end', { target: spot.name, reason, coins: coinsIn(this.state), hp: this.state.player!.hp });
+    }
+
+    /** Wait for hitpoints to regenerate (1 per 100 ticks) after earning without food. */
+    private async rest(spot: Spot): Promise<void> {
+        let s = this.state;
+        const want = s.player!.maxHp - spot.damage;
+        this.ctx.log('resting', { hp: s.player!.hp, until: want });
+        for (let i = 0; i < 1200 && !this.ctx.signal.aborted && s.player!.hp < want; i++) s = await nextTick(this.sdk, s.tick);
     }
 
     private async dismiss(): Promise<void> {
@@ -239,6 +322,12 @@ class CoinEarner {
     }
 
     private async walk(t: Tile): Promise<void> {
+        // walkTo would path through the toll gate as a door and retry there forever.
+        if (isEastOfTollGate(t) !== inAlKharid(this.state)) {
+            this.ctx.log('walk refused: destination is across the toll gate', { to: t });
+            await waitTicks(this.sdk, 5);
+            return;
+        }
         for (let i = 0; i < 4 && !this.ctx.signal.aborted; i++) {
             const r = await this.bot.walkTo(t.x, t.z, 2);
             if (r.success || dist(this.state, t) <= 3) return;
@@ -251,8 +340,14 @@ class CoinEarner {
      * Click the nearest matching target once per server tick until `stop`
      * says so or the session needs an errand (food, bank, death). Returns the
      * reason it stopped, or '' when `stop` fired.
+     *
+     * At a food target the session ends the moment the last food is eaten,
+     * so the walk to the restock starts with the hp that food left. With
+     * `noFood` (earning the first kebab money while broke) it pickpockets
+     * without food and stops with 'rest' before a failure could kill.
      */
-    private async thieve(spot: Spot, stop?: (s: BotWorldState) => boolean): Promise<string> {
+    private async thieve(spot: Spot, opts: { stop?: (s: BotWorldState) => boolean; noFood?: boolean } = {}): Promise<string> {
+        const { stop, noFood = false } = opts;
         let s = this.state;
         let lastXp = thievingOf(s)!.experience;
         let lastCoins = coinsIn(s);
@@ -303,13 +398,13 @@ class CoinEarner {
             const food = foodIn(s)[0];
             const forced = p.hp <= spot.damage + 1;
             const window = success && t - lastStunEnd >= 4 && t - lastEat >= 3;
-            if (food && ((window && p.hp <= p.maxHp - 6) || (forced && t - lastEat >= 2))) {
+            if (food && ((window && p.hp <= p.maxHp - EAT_BELOW_MAX) || (forced && t - lastEat >= 2))) {
                 await eat(this.sdk, food);
                 this.eats++;
                 lastEat = t;
-            } else if (!food && forced && spot.name !== 'man') {
-                // Waiting on regeneration costs 100 ticks per hp; go for food instead.
-                return 'out of food';
+            } else if (!food && spot.name !== 'man') {
+                if (!noFood) return 'out of food';
+                if (forced) return 'rest';
             }
 
             if (dist(s, spot.stand) > spot.radius + 6) return 'left station';
@@ -384,6 +479,8 @@ class CoinEarner {
         await this.walk(bank);
         const opened = await this.bot.openBank();
         if (!opened.success) {
+            // Earn the money instead of retrying a bank that will not open.
+            this.bankEmpty = true;
             this.ctx.log('bank failed', { message: opened.message });
             return false;
         }
@@ -409,7 +506,10 @@ class CoinEarner {
         const amount = carried - this.o.keepCoins;
         if (amount > 0) {
             const r = await this.bot.depositItem(/^coins$/i, amount);
-            if (r.success) this.banked += amount;
+            if (r.success) {
+                this.banked += amount;
+                this.bankEmpty = false;
+            }
             else this.ctx.log('deposit failed', { message: r.message });
         }
         this.ctx.reportBank({ items: this.sdk.getBankItems().map(i => ({ id: i.id, name: i.name, count: i.count })) });

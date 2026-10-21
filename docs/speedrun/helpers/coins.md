@@ -17,13 +17,36 @@ All targets from warriors up share the success curve `success_chance,*,240`
 coins per success and how often the bot leaves to eat, bank or restock. The
 loop clicks the target once per server tick and lets the server drop the clicks
 that land while the player is delayed or stunned (a success occupies 2 ticks, a
-failure 11; docs/speedrun/skills/thieving.md on the research branch). It eats a
-kebab in the tick after a success when hp is 6 below max, or at once when the
-next failure could kill, and goes for more kebabs when it runs out. The Al-Kharid
-toll gate (10 gp each way) is crossed with `crossTollGate` from buyer.ts in
-either direction. An earner that wakes up with no coins (for example after the
-buyer banked everything) withdraws its toll and kebab money from the bank before
-falling back to the Lumbridge men.
+failure 11; docs/speedrun/skills/thieving.md on the research branch).
+
+**Food rule.** It eats a kebab in the tick after a success once hp is 4 below
+max (a kebab heals 3 hp 20 times in 32 and 7 hp 8 times in 32, kebab.rs2), or
+at once when the next failure could kill. When the last kebab is eaten it
+leaves the station at once for more, so it never pickpockets a food target
+without food. (Before this rule every warrior earner thieved on without food
+until a failure could kill, and logged `out of food` at hp 2-3 on every
+restock.) The one exception is an earner in Al-Kharid with no coins anywhere:
+it pickpockets the warriors without food until it can buy kebabs, stops at hp
+3 and rests (1 hp per 100 ticks) before it goes on.
+
+**The toll gate.** `walkTo` treats the Al-Kharid toll gate as a door and, when
+its path runs through it, retries `cant_reach` at (3268,3227-3228) forever. The
+role therefore never walks to a tile on the other side of the gate (its walk
+refuses and logs `walk refused`); it crosses with `crossTollGate` from
+`speedrun/lib/toll-gate.ts`, shared with the buyer. That talks to a border guard
+on the player's side (clicking the gate itself starts the dialogue only when a
+guard stands within 1 tile), answers "Yes, ok.", pays 10 gp and confirms by the
+side the player ends on. It refuses up front with fewer than 10 coins and gives
+up at once on the guard's "not enough money" line.
+
+**Money errands** (`planErrand`, pure and unit-tested). The toll is charged only
+for a crossing the earner needs: 10 gp, plus `kebabs` gp when it crosses east
+for food. Once in Al-Kharid any coin buys a kebab (1 gp each). Money that is
+short comes from the bank first, then from pickpocketing on the side the player
+is on: the Lumbridge men in the west, the warriors in the east. Fresh earners
+used to loop here: they die once on the men (losing their coins), earn back
+exactly toll plus kebab money, pay the toll, and then, in Al-Kharid with 24 gp,
+walked back west through the gate to earn the 10 gp they had just paid.
 
 In `auto` mode a guard account whose kebabs fall below 10 goes back to
 Al-Kharid, thieves the warriors until the kebabs run out, restocks and returns
@@ -91,8 +114,9 @@ GATEWAY_URL=ws://127.0.0.1:8560 ROLE_OPTIONS='{}' bun speedrun/helpers/coins.ts 
 
 Log lines: `phase` (from, to, levels) on every target change, `progress` and
 `banked` with cumulative `earned`, `spent`, `banked`, successes, failures,
-eats, deaths and `gpPerTick`, plus `toll gate`, `kebabs`, `withdrew coins` and
-`died`. `ctx.reportBank` is called after every bank visit.
+eats, deaths and `gpPerTick`, plus `toll gate` (toEast, ok, paid, reason),
+`kebabs`, `withdrew coins`, `earning` (pickpocketing for errand money),
+`resting`, `walk refused` and `died`. `ctx.reportBank` is called after every bank visit.
 
 ## What the fleet needs
 
