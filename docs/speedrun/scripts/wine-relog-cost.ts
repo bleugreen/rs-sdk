@@ -29,7 +29,7 @@ const args = process.argv.slice(2);
 const account = args.find(a => !a.startsWith('--'));
 const opt = (k: string, d: string) => args.find(a => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d;
 if (!account) throw new Error('usage: wine-relog-cost.ts <account> [--n=6] [--offline-ms=2000]');
-if (!/^cairn_h\d+$/.test(account)) throw new Error('helper accounts only (cairn_hNN)');
+if (!/^(cairn_h\d+|wfx\d+)$/.test(account)) throw new Error('helper accounts (cairn_hNN) or lab accounts (wfxN) only');
 const n = Number(opt('n', '6'));
 const offlineMs = Number(opt('offline-ms', '2000'));
 const result = (name: string, data: unknown) => console.log(`RESULT ${name} ${JSON.stringify(data)}`);
