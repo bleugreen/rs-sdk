@@ -890,12 +890,11 @@ export class BotStateCollector implements ScanProvider {
                         ops = obj.iop;
                     } catch { /* ignore */ }
 
-                    // Equipment keeps the object's ops, as it always has (its
-                    // own "Remove" goes through useEquipmentItem). Elsewhere the
-                    // options follow the menu builder: the object's ops on an
-                    // objOps component (OPHELD), the component's iop otherwise
-                    // (INV_BUTTON) - exactly what useInventoryItem dispatches.
-                    if (interfaceId !== EQUIPMENT_INTERFACE_ID && !component.objOps) {
+                    // Options follow the menu builder: the object's ops on an
+                    // objOps component (OPHELD), the component's own iop
+                    // otherwise (INV_BUTTON, e.g. worn items' "Remove") -
+                    // exactly what useInventoryItem dispatches there.
+                    if (!component.objOps) {
                         ops = component.iop;
                     }
 
