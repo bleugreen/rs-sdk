@@ -303,19 +303,19 @@ describe('logoutClean and the post-combat window', () => {
         expect(clicks).toEqual([6]);
     });
 
-    test('a hit within 16 ticks waits out the window: the click is on hit + 17', async () => {
+    test('a hit within 16 ticks waits out the window (from the later of now and the hit, + 17)', async () => {
         const { session, sdk, clicks } = atTick(100, 95);
         const out = logoutClean(session, { timeoutMs: 1_000 });
-        for (let t = 101; t <= 111; t++) {
+        for (let t = 101; t <= 116; t++) {
             await flush();
             sdk.tick();
             expect(clicks).toEqual([]);
         }
         await flush();
-        sdk.tick(); // 112 = 95 + 16 + 1
+        sdk.tick(); // 117 = max(100, 95) + 16 + 1
         const r = await out;
-        expect(clicks).toEqual([112]);
-        expect(r).toMatchObject({ ok: true, clickTick: 112 });
+        expect(clicks).toEqual([117]);
+        expect(r).toMatchObject({ ok: true, clickTick: 117 });
     });
 
     test('a hit longer ago than 16 ticks does not wait', async () => {
