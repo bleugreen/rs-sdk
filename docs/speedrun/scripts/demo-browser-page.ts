@@ -2,7 +2,7 @@
 // workflow (.github/workflows/demo-latency-probe.yml, mode=browser).
 //
 //   bun docs/speedrun/scripts/demo-browser-page.ts open --dir=DIR --url=http://127.0.0.1:8899/bot?bot=NAME
-//       [--chrome=PATH] [--gateway-port=7851]
+//       [--chrome=PATH] [--gateway-port=7851] [--load-only]
 //     Opens the page (served by the branch's server/webclient/proxy.ts, which adds ?server= and
 //     ?gateway=), logs BOT_USERNAME in with gameClient.autoLogin and writes DIR/ready once in
 //     game. PASSWORD comes from the environment and goes into the page as a function argument,
@@ -10,7 +10,8 @@
 //     SIGINT/SIGTERM, then closes the page: the game socket closes, which the engine treats as
 //     a logout. Meanwhile it records every websocket frame of the page (DIR/frames.jsonl: wall
 //     ms, socket, direction, bytes, gateway message type), the in-game flag every 5 s
-//     (DIR/health.jsonl) and page errors (DIR/page.log).
+//     (DIR/health.jsonl) and page errors (DIR/page.log). --load-only stops once the client has
+//     loaded, before any login: a check of the page server, bundle and Chrome with no session.
 //
 //   bun docs/speedrun/scripts/demo-browser-page.ts eval --dir=DIR [--progress=EXPR] [--every=15]
 //       [--json=FILE] [--timeout-min=30] EXPR
@@ -63,7 +64,8 @@ async function open() {
     const user = process.env.BOT_USERNAME;
     const password = process.env.PASSWORD;
     delete process.env.PASSWORD;
-    if (!url || !user || !password) {
+    const loadOnly = rest.includes('--load-only');
+    if (!url || (!loadOnly && (!user || !password))) {
         console.error('open needs --url, BOT_USERNAME and PASSWORD');
         process.exit(2);
     }
@@ -108,11 +110,12 @@ async function open() {
             { timeout: 180_000, polling: 500 }
         );
         log('client loaded');
+        if (loadOnly) return;
         await sleep(500);
         // The engine refuses a login while the previous session of the account is still
         // being removed, so try a few times.
         for (let attempt = 1; attempt <= 4 && !stopping; attempt++) {
-            await page.evaluate((u: string, p: string) => { void (window as any).gameClient.autoLogin(u, p); }, user, password);
+            await page.evaluate((u: string, p: string) => { void (window as any).gameClient.autoLogin(u, p); }, user!, password!);
             try {
                 await page.waitForFunction(() => (window as any).gameClient?.ingame === true, { timeout: 45_000, polling: 250 });
                 break;
