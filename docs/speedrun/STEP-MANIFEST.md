@@ -19,8 +19,8 @@ the wine windows).
 ## How to read an entry
 
 **Step IDs** are provisional order v1's S00-S27 (cairn://p/rs/103). A quest or skill that the order
-splits gets one module and one `Step` object per ID, so `S10a` is Prayer 1-43 and `S10b` is Tree
-Gnome Village.
+splits gets one module and one `Step` object per ID, so `S10a` was Prayer 1-43 (retired in v2: its bones ride S07) and `S10b` is Tree
+Gnome Village. IDs never move: a step that changes place keeps its ID.
 
 **Three tick figures** per entry, all on SCORED's clock (in-world ticks at 300 ms):
 
@@ -77,7 +77,7 @@ checks after a restart or a drop: the step's `done` test, its `inProgress` test 
 and any probes, from `RESILIENCE.md` section 5. Quest state comes from rs/114's
 `speedrun/lib/quests.ts` and `docs/speedrun/quests/quest-state.md` (`questDone`, `questStatus`,
 `questStage`, `questPoints`, `requireQuestStage(view, key, stage, {atLeast?})`, `readQuestStage`,
-`journalProbe(key)`; PR #123, **pending rs/114's merge**). Route quest varps are not transmitted to
+`journalProbe(key)`; stage tables in `speedrun/data/quest-stages.ts`; on main, PR #123). Route quest varps are not transmitted to
 the client: status comes from the quest-list colours and the exact stage from a journal read, which
 re-clicks if the journal has not opened within 3 ticks. The Mage Arena is not on the quest list; its
 postcondition is items and messages.
@@ -146,7 +146,7 @@ scripts are in section 4; the shared primitives and their build order are in sec
 **The four findings this manifest first raised, and where they stand:**
 
 1. **Quest state on the demo**: rs/114's `speedrun/lib/quests.ts` (quest-list status, journal
-   stage, `questPoints`; PR #123, pending its merge).
+   stage, `questPoints`; merged to main as PR #123, with `speedrun/data/quest-stages.ts`).
 2. **`runSteps` idled SCORED at every boundary**: fixed (#92, measured 2 ticks per boundary before
    and 0 after; main, 08:30).
 3. **S09 starts at Mining 64**, not 49 (Plague City's 2,425 base): accepted by main (M0602).
@@ -174,8 +174,10 @@ scripts are in section 4; the shared primitives and their build order are in sec
   `SCORED`), `--log=<path>`, `--dry-run` (evaluate every precondition against the live state and
   stop), `--lab` (accept staff fixtures).
 - **Preconditions, before SCORED's run login** (RUN-ORDER.md section 1):
-  - **the host reservation**: run.ts writes `~/host-reserved.json` with owner the run and `until` =
-    start + 9 h (the run bound in `RUN-HOST.md`, cairn://p/rs/139), so rs/83's gate timer skips;
+  - **the host reservation**: `RUN-HOST.md` step 0 has written `~/host-reserved.json` before
+    anything else started on run night, owner the run, `until` covering setup, the 9 h run bound
+    and margin, so rs/83's gate history timer (rs/140) skips. run.ts refuses to start unless it is
+    live and the run's own, and never disables the timer (main via rs/103);
   - **main's start conditions** (09:30): Prayer xp in hand of at least 39,938 base in any bone mix; a
     cannon set and ~1,170 cannonballs; the rune axe or main's decision to run without it; the budget
     (expected + fallback deltas in force under 35,916). run.ts reads them from the operator's
@@ -230,8 +232,8 @@ scripts are in section 4; the shared primitives and their build order are in sec
 - **Primitives:** `runner/step.ts`, `runner/resume.ts`, `runner/fence.ts`, `lib/session.ts`
   (`openSession`, `launchClient`, `logoutClean`, `login`, `startWatchdog`), `lib/reconnect.ts`,
   `lib/demo-status.ts`, `lib/ticks.ts`, `lib/programs.ts`, `lib/hostgate.ts`,
-  `lib/hostgate-verdict.ts`, rs/114's `lib/quests.ts` (pending its merge). **Missing:** the
-  reservation write and removal; the start-condition checklist read; `relog` (on the [rs/41] branch
+  `lib/hostgate-verdict.ts`, `lib/quests.ts` (`readQuestStage`, `requireQuestStage`, `questPoints`; on main, PR #123). **Missing:** the
+  reservation check and removal; the start-condition checklist read; `relog` (on the [rs/41] branch
   of `session.ts`).
 - **Mode:** overlay-driven. It only starts, awaits and stops.
 - **Fallback:** on a precondition failure, stop at the boundary and do not improvise. On a failure
@@ -243,7 +245,7 @@ scripts are in section 4; the shared primitives and their build order are in sec
   the checkpoint with S03's `inProgress` true; a SIGINT during an unsafe step logs out only at the
   next `logoutSafe` boundary.
 - **Acceptance, reservation:** on a throwaway rehearsal, `~/host-reserved.json` exists with the run
-  as owner while it runs and the gate timer's `~/gate-history` shows no read in that window; the file
+  as owner from step 0 until the end, run.ts refuses to start without it and the gate timer's `~/gate-history` shows no read in that window; the file
   is gone after the final logout.
 - **Acceptance, demo (throwaway):** S01-S04 on a throwaway (after its own tutorial skip) in the
   browser webclient through `proxy.ts` with `?server=` and `?gateway=`. Pass: the session row
@@ -301,24 +303,23 @@ scripts are in section 4; the shared primitives and their build order are in sec
 - **Serves:** S15, Monkey Madness with reward option 1 at Daero (35,000 Strength and Hitpoints, 20,000
   Attack and Defence, 3 QP; read, `mm_daero.rs2:294-302`).
 - **Parameters:** `templeMethod: 'ladder' | 'wait'` (rs/59's ladder drop or the guard-cycle wait),
-  `returnMonkey: 'walk' | 'glider' | 'glory'` (spirit trees delete the monkey,
+  `returnMonkey: 'walk' | 'glider'` (no glory: charged glories are unobtainable, rs/123; spirit trees delete the monkey,
   `spirit_tree.rs2:74-76`, read), `dialogue: 'burst' | 'fixed'`, `from` (a segment letter, A-Z).
 - **Preconditions:** Tree Gnome Village and The Grand Tree complete (read, `king_narnode.rs2:7-10`;
   `%treequest` 9 and `%grandtree` 160, ledger). Ranged 50 **base** for the magic shortbow (read,
-  `tier50.rs2:6`), from S14. Prayer 43 for both protect prayers. The helper trade before segment A
+  `tier50.rs2:6`), from S14. Prayer 43 for both protect prayers (S07 leaves ~94). The helper trade before segment A
   (`quests/README.md` §4 step 8): gold bar, ball of wool, monkey bones, 5 bananas, magic shortbow +
-  100 rune arrows, 4-6 prayer potions, about 15 food, Varrock and Ardougne runes, a second
-  antipoison(4). The puzzle needs the OPHELD send that rs/23 fixed **in the lite client**; that the
-  browser webclient sends it too is **unverified** and must be checked before this step is
-  accepted. Arrival levels are Defence 1, ~42 HP, Strength 1 and Magic ~76 (inferred, rs/56
+  100 rune arrows, 6 prayer potions (insurance, O27), about 15 food, Varrock and Ardougne runes, a second
+  antipoison(4). The puzzle needs the OPHELD send that rs/23 fixed in the lite client; rs/116 verified the
+  run client's `sdk.sendUseItem` sends it (local engine; not demo-confirmed, RUN-ORDER.md R5). Arrival levels are Defence 1, ~42 HP, Strength 1 and Magic ~76 (inferred, rs/56
   timeline in `quests/README.md` §4).
 - **Postconditions:** quest complete (ledger; reward xp visible: Strength ~97, Attack 99, Defence ~89
   per `quests/README.md` §2), 3 QP (20 of the 32 so far). Items out: the bow and leftover arrows
   can go back to a helper. The gree-gree is not needed later.
 - **Ticks:** expected **4,077** (fixed client, with the failure budget: 3,897 success + ~180; inferred,
   `quests/README.md` §3 row, which includes rs/59's temple ladder drop at 33-36 measured and the
-  walked zoo return +100 inferred). Best **3,546** (burst, success path, r21 recomputation, same
-  row). Fallback **4,611** (stock column with failures, same row). The quest document's own split:
+  walked zoo return +100 inferred). Best **3,726** (burst success path 3,546, r21 recomputation, same
+  row, plus the same ~180 of expected failures; RUN-ORDER.md S15). Fallback **4,611** (stock column with failures, same row). The quest document's own split:
   travel 2,277, dialogue 826 fixed / 463 burst, interactions 250, fight 267, waits 336 (mixed
   measured, read and inferred; `quests/monkey_madness.md`, "Tick total"). The Ape Atoll hazards
   were measured at 70/70/70 and the route arrives at Defence 1 (open item (a), `quests/README.md`).
@@ -422,11 +423,13 @@ scripts are in section 4; the shared primitives and their build order are in sec
   the rotation's first standing tile. The same host-gate rule as Woodcutting.
 - **Postconditions:** Mining 99; pickaxe, knife and logs kept (no log used over 200 ores, measured,
   `skills/mining.md` §1). Items out: none.
-- **Ticks:** expected **3,765** (adjacent-rock "timer starter", 3.61 ticks per ore measured with
-  `mining-rotation.ts`, 200 ores at emulated respawn 13; total inferred with `mining-model.ts`;
-  `skills/mining.md` §1). Best **3,134** (knife, 3.00 ticks per ore measured with
-  `tickmanip-mine.ts`, 2 × 200 ores; total inferred; same section). Fallback about **4,000** on a
-  quiet server without the knife (inferred, same section). From 49, for comparison, 4,034 normal
+- **Ticks:** expected and best **3,116** (knife: 3.00 ticks per ore measured with
+  `tickmanip-mine.ts`, 2 × 200 ores, total 3,134 inferred, `skills/mining.md` §2; less the model's
+  18 ticks of level-ups, measured 0 in the rotation, `research/levelup-cost.md` §2, §6).
+  Fallback **3,765** plain (adjacent-rock "timer starter", 3.61 ticks per ore measured with
+  `mining-rotation.ts`, 200 ores at emulated respawn 13; total inferred with `mining-model.ts`,
+  §1; its level-up cost is unmeasured, so it keeps the model's). About **4,000** on a quiet server
+  without the knife (inferred, same section). From 49, for comparison, 4,034 normal
   and 3,360 knife (inferred, `skills/mining.md` §1-2).
 - **Primitives:** `runProgram(sdk, 'knife-mine', {steps, respawn, starter, untilLevel})` [rs/97];
   `probeInPage`; `HostGate`. **Missing:** the forced-slip hook; a rotation planner output as data
@@ -462,10 +465,11 @@ scripts are in section 4; the shared primitives and their build order are in sec
   `skills/fishing.md` §1-3), fly fishing rod, about 520 feathers, knife and 1 normal log, Fletching
   1; the host-gate rule as for Woodcutting.
 - **Postconditions:** Fishing 99. Items out: none (catches dropped).
-- **Ticks:** expected **3,410** (normal 5-tick cycle; measured segment from 9,612 base,
-  `fishing-rate.ts`, 673 catches at 300 ms; `skills/fishing.md` §2). Best **1,978-2,032** (knife,
-  two measured runs from 9,612 and 9,620 base, `tickmanip-cycle.ts --mode=flylumb-knife`; same
-  section). Fallback 3,410. In a visible tab, rs/82 measured 4.16 ticks per catch from 26 to 99,
+- **Ticks:** expected **1,995**, best **1,969** (knife: two measured runs of 2,032 and 1,978
+  from 9,612 and 9,620 base, `tickmanip-cycle.ts --mode=flylumb-knife`, `skills/fishing.md` §2,
+  scaled by rs/97's in-page 4.26 against the lite 4.28 ticks per catch, M0550; level-ups inside the
+  measured runs, `research/levelup-cost.md` §2). Fallback **3,410** plain (normal 5-tick cycle;
+  measured segment from 9,612 base, `fishing-rate.ts`, 673 catches at 300 ms; same section). In a visible tab, rs/82 measured 4.16 ticks per catch from 26 to 99,
   with 516 of 665 gaps at 3 (`LAB.md`). Compare the gap histogram, since ticks per catch depend on
   level.
 - **Primitives:** `runProgram(sdk, 'knife-cycle', {method:'fly', ...})` [rs/97], `probeInPage`,
@@ -477,7 +481,7 @@ scripts are in section 4; the shared primitives and their build order are in sec
   section, open question 5).
 - **Acceptance, local:** browser tab, 300 ms. From 20 to 99: within 5% of **4.26** ticks per catch
   (rs/97 in-page results via main, 05:50; the lite run's 2,896 ticks over 677 catches is 4.28). From
-  78 to 99: within 5% of **2,005** (the mean of 1,978 and 2,032), with at least 75% of gaps at 3
+  78 to 99: within 5% of **1,995** (the mean of 1,978 and 2,032, scaled to the page), with at least 75% of gaps at 3
   (rs/82's tab measured 78%). Forced slip: at most 5.17
   ticks per catch (4.92 +5%) at 99.
 - **Acceptance, demo (throwaway):** fly fishing needs level 20 (201 + 78 ticks from level 1 by the
@@ -571,8 +575,7 @@ scripts are in section 4; the shared primitives and their build order are in sec
   (segment A-P).
 - **Preconditions:** Tree Gnome Village complete; Agility at least 22 and an Agility potion (the
   check is `stat() < 25`, read); Plague City done and Magic 51 for the Ardougne teleport
-  (`%elenaquest` ≥ 30, read, `teleport.rs2:22-38`); Prayer 43 and the prayer potions from S10's
-  trade; Varrock and Ardougne runes.
+  (`%elenaquest` ≥ 30, read, `teleport.rs2:22-38`); Prayer 43 (~94 from S07, so no prayer potions, `SUPPLIES.md` H7-H8); Varrock and Ardougne runes.
 - **Postconditions:** `%grandtree` 160 (ledger); Agility 75; Attack +18,400, Magic +2,150 (read,
   `quest_grandtree.rs2:199-201`); 5 QP; Gnome Air (glider) available.
 - **Ticks:** expected **1,576** (fixed, inferred, `quests/README.md` §3 row; black demon 153
@@ -716,18 +719,22 @@ scripts are in section 4; the shared primitives and their build order are in sec
 - **Preconditions:** 32 QP (17 route + 4 Druidic Ritual + 11 filler; read, `champions_guild.rs2:2`);
   Monkey Madness done (Attack 99, Strength ~97, Defence ~89; rune armour needs base Defence 40,
   read); the trade of 12,000 coins, wizard's mind bomb, silk, lobster pot, unfired bowl, 3 planks, 12
-  steel nails, hammer, rune scimitar, rune full helm, chainbody and platelegs, amulet of strength,
-  about 10 sharks, glory, Varrock, Lumbridge and Falador runes (same step).
+  steel nails, hammer (held from H21a), the mithril scimitar (held from H11), an adamant full helm,
+  amulet of strength, about 10 sharks, Varrock, Lumbridge and Falador runes, and ~114,000 coins for
+  Scavvo's rune chainbody and platelegs, which SCORED buys upstairs on arrival (`SUPPLIES.md` H22;
+  the rune scimitar and helm are unobtainable, rs/124; no glory, rs/123).
 - **Postconditions:** quest complete; 18,650 Strength and Defence (read); 2 QP. Items out: armour can
   go back to a helper.
-- **Ticks:** expected **941** (fixed, inferred, with Elvarg at ~70 from 64-75 measured at 99, n=2),
-  best **925** (burst, r21), fallback **~1,051** (stock, inferred) (`quests/README.md` §3 row).
+- **Ticks:** expected **966**, best **945**: the quest 941 (fixed, inferred, with Elvarg at ~70
+  from 64-75 measured at 99, n=2) / 925 (burst, r21) (`quests/README.md` §3 row), plus Scavvo's
+  purchase +15-20 and the adamant helm +5 (estimated, `research/supply-fallbacks.md` §12).
+  Fallback **~1,076** (stock ~1,051, inferred, + the same 25).
 - **Primitives:** rs/94 `converse`, `act`, `combat`; `continueBurst`; `travel.ts`.
 - **Mode:** overlay-driven. **Logout-unsafe:** none, every varp is permanent (read). A death on
   Crandor is expensive and its return is untested.
 - **Fallback:** page by page; on a death, the respawn route (untested; to be measured).
 - **Acceptance, local:** `quest-dragon-*.ts` ported, at the post-MM stats, 3 runs. Pass: within 10% of
-  941, and Elvarg within 10% of 70.
+  941 for the quest (966 with Scavvo), and Elvarg within 10% of 70.
 - **Acceptance, demo (throwaway):** not feasible (32 QP). Demo coverage: the shared primitives.
 - **Start from:** `quest-dragon-guild.ts`, `quest-dragon-voyage.ts`, `quest-dragon-elvarg.ts`,
   `quest-dragon-lib.ts`, `quest-dragon-wreck-probe.ts`.
@@ -735,11 +742,11 @@ scripts are in section 4; the shared primitives and their build order are in sec
 
 ### 14. Tree Gnome Village: `speedrun/quests/tree-gnome-village.ts` (S10b)
 
-- **Serves:** S10b, right after Prayer 43 is buried (S10a) from the same trade. Ardougne teleport to the
+- **Serves:** S10b; Prayer is already ~94 from S07 (S10a retired). Ardougne teleport to the
   maze; the warlord by Fire Blast at 1/1/1 and 10 HP under Protect from Melee.
-- **Preconditions:** Magic 59 (Fire Blast, from S04); Plague City done (teleport); Prayer 43; the
-  pre-MM trade (`quests/README.md` §4 step 3): 6 logs, staff of fire, amulet of magic, 2 Prayer
-  potion(4), 1 Antipoison(4), 2 sharks, and Fire Blast runes for about T/5 casts per fight (the
+- **Preconditions:** Magic 59 (Fire Blast, from S04); Plague City done (teleport); Prayer 43 (~94 from S07); the
+  pre-MM trade (`SUPPLIES.md` H7, `quests/README.md` §4 step 3): 6 logs, staff of fire, amulet of
+  magic, 1 Antipoison(4), 2 sharks (no prayer potions now), and Fire Blast runes for about T/5 casts per fight (the
   rune counts in `pre_mm_fights.md` look too high, flagged by rs/81).
 - **Postconditions:** `%treequest` 9 (ledger); 11,450 Attack; Magic about 64; 2 QP; village spirit
   tree.
@@ -794,16 +801,17 @@ scripts are in section 4; the shared primitives and their build order are in sec
   `WorldConfig.ts:38,115` via the same doc, row 5).
 - **Postconditions:** Firemaking 99. It must pass 30 before S19 Sea Slug (read,
   `quest_seaslug.rs2:43`). Items out: none.
-- **Ticks:** expected **650** (dropped row; measured end to end 634 and 666 with the lab's restock gaps
-  removed; model 658; `skills/firemaking.md` §1). Best **634** (measured). Fallback **695** with trade
-  refills (inferred) or **735** banking at Falador east (inferred) (same section).
+- **Ticks:** expected **695** with trade refills (inferred: the model's 658 + 6 trades; the dropped
+  row's pacing around the 100-tick reveal is not built yet). Best **650** on the dropped row
+  (measured end to end 634 and 666 with the lab's restock gaps removed). Fallback **735** banking at
+  Falador east (inferred) (all `skills/firemaking.md` §1).
 - **Primitives:** `act` (use tinderbox on the next log), `levelup`; `trade.receiveFrom` for the trade
   fallback.
 - **Mode:** overlay-driven. Every roll is a fixed 4-tick chain, and only the refills react (§1,
   "Client").
 - **Fallback:** adjacent-helper trades.
 - **Acceptance, local:** a 54-log dropped row. Pass: **4.00** ticks per fire (measured) +2%, and 1 to
-  99 within 5% of 650.
+  99 within 5% of 650 on the row (695 by trades).
 - **Acceptance, demo (throwaway):** a throwaway and a log-row helper throwaway, a 20-log normal-log
   row. Pass: 4 ticks per fire on at least 18 of 19 gaps, and nobody else's pickup broke the row.
 - **Start from:** `firemaking-line.ts`, `firemaking-drop.ts`, `firemaking-supply.ts`, `firemaking-model.ts`.
@@ -813,7 +821,7 @@ scripts are in section 4; the shared primitives and their build order are in sec
 
 - **Serves:** S12, before any Thieving training. Fire Blast at Magic ~73 under Protect from Melee for
   each fight, kept on until SCORED is out of the arena door (General Khazard attacks at stage 12).
-- **Preconditions:** Magic 59 or more; Prayer 43 and potions; 5 coins, Ardougne runes, a few sharks
+- **Preconditions:** Magic 59 or more; Prayer 43 (~94 from S07; no potions, `SUPPLIES.md` H9); 5 coins, Ardougne runes, a few sharks
   (`quests/README.md` §4 step 5).
 - **Postconditions:** quest complete; 12,175 Attack (Attack 99 with TGV and GT; read), 2,175
   Thieving (57); 2 QP.
@@ -965,25 +973,26 @@ scripts are in section 4; the shared primitives and their build order are in sec
 
 ### 26. Pre-MM cannon session: `speedrun/skills/ranged.ts`, `cannonSession` (S14)
 
-- **Serves:** S14, Ranged 1 to 50 base at the Wilderness poison spiders (3288,3810), wielding the rune
-  scimitar at Attack 99, auto-retaliate off. This is its own entry and its own `Step` (main, 05:30,
+- **Serves:** S14, Ranged 1 to 50 base at the Wilderness poison spiders (3288,3810), wielding the mithril
+  scimitar at Attack 99 (the rune one is unobtainable, rs/124), auto-retaliate off. This is its own entry and its own `Step` (main, 05:30,
   via the rs/103 coordinator).
 - **Preconditions:** Dwarf Cannon done; Attack 99 (TGV + GT + FA = 42,025 base, read); the cannon set
   and cannonballs from the cannon holder; the antipoison from S10's trade, sharks.
 - **Postconditions:** Ranged at least 50 **base** (for the magic shortbow in S15). Cannon picked up
   and returned to the holder, or kept for S27.
-- **Ticks:** expected **~123-153**: 113 to Ranged 50 (measured, rs/31, `skills/ranged.md` §1) plus
-  about 10 of set-up (inferred, `quests/README.md` §4 step 7), and rs/56's measured sessions of
-  151-153 to Ranged 54-57. Best **113** (measured). Fallback about 153 (measured). The ~164-tick
-  leg in (glory to Edgeville and the run north; inferred, `[rs/59] research/travel-and-overhead.md`,
-  travel matrix) is a leg in entry 11.
+- **Ticks:** expected and best **132** (inferred): 113 to Ranged 50 (measured, rs/31,
+  `skills/ranged.md` §1), about 10 of set-up (inferred, `quests/README.md` §4 step 7) and +9 for
+  the mithril scimitar in place of the rune one (inferred, `research/supply-fallbacks.md` §10).
+  Fallback about **162** (rs/56's measured sessions of 151-153 to Ranged 54-57, + 9); the Battlefield
+  of Khazard about 143 (RUN-ORDER.md S14). The leg in, T13-14, is the Ardougne lever and the Deserted
+  Keep web, 181.5 measured with no glory (entry 11, `research/run-transitions.md` §2).
 - **Primitives:** **missing** `lib/cannon.ts`; rs/94 `combat` upkeep (antipoison at the first
   poisoning).
 - **Mode:** overlay-driven. **Logout-unsafe:** combat; Wilderness level 37 at 42 HP and Defence 1
   (`quests/README.md` §4 step 7).
 - **Fallback:** if poisoned without antipoison, the poison takes 24-30 of 42 HP per session (measured,
   n=4); eat and continue.
-- **Acceptance, local:** `quest-premm-cannon.ts` at route stats. Pass: Ranged 50 within 10% of 123.
+- **Acceptance, local:** `quest-premm-cannon.ts` at route stats. Pass: Ranged 50 within 10% of 132.
 - **Acceptance, demo (throwaway):** not feasible (Attack 99, Dwarf Cannon).
 - **Start from:** `quest-premm-cannon.ts`, `ranged-cannon.ts`, `ranged-cannon-sites.ts`.
 - **logoutSafe:** no.
@@ -993,12 +1002,16 @@ scripts are in section 4; the shared primitives and their build order are in sec
 - **Preconditions:** Druidic Ritual done (Herblore 3+); 245 unfinished potions and secondaries by band,
   245 vials (`skills/README.md`, Herblore row); a bank booth.
 - **Postconditions:** Herblore 99. Items out: potions to a helper.
-- **Ticks:** expected and best **112** from 28 (measured, bbs, 1 run; `skills/README.md`). Fallback
-  about 150 (estimated, read-then-act banking).
+- **Ticks:** expected **170** on the supply-safe list (guam and irit unfinished potions, 418
+  actions; inferred, `skills/herblore.md` section 7), best **117** on the ranging-cap list (258
+  actions; inferred, same section). Torstol is unobtainable, so the measured 112 from 28 (bbs, 1
+  run, the full list) is out of reach; mixed herbs cost +85 (`research/supply-fallbacks.md` §5).
+  Fallback about 200 (estimated, read-then-act banking).
 - **Primitives:** `bank.withdrawMany`, `bank.depositAll`; use-item-on-item at 5 per tick; `levelup` (71
   level-ups).
 - **Mode:** overlay-driven (delay-free, fixed slots, blind).
-- **Acceptance, local:** `delayfree-cycle.ts` Herblore band through the module. Pass: within 5% of 112.
+- **Acceptance, local:** `delayfree-cycle.ts` Herblore band through the module. Pass: within 5% of the list's figure (117 ranging cap, 170 supply-safe; the delay-free
+  rate itself is 112 from 28 on the full list).
 - **Acceptance, demo (throwaway):** after Druidic Ritual on a throwaway, 2 inventories. Pass: 5
   actions per tick on at least 90% of ticks.
 - **Start from:** `delayfree-cycle.ts`, `delayfree-model.ts`.
@@ -1010,11 +1023,14 @@ scripts are in section 4; the shared primitives and their build order are in sec
   fallback is 364 uncut diamonds; `skills/README.md`, Crafting row). Crafting 42 after Dwarf Cannon,
   or 45 after Goblin Diplomacy.
 - **Postconditions:** Crafting 99. Items out: cut gems.
-- **Ticks:** expected **101** from 42 (measured, bbs). Best about 95 from 45 (estimated). Fallback
-  about 121 on the diamond-only supply (inferred, `skills/README.md`) or about 130 (estimated)
-  read-then-act.
+- **Ticks:** expected **91**, best **85**: the diamond-only supply's ~121 from 42 (dragonstones
+  are unobtainable; measured 117 from 43, `skills/crafting.md` section 1) less the 107 diamonds cut in
+  S25c's wine windows, 30 measured (`research/wine-window.md` §5 B, n = 3), and a further 6 inferred
+  on best (§4). Fallback **121** with no gems in the windows, or about 130 (estimated) read-then-act.
+  The measured 101 from 42 needs dragonstones.
 - **Primitives and mode:** as Herblore; overlay-driven.
-- **Acceptance:** as Herblore, against 101.
+- **Acceptance:** as Herblore, against 121 for the 364 diamonds standalone (91 with 107 of them in
+  the wine windows).
 - **Start from:** `delayfree-cycle.ts`.
 - **logoutSafe:** yes.
 
