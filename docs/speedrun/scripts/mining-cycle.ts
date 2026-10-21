@@ -49,13 +49,14 @@ await runScript(async ({ bot, sdk }) => {
     let rollTick = -1; // observed tick on which the server rolls for `target`
     let lastXpTick = -1;
     let midDrops = 0;
-    let lostRolls = 0;
+    let clicks = 0;
 
     const click = (st: BotWorldState, p: [number, number]) => {
         const loc = liveRock(st, p[0], p[1])!;
         if (DROP === 'each') dropMatching(sdk, st, /ore$|^uncut/i, 4);
         sdk.sendInteractLoc(loc.x, loc.z, loc.id, mineOp(loc)).catch(() => {});
         target = p;
+        clicks++;
         clickTick = st.tick;
         // A click sent on observed tick c is processed on server tick c+1, whose first swing
         // schedules the roll for c+1+rate. Clicking the next rock on that tick's observation
@@ -81,11 +82,6 @@ await runScript(async ({ bot, sdk }) => {
             if (DROP === 'midclick' && loc) sdk.sendInteractLoc(loc.x, loc.z, loc.id, mineOp(loc)).catch(() => {});
             midDrops++;
         }
-        if (DROP === 'mid' && target && s.tick > rollTick + 2 && liveRock(s, target[0], target[1])) {
-            // the roll never came: count it and start over on any live rock
-            lostRolls++;
-            target = null;
-        }
         if (MODE === 'predict') {
             // On the roll tick (or later, if we had nothing live then), move to another live rock.
             if (target === null || s.tick >= rollTick) {
@@ -104,5 +100,5 @@ await runScript(async ({ bot, sdk }) => {
     console.log(log.join('\n'));
     summarize(`iron, stand ${sx},${sz}, level ${LEVEL}, ${PICK}, mode=${MODE}, drop=${DROP}`, ticks, xps);
     const inv = (sdk.getState() as BotWorldState).inventory.filter(i => /ore$/i.test(i.name)).length;
-    console.log(`ore left in inventory: ${inv}; mid-cycle drops ${midDrops}, rolls lost ${lostRolls}`);
+    console.log(`ore left in inventory: ${inv}; mid-cycle drops ${midDrops}, rock clicks ${clicks}, ores ${ticks.length}`);
 }, { timeout: 30 * 60_000 });
