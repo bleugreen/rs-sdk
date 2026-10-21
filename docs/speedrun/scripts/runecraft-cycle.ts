@@ -91,7 +91,8 @@ S.onStateUpdate(s => positions.add(`${s.player?.worldX},${s.player?.worldZ}`));
 
 // --debug: one line per publication per bot (trade screen and accepts,
 // essence held, dialog, new messages)
-if (process.argv.includes('--debug')) {
+const DEBUG = process.argv.includes('--debug');
+if (DEBUG) {
     for (const [tag, sdk] of [['S', S], ['H', H]] as const) {
         let seen = 0;
         sdk.onStateUpdate(s => {
@@ -162,7 +163,7 @@ async function runStock() {
 // Fire `fn` once on the scored account's publication with tick `t`.
 function at(t: number, fn: () => void): Promise<void> {
     return new Promise(resolve => {
-        const go = () => { sleep(GAP).then(() => { fn(); resolve(); }); };
+        const go = () => { sleep(GAP).then(() => { if (DEBUG) console.log(`SEND after S pub ${now(S)} (H pub ${now(H)}) for tick ${t + 1}: ${fn.toString().replace(/\s+/g, ' ').slice(6, 120)}`); fn(); resolve(); }); };
         if (now(S) >= t) return go();
         const un = S.onStateUpdate(s => { if (s.tick >= t) { un(); go(); } });
     });
