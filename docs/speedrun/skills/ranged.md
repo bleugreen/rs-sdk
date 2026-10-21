@@ -75,10 +75,7 @@ with Protect from Melee, and a rune scimitar unless a ranged weapon is listed.
 | Cannon alone, Battlefield of Khazard (non-Wilderness fallback) | 9.13 | 0 | 0 | 0 | 400 ticks; 16.3 xp/ball (22 hp targets) |
 | Cannon + defensive melee, Battlefield of Khazard | 8.88 | 3.37 | 0 | 1.12 | 400 ticks |
 
-What this means for the plan (inferred, `ranged-model.ts`):
-
-| Scenario | Plan | Ticks |
-|---|---|---|
+What this means for the plan (inferred, `ranged-model.ts`).
 Separate melee in these plans is rs/30's best single-combat target, the ogres west
 of Yanille (300 ms, `combat-rate.ts`): 9.25 Defence on defensive (8.99-10.08 Strength
 on aggressive), HP a third of that. Aggressive melee at the spiders is assumed to
