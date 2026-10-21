@@ -39,7 +39,7 @@ import {
     type Schedule,
     type TurnResult
 } from './altar-cue';
-import { altarData, count, ESSENCE, enterRoom, findAltar, inRoom, pos, restock, roomTiles, standOn, until, type Altar, type RestockOptions, type Tile } from './altar-room';
+import { altarData, count, ESSENCE, enterRoom, findAltar, findItem, inRoom, pos, restock, roomTiles, standOn, until, type Altar, type RestockOptions, type Tile } from './altar-room';
 import { ensureOutOfTutorial } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
 
@@ -307,7 +307,7 @@ export class AltarGiver {
                         void sdk.sendDeclineTrade();
                         continue;
                     }
-                    const slot = this.s?.inventory.find(i => ESSENCE.test(i.name))?.slot;
+                    const slot = findItem(this.s, ESSENCE)?.slot;
                     if (slot !== undefined) void sdk.sendOfferItem(slot, -1);
                     void sdk.sendClickComponent(TRADE_ACCEPT);
                 } else void sdk.sendClickComponent(TRADE_CONFIRM);
