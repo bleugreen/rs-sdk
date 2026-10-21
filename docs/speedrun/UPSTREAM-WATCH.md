@@ -107,6 +107,47 @@ file in the fork.
 ## What is watched
 
 <!-- watchlist:start -->
+| Entry | Paths | Why it matters |
+|---|---|---|
+| Demo deploy settings | `fly.toml` | The demo's live settings: 25x xp, 300 ms ticks, 100 sessions per IP and the hidden hiscore names. Every tick and xp estimate in the plan assumes these values, and an edit here also redeploys the demo. |
+| Demo build and boot | `server/Dockerfile`<br>`server/start.ts` | What the demo actually builds and starts. A change can switch the live server's startup flags or content build without touching any game code. |
+| Upstream patch checklist | `server/PATCHES.md` | Upstream's own list of the server's custom behaviour patches. An edit here usually announces that one of those behaviours was added, changed or dropped. |
+| Server config defaults | `server/engine/src/util/Environment.ts`<br>`server/engine/src/util/WorldConfig.ts` | The defaults and environment parsing that the fly.toml values pass through (xp rate 25, tick rate). A changed default or a renamed variable changes the live server even when fly.toml stays the same. |
+| Player xp and level stamps | `server/engine/src/engine/entity/Player.ts` | The xp table, the 25x multiplier applied to every xp drop, and the stamp of the tick each level was reached, which is what the hiscores rank us by. Every route's tick estimate and the scored time depend on them. |
+| Player save format | `server/engine/src/engine/entity/PlayerLoading.ts` | How playtime and the per-skill level-reached ticks are saved and loaded. A format change can reset or shift the times the hiscores show for our account. |
+| World tick loop and limits | `server/engine/src/engine/World.ts` | The tick loop, the playtime counter that adds one per logged-in tick (the scored clock), the per-IP session cap our helper accounts rely on, and the idle and no-response logout timers. |
+| Packet-per-tick enforcement | `server/engine/src/engine/entity/NetworkPlayer.ts` | Stops decoding a client's packets after 5 successful user events in a tick. The run's batched banking, trading and level-up dismissal are planned around exactly that floor. |
+| Packet-per-tick limits | `server/engine/src/network/game/client/ClientGameProtCategory.ts` | The budget values themselves: 5 user events, 20 client events and 2 restricted events per tick. Lowering the user-event limit slows every batched action in the run. |
+| Packet categories | `server/engine/src/network/game/client/model/**` | Which budget each client packet counts against. Moving a packet we send in bulk into the user or restricted budget slows the run's batched actions. |
+| Packet handlers | `server/engine/src/network/game/client/handler/**` | How the server handles item, interface-button, object and NPC clicks and dialogue resumes, and which of them count as successful. The SDK's actions and our fast paths send exactly these packets. |
+| Player script ops | `server/engine/src/engine/script/handlers/PlayerOps.ts` | p_delay, which sets how many ticks scripted actions hold the player, and stat_random, the level-scaled success roll behind every gathering action and every wine. |
+| Login server and hiscore writes | `server/engine/src/server/login/LoginServer.ts`<br>`server/engine/src/server/login/LoginThread.ts` | Accounts are created automatically on first login, which is how our helper accounts come to exist, and logout and autosave write the hiscore rows with each level's reached tick. |
+| Hiscores ranking and page | `server/engine/src/web/pages/RankedHiscores*.ts`<br>`server/engine/src/web/pages/hiscores.ts` | The ranking rule (highest level first, then lowest time) that decides whether we beat #1, and the page markup this watch parses to read the current #1. |
+| Grand Exchange | `server/engine/src/engine/market/**`<br>`server/engine/src/web/pages/market.ts`<br>`server/engine/src/engine/entity/tracking/TradeLedger.ts` | Grand Exchange order matching, escrow and the trade ledger. Any supply the run buys or sells instead of gathering goes through this code. |
+| Wine fermentation | `server/content/scripts/skill_cooking/scripts/cooking_inv/scripts/wine/wine.rs2` | Unfermented wine ferments on a timer, including every jug sitting in the bank, and each good wine pays Cooking xp with no level check beyond the 35 needed to mix it. The cooking route gets its Cooking levels from banked wine this way. |
+| Charge spell | `server/content/scripts/skill_magic/scripts/spells/charge.rs2` | Charge has no recast cooldown (the 'your current Charge is too strong' check is commented out), so it can be cast back to back for Magic xp. |
+| Magic | `server/content/scripts/skill_magic/**` | Spell data, rune costs and xp for every spell, including jewellery enchanting and alchemy. The Magic route's casts per level come from these numbers. |
+| Player-count scaling | `server/content/scripts/general/scripts/player_count.rs2` | Scales tree, rock and thieving respawn timers by how many players are online. A change alters gathering rates on a busy world. |
+| Teleport jewellery and xp lamps | `server/content/scripts/general/scripts/enchanted_jewellry/**`<br>`server/content/scripts/general/scripts/xplamp/**` | What enchanted jewellery does when worn or rubbed (glory, dueling, games necklace, recoil, forging) and how xp lamps pay out. Routes can use these for travel and free xp. |
+| Level requirements and level-up | `server/content/scripts/levelrequire/**`<br>`server/content/scripts/levelup/**` | Which items and actions need which level, and the level-up dialog that interrupts the player. The run dismisses that dialog immediately and plans its unlocks around these levels. |
+| Cooking | `server/content/scripts/skill_cooking/**` | Cooking actions, burn rolls and xp per item outside wine. Any cooking the route does besides wine is measured against these scripts. |
+| Woodcutting | `server/content/scripts/skill_woodcutting/**` | Chop success rolls, tree depletion and respawn, and xp per log. The woodcutting route's measured xp per tick comes from these scripts. |
+| Fishing | `server/content/scripts/skill_fishing/**` | Catch rolls, fishing spot behaviour and xp per catch. The measured fly-fishing route at Lumbridge depends on these numbers. |
+| Mining | `server/content/scripts/skill_mining/**` | Mining success rolls, rock depletion and respawn, and xp per ore. The mining route's xp per tick comes from these scripts. |
+| Thieving | `server/content/scripts/skill_thieving/**` | Pickpocket and stall success rolls, stun times and xp. The thieving route's xp per tick, and how long a failed attempt costs, come from these scripts. |
+| Agility | `server/content/scripts/skill_agility/**` | Course obstacles, their tick lengths, fail chances and xp. The agility route's laps per level come from these scripts. |
+| Fletching | `server/content/scripts/skill_fletching/**` | Fletching recipes, items made per action and xp. The fletching route's xp per tick comes from these scripts. |
+| Herblore | `server/content/scripts/skill_herblore/**` | Herb cleaning and potion mixing, their delays and xp. The herblore route's xp per tick comes from these scripts. |
+| Crafting | `server/content/scripts/skill_crafting/**` | Crafting recipes, including jewellery, with their delays and xp. The crafting route's xp per tick comes from these scripts. |
+| Smithing | `server/content/scripts/skill_smithing/**` | Smelting and anvil smithing, their delays, success rolls and xp. The smithing route's xp per tick comes from these scripts. |
+| Firemaking | `server/content/scripts/skill_firemaking/**` | Lighting rolls, the step after each fire and xp per log. The firemaking route's xp per tick comes from these scripts. |
+| Prayer | `server/content/scripts/skill_prayer/**` | Bone burying delay and xp per bone. The prayer route's xp per tick comes from these scripts. |
+| Runecraft | `server/content/scripts/skill_runecraft/**` | Altar access, runes made per essence and xp. The runecraft route's xp per trip comes from these scripts. |
+| Combat, ranged and combat magic | `server/content/scripts/skill_combat/**` | Hit rolls, attack speeds, ranged and combat-spell data and combat xp. Every combat level and quest fight in the run, including Elvarg, is timed against these scripts. |
+| Quests (grouped by directory) | `server/content/scripts/quests/**` | Quest requirements, steps and xp rewards. The measured quest routes and the quest-point total were planned against these scripts; changes are grouped by quest. |
+| Trade and bank interfaces | `server/content/scripts/interface_trade/**`<br>`server/content/scripts/interface_bank/**` | How trade offers and bank deposits accept items. The run's batched deposit and batched trade fast paths were measured against these interfaces. |
+| Bot webclient (counts only) | `server/webclient/src/lite/**`<br>`server/webclient/src/bot/**` | The client our bots run, including the state collector that produces the state the SDK reads. A change here can break our bots or need merging into the fork. |
+| SDK (counts only) | `sdk/**` | The SDK our speedrun code imports. An upstream change here means merge work for the fork and may change the bot helpers our routes call. |
 <!-- watchlist:end -->
 
 ## Caveats
