@@ -13,7 +13,7 @@
 // (map_live) the step fails: the full tutorial costs far more than any fallback would save.
 
 import type { BotWorldState, NearbyNpc } from '../../sdk/types';
-import { classifyPage, dialogText } from '../lib/dialogue';
+import { classifyPage } from '../lib/dialogue';
 import { waitUntil } from '../lib/wait';
 import type { Step, StepContext } from '../runner/step';
 
@@ -51,6 +51,13 @@ function guideOf(s: BotWorldState): NearbyNpc | undefined {
 
 const designOpen = (s: BotWorldState) => s.modalOpen && s.modalInterface === PLAYER_KIT;
 
+/** The open page's text from the dialog history, when it is from this page's tick; '' when unknown. */
+function pageBody(s: BotWorldState): string {
+    const entry = s.recentDialogs?.[0];
+    if (!entry || entry.tick < s.tick - 1) return '';
+    return entry.text.join(' ').trim();
+}
+
 async function skip({ sdk }: StepContext<unknown>): Promise<void> {
     let s = sdk.getState()!;
     // The design screen arrives with the first in-world frames; give it one tick if it is not up yet.
@@ -73,8 +80,10 @@ async function skip({ sdk }: StepContext<unknown>): Promise<void> {
     if (!asked.ok) throw new Error('the guide did not answer within 12 ticks');
     let page = asked.state;
     if (classifyPage(page.dialog) === 'continue') {
-        const text = dialogText(page);
-        if (text && !SKIP_PAGE.test(text)) throw new Error(`the guide's first page does not offer the skip: "${text}"`);
+        // The page body is checked when the client published it (dialog history); the lite client
+        // leaves it empty, and the choice page below is the guard that always holds.
+        const body = pageBody(page);
+        if (body && !SKIP_PAGE.test(body)) throw new Error(`the guide's first page does not offer the skip: "${body}"`);
         void sdk.sendClickDialog(0);
         const next = await waitUntil(sdk, st => classifyPage(st.dialog) === 'choice', { maxTicks: 6, after: page.tick });
         if (!next.ok) throw new Error('no choice page after the guide\'s question');
