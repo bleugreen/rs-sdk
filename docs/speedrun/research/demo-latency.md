@@ -113,6 +113,14 @@ The trial: on a fresh tick, walk one tile, and count the ticks until the step sh
   the same host. This is rs/26's setup.
 - **Public relay**: the lite runner publishes to the demo's own gateway. Not yet sampled; the
   gateway's HTTP numbers in section 4 already show it is the worst path.
+- **Browser tab**: `demo-latency-probe.yml` with `mode=browser` (rs/95). It runs the direct probe
+  first as the reference row, then a branch's browser webclient (`browser_ref`: its bundle,
+  `proxy.ts` page server and gateway) in headless Chrome on the same runner, with the game socket
+  straight to the demo and the overlay to a loopback gateway. `variant=overlay` reacts from
+  `tickmanip-latency.ts` over that gateway; `variant=in-page` runs rs/97's `rsPrograms` probe in
+  the page. Each run follows with the knife woodcutting loop and a plain control at the trees west
+  of Lumbridge castle, scores the run-night gate on its direct row, and breaks every reaction into
+  page-side hops from Chrome's own websocket frame times (`demo-browser-page.ts frames`).
 
 | Vantage | Path | PDT | Fly edge | `mrtt` | Online | Trials | 1 tick | 2 ticks | 3+ ticks | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
