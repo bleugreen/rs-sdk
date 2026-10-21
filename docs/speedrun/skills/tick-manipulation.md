@@ -12,13 +12,21 @@ Shared by [woodcutting.md](woodcutting.md), [fishing.md](fishing.md) and
   Ardougne zoo cluster, with a starter (`eat`, `knife` or `none`) on every move.
 - [`tickmanip-lab.sh`](../scripts/tickmanip-lab.sh): boots the tickmanip port block
   (LAB.md), logs one bot in, runs the given commands and tears everything down.
+- [`tickmanip-latency.ts`](../scripts/tickmanip-latency.ts): checks that a packet sent on
+  state label c is processed on server tick c+1, the assumption every loop here rests on.
 
-Every measurement is at `NODE_TICKRATE=300` (the production rate) with the **stock** lite
-client, unless a row says 100 ms. Both measuring loops are **predicted**: they send each
-packet on a tick computed from their own bootstrap click and use xp drops only to detect
-a lost lock. So the lite-client change in cairn://p/rs/22 (state published after the
-tick's packets are decoded) should not change these cycles. A reactive loop, one that waits
-to see the roll before sending, would lose a tick per cycle on the stock client.
+Every measurement is at `NODE_TICKRATE=300` (the production rate), unless a row says 100 ms.
+The rs/9 rows used the **stock** lite client. The rows marked rs/53 (respawn 13, level-ups)
+used the client with the #20 fix (a tick is published only after it is fully decoded) on a
+quiet host, `bgsrv-mac` (load 2-6, every latency probe on c+1). Both loops are
+**predicted**: they send each packet on a tick computed from their own bootstrap and use xp
+drops only to detect a lost lock. #20 did not change packet timing, and the cycles
+reproduced (knife iron at respawn 19: 3.50 ticks per ore, 0 slips, on both clients). It
+did move the xp one label earlier: stats from a roll on R are now in the state for R, not
+R+1, so the executors' slip checks take `--xplag` (0 now, 1 for the stock client). A
+reactive loop, one that waits to see the roll before sending, lost a tick per cycle on the
+stock client; it was not re-measured on the fixed one. Host load matters much more than
+the client (section 6).
 
 ## 1. Recommendation
 
@@ -38,10 +46,11 @@ forward instead of correcting it. Use it only where the knife is unavailable.
 | Skill and method | Normal cycle | With the knife starter | Ticks per xp drop, normal -> knife (measured) |
 |---|---|---|---|
 | Fishing: fly (trout, salmon), 99 | 5 (read `freshfish.rs2:77-78`; measured 80 of 90 gaps) | **3** (121 of 148 gaps) | 5.56 -> **3.80** (`tickmanip-cycle.ts`, 90 and 148 gaps) |
+| Fishing: fly at Lumbridge, 78 -> 99 through 21 level-ups and spot moves (rs/53) | 3,410 ticks for the segment (fishing.md) | 3, lock kept through every level-up | **3.80** ticks per catch, 1,978 ticks for 78-99 (520 catches); a second run from 20 took 2,896 to 99, 2,032 of them from 9,612 base |
 | Fishing: lobster cage, 99 | 6 (read `rarefish.rs2:117-118`; measured 19 of 32 gaps) | 3, but about 40% of cycles produce no roll | 8.44 -> **7.06** (32 and 79 gaps) |
 | Woodcutting: willow, rune axe, 99 | 4 (read `woodcut.rs2:153-154`; measured 47 of 75 gaps) | **3** (85 of 131 gaps) | 5.53 -> **4.23** (75 and 131 gaps) |
 | Mining: iron rotation, respawn 19 | 3 when stationary (read `mining.rs2:118-119`, `pickaxes.obj:198`); 4.82 ticks/ore moving | 3 per ore; 3.50 ticks/ore (6 rocks wait once per lap) | 4.82 -> **3.50** (`tickmanip-mine.ts`, 60 ores) |
-| Mining: iron rotation, respawn 13 (demo) | 4.94 ticks/ore | not run with the knife; eat starter 3.14 | 4.94 -> **3.14** (eat, 80 ores) |
+| Mining: iron rotation, respawn 13 (demo) | 4.94 ticks/ore; adjacent-rock starter 3.61 | **3** per ore, no wait (5-rock lap = respawn + 2) | 4.94 -> **3.00** (knife, 2 x 200 ores, rs/53) |
 
 A 2-tick Mining cycle is not possible (inferred, section 4). Fishing gains most, because
 its normal cycles are 5 and 6 ticks.
@@ -176,11 +185,17 @@ ore" is from the sixth ore on:
 | 19 | **knife** | 60 | 3:45 6:9 | **3.50** | 10.00 | 0 slips; 10 of 10 logs kept |
 | 13 (demo, emulated) | none | 40 | 4:26 8:8 | 4.94 | 7.08 | |
 | 13 | eat | 80 | 3:72 7:1 9:1 | **3.14** | 11.16 | 79 of 80 on the predicted tick, 1 slip |
+| 13, rs/53 | **knife**, rs/5's demo steps | 200 | 3:194 | **3.00** | 11.67 | 200 of 200 on the predicted tick, 0 slips; 10 of 10 logs kept |
+| 13, rs/53 | **knife**, the planner's free-starter steps | 200 | 3:194 | **3.00** | 11.67 | the same; steps in mining.md section 4 |
+| 13, rs/53 | adjacent-rock starter (`mining-rotation.ts`), same session | 200 | 3:75 4:113 6:1 | 3.61 | 9.69 | 200 of 200 rolls on the predicted tick |
+| 19, rs/53 | knife (repeat on the #20 client) | 60 | 3:45 6:9 | 3.50 | 10.00 | 60 of 60 on the predicted tick, 0 slips |
 
 For comparison, rs/5's adjacent-rock starter measured 3.84 (respawn 19) and 3.61 (respawn
-13) on the same cluster. At respawn 19 the 6-rock lap takes 18 ticks, one short of the
+13) on the same cluster; the rs/53 repeat at respawn 13 matched it exactly, so the knife's
+gain at the demo's respawn is 3.61 -> 3.00, 17%. At respawn 19 the 6-rock lap takes 18 ticks, one short of the
 respawn, so one move per lap waits 3 ticks (the 6:9 above). A 7-rock rotation should hold
-3.00 (inferred, not run). Respawn 13 was emulated by pinning `player_count.rs2` to
+3.00 (inferred, not run). At respawn 13 five rocks already hold 3.00, the floor, so more
+rocks cannot help (the planner's `--free-starter` gives 2.99 for the 6-rock cluster). Respawn 13 was emulated by pinning `player_count.rs2` to
 `min(1262, 2000)` locally; that file is not committed (mining.md section 4).
 
 **No 2-tick Mining.** After a roll on R, the earliest write is on R+1 (a write processed on
@@ -246,10 +261,27 @@ this (`resync` in `tickmanip-cycle.ts`, `SLIP` in `tickmanip-mine.ts`).
   clears the interaction but not the clock (`OpHeldHandler.ts:54-56`); every run above
   dropped this way.
 - **Level-up dialog:** a level-up opens a chat dialog and pauses (`levelup.rs2:51-55`).
-  The next starter closes it, because both handlers call `closeModal` (read), so the lock
-  should survive (inferred). The one level-30 run (eat, 31 dialogs in 60 willow logs, 23
-  lost locks) was at Draynor without raised combat stats, so NPC attacks may explain the
-  losses; it does not settle the question (section 8).
+  The engine queue that opens it runs on R+1 after that tick's packets (`World.ts`
+  `processPlayers`: queues, then the engine queue, then interactions), so the starter on
+  R+1 is already in, and the dialog only blocks R+1's fishing op. Answered at once
+  (`sendClickDialog(0)` sent on label R+1, landing on R+2), the roll on R+3 still runs.
+  Measured with the knife at Lumbridge (rs/53, `tickmanip-cycle.ts --dismiss=now`): 0 of
+  38 level-ups between 79 and 98 lost the lock, at a cost of about half a tick each, and 2
+  of 67 from level 20 needed a re-anchor (one beside a spot move). A dismissal that came
+  too late would cost one roll: the next starter's `closeModal` clears the dialog and the
+  knife's absolute write puts the lock back on schedule (inferred, read). Details in
+  fishing.md section 6.
+- **Spot moves:** a fishing spot keeps its NPC index when it teleports, so watch its tile.
+  Re-click the nearest spot and anchor the schedule on the first catch after it
+  (`--reanchor=xp`); about 8-9 ticks lost per move (rs/53, 12 moves).
+- **Host load:** the loops need every packet to land on its tick. On `local` at load
+  average 100-130 (16 cores), state publications came 354 ms apart at the median (p90
+  473) instead of 300, and 37 of 60 walk probes landed one or two ticks late
+  (`tickmanip-latency.ts`). Knife iron at respawn 13 then measured 8.6-8.8 ticks per ore
+  with every log fletched, the adjacent-rock rotation 14.3, and Lumbridge fly 78-99 7.7
+  ticks per catch, all worse than not manipulating. The same scripts on a quiet host
+  (load 2-6, 50 of 50 probes on time) gave the rows above. Probe the host before a timed
+  run, and on the demo, before trusting a schedule.
 - **Combat:** being attacked starts auto-retaliate, which replaces the gathering
   interaction and breaks the lock. Train where nothing aggressive reaches the account, or
   outlevel the local aggressors (measured at the Draynor willows, section 4).
@@ -285,10 +317,15 @@ shifting, and the packets in flight when each run's client disconnected at the e
   exactly on R+3, in a different tick from the starter, so latency jitter between the two
   sends is the likely cause (inferred). Logging the server's view of each click, or sending
   the click on R+2 and R+3 both, would settle it.
-- **Level-ups:** whether a level-up dialog costs the lock. A level-30 knife run with
-  combat stats raised would settle it.
-- **Respawn 13 with the knife,** and a 7-rock iron rotation at respawn 19 (planner: 3.00
-  ticks per ore).
+- **Level-ups** (settled by rs/53): the knife lock survives a level-up dialog answered at
+  once; about half a tick each (section 6). Woodcutting and Mining level-ups with the knife
+  were not run; the same tick order applies (inferred).
+- **Respawn 13 with the knife** (settled by rs/53): 3.00 ticks per ore. Still open: a
+  7-rock iron rotation at respawn 19 (planner: 3.00 ticks per ore).
+- **Demo latency:** the loops assume the demo's round trip fits inside a 300 ms tick, as
+  it did in the lab on a quiet host. `tickmanip-latency.ts` on a throwaway demo account
+  would show whether it does.
 - **Glassblowing and leather** as menu starters for accounts without a knife or logs: same
   pattern, not measured.
-- **Fixed client (rs/22):** not run; the loops are predicted, so no change is expected.
+- **Fixed client (rs/22, #20):** run (rs/53): packet timing and cycles unchanged; xp
+  appears a label earlier, which the executors now take as `--xplag` (section intro).
