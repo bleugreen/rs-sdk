@@ -96,7 +96,20 @@ await runScript(async ({ sdk }) => {
             id = loc.id;
         }
         await sdk.sendInteractLoc(lx, lz, id, 1);
-        return waitUntil(sdk, () => isAt(end), 12);
+        // A click sent while the previous crossing's p_delay is running is dropped,
+        // so give each kind just over its landing time and re-click on a miss.
+        const wait: Record<string, number> = { crossover: 3, pitfall: 4, tripwire: 6, log: 10, woodspring: 8 };
+        return waitUntil(sdk, () => isAt(end), wait[c.kind] ?? 8);
+    };
+    // A failed pitfall jump drops the player into the pit below (0_36_150);
+    // climb the hand holds back out (quest_regicide.rs2:318-339).
+    const climbOut = async () => {
+        if (here().z < 9000) return false;
+        const holds = (await sdk.scanNearbyLocs(4)).find(l => /hand/i.test(l.name) || l.options.some(o => /climb/i.test(o)));
+        if (!holds) return false;
+        await sdk.sendInteractLoc(holds.x, holds.z, holds.id, 1);
+        await waitUntil(sdk, s => (s.player?.worldZ ?? 9999) < 9000, 10);
+        return true;
     };
 
     const out = [];
@@ -127,8 +140,11 @@ await runScript(async ({ sdk }) => {
             if (!isAt(start)) await walkTo(start);
             const tc = now(sdk);
             let ok = null;
+            let pitFalls = 0;
             for (let a = 0; a < 15 && !ok; a++) {
-                if (await handleDialog()) { if (!isAt(start)) await walkTo(start); }
+                if (await climbOut()) { pitFalls++; }
+                if (await handleDialog() || !isAt(start)) { if (!isAt(start) && !isAt(step.end!)) await walkTo(start); }
+                if (isAt(step.end!)) { ok = { tick: now(sdk) } as never; break; }
                 const hp0 = sdk.getState()!.player!.hp;
                 ok = await crossOnce(c, start, step.end!);
                 if (!ok) {
@@ -139,7 +155,7 @@ await runScript(async ({ sdk }) => {
             }
             if (!ok) throw new Error(`failed to cross ${c.note}`);
             counts[c.kind] = (counts[c.kind] ?? 0) + 1;
-            crossTicks.push([c.kind, now(sdk) - tc]);
+            crossTicks.push([c.kind + (pitFalls ? ` (fell ${pitFalls})` : ''), now(sdk) - tc]);
         }
         const total = now(sdk) - t0;
         const r = { leg, run, agility, routeTiles: route.tiles, crossings: counts, total, dialoguePages, dialogueTicks, woodspringFails: woodFails, crossTicks, stage: await getVar(sdk, 'regicide_quest') };
