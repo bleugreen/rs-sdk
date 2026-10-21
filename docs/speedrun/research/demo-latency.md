@@ -596,7 +596,9 @@ Preconditions:
 **The gate** (cairn://p/rs/tenets/11), measured from the run machine itself, since a distant
 vantage adds path jitter that looks like overruns (section 9):
 
-- **(c), primary:** **at most 1 catch-up per minute** over a 3-5 minute window, a catch-up being an
+- **(c), primary:** **at most 2 catch-ups per minute** over a 3-5 minute window (working value,
+  pending rs/102's final recommendation; at most 2 agreed with (a) on all 15 Ashburn samples to
+  07:35, while at most 1 wrongly failed 05:09 at 60/60 and 1.6 per minute), a catch-up being an
   interval under 150 ms immediately after one over 350 ms, counted from decoded ticks (not from raw
   frames grouped 60 ms apart, which hides them; section 3). Over rs/102's 15 Ashburn samples it
   agreed with (a) on 14.
