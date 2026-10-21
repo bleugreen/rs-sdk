@@ -2,12 +2,23 @@
 
 Shared measurement, mechanics and gear: [combat.md](combat.md). Scripts:
 [`combat-rate.ts`](../scripts/combat-rate.ts), [`combat-model.ts`](../scripts/combat-model.ts).
-Labels follow `docs/speedrun/skills/README.md` (rs/2).
+Labels follow `docs/speedrun/skills/README.md` (rs/2). Host: the ogre rates are combat.md's
+and the spider rates ranged.md's, all taken at 300 ms on the Mac executor `local` at load
+11-18 on 16 cores, so they are **busy-host figures, a few percent pessimistic**.
 
 ## 1. Recommendation
 
-Defence is **the main melee line on the MM route**: 19,938 base from MM option 1's
-20,000. Two ways to close it:
+**On the route (rs/3's Package B), Defence needs only 1,288 base after the quests.**
+Monkey Madness option 1 gives 20,000 and Dragon Slayer (after MM) 18,650: 38,650, level 98
+(read). The pre-MM fights are cast, so Defence stays at 1 until MM. Close the 1,288 with
+**defensive melee beside the cannon at the Wilderness poison spiders: 230 ticks** at 5.60
+Defence per tick (rs/31's plan (e), `ranged.md`; inferred from measured rates). Those ticks
+are part of the Ranged finish, not extra: the cannon earns 11.03 Ranged per tick over them
+(Ranged 54 -> 67), then the finish continues with cannon + rapid knives. Ogres alone would
+close the gap in about 140 ticks (1,288 / 9.18) but give up the cannon's Ranged.
+
+Under the alternatives (Package A, no Dragon Slayer) the gap was 19,938 base from MM option
+1's 20,000, and Defence was the main melee line. Two ways to close a gap that size:
 
 - **While Ranged is still training, run defensive melee alongside the dwarf
   multicannon at the Wilderness poison spiders.** rs/31 measured 5.60 Defence + 1.85
@@ -20,7 +31,8 @@ Defence is **the main melee line on the MM route**: 19,938 base from MM option 1
 
 | Start | Ticks to 99 on ogres | HP earned | Basis |
 |---|---|---|---|
-| With MM option 1 (20,000, level 89) | **2,121** | 6,646, more than MM's 4,938 HP gap | inferred |
+| **On route: Package B, MM option 1 + Dragon Slayer (38,650, level 98)** | **140** on ogres; on the route, **230** at the spiders alongside the cannon (shared with Ranged) | 433 on ogres / 425 at the spiders; the HP gap is covered by the Ranged finish anyway | inferred |
+| Package A: MM option 1 alone (20,000, level 89) | 2,121 | 6,646, more than MM's 4,938 HP gap | inferred |
 | With MM option 2 (35,000, level 97) | 525 | 1,646 | inferred |
 | No MM (0) | **4,248** | 13,313 | inferred |
 | Level 1 | **4,248** | 13,313 | inferred |
@@ -39,10 +51,13 @@ Defence is **the main melee line on the MM route**: 19,938 base from MM option 1
 
 | Quest | Defence (base, read) | Start level | Scenario |
 |---|---|---|---|
-| Monkey Madness option 1 | 20,000 (`mm_daero.rs2:296`) | 89 | MM route |
+| Monkey Madness option 1 | 20,000 (`mm_daero.rs2:296`) | 89 | **on route** |
+| Dragon Slayer, after MM | 18,650 (`quest_dragon.rs2:34`) | 88 alone; **98 with MM option 1 (38,650; 1,288 left)** | **on route** (Package B) |
 | Monkey Madness option 2 | 35,000 (`mm_daero.rs2:305`) | 97 | alternative |
-| Holy Grail (now off route) | 15,300 (`quest_grail.rs2:117`) | 85; with MM option 1, 4,638 left | |
-| Dragon Slayer (off route) | 18,650 (`quest_dragon.rs2:34`) | 88 | |
+| Holy Grail (off route) | 15,300 (`quest_grail.rs2:117`) | 85; with MM option 1, 4,638 left | |
+
+Nothing before MM gives Defence on Package B: the pre-MM fights are cast (rs/3
+`pre_mm_fights.md`), and the Package B filler quests give no combat xp.
 
 ## 4. Mechanics
 
@@ -57,6 +72,9 @@ level does not change the xp rate.
   rs/31 costs it in `ranged.md`.
 - **Cannon + defensive melee at the spiders:** above, from rs/31.
 - **Controlled melee** gives only a third of the xp to Defence (combat.md section 4).
+- **Interleaving** (`interleaving.md` section 8): none of it can be absorbed into self-only
+  time. Defence is trained by melee at a fixed site, which is itself self-only time, and on
+  the route its 230 ticks already share the cannon's clock with Ranged.
 
 ## 6. Gotchas
 
@@ -65,7 +83,9 @@ See combat.md section 8. At low Defence, ogres still hit rarely and for at most 
 
 ## 7. Helper supply list
 
-MM route, Defence 89 -> 99 on ogres (2,121 ticks, inferred):
+On the route (Package B) Defence has no list of its own: its 230 ticks run inside the cannon
+finish, whose supplies are in `ranged.md` section 7. For Package A, Defence 89 -> 99 on ogres
+(2,121 ticks, inferred):
 
 | Item | Count | Source |
 |---|---|---|
@@ -81,4 +101,5 @@ adjacent-helper trade, 9 ticks).
 ## 8. Open questions
 
 - The parallel cannon plan depends on Wilderness safety on production (rs/31).
+- Monkey Madness at Defence 1, Strength 1 and ~42 HP is unmeasured (combat.md section 9).
 - Production latency (combat.md section 9).
