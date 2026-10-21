@@ -317,6 +317,19 @@ gate"). Both scripts do this by default (`--gate=off` forces the starter).
 [`speedrun/lib/hostgate.ts`](../../../speedrun/lib/hostgate.ts) (cairn://p/rs/62) lets
 the scored run's loops decide on the night whether the knife pays.
 
+**Direct path and relay.** A reaction can reach the engine two ways: directly (issued
+in-page by the browser webclient, or in-process on the engine websocket), or through the
+SDK relay (runner, gateway, lite client). From Azure eastus to the demo at about 1,655
+online (cairn://p/rs/86, 2026-10-21), the direct path landed 60 of 60 reactions on the next
+tick and the relay 32 at 1 and 28 at 2. The relay costs a tick about half the time on any
+host; the server's tick did not overrun. In the scored run the knife loops, the pickpocket
+re-click and Agility obstacles run as in-page tick programs (cairn://p/rs/82), and the SDK
+drives only the non-reactive steps. Every cycle measured in this document was taken against
+a local engine with 1-tick reactions, so read them as **direct-path figures**. Do not plan a
+relay-driven knife loop on the demo. On the direct path the gate's criterion is 60 of 60 at 1
+tick (floor 58), probed on the run machine right before the run at the real player count
+(path-aware probe: cairn://p/rs/96). The cost model below is the **relay fallback**.
+
 **Probe.** `probeOnTime(sdk, {trials})` walks one tile and back, sending each walk on the
 fresh state label that showed the previous step, the same send-on-a-fresh-label pattern the
 loops use. Each trial records the label the step appears on minus the label the walk was
@@ -353,7 +366,7 @@ tick and cancelled it, and the slip check restarted the rotation (about 9 ticks)
 lead it now plans on the label that shows the roll's xp. On a punctual host that is the
 same label, and a late roll costs only its late ticks. Measured on the bbs lab (300 ms,
 load 3-4 of 32 cores) by holding a random 15% of starter bundles one label
-(`--inject-late=0.15`, main's Ashburn distribution):
+(`--inject-late=0.15`, about the share main first read from Ashburn through the relay):
 
 | Loop | Starters on time | 15% held one label | Plain |
 |---|---|---|---|
@@ -374,8 +387,9 @@ manipulation on when knifeCycle + (1 - modeFraction) × missCost < plainCycle. T
 cost defaults to one plain cycle (measured above); the mining loop passes 1, because it
 runs closed-loop. The resulting thresholds on the share at the dominant offset:
 woodcutting (plain 4) needs more than 3/4, fly (5) more than 3/5, lobster (6) more than
-1/2, and the iron rotation (3.61, miss 1) more than 0.39. Main's Ashburn probe (51 of 60 at
-1 tick, 85%) passes everywhere. This run's probes from bbs (70% at 2 ticks) pass for fly and
+1/2, and the iron rotation (3.61, miss 1) more than 0.39. Main's first Ashburn probe through
+the relay (51 of 60 at 1 tick, 85%) passed everywhere, but a paired sample later read 32 of
+60 through the relay from the same host (above), so 85% was a lucky draw. This run's probes from bbs (70% at 2 ticks) pass for fly and
 fail for woodcutting, which matches the demo check below, where the knife did not clearly
 beat plain on trees. rs/26's bbs probe (25 at 2, 35 at 3, 58%) fails both. This replaced a
 first rule of "95% of trials at 1 tick" (from rs/53's quiet 110 of 110 against loaded 23
@@ -445,10 +459,12 @@ shifting, and the packets in flight when each run's client disconnected at the e
   were not run; the same tick order applies (inferred).
 - **Respawn 13 with the knife** (settled by rs/53): 3.00 ticks per ore. Still open: a
   7-rock iron rotation at respawn 19 (planner: 3.00 ticks per ore).
-- **Demo latency** (partly settled by rs/62): from bbs the demo reads 1-3 ticks, mostly 2.
-  From Azure eastus, main read 85% at 1 tick. A constant latency does not matter (section
-  6, "Run-time host gate"); the spread does. Still open: the knife's gain on the demo from
-  the run machine (`tickmanip-demo.sh` there).
+- **Demo latency** (settled for the plan by rs/62 and cairn://p/rs/86): the extra tick
+  comes from the SDK relay, not the host or the server tick. Direct path from Azure eastus:
+  60 of 60 at 1 tick; relay from the same host 32/28/0, from bbs mostly 2. The run drives
+  the reactive loops in-page (section 6, "Run-time host gate"). Still open: the knife
+  loops measured in-page in the browser webclient on the demo (cairn://p/rs/82), and the
+  direct-path probe on the run machine on the night (cairn://p/rs/96).
 - **Second-run slips in the lab** (rs/62): the second open-loop iron run in one lab session
   slipped 17-40 times in 60 ores, while the first was clean whichever script version went
   first. Not explained. Infinite run is on by default (`NODE_INFINITE_RUN`), so run energy

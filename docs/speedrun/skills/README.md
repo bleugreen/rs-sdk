@@ -27,16 +27,17 @@ tick manipulation" means the knife-on-logs starter ([tick-manipulation.md](tick-
 
 | Skill | Headline method | Start level (on-route quests) | Ticks to 99, normal | Ticks to 99, with tick manipulation | Basis | Helper supplies | Document |
 |---|---|---|---|---|---|---|---|
-| Agility | Gnome course to 22 plus an Agility potion for Grand Tree's level-25 check (122 ticks), then the Wilderness course 75 -> 99 | 75 (Grand Tree, 7,900 base) | **about 4,085** + 122 before the quest (67-tick laps, the Ashburn-latency estimate); 4,024 at the 66-tick lap measured with 1-tick latency; 4,512 at the 74-tick lap implied by home-to-demo latency | n/a (no gathering clock) | Lap measured at 300 ms on bbs, fixed lite client (`agility-course.ts`, 9 of 9 clean laps); totals inferred (`agility-model.ts --lap=N`) | 1 Agility potion; about 10-12 sharks | [agility.md](agility.md) |
+| Agility | Gnome course to 22 plus an Agility potion for Grand Tree's level-25 check (122 ticks), then the Wilderness course 75 -> 99 | 75 (Grand Tree, 7,900 base) | **about 4,024** + 122 before the quest (66-tick laps measured with 1-tick latency, the direct path the run uses for obstacles); 4,512 at the 74-tick lap implied by relay latency from home | n/a (no gathering clock) | Lap measured at 300 ms on bbs, fixed lite client (`agility-course.ts`, 9 of 9 clean laps); totals inferred (`agility-model.ts --lap=N`) | 1 Agility potion; about 10-12 sharks | [agility.md](agility.md) |
 | Mining | Doric's Quest, then iron with a rune pickaxe on the six-rock cluster south of the Ardougne zoo, on a planned rotation | 49 (Doric's Quest, 1,300) | **about 4,034** (adjacent-rock starter, 3.61 ticks per ore) | **about 3,360** (knife, 3.00 ticks per ore) | Rates measured at 300 ms with the demo's respawn 13 emulated (`mining-rotation.ts`, `tickmanip-mine.ts`, 200+ ores each, bgsrv-mac); totals inferred (`mining-model.ts`) | Doric's items (6 clay, 4 copper ore, 2 iron ore); rune pickaxe; knife and about 5 normal logs | [mining.md](mining.md) |
 | Woodcutting | Rune axe from level 1: normal trees to 15, oaks 15-73 (Taverley, 2914,3494), willows 73-99 | 1 (no Woodcutting quest on the route) | **about 3,958** | **about 3,028** | Cadence measured by engine trace at 300 ms (5,000+ rolls); totals inferred (`woodcutting-model.ts`); knife ratio 0.765 measured on willows (`tickmanip-cycle.ts`) | Rune axe; knife and 1 normal log | [woodcutting.md](woodcutting.md) |
 | Fishing | Fly fishing at the Lumbridge river, dropping each catch on the tick after it | 78 (Sea Slug 7,175 + Fishing Contest 2,437) | **about 3,410** | **about 2,000** (2,032 and 1,978 in two runs) | Measured segments at 300 ms (`fishing-rate.ts`, 673 catches; `tickmanip-cycle.ts`, two runs from 9,612 base) | Fly fishing rod; about 520 feathers; knife and 1 normal log | [fishing.md](fishing.md) |
 | Thieving | Knights of Ardougne in the East Ardougne market, clicking every tick | 57 (Fight Arena, 2,175) | **about 1,950-2,000** | n/a (no gathering clock) | 55 -> 99 measured end to end: 1,999 ticks at 300 ms on bbs (1 run), 2,176-2,226 at 100 ms (3 runs); the 57 start is from `thieving-model.ts` | About 20 sharks | [thieving.md](thieving.md) |
-| **Total** | | | **about 17,580** | **about 14,570** | Sum of the rows (Agility at 67-tick laps plus its 122 pre-quest ticks; Thieving at 1,975) | | |
+| **Total** | | | **about 17,520** | **about 14,510** | Sum of the rows (Agility at 66-tick laps plus its 122 pre-quest ticks; Thieving at 1,975) | | |
 
 The tick-manipulation column saves about 3,010 ticks: Fishing about 1,410, Woodcutting
-about 930, Mining about 670. It holds only from a host with Ashburn-like latency to the
-demo; from bbs the knife measured no gain on the demo. See the first open question.
+about 930, Mining about 670. Every figure in this table is a direct-path figure (reactions
+land on the next tick), which is how the run drives its reactive loops; driven through the
+SDK relay, the knife measured no gain on the demo. See the first open question.
 
 Decisions this table rests on:
 
@@ -68,34 +69,44 @@ unless that row says it fits the knife loop.
 
 ## Open questions
 
-1. **Tick manipulation on the demo server.** Every lab figure assumes a reaction lands on
-   the next tick. From bbs to the demo, 0 of 60 probe trials did (25 at 2 ticks, 35 at
-   3); from Azure eastus (Ashburn), 51 of 60 did and 9 took 2 ticks (`tickmanip-latency.ts`,
-   [../LAB.md](../LAB.md)). A constant latency cancels for the self-anchored knife loops;
-   the **spread** matters. A late starter costs about one plain cycle and does not lose
-   the lock (read in `cut_logs.rs2:83-85`; measured by holding 15% of starters one tick:
-   willows 5.76 ticks per log against 5.03 on time and 5.84 plain, fly 4.92 against 3.86
-   and 6.61, iron 3.51 against 3.53; [tick-manipulation.md](tick-manipulation.md),
-   "Run-time host gate"). So the knife beats plain when the share of packets at the
-   dominant latency exceeds about 0.75 for Woodcutting, 0.60 for fly fishing and 0.39 for
-   iron (inferred from those measurements). Ashburn's 85% clears all three. **Measured on
-   the demo from bbs** (throwaway account, normal trees, 5 rounds x 20 logs per condition,
-   2026-10-21): 70% of 480 probe trials at the dominant 2 ticks, and the forced knife read
-   5.44 ticks per expected roll against 5.67 plain, within noise (both 5.5 without the
-   first round). The run-time gate (`speedrun/lib/hostgate.ts`, merged from
-   cairn://p/rs/62) keeps the knife off there, re-probes every 500 ticks, and switches it
-   off after 30 drops that do not beat plain, so the run can never do worse than the normal
-   column. Still open: the knife on the demo **from the run host**. Run
-   `bash docs/speedrun/scripts/tickmanip-demo.sh <bot>` (about 25 minutes) there before
-   counting on the tick-manipulation column.
+1. **Tick manipulation on the demo server.** The knife loops need each reaction to land on
+   the next tick. A paired sample from Azure eastus (Ashburn) on 2026-10-21 (cairn://p/rs/86,
+   about 1,655 online, TCP 2 ms to the demo) separates the two paths. Reactions issued
+   in-process on the engine websocket landed 60 of 60 on the next tick. The same runner
+   through a private loopback gateway and the lite client landed 32 at 1 tick and 28 at 2.
+   So the **SDK relay costs a tick about half the time on any host**, the earlier Ashburn
+   reading of 51 of 60 was a lucky draw through the relay, and the server's tick does not
+   overrun at that player count. From bbs through the relay, none of 60 landed at 1 (25 at
+   2, 35 at 3).
+
+   **Decision (cairn://p/rs/main):** in the scored run the reactive loops (the knife loops,
+   the pickpocket re-click, Agility obstacles) run as in-page tick programs in the browser
+   webclient (cairn://p/rs/82), and the SDK drives only the non-reactive steps. Every lab
+   figure in these documents was taken with 1-tick reactions, so it is a direct-path
+   figure and applies to that setup. Do not plan a relay-driven knife loop on the demo.
+   Before the run, probe the direct path on the run machine at the actual player count:
+   it must read 60 of 60 at 1 tick (floor 58). The path-aware probe is cairn://p/rs/96.
+
+   **Relay fallback**, if the run ever has to drive the loops through the SDK: a late
+   starter costs about one plain cycle and does not lose the lock (read in
+   `cut_logs.rs2:83-85`; measured by holding 15% of starters one tick: willows 5.76 ticks
+   per log against 5.03 on time and 5.84 plain, fly 4.92 against 3.86 and 6.61, iron 3.51
+   against 3.53; [tick-manipulation.md](tick-manipulation.md), "Run-time host gate"). So
+   the knife beats plain when the share of packets at the dominant latency exceeds about
+   0.75 for Woodcutting, 0.60 for fly fishing and 0.39 for iron (inferred). Measured on the
+   demo from bbs through the relay (throwaway account, normal trees, 5 rounds x 20 logs per
+   condition): 70% of 480 probe trials at the dominant 2 ticks, and the forced knife read
+   5.44 ticks per expected roll against 5.67 plain, within noise. The relay gate
+   (`speedrun/lib/hostgate.ts`, cairn://p/rs/62) keeps the knife off there, so a
+   relay-driven run cannot do worse than the normal column.
 2. **Browser client.** All figures are on the headless lite client. The run drives the
    browser webclient, which froze under rapid-fire input in this lab and lacks the #20
    tick-publication fix. Main's cairn://p/rs/82 is porting the fix and proving the knife
    loops and the 2-tick pickpocket in a visible tab ([../LAB.md](../LAB.md), "Which
    client a number was taken on").
-3. **Reactions cost more on the demo.** Agility pays one latency per obstacle: 66 ticks
-   per lap at 1-tick latency, about 74 at home-to-demo latency, about 67 from Ashburn
-   (inferred). The same applies to level-up dismissals, re-clicks after a felled tree or
+3. **Reactions cost more through the relay.** Agility pays one latency per obstacle: 66
+   ticks per lap at 1-tick latency (the direct path, which the run uses for obstacles), about
+   74 through the relay from home (inferred). The same applies to level-up dismissals, re-clicks after a felled tree or
    a stun, and drops. Main's sendClickDialog(0, {blind:true}) (rs/51) is the likely fix
    for level-ups; [woodcutting.md](woodcutting.md) measured 5 ticks per level-up against
    the 1 it models.

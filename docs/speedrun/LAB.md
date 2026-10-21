@@ -109,8 +109,9 @@ average 100+ the knife iron rotation measured 8.6 ticks per ore against 3.00 on 
 host (`skills/tick-manipulation.md` section 6). Run
 `bun docs/speedrun/scripts/tickmanip-latency.ts <bot>` first: against a local lab engine
 every trial should read 1 (a packet sent on label c lands on tick c+1), and the publication
-interval should sit at the tick rate. Against the demo, 2 is normal and what counts is the
-share at the dominant offset (the run-time gate, `skills/tick-manipulation.md` section 6).
+interval should sit at the tick rate. Against the demo through the SDK relay, 2 is normal
+and what counts is the share at the dominant offset (the relay fallback of the run-time
+gate, `skills/tick-manipulation.md` section 6).
 Say in the document which host each number came from.
 
 Measured on 2026-10-21 (`tickmanip-latency.ts`, 60 trials, lite client with the
@@ -128,6 +129,16 @@ third of their 2-tick success gaps). On the demo the bot's own sends are as fast
 as in the lab; the extra 1-2 ticks come after the packet leaves the host. A loop
 that reacts to observed state (Agility obstacles, dialogue) pays them on every
 step. A loop that clicks blindly every tick (pickpocketing) does not.
+
+**Direct path and relay.** Those extra ticks are the SDK relay (runner, gateway, lite
+client), not the host or the server's tick. From Azure eastus at about 1,655 online
+(cairn://p/rs/86), reactions issued in-process on the engine websocket landed 60 of 60 on
+the next tick, and through a private loopback gateway plus the lite client 32 at 1 and 28
+at 2. A local lab engine gives 1-tick reactions through the relay, so **every loop figure
+taken in this lab is a direct-path figure**. The scored run runs its reactive loops (knife
+loops, pickpocket re-click, Agility obstacles) as in-page tick programs in the browser
+webclient (cairn://p/rs/82) for that reason. Don't plan a relay-driven knife loop against
+the demo.
 
 Long-lived terminals may not be pinnable to the executor that runs your
 scripts. In that case, run the whole lab inside one pinned batch:
