@@ -54,13 +54,16 @@ await runScript(async ({ bot, sdk }) => {
     for (const seg of SEGS) {
         if (seg === 'H') {
             await reset({ mm_main: 3, mm_zooknock: 5 }, [['shark', 5]], [2767, 2770]);
-            add(await locTalkAt(sdk, 2767, 2769, /search/i, [/^Yes$/], { idle: 2, done: s => invCount(s, /dentures/i) > 0 }), 'H1 denture crate');
-            add(await locTalkAt(sdk, 2769, 2765, /search/i, [/Yes, I'm sure/], { idle: 3, done: s => pos(s).z > 9000 }), 'H2 crate over the hole -> cellar');
+            let lastK = '';
+            const dump = sdk.onStateUpdate(s => { const k = `${JSON.stringify(pos(s))} ${s.dialog.isOpen ? (s.dialog.isWaiting ? 'W ' : '') + (s.dialog.allComponents ?? []).map(c => c.text).join(' ').slice(0, 50) : '-'} modal=${s.modalOpen}`; if (k !== lastK) console.log('S', s.tick, k); lastK = k; });
+            add(await locTalkAt(sdk, 2767, 2769, /search/i, [/^Yes$/], { idle: 5, done: s => invCount(s, /dentures/i) > 0 }), 'H1 denture crate');
+            add(await locTalkAt(sdk, 2769, 2765, /search/i, [/Yes, I'm sure/], { idle: 8, done: s => pos(s).z > 9000 }), 'H2 crate over the hole -> cellar');
             console.log('cellar landing', JSON.stringify(pos(sdk.getState())), 'hp', sdk.getState()!.player!.hp);
+            dump();
             add(await walk(bot, sdk, 2782, 9171, 1), 'H3 walk to mould crate');
-            add(await locTalkAt(sdk, 2782, 9172, /search/i, [/^Yes$/], { idle: 2, done: s => invCount(s, /mould/i) > 0 }), 'H4 mould crate');
+            add(await locTalkAt(sdk, 2782, 9172, /search/i, [/^Yes$/], { idle: 5, done: s => invCount(s, /mould/i) > 0 }), 'H4 mould crate');
             add(await walk(bot, sdk, 2786, 9171, 1), 'H5 walk to banana crate');
-            add(await locTalkAt(sdk, 2786, 9170, /search/i, [/^Yes$/], { idle: 2, done: s => invCount(s, /^banana$/i) > 0 }), 'H6 one banana crate');
+            add(await locTalkAt(sdk, 2786, 9170, /search/i, [/^Yes$/], { idle: 5, done: s => invCount(s, /^banana$/i) > 0 }), 'H6 one banana crate');
             add(await walk(bot, sdk, 2798, 9170, 1), 'H7 walk to eastern rope');
             add(await locOpAt(sdk, 2798, 9169, /climb/i, s => pos(s).z < 9000, 20), 'H8 climb rope');
             console.log('up at', JSON.stringify(pos(sdk.getState())));
