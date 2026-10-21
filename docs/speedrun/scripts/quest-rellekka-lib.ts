@@ -57,9 +57,10 @@ export async function finishDialogue(sdk: BotSDK, choices: RegExp[] = []): Promi
     return { pages: d.pages, options: d.options, runs: runsOf(d.transcript), transcript: d.transcript };
 }
 
-export async function findLoc(sdk: BotSDK, x: number, z: number, op?: string, radius = 15) {
+/** A loc at (x,z); several can share a tile (a wall and its decoration), so filter by op or name. */
+export async function findLoc(sdk: BotSDK, x: number, z: number, op?: string, radius = 15, name?: RegExp) {
     const locs = await sdk.scanNearbyLocs(radius);
-    const loc = locs.find(l => l.x === x && l.z === z && (!op || l.options.includes(op)));
+    const loc = locs.find(l => l.x === x && l.z === z && (!op || l.options.includes(op)) && (!name || name.test(l.name)));
     if (!loc) throw new Error(`no loc${op ? ` with ${op}` : ''} at ${x},${z} (near ${JSON.stringify(L.pos(sdk))})`);
     return loc;
 }
