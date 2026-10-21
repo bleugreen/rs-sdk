@@ -183,8 +183,9 @@ export const DEFAULT_MAX_PRICE: Record<string, number> = {
     'Chaos rune': 45,
     'Law rune': 120,
     'Cosmic rune': 30,
-    // Blood at the guild is still far below the GE (~600) at the 6x cap.
-    'Blood rune': 300,
+    // Blood at the guild is still far below the GE (~600) at its 6x ceiling of 300. The cap
+    // sits just above the ceiling: the buyer's next-unit estimate overshoots it by a fraction.
+    'Blood rune': 310,
     'Staff of water': 1600,
     'Staff of fire': 1600,
     'Staff of earth': 1600
