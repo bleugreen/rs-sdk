@@ -16,6 +16,7 @@ ROLE_OPTIONS='{"target":650,"maxPrice":410}' bun speedrun/helpers/rune-arrows.ts
 | `maxPrice` | 410 | Most to pay for one arrow. |
 | `bankEvery` | 100 | Arrows bought between trips to the Seers' bank; also how many arrows' worth of coins it carries. |
 | `crossingHitpoints` | 30 | Hitpoints to train before White Wolf Mountain (`speedrun/lib/kandarin.ts`). |
+| `extras` | none | More of Dargaud's stock to buy between rune-arrow waits, each `{"item", "target", "maxPrice"}`: a holding target and a unit cap. Rune arrows come first; while extras are wanted, each rune-arrow wait is 400 ticks instead of 1,200, and each bank trip carries coins for up to 300 of each. The role runs until rune arrows and every extra reach their targets. |
 
 The account needs the coins in its bank. A fresh account works: the role trains
 it first.
@@ -35,6 +36,14 @@ arrow missing. The restock rate, not the price, sets throughput: one arrow per
 A cap a few gp over 400 therefore buys every arrow within a restock or two of a
 full shelf, at about 405 gp each. A higher cap only front-loads: draining 100
 arrows from a full shelf costs about 600 gp each.
+
+That arithmetic holds only for an uncontended shelf. Live on the demo
+(cairn_h91, 2026-10-21) someone outside the fleet took about every restock:
+the shelf sat at 329-340 for an hour, so the next arrow cost 640-684 gp, and a
+410 cap bought nothing. At a 700 cap the role won about 75 arrows an hour at
+700 gp each. Read the shelf before choosing a cap. The role logs
+`perHour` and `averagePrice` for each item with every `buying` line, which
+shows the share of restocks it is winning.
 
 The buyer remembers the price it measured, per shop and item, across calls
 (`Buyer.buyAtShop`). Without that, each wait for a restock would start with a
