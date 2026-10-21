@@ -434,16 +434,31 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         let eats = 0;
         let wasVisible = true;
         const t0 = sdk.getState()!.tick;
+        // The boss fades (type change to "Ghost", no Attack op) and runs to
+        // another part of the room on half of the hits it takes
+        // (hauntedmine_boss_ghost.rs2 ai_queue1). The type change drops the
+        // player's attack, while the client keeps facing it, so the combat
+        // target in the bot state is no evidence of attacking: re-click
+        // whenever it is attackable and we have not swung for 5 ticks.
+        const atk0 = sdk.getSkill('attack')!.experience;
+        let lastSwing = t0;
+        let lastClick = -99;
+        let died = false;
+        const hpLog: string[] = [];
         while (sdk.getState()!.tick - t0 < 1500) {
             const s = sdk.getState()!;
             if (messageSince(sdk, t0, /killing strike/i) || s.dialog?.isOpen) break;
+            if (messageSince(sdk, t0, /you are dead/i)) { died = true; break; }
             const me = s.player!;
-            if (me.hp <= Math.max(20, Math.floor(STATS * 0.4))) {
+            if (me.animId !== -1) lastSwing = s.tick;
+            if ((s.tick - t0) % 25 === 0) hpLog.push(`${s.tick - t0}:${me.hp}/${sdk.findNearbyNpc(/treus dayth/i)?.healthPercent ?? '?'}%`);
+            if (me.hp <= 30) {
                 const food = sdk.findInventoryItem(/shark/i);
                 if (food) {
                     await sdk.sendUseItem(food.slot, 1);
                     eats++;
                     await ticks(sdk, 1);
+                    continue;
                 }
             }
             const boss = sdk.findNearbyNpc(/treus dayth/i);
@@ -453,14 +468,17 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
                 await sdk.waitForStateUpdate();
                 continue;
             }
+            const reappeared = !wasVisible;
             wasVisible = true;
-            if (me.combat?.targetIndex !== boss.index || !me.combat?.inCombat) {
+            if (reappeared || (s.tick - lastSwing >= 5 && s.tick - lastClick >= 3)) {
                 await sdk.sendInteractNpc(boss.index, 2);
                 swings++;
+                lastClick = s.tick;
             }
             await sdk.waitForStateUpdate();
         }
-        L.note(`attack clicks ${swings}, fade-outs seen ${moves}, sharks eaten ${eats}, hp left ${sdk.getState()!.player!.hp}`);
+        const dealt = Math.round((sdk.getSkill('attack')!.experience - atk0) / 100); // 4 xp per damage, 25x
+        L.note(`attack clicks ${swings}, fade-outs ${moves}, sharks ${eats}, damage dealt ~${dealt}, hp left ${sdk.getState()!.player!.hp}${died ? ', DIED' : ''}; hp/boss% ${hpLog.join(' ')}`);
         const kd = await dialog(sdk, [], { settle: 1 });
         L.add(kd);
         L.end();
