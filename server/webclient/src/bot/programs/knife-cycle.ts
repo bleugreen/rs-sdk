@@ -20,6 +20,24 @@
 // phase (a late starter, or two ticks decoded at once during a server overrun)
 // re-anchors the schedule on that roll at once.
 //
+// Bury (`bury`, Woodcutting on oak and willow): on the roll label R send
+// knife-on-logs, the button, a drop and a bone's Bury, and on R+2 the tree click
+// alone. The knife still sets the clock to R+3; the bury lands after it on R+1,
+// clears the interaction and the queued fletch, and delays the player through R+2
+// (bury_bone.rs2: p_stopaction, p_delay(0)), so nothing may land on R+2. The click
+// lands on R+3 itself, where the first-click label finds the clock due and rolls at
+// once (woodcut.rs2:97-98), so the 3-tick lattice holds with a bone every cycle
+// (docs/speedrun/research/bones-placement.md section 2). It also closes a level-up
+// page. With no bone in the pack the roll label sends the plain knife bundle, which
+// rolls on the same R+3, so running out loses no label. Fishing has no such branch
+// (the fly lock breaks), and a normal tree re-bootstraps on every log, so only the
+// methods marked `buryOnRoll` accept it.
+//
+// A non-depleting tree that falls (one log in 8, or another player's axe) leaves
+// the lock intact: the cycle runs on the player's clock, so a live tree clicked by
+// the roll tick takes the roll. The next scheduled click goes to a live tree, or,
+// when this cycle's click already went to the fallen one, a re-click goes out now.
+//
 // Plain (`technique: 'plain'`): click the target, re-click only when it is gone,
 // the player went idle, or after dropping a full inventory.
 
@@ -46,14 +64,16 @@ export interface CycleMethod {
     depletes?: boolean;
     /** Success chance per roll: stat_random bounds, or 'fly' (salmon from 30, then trout). */
     catchChance?: 'fly' | [number, number];
+    /** A click landing on the roll tick rolls at once, so a bury can take the starter's click slot (see `bury`). */
+    buryOnRoll?: boolean;
 }
 
 /** Presets (tickmanip-cycle.ts METHODS, minus the lab teleports and kit). */
 export const CYCLE_METHODS: Record<string, CycleMethod> = {
-    willow: { skill: 'woodcutting', kind: 'loc', target: '^willow', option: '^chop', product: '^willow logs$', clickOnRoll: false, r0: 3, plainCycle: 4, lockWindow: 18 },
+    willow: { skill: 'woodcutting', kind: 'loc', target: '^willow', option: '^chop', product: '^willow logs$', clickOnRoll: false, r0: 3, plainCycle: 4, lockWindow: 18, buryOnRoll: true },
     // A normal tree always falls on its first log, so each log re-bootstraps on the next tree.
     tree: { skill: 'woodcutting', kind: 'loc', target: '^(tree|dead tree|evergreen)$', option: '^chop', product: '^logs$', clickOnRoll: false, r0: 3, plainCycle: 4, lockWindow: 18, depletes: true, catchChance: [64, 200] },
-    oak: { skill: 'woodcutting', kind: 'loc', target: '^oak$', option: '^chop', product: '^oak logs$', clickOnRoll: false, r0: 3, plainCycle: 4, lockWindow: 18 },
+    oak: { skill: 'woodcutting', kind: 'loc', target: '^oak$', option: '^chop', product: '^oak logs$', clickOnRoll: false, r0: 3, plainCycle: 4, lockWindow: 18, buryOnRoll: true },
     fly: { skill: 'fishing', kind: 'npc', target: '^fishing spot$', option: '^lure$', product: '^raw ', clickOnRoll: false, r0: 4, plainCycle: 5, lockWindow: 15, catchChance: 'fly' },
     cage: { skill: 'fishing', kind: 'npc', target: '^fishing spot$', option: '^cage$', product: '^raw ', clickOnRoll: true, r0: 4, plainCycle: 6, lockWindow: 45 }
 };
@@ -63,6 +83,9 @@ export const SHAFTS_BUTTON = 8889;
 
 const KNIFE = /^knife$/i;
 const LOGS = /^logs$/i;
+const BURY = /^bury$/i;
+/** Any buryable bones; the run's are dragon bones. */
+export const DEFAULT_BONES = 'bones$';
 
 export function catchChance(method: CycleMethod, level: number): number | undefined {
     const c = method.catchChance;
@@ -121,6 +144,9 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
     const productRe = regex(method.product, '', 'method.product');
     // When the product is the knife's own log, keep a few for the starter.
     const keepProducts = num(params.keepProducts, productRe.test('Logs') ? 3 : 0, 'keepProducts');
+    const bonesRe = params.bury === undefined || params.bury === false ? null : regex(params.bury === true ? DEFAULT_BONES : params.bury, DEFAULT_BONES, 'bury');
+    if (bonesRe && technique !== 'knife') throw new Error('bury needs the knife technique (a plain loop with a bury is not implemented)');
+    if (bonesRe && !method.buryOnRoll) throw new Error(`bury is not supported for this method: its first click does not roll on a due clock (presets that allow it: ${Object.keys(CYCLE_METHODS).filter(k => CYCLE_METHODS[k]!.buryOnRoll).join(', ')})`);
 
     let plain = technique === 'plain';
     let started = false;
@@ -144,6 +170,16 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
     let levelUps = 0;
     let fellBack: string | undefined;
     let lastTick = 0;
+    let switches = 0;
+    // Bury: the label the cycle's lone click is due on (R+2), and what the bones did.
+    let clickDue: number | null = null;
+    let burySent = 0;
+    let buried = 0;
+    let noBoneCycles = 0;
+    let lateClicks = 0;
+    let prayerLevelUps = 0;
+    let lastPrayerXp = 0;
+    let lastPrayerLevel = 0;
     // Locs not to click until a tick: a tree that just fell (the browser state still lists
     // it on the label that shows its log) or one that yielded nothing (out of reach).
     const avoid = new Map<string, number>();
@@ -197,6 +233,14 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
         ctx.send({ type: 'clickComponent', componentId: SHAFTS_BUTTON }, `button ${SHAFTS_BUTTON}`);
         return true;
     };
+    const bones = (s: BotWorldState): InventoryItem[] => (bonesRe ? s.inventory.filter(i => bonesRe.test(i.name) && i.optionsWithIndex.some(o => BURY.test(o.text))) : []);
+    const buryOne = (ctx: ProgramContext): boolean => {
+        const b = bones(ctx.state)[0];
+        if (!b || !ctx.send({ type: 'useInventoryItem', slot: b.slot, optionIndex: itemOp(b, BURY, 1) }, `bury ${b.name}`)) return false;
+        burySent++;
+        ctx.count('burySent');
+        return true;
+    };
     const breakAt = (t: number) => rolls.break(t);
 
     const summary = () => {
@@ -216,6 +260,10 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
             moves,
             levelUps,
             phase: curPhase,
+            switches,
+            ...(bonesRe
+                ? { buried, burySent, buriesPerTick: lastTick > startTick ? Math.round((buried / (lastTick - startTick)) * 1000) / 1000 : 0, noBoneCycles, lateClicks, prayerLevelUps }
+                : {}),
             ...(fellBack ? { fellBack } : {})
         };
     };
@@ -232,6 +280,8 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
                 startTick = t;
                 lastXp = skillXp(s, method.skill);
                 lastLevel = baseLevel(s, method.skill);
+                lastPrayerXp = skillXp(s, 'prayer');
+                lastPrayerLevel = baseLevel(s, 'prayer');
                 if (!plain && !invItem(s, KNIFE)) return ctx.fault('no knife in the inventory');
                 if (!plain && !invItem(s, LOGS)) return ctx.fault('no normal logs in the inventory');
             }
@@ -239,12 +289,34 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
             const xp = skillXp(s, method.skill);
             let xpNow = false;
             if (xp > lastXp) {
+                const prev = rolls.lastTick;
                 rolls.event(t);
                 xpNow = true;
                 lastXp = xp;
                 ctx.count('rolls');
+                // The roll cadence: a lost 3-tick lock shows as gaps over 3 and a rising span figure.
                 ctx.gauge('ticksPerRoll', rolls.ticksPerEvent);
+                if (prev !== null) ctx.gauge('lastRollGap', t - prev);
+                const g = rolls.stats();
+                if (g.events > 1) ctx.gauge('ticksPerRollSpan', Math.round((g.span / (g.events - 1)) * 1000) / 1000);
                 ctx.progress();
+            }
+            if (bonesRe) {
+                // One bury per Prayer xp drop (the xp comes on the tick after the bury lands).
+                const pxp = skillXp(s, 'prayer');
+                if (pxp > lastPrayerXp) {
+                    buried++;
+                    ctx.count('buried');
+                    lastPrayerXp = pxp;
+                }
+                const plvl = baseLevel(s, 'prayer');
+                if (plvl > lastPrayerLevel) {
+                    prayerLevelUps++;
+                    ctx.count('prayerLevelUps');
+                    lastPrayerLevel = plvl;
+                }
+                ctx.gauge('bonesLeft', bones(s).length);
+                ctx.gauge('buriesPerTick', t > startTick ? Math.round((buried / (t - startTick)) * 1000) / 1000 : 0);
             }
             const lvl = baseLevel(s, method.skill);
             if (lvl > lastLevel) {
