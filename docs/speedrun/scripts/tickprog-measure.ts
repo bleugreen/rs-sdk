@@ -19,6 +19,10 @@
 //                ticksPerExpectedRoll is the figure to set against the cadence; on the trees it
 //                needs an axe worn or carried, and the result names the one it used)
 //   pickpocket   Ardougne knight, eat in windows  --level=55 --rolls=300 [--hold=1]
+//                [--pack=bury,charge[,arrows]] runs rs/106's stun pack (stunActions) with a
+//                ::give kit: dragon bones, blood and air runes, staff of fire, Magic 80 held
+//                (Mage Arena set), and for arrows rune arrowheads at Fletching 75 held. Bones
+//                and sharks are topped up by ::give (off the scored clock, like oak --bury)
 //   agility      Wilderness course                --laps=10 [--course=gnome]
 //
 // The page reacts on its own decoded tick; this script only sets up, starts the program
@@ -189,25 +193,75 @@ await runScript(async ({ bot: actions, sdk }) => {
         }
         case 'pickpocket': {
             const level = num('level', 55);
+            const pack = flag('pack')?.split(',').filter(Boolean) ?? [];
+            const arrows = pack.includes('arrows');
+            const SHARKS = pack.length ? 6 : 26;
             if (!DEMO) {
                 await tele('0,41,51,29,37', 2653, 3301);
+                await clearInventory();
                 await say('::setstat hitpoints 40');
                 await say(`::setstat thieving ${level}`);
-                await say('::give shark 26');
+                await say(`::give shark ${SHARKS}`);
+                if (pack.length) {
+                    await say('::setstat magic 80');
+                    await say('::setstat prayer 43');
+                    await say('::setvar magearena 8');
+                    await say('::give staff_of_fire 1');
+                    await sdk.waitForTicks(2);
+                    const staff = sdk.getState()?.inventory.find(i => /^staff of fire$/i.test(i.name));
+                    if (staff) { await sdk.sendUseItem(staff.slot, staff.optionsWithIndex.find(o => /wield/i.test(o.text))?.opIndex ?? 2); await sdk.waitForTicks(2); }
+                    await say('::give bloodrune 60000');
+                    await say('::give airrune 60000');
+                    if (arrows) { await say('::setstat fletching 75'); await say('::give headless_arrow 60000'); await say('::give rune_arrowheads 60000'); }
+                    await say(`::give dragon_bones ${28 - (sdk.getState()?.inventory.length ?? 28) - 1}`);
+                }
             }
             // Hold the level like the lite lab script (--hold): the cheat goes over the relay
             // beside the program's own clicks, so the sample stays at one level.
             const hold = !DEMO && flag('hold', '1') !== '0';
-            const started = await startProgram(sdk, 'pickpocket', { rolls: num('rolls', 300), food: '^shark$', heal: 20 });
+            const params: Record<string, unknown> = { rolls: num('rolls', 300), food: '^shark$', heal: 20 };
+            if (pack.length) params.stunActions = pack;
+            const started = await startProgram(sdk, 'pickpocket', params);
             let last = level;
+            // What the pack's actions did, from the skills' xp (only rises: a ::setstat hold lowers it)
+            const xpOf = (s: { skills: Array<{ name: string; experience: number }> }, n: string) => s.skills.find(k => k.name === n)?.experience ?? 0;
+            const s0 = sdk.getState()!;
+            const prev = { Prayer: xpOf(s0, 'Prayer'), Magic: xpOf(s0, 'Magic'), Fletching: xpOf(s0, 'Fletching') };
+            const gained = { Prayer: 0, Magic: 0, Fletching: 0 };
+            let refilling = false;
             const un = sdk.onStateUpdate(s => {
                 const lv = s.skills.find(k => k.name === 'Thieving')?.baseLevel ?? level;
                 if (hold && lv !== level && lv !== last) void sdk.sendSay(`::setstat thieving ${level}`);
                 last = lv;
+                if (!pack.length || DEMO) return;
+                for (const n of ['Prayer', 'Magic', 'Fletching'] as const) {
+                    const xp = xpOf(s, n);
+                    if (xp > prev[n]) gained[n] += xp - prev[n];
+                    prev[n] = xp;
+                }
+                const lvl = (n: string) => s.skills.find(k => k.name === n)?.baseLevel ?? 0;
+                if (lvl('Magic') >= 99) void sdk.sendSay('::setstat magic 80');
+                if (arrows && lvl('Fletching') >= 99) void sdk.sendSay('::setstat fletching 75');
+                if (refilling) return;
+                const bones = s.inventory.filter(i => /^dragon bones$/i.test(i.name)).length;
+                const sharks = s.inventory.filter(i => /^shark$/i.test(i.name)).length;
+                const free = 28 - s.inventory.length;
+                if ((pack.includes('bury') && bones <= 3 && free >= 6) || sharks <= 2) {
+                    refilling = true;
+                    const give = async () => {
+                        if (sharks <= 2) await sdk.sendSay(`::give shark ${Math.min(4, free)}`);
+                        const left = free - (sharks <= 2 ? Math.min(4, free) : 0) - 1;
+                        if (pack.includes('bury') && left > 0) await sdk.sendSay(`::give dragon_bones ${left}`);
+                        await sdk.waitForTicks(3);
+                    };
+                    void give().finally(() => { refilling = false; });
+                }
             });
             try {
                 const end = await awaitProgram(sdk, started.runId, { onProgress: progress });
-                return report('pickpocket', end);
+                report(pack.length ? `pickpocket +${pack.join('+')}` : 'pickpocket', end);
+                if (pack.length) console.log(`pack: ${(gained.Prayer / (72 * 25)).toFixed(0)} bones buried (Prayer xp), ${(gained.Magic / (180 * 25)).toFixed(0)} Charges (Magic xp), ${(gained.Fletching / (10 * 25 * 15)).toFixed(0)} rune arrow actions (Fletching xp)`);
+                return;
             } finally {
                 un();
             }
