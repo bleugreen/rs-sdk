@@ -15,10 +15,12 @@ export async function converseSeq(sdk: BotSDK, start: () => Promise<unknown>, an
     let lastPage = '';
     let pages = 0, choices = 0, next = 0;
     const unanswered: string[][] = [];
+    let seen = false;
     const unsub = sdk.onStateUpdate(s => {
         const d = s.dialog;
         if (!d.isOpen || d.isWaiting || !d.pageId || d.pageId === lastPage) return;
         lastPage = d.pageId;
+        seen = true;
         if (d.options.length > 1) {
             const want = answers[next];
             const opt = want ? d.options.find(o => want.test(o.text)) : undefined;
@@ -33,7 +35,8 @@ export async function converseSeq(sdk: BotSDK, start: () => Promise<unknown>, an
     });
     const t0 = now(sdk);
     await start();
-    const r = await waitUntil(sdk, until, maxTicks);
+    // `until` only counts once the conversation has shown its first page
+    const r = await waitUntil(sdk, s => seen && until(s), maxTicks);
     unsub();
     return { ticks: r ? r.tick - t0 : null, pages, choices, answered: next, unanswered, at: pos(r?.state ?? sdk.getState()) };
 }
@@ -45,11 +48,19 @@ export async function talk(sdk: BotSDK, npc: RegExp) {
     await sdk.sendInteractNpc(n.index, op.opIndex);
 }
 
-/** Click the nearest loc whose name and option match. */
-export async function clickLoc(sdk: BotSDK, name: RegExp, op: RegExp, near?: { x: number; z: number }) {
+/**
+ * Click the nearest loc whose name and option match. `fallback` addresses a
+ * loc the lite client does not list (the Lady Lumbridge's gangplank and deck
+ * ladder sit on a bridge-flagged map level) by tile and loc id (loc.pack).
+ */
+export async function clickLoc(sdk: BotSDK, name: RegExp, op: RegExp, near?: { x: number; z: number }, fallback?: { x: number; z: number; id: number; op: number }) {
     const locs = sdk.getState()!.nearbyLocs.filter(l => name.test(l.name) && l.optionsWithIndex.some(o => op.test(o.text)));
     const key = (l: { x: number; z: number; distance: number }) => near ? Math.max(Math.abs(l.x - near.x), Math.abs(l.z - near.z)) : l.distance;
     const loc = locs.sort((a, b) => key(a) - key(b))[0];
+    if (!loc && fallback) {
+        await sdk.sendInteractLoc(fallback.x, fallback.z, fallback.id, fallback.op);
+        return { x: fallback.x, z: fallback.z, id: fallback.id, viaFallback: true };
+    }
     if (!loc) throw new Error(`loc not found ${name} ${op} near ${JSON.stringify(pos(sdk.getState()))}`);
     await sdk.sendInteractLoc(loc.x, loc.z, loc.id, loc.optionsWithIndex.find(o => op.test(o.text))!.opIndex);
     return loc;
