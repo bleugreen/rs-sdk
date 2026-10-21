@@ -482,23 +482,57 @@ class AccountRunner {
     private child: Subprocess<'ignore', 'pipe', 'pipe'> | null = null;
     private sdk: BotSDK | null = null;
     private bot: BotActions | null = null;
-    private roleCtl: AbortController | null = null;
     private lastRoleActivity = 0;
     private loop: Promise<void> | null = null;
     private readonly stopCtl = new AbortController();
     private readonly log: RotatingLog;
     private readonly reloginBackoff = new Backoff({ initialMs: 10_000, maxMs: 60_000, resetAfterMs: 5 * 60_000 });
-    private readonly roleBackoff = new Backoff({ initialMs: 15_000, maxMs: 10 * 60_000, resetAfterMs: 10 * 60_000 });
+    private readonly roleLoop: FleetRoleLoop;
 
     constructor(
-        public cfg: AccountConfig,
+        cfg: AccountConfig,
         private readonly fleet: Fleet
     ) {
         this.log = new RotatingLog(join(PATHS.logs, `${cfg.account}.log`));
+        this.roleLoop = new FleetRoleLoop(cfg, {
+            load: loadRole,
+            context: (c, signal) => this.context(c, signal),
+            // abortable(): a role that ignores its signal must not hold the loop hostage.
+            run: (role, ctx, signal) => accountScope.run(this, () => executionContext.run({ signal }, () => abortable(role.run(ctx), signal))),
+            started: role => {
+                this.lastRoleActivity = Date.now();
+                this.stats.roleStarts++;
+                // The SDK reads config.showChat on every state message, so this takes effect at
+                // once and is reset when the account is reassigned to a role that does not chat.
+                this.sdk!.config.showChat = role.readsChat === true;
+            },
+            failed: (_, e) => {
+                this.stats.roleFailures++;
+                this.lastError = `role threw: ${errText(e)}`;
+                this.event('role_error', { error: errText(e).slice(0, 300) });
+                if (e instanceof Error && e.stack) this.note(`[fleet] ${e.stack.split('\n').slice(0, 6).join(' | ')}`);
+            },
+            attention: text => {
+                this.lastError = text;
+            },
+            note: text => this.note(text),
+            event: (type, fields) => this.event(type, fields),
+            returnTo: finished => this.fleet.returnTo(finished),
+            isStopping: () => this.stopping
+        });
+    }
+
+    get cfg(): AccountConfig {
+        return this.roleLoop.cfg;
     }
 
     get account(): string {
         return this.cfg.account;
+    }
+
+    /** Its current assignment's role has finished and was not restarted. */
+    get finished(): boolean {
+        return this.roleLoop.finished;
     }
 
     get childPid(): number | undefined {
@@ -531,9 +565,13 @@ class AccountRunner {
 
     /** New role or options from a reload: the running role is stopped and the loop starts the new one. */
     reconfigure(cfg: AccountConfig): void {
-        this.cfg = cfg;
-        this.note(`[fleet] reconfigured: role ${cfg.role} ${JSON.stringify(cfg.options)}`);
-        this.roleCtl?.abort(new Error('reconfigured'));
+        this.note(`[fleet] reconfigured: role ${cfg.role} ${JSON.stringify(cfg.options)}${cfg.then ? `, then ${describeAssignment(cfg.then)}` : ''}`);
+        this.roleLoop.reconfigure(cfg);
+    }
+
+    /** A reload that kept role and options (it may have changed `then`): nothing restarts. */
+    update(cfg: AccountConfig): void {
+        this.roleLoop.update(cfg);
     }
 
     /**
@@ -546,7 +584,7 @@ class AccountRunner {
         if (!this.stopping) {
             this.state = 'stopping';
             this.stopCtl.abort(new Error(reason));
-            this.roleCtl?.abort(new Error(reason));
+            this.roleLoop.interrupt(reason);
             await settledWithin(this.roles, 5_000);
             const clean = await this.logout().catch(() => false);
             if (this.child) this.event(clean ? 'logout' : 'logout_forced', { reason });
@@ -691,7 +729,7 @@ class AccountRunner {
         this.note('[fleet] online');
         this.event('login', { login: this.stats.logins });
         const session = new AbortController();
-        const roles = this.roleLoop(session.signal);
+        const roles = this.roleLoop.run(session.signal);
         this.roles = roles;
         const watchdog = setInterval(() => this.watch(), WATCH_EVERY_MS);
         const exit = await exited;
@@ -751,61 +789,18 @@ class AccountRunner {
             return;
         }
         const quiet = Date.now() - this.lastRoleActivity;
-        if (this.roleCtl && quiet > this.cfg.stallMinutes * 60_000) {
+        const ctl = this.roleLoop.ctl;
+        if (ctl && quiet > this.cfg.stallMinutes * 60_000) {
             this.note(`[fleet] role has not logged for ${Math.round(quiet / 60_000)} min; restarting it`);
             this.event('role_stall', { quietMin: Math.round(quiet / 60_000) });
-            this.roleCtl.abort(new Error(`stalled (${this.cfg.stallMinutes} min without a log line)`));
+            ctl.abort(new Error(`stalled (${this.cfg.stallMinutes} min without a log line)`));
         }
     }
 
-    private async roleLoop(session: AbortSignal): Promise<void> {
-        while (!session.aborted && !this.stopping) {
-            const cfg = this.cfg;
-            const ctl = new AbortController();
-            const relay = () => ctl.abort(session.reason);
-            session.addEventListener('abort', relay, { once: true });
-            this.roleCtl = ctl;
-            const started = Date.now();
-            this.lastRoleActivity = started;
-            this.stats.roleStarts++;
-            let outcome: string;
-            try {
-                const role = await loadRole(cfg.role);
-                // The SDK reads config.showChat on every state message, so this takes effect at
-                // once and is reset when the account is reassigned to a role that does not chat.
-                this.sdk!.config.showChat = role.readsChat === true;
-                this.note(`[fleet] starting role ${cfg.role} ${JSON.stringify(cfg.options)}`);
-                const ctx = this.context(cfg, ctl.signal);
-                // abortable(): a role that ignores its signal must not hold the loop hostage.
-                await accountScope.run(this, () =>
-                    executionContext.run({ signal: ctl.signal }, () => abortable(role.run(ctx), ctl.signal))
-                );
-                outcome = ctl.signal.aborted ? `stopped: ${errText(ctl.signal.reason)}` : 'returned';
-            } catch (e) {
-                outcome = ctl.signal.aborted ? `stopped: ${errText(ctl.signal.reason)}` : `threw: ${errText(e)}`;
-                if (!ctl.signal.aborted) {
-                    this.stats.roleFailures++;
-                    this.lastError = `role ${outcome}`;
-                    this.event('role_error', { error: errText(e).slice(0, 300) });
-                    if (e instanceof Error && e.stack) this.note(`[fleet] ${e.stack.split('\n').slice(0, 6).join(' | ')}`);
-                }
-            } finally {
-                session.removeEventListener('abort', relay);
-                this.roleCtl = null;
-            }
-            if (session.aborted || this.stopping) {
-                this.note(`[fleet] role ${outcome}`);
-                return;
-            }
-            // Stalls and reconfigures restart promptly; crashes back off so a broken role cannot hot-loop.
-            const delay = ctl.signal.aborted ? 3_000 : this.roleBackoff.failure(started, Date.now());
-            this.note(`[fleet] role ${outcome}; restarting it in ${Math.round(delay / 1000)}s`);
-            await sleep(delay, session);
-        }
-    }
-
-    private context(cfg: AccountConfig, signal: AbortSignal): RoleContext {
+    private async context(cfg: AccountConfig, signal: AbortSignal): Promise<RoleContext> {
+        const state = await openRoleState(join(PATHS.roleState, `${this.account}.json`));
         return {
+            state,
             bot: this.bot!,
             sdk: this.sdk!,
             account: this.account,
@@ -1073,6 +1068,8 @@ class Fleet {
             void runner.stop('removed from the active set');
         }
         for (const cfg of diff.changed) this.runners.get(cfg.account)!.reconfigure(cfg);
+        const touched = new Set([...diff.changed, ...diff.start].map(c => c.account));
+        for (const cfg of next) if (!touched.has(cfg.account)) this.runners.get(cfg.account)?.update(cfg);
         for (const cfg of diff.start) {
             const runner = new AccountRunner(cfg, this);
             this.runners.set(cfg.account, runner);
@@ -1097,6 +1094,35 @@ class Fleet {
         } catch (e) {
             fleetLog(`[fleet] reload refused, keeping the running config: ${errText(e)}`);
         }
+    }
+
+    private configWrites: Promise<unknown> = Promise.resolve();
+
+    /**
+     * A role with a `then` finished: rewrite its fleet.json entry to the `then`
+     * role and options (returnAssignment) before anything starts it, so a
+     * supervisor restart cannot run the finished role again. Writes are
+     * serialised, since several accounts may finish together.
+     */
+    returnTo(finished: AccountConfig): Promise<AccountConfig | null> {
+        const write = this.configWrites.then(async () => {
+            const raw = JSON.parse(await readFile(this.configPath, 'utf8')) as unknown;
+            const r = returnAssignment(raw, finished);
+            if (typeof r === 'string') {
+                fleetLog(`[fleet] ${finished.account}: ${finished.role} finished, but not moving it on: ${r}`);
+                return null;
+            }
+            await writeJsonAtomic(this.configPath, r.config);
+            this.config = { ...parseFleetConfig(r.config), gatewayPort: this.config.gatewayPort };
+            fleetLog(`[fleet] ${finished.account}: ${finished.role} finished; fleet.json now assigns it ${describeAssignment(r.next)}`);
+            return r.next;
+        });
+        const settled = write.catch((e: unknown) => {
+            fleetLog(`[fleet] ${finished.account}: could not rewrite ${this.configPath}: ${errText(e)}`);
+            return null;
+        });
+        this.configWrites = settled;
+        return settled;
     }
 
     /** Hold every login for `ms`: the refusal was about the server or this IP, not one account. */
@@ -1145,7 +1171,7 @@ class Fleet {
                 account: r.account,
                 role: r.cfg.role,
                 state: r.state,
-                rolePhase: r.rolePhase?.text ?? null,
+                rolePhase: r.finished ? 'finished' : (r.rolePhase?.text ?? null),
                 rolePhaseAt: r.rolePhase ? iso(r.rolePhase.at) : null,
                 onlineSince: r.onlineSince ? iso(r.onlineSince) : null,
                 nextAttemptAt: r.nextAttemptAt ? iso(r.nextAttemptAt) : null,
