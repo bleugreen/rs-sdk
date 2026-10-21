@@ -250,7 +250,8 @@ await runScript(async ({ bot, sdk }) => {
         await seg('Al Shabim: show the dart (pineapple)', async () => {
             await q.walk(3172, 3026, 2);
             await q.talk('al_shabim');
-            if (!q.inv('tentipineapple')) throw new Error('no pineapple');
+            // the scene closes the dialogue for a p_delay(2) mid-way (al_shabim.rs2:53-55)
+            await q.settle(() => !!q.inv('tentipineapple'), 60);
         });
         await seg('Al Shabim -> camp gate (walk)', async () => {
             await q.walk(3272, 3029, 1);
