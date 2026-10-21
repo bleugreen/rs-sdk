@@ -114,7 +114,7 @@ ping-ponging between bare yew spots (since fixed).
 | Tier | Axe | Rate | Contention |
 |---|---|---|---|
 | magic | bronze | 21-36 | 15-22 other players within 5 tiles of the cluster |
-| magic | steel | **38-74**, about 55 on average (27-log trips: 74, 72 overall for h10's first two, 56, 55, 38) | 12-27 others within 5 tiles, 45-71 distinct players per trip; up to 26 on one tree |
+| magic | steel | **38-74**, about 55 on average (27-log trips: h10 56 then 38, h11 74, h12 55) | 12-27 others within 5 tiles, 45-71 distinct players per trip; up to 26 on one tree |
 | yew | bronze | 72-133 at Seers; 332 and 892 at Catherby when nobody else was on the tree | Seers 33-43 others around the 3 trees; Catherby went from empty to 60-80 players within half an hour |
 | willow / maple | bronze | 200-340 (training trips) | |
 
