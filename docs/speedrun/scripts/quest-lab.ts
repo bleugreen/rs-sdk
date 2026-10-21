@@ -1,5 +1,6 @@
 // Shared helpers for the quest measurement scripts. Every timing is in server
 // ticks read from the world state (state.tick), never in wall-clock time.
+import { readFileSync } from 'fs';
 import type { BotSDK } from '../../../sdk/index';
 import type { BotWorldState, NearbyLoc, NearbyNpc } from '../../../sdk/types';
 
@@ -157,8 +158,6 @@ export function stats(xs: number[]) {
 
 /** name -> id from a server/content/pack/*.pack file (npc, loc, obj). */
 export function packIds(file: 'npc.pack' | 'loc.pack' | 'obj.pack'): Map<string, number> {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { readFileSync } = require('fs') as typeof import('fs');
     const m = new Map<string, number>();
     const path = new URL(`../../../server/content/pack/${file}`, import.meta.url).pathname;
     for (const line of readFileSync(path, 'utf8').split('\n')) {
@@ -219,4 +218,158 @@ export class Segments {
     total() {
         return this.list.reduce((a, s) => ({ ticks: a.ticks + s.ticks, pages: a.pages + s.pages, options: a.options + s.options, actions: a.actions + s.actions }), { ticks: 0, pages: 0, options: 0, actions: 0 });
     }
+}
+
+/**
+ * Quest-script actions over one bot, all recorded into a Segments timer.
+ * NPCs, locs and objs are addressed by their content config names
+ * (npc.pack / loc.pack / obj.pack), never by display name, because several
+ * quest NPCs share one display name (the three Students).
+ */
+export class QuestBot {
+    NPC = packIds('npc.pack');
+    LOC = packIds('loc.pack');
+    OBJ = packIds('obj.pack');
+    S: Segments;
+    constructor(public sdk: BotSDK, public bot: { walkTo(x: number, z: number, tolerance?: number): Promise<unknown> }) {
+        this.S = new Segments(sdk);
+    }
+
+    id(map: Map<string, number>, key: string) {
+        const v = map.get(key);
+        if (v === undefined) throw new Error(`unknown config name ${key}`);
+        return v;
+    }
+
+    inv(obj: string) {
+        const id = this.id(this.OBJ, obj);
+        return this.sdk.getInventory().find(i => i.id === id) ?? null;
+    }
+
+    count(obj: string) {
+        const id = this.id(this.OBJ, obj);
+        return this.sdk.getInventory().filter(i => i.id === id).reduce((a, i) => a + i.count, 0);
+    }
+
+    need(obj: string) {
+        const i = this.inv(obj);
+        if (!i) throw new Error(`no ${obj} in inventory`);
+        return i;
+    }
+
+    npc(key: string) {
+        const id = this.id(this.NPC, key);
+        const l = this.sdk.getNearbyNpcs().filter(n => n.id === id).sort((a, b) => a.distance - b.distance);
+        if (!l.length) throw new Error(`no ${key} in view at ${JSON.stringify(pos(this.sdk))}`);
+        return l[0];
+    }
+
+    async loc(key: string, near?: [number, number]) {
+        const id = this.id(this.LOC, key);
+        const l = (await this.sdk.scanNearbyLocs(40)).filter(x => x.id === id);
+        if (!l.length) throw new Error(`no ${key} in view at ${JSON.stringify(pos(this.sdk))}`);
+        const d = (x: NearbyLoc) => (near ? Math.max(Math.abs(x.x - near[0]), Math.abs(x.z - near[1])) : x.distance);
+        return l.sort((a, b) => d(a) - d(b))[0];
+    }
+
+    /** Run any dialogue that opens, until `until()` holds with no dialogue open. */
+    async settle(until: () => boolean, timeoutTicks = 80, choices: RegExp[] = []) {
+        const t0 = tick(this.sdk);
+        while (tick(this.sdk) - t0 < timeoutTicks) {
+            if (this.sdk.getState()!.dialog.isOpen) {
+                this.S.dialog(await runDialog(this.sdk, choices.splice(0), { settleTicks: 1, openTimeoutTicks: 1 }));
+                continue;
+            }
+            if (until()) {
+                this.S.mark();
+                return;
+            }
+            await this.sdk.waitForStateUpdate();
+        }
+        throw new Error(`timed out in segment ${this.S.cur?.name}`);
+    }
+
+    async talk(key: string, choices: RegExp[] = []) {
+        const n = this.npc(key);
+        const op = n.optionsWithIndex.find(o => /talk/i.test(o.text));
+        if (!op) throw new Error(`${key} has no talk option`);
+        this.S.action();
+        await this.sdk.sendInteractNpc(n.index, op.opIndex);
+        const r = await runDialog(this.sdk, choices, { openTimeoutTicks: 60, settleTicks: 2 });
+        if (r.closedAt < 0) throw new Error(`${key}: no dialogue opened`);
+        this.S.dialog(r);
+        return r;
+    }
+
+    async useOnNpc(obj: string, key: string, until: () => boolean = () => true, choices: RegExp[] = []) {
+        const n = this.npc(key);
+        this.S.action();
+        await this.sdk.sendUseItemOnNpc(this.need(obj).slot, n.index);
+        await this.waitForReaction();
+        await this.settle(until, 80, choices);
+    }
+
+    async opLoc(key: string, op: number, until: () => boolean, near?: [number, number]) {
+        const l = await this.loc(key, near);
+        this.S.action();
+        await this.sdk.sendInteractLoc(l.x, l.z, l.id, op);
+        await this.settle(until);
+    }
+
+    async useOnLoc(obj: string, key: string, until: () => boolean, near?: [number, number]) {
+        const l = await this.loc(key, near);
+        this.S.action();
+        await this.sdk.sendUseItemOnLoc(this.need(obj).slot, l.x, l.z, l.id);
+        await this.settle(until);
+    }
+
+    async useOnObj(src: string, dst: string, until: () => boolean) {
+        this.S.action();
+        await this.sdk.sendUseItemOnItem(this.need(src).slot, this.need(dst).slot);
+        await this.settle(until, 20);
+    }
+
+    async pickup(obj: string) {
+        const id = this.id(this.OBJ, obj);
+        const before = this.count(obj);
+        const g = this.sdk.getGroundItems().filter(x => x.id === id).sort((a, b) => a.distance - b.distance)[0];
+        if (!g) throw new Error(`no ground ${obj} near ${JSON.stringify(pos(this.sdk))}`);
+        this.S.action();
+        await this.sdk.sendPickup(g.x, g.z, id);
+        await this.settle(() => this.count(obj) > before);
+    }
+
+    async walk(x: number, z: number, tolerance = 1) {
+        await this.bot.walkTo(x, z, tolerance);
+        this.S.mark();
+    }
+
+    /** Give a use-on-NPC click time to open its dialogue before settle() checks the predicate. */
+    private async waitForReaction(ticks = 40) {
+        const t0 = tick(this.sdk);
+        while (tick(this.sdk) - t0 < ticks && !this.sdk.getState()!.dialog.isOpen) await this.sdk.waitForStateUpdate();
+    }
+
+    /** Drop everything not in `keep` while fewer than `free` slots are empty. */
+    async makeRoom(keep: string[], free = 3) {
+        const keepIds = new Set(keep.map(k => this.id(this.OBJ, k)));
+        for (;;) {
+            const inv = this.sdk.getInventory();
+            if (28 - inv.length >= free) return;
+            const junk = inv.find(i => !keepIds.has(i.id));
+            if (!junk) throw new Error('inventory full of kept items');
+            this.S.action();
+            await this.sdk.sendDropItem(junk.slot);
+            await waitUntil(this.sdk, () => !this.sdk.getInventory().some(i => i.slot === junk.slot && i.id === junk.id), 10);
+        }
+    }
+}
+
+export async function waitUntil(sdk: BotSDK, pred: () => boolean, ticks = 60) {
+    const t0 = tick(sdk);
+    while (tick(sdk) - t0 < ticks) {
+        if (pred()) return true;
+        await sdk.waitForStateUpdate();
+    }
+    return false;
 }
