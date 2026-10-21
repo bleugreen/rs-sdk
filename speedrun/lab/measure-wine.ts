@@ -10,12 +10,12 @@
 // first in-world state of the new session.
 import type { BotWorldState } from '../../sdk/types';
 import { giveWine, makeNotedWine, makeWines, receiveWine } from '../helpers/wine';
-import { ITEM, bankCount, closeBank, depositAllExcept, invCount, openBank, prepare, tick } from '../helpers/wine-common';
+import { ITEM, closeBank, invCount, openBank, prepare, tick } from '../helpers/wine-common';
 import { depositAll } from '../lib/bank';
 import { login, logoutClean, openSession, type Session } from '../lib/session';
 import { waitTicks } from '../lib/wait';
 import { arg, botArg, result } from './common';
-import { cheat, give, setstat, tele, VARROCK_WEST_BANK } from './setup';
+import { give, setstat, tele, VARROCK_WEST_BANK } from './setup';
 
 const big = Number(arg('big', '450'));
 const maker = await openSession(botArg(), { launch: true });
@@ -190,8 +190,3 @@ for (const s of [maker, receiver]) {
     await logoutClean(s).catch(() => {});
 }
 process.exit(0);
-
-// Keep the unused-import checker honest about helpers this script may grow into.
-void cheat;
-void bankCount;
-void depositAllExcept;
