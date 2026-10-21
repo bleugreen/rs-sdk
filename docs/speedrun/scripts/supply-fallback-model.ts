@@ -324,9 +324,11 @@ if (on('combat')) {
         ['magic shortbow + rune arrows, glory', { cannonR: bow.h / knife.h, hand: HAND_BOW }],
         ['rune knives, no glory', { cannonR: knifeNoG.h / knife.h, hand: (knifeNoG.h * knifeNoG.mh) / (knife.h * knife.mh), cannonMelee: kitMelee(W['rune scimitar'], false).cannon / KREF.cannon, meleeD: kitMelee(W['rune scimitar'], false).melee / KREF.melee }],
         ['magic shortbow, no glory', { cannonR: bowNoG.h / knife.h, hand: HAND_BOW * bowNoG.h / bow.h, cannonMelee: kitMelee(W['rune scimitar'], false).cannon / KREF.cannon, meleeD: kitMelee(W['rune scimitar'], false).melee / KREF.melee }],
-        ['no hand weapon: cannon with the scimitar throughout', { hand: 0, cannonR: SCIM / 12.2 }],
     ];
     const vRows = variants.map(([n, o]) => { const p = planE(o); return [n, f2(o.cannonR ?? 1), f2(o.hand ?? 1), f0(p.total), sgn(p.total - base.total), f0(p.hRest)]; });
+    // No hand ranged weapon at all: rs/91's 'scimitar whole finish', cannon + defensive melee throughout (config 5)
+    const scimOnly = Math.max((XP99 - R0) / MELEE.R, H_GAP / MELEE.H, D_GAP / MELEE.D);
+    vRows.push(['no hand ranged weapon: cannon + defensive melee throughout (rs/91)', '-', '-', f0(scimOnly), sgn(scimOnly - base.total), '0']);
     table(['S27 variant', 'Cannon share factor', 'Hand share factor', 'S27 ticks', 'Delta', 'HP-only ticks inside'], vRows);
 
     // Cannonballs short: each missing ball's cannon xp is earned at the hand rate instead
