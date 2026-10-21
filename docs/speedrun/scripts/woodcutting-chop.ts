@@ -15,6 +15,7 @@
 //                   after the tree depletes)
 //           rotate: every tick, click the next live tree in the list (a different one
 //                   from last tick), so a depletion never leaves the player idle
+// --dropdelay N  wait N observed ticks after a log appears before dropping it (default 0)
 // --drop    each:    drop every log once as it arrives (with a click in the same batch)
 //           full:    let the inventory fill, then drop 4 logs + click per tick
 //           noclick: drop every log with no click; re-click only after 12 idle ticks
@@ -45,6 +46,8 @@ const clickMode = opt('click', 'react') as 'react' | 'rotate';
 const dropMode = opt('drop', 'each') as 'each' | 'full' | 'noclick';
 const maxTicks = Number(opt('maxticks', String(targetLogs * 40 + 200)));
 const verbose = flag('verbose');
+// observed ticks to wait after a log appears before sending its drop (and click)
+const dropDelay = Number(opt('dropdelay', '0'));
 
 const XP_PER_LOG: Record<string, number> = { Tree: 25, Oak: 37.5, Willow: 67.5, 'Maple tree': 100, Yew: 175, 'Magic tree': 250 };
 const LOHI: Record<string, [number, number]> = { Tree: [224, 700], Oak: [112, 350], Willow: [56, 175], 'Maple tree': [28, 87], Yew: [14, 44], 'Magic tree': [7, 21] };
@@ -91,6 +94,7 @@ await runScript(async ({ bot, sdk }) => {
     const deadSince = new Map<string, number>();
     const respawns: number[] = [];
     const droppedAt = new Map<number, number>(); // slot -> tick a drop was sent
+    const firstSeen = new Map<number, number>(); // slot -> tick its log was first seen
     let current: [number, number] | null = null;
     let lastClicked = '';
     let lastXp = sdk.getSkillXp('woodcutting') ?? 0;
@@ -147,7 +151,11 @@ await runScript(async ({ bot, sdk }) => {
             if (needTree) current = live[0];
 
             // drops: each log once (a dropped item lingers in state for a tick or two)
-            const logItems = s.inventory.filter(i => /logs/i.test(i.name) && !(droppedAt.has(i.slot) && s.tick - droppedAt.get(i.slot)! < 4));
+            for (const i of s.inventory) if (/logs/i.test(i.name) && !firstSeen.has(i.slot)) firstSeen.set(i.slot, s.tick);
+            for (const slot of [...firstSeen.keys()]) if (!s.inventory.some(i => i.slot === slot && /logs/i.test(i.name))) firstSeen.delete(slot);
+            const logItems = s.inventory.filter(i => /logs/i.test(i.name)
+                && !(droppedAt.has(i.slot) && s.tick - droppedAt.get(i.slot)! < 4)
+                && s.tick - (firstSeen.get(i.slot) ?? s.tick) >= dropDelay);
             const free = 28 - s.inventory.length;
             let drops: number[] = [];
             if (dropMode === 'each' || dropMode === 'noclick') drops = logItems.slice(0, 1).map(i => i.slot);
