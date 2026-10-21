@@ -70,7 +70,8 @@ const INTEGER_FIELDS: { [T in BotAction['type']]: { required?: readonly IntegerK
     submitCountDialog: { required: ['value'] },
     scanNearbyLocs: { optional: ['radius'] },
     scanGroundItems: { optional: ['radius'] },
-    togglePrayer: { required: ['prayerIndex'] }
+    togglePrayer: { required: ['prayerIndex'] },
+    program: {}
 };
 
 function describeValue(value: unknown): string {
@@ -505,6 +506,10 @@ export class ActionExecutor {
                         `Failed to toggle prayer ${action.prayerIndex}`
                     );
                 }
+
+                case 'program':
+                    // BotOverlay hands these to its ProgramHost before the executor sees them.
+                    return { success: false, message: 'In-page tick programs run only in the browser webclient overlay', phase: 'validation', reason: 'unsupported' };
 
                 default:
                     return { success: false, message: `Unknown action type: ${(action as any).type}` };

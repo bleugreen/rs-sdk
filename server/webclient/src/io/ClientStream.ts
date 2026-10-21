@@ -73,6 +73,15 @@ export default class ClientStream {
         this.wsout.write(src, len);
     }
 
+    /**
+     * rs-sdk: when (performance.now()) the websocket message now being read
+     * arrived; 0 before any. The engine sends each server tick as one message, so
+     * read right after a PLAYER_INFO this is that tick's arrival.
+     */
+    get receivedAt(): number {
+        return this.wsin.receivedAt;
+    }
+
     // note: Java throws IOException on failure
     async read(): Promise<number> {
         if (this.dummy) {
@@ -182,10 +191,12 @@ class WebSocketWriter {
 class WebSocketEvent {
     private readonly bytes: Uint8Array;
     private position: number;
+    readonly receivedAt: number;
 
     constructor(bytes: Uint8Array) {
         this.bytes = bytes;
         this.position = 0;
+        this.receivedAt = performance.now();
     }
 
     get available(): number {
@@ -231,6 +242,11 @@ class WebSocketReader {
 
     get available(): number {
         return this.total;
+    }
+
+    /** Arrival time of the message the last read came from. */
+    get receivedAt(): number {
+        return this.event?.receivedAt ?? 0;
     }
 
     private onmessage = (e: MessageEvent): void => {

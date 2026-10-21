@@ -442,6 +442,7 @@ describe('browser game tick publication', () => {
         player.totalHealth = 30;
         const client = Object.assign(Object.create(Client.prototype), {
             stream: {
+                receivedAt: 1234,
                 get available() { return wire.length - readPos; },
                 async readBytes(dst: Uint8Array, offset: number, length: number) {
                     dst.set(wire.subarray(readPos, readPos + length), offset);
@@ -464,11 +465,13 @@ describe('browser game tick publication', () => {
             runenergy: 0,
             awaitingPlayerInfo: true,
             lastTickTime: 0,
-            pendingGameTicks: 0
+            pendingGameTicks: 0,
+            pendingTickArrivals: []
         });
         const published: Array<Record<string, unknown>> = [];
-        client.setOnGameTickCallback((ticks: number) => published.push({
+        client.setOnGameTickCallback((ticks: number, arrivals: readonly number[]) => published.push({
             ticks,
+            arrivals: [...arrivals],
             health: player.health,
             x: player.routeX[0],
             z: player.routeZ[0],
@@ -489,7 +492,7 @@ describe('browser game tick publication', () => {
 
         await client.drainPackets();
         expect(published).toEqual([{
-            ticks: 1, health: 23, x: 55, z: 56, level: 1, runenergy: 60, awaitingPlayerInfo: false
+            ticks: 1, arrivals: [1234], health: 23, x: 55, z: 56, level: 1, runenergy: 60, awaitingPlayerInfo: false
         }]);
         expect(unread()).toBe(0);
         expect(client.ptype).toBe(-1);
@@ -517,11 +520,13 @@ describe('browser game tick publication', () => {
 
         await client.drainPackets();
         expect(published).toEqual([{
-            ticks: 2, health: 23, x: 55, z: 56, level: 1, runenergy: 20, awaitingPlayerInfo: false
+            ticks: 2, arrivals: [1234, 1234], health: 23, x: 55, z: 56, level: 1, runenergy: 20, awaitingPlayerInfo: false
         }]);
         expect(unread()).toBe(0);
     });
 });
+
+import { ProgramHost } from './programs/host.js';
 
 describe('browser bot overlay action dispatch', () => {
     const ok = { success: true, message: 'ok' };
@@ -546,18 +551,21 @@ describe('browser bot overlay action dispatch', () => {
             noTimeoutTimer: 0,
             packetLogEnabled: false
         });
+        const executor = {
+            execute(action: { type: string }) {
+                ran.push(action.type);
+                client.out.p1(ran.length);
+                return execute(action);
+            }
+        };
         const o = Object.assign(Object.create(BotOverlay.prototype), {
             client,
             actionQueue: new BotActionQueue(),
             waitTicks: 0,
             serverTick: 0,
-            executor: {
-                execute(action: { type: string }) {
-                    ran.push(action.type);
-                    client.out.p1(ran.length);
-                    return execute(action);
-                }
-            },
+            executor,
+            // In-page programs dispatch through the same executor.
+            programs: new ProgramHost(a => executor.execute(a) as never, { log: () => {} }),
             // The state carries the tick and how many packet bytes were on the wire when collected.
             collectWorldState: () => ({ tick: o.serverTick, written: frames.flat().length }),
             gateway: {
@@ -649,6 +657,17 @@ describe('browser bot overlay action dispatch', () => {
         o.tick();
         expect(ran).toEqual(burst);
         expect(results.map(([id]) => id)).toEqual(burst);
+    });
+
+    test('hands a program action to the in-page program host, not the executor', async () => {
+        const { o, ran, results } = overlay(() => ok);
+        o.onAction({ type: 'program', op: 'start', name: 'probe', params: { trials: 3 }, reason: 't' }, 'p1');
+        o.onAction({ type: 'program', op: 'start', name: 'nope', reason: 't' }, 'p2');
+        o.tick();
+        await endOfTask();
+        expect(ran).toEqual([]);
+        expect(results).toEqual([['p1', true], ['p2', false]]);
+        expect(o.programs.status().name).toBe('probe');
     });
 
     test('stops the burst at an asynchronous action until it settles', async () => {
