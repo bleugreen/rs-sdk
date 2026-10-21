@@ -22,6 +22,18 @@ const key = (x: number, z: number) => `${x},${z}`;
 
 initPathfinding();
 
+// Tiles a walk must never touch: the 3x3 leaves of each pitfall (stepping on one
+// drops the player into the pit, regicide_zones.rs2:73-82), the woodspring
+// trigger tiles (:53-66) and the tripwire tiles. All are blockwalk=no locs, so
+// the collision map marks them walkable; block them for this analysis.
+export const hazardTiles: Array<[number, number]> = [];
+for (const [cx, cz] of [[2209, 3203], [2267, 3203], [2274, 3174], [2277, 3262]]) {
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) hazardTiles.push([cx + dx, cz + dz]);
+}
+hazardTiles.push([2295, 3214], [2295, 3215], [2257, 3227], [2258, 3227], [2181, 3210], [2181, 3211], [2236, 3181], [2237, 3181], [2200, 3169], [2201, 3169], [2275, 3163], [2276, 3163]);
+for (const [x, z] of [[2215, 3154], [2220, 3153], [2251, 3168], [2285, 3188], [2294, 3243]]) hazardTiles.push([x, z]);
+for (const [x, z] of hazardTiles) rsmod.changeFloor(x, z, 0, true);
+
 const X0 = 2130, X1 = 2430, Z0 = 3060, Z1 = 3345;
 const comp = new Map<string, number>();
 const compSize: number[] = [];
@@ -150,7 +162,10 @@ function walkTiles(a: P, b: P): number | null {
 
 // Crossing cost in tile-equivalents (0.5 tick per tile) for ranking only; the
 // document applies measured ticks per crossing type.
-const crossCost: Record<string, number> = { log: 14, pitfall: 10, crossover: 12, woodspring: 30, tripwire: 16 };
+// Measured ticks x 2 (quest-regicide-obstacles.ts): log 8-9, pitfall 2 (+ a 7%
+// fall at Agility 56), chained cross-over 6, woodspring about 11 expected,
+// tripwire step-over 5.
+const crossCost: Record<string, number> = { log: 17, pitfall: 6, crossover: 12, woodspring: 22, tripwire: 10 };
 
 export function solve(from: P, to: P, allowCrossovers: boolean) {
     const nodes: P[] = [from, to];
