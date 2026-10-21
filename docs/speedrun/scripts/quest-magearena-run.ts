@@ -8,7 +8,7 @@
 // Setup uses staff commands (LOCAL_STAFF_LEVEL=4) and is not timed. Each timed segment logs its
 // tick count, dialogue pages, option clicks and tiles.
 import { runScript } from '../../../sdk/runner';
-import { cheat, log, pos, sleep, talkThrough, tele, tick, waitTicks } from './quest-unlocks-lib';
+import { cheat, log, pos, talkThrough, tele, tick, waitTicks, waitUntil } from './quest-unlocks-lib';
 
 const MAGIC = Number(process.env.MAGIC ?? 80);
 const HP = Number(process.env.HP ?? 70);
