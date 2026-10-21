@@ -550,8 +550,19 @@ melee at the spiders 230, Ranged to 67; then cannon + rapid rune knives 1,821; H
 where cannon + knives is unmeasured, so **2,023-2,051** is the honest range, and the
 Package A-vs-B threshold for Waterfall's pre-MM saving is **~800-830** ticks.
 
+**rs/30's final melee figures (23:30, measured at 300 ms; `docs/speedrun/skills/combat.md`
+at 3beddb4b on agent/rs-30-builder-0, being re-ported to a clean branch by rs/28):** the
+rates above stand (Strength 7.58 / 8.99 / 10.08 by band, Defence 9.2-9.3, HP a third). With
+MM option 1, melee alone closes the 19,938 Defence gap in **2,121** ticks (HP 6,646, which
+covers MM's 4,938); without MM, Strength + Defence is **7,149** ticks of melee and leaves
+17,857 HP. rs/30 puts MM's margin at ~2,000-3,000 ticks and calls option 2 roughly a wash
+with option 1, because it costs melee alone and lets Ranged-by-combat absorb the HP. This
+page's larger margins (section 6) come from the cannon-led finish: the cannon trains Ranged
+with no HP, which makes Hitpoints bind harder without MM and under option 2. Both models
+recommend MM with option 1.
+
 Still to slot in: `pre_mm_fights.md` (rs/56: the pre-MM fights, and with them Package A
-against B), rs/30's `combat.md`
+against B), rs/30's `combat.md` once re-ported
 (its rates are quoted here from rs/28), rs/53 (Fishing Contest), and the rs/54 merge (Sea
 Slug).
 
