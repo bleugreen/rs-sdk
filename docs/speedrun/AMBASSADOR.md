@@ -152,6 +152,7 @@ Measured by rs/58 (`speedrun/lab/pm-probe.ts` checks the recipient's own chat, c
 | the same loopback gateway, both ways | | yes, 0.6-1.0 s |
 | loopback | loopback, recipient SDK `showChat: false` | **no** (the server accepted it; the sender saw its echo) |
 | local lab with `LAB_FRIEND=1` (friend server on) | | yes |
+| outside players on the demo, to the ambassador (loopback, `readsChat`) | | yes, during the live run |
 
 So private messages work through lite clients and loopback gateways. They are invisible only to an SDK built with `showChat: false`, which the fleet does for every role unless the role sets `readsChat`, and which a helper `bot.env`'s `SHOW_CHAT=false` does for standalone scripts.
 
@@ -189,7 +190,33 @@ What it said: "Nice try, i only chat" (to the prompt-extraction attempt), "I'm a
 
 ## Live run on the demo
 
-(Filled in by the unattended run below.)
+Standalone in the bbs development copy (`~/rs-dev/ambassador`, behind a dev loopback gateway), `qwen3.5:27b`, `scoredAccount: www_cairn_md`, 2026-10-21 07:17 to 11:44 UTC. The role restarted three times in the first 20 minutes for code updates, then ran unattended from 07:36. The lite client dropped once (08:21 to 08:36) and came back through a re-login loop; under the fleet the supervisor does that job. Stopped cleanly at the end: role stopped, account logged out with the logout button.
+
+| Measure | Value |
+|---|---|
+| lines heard | 2,744 from 46 players, plus 4 from our own accounts (logged, never answered) |
+| lines sent | 155 public, 1 private message; 1 decline; no line repeated |
+| held back | 422 by the rate limits (291 of them the 40-an-hour cap), 3 near-repeats, 7 stale decisions |
+| model | 362 decisions, median 2.6 s, p90 3.2 s, no errors |
+| injection flags | 31 from 10 players (15 heuristic, 16 by the model) |
+| private messages | 4 received from two outside players (and our camera account's greeting, ignored); one answered by PM |
+
+So incoming private messages from other players do reach a lite client behind a loopback gateway once the role reads chat. Typical exchanges:
+
+```text
+Walnut:      Burnt shrimp, mostly
+cairn_md:    Ouch! Did they taste like ash or just regret?
+Apollobot1:  Tygem045, brand new player saving up. Any help would mean a lot!
+cairn_md:    I can't trade gp, but logs sell fast near banks.
+Hermitscape: Say less 86 mining and still climbing, proper grind hours for real
+cairn_md:    86 mining! Nice grind hours right there.
+Walnut (PM): Bows pay better tho
+cairn_md (PM): Logs move faster here, bows need fletching time.
+```
+
+The first digest (this window) is on cairn://p/rs/58's channel; its three surprising items went to cairn://posts.
+
+What to improve, all at the model's level rather than the code's: the 27B model sometimes claims fleet activity in spite of the persona ("Rocks get spooked by my mining bots all day", "My team just hit a new high"; vague, and naming nothing, but against its rules), invents places ("try Varrock bakery"), and leans on one question ("What's your fleet doing?") until the 40-an-hour cap is the binding limit. A frontier key (`~/.rs-fleet/llm-key`) is the expected fix. The injection heuristics over-flag coordinates and "trade me" business chatter; that costs nothing but log noise, since a flag only limits replies.
 
 ## Findings for the wider project
 
