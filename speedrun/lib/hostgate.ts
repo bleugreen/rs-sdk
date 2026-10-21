@@ -16,11 +16,13 @@
 // decision is a cost model (`gateDecision`: does the predicted knife cycle beat the plain
 // one?), overridden by the loop's measured ticks per drop (`drop`).
 //
-// What a latency costs depends on the anchor. A loop anchored on its own bootstrap send
-// needs every starter's latency to equal the bootstrap's (a constant latency, even 3 ticks,
-// cancels), so it is judged on `sameAsPrevious`. A loop anchored on an observed roll needs
-// the starter to land on roll+1: it sends `mode - 1` ticks early (the lead) and is judged on
-// `modeFraction`.
+// A constant latency costs nothing: a loop anchored on its own bootstrap send shifts every
+// roll by the same amount, and a loop anchored on an observed roll sends `mode - 1` ticks
+// early (the lead). What costs is a starter whose latency differs from the dominant one. In
+// the cycle loops a starter that lands late writes nothing (the loop has re-armed the clock),
+// that roll runs at the plain length, and the fixed 3-tick schedule drifts back into phase
+// within three cycles: about one knife cycle lost, no lock lost. So the model takes
+// p = `modeFraction` and a miss cost of one knife cycle unless the loop says otherwise.
 
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState } from '../../sdk/types';
@@ -48,12 +50,9 @@ export interface ProbeSummary {
     counts: Record<number, number>;
     /** The most common latency (the smaller on a tie); 0 when no trial ran. */
     mode: number;
-    /** Share of trials at `mode`: what a schedule anchored on observed rolls lands with lead mode-1. */
+    /** Share of trials at `mode`: the chance a starter lands on its tick once the loop is in phase. */
     modeFraction: number;
-    /**
-     * Share of consecutive trials with the same latency: what a schedule anchored on its own
-     * bootstrap send needs, because a constant latency cancels against the bootstrap's.
-     */
+    /** Share of consecutive trials with the same latency (reported; how bursty the jitter is). */
     sameAsPrevious: number;
 }
 
@@ -204,17 +203,11 @@ export interface CycleModel {
     /** The manipulated cycle (3). */
     knifeCycle?: number;
     /**
-     * Extra ticks a mistimed starter costs. Default: one plain cycle, which fits rs/53's loaded
-     * fly run; the mining executor's slip-and-restart costs about 9 (5 to let the clock expire,
-     * then a plain transition).
+     * Extra ticks a starter off the dominant latency costs. Default: one knife cycle (the roll it
+     * should have started is lost and the schedule re-locks; measured with --inject-late,
+     * tick-manipulation.md "Run-time host gate").
      */
     missCost?: number;
-    /**
-     * 'self' (default): the schedule is anchored on the loop's own bootstrap send, so a starter
-     * lands right when its latency equals the bootstrap's (`sameAsPrevious`). 'xp': anchored on
-     * observed rolls with lead mode-1 (`modeFraction`).
-     */
-    anchor?: 'self' | 'xp';
 }
 
 export interface GateVerdict {
@@ -231,8 +224,8 @@ export interface GateVerdict {
 /** Manipulate when the predicted knife cycle beats the plain one. A probe with no trials says no. */
 export function gateDecision(r: ProbeSummary, model: CycleModel): GateVerdict {
     const knifeCycle = model.knifeCycle ?? 3;
-    const missCost = model.missCost ?? model.plainCycle;
-    const p = model.anchor === 'xp' ? r.modeFraction : r.trials === 1 ? 1 : r.sameAsPrevious;
+    const missCost = model.missCost ?? knifeCycle;
+    const p = r.modeFraction;
     const knife = knifeCycle + (1 - p) * missCost;
     return { on: r.trials > 0 && knife < model.plainCycle, p, knife, plain: model.plainCycle, lead: Math.max(0, r.mode - 1) };
 }

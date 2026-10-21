@@ -150,29 +150,32 @@ describe('gateDecision', () => {
     const wc = { plainCycle: 4 };
     const fly = { plainCycle: 5 };
     const mine = { plainCycle: 3.61, missCost: 9 };
+    // n trials, `atMode` of them at 1 tick and the rest at 2
+    const dist = (atMode: number, n = 20) => summarizeProbe([...Array(atMode).fill(1), ...Array(n - atMode).fill(2)]);
     test('a quiet host manipulates everywhere', () => {
         const quiet = summarizeProbe(Array(20).fill(1));
         for (const m of [wc, fly, mine]) expect(gateDecision(quiet, m)).toMatchObject({ on: true, p: 1, knife: 3, lead: 0 });
     });
-    test('a steady latency is fine for a self-anchored loop and needs a lead when anchored on xp', () => {
-        const steady = summarizeProbe(Array(20).fill(3));
-        expect(gateDecision(steady, wc)).toMatchObject({ on: true, p: 1, lead: 2 });
-        expect(gateDecision(steady, { ...wc, anchor: 'xp' })).toMatchObject({ on: true, p: 1, lead: 2 });
+    test('a steady latency costs nothing and sets the lead', () => {
+        expect(gateDecision(summarizeProbe(Array(20).fill(3)), wc)).toMatchObject({ on: true, p: 1, knife: 3, lead: 2 });
     });
     test('the threshold on p follows from the plain cycle and the miss cost', () => {
-        // knife 3 + (1-p) * miss < plain: woodcutting p > 0.75, fly p > 0.6, iron p > 0.93
-        const jitter = (same: number) => {
-            // 21 trials alternating in runs so that `same` of 20 consecutive pairs agree
-            const xs = [2];
-            for (let i = 0; i < 20; i++) xs.push(i < same ? xs[i]! : 5 - xs[i]!);
-            return summarizeProbe(xs);
-        };
-        expect(jitter(16).sameAsPrevious).toBe(0.8);
-        expect(gateDecision(jitter(16), wc).on).toBe(true);
-        expect(gateDecision(jitter(14), wc).on).toBe(false);
-        expect(gateDecision(jitter(14), fly).on).toBe(true);
-        expect(gateDecision(jitter(18), mine).on).toBe(false);
-        expect(gateDecision(jitter(19), mine).on).toBe(true);
+        // knife 3 + (1-p) * miss < plain. Default miss 3: woodcutting p > 2/3, fly p > 1/3.
+        // A miss cost of 9 (a slip and restart): iron p > 0.93.
+        expect(gateDecision(dist(14), wc).on).toBe(true);
+        expect(gateDecision(dist(13), wc).on).toBe(false);
+        expect(gateDecision(dist(7), fly).on).toBe(true);
+        expect(gateDecision(dist(6), fly).on).toBe(false);
+        expect(gateDecision(dist(19), mine).on).toBe(true);
+        expect(gateDecision(dist(18), mine).on).toBe(false);
+    });
+    test('Ashburn-like data passes, bbs-like data is close to the line', () => {
+        // main's Azure eastus probe: 51 at 1, 9 at 2 (85% at the dominant offset)
+        expect(gateDecision(dist(51, 60), wc)).toMatchObject({ on: true, lead: 0 });
+        // rs/26 from bbs: 25 at 2, 35 at 3 (58%): woodcutting stays plain, fly manipulates
+        const bbs = summarizeProbe([...Array(25).fill(2), ...Array(35).fill(3)]);
+        expect(gateDecision(bbs, wc)).toMatchObject({ on: false, lead: 2 });
+        expect(gateDecision(bbs, fly).on).toBe(true);
     });
     test('an empty probe says no', () => {
         expect(gateDecision(summarizeProbe([]), wc).on).toBe(false);
@@ -200,6 +203,7 @@ describe('HostGate', () => {
         expect(gate.due(t + 10)).toBe(false); // too soon after the last probe
         expect(gate.due(t + 50)).toBe(true);
         expect(lines).toEqual([`T${t} gate (start): latency 1:4 of 4, same as previous 1.00, in 5 ticks; p 1.00, predicted knife 3.00 vs plain 4.00, lead 0 -> manipulate`]);
+        // 1:2 2:2 would be p 0.5: knife 4.5 against 4, off (see the jittery test below)
     });
 
     test('a steady 2-tick host stays on with lead 1', async () => {
