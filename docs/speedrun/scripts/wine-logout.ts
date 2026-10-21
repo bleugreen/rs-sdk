@@ -1,5 +1,6 @@
-// Clean logout of wine helpers whose lite clients are still running, before the
+// Clean logout of helper accounts whose lite clients are still running, before the
 // clients are stopped (cairn://p/rs/47; docs/speedrun/helpers/wine.md, "Stopping").
+// Wine helpers and the couriers that supply the wine maker (any cairn_hNN or mule).
 //
 //   GATEWAY_URL=ws://127.0.0.1:8540 bun docs/speedrun/scripts/wine-logout.ts <account> ...
 //
@@ -12,7 +13,7 @@ import { closeSession, logoutClean, openSession } from '../../../speedrun/lib/se
 const accounts = process.argv.slice(2);
 if (accounts.length === 0) throw new Error('usage: wine-logout.ts <account> ...');
 for (const name of accounts) {
-    if (!/^cairn_h4\d$/.test(name)) throw new Error(`${name}: not a wine helper (cairn_h40-h49)`);
+    if (!/^cairn_(h\d\d|mule\d)$/.test(name)) throw new Error(`${name}: not a helper account (cairn_hNN or cairn_muleN)`);
 }
 
 let failed = 0;
