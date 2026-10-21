@@ -143,6 +143,14 @@ await runScript(async ({ bot, sdk }) => {
             console.log(`  before clerk: player ${JSON.stringify(L.pos(sdk))}, Bravek ${bravekNpc ? `${bravekNpc.x},${bravekNpc.z}` : 'not seen'}`);
             await S.step('clerk (24->25)', talk(sdk, /^Clerk$/), { choices: [/I need permission to enter a plague house/, /This is urgent though/] });
             await quest('clerk');
+        } else if (seg === 'clerk') {
+            await setStage(24);
+            await L.tele(sdk, 2529, 3316);
+            await sdk.waitForTicks(2);
+            const b = sdk.findNearbyNpc(/^Bravek$/);
+            console.log(`  before clerk: player ${JSON.stringify(L.pos(sdk))}, Bravek ${b ? `${b.x},${b.z}` : 'not seen'}`);
+            await S.step('clerk alone (24->25)', talk(sdk, /^Clerk$/), { choices: [/I need permission to enter a plague house/, /This is urgent though/] });
+            await quest('clerkAlone');
         } else if (seg === 'bravek') {
             await setStage(25);
             await ensure(sdk, 'hangover_cure', /^Hangover cure$/i);
