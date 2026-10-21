@@ -36,6 +36,8 @@ describe('fleet config', () => {
         expect(c.maxOnline).toBe(40);
         expect(c.gatewayPort).toBe(7790);
         expect(c.loginStaggerMs).toBe(4000);
+        expect([c.loginsPerMinute, c.loginBurst]).toEqual([4, 3]);
+        expect(problemsOf({ loginsPerMinute: 60, accounts: [] }).join()).toContain('loginsPerMinute');
         expect(c.accounts[0]).toEqual({ account: 'cairn_h01', role: 'feathers', options: {}, enabled: true, stallMinutes: 20 });
     });
 
