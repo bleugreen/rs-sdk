@@ -1235,10 +1235,10 @@ function positionals(args: string[], valueFlags: string[]): string[] {
     return out;
 }
 
-function parseOptions(text: string | undefined): Record<string, unknown> {
+function parseOptions(text: string | undefined, name = '--options'): Record<string, unknown> {
     if (!text) return {};
     const v = JSON.parse(text) as unknown;
-    if (typeof v !== 'object' || v === null || Array.isArray(v)) throw new Error('--options must be a JSON object');
+    if (typeof v !== 'object' || v === null || Array.isArray(v)) throw new Error(`${name} must be a JSON object`);
     return v as Record<string, unknown>;
 }
 
@@ -1360,15 +1360,36 @@ async function cmdAdd(args: string[]): Promise<void> {
     }
 }
 
+const ASSIGN_USAGE = 'usage: fleet.ts assign <account> <role> [--options JSON] [--then ROLE [--then-options JSON] | --return] [--disable]';
+
+/**
+ * Put an account on a role. `--then ROLE [--then-options JSON]` is where it goes
+ * once that role finishes; `--return` makes that its current assignment, with
+ * the exact options (or, if the current one is itself finite, its `then`).
+ */
 async function cmdAssign(args: string[]): Promise<void> {
-    const [account, role] = positionals(args, ['options']);
-    if (!account || !role) throw new Error('usage: fleet.ts assign <account> <role> [--options JSON] [--disable]');
+    const [account, role] = positionals(args, ['options', 'then', 'then-options']);
+    if (!account || !role) throw new Error(ASSIGN_USAGE);
     await loadRole(role);
     const options = flag(args, 'options');
+    const thenRole = flag(args, 'then');
+    const thenOptions = flag(args, 'then-options');
+    const back = args.includes('--return');
+    if (thenRole !== undefined && back) throw new Error(`--then and --return are alternatives\n${ASSIGN_USAGE}`);
+    if (thenOptions !== undefined && thenRole === undefined) throw new Error(`--then-options needs --then ROLE\n${ASSIGN_USAGE}`);
+    if (thenRole !== undefined) await loadRole(thenRole);
     const config = await readConfigForEdit();
     const entry = config.accounts.find(a => a.account === account);
+    let then: Assignment | undefined;
+    if (thenRole !== undefined) then = { role: thenRole, options: parseOptions(thenOptions, '--then-options') };
+    if (back) {
+        if (!entry) throw new Error(`--return: ${account} has no assignment in ${PATHS.config} to return to`);
+        then = (entry.then as Assignment | undefined) ?? { role: String(entry.role), options: (entry.options ?? {}) as Record<string, unknown> };
+    }
     const next: Record<string, unknown> = { ...(entry ?? {}), account, role };
+    delete next.then;
     if (options !== undefined) next.options = parseOptions(options);
+    if (then) next.then = then;
     if (args.includes('--disable')) next.enabled = false;
     else delete next.enabled;
     if (entry) config.accounts[config.accounts.indexOf(entry)] = next;
@@ -1376,7 +1397,8 @@ async function cmdAssign(args: string[]): Promise<void> {
     const env = await readFile(join(PATHS.bots, account, 'bot.env'), 'utf8').catch(() => null);
     if (env === null) console.warn(`warning: ${PATHS.bots}/${account}/bot.env does not exist yet; the fleet will retry until it does`);
     await writeConfig(config);
-    console.log(`${entry ? 'updated' : 'added'} ${account} -> ${role}${next.enabled === false ? ' (disabled)' : ''}; apply with: fleetctl reload`);
+    const after = then ? `, then ${describeAssignment(then)} once it finishes` : '';
+    console.log(`${entry ? 'updated' : 'added'} ${account} -> ${role}${after}${next.enabled === false ? ' (disabled)' : ''}; apply with: fleetctl reload`);
 }
 
 /** Read-only look at one account through the fleet gateway: an observe-mode SDK never takes control from the role. */
@@ -1431,7 +1453,7 @@ async function main(): Promise<void> {
         case 'peek':
             return cmdPeek(args);
         default:
-            console.error('usage: bun speedrun/helpers/fleet.ts run | status [--json] | add <range> [--count N] [--role R] [--options JSON] | assign <account> <role> [--options JSON] [--disable] | reload | peek <account>');
+            console.error('usage: bun speedrun/helpers/fleet.ts run | status [--json] | add <range> [--count N] [--role R] [--options JSON] | assign <account> <role> [--options JSON] [--then ROLE [--then-options JSON] | --return] [--disable] | reload | peek <account>');
             process.exit(2);
     }
 }
