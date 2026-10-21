@@ -47,6 +47,26 @@ await runScript(async ({ bot, sdk }) => {
         await lab.act('portcullis lever', () => lab.clickLoc(3337, 2466, 9672, 1), () => lab.at([2464, 9677, 0]));
     };
 
+    /**
+     * Koftik's damp cloth, a lit bronze fire arrow, the shot from (2446,9722).
+     * A miss costs the arrow (upass_bridge.rs2:63-71): back to Koftik for another cloth.
+     */
+    const crossBridge = async () => {
+        for (let shot = 1; shot <= 6; shot++) {
+            if (shot > 1) await lab.travel('back to Koftik after a miss', [2448, 9716, 0]);
+            await lab.talk(`Koftik (damp cloth), shot ${shot}`, /Koftik/, [/litter/i, /./]);
+            await lab.act('wrap cloth on bronze arrow', () => lab.useItem(/^Damp cloth$/i, /^Bronze arrow$/i), () => sdk.countInventoryItems(/fire arrow/i) > 0);
+            await lab.act('light it with the tinderbox', () => lab.useItem(/^Tinderbox$/i, /fire arrow/i), () => sdk.getInventory().some(i => i.id === 942));
+            await lab.act('wield the lit arrow', () => bot.equipItem(/^Bronze fire arrows$/i), () => sdk.getEquipment().some(e => /fire arrows/i.test(e.name)));
+            await lab.travel('Koftik -> shooting spot (2446,9722)', P.shootSpot);
+            const r = await lab.act(`fire at the guide rope, shot ${shot}`, () => lab.clickLoc(3340, 2443, 9718, 1),
+                () => lab.at(P.bridgeWest) || lab.log.slice(-3).some(t => /just misses/.test(t)));
+            if (lab.at(P.bridgeWest)) return shot;
+            void r;
+        }
+        throw new Error('bridge: six misses');
+    };
+
     if (segment === 'post') {
         await stats({ agility: AGILITY, thieving: THIEVING, ranged: 60, hitpoints: 99 });
         await lab.cheat('setvar upass 10');
@@ -60,11 +80,8 @@ await runScript(async ({ bot, sdk }) => {
         await lab.teleTo(2434, 3313, 0);
         const t0 = lab.tick();
         await lab.travel('cave entrance -> Koftik at the bridge', [2448, 9716, 0]);
-        await lab.talk('Koftik (damp cloth, %upass 10)', /Koftik/);
-        await lab.act('wrap cloth on bronze arrow', () => lab.useItem(/^Damp cloth$/i, /^Bronze arrow$/i), () => sdk.countInventoryItems(/fire arrow/i) > 0);
-        await lab.act('light it with the tinderbox', () => lab.useItem(/^Tinderbox$/i, /fire arrow/i), () => sdk.getInventory().some(i => i.name === 'Bronze fire arrows' && i.id === 942));
-        await lab.act('wield the lit arrow', () => bot.equipItem(/^Bronze fire arrows$/i), () => sdk.getEquipment().some(e => /fire arrows/i.test(e.name)));
-        await lab.travel('Koftik -> grid east edge (bridge shot, rope swing)', P.gridEast);
+        await crossBridge();
+        await lab.travel('bridge west bank -> grid east edge (rope swing)', P.gridEast);
         await grid(GRID);
         await lab.travel('portcullis -> Iban temple doors', P.templeDoor);
         await lab.act('temple doors (east side, %regicide_quest 2)', () => lab.clickLoc(3334, 2143, 4647, 1), () => lab.pos()[0] < 2100);

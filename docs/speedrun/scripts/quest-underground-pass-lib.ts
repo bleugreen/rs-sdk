@@ -175,9 +175,15 @@ export class Lab {
                         const target = run[j];
                         await this.sdk.sendWalk(target[0], target[1], true);
                         const final = j === stopAt - 1;
+                        let still = 0;
+                        let lq = this.pos();
                         await L.waitUntil(this.sdk, () => {
                             const q = this.pos();
                             const d = Math.max(Math.abs(q[0] - target[0]), Math.abs(q[1] - target[1]));
+                            still = q[0] === lq[0] && q[1] === lq[1] ? still + 1 : 0;
+                            lq = q;
+                            // stopped short (an NPC on the tile, or the client routed elsewhere): carry on from here
+                            if (still >= 3) return true;
                             return final ? d === 0 : d <= 2;
                         }, 60);
                         k = j + 1;
