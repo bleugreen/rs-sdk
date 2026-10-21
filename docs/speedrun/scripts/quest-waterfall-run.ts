@@ -50,6 +50,7 @@ await runScript(async ({ bot, sdk }) => {
             return stage();
         });
         await rec.seg('swim for the rock: washed to (2527,3413)', 'wait', async c => {
+            await walk(bot, sdk, c, 2512, 3476, 0);
             await opLoc(sdk, c, ROCK, 2512, 3468, 1);
             await waitAt(sdk, 2527, 3413, 0, 40);
         });
@@ -157,6 +158,7 @@ await runScript(async ({ bot, sdk }) => {
             await settle(sdk, 1, 20);
         });
         await rec.seg('rope on rock: wade to the rock', 'interaction', async c => {
+            await walk(bot, sdk, c, 2512, 3476, 0);
             await useOnLoc(sdk, c, /^rope$/i, ROCK, 2512, 3468);
             await waitTicksFor(sdk, s => (s.player?.worldZ ?? 9999) <= 3469, 30);
             await settle(sdk, 1, 20);
