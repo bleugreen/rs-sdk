@@ -574,6 +574,8 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         let approaches = 0;
         let levelUpPages = 0;
         let killPages = 0;
+        let lastXpTick = t0;
+        let stalls = 0;
         let lastXp = sdk.getSkill('magic')!.experience;
         let castsNoXp = 0;
         const badTiles = new Set<string>();
@@ -652,7 +654,7 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
                 // tile where two casts earn no xp is struck off for this boss
                 // position and we move to another.
                 const xpNow = sdk.getSkill('magic')!.experience;
-                if (xpNow > lastXp) { lastXp = xpNow; castsNoXp = 0; }
+                if (xpNow > lastXp) { lastXp = xpNow; castsNoXp = 0; lastXpTick = s.tick; }
                 const bossKey = `${boss.x},${boss.z}`;
                 if (castsNoXp >= 2) { badTiles.add(`${bossKey}>${p.x},${p.z}`); castsNoXp = 0; }
                 for (const n of sdk.getNearbyNpcs()) {
@@ -662,7 +664,18 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
                 const safe = safeRegion(sdk, cartSeen);
                 const okAny = (x: number, z: number) => castTile(boss.x, boss.z)(x, z) && !badTiles.has(`${bossKey}>${x},${z}`);
                 const okSafe = (x: number, z: number) => safe.has(`${x},${z}`) && okAny(x, z);
-                const ok = [...safe].some(k => { const [x, z] = k.split(',').map(Number); return okAny(x!, z!); }) ? okSafe : okAny;
+                const learned = [...safe].some(k => { const [x, z] = k.split(',').map(Number); return okAny(x!, z!); }) ? okSafe : okAny;
+                const tt = tableCastTile(boss.x, boss.z);
+                const ok = tt && !badTiles.has(`${bossKey}>${tt[0]},${tt[1]}`) ? (x: number, z: number) => x === tt[0] && z === tt[1] : learned;
+                // stalled with no xp for 40 ticks: back to the hub, forget
+                if (s.tick - lastXpTick > 40) {
+                    lastXpTick = s.tick;
+                    badTiles.clear();
+                    stalls++;
+                    const home = npcAwarePath(sdk, [{ x: IDLE[0], z: IDLE[1] }]);
+                    if (home) await walkPath(sdk, home);
+                    continue;
+                }
                 if (!ok(p.x, p.z)) {
                     const path = npcAwarePath(sdk, ok, boss.index);
                     approaches++;
@@ -707,7 +720,7 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         // melee: 4 xp per damage at 25x; magic: game xp gained, reported raw
         const gained = sdk.getSkill(STYLE === 'magic' ? 'magic' : 'attack')!.experience - xp0;
         const dealt = STYLE === 'magic' ? `${gained} magic xp` : Math.round(gained / 100);
-        L.note(`attack clicks ${swings}, approach walks ${approaches} (${approachTiles} tiles), level-up pages ${levelUpPages}, struck-off tiles ${badTiles.size}, fade-outs ${moves}, sharks ${eats}, damage dealt ~${dealt}, hp left ${sdk.getState()!.player!.hp}${died ? ', DIED' : ''}; hp/boss% ${hpLog.join(' ')}`);
+        L.note(`attack clicks ${swings}, approach walks ${approaches} (${approachTiles} tiles), level-up pages ${levelUpPages}, struck-off tiles ${badTiles.size}, stalls ${stalls}, fade-outs ${moves}, sharks ${eats}, damage dealt ~${dealt}, hp left ${sdk.getState()!.player!.hp}${died ? ', DIED' : ''}; hp/boss% ${hpLog.join(' ')}`);
         const kd = await dialog(sdk, [], { settle: 1 });
         kd.pages += killPages;
         L.add(kd);
