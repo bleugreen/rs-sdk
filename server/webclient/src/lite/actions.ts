@@ -211,11 +211,12 @@ export function useInventoryItem(c: LiteClient, slot: number, optionIndex: numbe
         return false;
     }
 
-    // The engine only wires OPHELD1-5 to the main inventory; every other
-    // component's item options are inv_button triggers (e.g. [inv_button4,
-    // tradeside:inv]). OPHELD with a foreign com id passes the wire and is
-    // silently dropped by the handler, so route those to INV_BUTTON instead.
-    if (interfaceId !== INVENTORY_INTERFACE_ID) {
+    // Same rule as the authentic menu: a component flagged objOps (the .if
+    // `interactable=yes` the engine reads as `operable`) offers the object's
+    // own ops as OPHELD - the main inventory, the sliding-puzzle grids. Any
+    // other component (bank side, trade offer) offers its own iop instead,
+    // which travels as INV_BUTTON; the engine drops OPHELD on those.
+    if (!IfType.list[interfaceId]?.objOps) {
         return clickInterfaceIop(c, interfaceId, optionIndex, slot);
     }
 

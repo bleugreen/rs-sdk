@@ -36,6 +36,7 @@ const CACHE_DIR = process.env.LITE_TEST_CACHE ?? '/tmp/rs-sdk-lite-test-cache';
 
 const INV_COMPONENT = 3214; // inventory:inv
 const BANK_SIDE_INV = 2006; // bank_side:inv on this 289 build (5064 is the 317-era id)
+const REINIT_PUZZLE_GRID = 11130; // reinitialisation_puzzle:com_3
 
 let available = false;
 
@@ -302,7 +303,32 @@ describe('outgoing action encoding', () => {
         expect(r.g2()).toBe(INV_COMPONENT);
     });
 
-    test('useInventoryItem routes non-inventory components to INV_BUTTON (no OPHELD handlers there)', () => {
+    test('useInventoryItem sends OPHELD on any objOps component, e.g. the Monkey Madness sliding puzzle', () => {
+        if (!available) {
+            return;
+        }
+
+        const c = makeClient('bota');
+        expect(c.ifType(REINIT_PUZZLE_GRID).objOps).toBe(true); // interactable=yes in the .if
+        giveItems(c, REINIT_PUZZLE_GRID, { 24: 385 });
+
+        // [opheld5,_mm_reinit] moves the tile; INV_BUTTON5 finds no trigger.
+        const start = c.out.pos;
+        expect(c.useInventoryItem(24, 5, REINIT_PUZZLE_GRID)).toBe(true);
+
+        const r = new Capture(c.out, start);
+        expect(r.g1()).toBe(ClientProt.OPHELD5);
+        expect(r.g2()).toBe(385);
+        expect(r.g2()).toBe(24);
+        expect(r.g2()).toBe(REINIT_PUZZLE_GRID);
+        expect(r.at).toBe(c.out.pos);
+
+        // An empty tile slot has nothing to move: nothing is written.
+        expect(c.useInventoryItem(23, 5, REINIT_PUZZLE_GRID)).toBe(false);
+        expect(c.out.pos).toBe(r.at);
+    });
+
+    test('useInventoryItem routes components without objOps to INV_BUTTON (their own iop)', () => {
         if (!available) {
             return;
         }
@@ -322,8 +348,9 @@ describe('outgoing action encoding', () => {
         expect(r.g2()).toBe(INV_COMPONENT);
         expect(r.at).toBe(c.out.pos);
 
-        // Foreign component: INV_BUTTONn with the same field order - OPHELD
-        // against a non-3214 com id is silently dropped by the engine.
+        // Bank side inventory has no objOps: INV_BUTTONn with the same field
+        // order - the engine drops OPHELD on a component that is not operable.
+        expect(c.ifType(BANK_SIDE_INV).objOps).toBe(false);
         start = c.out.pos;
         expect(c.useInventoryItem(1, 4, BANK_SIDE_INV)).toBe(true);
 

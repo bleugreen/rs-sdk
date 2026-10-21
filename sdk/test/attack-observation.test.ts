@@ -47,7 +47,7 @@ function state(targetIndex: number, message?: string, attackXp: number = 0) {
             : [],
         combatEvents: [],
         dialog: { isOpen: false, options: [], isWaiting: false },
-        interface: { isOpen: false, interfaceId: -1, options: [] },
+        interface: { isOpen: false, interfaceId: -1, options: [], inventories: [] },
         shop: { isOpen: false },
         bank: { isOpen: false }
     } as any;

@@ -66,7 +66,7 @@ function state({ engaged, message, magicXp = 0 }: StateOptions) {
             : [],
         combatEvents: [],
         dialog: { isOpen: false, options: [], isWaiting: false },
-        interface: { isOpen: false, interfaceId: -1, options: [] },
+        interface: { isOpen: false, interfaceId: -1, options: [], inventories: [] },
         shop: { isOpen: false },
         bank: { isOpen: false }
     } as any;

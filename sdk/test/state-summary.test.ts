@@ -160,3 +160,27 @@ describe('formatWorldState brief mode', () => {
         expect(out).toContain('[Chop down]');
     });
 });
+
+describe('formatWorldState interface inventories', () => {
+    test('lists an open modal inventory with the call that acts on it', () => {
+        const puzzle = state({
+            modalOpen: true,
+            modalInterface: 11126,
+            interface: {
+                isOpen: true,
+                interfaceId: 11126,
+                options: [],
+                inventories: [{
+                    componentId: 11130,
+                    size: 25,
+                    items: [{ slot: 0, id: 4001, name: 'Sliding piece', count: 1, optionsWithIndex: [{ text: 'Move', opIndex: 5 }] }]
+                }]
+            } as any
+        });
+
+        const out = formatWorldState(puzzle, 0);
+
+        expect(out).toContain('Inventory 11130 (1/25 slots filled; act with sdk.sendUseItem(slot, opIndex, 11130)):');
+        expect(out).toContain('  slot 0: Sliding piece (id 4001) [5:Move]');
+    });
+});

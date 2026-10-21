@@ -5,7 +5,7 @@ import type { Client } from '#/client/Client.js';
 import type ClientNpc from '#/dash3d/ClientNpc.js';
 import type ClientPlayer from '#/dash3d/ClientPlayer.js';
 import type ClientObj from '#/dash3d/ClientObj.js';
-import IfType from '#/config/IfType.js';
+import IfType, { ComponentType } from '#/config/IfType.js';
 import { collectGEState } from './ge-state.js';
 import { getDialogPageId } from './dialog-page.js';
 import ObjType from '#/config/ObjType.js';
@@ -57,6 +57,7 @@ import {
     type CombatEvent,
     type DialogState,
     type InterfaceState,
+    type InterfaceInventory,
     type PrayerState,
     type OpFeedbackState
 } from './types.js';
@@ -386,7 +387,30 @@ export class BotStateCollector implements ScanProvider {
             options = rawOptions.map((opt: any) => ({ index: opt.index, text: opt.text, componentId: opt.componentId }));
         }
 
-        return { isOpen, interfaceId, options };
+        const inventories = isOpen ? this.collectModalInventories(interfaceId) : [];
+
+        return { isOpen, interfaceId, options, inventories };
+    }
+
+    /** Every inventory component in the open modal's visible tree. */
+    private collectModalInventories(rootId: number): InterfaceInventory[] {
+        const inventories: InterfaceInventory[] = [];
+
+        const visit = (comId: number, depth: number): void => {
+            const com = IfType.list[comId];
+            if (!com || depth > 10 || (com.type === ComponentType.TYPE_LAYER && com.hide)) {
+                return;
+            }
+            if (com.linkObjType) {
+                inventories.push({ componentId: comId, size: com.linkObjType.length, items: this.collectInventory(comId) });
+            }
+            for (const childId of com.children ?? []) {
+                visit(childId, depth + 1);
+            }
+        };
+
+        visit(rootId, 0);
+        return inventories;
     }
 
     /**
@@ -858,22 +882,31 @@ export class BotStateCollector implements ScanProvider {
 
                 if (objId > 0) {
                     let name = 'Unknown';
-                    const optionsWithIndex: InventoryItemOption[] = [];
+                    let ops: (string | null)[] | null = null;
 
                     try {
                         const obj = ObjType.list(objId - 1);
                         name = obj.name || 'Unknown';
+                        ops = obj.iop;
+                    } catch { /* ignore */ }
 
-                        // Get inventory options (iop) from the object type
-                        if (obj.iop) {
-                            for (let opIdx = 0; opIdx < obj.iop.length; opIdx++) {
-                                const op = obj.iop[opIdx];
-                                if (op) {
-                                    optionsWithIndex.push({ text: op, opIndex: opIdx + 1 }); // opIndex is 1-based
-                                }
+                    // Options follow the menu builder: the object's ops on an
+                    // objOps component (OPHELD), the component's own iop
+                    // otherwise (INV_BUTTON, e.g. worn items' "Remove") -
+                    // exactly what useInventoryItem dispatches there.
+                    if (!component.objOps) {
+                        ops = component.iop;
+                    }
+
+                    const optionsWithIndex: InventoryItemOption[] = [];
+                    if (ops) {
+                        for (let opIdx = 0; opIdx < ops.length; opIdx++) {
+                            const op = ops[opIdx];
+                            if (op) {
+                                optionsWithIndex.push({ text: op, opIndex: opIdx + 1 }); // opIndex is 1-based
                             }
                         }
-                    } catch { /* ignore */ }
+                    }
 
                     items.push({
                         slot,

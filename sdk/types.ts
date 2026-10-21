@@ -269,6 +269,20 @@ export interface InterfaceState {
     isOpen: boolean;
     interfaceId: number;
     options: InterfaceOption[];
+    /** Inventory components inside the open modal (empty when none is open). */
+    inventories: InterfaceInventory[];
+}
+
+/**
+ * One inventory component of an open modal, e.g. a sliding-puzzle grid.
+ * `items` lists occupied slots only; any slot below `size` that is missing is
+ * empty. Each item's options are the ones a real menu offers in this
+ * component, and `sdk.sendUseItem(slot, opIndex, componentId)` dispatches them.
+ */
+export interface InterfaceInventory {
+    componentId: number;
+    size: number;
+    items: InventoryItem[];
 }
 
 /** A clickable viewport-interface option as published in world state. */

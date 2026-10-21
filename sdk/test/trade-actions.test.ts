@@ -48,8 +48,8 @@ function state(frame: Frame, tick: number) {
         combatEvents: [],
         dialog: { isOpen: false, options: [], isWaiting: false },
         interface: trade.isOpen
-            ? { isOpen: true, interfaceId: trade.screen === 'confirm' ? 3443 : 3323, options: [] }
-            : { isOpen: false, interfaceId: -1, options: [] },
+            ? { isOpen: true, interfaceId: trade.screen === 'confirm' ? 3443 : 3323, options: [], inventories: [] }
+            : { isOpen: false, interfaceId: -1, options: [], inventories: [] },
         shop: { isOpen: false },
         bank: { isOpen: false },
         trade,

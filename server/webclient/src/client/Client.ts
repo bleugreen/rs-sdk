@@ -1492,11 +1492,10 @@ export class Client extends GameShell {
             return false;
         }
 
-        // The engine only wires OPHELD1-5 to the main inventory (3214); every
-        // other component's item options are inv_button triggers. OPHELD with
-        // a foreign com id passes the wire and is silently dropped by the
-        // handler, so route those to INV_BUTTON instead.
-        if (interfaceId !== 3214) {
+        // Same rule as the menu builder: a component flagged objOps offers the
+        // object's own ops as OPHELD (main inventory, sliding-puzzle grids);
+        // any other component offers its own iop, which travels as INV_BUTTON.
+        if (!IfType.list[interfaceId]?.objOps) {
             return this.clickInterfaceIop(interfaceId, optionIndex, slot);
         }
 

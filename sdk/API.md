@@ -265,7 +265,7 @@
 | `async sendInteractPlayer(playerIndex: number, option: number = 2): Promise<ActionResult>` | Interact with a player by index and option (1-5). Option 2 = Attack (wilderness), 3 = Follow, 4 = Trade. |
 | `async sendTalkToNpc(npcIndex: number): Promise<ActionResult>` | Talk to an NPC by index. |
 | `async sendPickup(x: number, z: number, itemId: number): Promise<ActionResult>` | Pick up a ground item. |
-| `async sendUseItem(slot: number, option: number = 1, interfaceId?: number): Promise<ActionResult>` | Use an inventory item (eat, equip, etc). `interfaceId` selects which inventory component holds the item. The main inventory (3214, the default) dispatches OPHELD1-5; any other component (trade offer, bank side inventory, ...) dispatches INV_BUTTON1-5, which is the packet family the engine actually handles for interface-defined item options - OPHELD with a foreign component id is silently dropped. |
+| `async sendUseItem(slot: number, option: number = 1, interfaceId?: number): Promise<ActionResult>` | Use an inventory item (eat, equip, etc). `interfaceId` selects which inventory component holds the item (default: the main inventory, 3214). The packet follows the component, like a real menu click: a component that offers the object's own options (the main inventory, sliding-puzzle grids) gets OPHELD1-5; any other component (bank side inventory, trade offer, ...) offers its own options, sent as INV_BUTTON1-5. Either way, `option` is an `opIndex` from the item's `optionsWithIndex` as published for that component - see `state.interface.inventories` for the components of an open modal. |
 | `async sendUseEquipmentItem(slot: number, option: number = 1): Promise<ActionResult>` | Use an equipped item (remove, operate, etc). |
 | `async sendDropItem(slot: number): Promise<ActionResult>` | Drop an inventory item. |
 | `async sendUseItemOnItem(sourceSlot: number, targetSlot: number): Promise<ActionResult>` | Use one inventory item on another. Rejected up front while a shop or bank modal is open: those replace the inventory tab, so the server drops the packet as "component not visible" and sends no message at all. Close the modal first — `bot.closeShop()`, `bot.closeInterface()`, or `sendCloseModal()`. |
@@ -399,6 +399,8 @@ interface InterfaceState {
   isOpen: boolean;
   interfaceId: number;
   options: InterfaceOption[];
+  /** Inventory components inside the open modal (empty when none is open). */
+  inventories: InterfaceInventory[];
 }
 ```
 
