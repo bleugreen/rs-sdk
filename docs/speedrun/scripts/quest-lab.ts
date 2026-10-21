@@ -273,14 +273,16 @@ export class QuestBot {
     }
 
     /** Run any dialogue that opens, until `until()` holds with no dialogue open. */
-    async settle(until: () => boolean, timeoutTicks = 80, choices: RegExp[] = []) {
+    async settle(until: () => boolean, timeoutTicks = 80, choices: RegExp[] = [], requireDialog = false) {
         const t0 = tick(this.sdk);
+        let saw = false;
         while (tick(this.sdk) - t0 < timeoutTicks) {
             if (this.sdk.getState()!.dialog.isOpen) {
+                saw = true;
                 this.S.dialog(await runDialog(this.sdk, choices.splice(0), { settleTicks: 1, openTimeoutTicks: 1 }));
                 continue;
             }
-            if (until()) {
+            if (until() && (saw || !requireDialog)) {
                 this.S.mark();
                 return;
             }
@@ -309,18 +311,18 @@ export class QuestBot {
         await this.settle(until, 80, choices);
     }
 
-    async opLoc(key: string, op: number, until: () => boolean, near?: [number, number]) {
-        const l = await this.loc(key, near);
+    async opLoc(key: string, op: number, until: () => boolean, opts: { near?: [number, number]; dialog?: boolean } = {}) {
+        const l = await this.loc(key, opts.near);
         this.S.action();
         await this.sdk.sendInteractLoc(l.x, l.z, l.id, op);
-        await this.settle(until);
+        await this.settle(until, 80, [], opts.dialog);
     }
 
-    async useOnLoc(obj: string, key: string, until: () => boolean, near?: [number, number]) {
-        const l = await this.loc(key, near);
+    async useOnLoc(obj: string, key: string, until: () => boolean, opts: { near?: [number, number]; dialog?: boolean } = {}) {
+        const l = await this.loc(key, opts.near);
         this.S.action();
         await this.sdk.sendUseItemOnLoc(this.need(obj).slot, l.x, l.z, l.id);
-        await this.settle(until);
+        await this.settle(until, 80, [], opts.dialog);
     }
 
     async useOnObj(src: string, dst: string, until: () => boolean) {
