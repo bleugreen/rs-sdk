@@ -1,5 +1,9 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { afterAll, describe, expect, mock, test } from 'bun:test';
 
+import { CollisionFlag } from '#/dash3d/CollisionFlag.js';
+import { LocAngle } from '#/dash3d/LocAngle.js';
+import { LocShape } from '#/dash3d/LocShape.js';
+import { MapFlag } from '#/dash3d/MapFlag.js';
 import { ClientProt } from '#/io/ClientProt.js';
 import { ServerProt } from '#/io/ServerProt.js';
 
@@ -88,6 +92,11 @@ const { LiteClient } = await import('../lite/LiteClient.js');
 const { dispatch } = await import('../lite/protocol/incoming.js');
 const { captureBaseInterfaces, resetBaseInterfaces } = await import('../lite/interfaces.js');
 const { BotSDK } = await import('../../../../sdk/index.js');
+const { default: ClientBuild } = await import('../client/ClientBuild.js');
+const { default: World } = await import('#/dash3d/World.js');
+const { default: CollisionMap, BuildArea } = await import('#/dash3d/CollisionMap.js');
+const { default: LinkList } = await import('#/datastruct/LinkList.js');
+const { ReachProbe } = await import('./reach.js');
 
 const BUTTON_OK = 1;
 const BUTTON_CLOSE = 3;
@@ -943,6 +952,182 @@ describe('loc routing', () => {
         expect(result).toEqual({ success: true, routed: false });
         expect(opcodes).toEqual([ClientProt.OPLOCU]);
         expect(payload).toEqual([2512, 3468, 1996, 954, 0, 3214]);
+    });
+});
+
+describe('held-object ops on modal inventories', () => {
+    // The Monkey Madness hangar puzzle (reinitialisation_puzzle:com_3) moves a
+    // tile in [opheld5,_mm_reinit]; INV_BUTTON5 there finds no trigger. The
+    // lite twin of this test is in src/lite/action-encoding.test.ts.
+    const REINIT_PUZZLE_GRID = 11130;
+    const BANK_SIDE_INV = 2006;
+
+    function recorder() {
+        const opcodes: number[] = [];
+        const payload: number[] = [];
+        const iops: number[][] = [];
+        const client = Object.assign(Object.create(Client.prototype), {
+            ingame: true,
+            out: { p2: (value: number) => payload.push(value) },
+            writePacketOpcode: (opcode: number) => opcodes.push(opcode),
+            clickInterfaceIop: (com: number, op: number, slot: number) => {
+                iops.push([com, op, slot]);
+                return true;
+            }
+        });
+        return { client, opcodes, payload, iops };
+    }
+
+    test('the overlay sends OPHELD5 on the sliding-puzzle grid, not INV_BUTTON', () => {
+        defineObj(385, 'Puzzle piece');
+        const linkObjType = new Array(25).fill(0);
+        linkObjType[24] = 386; // obj id + 1, as the client stores it
+        defineComponent(REINIT_PUZZLE_GRID, { objOps: true, linkObjType });
+        const { client, opcodes, payload, iops } = recorder();
+
+        // The path an SDK sendUseItem(24, 5, 11130) takes through the overlay.
+        const result = new ActionExecutor(client).execute({
+            type: 'useInventoryItem', slot: 24, optionIndex: 5, interfaceId: REINIT_PUZZLE_GRID, reason: 'slide'
+        });
+
+        expect(result).toMatchObject({ success: true });
+        expect(opcodes).toEqual([ClientProt.OPHELD5]);
+        expect(payload).toEqual([385, 24, REINIT_PUZZLE_GRID]);
+        expect(iops).toEqual([]);
+
+        // An empty tile slot has nothing to move: nothing is written.
+        expect(client.useInventoryItem(23, 5, REINIT_PUZZLE_GRID)).toBe(false);
+        expect(opcodes).toEqual([ClientProt.OPHELD5]);
+    });
+
+    test('a component without objOps still gets its own iop as INV_BUTTON', () => {
+        defineComponent(BANK_SIDE_INV, { objOps: false, linkObjType: [0, 386] });
+        const { client, opcodes, iops } = recorder();
+
+        expect(client.useInventoryItem(1, 4, BANK_SIDE_INV)).toBe(true);
+
+        expect(iops).toEqual([[BANK_SIDE_INV, 4, 1]]);
+        expect(opcodes).toEqual([]);
+    });
+});
+
+describe('loc changes on bridged tiles', () => {
+    // The browser twin of src/lite/zone-bridge.test.ts, through the authentic
+    // path rather than a stub: ClientBuild places a map-level-1 door on a
+    // LinkBelow tile into collision[0], finishBuild pushes the tile's scene down
+    // to level 0, and the server's open-door packets are decoded by zonePacket
+    // and applied by the game loop's loc-change queue at the player's level.
+    // That is where the lite client once dropped the change (rs/54).
+    const ZONE_X = 48;
+    const ZONE_Z = 48;
+    const DOOR_X = ZONE_X + 2;
+    const DOOR_Z = ZONE_Z + 2;
+    const CLOSED_DOOR = 1533;
+    const OPEN_DOOR = 1534;
+
+    const originalLocList = LocType.list;
+    afterAll(() => {
+        (LocType as unknown as { list: typeof originalLocList }).list = originalLocList;
+    });
+
+    /** A loc file with one loc, in ClientBuild.loadLocations' smart-delta format. */
+    function locFile(locId: number, level: number, x: number, z: number, shape: number, angle: number): Uint8Array {
+        const buf = new Packet(new Uint8Array(16));
+        buf.p2(0x8000 + locId + 1);
+        buf.p2(0x8000 + ((level << 12) | (x << 6) | z) + 1);
+        buf.p1((shape << 2) | angle);
+        buf.p1(0); // end of this loc's positions
+        buf.p1(0); // end of locs
+        return buf.data.subarray(0, buf.pos);
+    }
+
+    function bridgedScene() {
+        // Every loc here is a 1x1 door that blocks walking.
+        (LocType as unknown as { list: (id: number) => unknown }).list = (id: number) =>
+            Object.assign(new LocType(), { id, blockwalk: true, blockrange: true, active: true, width: 1, length: 1 });
+
+        const size = BuildArea.SIZE;
+        const groundh = Array.from({ length: 4 }, () => Array.from({ length: size + 1 }, () => new Int32Array(size + 1)));
+        const mapl = Array.from({ length: 4 }, () => Array.from({ length: size }, () => new Uint8Array(size)));
+        for (let x = ZONE_X; x < ZONE_X + 8; x++) {
+            for (let z = ZONE_Z; z < ZONE_Z + 8; z++) {
+                mapl[1][x][z] = MapFlag.LinkBelow; // the fishing platform's floor
+            }
+        }
+        const world = new World(groundh, size, 4, size);
+        const collision = Array.from({ length: 4 }, () => {
+            const map = new CollisionMap();
+            map.reset();
+            return map;
+        });
+
+        const build = new ClientBuild(size, size, groundh, mapl);
+        build.loadLocations(locFile(CLOSED_DOOR, 1, DOOR_X, DOOR_Z, LocShape.WALL_STRAIGHT, LocAngle.WEST), 0, 0, world, collision);
+        build.finishBuild(world, collision);
+
+        const client = Object.assign(Object.create(Client.prototype), {
+            world, collision, mapl, groundh,
+            minusedlevel: 0,
+            sceneState: 2,
+            locChanges: new LinkList(),
+            localPlayer: { routeX: [DOOR_X], routeZ: [DOOR_Z] }
+        });
+        return { client, collision };
+    }
+
+    /** What the server sends to open the door: delete it, add the swung-open leaf beside it. */
+    function openDoor(client: any): void {
+        client.zoneUpdateX = ZONE_X;
+        client.zoneUpdateZ = ZONE_Z;
+        client.zonePacket(new Packet(Uint8Array.from([(2 << 4) | 2, (LocShape.WALL_STRAIGHT << 2) | LocAngle.WEST])), ServerProt.LOC_DEL);
+        client.zonePacket(
+            new Packet(Uint8Array.from([(1 << 4) | 2, (LocShape.WALL_STRAIGHT << 2) | LocAngle.NORTH, OPEN_DOOR >> 8, OPEN_DOOR & 0xff])),
+            ServerProt.LOC_ADD_CHANGE
+        );
+        client.locChangeDoQueue(); // the next game-loop cycle
+    }
+
+    function expectedCollision(walls: Array<[number, number, number]>) {
+        const map = new CollisionMap();
+        map.reset();
+        for (const [x, z, angle] of walls) {
+            map.addWall(x, z, LocShape.WALL_STRAIGHT, angle, true);
+        }
+        return map;
+    }
+
+    function differingTiles(actual: { flags: Int32Array }, expected: { flags: Int32Array }): number {
+        let n = 0;
+        for (let i = 0; i < expected.flags.length; i++) {
+            if (actual.flags[i] !== expected.flags[i]) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    test('a bridged loc is in the player-level scene and routes as closed', () => {
+        const { client, collision } = bridgedScene();
+
+        expect(client.locSceneInfo(DOOR_X, DOOR_Z, CLOSED_DOOR)).toEqual({ shape: LocShape.WALL_STRAIGHT, angle: LocAngle.WEST });
+        expect(differingTiles(collision[0], expectedCollision([[DOOR_X, DOOR_Z, LocAngle.WEST]]))).toBe(0);
+        expect(differingTiles(collision[1], expectedCollision([]))).toBe(0);
+    });
+
+    test('a door the server opens on a bridged floor opens for routing', () => {
+        const { client, collision } = bridgedScene();
+        const probe = new ReachProbe(client);
+        client.localPlayer = { routeX: [DOOR_X], routeZ: [DOOR_Z] };
+        // The tile behind the closed leaf is reachable only around the door
+        // before it opens, so test the wall edge directly.
+        expect(collision[0].flags[CollisionMap.index(DOOR_X, DOOR_Z)] & CollisionFlag.WALL_WEST).not.toBe(0);
+
+        openDoor(client);
+
+        expect(client.locSceneInfo(DOOR_X, DOOR_Z, CLOSED_DOOR)).toBeNull();
+        expect(client.locSceneInfo(DOOR_X - 1, DOOR_Z, OPEN_DOOR)).toEqual({ shape: LocShape.WALL_STRAIGHT, angle: LocAngle.NORTH });
+        expect(differingTiles(collision[0], expectedCollision([[DOOR_X - 1, DOOR_Z, LocAngle.NORTH]]))).toBe(0);
+        expect(probe.canReachTile(DOOR_X - 1, DOOR_Z)).toBe(true);
     });
 });
 
