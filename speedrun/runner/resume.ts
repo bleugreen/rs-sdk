@@ -1,0 +1,270 @@
+// The resume protocol: where the run continues after a restart, from the game
+// state, never from the run script's memory.
+//
+// A demo restart rolls the account back to its last world checkpoint (seconds
+// old on the demo; docs/speedrun/RESILIENCE.md), and a dropped client leaves
+// the step half done. Either way the script's own idea of "the step I was in"
+// is wrong, so every (re)start walks the manifest against what the game shows:
+//
+// 1. Milestones are the steps with `done`. The walk finds the first milestone
+//    whose `done` is false (k), and the last one before it that is done.
+// 2. Between them, the latest step that can start now wins: from k back to the
+//    step after the last done milestone, a step whose `inProgress` holds is
+//    entered through `resume`; otherwise one whose preconditions hold is
+//    entered through `run`. Transient steps (travel, banking) before k are
+//    skipped when the state already shows their effect.
+// 3. Nothing qualifies: stop for the operator with every candidate's reason.
+//
+// Probes (a bank-open probe, a quest-journal read) cost ticks, so they run only
+// when a step the walk evaluates declares them, once per walk.
+//
+// runResumable runs that walk, then the steps, and on a dropped connection
+// abandons the step attempt (runner/fence.ts), waits for the session to come
+// back (the watchdog's reconnect, lib/reconnect.ts), and walks again.
+
+import type { BotWorldState } from '../../sdk/types';
+import type { Session } from '../lib/session';
+import { tickSpan, type TickLog } from '../lib/ticks';
+import { currentTick, nextTick, sleep, tickMs } from '../lib/wait';
+import { Fence } from './fence';
+import { runSteps, type Observed, type RunnerSession, type RunStepsOptions, type RunStepsResult, type Step } from './step';
+
+export type Probe = (session: RunnerSession) => Promise<unknown>;
+
+export interface ResumePoint {
+    /** Step index to start at; steps.length when the run is complete. */
+    index: number;
+    mode: 'run' | 'resume' | 'finished';
+    step: string | null;
+    /** Last milestone found done (-1 if none) and the first not done (steps.length if none). */
+    lastDone: number;
+    firstUndone: number;
+    reason: string;
+    observed: Observed;
+}
+
+export class ResumeError extends Error {
+    constructor(readonly candidates: { step: string; why: string }[], readonly lastDone: number, readonly firstUndone: number) {
+        super(`no step can start from the observed state (last done milestone #${lastDone}, first undone #${firstUndone}): ${candidates.map(c => `${c.step}: ${c.why}`).join('; ')}`);
+        this.name = 'ResumeError';
+    }
+}
+
+/** Lazily probed view of the game, shared by one walk. */
+export class Observation implements Observed {
+    readonly probed: Record<string, unknown> = {};
+    constructor(readonly state: BotWorldState, private readonly probes: Readonly<Record<string, Probe>> = {}, private readonly session?: RunnerSession) {}
+
+    async ensure(names: readonly string[] | undefined): Promise<void> {
+        for (const n of names ?? []) {
+            if (n in this.probed) continue;
+            const p = this.probes[n];
+            if (!p || !this.session) throw new Error(`step needs probe "${n}", which the runner was not given`);
+            this.probed[n] = await p(this.session).catch(() => null);
+        }
+    }
+}
+
+/** Walk the manifest against the observation. See the file comment for the rule. */
+export async function resolveResume<C>(steps: ReadonlyArray<Step<C>>, obs: Observation, c: C): Promise<ResumePoint> {
+    let lastDone = -1;
+    let firstUndone = steps.length;
+    for (let i = 0; i < steps.length; i++) {
+        const s = steps[i]!;
+        if (!s.done) continue;
+        await obs.ensure(s.probes);
+        if (s.done(obs, c)) lastDone = i;
+        else {
+            firstUndone = i;
+            break;
+        }
+    }
+    const point = (index: number, mode: ResumePoint['mode'], reason: string): ResumePoint => ({
+        index, mode, step: steps[index]?.name ?? null, lastDone, firstUndone, reason, observed: obs,
+    });
+    // Trailing transients after the last milestone still have to run.
+    const top = Math.min(firstUndone, steps.length - 1);
+    if (top <= lastDone) return point(steps.length, 'finished', 'every milestone is done');
+    const why: { step: string; why: string }[] = [];
+    for (let j = top; j > lastDone; j--) {
+        const s = steps[j]!;
+        await obs.ensure(s.probes);
+        if (s.inProgress?.(obs, c)) return point(j, 'resume', `${s.name} is in progress`);
+        const pre = s.preconditions(obs.state, c);
+        if (pre === true) return point(j, 'run', `${s.name} can start${j < firstUndone && j !== top ? '' : ''}`);
+        why.push({ step: s.name, why: pre });
+    }
+    throw new ResumeError(why, lastDone, firstUndone);
+}
+
+// ------------------------------------------------------------------ link
+
+/** The connection as the runner sees it. */
+export interface Link {
+    /** Resolves with a reason once the session is lost; stops watching when `signal` aborts. */
+    lost(signal: AbortSignal): Promise<string>;
+    /** Resolves once the session is back in the world with an advancing tick. */
+    restored(timeoutMs: number): Promise<void>;
+    /** True while the session is lost. */
+    isLost(): boolean;
+}
+
+export interface SessionLinkOptions {
+    /** Ticks without an advancing in-world tick before the session counts as lost (default 10, the watchdog's). */
+    staleTicks?: number;
+    pollMs?: number;
+}
+
+/**
+ * A Link over a live Session. Lost: the lite child exited, the client publishes
+ * inGame false, or the tick stopped advancing for `staleTicks`. Restored: an
+ * advancing in-world tick after the loss, from whichever client the watchdog
+ * (or the caller's recover) brought back.
+ */
+export function sessionLink(session: Session, opts: SessionLinkOptions = {}): Link {
+    const staleMs = () => (opts.staleTicks ?? 10) * tickMs();
+    const pollMs = opts.pollMs ?? 100;
+    let lostAt = 0;
+    const why = (): string | null => {
+        if (session.client === 'lite' && session.child && session.childExit !== null) return `client exited (${session.childExit})`;
+        const s = session.sdk.getState();
+        if (s && !s.inGame && session.expectInWorld) return 'client out of game';
+        const since = Date.now() - session.lastAdvanceAt;
+        if (since > staleMs() && session.expectInWorld) return `no tick for ${since} ms`;
+        return null;
+    };
+    return {
+        isLost: () => why() !== null,
+        lost: async signal => {
+            while (!signal.aborted) {
+                const w = why();
+                if (w) {
+                    lostAt = Date.now();
+                    return w;
+                }
+                await sleep(pollMs);
+            }
+            return 'stopped watching';
+        },
+        restored: async timeoutMs => {
+            const deadline = Date.now() + timeoutMs;
+            const since = Math.max(lostAt, 1);
+            while (Date.now() < deadline) {
+                const s = session.sdk.getState();
+                if (s?.inGame && session.expectInWorld && session.lastAdvanceAt > since && why() === null) {
+                    // One more advance, so a replayed stale state does not count.
+                    await nextTick(session.sdk).catch(() => null);
+                    if (why() === null) return;
+                }
+                await sleep(pollMs);
+            }
+            throw new Error(`${session.name}: not back in the world within ${timeoutMs} ms`);
+        },
+    };
+}
+
+// ------------------------------------------------------------------ runner
+
+export const RESUME_STEP = '(resume)';
+export const DROP_STEP = '(drop)';
+
+export type ResumeEvent =
+    | { kind: 'resume'; attempt: number; point: Omit<ResumePoint, 'observed'> }
+    | { kind: 'drop'; attempt: number; reason: string; step: string | null; tick: number }
+    | { kind: 'restored'; attempt: number; wallMs: number };
+
+export interface ResumableOptions<C> extends Omit<RunStepsOptions<C>, 'from' | 'startMode' | 'observed' | 'signal'> {
+    link: Link;
+    probes?: Readonly<Record<string, Probe>>;
+    /** Operator override for the first attempt only (`--from`); later attempts always walk. */
+    from?: number | string;
+    /** Bring the session back after a drop. Default: wait for `link.restored` (the watchdog reconnects). */
+    recover?: (reason: string) => Promise<void>;
+    /** Give up after this many drops (default 20). */
+    maxDrops?: number;
+    /** Longest wait for the session to come back (default 30 min: a restart takes ~2-3). */
+    restoreTimeoutMs?: number;
+    onEvent?: (e: ResumeEvent) => void;
+}
+
+export interface ResumableResult extends RunStepsResult {
+    drops: number;
+    points: Omit<ResumePoint, 'observed'>[];
+}
+
+function row(log: TickLog, session: RunnerSession, step: string, startTick: number, startSession: number, t0: number, meta: Record<string, unknown>, ok = true): void {
+    const endTick = currentTick(session.sdk);
+    const span = tickSpan(startTick, endTick, startSession, session.sessionId);
+    log.append({
+        v: 1, runId: log.runId, account: session.name, sessionId: session.sessionId, step, startTick, endTick, ticks: span.ticks,
+        wallMs: Date.now() - t0, ok, meta, ...(span.crossedSession ? { crossedSession: true } : {}), tickMs: tickMs(), at: new Date().toISOString(),
+    });
+}
+
+/**
+ * Run the manifest to the end, surviving drops: walk from the game state, run,
+ * and on a lost link abandon the attempt, recover, and walk again. Errors that
+ * are not a lost link (a failed postcondition with the session healthy) are
+ * thrown as runSteps throws them.
+ */
+export async function runResumable<C>(session: RunnerSession, steps: ReadonlyArray<Step<C>>, opts: ResumableOptions<C>): Promise<ResumableResult> {
+    const fence = new Fence();
+    const unfence = fence.install(session.sdk);
+    const points: Omit<ResumePoint, 'observed'>[] = [];
+    let drops = 0;
+    try {
+        for (let attempt = 1; ; attempt++) {
+            const t0 = Date.now();
+            const startTick = currentTick(session.sdk);
+            const startSession = session.sessionId;
+            const state = session.sdk.getState() ?? (await nextTick(session.sdk));
+            const obs = new Observation(state, opts.probes, session);
+            let point: ResumePoint;
+            if (attempt === 1 && opts.from !== undefined) {
+                const { resolveStart } = await import('./step');
+                const index = resolveStart(steps, opts.from);
+                point = { index, mode: 'run', step: steps[index]?.name ?? null, lastDone: -1, firstUndone: -1, reason: 'operator --from', observed: obs };
+            } else {
+                point = await resolveResume(steps, obs, opts.c);
+            }
+            const { observed: _o, ...summary } = point;
+            points.push(summary);
+            row(opts.log, session, RESUME_STEP, startTick, startSession, t0, { attempt, ...summary, probes: Object.keys(obs.probed) });
+            opts.onEvent?.({ kind: 'resume', attempt, point: summary });
+            if (point.mode === 'finished') return { completed: 0, drops, points };
+
+            const a = fence.open();
+            const watch = new AbortController();
+            const lost = opts.link.lost(watch.signal).then(reason => ({ lost: reason }) as const);
+            const run = fence
+                .run(a, () => runSteps(session, steps, { ...opts, from: point.index, startMode: point.mode === 'resume' ? 'resume' : 'run', observed: point.observed, signal: a.signal }))
+                .then(r => ({ result: r }) as const, (e: unknown) => ({ error: e }) as const);
+            const first = await Promise.race([run, lost]);
+            watch.abort();
+
+            let reason: string;
+            if ('result' in first) {
+                if (!first.result.aborted) return { ...first.result, drops, points };
+                reason = a.reason || 'aborted';
+            } else if ('error' in first) {
+                if (!opts.link.isLost()) throw first.error;
+                reason = `step failed while the link was lost: ${first.error instanceof Error ? first.error.message : String(first.error)}`;
+            } else {
+                reason = first.lost;
+            }
+            const dropTick = currentTick(session.sdk);
+            a.abort(reason);
+            drops++;
+            const current = steps[Math.min(point.index, steps.length - 1)]?.name ?? null;
+            opts.onEvent?.({ kind: 'drop', attempt, reason, step: current, tick: dropTick });
+            if (drops > (opts.maxDrops ?? 20)) throw new Error(`gave up after ${drops - 1} drops (last: ${reason})`);
+            const r0 = Date.now();
+            const dropSession = session.sessionId;
+            await (opts.recover ? opts.recover(reason) : opts.link.restored(opts.restoreTimeoutMs ?? 30 * 60_000));
+            row(opts.log, session, DROP_STEP, dropTick, dropSession, r0, { attempt, reason, step: current, recoverMs: Date.now() - r0 }, false);
+            opts.onEvent?.({ kind: 'restored', attempt, wallMs: Date.now() - r0 });
+        }
+    } finally {
+        unfence();
+    }
+}
