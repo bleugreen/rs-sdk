@@ -359,24 +359,27 @@ load 3-4 of 32 cores) by holding a random 15% of starter bundles one label
 |---|---|---|---|
 | Iron rotation, knife, respawn 19, 80 ores | 3.53 ticks/ore, 0 slips | **3.51**, 11 held, 0 slips | 3.84 (rs/5) |
 | Willow, knife, 100 logs | 5.03 ticks/log | **5.76**, 23 held (about 3.2 ticks each) | 5.84 |
-| Fly, knife, 100 catches | 3.86 ticks/catch | FLY15 | FLYBASE |
+| Fly, knife, 100 catches | 3.86 ticks/catch | **4.92**, 20 held (about 5.3 ticks each) | 6.61 |
 
 The iron rotation absorbed the held starters entirely: at respawn 19 the 6-rock lap has
 slack, so a held starter mostly used up a wait (at respawn 13, with no slack, about 3.15 is
-expected; inferred). Each held willow starter cost about one knife cycle, as read. But with
-15% held the knife only just stays ahead of plain on willows, because tree depletion and
-re-bootstraps already dilute its per-roll gain.
+expected; inferred). Each held starter cost about one *plain* cycle, not one knife cycle:
+the late roll runs at the plain length, and the schedule needs a cycle or two to drift back
+into phase (fly gaps of 5 and 10). With 15% held, the knife stays well ahead of plain on
+fly (26%). On willows it only just stays ahead, because tree depletion and re-bootstraps
+already dilute its per-roll gain.
 
 **Decision.** `gateDecision(probe, {plainCycle, knifeCycle = 3, missCost})` turns the
 manipulation on when knifeCycle + (1 - modeFraction) × missCost < plainCycle. The miss
-cost defaults to one knife cycle (measured above); the mining loop passes 1, because it
+cost defaults to one plain cycle (measured above); the mining loop passes 1, because it
 runs closed-loop. The resulting thresholds on the share at the dominant offset:
-woodcutting (plain 4) needs more than 2/3, fly (5) more than 1/3, the iron rotation (3.61,
-miss 1) more than 0.39, and lobster (6) passes any distribution. Main's Ashburn probe (51
-of 60 at 1 tick, 85%) passes everywhere. rs/26's probe from bbs (25 at 2, 35 at 3, 58%)
-passes for fly and fails for woodcutting. This replaced a first rule of "95% of trials at 1
-tick" (from rs/53's quiet 110 of 110 against loaded 23 of 60) once the demo showed that
-even a good host reads 2.
+woodcutting (plain 4) needs more than 3/4, fly (5) more than 3/5, lobster (6) more than
+1/2, and the iron rotation (3.61, miss 1) more than 0.39. Main's Ashburn probe (51 of 60 at
+1 tick, 85%) passes everywhere. This run's probes from bbs (70% at 2 ticks) pass for fly and
+fail for woodcutting, which matches the demo check below, where the knife did not clearly
+beat plain on trees. rs/26's bbs probe (25 at 2, 35 at 3, 58%) fails both. This replaced a
+first rule of "95% of trials at 1 tick" (from rs/53's quiet 110 of 110 against loaded 23
+of 60) once the demo showed that even a good host reads 2.
 
 **Measured override.** The loops report every xp drop to the gate (`gate.drop`). After
 30 drops in one manipulating stretch, the gate compares that stretch's ticks per drop with
@@ -402,7 +405,7 @@ knife fly gave 3.68 per catch.
 `cairn_tm62`; normal trees west of Lumbridge castle, bronze axe). Five rounds of plain, knife
 forced on, and knife behind the gate, 20 logs each, with a 30-trial probe before every
 block. The gate in this run used an earlier model (consecutive agreement, with a miss
-costing a plain cycle). The demo's xp rate took the account from level 20 to 75 over the
+costing a plain cycle); the current one would have kept the knife off on these trees. The demo's xp rate took the account from level 20 to 75 over the
 run, so the report weights each log by the rolls expected at its level
 (`stat_random(64, 200)`). The walk to the next tree is in both columns.
 
@@ -414,8 +417,8 @@ run, so the report weights each log by the rolls expected at its level
 
 The probes before the 15 blocks, in order (counts at 1, 2 and 3 ticks): 13/16/1, 0/30/0,
 13/17/0; 1/28/1, 3/27/0, 9/21/0; 7/23/0, 13/17/0, 6/24/0; 20/9/1, 10/19/1, 15/15/0;
-3/27/0, 10/20/0, 8/21/1. In total 139 / 336 / 5 of 480: dominant 2 ticks at 70%, just over
-woodcutting's line. On this host the knife is at best a few percent ahead of plain, and
+3/27/0, 10/20/0, 8/21/1. In total 139 / 336 / 5 of 480: dominant 2 ticks at 70%, under
+woodcutting's line of 75%. On this host the knife is at best a few percent ahead of plain, and
 the 20-log blocks are too noisy to separate them; excluding round 1, the forced knife and
 plain both read 5.5 per expected roll. This is the pessimistic bound. The same command
 from the run machine (`bash docs/speedrun/scripts/tickmanip-demo.sh <bot>`) gives the real
