@@ -182,6 +182,7 @@ if (ROLE === 'helper') {
         let seenTick = -1;
         let stagedSeq = -1;
         let stagedAt = -1;
+        let stagedAt = -1;
         let offeredTick = -1;
         let gaveTick = -99;
         let plan: PlanMsg | null = null;
@@ -235,8 +236,8 @@ if (ROLE === 'helper') {
                 }
                 continue;
             }
-            if (stagedSeq === plan.seq && s.tick - stagedAt === 25 && !s.trade?.isOpen) console.log(`HELPER waiting seq ${plan.seq} at ${s.tick}: pos ${s.player?.worldX},${s.player?.worldZ} msgs ${s.gameMessages.slice(-5).map(m => `${m.tick}:${m.text}`).join(' | ')}`);
-            if (stagedSeq !== plan.seq) { stagedAt = s.tick; } stagedSeq = plan.seq; console.log(`HELPER seq ${plan.seq}: plan seen ${seenTick}, staged ${s.tick}`); }
+            if (stagedSeq === plan.seq && s.tick - stagedAt === 32 && !s.trade?.isOpen) console.log(`HELPER waiting seq ${plan.seq} at ${s.tick}: pos ${s.player?.worldX},${s.player?.worldZ} msgs ${s.gameMessages.slice(-5).map(m => `${m.tick}:${m.text}`).join(' | ')}`);
+            if (stagedSeq !== plan.seq) { stagedAt = s.tick; stagedSeq = plan.seq; console.log(`HELPER seq ${plan.seq}: plan seen ${seenTick}, staged ${s.tick}`); }
             const p = s.nearbyPlayers.find(x => x.name.toLowerCase() === partner);
             if (p) sdk.sendTradeRequest(p.index).catch(() => {});
         }
