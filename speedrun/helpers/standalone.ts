@@ -357,6 +357,10 @@ class AccountRun {
             throw new Error(`${this.entry.account}: no credentials at ${this.envPath}`);
         }
         this.botEnv = parseBotEnv(text);
+        // Credentials travel only by environment or the 600-mode file; argv is visible to every user in ps.
+        if (this.entry.args.some(a => this.botEnv.PASSWORD && a.includes(this.botEnv.PASSWORD))) {
+            throw new Error(`${this.entry.account}: a role argument carries the account's password; pass credentials only through bot.env`);
+        }
         const why = checkBotEnv(this.botEnv, this.entry.account, this.L.gatewayUrl);
         if (why) throw new Error(`${this.entry.account}: ${this.envPath}: ${why}`);
     }
