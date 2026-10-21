@@ -897,7 +897,8 @@ export async function courierTrip(ctx: RoleContext): Promise<{ trades: number; c
     await ensureOutOfTutorial(ctx);
     await bot.dismissBlockingUI();
     if (sdk.getTradeState().isOpen) await bot.declineTrade();
-    const p = sdk.getState()!.player;
+    const p = sdk.getState()?.player;
+    if (!p) throw new Error('courier: no player state');
     const home = { x: p.worldX, z: p.worldZ };
     const matching = () => sdk.getInventory().filter(i => patterns.some(re => re.test(i.name)));
     const keepNonMatching = () => countById(sdk.getInventory().filter(i => !patterns.some(re => re.test(i.name))));
