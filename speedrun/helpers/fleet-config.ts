@@ -41,6 +41,10 @@ export interface FleetConfig {
     gatewayPort: number;
     /** Minimum spacing between any two logins the fleet makes, first logins and re-logins alike. */
     loginStaggerMs: number;
+    /** Sustained fleet-wide login rate (token bucket refill). */
+    loginsPerMinute: number;
+    /** Logins allowed back to back before loginsPerMinute applies. */
+    loginBurst: number;
     accounts: AccountConfig[];
 }
 
@@ -48,6 +52,8 @@ export const CONFIG_DEFAULTS = {
     maxOnline: 40,
     gatewayPort: 7790,
     loginStaggerMs: 4000,
+    loginsPerMinute: 4,
+    loginBurst: 3,
     stallMinutes: 20
 } as const;
 
@@ -73,7 +79,7 @@ export function parseFleetConfig(raw: unknown): FleetConfig {
         throw new ConfigError(['top level must be an object: { "maxOnline": 40, "accounts": [ ... ] }']);
     }
 
-    const known = new Set(['maxOnline', 'gatewayPort', 'loginStaggerMs', 'accounts']);
+    const known = new Set(['maxOnline', 'gatewayPort', 'loginStaggerMs', 'loginsPerMinute', 'loginBurst', 'accounts']);
     for (const key of Object.keys(raw)) {
         if (!known.has(key)) problems.push(`unknown top-level key "${key}"`);
     }
@@ -89,6 +95,15 @@ export function parseFleetConfig(raw: unknown): FleetConfig {
     const loginStaggerMs = raw.loginStaggerMs ?? CONFIG_DEFAULTS.loginStaggerMs;
     if (!intIn(loginStaggerMs, 1000, 60_000)) {
         problems.push(`loginStaggerMs must be an integer from 1000 to 60000 (got ${JSON.stringify(raw.loginStaggerMs)})`);
+    }
+    // The demo answers bursts with "Too many login attempts"; these bounds keep the fleet polite.
+    const loginsPerMinute = raw.loginsPerMinute ?? CONFIG_DEFAULTS.loginsPerMinute;
+    if (!intIn(loginsPerMinute, 1, 12)) {
+        problems.push(`loginsPerMinute must be an integer from 1 to 12 (got ${JSON.stringify(raw.loginsPerMinute)})`);
+    }
+    const loginBurst = raw.loginBurst ?? CONFIG_DEFAULTS.loginBurst;
+    if (!intIn(loginBurst, 1, 6)) {
+        problems.push(`loginBurst must be an integer from 1 to 6 (got ${JSON.stringify(raw.loginBurst)})`);
     }
 
     const accounts: AccountConfig[] = [];
@@ -146,8 +161,14 @@ export function parseFleetConfig(raw: unknown): FleetConfig {
         maxOnline: maxOnline as number,
         gatewayPort: gatewayPort as number,
         loginStaggerMs: loginStaggerMs as number,
+        loginsPerMinute: loginsPerMinute as number,
+        loginBurst: loginBurst as number,
         accounts
     };
+}
+
+export function loginLimitPolicy(config: FleetConfig): { perMinute: number; burst: number; minSpacingMs: number } {
+    return { perMinute: config.loginsPerMinute, burst: config.loginBurst, minSpacingMs: config.loginStaggerMs };
 }
 
 /** The accounts the fleet should keep online: enabled ones, in file order, up to maxOnline. */
