@@ -28,7 +28,6 @@ const argv = process.argv.slice(2);
 const ri = argv.indexOf('--rocks');
 const ROCKS: P[] = [];
 for (let i = ri + 1; ri >= 0 && i < argv.length && !argv[i]!.startsWith('--'); i++) ROCKS.push(argv[i]!.split(',').map(Number) as P);
-if (!ROCKS.length && si < 0) throw new Error('--rocks x,z ... or --steps stand>rock ... required');
 // --steps stand>rock ... replays the planner's steps exactly (its --show output, one period).
 // The bot walks to the planner's standing tile itself (MOVE_GAMECLICK) and clicks the rock
 // once beside it; the first swing lands on the same tick the walk-into-op would, so choosing
@@ -40,6 +39,7 @@ for (let i = si + 1; si >= 0 && i < argv.length && !argv[i]!.startsWith('--'); i
     STEPS.push({ stand: a!.split(',').map(Number) as P, rock: b!.split(',').map(Number) as P });
 }
 if (STEPS.length) for (const st of STEPS) ROCKS.push(st.rock);
+if (!ROCKS.length) throw new Error('--rocks x,z ... or --steps stand>rock ... required');
 const START = arg('start', '').split(',').map(Number) as P;
 const ORES = Number(arg('ores', '120'));
 const LEVEL = Number(arg('level', '99'));
