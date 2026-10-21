@@ -20,6 +20,18 @@ host shows up as missed cycles (the one 14-tick gap in section 8 may be that), n
 slower cycle. rs/26's bbs correction factor had not been published when this was written
 (01:15).
 
+**Client.** Every number here was taken on the headless lite client against a local lab engine,
+where a reaction lands on the next tick. The scored run drives the browser webclient against the
+demo, where each reaction to observed state costs 1-2 more ticks through the SDK relay from home
+and about 0.15 from Ashburn (rs/2; `docs/speedrun/LAB.md` on main, "Which client a number was
+taken on" and the host-latency table under "Running several labs on one machine"). **The tuned
+7-tick cycle has no reactions**: its four packets (trade on T+5, accept on T+6, confirm and craft
+on T+7, section 4) go out on predicted ticks. So it does not pay the relay's extra ticks per
+reaction, but every packet must land on its tick, and the demo's relay latency of 2-3 ticks
+(LAB.md table) would break it. It belongs in the in-page tick program the scored run uses for
+its other tick-exact loops (cairn://p/rs/97). Reacting to published state instead is the stock
+SDK's 15-tick cycle (measured). Totals are not re-derived for the webclient.
+
 ## 1. Recommendation
 
 The scored account stands next to the altar inside the altar room and never
@@ -44,6 +56,15 @@ about 1,134 ticks of crafting, roughly 40 ticks better than the nature route
 after travel (inferred). Without law-capable helpers, the scored account has to
 leave the room for every trade (32 ticks per cycle, measured), and law is far
 worse than nature.
+
+### Summary row
+
+rs/2's columns for the Item-fed skills section of `docs/speedrun/skills/README.md`; column 5
+is "with interleaving (net)", n/a where nothing is absorbable.
+
+| Skill | Headline method | Start level (on-route quests) | Ticks to 99, normal | Ticks to 99, with interleaving (net) | Basis | Helper supplies | Document |
+|---|---|---|---|---|---|---|---|
+| Runecraft | craft in the altar room with a helper trading 27 essence per 7-tick cycle: air altar 1-44, nature altar 44-99 | 1 (no quest gives Runecraft; [quests README](../quests/README.md) section 4) | ~1,330 (~1,180 crafting + ~150 travel) | n/a | measured cycle, inferred totals; busy host | 4,536 rune essence, air and nature talismans, charged glory | runecraft.md |
 
 ## 2. Route by level band
 
@@ -255,7 +276,8 @@ Runecraft can be absorbed into self-only time.** It is location-bound: the accou
 inside the altar room, which it enters with a talisman, so it cannot be at a tree, a fishing
 spot or a knight at the same time. Inside the room every tick of the 7-tick cycle is either the
 craft's `p_delay(3)` (which drops packets) or the trade that refills it (section 4), so the
-room has no idle ticks to host other helper-fed actions either.
+room has no idle ticks to host other helper-fed actions either. Column 5 of the summary row is
+therefore n/a.
 
 ## 6. Gotchas
 

@@ -19,6 +19,15 @@ accounts). Lab: [../LAB.md](../LAB.md). Labels follow
 runs as at most a few percent pessimistic. The 4-tick roll chain itself is a server rule. rs/26's
 bbs correction factor had not been published when this was written (01:15).
 
+**Client.** Every number here was taken on the headless lite client against a local lab engine,
+where a reaction lands on the next tick. The scored run drives the browser webclient against the
+demo, where each reaction to observed state costs 1-2 more ticks through the SDK relay from home
+and about 0.15 from Ashburn (rs/2; `docs/speedrun/LAB.md` on main, "Which client a number was
+taken on" and the host-latency table under "Running several labs on one machine"). The reaction
+cost sits in the refills: **a trade refill has about 3 reactions per 27 logs** (open on the
+helper's request, accept, confirm) and a bank refill about the same; the helper-dropped row has
+no refills. Totals are not re-derived for the webclient.
+
 ## 1. Recommendation
 
 Light logs with a tinderbox, always the highest tier unlocked, from level 1
@@ -61,6 +70,15 @@ with trades). Reaching 43 also makes Sea Slug's dry-stick roll certain (same
 
 No on-route quest gives Firemaking. The post-quest start level is 1, so
 1 -> 99 and post-quest -> 99 are the same number.
+
+### Summary row
+
+rs/2's columns for the Item-fed skills section of `docs/speedrun/skills/README.md`; column 5
+is "with interleaving (net)", n/a where nothing is absorbable.
+
+| Skill | Headline method | Start level (on-route quests) | Ticks to 99, normal | Ticks to 99, with interleaving (net) | Basis | Helper supplies | Document |
+|---|---|---|---|---|---|---|---|
+| Firemaking | tinderbox line, highest log tier, on a helper-dropped row (or a trade per 27 logs) | 1 (no on-route quest gives Firemaking); 30 before Sea Slug if it stays on route ([quests README](../quests/README.md) section 4, step 0) | ~650 dropped row (measured 634 and 666); ~695 with trades | n/a | measured end to end (bgsrv-mac) | 157 logs (2 normal, 4 oak, 7 willow, 13 maple, 24 yew, 107 magic), tinderbox | firemaking.md |
 
 ## 2. Route by level band
 
@@ -266,7 +284,7 @@ cancel a gathering interaction (interleaving.md rule 1). And it runs on `%action
 same varp a pickpocket stun sets to `map_clock + 8` (interleaving.md section 4), so it cannot
 share a stun either (inferred from the read scripts; not measured). The reverse, using the
 line's 3 idle ticks per fire as a host for bury or delay-free actions, is an open question in
-interleaving.md section 9.
+interleaving.md section 9. Column 5 of the summary row is therefore n/a.
 
 ## 6. Gotchas
 

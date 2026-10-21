@@ -61,6 +61,15 @@ including the bank visit, takes **58 ticks** with a one-click-per-tick loop and
   damage, and only reorders ticks this route spends anyway (`pre_mm_fights.md`
   section 2).
 
+### Summary row
+
+rs/2's columns for the Item-fed skills section of `docs/speedrun/skills/README.md`; column 5
+is "with interleaving (net)". The loop conditions are in section 5.
+
+| Skill | Headline method | Start level (on-route quests) | Ticks to 99, normal | Ticks to 99, with interleaving (net) | Basis | Helper supplies | Document |
+|---|---|---|---|---|---|---|---|
+| Prayer | bury dragon bones at a bank booth; 11 early for Prayer 43 before TGV | 1 (no on-route quest gives Prayer; [quests README](../quests/README.md) section 4, step 0) | 1,151 (measured run 1,221 with stalls) | **~800** with the ~196 bones in pickpocket stuns: clean, Thieving has no knife column. Adding ~348 bones on 4-tick WC / 5-tick fly fishing gives ~150-220, which applies only against those skills' normal column; against WC's knife column it is ~500-570 | measured cadence (fedora, busy host); interleaving totals inferred | 555 dragon bones (11 unnoted before TGV, the rest one noted stack) | prayer.md |
+
 ## 2. Route by level band
 
 One method covers every band. Band boundaries are only where quest xp lands.
@@ -213,15 +222,6 @@ hosts: a pickpocket stun (1.96 bones per stun measured), the wait ticks of an un
 | Stuns only: 11 early + 196 in stuns + 348 standalone | **about 800** (21 + 723 + 40-72 of top-ups) | inferred |
 | Stuns + un-manipulated WC/fishing clocks | **about 150-220** (21 early + ~23 top-up trades) | inferred; applies only against Woodcutting's and Fishing's normal column. rs/3's README quotes ~150 for the gathering-clock case |
 | Stuns + 4-tick WC, counted against WC's knife column | **about 500-570** (the 150-220 plus ~348 Woodcutting ticks lost to the slower clock) | inferred, interleaving.md section 7 |
-
-### Summary row
-
-rs/2's columns for the Item-fed skills section of `docs/speedrun/skills/README.md`; column 5
-is "with interleaving (net)".
-
-| Skill | Headline method | Start level (on-route quests) | Ticks to 99, normal | Ticks to 99, with interleaving (net) | Basis | Helper supplies | Document |
-|---|---|---|---|---|---|---|---|
-| Prayer | bury dragon bones at a bank booth; 11 early for Prayer 43 before TGV | 1 (no on-route quest gives Prayer; [quests README](../quests/README.md) section 4, step 0) | 1,151 (measured run 1,221 with stalls) | **~800** with the ~196 bones in pickpocket stuns: clean, Thieving has no knife column. Adding ~348 bones on 4-tick WC / 5-tick fly fishing gives ~150-220, which applies only against those skills' normal column; against WC's knife column it is ~500-570 | measured cadence (fedora, busy host); interleaving totals inferred | 555 dragon bones (11 unnoted before TGV, the rest one noted stack) | prayer.md |
 
 ## 6. Gotchas
 

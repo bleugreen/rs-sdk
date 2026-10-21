@@ -13,6 +13,16 @@ busy host's figures, a few percent pessimistic: the bot reacts in wall-clock tim
 host occasionally costs a tick in a turnaround. The 100 ms runs were only used to debug the
 scripts.
 
+**Client.** Every number here was taken on the headless lite client against a local lab engine,
+where a reaction lands on the next tick. The scored run drives the browser webclient against the
+demo, where each reaction to observed state costs 1-2 more ticks through the SDK relay from home
+and about 0.15 from Ashburn (rs/2; `docs/speedrun/LAB.md` on main, "Which client a number was
+taken on" and the host-latency table under "Running several labs on one machine"). The ~10-tick
+turnaround per 5-item inventory is reaction-bound, with **about 4 reactions**: the trade is
+opened once the last item's xp is seen, the two trade screens are each accepted when they
+appear, and the make-5 click goes out once the bars are seen (section 2's leg table). The five
+items themselves run on the server's 5-tick clock. Totals are not re-derived for the webclient.
+
 ## 1. Recommendation
 
 Stand on the Varrock west anvil (3188,3426) with a hammer and have a helper stand on the next
@@ -33,6 +43,15 @@ best item at every level from 33 up.
 
 The issue brief's estimate (~940 ticks, ~54 base/tick) was the 5-tick item with almost no
 turnaround; the turnaround measured at 9-10 ticks per inventory of 25 ticks is what adds the rest.
+
+### Summary row
+
+rs/2's columns for the Item-fed skills section of `docs/speedrun/skills/README.md`; column 5
+is "with interleaving (net)", n/a where nothing is absorbable.
+
+| Skill | Headline method | Start level (on-route quests) | Ticks to 99, normal | Ticks to 99, with interleaving (net) | Basis | Helper supplies | Document |
+|---|---|---|---|---|---|---|---|
+| Smithing | best platebody per level at the Varrock west anvil, bars by helper trade per 5-item inventory | 1 (no on-route quest gives Smithing; [quests README](../quests/README.md) section 4) | 1,147 measured (~1,107 with the helper staged) | n/a | measured end to end, 300 ms; busy host | hammer; 15 bronze, 39 iron, 95 steel, 280 mithril, 340 adamant bars | smithing.md |
 
 ## 2. Route by level band
 
@@ -181,7 +200,7 @@ player is delayed for nearly all of every 5-tick item and drops any packet a hos
 send. The only portable Smithing xp is Superheat (`p_delay(1)`, about 2 per pickpocket stun),
 but 2 gold superheats with the gauntlets are 112.5 base, about 2.4 anvil ticks at the 47-per-tick
 top band, against 4 standalone ticks for the 2 dragon bones the same stun would carry. The stuns
-go to Prayer (inferred).
+go to Prayer (inferred). Column 5 of the summary row is therefore n/a.
 
 ## 6. Gotchas
 
