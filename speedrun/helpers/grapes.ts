@@ -324,6 +324,8 @@ class Gatherer {
             for (const i of this.sdk.getInventory().filter(i => /^(burnt chicken|bones|feather)$/i.test(i.name))) await this.bot.dropItem(i, 'all');
             const extra = invCount(this.sdk, COOKED_CHICKEN) - KEEP_FOOD;
             if (extra > 0) await this.bot.dropItem(/^cooked chicken$/i, extra);
+            // Still full: the rest of the tutorial kit (net, pot, runes...) goes to the bank.
+            if (freeSlots(this.sdk) === 0) await this.bank(DRAYNOR_BANK);
             return;
         }
         await this.pickStyle();
@@ -624,6 +626,7 @@ export const role: Role = {
             phase = to;
         };
         while (!ctx.signal.aborted) {
+            const cycleStart = tick(ctx.sdk);
             try {
                 await dismissDialogs(ctx.bot, ctx.sdk);
                 if (ctx.sdk.isBankOpen() || ctx.sdk.getState()?.shop?.isOpen) await ctx.bot.closeInterface();
@@ -645,6 +648,8 @@ export const role: Role = {
                     await g.getHat();
                 }
                 errors = 0;
+                // A cycle that changed nothing must not spin the loop.
+                if (tick(ctx.sdk) === cycleStart) await ctx.sdk.waitForTicks(1);
             } catch (e) {
                 if (ctx.signal.aborted) break;
                 errors++;
