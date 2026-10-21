@@ -499,7 +499,9 @@ class Herbalist {
                 }
                 return;
             }
-            const bought = (await this.run.bot.buyFromShop(item, n)).amountBought ?? 0;
+            const r = await this.run.bot.buyFromShop(item, n);
+            const bought = r.amountBought ?? 0;
+            if (bought < n) this.ctx.log('supply: short buy', { item: key, asked: n, bought, reason: r.reason ?? null, message: r.message });
             if (bought === 0) return;
             got += bought;
             this.bought[key] = (this.bought[key] ?? 0) + bought;
