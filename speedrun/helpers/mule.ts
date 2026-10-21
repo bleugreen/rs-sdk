@@ -541,7 +541,7 @@ export interface MuleOptions {
     /**
      * 'order': serve packages in order, one per trade from `serve`. 'request': only
      * after a request names one, by a line in `requestFile` or a PM from `serve`
-     * (PMs need the world's friends server; none reached the mule in our tests).
+     * (a PM reaches the role only if it sets `readsChat`; this role does not yet).
      */
     serveMode?: 'order' | 'request';
     /** A file on the mule's host; each line is a package name to prepare next. */

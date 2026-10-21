@@ -605,6 +605,9 @@ class AccountRunner {
             let outcome: string;
             try {
                 const role = await loadRole(cfg.role);
+                // The SDK reads config.showChat on every state message, so this takes effect at
+                // once and is reset when the account is reassigned to a role that does not chat.
+                this.sdk!.config.showChat = role.readsChat === true;
                 this.note(`[fleet] starting role ${cfg.role} ${JSON.stringify(cfg.options)}`);
                 const ctx = this.context(cfg, ctl.signal);
                 // abortable(): a role that ignores its signal must not hold the loop hostage.

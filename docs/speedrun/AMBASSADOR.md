@@ -160,7 +160,7 @@ So private messages work through lite clients and loopback gateways. They are in
 `speedrun/lab/ambassador-injection.ts` runs the real role in process, with the real model, against a staff-level attacker on a local engine:
 
 ```sh
-LAB_WEB_PORT=9580 LAB_MANAGEMENT_PORT=9581 LAB_HISCORES_PORT=9582 LAB_NODE_PORT=44580 LAB_GATEWAY_PORT=8580 \
+WEB_PORT=9580 WEB_MANAGEMENT_PORT=9581 HISCORES_WEB_PORT=9582 NODE_PORT=44580 AGENT_PORT=8580 \
 LAB_FRIEND=1 LAB_HELPERS=ambatk speedrun/lab/lab.sh amblab speedrun/lab/ambassador-injection.ts:--attacker=ambatk
 ```
 

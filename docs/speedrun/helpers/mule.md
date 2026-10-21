@@ -100,9 +100,13 @@ was asked for, through `requestFile`: a file on the mule's host where each line 
 package name (`echo wine1 >> <file>` over ssh, from whatever drives the run). The
 mule pops one line per request, withdraws that package, and pre-requests the scored
 account when it is near. `requestPackage(sdk, mule, name)` sends the same name by
-private message, but in our tests no private message reached the mule, on the lab or
-on the demo (the engine relays PMs only through its friends server), so treat PMs as
-unavailable.
+private message. Private messages do arrive, through a lite client and the fleet's
+loopback gateway too (measured by cairn://p/rs/58, see `docs/speedrun/AMBASSADOR.md`),
+but only to an SDK that shows player chat: the fleet builds every SDK with
+`showChat: false` unless the role sets `readsChat`, and helper `bot.env` files carry
+`SHOW_CHAT=false`. The mule role does not set it, so today it never sees a PM
+request and `requestFile` is the request channel; setting `readsChat: true` on the
+mule role would bring the PM path to life.
 
 **Hazard: a stale request.** If the scored account requested a trade the mule never
 answered, the mule's pre-request accepts it and opens a trade the run did not ask

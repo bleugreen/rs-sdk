@@ -2,8 +2,8 @@
 // player. Run it through lab.sh on the ambassador's port block, with an attacker
 // account as the helper:
 //
-//   LAB_WEB_PORT=9580 LAB_MANAGEMENT_PORT=9581 LAB_HISCORES_PORT=9582 LAB_NODE_PORT=44580 \
-//   LAB_GATEWAY_PORT=8580 LAB_FRIEND=1 LAB_HELPERS=ambatk \
+//   WEB_PORT=9580 WEB_MANAGEMENT_PORT=9581 HISCORES_WEB_PORT=9582 NODE_PORT=44580 \
+//   AGENT_PORT=8580 LAB_FRIEND=1 LAB_HELPERS=ambatk \
 //     speedrun/lab/lab.sh amblab speedrun/lab/ambassador-injection.ts:--attacker=ambatk
 //
 // The attacker is staff on the lab (LOCAL_STAFF_LEVEL), so its lines arrive crowned,
