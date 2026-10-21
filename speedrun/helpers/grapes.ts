@@ -93,7 +93,13 @@ const GUILD_INSIDE: Tile = { x: 3143, z: 3445 };
 const GUILD_GROUND: Box = { x1: 3137, z1: 3444, x2: 3150, z2: 3455 };
 /** The door is reached from the south-west, around the fence east of the guild (SDK route from Varrock west bank). */
 const GUILD_APPROACH_SOUTH: Tile = { x: 3152, z: 3422 };
+const GUILD_APPROACH_SW: Tile = { x: 3148, z: 3426 };
 const GUILD_APPROACH_WEST: Tile = { x: 3142, z: 3436 };
+/** The yard south-west of the guild, from which the door is a straight walk. */
+const GUILD_WEST_YARD: Box = { x1: 3136, z1: 3427, x2: 3148, z2: 3443 };
+/** Brick house east of the guild (m49_53.jm2 brickwall 1902) and its one door, on the east wall. */
+const EAST_HOUSE: Box = { x1: 3149, z1: 3434, x2: 3155, z2: 3441 };
+const EAST_HOUSE_DOOR = { x: 3155, z: 3438, id: 1533 };
 const GUILD_GRAPES = { x: 3144, z: 3450, level: 2 };
 const GUILD_JUG = { x: 3141, z: 3447, level: 2 };
 const GUILD_SINK = { x: 3146, z: 3451 };
@@ -438,6 +444,18 @@ class Gatherer {
         if (position(this.sdk).level !== want) throw new Error(`climb ${up ? 'up' : 'down'} failed`);
     }
 
+    /** Inside the house east of the guild: open its only door (east wall) and step out. */
+    async escapeHouse(): Promise<void> {
+        const p = position(this.sdk);
+        if (p.level !== 0 || !inBox(EAST_HOUSE, p.x, p.z)) return;
+        this.ctx.log('in the house east of the guild; opening its door', { at: p });
+        await this.sdk.sendInteractLoc(EAST_HOUSE_DOOR.x, EAST_HOUSE_DOOR.z, EAST_HOUSE_DOOR.id, 1);
+        await this.sdk.waitForTicks(8);
+        await this.sdk.sendWalk(EAST_HOUSE_DOOR.x + 2, EAST_HOUSE_DOOR.z);
+        await this.sdk.waitForTicks(8);
+        this.ctx.log('house escape', { now: position(this.sdk) });
+    }
+
     /**
      * Walk to a tile. The SDK's offline collision map can leave a tile with no route
      * out (it happened on the strip east of the guild, x 3149+, z 3428-3441), so on
@@ -467,6 +485,13 @@ class Gatherer {
     }
 
     async enterGuild(): Promise<void> {
+        await this.escapeHouse();
+        // Go round by the south-west: a direct walk from Varrock routes through the
+        // house east of the guild, whose door can be shut behind us.
+        const p = position(this.sdk);
+        if (!inBox(GUILD_WEST_YARD, p.x, p.z)) {
+            for (const w of [GUILD_APPROACH_SOUTH, GUILD_APPROACH_SW, GUILD_APPROACH_WEST]) await this.walkOrOpen(w, 2);
+        }
         await this.walkOrOpen(GUILD_OUTSIDE, 0);
         const door = (await this.sdk.scanNearbyLocs(4)).find(l => l.x === GUILD_DOOR.x && l.z === GUILD_DOOR.z && /door/i.test(l.name));
         if (door?.optionsWithIndex.some(o => /^open$/i.test(o.text))) {
