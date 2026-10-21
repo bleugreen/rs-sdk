@@ -180,6 +180,7 @@ the bank's bone stock, and the session summary.
 | `loot` | runes, herbs, gems, talismans, coins, keys | Extra loot regex on top of the spot's bones |
 | `maxPlayersNearTarget` | 0 | Skip a target with more than this many other players adjacent |
 | `styleCap` | 99 | Stop training a combat skill at this level |
+| `trace` | false | Log every fight at the spot (outcome, game ticks, position, live and busy targets in view, players), for measuring kill rates |
 
 ## Measured on the demo (2026-10-21 UTC)
 
