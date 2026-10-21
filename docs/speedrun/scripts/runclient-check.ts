@@ -112,8 +112,21 @@ async function walkTo(t: [number, number], level: number, maxTicks: number) {
     return { arrived: r !== null, ticks: r ? r.tick - t0 : null, endedAt: pos(sdk.getState()), sent: sent.success, message: sent.message, console: since(m) };
 }
 
+/**
+ * After a long ::tele the browser client fetches and rebuilds the region before
+ * its scene holds any locs; the lite client answers from a prebuilt index at
+ * once. Wait for the scene, and report how long it took.
+ */
+async function sceneHas(label: string, pred: (s: BotWorldState) => boolean, maxTicks = 100): Promise<number> {
+    const t0 = now(sdk);
+    const r = await waitUntil(sdk, pred, maxTicks);
+    if (!r) throw new Error(`${label}: not in the client's scene after ${maxTicks} ticks`);
+    return r.tick - t0;
+}
+
 async function doorCheck(d: Door): Promise<void> {
     if (!(await tele(sdk, d.outside[0], d.outside[1], d.level))) throw new Error(`${d.label}: tele failed`);
+    const sceneTicks = await sceneHas(d.label, s => closedAt(s, d) !== null || openLeaf(s, d) !== null);
     await ensureClosed(d);
     const shut = closedAt(sdk.getState(), d);
 
@@ -136,7 +149,7 @@ async function doorCheck(d: Door): Promise<void> {
     await ensureClosed(d);
 
     result('door', {
-        door: d.label, at: d.door, level: d.level,
+        door: d.label, at: d.door, level: d.level, sceneTicks,
         shutDoorVisible: shut ? { id: shut.id, options: shut.options, reachable: (shut as { reachable?: boolean }).reachable } : null,
         whileShut,
         open: { sent: sent.success, message: sent.message, ticks: opened ? opened.tick - t0 : null, leaf: leaf ? { id: leaf.id, x: leaf.x, z: leaf.z } : null },
@@ -181,6 +194,7 @@ async function puzzleCheck(): Promise<void> {
     for (const [k, v] of Object.entries(vars)) await setvar(sdk, k, v);
     await give(sdk, 'mm_gnome_royal_seal', 1);
     if (!(await tele(sdk, 2393, 9892))) throw new Error('puzzle: tele to the hangar failed');
+    await sceneHas('hangar panel', s => s.nearbyLocs.some(l => l.x === 2394 && l.z === 9883));
     const panel = await locOpAt(sdk, 2394, 9883, /./, s => layout(s) !== null, 30);
     const start = layout(sdk.getState());
     if (!start) throw new Error('puzzle: the panel did not open: ' + JSON.stringify(panel));
