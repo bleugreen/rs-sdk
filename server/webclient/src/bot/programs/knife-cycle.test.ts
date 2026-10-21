@@ -404,7 +404,8 @@ describe('knife cycle: catch chance from the axe', () => {
             for (const [axe, [lo, hi]] of Object.entries(content[tree]) as Array<[Axe, [number, number]]>) {
                 const p = (L: number) => catchChance(CYCLE_METHODS[tree]!, L, axe)!;
                 expect(p(1) * 256).toBe(lo + 1);
-                expect(p(50) * 256).toBe(Math.floor(lo / 2) + Math.floor(hi / 2) + 1);
+                // a value over 256 always beats the 0..255 draw (rune on a normal tree from about 48)
+                expect(p(50) * 256).toBe(Math.min(Math.floor(lo / 2) + Math.floor(hi / 2) + 1, 256));
                 expect(p(99) * 256).toBe(Math.min(hi + 1, 256));
             }
         }
