@@ -25,7 +25,9 @@ const near = (x: number, z: number, r = 3, l = 0): Pred => s => {
 };
 const GLIDER_GANDIUS = 824; // glidermap:com_21 (server/content/pack/interface.pack)
 const GLIDER_TA_QUIR_PRIW = 825; // glidermap:com_22
-const PUZZLE_TILES = 11129; // reinitialisation_puzzle:com_3
+// reinitialisation_puzzle:com_3. Moving a tile needs OPHELD5, which the stock lite client cannot send for
+// this component (cairn://p/rs/23): E3 only works with a client that does.
+const PUZZLE_TILES = 11130;
 
 // Quest state each segment starts from (varp/varbit name -> value), its items, and its tile.
 type Start = { vars: Record<string, number>; items?: Array<[string, number]>; at: [number, number, number?] };
