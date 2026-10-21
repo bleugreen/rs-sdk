@@ -33,8 +33,10 @@ speedrun/
                   hiscore-stamp-probe.ts (board reader and the live stamp test,
                   docs/speedrun/research/competitors/hiscore-timestamps.md);
                   observe.ts, the passive in-game observer and /playerpositions tracker
-                  (docs/speedrun/research/competitors/observation.md)
-  runs/           tick logs (gitignored)
+                  (docs/speedrun/research/competitors/observation.md);
+                  hiscore-scrape.ts (demo hiscore snapshots and climber diffs,
+                  docs/speedrun/research/competitors/hiscores.md)
+  runs/           tick logs and the hiscore HTML cache (gitignored)
 ```
 
 ## Conventions
