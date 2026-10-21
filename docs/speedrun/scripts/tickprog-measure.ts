@@ -223,6 +223,7 @@ await runScript(async ({ bot: actions, sdk }) => {
                 await say(`::setstat hitpoints ${num('hp', 10)}`);
                 if (has('knife')) await say('::give knife 1');
                 for (let i = 0; i < num('cakes', 0); i++) await say('::give cake 1');
+                for (let i = 0; i < num('sharks', 0); i++) await say('::give shark 1');
                 if (flag('at')) {
                     const [x, z] = flag('at')!.split(',').map(Number) as [number, number];
                     await tele(teleSpec(x, z), x, z);
