@@ -51,6 +51,8 @@ interface Run {
 }
 
 const LOG_TAIL = 40;
+/** Stamps a mark keeps: 64 events at a 3-tick cadence span about 2 minutes, far beyond any poll interval. */
+export const MARK_TAIL = 64;
 
 export class ProgramRuntime {
     private readonly registry = new Map<string, ProgramFactory>();
@@ -102,6 +104,7 @@ export class ProgramRuntime {
             progressTick: tick,
             counters: {},
             gauges: {},
+            marks: {},
             packets: 0,
             deferred: 0,
             skippedTicks: 0,
@@ -230,6 +233,12 @@ export class ProgramRuntime {
             },
             gauge: (name, value) => {
                 st.gauges[name] = value;
+            },
+            mark: name => {
+                const m = (st.marks[name] ??= { count: 0, ticks: [] });
+                m.count++;
+                m.ticks.push(state.tick);
+                if (m.ticks.length > MARK_TAIL) m.ticks.shift();
             },
             progress: () => {
                 st.progressTick = state.tick;

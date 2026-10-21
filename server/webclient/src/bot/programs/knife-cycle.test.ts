@@ -257,6 +257,26 @@ describe('knife cycle', () => {
         expect(h.sent.filter(s => s.action.type === 'interactLoc')).toHaveLength(1);
     });
 
+    test('every success is stamped in the status as it happens', () => {
+        // a scripted stream: xp on chosen ticks, the status read after every tick
+        const h = new Harness('cycle', createKnifeCycle);
+        const xpOn = new Set([1005, 1009, 1012, 1015, 1021]);
+        const state = (tick: number, xp: number) => makeState({ tick, skills: { Woodcutting: { xp } }, inventory: ['Knife', 'Logs', 'Logs'], locs: [{ id: 1, x: 3201, z: 3204, name: 'Willow', options: ['Chop down'] }] });
+        let xp = 0;
+        h.start('cycle', { method: 'willow', maxTicks: 100 }, state(1000, xp));
+        const seen: number[] = [];
+        for (let t = 1001; t <= 1025; t++) {
+            if (xpOn.has(t)) {
+                xp += 500;
+                seen.push(t);
+            }
+            h.step(state(t, xp));
+            expect(h.status.phase).toBe('running');
+            expect(h.status.marks.successes ?? { count: 0, ticks: [] }).toEqual({ count: seen.length, ticks: seen });
+        }
+        expect(h.status.counters.successes).toBe(5);
+    });
+
     test('ends after the requested successes with a summary', () => {
         const { h } = serverRun({ method: 'willow', ticks: 500, params: { successes: 20 } });
         expect(h.status.phase).toBe('done');

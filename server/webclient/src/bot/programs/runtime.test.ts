@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { parseProgramCommand, ProgramRuntime } from './runtime.js';
+import { MARK_TAIL, parseProgramCommand, ProgramRuntime } from './runtime.js';
 import { Harness, makeState } from './testkit.js';
 import type { TickProgram } from './types.js';
 
@@ -64,6 +64,21 @@ describe('ProgramRuntime', () => {
         expect(s?.result).toEqual({ partial: 1 });
         expect(h.runtime.active).toBe(false);
         expect(h.runtime.status()?.phase).toBe('stopped');
+    });
+
+    test('a mark publishes a running count and its last MARK_TAIL ticks while the run goes', () => {
+        const h = new Harness('mark', () => ({ onTick: c => { if (c.tick % 2 === 0) c.mark('even'); c.progress(); } }));
+        h.start('mark');
+        h.step(makeState({ tick: 1 }));
+        expect(h.status.marks).toEqual({});
+        h.step(makeState({ tick: 2 }));
+        expect(h.status.marks.even).toEqual({ count: 1, ticks: [2] });
+        for (let t = 3; t <= 200; t++) h.step(makeState({ tick: t }));
+        expect(h.status.phase).toBe('running');
+        expect(h.status.marks.even!.count).toBe(100);
+        expect(h.status.marks.even!.ticks).toHaveLength(MARK_TAIL);
+        expect(h.status.marks.even!.ticks.at(0)).toBe(200 - 2 * (MARK_TAIL - 1));
+        expect(h.status.marks.even!.ticks.at(-1)).toBe(200);
     });
 
     test('an ended run carries its last log lines', () => {

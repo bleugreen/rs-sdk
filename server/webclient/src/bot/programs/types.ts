@@ -38,6 +38,8 @@ export interface ProgramContext {
     count(name: string, by?: number): void;
     /** Set a published gauge (last value wins). */
     gauge(name: string, value: number): void;
+    /** Stamp this tick under a named mark: an event a poller must be able to time one by one (`ProgramStatus.marks`). */
+    mark(name: string): void;
     /** Mark progress: resets the runtime's stall detector. */
     progress(): void;
     log(line: string): void;
@@ -72,6 +74,17 @@ export type ProgramEnd = 'done' | 'fault' | 'stopped' | 'replaced';
 
 export type ProgramPhase = 'running' | ProgramEnd;
 
+/**
+ * A mark's running record. `count` only grows during a run; `ticks` holds the last
+ * MARK_TAIL stamps (runtime.ts), oldest first. A poller that saw `count` = c last time
+ * takes the last (count - c) entries of `ticks`; more new stamps than `ticks` holds means
+ * it polled too slowly and lost the excess.
+ */
+export interface ProgramMark {
+    count: number;
+    ticks: number[];
+}
+
 /** What the page publishes as `state.program` (and window.rsPrograms.status()). */
 export interface ProgramStatus {
     /** Bumps on every start; a step script awaits its own run by id. */
@@ -86,6 +99,12 @@ export interface ProgramStatus {
     progressTick: number;
     counters: Record<string, number>;
     gauges: Record<string, number>;
+    /**
+     * Per-event tick stamps, published while the run goes (`ctx.mark`). A stamp is the
+     * decoded tick the program saw the event on: when the page decodes several ticks in
+     * one pass it is the last of them.
+     */
+    marks: Record<string, ProgramMark>;
     /** Packets sent, and packets refused because the tick's budget was spent. */
     packets: number;
     deferred: number;

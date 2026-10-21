@@ -24,7 +24,7 @@ class PageSdk extends FakeSdk {
 }
 
 function status(p: Partial<ProgramStatus>): ProgramStatus {
-    return { runId: 1, name: 'x', phase: 'running', params: {}, startedTick: 100, tick: 100, progressTick: 100, counters: {}, gauges: {}, packets: 0, deferred: 0, skippedTicks: 0, maxTickMs: 0, frames: frames(), publish: frames(), react: { n: 0, p50: 0, p90: 0, max: 0 }, loops: { last: 0, p10Last10s: 0, min: 0 }, ...p };
+    return { runId: 1, name: 'x', phase: 'running', params: {}, startedTick: 100, tick: 100, progressTick: 100, counters: {}, gauges: {}, marks: {}, packets: 0, deferred: 0, skippedTicks: 0, maxTickMs: 0, frames: frames(), publish: frames(), react: { n: 0, p50: 0, p90: 0, max: 0 }, loops: { last: 0, p10Last10s: 0, min: 0 }, ...p };
 }
 
 function frames() {
@@ -37,6 +37,19 @@ describe('speedrun programs', () => {
         const s = await startProgram(sdk, 'knife-cycle', { method: 'fly', successes: 100 });
         expect(sdk.actions).toEqual([{ type: 'program', op: 'start', name: 'knife-cycle', params: { method: 'fly', successes: 100 }, reason: 'speedrun' }]);
         expect(s.runId).toBe(1);
+    });
+
+    test('marksSince returns the stamps a poller has not seen, and what it lost', () => {
+        const at = (count: number, ticks: number[]) => baseState().program && ({ ...baseState().program, marks: { successes: { count, ticks } } } as ProgramStatus);
+        expect(marksSince(null, 'successes', 0)).toEqual({ count: 0, ticks: [], missed: 0 });
+        let r = marksSince(at(2, [103, 106]), 'successes', 0);
+        expect(r).toEqual({ count: 2, ticks: [103, 106], missed: 0 });
+        r = marksSince(at(2, [103, 106]), 'successes', r.count);
+        expect(r).toEqual({ count: 2, ticks: [], missed: 0 });
+        r = marksSince(at(4, [103, 106, 109, 112]), 'successes', r.count);
+        expect(r).toEqual({ count: 4, ticks: [109, 112], missed: 0 });
+        // the window holds 2 here; 5 new stamps since the last poll lose 3
+        expect(marksSince(at(9, [124, 127]), 'successes', 4)).toEqual({ count: 9, ticks: [124, 127], missed: 3 });
     });
 
     test('a refused start throws with the page message', async () => {

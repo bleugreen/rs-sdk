@@ -46,7 +46,8 @@
 // fish each, and `ticksPerSuccess` is the mean gap between them, so it sits above the cadence
 // by 1/p. Where the method has a catch chance, `ticksPerExpectedRoll` weights each success as
 // 1/p rolls at the level it was rolled at (as tickmanip-demo-report.ts does); that is the
-// figure to set against 3 and `plainCycle`.
+// figure to set against 3 and `plainCycle`. The status carries every success's tick while the
+// run goes (`marks.successes`), so a poller can time each log or fish.
 
 import type { BotWorldState, InventoryItem } from '../types.js';
 import type { ProgramContext, ProgramParams, TickProgram } from './types.js';
@@ -319,6 +320,7 @@ export function createKnifeCycle(params: ProgramParams): TickProgram {
                 xpNow = true;
                 lastXp = xp;
                 ctx.count('successes');
+                ctx.mark('successes');
                 // A lost 3-tick lock shows as success gaps that are not multiples of 3 and a rising span figure.
                 ctx.gauge('ticksPerSuccess', successes.ticksPerEvent);
                 if (p) ctx.gauge('ticksPerExpectedRoll', ticksPerExpectedRoll());
