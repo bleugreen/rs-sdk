@@ -82,6 +82,8 @@ const { default: Packet } = await import('#/io/Packet.js');
 const { default: ClientPlayer, PlayerUpdate } = await import('#/dash3d/ClientPlayer.js');
 const { ActionExecutor } = await import('./ActionExecutor.js');
 const { BotStateCollector } = await import('./StateCollector.js');
+const { BotOverlay } = await import('./BotOverlay.js');
+const { BotActionQueue } = await import('./ActionQueue.js');
 const { LiteClient } = await import('../lite/LiteClient.js');
 const { dispatch } = await import('../lite/protocol/incoming.js');
 const { captureBaseInterfaces, resetBaseInterfaces } = await import('../lite/interfaces.js');
@@ -501,6 +503,54 @@ describe('browser game tick publication', () => {
             ticks: 2, health: 23, x: 55, z: 56, level: 1, runenergy: 20, awaitingPlayerInfo: false
         }]);
         expect(unread()).toBe(0);
+    });
+});
+
+describe('browser bot overlay action dispatch', () => {
+    function overlay(execute: (action: { type: string }) => unknown) {
+        const results: Array<[string, boolean]> = [];
+        const o = Object.assign(Object.create(BotOverlay.prototype), {
+            actionQueue: new BotActionQueue(),
+            waitTicks: 0,
+            executor: { execute },
+            gateway: {
+                isConnected: () => false,
+                sendActionResult: (id: string, r: { success: boolean }) => results.push([id, r.success])
+            },
+            ui: { logAction() {} }
+        });
+        const send = (type: string) => o.onAction({ type, reason: 't' }, type);
+        return { o, results, send };
+    }
+
+    test('runs a burst of queued actions in one cycle', () => {
+        const ran: string[] = [];
+        const { o, results, send } = overlay(a => { ran.push(a.type); return { success: true, message: 'ok' }; });
+        // knife on logs, the menu button, a drop and a click: one tick's burst
+        for (const type of ['useItemOnItem', 'clickComponent', 'dropItem', 'interactNpc']) send(type);
+
+        o.tick();
+        expect(ran).toEqual(['useItemOnItem', 'clickComponent', 'dropItem', 'interactNpc']);
+        expect(results.map(([id]) => id)).toEqual(ran);
+    });
+
+    test('stops the burst at an asynchronous action until it settles', async () => {
+        const ran: string[] = [];
+        let settle!: (r: unknown) => void;
+        const { o, send } = overlay(a => {
+            ran.push(a.type);
+            return a.type === 'slow' ? new Promise(r => { settle = r; }) : { success: true, message: 'ok' };
+        });
+        for (const type of ['fast', 'slow', 'after']) send(type);
+
+        o.tick();
+        o.tick();
+        expect(ran).toEqual(['fast', 'slow']);
+        settle({ success: true, message: 'done' });
+        await Promise.resolve();
+        await Promise.resolve();
+        o.tick();
+        expect(ran).toEqual(['fast', 'slow', 'after']);
     });
 });
 
