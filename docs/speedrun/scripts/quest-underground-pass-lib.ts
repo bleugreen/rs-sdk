@@ -150,6 +150,7 @@ export class Lab {
         const fails: string[] = [];
         let replans = 0;
         const resends0 = this.resends;
+        const detail: string[] = [];
         try {
             for (let attempt = 0; attempt < 12; attempt++) {
                 const p = plan(this.pos(), dst, opts.allow);
@@ -161,10 +162,12 @@ export class Lab {
                     const run: T[] = [];
                     while (i < p.steps.length && !p.steps[i].edge) run.push(p.steps[i++].t);
                     const edge = i < p.steps.length ? p.steps[i].edge : undefined;
-                    const directClick = edge && ['rockslide', 'bridge', 'stonebridge', 'stairs', 'unicorn_door', 'temple_door2', 'well_down', 'mudpile_up', 'pipe6', 'pipe4', 'exit_cave', 'enter_cave', 'rockpile'].includes(edge.kind);
+                    const directClick = edge && ['rockslide', 'stonebridge', 'stairs', 'unicorn_door', 'temple_door2', 'well_down', 'mudpile_up', 'pipe6', 'pipe4', 'exit_cave', 'enter_cave', 'rockpile'].includes(edge.kind);
                     // walk the run (all of it, unless the crossing's loc can be clicked from afar)
                     let k = 0;
                     const stopAt = directClick && run.length > 0 ? Math.max(0, run.length - reach) : run.length;
+                    const tw = this.tick();
+                    const tiles0 = tiles;
                     while (k < stopAt) {
                         const cur = this.pos();
                         let j = k;
@@ -179,7 +182,9 @@ export class Lab {
                         }, 60);
                         k = j + 1;
                     }
+                    if (stopAt > 0) detail.push(`walk ${tiles - tiles0} tiles ${this.tick() - tw}t`);
                     if (!edge) break;
+                    const te = this.tick();
                     if (opts.before) await opts.before(edge);
                     const c = edge.click!;
                     const m0 = this.log.length;
@@ -223,6 +228,7 @@ export class Lab {
                         if (Math.max(Math.abs(this.pos()[0] - to[0]), Math.abs(this.pos()[1] - to[1])) > 0) { crossings.push(edge.kind); failed = true; break; }
                     }
                     crossings.push(edge.kind + (edge.note.startsWith('(') ? ' ' + edge.note : ''));
+                    detail.push(`${edge.kind} ${this.tick() - te}t${resent ? ` (${resent} re-clicks)` : ''}`);
                     i++;
                 }
                 if (!failed) break;
@@ -232,7 +238,7 @@ export class Lab {
         } finally {
             off();
         }
-        const row = { label, ticks: this.tick() - t0 - 3, tiles, crossings: crossings.length, crossingList: crossings, fails, replans, resends: this.resends - resends0, hpLost: hp0 - this.hp(), at: this.pos() };
+        const row = { label, ticks: this.tick() - t0 - 3, tiles, crossings: crossings.length, crossingList: crossings, fails, replans, resends: this.resends - resends0, detail, hpLost: hp0 - this.hp(), at: this.pos() };
         this.record(row);
         return row;
     }
