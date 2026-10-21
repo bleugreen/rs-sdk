@@ -331,8 +331,7 @@ export default class OnDemand extends OnDemandProvider {
             type: 'init',
             versions: this.versions,
             crcs: this.crcs,
-            host: window.location.host,
-            secured: window.location.protocol === 'https:',
+            ...worldEndpoint(),
             ingame: this.app.ingame,
             dbEnabled: !!this.app.db
         });

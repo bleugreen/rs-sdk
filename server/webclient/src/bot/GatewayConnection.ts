@@ -2,6 +2,7 @@
 // Handles connection, reconnection, message sending/receiving
 
 import type { BotAction, BotWorldState } from './types.js';
+import { gatewayUrl } from '#/io/Endpoints.js';
 
 export interface GatewayMessageHandler {
     onAction(action: BotAction, actionId: string | null, actionTimeoutMs?: number): void;
@@ -68,9 +69,7 @@ export class GatewayConnection {
     connect(): void {
         if (this.ws) return;
 
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host;
-        const url = `${protocol}//${host}/gateway`;
+        const url = gatewayUrl();
 
         try {
             this.ws = new WebSocket(url);

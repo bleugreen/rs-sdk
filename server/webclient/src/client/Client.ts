@@ -4193,7 +4193,8 @@ export class Client extends GameShell {
                 await this.titleScreenDraw();
             }
 
-            this.stream = new ClientStream(await ClientStream.openSocket(window.location.host, window.location.protocol === 'https:'));
+            const world = worldEndpoint();
+            this.stream = new ClientStream(await ClientStream.openSocket(world.host, world.secured));
 
             const userhash = JString.toUserhash(username);
             const loginServer = Number(userhash >> 16n) & 0x1f;
