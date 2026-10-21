@@ -63,8 +63,8 @@ The bone collector's options (`train`, `fish`, `eatAt`, `styleCap`, `trace`, ...
 | `eyes` | one per guam and irit | Fixed eye of newt target instead |
 | `reportMinutes` | 10 | Interval of the `herbs` rate report |
 
-Use the Taverley spot. Edgeville needs no shop trips only because it cannot make them: its
-accounts bank herbs and the vials they loot, and need the Taverley spot later to mix.
+Use the Taverley spot. Shop trips start only at the Falador west bank, so an Edgeville account
+banks its herbs and looted vials unmixed until it is switched to the Taverley spot.
 
 ## Measured rates
 
@@ -116,6 +116,12 @@ collectors.
 
 ## Running on the fleet
 
-Accounts are cairn_h84-h87 (`HELPERS.md`). The role loads by file name, so adopting an account is
-`fleetctl assign <account> herbs` with options `{"spot":"chaos_druids_taverley","fish":false}`,
-then `fleetctl reload`. Keep two accounts per spot.
+Accounts are cairn_h84-h87 (`HELPERS.md`). The fleet loads a role by file name, so adopting an
+account is
+
+```
+fleetctl assign cairn_h84 herbs --options '{"spot":"chaos_druids_taverley","fish":false}'
+fleetctl reload
+```
+
+Keep two accounts per spot.
