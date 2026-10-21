@@ -189,6 +189,12 @@ export interface BidDecision {
     capped: boolean;
     /** Coins missing to rest a whole tranche (0 when funded). */
     coinsShort: number;
+    /**
+     * Coins this line wants kept for itself beyond what it has placed: a top-up
+     * waiting for a free slot or for enough coins, or a tranche it cannot fund.
+     * Lines after it spend only what is above the reservations.
+     */
+    reserve: number;
     reason: string;
 }
 
@@ -209,7 +215,7 @@ export function decideBid(input: BidInput): BidDecision {
     const { held, quote, coins, options: o } = input;
     const ours = input.ours.filter(x => x.side === 'buy' && x.state === 'open' && x.remaining > 0);
     const competition = competingBid(quote, ours);
-    const out = (d: Partial<BidDecision> & Pick<BidDecision, 'action' | 'reason'>): BidDecision => ({ competition, cancel: [], price: null, quantity: 0, capped: false, coinsShort: 0, ...d });
+    const out = (d: Partial<BidDecision> & Pick<BidDecision, 'action' | 'reason'>): BidDecision => ({ competition, cancel: [], price: null, quantity: 0, capped: false, coinsShort: 0, reserve: d.coinsShort ?? 0, ...d });
     const need = o.target - held;
     if (need <= 0) return out({ action: 'done', cancel: ours.map(x => x.id), reason: `holding ${held} of ${o.target}` });
 
@@ -239,10 +245,10 @@ export function decideBid(input: BidInput): BidDecision {
         const minTopUp = Math.max(1, Math.ceil(o.tranche / 4));
         const topUp = wanted - resting;
         if (topUp < minTopUp) return out({ action: 'hold', price: ourPrice, reason: `best bid at ${ourPrice}, ${resting} resting` });
-        if (ours.length >= MAX_OFFERS_PER_LINE) return out({ action: 'hold', price: ourPrice, reason: `best bid at ${ourPrice}; ${ours.length} offers already, top up when one completes` });
+        if (ours.length >= MAX_OFFERS_PER_LINE) return out({ action: 'hold', price: ourPrice, reserve: topUp * ourPrice, reason: `best bid at ${ourPrice}; ${ours.length} offers already, top up when one completes` });
         const quantity = Math.min(topUp, Math.floor(coins / ourPrice));
         const coinsShort = Math.max(0, topUp * ourPrice - coins);
-        if (quantity < minTopUp) return out({ action: 'hold', price: ourPrice, coinsShort, reason: `best bid at ${ourPrice}; coins for ${quantity} of a ${topUp} top-up` });
+        if (quantity < minTopUp) return out({ action: 'hold', price: ourPrice, coinsShort, reserve: topUp * ourPrice, reason: `best bid at ${ourPrice}; coins for ${quantity} of a ${topUp} top-up` });
         return out({ action: 'place', price: ourPrice, quantity, coinsShort, reason: `top up ${resting} resting to ${resting + quantity}` });
     }
 
@@ -251,7 +257,7 @@ export function decideBid(input: BidInput): BidDecision {
     const { price, capped } = priceAbove(competition.competing, base, o);
     const quantity = Math.min(wanted, Math.floor(coins / price));
     const coinsShort = Math.max(0, wanted * price - coins);
-    if (quantity <= 0) return out({ action: 'short', price, capped, coinsShort, reason: `${coins} gp buys none at ${price}` });
+    if (quantity <= 0) return out({ action: 'short', price, capped, coinsShort, reserve: wanted * price, reason: `${coins} gp buys none at ${price}` });
     return out({ action: 'place', price, quantity, capped, coinsShort, reason: competition.competing === null ? 'no competing bid' : `competing bid ${competition.competing}` });
 }
 
@@ -477,10 +483,8 @@ export class Bidder {
                 await this.collect();
             }
             if (d.capped) this.log('capped', { item: line.name, competing: d.competition.competing, maxPrice: line.o.maxPrice, price: d.price, note: 'at maxPrice and wanting more: not raising; tell cairn://p/rs/41 with the fill history' });
-            if (d.coinsShort > 0 && d.action !== 'done') {
-                reserved += d.coinsShort;
-                this.log('short', { item: line.name, coinsShort: d.coinsShort, price: d.price, coins: this.coins(), reserved, note: 'fund the bidder: bidder.ts <earner> fund' });
-            }
+            reserved += d.reserve;
+            if (d.coinsShort > 0 && d.action !== 'done') this.log('short', { item: line.name, coinsShort: d.coinsShort, price: d.price, coins: this.coins(), reserved, note: 'fund the bidder: bidder.ts <earner> fund' });
             seen.set(line, { quote, d });
         }
         const offersNow = new Map(this.lines.map(l => [l, this.ours(l)] as const));
@@ -508,9 +512,11 @@ export class Bidder {
             volume: quote.volume
         };
         const prev = line.prev;
+        // The others' best bid, whether it shows as the market bid or (under ours) as their average.
+        const theirBid = (m: MarketMemo) => m.competing ?? m.belowAvg;
         const competitorMoved =
-            prev !== null && (prev.competing !== memo.competing || prev.belowAvg !== memo.belowAvg || prev.otherQty !== memo.otherQty)
-                ? { from: { bid: prev.competing ?? prev.belowAvg, depth: prev.otherQty }, to: { bid: memo.competing ?? memo.belowAvg, depth: memo.otherQty } }
+            prev !== null && (theirBid(prev) !== theirBid(memo) || prev.otherQty !== memo.otherQty)
+                ? { from: { bid: theirBid(prev), depth: prev.otherQty }, to: { bid: theirBid(memo), depth: memo.otherQty } }
                 : null;
         const traded = prev === null || (memo.lastTradeAt ?? 0) > (prev.lastTradeAt ?? 0) ? { lastPrice: memo.lastPrice, at: iso(memo.lastTradeAt), volume7d: memo.volume, volumeDelta: prev ? memo.volume - prev.volume : null } : null;
         line.prev = memo;

@@ -228,6 +228,21 @@ describe('top-up size', () => {
     });
 });
 
+describe('coin reservations (earlier lines first)', () => {
+    // Seen live: bones held at 2 offers reserved nothing, and grapes took all 215k of a funding round.
+    test('a top-up waiting for a free slot reserves its coins', () => {
+        const ours = [offer({ id: 16015, item: 536, price: 6000, quantity: 11, remaining: 11 }), offer({ id: 16028, item: 536, price: 6000, quantity: 1, remaining: 1 })];
+        const d = decideBid({ held: 0, ours, quote: book([[1254, 5000]], ours), coins: 215_000, options: bones });
+        expect(d).toMatchObject({ action: 'hold', reserve: 18 * 6000, coinsShort: 0 });
+    });
+
+    test('a satisfied line reserves nothing; a line with no offer and no coins reserves its tranche', () => {
+        const ours = [offer({ remaining: 140 })];
+        expect(decideBid({ held: 116, ours, quote: book([[99_508, 1000]], ours), coins: 0, options: opts }).reserve).toBe(0);
+        expect(decideBid({ held: 0, ours: [], quote: book([[1254, 5000]]), coins: 0, options: bones }).reserve).toBe(30 * 6000);
+    });
+});
+
 describe('offer slots', () => {
     test(`no top-up beyond ${MAX_OFFERS_PER_LINE} offers per line (the server has 6 slots per account)`, () => {
         const ours = [offer({ id: 1, remaining: 20 }), offer({ id: 2, remaining: 20 })];
