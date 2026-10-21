@@ -180,7 +180,7 @@ export function courierPicks(bank: BankItem[], patterns: RegExp[], freeSlots: nu
 // ============ Chat cursors ============
 
 /** Unseen messages of some chat types. Requests that land between polls are never lost. */
-class ChatCursor {
+export class ChatCursor {
     private seen: number;
     constructor(
         private readonly sdk: BotSDK,
