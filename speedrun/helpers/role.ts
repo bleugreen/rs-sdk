@@ -5,6 +5,7 @@
 // standalone during development and inside the fleet unchanged.
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
+import { describeFreshState, waitForFreshState } from '../lib/fresh-state';
 
 export interface BankSnapshot {
     /** Every bank item, as sdk.getBankItems() reports it while the bank is open. */
@@ -47,7 +48,8 @@ export interface Role {
  * Needs bots/<account>/bot.env and the account's lite client already running
  * (cd server/webclient && bun src/lite/runner.ts <account>). Role options come
  * from the ROLE_OPTIONS environment variable as JSON. Log lines and bank
- * snapshots are printed as JSON lines on stdout.
+ * snapshots are printed as JSON lines on stdout. As in the fleet, the role
+ * starts only on state from the live client session (lib/fresh-state.ts).
  */
 export async function runStandalone(role: Role): Promise<void> {
     const { runScript } = await import('../../sdk/runner');
@@ -62,6 +64,8 @@ export async function runStandalone(role: Role): Promise<void> {
         async ({ bot, sdk }) => {
             // A helper's bot.env carries SHOW_CHAT=false, which runScript honours.
             if (role.readsChat) sdk.config.showChat = true;
+            const fresh = await waitForFreshState(sdk, { timeoutMs: 60_000, signal: controller.signal });
+            line({ message: `session state at ${describeFreshState(fresh)}` });
             await role.run({
                 bot,
                 sdk,
