@@ -98,6 +98,8 @@ The commands below use `:10`. If the log names another display, replace `:10` ev
 and Chrome's window stays mapped, so Chrome sees no change: the page's loop rate was the same
 connected and disconnected, with or without the capture (m, "Measured" below). We did not read
 `document.visibilityState` directly; an unchanged loop rate is the evidence that nothing throttled.
+The recording is better with RDP disconnected (step 5). Tenet 11 keeps the session connected;
+whether the run relaxes that is main's call, and these measurements support either choice.
 
 ## 3. Bring up the page server, the gateway and Chrome
 
@@ -185,13 +187,25 @@ connected), but the recording is smoother with RDP disconnected. Check during th
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'grep -E "^(frame|fps|drop_frames|dup_frames|speed|out_time)=" ~/recordings/ffmpeg-progress.log | tail -6; ls -la ~/recordings; df -h / | tail -1'
 ```
 
-**Optional live view for the operator** (instead of, or beside, RDP): LIVEVIEW_PLACEHOLDER
+**Optional live view for the operator** (instead of, or beside, RDP): a 3 fps, 960x540 MJPEG
+stream on the tailnet address, opened in a browser at `http://100.66.164.37:8090/live.mjpg` (over
+Tailscale, like RDP). ffmpeg's `-listen 1` serves one viewer and exits when the viewer leaves, so it
+runs in a loop:
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'tmux -L run new-session -d -s live "while true; do ffmpeg -hide_banner -loglevel warning -f x11grab -draw_mouse 1 -framerate 3 -video_size 1920x1080 -i :10.0+0,0 -vf scale=960:540 -c:v mjpeg -q:v 8 -f mpjpeg -listen 1 http://100.66.164.37:8090/live.mjpg; sleep 1; done"'
+```
+
+It costs 3.7% of one core (m: `pidstat` over 40 s, 16:53 UTC, ~150 kbit/s), and the recording
+beside it still wrote 29.7 fps with no drops (m: 70 s, 16:54 UTC). It was tested with `curl` on the
+host (217 frames in 72 s); nobody has opened it in the operator's browser yet. Stop it with
+`tmux -L run kill-session -t live`.
 
 ## 6. Quiesce check and the gate
 
 **Quiesce.** Nothing runs on the machine but the session's desktop, the `run` tmux stack (gateway,
 page server, Chrome, recording), rs/117's launcher with its lite runners and roles, and system
-daemons. The drained Cairn executor's daemon (`cairn-exec`) was idle at 0.3% of a core (m, 16:15
+daemons, plus the optional live view (step 5). The drained Cairn executor's daemon (`cairn-exec`) was idle at 0.3% of a core (m, 16:15
 UTC); whether it stays up during the run is main's call. No second Chrome, no other `bun`, no other
 ffmpeg.
 
@@ -212,11 +226,12 @@ The conditions and what to do on a failure are RUN-ORDER.md section 1 and tenet 
   account's env file), let it reach the game, then sample for five minutes with
   `docs/speedrun/scripts/runhost-loops.ts`. It attaches to the tab through the loopback gateway, runs
   the in-page probe (the page publishes `loops` only while a program runs), and every 10 s prints the
-  page's loop rate beside each process's CPU and ffmpeg's frame counters; `--logout` logs the gate
-  account out at the end.
+  page's loop rate beside each process's CPU and ffmpeg's frame counters. Closing the tab afterwards
+  drops the gate account's client; a throwaway account left in the world until the server's
+  no-connection timeout costs nothing.
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'cd ~/rs-sdk && ~/.bun/bin/bun docs/speedrun/scripts/runhost-loops.ts GATE_ACCOUNT --label=gate --minutes=5 --display=:10 --out=$HOME/rs-run/gate-loops.jsonl --logout 2>&1 | grep -v -E "^\[(Runner|BotSDK)\]|Pathfinding|LOGOUT DEBUG"; tmux -L run kill-session -t chrome'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'cd ~/rs-sdk && ~/.bun/bin/bun docs/speedrun/scripts/runhost-loops.ts GATE_ACCOUNT --label=gate --minutes=5 --display=:10 --out=$HOME/rs-run/gate-loops.jsonl 2>&1 | grep -v -E "^\[(Runner|BotSDK)\]|Pathfinding|LOGOUT DEBUG"; tmux -L run kill-session -t chrome'
 ```
 
 Read (d) from the summary line's `loops p10` (lowest / median / highest 10-second sample). **Pass**:
@@ -262,4 +277,42 @@ is checked.
 
 ## Measured: gate (d) on this host, 2026-10-21
 
-MEASURED_PLACEHOLDER
+**How it was taken.** On this host (c7i.2xlarge, 8 vCPU, no GPU), 16:28-16:52 UTC (09:28-09:52
+PDT), with the demo at about 1,690-1,700 online (the page's footer, m). Chrome 156.0.8078.47 was
+launched exactly as in step 3: its own profile, the three throttling flags, a maximised app window of
+1920x1029 in the operator's xrdp session (display :10, 1920x1080, 24 planes). The page server and
+gateway ran from the clone at main `85a28dc8d`. The tab was logged in as a throwaway `cairn_` demo
+account standing in Lumbridge and running the in-page probe (one walk to a neighbouring tile and back
+per tick), which makes the page publish its loop rate. The operator's macOS client was connected for
+conditions 1 and 2 and disconnected at 16:41:18 UTC for 3 and 4; the session lived on. The capture
+was step 5's ffmpeg line, a fresh file per condition. Each condition was one run of
+`runhost-loops.ts`: 30 samples, 10 s apart. CPU is the change in each process's utime+stime in
+`/proc/<pid>/stat` over each 10 s, as a percentage of one core. `pidstat -u` agreed: 67.5% for
+ffmpeg against the sampler's 64-94% in condition 2, and 94.2% against 93-97% in condition 3.
+
+| Condition (UTC) | Loop p10, lowest / median / highest sample (loops/s) | Run min | ffmpeg | Chrome tab renderer | Chrome GPU process | Chrome total | Xorg | xrdp | Page server, gateway | Host busy (8 vCPU), load | Recording |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1. RDP connected, capture off (16:28-16:33) | **70.8 / 72.2 / 73.0** | 68.0 | - | 53 | 18 | 72 | 9 | 4 | 0, 0.3 | 11%, 0.7 | - |
+| 2. RDP connected, capture on (16:34-16:39) | **71.0 / 72.3 / 73.1** | 64.6 | 75 | 56 | 17 | 73 | 11 | 5 | 0, 0.3 | 21%, 2.1 | ~23 fps, 2,389 dropped in 6 min |
+| 3. RDP disconnected, capture on (16:41-16:47) | **70.6 / 72.4 / 73.3** | 66.6 | 95 | 63 | 24 | 87 | 15 | 0 | 0, 0.3 | 25%, 2.0 | 29.9 fps, 0 dropped |
+| 4. RDP disconnected, capture off (16:47-16:52) | **71.0 / 72.2 / 73.1** | 66.0 | - | 58 | 22 | 80 | 11 | 0 | 0, 0.3 | 12%, 1.0 | - |
+
+All m. CPU columns are medians of the 30 samples, in percent of one core. "Run min" is the
+slowest single tick interval's loop rate in the condition.
+
+**Verdict: gate (d) passes on this host in every condition, with margin.** The lowest 10-second p10 in
+120 samples was 70.6 loops/s, about 40% above the ~50 threshold. Software rendering at 1920x1080
+costs the tab and Chrome's GPU process together about 0.7-0.9 of a core. The run's configuration
+(connected, capture on) is row 2. The capture costs 0.75 of a core with RDP connected and 0.95
+disconnected, about 10-12% of the machine. The busiest sample of the whole window had the host 27%
+busy. A larger instance is not needed for (d) (i).
+
+Not part of (d): the probe found about 17% of walk trials late and about 11 catch-ups a minute in
+every condition alike (for example 130 late of 770 and 57 catch-ups in condition 1; frame p90
+460-490 ms). Neither RDP nor the capture changed these, so the demo was overrunning during the
+window (i). Gates (a) and (c) would not have passed then; rs/96's gate exists for exactly this.
+
+A dry run at 16:21 UTC on the session's earlier 3072x1728 geometry (disconnected; capture of the
+top-left 1920x1080) had Chrome at about 1.45 cores and ffmpeg at 1.7, against 0.8 and 0.95 here.
+The scene differed, so it is not a clean comparison, but it agrees with fixing the session at
+1920x1080 (m for the figures, i for the reading).
