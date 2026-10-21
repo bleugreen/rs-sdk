@@ -46,7 +46,10 @@ await runScript(async ({ bot, sdk }) => {
             return stage();
         });
         await teleport('Varrock teleport (3213,3424)', 3213, 3424);
-        await rec.seg('walk to Reldo (3209,3495)', 'travel', async c => { await walk(bot, sdk, c, 3210, 3494, 1); });
+        await rec.seg('walk to Reldo (3209,3495), round the palace west side', 'travel', async c => {
+            // the SDK collision snapshot sees a gap at (3212,3438) that the server blocks; go round
+            for (const [x, z] of [[3182, 3436], [3180, 3470], [3206, 3480], [3210, 3494]] as [number, number][]) await walk(bot, sdk, c, x, z, 1);
+        });
         await rec.seg('Reldo: Imcando dwarves', 'dialogue', async c => {
             await talk(sdk, c, /reldo/i, [/imcando/i]);
             return stage();
