@@ -250,6 +250,18 @@ describe('events', () => {
     });
 });
 
+describe('role phase lines', () => {
+    test('either form names the phase; other lines are not phases', async () => {
+        const { describePhase } = await import('./fleet');
+        expect(describePhase('phase', { phase: 'gather' })).toBe('gather');
+        expect(describePhase('phase', { from: 'train', to: 'gather' })).toBe('gather');
+        expect(describePhase('phase gather')).toBe('gather');
+        expect(describePhase('phase: train')).toBe('train');
+        expect(describePhase('phased out')).toBeNull();
+        expect(describePhase('banked', { phase: 'x' })).toBeNull();
+    });
+});
+
 describe('accounts', () => {
     test('ranges and next free name', () => {
         expect(rangeNames(parseRange('h01-h04'))).toEqual(['cairn_h01', 'cairn_h02', 'cairn_h03', 'cairn_h04']);
