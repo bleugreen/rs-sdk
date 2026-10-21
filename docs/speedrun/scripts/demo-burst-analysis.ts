@@ -185,14 +185,20 @@ say(`(c) threshold calibration (agreement with (a), false passes, false fails): 
 }).join('; ')}.`);
 
 // ---------------------------------------------------------------- P(miss | next interval)
-const B = [[0, 50], [50, 100], [100, 150], [150, 200], [200, 250], [250, Infinity]] as const;
+const B = [[0, 50], [50, 100], [100, 150], [150, 200], [200, 225], [225, 250], [250, Infinity]] as const;
 const bins = B.map(() => ({ n: 0, miss: 0 }));
+// The same bins for trials whose previous interval was over 400 ms: a 'soft' overrun pair.
+const binsLate = B.map(() => ({ n: 0, miss: 0 }));
 const after = { catch: { n: 0, miss: 0 }, other: { n: 0, miss: 0 } };
 for (const seg of segments.filter(s => s.vantage === 'ashburn')) for (const t of seg.trials ?? []) {
     if (t.ticks === 99 || t.nextIntervalMs === null || t.nextIntervalMs === undefined) continue;
     const i = B.findIndex(([lo, hi]) => t.nextIntervalMs >= lo && t.nextIntervalMs < hi);
     bins[i]!.n++;
     if (t.ticks > 1) bins[i]!.miss++;
+    if ((t.prevIntervalMs ?? 0) > 400) {
+        binsLate[i]!.n++;
+        if (t.ticks > 1) binsLate[i]!.miss++;
+    }
     const k = t.nextIntervalMs < 150 ? after.catch : after.other;
     k.n++;
     if (t.ticks > 1) k.miss++;
@@ -203,8 +209,36 @@ say();
 say('| next interval ms | ' + B.map(([lo, hi]) => (hi === Infinity ? `>= ${lo}` : `${lo}-${hi}`)).join(' | ') + ' |');
 say('|---|' + B.map(() => '---').join('|') + '|');
 say('| missed | ' + bins.map(b => `${b.miss}/${b.n}`).join(' | ') + ' |');
+say('| missed, previous > 400 ms | ' + binsLate.map(b => `${b.miss}/${b.n}`).join(' | ') + ' |');
 say();
 say(`next < 150 ms: ${after.catch.miss}/${after.catch.n} missed (${((after.catch.miss / Math.max(1, after.catch.n)) * 100).toFixed(0)}%); otherwise ${after.other.miss}/${after.other.n} (${((after.other.miss / Math.max(1, after.other.n)) * 100).toFixed(1)}%).`);
+
+// Softer pair rules against (a), per sample, at their best limit: does counting soft overrun
+// pairs (a long tick then a moderately short one) predict a costly sample better than (c)?
+const pairRules: [string, (iv: number[], i: number) => boolean][] = [
+    ['350/150 (c)', (iv, i) => iv[i]! < 150 && iv[i - 1]! > 350],
+    ['400/200', (iv, i) => iv[i]! < 200 && iv[i - 1]! > 400],
+    ['400/225', (iv, i) => iv[i]! < 225 && iv[i - 1]! > 400],
+    ['400/250', (iv, i) => iv[i]! < 250 && iv[i - 1]! > 400],
+    ['any < 150', (iv, i) => iv[i]! < 150],
+    ['two ticks < 400 after > 350', (iv, i) => i > 1 && iv[i]! + iv[i - 1]! < 400 && iv[i - 2]! > 350],
+];
+const ruleSamples = segments.filter(s => s.kind === 'pair' && s.vantage === 'ashburn' && s.direct?.n).map(s => {
+    const iv = s.ticks.slice(1).map((t, i) => t - s.ticks[i]!);
+    const mins = iv.length * 0.3 / 60;
+    return { a: s.direct!.onTime / s.direct!.n >= 58 / 60, rates: pairRules.map(([, f]) => { let c = 0; for (let i = 1; i < iv.length; i++) if (f(iv, i)) c++; return c / mins; }) };
+});
+say();
+say('| pair rule | best limit /min | agrees with (a) | false passes | false fails |');
+say('|---|---|---|---|---|');
+pairRules.forEach(([name], k) => {
+    let best = { lim: 0, ok: -1, fp: 0, ff: 0 };
+    for (const lim of [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8]) {
+        const fp = ruleSamples.filter(s => s.rates[k]! <= lim && !s.a).length, ff = ruleSamples.filter(s => s.rates[k]! > lim && s.a).length;
+        if (ruleSamples.length - fp - ff > best.ok) best = { lim, ok: ruleSamples.length - fp - ff, fp, ff };
+    }
+    say(`| ${name} | ${best.lim} | ${best.ok}/${ruleSamples.length} | ${best.fp} | ${best.ff} |`);
+});
 
 // ---------------------------------------------------------------- bursts within windows
 // A burst is a maximal run of consecutive minutes failing (c) inside one continuous segment;
