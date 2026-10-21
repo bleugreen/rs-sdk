@@ -319,6 +319,8 @@ export interface MonitorOptions extends TrackerOptions {
     /** Called after every sample with the formatted line. */
     onLine?: (line: string, s: DemoStatus) => void;
     sample?: (origin: string) => Promise<DemoSample>;
+    /** Seed the last restart when the status file has none (e.g. from rs/102's log). */
+    lastRestartAt?: number;
 }
 
 /**
@@ -334,7 +336,8 @@ export class DemoMonitor {
     constructor(readonly origin: string, private readonly opts: MonitorOptions = {}) {
         this.file = opts.file === undefined ? DEFAULT_STATUS_FILE : opts.file;
         const prior = this.file ? readStatus(this.file) : null;
-        this.tracker = new RestartTracker(origin, opts, prior?.origin === origin ? prior.lastRestart : null);
+        const seeded = opts.lastRestartAt === undefined ? null : { downAt: opts.lastRestartAt, lastNormalAt: null, answeringAt: null, loginAt: null, refusals: 0, playersBefore: null };
+        this.tracker = new RestartTracker(origin, opts, (prior?.origin === origin ? prior.lastRestart : null) ?? seeded);
     }
 
     async sampleNow(): Promise<DemoStatus> {
@@ -377,13 +380,9 @@ if (import.meta.main) {
         console.log(s ? formatStatus(s) : `no status at ${file}`);
     } else if (cmd === 'watch') {
         const origin = arg('origin') ?? 'https://rs-sdk-demo.fly.dev';
-        const mon = new DemoMonitor(origin, { file, everyMs: Number(arg('every') ?? 20) * 1000, onLine: line => console.log(`${clock(Date.now())}  ${line}`) });
         const seed = arg('last-restart');
-        if (seed && !mon.tracker.status().lastRestart) {
-            const t = Date.parse(seed);
-            if (Number.isFinite(t)) Object.assign(mon, { tracker: new RestartTracker(origin, {}, { downAt: t, lastNormalAt: null, answeringAt: null, loginAt: null, refusals: 0, playersBefore: null }) });
-        }
-        mon.start();
+        const lastRestartAt = seed && Number.isFinite(Date.parse(seed)) ? Date.parse(seed) : undefined;
+        new DemoMonitor(origin, { file, lastRestartAt, everyMs: Number(arg('every') ?? 20) * 1000, onLine: line => console.log(`${clock(Date.now())}  ${line}`) }).start();
     } else {
         console.error('usage: bun speedrun/lib/demo-status.ts watch|show [--origin=] [--every=20] [--file=] [--last-restart=<iso>]');
         process.exit(2);
