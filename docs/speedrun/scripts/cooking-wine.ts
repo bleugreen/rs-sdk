@@ -1,6 +1,6 @@
 // Wine bank fermentation on the scored account's side (rs/37), measured end to end.
 //
-//   bun docs/speedrun/scripts/cooking-wine.ts <bot> --phase=prep [--wines=450] [--inv=0] [--level=1]
+//   bun docs/speedrun/scripts/cooking-wine.ts <bot> --phase=prep [--wines=450] [--inv=0] [--level=1|keep]
 //   (delayfree-lab.sh step @relog)
 //   bun docs/speedrun/scripts/cooking-wine.ts <bot> --phase=observe [--ticks=60]
 //
@@ -31,7 +31,7 @@ const args: Record<string, string> = Object.fromEntries(
 const PHASE = args.phase ?? 'prep';
 const WINES = Number(args.wines ?? 450);
 const INV = Number(args.inv ?? 0);
-const LEVEL = Number(args.level ?? 1);
+const LEVEL = args.level === 'keep' ? -1 : Number(args.level ?? 1); // keep: second firing of a two-login plan
 const TICKS = Number(args.ticks ?? 60);
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -60,7 +60,7 @@ await runScript(async ({ bot, sdk }) => {
         await bot.skipTutorial?.();
         // The session's own login timer must have fired before any wine is banked.
         await sdk.waitForCondition(s => s.tick >= 25, 60_000);
-        await sdk.sendSay(`::setstat cooking ${LEVEL}`);
+        if (LEVEL > 0) await sdk.sendSay(`::setstat cooking ${LEVEL}`);
         for (let attempt = 0; attempt < 5; attempt++) {
             await sdk.sendSay('::tele 0,49,53,49,44');
             await sdk.waitForTicks(4);
