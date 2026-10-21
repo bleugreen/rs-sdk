@@ -182,7 +182,6 @@ if (ROLE === 'helper') {
         let seenTick = -1;
         let stagedSeq = -1;
         let stagedAt = -1;
-        let stagedAt = -1;
         let offeredTick = -1;
         let gaveTick = -99;
         let plan: PlanMsg | null = null;
