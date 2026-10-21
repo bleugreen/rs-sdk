@@ -4,7 +4,8 @@
 //   bun docs/speedrun/scripts/flinch-wc.ts <bot> control 60
 //   bun docs/speedrun/scripts/flinch-wc.ts <bot> npcs4 1200 knife 200
 //   (lab.sh form: docs/speedrun/scripts/flinch-wc.ts:npcs4:1200:knife:200)
-//   args: mode (control | npcsN), max labels, weapon (knife | none), target rolls, stand x,z,
+//   bun docs/speedrun/scripts/flinch-wc.ts <bot> pair12 6000 knife 200 2674,3227 Willow
+//   args: mode (control | npcsN | pairN), max labels, weapon (knife | none), target rolls, stand x,z,
 //         tree name (Oak | Willow). Every tree of that name within 3 tiles of the stand tile
 //         is a target; the bot clicks the first one standing. Multi-combat tiles reaching
 //         two trees: oaks (3002,3312), willows (2674,3227) (woodcutting-spots.ts + multiway.csv).
@@ -31,6 +32,16 @@
 // (ClientCheatHandler.ts:515), so whenever the hits of the last 8 ticks stop covering two
 // residues 2 apart the controller spawns again (at most N spawns in all). Extra attackers
 // are harmless: a hit on a click tick finds the chop interaction (busy2) and writes nothing.
+//
+// pairN (brief A2, the two-willow tile): a tile with exactly two free cardinal neighbours
+// takes two melee attackers, and each one's phase is the tick it first steps into reach
+// (npc_combat.rs2:62; it leaves the player's tile by a random naive step,
+// PathingEntity.ts:449-462), so a spawn cannot be timed. Each attempt adds two hobgoblins
+// on the same label; 24 labels later it keeps them if their hits cover two residues 2
+// apart mod 4, and otherwise waits for both to despawn (spawn + 500) and tries again, up to
+// N attempts. The loop chops throughout; gaps are reported separately inside the phased
+// windows, which close when the hits stop covering two residues. Target rolls then count
+// xp drops inside the windows.
 //
 // Loop, every label: if a new hitsplat is seen and the bot did not click on the previous
 // label, click the oak; otherwise drop one log. Never two clicks in a row (a click on an
