@@ -184,14 +184,14 @@ await runScript(async ({ bot, sdk }) => {
             await q.makeRoom(KEEP);
             const soil = (await sdk.scanNearbyLocs(8)).filter(l => /soil/i.test(l.name) && l.x >= 3350 && l.x <= 3357 && l.z >= 3404 && l.z <= 3412).sort((a, b) => a.distance - b.distance)[0];
             if (!soil) throw new Error('no level 3 soil');
-            const n = sdk.getInventory().length;
-            const coins = q.count('coins');
+            const mark = q.chatMark();
             S.action();
             await sdk.sendUseItemOnLoc(q.need('trowel').slot, soil.x, soil.z, soil.id);
-            const ok = await waitUntil(sdk, () => sdk.getInventory().length !== n || q.count('coins') !== coins || sdk.getChat({ types: [0] }).slice(-1)[0]?.text === 'You find nothing.', 30);
-            if (!ok) console.log('dig: no result seen');
+            // every dig ends in "You find nothing." or "You carefully clean your find..." (area_digsite.rs2:441-507)
+            const ok = await waitUntil(sdk, () => q.chatSince(mark, /^You find nothing|carefully clean your find/), 30);
             await q.settle(() => true, 10);
-            digs++;
+            if (ok) digs++;
+            else console.log('dig: no result seen');
         }
         return `${digs} digs`;
     });
