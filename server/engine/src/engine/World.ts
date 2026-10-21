@@ -780,7 +780,6 @@ class World {
                     player.executeScript(player.activeScript, true, true);
                 }
 
-                console.log(`FLTRACE ${this.currentTick} beg pos=${player.x},${player.z} target=${player.target?.constructor?.name ?? '-'} inter=${player.hasInteraction() ? 1 : 0} tOp=${player.targetOp} wp=${player.hasWaypoints() ? 1 : 0} ad=${player.getVar(VarPlayerType.getId('action_delay'))} delayed=${player.delayed ? 1 : 0}`);
                 // - primary queue
                 // - weak queue
                 player.processQueues();
@@ -800,7 +799,6 @@ class World {
                 // - interactions
                 // - movement
                 player.processInteraction();
-                console.log(`FLTRACE ${this.currentTick} end pos=${player.x},${player.z} target=${player.target?.constructor?.name ?? '-'} inter=${player.hasInteraction() ? 1 : 0} tOp=${player.targetOp} wp=${player.hasWaypoints() ? 1 : 0} steps=${player.stepsTaken} ad=${player.getVar(VarPlayerType.getId('action_delay'))}`);
                 // After movement: face a loc/obj target if we walked over and held still (needs stepsTaken).
                 player.reorient();
                 if (!player.busy() && !player.delayed && !player.loggingOut) player.recoverItems();

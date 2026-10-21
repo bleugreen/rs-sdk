@@ -597,7 +597,6 @@ const PlayerOps: CommandHandlers = {
         const chance = Math.floor(JavaRandom.nextDouble() * 256);
 
         state.pushInt(value > chance ? 1 : 0);
-        console.log(`FLTRACE ${World.currentTick} roll stat=${stat} lvl=${clampedLevel} v=${value} c=${chance} ok=${value > chance ? 1 : 0}`);
     },
 
     [ScriptOpcode.SPOTANIM_PL]: state => {
