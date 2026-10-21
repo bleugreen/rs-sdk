@@ -10,6 +10,7 @@
 //
 //   bun docs/speedrun/scripts/demo-burst-sampler.ts --dir=/tmp/rs102-sampler [--until=12:00]
 //       [--every-min=30] [--ref=agent/rs-83-coordinator-0] [--lite-ref=main] [--yield-min=10]
+//       [--sample-minutes=6]   (0: the workflow's default react-only direct probe)
 //   bun docs/speedrun/scripts/demo-burst-sampler.ts --dir=... --collect=<run id>,...   (backfill, no dispatch)
 //
 // The workflow shares one concurrency group (and one demo account) with other dispatchers, and
@@ -35,6 +36,12 @@ const EVERY_MIN = Number(args.get('every-min') ?? 30);
 const SLOT_BUDGET_MIN = Number(args.get('slot-budget-min') ?? 25);
 const YIELD_MIN = Number(args.get('yield-min') ?? 10);
 const COUNT_S = Number(args.get('count-s') ?? 20);
+// The direct probe's command (the workflow's direct_command input): the default react trials plus
+// --sample-minutes of tick steadiness in the same session, because only a vantage next to the app
+// sees the server's tick spacing cleanly (a home path adds its own late-then-early pairs).
+const SAMPLE_MIN = Number(args.get('sample-minutes') ?? 6);
+const DIRECT_COMMAND = args.get('direct-command') ??
+    `bun docs/speedrun/scripts/demo-latency-probe.ts --label=gha-$RUNNER_AZURE_REGION --out=$OUT/direct.json --phases=react${SAMPLE_MIN > 0 ? ',sample' : ''} --trials=$TRIALS --react-delay=0 --minutes=${SAMPLE_MIN}`;
 const LOGIN_COOLDOWN_MS = 3 * 60_000; // the demo holds a session ~3 min after logout
 const HOST = 'rs-sdk-demo.fly.dev';
 
@@ -119,7 +126,7 @@ async function waitIdle(deadline: number): Promise<boolean> {
 
 function dispatch(): string | null {
     const t0 = Date.now();
-    const r = gh(['workflow', 'run', WORKFLOW, '-R', REPO, '--ref', REF, '-f', `lite_ref=${LITE_REF}`]);
+    const r = gh(['workflow', 'run', WORKFLOW, '-R', REPO, '--ref', REF, '-f', `lite_ref=${LITE_REF}`, '-f', `direct_command=${DIRECT_COMMAND}`]);
     if (!r.ok) {
         log(`dispatch failed: ${r.out.trim()}`);
         return null;
@@ -274,5 +281,5 @@ if (args.has('collect')) {
     process.exit(0);
 }
 
-log(`start: ${WORKFLOW} on ${REPO} @ ${REF} (lite_ref=${LITE_REF}) every ${EVERY_MIN} min until ${UNTIL === Infinity ? 'stopped' : pdt(UNTIL)}; dir ${DIR}`);
+log(`start: ${WORKFLOW} on ${REPO} @ ${REF} (lite_ref=${LITE_REF}, direct sample ${SAMPLE_MIN} min) every ${EVERY_MIN} min until ${UNTIL === Infinity ? 'stopped' : pdt(UNTIL)}; dir ${DIR}`);
 await Promise.all([pairLoop(), countLoop()]);
