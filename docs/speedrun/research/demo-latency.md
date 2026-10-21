@@ -450,8 +450,9 @@ host since #94. The rows were first taken from GitHub's Ashburn runners and then
 from the run machine itself (AWS us-east-1c, TCP p50 2 ms to the demo, headless Chrome 156,
 `~/rs130/session.sh`, which runs the workflow's browser mode by hand under a hard 595 s stop and a
 `~/host-reserved.json` sentinel; copy in
-[`data/browser-rows/host-scripts/`](data/browser-rows/host-scripts/)). Every
-minute measured so far failed the gate, so none of these is the calm-minute row yet:
+[`data/browser-rows/host-scripts/`](data/browser-rows/host-scripts/)); rs/176 reran it from
+14:45. Until 15:45 every minute measured failed the gate; 15:45 is the first in-page row in a
+gate-passing minute:
 
 | PDT, host | Variant, page from | Direct (gate) | Browser | Page side |
 | --- | --- | --- | --- | --- |
@@ -461,7 +462,24 @@ minute measured so far failed the gate, so none of these is the calm-minute row 
 | 12:45, run machine | in-page, main ae6d5664d | 51/9/0, 11.7/min (burst) | 47/12/1 | decision p50 1 ms; action packet out p50 0.7 / max 2.5 ms after its tick; 5.0 catch-ups/min over the probe |
 | 13:15, run machine | overlay, main ae6d5664d | 59/1/0, 2.4/min (fails (c) narrowly) | **59/1/0** | tick output in to game packet out p10 5 / **p50 6** / p90 7 / max 33 ms: page publication 1, gateway and SDK script 4, overlay flush 0; 0 catch-ups in the probe's window |
 | 13:35, run machine | in-page, main ae6d5664d | 41/17/1, 12.2/min (burst) | 51/7/2 | action packet out p50 1.1 / max 2.0 ms after its tick; 7.0 catch-ups/min over the probe |
+| 14:45, run machine | in-page, main c14428fc5 | 57/3/0, 3.9/min (burst) | 58/2/0 | decision p50 1 ms; loop p10 72.5/s, min 42.9; program counter 1 catch-up over the probe's 62 ticks |
+| 15:15, run machine | in-page, main c14428fc5 | 56/4/0, 4.5/min (burst) | 52/8/0 | decision p50 1 ms; loop p10 72.1/s, min 68.2; program counter 2 catch-ups over 68 ticks, one of them a tick 7 ms after a 451 ms one |
+| 15:45, run machine | in-page, main c14428fc5 | **58/2/0, 0.7/min (gate pass)** | **60/0/0** | decision p50 1 ms; loop p10 72.4/s, min 71.2; program counter 0 catch-ups over 60 ticks (p90 380, max 523 ms) |
 <!-- rs130-1115-s7 -->
+
+**The calm-minute in-page row (rs/176, 15:45 PDT = 22:45 UTC).** In the first session whose direct
+reference passed the gate, the in-page probe landed **60 of 60** on the next tick, against the
+direct path's 58: in a calm minute the page path loses nothing to the direct reference. In the two
+burst sessions before it the page landed 58 and 52 of 60 against direct's 57 and 56. All three
+rows: run machine, edge iad, TCP connect p50 1.8-2.0 ms, 1,423-1,635 online, page built once at
+main c14428fc5 (rs/159's per-log marks, before rs/175's oak lock window), probes from 5ed37d629,
+the route to the demo plain (per-route quickack not applied, its delayed-ACK mechanism refuted by
+the host thread's capture); data in `data/browser-rows/host-20261021T{2145,2215,2245}-in-page-oak/`,
+with each session's raw frame arrivals (`page/frames.jsonl`, epoch ms), the direct reference's
+(`direct.json`), its TCP state and its crowd (`crowd.jsonl`: 6-28 other players within 15 tiles
+throughout, so the account was never alone). One timing to know for back-to-back logins: after the
+page closes its game socket, the account stays listed on `/playerpositions` for about 2.5 minutes
+(22:21:54 to 22:24:27 UTC).
 
 The overlay's page-side reaction is now **5-6 ms at the median**, against 22 ms before #90 and 7 at
 05:38; what is left is the gateway and SDK script round trip. At 13:15, in the calmest minute
@@ -591,7 +609,69 @@ calm side yet. Of the knife's 17 gaps longer than 3 ticks, 11 contain a 350/150 
 soft pair; of its 2 gaps of 3, none and 1. The knife counted 4 off-phase rolls and 6 resyncs in 25
 logs, against none of either at 12:45. The per-log stamps come from the program's final logTail
 (20 of the knife's 25 logs, all 19 of plain's): its `status()` has no logTail mid-run, so polling
-it cannot stamp a longer run.
+it cannot stamp a longer run (rs/159 since added `marks.successes`; the rows below stamp every log).
+
+**Oak, every log stamped (rs/176, run machine, 21:45-22:53 UTC = 14:45-15:53 PDT).** Three
+sessions of the in-page knife then the in-page plain loop on the oaks at 3203,3240 and 3203,3246,
+bronze axe, page at main c14428fc5 (oak lock window 18 ticks, as at 13:35; rs/175's 48 is not in
+it, so the resync counts compare with 13:35's). The harness polls knife-cycle's status every 2.5 s
+for `marks.successes` and the counters, so every log has its tick (0 missed in all six runs);
+`docs/speedrun/scripts/knife-minutes.ts` does the weighting, p(L) = stat_random(L, 32, 100) at the
+level each log was rolled at. Catch-up figures in this subsection are labelled by counter: *gate* is
+the direct reference's decoded ticks (section 10's (c)), *program* the page program's own frame
+statistics, fed from each PLAYER_INFO message's arrival (the page's true tick timeline). The page's
+websocket frame groups are not used: one tick's output arrives in paced pieces (frames 4.3 ms apart,
+parts up to about 70 ms later), so grouping frames over-counts ticks (873 groups against 541 decoded
+ticks in the 21:45 knife run).
+
+| UTC (PDT), gate | Loop | Woodcutting, p | Logs | Ticks per log | Ticks per expected roll (Σ1/p over gaps) | Program catch-ups in the run |
+| --- | --- | --- | --- | --- | --- | --- |
+| 21:45 (14:45), fail 3.9/min | Knife | 69-74, p 0.309-0.324 | 56 | 9.75 | **3.07** (174.3 over 55) | 13 in 2.9 min (4.5/min) |
+| 21:45 (14:45), fail | Plain | 74-77, p 0.324-0.332 | 47 | 12.43 | **4.06** (140.9 over 46) | 17 in 2.9 min (5.8/min) |
+| 22:15 (15:15), fail 4.5/min | Knife | 77-79, p 0.332-0.336 | 29 | 9.61 | **3.19** (84.3 over 28) | 4 in 1.6 min (2.6/min) |
+| 22:15 (15:15), fail | Plain | 79-80, p 0.336-0.340 | 35 | 11.26 | **3.81** (100.6 over 34) | 1 in 2.2 min (0.5/min) |
+| 22:45 (15:45), **pass** 0.7/min | Knife | 80-83, p 0.340-0.348 | 54 | 9.98 | **3.42** (154.8 over 53) | 2 in 2.7 min (0.7/min) |
+| 22:45 (15:45), pass | Plain | 83-85, p 0.348-0.352 | 58 | 10.28 | **3.58** (163.6 over 57) | 8 in 3.0 min (2.6/min) |
+| All three | Knife | 69-83 | 139 | 9.81 | **3.23** (413.4 over 136) | |
+| All three | Plain | 74-85 | 140 | 11.25 | **3.80** (405.1 over 137) | |
+
+Roll luck alone puts about ±11% (one standard deviation) on a single run's figure here: at p about
+0.33 the rolls behind one log vary with a coefficient of about √(1-p) = 0.82, over about 50 gaps.
+Pooled, that is ±7%: the knife's 3.23 ± 0.22 against plain's 3.80 ± 0.26, so **the in-page knife
+beats plain on oak by about 15% (± 9%)**, close to its lab cadence of 3 against plain's 4.
+
+By minute, on the program's timeline (polled from 22:45 UTC only, so the 22:45 session alone; the
+earlier sessions have only the whole-run rates above). Each gap between logs is put in the
+wall-clock minute of the log that ends it, the minute binned by its program catch-ups per minute:
+
+| Loop, 22:45 UTC | 0-2 per minute | 2-5 | 5-10 | over 10 |
+| --- | --- | --- | --- | --- |
+| Knife | **3.76** (43 gaps, Σ1/p 125.4, 2.3 min) | 1.97 (10 gaps, Σ1/p 29.4, 0.4 min) | none | none |
+| Plain | **3.42** (38 gaps, Σ1/p 109.1, 2.0 min) | 3.10 (14 gaps, Σ1/p 40.3, 0.7 min) | 6.19 (5 gaps, Σ1/p 14.2, 0.4 min) | none |
+
+The calm bin's knife figure, 3.76 ± 0.47, is the knife's worst; it is also the session where the
+oaks fell most often under a crowd of 8-24 other players within 15 tiles (10 tree switches and 6
+checks with no live oak, against 6 and 2 at 21:45), so walks and waits, not timing, are the likely
+cost (inferred). Across sessions the knife's figure does not rise with the program catch-up rate
+(3.42 at 0.7 per minute, 3.19 at 2.6, 3.07 at 4.5, and 13:35's 3.25 at 12.4), so **no per-minute or
+per-catch-up cost is visible at these rates**; a cost of a few ticks per catch-up (one plain cycle
+each would add about 10% at 4.5 per minute) is at or below this series' resolution.
+
+Resyncs split the same way in all three knife runs. Every 'resync (no xp)' (`counters.slips`: 6, 3,
+5) is matched by a gap of 21 ticks or more with no phase resync on its end log (6, 4, 5): honest miss
+runs, which at p about 0.33 are expected on (1-p)^6, about 9% of logs (5.7, 2.4, 4.2 expected). The
+timing class, a 4-tick gap or an off-phase roll (`phaseResyncs`), counted 4, 3 and 4 (phase resyncs
+2, 0, 4), and does not follow the catch-ups either (13, 4, 2 in those runs). Gaps of exactly 3, the
+locked cadence's lucky case, held no gate-rule catch-up inside them in any run. So on oak the
+knife's slips are the 18-tick lock window tripping on honest misses, which rs/175's longer window
+addresses, not timing lost to overruns.
+
+Two cautions for reading these as the run's numbers. Every run-host session's catch-up rate includes
+ticks held on Fly's delivery path to this machine's address and released glued to the next one (the
+host thread's 22:30 UTC two-account read: two accounts on the machine received each tick within
+0.1 ms p50 of each other, so it follows the path, not the account). For the knife on this machine
+those are a real cost, but they overstate the server's own overruns, and the twin's path is clean so
+far. And the oak figures are small samples against a 15% effect; the pooled pair is the one to use.
 
 Overruns therefore matter for the knife as well: in a minute like 04:13 even the in-page direct
 path falls under Woodcutting's line. That is what the steadiness check in the run-night gate
@@ -911,6 +991,9 @@ rate by the next tick interval'.
 | 20:35 | run host, rs/130's reference row | 1,593-1,603 | 41/60 | 12.2 | fail |
 | 20:12 | rs/147's twin (same zone and image), Xvfb with recording | 1,411 | 60/60; in-page probe 60/60 | 0 | **pass** (loop p10 72-73/s) |
 | 20:22 | rs/147's twin in the run-night configuration: RDP disconnected, on-host recording at 29.9 fps with 0 dropped, xrdp display 1920x1080 | 1,589-1,604 | 60/60; in-page probe 60/60 at 20:29 | 0 (tick p90 377) | **pass** ((d) loop p10 70.8-72.9/s over 30 samples; host 31-33% busy) |
+| 21:45 | run host, rs/176's reference row | 1,604-1,630 | 57/60 | 3.9 | fail; in-page probe 58/60 |
+| 22:15 | run host, rs/176's reference row | 1,635-1,556 | 56/60 | 4.5 | fail; in-page probe 52/60 |
+| 22:45 | run host, rs/176's reference row | 1,423-1,564 | 58/60 | 0.7 (tick p90 343) | **pass**; in-page probe 60/60 in the same session |
 
 The twin's reads of record are kept in `docs/speedrun/rehearsals/HOST.md` (rs/147, rs/149).
 
@@ -1027,18 +1110,17 @@ in `docs/speedrun/scripts/host-gate/`, and the read itself is `docs/speedrun/scr
    between the home and Ashburn delay sweeps (section 3): either the game socket's home RTT is
    lower than `mrtt` suggests, or each account's frame leaves at a different point in the
    engine's output batch. A sweep from two accounts at once from Ashburn would separate them.
-8. **Browser rows in a gate-passing minute.** Both variants are on main and measured (section 7):
-   the overlay at 09:10 and 13:15 (60/60 and 59/60, page side 5-6 ms p50; at 13:15 equal to
-   direct in a near-calm minute, 2.4 catch-ups per minute) and the in-page program at 09:51, 10:45
-   and 12:45 (46/60, 53/60, 47/60; decision 1-2 ms, action packets out within 2.5 ms of their
-   tick). Every one of those minutes failed the gate, so neither variant has a calm-minute row
-   yet. The in-page knife beats plain per expected roll even in burst minutes (3.7-3.9 against
-   6.4 on normal trees, section 8; 3.25 against the in-page plain loop's 3.76 on oak, small
-   samples); the overlay's knife loses (8.3-9.2 against 6.4-7.2). The knife in a calm minute
-   against a catch-up minute, split per log, is still unmeasured: every minute at 13:35 was a
-   burst. Still open: both variants in a gate-passing
-   minute, whether the in-page misses in a window with no 350/150 catch-ups come from soft
-   overrun pairs (section 7), and the knife's completed fletches on the overlay.
+8. **Browser rows in a gate-passing minute.** Answered for the in-page program: at 15:45 PDT
+   (22:45 UTC) the run machine's direct row passed the gate (58/60, 0.7 catch-ups per minute) and
+   the in-page probe landed 60/60 (section 7). The overlay still has only its near-calm 13:15 row
+   (59/60, equal to direct, 2.4 catch-ups per minute). The knife's split per log is measured
+   (section 8, rs/176): on oak the in-page knife runs 3.23 ticks per expected roll against the
+   in-page plain loop's 3.80 over three sessions, and shows no cost from catch-ups at the program
+   counter's 0.7-5.8 per minute; its slips are honest miss runs. The overlay's knife loses
+   (8.3-9.2 against 6.4-7.2 on normal trees). Still open: a longer calm-minute knife sample (the
+   0-2 per minute bin is 43 gaps, too few to resolve a few per cent), whether the in-page misses in
+   a window with no 350/150 catch-ups come from soft overrun pairs (section 7), and the overlay
+   knife's completed fletches.
 9. **What drives overruns.** Not the hour, and barely the player count (correlation 0.20 per
    minute; section 9, 'Overrun bursts overnight'). Four of five severe bursts fell within 40
    minutes before one of the demo's restarts, which suggests a process degrading before it exits,
