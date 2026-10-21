@@ -53,15 +53,24 @@ export const UNF: Readonly<Record<string, { herb: number; unf: number; level: nu
     guam: { herb: 249, unf: 91, level: 3, secondary: 'eye of newt (attack, 25 base)' },
     marrentill: { herb: 251, unf: 93, level: 5, secondary: 'unicorn horn dust (antipoison, 37.5)' },
     tarromin: { herb: 253, unf: 95, level: 12, secondary: 'limpwurt root (strength, 50)' },
-    harralander: { herb: 255, unf: 97, level: 22, secondary: "red spiders' eggs (restore, 62.5)" },
+    harralander: { herb: 255, unf: 97, level: 22, secondary: 'chocolate dust (energy, 67.5)' },
     ranarr: { herb: 257, unf: 99, level: 30, secondary: 'snape grass (prayer, 87.5)' },
     irit: { herb: 259, unf: 101, level: 45, secondary: 'eye of newt (super attack, 100)' },
     avantoe: { herb: 261, unf: 103, level: 50, secondary: 'snape grass (fishing, 112.5)' },
     kwuarm: { herb: 263, unf: 105, level: 55, secondary: 'limpwurt root (super strength, 125)' }
 };
-/** Herbs made into unfinished potions by default: those whose secondary helpers can get (shop, spawn or drop). */
-const DEFAULT_UNF = ['irit', 'ranarr', 'harralander', 'marrentill', 'guam', 'kwuarm'];
+/**
+ * Herbs made into unfinished potions by default: the herb-table mix the run trains on
+ * (docs/speedrun/research/supply-fallbacks.md section 5). Marrentill is left out: its
+ * secondary, unicorn horn dust, is scarce.
+ */
+const DEFAULT_UNF = ['kwuarm', 'avantoe', 'irit', 'ranarr', 'harralander', 'tarromin', 'guam'];
 const VIAL_OF_WATER = 227;
+const EMPTY_VIAL = 229;
+const EYE_OF_NEWT = 221;
+const COINS = 995;
+/** Herbs whose potion takes an eye of newt (attack, super attack). */
+const NEWT_HERBS = ['guam', 'irit'];
 const HERB_NAME = /^herb$/i;
 
 /** True when Herblore can identify the unidentified herb with this id. */
@@ -86,7 +95,13 @@ export function herbOptions(raw: Record<string, unknown>) {
         reportMinutes: typeof raw.reportMinutes === 'number' ? raw.reportMinutes : 10,
         ritual: raw.ritual !== false,
         process: raw.process !== false,
-        unf: unfList(raw.unf)
+        unf: unfList(raw.unf),
+        /** Shop trips to Jatix (vials, eyes of newt) from the Falador west bank. */
+        supply: raw.supply !== false,
+        /** Start a shop trip once this many vials or eyes of newt are wanted. */
+        supplyBatch: typeof raw.supplyBatch === 'number' ? raw.supplyBatch : 20,
+        /** Fixed eye of newt target; by default one per guam and irit held. */
+        eyes: typeof raw.eyes === 'number' ? raw.eyes : undefined
     };
 }
 type HerbOptions = ReturnType<typeof herbOptions>;
@@ -107,6 +122,24 @@ export function nextMix(bank: readonly { id: number; count: number }[], herblore
         if (herblore >= u.level && count(u.herb) > 0) return { herb: u.herb, unf: u.unf };
     }
     return null;
+}
+
+/**
+ * What the bank still needs from Jatix's shop in Taverley: vials of water for every herb
+ * (unidentified or clean) on the mix list that is not already in a vial, and an eye of newt
+ * for every guam and irit, whether still a herb or already an unfinished potion. Empty
+ * vials in the bank count as vials (the next trip fills them). `eyes` overrides the eye of
+ * newt target with a fixed count.
+ */
+export function shopNeeds(bank: readonly { id: number; count: number }[], herbs: readonly string[], eyes?: number): { vials: number; eyes: number } {
+    const count = (id: number) => bank.find(i => i.id === id)?.count ?? 0;
+    const unid = (name: string) => Object.entries(UNID_HERBS).filter(([, h]) => h === name).reduce((a, [id]) => a + count(Number(id)), 0);
+    const herbsToMix = herbs.reduce((a, h) => a + count(UNF[h]!.herb) + unid(h), 0);
+    const newt = NEWT_HERBS.reduce((a, h) => a + count(UNF[h]!.herb) + unid(h) + count(UNF[h]!.unf), 0);
+    return {
+        vials: Math.max(0, herbsToMix - count(VIAL_OF_WATER) - count(EMPTY_VIAL)),
+        eyes: Math.max(0, (eyes ?? newt) - count(EYE_OF_NEWT))
+    };
 }
 
 /** Herbs picked up, by herb name, from a loot-by-id record; non-herb ids are ignored. */
@@ -136,7 +169,11 @@ const CAULDRON: Tile = { x: 2893, z: 9831 };
 const CAULDRON_DOOR_X = 2889;
 const CAULDRON_OUTSIDE: Tile = { x: 2888, z: 9831 };
 const SUITS_AREA: Box = { x1: 2880, z1: 9822, x2: 2895, z2: 9840 };
-const UNDERGROUND_Z = 6400;
+/** Jatix's herblore shop, Taverley: 800 empty vials, 800 eyes of newt, 3 pestles and mortars (taverly.inv). */
+const JATIX: Tile = { x: 2899, z: 3427 };
+/** Two fountains just north of Jatix; a vial fills in one zero-delay packet (water_sources.rs2). */
+const TAVERLEY_FOUNTAIN: Tile = { x: 2891, z: 3439 };
+const FALADOR_WEST_BANK: Tile = { x: 2946, z: 3368 };
 
 interface Meat { raw: RegExp; enchanted: RegExp; npc: RegExp; area: Box; centre: Tile }
 /** The four meats, each from the nearest monster to the Lumbridge cow field where training ends. */
@@ -157,6 +194,10 @@ class Herbalist {
     private processedAfterBank = true;
     readonly made: Record<string, number> = {};
     identified = 0;
+    readonly bought: Record<string, number> = {};
+    filled = 0;
+    /** No shop trip before this time (set when the bank is short of coins). */
+    private supplyAfter = 0;
 
     constructor(readonly run: Run, readonly ctx: RoleContext, readonly opt: HerbOptions) {}
 
@@ -388,6 +429,85 @@ class Herbalist {
         await this.run.bot.dismissBlockingUI();
     }
 
+    // ---- shop trips: Jatix (Taverley) for empty vials and eyes of newt, the fountain to fill ----
+
+    nearFaladorBank(): boolean { return !this.run.underground() && dist(this.run.pos(), FALADOR_WEST_BANK) <= 8; }
+
+    /** The shop trip due now, if any: the larger of the two needs, once it reaches a batch. */
+    supplyDue(): 'vials' | 'eyes' | null {
+        if (!this.opt.supply || !this.bankItems || Date.now() < this.supplyAfter || !this.nearFaladorBank()) return null;
+        const need = shopNeeds(this.bankItems, this.opt.unf, this.opt.eyes);
+        const emptyBanked = this.bankItems.find(i => i.id === EMPTY_VIAL)?.count ?? 0;
+        if (need.vials + emptyBanked >= this.opt.supplyBatch && need.vials + emptyBanked >= need.eyes) return 'vials';
+        if (need.eyes >= this.opt.supplyBatch) return 'eyes';
+        return null;
+    }
+
+    /** One round trip: coins (and banked empty vials) out, buy at Jatix, fill at the fountain, bank. */
+    async supplyTrip(what: 'vials' | 'eyes'): Promise<void> {
+        const run = this.run, bot = run.bot, sdk = run.sdk;
+        this.run.phase(`supply:${what}`);
+        const need = shopNeeds(this.bankItems ?? [], this.opt.unf, this.opt.eyes);
+        const open = await bot.openBank();
+        if (!open.success) { this.ctx.log('supply: bank did not open', { reason: open.message }); return; }
+        for (const name of [...new Set(this.inv().map(i => i.name))]) await bot.depositItem(new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'), -1);
+        const coins = sdk.getBankItems().find(i => i.id === COINS);
+        if (coins) await bot.withdrawItem(coins, coins.count);
+        if (what === 'vials') {
+            const empty = sdk.getBankItems().find(i => i.id === EMPTY_VIAL);
+            if (empty) await bot.withdrawItem(empty, Math.min(empty.count, 27));
+        }
+        await bot.closeBank();
+        const carried = (id: number) => this.inv().filter(i => i.id === id).reduce((a, i) => a + i.count, 0);
+        const free = () => 28 - this.inv().length;
+        const want = what === 'vials' ? Math.min(free(), Math.max(0, need.vials - carried(EMPTY_VIAL))) : Math.min(free(), need.eyes);
+        if (want > 0) {
+            if (!(await this.run.walk(JATIX.x, JATIX.z, 3, 300_000))) return;
+            const shop = await bot.openShop(/^jatix$/i);
+            if (!shop.success) { this.ctx.log('supply: shop did not open', { reason: shop.message }); return; }
+            const id = what === 'vials' ? EMPTY_VIAL : EYE_OF_NEWT;
+            const item = sdk.getState()?.shop?.shopItems.find(i => i.id === id);
+            const afford = item ? Math.floor(carried(COINS) / Math.max(1, item.buyPrice)) : 0;
+            const n = Math.min(want, item?.count ?? 0, afford);
+            if (item && n > 0) {
+                const r = await bot.buyFromShop(item, n);
+                this.bought[what] = (this.bought[what] ?? 0) + (r.amountBought ?? 0);
+            }
+            if (afford < want) {
+                this.ctx.log('supply: short of coins', { coins: carried(COINS), price: item?.buyPrice ?? null, want });
+                this.supplyAfter = Date.now() + 30 * 60_000;
+            }
+            await bot.closeShop();
+        }
+        if (carried(EMPTY_VIAL) > 0) await this.fillVials();
+        await this.run.walk(FALADOR_WEST_BANK.x, FALADOR_WEST_BANK.z, 3, 300_000);
+        const back = await bot.openBank();
+        if (!back.success) return;
+        for (const name of [...new Set(this.inv().map(i => i.name))]) await bot.depositItem(new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'), -1);
+        this.noteBank(sdk.getBankItems().map(i => ({ id: i.id, name: i.name, count: i.count })));
+        this.ctx.reportBank({ items: this.bankItems! });
+        await bot.closeBank();
+        this.ctx.log('supply', { what, bought: this.bought, filled: this.filled, need: shopNeeds(this.bankItems!, this.opt.unf, this.opt.eyes) });
+    }
+
+    /** Fill every carried empty vial at the Taverley fountain: the first use walks there, then one packet per vial. */
+    async fillVials(): Promise<void> {
+        const sdk = this.run.sdk;
+        if (!(await this.run.walk(TAVERLEY_FOUNTAIN.x, TAVERLEY_FOUNTAIN.z + 1, 3, 120_000))) return;
+        const fountain = (await sdk.scanNearbyLocs(8)).filter(l => /^fountain$/i.test(l.name)).sort((a, b) => a.distance - b.distance)[0];
+        if (!fountain) { this.ctx.log('supply: no fountain in view', { at: [this.run.pos().x, this.run.pos().z] }); return; }
+        const empties = () => this.inv().filter(i => i.id === EMPTY_VIAL).length;
+        let stall = 0, first = true;
+        while (empties() > 0 && stall < 3) {
+            const before = empties();
+            const vial = this.inv().find(i => i.id === EMPTY_VIAL)!;
+            if (first || stall > 0) await this.run.bot.useItemOnLoc(vial, fountain);
+            else await sdk.sendUseItemOnLoc(vial.slot, fountain.x, fountain.z, fountain.id);
+            first = false;
+            if (await this.run.waitFor(() => empties() < before, 5)) { this.filled += before - empties(); stall = 0; } else stall++;
+        }
+    }
+
     // ---- the cycle ----
 
     async cycle(): Promise<void> {
@@ -403,6 +523,8 @@ class Herbalist {
         if (this.opt.process && this.ritualDone() && !this.processedAfterBank) {
             if (await this.processStep()) return;
         }
+        const trip = this.supplyDue();
+        if (trip) return this.supplyTrip(trip);
         return run.cycle();
     }
 
@@ -427,10 +549,13 @@ class Herbalist {
             iritPerHour: per(irit, farmMs),
             identified: this.identified,
             made: this.made,
+            bought: this.bought,
+            filled: this.filled,
             bank: {
                 unf: Object.fromEntries(Object.entries(UNF).map(([n, u]) => [n, banked(u.unf)]).filter(([, c]) => c)),
                 unidentified: Object.values(UNID_HERBS).length ? (this.bankItems ?? []).filter(i => UNID_HERBS[i.id]).reduce((a, i) => a + i.count, 0) : 0,
-                vials: banked(VIAL_OF_WATER)
+                vials: banked(VIAL_OF_WATER),
+                eyes: banked(EYE_OF_NEWT)
             },
             herblore: this.herblore(),
             hoursSinceStart: Number(((Date.now() - this.startedAt) / 3_600_000).toFixed(3))
