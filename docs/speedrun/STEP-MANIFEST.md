@@ -498,6 +498,15 @@ scripts are in section 4; the shared primitives and their build order are in sec
   | 17-19 | 600 or fewer | neither holds: the six-rock lap waits one move a lap, (D + 2) / 6 = 3.17-3.50 | 3.50 m at D = 19 (mining.md:184); a seven-rock lap would hold 3.00 (i, not run, mining.md §4) |
 
   The ticks below are unchanged: 3,116 knife at the demo's count (D = 13).
+- **Bones on the `stay2` lap** (the 21:20 UTC stock; RUN-ORDER.md section 7): the ~85 babydragon
+  bones past S07's ~978 ride the lap `2603,3233>2602,3233 2605,3234>2605,3235 2605,3234>2605,3233
+  2602,3235>2602,3234 2602,3235>2602,3236`, one bury per lap on the east stay at 3.052 ticks per ore
+  (m, lab, `research/bones-placement.md` §4), ~0.26 per bone with its share of the loads
+  (H4m.1-H4m.4, SUPPLIES.md). **Missing:** `knife-mine` has no bury option (r,
+  `server/webclient/src/bot/programs/knife-mine.ts`; the lab lap is `bones-mine.ts`), so the bury
+  on a stay and the trade's stop and restart are unbuilt in the page. `stay2` is a five-rock lap,
+  so it applies only in the table's first band (D 13 or less); in the six-rock band the bones go to
+  the booth (+1.81 each, ~+154) unless a six-rock lap with a short-entry stay is measured.
 - **Preconditions:** rune pickaxe, knife and about 5 normal logs, Fletching 1; Mining 64; position on
   the rotation's first standing tile. The same host-gate rule as Woodcutting.
 - **Postconditions:** Mining 99; pickaxe, knife and logs kept (no log used over 200 ores, measured,
@@ -853,8 +862,9 @@ scripts are in section 4; the shared primitives and their build order are in sec
   fallback (the bones there at 2.07 ticks each) and for a knife-off night with bones left over.
 - **Parameters:** `bones` count, `mode: 'inline' | 'booth'`, `untilLevel`.
 - **Preconditions:** inline: entry 3's. Booth: the bones in the bank at Varrock west.
-- **Postconditions:** Prayer ~94 when S07 ends; 99 when S18 ends (on a bone stock that overflows to
-  the booth, such as 13:10's, 99 at the booth in S25).
+- **Postconditions:** Prayer ~94 when S07 ends with every line held (~95 on the 21:20 UTC stock, ~96
+  after its Mining lap); 99 when S18 ends, on that stock too (S07 ~978, the Mining lap ~85, the
+  stuns ~200, none at the booth); only a stock that overflows to the booth reaches 99 there, in S25.
 - **Ticks:** expected **95**, best **65**: 16 loads of 23 with rs/141's lab giver, 4 ticks each on
   SCORED's clock (the first 5) and refusals free (m, cairn://p/rs/141 at 732497c64), 65; +30
   inferred for the in-page stop, `receiveFrom` and restart (RUN-ORDER.md R15). rs/137 measured the
