@@ -349,14 +349,18 @@ function frameBefore(frames: Frame[], t: number): number {
 }
 
 /**
- * A tick's output can arrive as several websocket messages; group messages less than 60 ms
- * apart into one burst and measure the intervals between burst starts.
+ * A tick's output can arrive as several websocket messages, and the demo also sends small
+ * non-tick frames (1-4 bytes) between ticks. Group messages of at least 5 bytes that arrive less
+ * than 8 ms apart into one burst and measure the intervals between burst starts. A wider grouping
+ * (this used 60 ms) merges a catch-up tick into the tick before it and hides overruns
+ * (cairn://p/rs/102). For per-trial intervals, prefer the decoded tick timeline (`react.ticks`).
  */
 function frameStats(frames: Frame[]) {
     const bursts: { t: number; n: number; bytes: number; spanMs: number }[] = [];
     for (const f of frames) {
+        if (f.bytes < 5) continue;
         const b = bursts.at(-1);
-        if (b && f.t - (b.t + b.spanMs) < 60) {
+        if (b && f.t - (b.t + b.spanMs) < 8) {
             b.n++;
             b.bytes += f.bytes;
             b.spanMs = f.t - b.t;
@@ -367,7 +371,8 @@ function frameStats(frames: Frame[]) {
     return {
         intervals: quantiles(iv),
         over400: iv.filter(v => v > 400).length,
-        under200: iv.filter(v => v < 200).length,
+        /** an interval under 150 ms right after one over 350 ms: the engine catching up after an overrun */
+        catchUps: iv.filter((v, i) => i > 0 && v < 150 && iv[i - 1]! > 350).length,
         n: iv.length,
         messagesPerBurst: quantiles(bursts.map(b => b.n)),
         burstSpanMs: quantiles(bursts.map(b => b.spanMs)),

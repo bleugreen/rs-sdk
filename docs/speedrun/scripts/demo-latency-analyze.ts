@@ -8,27 +8,40 @@
 //    catch-up (World.ts cycle()), so a long tick is followed by one that starts almost at once,
 //    leaving no idle gap for a reaction to the long tick.
 // 2. Steadiness gate: over every rolling window of --window-min minutes of tick arrivals (react
-//    session frames, or sample phase frames), whether the tick interval p90 <= --p90 and max <=
-//    --max. Reports the share of windows that pass.
+//    session frames, or sample phase frames), whether the tick interval p90 <= --p90, max <=
+//    --max (default off), and catch-ups (an interval under 150 ms right after one over 350 ms)
+//    at most 1 per minute. Reports the share of windows that pass. Only data taken from the run
+//    machine's placement can score the gate: a distant vantage adds its own path jitter, which
+//    looks like overruns (cairn://p/rs/102).
 import { readFileSync } from 'node:fs';
 
 const args = process.argv.slice(2);
 const opt = (k: string, d: number) => Number(args.find(a => a.startsWith(`--${k}=`))?.split('=')[1] ?? d);
 const WIN = opt('window-min', 3) * 60_000;
 const P90 = opt('p90', 400);
-const MAX = opt('max', 600);
+const MAX = opt('max', Infinity);
 const files = args.filter(a => !a.startsWith('--'));
 
-/** Tick arrival times from raw [t, bytes] messages: messages under 60 ms apart are one tick. */
+/**
+ * Tick arrival times from raw [t, bytes] messages. The demo sends small non-tick frames (1-4 bytes)
+ * between ticks, and a catch-up tick can follow its predecessor within a few ms, so only frames of
+ * at least 5 bytes count and frames under 8 ms apart are one tick. (A 60 ms grouping merges
+ * catch-up ticks into the tick before them and hides exactly the overruns this script looks for;
+ * cairn://p/rs/102 measured 8 ms recovering 99.4% of decoded ticks.)
+ */
 function tickTimes(raw: [number, number][]): number[] {
     const out: number[] = [];
     let last = -Infinity;
-    for (const [t] of raw) {
-        if (t - last >= 60) out.push(t);
+    for (const [t, bytes] of raw) {
+        if (bytes < 5) continue;
+        if (t - last >= 8) out.push(t);
         last = t;
     }
     return out;
 }
+
+/** Catch-ups: an interval under 150 ms immediately after one over 350 ms. */
+const catchUps = (iv: number[]) => iv.filter((v, i) => i > 0 && v < 150 && iv[i - 1]! > 350).length;
 const q = (xs: number[], p: number) => {
     const a = [...xs].sort((u, v) => u - v);
     return a[Math.min(a.length - 1, Math.floor(p * a.length))] ?? NaN;
@@ -66,16 +79,23 @@ for (const f of files) {
         const ts = tickTimes(raw);
         let windows = 0;
         let pass = 0;
+        const perWindow: string[] = [];
         // windows start every 30 s
         for (let w0 = ts[0]!; w0 + WIN <= ts.at(-1)!; w0 += 30_000) {
             const iv: number[] = [];
             for (let i = 1; i < ts.length; i++) if (ts[i - 1]! >= w0 && ts[i]! <= w0 + WIN) iv.push(ts[i]! - ts[i - 1]!);
             if (iv.length < 10) continue;
             windows++;
-            if (q(iv, 0.9) <= P90 && Math.max(...iv) <= MAX) pass++;
+            const cu = catchUps(iv) / (WIN / 60_000);
+            if (q(iv, 0.9) <= P90 && Math.max(...iv) <= MAX && cu <= 1) pass++;
+            perWindow.push(`p90 ${q(iv, 0.9).toFixed(0)} catch-ups/min ${cu.toFixed(1)}`);
         }
+        const all: number[] = [];
+        for (let i = 1; i < ts.length; i++) all.push(ts[i]! - ts[i - 1]!);
+        const minutes = (ts.at(-1)! - ts[0]!) / 60_000;
         agg.windows += windows; agg.pass += pass;
-        lines.push(`  ${name}: ${ts.length} ticks; ${WIN / 60_000}-min windows passing p90<=${P90} and max<=${MAX}: ${pass}/${windows}`);
+        lines.push(`  ${name}: ${ts.length} ticks over ${minutes.toFixed(1)} min; p90 ${q(all, 0.9).toFixed(0)}; catch-ups ${(catchUps(all) / minutes).toFixed(1)}/min; ${WIN / 60_000}-min windows passing p90<=${P90}, max<=${MAX}, catch-ups<=1/min: ${pass}/${windows}`);
+        if (perWindow.length) lines.push(`    windows: ${perWindow.join('; ')}`);
     }
     console.log(lines.join('\n'));
 }
