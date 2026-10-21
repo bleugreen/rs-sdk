@@ -25,7 +25,7 @@ export function zonePacket(c: LiteClient, buf: Packet, opcode: number): void {
             const info = buf.g1();
             const id = buf.g2();
             if (inArea) {
-                c.world.addLoc(mapLevel(c, level, x, z), /* smallskill-bridge-patch */ c.mapBuildBaseX + x, c.mapBuildBaseZ + z, id, info >> 2, info & 0x3);
+                c.world.addLoc(level, c.mapBuildBaseX + x, c.mapBuildBaseZ + z, id, info >> 2, info & 0x3);
             }
             return;
         }
@@ -33,7 +33,7 @@ export function zonePacket(c: LiteClient, buf: Packet, opcode: number): void {
         case ServerProt.LOC_DEL: {
             const info = buf.g1();
             if (inArea) {
-                c.world.delLoc(mapLevel(c, level, x, z), c.mapBuildBaseX + x, c.mapBuildBaseZ + z, info >> 2);
+                c.world.delLoc(level, c.mapBuildBaseX + x, c.mapBuildBaseZ + z, info >> 2);
             }
             return;
         }
@@ -143,9 +143,4 @@ export function zonePacket(c: LiteClient, buf: Packet, opcode: number): void {
         default:
             return;
     }
-}
-
-// smallskill-bridge-patch (lab only): the static index keys a bridged tile's locs one level up.
-function mapLevel(c: LiteClient, level: number, x: number, z: number): number {
-    return level < 3 && (c.locIndex.mapFlags(1, c.mapBuildBaseX + x, c.mapBuildBaseZ + z) & 0x2) !== 0 ? level + 1 : level;
 }

@@ -54,6 +54,8 @@ below says which filler to buy.
 
 ## Ranking: net ticks per quest point
 
+> **Rows 1-3 are superseded** by measured documents: [sea_slug.md](sea_slug.md) (394 fixed, worth 955 given Fishing Contest; blocked for the bot until cairn://p/rs/54), [dorics_quest.md](dorics_quest.md) (65 fixed, worth 139 given Plague City) and [fishing_contest.md](fishing_contest.md) (223 fixed with a helper-caught carp, worth 325 given Sea Slug). Quote those, not the inferred figures below.
+
 Net = the quest's ticks minus the training its own xp replaces, divided by its quest points.
 Values use the rates the sibling documents use: Mining about 9.5 base xp per tick
 ([digsite.md](digsite.md)), Fishing about 9.1 (rs/7, via the coordinator), melee 14
