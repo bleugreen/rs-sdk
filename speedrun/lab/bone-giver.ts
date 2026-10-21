@@ -58,7 +58,14 @@ const killer = setTimeout(() => child.kill('SIGINT'), Number(process.env.BONE_LA
 const code = await child.exited;
 clearTimeout(killer);
 
-// The giver's side: every trade's request phase, and every refusal it re-sent.
-const log = readFileSync(join(runDir, 'logs', `${giver}.role.log`), 'utf8').split('\n');
-for (const line of log) if (/"message":"(trade|request|bounce)"/.test(line)) console.log(`giver ${line.slice(line.indexOf('{'))}`);
+// Both sides, line by line: the receiver's loads and pages, the giver's trades, requests and refusals.
+for (const [who, account, re] of [['receiver', receiver, /"message":"(load|page)"/], ['giver', giver, /"message":"(trade|request|bounce|phase)"/]] as const) {
+    let text = '';
+    try {
+        text = readFileSync(join(runDir, 'logs', `${account}.role.log`), 'utf8');
+    } catch {
+        console.log(`${who}: no role log`);
+    }
+    for (const line of text.split('\n')) if (re.test(line)) console.log(`${who} ${line.slice(line.indexOf('{'))}`);
+}
 process.exit(code);
