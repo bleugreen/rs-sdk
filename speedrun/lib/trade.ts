@@ -88,7 +88,9 @@ export function planOffers(inventory: readonly InventoryItem[], specs: readonly 
         used.add(item.id);
         const total = totals.get(item.id) ?? 0;
         const want = n === 'all' ? total : n;
-        out.push({ slot: item.slot, id: item.id, name: item.name, amounts: amountButtons(want, total), expected: Math.min(want, total) });
+        // An id held in more than one slot is unstackable: one press only.
+        const singlePress = item.count < total;
+        out.push({ slot: item.slot, id: item.id, name: item.name, amounts: amountButtons(want, total, { singlePress }), expected: Math.min(want, total) });
     };
     if (specs === 'all') {
         for (const item of firstSlot.values()) add(item, 'all');
