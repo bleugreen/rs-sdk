@@ -8,7 +8,8 @@ rule live there. **SCORED** is the scored account; its real name never appears h
 log line or a chat message. Figures carry a label: **m** measured (with the time), **r** read from a
 file, a config or main's notes, **i** inferred.
 
-**The run's standing configuration** (main, 10:02 PDT 2026-10-21, on the measurements below):
+**The run's standing configuration** (main, 10:02 PDT 2026-10-21, on the measurements below; it departs
+from tenet 11's "remote desktop connected" and rests on the proposed successor to tenet 11):
 
 - the recording is captured on the VM;
 - **RDP is disconnected during the run**;
@@ -112,8 +113,11 @@ The commands below use `:10`. If the log names another display, replace `:10` ev
 and Chrome's window stays mapped, so Chrome sees no change: the page's loop rate was the same
 connected and disconnected, with or without the capture (m, "Measured" below). We did not read
 `document.visibilityState` directly; an unchanged loop rate is the evidence that nothing throttled.
-That is why the run can leave RDP disconnected, which tenet 11 had ruled out before this
-measurement (its successor relaxes it).
+The session survives a disconnect intact. After the operator disconnected at 16:41 UTC, display :10
+stayed at 1920x1080 under the same `xfce4-session` process until 17:04 UTC. Chrome kept running and
+the tab stayed in game, maximised and unobscured (m). That is why the run can leave RDP
+disconnected. Tenet 11 asks for it connected, so this rests on the proposed successor to tenet 11.
+What does not change: Chrome stays maximised and unobscured on :10 with the throttling flags.
 
 ## 3. Bring up the page server, the gateway and Chrome
 
@@ -206,7 +210,11 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o 
 **The operator's live view**, started with the recording and left running until teardown. It is a
 3 fps, 960x540 MJPEG stream on the tailnet address, which the operator opens in a browser at
 `http://100.66.164.37:8090/live.mjpg` (over Tailscale, like RDP). ffmpeg's `-listen 1` serves one
-viewer and exits when that viewer leaves, so it runs in a loop; a reload reconnects:
+viewer and exits when that viewer leaves, so it runs in a loop; a reload reconnects. It is bound to the
+tailnet address only, never the public one. It is a **separate low-rate grab, not a second output of
+the recording's ffmpeg**: an HTTP `-listen` output blocks its process until a viewer connects and
+fails when the viewer leaves. Inside the recording's process that would hold up or end the
+recording (i). As its own process, it can come and go without touching the recording file:
 
 ```sh
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'tmux -L run new-session -d -s live "while true; do ffmpeg -hide_banner -loglevel warning -f x11grab -draw_mouse 1 -framerate 3 -video_size 1920x1080 -i :10.0+0,0 -vf scale=960:540 -c:v mjpeg -q:v 8 -f mpjpeg -listen 1 http://100.66.164.37:8090/live.mjpg; sleep 1; done"'
