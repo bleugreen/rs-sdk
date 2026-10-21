@@ -42,7 +42,9 @@ const kv = (k: string, d: string) => argv.find(a => a.startsWith(`--${k}=`))?.sl
 const BOT = argv.find(a => !a.startsWith('-'))!;
 const ROTS: Record<string, string> = {
     demo: '2604,3235>2605,3235 2602,3235>2602,3236 2603,3234>2602,3234 2603,3233>2602,3233 2605,3234>2605,3233',
-    stay: '2605,3234>2605,3235 2605,3234>2605,3233 2603,3233>2602,3233 2602,3235>2602,3234 2602,3235>2602,3236'
+    stay: '2605,3234>2605,3235 2605,3234>2605,3233 2603,3233>2602,3233 2602,3235>2602,3234 2602,3235>2602,3236',
+    // the same five steps reordered so the east stay follows a 2-tile move, the west one a 3-tile move
+    stay2: '2603,3233>2602,3233 2605,3234>2605,3235 2605,3234>2605,3233 2602,3235>2602,3234 2602,3235>2602,3236'
 };
 const ROT = kv('rot', 'stay');
 const BURY = kv('bury', 'stay');
@@ -194,7 +196,7 @@ await new Promise<void>(resolve => {
             checked.add(p);
             if (xpSeen.has(p) || xpSeen.has(p + 1)) continue;
             slips++;
-            log(`T${t} SLIP: no xp for roll@${p}`);
+            log(`T${t} SLIP: no xp for roll@${p} at ${s.player?.worldX},${s.player?.worldZ} anim ${s.player?.animId}; messages: ${s.gameMessages.slice(-3).map(g => g.text).join(' | ')}`);
             for (const q of predicted) checked.add(q);
             sched.clear();
             restartAt = t + 5;
