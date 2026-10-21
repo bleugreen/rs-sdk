@@ -47,6 +47,14 @@ Everything else is **overlay-driven** through the SDK and `speedrun/lib`. The re
 an in-process reaction landed on the next tick 60 of 60 times, and the same reaction through the
 loopback gateway 32 of 60 (`LAB.md`, "Direct path and relay").
 
+**In-page figures.** rs/97 measured its programs on its wired branch, on a local engine in a
+visible tab (direct path), reported to this issue as "rs/97 in-page results via main, 05:50": probe
+60 of 60; knife iron 3.00 ticks per ore (200 of 200 on the predicted tick); knife normal trees from
+level 1, 7.24 ticks per log; knife willow 4.83 ticks per log; knife fly 20-99, 4.26 ticks per
+catch; pickpocket at 55, 0.173 rolls per tick; Wilderness Agility 66 ticks per lap. The in-page
+entries take their acceptance thresholds from these figures and start from rs/97's branch
+(cairn://p/rs/97/1/builder).
+
 **Acceptance tests** come in two kinds. The local one runs on the lab engine at
 `NODE_TICKRATE=300` (`LAB.md`; `speedrun/lab/lab.sh` or `docs/speedrun/scripts/lab.sh`), and an
 in-page step runs there in a visible browser tab, because the lite client hosts no programs
@@ -83,7 +91,7 @@ include (cairn://p/rs/108 is auditing which ones do), and contention. The record
 | 0 | Run chain | `speedrun/run.ts` | all | boundary idle ~50-100 i | ~0 | +12-14 per crash | | overlay | `runner/step.ts` (main) |
 | 1 | Agility | `speedrun/skills/agility.ts` | S11a, S17 | 4,146 | ~3,945 | 4,634 | ~690 | in-page | rs/97 `agility` program, `agility-course.ts` |
 | 2 | Monkey Madness | `speedrun/quests/monkey-madness.ts` | S15 | 4,077 | 3,546 | 4,611 | ~1,065 | overlay | `quest-mm-*.ts` |
-| 3 | Woodcutting | `speedrun/skills/woodcutting.ts` | S07 | 3,958 | 3,028 | 3,958+ | ~930 | in-page | rs/97 `knife-cycle`, `tickmanip-cycle.ts` |
+| 3 | Woodcutting | `speedrun/skills/woodcutting.ts` | S07 | 3,958 | ~3,460 in-page (3,028 lite) | 3,958+ | ~500 | in-page | rs/97 `knife-cycle`, `tickmanip-cycle.ts` |
 | 4 | Mining | `speedrun/skills/mining.ts` | S09 | 3,765 | 3,134 | ~4,000 | ~870 | in-page | rs/97 `knife-mine`, `tickmanip-mine.ts` |
 | 5 | Fishing | `speedrun/skills/fishing.ts` | S22 | 3,410 | 1,978 | 3,410 | ~1,430 | in-page | rs/97 `knife-cycle`, `tickmanip-cycle.ts` |
 | 6 | Thieving and the stun pack | `speedrun/skills/thieving.ts` | S18 | ~2,040 | ~2,000 | ~2,040 + ~480 elsewhere | ~480 | in-page | rs/97 `pickpocket`, `thieving-pickpocket.ts` |
@@ -157,8 +165,18 @@ scripts are in section 4; the shared primitives and their build order are in sec
   `--lab` (accept staff fixtures).
 - **Preconditions:** a session that publishes advancing ticks (`openSession`, `waitAdvancingTick`);
   watchdog started; the in-page runtime present when the client is the browser (
-  `startProgram(sdk, 'probe')` answers); the run-night host gate passed (section 5, item 5) before
-  any knife step is started in knife mode.
+  `startProgram(sdk, 'probe')` answers); the **tab gate** passed (section 5, item 5) before any
+  in-page step starts in its fast mode. The gate has four conditions: the direct in-page probe at
+  least 58 of 60; publication p90 at most 400 ms over the probe minute; at most 1 catch-up interval
+  (< 200 ms) per minute; and a tab loop rate p10 of at least about 50 loops per second (main,
+  05:50, via the rs/103 coordinator).
+- **Run-machine setup** (a precondition the operator checks before S00; main, 05:50): power saving
+  and the screensaver off; the remote-desktop session kept connected; the tab visible and
+  unobscured; Chrome launched with `--disable-background-timer-throttling
+  --disable-renderer-backgrounding --disable-backgrounding-occluded-windows`. Chrome throttles
+  hidden or occluded tabs, and intensively after about 5 minutes, which would stall every in-page
+  program. run.ts re-checks the loop rate between steps and refuses an in-page step's fast mode
+  while it is low.
 - **Postconditions:** total level 1,881. The tick log closed with a session-level row (below).
 - **Ticks:** run.ts adds no actions of its own, but three things land on SCORED's clock.
   - **Step-boundary idle.** `runSteps` calls `nextTick` before the preconditions and again after
@@ -259,7 +277,8 @@ scripts are in section 4; the shared primitives and their build order are in sec
   script, climbs out of a pit and resumes at `stones` (`agility-courses.ts` `resume`) [rs/97].
 - **Acceptance, local:** a browser tab on the lab engine, `::setstat agility 99` at the pipe, then
   `runProgram(sdk, 'agility', {course:'wilderness', laps:10})`. Pass: at least 8 of 10 clean laps
-  at **66 ticks** (measured figure, tolerance +1). Gnome course from level 1 to 22: first
+  at **66 ticks** (tolerance +1). That figure is measured both on the lite client and in the page
+  (rs/97 in-page results via main, 05:50). Gnome course from level 1 to 22: first
   **measure** it at 300 ms (the 70.7-tick lap is a 100 ms figure), then pass within 5% of that
   measurement and of the 122 inferred.
 - **Acceptance, demo (throwaway):** from Ashburn, the in-page probe at least 58 of 60, then 10
@@ -334,10 +353,10 @@ scripts are in section 4; the shared primitives and their build order are in sec
   `dismiss: 'now'`, `keepProducts`, `respawnD` (felled-tree wait, from the observed player count).
 - **Preconditions:** rune axe (any level, `skills/woodcutting.md` §1), knife and at least 1 normal
   log, Fletching 1, members world (the demo is one, `fly.toml:23`). Free inventory except the kit.
-  Position on the band's tile. **Host gate (main, 05:30, via the rs/103 coordinator):** knife mode
-  only when the direct in-page probe reads at least **58 of 60**, state publication p90 is at most
-  **400 ms** over the probe minute, and there is at most **1 catch-up interval (< 200 ms) per
-  minute**. Otherwise plain, re-probed periodically (every 500 ticks while plain,
+  Position on the band's tile. **Tab gate (main, 05:30 and 05:50, via the rs/103 coordinator):**
+  knife mode only when the direct in-page probe reads at least **58 of 60**, state publication p90
+  is at most **400 ms** over the probe minute, there is at most **1 catch-up interval (< 200 ms) per
+  minute**, and the tab loop rate p10 is at least about **50 loops per second**. Otherwise plain, re-probed periodically (every 500 ticks while plain,
   `skills/tick-manipulation.md` §5). The in-page program resyncs on observed slips (rs/96, rs/97,
   rs/102).
 - **Postconditions:** Woodcutting 99; axe, knife and logs kept (the knife loop consumes no logs in
@@ -346,7 +365,12 @@ scripts are in section 4; the shared primitives and their build order are in sec
 - **Ticks:** expected **3,958** (normal 4-tick cycle, demo respawn D=20; inferred,
   `woodcutting-model.ts`, 400 simulated runs; `skills/woodcutting.md` §2). Best **3,028** (inferred:
   ×0.765, the knife ratio measured on willows at 99, 5.53 to 4.23 ticks per log, `tickmanip-cycle.ts`;
-  applying it to oak is inferred; `skills/woodcutting.md` §2). Fallback 3,958, plus a few hundred
+  applying it to oak is inferred; `skills/woodcutting.md` §2). **In the page the knife measured
+  4.83 ticks per willow log** against the lite client's 4.23 (rs/97 in-page results via main,
+  05:50). At that ratio (4.83 / 5.53 = 0.873) the best is about **3,460** (inferred), and the knife
+  is worth about 500 rather than 930. The fold-in (rs/111) should take the in-page figure and ask
+  rs/97 why willows lose about 0.6 ticks per log in the page when iron and fly match the lite
+  client. Fallback 3,958, plus a few hundred
   for one move to a second site under contention (estimated in `skills/README.md`, open question 5).
   Quiet server: 4,001 normal and 3,061 knife (inferred, same table).
 - **Primitives:** `lib/programs.ts` `runProgram(sdk, 'knife-cycle', {method, technique, untilLevel,
@@ -361,8 +385,10 @@ scripts are in section 4; the shared primitives and their build order are in sec
   cycle and does not lose the lock (read, `cut_logs.rs2:83-85`; measured by holding 15% of
   starters a tick: willows **5.76** ticks per log against 5.03 on time and 5.84 plain;
   `skills/README.md`, open question 1).
-- **Acceptance, local:** browser tab, lab engine at 300 ms, willows at 99: knife within 5% of **4.23**
-  ticks per log over 200+ logs, and plain within 5% of 5.53. **Forced slip:** hold 15% of starters
+- **Acceptance, local:** browser tab, lab engine at 300 ms, willows at 99: knife within 5% of **4.83**
+  ticks per log, rs/97's in-page figure (and the target is 4.23, the lite figure, if rs/97 finds
+  the gap), over 200+ logs; plain within 5% of 5.53. Normal trees from level 1: within 5% of
+  **7.24** ticks per log (in-page). **Forced slip:** hold 15% of starters
   one tick. Pass: within 5% of **5.76** and never above plain, plus a second run with 3 injected
   overrun minutes (publication gaps > 400 ms followed by a < 200 ms catch-up) where the gate turns
   the knife off within one probe window. Oaks 65-74: within 5% of the measured **8.41** base xp
@@ -405,7 +431,9 @@ scripts are in section 4; the shared primitives and their build order are in sec
   contention, the second cluster north of East Ardougne (2710-2715, 3328-3332), 3.74 by the planner
   and 4.02-4.12 measured at respawn 19 without a starter (`skills/mining.md` §4).
 - **Acceptance, local:** browser tab, 300 ms, respawn 13 emulated, 200 ores at 99. Pass: at most
-  **3.15** ticks per ore (3.00 ±5%; rs/82 measured 3.05 in a tab, 192 of 194 gaps at 3, `LAB.md`).
+  **3.15** ticks per ore (3.00 +5%). rs/97's program measured 3.00 with 200 of 200 on the predicted
+  tick (rs/97 in-page results via main, 05:50), and rs/82's overlay loop measured 3.05 in a tab
+  (`LAB.md`).
   Forced slip at 15%: at most 3.69 (3.51 +5%). Without the starter: within 5% of 3.61.
 - **Acceptance, demo (throwaway):** needs Mining 15 for iron, which is cheap on a throwaway (about 61
   ticks of copper, `skills/mining.md` §2). From Ashburn: probe at least 58 of 60, then 100 iron ores
@@ -438,8 +466,10 @@ scripts are in section 4; the shared primitives and their build order are in sec
   against 3.86 on time and 6.61 plain (measured; `skills/README.md`, open question 1). Fallback
   site if the river is crowded: Barbarian Village, 9.34 base xp per tick against 9.83 (same
   section, open question 5).
-- **Acceptance, local:** browser tab, 300 ms, 78 to 99. Pass: within 5% of **2,005** (the mean of
-  1,978 and 2,032) and at least 75% of gaps at 3 (the tab measured 78%). Forced slip: at most 5.17
+- **Acceptance, local:** browser tab, 300 ms. From 20 to 99: within 5% of **4.26** ticks per catch
+  (rs/97 in-page results via main, 05:50; the lite run's 2,896 ticks over 677 catches is 4.28). From
+  78 to 99: within 5% of **2,005** (the mean of 1,978 and 2,032), with at least 75% of gaps at 3
+  (rs/82's tab measured 78%). Forced slip: at most 5.17
   ticks per catch (4.92 +5%) at 99.
 - **Acceptance, demo (throwaway):** fly fishing needs level 20 (201 + 78 ticks from level 1 by the
   small net, measured and inferred, `skills/fishing.md` §2). From Ashburn: probe at least 58 of 60,
@@ -479,8 +509,8 @@ scripts are in section 4; the shared primitives and their build order are in sec
 - **Mode:** in-page. The 2-tick re-click and the stun-window packets are on predicted ticks.
 - **Fallback:** the plain pickpocket program with no stun actions. The bones then go to S25b and the
   Charge casts to a bank booth (33 ticks at 5 per tick, measured by rs/20 via `skills/magic.md` §1).
-- **Acceptance, local:** browser tab, 300 ms. At 55, 0.167-0.170 rolls per tick (lite 0.167, tab
-  0.170; measured, rs/97 brief); at 99, 0.35 rolls per tick (tab, `LAB.md`). 57 to 99 within 5% of
+- **Acceptance, local:** browser tab, 300 ms. At 55, within 5% of **0.173** rolls per tick (rs/97
+  in-page results via main, 05:50; lite 0.167); at 99, 0.35 rolls per tick (rs/82's tab, `LAB.md`). 57 to 99 within 5% of
   **1,975** with no stun actions. With the stun pack, rs/106's measured figures within 5%: at least
   1.96 bones per stun (measured, `skills/interleaving.md` §8) and no loss of the 2-tick success gap
   (at least 94% of success gaps at 2, against the tab's 170 of 181 at 55).
@@ -1220,11 +1250,15 @@ In build order. An item is listed where the first entry that needs it would othe
    both cannon entries use them. A `converse` mode that bursts known runs of continue pages through
    `continueBurst` is still missing; the burst column depends on it.
 4. **rs/97's runtime and `speedrun/lib/programs.ts`** merged, with the in-page probe (entries 1, 3-6, 9).
-5. **The run-night host gate** in `lib/hostgate.ts`: knife on only when the direct probe reads at
-   least 58 of 60, publication p90 is at most 400 ms over the probe minute, and there is at most 1
-   catch-up (< 200 ms) per minute; otherwise plain, re-probed periodically. It reads `probeInPage`
-   and `ProgramStatus.frames` / `publish` [rs/97]. rs/96 added the direct-path verdict, and rs/102
-   measures how long overrun bursts last.
+5. **The run-night tab gate** in `lib/hostgate.ts`: an in-page loop runs its fast mode only when the
+   direct probe reads at least 58 of 60, publication p90 is at most 400 ms over the probe minute,
+   there is at most 1 catch-up (< 200 ms) per minute, and the tab loop rate p10 is at least about
+   50 loops per second (main, 05:50). Otherwise it runs plain and re-probes periodically. The gate
+   reads `probeInPage` and `ProgramStatus.frames` / `publish` [rs/97]. A loop-rate measure is not
+   among the published fields read here (`maxTickMs` is the slowest `onTick`, not a loop rate), so
+   rs/97 or the gate needs to add one. rs/96 added the direct-path verdict, and rs/102 measures how
+   long overrun bursts last. The run-machine setup in the `run.ts` entry is what keeps the loop
+   rate up.
 6. **Missing in-page programs:** `rc-cycle` (entry 9, both halves, tuned and robust schedules), and
    the pickpocket `stunActions` extension (entries 6 and 32). Optional: a trade-and-make program for
    Smithing, a blind-cadence program for enchanting, a flick program for the combat finish.
