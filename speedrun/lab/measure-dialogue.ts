@@ -5,7 +5,7 @@
 import { advance, classifyPage, continueBurst } from '../lib/dialogue';
 import { closeSession, openSession } from '../lib/session';
 import { formatReport, report } from '../lib/ticks';
-import { waitTicks, waitUntil } from '../lib/wait';
+import { sleep, tickMs, waitTicks, waitUntil } from '../lib/wait';
 import { arg, botArg, labLog, result, sample } from './common';
 import { CARLA, tele } from './setup';
 
@@ -35,6 +35,18 @@ async function finish(): Promise<number> {
         const r = await advance(sdk, { choose: /easier/i, maxTicks: 5 });
         if (!r.ok) return pages;
         if (r.kind === 'continue') pages++;
+    }
+}
+
+/** Count the continue pages from here to the choice page, advancing through them. */
+async function continuesToChoice(): Promise<number> {
+    let n = 0;
+    for (;;) {
+        const w = await waitUntil(sdk, s => s.dialog.isOpen && !s.dialog.isWaiting, { maxTicks: 5 });
+        if (!w.ok || classifyPage(w.state.dialog) === 'choice') return n;
+        const r = await advance(sdk, { maxTicks: 5 });
+        if (!r.ok) return n;
+        n++;
     }
 }
 
@@ -69,10 +81,25 @@ for (let i = 0; i < n; i++) {
     await finish();
     await waitTicks(sdk, 2);
 
-    for (const k of [5, Math.min(10, before)]) {
+    // Each burst's landing is checked: a burst of k must leave exactly
+    // before-k continue pages ahead of the choice.
+    const atChoice = (s: { dialog: Parameters<typeof classifyPage>[0] }) => classifyPage(s.dialog) === 'choice';
+    const variants: Array<{ label: string; k: number; until: boolean; midTick: boolean }> = [
+        { label: 'k=5 (quiet-tick confirm)', k: 5, until: false, midTick: false },
+        { label: `k=${before} until choice`, k: before, until: true, midTick: false },
+        { label: `k=${before} until choice, fired mid-tick`, k: before, until: true, midTick: true },
+        { label: `k=${before} (quiet-tick confirm), fired mid-tick`, k: before, until: false, midTick: true },
+    ];
+    for (const v of variants) {
         await open();
-        const r = await sample(log, session, `continueBurst k=${k}`, () => continueBurst(sdk, k));
-        result(`continueBurst k=${k} detail`, r);
+        const r = await sample(log, session, `continueBurst ${v.label}`, async () => {
+            if (v.midTick) await sleep(tickMs() / 2);
+            return continueBurst(sdk, v.k, v.until ? { until: atChoice } : {});
+        });
+        const left = await continuesToChoice();
+        const landedRight = left === before - v.k;
+        result(`continueBurst ${v.label} detail`, { ...r, continuesLeftBeforeChoice: left, landedRight });
+        if (!landedRight) log.append({ ...log.rows[log.rows.length - 1]!, step: `continueBurst ${v.label}: wrong landing`, ok: false, error: `left ${left}, expected ${before - v.k}` });
         await finish();
         await waitTicks(sdk, 2);
     }
