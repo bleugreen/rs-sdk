@@ -577,6 +577,13 @@ function gateLine(r: { label: string; verdict: DirectVerdict | null; error?: str
 }
 
 async function readHiscore(account: string, origin: string, runId: string): Promise<PlayerRow[] | null> {
+    // A lab engine serves hiscores only when its web server is up; don't spend the fetcher's backoff on nothing.
+    try {
+        await fetch(origin, { signal: AbortSignal.timeout(5_000) });
+    } catch {
+        console.error(`[hiscore] ${origin} does not answer; skipped`);
+        return null;
+    }
     // Rows are written at the clean logout and show about 3 s later (hiscore-timestamps.md).
     for (let attempt = 1; attempt <= 6; attempt++) {
         await Bun.sleep(5_000);

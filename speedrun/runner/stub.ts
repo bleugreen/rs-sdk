@@ -35,7 +35,8 @@ function chopTo(to: number): Step<any> {
                         if (!d.success) throw new Error(`dropping logs: ${d.message}`);
                     }
                     const r = await bot.chopTree();
-                    if (!r.success) throw new Error(`chopTree: ${r.message}`);
+                    // A tree that falls mid-chop (to us or anyone) is the normal end of a tree: chop the next.
+                    if (!r.success && !/felled|fell|no longer/i.test(r.message)) throw new Error(`chopTree: ${r.message}`);
                 }
             });
         },
