@@ -81,8 +81,8 @@ only make Strength fuller.
 | MM option 2, without Troll Romance | 33,750 (gap 6,188) | 50,300 (gap 0) | 6,188 | ~440 |
 | **Monkey Madness dropped** (it needs the rs/23 client fix) | 17,750 (gap 22,188) | 15,300 (gap 24,638) | 37,300 | **~2,665** |
 
-Against a cost of about 1,120 ticks (stock), Dragon Slayer loses about 700-950 ticks in every
-plan that keeps Monkey Madness. If Monkey Madness is dropped, both of Dragon Slayer's rewards
+Against a cost of about 1,120 ticks (stock), Dragon Slayer loses about 650-950 ticks (by plan and
+dialogue column) in every plan that keeps Monkey Madness. If Monkey Madness is dropped, both of Dragon Slayer's rewards
 land in open gaps and it gains about 1,545 (stock) to 1,695 (burst) ticks, so it should then be
 done. One caveat in that case: melee training also gives a third of its xp as Hitpoints, and
 quest xp does not, so replacing 37,300 of melee training with Dragon Slayer removes about

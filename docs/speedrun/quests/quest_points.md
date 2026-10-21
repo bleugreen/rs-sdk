@@ -3,7 +3,7 @@
 **Short answer: the run needs no quest-point filler.** The only quest-point gate on the
 planned route is the Champions' Guild door for Dragon Slayer (32), and
 [dragon_slayer.md](dragon_slayer.md) recommends skipping Dragon Slayer. If it is done anyway,
-the other planned quests already give 51 quest points (48 without Monkey Madness), so it only
+the other planned quests already give 49 quest points (46 without Monkey Madness), so it only
 needs to come after 32 of them. Filler is needed only if Dragon Slayer is pulled earlier
 than that. For that case, and for the Legends' Quest arithmetic, this page ranks every
 candidate by net ticks per quest point.
@@ -36,18 +36,20 @@ sibling documents). They were not measured.
 | Tree Gnome Village, The Grand Tree, Monkey Madness | 2 + 5 + 3 | [tree_gnome_village.md](tree_gnome_village.md), [grand_tree.md](grand_tree.md), [monkey_madness.md](monkey_madness.md) |
 | Merlin's Crystal, Holy Grail | 6 + 2 | [merlins_crystal.md](merlins_crystal.md), [holy_grail.md](holy_grail.md) |
 | Waterfall, Fight Arena, Knight's Sword | 1 + 2 + 1 | [waterfall.md](waterfall.md), [fight_arena.md](fight_arena.md), [knights_sword.md](knights_sword.md) |
-| Priest in Peril, Haunted Mine | 1 + 2 | [priest_in_peril.md](priest_in_peril.md), [haunted_mine.md](haunted_mine.md) |
+| Priest in Peril | 1 | [priest_in_peril.md](priest_in_peril.md) |
 | Dwarf Cannon | 1 | [dwarf_cannon.md](dwarf_cannon.md) |
 | Watchtower, Temple of Ikov | 4 + 1 | [watchtower.md](watchtower.md), [temple_of_ikov.md](temple_of_ikov.md) |
 | Digsite, Tourist Trap | 2 + 2 | [digsite.md](digsite.md), [tourist_trap.md](tourist_trap.md) |
 | Plague City, Biohazard, Underground Pass, Regicide | 1 + 3 + 5 + 3 | Regicide chain (cairn://p/rs/15) |
 | Death Plateau, Troll Stronghold, Troll Romance | 1 + 1 + 2 | troll chain (cairn://p/rs/18) |
-| **Total** | **51** | |
+| **Total** | **49** | |
+
+Haunted Mine (2) is left out: it is on the skip list ([haunted_mine.md](haunted_mine.md)).
 
 So if Dragon Slayer is done, schedule it after any 32 of these. For example, the gnome chain
 (10), Merlin's Crystal and Holy Grail (8), Waterfall, Fight Arena and Knight's Sword (4),
-Priest in Peril and Haunted Mine (3), Watchtower (4), Temple of Ikov (1) and Digsite (2) make
-32 exactly. If some of these are dropped, the shortfall is a few points, and the ranking
+Priest in Peril (1), Watchtower (4), Temple of Ikov (1), Dwarf Cannon (1), Digsite (2) and
+Tourist Trap (2) make 33. Without Monkey Madness, the troll chain (4) makes up the difference. If some of these are dropped, the shortfall is a few points, and the ranking
 below says which filler to buy.
 
 ## Ranking: net ticks per quest point
