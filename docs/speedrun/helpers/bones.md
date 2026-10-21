@@ -18,8 +18,10 @@ Labels: **read** (from the content or engine), **measured** (on rs-sdk-demo.fly.
 - Base xp per bone (read, `skill_prayer/configs/bones.obj`, `bone_exp` in tenths): dragon 72,
   babydragon 30, big 15 (jogre bones are also 15), normal, bat and wolf 4.5.
 - This server uses a `2^(level/10)` curve where 99 is 39,938 base. Holy Grail is off the
-  route (rs/3), so the scored account buries the whole 39,938. The 673 big bones banked on
-  2026-10-21 cover 10,095 of it, which leaves **29,843 base**.
+  route (rs/3), so the scored account buries the whole 39,938. **The plan (main, 2026-10-21)
+  is 555 dragon bones for all of it** (rs/33 measured 1,221 ticks from level 1 to 99). The
+  673 big bones banked on 2026-10-21 (10,095 base) are only a fallback. The table below
+  prices the 29,843 base that would be left if that fallback were used.
 - Cadence (measured by cairn://p/rs/33, PR `cairn://p/rs/33/1/builder/create-pr`): 2 ticks
   per bury is a hard floor for every bone (`bury_bone.rs2`, `p_delay(0)`). A 28-bone bank
   cycle costs 58 ticks, and 555 dragon bones took 1,221 ticks from level 1 to 99, about
@@ -83,33 +85,50 @@ have never traded.
 
 ## Tier choice
 
-**Dragon bones from the GE first, and baby blue dragons farmed in parallel as the hedge.
-No more big bones.**
+**Decided (main, 2026-10-21): 555 dragon bones, filled in the order dragon bones from the
+GE, then baby blue dragons, then the banked big bones.** No more big bones are gathered.
 
-1. **The early 11 dragon bones (Prayer 43).** Place a bid now for 11 at about 6,000 gp,
-   above the standing 5,000 so the next seller fills us first. On the observed flow (a lot
-   most hours, 9-41 bones each) that fills within a few hours, well before morning. There is
-   no farmed dragon-bone source tonight. If the GE stays dry, the backstop is a helper with
-   Prayer 43 from its own babydragon bones killing the four Taverley blue dragons under
-   Protect from Magic, two kills per altar visit: a follow-up, not built.
-2. **The bulk: bid for 415 at about 5,500 gp** (or 555 if the big bones are to be replaced:
-   that saves about 1,173 scored ticks for about 0.8M gp more). On the observed flow of
-   about 15 an hour, by morning (about 8 hours) expect about 120. That's more if our higher
-   bid draws extra sellers, and fewer if the other buyer outbids us. The GE buyer role
-   (cairn://p/rs/50) and the mule (cairn://p/rs/49) place and collect the offers.
-3. **Farm baby blue dragons on 4 accounts** (9 spawns; more would crowd them). At the
-   measured ~60 an hour each, 4 accounts make about 240 an hour, 7,200 base per hour, so
-   the whole 995 in about 4 hours. Whatever the GE delivers is subtracted: babydragon bones
-   needed = (29,843 - 72 x dragon bones bought) / 30. The four existing helpers (h50-h52 at
-   75-85 combat, plus h53 fresh) can start within an hour. One fix comes first:
-   **eat while walking**. cairn_h51 died on the way in and lost its key and kit; the role
-   recovered by itself, but it cost about 8 minutes. Buying sharks (about 900 gp on the GE)
-   instead of fishing would roughly double trip length and the rate.
-4. **The 673 big bones** stay banked as a backstop. Bury them only if dragon and babydragon
-   supply falls short: they cost about 1,481 scored ticks for their 10,095 base.
+| Fill order | Source | Covers | Scored ticks |
+|---|---|---|---|
+| 1 | GE dragon bones (rs/63's bidder: 6,000 gp, +1,000 per stalled hour, cap 12,000) | 555 for the whole 39,938; the first 11 (Prayer 43) early | 1,221 for 555 (measured, rs/33) |
+| 2 | Baby blue dragons, farmed (`spot: 'baby_blue'`, up to 4 accounts) | (39,938 - 72 x dragon bones) / 30 babydragon bones: 1,332 if no dragon bones arrive | about 2.2 per bone |
+| 3 | The 673 banked big bones | 10,095 base, if 1 and 2 fall short | about 1,481 |
 
-Accounts under the fleet's 40-online cap: 4 baby blue farmers, the GE buyer, and the coin
-earners that fund about 11 hours of buying.
+Costs and capacity:
+
+- **GE.** 555 bones cost 3.3M gp at 6,000, up to 6.7M at the 12,000 cap: 17-33 hours of
+  coin earners at ~200k gp per hour.
+- **Baby blues.** At the measured ~60 an hour, 4 accounts make about 240 an hour (7,200
+  base), so they could cover the whole target alone in about 5.5 hours. Before scaling
+  them, the follow-up should add eating while walking (the probe's one death) and GE food
+  instead of fishing.
+- **No farmed dragon bones tonight.** Every 72-xp dragon breathes fire. The anti-dragon
+  shield needs Dragon Slayer (32 quest points). Protect from Magic drains about 20 points a
+  kill. Green dragons are in PvP wilderness. If the GE dries up before the early 11 arrive,
+  the backstop is a Prayer-43 helper (about 28 of its own babydragon bones) taking the four
+  Taverley blue dragons under Protect from Magic, two kills per altar visit. That is not
+  built.
+
+**Another fleet is on the same Prayer lever.** The standing 5,000 gp bid for dragon bones
+is not ours, and it is large. At 05:50 UTC on 2026-10-21 it wanted 1,455 (7.3M gp in
+escrow); by 08:30 it wanted 1,374, so it bought 81 in under three hours. All 19 dragon
+bone trades ever recorded on the demo (626 bones) were at 5,000 gp, which suggests that
+bid, or a predecessor at the same price, has taken every sale. Hourly fills in the
+`/api/market/items/536/history` read at 08:30 UTC:
+
+| Hour starting (UTC, 2026-10-20/21) | Bones | Trades |
+|---|---:|---:|
+| 23:00 | 11 | 1 |
+| 03:00 | 17 | 2 |
+| 04:00 | 9 | 1 |
+| 06:00 | 41 | 2 |
+| 07:00 (last fill about 07:08) | 40 | 1 |
+
+So sellers come in a few lots an hour, 9-41 bones each, and the market price is set by
+that bid. Any bid above 5,000 takes the next lot. The other buyer can answer by raising
+theirs, which is why rs/63's bidder escalates. Someone who buries 1,455 dragon bones is
+chasing roughly 99 Prayer under the same 25x curve. If they also race on ticks, every lot
+we win is one they don't.
 
 ## Stages (re-chosen from observed state every cycle; each change logged as `phase`)
 
