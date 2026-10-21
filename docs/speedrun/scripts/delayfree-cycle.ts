@@ -230,6 +230,9 @@ await runScript(async ({ bot, sdk }) => {
     const actPerTick: number[] = []; // per observed tick in the run: actions landed (from xp)
     const cycles: Array<{ open: number; seen: number; done: number; actions: number; xp: number }> = [];
     let dialogs = 0; // ticks on which the client showed a dialog (level-up boxes)
+    // Level-up scripts queued: one per action whose own xp crosses a level boundary (addXp
+    // enqueues [advancestat] once per call that raises the level), counted from each tick's xp.
+    let levelUpScripts = 0;
     let packets = 0;
     let finished = '';
 
@@ -237,7 +240,13 @@ await runScript(async ({ bot, sdk }) => {
         const x = xpOf(s);
         const d = x - lastXp;
         lastXp = x;
-        if (d > 0) log(`T${s.tick - t0} XP +${d / 25} base (${(d / 25 / r.xp).toFixed(2)} actions) level ${levelOf(x)}`);
+        if (d > 0) {
+            const n = Math.round(d / 25 / r.xp);
+            let ups = 0;
+            for (let k = 1; k <= n; k++) if (levelOf(x - d + Math.round(k * r.xp * 25)) > levelOf(x - d + Math.round((k - 1) * r.xp * 25))) ups++;
+            levelUpScripts += ups;
+            log(`T${s.tick - t0} XP +${d / 25} base (${(d / 25 / r.xp).toFixed(2)} actions) level ${levelOf(x)}${ups ? ` levelups ${ups}` : ''}`);
+        }
         actPerTick[s.tick - t0] = d / 25 / r.xp;
         if (s.dialog?.isOpen) dialogs++;
         return x;
@@ -460,6 +469,12 @@ await runScript(async ({ bot, sdk }) => {
         `open click -> bank seen (ticks:count) ${hist(cycles.filter(c => c.seen).map(c => c.seen - c.open))}; open click -> refilled inventory seen ${hist(cycles.filter(c => c.done).map(c => c.done - c.open))}`,
         `actions landed per tick (on ticks with xp; actions:ticks) ${hist(landed)}`,
         `packets ${packets}; ticks with a dialog open ${dialogs}`,
+        (() => {
+            const waits = cycles.filter(c => c.seen).map(c => c.seen - c.open);
+            const floor = waits.length ? Math.min(...waits) : 0;
+            const excess = waits.reduce((a, w) => a + (w - floor), 0);
+            return `level-up scripts queued ${levelUpScripts}; booth wait above its floor of ${floor}: ${excess} ticks over ${waits.length} visits = ${(excess / Math.max(1, levelUpScripts)).toFixed(2)} ticks per level-up`;
+        })(),
         `log ${LOG}`
     ].join('\n');
     log(summary);

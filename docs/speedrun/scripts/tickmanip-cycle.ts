@@ -36,6 +36,10 @@
 //   --from-xp=B     report the segment from the tick base xp first reaches B (a quest start)
 //   --dismiss=now|blind|none  answer a level-up dialog the tick it is seen with
 //                   sendClickDialog(0) (blind: { blind: true }); default now
+//   --dismiss=watcher|burst|click|none  the level-up lab's policies (levelup-dismiss.ts): the
+//                   speedrun/lib watcher, one blind continue per expected page, a re-click of
+//                   the target, or nothing (the next starter closes it); each level-up is logged
+//                   as an episode and summarised
 //   --reanchor=click|xp  after a lost lock or a moved spot: click (default) waits 5 ticks for
 //                   the clock to expire, re-clicks and steps the phase; xp re-clicks the
 //                   nearest target at once and anchors the schedule on the first xp it sees.
@@ -64,6 +68,7 @@ import type { BotWorldState, InventoryItem } from '../../../sdk/types';
 import { appendFileSync, writeFileSync } from 'fs';
 import { hostname } from 'os';
 import { HostGate } from '../../../speedrun/lib/hostgate';
+import { isPolicy, LevelUpLab } from './levelup-dismiss';
 
 const args: Record<string, string> = Object.fromEntries(
     process.argv.slice(2).filter(a => a.startsWith('--')).map(a => {
@@ -90,7 +95,7 @@ const DEMO = args.demo === 'true';
 const INJECT_LATE = Number(args['inject-late'] ?? 0);
 // A mistimed lock starves completely (each eat pushes the clock past the next click), so
 // "no xp for lockWindow ticks" means lost lock; size it so honest misses rarely trip it.
-const LOCK_WINDOW: Record<string, number> = { wc: 18, tree: 18, fly: 15, flylumb: 15, cage: 45 };
+const LOCK_WINDOW: Record<string, number> = { wc: 18, oak: 18, tree: 18, fly: 15, flylumb: 15, cage: 45 };
 const logPath = args.log ?? `${process.env.TMPDIR ?? '/tmp'}/tickmanip-${mode}${args.tag ? '-' + args.tag : ''}.log`;
 const FOOD = /^shrimps$/i;
 const FOOD_OBJ = 'shrimp';
@@ -126,7 +131,10 @@ const flyCatchP = (L: number) => {
 };
 
 const METHODS: Record<string, Method> = {
-    wc: { skill: 'woodcutting', tele: '0,48,50,15,34', give: [['rune_axe', 1]], kind: 'loc', target: /^willow/i, option: /^chop/i, product: /^willow logs$/i, clickOnRoll: false, r0: 3, plainCycle: 4 },
+    // rune axe success (trees.dbrow successchance): willow 56,175; oak 112,350
+    wc: { skill: 'woodcutting', tele: '0,48,50,15,34', give: [['rune_axe', 1]], kind: 'loc', target: /^willow/i, option: /^chop/i, product: /^willow logs$/i, clickOnRoll: false, r0: 3, plainCycle: 4, catchP: (L: number) => statRandom(L, 56, 175) },
+    // the route's oak tile north of Taverley (2914,3494), three oaks in reach (woodcutting.md section 2)
+    oak: { skill: 'woodcutting', tele: '0,45,54,34,38', give: [['rune_axe', 1]], kind: 'loc', target: /^oak/i, option: /^chop/i, product: /^oak logs$/i, clickOnRoll: false, r0: 3, plainCycle: 4, catchP: (L: number) => statRandom(L, 112, 350) },
     // Normal trees with a bronze axe (the starter kit; trees.dbrow successchance 64,200). A
     // normal tree always falls on its first log (woodcut.rs2 get_logs, deplete_chance 0), so
     // each log re-bootstraps on the next tree. Lab tele: the trees west of Lumbridge castle.
@@ -339,6 +347,9 @@ await runScript(async ({ bot, sdk }) => {
     const seenMsgs = new Set<string>((startState.gameMessages ?? []).map(m => `${m.tick ?? ''}|${m.text}`));
     let lastHp = -2;
     let probing = false;
+    // --dismiss=watcher|burst|click (levelup-dismiss.ts) replaces the dismissal below; 'none'
+    // keeps its old meaning (nothing sent) and also records episodes.
+    const lab = isPolicy(dismiss) ? new LevelUpLab(sdk, dismiss, method.skill, { reclick: st => { if (current) click(st); }, log }) : null;
 
     const done = new Promise<void>(resolve => {
         const unsubscribe = sdk.onStateUpdate((s: BotWorldState) => {
@@ -377,7 +388,7 @@ await runScript(async ({ bot, sdk }) => {
                 dialogOpenSince = null;
             }
             // Answer a level-up the tick it is seen (and again if it is still open 3 ticks on).
-            if (!probing && !plainNow() && dismiss !== 'none' && s.dialog?.isOpen && t !== lastDismiss && (dialogOpenSince === t || t - lastDismiss >= 3)) {
+            if (!probing && !plainNow() && !lab && s.dialog?.isOpen && t !== lastDismiss && (dialogOpenSince === t || t - lastDismiss >= 3)) {
                 lastDismiss = t;
                 fire(t, `dismiss dialog${dismiss === 'blind' ? ' (blind)' : ''}`, sdk.sendClickDialog(0, dismiss === 'blind' ? { blind: true } : {}));
             }
@@ -432,7 +443,7 @@ await runScript(async ({ bot, sdk }) => {
                     anchor = null;
                     return;
                 }
-                if (s.dialog?.isOpen) { actedTick = t; fire(t, 'dismiss dialog', sdk.sendClickDialog(0)); breaks.push(t); anchor = null; return; }
+                if (s.dialog?.isOpen && (!lab || lab.policy === 'none')) { actedTick = t; fire(t, 'dismiss dialog', sdk.sendClickDialog(0)); breaks.push(t); anchor = null; return; }
                 const stalled = anchor !== null && t - Math.max(anchor, lastXpTick) > 12 && idleTicks >= 2;
                 if (anchor === null || targetGone || stalled) {
                     actedTick = t;
@@ -534,6 +545,7 @@ await runScript(async ({ bot, sdk }) => {
         });
     });
     await done;
+    lab?.stop();
 
     // ---- summary ------------------------------------------------------------
     const endInv = sdk.getState()?.inventory ?? [];
@@ -561,6 +573,29 @@ await runScript(async ({ bot, sdk }) => {
         return { gap: a !== undefined && b !== undefined ? b - a : NaN, broke: breaks.some(x => x >= t && (b === undefined || x < b)) };
     };
     const lvRows = levelUps.map(l => ({ ...l, ...around(l.tick) }));
+    // Rolls lost per gap (level-up lab): a counted gap of g ticks holds g/c rolls at cycle c, of
+    // which 1/p are expected at the read catch chance p of the level the bot had after the gap's
+    // first drop. The excess is the gap's lost rolls; its variance is (1-p)/p^2. Gaps that start
+    // on a level-up drop are kept apart from the rest (the control, which should average 0).
+    const lostRolls = (() => {
+        if (!method.catchP) return null;
+        const c = technique === 'base' ? method.plainCycle : 3;
+        const levelAt = (t: number) => { let L = level; for (const l of levelUps) if (l.tick <= t) L = l.level; return L; };
+        const lvTicks = new Set(levelUps.map(l => l.tick));
+        const acc = { lv: { n: 0, sum: 0, v: 0 }, other: { n: 0, sum: 0, v: 0 } };
+        for (let i = 1; i < xpTicks.length; i++) {
+            const a = xpTicks[i - 1]!, b = xpTicks[i]!;
+            if (breaks.some(x => x > a && x < b)) continue;
+            const p = Math.min(1, method.catchP!(levelAt(a)));
+            const bucket = lvTicks.has(a) ? acc.lv : acc.other;
+            bucket.n++;
+            bucket.sum += (b - a) / c - 1 / p;
+            bucket.v += (1 - p) / (p * p);
+        }
+        const fmt = (x: { n: number; sum: number; v: number }) =>
+            x.n ? `${x.n} gaps, ${(x.sum / x.n).toFixed(2)} +/- ${(Math.sqrt(x.v) / x.n).toFixed(2)} rolls lost per gap (${((x.sum / x.n) * c).toFixed(2)} ticks)` : '0 gaps';
+        return `rolls lost (cycle ${c}, read catch chance): after a level-up drop ${fmt(acc.lv)}; other gaps ${fmt(acc.other)}`;
+    })();
     const mvRows = moves.map(m => ({ tick: m, ...around(m) }));
     const histOf = (xs: number[]) => { const h: Record<number, number> = {}; for (const x of xs) if (Number.isFinite(x)) h[x] = (h[x] ?? 0) + 1; return Object.entries(h).map(([g, c]) => `${g}:${c}`).join(' '); };
     const segEnd = segEndTick ?? xpTicks[xpTicks.length - 1] ?? startTick;
@@ -586,6 +621,8 @@ await runScript(async ({ bot, sdk }) => {
         `rolls in span at cycle ${cycle || '?'}: ${cycle ? span / cycle : '?'}; success fraction ${cycle ? ((xpTicks.length - 1) / (span / cycle)).toFixed(3) : '?'}`,
         `game xp ${gameXp} (base ${gameXp / 25}), base xp per tick over span ${(span ? gameXp / 25 / span : 0).toFixed(2)}`,
         `end inventory: logs ${countOf(/^logs$/i)}, arrow shafts ${countOf(/^arrow shaft/i)}, shrimps ${countOf(FOOD)}, packets sent ${packetsSent}`,
+        ...(lostRolls ? [lostRolls] : []),
+        ...(lab ? [lab.summary()] : []),
         `log ${logPath}`
     ].join('\n');
     log(summary);

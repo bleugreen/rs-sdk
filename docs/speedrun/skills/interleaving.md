@@ -47,6 +47,8 @@ The rules a `speedrun/lib` interleaver must follow (each is measured below):
 5. **Charge needs no re-click.** It is an interface button, not an inventory op.
 6. **Delayed actions (bury, alch, enchant) go only into free ticks**: the wait ticks of a
    4-tick Woodcutting or 5-tick Fishing clock (bury only), or a pickpocket stun (all three).
+   Bury also rides the 3-tick knife Woodcutting loop if the re-click moves to the next roll
+   tick (section 3).
 7. **Thieving: interleave inside stuns only.** Helpers between attempts slow pickpocketing.
 8. **Level-ups cost gathering ticks.** Each one opens a chat dialog that makes the player
    busy for the tick it pops. Let helper skills level where no gathering roll is waiting
@@ -159,10 +161,14 @@ phase 0. Enchant's 3-tick blackout always covers the next arming or roll tick, s
 slips every cycle. On Fishing the re-click for phase 0 has to go on phase 4, which a
 `p_delay(1)` from phase 2 rejects.
 
-Not fitting by reading (unmeasured): bury on the 3-tick iron clock and on rs/9's 3-tick
-eat-manipulated WC/fishing (no 2-tick gap); High Alchemy anywhere in gathering (5 ticks).
-Mining's rock-respawn waits (15-tick gaps with 2 rocks) are free ticks for anything,
-but that was not measured.
+**Bury does fit the 3-tick knife Woodcutting loop** (measured, rs/105,
+[`research/bones-placement.md`](../research/bones-placement.md) section 2): send `[knife,
+button, drop, bury]` on the roll label and the re-click alone two labels later, so it lands on
+the next roll tick, where Woodcutting's first-click label rolls at once. 0.298 bones per tick,
+0.23 Woodcutting ticks per bone with real top-up trades. It does not fit knife fly fishing
+(Fishing has no roll-at-once branch; the lock breaks) or a Mining move (+2 ticks), and fits a
+Mining stay only after a short entry (same document, section 4). The planned 5-rock iron lap
+has no respawn waits at the demo's respawn 13. High Alchemy fits no gathering clock (5 ticks).
 
 ## 4. Packets during forced delays: Thieving and Agility
 
@@ -227,10 +233,11 @@ rs/9's eat technique sends `[eat, drop?, click]` on the tick after each roll for
 Woodcutting/fly-fishing cycle. Eat is an inventory op, so it is one more "helper" before the
 click. Delay-free helpers compose with it within the 4-event budget, as `[eat, h, h, click]`
 then `[h, h, h, click]` (and nothing on fishing's roll tick) (inferred, not measured
-together). Delayed actions compete with it: bury needs the 4-tick clock's 2-tick gap, which
-the 3-tick cycle removes. Per bone that is 1 extra Woodcutting tick (4 instead of 3) against
-2 standalone bury ticks saved, so 4-tick WC + bury is worth +1 tick per bone over 3-tick WC +
-standalone bury, before trade logistics (inferred).
+together). A bury first looked incompatible with it (the bury rejects the re-click's tick),
+and burying on the plain 4-tick clock instead measured 1.17 Woodcutting ticks per bone against
+the knife loop, so a saving of ~0.9 per bone. Moving the re-click onto the next roll tick
+removes the conflict: knife Woodcutting + bury costs 0.23 ticks per bone, almost all of it the
+top-up trades (measured, rs/105, `research/bones-placement.md` sections 1-2).
 
 ## 8. Which helper-fed skills fit, and how much (inferred from the measurements above)
 
@@ -246,7 +253,7 @@ share the stuns. Standalone ticks saved per stun: 2 bones = 4 ticks, 2 enchants 
 | Herblore (mixing) | anywhere, delay-free | all ~270 potions (~89 standalone ticks) | 2 non-stackable slots per potion: ~13 per load, so the top-up trades dominate |
 | Crafting (gem cutting) | anywhere, delay-free | all ~290 gems (~80 standalone ticks) | 1 slot per gem + chisel |
 | Magic, Charge 80-99 | anywhere, no re-click | all (~33 standalone ticks), 5 per tick | 3 rune stacks |
-| Prayer, bury dragon bones | 4-tick WC (1/4 ticks), 5-tick fishing (1/5), stuns (~2) | ~200 of ~555 bones in stuns; the rest needs ~4 WC ticks or ~5 fishing ticks per bone | 1 slot per bone; a top-up every ~12 stuns or ~50-100 gathering ticks |
+| Prayer, bury dragon bones | knife WC (1 per 3-tick cycle, `research/bones-placement.md`), 4-tick WC (1/4 ticks), 5-tick fishing (1/5), stuns (~2) | ~200 of ~555 bones in stuns; the rest in ~1,200 ticks of knife WC at ~0.23 ticks per bone | 1 slot per bone; a top-up every ~12 stuns or ~77 knife WC ticks (5 ticks each) |
 | Magic, enchant / Superheat (`p_delay(1)`) | stuns only (~2 per stun) | ~190 casts by capacity; **0 on rs/3's Package B route**, whose 60 enchants all come before Thieving starts (below) | 1 slot per item |
 | Magic, High Alchemy (`p_delay(3)`) | stuns only (1 per stun) | ~100 casts | 1 slot per item, plus natures |
 | Smithing (anvil), Firemaking (lines), Runecraft (altar), Cooking (range), combat | **no**: they need a location or are the self-only activity | - | - |
@@ -286,9 +293,9 @@ enchant can be in a stun.
 | **Standalone ticks absorbed** | **~530** | **~470-490** (~400-420 from bones, ~65-70 from Charge and Fletching) |
 
 The measured per-stun figures are unchanged; only the allocation moves. Prayer's other ~348
-bones (555 - 11 early - 196) can still ride un-manipulated 4-tick Woodcutting or 5-tick fly
-fishing (section 3), which would absorb up to ~700 more standalone ticks (`prayer.md` section
-5). A third bone per stun (T+4, T+6, T+8) lands about 2/3 of the time by reading, which would
+bones (555 - 11 early - 196), and the 11 early ones, ride the knife Woodcutting loop itself
+(section 3; `research/bones-placement.md`, measured: ~1,200 of S07's knife ticks, ~0.23 ticks
+per bone with the trades). A third bone per stun (T+4, T+6, T+8) lands about 2/3 of the time by reading, which would
 lift the stun share to ~260 bones (~520 ticks); unmeasured as a sustained plan. The stun shares
 are clean against the README's two column 5 conditions: the host is the plain pickpocket loop,
 Thieving has no knife column, and the stun's packets (3 per tick at +2, +4, +6) fit the budget.
