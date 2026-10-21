@@ -63,6 +63,7 @@ const LocOps: CommandHandlers = {
         check(duration, DurationValid);
         check(id, LocTypeValid);
 
+        console.log(`WCTRACE ${World.currentTick} locchange at=${state.activeLoc.x},${state.activeLoc.z} to=${id} duration=${duration}`);
         World.changeLoc(state.activeLoc, id, state.activeLoc.shape, state.activeLoc.angle, duration);
     },
 
