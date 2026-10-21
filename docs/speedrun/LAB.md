@@ -52,6 +52,21 @@ bun bots/<name>/<script>.ts                   # scripts import runScript from sd
 Do not use the browser client or MCP `execute_code` for rapid-fire tests; the
 browser freezes. Scripts drive the lite client.
 
+### Which client a number was taken on
+
+Every measured number under `docs/speedrun/skills/` was taken on the **headless lite
+client** (`server/webclient/src/lite/`) unless its row says otherwise. The scored run
+will drive the **browser webclient** in a visible tab, because the recording must be
+first-person. The two clients do not share their tick handling: the #20 fix (publish a
+tick after it is fully decoded) is in the lite client. The browser client has frozen under
+rapid-fire input in this lab (above). So no figure here has yet been confirmed in the run
+configuration. The figures most at risk are those that depend on landing a packet on a
+predicted tick: the knife-starter loops (`tick-manipulation.md`) and the 2-tick
+pickpocket (`thieving.md`). Pure server cadences (a 4-tick woodcutting roll, 5-tick fly
+fishing, lap obstacles) do not depend on the client. Rehearsals in the exact run
+configuration settle this. Until then, gate the knife loops at run time with the
+on-time probe (`tickmanip-latency.ts`) and fall back to the plain loops when it fails.
+
 ## Running several labs on one machine
 
 Each process takes its ports from the environment, so parallel labs only need
