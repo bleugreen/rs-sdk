@@ -24,7 +24,9 @@
 // line), (c) <= 2 catch-ups per minute ((d), the page's loop rate, is the in-page probe's; not
 // measured here). Exit 0 when the loops may start, 1 when not. Needs server/webclient's dependencies (`cd server/webclient && bun install`).
 // --bot=NAME overrides <bot>: under lab.sh, whose runner holds <bot>, the direct probe logs
-// in a second account.
+// in a second account. After the last trial (and on the 10-minute abort, SIGTERM, SIGINT or
+// SIGHUP) it logs out and waits for the server to confirm, printing a `logout (direct):` line
+// (also in --json); the exit code stays the gate's.
 //
 //   LAB_BLOCK=tickmanip NODE_TICKRATE=300 bash docs/speedrun/scripts/lab.sh <bot> \
 //       docs/speedrun/scripts/tickmanip-latency.ts \
@@ -39,7 +41,7 @@
 import { writeFileSync } from 'fs';
 import { hostname } from 'os';
 import { runScript } from '../../../sdk/runner';
-import { openDirectSession } from '../../../speedrun/lib/direct';
+import { type DirectLogoutResult, directLogoutText, openDirectSession } from '../../../speedrun/lib/direct';
 import { directDecision, gateDecision, latencyHistogram, measureVantage, type ProbeResult, probeOnTime, steadinessHistogram, vantageDecision, verdictText } from '../../../speedrun/lib/hostgate';
 import { loadBotEnv } from '../../../speedrun/lib/session';
 
@@ -107,10 +109,14 @@ if (PATH === 'relay') {
         }
     }
     const session = await openDirectSession({ host, username: env.BOT_USERNAME, password: env.PASSWORD });
+    // Every way out of the probe goes through the logout (session.logout() is idempotent).
+    const logOutAndExit = (code: number) => void session.logout().then(lo => console.log(`logout (direct): ${directLogoutText(lo)}`)).finally(() => process.exit(code));
     const abort = setTimeout(() => {
         console.error('tickmanip-latency: direct probe timed out after 10 minutes');
-        process.exit(1);
+        logOutAndExit(1);
     }, 10 * 60_000);
+    for (const [signal, code] of [['SIGTERM', 143], ['SIGINT', 130], ['SIGHUP', 129]] as const) process.once(signal, () => logOutAndExit(code));
+    let saveJson: ((logout: DirectLogoutResult) => void) | null = null;
     try {
         await session.waitTicks(5);
         // a first login opens the character design screen (3559), which holds the walks
@@ -132,13 +138,17 @@ if (PATH === 'relay') {
         if (json) {
             const t0 = r.tickArrivals[0] ?? 0;
             const { tickArrivals, ...rest } = r;
-            writeFileSync(json, JSON.stringify({ ...out, result: { ...rest, tickArrivalsMs: tickArrivals.map(t => Math.round((t - t0) * 10) / 10) }, verdict: v }, null, 2));
-            console.log(`wrote ${json}`);
+            saveJson = logout => {
+                writeFileSync(json, JSON.stringify({ ...out, result: { ...rest, tickArrivalsMs: tickArrivals.map(t => Math.round((t - t0) * 10) / 10) }, verdict: v, logout }, null, 2));
+                console.log(`wrote ${json}`);
+            };
         }
         process.exitCode = v.on ? 0 : 1;
     } finally {
         clearTimeout(abort);
-        session.close();
+        const logout = await session.logout();
+        console.log(`logout (direct): ${directLogoutText(logout)}`);
+        saveJson?.(logout);
     }
     process.exit();
 }
