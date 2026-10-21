@@ -2,6 +2,15 @@
 
 `server/{engine,content,webclient}` are vendored copies of upstream LostCity (rev 289, upgraded
 from 274 on 2026-10-09; branches `289` in each upstream repo).
+Revision 289 is the January 17, 2005 client (`server/content/README.md`), not May 2004.
+
+Upstream pin (checked 2026-10-21): `server/engine` = LostCityRS/Engine-TS `289` @ `ca82af8`
+(the branch tip, 2026-09-30); `server/content` = LostCityRS/Content `289` @ `460d0fde`
+(2026-10-04; the only later commit, `8efdb336`, is a Troll Romance sled animation). Everything
+else in those trees is a patch listed below. The public demo then ran MaxBittker/rs-sdk main
+`b565f2d9`, whose engine and content equal ours except the lab `LOCAL_STAFF_LEVEL` patch.
+To clone upstream from an agent sandbox, set `GIT_CONFIG_GLOBAL=/dev/null`: the global git
+config rewrites GitHub URLs to SSH, which fails there.
 Every local modification ("monkeypatch") is listed here with a verification step.
 **Walk this checklist after every vendor sync/rebase** — history shows patches don't get
 dropped wholesale, they get subtly severed (see "Cross-boundary invariants" below).
