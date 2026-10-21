@@ -126,9 +126,10 @@ export function classifyHit(
 ): { source: HitSource; attacker?: NearbyPlayer } {
     if (ev.tick - lastFailTick <= FALL_WINDOW && ev.tick >= lastFailTick) return { source: 'fall' };
     const able = (p: NearbyPlayer) => canAttack(me.combatLevel, me.wild, p.combatLevel, wildernessLevel(p.x, p.z));
+    // the facing guess sticks to a past target (StateCollector), so it counts only with that player in view
     if (ev.sourceType === 'other_player') {
         const p = players.find(q => q.index === ev.sourceIndex);
-        if (!p || able(p)) return { source: 'player', ...(p ? { attacker: p } : {}) };
+        if (p && p.distance <= 10 && able(p)) return { source: 'player', attacker: p };
     }
     // npc targetIndex packs player targets as slot + 32768
     if (npcs.some(n => n.distance <= 2 && n.targetIndex >= 32768)) return { source: 'npc' };
@@ -195,6 +196,14 @@ export function createAgility(params: ProgramParams): TickProgram {
     const eatGap = num(params.eatGap, 3, 'eatGap');
     /** End `low-food` between obstacles once this many food items or fewer are left (-1: off), for a restock. */
     const restockBelow = num(params.restockBelow, -1, 'restockBelow');
+    // Protect from Melee (prayer 14): 'hold' keeps it on; 'near' has it on only while an NPC matching
+    // protectNpc is within protectRange; 'flick' keeps it on and turns it off and on every flickGap
+    // ticks. The drain timer (prayer.rs2) fires 5 ticks after the first prayer goes on and costs a
+    // point only if a prayer is on when it fires; turning the last prayer off clears it.
+    const protect = oneOf(params.protect, ['off', 'hold', 'near', 'flick'] as const, 'off', 'protect');
+    const protectRange = num(params.protectRange, 3, 'protectRange');
+    const protectNpc = regex(params.protectNpc, 'skeleton', 'protectNpc');
+    const flickGap = num(params.flickGap, 4, 'flickGap');
     const stepTimeout = num(params.stepTimeout, 80, 'stepTimeout');
     const pauseFor = oneOf(params.pauseFor, ['none', 'threat', 'any'] as const, 'none', 'pauseFor');
     const rule: ThreatRule = {
@@ -221,6 +230,15 @@ export function createAgility(params: ProgramParams): TickProgram {
     const sightings = new Map<string, Sighting>();
     const trails = new Map<string, Array<[number, number, number]>>();
     const pauseEpisodes = { any: 0, threat: 0 };
+    let prayerStart = -1;
+    let lastToggle = Number.NEGATIVE_INFINITY;
+    let lastOn = Number.NEGATIVE_INFINITY;
+    let toggles = 0;
+    // per lap, closed by the lap bonus
+    const lap = { eats: 0, hits: 0, falls: 0 };
+    const lapEats: number[] = [];
+    const lapHits: number[] = [];
+    const lapFalls: number[] = [];
     let lastXp = 0;
     let lapsDone = 0;
     let lastBonusTick: number | null = null;
@@ -275,6 +293,7 @@ export function createAgility(params: ProgramParams): TickProgram {
         return ctx.send({ type: 'interactLoc', x: loc.x, z: loc.z, locId: loc.id, optionIndex: loc.optionsWithIndex.find(o => re.test(o.text))!.opIndex }, `${re.source} ${loc.name}`);
     };
 
+    let ctx0: ProgramContext | null = null;
     const summary = (ended?: AgilityEnd, extra: Record<string, unknown> = {}) => {
         const mean = (xs: number[]) => (xs.length ? Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) * 100) / 100 : Number.NaN);
         return {
@@ -293,6 +312,12 @@ export function createAgility(params: ProgramParams): TickProgram {
             fallDamage: damage.fall,
             npcDamage: damage.npc,
             playerDamage: damage.player,
+            lapEats,
+            lapHits,
+            lapFalls,
+            protect,
+            prayerUsed: prayerStart >= 0 ? prayerStart - (ctx0?.state.prayers?.prayerPoints ?? prayerStart) : 0,
+            prayerToggles: toggles,
             pauseFor,
             wouldPause: { ...pauseEpisodes },
             sightings: [...sightings.values()],
@@ -347,6 +372,7 @@ export function createAgility(params: ProgramParams): TickProgram {
             const s = ctx.state;
             const t = ctx.tick;
             lastTick = t;
+            ctx0 = ctx;
             const p = s.player;
             if (!p) return;
             if (!started) {
@@ -356,6 +382,7 @@ export function createAgility(params: ProgramParams): TickProgram {
                 lastXp = skillXp(s, 'agility');
                 level = baseLevel(s, 'agility');
                 startLifeId = p.lifeId ?? 0;
+                prayerStart = s.prayers?.prayerPoints ?? -1;
                 messages.take(s);
                 hits.take(s);
                 if (params.startStep === 'auto') i = Math.max(0, course.steps.findIndex(st => st.name === stepFromPosition(course, p.worldX, p.worldZ)));
@@ -371,6 +398,10 @@ export function createAgility(params: ProgramParams): TickProgram {
                 gainSinceClick = Math.max(gainSinceClick, gain);
                 if (gain >= course.lapBonus - 0.05) {
                     lapsDone++;
+                    lapEats.push(lap.eats);
+                    lapHits.push(lap.hits);
+                    lapFalls.push(lap.falls);
+                    lap.eats = lap.hits = lap.falls = 0;
                     if (lastBonusTick !== null) {
                         lapTicks.push(t - lastBonusTick);
                         ctx.gauge('ticksPerLap', lapTicks.reduce((a, b) => a + b, 0) / lapTicks.length);
@@ -390,14 +421,20 @@ export function createAgility(params: ProgramParams): TickProgram {
                 if (FAIL_RE.test(m.text)) failed = true;
                 if (REFUSED_RE.test(m.text)) refused = true;
             }
-            if (failed) lastFailTick = t;
+            if (failed) {
+                lastFailTick = t;
+                lap.falls++;
+            }
 
             // the Wilderness watch: who is about, and who hit us
             const me: Me = { x: p.worldX, z: p.worldZ, combatLevel: p.combatLevel, wild: wildernessLevel(p.worldX, p.worldZ) };
             for (const ev of hits.take(s)) {
                 const hit = classifyHit(ev, lastFailTick, s.nearbyPlayers ?? [], s.nearbyNpcs ?? [], me);
                 damage[hit.source] += ev.damage;
-                if (hit.source === 'npc') ctx.count('npcDamage', ev.damage);
+                if (hit.source === 'npc') {
+                    ctx.count('npcDamage', ev.damage);
+                    lap.hits++;
+                }
                 if (hit.source === 'player') {
                     ctx.log(`hit ${ev.damage} by a player${hit.attacker ? ` (${hit.attacker.name})` : ''}`);
                     return end(ctx, 'attacked', { attacker: hit.attacker ? playerBrief(hit.attacker) : null, hitTick: t, hp: p.hp });
@@ -419,6 +456,7 @@ export function createAgility(params: ProgramParams): TickProgram {
                 if (ctx.send({ type: 'useInventoryItem', slot: food.slot, optionIndex: itemOp(food, /^eat$/i, 1) }, 'eat')) {
                     lastEatTick = t;
                     eats++;
+                    lap.eats++;
                     ctx.count('eats');
                 }
             }
@@ -488,6 +526,25 @@ export function createAgility(params: ProgramParams): TickProgram {
                         }
                     }
                     return;
+                }
+            }
+
+            // Protect from Melee, before this tick's click (the button clears a pending interaction)
+            if (protect !== 'off') {
+                const on = s.prayers?.activePrayers?.[14] === true;
+                const want = protect !== 'near' || (s.nearbyNpcs ?? []).some(nn => nn.distance <= protectRange && protectNpc.test(nn.name));
+                const toggle = () => {
+                    if (ctx.send({ type: 'togglePrayer', prayerIndex: 14 }, 'protect from melee')) toggles++;
+                    lastToggle = t;
+                };
+                if (want && !on && t - lastToggle >= 2) {
+                    toggle();
+                    lastOn = t;
+                } else if (!want && on && t - lastToggle >= 2) toggle();
+                else if (want && on && protect === 'flick' && t - lastOn >= flickGap) {
+                    toggle(); // off
+                    toggle(); // and on again, in the same tick
+                    lastOn = t;
                 }
             }
 

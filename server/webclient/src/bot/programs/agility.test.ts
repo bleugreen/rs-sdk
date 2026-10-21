@@ -231,6 +231,7 @@ describe('Wilderness rules', () => {
         expect(classifyHit(ev(100), 98, [], [], me).source).toBe('fall');
         expect(classifyHit(ev(100), 90, [], [], me).source).toBe('npc');
         expect(classifyHit(ev(100, 'other_player', 1), 0, [player({ x: 3005, z: 3940 })], [], me).source).toBe('player');
+        expect(classifyHit(ev(100, 'other_player', 1), 0, [], [], me).source).toBe('npc'); // a stale facing, nobody in view
         expect(classifyHit(ev(100), 0, [player({ x: 3007, z: 3940, combatTargetType: 'player' })], [{ distance: 1, targetIndex: 32770 }], me).source).toBe('npc');
         expect(classifyHit(ev(100), 0, [player({ x: 3007, z: 3940, combatTargetType: 'player' })], [], me).source).toBe('player');
     });
