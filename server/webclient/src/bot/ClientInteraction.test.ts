@@ -675,6 +675,56 @@ describe('browser bot overlay action dispatch', () => {
     });
 });
 
+describe('decode on arrival: the game socket wakes the run loop', () => {
+    const napper = () => Object.assign(Object.create(Client.prototype), { wakeSleep: null, wakePending: false });
+
+    test('a wake ends the pending sleep at once', async () => {
+        const shell = napper();
+        const t0 = performance.now();
+        const slept = shell.nap(10_000);
+        shell.wake();
+        await slept;
+        expect(performance.now() - t0).toBeLessThan(50);
+        expect(shell.wakeSleep).toBeNull();
+    });
+
+    test('a wake during a pass makes the next sleep return at once, once', async () => {
+        const shell = napper();
+        shell.wake();
+        const t0 = performance.now();
+        await shell.nap(10_000);
+        expect(performance.now() - t0).toBeLessThan(50);
+        // Consumed: the following sleep runs its full length.
+        const t1 = performance.now();
+        await shell.nap(30);
+        expect(performance.now() - t1).toBeGreaterThanOrEqual(25);
+    });
+
+    test('the receive listener runs after the reader has buffered the message', async () => {
+        const { default: ClientStream } = await import('#/io/ClientStream.js');
+        // A browser WebSocket runs the onmessage handler in the order it was first set
+        // among the listeners; the reader sets it in the stream's constructor.
+        class FakeSocket extends EventTarget {
+            readyState = 1;
+            url = 'ws://localhost:1';
+            binaryType = '';
+            onclose: unknown = null;
+            onerror: unknown = null;
+            set onmessage(handler: (e: Event) => void) {
+                this.addEventListener('message', handler);
+            }
+            send() {}
+            close() {}
+        }
+        const socket = new FakeSocket();
+        const stream = new ClientStream(socket as unknown as WebSocket);
+        const seen: number[] = [];
+        stream.onReceive(() => seen.push(stream.available));
+        socket.dispatchEvent(new MessageEvent('message', { data: new Uint8Array([1, 2, 3]).buffer }));
+        expect(seen).toEqual([3]);
+    });
+});
+
 describe('Client.flushNow', () => {
     function flushClient(write: (data: Uint8Array, length: number) => void, ingame = true) {
         const client = Object.assign(Object.create(Client.prototype), {
