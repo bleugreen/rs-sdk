@@ -19,6 +19,9 @@ export const ITEM = {
     wineNote: 1996 // cert_jug_unfermented_wine: invisible to the timer (wine.rs2 counts obj 1995 only)
 } as const;
 
+/** Using grapes on a jug of water needs this Cooking level (wine.rs2). */
+export const WINE_COOKING_LEVEL = 35;
+
 /** Varrock west bank booths face this tile; the Grand Exchange is in the same building. */
 export const VARROCK_WEST_BANK = { x: 3185, z: 3436 };
 /** Logout button (interface.pack: 2458 = logout:try_logout). */

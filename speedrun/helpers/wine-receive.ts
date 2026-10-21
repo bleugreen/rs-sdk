@@ -29,12 +29,10 @@ import type { BotWorldState } from '../../sdk/types';
 import { classifyPage } from '../lib/dialogue';
 import { receiveFrom, type TradeSdk } from '../lib/trade';
 import type { StateSource } from '../lib/wait';
-import { ITEM } from './wine-common';
+import { ITEM, WINE_COOKING_LEVEL } from './wine-common';
 
 /** login.rs2 -> ~ferment_wines_login: settimer(fermenting_wine, 20); a make does the same (wine.rs2). */
 export const FERMENT_TIMER_TICKS = 20;
-/** Using grapes on a jug of water needs this Cooking level (wine.rs2). */
-export const WINE_COOKING_LEVEL = 35;
 
 export type ReceiverSdk = StateSource &
     TradeSdk &

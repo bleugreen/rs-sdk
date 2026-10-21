@@ -17,6 +17,7 @@
 //  - The receiver takes one noted stack in one trade slot and deposits it; the
 //    bank stores it unnoted, and the next fermenting_wine firing (its next login,
 //    or the current login's timer if it is still pending) ferments every wine.
+//    The receiver's side is wine-receive.ts.
 //
 // Role options (ROLE_OPTIONS / fleet config):
 //   target      noted wines to hold before it stops making (default: no limit)
@@ -28,13 +29,12 @@ import type { BotSDK } from '../../sdk/index';
 import type { InventoryItem } from '../../sdk/types';
 import { depositMatching, withdrawMany } from '../lib/bank';
 import { give, receiveFrom, sameName } from '../lib/trade';
-import { advance, classifyPage } from '../lib/dialogue';
-import { waitUntil } from '../lib/wait';
 import type { Role, RoleContext } from './role';
 import { runStandalone } from './role';
 import {
     ITEM,
     VARROCK_WEST_BANK,
+    WINE_COOKING_LEVEL,
     bankCount,
     checkAbort,
     closeBank,
@@ -48,8 +48,6 @@ import {
     tick,
     walkNear
 } from './wine-common';
-
-export const WINE_COOKING_LEVEL = 35;
 
 type Ctx = Pick<RoleContext, 'bot' | 'sdk' | 'log'>;
 
@@ -242,50 +240,10 @@ export async function giveWine(ctx: Ctx, receiver: string, amount = -1, openTime
     return { success: r.ok, given: before - invCount(sdk, ITEM.wineNote), ticks: r.ticks, message: r.reason ?? 'ok' };
 }
 
-export interface ReceiveResult {
-    received: number;
-    deposited: number;
-    /** Receiver clock: trade (first click to notes arriving), then bank (open, deposit, close). */
-    tradeTicks: number;
-    bankTicks: number;
-    firstClickTick: number;
-    doneTick: number;
-}
-
-/**
- * Receiver side, for the scored account: accept one trade of noted wine from
- * `giver`, then deposit it (the bank stores it unnoted, ready for the next
- * fermenting_wine firing). `depositAmount` banks only part of the stack, e.g. a
- * small first batch to lift Cooking off level 1 before the big one (wine.md).
- * The receiver should stand next to a bank booth.
- */
-export async function receiveWine(ctx: Ctx, giver: string, opts: { depositAmount?: number; minWines?: number; openTimeoutMs?: number } = {}): Promise<ReceiveResult> {
-    const { bot, sdk } = ctx;
-    const before = invCount(sdk, ITEM.wineNote);
-    const t0 = tick(sdk);
-    const r = await receiveFrom(sdk, giver, { want: [{ item: /^unfermented wine$/i, amount: opts.minWines ?? 1 }], openTimeoutMs: opts.openTimeoutMs ?? 120_000 });
-    const received = invCount(sdk, ITEM.wineNote) - before;
-    const t1 = tick(sdk);
-    if (!r.ok || received <= 0) throw new Error(`no wine received: ${r.reason ?? 'unknown'}`);
-    await openBank(ctx);
-    const banked0 = bankCount(sdk, ITEM.wine);
-    const amount = opts.depositAmount ?? -1;
-    if (amount < 0 || amount >= invCount(sdk, ITEM.wineNote)) {
-        const d = await depositMatching(sdk, [ITEM.wineNote]);
-        if (!d.ok) throw new Error(`deposit failed: ${d.reason}`);
-    } else {
-        const note = sdk.getInventory().find(i => i.id === ITEM.wineNote)!;
-        await bot.depositItem(note, amount);
-    }
-    const deposited = bankCount(sdk, ITEM.wine) - banked0;
-    await closeBank(bot, sdk);
-    return { received, deposited, tradeTicks: r.ticks, bankTicks: tick(sdk) - t1, firstClickTick: t0, doneTick: tick(sdk) };
-}
-
 /**
  * Make sure the maker carries one grapes and one jug of water (unnoted) beside its
  * notes: the receiver needs them to re-arm its own timer after the first firing
- * (see splitDelivery). Opens and closes the bank if they are missing.
+ * (wine-receive.ts splitDelivery). Opens and closes the bank if they are missing.
  */
 export async function prepareRearmKit(ctx: Ctx): Promise<void> {
     const { bot, sdk } = ctx;
@@ -307,155 +265,6 @@ export async function giveWineKit(ctx: Ctx, receiver: string, openTimeoutMs = 12
     if (!(await waitForPlayer(sdk, receiver, openTimeoutMs))) return { success: false, given: 0, ticks: 0, message: `${receiver} never came into sight` };
     const r = await give(sdk, receiver, [{ item: ITEM.wineNote, n: 'all' }, { item: ITEM.grapes, n: 1 }, { item: ITEM.jugWater, n: 1 }], { openTimeoutMs });
     return { success: r.ok, given: before - invCount(sdk, ITEM.wineNote), ticks: r.ticks, message: r.reason ?? 'ok' };
-}
-
-export interface SplitResult {
-    received: number;
-    first: number;
-    rest: number;
-    /** Ticks are on the receiver's clock. */
-    tradeTicks: number;
-    firstBankTicks: number;
-    /** Dismissing the level-up dialog after the first firing (and its page count), and after the second. */
-    levelUpTicks: number;
-    levelUpPages: number;
-    finalLevelUpTicks: number;
-    /** Bank (deposit the rest) plus the one re-arming make, and the two parts. */
-    rearmTicks: number;
-    rearmBankTicks: number;
-    rearmMakeTicks: number;
-    firstFermentTick: number;
-    secondFermentTick: number;
-    levelAfterFirst: number;
-    levelAfterSecond: number;
-    rearmed: boolean;
-}
-
-/**
- * The scored account's side of the single-login split delivery (wine.md). One
- * firing over a big bank is 15 all-or-nothing rolls at the current level, so
- * ferment a small first batch (default 29: 29 single-wine-sized rolls) to lift
- * Cooking off level 1, then the rest at the higher level:
- *
- *  1. receive the noted wines + 1 grapes + 1 jug of water in one trade;
- *  2. deposit `first` notes; the login-armed timer ferments them;
- *  3. after that firing, deposit the rest and make one wine (needs Cooking 35),
- *     which re-arms the timer; 20 ticks later it ferments the rest.
- *
- * Call it within the login window, before the login timer fires (login+20), and
- * keep the account out of modals when each timer is due. If the first firing
- * leaves Cooking below 35 (about 1% of the time for 29), the rest stays banked
- * and ferments at the next login instead (rearmed: false).
- * The account must stand next to a bank booth.
- */
-export async function splitDelivery(ctx: Ctx, giver: string, opts: { first?: number; openTimeoutMs?: number; maxWaitTicks?: number } = {}): Promise<SplitResult> {
-    const { bot, sdk } = ctx;
-    const first = opts.first ?? 29;
-    const maxWait = opts.maxWaitTicks ?? 40;
-    const xp = () => sdk.getSkill('Cooking')?.experience ?? 0;
-    const before = invCount(sdk, ITEM.wineNote);
-    const r = await receiveFrom(sdk, giver, {
-        want: [
-            { item: /^unfermented wine$/i, amount: first + 1 },
-            { item: /^grapes$/i, amount: 1 },
-            { item: /^jug of water$/i, amount: 1 }
-        ],
-        openTimeoutMs: opts.openTimeoutMs ?? 120_000
-    });
-    const received = invCount(sdk, ITEM.wineNote) - before;
-    if (!r.ok || received <= first) throw new Error(`split delivery: trade failed (${r.reason ?? 'too few wines'})`);
-
-    const t1 = tick(sdk);
-    await openBank(ctx);
-    const note = sdk.getInventory().find(i => i.id === ITEM.wineNote)!;
-    await bot.depositItem(note, first);
-    await closeBank(bot, sdk);
-    const firstBankTicks = tick(sdk) - t1;
-
-    // An all-bad firing gives no xp and no message (wine.rs2): then the wait runs out
-    // and the level stays below 35, so the rest is left for the next login.
-    const xp0 = xp();
-    const fired = await waitUntil(sdk, () => xp() > xp0, { maxTicks: maxWait });
-    const firstFermentTick = fired.ok ? fired.tick : -1;
-    const levelAfterFirst = skillLevel(sdk, 'Cooking');
-    const rest = invCount(sdk, ITEM.wineNote);
-
-    // The jump in Cooking opens level-up pages (and unlock pages); banking and the
-    // make wait on them, so click through until the chat box stays closed.
-    const tDlg = tick(sdk);
-    const levelUpPages = await clearDialogs(sdk);
-    const levelUpTicks = tick(sdk) - tDlg;
-
-    const t2 = tick(sdk);
-    await openBank(ctx);
-    const d = await depositMatching(sdk, [ITEM.wineNote]);
-    if (!d.ok) throw new Error(`split delivery: deposit of the rest failed (${d.reason})`);
-    await closeBank(bot, sdk);
-    const rearmBankTicks = tick(sdk) - t2;
-    let rearmed = false;
-    let rearmMakeTicks = 0;
-    if (levelAfterFirst >= WINE_COOKING_LEVEL) {
-        const mk = await makeWines(ctx, 1);
-        rearmed = mk.made === 1;
-        rearmMakeTicks = mk.ticks;
-    }
-    const rearmTicks = tick(sdk) - t2;
-
-    let secondFermentTick = -1;
-    let finalLevelUpTicks = 0;
-    if (rearmed) {
-        const xp1 = xp();
-        const ok = await waitUntil(sdk, () => xp() > xp1, { maxTicks: maxWait });
-        if (ok.ok) {
-            secondFermentTick = ok.tick;
-            await waitUntil(sdk, s => s.dialog.isOpen, { maxTicks: 2 });
-            const t3 = tick(sdk);
-            await clearDialogs(sdk);
-            finalLevelUpTicks = tick(sdk) - t3;
-        }
-    }
-    return {
-        levelUpTicks,
-        levelUpPages,
-        finalLevelUpTicks,
-        rearmBankTicks,
-        rearmMakeTicks,
-        received,
-        first,
-        rest,
-        tradeTicks: r.ticks,
-        firstBankTicks,
-        rearmTicks,
-        firstFermentTick,
-        secondFermentTick,
-        levelAfterFirst,
-        levelAfterSecond: skillLevel(sdk, 'Cooking'),
-        rearmed
-    };
-}
-
-/**
- * Click through continue pages (level-up and unlock pages) until the chat box has
- * stayed closed for two ticks. Returns the pages clicked. A choice page is left alone.
- */
-export async function clearDialogs(sdk: BotSDK, maxTicks = 40): Promise<number> {
-    let pages = 0;
-    let closedSince = -1;
-    const start = tick(sdk);
-    while (tick(sdk) - start < maxTicks) {
-        const d = sdk.getState()?.dialog;
-        if (d?.isOpen && classifyPage(d) === 'continue') {
-            closedSince = -1;
-            const r = await advance(sdk, { maxTicks: 3 });
-            if (r.ok) pages++;
-            continue;
-        }
-        if (d?.isOpen) return pages;
-        if (closedSince < 0) closedSince = tick(sdk);
-        else if (tick(sdk) - closedSince >= 2) return pages;
-        await sdk.waitForTicks(1);
-    }
-    return pages;
 }
 
 /**
