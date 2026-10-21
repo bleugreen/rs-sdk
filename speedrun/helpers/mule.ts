@@ -769,8 +769,14 @@ class Mule {
     private async receiveFrom(name: string): Promise<void> {
         const { ctx } = this;
         if (!(await this.openTradeWith(name))) return;
-        // Give nothing, accept any offer: couriers and the scored account only hand stock in.
-        const r = await ctx.bot.trade(playerPattern(name), { timeout: 60_000, requestTimeout: 5_000 });
+        // Give nothing, accept any non-empty offer: couriers and the scored account only
+        // hand stock in. A session that stays empty is declined so it cannot hold the mule.
+        const r = await ctx.bot.trade(playerPattern(name), {
+            accept: offer => offer.length > 0,
+            rejectAfterMs: 30_000,
+            timeout: 90_000,
+            requestTimeout: 5_000
+        });
         ctx.log('received', {
             from: name,
             success: r.success,
