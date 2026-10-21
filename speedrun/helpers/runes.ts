@@ -699,7 +699,8 @@ export class Runes {
         const { bot, sdk, log } = this.ctx;
         const at = (s: BotWorldState, t: Tile) => Math.max(Math.abs(s.player!.worldX - t.x), Math.abs(s.player!.worldZ - t.z));
         const across = (s: BotWorldState) => at(s, c.to) <= 1 && at(s, c.from) >= 2;
-        if (across(this.state)) return;
+        // Already on the far side (a relog lands the account at the ladder top, past both ruin webs).
+        if (across(this.state) || (at(this.state, c.web) <= 3 && at(this.state, c.to) < at(this.state, c.from))) return;
         if (at(this.state, c.from) > 1) await this.walk(c.from, c.name);
         for (let i = 0; i < 16 && !this.ctx.signal.aborted; i++) {
             const web = sdk.getNearbyLocs().find(l => /^web$/i.test(l.name) && l.x === c.web.x && l.z === c.web.z);
