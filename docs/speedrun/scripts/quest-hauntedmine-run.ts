@@ -263,10 +263,25 @@ function safeRegion(sdk: Sdk, cartSeen: Set<string>): Set<string> {
     return seen;
 }
 
-/** A tile to cast from: in range, line of sight, out of every cart zone. */
+/**
+ * A tile to cast from: in range, line of sight, out of every cart zone. The
+ * loading cranes (size-3 NPCs) block the server's line of sight although the
+ * static collision does not show it, so the straight line must also miss
+ * every crane footprint.
+ */
+let craneTiles = new Set<string>();
+function lineClearOfCranes(x0: number, z0: number, x1: number, z1: number) {
+    const n = Math.max(Math.abs(x1 - x0), Math.abs(z1 - z0)) * 4;
+    for (let i = 1; i < n; i++) {
+        const x = Math.round(x0 + ((x1 - x0) * i) / n), z = Math.round(z0 + ((z1 - z0) * i) / n);
+        if (craneTiles.has(`${x},${z}`)) return false;
+    }
+    return true;
+}
 function castTile(bx: number, bz: number) {
     return (x: number, z: number) =>
-        Math.max(Math.abs(x - bx), Math.abs(z - bz)) <= 8 && !inCartZone(x, z) && rsmod.hasLineOfSight(0, x, z, bx, bz, 1, 1, 1, 1, 0);
+        Math.max(Math.abs(x - bx), Math.abs(z - bz)) <= 8 && !inCartZone(x, z) && !craneTiles.has(`${x},${z}`) &&
+        rsmod.hasLineOfSight(0, x, z, bx, bz, 1, 1, 1, 1, 0) && lineClearOfCranes(x, z, bx, bz);
 }
 
 /** Walk an npc-aware path in short hops (each hop's own route then matches it). */
@@ -635,7 +650,10 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
                 if (xpNow > lastXp) { lastXp = xpNow; castsNoXp = 0; }
                 const bossKey = `${boss.x},${boss.z}`;
                 if (castsNoXp >= 2) { badTiles.add(`${bossKey}>${p.x},${p.z}`); castsNoXp = 0; }
-                for (const n of sdk.getNearbyNpcs()) if (/mine cart/i.test(n.name)) cartSeen.add(`${n.x},${n.z}`);
+                for (const n of sdk.getNearbyNpcs()) {
+                    if (/mine cart/i.test(n.name)) cartSeen.add(`${n.x},${n.z}`);
+                    if (/loading crane/i.test(n.name)) for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) craneTiles.add(`${n.x + i},${n.z + j}`);
+                }
                 const safe = safeRegion(sdk, cartSeen);
                 const okAny = (x: number, z: number) => castTile(boss.x, boss.z)(x, z) && !badTiles.has(`${bossKey}>${x},${z}`);
                 const okSafe = (x: number, z: number) => safe.has(`${x},${z}`) && okAny(x, z);
