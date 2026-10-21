@@ -179,7 +179,7 @@ async function fetchDustyKey(r: Run): Promise<boolean> {
             const d = r.sdk.getDialog();
             if (!d?.isOpen) { await r.sdk.waitForTicks(1); continue; }
             const pick = d.options.find(o => /anywhere good to explore|yes please/i.test(o.text));
-            if (pick) await r.bot.clickDialogByText(pick.text);
+            if (pick) await r.sdk.clickDialogByText(pick.text);
             else await r.sdk.sendClickDialog(0);
             await r.sdk.waitForTicks(1);
         }
