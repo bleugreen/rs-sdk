@@ -1,9 +1,9 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import type { InventoryItem } from '../../sdk/types';
 import type { WithdrawSpec } from '../lib/bank';
 import type { FakeSdk } from '../lib/fake-sdk';
 import { borderGuard, guard, pathfinder, tollWorld } from '../lib/fake-toll-gate';
-import { inAlKharid, type Tile } from '../lib/toll-gate';
+import { inAlKharid, isEastOfTollGate, type Tile } from '../lib/toll-gate';
 import type { GiveResult } from '../lib/trade';
 import { gameIo, giveOutcome, runHandovers, tollsAfterBank, withdrawSpecs, type Handover, type HandoverIo, type HandoverOptions } from './handover';
 import type { RoleContext } from './role';
@@ -83,8 +83,6 @@ function setup(at: Tile, carried: number, give?: (fake: FakeSdk, items: Handover
 const coinsTo76 = (n: number, o: Partial<HandoverOptions> = {}): HandoverOptions => ({ bank: VARROCK_WEST_BANK, meet: VARROCK_WEST_MEET, handovers: [{ to: H76, items: [{ item: 'Coins', n }] }], ...o });
 
 describe('handover across the Al Kharid toll gate', () => {
-    beforeEach(() => {});
-
     test('donor in Al Kharid, bank and meet in Varrock: pays the toll once, opens only the Varrock bank, delivers', async () => {
         // 2026-10-21: cairn_h41 earning in Al Kharid, 145k for cairn_h76 at Varrock west.
         const t = setup(AL_KHARID, 1566);
@@ -101,7 +99,7 @@ describe('handover across the Al Kharid toll gate', () => {
         expect(t.withdrawn.map(w => w.map(s => s.n))).toEqual([[145_000]]);
         expect(t.fake.sent.filter(a => a.method === 'sendInteractNpc')).toHaveLength(1);
         // No walk ever asked the pathfinder for a tile across the fence.
-        expect(t.walks.every(w => inAlKharid({ player: { worldX: w.to[0], worldZ: w.to[1] } } as never) === w.fromEast)).toBe(true);
+        expect(t.walks.every(w => isEastOfTollGate({ x: w.to[0], z: w.to[1] }) === w.fromEast)).toBe(true);
     });
 
     test('bank in Al Kharid, meet in Varrock: carries the toll out and back, and returns to the Al Kharid bank', async () => {
