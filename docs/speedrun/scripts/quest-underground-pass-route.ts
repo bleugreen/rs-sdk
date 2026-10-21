@@ -129,7 +129,21 @@ one([2387, 9605, 0], [2387 + 32, 9605, 0], 'pipe6', 'upass >= 4', { id: 3237, x:
 one([2412, 9605, 0], [2412 + 32, 9605, 0], 'pipe6', 'upass >= 4', { id: 3237, x: 2413, z: 9605, op: 1 });
 one([2419, 9605, 0], [2419 - 32, 9605, 0], 'pipe6', 'upass >= 4', { id: 3237, x: 2417, z: 9605, op: 1 });
 
-export interface Plan { cost: number; tiles: number; crossings: string[]; steps: Array<{ t: T; edge?: Edge }>; end: T }
+/**
+ * Trap tiles. Spear traps hit a player on the trap tile or the tile north of it,
+ * every tick (10% of current hp + 1, upass_obstacles.rs2:178-183); the flat
+ * rocks of the double spring traps hit a player standing on them (8% of base
+ * hp + 1, upass_obstacles.rs2:183-188). The planner steers round them at
+ * TRAP_PENALTY ticks per tile and reports the ones a route still crosses.
+ */
+export const TRAP_TILES = new Set<string>([
+    ...[[2430, 9676], [2432, 9676], [2435, 9676], [2440, 9677], [2443, 9677]].map(([x, z]) => `0,${x},${z}`),
+    ...[[2393, 9676], [2396, 9677], [2401, 9675], [2404, 9675], [2408, 9674], [2416, 9689], [2418, 9681], [2418, 9685], [2406, 9719], [2406, 9725]].map(([x, z]) => `0,${x},${z}`),
+]);
+export let TRAP_PENALTY = 8;
+export function setTrapPenalty(v: number) { TRAP_PENALTY = v; }
+
+export interface Plan { cost: number; tiles: number; crossings: string[]; traps: string[]; steps: Array<{ t: T; edge?: Edge }>; end: T }
 
 /** Cheapest route; arrives on or next to dst. */
 export function plan(src: T, dst: T, allow: (kind: string) => boolean = () => true): Plan | null {
@@ -183,18 +197,20 @@ export function plan(src: T, dst: T, allow: (kind: string) => boolean = () => tr
             steps.reverse();
             let tiles = 0;
             const crossings: string[] = [];
+            const traps: string[] = [];
             for (const s of steps) {
                 if (s.edge) crossings.push(`${s.edge.kind}${s.edge.note ? ' ' + s.edge.note : ''}`);
                 else tiles++;
+                if (!s.edge && TRAP_TILES.has(K(s.t))) traps.push(`(${s.t[0]},${s.t[1]})`);
             }
-            return { cost: d, tiles, crossings, steps, end: t };
+            return { cost: d - traps.length * TRAP_PENALTY, tiles, crossings, traps, steps, end: t };
         }
         const [x, z, l] = t;
         for (const [dx, dz] of DIRS) {
             const nt: T = [x + dx, z + dz, l];
             if (!inBox(nt[0], nt[1], l) || !rsmod.canTravel(l, x, z, dx, dz, 1, 0, CollisionType.NORMAL)) continue;
-            const nd = d + 0.5;
             const nk = K(nt);
+            const nd = d + 0.5 + (TRAP_TILES.has(nk) ? TRAP_PENALTY : 0);
             if (nd < (dist.get(nk) ?? Infinity)) {
                 dist.set(nk, nd);
                 prev.set(nk, { k, t });
@@ -283,6 +299,6 @@ if (import.meta.main) {
             console.log(`| ${name} | unreachable | | |`);
             continue;
         }
-        console.log(`| ${name} | ${r.cost.toFixed(1)} | ${r.tiles} | ${r.crossings.join('; ') || '-'} |`);
+        console.log(`| ${name} | ${r.cost.toFixed(1)} | ${r.tiles} | ${r.crossings.join('; ') || '-'} | ${r.traps.length ? 'traps ' + r.traps.join(' ') : ''}`);
     }
 }
