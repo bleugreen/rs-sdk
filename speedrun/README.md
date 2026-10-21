@@ -27,6 +27,7 @@ speedrun/
     ticks.ts      TickLog (JSONL), measure, report; CLI: bun speedrun/lib/ticks.ts report <file>
     hostgate.ts   probeOnTime (packet latency in ticks), gateDecision, HostGate (run-time knife gate)
     programs.ts   startProgram, awaitProgram, runProgram, probeInPage: the page's in-page tick programs
+    gated-program.ts  runGatedProgram, inPageGate: an in-page knife program under the host gate
     fake-sdk.ts   scriptable BotSDK stand-in for the unit tests
   runner/
     step.ts       Step type and runSteps
@@ -432,6 +433,46 @@ click on a tree that needs a walk never rolls in a bury cycle. The status carrie
 script sees a lost 3-tick lock as gaps over 3. The program does not trade: a top-up is the step
 script's (stop, `trade.ts` `receiveFrom`, start again). Measured 0.329 bones per tick at oak
 WC 60 with the knife cadence unchanged (`docs/speedrun/skills/woodcutting.md` section 9).
+
+## gated-program.ts
+
+The one loop that runs an in-page knife program (`knife-cycle`, `knife-mine`) under the
+host gate, for the skill step modules:
+
+```ts
+const gate = inPageGate(sdk, { plainTicksPerRoll: 4 }); // 20-trial in-page probe, 19 of 20 keeps the knife
+const { segments, ended } = await runGatedProgram(sdk, 'knife-cycle', { method: 'willow', untilLevel: 99 }, {
+    gate, technique: 'auto',                    // or 'knife' / 'plain': forced, never probes
+    rollsPerDrop: s => 1 / successChance(s),   // the measured switch-off reads ticks per expected roll
+    onSegment, onProgress, signal               // abort resolves with the segments so far
+});
+```
+
+With `auto` it probes before the first run, after a slip while knifing, and every 500 ticks
+while plain. It runs the program with its knife parameters while the gate is on and the
+pause rule is not holding, and with its plain ones otherwise (`technique: 'plain'`,
+`starter: 'none'`). Each run is one segment, and each segment carries its final
+`ProgramStatus`, technique and the reason it ended (`done`, `probe`, `measured`, `pause`,
+`resume`, `aborted`, `stopped`, `fault`).
+
+The switch-offs:
+- **Measured.** Over `measureDrops` (30) drops, if the knife is not strictly faster than
+  `plainTicksPerRoll * (1 - measuredMargin)`, it goes plain for `measuredOffTicks` (3000).
+  The unit is ticks per expected roll for knife-cycle (each log weighted by `rollsPerDrop`,
+  1 / the success chance at the level) and ticks per ore for knife-mine.
+- **Pause** (STEP-MANIFEST.md entry 0). Above 5 catch-ups in the knife run's last minute
+  (`frames.catchUpsLastMinute`), it pauses to plain. Below 1 after a minute of plain, it
+  re-probes and resumes. Paused drops are not fed to the gate.
+
+The `logs`/`rolls`/`ores` budget and `maxTicks` carry across segments. `params` may be a
+function of the technique.
+
+A 20-trial probe costs 20 to 29 ticks on the account's clock (29 is the first, which waits
+for a fresh label and walks home; lab, 300 ms).
+
+**Forced slip** (test only): the start parameter `hold: 0.15` makes the page runtime hold that
+share of starter bundles one tick, as the lab's `--inject-late` does. The status counts them
+in `held`. Without the parameter nothing changes.
 
 ## runner/step.ts
 
