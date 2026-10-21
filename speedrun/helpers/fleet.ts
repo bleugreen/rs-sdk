@@ -705,7 +705,10 @@ class GatewayProcess {
     private stopping = false;
     private readonly log = new RotatingLog(join(PATHS.logs, 'gateway.log'));
 
-    constructor(readonly port: number) {}
+    constructor(
+        readonly port: number,
+        private readonly onExit: (code: number | null) => void
+    ) {}
 
     get pid(): number | undefined {
         return this.child?.pid;
@@ -757,6 +760,7 @@ class GatewayProcess {
         void child.exited.then(code => {
             if (this.stopping) return;
             this.restarts++;
+            this.onExit(code);
             fleetLog(`[fleet] gateway exited with code ${code}; restarting it in 5s (clients and SDKs reconnect on their own)`);
             setTimeout(() => {
                 if (!this.stopping) this.spawn();
@@ -810,7 +814,10 @@ async function readPid(): Promise<number | null> {
 export interface StatusAccount {
     account: string;
     role: string;
-    phase: Phase;
+    state: RunnerState;
+    /** The role's latest `phase` log line, and when. */
+    rolePhase: string | null;
+    rolePhaseAt: string | null;
     onlineSince: string | null;
     nextAttemptAt: string | null;
     lastLogAt: string | null;
@@ -840,7 +847,8 @@ class Fleet {
     config!: FleetConfig;
     readonly runners = new Map<string, AccountRunner>();
     readonly ledger = new LedgerWriter(PATHS.ledger, PATHS.history);
-    loginGate!: LoginGate;
+    readonly events = new EventLog(PATHS.events);
+    logins!: LoginLimiter;
     private gateway!: GatewayProcess;
     private readonly startedAt = Date.now();
     private shuttingDown: string | null = null;
@@ -863,8 +871,8 @@ class Fleet {
         if (other !== null && other !== process.pid) throw new Error(`another fleet is running (pid ${other}); stop it first`);
         await Bun.write(PATHS.pid, `${process.pid}\n`);
 
-        this.loginGate = new LoginGate(this.config.loginStaggerMs);
-        this.gateway = new GatewayProcess(this.config.gatewayPort);
+        this.logins = new LoginLimiter(loginLimitPolicy(this.config));
+        this.gateway = new GatewayProcess(this.config.gatewayPort, code => this.events.record('gateway_exit', { code }));
         await this.gateway.start();
         // Synchronous and slow on first use; warm it before any socket exists (see sdk/runner.ts).
         initPathfinding();
@@ -877,7 +885,11 @@ class Fleet {
         process.on('uncaughtException', e => fleetLog(`[fleet] uncaught exception: ${e.stack ?? errText(e)}`));
 
         const active = activeAccounts(this.config);
-        fleetLog(`[fleet] started (pid ${process.pid}) on ${describeCode(this.code)}: ${active.length} accounts, maxOnline ${this.config.maxOnline}, logins ${this.config.loginStaggerMs / 1000}s apart`);
+        fleetLog(
+            `[fleet] started (pid ${process.pid}) on ${describeCode(this.code)}: ${active.length} accounts, maxOnline ${this.config.maxOnline}, ` +
+            `logins at most ${this.config.loginsPerMinute}/min (burst ${this.config.loginBurst}, ${this.config.loginStaggerMs / 1000}s apart)`
+        );
+        this.events.record('fleet_start', { pid: process.pid, accounts: active.length, code: describeCode(this.code) });
         this.apply(active);
         this.statusTimer = setInterval(() => void this.writeStatus(), STATUS_EVERY_MS);
         void this.writeStatus();
@@ -909,13 +921,22 @@ class Fleet {
                 next.gatewayPort = this.config.gatewayPort;
             }
             this.config = next;
-            this.loginGate.setSpacing(next.loginStaggerMs);
+            this.logins.setPolicy(loginLimitPolicy(next));
             fleetLog(`[fleet] reload: ${activeAccounts(next).length} active accounts`);
             this.apply(activeAccounts(next));
             void this.writeStatus();
         } catch (e) {
             fleetLog(`[fleet] reload refused, keeping the running config: ${errText(e)}`);
         }
+    }
+
+    /** Hold every login for `ms`: the refusal was about the server or this IP, not one account. */
+    pauseLogins(ms: number, why: string): void {
+        const until = Date.now() + ms;
+        if (until <= this.logins.pausedUntilMs) return;
+        this.logins.pause(until);
+        this.events.record('login_pause', { until: iso(until), why });
+        fleetLog(`[fleet] pausing all logins for ${Math.round(ms / 1000)}s: ${why}`);
     }
 
     /** Exit code 3 from a client: the server moved to a new revision. Retrying cannot help, so stop everything. */
@@ -940,6 +961,7 @@ class Fleet {
         if (this.statusTimer) clearInterval(this.statusTimer);
         await this.writeStatus();
         await rm(PATHS.pid, { force: true });
+        this.events.record('fleet_stop', { why, exit: code });
         fleetLog(`[fleet] stopped (${why}), exit ${code}`);
         await fleetLogFile?.close();
         process.exit(code);
@@ -953,7 +975,9 @@ class Fleet {
             accounts.push({
                 account: r.account,
                 role: r.cfg.role,
-                phase: r.phase,
+                state: r.state,
+                rolePhase: r.rolePhase?.text ?? null,
+                rolePhaseAt: r.rolePhase ? iso(r.rolePhase.at) : null,
                 onlineSince: r.onlineSince ? iso(r.onlineSince) : null,
                 nextAttemptAt: r.nextAttemptAt ? iso(r.nextAttemptAt) : null,
                 lastLogAt: r.lastLog ? iso(r.lastLog.at) : null,
