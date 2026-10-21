@@ -317,6 +317,13 @@ gate"). Both scripts do this by default (`--gate=off` forces the starter).
 [`speedrun/lib/hostgate.ts`](../../../speedrun/lib/hostgate.ts) (cairn://p/rs/62) lets
 the scored run's loops decide on the night whether the knife pays.
 
+**When the client drops instead.** A gate that finds the host failing only slows the loop. A
+client that stops ticking costs far more. A closed socket stays in the world 500 ticks, a
+silent one 1,000, and a live client that nothing drives stays indefinitely. Run the account
+under `startWatchdog`, which logs a wedged client out cleanly within about 10 ticks. The
+mechanism, the measurements (lab and demo) and the policy are in
+[hiscore-timestamps.md section 5.1](../research/competitors/hiscore-timestamps.md#51-the-dropped-login-settled-by-rs101).
+
 **Direct path and relay.** A reaction can reach the engine two ways: directly (issued
 in-page by the browser webclient, or in-process on the engine websocket), or through the
 SDK relay (runner, gateway, lite client). From Azure eastus to the demo at about 1,655

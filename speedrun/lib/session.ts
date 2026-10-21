@@ -3,9 +3,15 @@
 // client that died or went stale.
 //
 // Why explicit logout matters: the hiscore clock counts ticks in the world. A
-// logout click outside combat removes the player in the same tick. A dropped
-// connection leaves the player in the world until the 500-tick no-connection
-// timeout (1000 with no response), so it is never used as a way to leave.
+// logout click outside combat removes the player on the next tick. A closed
+// socket leaves the player in the world for 500 ticks (World.ts
+// TIMEOUT_NO_CONNECTION), a silent open one for 1000 (TIMEOUT_NO_RESPONSE), and
+// a live lite runner with nothing driving it forever: it sends NO_TIMEOUT every
+// second on its own (lite/session.ts). So a launched client is never left
+// behind: a failed openSession, a crash, SIGTERM or SIGHUP log it out (or, if
+// the click cannot land, kill it), and the watchdog logs a wedged client out
+// instead of killing it. Measured in docs/speedrun/research/competitors/
+// hiscore-timestamps.md section 5.
 //
 // The lite runner exits with code 1 when its game session ends and never
 // re-logs itself; code 3 means the client revision is outdated and a relaunch
@@ -82,6 +88,8 @@ export interface Session {
     lastAdvanceAt: number;
     /** Wall ms of the last client launch. */
     launchedAt: number;
+    /** Wall ms of the bot's last markProgress (read by the watchdog's progressStaleTicks). */
+    lastProgressAt: number;
     watchdog: Watchdog | null;
     logPath: string;
 }
@@ -129,14 +137,33 @@ export async function openSession(botName: string, opts: OpenOptions = {}): Prom
         lastInWorldTick: -1,
         lastAdvanceAt: Date.now(),
         launchedAt: 0,
+        lastProgressAt: Date.now(),
         watchdog: null,
         logPath: join(logDir, `${env.BOT_USERNAME}-${opts.client ?? 'lite'}.log`),
     };
     sdk.onStateUpdate(s => track(session, s));
     if (opts.launch) await launchClient(session);
-    await sdk.connect();
-    await waitAdvancingTick(session, opts.readyTimeoutMs ?? 120_000);
+    try {
+        await sdk.connect();
+        // On connect the gateway can hand back the bot's last published state, which
+        // still reads inGame from the previous session. A freshly launched client
+        // takes ~20 s on the demo to log in and advance past it, so give the advance
+        // the whole budget rather than the short attach-time window.
+        const ready = opts.readyTimeoutMs ?? 120_000;
+        await waitAdvancingTick(session, ready, opts.launch ? ready : undefined);
+    } catch (err) {
+        // The client we launched may be in the world even though this process never
+        // saw it advance; left running it would hold the player there indefinitely.
+        if (opts.launch) await abandonClient(session);
+        await sdk.disconnect().catch(() => {});
+        throw err;
+    }
     return session;
+}
+
+/** Tell the watchdog the bot is still making progress (see progressStaleTicks). */
+export function markProgress(session: Session): void {
+    session.lastProgressAt = Date.now();
 }
 
 function track(session: Session, s: BotWorldState): void {
@@ -148,11 +175,11 @@ function track(session: Session, s: BotWorldState): void {
 }
 
 /** Wait until the client publishes in-game state with a tick that advances. */
-export async function waitAdvancingTick(session: Session, timeoutMs: number): Promise<BotWorldState> {
+export async function waitAdvancingTick(session: Session, timeoutMs: number, advanceMs: number = Math.max(5_000, 20 * tickMs())): Promise<BotWorldState> {
     const first = await waitFor(session.sdk, s => s.inGame, timeoutMs);
     if (!first) throw new Error(`${session.name}: no in-game state within ${timeoutMs} ms`);
     const t = first.tick;
-    const next = await waitFor(session.sdk, s => s.inGame && s.tick !== t, Math.max(5_000, 20 * tickMs()));
+    const next = await waitFor(session.sdk, s => s.inGame && s.tick !== t, advanceMs);
     if (!next) throw new Error(`${session.name}: tick did not advance (no live client?)`);
     return next;
 }
@@ -168,13 +195,21 @@ export async function launchClient(session: Session): Promise<void> {
     session.launchedAt = Date.now();
     if (session.client === 'lite') {
         appendFileSync(session.logPath, `[speedrun] launch session ${session.sessionId} at ${new Date().toISOString()}\n`);
-        const child = Bun.spawn(['bun', 'src/lite/runner.ts', session.name], {
+        // Its own process group: a terminal Ctrl-C goes to this process (the step
+        // runner's stop signal, which logs out cleanly) and not to the runner,
+        // whose SIGINT handler would just close the socket and leave the player
+        // in the world for 500 ticks.
+        // `detached` (setpgid) works in Bun 1.3 but is missing from bun-types.
+        const spawnOpts = {
             cwd: join(ROOT, 'server', 'webclient'),
             stdout: openSync(session.logPath, 'a'),
             stderr: 'inherit',
             env: { ...process.env },
-        });
+            detached: true,
+        } as { cwd: string; stdout: number; stderr: 'inherit'; env: Record<string, string | undefined> };
+        const child = Bun.spawn(['bun', 'src/lite/runner.ts', session.name], spawnOpts);
         session.child = child;
+        guardLaunched(session);
         // A signal-killed child can report a null code; count it as 128+SIGKILL.
         void child.exited.then(code => {
             if (session.child === child) session.childExit = code ?? 137;
@@ -191,6 +226,59 @@ async function killChild(session: Session): Promise<void> {
     if (!child || session.childExit !== null) return;
     child.kill('SIGKILL');
     await child.exited.catch(() => {});
+}
+
+/**
+ * Get a launched lite client's player out of the world when this process is
+ * giving it up. The logout click removes an in-world player on the next tick
+ * and the runner exits on the server's LOGOUT; if it has not exited within
+ * `waitMs` (the click could not land), SIGKILL, which bounds the stay to the
+ * 500-tick no-connection timeout instead of the indefinite stay of a live runner.
+ */
+export async function abandonClient(session: Session, waitMs: number = Math.max(2_000, 10 * tickMs())): Promise<void> {
+    const child = session.child;
+    if (session.client !== 'lite' || !child || session.childExit !== null) return;
+    session.expectInWorld = false;
+    void session.sdk.sendClickComponent(LOGOUT_BUTTON).catch(() => {});
+    const exited = await Promise.race([child.exited.then(() => true), sleep(waitMs).then(() => false)]);
+    if (!exited) await killChild(session);
+}
+
+const launchedSessions = new Set<Session>();
+let exitGuardsInstalled = false;
+
+/**
+ * Never let a launched runner outlive this process. A crash, SIGTERM or SIGHUP
+ * logs every launched client out (abandonClient) before exiting; any other exit
+ * (process.exit with a client still running) can only kill it synchronously.
+ * SIGINT is left to the caller: the step runner uses it to stop at a safe
+ * boundary and log out itself. SIGKILL cannot be caught; run the scored account
+ * where nothing SIGKILLs the controller.
+ */
+function guardLaunched(session: Session): void {
+    launchedSessions.add(session);
+    if (exitGuardsInstalled) return;
+    exitGuardsInstalled = true;
+    const live = () => [...launchedSessions].filter(s => s.child && s.childExit === null);
+    process.on('exit', () => {
+        for (const s of live()) {
+            try {
+                s.child!.kill('SIGKILL');
+            } catch {}
+        }
+    });
+    let ending = false;
+    const fatal = (code: number) => async (err?: unknown) => {
+        if (err instanceof Error) console.error(err);
+        if (ending) return;
+        ending = true;
+        await Promise.all(live().map(s => abandonClient(s).catch(() => {})));
+        process.exit(code);
+    };
+    process.on('uncaughtException', fatal(1));
+    process.on('unhandledRejection', fatal(1));
+    process.on('SIGTERM', fatal(143));
+    process.on('SIGHUP', fatal(129));
 }
 
 export interface LogoutResult {
@@ -346,24 +434,42 @@ export interface WatchdogInputs {
     /** Lite child exit code, null while running or for the browser. */
     childExit: number | null;
     nextAttemptAt: number;
+    /** A clean logout was already tried during the current wedge and not confirmed. */
+    logoutFailed: boolean;
+    /** Wall ms since the bot's last markProgress, and the limit; null when progress is not tracked. */
+    msSinceProgress: number | null;
+    progressStaleMs: number | null;
 }
 
-export type WatchdogVerdict = 'ok' | 'wait' | 'relaunch' | 'give_up';
+/**
+ * - `logout`: the client is wedged but its process is alive. Log out cleanly
+ *   (the player leaves on the next tick), then log back in.
+ * - `relaunch`: the client is gone (or would not log out). Launch a fresh one;
+ *   its login takes the session over in the engine (World.ts "kick the existing
+ *   session"), which is the only way out faster than the 500/1000-tick timeouts.
+ * - `stop`: the client is healthy but the bot stopped making progress. Log out
+ *   cleanly and stay out: a live client keeps an idle player in the world forever.
+ */
+export type WatchdogVerdict = 'ok' | 'wait' | 'logout' | 'relaunch' | 'stop' | 'give_up';
 
 /**
- * Pure staleness decision. Relaunch when the account should be in the world
- * and the tick stopped advancing, the gateway reports the bot dead or stale,
- * or the lite child exited. Never relaunch after exit code 3 (outdated
- * client); respect the backoff window between attempts.
+ * Pure decision. While the account should be in the world: a lite child that
+ * exited gets a relaunch; a stale tick or a dead/stale gateway with the client
+ * still running gets a clean logout first, and a relaunch only if that logout
+ * was not confirmed; a stalled bot gets a stop. Never relaunch after exit code
+ * 3 (outdated client); relaunches respect the backoff window, a logout does not.
  */
 export function watchdogDecision(i: WatchdogInputs): WatchdogVerdict {
     if (i.paused || !i.expectInWorld) return 'ok';
     if (i.childExit === 3) return 'give_up';
+    const relaunch = i.now >= i.nextAttemptAt ? 'relaunch' : 'wait';
+    if (i.childExit !== null) return relaunch;
     // A client that is still logging in is not stale; only its exit counts.
-    const loggingIn = !i.tickedSinceLaunch && i.msSinceLaunch < i.launchGraceMs;
-    const unhealthy = i.childExit !== null || (!loggingIn && (i.msSinceAdvance > i.staleMs || i.gateway === 'dead' || i.gateway === 'stale'));
-    if (!unhealthy) return 'ok';
-    return i.now >= i.nextAttemptAt ? 'relaunch' : 'wait';
+    if (!i.tickedSinceLaunch && i.msSinceLaunch < i.launchGraceMs) return 'ok';
+    const wedged = i.msSinceAdvance > i.staleMs || i.gateway === 'dead' || i.gateway === 'stale';
+    if (wedged) return i.logoutFailed ? relaunch : 'logout';
+    if (i.progressStaleMs !== null && i.msSinceProgress !== null && i.msSinceProgress > i.progressStaleMs) return 'stop';
+    return 'ok';
 }
 
 /** Backoff after the n-th consecutive relaunch: 1 s, 2 s, 4 s, ... capped at 30 s. */
@@ -375,7 +481,10 @@ export interface Watchdog {
     stop(): void;
     pause(): void;
     resume(): void;
+    /** Run one decision and act on it now (the timer calls this every tick). */
+    check(): Promise<void>;
     readonly relaunches: number;
+    readonly logouts: number;
     readonly gaveUp: boolean;
 }
 
@@ -386,18 +495,68 @@ export interface WatchdogEvent {
     sessionId: number;
 }
 
-export function startWatchdog(session: Session, opts: { staleTicks?: number; launchGraceMs?: number; onEvent?: (e: WatchdogEvent) => void } = {}): Watchdog {
+/** What the watchdog does about a verdict; replaceable in tests. */
+export interface WatchdogActions {
+    logout(session: Session, timeoutMs: number): Promise<LogoutResult>;
+    login(session: Session): Promise<unknown>;
+    relaunch(session: Session): Promise<void>;
+}
+
+const liveActions: WatchdogActions = {
+    logout: (session, timeoutMs) => logoutClean(session, { timeoutMs }),
+    login: session => login(session),
+    relaunch: async session => {
+        await killChild(session);
+        await launchClient(session);
+    },
+};
+
+export interface WatchdogOptions {
+    /** Ticks without an advancing in-world tick before the client counts as wedged (default 10). */
+    staleTicks?: number;
+    launchGraceMs?: number;
+    /** How long the clean logout of a wedged client may take before it counts as not landing (default 8 ticks, at least 2 s). */
+    logoutTimeoutMs?: number;
+    /** Opt in: ticks without markProgress before a healthy client's bot counts as stalled (verdict stop). */
+    progressStaleTicks?: number;
+    onEvent?: (e: WatchdogEvent) => void;
+    /** Default true; false leaves the checks to wd.check() (tests). */
+    timer?: boolean;
+    actions?: Partial<WatchdogActions>;
+}
+
+/**
+ * Keep the scored account either playing or out of the world. A wedged client
+ * is logged out cleanly and logged back in (leaves on the next tick, costs no
+ * counted ticks while out); one that will not log out, or whose process died,
+ * is replaced by a fresh launch, whose login takes the session over. A bot that
+ * stops calling markProgress (when progressStaleTicks is set) is logged out and
+ * left out. Nothing here kills a running client except as the fallback before a
+ * relaunch.
+ */
+export function startWatchdog(session: Session, opts: WatchdogOptions = {}): Watchdog {
     const staleMs = (opts.staleTicks ?? 10) * tickMs();
     const launchGraceMs = opts.launchGraceMs ?? 30_000;
+    const logoutTimeoutMs = opts.logoutTimeoutMs ?? Math.max(2_000, 8 * tickMs());
+    const progressStaleMs = opts.progressStaleTicks === undefined ? null : opts.progressStaleTicks * tickMs();
+    const actions: WatchdogActions = { ...liveActions, ...opts.actions };
     let paused = false;
     let stopped = false;
     let gaveUp = false;
     let relaunches = 0;
+    let logouts = 0;
     let attempt = 0;
     let nextAttemptAt = 0;
+    let logoutFailed = false;
     let busy = false;
     let gateway: BotStatus['status'] | null = null;
     let lastGatewayPoll = 0;
+
+    const emit = (verdict: WatchdogVerdict, reason: string) => opts.onEvent?.({ at: Date.now(), verdict, reason, sessionId: session.sessionId });
+    const backOff = () => {
+        attempt++;
+        nextAttemptAt = Date.now() + backoffMs(attempt);
+    };
 
     const check = async () => {
         if (stopped || busy || gaveUp) return;
@@ -412,24 +571,53 @@ export function startWatchdog(session: Session, opts: { staleTicks?: number; lau
             const verdict = watchdogDecision({
                 expectInWorld: session.expectInWorld, paused, now: Date.now(), msSinceAdvance, staleMs,
                 msSinceLaunch: Date.now() - session.launchedAt, tickedSinceLaunch: session.lastAdvanceAt > session.launchedAt, launchGraceMs,
-                gateway, childExit: session.child ? session.childExit : null, nextAttemptAt,
+                gateway, childExit: session.child ? session.childExit : null, nextAttemptAt, logoutFailed,
+                msSinceProgress: progressStaleMs === null ? null : Date.now() - session.lastProgressAt, progressStaleMs,
             });
             if (verdict === 'ok') {
-                if (msSinceAdvance < staleMs) attempt = 0;
+                if (msSinceAdvance < staleMs) {
+                    attempt = 0;
+                    logoutFailed = false;
+                }
                 return;
             }
-            const reason = `childExit=${session.childExit} sinceAdvance=${msSinceAdvance}ms gateway=${gateway}`;
-            opts.onEvent?.({ at: Date.now(), verdict, reason, sessionId: session.sessionId });
+            emit(verdict, `childExit=${session.childExit} sinceAdvance=${msSinceAdvance}ms gateway=${gateway}`);
             if (verdict === 'give_up') {
                 gaveUp = true;
                 return;
             }
+            if (verdict === 'logout' || verdict === 'stop') {
+                logouts++;
+                const out = await actions.logout(session, logoutTimeoutMs);
+                if (!out.ok) {
+                    // The click did not land (frozen client, broken relay). logoutClean
+                    // paused us and cleared expectInWorld; the account is still in, so
+                    // the next check relaunches.
+                    logoutFailed = true;
+                    session.expectInWorld = true;
+                    paused = false;
+                    emit('logout', `logout not confirmed (${out.reason}); relaunching`);
+                    return;
+                }
+                emit(verdict, `logged out: last in-world tick ${out.lastInWorldTick}, ${out.latencyTicks} tick(s) after the click`);
+                if (verdict === 'stop') return; // stay out, paused; the bot is not driving
+                try {
+                    await actions.login(session);
+                    emit('relaunch', `logged back in (session ${session.sessionId})`);
+                } catch (err) {
+                    // Out of the world is safe; let the relaunch path retry with backoff.
+                    session.expectInWorld = true;
+                    paused = false;
+                    backOff();
+                    emit('relaunch', `login after logout failed: ${err}`);
+                }
+                return;
+            }
             if (verdict === 'relaunch') {
-                attempt++;
                 relaunches++;
-                nextAttemptAt = Date.now() + backoffMs(attempt);
-                await killChild(session);
-                await launchClient(session);
+                logoutFailed = false;
+                backOff();
+                await actions.relaunch(session);
                 gateway = null;
                 lastGatewayPoll = Date.now() + 5_000; // let the new client register before polling
             }
@@ -437,11 +625,11 @@ export function startWatchdog(session: Session, opts: { staleTicks?: number; lau
             busy = false;
         }
     };
-    const timer = setInterval(() => void check(), Math.max(100, tickMs()));
+    const timer = opts.timer === false ? null : setInterval(() => void check(), Math.max(100, tickMs()));
     const wd: Watchdog = {
         stop: () => {
             stopped = true;
-            clearInterval(timer);
+            if (timer) clearInterval(timer);
         },
         pause: () => {
             paused = true;
@@ -449,9 +637,14 @@ export function startWatchdog(session: Session, opts: { staleTicks?: number; lau
         resume: () => {
             paused = false;
             session.lastAdvanceAt = Date.now();
+            session.lastProgressAt = Date.now();
         },
+        check,
         get relaunches() {
             return relaunches;
+        },
+        get logouts() {
+            return logouts;
         },
         get gaveUp() {
             return gaveUp;

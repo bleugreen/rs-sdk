@@ -18,7 +18,8 @@ speedrun/
     trade.ts      give / giveAll (giver), receiveFrom (receiver) (+ pure per-tick decisions)
     dialogue.ts   classifyPage, advance, continueBurst
     levelup.ts    isLevelUp, startLevelUpWatcher, withLevelUpDismissal
-    session.ts    openSession, launchClient, logoutClean, waitLoggedOut, login, startWatchdog
+    session.ts    openSession, launchClient, logoutClean, waitLoggedOut, login, startWatchdog,
+                  abandonClient, markProgress
     ticks.ts      TickLog (JSONL), measure, report; CLI: bun speedrun/lib/ticks.ts report <file>
     hostgate.ts   probeOnTime (packet latency in ticks), gateDecision, HostGate (run-time knife gate)
     fake-sdk.ts   scriptable BotSDK stand-in for the unit tests
@@ -33,8 +34,19 @@ speedrun/
     probe-engine.ts      engine-rule probes (docs/speedrun/research/engine-sweep/engine.md)
     census-delayfree.ts  static census of delay-free item/xp triggers (same doc)
     measure-sweep.ts     top-ten verification (docs/speedrun/research/engine-sweep.md section 8)
-  tools/          upstream watch (nightly diff of watched upstream paths)
-  runs/           tick logs (gitignored)
+    measure-drop.ts      ticks from a client drop to the player leaving, with and without the
+                         watchdog (docs/speedrun/research/competitors/hiscore-timestamps.md 5.1)
+  tools/          upstream watch (nightly diff of watched upstream paths);
+                  drop-probe.ts (the dropped-client stay on the demo, with a throwaway);
+                  hiscore-stamp-probe.ts (the live stamp test, plus uncached
+                  page/classify reads through hiscore-scrape.ts's parser,
+                  docs/speedrun/research/competitors/hiscore-timestamps.md);
+                  observe.ts, the passive in-game observer and /playerpositions tracker
+                  (docs/speedrun/research/competitors/observation.md);
+                  hiscore-scrape.ts (demo hiscore snapshots and climber diffs; the
+                  one player-page parser and stamp grouping,
+                  docs/speedrun/research/competitors/hiscores.md)
+  runs/           tick logs and the hiscore HTML cache (gitignored)
 ```
 
 ## Conventions
@@ -226,14 +238,22 @@ level with and without the watcher) has not been measured yet.
 - `openSession(bot, {client: 'lite'|'browser', launch?})` builds the control
   `BotSDK` from `bots/<bot>/bot.env` the way `runScript` does, without
   `runScript`'s disconnect-is-fatal policy, and waits for an advancing tick.
+  The gateway can replay the bot's last published state (still `inGame`) on
+  connect, so with `launch` the advance gets the whole ready budget: a demo
+  login takes about 20 s. If it fails after launching, it logs the client out
+  (or kills it) before rethrowing, so no runner is left holding the player.
 - `launchClient` spawns the lite runner (`server/webclient`, `src/lite/runner.ts`)
   or opens the browser client URL; each launch bumps `sessionId`, and the
-  client's tick counter restarts with it.
+  client's tick counter restarts with it. The runner gets its own process
+  group (a terminal Ctrl-C reaches only this process), and it never outlives
+  this process: a crash, SIGTERM or SIGHUP logs every launched runner out
+  (`abandonClient`), and any other exit kills it.
 - `logoutClean` waits out the 16-tick post-combat window, clicks logout
   (IF_BUTTON 2458), retries once if refused, and verifies: no tick after the
   click, and the lite child exited or the gateway reports the bot dead. It
-  never kills the process to log out: a dropped connection leaves the player
-  in the world until the 500-tick no-connection timeout.
+  never kills the process to log out. A closed socket leaves the player in the
+  world for 500 ticks, a silent one for 1,000, and a live client with nothing
+  driving it forever (hiscore-timestamps.md section 5.1).
 - `waitLoggedOut(ms)` asserts the account is out, then waits wall time, which
   is free.
 - `login` relaunches the client and waits for an advancing tick. A login
@@ -241,13 +261,28 @@ level with and without the watcher) has not been measured yet.
   session's save is still flushing (`World.ts`, "old session is mid-logout");
   the lab hit this once in 7 re-logins. So a client that exits before its
   first in-world tick is relaunched with backoff.
-- `startWatchdog` relaunches the client when the account should be in the
-  world and the lite child exited, the tick stopped advancing for 10 ticks, or
-  the gateway reports the bot dead or stale. A freshly launched client gets a
-  30 s login grace (only its exit counts), it backs off 1 s, 2 s, 4 s ... 30 s,
-  it never relaunches after exit code 3 (outdated client), and it is a no-op
-  while paused around an intended logout. The decision is the pure
+- `startWatchdog` acts while the account should be in the world. A client
+  whose tick stopped advancing for 10 ticks, or whose gateway status is dead or
+  stale, while its process runs, is logged out cleanly (`logoutClean`) and
+  logged back in. If that logout is not confirmed within 8 ticks, or the lite
+  child has exited, the watchdog kills the client and relaunches it; the new
+  login takes the session over. With `progressStaleTicks` set, a healthy client
+  whose bot stopped calling `markProgress` is logged out and left out. A
+  freshly launched client gets a 30 s login grace (only its exit counts).
+  Relaunches back off 1 s, 2 s, 4 s ... 30 s; the logout does not wait. It never
+  relaunches after exit code 3 (outdated client), and it is a no-op while
+  paused around an intended logout. The decision is the pure
   `watchdogDecision`.
+
+| Measurement (`lab/measure-drop.ts`, bgsrv-mac, 300 ms) | Ticks from the drop or wedge until the old session left |
+|---|---|
+| No watchdog: runner SIGKILLed | 499-500 (demo: 497) |
+| No watchdog: network severed, sockets left open | 998 |
+| No watchdog: controller crashed, runner alive (before the exit guards) | unbounded (> 1,303) |
+| Watchdog: relay wedged, client alive (clean logout) | 10 |
+| Watchdog: client frozen (logout fails, then relaunch and takeover) | 20 |
+| Watchdog: client killed (relaunch and takeover) | about 1 |
+| Controller crashed, exit guard | 0 |
 
 | Measurement (`lab/measure-session.ts`) | Result |
 |---|---|
