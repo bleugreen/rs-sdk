@@ -18,11 +18,11 @@ the time, and the reactive steps are worth roughly 3,000 ticks over the route.
   decoded (cairn://p/rs/82), inside the pass that decoded it and before that pass
   flushes. `BotOverlay.onGameTick` collects the state it is about to publish, hands
   it to `ProgramHost.onTick`, then publishes it with the program's status. Packets a
-  program writes through `ActionExecutor` leave in that flush. Until then a reaction
-  waits for the next game-loop pass (measured p50 8 ms, p90 12 ms in a visible tab).
-  cairn://p/rs/113 wakes the loop on frame arrival and flushes right after the decode
-  (it measured frame-in to state-out 7.2 to 0.5 ms p50); programs are unchanged by
-  that, since they only ever see the decoded-tick callback.
+  program writes through `ActionExecutor` leave in that flush. Since cairn://p/rs/113
+  (#90) the game socket's message wakes the loop, the tick is decoded on arrival and
+  the loop flushes right after it, so a program decides under 1 ms after its frame
+  arrives (it waited for the next loop pass before: p50 8 ms, p90 12 ms). Programs
+  were unchanged by that; they only ever see the decoded-tick callback.
 - **Runtime** (`server/webclient/src/bot/programs/runtime.ts`). Programs register by
   name. One runs at a time, because each reactive step owns the player's interaction
   and the tick's packets, and starting a program replaces the running one. A program
@@ -117,6 +117,8 @@ rs/82's figure (LAB.md); the lite column is from the skills docs.
 |---|---|---|---|---|
 | Latency probe, 60 trials | **60 at 1 tick** (three runs); decoded-tick interval p50 299-300 ms, p90 308-310 | 60 at 1 | 60 at 1 | 2.2-4.2 |
 | Frame arrival to program decision (game-loop wait, before rs/113) | p50 7-9 ms, p90 12-13, max 17 | | | 2-3 |
+| Same with rs/113's decode-on-arrival (#90), 2026-10-21 07:45 PDT | **under 1 ms** (max 0.6); probe 60 at 1 tick; loops/s 73-76; frame p90 310 ms, 0 catch-ups | | | 3.9-4.0 |
+| Knife iron after #90, 200 ores | 3.015 ticks per ore (193 of 194 gaps at 3), 199 of 200 on the predicted tick, 0 slips | | | 3.3-3.5 |
 | Knife iron, respawn 13, 5-rock rotation, 200 ores | **3.00 ticks per ore**, 194 of 194 gaps at 3, 200 of 200 on the predicted tick | 3.05 | 3.00 | 2.5-3.5 |
 | Same, before the closed-loop fix to one slip | 3.12 (3:191 6:2 21:1, one slip) | | | 3.1 |
 | Iron, plain fallback (`starter: 'none'`), 100 ores | 4.03 (4:93 7:1) | | 4.94 (no starter) | 3.1-4.1 |
