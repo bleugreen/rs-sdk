@@ -274,7 +274,7 @@ scripts are in section 4; the shared primitives and their build order are in sec
   `skills/agility.md` §1-2). Best about **3,820** (inferred: the lab fell 4 times in 39 laps
   against the model's 9, so the model reads about 5% pessimistic; `skills/agility.md` §2).
   Fallback **4,512** at the 74-tick lap a relay-driven loop would pay (inferred, same section). The
-  entry total is 4,146 expected, ~3,945 best and 4,634 fallback.
+  entry total is 4,146 expected, ~3,942 best and 4,634 fallback.
 - **Primitives:** `lib/programs.ts` `runProgram(sdk, 'agility', {course, untilLevel, food,
   eatBelow})` [rs/97]; the in-page probe before S17; `levelup` (dismissal is inside the program;
   verify); `session.logoutClean` for the post-combat 16-tick rule if attacked. **Missing:** an
@@ -379,7 +379,7 @@ scripts are in section 4; the shared primitives and their build order are in sec
   per willow log, M0550). Fallback **3,881** plain. The bury adds **110** expected / **80** best on
   Prayer's line (entry 15). The oak-to-willow walk (46 i) is a leg (entry 11). A move to a second site
   under contention costs "a few hundred" (estimated, `skills/README.md` open question 5).
-- **In the page** (cairn://p/rs/137, `skills/woodcutting.md` section 9 on its PR): local engine,
+- **In the page** (cairn://p/rs/137, merged to main as PR #124; `skills/woodcutting.md` section 9 and `tick-programs.md` on main): local engine,
   300 ms, visible tab, oak at 60, 200 rolls per run: knife + bury **0.329 bones per tick** in all
   four runs at 3.16-3.26 ticks per roll, every bury landed, 0 resyncs; the plain knife in the same
   tab 3.20 and 3.40 (m). The bury costs the loop nothing measurable. With rs/105's trade cost, about
@@ -398,7 +398,7 @@ scripts are in section 4; the shared primitives and their build order are in sec
 - **Acceptance, local:** browser tab, lab engine at 300 ms, willows at 99: knife within 5% of
   **4.83** ticks per log over 200+ logs; plain within 5% of 5.53. Normal trees from level 1 within 5%
   of **7.24**. **Bury:** oak at 60, `trees` passed: at least **0.31 bones per tick** without trades
-  (0.329 measured in the page, rs/137) and ticks per roll within 5% of the no-bury knife in the same
+  (0.329 measured in the page, #124) and ticks per roll within 5% of the no-bury knife in the same
   tab; then with a real helper trading 23-bone loads through stop, `receiveFrom` and restart, at
   least 0.29 bones per tick and 5 or fewer ticks per load. **Forced fallen tree:** fell the target
   tree mid-run; pass if the rate stays at or above 0.31 (the failure mode is 0.27-0.28). **Forced slip:** hold 15% of starters
@@ -778,7 +778,7 @@ scripts are in section 4; the shared primitives and their build order are in sec
 - **Ticks:** expected **110**, best **80** (inferred: 0.23 Woodcutting ticks per bone measured on
   oak, almost all of it the 23-bone trades, about 0.31 with willow-style bounces and margin; best is
   16 loads at 5 ticks; `research/bones-placement.md` §1, §6; rs/137 measured the bury itself at no
-  cost in the page). Knife off: ~110 / ~75. Fallback **735**, the 355 bones at the booth (58 ticks
+  cost in the page, 0.329 bones per tick, #124). Knife off: ~110 / ~75. Fallback **735**, the 355 bones at the booth (58 ticks
   per 28-bone inventory, `skills/prayer.md` §1).
 - **Primitives:** entry 3's; for the booth `lib/bank.ts` `withdrawMany` with `n:'fill'` and a blind
   bury every 2 ticks.
