@@ -34,6 +34,8 @@ for (const a of process.argv.slice(2)) {
 }
 const P90_MAX = 400;
 const CATCH_MAX_PER_MIN = 1;
+// Two regimes: a severe burst costs 11-26 of 60 reactions, a simmer of 1-6 catch-ups/min up to ~6.
+const SEVERE_PER_MIN = 10;
 const LATE_MS = 450;
 
 const pdtFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
@@ -240,6 +242,33 @@ for (let i = 0; i < seq.length;) {
     i = j + 1;
 }
 say(`Samples failing (c): ${seq.filter(s => s.fail).length}/${seq.length}.`);
+
+// ---------------------------------------------------------------- severe bursts and restarts
+say();
+say(`## Severe bursts (>= ${SEVERE_PER_MIN} catch-ups/min over a sample) and demo restarts`);
+say();
+const ash = segments.filter(s => s.kind === 'pair' && s.vantage === 'ashburn').map(s => ({ t0: s.ticks[0]!, t1: s.ticks.at(-1)!, s: score(s.ticks), direct: s.direct }));
+const severe = ash.filter(a => a.s.catchPerMin >= SEVERE_PER_MIN);
+const simmer = ash.filter(a => a.s.catchPerMin > CATCH_MAX_PER_MIN && a.s.catchPerMin < SEVERE_PER_MIN);
+const calm = ash.filter(a => a.s.catchPerMin <= CATCH_MAX_PER_MIN);
+const onTime = (xs: typeof ash) => `${xs.reduce((s, a) => s + (a.direct?.onTime ?? 0), 0)}/${xs.reduce((s, a) => s + (a.direct?.n ?? 0), 0)}`;
+say(`Ashburn samples: calm (<= ${CATCH_MAX_PER_MIN}/min) ${calm.length}, on time ${onTime(calm)}; simmer ${simmer.length}, ${onTime(simmer)}; severe ${severe.length}, ${onTime(severe)}.`);
+for (const a of severe) {
+    const i = ash.indexOf(a);
+    say(`- ${hhmm(a.t0)}: ${a.s.catchPerMin.toFixed(1)}/min; previous sample ${ash[i - 1] ? `${hhmm(ash[i - 1]!.t0)} at ${ash[i - 1]!.s.catchPerMin.toFixed(1)}/min` : 'none'}, next ${ash[i + 1] ? `${hhmm(ash[i + 1]!.t0)} at ${ash[i + 1]!.s.catchPerMin.toFixed(1)}/min` : 'none'}`);
+}
+// A restart: the public player count reads 0 or fails, after a reading over 500.
+const restartsSeen: number[] = [];
+for (let i = 1; i < counts.length; i++) if ((counts[i]![1] === 0 || Number.isNaN(counts[i]![1])) && counts[i - 1]![1] > 500) restartsSeen.push(counts[i]![0]);
+const pcRaw = pcPath && existsSync(pcPath) ? readFileSync(pcPath, 'utf8').split('\n').slice(1).map(l => l.split('\t')) : [];
+for (let i = 1; i < pcRaw.length; i++) if (pcRaw[i]![2] === '' && Number(pcRaw[i - 1]![2]) > 500 && !restartsSeen.some(t => Math.abs(t - Number(pcRaw[i]![1])) < 120_000)) restartsSeen.push(Number(pcRaw[i]![1]));
+restartsSeen.sort((a, b) => a - b);
+const dedup = restartsSeen.filter((t, i) => i === 0 || t - restartsSeen[i - 1]! > 120_000);
+say();
+say(`Demo restarts seen in /playercount: ${dedup.length ? dedup.map(t => {
+    const before = ash.filter(a => a.t1 <= t).at(-1);
+    return `${hhmm(t)} (last sample before: ${before ? `${hhmm(before.t0)}, ${before.s.catchPerMin.toFixed(1)}/min, ${Math.round((t - before.t1) / 60_000)} min earlier` : 'none'})`;
+}).join('; ') : 'none'}.`);
 
 // ---------------------------------------------------------------- correlations
 say();
