@@ -456,7 +456,8 @@ export async function receivePackage(sdk: BotSDK, bot: BotActions, options: Rece
         received: diffItems(invBefore, sdk.getInventory()).gained
     });
 
-    const opened = await bot.tradeWith(playerPattern(options.mule), Math.max(1, deadline - Date.now()));
+    // retryOnBusy: the mule is briefly "busy" while its bank is open (re-arming the next package).
+    const opened = await bot.tradeWith(playerPattern(options.mule), Math.max(1, deadline - Date.now()), { retryOnBusy: true });
     if (!opened.success) return result(false, opened.message);
 
     const complete = (offer: TradeItem[], partnerAccepted: boolean): boolean =>
