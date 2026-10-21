@@ -98,6 +98,7 @@ account, against about 3,360 + 30 + travel for this route (4,030 + 30 without th
 |---|---|---|---|---|
 | Doric's Quest | 1,300 | `quest_doric.rs2:99` (`stat_advance(mining, 13000)`) | 49 (49 needs 1,214.7, 50 needs 1,304.8) | 1 quest point. Needs 6 clay, 4 copper ore, 2 iron ore (`quest_doric.rs2:70`), all tradeable. Doric stands at (2952,3451), north of Falador. No other requirement. |
 | Plague City | 2,425 | `quest_elena.rs2:12` | 58 alone, 64 after Doric | About 737 / 620 / 564 ticks (stock / fixed / burst; cairn://p/rs/15). Provisional: it is being judged on the Ardougne teleport, since the Regicide chain is off the route. Saves about 270 mining ticks after Doric. |
+| Heroes' Quest | 2,575 | `quest_hero.rs2:39` (it also gives Woodcutting and Fishing) | 58 alone | Off the planned route: it needs 55 quest points and other quests the route does not do (cairn://p/rs/3). |
 | Digsite | 15,300 (measured 382,500 game xp at the hand-in, rs/16) | `quest_itexam.rs2:41` | 85 alone, 86 after Doric | About 2,180 ticks of playtime on the stock client, 1,930 with the client fix, 1,790 with burst inputs; p90 about 2,600 (measured, `docs/speedrun/quests/digsite.md`, cairn://p/rs/16). Also gives 2,000 base Herblore, a helper-fed skill. Saves about 1,612 mining ticks after Doric (4,034 to 2,422), so it costs about 570 ticks net on median and about 1,000 at p90. |
 
 Doric's dialogue is about 14 pages (start: greeting, two choices, five lines; hand-in:

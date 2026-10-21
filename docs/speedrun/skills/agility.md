@@ -300,10 +300,12 @@ reward quest is worth doing, and where its picks go, is decided in
 
 | Item | Count | Needed for |
 |---|---|---|
-| None | | Quest route with two Tourist Trap picks or a Legends pick: no training. |
-| Sharks (or any food) | about 3 | Quest route ending at 96 (13 laps of Wilderness course), as insurance against falls and skeletons. |
+| Agility potion (4) | 1 | The planned route: level 22 on the Gnome course plus the potion's +3 passes Grand Tree's level-25 check (122 ticks instead of 159). |
+| Sharks (or any food) | about 10-12 | The planned route, 75 -> 99 on the Wilderness course (about 61 laps), against falls and skeletons (inferred, scaled from the 52 -> 99 figure below). |
+| None | | Quest route with every Agility quest plus two Tourist Trap picks or a Legends pick (off the planned route): no training. |
+| Sharks (or any food) | about 3 | Every Agility quest, ending at 96 (13 laps; off the planned route). |
 | Sharks | about 11-15 | No-quest route, 52 -> 99. |
-| Agility potion (4) | 1, optional | Only if Grand Tree must come before any other Agility reward: lets level 22 pass the 25 check (saves 37 ticks). On the course, +3 levels saves only 13 ticks from 96 and 70 from 52 (inferred, 74-tick laps), so it is not worth bringing for training. |
+| Agility potion (4) | (see the first row) | Only if Grand Tree must come before any other Agility reward: lets level 22 pass the 25 check (saves 37 ticks). On the course, +3 levels saves only 13 ticks from 96 and 70 from 52 (inferred, 74-tick laps), so it is not worth bringing for training. |
 
 Nothing else is needed: no gear, no coins (the arena is not used), no tools.
 
