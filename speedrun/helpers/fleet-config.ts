@@ -3,6 +3,8 @@
 // every problem at once, because the file is hand-edited over SSH and a fleet
 // that silently drops a misspelt account looks healthy while doing nothing.
 
+import { existsSync, readFileSync } from 'node:fs';
+
 /**
  * Absolute ceiling on configured accounts. The demo server allows 100 sessions
  * per source IP, and that budget is shared with everything else on the
@@ -15,11 +17,26 @@ export const HARD_MAX_ACCOUNTS = 60;
 export const GATEWAY_PORT_RANGE = [7790, 7799] as const;
 
 /**
- * Accounts the fleet must never log in as: the scored account (`www_cairn_md`), its claimed
- * spare (`cairn_dot_md`) and the operator's own. A login adds playtime to the scored account,
- * so this list is checked even where ACCOUNT_NAME_RE would already refuse a name.
+ * Accounts the fleet must never log in as: the claimed spare `cairn_dot_md`, the operator's own
+ * `cairn`, the former scored-account candidate `www_cairn_md`, and every name in the fleet host's
+ * gitignored `forbidden-accounts.txt` at the checkout root. The scored account's real name is
+ * kept out of git, so it goes in that file. A login adds playtime to the scored account, so this
+ * list is checked even where ACCOUNT_NAME_RE would already refuse a name.
  */
-export const FORBIDDEN_ACCOUNTS = new Set(['www_cairn_md', 'cairn_dot_md', 'cairn']);
+export const FORBIDDEN_ACCOUNTS = new Set(['www_cairn_md', 'cairn_dot_md', 'cairn', ...readLocalForbidden()]);
+
+/** One account per line, `#` starts a comment; display forms (`Www Cairn Md`) are canonicalised. */
+export function parseForbiddenList(text: string): string[] {
+    return text
+        .split('\n')
+        .map(line => line.replace(/#.*/, '').trim().toLowerCase().replace(/\s+/g, '_'))
+        .filter(Boolean);
+}
+
+function readLocalForbidden(): string[] {
+    const file = new URL('../../forbidden-accounts.txt', import.meta.url);
+    return existsSync(file) ? parseForbiddenList(readFileSync(file, 'utf8')) : [];
+}
 
 /** Helper accounts all carry the operator's prefix; usernames are at most 12 characters. */
 export const ACCOUNT_NAME_RE = /^cairn_[a-z0-9_]{1,6}$/;

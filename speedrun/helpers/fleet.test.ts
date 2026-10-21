@@ -8,6 +8,7 @@ import {
     diffActive,
     FORBIDDEN_ACCOUNTS,
     HARD_MAX_ACCOUNTS,
+    parseForbiddenList,
     parseFleetConfig
 } from './fleet-config';
 import { applyBankReport, emptyLedger, LedgerWriter, parseLedger, readLedger } from './ledger';
@@ -50,7 +51,11 @@ describe('fleet config', () => {
         expect(problemsOf({ maxOnline: 61, accounts: [] }).join()).toContain('maxOnline');
     });
 
-    test('never runs the scored account www_cairn_md', () => {
+    test('the private forbidden list parses names and display forms, ignoring comments', () => {
+        expect(parseForbiddenList('# the scored account\nWww Cairn Zz\n\n  cairn_x1  # spare\n')).toEqual(['www_cairn_zz', 'cairn_x1']);
+    });
+
+    test('never runs the former scored-account candidate www_cairn_md', () => {
         expect(FORBIDDEN_ACCOUNTS.has('www_cairn_md')).toBe(true);
         const problems = problemsOf({ accounts: [{ account: 'www_cairn_md', role: 'feathers' }] });
         expect(problems).toHaveLength(1);

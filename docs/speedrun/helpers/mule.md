@@ -38,7 +38,7 @@ Two more facts from `interface_trade/scripts/trade.rs2` shape the protocol:
 
 Safety is unchanged from the SDK. The giver checks, on both screens, that the partner
 is exactly the configured account (display names are compared in canonical form:
-`www_cairn_md` shows as `Www Cairn Md`) and that its own offer is exactly the package
+`cairn_h05` shows as `Cairn H05`) and that its own offer is exactly the package
 by item id and count. Any mismatch declines, and nothing changes hands.
 `receivePackage` re-checks `want` on the confirm screen.
 
@@ -166,7 +166,7 @@ gateway it asks `localhost:8888` and every GE action fails with "Unable to conne
 Standalone, from the repo root, with the account's lite client running:
 
 ```sh
-ROLE_OPTIONS='{"serve":"www_cairn_md","packages":[{"name":"food","items":[{"item":"Shark","amount":200,"noted":true}]}]}' \
+ROLE_OPTIONS='{"serve":"<the scored account, from the run host's private config>","packages":[{"name":"food","items":[{"item":"Shark","amount":200,"noted":true}]}]}' \
   bun speedrun/helpers/mule.ts cairn_mule1
 ROLE_OPTIONS='{"mule":"cairn_mule1","items":["^logs$"]}' bun speedrun/helpers/mule.ts cairn_h10 courier
 ```
