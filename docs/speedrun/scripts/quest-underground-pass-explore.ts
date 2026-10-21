@@ -51,7 +51,7 @@ await runScript(async ({ bot, sdk }) => {
         // wait until the player has stood still with no dialogue for 2 ticks
         let still = 0;
         let last = L.pos(sdk);
-        for (let i = 0; i < maxTicks && still < 3; i++) {
+        for (let i = 0; i < maxTicks && still < 5; i++) {
             await sdk.waitForTicks(1);
             const p = L.pos(sdk);
             const s = sdk.getState()!;
