@@ -3,6 +3,7 @@
 // times come from tick deltas, never wall-clock time.
 import type { BotSDK } from '../../../sdk';
 import type { BotWorldState, NearbyLoc } from '../../../sdk/types';
+import { isPolicy, LevelUpLab } from './levelup-dismiss';
 
 export const XP_RATE = 25; // server/engine/src/util/WorldConfig.ts:102
 
@@ -20,15 +21,22 @@ export function agilityXp(s: BotWorldState | null): number {
     return s?.skills.find(k => k.name === 'Agility')?.experience ?? 0;
 }
 
-/** Records every Agility xp change with its server tick; also dismisses level-up dialogs. */
+/**
+ * Records every Agility xp change with its server tick; also dismisses level-up dialogs. With
+ * LEVELUP_DISMISS=watcher|burst in the environment, a levelup-dismiss.ts policy dismisses them
+ * instead of the plain continue below (docs/speedrun/research/levelup-cost.md).
+ */
 export class XpLog {
     events: XpEvent[] = [];
     private last: number;
     private unsub: () => void;
     hpLost = 0;
     private lastHp: number;
+    readonly levelUps: LevelUpLab | null;
 
     constructor(private sdk: BotSDK) {
+        const policy = process.env.LEVELUP_DISMISS ?? '';
+        this.levelUps = isPolicy(policy) ? new LevelUpLab(sdk, policy, 'agility') : null;
         const s = sdk.getState();
         this.last = agilityXp(s);
         this.lastHp = s?.player?.hp ?? 0;
@@ -49,14 +57,14 @@ export class XpLog {
                 });
                 this.last = xp;
             }
-            if (st.dialog?.isOpen && st.dialog.options.length === 0 && !st.dialog.isWaiting) {
+            if (!this.levelUps && st.dialog?.isOpen && st.dialog.options.length === 0 && !st.dialog.isWaiting) {
                 // level-up and message boxes freeze scripts; click to continue
                 void sdk.sendClickDialog(0).catch(() => {});
             }
         });
     }
 
-    stop() { this.unsub(); }
+    stop() { this.unsub(); this.levelUps?.stop(); }
 
     since(i: number) { return this.events.slice(i); }
 }
