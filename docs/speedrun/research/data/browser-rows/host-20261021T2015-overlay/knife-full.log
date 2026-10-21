@@ -1,0 +1,35 @@
+Pathfinding initialized in 196ms (136704 zones + 297 mainland fill, 1268350 tiles, 2691 doors masked, 5 one-way doors blocked)
+[Runner] Connecting to bot "cairn_r130"...
+[BotSDK] Waiting for game state to be ready...
+[BotSDK] Game state ready!
+[BotSDK] Connected and game state ready
+[Runner] Connected to bot "cairn_r130"
+start at 3172,3233, inventory: Bronze axe, Arrow shaft, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Knife, Logs, Logs, Logs, Logs, Logs, Logs, Logs
+walk to the trees: Arrived (at 3192,3232)
+ready at 3192,3232: knife true, logs 23, woodcutting 56, 15 trees within 10 tiles
+[Runner] Disconnecting bot "cairn_r130"...
+[LOGOUT DEBUG] SDK WebSocket closed - autoReconnect=true, intentionalDisconnect=true
+Pathfinding initialized in 199ms (136704 zones + 297 mainland fill, 1268350 tiles, 2691 doors masked, 5 one-way doors blocked)
+[Runner] Connecting to bot "cairn_r130"...
+[BotSDK] Waiting for game state to be ready...
+[BotSDK] Game state ready!
+[BotSDK] Connected and game state ready
+[Runner] Connected to bot "cairn_r130"
+segment: from start T117 to last xp T552: 435 ticks, 30 catches, 14.50 ticks per catch, base 750.0, 1.72 base per tick
+level-ups 4: gap from the level's drop to the next 10:1 12:1 16:1 20:1; re-anchored after 4
+  L57@T147:16R L58@T237:12R L59@T338:20R L60@T443:10R
+spot moves 0: spanning gaps 
+  
+logs given during the run 0
+starters held a label (--inject-late=0): 0
+gate: off
+levels reached: 57@T147 58@T237 59@T338 60@T443
+mode=tree-knife level=99 phase=0 xpEvents=30 gapsCounted=0 breaks=31 resyncs=30 finalPhase=1 dialogs=7
+gap histogram (ticks:count) 
+min gap 0, gcd of gaps 0, span 427 ticks, ticks per xp event 14.72
+rolls in span at cycle ?: ?; success fraction ?
+game xp 18750 (base 750), base xp per tick over span 1.76
+end inventory: logs 2, arrow shafts 15, shrimps 0, packets sent 244
+log /home/ubuntu/rs130/out/20261021T2015-overlay/knife/r1-knife.log
+[Runner] Disconnecting bot "cairn_r130"...
+[LOGOUT DEBUG] SDK WebSocket closed - autoReconnect=true, intentionalDisconnect=true

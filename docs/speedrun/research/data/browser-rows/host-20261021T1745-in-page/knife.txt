@@ -1,0 +1,2 @@
+probe start 2026-10-21 10:47:29 PDT: bun docs/speedrun/scripts/tickmanip-demo-setup.ts "$BOT" --logs=1 && bun --no-install docs/speedrun/scripts/demo-browser-page.ts eval --dir="$OUT/page" --progress="rsPrograms.status()" --json="$OUT/knife.json" --timeout-min=30 "rsPrograms.run(\"knife-cycle\", { method: \"tree\", rolls: $CYCLES, maxTicks: 6000 })"
+probe end 2026-10-21 10:47:30 PDT, exit 1
