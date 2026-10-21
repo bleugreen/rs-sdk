@@ -774,8 +774,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **S21's altar in force (main, 15:17 PDT): the body altar.** With 0 nature talismans held, S21 runs
   at the body altar, ruins (3052,3444) south of Edgeville, with 14 givers on 15 body talismans and no
   keeper (rs/163; supply-fallbacks.md §7: 194 crafts, 5,238 essence, +205 in every RUN-ORDER.md
-  scenario row). The nature altar below is the every-line-held baseline and a sensitivity row; the
-  module takes `altar: 'body'` as well.
+  scenario row). The nature altar below is the every-line-held baseline and a sensitivity row. The
+  module therefore needs `altar: 'body'` beside `'air'` and `'nature'`.
 - **Postconditions:** Runecraft 44 (S06) or 99 (S21). Items out: the rune stacks.
 - **Ticks:** expected and best **1,186**: S06 **54** (7 x 7 measured, 8 of 8 at air 1 with a level-up
   every craft, + a 5-tick session trade) and S21 **1,132** (161 x 7 + 5; 13 of 14 measured cycles at
