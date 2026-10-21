@@ -132,7 +132,7 @@ if (mode === 'split') {
         }
         const nRelogs = relogs.length;
         const level0 = receiver.sdk.getSkill('Cooking')?.baseLevel;
-        let s;
+        let s: Awaited<ReturnType<typeof splitDelivery>>;
         try {
             s = await splitDelivery(R, maker.name, { loginTick, first: firsts[k] ?? first, arming, relog: relogReceiver });
         } catch (e) {
