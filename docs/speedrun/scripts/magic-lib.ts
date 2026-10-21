@@ -89,6 +89,15 @@ export function xpRecorder(sdk: BotSDK, skill: string) {
     };
 }
 
+/** Varrock west bank, inside, next to the booths (LAB.md's example tile). */
+export const VARROCK_WEST_BANK = { x: 3185, z: 3436 };
+
+/** Leave Tutorial Island (fresh lab accounts start there) and stand in Varrock west bank. */
+export async function prepare(sdk: BotSDK, bot: BotActions): Promise<void> {
+    await bot.skipTutorial().catch((e: any) => console.log('skipTutorial:', e?.message ?? e));
+    await tele(sdk, VARROCK_WEST_BANK.x, VARROCK_WEST_BANK.z);
+}
+
 /** Wipe inventory and worn items, then optionally wield a staff. */
 export async function freshKit(sdk: BotSDK, bot: BotActions, staff?: string): Promise<void> {
     await cheat(sdk, 'clearinv inv');

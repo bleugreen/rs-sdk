@@ -11,7 +11,7 @@
 // (OpHeldTHandler refuses OPHELDT while the player is delayed) costs nothing, so this measures the
 // server's own floor. burst > 1 shows whether several casts can land in one tick.
 import { runScript } from '../../../sdk/runner';
-import { cheat, freshKit, histogram, log, nextTick, tick, waitTicks, xpRecorder } from './magic-lib';
+import { cheat, freshKit, histogram, log, nextTick, prepare, tick, waitTicks, xpRecorder } from './magic-lib';
 
 type Spell = {
     level: number;
@@ -43,6 +43,7 @@ const CASTS = Number(castsArg);
 const BURST = Number(burstArg);
 
 await runScript(async ({ bot, sdk }) => {
+    await prepare(sdk, bot);
     const rec = xpRecorder(sdk, 'Magic');
     const summary: string[] = [];
     for (const name of names) {
