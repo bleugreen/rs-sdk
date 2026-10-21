@@ -195,7 +195,7 @@ them, contention, overrun share, relogs, restarts) are in section 6 and the tota
 Hand-off IDs (H1-H23, H4.x, H14.x) are SUPPLIES.md's. "Unsafe" means a logout there loses progress
 (Q§4 and the step's own document); every other boundary is logout-safe, and logout is always refused
 within 16 ticks of combat (m, PRIM §8). Quest state after a restart is read through rs/114's
-`speedrun/lib/quests.ts` ([quests/quest-state.md](quests/quest-state.md), pending rs/114's merge);
+`speedrun/lib/quests.ts` (`questStatus`, `questStage`, `readQuestStage`, `requireQuestStage`, `questDone`, `questPoints`; stage tables in `speedrun/data/quest-stages.ts`; [quests/quest-state.md](quests/quest-state.md); on main, PR #123);
 each step's resume entry is in MAN.
 
 No amulet of glory is used anywhere: rs/123 found charged glories unobtainable, and every leg below is
@@ -215,9 +215,9 @@ RT's measured no-glory method (RT, "No amulet of glory").
 | T05-06 | M | Doric to inside the air altar room (2841,4830) | Falador teleport, run 52-54, talisman entry 4 | | 61 m (RT `L05`: 62, 60) | 61 m | | | safe | | |
 | S06 | I | air altar, stand (2844,4832) | Runecraft, 7 crafts of 27, tuned 7-tick cycle | Runecraft 1-44 | 54 i (7 x 7 m, 8 of 8 at air 1 with a level-up every craft, LU§2; + 5 session trade) | 54 i | in: H5 (189 essence, air talisman); out: several hundred air runes | 7 altar givers (Ashburn, rs/117), logged in before SCORED | safe in the room | robust 8-tick: 61; stock 15-tick: 110 | R12 |
 | T06-07 | M | room to the Taverley normal trees (2912,3495) | Falador teleport + run | | 74 m (RT `L06`: 75, 73) | 74 m | | | safe | | |
-| S07 | I | normal trees (2912,3495) to 15; oaks from (2914,3494) 15-73; willows from (2920,3406) 73-99 | Woodcutting, in-page knife loop, **bury variant** (S25b's bones ride it, below) | Woodcutting 1-99 | **knife 3,390 i · plain 3,881 i** (SK:woodcutting §2's 3,958 less the model's ~77 ticks of level-ups, measured 0 when answered on the next label, LU§2-§3; knife at M0550's in-page willow 4.83 against plain 5.53 ticks per log) | knife 3,390 i | in: rune axe, knife, 1 normal log (H4); bone loads H4.1-H4.16 | bone giver (Ashburn, rs/117) on the next tile; a bbs lookout scouts the oaks | safe at any cycle boundary | gate fails: plain 4-tick loop with the bury (3,881) | contention (R9); overrun (R2); the willow rate (O19); the bury variant is lab-only, lite client (R15) |
+| S07 | I | normal trees (2912,3495) to 15; oaks from (2914,3494) 15-73; willows from (2920,3406) 73-99 | Woodcutting, in-page knife loop, **bury variant** (S25b's bones ride it, below) | Woodcutting 1-99 | **knife 3,390 i · plain 3,881 i** (SK:woodcutting §2's 3,958 less the model's ~77 ticks of level-ups, measured 0 when answered on the next label, LU§2-§3; knife at M0550's in-page willow 4.83 against plain 5.53 ticks per log) | knife 3,390 i | in: rune axe, knife, 1 normal log (H4); bone loads H4.1-H4.16 | bone giver (Ashburn, rs/117) on the next tile; a bbs lookout scouts the oaks | safe at any cycle boundary | gate fails: plain 4-tick loop with the bury (3,881) | contention (R9); overrun (R2); the willow rate (O19); the bury's trades in the page (R15) |
 | T07a | I | oak tile to willow tile (88 tiles) | run, inside S07 | | 46 i (0.51 ticks per route tile, PRIM §2) | 46 i | | | safe | | |
-| S25b | I | **inside S07**, at the oak tile, then the willow tile | **moved from the booth into S07**: bury 355 dragon bones in the knife loop, the re-click moved to the roll tick (BP§2) | Prayer 1-~94 | 110 i (BP§6: 0.23 S07 ticks per bone m, oak, 357 bones, almost all of it the 23-bone trades; ~0.31 with willow-style bounces and margin) | 80 i (16 loads x 5 m, BP§3) | in: H4.1-H4.16 (23 unnoted per load); 0.298 bones per tick m, so ~1,190 of S07's ticks carry them | bone giver beside the tree requests first, re-requests the tick after a refusal (BP§3) | safe between loads | the plain loop with the bury (~110 / ~75, BP§6); the Mining `stay2` lap (up to ~200 bones, BP§4); the booth at 2.07 per bone | dragon bones (R6); level-ups free (57 per 600 ticks, 161 of 164 roll gaps kept, BP§2) |
+| S25b | I | **inside S07**, at the oak tile, then the willow tile | **moved from the booth into S07**: bury 355 dragon bones in the knife loop, the re-click moved to the roll tick (BP§2) | Prayer 1-~94 | 110 i (the bury itself costs the loop nothing measurable in the tab: 3.21 against 3.30 ticks per roll, 0.329 bones per tick, m, #124, SK:woodcutting §9 on main; the cost is the 16 trades and restarts, 0.23 ticks per bone m on the lite client, BP§6, ~0.31 with willow-style bounces and margin) | 80 i (16 loads x 5 m, BP§3) | in: H4.1-H4.16 (23 unnoted per load); 0.329 bones per tick in the tab without trades (m, #124), ~0.31 with them (i, SK:woodcutting §9), so ~1,150 of S07's ticks carry them | bone giver beside the tree requests first, re-requests the tick after a refusal (BP§3) | safe between loads | the plain loop with the bury (~110 / ~75, BP§6); the Mining `stay2` lap (up to ~200 bones, BP§4); the booth at 2.07 per bone | dragon bones (R6); level-ups free (57 per 600 ticks, 161 of 164 roll gaps kept, BP§2) |
 | T07-08 | M | willows to Edmond (2568,3334) | Camelot teleport + run, 248 tiles | | +2 m (RT `L07` 131 against Plague City's 129) | +2 m | | | safe | | |
 | S08 | M | Camelot in; Ardougne scroll read at the end | Plague City | Mining 49-64 | 620 m (Q§3) | 564 i | in: H6; out: 1 QP, the Ardougne teleport | trade giver | safe | - | needs Magic 45 and 51 from S04 |
 | T08-09 | M | Edmond to the zoo iron (2604,3235) | Ardougne teleport + run | | 50 m (RT `L08t`) | 50 m | | | safe | | |
@@ -272,7 +272,8 @@ RT's measured no-glory method (RT, "No amulet of glory").
 
 The last row is the step figures (32,099 expected, 30,655 best) and the legs (1,382 both: 1,157.5 m
 and 224.5 i, net of the arrival rows the quests count; section 6). S25's 1,488 / 1,384 is S25a + S25c +
-S25d + S25e.
+S25d + S25e. The step figures' expected sum (32,099) and section 7's best total (30,655 + 1,382 legs + 47
+hand-offs + 15 level-up pages = 32,099) are equal by coincidence.
 
 ## 3. Dependency graph (b)
 
@@ -416,7 +417,7 @@ restart is entered through `runResumable` (`speedrun/runner/resume.ts`), which c
 
 | Host | Free capacity | Planned use | Rule that binds | Basis |
 |---|---|---|---|---|
-| Knife Woodcutting: S07 | one bury per 3-tick cycle once the re-click moves from R+1 to R+2 (the bury on R, the click landing on R+3) | **355 dragon bones** (S25b): 0.298 bones per tick, ~1,190 of S07's ticks; 0.23 ticks per bone, the 23-bone trades | 4 events on R, 1 on R+2; the helper requests while SCORED holds 2 bones; a bury never shares R+1 with a page (BP§2-§3) | BP, measured on oak and willow (lite client) |
+| Knife Woodcutting: S07 | one bury per 3-tick cycle once the re-click moves from R+1 to R+2 (the bury on R, the click landing on R+3) | **355 dragon bones** (S25b): 0.329 bones per tick in the tab (#124), ~0.31 with the trades, ~1,150 of S07's ticks; 0.23 ticks per bone, the 23-bone trades | 4 events on R, 1 on R+2; the helper requests while SCORED holds 2 bones; a bury never shares R+1 with a page (BP§2-§3) | BP, measured on oak and willow (lite client); #124, measured in the page on oak (SK:woodcutting §9 on main) |
 | Knife Mining: S09 | none on the planned lap (0 wait ticks at respawn 13, m); the `stay2` lap takes one bone per 15 ticks at 3.052 ticks per ore | reserve only: up to ~200 bones if S07 cannot carry them | a bury on a move costs 2 ticks; the 3-tile stay failure is unexplained (BP§4) | BP§4 |
 | Knife fly fishing: S22 | none: a bury breaks the lock (3 catches in 400 ticks, m) | nothing | | BP§2 |
 | Plain loops, if the run gate turns the knife off | 4-tick Woodcutting: 0.230 bones per tick m | the same 355 bones on the plain clock: 0.12-0.20 per bone against the plain column (~110 / ~75) | the bury goes in the roll gap | BP§1, §6 |
@@ -554,7 +555,7 @@ SF priced each at-risk line against v1. Three of its lines change here.
 
 - **Dragon bones.** A missing dragon bone no longer costs 2.07 booth ticks: the bones ride S07 at
   ~0.31 ticks per bone (0.225 best), which holds up to ~1,010 non-stun bones (S07's 3,390 knife ticks
-  at 0.298 bones per tick, BP§1). The next ~200 go to the Mining `stay2` lap at ~0.26 (BP§4), and
+  at 0.298 bones per tick, BP§1; #124's in-tab ~0.31 with trades would raise it to ~1,050, a few ticks in the scenarios below, which keep BP's figure). The next ~200 go to the Mining `stay2` lap at ~0.26 (BP§4), and
   only then to the booth. The stuns take ~200 of any type. Bones of any kind bury in the same op, so
   the cost per bone is the same (i).
 - **The rune axe.** SF§13's ratios (1.13 adamant, 1.28 mithril) on S07's 3,390: +441 / +941 knife,
@@ -646,11 +647,11 @@ actions against ~650 slots), so the tick delta against the plan is 0 (i, SP§2, 
 | R8 | **Wilderness player killers** | S14 (level 37), S16 (deep Wilderness), S27 (level 37), S17 (levels 50-56, now the last step), and the legs T13-14, T14-15 to level 20, T26-27, T27-17 | a death keeps 3 items: the cannon set and the kit are lost; ~200-350 to regear and return (e); a death in S17 after its last level-up costs nothing | short exposures; a bbs lookout reports players in view before SCORED enters (no following or blocking, HELPERS.md etiquette); Protect from Melee available everywhere from S07 on (Prayer ~94); Nulodion replaces a lost cannon for its owner (SF§9); fallback cannon site the Battlefield of Khazard; for S17, relay or Gnome-course laps are the only alternatives (SK:agility). Aggressive NPCs took up to 31 of 42 HP on the Wilderness legs (RT§2): carry food |
 | R9 | **Contention** at the zoo iron and the Taverley oaks and willows | S09, S07 | +150 each expected, "a few hundred" per site move | a scout helper checks the site before SCORED arrives; second sites: the iron cluster north of East Ardougne and SK:woodcutting §6's tiles. The S07 bone giver stands on the next tile, so a second tree also needs a free tile beside it |
 | R10 | **Sea Slug's client dependency** (bridged doors) | S19 | without it the quest cannot finish; Sheep Shearer (~68 i) replaces the point and Fishing starts lower | verified on the run client by rs/116 (local engine, not demo-confirmed); wait for the door loc after a teleport; if it fails on the demo, swap in Sheep Shearer before S26 and re-cost S22 |
-| R11 | **No spare quest point** at the Champions' Guild door: exactly 32 (Q§7) | S26 | any lost point blocks Dragon Slayer and the finish | check `questPoints` after S24 (rs/114, pending its merge); Sheep Shearer (~68 i) or Imp Catcher (~94 i) is the replacement |
+| R11 | **No spare quest point** at the Champions' Guild door: exactly 32 (Q§7) | S26 | any lost point blocks Dragon Slayer and the finish | check `questPoints(state)` after S24 (`speedrun/lib/quests.ts`, on main, PR #123); Sheep Shearer (~68 i) or Imp Catcher (~94 i) is the replacement |
 | R12 | **Runecraft cycle order**: the tuned cycle schedules the giver's packets too, so the giver must be processed before SCORED (IP bucket, then login order, r) | S06, S21 | robust 8-tick +1 per craft (+168 if all); a relayed giver: the stock 15-tick cycle (+1,344) | altar givers on the run machine through rs/117, logged in before SCORED and staying in; a new SCORED session (a restart) cancels armed givers (rs/117's cue contract), and the givers must be back in before SCORED |
-| R13 | **Quest steps in the browser client**: every quest figure was taken on the lite client | S05-S26 | unknown; the fixed-column expected assumes one tick per page | rehearse each quest script on the run configuration; S15 and S19 are verified on the run client on a local engine (rs/116); quest state and resume through rs/114's `quests.ts` |
+| R13 | **Quest steps in the browser client**: every quest figure was taken on the lite client | S05-S26 | unknown; the fixed-column expected assumes one tick per page | rehearse each quest script on the run configuration; S15 and S19 are verified on the run client on a local engine (rs/116); quest state and resume through `speedrun/lib/quests.ts` (`readQuestStage`, `requireQuestStage`; on main, PR #123) |
 | R14 | **SCORED's name exposed** in the repository, logs or game chat | everywhere | a named account before the run invites interference and breaks the naming rule | SCORED never appears by name in the repository, commits or documents; rs/117's cue carries a hash, never the name; the ambassador (rs/58) will not name the scored account in game chat before the run (M0606) |
-| R15 | **The S07 knife-and-bury loop is lab-only**: measured on the lite client against a local engine, never in the page (BP§7; C#21) | S07 / S25b | +263 if the bones go to the Mining `stay2` lap and the booth; +625 all at the booth | cairn://p/rs/137 builds the in-page bury variant; the plain loop with the bury is its fallback; acceptance before the run (MAN entry 3) |
+| R15 | **The S07 bury's trades in the page**: the bury itself is measured in the tab (`knife-cycle` with `bury` and `trees`, 0.329 bones per tick in four runs, every bury landed, no measurable cost to the loop; m, #124, SK:woodcutting §9 on main). The stop, `receiveFrom` and restart for each 23-bone load is measured only on the lite client (BP§3), and the restart re-anchors on observed xp | S07 / S25b | a slow restart: a few ticks per load, ~+30 over 16 loads (i); the variant failing on the demo: +263 if the bones go to the Mining `stay2` lap and the booth, +625 all at the booth | acceptance with a real helper trading 23-bone loads (MAN entry 3); the plain loop with the bury is its fallback; always pass `trees` (without it the rate falls to 0.27-0.28, m, #124) |
 | R16 | **The stun-pack helper on the demo**: the lab teleported the helper beside SCORED (57 times in one run); a helper 28 tiles behind cost 18 dry stuns (SP§5, §12). An offer of an unstackable item in more than one press lands only the first (rs/136) | S18 | dry stuns lose their bones (to S07 at ~0.31 each) and slow nothing else; a late top-up at k = 4 costs ~1 | the helper keeps within 3 tiles at all times; SCORED tops up early (6 bones left) when the helper is far; one press per item; rs/136 fixes `trade.ts` |
 
 ## 9. Ordering questions
@@ -695,7 +696,7 @@ actions against ~650 slots), so the tick delta against the plan is 0 (i, SP§2, 
   unavailable glory (166-169) and the Port Sarim ship (311-312) (RT§6).
 - **O23, Crafting riding Prayer's 2-tick bury cadence at the booth** (C#10, cairn://posts/381):
   moot while the bones ride S07, because S25 holds no bones. It becomes a lead again only if the
-  S07 bury variant fails and the bones return to the booth (R15).
+  S07 bury variant fails on the demo and the bones return to the booth (R15).
 - **O24, the 2-tick Woodcutting flinch**: worth 0 on the demo (rs/128, merged as #110; ARC), so the
   Woodcutting route is unchanged.
 - Carried from v1: Cooking at Varrock west behind planned relogs, never first (a fresh account's
@@ -721,7 +722,7 @@ actions against ~650 slots), so the tick delta against the plan is 0 (i, SP§2, 
 | O25 | A door-free route for T18-19 | 49 m; ~31 i | a measured route from the knights | the legs builder (MAN entry 11) |
 | O26 | T14-15 end to end | 173.5 i (a composite); the end-to-end no-glory variants measured 187-188 | one end-to-end run | the legs builder |
 | O27 | Food and potions now that Prayer is ~94 from S07 on (H7's prayer potions dropped; MM's 6 and the Mage Arena's 2 kept as insurance) | not priced | the quests' fights at Prayer ~94 | rs/103 coordinator |
-| O28 | The S07 knife-and-bury loop in the page | 110 / 80 (lite, lab) | rs/137's in-page variant at the oak and willow tiles | rs/137 |
+| O28 | The S07 bury's trades in the page (**the loop itself is settled**: 0.329 bones per tick in the tab at no measurable cost, m, #124) | 110 / 80 (BP's trade cost, lite) | a real helper trading 23-bone loads through stop, `receiveFrom` and restart, in the tab | the S07 builder (MAN entry 3), rs/117 (the giver) |
 | O29 | H1 with rings (15 sapphires enchanted on T01-02) | not in either column; -~30 i | the starter junk dropped on the landing before H1, and the ride measured | the hand-off builder (MAN entry 33) |
 | O30 | The S07 bone giver's re-request on a level-up bounce | 3 of 22 willow trades took 30 ticks (BP§3); 1-2 i with a next-tick re-request | the helper's retry measured | rs/117 (the giver), rs/137 |
 
@@ -737,7 +738,7 @@ per-quest documents and [quests/primitives.md](quests/primitives.md);
 [research/competitors/hiscore-timestamps.md](research/competitors/hiscore-timestamps.md);
 [speedrun/README.md](../../speedrun/README.md), `speedrun/lib/hostgate.ts`, `hostgate-verdict.ts`,
 `demo-status.ts` and `speedrun/runner/resume.ts`. On other branches: `HELPERS.md`, `helpers/wine.md`
-and `helpers/bones.md` (cairn://p/rs/41/1/coordinator); rs/114's `quests/quest-state.md` (PR #123);
+and `helpers/bones.md` (cairn://p/rs/41/1/coordinator); rs/114's `speedrun/lib/quests.ts`, `speedrun/data/quest-stages.ts` and `quests/quest-state.md` (on main, PR #123); rs/137's `knife-cycle` `bury` and `skills/woodcutting.md` section 9 (on main, PR #124);
 rs/124's bow measurement (relayed on cairn://p/rs/111, comment 19). The main thread's arc
 (cairn://p/rs/main/arc), its 04:20 tally, tenet 12 (cairn://p/rs/tenets/12), and main's notes relayed
 by cairn://p/rs/103/1/coordinator and on cairn://p/rs/111. Stock figures: cairn://p/rs/41 comments
