@@ -4,6 +4,7 @@
 # scripts in order, then stops everything.
 #
 #   [NODE_TICKRATE=300] [LAB_HELPERS="srlab2"] [LAB_RUNNERS=0] \
+#     [WEB_PORT=9300 WEB_MANAGEMENT_PORT=9301 HISCORES_WEB_PORT=9302 NODE_PORT=44000 AGENT_PORT=8300] \
 #     speedrun/lab/lab.sh <bot> <script.ts>[:arg:arg] ...
 #
 # Each script runs as `bun <script> <bot> <args...>`; arguments follow the
@@ -22,7 +23,8 @@ mkdir -p "$LOG"
 export NODE_TICKRATE=${NODE_TICKRATE:-300}
 export PROFANITY_FILTER=false NODE_PROFANITY_FILTER=false
 
-export WEB_PORT=9300 WEB_MANAGEMENT_PORT=9301 HISCORES_WEB_PORT=9302 NODE_PORT=44000 AGENT_PORT=8300
+# Overridable so several labs can run side by side (each needs its own block).
+export WEB_PORT=${WEB_PORT:-9300} WEB_MANAGEMENT_PORT=${WEB_MANAGEMENT_PORT:-9301} HISCORES_WEB_PORT=${HISCORES_WEB_PORT:-9302} NODE_PORT=${NODE_PORT:-44000} AGENT_PORT=${AGENT_PORT:-8300}
 PIDS=()
 cleanup() { for p in "${PIDS[@]}"; do kill "$p" 2>/dev/null; done; sleep 1; for p in "${PIDS[@]}"; do kill -9 "$p" 2>/dev/null; done; }
 trap cleanup EXIT
@@ -46,8 +48,8 @@ for b in "$BOT" ${LAB_HELPERS:-} ${LAB_BOTS:-}; do
     if [ ! -f "$ROOT/bots/$b/bot.env" ]; then
         (cd "$ROOT" && bun bots/create-bot.ts "$b" --local --no-chat > /dev/null)
     fi
-    sed -i.bak -e 's#^SERVER=.*#SERVER=localhost:9300#' -e 's#^GATEWAY_URL=.*#GATEWAY_URL=ws://localhost:8300#' -e 's#^TELEMETRY=.*#TELEMETRY=false#' "$ROOT/bots/$b/bot.env"
-    grep -q '^GATEWAY_URL=' "$ROOT/bots/$b/bot.env" || echo 'GATEWAY_URL=ws://localhost:8300' >> "$ROOT/bots/$b/bot.env"
+    sed -i.bak -e "s#^SERVER=.*#SERVER=localhost:$WEB_PORT#" -e "s#^GATEWAY_URL=.*#GATEWAY_URL=ws://localhost:$AGENT_PORT#" -e 's#^TELEMETRY=.*#TELEMETRY=false#' "$ROOT/bots/$b/bot.env"
+    grep -q '^GATEWAY_URL=' "$ROOT/bots/$b/bot.env" || echo "GATEWAY_URL=ws://localhost:$AGENT_PORT" >> "$ROOT/bots/$b/bot.env"
 done
 for b in $RUNNERS; do
     (cd "$ROOT/server/webclient" && exec bun src/lite/runner.ts "$b") > "$LOG/runner-$b.log" 2>&1 &
