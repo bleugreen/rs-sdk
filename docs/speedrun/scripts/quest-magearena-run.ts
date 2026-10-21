@@ -35,8 +35,8 @@ await runScript(async ({ bot, sdk }) => {
     const FROM = process.env.FROM ?? 'kolodion';
     let t0 = clock(sdk);
     let tDone = t0;
-    const magicXp0 = sdk.getSkill('Magic')?.experience ?? 0;
-    const hpXp0 = sdk.getSkill('Hitpoints')?.experience ?? 0;
+    let magicXp0 = sdk.getSkill('Magic')?.experience ?? 0;
+    let hpXp0 = sdk.getSkill('Hitpoints')?.experience ?? 0;
     if (FROM === 'kolodion') {
     if (process.env.RESET === '1') await cheat(sdk, 'setvar magearena 0');
     for (const it of sdk.getEquipment()) await bot.unequipItem(it);
@@ -57,6 +57,8 @@ await runScript(async ({ bot, sdk }) => {
     await waitTicks(sdk, 5);
 
     // ---- segment 1: talk to Kolodion until the arena teleport ----
+    magicXp0 = sdk.getSkill('Magic')?.experience ?? 0;
+    hpXp0 = sdk.getSkill('Hitpoints')?.experience ?? 0;
     t0 = clock(sdk);
     if (PRAYER >= 37) await bot.activatePrayer('protect_from_magic');
     const kol = sdk.findNearbyNpc(/^Kolodion$/);
