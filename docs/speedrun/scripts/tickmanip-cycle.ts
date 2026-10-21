@@ -259,8 +259,9 @@ await runScript(async ({ bot, sdk }) => {
         fire(s.tick, `button ${SHAFTS_BUTTON}`, sdk.sendClickComponent(SHAFTS_BUTTON) as Promise<{ success: boolean; message?: string }>);
         return true;
     };
-    // When the product is the knife's own log, keep a few for the starter.
-    const keepProducts = technique === 'knife' && method.product.test('Logs') ? 3 : 0;
+    // When the product is the knife's own log, keep a few for the starter (in every technique,
+    // so a plain block leaves logs for the knife block after it).
+    const keepProducts = method.product.test('Logs') ? 3 : 0;
     const droppable = (s: BotWorldState) => s.inventory.filter(i => method.product.test(i.name)).slice(keepProducts);
     const dropOne = (s: BotWorldState) => {
         const p = droppable(s)[0];
