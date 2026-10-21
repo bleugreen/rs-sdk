@@ -125,6 +125,9 @@ The trial: on a fresh tick, walk one tile, and count the ticks until the step sh
 | Quebec (Azure CanadaEast) | private relay | 03:05 | iad, TCP 24 ms | none | 1,649-1,653 | 60 | 36 | 24 | 0 | rs/86 run 6 |
 | Ashburn | direct | 03:17 | iad | none | 1,659-1,668 | 60 | 60 | 0 | 0 | [rs/86 run 7](https://github.com/bleugreen/rs-sdk/actions/runs/39583303736) |
 | Ashburn | private relay | 03:17 | iad | none | 1,659-1,668 | 60 | 40 | 20 | 0 | rs/86 run 7 |
+| Ashburn | direct | 04:04 | iad | none | 1,673 | 60 | 60 | 0 | 0 | [rs/98 pair](https://github.com/bleugreen/rs-sdk/actions/runs/39589100761) |
+| Ashburn | private relay, **rs/98's fixed lite runner** (agent/rs-98-builder-0@589f7823, PR #78) | 04:06 | iad | none | 1,673 | 60 | **60** | 0 | 0 | rs/98 pair |
+| Home (fedora) | direct, +0 ms | 04:00 | lax | 56-86 ms | 1,623-1,675 | 15 | 1 | 14 | 0 | fedora hour sampler 1; probe turnaround p50 0.3 ms (clean) |
 | Home (Mac) | direct, +0 ms, **host loaded** | 03:46 | lax | 56-86 ms | 1,674 | 15 | 0 | 14 | 1 | hour sample; probe turnaround p50 10 ms, p90 76 ms (normally under 1 ms), so not a clean reading |
 | Ashburn VM (operator) | direct and relay | pending | | | | | | | | placeholder |
 | Browser tab, overlay path (rs/82's branch) | browser | pending | | | | | | | | rs/95 |
@@ -223,7 +226,8 @@ Home (Mac or fedora, Los Angeles edge) at about 1,650 online, and what changes i
 | Input read | once, at cycle start, after `processWorld` | same | fixed | `World.ts` |
 | Output flush | once, near cycle end | same | fixed | `World.ts` |
 | Client turnaround, direct in-process | 0.3-0.6 ms p50, under 25 ms max | same | fixed | probe `reactMs` |
-| Client turnaround, private SDK relay | 73 ms p50 (p10 46, p90 511) | same | fixed by client code; tails by host load | relay trace below |
+| Client turnaround, private SDK relay, before rs/98's fix | 73 ms p50 (p10 46, p90 511) | same | fixed by client code; tails by host load | relay trace below |
+| Client turnaround, private SDK relay, after rs/98's fix | 1.7 ms p50 (2.0 p90) frame to wire, local lab; state collection (3 ms p50, 40 ms p90) now runs after the send | same | fixed by client code | "After the relay fix (rs/98)" below |
 | Public gateway wait | +340-2,000 ms per request | same | load on the demo | section 4 |
 
 **Threshold for a 1-tick reaction:** client turnaround `r` < `W - RTT`. At home that is 0-25 ms on
@@ -281,6 +285,14 @@ same paired Ashburn sample to confirm. The browser tab has the same class of del
 executes queued actions in the draw loop (`Client.gameDraw`, `BotOverlay.tick`, about 14-20 ms
 frames) and publishes through the engine's `/gateway`, which is why main chose in-page programs
 for the reactive steps (section 7).
+
+### After the relay fix (rs/98)
+
+rs/98 made the three changes above. The lite runner executes a gateway action on arrival and flushes the game socket before it collects and publishes state. The session drains on the socket's message event. The 20 ms client cycle is kept for the frame counter, keepalive and idle watchdog only.
+
+Local traced lab (bgsrv-mac, NODE_TICKRATE=300, this section's tracer, 60 trials): frame arrival to packet on the wire went from 56.4 ms p50 (63.3 p90) on main to 1.7 ms (2.0). The action-wait and flush-wait hops fell from about 21 ms each to 0.
+
+Ashburn pair (Azure eastus, edge iad, TCP p50 3 ms, 1,673 online, 04:04-04:06 PDT, lite_ref agent/rs-98-builder-0@589f7823; https://github.com/bleugreen/rs-sdk/actions/runs/39589100761): direct 60:0:0, relay **60:0:0**, against unfixed relay baselines of 32:28 (run 39579095329, 02:43) and 40:20 (03:17). SDK send resolve is 0 ms p50 and 2 ms max, down from 20. State collection (3 ms p50, 40 ms p90 on a loaded host) is now the only client-side cost between a frame and the reaction. It no longer sits between the action and the wire. It cost no tick in these 60 trials, but one sample can't rule out its tail; run-night re-measures keep testing it.
 
 ## 6. Burst and blind sending
 
@@ -395,6 +407,7 @@ the gate would correctly keep the knife off on trees and fly.
 | 02:43 | Ashburn, direct session | ~1,655 | p50 245 / p90 348 / max 879 ms | rs/86 run 4 |
 | 01:54-02:45 | GitHub runners, relay publication | 1,549-1,663 | p10 224-245 / p50 289-306 / p90 368-388 / max 486-670 ms | rs/86 runs 1-4 |
 | 03:47-03:57 | Mac, one session, 10 min, no input | 1,576-1,680 | 179 / 299 / 404 / 803 ms; 210 of 2,021 intervals over 400 ms (10%) | hour sample |
+| 04:00-04:12 | fedora, one session, 10 min (load 19 of 32 cores) | 1,623-1,675 | 171 / 291 / 394 / 794 ms; 194 of 2,071 over 400 ms (9%). Direct reactions from home: +0 ms 1/14/0, +25 ms 1/14/0 | fedora sampler 1 |
 
 The interval p10 of 118 ms from home is the engine's catch-up after a long tick (`World.ts` lets
 the next cycle start early to recover up to two ticks of backlog). Samples at other hours are
@@ -418,9 +431,12 @@ can watch (VNC or RDP), Chrome, and the client watchdog from `speedrun/lib` (rs/
 **Route.** As decided (section 7): our webclient served on the run host, game socket to
 `wss://rs-sdk-demo.fly.dev/`, bot overlay to a loopback gateway, reactive steps in-page on the
 game socket, non-reactive steps through the SDK. Never route anything through the public gateway.
-The decided route alone does not make reactive steps fast if they are driven through the SDK: the
-relay from Ashburn lands only about half its reactions on the next tick (section 5). Reactive
-steps must run in-page, unless the relay fix in section 5 is made and measured.
+The decided route alone does not make reactive steps fast if they are driven through the SDK with
+the unfixed lite runner: that relay from Ashburn landed only about 60% of its reactions on the
+next tick (section 5). rs/98's fixed lite runner landed 60 of 60 from Ashburn through the relay,
+so SDK-driven reactive steps are viable on that client; the browser tab's overlay has the same
+class of delay and is not fixed by it, so the tab's reactive steps still run in-page unless main
+decides otherwise.
 
 **What it saves.** Per reactive step, the direct path from Ashburn turns a 2-3 tick reaction (home
 through the relay) into 1. On the route:
@@ -456,9 +472,9 @@ machine is the stand-in for items 3 and 4.
 ## 11. Open questions
 
 1. **The Ashburn VM row** and the Ashburn burst and blind distributions (rs/86 is running them).
-2. **The relay fix's effect** (section 5) is predicted, not measured. A paired Ashburn sample of
-   the lite runner with the three changes would settle whether relay-driven TypeScript step
-   scripts can match the in-page programs.
+2. **The relay fix's tail.** rs/98's fixed lite runner landed 60 of 60 from Ashburn (section 5).
+   State collection's tail (40 ms p90 on a loaded host) is the remaining risk; run-night
+   re-measures keep testing it.
 3. **Other hours.** The reaction distribution and tick intervals at two or three other hours and
    player counts. The sampler command: `demo-latency-probe.ts --phases=react,sample
    --react-delay=0,25 --trials=15 --minutes=10`.
