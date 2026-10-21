@@ -739,7 +739,17 @@ export class Runes {
                 log('lundail: in the Wilderness', { at: { x: this.state.player!.worldX, z: this.state.player!.worldZ }, carried: this.coins() });
             }
             if (!inCellar(this.state)) {
-                if (inKeep(this.state.player!.worldX, this.state.player!.worldZ)) await this.crossWeb('north');
+                if (inKeep(this.state.player!.worldX, this.state.player!.worldZ)) {
+                    try {
+                        await this.crossWeb('north');
+                    } catch (e) {
+                        // Don't linger in the Wilderness: leave by the lever and report.
+                        await this.walk(PLACES.keepLever, 'the Deserted Keep lever');
+                        await bot.interactLoc(/^lever$/i, /pull/i);
+                        await waitUntil(sdk, s => !!s.player && s.player.worldZ < 3520, { maxTicks: 15 });
+                        throw e;
+                    }
+                }
                 await this.walk(PLACES.arenaLadder, 'the Mage Arena cellar ladder');
                 await this.climb(/^ladder$/i, /climb-down/i, inCellar, 'climb down to Lundail');
             }
