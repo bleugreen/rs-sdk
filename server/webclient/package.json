@@ -9,7 +9,8 @@
     "scripts": {
         "build": "bun run bundle.ts",
         "build:dev": "bun run bundle.ts dev",
-        "watch": "bun --watch run bundle.ts dev"
+        "watch": "bun --watch run bundle.ts dev",
+        "proxy": "bun run proxy.ts"
     },
     "dependencies": {
         "fflate": "^0.8.2"
