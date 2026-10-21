@@ -4,7 +4,16 @@
 //       [--level=L] [--phase=P] [--maxticks=T]
 //
 // method:    wc (willow, Draynor), fly (lure, Barbarian Village), cage (lobster, Catherby)
-// technique: base (click once, re-click only when idle) or eat (one food bite per cycle)
+// technique: base (click once, re-click only when idle), eat (one food bite per cycle) or
+//            knife (knife on logs + the arrow-shafts button, sent blind in the same tick)
+//
+// Knife technique: the fletching writer runs after the menu choice
+// (cut_logs.rs2:80-86: if %action_delay < map_clock, set map_clock+2), so the knife-on-logs
+// packet, the skill_multi3:make1_a button (component 8889, arrow shafts from normal logs,
+// Fletching 1) and the target click all go out together. The server registers the resume
+// buttons as soon as the knife script suspends, so the blind button is accepted
+// (IfButtonHandler.ts:20,29), and the click's closeModal clears the weak queue before the
+// fletch runs (Player.ts:817-820): no log is used. It replaces the eat in the schedule below.
 //
 // Eat technique (docs/speedrun/skills/tick-manipulation.md): eating ordinary food runs
 // %action_delay += 3 (consume.rs2) from an inventory op, with no menu. Sent on the tick
@@ -68,8 +77,8 @@ const METHODS: Record<string, Method> = {
 };
 
 const method = METHODS[methodName];
-if (!method || (technique !== 'base' && technique !== 'eat')) {
-    console.error(`unknown mode ${mode}; methods ${Object.keys(METHODS).join(', ')}; techniques base, eat`);
+if (!method || !['base', 'eat', 'knife'].includes(technique!)) {
+    console.error(`unknown mode ${mode}; methods ${Object.keys(METHODS).join(', ')}; techniques base, eat, knife`);
     process.exit(2);
 }
 const lockWindow = Number(args.window ?? LOCK_WINDOW[methodName]);
@@ -87,6 +96,7 @@ await runScript(async ({ bot, sdk }) => {
     await sdk.sendSay(`::setstat ${method.skill} ${level}`);
     for (const [obj, n] of method.give) await sdk.sendSay(`::give ${obj} ${n}`);
     if (technique === 'eat') await sdk.sendSay(`::give ${FOOD_OBJ} 18`);
+    if (technique === 'knife') { await sdk.sendSay('::give knife 1'); await sdk.sendSay('::give logs 1'); }
     // A fresh account's tutorial exit can land after the first teleport; retry until we are there.
     const [, mx, mz, lx, lz] = method.tele.split(',').map(Number);
     for (let attempt = 0; attempt < 5; attempt++) {
@@ -146,6 +156,15 @@ await runScript(async ({ bot, sdk }) => {
         if (!food) { log(`T${s.tick} out of food`); return false; }
         const op = food.optionsWithIndex.find(o => /^eat$/i.test(o.text))?.opIndex ?? 1;
         fire(s.tick, `eat slot${food.slot}`, sdk.sendUseItem(food.slot, op));
+        return true;
+    };
+    const SHAFTS_BUTTON = 8889; // skill_multi3:make1_a (server/content/pack/interface.pack)
+    const knifeStart = (s: BotWorldState): boolean => {
+        const knife = invItem(s, /^knife$/i);
+        const logs = invItem(s, /^logs$/i);
+        if (!knife || !logs) { log(`T${s.tick} missing knife or logs`); return false; }
+        fire(s.tick, `knife slot${knife.slot} on logs slot${logs.slot}`, sdk.sendUseItemOnItem(knife.slot, logs.slot));
+        fire(s.tick, `button ${SHAFTS_BUTTON}`, sdk.sendClickComponent(SHAFTS_BUTTON) as Promise<{ success: boolean; message?: string }>);
         return true;
     };
     const dropOne = (s: BotWorldState) => {
@@ -266,11 +285,11 @@ await runScript(async ({ bot, sdk }) => {
             const k = d % 3;
             if (k === 0) {
                 actedTick = t;
-                eat(s);
+                if (technique === 'knife') knifeStart(s); else eat(s);
                 if (dropProducts) dropOne(s);
                 if (!method.clickOnRoll) click(s);
             } else if (k === 1) {
-                if (foodCount < 4) { actedTick = t; fire(t, 'give food', sdk.sendSay(`::give ${FOOD_OBJ} 14`)); }
+                if (technique === 'eat' && foodCount < 4) { actedTick = t; fire(t, 'give food', sdk.sendSay(`::give ${FOOD_OBJ} 14`)); }
             } else if (k === 2 && method.clickOnRoll) {
                 actedTick = t;
                 click(s);
