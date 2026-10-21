@@ -152,6 +152,7 @@ export class Lab {
         let replans = 0;
         const resends0 = this.resends;
         const eaten0 = this.eaten;
+        const doors0 = this.doors;
         const detail: string[] = [];
         try {
             for (let attempt = 0; attempt < 12; attempt++) {
@@ -191,12 +192,20 @@ export class Lab {
                             lq = q;
                             if (still >= 2) {
                                 // a click during a forced move is dropped: send it again; after 6 tries
-                                // accept stopping short (an NPC standing on the tile)
+                                // accept stopping short (an NPC standing on the tile). The planner treats
+                                // doors as open, so a stall next to a closed door opens it.
                                 if (walkResends >= 6) return true;
                                 walkResends++;
-                                this.resends++;
                                 still = 0;
-                                void this.sdk.sendWalk(target[0], target[1], true);
+                                const door = (this.sdk.getState()?.nearbyLocs ?? []).filter(l => /door/i.test(l.name) && l.options.includes('Open') && Math.max(Math.abs(l.x - q[0]), Math.abs(l.z - q[1])) <= 2).sort((a, b) => a.distance - b.distance)[0];
+                                if (door && walkResends <= 3) {
+                                    const op = door.optionsWithIndex.find(o => o.text === 'Open')!;
+                                    this.doors++;
+                                    void this.sdk.sendInteractLoc(door.x, door.z, door.id, op.opIndex).then(() => this.sdk.waitForTicks(2)).then(() => this.sdk.sendWalk(target[0], target[1], true));
+                                } else {
+                                    this.resends++;
+                                    void this.sdk.sendWalk(target[0], target[1], true);
+                                }
                             }
                             return false;
                         }, 60);
@@ -261,10 +270,12 @@ export class Lab {
         } finally {
             off();
         }
-        const row = { label, ticks: this.tick() - t0 - 3, tiles, crossings: crossings.length, crossingList: crossings, fails, replans, resends: this.resends - resends0, eaten: this.eaten - eaten0, detail, hpLost: hp0 - this.hp(), at: this.pos() };
+        const row = { label, ticks: this.tick() - t0 - 3, tiles, crossings: crossings.length, crossingList: crossings, fails, replans, resends: this.resends - resends0, eaten: this.eaten - eaten0, doors: this.doors - doors0, detail, hpLost: hp0 - this.hp(), at: this.pos() };
         this.record(row);
         return row;
     }
+    /** doors opened during travel */
+    doors = 0;
     /** food eaten while travelling (one click each; walking continues) */
     eaten = 0;
     async eatIfLow(threshold = 0.45) {
