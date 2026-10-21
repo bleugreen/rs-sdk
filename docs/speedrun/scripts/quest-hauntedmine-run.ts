@@ -528,6 +528,9 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         let msgSeen = sdk.getState()!.gameMessages.length;
         let approaches = 0;
         let levelUpPages = 0;
+        let lastXp = sdk.getSkill('magic')!.experience;
+        let castsNoXp = 0;
+        const badTiles = new Set<string>();
         let approachTiles = 0;
         const atk0 = sdk.getSkill('attack')!.experience;
         let lastSwing = t0;
@@ -595,8 +598,16 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
             wasVisible = true;
             if (STYLE === 'magic') {
                 const p = pos(sdk);
-                if (!castTile(boss.x, boss.z)(p.x, p.z)) {
-                    const path = npcAwarePath(sdk, castTile(boss.x, boss.z), boss.index);
+                // The SDK's line of sight can disagree with the server's: a
+                // tile where two casts earn no xp is struck off for this boss
+                // position and we move to another.
+                const xpNow = sdk.getSkill('magic')!.experience;
+                if (xpNow > lastXp) { lastXp = xpNow; castsNoXp = 0; }
+                const bossKey = `${boss.x},${boss.z}`;
+                if (castsNoXp >= 2) { badTiles.add(`${bossKey}>${p.x},${p.z}`); castsNoXp = 0; }
+                const ok = (x: number, z: number) => castTile(boss.x, boss.z)(x, z) && !badTiles.has(`${bossKey}>${x},${z}`);
+                if (!ok(p.x, p.z)) {
+                    const path = npcAwarePath(sdk, ok, boss.index);
                     approaches++;
                     if (path) {
                         approachTiles += path.length;
@@ -607,6 +618,7 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
                 if (reappeared || s.tick - lastClick >= 5) {
                     await sdk.sendSpellOnNpc(boss.index, CRUMBLE_UNDEAD);
                     swings++;
+                    castsNoXp++;
                     lastClick = sdk.getState()!.tick;
                 }
                 await sdk.waitForStateUpdate();
@@ -638,7 +650,7 @@ const phases: Record<Phase, (sdk: Sdk, L: Ledger) => Promise<void>> = {
         // melee: 4 xp per damage at 25x; magic: game xp gained, reported raw
         const gained = sdk.getSkill(STYLE === 'magic' ? 'magic' : 'attack')!.experience - xp0;
         const dealt = STYLE === 'magic' ? `${gained} magic xp` : Math.round(gained / 100);
-        L.note(`attack clicks ${swings}, approach walks ${approaches} (${approachTiles} tiles), level-up pages ${levelUpPages}, fade-outs ${moves}, sharks ${eats}, damage dealt ~${dealt}, hp left ${sdk.getState()!.player!.hp}${died ? ', DIED' : ''}; hp/boss% ${hpLog.join(' ')}`);
+        L.note(`attack clicks ${swings}, approach walks ${approaches} (${approachTiles} tiles), level-up pages ${levelUpPages}, struck-off tiles ${badTiles.size}, fade-outs ${moves}, sharks ${eats}, damage dealt ~${dealt}, hp left ${sdk.getState()!.player!.hp}${died ? ', DIED' : ''}; hp/boss% ${hpLog.join(' ')}`);
         const kd = await dialog(sdk, [], { settle: 1 });
         L.add(kd);
         L.end();
