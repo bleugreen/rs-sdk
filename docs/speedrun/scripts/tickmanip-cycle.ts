@@ -3,7 +3,8 @@
 //   bun docs/speedrun/scripts/tickmanip-cycle.ts <bot> --mode=<method>-<technique> [--rolls=N]
 //       [--level=L] [--phase=P] [--maxticks=T]
 //
-// method:    wc (willow, Draynor), fly (lure, Barbarian Village), cage (lobster, Catherby)
+// method:    wc (willow, Draynor), fly (lure, Barbarian Village), flylumb (lure, Lumbridge river,
+//            the route's spot, fishing.md section 2), cage (lobster, Catherby)
 // technique: base (click once, re-click only when idle), eat (one food bite per cycle) or
 //            knife (knife on logs + the arrow-shafts button, sent blind in the same tick)
 //
@@ -30,6 +31,21 @@
 // then every 3 ticks; every packet shares the same latency, so relative timing survives.
 // xp drops are only used to detect a lost lock (then: stop, let the clock expire, re-click).
 //
+// Route segments (levels change during the run):
+//   --until=L       stop when the skill's base level reaches L (--rolls and --maxticks become caps)
+//   --from-xp=B     report the segment from the tick base xp first reaches B (a quest start)
+//   --dismiss=now|blind|none  answer a level-up dialog the tick it is seen with
+//                   sendClickDialog(0) (blind: { blind: true }); default now
+//   --reanchor=click|xp  after a lost lock or a moved spot: click (default) waits 5 ticks for
+//                   the clock to expire, re-clicks and steps the phase; xp re-clicks the
+//                   nearest target at once and anchors the schedule on the first xp it sees.
+//                   After a roll on R the normal loop rolls next on R + r0 + 1, so the first
+//                   starter goes out on label R + r0 + 1, the same as a bootstrap at label R.
+//   --xplag=0|1     label offset of a roll's xp: 0 on the lite client since #20 (a tick is
+//                   published once fully decoded), 1 before it
+// A fishing spot that teleports keeps its NPC index, so a move is detected by its tile; the
+// client never follows it (fishing.md section 4).
+//
 // Every packet sent and every xp change is logged with its tick to --log
 // (default $TMPDIR/tickmanip-<mode>.log); a summary goes to stdout.
 import { runScript } from '../../../sdk/runner';
@@ -44,14 +60,19 @@ const args: Record<string, string> = Object.fromEntries(
 );
 const mode = args.mode ?? 'wc-eat';
 const [methodName, technique] = mode.split('-');
-const rollsTarget = Number(args.rolls ?? 200);
+const untilLevel = args.until ? Number(args.until) : 0;
+const rollsTarget = Number(args.rolls ?? (untilLevel ? Infinity : 200));
 const level = Number(args.level ?? 99);
 const phase = Number(args.phase ?? 0);
-const maxTicks = Number(args.maxticks ?? rollsTarget * 12 + 200);
+const maxTicks = Number(args.maxticks ?? (untilLevel ? 30_000 : rollsTarget * 12 + 200));
+const fromXp = Number(args['from-xp'] ?? 0);
+const dismiss = args.dismiss ?? 'now';
+const reanchor = args.reanchor ?? 'click';
+const XP_LAG = Number(args.xplag ?? 0);
 const dropProducts = args.drop !== 'false';
 // A mistimed lock starves completely (each eat pushes the clock past the next click), so
 // "no xp for lockWindow ticks" means lost lock; size it so honest misses rarely trip it.
-const LOCK_WINDOW: Record<string, number> = { wc: 18, fly: 15, cage: 45 };
+const LOCK_WINDOW: Record<string, number> = { wc: 18, fly: 15, flylumb: 15, cage: 45 };
 const logPath = args.log ?? `${process.env.TMPDIR ?? '/tmp'}/tickmanip-${mode}${args.tag ? '-' + args.tag : ''}.log`;
 const FOOD = /^shrimps$/i;
 const FOOD_OBJ = 'shrimp';
@@ -73,6 +94,8 @@ interface Method {
 const METHODS: Record<string, Method> = {
     wc: { skill: 'woodcutting', tele: '0,48,50,15,34', give: [['rune_axe', 1]], kind: 'loc', target: /^willow/i, option: /^chop/i, product: /^willow logs$/i, clickOnRoll: false, r0: 3 },
     fly: { skill: 'fishing', tele: '0,48,53,31,38', give: [['fly_fishing_rod', 1], ['feather', 5000]], kind: 'npc', target: /^fishing spot$/i, option: /^lure$/i, product: /^raw /i, clickOnRoll: false, r0: 4 },
+    // standing tile (3241,3248) between the river's two spot clusters
+    flylumb: { skill: 'fishing', tele: '0,50,50,41,48', give: [['fly_fishing_rod', 1], ['feather', 5000]], kind: 'npc', target: /^fishing spot$/i, option: /^lure$/i, product: /^raw /i, clickOnRoll: false, r0: 4 },
     cage: { skill: 'fishing', tele: '0,44,53,34,41', give: [['lobster_pot', 1]], kind: 'npc', target: /^fishing spot$/i, option: /^cage$/i, product: /^raw /i, clickOnRoll: true, r0: 4 }
 };
 
@@ -86,7 +109,7 @@ if (!method || !['base', 'eat', 'knife'].includes(technique!)) {
 }
 const lockWindow = Number(args.window ?? LOCK_WINDOW[methodName]);
 
-writeFileSync(logPath, `# tickmanip-cycle ${mode} level=${level} phase=${phase} rolls=${rollsTarget}\n`);
+writeFileSync(logPath, `# tickmanip-cycle ${mode} level=${level} phase=${phase} rolls=${rollsTarget} until=${untilLevel} dismiss=${dismiss} reanchor=${reanchor} xplag=${XP_LAG}\n`);
 const log = (line: string) => appendFileSync(logPath, line + '\n');
 
 await runScript(async ({ bot, sdk }) => {
@@ -103,7 +126,8 @@ await runScript(async ({ bot, sdk }) => {
     for (const [obj, n] of method.give) await sdk.sendSay(`::give ${obj} ${n}`);
     if (technique === 'eat') await sdk.sendSay(`::give ${FOOD_OBJ} 18`);
     // Spare logs: a cycle whose click slips lets the queued fletch run and use one log.
-    if (technique === 'knife') { await sdk.sendSay('::give knife 1'); for (let i = 0; i < 10; i++) await sdk.sendSay('::give logs 1'); }
+    const SPARE_LOGS = 10;
+    if (technique === 'knife') { await sdk.sendSay('::give knife 1'); for (let i = 0; i < SPARE_LOGS; i++) await sdk.sendSay('::give logs 1'); }
     // A fresh account's tutorial exit can land after the first teleport; retry until we are there.
     const [, mx, mz, lx, lz] = method.tele.split(',').map(Number);
     for (let attempt = 0; attempt < 5; attempt++) {
@@ -115,6 +139,7 @@ await runScript(async ({ bot, sdk }) => {
 
     type Target = { kind: 'loc'; x: number; z: number; id: number; op: number } | { kind: 'npc'; index: number; op: number; x: number; z: number };
     let current: Target | null = null;
+    let currentTile: [number, number] | null = null; // an npc target's route tile when clicked
     let packetsSent = 0;
 
     const skillXp = (s: BotWorldState) => s.skills.find(k => k.name.toLowerCase() === method.skill)?.experience ?? 0;
@@ -155,7 +180,11 @@ await runScript(async ({ bot, sdk }) => {
         current = findTarget(s);
         if (!current) { log(`T${s.tick} no target at ${s.player?.worldX},${s.player?.worldZ}; npcs=${s.nearbyNpcs.slice(0, 6).map(n => n.name + ':' + n.options.join('/')).join(', ')} locs=${s.nearbyLocs.slice(0, 6).map(l => l.name).join(', ')}`); return false; }
         if (current.kind === 'loc') fire(s.tick, `click loc ${current.id}@${current.x},${current.z} op${current.op}`, sdk.sendInteractLoc(current.x, current.z, current.id, current.op));
-        else fire(s.tick, `click npc #${current.index}@${current.x},${current.z} op${current.op}`, sdk.sendInteractNpc(current.index, current.op));
+        else {
+            const n = s.nearbyNpcs.find(m => m.index === (current as any).index);
+            currentTile = n ? [n.tileX ?? n.x, n.tileZ ?? n.z] : null;
+            fire(s.tick, `click npc #${current.index}@${currentTile ?? `${current.x},${current.z}`} op${current.op}`, sdk.sendInteractNpc(current.index, current.op));
+        }
         return true;
     };
 
@@ -180,6 +209,9 @@ await runScript(async ({ bot, sdk }) => {
         const p = invItem(s, method.product);
         if (p) fire(s.tick, `drop ${p.name} slot${p.slot}`, sdk.sendDropItem(p.slot));
     };
+    // A slipped knife cycle lets the queued fletch run and turns one log into shafts. Long
+    // runs top the spares up (a lab stand-in for carrying more); the summary counts gifts.
+    let logsGiven = 0;
 
     // Warm-up: one ordinary click so the bot is standing at the target before any timing
     // starts (a click that has to walk first shifts the open-loop anchor), then stop and
@@ -202,7 +234,8 @@ await runScript(async ({ bot, sdk }) => {
     const startState = sdk.getState()!;
     const startXp = skillXp(startState);
     const startTick = startState.tick;
-    log(`setup tick=${startTick} pos=${startState.player?.worldX},${startState.player?.worldZ} xp=${startXp}`);
+    const baseLevelOf = (s: BotWorldState) => s.skills.find(k => k.name.toLowerCase() === method.skill)?.baseLevel ?? 0;
+    log(`setup tick=${startTick} pos=${startState.player?.worldX},${startState.player?.worldZ} xp=${startXp} level=${baseLevelOf(startState)}`);
 
     // ---- measurement loop -------------------------------------------------
     const xpTicks: number[] = [];
@@ -217,6 +250,14 @@ await runScript(async ({ bot, sdk }) => {
     let lastSeenTick = -1;
     let dialogsSeen = 0;
     let dialogOpenSince: number | null = null;
+    let lastDismiss = -1;
+    let lastLevel = baseLevelOf(startState);
+    const levelUps: Array<{ tick: number; level: number }> = [];
+    const moves: number[] = [];
+    let awaitXpSince: number | null = null; // --reanchor=xp: clicked, waiting for the first xp
+    let segStartTick: number | null = fromXp > 0 && startXp / 25 >= fromXp ? startTick : null;
+    let segStartXp = segStartTick !== null ? startXp : 0;
+    let segEndTick: number | null = null;
     const seenMsgs = new Set<string>((startState.gameMessages ?? []).map(m => `${m.tick ?? ''}|${m.text}`));
     let lastHp = -2;
 
@@ -226,10 +267,19 @@ await runScript(async ({ bot, sdk }) => {
             const t = s.tick;
 
             const xp = skillXp(s);
+            let xpNow = false;
             if (xp > lastXp) {
                 xpTicks.push(t);
+                xpNow = true;
                 log(`T${t} XP +${xp - lastXp} (total ${xp})`);
                 lastXp = xp;
+                if (segStartTick === null && fromXp > 0 && xp / 25 >= fromXp) { segStartTick = t; segStartXp = xp; log(`T${t} SEGMENT start at base ${xp / 25}`); }
+            }
+            const lvl = baseLevelOf(s);
+            if (lvl > lastLevel) {
+                levelUps.push({ tick: t, level: lvl });
+                log(`T${t} LEVEL ${lvl}`);
+                lastLevel = lvl;
             }
             // Game messages and hitpoint changes explain lost locks (random events, deaths).
             const msgs = s.gameMessages ?? [];
@@ -245,13 +295,19 @@ await runScript(async ({ bot, sdk }) => {
                 log(`T${t} DIALOG closed (open ${t - dialogOpenSince} ticks)`);
                 dialogOpenSince = null;
             }
+            // Answer a level-up the tick it is seen (and again if it is still open 3 ticks on).
+            if (technique !== 'base' && dismiss !== 'none' && s.dialog?.isOpen && t !== lastDismiss && (dialogOpenSince === t || t - lastDismiss >= 3)) {
+                lastDismiss = t;
+                fire(t, `dismiss dialog${dismiss === 'blind' ? ' (blind)' : ''}`, sdk.sendClickDialog(0, dismiss === 'blind' ? { blind: true } : {}));
+            }
 
             if (t !== lastSeenTick) {
                 lastSeenTick = t;
                 idleTicks = (s.player?.animId ?? -1) === -1 ? idleTicks + 1 : 0;
             }
 
-            if (xpTicks.length >= rollsTarget || t - startTick > maxTicks) {
+            if (untilLevel && lvl >= untilLevel && segEndTick === null) segEndTick = t;
+            if (xpTicks.length >= rollsTarget || t - startTick > maxTicks || segEndTick !== null) {
                 unsubscribe();
                 resolve();
                 return;
@@ -283,19 +339,56 @@ await runScript(async ({ bot, sdk }) => {
                 return;
             }
 
+            if (technique === 'knife' && s.inventory.filter(i => /^logs$/i.test(i.name)).length < 4 && t % 3 === 1 && logsGiven < 200) {
+                logsGiven++;
+                fire(t, 'give logs', sdk.sendSay('::give logs 1'));
+            }
+
+            // A spot that teleported keeps its index: compare its tile with the clicked one.
+            let moved = false;
+            if (current?.kind === 'npc' && currentTile && (anchor !== null || awaitXpSince !== null)) {
+                const n = s.nearbyNpcs.find(m => m.index === (current as any).index);
+                const tile = n ? [n.tileX ?? n.x, n.tileZ ?? n.z] : null;
+                if (!tile || tile[0] !== currentTile[0] || tile[1] !== currentTile[1]) {
+                    moved = true;
+                    moves.push(t);
+                    log(`T${t} MOVE spot #${current.index} ${currentTile.join(',')} -> ${tile ? tile.join(',') : 'gone'}`);
+                }
+            }
+
             // eat technique: open-loop schedule anchored on our own bootstrap click (see header)
-            if (anchor !== null && (targetGone || (t - Math.max(anchor + method.r0 + 1, lastXpTick) > lockWindow))) {
+            const lost = anchor !== null && t - Math.max(anchor + method.r0 + 1, lastXpTick) > lockWindow;
+            if (moved || (anchor !== null && (targetGone || lost))) {
+                const why = moved ? 'spot moved' : targetGone ? 'target gone' : 'no xp';
                 // A lock with no xp is mistimed by a tick or two (latency moved); try the next phase.
-                if (!targetGone) curPhase = (curPhase + 1) % 3;
+                if (reanchor === 'click' && why === 'no xp') curPhase = (curPhase + 1) % 3;
                 resyncs++;
-                log(`T${t} resync (${targetGone ? 'target gone' : 'no xp'}), next phase ${curPhase}`);
+                log(`T${t} resync (${why})${reanchor === 'click' ? `, next phase ${curPhase}` : ''}`);
                 anchor = null;
+                awaitXpSince = null;
                 current = null;
-                cooldownUntil = t + 5; // let the pushed clock expire so the bootstrap click starts a fresh cycle
+                currentTile = null;
+                cooldownUntil = reanchor === 'xp' ? t : t + 5; // click: let the pushed clock expire so the bootstrap click starts a fresh cycle
+            }
+            if (awaitXpSince !== null) {
+                if (xpNow && t > awaitXpSince) {
+                    // roll on R = t - xplag; the loop's own re-arm puts the next roll on R + r0 + 1
+                    anchor = t - XP_LAG;
+                    curPhase = 0;
+                    awaitXpSince = null;
+                    log(`T${t} anchored on xp (roll ${anchor})`);
+                } else {
+                    if (t - awaitXpSince > 30) { actedTick = t; current = null; if (click(s)) awaitXpSince = t; log(`T${t} re-click while waiting for xp`); }
+                    return;
+                }
             }
             if (anchor === null) {
                 if (t < cooldownUntil) return;
                 actedTick = t;
+                if (reanchor === 'xp') {
+                    if (click(s)) { awaitXpSince = t; breaks.push(t); log(`T${t} re-click, anchoring on the next xp`); }
+                    return;
+                }
                 if (click(s)) { anchor = t; breaks.push(t); log(`T${t} bootstrap phase ${curPhase}`); }
                 return;
             }
@@ -333,7 +426,29 @@ await runScript(async ({ bot, sdk }) => {
     const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a);
     const cycle = gaps.reduce((a, b) => gcd(a, b), 0);
     const gameXp = lastXp - startXp;
+
+    // Level-ups and moves: the gap from the xp drop at (or before) each event to the next drop,
+    // and whether the schedule had to be re-anchored inside it.
+    const nextXp = (t: number) => xpTicks.find(x => x > t);
+    const prevXp = (t: number) => [...xpTicks].reverse().find(x => x <= t);
+    const around = (t: number) => {
+        const a = prevXp(t), b = nextXp(t);
+        return { gap: a !== undefined && b !== undefined ? b - a : NaN, broke: breaks.some(x => x >= t && (b === undefined || x < b)) };
+    };
+    const lvRows = levelUps.map(l => ({ ...l, ...around(l.tick) }));
+    const mvRows = moves.map(m => ({ tick: m, ...around(m) }));
+    const histOf = (xs: number[]) => { const h: Record<number, number> = {}; for (const x of xs) if (Number.isFinite(x)) h[x] = (h[x] ?? 0) + 1; return Object.entries(h).map(([g, c]) => `${g}:${c}`).join(' '); };
+    const segEnd = segEndTick ?? xpTicks[xpTicks.length - 1] ?? startTick;
+    const segFrom = segStartTick ?? startTick;
+    const segCatches = xpTicks.filter(x => x > segFrom && x <= segEnd).length;
+    const segBase = (lastXp - (segStartTick !== null ? segStartXp : startXp)) / 25;
     const summary = [
+        `segment: from ${segStartTick !== null ? `base ${(segStartXp / 25).toFixed(1)} at T${segFrom}` : `start T${segFrom}`} to ${segEndTick !== null ? `level ${untilLevel} at T${segEnd}` : `last xp T${segEnd}`}: ${segEnd - segFrom} ticks, ${segCatches} catches, ${((segEnd - segFrom) / Math.max(1, segCatches)).toFixed(2)} ticks per catch, base ${segBase.toFixed(1)}, ${(segBase / Math.max(1, segEnd - segFrom)).toFixed(2)} base per tick`,
+        `level-ups ${levelUps.length}: gap from the level's drop to the next ${histOf(lvRows.map(r => r.gap))}; re-anchored after ${lvRows.filter(r => r.broke).length}`,
+        `  ${lvRows.map(r => `L${r.level}@T${r.tick}:${r.gap}${r.broke ? 'R' : ''}`).join(' ')}`,
+        `spot moves ${moves.length}: spanning gaps ${histOf(mvRows.map(r => r.gap))}`,
+        `  ${mvRows.map(r => `T${r.tick}:${r.gap}`).join(' ')}`,
+        `logs given during the run ${logsGiven}`,
         `mode=${mode} level=${level} phase=${phase} xpEvents=${xpTicks.length} gapsCounted=${gaps.length} breaks=${breaks.length} resyncs=${resyncs} finalPhase=${curPhase} dialogs=${dialogsSeen}`,
         `gap histogram (ticks:count) ${Object.entries(hist).map(([g, c]) => `${g}:${c}`).join(' ')}`,
         `min gap ${minGap}, gcd of gaps ${cycle}, span ${span} ticks, ticks per xp event ${(span / Math.max(1, xpTicks.length - 1)).toFixed(2)}`,
