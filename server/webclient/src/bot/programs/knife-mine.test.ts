@@ -168,7 +168,8 @@ describe('knife mining', () => {
         expect(r.buried).toBe(buries.length);
         expect(Math.abs(r.buried - r.ores / 5)).toBeLessThanOrEqual(1);
         expect(r.transitions['stay+bury']).toBe(r.burySent);
-        expect(r.longEntryStays).toBe(r.transitions.stay);
+        // every plain stay but the opening click is the west one
+        expect(r.longEntryStays).toBe(r.transitions.stay! - 1);
         expect(r.noBoneStays).toBe(0);
         expect(r.bonesPerTick).toBeCloseTo(1 / 15, 2);
         // successive bones 15 ticks apart, each on a roll label
