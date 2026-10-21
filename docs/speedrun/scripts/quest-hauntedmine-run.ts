@@ -271,6 +271,20 @@ function safeRegion(sdk: Sdk, cartSeen: Set<string>): Set<string> {
  * every crane footprint.
  */
 let craneTiles = new Set<string>();
+
+/**
+ * Casting tile per boss spot, from casts that landed in lab runs (the boss's
+ * six spots: hauntedmine_boss_move). Null when the spot is not recognised.
+ */
+function tableCastTile(bx: number, bz: number): [number, number] | null {
+    if (bz <= 4446) return [2786, 4446]; // s5, south
+    if (bx >= 2793 && bz <= 4453) return [2789, 4454]; // s0, east
+    if (bx >= 2795 && bz >= 4458) return [2796, 4454]; // s1, north-east
+    if (bz >= 4462 && bx >= 2786 && bx <= 2790) return [2787, 4461]; // s2, north
+    if (bx <= 2781 && bz >= 4458) return [2779, 4457]; // s3, north-west
+    if (bx <= 2782 && bz >= 4453 && bz <= 4456) return [2780, 4457]; // s4, west
+    return null;
+}
 function lineClearOfCranes(x0: number, z0: number, x1: number, z1: number) {
     const n = Math.max(Math.abs(x1 - x0), Math.abs(z1 - z0)) * 4;
     for (let i = 1; i < n; i++) {
