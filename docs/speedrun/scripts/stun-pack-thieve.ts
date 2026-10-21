@@ -481,7 +481,7 @@ function runActs(s: BotWorldState, acts: string, click: () => void): string[] {
 }
 
 // ------------------------------------------------------------------ helper: per-tick loop
-let tiersStaged = false;
+let tiersStaged = false, lastTele = -100, teleSide = 0, hTeles = 0;
 let gctx: GiverCtx | null = null, gplan: OfferEntry[] = [], hLast = -1, lastReq = -100, hBusy = 0, hReqs = 0, stageAt = -100, lastFollow = -100, hAnswers = 0;
 function onHelper(hs: BotWorldState) {
     if (!helper || !hs?.inGame || done) return;
@@ -512,8 +512,21 @@ function onHelper(hs: BotWorldState) {
         onHelperGiver(hs);
         return;
     }
-    if (!armed) return;
     const s = sdk.getState()!;
+    // Keep up with SCORED at all times (a lab stand-in for the helper walking, which costs SCORED
+    // nothing): following only while armed left it 28 tiles behind a wandering knight for ~300
+    // ticks and 18 stuns ran dry. Never during a trade.
+    {
+        const me = hs.player!, p = s.player!;
+        const far = Math.max(Math.abs(me.worldX - p.worldX), Math.abs(me.worldZ - p.worldZ)) > 3;
+        if (far && !tr.isOpen && !rctx && hs.tick - lastTele >= 6) {
+            const x = p.worldX + (teleSide++ % 2 === 0 ? 1 : -1), z = p.worldZ;
+            void say(helper.sdk, `tele 0,${x >> 6},${z >> 6},${x & 63},${z & 63}`);
+            lastTele = hs.tick; hTeles++;
+            return;
+        }
+    }
+    if (!armed) return;
     // Stage: the helper's stock (a stand-in for its bank trips, which cost SCORED nothing) is
     // the undelivered arrowhead tiers, --sharks sharks and bones in every other slot. The load
     // itself is sized by SCORED when it sends the request (loadFor).
@@ -575,7 +588,7 @@ function finish() {
         normalStuns: { n: normal.length, next: hist(normal.map(x => x.next!)), meanNext: mean(normal.map(x => x.next!)), bones: mean(normal.map(x => x.bones)), casts: mean(normal.map(x => x.casts)), arrows: mean(normal.map(x => x.arrows)), pages: mean(normal.map(x => x.pages)) },
         nextByPages: { withPage: mean(normal.filter(x => x.pages > 0).map(x => x.next!)), withoutPage: mean(normal.filter(x => x.pages === 0).map(x => x.next!)), nWith: normal.filter(x => x.pages > 0).length },
         topupStuns: { n: tu.length, next: hist(tu.map(x => x.next!)), bones: mean(tu.map(x => x.bones)), casts: mean(tu.map(x => x.casts)), arrows: mean(tu.map(x => x.arrows)) },
-        topups: { n: topups.length, ok: topups.filter(u => u.ok).length, recvTicks: hist(topups.filter(u => u.recvTicks !== undefined).map(u => u.recvTicks!)), successGaps: hist(topups.filter(u => u.gap !== undefined).map(u => u.gap!)), failures: topups.filter(u => !u.ok).map(u => u.reason), list: topups, helperRequests: hReqs, helperAnswers: hAnswers, helperBusy: hBusy, giveRefills },
+        topups: { n: topups.length, ok: topups.filter(u => u.ok).length, recvTicks: hist(topups.filter(u => u.recvTicks !== undefined).map(u => u.recvTicks!)), successGaps: hist(topups.filter(u => u.gap !== undefined).map(u => u.gap!)), failures: topups.filter(u => !u.ok).map(u => u.reason), list: topups, helperRequests: hReqs, helperAnswers: hAnswers, helperBusy: hBusy, helperTeles: hTeles, giveRefills },
         totals: tot, outside, chargeOutSent,
         pages, pagesInStun, pagesOutside, pageOpens: { inStun: pageOpensIn, outside: pageOpensOut },
         eats, forcedEats, stunEats, hpLost, damage: dmg, deaths, setstats,
