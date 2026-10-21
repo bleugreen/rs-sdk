@@ -614,7 +614,10 @@ step acts. Options (strings are accepted, as `--skill-opt` passes them):
   accepts that logged-out end;
 - `pauseFor` (`none` by default, rs/147's ruling), `playerRadius` (15) and the
   threat parameters, passed to the program (docs/speedrun/tick-programs.md);
-  `maxPauses` (3).
+  `maxPauses` (3);
+- `drop`: a pattern of items to drop before the walk to the Gnome course (a
+  fresh account's 18-slot starter kit leaves 10 free; the rehearsal drops the 16
+  that are not food).
 
 What each Wilderness end does: a pause (`pauseFor` fired) logs out at once,
 writes an `agility:pause` row and throws `AgilityStop('paused-for-player')`;

@@ -350,6 +350,8 @@ async function bandProgram(ctx: StepContext<unknown>, band: Band, o: AgilityOpti
         untilLevel: band.to,
         technique: o.technique,
         startStep: 'auto',
+        // the longest obstacle takes 18 ticks; a dropped click (the lab saw one at the rocks) costs this much
+        stepTimeout: 40,
         eatBelow,
         ...(o.food ? { food: o.food } : {}),
         ...(band.course === 'wilderness'
