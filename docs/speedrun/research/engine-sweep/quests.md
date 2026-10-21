@@ -17,10 +17,11 @@ were made for this page. The later verification child should check the items mar
 quest's last step, and none can be granted twice. The reasons, in order of how much they
 cover:
 
-1. **Queued rewards cannot be double-granted (r, engine).** 61 of the 66 one-off quest
-   rewards are `[queue,..._complete]` scripts that set the quest varp themselves, and the
-   remaining direct grants set the varp in the same uninterrupted script segment as the
-   grant. A normal `queue()` runs only when the player can be accessed (no modal, not
+1. **Queued rewards cannot be double-granted (r, engine).** 46 of the 58 one-off quest
+   reward events (Ikov's two endings counted separately) are `[queue,...]` scripts, and all
+   but two of those set the completion varp themselves. Priest in Peril uses an essence
+   counter, and Gertrude's Cat sets the varp at the caller (table 2b). The 12 direct grants
+   set the varp in the same uninterrupted script segment as the grant. A normal `queue()` runs only when the player can be accessed (no modal, not
    delayed), any op packet closes the modal, and queues run before interactions in the
    player's turn. So the reward always lands before a second trigger could reach the
    `queue()` call again. Details are in [Why queued rewards are single-shot](#why-queued-rewards-are-single-shot).
@@ -273,7 +274,7 @@ estimate; do not cost it further unless Fishing becomes the binding skill.
 Each telescope look rolls `random(12)` and queues the reward dialogue with that
 constellation (`quest_itgronigen.rs2:187-199`). An op packet before the reward page closes the
 dialogue and discards it (engine section), so looking again rerolls (r; the script's own
-comment says so, `:197-198`). Four of the twelve give xp (Strength, Defence, Hitpoints,
+comment says so, `:196-197`). Four of the twelve give xp (Strength, Defence, Hitpoints,
 Attack 875 each, `:225-244`); the rest give items. Expected ~3 looks to land a chosen combat
 skill, or ~12 for a specific one. Defence and Hitpoints are the post-MM gaps (README section 6),
 but 875 is ~95 ticks of defensive melee at ~9.3/tick. The Observatory itself is not costed by
