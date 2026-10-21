@@ -276,6 +276,8 @@ await runScript(async ({ bot, sdk }) => {
     let reached = -1;
     const offered = new Set<number>();
     let lastClick = -99;
+    let lastXpTick = -99;
+    let clickArgs: [number, number, number] = [0, 1, 0];
     let retries = 0;
     const end = Date.now() + Number(arg('minutes', '40')) * 60_000;
     const done = () => (route ? reached >= 0 : inv >= CYCLES) || Date.now() > end;
@@ -289,6 +291,7 @@ await runScript(async ({ bot, sdk }) => {
         if (route && sk.baseLevel >= UNTIL) { reached = s.tick; log.xps.push(s.tick); break; }
         if (sk.experience > lastXp) {
             lastXp = sk.experience;
+            lastXpTick = s.tick;
             progress = s.tick;
             log.xps.push(s.tick);
             expect--;
@@ -349,14 +352,26 @@ await runScript(async ({ bot, sdk }) => {
                 } else if (s.tick - L.tradeOpen > 10) { phase = 'free'; offered.clear(); }
             }
         }
-        // A click that produced no xp (lost behind a level-up dialog) is retried.
-        if (phase === 'smith' && s.tick - lastClick > 6 && s.tick - progress > 6) { phase = 'anvil'; retries++; }
+        // attempt_smithing starts with if_close, so while the interface is still open after a
+        // click the click was refused (InvButtonHandler); re-send it. A click that closed the
+        // interface without xp falls back to a fresh use-bar.
+        if (phase === 'smith' && s.tick > lastClick && s.tick - progress > 2 && lastXpTick < lastClick) {
+            if (s.interface?.isOpen && s.interface.interfaceId === SMITHING_IF) {
+                sdk.sendClickComponentWithOption(clickArgs[0], clickArgs[1], clickArgs[2]).catch(() => {});
+                lastClick = s.tick;
+                retries++;
+            } else if (s.tick - lastClick > 5) { phase = 'anvil'; retries++; }
+        }
         if (phase === 'anvil' && s.tick >= freeFrom && !(DIALOG === 'click' && s.dialog.isOpen)) {
             const g = PLAN[inv]!.segs[seg]!;
             if (s.interface?.isOpen && s.interface.interfaceId === SMITHING_IF) {
-                const make = left >= 10 ? 10 : left >= 5 ? 5 : 1;
-                sdk.sendClickComponentWithOption(g.row.com, make === 10 ? 3 : make === 5 ? 2 : 1, g.row.slot).catch(() => {});
-                expect = make;
+                // When no later item in this inventory needs this bar, make-5/make-10 runs until
+                // the bars are gone (smithing.rs2 stops with a mesbox), so any count is one click.
+                const lastOfBar = !PLAN[inv]!.segs.slice(seg + 1).some(x => x.row.bar === g.row.bar);
+                const make = left >= 10 || (lastOfBar && left > 5) ? 10 : left >= 5 || (lastOfBar && left > 1) ? 5 : 1;
+                clickArgs = [g.row.com, make === 10 ? 3 : make === 5 ? 2 : 1, g.row.slot];
+                sdk.sendClickComponentWithOption(clickArgs[0], clickArgs[1], clickArgs[2]).catch(() => {});
+                expect = Math.min(make, left);
                 lastClick = s.tick;
                 L.clicks.push(s.tick);
                 phase = 'smith';
