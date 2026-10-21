@@ -697,9 +697,17 @@ export class Runes {
                 }
                 await this.buyer.setCoins(budget);
             });
-            const weapon = this.state.inventory.find(i => this.o.webWeapons.some(p => p.test(i.name)));
-            if (weapon) await bot.equipItem(weapon);
-            if (!bot.getEquipment().some(e => this.o.webWeapons.some(p => p.test(e.name)))) {
+            const wielding = () => bot.getEquipment().some(e => this.o.webWeapons.some(p => p.test(e.name)));
+            // Right after the bank closes, the inventory can still carry the bank's ops (no Wield) for a tick.
+            for (let i = 0; i < 3 && !wielding(); i++) {
+                await waitTicks(sdk, 2);
+                const weapon = this.state.inventory.find(it => this.o.webWeapons.some(p => p.test(it.name)));
+                if (!weapon) break;
+                const r = await bot.equipItem(weapon);
+                await waitUntil(sdk, () => wielding(), { maxTicks: 4 });
+                if (!wielding()) log('lundail: wield retry', { weapon: weapon.name, message: r.message, options: weapon.optionsWithIndex.map(o => o.text) });
+            }
+            if (!wielding()) {
                 log('lundail: no weapon that can slash the keep web (a bronze axe or sword will do)');
                 await this.atBank(PLACES.ardougneBank, () => this.buyer.depositAllBut([]));
                 return 'blocked';
