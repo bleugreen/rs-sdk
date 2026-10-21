@@ -48,6 +48,17 @@ const ctxOf = (s: Session) => ({ sdk: s.sdk, bot: s.bot, log: (m: string, d?: Re
 const result = (name: string, data: unknown) => console.log(`RESULT ${name} ${JSON.stringify(data)}`);
 
 const maker = await openSession(makerName, { launch: args.includes('--launch-maker') });
+const sessions: Session[] = [maker];
+// Any failure logs the launched accounts out cleanly before exiting: a client that
+// dies with this process would leave its account in the world for 500 ticks.
+process.on('uncaughtException', async e => {
+    console.error(e);
+    for (const s of sessions.reverse()) if (s !== maker || args.includes('--launch-maker')) await logoutClean(s).catch(() => undefined);
+    process.exit(1);
+});
+process.on('unhandledRejection', e => {
+    throw e;
+});
 const M = ctxOf(maker);
 await prepare(M);
 // A grape camper may be upstairs in the Cooking Guild: climb down first.
@@ -65,6 +76,7 @@ if (made.noted === 0) throw new Error('maker holds no noted wine (bank grapes an
 if (mode === 'split' && arming === 'make') await prepareRearmKit(M);
 
 const receiver = await openSession(receiverName, { launch: true });
+sessions.push(receiver);
 const R = ctxOf(receiver);
 await prepare(R);
 await walkNear(R, VARROCK_WEST_BANK.x - 2, VARROCK_WEST_BANK.z, 2);
@@ -120,7 +132,17 @@ if (mode === 'split') {
         }
         const nRelogs = relogs.length;
         const level0 = receiver.sdk.getSkill('Cooking')?.baseLevel;
-        const s = await splitDelivery(R, maker.name, { loginTick, first: firsts[k] ?? first, arming, relog: relogReceiver });
+        let s;
+        try {
+            s = await splitDelivery(R, maker.name, { loginTick, first: firsts[k] ?? first, arming, relog: relogReceiver });
+        } catch (e) {
+            // A declined trade leaves the notes with the giver: offer them again. The
+            // retry may come after the login window, which the fallback handles.
+            if (!/wine trade failed/.test(String(e))) throw e;
+            result('trade-retry', { run: k, error: String(e), tick: tick(receiver.sdk) });
+            giving = startGiving(k);
+            s = await splitDelivery(R, maker.name, { loginTick, first: firsts[k] ?? first, arming, relog: relogReceiver });
+        }
         const own = relogs.slice(nRelogs);
         const last = own[own.length - 1];
         const L = s.loginTick;

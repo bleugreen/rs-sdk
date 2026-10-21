@@ -125,8 +125,8 @@ export interface ReceiverCtx {
 
 /**
  * Ticks an empty partner offer on the confirm screen is taken as not read yet
- * before the receiver declines. Seen on the demo: a receiver declined a correct
- * 3-wine offer on its first confirm-screen state.
+ * (the list may be published a state after the screen) before the receiver
+ * declines. A non-empty offer that does not match is declined at once.
  */
 export const CONFIRM_EMPTY_GRACE_TICKS = 3;
 
