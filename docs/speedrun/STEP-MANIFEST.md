@@ -504,7 +504,7 @@ scripts are in section 4; the shared primitives and their build order are in sec
   (m, lab, `research/bones-placement.md` §4), ~0.26 per bone with its share of the loads
   (H4m.1-H4m.4, SUPPLIES.md). **Missing:** `knife-mine` has no bury option (r,
   `server/webclient/src/bot/programs/knife-mine.ts`; the lab lap is `bones-mine.ts`), so the bury
-  on a stay and the trade's stop and restart are unbuilt in the page. `stay2` is a five-rock lap,
+  on a stay and the trade's stop and restart are unbuilt in the page (RUN-ORDER.md O35). `stay2` is a five-rock lap,
   so it applies only in the table's first band (D 13 or less); in the six-rock band the bones go to
   the booth (+1.81 each, ~+154) unless a six-rock lap with a short-entry stay is measured.
 - **Preconditions:** rune pickaxe, knife and about 5 normal logs, Fletching 1; Mining 64; position on

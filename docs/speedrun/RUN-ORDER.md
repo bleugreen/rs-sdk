@@ -110,7 +110,7 @@ path now clears the record by about 4.2% with everything held, and by about 2.8%
 plan with the 21:20 UTC bones. On that stock no bone goes to the booth: 49 dragon and 1,214
 babydragon reach Prayer 99 with ~197 babydragon to spare, so another babydragon bone is worth ~0
 and another dragon bone ~0.36 (section 7, "The stock at 21:20 UTC"). The ~85 bones past S07 ride
-the Mining `stay2` lap, whose bury is not yet built in the page; at the booth they would cost +154.
+the Mining `stay2` lap, whose bury is not yet built in the page; at the booth they would cost +154 (O35).
 The knife gate failing all night erases the margin on its own (+3,249 without rs/162, +2,624 with
 it, R2). Monkey Madness's bad-but-plausible case (+~860 beyond its expected, R5) no longer does on
 its own: it leaves ~135. A relog from SCORED's tab costs ~20 ticks, not 2 (TWIN), which adds +63 to the
@@ -746,7 +746,10 @@ History: at 13:10 PDT the stock was 28 dragon, 911 babydragon and ~3,100 big; th
 197 are already above need. Another dragon bone (72 base) replaces 2.4 babydragon, so the stock needs
 1.4 fewer bones; they come off the last bones filled, the Mining lap's, at 0.26: **-0.36**, expected
 and best. After ~61 more dragon bones the Mining lap is empty and the saving becomes S07's, -0.37 /
--0.24. The 18 dragon bones bid but unfilled would save ~7 if they fill. At BP's lite 0.298 per tick
+-0.24. The 18 dragon bones bid but unfilled would save ~7 if they fill. **Until `knife-mine` buries
+(O35)** those 85 go to the booth, and bones overflow to it again: each extra dragon bone then saves
+1.4 x 2.07 = **~2.9**, not ~0.36, until ~61 more are held (~110 in all: 110 dragon and 1,068
+babydragon leave 978 non-stun, S07's capacity). The 18 bid would then save ~52. At BP's lite 0.298 per tick
 instead of the in-tab 0.329, S07 would hold ~886 and the other 92 would ride the Mining lap (177 of
 its ~200): ~0 expected, +8 best.
 
@@ -795,7 +798,7 @@ actions against ~650 slots), so the tick delta against the plan is 0 (i, SP§2, 
 | MM bad-but-plausible case | +~860 | Q§6: +1,040 against the +180 expected |
 | A mithril axe in place of the rune axe (the axe is held) | +836 | SF§13 on 2,986 (the 355 bones fit either way) |
 | The bone stock at 21:20 UTC (49 dragon, 1,214 of 1,411 babydragon) | +185 | 623 more bones in S07, 85 in Mining, none at the booth |
-| On that stock, the Mining lap's bury not built in the page: its 85 at the booth | +154 | 85 x (2.07 - 0.26); `knife-mine` has no bury (section 7) |
+| On that stock, the Mining lap's bury not built in the page: its 85 at the booth | +154 | 85 x (2.07 - 0.26); `knife-mine` has no bury (section 7, O35) |
 | An adamant axe in place of the rune axe (the axe is held) | +388 | SF§13 on 2,986 |
 | The S07 bury variant fails in the page: bones to the Mining `stay2` lap (200) and the booth (155) | +278 (+640 if all to the booth) | BP§4; SK:prayer §1; against S25b's 95 |
 | S07's bury at BP's lite 0.298 per tick instead of the in-tab 0.329, on the 21:20 UTC stock | ~0 (+8 best) | S07 holds ~886, not ~978; the 92 ride the Mining lap at the same 0.26 |
@@ -938,6 +941,7 @@ actions against ~650 slots), so the tick delta against the plan is 0 (i, SP§2, 
 | O31 | A plain+bury mode in knife-cycle, S07's gated-off fallback | not built: knife-cycle's `bury` works only with the knife technique (rs/147, 13:19). The knife-off column without it is in force (37,659 / 35,371; 37,034 / 34,711 with it); S07's gate off alone on the 21:20 UTC stock costs +2,314 without it, +796 with it | cairn://p/rs/162 lands and passes its lab bar: at least 0.22 bones per tick in the page with no loss of Woodcutting rate | main (rs/162; knife-cycle's options are main's to file) |
 | O33 | A tab relog's ~20 ticks before the bot sees state, and the wine's login + 19 deadline after it (R1, R17) | ~20 i per tab relog (m, TWIN: first state at client tick 20, 21, 22 against 3 for a fresh tab); +36 carried in S25c and +27 in restarts; R17 as built +~25 beyond the totals | the cause of the ~20; a relog that does not re-navigate the tab, measured on the twin; or the in-page host running the wine window's first 19 ticks; or the 29 wines deposited before relog 1, rehearsed on the twin | rs/174 (main's build child: the cause and the fastest relog, first actionable tick against login + 19, target + 7); rs/164, rs/147 (measurement) |
 | O34 | Protect from Melee in S17, the Wilderness course, Agility 75-99. The demo's Agility #1, stunagile, trained Prayer to 43 before Agility ([hiscores.md](research/competitors/hiscores.md), "Agility"), which points at laps under it from Prayer 43 (i) | **not priced**: S17's row (4,024 / 3,820) and its 12 sharks (H23) stand. Drain (r): the `prayer_drain` timer runs every 5 ticks (`prayer.rs2:33`), adds drain effect x 5 to a counter and loses a point per 60 + 2 x prayer bonus (`prayer.rs2:163-174`, `equip.rs2:185`); Protect from Melee's effect is 12 (`prayers.enum:18`), so at bonus 0 it costs **1 point every 5 ticks** and Prayer 99 holds it ~495 ticks. Pricing (i): held through S17's ~4,024 ticks it needs ~805 points, ~706 past a full bar, about 23-26 prayer-potion doses at the classic 7 + level/4 = 31 a dose (not read in this engine), a net loss against ~12 eats. Falls (15% of current HP + 1, `skills/agility.md:206-218`) are most of SCORED's damage at Defence 98, Protect from Melee does not stop them, and they cannot kill above 1 HP. Only flicking near the skeletons is worth measuring: at most the ~12 eats' cost, about 0-30 | rs/155's lab run at SCORED's S17 stats: lap ticks with and without eating; skeleton hits at Defence 98; held against flicked (drain and lap cost); the no-eat HP floor | rs/155 under rs/147 |
+| O35 | A home in the page for the ~85 non-stun bones past S07's ~978 on the 21:20 UTC stock. `knife-mine` has no `bury` option (r, `server/webclient/src/bot/programs/knife-mine.ts`), so today they go to the booth | **+154** beyond the stock row: 85 at 2.07 (~176) against ~22 on the `stay2` lap at 0.26 (i). Not in the totals; a sensitivity row (section 7). While it stands, each extra dragon bone is worth ~2.9, not ~0.36 (section 7, "Slopes") | either one: **(a)** an additive `bury` option on `knife-mine` for the `stay2` lap, passing a lab bar at BP§4's one bone per 15 ticks at 3.052 ticks per ore (measured on lite only), and usable only in the five-rock band (D 13 or less, MAN entry 4); or **(b)**, with no code, ~61 more dragon bones (~110 held): each replaces 2.4 babydragon and removes ~1.4 bones, which brings the non-stun bones under S07's ~978. h55 and h56 continue on adult blue dragons (rs/112; main's ruling, 14:31 PDT) | main for (a) (knife-program options are main's to file); rs/41 and rs/112 for (b) |
 
 ## Sources
 
