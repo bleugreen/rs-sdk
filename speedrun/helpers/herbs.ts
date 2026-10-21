@@ -98,7 +98,7 @@ export function herbOptions(raw: Record<string, unknown>) {
         unf: unfList(raw.unf),
         /** Shop trips to Jatix (vials, eyes of newt) from the Falador west bank. */
         supply: raw.supply !== false,
-        /** Start a shop trip once this many vials or eyes of newt are wanted. */
+        /** Start a shop trip once this many vials and eyes of newt together are wanted. */
         supplyBatch: typeof raw.supplyBatch === 'number' ? raw.supplyBatch : 20,
         /** Fixed eye of newt target; by default one per guam and irit held. */
         eyes: typeof raw.eyes === 'number' ? raw.eyes : undefined
@@ -433,50 +433,39 @@ class Herbalist {
 
     nearFaladorBank(): boolean { return !this.run.underground() && dist(this.run.pos(), FALADOR_WEST_BANK) <= 8; }
 
-    /** The shop trip due now, if any: the larger of the two needs, once it reaches a batch. */
-    supplyDue(): 'vials' | 'eyes' | null {
-        if (!this.opt.supply || !this.bankItems || Date.now() < this.supplyAfter || !this.nearFaladorBank()) return null;
+    /** True when the bank's shop needs (vials to fill, eyes of newt) add up to a batch. */
+    supplyDue(): boolean {
+        if (!this.opt.supply || !this.bankItems || Date.now() < this.supplyAfter || !this.nearFaladorBank()) return false;
         const need = shopNeeds(this.bankItems, this.opt.unf, this.opt.eyes);
         const emptyBanked = this.bankItems.find(i => i.id === EMPTY_VIAL)?.count ?? 0;
-        if (need.vials + emptyBanked >= this.opt.supplyBatch && need.vials + emptyBanked >= need.eyes) return 'vials';
-        if (need.eyes >= this.opt.supplyBatch) return 'eyes';
-        return null;
+        return need.vials + emptyBanked + need.eyes >= this.opt.supplyBatch;
     }
 
-    /** One round trip: coins (and banked empty vials) out, buy at Jatix, fill at the fountain, bank. */
-    async supplyTrip(what: 'vials' | 'eyes'): Promise<void> {
+    /**
+     * One round trip from the Falador west bank: coins and banked empty vials out, empty vials
+     * then eyes of newt from Jatix with the bag space left, the vials filled at the fountain,
+     * everything banked.
+     */
+    async supplyTrip(): Promise<void> {
         const run = this.run, bot = run.bot, sdk = run.sdk;
-        this.run.phase(`supply:${what}`);
+        this.run.phase('supply');
         const need = shopNeeds(this.bankItems ?? [], this.opt.unf, this.opt.eyes);
         const open = await bot.openBank();
         if (!open.success) { this.ctx.log('supply: bank did not open', { reason: open.message }); return; }
         await this.depositAll();
         const coins = sdk.getBankItems().find(i => i.id === COINS);
         if (coins) await bot.withdrawItem(coins, coins.count);
-        if (what === 'vials') {
-            const empty = sdk.getBankItems().find(i => i.id === EMPTY_VIAL);
-            if (empty) await bot.withdrawItem(empty, Math.min(empty.count, 27));
-        }
+        const empty = sdk.getBankItems().find(i => i.id === EMPTY_VIAL);
+        if (empty) await bot.withdrawItem(empty, Math.min(empty.count, 27));
         await bot.closeBank();
         const carried = (id: number) => this.inv().filter(i => i.id === id).reduce((a, i) => a + i.count, 0);
         const free = () => 28 - this.inv().length;
-        const want = what === 'vials' ? Math.min(free(), Math.max(0, need.vials - carried(EMPTY_VIAL))) : Math.min(free(), need.eyes);
-        if (want > 0) {
+        if (need.vials > carried(EMPTY_VIAL) || need.eyes > 0) {
             if (!(await this.run.walk(JATIX.x, JATIX.z, 3, 300_000))) return;
             const shop = await bot.openShop(/^jatix$/i);
             if (!shop.success) { this.ctx.log('supply: shop did not open', { reason: shop.message }); return; }
-            const id = what === 'vials' ? EMPTY_VIAL : EYE_OF_NEWT;
-            const item = sdk.getState()?.shop?.shopItems.find(i => i.id === id);
-            const afford = item ? Math.floor(carried(COINS) / Math.max(1, item.buyPrice)) : 0;
-            const n = Math.min(want, item?.count ?? 0, afford);
-            if (item && n > 0) {
-                const r = await bot.buyFromShop(item, n);
-                this.bought[what] = (this.bought[what] ?? 0) + (r.amountBought ?? 0);
-            }
-            if (afford < want) {
-                this.ctx.log('supply: short of coins', { coins: carried(COINS), price: item?.buyPrice ?? null, want });
-                this.supplyAfter = Date.now() + 30 * 60_000;
-            }
+            await this.buy('vials', EMPTY_VIAL, Math.min(free(), need.vials - carried(EMPTY_VIAL)));
+            await this.buy('eyes', EYE_OF_NEWT, Math.min(free(), need.eyes));
             await bot.closeShop();
         }
         if (carried(EMPTY_VIAL) > 0) await this.fillVials();
@@ -487,7 +476,34 @@ class Herbalist {
         this.noteBank(sdk.getBankItems().map(i => ({ id: i.id, name: i.name, count: i.count })));
         this.ctx.reportBank({ items: this.bankItems! });
         await bot.closeBank();
-        this.ctx.log('supply', { what, bought: this.bought, filled: this.filled, need: shopNeeds(this.bankItems!, this.opt.unf, this.opt.eyes) });
+        this.ctx.log('supply', { bought: this.bought, filled: this.filled, need: shopNeeds(this.bankItems!, this.opt.unf, this.opt.eyes) });
+    }
+
+    /**
+     * Buy up to `want` of an item from the open shop. A buy can come back short (one Buy-10
+     * packet's purchase not seen in time), so keep buying while each attempt makes progress.
+     */
+    async buy(key: string, id: number, want: number): Promise<void> {
+        const sdk = this.run.sdk;
+        const coins = () => this.inv().filter(i => i.id === COINS).reduce((a, i) => a + i.count, 0);
+        let got = 0;
+        for (let attempt = 0; attempt < 5 && got < want; attempt++) {
+            const item = sdk.getState()?.shop?.shopItems.find(i => i.id === id);
+            if (!item) return;
+            const afford = Math.floor(coins() / Math.max(1, item.buyPrice));
+            const n = Math.min(want - got, item.count, afford);
+            if (n <= 0) {
+                if (afford < want - got) {
+                    this.ctx.log('supply: short of coins', { item: key, coins: coins(), price: item.buyPrice, want: want - got });
+                    this.supplyAfter = Date.now() + 30 * 60_000;
+                }
+                return;
+            }
+            const bought = (await this.run.bot.buyFromShop(item, n)).amountBought ?? 0;
+            if (bought === 0) return;
+            got += bought;
+            this.bought[key] = (this.bought[key] ?? 0) + bought;
+        }
     }
 
     /** With the bank open, deposit every carried stack. */
@@ -531,8 +547,7 @@ class Herbalist {
         if (this.opt.process && this.ritualDone() && !this.processedAfterBank) {
             if (await this.processStep()) return;
         }
-        const trip = this.supplyDue();
-        if (trip) return this.supplyTrip(trip);
+        if (this.supplyDue()) return this.supplyTrip();
         return run.cycle();
     }
 
