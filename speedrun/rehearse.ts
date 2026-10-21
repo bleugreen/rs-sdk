@@ -751,6 +751,86 @@ export function formatSummary(
     return lines.join('\n');
 }
 
+// ------------------------------------------------------------------ the chain under its stops
+
+export interface AttemptOptions {
+    log: TickLog;
+    account: string;
+    link: Link;
+    from?: number | string;
+    /** Read at every logout-safe boundary, before the other stops. */
+    reservation: ReservationWatch;
+    /** Ctrl-C asked for a stop. */
+    stopAsked: () => boolean;
+    /** Why the rehearsal tab's in-page probe refuses ((c) failed), or null. */
+    gateStop: () => string | null;
+    /** Leave the world: logoutClean, page-confirmed. Clearing `expectInWorld` keeps the watchdog from relaunching. */
+    logout: () => Promise<LogoutResult>;
+    onEvent?: (e: ResumeEvent) => void;
+}
+
+export interface AttemptResult {
+    outcome: string;
+    code: number;
+    /** Set when a live host reservation stopped the attempt. */
+    paused: HostReservation | null;
+}
+
+/**
+ * The chain through runResumable with the attempt's stops, polled after each logoutSafe step:
+ * the runner has no safe point inside a step, so a long step runs to its end first. A live host
+ * reservation logs out there, writes a PAUSE_STEP row and returns EXIT_HOST_RESERVED; nothing here
+ * restarts the attempt. Ctrl-C returns 4 and a failed rehearsal-tab gate 3, as before.
+ */
+export async function runAttempt(session: Session, chain: ReadonlyArray<Step<any>>, o: AttemptOptions): Promise<AttemptResult> {
+    const held: { reservation: HostReservation | null; logout: LogoutResult | null } = { reservation: null, logout: null };
+    try {
+        const r = await runResumable(session, chain, {
+            log: o.log,
+            c: {},
+            link: o.link,
+            // The reservation is read first, at every boundary, so a pause is recorded as one even beside a Ctrl-C.
+            shouldStop: () => {
+                held.reservation ??= o.reservation.check();
+                return held.reservation !== null || o.stopAsked() || o.gateStop() !== null;
+            },
+            logout: async () => {
+                held.logout = await o.logout();
+            },
+            ...(o.from !== undefined ? { from: o.from } : {}),
+            ...(o.onEvent ? { onEvent: o.onEvent } : {}),
+        });
+        if (r.resumeAt === undefined) return { outcome: r.drops ? `chain done after ${r.drops} drop(s)` : 'chain done', code: 0, paused: null };
+        const before = chain[r.resumeAt]?.name ?? null;
+        const res = held.reservation;
+        if (res) {
+            const out = held.logout;
+            o.log.append(annotation(o.log, o.account, 'gate', PAUSE_STEP, {
+                sessionId: session.sessionId,
+                startTick: out ? out.clickTick : (session.sdk.getState()?.tick ?? -1),
+                ok: out?.ok === true,
+                ...(out && !out.ok ? { error: `logout not confirmed: ${out.reason}` } : {}),
+                meta: { ...res, path: o.reservation.path, before, ...(out ? { logout: out } : {}) },
+            }));
+            const left = out?.ok ? 'logged out' : `logout NOT confirmed (${out?.reason ?? 'no logout'})`;
+            return {
+                outcome: `PAUSED for the gate/run: the host is reserved by ${reservationText(res)}; ${left} before "${before}"; run again once the reservation is gone`,
+                code: EXIT_HOST_RESERVED,
+                paused: res,
+            };
+        }
+        const gate = o.gateStop();
+        if (gate) return { outcome: `REFUSED after the in-page probe (${gate}); logged out`, code: 3, paused: null };
+        return { outcome: `stopped before "${before}"; logged out`, code: 4, paused: null };
+    } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        // A step that logged out on purpose (a PausedForPlayer pause) left the world itself.
+        const r = !session.expectInWorld ? { outcome: `paused by the step, already logged out: ${msg}`, code: 4 } : { outcome: `FAILED: ${msg}`, code: 1 };
+        console.error(`[rehearse] ${r.outcome}`);
+        return { ...r, paused: null };
+    }
+}
+
 // ------------------------------------------------------------------ the attempt
 
 export interface SkillModule {
@@ -827,6 +907,23 @@ async function main(argv: string[]): Promise<number> {
     const local = isLocalWorld(env.SERVER);
     const a = local ? parseArgs(argv) : parseArgs(argv, { defaultGateBot: DEFAULT_GATE_BOT });
     if (a.lab && !local) throw new UsageError(`--lab accepts staff fixtures, and ${env.SERVER} is not a local lab`);
+
+    // 0. Pre-flight: no login of any kind while the host is reserved for the gate or the run.
+    const reservation = new ReservationWatch(reservationPath(a.hostReservation));
+    let gateTab: Session | null = null;
+    const refuseIfReserved = async (): Promise<boolean> => {
+        const why = reservationRefusal(reservation);
+        if (!why) return false;
+        console.error(`[rehearse] REFUSED: ${why}`);
+        console.error('[rehearse] nothing was logged in for the attempt');
+        if (gateTab) {
+            await logoutClean(gateTab).catch(() => {});
+            await closeSession(gateTab);
+        }
+        return true;
+    };
+    if (await refuseIfReserved()) return EXIT_HOST_RESERVED;
+
     const mod = a.claim ? null : await loadSkillModule(a.skill!);
     const skillName = mod?.skill ?? CLAIM_SKILL;
     const start = await import('./skills/start');
@@ -847,8 +944,8 @@ async function main(argv: string[]): Promise<number> {
     else if (a.gateBot) direct = await directReadViaCli(a.gateBot, { lab: a.lab, runId });
     if (direct) log.append(annotation(log, account, 'gate', '(gate) direct', { ok: !direct.error && direct.verdict?.on === true, ...(direct.error ? { error: direct.error } : {}), meta: { ...direct, ...(direct.verdict ? { text: verdictText(direct.verdict) } : {}) } }));
     const inPage: InPageRead[] = [];
-    let gateTab: Session | null = null;
     if (a.gateProbeTrials > 0) {
+        if (await refuseIfReserved()) return EXIT_HOST_RESERVED;
         gateTab = await openSession(a.gateBot!, { client: 'browser', launch: true });
         inPage.push(await inPageRead(gateTab, a.gateProbeTrials, 'gate tab before'));
         log.append(annotation(log, gateTab.name, 'gate', '(gate) in-page before', { meta: { ...inPage[0]!, text: verdictText(inPage[0]!.verdict) } }));
@@ -872,6 +969,8 @@ async function main(argv: string[]): Promise<number> {
         }
         for (const r of refusal) console.warn(`[rehearse] --force-gate: starting anyway: ${r}`);
     }
+    // The gate takes minutes; a reservation may have appeared meanwhile. --force-gate does not override it.
+    if (await refuseIfReserved()) return EXIT_HOST_RESERVED;
 
     // 2. The attempt, on the clock from the login.
     const session = await openSession(a.bot, { client: a.client, launch: true });
@@ -959,39 +1058,24 @@ async function main(argv: string[]): Promise<number> {
     if (a.kit) chain.push(kitStep(a.kit, a.kitFrom));
     if (mod) chain.push(...mod.steps({ to: a.to, ...(a.technique ? { technique: a.technique } : {}), ...a.skillOpts }));
 
-    let outcome = 'chain done';
-    let code = 0;
-    try {
-        const r = await runResumable(session, chain, {
-            log,
-            c: {},
-            link: sessionLink(session),
-            shouldStop: () => stopAsked || gateStop !== null,
-            logout: () => leave(),
-            ...(a.from !== undefined ? { from: a.from } : {}),
-            onEvent: e => console.log(`[resume] ${JSON.stringify(e)}`),
-        });
-        if (r.resumeAt !== undefined) {
-            outcome = gateStop ? `REFUSED after the in-page probe (${gateStop}); logged out` : `stopped before "${chain[r.resumeAt]?.name}"; logged out`;
-            code = gateStop ? 3 : 4;
-        } else if (r.drops) outcome = `chain done after ${r.drops} drop(s)`;
-    } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        // A step that logged out on purpose (a PausedForPlayer pause) left the world itself.
-        if (!session.expectInWorld) {
-            outcome = `paused by the step, already logged out: ${msg}`;
-            code = 4;
-        } else {
-            outcome = `FAILED: ${msg}`;
-            code = 1;
-        }
-        console.error(`[rehearse] ${outcome}`);
-    }
+    const { outcome, code, paused } = await runAttempt(session, chain, {
+        log,
+        account,
+        link: sessionLink(session),
+        reservation,
+        stopAsked: () => stopAsked,
+        gateStop: () => gateStop,
+        logout: () => leave(),
+        ...(a.from !== undefined ? { from: a.from } : {}),
+        onEvent: e => console.log(`[resume] ${JSON.stringify(e)}`),
+    });
+    if (paused) console.error(`[rehearse] ${outcome}`);
 
     // 3. Out of the world at once, then everything that costs no ticks.
     if (session.expectInWorld && !leaving) await leave();
-    clearInterval(playersTimer);
+    // After a deliberate logout (expectInWorld false) the watchdog relaunches nothing; stop it outright.
     wd.stop();
+    clearInterval(playersTimer);
     monitor?.stop();
     process.off('SIGINT', onSigint);
     for (const st of programs.flush()) log.append(programRow(log, account, session.sessionId, st));
@@ -1001,7 +1085,12 @@ async function main(argv: string[]): Promise<number> {
     closeSessionRow(session.sessionId, 'logout', out?.ok ? out.lastInWorldTick : session.lastInWorldTick, out ?? undefined);
     await readPlayers('end');
 
-    if (gateTab) {
+    if (gateTab && paused) {
+        // The host is reserved: the gate account leaves too, without its after-probe.
+        gate.push('gate tab after: skipped (paused for the gate/run)');
+        await logoutClean(gateTab).catch(() => {});
+        await closeSession(gateTab);
+    } else if (gateTab) {
         try {
             const after = await inPageRead(gateTab, a.gateProbeTrials, 'gate tab after');
             log.append(annotation(log, gateTab.name, 'gate', '(gate) in-page after', { meta: { ...after, text: verdictText(after.verdict) } }));
@@ -1023,6 +1112,7 @@ async function main(argv: string[]): Promise<number> {
     console.log('\n' + formatSummary(summary, { account, skill: skillName, ...(a.claim ? {} : { to: a.to }), outcome, gate, hiscore: checks, ...(hiscoreOrigin ? { hiscoreUrl: `${hiscoreOrigin}${playerPath(account)}` } : {}) }));
     console.log(`log: ${log.path}`);
     if (code === 4) console.log('resume: run the same command again (the walk starts from game state); --from=<step> overrides it');
+    if (code === EXIT_HOST_RESERVED) console.log(`resume: once ${reservation.path} is gone or expired, run the same command again (nothing restarts on its own)`);
     await closeSession(session);
     return code;
 }
