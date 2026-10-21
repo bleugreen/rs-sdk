@@ -8,6 +8,16 @@ rule live there. **SCORED** is the scored account; its real name never appears h
 log line or a chat message. Figures carry a label: **m** measured (with the time), **r** read from a
 file, a config or main's notes, **i** inferred.
 
+**The run's standing configuration** (main, 10:02 PDT 2026-10-21, on the measurements below):
+
+- the recording is captured on the VM;
+- **RDP is disconnected during the run**;
+- the operator watches through a 3 fps MJPEG **live view** (step 5).
+
+RDP is used only before the run: to create the desktop session at the right geometry and to check the
+bring-up by eye. With RDP disconnected the tab runs exactly as fast as with it connected, and the
+recording is smooth. A connected session costs the recording about a fifth of its frames.
+
 ## The host
 
 | | | |
@@ -71,9 +81,11 @@ before it probes (step 6), so this step is the early warning, not the record.
 
 ## 2. The operator's remote desktop
 
-RDP is for the operator to watch and to keep the session alive; the recording does not come through
-it (step 5). Client settings (labels as in Microsoft's Windows App for macOS; check them against the
-client in use):
+RDP is for the pre-run steps only. Connecting creates the desktop session that Chrome and the
+recording live in. The operator stays connected to watch steps 2 and 3 come up, then **disconnects
+before the recording starts** (step 5) and watches the live view from then on. Neither the recording
+nor the run goes through RDP. Client settings (labels as in Microsoft's Windows App for macOS; check
+them against the client in use):
 
 - Resolution **1920x1080**, fixed. **Optimize for Retina displays off**, no "fit to window", no
   "update the session resolution on resize" (dynamic resolution). The first test session came up at
@@ -83,6 +95,8 @@ client in use):
   nothing on top of it.
 - To leave, **Disconnect** (close the window). Never **Log out** in XFCE: that ends the only desktop
   session, and with it display :10, Chrome and the recording.
+- A mid-run reconnect to look at something is safe for the run, because the tab doesn't slow down.
+  The recording drops frames while connected, so disconnect again as soon as possible.
 
 After the operator connects, read which display the session is on and its geometry; it must be
 1920x1080 at 24 planes. If it is not, the session predates the client settings: main ends it from
@@ -98,8 +112,8 @@ The commands below use `:10`. If the log names another display, replace `:10` ev
 and Chrome's window stays mapped, so Chrome sees no change: the page's loop rate was the same
 connected and disconnected, with or without the capture (m, "Measured" below). We did not read
 `document.visibilityState` directly; an unchanged loop rate is the evidence that nothing throttled.
-The recording is better with RDP disconnected (step 5). Tenet 11 keeps the session connected;
-whether the run relaxes that is main's call, and these measurements support either choice.
+That is why the run can leave RDP disconnected, which tenet 11 had ruled out before this
+measurement (its successor relaxes it).
 
 ## 3. Bring up the page server, the gateway and Chrome
 
@@ -135,7 +149,9 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o 
 - `--password-store=basic` keeps a fresh profile from raising a keyring prompt over the tab;
   `--no-first-run --no-default-browser-check` keep the first-run dialogs away.
 
-Check the flags and the window (expect the five flag names and a window 1920 wide):
+Check the flags and the window (expect the five flag names and a window 1920 wide). The operator,
+still connected, sees the tab come up. Once this check passes, the operator **disconnects**.
+Everything from step 4 on runs disconnected:
 
 ```sh
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'ps -o args= -C chrome | grep -v -- --type= | grep -o -E "disable-background-timer-throttling|disable-renderer-backgrounding|disable-backgrounding-occluded-windows|start-maximized|user-data-dir=[^ ]*"; DISPLAY=:10 xwininfo -root -tree | grep "Bot Client"; tail -2 $HOME/rs-run/gateway.log'
@@ -176,21 +192,21 @@ three choices made here:
 Size: 7.2 Mbit/s at 30 fps in game, about 3.3 GB an hour (m: 288 MB in 318 s, 16:41-16:47 UTC; i: per
 hour), against 51 GB free (m, 16:15 UTC); the disk holds well over ten hours.
 
-**Frame drops while RDP is connected.** With the operator connected, the capture kept real time but
-wrote only about 23 distinct frames a second (2,389 of ~10,700 dropped over 6 minutes); disconnected,
-it wrote 29.9 a second with none dropped (m, "Measured"). The capture is not short of CPU (it used
-under one core of eight in both); the likely cause is the live RDP session's screen updates
-competing with the grab for the X server (i). The game is unaffected (the loop rate is the same
-connected), but the recording is smoother with RDP disconnected. Check during the run with:
+**Why RDP stays disconnected during the run.** With the operator connected, the capture kept real
+time but wrote only about 23 distinct frames a second (2,389 of ~10,700 dropped over 6 minutes).
+Disconnected, it wrote 29.9 a second with none dropped (m, "Measured"). The capture is not short of
+CPU: it used under one core of eight in both cases. The likely cause is the live RDP session's
+screen updates competing with the grab for the X server (i). The game is unaffected either way.
+Check the recording during the run with:
 
 ```sh
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'grep -E "^(frame|fps|drop_frames|dup_frames|speed|out_time)=" ~/recordings/ffmpeg-progress.log | tail -6; ls -la ~/recordings; df -h / | tail -1'
 ```
 
-**Optional live view for the operator** (instead of, or beside, RDP): a 3 fps, 960x540 MJPEG
-stream on the tailnet address, opened in a browser at `http://100.66.164.37:8090/live.mjpg` (over
-Tailscale, like RDP). ffmpeg's `-listen 1` serves one viewer and exits when the viewer leaves, so it
-runs in a loop:
+**The operator's live view**, started with the recording and left running until teardown. It is a
+3 fps, 960x540 MJPEG stream on the tailnet address, which the operator opens in a browser at
+`http://100.66.164.37:8090/live.mjpg` (over Tailscale, like RDP). ffmpeg's `-listen 1` serves one
+viewer and exits when that viewer leaves, so it runs in a loop; a reload reconnects:
 
 ```sh
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'tmux -L run new-session -d -s live "while true; do ffmpeg -hide_banner -loglevel warning -f x11grab -draw_mouse 1 -framerate 3 -video_size 1920x1080 -i :10.0+0,0 -vf scale=960:540 -c:v mjpeg -q:v 8 -f mpjpeg -listen 1 http://100.66.164.37:8090/live.mjpg; sleep 1; done"'
@@ -198,14 +214,14 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o 
 
 It costs 3.7% of one core (m: `pidstat` over 40 s, 16:53 UTC, ~150 kbit/s), and the recording
 beside it still wrote 29.7 fps with no drops (m: 70 s, 16:54 UTC). It was tested with `curl` on the
-host (217 frames in 72 s); nobody has opened it in the operator's browser yet. Stop it with
-`tmux -L run kill-session -t live`.
+host (217 frames in 72 s); nobody has opened it in the operator's browser yet. Teardown stops it with
+the rest of the stack (or `tmux -L run kill-session -t live` on its own).
 
 ## 6. Quiesce check and the gate
 
 **Quiesce.** Nothing runs on the machine but the session's desktop, the `run` tmux stack (gateway,
 page server, Chrome, recording), rs/117's launcher with its lite runners and roles, and system
-daemons, plus the optional live view (step 5). The drained Cairn executor's daemon (`cairn-exec`) was idle at 0.3% of a core (m, 16:15
+daemons. The `run` stack includes the live view (step 5). The drained Cairn executor's daemon (`cairn-exec`) was idle at 0.3% of a core (m, 16:15
 UTC); whether it stays up during the run is main's call. No second Chrome, no other `bun`, no other
 ffmpeg.
 
@@ -215,7 +231,8 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o 
 
 **The gate** is measured here, on this machine, right before the run, at the real player count, and
 **on a gate account, never SCORED**: SCORED's playtime starts at its first login, which is step 7.
-The conditions and what to do on a failure are RUN-ORDER.md section 1 and tenet 11.
+Measure it in the run's configuration: RDP disconnected, with the recording and the live view running.
+The conditions and what to do on a failure are in RUN-ORDER.md section 1 and tenet 11.
 
 - **(a)-(c)**, next-tick reactions, tick publication p90 and catch-ups: rs/96's direct-path CLI,
   `docs/speedrun/scripts/tickmanip-latency.ts <gate account> --path=direct --no-tele`
@@ -272,8 +289,8 @@ recording must already be stopped (step 8), since killing tmux under ffmpeg cuts
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@54.242.152.95 'tmux -L run has-session -t rec 2>/dev/null && { echo "recording still running: stop it first (step 8)"; exit 1; }; tmux -L run kill-server; sleep 2; ls /tmp/tmux-$(id -u)/; pgrep -a -f "proxy.ts|gateway.ts|rs-run/chrome-profile" || echo "tab stack stopped"'
 ```
 
-The operator disconnects (never logs out). The recording stays on the host until its copy on the Mac
-is checked.
+The session itself stays: nobody logs out of XFCE. The recording stays on the host until its copy on
+the Mac is checked.
 
 ## Measured: gate (d) on this host, 2026-10-21
 
@@ -303,8 +320,8 @@ slowest single tick interval's loop rate in the condition.
 **Verdict: gate (d) passes on this host in every condition, with margin.** The lowest 10-second p10 in
 120 samples was 70.6 loops/s, about 40% above the ~50 threshold. Software rendering at 1920x1080
 costs the tab and Chrome's GPU process together about 0.7-0.9 of a core. The run's configuration
-(connected, capture on) is row 2. The capture costs 0.75 of a core with RDP connected and 0.95
-disconnected, about 10-12% of the machine. The busiest sample of the whole window had the host 27%
+(RDP disconnected, capture on) is row 3, plus the live view's 3.7% of a core. The capture costs 0.95
+of a core disconnected and 0.75 connected, about 10-12% of the machine. The busiest sample of the whole window had the host 27%
 busy. A larger instance is not needed for (d) (i).
 
 Not part of (d): the probe found about 17% of walk trials late and about 11 catch-ups a minute in
