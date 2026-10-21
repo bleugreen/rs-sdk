@@ -41,7 +41,20 @@ const expected = rolls.reduce((n, r) => n + Math.min(r.v, 256) / 256, 0);
 const sd = Math.sqrt(rolls.reduce((n, r) => { const p = Math.min(r.v, 256) / 256; return n + p * (1 - p); }, 0));
 
 // gaps between consecutive rolls; the cycle is 4, anything above it is lost time
-const depleteTicks = new Set(locs.filter(l => rolls.some(r => r.t === l.t && r.ok)).map(l => l.t));
+// a tree depletion is a loc_change on the tick of a successful roll (other world locs,
+// such as one on a 500-tick timer, also show up in the trace)
+const treeLocs = locs.filter(l => rolls.some(r => r.t === l.t && r.ok));
+const depleteTicks = new Set(treeLocs.map(l => l.t));
+// phase of each accepted click: ticks since the latest roll at or before it
+const clickPhase: Record<number, number> = {};
+for (const o of oploc.filter(o => o.ok)) {
+    const prev = [...rolls].reverse().find(r => r.t <= o.t);
+    if (!prev) continue;
+    const ph = Math.min(o.t - prev.t, 9);
+    clickPhase[ph] = (clickPhase[ph] ?? 0) + 1;
+}
+// ticks lost per level-up: the gap after a roll whose xp crossed a level
+const levelUpTicks = new Set(lines.filter(l => / levelup /.test(l)).map(l => Number(l.slice(l.indexOf('WCTRACE ') + 8).split(' ')[0])));
 const gapHist: Record<number, number> = {};
 let lost = 0, lostAfterDepletion = 0, lostOther = 0, waitsAllDown = 0;
 const lostEvents: string[] = [];
@@ -63,7 +76,7 @@ const span = rolls[rolls.length - 1].t - rolls[0].t;
 const activeSpan = span - rolls.slice(1).reduce((n, r, i) => n + (r.t - rolls[i].t > 40 ? r.t - rolls[i].t - 4 : 0), 0);
 const xpBase = xps.reduce((n, x) => n + x.fine, 0) / 10; // tenths -> base xp
 const durations: Record<number, number> = {};
-for (const l of locs) durations[l.duration] = (durations[l.duration] ?? 0) + 1;
+for (const l of treeLocs) durations[l.duration] = (durations[l.duration] ?? 0) + 1;
 const perTick: Record<number, number> = {};
 for (const o of opheld) perTick[o.t] = (perTick[o.t] ?? 0) + 1;
 const summary = {
@@ -81,6 +94,8 @@ const summary = {
     movedTicks: moved.length,
     opheld: opheld.length, opheldRejected: opheld.filter(o => !o.ok).length, maxOpheldInOneTick: Math.max(0, ...Object.values(perTick)),
     oploc: oploc.length, oplocRejected: oploc.filter(o => !o.ok).length,
+    clickPhase,
+    levelUps: levelUpTicks.size,
 };
 console.log(`SUMMARY ${JSON.stringify(summary)}`);
 for (const e of lostEvents) console.log(`LOST ${e}`);

@@ -114,16 +114,18 @@ await runScript(async ({ bot, sdk }) => {
         current = t;
     };
 
-    // predict mode. A click sent on observed tick c is processed on server tick c+1; if
-    // the timer is stale it sets the roll for c+4 (woodcut.rs2:55-60). The state for tick
-    // k shows the results of server tick k-1, so a log seen at k came from the roll that
-    // the click sent at k-1 should have followed.
+    // predict mode. A click on a stale timer sets the roll 3 ticks after the tick the
+    // server processes it (woodcut.rs2:55-60), and every later click is sent 4 observed
+    // ticks after the previous one, so the clicks stay on one phase of the roll grid.
+    // --shift moves that phase: with shift 0 the clicks were measured landing on the
+    // roll tick itself; shift 1 puts them on the tick after it. Check the phase with
+    // woodcutting-trace-summary.ts (clickPhase). Nothing resyncs from observed logs.
+    const shift = Number(opt('shift', '1'));
     let rollObs = -1;
     let lastLevel = sdk.getSkill('woodcutting')?.baseLevel ?? 0;
     let predictClicks = 0, levelClicks = 0, resyncs = 0;
-    const predictStep = (s: BotWorldState, gotLog: boolean, levelUp: boolean) => {
+    const predictStep = (s: BotWorldState, _gotLog: boolean, levelUp: boolean) => {
         const live = trees.filter(t => alive(s, t));
-        if (gotLog && rollObs >= 0 && rollObs !== s.tick + 3) { resyncs++; rollObs = s.tick + 3; }
         const drops = s.inventory.filter(i => /logs/i.test(i.name) && !(droppedAt.has(i.slot) && s.tick - droppedAt.get(i.slot)! < 4)).slice(0, 3);
         const send = (t: [number, number]) => {
             for (const i of drops) { fire(sdk.sendDropItem(i.slot)); droppedAt.set(i.slot, s.tick); events.push({ k: 'P', t: s.tick }); }
@@ -135,14 +137,14 @@ await runScript(async ({ bot, sdk }) => {
             // this one closes it, and the timer is stale, so the grid moves to c+4
             send(live.find(t => key(t) === lastClicked) ?? live[0]);
             levelClicks++;
-            rollObs = s.tick + 4;
+            rollObs = s.tick + 4 + shift;
             return;
         }
         if (rollObs < 0 || current === null) {
             // start, or every tree was down: click as soon as one is live
             if (!live.length) return;
             send(live[0]);
-            rollObs = s.tick + 4;
+            rollObs = s.tick + 4 + shift;
             return;
         }
         if (s.tick < rollObs) return;
@@ -161,16 +163,15 @@ await runScript(async ({ bot, sdk }) => {
             endMs = Date.now();
             if (s.dialog.isOpen && clickMode !== 'predict') fire(sdk.sendClickDialog(0));
 
-            // A log is counted from its 'You get some ...' message (one per success); xp
-            // deltas would miss a log that lands on the same tick as a --hold level reset.
+            // A log is counted from an xp increase. Game messages are not usable: the lite
+            // client re-reports old messages under new observation ids, which measured as
+            // 'logs' on ticks where the server granted none. ::setstat (--hold) only lowers xp.
             const wc = s.skills.find(k => k.name.toLowerCase() === 'woodcutting')!;
-            let gotLog = false;
+            const gotLog = lastXp >= 0 && wc.experience > lastXp;
             for (const m of s.gameMessages) {
                 const id = m.observationId ?? `${m.tick}:${m.text}`;
                 if (seenMsg.has(id)) continue;
                 seenMsg.add(id);
-                if (/^You get some/.test(m.text)) gotLog = true;
-                if (/swing your axe/.test(m.text)) { events.push({ k: 'S', t: s.tick }); out('S', s.tick); }
                 if (/too full|need a Woodcutting level|do not have an axe/.test(m.text)) out('M', s.tick, m.text);
             }
             if (gotLog) {
