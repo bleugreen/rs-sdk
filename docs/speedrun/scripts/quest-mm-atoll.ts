@@ -74,6 +74,9 @@ await runScript(async ({ bot, sdk }) => {
         }
         if (seg === 'T') {
             await reset({ mm_main: 3, mm_zooknock: 5 }, [['mm_enchanted_gold_bar', 1], ['mm_monkey_amulet_mould', 1], ['ball_of_wool', 1], ['shark', 5]], [2795, 2786]);
+            // Auto retaliate off (one click on the combat tab, controls:com_3, player_controls.rs2:14-19),
+            // or every guard hit turns the player round to fight and drops the walk.
+            await setvar(sdk, 'option_nodef', 1);
             await bot.activatePrayer('protect_from_melee');
             {
                 // Five aggressive temple guards (level 167, mm_religious_trapdoor_guard) stand round the
