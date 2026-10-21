@@ -22,7 +22,9 @@ await runScript(async ({ sdk }) => {
         let last = pos(sdk.getState());
         let still = 0;
         while (still < 4 && now(sdk) - t0 < 400) {
-            await sdk.sendWalk(tx, tz, true);
+            const cur = pos(sdk.getState());
+            const clamp = (d: number) => Math.max(-40, Math.min(40, d));
+            await sdk.sendWalk(cur.x + clamp(tx - cur.x), cur.z + clamp(tz - cur.z), true);
             await waitTicks(sdk, 3);
             const p = pos(sdk.getState());
             if (p.x === last.x && p.z === last.z) still++;
