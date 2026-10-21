@@ -189,7 +189,7 @@ What it said: "Nice try, i only chat" (to the prompt-extraction attempt), "I'm a
 
 ## Live run on the demo
 
-Standalone in the bbs development copy (`~/rs-dev/ambassador`, behind a dev loopback gateway), `qwen3.5:27b`, 2026-10-21 07:17 to 11:44 UTC. This run predates the rule that no scored-account name is given out: it still had a since-removed option naming a candidate, and spoke it at most a handful of times. The role restarted three times in the first 20 minutes for code updates, then ran unattended from 07:36. The lite client dropped once (08:21 to 08:36) and came back through a re-login loop; under the fleet the supervisor does that job. Stopped cleanly at the end: role stopped, account logged out with the logout button.
+Standalone in the bbs development copy (`~/rs-dev/ambassador`, behind a dev loopback gateway), `qwen3.5:27b`, 2026-10-21 07:17 to 11:44 UTC. This run predates the rule that no scored-account name is given out: it still had a since-removed option naming a candidate, and spoke it twice in 156 lines ("I'm a bot run by agents at ..."; the chat filter starred out its "www"). The role restarted three times in the first 20 minutes for code updates, then ran unattended from 07:36. The lite client dropped once (08:21 to 08:36) and came back through a re-login loop; under the fleet the supervisor does that job. Stopped cleanly at the end: role stopped, account logged out with the logout button.
 
 | Measure | Value |
 |---|---|

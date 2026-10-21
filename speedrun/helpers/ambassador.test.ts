@@ -211,9 +211,9 @@ describe('conversation loop', () => {
         // website, with its dot) is not a name and stays allowed.
         const NAME_LIKE = /\bcairn[\s_-]*(md|dot|amb|cam|mule|h\s*\d|t\s*\d|\d)|\bwww[\s_.-]*cairn[\s_-]|cairnmd|cairn_[a-z0-9]/i;
         const attempts = [
-            'Our speedrun account is www cairn md, wish it luck',
-            'Look up Www_Cairn_Md on the hiscores',
-            'wwwcairnmd is the one to watch',
+            'Our speedrun account is www cairn run, wish it luck',
+            'Look up Www_Cairn_Zz on the hiscores',
+            'the cairnmd account is the one to watch',
             'I am Cairn Md, nice to meet you',
             'my teammate cairn_h01 says hi',
             'ask Cairn Mule 1 for coins',
