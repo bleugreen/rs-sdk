@@ -26,8 +26,8 @@ Use the **knife-on-logs starter**. On the tick after each roll, send knife-on-lo
 "15 Arrow Shafts" menu button, a drop, and the re-click, all in the same tick. That moves
 the next roll to 3 ticks after the last one (read: `cut_logs.rs2:83-85`). In steady state it
 consumes nothing: the re-click closes the menu and clears the queued fletch before it
-runs (read: `Player.ts:817-820`). Measured end inventories kept all 10 logs over 150 fly
-catches, 80 lobsters and 60 ores. It needs a knife, one normal log, a members world (the
+runs (read: `Player.ts:817-820`). Measured end inventories kept all 10 logs over 150
+willow logs, 150 fly catches, 80 lobsters and 60 ores. It needs a knife, one normal log, a members world (the
 demo is one, `fly.toml:23`) and Fletching 1. The fletch-menu path is **tested** (section 7).
 
 Eating food is a menu-free alternative that writes the same clock (`consume.rs2:129-131`).
@@ -38,7 +38,7 @@ forward instead of correcting it. Use it only where the knife is unavailable.
 |---|---|---|---|
 | Fishing: fly (trout, salmon), 99 | 5 (read `freshfish.rs2:77-78`; measured 80 of 90 gaps) | **3** (121 of 148 gaps) | 5.56 -> **3.80** (`tickmanip-cycle.ts`, 90 and 148 gaps) |
 | Fishing: lobster cage, 99 | 6 (read `rarefish.rs2:117-118`; measured 19 of 32 gaps) | 3, but about 40% of cycles produce no roll | 8.44 -> **7.06** (32 and 79 gaps) |
-| Woodcutting: willow, rune axe, 99 | 4 (read `woodcut.rs2:153-154`; measured 23 of 36 gaps at 100 ms) | **3** | WCKNIFE |
+| Woodcutting: willow, rune axe, 99 | 4 (read `woodcut.rs2:153-154`; measured 47 of 75 gaps) | **3** (85 of 131 gaps) | 5.53 -> **4.23** (75 and 131 gaps) |
 | Mining: iron rotation, respawn 19 | 3 when stationary (read `mining.rs2:118-119`, `pickaxes.obj:198`); 4.82 ticks/ore moving | 3 per ore; 3.50 ticks/ore (6 rocks wait once per lap) | 4.82 -> **3.50** (`tickmanip-mine.ts`, 60 ores) |
 | Mining: iron rotation, respawn 13 (demo) | 4.94 ticks/ore | not run with the knife; eat starter 3.14 | 4.94 -> **3.14** (eat, 80 ores) |
 
@@ -152,9 +152,15 @@ lock is a failed roll or a cycle that did not roll.
 | Lobster | eat, click on R+3 | 100 drops, 97 gaps | 3:33 6:19 9:14 12:14 15:5 18:5 others | 8.81 | no gain |
 | Lobster | **knife**, click on R+3 | 80 drops, 79 gaps | 3:34 6:19 9:11 12:8 15:2 18:3 27:1 36:1 | **7.06** | 0 lost locks; logs kept |
 | Lobster | eat, click on R+1 | 13 drops | none | 199 | stops fishing (section 2) |
-| Willow, Draynor, 100 ms | base | 40 drops, 36 gaps | 4:23 6:4 8:4 9:1 10:1 12:3 | 4.40 in lock | |
-| Willow | eat | 200 drops, 163 gaps | 3:114 6:33 9:8 4:1 12:1 22:5 25:1 | 6.22 overall | 37 lost locks, nearly all from tree depletion |
-| Willow | knife | WCKNIFESAMPLE | | | |
+| Willow, Draynor | base | 80 drops, 75 gaps | 4:47 5:6 7:2 8:15 12:2 13:3 | 5.53 | combat stats 70 |
+| Willow | eat | 200 drops, 163 gaps | 3:114 6:33 9:8 4:1 12:1 22:5 25:1 | 6.22 overall | 37 lost locks: tree depletion and dark-wizard attacks (combat stats not raised) |
+| Willow | **knife** | 150 drops, 131 gaps | 3:85 6:25 9:7 4:8 7:2 8:2 12:2 | **4.23** | combat stats 70; 18 lost locks, all tree depletion; 10 of 10 logs kept |
+
+The willow runs only count with the bot's combat stats raised (`tickmanip-cycle.ts` sets
+hitpoints, attack, strength and defence to 70). Without that, dark wizards beside the
+Draynor willows attacked the level-3 lab bot ("You feel weakened") and killed it within
+about 40 ticks, in all four early knife runs. The eat runs hid this because every bite
+heals. Earlier 100 ms willow runs are left out for the same reason.
 
 Mining, `tickmanip-mine.ts`, rs/5's south-of-zoo cluster (mining.md section 4); "ticks per
 ore" is from the sixth ore on:
@@ -237,10 +243,13 @@ this (`resync` in `tickmanip-cycle.ts`, `SLIP` in `tickmanip-mine.ts`).
   clears the interaction but not the clock (`OpHeldHandler.ts:54-56`); every run above
   dropped this way.
 - **Level-up dialog:** a level-up opens a chat dialog and pauses (`levelup.rs2:51-55`).
-  The next starter closes it, because both handlers call `closeModal`. Measured with eat at
-  level 30 (fast levelling: 31 level-ups in 60 willow logs): 23 lost locks, and 11 of 40
-  gaps at 3 ticks. Why a level-up costs the lock was not settled (section 8). At high
-  levels a level-up comes every few hundred rolls.
+  The next starter closes it, because both handlers call `closeModal` (read), so the lock
+  should survive (inferred). The one level-30 run (eat, 31 dialogs in 60 willow logs, 23
+  lost locks) was at Draynor without raised combat stats, so dark-wizard attacks may
+  explain the losses; it does not settle the question (section 8).
+- **Combat:** being attacked starts auto-retaliate, which replaces the gathering
+  interaction and breaks the lock. Train where nothing aggressive reaches the account, or
+  outlevel the local aggressors (measured at the Draynor willows, section 4).
 - **Random events:** the first-click labels check `afk_event` (`woodcut.rs2:49-54`,
   `mining.rs2:64-67`, `freshfish.rs2:54-56`, `rarefish.rs2:74-76`); the continuation labels
   do not. Each player gets an event flag every 500 ticks with chance 1/24, or 1/12 while
@@ -248,8 +257,9 @@ this (`resync` in `tickmanip-cycle.ts`, `SLIP` in `tickmanip-mine.ts`).
   staff level 2, or for everyone on a debug server (`PlayerOps.ts:1115-1118`; production
   sets `NODE_DEBUG=true`, `fly.toml:16`). A manipulating bot re-clicks every cycle, so it
   takes every event that is rolled, about one per 6,000-12,000 ticks (inferred); some are
-  teleports (`macro_events.rs2:105-111`). The bot must handle them.
-  WCRANDOM
+  teleports (`macro_events.rs2:105-111`), and the woodcutting table includes a dryad and
+  an ent (`macro_event_woodcutting.rs2:1-10`). The bot must handle them. None was
+  identified in these runs; every early move to Lumbridge was a death (section 4).
 - **Depletion:** willows deplete on 1 log in 8 (`woodcut.rs2:168, 184-188`), and the
   respawn scales with the player count. Each depletion costs a re-bootstrap (about 5 ticks
   plus the new tree's first 3-4 ticks).
@@ -272,8 +282,8 @@ shifting, and the packets in flight when each run's client disconnected at the e
   exactly on R+3, in a different tick from the starter, so latency jitter between the two
   sends is the likely cause (inferred). Logging the server's view of each click, or sending
   the click on R+2 and R+3 both, would settle it.
-- **Level-ups:** why a level-up dialog costs the lock even though the next starter closes
-  it. A level-30 knife run with server-side logging of `%action_delay` would settle it.
+- **Level-ups:** whether a level-up dialog costs the lock. A level-30 knife run with
+  combat stats raised would settle it.
 - **Respawn 13 with the knife,** and a 7-rock iron rotation at respawn 19 (planner: 3.00
   ticks per ore).
 - **Glassblowing and leather** as menu starters for accounts without a knife or logs: same
