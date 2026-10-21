@@ -558,6 +558,18 @@ class Run {
         return r.success;
     }
 
+    /** Keep one of each key; the jail key is done with once the dusty key is carried. */
+    async dropSpareKeys(): Promise<void> {
+        const inv = this.state().inventory;
+        const seen = new Set<string>();
+        for (const item of inv) {
+            if (!/ key$/i.test(item.name)) continue;
+            const spent = JAIL_KEY.test(item.name) && this.carrying(DUSTY_KEY);
+            if (seen.has(item.name) || spent) await this.bot.dropItem(item, 1);
+            seen.add(item.name);
+        }
+    }
+
     // ---- banking (kept small so it can move to speedrun/lib) ----
 
     nearBank(): boolean { return !this.underground() && BANKS.some(b => dist(this.pos(), b) <= 8); }
@@ -669,7 +681,8 @@ class Run {
 
     async loot(want: RegExp, at: Tile): Promise<Outcome> {
         await this.sdk.waitForTicks(1);
-        const wanted = (g: GroundItem) => want.test(g.name) || this.upgrade(g.name);
+        // Keys are needed once; other players' spares lie around the dragon room.
+        const wanted = (g: GroundItem) => (want.test(g.name) && !(/ key$/i.test(g.name) && this.carrying(exact(g.name)))) || this.upgrade(g.name);
         const bonesFirst = (g: GroundItem) => Number(/bones/i.test(g.name));
         for (let pass = 0; pass < 6; pass++) {
             const g = (await this.sdk.scanGroundItems(6))
@@ -983,6 +996,7 @@ class Run {
         for (const name of new Set(this.state().inventory.filter(i => isClutter(i.name, this.level('Cooking'))).map(i => i.name))) {
             await this.bot.dropItem(exact(name), 'all');
         }
+        await this.dropSpareKeys();
         if (this.freeSlots() === 0) {
             await this.bank('full', spot, [{ re: ROD, n: 1 }, { re: FEATHER, n: 10_000 }, { re: BRASS_KEY, n: 1 }]);
             return;
