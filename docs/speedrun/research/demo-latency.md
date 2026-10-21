@@ -629,12 +629,12 @@ Preconditions:
 2. `flyio-debug` shows `nr=iad`, `sr=iad`, no mesh hop; TCP connect p50 under 5 ms (rs/86's
    workflow refuses to log in above 10 ms).
 
-**The gate** (cairn://p/rs/tenets/11), measured from the run machine itself, since a distant
+**The gate** (cairn://p/rs/tenets/12, approved; supersedes 11), measured from the run machine itself, since a distant
 vantage adds path jitter that looks like overruns (section 9):
 
-- **(c), primary:** **at most 2 catch-ups per minute** over a 3-5 minute window (working value,
-  pending rs/102's final recommendation; at most 2 agreed with (a) on all 15 Ashburn samples to
-  07:35, while at most 1 wrongly failed 05:09 at 60/60 and 1.6 per minute), a catch-up being an
+- **(c), primary:** **at most 2 catch-ups per minute** over a 3-5 minute window (tenet 12;
+  at most 2 agreed with (a) on all 17 Ashburn samples, at most 1 wrongly failed 05:09 at 60/60 and
+  1.6 per minute, and at most 4 passed the bad 07:01 minute), a catch-up being an
   interval under 150 ms immediately after one over 350 ms, counted from decoded ticks (not from raw
   frames grouped 60 ms apart, which hides them; section 3).
 - **(a)** the direct in-page probe lands **at least 58 of 60** reactions on the next tick;
@@ -654,12 +654,15 @@ Also before starting:
    program sends on a free-running clock. The blind sender's on-aim share is diagnostic only: it
    tops out at about 76% even from Ashburn when sent within 50 ms of the frame, and 23% free-running
    (section 6), so it cannot be a pass/fail line.
-4. **The tab's machine**: decided, the gate's fourth criterion in cairn://p/rs/tenets/11. On macOS
+4. **The tab's machine**: decided, the gate's (d) in cairn://p/rs/tenets/12. On macOS
    with a display attached, rs/97 saw no throttling; the run VM must reproduce that, not assume
    it. Until cairn://p/rs/113's
    decode-on-arrival lands, an in-page reaction includes up to one game-loop period (about
    13.5 ms at 74 loops per second), and Chrome throttles hidden or occluded tabs. So: the tab's
-   loop rate p10 at least about 50 per second; the remote-desktop session connected; screensaver
+   loop rate p10 at least about 50 per second; the remote-desktop session DISCONNECTED during the
+   run, with the operator on the low-rate live view (tenet 12: rs/134 measured the tab's loop at
+   about 72 per second in all four conditions, and the on-host recording at 29.9 fps with RDP
+   disconnected against 23 fps connected); screensaver
    and sleep off; Chrome started with `--disable-background-timer-throttling
    --disable-renderer-backgrounding --disable-backgrounding-occluded-windows`.
 5. If the SDK drives any step that reacts, the relay probe for that step, gated by
