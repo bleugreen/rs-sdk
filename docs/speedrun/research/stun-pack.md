@@ -68,6 +68,10 @@ offset k lands on T+2+k, so k = 2..8 is the usable window.
 | 7 | T+9 | knight click | |
 | 8 | T+10 | knight click | xp landing on T+10 queues a level-up page that pops on T+11 and blocks the attempt (m, smoke run: 12 ticks to the next roll with a page, 11 without), so no xp actions here |
 
+The in-page `pickpocket` program carries this plan as `stunActions: ['bury', 'charge',
+'arrows']` (cairn://p/rs/132; `tick-programs.md`, server/webclient/src/bot/programs/stun-actions.ts),
+measured at 3.00 bones per stun with the next attempt unchanged.
+
 `h` is one delay-free action: Charge while Magic < 99 and runes last, otherwise an arrow action
 (the highest arrowhead tier held and usable), otherwise dropping a finished lower-tier arrow
 stack. An open level-up page is resumed first, at the cost of one `h` slot (section 9). Inside a
