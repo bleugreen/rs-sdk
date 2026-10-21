@@ -4919,10 +4919,9 @@ export class Client extends GameShell {
             this.macroMinimapZoomModifier = -1;
         }
 
-        // rs-sdk: run queued SDK actions here, just before the flush below, so
-        // their packets leave in this cycle and in one websocket frame. Run from
-        // the draw call they waited for a frame and then for the next cycle's
-        // flush, which on a slow frame pushed a burst past the tick boundary.
+        // rs-sdk: SDK actions run when the gateway delivers them and leave through
+        // flushNow. This is their fallback drain (waits, expiry, work held off the
+        // game screen), just before the flush below so its packets leave this cycle.
         this.botOverlay?.tick();
 
         if (now - this.noTimeoutTimer > 1_000) {
