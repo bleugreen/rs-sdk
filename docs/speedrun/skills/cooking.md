@@ -21,16 +21,25 @@ Three routes, side by side (scored-account ticks):
 
 | Route | Ticks 1 -> 99, fast | Ticks 1 -> 99, stock SDK | Helper supply | Basis |
 |---|---|---|---|---|
-| **1. Wine bank fermentation, two logins** (29 wines in the bank + 28 in the inventory at one login, 400 in the bank at the next) | **about 15-25** of hand-off, plus two logins; the two 20-tick fermentation waits overlap other work | same | **457 unfermented wines** (457 grapes + 457 jugs of water, a maker at Cooking 35) | measured end to end (bbs, 300 ms); hand-off ticks measured by rs/47 |
+| **1. Wine bank fermentation, one login** (rs/47's rule: deposit 29, let the login + 20 timer fire, deposit the other 421, make one wine to re-arm the timer) | **45-51 active ticks**, 73-77 from login to 99 (the two 20-tick waits are idle) | same | **450 unfermented wines** as notes + 1 grapes + 1 jug of water (grapes and jugs for a maker at Cooking 35) | measured by rs/47 (3 runs, all 99); P(99 in one login) 98.3%, 99.1% if a second login is allowed (rs/47 `wine.md`, 200k trials) |
+| 1b. Wine, two logins (29 bank + 28 inventory, then 400 at the next login) | about 15-25 of hand-off; fermentation idle | same | 457 wines | measured end to end here (bbs, 300 ms); model 100% |
 | **2. Ugthanki kebabs** (no wine) | **131** | about 528 | about 340 kebab mixtures + 340 pitta breads | fast measured; stock inferred from 3 measured cycles |
 | 2b. Raw fish on a range (no wine, no kebabs) | about 980 (about 870 with helper-made cakes) | about the same | swordfish about 81 + sharks about 168, plus a few low-level fish | inferred from the measured 3 ticks per cook |
 | **3. Hybrid: the wines you have, then fish** | 57 wines -> level about 67, then about 790 of fish | same | 57 wines + about 210 fish | inferred (model) |
 
-**Recommendation.** Use the **two-login wine plan** if helpers can gather about 460 grapes: Cooking
-99 then costs the scored account only its share of two hand-offs. **Do not use a single
-450-wine login**: it reaches 99 only about 46% of the time (model, matching rs/47's 46%), and the
-measured 450-wine run from level 1 ended at **Cooking 98** (3 of the 15 batch rolls failed, 90
-bad wines). **If grapes are unobtainable** (the demo GE has a 1,650 gp bid for 99,658 grapes and
+**Recommendation.** If helpers can gather about 450 grapes, use **rs/47's one-login batch rule**
+(`docs/speedrun/helpers/wine.md` on rs/41's branch): at a login, deposit 29 noted wines before
+login + 20 (they roll singly: 15 batches of 1 + 14 singles), let the login timer ferment them
+(Cooking 1 -> about 55), then deposit the other 421 and make one wine from the grapes and jug in
+the trade, which re-arms the timer (`wine.rs2:20`; making needs Cooking 35, `wine.rs2:8`). 20
+ticks later the rest ferments to 99. rs/47 measured it three times (99 every run, 45-51 active
+ticks); P(99) is 98.3% in one login and 99.1% if a failed re-arm falls back to the next login.
+**It must sit at a login boundary**, because the first firing is the login timer
+(`login.rs2:70`). **Do not ferment all the wine at once**: one 450-wine firing reaches 99 only about
+46% of the time (model here and rs/47's), and the measured 450-wine run from level 1 ended at
+**Cooking 98** (3 of the 15 batch rolls failed, 90 bad wines). The two-login plan measured here
+(29 bank + 28 inventory, then 400) also reached 99 and models at 100%, but needs a second login
+and 28 loose wines held in the inventory across the logout. **If grapes are unobtainable** (the demo GE has a 1,650 gp bid for 99,658 grapes and
 no sellers), use **ugthanki kebabs**: 131 ticks, no Cooking level needed, and every input can be
 gathered or bought. Fish on a range is the last resort at about 980 ticks. Each 100 wines short
 of 364 good wines costs about 36 ticks of kebabs or about 200 of sharks (inferred).
@@ -41,6 +50,14 @@ of 364 good wines costs about 36 ticks of kebabs or about 200 of sharks (inferre
 
 No bands. The timer that ferments wine has no Cooking level check (`wine.rs2:22-70`), so one
 firing can take level 1 to 99.
+
+**One login (recommended), rs/47's timeline** (measured by rs/47, 3 runs, `wine-handoff.ts` on
+rs/41's branch): accept the trade (450 notes, 1 grapes, 1 jug of water) 4 ticks; open bank, deposit
+29 notes, close 5 (done about login + 9); idle to login + 20 (first firing, Cooking 1 -> 53-55);
+dismiss the level-up 5; deposit the 421 notes, close, make one wine 28-36; idle 20 (second firing,
+-> 99). About 45-51 active ticks, 73-77 from login to 99.
+
+**Two logins (measured here):**
 
 | Step | What | Ticks on the scored account | Basis |
 |---|---|---|---|
