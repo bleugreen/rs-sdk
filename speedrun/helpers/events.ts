@@ -19,6 +19,8 @@ export type FleetEventType =
     | 'client_silent'
     | 'role_error'
     | 'role_stall'
+    /** A role's run() returned: it finished its job and is not restarted. */
+    | 'role_finished'
     | 'gateway_exit';
 
 export interface FleetEvent {
