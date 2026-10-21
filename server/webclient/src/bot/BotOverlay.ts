@@ -18,6 +18,29 @@ export function getBotOverlay(): BotOverlay | null {
     return globalBotOverlay;
 }
 
+let taskChannel: MessageChannel | null = null;
+const postedTasks: Array<() => void> = [];
+
+/**
+ * Run `fn` in a task of its own, behind the tasks already queued (typically the
+ * rest of a burst's gateway messages). A MessageChannel rather than setTimeout,
+ * which a background tab throttles to a second or more.
+ */
+function postTask(fn: () => void): void {
+    if (typeof MessageChannel === 'undefined') {
+        setTimeout(fn, 0);
+        return;
+    }
+    if (!taskChannel) {
+        taskChannel = new MessageChannel();
+        taskChannel.port1.onmessage = () => postedTasks.shift()?.();
+        // Bun and Node: an idle port must not hold a test process open.
+        (taskChannel.port1 as { unref?: () => void }).unref?.();
+    }
+    postedTasks.push(fn);
+    taskChannel.port2.postMessage(null);
+}
+
 export class BotOverlay implements GatewayMessageHandler {
     private client: Client;
     private collector: BotStateCollector;
@@ -33,12 +56,20 @@ export class BotOverlay implements GatewayMessageHandler {
     private serverTick: number = 0;
 
     /**
-     * Most queued actions run in one game cycle. A script that sends a burst
-     * (knife on logs, the menu button, a drop and a click in one tick) gets it
-     * out in one websocket frame whatever the frame rate; the cap only bounds a
-     * runaway queue's cost to a single cycle.
+     * Most queued actions run in one pass, whether on arrival or in the game
+     * loop. A burst a script releases behind a wait or an asynchronous action
+     * (knife on logs, the menu button, a drop and a click in one tick) goes out
+     * in one websocket frame; the cap only bounds a runaway queue's cost to a
+     * single pass.
      */
-    private static readonly MAX_ACTIONS_PER_CYCLE = 10;
+    private static readonly MAX_ACTIONS_PER_PASS = 10;
+
+    /** A flush is queued for the end of the current task (scheduleFlush). */
+    private flushScheduled: boolean = false;
+    /** A post-action state is queued in a task of its own (requestState). */
+    private statePending: boolean = false;
+    /** A drain is queued in a task of its own (postDrain). */
+    private drainPosted: boolean = false;
 
     // Activity tracking for favicon
     private lastActionTime: number = 0;
@@ -118,6 +149,7 @@ export class BotOverlay implements GatewayMessageHandler {
         // Reset idle timer - SDK actions count as activity
         this.client.idleTimer = performance.now();
         this.ui.logAction(action.type, formatAction(action));
+        this.runArrived();
     }
 
     onScreenshotRequest(screenshotId?: string): void {
@@ -170,7 +202,12 @@ export class BotOverlay implements GatewayMessageHandler {
 
     // ============ Main Tick Loop ============
 
-    /** Called once per game cycle by Client.gameLoop, before it flushes outgoing packets. */
+    /**
+     * Called once per game cycle by Client.gameLoop, before it flushes outgoing
+     * packets. Actions normally run when they arrive (runArrived); this is the
+     * fallback drain that counts `wait` actions down, expires stale work, and
+     * runs what was held while the client was off the game screen.
+     */
     tick(): void {
         for (const expired of this.actionQueue.expirePending()) {
             const result: ActionResult = {
@@ -197,22 +234,87 @@ export class BotOverlay implements GatewayMessageHandler {
                 this.gateway.sendActionResult(activeExpired.actionId, result);
             }
             this.ui.logAction('failed', result.message);
-            this.sendState();
+            this.requestState();
         }
 
         // Handle wait ticks
         if (this.waitTicks > 0) {
             this.waitTicks--;
+            if (this.waitTicks > 0) return;
             const active = this.actionQueue.active;
-            if (this.waitTicks === 0 && active) {
+            if (active) {
                 this.finishAction(active, { success: true, message: 'Wait complete', phase: 'completion' });
             }
-            return;
         }
 
-        for (let n = 0; n < BotOverlay.MAX_ACTIONS_PER_CYCLE; n++) {
+        this.runQueued();
+    }
+
+    /**
+     * Run a gateway action the moment it arrives instead of on the next game
+     * cycle, and put its packets on the wire at the end of this task. Off the
+     * game screen actions stay queued for the loop, which drains only in game.
+     * This never runs in the middle of a tick's decode: the client decodes inside
+     * one game-loop pass whose awaits all resolve on bytes already buffered, and
+     * a gateway message is a task of its own.
+     */
+    private runArrived(): void {
+        if (!this.client.isInGame()) return;
+        this.runQueued();
+        this.scheduleFlush();
+    }
+
+    private runQueued(): void {
+        for (let n = 0; n < BotOverlay.MAX_ACTIONS_PER_PASS; n++) {
             if (!this.runNextAction()) return;
         }
+    }
+
+    /**
+     * Flush at the end of the current task, so whatever ran in it (a burst
+     * delivered together, or one released from behind an asynchronous action)
+     * leaves as one websocket message and the engine reads it in one tick. The
+     * engine decodes 5 user packets per tick (ClientGameProtCategory.USER_EVENT)
+     * and carries any excess to the next. A microtask adds no latency: it runs
+     * before the page handles its next message.
+     */
+    private scheduleFlush(): void {
+        if (this.flushScheduled) return;
+        this.flushScheduled = true;
+        queueMicrotask(() => {
+            this.flushScheduled = false;
+            this.client.flushNow();
+        });
+    }
+
+    /**
+     * Start what waited behind an asynchronous action once it settles, in a task
+     * of its own: the promise can settle in the middle of a game-loop pass,
+     * where the next action must not run against half-decoded state.
+     */
+    private postDrain(): void {
+        if (this.drainPosted) return;
+        this.drainPosted = true;
+        postTask(() => {
+            this.drainPosted = false;
+            this.runArrived();
+        });
+    }
+
+    /**
+     * Publish the state after an action in a task of its own, after its packets
+     * are on the wire and the rest of a burst has run. Collecting it costs a few
+     * ms (tens at p90), which in line would hold the flush and spread a burst's
+     * packets apart. It is collected when it is sent, so it reflects the action
+     * and anything decoded since.
+     */
+    private requestState(): void {
+        if (this.statePending) return;
+        this.statePending = true;
+        postTask(() => {
+            this.statePending = false;
+            this.sendState();
+        });
     }
 
     /**
@@ -220,7 +322,7 @@ export class BotOverlay implements GatewayMessageHandler {
      * SDK action (and any new one, such as starting or stopping an in-page
      * program) is dispatched here through ActionExecutor.execute, and its result
      * and a fresh state go back through finishAction. True when it completed synchronously, so
-     * the following one may run in the same cycle; false when the queue is
+     * the following one may run in the same pass; false when the queue is
      * empty or an asynchronous action or a wait now holds it.
      */
     private runNextAction(): boolean {
@@ -246,7 +348,7 @@ export class BotOverlay implements GatewayMessageHandler {
                     phase: 'completion',
                     reason: 'execution_error'
                 });
-            });
+            }).then(() => this.postDrain());
             return false;
         }
 
@@ -348,7 +450,7 @@ export class BotOverlay implements GatewayMessageHandler {
             this.gateway.sendActionResult(entry.actionId, result);
             this.ui.logAction(result.success ? 'success' : 'failed', result.message);
         }
-        this.sendState();
+        this.requestState();
     }
 
     private captureAndSendScreenshot(screenshotId?: string): void {
