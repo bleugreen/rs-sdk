@@ -19,6 +19,18 @@
 // resolved from the inventory, ahead of the knight click: bury, Charge, arrowheads on headless
 // arrows, or any item, item-on-item, spell-on-item or button template. Timing, costs and the
 // template shape are in stun-actions.ts. The click still goes out every tick, last.
+//
+// Top-up trades are not the program's, and it cannot run across one. Its knight click goes out
+// on every tick, stun ticks included, and a click closes an open trade, as do an inventory op
+// and Charge's if_close (stun-pack.md section 5). A trade requested at stun offset +2 would
+// therefore be closed by the next tick's click, not only by the clicks at +7 and +8. A step
+// module that tops up inside a stun stops the program before the request and restarts it once
+// the trade is done, by offset +9 at the latest: the click sent on +9 lands on T+11 and starts
+// the next attempt, so a later restart delays it. rs/106's trades requested at +2 completed at
+// +7 or +8. The restarted program has not seen that failure, so it sends no stun actions for
+// the rest of that stun; a top-up stun buries nothing in rs/106's plan either. Stopping targets
+// come from game state (untilLevel, maxTicks), so a restart loses nothing but `rolls`, which
+// counts from the restart.
 
 import type { NearbyNpc } from '../types.js';
 import { StunPack } from './stun-actions.js';
