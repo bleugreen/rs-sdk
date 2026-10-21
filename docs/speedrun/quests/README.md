@@ -394,8 +394,14 @@ Each of these was costed and dropped on the board. Section 3 has the numbers.
 - **Heroes' Quest**: 55-QP gate, a live helper partner of the other gang, and Fishing and
   Cooking 53 because the lava eel is untradeable; ~800 of value. [legends.md](legends.md)
 - **Dragon Slayer, without MM**: Hitpoints binds, so its Strength and Defence replace little
-  or nothing, and it would need ~20 QP of filler. With MM it is the Package B candidate
-  (section 7), not a skip. [dragon_slayer.md](dragon_slayer.md)
+  or nothing, and it would need filler. With MM it is on the route (Package B, section 7).
+  [dragon_slayer.md](dragon_slayer.md)
+- **Waterfall**: after MM its Strength is worth ~485-534 ticks without Dragon Slayer and
+  nothing with it, and before MM it saves only 15-47 ticks of fights (m, rs/56), against
+  888 fixed. [waterfall.md](waterfall.md), [pre_mm_fights.md](pre_mm_fights.md)
+- **Witch's House** (with MM): its 6,325 Hitpoints are covered by the combat finish's
+  by-product, and Druidic Ritual's mandatory 4 QP replace it as Dragon Slayer filler. Without
+  MM it would be worth ~1,480 (section 6). [quest_points.md](quest_points.md)
 - **Haunted Mine**: Strength is capped, and the Treus Dayth fight completed 1 time in 6
   (expected cost 3,700-5,700 with failures). [haunted_mine.md](haunted_mine.md)
 - **Priest in Peril**: only worth it as Haunted Mine's gate; 1,406 Prayer for ~841.
@@ -464,39 +470,49 @@ xp lands where the quest says. The totals come from a phase model that integrate
 measured rates over the xp curve, so they are **inferred, on measured rates**, in the fixed
 column. The model reproduces rs/31's published 2,248 for the old case with Holy Grail (2,249).
 rs/28's quick check of the with-MM Defence gap alone, ~2,150 ticks of defensive melee at
-~9.3 with ~6,600 HP as a by-product, agrees. The ~3,520 below covers Ranged and Defence
-together.
+~9.3 with ~6,600 HP as a by-product, agrees. rs/31 confirmed both packages' finishes on its
+own model (3,520 for A, 2,051 for B; section 7). Package B is the recommended line below;
+Package A is kept as the alternative.
 
-### Combat state after the quests (Package A: Waterfall on)
+### Combat state after the quests (Package B: Dragon Slayer on, Waterfall off)
 
-| Skill | With MM option 1 | Without MM (no Tree Gnome Village either) |
+| Skill | With MM option 1 | Without MM (no Tree Gnome Village or Dragon Slayer; Waterfall kept) |
 |---|---|---|
-| Attack | 75,775: capped (r) | 44,325 (GT + Waterfall + Fight Arena): capped (r) |
-| Strength | 48,750: capped (r) | 13,750 (level 83): gap 26,188 |
-| Defence | 20,000 (level 89): gap 19,938 | 0: gap 39,938 |
-| Hitpoints | 35,000 (level 97): gap 4,938 | ~0: gap ~39,900 |
-| Ranged | ~54 after the demon fight (50 from the cannon session + ~485 from the fight, m) | 1: gap 39,938 |
+| Attack | 62,025 (TGV + GT + FA + MM): capped (r) | 44,325 (GT + Waterfall + Fight Arena): capped (r) |
+| Strength | 53,650 (MM 35,000 + DS 18,650): capped (r) | 13,750 (level 83): gap 26,188 |
+| Defence | 38,650 (MM + DS, level 98): gap 1,288 (r) | 0: gap 39,938 |
+| Hitpoints | 35,000 + ~720 from the pre-MM spell fights (m/i, rs/56): gap ~4,220 | ~0: gap ~39,900 |
+| Ranged | 50-57 from the cannon session (m) + ~485 from the Jungle Demon fight (m) | 1: gap 39,938 |
 
 ### Side by side
 
-| Line | With MM option 1 | Without MM |
+| Line | With MM option 1 (Package B) | Without MM |
 |---|---|---|
-| Tree Gnome Village | 927 | not done (Grand Tree does not require it) |
+| Tree Gnome Village | 896 | not done (Grand Tree does not require it) |
 | Monkey Madness | 3,865 success (m/r/i mix), 4,645 expected | not done |
 | Dwarf Cannon | 976 | **not done**: Hitpoints binds, and cannon xp gives no Hitpoints, so the cannon shortens nothing (the model's best cannon plan is ~13,260 + 976 for the quest, against ~13,900 with knives and no quest: about even, and the knives need no Wilderness) |
-| Ranged method | **cannon**: 113 m firing (+~10 set-up) for Ranged 50 before MM, wielding a melee weapon. After MM, cannon + defensive melee at the spiders until Ranged 99 (~3,459; 11.03 Ranged + 5.60 Defence + 1.85 HP per tick, m rates) | **rapid rune knives**, ~5,270 from level 1 (`ranged.md`; 8.1-8.75 Ranged + ~2.7-2.9 HP per tick, m). Longrange is no use: 2.63/tick to each of Ranged and Defence (m) |
-| Strength and Defence | Defence: 19,371 inside the cannon phase, then ~62 of melee alone for the last ~570; Strength 0 | Strength 83 to 99 at the banded rates, **~2,860**; Defence 1 to 99 at ~9.3 with Strength 99 (the Defence level does not change the hit rate), **~4,300** |
-| **Hitpoints (its own line)** | 0 extra: the cannon phase's defensive melee produces ~6,400 against the 4,938 gap | The Strength, Defence and Ranged training above yields 35,355 HP, leaving 4,583. That needs 13,749 more combat xp in a capped skill: **~1,480** at ~9.3 |
-| Combat training after the quests | **~3,644** (123 + 3,521) | **~13,900** (2,862 + 4,295 + 5,270 + 1,478) |
-| **Block total** | **~9,410 success, ~10,190 expected** | **~13,900** |
+| Waterfall | not done | 888: kept. Without MM its Attack and Strength save only the ~9,400 xp that lies above the Hitpoints floor, ~1,000 ticks of melee at ~9.3 against 888: about even (i) |
+| Dragon Slayer + filler | 941 + 456 | not done: Hitpoints binds (decision 4) |
+| Ranged method | **cannon**: 113 m firing (+~10 set-up) for Ranged 50 before MM, wielding a melee weapon. After Dragon Slayer, cannon + defensive melee at the spiders until Defence 99 (230, Ranged to 67), then cannon + rapid rune knives to Ranged 99 (1,821) (rs/31, on m rates) | **rapid rune knives**, ~5,270 from level 1 (`ranged.md`; 8.1-8.75 Ranged + ~2.7-2.9 HP per tick, m). Longrange is no use: 2.63/tick to each of Ranged and Defence (m) |
+| Strength and Defence | Strength 0; Defence's last 1,288 inside the cannon phase | Strength 83 to 99 at the banded rates, **~2,860**; Defence 1 to 99 at ~9.3 with Strength 99, **~4,300** |
+| **Hitpoints (its own line)** | 0 extra: the finish produces 5,089 (rs/31) against a gap of ~4,220 | The Strength, Defence and Ranged training above yields 35,355 HP, leaving 4,583. That needs 13,749 more combat xp in a capped skill: **~1,480** at ~9.3 |
+| Combat training after the quests | **~2,146-2,174** (123 + 2,023-2,051) | **~13,900** (2,862 + 4,295 + 5,270 + 1,478) |
+| **Block total** | **~9,280-9,310 success, ~10,060-10,090 expected** | **~14,790** (888 + 13,900) |
 
-**MM option 1 wins by about 4,490 ticks on the success path and 3,710 expected.**
+**MM option 1 wins by about 5,480-5,510 ticks on the success path and 4,700-4,730
+expected.** Package A, the alternative, gives the same block with Waterfall 888 and the
+3,520 finish in place of Dragon Slayer, its filler and the 2,023-2,051 finish:
+~10,220-10,250 success (after rs/56's measured S of 15-47), so MM wins by ~4,540 there and
+Package B is ~910-970 better.
 
 **Option 1 against option 2, rechecked without Holy Grail** (same model, measured rates).
 Option 2 (35,000 Attack and Defence, 20,000 Strength and Hitpoints) leaves Defence 4,938,
 Strength 6,188 and Hitpoints 19,938, and Attack is capped either way. Hitpoints then binds,
 with ~3,590 ticks of top-up alone. The finish is ~6,650 ticks against ~3,520 for option 1,
-so **option 1 stays better by ~3,130**. Without Waterfall it is ~6,700 against ~4,010.
+so **option 1 stays better by ~3,130** (Package A). Without Waterfall it is ~6,700 against
+~4,010. Package B was not re-modelled under option 2: Dragon Slayer would cap Strength and
+Defence there too, but it gives no Hitpoints, so option 2's ~19,200 HP gap still binds and
+option 1 stays ahead (i).
 
 Why no-MM is so expensive: Hitpoints needs 39,938, which is one third of 119,814 base of
 personal combat xp, and the uncapped gaps (Strength, Defence, Ranged) add up to 106,064.
@@ -510,12 +526,14 @@ block to ~12,580. That makes it a no-MM-only candidate.
 **Sensitivity to the melee rate.** With the knives fixed at ~5,270, the no-MM block is about
 5,270 + 79,876 / (melee rate): ~15,250 at 8, ~13,860 at 9.3 (measured, Defence at Strength
 99), ~13,260 at 10 and ~11,930 at 12. The MM block hardly depends on the melee rate; only
-the last ~62 ticks are melee alone. No-MM would only draw level with MM's expected ~10,190
-at about **16 base xp per tick** of melee, against rs/30's measured 9-10 at these levels.
+the 230 ticks of cannon + defensive melee are melee at all. No-MM would only draw level with
+MM's expected ~10,075 at well over **16 base xp per tick** of melee, against rs/30's
+measured 9-10 at these levels.
 
 ### Monkey Madness's failure budget
 
-From `monkey_madness.md` (3-sample observations, so inferred):
+From `monkey_madness.md` (3-sample observations at 70/70/70, so inferred; see open item (a)
+for the route's real levels):
 
 | Item | Ticks (fixed) |
 |---|---|
@@ -530,11 +548,12 @@ From `monkey_madness.md` (3-sample observations, so inferred):
 | **Bad-but-plausible worst case**: 6 trapdoor tries with 2 deaths (one losing the bar), the aunt twice, the demon twice, one dungeon death | +~2,650, so **~6,500** |
 
 **Retry tolerance.** MM stays ahead of no-MM until its overrun over the success path reaches
-about 4,490 fixed ticks: roughly 13 trapdoor deaths with the bar kept, or 4 with it lost.
-The bad-but-plausible worst case (+2,650) is well inside that. The open leads would shrink
-the trapdoor's +600: an antipoison, since the deaths may be jungle-spider poison through the
-prayer, and timing the guards' one-tile wander. A logout inside a cutscene zone completes
-the cutscene on the next login (`mm_login`, unmeasured, worth up to ~150).
+about **5,490** fixed ticks under Package B: roughly **16 trapdoor deaths** with the bar kept,
+or 5 with it lost (Package A's margin of ~4,540 gave ~13 and 4). The bad-but-plausible worst
+case (+2,650) is well inside that. The open leads would shrink the trapdoor's +600: an
+antipoison, since the deaths may be jungle-spider poison through the prayer, and timing the
+guards' one-tile wander. A logout inside a cutscene zone completes the cutscene on the next
+login (`mm_login`, unmeasured, worth up to ~150).
 
 ## 7. Conditional calls
 
