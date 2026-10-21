@@ -73,10 +73,11 @@ export interface DialogRun {
 export async function runDialog(
     sdk: BotSDK,
     choices: RegExp[] = [],
-    opts: { settleTicks?: number; openTimeoutTicks?: number; maxSteps?: number; log?: boolean; allowUnused?: boolean } = {},
+    opts: { settleTicks?: number; openTimeoutTicks?: number; maxSteps?: number; log?: boolean; allowUnused?: boolean; sharedQueue?: boolean } = {},
 ): Promise<DialogRun> {
     const settle = opts.settleTicks ?? 3;
-    const queue = [...choices];
+    // sharedQueue: consume `choices` in place, so a caller can spread one list over several dialogue runs
+    const queue = opts.sharedQueue ? choices : [...choices];
     const out: DialogRun = { pages: 0, options: 0, ticks: 0, closedAt: -1, transcript: [] };
     let first = -1;
     let lastOpen = -1;
@@ -281,11 +282,12 @@ export class QuestBot {
     async settle(until: () => boolean, timeoutTicks = 80, choices: RegExp[] = [], requireDialog = false, abort: () => boolean = () => false) {
         const t0 = tick(this.sdk);
         let saw = false;
+        const queue = [...choices];
         while (tick(this.sdk) - t0 < timeoutTicks) {
             if (abort()) return;
             if (this.sdk.getState()!.dialog.isOpen) {
                 saw = true;
-                this.S.dialog(await runDialog(this.sdk, choices.splice(0), { settleTicks: 1, openTimeoutTicks: 1 }));
+                this.S.dialog(await runDialog(this.sdk, queue, { settleTicks: 1, openTimeoutTicks: 1, sharedQueue: true, allowUnused: true }));
                 continue;
             }
             if (until() && (saw || !requireDialog)) {
@@ -294,7 +296,9 @@ export class QuestBot {
             }
             await this.sdk.waitForStateUpdate();
         }
-        throw new Error(`timed out in segment ${this.S.cur?.name}`);
+        const d = this.sdk.getState()!.dialog;
+        const chat = this.sdk.getChat({ types: [0], includeSelf: true }).slice(-4).map(m => m.text);
+        throw new Error(`timed out in segment ${this.S.cur?.name}; dialog ${d.isOpen ? JSON.stringify({ text: d.text, options: d.options.map(o => o.text), waiting: d.isWaiting }) : 'closed'}; chat ${JSON.stringify(chat)}`);
     }
 
     async talk(key: string, choices: RegExp[] = [], opts: { allowUnused?: boolean } = {}) {
