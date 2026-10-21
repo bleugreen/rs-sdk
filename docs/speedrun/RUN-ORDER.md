@@ -119,6 +119,11 @@ marks every giver's host.
 (8 vCPU, no GPU, Ubuntu 24.04, XFCE over xrdp). [RUN-HOST.md](RUN-HOST.md) is its run-night runbook,
 with every command. In order:
 
+- reserve the host before anything else starts: step 0 writes `~/host-reserved.json` (owner the run,
+  `until` covering setup, the 9 h run bound and an hour's margin), so every firing of rs/83's gate
+  history timer (rs/140) skips; the timer is never disabled instead. run.ts refuses to start unless
+  the reservation is live and its own, and removes it after the final clean logout (RUN-HOST.md,
+  "Host reservation" and "Gate history timer", cairn://p/rs/139; main via rs/103);
 - check Fly edge iad and TCP connect p50 of at most 5 ms;
 - the operator connects over RDP at a fixed 1920x1080, 24 bpp, only to create the session and watch
   the bring-up, then disconnects for the rest of the run and watches a 3 fps MJPEG live view (one
@@ -133,9 +138,8 @@ with every command. In order:
   rs/138 is merged to main (RUN-HOST.md, "Rules for every launch on the host");
 - log rs/117's helpers in;
 - start the recording on the VM (ffmpeg x11grab, 1920x1080, 30 fps, libx264 veryfast crf 20);
-- check that nothing else runs, and reserve the host: the run writes `~/host-reserved.json` (owner the
-  run, `until` = start + 9 h) before the gate measurement, so rs/83's gate timer skips; run.ts removes
-  it after the final clean logout (RUN-HOST.md, "Host reservation", cairn://p/rs/139);
+- check that nothing else runs (the leftover check does not count the gate history timer's
+  `rs-gate-read.service`, and waits out a firing in progress);
 - measure the gate on a throwaway gate account, in the run's configuration (RDP disconnected,
   recording and live view on);
 - only then open SCORED's tab. SCORED already exists: it was claimed with the tutorial skip and
