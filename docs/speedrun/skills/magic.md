@@ -507,6 +507,11 @@ with 4 rune slots), 5 from 57 (26 per inventory).
   55-114 casts per fight, but a 165-tick fight at the 5-tick spell attack delay
   (`player_magic.rs2:188`) allows at most about 33 casts. The supply list above keeps rs/3's
   figures as an upper bound; the real count belongs in rs/3's document.
+- **Ladder to 59 or to 51 (open).** Section 5 puts the two within about 15 ticks of each
+  other either way (inferred). It turns on the black demon at Magic 64 on Fire Blast, which
+  was not measured; one run of `quest-premm-fight.ts <bot> blackdemon stats=80,1,1,28,43,64
+  mode=fire_blast` on rs/3's branch would settle it. 59 stays recommended until then because
+  it needs no magic potion.
 - **rs/80's timeline.** rs/80 (finalising rs/3's README) plans the arena at about base 76 with
   no potion for Fire Wave and one potion for Charge. This document finds Charge needs no
   potion for any yield measured at base 71; reconcile once rs/80 lands.

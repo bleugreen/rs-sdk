@@ -9,6 +9,14 @@ gathering clock: bury, enchant), [`interleave-thieve.ts`](../scripts/interleave-
 `NODE_TICKRATE=300` on a local engine driven by the headless lite client, unless it is
 labelled read or inferred. Base xp = game xp / 25.
 
+**Host.** The 300 ms batches ran on the Mac executor `local`, which main measured at load 11-18
+on 16 cores that night (cairn://p/rs/main, 00:36). Read the measured rates as a **busy host's
+figures, a few percent pessimistic**. That matters more here than elsewhere: the phase-locked
+plans and the 4-events-per-tick budget depend on packets landing on predicted ticks, and a
+loaded host pushes some of them a tick late (the Fishing lock losses in section 2 and the
+~1-tick enchant recovery in section 4 may partly be that). rs/26's bbs correction factor had not
+been published when this was written (01:15).
+
 ## Checklist for bot authors
 
 The rules a `speedrun/lib` interleaver must follow (each is measured below):
@@ -229,14 +237,42 @@ share the stuns. Standalone ticks saved per stun: 2 bones = 4 ticks, 2 enchants 
 | Crafting (gem cutting) | anywhere, delay-free | all ~290 gems (~80 standalone ticks) | 1 slot per gem + chisel |
 | Magic, Charge 80-99 | anywhere, no re-click | all (~33 standalone ticks), 5 per tick | 3 rune stacks |
 | Prayer, bury dragon bones | 4-tick WC (1/4 ticks), 5-tick fishing (1/5), stuns (~2) | ~200 of ~555 bones in stuns; the rest needs ~4 WC ticks or ~5 fishing ticks per bone | 1 slot per bone; a top-up every ~12 stuns or ~50-100 gathering ticks |
-| Magic, enchant / Superheat (`p_delay(1)`) | stuns only (~2 per stun) | ~190 casts | 1 slot per item |
+| Magic, enchant / Superheat (`p_delay(1)`) | stuns only (~2 per stun) | ~190 casts by capacity; **0 on rs/3's Package B route**, whose 60 enchants all come before Thieving starts (below) | 1 slot per item |
 | Magic, High Alchemy (`p_delay(3)`) | stuns only (1 per stun) | ~100 casts | 1 slot per item, plus natures |
 | Smithing (anvil), Firemaking (lines), Runecraft (altar), Cooking (range), combat | **no**: they need a location or are the self-only activity | - | - |
 
 Totals are small for the delay-free skills (~250 standalone ticks together). The larger
 prizes are Prayer (~400 ticks of burying absorbable in stuns, more in 4-tick WC or fishing)
-and Magic 1-80 enchanting (~190 casts in stuns). Each top-up trade is real time that is not
-absorbed, so the saving is the standalone action time, not the logistics.
+and, on routes where it comes late enough, Magic enchanting (~190 casts in stuns). Each top-up
+trade is real time that is not absorbed, so the saving is the standalone action time, not the
+logistics.
+
+### Stun allocation on rs/3's Package B route (inferred from the per-stun figures above)
+
+The earlier allocation (rs/28 coordinator, 23:56) spent about 80 stuns on Magic's enchant
+ladder 7 -> 71 (~150-170 enchants, ~450 standalone ticks absorbed) and about 20 on dragon bones
+(~40 bones, ~80 ticks): about 530 ticks in all. Package B changes the Magic side completely.
+The pre-MM fights are cast and pay ~3,600 base Magic, so the ladder now stops at 59 (60
+enchants) and the Mage Arena is reached at base 76-77 without more (`magic.md` section 1). Those
+60 enchants must all be done **before Tree Gnome Village**: the Ardougne teleport at 51 and the
+warlord's Fire Blast at 59. Thieving is trained only **after Fight Arena**, whose 2,175 Thieving
+is worth most while Thieving is low (rs/3 README section 4). So no enchant can be in a stun.
+
+| Use of Thieving's ~100 stuns (55 -> 99) | Before (Package A plan) | Package B |
+|---|---|---|
+| Enchants | ~80 stuns, ~150-170 casts, ~450 ticks | **0** |
+| Dragon bones (1.96 per stun, measured) | ~20 stuns, ~40 bones, ~80 ticks | **~100 stuns, ~196 bones: ~392 bury ticks + ~7 bank visits (~28), so ~400-420 ticks** |
+| Enchant recovery cost (~1 tick per enchant stun, measured) | ~80 ticks lost | 0 |
+| Top-up trades (not absorbed) | ~8 | ~8 (bones at ~24 per load, ~12 stuns each) |
+| **Standalone ticks absorbed** | **~530** (~450 net of the recovery) | **~400-420** |
+
+The measured per-stun figures are unchanged; only the allocation moves. Prayer's other ~348
+bones (555 - 11 early - 196) can still ride un-manipulated 4-tick Woodcutting or 5-tick fly
+fishing (section 3), which would absorb up to ~700 more standalone ticks (`prayer.md` section
+5). A third bone per stun (T+4, T+6, T+8) lands about 2/3 of the time by reading, which would
+lift the stun share to ~260 bones (~520 ticks); unmeasured as a sustained plan. Charge 80 -> 99
+(~33 standalone ticks, after the Mage Arena) is absorbable into any later gathering session
+(`magic.md` section 5).
 
 ## 9. Open questions
 
