@@ -40,16 +40,21 @@ Mine, and Merlin's Crystal with Holy Grail are all off.
 **Headline recommendation.** Do Monkey Madness with option 1 (35,000 Strength and Hitpoints).
 It is the largest single lever on the route. Without it, Hitpoints becomes the binding
 combat line, because only damage the account deals itself gives Hitpoints. That leaves
-about **15,250 ticks** of combat training after the quests. With it, Tree Gnome Village,
-Monkey Madness, Dwarf Cannon and the cannon-led combat finish together cost **~9,420**
-(success path) or **~10,200** (expected) (fixed column; i, section 6). The margin of about
-5,000 expected ticks survives every failure case measured on Ape Atoll. Monkey Madness needs
+about **13,900 ticks** of combat training after the quests. With it, Tree Gnome Village,
+Monkey Madness, Dwarf Cannon and the cannon-led combat finish together cost **~9,410**
+(success path) or **~10,190** (expected). These are fixed-column figures from a model over
+rs/30's and rs/31's measured rates (section 6). The margin of about 3,700 expected ticks
+survives every failure case measured on Ape Atoll. Monkey Madness needs
 the rs/23 client fix (merged). Sea Slug needs cairn://p/rs/54 (PR #31, open). Fishing Contest
 is conditional on the fly-fishing cycle (cairn://p/rs/53).
 
-**Waterfall is conditional** (pending cairn://p/rs/56). After MM its Strength is worth
-~620 ticks against ~888 fixed. It stays on only if its Strength saves more than ~270 ticks
-in the pre-MM fights, where it is the only Strength source.
+**Waterfall or Dragon Slayer: one decision pending cairn://p/rs/56.** Both fill MM option
+1's Strength gap. **Package A** (current: Waterfall on, Dragon Slayer off) is what the totals
+above assume. **Package B** (Waterfall off; Dragon Slayer after MM plus 15 QP of filler) is
+about **830 fixed ticks cheaper** after MM, because Dragon Slayer's Defence also fills most
+of the Defence gap. But B gives up Waterfall's Strength in the pre-MM fights. **Rule: take B
+unless rs/56 measures that Waterfall's Strength saves more than ~830 ticks across the pre-MM
+fights** ([section 7](#7-conditional-calls)).
 
 ## 2. Dependency graph
 
@@ -81,7 +86,7 @@ flowchart TD
   RS54{{"rs/54 bridged-door fix, PR #31"}}
   SS["Sea Slug"]
   FC["Fishing Contest, helper carp"]
-  FIN(["Combat finish: cannon + defensive melee, ~3,530"])
+  FIN(["Combat finish: cannon + defensive melee, ~3,520"])
 
   PC --> TELE
   M51 --> TELE
@@ -205,10 +210,10 @@ with ~70 Hitpoints. The route reaches them with Hitpoints near 10 and Strength n
 | Plague City | 737 m / 620 m / 564 i | 2,425 Mining, 1 QP, Ardougne teleport (r) | ~882 i: Mining 269 (4,034 to 3,765) + teleport legs ~613 (`plague_city.md`'s 644 less Holy Grail's ~31, now off the route) | **+262** | 3.9 | DO, before any teleport user | [plague_city.md](plague_city.md) |
 | Tree Gnome Village | 1,036 / 927 / 873 (r21); includes ~103 i to reach the maze from the Ardougne teleport and the gnome-chain trade; warlord *pending rs/56* | 11,450 Attack, 2 QP, village spirit tree (r) | 0: Attack is over 99 without it | -927 (counted in the Monkey Madness block) | 12.4 | DO, as the Monkey Madness gate | [tree_gnome_village.md](tree_gnome_village.md) |
 | The Grand Tree (Ardougne teleport for B and C) | 1,930 i / 1,660 i / 1,525 (r21); black demon *pending rs/56* | 18,400 Attack, 7,900 Agility, 2,150 Magic, 5 QP, stronghold tree, Gnome Air (r) | ~2,228 i: Agility 2,143 (rs/2 `agility.md`: 6,960 without quests, 4,695 + 122 with), Magic ~85 (26 base/tick enchanting, `magic.md`), Attack 0 | **+568** | 17.1 | DO | [grand_tree.md](grand_tree.md) |
-| Waterfall (spirit-tree variant) | 915 i / 888 i / 874 i (pm) | 13,750 Attack, 13,750 Strength, 1 QP (r) | after MM: Strength 4,938 of the gap left by option 1, ~618 i of melee at rs/30's ~8/tick (the cannon cannot share it: its Ranged is used up in the Defence phase); Attack 0. Before MM: faster pre-MM fights, *pending rs/56* | **-270** + the pre-MM fight saving | 31.0 | **CONDITIONAL, pending rs/56**: ON only if the pre-MM saving exceeds ~270 | [waterfall.md](waterfall.md) |
+| Waterfall (spirit-tree variant) | 915 i / 888 i / 874 i (pm) | 13,750 Attack, 13,750 Strength, 1 QP (r) | after MM: Strength 4,938 of the gap left by option 1, ~485 i of melee at rs/30's measured 9-10/tick for Strength 97-99 (the cannon cannot share it: its Ranged is used up in the Defence phase); Attack 0. Before MM: faster pre-MM fights, *pending rs/56* | **-403** + the pre-MM fight saving | 31.0 | **CONDITIONAL, pending rs/56**: Package A against Package B (section 7) | [waterfall.md](waterfall.md) |
 | Fight Arena | 846 m / 771 i / 724 i (pm); fights *pending rs/56* | 12,175 Attack, 2,175 Thieving, 2 QP (r) | Thieving ~865 i (rs/2 `thieving.md`: 2,840 from 1, ~1,975 from 57); Attack 0 | **+94** | 18.6 | DO, while Thieving is low | [fight_arena.md](fight_arena.md) |
 | Dwarf Cannon | 1,078 m / 976 i / 920 (r21) | 750 Crafting, 1 QP, the multicannon (r) | ~4,090 i: with Defence starting at 20,000, the combat finish (pre-MM Ranged 50, the Jungle Demon fight, then to 99/99/99) is ~8,000 ticks by hand against ~3,920 with the cannon (rs/31's rates) | **+3,110** | 0.8 | DO (Monkey Madness route only, section 6) | [dwarf_cannon.md](dwarf_cannon.md) |
-| Monkey Madness, option 1 | success 4,399 / 3,865 / 3,514 (r21); expected 5,179 / 4,645 / 4,295; ~60% m | 35,000 Strength, 35,000 Hitpoints, 20,000 Attack, 20,000 Defence, 3 QP (r, `mm_daero.rs2:294-302`) | ~10,630 i: the scenario difference in section 6 (no-MM combat 15,255, minus the with-MM finish 3,653 and Dwarf Cannon 976) | **+5,834** success, **+5,054** expected (after Tree Gnome Village's 927) | 28.5 | DO | [monkey_madness.md](monkey_madness.md) |
+| Monkey Madness, option 1 | success 4,399 / 3,865 / 3,514 (r21); expected 5,179 / 4,645 / 4,295; ~60% m | 35,000 Strength, 35,000 Hitpoints, 20,000 Attack, 20,000 Defence, 3 QP (r, `mm_daero.rs2:294-302`) | ~9,260 i: the scenario difference in section 6 (no-MM combat ~13,900, minus the with-MM finish ~3,644 and Dwarf Cannon 976) | **+4,470** success, **+3,690** expected (after Tree Gnome Village's 927) | 28.5 | DO | [monkey_madness.md](monkey_madness.md) |
 | Mage Arena (base 71 + potion) | 606 i / 581 i / 574 (r21); fight 331 m (rs/52) | Charge (0 xp reward; the fight gives ~2,800-3,100 Magic) (r, m) | ~1,340 i: Magic 57 to 99 by enchanting is ~1,550 (364 to 80, then 29,251 at 26 base/tick plus banks, `magic.md`), against ~205 with the arena (rs/52) | **+759** | n/a | DO; Protect from Magic from bones, plus prayer potions | [mage_arena.md](mage_arena.md) |
 | Sea Slug | 495 i / 394 m / 340 i | 7,175 Fishing, 1 QP (r) | 955 i given Fishing Contest (rs/2 `fishing.md` §3); 586 i on the 3-tick cycle | **+561** (+192 on the 3-tick cycle) | 18.2 | DO, after rs/54 merges | [sea_slug.md](sea_slug.md) |
 | Fishing Contest (helper carp) | 276 i / 223 m / 200 i | 2,437 Fishing, 1 QP (r) | 325 i given Sea Slug; 186 i on the 3-tick cycle | **+102** (-37 on the 3-tick cycle) | 10.9 | DO, if fly fishing stays on the normal cycle | [fishing_contest.md](fishing_contest.md) |
@@ -225,7 +230,7 @@ that to matter, so it is recomputed (r21).
 | Merlin's Crystal + Holy Grail | 820 m + 1,240 i = 2,060 / 703 + 1,152 = 1,855 i / 647 + 1,115 = 1,762 i (pm); the Mordred and Titan fights would also need re-costing at route levels | 15,300 Defence, 11,000 Prayer, 8 QP (r) | Defence ~1,281 i (the MM-route combat finish is ~2,250 with it, ~3,530 without; rs/31's rates). Prayer ~150-350: ~350 m standalone (rs/33: dragon bones at 2 ticks each, ~34.8 base/tick with banking) down to ~150 m if the ~153 bones are buried in the idle ticks of 4-tick Woodcutting or 5-tick fly fishing (rs/38). The protect prayers do not need it (above) | **about -224 to -424** | OFF (coordinator, after rs/33) | [merlins_crystal.md](merlins_crystal.md), [holy_grail.md](holy_grail.md) |
 | Legends' Quest (with its chain and ~41 QP of filler) | ~22,500 i (15,000-35,000) | 4 picks of 7,650 (r) | ~3,600 i (with Heroes' along the way) | **about -19,000** | OFF | [legends.md](legends.md) |
 | Heroes' Quest | ~3,000 i (2,000-5,000), plus the 55-QP gate | small xp in 13 skills (r) | ~800 i | about -2,200 | OFF: needs a live helper partner and Fishing/Cooking 53 for the untradeable lava eel | [legends.md](legends.md) |
-| Dragon Slayer | 1,120 / 1,010 / 970 (~370 m; burst pre-rule) | 18,650 Strength, 18,650 Defence, 2 QP (r) | with MM: its Defence fills most of the 19,938 gap, worth up to ~1,280 i (the same arithmetic as Holy Grail's Defence). Without MM: ~0, because Hitpoints binds (section 6). The route has 18 QP, so the 32-QP door needs ~14 QP of filler (~450-600 fixed i from `quest_points.md`'s ranking) | about -180 to -330 with MM | OFF in both scenarios (coordinator); recheck if MM option 1's Defence gap matters more after rs/56 | [dragon_slayer.md](dragon_slayer.md) |
+| Dragon Slayer | 1,120 / 1,010 / 970 (~370 m; burst pre-rule) | 18,650 Strength, 18,650 Defence, 2 QP (r) | with MM, in place of Waterfall (Package B): its Strength and Defence shrink the post-MM finish from ~3,520 to ~2,020 (i, phase model), and Waterfall's 888 is saved; needs 15 QP of filler (546 fixed i). Without MM: little or nothing, because Hitpoints binds (section 6) | Package B is ~830 better than Package A before Waterfall's pre-MM saving | **CONDITIONAL with MM, pending rs/56** (section 7); OFF without MM | [dragon_slayer.md](dragon_slayer.md) |
 | Haunted Mine (+ Priest in Peril) | ~1,072 m success; expected ~3,700-5,700 i with the Treus Dayth failures (1 kill in 6) | 22,000 Strength, 2 QP (r) | 0: Strength is capped | at most -3,700 | OFF | [haunted_mine.md](haunted_mine.md) |
 | Priest in Peril | ~841 i | 1,406 Prayer, 1 QP, Morytania (r) | ~40 i (Prayer at ~34.8 base/tick, rs/33) | about -800 | OFF | [priest_in_peril.md](priest_in_peril.md) |
 | The Knight's Sword | 911 m / ~837 i / ~803 i (pm) | 12,725 Smithing, 1 QP (r) | ~236 i (helper-fed Smithing ~54 base/tick) | -601 | OFF | [knights_sword.md](knights_sword.md) |
@@ -271,7 +276,7 @@ always refused within 16 ticks of combat (m). Ticks are fixed-client figures.
 | 10 | Magic: enchant 57 to 71 (~164 i), sip, Mage Arena (Kolodion ~331 m under Protect from Magic, ~54-62 prayer points, so 1-2 prayer potions at Prayer 43), sip on the exit walk, Charge 76 to 99 (~41 m). It can move earlier: any time after Plague City, Prayer 37 and Magic 71 | 581 | the arena fight (combat; no teleport from the Wilderness legs, so leave from the cellar or chamber) | staff of fire, ~70 blood + 400 air runes, 489 blood + 489 air for Charge, a knife (webs), 2 magic potions (Herblore 76 brew or the Grand Exchange), prayer potions, Ardougne runes |
 | 11 | Sea Slug (once rs/54 merges; Firemaking 30) | 394 | none | swamp paste, unlit torch, Ardougne runes |
 | 12 | Fishing Contest (helper carp), if fly fishing stays on the normal cycle | 223 | inside the contest fence, steps 7-9: leaving through the gate resets the contest; logout inside was not tested | raw giant carp (a helper leaves the contest before its third catch), rod, 1 bait, 5 coins, 3 Camelot casts |
-| 13 | Combat finish after MM: cannon + defensive melee until Ranged 99 (~3,459 i), then defensive melee to Defence 99 (~71 i); Hitpoints fills as a by-product (~6,400 against the 4,938 gap) | ~3,530 | combat | cannonballs, food, antipoison |
+| 13 | Combat finish after MM (Package A): cannon + defensive melee until Ranged 99 (~3,459 i), then defensive melee to Defence 99 (~62 i at rs/30's measured ~9.3); Hitpoints fills as a by-product (~6,400 against the 4,938 gap). Package B: Dragon Slayer and its filler go here instead of Waterfall, and the finish is cannon + defensive melee (~231) then cannon + rapid knives (~1,792) | ~3,520 (B: ~2,020) | combat | cannonballs, food, antipoison |
 
 Sea Slug and Fishing Contest can go anywhere after Plague City. Doing them before Fishing
 training starts is what the marginal values assume.
@@ -290,9 +295,9 @@ Each of these was costed and dropped on the board. Section 3 has the numbers.
   ~22,500 ticks for ~3,600 of value. [legends.md](legends.md)
 - **Heroes' Quest**: 55-QP gate, a live helper partner of the other gang, and Fishing and
   Cooking 53 because the lava eel is untradeable; ~800 of value. [legends.md](legends.md)
-- **Dragon Slayer**: with MM option 1 only its Defence counts. Without MM, Hitpoints binds
-  and its Strength and Defence replace nothing. Either way the 18-QP route would also need
-  ~14 QP of filler for the 32-QP door. [dragon_slayer.md](dragon_slayer.md)
+- **Dragon Slayer, without MM**: Hitpoints binds, so its Strength and Defence replace little
+  or nothing, and it would need ~20 QP of filler. With MM it is the Package B candidate
+  (section 7), not a skip. [dragon_slayer.md](dragon_slayer.md)
 - **Haunted Mine**: Strength is capped, and the Treus Dayth fight completed 1 time in 6
   (expected cost 3,700-5,700 with failures). [haunted_mine.md](haunted_mine.md)
 - **Priest in Peril**: only worth it as Haunted Mine's gate; 1,406 Prayer for ~841.
