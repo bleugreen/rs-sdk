@@ -40,14 +40,10 @@ const say = (m: string, d?: Record<string, unknown>) => console.log(`demo: ${m}$
  * The lab's means for the same path (m, lab, 300 ms; rs/257's PR #286): A-J the real-level chains
  * (J on travel.ts #240, as the demo's tree has it), K and L the walking runs. B and I are dice.
  */
-const LAB: Readonly<Record<string, number>> = {
-    burst: 0, // placeholder key so the table below reads per mode
-};
 const LAB_BY_MODE: Readonly<Record<DialogueMode, Record<string, number>>> = {
     burst: { A: 8, B: 296.3, C: 6, D: 29.3, E: 18, F: 58.3, G: 43, H: 101.7, I: 103.7, J: 45.3, K: 410.5, L: 421.5 },
     fixed: { A: 15, B: 281.7, C: 13.3, D: 30.3, E: 27, F: 58, G: 47, H: 107.3, I: 124.3, J: 54, K: 410.5, L: 421.5 },
 };
-void LAB;
 
 let gateway: Subprocess | null = null;
 if (!lab) {
