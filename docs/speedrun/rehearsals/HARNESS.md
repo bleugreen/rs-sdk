@@ -214,6 +214,31 @@ display until the attempt ends. In order (`rehearse.ts` `bracketAttempt`):
    its window. The probe is also skipped when the attempt's logout was not confirmed, or when the
    attempt paused for the gate/run (rs/213).
 
+**Checked on the twin** (rs/232, 2026-10-22 02:03-02:10 UTC; m). The setup was RUN-HOST.md step 3's
+stack, with Chrome's app window on cairn_twin's bare page and a 30-minute bound; the recording was
+started at 02:03:2xZ. The run was
+`rehearse.ts --skill=speedrun/runner/stub.ts --skill-opt=idle=300 --bot=cairn_smoke --gate-bot=cairn_twin` with `DISPLAY=:10`.
+The recording was stopped by hand after cairn_smoke's logout line.
+
+| Row | Result |
+|---|---|
+| `(gate) in-page before` | 60/60, (c) 0/min, loop p10 72.4/s. cairn_twin's logout was confirmed. cairn_smoke's window was then **opened** (`/json/new`, maximised), and cairn_twin's was closed |
+| `(gate) recording` | running (the `.mkv`); the live view was not up |
+| `(gate) live frame` | **PASS** 1.2 s after the first step: the window in front was `cairn_smoke - 2004Scape Bot Client - Google Chrome`, Chrome's only page, maximised; frame difference 2.5 (at 0,120), contrast 48.9; no raise needed |
+| `(gate) in-page after` | 60/60 at 02:07:52Z, after the recording stopped at 02:07:27Z |
+| Recording | 240.9 s, 7,226 frames, 0 dropped |
+
+Frames extracted from the recording file (`ffmpeg -ss`) show cairn_twin's app window during its
+before-probe (02:05:31Z). From cairn_smoke's login to the end of the file, they show cairn_smoke's
+game view (02:06:39Z: "Cairn Smoke" in the chat and the overlay, tick 120).
+
+The staged window is a normal Chrome window, with a tab strip and an address bar showing the bare
+page URL (no token). It is not an `--app` window, because `/json/new` can't open one. The stub step
+itself failed at tick 278 with `waitTicks(300): client stopped publishing`. That failure is
+unrelated to the windows: `waitTicks`'s wall-clock backstop is (n + 13) x 300 ms, which is 93.9 s,
+and the demo was ticking at about 0.34 s, so 300 ticks took longer than that. Use `idle=50` for
+this smoke, as rs/164 did.
+
 So the recording shows the gate account's window for its before-probe, if the recording was
 already running then, and the attempt account's window from its login to its logout. Only one of
 an attempt's accounts is in the world at any moment, where before there were two for the whole
