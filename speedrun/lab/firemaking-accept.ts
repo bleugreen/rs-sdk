@@ -28,7 +28,7 @@
 // RESULT reports every lap: lap 1 (logs 0-53) carries the failed rolls below level 43, so the
 // chain's own pace is lap 2 (logs 54-107, every roll certain, no lap turn inside it).
 
-import { appendFileSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import puppeteer from 'puppeteer';
@@ -124,6 +124,8 @@ if (role === 'giver') {
 // ------------------------------------------------------------------ the helper process
 
 const base = arg('out', '') || mkdtempSync(join(tmpdir(), `fm-accept-${supply}-`));
+// An --out directory must exist before the helper log and the browser proxy's log files open in it.
+mkdirSync(base, { recursive: true });
 interface Line { message?: string; phase?: string; i?: number; k?: number; tick?: number; ms?: number; need?: number; early?: boolean; ok?: boolean; [k: string]: unknown }
 const lines: Line[] = [];
 const waiters: Array<{ pred: (l: Line) => boolean; res: (l: Line) => void }> = [];
