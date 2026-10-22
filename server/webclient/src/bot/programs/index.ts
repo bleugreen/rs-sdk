@@ -6,11 +6,12 @@ import { createKnifeCycle } from './knife-cycle.js';
 import { createKnifeMine } from './knife-mine.js';
 import { createPickpocket } from './pickpocket.js';
 import { createProbe } from './probe.js';
+import { createRcCycle } from './rc-cycle.js';
 import type { ProgramRuntime } from './runtime.js';
 
 export { ProgramRuntime, parseProgramCommand, USER_EVENTS_PER_TICK } from './runtime.js';
 export { ProgramHost } from './host.js';
-export type { ProgramStatus, ProgramCommand, ProgramParams, TickProgram, ProgramContext } from './types.js';
+export type { ProgramStatus, ProgramCommand, ProgramParams, TickProgram, ProgramContext, FrameStamp } from './types.js';
 
 /** Names the SDK starts programs by. */
 export function registerPrograms(runtime: ProgramRuntime): ProgramRuntime {
@@ -19,5 +20,6 @@ export function registerPrograms(runtime: ProgramRuntime): ProgramRuntime {
         .register('knife-cycle', createKnifeCycle)
         .register('knife-mine', createKnifeMine)
         .register('pickpocket', createPickpocket)
-        .register('agility', createAgility);
+        .register('agility', createAgility)
+        .register('rc-cycle', createRcCycle);
 }

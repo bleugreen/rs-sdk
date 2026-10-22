@@ -31,6 +31,10 @@
 //                trade is open; the helper (a lite client teleported beside the account)
 //                offers --load=9 bones with one press; this script accepts for the account
 //   agility      Wilderness course                --laps=10 [--course=gnome]
+//   rc           rc-cycle at an altar with lite givers (GIVERS=a,b in tickprog-lab.sh)
+//                --givers=a,b --crafts=30 --schedule=robust|tuned [--altar=body]
+//                (this script plays run.ts: it hands the program's turns and beacons to the
+//                givers in memory instead of cue.json, and feeds restocked givers back in)
 //
 // The page reacts on its own decoded tick; this script only sets up, starts the program
 // through speedrun/lib/programs.ts, prints progress, and reports the program's result with
@@ -39,6 +43,7 @@ import { hostname, loadavg } from 'os';
 import { runScript } from '../../../sdk/runner';
 import { latencyHistogram } from '../../../speedrun/lib/hostgate';
 import { awaitProgram, probeInPage, ProgramError, programStatus, runProgram, startProgram } from '../../../speedrun/lib/programs';
+import { runGivers } from './tickprog-rc-givers';
 import { statRandom } from '../../../server/webclient/src/bot/programs/util';
 import { openSession, closeSession, type Session } from '../../../speedrun/lib/session';
 import { decideGiver, decideReceiver, newGiverCtx, newReceiverCtx, planOffers, sameName, tradeOf, type GiverCtx, type OfferEntry, type ReceiverCtx } from '../../../speedrun/lib/trade';
@@ -387,8 +392,17 @@ await runScript(async ({ bot: actions, sdk }) => {
             const end = await runProgram(sdk, 'agility', { course, laps: num('laps', 10), technique: flag('technique', 'react') }, { onProgress: progress });
             return report(`agility ${course}`, end);
         }
+        case 'rc': {
+            const givers = (flag('givers') ?? process.env.GIVERS ?? '').split(',').filter(Boolean);
+            if (givers.length === 0) throw new Error('rc needs --givers=a,b (lite runners logged in by tickprog-lab.sh GIVERS=...)');
+            const lab = await runGivers({ sdk, givers, altar: flag('altar', 'body')!, schedule: flag('schedule', 'robust') as 'tuned' | 'robust', crafts: num('crafts', 30), onProgress: progress });
+            report(`rc-cycle ${lab.altar} ${lab.schedule}`, lab.end);
+            console.log(`givers: ${JSON.stringify(lab.givers)}`);
+            console.log(`RESULT rc ${JSON.stringify(lab.summary)}`);
+            return;
+        }
         default:
-            throw new Error(`unknown mode ${mode}: probe, mine, fly, willow, oak, tav-willow, tree, pickpocket, agility`);
+            throw new Error(`unknown mode ${mode}: probe, mine, fly, willow, oak, tav-willow, tree, pickpocket, agility, rc`);
     }
     }
 

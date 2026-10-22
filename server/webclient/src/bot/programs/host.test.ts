@@ -10,7 +10,7 @@ const ok = () => ({ success: true, message: 'ok' });
 describe('ProgramHost', () => {
     test('registers the speedrun programs', () => {
         const host = new ProgramHost(ok, { log: () => {} });
-        expect(host.controls().list()).toEqual(['agility', 'knife-cycle', 'knife-mine', 'pickpocket', 'probe']);
+        expect(host.controls().list()).toEqual(['agility', 'knife-cycle', 'knife-mine', 'pickpocket', 'probe', 'rc-cycle']);
     });
 
     test('answers the program overlay action and validates it', () => {

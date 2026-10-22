@@ -49,6 +49,8 @@ export interface ConnectOptions {
     rsaExponent?: string;
     /** Reconnect after a dropped socket (opcode 18 instead of 16). */
     reconnect?: boolean;
+    /** Extra headers on the websocket handshake (Bun only; the lab's fly-client-ip). */
+    headers?: Record<string, string>;
 }
 
 export class LoginError extends Error {
@@ -116,7 +118,7 @@ export class GameConnection {
             throw new LoginError(-1, 'Password must be 1-20 characters');
         }
 
-        const socket = await ClientStream.openSocket(opts.host, opts.secured);
+        const socket = await ClientStream.openSocket(opts.host, opts.secured, opts.headers);
         const stream = new ClientStream(socket);
 
         try {

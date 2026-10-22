@@ -582,4 +582,4 @@ export type BotAction =
     | { type: 'togglePrayer'; prayerIndex: number; reason: string }
     // In-page tick programs (bot/programs): start, stop, or read the one running in the
     // browser page. Only the browser overlay runs them; the executor refuses them.
-    | { type: 'program'; op: 'start' | 'stop' | 'status' | 'list'; name?: string; params?: Record<string, unknown>; reason: string };
+    | { type: 'program'; op: 'start' | 'stop' | 'status' | 'list' | 'input'; name?: string; params?: Record<string, unknown>; data?: unknown; reason: string };
