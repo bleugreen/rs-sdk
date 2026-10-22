@@ -1,7 +1,7 @@
 // Live probe: pickpocketing the East Ardougne market knights (docs/markets/probes.md).
 //
 //   bun markets/methods/probe-knights.ts <account> --minutes N [--out file.jsonl]
-//       [--withdraw 1000] [--food 20] [--bank-at 25000] [--keep-coins 500] [--food-source shop,stall]
+//       [--withdraw 1000] [--food 20] [--bank-at 25000] [--keep-coins 500] [--food-source shop]
 //
 // Start: Thieving 55+, anywhere on the Lumbridge side or in Al Kharid (or already in East
 // Ardougne), coins in the bank. It takes `--withdraw` coins from the nearest bank on its side
@@ -13,8 +13,9 @@
 // never misses the first free tick.
 //
 // Food: the Baker's shop (bread 5 HP, cake 3 bites of 4, chocolate slice 5; stock 10/3/8,
-// shared and restocking; ardougne_east.inv), else, with `stall` in --food-source, the east baker's
-// stall from the tile north of it (speedrun/helpers/kits.ts: the stall body hides the player from
+// shared and restocking; ardougne_east.inv); sold out, it waits at the shop for the restock. With
+// `stall` in --food-source, also the east baker's stall, for accounts with combat stats only: in
+// the lab a guard caught a 10-Hitpoints account there within 51 ticks and took it to 4. The stall from the tile north of it (speedrun/helpers/kits.ts: the stall body hides the player from
 // the baker; nothing is clicked for STALL_BACKOFF_TICKS after any combat contact, since a click in
 // the engine's 10-tick combat window is refused). A theft makes the Baker call the guards on
 // the next trade for 1,500 ticks (baker.rs2, ^baker_stall_timer), so the shop is skipped then.
@@ -25,7 +26,7 @@ import type { BotWorldState, InventoryItem, NearbyNpc } from '../../sdk/types';
 import { BAKER_STALL, BAKER_STALL_TILE, lastContact, STALL_BACKOFF_TICKS } from '../../speedrun/helpers/kits';
 import { sailTo } from '../../speedrun/lib/ships';
 import { inAlKharid, travelTo, WEST_OF_GATE } from '../../speedrun/lib/toll-gate';
-import { nextTick, waitUntil } from '../../speedrun/lib/wait';
+import { nextTick, waitTicks, waitUntil } from '../../speedrun/lib/wait';
 import { ARDOUGNE_SOUTH_BANK, inEastArdougne } from '../../speedrun/skills/thieving';
 import { cheb, coinsIn, commonOptions, here, numberFlag, runProbe, walk, type Args, type CommonOptions, type ProbeContext, type ProbeSpec, type Tile } from './probe-sampler';
 
@@ -42,6 +43,9 @@ const MARKET: Tile = { x: 2665, z: 3290 };
 const BAKER = /^Baker$/i;
 /** ^baker_stall_timer (stealing.constant): ticks after a theft during which a trade with the Baker calls the guards. */
 export const BAKER_ALERT_TICKS = 1500;
+/** With no food at all, the shop is tried again this often, this many times, before the probe stops. */
+const SOLD_OUT_WAIT_TICKS = 50;
+const SOLD_OUT_RETRIES = 12;
 /** Shop names, best first (HP per gp at base price: bread 5 for 12, slice 5, cake 12 for 50). */
 const SHOP_FOOD = ['Bread', 'Chocolate slice', 'Cake'];
 /** speedrun/helpers/buyer.ts BANKS: the start-side banks. */
@@ -65,11 +69,11 @@ export interface KnightsOptions extends CommonOptions {
 }
 
 export const KNIGHTS_USAGE =
-    'usage: bun markets/methods/probe-knights.ts <account> --minutes N [--out file.jsonl] [--withdraw 1000] [--food 20] [--bank-at 25000] [--keep-coins 500] [--food-source shop,stall]';
+    'usage: bun markets/methods/probe-knights.ts <account> --minutes N [--out file.jsonl] [--withdraw 1000] [--food 20] [--bank-at 25000] [--keep-coins 500] [--food-source shop|stall|shop,stall]';
 
 export function parseKnights(a: Args): KnightsOptions {
     const common = commonOptions(a, ['withdraw', 'food', 'bank-at', 'keep-coins', 'food-source']);
-    const foodSource = (a.flags['food-source'] ?? 'shop,stall').split(',').map(s => s.trim()).filter(Boolean);
+    const foodSource = (a.flags['food-source'] ?? 'shop').split(',').map(s => s.trim()).filter(Boolean);
     if (!foodSource.length || foodSource.some(s => s !== 'shop' && s !== 'stall')) throw new Error(`--food-source takes shop, stall or both (shop,stall), not '${a.flags['food-source']}'`);
     const keepCoins = numberFlag(a, 'keep-coins', 500, { min: 0, integer: true });
     const bankAt = numberFlag(a, 'bank-at', 25_000, { min: 1, integer: true });
@@ -314,8 +318,15 @@ export class KnightsProbe {
         this.t.restocks++;
         const o = ctx.options;
         const want = () => Math.min(o.food, foodItems(this.s).length + 28 - this.s.inventory.length) - foodItems(this.s).length;
-        if (o.foodSource.includes('shop') && this.s.tick - this.lastTheft >= BAKER_ALERT_TICKS && want() > 0) await this.buyFood(want);
+        const shopOpen = () => o.foodSource.includes('shop') && this.s.tick - this.lastTheft >= BAKER_ALERT_TICKS;
+        if (shopOpen() && want() > 0) await this.buyFood(want);
         if (o.foodSource.includes('stall') && want() > 0) await this.stealFood(want);
+        // sold out (the stock is shared and restocks): wait at the shop rather than give up
+        for (let i = 0; i < SOLD_OUT_RETRIES && shopOpen() && foodItems(this.s).length === 0 && !ctx.signal.aborted; i++) {
+            ctx.event('baker sold out: waiting for the restock', { ticks: SOLD_OUT_WAIT_TICKS });
+            await waitTicks(ctx.sdk, SOLD_OUT_WAIT_TICKS);
+            await this.buyFood(want);
+        }
         ctx.event('restocked', { food: foodItems(this.s).length, hp: this.s.player!.hp, coins: coinsIn(this.s) });
         if (foodItems(this.s).length === 0 && this.s.player!.hp <= KNIGHT_DAMAGE + 1) throw new Error('no food to be had and too few hitpoints for the knights');
     }
