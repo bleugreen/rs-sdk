@@ -6,7 +6,9 @@
 //       [--gate-bot=<gate account env, default cairn_twin off a local world>] [--gate-json=<file>]
 //       [--gate-probe-trials=60] [--probe-trials=0]
 //       [--force-gate] [--from=<step name or index>] [--log=<file>] [--lab] [--insecure-query-login]
+//       [--host-reservation=<file>]
 //   bun speedrun/rehearse.ts --claim --bot=<env name> [--client=browser|lite] [--log=<file>] [--lab]
+//       [--host-reservation=<file>]
 //
 // --claim parks a fresh name: S00 (the tutorial skip that creates the account), then logoutClean,
 // nothing else. It takes no gate account, no direct read and no probes, so it is one login, and
@@ -15,6 +17,10 @@
 // A thin layer over runner/resume.ts runResumable (runSteps with resume from game state) and
 // lib/session.ts. In order:
 //
+// 0. Pre-flight: the host reservation (HOST.md, 'Run-capable twin'; $HOME/host-reserved.json, or
+//    $SPEEDRUN_HOST_RESERVATION, or --host-reservation). While it is live, nothing logs in: exit 5.
+//    It is read again before each login below, and at every logout-safe step boundary of the
+//    attempt: a live one there logs out, writes a `(gate) paused for the gate/run` row, and exits 5.
 // 1. Off the clock, before the rehearsal account logs in: /playercount; the direct gate read
 //    ((a)-(c), rs/96's CLI docs/speedrun/scripts/tickmanip-latency.ts run on the gate account with
 //    --gate-bot, or the --json file it wrote with --gate-json); and the in-page probe on the gate
@@ -36,9 +42,12 @@
 // Stop: the first Ctrl-C stops at the next logoutSafe boundary with logoutClean; a second logs
 // out at once. SIGTERM (a `timeout` bound) logs out at once too. A re-run walks from game state
 // (runResumable); --from overrides the first walk. Use the same --log so the hiscore check sees
-// every session. Exit: 0 chain done, 3 refused by the gate, 4 stopped or paused (resume), 1 error.
+// every session. Exit: 0 chain done, 3 refused by the gate, 4 stopped or paused (resume), 5 host
+// reserved (refused at pre-flight, or paused for the gate/run; re-run once the reservation is gone),
+// 1 error.
 
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'fs';
+import { homedir } from 'os';
 import { isAbsolute, join } from 'path';
 import type { BotWorldState } from '../sdk/types';
 import { clock, DemoMonitor, demoOrigin, samplePlayerCount } from './lib/demo-status';
@@ -49,7 +58,7 @@ import { type ClientKind, closeSession, loadBotEnv, logoutClean, type LogoutResu
 import { formatReport, newRunId, parseLog, report, type RowKind, type StepReport, TickLog, type TickRow } from './lib/ticks';
 import { receiveFrom, type WantSpec } from './lib/trade';
 import { tickMs, waitUntil } from './lib/wait';
-import { DROP_STEP, RESUME_STEP, runResumable, sessionLink } from './runner/resume';
+import { DROP_STEP, type Link, RESUME_STEP, type ResumeEvent, runResumable, sessionLink } from './runner/resume';
 import { BOUNDARY_STEP, type Step } from './runner/step';
 import { parsePlayer, type PlayerRow, playerPath, PoliteFetcher } from './tools/hiscore-scrape';
 
@@ -91,9 +100,11 @@ export interface RehearseArgs {
     probeTrials: number;
     forceGate: boolean;
     from?: number | string;
+    /** The host reservation file (default reservationPath()). */
+    hostReservation?: string;
 }
 
-const VALUE_FLAGS = new Set(['skill', 'bot', 'client', 'to', 'log', 'kit-from', 'kit', 'technique', 'skill-opt', 'gate-bot', 'gate-json', 'gate-probe-trials', 'probe-trials', 'from']);
+const VALUE_FLAGS = new Set(['skill', 'bot', 'client', 'to', 'log', 'kit-from', 'kit', 'technique', 'skill-opt', 'gate-bot', 'gate-json', 'gate-probe-trials', 'probe-trials', 'from', 'host-reservation']);
 // --insecure-query-login is read by lib/session.ts from process.argv (lab-only browser login).
 const SWITCHES = new Set(['lab', 'force-gate', 'insecure-query-login', 'claim']);
 /** What --claim refuses: everything that would add a login, a probe or a step after S00. */
@@ -109,7 +120,9 @@ export const USAGE = `usage: bun speedrun/rehearse.ts --skill=<name|module.ts> -
     [--gate-bot=<gate account env, default ${DEFAULT_GATE_BOT} off a local world>] [--gate-json=<file>]
     [--gate-probe-trials=60] [--probe-trials=0]
     [--force-gate] [--from=<step name or index>] [--log=<file>] [--lab] [--insecure-query-login]
-       bun speedrun/rehearse.ts --claim --bot=<env name> [--client=browser|lite] [--log=<file>] [--lab]`;
+    [--host-reservation=<file>]
+       bun speedrun/rehearse.ts --claim --bot=<env name> [--client=browser|lite] [--log=<file>] [--lab]
+    [--host-reservation=<file>]`;
 
 function wholeNumber(key: string, raw: string, min: number, max = Number.MAX_SAFE_INTEGER): number {
     const n = Number(raw);
@@ -200,6 +213,7 @@ export function parseArgs(argv: readonly string[], opts: { defaultGateBot?: stri
         ...(gateBot ? { gateBot } : {}),
         ...(v.has('gate-json') ? { gateJson: v.get('gate-json')! } : {}),
         ...(from !== undefined ? { from: /^\d+$/.test(from) ? Number(from) : from } : {}),
+        ...(v.has('host-reservation') ? { hostReservation: v.get('host-reservation')! } : {}),
     };
 }
 
@@ -324,6 +338,95 @@ export function gateRefusal(i: { direct: DirectRead | null; inPage: readonly InP
         if (c?.ok === false) out.push(`(c) ${c.value} catch-ups per minute over ${c.limit} on the ${r.label} in-page probe: an overrun period; wait and re-read`);
     }
     return out;
+}
+
+// ------------------------------------------------------------------ host reservation
+
+/**
+ * The host reservation (docs/speedrun/rehearsals/HOST.md, 'Run-capable twin'): one JSON object
+ * `{"owner", "until", "reason"}`, written by the scored run's step 0 and by rs/host for installs and
+ * hand reads. It is live while `until` is in the future. While it is live no attempt or claim
+ * starts, and an attempt in flight logs out at its next logout-safe boundary and does not restart.
+ */
+export const RESERVATION_FILE = 'host-reserved.json';
+/** Overrides the default path ($HOME/host-reserved.json); --host-reservation overrides both. */
+export const RESERVATION_ENV = 'SPEEDRUN_HOST_RESERVATION';
+/** Exit code: refused at pre-flight, or paused mid-attempt, because the host is reserved. */
+export const EXIT_HOST_RESERVED = 5;
+/** The `gate` annotation row an attempt paused by a live reservation writes. */
+export const PAUSE_STEP = '(gate) paused for the gate/run';
+
+export interface HostReservation {
+    owner: string;
+    until: string;
+    reason: string;
+}
+
+export type ReservationState =
+    | { state: 'none' }
+    | { state: 'expired'; reservation: HostReservation }
+    | { state: 'live'; reservation: HostReservation }
+    | { state: 'malformed'; error: string };
+
+export function reservationPath(flag?: string, env: Readonly<Record<string, string | undefined>> = process.env): string {
+    return flag ?? env[RESERVATION_ENV] ?? join(env.HOME ?? homedir(), RESERVATION_FILE);
+}
+
+/** The file's text (null: no file) at `now`. Malformed: not a JSON object, or an `until` that is not a time. */
+export function judgeReservation(text: string | null, now: number): ReservationState {
+    if (text === null) return { state: 'none' };
+    let o: unknown;
+    try {
+        o = JSON.parse(text);
+    } catch (e) {
+        return { state: 'malformed', error: `not JSON (${e instanceof Error ? e.message : e})` };
+    }
+    if (!o || typeof o !== 'object' || Array.isArray(o)) return { state: 'malformed', error: 'not a JSON object' };
+    const r = o as Record<string, unknown>;
+    const until = typeof r.until === 'string' ? Date.parse(r.until) : Number.NaN;
+    if (!Number.isFinite(until)) return { state: 'malformed', error: `"until" is not a time (${JSON.stringify(r.until ?? null)})` };
+    const reservation = { owner: String(r.owner ?? '?'), until: r.until as string, reason: String(r.reason ?? '') };
+    return until > now ? { state: 'live', reservation } : { state: 'expired', reservation };
+}
+
+export function readReservation(path: string, now: number = Date.now()): ReservationState {
+    let text: string | null;
+    try {
+        text = readFileSync(path, 'utf-8');
+    } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== 'ENOENT') return { state: 'malformed', error: `unreadable (${e instanceof Error ? e.message : e})` };
+        text = null;
+    }
+    return judgeReservation(text, now);
+}
+
+export function reservationText(r: HostReservation): string {
+    return `${r.owner} until ${r.until}${r.reason ? ` (${r.reason})` : ''}`;
+}
+
+/** Reads the file afresh on every check; a malformed file is warned about once per distinct problem. */
+export class ReservationWatch {
+    private warned: string | null = null;
+    constructor(
+        readonly path: string,
+        private readonly opts: { now?: () => number; warn?: (msg: string) => void } = {}
+    ) {}
+
+    /** The live reservation, or null (no file, expired, or malformed). */
+    check(): HostReservation | null {
+        const s = readReservation(this.path, this.opts.now ? this.opts.now() : Date.now());
+        if (s.state === 'malformed' && this.warned !== s.error) {
+            this.warned = s.error;
+            (this.opts.warn ?? console.warn)(`[rehearse] WARNING: ${this.path} is malformed, so it is not a live reservation: ${s.error}`);
+        }
+        return s.state === 'live' ? s.reservation : null;
+    }
+}
+
+/** Pre-flight, and before each login: why nothing may log in, or null to go. */
+export function reservationRefusal(watch: ReservationWatch): string | null {
+    const r = watch.check();
+    return r ? `the host is reserved by ${reservationText(r)} (${watch.path}): no attempt or claim starts while it is live; run again once it is gone or expired` : null;
 }
 
 // ------------------------------------------------------------------ player count through the attempt
@@ -514,6 +617,8 @@ export interface Summary {
     reach: { skill: string; level: number; playtime: number }[];
     /** /playercount over the attempt: the gate read and the `players` rows. */
     players: PlayerSwing;
+    /** Every pause for the gate/run in the log (PAUSE_STEP rows), this invocation's and earlier ones'. */
+    pauses: { owner: string; until: string; reason: string; sessionId: number; tick: number; at: string; before: string | null }[];
     lowerBound: boolean;
 }
 
@@ -523,6 +628,7 @@ const sum = (rows: readonly TickRow[]) => rows.reduce((a, r) => a + r.ticks, 0);
 export function summarize(rows: readonly TickRow[]): Summary {
     const sessions: Summary['sessions'] = [];
     const reach: Summary['reach'] = [];
+    const pauses: Summary['pauses'] = [];
     let prior = 0;
     for (const r of rows) {
         if (r.kind === 'session') {
@@ -531,6 +637,12 @@ export function summarize(rows: readonly TickRow[]): Summary {
             prior += playtime;
         } else if (r.kind === 'reach') {
             reach.push({ skill: String(r.meta?.skill), level: Number(r.meta?.level), playtime: prior + r.endTick });
+        } else if (r.kind === 'gate' && r.step === PAUSE_STEP) {
+            const m = r.meta ?? {};
+            pauses.push({
+                owner: String(m.owner ?? '?'), until: String(m.until ?? '?'), reason: String(m.reason ?? ''),
+                sessionId: r.sessionId, tick: r.startTick, at: r.at, before: typeof m.before === 'string' ? m.before : null,
+            });
         }
     }
     const plain = rows.filter(r => !r.kind);
@@ -556,6 +668,7 @@ export function summarize(rows: readonly TickRow[]): Summary {
         steps: rep.steps,
         reach,
         players: playerSwing(playerReads(rows)),
+        pauses,
         lowerBound: rep.lowerBound || sessions.some(s => s.lowerBound),
     };
 }
@@ -622,6 +735,12 @@ export function formatSummary(
     const target = [...s.reach].reverse().find(r => r.skill === o.skill.toLowerCase());
     if (target) lines.push(`reach: ${o.skill} ${target.level} at playtime ${target.playtime}`);
     lines.push(...formatPlayers(s.players));
+    for (const p of s.pauses) {
+        lines.push(
+            `PAUSED for the gate/run at ${p.at}: host reserved by ${reservationText(p)}; logged out at tick ${p.tick} of session ${p.sessionId}` +
+                (p.before ? `, before "${p.before}"` : '')
+        );
+    }
     if (o.hiscore) {
         for (const h of o.hiscore) {
             const mark = h.ok === null ? '' : h.ok ? ' ok' : ` OFF by ${h.diff}`;
@@ -630,6 +749,86 @@ export function formatSummary(
         if (o.hiscoreUrl) lines.push(`  ${o.hiscoreUrl}`);
     }
     return lines.join('\n');
+}
+
+// ------------------------------------------------------------------ the chain under its stops
+
+export interface AttemptOptions {
+    log: TickLog;
+    account: string;
+    link: Link;
+    from?: number | string;
+    /** Read at every logout-safe boundary, before the other stops. */
+    reservation: ReservationWatch;
+    /** Ctrl-C asked for a stop. */
+    stopAsked: () => boolean;
+    /** Why the rehearsal tab's in-page probe refuses ((c) failed), or null. */
+    gateStop: () => string | null;
+    /** Leave the world: logoutClean, page-confirmed. Clearing `expectInWorld` keeps the watchdog from relaunching. */
+    logout: () => Promise<LogoutResult>;
+    onEvent?: (e: ResumeEvent) => void;
+}
+
+export interface AttemptResult {
+    outcome: string;
+    code: number;
+    /** Set when a live host reservation stopped the attempt. */
+    paused: HostReservation | null;
+}
+
+/**
+ * The chain through runResumable with the attempt's stops, polled after each logoutSafe step:
+ * the runner has no safe point inside a step, so a long step runs to its end first. A live host
+ * reservation logs out there, writes a PAUSE_STEP row and returns EXIT_HOST_RESERVED; nothing here
+ * restarts the attempt. Ctrl-C returns 4 and a failed rehearsal-tab gate 3, as before.
+ */
+export async function runAttempt(session: Session, chain: ReadonlyArray<Step<any>>, o: AttemptOptions): Promise<AttemptResult> {
+    const held: { reservation: HostReservation | null; logout: LogoutResult | null } = { reservation: null, logout: null };
+    try {
+        const r = await runResumable(session, chain, {
+            log: o.log,
+            c: {},
+            link: o.link,
+            // The reservation is read first, at every boundary, so a pause is recorded as one even beside a Ctrl-C.
+            shouldStop: () => {
+                held.reservation ??= o.reservation.check();
+                return held.reservation !== null || o.stopAsked() || o.gateStop() !== null;
+            },
+            logout: async () => {
+                held.logout = await o.logout();
+            },
+            ...(o.from !== undefined ? { from: o.from } : {}),
+            ...(o.onEvent ? { onEvent: o.onEvent } : {}),
+        });
+        if (r.resumeAt === undefined) return { outcome: r.drops ? `chain done after ${r.drops} drop(s)` : 'chain done', code: 0, paused: null };
+        const before = chain[r.resumeAt]?.name ?? null;
+        const res = held.reservation;
+        if (res) {
+            const out = held.logout;
+            o.log.append(annotation(o.log, o.account, 'gate', PAUSE_STEP, {
+                sessionId: session.sessionId,
+                startTick: out ? out.clickTick : (session.sdk.getState()?.tick ?? -1),
+                ok: out?.ok === true,
+                ...(out && !out.ok ? { error: `logout not confirmed: ${out.reason}` } : {}),
+                meta: { ...res, path: o.reservation.path, before, ...(out ? { logout: out } : {}) },
+            }));
+            const left = out?.ok ? 'logged out' : `logout NOT confirmed (${out?.reason ?? 'no logout'})`;
+            return {
+                outcome: `PAUSED for the gate/run: the host is reserved by ${reservationText(res)}; ${left} before "${before}"; run again once the reservation is gone`,
+                code: EXIT_HOST_RESERVED,
+                paused: res,
+            };
+        }
+        const gate = o.gateStop();
+        if (gate) return { outcome: `REFUSED after the in-page probe (${gate}); logged out`, code: 3, paused: null };
+        return { outcome: `stopped before "${before}"; logged out`, code: 4, paused: null };
+    } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        // A step that logged out on purpose (a PausedForPlayer pause) left the world itself.
+        const r = !session.expectInWorld ? { outcome: `paused by the step, already logged out: ${msg}`, code: 4 } : { outcome: `FAILED: ${msg}`, code: 1 };
+        console.error(`[rehearse] ${r.outcome}`);
+        return { ...r, paused: null };
+    }
 }
 
 // ------------------------------------------------------------------ the attempt
@@ -708,6 +907,23 @@ async function main(argv: string[]): Promise<number> {
     const local = isLocalWorld(env.SERVER);
     const a = local ? parseArgs(argv) : parseArgs(argv, { defaultGateBot: DEFAULT_GATE_BOT });
     if (a.lab && !local) throw new UsageError(`--lab accepts staff fixtures, and ${env.SERVER} is not a local lab`);
+
+    // 0. Pre-flight: no login of any kind while the host is reserved for the gate or the run.
+    const reservation = new ReservationWatch(reservationPath(a.hostReservation));
+    let gateTab: Session | null = null;
+    const refuseIfReserved = async (): Promise<boolean> => {
+        const why = reservationRefusal(reservation);
+        if (!why) return false;
+        console.error(`[rehearse] REFUSED: ${why}`);
+        console.error('[rehearse] nothing was logged in for the attempt');
+        if (gateTab) {
+            await logoutClean(gateTab).catch(() => {});
+            await closeSession(gateTab);
+        }
+        return true;
+    };
+    if (await refuseIfReserved()) return EXIT_HOST_RESERVED;
+
     const mod = a.claim ? null : await loadSkillModule(a.skill!);
     const skillName = mod?.skill ?? CLAIM_SKILL;
     const start = await import('./skills/start');
@@ -728,8 +944,8 @@ async function main(argv: string[]): Promise<number> {
     else if (a.gateBot) direct = await directReadViaCli(a.gateBot, { lab: a.lab, runId });
     if (direct) log.append(annotation(log, account, 'gate', '(gate) direct', { ok: !direct.error && direct.verdict?.on === true, ...(direct.error ? { error: direct.error } : {}), meta: { ...direct, ...(direct.verdict ? { text: verdictText(direct.verdict) } : {}) } }));
     const inPage: InPageRead[] = [];
-    let gateTab: Session | null = null;
     if (a.gateProbeTrials > 0) {
+        if (await refuseIfReserved()) return EXIT_HOST_RESERVED;
         gateTab = await openSession(a.gateBot!, { client: 'browser', launch: true });
         inPage.push(await inPageRead(gateTab, a.gateProbeTrials, 'gate tab before'));
         log.append(annotation(log, gateTab.name, 'gate', '(gate) in-page before', { meta: { ...inPage[0]!, text: verdictText(inPage[0]!.verdict) } }));
@@ -753,6 +969,8 @@ async function main(argv: string[]): Promise<number> {
         }
         for (const r of refusal) console.warn(`[rehearse] --force-gate: starting anyway: ${r}`);
     }
+    // The gate takes minutes; a reservation may have appeared meanwhile. --force-gate does not override it.
+    if (await refuseIfReserved()) return EXIT_HOST_RESERVED;
 
     // 2. The attempt, on the clock from the login.
     const session = await openSession(a.bot, { client: a.client, launch: true });
@@ -840,39 +1058,24 @@ async function main(argv: string[]): Promise<number> {
     if (a.kit) chain.push(kitStep(a.kit, a.kitFrom));
     if (mod) chain.push(...mod.steps({ to: a.to, ...(a.technique ? { technique: a.technique } : {}), ...a.skillOpts }));
 
-    let outcome = 'chain done';
-    let code = 0;
-    try {
-        const r = await runResumable(session, chain, {
-            log,
-            c: {},
-            link: sessionLink(session),
-            shouldStop: () => stopAsked || gateStop !== null,
-            logout: () => leave(),
-            ...(a.from !== undefined ? { from: a.from } : {}),
-            onEvent: e => console.log(`[resume] ${JSON.stringify(e)}`),
-        });
-        if (r.resumeAt !== undefined) {
-            outcome = gateStop ? `REFUSED after the in-page probe (${gateStop}); logged out` : `stopped before "${chain[r.resumeAt]?.name}"; logged out`;
-            code = gateStop ? 3 : 4;
-        } else if (r.drops) outcome = `chain done after ${r.drops} drop(s)`;
-    } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        // A step that logged out on purpose (a PausedForPlayer pause) left the world itself.
-        if (!session.expectInWorld) {
-            outcome = `paused by the step, already logged out: ${msg}`;
-            code = 4;
-        } else {
-            outcome = `FAILED: ${msg}`;
-            code = 1;
-        }
-        console.error(`[rehearse] ${outcome}`);
-    }
+    const { outcome, code, paused } = await runAttempt(session, chain, {
+        log,
+        account,
+        link: sessionLink(session),
+        reservation,
+        stopAsked: () => stopAsked,
+        gateStop: () => gateStop,
+        logout: () => leave(),
+        ...(a.from !== undefined ? { from: a.from } : {}),
+        onEvent: e => console.log(`[resume] ${JSON.stringify(e)}`),
+    });
+    if (paused) console.error(`[rehearse] ${outcome}`);
 
     // 3. Out of the world at once, then everything that costs no ticks.
     if (session.expectInWorld && !leaving) await leave();
-    clearInterval(playersTimer);
+    // After a deliberate logout (expectInWorld false) the watchdog relaunches nothing; stop it outright.
     wd.stop();
+    clearInterval(playersTimer);
     monitor?.stop();
     process.off('SIGINT', onSigint);
     for (const st of programs.flush()) log.append(programRow(log, account, session.sessionId, st));
@@ -882,7 +1085,12 @@ async function main(argv: string[]): Promise<number> {
     closeSessionRow(session.sessionId, 'logout', out?.ok ? out.lastInWorldTick : session.lastInWorldTick, out ?? undefined);
     await readPlayers('end');
 
-    if (gateTab) {
+    if (gateTab && paused) {
+        // The host is reserved: the gate account leaves too, without its after-probe.
+        gate.push('gate tab after: skipped (paused for the gate/run)');
+        await logoutClean(gateTab).catch(() => {});
+        await closeSession(gateTab);
+    } else if (gateTab) {
         try {
             const after = await inPageRead(gateTab, a.gateProbeTrials, 'gate tab after');
             log.append(annotation(log, gateTab.name, 'gate', '(gate) in-page after', { meta: { ...after, text: verdictText(after.verdict) } }));
@@ -904,6 +1112,7 @@ async function main(argv: string[]): Promise<number> {
     console.log('\n' + formatSummary(summary, { account, skill: skillName, ...(a.claim ? {} : { to: a.to }), outcome, gate, hiscore: checks, ...(hiscoreOrigin ? { hiscoreUrl: `${hiscoreOrigin}${playerPath(account)}` } : {}) }));
     console.log(`log: ${log.path}`);
     if (code === 4) console.log('resume: run the same command again (the walk starts from game state); --from=<step> overrides it');
+    if (code === EXIT_HOST_RESERVED) console.log(`resume: once ${reservation.path} is gone or expired, run the same command again (nothing restarts on its own)`);
     await closeSession(session);
     return code;
 }

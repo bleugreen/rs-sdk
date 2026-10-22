@@ -347,12 +347,15 @@ during the gate and the run.
   - Rehearsal attempts keep using their slot files, not this file.
   - Check: `cat ~/host-reserved.json 2>/dev/null || echo none`.
 
-  `speedrun/rehearse.ts` enforcing this, at pre-flight and at step boundaries, is rs/213. Until it
-  lands, rs/147 checks the file by hand before granting any slot.
+  `speedrun/rehearse.ts` enforces this (rs/213). While the sentinel is live it refuses at
+  pre-flight, before any login, and exits 5; `--force-gate` does not override it. In flight it
+  re-reads the file at each step boundary and, if a reservation has appeared, logs out cleanly and
+  stops. It checks only at boundaries, so a long band (for example willows 73-99, about 12 minutes)
+  finishes first.
 - **Run night, for an attempt in flight.** main announces the run night's window, and rs/147
   grants no attempt that would still be running when it opens. If an attempt is in flight when a
   live reservation appears:
-  1. It logs out at its next step boundary (within 5 minutes).
+  1. It logs out at its next step boundary, once the current step has finished.
   2. It records the stop as 'paused for the gate/run'.
   3. It does not restart until the reservation is gone.
 
