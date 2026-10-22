@@ -41,6 +41,15 @@ Every foreground measurement runs as `timeout --kill-after=30s <bound> <command>
 then SIGKILL 30 s later. **Teardown (step 9) still stops everything explicitly; the timeout is the
 backstop** for the teardown that never happens.
 
+**Every launch for SCORED or a rehearsal account is dry-run first** (main's rule, 13:4x PDT
+2026-10-22, after a rehearsal attempt's launch died on an unquoted lap string that the shell split at
+`;`, and its account stood about 280 ticks idle; rs/147, rs/439). The dry run is the launch's exact
+command **on its exact host, in the same shell with the same quoting, with no login, immediately
+before the real launch**, and its output goes in the run's record beside the gate lines (step 5a.3).
+On this page that is `handoff` (step 7, "The launch dry run", which gives the form; SCORED, or a
+rehearsal account with `--rehearsal`) and step 8's attach-and-logout. The scored run's own start,
+run.ts, is rs/186's and not on main, so its line is pending; it is dry-run the same way.
+
 **The run bound is 9 h.** A full run is our row, about 35,300 ticks (RUN-ORDER.md): about 2.9 h of
 wall clock at the 300 ms tick the demo ran until 19:56Z on 2026-10-22, and about **3.9 h at the
 400 ms it has run since** ("Measured: the demo's tick period"); at 600 ms, which remains possible,
@@ -510,6 +519,16 @@ note**: tell main. Expect `floor ok`:
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'N=FLOOR_MAIN_NAMED; cd ~/rs-sdk && C=$(cat $HOME/run-commit) || exit 1; git fetch -q origin main && git show origin/main:docs/speedrun/STEP-MANIFEST.md >$HOME/rs-run/manifest-main.md || { echo "STOP: cannot read STEP-MANIFEST.md on origin/main"; exit 1; }; L=$(sed -n -E "s/.*RUN_COMMIT. at or after the run-commit floor, .([0-9a-f]{7,40}).*/\1/p" $HOME/rs-run/manifest-main.md); case "$L" in ""|*[!0-9a-f]*) echo "STOP: entry 0 does not give exactly one floor"; exit 1;; esac; F=$(git rev-parse -q --verify "$L^{commit}") || { echo "STOP: the floor $L is not in this clone"; exit 1; }; [ "$F" = "$(git rev-parse -q --verify "$N^{commit}")" ] || { echo "STOP: entry 0 names $L, main last named $N"; exit 1; }; git merge-base --is-ancestor "$F" "$C" || { echo "STOP: RUN_COMMIT is before the floor $L"; exit 1; }; git merge-base --is-ancestor d02c094f "$C" || { echo "STOP: RUN_COMMIT lacks run-gate.ts as of #350"; exit 1; }; echo "floor ok: $L, RUN_COMMIT at or after it, run-gate.ts in it"'
 ```
 
+**The schedule for 2026-10-23** (main, 13:3x PDT 2026-10-22). All of it is subject to the operator
+and to the Monkey Madness kit gate (RUN-ORDER.md R37):
+
+| When (UTC) | PDT | What |
+|---|---|---|
+| by ~03:00Z | 20:00 on the 22nd | the overnight lab pass, only if the rehearsal chunks are green by then |
+| by ~09:00Z | 02:00 | the run-eve loads done |
+| 13:00Z | 06:00 | the floor freeze (below), 2 h before the gate series |
+| from ~15:00Z | 08:00 | the gate series (step 5a), the start on the first pass |
+
 **The run-eve freeze** (main's ruling; STEP-MANIFEST.md entry 0). The last floor is named at least
 2 h before the gate series starts; after that no merge moves the floor without the line's update in
 the same window.
@@ -525,8 +544,9 @@ between the two Ashburn machines keeps its cache (same origin, same Chrome major
 
 **The run tab's profile is warm before it opens** (step 7, main's ruling). This step's build is the
 final served-webclient rebuild unless another follows; step 7's verification login (the gate tab's,
-step 6) runs after the last one, so a later rebuild means running it again, and so does a demo
-restart after it (step 7, "The warm-up comes after the last demo restart").
+step 6) runs after the last one, so a later rebuild means running it again. A demo restart after the
+last gate pass means gating again too: it invalidates the pass, not the cache (step 7, "The restart
+detector").
 
 **The inventory check, before the start is called.** On any checkout at `RUN_COMMIT` (it reads only
 the repository), run
@@ -810,9 +830,11 @@ Why SCORED's machine:
   lab, rs/131: a giver in a lower bucket was handled first whatever the login order, 7.00 ticks a
   craft, 30 of 30; one in a higher bucket after, 8.00). On the demo the address is the machine's
   public one, `fly-client-ip` (r, rs/131; the table above has each machine's bucket). One machine
-  is one address and one bucket, so login order decides: **the givers log in before SCORED and never
-  relog once SCORED is in.** A giver relaunched after SCORED is in comes back behind SCORED, and its
-  turns run robust at 8 until SCORED's next relog: about 7 ticks for the craft lost in the cue plus
+  is one address and one bucket, so login order decides: **a step's givers are in before SCORED's
+  last login ahead of that step, and never relog after it**: S06's before SCORED's first login, S21's
+  before SCORED's one in-page relog ahead of S21 ("The per-address login plan", below). A giver
+  relaunched after that comes back behind SCORED, and its turns run robust at 8 until SCORED's next
+  relog: about 7 ticks for the craft lost in the cue plus
   1 per later turn of that giver, at most ~15 over S21 for one crash with 22 givers (m, lab, rs/163:
   back in the world 54-74 ticks after a SIGKILL, exactly 1 turn missed, later turns 8, 3 of 3
   repeats on the direct path; RUN-ORDER.md R12).
@@ -859,7 +881,7 @@ scope is not in force, and rs/393's writer is pending likewise.
 
 | Helper | Tick-exact? | Where |
 |---|---|---|
-| S06 air-altar givers (7) and S21 body-altar givers (22) | yes: the 7-tick cycle schedules their packets (R12) | SCORED's machine, before SCORED |
+| S06 air-altar givers (7) and S21 body-altar givers (22) | yes: the 7-tick cycle schedules their packets (R12) | SCORED's machine: S06's before SCORED's first login; S21's late, before SCORED's in-page relog ahead of S21 (below) |
 | Trade givers (2): the hand-offs, H4m, S18's top-ups, the wine (SUPPLIES.md) | tick-sensitive: an S18 top-up must finish by stun + 9 (R16), the wine's bank by login + 19 (R17) | SCORED's machine, before SCORED |
 | S07 bone givers b01-b04 | no: SCORED's loop stops, receives and restarts, and a refused request costs SCORED 0 because the giver re-sends on the next tick (m, lab, rs/141) | SCORED's machine with the roster (rs/117's launcher, SUPPLIES.md H4.1); their machine decides no cycle, but they count in the load check |
 | Cannon helper (H11, H11r, H23), carp helper, couriers, lookouts | no | bbs fleet; their machine doesn't matter |
@@ -884,8 +906,9 @@ It is **pending (rs/host, with rs/41 and rs/214)**: at the 22-giver point (00:35
 2026-10-22) all 22 logged in in 190 s (m, rs/214) but the tab side never started, so there is no
 (d) or fps reading; the ~34-client body point is booked for 01:00-01:25Z. The ~65-client nature
 point runs only if rs/194 reports 4 or more nature talismans before the run's eve (main, 17:07 PDT;
-RUN-ORDER.md O41). Around 25-36 logins on one machine is fine on the swarm side: the demo's bound
-is per IP and our cap is a total (main, 16:24 PDT; "~20 a machine" was an observation, not a cap).
+RUN-ORDER.md O41). Around 25-36 logins on one machine was ruled fine on the swarm side while the demo's per-IP bound
+was 100 (main, 16:24 PDT; "~20 a machine" was an observation, not a cap). The bound has been 50 an
+address since 13:2x PDT 2026-10-22 ("The per-address login plan", below).
 
 **How.** The tick-exact helpers (the Runecraft altar givers, the trade giver, the wine giver, the S07 bone givers) run on this
 machine through rs/117's launcher, `speedrun/helpers/standalone.ts`, from this same checkout, on their
@@ -893,13 +916,39 @@ own loopback gateway (7795 by default). How to configure, start and stop them is
 [HELPERS.md](HELPERS.md), "Helpers on the run machine" (cairn://p/rs/117); this page doesn't repeat
 it. The one ordering rule that touches this runbook: **the helpers are logged in before SCORED's tab
 opens** (the launcher's `helpersReady`), because login order decides the 7- or 8-tick Runecraft
-cycle. Every helper counts against the 80-login cap from its login until it logs out (step 7), and
-SCORED's run login is the peak, because S21's altar givers are already in (SUPPLIES.md, "Peak
-concurrent logins"). At the gate the 7 opening givers on **each** machine count, 14 in all. After a demo restart the helpers come back by relaunching rs/141's headless
+cycle. Every helper counts against the 80-login cap from its login until it logs out (step 7), and against
+its address's per-IP cap (below). With S21's altar givers in from the start, SCORED's run login was
+the peak (SUPPLIES.md, "Peak concurrent logins"); under the per-address plan below, the peak per
+address is rs/41's map, pending. At the gate the 7 opening givers on **each** machine count, 14 in all. After a demo restart the helpers come back by relaunching rs/141's headless
 lite-runner child processes (`fleet.ts`, `standalone.ts`), not tabs: the OS closes the old child's
 gateway socket when it exits, so there is no gateway takeover (inferred from the code; owned by
 rs/41), and the earlier lite restart measurement read 3 in-world ticks after the relogin
 (`RESILIENCE.md` section 6).
+
+**The per-address login plan** (main, 13:3x-13:4x PDT 2026-10-22, via rs/158; RUN-ORDER.md R43).
+One run machine is one address, so SCORED's machine carries SCORED, its gate account until the
+gate's kill, and every helper launched there:
+
+- **The cap.** The demo's operator caps simultaneous logins at **50 per IP** (public Discord, 13:2x
+  PDT; it was 100 and may rise). A working cap of **45 per address** is proposed as tenet 16's
+  successor and is not ruled; until it is, tenet 16's 80, summed across every host, stands (step 7).
+- **Families log out when their step is done:** after S03, S04, S06 and S07, that step's helper
+  family logs out.
+- **S21's body-altar givers log in late, then SCORED relogs once.** The 22 givers log in ahead of
+  S21, not before SCORED's first login. Then SCORED makes its one in-page relog before S21, which
+  re-appends it at its group's tail behind them, so they are handled first and the cycle stays at 7
+  (R12; the in-page relog is `login(session, {inPage: true})`, step 7). 22 logins took 190 s through
+  the launcher's limiter (m, rs/214), so their trigger leads S21 by at least that (i).
+- **The atoll helper, H12o,** is cued by run.ts at least 52 ticks before S15's segment P. H12o is a
+  lever under S15's risk line, with no ledger row until it is ruled in (RUN-ORDER.md R37).
+- **Triggers.** The family logouts, the late logins, SCORED's relog and H12o's cue are triggered by
+  run.ts and acted on by rs/41's schedule. run.ts is rs/186's and not on main (main has only
+  `speedrun/lab/quests/run.ts`), and the schedule is rs/41's: **both pending**. On main nothing
+  triggers them.
+
+**The peak per address is pending rs/41's map** of which accounts log in from which address. No
+account name or address goes on this page. `handoff`'s login count is a total across every host
+(step 7), and nothing on main counts logins per address.
 
 **The S07 bone givers** are rs/41's four, **cairn_b01-b04**, which serve SUPPLIES.md's H4.1-H4.n
 at the Woodcutting trees. They take turns, and they're a role rs/141 added to the same launcher
@@ -1014,8 +1063,9 @@ opening roster (S06's 7 air-altar givers) logged in on each (step 4), the record
 running, RDP disconnected. **Rehearsals are paused on both machines** from the start of the gate series on run day until the
 scored run's teardown, meaning SCORED's hiscore row has landed at its final logout and the recording
 is stopped (main, 19:00 PDT 2026-10-21; tenet 17). Rehearsal logins and their helpers count against
-the same 100-per-address ban line and 80 working cap as the run's own roster, which peaks near 72
-under the nature plan, and a ban costs the run. No rehearsal claim may run into the gate series, and an attempt in
+the same per-IP cap (50 an address since 13:2x PDT 2026-10-22, 100 before; step 4, "The
+per-address login plan") and 80 working cap as the run's own roster, which peaks near 72 under the
+nature plan, and going over costs the run. No rehearsal claim may run into the gate series, and an attempt in
 flight pauses at its next step boundary once the run's claim appears (rehearse.ts, `--claim-owner`;
 speedrun/README.md, "Under a claim").
 
@@ -1042,8 +1092,8 @@ bun -e 'const ws = new WebSocket("wss://rs-sdk-demo.fly.dev/worldfeed"); const t
 
 It printed `demo tickMs 400` at 20:10Z on 2026-10-22 (m, rs/469, from fedora; "Measured: the
 demo's tick period"). The demo has run 400 ms ticks since its 19:56:29Z restart that day (300 ms
-before it). Tenet 12's (a) is counted in ticks and is unaffected; (b) and (c) are pending #370
-(step 6, line 2).
+before it). Tenet 12's (a) is counted in ticks and is unaffected; (b) and (c) become fractions of
+the tick length with rs/471, pending (step 6, line 2).
 
 1. **Gate both in the same minute: `gate`.** It runs step 6 on both machines in parallel, each on
    its own gate account, and refuses the same account twice (one account is in the world only once).
@@ -1074,7 +1124,8 @@ before it). Tenet 12's (a) is counted in ticks and is unaffected; (b) and (c) ar
    [run-gate] chosen: run (only the run host passes; twin fail (on time 51/60))
    ```
 
-   - **One passes:** start on it. A pass includes a marginal (a), 58 or 59 of 60.
+   - **One passes:** start on it, except that the run host passing alone also needs its clean
+     pairs (below). A pass includes a marginal (a), 58 or 59 of 60.
    - **Both pass:** start on the preferred machine, the twin, unless the tiebreak moves it.
    - **The tiebreak (main's, reversed onto the preferred machine):** if the preferred machine passed
      only at the margin ((a) under 60 of 60, (c) above 1 a minute, or a (d) sample under 60 loops a
@@ -1086,12 +1137,15 @@ before it). Tenet 12's (a) is counted in ticks and is unaffected; (b) and (c) ar
      its current address** (rotated 17:39Z 2026-10-22; main, 11:5x PDT, via rs/158). Otherwise a
      marginal twin means **re-measure**, not the run host: no `handoff`; gate both again. The tool
      doesn't count pairs, so, like 5a.1's address rule, this is the operator's check.
-   - **Open, for main's ruling: only the run host passes** (rs/447). The eligibility line above
-     covers a tiebreak move only. When the twin fails and the run host passes, `gate` chooses the
-     run host (`chosen: run (only the run host passes; ...)`, `choose` in run-gate.ts), as "one
-     passes" above says, whatever its count of clean pairs on its current address. Whether the 4+
-     pairs condition also applies in this case is not ruled, and this page writes no rule for it:
-     the case goes to main before `handoff`.
+   - **Only the run host passes** (main's ruling, 13:5x PDT 2026-10-22, via rs/158; rs/447): the
+     run starts on it **only with 4+ clean pairs on its current address**. A clean pair is a
+     same-minute pair in which the run host has no held ticks 135-218 ms behind the twin's copy of
+     the same tick, and no glued pairs of its own. The twin's read counts as the pair's other half
+     even when the twin's own (a) fails. Otherwise wait for the next pair: no `handoff`; gate both
+     again. **Where the code differs:** `choose` in run-gate.ts picks the run host whenever it alone
+     passes (`chosen: run (only the run host passes; ...)`) and writes it to `choice.json`, and
+     `handoff --machine=run` accepts that choice; the tool doesn't count pairs. So, as for the
+     tiebreak, the count is the operator's check before `handoff`, and the ruling decides.
    - **Neither passes:** no start; `gate` exits 1 (3 when a machine read re-measure and none stopped
      on a precondition). RUN-ORDER.md section 1's rule applies to both: the knife stays off on a
      failed gate, and the start waits for a passing read (re-measure both; the gate history on both
@@ -1107,10 +1161,11 @@ before it). Tenet 12's (a) is counted in ticks and is unaffected; (b) and (c) ar
    account in every line, `STOP:` line, JSON file and `GATE-RESULT` (from the `--role` the Mac
    passes), and the Mac relabels both in everything streamed back, its log and `choice.json`. Run on
    a machine by hand without `--role`, the label is plain `GATE`.
-4. **On the chosen machine:** the rest of the roster logs in through rs/117's launcher before SCORED
-   (22 body-altar, 4 bone and 2 trade givers; 22 logins took 190 s through the launcher's limiter, m,
-   rs/214 on the run host, 00:35-00:39Z on 2026-10-22), then step 7's login count (`handoff`
-   re-checks it), then `handoff`, within 20 minutes of the gate (`--max-gate-age`).
+4. **On the chosen machine:** the 4 bone and 2 trade givers log in through rs/117's launcher before
+   SCORED. S21's 22 body-altar givers log in later, ahead of S21 (step 4, "The per-address login
+   plan"; 22 logins took 190 s through the launcher's limiter, m, rs/214 on the run host,
+   00:35-00:39Z on 2026-10-22). Then step 7's login count (`handoff` re-checks it), then the launch
+   dry run and `handoff` (step 7), within 20 minutes of the gate (`--max-gate-age`).
 5. **On the other machine,** before SCORED's first login: its 7 opening givers log out cleanly
    (HELPERS.md teardown; send their stop at least 5 minutes before they must be out of the world,
    since the server logs out at most one player per tick world-wide: HELPERS.md, "Stopping", rs/267)
@@ -1186,12 +1241,18 @@ hard check, and the first that fails stops that machine:
    above 2 a minute reads re-measure, exit 3, even when (a) is short too. Either way that machine
    can't be chosen: the run never starts on a machine whose read is under the floor, which rs/315's
    Thieving rehearsal harness let through at 57 of 60.
-   **(b) and (c) at the demo's 400 ms tick** (since 19:56Z on 2026-10-22). (a) is counted in ticks
-   and stands as written. (b)'s publication p90 and (c)'s catch-up, an interval under 150 ms right
-   after one over 350 ms (`CATCH_UP` in `speedrun/lib/hostgate-verdict.ts`; RUN-ORDER.md section
-   1), are fixed millisecond values set at 300 ms. Main re-expresses them in tick periods through
-   rs/449 (#370): **pending #370**, with no new numbers here. Until then the tool applies them as
-   coded.
+   **(b) and (c) in the demo's tick length T** (main's ruling, 13:5x PDT 2026-10-22, via rs/158; the
+   demo has ticked at 400 ms since 19:56Z that day). (a) is counted in ticks and stands as written.
+   **(b)**: the publication p90 at most 4/3 T (400 ms at T=300), reported, not a pass line. **(c)**:
+   a catch-up is an interval under T/2 right after one over 7/6 T (150 / 350 ms at T=300), at most 2
+   a minute (RUN-ORDER.md section 1). The change that carries them is **rs/471** (host's:
+   `speedrun/lib/hostgate-verdict.ts` and the in-page `server/webclient/src/bot/programs/frames.ts`
+   on one rule, with T=300 pinned in its tests), **pending**: its PR, #385, is open and not on main.
+   rs/449's #370 carries only the gate history's fields (uptime, fingerprint, `tickMs`, 60 s of
+   server intervals, T on each record), not these limits. **The code wins until rs/471 merges:** on
+   main the tool applies the 300 ms values at any T (`CATCH_UP = { underMs: 150, afterOverMs: 350 }`,
+   `DIRECT_RULE.maxTickP90Ms: 400`), so at the demo's 400 ms (c) still counts an interval under
+   150 ms after one over 350.
 3. **(d)**, the tab's loop rate: it opens the gate account's tab (step 3's line, bound 15 min),
    checks the six flags, logs it in with tab-login, prints the three report-only lines (below) and runs the secrets
    check (`0 0 0`). Then it
@@ -1270,18 +1331,22 @@ other machine, anything still logged in, which should be nothing once its 7 open
 its rehearsals paused and its timer skipping under the claim, and any rehearsal account there
 that did not log out counts; the bbs fleet (rs/41 reports its count to the operator; no command on
 this page reads it); the ambassador's host (rs/58); and any other host with one of our accounts in
-the world. With SCORED's 1 the total must be **at most 80**, the working cap: 100 simultaneous
-connections per IP is the server operator's ban threshold, and spreading accounts across IPs to
-evade it is what gets accounts banned. The gate minute holds the 7 opening givers and a gate
+the world. With SCORED's 1 the total must be **at most 80**, the working cap. Per address, the demo's operator
+caps logins at 50 per IP since 13:2x PDT 2026-10-22 (100 before, then the ban threshold; 45 an
+address proposed as tenet 16's successor; step 4, "The per-address login plan"), and spreading
+accounts across IPs to evade a cap is what gets accounts banned. The gate minute holds the 7 opening givers and a gate
 account on each machine, 16 on the two (step 5a). **Fleet accounts not needed during the run are logged out**
 before the count, their stop sent at least 5 minutes before it: the server logs out at most one
 player per tick world-wide, so a stop of many accounts queues (rs/267; HELPERS.md, "Stopping"); gathering is finished by run day. The gate account is already out (step 6).
 SUPPLIES.md, "Peak concurrent logins", has the count by run phase: on the body-altar plan (22 givers,
 rs/163) the start is ~90 with the gathering fleet's ~53 in and 37 without it, so **logging the
-unneeded fleet out first is mandatory**. S21's givers log in before SCORED, on the chosen machine
-(step 4; RUN-ORDER.md O38, settled). Do not log SCORED in over the cap. `handoff` re-checks it as a
-hard check: our accounts online, as `rs-claim status` counts them on `/playerpositions` (every
-host's), plus SCORED's 1, at most 80 (`--cap`); it refuses if the count can't be read.
+unneeded fleet out first is mandatory**. Those counts have S21's givers in from SCORED's first
+login. Under the per-address plan they log in later, ahead of S21, on the chosen machine (step 4;
+RUN-ORDER.md O38 for the machine), so the start is lower, and the peak per address is rs/41's map,
+pending. Do not log SCORED in over the cap. `handoff` re-checks it as a hard check: our accounts
+online, as `rs-claim status` counts them on `/playerpositions` (every host's), plus SCORED's 1, at
+most 80 (`--cap`); it refuses if the count can't be read. **The code counts a total, not an
+address:** nothing on main counts logins per address.
 
 **The gate's Chrome is gone before SCORED's tab opens.** After an unconfirmed gate logout the gate
 tab's Chrome could still be running on the run profile; SCORED's `--app` window would then join that
@@ -1329,22 +1394,26 @@ at that exact origin (rs/41, via rs/158). Two layers, of which run-gate.ts check
 The gate timer's direct-path login opens no browser and warms nothing, and a fresh or `mkdtemp`
 profile is cold.
 
-**The warm-up comes after the last demo restart: the bundle token** (main's ruling, relayed by
-rs/158 at 13:0x-13:2x PDT 2026-10-22; the command is the host thread's). The demo's page imports the
-client as `./bot/client.js?v=<token>` (`server/engine/view/bot.ejs`), and the engine sets the token
-once at process start, `Date.now().toString(36)` (`server/engine/src/web/pages/client.ts`), so it
-changes at every demo restart and decodes to the process's start time (rs/449). The page server
-passes the page through from the demo (`server/webclient/proxy.ts`), so the run tab's page carries
-the demo's current token. Main's rules:
+**The restart detector: the bundle token** (main's rulings, relayed by rs/158 at 13:0x-13:2x and
+13:5x PDT 2026-10-22; the command is the host thread's). The demo's page imports the client as
+`./bot/client.js?v=<token>` (`server/engine/view/bot.ejs`), and the engine sets the token once at
+process start, `Date.now().toString(36)` (`server/engine/src/web/pages/client.ts`), so it changes at
+every demo restart and decodes to the process's start time (rs/449). The page server passes the
+page through from the demo (`server/webclient/proxy.ts`), so the run tab's page carries the demo's
+current token.
 
-- the warm-up login, the gate account's login at the Lumbridge spawn through the run's profile and
-  address (above), comes **after the last demo restart before the start**;
-- a demo restart during the gate series means **one more gate-account login** before the run tab
-  opens;
-- the operator runs the command below with the warm-up login, right after `gate`, and records the
-  token **beside the tick-length reading** (step 5a) in the run's record. It runs again right before
-  the run tab opens (the hand-off, below). **A different token means a restart came in between:
-  warm up again**, with one more gate-account login, before `handoff`.
+A restart cools nothing the run tab caches. The page server answers `/bot/client.js` for any `?v=`
+from the checkout's own `out/bot` with `Cache-Control: no-store` (proxy.ts; step 0, "What identifies
+a build"), so every page load fetches the bundle from loopback, and the on-demand IndexedDB cache is
+keyed by the page's origin and stays warm through a restart ("Measured: the run tab's browser
+profile"). The token check is a **restart detector**, and main's rule for it is: **a restart between
+the last gate pass and the run tab opening invalidates the pass, not the cache, so the gate runs
+again before the run tab.**
+
+- the operator runs the command below right after `gate` and records the token **beside the
+  tick-length reading** (step 5a) in the run's record;
+- it runs again right before the run tab opens (the hand-off, below). **A different token means a
+  restart came in between: run `gate` again** (step 5a, both machines) before `handoff`.
 
 The token is run-night state: it goes in the run's record, never on this page. `-m 10` is curl's
 own limit, not a `timeout` pipe. It prints one `client.js?v=` line; no line means the page didn't
@@ -1354,29 +1423,19 @@ answer, so read again:
 curl -s -m 10 https://rs-sdk-demo.fly.dev/bot | grep -oE 'client\.js\?v=[A-Za-z0-9]+'
 ```
 
-**The one more login, on main.** run-gate.ts has no login-only command: the gate account's tab logs
-in only inside `gate` (step 6, line 3). So on main the extra gate-account login is another `gate`,
-which also reads both paths again after the restart and renews the choice for `handoff`'s 20-minute
-limit. A login-only warm-up in the tool is not built.
-
-**Where the code differs from the ruling's reason** (r, main at 2ec58839; sent to main with this
-fold-in). The reason given for the rule is that a restart cools the run profile's cached bundle.
-The page server answers `/bot/client.js` for any `?v=` from the checkout's own `out/bot`, with
-`Cache-Control: no-store` (proxy.ts; step 0, "What identifies a build"). So the profile never holds
-a copy of the bundle under any token: every page load, the warm-up's and SCORED's, fetches it from
-loopback (seconds), and a new token changes nothing the profile caches. What the warm-up warms is
-the on-demand IndexedDB cache at the page's origin, which a restart leaves warm ("Measured: the run
-tab's browser profile"). The page's other files come from the demo under the demo's own cache
-headers, not read here. By the code, the token check is a restart detector between the warm-up and
-the run tab rather than a bundle-cache check. The rules above stand as ruled.
+**"One more gate login" means another `gate` run** (main, 13:5x PDT). There is no login-only
+warm-up, and none is needed: run-gate.ts has no login-only command, and the gate account's tab logs
+in only inside `gate` (step 6, line 3). Another `gate` reads both paths again after the restart,
+logs each gate account in through the run's profile and address (the verification pass, above), and
+renews the choice for `handoff`'s 20-minute limit.
 
 **The hand-off.** Right before it, on the Mac, read the demo's tick length (step 5a's command) and
 the bundle token (above) again and record both. **A tick length different from step 5a's reading
-is a stop**: no start; tell main. A different token means one more gate-account login first
-(above). Then, on the chosen machine, with the machine chosen (step 5a), the full roster in
+is a stop**: no start; tell main (main kept this stop-on-change for the reads before the start,
+13:5x PDT). A different token means `gate` again first (above). Then, on the chosen machine, with the machine chosen (step 5a), the full roster in
 (step 4), the recording running (step 5), the gate's Chrome gone, the profile warm and the login
 count at or under 80: put `$SCORED_ENV` on it (step 0), run step 3's env check with
-`ENV=$SCORED_ENV` (expect only `mode 600`), then hand over. `$SCORED_ENV` is set in the Mac's shell
+`ENV=$SCORED_ENV` (expect only `mode 600`), then the launch dry run (below), then hand over. `$SCORED_ENV` is set in the Mac's shell
 to the env file's path on the machine. Use `--machine=run` when the gate chose the run host. Bound:
 12 min:
 
@@ -1384,7 +1443,36 @@ to the env file's path on the machine. Use `--machine=run` when the gate chose t
 bun speedrun/tools/run-gate.ts handoff --machine=twin --scored-env="$SCORED_ENV" --claim=run
 ```
 
-On the Mac it refuses a machine the latest gate did not choose, a choice older than 20 minutes
+**The launch dry run, immediately before that line** (main's rule, 13:4x PDT 2026-10-22; "Rules for
+every launch"). Type the hand-off's exact line in the same shell on the Mac, with the same quoting,
+and put `printf '<%s>\n'` in front of it. The shell then prints each word it would pass, one per
+line, and nothing runs and nothing logs in. The `sed` relabels SCORED's directory in the path, so the
+output can be recorded beside the gate lines (step 5a.3) without SCORED's name:
+
+```sh
+printf '<%s>\n' bun speedrun/tools/run-gate.ts handoff --machine=twin --scored-env="$SCORED_ENV" --claim=run | sed "s#$(basename "$(dirname "$SCORED_ENV")")#SCORED#g"
+```
+
+Expect six lines, each argument whole (m, fedora, bash, a stand-in path, 2026-10-22):
+
+```
+<bun>
+<speedrun/tools/run-gate.ts>
+<handoff>
+<--machine=twin>
+<--scored-env=bots/SCORED/bot.env>
+<--claim=run>
+```
+
+An argument split at a space shows as extra lines. An unquoted `;` ends the `printf` there, and the
+shell runs the rest as a command of its own, which prints an error such as `command not found`
+(exit 127 in the same test). Either is a stop: fix the quoting, dry-run again, and launch only the
+line that dry-ran clean. **Where the code stands** (r, main 36edbf1d): run-gate.ts has no dry run of
+its own, and `handoff` opens SCORED's tab and logs it in once its checks pass (`onHandoff`), so the
+shell's parse is what a dry run can show. The Mac passes `handoff`'s arguments to the machine
+shell-quoted (`shq`, in `remote`), so the Mac's line is the only quoting the operator decides.
+
+On the Mac `handoff` refuses a machine the latest gate did not choose, a choice older than 20 minutes
 (`--max-gate-age`; gate again), and a rehearsal's gate for the run's hand-off or the other way
 round. Then on the machine, in order, each a hard check:
 
@@ -1407,7 +1495,9 @@ showing it` and exits 0. SCORED's name is never printed: every line, frame and r
 stop before the login leaves SCORED's bare page up and not logged in, for the operator to read in
 the live view. A stop after it leaves SCORED in game: touch nothing on the display, and tell main.
 
-run.ts checks that step 0's claim is live and the run's own, and refuses to start otherwise. From
+run.ts checks that step 0's claim is live and the run's own, and refuses to start otherwise. Its
+start is a launch for SCORED, dry-run first like `handoff` (above); run.ts is rs/186's and not on
+main, so its line is pending. From
 here the run scripts drive the tab through the gateway on 7780 (RUN-ORDER.md, STEP-MANIFEST.md).
 Nobody touches the window. Relaunches during the run go the same way: session.ts mints a fresh token
 from `CLIENT_URL` and re-navigates the tab over `CDP_URL`. The run's relogs use
@@ -1531,11 +1621,20 @@ What the run does:
   (resume.ts, r). A restart inside an S15 no-logout segment loses the segment (RUN-ORDER.md R7).
 
 What the operator does: touch nothing on the display and run no step by hand. Record the drop's UTC
-time, the new bundle token and the tick length (step 5a's command) in the run's record; if the tick
-length changed, tell main. Watch the live view for SCORED back in game and the run log for its
+time, the new bundle token and the tick length (step 5a's command) in the run's record; a changed
+tick length is handled as below, never by a stop. Watch the live view for SCORED back in game and the run log for its
 resume row. Tell main if SCORED isn't back within reconnect's 30 minutes, or if the walk stops for
 the operator (resume.ts then prints each candidate step's reason). The recording and the live view
 run on through it: they grab the display, not the game.
+
+**A tick-length change during the run** (main's ruling, 13:5x PDT 2026-10-22, via rs/158). **The run
+never stops for it**: the score is in ticks, the in-page loops read the observed period once rs/470
+lands (pending), and a stop burns the name. run.ts records the change (the world feed's `hello` at
+each relog; rs/186, pending), and rs/83's monitor alerts on it. The operator is told live, and the
+attempt's findings label the change. The two reads before the start keep their stop-on-change
+(step 5a and the hand-off, above), since both come before SCORED's first login. On main neither the
+record nor the alert is in the run chain; what shows a changed period there is TICKMON's
+`periodMs`, minute by minute (above), which acts on nothing.
 
 **Before S09: who is on the zoo iron cluster** (main, 21:58 PDT 2026-10-21; rs/259's threshold,
 relayed by rs/158 at 22:37 PDT). S09 mines the six-rock cluster south of the Ardougne zoo (rocks
@@ -1551,6 +1650,7 @@ the log; nobody steps in. Run it on the chosen machine: it takes the lap's stand
 only a count, and names nobody. Bound: 1 min. Expect `0 other accounts` on an uncontested cluster
 (run without SCORED's name at 14:36Z on 2026-10-22, it read 0 of 1,639 online):
 
+<!-- S09-COUNT -->
 ```sh
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'ENV=SCORED_ENV; cd ~/rs-sdk && S="$(sed -n "s/^BOT_USERNAME=//p" "$ENV")" timeout --kill-after=30s 1m ~/.bun/bin/bun -e "const { ROTATIONS, parseSteps } = await import(\"./speedrun/skills/mining.ts\"); const { playerNameKey } = await import(\"./speedrun/lib/demo-status.ts\"); const stands = parseSteps(ROTATIONS.five.steps).map(s => s.stand); const me = playerNameKey(process.env.S ?? \"\"); const b = await (await fetch(\"https://rs-sdk-demo.fly.dev/playerpositions\", { signal: AbortSignal.timeout(10000) })).json(); const all = Array.isArray(b) ? b : b.players; const n = all.filter(p => p.level === 0 && stands.some(([x, z]) => Math.max(Math.abs(p.x - x), Math.abs(p.z - z)) <= 1) && playerNameKey(p.name) !== me && !playerNameKey(p.name).startsWith(\"cairn \")).length; console.log(new Date().toISOString().slice(0, 19) + \"Z zoo iron cluster: \" + n + \" other accounts within 1 tile of a lap stand, \" + all.length + \" online\");"'
 ```
