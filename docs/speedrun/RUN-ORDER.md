@@ -733,11 +733,12 @@ in force; 38,309 / 35,884 without rs/162, history).** Fold-in 13 (rs/265), one c
 
 | Change | Line (tally id) | Expected | Best | Source |
 |---|---|---|---|---|
-| **2. The gate's measured switch-off false-fires on luck** (R21): `measureDrops` 30 to 120 by default and explicit per module (rs/262, #221, on main as 148788c5; main, 20:08 PDT); text and the module-status values only | - | 0 | 0 | rs/236; rs/262; rs/147 |
 | **1. S09's plain fallback on `selfStarter`** (knife-mine's opt-in on main as 4235a9e7, #220, the new run-commit floor then; the Mining module passes it): the in-page plain loop with the option, 3.62 ticks per ore on the five-rock lap at D = 13 (150 ores, 0 slips, 59 tricks), best 3.61 over 200 at D = 15, against 4.00 without it, whose trick refused the next rock as its timer starter and never fired on this lap; 4,170 to 3,775 / 3,765. rs/158 expected about -410 (4.00 to 3.61 on ~4,172); the expected takes D = 13's 3.62, the five-rock lap at the demo's usual D of 13 or less, so -395. The knife is unchanged (3.04 without the option, 3.00 with it, 0 slips); D = 19 values corrected (six-rock knife 3.50, plain 4.17, plain + `selfStarter` 3.83); the restart wait after a knife-to-plain switch is D, 0 after a re-probe of 20 ticks or more (R18); the late-starter lab bin goes to R2 without a re-price | Mining (44), the knife-off cells only | 0 (knife off -395) | 0 (knife off -405) | MR; rs/158 |
+| **2. The gate's measured switch-off false-fires on luck** (R21): `measureDrops` 30 to 120 by default and explicit per module (rs/262, #221, on main as 148788c5; main, 20:08 PDT); text and the module-status values only | - | 0 | 0 | rs/236; rs/262; rs/147 |
+| **Net, knife on** | | **0** | **0** | |
 
-After item 1: knife on 34,456 / 31,567 (unchanged); knife off in force, with rs/162's plain + bury,
-**37,178 / 34,713**; without it (history) 37,914 / 35,479.
+The totals after each item (knife on; knife off in force, with rs/162's plain + bury; without it,
+history): item 1, 34,456 / 31,567, **37,178 / 34,713**, 37,914 / 35,479; item 2, the same.
 
 **Changes since 71baa3a9 (fold-in 10, rs/209, which moved no total; 34,575 / 31,663 knife on;
 37,692 / 35,214 knife off in force; 38,428 / 35,980 without rs/162, history).** Fold-in 11 (rs/218):
