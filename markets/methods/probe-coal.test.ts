@@ -31,9 +31,11 @@ describe('the floor check', () => {
         expect(sellDecision(79, 80)).toEqual({ sell: false, reason: 'best bid 79 gp is below the floor of 80 gp' });
         expect(sellDecision(null, 80)).toEqual({ sell: false, reason: 'no open bid for coal' });
     });
-    test('proceeds expected after the 5% fee', () => {
-        expect(expectedProceeds(5, 85)).toBe(403);
+    test('proceeds: the gross less the fee, the fee rounded down (MarketStore.ts)', () => {
+        // measured in the lab: 5 coal at 85 paid 404 gp
+        expect(expectedProceeds(5, 85)).toBe(404);
         expect(expectedProceeds(5, 80)).toBe(380);
+        expect(expectedProceeds(1, 19)).toBe(19);
     });
 });
 
