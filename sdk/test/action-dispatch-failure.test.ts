@@ -21,6 +21,42 @@ function dispatch(sdk: BotSDK): Promise<ActionResult> {
     return (sdk as any).sendAction({ type: 'walkTo', x: 0, z: 0, running: true, reason: 'SDK' });
 }
 
+describe('BotSDK.sendAction while the region loads', () => {
+    const withScene = (sceneReady: boolean | undefined) => {
+        const stub = stubSdk(20);
+        (stub.sdk as any).state = { inGame: true, ...(sceneReady === undefined ? {} : { sceneReady }) };
+        return stub;
+    };
+
+    test('refuses a world click without sending it, never reporting success', async () => {
+        const { sdk, sent } = withScene(false);
+        for (const action of [
+            { type: 'interactLoc', x: 2459, z: 3383, locId: 190, optionIndex: 1, reason: 'SDK' },
+            { type: 'interactNpc', npcIndex: 5, optionIndex: 1, reason: 'SDK' },
+            { type: 'walkTo', x: 1, z: 2, running: true, reason: 'SDK' }
+        ]) {
+            const r: ActionResult = await (sdk as any).sendAction(action);
+            expect(r).toMatchObject({ success: false, reason: 'scene_loading', phase: 'validation' });
+        }
+        expect(sent).toHaveLength(0);
+    });
+
+    test('sends a world click once the region is built, and when the client does not publish sceneReady', async () => {
+        for (const ready of [true, undefined]) {
+            const { sdk, sent } = withScene(ready);
+            await dispatch(sdk);
+            expect(sent).toHaveLength(1);
+        }
+    });
+
+    test('sends a click that is not routed in the world while the region loads (dialogue, inventory)', async () => {
+        const { sdk, sent } = withScene(false);
+        await (sdk as any).sendAction({ type: 'clickDialogOption', optionIndex: 0, reason: 'SDK' });
+        await (sdk as any).sendAction({ type: 'useInventoryItem', slot: 0, optionIndex: 1, reason: 'SDK' });
+        expect(sent).toHaveLength(2);
+    });
+});
+
 describe('BotSDK.sendAction dispatch failures', () => {
     test('cleans pending dispatches when the socket write throws synchronously', async () => {
         const { sdk, pending } = stubSdk(5000);

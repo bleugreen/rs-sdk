@@ -166,6 +166,12 @@ export { chunkMessage } from './chunking';
 import { chunkMessage } from './chunking';
 export { Spells, type SpellName } from './spells';
 
+/** Actions the client routes against its scene's collision maps: refused while the region loads (see sendAction). */
+const WORLD_CLICKS: ReadonlySet<BotAction['type']> = new Set<BotAction['type']>([
+    'walkTo', 'talkToNpc', 'interactNpc', 'interactPlayer', 'interactLoc', 'pickupItem', 'interactGroundItem',
+    'useItemOnLoc', 'useItemOnNpc', 'spellOnNpc', 'spellOnPlayer', 'spellOnGroundItem'
+]);
+
 export class BotSDK {
     readonly config: Required<SDKConfig>;
     private ws: WebSocket | null = null;
@@ -1072,6 +1078,19 @@ export class BotSDK {
     // ============ Plumbing: Raw Actions ============
 
     private async sendAction(action: BotAction): Promise<ActionResult> {
+        // A world click while the client is still building the region ("Loading - please wait")
+        // routes against stale collision maps, and the client sends its op packet anyway and
+        // reports success whether or not the player can move. Refuse it here, sending nothing, so
+        // the result is honest; the caller retries once state.sceneReady is true. Clients that
+        // never publish sceneReady (older ones) or build within the tick (lite) are unaffected.
+        if (WORLD_CLICKS.has(action.type) && this.state?.inGame && this.state.sceneReady === false) {
+            return {
+                success: false,
+                phase: 'validation',
+                reason: 'scene_loading',
+                message: `${action.type} not sent: the client is still loading the region (state.sceneReady is false); retry once it is true`
+            };
+        }
         if (this.connectionState === 'reconnecting') {
             console.log(`[BotSDK] Waiting for reconnection before sending action: ${action.type}`);
             await this.waitForConnection();
