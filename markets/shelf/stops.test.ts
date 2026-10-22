@@ -159,12 +159,12 @@ describe('records', () => {
         [554, 'firerune'],
         [562, 'chaosrune']
     ]);
-    const content = { inv: 'runeshop', objName: (id: number) => names.get(id), stockBase: (obj: string) => (obj === 'firerune' ? 5000 : undefined) };
+    const content = { inv: 'runeshop', haggle: 10, objName: (id: number) => names.get(id), stockBase: (obj: string) => (obj === 'firerune' ? 5000 : undefined) };
     const read = { stop: 'aubury', read: 1, utc: '2026-10-22T23:00:00.000Z', tick: 1234, at: { x: 3253, z: 3402, level: 0 }, legMs: 61_000, legTicks: 152, shop, values: new Map([[0, 5]]), inv: 'runeshop', content };
 
     test('one shop line with the config, then one line per shelf slot with the issue-required fields', () => {
         const [head, ...items] = shelfRecords(read);
-        expect(head).toEqual({ kind: 'shop', utc: read.utc, stop: 'aubury', read: 1, shopTitle: shop.title, inv: 'runeshop', tick: 1234, shopConfig: shop.shopConfig, items: 2, at: read.at, legMs: 61_000, legTicks: 152 });
+        expect(head).toEqual({ kind: 'shop', utc: read.utc, stop: 'aubury', read: 1, shopTitle: shop.title, inv: 'runeshop', tick: 1234, shopConfig: shop.shopConfig, haggle: 10, items: 2, at: read.at, legMs: 61_000, legTicks: 152 });
         expect(items).toHaveLength(2);
         const required = ['utc', 'stop', 'shopTitle', 'slot', 'itemId', 'name', 'count', 'baseCost', 'buyPrice', 'sellPrice', 'inv', 'obj'];
         for (const r of items) for (const k of required) expect(r).toHaveProperty(k);
@@ -194,6 +194,15 @@ describe('records', () => {
         // Not in the base config: priced from its whole count, and flagged.
         expect(items[1]).toMatchObject({ obj: 'chaosrune', stockBase: null, inBaseConfig: false, valuePrice: null, computedBuyPrice: 9, computedSellPrice: 9 });
         for (const r of [head, ...items]) expect(JSON.parse(JSON.stringify(r))).toEqual(r);
+    });
+
+    test("computed prices use the content's haggle, not the SDK's fallback 10", () => {
+        // Lab: 8 death runes sold into the Lumbridge general store (haggle 30); the server's Value said 31.
+        const general = { title: 'Lumbridge General Store', shopConfig: { buyMultiplier: 400, sellMultiplier: 1300, haggle: 10 }, shopItems: [{ slot: 8, id: 560, name: 'Death rune', count: 8, baseCost: 30, buyPrice: 39, sellPrice: 12 }] };
+        const lumbridge = { inv: 'generalshop1', haggle: 30, objName: () => 'deathrune', stockBase: () => undefined };
+        const [head, item] = shelfRecords({ ...read, stop: 'general-lumbridge', shop: general, values: new Map([[8, 31]]), inv: 'generalshop1', content: lumbridge });
+        expect(head.haggle).toBe(30);
+        expect(item).toMatchObject({ inBaseConfig: false, valuePrice: 31, computedBuyPrice: 31, buyPrice: 39 });
     });
 
     test('without content the names and computed prices are null and inv is the table name', () => {
