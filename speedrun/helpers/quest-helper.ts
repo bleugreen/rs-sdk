@@ -306,6 +306,71 @@ const BATTLEFIELD_TREE = { x: GT.battlefieldTree.x, z: GT.battlefieldTree.z, tol
 /** Brimhaven's customs ship lands here (lib/ships.ts VOYAGES). */
 const ARDOUGNE_DOCK = { x: 2681, z: 3270 } as const;
 
+/**
+ * The Karamja stepping stones (shortcuts.rs2 [oploc1,_karamja_stepping_stone]), north to south. The
+ * glider crash site and the shipyard are a pocket of Karamja that reaches the rest of the island only
+ * across them (the demo's own collision export: the pocket's nearest tiles to Musa Point and Tai Bwo
+ * Wannai are walled by jungle). A click jumps one tile towards the stone clicked; a slip washes the
+ * player up 4 tiles on in the direction of travel, so going south it lands on the far bank too.
+ */
+export const STONES = [{ id: 2333, x: 2925, z: 2950 }, { id: 2334, x: 2925, z: 2949 }, { id: 2335, x: 2925, z: 2948 }] as const;
+const STONES_NORTH = { x: 2925, z: 2951 } as const;
+const SOUTH_BANK_Z = 2947;
+
+/** The crash site and shipyard pocket: south of Musa Point's jungle, east of Tai Bwo Wannai's, north of the river. */
+export const inShipyardPocket = (p: { x: number; z: number }): boolean => p.x >= 2889 && p.x <= 3010 && p.z > SOUTH_BANK_Z && p.z <= 3120;
+
+export type StoneMove = { kind: 'stone'; stone: (typeof STONES)[number] } | { kind: 'walk'; to: { x: number; z: number } };
+
+/** The next move south over the river, or null once south of it. */
+export function nextStoneMove(p: { x: number; z: number }): StoneMove | null {
+    if (p.z <= SOUTH_BANK_Z) return null;
+    const on = STONES.findIndex(s => s.x === p.x && s.z === p.z);
+    if (on === STONES.length - 1) return { kind: 'walk', to: { x: STONES_NORTH.x, z: SOUTH_BANK_Z } };
+    if (on >= 0) return { kind: 'stone', stone: STONES[on + 1]! };
+    if (p.x === STONES_NORTH.x && p.z === STONES_NORTH.z) return { kind: 'stone', stone: STONES[0] };
+    return { kind: 'walk', to: STONES_NORTH };
+}
+
+/** Until the position holds for `ticks` ticks (a slip moves the player four times over about 6 ticks). */
+async function settle(sdk: ReturnType<typeof sdkOf>, ticks = 3): Promise<void> {
+    let last = '';
+    let still = 0;
+    await waitUntil(sdk, s => {
+        const k = `${pos(s).x},${pos(s).z}`;
+        still = k === last ? still + 1 : 0;
+        last = k;
+        return still >= ticks;
+    }, { maxTicks: 20 });
+}
+
+/** Out of the shipyard (its gate opens from inside without the password) and south over the stones. */
+async function offShipyardPocket(ctx: StepContext<any>): Promise<void> {
+    const sdk = sdkOf(ctx);
+    if (inKaramja(st(ctx)) && pos(st(ctx)).x >= GT.shipyardGate.x) {
+        await go(ctx, { x: GT.shipyardGate.x + 1, z: GT.shipyardGate.z, tol: 1 }, 'to the shipyard gate (inside)');
+        await locOp(ctx, 'shipyard gate out', GT.shipyardGate, /^open$/i, s => pos(s).x < GT.shipyardGate.x, 20);
+    }
+    const moves: string[] = [];
+    for (let i = 0; i < 16; i++) {
+        const p = pos(st(ctx));
+        const m = nextStoneMove(p);
+        if (!m) {
+            logNote(ctx.log, ctx.session, 'leg:S11b:J:stones', { moves, hp: st(ctx).player?.hp });
+            return;
+        }
+        if (m.kind === 'walk') {
+            moves.push(`walk ${m.to.x},${m.to.z}`);
+            await go(ctx, { ...m.to, tol: 0 }, 'to the stepping stones');
+            continue;
+        }
+        moves.push(`stone ${m.stone.z}`);
+        await act(sdk, () => sdk.sendInteractLoc(m.stone.x, m.stone.z, m.stone.id, 1), s => pos(s).x !== p.x || pos(s).z !== p.z, { maxTicks: 16, interrupts: interrupts() });
+        await settle(sdk);
+    }
+    throw new Error(`the stepping stones: still north of the river at ${JSON.stringify(pos(st(ctx)))} after ${moves.join(', ')}`);
+}
+
 export function gtPlan(): QuestPlan {
     return {
         substitute: {
@@ -395,6 +460,7 @@ export function gtPlan(): QuestPlan {
             J: async ctx => {
                 const s = st(ctx);
                 if (regionOf(pos(s)) !== 'karamja') return;
+                if (inShipyardPocket(pos(s))) await offShipyardPocket(ctx);
                 const sailor: Sailor = {
                     bot: ctx.bot,
                     sdk: ctx.sdk,

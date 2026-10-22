@@ -6,7 +6,7 @@ import * as tgv from '../quests/tree-gnome-village';
 import { ROUTES } from '../skills/agility';
 import { BANKS } from './buyer';
 import { AGILITY_COURSES } from '../../server/webclient/src/bot/programs/agility-courses';
-import { AGILITY_TO, ARMOUR, freeSlots, gtPlan, kitBank, lapsDone, stepLoc, KIT_COINS, KIT_SHARKS, kitCheck, kitDeposits, kitWithdraws, logShortfall, mmPlan, nearestWaypoint, parsePhases, PHASES, pickTree, approachFirst, transientFault, ROYAL_SEAL, TGV_KIT, tgvPlan, type QuestPlan } from './quest-helper';
+import { AGILITY_TO, ARMOUR, freeSlots, gtPlan, kitBank, lapsDone, stepLoc, KIT_COINS, KIT_SHARKS, kitCheck, kitDeposits, kitWithdraws, logShortfall, mmPlan, nearestWaypoint, parsePhases, PHASES, pickTree, approachFirst, transientFault, inShipyardPocket, nextStoneMove, STONES, ROYAL_SEAL, TGV_KIT, tgvPlan, type QuestPlan } from './quest-helper';
 import { applySubstitutes, LEG_PREFIX, withLegs } from '../lab/quests/demo-quest';
 import type { NearbyLoc } from '../../sdk/types';
 
@@ -221,5 +221,30 @@ describe('transientFault', () => {
         expect(transientFault("Glough's ladder up: no loc with /^climb-up$/i at (2476,3462)")).toBe(false);
         expect(transientFault('spirit tree to khazard: no arrival at 2555,3259: timeout')).toBe(false);
         expect(transientFault(undefined)).toBe(false);
+    });
+});
+
+describe('off the shipyard pocket by the stepping stones', () => {
+    test('the pocket is the crash site and the shipyard, not Musa Point, Brimhaven or the south bank', () => {
+        expect(inShipyardPocket({ x: 2945, z: 3034 })).toBe(true); // inside the yard, where segment I ends
+        expect(inShipyardPocket({ x: 2917, z: 3058 })).toBe(true); // the glider crash
+        expect(inShipyardPocket({ x: 2954, z: 3148 })).toBe(false); // Musa Point
+        expect(inShipyardPocket({ x: 2772, z: 3228 })).toBe(false); // Brimhaven
+        expect(inShipyardPocket({ x: 2925, z: 2947 })).toBe(false); // south of the river
+    });
+    test('north bank, each stone in turn, then the step ashore', () => {
+        expect(nextStoneMove({ x: 2940, z: 3041 })).toEqual({ kind: 'walk', to: { x: 2925, z: 2951 } });
+        expect(nextStoneMove({ x: 2925, z: 2951 })).toEqual({ kind: 'stone', stone: STONES[0] });
+        expect(nextStoneMove({ x: 2925, z: 2950 })).toEqual({ kind: 'stone', stone: STONES[1] });
+        expect(nextStoneMove({ x: 2925, z: 2949 })).toEqual({ kind: 'stone', stone: STONES[2] });
+        expect(nextStoneMove({ x: 2925, z: 2948 })).toEqual({ kind: 'walk', to: { x: 2925, z: 2947 } });
+    });
+    test('done once south of the river, including where a slip washes up', () => {
+        expect(nextStoneMove({ x: 2925, z: 2947 })).toBeNull();
+        expect(nextStoneMove({ x: 2931, z: 2945 })).toBeNull();
+    });
+    test('the stones run north to south, one tile apart, each a click from the one before', () => {
+        expect(STONES.map(s => s.z)).toEqual([2950, 2949, 2948]);
+        expect(new Set(STONES.map(s => s.x))).toEqual(new Set([2925]));
     });
 });
