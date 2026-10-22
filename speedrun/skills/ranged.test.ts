@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import type { BotWorldState, InventoryItem, NearbyLoc, NearbyNpc, PlayerState, SkillState } from '../../sdk/types';
 import { baseState, FakeSdk, flush } from '../lib/fake-sdk';
 import {
-    cannonSessionStep, chooseConsume, combatFinishStep, FINISH, gearClick, IMMUNITY, noteConsume, phaseFor, pickTarget, resipAt, RETALIATE_OFF, RETALIATE_ON, runSession,
-    specFor, SPIDERS, type ConsumeMemory, type RangedSdk,
+    cannonSessionStep, chooseConsume, combatFinishStep, FINISH, gearClick, IMMUNITY, noteConsume, otherItems, phaseFor, pickTarget, resipAt, RETALIATE_OFF, RETALIATE_ON, runSession,
+    slotNeed, specFor, SPIDERS, type ConsumeMemory, type RangedSdk,
 } from './ranged';
 
 const SKILLS = ['Attack', 'Defence', 'Strength', 'Hitpoints', 'Ranged', 'Prayer'] as const;
@@ -267,6 +267,51 @@ describe('steps: gates and resume', () => {
         expect(pre(step, ready({ ...lv, Ranged: 99 }, []))).toBe(true);
         expect(isDone(step, ready(ALL99, []))).toBe(true);
         expect(inProg(step, ready({ ...lv, Defence: 99 }, bowKit))).toBe(true);
+    });
+});
+
+describe('steps: the free-slot preconditions', () => {
+    type S = ReturnType<typeof cannonSessionStep>;
+    const pre = (step: S, s: BotWorldState) => step.preconditions(s, {} as never);
+    const junk = (n: number, name = 'Bones') => Array.from({ length: n }, (_, i) => item(40 + i, name));
+    const scim = item(9, 'Mithril scimitar');
+    const s14 = (inventory: InventoryItem[], patch: Partial<BotWorldState> = {}) => st({ Attack: 99, Prayer: 43, Hitpoints: 42, Ranged: 1 }, { inventory, equipment: [scim], ...patch });
+
+    test('S14: a held set needs nothing beyond itself; a placed cannon needs 4 free slots for its pick-up', () => {
+        const step = cannonSessionStep();
+        expect(pre(step, s14([...kit(100), ...junk(23)]))).toBe(true);
+        const placed = (n: number) => s14([item(4, 'Cannonball', 100), ...junk(n)], { nearbyLocs: [cannonLoc()] });
+        expect(pre(step, placed(23))).toBe(true);
+        expect(pre(step, placed(25))).toBe('25 other items (Bones): need 4 free slots (4 to pick up the placed cannon), 2 free');
+        expect(pre(cannonSessionStep({ pickUp: { s14: false } }), placed(25))).toBe(true);
+        expect(otherItems(s14([...kit(100), item(5, 'Shark'), item(6, 'Antipoison(3)'), item(7, 'Law rune', 2), item(8, 'Vial')]))).toEqual(['Law rune']);
+    });
+
+    test('S27: the bow takes a worn shield off, unless the held rune arrows free a slot going to the quiver', () => {
+        const step = combatFinishStep();
+        const lv: Levels = { Attack: 99, Defence: 99, Ranged: 70, Prayer: 99 };
+        const shield = item(5, 'Anti-dragon shield');
+        const quiver = item(13, 'Rune arrow', 570);
+        const s27 = (inv: InventoryItem[], equipment: InventoryItem[], l: Levels = lv) => st(l, { inventory: [...kit(1200), item(5, 'Magic shortbow'), ...inv], equipment });
+        // The route: the 570 rune arrows in the pack beside the shield. A full pack still starts.
+        expect(pre(step, s27([item(6, 'Rune arrow', 570), ...junk(21)], [scim, shield]))).toBe(true);
+        // The arrows already quivered: the shield needs a slot.
+        expect(pre(step, s27(junk(22), [scim, shield, quiver]))).toBe('22 other items (Bones): need 1 free slots (1 for the Anti-dragon shield the magic shortbow takes off), 0 free');
+        expect(pre(step, s27(junk(21), [scim, shield, quiver]))).toBe(true);
+        expect(pre(step, s27(junk(22), [scim, quiver]))).toBe(true);
+        // Ranged 99: no bow phase ahead.
+        expect(pre(step, s27(junk(22), [scim, shield, quiver], { ...lv, Ranged: 99 }))).toBe(true);
+        expect(slotNeed(s27([], [scim, shield, quiver]), { pickUp: true, bowAhead: true })).toEqual({ need: 1, why: ['1 for the Anti-dragon shield the magic shortbow takes off'] });
+    });
+
+    test('S27 with the cannon placed: the pick-up and the shield together', () => {
+        const s = st({ Attack: 99, Defence: 99, Ranged: 70, Prayer: 99 }, {
+            inventory: [item(4, 'Cannonball', 1200), item(5, 'Magic shortbow'), ...junk(19)],
+            equipment: [scim, item(5, 'Anti-dragon shield'), item(13, 'Rune arrow', 570)],
+            nearbyLocs: [cannonLoc()],
+        });
+        expect(slotNeed(s, { pickUp: true, bowAhead: true }).need).toBe(5);
+        expect(pre(combatFinishStep(), s)).toMatch(/^19 other items \(Bones\): need 5 free slots \(4 to pick up the placed cannon; 1 for the Anti-dragon shield the magic shortbow takes off\), 7 free$/);
     });
 });
 
