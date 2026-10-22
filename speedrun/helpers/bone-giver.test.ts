@@ -135,7 +135,7 @@ describe('a group of bone givers takes turns (S07 b01-b04)', () => {
 
 describe('the item priority list (S07: dragon bones first, then babydragon, from each giver\'s own bank)', () => {
     const MIX = ['Dragon bones', 'Babydragon bones'];
-    const specs = (xs: { item: RegExp | string; n: number }[]) => xs.map(s => [String(s.item), s.n]);
+    const specs = (xs: readonly { item: unknown; n: number }[]) => xs.map(s => [String(s.item), s.n]);
 
     test('a single item behaves as before: one spec of the whole load, from the one item', () => {
         const o = bgo({});
