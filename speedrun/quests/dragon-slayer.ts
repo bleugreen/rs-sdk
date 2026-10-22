@@ -961,7 +961,8 @@ export function steps(opts: Options = {}): Step<any>[] {
         },
         {
             letter: 'L', label: 'elvarg', logoutSafe: true,
-            preconditions: s => ok(mapWithNed(s), 'the Crandor map is not with Ned'),
+            // Complete is a start too: a run stopped after the kill resumes here for the key drop.
+            preconditions: s => ok(mapWithNed(s) || questStatus(s, quest) === 'complete', 'the Crandor map is not with Ned'),
             run: ctx => elvarg(ctx, opts),
             postconditions: allOf(
                 s => ok(questStatus(s, quest) === 'complete', 'Dragon Slayer is not complete'),
