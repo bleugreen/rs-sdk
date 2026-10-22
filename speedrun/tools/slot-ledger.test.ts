@@ -164,6 +164,53 @@ describe('walk', () => {
     });
 });
 
+describe('top-ups: NAME to N [K] brings the held count up to N', () => {
+    const top = (held: string, entry: string, need = 0) => run(table(held, `| H10 | ${entry} | - | - | ${need} | (r) |`));
+
+    test('the parse: count N and topUp; an ordinary x N entry carries no topUp; to ? is not a top-up', () => {
+        const { rows } = parseLedger(table('| H10 | shark to 9 [u] (rs/257); law rune to 4 [s]; shark x8 [u] | - | - | 8 | (r) |'));
+        expect(rows[0]!.in).toEqual([
+            { name: 'shark', count: 9, kind: 'u', topUp: true },
+            { name: 'law rune', count: 4, kind: 's', topUp: true },
+            { name: 'shark', count: 8, kind: 'u' },
+        ]);
+        expect(parseLedger(table('| H10 | shark to ? [u] | - | - | 0 | (r) |')).errors[0]).toMatch(/in entry "shark to \? \[u\]": expected NAME xCOUNT \[s\|u\|n\] or NAME to N/);
+    });
+
+    test('unstackable: held below N takes N - held slots; at N or above, none and no change', () => {
+        const s3 = '| S09 | shark x3 [u] | - | - | 0 | (r) |';
+        expect(byRow(top(s3, 'shark to 9 [u]', 6), 'H10')).toMatchObject({ verdict: 'pass', used: 9, held: 'shark x9' });
+        expect(byRow(top('| S09 | shark x9 [u] | - | - | 0 | (r) |', 'shark to 9 [u]'), 'H10')).toMatchObject({ used: 9, held: 'shark x9' });
+        expect(byRow(top('| S09 | shark x11 [u] | - | - | 0 | (r) |', 'shark to 9 [u]'), 'H10')).toMatchObject({ used: 11, held: 'shark x11' });
+        // Worn ones count towards N: one worn and two in the pack, to 4, brings one.
+        const worn = run(table('| S09 | ring x3 [u] | - | +ring | 0 | (r) |', '| H10 | ring to 4 [u] | - | - | 1 | (r) |'));
+        expect(byRow(worn, 'H10')).toMatchObject({ used: 3, held: 'ring x3', worn: 'ring x1' });
+        // A hand-off's trade must fit what the top-up brings, not N.
+        const tight = run(table('| S09 | junk x22 [u]; shark x3 [u] | - | - | 0 | (r) |', '| H10 | shark to 9 [u] | - | - | 6 | (r) |'));
+        expect(byRow(tight, 'H10')).toMatchObject({ free: 3, verdict: 'SHORT' });
+        expect(byRow(tight, 'H10').notes).toContain('the trade adds 6 slots, 3 free');
+    });
+
+    test('stackable: one slot when the pack holds none and some comes, else none; the count goes to N', () => {
+        expect(byRow(top('| S09 | - | - | - | 0 | (r) |', 'law rune to 4 [s]', 1), 'H10')).toMatchObject({ used: 1, held: 'law rune x4' });
+        expect(byRow(top('| S09 | law rune x2 [s] | - | - | 0 | (r) |', 'law rune to 4 [s]'), 'H10')).toMatchObject({ used: 1, held: 'law rune x4' });
+        expect(byRow(top('| S09 | law rune x7 [s] | - | - | 0 | (r) |', 'law rune to 4 [s]'), 'H10')).toMatchObject({ used: 1, held: 'law rune x7' });
+        // A quivered stack counts towards N; what comes lands in the pack as a stack of its own.
+        const quiver = (n: number) => run(table(`| S14 | rune arrow x${n} [s] | - | +rune arrow | 0 | (r) |`, '| H10 | rune arrow to 200 [s] | - | - | 0 | (r) |'));
+        expect(byRow(quiver(150), 'H10')).toMatchObject({ used: 1, held: 'rune arrow x50', worn: 'rune arrow x150' });
+        expect(byRow(quiver(200), 'H10')).toMatchObject({ used: 0, held: '-', worn: 'rune arrow x200' });
+        // Noted items follow the stackable rule.
+        expect(byRow(top('| S09 | - | - | - | 0 | (r) |', 'wine to 10 [n]', 1), 'H10')).toMatchObject({ used: 1, held: 'wine x10 (noted)' });
+    });
+
+    test('an ordinary x N entry still adds N whatever is held; a top-up of a stack held at x? is noted unknown', () => {
+        expect(byRow(top('| S09 | shark x3 [u] | - | - | 0 | (r) |', 'shark x8 [u]', 8), 'H10')).toMatchObject({ used: 11, held: 'shark x11' });
+        const vague = byRow(top('| S09 | air rune x? [s] | - | - | 0 | (r) |', 'air rune to 6 [s]'), 'H10');
+        expect(vague).toMatchObject({ used: 1, held: 'air rune x?' });
+        expect(vague.notes).toContain('? counts: in air rune to 6: held at an unknown count');
+    });
+});
+
 describe("tonight's routes (fixtures inferred from the documents)", () => {
     test('as first routed: H4 refused, 22 free against 23 (rs/285)', () => {
         const entries = run(fixture('route-original'));
@@ -221,5 +268,11 @@ describe('STEP-MANIFEST.md', () => {
         expect(errors).toEqual([]);
         expect(rows[0]!.row).toBe('S00');
         expect(() => walk(rows)).not.toThrow();
+    });
+    // rs/158's last-fix fold-in flips this to `test.skipIf(!...)` like the one above, once its table
+    // walks clean: every row then passes, and any later change that breaks a row fails the suite.
+    test.todo('its Inventory ledger has no failing row', () => {
+        const s = summary(walk(parseLedger(text).rows));
+        expect(s.failed.map(e => `${e.row.row}: ${e.notes.join('; ')}`)).toEqual([]);
     });
 });
