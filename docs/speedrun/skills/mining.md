@@ -324,8 +324,24 @@ cluster or a simple rotation without chosen tiles or starters, on a busy server.
 | Copper ore | 4 | Doric's Quest |
 | Iron ore | 2 | Doric's Quest |
 | Rune pickaxe | 1 | Usable from Mining 41, so straight after Doric's Quest |
-| Knife and logs | 1 knife, about 5 normal logs | Knife starter (Fletching 1); no log was used in 400 ores at 300 ms, spares cover slipped cycles |
+| Knife and logs | 1 knife, about 5 normal logs | Knife starter (Fletching 1); no log used in 400 ores (lite) or in 1,050 ores in the page (`stay2` + `bury`, below), spares cover slipped cycles |
 | Iron, steel, mithril, adamant pickaxes | 1 each | Only if skipping Doric's Quest |
+
+**Logs over a long lap (measured, 2026-10-21).** The knife's button puts the fletch on a weak
+queue due 2 ticks after it lands (`cut_logs.rs2`, `process_fletch_logs`); if nothing clears that
+queue first, the fletch completes and a log becomes 15 shafts, which is how the Fishing loop
+lost logs (rs/195). In `knife-mine` every knife goes out on the roll label together with the
+ore drop, and the drop is an inventory op that clears the weak queue in the same tick
+(`OpHeldHandler` -> `clearPendingAction` -> `closeModal`); the walk, the bury and the rock click
+would each clear it too, and the click always lands by R+3. In the page (bgsrv-mac, 300 ms,
+respawn 13 pinned, Mining 64, rune pickaxe, the `stay2` lap with `bury`), 1,050 ores over
+**3,184 knife ticks** (3.033 ticks per ore, 3:1030 4:4 6:10, 0 slips, 839 knife starters, 210
+bones) held 10 logs at the start and 10 at the end, with **no Fletching xp event**: 0 logs per
+1,000 knife ticks, one-sided 95% upper bound 0.94. A bare knife and button sent afterwards with
+nothing behind it did complete on its third tick (one log, 15 shafts, Fletching xp), so the
+watcher sees a completed fletch. A loss here needs the knife on time and the drop, walk and
+click all at least 2 ticks late, which the lab cannot show; S09's ~5 logs are kept.
+Script: `speedrun/lab/measure-mine-logs.ts`.
 
 No food expected: the Ardougne-north runs ended at full HP with bears nearby. The zoo
 cluster was not checked for aggressive NPCs.
