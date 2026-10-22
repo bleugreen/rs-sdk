@@ -23,11 +23,12 @@
 //          --prayer-to=0, --logs=5 (normal logs in the kit, as cairn_mule2 stages it), --log=<path>,
 //          --starter (the tutorial's starter items, as a demo account carries them; walk and
 //          chain), --hp-stop=N (the module's hpStop), --no-wait-respawn / --no-probe-dirs (the
-//          module's two fixes off, for an A/B)
+//          module's two fixes off, for an A/B), --run=on|off (press the run button before the
+//          steps start, on a tick with nothing pending: the button runs p_clearpendingaction)
 // --route=rimmington runs every case on the module's `rimmington` stands (the Rimmington oaks and
 // the Draynor-west willows); the default is the scored run's `taverley`.
-// Every walk step gets a telemetry line: tiles per tick (run 2, walk 1, still 0), run energy and
-// weight at its start and end. The lab's run energy never drains (NODE_INFINITE_RUN defaults on,
+// Every walk and band step gets a telemetry line: tiles per tick (run 2, walk 1, still 0), run
+// energy and weight at its start and end, and the run varp (`option_run`) at its start. The lab's run energy never drains (NODE_INFINITE_RUN defaults on,
 // as on the demo), so neither energy nor weight is managed here.
 
 import { existsSync, readFileSync, writeFileSync } from 'fs';
@@ -57,6 +58,8 @@ if (!Object.hasOwn(ROUTES, route)) throw new Error(`unknown --route ${route} (${
 const sites = ROUTES[route as RouteName];
 const where = () => `host ${hostname()} load ${loadavg().map(l => l.toFixed(1)).join(' ')} at ${new Date().toISOString()}`;
 const LUMBRIDGE = [3222, 3222] as const;
+/** controls:com_4 (run off) and com_5 (run on), interface.pack; player_controls.rs2. */
+const RUN_BUTTON = { off: 152, on: 153 } as const;
 const BONES = /^dragon bones$/i;
 /** The helper's tile beside each stand (STEP-MANIFEST.md entry 3; bones-wc.ts). */
 const HELPER_TILE: Record<'oak' | 'willow', readonly [number, number]> = { oak: [2913, 3494], willow: [2920, 3407] };
@@ -185,13 +188,24 @@ await runScript(async ({ bot: actions, sdk }) => {
         if (!(await tele(sdk, LUMBRIDGE[0], LUMBRIDGE[1]))) throw new Error('tele to Lumbridge failed');
     }
     await sdk.waitForTicks(2);
+    const runMode = flag('run');
+    if (runMode !== undefined) {
+        if (runMode !== 'on' && runMode !== 'off') throw new Error(`--run takes on or off, not ${runMode}`);
+        const want = runMode === 'on' ? 1 : 0;
+        if (sdk.getState()?.varps?.option_run !== want) {
+            await sdk.sendClickComponent(RUN_BUTTON[runMode]);
+            await sdk.waitForCondition(s => s.varps?.option_run === want, 5000);
+        }
+        await sdk.waitForTicks(1);
+        console.log(`  run ${runMode}: option_run ${sdk.getState()?.varps?.option_run} at T${sdk.getState()?.tick}`);
+    }
 
     // Walk telemetry: the last state seen on each tick.
-    const samples = new Map<number, { x: number; z: number; e: number; w: number }>();
+    const samples = new Map<number, { x: number; z: number; e: number; w: number; run?: number }>();
     sdk.onStateUpdate(s => {
         const p = s.player;
         if (!p) return;
-        samples.set(s.tick, { x: p.worldX, z: p.worldZ, e: p.runEnergy, w: p.runWeight });
+        samples.set(s.tick, { x: p.worldX, z: p.worldZ, e: p.runEnergy, w: p.runWeight, ...(s.varps?.option_run !== undefined ? { run: s.varps.option_run } : {}) });
     });
     const walkLine = (step: string, from: number, to: number): string => {
         const n = { run: 0, walk: 0, still: 0, gaps: 0 };
@@ -219,7 +233,7 @@ await runScript(async ({ bot: actions, sdk }) => {
         const s1 = samples.get(to);
         const lead = first === null ? 0 : first - from - 1;
         const tail = last === null ? 0 : to - last;
-        return `walk ${step}: ${to - from} ticks, ${tiles} tiles; run ${n.run}, walk ${n.walk}, still ${n.still} (before the first step ${lead}, after the last ${tail}), unseen ${n.gaps}; energy ${s0?.e}% -> ${s1?.e}%, weight ${s0?.w} -> ${s1?.w} kg`;
+        return `moves ${step}: ${to - from} ticks, ${tiles} tiles; run ${n.run}, walk ${n.walk}, still ${n.still} (before the first step ${lead}, after the last ${tail}), unseen ${n.gaps}; energy ${s0?.e}% -> ${s1?.e}%, weight ${s0?.w} -> ${s1?.w} kg, option_run ${s0?.run ?? '-'}`;
     };
 
     if (bury && helperName) {
@@ -279,7 +293,7 @@ await runScript(async ({ bot: actions, sdk }) => {
         const end = sdk.getState();
         console.log(`measure-woodcutting ${which} end: Woodcutting ${wcLevel(end)}, Prayer ${end?.skills.find(k => k.name === 'Prayer')?.baseLevel}; min hitpoints ${minHp}; ${where()}`);
         console.log(formatReport(report(log.rows)));
-        for (const r of log.rows.filter(r => r.step.startsWith('woodcutting:walk-') && r.ticks > 0)) console.log(walkLine(r.step, r.startTick, r.endTick));
+        for (const r of log.rows.filter(r => /^woodcutting:(walk-oaks|walk-willows|normal-1-15|oak-15-73|willow-73-99)$/.test(r.step) && r.ticks > 0)) console.log(walkLine(r.step, r.startTick, r.endTick));
         for (const r of log.rows.filter(r => (r.meta as { kind?: string } | undefined)?.kind === 'wc-segment')) {
             const waits = ((r.meta as { result?: { respawnWaits?: number[] } }).result?.respawnWaits ?? []);
             if (waits.length) console.log(`respawn waits ${r.step} run ${(r.meta as { runId: number }).runId}: ${JSON.stringify(waits)}`);
