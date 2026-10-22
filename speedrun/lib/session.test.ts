@@ -141,6 +141,7 @@ function fakeSession(over: Partial<Session> = {}): { session: Session; sdk: Fake
         sdk,
         bot: null,
         sessionId: 1,
+        launchId: 1,
         expectInWorld: true,
         child,
         childExit: null,
@@ -560,7 +561,8 @@ describe('login with inPage: the tab logs back in where it is', () => {
             cdp.hooks.onAutoLogin = () => getsIn(cdp, sdk);
             const r = await login(session, { inPage: true, timeoutMs: 3_000 });
             expect(r).toMatchObject({ via: 'page', attempts: 1, tickBase: 40 });
-            expect(session).toMatchObject({ sessionId: 2, tickBase: 40, expectInWorld: true });
+            // A new game session on the page's own count: the launch is unchanged.
+            expect(session).toMatchObject({ sessionId: 2, tickBase: 40, launchId: 1, expectInWorld: true });
             expect(sdk.state!.tick - session.tickBase).toBe(2);
             expect(cdp.page.navigations).toEqual([]);
             expect(cdp.page.minted).toHaveLength(1);
@@ -600,6 +602,7 @@ describe('login with inPage: the tab logs back in where it is', () => {
             cdp.hooks.onNavigate = () => getsIn(cdp, sdk, 1);
             const r = await login(session, { inPage: true, timeoutMs: 3_000 });
             expect(r).toMatchObject({ via: 'launch', attempts: 1, tickBase: 0 });
+            expect(session.launchId).toBe(2);
             expect(cdp.page.navigations).toHaveLength(1);
             expect(cdp.page.navigations[0]).toContain('token=');
             expect(cdp.page.autoLogins).toEqual([]);

@@ -12,8 +12,9 @@ import type { Session } from '../lib/session';
 import { TickLog } from '../lib/ticks';
 import { sleep, waitUntil } from '../lib/wait';
 import { MANIFEST } from '../tools/slot-ledger';
+import * as cooking from '../skills/cooking';
 import {
-    ALTERNATIVES, anvilAnnounce, KIT_PARTNER_ROWS, buildChain, CENSUS_STEP, chainIds, ledgerCoverage, ledgerRows, missingOnPath, missingStep, parseStepTable, PLACEMENT, resolveFrom, sliceUntil, tag,
+    ALTERNATIVES, anvilAnnounce, KIT_PARTNER_ROWS, buildChain, CENSUS_STEP, chainIds, chainProbes, ledgerCoverage, ledgerRows, missingOnPath, missingStep, parseStepTable, PLACEMENT, resolveFrom, sliceUntil, tag,
     whenNeeded, withCue, type ChainStep, type CueSink, type RunConfig,
 } from './chain';
 import { CueKeeper, prepareCueDir } from './cue-keeper';
@@ -48,6 +49,20 @@ function recorder() {
 }
 
 const chain = buildChain(CONFIG, { cues: recorder().cues });
+
+describe('chainProbes', () => {
+    test("every probe the chain's steps read, S25c's wineBank from cooking.ts's PROBES, none missing", () => {
+        const p = chainProbes(chain);
+        const declared = new Set(chain.flatMap(s => s.probes ?? []));
+        expect(declared.has('wineBank')).toBe(true);
+        expect(Object.keys(p).sort()).toEqual([...declared].sort());
+        expect(p.wineBank).toBe(cooking.PROBES.wineBank);
+    });
+
+    test('a step reading a probe no module exports refuses', () => {
+        expect(() => chainProbes([...chain, tag('S99', 'step', { name: 'S99 x', preconditions: () => true, postconditions: () => true, run: async () => {}, probes: ['nowhere'] })])).toThrow('no probe for "nowhere" (S99 x)');
+    });
+});
 
 /** The fold-in 23 ledger shape: H12 split into H12a and H12b (rs/158). */
 const H12_ROW = MANIFEST_TEXT.split('\n').find(l => l.startsWith('| H12 |'))!;

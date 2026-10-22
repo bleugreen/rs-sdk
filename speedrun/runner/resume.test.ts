@@ -7,7 +7,8 @@ import { TickLog } from '../lib/ticks';
 import { sleep, waitUntil } from '../lib/wait';
 import { FencedError } from './fence';
 import { awaitScene } from '../lib/wait';
-import { DROP_STEP, Observation, RESUME_STEP, ResumeError, resolveResume, runResumable, sessionLink, type Link } from './resume';
+import { journalProbeName } from '../lib/quests';
+import { DROP_STEP, moduleProbes, Observation, RESUME_STEP, ResumeError, resolveResume, runResumable, sessionLink, stepProbes, type Link } from './resume';
 import type { RunnerSession, Step } from './step';
 
 const prevTick = process.env.SPEEDRUN_TICK_MS;
@@ -374,5 +375,33 @@ describe('sessionLink', () => {
         expect(link.isLost()).toBe(true);
         (s as { expectInWorld: boolean }).expectInWorld = false;
         expect(link.isLost()).toBe(false);
+    });
+});
+
+describe('stepProbes', () => {
+    const wineBank = async () => ({ wine: 3 });
+
+    test('a module exporting PROBES gives the steps that read them', () => {
+        expect(stepProbes([{ name: 'S25c', probes: ['wineBank'] }, { name: 'S25c again', probes: ['wineBank'] }], [{ PROBES: { wineBank } }])).toEqual({ wineBank });
+    });
+
+    test('a module without PROBES, whose steps read none, gives none (as before)', () => {
+        expect(stepProbes([{ name: 'a' }, { name: 'b', probes: [] }], [{}])).toEqual({});
+        expect(moduleProbes({})).toEqual({});
+    });
+
+    test("a quest's journal names resolve from lib/quests; a list of names provides no probe itself", () => {
+        const name = journalProbeName('dragon');
+        expect(moduleProbes({ PROBES: [name] })).toEqual({});
+        const p = stepProbes([{ name: 'S17 Dragon Slayer', probes: [name] }], [{ PROBES: [name] }]);
+        expect(Object.keys(p)).toEqual([name]);
+        expect(typeof p[name]).toBe('function');
+    });
+
+    test('only the probes a step reads; one nothing provides refuses, naming it and its step', () => {
+        expect(stepProbes([], [{ PROBES: { wineBank } }])).toEqual({});
+        expect(() => stepProbes([{ name: 'S25c', probes: ['wineBank'] }, { name: 'q', probes: ['journal:nosuchquest'] }], [{}])).toThrow(
+            'no probe for "wineBank" (S25c), "journal:nosuchquest" (q)'
+        );
     });
 });
