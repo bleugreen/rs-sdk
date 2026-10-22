@@ -54,8 +54,8 @@ present at `<commit>`, and still present at the tip.
 | `<demo>/hiscores?category=0&profile=main` | title `35,916 ticks normalized to 400 ms per tick` | **no published commit** (`git log --all -S` finds nothing in upstream or this fork) | yes | built on the tip |
 
 The unpublished marker probably arrived with the operator's change to 400 ms
-ticks, which the worldfeed showed live at 2026-10-22 19:56Z
-(`.claude`-free source: the demo-server skill). The current process started
+ticks, which has been live since 2026-10-22 19:56Z according to the
+`demo-server` project skill (read from the worldfeed). The current process started
 twelve minutes after that. Both the hover title and the 400 ms tick come from
 the same restart, but nothing public names that commit.
 
