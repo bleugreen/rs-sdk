@@ -17,6 +17,7 @@
 //
 //   [--ores=1050] [--logs=10] [--level=64] [--prayer=43] [--respawn=13] [--no-bury] [--no-control]
 import { hostname, loadavg } from 'os';
+import { ChatHistory } from '../../sdk/chat-history';
 import { runScript } from '../../sdk/runner';
 import type { BotWorldState } from '../../sdk/types';
 import { awaitProgram, ProgramError, startProgram } from '../lib/programs';
@@ -51,7 +52,8 @@ await runScript(async ({ bot: actions, sdk }) => {
         const events: Watch['events'] = [];
         const s0 = state();
         let xp = fletchXp(s0), logs = logsOf(s0), shafts = shaftsOf(s0), lastTick = s0.tick;
-        const seen = new Set<string>((s0.gameMessages ?? []).map(m => (m.observationId !== undefined ? `o${m.observationId}` : `${m.tick}|${m.text}`)));
+        const chat = new ChatHistory();
+        chat.record(s0.gameMessages ?? []);
         const off = sdk.onStateUpdate(s => {
             if (!s?.inGame || s.tick === lastTick) return;
             lastTick = s.tick;
@@ -60,10 +62,7 @@ await runScript(async ({ bot: actions, sdk }) => {
             if (l !== logs) events.push({ tick: s.tick, what: 'logs', detail: `${logs} -> ${l}` });
             if (sh !== shafts) events.push({ tick: s.tick, what: 'shafts', detail: `${shafts} -> ${sh}` });
             xp = x; logs = l; shafts = sh;
-            for (const m of s.gameMessages ?? []) {
-                const key = m.observationId !== undefined ? `o${m.observationId}` : `${m.tick}|${m.text}`;
-                if (seen.has(key)) continue;
-                seen.add(key);
+            for (const m of chat.record(s.gameMessages ?? [])) {
                 if (/carefully cut|run out of/i.test(m.text)) events.push({ tick: s.tick, what: 'message', detail: m.text });
             }
         });
