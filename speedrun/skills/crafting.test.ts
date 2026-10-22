@@ -278,6 +278,17 @@ describe('preconditions', () => {
         expect(preconditions(world({ inventory: [...inv.slice(0, 2), item(2, ITEM.hardLeatherNote, 928)] }), O)).toBe(true);
     });
 
+    test('the short mix moves the stop: the full mix\'s 187 thread refuse, leather short of 953 bodies refuses, the short mix\'s package passes', () => {
+        const pack = (leather: number, thread: number) => [item(0, ITEM.needle), item(1, ITEM.thread, thread), item(2, ITEM.hardLeatherNote, leather, 'Hard leather')];
+        const short = { stagedGems: SHORT };
+        expect(preconditions(world({ inventory: pack(954, 187) }), O)).toBe(true);
+        expect(preconditions(world({ inventory: pack(954, 187) }), short)).toBe('thread short: 187 for 953 bodies (one worn every 5th, 192 at the worst-case wear)');
+        expect(preconditions(world({ inventory: pack(952, 230) }), short)).toBe('supplies short: 952 hard leather for 953 bodies to 856583 xp (they reach Crafting 96)');
+        expect(preconditions(world({ inventory: pack(979, 192) }), short)).toBe(true);
+        // the bank in sight: its stock and the pack's together
+        expect(preconditions(world({ inventory: [], bank: [[ITEM.hardLeather, 979], [ITEM.thread, 191], [ITEM.needle, 1]] }), short)).toBe('thread short: 191 for 953 bodies (one worn every 5th, 192 at the worst-case wear)');
+    });
+
     test('with the bank open: thread on both sides of the worst-case bound, the needle, the leather', () => {
         const bank = (thread: number, needle = 1, leather = 954): Array<[number, number]> => [[ITEM.hardLeather, leather], [ITEM.thread, thread], [ITEM.needle, needle]];
         expect(preconditions(world({ inventory: [], bank: bank(187) }), O)).toBe(true);
