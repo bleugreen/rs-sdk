@@ -119,7 +119,11 @@ The leftover check was clean before (20:44Z) and after (20:52Z): no tmux server,
 On the rehearsal host, as RUN-HOST.md prescribes ("Rules for every launch": `exec timeout` as the
 whole command of its own tmux session, logs by redirection). The ssh line, key and IP are in
 `docs/speedrun/rehearsals/HOST.md` (rs/149). The page server, gateway and Chrome (with
-`--remote-debugging-port`) must be up first (RUN-HOST.md step 3). The account's
+`--remote-debugging-port`) must be up first (RUN-HOST.md step 3). **Launch that Chrome with
+`--app` on the attempt account's bare page** (`NAME=<ACCOUNT>` in step 3's command), not the gate
+account's. The harness then reuses that app window for the attempt (staged as `present`). The gate
+account gets a `/json/new` window, which is the one it closes, so the recording shows an app window
+without a tab strip or address bar. The account's
 `~/rs-sdk/bots/<ACCOUNT>/bot.env` (mode 600) needs `CLIENT_URL` (the proxy.ts page) and `CDP_URL`,
 and the gate account `cairn_twin`'s needs the same. Off a local world the harness uses
 `cairn_twin` when no `--gate-bot` is given; the command below names it anyway.
