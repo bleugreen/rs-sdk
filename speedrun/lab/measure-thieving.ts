@@ -39,7 +39,13 @@ import { formatReport, report, TickLog, type TickRow } from '../lib/ticks';
 import { clickBack, decideGiver, decideTradeClick, DROPPED_TICKS, newClickCtx, newGiverCtx, planOffers, sameName, sendTradeClick, tradeOf, type ClickCtx, type GiverCtx, type GiveSpec, type OfferEntry } from '../lib/trade';
 import { waitTicks, waitUntil } from '../lib/wait';
 import { runSteps } from '../runner/step';
-import { type FoodName, type LegMark, steps, type ThievingOptions } from '../skills/thieving';
+import { FOODS, type FoodName, type LegMark, steps, type ThievingOptions, topUpAsk } from '../skills/thieving';
+import { CueWriter, type CueScope } from '../helpers/altar-cue';
+import { askOffer, BoneGiver } from '../helpers/bone-giver';
+import { memoryRoleState, type RoleContext } from '../helpers/role';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { arg, result } from './common';
 import { cheat, leaveTutorial, near, tele } from './setup';
 
@@ -47,6 +53,9 @@ const bot = process.argv[2] ?? '';
 const mode = process.argv[3] ?? '';
 if (!bot || !mode) throw new Error('usage: measure-thieving.ts <bot> setup|fresh|at|steps|leg [--k=v ...]');
 const where = () => ({ host: hostname(), load: loadavg().map(l => +l.toFixed(1)), at: new Date().toISOString(), tickrate: process.env.NODE_TICKRATE ?? '' });
+
+// the Thieving module writes the courier's ask to the cue directory: a scratch one, never the checkout's
+process.env.RC_CUE_DIR ??= mkdtempSync(join(tmpdir(), 'thieving-cue-'));
 
 const session = await openSession(bot, { client: 'browser', insecureQueryLogin: true });
 const { sdk } = session;
@@ -290,9 +299,15 @@ function trackTopUps(giver: string, below: number, giverEvents: ReadonlyArray<{ 
     /** Due stuns (by the +2 state, which is what the program's `fewer` reads), program request ticks, and supplies across each trade. */
     const due: number[] = [], requests: number[] = [], trades: Array<{ open: number; close: number | null; before: number; after: number | null }> = [];
     let reqRun = -1, reqSeen = 0;
+    /** Ticks a bone left the pack (a bury; a trade only adds bones). */
+    const buries: number[] = [];
+    let bonesWas = -1;
     const un = sdk.onStateUpdate((s: BotWorldState) => {
         if (s.tick === last) return;
         last = s.tick;
+        const b = bonesOf(s);
+        if (bonesWas >= 0) for (let k = b; k < bonesWas; k++) buries.push(s.tick);
+        bonesWas = b;
         const st = programStatus(s);
         if (st && st.name === 'pickpocket') {
             const n = (st.counters['stun:topup'] ?? 0) + (st.counters['stun:topup:bones'] ?? 0);
@@ -332,7 +347,9 @@ function trackTopUps(giver: string, below: number, giverEvents: ReadonlyArray<{ 
             const next = rolls.find(r => r > f);
             const open = opens.find(o => o > f && (next === undefined || o < next));
             const close = open === undefined ? undefined : closes.find(c => c >= open);
-            return { f, gap: next === undefined ? null : next - f, open: open === undefined ? null : open - f, close: close === undefined ? null : close - f };
+            // rs/158's measure for the standing request: bones buried after the trade closed, still in this stun
+            const buried = close === undefined ? 0 : buries.filter(t => t > close && (next === undefined || t < next)).length;
+            return { f, gap: next === undefined ? null : next - f, open: open === undefined ? null : open - f, close: close === undefined ? null : close - f, buried };
         }).filter(r => r.gap !== null);
         const stat = (rs: typeof rows) => {
             const hist: Record<number, number> = {};
@@ -345,7 +362,9 @@ function trackTopUps(giver: string, below: number, giverEvents: ReadonlyArray<{ 
         return {
             topUpStuns: topStat, otherStuns: other,
             costPerTopUp: topStat.meanGap !== null && other.meanGap !== null ? +(topStat.meanGap - other.meanGap).toFixed(2) : null,
-            topUps: top.map(r => ({ f: r.f, open: r.open, close: r.close, gap: r.gap })),
+            topUps: top.map(r => ({ f: r.f, open: r.open, close: r.close, gap: r.gap, buried: r.buried })),
+            topUpStunsBurying: top.filter(r => r.buried > 0).length,
+            bonesPerTopUpStun: top.length ? +(top.reduce((a, r) => a + r.buried, 0) / top.length).toFixed(2) : null,
             dueFails: dueFails.length,
             dueNotAdjacent: dueFails.filter(f => adjacentAt2[f] === false).length,
             dueDiagonal: dueFails.filter(f => offsetAt2[f] && offsetAt2[f]![0] !== 0 && offsetAt2[f]![1] !== 0).length,
@@ -405,39 +424,75 @@ function trackTopUps(giver: string, below: number, giverEvents: ReadonlyArray<{ 
 }
 
 /**
- * The pack's courier stand-in (stun-pack.md sections 5 and 6): at each trade it sizes the load from
- * the account's state as the trade opens (nothing else is sent while it is open, so the free slots
- * cannot shrink): sharks back to 2, the adamant and then the rune arrowheads once each when the
- * account is down to one arrowhead tier, and dragon bones in every slot left but one (a new arrow
- * product stack). It keeps 22 bones, 2 sharks and the arrowheads still due, by ::give.
+ * The pack's courier stand-in (stun-pack.md sections 5 and 6): at each trade it reads the account's
+ * state as the trade opens and offers what the Thieving module's ask names (thieving.ts topUpAsk, the
+ * sizing the run's courier gets through the cue directory). It keeps 22 bones, 2 sharks and the
+ * arrowheads still due, by ::give. `--courier=role` runs the run's courier itself instead
+ * (bone-giver.ts, mode on-request; courierRole below).
  */
 function courier(): GiverPolicy {
-    const seen = { adamant: false, rune: false };
-    // in-game names are "<tier> arrowtips" (the debug names say arrowheads)
-    const tiers = (s: BotWorldState) => s.inventory.filter(i => /arrow(head|tip)s$/i.test(i.name));
+    const mem = { tiers: new Set<string>() };
     return {
-        load: (_hs, s) => {
-            if (!s) return [];
-            for (const t of tiers(s)) if (/^adamant/i.test(t.name)) seen.adamant = true; else if (/^rune/i.test(t.name)) seen.rune = true;
-            const sharks = Math.max(0, 2 - s.inventory.filter(i => /^shark$/i.test(i.name)).length);
-            const tier = tiers(s).length <= 1 ? (!seen.adamant ? 'adamant' : !seen.rune ? 'rune' : null) : null;
-            if (tier) seen[tier] = true;
-            const free = 28 - s.inventory.length - (s.inventory.some(i => /^coins$/i.test(i.name)) ? 0 : 1);
-            const bones = Math.max(0, free - sharks - (tier ? 1 : 0) - 1);
-            return [
-                ...(bones > 0 ? [{ item: /^dragon bones$/i, n: bones }] : []),
-                ...(sharks > 0 ? [{ item: /^shark$/i, n: sharks }] : []),
-                ...(tier ? [{ item: new RegExp(`^${tier} arrow(head|tip)s$`, 'i'), n: 'all' as const }] : [])
-            ];
-        },
+        load: (hs, s) => (s ? askOffer({ items: topUpAsk(s, FOODS.shark, true, mem) }, hs.inventory).specs : []),
         restock: hs => {
             const n = (re: RegExp) => hs.inventory.filter(i => re.test(i.name)).reduce((a, i) => a + i.count, 0);
             return [
                 ...(n(/^dragon bones$/i) < 22 ? [`give dragon_bones ${22 - n(/^dragon bones$/i)}`] : []),
                 ...(n(/^shark$/i) < 2 ? [`give shark ${2 - n(/^shark$/i)}`] : []),
-                ...(!seen.adamant && n(/^adamant arrow(head|tip)s$/i) === 0 ? ['give adamant_arrowheads 495'] : []),
-                ...(!seen.rune && n(/^rune arrow(head|tip)s$/i) === 0 ? ['give rune_arrowheads 2595'] : [])
+                ...(!mem.tiers.has('adamant') && n(/^adamant arrow(head|tip)s$/i) === 0 ? ['give adamant_arrowheads 495'] : []),
+                ...(!mem.tiers.has('rune') && n(/^rune arrow(head|tip)s$/i) === 0 ? ['give rune_arrowheads 2595'] : [])
             ];
+        }
+    };
+}
+
+/** The courier's S18 side tile among the knights; it re-steps beside the account from there. */
+const COURIER_SITE = { giver: { x: 2671, z: 3305 }, receiver: { x: 2670, z: 3305 } };
+
+/**
+ * The run's courier (bone-giver.ts, mode on-request) on the helper's session, in this process: the
+ * cue names the account by hash, the module's TopUpAsker writes each ask, and the courier restocks
+ * by ::give (restock kind cheat). Its log lines and trade messages are `events`, for the trace.
+ */
+function courierRole(h: Session, helperBot: string, scored: string, standing: boolean) {
+    const dir = process.env.RC_CUE_DIR!;
+    process.env.HELPER_LAB_TELE = '1';
+    // a launched role has its bot.env's SERVER; restock kind cheat checks it is the local lab
+    process.env.SERVER ??= `localhost:${process.env.WEB_PORT ?? ''}`;
+    const s0 = sdk.getState()!;
+    const scope: CueScope = { step: 'S18', family: 'courier' };
+    new CueWriter(dir, scored, scope).write({ beacons: [{ tick: s0.tick, ms: Date.now() }], turns: [] });
+    const events: Array<{ tick: number; ev: string }> = [];
+    const tick = () => h.sdk.getState()?.tick ?? -1;
+    const seen = new Set<string>();
+    const unMsg = h.sdk.onStateUpdate(hs => {
+        for (const m of hs.gameMessages ?? []) {
+            const key = m.observationId !== undefined ? `o${m.observationId}` : `${m.tick}|${m.text}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            if (/wishes to trade|busy at the moment|^sending trade offer/i.test(m.text)) events.push({ tick: hs.tick, ev: m.text.replace(/^.*(wishes to trade|busy|sending trade offer).*$/i, '$1').toLowerCase() });
+        }
+    });
+    const ac = new AbortController();
+    const options = {
+        mode: 'on-request', item: 'Babydragon bones', hold: 22, refillBelow: 21, standing, scope,
+        restock: { kind: 'cheat' }, sites: [COURIER_SITE],
+        carry: [{ item: 'Shark', count: 2, obj: 'shark' }, { item: 'Adamant arrowtips', count: 495, obj: 'adamant_arrowheads', once: true }, { item: 'Rune arrowtips', count: 2595, obj: 'rune_arrowheads', once: true }]
+    };
+    const ctx: RoleContext = {
+        bot: h.bot, sdk: h.sdk, account: helperBot, options, signal: ac.signal, state: memoryRoleState(), reportBank: () => {},
+        log: (message, data) => {
+            events.push({ tick: tick(), ev: `${message} ${JSON.stringify(data ?? {})}`.slice(0, 240) });
+        }
+    } as RoleContext;
+    const done = new BoneGiver(ctx).run().catch(e => events.push({ tick: tick(), ev: `role error ${String(e).slice(0, 200)}` }));
+    return {
+        events,
+        teles: 0,
+        stop: async () => {
+            ac.abort();
+            await Promise.race([done, Bun.sleep(15_000)]);
+            unMsg();
         }
     };
 }
@@ -520,7 +575,10 @@ switch (mode) {
         const tuMode = arg('mode', 'idle') as 'idle' | 'restart';
         const below = Number(arg('below', '2'));
         const bonesBelow = Number(arg('bones-below', '3'));
-        const helper = await openSession(helperBot, { launch: true, pathfinding: false });
+        // --courier=role: the run's courier (bone-giver.ts) instead of the stand-in; --standing turns on its standing request
+        const asRole = arg('courier', 'standin') === 'role';
+        const standing = process.argv.includes('--standing');
+        const helper = await openSession(helperBot, { launch: true, pathfinding: asRole });
         await helper.bot.skipTutorial().catch(() => {});
         await helper.sdk.sendSay('::~clearinv inv');
         // staging, off the clock: SCORED after Monkey Madness and the Mage Arena (stun-pack.md section 3)
@@ -540,11 +598,11 @@ switch (mode) {
         await waitTicks(sdk, 2);
         while (sdk.getState()!.dialog?.isOpen) { await sdk.sendClickDialog(0); await waitTicks(sdk, 1); }
         const giver = helper.sdk.getState()?.player?.name ?? helperBot;
-        const g = runGiver(helper, courier());
-        await waitUntil(sdk, s => s.nearbyPlayers.some(p => sameName(p.name, giver) && Math.abs(p.x - s.player!.worldX) + Math.abs(p.z - s.player!.worldZ) === 1), { maxTicks: 40 });
+        const g = asRole ? courierRole(helper, helperBot, sdk.getState()!.player!.name, standing) : runGiver(helper, courier());
+        await waitUntil(sdk, s => s.nearbyPlayers.some(p => sameName(p.name, giver) && Math.abs(p.x - s.player!.worldX) + Math.abs(p.z - s.player!.worldZ) === 1), { maxTicks: asRole ? 200 : 40 });
         const track = trackTopUps(giver, below, g.events, bonesBelow);
         const s0 = sdk.getState()!;
-        result('pack', { ...where(), mode: tuMode, giver, below, bonesBelow, hp: s0.player!.hp, inventory: s0.inventory.map(i => `${i.name}x${i.count}`), equipment: s0.equipment.map(i => i.name) });
+        result('pack', { ...where(), mode: tuMode, giver, courier: asRole ? (standing ? 'role, standing' : 'role') : 'stand-in', below, bonesBelow, hp: s0.player!.hp, inventory: s0.inventory.map(i => `${i.name}x${i.count}`), equipment: s0.equipment.map(i => i.name) });
         try {
             const rows = await runList(steps({ to: Number(arg('to', '99')), food: 'shark', topUp: { giver, below, mode: tuMode }, stunPack: { bonesBelow, chargeUnlocked: true } }).filter(s => s.name === 'thieving:knights'));
             const band = rows.find(r => r.step === 'thieving:knights');
@@ -558,7 +616,8 @@ switch (mode) {
             result(`pack ${tuMode} topups`, track.topUpLog());
         } finally {
             track.stop();
-            g.stop();
+            await g.stop();
+            if (asRole) result(`pack ${tuMode} courier`, { events: g.events.filter(e => !/^(wishes to trade|busy|sending trade offer)$/.test(e.ev)).slice(-150) });
             await closeSession(helper);
         }
         break;
