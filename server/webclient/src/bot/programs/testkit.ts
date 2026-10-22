@@ -4,7 +4,7 @@
 import type { ActionResult } from '../ActionExecutor.js';
 import type { BotAction, BotWorldState, GameMessage, InventoryItem, NearbyLoc, NearbyNpc } from '../types.js';
 import { ProgramRuntime } from './runtime.js';
-import type { ProgramFactory, ProgramParams, ProgramStatus } from './types.js';
+import type { ProgramFactory, ProgramInit, ProgramParams, ProgramStatus, TickProgram } from './types.js';
 
 export interface StateSpec {
     tick: number;
@@ -91,6 +91,11 @@ export function makeState(spec: StateSpec): BotWorldState {
     } as unknown as BotWorldState;
 }
 
+/** A test program's factory with its accepted keys (none by default). */
+export function declared(fn: (params: ProgramParams, init: ProgramInit) => TickProgram, params: readonly string[] = []): ProgramFactory {
+    return Object.assign(fn, { params });
+}
+
 export interface Sent {
     tick: number;
     action: BotAction;
@@ -105,7 +110,8 @@ export class Harness {
     /** Make dispatch reject actions of these types. */
     reject = new Set<string>();
 
-    constructor(name: string, factory: ProgramFactory, opts: { packetsPerTick?: number; stallTicks?: number } = {}) {
+    /** A bare function registers as a program that accepts no keys of its own. */
+    constructor(name: string, factory: ProgramFactory | ((params: ProgramParams, init: ProgramInit) => TickProgram), opts: { packetsPerTick?: number; stallTicks?: number } = {}) {
         this.runtime = new ProgramRuntime({
             dispatch: (action): ActionResult => {
                 if (this.reject.has(action.type)) return { success: false, message: 'rejected' };
@@ -117,7 +123,7 @@ export class Harness {
             onEnd: s => (this.ended = s),
             ...opts
         });
-        this.runtime.register(name, factory);
+        this.runtime.register(name, 'params' in factory ? factory : declared(factory));
     }
 
     start(name: string, params: ProgramParams = {}, state?: BotWorldState): ProgramStatus {

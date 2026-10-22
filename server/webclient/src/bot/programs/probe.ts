@@ -33,6 +33,7 @@ export interface InPageProbeResult {
     reason?: string;
 }
 
+createProbe.params = ['trials', 'maxWait', 'dirs'] as const;
 export function createProbe(params: ProgramParams): TickProgram {
     const trials = num(params.trials, 20, 'trials');
     const maxWait = num(params.maxWait, 8, 'maxWait');

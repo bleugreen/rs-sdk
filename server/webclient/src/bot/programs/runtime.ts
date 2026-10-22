@@ -18,6 +18,9 @@ import type { ProgramAction, ProgramCommand, ProgramContext, ProgramEnd, Program
 
 export const USER_EVENTS_PER_TICK = 5;
 
+/** Start parameters the runtime itself reads, accepted for every program. */
+export const RUNTIME_PARAMS: readonly string[] = ['stallTicks'];
+
 export interface RuntimeOptions {
     /** Sends one action now (ActionExecutor.execute for the synchronous actions programs use). */
     dispatch: (action: BotAction) => ActionResult | Promise<ActionResult>;
@@ -72,12 +75,19 @@ export class ProgramRuntime {
     }
 
     register(name: string, factory: ProgramFactory): this {
+        if (!Array.isArray(factory.params)) throw new Error(`program '${name}' declares no parameter keys (set ${factory.name || 'its factory'}.params)`);
         this.registry.set(name, factory);
         return this;
     }
 
     names(): string[] {
         return [...this.registry.keys()].sort();
+    }
+
+    /** The start parameter keys a registered program accepts, the runtime's own included. */
+    accepts(name: string): string[] | undefined {
+        const factory = this.registry.get(name);
+        return factory ? [...factory.params, ...RUNTIME_PARAMS] : undefined;
     }
 
     get active(): boolean {
@@ -118,6 +128,9 @@ export class ProgramRuntime {
         const log = (line: string) => this.log(status, line, tail);
         let program: TickProgram;
         try {
+            const accepted = new Set([...factory.params, ...RUNTIME_PARAMS]);
+            const unknown = Object.keys(params).filter(k => !accepted.has(k));
+            if (unknown.length) throw new Error(`${name} does not declare ${unknown.join(', ')} (accepts: ${[...accepted].join(', ')})`);
             program = factory(params, { state: this.lastState, log });
         } catch (e) {
             status.phase = 'fault';

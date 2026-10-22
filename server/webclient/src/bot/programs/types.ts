@@ -68,7 +68,16 @@ export interface ProgramInit {
     log(line: string): void;
 }
 
-export type ProgramFactory = (params: ProgramParams, init: ProgramInit) => TickProgram;
+export interface ProgramFactory {
+    (params: ProgramParams, init: ProgramInit): TickProgram;
+    /**
+     * Every start parameter key the program reads (besides the runtime's own,
+     * RUNTIME_PARAMS). A start with any other key faults: a key the page does not
+     * know means a typo or a page built from a commit without that program change,
+     * and either way the run would not be the program the caller asked for.
+     */
+    readonly params: readonly string[];
+}
 
 export type ProgramEnd = 'done' | 'fault' | 'stopped' | 'replaced';
 
