@@ -21,7 +21,7 @@
 import { appendFileSync, existsSync, mkdirSync, openSync, readFileSync } from 'fs';
 import { join } from 'path';
 import type { Subprocess } from 'bun';
-import { deriveGatewayUrl, type BotSDK } from '../../sdk/index';
+import { BotSDK, deriveGatewayUrl } from '../../sdk/index';
 import type { BotActions } from '../../sdk/actions';
 import type { BotStatus, BotWorldState } from '../../sdk/types';
 import { pageInGame, pageLogin, pageLoginState, type PageLoginStart } from './tab';
@@ -269,7 +269,6 @@ export async function openSession(botName: string, opts: OpenOptions = {}): Prom
     const env = loadBotEnv(botName);
     const client = opts.client ?? 'lite';
     const gatewayUrl = sessionGateway(env, client === 'browser' ? pageWorld(env) : env.SERVER || 'localhost', { allowRelay: opts.allowRelay });
-    const { BotSDK } = await import('../../sdk/index');
     const { BotActions } = await import('../../sdk/actions');
     if (opts.pathfinding !== false) (await import('../../sdk/pathfinding')).initPathfinding();
     const sdk = new BotSDK({

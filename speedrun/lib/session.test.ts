@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { fakeCdp } from './fake-cdp';
 import { FakeSdk, flush } from './fake-sdk';
 import { loginTokenProof } from '../../server/webclient/login-token';
@@ -7,6 +7,8 @@ import {
     abandonClient,
     backoffMs,
     browserUrl,
+    gatewayPath,
+    isLoopbackHost,
     loggedOutBy,
     login,
     logoutClean,
@@ -14,6 +16,7 @@ import {
     openBrowserClient,
     parseBotEnv,
     relog,
+    sessionGateway,
     startWatchdog,
     watchdogDecision,
     type LogoutResult,
@@ -402,6 +405,70 @@ describe('logoutClean on a browser tab: the page confirms, never the gateway', (
 
 test('backoff doubles from 1 s and caps at 30 s', () => {
     expect([1, 2, 3, 4, 5, 6, 7].map(backoffMs)).toEqual([1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000]);
+});
+
+describe('sessionGateway', () => {
+    const DEMO = 'demo.example';
+    const env = parseBotEnv(`BOT_USERNAME=srlab1\nPASSWORD=pw\nSERVER=${DEMO}\n`);
+    const saved = process.env.GATEWAY_URL;
+    beforeEach(() => {
+        delete process.env.GATEWAY_URL;
+    });
+    afterEach(() => {
+        if (saved === undefined) delete process.env.GATEWAY_URL;
+        else process.env.GATEWAY_URL = saved;
+    });
+
+    test('refuses the demo with GATEWAY_URL unset, naming the variable and the relay it would take', () => {
+        expect(() => sessionGateway(env, DEMO)).toThrow(`refusing to open srlab1 on ${DEMO} with GATEWAY_URL unset (so wss://${DEMO}/gateway): a demo session must use a loopback gateway`);
+        expect(() => sessionGateway({ ...env, GATEWAY_URL: '' }, DEMO)).toThrow(/GATEWAY_URL unset/);
+    });
+
+    test('refuses the demo with a GATEWAY_URL that is not loopback, from bot.env or the environment', () => {
+        expect(() => sessionGateway({ ...env, GATEWAY_URL: `wss://${DEMO}:7443` }, DEMO)).toThrow(`GATEWAY_URL=wss://${DEMO}:7443 (from bot.env)`);
+        process.env.GATEWAY_URL = 'ws://gateway.example:7780';
+        expect(() => sessionGateway(env, DEMO)).toThrow('GATEWAY_URL=ws://gateway.example:7780 (from the environment)');
+        // A name that only starts like localhost is not loopback.
+        expect(() => sessionGateway({ ...env, GATEWAY_URL: 'ws://localhost.example:7780' }, DEMO)).toThrow(/refusing/);
+        expect(() => sessionGateway({ ...env, GATEWAY_URL: 'not a url' }, DEMO)).toThrow(/refusing/);
+    });
+
+    test('allows the demo through a loopback gateway: 127.0.0.0/8, localhost, ::1', () => {
+        for (const url of ['ws://127.0.0.1:7780', 'ws://127.8.9.10:7795', 'ws://localhost:7780', 'ws://[::1]:7780', 'wss://localhost/gateway']) {
+            expect(sessionGateway({ ...env, GATEWAY_URL: url }, DEMO)).toBe(url);
+        }
+        process.env.GATEWAY_URL = 'ws://127.0.0.1:7780';
+        expect(sessionGateway(env, DEMO)).toBe('ws://127.0.0.1:7780');
+        // bot.env wins over the environment, as in the lite runner.
+        expect(sessionGateway({ ...env, GATEWAY_URL: 'ws://localhost:7795' }, DEMO)).toBe('ws://localhost:7795');
+    });
+
+    test('allows the direct path', () => {
+        expect(gatewayPath('direct://srlab1')).toBe('direct');
+        expect(sessionGateway({ ...env, GATEWAY_URL: 'direct://srlab1' }, DEMO)).toBe('direct://srlab1');
+    });
+
+    test('leaves a local engine alone, whatever its gateway', () => {
+        const lab = { ...env, SERVER: 'localhost:8960' };
+        expect(sessionGateway(lab, 'localhost:8960')).toBe('ws://localhost:8960');
+        expect(sessionGateway({ ...lab, GATEWAY_URL: 'ws://gateway.example:7780' }, '127.0.0.1:8888')).toBe('ws://gateway.example:7780');
+        expect(sessionGateway(lab, '[::1]:8960')).toBe('ws://localhost:8960');
+    });
+
+    test('allowRelay opens on the relay and says so loudly', () => {
+        const lines: string[] = [];
+        expect(sessionGateway(env, DEMO, { allowRelay: true, warn: l => lines.push(l) })).toBe(`wss://${DEMO}/gateway`);
+        expect(lines).toHaveLength(1);
+        expect(lines[0]).toMatch(/^\[speedrun\] !!! allowRelay: opening srlab1 on demo\.example with GATEWAY_URL unset/);
+        // Nothing to warn about where the guard would not refuse.
+        expect(sessionGateway({ ...env, GATEWAY_URL: 'ws://127.0.0.1:7780' }, DEMO, { allowRelay: true, warn: l => lines.push(l) })).toBe('ws://127.0.0.1:7780');
+        expect(lines).toHaveLength(1);
+    });
+
+    test('isLoopbackHost', () => {
+        for (const h of ['localhost', 'localhost:8960', '127.0.0.1', '127.1.2.3:80', '::1', '[::1]:7780', 'LOCALHOST']) expect(isLoopbackHost(h)).toBe(true);
+        for (const h of ['demo.example', 'localhost.example', '127.example', '128.0.0.1', '[::2]:80', '']) expect(isLoopbackHost(h)).toBe(false);
+    });
 });
 
 describe('browserUrl', () => {
