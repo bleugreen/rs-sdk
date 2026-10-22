@@ -17,6 +17,9 @@
 // Setup uses staff cheats and is untimed; the timed span is the step's own TickLog row.
 
 import { readFileSync, writeFileSync } from 'node:fs';
+// Static, as runecraft-accept.ts: a dynamic import('puppeteer') under bun breaks its proxy-agent's
+// CommonJS interop ("debug_1.default is not a function").
+import puppeteer from 'puppeteer';
 import { join } from 'node:path';
 import { decideRequest, newRequestCtx } from '../helpers/bone-giver';
 import { isTileWalkable } from '../../sdk/pathfinding';
@@ -57,7 +60,6 @@ if (browserMode) {
     const webPort = process.env.WEB_PORT ?? '9300';
     const agentPort = process.env.AGENT_PORT ?? '8300';
     const cdpPort = Number(webPort) + 5;
-    const puppeteer = (await import('puppeteer')).default;
     browser = await puppeteer.launch({
         headless: true,
         defaultViewport: null,
