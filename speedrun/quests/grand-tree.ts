@@ -33,7 +33,7 @@ import { questStage, questStatus, journalProbeName, type QuestView } from '../li
 import { logNote } from '../lib/ticks';
 import { runTo, spiritTree, teleport } from '../lib/travel';
 import { receiveFrom, type WantSpec } from '../lib/trade';
-import { currentTick, waitUntil, type Pred } from '../lib/wait';
+import { currentTick, waitTicks, waitUntil, type Pred } from '../lib/wait';
 import { chebyshev, configId, findLoc, findNpc, invCount, invItem, messagesSince, opIndex, pos, skillLevel, worn, type LocQuery, type Tile } from '../lib/world';
 import type { Step, StepContext } from '../runner/step';
 
@@ -388,6 +388,11 @@ async function leaveTree(sdk: Sdk, ctx: Pick<Ctx, 'bot'>): Promise<void> {
     await treeLadder(sdk, 0);
     await go({ sdk, bot: ctx.bot }, TILES.doorInside, 0);
     await loc(sdk, 'tree door out', TILES.door, /^open$/i, s => pos(s).z <= 3491);
+    // The door's forcemove (gnome_gate.rs2 open_tree_door, agility_walk) ends on p_delay(0): the
+    // tick z first reads 3491 still holds the player, so a walk click then is dropped. travel's
+    // stall handler then opens the nearest closed door, this one, and forcemoves SCORED back in;
+    // measured, that ping-pong cost ~50 ticks on every exit before bot.walkTo took over.
+    await waitTicks(sdk, 1);
 }
 
 async function gloughUp(sdk: Sdk, ctx: Pick<Ctx, 'bot'>): Promise<void> {
