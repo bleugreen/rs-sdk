@@ -92,7 +92,7 @@ describe('reader sources', () => {
         .map(f => ({ f, text: readFileSync(join(dir, f), 'utf8') }));
 
     test('never name a trading method', () => {
-        expect(sources.map(s => s.f).sort()).toEqual(['read-only.ts', 'shelf-reader.ts', 'stops.ts']);
+        expect(sources.map(s => s.f).sort()).toEqual(['content.ts', 'export-supplies.ts', 'read-only.ts', 'shelf-reader.ts', 'stops.ts']);
         // `trade` is also an English word in the comments: as a method it is only ever reached as `.trade`.
         const named = new RegExp(`\\b(${TRADING.filter(n => n !== 'trade').join('|')})\\b|\\.trade\\b`);
         for (const { f, text } of sources) expect({ f, hit: named.exec(text)?.[0] ?? null }).toEqual({ f, hit: null });
@@ -101,10 +101,10 @@ describe('reader sources', () => {
     test('import only the SDK types, the role launcher and the speedrun walkers', () => {
         const allowed = [
             /^node:/,
-            /^\.\/(read-only|stops)$/,
+            /^\.\/(content|read-only|stops)$/,
             /^\.\.\/\.\.\/sdk\/(types|actions|index)$/,
             /^\.\.\/\.\.\/speedrun\/helpers\/role$/,
-            /^\.\.\/\.\.\/speedrun\/lib\/(ships|toll-gate|underground|wait|world)$/
+            /^\.\.\/\.\.\/speedrun\/lib\/(obj-pack|ships|toll-gate|underground|wait|world)$/
         ];
         for (const { f, text } of sources) {
             for (const m of text.matchAll(/from '([^']+)'/g)) expect({ f, spec: m[1], ok: allowed.some(a => a.test(m[1]!)) }).toEqual({ f, spec: m[1], ok: true });
