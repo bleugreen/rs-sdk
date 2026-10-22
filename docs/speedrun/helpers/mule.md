@@ -186,18 +186,22 @@ from the same inventory-ledger rows (STEP-MANIFEST.md) the scored side's hand-of
   package with that guess, and a stackable it misreads (thread, nails, before they were added)
   makes it count one slot per item and refuse the package.
 - The packages come in ledger order, which is the order the run pulls them (`serveMode: 'order'`);
-  a list out of ledger order is refused. cairn_mule1's trades are `MULE1_ORDER`, rs/158's list: H1,
-  H3's three ring loads, H4, H4k, H6, H4p, H7-H10, H12, H13, H14 (S18's load 0), H15, H16,
-  H18-H20, H21d (with H21e's list, one trade) and H22. A unit test checks it against SUPPLIES.md's
-  trade-giver rows; `MULE1_NO_PACKAGE` names the trade-giver rows with no package of their own.
-- **H3's loads** (`H3#1`..`H3#3`, packages `h3-1`..`h3-3`): the ledger row names the rings only as
-  the module's `<gem ring> x20`, so each load's rings come from `skills/magic.ts` `ROUTE_LOADS`,
-  whose total must equal the row's count.
-- **On-request packages** (`MULE1_ON_REQUEST`: H4e, the bone runes' fallback) carry
-  `onRequest: true`. Order mode never serves them in turn; a request by name (the request file or a
-  PM) serves one, and the order then resumes at the package that was due (`afterServe`), so a
-  fallback can't shift every later package. A row with no ledger row (H4e today) has no package,
-  and the CLI names it.
+  a list out of ledger order is refused. cairn_mule1's trades are `MULE1_ORDER`, rs/158's list of
+  19: H1, H4, H4k, H6, H4p, H7-H10, H12, H13, H14 (S18's load 0), H15, H16, H18-H20, H21d (with
+  H21e's list, one trade) and H22. H3's ring loads are the three ring givers' (cairn_h81-h83,
+  `skills/magic.ts` `RING_CONTRACT`), not the mule's. A unit test checks the list against
+  SUPPLIES.md's trade-giver rows; `MULE1_NO_PACKAGE` names the trade-giver rows with no package of
+  their own, and why.
+- **On-request packages** (`MULE1_ON_REQUEST`: H4e, the bone runes' fallback, and H4m, the bones
+  past S07's capacity on an overflowing stock) come from the ledger's **fallback hand-offs** table
+  (the ledger's columns, after a `Fallback hand-offs` heading; the walk never reads it, so a
+  fallback changes no later slot count). They carry `onRequest: true`: order mode never serves them
+  in turn; a request by name (the request file or a PM) serves one, and the order then resumes at
+  the package that was due (`afterServe`), so a fallback can't shift every later package. One with
+  no row in that table has no package, and the CLI names it.
+- **Request mode is the recommended run-day default** (rs/158): run.ts writes each hand-off's
+  package name (`h12`) to the mule's request file before the trade, so a missed or repeated trade
+  cannot shift the packages; order mode is the fallback.
 
 ```sh
 bun speedrun/helpers/mule-ledger.ts [--form ask|fixed] [--rows H12]       # { packages } for ROLE_OPTIONS
