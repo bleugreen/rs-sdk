@@ -1,7 +1,8 @@
 // RUN-ORDER.md and STEP-MANIFEST.md re-summed from their own tables, with the cross-checks a
 // fold-in must keep: section 2's step table against its "Steps and legs" row, section 6's leg
 // cells against the table's legs, section 7's lines against its total rows, the M / I / E split
-// against the knife-on total, and STEP-MANIFEST.md section 1 against the step table.
+// against the knife-on total, STEP-MANIFEST.md section 1 against the step table, and S16's Magic 77
+// with O43a on.
 //
 //   bun docs/speedrun/scripts/run-order-sums.ts
 //   EXPECT=34914.4,32624.7,37569.4,35738.7,38305.4,36504.7 bun docs/speedrun/scripts/run-order-sums.ts
@@ -12,6 +13,7 @@
 // any mismatch. FROM names the six totals before a re-pricing and prints each one's change. Figures may carry half ticks (legs measured to 0.5, the Grand Tree's segment A).
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { baseToXp, levelForXp } from '../../../speedrun/lib/xp.ts';
 
 const dir = join(import.meta.dir, '..');
 const ro = readFileSync(join(dir, 'RUN-ORDER.md'), 'utf8').split('\n');
@@ -111,6 +113,20 @@ for (const l of man.slice(mh + 2)) {
 console.log(`STEP-MANIFEST.md section 1: steps ${r1(ms)} / ${r1(msb)}, legs ${r1(ml)} / ${r1(mlb)}`);
 eq(ms, se, 'manifest steps (expected) against section 2'); eq(msb, sb, 'manifest steps (best) against section 2');
 eq(ml, le, 'manifest legs (expected) against section 2'); eq(mlb, lb, 'manifest legs (best) against section 2');
+
+// O43a's guard: with defensive casting on, S16 must still arrive at Magic 77 (Fire Wave's 75 boosted
+// and S18's Charge at 80 rest on it); the sensitivity row states the arrival, the Magic O43a gives up
+// and the result, and this re-derives the level from the engine's curve.
+const o43a = ro.join('\n').match(new RegExp(String.raw`S16 would arrive at (${NUM}) - (${NUM}) = (${NUM}) base Magic, still level (\d+)`));
+if (!o43a) fail.push('O43a: no "S16 would arrive at A - B = C base Magic, still level L" sentence in RUN-ORDER.md');
+else {
+    const [arrive, cost, left, lvl] = [num(o43a[1]!), num(o43a[2]!), num(o43a[3]!), Number(o43a[4])];
+    const level = levelForXp(baseToXp(left));
+    console.log(`O43a: S16 arrives at ${arrive} - ${cost} = ${r1(arrive - cost)} base Magic, level ${level} (the row says ${lvl})`);
+    eq(arrive - cost, left, 'O43a: the arrival less the Magic it gives up');
+    if (level !== lvl) fail.push(`O43a: level ${level} against the row's ${lvl}`);
+    if (level < 77) fail.push(`O43a: S16 would arrive at Magic ${level}, under 77`);
+}
 
 if (fail.length) { console.error(`FAIL\n${fail.join('\n')}`); process.exit(1); }
 console.log('every cross-check passes');
