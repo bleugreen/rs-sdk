@@ -116,6 +116,17 @@ describe('altar-giver stock turn', () => {
         expect(await turn).toBe('missed');
     });
 
+    test('a turn that did not give reports ready afresh, which lifts the scored side\'s skip (MissBench)', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 100, inventory: [ESSENCE] }));
+        const g = giverWith(sdk);
+        const inner = g as unknown as { phase: string; readyAt: number | null };
+        inner.phase = 'armed';
+        inner.readyAt = 1;
+        const before = Date.now();
+        expect(await runTurn(g, { T: 103, myT: 103, armedTick: 100 })).toBe('no-receiver');
+        expect(inner.readyAt).toBeGreaterThanOrEqual(before);
+    });
+
     test('a receiver out of sight is reported, with nothing sent', async () => {
         const sdk = new FakeSdk(baseState({ tick: 100, inventory: [ESSENCE] }));
         expect(await runTurn(giverWith(sdk), { T: 103, myT: 103, armedTick: 100 })).toBe('no-receiver');

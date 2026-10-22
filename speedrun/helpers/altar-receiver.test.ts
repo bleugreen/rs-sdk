@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { NearbyPlayer } from '../../sdk/types';
-import type { GiverStatus } from './altar-cue';
+import { MissBench, type GiverStatus } from './altar-cue';
 import { giverOptions } from './altar-giver';
 import { altarData, count, ESSENCE, findItem, NOTE_IDS, roomTiles } from './altar-room';
 import { chooseBatch, planTurns } from './altar-receiver';
@@ -34,6 +34,14 @@ describe('chooseBatch', () => {
     const me = { x: 2844, z: 4832 };
     const nearby = [player('Cairn H70', 2845, 4832, 11), player('Cairn H71', 2843, 4832, 12), player('Cairn H72', 2845, 4831, 13)];
     const base = { schedule: 'tuned' as const, autoRobust: true, myLoggedInAt: 500, now: 11_000 };
+
+    test('a giver benched after a failed turn is skipped until it reports ready after that turn', () => {
+        const bench = new MissBench();
+        bench.miss('cairn_h70', 2);
+        const all = [status('cairn_h70', { readyAt: 1 }), status('cairn_h71', { readyAt: 3 })];
+        expect(chooseBatch(all, nearby, me, { ...base, bench }).map(c => c.giver)).toEqual(['cairn_h71']);
+        expect(chooseBatch([status('cairn_h70', { readyAt: 4 }), all[1]!], nearby, me, { ...base, bench }).map(c => c.giver)).toEqual(['cairn_h71', 'cairn_h70']);
+    });
 
     test('ready, fresh, adjacent givers, oldest ready first; diagonal ones are skipped', () => {
         const b = chooseBatch([status('cairn_h71', { readyAt: 5 }), status('cairn_h70', { readyAt: 3 }), status('cairn_h72')], nearby, me, base);
