@@ -278,7 +278,7 @@ through this filter on the Mac and run what it prints; never run a run-host comm
 the twin in mind, or the other way round:
 
 ```sh
-pbpaste | sed -e 's/id_ed25519_ashburn/id_ed25519_rehearsal/g' -e 's/known_hosts_ashburn/known_hosts_rehearsal/g' -e 's/RS_RUN_HOST/RS_TWIN_HOST/g' -e "s/'\"\\$RS_RUN_TAILNET\"'/127.0.0.1/g"
+pbpaste | sed -e 's/id_ed25519_ashburn/id_ed25519_rehearsal/g' -e 's/known_hosts_ashburn/known_hosts_rehearsal/g' -e 's/RS_RUN_HOST/RS_TWIN_HOST/g' -e 's/"[$]RS_RUN_TAILNET"/127.0.0.1/g'
 ```
 
 **Names and ports**, the same on both machines except the live view:
@@ -658,7 +658,7 @@ Two rules from this page apply to that launch:
 
 The recording is captured on the VM itself, not over RDP: ffmpeg grabs the session's X display
 (r: main, 09:13; rejected: recording at the Mac end over RDP). Start it **before SCORED's first
-login**, which is before step 7, and before the gate so the gate is measured with the capture
+login** (step 5a's hand-over, line 6), which is before step 7, and before the gate so the gate is measured with the capture
 running, as in the run. Bound: `T=9h` for the run, `T=30m` for a rehearsal. At the bound `timeout`
 sends SIGINT, which ffmpeg treats like `q`: it finishes the file:
 
@@ -735,11 +735,13 @@ reservation appears (rs/147's HOST.md, "Run-capable twin").
    2026-10-21 the server's own tick distribution was the same on both machines to the millisecond
    while one address's path held ticks (m, the host thread's pairs, 21:00-23:00Z). If they cannot
    overlap (one ssh line down, say), run them back to back, the run host first, and record that they
-   did not share a minute.
+   did not share a minute. **Only reads taken after a machine's last address change count**, here
+   and in the gate history: a read is a dated read of that machine's route at the time ("The host").
 2. **Choose.**
    - **One passes:** start on it.
-   - **Both pass:** start on **the run host**, the default: its new address reads clean ("Measured:
-     the route after the address change") and the run host stays preferred by its documentation
+   - **Both pass:** start on **the run host**, the default: its route read clean after its 23:11Z
+     address change ("Measured: the route after the address change"; re-qualified after any later
+     change), and the run host stays preferred by its documentation
      (main, 15:54 PDT; under tenet 17 that is only a default). **The tiebreak:** start on the twin
      instead only when its read is clearly better in that minute, meaning the run host passed at the
      margin ((a) 58 or 59 of 60, or (c) exactly 2 catch-ups a minute, or a (d) sample under 60 loops
@@ -760,6 +762,19 @@ reservation appears (rs/147's HOST.md, "Run-capable twin").
    rehearsals pause during the gate and the run). rs/147's HOST.md (the host thread's text, 609fe89e)
    lets them resume on the machine not chosen right after the choice; until that is reconciled this
    page follows tenet 17 and the mission's brief (RUN-ORDER.md O42).
+6. **Hand over from the gate to the run, on the chosen machine** (main's recording rule, 18:16 PDT
+   2026-10-21, after cairn_casts' rehearsal recorded the gate account's tab instead of the attempt
+   because the gate tab stayed on top of the recorded display; rs/147):
+   1. the gate probe tab is **logged out and closed** before the run tab opens (step 6's
+      logout-before-Chrome-stops command does both);
+   2. the run tab is the **only browser window on the recorded display**: `DISPLAY=:10 xwininfo
+      -root -tree` lists one `Bot Client` window (step 3's check);
+   3. the recording is **already running before the run tab's login** (step 5);
+   4. **a live frame of the capture shows the run tab**: the live view, a grab of the same display,
+      shows SCORED's tab before step 7's tab-login. This is a pass line of the gate, beside tenet
+      12's (a)-(d): no start until it holds. A wrong window costs the run's evidence, not ticks
+      (RUN-ORDER.md R20);
+   5. any later probe runs on **the other machine**, never on the recorded display.
 
 **No second gate mid-run.** SCORED's logged-in ticks keep counting and the recording, the live view
 and the helpers are on the chosen machine, so the run never stops to re-measure or to change
@@ -908,7 +923,8 @@ in the run's environment turns it off, and `SPEEDRUN_TICKMON_LATE_MS` changes th
 
 ## 8. Stop the recording and pull it
 
-On the chosen machine (in its ssh form). After SCORED's final clean logout (the run script's `logoutClean`), and only once that logout is
+On the chosen machine (in its ssh form). The recording holds the run only if step 5a's hand-over
+(line 6) passed: the run tab alone on the recorded display. After SCORED's final clean logout (the run script's `logoutClean`), and only once that logout is
 confirmed, stop ffmpeg with `q`, so it finishes the file, and check what it wrote. The final logout
 is what writes SCORED's hiscore row (RUN-ORDER.md section 4, "Final logout"). With `RUN_COMMIT` at
 or after `c2d9eada` ("Credentials"), `logoutClean` confirms the logout from the page's own in-game
