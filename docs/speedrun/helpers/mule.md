@@ -234,6 +234,16 @@ It reports, per row, the ticks on its clock, the staging ticks, the free slots b
 and what moved, and ends holding exactly what it started with, by id. The mule's first and last
 bank reports in the dev log are the before and after for the reconciliation.
 
+**mule1's own cue directory** (rs/186's ruling). `cue.json` is one file per directory, so a mule
+cue in the givers' shared directory would replace theirs (H4e at S07's end, beside the bone
+givers'). mule1's run-day options therefore carry `cueDir: <cue root>/mule` (`muleCueDir` in
+`mule-ledger.ts`), and run.ts's cue keeper writes mule1's cues and top-up asks there.
+`mule-ledger.ts` prints the run-day options with it (`--cue-root` names the run host's cue root;
+default `RC_CUE_DIR`, else `run-machine/rc-cue`), and `--check` reports a config whose cue directory
+is any other, the shared one included. The directory is set in the config, never derived inside
+mule.ts, because the launcher's cue gate must read the directory the role reads (HELPERS.md, "The
+cue gate"): a launcher entry's own `cueDir` and its options' agree, or the launcher refuses it.
+
 **Order mode and giving back.** In `order` mode every trade from the scored account
 takes the next package. A trade from the scored account while no package is pending
 is receive-only: the mule accepts any non-empty offer and banks it. A session that
@@ -295,7 +305,8 @@ ROLE_OPTIONS='{"mule":"cairn_mule1","items":["^logs$"]}' bun speedrun/helpers/mu
 Mule options: `serve` (the scored account), `couriers` (default `^cairn_h\d+$`),
 `packages`, `serveMode` (`order` | `request`), `giver` (`burst` | `stock`), `preRequest`
 (default true), `stand` (default 3185,3436), `ge`, `cueDir` (where package cues and top-up asks
-are read; default `RC_CUE_DIR`, else `run-machine/rc-cue`, the directory the givers' cues use),
+are read; default `RC_CUE_DIR`, else `run-machine/rc-cue`; on run day mule1's own directory,
+`<cue root>/mule`, as `mule-ledger.ts` prints it),
 and for top-up lines `askWaitTicks` (default 3).
 
 **H12o, the atoll helper.** cairn_h45 runs the mule role from the run-machine launcher, logged

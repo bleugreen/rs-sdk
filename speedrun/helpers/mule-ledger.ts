@@ -16,18 +16,22 @@
 // 'order', the fallback to asking by cue); each also records the step it feeds, the first S row
 // after it (H12 before S15).
 //
-//   bun speedrun/helpers/mule-ledger.ts [--form ask|fixed] [--rows H1,H12] [--on-request H4e] [--manifest PATH]
-//       prints { packages } for the mule's options (default MULE1_ORDER, then MULE1_ON_REQUEST)
-//   ... --check FILE [--account cairn_mule1]   drift of FILE's packages (mule options, a packages
-//       list, or fleet.json) against the ledger; exit 1 on any
+//   bun speedrun/helpers/mule-ledger.ts [--form ask|fixed] [--rows H1,H12] [--on-request H4e] [--manifest PATH] [--cue-root DIR]
+//       prints the mule's run-day options { serveMode: 'request', cueDir, packages } (default
+//       MULE1_ORDER, then MULE1_ON_REQUEST); cueDir is muleCueDir, <cue root>/mule, the mule's own
+//   ... --check FILE [--account cairn_mule1] [--cue-root DIR]   drift of FILE's packages and cue
+//       directory (mule options, a packages list, fleet.json or a launcher config) against the
+//       ledger; exit 1 on any
 //   ... --bank FILE [--account cairn_mule1]    the packages staged back to back against the account's
 //       bank in stockpile.json (stockWalk): missing, ambiguous, top-ups short
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import type { BankItem } from '../../sdk/types';
 import { namesNote, refLabel, refMatches, type ItemRef } from '../lib/items';
 import { noteLink, type ObjPack } from '../lib/obj-pack';
 import { gameName, planHandOff } from '../runner/handoff';
+import { cueDir } from './altar-cue';
 import { itemLabel, MANIFEST, parseLedger, type InEntry, type LedgerRow } from '../tools/slot-ledger';
 import { isStackableName, isTopUp, packageOf, planPackage, type Package, type PackageItem } from './mule';
 
@@ -219,10 +223,15 @@ export function configPackages(config: unknown, account = 'cairn_mule1'): unknow
  * How a mule's configured packages differ from the ledger's; empty when they agree. In order mode
  * every trade takes the next package, so a missing, extra or reordered package is drift too. Each
  * line is compared by identity (obj id, or name), count or top-up max, and noted; a top-up package
- * by its scope.
+ * by its scope. With `o.cueDir`, the config's cue directory (configCueDir) must be that one.
  */
-export function muleDrift(config: unknown, ledger: readonly LedgerPackage[], o: { account?: string; pack?: ObjPack } = {}): string[] {
+export function muleDrift(config: unknown, ledger: readonly LedgerPackage[], o: { account?: string; pack?: ObjPack; cueDir?: string } = {}): string[] {
     const out: string[] = [];
+    if (o.cueDir !== undefined) {
+        const have = configCueDir(config, o.account);
+        const bare = (d: string) => d.replace(/\/+$/, '');
+        if (have === null || bare(have) !== bare(o.cueDir)) out.push(`cueDir ${have ?? 'none (the shared cue directory)'}, the run's ${o.cueDir}`);
+    }
     const pack = o.pack;
     const configured: Package[] = [];
     configPackages(config, o.account).forEach((raw, i) => {
@@ -265,6 +274,34 @@ export function muleDrift(config: unknown, ledger: readonly LedgerPackage[], o: 
         if (!!have.onRequest !== l.onRequest) out.push(`${l.row}: ${l.onRequest ? 'served in order, but only on request in the ledger list' : 'served only on request, but in the order in the ledger list'}`);
     }
     return out;
+}
+
+/**
+ * The mule's own cue directory: `mule` under the run's cue root (altar-cue.ts cueDir: RC_CUE_DIR, else
+ * run-machine/rc-cue). cue.json is one file per directory, so a mule cue in the givers' shared
+ * directory would replace theirs (H4e at S07's end, beside the bone givers'); the mule's package cues
+ * and top-up asks live here instead (rs/186's ruling). It is set in the mule's config, never derived
+ * inside mule.ts: the launcher's cue gate must read the directory the role reads (standalone.ts).
+ */
+export function muleCueDir(cueRoot: string = cueDir()): string {
+    return join(cueRoot, 'mule');
+}
+
+/** The mule's run-day options from the ledger, less `serve` (the scored account, from the run host's private config). */
+export function muleRunOptions(ledger: readonly LedgerPackage[], cueRoot?: string): { serveMode: 'request'; cueDir: string; packages: Package[] } {
+    return { serveMode: 'request', cueDir: muleCueDir(cueRoot), packages: packagesOf(ledger) };
+}
+
+/** The cue directory a config gives the account's mule: a launcher entry's own cueDir, else its options'; null for none (the shared default). */
+export function configCueDir(config: unknown, account = 'cairn_mule1'): string | null {
+    if (Array.isArray(config)) return null;
+    const c = (config ?? {}) as Record<string, unknown>;
+    if (Array.isArray(c.accounts)) {
+        const entry = (c.accounts as Record<string, unknown>[]).find(a => a.account === account);
+        if (!entry) throw new Error(`the fleet config has no entry for ${account}`);
+        return typeof entry.cueDir === 'string' ? entry.cueDir : configCueDir(entry.options ?? {}, account);
+    }
+    return typeof c.cueDir === 'string' ? c.cueDir : null;
 }
 
 // ------------------------------------------------------------------ stock
@@ -315,8 +352,11 @@ export function main(argv: readonly string[]): number {
     const ledger = muleFromLedger(manifest, { form, ...(rows ? { rows } : {}), ...(onRequest ? { onRequest } : {}) });
     const check = arg(argv, '--check');
     const bankFile = arg(argv, '--bank');
+    const cueRoot = arg(argv, '--cue-root');
     if (check) {
-        const drift = muleDrift(JSON.parse(readFileSync(check === '-' ? 0 : check, 'utf8')), ledger, { account });
+        const config: unknown = JSON.parse(readFileSync(check === '-' ? 0 : check, 'utf8'));
+        // A bare packages list carries no cue directory to compare.
+        const drift = muleDrift(config, ledger, { account, ...(Array.isArray(config) ? {} : { cueDir: muleCueDir(cueRoot) }) });
         console.log(drift.length ? drift.join('\n') : `no drift: ${ledger.map(l => l.row).join(', ')} (${form} form)`);
         return drift.length ? 1 : 0;
     }
@@ -328,7 +368,7 @@ export function main(argv: readonly string[]): number {
         console.log(`${account}'s bank as of ${entry.asOf}, the packages served back to back: ${short.length ? `\n${short.join('\n')}` : 'every package stages in full'}`);
         return short.length ? 1 : 0;
     }
-    console.log(JSON.stringify({ packages: packagesOf(ledger) }, null, 2));
+    console.log(JSON.stringify(muleRunOptions(ledger, cueRoot), null, 2));
     if (!onRequest && !rows) for (const id of onRequestGaps(manifest)) console.error(`${id}: served on request, but the ledger has no ${id} row, so it has no package`);
     for (const l of ledger) {
         const notes = [`${l.slots} slots`, l.takesBack.length ? `takes back ${l.takesBack.map(b => b.label).join('; ')}` : 'takes nothing back', ...(l.moduleLines.length ? [`the module's: ${l.moduleLines.join(', ')}`] : [])];
