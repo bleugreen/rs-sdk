@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { BotWorldState, InventoryItem, PlayerState, QuestJournalState } from '../../sdk/types';
+import * as pathfinding from '../../sdk/pathfinding';
 import { baseState } from '../lib/fake-sdk';
 import { configId } from '../lib/world';
 import { Observation, resolveResume } from '../runner/resume';
@@ -189,6 +190,10 @@ describe('Elvarg', () => {
 });
 
 describe("Melzar's Maze rooms (offline pathfinder, every maze door shut)", () => {
+    // The collision-map load runs here, at collection, not in a hook: bun holds beforeAll to the same
+    // 5 s timeout as a test, and the load is a one-off that took 0.2 s on an idle host and 4.8 s on a
+    // loaded one. The test's own bound then covers only the 15 path searches (~0.1 s idle).
+    pathfinding.initPathfinding();
     const at = (x: number, z: number, level = 0, inv: InventoryItem[] = []) => mazeMove(world({ at: [x, z, level], inv }))?.label ?? null;
     test('each room maps to its move', () => {
         expect(at(2940, 3248)).toBe('rat, red door');
@@ -206,5 +211,5 @@ describe("Melzar's Maze rooms (offline pathfinder, every maze door shut)", () =>
         expect(at(2935, 9656)).toBe('chest, exit ladder');
         expect(at(2939, 3256, 0, [part(1)])).toBe('exit door');
         expect(at(2942, 3248)).toBeNull();
-    });
+    }, 10_000);
 });
