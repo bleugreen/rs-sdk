@@ -56,7 +56,7 @@ describe('kitCheck', () => {
 describe('substituted checks replace SCORED-only gates', () => {
     test("TGV A: the helper's kit, not H7 (no staff of fire, no runes, Prayer 1)", () => {
         const s = state({
-            quests: { tree: 'not_started' } as BotWorldState['quests'],
+            quests: { tree: 'not_started' } as unknown as BotWorldState['quests'],
             inventory: [...Array.from({ length: 6 }, () => item('Logs')), ...Array.from({ length: TGV_KIT.sharks }, () => item('Shark'))],
             equipment: [item('Rune scimitar')],
             player: at(tgv.ARRIVAL.x, tgv.ARRIVAL.z),
@@ -70,9 +70,9 @@ describe('substituted checks replace SCORED-only gates', () => {
     test('GT A: needs TGV complete and the tree door, not Plague City, Magic or Prayer', () => {
         const a = gtPlan().substitute.A!;
         const door = at(grandTree.TILES.arrival.x, grandTree.TILES.arrival.z);
-        expect(a.preconditions!(state({ quests: { tree: 'complete', grandtree: 'not_started' } as BotWorldState['quests'], player: door }), {})).toBe(true);
-        expect(a.preconditions!(state({ quests: { tree: 'started', grandtree: 'not_started' } as BotWorldState['quests'], player: door }), {})).toMatch(/Tree Gnome Village/);
-        expect(a.preconditions!(state({ quests: { tree: 'complete', grandtree: 'not_started' } as BotWorldState['quests'], player: at(3200, 3200) }), {})).toMatch(/not at the Grand Tree door/);
+        expect(a.preconditions!(state({ quests: { tree: 'complete', grandtree: 'not_started' } as unknown as BotWorldState['quests'], player: door }), {})).toBe(true);
+        expect(a.preconditions!(state({ quests: { tree: 'started', grandtree: 'not_started' } as unknown as BotWorldState['quests'], player: door }), {})).toMatch(/Tree Gnome Village/);
+        expect(a.preconditions!(state({ quests: { tree: 'complete', grandtree: 'not_started' } as unknown as BotWorldState['quests'], player: at(3200, 3200) }), {})).toMatch(/not at the Grand Tree door/);
     });
 
     test('MM A: both prerequisite quests complete, MM not started (or the seal already held)', () => {
@@ -100,10 +100,10 @@ describe('parsePhases', () => {
 describe('nearestWaypoint', () => {
     test('joins the agility route where it passes nearest, not at Lumbridge', () => {
         const route = ROUTES.spawnToGnome;
-        // The Grand Exchange: the route's Barbarian Village stretch, not its Lumbridge start.
+        // The Grand Exchange: the route's Falador stretch (Chebyshev 200), not its Lumbridge start.
         const i = nearestWaypoint(route, { x: 3165, z: 3487 });
         expect(i).toBeGreaterThan(0);
-        expect(route[i]).toEqual([3052, 3278]);
+        expect(route[i]).toEqual([3000, 3287]);
         expect(nearestWaypoint(route, { x: 3201, z: 3237 })).toBe(0);
     });
 });
