@@ -408,30 +408,28 @@ export class CueGate {
         for (const w of this.wakes) w();
     }
 
-    /** Settles on the login scope's first open or stop, after `maxMs` (expired), or when `cancelled` resolves (stopped). */
+    /** The login's outcome so far: open, or stop (the login scope's, or the stop scope's), or null while waiting. */
+    private loginResult(): LoginWait | null {
+        if (this.login !== 'waiting') return { result: this.login.result, cue: this.login.cue };
+        if (this.stopped) return { result: 'stop', cue: this.stopped };
+        return null;
+    }
+
+    /** Settles on the login scope's first open or stop (or the stop scope's stop), after `maxMs` (expired), or when `cancelled` resolves (stopped). */
     async waitForLogin(maxMs: number, cancelled: Promise<unknown>): Promise<LoginWait> {
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        let wake: () => void = () => undefined;
-        const settled = new Promise<void>(r => (wake = r));
-        this.wakes.add(wake);
-        try {
-            for (;;) {
-                if (this.login !== 'waiting') return this.login.result === 'open' ? { result: 'open', cue: this.login.cue } : { result: 'stop', cue: this.login.cue };
-                if (this.stopped) return { result: 'stop', cue: this.stopped };
-                const r = await Promise.race([
-                    settled.then(() => 'cue' as const),
-                    new Promise<'expired'>(res => (timer = setTimeout(() => res('expired'), maxMs))),
-                    cancelled.then(() => 'stopped' as const)
-                ]);
-                clearTimeout(timer);
-                if (r === 'expired' || r === 'stopped') {
-                    // A cue that settled it in the same turn still counts.
-                    if (this.login === 'waiting' && !this.stopped) return { result: r };
-                }
-            }
-        } finally {
+        const deadline = Date.now() + maxMs;
+        for (;;) {
+            const settled = this.loginResult();
+            if (settled) return settled;
+            let wake: () => void = () => undefined;
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            const woken = new Promise<'cue'>(r => (wake = () => r('cue')));
+            this.wakes.add(wake);
+            const r = await Promise.race([woken, new Promise<'expired'>(res => (timer = setTimeout(() => res('expired'), Math.max(0, deadline - Date.now())))), cancelled.then(() => 'stopped' as const)]);
             clearTimeout(timer);
             this.wakes.delete(wake);
+            // A cue that settled it meanwhile still counts.
+            if (r !== 'cue') return this.loginResult() ?? { result: r };
         }
     }
 
