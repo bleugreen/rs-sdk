@@ -103,7 +103,7 @@ export interface RunConfig {
 /** Where the modules' cues go: run.ts's CueKeeper, a recorder in tests. */
 export interface CueSink {
     /** Open `scope`'s cue (a fresh session when `fresh`, else only when another scope or none is open). */
-    open(scope: CueScope, ctx: StepContext<unknown>, o: { fresh: boolean }): Promise<void>;
+    open(scope: CueScope, ctx: Pick<StepContext<unknown>, 'sdk'>, o: { fresh: boolean }): Promise<void>;
     /** Write the stop of `scope`'s cue if it is the open one. */
     stop(scope: CueScope, ctx: StepContext<unknown>): void;
 }
@@ -178,12 +178,12 @@ export const INTERNAL: Readonly<Record<string, string>> = {
 export const NOT_TRADES: readonly string[] = ['H2', 'H4m.x', 'H21b'];
 
 /**
- * The cannon rows wait for the one cannon receiver (handoff.ts's cue option, cannon-receiver.ts
- * reduced to a thin stand-in, after rs/41's fleet snapshot 6): until then they refuse like a
- * missing step, so no second receiver ever runs.
+ * The cannon rows: the holder (cannon.ts serve mode) serves only the receiver its cue names, so
+ * these hand-offs go through handoff.ts's cue option (the one cannon receiver; the lab stand-in
+ * helpers/cannon-receiver.ts runs the same sequence), the cue opened by the run's CueSink so S14's
+ * and S27's own cues continue the same session.
  */
 export const CANNON_ROWS: Readonly<Record<string, CueScope>> = { H11: { step: 'S14', family: 'cannon' }, H23: { step: 'S27', family: 'cannon' } };
-export const CANNON_PENDING = 'rs/393: one cannon receiver, after fleet snapshot 6';
 
 export function ledgerRows(manifest: string): LedgerRow[] {
     const { rows, errors } = parseLedger(manifest);
@@ -375,7 +375,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
     const coverage = ledgerCoverage(rows);
     if (coverage.length) throw new Error(`ledger coverage: ${coverage.join('; ')}`);
     const placed = Object.keys(PLACEMENT).filter(id => inLedger.has(id));
-    const missingPartners = [...placed, ...KIT_PARTNER_ROWS].filter(id => !cfg.partners[id] && !CANNON_ROWS[id]);
+    const missingPartners = [...placed, ...KIT_PARTNER_ROWS].filter(id => !cfg.partners[id]);
     if (missingPartners.length) throw new Error(`the run config names no partner for ${missingPartners.join(', ')}`);
     const partner = (id: string) => cfg.partners[id]!;
     const kitFrom = (id: string) => ({ kitFrom: partner(id) });
@@ -501,11 +501,9 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         }
         const next = out.find(s => s.done);
         const supersededBy: ObservedCheck<unknown> | undefined = next?.done ? (ob, c) => next.done!(ob, c) : undefined;
-        if (CANNON_ROWS[e.row]) {
-            out.unshift({ ...missingStep(e.id, `${e.row} hand-off (cannon)`, CANNON_PENDING), kind: 'handoff' });
-            continue;
-        }
-        out.unshift(tag(e.id, 'handoff', handOffStep(handOffFrom(manifest, e.row), { partner: partner(e.row), ...(supersededBy ? { supersededBy } : {}) })));
+        const scope = CANNON_ROWS[e.row];
+        const cue = scope ? { scope, open: (ctx: Pick<StepContext<unknown>, 'sdk'>) => o.cues.open(scope, ctx, { fresh: false }) } : undefined;
+        out.unshift(tag(e.id, 'handoff', handOffStep(handOffFrom(manifest, e.row), { partner: partner(e.row), ...(supersededBy ? { supersededBy } : {}), ...(cue ? { cue } : {}) }), cue ? { cue: scope } : {}));
     }
     return out.map(censused);
 }
