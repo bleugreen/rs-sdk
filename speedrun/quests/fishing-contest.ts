@@ -98,8 +98,12 @@ export const FENCE: Box = { x0: 2622, z0: 3424, x1: 2642, z1: 3452 };
 export const inFence = (s: BotWorldState) => inBox(s, FENCE);
 const BONZO_RE = /^bonzo$/i;
 const BONZO_AT = { x: 2641, z: 3439 } as const;
-/** garlicpipe (loc 41, one of three wall pipes along z 3446). */
-export const PIPE = { x: 2637, z: 3446, id: 41 } as const;
+/**
+ * garlicpipe (loc 41): of the three wall pipes along z 3446 only this one can be reached (the client
+ * finds no route to 2636 or 2637, and a use on them gets "I can't reach that!"; m, lab probe). The
+ * use is made from its own tile.
+ */
+export const PIPE = { x: 2638, z: 3446, id: 41 } as const;
 /** 0_41_53_sinisterfishspot, the pipe spot: with the worm it gives the carp. */
 export const CARP_SPOT = { x: 2637, z: 3444 } as const;
 
