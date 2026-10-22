@@ -20,6 +20,7 @@
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem, NearbyLoc } from '../../sdk/types';
+import { tickClock, type TickClock } from '../lib/wait';
 import type { Role, RoleContext } from './role';
 import { runStandalone } from './role';
 
@@ -51,6 +52,11 @@ const PICKAXES: { name: RegExp; level: number; attack: number }[] = [
     { name: /^bronze pickaxe$/i, level: 1, attack: 1 }
 ];
 
+/** Pickaxe cycles are 3-8 ticks: more observed ticks than this without a gain means the mining loop stopped, and the rock is clicked again. */
+export const MINE_STALL_TICKS = 12;
+/** A page can close a tick before the next one opens: a dialog closed for more observed ticks than this has ended the conversation. */
+export const DIALOG_GAP_TICKS = 5;
+
 export const inMine = (s: BotWorldState | null) =>
     !!s?.player && s.player.worldX >= 2870 && s.player.worldX <= 2950 && s.player.worldZ >= 4790 && s.player.worldZ <= 4880;
 const inTowerBasement = (s: BotWorldState | null) =>
@@ -60,7 +66,7 @@ const onTutorialIsland = (s: BotWorldState | null) =>
 
 class Stop extends Error {}
 
-class EssenceMiner {
+export class EssenceMiner {
     private bot: BotActions;
     private sdk: BotSDK;
     private questDone = false;
@@ -116,6 +122,17 @@ class EssenceMiner {
         } catch {
             return false;
         }
+    }
+    /**
+     * lib/wait's tickClock as a counter only: forward steps of `state.tick`, so a
+     * client relaunch neither resets nor freezes the count. The loops that use it
+     * wait with sdk.waitForTicks, whose own timeout is their dead-client bound.
+     */
+    private tickCounter(): TickClock {
+        const tick = this.sdk.getState()?.tick;
+        const clock = tickClock(tick, () => {}, tick);
+        clock.stop();
+        return clock;
     }
     private messagesSince(tick: number): string[] {
         return (this.sdk.getState()?.gameMessages ?? []).filter(m => m.tick >= tick).map(m => m.text);
@@ -180,7 +197,7 @@ class EssenceMiner {
      * first pattern in `choices` that matches an offered option is clicked; if none
      * matches, the conversation is abandoned. Returns every text line shown.
      */
-    private async converse(npc: RegExp, choices: RegExp[]): Promise<{ lines: string[]; offered: string[][] }> {
+    async converse(npc: RegExp, choices: RegExp[]): Promise<{ lines: string[]; offered: string[][] }> {
         const lines: string[] = [];
         const offered: string[][] = [];
         const startTick = this.tick();
@@ -188,18 +205,19 @@ class EssenceMiner {
         const talk = await this.bot.talkTo(npc);
         if (!talk.success) throw new Error(`talkTo ${npc}: ${talk.message}`);
         const deadline = Date.now() + 120_000;
-        let closedSince = 0;
+        const ticks = this.tickCounter();
+        let closedAt: number | null = null;
         while (Date.now() < deadline) {
             const s = this.sdk.getState();
+            if (s) ticks.see(s);
             const d = s?.dialog;
             if (!d?.isOpen) {
-                // A page can close a tick before the next one opens.
-                if (!closedSince) closedSince = Date.now();
-                if (Date.now() - closedSince > 1500) break;
+                closedAt ??= ticks.elapsed;
+                if (ticks.elapsed - closedAt > DIALOG_GAP_TICKS) break;
                 await this.sdk.waitForTicks(1);
                 continue;
             }
-            closedSince = 0;
+            closedAt = null;
             if (d.isWaiting) {
                 await this.sdk.waitForTicks(1);
                 continue;
@@ -447,29 +465,31 @@ class EssenceMiner {
     }
 
     /** Mine until the pack is full. Returns essence gained. */
-    private async mineUntilFull(): Promise<number> {
+    async mineUntilFull(): Promise<number> {
         const before = this.count(ESSENCE);
         let lastCount = before;
-        let lastGainAt = Date.now();
+        const ticks = this.tickCounter();
+        let lastGainAt = 0;
         let rock: NearbyLoc | null = null;
         while (this.freeSlots() > 0) {
             this.checkSignal();
             const s = this.state();
+            ticks.see(s);
             if (!inMine(s)) throw new Error('left the mine while mining');
             if (s.dialog.isOpen) await this.bot.dismissBlockingUI(); // level-up
             const now = this.count(ESSENCE);
             if (now > lastCount) {
                 lastCount = now;
-                lastGainAt = Date.now();
+                lastGainAt = ticks.elapsed;
             }
-            // Pickaxe cycles are 3-8 ticks; 12 ticks without a gain means the loop stopped.
-            const stalled = Date.now() - lastGainAt > 12 * 300 || rock === null;
+            const stalled = ticks.elapsed - lastGainAt > MINE_STALL_TICKS || rock === null;
             if (stalled) {
                 // The SDK names mining rocks "Rocks <ore>": this one is "Rocks rune essence ore".
                 rock = await this.findLoc(/rune essence/i, /^mine$/i, 40);
                 if (!rock) throw new Error(`no essence rock visible from ${JSON.stringify(this.pos())}`);
                 await this.bot.interactLoc(rock, /mine/i);
-                lastGainAt = Date.now();
+                ticks.see(this.state());
+                lastGainAt = ticks.elapsed;
                 continue;
             }
             await this.sdk.waitForTicks(1);
