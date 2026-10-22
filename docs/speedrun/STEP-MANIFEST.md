@@ -2455,9 +2455,9 @@ S10b) or fire (S10b to S14) supplies its element.
 | T08-09 | - | law rune x2 (consume: Ardougne teleport; the staff of water covers the water) | - | 0 | RUN-ORDER T08-09 (r) |
 | H4m.x | - | - | - | 0 | SUPPLIES H4m: no bones on the 2026-10-23 forecast, the row in force; on the 21:20 UTC stock ~85 in loads of 24, 24, 24 and 13, sized to SCORED's free slots (r) |
 | S09 | - | - | - | 4 | MAN entry 4 (r); `mining.ts` FREE_SLOTS 4: ore, a gem, a stray fletch (r) |
+| S10a | - | - | - | 0 | retired: Prayer comes from S07, RUN-ORDER S10a (r) |
 | H7 | normal logs x6 [u]; staff of fire x1 [u]; amulet of magic x1 [u]; antipoison x1 [u]; shark x2 [u]; death rune x110 [s]; chaos rune x40 [s]; air rune x550 [s] | - | +staff of fire; -staff of water; +amulet of magic | 13 | SUPPLIES H7 (r) |
 | S10b | gnome amulet x1 [u] (the reward, `quest_tree.rs2:97`); tree gnome village items x? [u] (the orbs of protection: whether any stays is not read) | normal logs x6 (hand-in: Montai); death rune x26 (consume: ~26 Fire Blasts); air rune x104 (consume) | - | ? | `quest_tree` (r); MAN entry 14 (r); the cast count ~26 (i) |
-| S10a | - | - | - | 0 | retired: Prayer comes from S07, RUN-ORDER S10a (r) |
 | S11a | - | - | - | 0 | MAN entry 1 (r) |
 | H8 | agility potion x1 [u]; law rune x5 [s] (1 Varrock, 4 Ardougne); air rune x3 [s]; fire rune x1 [s]; water rune x4 [s] | - | - | 2 | SUPPLIES H8 (r) |
 | S11b | grand tree items x? [u] (of the translation book, journal, lumber order, Glough's key and bark sample, which stay after the reward is not read) | chaos rune x31 (consume: ~31 Fire Bolts); air rune x93 (consume); law rune x3 (consume: one Varrock and one Ardougne teleport inside the quest); air rune x3 (consume); water rune x2 (consume) | - | 9 | MAN entry 8: 9 free at segment L, the quest's items (r); rs/202's lab, 14 free at L (m); the teleports inside the quest (i); the potion keeps its slot at 3 doses (r) |
