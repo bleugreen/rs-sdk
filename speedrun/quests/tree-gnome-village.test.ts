@@ -206,6 +206,14 @@ describe('H7: the kit', () => {
         expect(h7Want(kitted())).toEqual([]);
     });
 
+    test('A with a kitFrom and the full H7 kit already held sends nothing and passes its postconditions', async () => {
+        const sdk = new FakeSdk(kitted());
+        const a = steps({ kitFrom: 'Ashburn' }).find(s => s.name === `${stepId}:A-kit`)!;
+        await drive(sdk, a.run(ctxFor(sdk)), 10);
+        expect(sdk.sent).toEqual([]);
+        expect(a.postconditions(sdk.state!, {})).toBe(true);
+    });
+
     test('A without a giver and without the kit stops before any click', async () => {
         const sdk = new FakeSdk(scored());
         await expect(byLetter('A').run(ctxFor(sdk))).rejects.toThrow(/no kitFrom to receive H7/);

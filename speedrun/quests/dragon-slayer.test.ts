@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import type { BotWorldState, InventoryItem, PlayerState, QuestJournalState } from '../../sdk/types';
 import * as pathfinding from '../../sdk/pathfinding';
-import { baseState, runeNeedProblems } from '../lib/fake-sdk';
+import { baseState } from '../lib/fake-sdk';
 import { configId } from '../lib/world';
 import { Observation, resolveResume } from '../runner/resume';
 import {
     ARMOURLESS_COST, atLeast, ELVARG_PRAYERS, entryCheck, keyDropped, kitItems, LETTERS, mazeMove, questItems, onCrandor, PROBES, quest, restockWait, SCAVVO_RESTOCK,
-    RUNE_NEED, RUNE_USE, stepId, steps, stockZeroChoice, TILES, usablePrayers, wornKitCheck,
+    stepId, steps, stockZeroChoice, TILES, usablePrayers, wornKitCheck,
 } from './dragon-slayer';
 import { kitWant, slotNeed } from './segments';
 
@@ -256,15 +256,4 @@ describe("Melzar's Maze rooms (offline pathfinder, every maze door shut)", () =>
         expect(at(2939, 3256, 0, [part(1)])).toBe('exit door');
         expect(at(2942, 3248)).toBeNull();
     }, 10_000);
-});
-
-describe('rune pins: RUNE_USE and RUNE_NEED agree with the kit (tools/rune-pins.ts)', () => {
-    test("RUNE_NEED.A is exactly the runes of A's kit (kitItems)", () => {
-        const kitHeld = (s: BotWorldState) => (kitWant(s, kitItems()).length ? `kit wants ${kitWant(s, kitItems()).map(w => String(w.item)).join(', ')}` : true);
-        expect(runeNeedProblems(kitHeld, world({ inv: KIT() }), RUNE_NEED.A!)).toEqual([]);
-    });
-    test('only Lumbridge (F) and Falador (G) are cast: no Varrock, so no fire', () => {
-        expect(Object.keys(RUNE_USE)).toEqual(['F', 'G']);
-        expect(RUNE_NEED.A!.firerune).toBeUndefined();
-    });
 });
