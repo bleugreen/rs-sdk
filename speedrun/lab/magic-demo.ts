@@ -16,19 +16,17 @@
 //
 // --lab is the dry run on a local engine through lab.sh (its gateway and runner): it stages the
 // kit at Varrock west bank with staff commands, as the throwaway stands on the demo.
-import type { Subprocess } from 'bun';
-import { join, resolve } from 'node:path';
 import { wield } from '../lib/act';
-import { closeSession, loadBotEnv, logoutClean, openSession, type Session } from '../lib/session';
+import { closeSession, logoutClean, openSession, type Session } from '../lib/session';
 import { formatReport, report } from '../lib/ticks';
 import { travelTo } from '../lib/toll-gate';
 import { nextTick, waitUntil } from '../lib/wait';
 import { runSteps } from '../runner/step';
 import { enchantHeld, magicLevel, magicXp, steps, type MagicReport } from '../skills/magic';
 import { arg, botArg, labLog, result } from './common';
+import { startLoopbackGateway } from './loopback-gateway';
 import { cheat, leaveTutorial, mustTele } from './setup';
 
-const ROOT = resolve(import.meta.dir, '..', '..');
 const account = botArg();
 const lab = process.argv.includes('--lab');
 const COOP_GATE = { x: 3235, z: 3295 };
@@ -38,28 +36,7 @@ const say = (m: string, d?: Record<string, unknown>) => console.log(`demo: ${m}$
 const noStop = { shouldStop: () => false, logout: async () => {} };
 const count = (s: Session, re: RegExp) => s.sdk.getState()!.inventory.filter(i => re.test(i.name)).reduce((a, i) => a + i.count, 0);
 
-let gateway: Subprocess | null = null;
-if (!lab) {
-    const url = loadBotEnv(account).GATEWAY_URL ?? '';
-    const m = /^ws:\/\/127\.0\.0\.1:(\d+)\/?$/.exec(url);
-    if (!m) throw new Error(`bots/${account}/bot.env: GATEWAY_URL must be ws://127.0.0.1:<port> (tenet 12, the loopback gateway), not "${url}"`);
-    const port = m[1]!;
-    const up = () => fetch(`http://127.0.0.1:${port}/status`, { signal: AbortSignal.timeout(1500) }).then(() => true, () => false);
-    if (await up()) throw new Error(`something already answers on 127.0.0.1:${port}; pick another port`);
-    gateway = Bun.spawn([process.execPath, 'server/gateway/gateway.ts'], {
-        cwd: ROOT,
-        env: { ...process.env, AGENT_PORT: port, GATEWAY_HOSTNAME: '127.0.0.1', GATEWAY_PUBLIC_PORT: '0', LOGIN_SERVER: 'false', ENGINE_MANAGEMENT_URL: 'http://127.0.0.1:9' },
-        stdin: 'ignore',
-        stdout: Bun.file(join(process.env.TMPDIR ?? '/tmp', `magic-demo-gateway-${port}.log`)),
-        stderr: 'inherit',
-    });
-    const deadline = Date.now() + 20_000;
-    while (!(await up())) {
-        if (gateway.exitCode !== null || Date.now() > deadline) throw new Error(`gateway did not come up on 127.0.0.1:${port}`);
-        await Bun.sleep(250);
-    }
-    say('loopback gateway up', { port: Number(port) });
-}
+const gateway = lab ? null : await startLoopbackGateway(account, 'magic-demo');
 
 const s = await openSession(account, lab ? {} : { launch: true, readyTimeoutMs: 180_000 });
 let pass = false;

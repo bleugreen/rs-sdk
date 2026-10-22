@@ -46,6 +46,9 @@
 //                In a group, on one giver only: it carries them on every trip and offers them on the
 //                group's last load, which boneServer keeps for it
 //   finalN       bones on that last load (default n - finalExtras.length: the same free slots as every load)
+//   acceptReturn standing mode, rehearsals only (default false): after each trade take the load straight
+//                back from the scored-side account (bone-receiver.ts returnLoads), and when the group is
+//                done bank everything held, so the bank ends as it was staged. Never set on the run
 //   cueDir       default RC_CUE_DIR, else run-machine/rc-cue in the checkout
 //   scope        required: { step, family }, the cue this giver serves (altar-cue.ts CueScope):
 //                family 'bone' in the standing mode (S07), 'courier' in on-request (S18)
@@ -55,8 +58,8 @@
 // and once the trade is open it writes what it wants (the top-up ask, altar-cue.ts:
 // bones to fill its free slots, food back to 2, an arrowtip tier once) to the cue
 // directory. The courier can't size a load itself: it can't see the scored account's
-// inventory. It holds a side tile of the scored account (orthogonally adjacent, never
-// an NPC's tile, re-stepped whenever it moves), answers the request on the frame that
+// inventory. It holds a side tile of the scored account (orthogonally adjacent, no wall
+// on the edge between, never an NPC's tile, re-stepped whenever it moves), answers the request on the frame that
 // carries it, offers what the ask names (each item in one press), and refills to `hold`
 // bones and its `carry` list whenever it holds fewer than `refillBelow` bones or less
 // than a carried count. Why a side: an op on a player reaches it only from a side
@@ -74,7 +77,7 @@
 import { join } from 'node:path';
 import type { BotWorldState, NearbyPlayer } from '../../sdk/types';
 import { withdrawMany } from '../lib/bank';
-import { give, DROPPED_TICKS, openTrade, tradeOf, type GiveSpec } from '../lib/trade';
+import { give, DROPPED_TICKS, openTrade, receiveFrom, tradeOf, type GiveSpec } from '../lib/trade';
 import { waitUntil, type StateSource } from '../lib/wait';
 import { existsSync, readdirSync } from 'node:fs';
 import { runIsOn } from '../lib/run-mode';
@@ -139,6 +142,8 @@ export interface BoneGiverOptions {
     finalExtras: Extra[];
     /** Bones on the last load, the one that carries finalExtras. */
     finalN: number;
+    /** Rehearsal only: take each load back from the scored-side account, and bank everything at the end. */
+    acceptReturn: boolean;
     cueDir: string;
     scope: CueScope;
 }
@@ -230,9 +235,24 @@ export function boneGiverOptions(raw: Record<string, unknown>, env: Record<strin
         resendTicks: Number(raw.resendTicks ?? 100),
         finalExtras,
         finalN: finalExtras.length ? finalN : n,
+        acceptReturn: acceptReturnOption(raw.acceptReturn, mode, kind),
         cueDir: typeof raw.cueDir === 'string' ? raw.cueDir : cueDir(env),
         scope: scopeOption(raw.scope, [mode === 'standing' ? 'bone' : 'courier'])
     };
+}
+
+function acceptReturnOption(raw: unknown, mode: BoneMode, kind: string): boolean {
+    if (raw === undefined || raw === false) return false;
+    if (raw !== true) throw new Error('acceptReturn must be true or false');
+    if (mode !== 'standing' || kind !== 'bank') throw new Error('acceptReturn is for the standing mode with restock kind bank (a trade-and-return rehearsal)');
+    return true;
+}
+
+/** The same items merged by name: what to want back from a give()'s `gave`. */
+export function returnWants(gave: readonly { name: string; count: number }[]): { name: string; count: number }[] {
+    const by = new Map<string, number>();
+    for (const g of gave) by.set(g.name, (by.get(g.name) ?? 0) + g.count);
+    return [...by].map(([name, count]) => ({ name, count }));
 }
 
 /** The bank can't make the next load (bones or extras): in a group the giver leaves rather than retrying. */
@@ -401,13 +421,46 @@ export function npcTiles(s: BotWorldState | null | undefined): Tile[] {
 }
 
 /**
- * The side tiles of `receiver` the giver may hold, nearest to `me` first: orthogonally
- * adjacent, never a tile an NPC stands on (the knight the scored account pickpockets).
+ * A tile's collision flags on the courier's level: true when any bit of `mask` is set. At runtime
+ * the SDK pathfinder's map (sdk/pathfinding.ts isFlagged), which keeps rsmod's directional wall flags.
  */
-export function sideTiles(receiver: Tile, me: Tile, npcs: readonly Tile[]): Tile[] {
+export type FlagReader = (x: number, z: number, mask: number) => boolean;
+
+// rsmod's CollisionFlag wall bits (server/vendor/rsmod-pathfinder): a wall on that edge of the tile.
+const WALL_NORTH = 2;
+const WALL_EAST = 8;
+const WALL_SOUTH = 32;
+const WALL_WEST = 128;
+
+/**
+ * Whether a wall stands on the edge between orthogonal neighbours `a` and `b`, read from either
+ * tile's flags in the matching direction (the map flags a wall on both of its tiles; either is enough).
+ */
+export function wallBetween(a: Tile, b: Tile, flagged: FlagReader): boolean {
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const [out, back] = dx === 1 ? [WALL_EAST, WALL_WEST] : dx === -1 ? [WALL_WEST, WALL_EAST] : dz === 1 ? [WALL_NORTH, WALL_SOUTH] : [WALL_SOUTH, WALL_NORTH];
+    return flagged(a.x, a.z, out) || flagged(b.x, b.z, back);
+}
+
+/**
+ * True when `me` is on a side of `t` that `t` can trade from without stepping: orthogonally
+ * adjacent with no wall on the edge between. A stunned scored account cannot step, so across a
+ * wall its request draws 'I can't reach that!' and dies (rs/454's probe).
+ */
+export function onOpenSide(me: Tile, t: Tile, flagged: FlagReader): boolean {
+    return onSide(me, t) && !wallBetween(t, me, flagged);
+}
+
+/**
+ * The side tiles of `receiver` the giver may hold, nearest to `me` first: orthogonally
+ * adjacent, no wall on the edge between it and `receiver`, and never a tile an NPC stands on
+ * (the knight the scored account pickpockets). A blocking loc (a stall) is no wall: it stays.
+ */
+export function sideTiles(receiver: Tile, me: Tile, npcs: readonly Tile[], flagged: FlagReader): Tile[] {
     const dist = (a: Tile) => Math.abs(a.x - me.x) + Math.abs(a.z - me.z);
     return SIDES.map(([dx, dz]) => ({ x: receiver.x + dx, z: receiver.z + dz }))
-        .filter(t => !npcs.some(n => n.x === t.x && n.z === t.z))
+        .filter(t => !npcs.some(n => n.x === t.x && n.z === t.z) && !wallBetween(receiver, t, flagged))
         .sort((a, b) => dist(a) - dist(b));
 }
 
@@ -560,6 +613,12 @@ export class BoneGiver {
     private seeded = false;
     /** Why the giver went off early (BankShortError in a group). */
     private offDetail = '';
+    /** sdk/pathfinding.ts isFlagged, loaded by run() in on-request mode; until then no wall is known. */
+    private isFlagged: ((x: number, z: number, level: number, mask: number) => boolean) | null = null;
+    /** The collision flags on the level we stand on (the scored account's: it is in sight). */
+    private readonly flagged: FlagReader = (x, z, mask) => !!this.isFlagged?.(x, z, pos(this.s).level, mask);
+    /** acceptReturn: a returned load waits in the pack; bank it on the next cycle even though it is a full load. */
+    private mustBank = false;
 
     constructor(private readonly ctx: RoleContext) {
         this.o = boneGiverOptions(ctx.options);
@@ -651,7 +710,7 @@ export class BoneGiver {
         if (!s) return false;
         if (tradeOf(s).isOpen) return true;
         const r = this.receiverInSight();
-        return !!r && onSide(pos(s), r);
+        return !!r && onOpenSide(pos(s), r, this.flagged);
     }
 
     private receiverInSight(): NearbyPlayer | undefined {
@@ -671,6 +730,9 @@ export class BoneGiver {
             wasOpen = open;
         });
         try {
+            // The side tile's wall rule reads the SDK's collision map. The launch already loaded and
+            // warmed it (role.ts, sdk/runner.ts); imported here so the module alone does not load it.
+            if (this.o.mode === 'on-request') this.isFlagged = (await import('../../sdk/pathfinding')).isFlagged;
             await ensureOutOfTutorial(ctx);
             await ctx.bot.dismissBlockingUI();
             if (ctx.sdk.getTradeState().isOpen) await ctx.sdk.sendDeclineTrade();
@@ -689,6 +751,7 @@ export class BoneGiver {
                     await ctx.sdk.waitForTicks(10).catch(() => {});
                 }
             }
+            if (this.o.acceptReturn && !ctx.signal.aborted) await this.bankAll().catch(e => ctx.log('final bank failed', { error: String(e).slice(0, 200) }));
         } finally {
             unsubOpen();
             watcher.close();
@@ -707,7 +770,8 @@ export class BoneGiver {
         const k = this.loadsDone();
         const extras = carriesFinal || isFinalLoad(o, k) ? o.finalExtras : [];
         const bones = o.group.length ? o.n : loadBones(o, k);
-        if (this.held() !== bones || extras.some(e => count(this.s, exact(e.item)) < e.count)) {
+        if (this.mustBank || this.held() !== bones || extras.some(e => count(this.s, exact(e.item)) < e.count)) {
+            this.mustBank = false;
             this.setPhase('restock', carriesFinal ? 'with the last load\'s extras' : extras.length ? 'the last load' : '');
             await this.restock(bones, extras);
         }
@@ -758,6 +822,7 @@ export class BoneGiver {
             this.trades++;
             this.trip = { tick: this.s?.tick ?? 0, energy: this.energy(), at: pos(this.s) };
         }
+        if (r.ok && o.acceptReturn) await this.takeReturn(t.partner, r.gave);
         ctx.log('trade', { ok: r.ok, ticks: r.ticks, load, gave: r.gave.map(i => `${i.name} x${i.count}`), final: isFinalLoad(o, load), waited: req.waited, sends: req.sends, bounces: req.bounces, ...(r.reason ? { reason: r.reason } : {}) });
     }
 
@@ -779,7 +844,7 @@ export class BoneGiver {
             receiver = this.receiverInSight();
             if (!receiver) return;
         }
-        if (!onSide(pos(this.s), receiver)) {
+        if (!onOpenSide(pos(this.s), receiver, this.flagged)) {
             this.setPhase('travel', 'to a side tile');
             await this.stepToSide(receiver);
             return; // re-read where the scored account is now
@@ -851,11 +916,12 @@ export class BoneGiver {
      * courier stood 180-350 ticks in one standOn while the account moved on, and about half the due
      * top-ups found it 5-15 tiles off). Instead it waits at most SIDE_STEP_TICKS observed ticks, or
      * until it is on a side or the account has moved, and the caller re-reads. A side the walk did
-     * not get nearer to (a wall, a fence) yields to the next one on the following step.
+     * not get nearer to (a wall, a fence) yields to the next one on the following step. A side across
+     * a wall edge from the account is never chosen (sideTiles).
      */
     private async stepToSide(receiver: Tile): Promise<void> {
         const { ctx } = this;
-        const sides = sideTiles(receiver, pos(this.s), npcTiles(this.s));
+        const sides = sideTiles(receiver, pos(this.s), npcTiles(this.s), this.flagged);
         if (!sides.length) throw new Error(`no free side tile beside the scored account at ${receiver.x},${receiver.z}`);
         const side = sides[this.sideMisses % sides.length]!;
         const from = pos(this.s);
@@ -864,9 +930,9 @@ export class BoneGiver {
         const hash = this.cue?.receiver.sha256;
         await until(ctx, st => {
             const r = st.nearbyPlayers.find(p => nameHash(p.name) === hash);
-            return !r || r.x !== receiver.x || r.z !== receiver.z || onSide(pos(st), r);
+            return !r || r.x !== receiver.x || r.z !== receiver.z || onOpenSide(pos(st), r, this.flagged);
         }, SIDE_STEP_TICKS);
-        this.sideMisses = dist(pos(this.s)) < dist(from) || onSide(pos(this.s), receiver) ? 0 : this.sideMisses + 1;
+        this.sideMisses = dist(pos(this.s)) < dist(from) || onOpenSide(pos(this.s), receiver, this.flagged) ? 0 : this.sideMisses + 1;
     }
 
     /** Wait for the scored account's request. Resolves with the tick of the frame that carries it (or shows the trade open), or null when it moved off or the cue stopped. */
@@ -884,7 +950,7 @@ export class BoneGiver {
                 if (tradeOf(st).isOpen) return finish(st.tick);
                 // Off its side (it moved, or we were pushed): re-step before the next request.
                 const receiver = st.nearbyPlayers.find(p => nameHash(p.name) === hash);
-                if (!receiver || !onSide(pos(st), receiver)) return finish(null);
+                if (!receiver || !onOpenSide(pos(st), receiver, this.flagged)) return finish(null);
                 const at = newRequestFrom(st, hash, this.lastRequestTick);
                 if (at === null) return;
                 this.lastRequestTick = at;
@@ -916,6 +982,33 @@ export class BoneGiver {
             ranBack: bank ? legRan(bank.at, now.at, now.tick - bank.tick) : null,
             runToggle: runIsOn(this.s)
         });
+    }
+
+    /** Rehearsal: the load just given comes straight back (bone-receiver.ts returnLoads); the next restock banks it. */
+    private async takeReturn(partner: string, gave: readonly { name: string; count: number }[]): Promise<void> {
+        const want = returnWants(gave);
+        // Still 'trading', so it keeps the turn: the next giver must not request while the stand-in is in
+        // this trade. Such a request got no busy refusal in the lab, so that giver took it as standing and
+        // waited out resendTicks (35 ticks per load) before the stand-in's click could open.
+        this.setPhase('trading', 'taking the load back');
+        const r = await receiveFrom(this.ctx.sdk, partner, { want: want.map(w => ({ item: exact(w.name), amount: w.count })), openTimeoutMs: 60_000 });
+        this.ctx.log('return', { ok: r.ok, ticks: r.ticks, received: r.received.map(i => `${i.name} x${i.count}`), ...(r.reason ? { reason: r.reason } : {}) });
+        // The returned load is banked at the next restock and the next one withdrawn: the run's round trip, dragon first.
+        this.mustBank = true;
+    }
+
+    /** Rehearsal end: bank everything held, so the bank is back to its staged count; log what it holds. */
+    private async bankAll(): Promise<void> {
+        const { ctx, o } = this;
+        const bank = o.restock.bank;
+        this.setPhase('restock', 'banking everything at the end');
+        await walkNear(ctx, bank.x, bank.z, 3);
+        if (!(await openBank(ctx))) throw new Error('could not open the bank');
+        await depositAllExcept(ctx.sdk);
+        const items = ctx.sdk.getBankItems();
+        const keep = [...o.items, ...o.finalExtras.map(e => e.item)];
+        ctx.log('final bank', { bank: keep.map(name => `${items.filter(i => exact(name).test(i.name)).reduce((a, i) => a + i.count, 0)} ${name}`), carried: this.s?.inventory.length ?? 0 });
+        await closeBank(ctx);
     }
 
     /** Carry exactly `n` of the item and `extras`, and nothing else. */

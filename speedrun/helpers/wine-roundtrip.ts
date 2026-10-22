@@ -12,14 +12,16 @@
 //
 // Neither side opens a bank, makes wine or relogs. Each prints `RESULT wine-roundtrip {...}`.
 //   bun speedrun/helpers/wine-roundtrip.ts <account> [giver|standin]
-// Options: giver: receiver, backWaitMs (default 300000); standin: giver, count (the notes expected).
+// Options: giver: receiver, backWaitMs (default 300000); standin: giver, count (the notes expected),
+// giverWaitMs (default 240000: how long it waits for the giver to come into view), settleMs (default
+// 20000: the wait before returning, so the giver logs its take-back before a launcher stops both).
 import type { InventoryItem } from '../../sdk/types';
 import { give, receiveFrom } from '../lib/trade';
 import { nextTick, waitTicks } from '../lib/wait';
 import { countById } from './mule';
 import { countsDiffer } from './mule-standin';
 import { runStandalone, type Role, type RoleContext } from './role';
-import { giveWine } from './wine';
+import { giveWine, waitForPlayer } from './wine';
 import { ITEM } from './wine-common';
 
 const label = (items: readonly { name: string; count: number }[]) => items.map(i => `${i.name} x${i.count}`);
@@ -68,6 +70,9 @@ async function standin(ctx: RoleContext): Promise<void> {
     const count = Number(ctx.options.count ?? 0);
     if (!from || !(count > 0)) throw new Error('wine-roundtrip standin: options.giver and options.count are required');
     const before = countById(sdk.getInventory());
+    // The launcher logs the stand-in in first, and openTrade gives up on a partner out of sight
+    // (player_not_found): wait for the giver to arrive before asking for the trade.
+    if (!(await waitForPlayer(sdk, from, Number(ctx.options.giverWaitMs ?? 240_000)))) return finish(ctx, 'standin', { ok: false, reason: `${from} never came into view`, sameAsStart: true, diff: [] });
     const r = await receiveFrom(sdk, from, { want: [{ item: ITEM.wineNote, amount: count }], openTimeoutMs: 240_000, maxTicks: 40 });
     const got = { ok: r.ok, ticks: r.ticks, received: label(r.received), reason: r.reason ?? null, notes: notes(sdk.getInventory()), loose: loose(sdk.getInventory()), free: 28 - sdk.getInventory().length };
     ctx.log('received', got);
@@ -85,7 +90,7 @@ async function standin(ctx: RoleContext): Promise<void> {
     const diff = countsDiffer(before, countById(sdk.getInventory()));
     finish(ctx, 'standin', { ok: r.ok && diff.length === 0, received: got, back, sameAsStart: diff.length === 0, diff });
     // Leave the giver time to log its take-back before a launcher stops everything.
-    const until = Date.now() + 20_000;
+    const until = Date.now() + Number(ctx.options.settleMs ?? 20_000);
     while (Date.now() < until && !ctx.signal.aborted) await nextTick(sdk);
 }
 

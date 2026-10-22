@@ -6,7 +6,8 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { packageForCue, requestPackage } from './mule';
-import { configPackages, MULE1_NO_PACKAGE, MULE1_ON_REQUEST, MULE1_ORDER, muleDrift, muleFromLedger, onRequestGaps, packagesOf, parseFallbacks, stepAfter, stockWalk } from './mule-ledger';
+import { cueDir } from './altar-cue';
+import { configPackages, MULE1_NO_PACKAGE, MULE1_ON_REQUEST, MULE1_ORDER, muleCueDir, muleDrift, muleFromLedger, muleRunOptions, onRequestGaps, packagesOf, parseFallbacks, stepAfter, stockWalk } from './mule-ledger';
 
 // Rows in the inventory ledger's grammar (STEP-MANIFEST.md); the items are the test's own.
 const TABLE = `
@@ -119,6 +120,24 @@ describe('cues', () => {
 });
 
 describe('muleDrift', () => {
+    test("the mule's cue directory is its own, <cue root>/mule: in the run-day options, and checked as drift", () => {
+        expect(muleCueDir('/run/rc-cue')).toBe('/run/rc-cue/mule');
+        expect(muleCueDir(cueDir({ RC_CUE_DIR: '/run/rc-cue' }))).toBe('/run/rc-cue/mule');
+        const want = '/run/rc-cue/mule';
+        const opts = muleRunOptions(ask(), '/run/rc-cue');
+        expect(opts).toEqual({ serveMode: 'request', cueDir: want, packages: packagesOf(ask()) });
+        expect(muleDrift(opts, ask(), { cueDir: want })).toEqual([]);
+        expect(muleDrift({ ...opts, cueDir: '/run/rc-cue/mule/' }, ask(), { cueDir: want })).toEqual([]);
+        expect(muleDrift({ ...opts, cueDir: '/run/rc-cue' }, ask(), { cueDir: want })).toEqual(["cueDir /run/rc-cue, the run's /run/rc-cue/mule"]);
+        const { cueDir: _, ...shared } = opts;
+        const fleet = (entry: Record<string, unknown>) => ({ accounts: [{ account: 'cairn_mule1', role: 'mule', ...entry }] });
+        expect(muleDrift(fleet({ options: shared }), ask(), { cueDir: want })).toEqual(["cueDir none (the shared cue directory), the run's /run/rc-cue/mule"]);
+        // A launcher entry's own cueDir is the one its role reads (standalone.ts).
+        expect(muleDrift(fleet({ cueDir: want, options: shared }), ask(), { cueDir: want })).toEqual([]);
+        // Without o.cueDir nothing about the directory is compared.
+        expect(muleDrift(shared, ask())).toEqual([]);
+    });
+
     test('packages generated from the ledger have none, in either form', () => {
         expect(muleDrift({ packages: packagesOf(ask()) }, ask())).toEqual([]);
         expect(muleDrift(packagesOf(fixed()), fixed())).toEqual([]);

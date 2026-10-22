@@ -108,8 +108,11 @@ Every body giver entry has this shape; slots rotate 0, 1, 2 (east, west, south),
 ```json
 { "account": "cairn_t01", "role": "altar-giver", "path": "direct",
   "options": { "altar": "body", "slot": 0, "essence": 27,
-               "restock": { "kind": "bank" }, "scope": { "step": "S21", "family": "altar" } } }
+               "restock": { "kind": "bank" }, "scope": { "step": "S21", "family": "altar" } },
+  "loginOn": { "step": "S21", "family": "altar" } }
 ```
+
+On run day the S21 givers log in only when S21's cue opens: each entry also carries `"loginOn": { "step": "S21", "family": "altar" }`. `runecraft.ts`'s pre-login step opens the cue before SCORED's relog and waits for every giver to report ready, so the givers are still handled before SCORED. The cue's stop at S21's end logs them out. The S06 air givers carry `"stopOn": { "step": "S06", "family": "altar" }` and log out on S06's stop. A giver's role does not end on a stop by itself: it only cancels an armed turn. The launcher ends the role and logs the account out (HELPERS.md, "The cue gate"). `roster.ts config` adds `loginOn` to every generated giver entry; the `--role=idle` load check logs in at once.
 
 Slot 18's entry (cairn_t19) also carries `"handBack": [{"item":"Law rune","n":1},{"item":"Air rune","n":3},{"item":"Earth rune","n":1}]` (`roster.ts config` adds it). No giver is `receiver` or `final`. All helpers log in **on the chosen scored machine before SCORED**, and share its local cue directory. A lower processing bucket on another machine is not a placement plan: the cue is local, not cross-machine. A giver that relogs after SCORED loses tuned ordering and takes robust turns until SCORED next relogs.
 

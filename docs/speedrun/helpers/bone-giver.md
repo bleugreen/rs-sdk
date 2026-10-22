@@ -1,7 +1,10 @@
 # Bone giver (dragon bones beside the scored account)
 
 `speedrun/helpers/bone-giver.ts`, a run-machine role started by the launcher
-(`standalone.ts`, HELPERS.md "Helpers on the run machine"), like the altar givers. It hands
+(`standalone.ts`, HELPERS.md "Helpers on the run machine"), like the altar givers. On run
+day S07's givers carry `stopOn: { step: 'S07', family: 'bone' }`: the role ends on S07's stop
+anyway, and the launcher then logs the account out at once instead of leaving it in the world
+until the launcher's stop (HELPERS.md, "The cue gate"). It hands
 the scored account its dragon bones in two places (SUPPLIES.md, H4.1-H4.16 and H14.1-H14.13):
 
 - **S07, mode `standing` (default).** While the scored account chops with the knife cycle and
@@ -52,6 +55,19 @@ the scored account its dragon bones in two places (SUPPLIES.md, H4.1-H4.16 and H
   lost 6 of 17 due top-ups that way while it held Chebyshev distance 1 (`lab/measure-thieving.ts`).
   The giver picks the nearest of the four orthogonal tiles that no NPC stands on, so never the
   knight's (`sideTiles`); a side the walk cannot reach falls through to the next.
+- **Never across a wall edge (S18).** A side tile counts only if no wall lies on the edge between
+  it and the scored account (`wallBetween`, `onOpenSide`). The stunned account cannot step, so a
+  request across a wall draws 'I can't reach that!' and dies on its own tick (rs/454's engine
+  probe; this was the ~1 in 40 unanswered top-ups, 6 of 191 in the lab). The Ardougne knights'
+  area has walled columns: x=2672 carries an east-edge wall at z 3299-3303 and 3306-3310. The wall
+  is read from either tile's directional wall flag in the SDK pathfinder's collision map
+  (`sdk/pathfinding.ts` `isFlagged`, rsmod's `CollisionFlag.WALL_*`), the map every helper launch
+  already loads, so the helper keeps no map of its own. A blocking loc such as a stall is no wall:
+  a stall tile with an open shared edge stays a side. The same rule decides whether the courier is
+  already on a side, so one standing across a wall re-steps rather than waiting there. With every
+  side walled or taken by an NPC, `stepToSide` faults with 'no free side tile' as before. One gap:
+  the SDK map clears the wall at door positions so routes pass through them, so a closed door on
+  the shared edge is not seen.
 
 The receiver is never named: it is whoever in sight matches the receiver hash in the cue
 directory's `cue.json` (`altar-cue.ts`), which the scored side writes at login. The giver reads
@@ -108,6 +124,20 @@ The launcher ran on bbs through its own relay (not the run machine). cairn_b01-b
 
 A load is due every ~70 ticks of burying, so four givers leave each ~280 ticks per round trip against the 211 measured: **four are enough, three (210) would not be**. The extra ~3 ticks a load against the lab come from both sides' clicks crossing bbs's relay. The run machine is 1.8 ms from the demo (altar-giver.md), so expect nearer the lab's 4 there, but that is not measured. The first attempt ended at once: cairn_h75 had been left in the air altar room by the Runecraft demo. The stand-in now leaves any altar room by its portal first (`altarRoomOf`).
 
+## The trade-and-return rehearsal (S07 at full scale, nothing spent)
+
+The whole of S07's rotation, played against a stand-in that keeps nothing, so the staged banks come out of it unchanged. The stand-in is `bone-receiver` with `returnLoads: true` and `givers`, and every giver has `acceptReturn: true` (bank restock only; never set on the run). Lab driver: `speedrun/lab/bone-giver.ts --givers=4 --loads=N --final=3 --mix=D,B --return --pace=69`.
+
+- **Per load:** the stand-in takes the load from the group's server, as the step does, then gives exactly what that trade brought straight back to that giver (`give` by exact name; anything its pack already held stays). It then waits out `paceTicks` from the receive, by default n × buryEvery = 69, a load's bury time, before wanting the next load. So the rotation runs at the run's pace.
+- **The giver** takes its load back with `receiveFrom` (`returnWants`: what it gave, merged by name). It stays `trading` while it does, so it keeps the turn: a next giver requesting a stand-in that is busy in this trade got no busy refusal in the lab, took the request as standing, and lost about 35 ticks to its re-send. Then it makes its real bank trip, depositing the returned load and withdrawing the next dragon first. So the round trip and the bank sequence are the run's.
+- **At the end** every giver banks everything it holds (`final bank` lists its bones and extras) and goes off. The stand-in waits for all of them to be off, so each bank ends as staged.
+- **The stand-in** banks, eats, equips and buries nothing. Its pack needs free slots for the biggest load, n or finalN + extras (23, or 21 + 2). Off the lab it may be any helper that is neither forbidden nor one of the givers (`assertDemoStandIn`).
+- **Per load it records:** the giver, ticks from its click to the bones, whether a request was standing, ticks waiting for a server (a stall when the group had nobody ready), the return trade's ticks, and the gap since the last load. `RESULT bone-receiver` sums them.
+
+**A standing request goes stale on an idle receiver.** In the lab, a giver's request that had stood about 60 or more ticks did not open on the stand-in's click. The trade opened only at the giver's re-send (`resendTicks`, 100), about 35 ticks late. The run's account buries every 3 ticks, so a request to it bounces as busy and is re-sent fresh: the step's loads came in 4 ticks in rs/436's lab and in 5-8 on the 16-load demo. The rehearsal's idle stand-in needs the givers to re-send sooner, so the lab driver sets `resendTicks: 30` with `--return`. With 100, 4 of 8 loads took 34-36 ticks; with 30, all 8 took 4-5. If S07 ever stands idle with a load requested (waiting on a chop with an empty pack, say), expect that cost.
+
+Lab (`local`, 2026-10-22 18:50-18:55Z, 300 ms, 4 givers, 8 loads, final giver h73, `--mix=30,60 --return --pace=69`, `resendTicks` 30; a correctness check): **8 of 8** in strict rotation, every load handed back (4 ticks each), click to bones 4-5, a load every 73-74 ticks (the pace plus the trade), restock round trips 167-174 ticks. The last load was h73's 21 bones and the runes. Every bank ended at its starting count plus exactly that run's seed.
+
 ## The stand-in on the demo
 
 `bone-receiver` on a non-local server uses no staff commands. It banks what it carries at Falador west, walks to the site, and raises no level-up pages. Its `item` option sets the bones it takes and buries; the demo uses `Big bones`, which are unstackable like dragon bones but not scarce. It buries what it's given, so off the lab it runs only as a run-machine test account (`STAND_IN_ACCOUNTS`: h70-h72 and h75) and refuses any other name.
@@ -140,6 +170,7 @@ the send while the relay still held the click. Rs/105's three 30-tick trades cam
 | `scope` | required | `{ step, family }` of the cue it serves: family `bone` in the standing mode, `courier` in on-request (`altar-cue.ts` CueScope) |
 | `item`, `n` | `Dragon bones`, 23 | what and how many per S07 load (unnoted, one press). `item` may be a priority list, S07's `["Dragon bones", "Babydragon bones"]` ("Taking turns") |
 | `group` | none | standing mode only: the accounts taking turns at the site, this one included (S07: b01-b04; "Taking turns"). With a group, `trades` counts the group's loads |
+| `acceptReturn` | false | rehearsal only (standing, bank restock): take each load back from the stand-in and bank everything at the end ("The trade-and-return rehearsal"). Never set on the run |
 | `sites` | S07's oak then willow | `[{ giver, receiver }]` tiles in run order; the giver moves on when the receiver is not in sight within `siteWaitTicks` (30). Required for `on-request` (where to wait) |
 | `trades` | no limit | stop after this many trades (else when the cue says stop) |
 | `restock` | `{ kind: 'bank', bank: Falador west }` | `cheat` makes the bones with a staff command (lab only). `labSeed: [{ obj, n }]` (bank, lab only): staff-gives these, noted, before the first bank visit, which banks them, so every later withdrawal is a real one |
