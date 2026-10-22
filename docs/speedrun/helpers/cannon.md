@@ -196,8 +196,13 @@ is a minimum, so the extras need not be listed; add them to `want` to refuse a t
 them. For H11r without return extras, `give(holder, loadSpecs(leftover))`. With return extras
 the holder offers them in the same trade, which a plain `give` declines (its partner may offer
 nothing by default): use `give(holder, loadSpecs(leftover), { expectTheirs })` with the return
-extras as `expectTheirs`, or `swap(holder, loadSpecs(leftover), want)`. The stand-in receiver's
-give-back (`cannon-receiver.ts`) is the plain `give`, so it does not cover return extras yet.
+extras as `expectTheirs`, or `swap(holder, loadSpecs(leftover), want)`; the run's hand-off runner
+trades every row that both gives and receives through `swap`, judged by the inventory delta.
+
+**Stand-in receiver**: `speedrun/helpers/cannon-receiver.ts` does the same with `expectBack`
+(`[{ item, count }]`, the holder's `returnExtras`): its give-back is then `swap` (the set and
+balls out, the extras wanted), and counts as given back only when both directions moved
+(`giveBackDelivered`). Without `expectBack` it is the plain `give`.
 
 **Stand-in receiver**: `speedrun/helpers/cannon-receiver.ts` writes the cue, waits for the
 holder's request, receives as the scored step does and reports the trade's ticks on its own
@@ -214,6 +219,20 @@ receiver cairn_h76 with `%mcannon` set by staff command (not a real quest run):
 | 0 (not started) | set + 100 balls, one trade | **4 ticks** | yes | "You can't set up this cannon." | 5 / 4 ticks |
 
 4 ticks is the receiver floor SUPPLIES.md measured for a few stacks.
+
+**H11r with the Monkey Madness extras** (`cannon-handoff.ts --quest=11 --mm=1`, this Mac's local
+engine, `NODE_TICKRATE=300`, 2026-10-22): holder cairn_h71 with `serve.returnExtras` (magic
+shortbow 1, rune arrow 200), stand-in cairn_h76 with `expectBack`, both on the cow pen.
+
+| Trade | Items | Holder clock | Stand-in clock |
+|---|---|---|---|
+| H11 give | set + 100 balls out; nothing back | 3 ticks (request to open 2, 1 send, 0 refusals) | 4 ticks |
+| H11r swap, **one trade** | set + 100 balls in; magic shortbow 1 + rune arrow 200 out | 4 ticks | 5 ticks |
+
+Both sides judged the swap delivered both ways (`takeBackDelivered`, `giveBackDelivered`), and
+Set-up placed the base in between. The bow and the arrows were each one All press. A fresh lab
+account spawns west of the mountain line, so in the lab (`HELPER_LAB_TELE=1` with `labStock`) the
+holder teleports to its tiles, as the other helpers do.
 
 ### Demo leg (rs-sdk-demo, 2026-10-22 00:56-01:06 UTC)
 
