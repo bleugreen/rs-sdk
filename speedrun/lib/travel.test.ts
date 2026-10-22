@@ -1,6 +1,7 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { BotWorldState, InventoryItem, NearbyLoc, PlayerState } from '../../sdk/types';
-import { baseState, drive, FakeSdk, simulateWalking } from './fake-sdk';
+import { baseState, drive, FakeSdk, flush, simulateWalking } from './fake-sdk';
+import { sleep } from './wait';
 import {
     deletesFollowerItem, expandRoute, hopNeeds, hopsDestination, runesHeld, runTo, SPELLS, teleport, teleportRefusal, travel, wildernessLevel, type Hop,
 } from './travel';
@@ -130,6 +131,42 @@ describe('runTo: the chained run', () => {
         expect(r.ok).toBe(true);
         expect(wildernessLevel(at(sdk))).toBe(20);
         expect(at(sdk).z).toBe(3678); // two tiles a tick from 3700: the first tile at level 20 or less
+    });
+});
+
+describe('runTo: a client that stops publishing', () => {
+    // 5 ms ticks: the stall bound is (STALL_TICKS + 10) x 5 = 150 ms of wall time.
+    const prev = process.env.SPEEDRUN_TICK_MS;
+    beforeAll(() => { process.env.SPEEDRUN_TICK_MS = '5'; });
+    afterAll(() => { if (prev === undefined) delete process.env.SPEEDRUN_TICK_MS; else process.env.SPEEDRUN_TICK_MS = prev; });
+
+    async function ticks(sdk: FakeSdk, n: number) {
+        for (let i = 0; i < n; i++) {
+            await flush();
+            sdk.tick();
+        }
+        await flush();
+    }
+
+    test('rides out a stall inside the bound, then arrives', async () => {
+        const sdk = world(3200, 3200);
+        simulateWalking(sdk);
+        const p = runTo(sdk as never, { x: 3240, z: 3200 });
+        await ticks(sdk, 5);
+        await sleep(60); // silent for 60 ms, under the 150 ms bound
+        const r = await drive(sdk, p);
+        expect(r.ok).toBe(true);
+        expect(at(sdk)).toEqual({ x: 3240, z: 3200 });
+    });
+
+    test('past the bound: ok false with no tick, never a throw', async () => {
+        const sdk = world(3200, 3200);
+        simulateWalking(sdk);
+        const p = runTo(sdk as never, { x: 3240, z: 3200 });
+        await ticks(sdk, 5);
+        const r = await p; // no more ticks
+        expect(r.ok).toBe(false);
+        expect(r.reason).toBe('run to 3240,3200: no tick');
     });
 });
 

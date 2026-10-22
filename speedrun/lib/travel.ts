@@ -22,7 +22,7 @@ import { act, actConverse, castTeleport, clickWalk, slotOf, walkTo, TELEPORTS, t
 import type { ConverseSdk } from './converse';
 import type { OptionPattern } from './dialogue';
 import type { ItemPattern } from './items';
-import { currentTick, nextTick, waitUntil, type StateSource } from './wait';
+import { currentTick, waitUntil, type StateSource } from './wait';
 import { chebyshev, findLoc, invCount, invItem, messagesSince, opIndex, pos, skillLevel, stateOf, tileCounter, waitForNpc, type LocQuery, type OpPattern, type StateLike, type Tile } from './world';
 
 export type TravelSdk = ActSdk & ConverseSdk & Pick<BotSDK, 'findPath'>;
@@ -568,6 +568,19 @@ async function openDoorOnRoute(sdk: TravelSdk, trip: Trip, door: NearbyLoc): Pro
     return r.ok;
 }
 
+/**
+ * Ticks of silence a run rides out. Through wait.ts's wall-clock backstop of (maxTicks + 10) x
+ * tickMs that is 9 s at 300 ms: the demo has gone silent ~2 s with nothing wrong (rs/102), and a
+ * 4 s stall then recovered on the demo (rs/198), where the runner counts a session lost at 17 ticks.
+ */
+export const STALL_TICKS = 20;
+
+/** The first published state after tick `after`, or null once the client has been silent past STALL_TICKS. */
+async function tickAfter(sdk: StateSource, after: number): Promise<BotWorldState | null> {
+    const r = await waitUntil(sdk, s => s.tick > after, { maxTicks: STALL_TICKS, after });
+    return r.ok ? r.state : null;
+}
+
 async function hopRun(sdk: TravelSdk, trip: Trip, to: Area, opts: TravelOptions, viaIn: readonly XZ[], wildAtMost?: number): Promise<HopOutcome> {
     const goal: Required<Area> = { x: to.x, z: to.z, level: to.level ?? 0, tol: to.tol ?? 0 };
     const reachMax = opts.reach ?? 20;
@@ -661,7 +674,7 @@ async function hopRun(sdk: TravelSdk, trip: Trip, to: Area, opts: TravelOptions,
             if (door && (doorTries.get(key) ?? 0) < 2) {
                 doorTries.set(key, (doorTries.get(key) ?? 0) + 1);
                 await openDoorOnRoute(sdk, trip, door);
-                await nextTick(sdk);
+                if (!(await tickAfter(sdk, currentTick(sdk)))) return { ok: false, reason: 'no tick' };
                 t = currentTick(sdk);
                 lastMove = t;
                 clickTick = t;
@@ -680,7 +693,9 @@ async function hopRun(sdk: TravelSdk, trip: Trip, to: Area, opts: TravelOptions,
             await sdk.sendWalk(target.x, target.z, true);
             clickTick = t;
         }
-        t = (await nextTick(sdk, t)).tick;
+        const next = await tickAfter(sdk, t);
+        if (!next) return { ok: false, reason: 'no tick' };
+        t = next.tick;
     }
 }
 
