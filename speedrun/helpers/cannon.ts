@@ -79,7 +79,7 @@ import { advance } from '../lib/dialogue';
 import { ANY_OFFER, give, DROPPED_TICKS, offerSatisfies, receiveFrom, swap, tradeOf, type GiveResult, type GiveSpec, type SwapSdk, type TradeSdk, type WantSpec } from '../lib/trade';
 import { INVENTORY_SIZE } from '../lib/items';
 import { assertUntracked, cueDir, CueWatcher, nameHash, scopeOption, type Cue, type CueScope } from './altar-cue';
-import { cheat, isLocalServer, standOn } from './altar-room';
+import { cheat, isLocalServer, labTele, standOn } from './altar-room';
 import { partnerIs, requestUntilOpen } from './bone-giver';
 import { Buyer } from './buyer';
 import { CROSSING_HITPOINTS, crossingSettings, TAVERLEY, trainHitpointsOnCows, type Pt } from '../lib/kandarin';
@@ -1379,6 +1379,16 @@ class Cannon {
         }
     }
 
+    /**
+     * Lab only (HELPER_LAB_TELE=1, as the other helpers): teleport onto `to` when far from it, so a
+     * fresh lab account's spawn (west of the mountain line on the lab engine) is not walked from.
+     */
+    private async labTeleNear(to: Pt): Promise<void> {
+        if (process.env.HELPER_LAB_TELE !== '1' || !this.o.serve?.labStock || cheb(this.pos(), to) <= 150) return;
+        await labTele(this.ctx, to);
+        this.log('lab tele', { to, at: this.pos() });
+    }
+
     /** Run `step` until it returns true; an error is logged and waited out with backoff (Stop propagates). */
     private async retryUntil(step: () => Promise<boolean>): Promise<void> {
         let failures = 0;
@@ -1440,6 +1450,7 @@ class Cannon {
         const so = this.o.serve!;
         await this.serveLoad();
         this.setPhase('serve-travel');
+        await this.labTeleNear(so.tile);
         await this.goTo(so.tile, 2, 'the hand-off tile');
         await standOn(this.ctx, so.tile);
         this.setPhase('serve-waiting');
@@ -1537,6 +1548,7 @@ class Cannon {
             throw new Error(`no room for the set and balls to come back: ${this.sdk.getInventory().map(i => `${i.name} x${i.count}`).join(', ')}`);
         }
         this.setPhase('serve-return');
+        await this.labTeleNear(so.returnTile!);
         await this.goTo(so.returnTile!, 2, 'the return tile');
         await standOn(this.ctx, so.returnTile!);
         const t0 = this.tick();
