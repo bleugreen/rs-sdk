@@ -30,7 +30,7 @@ Gnome Village. IDs never move: a step that changes place keeps its ID.
 **Lab host (main's rule, fold-in 23).** fedora's lab engine stalls 14-40 s and then resumes 1 tick
 later, so every measured figure whose runs were on fedora carries '(fedora)' beside its citation, and
 a failure seen only on fedora never reverts a row from m on its own (RUN-ORDER.md, "How to read the
-numbers").
+numbers", which also carries fold-in 30's rule: a 2026-10-22 lab figure's host label is the executor its batch named, pending each `uname -n` re-check).
 
 **Three tick figures** per entry, all on SCORED's clock (in-world ticks at 300 ms):
 
