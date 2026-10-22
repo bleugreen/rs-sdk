@@ -118,6 +118,15 @@ Record login successes/refusals/substitutions, first and last login timestamps, 
 
 ## Measured
 
+### Idle roster load, 2026-10-22
+
+The run host accepted t01–t22 on the direct path without refusals or substitutions. Launcher start was 00:35:41.170 UTC; first login 00:35:45.240, last 00:38:55.004 (193.834 seconds from launch). All accounts logged in once and remained on Tutorial Island at 3094,3106. This did not skip S00 or provision supplies. Per-account login, heartbeat and logout evidence is in [giver-load-20261022.json](../rehearsals/giver-load-20261022.json).
+
+SIGTERM arrived at 00:52:00.065. Thirteen accounts confirmed server LOGOUT; nine reached the launcher's account-stop deadline and were killed at 00:52:23.067. Several of those nine already had stale state before the signal. All processes and all 27 copied credential files (22 primaries plus five unused spares) were gone by 00:52:54. The nine killed accounts remained listed by the server at 00:54:22 and were absent by 00:56:50. Process cleanup was bounded, but **22 clean logouts were not achieved**; the launcher owner is investigating the nine stalled sessions.
+
+The host-owned tab/recording job did not run, so this check supplies **no gate (d) or recording-fps verdict**. It is not evidence that a scored-style tab passes with the roster present. That simultaneous measurement remains required.
+
+
 Lab (local engine at `NODE_TICKRATE=300`, the launcher with 3 givers and the stand-in on the build slot, air altar; `speedrun/lab/altar-givers.ts`):
 
 | Variant | Login order | Turns given | Craft-to-craft gaps |
