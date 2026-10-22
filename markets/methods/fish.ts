@@ -24,6 +24,8 @@ import { depositMatching } from '../../speedrun/lib/bank';
 import { walkTo } from '../../speedrun/lib/act';
 import { nextTick, waitTicks } from '../../speedrun/lib/wait';
 import { runStandalone, type Role, type RoleContext } from '../../speedrun/helpers/role';
+// stat_random is one formula for every skill; value.ts names it for pickpocketing
+import { pickpocketChance } from './value';
 
 export const CATHERBY_BANK = { x: 2809, z: 3440 };
 export const CATHERBY_SPOTS = { x: 2851, z: 3427 };
@@ -51,6 +53,33 @@ export const CATCHES: Record<'shark' | 'swordfish' | 'lobster' | 'bass', Catch> 
 export function shouldReclick(i: { clicked: boolean; spotThere: boolean; sinceCatch: number; staleTicks?: number }): boolean {
     if (!i.clicked || !i.spotThere) return true;
     return i.sinceCatch >= (i.staleTicks ?? 150);
+}
+
+/**
+ * memberfish.rs2 fish_roll_big_net: each entry's stat_random(fishing, lo, hi) success chance, all
+ * rolled on every cast; cod from Fishing 23, bass from 46. Debug names (raw_bass is "Raw bass",
+ * oystershell "Oyster").
+ */
+export const BIG_NET: ReadonlyArray<{ obj: string; lo: number; hi: number; from: number }> = [
+    { obj: 'leather_boots', lo: 10, hi: 10, from: 1 },
+    { obj: 'seaweed', lo: 10, hi: 10, from: 1 },
+    { obj: 'leather_gloves', lo: 5, hi: 5, from: 1 },
+    { obj: 'raw_mackerel', lo: 5, hi: 65, from: 1 },
+    { obj: 'raw_mackerel', lo: 10, hi: 10, from: 1 },
+    { obj: 'oystershell', lo: 3, hi: 7, from: 1 },
+    { obj: 'casket', lo: 1, hi: 2, from: 1 },
+    { obj: 'raw_cod', lo: 4, hi: 55, from: 23 },
+    { obj: 'raw_bass', lo: 3, hi: 40, from: 46 }
+];
+
+/** Expected units of each obj per big-net roll at a Fishing level. */
+export function bigNetPerRoll(level: number): Map<string, number> {
+    const out = new Map<string, number>();
+    for (const e of BIG_NET) {
+        if (level < e.from) continue;
+        out.set(e.obj, (out.get(e.obj) ?? 0) + pickpocketChance(level, e.lo, e.hi));
+    }
+    return out;
 }
 
 /** What to drop when the pack is full: every item that is neither the tool nor on the keep list. */
