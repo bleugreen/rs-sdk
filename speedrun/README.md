@@ -86,6 +86,11 @@ speedrun/
                   tab-logout.ts (log a browser tab out and confirm it through the page over CDP
                   before Chrome is closed; the host runbooks' interim, now that `logoutClean`
                   itself confirms a browser logout through the page);
+                  kit-return.ts (hand a rehearsal account's kit back to its giver and log out:
+                  runs only within 30 tiles of the giver's --at tile, else casts a teleport
+                  landing there if it can, else refuses without moving (exit 3; this content
+                  has no home teleport, so move the giver and pass --at); halts on the first
+                  hit and logs out (exit 4, naming the attacker));
                   upstream watch (nightly diff of watched upstream paths);
                   drop-probe.ts (the dropped-client stay on the demo, with a throwaway);
                   hiscore-stamp-probe.ts (the live stamp test, plus uncached
