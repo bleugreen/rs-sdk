@@ -403,10 +403,10 @@ describe('compareHiscore', () => {
 
 // Live demo player pages (speedrun/tools/fixtures/hiscore, fetched 2026-10-22 22:42-22:47Z in the
 // `N ticks normalized to 400 ms per tick` form; cairn_chops's from earlier that day, identical but for its rank).
-const page = (name: string): PlayerRow[] => parsePlayer(readFileSync(join(import.meta.dir, 'tools', 'fixtures', 'hiscore', name), 'utf8'))!;
-const runesPage = () => page('player-cairn_runes-2026-10-22-400ms.html');
-const sub15Page = () => page('player-cairn_h90-2026-10-22-400ms.html');
-const unsavedPage = () => page('player-acquiredl13-unsaved-2026-10-22.html');
+const livePage = (name: string): PlayerRow[] => parsePlayer(readFileSync(join(import.meta.dir, 'tools', 'fixtures', 'hiscore', name), 'utf8'))!;
+const runesPage = () => livePage('player-cairn_runes-2026-10-22-400ms.html');
+const sub15Page = () => livePage('player-cairn_h90-2026-10-22-400ms.html');
+const unsavedPage = () => livePage('player-acquiredl13-unsaved-2026-10-22.html');
 // rs/461's cairn_runes log: Runecraft 70 at playtime 4,544, logout click on session tick 4,604.
 const runesLog = () => summarize([reached('runecraft', 70, 4544), session(4604)]);
 
@@ -425,7 +425,7 @@ describe('compareHiscore on live player pages', () => {
             ['player-cairn_chops-2026-10-22-400ms.html', 'woodcutting', 3329],
         ] as const) {
             const s = summarize([reached(skill, 99, ticks), session(ticks + 5)]);
-            const checks = compareHiscore(s, page(file), skill);
+            const checks = compareHiscore(s, livePage(file), skill);
             expect(checks[0]).toMatchObject({ row: `${skill[0]!.toUpperCase()}${skill.slice(1)} 99`, hiscore: ticks, expected: ticks, diff: 0, ok: true, tickMs: 400 });
             expect(checks[1]).toMatchObject({ row: 'Overall', hiscore: ticks, ok: true });
         }
