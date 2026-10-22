@@ -4,7 +4,7 @@ import { baseState, FakeSdk, type SentAction } from '../lib/fake-sdk';
 import { ITEM } from './wine-common';
 import { fakeClock, peek, tickEvery, useFakeTicks } from '../lib/fake-ticks';
 import { IDLE_TICKS, STALLED } from '../lib/wait';
-import { afterDeposit, awaitFiring, depositButtons, drainChat, receiveWine, splitDelivery, timerHeld, type ReceiverSdk } from './wine-receive';
+import { afterDeposit, awaitFiring, depositButtons, drainChat, receiveWine, SECOND_WAIT_SLACK, splitDelivery, splitStage, timerHeld, wineBankOf, type ReceiverSdk } from './wine-receive';
 
 describe('timerHeld / afterDeposit', () => {
     test('the bank must open before the due tick: the timer phase runs before interactions', () => {
@@ -246,5 +246,193 @@ describe('splitDelivery', () => {
         expect(r.levelAfterFirst).toBeLessThan(35);
         expect(r.arming).toBe('relog');
         expect(r.secondFermentTick).toBe(5_020);
+    });
+});
+
+/** Every send with the tick it went out on. */
+function recordTicks(e: FakeEngine): Array<[number, string, unknown[]]> {
+    const out: Array<[number, string, unknown[]]> = [];
+    const orig = e.sdk.onSend;
+    e.sdk.onSend = (a, f) => {
+        out.push([e.sdk.state!.tick, a.method, a.args]);
+        orig(a, f);
+    };
+    return out;
+}
+
+describe('splitDelivery window hooks (S25c, skills/cooking.ts)', () => {
+    test('no windows: exactly the packets, on exactly the ticks, the split sent before the hooks existed', async () => {
+        // captured from agent/rs-186-coordinator-0 at 023d8842, before the hooks
+        const e = new FakeEngine(100, 59, 1);
+        const seq = recordTicks(e);
+        await splitDelivery({ sdk: run(e) }, 'maker', { loginTick: 100, first: 29, relog: e.relogTo(5_000) });
+        expect(seq).toEqual([
+            [100, 'sendInteractLoc', [3186, 3436, 2213, 1]],
+            [101, 'sendBankDeposit', [0, 10]],
+            [101, 'sendBankDeposit', [0, 10]],
+            [101, 'sendBankDeposit', [0, 5]],
+            [101, 'sendBankDeposit', [0, 1]],
+            [101, 'sendBankDeposit', [0, 1]],
+            [101, 'sendBankDeposit', [0, 1]],
+            [101, 'sendBankDeposit', [0, 1]],
+            [101, 'sendCloseModal', []],
+            [120, 'sendInteractLoc', [3186, 3436, 2213, 1]],
+            [121, 'sendBankDeposit', [0, -1]],
+            [121, 'sendCloseModal', []]
+        ]);
+    });
+
+    test('the hooks fire at their points: bursts before each close, the waits beside each firing with its due tick', async () => {
+        const e = new FakeEngine(100, 59, 1);
+        const seq = recordTicks(e);
+        const calls: string[] = [];
+        const sdk = run(e);
+        const r = await splitDelivery({ sdk }, 'maker', {
+            loginTick: 100,
+            first: 29,
+            relog: e.relogTo(5_000),
+            windows: {
+                firstBurst: s => {
+                    calls.push(`firstBurst bank open ${s.bank.isOpen}`);
+                    void e.sdk.sendBankWithdraw(7, -1);
+                    void e.sdk.sendBankWithdraw(8, -1);
+                    return 2;
+                },
+                firstWait: async due => {
+                    calls.push(`firstWait ${due} at ${sdk.getState()!.tick}`);
+                },
+                restBurst: () => {
+                    calls.push('restBurst');
+                    void e.sdk.sendBankDeposit(5, -1);
+                    return 1;
+                },
+                secondWait: async due => {
+                    calls.push(`secondWait ${due} at ${sdk.getState()!.tick}`);
+                }
+            }
+        });
+        expect(calls).toEqual(['firstBurst bank open true', 'firstWait 120 at 102', 'restBurst', 'secondWait 5020 at 5000']);
+        // burst 1: the seven 29 buttons, the two withdrawals, then the close; P1: All, the gem deposit, the close
+        expect(seq.filter(x => x[0] === 101).map(x => `${x[1]} ${JSON.stringify(x[2])}`)).toEqual([
+            ...['[0,10]', '[0,10]', '[0,5]', '[0,1]', '[0,1]', '[0,1]', '[0,1]'].map(a => `sendBankDeposit ${a}`),
+            'sendBankWithdraw [7,-1]',
+            'sendBankWithdraw [8,-1]',
+            'sendCloseModal []'
+        ]);
+        expect(seq.filter(x => x[0] === 121).map(x => x[1])).toEqual(['sendBankDeposit', 'sendBankDeposit', 'sendCloseModal']);
+        expect(r.firstFermentTick).toBe(120);
+        expect(r.secondFermentTick).toBe(5_020);
+        // secondWait replaces the final drainChat: it owns the second firing's pages
+        expect(r.finalPages).toBe(0);
+        expect(e.firings.map(f => f.wines)).toEqual([29, 30]);
+    });
+
+    test('a window still running past the firing: the split waits for both, and a window failure is the split failure', async () => {
+        const e = new FakeEngine(100, 59, 1);
+        const sdk = run(e);
+        let windowEnd = -1;
+        const r = await splitDelivery({ sdk }, 'maker', {
+            loginTick: 100,
+            first: 29,
+            relog: e.relogTo(5_000),
+            windows: {
+                secondWait: async () => {
+                    await e.sdk.waitForCondition(st => st.tick >= 5_030, 10_000);
+                    windowEnd = sdk.getState()!.tick;
+                }
+            }
+        });
+        expect(r.secondFermentTick).toBe(5_020);
+        expect(windowEnd).toBe(5_030);
+        const e2 = new FakeEngine(100, 59, 1);
+        await expect(splitDelivery({ sdk: run(e2) }, 'maker', { loginTick: 100, first: 29, relog: e2.relogTo(5_000), windows: { firstWait: async () => { throw new Error('gem window faulted'); } } })).rejects.toThrow('gem window faulted');
+    });
+
+    test(`the second firing is awaited with ${SECOND_WAIT_SLACK} ticks of slack under a window (its bank visits hold the timer)`, async () => {
+        const e = new FakeEngine(100, 59, 1);
+        const sdk = run(e);
+        const r = await splitDelivery({ sdk }, 'maker', {
+            loginTick: 100,
+            first: 29,
+            relog: e.relogTo(5_000),
+            windows: {
+                // a bank visit open across the due tick, closed at 5,024
+                secondWait: async () => {
+                    await e.sdk.waitForCondition(st => st.tick >= 5_018, 10_000);
+                    void e.sdk.sendInteractLoc(3186, 3436, 2213, 1);
+                    await e.sdk.waitForCondition(st => st.tick >= 5_023, 10_000);
+                    void e.sdk.sendCloseModal();
+                }
+            }
+        });
+        expect(r.secondFermentTick).toBe(5_024);
+        expect(r.levelAfterSecond).toBeGreaterThan(r.levelAfterFirst);
+    });
+});
+
+describe('splitStage and the resume stages', () => {
+    test('splitStage: one stage per row of the resume table', () => {
+        expect(splitStage(0, { unfermented: 0, fermented: 0 })).toBe('trade');
+        expect(splitStage(520, { unfermented: 0, fermented: 0 })).toBe('deposit-first');
+        expect(splitStage(491, { unfermented: 29, fermented: 0 })).toBe('await-first');
+        expect(splitStage(491, { unfermented: 0, fermented: 29 })).toBe('deposit-rest');
+        expect(splitStage(0, { unfermented: 491, fermented: 29 })).toBe('await-second');
+        expect(splitStage(0, { unfermented: 0, fermented: 520 })).toBe('exhausted');
+        // everything banked before any firing: this login's firing rolls it all
+        expect(splitStage(0, { unfermented: 520, fermented: 0 })).toBe('await-second');
+        expect(wineBankOf([{ id: ITEM.wine, count: 491 }, { id: ITEM.jugWine, count: 20 }, { id: ITEM.badWine, count: 9 }, { id: 1755, count: 1 }])).toEqual({ unfermented: 491, fermented: 29 });
+    });
+
+    test("from 'deposit-first': no trade, the 29 deposited for this login's timer, then the usual rest and relog", async () => {
+        const e = new FakeEngine(100, 520, 1);
+        const r = await splitDelivery({ sdk: run(e) }, 'maker', { loginTick: 100, first: 29, relog: e.relogTo(5_000), from: 'deposit-first' });
+        expect(r.tradeSkipped).toBe(true);
+        expect(r.firstFermentTick).toBe(120);
+        expect(e.firings.map(f => f.wines)).toEqual([29, 491]);
+        expect(e.relogs).toBe(1);
+    });
+
+    test("from 'await-first': nothing sent before the firing; the first wait runs", async () => {
+        const e = new FakeEngine(100, 491, 1);
+        e.banked = 29;
+        const seq = recordTicks(e);
+        const waits: number[] = [];
+        const r = await splitDelivery({ sdk: run(e) }, 'maker', { loginTick: 100, first: 29, relog: e.relogTo(5_000), from: 'await-first', windows: { firstWait: async due => void waits.push(due) } });
+        expect(waits).toEqual([120]);
+        // P1's booth click goes out on the firing tick itself, as in the full sequence
+        expect(seq.filter(x => x[0] < 120)).toEqual([]);
+        expect(r.firstFermentTick).toBe(120);
+        expect(e.firings.map(f => f.wines)).toEqual([29, 491]);
+    });
+
+    test("from 'deposit-rest' (a reconnect after the first firing): the rest rides this login's timer, no arming relog", async () => {
+        const e = new FakeEngine(100, 491, 50);
+        const bursts: number[] = [];
+        const r = await splitDelivery({ sdk: run(e) }, 'maker', { loginTick: 100, first: 29, relog: e.relogTo(5_000), from: 'deposit-rest', windows: { restBurst: s => (bursts.push(s.tick), 0) } });
+        expect(bursts).toHaveLength(1);
+        expect(e.relogs).toBe(0);
+        expect(r.secondFermentTick).toBe(120);
+        expect(e.firings).toEqual([{ tick: 120, wines: 491 }]);
+    });
+
+    test("from 'deposit-rest' with the bank opening on login + 20: the deadline relog, and the rest ferments at the new login + 20", async () => {
+        const e = new FakeEngine(100, 491, 50);
+        e.sdk.state = { ...e.sdk.state!, tick: 119 };
+        const r = await splitDelivery({ sdk: run(e) }, 'maker', { loginTick: 100, first: 29, relog: e.relogTo(5_000), from: 'deposit-rest' });
+        expect(r.missRelogs).toBe(1);
+        expect(r.secondLoginTick).toBe(5_000);
+        expect(r.secondFermentTick).toBe(5_020);
+        expect(e.firings.map(f => f.wines)).toEqual([0, 491]);
+    });
+
+    test("from 'await-second': no packets; the second wait runs beside this login's firing", async () => {
+        const e = new FakeEngine(100, 0, 50);
+        e.sdk.state = { ...e.sdk.state!, inventory: [] };
+        e.banked = 491;
+        const seq = recordTicks(e);
+        const r = await splitDelivery({ sdk: run(e) }, 'maker', { loginTick: 100, first: 29, from: 'await-second' });
+        expect(seq).toEqual([]);
+        expect(r.secondFermentTick).toBe(120);
+        expect(e.relogs).toBe(0);
     });
 });
