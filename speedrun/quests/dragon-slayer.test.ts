@@ -5,7 +5,7 @@ import { baseState } from '../lib/fake-sdk';
 import { configId } from '../lib/world';
 import { Observation, resolveResume } from '../runner/resume';
 import {
-    ARMOURLESS_COST, atLeast, ELVARG_PRAYERS, entryCheck, kitItems, mazeMove, onCrandor, PROBES, quest, restockWait, SCAVVO_RESTOCK,
+    ARMOURLESS_COST, atLeast, ELVARG_PRAYERS, entryCheck, keyDropped, kitItems, mazeMove, onCrandor, PROBES, quest, restockWait, SCAVVO_RESTOCK,
     stepId, steps, stockZeroChoice, TILES, usablePrayers, wornKitCheck,
 } from './dragon-slayer';
 import { kitWant } from './segments';
@@ -103,6 +103,15 @@ describe('entry and kit', () => {
         expect(last.postconditions(world({ status: 'complete', at: [TILES.exit.x, TILES.exit.z] }), {})).toBe(true);
         expect(last.postconditions(world({ status: 'started' }), {})).toMatch(/not complete/);
         expect(last.postconditions({ ...world({ status: 'complete' }), modalOpen: true }, {})).toMatch(/reward page/);
+    });
+
+    test("the exit state holds no maze key, and a kill without the drop resumes at L", async () => {
+        const last = steps().at(-1)!;
+        const done = world({ status: 'complete', at: [TILES.exit.x, TILES.exit.z] });
+        const keyed = world({ status: 'complete', at: [TILES.exit.x, TILES.exit.z], inv: [item('Shark'), item('Maze key')] });
+        expect(keyDropped(done)).toBe(true);
+        expect(last.postconditions(keyed, {})).toMatch(/maze key is still held/);
+        expect(await resumeAt(keyed)).toBe('S26:L-elvarg');
     });
 });
 

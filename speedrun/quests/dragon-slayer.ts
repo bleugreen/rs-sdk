@@ -37,7 +37,7 @@
 import type { BotWorldState, NearbyLoc, PrayerName } from '../../sdk/types';
 import { measure } from '../lib/ticks';
 import * as pathfinding from '../../sdk/pathfinding';
-import { act, pickup, talkTo, useOn, wield, type ActOptions } from '../lib/act';
+import { act, dropItems, pickup, talkTo, useOn, wield, type ActOptions } from '../lib/act';
 import { fight, PRAYER_LEVELS, prayerActive, setPrayer, type FightResult } from '../lib/combat';
 import { converse, levelUpInterrupt, type ConverseResult } from '../lib/converse';
 import type { OptionPattern } from '../lib/dialogue';
@@ -836,7 +836,13 @@ async function elvarg(ctx: Ctx, opts: Options): Promise<void> {
         await clearDialogue(sdk, opts);
         await waitTicks(sdk, 1);
     }
+    // Melzar's key is dead weight after the quest; the run's inventory ledger drops it here (fold-in 18).
+    const d = await dropItems(sdk, i => ITEM.key.test(i.name));
+    if (!d.ok) fail(where, `the maze key did not drop (${d.ticks} ticks)`);
 }
+
+/** The exit state holds no maze key (T26-27's inventory, STEP-MANIFEST fold-in 18). */
+export const keyDropped = (s: BotWorldState): true | string => ok(invItem(s, ITEM.key) === null, "Melzar's maze key is still held: the exit drops it");
 
 // ------------------------------------------------------------------ segments
 
@@ -960,8 +966,10 @@ export function steps(opts: Options = {}): Step<any>[] {
             postconditions: allOf(
                 s => ok(questStatus(s, quest) === 'complete', 'Dragon Slayer is not complete'),
                 s => ok(!s.modalOpen && !s.dialog.isOpen, 'a reward page is still open'),
+                keyDropped,
             ),
-            done: o => questStatus(stateOf(o), quest) === 'complete',
+            // The key drop is part of the exit: a run stopped between the kill and the drop resumes here.
+            done: o => questStatus(stateOf(o), quest) === 'complete' && keyDropped(stateOf(o)) === true,
         },
     ];
     return questSteps(stepId, segs);
