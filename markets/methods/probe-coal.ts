@@ -23,6 +23,7 @@ import type { BotWorldState, NearbyLoc } from '../../sdk/types';
 import type { GEOffer } from '../../sdk/ge-types';
 import { MarketClient, type MarketQuote } from '../../sdk/market';
 import { pointMarketAtServer } from '../../speedrun/helpers/mule';
+import { depositMatching } from '../../speedrun/lib/bank';
 import { nextTick, waitUntil } from '../../speedrun/lib/wait';
 import { onTutorialIsland } from '../../speedrun/lib/world';
 import { EMPTY_ROCKS, miningLevel, steps as miningSteps } from '../../speedrun/skills/mining';
@@ -60,7 +61,8 @@ export const EDGEVILLE_BANK: Tile = { x: 3093, z: 3491 };
 export const VARROCK_WEST_BANK: Tile = { x: 3185, z: 3438 };
 
 const COAL = /^coal$/i;
-const ORE = /^(coal|tin ore|copper ore|iron ore|clay)$|^uncut /i;
+/** Every item but a pickaxe (what each bank visit deposits). */
+const KEEP_ONLY_PICKAXE = /^(?!.*pickaxe$)/i;
 const MINE = /^mine$/i;
 
 export interface CoalOptions extends CommonOptions {
@@ -253,12 +255,16 @@ export class CoalProbe {
         c.bankTrips++;
     }
 
-    /** At a bank: everything mined in, the pickaxe kept. */
+    /**
+     * At a bank: everything but the pickaxe in, the tutorial's starter kit too, so a fresh account's
+     * pack holds 27 ores between bank trips instead of the few slots mining.prep frees.
+     */
     private async depositOres(): Promise<void> {
         const { ctx } = this;
         const opened = await ctx.bot.openBank();
         if (!opened.success) throw new Error(`openBank: ${opened.message}`);
-        for (const name of [...new Set(this.s.inventory.filter(i => ORE.test(i.name)).map(i => i.name))]) await ctx.bot.depositItem(name, -1);
+        const d = await depositMatching(ctx.sdk, [KEEP_ONLY_PICKAXE]);
+        if (!d.ok) ctx.event('deposit incomplete', { reason: d.reason ?? null });
         this.t.coalInBank = ctx.sdk.getBankItems().find(i => COAL.test(i.name))?.count ?? 0;
         ctx.event('banked', { coalInBank: this.t.coalInBank, coinsInBank: ctx.sdk.getBankItems().find(i => /^coins$/i.test(i.name))?.count ?? 0 });
     }
