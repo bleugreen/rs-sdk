@@ -30,10 +30,14 @@ lent, so the kit's rune axe is a second one bought for this.
   account has 10 free slots. The role refuses a kit that needs more (`kitSlots`:
   one slot per unstackable item, one per stack or banknote). The mining kit is
   exactly 10.
-- **Never a second kit blind.** If `give()` fails and the kit has still left the
-  pack (an unsettled trade), the role logs `hand-off unsettled` and stops serving.
-  It does not stage another kit. A person reads both logs and decides what
-  happened.
+- **Never a second kit blind.** Before opening a trade, the role writes
+  `giving` into `ctx.state` under `kits.delivery:<receiver>`. Success changes it
+  to `delivered`; an uncertain result retains a blocking record. A crash,
+  re-login or launcher restart therefore cannot stage another kit for that
+  receiver. Only an unopened trade (`no_response` or `player_not_found`) with
+  the entire kit still held clears the record for an automatic retry. A person
+  reads both logs before clearing any other record. Changing kit counts does
+  not bypass this guard.
 - **Buying is not this role's job.** The existing roles cover it, run on the same
   account beforehand (next section).
 
@@ -94,9 +98,9 @@ machine") under a private tmux socket:
 cat > kits/mule2-kits.json <<'EOF'
 {"gatewayPort":7720,"botsDir":"/home/bleu/rs-fleet/bots","runDir":"/home/bleu/rs-dev/rehearsal-kits/run-mule2",
  "accounts":[{"account":"cairn_mule2","role":"kits","options":{
-   "serve":"cairn_chops",
-   "kits":{"cairn_chops":"rune_axe:1,knife:1,logs:1",
-           "cairn_casts":"fly_fishing_rod:1,feather:800,knife:1,logs:1",
+   "serve":"cairn_casts",
+   "kits":{"cairn_chops":"rune_axe:1,knife:1,logs:5",
+           "cairn_casts":"fly_fishing_rod:1,feather:800,knife:1,logs:5",
            "cairn_rocks":"steel_pickaxe:1,mithril_pickaxe:1,adamant_pickaxe:1,rune_pickaxe:1,knife:1,logs:4,coins:60"}}}]}
 EOF
 tmux -L rs41-kits new-session -d -s mule2 \
@@ -183,7 +187,12 @@ the tmux session closes with the process. Stopping in the middle of a trade is
 safe: items move only when both sides have accepted the confirm screen, and a
 trade cut short before that changes nothing. To avoid even that edge, stop
 outside a hand-off window. Stopping after `kit staged` leaves the kit in
-the pack, and the next start banks and restages it. Resting GE offers (the rune
+the pack, and the next start banks and restages it if no delivery record exists.
+If stopped during a hand-off, keep its delivery record until the receiver's log
+proves what happened. Never clear the role-state file wholesale. When adopting
+an older deployment that did not persist delivery records, first remove any
+already-served receiver from `serve`; do not restart its old assignment.
+Resting GE offers (the rune
 axe bid) survive a stop. Cancel one only from a `bidder` run, by setting the line's
 `target` to what is already held.
 

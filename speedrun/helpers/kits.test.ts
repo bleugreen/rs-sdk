@@ -10,8 +10,8 @@ const inv = (items: [number, number, string, number][]): InventoryItem[] =>
 
 /** rs/147's kits (2026-10-21). */
 const KITS = {
-    cairn_chops: 'rune_axe:1,knife:1,logs:1',
-    cairn_casts: 'fly_fishing_rod:1,feather:800,knife:1,logs:1',
+    cairn_chops: 'rune_axe:1,knife:1,logs:5',
+    cairn_casts: 'fly_fishing_rod:1,feather:800,knife:1,logs:5',
     cairn_rocks: 'steel_pickaxe:1,mithril_pickaxe:1,adamant_pickaxe:1,rune_pickaxe:1,knife:1,logs:4,coins:60',
     cairn_steals: 'cake:38:noted,coins:100',
     cairn_jumps: 'cake:7,knife:1'
@@ -29,7 +29,7 @@ describe('kit specs', () => {
             { item: 'Fly fishing rod', amount: 1, noted: false },
             { item: 'Feather', amount: 800, noted: false },
             { item: 'Knife', amount: 1, noted: false },
-            { item: 'Logs', amount: 1, noted: false }
+            { item: 'Logs', amount: 5, noted: false }
         ]);
         expect(parseKit(KITS.cairn_steals)[0]).toEqual({ item: 'Cake', amount: 38, noted: true });
         expect(parseKit([{ item: 'Rune axe', amount: 1 }])).toEqual([{ item: 'Rune axe', amount: 1, noted: false }]);
@@ -45,7 +45,7 @@ describe('kit specs', () => {
 
     test('slots: unstackables one each, stacks and notes one', () => {
         expect(kitSlots(parseKit(KITS.cairn_rocks))).toBe(10);
-        expect(kitSlots(parseKit(KITS.cairn_casts))).toBe(4);
+        expect(kitSlots(parseKit(KITS.cairn_casts))).toBe(8);
         expect(kitSlots(parseKit(KITS.cairn_steals))).toBe(2);
         expect(kitSlots(parseKit(KITS.cairn_jumps))).toBe(8);
         expect(kitSlots(parseKit('knife:3'))).toBe(3);
@@ -110,8 +110,8 @@ describe('giving', () => {
 
     test('kitHeld wants the whole kit', () => {
         const kit = parseKit(KITS.cairn_casts);
-        expect(kitHeld(inv([[0, 309, 'Fly fishing rod', 1], [1, 314, 'Feather', 799], [2, 946, 'Knife', 1], [3, 1511, 'Logs', 1]]), kit)).toBe(false);
-        expect(kitHeld(inv([[0, 309, 'Fly fishing rod', 1], [1, 314, 'Feather', 800], [2, 946, 'Knife', 1], [3, 1511, 'Logs', 1]]), kit)).toBe(true);
+        expect(kitHeld(inv([[0, 309, 'Fly fishing rod', 1], [1, 314, 'Feather', 799], [2, 946, 'Knife', 1], [3, 1511, 'Logs', 1], [4, 1511, 'Logs', 1], [5, 1511, 'Logs', 1], [6, 1511, 'Logs', 1], [7, 1511, 'Logs', 1]]), kit)).toBe(false);
+        expect(kitHeld(inv([[0, 309, 'Fly fishing rod', 1], [1, 314, 'Feather', 800], [2, 946, 'Knife', 1], [3, 1511, 'Logs', 1], [4, 1511, 'Logs', 1], [5, 1511, 'Logs', 1], [6, 1511, 'Logs', 1], [7, 1511, 'Logs', 1]]), kit)).toBe(true);
     });
 });
 
