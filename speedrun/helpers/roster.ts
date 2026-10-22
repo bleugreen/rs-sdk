@@ -103,20 +103,11 @@ export function giverEntries(accounts: string[], o: EntryOptions): Record<string
     const handBack = handBackSlot(S21_ESSENCE, accounts.length).index;
     return accounts.map((account, i) => {
         if (o.role === 'idle') return { account, role: 'idle', path: 'direct', options: { heartbeatMinutes: 1 } };
-        if (i === handBack) return withHandBack(giverEntry(account, i, o));
-        return giverEntry(account, i, o);
-    });
-}
-
-function withHandBack(e: Record<string, unknown>): Record<string, unknown> {
-    return { ...e, options: { ...(e.options as Record<string, unknown>), handBack: S21_HAND_BACK.map(i => ({ ...i })) } };
-}
-
-function giverEntry(account: string, i: number, o: EntryOptions): Record<string, unknown> {
-    {
         const restock: Record<string, unknown> = { kind: 'bank' };
         if (o.acceptFrom) restock.acceptFrom = o.acceptFrom;
-        return { account, role: 'altar-giver', path: 'direct', options: { altar: 'body', slot: i % GIVER_SLOTS, essence: ESSENCE_PER_TRIP, restock, scope: { step: 'S21', family: 'altar' } } };
+        const options: Record<string, unknown> = { altar: 'body', slot: i % GIVER_SLOTS, essence: ESSENCE_PER_TRIP, restock, scope: { step: 'S21', family: 'altar' } };
+        if (i === handBack) options.handBack = S21_HAND_BACK.map(h => ({ ...h }));
+        return { account, role: 'altar-giver', path: 'direct', options };
     });
 }
 
@@ -162,8 +153,18 @@ export interface Transfer {
  * givers themselves, forbidden or not cairn_ helpers are never used.
  */
 export function allocate(stock: Stockpile, item: string, givers: string[], each: number): Transfer[] {
-    validateAccounts(givers);
     positiveInteger(each, 'allocation');
+    return allocateEach(stock, item, givers, () => each);
+}
+
+/** As allocate, with each giver's own count (0: nothing for it). */
+export function allocateEach(stock: Stockpile, item: string, givers: string[], countFor: (giver: string) => number): Transfer[] {
+    validateAccounts(givers);
+    const wants = givers.map(g => {
+        const n = countFor(g);
+        if (!Number.isSafeInteger(n) || n < 0) throw new Error('allocation must be a non-negative safe integer');
+        return n;
+    });
     if (!stock || typeof stock.accounts !== 'object' || stock.accounts === null || Array.isArray(stock.accounts)) throw new Error('stockpile needs accounts');
     for (const a of Object.values(stock.accounts)) {
         if (!a || (a.bank !== undefined && !Array.isArray(a.bank))) throw new Error('invalid stockpile account');
@@ -178,11 +179,12 @@ export function allocate(stock: Stockpile, item: string, givers: string[], each:
         .filter(h => h.left > 0)
         .sort((a, b) => b.left - a.left || a.name.localeCompare(b.name));
     const have = holders.reduce((n, h) => n + h.left, 0);
-    if (have < each * givers.length) throw new Error(`${item}: need ${each * givers.length}, the stockpile holds ${have}`);
+    const total = wants.reduce((a, n) => a + n, 0);
+    if (have < total) throw new Error(`${item}: need ${total}, the stockpile holds ${have}`);
     const out: Transfer[] = [];
     let h = 0;
-    for (const to of givers) {
-        let need = each;
+    for (const [g, to] of givers.entries()) {
+        let need = wants[g]!;
         while (need > 0) {
             const holder = holders[h]!;
             const n = Math.min(need, holder.left);
