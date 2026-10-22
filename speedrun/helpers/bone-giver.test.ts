@@ -7,7 +7,9 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ASK_SLACK_MS, nameHash, newRequestFrom, readTopUpAsk, usableAsk, writeTopUpAsk } from './altar-cue';
-import { askOffer, boneGiverOptions, boneServer, carryDue, isFinalLoad, legRan, loadOffer, npcTiles, onSide, partnerIs, readBoneStatuses, requestUntilOpen, S07_SITES, sideTiles, type BoneStatus } from './bone-giver';
+import type { Cue } from './altar-cue';
+import type { RoleContext } from './role';
+import { askOffer, BoneGiver, boneGiverOptions, boneServer, carryDue, groupLoadsDone, isFinalLoad, legRan, loadOffer, npcTiles, onSide, partnerIs, readBoneStatuses, requestUntilOpen, S07_SITES, sideTiles, type BoneStatus } from './bone-giver';
 import { assertDemoStandIn } from './bone-receiver';
 
 const o = { noReplyTicks: 3, resendTicks: 100 };
@@ -30,7 +32,7 @@ const bgo = (raw: Record<string, unknown>, env?: Record<string, string | undefin
 
 describe('a group of bone givers takes turns (S07 b01-b04)', () => {
     const now = 50_000;
-    const st = (account: string, phase: BoneStatus['phase'], readyAt: number | null, extra: Partial<BoneStatus> = {}): BoneStatus => ({ v: 1, account, phase, held: 23, n: 23, trades: 0, bounces: 0, tile: null, readyAt, ms: now - 500, ...extra });
+    const st = (account: string, phase: BoneStatus['phase'], readyAt: number | null, extra: Partial<BoneStatus> = {}): BoneStatus => ({ v: 1, account, phase, held: 23, n: 23, trades: 0, bounces: 0, tile: null, readyAt, session: null, final: false, loads: null, ms: now - 500, ...extra });
     const GROUP = ['cairn_b01', 'cairn_b02', 'cairn_b03', 'cairn_b04'];
 
     test('the server is the giver already requesting or trading; else the loaded giver waiting longest', () => {
@@ -48,6 +50,69 @@ describe('a group of bone givers takes turns (S07 b01-b04)', () => {
         ];
         expect(boneServer(statuses, GROUP, now)).toBeUndefined();
         expect(boneServer([...statuses, st('cairn_b04', 'waiting', 999)], GROUP, now)).toBe('cairn_b04');
+    });
+
+    describe("the group's last load (finalExtras on one giver, rs/147's ruling)", () => {
+        // 16 loads on 4 givers; b03 carries T07-08's runes. trades split so the group has given `done`.
+        const at = (done: number, phases: Partial<Record<string, BoneStatus['phase']>> = {}, session = 's1') => {
+            const per = [Math.ceil(done / 4), Math.ceil((done - 1) / 4), Math.ceil((done - 2) / 4), Math.ceil((done - 3) / 4)].map(x => Math.max(0, x));
+            return GROUP.map((a, i) => st(a, phases[a] ?? 'waiting', 100 * (i + 1), { trades: per[i]!, session, loads: 16, final: a === 'cairn_b03' }));
+        };
+
+        test('the group count adds up its givers in the session, an ended giver included and another run\'s file not', () => {
+            expect(groupLoadsDone(at(11, { cairn_b01: 'off' }), GROUP)).toBe(11);
+            const other = st('cairn_b04', 'off', null, { trades: 9, session: 'old', ms: now - 900_000 });
+            const mixed = [...at(11).filter(s => s.account !== 'cairn_b04'), other];
+            expect(groupLoadsDone(mixed, GROUP, 's1')).toBe(at(11).filter(s => s.account !== 'cairn_b04').reduce((n, s) => n + s.trades, 0));
+            // Without a session given, the newest status's session decides.
+            expect(groupLoadsDone(mixed, GROUP)).toBe(groupLoadsDone(mixed, GROUP, 's1'));
+        });
+
+        test('the last load goes to the final giver alone, even when another has waited longer', () => {
+            expect(boneServer(at(15), GROUP, now)).toBe('cairn_b03');
+            expect(boneServer(at(15, { cairn_b03: 'restock' }), GROUP, now)).toBeUndefined();
+        });
+
+        test('within one rotation of the last load the final giver waits it out; before that it takes its turn', () => {
+            // done 12-14: fewer than 4 loads before the last, so b03 is passed over though it is oldest of b03, b04.
+            for (const done of [12, 13, 14]) expect(boneServer(at(done, { cairn_b01: 'restock', cairn_b02: 'restock' }), GROUP, now)).toBe('cairn_b04');
+            expect(boneServer(at(11, { cairn_b01: 'restock', cairn_b02: 'restock' }), GROUP, now)).toBe('cairn_b03');
+        });
+
+        test('no server once the group has given its loads; without a final giver the last load is anyone\'s', () => {
+            expect(boneServer(at(16), GROUP, now)).toBeUndefined();
+            const plain = at(15).map(s => ({ ...s, final: false }));
+            expect(boneServer(plain, GROUP, now)).toBe('cairn_b01');
+        });
+
+        test('options: the final giver carries a whole load and the extras on every trip', () => {
+            const RUNES = [
+                { item: 'Law rune', count: 1 },
+                { item: 'Air rune', count: 5 }
+            ];
+            expect(bgo({ group: GROUP, trades: 16, finalExtras: RUNES })).toMatchObject({ n: 23, finalN: 21, trades: 16 });
+            expect(() => bgo({ group: GROUP, trades: 16, n: 27, finalExtras: RUNES })).toThrow(/fit 28 slots/);
+            expect(() => bgo({ group: GROUP, trades: 16, finalN: 23, n: 22, finalExtras: RUNES })).toThrow(/finalN must be at most n/);
+        });
+    });
+
+    test('a relaunched giver resumes its trades from its own status file in the same session, and only then', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'bone-resume-'));
+        writeFileSync(join(dir, 'bones-cairn_b02.json'), JSON.stringify(st('cairn_b02', 'restock', null, { trades: 3, session: 's1' })));
+        const logs: string[] = [];
+        const ctx = (account: string) => ({ account, options: { group: GROUP, cueDir: dir, scope: { step: 'S07', family: 'bone' } }, sdk: { getState: () => null }, log: (m: string) => logs.push(m) }) as unknown as RoleContext;
+        const cue = (session: string) => ({ session }) as unknown as Cue;
+        const trades = (g: BoneGiver) => (g as unknown as { trades: number }).trades;
+        const same = new BoneGiver(ctx('cairn_b02'));
+        same.onCue(cue('s1'));
+        expect(trades(same)).toBe(3);
+        expect(logs).toEqual(['resumed']);
+        const other = new BoneGiver(ctx('cairn_b02'));
+        other.onCue(cue('s2'));
+        expect(trades(other)).toBe(0);
+        // Only the first cue decides: a later cue of the old session changes nothing.
+        other.onCue(cue('s1'));
+        expect(trades(other)).toBe(0);
     });
 
     test('status files round-trip from the cue directory', () => {
