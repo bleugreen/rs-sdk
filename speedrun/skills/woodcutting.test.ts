@@ -772,9 +772,6 @@ describe('woodcutting: the slot ledger, H4k to H4.x (rs/158 spec 1)', () => {
         h.sdk.onSend = (a, sdk) => (order.push(a.method), onSend(a, sdk));
         const walk = h.ctx.bot.walkTo;
         (h.ctx.bot as { walkTo: typeof walk }).walkTo = (async (...args: Parameters<typeof walk>) => (order.push('walkTo'), walk(...args))) as typeof walk;
-        const held: string[][] = [];
-        const receive = h.byName; // keep the harness's receive: record the pack it sees
-        void receive;
         await oak.run(h.ctx);
         expect(order.slice(0, 2)).toEqual(['sendDropItem', 'walkTo']);
         const s = h.sdk.getState()!;
@@ -782,7 +779,6 @@ describe('woodcutting: the slot ledger, H4k to H4.x (rs/158 spec 1)', () => {
         expect(s.inventory.filter(i => !/bones$/i.test(i.name)).map(i => i.name).sort()).toEqual(['Knife', 'Logs', 'Rune axe']);
         expect(s.inventory.filter(i => /^logs$/i.test(i.name))[0]!.slot).toBe(end.held.indexOf('Logs'));
         expect(h.receives).toHaveLength(1);
-        void held;
         // the ledger's H4.x: 25 free at the load, against 23 bones and the chopped log
         expect(28 - (s.inventory.length - 23)).toBe(25);
     });
