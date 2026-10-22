@@ -25,9 +25,9 @@ b01-b04, h70-h75) show nothing. Every move below was confirmed on both sides: th
 
 | Giver | Account | Host on run day | Rows |
 |---|---|---|---|
-| Trade giver 1 (`mule` role, packages served in order) | **cairn_mule1** (fleet, Varrock west bank; `serve` set on run day) | Ashburn run machine; credentials go there only through host, on run day | H1, H3, H4, H4k, H4p, H6-H10, H12-H16, H18-H20, H21d, H21e, H22, H23's potions, sharks and bow |
+| Trade giver 1 (`mule` role, packages served in order) | **cairn_mule1** (fleet, Varrock west bank; `serve` set on run day) | Ashburn run machine; credentials go there only through host, on run day | H1, H3, H4, H4k, H4p, H6-H10, H12-H16, H18-H20, H21d, H21e, H22, H23's potions and sharks |
 | Trade giver 2 | **cairn_mule2** (outside fleet.json, credentials in `~/rs-fleet/bots`; the rehearsal-kit giver until the run; named by rs/41, 01:36) | Ashburn, as above | **H21c, the wine giver** (below), and any hand-off trade giver 1 cannot reach in time (rs/117 splits them); holds attempt 2's axe and pickaxe |
-| Cannon helper | cairn_h92 (`cannon.ts` serve mode, dev copy `~/rs-dev/cannon`) | bbs | H11, H11r, H23's cannon and balls |
+| Cannon helper | cairn_h92 (`cannon.ts` serve mode, dev copy `~/rs-dev/cannon`) | bbs | H11, H11r, H23's cannon, balls and shortbow |
 | Bone givers | cairn_b01-b04 (`bone-giver.ts`) | Ashburn | H4.1-H4.n; the last load also gives T07-08's Camelot runes |
 | Air-altar givers (S06) | 7 givers: h70, h71, h72 staged by rs/196's morning sequence, 4 not yet named | Ashburn | H5 |
 | Body-altar givers (S21) | cairn_t01-t22, spares t23-t27 (`roster.ts`) | Ashburn | H17 |
@@ -87,16 +87,17 @@ named in the gap column.
 | H21d | mule1 | in: chisel 1, uncut diamond 391 (noted) | chisel on mule1; **uncut diamonds: 2** (GE bid wall 6,000 for 9,787, no sellers) | partly | Unreachable by 23 Oct. rs/158's fallback, the gem-table mix (+88): uncut sapphire 35, emerald 21, ruby 16 held. Owner rs/158 (which mix), rs/41 (stock) |
 | H21e | mule1 | in: noted unfinished potions and their secondaries (counts per rs/302's planner and rs/158's ledger) | snape grass 102 (100 for H21e) and eye of newt 50 on mule1; h84 (~483 unf after processing, eyes, snape grass), h85 (~360 unf), limpwurt 250 on h51-h54 | partly | **Code gap:** `handover` (and the `mule` package spec) address items by exact name, and in this revision every unfinished potion is "Unfinished potion" and every grimy herb "Herb", so neither can move one potion type, or keep types apart. Needs id-addressed items (noted ids differ from the banked ones). Until then, h84/h85's unf stay put. Owner rs/41 (file or fold into rs/329) |
 | H22 | mule1 | in: coins 126,000, wizard's mind bomb 1, silk 1, lobster pot 1, unfired bowl 1, plank 3, nails 12, adamant full helm 1, amulet of strength 1, shark 10, law 5, air 9, fire 1, earth 1, water 3, mithril scimitar 1 (back from H12) | coins, helm, sharks, runes on mule1; quest items and nails 12 ("Nails", id 1539) on h94; **planks, amulet of strength: none** | partly | Planks: rs/173's far-set lab picked up 4 at the Barbarian Outpost; fallback the Rimmington spawn. Amulet of strength: h80's ruby amulet enchanted (Enchant 3, Magic 49) by a helper (rs/41) |
-| H23 | h92 + mule1 | in: cannon set 1, cannonballs 1,200 (h92); ranging potion(4) 3, super antipoison(4) 2, super attack(4) 1, super strength(4) 1, shark 12, magic shortbow 1 (back from H13; mule1) | set, balls on h92; sharks on mule1; **no potions held** | partly | Potions from the herb line (rs/41): irit and kwuarm unf on h85, eye of newt, limpwurt; ranging needs Herblore 72. GE: ranging bid 5,000, no sellers |
+| H23 | h92 + mule1 | in: cannon set 1, cannonballs 1,200 and the magic shortbow 1 (back from H13, passed mule1 → h92 before S26) in h92's trade; ranging potion(4) 3, super antipoison(4) 2, super attack(4) 1, super strength(4) 1, shark 12 (mule1) | set, balls on h92; sharks on mule1; **no potions held** | partly | Potions from the herb line (rs/41): irit and kwuarm unf on h85, eye of newt, limpwurt; ranging needs Herblore 72. GE: ranging bid 5,000, no sellers |
 | DS re-supply (contingency, rs/258) | mule2 | mithril scimitar, hammer, 8 sharks; planks 3, nails 12 | on mule2: scimitar, hammer, sharks | partly | Planks and nails: GE bids rest on mule2 (#19502 at 450, #19505 at 200), neither ever traded; fallback nails smithed by a smelter (h20/h21 steel), planks from the Rimmington spawn. Re-run `kits/mule2-ds.json` to collect fills (rs/41, low priority) |
 
 **Fully staged today:** H1, H3, H4k, H4p, H9, H10 and H18. The cannon set
 and balls (H11, H23) are on h92, and the wine (H21c) is on h40. Every other row is partly staged,
 with the missing items named above.
 
-**One conflict to settle.** rs/329's item 3 says H23 "takes back the magic shortbow". The inputs
-here have H13 take it back and H23 give it again, because S27 fires it. This page follows the
-inputs: the bow returns to mule1 at H13, and mule1 gives it in H23 beside h92's cannon trade.
+**The shortbow's path (rs/158, 02:30 PDT).** H13 takes the magic shortbow back to mule1, and
+H23 gives it again **in h92's cannon trade**, with the set and balls, because S27 fires it. So
+the bow moves mule1 → h92 between S16 and S26, and `cannon.ts` serve must offer it. rs/329's
+item 3 ("H23 takes back the magic shortbow") is being corrected by rs/41.
 
 ## Per attempt
 
