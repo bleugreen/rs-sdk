@@ -290,6 +290,8 @@ export type LightEvent =
           send: number | null;
           /** Ticks the chain lost to a late or fresh start (0 when chained). */
           slip: number;
+          /** No success message was seen: the log turned into a fire with this account's xp (see onTick). */
+          inferred?: true;
       }
     | { kind: 'refused'; tick: number; tile: Tile; reason: 'tile' | 'level' | 'unreachable' }
     | { kind: 'lost'; tick: number; tile: Tile; tier: string }
@@ -313,6 +315,8 @@ interface Pending {
     from: Tile;
     evidence: boolean;
     goneSince: number | null;
+    /** Firemaking xp when the light was first sent. */
+    xp: number;
 }
 
 /**
@@ -330,6 +334,7 @@ export class Lighter {
     firstAttemptTick: number | null = null;
     firstSuccessTick: number | null = null;
     lastSuccessTick: number | null = null;
+    private lastInferred = false;
     private attemptTick: number | null = null;
     private pending: Pending | null = null;
     private waitFrom: number | null = null;
@@ -382,7 +387,11 @@ export class Lighter {
                 this.attemptTick = t;
                 this.firstAttemptTick ??= t;
                 if (this.pending) this.pending.evidence = true;
-            } else if (MSG.success.test(m.text)) this.onSuccess(t, litAt);
+            } else if (MSG.success.test(m.text)) {
+                // Successes are at least 4 ticks apart, so one this soon after an inferred success is
+                // that success's own message arriving late, not the next log's.
+                if (!(this.lastInferred && this.lastSuccessTick !== null && t - this.lastSuccessTick < 4)) this.onSuccess(t, litAt);
+            }
             else if (MSG.refused.test(m.text)) this.onRefused(t, 'tile');
             else if (MSG.tooLow.test(m.text)) this.onRefused(t, 'level');
             else if (MSG.unreachable.test(m.text)) this.onRefused(t, 'unreachable');
@@ -396,10 +405,17 @@ export class Lighter {
             if (onGround) p.goneSince = null;
             else if (p.goneSince === null) p.goneSince = t;
             else if (t - p.goneSince >= 1) {
-                // Gone a whole tick without a success: taken, or despawned. Move on past it.
-                this.events.push({ kind: 'lost', tick: t, tile: p.tile, tier: p.tier });
-                this.cursor = p.index + 1;
-                this.pending = null;
+                if (hasFire(s, p.tile) && fmXp(s) > p.xp) {
+                    // Lit, and the success message never showed (5 times on the demo, rs/269): the
+                    // log became a fire on its tile and this account's xp rose. A stranger's pickup
+                    // leaves no fire, and a stranger's light gives this account no xp.
+                    this.onSuccess(p.goneSince, litAt, true);
+                } else {
+                    // Gone a whole tick without a success: taken, or despawned. Move on past it.
+                    this.events.push({ kind: 'lost', tick: t, tile: p.tile, tier: p.tier });
+                    this.cursor = p.index + 1;
+                    this.pending = null;
+                }
             }
             const q = this.pending;
             if (q && onGround) {
@@ -433,7 +449,7 @@ export class Lighter {
             this.waitFrom = null;
         }
         this.cursor = target.index;
-        this.pending = { tile: target.tile, index: target.index, itemId: target.item.id, tier: target.item.name, firstSent: t, sentTick: t, from: here(s), evidence: false, goneSince: null };
+        this.pending = { tile: target.tile, index: target.index, itemId: target.item.id, tier: target.item.name, firstSent: t, sentTick: t, from: here(s), evidence: false, goneSince: null, xp: fmXp(s) };
         d.light = { x: target.tile[0], z: target.tile[1], itemId: target.item.id };
         return d;
     }
@@ -472,7 +488,7 @@ export class Lighter {
         return null;
     }
 
-    private onSuccess(t: number, level: number): void {
+    private onSuccess(t: number, level: number, inferred = false): void {
         const p = this.pending;
         const prev = this.lastSuccessTick;
         const fresh = this.attemptTick !== null && (prev === null || this.attemptTick > prev);
@@ -487,11 +503,12 @@ export class Lighter {
         const tile = p?.tile ?? this.tileAt(this.cursor);
         this.events.push({
             kind: 'fire', tick: t, n: this.fires, tile, tier: p?.tier ?? '?', level, gap, failures, fresh,
-            send: p && prev !== null ? p.firstSent - prev : null, slip
+            send: p && prev !== null ? p.firstSent - prev : null, slip, ...(inferred ? { inferred: true as const } : {})
         });
         this.fires++;
         this.firstSuccessTick ??= t;
         this.lastSuccessTick = t;
+        this.lastInferred = inferred;
         this.cursor = (p?.index ?? this.cursor) + 1;
         this.pending = null;
     }
@@ -648,7 +665,7 @@ export async function lightRow(ctx: StepContext<any>, o: Resolved): Promise<RowR
         firstAttemptTick: L.firstAttemptTick, firstSuccessTick: L.firstSuccessTick,
         fixedTicks: L.firstAttemptTick === null ? null : L.firstAttemptTick - L.startTick,
         slips: fireEvents.filter(e => e.slip > 0).length, slipTicks: fireEvents.reduce((a, e) => a + e.slip, 0),
-        fresh: fireEvents.filter(e => e.fresh).length,
+        fresh: fireEvents.filter(e => e.fresh).length, inferred: fireEvents.filter(e => e.inferred).length,
         sends: Object.fromEntries([0, 1, 2, 3].map(k => [`R+${k + 2}`, fireEvents.filter(e => e.send === k).length]).concat([['later', fireEvents.filter(e => (e.send ?? 0) > 3).length]])),
         lost: count('lost'), refused: count('refused'), skips: count('skip'), resends: L.resends, nolog: count('nolog'),
         nologTicks: L.events.reduce((a, e) => a + (e.kind === 'nolog' && !e.first ? e.ticks : 0), 0),
