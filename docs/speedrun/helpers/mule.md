@@ -121,7 +121,11 @@ run machine's one channel to the givers, the same directory the top-up asks use.
 mule reads the cue (`readCue`); a new one (a new session or a later write, and none older than
 the mule's start less a minute) that names the account it serves (by name hash) and addresses
 one of its packages (`cueAddresses`, `packageForCue`) makes that package the next one: the mule
-withdraws it and pre-requests the scored account when it is near. `serveMode: 'request'` serves
+withdraws it and pre-requests the scored account when it is near. A cue session asks once
+(`muleCueAction`): a later write of the same session (fresh beacons) asks nothing again, so a
+served package is never re-staged by its own cue, and a write with `stop` withdraws the request
+(a still-pending package is banked). So one writer per hand-off, the run's cue keeper or
+`requestPackage`, may rewrite and stop its cue freely. `serveMode: 'request'` serves
 only packages asked for this way; in `'order'` mode a cue still asks for any package (a
 fallback marked `onRequest`). There is no request file and no private-message request: a config
 with `requestFile` is refused.
@@ -217,6 +221,18 @@ scope. It reads mule options, a packages list, or fleet.json's entry for `--acco
 cairn_mule1). Zero drift is the run-day gate. `--bank` (`stockWalk`) stages the packages one after
 another against the account's bank in stockpile.json, crediting what each row's give-back returns
 (H12's scimitar serves H22), and lists what runs out.
+
+**Proving the packages on the demo** (`speedrun/helpers/mule-standin.ts`). A throwaway stand-in
+runs the scored side's own `runHandOff` against the mule in `request` mode, row by row in run
+order, under the standalone launcher (the stand-in `final`). Each row: ask by cue, wait for the
+mule's standing request (the package is staged, as when SCORED arrives), run the hand-off, then
+hand everything received straight back (the mule, with no package pending, takes any offer and
+banks it). The stand-in never equips (the row's wield lines are emptied), eats or banks; a give line
+runs only on mule surplus it was seeded with just before the row (a seed package, `onRequest`),
+and every line left out is reported as not exercised. A give-back that fails stops the session.
+It reports, per row, the ticks on its clock, the staging ticks, the free slots before and after,
+and what moved, and ends holding exactly what it started with, by id. The mule's first and last
+bank reports in the dev log are the before and after for the reconciliation.
 
 **Order mode and giving back.** In `order` mode every trade from the scored account
 takes the next package. A trade from the scored account while no package is pending

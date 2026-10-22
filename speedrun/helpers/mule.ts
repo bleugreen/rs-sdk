@@ -713,6 +713,19 @@ export function newCue(cue: Pick<Cue, 'session' | 'seq' | 'ms'> | null, last: { 
     return !last || cue.session !== last.session || cue.seq > last.seq;
 }
 
+/**
+ * What a mule cue does. A cue session asks once: its first write the mule sees is the request
+ * (`ask`); a later write of the same session (fresh beacons) asks nothing again, so a package served
+ * is never re-staged by its own cue. A write with `stop` (any seq, either session) withdraws the
+ * request (`stop`): the package, if still pending, is dropped. So one writer per hand-off (the run's
+ * cue keeper, or requestPackage) may rewrite and stop its cue freely.
+ */
+export function muleCueAction(cue: Pick<Cue, 'session' | 'seq' | 'ms' | 'stop'> | null, last: { session: string; seq: number } | null, startMs: number): 'ask' | 'stop' | 'none' {
+    if (!newCue(cue, last, startMs)) return 'none';
+    if (cue!.stop) return 'stop';
+    return !last || cue!.session !== last.session ? 'ask' : 'none';
+}
+
 /** A package's lines from options: `{ item | id, amount, noted? }`, or `{ item | id, topUp: { max }, noted? }`. */
 export function packageItems(name: string, items: unknown, pack?: ObjPack): PackageItem[] {
     if (!Array.isArray(items)) throw new Error(`Package ${name}: items must be a list`);
@@ -865,14 +878,21 @@ class Mule {
 
         // 1. Package requests: a new mule cue in the cue directory, scoped to one of our packages.
         const cue = readCue(this.o.cueDir);
-        if (cue?.scope?.family === 'mule' && newCue(cue, this.lastCue, this.startMs)) {
+        const action = cue?.scope?.family === 'mule' ? muleCueAction(cue, this.lastCue, this.startMs) : 'none';
+        if (cue && action !== 'none') {
+            const last = this.lastCue;
             this.lastCue = { session: cue.session, seq: cue.seq };
             const pkg = packageForCue(cue, this.o.packages, this.o.serve);
-            ctx.log('package request', { step: cue.scope.step, session: cue.session, seq: cue.seq, found: pkg?.name ?? null });
-            if (pkg && pkg !== this.pending) {
+            ctx.log(action === 'ask' ? 'package request' : 'package request stopped', { step: cue.scope.step, session: cue.session, seq: cue.seq, found: pkg?.name ?? null, after: last });
+            if (action === 'ask' && pkg && pkg !== this.pending) {
                 this.pending = pkg;
                 this.held = null;
                 this.shortSince = 0;
+            } else if (action === 'stop' && pkg && pkg === this.pending && (this.o.serveMode === 'request' || pkg.onRequest)) {
+                // Withdrawn: bank the staged package; order mode returns to the package due.
+                this.pending = this.o.serveMode === 'order' ? (this.ordered[this.nextIndex] ?? null) : null;
+                this.held = null;
+                this.needsBank = true;
             }
         }
 
