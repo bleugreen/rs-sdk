@@ -225,7 +225,8 @@ try {
     {
         let s = make('p2seller'), b = make('p2buyer');
         s.invAdd(INV, logsNote, 50);
-        b.invAdd(INV, coins, 500);
+        // 600 coins: 100 stay behind, so the coin stack keeps its slot and 27 daggers fill the rest.
+        b.invAdd(INV, coins, 600);
         for (let i = 0; i < 27; i++) b.invAdd(INV, dagger, 1);
         check('P2 collect with a full backpack (overflow retry)', () => [s, b], [logs, coins, dagger], log => {
             place(s, 0, 'sell', 'logs', logs, 50, 10);
