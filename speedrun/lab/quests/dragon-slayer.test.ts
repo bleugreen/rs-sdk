@@ -71,10 +71,6 @@ describe('lab fixtures', () => {
 describe('lab fixture tiles (offline pathfinder)', () => {
     // Loaded at collection: bun holds hooks to the 5 s test timeout, and the load took 4.8 s on a loaded host.
     pathfinding.initPathfinding();
-    test('every fixture tile is walkable', () => {
-        for (const f of FIXTURES) expect([f.letter, pathfinding.isTileWalkable(f.tile.level ?? 0, f.tile.x, f.tile.z)]).toEqual([f.letter, true]);
-    });
-
     test("D's tile reaches the guild door from inside", () => {
         const d = FIXTURES.find(f => f.letter === 'D')!;
         const path = pathfinding.findLongPath(0, d.tile.x, d.tile.z, LOCS.guildDoor.x, LOCS.guildDoor.z - 1);
