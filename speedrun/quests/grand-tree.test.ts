@@ -3,12 +3,14 @@ import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem, NearbyLoc, NearbyNpc, PlayerState, QuestJournalState } from '../../sdk/types';
 import { PRAYER_INDICES } from '../../sdk/types';
 import { QUESTS } from '../data/quest-stages';
-import { baseState, FakeSdk, type SentAction } from '../lib/fake-sdk';
+import { baseState, FakeSdk, runeNeedProblems, type SentAction } from '../lib/fake-sdk';
+import { sumUse } from '../lib/travel';
 import { journalProbeName } from '../lib/quests';
 import { TickLog } from '../lib/ticks';
 import type { Observed, RunnerSession, StepContext } from '../runner/step';
 import {
-    AGILITY_AFTER, ardougneTeleport, climbToPillars, entryCheck, exitCheck, FREE_SLOTS, gtStage, kitCheck, resolveOptions, ROOTS, searchRoot, steps, TILES,
+    AGILITY_AFTER, ardougneTeleport, climbToPillars, DEMON_CASTS, DEMON_MAX_CASTS, entryCheck, exitCheck, FREE_SLOTS, gtStage, H8, ITEM, kitCheck, resolveOptions, ROOTS,
+    RUNE_NEED, RUNE_STAFF, RUNE_USE, searchRoot, steps, TILES,
 } from './grand-tree';
 
 const prevTick = process.env.SPEEDRUN_TICK_MS;
@@ -358,5 +360,21 @@ describe('P: the exit state', () => {
         const s = done(AGILITY_AFTER);
         expect(exitCheck({ ...s, inventory: [...s.inventory, item('Daconia rock')] })).toMatch(/Daconia rock/);
         expect(exitCheck({ ...s, player: player(TILES.narnode.x, TILES.narnode.z) })).toMatch(/not beside Narnode in the roots/);
+    });
+});
+
+describe('rune pins: RUNE_USE and RUNE_NEED agree with the kit (tools/rune-pins.ts)', () => {
+    test('RUNE_NEED.A is exactly what kitCheck wants held', () => {
+        expect(runeNeedProblems(s => kitCheck(s), routeState(), RUNE_NEED.A!)).toEqual([]);
+    });
+    test("the teleports at B, C and J are H8's law, water and air, J's fire the staff's", () => {
+        const h8 = (it: RegExp) => H8.find(w => w.item === it)!.amount;
+        expect(sumUse(RUNE_USE.B!, RUNE_USE.C!, RUNE_USE.J!)).toEqual({ lawrune: h8(ITEM.law), waterrune: h8(ITEM.water), airrune: h8(ITEM.air) });
+        expect(entryCheck(routeState({ equipment: [] }))).toMatch(new RegExp(RUNE_STAFF, 'i'));
+    });
+    test("N2's Fire Bolts are the measured maximum, inside the kit's DEMON_CASTS", () => {
+        expect(RUNE_USE.N2!.chaosrune).toBe(DEMON_MAX_CASTS);
+        expect(DEMON_MAX_CASTS).toBeLessThanOrEqual(DEMON_CASTS);
+        expect(RUNE_USE.N2!.firerune).toBeUndefined();
     });
 });

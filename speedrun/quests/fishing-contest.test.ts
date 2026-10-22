@@ -1,12 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import type { BotWorldState, InventoryItem, PlayerState, QuestJournalState } from '../../sdk/types';
-import { baseState, drive, FakeSdk } from '../lib/fake-sdk';
+import { baseState, drive, FakeSdk, runeNeedProblems } from '../lib/fake-sdk';
+import { sumUse } from '../lib/travel';
 import { journalProbeName } from '../lib/quests';
 import { TickLog } from '../lib/ticks';
 import { Observation, resolveResume } from '../runner/resume';
 import type { Observed, RunnerSession, StepContext } from '../runner/step';
 import { DEFAULT_DIALOGUE, slotNeed } from './segments';
-import { ARRIVAL, DEAD_AT_EXIT, FENCE, inFence, inWood, LETTERS, observed, PIPE, QUEST_ITEMS, quest, RAILING, stepId, steps } from './fishing-contest';
+import { ARRIVAL, DEAD_AT_EXIT, FENCE, inFence, inWood, LETTERS, observed, PIPE, QUEST_ITEMS, quest, RAILING, RUNE_NEED, RUNE_USE, stepId, steps } from './fishing-contest';
 
 let nextSlot = 0;
 const item = (name: string, count = 1): InventoryItem => ({ slot: nextSlot++, id: 1000 + nextSlot, name, count, optionsWithIndex: [] }) as unknown as InventoryItem;
@@ -275,5 +276,15 @@ describe('N: the exit state and its drops (the slot ledger T20-21 drops, moved i
         expect(sdk.sent.map(a => a.method)).toEqual(['sendDropItem', 'sendDropItem']);
         expect(sdk.sent.map(a => a.args[0]).sort()).toEqual([...deadSlots].sort());
         expect(post(sdk.getState()!)).toBe(true);
+    });
+});
+
+describe('rune pins: RUNE_USE and RUNE_NEED agree with the entry check (tools/rune-pins.ts)', () => {
+    test("RUNE_NEED.A is exactly what A's runesHeld wants held", () => {
+        expect(runeNeedProblems(s => byLetter('A').preconditions(s, {}), arrival(), RUNE_NEED.A!)).toEqual([]);
+    });
+    test("C and M each want their own cast held (oneCast), and the two are the whole of it", () => {
+        expect(runeNeedProblems(s => byLetter('C').preconditions(s, {}), startOf('C').state, RUNE_USE.C!)).toEqual([]);
+        expect(sumUse(RUNE_USE.C!, RUNE_USE.M!)).toEqual(RUNE_NEED.A!);
     });
 });

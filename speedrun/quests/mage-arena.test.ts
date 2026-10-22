@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { PRAYER_INDICES, type BotWorldState, type GroundItem, type InventoryItem, type NearbyNpc, type PlayerState } from '../../sdk/types';
-import { drive, FakeSdk, baseState } from '../lib/fake-sdk';
+import { drive, FakeSdk, baseState, runeNeedProblems } from '../lib/fake-sdk';
 import { TickLog } from '../lib/ticks';
 import type { Observed, StepContext } from '../runner/step';
 import {
     AIR_RUNES, ARRIVAL, barredReason, entryRefusal, exitClean, exitDropItems, exitMagic, FALLBACK_RUNES, fightKolodion, formPicker, KEEP_SHARKS, kit, LETTERS, newTally, prayerBudget, quest,
-    SPELL_RUNES, SPELLS, spellReady, stepId, steps, type Options,
+    FIRE_WAVE_MAX_CASTS, RUNE_NEED, RUNE_USE, RUNE_USE_FALLBACK, SPELL_RUNES, SPELLS, spellReady, stepId, steps, type Options,
 } from './mage-arena';
 
 // Config ids from server/content/pack/obj.pack: entryRefusal reads the categories by id.
@@ -464,5 +464,16 @@ describe('exitMagic: what S18 sees', () => {
         expect(exitMagic(arrival({}, { magic: 81 }))).toMatchObject({ base: 81, chargeReady: true, sipNeeded: false });
         expect(exitMagic(arrival({}, { magic: 79 }))).toMatchObject({ chargeReady: false, sipNeeded: true });
         expect(exitMagic(arrival({}, { magic: 75 }))).toMatchObject({ chargeReady: false, sipNeeded: false });
+    });
+});
+
+describe('rune pins: RUNE_USE and RUNE_NEED agree with the kit (tools/rune-pins.ts)', () => {
+    test("RUNE_NEED.B is exactly what B's fightReady wants held (H13's kit)", () => {
+        expect(runeNeedProblems(s => seg('B').preconditions(s, {}), without(arrival(), /greegree/i), RUNE_NEED.B!)).toEqual([]);
+    });
+    test("C's Fire Waves are the measured maximum, inside SPELL_RUNES; the fallback spends the whole kit's spell runes", () => {
+        expect(RUNE_USE.C).toEqual({ bloodrune: FIRE_WAVE_MAX_CASTS, airrune: FIRE_WAVE_MAX_CASTS * SPELLS.fire_wave.air });
+        expect(FIRE_WAVE_MAX_CASTS).toBeLessThanOrEqual(SPELL_RUNES.fire_wave);
+        expect(RUNE_USE_FALLBACK.C).toMatchObject({ bloodrune: SPELL_RUNES.fire_wave, deathrune: FALLBACK_RUNES });
     });
 });

@@ -1,12 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import type { BotWorldState, InventoryItem, PlayerState, QuestJournalState } from '../../sdk/types';
-import { baseState, drive, FakeSdk } from '../lib/fake-sdk';
+import { baseState, drive, FakeSdk, runeNeedProblems } from '../lib/fake-sdk';
 import { journalProbeName } from '../lib/quests';
 import { TickLog } from '../lib/ticks';
 import { Observation, resolveResume } from '../runner/resume';
 import type { RunnerSession, StepContext } from '../runner/step';
 import {
-    ARENA, ARRIVAL, castRunes, census, DEAD_AT_EXIT, entryCheck, exitCheck, fightOptions, LETTERS, MIN_CASTS, observed, QUEST_ITEMS, quest, SHAPES, stepId, steps, TILES,
+    ARENA, ARRIVAL, castRunes, census, DEAD_AT_EXIT, entryCheck, exitCheck, fightOptions, LETTERS, MAX_CASTS, MIN_CASTS, observed, QUEST_ITEMS, quest, RUNE_NEED, RUNE_STAFF, RUNE_USE,
+    SHAPES, stepId, steps, TILES,
 } from './fight-arena';
 import { DEFAULT_DIALOGUE, slotNeed } from './segments';
 
@@ -241,5 +242,17 @@ describe('K: the exit', () => {
         expect(c.slots.length).toBe(14);
         expect(c.free).toBe(14);
         expect(c.worn).toEqual(['Staff of fire', 'Amulet of magic', 'Khazard helmet', 'Khazard armour']);
+    });
+});
+
+describe('rune pins: RUNE_USE and RUNE_NEED agree with the entry check (tools/rune-pins.ts)', () => {
+    test('RUNE_NEED.A is exactly what entryCheck wants held: MIN_CASTS Fire Blasts and T12-13\'s Ardougne', () => {
+        expect(runeNeedProblems(s => entryCheck(undefined)(s, {}), world(), RUNE_NEED.A!)).toEqual([]);
+    });
+    test('the fights use the measured maximum, inside MIN_CASTS, their fire the staff\'s', () => {
+        expect(RUNE_USE.G!.deathrune).toBe(MAX_CASTS);
+        expect(MAX_CASTS).toBeLessThanOrEqual(MIN_CASTS);
+        expect(RUNE_USE.G!.firerune).toBeUndefined();
+        expect(castRunes(1)(world({ worn: [] }), {})).toMatch(new RegExp(RUNE_STAFF, 'i'));
     });
 });
