@@ -261,6 +261,8 @@ describe('thieving steps', () => {
         expect(() => steps({ topUp: { giver: 'g', below: 0 } })).toThrow(/topUp needs/);
         expect(() => steps({ topUp: { giver: 'g', below: 3, mode: 'later' as never } })).toThrow(/topUp needs/);
         expect(steps({ topUp: { giver: 'g', below: 3, mode: 'restart' } }).length).toBe(7);
+        expect(() => steps({ topUp: { giver: 'g', below: 3, resend: 'yes' as never } })).toThrow(/topUp.resend must be true or false/);
+        expect(() => steps({ topUp: { giver: 'g', below: 3, mode: 'restart', resend: true } })).toThrow(/topUp.resend is for idle mode/);
     });
 
     test('a band with work left fails its precondition on the lite client; a finished one does not', () => {
@@ -355,6 +357,8 @@ describe('thieving helper top-ups', () => {
         const done = steps({ food: 'cake', topUp }).find(s => s.name === 'thieving:knights')!.run(ctx);
         await settle(() => sdk.starts.length === 1);
         expect(sdk.starts[0]!.params).toMatchObject({ idleOnInterface: true, stunActions: [topUpAction(topUp, FOODS.cake)], retargetTicks: 12 });
+        // the re-send is off unless asked for
+        expect(sdk.starts[0]!.params.requestResend).toBeUndefined();
         const action = topUpAction(topUp, FOODS.cake) as { fewer: Array<{ item: string; than: number }> };
         expect(action).toMatchObject({ name: 'topup', kind: 'player', player: '^cairn_mule2$', window: [2, 2] });
         expect(action.fewer[0]!.than).toBe(4);

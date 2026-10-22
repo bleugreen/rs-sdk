@@ -20,7 +20,9 @@
 // - `idle` (default): the program sends the trade request itself, as a `player` stun action
 //   on the stun's +2 once fewer than `below` food items are left, and with
 //   `idleOnInterface` sends nothing while the trade is open; this module's TopUpReceiver
-//   accepts the offer and confirm screens (`lib/trade.ts` `decideReceiver`).
+//   accepts the offer and confirm screens (`lib/trade.ts` `decideReceiver`). `resend: true`
+//   (off by default) has the program send a request the engine never answered once more,
+//   TOPUP_RESEND_TICKS after it and inside the program's request hold.
 // - `restart` (the fallback): the module stops the program on the first failure with food
 //   below `below`, receives the trade (`receiveFrom`, re-sending a request the stun's delay
 //   dropped), and starts the program again by TOPUP_RESTART_BY ticks after the failure, whose
@@ -225,6 +227,8 @@ export interface TopUp {
     below: number;
     /** See the header (default 'idle'). */
     mode?: 'idle' | 'restart';
+    /** Idle mode only: re-send an unanswered request once, TOPUP_RESEND_TICKS after it (default off). */
+    resend?: boolean;
 }
 
 /** Ticks after the failure by which a stopped program must be running again (the header). */
@@ -236,6 +240,14 @@ export const TOPUP_RESTART_BY = 9;
  * (OpPlayerHandler): in the lab every one of 13 such requests vanished and no top-up landed.
  */
 export const TOPUP_NO_REPLY_TICKS = 2;
+/**
+ * Idle mode's `resend`: the program's `requestResend`, ticks after the +2 request. A request that
+ * has drawn neither a trade nor "Sending trade offer..." by then was dropped: in rs/279's
+ * side-tile lab, 1 of 10 requests never reached the giver. 3 is the last tick of the program's
+ * request hold (REQUEST_HOLD), so the re-send displaces no click, and a request that ran even
+ * 2 ticks late has already been answered.
+ */
+export const TOPUP_RESEND_TICKS = 3;
 
 /** The `player` stun action that requests the top-up on a stun's +2. */
 export function topUpAction(topUp: TopUp, food: Food): Record<string, unknown> {
@@ -995,7 +1007,8 @@ async function runBand(ctx: Ctx, band: Band, end: number, cfg: Config): Promise<
             stopWhenFoodBelow: 1,
             retargetTicks: 12,
             ...(topUp && mode === 'idle' ? { idleOnInterface: true } : {}),
-            ...(stunActions ? { stunActions } : {})
+            ...(stunActions ? { stunActions } : {}),
+            ...(topUp && mode === 'idle' && topUp.resend ? { requestResend: TOPUP_RESEND_TICKS } : {})
         };
     };
     let policy = eatPolicy(s.player!.maxHp, heldFood(s, cfg.foods).heal, band.stunDamage);
@@ -1125,6 +1138,8 @@ export function steps(opts: ThievingOptions = {}): Step[] {
     const foods = parseFoods(opts.food);
     const topUp = opts.topUp;
     if (topUp && (!topUp.giver || !(topUp.below >= 1) || !['idle', 'restart', undefined].includes(topUp.mode))) throw new Error(`topUp needs a giver, below >= 1 and mode idle or restart (got ${JSON.stringify(topUp)})`);
+    if (topUp?.resend !== undefined && typeof topUp.resend !== 'boolean') throw new Error(`topUp.resend must be true or false (got ${JSON.stringify(topUp.resend)})`);
+    if (topUp?.resend && topUp.mode === 'restart') throw new Error('topUp.resend is for idle mode; restart mode re-sends through receiveFrom');
     const stunPack = parseStunPack(opts.stunPack, topUp);
     const cfg: Config = { to: opts.to ?? 99, foods, restock: opts.restock ?? 'bank', ...(topUp ? { topUp } : {}), ...(stunPack ? { stunPack } : {}) };
     const [men, ...ardougne] = BANDS;
