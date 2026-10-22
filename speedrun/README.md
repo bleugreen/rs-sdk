@@ -1024,28 +1024,28 @@ observed ticks, only wall time, and a starved tab stretches it past `IDLE_TICKS`
 `LANDING_TICKS` (8) and takes `LANDING_IDLE_TICKS` (100) ticks of the observed period as its idle bound.
 On failure it names the last tick, the position, the kit and the silence.
 
-**Click recovery.** Every tick bound after a click counts from the server tick the click
-*reached*, not the tick it was sent. A starved browser tab decodes a backlog of ticks: it runs a
-queued click only when it gets to it (the SDK's action result marks that), and it decodes the
-server's reply only after the rest of the backlog. The reached tick is the later of the tick the
-click executed and S00's first tick plus the wall time since then over `tickMs()`
-(`serverClock`). Wall time only ever lengthens a tick bound; on a current tab the two agree. The
-talk and the continue go through `clickAnswered`, which sends the click **once more** when the
-engine refuses it ("I can't reach that!") or shows nothing (no page, no step) `REPLY_TICKS` (4)
-after it reached the server. Each re-send is logged as an `S00:resend` note. A second failure
-throws after `TALK_TICKS` (12) or `CHOICE_TICKS` (6), with every click's sent, executed and
-reached tick and the last state in the message. The refusal is the guide's random walk: when the
-guide stands next to the player the client sends no route, and if the guide steps away that same
-tick the engine has nothing to walk, so it ends the interaction. This is S00's own copy of the
-rule `lib/act.ts` applies to every other click; it folds into the shared click guard once that
-guard counts from the reached tick (rs/309).
+**Click recovery.** The talk goes through `lib/act.ts`'s `ClickGuard` (`alwaysWatch`): it is sent
+from a settled position and sent once more when it draws no reply. Each re-send is logged as an
+`S00:resend` note with the guard's counts. The guide refuses about one talk in thirty with "I
+can't reach that!". It wanders, and when it stands next to the player the client sends no route,
+so a step the guide takes that tick leaves the engine nothing to walk; the guard re-sends 3 ticks
+later. The continue has no re-send: no continue was dropped in any lab run, and every "no choice
+page" failure was the bound.
+
+S00's own waits for the guide's page (`TALK_TICKS`, 12), the choice page (`CHOICE_TICKS`, 6) and the
+landing (`LANDING_TICKS`, 8) count from the server tick the click *reached*, not from the send or
+the page. A starved browser tab decodes a backlog of ticks: it runs a queued click only when it
+gets to it (the SDK's action result marks that), and it decodes the server's reply only after the
+rest of the backlog. The reached tick is the later of the tick the click executed and S00's first
+tick plus the wall time since then over `tickMs()` (`lib/wait.ts` `serverClock`). Wall time only
+ever lengthens a tick bound, and on a current tab the two agree. Failures name the click's sent,
+executed and reached ticks, the guard's re-sends, and the last state.
 
 | S00 on the browser client (bgsrv-mac, 300 ms, fresh bots, `lab/measure-s00.ts`, rs/345) | Before | After |
 |---|---|---|
-| Quiet tab | 24 of 24 (no refusal drawn) | **40 of 40**; 1 talk refused, re-sent next tick, page 1 tick late |
-| Quiet tab, intermediate build (bounds from the execution tick; refusal re-sent only after 4 quiet ticks) | - | 40 of 40; 2 refusals, each recovered at tick 7 |
+| Quiet tab | 24 of 24 (no refusal drawn) | **40 of 40**; 3 talks re-sent by ClickGuard, page at tick 8 |
 | Tab throttled from login, 14x / 20x | 0 of 4 ("no choice page": continue executed 6-9 ticks late) | **4 of 4** |
-| Tab throttled from login, 30x / 40x | 0 of 2 at 30x | **4 of 4** (landing 16-42 ticks after the click was sent) |
+| Tab throttled from login, 30x / 40x | 0 of 2 at 30x | **4 of 4** (landing 40-88 ticks after the first state) |
 
 | Rebuild silence, "Yes please." to the landing state (browser client, bgsrv-mac, 300 ms, fresh bots, rs/337) | Silence | Ticks across it |
 |---|---|---|
