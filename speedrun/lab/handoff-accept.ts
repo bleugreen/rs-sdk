@@ -29,21 +29,19 @@
 
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { giveOpenTrade } from '../helpers/mule';
 import { wield } from '../lib/act';
 import { closeSession, openSession, type Session } from '../lib/session';
-import { objName } from '../lib/items';
 import { formatReport, report } from '../lib/ticks';
-import { clickBack, decideTradeClick, newClickCtx, sameName, sendTradeClick, tradeOf } from '../lib/trade';
-import { nextTick, waitTicks, waitUntil } from '../lib/wait';
-import { configIds, onTutorialIsland, pos } from '../lib/world';
+import { waitTicks } from '../lib/wait';
+import { onTutorialIsland, pos } from '../lib/world';
 import { handOffFrom, handOffStep, type HandOffPlan, type HandOffReport } from '../runner/handoff';
 import { runSteps } from '../runner/step';
 import { LUMBRIDGE_SPAWN } from '../skills/start';
 import { MANIFEST } from '../tools/slot-ledger';
 import { launchLabBrowser, type LabBrowser } from './browser';
 import { arg, botArg, labLog, result } from './common';
-import { cheat, leaveTutorial, mustTele, setStats } from './setup';
+import { objFor, serveStandingRequest, stage, stageReceive, wipe } from './handoff-partner';
+import { leaveTutorial, mustTele, setStats } from './setup';
 
 const row = arg('row', 'H1');
 const partnerName = arg('partner', '');
@@ -62,17 +60,6 @@ const PARTNER_TILE = row === 'H1' ? { x: LUMBRIDGE_SPAWN.x + 1, z: LUMBRIDGE_SPA
 const LANDING = { x: 2661, z: 3301 };
 const AWAY = { x: 3222, z: 3218 };
 
-// ::give takes an obj's debug name. Most are the ledger name with underscores or without spaces;
-// these are not.
-const DEBUG_NAMES: Readonly<Record<string, string>> = { 'prayer potion': '4doseprayerrestore', 'magic potion': '4dose1magic', 'normal logs': 'logs' };
-function debugName(name: string): string {
-    const objs = configIds('obj');
-    for (const c of [DEBUG_NAMES[name], name.replace(/ /g, '_'), name.replace(/ /g, '')]) if (c && objs.has(c)) return c;
-    throw new Error(`no obj debug name for "${name}": add it to DEBUG_NAMES`);
-}
-
-/** The obj ::give stages for an entry: its id's obj (the note, for an `in` at [n]), else by name. */
-const objFor = (e: { name: string; ids?: readonly number[] }) => (e.ids ? objName(e.ids[0]!)! : debugName(e.name));
 const hold = arg('hold', '').split(',').filter(Boolean);
 
 // --client=browser, as magic-accept.ts: a headless Chrome on the lab's /bot page.
@@ -134,8 +121,7 @@ const rows: Array<Record<string, unknown>> = [];
 for (let n = 0; n < runs; n++) {
     if (onTutorialIsland(partner.sdk.getState()?.player)) await leave(partner);
     await mustTele(partner.sdk, PARTNER_TILE.x, PARTNER_TILE.z);
-    await wipe(partner);
-    await stage(partner, plan.receive.map(r => ({ obj: objFor(r), count: r.count, kind: r.kind })));
+    await stageReceive(partner, plan);
 
     let fresh = false;
     if (row === 'H1') {
@@ -151,7 +137,7 @@ for (let n = 0; n < runs; n++) {
 
     const scoredName = scored.sdk.getState()!.player!.name;
     let stop = false;
-    const partnerSide = serve(scoredName, () => stop);
+    const partnerSide = serveStandingRequest(partner, scoredName, () => stop);
     // The arrival, and the step at once: S00's landing for H1, a cold ::tele for the rest.
     if (fresh) await leave(scored);
     else await mustTele(scored.sdk, LANDING.x, LANDING.z);
