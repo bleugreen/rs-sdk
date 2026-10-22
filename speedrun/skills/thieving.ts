@@ -70,6 +70,7 @@
 import type { BotWorldState, InventoryItem, NearbyNpc } from '../../sdk/types';
 import { depositMatching, withdrawMany } from '../lib/bank';
 import { act } from '../lib/act';
+import { ARROW_TIERS } from '../lib/arrows';
 import { advance } from '../lib/dialogue';
 import { withLevelUpDismissal } from '../lib/levelup';
 import { overBudgetMeta, runProgram, stopProgram, type ProgramStatus } from '../lib/programs';
@@ -563,8 +564,8 @@ export function ironShortfall(s: BotWorldState, items: readonly AskItem[]): stri
 const GOD_STAFF = /^(saradomin|guthix|zamorak) staff$/i;
 /** A worn staff that supplies Charge's three fire runes. */
 const FIRE_STAFF = /^(staff of fire|fire battlestaff|mystic fire staff)$/i;
-/** Arrowhead tiers and the Fletching level each needs (stun-actions.ts ARROW_TIERS; the tests check they agree). */
-export const ARROWHEAD_TIERS: ReadonlyArray<readonly [string, number]> = [['rune', 75], ['adamant', 60], ['mithril', 45], ['steel', 30], ['iron', 15], ['bronze', 1]];
+/** Arrowhead tiers and the Fletching level each needs (lib/arrows.ts; the tests check they agree with stun-actions.ts ARROW_TIERS). */
+export const ARROWHEAD_TIERS: ReadonlyArray<readonly [string, number]> = ARROW_TIERS.map(t => [t.tier, t.level] as const);
 
 /** Charge's level (magic_spells.dbrow magic_spell_charge), checked against the boosted level (magic.rs2:22). */
 export const CHARGE_LEVEL = 80;
