@@ -16,7 +16,8 @@ cairn://p/rs/111 reconciled the two with the labs rs/104-108 (run-transitions, b
 stun-pack, wine-window, levelup-cost under `research/`), rs/129's supply fallbacks and rs/127's
 `RESILIENCE.md`: **every step's expected and best here is RUN-ORDER.md v2's figure**, and the
 moves are the same (S17 last, after S27; the bones in S07's knife loop; S18 one measured row; gems in
-the wine windows).
+the wine windows). The **inventory ledger** at the end is the single source for what SCORED holds at each step and
+hand-off, which `speedrun/tools/slot-ledger.ts` checks against every step's free-slot need.
 
 ## How to read an entry
 
@@ -2379,3 +2380,136 @@ flowchart TD
   TRD["10. trade swap, receivePackage, relog"] --> SMI["entry 10 Smithing"]
   TRD --> COOK["entry 29 Cooking"]
 ```
+
+## Inventory ledger
+
+SCORED's inventory, step by step, in run order: the single source that `speedrun/tools/slot-ledger.ts`
+(rs/304) walks to check that the free slots at every row cover that row's need. No module or script
+keeps a copy of these item lists. One row per step, per leg where items change, and per hand-off;
+a hand-off's row sits directly before the step that receives it (H11 and H23 come after the
+teleport of their legs, T13-14 and T26-27; H11r after T14-15's). Rows for a repeated load (H3, H5, H4.x,
+H4m.x, H14.x, H21a) carry **one** load, and the next step's `out` consumes it. S18b-d sit inside
+S18 and T07a and S25b inside S07. Legs that change nothing (T02-03, T09-10, T10-11, T18-19, T24-25,
+T25-26, T27-17) have no row. Fold-in 16 (rs/303) wrote the table; its dry walk's findings went to
+rs/158, which owns the loads and hand-offs. A `?` marks a count nobody has measured or read yet:
+replace it from a census (rs/196, rs/201, the quest modules' exit censuses, the run.ts dress
+rehearsal), never from a guess.
+
+**Row grammar** (agreed with rs/186 and rs/304, 2026-10-22):
+
+- The table's header line is exactly `| row | in | out | equip | needAtStart | source |`; the table
+  ends at the first line that does not start with `|`. `-` is an empty cell.
+- `row`: the RUN-ORDER.md id (`S04`, `T04-05`, `H4`, `H4k`), with `H4.x`, `H4m.x` and `H14.x` for
+  one load of H4.1-H4.n, H4m.1-H4m.4 and H14.1-H14.13.
+- `in`: entries separated by `; `, each `NAME xCOUNT [K]`. K is `s` (stackable: one slot per NAME,
+  merging with a held stack), `u` (unstackable: COUNT slots) or `n` (noted: one slot per NAME,
+  merging). COUNT is an integer or `?`. Text in parentheses after `[K]` is a note. NAME is lower case
+  and compared exactly.
+- `out`: entries `NAME xCOUNT (REASON ...)` or `NAME all (REASON ...)`; COUNT is an integer or `?`.
+  REASON's first word is `drop`, `trade`, `swap`, `consume`, `hand-in` or `deposit`. `swap` means
+  given in the same trade as the row's `in`, so it frees its slots before the need check
+  (`trade.rs2:161-190` counts offered items as freed). An `out` may name a worn item, which leaves
+  the worn set at no slot cost. An `out` of an item that is neither held nor worn is an error.
+- `equip`: entries `+NAME` (inventory to worn: the item must be held, and its slot frees) and
+  `-NAME` (worn to inventory: it takes a slot). There is no equipment-slot model, so a swap of
+  weapons is written as both (`+staff of fire; -staff of water`). Worn items take no slots, and the
+  worn set is empty at S00.
+- `needAtStart`: an integer or `?`: the free slots the row needs when it starts, after its swap
+  outs. For a hand-off it is the slots its `in` adds given what SCORED then holds (new NAMEs for `s`
+  and `n`, COUNT for `u`); for a step it is the step's own peak beyond its `in` (S07's 2, S09's 4,
+  S13's 6 railings), from its module's precondition or its entry.
+- `source`: one or more citations, each labelled `(m)` measured, `(r)` read or `(i)` inferred.
+
+**Order within a row:** (1) the swap outs; (2) free slots >= needAtStart; (3) the other outs;
+(4) `in`; (5) `equip`; (6) slots used <= 28. A hand-off row also fails if its `in` adds more slots
+than the free count. A `u` item at `x?` adds no slots and makes its row's verdict unknown, not a pass.
+
+Teleport runes (r): Varrock 1 law, 3 air, 1 fire; Lumbridge 1 law, 3 air, 1 earth; Falador 1 law,
+3 air, 1 water; Camelot 1 law, 5 air; Ardougne 2 law, 2 water. A worn staff of water (S01 to
+S10b) or fire (S10b to S14) supplies its element.
+
+| row | in | out | equip | needAtStart | source |
+|---|---|---|---|---|---|
+| S00 | bronze axe x1 [u]; tinderbox x1 [u]; net x1 [u]; shrimp x1 [u]; bucket x1 [u]; pot x1 [u]; bread x1 [u]; bronze pickaxe x1 [u]; bronze dagger x1 [u]; bronze sword x1 [u]; wooden shield x1 [u]; shortbow x1 [u]; bronze arrow x25 [s]; air rune x25 [s]; mind rune x15 [s]; water rune x6 [s]; earth rune x4 [s]; body rune x2 [s] | - | - | 18 | the starter kit, `tutorial.rs2:303-320` (r); 18 of 28 slots, rs/285 (m) |
+| H1 | staff of water x1 [u]; cosmic rune x60 [s]; air rune x81 [s]; fire rune x80 [s]; earth rune x50 [s]; law rune x1 [s] (T04-05's Falador teleport) | - | - | 4 | SUPPLIES H1 (r); the law rune, rs/158 23:29 PDT (r) |
+| S01 | - | - | +staff of water | 0 | MAN entry 24, the staff of water wielded from S01 (r) |
+| T01-02 | - | bronze axe x1 (drop: starter junk); net x1 (drop); shrimp x1 (drop); bucket x1 (drop); pot x1 (drop); bread x1 (drop); bronze pickaxe x1 (drop); bronze dagger x1 (drop); bronze sword x1 (drop); wooden shield x1 (drop); shortbow x1 (drop); bronze arrow all (drop); body rune all (drop); water rune all (drop: the staff of water covers water) | - | 0 | RUN-ORDER T01-02 (r); rs/285's count, 12 junk (m) |
+| S02 | - | air rune x4 (consume: Wind Strike, 3 or 4 casts); mind rune x4 (consume); mind rune all (drop: `dropAtStrikeExit`) | - | 0 | RUN-ORDER S02 (r); rs/285, 12 / 12 / 12 / 17 (m) |
+| H2 | - | - | - | 0 | SUPPLIES H2: 157 logs on the ground, lit where they lie, nothing in the pack (r); the traded fallback is 8 refills of 20 (rs/245, m) |
+| S03 | - | - | - | 0 | MAN entry 16 (r) |
+| H3 | gem ring x20 [u] (one of three ring loads, unnoted; loads 2 and 3 take the last load's 20 enchanted back in the same trade) | - | - | 20 | SUPPLIES H3 (r); rs/285, ring trades 4 ticks (m) |
+| S04 | enchanted ring x20 [u] (load 3's, kept for H4: `handBack: 'keep'`) | cosmic rune x60 (consume: 60 enchants); air rune x81 (consume: 27 emerald); fire rune x80 (consume: 16 ruby); earth rune x50 (consume: 5 diamond); gem ring x20 (consume: enchanted) | - | 0 | MAN entry 24 (r); rs/285, 191 and 191 (m) |
+| T04-05 | - | law rune x1 (consume: Falador teleport); air rune x3 (consume); tinderbox x1 (drop: S04's exit); earth rune all (drop: the leftover 4) | - | 0 | RUN-ORDER T04-05 (r); rs/158 23:30 PDT (r) |
+| H4 | clay x6 [u]; copper ore x4 [u]; iron ore x2 [u]; air talisman x1 [u]; law rune x2 [s]; air rune x6 [s] | enchanted ring x20 (swap: S04's last load, `swap()`) | - | 14 | SUPPLIES H4 (r); rs/285, the swap 6 / 6 (m) |
+| S05 | coins x180 [s] (Doric's reward) | clay x6 (hand-in); copper ore x4 (hand-in); iron ore x2 (hand-in) | - | 0 | `quest_doric` (r); MAN entry 30 (r) |
+| T05-06 | - | coins all (drop); law rune x1 (consume: Falador teleport); air rune x3 (consume); air talisman x1 (drop: on entry, runecraft.ts's first act at S06's start) | - | 0 | RUN-ORDER T05-06 (r); `runecraft.ts` dropTalisman (r) |
+| H5 | rune essence x26 [u] (one of 7 loads, 182 in all; each giver keeps its own talisman) | - | - | 26 | SUPPLIES H5 (r); rs/196, 26 a load 7 / 7 (m) |
+| S06 | air rune x? [s] (crafted, into the held stack) | rune essence x26 (consume: one craft before the next load) | - | 0 | MAN entry 9 (r); rs/196's census, 26 free (m) |
+| T06-07 | - | law rune x1 (consume: Falador teleport); air rune x3 (consume); air rune all (drop: S06's air runes) | - | 0 | RUN-ORDER T06-07 (r) |
+| H4k | rune axe x1 [u]; rune pickaxe x1 [u]; knife x1 [u]; normal logs x6 [u] | - | - | 9 | SUPPLIES H4k (r); rs/41 23:30 PDT (r) |
+| H4.x | bones x23 [u] (one load of n: 16 with every line held, 25 on the 2026-10-23 forecast, 43 on the 21:20 UTC stock) | - | - | 24 | SUPPLIES H4.1-H4.n (r); `woodcutting.ts` preconditions: free + held bones >= load + 1, the 1 for the chopped log (r); the rune axe is carried, not wielded, at Attack 1 (r) |
+| S07 | - | bones x23 (consume: buried in the knife loop, S25b) | - | 2 | MAN entry 3 (r); `woodcutting.ts`: 2 free (r); T07a and S25b are inside S07 |
+| T07-08 | - | law rune x1 (consume: Camelot teleport); air rune x5 (consume) | - | 0 | RUN-ORDER T07-08 (r); Camelot is 1 law and 5 air (r) |
+| H6 | dwellberries x1 [u]; bucket of water x4 [u]; spade x1 [u]; rope x1 [u]; chocolate dust x1 [u]; bucket of milk x1 [u]; snape grass x1 [u]; law rune x3 [s] (1 Camelot, 2 Ardougne); air rune x5 [s]; water rune x2 [s] | - | - | 13 | SUPPLIES H6 (r) |
+| S08 | bucket x4 [u] (empty, one back per pour, `mud_patch.rs2:41`); gas mask x1 [u] (Alrena's, kept) | dwellberries x1 (hand-in); bucket of water x4 (consume: the mud patch); rope x1 (consume); chocolate dust x1 (consume: the hangover cure); bucket of milk x1 (consume); snape grass x1 (consume) | +gas mask | ? | `quest_elena` (r): the gas mask worn to enter West Ardougne (`sewerpipe.rs2:5`), the spade kept, the picture, warrant, key and book taken back; the quest's own peak is not measured (i) |
+| T08-09 | - | law rune x2 (consume: Ardougne teleport; the staff of water covers the water) | - | 0 | RUN-ORDER T08-09 (r) |
+| H4m.x | - | - | - | 0 | SUPPLIES H4m: no bones on the 2026-10-23 forecast, the row in force; on the 21:20 UTC stock ~85 in loads of 24, 24, 24 and 13, sized to SCORED's free slots (r) |
+| S09 | - | - | - | 4 | MAN entry 4 (r); `mining.ts` FREE_SLOTS 4: ore, a gem, a stray fletch (r) |
+| H7 | normal logs x6 [u]; staff of fire x1 [u]; amulet of magic x1 [u]; antipoison x1 [u]; shark x2 [u]; death rune x110 [s]; chaos rune x40 [s]; air rune x550 [s] | - | +staff of fire; -staff of water; +amulet of magic | 13 | SUPPLIES H7 (r) |
+| S10b | gnome amulet x1 [u] (the reward, `quest_tree.rs2:97`); tree gnome village items x? [u] (the orbs of protection: whether any stays is not read) | normal logs x6 (hand-in: Montai); death rune x26 (consume: ~26 Fire Blasts); air rune x104 (consume) | - | ? | `quest_tree` (r); MAN entry 14 (r); the cast count ~26 (i) |
+| S10a | - | - | - | 0 | retired: Prayer comes from S07, RUN-ORDER S10a (r) |
+| S11a | - | - | - | 0 | MAN entry 1 (r) |
+| H8 | agility potion x1 [u]; law rune x5 [s] (1 Varrock, 4 Ardougne); air rune x3 [s]; fire rune x1 [s]; water rune x4 [s] | - | - | 2 | SUPPLIES H8 (r) |
+| S11b | grand tree items x? [u] (of the translation book, journal, lumber order, Glough's key and bark sample, which stay after the reward is not read) | chaos rune x31 (consume: ~31 Fire Bolts); air rune x93 (consume); law rune x3 (consume: one Varrock and one Ardougne teleport inside the quest); air rune x3 (consume); water rune x2 (consume) | - | 9 | MAN entry 8: 9 free at segment L, the quest's items (r); rs/202's lab, 14 free at L (m); the teleports inside the quest (i); the potion keeps its slot at 3 doses (r) |
+| T11-12 | - | law rune x2 (consume: Ardougne teleport); water rune x2 (consume) | - | 0 | RUN-ORDER T11-12 (r) |
+| H9 | coins x5 [s]; law rune x2 [s]; water rune x2 [s]; shark x3 [u] | - | - | 4 | SUPPLIES H9 (r) |
+| S12 | coins x1000 [s] (the reward); khazard helmet x1 [u]; khazard platemail x1 [u] | coins x5 (consume: the khali brew) | +khazard helmet; +khazard platemail; -gas mask | ? | `quest_arena` (r): the armour worn to pass the guards (`khazard_guard.rs2:7`), the helmet in the gas mask's hat slot; the Fire Blast casts and sharks eaten are not recorded (i) |
+| T12-13 | - | law rune x2 (consume: Ardougne teleport); water rune x2 (consume) | - | 0 | RUN-ORDER T12-13 (r) |
+| H10 | law rune x5 [s] (2 Ardougne, 1 Falador); water rune x5 [s]; air rune x3 [s]; shark x8 [u] | - | - | 8 | SUPPLIES H10 (r) |
+| S13 | dwarf cannon items x3 [u] (the end-of-quest peak's 3: the tool kit, kept, and the instruction manual and mould, `quest_mcannon`) | law rune x3 (consume: one Falador and one Ardougne teleport inside the quest); air rune x3 (consume); water rune x3 (consume); shark x3 (consume: eaten, mean 2.7) | - | 6 | MAN entry 12: 6 railings at A's end (r); rs/257's six runs (m); the leftovers (i) |
+| T13-14 | - | law rune x2 (consume: Ardougne teleport); water rune x2 (consume) | - | 0 | RUN-ORDER T13-14 (r) |
+| H11 | cannon base x1 [u]; cannon stand x1 [u]; cannon barrels x1 [u]; cannon furnace x1 [u]; cannonball x100 [s]; mithril scimitar x1 [u]; law rune x4 [s] (2 Ardougne); water rune x4 [s]; shark x2 [u] | - | - | 8 | SUPPLIES H11 (r) |
+| S14 | - | cannonball x70 (consume: 65-72) | +mithril scimitar; -staff of fire | 0 | MAN entry 26 (r); rs/199 (m); the cannon is picked up again (r) |
+| T14-15 | - | law rune x2 (consume: Ardougne teleport); water rune x2 (consume) | - | 0 | RUN-ORDER T14-15 (r) |
+| H11r | - | cannon base x1 (trade: back to the cannon helper); cannon stand x1 (trade); cannon barrels x1 (trade); cannon furnace x1 (trade); cannonball all (trade) | - | 0 | SUPPLIES H11r (r) |
+| H12 | gold bar x1 [u]; ball of wool x1 [u]; monkey bones x1 [u]; banana x5 [u]; magic shortbow x1 [u]; rune arrow x200 [s]; prayer potion x2 [u]; antipoison x1 [u] (the second); shark x9 [u]; law rune x6 [s] (2 Varrock, 2 Ardougne); air rune x6 [s]; fire rune x2 [s]; water rune x4 [s] | staff of fire x1 (swap); mithril scimitar x1 (swap: unwielded); shark x? (swap: S14's leftover food) | +magic shortbow; +rune arrow | 22 | SUPPLIES H12 (r); rs/201's slot table, 24 slots at the swap with the bow worn (r); rs/158 23:34 PDT (r) |
+| S15 | m'speak amulet x1 [u]; monkey greegree x1 [u]; monkey madness items x? [u] (the talisman and the mould, and what stays after the reward, are not read) | gold bar x1 (hand-in); ball of wool x1 (consume); monkey bones x1 (consume); banana x5 (hand-in); law rune x3 (consume: Ardougne at T and Varrock at Y); water rune x2 (consume); air rune x3 (consume); fire rune x1 (consume); shark x? (consume: eaten) | +m'speak amulet; -amulet of magic; +monkey greegree; -magic shortbow | 2 | rs/201's slot table: D, K and L at 26 against 24 at the swap, bow worn (m); MAN entry 2 (r) |
+| T15-16 | - | law rune x2 (consume: Ardougne teleport); water rune x2 (consume) | - | 0 | RUN-ORDER T15-16 (r); the knife cuts the webs (r) |
+| H13 | blood rune x70 [s]; air rune x400 [s]; magic potion x1 [u]; prayer potion x2 [u]; law rune x4 [s] (2 Ardougne); water rune x4 [s] | - | - | 4 | SUPPLIES H13 (r) |
+| S16 | god staff x1 [u] (`chamber_guardian.rs2:14`) | blood rune x? (consume: Fire Wave); air rune x? (consume) | +staff of fire | ? | MAN entry 19: the staff of fire (r); the casts are not recorded (i) |
+| T16-18 | - | law rune x2 (consume: Ardougne teleport); water rune x2 (consume) | - | 0 | RUN-ORDER T16-18 (r) |
+| H14 | blood rune x500 [s]; air rune x500 [s]; headless arrow x4410 [s]; bronze arrowtips x60 [s]; iron arrowtips x90 [s]; steel arrowtips x135 [s]; mithril arrowtips x1485 [s]; shark x2 [u]; dragon bones x16 [u] (every free slot less one) | - | - | 23 | SUPPLIES H14 (r) |
+| H14.x | dragon bones x15 [u] (15-21 a load, sized by SCORED at its request); adamant arrowtips x2070 [s]; rune arrowtips x570 [s] | - | - | 17 | SUPPLIES H14.1-H14.13 (r) |
+| S18 | bronze arrow x60 [s]; iron arrow x90 [s]; steel arrow x135 [s]; mithril arrow x1485 [s]; adamant arrow x2070 [s]; rune arrow x570 [s] (kept for S27); coins x? [s] (the knights' loot, to a helper later) | dragon bones all (consume: 3 a stocked stun); blood rune x489 (consume: Charge); air rune x489 (consume); headless arrow all (consume); bronze arrowtips all (consume); iron arrowtips all (consume); steel arrowtips all (consume); mithril arrowtips all (consume); adamant arrowtips all (consume); rune arrowtips all (consume) | +staff of fire | ? | MAN entries 6 and 32: the staff of fire wielded (r); stun-pack.md (r); which fletched tiers are dropped is not stated (i) |
+| H15 | swamp paste x1 [u]; unlit torch x1 [u]; law rune x2 [s]; water rune x2 [s] | - | - | 2 | SUPPLIES H15 (r) |
+| S19 | lit torch x1 [u] (`quest_seaslug` lights the torch and deletes no lit torch) | swamp paste x1 (hand-in); unlit torch x1 (consume) | - | ? | `quest_seaslug` (r); MAN entry 20 (r); the quest's own peak (i) |
+| T19-20 | - | law rune x1 (consume: Camelot teleport); air rune x5 (consume) | - | 0 | RUN-ORDER T19-20 (r) |
+| H16 | raw giant carp x1 [u]; fishing rod x1 [u]; fishing bait x1 [s]; coins x5 [s]; law rune x5 [s] (3 Camelot, 1 Falador, 1 Lumbridge); air rune x21 [s]; water rune x1 [s]; earth rune x1 [s] | - | - | 4 | SUPPLIES H16 (r) |
+| S20 | fishing contest items x? [u] (the contest's catches and the trophy: not read) | raw giant carp x1 (hand-in); fishing bait all (consume); coins x5 (consume: the entry fee); law rune x2 (consume: the other two Camelot casts); air rune x10 (consume) | - | ? | `quest_fishingcompo` (r); MAN entry 23 (r) |
+| T20-21 | - | law rune x1 (consume: Falador teleport); air rune x3 (consume); water rune x1 (consume); body talisman x1 (drop: on entry, as at S06) | - | 0 | RUN-ORDER T20-21, the body plan in force (r); SCORED's body talisman, SUPPLIES section 3's talisman row (r) |
+| H17 | rune essence x27 [u] (one of 194 deliveries) | - | - | 27 | SUPPLIES H17 (r); MAN entry 9 (r) |
+| S21 | body rune x? [s] (crafted) | rune essence x27 (consume: one craft) | - | 0 | MAN entry 9 (r) |
+| T21-22 | - | law rune x1 (consume: Lumbridge teleport); air rune x3 (consume); earth rune x1 (consume) | - | 0 | RUN-ORDER T21-22 (r) |
+| H18 | fly fishing rod x1 [u]; feather x580 [s]; normal logs x10 [u]; law rune x1 [s]; air rune x3 [s]; earth rune x1 [s] | - | - | 13 | SUPPLIES H18 (r) |
+| S22 | - | feather x520 (consume) | - | 1 | MAN entry 5 (r); `fishing.ts`: one free slot for the catch (r) |
+| T22-23 | - | law rune x1 (consume: Lumbridge teleport); air rune x3 (consume); earth rune x1 (consume) | - | 0 | RUN-ORDER T22-23 (r) |
+| H19 | egg x1 [u]; bucket of milk x1 [u]; pot of flour x1 [u]; law rune x1 [s]; air rune x3 [s]; water rune x1 [s] | - | - | 3 | SUPPLIES H19 (r) |
+| S23 | - | egg x1 (hand-in); bucket of milk x1 (hand-in); pot of flour x1 (hand-in) | - | 0 | `quest_cook` (r) |
+| T23-24 | - | law rune x1 (consume: Falador teleport); air rune x3 (consume); water rune x1 (consume) | - | 0 | RUN-ORDER T23-24 (r) |
+| H20 | goblin mail x3 [u]; orange dye x1 [u]; blue dye x1 [u]; raw rat meat x1 [u]; raw bear meat x1 [u]; raw beef x1 [u]; raw chicken x1 [u]; cadava berries x1 [u]; law rune x2 [s] (1 Falador, 1 Varrock); air rune x6 [s]; water rune x1 [s]; fire rune x1 [s] | - | - | 10 | SUPPLIES H20 (r) |
+| S24 | gold bar x1 [u] (Goblin Diplomacy's reward, `quest_gobdip`) | goblin mail x3 (hand-in); orange dye x1 (consume); blue dye x1 (consume); raw rat meat x1 (hand-in: enchanted first); raw bear meat x1 (hand-in); raw beef x1 (hand-in); raw chicken x1 (hand-in); cadava berries x1 (hand-in) | - | ? | `quest_gobdip`, `quest_druid` (r); MAN entries 21, 22, 25 (r) |
+| S24 legs | - | law rune x2 (consume: Falador and Varrock teleports); air rune x6 (consume); water rune x1 (consume); fire rune x1 (consume) | - | 0 | RUN-ORDER S24 legs (r) |
+| H21a | hammer x1 [u]; bars x25 [u] (the first of 31 trades of 24-25; each later trade takes the 5 platebodies back) | - | - | 26 | SUPPLIES H21a (r); MAN entry 10 (r) |
+| S25a | platebody x5 [u] (back to the helper in the next trade) | bars x25 (consume: smithed) | - | 0 | MAN entry 10 (r) |
+| H21d | chisel x1 [u]; uncut diamond x391 [n]; guam potion (unf) x41 [n]; irit potion (unf) x405 [n]; eye of newt x432 [n] (H21d and H21e in one trade) | platebody x5 (trade: the last 5, H21a's final hand-back) | - | 5 | SUPPLIES H21d, H21e (r) |
+| S25d | - | uncut diamond all (deposit: banked on the first booth visit, withdrawn an inventory at a time); guam potion (unf) all (deposit); irit potion (unf) all (deposit); eye of newt all (deposit) | - | 27 | MAN entry 28: the chisel and 27 uncut a booth cycle (i) |
+| S25e | - | - | - | 28 | MAN entry 27; rs/302's herblore.ts precondition, 28 free with the notes banked (r) |
+| H21b | - | - | - | 0 | retired on the stock in force, SUPPLIES H21b (r) |
+| H21c | unfermented wine x520 [n] | - | - | 1 | SUPPLIES H21c: SCORED enters relog 1 holding at most 27 items (r) |
+| S25c | - | unfermented wine all (deposit: banked at relog 1) | - | ? | MAN entry 29 (r); WW section 5 (r) |
+| H22 | coins x126000 [s]; wizard's mind bomb x1 [u]; silk x1 [u]; lobster pot x1 [u]; unfired bowl x1 [u]; plank x3 [u]; steel nails x12 [s]; adamant full helm x1 [u]; amulet of strength x1 [u]; shark x10 [u]; law rune x5 [s] (Varrock, Lumbridge, Falador, Ardougne); air rune x9 [s]; fire rune x1 [s]; earth rune x1 [s]; water rune x3 [s] | - | - | 21 | SUPPLIES H22 (r) |
+| S26 | rune chainbody x1 [u] (Scavvo); rune platelegs x1 [u]; anti-dragon shield x1 [u]; crandor map x1 [u] (`dragonmap`, not deleted) | coins x126000 (consume: the quest's 12,000 and Scavvo's 114,000); wizard's mind bomb x1 (hand-in); silk x1 (hand-in); lobster pot x1 (hand-in); unfired bowl x1 (hand-in); plank x3 (consume: the hull); steel nails x12 (consume); law rune x3 (consume: Varrock, Lumbridge and Falador teleports); air rune x9 (consume); fire rune x1 (consume); earth rune x1 (consume); water rune x1 (consume); shark x? (consume: eaten) | +rune chainbody; -khazard platemail; +rune platelegs; +adamant full helm; -khazard helmet; +amulet of strength; -m'speak amulet; +anti-dragon shield; +mithril scimitar; -monkey greegree | ? | MAN entry 13: the mithril scimitar held from H11 (r); `quest_dragon` (r); rs/258's single pass (m) |
+| T26-27 | - | law rune x2 (consume: Ardougne teleport); water rune x2 (consume) | - | 0 | RUN-ORDER T26-27 (r) |
+| H23 | cannon base x1 [u]; cannon stand x1 [u]; cannon barrels x1 [u]; cannon furnace x1 [u]; cannonball x1200 [s]; ranging potion x3 [u]; super antipoison x2 [u]; super attack x1 [u]; super strength x1 [u]; shark x12 [u] (for S17) | - | - | 24 | SUPPLIES H23 (r) |
+| S27 | - | cannonball x1110 (consume); ranging potion x? (consume: 1-3 doses a bow window) | +mithril scimitar; -mithril scimitar; -anti-dragon shield; +magic shortbow; +rune arrow | 0 | MAN entry 7: the mithril scimitar until Defence 99, then the bow (r); rs/199 (m) |
+| S17 | - | shark x? (consume: 2-3 eats) | - | 0 | MAN entry 1 (r); rs/270 (m) |
