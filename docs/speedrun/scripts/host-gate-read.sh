@@ -26,10 +26,11 @@
 #    fingerprint: the hiscores Time hover's template, a hash of the hiscores page's static chrome,
 #    a hash of /playercount's shape and the md5 of the served bot client. Each of these is null
 #    when its fetch or parse fails; report-only, never a skip. All fetches run side by side.
-#    Alongside them, host-gate-feed.ts (beside this script) reads the engine's login-free world
-#    feed for $GATE_FEED_SECONDS (default and most 60): the configured tick length and the
-#    engine's own tick intervals, also under `preLogin`. That read is the check's longest part,
-#    and the budget below holds 75 s for it on top of the probe's own.
+#    Alongside them, host-gate-feed.ts (beside this script) opens the engine's login-free world
+#    feed: its first $GATE_FEED_SECONDS (default and most 60) give the configured tick length and
+#    the engine's own tick intervals, also under `preLogin`. Those seconds are the check's longest
+#    part, and the budget below holds 75 s for them on top of the probe's own. The feed then stays
+#    open beside the probe, logging every tick, and is stopped when the probe exits.
 #    Under $GATE_MIN_PLAYERS (default 300) online, or no answer, means
 #    `skip: restart suspected (players N)`: a server refilling after a restart is not a reading
 #    of the run's conditions, and a login would only add to its rush.
@@ -38,6 +39,10 @@
 #    players and Fly edge up front, the gate's own JSON under `gate`. A read that is not `ok`
 #    also keeps the last 40 lines of the probe's output under `outputTail` (account name and
 #    password redacted), since a Bun crash ends with its version banner, not its error.
+#    `pathCheck` (host-gate-feed.ts --pathcheck) sets the probe's tick arrivals against the feed's
+#    copy of the same ticks and labels each late or catch-up tick the server's or the path's; the
+#    feed's ticks are kept compact under `feedLog`, after `gate`. Report-only: null when it cannot
+#    be made, and never a skip or a change to status or verdict.
 #    One summary line goes to stdout (the journal). Exit 0 for skips and every verdict, red
 #    included; 1 when the read itself broke (timeout, crash), with its record still written.
 set -uo pipefail
@@ -62,6 +67,7 @@ pre_players= pre_sid= pre_bn=
 pre_start_token= pre_start_utc= pre_uptime_min=
 pre_hover= pre_chrome= pre_pc_shape= pre_bundle_md5=
 pre_feed=
+feed_pid= pathcheck_out=
 mkdir -p "$history"
 record="$history/$(date -u -d "$utc" +%Y-%m-%dT%H%M%SZ).json"
 n=1
@@ -75,15 +81,16 @@ write_record() {
         players=$(sed -n 's/^vantage: .*, \([0-9]*\) online$/\1/p' "$out" | head -1)
         [ "$status" = ok ] || tail=$(grep -v '^[[:space:]]*$' "$out" | tail -40)
     fi
-    local gatearg=(--argjson g '[null]')
+    local gatearg=(--argjson g '[null]') pcarg=(--argjson pc '[null]')
     [ -n "$gate" ] && [ -s "$gate" ] && jq -e . "$gate" >/dev/null 2>&1 && gatearg=(--slurpfile g "$gate")
-    jq -n "${gatearg[@]}" --arg utc "$utc" --arg end "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg host "$(hostname)" --arg commit "$commit" \
+    [ -n "$pathcheck_out" ] && jq -e 'type == "object"' "$pathcheck_out" >/dev/null 2>&1 && pcarg=(--slurpfile pc "$pathcheck_out")
+    jq -n "${gatearg[@]}" "${pcarg[@]}" --arg utc "$utc" --arg end "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg host "$(hostname)" --arg commit "$commit" \
         --arg status "$status" --argjson exit "$code" --arg note "$note" --arg edge "$edge" --arg players "$players" \
         --arg tail "$tail" --arg pp "$pre_players" --arg psid "$pre_sid" --arg pbn "$pre_bn" \
         --arg pst "$pre_start_token" --arg psu "$pre_start_utc" --arg pup "$pre_uptime_min" \
         --arg phh "$pre_hover" --arg phc "$pre_chrome" --arg pps "$pre_pc_shape" --arg pbm "$pre_bundle_md5" \
         --arg pfeed "$pre_feed" '
-        $g[0] as $j |
+        $g[0] as $j | ($pc[0] // {}) as $p |
         def orNull: if . == "" then null else . end;
         def num: if type == "number" then . else null end;
         ($pfeed | if . == "" then {} else (try fromjson catch {}) end | if type == "object" then . else {} end) as $f |
@@ -101,6 +108,7 @@ write_record() {
          players: ($j.vantage.players // (if $players == "" then null else ($players | tonumber) end)),
          edge: ($j.vantage.edge // (if $edge == "" then null else $edge end)),
          connectP50Ms: $j.vantage.connectP50, failures: $j.verdict.failures,
+         pathCheck: ($p.pathCheck | if type == "object" then . else null end),
          preLogin: (if ($pp + $psid + $pbn + $pst + $phh + $phc + $pps + $pbm + $pfeed) == "" then null
                     else {players: ($pp | orNull | if . == null then null else tonumber end),
                           flyMachine: ($psid | orNull), flyWorker: ($pbn | orNull),
@@ -112,7 +120,8 @@ write_record() {
                           tickMsConfigured: ($f.tickMsConfigured | num),
                           hiscoreHover: ($phh | orNull), hiscoreChromeSha: ($phc | orNull),
                           playercountShape: ($pps | orNull), botBundleMd5: ($pbm | orNull)} end),
-         gate: $j}
+         gate: $j,
+         feedLog: ($p.feedLog | if type == "object" then . else null end)}
         + (if $tail == "" then {} else {outputTail: ($tail | split("\n"))} end)' > "$record.tmp" && mv "$record.tmp" "$record"
 }
 # server_start PAGE: the page imports client.js?v=<token>, Date.now().toString(36) taken once at
@@ -162,6 +171,18 @@ playercount_shape() {
     else
         pre_pc_shape=$(digits_to_n < "$1" | sha16)
     fi
+}
+# stop_feed: ends the world-feed helper (it closes its socket on SIGTERM); its log is on disk already
+stop_feed() {
+    [ -n "$feed_pid" ] || return 0
+    kill -TERM "$feed_pid" 2>/dev/null
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+        kill -0 "$feed_pid" 2>/dev/null || break
+        sleep 0.1
+    done
+    kill -KILL "$feed_pid" 2>/dev/null
+    wait "$feed_pid" 2>/dev/null
+    feed_pid=
 }
 skip() {
     echo "skip: $1"
@@ -243,13 +264,15 @@ account=$(sed -n 's/^BOT_USERNAME=//p' "$env_file" | tr -d '\r')
 password=$(sed -n 's/^PASSWORD=//p' "$env_file" | tr -d '\r')
 server=$(sed -n 's/^SERVER=//p' "$env_file" | tr -d '\r')
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+trap 'stop_feed; rm -rf "$tmp"' EXIT
 case "$server" in
     ""|localhost*|127.*) ;;
     *)
-        # side by side, so the check waits no longer than the feed read
-        (cd "$tmp" && timeout $((feed_seconds + 15)) "$bun" "$feed_helper" "$server" --seconds="$feed_seconds") \
-            > "$tmp/feed.out" 2>/dev/null &
+        # side by side, so the check waits no longer than the feed's first $feed_seconds; the
+        # helper (exec'd, so $! is the process stop_feed signals) stays open through the probe
+        feed_deadline=$((SECONDS + feed_seconds + 15))
+        (cd "$tmp" && exec timeout $((budget_end + 10 - SECONDS)) "$bun" "$feed_helper" "$server" \
+            --seconds="$feed_seconds" --log="$tmp/feed.log") > "$tmp/feed.out" 2>/dev/null &
         feed_pid=$!
         curl -s --max-time 8 -H 'flyio-debug: doit' -D "$tmp/pc.h" -o "$tmp/pc.json" "https://$server/playercount" &
         pc_pid=$!
@@ -262,7 +285,11 @@ case "$server" in
             pre_bundle_md5=$(md5sum < "$tmp/bot.js" | cut -c1-32)
             [[ $pre_bundle_md5 =~ ^[0-9a-f]{32}$ ]] && [ -s "$tmp/bot.js" ] || pre_bundle_md5=
         fi
-        wait "$pc_pid" "$hs_pid" "$feed_pid"
+        wait "$pc_pid" "$hs_pid"
+        while [ "$SECONDS" -lt "$feed_deadline" ] && kill -0 "$feed_pid" 2>/dev/null &&
+            ! jq -e 'type == "object"' "$tmp/feed.out" >/dev/null 2>&1; do
+            sleep 0.2
+        done
         pre_feed=$(jq -c 'select(type == "object")' "$tmp/feed.out" 2>/dev/null | head -1)
         playercount_shape "$tmp/pc.json"
         hiscore_marks "$tmp/hiscores.html"
@@ -295,6 +322,17 @@ for f in "$tmp/out.txt" "$tmp/gate.json"; do
 done
 gateline=$(grep -m1 '^gate (direct):' "$tmp/out.txt" || true)
 
+# the path check, report-only: the probe prints its end time as its last tick arrives, which puts
+# its relative tick arrivals on the feed log's clock; it runs only in what the budget has left
+stop_feed
+if [ -s "$tmp/feed.log" ] && [ $((budget_end + 5 - SECONDS)) -ge 2 ]; then
+    probe_end=$(sed -n 's/^probe (direct) from .* at \([0-9][0-9T:.-]*Z\), server .*$/\1/p' "$tmp/out.txt" | head -1)
+    tick_conf=$(jq -r '.tickMsConfigured // empty' <<<"${pre_feed:-null}" 2>/dev/null || true)
+    (cd "$tmp" && timeout $(( budget_end + 5 - SECONDS < 10 ? budget_end + 5 - SECONDS : 10 )) "$bun" "$feed_helper" --pathcheck \
+        "$tmp/feed.log" "$tmp/gate.json" "${probe_end:-none}" ${tick_conf:+--tick-ms="$tick_conf"}) \
+        > "$tmp/pathcheck.json" 2>/dev/null && pathcheck_out=$tmp/pathcheck.json
+fi
+
 # 5. the record
 case $code in
     0|1) if [ -s "$tmp/gate.json" ]; then status=ok; else status=error; fi ;;
@@ -309,7 +347,9 @@ errline() { grep -v '^Bun v[0-9]' "$tmp/out.txt" | grep -m1 -iE 'error|panic|exc
 [ "$status" = ok ] || note="${gateline:-$(errline)}"
 [ "$status" = ok ] || [ -n "$note" ] || note=$(lastline)
 write_record "$status" "$code" "$note" "$tmp/gate.json" "$tmp/out.txt"
-jq -r '"gate \(.utc) status=\(.status) on=\(.on) onTime=\(.onTime)/\(.trials) catchups/min=\(.catchUpsPerMinute) p90=\(.tickP90Ms) players=\(.players) edge=\(.edge) commit=\(.commit[0:9]) -> '"$record"'"' "$record"
+jq -r '(.pathCheck | if . == null then "null" else
+        "slow:\(.serverSlow),catchup:\(.serverCatchUp),held:\(.pathHeld),unmatched:\(.unmatched),offset:\(.offsetMs)ms,spread:\(.offsetSpreadMs)ms,matched:\(.ticksMatched)" end) as $pc |
+    "gate \(.utc) status=\(.status) on=\(.on) onTime=\(.onTime)/\(.trials) catchups/min=\(.catchUpsPerMinute) p90=\(.tickP90Ms) players=\(.players) edge=\(.edge) path=\($pc) commit=\(.commit[0:9]) -> '"$record"'"' "$record"
 if [ "$status" != ok ]; then
     echo "$status (exit $code): $note"
     [ "$status" = not-probed ] || exit 1
