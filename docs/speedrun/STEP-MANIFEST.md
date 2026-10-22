@@ -1301,6 +1301,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   small net, measured and inferred, `skills/fishing.md` §2). From Ashburn: probe at least 58 of 60,
   then 150 catches knife and 150 plain. Pass: knife gap-3 share within 5 points of the local
   figure at the same level.
+- **An unexplained observation (rs/396, 2026-10-22; not a risk row):** a netting attempt at Catherby on h55 (Fishing 1) caught nothing in 600 ticks on the real server, undiagnosed, where the same step took 124 in the lab; SCORED reaches S20 at about Fishing 74 from Sea Slug, so nothing here or in S20 is priced from it.
 - **Start from:** rs/97 `knife-cycle.ts` preset `fly`; `tickmanip-cycle.ts`, `fishing-rate.ts`.
 - **logoutSafe:** yes.
 
