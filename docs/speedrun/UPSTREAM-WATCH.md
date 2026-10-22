@@ -89,6 +89,27 @@ To check that notifications reach you end to end, run the workflow by hand from 
 with `since` set to an older upstream commit, for example `df3d8888`. That opens or comments on
 the issue with a `[replay]` title and never moves state.
 
+## Which commit is the demo serving?
+
+The demo builds its webclient inside its image (`server/Dockerfile`, `bun run build` after
+copying `server/content`, `webclient`, `engine`, `gateway` and `sdk`) and serves
+`/bot/client.js`, `/bot/ondemandworker.js` and `/client/client.js` (the standard build) from
+it. Two facts make those files a deploy fingerprint:
+
+- Every rebuild produces a new raw md5, even from identical source. So a served md5 that is
+  unchanged across a world restart means the restart reused the same built image (or a cached
+  build layer, which needs all five copied trees unchanged). A changed md5 means a rebuild, not
+  necessarily new code.
+- To name the source commit, build candidate upstream commits the way the Dockerfile does and
+  compare each with `docs/speedrun/scripts/bundle-compare.ts`. Same source gives equal word
+  multisets; the differing words name the change. The bundle embeds no build date or commit.
+  Upstream commits that leave `server/webclient` and `sdk` untouched build the same client, so
+  this dates the client to a range of commits, not one.
+
+The page's `./bot/client.js?v=` token is `Date.now().toString(36)` at process start
+(`server/engine/src/web/pages/client.ts`), which dates the restart itself. fly.toml `[env]` and
+Fly secrets can change, and restart the machine, without any of this moving.
+
 ## Extending the watchlist
 
 Each entry has an `id`, a `title`, its `paths` (globs matched with `Bun.Glob`), and a one-line
