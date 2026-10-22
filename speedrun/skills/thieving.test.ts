@@ -1173,7 +1173,7 @@ describe('thieving: the superheat top-up', () => {
             expect(asker.step({ ...s, trade: CLOSED as never })).toBeNull();
             return asker.step({ ...s, trade: screen('offer') as never, tick: s.tick + 1 })!;
         };
-        const tiers = (items: AskItem[]) => items.filter(a => /arrow\(head/.test(a.item)).map(a => a.item);
+        const tiers = (items: ReturnType<typeof topUpAsk>) => items.filter(a => /arrow\(head/.test(a.item)).map(a => a.item);
         // Fletching 50 on mithril alone (bronze to steel used up): 11 held, 17 free, the tier and the arrow slot out: 15 iron
         const first = trade(at(50, [['Mithril arrowheads', 1200], ['Mithril arrow', 285]]));
         expect(tiers(first)).toEqual(['^adamant arrow(head|tip)s$']);
