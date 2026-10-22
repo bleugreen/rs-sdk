@@ -1,39 +1,10 @@
-import { afterEach, beforeEach, describe, expect, jest as bunJest, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { LOST_AFTER_TICKS } from '../runner/resume';
 import { FakeSdk } from './fake-sdk';
+import { fakeClock as jest, peek, tickEvery, useFakeTicks } from './fake-ticks';
 import { IDLE_TICKS, nextTick, waitOrThrow, waitTicks, waitUntil, type WaitResult } from './wait';
 
-// Every test runs on fake timers: a tick is `jest.advanceTimersByTime(ms)`
-// followed by `sdk.tick()`, so the idle timer sees the wall time between ticks.
-
-// The locked @types/bun (1.2.15) predates bun:test's fake timers, which the
-// runtime CI pins (1.4.x) has; this names the part of that API used here.
-const jest = bunJest as unknown as { useFakeTimers(): void; useRealTimers(): void; advanceTimersByTime(ms: number): void };
-
-const saved = process.env.SPEEDRUN_TICK_MS;
-beforeEach(() => {
-    process.env.SPEEDRUN_TICK_MS = '300';
-    jest.useFakeTimers();
-});
-afterEach(() => {
-    jest.useRealTimers();
-    if (saved === undefined) delete process.env.SPEEDRUN_TICK_MS;
-    else process.env.SPEEDRUN_TICK_MS = saved;
-});
-
-function tickEvery(sdk: FakeSdk, ms: number, n: number): void {
-    for (let i = 0; i < n; i++) {
-        jest.advanceTimersByTime(ms);
-        sdk.tick();
-    }
-}
-
-/** The settled value of `p` so far, or undefined while it is pending. */
-async function peek<T>(p: Promise<T>): Promise<T | undefined> {
-    const pending = Symbol();
-    const r = await Promise.race([p, Promise.resolve(pending)]);
-    return r === pending ? undefined : (r as T);
-}
+useFakeTicks();
 
 test('the idle timeout outlasts the resumable runner stale-session threshold', () => {
     expect(IDLE_TICKS).toBeGreaterThanOrEqual(LOST_AFTER_TICKS);
