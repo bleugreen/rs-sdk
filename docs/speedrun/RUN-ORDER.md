@@ -1040,8 +1040,8 @@ rs/41's 09:35 plan and today's count:
 | Arrowtips | 0: complete (adamant ~09:30 UTC on the 22nd) | 0 in ticks; adamant 1,220 of 2,070 and mithril still buying, which is Fletching 99's xp (readiness), not ticks (below) | 0 | 0 |
 | Cannonballs, essence | 0: 1,416 balls and two sets; 63,674 essence | 0 | 0 | 0 |
 | **Deltas** | **+367 / +350** | +773 / +718 | **+654 / +590** | **0** |
-| **Knife-on total** | **35,175 / 32,217** | 35,581 / 32,585 | **35,462 / 32,457** | 34,808 / 31,867 |
-| Against the record (exp) | **-741** | -335 | **-454** | -1,108 |
+| **Knife-on total** | **35,215 / 32,217** | 35,621 / 32,585 | **35,502 / 32,457** | 34,848 / 31,867 |
+| Against the record (exp) | **-701** | -295 | **-414** | -1,068 |
 
 **The forecast at 2026-10-23 (in force)** (F23; i). rs/112's firm dragon-bone forecast is due at
 16:00 PDT and was not in hand when this row was priced, so it takes a stated assumption: ~14 dragon
@@ -1100,11 +1100,11 @@ and not counted); big ~2,458 + ~673, none needed; the rune axe held. The fewest 
 takes 978 (623 past the baseline's 355, at 6/23 = 0.26, best 4/23 = 0.17: +163 / +108). While
 `knife-mine`'s bury cannot fire (iron respawning slower than 13 ticks, or a run commit without
 #159), the other 85 go to the booth at 2.07: +176, so **+339 / +284** (i), and +773 / +718 with
-the conservative row's other lines (35,581 / 32,585, 335 under the record expected). **With it**
+the conservative row's other lines (35,621 / 32,585, 295 under the record expected). **With it**
 (O35 closed: #159 on main since 15:52 PDT) they ride the Mining `stay2` lap instead, at ~0.21 a bone in trades (+18) and at most +0.02 a Mining ore over
 their ~425 ores (+9; 0 best) (m, lab, rs/182), and two lap switches that each wait out the
 13-tick respawn plus a start (~+30, i, rs/207): **+220 / +156**, and +654 / +590 with the other
-lines (35,462 / 32,457, 454 under). The rule is the one the knife-off column follows for rs/162: a
+lines (35,502 / 32,457, 414 under). The rule is the one the knife-off column follows for rs/162: a
 row does not price a program that is not on the run commit, and #159 is on main and a run-commit
 requirement (RUN-HOST.md "Credentials"), so the conservative row prices it. The forecast row closes
 O35 with dragon bones as well. With the 49 dragon and then babydragon buried in S07, Prayer is
