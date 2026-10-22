@@ -452,20 +452,33 @@ There were three repeats of each, and every one is in
 `docs/speedrun/research/data/decode-cap-20261022/` with the account name redacted. A cell gives
 the actions applied in the landing tick / the next tick / later.
 
-| Class | N (or K) | Lab (fedora, T = 300, 3 of 3 alike) | Demo (T = 400) |
+| Class | N (or K) | Lab (fedora, T = 300) | Demo (fedora, direct, T = 400) |
 | --- | --- | --- | --- |
-| user (drag) | 5 | 5 / 0 / 0 | pending |
-| user (drag) | 6 | 5 / 1 / 0 | pending |
-| user (drag) | 8 | 5 / 3 / 0 | pending |
-| ifbutton (Charge) | 5 | 5 / 0 / 0 | lab only |
-| ifbutton (Charge) | 6 | 5 / 1 / 0 | lab only |
-| ifbutton (Charge) | 8 | 5 / 3 / 0 | lab only |
-| client: drag + K camera + drag | 5, 6, 8, 19 | 2 / 0 / 0 | pending |
-| client: drag + K camera + drag | 20, 21 | 1 / 1 / 0 | pending |
-| failed: drag + K failed drags + drag | 5, 8 | 2 / 0 / 0 | pending |
+| user (drag) | 5 | 5 / 0 / 0 (3 of 3) | 5 / 0 / 0 (3 of 3) |
+| user (drag) | 6 | 5 / 1 / 0 (3 of 3) | 5 / 1 / 0 (3 of 3) |
+| user (drag) | 8 | 5 / 3 / 0 (3 of 3) | 5 / 3 / 0 (3 of 3) |
+| ifbutton (Charge) | 5 | 5 / 0 / 0 (3 of 3) | not run (no Charge on a throwaway) |
+| ifbutton (Charge) | 6 | 5 / 1 / 0 (3 of 3) | not run |
+| ifbutton (Charge) | 8 | 5 / 3 / 0 (3 of 3) | not run |
+| client: drag + K camera + drag | 5, 6, 8, 19 | 2 / 0 / 0 (3 of 3 each) | 2 / 0 / 0 (3 of 3 each) |
+| client: drag + K camera + drag | 20, 21 | 1 / 1 / 0 (3 of 3 each) | 1 / 1 / 0 (3 of 3 each) |
+| failed: drag + K failed drags + drag | 5, 8 | 2 / 0 / 0 (3 of 3 each) | 2 / 0 / 0 (3 of 3 each) |
 
 In the lab every burst went out 0.1-0.9 ms after the frame and landed on the next tick. The lab
-reproduces the fork's rule exactly, which validates the method. **Five user actions per tick, and a
+reproduces the fork's rule exactly, which validates the method.
+
+The demo run was one session, 23:26:41-23:28:21Z on 22 October, from fedora (a home address) on
+the direct game socket. The page token was mvjz3zys before and after (no restart). Tick
+intervals ran p10 289, p50 400, p90 516 ms over 236 ticks. Every burst went out as one write
+0.2-0.8 ms after its frame (one at 5.9 ms). The account's inventory was empty, so the probe's
+`--bank` mode borrowed one item from its own bank at a Varrock west booth and deposited it back
+before a confirmed logout. Five of 33 repeats first showed on the second tick after the send
+instead of the first. That is path latency (the whole burst arrived after that tick's input
+read); the split within the landing tick was the same as in the others.
+
+**Rule, measured on the demo engine as of 22 October 23:27Z: at most 5 successful user events per
+tick and at most 20 client events (failed user events included). The rest carry over to the next
+tick, in order. Nothing is dropped.** The cap is the fork's, unchanged by the 19:34Z engine change. **Five user actions per tick, and a
 20-event client budget that failed user actions draw on instead of the user cap.** Charge behaves
 like the drag, so on our engine nothing in its script holds it to one cast per tick.
 
@@ -489,10 +502,10 @@ tick on its own (`USER_EVENTS_PER_TICK = 5`, server/webclient/src/bot/programs/r
 program can't probe past 5 there anyway.
 
 rs/466's Charge result (5 clicks via the gateway relay, 4 casts in the tick and the 5th 'a few
-ticks later') is not the decode cap. Carry-over would land the fifth on the very next tick, and on
-the lab Charge carries over exactly like the drag. Of rs/83's candidates, (c), a script queue, is
-out on our engine. That leaves (b), the relay delivering the five clicks across a tick boundary,
-or a demo-side change specific to spells.
+ticks later') is not the decode cap. The demo applies 5 drags in one tick, and on the lab Charge
+behaves exactly like the drag. Of rs/83's candidates, (a), a lower cap, is out on the demo, and
+(c), a script queue, is out on our engine. That leaves (b), the relay delivering the five clicks
+across a tick boundary, or a demo-side change specific to spells, which a throwaway can't test.
 
 ## 7. The browser tab's sockets, and the route the run's input must take
 
