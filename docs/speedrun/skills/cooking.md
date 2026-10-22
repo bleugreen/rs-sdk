@@ -60,7 +60,7 @@ is "with interleaving (net)", n/a where nothing is absorbable (section 5).
 
 | Skill | Headline method | Start level (on-route quests) | Ticks to 99, normal | Ticks to 99, with interleaving (net) | Basis | Helper supplies | Document |
 |---|---|---|---|---|---|---|---|
-| Cooking | rs/47's one-login wine bank fermentation (deposit 29, let the login timer fire, deposit 421, make one wine) | 30 after Cook's Assistant ([quests README](../quests/README.md) step 12), else 1; irrelevant, one firing covers 1 -> 99 | 45-51 active ticks (73-77 from login to 99; the two 20-tick waits are idle) | n/a | measured by rs/47 (3 runs, all 99; P(99) 98.3% in one login) | 450 unfermented wines as notes, 1 grapes, 1 jug of water | cooking.md |
+| Cooking | rs/47's one-login wine bank fermentation (deposit 29, let the login timer fire, deposit 421, make one wine) | about 24 after Cook's Assistant ([quests README](../quests/README.md) step 12), else 1; irrelevant, one firing covers 1 -> 99 | 45-51 active ticks (73-77 from login to 99; the two 20-tick waits are idle) | n/a | measured by rs/47 (3 runs, all 99; P(99) 98.3% in one login) | 450 unfermented wines as notes, 1 grapes, 1 jug of water | cooking.md |
 
 ## 2. Route by level band
 
@@ -130,9 +130,11 @@ ticks. With any kebab supply at all, kebabs replace the fish.
 | Gertrude's Cat | 1,525 (`quest_fluffs.rs2:316`) | no |
 | Heroes' Quest | 2,825 (`quest_hero.rs2:35`); also needs Cooking 53 for the lava eel | no (`legends.md`) |
 
-Cook's Assistant is now on the route as Dragon Slayer filler, so the on-route start is **30**
-(300 base, inferred from the server's xp table, `Player.ts`) if the wine login falls after it,
-and 1 before it. Quest xp cannot matter for the wine route in any case: one firing covers
+Cook's Assistant is now on the route as Dragon Slayer filler, so the on-route start is **about
+24** (300 base = 7,500 game xp, rs/416's reading; an earlier inference here said 30) if the wine
+login falls after it, and 1 before it. The S25c lab was staged at 30; a start of 24 changes no
+wine count and no step logic (section 4: the rolls use the current level, and the plan reaches 99
+from 1). Quest xp cannot matter for the wine route in any case: one firing covers
 1 -> 99, and the re-arming make's Cooking 35 is reached by the first firing either way.
 
 ## 4. Mechanics
