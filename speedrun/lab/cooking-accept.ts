@@ -28,7 +28,7 @@
 // Prints one RESULT line: the step's ticks, normalised, each relog's cost and path, the firing
 // offsets from each login, the slot timeline's points, burst 1's open-to-close ticks, P1's pages.
 
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { hostname, loadavg } from 'os';
 import { join } from 'path';
 import type { BotWorldState } from '../../sdk/types';
@@ -46,6 +46,7 @@ import { runSteps, type RunnerSession } from '../runner/step';
 import { CHISEL, GIVER_TILE, PROBES, STEP_NAME, steps, type CookingOptions } from '../skills/cooking';
 import { CRAFTING_HANDOFF_XP } from '../skills/crafting';
 import { boothFor, SCORED_TILE, VARROCK_WEST } from '../skills/herblore';
+import { launchLabBrowser, type LabBrowser } from './browser';
 import { cheat, leaveTutorial, mustTele } from './setup';
 
 const [receiver, giverName, which] = process.argv.slice(2);
@@ -77,22 +78,9 @@ const RUN_GEMS: Record<string, number> = { uncut_diamond: 2, uncut_ruby: 20, unc
 
 // ---------------------------------------------------------------- the clients
 
-const webPort = process.env.WEB_PORT ?? '9660';
-const agentPort = process.env.AGENT_PORT ?? '8660';
 const demo = which === 'demo';
-if (!demo) {
-    const envFile = join(ROOT, 'bots', receiver, 'bot.env');
-    const text = readFileSync(envFile, 'utf8');
-    writeFileSync(envFile, text.replace(/^CLIENT_URL=.*\n?/m, '').trimEnd() + `\nCLIENT_URL=http://localhost:${webPort}/bot?gateway=${encodeURIComponent(`ws://localhost:${agentPort}`)}\n`, { mode: 0o600 });
-    const cdpPort = Number(webPort) + 7;
-    const puppeteer = (await import('puppeteer')).default;
-    await puppeteer.launch({
-        headless: process.argv.includes('--headless'),
-        defaultViewport: null,
-        args: ['--no-sandbox', '--window-size=800,660', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', `--remote-debugging-port=${cdpPort}`]
-    });
-    process.env.SPEEDRUN_CDP_URL = `http://127.0.0.1:${cdpPort}`;
-}
+// lab: the receiver's tab in the lab's Chrome, DevTools on WEB_PORT + 7
+const chrome: LabBrowser | null = demo ? null : await launchLabBrowser(receiver, { headless: process.argv.includes('--headless'), cdpPort: Number(process.env.WEB_PORT ?? '9660') + 7 });
 // demo: run A's shape (the plain sequence) needs no page program, so the receiver is a lite client
 // on its loopback gateway (openSession refuses the demo relay); the giver is rs/41's `wine` role
 // with afterRelog, run by the fleet, not by this script
@@ -317,5 +305,6 @@ try {
         await logoutClean(s).catch(() => {});
         await closeSession(s).catch(() => {});
     }
+    await chrome?.kill().catch(() => {});
 }
 process.exit(exitCode);

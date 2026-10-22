@@ -223,6 +223,16 @@ Agility, run inside the page on the decoded tick. Its browser lab is
 `docs/speedrun/scripts/tickprog-lab.sh`, and it has the measured table (in-page vs this
 overlay vs lite, Chrome throttling, and the Ashburn row).
 
+### Lab and demo browsers
+
+Every lab Chrome is launched by `speedrun/lab/browser.ts` `launchLabBrowser`, the only
+`puppeteer.launch` under `speedrun/lab` (`browser.test.ts` enforces it). It loads puppeteer at
+launch, not at module load, because Bun 1.4.3 crashes loading it on some hosts. In demo mode,
+any Chrome launched by hand, or by a script that a demo attaches to over CDP
+(`SPEEDRUN_CDP_URL` / `CDP_URL`), must carry `--password-store=basic`. Without it the first
+navigation hangs on a host with no D-Bus (Ashburn) or waits ~25 s for the keyring timeout (bbs).
+`launchLabBrowser` passes it already. The run host's side is in RUN-HOST.md (rs/158's fold-in 12).
+
 ## Running several labs on one machine
 
 Each process takes its ports from the environment, so parallel labs only need

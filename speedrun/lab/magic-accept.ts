@@ -16,11 +16,6 @@
 //
 // Setup uses staff cheats and is untimed; the timed span is the step's own TickLog row.
 
-import { readFileSync, writeFileSync } from 'node:fs';
-// Static, as runecraft-accept.ts: a dynamic import('puppeteer') under bun breaks its proxy-agent's
-// CommonJS interop ("debug_1.default is not a function").
-import puppeteer from 'puppeteer';
-import { join } from 'node:path';
 import { isTileWalkable } from '../../sdk/pathfinding';
 import { pathTiles } from '../lib/paths';
 import { closeSession, openSession, type Session } from '../lib/session';
@@ -32,6 +27,7 @@ import { runSteps } from '../runner/step';
 import { ENCHANTS, enchantedRingSpecs, enchantHeld, magicLevel, magicXp, ROUTE_LOADS, steps, type MagicReport } from '../skills/magic';
 import { onTutorialIsland } from '../lib/world';
 import { tutorialSkip } from '../skills/start';
+import { launchLabBrowser, type LabBrowser } from './browser';
 import { arg, botArg, labLog, result } from './common';
 import { cheat, mustTele } from './setup';
 
@@ -55,21 +51,7 @@ const S01_TILE = { x: 3222, z: 3222 };
 // after a landing; lab.sh with LAB_RUNNERS=0, so only the givers get lite runners). The page
 // publishes to the gateway named in its URL.
 const browserMode = arg('client', 'lite') === 'browser';
-let browser: { close(): Promise<void> } | null = null;
-if (browserMode) {
-    const webPort = process.env.WEB_PORT ?? '9300';
-    const agentPort = process.env.AGENT_PORT ?? '8300';
-    const cdpPort = Number(webPort) + 5;
-    browser = await puppeteer.launch({
-        headless: true,
-        defaultViewport: null,
-        args: ['--no-sandbox', '--window-size=800,660', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', `--remote-debugging-port=${cdpPort}`],
-    });
-    process.env.SPEEDRUN_CDP_URL = `http://127.0.0.1:${cdpPort}`;
-    const envPath = join(process.cwd(), 'bots', botArg(), 'bot.env');
-    const clientUrl = `CLIENT_URL=http://localhost:${webPort}/bot?gateway=${encodeURIComponent(`ws://localhost:${agentPort}`)}`;
-    writeFileSync(envPath, readFileSync(envPath, 'utf8').replace(/^CLIENT_URL=.*\n?/m, '').trimEnd() + `\n${clientUrl}\n`, { mode: 0o600 });
-}
+const browser: LabBrowser | null = browserMode ? await launchLabBrowser(botArg()) : null;
 const scored = await openSession(botArg(), browserMode ? { client: 'browser', launch: true, insecureQueryLogin: true } : {});
 const log = labLog(`magic-${mode}`);
 const noStop = { shouldStop: () => false, logout: async () => {} };
@@ -328,5 +310,5 @@ if (mode === 'h4') {
 
 console.log(formatReport(report(log.rows)));
 await closeSession(scored);
-await browser?.close();
+await browser?.kill();
 process.exit(pass ? 0 : 1);

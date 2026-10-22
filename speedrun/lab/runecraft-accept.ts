@@ -37,7 +37,6 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import puppeteer from 'puppeteer';
 import { closeSession, login, logoutClean, openSession, type Session } from '../lib/session';
 import { TickLog } from '../lib/ticks';
 import { waitUntil } from '../lib/wait';
@@ -46,6 +45,7 @@ import { programStatus } from '../lib/programs';
 import { Observation, resolveResume, runResumable, sessionLink } from '../runner/resume';
 import { BODY_ALTAR_LEGS, legById, runLeg, type LegStep } from '../runner/legs';
 import { runSteps } from '../runner/step';
+import { labClientUrl, launchLabBrowser } from './browser';
 import { mustTele } from './setup';
 import { onTutorialIsland } from '../lib/world';
 import { tutorialSkip } from '../skills/start';
@@ -107,12 +107,7 @@ console.log(`runecraft-accept: ${altar} from ${level}, ${cycles ? `${cycles} cyc
 
 // the block's spare ports: the givers' loopback gateway on AGENT_PORT+5, Chrome's DevTools on WEB_PORT+5
 const cdpPort = Number(webPort) + 5;
-const browser = await puppeteer.launch({
-    headless,
-    defaultViewport: null,
-    args: ['--no-sandbox', '--window-size=800,660', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', `--remote-debugging-port=${cdpPort}`]
-});
-process.env.SPEEDRUN_CDP_URL = `http://127.0.0.1:${cdpPort}`;
+const chrome = await launchLabBrowser(scored, { headless, cdpPort });
 
 let launcher: ReturnType<typeof Bun.spawn> | null = null;
 const startGivers = async () => {
@@ -141,11 +136,6 @@ const startGivers = async () => {
     console.log(`givers ready after ${Math.round((Date.now() - t0) / 1000)} s`);
 };
 
-// The page publishes to the gateway named in its URL; without one it uses the default port, not the lab's.
-const scoredEnv = join(process.cwd(), 'bots', scored, 'bot.env');
-const envText = readFileSync(scoredEnv, 'utf8');
-const clientUrl = `CLIENT_URL=http://localhost:${webPort}/bot?gateway=${encodeURIComponent(`ws://localhost:${agentPort}`)}`;
-writeFileSync(scoredEnv, envText.replace(/^CLIENT_URL=.*\n?/m, '').trimEnd() + `\n${clientUrl}\n`, { mode: 0o600 });
 
 let session: Session | null = null;
 /** The arrival leg's figures under --arrive=leg. */
@@ -157,7 +147,7 @@ try {
         // its own tab, once: out of the tutorial, then only its talisman and the runes (rs/383: 'carry them in')
         const hbEnv = join(process.cwd(), 'bots', HB);
         mkdirSync(hbEnv, { recursive: true, mode: 0o700 });
-        writeFileSync(join(hbEnv, 'bot.env'), readFileSync(join(botsDir, HB, 'bot.env'), 'utf8').trimEnd() + `\nGATEWAY_URL=ws://localhost:${agentPort}\n${clientUrl}\n`, { mode: 0o600 });
+        writeFileSync(join(hbEnv, 'bot.env'), readFileSync(join(botsDir, HB, 'bot.env'), 'utf8').trimEnd() + `\nGATEWAY_URL=ws://localhost:${agentPort}\nCLIENT_URL=${labClientUrl()}\n`, { mode: 0o600 });
         console.log('hand-back giver: staging in its own tab');
         const hb = await openSession(HB, { client: 'browser', launch: true, insecureQueryLogin: true });
         console.log('hand-back giver: session open');
@@ -228,7 +218,7 @@ try {
         if (!s.inGame) return;
         if (reloadAfter && !reloaded && crafts() >= Number(reloadAfter)) {
             reloaded = true;
-            void browser.pages().then(ps => ps.find(p => p.url().includes(`bot=${scored}`))?.reload()).then(() => console.log(`reloaded the page after ${reloadAfter} crafts`));
+            void chrome.browser.pages().then(ps => ps.find(p => p.url().includes(`bot=${scored}`))?.reload()).then(() => console.log(`reloaded the page after ${reloadAfter} crafts`));
         }
         if (junkAfter && junked === null && crafts() >= Number(junkAfter)) {
             junked = programStatus(s)?.runId ?? 0;
@@ -295,6 +285,6 @@ try {
         (launcher as { kill(sig?: string): void }).kill('SIGINT');
         await Promise.race([(launcher as { exited: Promise<unknown> }).exited, Bun.sleep(20_000)]);
     }
-    await browser.close().catch(() => {});
+    await chrome.kill().catch(() => {});
 }
 process.exit(exit);

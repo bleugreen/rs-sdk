@@ -10,33 +10,23 @@
 // send was re-sent, `S00TRACE` lines (one per published state from the first state to the end).
 // The whole trace goes to $LAB_LOG/s00-<bot>.json.
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import puppeteer from 'puppeteer';
 import type { BotWorldState } from '../../sdk/types';
 import { classifyPage } from '../lib/dialogue';
 import { openSession } from '../lib/session';
 import { atSpawn, hasStarterKit, PLAYER_KIT } from '../skills/start';
 import { arg, botArg } from './common';
+import { launchLabBrowser } from './browser';
 import { leaveTutorial } from './setup';
 
 const bot = botArg();
 const throttle = Number(arg('throttle', '1'));
 const throttleAt = arg('throttle-at', 'login');
-const webPort = process.env.WEB_PORT ?? '9300';
-const agentPort = process.env.AGENT_PORT ?? '8300';
-const cdpPort = Number(webPort) + 7;
-
-const browser = await puppeteer.launch({
-    headless: true, defaultViewport: null,
-    args: ['--no-sandbox', '--window-size=800,660', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', `--remote-debugging-port=${cdpPort}`],
-});
-process.env.SPEEDRUN_CDP_URL = `http://127.0.0.1:${cdpPort}`;
-const envPath = join(process.cwd(), 'bots', bot, 'bot.env');
-writeFileSync(envPath, readFileSync(envPath, 'utf8').replace(/^CLIENT_URL=.*\n?/m, '').trimEnd() + `\nCLIENT_URL=http://localhost:${webPort}/bot?gateway=${encodeURIComponent(`ws://localhost:${agentPort}`)}\n`, { mode: 0o600 });
+const chrome = await launchLabBrowser(bot, { cdpPort: Number(process.env.WEB_PORT ?? '9300') + 7 });
 
 async function throttleTab(): Promise<void> {
-    for (const p of await browser.pages()) if (p.url().includes('/bot')) await p.emulateCPUThrottling(throttle);
+    for (const p of await chrome.browser.pages()) if (p.url().includes('/bot')) await p.emulateCPUThrottling(throttle);
 }
 
 const t0 = Date.now();
@@ -120,5 +110,5 @@ const summary = {
 console.log(`S00 ${JSON.stringify(summary)}`);
 if (error !== null || talks > 1 || conts > 1) for (const r of states) console.log(`S00TRACE ${JSON.stringify(r)}`);
 if (process.env.LAB_LOG) writeFileSync(join(process.env.LAB_LOG, `s00-${bot}.json`), JSON.stringify({ summary, sends, states }, null, 1));
-await browser.close();
+await chrome.kill();
 process.exit(0);

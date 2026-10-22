@@ -37,7 +37,6 @@
 // Prints one RESULT line per case: ticks, the pass bound, the cycle-gap histogram, the level-up
 // backlog, and the per-tick sends and landings the demo metric reads.
 
-import { readFileSync, writeFileSync } from 'fs';
 import { hostname, loadavg } from 'os';
 import { join } from 'path';
 import type { BotWorldState } from '../../sdk/types';
@@ -50,6 +49,7 @@ import { levelForXp, xpForLevel } from '../lib/xp';
 import { Observation, resolveResume } from '../runner/resume';
 import { runSteps, type RunnerSession } from '../runner/step';
 import { boothFor, HERB_NOTES, herbloreLevel, herbloreXp, POST_RITUAL_XP, preconditions, recipesFor, SCORED_TILE, STEP_NAME, steps, VARROCK_WEST } from '../skills/herblore';
+import { launchLabBrowser, type LabBrowser } from './browser';
 import { cheat, leaveTutorial, mustTele, near, setstat } from './setup';
 
 const bot = process.argv[2];
@@ -118,23 +118,8 @@ function metrics(sh: ItemCycleShared | undefined): Metrics | null {
     };
 }
 
-// The page publishes to the gateway named in its URL; without one it uses the default port, not the lab's.
-const webPort = process.env.WEB_PORT ?? '9300';
-const agentPort = process.env.AGENT_PORT ?? '8300';
-if (which !== 'demo') {
-    const envFile = join(process.cwd(), 'bots', bot, 'bot.env');
-    const text = readFileSync(envFile, 'utf8');
-    writeFileSync(envFile, text.replace(/^CLIENT_URL=.*\n?/m, '').trimEnd() + `\nCLIENT_URL=http://localhost:${webPort}/bot?gateway=${encodeURIComponent(`ws://localhost:${agentPort}`)}\n`, { mode: 0o600 });
-    const cdpPort = Number(webPort) + 7;
-    // imported here: puppeteer fails to load under bun on some hosts (bbs), and the demo never launches Chrome itself
-    const puppeteer = (await import('puppeteer')).default;
-    await puppeteer.launch({
-        headless: process.argv.includes('--headless'),
-        defaultViewport: null,
-        args: ['--no-sandbox', '--window-size=800,660', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', `--remote-debugging-port=${cdpPort}`]
-    });
-    process.env.SPEEDRUN_CDP_URL = `http://127.0.0.1:${cdpPort}`;
-}
+// lab: the tab in the lab's Chrome, DevTools on WEB_PORT + 7; the demo never launches Chrome itself
+const chrome: LabBrowser | null = which === 'demo' ? null : await launchLabBrowser(bot, { headless: process.argv.includes('--headless'), cdpPort: Number(process.env.WEB_PORT ?? '9300') + 7 });
 
 const opened: Session = await openSession(bot, { client: 'browser', launch: true, insecureQueryLogin: which !== 'demo' });
 let exitCode = 0;
@@ -332,6 +317,7 @@ await (async () => {
         console.log(`RESULT ${JSON.stringify({ ...result, levelFromXp: levelForXp(herbloreXp(state())), host: hostname(), log: log.path })}`);
         await logoutClean(opened).catch(() => {});
         await closeSession(opened).catch(() => {});
+        await chrome?.kill().catch(() => {});
     }
 })();
 process.exit(exitCode);
