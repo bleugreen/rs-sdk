@@ -2104,15 +2104,18 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Serves:** S20, **from (2820,3486), beside the Fishing Contest tunnel stairs** (the stairs loc,
   (2820,3484), cannot be reached), its arrival tile: the Camelot teleport and the run east are T19-20
   (entry 11; RUN-ORDER.md O6).
-- **The self route** (fold-in 22; main's ruling, 05:5x PDT): the raw giant carp is `tradeable=no` (`fishing.obj:378`, obj 338), as are the red vine worm and the pass (r), and two demo handovers failed empty (rs/41). So SCORED gets the pass, digs a red vine worm in McGrubor's Wood (the spade), puts garlic in the pipe
-  (`quest_fishingcompo.rs2` `[oplocu,garlicpipe]`; Bonzo's set-places then moves the stranger at
-  once), catches its own carp at the pipe spot with the worm (`hemenster_fishing.rs2`: a worm is taken
-  before bait, and at the stranger's spot it gives the giant carp), and talks to Bonzo. The walks aim
-  at McGrubor's railing's outside tile (2661,3500), since the pathfinder treats the locked gate as a
-  door (`quests/fishing_contest.md`). **The quest stays**: the guild door needs 32 QP with none spare
-  (RUN-ORDER.md R11).
-- **Preconditions:** H16: garlic 1, a spade, a rod, 1 bait (unused on this route, harmless), 5 coins,
-  3 Camelot casts, the first of them T19-20's; no carp.
+- **The self route** (fold-in 22; main's ruling, 05:5x PDT): the raw giant carp is `tradeable=no` (`fishing.obj:378`, obj 338), as are the red vine worm and the pass (r), and two demo handovers failed empty (rs/41). So SCORED gets the pass, digs a red vine worm in McGrubor's Wood with the spade (the
+  wood is east of the railing), pays Bonzo before the garlic (`quest_fishingcompo.rs2:90-93`), puts
+  the garlic in the wall pipe at (2638,3446), the only reachable one, catches its own carp at the pipe
+  spot with the worm (`hemenster_fishing.rs2:20-24`: the worm is the bait, taken before any fishing
+  bait), and talks to Bonzo; the module drops the pass and the spade at S20's exit. The walks aim at
+  McGrubor's railing's outside tile (2661,3500), since the pathfinder treats the locked gate as a door
+  (`quests/fishing_contest.md`). No loc-script re-send exposure in the lab: the stairs and the gate
+  open their page in 1 tick. Owner **rs/388** (rs/388's first full run, fold-in 22). **The quest
+  stays**: the guild door needs 32 QP with none spare (RUN-ORDER.md R11).
+- **Preconditions:** a fishing rod, a spade, garlic and 5 coins from H16 (the carp, the worm and the
+  pass are untradeable: `fishing.obj:378`, `quest_fishingcompo.obj`), 2 Camelot casts (T19-20's is the
+  leg's).
 - **Postconditions:** 2,437 Fishing (78 with Sea Slug); 1 QP.
 - **Ticks:** expected **300** (burst, i, fold-in 22), best **300**, fixed fallback **323**, fallback
   **376** (stock): the helper-carp figures + 142 for `fishing_contest.md`'s self route, which replaces steps 4-5's 69 ticks with ~211: the Camelot teleport 4, a run to McGrubor's railing west side (2661,3500) 58 m, the squeeze 2, the vines 38 m, the dig ~3 i, back 40 m, the squeeze 2, the gate 62 m, the garlic stash in the pipe ~4 i, and two of Bonzo's pages; the walks measured, the dig, the stash and the carp catch inferred from their scripts. Before: 158 / 158 / 181 / 234, `quests/README.md` §3 row's 223 / 200 / 276 less steps 1-2's 42, the
@@ -2121,8 +2124,9 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Logout-unsafe:** inside the contest fence; leaving through the gate resets the contest, and a
   logout inside was not tested (same step).
 - **Acceptance, local:** `quest-smallskill-fishingcompo.ts` through the module on the self route. Pass:
-  within 10% of 323, counted from (2820,3486); 3 of 3 (rs/388, under rs/185).
-- **Acceptance, demo (throwaway):** feasible on one throwaway by the self route (the carp cannot be traded). Pass: within 10%.
+  within 10% of 323, counted from (2820,3486); 3 of 3 (rs/388, under rs/185). **First run** (rs/388, lab,
+  lite, fixed dialogue, n = 1): 327 m from the arrival tile; no re-price on one run (3 burst and 2
+  more fixed runs follow).
 - **Start from:** `quest-smallskill-fishingcompo.ts`.
 - **logoutSafe:** yes after the fence.
 
@@ -2734,11 +2738,12 @@ is a finding for rs/158. rs/304's walker reads **89 rows: 87 pass, 2 unknown (S1
 peaks), 0 fail** (83 rows, 22 pass, 4 unknown and 57 failing before). Three trades are new: H4e
 (S07's end, the Camelot runes in and the axe back; retired in fold-in 22, the 0-tick path on #310, its
 row now the 'S07 last load' sub-row), H4p (the Mining kit at S09's arrival) and H17e
-(T21-22's runes after S21's last craft). Four sub-rows put a need or a drop where it falls: S15 Y (Narnode's
+(T21-22's runes after S21's last craft). Five sub-rows put a need or a drop where it falls: S15 Y (Narnode's
 reward, the step's exit need), S18 load 0 (H14's bones spent before the first top-up), S25d bank
-(the notes banked on the first booth visit) and S10b N (Tree Gnome Village's gnome amulet dropped at
-segment N after the reward, fold-in 22: a row's `out` is applied before its `in`, so a reward and its
-drop cannot share a row). **Food is not subtracted** unless a floor is measured
+(the notes banked on the first booth visit), S10b N (Tree Gnome Village's gnome amulet dropped at
+segment N after the reward) and S20 exit (Fishing Contest's worm, carp, trophy, pass and spade given
+up inside the step), the last two from fold-in 22: a row's `out` is applied before its `in`, so an
+item received and given inside one step cannot share a row. **Food is not subtracted** unless a floor is measured
 (S17's 2): the top-ups (`NAME to N`) and the walk carry the no-eat count, the slot bound. **Quest
 leftovers are read from the quests' scripts**, each row citing the file and line, and each leaves on
 the next leg or trade.
@@ -2870,9 +2875,10 @@ S10b) or fire (S10b to S14) supplies its element.
 | H15 | swamp paste x1 [u]; torch @596 x1 [u] (unlit, obj `torch_unlit`; the game name 'Torch', which lit and unlit share; the ids rs/331's); law rune x2 [s]; water rune x2 [s] | bronze arrow all (swap: the dead fletched tiers); iron arrow all (swap); steel arrow all (swap); mithril arrow all (swap); adamant arrow all (swap); coins all (swap: the knights' loot); shark all (swap: S18's, dead until S26); blood rune all (swap: Charge done) | - | 2 | SUPPLIES H15 (r); P1, the next existing trade after S18 (r); staging rs/331, `helpers/staging.md` ba7303c5 (r) |
 | S19 | torch @594 x1 [u] (lit, obj `torch_lit`, `quest_seaslug.rs2:56-57`); dry sticks x1 [u] (`:40`); broken glass x1 [u]; oyster pearls x1 [u] (the reward, `caroline.rs2:44`) | swamp paste x1 (hand-in, `holgart_ardougne.rs2:44`); torch @596 x1 (consume: lit) | - | 2 | `quest_seaslug` (r); MAN entry 20 (r); the peak, the glass and the sticks beside the torch (r) |
 | T19-20 | - | law rune x1 (consume: Camelot teleport); air rune x5 (consume); torch @594 x1 (drop: Sea Slug's leftovers); dry sticks x1 (drop); broken glass x1 (drop); oyster pearls x1 (drop) | - | 0 | RUN-ORDER T19-20 (r); P1; Sea Slug's exit drops, rs/185, issue pending (r) |
-| H16 | garlic x1 [u]; spade x1 [u]; fishing rod x1 [u]; fishing bait x1 [s]; coins x5 [s]; law rune x4 [s] (3 Camelot, 1 Falador); air rune x18 [s]; water rune x1 [s]; body talisman x1 [u] (SCORED's own, for S21) | - | - | 6 | SUPPLIES H16 (r); the self route's garlic and spade in place of the untradeable carp (fold-in 22, r); the body talisman (rs/318 ruling 6, r); the Lumbridge cast moved to H17e (rs/318 ruling 7, r); owner rs/320 (r); staging rs/331, `helpers/staging.md` ba7303c5 (r) |
-| S20 | fishing pass x1 [u] (`mountain_dwarf.rs2:71`, never deleted) | garlic x1 (consume: the pipe, `quest_fishingcompo.rs2` `[oplocu,garlicpipe]`); coins x5 (consume: the entry fee); law rune x2 (consume: the other two Camelot casts); air rune x10 (consume) | - | 2 | `quest_fishingcompo` (r); MAN entry 23 (r); the trophy handed to the dwarf (`mountain_dwarf.rs2:98-99`); **the self route** (fold-in 22): the red vine worm dug with H16's spade and spent on the carp at the pipe spot (`hemenster_fishing.rs2`: a worm is taken before bait), the carp handed to Bonzo, so neither stays; the peak, the pass and the worm, then the carp and the trophy (r) |
-| T20-21 | - | law rune x1 (consume: Falador teleport); air rune x3 (consume); water rune x1 (consume); law rune all (drop: the surplus, so S21 starts holding only the talisman); air rune all (drop); water rune all (drop); fishing rod x1 (drop: Fishing Contest's leftovers); fishing bait all (drop: unused on the self route); spade x1 (drop); fishing pass x1 (drop); body talisman x1 (drop: on entry, as at S06) | - | 0 | RUN-ORDER T20-21, the body plan in force (r); rs/318 rulings 6 and 7 (r); P1; Fishing Contest's exit drops, rs/185, issue pending (r) |
+| H16 | fishing rod x1 [u]; spade x1 [u]; garlic x1 [u]; coins x5 [s]; law rune x4 [s] (3 Camelot incl. T19-20's, 1 Falador); air rune x18 [s]; water rune x1 [s]; body talisman x1 [u] (SCORED's own, for S21) | - | - | 5 | SUPPLIES H16 (r); rs/388's list for the self route, fold-in 22: the spade and garlic in place of the untradeable carp, and no fishing bait, the worm being the bait (`hemenster_fishing.rs2:20-24`) (r); the body talisman (rs/318 ruling 6, r); the Lumbridge cast moved to H17e (rs/318 ruling 7, r); owner rs/320 (r); staging rs/331, `helpers/staging.md` ba7303c5 (r) |
+| S20 | fishing pass x1 [u] (`mountain_dwarf.rs2:71`); red vine worm x1 [s] (dug in McGrubor's Wood); raw giant carp x1 [u] (caught at the pipe spot with the worm); fishing trophy x1 [u] (Bonzo's, for the carp) | garlic x1 (consume: the pipe, `quest_fishingcompo.rs2` `[oplocu,garlicpipe]`); coins x5 (consume: the entry fee); law rune x2 (consume: the other two Camelot casts); air rune x10 (consume) | - | 2 | `quest_fishingcompo` (r); MAN entry 23 (r); **the self route** (rs/388's rows, fold-in 22): the pass, the worm, the carp and the trophy received here and given in S20 exit (r); the peak, the pass and the worm, then the carp and the trophy (r) |
+| S20 exit | - | red vine worm all (consume: the carp's bait, `hemenster_fishing.rs2:20-24`); raw giant carp x1 (hand-in: Bonzo); fishing trophy x1 (hand-in: the dwarf, `mountain_dwarf.rs2:98-99`); fishing pass x1 (drop: at S20's exit, the module); spade x1 (drop: at S20's exit, the module) | - | 0 | rs/388 (fold-in 22, r); a sub-row, because a row gives before it receives (r) |
+| T20-21 | - | law rune x1 (consume: Falador teleport); air rune x3 (consume); water rune x1 (consume); law rune all (drop: the surplus, so S21 starts holding only the talisman); air rune all (drop); water rune all (drop); fishing rod x1 (drop: Fishing Contest's leftovers); body talisman x1 (drop: on entry, as at S06) | - | 0 | RUN-ORDER T20-21, the body plan in force (r); rs/318 rulings 6 and 7 (r); P1; Fishing Contest's exit drops, rs/185, issue pending (r) |
 | H17 | rune essence x27 [u] (one of 194 deliveries) | - | - | 27 | SUPPLIES H17 (r); MAN entry 9 (r); 28 free, the staff of fire worn and the arrows quivered (rs/318 ruling 7, r) |
 | S21 | body rune x? [s] (crafted) | rune essence x27 (consume: one craft) | - | 0 | MAN entry 9 (r); the body runes are a stack, so the uncounted product takes one slot (r) |
 | H17e | law rune x1 [s]; air rune x3 [s]; earth rune x1 [s] (T21-22's Lumbridge teleport) | - | - | 3 | rs/318 ruling 7 (r): after the last craft, +4 i on S21 (i; 8 m from the last craft's frame, rs/196, fold-in 22; +5 i before); from **a runes-only hand-back trip** (the giver's body talisman and the runes, no essence, since a talisman plus 27 essence fills 28 slots: **cairn_t19** (216 essence + the Lumbridge runes), roster slot 18, 8 essence trades then the runes-only trip after delivery 173, no 23rd account (rs/383, rs/41; fold-in 22) (r); SCORED's side on rs/186's branch (023d8842), rs/383's giver half, both on main with #313 (2538b7d8); SCORED ends with exactly these runes beside its body runes (rs/196, m) (r); owner rs/196 (`runecraft.ts` via `receiveFrom`) (r); staging rs/331, `helpers/staging.md` ba7303c5 (r) |
