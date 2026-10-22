@@ -19,13 +19,20 @@
 //   and on the frame that shows it open write that many bones as the top-up ask
 //   (altar-cue.ts writeTopUpAsk), as the Thieving module does; loads = asks.length;
 //   item (default 'Dragon bones'): the bones it takes and buries.
+//   returnLoads (S07's trade-and-return rehearsal, with `givers`): bury nothing. Each load goes straight
+//   back to the giver that served it (the giver's `acceptReturn`), then the stand-in waits out
+//   `paceTicks` (default n x buryEvery, a load's bury time) from the receive before the next, so
+//   the rotation runs at the run's pace. At the end it waits for every giver to go off (each banks
+//   what it holds first), so every giver's bank ends as it was staged. It banks, eats and equips
+//   nothing, and needs the free slots for the biggest load (n, or finalN plus the extras).
 //
 // On the local lab it clears its pack and teleports with staff commands. Anywhere else (the
 // demo) it uses none: it banks what it carries at Falador west, walks to the site, and raises
 // no level-up pages. There it runs only as a run-machine test account (STAND_IN_ACCOUNTS), never
-// a fleet or scored account, because it buries what it is given.
+// a fleet or scored account, because it buries what it is given; with returnLoads it buries and
+// banks nothing, so any helper outside the forbidden list and the group will do.
 import type { BotWorldState } from '../../sdk/types';
-import { receiveFrom, tradeOf } from '../lib/trade';
+import { give, receiveFrom, tradeOf } from '../lib/trade';
 import { canonName, CueWriter, cueDir, FrameLog, scopeOption, writeTopUpAsk } from './altar-cue';
 import { altarData, altarRoomOf, cheat, count, exactItem, isLocalServer, labTele, leaveRoom, pos, standOn, until, type Tile } from './altar-room';
 import { boneServer, DEFAULT_BONE_BANK, readBoneStatuses, S07_SITES } from './bone-giver';
@@ -36,9 +43,18 @@ import { runStandalone, type Role, type RoleContext } from './role';
 /** The run machine's test accounts (bbs ~/rs-run-machine/bots), the only ones the stand-in runs as off the lab. */
 export const STAND_IN_ACCOUNTS: ReadonlySet<string> = new Set(['cairn_h70', 'cairn_h71', 'cairn_h72', 'cairn_h75']);
 
-/** Off the lab: refuse any account but a run-machine test account. */
-export function assertDemoStandIn(account: string): void {
+/**
+ * Off the lab: refuse any account but a run-machine test account, or with `returnLoads` (it keeps
+ * nothing) any helper that is neither forbidden nor one of the givers.
+ */
+export function assertDemoStandIn(account: string, o: { returnLoads?: boolean; givers?: readonly string[] } = {}): void {
     const a = canonName(account);
+    if (o.returnLoads) {
+        if (FORBIDDEN_ACCOUNTS.has(a) || !/^cairn_[a-z0-9_]+$/.test(a) || (o.givers ?? []).map(canonName).includes(a)) {
+            throw new Error(`bone-receiver with returnLoads runs as a cairn_ helper that is neither forbidden nor a giver (got ${account})`);
+        }
+        return;
+    }
     if (FORBIDDEN_ACCOUNTS.has(a) || !STAND_IN_ACCOUNTS.has(a)) {
         throw new Error(`bone-receiver buries what it is given: off the local lab it runs only as a run-machine test account (${[...STAND_IN_ACCOUNTS].join(', ')}), never a fleet or scored account (got ${account})`);
     }
@@ -60,6 +76,12 @@ interface LoadResult {
     standingAtClick: boolean;
     /** Ticks from the last bury of the previous load to the first bury of this one (3 when the trade cost nothing). */
     buryGap?: number;
+    /** returnLoads: ticks from wanting the load (pace over) to the trade click: a stall when the group had nobody ready. */
+    waitForGiver?: number;
+    /** returnLoads: the hand-back to the giver. */
+    returned?: { ok: boolean; ticks: number; reason?: string };
+    /** returnLoads: ticks from the previous load's receive to this one's. */
+    loadGap?: number;
     page?: { held: number; requestAfterClose: number | null };
     reason?: string;
 }
