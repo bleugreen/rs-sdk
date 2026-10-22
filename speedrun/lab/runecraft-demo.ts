@@ -35,6 +35,7 @@ import { closeSession, loadBotEnv, logoutClean, openSession, type LogoutResult, 
 import { TickLog } from '../lib/ticks';
 import { waitUntil } from '../lib/wait';
 import { runSteps } from '../runner/step';
+import { leaveTutorial, mustTele } from './setup';
 import { altarStep, inRoom, preconditions, rcLevel, rcShared, rcXp, readLauncherFile, xpAfterCrafts, type Band, type ScheduleMode } from '../skills/runecraft';
 
 const ROOT = resolve(import.meta.dir, '..', '..');
@@ -164,9 +165,10 @@ try {
             await sdk.sendSay(cmd);
             await sdk.waitForTicks(2);
         };
+        await leaveTutorial(session, log);
         await say('::~clearinv inv');
         await say(`::give ${altar.talismanObj} 1`);
-        await say(`::tele ${altar.exit.level},${altar.exit.x >> 6},${altar.exit.z >> 6},${altar.exit.x & 63},${altar.exit.z & 63}`);
+        await mustTele(sdk, altar.exit.x, altar.exit.z, altar.exit.level);
         await waitUntil(sdk, s => s.inventory.some(i => altar.talisman.test(i.name)), { maxTicks: 10 });
     }
     const abort = new AbortController();

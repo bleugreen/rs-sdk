@@ -8,12 +8,13 @@ import { depositAll, withdrawMany, type WithdrawSpec } from '../lib/bank';
 import { closeSession, openSession } from '../lib/session';
 import { formatReport, report } from '../lib/ticks';
 import { arg, botArg, labLog, sample } from './common';
-import { bankFixture, isLabItem, LAB_ITEMS } from './setup';
+import { bankFixture, isLabItem, LAB_ITEMS, leaveTutorial } from './setup';
 
 const n = Number(arg('n', '3'));
 const session = await openSession(botArg());
 const { sdk, bot } = session;
 const log = labLog('bank');
+await leaveTutorial(session);
 
 await bankFixture(session, { ironOre: 100 });
 const labIds = LAB_ITEMS.map(d => sdk.getState()!.bank.items.find(i => isLabItem(i.name, d))?.id).filter((id): id is number => id !== undefined);

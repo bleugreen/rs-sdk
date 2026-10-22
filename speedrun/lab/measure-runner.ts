@@ -14,7 +14,7 @@ import { formatReport, report } from '../lib/ticks';
 import { waitTicks, waitUntil } from '../lib/wait';
 import { runSteps, type Step } from '../runner/step';
 import { arg, botArg, labLog, result } from './common';
-import { cheat, near, tele } from './setup';
+import { cheat, leaveTutorial, near, tele } from './setup';
 
 const n = Number(arg('n', '3'));
 const stepsPerChain = Number(arg('steps', '10'));
@@ -27,8 +27,7 @@ const { sdk } = session;
 const log = labLog('runner');
 
 // A bot fresh from create-bot is still on Tutorial Island.
-await cheat(sdk, 'setvar tutorial 1000');
-await waitTicks(sdk, 2);
+await leaveTutorial(session);
 if (!(await tele(sdk, A.x, A.z))) throw new Error('tele to Lumbridge courtyard failed');
 
 function walkStep(i: number, from: { x: number; z: number }, to: { x: number; z: number }): Step {

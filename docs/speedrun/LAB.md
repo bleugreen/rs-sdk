@@ -58,6 +58,20 @@ reporting belongs in `speedrun/lab/record.ts`; do not copy a quest helper librar
 into a new probe. See [scripts/README.md](scripts/README.md) for the boundary and
 measurement-output conventions.
 
+### Staging a fresh account
+
+A bot's first login on an engine's save data (a new name, or any name in a fresh checkout,
+since saves live in the gitignored `server/engine/data/players/`) lands on Tutorial Island, where
+the login script hides every side tab (`tutorial.rs2` `start_tutorial`). A staff `::tele` off the
+island does not bring them back, and the server then drops every click on a side-tab component
+(inventory ops, item use, spells, prayers, the run toggle: `Player.isComponentVisible`) without a
+message. A script that re-sends until the inventory changes counts those drops as ticks. So a lab
+account leaves the island the way the run does, through S00's `tutorialSkip`
+(`speedrun/skills/start.ts`, which opens every tab), before anything stages it:
+`speedrun/lab/setup.ts` `leaveTutorial(session)` runs it when the player is still on the island,
+and `tele()`/`mustTele()` refuse to teleport off the island at all. A raw `::tele` bypasses that
+guard, so stage through `setup.ts`.
+
 ### Which client a number was taken on
 
 Every measured number under `docs/speedrun/skills/` was taken on the **headless lite

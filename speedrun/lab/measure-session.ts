@@ -11,12 +11,13 @@ import { readFileSync } from 'fs';
 import { closeSession, login, logoutClean, openSession, startWatchdog, waitAdvancingTick, type WatchdogEvent } from '../lib/session';
 import { sleep, tickMs, waitTicks } from '../lib/wait';
 import { arg, result } from './common';
-import { tele, VARROCK_WEST_BANK } from './setup';
+import { leaveTutorial, tele, VARROCK_WEST_BANK } from './setup';
 
 const n = Number(arg('n', '3'));
 const name = arg('bot', 'srlab3');
 const session = await openSession(name, { launch: true, pathfinding: false });
 const { sdk } = session;
+await leaveTutorial(session);
 await tele(sdk, VARROCK_WEST_BANK.x, VARROCK_WEST_BANK.z);
 
 // 1. Logout and re-login.

@@ -10,7 +10,7 @@
 import { depositAll } from '../lib/bank';
 import { closeSession, openSession } from '../lib/session';
 import { formatReport, report, TickLog } from '../lib/ticks';
-import { give, LAB_ITEMS, near, tele, VARROCK_WEST_BANK } from '../lab/setup';
+import { give, LAB_ITEMS, leaveTutorial, near, tele, VARROCK_WEST_BANK } from '../lab/setup';
 import { runSteps, type Step } from './step';
 
 const bankEverything: Step = {
@@ -41,6 +41,7 @@ const fromArg = args.find(a => a.startsWith('--from='))?.slice(7);
 const session = await openSession(bot);
 try {
     if (args.includes('--lab')) {
+        await leaveTutorial(session);
         if (!(await tele(session.sdk, VARROCK_WEST_BANK.x, VARROCK_WEST_BANK.z))) throw new Error('tele failed');
         if (session.sdk.getState()!.inventory.length === 0) await give(session.sdk, LAB_ITEMS.slice(0, 24));
     }

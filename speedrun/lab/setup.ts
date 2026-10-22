@@ -7,8 +7,11 @@ import type { BotWorldState } from '../../sdk/types';
 import { depositAll } from '../lib/bank';
 import { matchesItem, type ItemPattern } from '../lib/items';
 import type { Session } from '../lib/session';
+import { TickLog } from '../lib/ticks';
 import { waitTicks, waitUntil } from '../lib/wait';
 import { invCount, pos } from '../lib/world';
+import { runSteps, type RunnerSession } from '../runner/step';
+import { onTutorialIsland, tutorialSkip } from '../skills/start';
 
 type LabSdk = Pick<BotSDK, 'getState' | 'onStateUpdate' | 'sendSay'>;
 type ClearSdk = LabSdk & Pick<BotSDK, 'sendDropItem' | 'sendUseEquipmentItem'>;
@@ -42,7 +45,27 @@ export function near(s: BotWorldState | null | undefined, x: number, z: number, 
     return !!p && Math.abs(p.worldX - x) <= r && Math.abs(p.worldZ - z) <= r;
 }
 
+/**
+ * Leave Tutorial Island the way the run does, through S00's `tutorialSkip` (`[label,tutorial_complete]`
+ * opens every side tab); a no-op once the account is off the island. Call it before staging an account
+ * that may be on its first login on this engine's save data (a new name, a fresh checkout or engine).
+ */
+export async function leaveTutorial(session: RunnerSession, log: TickLog = TickLog.memory()): Promise<void> {
+    if (!onTutorialIsland(session.sdk.getState()?.player)) return;
+    await runSteps(session, [tutorialSkip], { log, c: {}, shouldStop: () => false, logout: async () => {}, tickMonitor: false });
+}
+
+/**
+ * Staff-teleport to a tile. Refuses on Tutorial Island: a first login there hides every side tab
+ * (tutorial.rs2 `start_tutorial`) and a teleport off never restores them, so the server then drops
+ * every side-tab click (inventory ops, item use, spells, prayers: `Player.isComponentVisible`)
+ * without a message, and a script that retries until the inventory changes counts the drops as ticks.
+ */
 export async function tele(sdk: LabSdk, x: number, z: number, level = 0): Promise<boolean> {
+    const at = sdk.getState()?.player;
+    if (at && onTutorialIsland(at)) {
+        throw new Error(`tele to ${level},${x},${z} refused: the player is on Tutorial Island (at ${at.worldX},${at.worldZ}), where a teleport off leaves the side tabs hidden and the server silently ignores inventory ops. Leave through S00's tutorialSkip first: setup.ts leaveTutorial(session). See docs/speedrun/LAB.md, 'Staging a fresh account'.`);
+    }
     if (near(sdk.getState(), x, z) && sdk.getState()?.player?.level === level) return true;
     await cheat(sdk, `tele ${level},${x >> 6},${z >> 6},${x & 63},${z & 63}`);
     const r = await waitUntil(sdk, s => near(s, x, z) && s.player?.level === level, { maxTicks: 20 });

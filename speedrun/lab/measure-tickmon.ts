@@ -18,7 +18,7 @@ import { abandonClient, closeSession, loadBotEnv, openSession, ROOT } from '../l
 import { waitTicks, waitUntil } from '../lib/wait';
 import { runSteps, type Step } from '../runner/step';
 import { arg, botArg, labLog, result } from './common';
-import { cheat, near, tele } from './setup';
+import { cheat, leaveTutorial, near, tele } from './setup';
 
 const minutes = Number(arg('minutes', '5'));
 const holdP = Number(arg('hold-p', '0'));
@@ -81,8 +81,7 @@ if (holdP > 0) {
 
 const session = await openSession(name, { launch: holdP > 0, readyTimeoutMs: 180_000 });
 const { sdk } = session;
-await cheat(sdk, 'setvar tutorial 1000');
-await waitTicks(sdk, 2);
+await leaveTutorial(session);
 if (!(await tele(sdk, A.x, A.z))) throw new Error('tele to Lumbridge courtyard failed');
 
 // Walk between two tiles every 10 ticks until the deadline: the account stays active, and the
