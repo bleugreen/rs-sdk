@@ -1,0 +1,85 @@
+Pathfinding initialized in 201ms (136704 zones + 297 mainland fill, 1268350 tiles, 2691 doors masked, 5 one-way doors blocked)
+[Runner] Connecting to bot "cairn_r130"...
+[BotSDK] Waiting for game state to be ready...
+[BotSDK] Game state ready!
+[BotSDK] Connected and game state ready
+[Runner] Connected to bot "cairn_r130"
+start at 3203,3243, inventory: Bronze axe, Knife, Oak logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs, Logs
+walk to the trees: Arrived (at 3194,3231)
+ready at 3194,3231: knife true, logs 23, woodcutting 69, 13 trees within 10 tiles
+[Runner] Disconnecting bot "cairn_r130"...
+[LOGOUT DEBUG] SDK WebSocket closed - autoReconnect=true, intentionalDisconnect=true
+2026-10-21T21:47:37.651Z eval rsPrograms.run("knife-cycle", { method: "oak", trees: [[3203, 3240], [3203, 3246]], maxTicks: 557 })
+2026-10-21T21:47:40.660Z progress {"id":2,"ph":"running","t":103,"n":0,"k":[],"pr":0,"sl":0,"rs":0,"lu":0,"sw":0}
+2026-10-21T21:47:42.669Z progress {"id":2,"ph":"running","t":109,"n":1,"k":[107],"pr":0,"sl":0,"rs":0,"lu":0,"sw":0}
+2026-10-21T21:47:45.676Z progress {"id":2,"ph":"running","t":118,"n":3,"k":[107,111,117],"pr":0,"sl":0,"rs":0,"lu":0,"sw":0}
+2026-10-21T21:47:47.684Z progress {"id":2,"ph":"running","t":125,"n":3,"k":[107,111,117],"pr":0,"sl":0,"rs":0,"lu":0,"sw":0}
+2026-10-21T21:47:50.693Z progress {"id":2,"ph":"running","t":133,"n":4,"k":[107,111,117,129],"pr":0,"sl":0,"rs":0,"lu":0,"sw":0}
+2026-10-21T21:47:52.699Z progress {"id":2,"ph":"running","t":139,"n":4,"k":[107,111,117,129],"pr":0,"sl":0,"rs":0,"lu":0,"sw":0}
+2026-10-21T21:47:55.705Z progress {"id":2,"ph":"running","t":147,"n":5,"k":[107,111,117,129,144],"pr":0,"sl":0,"rs":0,"lu":0,"sw":1}
+2026-10-21T21:47:57.713Z progress {"id":2,"ph":"running","t":153,"n":5,"k":[107,111,117,129,144],"pr":0,"sl":0,"rs":0,"lu":0,"sw":1}
+2026-10-21T21:48:00.722Z progress {"id":2,"ph":"running","t":162,"n":6,"k":[107,111,117,129,144,156],"pr":0,"sl":0,"rs":0,"lu":0,"sw":1}
+2026-10-21T21:48:02.726Z progress {"id":2,"ph":"running","t":170,"n":7,"k":[107,111,117,129,144,156,168],"pr":0,"sl":0,"rs":0,"lu":0,"sw":2}
+2026-10-21T21:48:05.734Z progress {"id":2,"ph":"running","t":177,"n":7,"k":[107,111,117,129,144,156,168],"pr":0,"sl":0,"rs":0,"lu":0,"sw":2}
+2026-10-21T21:48:07.739Z progress {"id":2,"ph":"running","t":183,"n":8,"k":[107,111,117,129,144,156,168,180],"pr":0,"sl":0,"rs":0,"lu":0,"sw":2}
+2026-10-21T21:48:10.744Z progress {"id":2,"ph":"running","t":193,"n":9,"k":[107,111,117,129,144,156,168,180,186],"pr":0,"sl":0,"rs":0,"lu":1,"sw":2}
+2026-10-21T21:48:12.749Z progress {"id":2,"ph":"running","t":201,"n":9,"k":[107,111,117,129,144,156,168,180,186],"pr":0,"sl":0,"rs":0,"lu":1,"sw":2}
+2026-10-21T21:48:15.756Z progress {"id":2,"ph":"running","t":212,"n":11,"k":[107,111,117,129,144,156,168,180,186,204,207],"pr":0,"sl":0,"rs":0,"lu":1,"sw":2}
+2026-10-21T21:48:17.760Z progress {"id":2,"ph":"running","t":218,"n":12,"k":[107,111,117,129,144,156,168,180,186,204,207,214],"pr":1,"sl":0,"rs":0,"lu":1,"sw":2}
+2026-10-21T21:48:20.769Z progress {"id":2,"ph":"running","t":226,"n":13,"k":[111,117,129,144,156,168,180,186,204,207,214,223],"pr":1,"sl":0,"rs":0,"lu":1,"sw":3}
+2026-10-21T21:48:22.781Z progress {"id":2,"ph":"running","t":232,"n":13,"k":[111,117,129,144,156,168,180,186,204,207,214,223],"pr":1,"sl":0,"rs":0,"lu":1,"sw":3}
+2026-10-21T21:48:25.792Z progress {"id":2,"ph":"running","t":239,"n":14,"k":[117,129,144,156,168,180,186,204,207,214,223,235],"pr":1,"sl":0,"rs":0,"lu":1,"sw":3}
+2026-10-21T21:48:27.796Z progress {"id":2,"ph":"running","t":245,"n":14,"k":[117,129,144,156,168,180,186,204,207,214,223,235],"pr":1,"sl":0,"rs":0,"lu":1,"sw":3}
+2026-10-21T21:48:30.806Z progress {"id":2,"ph":"running","t":252,"n":14,"k":[117,129,144,156,168,180,186,204,207,214,223,235],"pr":1,"sl":0,"rs":0,"lu":1,"sw":3}
+2026-10-21T21:48:32.809Z progress {"id":2,"ph":"running","t":256,"n":15,"k":[129,144,156,168,180,186,204,207,214,223,235,256],"pr":1,"sl":1,"rs":1,"lu":1,"sw":3}
+2026-10-21T21:48:35.819Z progress {"id":2,"ph":"running","t":268,"n":15,"k":[129,144,156,168,180,186,204,207,214,223,235,256],"pr":1,"sl":1,"rs":1,"lu":1,"sw":3}
+2026-10-21T21:48:37.829Z progress {"id":2,"ph":"running","t":275,"n":15,"k":[129,144,156,168,180,186,204,207,214,223,235,256],"pr":1,"sl":1,"rs":1,"lu":1,"sw":3}
+2026-10-21T21:48:40.835Z progress {"id":2,"ph":"running","t":284,"n":15,"k":[129,144,156,168,180,186,204,207,214,223,235,256],"pr":1,"sl":2,"rs":2,"lu":1,"sw":3}
+2026-10-21T21:48:42.840Z progress {"id":2,"ph":"running","t":291,"n":16,"k":[144,156,168,180,186,204,207,214,223,235,256,285],"pr":1,"sl":2,"rs":2,"lu":1,"sw":3}
+2026-10-21T21:48:45.851Z progress {"id":2,"ph":"running","t":302,"n":17,"k":[156,168,180,186,204,207,214,223,235,256,285,292],"pr":1,"sl":2,"rs":2,"lu":1,"sw":3}
+2026-10-21T21:48:47.860Z progress {"id":2,"ph":"running","t":308,"n":17,"k":[156,168,180,186,204,207,214,223,235,256,285,292],"pr":1,"sl":2,"rs":2,"lu":1,"sw":3}
+2026-10-21T21:48:50.867Z progress {"id":2,"ph":"running","t":318,"n":17,"k":[156,168,180,186,204,207,214,223,235,256,285,292],"pr":1,"sl":3,"rs":3,"lu":1,"sw":3}
+2026-10-21T21:48:52.873Z progress {"id":2,"ph":"running","t":325,"n":19,"k":[180,186,204,207,214,223,235,256,285,292,321,325],"pr":1,"sl":3,"rs":3,"lu":1,"sw":3}
+2026-10-21T21:48:55.882Z progress {"id":2,"ph":"running","t":335,"n":20,"k":[186,204,207,214,223,235,256,285,292,321,325,331],"pr":1,"sl":3,"rs":3,"lu":2,"sw":3}
+2026-10-21T21:48:57.889Z progress {"id":2,"ph":"running","t":342,"n":20,"k":[186,204,207,214,223,235,256,285,292,321,325,331],"pr":1,"sl":3,"rs":3,"lu":2,"sw":3}
+2026-10-21T21:49:00.900Z progress {"id":2,"ph":"running","t":352,"n":22,"k":[207,214,223,235,256,285,292,321,325,331,343,349],"pr":1,"sl":3,"rs":3,"lu":2,"sw":3}
+2026-10-21T21:49:02.909Z progress {"id":2,"ph":"running","t":358,"n":23,"k":[214,223,235,256,285,292,321,325,331,343,349,355],"pr":1,"sl":3,"rs":3,"lu":2,"sw":3}
+2026-10-21T21:49:05.919Z progress {"id":2,"ph":"running","t":368,"n":25,"k":[235,256,285,292,321,325,331,343,349,355,361,367],"pr":1,"sl":3,"rs":3,"lu":2,"sw":3}
+2026-10-21T21:49:07.925Z progress {"id":2,"ph":"running","t":374,"n":26,"k":[256,285,292,321,325,331,343,349,355,361,367,370],"pr":1,"sl":3,"rs":3,"lu":2,"sw":3}
+2026-10-21T21:49:10.936Z progress {"id":2,"ph":"running","t":384,"n":28,"k":[292,321,325,331,343,349,355,361,367,370,376,382],"pr":1,"sl":3,"rs":3,"lu":2,"sw":4}
+2026-10-21T21:49:12.945Z progress {"id":2,"ph":"running","t":389,"n":28,"k":[292,321,325,331,343,349,355,361,367,370,376,382],"pr":1,"sl":3,"rs":3,"lu":2,"sw":4}
+2026-10-21T21:49:15.955Z progress {"id":2,"ph":"running","t":397,"n":29,"k":[321,325,331,343,349,355,361,367,370,376,382,394],"pr":1,"sl":3,"rs":3,"lu":2,"sw":5}
+2026-10-21T21:49:17.964Z progress {"id":2,"ph":"running","t":403,"n":29,"k":[321,325,331,343,349,355,361,367,370,376,382,394],"pr":1,"sl":3,"rs":3,"lu":2,"sw":5}
+2026-10-21T21:49:20.978Z progress {"id":2,"ph":"running","t":411,"n":29,"k":[321,325,331,343,349,355,361,367,370,376,382,394],"pr":1,"sl":3,"rs":3,"lu":2,"sw":5}
+2026-10-21T21:49:22.987Z progress {"id":2,"ph":"running","t":419,"n":29,"k":[321,325,331,343,349,355,361,367,370,376,382,394],"pr":1,"sl":4,"rs":4,"lu":2,"sw":5}
+2026-10-21T21:49:25.996Z progress {"id":2,"ph":"running","t":430,"n":30,"k":[325,331,343,349,355,361,367,370,376,382,394,427],"pr":1,"sl":4,"rs":4,"lu":2,"sw":5}
+2026-10-21T21:49:28.008Z progress {"id":2,"ph":"running","t":437,"n":31,"k":[331,343,349,355,361,367,370,376,382,394,427,437],"pr":1,"sl":4,"rs":4,"lu":3,"sw":5}
+2026-10-21T21:49:31.017Z progress {"id":2,"ph":"running","t":446,"n":32,"k":[343,349,355,361,367,370,376,382,394,427,437,443],"pr":1,"sl":4,"rs":4,"lu":3,"sw":5}
+2026-10-21T21:49:33.020Z progress {"id":2,"ph":"running","t":454,"n":33,"k":[349,355,361,367,370,376,382,394,427,437,443,454],"pr":2,"sl":4,"rs":4,"lu":3,"sw":5}
+2026-10-21T21:49:36.025Z progress {"id":2,"ph":"running","t":464,"n":36,"k":[367,370,376,382,394,427,437,443,454,457,460,463],"pr":2,"sl":4,"rs":4,"lu":3,"sw":5}
+2026-10-21T21:49:38.029Z progress {"id":2,"ph":"running","t":470,"n":38,"k":[376,382,394,427,437,443,454,457,460,463,466,469],"pr":2,"sl":4,"rs":4,"lu":3,"sw":5}
+2026-10-21T21:49:41.036Z progress {"id":2,"ph":"running","t":480,"n":39,"k":[382,394,427,437,443,454,457,460,463,466,469,478],"pr":2,"sl":4,"rs":4,"lu":3,"sw":5}
+2026-10-21T21:49:43.045Z progress {"id":2,"ph":"running","t":486,"n":40,"k":[394,427,437,443,454,457,460,463,466,469,478,481],"pr":2,"sl":4,"rs":4,"lu":3,"sw":5}
+2026-10-21T21:49:46.056Z progress {"id":2,"ph":"running","t":497,"n":40,"k":[394,427,437,443,454,457,460,463,466,469,478,481],"pr":2,"sl":4,"rs":4,"lu":3,"sw":5}
+2026-10-21T21:49:48.064Z progress {"id":2,"ph":"running","t":504,"n":40,"k":[394,427,437,443,454,457,460,463,466,469,478,481],"pr":2,"sl":5,"rs":5,"lu":3,"sw":5}
+2026-10-21T21:49:51.071Z progress {"id":2,"ph":"running","t":513,"n":42,"k":[437,443,454,457,460,463,466,469,478,481,506,513],"pr":2,"sl":5,"rs":5,"lu":4,"sw":5}
+2026-10-21T21:49:53.075Z progress {"id":2,"ph":"running","t":520,"n":44,"k":[454,457,460,463,466,469,478,481,506,513,516,519],"pr":2,"sl":5,"rs":5,"lu":4,"sw":6}
+2026-10-21T21:49:56.083Z progress {"id":2,"ph":"running","t":529,"n":44,"k":[454,457,460,463,466,469,478,481,506,513,516,519],"pr":2,"sl":5,"rs":5,"lu":4,"sw":6}
+2026-10-21T21:49:58.109Z progress {"id":2,"ph":"running","t":537,"n":47,"k":[463,466,469,478,481,506,513,516,519,531,534,537],"pr":2,"sl":5,"rs":5,"lu":4,"sw":6}
+2026-10-21T21:50:01.116Z progress {"id":2,"ph":"running","t":547,"n":49,"k":[469,478,481,506,513,516,519,531,534,537,540,543],"pr":2,"sl":5,"rs":5,"lu":4,"sw":6}
+2026-10-21T21:50:03.122Z progress {"id":2,"ph":"running","t":553,"n":50,"k":[478,481,506,513,516,519,531,534,537,540,543,549],"pr":2,"sl":5,"rs":5,"lu":4,"sw":6}
+2026-10-21T21:50:06.129Z progress {"id":2,"ph":"running","t":564,"n":52,"k":[506,513,516,519,531,534,537,540,543,549,555,564],"pr":2,"sl":5,"rs":5,"lu":4,"sw":6}
+2026-10-21T21:50:08.139Z progress {"id":2,"ph":"running","t":571,"n":52,"k":[506,513,516,519,531,534,537,540,543,549,555,564],"pr":2,"sl":5,"rs":5,"lu":4,"sw":6}
+2026-10-21T21:50:11.149Z progress {"id":2,"ph":"running","t":581,"n":54,"k":[516,519,531,534,537,540,543,549,555,564,573,576],"pr":2,"sl":5,"rs":5,"lu":4,"sw":6}
+2026-10-21T21:50:13.154Z progress {"id":2,"ph":"running","t":587,"n":54,"k":[516,519,531,534,537,540,543,549,555,564,573,576],"pr":2,"sl":5,"rs":5,"lu":4,"sw":6}
+2026-10-21T21:50:15.159Z progress {"id":2,"ph":"running","t":593,"n":54,"k":[516,519,531,534,537,540,543,549,555,564,573,576],"pr":2,"sl":5,"rs":5,"lu":4,"sw":6}
+2026-10-21T21:50:18.168Z progress {"id":2,"ph":"running","t":604,"n":54,"k":[516,519,531,534,537,540,543,549,555,564,573,576],"pr":2,"sl":6,"rs":6,"lu":4,"sw":6}
+2026-10-21T21:50:20.172Z progress {"id":2,"ph":"running","t":611,"n":54,"k":[516,519,531,534,537,540,543,549,555,564,573,576],"pr":2,"sl":6,"rs":6,"lu":4,"sw":6}
+2026-10-21T21:50:23.179Z progress {"id":2,"ph":"running","t":618,"n":54,"k":[516,519,531,534,537,540,543,549,555,564,573,576],"pr":2,"sl":6,"rs":6,"lu":4,"sw":6}
+2026-10-21T21:50:25.187Z progress {"id":2,"ph":"running","t":626,"n":54,"k":[516,519,531,534,537,540,543,549,555,564,573,576],"pr":2,"sl":6,"rs":6,"lu":4,"sw":6}
+2026-10-21T21:50:28.197Z progress {"id":2,"ph":"running","t":637,"n":55,"k":[519,531,534,537,540,543,549,555,564,573,576,633],"pr":2,"sl":6,"rs":6,"lu":5,"sw":6}
+2026-10-21T21:50:30.202Z progress {"id":2,"ph":"running","t":644,"n":56,"k":[531,534,537,540,543,549,555,564,573,576,633,643],"pr":2,"sl":6,"rs":6,"lu":5,"sw":6}
+2026-10-21T21:50:32.209Z result {"runId":2,"name":"knife-cycle","phase":"done","params":{"method":"oak","trees":[[3203,3240],[3203,3246]],"maxTicks":557},"startedTick":92,"tick":651,"progressTick":643,"counters":{"successes":56,"starters":151,"switches":6,"levelUps":5,"phaseResyncs":2,"slips":6,"resyncs":6,"noTarget":2},"gauges":{"ticksPerSuccess":6.98,"lastSuccessGap":10,"ticksPerSuccessSpan":9.745},"marks":{"successes":{"count":56,"ticks":[107,111,117,129,144,156,168,180,186,204,207,214,223,235,256,285,292,321,325,331,343,349,355,361,367,370,376,382,394,427,437,443,454,457,460,463,466,469,478,481,506,513,516,519,531,534,537,540,543,549,555,564,573,576,633,643]}},"packets":527,"deferred":0,"skippedTicks":0,"maxTickMs":1.1,"frames":{"n":558,"p50":310,"p90":420,"max":701,"under150":22,"over350":160,"catchUps":13,"catchUpsLastMinute":5,"catchUpsPerMinute":4.48},"publish":{"n":558,"p50":310,"p90":420,"max":702,"under150":22,"over350":159,"catchUps":13,"catchUpsLastMinute":5,"catchUpsPerMinute":4.48},"react":{"n":559,"p50":2,"p90":2,"max":1.7},"loops":{"last":80.6,"p10Last10s":63.5,"min":46.6},"last":"done","result":{"method":"oak","technique":"knife","successes":56,"ticks":558,"ticksPerSuccess":6.98,"gaps":49,"histogram":{"3":15,"4":2,"6":12,"7":3,"9":4,"10":2,"11":1,"12":8,"15":1,"18":1},"span":536,"ticksPerSuccessOverSpan":9.745,"starters":151,"resyncs":6,"moves":0,"levelUps":5,"phase":0,"switches":6},"endedTick":651,"logTail":["T427 xp (anchor -, awaiting xp since 413)","T427 anchored on xp (roll 427)","T437 level 72","T437 xp (anchor 427, awaiting xp since -)","T443 xp (anchor 427, awaiting xp since -)","T454 xp (anchor 427, awaiting xp since -)","T454 roll off phase: re-anchored on it","T457 xp (anchor 450, awaiting xp since -)","T460 xp (anchor 450, awaiting xp since -)","T463 xp (anchor 450, awaiting xp since -)","T466 xp (anchor 450, awaiting xp since -)","T469 xp (anchor 450, awaiting xp since -)","T478 xp (anchor 450, awaiting xp since -)","T481 xp (anchor 450, awaiting xp since -)","T500 resync (no xp)","T506 xp (anchor -, awaiting xp since 500)","T506 anchored on xp (roll 506)","T513 level 73","T513 xp (anchor 506, awaiting xp since -)","T516 xp (anchor 506, awaiting xp since -)","T517 target gone (anchor 506, awaiting xp since -)","T517 tree gone: the next click goes to 3203,3240 (player at 3203,3245)","T519 xp (anchor 506, awaiting xp since -)","T531 xp (anchor 506, awaiting xp since -)","T534 xp (anchor 506, awaiting xp since -)","T537 xp (anchor 506, awaiting xp since -)","T540 xp (anchor 506, awaiting xp since -)","T543 xp (anchor 506, awaiting xp since -)","T549 xp (anchor 506, awaiting xp since -)","T555 xp (anchor 506, awaiting xp since -)","T564 xp (anchor 506, awaiting xp since -)","T573 xp (anchor 506, awaiting xp since -)","T576 xp (anchor 506, awaiting xp since -)","T595 resync (no xp)","T626 re-click while waiting for xp","T633 level 74","T633 xp (anchor -, awaiting xp since 626)","T633 anchored on xp (roll 633)","T643 xp (anchor 633, awaiting xp since -)","done"]}
+server frame interval ms in the page: p50 310 p90 420 max 701, catch-ups 13 (4.5/min), under 150 22, over 350 160
+page publication interval ms: p50 310 p90 420 max 702
+program knife-cycle done: deferred 0, skippedTicks 0, maxTickMs 1.1, packets 527

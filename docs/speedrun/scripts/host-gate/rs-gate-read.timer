@@ -1,0 +1,15 @@
+# Fires rs-gate-read.service on the run host. install.sh --every 30|15 rewrites OnCalendar
+# (*:00,30 now; *:00,15,30,45 from two hours before the run's start).
+# Persistent=false: a firing missed while the host was down is not made up later, since a
+# late read would land in someone else's slot.
+[Unit]
+Description=Run-night gate read schedule (rs/83)
+
+[Timer]
+OnCalendar=*:00,30
+Persistent=false
+AccuracySec=1s
+Unit=rs-gate-read.service
+
+[Install]
+WantedBy=timers.target

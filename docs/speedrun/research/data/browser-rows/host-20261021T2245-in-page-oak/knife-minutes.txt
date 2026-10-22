@@ -1,0 +1,40 @@
+knife: 54 logs stamped (marks, 0 not stamped; 66 polls), Woodcutting 80-83 (start 80), p 0.34-0.348
+  catch-ups from program (program 2 over 544 intervals, under 150 ms 16, over 350 ms 104; page frame groups 15)
+  all                            53 gaps, 529 ticks, 9.98 per log, 3.42 per expected roll (Σ1/p 154.79)
+  minute catch-ups <= 2/min      43 gaps, 471 ticks, 10.95 per log, 3.76 per expected roll (Σ1/p 125.36)
+  minute catch-ups >  2/min      10 gaps, 58 ticks, 5.8 per log, 1.97 per expected roll (Σ1/p 29.43)
+  trailing 60 s catch-ups <= 2   53 gaps, 529 ticks, 9.98 per log, 3.42 per expected roll (Σ1/p 154.79)
+  trailing 60 s catch-ups >  2   0 gaps, 0 ticks, NaN per log, NaN per expected roll (Σ1/p 0)
+  trailing 60 s soft pairs <= 2  9 gaps, 97 ticks, 10.78 per log, 3.7 per expected roll (Σ1/p 26.18)
+  trailing 60 s soft pairs >  2  44 gaps, 432 ticks, 9.82 per log, 3.36 per expected roll (Σ1/p 128.61)
+  minutes: 22:47Z 1 catch-ups, 1 soft in 23 s (2.65/min, busy); 22:48Z 0 catch-ups, 5 soft in 60 s (0/min, calm); 22:49Z 1 catch-ups, 3 soft in 60 s (1/min, calm); 22:50Z 0 catch-ups, 3 soft in 17 s (0/min, calm)
+  bin 0-2      catch-ups/min: 2.28 min, 43 gaps, Σ1/p 125.36, 471 ticks, 3.76 per expected roll
+  bin 2-5      catch-ups/min: 0.38 min, 10 gaps, Σ1/p 29.43, 58 ticks, 1.97 per expected roll
+  bin 5-10     catch-ups/min: 0 min, 0 gaps, Σ1/p 0, 0 ticks, - per expected roll
+  bin over 10  catch-ups/min: 0 min, 0 gaps, Σ1/p 0, 0 ticks, - per expected roll
+  gap histogram (ticks:count): 3:19 6:9 7:2 9:2 10:2 11:1 12:4 15:3 16:1 17:2 18:2 19:1 25:1 29:1 33:2 37:1
+  resyncs: honest miss runs (21+ ticks, no phase resync) 5; timing 4 (4-tick 0, phase resync 4); counters {"successes":54,"starters":152,"levelUps":3,"switches":10,"slips":5,"resyncs":5,"phaseResyncs":4,"noTarget":6}
+  gaps of 3: 19; with a catch-up inside 1, with a soft pair inside 3
+  longer gaps: 34; with a catch-up inside 1, with a soft pair inside 8
+  timing gaps: 4; with a catch-up inside 0, with a soft pair inside 3
+  honest miss runs: 5; with a catch-up inside 0, with a soft pair inside 2
+plain: 58 logs stamped (marks, 0 not stamped; 73 polls), Woodcutting 83-85 (start 83), p 0.348-0.352
+  catch-ups from program (program 8 over 588 intervals, under 150 ms 14, over 350 ms 137; page frame groups 13)
+  all                            57 gaps, 586 ticks, 10.28 per log, 3.58 per expected roll (Σ1/p 163.57)
+  minute catch-ups <= 2/min      38 gaps, 373 ticks, 9.82 per log, 3.42 per expected roll (Σ1/p 109.08)
+  minute catch-ups >  2/min      19 gaps, 213 ticks, 11.21 per log, 3.91 per expected roll (Σ1/p 54.49)
+  trailing 60 s catch-ups <= 2   41 gaps, 432 ticks, 10.54 per log, 3.67 per expected roll (Σ1/p 117.58)
+  trailing 60 s catch-ups >  2   16 gaps, 154 ticks, 9.63 per log, 3.35 per expected roll (Σ1/p 45.99)
+  trailing 60 s soft pairs <= 2  0 gaps, 0 ticks, NaN per log, NaN per expected roll (Σ1/p 0)
+  trailing 60 s soft pairs >  2  57 gaps, 586 ticks, 10.28 per log, 3.58 per expected roll (Σ1/p 163.57)
+  minutes: 22:50Z 3 catch-ups, 8 soft in 40 s (4.49/min, busy); 22:51Z 1 catch-ups, 8 soft in 60 s (1/min, calm); 22:52Z 1 catch-ups, 5 soft in 60 s (1/min, calm); 22:53Z 3 catch-ups, 4 soft in 21 s (8.38/min, busy)
+  bin 0-2      catch-ups/min: 2 min, 38 gaps, Σ1/p 109.08, 373 ticks, 3.42 per expected roll
+  bin 2-5      catch-ups/min: 0.67 min, 14 gaps, Σ1/p 40.27, 125 ticks, 3.1 per expected roll
+  bin 5-10     catch-ups/min: 0.36 min, 5 gaps, Σ1/p 14.22, 88 ticks, 6.19 per expected roll
+  bin over 10  catch-ups/min: 0 min, 0 gaps, Σ1/p 0, 0 ticks, - per expected roll
+  gap histogram (ticks:count): 4:14 5:7 6:1 8:12 9:6 10:3 12:1 13:2 16:1 17:3 20:1 28:2 29:1 32:1 33:1 34:1
+  resyncs: honest miss runs (21+ ticks, no phase resync) 6; timing 0 (4-tick 0, phase resync 0); counters {"successes":58,"levelUps":2}
+  gaps of 3: 0; with a catch-up inside 0, with a soft pair inside 0
+  longer gaps: 57; with a catch-up inside 6, with a soft pair inside 21
+  timing gaps: 0; with a catch-up inside 0, with a soft pair inside 0
+  honest miss runs: 6; with a catch-up inside 4, with a soft pair inside 6

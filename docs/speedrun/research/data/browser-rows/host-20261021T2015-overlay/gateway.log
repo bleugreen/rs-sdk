@@ -1,0 +1,736 @@
+[Gateway] Starting Gateway Service on port 7861...
+[Gateway] Gateway running at http://localhost:7861
+[Gateway] Bot/SDK: ws://localhost:7861
+[Gateway] Authentication DISABLED (set LOGIN_SERVER=true to enable)
+[Gateway] Bot connected: cairn_r130-1792613827086 (cairn_r130)
+[Gateway] SDK connected: sdk-1792613830658-z1ii2l -> cairn_r130 (mode: control)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613831041-8cvxkv)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613831386-ui3c1q)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613831665-5h5bcc)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613831978-4glxjj)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613832174-vsoux6)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613832546-mz8k7o)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613832875-aklgzo)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613833150-ghkjim)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613833453-ulztzm)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613833676-812jdh)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613834007-z86s57)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613834284-laramg)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613834603-k874qu)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613834883-xyredz)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613835199-1ols4w)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613835509-trmtaw)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613835994-jfru4v)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613836384-kcohvc)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613836709-r333qw)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613837056-qi8i1b)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613837366-ahqpyx)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613837585-iao7u1)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613837881-a8gwc7)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613838196-wq3co0)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613838482-td9j7x)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613838789-yqui4v)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613839131-2wt3f2)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613839444-ctyjzw)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613839691-d44yn1)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613839982-otywl7)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613840342-6i2imd)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613840649-rj5p8n)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613840942-oyjlzz)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613841339-4fyw94)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613841573-bjh4ek)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613842034-t5x44c)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613842247-wls9yr)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613842391-z5e2cs)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613842680-zz669m)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613842975-ipj24y)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613843494-1rwhm0)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613843801-eh1pm9)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613843950-dcympb)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613844183-1h7kxb)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613844474-ckgnor)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613844780-10g36g)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613845079-4uy341)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613845379-trurad)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613845822-mv1dlj)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613846071-wggbm5)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613846407-r4rwko)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613846628-2qdmy8)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613846934-89fmur)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613847240-0nnxnk)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613847563-clkkyj)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613847867-vzt602)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613848229-c2tnwg)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613848468-a9zoyz)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613848689-h33ud1)
+[Gateway] [cairn_r130] Action result: success - Walking to (3173, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613849048-ejkjrp)
+[Gateway] [cairn_r130] Action result: success - Walking to (3172, 3233)
+[Gateway] SDK disconnected: sdks-1-wy90p3 (sdk-1792613830658-z1ii2l)
+[Gateway] SDK connected: sdk-1792613849729-968gxz -> cairn_r130 (mode: control)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613850811-qwl524)
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 1
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613851438-c1i7g0)
+[Gateway] [cairn_r130] Action result: success - Walking to (3180, 3233)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613852349-t2xwdz)
+[Gateway] [cairn_r130] Action result: success - Walking to (3181, 3232)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613852666-lo5l0d)
+[Gateway] [cairn_r130] Action result: success - Walking to (3192, 3232)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613854148-l0c8op)
+[Gateway] [cairn_r130] Action result: success - Walking to (3194, 3230)
+[Gateway] SDK disconnected: sdks-2-6fyeua (sdk-1792613849729-968gxz)
+[Gateway] SDK connected: sdk-1792613854897-7ggpu7 -> cairn_r130 (mode: control)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613855647-7gysfc)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792613859257-cw06i2)
+[Gateway] [cairn_r130] Action result: success - Walking to (3194, 3230)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613861067-hc38yp)
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613861070-vx5aay)
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 5
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613861072-v42q6b)
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 6
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613861073-a8nrxi)
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 7
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613861076-uk2z4s)
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 8
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613861078-t80xbc)
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 9
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613861080-j4xxsr)
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 10
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613861081-7hgnh5)
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 11
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613861086-euoh7h)
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 12
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613861087-6p7v68)
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 13
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613861088-0q6vwd)
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 14
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613861090-proxnb)
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 15
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613861091-md1cfq)
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 16
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613861094-u7z3xp)
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 17
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613861095-p7qpl5)
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 19
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613861100-o08uqu)
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 20
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613861101-agjjrt)
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 21
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613861103-dwpq1y)
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 22
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613861104-8vl4ft)
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 23
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613861105-mqcyd6)
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 24
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613861107-xew82i)
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 25
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613862089-0yuj9t)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613863287-c5fwp7)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613863287-0dsk3d)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613863287-8r7vnm)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613864044-2g0l4b)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613864044-aktcpw)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613864045-uyeyaj)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613864045-ww63z3)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613865884-eunxrj)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613867039-9yxjxy)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613867040-my71f4)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613867040-p1adfx)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613869172-ujobh1)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613870318-6oucro)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613870318-lkp7pm)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613870318-1n2mgd)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613870318-dzzwl9)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: clickDialogOption (act-1792613870892-tk56z7)
+[Gateway] [cairn_r130] Action result: success - Clicked dialog option 0
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613872508-vjr6k5)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613873713-d9opgh)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613873713-a27esc)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613873713-yuzqh5)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613873713-wok0it)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613874500-13zjm9)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613874500-gjv59k)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613874500-iwf9vz)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613875464-e78op8)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613875464-bz6zpi)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613875464-ub1aze)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613875464-lxgn90)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613877454-tgxgw6)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613878378-uaz562)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613878378-ko3m9s)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613878378-j9ak0i)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613880547-yfjbec)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613881744-c279oy)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613881744-nvxna6)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613881744-cxrxvw)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613881744-5t16gb)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613883792-2oxrq6)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613884985-e4zlnn)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613884985-f5ajys)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613884985-bd7xmu)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613884985-eqaqjk)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613885956-ygejye)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613885956-ktz40k)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613885956-agemzs)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613885956-hfigw6)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613887776-4okcdt)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613889069-xl83b9)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613889069-zq7k0x)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613889069-arfdx9)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613889885-16z7mm)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613889885-m77uqt)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613889885-tddc0y)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613892201-jk678r)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613893490-it0lvp)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613893490-ast63r)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613893490-wylw0z)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613893490-0uyuxk)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613894507-h49uzh)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613894507-8rwcbc)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613894507-gbsh0k)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613894507-ds74q5)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613896159-t106nn)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613897548-g3ei3i)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613897548-slwptn)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613897548-os1zg8)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: clickDialogOption (act-1792613897993-i467qi)
+[Gateway] [cairn_r130] Action result: success - Clicked dialog option 0
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613899569-a03903)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613900743-30jhu3)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613900743-k82dzz)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613900743-gswb0n)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613900743-0iag4k)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613903067-ehirjm)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613904300-d5paae)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613904300-3j4ebk)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613904300-jq55sm)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613904300-yqq1sg)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613906281-rhrkdj)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613907525-haxg61)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613907525-rbdqfo)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613907525-p2czuc)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613907525-xtrq87)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613908387-frxjky)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613908387-h7hvfw)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613908387-4mgdq1)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613909344-6ajlp8)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613909344-38dun2)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613909344-oflguo)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613910205-6y0mma)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613910205-5xrfz9)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613910205-smjf4g)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613911073-ydhz8r)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613911074-btexnc)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613911074-rkoxm8)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613912059-7gugq9)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613912059-1p754k)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613912059-l7ad6e)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613912896-u7fx0r)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613912896-z7t8br)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613912896-rsxq9c)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613913799-g8d1mr)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613913799-vhm8ka)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613913799-njmpx5)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613915653-cjtxn3)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613917294-drdryc)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613917294-y63n06)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613917294-dde9qn)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613917294-07qp6n)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613918365-8w9wv3)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613918365-e4a3nd)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613918365-ka5ix7)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613918877-mgteay)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613918877-44ze0x)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613918877-kc429r)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613918877-rqeu19)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613920689-lcopq3)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613922316-qv304h)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613922316-q6lzp0)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613922316-jn4f7h)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613924592-ldphw9)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613926133-y402zs)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613926133-it8l49)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613926133-msh9h6)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613926133-0hqt4n)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613927047-jnibq7)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613927047-jc1xwi)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613927047-9nqthl)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613927949-ep3cxl)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613927949-1oasfr)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613927949-yrn6mm)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613927949-n2znlc)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: clickDialogOption (act-1792613928321-dejqg4)
+[Gateway] [cairn_r130] Action result: success - Clicked dialog option 0
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613929773-53p4cn)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613931324-hmn6oo)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613931324-6muc3i)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613931324-nsa2n2)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613932196-ucq487)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613932196-5m6q5c)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613932196-5cdo3p)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613933032-ymvthz)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613933032-8oqc48)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613933032-vpqvaa)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613933998-pnhqxg)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613933998-54yqfi)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613933998-7zhdbq)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613933998-ruymdi)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613935956-160uwt)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: clickDialogOption (act-1792613936413-si4hmw)
+[Gateway] [cairn_r130] Action result: success - Clicked dialog option 0
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613937361-d3l59z)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613937361-7jfrmo)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613937361-ntwxq9)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613937361-risx92)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613939212-jwvis6)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613940548-obu2l5)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613940548-ymn84v)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613940548-azn52p)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613941440-szu1p1)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613941440-cc65my)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613941440-00gr5a)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613942419-r60ecy)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613942419-ecqfsi)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613942419-iqxqg5)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613943303-ui2k2k)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613943304-6fsnz8)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613943304-96qqvm)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613944267-u9y8uo)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613944267-ni0k5j)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613944267-h0oguj)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613944267-azbm7m)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613946022-olee3c)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613949042-y2krhj)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613950475-nt8l2f)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613950475-umx0a4)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613950475-bk7ags)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613950475-amipj5)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613951515-hep4ta)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613951515-7gs237)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613951515-hc82f3)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613952255-b1tlha)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613952255-yaq8ae)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613952255-kg03ql)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613952255-dfj86f)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613954290-aaepij)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613957291-uoyof9)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613958790-udxr26)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613958790-bx0sbc)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613958790-35phek)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613958790-rrxvxi)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613959994-pl1dw5)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613959994-e0xfva)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613959994-qu1z0z)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613959994-c44yft)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: clickDialogOption (act-1792613960395-22cr13)
+[Gateway] [cairn_r130] Action result: success - Clicked dialog option 0
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613962134-chy74i)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613965622-icxucv)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613967424-2cqfkk)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613967425-cxyjsc)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613967425-uty5qd)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613967425-nai56u)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: clickDialogOption (act-1792613969320-cz715i)
+[Gateway] [cairn_r130] Action result: success - Clicked dialog option 0
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613969577-u5osdt)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613971473-1y645u)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613971473-7rl2xd)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613971473-3dfvlo)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613971473-kw7oup)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613973379-x4qpml)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613974999-pmi545)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613974999-h6f61i)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613974999-fjseph)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613974999-kji2xb)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613977452-vof3vr)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613979899-6hr46v)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613981048-sl6uxu)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613981048-66ekbt)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613981048-3dpr1m)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613981048-7djqup)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613981885-i01eu8)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613981885-tc3xq1)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792613981885-r0ou3s)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613981885-jmb90a)
+[Gateway] [cairn_r130] Action result: success - Using slot 18 on 1
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 4
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613984170-b7s6y4)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613985810-vqfgtk)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613985810-7i5hfm)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613985810-xwi079)
+[Gateway] [cairn_r130] Action result: success - Using slot 1 on 2
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613986684-vtcc2w)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613986684-w218tg)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613986684-ifsw6p)
+[Gateway] [cairn_r130] Action result: success - Using slot 1 on 2
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613987493-yv5qpb)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613987493-4um1g7)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613987493-6a1u7a)
+[Gateway] [cairn_r130] Action result: success - Using slot 1 on 2
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613988389-4lboxy)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613988389-tjh1nn)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613988389-58ic0x)
+[Gateway] [cairn_r130] Action result: success - Using slot 1 on 2
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: clickDialogOption (act-1792613989270-27o41j)
+[Gateway] [cairn_r130] Action result: success - Clicked dialog option 0
+[Gateway] [cairn_r130] SDK action: clickDialogOption (act-1792613990309-jh1uua)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613990309-o7dbm9)
+[Gateway] [cairn_r130] Action result: success - Clicked dialog option 0
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613991676-m43vmj)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613991676-mey5xe)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613991676-v0g1qy)
+[Gateway] [cairn_r130] Action result: success - Using slot 1 on 3
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: useItemOnItem (act-1792613992574-6heacg)
+[Gateway] [cairn_r130] SDK action: clickComponent (act-1792613992574-cwfh2b)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613992574-3svyvy)
+[Gateway] [cairn_r130] Action result: success - Using slot 1 on 3
+[Gateway] [cairn_r130] Action result: success - Clicked component 8889
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] SDK disconnected: sdks-3-lvheqa (sdk-1792613854897-7ggpu7)
+[Gateway] SDK connected: sdk-1792613994091-w9bah6 -> cairn_r130 (mode: control)
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792613994915-xcy7qm)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792614004256-9ayf6o)
+[Gateway] [cairn_r130] Action result: success - Walking to (3218, 3230)
+[Gateway] [cairn_r130] SDK action: clickDialogOption (act-1792614006921-eky8c1)
+[Gateway] [cairn_r130] Action result: success - Clicked dialog option 0
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792614007205-j42em0)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792614009494-4bd1bd)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792614013198-cqy4ir)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1282
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792614017101-e7tfbb)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792614020107-cielkm)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792614022022-tr7fkz)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1282
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792614026010-hntlon)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1286
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792614028208-r5g962)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1286
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792614030866-ud9r5n)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1282
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792614035189-3kx3k7)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1286
+[Gateway] [cairn_r130] SDK action: clickDialogOption (act-1792614038974-qa30o9)
+[Gateway] [cairn_r130] Action result: success - Clicked dialog option 0
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792614039310-hkbiz2)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1286
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792614041084-x4vk68)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1286
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792614044187-wobfkg)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1286
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792614048432-kjlz4l)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792614054982-8y6y02)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1286
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792614056770-rw6gby)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792614059767-ta9tr6)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792614060005-klvmor)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1278
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792614060325-8bglhn)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1276
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792614062106-ufr482)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1282
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792614065121-v9hau1)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1286
+[Gateway] [cairn_r130] SDK action: clickDialogOption (act-1792614068728-41ma9o)
+[Gateway] [cairn_r130] Action result: success - Clicked dialog option 0
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792614069007-jx6ddg)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1286
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792614072064-i0okfj)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1282
+[Gateway] [cairn_r130] SDK action: interactLoc (act-1792614078689-nx9c2y)
+[Gateway] [cairn_r130] Action result: success - Interacting with loc 1286
+[Gateway] SDK disconnected: sdks-4-864n5h (sdk-1792613994091-w9bah6)
+[Gateway] Bot disconnected: cairn_r130-1792613827086 (cairn_r130)

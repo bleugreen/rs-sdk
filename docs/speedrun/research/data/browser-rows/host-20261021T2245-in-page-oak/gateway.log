@@ -1,0 +1,32 @@
+[Gateway] Starting Gateway Service on port 7861...
+[Gateway] Gateway running at http://localhost:7861
+[Gateway] Bot/SDK: ws://localhost:7861
+[Gateway] Authentication DISABLED (set LOGIN_SERVER=true to enable)
+[Gateway] Bot connected: cairn_r130-1792622825804 (cairn_r130)
+[Gateway] SDK connected: sdk-1792622849291-td8vwj -> cairn_r130 (mode: control)
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792622850321-8snn0z)
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 2
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792622850325-y56cau)
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 26
+[Gateway] [cairn_r130] SDK action: dropItem (act-1792622850329-hzypv5)
+[Gateway] [cairn_r130] Action result: success - Dropping item at slot 27
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792622850974-o57vrh)
+[Gateway] [cairn_r130] Action result: success - Walking to (3203, 3244)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792622851243-r0gwwr)
+[Gateway] [cairn_r130] Action result: success - Walking to (3202, 3243)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792622851536-2ltis4)
+[Gateway] [cairn_r130] Action result: success - Walking to (3202, 3242)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792622851840-2j18ij)
+[Gateway] [cairn_r130] Action result: success - Walking to (3199, 3242)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792622852133-nnc4io)
+[Gateway] [cairn_r130] Action result: success - Walking to (3199, 3240)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792622852487-shrdij)
+[Gateway] [cairn_r130] Action result: success - Walking to (3197, 3238)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792622852737-oadnye)
+[Gateway] [cairn_r130] Action result: success - Walking to (3197, 3235)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792622853157-lg8u83)
+[Gateway] [cairn_r130] Action result: success - Walking to (3194, 3232)
+[Gateway] [cairn_r130] SDK action: walkTo (act-1792622853718-o775d5)
+[Gateway] [cairn_r130] Action result: success - Walking to (3194, 3230)
+[Gateway] SDK disconnected: sdks-1-cwg987 (sdk-1792622849291-td8vwj)
+[Gateway] Bot disconnected: cairn_r130-1792622825804 (cairn_r130)

@@ -1,0 +1,15 @@
+Pathfinding initialized in 197ms (136704 zones + 297 mainland fill, 1268350 tiles, 2691 doors masked, 5 one-way doors blocked)
+[Runner] Connecting to bot "cairn_r130"...
+[BotSDK] Waiting for game state to be ready...
+[BotSDK] Game state ready!
+[BotSDK] Connected and game state ready
+[Runner] Connected to bot "cairn_r130"
+probe from ip-172-31-31-189 at 2026-10-21T20:17:10.733Z, server rs-sdk-demo.fly.dev
+latency in ticks (label of the step - label sent): 1:59 2:1  (60 trials, 0 lost, 62 ticks)
+on time 59/60; dominant 1 ticks (98%, lead 0); consecutive trials agree 97%
+sequence: 111111111111111121111111111111111111111111111111111111111111
+gate at plain cycle 4: p 0.98, predicted knife 3.07 vs plain 4 -> manipulate, lead 0
+state publication interval ms: p10 221 p50 304 p90 363 max 519
+send resolve ms: p50 4 p90 5 max 16
+[Runner] Disconnecting bot "cairn_r130"...
+[LOGOUT DEBUG] SDK WebSocket closed - autoReconnect=true, intentionalDisconnect=true

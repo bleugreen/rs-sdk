@@ -1,0 +1,473 @@
+{
+ "method": "page/frames.jsonl, probe window from marks.tsv. Ticks: inbound game frames of 5+ bytes, grouped when under 8 ms apart. The probe walk packet is the 9-byte outbound frame (60 in the window, matched in order to browser-probe.json result.latencies). send_after_tick_ms: walk packet out minus the start of the tick it reacted to. prev/next_interval_ms: tick start to tick start around that tick.",
+ "trials": [
+  {
+   "trial": 0,
+   "ticks": 1,
+   "send_after_tick_ms": 2,
+   "prev_interval_ms": 236.2,
+   "next_interval_ms": 229.5
+  },
+  {
+   "trial": 1,
+   "ticks": 1,
+   "send_after_tick_ms": 1.0,
+   "prev_interval_ms": 229.5,
+   "next_interval_ms": 302.5
+  },
+  {
+   "trial": 2,
+   "ticks": 1,
+   "send_after_tick_ms": 0.8,
+   "prev_interval_ms": 302.5,
+   "next_interval_ms": 318.9
+  },
+  {
+   "trial": 3,
+   "ticks": 1,
+   "send_after_tick_ms": 2.0,
+   "prev_interval_ms": 318.9,
+   "next_interval_ms": 276.5
+  },
+  {
+   "trial": 4,
+   "ticks": 1,
+   "send_after_tick_ms": 0.8,
+   "prev_interval_ms": 276.5,
+   "next_interval_ms": 326.4
+  },
+  {
+   "trial": 5,
+   "ticks": 1,
+   "send_after_tick_ms": 0.7,
+   "prev_interval_ms": 326.4,
+   "next_interval_ms": 272.8
+  },
+  {
+   "trial": 6,
+   "ticks": 1,
+   "send_after_tick_ms": 0.7,
+   "prev_interval_ms": 272.8,
+   "next_interval_ms": 323.2
+  },
+  {
+   "trial": 7,
+   "ticks": 1,
+   "send_after_tick_ms": 1.4,
+   "prev_interval_ms": 323.2,
+   "next_interval_ms": 355.9
+  },
+  {
+   "trial": 8,
+   "ticks": 1,
+   "send_after_tick_ms": 0.8,
+   "prev_interval_ms": 355.9,
+   "next_interval_ms": 284.6
+  },
+  {
+   "trial": 9,
+   "ticks": 1,
+   "send_after_tick_ms": 0.7,
+   "prev_interval_ms": 284.6,
+   "next_interval_ms": 156.8
+  },
+  {
+   "trial": 10,
+   "ticks": 1,
+   "send_after_tick_ms": 0.8,
+   "prev_interval_ms": 97.1,
+   "next_interval_ms": 442.6
+  },
+  {
+   "trial": 11,
+   "ticks": 2,
+   "send_after_tick_ms": 0.8,
+   "prev_interval_ms": 442.6,
+   "next_interval_ms": 335.6
+  },
+  {
+   "trial": 12,
+   "ticks": 1,
+   "send_after_tick_ms": 0.6,
+   "prev_interval_ms": 378.4,
+   "next_interval_ms": 376.8
+  },
+  {
+   "trial": 13,
+   "ticks": 1,
+   "send_after_tick_ms": 0.6,
+   "prev_interval_ms": 376.8,
+   "next_interval_ms": 359.6
+  },
+  {
+   "trial": 14,
+   "ticks": 1,
+   "send_after_tick_ms": 0.6,
+   "prev_interval_ms": 359.6,
+   "next_interval_ms": 267.8
+  },
+  {
+   "trial": 15,
+   "ticks": 1,
+   "send_after_tick_ms": 0.6,
+   "prev_interval_ms": 267.8,
+   "next_interval_ms": 357.3
+  },
+  {
+   "trial": 16,
+   "ticks": 1,
+   "send_after_tick_ms": 0.8,
+   "prev_interval_ms": 357.3,
+   "next_interval_ms": 265.8
+  },
+  {
+   "trial": 17,
+   "ticks": 1,
+   "send_after_tick_ms": 0.7,
+   "prev_interval_ms": 265.8,
+   "next_interval_ms": 309.5
+  },
+  {
+   "trial": 18,
+   "ticks": 1,
+   "send_after_tick_ms": 0.7,
+   "prev_interval_ms": 309.5,
+   "next_interval_ms": 267.5
+  },
+  {
+   "trial": 19,
+   "ticks": 1,
+   "send_after_tick_ms": 0.7,
+   "prev_interval_ms": 267.5,
+   "next_interval_ms": 258.3
+  },
+  {
+   "trial": 20,
+   "ticks": 1,
+   "send_after_tick_ms": 0.6,
+   "prev_interval_ms": 258.3,
+   "next_interval_ms": 366.5
+  },
+  {
+   "trial": 21,
+   "ticks": 1,
+   "send_after_tick_ms": 0.7,
+   "prev_interval_ms": 366.5,
+   "next_interval_ms": 231.0
+  },
+  {
+   "trial": 22,
+   "ticks": 1,
+   "send_after_tick_ms": 0.6,
+   "prev_interval_ms": 231.0,
+   "next_interval_ms": 414.0
+  },
+  {
+   "trial": 23,
+   "ticks": 1,
+   "send_after_tick_ms": 0.7,
+   "prev_interval_ms": 414.0,
+   "next_interval_ms": 266.5
+  },
+  {
+   "trial": 24,
+   "ticks": 1,
+   "send_after_tick_ms": 0.7,
+   "prev_interval_ms": 266.5,
+   "next_interval_ms": 286.7
+  },
+  {
+   "trial": 25,
+   "ticks": 1,
+   "send_after_tick_ms": 0.8,
+   "prev_interval_ms": 286.7,
+   "next_interval_ms": 232.6
+  },
+  {
+   "trial": 26,
+   "ticks": 1,
+   "send_after_tick_ms": 0.7,
+   "prev_interval_ms": 232.6,
+   "next_interval_ms": 385.3
+  },
+  {
+   "trial": 27,
+   "ticks": 1,
+   "send_after_tick_ms": 0.7,
+   "prev_interval_ms": 385.3,
+   "next_interval_ms": 443.9
+  },
+  {
+   "trial": 28,
+   "ticks": 1,
+   "send_after_tick_ms": 0.7,
+   "prev_interval_ms": 443.9,
+   "next_interval_ms": 194.7
+  },
+  {
+   "trial": 29,
+   "ticks": 2,
+   "send_after_tick_ms": 0.6,
+   "prev_interval_ms": 194.7,
+   "next_interval_ms": 122.8
+  },
+  {
+   "trial": 30,
+   "ticks": 1,
+   "send_after_tick_ms": 0.7,
+   "prev_interval_ms": 103.5,
+   "next_interval_ms": 154.7
+  },
+  {
+   "trial": 31,
+   "ticks": 1,
+   "send_after_tick_ms": 0.8,
+   "prev_interval_ms": 154.7,
+   "next_interval_ms": 432
+  },
+  {
+   "trial": 32,
+   "ticks": 2,
+   "send_after_tick_ms": 0.8,
+   "prev_interval_ms": 432,
+   "next_interval_ms": 211.6
+  },
+  {
+   "trial": 33,
+   "ticks": 1,
+   "send_after_tick_ms": 0.7,
+   "prev_interval_ms": 139.8,
+   "next_interval_ms": 385.5
+  },
+  {
+   "trial": 34,
+   "ticks": 1,
+   "send_after_tick_ms": 0.8,
+   "prev_interval_ms": 385.5,
+   "next_interval_ms": 225.8
+  },
+  {
+   "trial": 35,
+   "ticks": 1,
+   "send_after_tick_ms": 0.8,
+   "prev_interval_ms": 225.8,
+   "next_interval_ms": 422.9
+  },
+  {
+   "trial": 36,
+   "ticks": 1,
+   "send_after_tick_ms": 0.7,
+   "prev_interval_ms": 422.9,
+   "next_interval_ms": 477.9
+  },
+  {
+   "trial": 37,
+   "ticks": 1,
+   "send_after_tick_ms": 1.0,
+   "prev_interval_ms": 477.9,
+   "next_interval_ms": 535.0
+  },
+  {
+   "trial": 38,
+   "ticks": 1,
+   "send_after_tick_ms": 0.7,
+   "prev_interval_ms": 535.0,
+   "next_interval_ms": 284.5
+  },
+  {
+   "trial": 39,
+   "ticks": 1,
+   "send_after_tick_ms": 0.6,
+   "prev_interval_ms": 284.5,
+   "next_interval_ms": 173.2
+  },
+  {
+   "trial": 40,
+   "ticks": 1,
+   "send_after_tick_ms": 0.7,
+   "prev_interval_ms": 173.2,
+   "next_interval_ms": 181.6
+  },
+  {
+   "trial": 41,
+   "ticks": 1,
+   "send_after_tick_ms": 0.7,
+   "prev_interval_ms": 181.6,
+   "next_interval_ms": 178.9
+  },
+  {
+   "trial": 42,
+   "ticks": 1,
+   "send_after_tick_ms": 0.9,
+   "prev_interval_ms": 178.9,
+   "next_interval_ms": 248.8
+  },
+  {
+   "trial": 43,
+   "ticks": 1,
+   "send_after_tick_ms": 0.7,
+   "prev_interval_ms": 248.8,
+   "next_interval_ms": 248.9
+  },
+  {
+   "trial": 44,
+   "ticks": 1,
+   "send_after_tick_ms": 0.8,
+   "prev_interval_ms": 248.9,
+   "next_interval_ms": 134.2
+  },
+  {
+   "trial": 45,
+   "ticks": 1,
+   "send_after_tick_ms": 0.8,
+   "prev_interval_ms": 199.5,
+   "next_interval_ms": 287.4
+  },
+  {
+   "trial": 46,
+   "ticks": 2,
+   "send_after_tick_ms": 0.8,
+   "prev_interval_ms": 287.4,
+   "next_interval_ms": 250.1
+  },
+  {
+   "trial": 47,
+   "ticks": 2,
+   "send_after_tick_ms": 0.7,
+   "prev_interval_ms": 489.4,
+   "next_interval_ms": 174.3
+  },
+  {
+   "trial": 48,
+   "ticks": 1,
+   "send_after_tick_ms": 0.7,
+   "prev_interval_ms": 349.6,
+   "next_interval_ms": 372.2
+  },
+  {
+   "trial": 49,
+   "ticks": 1,
+   "send_after_tick_ms": 0.7,
+   "prev_interval_ms": 372.2,
+   "next_interval_ms": 336.1
+  },
+  {
+   "trial": 50,
+   "ticks": 1,
+   "send_after_tick_ms": 0.7,
+   "prev_interval_ms": 336.1,
+   "next_interval_ms": 276.3
+  },
+  {
+   "trial": 51,
+   "ticks": 2,
+   "send_after_tick_ms": 0.7,
+   "prev_interval_ms": 276.3,
+   "next_interval_ms": 208.3
+  },
+  {
+   "trial": 52,
+   "ticks": 1,
+   "send_after_tick_ms": 0.6,
+   "prev_interval_ms": 215.5,
+   "next_interval_ms": 278.0
+  },
+  {
+   "trial": 53,
+   "ticks": 1,
+   "send_after_tick_ms": 0.8,
+   "prev_interval_ms": 278.0,
+   "next_interval_ms": 289.8
+  },
+  {
+   "trial": 54,
+   "ticks": 1,
+   "send_after_tick_ms": 0.6,
+   "prev_interval_ms": 289.8,
+   "next_interval_ms": 453.5
+  },
+  {
+   "trial": 55,
+   "ticks": 1,
+   "send_after_tick_ms": 0.6,
+   "prev_interval_ms": 453.5,
+   "next_interval_ms": 221.0
+  },
+  {
+   "trial": 56,
+   "ticks": 2,
+   "send_after_tick_ms": 0.6,
+   "prev_interval_ms": 221.0,
+   "next_interval_ms": 185.4
+  },
+  {
+   "trial": 57,
+   "ticks": 1,
+   "send_after_tick_ms": 0.8,
+   "prev_interval_ms": 310.3,
+   "next_interval_ms": 271.1
+  },
+  {
+   "trial": 58,
+   "ticks": 1,
+   "send_after_tick_ms": 0.6,
+   "prev_interval_ms": 271.1,
+   "next_interval_ms": 286.4
+  },
+  {
+   "trial": 59,
+   "ticks": 1,
+   "send_after_tick_ms": 0.7,
+   "prev_interval_ms": 286.4,
+   "next_interval_ms": 252.2
+  }
+ ],
+ "other_outbound_after_tick_ms": [
+  46.9,
+  75.3,
+  270.5,
+  45.0,
+  160.0,
+  294.4,
+  29.2,
+  18.8,
+  0.6,
+  170.8,
+  327.8,
+  99.4,
+  322.8,
+  241.6,
+  119.8,
+  186.3,
+  197.2,
+  137.4,
+  74.2,
+  82.3,
+  347.1,
+  40.2,
+  111.6,
+  206.2,
+  218.8,
+  318.7,
+  426.7,
+  137.5,
+  265.2,
+  43.5,
+  37.6,
+  145.9,
+  15.4,
+  138.5,
+  29.2,
+  87.2,
+  254.2,
+  184.8,
+  109.0,
+  187.3,
+  421.2,
+  184.7,
+  90.1,
+  172.8,
+  182.8,
+  263.8
+ ]
+}
