@@ -17,6 +17,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { readBank } from '../lib/boards.ts';
+import { writerExclusion } from '../lib/accounts.ts';
 import { DEMO_SERVER, Gentle } from '../lib/demo.ts';
 import { bidPool, DemoMarket, readBids } from '../lib/market.ts';
 import { familyOf } from '../lib/families.ts';
@@ -47,8 +48,9 @@ const gp = (n: number): string => (n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : `${(n
 async function main(): Promise<void> {
     const { values } = parseArgs({
         args: Bun.argv.slice(2),
-        options: { every: { type: 'string' }, 'block-hours': { type: 'string' }, out: { type: 'string' }, once: { type: 'boolean' }, server: { type: 'string' } }
+        options: { every: { type: 'string' }, 'block-hours': { type: 'string' }, out: { type: 'string' }, once: { type: 'boolean' }, server: { type: 'string' }, 'placeholder-data': { type: 'boolean' } }
     });
+    const ex = writerExclusion();
     const every = Number(values.every ?? MIN_EVERY_S);
     if (!(every >= MIN_EVERY_S)) throw new Error(`--every must be at least ${MIN_EVERY_S} seconds (tenet 28)`);
     const blockHours = Number(values['block-hours'] ?? 6);
@@ -62,14 +64,18 @@ async function main(): Promise<void> {
 
     for (let next = Date.now(); ; ) {
         const at = new Date();
-        const bank = await readBank(g).catch(e => (console.error(`${at.toISOString()} bank: ${e instanceof Error ? e.message : e}`), null));
-        const positions: Position[] | null = await readPositions(g).catch(e => (console.error(`${at.toISOString()} positions: ${e instanceof Error ? e.message : e}`), null));
+        const rawBank = await readBank(g).catch(e => (console.error(`${at.toISOString()} bank: ${e instanceof Error ? e.message : e}`), null));
+        const rawPositions: Position[] | null = await readPositions(g).catch(e => (console.error(`${at.toISOString()} positions: ${e instanceof Error ? e.message : e}`), null));
+        // Excluded accounts never reach a file or the console; ranks are positions among the rows kept.
+        const bank = rawBank && ex.keep(rawBank);
+        const positions = rawPositions && ex.keep(rawPositions);
         const bids = await readBids(market, 7).then(bidPool, e => (console.error(`${at.toISOString()} bids: ${e instanceof Error ? e.message : e}`), null));
 
         const path = join(out, blockFile(at, blockHours));
         const file: PollFile = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : { v: 1, source: g.origin, polls: [] };
         if (previous === null && file.polls.length) previous = decodePolls(file).findLast(p => p.bank)?.bank ?? null;
         const record = encodePoll(file, at.toISOString(), bank, positions, n => familyOf(n) !== null, ps => zoneRoster(ps));
+        record.online = rawPositions?.length ?? null;
         if (bids) record.bids = bids;
         file.polls.push(record);
         writeFileSync(path, formatPollFile(file));
@@ -80,7 +86,7 @@ async function main(): Promise<void> {
             if (f) online.set(f, (online.get(f) ?? 0) + 1);
         }
         const leaders = (bank ?? []).slice(0, 5).map(r => `${r.name} ${gp(r.gp)}`).join(', ');
-        console.log(`${at.toISOString().slice(0, 16)}Z online=${positions?.length ?? '?'} | ${leaders || 'bank read failed'} | families online ${[...online].map(([f, n]) => `${f} ${n}`).join(', ')}`);
+        console.log(`${at.toISOString().slice(0, 16)}Z online=${rawPositions?.length ?? '?'} | ${leaders || 'bank read failed'} | families online ${[...online].map(([f, n]) => `${f} ${n}`).join(', ')}`);
         if (bids) console.log(`  bid pool: ${bids.items} items, ${gp(bids.value)} committed`);
         if (record.zones) console.log(`  zones: ${Object.entries(record.zones).map(([z, names]) => `${z} ${names.length}`).join(', ')}`);
         if (bank && previous) {
