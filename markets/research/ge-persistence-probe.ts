@@ -13,7 +13,8 @@
 //   items held (all invs, notes folded to the base item, escrow invs, saved overflow)
 //   + ledger escrow (open sell remaining, open buy remaining * price)
 //   + ledger claims (offer.items / offer.coins)
-//   + GE tax (coins only)
+//   + GE tax (coins only, all probes share one ledger so it carries over)
+// is constant. Each step prints the total and, per account, held/ledger.
 // is constant. It also prints the bank value the wealth board would compute
 // (LoginServer.ts updateWealthHiscores: sum of ObjType.cost * count over bank).
 //
@@ -124,7 +125,11 @@ function crash(players: P[]): P[] {
 }
 
 const click = (p: P, name: string) => {
-    if (!new IfButtonHandler().handle(new IfButton(Component.getId('grand_exchange:' + name)), p)) throw new Error('button not handled: ' + name);
+    const press = () => new IfButtonHandler().handle(new IfButton(Component.getId('grand_exchange:' + name)), p);
+    if (press()) return;
+    // The home-screen button is not visible from every screen; reopen at home and retry once.
+    openExchange(p, 3180, 3443);
+    if (!press()) throw new Error('button not handled: ' + name);
 };
 
 function place(p: P, slot: number, side: 'buy' | 'sell', query: string, item: number, quantity: number, price: number) {
@@ -156,7 +161,10 @@ function check(probe: string, players: () => P[], items: number[], body: (log: (
             const was = base.get(i)!;
             if (now > was) worst = 'DUPLICATION';
             else if (now < was && worst === 'conserved') worst = 'loss';
-            parts.push(`${ObjType.get(i).debugname}=${now}${now !== was ? ` (${now > was ? '+' : ''}${now - was})` : ''}`);
+            const where = players()
+                .map(p => `${p.username}:${held(p, i)}/${ledger(p.username, i, ObjType.getId('coins'))}`)
+                .join(',');
+            parts.push(`${ObjType.get(i).debugname}=${now}${now !== was ? ` (${now > was ? '+' : ''}${now - was})` : ''} [${where}]`);
         }
         steps.push(`  ${step.padEnd(52)} ${parts.join('  ')}`);
     };
