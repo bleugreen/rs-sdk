@@ -939,7 +939,7 @@ mostly luck (ticks per success ran 3.2 to 8.8 across the base windows alone).
 
 | Phase (run 4) | Probes | On the next tick | Probe tick interval max (ms) | Render loops/s (mean, min) during the program | Reaction p50 / p90 / max (ms) | Packets a tick | Decoded-frame max (ms), catch-ups |
 |---|---|---|---|---|---|---|---|
-| base, bots out | 4 | **240 / 240** | 408-439 | 74.1-74.2, 69-72 | 1 / 2-6 / 7.5-25.5 | 1.98-2.02 | 415-2,360, 3 (base4) |
+| base, bots out | 4 | **240 / 240** | 408-439 | 73.1-74.2, 0-72 (0: base4's stall) | 1 / 2-6 / 7.5-25.5 | 1.98-2.02 | 415-2,360, 3 (base4) |
 | **crowd, 40 in view** | 3 | **180 / 180** | 407-414 | 74.1-74.2, 71-73 | 1-2 / 2 / 8.7-13.8 | 2.01-2.02 | 420-473, 0 |
 | away, bots logged in, out of view | 2 | 120 / 120 | 408-435 | 74.1-74.2, 70-72 | 1 / 2 / 9.8-25.5 | 2.01 | 416-419, 0 |
 | prefer | 1 | 60 / 60 | 408 | 74.1, 73 | 2 / 2 / 9.6 | 2.01 | 420, 0 |
