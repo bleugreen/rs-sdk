@@ -128,10 +128,10 @@ async function skipObserved({ sdk, session, log }: StepContext<unknown>, landing
     const landed = await waitUntil(sdk, st => atSpawn(st) && hasStarterKit(st), { maxTicks: 8, after: page.tick, idle: landingIdle });
     if (!landed.ok) {
         const why = landed.reason === 'idle'
-            ? `no state for ${(landed.silentMs / 1000).toFixed(1)} s after the skip (bound ${LANDING_IDLE_TICKS} ticks, ${(boundMs / 1000).toFixed(1)} s)`
-            : `8 ticks passed after the skip`;
+            ? `the tab stayed silent past ${LANDING_IDLE_TICKS} ticks, ${(boundMs / 1000).toFixed(1)} s`
+            : '8 ticks passed';
         const kit = landed.state && hasStarterKit(landed.state) ? 'with' : 'without';
-        throw new Error(`not at Lumbridge with the starter kit: ${why}; last state tick ${landed.tick} (choice page at ${page.tick}), at ${where(landed.state)} ${kit} the kit`);
+        throw new Error(`not at Lumbridge with the starter kit after the skip (${why}): last state tick ${landed.tick} (choice page at ${page.tick}), at ${where(landed.state)} ${kit} the kit, silent ${(landed.silentMs / 1000).toFixed(1)} s`);
     }
     // The login could not turn run on (the controls tab is hidden on the island); tutorial_complete opened it.
     // Recorded, never fatal: see lib/run-mode.ts.
