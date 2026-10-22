@@ -390,11 +390,15 @@ describe('thieving helper top-ups', () => {
         const mem = { tiers: new Set<string>() };
         // 9 slots held, coins among them: 19 free; 1 shark back, the adamant tier's slot, one for a new arrow stack: 16 bones
         expect(topUpAsk(pack(['Mithril']), FOODS.shark, true, mem)).toEqual([{ item: 'bones$', count: 16 }, { item: '^(Shark)$', count: 1 }, { item: '^adamant arrow(head|tip)s$', count: 'all' }]);
-        // two tiers held: no tier; the adamant one was asked for once
-        expect(topUpAsk(pack(['Mithril', 'Adamant'], { sharks: 2 }), FOODS.shark, true, mem)).toEqual([{ item: 'bones$', count: 16 }]);
-        // down to adamant: rune, then nothing more
-        expect(topUpAsk(pack(['Adamant'], { sharks: 2 }), FOODS.shark, true, mem).at(-1)).toEqual({ item: '^rune arrow(head|tip)s$', count: 'all' });
+        // the next top-up, two tiers held: rune all the same (the best tier held goes first, so one tier
+        // comes back only once the adamant is gone); its slot comes out of the bones: 17 free, 15 bones
+        expect(topUpAsk(pack(['Mithril', 'Adamant'], { sharks: 2 }), FOODS.shark, true, mem)).toEqual([{ item: 'bones$', count: 15 }, { item: '^rune arrow(head|tip)s$', count: 'all' }]);
+        // each tier once: nothing more, whatever is held
+        expect(topUpAsk(pack(['Mithril', 'Adamant', 'Rune'], { sharks: 2 }), FOODS.shark, true, mem)).toEqual([{ item: 'bones$', count: 15 }]);
+        expect(topUpAsk(pack(['Adamant'], { sharks: 2 }), FOODS.shark, true, mem).map(a => a.item)).toEqual(['bones$']);
         expect(topUpAsk(pack(['Rune'], { sharks: 2 }), FOODS.shark, true, mem).map(a => a.item)).toEqual(['bones$']);
+        // down to adamant with the rune not yet asked: rune
+        expect(topUpAsk(pack(['Adamant'], { sharks: 2 }), FOODS.shark, true, { tiers: new Set() }).at(-1)).toEqual({ item: '^rune arrow(head|tip)s$', count: 'all' });
         // no coins yet: one slot stays for the loot; Fletching 99: no tier and no arrow slot
         expect(topUpAsk(pack(['Mithril'], { coins: false }), FOODS.shark, true, { tiers: new Set() })[0]).toEqual({ item: 'bones$', count: 16 });
         expect(topUpAsk(pack(['Mithril'], { fletching: 99, sharks: 2 }), FOODS.shark, true, { tiers: new Set() })).toEqual([{ item: 'bones$', count: 18 }]);

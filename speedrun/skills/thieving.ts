@@ -320,7 +320,10 @@ export class TopUpReceiver {
 
 /** The pack's top-up brings the food back to this many (stun-pack.md section 6). */
 export const PACK_FOOD_TO = 2;
-/** Arrowtip tiers the courier brings, once each, when the account is down to one tier (stun-pack.md section 6). */
+/**
+ * Arrowtip tiers the courier brings, once each (stun-pack.md section 6): the first once the account is
+ * down to one tier, each later one on the next top-up, whatever tiers are held (topUpAsk).
+ */
 export const COURIER_TIERS = ['adamant', 'rune'] as const;
 const ARROWTIPS = /arrow(head|tip)s$/i;
 
@@ -333,8 +336,11 @@ export interface AskMemory {
  * What this account asks the courier for, from its state as the trade opens (stun-pack.md
  * section 5, step 3): while the trade is open it sends nothing else, so its free slots can't
  * shrink. Free slots keep one for the knights' coins until some are held. With the pack: food
- * back to PACK_FOOD_TO, the next courier tier once the account is down to one arrowtip tier
- * (while Fletching is below 99), and bones in every slot left but one, which stays free for a
+ * back to PACK_FOOD_TO, the next courier tier (while Fletching is below 99): the first once the
+ * account is down to one arrowtip tier, each later one on the next top-up whatever tiers are held,
+ * because the program fletches the best tier held (stun-actions.ts STUN_PRESETS.arrows), so the
+ * account is down to one tier again only once the adamant is used up, often after the band has
+ * ended; and bones in every slot left but one, which stays free for a
  * new arrow product stack; with superheat (`superheat`) those slots take its ore (superheatOre).
  * Without the pack: food in every free slot. The courier offers each item with one press
  * (bone-giver.ts askOffer), so a courier holding exactly the ore asked offers it as All.
@@ -347,7 +353,8 @@ export function topUpAsk(s: BotWorldState, food: Food, pack: boolean, mem: AskMe
     const fletching = baseOf(s, 'fletching') < 99;
     const tiersHeld = inv.filter(i => ARROWTIPS.test(i.name));
     for (const t of tiersHeld) for (const c of COURIER_TIERS) if (new RegExp(`^${c} `, 'i').test(t.name)) mem.tiers.add(c);
-    const tier = fletching && tiersHeld.length <= 1 ? COURIER_TIERS.find(c => !mem.tiers.has(c)) : undefined;
+    const begun = COURIER_TIERS.some(c => mem.tiers.has(c));
+    const tier = fletching && (tiersHeld.length <= 1 || begun) ? COURIER_TIERS.find(c => !mem.tiers.has(c)) : undefined;
     if (tier) mem.tiers.add(tier);
     const sharks = Math.max(0, PACK_FOOD_TO - edibleFood(s, food).length);
     const bones = Math.max(0, free - sharks - (tier ? 1 : 0) - (fletching ? 1 : 0));

@@ -13,8 +13,10 @@
 // need: when going best-first to 75 would leave less than the rune tips' share plus a margin for
 // the page's level lag at the band edges, the run to 75 is capped with `maxActions`, which holds
 // whatever the lag (an action takes at most 15). And when Fletching reaches
-// `toLevel` with rune tips still held (the courier brings them late, at about 96), a last run
-// fletches rune only until the keep is made. The step refuses up front when the stock cannot end
+// `toLevel` with rune tips still held, a last run fletches rune only until the keep is made. In
+// S18 the tiers go best first (stun-actions.ts STUN_PRESETS.arrows): the adamant from Fletching
+// 60, the rune from 75; the courier delivers the rune tips on the top-up after the adamant's, by
+// about stun 45-50 (thieving.ts topUpAsk), so a short band leaves rune tips held, not on the courier. The step refuses up front when the stock cannot end
 // with the keep.
 //
 // Free slots. `make_arrows` never checks space (arrows.rs2) and INV_ADD drops what does not fit at
