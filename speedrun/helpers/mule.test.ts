@@ -557,6 +557,15 @@ describe('carried packages (H12o on Ape Atoll): no bank, a tile per package, wil
         expect(muleOptions({ carried: true, wildlife: [], keepAliveMinutes: 0 })).toMatchObject({ wildlife: [], keepAliveMinutes: 0 });
     });
 
+    test('the run-day entry documented in mule.md ("H12o, the atoll helper") serves exactly these packages', () => {
+        const md = readFileSync(join(import.meta.dir, '../../docs/speedrun/helpers/mule.md'), 'utf8');
+        const block = [...md.matchAll(/```json\n([\s\S]*?)```/g)].map(m => m[1]!).find(b => b.includes('"cairn_h45"'));
+        const entry = JSON.parse(block!) as { options: Record<string, unknown> } & Record<string, unknown>;
+        expect(entry).toMatchObject({ account: 'cairn_h45', role: 'mule', cueDir: 'run-machine/h45-cue', loginOn: M, stopOn: P });
+        expect(entry.options).toMatchObject({ serveMode: 'request', carried: true });
+        expect(muleOptions(entry.options, { RC_CUE_DIR: '/tmp/cue-h45' }).packages).toEqual(opts.packages);
+    });
+
     test('carriedNeeds: each package found in the one inventory; the start-of-login check sums them', () => {
         const inv = loaded();
         const m = carriedNeeds(hm, inv);
