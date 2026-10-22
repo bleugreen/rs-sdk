@@ -445,7 +445,8 @@ describe("Q: the reward's level-up page ends the wait (converse expect 'interrup
             return out;
         };
         const { ctx, log } = ctxFor(sdk);
-        await drive(sdk, byLetter('Q').run({ ...ctx, c: { dialogue: 'fixed' } } as never) as Promise<unknown>, 120, each);
+        const Q = steps({ dialogue: 'fixed' }).find(st => letterOf(st.name) === 'Q')!;
+        await drive(sdk, Q.run(ctx) as Promise<unknown>, 120, each);
         return { sdk, log, closedAt, lvlClosedAt, dropAt };
     }
 
@@ -461,7 +462,7 @@ describe("Q: the reward's level-up page ends the wait (converse expect 'interrup
         const { sdk, log, closedAt, lvlClosedAt, dropAt } = await rewardRun(1);
         expect(lvlClosedAt).toBe(closedAt + 2);
         expect(dropAt).toBeLessThan(lvlClosedAt + LEVEL_UP_TICKS);
-        expect(JSON.stringify(log.rows())).toContain('"levelUpInTalk":1');
+        expect(JSON.stringify(log.rows)).toContain('"levelUpInTalk":1');
         expect(byLetter('Q').postconditions(sdk.getState()!, {})).toBe(true);
     });
 });
