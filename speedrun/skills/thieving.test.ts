@@ -1253,7 +1253,8 @@ describe('thieving: the knight choice', () => {
         const done = steps({ food: 'shark', ...UNCROWDED }).find(x => x.name === 'thieving:knights')!.run(ctx);
         await settle(() => sdk.starts.length === 1);
         expect(sdk.starts[0]!.params.prefer).toEqual([22, 21]);
-        for (const p of [{ gauges: { target: 22 } }, { gauges: { target: 22 }, counters: { rolls: 4 } }, { gauges: { target: 21 }, counters: { retargets: 1 } }]) {
+        const statuses: Array<Partial<ProgramStatus>> = [{ gauges: { target: 22 } }, { gauges: { target: 22 }, counters: { rolls: 4 } }, { gauges: { target: 21 }, counters: { retargets: 1 } }];
+        for (const p of statuses) {
             await flush();
             sdk.publish(p);
         }
