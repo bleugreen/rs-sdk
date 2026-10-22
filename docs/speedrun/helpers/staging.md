@@ -72,8 +72,8 @@ named in the gap column.
 | H10 | mule1 | in: law 5, water 5, air 3, sharks up to 8 in all (8 staged; the giver tops up to 8 by what SCORED holds) | mule1 | **yes** | - |
 | H11 | h92 | in: cannon set 1, cannonballs 100, mithril scimitar 1, law 4, water 4, shark 2 | set and 1,416 balls on h92; scimitar, runes and sharks on mule1 | partly | Move a scimitar, law 4, water 4 and shark 2 from mule1 to h92, and have `cannon.ts` serve offer them with the set (it serves set + balls today): rs/329 or rs/41 |
 | H11r | h92 | back: cannon set, leftover balls (~30) | - | n/a | h92 receives (serve `returnTile`) |
-| H12 | mule1 | in: gold bar 1, ball of wool 1, monkey bones 1, banana 5, magic shortbow 1, rune arrow 200, prayer potion(4) 2, antipoison(4) 1, shark 9, law 6, air 6, fire 2 (two real Varrock sets), water 4; back: staff of fire, mithril scimitar, knife, Fight Arena's 1,000 coins, dead items | wool, arrows, sharks, runes on mule1; gold bar and bananas h94; **monkey bones, magic shortbow, prayer potions: none** | partly | Shortbow: h90's GE bid (target 3, to 20,000; resting at 13,025 over a 13,000 wall; recent trades ~9,300), rs/331 set it. Monkey bones: rs/173 `far`. Prayer potions: no GE sellers (8,000 bid wall); mix (Herblore 38, ranarr + snape grass) on h84/h85 (rs/41). Gold bar, bananas: h94 (rs/173) |
-| H13 | mule1 | in: blood 70, air 400, magic potion(4) 1 (insurance), prayer potion(4) 2, law 4, water 4, staff of fire 1, knife 1 (both back from H12); back: the magic shortbow | air and runes on mule1; **blood runes, magic potion, prayer potions: none** | partly | Blood: GE ask 960 for 98, bid wall 700 for 16k; the Magic Guild sells at 50+ to Magic 66. Owner rs/41 (raise h88's 570 line from 603-650 to ~1,000, or train a Magic 66 buyer). The magic potion is insurance only |
+| H12 | mule1 | in: gold bar 1, ball of wool 1, monkey bones 1, banana 5, magic shortbow 1, rune arrow 200, prayer potion(4) 2, antipoison(4) 1, shark 9, law 6, air 6, fire 2 (two real Varrock sets), water 4; back: staff of fire, mithril scimitar, knife, Fight Arena's 1,000 coins, dead items | wool, arrows, sharks, runes on mule1; gold bar and bananas h94; **monkey bones, magic shortbow, prayer potions: none** | partly | Shortbow: rs/346 fletches (h90's GE bid, target 3 to 20,000, also rests at 13,025). Monkey bones: rs/173 `far`. Prayer potions: rs/348 (resting bids below). Gold bar, bananas: h94, being delivered by rs/173 |
+| H13 | mule1 | in: blood 70, air 400, magic potion(4) 1 (insurance), prayer potion(4) 2, law 4, water 4, staff of fire 1, knife 1 (both back from H12); back: the magic shortbow | air and runes on mule1; **blood runes, magic potion, prayer potions: none** | partly | Blood: rs/347 (GE asks and the Magic Guild via h88, Magic 66); h90's line (below) rests at 725. Potions: rs/348. The magic potion is insurance only |
 | H14 | mule1 | in: blood 500, air 500, headless arrow 4,410, arrowtips bronze 60, iron 90, steel 135, mithril 1,485, shark 2, bones ~16 (babydragon only) | all on mule1 except blood and bones | partly | Blood as H13. Bones: babydragon from h51-h54 to the S18 courier (rs/41) |
 | H14.x | mule1 | in: babydragon bones to fill (~184), adamant tips 2,070, rune tips 570, sharks back to 2 | tips and sharks on mule1 | partly | Bones as H14 |
 | H15 | mule1 | in: swamp paste 1, unlit torch 1, law 2, water 2 | runes on mule1; **paste and torch: none** | partly | rs/173 `far` (Port Khazard store, Jiminua's) |
@@ -84,20 +84,22 @@ named in the gap column.
 | H20 | mule1 | in: goblin mail 3, orange dye 1, blue dye 1, raw rat meat 1, raw bear meat 1, raw beef 1, raw chicken 1, cadava berries 1, law 2, air 6, water 1, fire 1 | runes on mule1; goblin mail and meats h96, the rest h94 | partly | h94 and h96's quest items wait for rs/173 (rs/41 01:5x) |
 | H21a | anvil giver | in: hammer 1, then 31 loads of 24-25 bars (bronze 15, iron 39, steel 120, mithril 305, adamant 365), each taking 5 platebodies back; takes every dead item back | adamant **354 (11 short)**, the rest ample (h20-h23); hammer h20, h91 | no | Adamant: h22/h23 smelting (rs/41's forecast 365 by ~12:00 UTC). Anvil giver to name (rs/41, rs/188) |
 | H21c | **mule2** (wine giver) | in: unfermented wine 520, noted, one slot | **h40's inventory** (520, never banked) at Varrock west | yes, on h40 | One inventory-to-inventory trade h40 → mule2 close to the run, with h40's own `wine` role (`giveWine`, `receiver: cairn_mule2`), never `handover`: handover deposits the donor's inventory first, which unnotes the wine and starts fermentation. mule2 must hold it in its inventory, never run a banking role while it does, and on run day gives it from tile (3184,3436) to SCORED at (3185,3436) with rs/339's `afterRelog`. Why mule2: mule1's `mule` role banks whatever a courier hands it. Owners rs/331 (plan), rs/41 (the trade, on the run eve), rs/339 and rs/158 told |
-| H21d | mule1 | in: chisel 1, uncut diamond 391 (noted) | chisel on mule1; **uncut diamonds: 2** (GE bid wall 6,000 for 9,787, no sellers) | partly | Unreachable by 23 Oct. rs/158's fallback, the gem-table mix (+88): uncut sapphire 35, emerald 21, ruby 16 held. Owner rs/158 (which mix), rs/41 (stock) |
+| H21d | mule1 | in: chisel 1, uncut diamond 391 (noted) | chisel on mule1; **uncut diamonds: 2** (GE bid wall 6,000 for 9,787, no sellers) | partly | No buying (25,000 each; rs/41). rs/158's gem-table fallback (+88) is in force. **Mixed uncut gems held (banks 08:15-08:32 UTC):** sapphire 63 (h20 19, h54 15, h23 11, h21 8, h53 8, h22 1, h80 1), emerald 23 (h53 6, h54 6, h51 3, h80 3, h20 2, h23 2, h22 1), ruby 20 (h54 5, h52 4, h80 4, h23 3, h53 3, h22 1), diamond 2 (h51, h52); none on mule1, no dragonstone, opal, jade or topaz. rs/158 sends the mix with fold-in 18 |
 | H21e | mule1 | in: noted unfinished potions and their secondaries (counts per rs/302's planner and rs/158's ledger) | snape grass 102 (100 for H21e) and eye of newt 50 on mule1; h84 (~483 unf after processing, eyes, snape grass), h85 (~360 unf), limpwurt 250 on h51-h54 | partly | **Code gap:** `handover` (and the `mule` package spec) address items by exact name, and in this revision every unfinished potion is "Unfinished potion" and every grimy herb "Herb", so neither can move one potion type, or keep types apart. Needs id-addressed items (noted ids differ from the banked ones). Until then, h84/h85's unf stay put. Owner rs/41 (file or fold into rs/329) |
 | H22 | mule1 | in: coins 126,000, wizard's mind bomb 1, silk 1, lobster pot 1, unfired bowl 1, plank 3, nails 12, adamant full helm 1, amulet of strength 1, shark 10, law 5, air 9, fire 1, earth 1, water 3, mithril scimitar 1 (back from H12) | coins, helm, sharks, runes on mule1; quest items and nails 12 ("Nails", id 1539) on h94; **planks, amulet of strength: none** | partly | Planks: rs/173's far-set lab picked up 4 at the Barbarian Outpost; fallback the Rimmington spawn. Amulet of strength: h80's ruby amulet enchanted (Enchant 3, Magic 49) by a helper (rs/41) |
-| H23 | h92 + mule1 | in: cannon set 1, cannonballs 1,200 and the magic shortbow 1 (back from H13, passed mule1 → h92 before S26) in h92's trade; ranging potion(4) 3, super antipoison(4) 2, super attack(4) 1, super strength(4) 1, shark 12 (mule1) | set, balls on h92; sharks on mule1; **no potions held** | partly | Potions from the herb line (rs/41): irit and kwuarm unf on h85, eye of newt, limpwurt; ranging needs Herblore 72. GE: ranging bid 5,000, no sellers |
+| H23 | h92 + mule1 | in: cannon set 1, cannonballs 1,200 and h92's own magic shortbow 1 in h92's trade (`serveExtras`, rs/344); ranging potion(4) 3, super antipoison(4) 2, super attack(4) 1, super strength(4) 1, shark 12 (mule1) | set, balls on h92; sharks on mule1; **no potions, no bow held** | partly | Potions: rs/348 (resting GE bids below, from rs/331). Bow: rs/346, one for h92 |
 | DS re-supply (contingency, rs/258) | mule2 | mithril scimitar, hammer, 8 sharks; planks 3, nails 12 | on mule2: scimitar, hammer, sharks | partly | Planks and nails: GE bids rest on mule2 (#19502 at 450, #19505 at 200), neither ever traded; fallback nails smithed by a smelter (h20/h21 steel), planks from the Rimmington spawn. Re-run `kits/mule2-ds.json` to collect fills (rs/41, low priority) |
 
 **Fully staged today:** H1, H3, H4k, H4p, H9, H10 and H18. The cannon set
 and balls (H11, H23) are on h92, and the wine (H21c) is on h40. Every other row is partly staged,
 with the missing items named above.
 
-**The shortbow's path (rs/158, 02:30 PDT).** H13 takes the magic shortbow back to mule1, and
-H23 gives it again **in h92's cannon trade**, with the set and balls, because S27 fires it. So
-the bow moves mule1 → h92 between S16 and S26, and `cannon.ts` serve must offer it. rs/329's
-item 3 ("H23 takes back the magic shortbow") is being corrected by rs/41.
+**Two magic shortbows per attempt (rs/158's ruling, 02:4x PDT).** mule1 gives one at H12 and
+takes it back at H13, where it stays. h92 holds its own from the start and gives it in H23's
+cannon trade, with the set and balls (rs/344 adds `serveExtras` to `cannon.ts` serve). There is
+no mid-run bow transfer. rs/346 fletches them, one to mule1 and one to h92 per attempt. Fallback
+if they are late: a willow shortbow from the Ranging Guild shop (stock 20), 2 per attempt bought
+by cairn_h91 when rs/158 or rs/185 asks (rs/41).
 
 ## Per attempt
 
@@ -126,8 +128,8 @@ moved to the giver that serves H4k and H4p before that attempt's run login.
 |---|---|---|---|---|
 | Rune axe | 1 | mule1 1, mule2 1 | 2 | h90's GE line, 2 more (approved to 300,000) |
 | Rune pickaxe | 1 | mule1 3, mule2 1 | 4 | - |
-| Mithril scimitar | 1 | mule1 2 (mule2's 1 is the contingency's) | 2 | Zeke (Al Kharid, ~1,050) was out of stock after 2; one more on a later buyer run |
-| Magic shortbow | 1 | 0 | 0 | h90's bid, target 3, to 20,000 |
+| Mithril scimitar | 1 | mule1 2, h63 1 (bought 09:35; mule2's 1 is the contingency's) | 3 | Zeke (Al Kharid, ~1,050) |
+| Magic shortbow | **2** (mule1's for H12-H13, h92's for H23) | 0 | 0 | rs/346 fletches; h90's GE bid (target 3, to 20,000); willow shortbow fallback (Ranging Guild, via h91) |
 | Staff of water | 1 | mule1 3 | 3 | Zaff (Varrock, 1,500, stock 2) |
 | Staff of fire | 1 | mule1 3 (+ h55, h56 casting) | 3 | Zaff |
 | Knife | 1 | mule1 3, h94 2 | 5 | Shantay, 6 gp |
@@ -138,11 +140,11 @@ moved to the giver that serves H4k and H4p before that attempt's run login.
 | Cannonballs | ~1,270 (1,300 out, ~30 back at H11r) | 1,416 | 1 | h92 makes them from steel bars (352 held, 4 a bar) |
 | Uncut diamond | 391 | 2 | 0 | the gem-table fallback, every attempt |
 | Adamantite bars | 365 | 354 | 0.97 | smelting; the mithril-platebody fallback (+425 mithril bars) for later attempts |
-| Blood runes | 570 | 0 | 0 | GE or the Magic Guild |
+| Blood runes | 570 | 0 | 0 | rs/347: GE (h90's #19732 at 725 for 200 rests) and the Magic Guild via h88 |
 | Bones (Prayer) | the S07/S09/S18 mix, ~1,645 bones on the forecast | dragon 172, babydragon 1,533, big 2,526 | 1 on the fast mix; later attempts fall back to big bones (rs/158 prices the ticks) |
 | Rune arrows | 200 | mule1 200 | 1 | h91's `rune-arrows` loop (target 200) is rebuying (attempt 2's) |
 | Arrowtips, headless arrows | rune 570, adamant 2,070, mithril 1,485, headless 4,410, the rest small | exactly one attempt's (mule1) | 1 | h76 is back camping Hickton's toward its targets (attempt 2's) |
-| Potions (prayer 4, antipoison 2, agility 1, ranging 3, supers 4) | 14 | 0 | 0 | the herb line (rs/41) |
+| Potions (prayer 4, antipoison 2, agility 1, ranging 3, supers 4; magic 1 as insurance) | 14 (+1) | 0 | 0 | rs/348; resting GE bids from rs/331 (below) |
 | Sharks | ~52 | mule1 60; ~148 elsewhere outside mule2 | 3+ | GE ask ~557 |
 | Law runes | ~49 | mule1 57; ~600 in the fleet | 13 | - |
 | Air / fire / earth / water runes | ~1,600 / 85 / 54 / 33 | mule1 1,678 / 285 / 131 / 67 | 1 / 3 / 2 / 2 | GE air at 21-22; Aubury (fire, earth; water ran out at 31) |
@@ -176,5 +178,15 @@ fresh id `rs331-<donor>-mule1-1`. fleet.json backups are in `~/rs-dev/staging-33
 | 09:25 | cairn_h64 | handover rs331-h64-mule1-1: coins 126,010, air 1,400, earth 120, fire 200, water 31, staff of water 2, staff of fire 2, rune pickaxe 2, mithril scimitar 2, knife 2 → mule1 | `coins` {} |
 | 09:26-09:29 | cairn_h13 (fleet) | handover rs331-h13-mule1-1: normal logs 3 → mule1 (crossed from Seers') | `woodcutter` {} |
 
-Funding used: 74,481 + 29,400 on h64; h90's two open GE offers escrow 100,025 (axe) and 13,025
-(shortbow) from its own 468,995. Under the 480,000 rs/41 approved.
+| 09:32 | cairn_h90 | bidder line added: blood rune target 570, tranche 200, min 725, max 1,000, +25 after 30 idle minutes (backup `...bak-20261022T093141Z`); SIGINT to the bidder child, the loop restarted it | offer #19732 at 725 for 200 |
+| 09:33-09:36 | cairn_h63 (fleet) | `buyer` by item id: prayer(4) #19735 at 9,000 for 4, ranging(4) #19737 at 6,000 for 3, super attack(4) #19740 at 3,500, super strength(4) #19741 at 4,000 (all resting, no sellers); mithril scimitar 1 at Zeke (1,050), banked on h63 | `coins` {} |
+| 09:33-09:35 | cairn_h62 (fleet) | `buyer` by item id: superantipoison(4) #19742 for 2, antipoison(4) #19743 for 2, agility(4) #19744, magic(4) #19746, each at 2,000 (resting) | `coins` {} |
+
+Re-running the same buyer list on h62 or h63 collects any fills and buys only the shortfall.
+Those offers, and h90's blood-rune line, are handed to rs/347 and rs/348, which own blood runes
+and potions from 02:40 PDT.
+
+Funding used: 74,481 + 29,400 on h64 and 1,050 on h63. GE escrow: h90's axe 100,025, shortbow
+13,025 and blood runes up to 200,000 from its own coins; h62/h63's potions ~73,500. All within
+rs/41's approvals (axe 300,000, pickaxes and scimitars 80,000, the buyer extras ~100,000, blood
+runes ~570,000, potions 250,000).
