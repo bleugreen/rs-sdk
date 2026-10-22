@@ -61,7 +61,8 @@ log that disappears without a fire (taken or despawned) is logged as `lost`. It 
 because a replacement would be private for another 100 ticks.
 
 On a restart mid-row the role resumes after the last own log it still sees lying on its tile
-(`resumeCursor`) and relearns the frontier from the fires.
+(`resumeCursor`) and relearns the frontier from the fires. A `held` dropper that still carries
+its whole load has dropped nothing, so it always starts fresh (below).
 
 ## Starting
 
@@ -118,10 +119,34 @@ by default, and with all of them off the dropper behaves exactly as above.
     An own log counts on the tile it was actually dropped on, by a fire first seen at or after
     the drop. Another part's log, which we cannot see, counts by the first fresh fire from the
     slot after the last lit log's fire to the end of its block (`advanceFresh`).
+  - *The last lap's fire.* A log goes down about 105 ticks before it is lit, so on a lapped
+    row its tile's fire from the previous lap is often still burning at the drop: on a 51-tile
+    lap (204 ticks) that fire is about 100 ticks old, and fires burn 100-199 ticks
+    (`firemaking.rs2`: `100 + random(100)`). Counting it as occupied would skip nearly every
+    tile from lap 2 on and fill the blocks. So a fire the dropper saw appear at tick F (a fresh
+    fire in `FireLedger`) does not block a log whose need tick is F + 200 or later
+    (`fireOutBy`, `FIRE_OUT_TICKS`): it is out before the light can land. The need tick is a
+    lower bound on the light, so this never drops on a fire that can still be burning. A fire
+    already burning when the dropper first saw its tile may be any age and still blocks. A fire
+    tile does not block walking (`blockwalk=no`), so the dropper can stand on it to drop. The
+    rule only helps a dropper that was watching its tiles when the previous lap lit them, so on
+    a lapped row a staggered dropper should be dropping (logged in, cue seen) about a lap
+    before its first log is due. If it arrives later, those first tiles read occupied and skip.
+  - *Spares shorten revisits.* A tile's next log comes round after one lap of logs, minus the
+    empty spares in between. Under 50 logs (200 ticks) the lighter can reach a tile whose last
+    fire still burns. On rs/228's 51-tile lap with `spareTiles` 2, some tiles come round in 47
+    logs (188 ticks). Use `spareTiles` 0 on a 51-tile lap, or 1 on a 53-tile lap, which keeps
+    every revisit at 51 logs or more. `shortestRevisit(plannedTiles(...))` computes it, and the
+    role logs `warning: a tile comes round before its last fire is surely out` at start when
+    it is under 50.
 - **`restock: {kind:'held'}`**: the dropper logs in already carrying its one inventory and never
   restocks. At start it checks the load (spares on top are fine) and throws if it is short. It
   refuses a part that owns more than one inventory, which means `parts` must be 6 for the
-  route's 157 logs. `restockTicks` defaults to 0.
+  route's 157 logs. `restockTicks` defaults to 0. At login, a held dropper that still carries
+  its whole load takes the fresh start (held check, `armed`, trigger, `cue`, catch-up) whatever
+  lies on its tiles. On a lapped row those tiles are shared with earlier inventories, and the
+  logs lying there are other droppers' drops, which `resumeCursor` would otherwise read as its
+  own (rs/228's lab: a late dropper printed `resume cursor 9` and dropped nothing).
 - **`cueAt: 'written'`** (with `start: 'cue'`; the default is `'seen'`): a dropper that logs in
   after the go file was written counts from the file's `ms`, not from the tick it sees it.
   `start = tick_now - round((Date.now() - ms) / tickMs) + 1 + reveal + lead` (`cueTick`), with
@@ -155,7 +180,8 @@ Log lines: `phase` (restock, armed, dropping), `start`, `drop` (`i`, tier, tick,
 need, lit; `early` if it went down more than 100 ticks before its need; `slot` and `tile` with
 `skipOccupied`), `progress` every 10 lit, `lost`, `restocked` (ticks), `fm-row: finished`. The
 opt-ins add `skip` and `skip: block full` (i, from, to), `held` (the load checked), `cue`
-(seenTick, writtenMs, cueTick) and `catch-up` (lit, slot).
+(seenTick, writtenMs, cueTick) and `catch-up` (lit, slot). A layout whose shortest revisit is
+under 50 logs logs `warning: a tile comes round before its last fire is surely out`.
 
 ## Lab acceptance
 
@@ -203,11 +229,18 @@ Where each number comes from:
 - **Bank restock** is written (Falador east by default; `withdrawMany` of the inventory's tiers)
   but untested; the lab restocked by `::give`. Measure a trip from the chosen row, and set
   `restockTicks` and `parts` from `maxRestockTicks`.
-- **The opt-ins are unit-tested only.** No lab run has exercised `skipOccupied`, `held` or
-  `cueAt: 'written'` with its catch-up against a server yet. rs/228 labs them first.
+- **`skipOccupied` is unit-tested only.** rs/228's lab run 1 (51-tile lap, six held droppers,
+  `cueAt: 'written'`, staggered logins) exercised `held`, the written cue and catch-up: droppers
+  0-3 dropped 112 logs and all 112 were lit. It found the two faults fixed above (a late held
+  dropper's resume, and the last lap's fire). No lab run has had `skipOccupied` on yet.
 - **Restart with `skipOccupied`** resumes by the planned tiles (`resumeCursor`), so after skips in
-  the current block it can be off by up to `spareTiles` logs. A held dropper's lab plan does not
-  restart mid-row.
+  the current block it can be off by up to `spareTiles` logs.
+- **A held dropper restarting mid-row** (it carries part of its load) still resumes from the
+  logs it sees on its tiles, and on a lapped row those can be other droppers' logs. Logs it
+  carries as spares hide up to that many of its own drops, so it reads as not started.
+- **The fire-age rule trusts continuous watching.** The ledger records a fire on its tiles in
+  view, each tick. If a tile is out of view while its fire burns out and a new one is lit, the
+  new fire inherits the old one's tick and reads as out too early.
 - **Catch-up trusts a burning pair.** Two foreign fires on consecutive planned tiles, within
   SCORED's reach on schedule, would put the frontier too far on, and logs would turn public early.
 - **Demo.** No demo run, and no demo credentials for `cairn_f01`/`f02` yet (they would go in

@@ -13,7 +13,9 @@ import {
     cueTick,
     dropTarget,
     earliestDrop,
+    FIRE_OUT_TICKS,
     FireLedger,
+    fireOutBy,
     FmRow,
     GO_FILE,
     fmRowOptions,
@@ -30,8 +32,10 @@ import {
     placeSlot,
     plannedTiles,
     REVEAL_TICKS,
+    ROLL_TICKS,
     resumeCursor,
     rowPlan,
+    shortestRevisit,
     snakeTile,
     type Pace,
     type Progress
@@ -474,7 +478,7 @@ function fakeRole(options: Record<string, unknown>) {
         groundItems: [] as Item[],
         nearbyPlayers: []
     };
-    const sdk = { getState: () => state, onStateUpdate: () => () => {}, scanNearbyLocs: async () => state.nearbyLocs };
+    const sdk = { getState: () => state, onStateUpdate: () => () => {}, scanNearbyLocs: async () => state.nearbyLocs, scanGroundItems: async () => state.groundItems };
     const ctx = { sdk, bot: {}, account: 'cairn_d01', options, log: (m: string, d?: Record<string, unknown>) => logs.push({ m, d }), signal: new AbortController().signal } as unknown as RoleContext;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const role = new FmRow(ctx) as any;
@@ -531,5 +535,103 @@ describe('role wiring', () => {
         expect(logs.at(-1)).toMatchObject({ m: 'cue', d: { seenTick: 1000, cueTick: 900 } });
         const seen = fakeRole({ start: 'cue', cueDir: dir });
         expect(await seen.role.trigger()).toBe(1000);
+    });
+});
+
+// ------------------------------------------------------------------ rs/228's lab: the 51-tile lapped row
+
+const run = (x0: number, x1: number, z: number) => Array.from({ length: Math.abs(x1 - x0) + 1 }, (_, n) => ({ x: x0 + Math.sign(x1 - x0) * n, z }));
+/** `3222-3218@3219;3218-3243@3218;3242-3223@3219`, confirmed in the lab: every gap a 4-tick chain. */
+const ROW51 = [...run(3222, 3218, 3219), ...run(3218, 3243, 3218), ...run(3242, 3223, 3219)];
+const ROW51_OPTS = { tiles: ROW51.map(t => [t.x, t.z]), parts: 6 };
+
+describe('lapped row: a held dropper that logs in late', () => {
+    const plan51 = rowPlan(ROW51);
+    const own5 = ownLogs(157, 5, 6);
+    // Inventory 3's logs 95-99, down and not lit yet, lie on the tiles of part 5's logs 146-150.
+    const foreign = [95, 96, 97, 98, 99].map(i => ({ name: 'Magic logs', ...plan51[i]!.tile }));
+
+    test('resumeCursor: still carrying its whole load, it has dropped nothing, whatever lies on its tiles', () => {
+        expect(ROW51).toHaveLength(51);
+        expect(plan51[146]!.tile).toEqual(plan51[95]!.tile);
+        // From the ground alone the other droppers' logs read as its own.
+        expect(resumeCursor(plan51, own5, foreign)).toBe(11);
+        const holds = (n: number) => (tier: { name: string }) => (tier.name === 'Magic logs' ? n : 0);
+        // 17 logs plus spares, or exactly 17.
+        expect(resumeCursor(plan51, own5, foreign, holds(21))).toBe(0);
+        expect(resumeCursor(plan51, own5, foreign, holds(17))).toBe(0);
+        // Some already dropped: a real restart, resumed from the ground as before.
+        expect(resumeCursor(plan51, own5, foreign, holds(10))).toBe(11);
+    });
+
+    test('the role takes the fresh-start path (arm, held check, cue) instead of `resume`', async () => {
+        const { role, state, logs } = fakeRole({ ...ROW51_OPTS, part: 5, restock: { kind: 'held' }, start: 'cue', cueAt: 'written' });
+        state.groundItems = foreign;
+        state.inventory = Array.from({ length: 21 }, (_, slot) => ({ name: 'Magic logs', count: 1, slot }));
+        expect(await role.resume()).toBe(false);
+        expect(role.cursor).toBe(0);
+        expect(logs.map(l => l.m)).not.toContain('resume');
+        // Not a held dropper: the ground decides, as before.
+        const bank = fakeRole({ ...ROW51_OPTS, part: 5 });
+        bank.state.groundItems = foreign;
+        bank.state.inventory = state.inventory;
+        expect(await bank.role.resume()).toBe(true);
+        expect(bank.logs.at(-1)).toMatchObject({ m: 'resume', d: { cursor: 11 } });
+    });
+});
+
+describe('lapped row: skipOccupied and the last lap’s fire', () => {
+    test('fireOutBy: a fire seen lit at F is out for a log needed at F + 200 or later; unseen starts never are', () => {
+        expect(FIRE_OUT_TICKS).toBe(200);
+        expect(fireOutBy(900, 1100)).toBe(true);
+        expect(fireOutBy(900, 1099)).toBe(false);
+        expect(fireOutBy(null, 1_000_000)).toBe(false);
+        const t = { x: 3230, z: 3218 };
+        expect(occupied(t, [{ name: 'Fire', ...t }], [], true)).toBe(false);
+        expect(occupied(t, [{ name: 'Fire', ...t }], [{ name: 'Bones', ...t }], true)).toBe(true);
+    });
+
+    async function litAt(lit: number, start: number) {
+        const f = fakeRole({ ...ROW51_OPTS, part: 0, skipOccupied: true, spareTiles: 0 });
+        f.state.player = { worldX: ROW51[0]!.x, worldZ: ROW51[0]!.z };
+        // The dropper watches log 0's tile clear, then sees the last lap's fire lit on it.
+        f.state.tick = lit - 10;
+        await f.role.observe(f.state);
+        f.state.nearbyLocs = [...f.state.nearbyLocs, { name: 'Fire', ...ROW51[0]! }];
+        f.state.tick = lit;
+        await f.role.observe(f.state);
+        f.state.tick = lit + 100;
+        f.role.start = start;
+        return f;
+    }
+
+    test('a fire it saw lit 200 ticks before the log is needed takes the log; a younger one is skipped', async () => {
+        const out = await litAt(900, 1100);
+        expect(out.role.ledger.freshSince(ROW51[0])).toBe(900);
+        expect(out.role.chooseTile(0, out.state)).toEqual(ROW51[0]);
+        expect(out.logs.map(l => l.m)).not.toContain('skip');
+        const young = await litAt(900, 1099);
+        expect(young.role.chooseTile(0, young.state)).toEqual(ROW51[1]);
+        expect(young.logs.at(-1)).toMatchObject({ m: 'skip', d: { i: 0, from: 0, to: 1 } });
+    });
+
+    test('a fire already burning when first seen stays occupied', async () => {
+        const f = fakeRole({ ...ROW51_OPTS, part: 0, skipOccupied: true, spareTiles: 0 });
+        f.state.player = { worldX: ROW51[0]!.x, worldZ: ROW51[0]!.z };
+        f.state.nearbyLocs = [{ name: 'Tree', x: 0, z: 0 }, { name: 'Fire', ...ROW51[0]! }];
+        await f.role.observe(f.state);
+        f.role.start = 1_000_000;
+        expect(f.role.chooseTile(0, f.state)).toEqual(ROW51[1]);
+    });
+
+    test('shortestRevisit: spares bring a 51-lap round in 47 logs; spareTiles 0 there, or 1 on a 53-lap, keeps 51', () => {
+        expect(shortestRevisit(plannedTiles(ROW51, 6, 2))).toBe(47);
+        expect(ROLL_TICKS * 47).toBeLessThan(FIRE_OUT_TICKS);
+        expect(shortestRevisit(plannedTiles(ROW51, 6, 0))).toBe(51);
+        const ROW53 = [...ROW51, { x: 3222, z: 3220 }, { x: 3222, z: 3221 }];
+        expect(shortestRevisit(plannedTiles(ROW53, 6, 1))).toBe(51);
+        // S03's default snake comes round in 54.
+        expect(shortestRevisit(plannedTiles(LAB_ROW, 1, 0))).toBe(54);
+        expect(shortestRevisit(plannedTiles(LIST.slice(0, 1).concat(Array.from({ length: 200 }, (_, n) => ({ x: n, z: 0 }))), 1, 0))).toBeNull();
     });
 });
