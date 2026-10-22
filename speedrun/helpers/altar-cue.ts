@@ -362,6 +362,68 @@ export class MissBench {
     }
 }
 
+// ------------------------------------------------------------------ the top-up ask (S18)
+
+/**
+ * S18's top-up courier (bone-giver.ts, mode on-request) can't see the scored account's
+ * inventory, and the trade screen doesn't show its free slots, so the scored side sizes each
+ * load (SUPPLIES.md H14.x) and writes it here. It writes on the frame that shows the trade
+ * open: from then until the trade ends it sends nothing else, so its free slots can't change
+ * under the ask. The courier offers what the ask names, each item with one press, and takes
+ * only an ask written after it saw the trade open (less `ASK_SLACK_MS` for the two clients'
+ * frame arrivals) and newer than the last one it served, so an ask left over from an earlier
+ * trade is never sized onto this one.
+ */
+export const ASK_FILE = 'topup-ask.json';
+
+/** The two clients see a frame within a few ms of each other on one machine; this covers a slow one. */
+export const ASK_SLACK_MS = 300;
+
+/** One item the scored side wants: a case-insensitive name pattern, and a count or every one the courier holds. */
+export interface AskItem {
+    item: string;
+    count: number | 'all';
+}
+
+export interface TopUpAsk {
+    v: 2;
+    items: AskItem[];
+    /** Date.now() at the write. */
+    ms: number;
+}
+
+function askError(items: unknown): string | null {
+    if (!Array.isArray(items) || items.length === 0) return 'an ask needs at least one item';
+    for (const a of items as AskItem[]) {
+        if (typeof a?.item !== 'string' || !a.item) return 'an ask item needs a name pattern';
+        try {
+            new RegExp(a.item, 'i');
+        } catch {
+            return `an ask item's pattern does not compile: ${a.item}`;
+        }
+        if (a.count !== 'all' && !(Number.isInteger(a.count) && a.count >= 1)) return `an ask item's count must be a whole number of at least 1 or 'all' (got ${JSON.stringify(a.count)})`;
+    }
+    return null;
+}
+
+export function writeTopUpAsk(dir: string, items: AskItem[], ms = Date.now()): TopUpAsk {
+    const err = askError(items);
+    if (err) throw new Error(err);
+    const ask: TopUpAsk = { v: 2, items: items.map(a => ({ item: a.item, count: a.count })), ms };
+    writeJsonAtomicSync(join(dir, ASK_FILE), ask);
+    return ask;
+}
+
+export function readTopUpAsk(dir: string): TopUpAsk | null {
+    const a = readJson<TopUpAsk>(join(dir, ASK_FILE));
+    return a && a.v === 2 && Number.isFinite(a.ms) && askError(a.items) === null ? a : null;
+}
+
+/** The ask for the trade the courier saw open at `openMs`: written since then (less the slack) and after the last one served. */
+export function usableAsk(ask: TopUpAsk | null, openMs: number, lastServedMs: number): TopUpAsk | null {
+    return ask && ask.ms >= openMs - ASK_SLACK_MS && ask.ms > lastServedMs ? ask : null;
+}
+
 // ------------------------------------------------------------------ files
 
 export function writeJsonAtomicSync(path: string, value: unknown): void {
