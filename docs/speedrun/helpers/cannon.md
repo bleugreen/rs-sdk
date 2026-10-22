@@ -185,3 +185,31 @@ receiver cairn_h76 with `%mcannon` set by staff command (not a real quest run):
 | 0 (not started) | set + 100 balls, one trade | **4 ticks** | yes | "You can't set up this cannon." | 5 / 4 ticks |
 
 4 ticks is the receiver floor SUPPLIES.md measured for a few stacks.
+
+### Demo leg (rs-sdk-demo, 2026-10-22 00:56-01:06 UTC)
+
+No throwaway has done Dwarf Cannon, so the acceptance ran as a round trip of h92's spare set
+with a fresh account, on Falador west bank's floor (holder 2945,3369, receiver 2944,3369):
+
+| Leg | Giver | Receiver | One trade | Items | Receiver clock | Giver clock |
+|---|---|---|---|---|---|---|
+| 1 | cairn_h92 (serve) | cairn_h93, fresh (`cannon-receiver.ts`) | yes | base, stand, barrels, furnace, 100 balls | 8 ticks | 6 |
+| 2 | cairn_h93 (serve) | cairn_h92, quest complete (serve `returnTile`) | yes | base, stand, barrels, furnace, 100 balls | **6 ticks** | 4 |
+
+Both holders found their partner by name hash, with 0 refusals. Leg 2 is the acceptance: a
+quest-complete account receives a set and balls in one trade. Leg 1's 8 ticks are likely
+inflated by the stand-in's own measurement. It counts the holder's request only once it is on
+its own tile, so it missed the one sent while it walked in, clicked after its 30-tick wait, and
+the 8 likely include walking to the holder. Set-up was not tried on the demo.
+
+h92's bank, read with the bank open before the leg and again after it banked the returned load,
+was identical (inventory empty both times):
+
+| Item | Before | After |
+|---|---|---|
+| Cannon base, stand, barrels, furnace | 2 each | 2 each |
+| Cannonball | 1,416 | 1,416 |
+| Coins | 4,246 | 4,246 |
+| Ammo mould / Instruction manual | 3 / 2 | 3 / 2 |
+
+During the leg, h92's load left 1 set and 1,316 balls in its bank.

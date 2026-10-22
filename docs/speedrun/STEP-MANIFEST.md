@@ -197,7 +197,7 @@ are filed under main and held until tenet 15 is answered.
 |---|---|---|---|
 | H1 mule, hand-off and quest-item giver | S01, every helper trade | on rs/41's branch (rs/49, #34) | the step packages and per-tile positioning (section 4) are rs/41's, no issue yet; quest items rs/126, rs/173 |
 | H2 stun-pack courier | S18 | on rs/41's branch (rs/141): `bone-giver.ts`'s S18 on-request mode; the Charge and Fletching stacks building (rs/163, held: not before 15:25 PDT) | rs/163's execution 2 extends `bone-giver.ts`; there is no `stun-courier.ts` |
-| H3 cannon holder | S14, S27 | on rs/41's branch (rs/125): `cannon.ts`; the hand-off lab-verified (rs/189), demo leg pending | cairn_h92 holds two sets and 1,416 balls (rs/41, 15:00 PDT); `cannon.ts` serve mode hands over a set and balls in one trade, 4 ticks on the receiver's clock in the lab; the quest gates buying and Set-up, not trading |
+| H3 cannon holder | S14, S27 | on rs/41's branch (rs/125): `cannon.ts`; the hand-off verified in the lab and on the demo (rs/189) | cairn_h92 holds two sets and 1,416 balls (rs/41, 15:00 PDT); `cannon.ts` serve mode hands over a set and balls in one trade: 4 ticks on the receiver's clock in the lab, 6 on the demo with h92 as the quest-complete receiver; the quest gates buying and Set-up, not trading |
 | H4 in-room essence giver | S06, S21 | on rs/41's branch (rs/117, rs/141): `altar-giver.ts`; the direct path building (rs/163) | `altar-giver.ts`, `altar-cue.ts`, `altar-room.ts`; rs/163's direct-path transport (PR #144; lab 21 of 21, host slot 22:05Z); there is no `rc-giver.ts`. rs/163 sized the body-altar roster at 14 givers on 15 body talismans, no keeper (0 nature talismans; a ~90-tick round trip, e; RUN-ORDER.md section 7) |
 | H5 anvil helper | S25a | building (rs/188) | `anvil.ts`, new |
 | H6 log-row dropper | S03 | building (rs/187) | `fm-row.ts`, new, first in rs/187's queue |
@@ -1387,7 +1387,13 @@ bones, bidder, grapes, wine maker, coins) are supply, not step scripts; `SUPPLIE
 - **Acceptance:** demo, a throwaway that has completed Dwarf Cannon receives a set and balls in one
   trade. **Lab, met** (`speedrun/lab/cannon-handoff.ts`, receiver quest state set by staff command):
   one trade, 4 ticks on the receiver's clock, Set-up works for the quest-complete receiver only.
-  Demo: pending.
+  **Demo, met** (2026-10-22 01:00 UTC, the spare set and 100 balls, a round trip with a fresh
+  cairn_h93): one trade each way. Leg 2 is the acceptance: cairn_h93 served the load back and
+  cairn_h92, quest complete, received it in **6 ticks on its own clock**. Leg 1 (h92 to h93) took
+  8 ticks on h93's clock, which is likely inflated by the stand-in receiver's measurement: it
+  counts the holder's request only once it is on its own tile, so it missed the request sent
+  while it walked in, clicked after its 30-tick wait, and the 8 likely include walking to the
+  holder. h92's bank was unchanged across the leg (`helpers/cannon.md`, Demo leg).
 
 ### H4. In-room essence giver: `speedrun/helpers/altar-giver.ts` (on rs/41's branch, rs/117 and rs/141; the direct path building, rs/163)
 
