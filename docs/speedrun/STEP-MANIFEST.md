@@ -198,7 +198,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 20 | 21 | Romeo & Juliet | `speedrun/quests/romeo-juliet.ts` | S24 | 211 | 211 | 301 | ~90 | overlay | none (page counts only) | building (rs/185, held: tenet 15) |
 | 21 | 22 | Druidic Ritual | `speedrun/quests/druidic-ritual.ts` | S24 | 220 | 220 | 284 | ~64 | overlay | none (page counts only) | building (rs/185, held: tenet 15) |
 | 22 | 24 | Magic (strike, enchant) | `speedrun/skills/magic.ts` | S02, S04 | 213 | 208 | ~231 | ~23 | overlay | `magic-strike.ts`, `magic-cadence.ts` | **on main as #255** (acec0aec, rs/316, inside the floor); **browser client, lab: S02 20.3 m (best 17), S04 192.7 m (best 191)** (rs/285, fold-in 17); on lite before: S02 14 m (12 / 12 / 12 / 17 in the lab, 17 on the demo; best 12); **demo-confirmed for the enchant cadence** (cairn_m01: 20 sapphire enchants in 60 ticks, 19 of 19 gaps at 3); S04 191 m (lab, 2 of 2) with `handBack: 'keep'`, the last 20 rings to H4's swap |
-| 23 | 23 | Fishing Contest | `speedrun/quests/fishing-contest.ts` | S20 | 300 | 300 | 376 | ~76 | overlay | `quest-smallskill-fishingcompo.ts` | building: **rs/388** (rs/185's module, on **the self route**; the helper carp is untradeable; lab 3/3 pending; fold-in 22) |
+| 23 | 23 | Fishing Contest | `speedrun/quests/fishing-contest.ts` | S20 | 314 | 313 | 376 | ~62 | overlay | `quest-smallskill-fishingcompo.ts` | **lab-accepted on lite** (rs/388, rs/185's module 5bd450ad on **the self route**, 6 of 6 from the arrival tile: burst 314, fixed 327.3, m; fold-in 23); the helper carp is untradeable; the browser re-run pending rs/309 |
 | 24 | 27 | Herblore | `speedrun/skills/herblore.ts` | S25e | 167 | 167 | ~200 e | ~33 | overlay | `delayfree-cycle.ts` | **lab-accepted on rs/302's branch, not on main** (rs/302, browser, n = 3: 167 from Herblore 28, 90 of 90 work ticks at 5 events, 0 overBudget; fold-in 22); `herblore.ts` is on main (c8ea24da, #302) only as crafting's import; the demo on cairn_h85 pending; its snapshot joins the floor's pending list when rs/158 sends the number |
 | 25 | 26 | Pre-MM cannon session | `speedrun/skills/ranged.ts` (`cannonSession`) | S14 | 118 | 104 | ~162 | ~58 | overlay | `quest-premm-cannon.ts`, `ranged-cannon.ts` | on main, 8a741554 (#212, rs/252's snapshot); lab-accepted (S27 1,972 i on the module's rates, S14 118 m; rs/199, PR #207); lab is the final tier (a demo test is not feasible) |
 | 26 | 15 | Prayer (bones inside S07; the booth as fallback) | `speedrun/skills/woodcutting.ts` bury option; `speedrun/skills/prayer.ts` for the booth | S25b (S10a retired) | 95 | 65 | 735 (the booth) | ~670 | in-page with S07 | `bones-wc.ts`, `prayer-bury.ts` | bury in S07: building (rs/211); gate-off plain + bury on main (rs/162, 3dfc217f, #165); booth: building (rs/186, held: tenet 15) |
@@ -2120,16 +2120,19 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   pass are untradeable: `fishing.obj:378`, `quest_fishingcompo.obj`), 2 Camelot casts (T19-20's is the
   leg's).
 - **Postconditions:** 2,437 Fishing (78 with Sea Slug); 1 QP.
-- **Ticks:** expected **300** (burst, i, fold-in 22), best **300**, fixed fallback **323**, fallback
-  **376** (stock): the helper-carp figures + 142 for `fishing_contest.md`'s self route, which replaces steps 4-5's 69 ticks with ~211: the Camelot teleport 4, a run to McGrubor's railing west side (2661,3500) 58 m, the squeeze 2, the vines 38 m, the dig ~3 i, back 40 m, the squeeze 2, the gate 62 m, the garlic stash in the pipe ~4 i, and two of Bonzo's pages; the walks measured, the dig, the stash and the carp catch inferred from their scripts. Before: 158 / 158 / 181 / 234, `quests/README.md` §3 row's 223 / 200 / 276 less steps 1-2's 42, the
+- **Ticks:** expected **314** (burst, m (lab, lite), fold-in 23), best **313**, fixed fallback **327.3**,
+  fallback **376** (stock): rs/388, lab, lite, bgsrv-mac, 300 ms, 6 of 6 from the arrival tile (2820,3486),
+  module 5bd450ad: burst 315 / 314 / 313 (mean 314), fixed 324 / 329 / 329 (mean 327.3); segment J varies
+  with the Sinister Stranger (9 ticks without his pages, 13 with); the browser re-run pending rs/309.
+  Before: 300 / 300 / 323 (i, fold-in 22), the helper-carp figures + 142 for `fishing_contest.md`'s self route, which replaces steps 4-5's 69 ticks with ~211: the Camelot teleport 4, a run to McGrubor's railing west side (2661,3500) 58 m, the squeeze 2, the vines 38 m, the dig ~3 i, back 40 m, the squeeze 2, the gate 62 m, the garlic stash in the pipe ~4 i, and two of Bonzo's pages; the walks measured, the dig, the stash and the carp catch inferred from their scripts. Before: 158 / 158 / 181 / 234, `quests/README.md` §3 row's 223 / 200 / 276 less steps 1-2's 42, the
   Camelot teleport 4 and the run east 36-40 (`fishing_contest.md`), which are T19-20's.
 - **Primitives and mode:** rs/94 `converse`, `act`, `travel.ts`; overlay-driven (H16 is entry 33's).
 - **Logout-unsafe:** inside the contest fence; leaving through the gate resets the contest, and a
   logout inside was not tested (same step).
 - **Acceptance, local:** `quest-smallskill-fishingcompo.ts` through the module on the self route. Pass:
-  within 10% of 323, counted from (2820,3486); 3 of 3 (rs/388, under rs/185). **First run** (rs/388, lab,
-  lite, fixed dialogue, n = 1): 327 m from the arrival tile; no re-price on one run (3 burst and 2
-  more fixed runs follow).
+  within 10% of 323, counted from (2820,3486); 3 of 3 (rs/388, under rs/185). **Met** (rs/388, lab, lite,
+  6 of 6: fixed 324 / 329 / 329, burst 315 / 314 / 313; fold-in 23); fold-in 22's first run, 327 m
+  (fixed, n = 1), before it.
 - **Start from:** `quest-smallskill-fishingcompo.ts`.
 - **logoutSafe:** yes after the fence.
 
