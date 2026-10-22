@@ -554,16 +554,60 @@ The model's fixed part to the Gnome course start is 25 (S00, kit, top-up) + 595 
 course start, the lab's 571-592 to the gate plus the pass, section 1) = 620. Session A was on that
 pace to the gate (14 + 561 to arrive about tick 570, against the lab's 571-592).
 
-### 7.4 The resume (rs/310)
+### 7.4 Session C: the resume, Gnome 1 -> 52 (rs/310, 20:47-20:57Z)
 
-The resume runs from a worktree of rs/147's mission branch at 71c86565, which carries rs/309's
-shared layer (#321, c4e2a681): `passGate` in `speedrun/lib/travel.ts` clears Femi's scene and
-confirms the far side, and a world click while the region loads is reported as `scene_loading`,
-never as a success. Served-page check before login, on the bundle built in `~/rs-310`: `eatAt` 4
-hits and rs/309's `sceneReady` 1 hit; `GNOME_STRONGHOLD_GATE` is Bun-side, in the worktree's
-`travel.ts` and `agility.ts`. The launch is session B's, with the cairn_twin gate tab back (2
-logins), `--claim-owner=rs/310`, and the same `--log`.
+Worktree `~/rs-310` at b1436d00 (rs/147's mission branch, carrying rs/309's #321 c4e2a681,
+aa3f012c's auto-retaliate off and main's floor dd225788), page served from it. Served-page check
+before login: `eatAt` 4 hits, rs/309's `sceneReady` 1 hit, served `client.js` byte-identical to
+the worktree's build; `GNOME_STRONGHOLD_GATE` is Bun-side (in the worktree's `travel.ts` and
+`agility.ts`). Launch: session B's line with the cairn_twin gate tab back (2 logins),
+`--claim-owner=rs/310`, `SPEEDRUN_TICK_MS=400` (the harness's wall-clock bounds) and the same
+`--log`. The Chrome profile was new (cold on-demand cache). Demo: **400 ms ticks** (worldfeed
+hello `tickMs 400`), process token `mvjz3zys` at the start; 38 of our accounts online before the
+claim. The claim kept the twin's gate timer off its :00/:30 reads from 20:46Z to 21:08Z.
 
-Status: staged on the twin and waiting for a window. Main's twin order for 2026-10-22 puts this
-resume last, after rs/185's browser runs, host's gate work, rs/393's `--until=S14` dress rehearsal
-and rs/439's Firemaking, and only if about 55 minutes remain before the floor freeze.
+| Row | Result |
+|---|---|
+| `(gate) players` | 1,237 online |
+| `(gate) direct` (cairn_twin, 20:47:09Z) | (a) 60/60, (c) 0 catch-ups/min, tick p90 480.7 ms (report line 400 is a 300 ms calibration); edge iad, TCP connect p50 2.1 ms |
+| `(gate) in-page before` | (a) 60/60, (c) 0/min, loop p10 72.5/s, tick p90 450 ms |
+| `(gate) recording` | `~/recordings/rs310-agility-20261022T204646Z.mkv` on `:10` (1,108 s) |
+| `(gate) live frame` | PASS: cairn_jumps's tab the only window, maximised, in front; difference 2.3 |
+| Inventory at login | knife, 2 sharks, 25 cake slots (the kit's 7 and the top-up's 18, one partly eaten); S01 skipped |
+| `agility:gate` north | **14 ticks, 2 clicks, 1 dialogue** (Femi's first visit cleared), ended north: rs/309's helper |
+| `agility:walk-gnome` | **49 ticks** (4-53), from the gate to the course |
+| `agility:gnome` 1 -> 52 | **1,043 ticks** (53-1096), 17 laps, 124 obstacles; clean laps 59 (one 60); 0 falls, 0 eats; program frames p50 400, p90 480 ms, 0 catch-ups |
+| `agility:gate` south | 6 ticks, 1 click, 0 dialogues |
+| `agility:walk-wilderness` | **failed** at tick 1191 after 95 ticks: `walk to (2561,3311): Stuck at (2537, 3351)` |
+| Logout | click on tick 1191, confirmed by the page; session 1,194 ticks |
+| `(gate) in-page after` | (a) 60/60, (c) 0/min, loop p10 72.8/s |
+| `(players) end` | 1,260 |
+| TICKMON | 0 glued ticks in every minute; period 399-400 ms |
+
+**Why the walk failed** (measured on the recording, read in the code). The leg to (2539,3351)
+arrived at 20:57:09Z, and `bot.walkTo(2561,3311)` started while the browser client was rebuilding
+the scene: the frame at about 20:57:09.4Z shows 'Loading - please wait.' over the player. Both
+tries returned `Stuck at` within about 1.6 s, and no walk toward the lever was sent. The map there
+is open ground (the only door on the path is the lever house's at (2564,3310)). The chain: since
+#321 a world click while `state.sceneReady` is false returns `scene_loading`, not success
+(`sdk/index.ts`, `sendAction`); `walkStepToward` (`sdk/actions-helpers.ts`) turns any failed
+dispatch into 'stuck' at once; and `walkTo` (`sdk/actions.ts`) turns three of those, with no
+door nearby, into `Stuck at` within milliseconds. So on the browser client a walk leg that starts
+during a rebuild fails outright: region crossings, and every teleport, lever or spirit-tree
+landing or relog followed by a walk. The lab's lite client builds within the tick and never shows
+it. The fix is rs/485 (walkStepToward waits for `sceneReady`, then judges movement and re-sends
+once).
+
+### 7.5 Totals after session C
+
+| | Ticks |
+|---|---|
+| Sessions | 576 + 11 + 1,194 = 1,781 |
+| Playtime by the log | **1,784** (each session's last tick + 1) |
+| Agility 52 reached | playtime **1,685** by the log; hiscore **1,682** (Agility and Overall, at 400 ms/tick), 3 under the log |
+| Model to 52 (section 6.7's fixed parts) | 25 + 595 + 1,042 = 1,662 |
+| Divergence at 52 | **+23** by the log (+20 by the hiscore), all in the walk to the Gnome course: 561 + 9 + 49 = 619 against 595. That is the gate stall: session A's failed tries at the gate, session B's 11 ticks, and the relog and gate pass in session C. Gnome 1 -> 52 itself ran 1,043 against 1,042 |
+| Lost to the walk-wilderness failure | the logout's 3 ticks, plus the next session's relog cost (about 20, HARNESS.md "Relogs"); the 95 ticks walked still count, since the resume starts from (2538,3350) |
+
+The resume from (2538,3350) waits for rs/485's tested commit: main approved overlaying its sdk
+files byte-identical on `~/rs-310` (the sdk runs outside the page, so the bundle is unchanged).
