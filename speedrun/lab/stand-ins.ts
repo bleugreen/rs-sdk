@@ -57,20 +57,6 @@ const LEGS = 'speedrun/runner/legs.ts TILES';
 
 export const STAND_INS: readonly StandIn[] = [
     {
-        stepId: 'S05', name: "Doric's Quest (with H4, its segment A)", owner: 'rs/416', quest: 'doric',
-        varps: [{ name: 'doricquest', value: 100, source: `${QS} doric: varp 31, complete = 100` }],
-        xp: [{ skill: 'mining', base: 1300, source: `${MAN} S05 postconditions; quest_doric.rs2 stat_advance(mining, 13000): Mining 1-49 (${RO} S05)` }],
-        qp: { add: 1, source: `${QS} doric` },
-        give: [
-            { obj: 'air_talisman', n: 1, source: `${MAN} ledger H4 in (T05-06's ruins, S06)` },
-            { obj: 'lawrune', n: 2, source: `${MAN} ledger H4 in (T05-06's teleport)` },
-            { obj: 'airrune', n: 6, source: `${MAN} ledger H4 in (T05-06's teleport)` },
-        ],
-        take: [{ item: /^ring of /i, source: `${MAN} ledger H4 out: the 20 enchanted rings kept from S04, swapped out` }],
-        end: { x: 2952, z: 3451, source: `${LEGS}.doric (T05-06's start)` },
-        notes: "Doric's 180 coins are dropped at the step's exit (plan v33), so none are given; the clay and ores come in with H4 and go to Doric, net nothing.",
-    },
-    {
         stepId: 'S15', name: 'Monkey Madness', owner: 'rs/185', quest: 'mm',
         varps: [{ name: 'mm_main', value: 9, source: `${QS} mm: varp 365, complete >= 9 (10, Daero's training, inferred at Z)` }],
         xp: [
@@ -114,19 +100,6 @@ export const STAND_INS: readonly StandIn[] = [
             { item: /^(lit )?torch$/i, source: `${MAN} ledger S19 out (consumed lit)` },
         ],
         end: { x: 2716, z: 3302, source: `${LEGS}.caroline (T19-20's start)` },
-    },
-    {
-        stepId: 'S23', name: "Cook's Assistant", owner: 'rs/416', quest: 'cook',
-        varps: [{ name: 'cookquest', value: 2, source: `${QS} cook: varp 29, complete = 2` }],
-        xp: [{ skill: 'cooking', base: 300, source: `${MAN} S23 postconditions; quest_cook.rs2: Cooking 1-30 (${RO} S23)` }],
-        qp: { add: 1, source: `${QS} cook` },
-        give: [],
-        take: [
-            { item: /^egg$/i, source: `${MAN} ledger S23 out (hand-in)` },
-            { item: /^bucket of milk$/i, source: `${MAN} ledger S23 out (hand-in)` },
-            { item: /^pot of flour$/i, source: `${MAN} ledger S23 out (hand-in)` },
-        ],
-        end: { x: 3209, z: 3215, source: `${LEGS}.cook (T23-24's start)` },
     },
     {
         stepId: 'S24', name: 'Goblin Diplomacy, Druidic Ritual, Romeo and Juliet (with L24a-c)', owner: 'rs/416', quest: 'romeojuliet',
