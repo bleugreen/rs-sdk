@@ -379,11 +379,12 @@ export function gtPlan(): QuestPlan {
         },
         legs: {
             // B casts the Ardougne teleport only from west of x 2600: arrive on Hazelmere's side instead.
+            // On foot: the stronghold's spirit tree talks only once The Grand Tree is complete
+            // (spirit_tree.rs2 [oploc1,ent]), and the village's is behind Elkoy's maze.
             B: async ctx => {
                 if (pos(st(ctx)).x >= 2600) return;
                 await leaveTree(ctx);
-                await go(ctx, STRONGHOLD_TREE, 'to the stronghold spirit tree');
-                await tree(ctx, 'khazard');
+                await outOfStronghold(ctx);
                 await go(ctx, { ...GT.hazelmereLadderFoot, tol: 1 }, "to Hazelmere's ladder");
             },
             // C casts it again from inside Hazelmere's box: leave the box for the battlefield tree, which C takes itself.
@@ -648,12 +649,16 @@ async function gnomeLaps(ctx: StepContext<any>): Promise<void> {
 /** From the stronghold (the course) out of its south gate to Elkoy, where Tree Gnome Village starts. */
 async function toElkoy(ctx: StepContext<any>): Promise<void> {
     if (chebyshev(pos(st(ctx)), ELKOY) <= 2 || inVillage(st(ctx))) return;
-    if (inGnomeStronghold(st(ctx))) {
-        if (gateSide(GNOME_STRONGHOLD_GATE, pos(st(ctx))) !== 'north') await go(ctx, { x: 2461, z: 3388, tol: 2 }, 'to the stronghold gate');
-        const g = await passGate(sdkOf(ctx), GNOME_STRONGHOLD_GATE, GNOME_STRONGHOLD_GATE.sides.south);
-        if (!g.ok) throw new Error(`the Gnome Stronghold gate: ${g.reason}`);
-    }
+    await outOfStronghold(ctx);
     await go(ctx, { ...ELKOY, tol: 1 }, "to Elkoy's maze entrance");
+}
+
+/** Out of the Gnome Stronghold by its south gate (the pathfinder masks the gate, so it is never walked through). */
+async function outOfStronghold(ctx: StepContext<any>): Promise<void> {
+    if (!inGnomeStronghold(st(ctx))) return;
+    if (gateSide(GNOME_STRONGHOLD_GATE, pos(st(ctx))) !== 'north') await go(ctx, { x: 2461, z: 3388, tol: 2 }, 'to the stronghold gate');
+    const g = await passGate(sdkOf(ctx), GNOME_STRONGHOLD_GATE, GNOME_STRONGHOLD_GATE.sides.south);
+    if (!g.ok) throw new Error(`the Gnome Stronghold gate: ${g.reason}`);
 }
 
 /** From beside the village spirit tree (Tree Gnome Village's exit) to the Grand Tree door. */
