@@ -100,6 +100,30 @@ describe('loc, npc and item helpers', () => {
         expect(await p).toMatchObject({ ok: true, ticks: 4, at: { x: 3213, z: 3424, level: 0 } });
         expect(sdk.sent[0]).toEqual({ method: 'sendClickComponent', args: [1164] });
     });
+
+    test('castTeleport ends on the refusal message at once, ok false, instead of waiting out its timeout', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: player(3000, 3000) }));
+        const p = castTeleport(sdk as never, 'varrock');
+        await ticks(sdk, 1, () => ({ gameMessages: [{ type: 0, text: 'A mysterious force blocks your teleport spell!', sender: '', tick: 2, fromSelf: false }] }));
+        expect(await p).toMatchObject({ ok: false, ticks: 1, reason: 'refused: A mysterious force blocks your teleport spell!', at: { x: 3000, z: 3000 } });
+        expect(sdk.sent).toEqual([{ method: 'sendClickComponent', args: [1164] }]);
+    });
+
+    test('castTeleport with a landing predicate takes a jump of 30 tiles or less onto the landing', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: player(3241, 3248) }));
+        const landing = (s: BotWorldState) => Math.abs(s.player!.worldX - 3221) <= 2 && Math.abs(s.player!.worldZ - 3218) <= 2;
+        const p = castTeleport(sdk as never, 'lumbridge', 25, landing);
+        await ticks(sdk, 4, i => (i === 3 ? { player: player(3222, 3219) } : {}));
+        expect(await p).toMatchObject({ ok: true, ticks: 4, at: { x: 3222, z: 3219 } });
+    });
+
+    test('castTeleport ignores a refusal message older than the cast', async () => {
+        const old = { type: 0, text: 'You do not have enough Law Runes to cast this spell.', sender: '', tick: 1, fromSelf: false };
+        const sdk = new FakeSdk(baseState({ tick: 1, player: player(3000, 3000), gameMessages: [old] }));
+        const p = castTeleport(sdk as never, 'varrock');
+        await ticks(sdk, 4, i => (i === 3 ? { player: player(3213, 3424) } : {}));
+        expect(await p).toMatchObject({ ok: true, ticks: 4 });
+    });
 });
 
 describe('actConverse', () => {
