@@ -159,13 +159,25 @@ describe('casting style (O43a)', () => {
             ],
         },
     });
-    const spellFight = async (sdk: FakeSdk, o: Parameters<typeof fight>[2] = {}) => {
+    /** The server's set_attackstyle: a click applies on the next tick, unless `drop` says the player is busy. */
+    const server = (sdk: FakeSdk, drop: (n: number) => boolean = () => false) => {
+        let n = 0;
+        let pending: number | null = null;
+        sdk.onSend = a => { if (a.method === 'sendSetCombatStyle' && !drop(n++)) pending = a.args[0] as number; };
+        return (patch: Partial<BotWorldState> = {}) => {
+            const p = pending;
+            pending = null;
+            return tick(sdk, p === null ? patch : { ...staff(p), ...patch });
+        };
+    };
+    const spellFight = async (sdk: FakeSdk, o: Parameters<typeof fight>[2] = {}, drop?: (n: number) => boolean) => {
+        const step = server(sdk, drop);
         const p = fight(sdk as never, /mordred/i, { spell: 1181, ...o });
-        await tick(sdk);
-        await tick(sdk);
-        await tick(sdk, { nearbyNpcs: [npc(7, 0)] });
+        for (let i = 0; i < 8; i++) await step();
+        await step({ nearbyNpcs: [npc(7, 0)] });
         return p;
     };
+    const castsAndClicks = (sdk: FakeSdk) => sdk.sent.map(a => a.method).filter(m => m === 'sendSetCombatStyle' || m === 'sendSpellOnNpc');
 
     test('off by default: questCastStyle adds nothing and a spell fight sends no style click', async () => {
         expect(castingStyle.style).toBe('normal');
@@ -180,11 +192,14 @@ describe('casting style (O43a)', () => {
         try {
             expect(questCastStyle()).toEqual({ castStyle: 'defensive' });
             const sdk = arena(staff(0));
-            await spellFight(sdk, questCastStyle());
+            const r = await spellFight(sdk, questCastStyle());
+            expect(r).toMatchObject({ end: 'killed', styleClicks: 1 });
             expect(sends(sdk, 'sendSetCombatStyle').map(a => a.args)).toEqual([[2]]);
-            const order = sdk.sent.map(a => a.method).filter(m => m === 'sendSetCombatStyle' || m === 'sendSpellOnNpc');
+            const order = castsAndClicks(sdk);
             expect(order[0]).toBe('sendSetCombatStyle');
-            expect(order.filter(m => m === 'sendSpellOnNpc').length).toBeGreaterThanOrEqual(2);
+            // The first cast waits a tick for the style to show.
+            expect(order[1]).toBe('sendSpellOnNpc');
+            expect(sends(sdk, 'sendSpellOnNpc').length).toBeGreaterThanOrEqual(2);
         } finally {
             castingStyle.style = 'normal';
         }
@@ -192,8 +207,29 @@ describe('casting style (O43a)', () => {
 
     test('idempotent on resume: the defensive style already selected sends no click', async () => {
         const sdk = arena(staff(2));
-        await spellFight(sdk, { castStyle: 'defensive' });
+        expect(await spellFight(sdk, { castStyle: 'defensive' })).toMatchObject({ styleClicks: 0 });
         expect(sends(sdk, 'sendSetCombatStyle')).toEqual([]);
+        expect(castsAndClicks(sdk)[0]).toBe('sendSpellOnNpc');
+    });
+
+    test('a click the server drops (player busy) is re-sent, and no cast goes out until the style shows', async () => {
+        const sdk = arena(staff(0));
+        const r = await spellFight(sdk, { castStyle: 'defensive' }, n => n === 0);
+        expect(r.styleClicks).toBe(2);
+        const order = castsAndClicks(sdk);
+        expect(order.slice(0, 3)).toEqual(['sendSetCombatStyle', 'sendSetCombatStyle', 'sendSpellOnNpc']);
+    });
+
+    test('a style that drops back mid-fight is re-sent', async () => {
+        const sdk = arena(staff(0));
+        const step = server(sdk);
+        const p = fight(sdk as never, /mordred/i, { spell: 1181, castStyle: 'defensive' });
+        await step();
+        await step();
+        await step(staff(0)); // reverted (a weapon swap, a script)
+        await step();
+        await step({ nearbyNpcs: [npc(7, 0)] });
+        expect((await p).styleClicks).toBe(2);
     });
 
     test('melee fights ignore it; an unpublished tab falls back to the staff slot', async () => {
