@@ -113,7 +113,6 @@ try {
     await until('helpersReady', () => status()?.helpersReady === true, 240_000);
     check(true, `helpersReady with lc01-lc03 online and lc04-lc06 logged out (loginOn): ${status()!.accounts.map(a => `${a.account}=${a.state}`).join(' ')}`);
     check(acct('cairn_lc02')?.state === 'online' && acct('cairn_lc03')?.state === 'online', 'the stop left from before the launch kept nobody out (lc02, lc03 online)');
-    check(!!lineAt(/cairn_lc0[23]: cue for S06\/altar written before this launch ignored/) || true, 'stale cue noted in the accounts\' cue logs');
 
     // lc06: no cue for S99/ring within 15 s.
     await until('lc06 expiry', () => !!lineAt(/cairn_lc06: no cue for S99\/ring within/), 60_000);

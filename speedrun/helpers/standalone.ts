@@ -972,8 +972,8 @@ class AccountRun implements Stoppable {
         const { account } = this.entry;
         if (this.halted || !this.gate) return;
         this.state = 'awaiting-cue';
-        const minutes = Math.round(on.waitMs / 60_000);
-        this.L.log(`[launcher] ${account}: logged out until a cue for ${scopeText(on)} opens (at most ${minutes} min)`);
+        const wait = on.waitMs < 120_000 ? `${Math.round(on.waitMs / 1000)} s` : `${Math.round(on.waitMs / 60_000)} min`;
+        this.L.log(`[launcher] ${account}: logged out until a cue for ${scopeText(on)} opens (at most ${wait})`);
         this.L.writeStatus();
         const w = await this.gate.waitForLogin(on.waitMs, this.L.stopRequested);
         if (w.result === 'stopped' || this.L.isStopping) return;
@@ -987,7 +987,7 @@ class AccountRun implements Stoppable {
             return;
         }
         if (w.result === 'expired') {
-            const why = `no cue for ${scopeText(on)} within ${minutes} min`;
+            const why = `no cue for ${scopeText(on)} within ${wait}`;
             this.L.log(`[launcher] !!! ${account}: ${why}: it never logs in`);
             this.neverLogsIn(why, 'expired');
             return;
