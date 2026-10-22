@@ -391,19 +391,21 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     stun actions, after #159's `stay2` bury, entry 4), 3dfc217f (#165, rs/162's plain + bury, the
     knife-off line in force, entry 3), b6950915 (#177: a program faults at start on a parameter key
     it does not declare, so each entry's program keys are the program's declared names) and
-    834f376b (#176, rs/210's tick-cadence monitor). Pending, each moving the floor when it lands (none has a PR number yet):
+    834f376b (#176, rs/210's tick-cadence monitor). Pending, each moving the floor when it lands (none has a PR number yet; main is asked whether its 23:03 PDT list, which leaves out rs/243, the Agility snapshot, 3042ae95 and the courier's side tile, was an omission):
+    **rs/147's Agility snapshot**, to be filed, **first for O40**: without it S11a and S17 fault at
+    start on any page from b6950915 (agility's `untilLevel`, RUN-ORDER.md O40); it also carries the
+    program's `eatAt` opt-in (f95f9558, rs/241's work) and the module default `eatAt: 'land'`
+    (a9298868, rs/270; entry 1);
     **rs/280** (run on after every login and relog, `ensureRunOn`; RUN-ORDER.md O45); **rs/267's
     changes via rs/41's branch**: the trade giver's re-send moved onto `decideRequest` in game ticks
     (commit pending; R25) and the S18 courier holding a side tile (R24), both on the helpers'
     deployed commit before they serve SCORED, and `lib/trade.ts` `openTrade` with the altar giver
-    (3042ae95: the Runecraft stock rung at 9 a cycle and a busy partner's retry at ~2, entry 9); **rs/298**, the Mining S09 snapshot (rs/259's
+    (3042ae95: the Runecraft stock rung at 9 a cycle and a busy partner's retry at ~2, entry 9); **rs/298** (4718c8ae, PR pending), the Mining S09 snapshot (rs/259's
     3fa6fbe4, the ore drop before every band start and restart, R27, and 314989e9, `measureDrops` 120;
     entry 4; the scored S09 needs it); **rs/297**, the Woodcutting S07 snapshot (cairn_chops' raced code
     and any knife-cycle opt-in hunks it needs; entry 3);
     **rs/243** (the second Thieving part: pickpocket's `stopWhenFoodBelow` and `retargetTicks`,
-    entry 6); **rs/147's Agility snapshot**, to be filed (agility's `untilLevel`, closing
-    RUN-ORDER.md O40, the program's `eatAt` opt-in, f95f9558, rs/241's work, and the module default
-    `eatAt: 'land'`, a9298868, rs/270; entry 1); and **rs/281** (the Grand Tree snapshot, with rs/202's door-exit workaround,
+    entry 6); and **rs/281** (the Grand Tree snapshot, with rs/202's door-exit workaround,
     marked removable; the floor already carries #240's fix; entry 8). Gate tooling on main, not floor
     items: 5d22252d (#208, `lib/display.ts`) and c4b79f17 (#213, `lib/tab.ts` window helpers);
   - **the login cap**: our simultaneous demo logins, summed across every host, at most 100 with a
