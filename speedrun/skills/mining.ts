@@ -111,6 +111,15 @@ export function plainTicksPerOre(D: number): number {
     return Math.round((3.61 + t * (3.84 - 3.61)) * 100) / 100;
 }
 
+/**
+ * Drops in one knife stretch before the gate's measured switch-off may fire. Below 63 an iron
+ * roll can fail, and over the 15-63 band's ~92 ores roll luck alone trips a 30-drop check about
+ * 2.6% of the time (0.1% at 60, never at 90+); from 63 every roll succeeds. A false fire holds
+ * plain for 3,000 ticks (~+550 on the 63-99 band), while 120 instead of 60 costs only ~60 more
+ * ores of a genuinely slow knife, so the window is long (docs/speedrun/rehearsals/mining.md).
+ */
+export const GATE_MEASURE_DROPS = 120;
+
 export function parseSteps(steps: string): Array<{ stand: P; rock: P }> {
     return steps.trim().split(/\s+/).map(st => {
         const [a, b] = st.split('>');
@@ -255,6 +264,25 @@ export const EMPTY_ROCKS: ReadonlySet<number> = new Set([450, 451, 452, 453]);
 const liveRock = (s: BotWorldState, p: P): NearbyLoc | undefined =>
     s.nearbyLocs.find(l => l.x === p[0] && l.z === p[1] && !EMPTY_ROCKS.has(l.id) && l.optionsWithIndex.some(o => MINE.test(o.text)));
 const here = (s: BotWorldState): P => [s.player?.worldX ?? 0, s.player?.worldZ ?? 0];
+const ORE = /^(iron|copper|tin) ore$/i;
+
+/**
+ * Drops every ore in the pack, 5 a tick, and returns how many. knife-mine drops each ore the tick
+ * after it lands, so an interrupted run (an abort, a slip, a fault, a logout) can leave its last ore
+ * behind; prep keeps only 4 slots free, and a full pack gives no xp, which knife-mine reads as a
+ * stall (cairn_rocks on the demo: 5 such ores filled the pack at Mining 92).
+ */
+export async function dropOres(sdk: StepContext<any>['sdk']): Promise<number> {
+    let n = 0;
+    for (let guard = 0; guard < 8; guard++) {
+        const ores = sdk.getState()!.inventory.filter(i => ORE.test(i.name)).slice(0, 5);
+        if (!ores.length) break;
+        await Promise.all(ores.map(i => sdk.sendDropItem(i.slot)));
+        n += ores.length;
+        await nextTick(sdk);
+    }
+    return n;
+}
 const freeSlots = (s: BotWorldState) => 28 - s.inventory.length;
 
 function toNumber(v: unknown, name: string): number {
@@ -555,6 +583,15 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
     const segments: GatedSegment[] = [];
     const restarts: Array<{ tick: number; why: string; D: number; rotation: string }> = [];
     const restartWaits: Array<{ tick: number; ticks: number; after: string; next: string; ok: boolean }> = [];
+    const oreDrops: Array<{ tick: number; ores: number }> = [];
+    const clearOres = async () => {
+        const t = currentTick(sdk);
+        const n = await dropOres(sdk);
+        if (n) {
+            oreDrops.push({ tick: t, ores: n });
+            log(`T${currentTick(sdk)} dropped ${n} ore${n > 1 ? 's' : ''} left by an interrupted run`);
+        }
+    };
     let faults = 0;
     let rotation = o.rotation ?? rotationFor(D);
     let abort = new AbortController();
@@ -589,6 +626,7 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
             const s = sdk.getState()!;
             if (miningLevel(s) >= end) break;
             rotation = o.rotation ?? rotationFor(D);
+            await clearOres();
             const live = (st: BotWorldState) => rocks(rotation).every(p => liveRock(st, p));
             if (!live(s)) {
                 const r = await waitUntil(sdk, live, { maxTicks: D + 10 });
@@ -598,7 +636,7 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
             const canKnife = inv.some(i => /^knife$/i.test(i.name)) && inv.some(i => /^logs$/i.test(i.name));
             const technique: Technique = canKnife ? o.technique : 'plain';
             if (!canKnife && o.technique !== 'plain') log('no knife or no logs left: plain');
-            if (technique === 'auto' && !shared.gate) shared.gate = deps.inPageGate(sdk as never, { plainTicksPerRoll: plainTicksPerOre(D), log });
+            if (technique === 'auto' && !shared.gate) shared.gate = deps.inPageGate(sdk as never, { plainTicksPerRoll: plainTicksPerOre(D), measureDrops: GATE_MEASURE_DROPS, log });
             const params: Record<string, unknown> = {
                 steps: ROTATIONS[rotation]!.steps,
                 respawn: D,
@@ -619,6 +657,7 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
                     // or a re-probe's return waits for it (up to D), never retrying into faults.
                     // An empty nearbyLocs (the scene not loaded after a relog) reads as not live.
                     beforeRestart: async (next, prev) => {
+                        await clearOres();
                         const w0 = currentTick(sdk);
                         const r = await waitUntil(sdk, live, { maxTicks: D + 10 });
                         restartWaits.push({ tick: w0, ticks: currentTick(sdk) - w0, after: `${prev.technique}:${prev.reason}`, next, ok: r.ok });
@@ -650,7 +689,7 @@ async function ironBand(ctx: StepContext<any>, name: string, end: number, failur
         watch.stop();
         if (poll) clearInterval(poll);
         ctx.log.append(row(ctx, `(band) ${name}`, {
-            players, respawn: D, rotation, restarts, restartWaits, faults, observedRespawn: watch.histogram, gate: shared.gate?.summary() ?? null,
+            players, respawn: D, rotation, restarts, restartWaits, oreDrops, faults, observedRespawn: watch.histogram, gate: shared.gate?.summary() ?? null,
             segments: segments.map(sg => ({ technique: sg.technique, reason: sg.reason, ticks: (sg.status.endedTick ?? sg.status.tick) - sg.status.startedTick, ores: sg.status.counters.ores ?? 0, slips: sg.status.counters.slips ?? 0, failed: sg.status.counters.failed ?? 0, result: sg.status.result })),
         }, t0, currentTick(sdk)));
     }
