@@ -70,8 +70,11 @@ vials unmixed until it is switched to the Taverley spot.
 **Gather-only** (a borrowed combat account with no Druidic Ritual): `{"spot":"chaos_druids",
 "fish":false,"food":"none","ritual":false,"process":false,"supply":false}`. `food:"none"` is
 needed: without it the role fetches a fishing net (phase `kit:net`) before it farms. Food
-already carried stays carried on every bank visit, which keeps the herb load small in the
-Wilderness. The grimy herbs are identified and mixed later by an account with the ritual.
+already carried stays carried on every bank visit unless `keepFood` caps it (the bone engine's
+option: most food left carried, the rest banked). A coin earner borrowed with 24 kebabs has
+3 free slots and banks every 3 drops (measured, cairn_h51: ~31 herbs an hour against ~100-120
+for the others), so give it `keepFood` around 10: about 17 free slots, still a small herb load
+for the Wilderness. The grimy herbs are identified and mixed later by an account with the ritual.
 
 ## Measured rates
 

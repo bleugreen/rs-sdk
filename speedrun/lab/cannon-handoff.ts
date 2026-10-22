@@ -12,7 +12,11 @@
 // tries Set-up on the base, and gives everything back, which the holder takes at
 // serve.returnTile (the H11r direction).
 //
-// Options: --quest=N (default 11), --balls=N (default 100), --setup=0 to skip Set-up
+// With --mm=1 the give-back is H11r as rs/158 moved it: the holder also carries Monkey Madness's
+// magic shortbow and 200 rune arrows (serve.returnExtras) and gives them in the same trade as
+// the set comes back; the receiver expects them (expectBack), so it is one two-way trade.
+//
+// Options: --quest=N (default 11), --balls=N (default 100), --setup=0 to skip Set-up, --mm=1
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -23,6 +27,11 @@ const arg = (k: string, d: string) => process.argv.find(a => a.startsWith(`--${k
 const quest = Number(arg('quest', '11'));
 const balls = Number(arg('balls', '100'));
 const setUp = arg('setup', '1') !== '0';
+const mm = arg('mm', '0') === '1';
+const MM = [
+    { item: 'Magic shortbow', count: 1, obj: 'magic_shortbow' },
+    { item: 'Rune arrow', count: 200, obj: 'rune_arrow' }
+];
 const webPort = process.env.WEB_PORT ?? '9300';
 
 // Inside the Lumbridge cow pen (lib/kandarin.ts COW_PEN): open grass, outside every
@@ -50,13 +59,13 @@ const config = {
     runDir,
     loginSpacingMs: 2000,
     accounts: [
-        { account: giver, role: 'cannon', options: { serve: { tile: GIVER_TILE, balls, labStock: true, returnTile: GIVER_TILE, scope: { step: 'S14', family: 'cannon' } } } },
-        { account: receiver, role: 'cannon-receiver', receiver: true, final: true, options: { giver, tile: RECEIVER_TILE, balls, questVarp: quest, setUp, giveBack: true, waitTicks: 1500, scope: { step: 'S14', family: 'cannon' } } }
+        { account: giver, role: 'cannon', options: { serve: { tile: GIVER_TILE, balls, labStock: true, returnTile: GIVER_TILE, ...(mm ? { returnExtras: MM } : {}), scope: { step: 'S14', family: 'cannon' } } } },
+        { account: receiver, role: 'cannon-receiver', receiver: true, final: true, options: { giver, tile: RECEIVER_TILE, balls, questVarp: quest, setUp, giveBack: true, ...(mm ? { expectBack: MM.map(({ item, count }) => ({ item, count })) } : {}), waitTicks: 1500, scope: { step: 'S14', family: 'cannon' } } }
     ]
 };
 const configPath = join(base, 'launch.json');
 writeFileSync(configPath, JSON.stringify(config, null, 2));
-console.log(`cannon hand-off lab: receiver %mcannon=${quest}, ${balls} balls, set-up ${setUp}, run files in ${base}`);
+console.log(`cannon hand-off lab: receiver %mcannon=${quest}, ${balls} balls, set-up ${setUp}, Monkey Madness extras ${mm}, run files in ${base}`);
 
 const child = Bun.spawn([process.execPath, 'speedrun/helpers/standalone.ts', configPath], {
     cwd: ROOT,
@@ -71,7 +80,7 @@ clearTimeout(killer);
 
 for (const [who, account, re] of [
     ['receiver', receiver, /"message":"(received|set-up|gave back|holder in sight|cue written)"|RESULT/],
-    ['holder', giver, /"message":"(hand-off|returned|request|bounce|phase|serve error|load|serve: finished)"/]
+    ['holder', giver, /"message":"(hand-off|returned|request|bounce|phase|serve error|load|return load|serve: (finished|resuming))"/]
 ] as const) {
     let text = '';
     try {
