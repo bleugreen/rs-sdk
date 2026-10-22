@@ -19,16 +19,16 @@
 //       prints { packages } for the mule's options
 //   ... --check FILE [--account cairn_mule1]   drift of FILE's packages (mule options, a packages
 //       list, or fleet.json) against the ledger; exit 1 on any
-//   ... --bank FILE [--account cairn_mule1]    each package staged against the account's bank in
-//       stockpile.json (mule.ts planPackage): missing, ambiguous, top-ups short
+//   ... --bank FILE [--account cairn_mule1]    the packages staged back to back against the account's
+//       bank in stockpile.json (stockWalk): missing, ambiguous, top-ups short
 import { readFileSync } from 'node:fs';
 
 import type { BankItem } from '../../sdk/types';
-import { namesNote, refLabel, type ItemRef } from '../lib/items';
+import { namesNote, refLabel, refMatches, type ItemRef } from '../lib/items';
 import { noteLink, type ObjPack } from '../lib/obj-pack';
 import { gameName, planHandOff } from '../runner/handoff';
 import { itemLabel, MANIFEST, parseLedger, type InEntry, type LedgerRow } from '../tools/slot-ledger';
-import { isTopUp, packageOf, planPackage, type Package, type PackageItem } from './mule';
+import { isStackableName, isTopUp, packageOf, planPackage, type Package, type PackageItem } from './mule';
 
 /** cairn_mule1's hand-offs (rs/443): H21e's list rides H21d's row, one trade. */
 export const MULE1_ROWS = ['H1', 'H4', 'H4k', 'H4p', 'H6', 'H10', 'H12', 'H13', 'H21d', 'H22'] as const;
@@ -50,8 +50,8 @@ export interface LedgerPackage {
     topUps: { item: string; to: number }[];
     /** The mule's inventory slots the package fills (a top-up at its `to`). */
     slots: number;
-    /** What the scored account gives back in the same trade, as the ledger writes it. */
-    takesBack: string[];
+    /** What the scored account gives back in the same trade; `label` as the ledger writes it, `ref` null for a family. */
+    takesBack: { label: string; ref: ItemRef | null; count: number | 'all' }[];
     /** The row's `<NAME>` entries: the module's own, not in this trade. */
     moduleLines: string[];
 }
@@ -67,10 +67,18 @@ export function stepAfter(rows: readonly LedgerRow[], index: number): string {
     throw new Error(`${rows[index]!.row}: no step row after it in the ledger`);
 }
 
+/** A ledger ITEM as a package line names it: by id for `NAME @ID`, else by the game's name. */
+const refOf = (e: { name: string; id?: number }): ItemRef => (e.id !== undefined ? { id: e.id } : { item: capitalise(gameName(e.name)) });
+
 function lineOf(e: InEntry, at: string, form: TopUpForm): PackageItem {
     if (e.family) throw new Error(`${at}: in ${itemLabel(e)} names any dose; a package line offers one obj, so the row must name it`);
     if (e.count === null) throw new Error(`${at}: in ${itemLabel(e)} x? has no count`);
-    const ref: ItemRef = e.id !== undefined ? { id: e.id } : { item: capitalise(gameName(e.name)) };
+    const ref = refOf(e);
+    // The mule sizes a package by isStackableName; a line it misjudges would make it refuse the
+    // package (too many slots) or overfill its inventory.
+    if (ref.item !== undefined && e.kind !== 'n' && isStackableName(ref.item) !== (e.kind === 's')) {
+        throw new Error(`${at}: in ${itemLabel(e)} is [${e.kind}], but mule.ts isStackableName reads ${ref.item} as ${e.kind === 's' ? 'unstackable' : 'stackable'}`);
+    }
     const noted = e.kind === 'n' ? { noted: true } : {};
     if (e.topUp && form === 'ask') return { ...ref, topUp: { max: e.count }, ...noted };
     return { ...ref, amount: e.count, ...noted };
@@ -90,7 +98,9 @@ export function packageFromRow(rows: readonly LedgerRow[], index: number, form: 
     const pkg = packageOf(raw, pack);
     const slots = entries.reduce((n, e) => n + (e.kind === 'u' ? e.count! : 1), 0);
     if (slots > INVENTORY_SLOTS) throw new Error(`${at}: the package fills ${slots} slots, more than the mule's ${INVENTORY_SLOTS}`);
-    const takesBack = plan.give.map(g => `${row.out.find(o => o.name === g.name) ? itemLabel(row.out.find(o => o.name === g.name)!) : g.name} ${g.count === 'all' ? 'all' : `x${g.count}`}`);
+    const takesBack = row.out
+        .filter(o => !o.placeholder)
+        .map(o => ({ label: `${itemLabel(o)} ${o.count === 'all' ? 'all' : `x${o.count}`}`, ref: o.family ? null : refOf(o), count: o.count ?? 'all' }));
     return { row: row.row, line: row.line, step, package: pkg, topUps, slots, takesBack, moduleLines: plan.placeholders };
 }
 
@@ -195,15 +205,30 @@ export function muleDrift(config: unknown, ledger: readonly LedgerPackage[], o: 
 
 // ------------------------------------------------------------------ stock
 
-/** Each package staged against a bank on its own (mule.ts planPackage): what the bank cannot serve. */
-export function stockCheck(ledger: readonly LedgerPackage[], bank: BankItem[], pack?: ObjPack): string[] {
+/**
+ * The packages served back to back from one bank, in ledger order (mule.ts planPackage per package):
+ * what the bank cannot serve when each comes up. Each package's withdrawals leave the bank (a top-up
+ * at its max), and what the scored account gives back with a count returns to it, so a later row's
+ * `back from H12` line is served from H12's give-back. An `all` give-back has no count and is not
+ * credited.
+ */
+export function stockWalk(ledger: readonly LedgerPackage[], bank: readonly BankItem[], pack?: ObjPack): string[] {
     const out: string[] = [];
+    const held: BankItem[] = bank.map(b => ({ ...b }));
     for (const l of ledger) {
-        const plan = planPackage(l.package, bank, undefined, pack);
+        const plan = planPackage(l.package, held.filter(b => b.count > 0), undefined, pack);
         for (const m of plan.missing) out.push(`${l.row}: ${m.item} wanted ${m.wanted}, the bank holds ${m.have}`);
         for (const a of plan.ambiguous) out.push(`${l.row}: ${a.item} matches ids ${a.ids.join(', ')}`);
         for (const t of plan.topUpShort) out.push(`${l.row}: top-up ${t.item} stages ${t.staged} of ${t.max}`);
-        if (plan.slots > INVENTORY_SLOTS) out.push(`${l.row}: ${plan.slots} slots`);
+        if (plan.slots > INVENTORY_SLOTS) out.push(`${l.row}: ${plan.slots} slots, more than ${INVENTORY_SLOTS}`);
+        for (const w of plan.withdrawals) w.bankItem.count -= w.amount;
+        for (const b of l.takesBack) {
+            if (!b.ref || b.count === 'all') continue;
+            const ref = b.ref;
+            const into = held.find(h => refMatches(ref, h, pack));
+            if (into) into.count += b.count;
+            else held.push({ slot: held.length, id: ref.id !== undefined ? noteLink(ref.id, pack).item : -1 - held.length, name: ref.item ?? refLabel(ref), count: b.count });
+        }
     }
     return out;
 }
@@ -233,13 +258,13 @@ export function main(argv: readonly string[]): number {
         const stock = JSON.parse(readFileSync(bankFile, 'utf8')) as { accounts?: Record<string, { asOf: string; bank: BankItem[] }> };
         const entry = stock.accounts?.[account];
         if (!entry) throw new Error(`${bankFile} has no bank for ${account}`);
-        const short = stockCheck(ledger, entry.bank.map((b, slot) => ({ ...b, slot })));
-        console.log(`${account}'s bank as of ${entry.asOf}: ${short.length ? `\n${short.join('\n')}` : 'every package stages in full'}`);
+        const short = stockWalk(ledger, entry.bank.map((b, slot) => ({ ...b, slot })));
+        console.log(`${account}'s bank as of ${entry.asOf}, the packages served back to back: ${short.length ? `\n${short.join('\n')}` : 'every package stages in full'}`);
         return short.length ? 1 : 0;
     }
     console.log(JSON.stringify({ packages: packagesOf(ledger) }, null, 2));
     for (const l of ledger) {
-        const notes = [`${l.slots} slots`, l.takesBack.length ? `takes back ${l.takesBack.join('; ')}` : 'takes nothing back', ...(l.moduleLines.length ? [`the module's: ${l.moduleLines.join(', ')}`] : [])];
+        const notes = [`${l.slots} slots`, l.takesBack.length ? `takes back ${l.takesBack.map(b => b.label).join('; ')}` : 'takes nothing back', ...(l.moduleLines.length ? [`the module's: ${l.moduleLines.join(', ')}`] : [])];
         console.error(`${l.row} (line ${l.line}, before ${l.step}): ${notes.join('; ')}`);
     }
     return 0;
