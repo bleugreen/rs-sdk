@@ -822,11 +822,15 @@ options; that restart, like every update, keeps step 0's deploy rules. The run m
 runs from `~/rs-sdk` at `RUN_COMMIT`, which the floor puts after 2538b7d8.
 
 **A sixth family, `mule`** (rs/429, landed 029c6825 on rs/41's branch; relayed by rs/158 at 10:30
-PDT 2026-10-22). mule.ts serves H12's `Shark topUp {max: 15}` from an ask scoped
-`{step: 'S15', family: 'mule'}` that SCORED writes on the first open-trade frame. So the families
-are six: altar (S06, S21), bone (S07), courier (S18), anvil (S25a), cannon (S14, S27) and mule (S15's
-H12). The mule reader is **pending** until fleet code carrying rs/429 is on main and deployed, which
-is fleet snapshot 8 (rs/438); rs/393's writer is pending likewise.
+PDT 2026-10-22). mule.ts serves H12's `Shark topUp {max: 15}` from an ask that SCORED writes on the
+first open-trade frame. **A scope's `step` is the step id for altar, bone, courier, anvil and cannon,
+and the hand-off id for mule**, for example `{step: 'H12', family: 'mule'}` (rs/158's cue scope
+contract, agreed by rs/186 and settled by rs/41 with rs/186, 2026-10-22). run.ts names mule1's
+package in that cue before every mule1 hand-off, with queue order as the fallback. So the families
+are six: altar (S06, S21), bone (S07), courier (S18), anvil (S25a), cannon (S14, S27) and mule (by
+hand-off id, H12 in S15). The contract is **pending**: commit 2c38a339 on rs/41's branch, landing
+in fleet snapshot 9. The mule reader is pending until that fleet code is on main and deployed, and
+rs/393's writer likewise.
 
 **On run night the opening roster logs in on both machines after `up` and before `gate`** (step
 5a), so each gate is read under the opening load.
