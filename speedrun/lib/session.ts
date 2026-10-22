@@ -24,6 +24,7 @@ import type { Subprocess } from 'bun';
 import { BotSDK, deriveGatewayUrl } from '../../sdk/index';
 import type { BotActions } from '../../sdk/actions';
 import type { BotStatus, BotWorldState } from '../../sdk/types';
+import { ensureRunOn, type EnsureRunResult } from './run-mode';
 import { pageInGame, pageLogin, pageLoginState, type PageLoginStart } from './tab';
 import { sleep, tickMs, waitUntil } from './wait';
 
