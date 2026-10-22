@@ -204,5 +204,7 @@ every bank visit. Its role has `produces: []`: it holds stock rather than produc
 it, so the ledger should attribute the mule's bank by account, not by role.
 
 The giver sits behind one function, `giveOpenTrade(sdk, bot, partner, items, mode)`.
-When `speedrun/lib/trade.ts` (rs/40) lands, its giver can replace the burst body
-there without touching the mule.
+Its burst mode is `speedrun/lib/trade.ts` `give()`, the one giver implementation. It uses
+`expectTheirs: ANY_OFFER`, so the scored account may hand items back in the same trade
+(the two-way swap): whatever it offers is accepted, re-accepted after any reset, and the
+confirm screen is accepted once the mule's own offer is exactly the package.
