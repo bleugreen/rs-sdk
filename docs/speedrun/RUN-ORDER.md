@@ -1259,7 +1259,7 @@ legs measured 23 more than the quest documents count).
 | E: estimated allowances (contention, overrun, relay, retries) (S15's never-measured Ape Atoll rows are gone: V to Z measured, fold-in 19, ~61 in burst before; T's and U's ~104 and ~307 out in fold-in 18) | 1,200.0 | 3.4% |
 | **Total** | **34,849.1** | |
 
-Fold-in 25 against fold-in 24's split (16,270.9 / 17,352.5 / 1,200.0): M +492, I -466.3, E 0: S24 on the browser (M +492, I -472) and S15's rope pin on its measured recovery (I +5.7); **the plan is 48.1% measured end to end on the burst expected** (46.7% at fold-in 24). Fold-in 24 against fold-in 23's split (16,225.6 / 17,352.5 / 1,200.0): M +45.3 (S26 on the browser; S19's +0.3 inside M) (the Total row read fold-in 23's 34,777.8 until fold-in 25).
+Fold-in 25 against fold-in 24's split (16,270.9 / 17,352.5 / 1,200.0): M +492, I -466.3, E 0: S24 on the browser (M +492, I -472) and S15's rope pin on its measured recovery (I +5.7); **the plan is 48.1% measured end to end on the burst expected** (46.7% at fold-in 24). Fold-in 24 against fold-in 23's split (16,225.3 / 17,352.5 / 1,200.0): M +45.6 (S19 +0.3 and S26 +45.3 on the browser) (the Total row read fold-in 23's 34,777.8 until fold-in 25).
 
 Fold-in 23 against fold-in 22's split (14,219.9 / 19,494.5 / 1,200.0): M +836.4, I -886, E 0: S20 measured on the self route (M +314, I -300), S12 measured (M +532, I -524), S15's segment G at the fixed column's -62 on the burst rule (I -62) and T05-06 on the browser on #321 (M -9.6); the plan is 43.2% measured end to end on the burst expected.
 
