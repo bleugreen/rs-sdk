@@ -129,7 +129,6 @@ export function tickClock(from: number | undefined, onIdle: () => void, lastTick
             if (s.tick === last) return;
             last = s.tick;
             if (!stopped) arm();
-            else armedAt = Date.now();
         },
         stop() {
             stopped = true;
