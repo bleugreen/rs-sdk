@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { parseLog, report, TickLog } from './ticks';
-import { PERIOD_MIN_SAMPLES, PERIOD_SPAN_TICKS, startRunTickMonitor, startTickMonitor, TickCadence, type TickCadenceConfig, tickMonitorSetting, tickMonLine, type TickMonMinute, TickPeriod, summarizeWindow } from './tick-monitor';
+import { OverBudgetCount, PERIOD_MIN_SAMPLES, PERIOD_SPAN_TICKS, startRunTickMonitor, startTickMonitor, TickCadence, type TickCadenceConfig, tickMonitorSetting, tickMonLine, type TickMonMinute, TickPeriod, summarizeWindow } from './tick-monitor';
 
 const CFG: TickCadenceConfig = { tickMs: 300, lateMs: 120, gluedMs: 5, gapTicks: 17 };
 
@@ -156,19 +156,21 @@ describe('tickMonLine', () => {
     });
 });
 
+type Pub = { tick: number; inGame: boolean; program?: { runId: number; counters?: Record<string, number> } | null };
+
 /** A source with a hand-driven gateway clock. */
 function source() {
-    const listeners = new Set<(s: { tick: number; inGame: boolean }) => void>();
+    const listeners = new Set<(s: Pub) => void>();
     let receivedAt = 0;
     return {
-        onStateUpdate(l: (s: { tick: number; inGame: boolean }) => void) {
+        onStateUpdate(l: (s: Pub) => void) {
             listeners.add(l);
             return () => listeners.delete(l);
         },
         getStateReceivedAt: () => receivedAt,
-        publish(tick: number, at: number, inGame = true) {
+        publish(tick: number, at: number, inGame = true, program?: Pub['program']) {
             receivedAt = at;
-            for (const l of [...listeners]) l({ tick, inGame });
+            for (const l of [...listeners]) l({ tick, inGame, ...(program !== undefined ? { program } : {}) });
         },
         get listeners() {
             return listeners.size;
@@ -244,6 +246,48 @@ describe('the run log', () => {
         expect(printed).toEqual([row.meta!.line as string]);
         const rep = report(parseLog(JSON.stringify(row) + '\n'));
         expect([rep.totalTicks, rep.annotations]).toEqual([0, [{ kind: 'tickmon', step: 'tickmon', count: 1, totalTicks: 5 }]]);
+    });
+
+    test("the page program's over-budget ticks: summed per minute into the line and the row's meta, absent when none", () => {
+        const log = TickLog.memory('r1');
+        const src = source();
+        const mon = startRunTickMonitor({ name: 'acct', sessionId: 2, sdk: src }, log, { tickMs: 300 });
+        const log0 = console.log;
+        console.log = () => {};
+        try {
+            src.publish(1, 300, true, { runId: 4, counters: { overBudget: 0 } });
+            src.publish(2, 600, true, { runId: 4, counters: { overBudget: 1 } });
+            src.publish(2, 610, true, { runId: 4, counters: { overBudget: 2 } }); // a same-label republication still counts
+            src.publish(3, 900, true, { runId: 4, counters: { overBudget: 2 } });
+            mon!.roll();
+            src.publish(4, 1200, true, { runId: 5, counters: { overBudget: 1 } }); // a new run counts from 0
+            mon!.roll();
+            src.publish(5, 1500, true, { runId: 5, counters: { overBudget: 1 } });
+            src.publish(6, 1800, true, null);
+            mon!.roll();
+        } finally {
+            console.log = log0;
+        }
+        mon!.stop();
+        const lines = log.rows.map(r => String(r.meta!.line));
+        expect(lines[0]).toEndWith('periodMs=300 overBudget=2');
+        expect(lines[1]).toEndWith(' overBudget=1');
+        expect(lines[2]).toEndWith('periodMs=300');
+        expect(log.rows.map(r => r.meta!.overBudget)).toEqual([2, 1, undefined]);
+    });
+
+    test('OverBudgetCount keeps increments across runs and ignores states without a program', () => {
+        const c = new OverBudgetCount();
+        c.see(undefined);
+        c.see({ runId: 1, counters: {} });
+        expect(c.take()).toBe(0);
+        c.see({ runId: 1, counters: { overBudget: 3 } }); // first seen already counting: all of it
+        c.see({ runId: 1, counters: { overBudget: 3 } });
+        expect(c.take()).toBe(3);
+        c.see({ runId: 2, counters: { overBudget: 2 } });
+        c.see({ runId: 2, counters: { overBudget: 5 } });
+        expect(c.take()).toBe(5);
+        expect(c.take()).toBe(0);
     });
 
     test('SPEEDRUN_TICKMON=off turns it off; SPEEDRUN_TICKMON_LATE_MS sets the threshold', () => {

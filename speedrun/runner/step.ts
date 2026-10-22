@@ -30,7 +30,12 @@ import { meterDispatch, TickWindow, type WindowSnapshot } from './budget';
 
 export type Check<C> = (s: BotWorldState, c: C) => true | string;
 
-export type RunnerSession = Pick<Session, 'sdk' | 'bot' | 'name' | 'sessionId'>;
+/**
+ * `tickBase` (optional so test fakes need not carry it; a real Session always does): the tick
+ * the current login's count starts from, which a resumed step that times a login-armed
+ * deadline reads (skills/cooking.ts).
+ */
+export type RunnerSession = Pick<Session, 'sdk' | 'bot' | 'name' | 'sessionId'> & Partial<Pick<Session, 'tickBase'>>;
 
 /**
  * What the resume walk (runner/resume.ts) knows about the game: the published

@@ -11,7 +11,20 @@
 //
 // `stow`: at the stop, one more visit deposits everything held, the tool and the
 // kept items too, so the next step starts with a free inventory.
+// `held`: the first load is the one already held (no booth click first); with
+// `bank: false` it is the only one (the run ends 'load done'), for a wait in which
+// other items held must stay out of the bank (the wine notes in Cooking's W1).
+// `mixed` (tool mode): a load holds several recipes' inputs, filled in xp order
+// (the cooking windows' diamond, ruby, emerald and sapphire). The blind plan is
+// each recipe's slots ascending, all below the first hole: uncut_gem.rs2 deletes
+// the first matching uncut gem and adds the cut one to the first free slot, so
+// every cut stays in its slot whatever the order of the types.
 // stack no bank: two stacks (arrowheads on headless arrows), `per` items an action.
+//       One tier a tick by default. `fill`: when the best tier's stack runs out
+//       inside the tick's room, the rest of the tick goes to the next-best tier
+//       the seen level allows and the inventory holds (the slots never move, so
+//       the sends stay blind). A tier the level reaches only when this tick's
+//       burst lands is not filled in: the server would refuse it.
 //
 // The mixes are blind: the whole list for an inventory is fixed on the tick the
 // refilled inventory is seen, and each tick sends the next ones without reading
@@ -136,6 +149,23 @@ export function planMixes(inventory: readonly InventoryItem[], r: CycleRecipe, m
     return as.slice(0, n).map((dst, i) => ({ src: bs[i]!, dst }));
 }
 
+/**
+ * Tool mode's blind list for a load of several recipes' inputs, at most `cap` long, or null
+ * when none can be sent blind: each recipe's `planMixes` in the order given (highest xp
+ * first), so each type's slots go ascending. Each recipe's own check keeps every slot used
+ * below the first hole, which is all a mixed load needs: every cut lands in its own slot, so
+ * no later action's slot changes.
+ */
+export function planMixedLoad(inventory: readonly InventoryItem[], recipes: readonly CycleRecipe[], cap = Infinity): Array<{ mix: Mix; recipe: CycleRecipe }> | null {
+    const out: Array<{ mix: Mix; recipe: CycleRecipe }> = [];
+    for (const r of recipes) {
+        if (out.length >= cap) break;
+        const plan = planMixes(inventory, r, 'tool', cap - out.length);
+        if (plan) for (const mix of plan) out.push({ mix, recipe: r });
+    }
+    return out.length ? out : null;
+}
+
 /** The bank buttons that withdraw exactly n: All when that is n, else 10s, a 5, then 1s. */
 export function withdrawAmounts(n: number, allGives: number): number[] {
     if (!Number.isInteger(n) || n <= 0) throw new Error(`invalid withdraw amount ${n}`);
@@ -158,8 +188,10 @@ type VisitKind = 'canonical' | 'reset' | 'stow';
 
 interface Visit {
     kind: VisitKind;
-    /** Null until a barrier resolves it. */
+    /** Null until a barrier resolves it. With `mixed`, the load's highest-xp recipe. */
     recipe: CycleRecipe | null;
+    /** `mixed`: the recipes the load was filled from, as the visit record names them. */
+    label?: string;
     queue: Packet[];
     /** Actions the refilled inventory must allow. */
     expect: number;
@@ -282,23 +314,38 @@ function bump(h: Record<number, number>, key: number): void {
     h[key] = (h[key] ?? 0) + 1;
 }
 
-createItemCycle.params = ['mode', 'skill', 'recipes', 'booth', 'untilLevel', 'untilXp', 'maxActions', 'perTick', 'maxTicks', 'stow'] as const;
+createItemCycle.params = ['mode', 'skill', 'recipes', 'booth', 'untilLevel', 'untilXp', 'maxActions', 'perTick', 'maxTicks', 'stow', 'held', 'bank', 'mixed', 'fill'] as const;
 export function createItemCycle(params: ProgramParams): TickProgram {
     if (params.mode === undefined) throw new Error('mode is required: pair, tool or stack');
     const mode: CycleMode = oneOf(params.mode, ['pair', 'tool', 'stack'] as const, 'pair', 'mode');
     const skill = params.skill;
     if (typeof skill !== 'string' || !skill) throw new Error('skill must be a skill name');
     const recipes = recipesParam(params.recipes, mode);
-    const booth = mode === 'stack' ? null : boothParam(params.booth);
+    // Each key is read as params.<key> so index.test.ts's declared-equals-read check can see it.
+    const flag = (name: 'stow' | 'held' | 'bank' | 'mixed' | 'fill', v: unknown): boolean | undefined => {
+        if (v !== undefined && typeof v !== 'boolean') throw new Error(`${name} must be a boolean`);
+        return v as boolean | undefined;
+    };
+    const stow = flag('stow', params.stow) === true;
+    if (stow && mode === 'stack') throw new Error('stow applies to the pair and tool modes (stack mode never banks)');
+    const heldStart = flag('held', params.held) === true;
+    const banks = flag('bank', params.bank) !== false;
+    const mixed = flag('mixed', params.mixed) === true;
+    if (heldStart && mode === 'stack') throw new Error('held applies to the pair and tool modes (stack mode always works on what is held)');
+    if (!banks && mode === 'stack') throw new Error('bank applies to the pair and tool modes (stack mode never banks)');
+    if (!banks && !heldStart) throw new Error('bank: false needs held: true (with no visit, the held load is all there is)');
+    if (!banks && stow) throw new Error('stow needs a bank visit: it cannot go with bank: false');
+    if (mixed && mode !== 'tool') throw new Error('mixed applies to tool mode only');
+    if (mixed && recipes.some(r => r.keep)) throw new Error('mixed loads take no keep items');
+    const fill = flag('fill', params.fill) === true;
+    if (fill && mode !== 'stack') throw new Error('fill applies to stack mode only');
+    const booth = mode === 'stack' || (!banks && params.booth === undefined) ? null : boothParam(params.booth);
     const untilLevel = num(params.untilLevel, 0, 'untilLevel');
     const untilXp = num(params.untilXp, 0, 'untilXp');
     const maxActions = num(params.maxActions, Infinity, 'maxActions');
     if (!untilLevel && !untilXp && maxActions === Infinity) throw new Error('give untilLevel, untilXp or maxActions (the stopping target)');
     const perTick = num(params.perTick, 5, 'perTick');
     const maxTicks = num(params.maxTicks, Infinity, 'maxTicks');
-    if (params.stow !== undefined && typeof params.stow !== 'boolean') throw new Error('stow must be a boolean');
-    const stow = params.stow === true;
-    if (stow && mode === 'stack') throw new Error('stow applies to the pair and tool modes (stack mode never banks)');
 
     /** Items a visit leaves in the inventory: the tools and the kept items. */
     const kept = new Set(recipes.flatMap(r => [...(r.tool === undefined ? [] : [r.tool]), ...(r.keep ?? []).map(k => k.id)]));
@@ -312,8 +359,13 @@ export function createItemCycle(params: ProgramParams): TickProgram {
     let lastLevel = 0;
     let phase: Phase = 'opening';
     let mixes: Mix[] = [];
+    /** `mixed`: the recipe of each of `mixes`. */
+    let mixRecipes: CycleRecipe[] = [];
+    /** `mixed` and `fill`: the recipes of the actions sent and not yet seen landed, oldest first. */
+    const inFlight: CycleRecipe[] = [];
+    let heldPending = heldStart;
     let next = 0;
-    /** The recipe whose actions are in flight: landed xp is credited to it. */
+    /** The recipe whose actions are in flight: landed xp is credited to it (`mixed`: the load's first). */
     let current: CycleRecipe | null = null;
     let visit: Visit | null = null;
     let forceReset = false;
@@ -368,7 +420,24 @@ export function createItemCycle(params: ProgramParams): TickProgram {
 
             const xp = skillXp(s, skill);
             let landed = 0;
-            if (xp > lastXp) {
+            if (xp > lastXp && (mixed || fill)) {
+                // credit the oldest actions in flight whose xp the gain covers (at least one)
+                const gained = xp - lastXp;
+                let acc = 0;
+                while (inFlight.length && (landed === 0 || acc + inFlight[0]!.xp * XP_RATE <= gained + 0.5)) {
+                    const r = inFlight.shift()!;
+                    acc += r.xp * XP_RATE;
+                    byRecipe[r.name] = (byRecipe[r.name] ?? 0) + 1;
+                    landed++;
+                }
+                lastXp = xp;
+                if (landed) {
+                    landedTotal += landed;
+                    bump(shared.xpDropsPerTick, landed);
+                }
+                ctx.count('actions', landed);
+                ctx.progress();
+            } else if (xp > lastXp) {
                 const r = current;
                 landed = r ? Math.max(1, Math.round((xp - lastXp) / (r.xp * XP_RATE))) : 0;
                 lastXp = xp;
@@ -466,6 +535,50 @@ export function createItemCycle(params: ProgramParams): TickProgram {
                 return true;
             };
 
+            /** The recipes the level allows, highest xp first. */
+            const eligible = () => byXp.filter(r => r.level <= level);
+
+            /**
+             * The blind list for the inventory as it stands: with `mixed`, every allowed recipe's
+             * in xp order; else the first allowed recipe (highest xp) that plans.
+             */
+            const loadPlan = (): { mixes: Mix[]; by: CycleRecipe[] } | null => {
+                if (mixed) {
+                    const p = planMixedLoad(s.inventory, eligible(), remaining());
+                    return p ? { mixes: p.map(x => x.mix), by: p.map(x => x.recipe) } : null;
+                }
+                for (const r of eligible()) {
+                    const p = planMixes(s.inventory, r, mode as 'pair' | 'tool', remaining());
+                    if (p) return { mixes: p, by: p.map(() => r) };
+                }
+                return null;
+            };
+
+            /**
+             * `mixed`: the withdrawals that fill `room` slots from the allowed recipes in xp order,
+             * All of each (exact counts for the last when `remaining()` caps it). Counts are bank
+             * plus inventory, as a visit's deposits land ahead of them. Null when nothing is on
+             * hand, or when an input is held but has no bank slot yet (read it after the deposits).
+             */
+            const mixedFill = (room: number): { packets: Packet[]; n: number; label: string } | null => {
+                const packets: Packet[] = [];
+                const names: string[] = [];
+                let n = 0;
+                for (const r of eligible()) {
+                    if (room <= 0 || remaining() - n <= 0) break;
+                    const tot = total(r.a);
+                    if (tot <= 0) continue;
+                    const slot = bankSlot(r.a);
+                    if (slot === undefined) return null;
+                    const k = Math.min(tot, room, remaining() - n);
+                    for (const amount of withdrawAmounts(k, Math.min(tot, room))) packets.push({ kind: 'withdraw', slot, id: r.a, amount });
+                    room -= k;
+                    n += k;
+                    names.push(r.name);
+                }
+                return n > 0 ? { packets, n, label: names.join('+') } : null;
+            };
+
             /** Kept items not held now: each takes a slot when the visit withdraws it. */
             const keepsMissing = (r: CycleRecipe) => (r.keep ?? []).filter(k => invCount(k.id) === 0).length;
 
@@ -509,6 +622,12 @@ export function createItemCycle(params: ProgramParams): TickProgram {
                         const err = withdraw(r.tool!, 1, -2);
                         if (err) return `no tool (${err})`;
                         room -= 1;
+                    }
+                    if (mixed) {
+                        const f = mixedFill(room);
+                        if (!f) return `no input for a ${r.name} load in the bank`;
+                        out.push(...f.packets, { kind: 'close' });
+                        return { packets: out, n: f.n };
                     }
                     room -= keepsMissing(r);
                     const totA = total(r.a);
@@ -560,7 +679,12 @@ export function createItemCycle(params: ProgramParams): TickProgram {
                         return { ...base, kind: 'canonical', recipe: r, queue, expect: PAIR_LOAD };
                     }
                 }
-                if (!forceReset && mode === 'tool') {
+                if (!forceReset && mode === 'tool' && mixed && held.some(i => i.id === r.tool)) {
+                    // every non-kept item goes, then All of each input in xp order fills the room
+                    const f = mixedFill(INVENTORY - held.filter(i => kept.has(i.id)).length);
+                    if (f) return { ...base, kind: 'canonical', recipe: r, label: f.label, queue: [...deposits, ...f.packets, { kind: 'close' }], expect: f.n };
+                }
+                if (!forceReset && mode === 'tool' && !mixed) {
                     const toolHeld = held.some(i => i.id === r.tool);
                     const slot = bankSlot(r.a);
                     if (toolHeld && slot !== undefined) {
@@ -578,7 +702,7 @@ export function createItemCycle(params: ProgramParams): TickProgram {
                 }
                 // a reset: everything but the tool goes, then exactly n of each input. Inputs held but not banked
                 // get their bank slot only once deposited: read it after the deposits land.
-                const inputs = [r.a, ...(r.b === undefined ? [] : [r.b])];
+                const inputs = mixed ? eligible().filter(x => total(x.a) > 0).map(x => x.a) : [r.a, ...(r.b === undefined ? [] : [r.b])];
                 const toolNeeded = mode === 'tool' && !held.some(i => i.id === r.tool);
                 if (inputs.some(id => bankSlot(id) === undefined) || (toolNeeded && bankSlot(r.tool!) === undefined)) return deferred();
                 const w = resetWithdrawals(r);
@@ -608,6 +732,7 @@ export function createItemCycle(params: ProgramParams): TickProgram {
                 }
                 v.recipe = r;
                 v.expect = w.n;
+                if (mixed) v.label = eligible().filter(x => total(x.a) > 0).map(x => x.name).join('+');
                 v.queue.splice(0, 1, ...w.packets);
                 return true;
             };
@@ -622,10 +747,12 @@ export function createItemCycle(params: ProgramParams): TickProgram {
                 }
                 while (next < mixes.length && room()) {
                     const m = mixes[next]!;
+                    const by = mixRecipes[next];
                     next++;
                     if (send({ type: 'useItemOnItem', sourceSlot: m.src, targetSlot: m.dst }, `use ${m.src}->${m.dst}`)) {
                         sentActions++;
                         acted++;
+                        if (mixed && by) inFlight.push(by);
                     } else {
                         ctx.count('actionRejected');
                     }
@@ -644,8 +771,23 @@ export function createItemCycle(params: ProgramParams): TickProgram {
                     endReason = 'maxActions';
                     return;
                 }
+                if (!banks) {
+                    // the held load was the only one: end as maxActions does
+                    phase = 'ending';
+                    endReason = 'load done';
+                    return;
+                }
                 phase = 'opening';
                 openBooth();
+            };
+
+            /** Take a planned load into `work`. */
+            const install = (plan: { mixes: Mix[]; by: CycleRecipe[] }) => {
+                current = plan.by[0] ?? null;
+                mixes = plan.mixes;
+                mixRecipes = plan.by;
+                next = 0;
+                phase = 'work';
             };
 
             const beginStow = (reason: string) => {
@@ -681,7 +823,7 @@ export function createItemCycle(params: ProgramParams): TickProgram {
                     ctx.count('resets');
                 }
                 visit = v;
-                shared.visits.push({ seen: t, kind: v.kind, recipe: v.recipe?.name ?? null, n: v.expect });
+                shared.visits.push({ seen: t, kind: v.kind, recipe: v.label ?? v.recipe?.name ?? null, n: v.expect });
                 if (shared.visits.length > VISITS_KEEP) shared.visits.shift();
                 phase = 'banking';
                 banking();
@@ -703,7 +845,7 @@ export function createItemCycle(params: ProgramParams): TickProgram {
                         if (!resolveBarrier(v)) return;
                         const rec = shared.visits[shared.visits.length - 1];
                         if (rec && rec.seen === v.seen) {
-                            rec.recipe = v.recipe!.name;
+                            rec.recipe = v.label ?? v.recipe!.name;
                             rec.n = v.expect;
                         }
                         continue;
@@ -746,7 +888,8 @@ export function createItemCycle(params: ProgramParams): TickProgram {
                     return opening();
                 }
                 const r = v.recipe!;
-                const plan = planMixes(s.inventory, r, mode as 'pair' | 'tool', remaining());
+                const mixedPlan = mixed ? loadPlan() : null;
+                const plan = mixed ? (mixedPlan?.mixes ?? null) : planMixes(s.inventory, r, mode as 'pair' | 'tool', remaining());
                 if (!plan || plan.length < v.expect) {
                     drift++;
                     ctx.count('drift');
@@ -763,28 +906,50 @@ export function createItemCycle(params: ProgramParams): TickProgram {
                 const rec = shared.visits[shared.visits.length - 1];
                 if (rec && rec.seen === v.seen) rec.refill = t;
                 visit = null;
-                current = r;
-                mixes = plan;
-                next = 0;
-                phase = 'work';
+                install(mixedPlan ?? { mixes: plan, by: plan.map(() => r) });
                 work();
             };
 
             const stack = () => {
                 const has = (id: number | undefined) => s.inventory.find(i => i.id === id && i.count > 0);
-                const r = byXp.find(x => x.level <= level && has(x.a) && has(x.b));
+                const usable = byXp.filter(x => x.level <= level && has(x.a) && has(x.b));
+                const r = usable[0];
                 if (!r) return finish('out of supplies');
                 if (remaining() <= 0) return finish('maxActions');
-                const heads = has(r.b)!;
-                const shafts = has(r.a)!;
-                const per = r.per ?? 15;
-                pending = Math.ceil(Math.min(heads.count, shafts.count) / per);
                 current = r;
-                const k = Math.min(pending, remaining());
-                for (let i = 0; i < k && room(); i++) {
-                    if (!send({ type: 'useItemOnItem', sourceSlot: heads.slot, targetSlot: shafts.slot }, `use ${heads.slot}->${shafts.slot}`)) break;
-                    sentActions++;
-                    acted++;
+                if (!fill) {
+                    const heads = has(r.b)!;
+                    const shafts = has(r.a)!;
+                    pending = Math.ceil(Math.min(heads.count, shafts.count) / (r.per ?? 15));
+                    const k = Math.min(pending, remaining());
+                    for (let i = 0; i < k && room(); i++) {
+                        if (!send({ type: 'useItemOnItem', sourceSlot: heads.slot, targetSlot: shafts.slot }, `use ${heads.slot}->${shafts.slot}`)) break;
+                        sentActions++;
+                        acted++;
+                    }
+                    return;
+                }
+                // fill: tier after tier, each action taking min(per, its tips, the shared stack left)
+                const left = new Map<number, number>();
+                const count = (it: InventoryItem) => left.get(it.slot) ?? it.count;
+                pending = 0;
+                for (const x of usable) {
+                    const heads = has(x.b)!;
+                    const shafts = has(x.a)!;
+                    const per = x.per ?? 15;
+                    for (let h = count(heads), a = count(shafts); h > 0 && a > 0; ) {
+                        const n = Math.min(per, h, a);
+                        h -= n;
+                        a -= n;
+                        pending++;
+                        if (remaining() <= 0 || !room()) continue;
+                        if (!send({ type: 'useItemOnItem', sourceSlot: heads.slot, targetSlot: shafts.slot }, `use ${heads.slot}->${shafts.slot}`)) continue;
+                        sentActions++;
+                        acted++;
+                        inFlight.push(x);
+                        left.set(heads.slot, h);
+                        left.set(shafts.slot, a);
+                    }
                 }
             };
 
@@ -796,6 +961,13 @@ export function createItemCycle(params: ProgramParams): TickProgram {
                 // the stop: no more actions, the last visit next (a run started past it only stows)
                 beginStow(atTarget ? 'target' : 'maxActions');
                 if (phase === 'work') phase = 'opening';
+            }
+            if (heldPending && !stowing) {
+                // `held`: the first load is the one held now; no booth click before it
+                heldPending = false;
+                const plan = loadPlan();
+                if (!plan) return fault('held load not plannable', { level, inventory: s.inventory.map(i => [i.slot, i.id, i.count]) });
+                install(plan);
             }
 
             if (mode === 'stack') stack();

@@ -1,0 +1,7 @@
+Pathfinding initialized in 189ms (136704 zones + 297 mainland fill, 1268350 tiles, 2691 doors masked, 5 one-way doors blocked)
+[Runner] Connecting to bot "cairn_r130"...
+[LOGOUT DEBUG] SDK WebSocket error event
+[LOGOUT DEBUG] SDK WebSocket closed - autoReconnect=true, intentionalDisconnect=false
+[LOGOUT DEBUG] SDK scheduling auto-reconnect
+[BotSDK] Reconnecting in 1000ms (attempt 1)
+[Runner] Failed to connect: WebSocket error

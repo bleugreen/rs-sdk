@@ -89,11 +89,13 @@ describe('planRoute', () => {
         expect(p.byRecipe).toEqual({ attack: 5 });
     });
 
-    test('expectedTicks: 4 per inventory plus 0.3 per level-up drop', () => {
+    test("expectedTicks: 4 per inventory plus each load's level-up pages beyond the first", () => {
         const p = planRoute(xpForLevel(90), 91, RECIPES, stock([[DWARF_WEED, 500], [WINE_OF_ZAMORAK, 500]]));
-        const drops = p.loads.reduce((n, l) => n + l.levelups, 0);
-        expect(drops).toBe(1);
-        expect(p.expectedTicks).toBe(Math.round((p.loads.length * 4 + 0.3) * 10) / 10);
+        expect(p.loads.reduce((n, l) => n + l.levelups, 0)).toBe(1);
+        expect(p.expectedTicks).toBe(p.loads.length * 4); // a load's one page clears during its work ticks
+        expect(planRoute(xpForLevel(90), 91, RECIPES, stock([[DWARF_WEED, 500], [WINE_OF_ZAMORAK, 500]]), { freePagesPerLoad: 0 }).expectedTicks).toBe(p.loads.length * 4 + 1);
+        // herblore-accept L1 from 28 on the supply-safe list: 164 program ticks measured (bgsrv-mac, 3 of 3)
+        expect(planRoute(POST_RITUAL - 1, 99, RECIPES, stock([[GUAM, 41], [IRIT, 405], [EYE, 432]])).expectedTicks).toBe(164);
     });
 });
 
@@ -137,6 +139,19 @@ describe('runItemCycle', () => {
         // the stand tile reaches the program, which sends the booth click unrouted from it
         const stand = { x: 3185, z: 3436 };
         expect(programParams({ ...SPEC, booth: { ...SPEC.booth!, stand } }).booth).toEqual({ ...SPEC.booth, stand });
+    });
+
+    test('programParams carries held, bank and mixed when given (the cooking windows), and leaves them out otherwise', () => {
+        const tool = { ...SPEC, mode: 'tool' as const, skill: 'crafting' };
+        expect(programParams({ ...tool, held: true, bank: false, mixed: true })).toMatchObject({ held: true, bank: false, mixed: true });
+        expect(Object.keys(programParams(tool))).not.toEqual(expect.arrayContaining(['held']));
+        for (const k of ['held', 'bank', 'mixed']) expect(programParams(tool)).not.toHaveProperty(k);
+        // clearTicks is the driver's, never the program's
+        expect(programParams({ ...tool, clearTicks: 0 })).not.toHaveProperty('clearTicks');
+        // fill (stack mode) only when given
+        const stack = { mode: 'stack' as const, skill: 'fletching', recipes: [{ name: 'runearrow', level: 75, xp: 187.5, a: 53, b: 44, products: [892], per: 15 }], untilLevel: 99, step: 'S18d-fallback fletching' };
+        expect(programParams({ ...stack, fill: true })).toMatchObject({ mode: 'stack', fill: true });
+        expect(programParams(stack)).not.toHaveProperty('fill');
     });
 
     test('done: resolves with the result; one program row and one note; the watcher runs out its ticks', async () => {

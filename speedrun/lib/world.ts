@@ -121,7 +121,10 @@ function nearest(locs: NearbyLoc[], q: LocQuery): NearbyLoc | null {
 }
 
 /** The nearest loc matching `q`: from the published list, else from an on-demand scan. */
-export async function findLoc(sdk: Pick<BotSDK, 'getState' | 'scanNearbyLocs'>, q: LocQuery): Promise<NearbyLoc | null> {
+export async function findLoc(sdk: Pick<BotSDK, 'getState' | 'scanNearbyLocs'> & Partial<StateSource>, q: LocQuery): Promise<NearbyLoc | null> {
+    // While the client rebuilds the region (sceneReady false: the browser client after a teleport,
+    // a spirit tree or a relog) its loc lists are empty or the old region's, so wait for the built region.
+    if (sdk.getState()?.sceneReady === false && sdk.onStateUpdate) await waitUntil(sdk as StateSource, s => s.sceneReady !== false, { maxTicks: 60 });
     return nearest(sdk.getState()?.nearbyLocs ?? [], q) ?? nearest(await sdk.scanNearbyLocs(q.radius ?? 25), q);
 }
 
@@ -148,6 +151,34 @@ export function skillXp(src: StateLike, skill: string): number {
 /** Game messages (chat type 0) first published at or after `tick`, optionally matching `re`. */
 export function messagesSince(src: StateLike, tick: number, re?: RegExp): string[] {
     return (stateOf(src)?.gameMessages ?? []).filter(m => m.type === 0 && m.tick >= tick && (!re || re.test(m.text))).map(m => m.text);
+}
+
+/**
+ * The game-message cursor (the SDK's ActionHelpers.getMessageTick rule): the newest message's
+ * observation id, the publication it first showed in, or its tick where it has none. Take it
+ * before a click; messagesAfter then yields only the replies since. The clients stamp a click's
+ * reply on different ticks (the browser on the click's own tick, lite on the next), so no tick
+ * offset tells a new reply from the last one's on both; the publication cursor does.
+ */
+export function messageCursor(src: StateLike): number {
+    let c = 0;
+    for (const m of stateOf(src)?.gameMessages ?? []) c = Math.max(c, m.observationId ?? m.tick);
+    return c;
+}
+
+/** Game messages (chat type 0) newer than `cursor` (messageCursor), optionally matching `re`. */
+export function messagesAfter(src: StateLike, cursor: number, re?: RegExp): string[] {
+    return (stateOf(src)?.gameMessages ?? []).filter(m => m.type === 0 && (m.observationId ?? m.tick) > cursor && (!re || re.test(m.text))).map(m => m.text);
+}
+
+/**
+ * A click's game-message reply matching `re`: call it just before sending the click. It takes the
+ * messageCursor then, so `seen` (a predicate for the state it is given) and `first` (the live
+ * state) see only replies published since, on both clients.
+ */
+export function replyAfter(src: Pick<StateSource, 'getState'>, re: RegExp): { seen: (s: BotWorldState) => boolean; first: () => string | undefined } {
+    const cursor = messageCursor(src);
+    return { seen: s => messagesAfter(s, cursor, re).length > 0, first: () => messagesAfter(src, cursor, re)[0] };
 }
 
 export interface TileCounter {

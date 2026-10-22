@@ -1,5 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { createHash } from 'crypto';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { readTopUpAsk } from '../helpers/altar-cue';
+
+// The top-up bands write the courier's ask to the cue directory: never the checkout's run-machine/,
+// which on the run machine is the live one.
+const CUE = mkdtempSync(join(tmpdir(), 'thieving-cue-'));
+process.env.RC_CUE_DIR = CUE;
 import type { ActionResult, BotWorldState, InventoryItem } from '../../sdk/types';
 import { createPickpocket } from '../../server/webclient/src/bot/programs/pickpocket';
 import type { ProgramAction, ProgramContext, TickProgram } from '../../server/webclient/src/bot/programs/types';
@@ -7,10 +16,13 @@ import { baseState, FakeSdk, flush, type SentAction } from '../lib/fake-sdk';
 import type { ProgramStatus } from '../lib/programs';
 import { TickLog } from '../lib/ticks';
 import type { Step, StepContext } from '../runner/step';
-import { STUN_PRESETS } from '../../server/webclient/src/bot/programs/stun-actions';
+import { parseStunActions, STUN_PRESETS } from '../../server/webclient/src/bot/programs/stun-actions';
+import { Spells } from '../../sdk/spells';
+import { parseIn } from '../tools/slot-ledger';
+import { xpForLevel } from '../lib/xp';
 import {
-    ARDOUGNE_SOUTH_BANK, ARROWHEAD_TIERS, BANDS, bonesTopUpAction, chargeSipPotion, type ChargeSip, eatPolicy, FOODS, foodPattern, packReport, parseStunPack, RETALK_QUIET_TICKS, retalkDue, steps, STUN_PACK_ACTIONS, STUN_PACK_BONES_BELOW,
-    stunPackCheck, TOPUP_RESTART_BY, topUpAction, topUpDue, TopUpReceiver
+    ARDOUGNE_SOUTH_BANK, ARROWHEAD_TIERS, BANDS, bonesTopUpAction, chargeSipPotion, type ChargeSip, DROP_BARS, eatPolicy, FOODS, foodPattern, oreTopUpAction, packReport, parseStunPack, RETALK_QUIET_TICKS, retalkDue, steps, STUN_PACK_ACTIONS, STUN_PACK_BONES_BELOW,
+    stunActionsFor, stunPackCheck, SUPERHEAT_BRONZE_CASTS, SUPERHEAT_SPELL, superheatActions, superheatLoad, TOPUP_RESTART_BY, topUpAction, topUpAsk, TopUpAsker, topUpDue, TopUpReceiver
 } from './thieving';
 
 describe('sail retalk', () => {
@@ -358,9 +370,49 @@ describe('thieving helper top-ups', () => {
 
         expect(sdk.sent.map(a => a.method)).toEqual(['sendAcceptTrade', 'sendAcceptTrade']);
         expect(sdk.ops).toEqual(['start']);
-        const meta = ctx.log.rows.find(r => r.step === 'thieving:knights:detail')!.meta as { topUp: { mode: string; trades: Array<{ ok: boolean; received: number }> } };
+        const meta = ctx.log.rows.find(r => r.step === 'thieving:knights:detail')!.meta as { topUp: { mode: string; trades: Array<{ ok: boolean; received: number }>; asks: Array<{ items: unknown }> } };
         expect(meta.topUp.mode).toBe('idle');
         expect(meta.topUp.trades.map(t => [t.ok, t.received])).toEqual([[true, 10]]);
+        // the courier's ask, written on the open frame: 2 slots of cake held, one kept for coins, cake in the other 25
+        const ask = [{ item: '^(Cake|2\\/3 cake|Slice of cake)$', count: 25 }];
+        expect(meta.topUp.asks.map(a => a.items)).toEqual([ask]);
+        expect(readTopUpAsk(CUE)!.items).toEqual(ask);
+    });
+
+    test('topUpAsk with the pack: bones to fill, food back to 2, the next courier tier once at one tier held, one slot for arrows', () => {
+        const skills = (fletching: number) => [{ name: 'Thieving', level: 60, baseLevel: 60, experience: 0 }, { name: 'Fletching', level: fletching, baseLevel: fletching, experience: 0 }] as never;
+        const pack = (tiers: string[], o: { fletching?: number; coins?: boolean; sharks?: number } = {}) => {
+            const names = ['Blood rune', 'Air rune', 'Headless arrow', ...tiers.map(t => `${t} arrowtips`), 'Mithril arrow', ...(o.coins === false ? [] : ['Coins']), 'Babydragon bones', 'Babydragon bones'];
+            const inv = names.map((n, i) => item(i, n, { eat: false }));
+            for (let k = 0; k < (o.sharks ?? 1); k++) inv.push(item(inv.length, 'Shark'));
+            return { ...world({ level: 60, x: 2670, z: 3305 }), skills: skills(o.fletching ?? 50), inventory: inv } as BotWorldState;
+        };
+        const mem = { tiers: new Set<string>() };
+        // 9 slots held, coins among them: 19 free; 1 shark back, the adamant tier's slot, one for a new arrow stack: 16 bones
+        expect(topUpAsk(pack(['Mithril']), FOODS.shark, true, mem)).toEqual([{ item: 'bones$', count: 16 }, { item: '^(Shark)$', count: 1 }, { item: '^adamant arrow(head|tip)s$', count: 'all' }]);
+        // two tiers held: no tier; the adamant one was asked for once
+        expect(topUpAsk(pack(['Mithril', 'Adamant'], { sharks: 2 }), FOODS.shark, true, mem)).toEqual([{ item: 'bones$', count: 16 }]);
+        // down to adamant: rune, then nothing more
+        expect(topUpAsk(pack(['Adamant'], { sharks: 2 }), FOODS.shark, true, mem).at(-1)).toEqual({ item: '^rune arrow(head|tip)s$', count: 'all' });
+        expect(topUpAsk(pack(['Rune'], { sharks: 2 }), FOODS.shark, true, mem).map(a => a.item)).toEqual(['bones$']);
+        // no coins yet: one slot stays for the loot; Fletching 99: no tier and no arrow slot
+        expect(topUpAsk(pack(['Mithril'], { coins: false }), FOODS.shark, true, { tiers: new Set() })[0]).toEqual({ item: 'bones$', count: 16 });
+        expect(topUpAsk(pack(['Mithril'], { fletching: 99, sharks: 2 }), FOODS.shark, true, { tiers: new Set() })).toEqual([{ item: 'bones$', count: 18 }]);
+    });
+
+    test('TopUpAsker: writes once per trade with the courier, on the frame that shows it open; nothing for anyone else', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'asker-'));
+        const asker = new TopUpAsker(GIVER, dir, [FOODS.cake], false);
+        let s = world({ level: 60, x: 2670, z: 3305, maxHp: 40, inventory: [cake(0), cake(1)] });
+        const at = (patch: Partial<BotWorldState>) => (s = { ...s, ...patch, tick: s.tick + 1 } as BotWorldState);
+        expect(asker.step(s)).toBeNull();
+        expect(asker.step(at({ trade: screen('offer', 'stranger') as never }))).toBeNull();
+        expect(readTopUpAsk(dir)).toBeNull();
+        expect(asker.step(at({ trade: CLOSED as never }))).toBeNull();
+        expect(asker.step(at({ trade: screen('offer') as never }))).toEqual([{ item: '^(Cake|2\\/3 cake|Slice of cake)$', count: 25 }]);
+        expect(asker.step(at({ trade: screen('confirm') as never }))).toBeNull();
+        expect(readTopUpAsk(dir)!.items[0]!.count).toBe(25);
+        expect(asker.asks.map(a => a.tick)).toEqual([s.tick - 1]);
     });
 
     test('restart mode: stop at the failure, receive the trade, restart within TOPUP_RESTART_BY ticks', async () => {
@@ -472,7 +524,7 @@ function programState(tick: number, o: TraceOpts, msgs: ReadonlyArray<{ text: st
     return baseState({
         tick,
         player: { name: 'cairn_test', worldX: KNIGHTS_AT.x, worldZ: KNIGHTS_AT.z, level: 0, hp: 40, maxHp: 40, isDead: false } as never,
-        skills: [skill('Thieving', 60), skill('Magic', o.magic ?? 80), skill('Fletching', o.fletching ?? 1), skill('Prayer', 43), skill('Hitpoints', 40)],
+        skills: [skill('Thieving', 60), skill('Magic', o.magic ?? 80), skill('Fletching', o.fletching ?? 1), skill('Prayer', 43), skill('Hitpoints', 40), ...(o.smithing === undefined ? [] : [skill('Smithing', o.smithing)])],
         inventory: o.inventory.map((it, slot) => ({ slot, id: 1000 + slot, name: it.name, count: it.count ?? 1, optionsWithIndex: (it.options ?? ['Use', 'Drop']).map((text, i) => ({ text, opIndex: i + 1 })) })),
         nearbyNpcs: [{ index: 12, name: 'Knight of Ardougne', distance: 1, x: KNIGHTS_AT.x, z: KNIGHTS_AT.z - 1, optionsWithIndex: ['Talk-to', 'Attack', 'Pickpocket'].map((text, i) => ({ text, opIndex: i + 1 })) }] as never,
         nearbyPlayers: giver ? [{ kind: 'player', index: 7, name: GIVER, combatLevel: 3, x: KNIGHTS_AT.x + giver[0], z: KNIGHTS_AT.z + giver[1], distance: Math.max(Math.abs(giver[0]), Math.abs(giver[1])) }] as never : [],
@@ -485,6 +537,8 @@ interface TraceOpts {
     inventory: readonly KitItem[];
     magic?: number;
     fletching?: number;
+    /** Base Smithing; omitted: no Smithing row in the state. */
+    smithing?: number;
     /** The giver's tile less the account's; omitted: no giver in sight. */
     giverAt?: [number, number];
 }
@@ -907,5 +961,216 @@ describe('thieving: the stun pack across top-ups and restarts', () => {
             xp: { prayer: 14400, magic: 29700, fletching: 130000 }, levels: { prayer: [43, 85], magic: [80, 99], fletching: [1, 99] }
         });
         expect(meta.pack.counters).not.toHaveProperty('fails');
+    });
+});
+
+// ------------------------------------------------------------------ superheat
+
+const SH = { chargeUnlocked: true, superheat: true };
+
+/** Load 0 with superheat (stun-pack.md section 16): nature runes and ore in place of the bones. */
+function shWorld(o: { magic?: number; smithing?: number; ore?: Array<[string, number]>; drop?: RegExp; equipment?: string[]; giverAt?: [number, number] | null } = {}): BotWorldState {
+    let slot = 9;
+    const ore = (o.ore ?? [['Iron ore', 16]]).flatMap(([name, n]) => Array.from({ length: n }, () => named(slot++, name, 1, ['Use', 'Drop'])));
+    const inventory = [
+        named(0, 'Shark', 1, ['Eat']), named(1, 'Shark', 1, ['Eat']), named(2, 'Blood rune', 489), named(3, 'Air rune', 489), named(4, 'Headless arrow', 3600),
+        named(5, 'Bronze arrowheads', 60), named(6, 'Iron arrowheads', 90), named(7, 'Nature rune', 160), ...ore
+    ].filter(i => !o.drop?.test(i.name));
+    const s = packWorld({ inventory, ...(o.magic === undefined ? {} : { magic: o.magic }), ...(o.equipment ? { equipment: o.equipment } : {}), ...(o.giverAt === undefined ? {} : { giverAt: o.giverAt }) });
+    const smithing = o.smithing ?? 15;
+    return { ...s, skills: [...s.skills, { name: 'Smithing', level: smithing, baseLevel: smithing, experience: xpForLevel(smithing) }] } as BotWorldState;
+}
+
+/** The scripted program's superheat kit: runes, arrows, ore and any bars already made. */
+function shKit(o: { iron?: number; copper?: number; tin?: number; bars?: number; blood?: number } = {}): KitItem[] {
+    const n = (k: number, name: string, options = ['Use', 'Drop']) => Array.from({ length: k }, () => ({ name, options }));
+    return [
+        ...n(2, 'Shark', ['Eat', 'Drop']), { name: 'Blood rune', count: o.blood ?? 489 }, { name: 'Air rune', count: 489 }, { name: 'Nature rune', count: 160 }, { name: 'Headless arrow', count: 3600 }, { name: 'Bronze arrowheads', count: 60 },
+        // a bar publishes no options (its obj declares no ops; the client's Drop is implicit)
+        ...n(o.iron ?? 0, 'Iron ore'), ...n(o.copper ?? 0, 'Copper ore'), ...n(o.tin ?? 0, 'Tin ore'), ...n(o.bars ?? 0, 'Iron bar', [])
+    ];
+}
+
+describe('thieving: the stun pack with superheat', () => {
+    test('off by default: superheat false, or not passed, sends the bury pack', async () => {
+        const s = packWorld();
+        const pack = await knightsParams({ food: 'shark', topUp: TOPUP, stunPack: PACK }, s);
+        expect(await knightsParams({ food: 'shark', topUp: TOPUP, stunPack: { ...PACK, superheat: false } }, s)).toEqual(pack);
+        expect(pack.stunActions).toEqual([topUpAction(TOPUP, FOODS.shark), bonesTopUpAction(TOPUP, 3), 'bury', 'charge', 'arrows']);
+        expect(parseStunPack(true, TOPUP)).not.toHaveProperty('superheat');
+    });
+
+    test('options: true is 2 casts and oreBelow 2; casts 1 or 2; no unknown keys; bonesBelow refused beside it', () => {
+        expect(parseStunPack({ superheat: true }, TOPUP)!.superheat).toEqual({ casts: 2, oreBelow: 2 });
+        expect(parseStunPack({ superheat: { casts: 1 } }, TOPUP)!.superheat).toEqual({ casts: 1, oreBelow: 1 });
+        expect(parseStunPack({ superheat: { oreBelow: 4 } }, TOPUP)!.superheat).toEqual({ casts: 2, oreBelow: 4 });
+        expect(() => parseStunPack({ superheat: { casts: 3 } }, TOPUP)).toThrow(/casts must be 1 or 2/);
+        expect(() => parseStunPack({ superheat: { oreBelow: 0 } }, TOPUP)).toThrow(/oreBelow must be a whole number/);
+        expect(() => parseStunPack({ superheat: { ore: 'iron' } as never }, TOPUP)).toThrow(/superheat has no option 'ore'/);
+        expect(() => parseStunPack({ superheat: 'on' as never }, TOPUP)).toThrow(/superheat must be true or/);
+        expect(() => parseStunPack({ superheat: true, bonesBelow: 3 }, TOPUP)).toThrow(/bonesBelow has no effect with superheat/);
+        expect(() => parseStunPack({ superheat: true }, undefined)).toThrow(/its ore arrive through the top-up trade/);
+        expect(SUPERHEAT_SPELL).toBe(Spells.SUPERHEAT);
+        // 12 bronze bars at 155 game xp reach Smithing 15's 1,860 (rs/367's 12 copper and 12 tin)
+        expect(SUPERHEAT_BRONZE_CASTS).toBe(12);
+    });
+
+    test('idle params: the food and ore top-ups, iron then bronze casts, the bar drops, charge, arrows; the program parses them', async () => {
+        const params = await knightsParams({ food: 'shark', topUp: TOPUP, stunPack: SH }, shWorld());
+        expect(params.stunActions).toEqual([topUpAction(TOPUP, FOODS.shark), oreTopUpAction(TOPUP, 2), ...superheatActions({ casts: 2, oreBelow: 2 }, true), DROP_BARS, 'charge', 'arrows']);
+        expect(oreTopUpAction(TOPUP, 2)).toEqual({ name: 'topup:ore', kind: 'player', player: '^cairn_mule2$', fewer: [{ item: '^(iron|copper) ore$', than: 2 }], window: [2, 2] });
+        const declared = new Set<string>(createPickpocket.params);
+        expect(Object.keys(params).filter(k => !declared.has(k))).toEqual([]);
+        const tpl = parseStunActions(params.stunActions);
+        expect(tpl.filter(t => t.name.startsWith('superheat')).map(t => [t.name, t.delay, t.rest, t.skipClick, t.window])).toEqual([['superheat:iron', 'tick2', 2, true, [2, 5]], ['superheat:bronze', 'tick2', 2, true, [2, 5]]]);
+        // restart mode: the actions alone
+        expect(stunActionsFor({ ...TOPUP, mode: 'restart' }, FOODS.shark, parseStunPack(SH, TOPUP))).toEqual([...superheatActions({ casts: 2, oreBelow: 2 }, true), DROP_BARS, 'charge', 'arrows']);
+        // no fire staff worn: each cast also needs its 4 fire runes
+        expect(superheatActions({ casts: 1, oreBelow: 1 }, false)[0]).toMatchObject({ needs: [{ item: '^nature runes?$', count: 1 }, { item: '^fire runes?$', count: 4 }], window: [2, 2] });
+    });
+
+    test('the program refuses a tick2 window past +5 and any unknown action key', () => {
+        expect(() => parseStunActions([{ ...superheatActions({ casts: 2, oreBelow: 2 }, true)[0], window: [2, 6] }])).toThrow(/window ending by \+5/);
+        expect(() => parseStunActions([{ ...DROP_BARS, rest: 2 }])).toThrow(/has no key 'rest'/);
+        expect(() => parseStunActions([{ ...DROP_BARS, op: 6 }])).toThrow(/OPHELD op, 1 to 5/);
+        expect(() => parseStunActions([{ name: 'x', kind: 'item', item: 'bar$' }])).toThrow(/needs item and option \(or op\)/);
+        expect(() => parseStunActions([{ ...DROP_BARS, skipClick: true }])).toThrow(/skipClick needs a 'tick' or 'tick2' delay/);
+    });
+
+    test('the packets: a stocked stun casts on +2 and +5 behind four delay-free actions and no click, rests +3, +4, +6 and +7', async () => {
+        const params = await knightsParams({ food: 'shark', topUp: TOPUP, stunPack: SH }, shWorld());
+        const t = programTrace(params, { ticks: 120, inventory: shKit({ iron: 10 }), smithing: 20, giverAt: [1, 0] });
+        const cast = ['clickComponent', 'clickComponent', 'clickComponent', 'clickComponent', 'spellOnItem'];
+        for (const k of [2, 5]) for (const ticks of byOffset(t, k)) expect(ticks).toEqual(cast);
+        for (const k of [3, 4, 6, 7, 8]) for (const ticks of byOffset(t, k)) expect(ticks).toEqual(['interactNpc']);
+        const k2 = t.h.sent.filter(s => s.tick === t.fails[0]! + 2).map(s => s.action);
+        // Superheat on the first iron ore (slot 7 in shKit), by its IF component
+        expect(k2[4]).toEqual({ type: 'spellOnItem', slot: 7, spellComponent: Spells.SUPERHEAT });
+        const stuns = byOffset(t, 2).length;
+        expect(t.h.status.counters['stun:superheat:iron']).toBe(2 * stuns);
+        expect(t.h.status.counters.stunClickSkips).toBe(2 * stuns);
+        expect(t.h.status.counters['stun:bury']).toBeUndefined();
+        // the clicks outside the stuns are the bury pack's
+        const bury = packetTrace(await knightsParams({ food: 'shark', topUp: TOPUP, stunPack: PACK }, packWorld()), { inventory: kit(), giverAt: [1, 0] });
+        const inStun = (line: string) => t.fails.some(f => { const tick = Number(line.split(' ')[0]); return tick > f && tick <= f + 7; });
+        const clicks = (lines: string[]) => lines.filter(l => l.includes('"interactNpc"') && !inStun(l));
+        expect(clicks(t.lines)).toEqual(clicks(bury));
+    });
+
+    test('the packets: bars held are dropped first, then Charge; out of blood, arrows fill the slots', async () => {
+        const params = await knightsParams({ food: 'shark', topUp: TOPUP, stunPack: SH }, shWorld());
+        const t = programTrace(params, { ticks: 120, inventory: shKit({ iron: 10, bars: 2 }), smithing: 20, giverAt: [1, 0] });
+        for (const ticks of byOffset(t, 2)) expect(ticks).toEqual(['useInventoryItem', 'useInventoryItem', 'clickComponent', 'clickComponent', 'spellOnItem']);
+        // the two bars (slots 17 and 18, after ten ores) by OPHELD5, the client's Drop
+        const drops = t.h.sent.filter(s => s.tick === t.fails[0]! + 2 && s.action.type === 'useInventoryItem').map(s => s.action);
+        expect(drops).toEqual([{ type: 'useInventoryItem', slot: 17, optionIndex: 5 }, { type: 'useInventoryItem', slot: 18, optionIndex: 5 }]);
+        const dry = programTrace(params, { ticks: 120, inventory: shKit({ iron: 10, blood: 0 }), smithing: 20, giverAt: [1, 0] });
+        for (const ticks of byOffset(dry, 2)) expect(ticks).toEqual(['useItemOnItem', 'useItemOnItem', 'useItemOnItem', 'useItemOnItem', 'spellOnItem']);
+        expect(dry.h.status.counters['stun:charge']).toBeUndefined();
+    });
+
+    test('the packets: below Smithing 15 bronze, copper with tin; iron waits for 15', async () => {
+        const params = await knightsParams({ food: 'shark', topUp: TOPUP, stunPack: SH }, shWorld({ smithing: 1, ore: [['Copper ore', 6], ['Tin ore', 6]] }));
+        const t = programTrace(params, { ticks: 120, inventory: shKit({ iron: 4, copper: 4, tin: 4 }), smithing: 1, giverAt: [1, 0] });
+        const k2 = t.h.sent.filter(s => s.tick === t.fails[0]! + 2).map(s => s.action);
+        // the first copper ore (slots 7-10 hold iron)
+        expect(k2[4]).toEqual({ type: 'spellOnItem', slot: 11, spellComponent: Spells.SUPERHEAT });
+        expect(t.h.status.counters['stun:superheat:iron']).toBeUndefined();
+        expect(t.h.status.counters['stun:superheat:bronze']).toBe(2 * byOffset(t, 2).length);
+        // copper without tin casts nothing
+        const noTin = programTrace(params, { ticks: 120, inventory: shKit({ copper: 4 }), smithing: 1 });
+        expect(noTin.h.sent.some(s => s.action.type === 'spellOnItem')).toBe(false);
+    });
+
+    test('the packets: no ore and no giver beside it, no cast: every window tick carries four delay-free actions and the click', async () => {
+        const params = await knightsParams({ food: 'shark', topUp: TOPUP, stunPack: SH }, shWorld());
+        const t = programTrace(params, { ticks: 120, inventory: shKit(), smithing: 20 });
+        expect(t.h.sent.some(s => s.action.type === 'spellOnItem' || s.action.type === 'interactPlayer')).toBe(false);
+        for (const k of [2, 3, 4, 5, 6, 7]) for (const ticks of byOffset(t, k)) expect(ticks).toEqual(['clickComponent', 'clickComponent', 'clickComponent', 'clickComponent', 'interactNpc']);
+        expect(t.h.status.counters.stunClickSkips).toBeUndefined();
+    });
+
+    test('the packets: ore below oreBelow with the giver on a side tile, the ore top-up owns +2 and the stun casts nothing while it holds', async () => {
+        const params = await knightsParams({ food: 'shark', topUp: TOPUP, stunPack: SH }, shWorld());
+        const t = programTrace(params, { ticks: 120, inventory: shKit({ iron: 1 }), smithing: 20, giverAt: [1, 0] });
+        for (const ticks of byOffset(t, 2)) expect(ticks).toEqual(['interactPlayer']);
+        for (const k of [3, 4, 5]) for (const ticks of byOffset(t, k)) expect(ticks).toEqual([]);
+        expect(t.h.status.counters['stun:topup:ore']).toBe(byOffset(t, 2).length);
+        expect(t.h.sent.some(s => s.action.type === 'spellOnItem')).toBe(false);
+        // low on sharks as well: one request, the food one (the courier brings the ore with it)
+        const both = programTrace(params, { ticks: 120, inventory: shKit({ iron: 1 }).filter((it, i) => !(it.name === 'Shark' && i === 0)), smithing: 20, giverAt: [1, 0] });
+        expect(both.h.status.counters['stun:topup']).toBe(byOffset(both, 2).length);
+        expect(both.h.status.counters['stun:topup:ore']).toBeUndefined();
+    });
+
+    test('casts 1: one cast on +2, and +5 carries delay-free actions and the click', async () => {
+        const params = await knightsParams({ food: 'shark', topUp: TOPUP, stunPack: { ...SH, superheat: { casts: 1 } } }, shWorld());
+        const t = programTrace(params, { ticks: 120, inventory: shKit({ iron: 10 }), smithing: 20, giverAt: [1, 0] });
+        for (const ticks of byOffset(t, 2)) expect(ticks.at(-1)).toBe('spellOnItem');
+        for (const ticks of byOffset(t, 5)) expect(ticks).toEqual(['clickComponent', 'clickComponent', 'clickComponent', 'clickComponent', 'interactNpc']);
+    });
+});
+
+describe('thieving: the superheat start check', () => {
+    const check = (s: BotWorldState) => stunPackCheck(s, GIVER, { chargeUnlocked: true, sipForCharge: true, superheat: { casts: 2, oreBelow: 2 } });
+
+    test('passes on its Load 0; each refusal names what is missing', () => {
+        expect(check(shWorld())).toBe(true);
+        expect(check(shWorld({ drop: /^nature rune$/i }))).toBe("the stun pack's Superheat needs nature runes (holding 0)");
+        expect(check(shWorld({ ore: [] }))).toBe("the stun pack's Superheat needs ore for a cast: iron ore at Smithing 15 or more, or copper and tin ore (Smithing 15; holding 0 iron, 0 copper, 0 tin)");
+        expect(check(shWorld({ smithing: 1 }))).toMatch(/\(Smithing 1; holding 16 iron, 0 copper, 0 tin\)/);
+        expect(check(shWorld({ smithing: 1, ore: [['Copper ore', 1], ['Tin ore', 1]] }))).toBe(true);
+        // no fire staff: Charge refuses first while its runes are held; without them Superheat wants fire runes
+        expect(check(shWorld({ equipment: [] }))).toMatch(/Charge needs a staff of fire wielded/);
+        expect(check(shWorld({ equipment: [], drop: /^blood rune$/i }))).toBe("the stun pack's Superheat needs a staff of fire wielded or 4 fire runes a cast (holding 0 fire runes)");
+    });
+
+    test('without blood runes Charge is not checked (Superheat carries Magic); with them it is', () => {
+        expect(check(shWorld({ magic: 79, drop: /^blood rune$/i }))).toBe(true);
+        expect(check(shWorld({ magic: 79 }))).toMatch(/Charge needs Magic 80: base 79/);
+        // the bury pack still refuses without blood runes
+        expect(stunPackCheck(shWorld({ drop: /^blood rune$/i }), GIVER, { chargeUnlocked: true, sipForCharge: true })).toMatch(/3 blood and 3 air runes \(holding 0 and 489\)/);
+        expect(check(shWorld({ magic: 40, drop: /^blood rune$/i }))).toBe("the stun pack's Superheat needs Magic 43: boosted 40");
+    });
+
+    test('the band refuses before its first packet', async () => {
+        const sdk = new ManualPageSdk(shWorld({ ore: [] }));
+        await expect(steps({ topUp: TOPUP, stunPack: SH }).find(s => s.name === 'thieving:knights')!.run(harness(sdk).ctx)).rejects.toThrow(/Superheat needs ore for a cast/);
+        expect(sdk.starts).toEqual([]);
+        expect(sdk.sent).toEqual([]);
+    });
+});
+
+describe('thieving: the superheat top-up', () => {
+    const smith = (s: BotWorldState, xp: number) => ({ ...s, skills: s.skills.map(k => (k.name === 'Smithing' ? { ...k, experience: xp, level: 1, baseLevel: xp >= 1860 ? 15 : 1 } : k)) }) as BotWorldState;
+
+    test('superheatLoad: bronze pairs while bronze casts are due, iron in the rest; a slot-ledger `in` cell', () => {
+        const s = shWorld({ smithing: 1, ore: [] });
+        expect(superheatLoad(smith(s, 0), 16)).toBe('copper ore to 8 [u]; tin ore to 8 [u]');
+        // 8 bars made: 4 bronze casts still due, then iron
+        expect(superheatLoad(smith(s, 8 * 155), 16)).toBe('copper ore to 4 [u]; tin ore to 4 [u]; iron ore to 8 [u]');
+        expect(superheatLoad(smith(shWorld({ ore: [['Iron ore', 3]] }), 1860), 13)).toBe('iron ore to 16 [u]');
+        expect(superheatLoad(s, 0)).toBe('');
+        expect(parseIn('copper ore to 4 [u]; tin ore to 4 [u]; iron ore to 8 [u]')).toEqual([
+            { name: 'copper ore', count: 4, kind: 'u', topUp: true }, { name: 'tin ore', count: 4, kind: 'u', topUp: true }, { name: 'iron ore', count: 8, kind: 'u', topUp: true }
+        ]);
+    });
+
+    test('restart mode stops for a top-up on ore below the bar', () => {
+        const st = { counters: { fails: 3 }, gauges: { food: 2 } };
+        expect(topUpDue(st, 2, 2, { held: 1, below: 2 })).toBe(true);
+        expect(topUpDue(st, 2, 2, { held: 2, below: 2 })).toBe(false);
+    });
+
+    test('the detail row: casts, bar drops, skipped clicks and Smithing', async () => {
+        const sdk = new ManualPageSdk(shWorld({ smithing: 1, ore: [['Copper ore', 8], ['Tin ore', 8]] }));
+        const { ctx } = harness(sdk);
+        const done = steps({ food: 'shark', topUp: TOPUP, stunPack: SH }).find(s => s.name === 'thieving:knights')!.run(ctx);
+        await settle(() => sdk.starts.length === 1);
+        const after = sdk.state!.skills.map(k => (k.name === 'Thieving' ? { ...k, level: 99, baseLevel: 99 } : k.name === 'Smithing' ? { ...k, level: 53, baseLevel: 53, experience: 41860 } : k));
+        sdk.publish({ phase: 'done', result: { reason: 'level' }, counters: { fails: 90, 'stun:superheat:bronze': 12, 'stun:superheat:iron': 128, 'stun:drop:bars': 139, 'stun:charge': 163, 'stun:topup:ore': 9, 'stun:topup': 2, stunClickSkips: 140, stunFired: 600 } }, { skills: after as never });
+        await done;
+        const meta = ctx.log.rows.find(r => r.step === 'thieving:knights:detail')!.meta as { pack: ReturnType<typeof packReport> };
+        expect(meta.pack).toMatchObject({ superheat: { casts: 2, oreBelow: 2 }, superheats: 140, barDrops: 139, clickSkips: 140, charges: 163, buried: 0, topUpRequests: 11, xp: { smithing: 41860 }, levels: { smithing: [1, 53] } });
     });
 });

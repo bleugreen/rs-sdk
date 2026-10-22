@@ -128,6 +128,21 @@ Options (`ROLE_OPTIONS`): `train` (20), `keyMagic` (41), `tripCasts` (500), `tri
 off), `lawMax` (3,500), `prices` (caps: chaos 60, death 90), `shopPrices` (estimates),
 `funders`.
 
+### Blue dragon scales: not collectable from the safe tile
+
+The room has five blue dragon scale ground spawns (read, `m45_153.jm2`): (2902,9806),
+(2905,9801), (2906,9796), (2908,9805) and (2910,9809), the source of the dragon scale dust in
+S25e's weapon poison (kwuarm) and antifire (lantadyme). Four are within 10 tiles of the safe
+tile, but **none is in line of sight from it**: `collisionLineOfSight` (the engine's
+hasLineOfSight on the room's projectile blockers) is false for all five, even (2902,9806) at 4
+tiles while (2902,9805) is visible (dragons.test.ts pins it). Measured on the demo,
+2026-10-22 15:36-15:46Z: cairn_h56 stood on the tile for 10 minutes with 25 laws and a
+telegrab-for-scales build, all five scales lying unclaimed in view, no other player in the
+room, and grabbed none. So the role does not telegrab scales; a scale has to be walked to,
+inside the adults' leashes (an anti-dragonfire shield's job, not this role's). They respawn
+`respawnrate` ticks after being taken (100 by default, `ObjType`), scaled by
+`World.scaleByPlayerCount` to (4000 - players) / 4000, about 62 ticks at 1,500 players.
+
 ## Measured
 
 **Lab** (local engine, 300 ms ticks; rs/112 comments #1, #2, #6): 34 kills at Magic 45-91 with

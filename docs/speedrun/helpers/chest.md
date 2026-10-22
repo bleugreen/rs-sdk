@@ -39,3 +39,17 @@ First run: cairn_h47 (Thieving 99, combat 111), 2026-10-22, outside the fleet fr
 | Bank detour (every 40 runes) | ~30 ticks |
 
 The rate follows the world's player count: at a quiet world the respawn is the full ~400 ticks, about 115 runes per hour.
+
+## Stopping, and a delivery
+
+Never stop the role's process (or the launcher) while the account is below ground: the only way out of the basement is the trap's teleport, and the handover's walker has no route up the cellar ladder and through the locked door. The first delivery attempt failed that way (safely: no trade opened, nothing recorded under its id).
+
+Ask for a stop instead: create the stop file, `<role-state dir>/<account>.chest-stop` (under the launcher, `run-machine/role-state/cairn_h47.chest-stop`; option `stopFile` overrides it), or set `target`. Below ground the role carries on until the next loot teleports it out (at most one respawn, about 2-4 minutes); on the surface it banks what it carries at the East Ardougne north bank, deletes the stop file, logs `finished` and returns. With `final: true` on its launcher entry the launcher then logs the account out.
+
+A delivery is then three steps on bbs, from the dev copy:
+
+1. `touch run-machine/role-state/cairn_h47.chest-stop` and wait for the unit to end (`finished` in the role log).
+2. Run the `handover` role (`final: true`) with `bank: {x: 2617, z: 3333}` (East Ardougne north bank), `meet: {x: 3185, z: 3436}` (cairn_mule1 at Varrock west bank), a fresh `id`, and `items: [{item: 'Blood rune', n}]`. Varrock and back is about 4 minutes of walking each way; the handover walks back to the Ardougne bank when it is done.
+3. Start the chest launcher again.
+
+Delivered so far: 184 on 2026-10-22 at 12:15 UTC (`rs372-mule1-blood-1`).

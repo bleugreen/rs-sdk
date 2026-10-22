@@ -1,0 +1,2694 @@
+{
+ "chance": [
+  32,
+  100
+ ],
+ "limit": 2,
+ "soft": [
+  400,
+  225
+ ],
+ "pageTicks": 1714,
+ "catchUps": 30,
+ "softs": 41,
+ "knife": {
+  "levels": "80-83",
+  "startLevel": 80,
+  "p": "0.34-0.348",
+  "missed": 0,
+  "catchUpSource": "program",
+  "programFrames": {
+   "wall": 1792623018794,
+   "t": 640,
+   "n": 54,
+   "pr": 4,
+   "sl": 5,
+   "rs": 5,
+   "lu": 3,
+   "sw": 10,
+   "fc": 2,
+   "fu": 16,
+   "fo": 104,
+   "fn": 544
+  },
+  "pageCatchUpsInRun": 15,
+  "bins": [
+   {
+    "bin": "0-2",
+    "minutesObserved": 2.28,
+    "logs": 43,
+    "ticks": 471,
+    "perLog": 10.95,
+    "expRolls": 125.36,
+    "perExpectedRoll": 3.76
+   },
+   {
+    "bin": "2-5",
+    "minutesObserved": 0.38,
+    "logs": 10,
+    "ticks": 58,
+    "perLog": 5.8,
+    "expRolls": 29.43,
+    "perExpectedRoll": 1.97
+   },
+   {
+    "bin": "5-10",
+    "minutesObserved": 0,
+    "logs": 0,
+    "ticks": 0,
+    "perLog": null,
+    "expRolls": 0,
+    "perExpectedRoll": null
+   },
+   {
+    "bin": "over 10",
+    "minutesObserved": 0,
+    "logs": 0,
+    "ticks": 0,
+    "perLog": null,
+    "expRolls": 0,
+    "perExpectedRoll": null
+   }
+  ],
+  "all": {
+   "logs": 53,
+   "ticks": 529,
+   "perLog": 9.98,
+   "expRolls": 154.79,
+   "perExpectedRoll": 3.42
+  },
+  "minuteCalm": {
+   "logs": 43,
+   "ticks": 471,
+   "perLog": 10.95,
+   "expRolls": 125.36,
+   "perExpectedRoll": 3.76
+  },
+  "minuteBusy": {
+   "logs": 10,
+   "ticks": 58,
+   "perLog": 5.8,
+   "expRolls": 29.43,
+   "perExpectedRoll": 1.97
+  },
+  "trailingCalm": {
+   "logs": 53,
+   "ticks": 529,
+   "perLog": 9.98,
+   "expRolls": 154.79,
+   "perExpectedRoll": 3.42
+  },
+  "trailingBusy": {
+   "logs": 0,
+   "ticks": 0,
+   "perLog": null,
+   "expRolls": 0,
+   "perExpectedRoll": null
+  },
+  "softCalm": {
+   "logs": 9,
+   "ticks": 97,
+   "perLog": 10.78,
+   "expRolls": 26.18,
+   "perExpectedRoll": 3.7
+  },
+  "softBusy": {
+   "logs": 44,
+   "ticks": 432,
+   "perLog": 9.82,
+   "expRolls": 128.61,
+   "perExpectedRoll": 3.36
+  },
+  "kinds": {
+   "honest": 5,
+   "timing": 4,
+   "timingFourTick": 0,
+   "timingPhaseResync": 4
+  },
+  "counters": {
+   "successes": 54,
+   "starters": 152,
+   "levelUps": 3,
+   "switches": 10,
+   "slips": 5,
+   "resyncs": 5,
+   "phaseResyncs": 4,
+   "noTarget": 6
+  },
+  "histogram": {
+   "3": 19,
+   "6": 9,
+   "7": 2,
+   "9": 2,
+   "10": 2,
+   "11": 1,
+   "12": 4,
+   "15": 3,
+   "16": 1,
+   "17": 2,
+   "18": 2,
+   "19": 1,
+   "25": 1,
+   "29": 1,
+   "33": 2,
+   "37": 1
+  },
+  "minutes": {
+   "2026-10-21T22:47:00.000Z": {
+    "catchUps": 1,
+    "softs": 1,
+    "spanMs": 22655.571533203125,
+    "rate": 2.65,
+    "softRate": 2.65,
+    "calm": false
+   },
+   "2026-10-21T22:48:00.000Z": {
+    "catchUps": 0,
+    "softs": 5,
+    "spanMs": 60000,
+    "rate": 0,
+    "softRate": 5,
+    "calm": true
+   },
+   "2026-10-21T22:49:00.000Z": {
+    "catchUps": 1,
+    "softs": 3,
+    "spanMs": 60000,
+    "rate": 1,
+    "softRate": 3,
+    "calm": true
+   },
+   "2026-10-21T22:50:00.000Z": {
+    "catchUps": 0,
+    "softs": 3,
+    "spanMs": 16587.300048828125,
+    "rate": 0,
+    "softRate": 10.85,
+    "calm": true
+   }
+  },
+  "logs": [
+   {
+    "n": 1,
+    "tick": 106,
+    "level": 80,
+    "wall": 1792622857344.4285,
+    "phaseResync": false
+   },
+   {
+    "n": 2,
+    "tick": 122,
+    "level": 80,
+    "wall": 1792622862075,
+    "phaseResync": false
+   },
+   {
+    "n": 3,
+    "tick": 125,
+    "level": 80,
+    "wall": 1792622862946.2856,
+    "phaseResync": false
+   },
+   {
+    "n": 4,
+    "tick": 131,
+    "level": 81,
+    "wall": 1792622864776.2222,
+    "phaseResync": false
+   },
+   {
+    "n": 5,
+    "tick": 137,
+    "level": 81,
+    "wall": 1792622866780.889,
+    "phaseResync": false
+   },
+   {
+    "n": 6,
+    "tick": 140,
+    "level": 81,
+    "wall": 1792622867689.5715,
+    "phaseResync": false
+   },
+   {
+    "n": 7,
+    "tick": 152,
+    "level": 81,
+    "wall": 1792622871230.2,
+    "phaseResync": false
+   },
+   {
+    "n": 8,
+    "tick": 155,
+    "level": 81,
+    "wall": 1792622872132,
+    "phaseResync": false
+   },
+   {
+    "n": 9,
+    "tick": 158,
+    "level": 81,
+    "wall": 1792622872992.5715,
+    "phaseResync": false
+   },
+   {
+    "n": 10,
+    "tick": 161,
+    "level": 81,
+    "wall": 1792622873853.1428,
+    "phaseResync": false
+   },
+   {
+    "n": 11,
+    "tick": 164,
+    "level": 81,
+    "wall": 1792622874741.8,
+    "phaseResync": false
+   },
+   {
+    "n": 12,
+    "tick": 182,
+    "level": 81,
+    "wall": 1792622880249.818,
+    "phaseResync": false
+   },
+   {
+    "n": 13,
+    "tick": 215,
+    "level": 81,
+    "wall": 1792622890452.8333,
+    "phaseResync": false
+   },
+   {
+    "n": 14,
+    "tick": 222,
+    "level": 81,
+    "wall": 1792622892225,
+    "phaseResync": false
+   },
+   {
+    "n": 15,
+    "tick": 228,
+    "level": 81,
+    "wall": 1792622894229,
+    "phaseResync": false
+   },
+   {
+    "n": 16,
+    "tick": 243,
+    "level": 81,
+    "wall": 1792622898385.2856,
+    "phaseResync": false
+   },
+   {
+    "n": 17,
+    "tick": 249,
+    "level": 81,
+    "wall": 1792622900247.6667,
+    "phaseResync": false
+   },
+   {
+    "n": 18,
+    "tick": 252,
+    "level": 81,
+    "wall": 1792622901250.3333,
+    "phaseResync": false
+   },
+   {
+    "n": 19,
+    "tick": 255,
+    "level": 81,
+    "wall": 1792622902253,
+    "phaseResync": false
+   },
+   {
+    "n": 20,
+    "tick": 264,
+    "level": 81,
+    "wall": 1792622905272,
+    "phaseResync": false
+   },
+   {
+    "n": 21,
+    "tick": 270,
+    "level": 81,
+    "wall": 1792622907284,
+    "phaseResync": false
+   },
+   {
+    "n": 22,
+    "tick": 285,
+    "level": 81,
+    "wall": 1792622911104.8,
+    "phaseResync": false
+   },
+   {
+    "n": 23,
+    "tick": 288,
+    "level": 81,
+    "wall": 1792622912013.2,
+    "phaseResync": false
+   },
+   {
+    "n": 24,
+    "tick": 291,
+    "level": 81,
+    "wall": 1792622912984.3333,
+    "phaseResync": false
+   },
+   {
+    "n": 25,
+    "tick": 316,
+    "level": 81,
+    "wall": 1792622920540.8,
+    "phaseResync": false
+   },
+   {
+    "n": 26,
+    "tick": 345,
+    "level": 82,
+    "wall": 1792622929646.2727,
+    "phaseResync": false
+   },
+   {
+    "n": 27,
+    "tick": 355,
+    "level": 82,
+    "wall": 1792622932389,
+    "phaseResync": false
+   },
+   {
+    "n": 28,
+    "tick": 365,
+    "level": 82,
+    "wall": 1792622935258.818,
+    "phaseResync": true
+   },
+   {
+    "n": 29,
+    "tick": 368,
+    "level": 82,
+    "wall": 1792622936078.6365,
+    "phaseResync": false
+   },
+   {
+    "n": 30,
+    "tick": 371,
+    "level": 82,
+    "wall": 1792622936898.4546,
+    "phaseResync": false
+   },
+   {
+    "n": 31,
+    "tick": 374,
+    "level": 82,
+    "wall": 1792622937779.5,
+    "phaseResync": false
+   },
+   {
+    "n": 32,
+    "tick": 383,
+    "level": 82,
+    "wall": 1792622940662,
+    "phaseResync": false
+   },
+   {
+    "n": 33,
+    "tick": 386,
+    "level": 82,
+    "wall": 1792622941569.5,
+    "phaseResync": false
+   },
+   {
+    "n": 34,
+    "tick": 389,
+    "level": 82,
+    "wall": 1792622942477,
+    "phaseResync": false
+   },
+   {
+    "n": 35,
+    "tick": 404,
+    "level": 82,
+    "wall": 1792622946887.2,
+    "phaseResync": false
+   },
+   {
+    "n": 36,
+    "tick": 416,
+    "level": 82,
+    "wall": 1792622950697.8,
+    "phaseResync": false
+   },
+   {
+    "n": 37,
+    "tick": 433,
+    "level": 82,
+    "wall": 1792622955735,
+    "phaseResync": true
+   },
+   {
+    "n": 38,
+    "tick": 470,
+    "level": 82,
+    "wall": 1792622966906.6,
+    "phaseResync": false
+   },
+   {
+    "n": 39,
+    "tick": 489,
+    "level": 82,
+    "wall": 1792622972523.4,
+    "phaseResync": false
+   },
+   {
+    "n": 40,
+    "tick": 522,
+    "level": 82,
+    "wall": 1792622982261.6,
+    "phaseResync": false
+   },
+   {
+    "n": 41,
+    "tick": 529,
+    "level": 82,
+    "wall": 1792622984367.2,
+    "phaseResync": false
+   },
+   {
+    "n": 42,
+    "tick": 532,
+    "level": 82,
+    "wall": 1792622985240.5715,
+    "phaseResync": false
+   },
+   {
+    "n": 43,
+    "tick": 550,
+    "level": 82,
+    "wall": 1792622990680,
+    "phaseResync": false
+   },
+   {
+    "n": 44,
+    "tick": 556,
+    "level": 82,
+    "wall": 1792622992586,
+    "phaseResync": false
+   },
+   {
+    "n": 45,
+    "tick": 559,
+    "level": 82,
+    "wall": 1792622993489,
+    "phaseResync": false
+   },
+   {
+    "n": 46,
+    "tick": 571,
+    "level": 82,
+    "wall": 1792622997249.4546,
+    "phaseResync": false
+   },
+   {
+    "n": 47,
+    "tick": 574,
+    "level": 82,
+    "wall": 1792622998070.6365,
+    "phaseResync": false
+   },
+   {
+    "n": 48,
+    "tick": 585,
+    "level": 82,
+    "wall": 1792623001145.1428,
+    "phaseResync": true
+   },
+   {
+    "n": 49,
+    "tick": 591,
+    "level": 83,
+    "wall": 1792623003056.6667,
+    "phaseResync": false
+   },
+   {
+    "n": 50,
+    "tick": 603,
+    "level": 83,
+    "wall": 1792623007076.7778,
+    "phaseResync": false
+   },
+   {
+    "n": 51,
+    "tick": 609,
+    "level": 83,
+    "wall": 1792623009091.4443,
+    "phaseResync": false
+   },
+   {
+    "n": 52,
+    "tick": 615,
+    "level": 83,
+    "wall": 1792623010911.5715,
+    "phaseResync": false
+   },
+   {
+    "n": 53,
+    "tick": 618,
+    "level": 83,
+    "wall": 1792623011773,
+    "phaseResync": false
+   },
+   {
+    "n": 54,
+    "tick": 635,
+    "level": 83,
+    "wall": 1792623016587.3,
+    "phaseResync": true
+   }
+  ],
+  "gaps": [
+   {
+    "ticks": 16,
+    "level": 80,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 0,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 3,
+    "level": 80,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 0,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 6,
+    "level": 81,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 0,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 6,
+    "level": 81,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 1,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 3,
+    "level": 81,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 12,
+    "level": 81,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 3,
+    "level": 81,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 3,
+    "level": 81,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 3,
+    "level": 81,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 3,
+    "level": 81,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 4,
+    "catchUpsInGap": 0,
+    "softsInGap": 1,
+    "kind": "other"
+   },
+   {
+    "ticks": 18,
+    "level": 81,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 5,
+    "catchUpsInGap": 0,
+    "softsInGap": 1,
+    "kind": "other"
+   },
+   {
+    "ticks": 33,
+    "level": 81,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 5,
+    "catchUpsInGap": 0,
+    "softsInGap": 2,
+    "kind": "honest"
+   },
+   {
+    "ticks": 7,
+    "level": 81,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 5,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 6,
+    "level": 81,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 5,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 15,
+    "level": 81,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 5,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 6,
+    "level": 81,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 5,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 3,
+    "level": 81,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 5,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 3,
+    "level": 81,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 6,
+    "catchUpsInGap": 0,
+    "softsInGap": 1,
+    "kind": "other"
+   },
+   {
+    "ticks": 9,
+    "level": 81,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 6,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 6,
+    "level": 81,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 6,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 15,
+    "level": 81,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 5,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 3,
+    "level": 81,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 5,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 3,
+    "level": 81,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 6,
+    "catchUpsInGap": 0,
+    "softsInGap": 1,
+    "kind": "other"
+   },
+   {
+    "ticks": 25,
+    "level": 81,
+    "p": 0.34,
+    "expRolls": 2.942528735632184,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 6,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "honest"
+   },
+   {
+    "ticks": 29,
+    "level": 82,
+    "p": 0.344,
+    "expRolls": 2.909090909090909,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 0,
+    "trailingSoft60": 6,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "honest"
+   },
+   {
+    "ticks": 10,
+    "level": 82,
+    "p": 0.344,
+    "expRolls": 2.909090909090909,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 0,
+    "trailingSoft60": 6,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 10,
+    "level": 82,
+    "p": 0.344,
+    "expRolls": 2.909090909090909,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 0,
+    "trailingSoft60": 5,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "timing"
+   },
+   {
+    "ticks": 3,
+    "level": 82,
+    "p": 0.344,
+    "expRolls": 2.909090909090909,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 0,
+    "trailingSoft60": 5,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 3,
+    "level": 82,
+    "p": 0.344,
+    "expRolls": 2.909090909090909,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 0,
+    "trailingSoft60": 5,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 3,
+    "level": 82,
+    "p": 0.344,
+    "expRolls": 2.909090909090909,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 0,
+    "trailingSoft60": 5,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 9,
+    "level": 82,
+    "p": 0.344,
+    "expRolls": 2.909090909090909,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 0,
+    "trailingSoft60": 4,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 3,
+    "level": 82,
+    "p": 0.344,
+    "expRolls": 2.909090909090909,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 0,
+    "trailingSoft60": 4,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 3,
+    "level": 82,
+    "p": 0.344,
+    "expRolls": 2.909090909090909,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 0,
+    "trailingSoft60": 4,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 15,
+    "level": 82,
+    "p": 0.344,
+    "expRolls": 2.909090909090909,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 0,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 12,
+    "level": 82,
+    "p": 0.344,
+    "expRolls": 2.909090909090909,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 0,
+    "trailingSoft60": 2,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 17,
+    "level": 82,
+    "p": 0.344,
+    "expRolls": 2.909090909090909,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 0,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 1,
+    "kind": "timing"
+   },
+   {
+    "ticks": 37,
+    "level": 82,
+    "p": 0.344,
+    "expRolls": 2.909090909090909,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 0,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 1,
+    "kind": "honest"
+   },
+   {
+    "ticks": 19,
+    "level": 82,
+    "p": 0.344,
+    "expRolls": 2.909090909090909,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 0,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 33,
+    "level": 82,
+    "p": 0.344,
+    "expRolls": 2.909090909090909,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 0,
+    "trailingSoft60": 2,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "honest"
+   },
+   {
+    "ticks": 7,
+    "level": 82,
+    "p": 0.344,
+    "expRolls": 2.909090909090909,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 0,
+    "trailingSoft60": 2,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 3,
+    "level": 82,
+    "p": 0.344,
+    "expRolls": 2.909090909090909,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 0,
+    "trailingSoft60": 2,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 18,
+    "level": 82,
+    "p": 0.344,
+    "expRolls": 2.909090909090909,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 0,
+    "trailingSoft60": 2,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 6,
+    "level": 82,
+    "p": 0.344,
+    "expRolls": 2.909090909090909,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 0,
+    "trailingSoft60": 2,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 3,
+    "level": 82,
+    "p": 0.344,
+    "expRolls": 2.909090909090909,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 2,
+    "catchUpsInGap": 1,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 12,
+    "level": 82,
+    "p": 0.344,
+    "expRolls": 2.909090909090909,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 2,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 3,
+    "level": 82,
+    "p": 0.344,
+    "expRolls": 2.909090909090909,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 2,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 11,
+    "level": 82,
+    "p": 0.344,
+    "expRolls": 2.909090909090909,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 1,
+    "kind": "timing"
+   },
+   {
+    "ticks": 6,
+    "level": 83,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 12,
+    "level": 83,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 3,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 6,
+    "level": 83,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 4,
+    "catchUpsInGap": 0,
+    "softsInGap": 1,
+    "kind": "other"
+   },
+   {
+    "ticks": 6,
+    "level": 83,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 5,
+    "catchUpsInGap": 0,
+    "softsInGap": 1,
+    "kind": "other"
+   },
+   {
+    "ticks": 3,
+    "level": 83,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 5,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 17,
+    "level": 83,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 5,
+    "catchUpsInGap": 0,
+    "softsInGap": 1,
+    "kind": "timing"
+   }
+  ]
+ },
+ "plain": {
+  "levels": "83-85",
+  "startLevel": 83,
+  "p": "0.348-0.352",
+  "missed": 0,
+  "catchUpSource": "program",
+  "programFrames": {
+   "wall": 1792623201491,
+   "t": 1231,
+   "n": 58,
+   "pr": 0,
+   "sl": 0,
+   "rs": 0,
+   "lu": 2,
+   "sw": 0,
+   "fc": 8,
+   "fu": 14,
+   "fo": 137,
+   "fn": 588
+  },
+  "pageCatchUpsInRun": 13,
+  "bins": [
+   {
+    "bin": "0-2",
+    "minutesObserved": 2,
+    "logs": 38,
+    "ticks": 373,
+    "perLog": 9.82,
+    "expRolls": 109.08,
+    "perExpectedRoll": 3.42
+   },
+   {
+    "bin": "2-5",
+    "minutesObserved": 0.67,
+    "logs": 14,
+    "ticks": 125,
+    "perLog": 8.93,
+    "expRolls": 40.27,
+    "perExpectedRoll": 3.1
+   },
+   {
+    "bin": "5-10",
+    "minutesObserved": 0.36,
+    "logs": 5,
+    "ticks": 88,
+    "perLog": 17.6,
+    "expRolls": 14.22,
+    "perExpectedRoll": 6.19
+   },
+   {
+    "bin": "over 10",
+    "minutesObserved": 0,
+    "logs": 0,
+    "ticks": 0,
+    "perLog": null,
+    "expRolls": 0,
+    "perExpectedRoll": null
+   }
+  ],
+  "all": {
+   "logs": 57,
+   "ticks": 586,
+   "perLog": 10.28,
+   "expRolls": 163.57,
+   "perExpectedRoll": 3.58
+  },
+  "minuteCalm": {
+   "logs": 38,
+   "ticks": 373,
+   "perLog": 9.82,
+   "expRolls": 109.08,
+   "perExpectedRoll": 3.42
+  },
+  "minuteBusy": {
+   "logs": 19,
+   "ticks": 213,
+   "perLog": 11.21,
+   "expRolls": 54.49,
+   "perExpectedRoll": 3.91
+  },
+  "trailingCalm": {
+   "logs": 41,
+   "ticks": 432,
+   "perLog": 10.54,
+   "expRolls": 117.58,
+   "perExpectedRoll": 3.67
+  },
+  "trailingBusy": {
+   "logs": 16,
+   "ticks": 154,
+   "perLog": 9.63,
+   "expRolls": 45.99,
+   "perExpectedRoll": 3.35
+  },
+  "softCalm": {
+   "logs": 0,
+   "ticks": 0,
+   "perLog": null,
+   "expRolls": 0,
+   "perExpectedRoll": null
+  },
+  "softBusy": {
+   "logs": 57,
+   "ticks": 586,
+   "perLog": 10.28,
+   "expRolls": 163.57,
+   "perExpectedRoll": 3.58
+  },
+  "kinds": {
+   "honest": 6,
+   "timing": 0,
+   "timingFourTick": 0,
+   "timingPhaseResync": 0
+  },
+  "counters": {
+   "successes": 58,
+   "levelUps": 2
+  },
+  "histogram": {
+   "4": 14,
+   "5": 7,
+   "6": 1,
+   "8": 12,
+   "9": 6,
+   "10": 3,
+   "12": 1,
+   "13": 2,
+   "16": 1,
+   "17": 3,
+   "20": 1,
+   "28": 2,
+   "29": 1,
+   "32": 1,
+   "33": 1,
+   "34": 1
+  },
+  "minutes": {
+   "2026-10-21T22:50:00.000Z": {
+    "catchUps": 3,
+    "softs": 8,
+    "spanMs": 40106,
+    "rate": 4.49,
+    "softRate": 11.97,
+    "calm": false
+   },
+   "2026-10-21T22:51:00.000Z": {
+    "catchUps": 1,
+    "softs": 8,
+    "spanMs": 60000,
+    "rate": 1,
+    "softRate": 8,
+    "calm": true
+   },
+   "2026-10-21T22:52:00.000Z": {
+    "catchUps": 1,
+    "softs": 5,
+    "spanMs": 60000,
+    "rate": 1,
+    "softRate": 5,
+    "calm": true
+   },
+   "2026-10-21T22:53:00.000Z": {
+    "catchUps": 3,
+    "softs": 4,
+    "spanMs": 21491,
+    "rate": 8.38,
+    "softRate": 11.17,
+    "calm": false
+   }
+  },
+  "logs": [
+   {
+    "n": 1,
+    "tick": 645,
+    "level": 83,
+    "wall": 1792623019894,
+    "phaseResync": false
+   },
+   {
+    "n": 2,
+    "tick": 649,
+    "level": 83,
+    "wall": 1792623021039.7144,
+    "phaseResync": false
+   },
+   {
+    "n": 3,
+    "tick": 653,
+    "level": 83,
+    "wall": 1792623022185.4285,
+    "phaseResync": false
+   },
+   {
+    "n": 4,
+    "tick": 682,
+    "level": 83,
+    "wall": 1792623030924.6667,
+    "phaseResync": false
+   },
+   {
+    "n": 5,
+    "tick": 686,
+    "level": 83,
+    "wall": 1792623032430.5,
+    "phaseResync": false
+   },
+   {
+    "n": 6,
+    "tick": 694,
+    "level": 83,
+    "wall": 1792623035819.25,
+    "phaseResync": false
+   },
+   {
+    "n": 7,
+    "tick": 699,
+    "level": 83,
+    "wall": 1792623037753.2,
+    "phaseResync": false
+   },
+   {
+    "n": 8,
+    "tick": 707,
+    "level": 83,
+    "wall": 1792623040331,
+    "phaseResync": false
+   },
+   {
+    "n": 9,
+    "tick": 711,
+    "level": 83,
+    "wall": 1792623041427,
+    "phaseResync": false
+   },
+   {
+    "n": 10,
+    "tick": 720,
+    "level": 83,
+    "wall": 1792623043987,
+    "phaseResync": false
+   },
+   {
+    "n": 11,
+    "tick": 740,
+    "level": 83,
+    "wall": 1792623050104.2727,
+    "phaseResync": false
+   },
+   {
+    "n": 12,
+    "tick": 748,
+    "level": 83,
+    "wall": 1792623052355,
+    "phaseResync": false
+   },
+   {
+    "n": 13,
+    "tick": 758,
+    "level": 83,
+    "wall": 1792623055529.5,
+    "phaseResync": false
+   },
+   {
+    "n": 14,
+    "tick": 762,
+    "level": 83,
+    "wall": 1792623056733.1,
+    "phaseResync": false
+   },
+   {
+    "n": 15,
+    "tick": 770,
+    "level": 83,
+    "wall": 1792623059038,
+    "phaseResync": false
+   },
+   {
+    "n": 16,
+    "tick": 775,
+    "level": 83,
+    "wall": 1792623060545.5,
+    "phaseResync": false
+   },
+   {
+    "n": 17,
+    "tick": 783,
+    "level": 83,
+    "wall": 1792623063054.5,
+    "phaseResync": false
+   },
+   {
+    "n": 18,
+    "tick": 793,
+    "level": 83,
+    "wall": 1792623065973.3635,
+    "phaseResync": false
+   },
+   {
+    "n": 19,
+    "tick": 798,
+    "level": 83,
+    "wall": 1792623067403,
+    "phaseResync": false
+   },
+   {
+    "n": 20,
+    "tick": 811,
+    "level": 84,
+    "wall": 1792623071478.6,
+    "phaseResync": false
+   },
+   {
+    "n": 21,
+    "tick": 819,
+    "level": 84,
+    "wall": 1792623073797.7144,
+    "phaseResync": false
+   },
+   {
+    "n": 22,
+    "tick": 836,
+    "level": 84,
+    "wall": 1792623078808.5715,
+    "phaseResync": false
+   },
+   {
+    "n": 23,
+    "tick": 848,
+    "level": 84,
+    "wall": 1792623082438,
+    "phaseResync": false
+   },
+   {
+    "n": 24,
+    "tick": 856,
+    "level": 84,
+    "wall": 1792623085015.4,
+    "phaseResync": false
+   },
+   {
+    "n": 25,
+    "tick": 861,
+    "level": 84,
+    "wall": 1792623086519.4,
+    "phaseResync": false
+   },
+   {
+    "n": 26,
+    "tick": 865,
+    "level": 84,
+    "wall": 1792623087789,
+    "phaseResync": false
+   },
+   {
+    "n": 27,
+    "tick": 869,
+    "level": 84,
+    "wall": 1792623089125,
+    "phaseResync": false
+   },
+   {
+    "n": 28,
+    "tick": 882,
+    "level": 84,
+    "wall": 1792623092706.4285,
+    "phaseResync": false
+   },
+   {
+    "n": 29,
+    "tick": 910,
+    "level": 84,
+    "wall": 1792623102668.25,
+    "phaseResync": false
+   },
+   {
+    "n": 30,
+    "tick": 914,
+    "level": 84,
+    "wall": 1792623104548.125,
+    "phaseResync": false
+   },
+   {
+    "n": 31,
+    "tick": 923,
+    "level": 84,
+    "wall": 1792623107984.6,
+    "phaseResync": false
+   },
+   {
+    "n": 32,
+    "tick": 927,
+    "level": 84,
+    "wall": 1792623109441,
+    "phaseResync": false
+   },
+   {
+    "n": 33,
+    "tick": 935,
+    "level": 84,
+    "wall": 1792623111449,
+    "phaseResync": false
+   },
+   {
+    "n": 34,
+    "tick": 940,
+    "level": 84,
+    "wall": 1792623112774.5715,
+    "phaseResync": false
+   },
+   {
+    "n": 35,
+    "tick": 956,
+    "level": 84,
+    "wall": 1792623117789,
+    "phaseResync": false
+   },
+   {
+    "n": 36,
+    "tick": 960,
+    "level": 84,
+    "wall": 1792623118937,
+    "phaseResync": false
+   },
+   {
+    "n": 37,
+    "tick": 969,
+    "level": 84,
+    "wall": 1792623121632.8,
+    "phaseResync": false
+   },
+   {
+    "n": 38,
+    "tick": 977,
+    "level": 84,
+    "wall": 1792623124242,
+    "phaseResync": false
+   },
+   {
+    "n": 39,
+    "tick": 981,
+    "level": 84,
+    "wall": 1792623125335.818,
+    "phaseResync": false
+   },
+   {
+    "n": 40,
+    "tick": 986,
+    "level": 84,
+    "wall": 1792623126703.0908,
+    "phaseResync": false
+   },
+   {
+    "n": 41,
+    "tick": 1018,
+    "level": 84,
+    "wall": 1792623136382.3,
+    "phaseResync": false
+   },
+   {
+    "n": 42,
+    "tick": 1024,
+    "level": 84,
+    "wall": 1792623138144.2856,
+    "phaseResync": false
+   },
+   {
+    "n": 43,
+    "tick": 1041,
+    "level": 84,
+    "wall": 1792623143155.7144,
+    "phaseResync": false
+   },
+   {
+    "n": 44,
+    "tick": 1045,
+    "level": 84,
+    "wall": 1792623144302,
+    "phaseResync": false
+   },
+   {
+    "n": 45,
+    "tick": 1049,
+    "level": 84,
+    "wall": 1792623145506.8,
+    "phaseResync": false
+   },
+   {
+    "n": 46,
+    "tick": 1058,
+    "level": 84,
+    "wall": 1792623148175.8572,
+    "phaseResync": false
+   },
+   {
+    "n": 47,
+    "tick": 1075,
+    "level": 85,
+    "wall": 1792623153670.6667,
+    "phaseResync": false
+   },
+   {
+    "n": 48,
+    "tick": 1109,
+    "level": 85,
+    "wall": 1792623163701,
+    "phaseResync": false
+   },
+   {
+    "n": 49,
+    "tick": 1118,
+    "level": 85,
+    "wall": 1792623166380,
+    "phaseResync": false
+   },
+   {
+    "n": 50,
+    "tick": 1122,
+    "level": 85,
+    "wall": 1792623167670.7144,
+    "phaseResync": false
+   },
+   {
+    "n": 51,
+    "tick": 1130,
+    "level": 85,
+    "wall": 1792623170060.3333,
+    "phaseResync": false
+   },
+   {
+    "n": 52,
+    "tick": 1135,
+    "level": 85,
+    "wall": 1792623171700.2,
+    "phaseResync": false
+   },
+   {
+    "n": 53,
+    "tick": 1143,
+    "level": 85,
+    "wall": 1792623174109.8,
+    "phaseResync": false
+   },
+   {
+    "n": 54,
+    "tick": 1171,
+    "level": 85,
+    "wall": 1792623182563.75,
+    "phaseResync": false
+   },
+   {
+    "n": 55,
+    "tick": 1180,
+    "level": 85,
+    "wall": 1792623186049,
+    "phaseResync": false
+   },
+   {
+    "n": 56,
+    "tick": 1190,
+    "level": 85,
+    "wall": 1792623189154.5,
+    "phaseResync": false
+   },
+   {
+    "n": 57,
+    "tick": 1198,
+    "level": 85,
+    "wall": 1792623191209.375,
+    "phaseResync": false
+   },
+   {
+    "n": 58,
+    "tick": 1231,
+    "level": 85,
+    "wall": 1792623201491,
+    "phaseResync": false
+   }
+  ],
+  "gaps": [
+   {
+    "ticks": 4,
+    "level": 83,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 0,
+    "trailingSoft60": 4,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 4,
+    "level": 83,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 0,
+    "trailingSoft60": 4,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 29,
+    "level": 83,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 7,
+    "catchUpsInGap": 2,
+    "softsInGap": 3,
+    "kind": "honest"
+   },
+   {
+    "ticks": 4,
+    "level": 83,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 7,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 8,
+    "level": 83,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 8,
+    "catchUpsInGap": 0,
+    "softsInGap": 1,
+    "kind": "other"
+   },
+   {
+    "ticks": 5,
+    "level": 83,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 9,
+    "catchUpsInGap": 0,
+    "softsInGap": 1,
+    "kind": "other"
+   },
+   {
+    "ticks": 8,
+    "level": 83,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 10,
+    "catchUpsInGap": 0,
+    "softsInGap": 1,
+    "kind": "other"
+   },
+   {
+    "ticks": 4,
+    "level": 83,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 10,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 9,
+    "level": 83,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 10,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 20,
+    "level": 83,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 10,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 8,
+    "level": 83,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 10,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 10,
+    "level": 83,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 3,
+    "trailingSoft60": 11,
+    "catchUpsInGap": 1,
+    "softsInGap": 1,
+    "kind": "other"
+   },
+   {
+    "ticks": 4,
+    "level": 83,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 3,
+    "trailingSoft60": 11,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 8,
+    "level": 83,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": false,
+    "bin": "2-5",
+    "contiguous": true,
+    "trailing60": 3,
+    "trailingSoft60": 11,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 5,
+    "level": 83,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 3,
+    "trailingSoft60": 11,
+    "catchUpsInGap": 0,
+    "softsInGap": 1,
+    "kind": "other"
+   },
+   {
+    "ticks": 8,
+    "level": 83,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 3,
+    "trailingSoft60": 11,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 10,
+    "level": 83,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 3,
+    "trailingSoft60": 11,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 5,
+    "level": 83,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 3,
+    "trailingSoft60": 11,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 13,
+    "level": 84,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 3,
+    "trailingSoft60": 9,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 8,
+    "level": 84,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 3,
+    "trailingSoft60": 9,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 17,
+    "level": 84,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 3,
+    "trailingSoft60": 8,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 12,
+    "level": 84,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 3,
+    "trailingSoft60": 8,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 8,
+    "level": 84,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 3,
+    "trailingSoft60": 9,
+    "catchUpsInGap": 0,
+    "softsInGap": 1,
+    "kind": "other"
+   },
+   {
+    "ticks": 5,
+    "level": 84,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 3,
+    "trailingSoft60": 9,
+    "catchUpsInGap": 1,
+    "softsInGap": 1,
+    "kind": "other"
+   },
+   {
+    "ticks": 4,
+    "level": 84,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 3,
+    "trailingSoft60": 9,
+    "catchUpsInGap": 0,
+    "softsInGap": 1,
+    "kind": "other"
+   },
+   {
+    "ticks": 4,
+    "level": 84,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 3,
+    "trailingSoft60": 9,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 13,
+    "level": 84,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 9,
+    "catchUpsInGap": 0,
+    "softsInGap": 1,
+    "kind": "other"
+   },
+   {
+    "ticks": 28,
+    "level": 84,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 8,
+    "catchUpsInGap": 0,
+    "softsInGap": 2,
+    "kind": "honest"
+   },
+   {
+    "ticks": 4,
+    "level": 84,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 8,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 9,
+    "level": 84,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 9,
+    "catchUpsInGap": 0,
+    "softsInGap": 1,
+    "kind": "other"
+   },
+   {
+    "ticks": 4,
+    "level": 84,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 10,
+    "catchUpsInGap": 0,
+    "softsInGap": 1,
+    "kind": "other"
+   },
+   {
+    "ticks": 8,
+    "level": 84,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 10,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 5,
+    "level": 84,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 10,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 16,
+    "level": 84,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 9,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 4,
+    "level": 84,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 9,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 9,
+    "level": 84,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 8,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 8,
+    "level": 84,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 8,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 4,
+    "level": 84,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 8,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 5,
+    "level": 84,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 8,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 32,
+    "level": 84,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 10,
+    "catchUpsInGap": 0,
+    "softsInGap": 2,
+    "kind": "honest"
+   },
+   {
+    "ticks": 6,
+    "level": 84,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 10,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 17,
+    "level": 84,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 11,
+    "catchUpsInGap": 0,
+    "softsInGap": 1,
+    "kind": "other"
+   },
+   {
+    "ticks": 4,
+    "level": 84,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 11,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 4,
+    "level": 84,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 10,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 9,
+    "level": 84,
+    "p": 0.348,
+    "expRolls": 2.8764044943820224,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 0,
+    "trailingSoft60": 8,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 17,
+    "level": 85,
+    "p": 0.352,
+    "expRolls": 2.8444444444444446,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 0,
+    "trailingSoft60": 7,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 34,
+    "level": 85,
+    "p": 0.352,
+    "expRolls": 2.8444444444444446,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 6,
+    "catchUpsInGap": 1,
+    "softsInGap": 1,
+    "kind": "honest"
+   },
+   {
+    "ticks": 9,
+    "level": 85,
+    "p": 0.352,
+    "expRolls": 2.8444444444444446,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 6,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 4,
+    "level": 85,
+    "p": 0.352,
+    "expRolls": 2.8444444444444446,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 6,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 8,
+    "level": 85,
+    "p": 0.352,
+    "expRolls": 2.8444444444444446,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 4,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 5,
+    "level": 85,
+    "p": 0.352,
+    "expRolls": 2.8444444444444446,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 4,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 8,
+    "level": 85,
+    "p": 0.352,
+    "expRolls": 2.8444444444444446,
+    "calm": true,
+    "bin": "0-2",
+    "contiguous": true,
+    "trailing60": 1,
+    "trailingSoft60": 5,
+    "catchUpsInGap": 0,
+    "softsInGap": 1,
+    "kind": "other"
+   },
+   {
+    "ticks": 28,
+    "level": 85,
+    "p": 0.352,
+    "expRolls": 2.8444444444444446,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 6,
+    "catchUpsInGap": 1,
+    "softsInGap": 1,
+    "kind": "honest"
+   },
+   {
+    "ticks": 9,
+    "level": 85,
+    "p": 0.352,
+    "expRolls": 2.8444444444444446,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 7,
+    "catchUpsInGap": 0,
+    "softsInGap": 1,
+    "kind": "other"
+   },
+   {
+    "ticks": 10,
+    "level": 85,
+    "p": 0.352,
+    "expRolls": 2.8444444444444446,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 8,
+    "catchUpsInGap": 0,
+    "softsInGap": 1,
+    "kind": "other"
+   },
+   {
+    "ticks": 8,
+    "level": 85,
+    "p": 0.352,
+    "expRolls": 2.8444444444444446,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 2,
+    "trailingSoft60": 8,
+    "catchUpsInGap": 0,
+    "softsInGap": 0,
+    "kind": "other"
+   },
+   {
+    "ticks": 33,
+    "level": 85,
+    "p": 0.352,
+    "expRolls": 2.8444444444444446,
+    "calm": false,
+    "bin": "5-10",
+    "contiguous": true,
+    "trailing60": 4,
+    "trailingSoft60": 7,
+    "catchUpsInGap": 2,
+    "softsInGap": 1,
+    "kind": "honest"
+   }
+  ]
+ }
+}

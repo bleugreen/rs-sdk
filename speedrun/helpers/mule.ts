@@ -12,14 +12,23 @@
 //   shared across booths, so the courier walks to Varrock west bank, withdraws its
 //   produce there as notes, trades it to the mule, and walks back to where it was.
 //
-// The scored account's side of a hand-off is `requestPackage` + `receivePackage`.
+// The scored account's side of a hand-off is `requestPackage` (a cue scoped to the hand-off) +
+// `receivePackage`.
 // How the run uses them, and their measured cost in ticks: docs/speedrun/helpers/mule.md.
+//
+// Top-ups. A package line may be `{ item | id, topUp: { max } }` instead of a fixed `amount`:
+// the ledger's `ITEM to N` (H12's `shark to 15`), where the scored account wants N less what it
+// holds and the mule cannot see its pack. The package then carries `scope: { step, family: 'mule' }`
+// (altar-cue.ts CueScope). The mule stages the line up to `max` (as far as its bank and the 28
+// slots allow) and, once the trade is open, waits up to `askWaitTicks` observed ticks for the
+// scored account's top-up ask with that scope (altar-cue.ts awaitAsk, the courier's ask reader).
+// It offers the fixed lines as before, and of each top-up line the asked count clamped to
+// [0, max] and to what it holds. With no usable ask it offers none of that line and logs it.
+// Mule options for it: `askWaitTicks` (default 3), `cueDir` (default RC_CUE_DIR, as the givers).
 //
 // Run standalone (lite client already running for the account):
 //   ROLE_OPTIONS='{...}' bun speedrun/helpers/mule.ts <account>            # mule
 //   ROLE_OPTIONS='{...}' bun speedrun/helpers/mule.ts <account> courier    # courier
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
 import type { BankItem, BotWorldState, GameMessage, InventoryItem, TradeItem, TradeItemSpec } from '../../sdk/types';
@@ -29,6 +38,7 @@ import type { ObjPack } from '../lib/obj-pack';
 import { travelTo } from '../lib/toll-gate';
 import { ANY_OFFER, clickBack, decideTradeClick, DROPPED_TICKS, give, newClickCtx, offerSatisfies, openTrade, sameName, sendTradeClick, type ClickCtx } from '../lib/trade';
 import { tickMs } from '../lib/wait';
+import { awaitAsk, cueAddresses, cueDir, CueWriter, nameHash, readCue, scopeOption, type AwaitAskOptions, type Cue, type CueScope, type TopUpAsk } from './altar-cue';
 import { runStandalone, type Role, type RoleContext } from './role';
 
 // ============ Places ============
@@ -36,7 +46,6 @@ import { runStandalone, type Role, type RoleContext } from './role';
 /** Where the mule stands: inside Varrock west bank, in reach of the booths, off the GE table. */
 export const MULE_STAND = { x: 3185, z: 3436 };
 export const DEFAULT_COURIERS = '^cairn_h\\d+$';
-const PM_RECEIVED_TYPES = [3, 7];
 
 function onTutorialIsland(x: number, z: number): boolean {
     return x >= 3050 && x <= 3156 && z >= 3056 && z <= 3136;
@@ -82,23 +91,51 @@ export interface PackageCount {
     noted?: boolean;
 }
 
+/** A top-up line: the count comes from the scored account's ask, at most `max` (the ledger's `to N`). */
+export interface TopUpCount {
+    topUp: { max: number };
+    /** As PackageCount's. */
+    noted?: boolean;
+}
+
 /**
  * A package line: `item`, the exact name, case-insensitive ("Unfermented wine"), or `id`,
  * the obj id where names collide (every unfinished potion is "Unfinished potion"). An id
  * may be the item's or its note's (lib/obj-pack.ts); a note's id is withdrawn noted.
+ * A fixed `amount`, or a `topUp`.
  */
-export type PackageItem = ItemRef & PackageCount;
+export type PackageItem = ItemRef & (PackageCount | TopUpCount);
 export type NamedPackageItem = NamedRef & PackageCount;
+
+export function isTopUp(spec: PackageItem): spec is ItemRef & TopUpCount {
+    return 'topUp' in spec;
+}
 
 export interface Package {
     name: string;
     items: PackageItem[];
+    /** Whose top-up ask the package reads (family 'mule'); set exactly when it has a top-up line. */
+    scope?: CueScope;
+    /** Served only when asked for by name (a fallback such as H4e): never a step of order mode. */
+    onRequest?: true;
+}
+
+/**
+ * Order mode after a successful serve: the ordered packages advance only when the one served is
+ * the ordered package due, so a package asked for by name in between (a fallback) leaves the
+ * order where it was and the due package comes up again.
+ */
+export function afterServe(ordered: readonly Package[], nextIndex: number, served: Package): { nextIndex: number; pending: Package | null } {
+    const next = ordered[nextIndex] === served ? nextIndex + 1 : nextIndex;
+    return { nextIndex: next, pending: ordered[next] ?? null };
 }
 
 export interface Withdrawal {
     bankItem: BankItem;
     amount: number;
     noted: boolean;
+    /** A top-up line's, staged up to its max. */
+    topUp?: boolean;
 }
 
 export interface PackagePlan {
@@ -108,6 +145,8 @@ export interface PackagePlan {
     ambiguous: { item: string; ids: number[] }[];
     /** Inventory slots the package occupies once withdrawn. */
     slots: number;
+    /** Top-up lines staged below their max: the bank, or the slots the fixed lines leave, hold fewer. */
+    topUpShort: { item: string; max: number; staged: number }[];
 }
 
 /**
@@ -115,11 +154,17 @@ export interface PackagePlan {
  * package that does not fit in 28 slots is reported as `slots > 28` for the caller
  * to refuse. A name that matches two different bank items is reported in
  * `ambiguous`, never resolved to whichever comes first.
+ *
+ * Top-up lines are staged after the fixed ones, each up to its max as far as the bank and the
+ * slots left allow (`topUpShort` names any staged below it); a top-up is never `missing`, since
+ * the scored account may ask for none.
  */
 export function planPackage(pkg: Package, bank: BankItem[], stackable: (name: string) => boolean = isStackableName, pack?: ObjPack): PackagePlan {
     const withdrawals: Withdrawal[] = [];
     const missing: PackagePlan['missing'] = [];
     const ambiguous: PackagePlan['ambiguous'] = [];
+    const topUpShort: PackagePlan['topUpShort'] = [];
+    const topUps: Array<{ spec: ItemRef & TopUpCount; bankItem: BankItem | undefined }> = [];
     let slots = 0;
     for (const spec of pkg.items) {
         const matches = bank.filter(b => refMatches(spec, b, pack));
@@ -129,6 +174,10 @@ export function planPackage(pkg: Package, bank: BankItem[], stackable: (name: st
             continue;
         }
         const bankItem = matches[0];
+        if (isTopUp(spec)) {
+            topUps.push({ spec, bankItem });
+            continue;
+        }
         const have = bankItem?.count ?? 0;
         const amount = spec.amount === -1 ? have : spec.amount;
         if (!bankItem || amount <= 0 || have < amount) {
@@ -139,7 +188,17 @@ export function planPackage(pkg: Package, bank: BankItem[], stackable: (name: st
         withdrawals.push({ bankItem, amount, noted });
         slots += noted || stackable(bankItem.name) ? 1 : amount;
     }
-    return { withdrawals, missing, ambiguous, slots };
+    for (const { spec, bankItem } of topUps) {
+        const noted = spec.noted ?? namesNote(spec, pack);
+        const oneSlot = noted || (!!bankItem && stackable(bankItem.name));
+        const room = oneSlot ? (slots < 28 ? Infinity : 0) : Math.max(0, 28 - slots);
+        const staged = Math.min(spec.topUp.max, bankItem?.count ?? 0, room);
+        if (staged < spec.topUp.max) topUpShort.push({ item: refLabel(spec), max: spec.topUp.max, staged });
+        if (!bankItem || staged <= 0) continue;
+        withdrawals.push({ bankItem, amount: staged, noted, topUp: true });
+        slots += oneSlot ? 1 : staged;
+    }
+    return { withdrawals, missing, ambiguous, slots, topUpShort };
 }
 
 /**
@@ -148,8 +207,9 @@ export function planPackage(pkg: Package, bank: BankItem[], stackable: (name: st
  * withdrawal, never as a wrong trade.
  */
 export function isStackableName(name: string): boolean {
-    // Throwing knives (`Rune knife`) stack; the plain `Knife` tool does not.
-    return /^coins$| rune$|arrows?$|arrowtips$|arrowheads$|bolts$|darts?$|dart tips?$|^feathers?$|\S knife$|cannonballs?$/i.test(name);
+    // Throwing knives (`Rune knife`) stack; the plain `Knife` tool does not. Thread and nails stack
+    // (crafting.obj, smithing configs: stackable=yes); mule-ledger.ts refuses a ledger [s] line this misses.
+    return /^coins$| rune$|arrows?$|arrowtips$|arrowheads$|bolts$|darts?$|dart tips?$|^feathers?$|\S knife$|cannonballs?$|^thread$|^nails$/i.test(name);
 }
 
 /** Aggregate an inventory or offer into id -> count. */
@@ -184,10 +244,23 @@ export function firstSlotPerId(items: InventoryItem[]): InventoryItem[] {
     return out;
 }
 
-/** Parse a package request PM: "<name>" or "pkg <name>". */
-export function parsePackageRequest(text: string, packages: Package[]): Package | null {
-    const name = text.trim().replace(/^pkg\s+/i, '').toLowerCase();
-    return packages.find(p => p.name.toLowerCase() === name) ?? null;
+/**
+ * The package a cue asks for: the one whose scope the cue addresses (altar-cue.ts cueAddresses, family
+ * 'mule', the scope's step the hand-off id), and only when the cue's receiver is the account this mule
+ * serves. A mule cue that names no package of ours, or another receiver, asks for nothing.
+ */
+export function packageForCue(cue: Pick<Cue, 'scope' | 'receiver'> | null, packages: readonly Package[], serve: string | undefined): Package | null {
+    if (!cue || !serve || cue.receiver?.sha256 !== nameHash(serve)) return null;
+    return packages.find(p => !!p.scope && cueAddresses(cue, p.scope.step, 'mule')) ?? null;
+}
+
+/**
+ * Ask the mule for the package of hand-off `handOff` (H12): a cue in `dir` scoped
+ * `{ step: handOff, family: 'mule' }` for `receiver`, the account the mule serves. The scored side
+ * (run.ts) writes it before the hand-off; the mule stages that package and pre-requests.
+ */
+export function requestPackage(dir: string, receiver: string, handOff: string, beacon: { tick: number; ms: number }): Cue {
+    return new CueWriter(dir, receiver, { step: handOff, family: 'mule' }).write({ beacons: [beacon], turns: [] });
 }
 
 /**
@@ -202,6 +275,42 @@ export function stagedExactly(inventory: InventoryItem[], held: Map<number, numb
     const extra = inventory.filter(i => (inv.get(i.id) ?? 0) > (held.get(i.id) ?? 0)).map(i => `${i.name} x${i.count}`);
     const short = [...held].filter(([id, n]) => (inv.get(id) ?? 0) < n).map(([id]) => id);
     return { exact: extra.length === 0 && short.length === 0, extra, short };
+}
+
+/** What a top-up line offers in one trade, and why. */
+export interface TopUpServe {
+    item: string;
+    /** The inventory id staged for it; null when none is. */
+    id: number | null;
+    max: number;
+    /** How many the mule holds of it. */
+    held: number;
+    /** The ask's count for it; null when no usable ask names it. */
+    asked: number | 'all' | null;
+    /** Offered: the ask clamped to [0, max] and to `held`; 0 without an ask. */
+    n: number;
+}
+
+/**
+ * Each top-up line's count for this trade. A line takes the first ask item whose pattern (a
+ * case-insensitive RegExp source, as the courier's asks) matches the name of what the mule holds
+ * for it: `'all'` means up to max. No ask, or an ask that names none of it, offers none.
+ */
+export function topUpCounts(pkg: Pick<Package, 'items'>, inventory: readonly InventoryItem[], ask: Pick<TopUpAsk, 'items'> | null, pack?: ObjPack): TopUpServe[] {
+    const out: TopUpServe[] = [];
+    for (const spec of pkg.items) {
+        if (!isTopUp(spec)) continue;
+        const mine = inventory.filter(i => refMatches(spec, i, pack));
+        const first = mine[0];
+        const held = first ? mine.filter(i => i.id === first.id).reduce((n, i) => n + i.count, 0) : 0;
+        const name = first?.name ?? spec.item ?? '';
+        const a = name ? ask?.items.find(x => new RegExp(x.item, 'i').test(name)) : undefined;
+        const asked = a ? a.count : null;
+        const max = spec.topUp.max;
+        const want = asked === null ? 0 : asked === 'all' ? max : Math.min(Math.max(0, asked), max);
+        out.push({ item: refLabel(spec), id: first?.id ?? null, max, held, asked, n: Math.min(want, held) });
+    }
+    return out;
 }
 
 /** Within this many tiles the mule pre-requests the scored account. */
@@ -388,6 +497,8 @@ function diffItems(before: InventoryItem[], after: InventoryItem[]): { gained: T
  *   `items` and the partner is exactly `partner`; any mismatch declines. A decline
  *   after our confirm accept is settled on the server's word (lib/trade.ts).
  * stock: the SDK's bot.trade (offers one item at a time, waiting for each).
+ *
+ * `amounts` offers an exact count of an id instead of all of it (a top-up line), and none at 0.
  */
 export async function giveOpenTrade(
     sdk: BotSDK,
@@ -395,7 +506,8 @@ export async function giveOpenTrade(
     partner: string,
     items: InventoryItem[],
     mode: GiverMode = 'burst',
-    timeoutMs = 60_000
+    timeoutMs = 60_000,
+    amounts?: ReadonlyMap<number, number>
 ): Promise<GiveResult> {
     const startTick = tick(sdk);
     const invBefore = sdk.getInventory();
@@ -410,17 +522,61 @@ export async function giveOpenTrade(
         return done(false, `No trade open with ${partner} (open: ${open.isOpen}, partner: ${open.partner})`);
     }
 
+    const count = (id: number): number | 'all' => amounts?.get(id) ?? 'all';
+    const offered = firstSlotPerId(items).filter(i => count(i.id) !== 0);
     if (mode === 'stock') {
-        const names = firstSlotPerId(items).map(i => ({ item: new RegExp(`^${escapeRegExp(i.name)}$`, 'i'), amount: -1 }));
+        const names = offered.map(i => {
+            const n = count(i.id);
+            return { item: new RegExp(`^${escapeRegExp(i.name)}$`, 'i'), amount: n === 'all' ? -1 : n };
+        });
         const r = await bot.trade(playerPattern(partner), { give: names, timeout: timeoutMs });
         return { success: r.success, message: r.message, ticks: tick(sdk) - startTick, gave: r.gave, received: r.received };
     }
 
-    const specs = firstSlotPerId(items).map(i => ({ item: i.id, n: 'all' as const }));
+    const specs = offered.map(i => ({ item: i.id, n: count(i.id) }));
     const r = await give(sdk, partner, specs, { expectTheirs: ANY_OFFER, maxTicks: Math.ceil(timeoutMs / tickMs()), openTimeoutMs: 5_000 });
     const { gained } = diffItems(invBefore, sdk.getInventory());
     const message = r.ok ? `Gave package to ${partner}${r.reason ? ` (${r.reason})` : ''}` : `Not given: ${r.reason ?? 'unknown'}`;
     return { success: r.ok, message, ticks: r.ticks, gave: r.gave, received: gained };
+}
+
+export interface ServeOptions {
+    partner: string;
+    pkg: Package;
+    /** The staged package's ids and counts (Mule.held). */
+    held: ReadonlyMap<number, number>;
+    mode?: GiverMode;
+    timeoutMs?: number;
+    /** Where and how long to wait for the scored account's ask; required for a package with a top-up (the scope is the package's). */
+    ask?: Omit<AwaitAskOptions, 'scope'>;
+    log?: (message: string, data?: Record<string, unknown>) => void;
+}
+
+export interface ServeResult extends GiveResult {
+    /** Each top-up line's count (topUpCounts); empty for a fixed package. */
+    topUps: TopUpServe[];
+    /** The ask it served, or null. */
+    ask: TopUpAsk | null;
+}
+
+/**
+ * Give the staged package in the trade open with `partner`. A fixed package is all of each
+ * staged id, as ever. A package with a top-up first waits for the scored account's ask (altar-cue.ts
+ * awaitAsk, scoped to the package) and offers each top-up line's topUpCounts count.
+ */
+export async function serveStaged(sdk: BotSDK, bot: BotActions, o: ServeOptions): Promise<ServeResult> {
+    const items = sdk.getInventory().filter(i => o.held.has(i.id));
+    const mode = o.mode ?? 'burst';
+    const timeoutMs = o.timeoutMs ?? 60_000;
+    if (!o.pkg.items.some(isTopUp)) return { ...(await giveOpenTrade(sdk, bot, o.partner, items, mode, timeoutMs)), topUps: [], ask: null };
+    if (!o.pkg.scope || !o.ask) throw new Error(`Package ${o.pkg.name} has a top-up: it needs a scope and the ask's options`);
+    const ask = await awaitAsk(sdk, { ...o.ask, scope: o.pkg.scope });
+    const topUps = topUpCounts(o.pkg, items, ask);
+    const unserved = topUps.filter(t => t.asked === null || t.n < Math.min(t.asked === 'all' ? t.max : t.asked, t.max));
+    if (!ask) o.log?.('top-up: no usable ask; offering none of the top-up lines', { package: o.pkg.name, scope: o.pkg.scope, waitedTicks: o.ask.maxTicks });
+    else if (unserved.length) o.log?.('top-up: short of the ask', { package: o.pkg.name, lines: unserved });
+    const amounts = new Map(topUps.flatMap(t => (t.id === null ? [] : [[t.id, t.n] as const])));
+    return { ...(await giveOpenTrade(sdk, bot, o.partner, items, mode, timeoutMs, amounts)), topUps, ask };
 }
 
 // ============ Receiver (the scored account's side) ============
@@ -443,15 +599,6 @@ export interface ReceiveResult {
     /** Ticks on this account's clock from the trade request to the items in the inventory. */
     ticks: number;
     received: TradeItem[];
-}
-
-/**
- * Ask the mule for a named package by private message. Send it early (before
- * walking to the bank); it costs no ticks, and the mule withdraws the package and
- * pre-requests a trade while this account is on its way.
- */
-export async function requestPackage(sdk: BotSDK, mule: string, packageName: string): Promise<void> {
-    await sdk.sendPrivateMessage(mule, packageName);
 }
 
 /**
@@ -541,26 +688,58 @@ export interface MuleOptions {
     couriers?: string | string[];
     packages?: Package[];
     /**
-     * 'order': serve packages in order, one per trade from `serve`. 'request': only
-     * after a request names one, by a line in `requestFile` or a PM from `serve`
-     * (a PM reaches the role only if it sets `readsChat`; this role does not yet).
+     * 'request': serve only the package a cue asks for (packageForCue: a cue in `cueDir` scoped to the
+     * package's hand-off, written by the scored side before the hand-off). 'order': serve the packages
+     * not marked onRequest in order, one per trade from `serve`; a cue still asks for any package.
      */
     serveMode?: 'order' | 'request';
-    /** A file on the mule's host; each line is a package name to prepare next. */
-    requestFile?: string;
     giver?: GiverMode;
     /** Send `serve` a trade request when a package is ready and it comes within 12 tiles. Default true. */
     preRequest?: boolean;
     stand?: { x: number; z: number };
     ge?: { orders?: GeOrder[]; collectEveryMin?: number };
+    /** Observed ticks a top-up package waits after the open for the scored account's ask. Default 3. */
+    askWaitTicks?: number;
+    /** Where package cues and top-up asks are read (altar-cue.ts cueDir: RC_CUE_DIR, else run-machine/rc-cue). */
+    cueDir?: string;
 }
 
-/** A package's lines from options: `{ item | id, amount, noted? }`. */
+/** A cue older than this when the mule starts is a past hand-off's, never served. */
+export const STALE_CUE_MS = 60_000;
+
+/** A cue the mule has not acted on yet: a new session, or a later write of the last one. */
+export function newCue(cue: Pick<Cue, 'session' | 'seq' | 'ms'> | null, last: { session: string; seq: number } | null, startMs: number): boolean {
+    if (!cue || cue.ms < startMs - STALE_CUE_MS) return false;
+    return !last || cue.session !== last.session || cue.seq > last.seq;
+}
+
+/**
+ * What a mule cue does. A cue session asks once: its first write the mule sees is the request
+ * (`ask`); a later write of the same session (fresh beacons) asks nothing again, so a package served
+ * is never re-staged by its own cue. A write with `stop` (any seq, either session) withdraws the
+ * request (`stop`): the package, if still pending, is dropped. So one writer per hand-off (the run's
+ * cue keeper, or requestPackage) may rewrite and stop its cue freely.
+ */
+export function muleCueAction(cue: Pick<Cue, 'session' | 'seq' | 'ms' | 'stop'> | null, last: { session: string; seq: number } | null, startMs: number): 'ask' | 'stop' | 'none' {
+    if (!newCue(cue, last, startMs)) return 'none';
+    if (cue!.stop) return 'stop';
+    return !last || cue!.session !== last.session ? 'ask' : 'none';
+}
+
+/** A package's lines from options: `{ item | id, amount, noted? }`, or `{ item | id, topUp: { max }, noted? }`. */
 export function packageItems(name: string, items: unknown, pack?: ObjPack): PackageItem[] {
     if (!Array.isArray(items)) throw new Error(`Package ${name}: items must be a list`);
     return (items as Record<string, unknown>[]).map((raw, j) => {
         const where = `Package ${name} item ${j}`;
         const ref = itemRef(raw ?? {}, where, pack);
+        if (raw.topUp !== undefined) {
+            if (raw.amount !== undefined) throw new Error(`${where}: a top-up takes its count from the ask, so it has no amount`);
+            const max = Number((raw.topUp as { max?: unknown } | null)?.max);
+            if (!Number.isInteger(max) || max < 1) throw new Error(`${where}: topUp.max must be a whole number of at least 1`);
+            if (raw.noted !== undefined && typeof raw.noted !== 'boolean') throw new Error(`${where}: noted must be true or false`);
+            if (raw.noted === false && namesNote(ref, pack)) throw new Error(`${where}: obj ${ref.id} is a note, so it cannot be noted: false`);
+            return { ...ref, topUp: { max }, ...(typeof raw.noted === 'boolean' ? { noted: raw.noted } : {}) };
+        }
         const amount = Number(raw.amount);
         if (!Number.isInteger(amount) || (amount < 1 && amount !== -1)) throw new Error(`Package ${name}: bad amount for ${refLabel(ref)}`);
         if (raw.noted !== undefined && typeof raw.noted !== 'boolean') throw new Error(`${where}: noted must be true or false`);
@@ -569,15 +748,42 @@ export function packageItems(name: string, items: unknown, pack?: ObjPack): Pack
     });
 }
 
-function muleOptions(raw: Record<string, unknown>): Required<Omit<MuleOptions, 'serve' | 'ge'>> & Pick<MuleOptions, 'serve' | 'ge'> {
+/**
+ * A package from options. One with a top-up line needs `scope: { step, family: 'mule' }`, the ask
+ * it reads; a fixed package takes no scope, and comes back exactly as before (name and items).
+ */
+export function packageOf(raw: unknown, pack?: ObjPack): Package {
+    const p = (raw ?? {}) as Record<string, unknown>;
+    const name = String(p.name);
+    const items = packageItems(name, p.items, pack);
+    if (p.onRequest !== undefined && typeof p.onRequest !== 'boolean') throw new Error(`Package ${name}: onRequest must be true or false`);
+    const onRequest = p.onRequest === true ? { onRequest: true as const } : {};
+    if (!items.some(isTopUp)) {
+        // The scope keys the package for a cue (its hand-off id); a fixed package may go without.
+        const scope = p.scope === undefined ? {} : { scope: scopeOption(p.scope, ['mule'], `Package ${name} scope`) };
+        return { name, items, ...scope, ...onRequest };
+    }
+    const labels = items.map(i => refLabel(i).toLowerCase());
+    for (const t of items.filter(isTopUp)) {
+        const l = refLabel(t).toLowerCase();
+        if (labels.filter(x => x === l).length > 1) throw new Error(`Package ${name}: ${refLabel(t)} is a top-up line and another line too`);
+    }
+    return { name, items, scope: scopeOption(p.scope, ['mule'], `Package ${name} scope`), ...onRequest };
+}
+
+export function muleOptions(raw: Record<string, unknown>, env: Record<string, string | undefined> = process.env): Required<Omit<MuleOptions, 'serve' | 'ge'>> & Pick<MuleOptions, 'serve' | 'ge'> {
     const o = raw as MuleOptions;
-    const packages = (o.packages ?? []).map(p => ({ name: String(p.name), items: packageItems(String(p.name), p.items) }));
+    const packages = (o.packages ?? []).map(p => packageOf(p));
+    if ('requestFile' in raw) throw new Error('requestFile is gone: a package is asked for by a cue scoped { step: <hand-off id>, family: "mule" } in cueDir (mule.md)');
+    const askWaitTicks = Number(o.askWaitTicks ?? 3);
+    if (!Number.isInteger(askWaitTicks) || askWaitTicks < 0) throw new Error(`askWaitTicks must be a whole number (got ${o.askWaitTicks})`);
     return {
+        askWaitTicks,
+        cueDir: typeof o.cueDir === 'string' ? o.cueDir : cueDir(env),
         serve: o.serve,
         couriers: o.couriers ?? DEFAULT_COURIERS,
         packages,
         serveMode: o.serveMode ?? 'order',
-        requestFile: o.requestFile ?? '',
         giver: o.giver ?? 'burst',
         preRequest: o.preRequest ?? true,
         stand: o.stand ?? MULE_STAND,
@@ -589,9 +795,13 @@ class Mule {
     private readonly o: ReturnType<typeof muleOptions>;
     private readonly courierPatterns: RegExp[];
     private readonly requests: ChatCursor;
-    private readonly pms: ChatCursor;
+    /** The last mule cue acted on, and when this role started (a cue older than that, less STALE_CUE_MS, is a past one). */
+    private lastCue: { session: string; seq: number } | null = null;
+    private readonly startMs = Date.now();
     /** Package to serve next, or null. */
     private pending: Package | null = null;
+    /** Order mode's packages: every package but those served only on request. */
+    private readonly ordered: Package[];
     private nextIndex = 0;
     /** Ids/counts of the pending package while it sits in the inventory. */
     private held: Map<number, number> | null = null;
@@ -603,6 +813,10 @@ class Mule {
     private lastGeCollect = 0;
     private readonly geDone = new Set<string>();
     private current = 'start';
+    /** Date.now() at the first frame showing the current trade open (altar-cue.ts usableAsk). */
+    private openSeenMs = 0;
+    /** Date.now() of the last top-up ask served. */
+    private lastAskMs = 0;
 
     /** What the mule is doing: idle, consolidate (taking courier stock in), serve (preparing or giving a package), ge. */
     private phase(to: 'idle' | 'consolidate' | 'serve' | 'ge'): void {
@@ -615,8 +829,8 @@ class Mule {
         this.o = muleOptions(ctx.options);
         this.courierPatterns = toRegExps(this.o.couriers);
         this.requests = new ChatCursor(ctx.sdk, [TRADE_REQUEST_CHAT_TYPE]);
-        this.pms = new ChatCursor(ctx.sdk, PM_RECEIVED_TYPES);
-        if (this.o.serveMode === 'order') this.pending = this.o.packages[0] ?? null;
+        this.ordered = this.o.packages.filter(p => !p.onRequest);
+        if (this.o.serveMode === 'order') this.pending = this.ordered[0] ?? null;
     }
 
     private isServe(name: string | null | undefined): boolean {
@@ -636,13 +850,23 @@ class Mule {
         await walkNear(ctx, this.o.stand.x, this.o.stand.z, 3);
         ctx.log('mule ready', { serve: this.o.serve, packages: this.o.packages.map(p => p.name), giver: this.o.giver, serveMode: this.o.serveMode });
 
-        while (!ctx.signal.aborted) {
-            try {
-                await this.cycle();
-            } catch (e) {
-                ctx.log('cycle error', { error: String(e) });
-                await ctx.sdk.waitForTicks(5).catch(() => {});
+        let wasOpen = false;
+        const unsubOpen = ctx.sdk.onStateUpdate(st => {
+            const open = !!st.trade?.isOpen;
+            if (open && !wasOpen) this.openSeenMs = Date.now();
+            wasOpen = open;
+        });
+        try {
+            while (!ctx.signal.aborted) {
+                try {
+                    await this.cycle();
+                } catch (e) {
+                    ctx.log('cycle error', { error: String(e) });
+                    await ctx.sdk.waitForTicks(5).catch(() => {});
+                }
             }
+        } finally {
+            unsubOpen();
         }
         if (ctx.sdk.getTradeState().isOpen) await ctx.bot.declineTrade();
         await closeBank(ctx);
@@ -652,20 +876,23 @@ class Mule {
         const { ctx } = this;
         const { sdk } = ctx;
 
-        // 1. Package requests: a PM from the scored account, or a line in the request file.
-        const asks: { from: string; text: string }[] = this.pms
-            .next()
-            .filter(pm => this.isServe(pm.sender))
-            .map(pm => ({ from: pm.sender, text: pm.text }));
-        const fileAsk = this.takeFileRequest();
-        if (fileAsk) asks.push({ from: 'requestFile', text: fileAsk });
-        for (const ask of asks) {
-            const pkg = parsePackageRequest(ask.text, this.o.packages);
-            ctx.log('package request', { from: ask.from, text: ask.text, found: pkg?.name ?? null });
-            if (pkg && pkg !== this.pending) {
+        // 1. Package requests: a new mule cue in the cue directory, scoped to one of our packages.
+        const cue = readCue(this.o.cueDir);
+        const action = cue?.scope?.family === 'mule' ? muleCueAction(cue, this.lastCue, this.startMs) : 'none';
+        if (cue && action !== 'none') {
+            const last = this.lastCue;
+            this.lastCue = { session: cue.session, seq: cue.seq };
+            const pkg = packageForCue(cue, this.o.packages, this.o.serve);
+            ctx.log(action === 'ask' ? 'package request' : 'package request stopped', { step: cue.scope.step, session: cue.session, seq: cue.seq, found: pkg?.name ?? null, after: last });
+            if (action === 'ask' && pkg && pkg !== this.pending) {
                 this.pending = pkg;
                 this.held = null;
                 this.shortSince = 0;
+            } else if (action === 'stop' && pkg && pkg === this.pending && (this.o.serveMode === 'request' || pkg.onRequest)) {
+                // Withdrawn: bank the staged package; order mode returns to the package due.
+                this.pending = this.o.serveMode === 'order' ? (this.ordered[this.nextIndex] ?? null) : null;
+                this.held = null;
+                this.needsBank = true;
             }
         }
 
@@ -694,17 +921,6 @@ class Mule {
         }
         this.phase('idle');
         await nextTick(sdk);
-    }
-
-    /** Pop the first package name from the request file (one name per line), if any. */
-    private takeFileRequest(): string | null {
-        const path = this.o.requestFile;
-        if (!path || !existsSync(path)) return null;
-        const lines = readFileSync(path, 'utf8').split('\n').map(l => l.trim());
-        const first = lines.findIndex(l => l.length > 0);
-        if (first < 0) return null;
-        writeFileSync(path, lines.slice(first + 1).filter(Boolean).map(l => `${l}\n`).join(''));
-        return lines[first]!;
     }
 
     private wantsPackage(): boolean {
@@ -745,10 +961,11 @@ class Mule {
         // A package is staged only into an otherwise empty inventory, so `held` is the package alone.
         if (this.pending && !this.held && deposited) {
             const plan = planPackage(this.pending, sdk.getBankItems());
-            if (plan.missing.length || plan.ambiguous.length || plan.slots > 28) {
-                if (this.shortSince === 0) ctx.log('package short', { package: this.pending.name, missing: plan.missing, ambiguous: plan.ambiguous, slots: plan.slots });
+            if (plan.missing.length || plan.ambiguous.length || plan.slots > 28 || plan.withdrawals.length === 0) {
+                if (this.shortSince === 0) ctx.log('package short', { package: this.pending.name, missing: plan.missing, ambiguous: plan.ambiguous, slots: plan.slots, topUpShort: plan.topUpShort });
                 this.shortSince = Date.now();
             } else {
+                if (plan.topUpShort.length) ctx.log('package: top-up staged below its max', { package: this.pending.name, topUpShort: plan.topUpShort });
                 let ok = true;
                 for (const w of plan.withdrawals) {
                     const r = await bot.withdrawItem(w.bankItem, w.amount, { asNote: w.noted });
@@ -803,10 +1020,18 @@ class Mule {
         }
         if (!(await this.openTradeWith(name))) return;
         const pkg = this.pending!;
-        const items = sdk.getInventory().filter(i => this.held!.has(i.id));
         // 30 s, not 60: a pre-request can open a trade the scored account did not ask for
         // yet (it accepts a stale request of theirs), and that screen must not linger.
-        const r = await giveOpenTrade(sdk, bot, this.o.serve!, items, this.o.giver, 30_000);
+        const r = await serveStaged(sdk, bot, {
+            partner: this.o.serve!,
+            pkg,
+            held: this.held!,
+            mode: this.o.giver,
+            timeoutMs: 30_000,
+            ask: { dir: this.o.cueDir, openMs: this.openSeenMs || Date.now(), lastServedMs: this.lastAskMs, maxTicks: this.o.askWaitTicks, signal: ctx.signal },
+            log: ctx.log
+        });
+        if (r.ask) this.lastAskMs = r.ask.ms;
         ctx.log('hand-off', {
             to: name,
             package: pkg.name,
@@ -815,13 +1040,13 @@ class Mule {
             stacks: this.held!.size,
             mode: this.o.giver,
             result: r.message,
-            received: r.received.map(i => `${i.name} x${i.count}`)
+            received: r.received.map(i => `${i.name} x${i.count}`),
+            ...(r.topUps.length ? { asked: r.ask?.items ?? null, topUps: r.topUps.map(t => ({ item: t.item, asked: t.asked, n: t.n })) } : {})
         });
         if (r.success) {
             this.held = null;
             if (this.o.serveMode === 'order') {
-                this.nextIndex++;
-                this.pending = this.o.packages[this.nextIndex] ?? null;
+                ({ nextIndex: this.nextIndex, pending: this.pending } = afterServe(this.ordered, this.nextIndex, pkg));
             } else {
                 this.pending = null;
             }

@@ -76,10 +76,16 @@ skeleton damage, not the falls or the lap.
   700, inferred from the chain's level ticks: 959 -> 1,696 at 35 -> 52 is 737)
   + about 100 to the lever. Barbarian loses before its unmeasured fall exits.
 - **The Gnome gate from the south** starts Femi's boxes scene on a first visit
-  (`gnome_gate.rs2`, `%femi_help = 0` with Femi within 6 tiles). The walk
-  declines ("Sorry, I'm a bit busy.", which sets `%femi_help = 1`) and clicks
-  again. The scored run's S11a arrives by spirit tree, so its Grand Tree quest
-  never sees this.
+  (`gnome_gate.rs2`, `%femi_help = 0` with Femi within 6 tiles). The walk goes
+  through with the shared `passGate` (`speedrun/lib/travel.ts`,
+  `GNOME_STRONGHOLD_GATE`): it declines ("Sorry, I'm a bit busy.", which sets
+  `%femi_help = 1`), clicks again, and returns only once the player stands on
+  the far side. A walk leg that fails for any reason tries the gate, but only
+  when the leg ends across it from the player (rs/295's demo stop: the leg
+  ended "Stuck at", the old module passed the gate only on "no path", and
+  bot.walkTo's own door opener had clicked the gate and opened the scene). The
+  scored run's S11a arrives by spirit tree; S15's walked zoo return meets this
+  gate once.
 - **Monkey bars** rejected as planned (level-6 Wilderness spiders and earth
   warriors against a 10 HP account).
 

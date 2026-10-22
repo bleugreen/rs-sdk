@@ -28,9 +28,7 @@
 // give succeeded. Reports the step's in-world ticks per run (the TickLog row: observed ticks).
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import puppeteer from 'puppeteer';
+import { readFileSync } from 'node:fs';
 import { giveOpenTrade } from '../helpers/mule';
 import { wield } from '../lib/act';
 import { closeSession, openSession, type Session } from '../lib/session';
@@ -43,6 +41,7 @@ import { handOffFrom, handOffStep, type HandOffPlan, type HandOffReport } from '
 import { runSteps } from '../runner/step';
 import { LUMBRIDGE_SPAWN } from '../skills/start';
 import { MANIFEST } from '../tools/slot-ledger';
+import { launchLabBrowser, type LabBrowser } from './browser';
 import { arg, botArg, labLog, result } from './common';
 import { cheat, leaveTutorial, mustTele, setStats } from './setup';
 
@@ -78,21 +77,7 @@ const hold = arg('hold', '').split(',').filter(Boolean);
 
 // --client=browser, as magic-accept.ts: a headless Chrome on the lab's /bot page.
 const browserMode = arg('client', 'lite') === 'browser';
-let browser: { close(): Promise<void> } | null = null;
-if (browserMode) {
-    const webPort = process.env.WEB_PORT ?? '9300';
-    const agentPort = process.env.AGENT_PORT ?? '8300';
-    const cdpPort = Number(webPort) + 5;
-    browser = await puppeteer.launch({
-        headless: true,
-        defaultViewport: null,
-        args: ['--no-sandbox', '--window-size=800,660', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', `--remote-debugging-port=${cdpPort}`],
-    });
-    process.env.SPEEDRUN_CDP_URL = `http://127.0.0.1:${cdpPort}`;
-    const envPath = join(process.cwd(), 'bots', botArg(), 'bot.env');
-    const clientUrl = `CLIENT_URL=http://localhost:${webPort}/bot?gateway=${encodeURIComponent(`ws://localhost:${agentPort}`)}`;
-    writeFileSync(envPath, readFileSync(envPath, 'utf8').replace(/^CLIENT_URL=.*\n?/m, '').trimEnd() + `\n${clientUrl}\n`, { mode: 0o600 });
-}
+const browser: LabBrowser | null = browserMode ? await launchLabBrowser(botArg()) : null;
 
 const scored = await openSession(botArg(), browserMode ? { client: 'browser', launch: true, insecureQueryLogin: true } : {});
 const partner = await openSession(partnerName, { pathfinding: false });
@@ -212,5 +197,5 @@ result(`handoff ${row}`, { pass, client: browserMode ? 'browser' : 'lite', trade
 console.log(formatReport(report(log.rows)));
 await closeSession(partner);
 await closeSession(scored);
-await browser?.close();
+await browser?.kill();
 process.exit(pass ? 0 : 1);

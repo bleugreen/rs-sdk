@@ -32,7 +32,10 @@
 // - gaps: the label went back (a relaunch restarts the client's counter) or jumped more than
 //   `gapTicks` (17, the watchdog's stale bound) at once. The cadence restarts there and the
 //   jump is not counted as glued or late;
-// - the period the window's arrivals were measured against (median, ms).
+// - the period the window's arrivals were measured against (median, ms);
+// - overBudget: ticks in the window whose sixth and later user events the engine deferred, summed
+//   from the page program's `counters.overBudget` as each publication carries it (lib/programs.ts
+//   overBudgetMeta). Printed only when nonzero, so a minute with no overflow reads as it always did.
 
 import type { TickLog, TickRow } from './ticks';
 import { tickMs as defaultTickMs } from './wait';
@@ -214,29 +217,69 @@ export interface TickMonMinute extends Omit<CadenceCounts, 'offsets' | 'periods'
     lateMs: number;
     /** Median tick period the window's offsets were measured against, ms; null with no offsets. */
     periodMs: number | null;
+    /** Over-budget ticks the page's program counted in the window (`OverBudgetCount`). */
+    overBudget: number;
 }
 
 function quantile(sorted: number[], p: number): number | null {
     return sorted.length ? Math.round(sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))]!) : null;
 }
 
-export function summarizeWindow(c: CadenceCounts, minute: number, startedAt: number, secs: number, lateMs: number): TickMonMinute {
+export function summarizeWindow(c: CadenceCounts, minute: number, startedAt: number, secs: number, lateMs: number, overBudget = 0): TickMonMinute {
     const { offsets, periods, ...rest } = c;
     const sorted = [...offsets].sort((a, b) => a - b);
     const periodMs = quantile([...periods].sort((a, b) => a - b), 0.5);
-    return { ...rest, minute, startedAt, secs, p50: quantile(sorted, 0.5), p90: quantile(sorted, 0.9), max: quantile(sorted, 1), lateMs, periodMs };
+    return { ...rest, minute, startedAt, secs, p50: quantile(sorted, 0.5), p90: quantile(sorted, 0.9), max: quantile(sorted, 1), lateMs, periodMs, overBudget };
 }
 
-/** `TICKMON minute=3 at=2026-10-21T16:23:00Z secs=60 ticks=176 glued=0 late=1 p50=0 p90=2 max=151 gaps=0 lateMs=120 periodMs=341` */
+/**
+ * `TICKMON minute=3 at=2026-10-21T16:23:00Z secs=60 ticks=176 glued=0 late=1 p50=0 p90=2 max=151 gaps=0 lateMs=120 periodMs=341`,
+ * ending ` overBudget=N` in a minute where the page's program had over-budget ticks.
+ */
 export function tickMonLine(m: TickMonMinute): string {
     const v = (x: number | null) => (x === null ? '-' : String(x));
     const at = new Date(m.startedAt).toISOString().replace(/\.\d+Z$/, 'Z');
-    return `TICKMON minute=${m.minute} at=${at} secs=${m.secs} ticks=${m.ticks} glued=${m.glued} late=${m.late} p50=${v(m.p50)} p90=${v(m.p90)} max=${v(m.max)} gaps=${m.gaps} lateMs=${m.lateMs} periodMs=${v(m.periodMs)}`;
+    const over = m.overBudget > 0 ? ` overBudget=${m.overBudget}` : '';
+    return `TICKMON minute=${m.minute} at=${at} secs=${m.secs} ticks=${m.ticks} glued=${m.glued} late=${m.late} p50=${v(m.p50)} p90=${v(m.p90)} max=${v(m.max)} gaps=${m.gaps} lateMs=${m.lateMs} periodMs=${v(m.periodMs)}${over}`;
+}
+
+/** The page program's status as a publication carries it (lib/programs.ts ProgramStatus). */
+export interface PublishedProgram {
+    runId: number;
+    counters?: Record<string, number>;
+}
+
+/**
+ * The over-budget ticks the page's programs counted since the last `take`. The page publishes
+ * each run's running total (`counters.overBudget`); this keeps the increments. A run first seen
+ * already counting (one started before the monitor) contributes its whole count.
+ */
+export class OverBudgetCount {
+    private runId: number | null = null;
+    private seen = 0;
+    private total = 0;
+
+    see(program: PublishedProgram | null | undefined): void {
+        if (!program) return;
+        if (program.runId !== this.runId) {
+            this.runId = program.runId;
+            this.seen = 0;
+        }
+        const n = program.counters?.overBudget ?? 0;
+        if (n > this.seen) this.total += n - this.seen;
+        this.seen = n;
+    }
+
+    take(): number {
+        const n = this.total;
+        this.total = 0;
+        return n;
+    }
 }
 
 /** The part of the SDK the monitor reads. */
 export interface TickMonitorSource {
-    onStateUpdate(listener: (s: { tick: number; inGame: boolean }) => void): () => void;
+    onStateUpdate(listener: (s: { tick: number; inGame: boolean; program?: PublishedProgram | null }) => void): () => void;
     /** When the gateway received the state just published (epoch ms); 0 or absent means unknown. */
     getStateReceivedAt?(): number;
 }
@@ -272,7 +315,8 @@ export function startTickMonitor(source: TickMonitorSource, opts: TickMonitorOpt
     const minPartialMs = opts.minPartialMs ?? 10_000;
     const now = opts.now ?? Date.now;
     const cadence = new TickCadence(cfg);
-    // Raw arrivals since the last roll; the listener does nothing else.
+    const overBudget = new OverBudgetCount();
+    // Raw arrivals since the last roll, and the program's over-budget increments; the listener does nothing else.
     let labels: number[] = [];
     let times: number[] = [];
     let lastLabel: number | null = null;
@@ -282,7 +326,10 @@ export function startTickMonitor(source: TickMonitorSource, opts: TickMonitorOpt
     let stopped = false;
 
     const unsubscribe = source.onStateUpdate(s => {
-        if (!s.inGame || s.tick === lastLabel) return;
+        if (!s.inGame) return;
+        // every publication, a same-label one too: a status republished after an action is newer
+        overBudget.see(s.program);
+        if (s.tick === lastLabel) return;
         lastLabel = s.tick;
         labels.push(s.tick);
         times.push(source.getStateReceivedAt?.() || now());
@@ -303,7 +350,7 @@ export function startTickMonitor(source: TickMonitorSource, opts: TickMonitorOpt
         times = [];
         for (let i = 0; i < ls.length; i++) cadence.arrive(ls[i]!, ts[i]!);
         const end = now();
-        const m = summarizeWindow(cadence.take(), minute++, windowStart, Math.round((end - windowStart) / 1000), cfg.lateMs);
+        const m = summarizeWindow(cadence.take(), minute++, windowStart, Math.round((end - windowStart) / 1000), cfg.lateMs, overBudget.take());
         windowStart = end;
         opts.emit(m);
     }
@@ -346,7 +393,7 @@ export function tickMonRow(log: TickLog, session: { name: string; sessionId: num
         ticks: m.ticks,
         wallMs: m.secs * 1000,
         ok: true,
-        meta: { line: tickMonLine(m), minute: m.minute, glued: m.glued, late: m.late, p50: m.p50, p90: m.p90, max: m.max, gaps: m.gaps, lateMs: m.lateMs, periodMs: m.periodMs },
+        meta: { line: tickMonLine(m), minute: m.minute, glued: m.glued, late: m.late, p50: m.p50, p90: m.p90, max: m.max, gaps: m.gaps, lateMs: m.lateMs, periodMs: m.periodMs, ...(m.overBudget > 0 ? { overBudget: m.overBudget } : {}) },
         tickMs,
         at: new Date(m.startedAt).toISOString(),
     };

@@ -4,8 +4,9 @@
 // docs/speedrun/skills/herblore.md section 9 has the design and the measured figures.
 //
 // Callers: skills/herblore.ts (S25e), skills/crafting.ts (S25d: hard leather bodies in tool
-// mode, the thread a `keep` item, `stow` on the last visit). The cooking gem windows (entry
-// 29) and the Fletching fallback (entry 32) call `runItemCycle` with their own recipes.
+// mode, the thread a `keep` item, `stow` on the last visit), skills/cooking.ts (S25c's wine
+// windows: `held` + `bank: false` on the load held in W1, `mixed` gem loads and `stow` in
+// W2/P2). The Fletching fallback (entry 32) calls `runItemCycle` with its own recipes.
 //
 // `planRoute` is the program's own recipe rule run on paper: at each bank visit, the
 // highest-xp recipe the level allows whose inputs are both on hand, for min(load, A, B)
@@ -70,6 +71,19 @@ export interface ItemCycleSpec {
     stallTicks?: number;
     /** At the stop, one more visit deposits everything held, the tool and kept items too. */
     stow?: boolean;
+    /** The first load is the one held now: no booth click before it. */
+    held?: boolean;
+    /** false (with `held`): no bank visit at all; the run ends 'load done' once the held load is sent. */
+    bank?: boolean;
+    /** Tool mode: a load holds several recipes' inputs, filled in xp order (the cooking windows' gems). */
+    mixed?: boolean;
+    /** Stack mode: a tick whose best tier runs out carries on with the next tier the level allows (Fletching). */
+    fill?: boolean;
+    /**
+     * Ticks the level-up watcher runs after the program (default LEVEL_UP_CLEAR_TICKS). 0: none, for
+     * a caller that clears the pages itself against a deadline (cooking's W1, through the due tick).
+     */
+    clearTicks?: number;
     step: string;
     log?: (msg: string, data?: Record<string, unknown>) => void;
     onProgress?: (status: ProgramStatus) => void;
@@ -156,7 +170,10 @@ export interface RoutePlan {
     xpShort: number;
     /** The level the supplies reach. */
     level: number;
-    /** Ticks per inventory x loads + ticks per level-up drop x drops; the lab calibrates both. */
+    /**
+     * Ticks per inventory x loads, plus each load's level-up pages beyond `freePagesPerLoad`: a page
+     * still queued at the booth click holds it a tick (herblore.md section 9, fitted on the lab).
+     */
     expectedTicks: number;
     /** What is left of each input. */
     left: Record<number, number>;
@@ -168,8 +185,12 @@ export interface PlanOptions {
     load?: number;
     /** Measured steady cycle: 4 ticks per 14-potion inventory (herblore.md section 2). */
     ticksPerInventory?: number;
-    /** Booth delay per level-up page left at the visit (levelup-cost.md section 1, about 0.3, inferred). */
-    ticksPerLevelupDrop?: number;
+    /**
+     * Level-up pages a load's work ticks clear before its booth click (default 1). Each further page
+     * in the load delays the bank a tick: herblore-accept L1 measured 164 program ticks against
+     * 4 x 30 loads + 44 such pages (m, bgsrv-mac, 3 of 3); L2 and L3 sit within 6%.
+     */
+    freePagesPerLoad?: number;
 }
 
 export function planRoute(fromXp: number, toLevel: number, recipes: readonly ItemRecipe[], stock: Stock, opts: PlanOptions = {}): RoutePlan {
@@ -183,7 +204,8 @@ export function planRoute(fromXp: number, toLevel: number, recipes: readonly Ite
     const byRecipe: Record<string, number> = {};
     let xp = fromXp;
     let actions = 0;
-    let drops = 0;
+    let queued = 0;
+    const freePages = opts.freePagesPerLoad ?? 1;
     while (xp < target) {
         const level = levelForXp(xp);
         const r = byXp.find(x => x.level <= level && has(x.a) && has(x.b) && has(x.tool));
@@ -201,10 +223,9 @@ export function planRoute(fromXp: number, toLevel: number, recipes: readonly Ite
         loads.push({ recipe: r.name, n: done, levelups: ups, xpAfter: xp });
         byRecipe[r.name] = (byRecipe[r.name] ?? 0) + done;
         actions += done;
-        drops += ups;
+        queued += Math.max(0, ups - freePages);
     }
     const perInv = opts.ticksPerInventory ?? 4;
-    const perDrop = opts.ticksPerLevelupDrop ?? 0.3;
     return {
         loads,
         actions,
@@ -212,7 +233,7 @@ export function planRoute(fromXp: number, toLevel: number, recipes: readonly Ite
         reaches: xp >= target,
         xpShort: Math.max(0, target - xp),
         level: levelForXp(xp),
-        expectedTicks: Math.round((loads.length * perInv + drops * perDrop) * 10) / 10,
+        expectedTicks: Math.round((loads.length * perInv + queued) * 10) / 10,
         left: Object.fromEntries(recipes.flatMap(r => [r.a, ...(r.b === undefined ? [] : [r.b])]).map(id => [id, left.get(id) ?? 0]))
     };
 }
@@ -233,7 +254,7 @@ export const LEVEL_UP_CLEAR_TICKS = 3;
 export function programParams(spec: ItemCycleSpec): Record<string, unknown> {
     const p: Record<string, unknown> = { mode: spec.mode, skill: spec.skill, recipes: spec.recipes.map(r => ({ ...r, ...(r.keep ? { keep: r.keep.map(k => ({ ...k })) } : {}) })) };
     if (spec.booth) p.booth = { ...spec.booth };
-    for (const k of ['untilLevel', 'untilXp', 'maxActions', 'perTick', 'maxTicks', 'stallTicks', 'stow'] as const) if (spec[k] !== undefined) p[k] = spec[k];
+    for (const k of ['untilLevel', 'untilXp', 'maxActions', 'perTick', 'maxTicks', 'stallTicks', 'stow', 'held', 'bank', 'mixed', 'fill'] as const) if (spec[k] !== undefined) p[k] = spec[k];
     return p;
 }
 
@@ -268,7 +289,7 @@ export async function runItemCycle(ctx: ItemCycleContext, spec: ItemCycleSpec): 
         throw e;
     } finally {
         ledgerRows(ctx, spec, final ?? last, error, t0);
-        await clearLevelUps(sdk);
+        await clearLevelUps(sdk, spec.clearTicks ?? LEVEL_UP_CLEAR_TICKS);
     }
 }
 
@@ -320,10 +341,11 @@ function ledgerRows(ctx: ItemCycleContext, spec: ItemCycleSpec, st: ProgramStatu
     spec.log?.(`item-cycle ${st.phase}${st.fault ? `: ${st.fault}` : ''}`, summary);
 }
 
-async function clearLevelUps(sdk: ItemCycleSdk): Promise<void> {
+async function clearLevelUps(sdk: ItemCycleSdk, ticks: number): Promise<void> {
+    if (ticks <= 0) return;
     const watcher = startLevelUpWatcher(sdk);
     try {
-        await waitTicks(sdk, LEVEL_UP_CLEAR_TICKS);
+        await waitTicks(sdk, ticks);
     } catch {
         // a dropped session ends the wait; the watcher has nothing left to do
     } finally {

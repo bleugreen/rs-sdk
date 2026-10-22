@@ -12,7 +12,9 @@
 // fixed; both runs every repetition in each mode and prints the comparison);
 // --trace=N prints the player every N ticks and on every hp, dialogue or chat
 // change; --launch makes this script launch (and own) the bot's client, which
-// a fixture's relog needs: run lab.sh with LAB_RUNNERS=0 then. Lab only: staff
+// a fixture's relog needs: run lab.sh with LAB_RUNNERS=0 then; --client=browser
+// runs this checkout's page in a headless tab instead (implies --launch; build
+// the bundle first: `bun run build` in server/webclient). Lab only: staff
 // commands. Under the table the report lists each run's `note` rows (what a
 // segment recorded about itself: casts, refusals, free slots), and a quest's
 // `check` can fail a run whose segments passed (a reward's xp).
@@ -27,13 +29,14 @@
 import type { BotSDK } from '../../../sdk/index';
 import type { BotWorldState } from '../../../sdk/types';
 import { wield } from '../../lib/act';
-import { pageText } from '../../lib/dialogue';
+import { pageText, resetDialogueMemory } from '../../lib/dialogue';
 import { closeSession, openSession, relog, type Session } from '../../lib/session';
 import { TickLog, type TickRow } from '../../lib/ticks';
 import { waitTicks } from '../../lib/wait';
 import { configId } from '../../lib/world';
 import type { DialogueMode, QuestOptions } from '../../quests/segments';
 import { BOUNDARY_STEP, runSteps, type RunnerSession, type Step } from '../../runner/step';
+import { launchLabBrowser } from '../browser';
 import { arg, botArg, result } from '../common';
 import { stats, type Stats } from '../record';
 import { cheat, clearInventory, give, leaveTutorial, mustTele, setStats, tele } from '../setup';
@@ -94,7 +97,7 @@ export async function applyFixture(session: Session, f: QuestFixture, staging: {
         await waitTicks(sdk, Math.ceil(vars.length / 5) + 2);
     }
     if (f.relog ?? vars.length > 0) {
-        if (!session.child) throw new Error(`fixture ${f.letter}: the quest tab only shows the vars after a relog, which needs this script to own the client (LAB_RUNNERS=0 and --launch), or relog: false`);
+        if (!session.child && session.client !== 'browser') throw new Error(`fixture ${f.letter}: the quest tab only shows the vars after a relog, which needs this script to own the client (LAB_RUNNERS=0 and --launch), or relog: false`);
         await relog(session);
         await waitTicks(sdk, 2);
     }
@@ -250,13 +253,20 @@ export interface LabRunOptions {
 /** Apply the fixture of `from`, run the chosen segments, `runs` times; a failed run is recorded and the next one starts afresh. */
 export async function runLabQuest<O extends QuestOptions>(session: Session | RunnerSession, quest: LabQuest<O>, o: LabRunOptions): Promise<LabReport> {
     const dialogue = o.dialogue ?? 'fixed';
-    const all = quest.steps({ ...(quest.options ?? {}), dialogue } as O);
-    const chosen = selectSegments(all, quest.stepId, o.from, o.until);
-    const letter = letterOf(quest.stepId, chosen[0]!.name);
+    // Built afresh for every run: a module's steps() may keep what the run has seen in a closure,
+    // and a later run must not inherit it.
+    const build = () => selectSegments(quest.steps({ ...(quest.options ?? {}), dialogue } as O), quest.stepId, o.from, o.until);
+    let chosen = build();
+    const names = chosen.map(c => c.name);
+    const letter = letterOf(quest.stepId, names[0]!);
     const fixture = quest.fixtures.find(f => f.letter === letter);
     if (!fixture) throw new Error(`${quest.title}: no fixture for segment ${letter}`);
     const records: RunRecord[] = [];
     for (let run = 0; run < (o.runs ?? 1); run++) {
+        if (run > 0) chosen = build();
+        // The dialogue layer remembers the last page it acted on per sdk: run N's last page must not
+        // read as stale when run N+1's first page has the same id.
+        resetDialogueMemory(session.sdk);
         const s = session as Session;
         if (quest.applyFixture) await quest.applyFixture(s, fixture);
         else await applyFixture(s, fixture, quest.staging);
@@ -279,7 +289,7 @@ export async function runLabQuest<O extends QuestOptions>(session: Session | Run
             boundary: log.rows.filter(r => !r.kind && r.step === BOUNDARY_STEP).reduce((a, r) => a + r.ticks, 0),
         });
     }
-    return summarize(quest.title, dialogue, chosen.map(c => c.name), records, quest.reference, quest.stepId);
+    return summarize(quest.title, dialogue, names, records, quest.reference, quest.stepId);
 }
 
 /** With --trace: the player every `every` ticks, and on every hp, dialogue page or new chat line. */
@@ -304,19 +314,23 @@ export function trace(sdk: Pick<BotSDK, 'onStateUpdate'>, every: number): () => 
 }
 
 /** The command line for a quest's lab file: `<bot> --from --until --runs --dialogue --trace`. */
-export function labArgs(): Omit<LabRunOptions, 'dialogue'> & { dialogue: DialogueMode | 'both'; launch: boolean } {
+export function labArgs(): Omit<LabRunOptions, 'dialogue'> & { dialogue: DialogueMode | 'both'; launch: boolean; client: 'lite' | 'browser' } {
     const dialogue = arg('dialogue', 'fixed');
     if (dialogue !== 'fixed' && dialogue !== 'burst' && dialogue !== 'both') throw new Error(`--dialogue=${dialogue}: want fixed, burst or both`);
     const from = arg('from', '');
     if (!from) throw new Error('--from=<segment letter or step name> is required');
     const until = arg('until', from);
-    return { from, until, runs: Number(arg('runs', '1')), dialogue, trace: Number(arg('trace', '0')), launch: process.argv.includes('--launch') };
+    const client = arg('client', 'lite');
+    if (client !== 'lite' && client !== 'browser') throw new Error(`--client=${client}: want lite or browser`);
+    return { from, until, runs: Number(arg('runs', '1')), dialogue, trace: Number(arg('trace', '0')), launch: process.argv.includes('--launch') || client === 'browser', client };
 }
 
 /** Open the lab bot's session, run, print the table(s) and a RESULT line, close. */
 export async function labMain<O extends QuestOptions>(quest: LabQuest<O>): Promise<LabReport[]> {
     const a = labArgs();
-    const session = await openSession(botArg(), { launch: a.launch });
+    // --client=browser: this checkout's page in a headless lab tab (lab/browser.ts), launched and owned here
+    const chrome = a.client === 'browser' ? await launchLabBrowser(botArg()) : null;
+    const session = await openSession(botArg(), a.client === 'browser' ? { client: 'browser', launch: true, insecureQueryLogin: true } : { launch: a.launch });
     try {
         // A bot's first login on this engine's saves is on Tutorial Island, where every fixture's tele() refuses.
         await leaveTutorial(session);
@@ -332,5 +346,6 @@ export async function labMain<O extends QuestOptions>(quest: LabQuest<O>): Promi
         return reports;
     } finally {
         await closeSession(session);
+        await chrome?.kill();
     }
 }

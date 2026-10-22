@@ -727,6 +727,8 @@ export interface GiveOptions {
     openTimeoutMs?: number;
     /** openTrade's `noReplyTicks` (opt-in DROPPED_TICKS beside the partner). */
     noReplyTicks?: number;
+    /** openTrade's `resendTicks` (default RESEND_TICKS; Infinity: a standing request is never re-sent). */
+    resendTicks?: number;
     /** Checked on every published state from the open on: a reason declines the trade and ends the give. */
     stopIf?: (s: BotWorldState) => string | null;
 }
@@ -738,6 +740,7 @@ async function giveImpl(sdk: TradeSdk, partner: string, specs: readonly GiveSpec
         maxTicks: opts.openMaxTicks,
         timeoutMs: opts.openTimeoutMs ?? 60_000,
         noReplyTicks: opts.noReplyTicks,
+        ...(opts.resendTicks !== undefined ? { resendTicks: opts.resendTicks } : {}),
         ...(stopIf ? { stopped: (s: BotWorldState) => !!(stopWhy = stopIf(s)) } : {})
     });
     if (!open.ok) return { ok: false, ticks: 0, gave: [], sent: 0, reason: open.reason === 'stopped' && stopWhy ? `stopped: ${stopWhy}` : open.reason };

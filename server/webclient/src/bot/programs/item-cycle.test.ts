@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import '../../lite/test-support/browser-globals.js';
 
-import { createItemCycle, keepCovers, keepNeed, planMixes, withdrawAmounts, type CycleRecipe, type ItemCycleResult, type ItemCycleShared } from './item-cycle.js';
+import { createItemCycle, keepCovers, keepNeed, planMixedLoad, planMixes, withdrawAmounts, type CycleRecipe, type ItemCycleResult, type ItemCycleShared } from './item-cycle.js';
 import { Harness, makeState, type Sent } from './testkit.js';
 
 // obj ids (server/content/pack/obj.pack); a note is its item's id + 1
@@ -18,10 +18,23 @@ const CRUSHED = 1633;
 const HEADLESS = 53;
 const RUNE_HEADS = 44;
 const RUNE_ARROW = 892;
+const ADAMANT_HEADS = 43;
+const ADAMANT_ARROW = 890;
 const NEEDLE = 1733;
 const THREAD = 1734;
 const HARD_LEATHER = 1743;
 const HARD_BODY = 1131;
+// helpers/jeweller.ts GEM: uncut -> cut
+const UNCUT_SAPPHIRE = 1623;
+const SAPPHIRE = 1607;
+const UNCUT_EMERALD = 1621;
+const EMERALD = 1605;
+const UNCUT_RUBY = 1619;
+const RUBY = 1603;
+const UNCUT_DIAMOND = 1617;
+const DIAMOND = 1601;
+/** Noted unfermented wine (wine-common.ts ITEM.wineNote): held through W1, never a recipe's. */
+const WINE_NOTE = 1996;
 
 const attack: CycleRecipe = { name: 'attack', level: 3, xp: 25, a: GUAM_UNF, b: EYE, products: [ATTACK] };
 const superAttack: CycleRecipe = { name: 'superattack', level: 45, xp: 100, a: IRIT_UNF, b: EYE, products: [SUPER_ATTACK] };
@@ -29,9 +42,17 @@ const opal: CycleRecipe = { name: 'opal', level: 1, xp: 15, a: UNCUT_OPAL, tool:
 const runeArrow: CycleRecipe = { name: 'runearrow', level: 75, xp: 187.5, a: HEADLESS, b: RUNE_HEADS, products: [RUNE_ARROW] };
 /** leather.rs2 @craft_leather(hardleather_body): needle on hard leather, a thread worn out every 5th body. */
 const body: CycleRecipe = { name: 'hardleather_body', level: 28, xp: 35, a: HARD_LEATHER, tool: NEEDLE, keep: [{ id: THREAD, every: 5 }], products: [HARD_BODY] };
+/** The cooking windows' gems (uncut_gem.rs2, gem.dbrow), listed low xp first so the program must sort them. */
+const GEMS: CycleRecipe[] = [
+    { name: 'sapphire', level: 20, xp: 50, a: UNCUT_SAPPHIRE, tool: CHISEL, products: [SAPPHIRE] },
+    { name: 'emerald', level: 27, xp: 67.5, a: UNCUT_EMERALD, tool: CHISEL, products: [EMERALD] },
+    { name: 'ruby', level: 34, xp: 85, a: UNCUT_RUBY, tool: CHISEL, products: [RUBY] },
+    { name: 'diamond', level: 43, xp: 107.5, a: UNCUT_DIAMOND, tool: CHISEL, products: [DIAMOND] }
+];
+const byXpDesc = [...GEMS].sort((x, y) => y.xp - x.xp);
 
 const BOOTH = { x: 3186, z: 3436, id: 2213, option: 2 };
-const STACKABLE = new Set([HEADLESS, RUNE_HEADS, RUNE_ARROW, GUAM_UNF + 1, IRIT_UNF + 1, EYE + 1, NEEDLE, THREAD]);
+const STACKABLE = new Set([HEADLESS, RUNE_HEADS, RUNE_ARROW, ADAMANT_HEADS, ADAMANT_ARROW, GUAM_UNF + 1, IRIT_UNF + 1, EYE + 1, NEEDLE, THREAD, WINE_NOTE]);
 const NOTES = new Map([[GUAM_UNF + 1, GUAM_UNF], [IRIT_UNF + 1, IRIT_UNF], [EYE + 1, EYE]]);
 
 /** speedrun/lib/xp.ts: LEVEL_XP[level] in game xp. */
@@ -657,6 +678,154 @@ describe('item-cycle tool mode (gems)', () => {
     });
 });
 
+describe('item-cycle held, bank: false and mixed loads (the cooking wine windows)', () => {
+    const item = (slot: number, id: number) => ({ slot, id, name: `obj ${id}`, count: 1, optionsWithIndex: [] });
+    const gems = (id: number, n: number): Obj[] => Array.from({ length: n }, () => ({ id, count: 1 }));
+    /** W1's inventory: the 491 notes, the chisel, then 26 uncut sapphires (the one stack burst 1 withdraws). */
+    const w1Inventory = (): Array<Obj | null> => [{ id: WINE_NOTE, count: 491 }, { id: CHISEL, count: 1 }, ...gems(UNCUT_SAPPHIRE, 26)];
+    /** The bank after burst 1: what is left of the 107 for W2 and P2. */
+    const w2Bank = (): Obj[] => [{ id: UNCUT_DIAMOND, count: 2 }, { id: UNCUT_RUBY, count: 20 }, { id: UNCUT_EMERALD, count: 23 }, { id: UNCUT_SAPPHIRE, count: 36 }];
+    const crafting96 = LEVEL_XP[96]!;
+
+    test('planMixedLoad: each type ascending in xp order, capped, and a type with a hole below it left out', () => {
+        const inv = [item(0, CHISEL), item(1, UNCUT_EMERALD), item(2, UNCUT_DIAMOND), item(3, UNCUT_RUBY), item(4, UNCUT_DIAMOND), item(5, UNCUT_EMERALD)];
+        expect(planMixedLoad(inv, byXpDesc)!.map(x => [x.recipe.name, x.mix.dst])).toEqual([['diamond', 2], ['diamond', 4], ['ruby', 3], ['emerald', 1], ['emerald', 5]]);
+        expect(planMixedLoad(inv, byXpDesc)!.every(x => x.mix.src === 0)).toBe(true);
+        expect(planMixedLoad(inv, byXpDesc, 3)!.map(x => x.recipe.name)).toEqual(['diamond', 'diamond', 'ruby']);
+        // a hole at 2 lies below the emerald at 3: the whole type is left out, the ruby below it still planned
+        const holed = [item(0, CHISEL), item(1, UNCUT_RUBY), item(3, UNCUT_EMERALD)];
+        expect(planMixedLoad(holed, byXpDesc)!.map(x => x.recipe.name)).toEqual(['ruby']);
+        expect(planMixedLoad([item(0, CHISEL)], byXpDesc)).toBeNull();
+        expect(planMixedLoad([item(1, UNCUT_RUBY)], byXpDesc)).toBeNull();
+    });
+
+    test('W1: held + bank:false cuts the 26 held with no booth click and no bank packet, the notes untouched, then ends load done', () => {
+        const w = new World({ mode: 'tool', recipes: GEMS, xp: crafting96, inventory: w1Inventory(), bank: w2Bank(), params: { untilLevel: undefined, maxActions: 107, held: true, bank: false, mixed: true } });
+        w.start();
+        const st = w.run(20);
+        expect(st.phase).toBe('done');
+        expect(w.result).toMatchObject({ ended: 'load done', sent: 26, actions: 26, visits: 0, byRecipe: { sapphire: 26 } });
+        // the first tick sends cuts: the held load is planned on the start state
+        expect(w.sentAt(101)).toEqual(['use 1->2', 'use 1->3', 'use 1->4', 'use 1->5', 'use 1->6']);
+        expect(w.h.sent.every(s => s.action.type === 'useItemOnItem')).toBe(true);
+        expect(w.inv[0]).toEqual({ id: WINE_NOTE, count: 491 });
+        expect(w.inv.filter(o => o?.id === SAPPHIRE)).toHaveLength(26);
+        expect(w.bank).toEqual(w2Bank());
+        expect(w.ignored).toEqual([]);
+        expectBudget(w);
+    });
+
+    test('W1 with a mixed held load (a resume, or a burst that took two stacks): every type cut, credited by type', () => {
+        const inv: Array<Obj | null> = [{ id: WINE_NOTE, count: 491 }, { id: CHISEL, count: 1 }, ...gems(UNCUT_SAPPHIRE, 4), ...gems(UNCUT_DIAMOND, 2), ...gems(UNCUT_RUBY, 20)];
+        const w = new World({ mode: 'tool', recipes: GEMS, xp: crafting96, inventory: inv, params: { untilLevel: undefined, maxActions: 107, held: true, bank: false, mixed: true } });
+        w.start();
+        w.run(20);
+        expect(w.result).toMatchObject({ ended: 'load done', sent: 26, actions: 26, byRecipe: { diamond: 2, ruby: 20, sapphire: 4 } });
+        // highest xp first: the diamonds at 6-7, then the rubies, then the sapphires at 2-5
+        expect(w.sentAt(101)).toEqual(['use 1->6', 'use 1->7', 'use 1->8', 'use 1->9', 'use 1->10']);
+        expect(w.xp - crafting96).toBe((2 * 107.5 + 20 * 85 + 4 * 50) * 25);
+        expect(w.ignored).toEqual([]);
+    });
+
+    test('held with a maxActions inside the load stops there (maxActions, not load done)', () => {
+        const w = new World({ mode: 'tool', recipes: GEMS, xp: crafting96, inventory: w1Inventory(), params: { untilLevel: undefined, maxActions: 7, held: true, bank: false, mixed: true } });
+        w.start();
+        w.run(10);
+        expect(w.result).toMatchObject({ ended: 'maxActions', sent: 7, actions: 7 });
+        expect(w.inv.filter(o => o?.id === UNCUT_SAPPHIRE)).toHaveLength(19);
+    });
+
+    test('held with nothing plannable faults at once, never clicking the booth', () => {
+        const w = new World({ mode: 'tool', recipes: GEMS, xp: crafting96, inventory: [{ id: WINE_NOTE, count: 491 }, { id: CHISEL, count: 1 }], bank: w2Bank(), params: { untilLevel: undefined, maxActions: 26, held: true, bank: false, mixed: true } });
+        w.start();
+        const st = w.run(3);
+        expect(st.phase).toBe('fault');
+        expect(st.fault).toBe('held load not plannable');
+        expect(w.h.sent).toEqual([]);
+    });
+
+    test('held with banking (no bank:false): the held load first, then the normal booth cycle', () => {
+        const w = new World({ mode: 'tool', recipes: [opal], xp: LEVEL_XP[10]!, inventory: [{ id: CHISEL, count: 1 }, ...gems(UNCUT_OPAL, 10)], bank: [{ id: UNCUT_OPAL, count: 27 }], params: { untilLevel: undefined, maxActions: 37, held: true } });
+        w.start();
+        const st = w.run(30);
+        expect(w.sentAt(101)[0]).toBe('use 0->1');
+        expect(st.phase).toBe('done');
+        expect(w.result).toMatchObject({ ended: 'maxActions', sent: 37 });
+        expect(w.shared.visits.map(v => v.n)).toEqual([27]);
+        expect(w.ignored).toEqual([]);
+    });
+
+    test('W2 + P2: mixed canonical loads of exactly 27, 27, 27 from four stacks, then the stow; 107 over both windows is 6,567.5 base', () => {
+        // W1 already cut 26 sapphires
+        const w = new World({ mode: 'tool', recipes: GEMS, xp: crafting96 + 26 * 50 * 25, inventory: [{ id: CHISEL, count: 1 }], bank: w2Bank(), params: { untilLevel: undefined, maxActions: 81, mixed: true, stow: true } });
+        w.start();
+        const st = w.run(60);
+        expect(st.phase).toBe('done');
+        expect(w.result).toMatchObject({ ended: 'maxActions', stowed: true, sent: 81, actions: 81, byRecipe: { diamond: 2, ruby: 20, emerald: 23, sapphire: 36 } });
+        expect(w.shared.visits.map(v => [v.kind, v.recipe, v.n])).toEqual([
+            ['canonical', 'diamond+ruby+emerald', 27],
+            ['canonical', 'emerald+sapphire', 27],
+            ['canonical', 'sapphire', 27],
+            ['stow', null, 0]
+        ]);
+        // the first visit: All of diamond, ruby, then emerald (All gives the 5 that fit), close
+        expect(w.sentAt(w.shared.visits[0]!.seen)).toEqual(['withdraw #0 -1', 'withdraw #1 -1', 'withdraw #2 -1', 'closeModal']);
+        expect(w.inv.every(o => o === null)).toBe(true);
+        // W1's 26 sapphires and these 81: the full 107-gem mix's 6,567.5 base (crafting.ts craftingHandoffXp over H21d's staged gems)
+        expect((w.xp - crafting96) / 25).toBe(6567.5);
+        expect(w.bank).toEqual(expect.arrayContaining([{ id: DIAMOND, count: 2 }, { id: RUBY, count: 20 }, { id: EMERALD, count: 23 }, { id: SAPPHIRE, count: 36 }, { id: CHISEL, count: 1 }]));
+        expect(w.ignored).toEqual([]);
+        expectBudget(w);
+    });
+
+    test('mixed with maxActions short of the stacks: the last load withdraws exactly the rest, and a 108th gem stays banked', () => {
+        const bank = [...w2Bank().slice(0, 3), { id: UNCUT_SAPPHIRE, count: 37 }];
+        const w = new World({ mode: 'tool', recipes: GEMS, xp: crafting96, inventory: [{ id: CHISEL, count: 1 }], bank, params: { untilLevel: undefined, maxActions: 30, mixed: true } });
+        w.start();
+        const st = w.run(30);
+        expect(st.phase).toBe('done');
+        expect(w.result).toMatchObject({ ended: 'maxActions', sent: 30, byRecipe: { diamond: 2, ruby: 20, emerald: 8 } });
+        expect(w.shared.visits.map(v => v.n)).toEqual([27, 3]);
+        const second = w.shared.visits[1]!.seen;
+        expect(w.h.sent.filter(s => s.tick >= second && s.action.type === 'bankWithdraw').map(s => (s.action as { amount: number }).amount)).toEqual([1, 1, 1]);
+        expect(w.bank.find(b => b.id === UNCUT_SAPPHIRE)!.count).toBe(37);
+        expect(w.ignored).toEqual([]);
+    });
+
+    test('mixed with no chisel held: the reset withdraws it, then fills the 27 in xp order', () => {
+        const w = new World({ mode: 'tool', recipes: GEMS, xp: crafting96, bank: [{ id: CHISEL, count: 1 }, { id: UNCUT_RUBY, count: 20 }, { id: UNCUT_SAPPHIRE, count: 40 }], params: { untilLevel: undefined, maxActions: 27, mixed: true } });
+        w.start();
+        w.run(20);
+        expect(w.sentAt(102)).toEqual(['withdraw #0 1', 'withdraw #1 -1', 'withdraw #2 -1', 'closeModal']);
+        expect(w.shared.visits[0]).toMatchObject({ kind: 'reset', recipe: 'ruby', n: 27 });
+        expect(w.result).toMatchObject({ sent: 27, byRecipe: { ruby: 20, sapphire: 7 } });
+        expect(w.ignored).toEqual([]);
+    });
+
+    test('mixed below a recipe level: the gem the level does not allow stays banked', () => {
+        const w = new World({ mode: 'tool', recipes: GEMS, xp: LEVEL_XP[30]!, inventory: [{ id: CHISEL, count: 1 }], bank: [{ id: UNCUT_DIAMOND, count: 5 }, { id: UNCUT_EMERALD, count: 10 }], params: { untilLevel: undefined, maxActions: 10, mixed: true } });
+        w.start();
+        w.run(20);
+        expect(w.result).toMatchObject({ sent: 10, byRecipe: { emerald: 10 } });
+        expect(w.bank.find(b => b.id === UNCUT_DIAMOND)!.count).toBe(5);
+    });
+
+    test('bad held, bank and mixed parameters fault at the start; bank:false needs no booth', () => {
+        const h = new Harness('item-cycle', createItemCycle);
+        const tool = { mode: 'tool', skill: 'crafting', booth: BOOTH, recipes: GEMS, maxActions: 10 };
+        expect(h.start('item-cycle', { ...tool, held: 'yes' }).fault).toContain('held must be a boolean');
+        expect(h.start('item-cycle', { ...tool, mixed: 1 }).fault).toContain('mixed must be a boolean');
+        expect(h.start('item-cycle', { ...tool, bank: false }).fault).toContain('bank: false needs held: true');
+        expect(h.start('item-cycle', { ...tool, held: true, bank: false, stow: true }).fault).toContain('stow needs a bank visit');
+        expect(h.start('item-cycle', { mode: 'pair', skill: 'herblore', booth: BOOTH, maxActions: 10, recipes: [attack], mixed: true }).fault).toContain('mixed applies to tool mode only');
+        expect(h.start('item-cycle', { ...tool, recipes: [body], mixed: true }).fault).toContain('mixed loads take no keep items');
+        expect(h.start('item-cycle', { mode: 'stack', skill: 'fletching', maxActions: 10, recipes: [runeArrow], held: true }).fault).toContain('held applies to the pair and tool modes');
+        const noBooth = h.start('item-cycle', { mode: 'tool', skill: 'crafting', recipes: GEMS, maxActions: 10, held: true, bank: false });
+        expect(noBooth.fault).toBeUndefined();
+        expect(createItemCycle.params).toEqual(expect.arrayContaining(['held', 'bank', 'mixed']));
+    });
+});
+
 describe('keepNeed and keepCovers (thread, one worn every 5th body at worst)', () => {
     const thread = { id: THREAD, every: 5 };
     test('a load of 26 needs 6 thread; 6 covers 26, 5 covers 21, 1 covers 1', () => {
@@ -839,4 +1008,311 @@ describe('item-cycle stack mode (arrows)', () => {
         expect(w.result.actions).toBe(7);
         expect(w.shared.sendsPerTick).toEqual({ 5: 1, 2: 1 });
     });
+
+    const adamantArrow: CycleRecipe = { name: 'adamantarrow', level: 60, xp: 150, a: HEADLESS, b: ADAMANT_HEADS, products: [ADAMANT_ARROW] };
+    /** 45 rune tips (3 actions) beside a long adamant stack. */
+    const switchWorld = (xp: number, params: Record<string, unknown> = {}, heads: Obj[] = [{ id: RUNE_HEADS, count: 45 }, { id: ADAMANT_HEADS, count: 900 }]) =>
+        new World({ mode: 'stack', recipes: [adamantArrow, runeArrow], xp, inventory: [{ id: HEADLESS, count: 1000 }, ...heads], params: { untilLevel: undefined, maxActions: 60, ...params } });
+    const sources = (w: World, t: number) => w.h.sent.filter(s => s.tick === t).map(s => (s.action as { sourceSlot?: number }).sourceSlot);
+
+    test('one tier a tick by default: the rune stack runs out after 3, the tick ends short', () => {
+        const w = switchWorld(LEVEL_XP[80]!);
+        w.start();
+        w.run(2);
+        expect(sources(w, 101)).toEqual([1, 1, 1]);
+        expect(sources(w, 102)).toEqual([2, 2, 2, 2, 2]);
+    });
+
+    test('fill: the switch tick carries both tiers, the rest of it on adamant; each tier credited', () => {
+        const w = switchWorld(LEVEL_XP[80]!, { fill: true });
+        w.start();
+        w.run(2);
+        expect(sources(w, 101)).toEqual([1, 1, 1, 2, 2]);
+        expect(w.inv.find(o => o?.id === RUNE_ARROW)!.count).toBe(45);
+        expect(w.inv.find(o => o?.id === ADAMANT_ARROW)!.count).toBe(30);
+        w.run(30);
+        expect(w.result.ended).toBe('maxActions');
+        expect(w.result.byRecipe).toEqual({ runearrow: 3, adamantarrow: 57 });
+        expect(w.result.actions).toBe(60);
+        expect(w.shared.sendsPerTick).toEqual({ 5: 12 });
+    });
+
+    test('fill never sends a tier the seen level does not allow, even if this tick reaches it', () => {
+        // Fletching 74 with 3 adamant actions and a rune stack: rune waits for a tick that sees 75
+        const w = switchWorld(LEVEL_XP[75]! - 1, { fill: true }, [{ id: ADAMANT_HEADS, count: 45 }, { id: RUNE_HEADS, count: 300 }]);
+        expect(levelOf(w.xp)).toBe(74);
+        w.start();
+        w.run(1);
+        expect(sources(w, 101)).toEqual([1, 1, 1]);
+        w.run(1);
+        expect(sources(w, 102)).toEqual([2, 2, 2, 2, 2]);
+        expect(w.ignored).toEqual([]);
+    });
+
+    test('fill: maxActions still caps, across the switch', () => {
+        const w = switchWorld(LEVEL_XP[80]!, { fill: true, maxActions: 4 });
+        w.start();
+        w.run(5);
+        expect(sources(w, 101)).toEqual([1, 1, 1, 2]);
+        expect(w.result).toMatchObject({ ended: 'maxActions', sent: 4, actions: 4 });
+    });
+
+    test('fill applies to stack mode only', () => {
+        const h = new Harness('item-cycle', createItemCycle);
+        expect(h.start('item-cycle', { mode: 'pair', skill: 'herblore', booth: BOOTH, maxActions: 10, recipes: [attack], fill: true }).fault).toContain('fill applies to stack mode only');
+        expect(h.start('item-cycle', { mode: 'stack', skill: 'fletching', maxActions: 10, recipes: [runeArrow], fill: 'yes' }).fault).toContain('fill must be a boolean');
+        expect(createItemCycle.params).toContain('fill');
+    });
+});
+
+/**
+ * The callers that never pass `fill` (herblore.ts, crafting.ts, cooking.ts W1 and W2/P2, and a stack
+ * call without it) must send exactly what the program sent before `fill` existed. Each golden is the
+ * whole stream of one run to its end: every packet of every tick, every field in order, as the
+ * pre-fill program (main 23f93a66) sent it in this world. Omitting `fill` and passing `fill: false`
+ * must both reproduce it. To regenerate, swap that program's item-cycle.ts in and print `runShape`.
+ */
+describe('the default send stream: fill off leaves every other call shape unchanged', () => {
+    const stream = (w: World): string[] => {
+        const by = new Map<number, string[]>();
+        for (const { tick, action } of w.h.sent) {
+            // reason is the runtime's stamp (`program item-cycle`) on every action, not the program's
+            const { type, reason: _, ...rest } = action as unknown as Record<string, unknown>;
+            const one = `${type}(${Object.entries(rest).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(',')})`;
+            by.set(tick, [...(by.get(tick) ?? []), one]);
+        }
+        const st = w.h.status;
+        const end = st.phase === 'fault' ? st.fault : st.phase === 'done' ? `${(st.result as ItemCycleResult).ended}, ${(st.result as ItemCycleResult).actions} actions` : 'still running';
+        return [...[...by].map(([t, sends]) => `T${t} ${sends.join(' ')}`), `end ${st.phase}: ${end}`];
+    };
+
+    const gems = (id: number, n: number): Obj[] => Array.from({ length: n }, () => ({ id, count: 1 }));
+    const w2Bank = (): Obj[] => [{ id: UNCUT_DIAMOND, count: 2 }, { id: UNCUT_RUBY, count: 20 }, { id: UNCUT_EMERALD, count: 23 }, { id: UNCUT_SAPPHIRE, count: 36 }];
+    const adamantArrow: CycleRecipe = { name: 'adamantarrow', level: 60, xp: 150, a: HEADLESS, b: ADAMANT_HEADS, products: [ADAMANT_ARROW] };
+
+    /** Each call shape as its caller makes it; `extra` is where the test adds `fill: false`. */
+    const SHAPES: Record<string, { world: (extra: Record<string, unknown>) => World; ticks: number }> = {
+        // herblore.ts: pair, booth, untilLevel. From an empty inventory: the reset visit, level-up pages, the switch to super attack at 45, out of supplies
+        'herblore pair': {
+            world: extra => new World({ mode: 'pair', recipes: [attack, superAttack], xp: LEVEL_XP[45]! - 2 * 625 + 1, bank: [{ id: GUAM_UNF, count: 14 }, { id: IRIT_UNF, count: 28 }, { id: EYE, count: 50 }], params: extra }),
+            ticks: 60
+        },
+        // herblore.ts off the stand tile: every booth click routed (two events), a 5-tick cycle
+        'herblore pair routed': {
+            world: extra => new World({ mode: 'pair', recipes: [attack], xp: LEVEL_XP[90]! + 1, inventory: inv14(GUAM_UNF, EYE), bank: [{ id: GUAM_UNF, count: 30 }, { id: EYE, count: 30 }], stand: false, params: { maxActions: 30, ...extra } }),
+            ticks: 40
+        },
+        // tool on gems: a held load, then the booth cycle, some cuts smashing into crushed gemstone
+        'crafting gems held smash': {
+            world: extra => new World({ mode: 'tool', recipes: [opal], xp: LEVEL_XP[10]!, inventory: [{ id: CHISEL, count: 1 }, ...gems(UNCUT_OPAL, 10)], bank: [{ id: UNCUT_OPAL, count: 27 }], smash: n => n % 7 === 3, params: { untilLevel: undefined, maxActions: 37, held: true, ...extra } }),
+            ticks: 40
+        },
+        // crafting.ts: tool, booth, maxActions + untilXp, stow
+        'crafting tool stow': {
+            world: extra => new World({ mode: 'tool', recipes: [body], xp: LEVEL_XP[45]!, inventory: [{ id: NEEDLE, count: 1 }, { id: THREAD, count: 230 }], bank: [{ id: HARD_LEATHER, count: 60 }], params: { untilLevel: undefined, maxActions: 30, untilXp: LEVEL_XP[45]! + 40 * 35 * 25, stow: true, ...extra } }),
+            ticks: 60
+        },
+        // tool with a held load ahead of the booth cycle, then the stow
+        'crafting tool held stow': {
+            world: extra => new World({ mode: 'tool', recipes: [body], xp: LEVEL_XP[45]!, inventory: [{ id: NEEDLE, count: 1 }, { id: THREAD, count: 230 }, ...gems(HARD_LEATHER, 10)], bank: [{ id: HARD_LEATHER, count: 40 }], params: { untilLevel: undefined, maxActions: 40, held: true, stow: true, ...extra } }),
+            ticks: 60
+        },
+        // cooking.ts W1: held, bank: false, mixed, maxActions
+        'cooking W1 mixed held': {
+            world: extra => new World({ mode: 'tool', recipes: GEMS, xp: LEVEL_XP[96]!, inventory: [{ id: WINE_NOTE, count: 491 }, { id: CHISEL, count: 1 }, ...gems(UNCUT_SAPPHIRE, 26)], bank: w2Bank(), params: { untilLevel: undefined, maxActions: 26, held: true, bank: false, mixed: true, ...extra } }),
+            ticks: 20
+        },
+        // cooking.ts W2/P2: mixed, booth, stow, maxActions
+        'cooking W2 mixed stow': {
+            world: extra => new World({ mode: 'tool', recipes: GEMS, xp: LEVEL_XP[96]! + 26 * 50 * 25, inventory: [{ id: CHISEL, count: 1 }], bank: w2Bank(), params: { untilLevel: undefined, maxActions: 81, mixed: true, stow: true, ...extra } }),
+            ticks: 60
+        },
+        // stack without fill (the branch fill restructured): one tier a tick across the rune -> adamant switch
+        'stack one tier a tick': {
+            world: extra => new World({ mode: 'stack', recipes: [adamantArrow, runeArrow], xp: LEVEL_XP[80]!, inventory: [{ id: HEADLESS, count: 1000 }, { id: RUNE_HEADS, count: 45 }, { id: ADAMANT_HEADS, count: 900 }], params: { untilLevel: undefined, maxActions: 60, ...extra } }),
+            ticks: 30
+        }
+    };
+
+    const GOLDEN: Record<string, string[]> = {
+        'herblore pair': [
+            'T101 interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T102 bankWithdraw(slot=0,amount=-1) bankWithdraw(slot=2,amount=-1) closeModal()',
+            'T103 useItemOnItem(sourceSlot=14,targetSlot=0) useItemOnItem(sourceSlot=15,targetSlot=1) useItemOnItem(sourceSlot=16,targetSlot=2) useItemOnItem(sourceSlot=17,targetSlot=3) useItemOnItem(sourceSlot=18,targetSlot=4)',
+            'T104 useItemOnItem(sourceSlot=19,targetSlot=5) useItemOnItem(sourceSlot=20,targetSlot=6) useItemOnItem(sourceSlot=21,targetSlot=7) useItemOnItem(sourceSlot=22,targetSlot=8) useItemOnItem(sourceSlot=23,targetSlot=9)',
+            'T105 useItemOnItem(sourceSlot=24,targetSlot=10) useItemOnItem(sourceSlot=25,targetSlot=11) useItemOnItem(sourceSlot=26,targetSlot=12) useItemOnItem(sourceSlot=27,targetSlot=13) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T106 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T107 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T108 bankWithdraw(slot=1,amount=-1) bankDeposit(slot=0,amount=-1) bankWithdraw(slot=0,amount=-1) closeModal()',
+            'T109 useItemOnItem(sourceSlot=14,targetSlot=0) useItemOnItem(sourceSlot=15,targetSlot=1) useItemOnItem(sourceSlot=16,targetSlot=2) useItemOnItem(sourceSlot=17,targetSlot=3) useItemOnItem(sourceSlot=18,targetSlot=4)',
+            'T110 useItemOnItem(sourceSlot=19,targetSlot=5) useItemOnItem(sourceSlot=20,targetSlot=6) useItemOnItem(sourceSlot=21,targetSlot=7) useItemOnItem(sourceSlot=22,targetSlot=8) useItemOnItem(sourceSlot=23,targetSlot=9)',
+            'T111 useItemOnItem(sourceSlot=24,targetSlot=10) useItemOnItem(sourceSlot=25,targetSlot=11) useItemOnItem(sourceSlot=26,targetSlot=12) useItemOnItem(sourceSlot=27,targetSlot=13) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T112 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T113 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T114 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T115 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T116 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T117 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T118 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T119 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T120 bankWithdraw(slot=1,amount=-1) bankDeposit(slot=0,amount=-1) bankWithdraw(slot=0,amount=-1) closeModal()',
+            'T121 useItemOnItem(sourceSlot=14,targetSlot=0) useItemOnItem(sourceSlot=15,targetSlot=1) useItemOnItem(sourceSlot=16,targetSlot=2) useItemOnItem(sourceSlot=17,targetSlot=3) useItemOnItem(sourceSlot=18,targetSlot=4)',
+            'T122 useItemOnItem(sourceSlot=19,targetSlot=5) useItemOnItem(sourceSlot=20,targetSlot=6) useItemOnItem(sourceSlot=21,targetSlot=7) useItemOnItem(sourceSlot=22,targetSlot=8) useItemOnItem(sourceSlot=23,targetSlot=9)',
+            'T123 useItemOnItem(sourceSlot=24,targetSlot=10) useItemOnItem(sourceSlot=25,targetSlot=11) useItemOnItem(sourceSlot=26,targetSlot=12) useItemOnItem(sourceSlot=27,targetSlot=13) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T124 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T125 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T126 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T127 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'end fault: out of supplies: no recipe at herblore 65 has both inputs in the bank or inventory'
+        ],
+        'herblore pair routed': [
+            'T101 interactLoc(x=3186,z=3436,locId=2213,optionIndex=2)',
+            'T102 bankDeposit(slot=0,amount=-1) bankDeposit(slot=14,amount=-1) bankWithdraw(slot=0,amount=10) bankWithdraw(slot=0,amount=1) bankWithdraw(slot=0,amount=1)',
+            'T103 bankWithdraw(slot=0,amount=1) bankWithdraw(slot=0,amount=1) bankWithdraw(slot=1,amount=-1) closeModal()',
+            'T104 useItemOnItem(sourceSlot=14,targetSlot=0) useItemOnItem(sourceSlot=15,targetSlot=1) useItemOnItem(sourceSlot=16,targetSlot=2) useItemOnItem(sourceSlot=17,targetSlot=3) useItemOnItem(sourceSlot=18,targetSlot=4)',
+            'T105 useItemOnItem(sourceSlot=19,targetSlot=5) useItemOnItem(sourceSlot=20,targetSlot=6) useItemOnItem(sourceSlot=21,targetSlot=7) useItemOnItem(sourceSlot=22,targetSlot=8) useItemOnItem(sourceSlot=23,targetSlot=9)',
+            'T106 useItemOnItem(sourceSlot=24,targetSlot=10) useItemOnItem(sourceSlot=25,targetSlot=11) useItemOnItem(sourceSlot=26,targetSlot=12) useItemOnItem(sourceSlot=27,targetSlot=13)',
+            'T107 interactLoc(x=3186,z=3436,locId=2213,optionIndex=2)',
+            'T108 bankWithdraw(slot=1,amount=-1) bankDeposit(slot=0,amount=-1) bankWithdraw(slot=0,amount=-1) closeModal()',
+            'T109 useItemOnItem(sourceSlot=14,targetSlot=0) useItemOnItem(sourceSlot=15,targetSlot=1) useItemOnItem(sourceSlot=16,targetSlot=2) useItemOnItem(sourceSlot=17,targetSlot=3) useItemOnItem(sourceSlot=18,targetSlot=4)',
+            'T110 useItemOnItem(sourceSlot=19,targetSlot=5) useItemOnItem(sourceSlot=20,targetSlot=6) useItemOnItem(sourceSlot=21,targetSlot=7) useItemOnItem(sourceSlot=22,targetSlot=8) useItemOnItem(sourceSlot=23,targetSlot=9)',
+            'T111 useItemOnItem(sourceSlot=24,targetSlot=10) useItemOnItem(sourceSlot=25,targetSlot=11) useItemOnItem(sourceSlot=26,targetSlot=12) useItemOnItem(sourceSlot=27,targetSlot=13)',
+            'T112 interactLoc(x=3186,z=3436,locId=2213,optionIndex=2)',
+            'T113 bankDeposit(slot=0,amount=-1) bankWithdraw(slot=0,amount=1) bankWithdraw(slot=0,amount=1) bankWithdraw(slot=1,amount=1) bankWithdraw(slot=1,amount=1)',
+            'T114 closeModal()',
+            'T115 useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=3,targetSlot=1)',
+            'end done: maxActions, 30 actions'
+        ],
+        'crafting gems held smash': [
+            'T101 useItemOnItem(sourceSlot=0,targetSlot=1) useItemOnItem(sourceSlot=0,targetSlot=2) useItemOnItem(sourceSlot=0,targetSlot=3) useItemOnItem(sourceSlot=0,targetSlot=4) useItemOnItem(sourceSlot=0,targetSlot=5)',
+            'T102 useItemOnItem(sourceSlot=0,targetSlot=6) useItemOnItem(sourceSlot=0,targetSlot=7) useItemOnItem(sourceSlot=0,targetSlot=8) useItemOnItem(sourceSlot=0,targetSlot=9) useItemOnItem(sourceSlot=0,targetSlot=10)',
+            'T103 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T104 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T105 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T106 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T107 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T108 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T109 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T110 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T111 bankDeposit(slot=1,amount=-1) bankDeposit(slot=4,amount=-1) bankWithdraw(slot=0,amount=-1) closeModal()',
+            'T112 useItemOnItem(sourceSlot=0,targetSlot=1) useItemOnItem(sourceSlot=0,targetSlot=2) useItemOnItem(sourceSlot=0,targetSlot=3) useItemOnItem(sourceSlot=0,targetSlot=4) useItemOnItem(sourceSlot=0,targetSlot=5)',
+            'T113 useItemOnItem(sourceSlot=0,targetSlot=6) useItemOnItem(sourceSlot=0,targetSlot=7) useItemOnItem(sourceSlot=0,targetSlot=8) useItemOnItem(sourceSlot=0,targetSlot=9) useItemOnItem(sourceSlot=0,targetSlot=10)',
+            'T114 useItemOnItem(sourceSlot=0,targetSlot=11) useItemOnItem(sourceSlot=0,targetSlot=12) useItemOnItem(sourceSlot=0,targetSlot=13) useItemOnItem(sourceSlot=0,targetSlot=14) useItemOnItem(sourceSlot=0,targetSlot=15)',
+            'T115 useItemOnItem(sourceSlot=0,targetSlot=16) useItemOnItem(sourceSlot=0,targetSlot=17) useItemOnItem(sourceSlot=0,targetSlot=18) useItemOnItem(sourceSlot=0,targetSlot=19) useItemOnItem(sourceSlot=0,targetSlot=20)',
+            'T116 useItemOnItem(sourceSlot=0,targetSlot=21) useItemOnItem(sourceSlot=0,targetSlot=22) useItemOnItem(sourceSlot=0,targetSlot=23) useItemOnItem(sourceSlot=0,targetSlot=24) useItemOnItem(sourceSlot=0,targetSlot=25)',
+            'T117 useItemOnItem(sourceSlot=0,targetSlot=26) useItemOnItem(sourceSlot=0,targetSlot=27)',
+            'end done: maxActions, 32 actions'
+        ],
+        'crafting tool stow': [
+            'T101 interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T102 bankWithdraw(slot=0,amount=-1) closeModal()',
+            'T103 useItemOnItem(sourceSlot=0,targetSlot=2) useItemOnItem(sourceSlot=0,targetSlot=3) useItemOnItem(sourceSlot=0,targetSlot=4) useItemOnItem(sourceSlot=0,targetSlot=5) useItemOnItem(sourceSlot=0,targetSlot=6)',
+            'T104 useItemOnItem(sourceSlot=0,targetSlot=7) useItemOnItem(sourceSlot=0,targetSlot=8) useItemOnItem(sourceSlot=0,targetSlot=9) useItemOnItem(sourceSlot=0,targetSlot=10) useItemOnItem(sourceSlot=0,targetSlot=11)',
+            'T105 useItemOnItem(sourceSlot=0,targetSlot=12) useItemOnItem(sourceSlot=0,targetSlot=13) useItemOnItem(sourceSlot=0,targetSlot=14) useItemOnItem(sourceSlot=0,targetSlot=15) useItemOnItem(sourceSlot=0,targetSlot=16)',
+            'T106 useItemOnItem(sourceSlot=0,targetSlot=17) useItemOnItem(sourceSlot=0,targetSlot=18) useItemOnItem(sourceSlot=0,targetSlot=19) useItemOnItem(sourceSlot=0,targetSlot=20) useItemOnItem(sourceSlot=0,targetSlot=21)',
+            'T107 useItemOnItem(sourceSlot=0,targetSlot=22) useItemOnItem(sourceSlot=0,targetSlot=23) useItemOnItem(sourceSlot=0,targetSlot=24) useItemOnItem(sourceSlot=0,targetSlot=25) useItemOnItem(sourceSlot=0,targetSlot=26)',
+            'T108 useItemOnItem(sourceSlot=0,targetSlot=27) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T109 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T110 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T111 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T112 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T113 bankDeposit(slot=2,amount=-1) bankWithdraw(slot=0,amount=1) bankWithdraw(slot=0,amount=1) bankWithdraw(slot=0,amount=1) bankWithdraw(slot=0,amount=1)',
+            'T114 closeModal()',
+            'T115 useItemOnItem(sourceSlot=0,targetSlot=2) useItemOnItem(sourceSlot=0,targetSlot=3) useItemOnItem(sourceSlot=0,targetSlot=4) useItemOnItem(sourceSlot=0,targetSlot=5) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T116 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T117 bankDeposit(slot=0,amount=-1) bankDeposit(slot=1,amount=-1) bankDeposit(slot=2,amount=-1) closeModal()',
+            'end done: maxActions, 30 actions'
+        ],
+        'crafting tool held stow': [
+            'T101 useItemOnItem(sourceSlot=0,targetSlot=2) useItemOnItem(sourceSlot=0,targetSlot=3) useItemOnItem(sourceSlot=0,targetSlot=4) useItemOnItem(sourceSlot=0,targetSlot=5) useItemOnItem(sourceSlot=0,targetSlot=6)',
+            'T102 useItemOnItem(sourceSlot=0,targetSlot=7) useItemOnItem(sourceSlot=0,targetSlot=8) useItemOnItem(sourceSlot=0,targetSlot=9) useItemOnItem(sourceSlot=0,targetSlot=10) useItemOnItem(sourceSlot=0,targetSlot=11)',
+            'T103 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T104 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T105 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T106 bankDeposit(slot=2,amount=-1) bankWithdraw(slot=0,amount=-1) closeModal()',
+            'T107 useItemOnItem(sourceSlot=0,targetSlot=2) useItemOnItem(sourceSlot=0,targetSlot=3) useItemOnItem(sourceSlot=0,targetSlot=4) useItemOnItem(sourceSlot=0,targetSlot=5) useItemOnItem(sourceSlot=0,targetSlot=6)',
+            'T108 useItemOnItem(sourceSlot=0,targetSlot=7) useItemOnItem(sourceSlot=0,targetSlot=8) useItemOnItem(sourceSlot=0,targetSlot=9) useItemOnItem(sourceSlot=0,targetSlot=10) useItemOnItem(sourceSlot=0,targetSlot=11)',
+            'T109 useItemOnItem(sourceSlot=0,targetSlot=12) useItemOnItem(sourceSlot=0,targetSlot=13) useItemOnItem(sourceSlot=0,targetSlot=14) useItemOnItem(sourceSlot=0,targetSlot=15) useItemOnItem(sourceSlot=0,targetSlot=16)',
+            'T110 useItemOnItem(sourceSlot=0,targetSlot=17) useItemOnItem(sourceSlot=0,targetSlot=18) useItemOnItem(sourceSlot=0,targetSlot=19) useItemOnItem(sourceSlot=0,targetSlot=20) useItemOnItem(sourceSlot=0,targetSlot=21)',
+            'T111 useItemOnItem(sourceSlot=0,targetSlot=22) useItemOnItem(sourceSlot=0,targetSlot=23) useItemOnItem(sourceSlot=0,targetSlot=24) useItemOnItem(sourceSlot=0,targetSlot=25) useItemOnItem(sourceSlot=0,targetSlot=26)',
+            'T112 useItemOnItem(sourceSlot=0,targetSlot=27) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T113 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T114 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T115 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T116 bankDeposit(slot=2,amount=-1) bankWithdraw(slot=0,amount=1) bankWithdraw(slot=0,amount=1) bankWithdraw(slot=0,amount=1) bankWithdraw(slot=0,amount=1)',
+            'T117 closeModal()',
+            'T118 useItemOnItem(sourceSlot=0,targetSlot=2) useItemOnItem(sourceSlot=0,targetSlot=3) useItemOnItem(sourceSlot=0,targetSlot=4) useItemOnItem(sourceSlot=0,targetSlot=5) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T119 clickDialogOption(optionIndex=0) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T120 bankDeposit(slot=0,amount=-1) bankDeposit(slot=1,amount=-1) bankDeposit(slot=2,amount=-1) closeModal()',
+            'end done: maxActions, 40 actions'
+        ],
+        'cooking W1 mixed held': [
+            'T101 useItemOnItem(sourceSlot=1,targetSlot=2) useItemOnItem(sourceSlot=1,targetSlot=3) useItemOnItem(sourceSlot=1,targetSlot=4) useItemOnItem(sourceSlot=1,targetSlot=5) useItemOnItem(sourceSlot=1,targetSlot=6)',
+            'T102 useItemOnItem(sourceSlot=1,targetSlot=7) useItemOnItem(sourceSlot=1,targetSlot=8) useItemOnItem(sourceSlot=1,targetSlot=9) useItemOnItem(sourceSlot=1,targetSlot=10) useItemOnItem(sourceSlot=1,targetSlot=11)',
+            'T103 useItemOnItem(sourceSlot=1,targetSlot=12) useItemOnItem(sourceSlot=1,targetSlot=13) useItemOnItem(sourceSlot=1,targetSlot=14) useItemOnItem(sourceSlot=1,targetSlot=15) useItemOnItem(sourceSlot=1,targetSlot=16)',
+            'T104 useItemOnItem(sourceSlot=1,targetSlot=17) useItemOnItem(sourceSlot=1,targetSlot=18) useItemOnItem(sourceSlot=1,targetSlot=19) useItemOnItem(sourceSlot=1,targetSlot=20) useItemOnItem(sourceSlot=1,targetSlot=21)',
+            'T105 useItemOnItem(sourceSlot=1,targetSlot=22) useItemOnItem(sourceSlot=1,targetSlot=23) useItemOnItem(sourceSlot=1,targetSlot=24) useItemOnItem(sourceSlot=1,targetSlot=25) useItemOnItem(sourceSlot=1,targetSlot=26)',
+            'T106 useItemOnItem(sourceSlot=1,targetSlot=27)',
+            'end done: maxActions, 26 actions'
+        ],
+        'cooking W2 mixed stow': [
+            'T101 interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T102 bankWithdraw(slot=0,amount=-1) bankWithdraw(slot=1,amount=-1) bankWithdraw(slot=2,amount=-1) closeModal()',
+            'T103 useItemOnItem(sourceSlot=0,targetSlot=1) useItemOnItem(sourceSlot=0,targetSlot=2) useItemOnItem(sourceSlot=0,targetSlot=3) useItemOnItem(sourceSlot=0,targetSlot=4) useItemOnItem(sourceSlot=0,targetSlot=5)',
+            'T104 useItemOnItem(sourceSlot=0,targetSlot=6) useItemOnItem(sourceSlot=0,targetSlot=7) useItemOnItem(sourceSlot=0,targetSlot=8) useItemOnItem(sourceSlot=0,targetSlot=9) useItemOnItem(sourceSlot=0,targetSlot=10)',
+            'T105 useItemOnItem(sourceSlot=0,targetSlot=11) useItemOnItem(sourceSlot=0,targetSlot=12) useItemOnItem(sourceSlot=0,targetSlot=13) useItemOnItem(sourceSlot=0,targetSlot=14) useItemOnItem(sourceSlot=0,targetSlot=15)',
+            'T106 useItemOnItem(sourceSlot=0,targetSlot=16) useItemOnItem(sourceSlot=0,targetSlot=17) useItemOnItem(sourceSlot=0,targetSlot=18) useItemOnItem(sourceSlot=0,targetSlot=19) useItemOnItem(sourceSlot=0,targetSlot=20)',
+            'T107 useItemOnItem(sourceSlot=0,targetSlot=21) useItemOnItem(sourceSlot=0,targetSlot=22) useItemOnItem(sourceSlot=0,targetSlot=23) useItemOnItem(sourceSlot=0,targetSlot=24) useItemOnItem(sourceSlot=0,targetSlot=25)',
+            'T108 useItemOnItem(sourceSlot=0,targetSlot=26) useItemOnItem(sourceSlot=0,targetSlot=27) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T109 bankDeposit(slot=1,amount=-1) bankDeposit(slot=3,amount=-1) bankDeposit(slot=23,amount=-1) bankWithdraw(slot=0,amount=-1) bankWithdraw(slot=1,amount=-1)',
+            'T110 closeModal()',
+            'T111 useItemOnItem(sourceSlot=0,targetSlot=1) useItemOnItem(sourceSlot=0,targetSlot=2) useItemOnItem(sourceSlot=0,targetSlot=3) useItemOnItem(sourceSlot=0,targetSlot=4) useItemOnItem(sourceSlot=0,targetSlot=5)',
+            'T112 useItemOnItem(sourceSlot=0,targetSlot=6) useItemOnItem(sourceSlot=0,targetSlot=7) useItemOnItem(sourceSlot=0,targetSlot=8) useItemOnItem(sourceSlot=0,targetSlot=9) useItemOnItem(sourceSlot=0,targetSlot=10)',
+            'T113 useItemOnItem(sourceSlot=0,targetSlot=11) useItemOnItem(sourceSlot=0,targetSlot=12) useItemOnItem(sourceSlot=0,targetSlot=13) useItemOnItem(sourceSlot=0,targetSlot=14) useItemOnItem(sourceSlot=0,targetSlot=15)',
+            'T114 useItemOnItem(sourceSlot=0,targetSlot=16) useItemOnItem(sourceSlot=0,targetSlot=17) useItemOnItem(sourceSlot=0,targetSlot=18) useItemOnItem(sourceSlot=0,targetSlot=19) useItemOnItem(sourceSlot=0,targetSlot=20)',
+            'T115 useItemOnItem(sourceSlot=0,targetSlot=21) useItemOnItem(sourceSlot=0,targetSlot=22) useItemOnItem(sourceSlot=0,targetSlot=23) useItemOnItem(sourceSlot=0,targetSlot=24) useItemOnItem(sourceSlot=0,targetSlot=25)',
+            'T116 useItemOnItem(sourceSlot=0,targetSlot=26) useItemOnItem(sourceSlot=0,targetSlot=27) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T117 bankDeposit(slot=1,amount=-1) bankDeposit(slot=19,amount=-1) bankWithdraw(slot=0,amount=-1) closeModal()',
+            'T118 useItemOnItem(sourceSlot=0,targetSlot=1) useItemOnItem(sourceSlot=0,targetSlot=2) useItemOnItem(sourceSlot=0,targetSlot=3) useItemOnItem(sourceSlot=0,targetSlot=4) useItemOnItem(sourceSlot=0,targetSlot=5)',
+            'T119 useItemOnItem(sourceSlot=0,targetSlot=6) useItemOnItem(sourceSlot=0,targetSlot=7) useItemOnItem(sourceSlot=0,targetSlot=8) useItemOnItem(sourceSlot=0,targetSlot=9) useItemOnItem(sourceSlot=0,targetSlot=10)',
+            'T120 useItemOnItem(sourceSlot=0,targetSlot=11) useItemOnItem(sourceSlot=0,targetSlot=12) useItemOnItem(sourceSlot=0,targetSlot=13) useItemOnItem(sourceSlot=0,targetSlot=14) useItemOnItem(sourceSlot=0,targetSlot=15)',
+            'T121 useItemOnItem(sourceSlot=0,targetSlot=16) useItemOnItem(sourceSlot=0,targetSlot=17) useItemOnItem(sourceSlot=0,targetSlot=18) useItemOnItem(sourceSlot=0,targetSlot=19) useItemOnItem(sourceSlot=0,targetSlot=20)',
+            'T122 useItemOnItem(sourceSlot=0,targetSlot=21) useItemOnItem(sourceSlot=0,targetSlot=22) useItemOnItem(sourceSlot=0,targetSlot=23) useItemOnItem(sourceSlot=0,targetSlot=24) useItemOnItem(sourceSlot=0,targetSlot=25)',
+            'T123 useItemOnItem(sourceSlot=0,targetSlot=26) useItemOnItem(sourceSlot=0,targetSlot=27) interactLoc(x=3186,z=3436,locId=2213,optionIndex=2,route=false)',
+            'T124 bankDeposit(slot=0,amount=-1) bankDeposit(slot=1,amount=-1) closeModal()',
+            'end done: maxActions, 81 actions'
+        ],
+        'stack one tier a tick': [
+            'T101 useItemOnItem(sourceSlot=1,targetSlot=0) useItemOnItem(sourceSlot=1,targetSlot=0) useItemOnItem(sourceSlot=1,targetSlot=0)',
+            'T102 useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0)',
+            'T103 useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0)',
+            'T104 useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0)',
+            'T105 useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0)',
+            'T106 useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0)',
+            'T107 useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0)',
+            'T108 useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0)',
+            'T109 useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0)',
+            'T110 useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0)',
+            'T111 useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0)',
+            'T112 useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0)',
+            'T113 useItemOnItem(sourceSlot=2,targetSlot=0) useItemOnItem(sourceSlot=2,targetSlot=0)',
+            'end done: maxActions, 60 actions'
+        ]
+    };
+
+    const runShape = (name: string, extra: Record<string, unknown>) => {
+        const w = SHAPES[name]!.world(extra);
+        w.start();
+        w.run(SHAPES[name]!.ticks);
+        return { w, lines: stream(w) };
+    };
+
+    for (const name of Object.keys(SHAPES)) {
+        test(`${name}: the whole stream matches the pre-fill program's, with fill omitted and with fill: false`, () => {
+            const off = runShape(name, {});
+            expect(off.lines).toEqual(GOLDEN[name]!);
+            expect(off.w.ignored).toEqual([]);
+            expect(runShape(name, { fill: false }).lines).toEqual(GOLDEN[name]!);
+        });
+    }
 });

@@ -25,14 +25,21 @@
 //          chain), --hp-stop=N (the module's hpStop), --no-wait-respawn / --no-probe-dirs (the
 //          module's two fixes off, for an A/B), --run=on|off (press the run button before the
 //          steps start, on a tick with nothing pending: the button runs p_clearpendingaction)
+// --givers=N (with --bury, band case): N bone givers cairn_b01.. taking turns as one group (bone-giver.ts
+//   group, S07's b01-b04, staff-made bones), launched by the run-machine launcher (standalone.ts) against
+//   this lab; the module takes each load from the group's server (bones.group) and writes their S07 cue.
+//   --final=L (needs rs/383's group last load in bone-giver.ts): the group gives L loads, the last giver
+//   carries finalExtras (law 1, air 5) and serves the L-th, and the module's lastLoad is 21.
+//   --server-wait=N is the module's serverWait. Prints each load's giver and ticks, and the givers' logs.
 // --route=rimmington runs every case on the module's `rimmington` stands (the Rimmington oaks and
 // the Draynor-west willows); the default is the scored run's `taverley`.
 // Every walk and band step gets a telemetry line: tiles per tick (run 2, walk 1, still 0), run
 // energy and weight at its start and end, and the run varp (`option_run`) at its start. The lab's run energy never drains (NODE_INFINITE_RUN defaults on,
 // as on the demo), so neither energy nor weight is managed here.
 
-import { existsSync, readFileSync, writeFileSync } from 'fs';
-import { hostname, loadavg } from 'os';
+import { randomBytes } from 'crypto';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
+import { hostname, loadavg, tmpdir } from 'os';
 import { join } from 'path';
 import { runScript } from '../../sdk/runner';
 import type { BotWorldState } from '../../sdk/types';
@@ -40,8 +47,8 @@ import { closeSession, openSession, type Session } from '../lib/session';
 import { formatReport, report, TickLog } from '../lib/ticks';
 import { give as giveTrade } from '../lib/trade';
 import { runSteps, type Step } from '../runner/step';
-import { BANDS, ROUTES, type RouteName, steps, type SubBandRow, type TechniqueFigures, type Tree, wcLevel, type WoodcuttingOptions } from '../skills/woodcutting';
-import { give, setstat, tele } from './setup';
+import { BANDS, ROUTES, type RouteName, S07_BONE_CUE, steps, type SubBandRow, type TechniqueFigures, type Tree, wcLevel, type WoodcuttingOptions } from '../skills/woodcutting';
+import { give, leaveTutorial, setstat, tele } from './setup';
 
 const ROOT = join(import.meta.dir, '../..');
 const bot = process.argv[2];
@@ -102,8 +109,73 @@ async function openHelper(name: string, main: string): Promise<Session> {
     return openSession(name, { client: 'lite', launch: true, pathfinding: false });
 }
 
+interface Group {
+    group: string[];
+    cueDir: string;
+    runDir: string;
+    stop(): Promise<void>;
+}
+
+/** The bone giver group, one bone-giver role per account under the run-machine launcher, on this lab's engine. */
+async function startGroup(n: number, final: number | null, tree: 'oak' | 'willow', main: string): Promise<Group> {
+    const webPort = readFileSync(join(ROOT, 'bots', main, 'bot.env'), 'utf8').match(/^SERVER=localhost:(\d+)$/m)?.[1];
+    if (!webPort) throw new Error(`--givers: bots/${main}/bot.env has no SERVER=localhost:<port>`);
+    const base = mkdtempSync(join(tmpdir(), 'wc-givers-'));
+    const botsDir = join(base, 'bots');
+    const runDir = join(base, 'run');
+    const group = Array.from({ length: n }, (_, i) => `cairn_b0${i + 1}`);
+    for (const account of group) {
+        mkdirSync(join(botsDir, account), { recursive: true, mode: 0o700 });
+        writeFileSync(join(botsDir, account, 'bot.env'), `BOT_USERNAME=${account}\nPASSWORD=${randomBytes(6).toString('hex')}\nSERVER=localhost:${webPort}\nSHOW_CHAT=false\nTELEMETRY=false\nPROFANITY_FILTER=false\n`, { mode: 0o600 });
+    }
+    const [sx, sz] = sites[tree].stand;
+    const [gx, gz] = HELPER_TILE[tree];
+    const runes = [{ item: 'Law rune', count: 1, obj: 'lawrune' }, { item: 'Air rune', count: 5, obj: 'airrune' }];
+    const accounts = group.map((account, i) => ({
+        account,
+        role: 'bone-giver',
+        options: {
+            restock: { kind: 'cheat' },
+            sites: [{ giver: { x: gx, z: gz }, receiver: { x: sx, z: sz } }],
+            scope: S07_BONE_CUE,
+            group,
+            ...(final !== null ? { trades: final } : {}),
+            ...(final !== null && i === n - 1 ? { finalExtras: runes } : {})
+        }
+    }));
+    const configPath = join(base, 'launch.json');
+    writeFileSync(configPath, JSON.stringify({ gatewayPort: Number(process.env.BONE_GW_PORT ?? 8486), botsDir, runDir, loginSpacingMs: 2000, accounts }, null, 2));
+    const cueDir = join(runDir, 'rc-cue');
+    const child = Bun.spawn([process.execPath, 'speedrun/helpers/standalone.ts', configPath], {
+        cwd: ROOT,
+        env: { ...process.env, HELPER_LAB_TELE: '1', RC_CUE_DIR: cueDir },
+        stdout: Bun.file(join(base, 'launcher.out')),
+        stderr: Bun.file(join(base, 'launcher.err'))
+    });
+    console.log(`  givers ${group.join(', ')}${final !== null ? `, ${final} loads, the last from ${group[n - 1]}` : ''}: launcher pid ${child.pid}, run files in ${base}`);
+    const t0 = Date.now();
+    for (;;) {
+        const status = existsSync(join(runDir, 'launcher.json')) ? (JSON.parse(readFileSync(join(runDir, 'launcher.json'), 'utf8')) as { helpersReady?: boolean }) : null;
+        if (status?.helpersReady) break;
+        if (child.exitCode !== null) throw new Error(`the launcher exited ${child.exitCode}: ${readFileSync(join(base, 'launcher.err'), 'utf8').slice(-2000)}`);
+        if (Date.now() - t0 > 180_000) throw new Error('the givers were not all in within 180 s');
+        await Bun.sleep(1000);
+    }
+    console.log(`  givers in after ${Math.round((Date.now() - t0) / 1000)} s`);
+    return {
+        group,
+        cueDir,
+        runDir,
+        async stop() {
+            child.kill('SIGINT');
+            await Promise.race([child.exited, Bun.sleep(30_000)]);
+            if (child.exitCode === null) child.kill('SIGKILL');
+        }
+    };
+}
+
 await runScript(async ({ bot: actions, sdk }) => {
-    await actions.skipTutorial().catch(() => {});
+    await leaveTutorial({ sdk, bot: actions, name: bot, sessionId: 0 } as never);
     await sdk.waitForTicks(2);
     while (sdk.getState()?.dialog.isOpen) {
         await sdk.sendClickDialog(0);
@@ -163,13 +235,19 @@ await runScript(async ({ bot: actions, sdk }) => {
     const helperName = flag('helper');
     const load = Number(flag('load', '23'));
     let helper: Session | null = null;
+    const nGivers = Number(flag('givers', '0'));
+    const final = flag('final') === undefined ? null : Number(flag('final'));
+    let givers: Group | null = null;
+    if (nGivers && (!bury || helperName || tree === 'normal' || nGivers < 2 || nGivers > 9)) throw new Error('--givers=N takes 2-9 givers, with --bury, without --helper, on an oak or willow band');
+    if (final !== null && (!nGivers || !Number.isInteger(final) || final < 1)) throw new Error('--final=L needs --givers and a load count');
 
     if (which === 'band') {
         await clear();
         await setstat(sdk, 'woodcutting', level);
         if (flag('prayer')) await setstat(sdk, 'prayer', Number(flag('prayer')));
         await kit();
-        const bones = Number(flag('bones', bury && !helperName ? String(load) : '0'));
+        // a giver or a group brings the first load; alone the account starts with one
+        const bones = Number(flag('bones', bury && !helperName && !nGivers ? String(load) : '0'));
         if (bones) await give(sdk, Array(bones).fill('dragon_bones'));
         const stand = sites[tree].stand;
         if (!(await tele(sdk, stand[0], stand[1]))) throw new Error(`tele to ${stand.join(',')} failed`);
@@ -262,6 +340,8 @@ await runScript(async ({ bot: actions, sdk }) => {
         });
     }
 
+    if (nGivers) givers = await startGroup(nGivers, final, tree as 'oak' | 'willow', bot);
+
     const s0 = sdk.getState()!;
     console.log(`measure-woodcutting ${which}: Woodcutting ${wcLevel(s0)} at ${s0.player?.worldX},${s0.player?.worldZ}; ${where()}`);
     const log = TickLog.open(undefined, flag('log'));
@@ -273,6 +353,7 @@ await runScript(async ({ bot: actions, sdk }) => {
         ...(has('bad-probe') ? { gate: { direct: { trials: 20, pass: 21, floor: 21 } } } : {}),
         ...(bury ? { bury: true, prayerTo: flag('prayer-to', '0') } : {}),
         ...(bury && helperName ? { bones: { giver: helper!.name, load } } : {}),
+        ...(givers ? { bones: { group: givers.group, load, ...(final !== null ? { lastLoad: load - 2 } : {}), ...(flag('server-wait') ? { serverWait: Number(flag('server-wait')) } : {}) }, cueDir: givers.cueDir } : {}),
         route,
         ...(flag('hp-stop') ? { hpStop: flag('hp-stop') } : {}),
         ...(has('no-wait-respawn') ? { waitRespawn: false } : {}),
@@ -298,7 +379,21 @@ await runScript(async ({ bot: actions, sdk }) => {
             const waits = ((r.meta as { result?: { respawnWaits?: number[] } }).result?.respawnWaits ?? []);
             if (waits.length) console.log(`respawn waits ${r.step} run ${(r.meta as { runId: number }).runId}: ${JSON.stringify(waits)}`);
         }
-        for (const r of log.rows.filter(r => r.step === 'woodcutting:bones-load')) console.log(`bones-load ${JSON.stringify(r.meta)}`);
+        const loadRows = log.rows.filter(r => r.step === 'woodcutting:bones-load');
+        for (const r of loadRows) console.log(`bones-load ${JSON.stringify(r.meta)}`);
+        if (givers) {
+            const m = loadRows.map(r => r.meta as { giver: string | null; ticks: number; stepTicks: number; serverWait: number; received: number });
+            const mean = (xs: number[]) => (xs.length ? (xs.reduce((a, b) => a + b, 0) / xs.length).toFixed(2) : '-');
+            console.log(`group loads: ${loadRows.filter(r => r.ok).length} of ${loadRows.length} ok; givers in order ${m.map(x => x.giver ?? '-').join(' ')}`);
+            console.log(`  click to bones (receiveFrom ticks) mean ${mean(m.map(x => x.ticks))}, all ${m.map(x => x.ticks).join(' ')}`);
+            console.log(`  load step ticks (server wait + trade) mean ${mean(m.map(x => x.stepTicks))}, all ${m.map(x => x.stepTicks).join(' ')}; server waits ${m.map(x => x.serverWait).join(' ')}`);
+            await givers.stop();
+            for (const account of givers.group) {
+                const path = join(givers.runDir, 'logs', `${account}.role.log`);
+                const text = existsSync(path) ? readFileSync(path, 'utf8') : '';
+                for (const line of text.split('\n')) if (/"message":"(trade|request|phase|trip|resumed)"/.test(line)) console.log(`giver ${account} ${line.slice(line.indexOf('{'))}`);
+            }
+        }
         for (const r of log.rows.filter(r => (r.meta as { kind?: string } | undefined)?.kind === 'wc-band')) printBand(r.step, r.meta as Record<string, unknown>);
         console.log(`log: ${log.path}`);
         if (helper) await closeSession(helper);

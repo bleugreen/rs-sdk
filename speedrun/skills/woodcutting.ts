@@ -67,15 +67,28 @@
 // band's postcondition asks for the runes. The fallback until a bone giver can
 // add the runes to a load: `handBack` adds `woodcutting:hand-back`, one `swap()` at `to` that
 // gives the axe and every bone held and takes the runes (1 law, 5 air), a trade of its own,
-// since the axe chops to the last level, after the last load.
+// since the axe chops to the last level, after the last load. Once the runes are in, that load was
+// the last: the band asks for no other, and the knife cycle chops on without bones to the band end.
+//
+// The giver group (`bones.group`, S07's b01-b04 taking turns; bone-giver.md "Taking turns"): the
+// module writes the cue the givers read, scoped { step: 'S07', family: 'bone' } (S07_BONE_CUE), at
+// each burying band's start and stops it when S07's last band reaches `to`, in one session for the
+// whole step so the group counts its loads across both bands. Nothing else writes it: Runecraft's
+// S06 cue is scoped to S06's altar givers. Before each load the partner is the group's server
+// (bone-giver.ts awaitBoneServer: boneServer over the givers' status files, waiting on observed
+// ticks while none serves), and a load that finds none within `serverWait` fails the band. The want
+// is the same whichever giver serves, so `lastLoad` holds for the group as for one giver: which
+// giver carries the runes is the helpers' choice (bone-giver.ts finalExtras).
 
 import type { BotWorldState, InventoryItem } from '../../sdk/types';
+import { canonName, CueWriter, cueDir as defaultCueDir, type Beacon, type CueScope } from '../helpers/altar-cue';
+import { awaitBoneServer, SERVER_WAIT_TICKS, type ServerWait } from '../helpers/bone-giver';
 import { GATED_PROGRAMS, type GatedSegment, type GatedTechnique, inPageGate, type InPageGateOptions, runGatedProgram, type SegmentTechnique } from '../lib/gated-program';
 import type { HostGate } from '../lib/hostgate';
 import { withLevelUpDismissal } from '../lib/levelup';
 import type { ProgramStatus } from '../lib/programs';
 import type { TickLog } from '../lib/ticks';
-import { type GiveSpec, receiveFrom, swap, type WantSpec } from '../lib/trade';
+import { type GiveSpec, receiveFrom, type ReceiveResult, swap, type WantSpec } from '../lib/trade';
 import { tickMs } from '../lib/wait';
 import type { RunnerSession, Step, StepContext } from '../runner/step';
 
@@ -244,6 +257,8 @@ export const HIT_REACH = 2;
 export const NORMAL_KEEP = 1;
 /** T07-08's Camelot teleport, received in the hand-back (the ledger's teleport runes: 1 law, 5 air). */
 export const CAMELOT_RUNES: readonly WantSpec[] = [{ item: /^law rune$/i, amount: 1 }, { item: /^air rune$/i, amount: 5 }];
+/** The cue S07's bone giver group reads (bone-giver.ts `scope` in the standing mode). */
+export const S07_BONE_CUE: CueScope = { step: 'S07', family: 'bone' };
 
 // ------------------------------------------------------------------ state
 
@@ -300,8 +315,15 @@ export function routeFrom(from: Tile, goal: Tile, waypoints: readonly Tile[]): T
 // ------------------------------------------------------------------ options
 
 export interface BonesOptions {
-    /** The giver's display name (the lab's second bot, Ashburn's H-helpers on the run). */
-    giver: string;
+    /** One giver by display name (the lab's second bot). Give this or `group`. */
+    giver?: string;
+    /**
+     * The givers taking turns (bone-giver.ts `group`, S07's b01-b04): each load comes from the
+     * group's server, and the module writes the S07 bone cue they read. Give this or `giver`.
+     */
+    group?: readonly string[];
+    /** With a group: observed ticks a load waits for a server before the band fails (default SERVER_WAIT_TICKS). */
+    serverWait?: number;
     /** Bones per load (default 23). */
     load?: number;
     /**
@@ -318,9 +340,13 @@ export interface WoodcuttingOptions {
     technique?: GatedTechnique;
     /** Bury bones inside the knife cycle on oak and willow: true, or a bones regex. */
     bury?: boolean | string;
-    /** The bone giver; `boneGiver` / `boneLoad` / `boneLastLoad` are the CLI's flat form (--skill-opt). */
+    /** The bone giver; `boneGiver` / `boneGroup` (comma-separated) / `boneServerWait` / `boneLoad` / `boneLastLoad` are the CLI's flat form (--skill-opt). */
     bones?: BonesOptions;
     boneGiver?: string;
+    boneGroup?: string | readonly string[];
+    boneServerWait?: number | string;
+    /** With a giver group: the cue directory (default altar-cue.ts cueDir(): RC_CUE_DIR or run-machine/rc-cue). */
+    cueDir?: string;
     boneLoad?: number | string;
     boneLastLoad?: number | string;
     /** The last band's Prayer postcondition with `bury` (default 94; 0 checks nothing). */
@@ -366,7 +392,7 @@ interface Resolved {
     technique: GatedTechnique;
     bury: string | true | null;
     bonesRe: RegExp;
-    bones: { giver: string; load: number; lastLoad: number | null } | null;
+    bones: { giver: string; load: number; lastLoad: number | null } | { group: string[]; serverWait: number; cueDir: string; load: number; lastLoad: number | null } | null;
     prayerTo: number;
     plainTicksPerRoll: number;
     route: RouteName;
@@ -401,6 +427,13 @@ function flag(name: string, raw: unknown, def: boolean): boolean {
     throw new Error(`woodcutting: ${name} must be true or false, got ${JSON.stringify(raw)}`);
 }
 
+function groupOpt(raw: unknown): string[] {
+    const names = (typeof raw === 'string' ? raw.split(',') : Array.isArray(raw) ? raw : null)?.map(n => (typeof n === 'string' ? n.trim() : ''));
+    if (!names || names.length < 2 || names.some(n => !n)) throw new Error(`woodcutting: a bone group lists at least two giver names, got ${JSON.stringify(raw)}`);
+    if (new Set(names.map(canonName)).size !== names.length) throw new Error(`woodcutting: the bone group names a giver twice: ${names.join(', ')}`);
+    return names;
+}
+
 function resolve(opts: WoodcuttingOptions): Resolved {
     const to = numberOpt('to (an integer from 2 to 99)', opts.to, n => Number.isInteger(n) && n >= 2 && n <= 99, 99);
     const technique = opts.technique ?? 'auto';
@@ -410,11 +443,17 @@ function resolve(opts: WoodcuttingOptions): Resolved {
     if (bury !== null && to <= BANDS[0]!.end) throw new Error(`woodcutting: bury needs an oak or willow band, and to=${to} ends on normal trees`);
     if (bury !== null && technique === 'plain') throw new Error('woodcutting: bury needs the knife (knife-cycle has no plain loop with a bury)');
     const giver = opts.bones?.giver ?? opts.boneGiver;
+    const groupRaw = opts.bones?.group ?? opts.boneGroup;
+    const group = groupRaw === undefined ? null : groupOpt(groupRaw);
+    if (giver !== undefined && group) throw new Error('woodcutting: name one bone giver or a group, not both');
+    const waitRaw = opts.bones?.serverWait ?? opts.boneServerWait;
+    if (waitRaw !== undefined && !group) throw new Error('woodcutting: serverWait is for a bone group');
+    const serverWait = numberOpt('serverWait (a whole number of ticks, at least 1)', waitRaw, n => Number.isInteger(n) && n >= 1, SERVER_WAIT_TICKS);
     const load = numberOpt('bone load', opts.bones?.load ?? opts.boneLoad, n => Number.isInteger(n) && n >= 1 && n <= 27, BONE_LOAD);
-    if (giver !== undefined && bury === null) throw new Error('woodcutting: a bone giver without bury');
+    if ((giver !== undefined || group) && bury === null) throw new Error('woodcutting: a bone giver without bury');
     const lastRaw = opts.bones?.lastLoad ?? opts.boneLastLoad;
     const lastLoad = lastRaw === undefined ? null : numberOpt(`last load (an integer from 1 to the load, ${load})`, lastRaw, n => Number.isInteger(n) && n >= 1 && n <= load, load);
-    if (lastLoad !== null && !giver) throw new Error('woodcutting: a last load without a bone giver');
+    if (lastLoad !== null && !giver && !group) throw new Error('woodcutting: a last load without a bone giver');
     const route = opts.route ?? 'taverley';
     if (!Object.hasOwn(ROUTES, route)) throw new Error(`woodcutting: route must be ${Object.keys(ROUTES).join(' or ')}, got ${JSON.stringify(route)}`);
     const sitesIn = typeof opts.sites === 'string' ? (JSON.parse(opts.sites) as Partial<Sites>) : (opts.sites ?? {});
@@ -422,6 +461,7 @@ function resolve(opts: WoodcuttingOptions): Resolved {
     const hb = opts.handBack;
     let handBack: string | null = null;
     if (hb === true || hb === 'true') {
+        if (group) throw new Error('woodcutting: handBack true swaps with the bone giver, and a group has no one giver (name the partner instead)');
         if (!giver) throw new Error('woodcutting: handBack true swaps with the bone giver, and there is none (name the partner instead)');
         handBack = String(giver);
     } else if (hb !== undefined && hb !== false && hb !== 'false') {
@@ -433,7 +473,7 @@ function resolve(opts: WoodcuttingOptions): Resolved {
         technique,
         bury,
         bonesRe: new RegExp(bury === null || bury === true ? DEFAULT_BONES : bury, 'i'),
-        bones: giver ? { giver: String(giver), load, lastLoad } : null,
+        bones: giver ? { giver: String(giver), load, lastLoad } : group ? { group, serverWait, cueDir: opts.cueDir ?? defaultCueDir(), load, lastLoad } : null,
         prayerTo: bury === null ? 0 : numberOpt('prayerTo', opts.prayerTo, n => Number.isInteger(n) && n >= 0 && n <= 99, PRAYER_TO),
         plainTicksPerRoll: numberOpt('plainTicksPerRoll', opts.plainTicksPerRoll, n => n > 0, CYCLE.plain),
         route: route as RouteName,
@@ -842,15 +882,44 @@ function walkStep(o: Resolved, name: string, goal: Tile, needed: (s: BotWorldSta
     };
 }
 
-function bandStep(o: Resolved, b: Band, last: boolean): Step {
+/**
+ * S07's bone cue for a giver group: one CueWriter, so one session, for the whole step. It names the
+ * scored account (by hash) to the givers, which ignore every cue not scoped S07_BONE_CUE.
+ */
+export class BoneCue {
+    private writer: CueWriter | null = null;
+    constructor(readonly dir: string) {}
+
+    private static beacons(s: BotWorldState | null): Beacon[] {
+        return [{ tick: s?.tick ?? 0, ms: Date.now() }];
+    }
+
+    write(s: BotWorldState | null, receiver: string): void {
+        this.writer ??= new CueWriter(this.dir, receiver, S07_BONE_CUE);
+        this.writer.write({ beacons: BoneCue.beacons(s), turns: [] });
+    }
+
+    stop(s: BotWorldState | null): void {
+        this.writer?.stop(BoneCue.beacons(s));
+    }
+
+    get session(): string | null {
+        return this.writer?.session ?? null;
+    }
+}
+
+function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null): Step {
     const end = bandEnd(o, b);
     const site = o.sites[b.tree];
     const technique = bandTechnique(b.tree, o.technique);
     const knifeCapable = technique !== 'plain';
     const burying = o.bury !== null && b.tree !== 'normal';
     const giver = burying ? o.bones : null;
+    const group = giver && 'group' in giver ? giver : null;
     const passed = (s: BotWorldState) => wcLevel(s) >= end;
     const bonesHeld = (s: BotWorldState) => s.inventory.filter(i => o.bonesRe.test(i.name)).length;
+    /** The last load (lastLoad's, with the runes) came: no other follows. */
+    const lastCame = (s: BotWorldState | null) => !!s && giver?.lastLoad != null && runesHeld(s);
     const params = paramsOf(o, b.tree, end);
 
     const pre = (s: BotWorldState): true | string => {
@@ -908,18 +977,31 @@ function bandStep(o: Resolved, b: Band, last: boolean): Step {
         const topUp = async () => {
             const t0 = sdk.getState()?.tick ?? 0;
             const before = bonesHeld(sdk.getState()!);
-            const r = await o.receive(sdk, giver!.giver, { want: [{ item: o.bonesRe, amount: giver!.lastLoad ?? giver!.load }], maxTicks: 60, openTimeoutMs: 20_000 });
+            // A group's load comes from its server, whoever that is now.
+            let partner: string | null = giver && 'giver' in giver ? giver.giver : null;
+            let wait: ServerWait | null = null;
+            if (group) {
+                wait = await awaitBoneServer(sdk, group.cueDir, group.group, group.serverWait);
+                partner = wait.server ?? null;
+            }
+            const want = { want: [{ item: o.bonesRe, amount: giver!.lastLoad ?? giver!.load }], maxTicks: 60, openTimeoutMs: 20_000 };
+            const r: ReceiveResult = partner !== null ? await o.receive(sdk, partner, want) : { ok: false, ticks: 0, received: [], reason: `no giver of the group served within ${group!.serverWait} observed ticks` };
             const t1 = sdk.getState()?.tick ?? t0;
             const got = bonesHeld(sdk.getState()!) - before;
             loads++;
-            annotation(log, session, 'woodcutting:bones-load', t0, t1, r.ok, { kind: 'wc-bones-load', band: b.name, load: loads, ticks: r.ticks, stepTicks: t1 - t0, received: got, ...(r.reason ? { reason: r.reason } : {}) });
-            if (!r.ok) throw new Error(`${b.name}: bone load ${loads} from ${giver!.giver} failed: ${r.reason}`);
+            annotation(log, session, 'woodcutting:bones-load', t0, t1, r.ok, {
+                kind: 'wc-bones-load', band: b.name, load: loads, ticks: r.ticks, stepTicks: t1 - t0, received: got, ...(r.reason ? { reason: r.reason } : {}),
+                ...(wait ? { giver: partner, serverWait: wait.waited } : {})
+            });
+            if (!r.ok) throw new Error(`${b.name}: bone load ${loads} from ${partner ?? `the group (${group!.group.join(', ')})`} failed: ${r.reason}`);
             ledger.bonesLoad();
         };
 
         let ended = 'stopped';
         // a load before the first start when the pack is empty, and after each stop for one
-        let needLoad = !!giver && knifeCapable && bonesHeld(s0) === 0;
+        let needLoad = !!giver && knifeCapable && bonesHeld(s0) === 0 && !lastCame(s0);
+        // The group finds the scored account by the cue: written before the first load, every band.
+        if (group && cue) cue.write(sdk.getState(), session.name);
         try {
             for (;;) {
                 if (guard.hit) break;
@@ -937,7 +1019,7 @@ function bandStep(o: Resolved, b: Band, last: boolean): Step {
                     log: o.log,
                     onProgress: (st, tech) => {
                         ledger.observe(st, tech, wcLevel(sdk.getState()));
-                        if (!giver || tech !== 'knife' || stop.signal.aborted) return;
+                        if (!giver || tech !== 'knife' || stop.signal.aborted || lastCame(sdk.getState())) return;
                         if (st.gauges.bonesLeft !== 0) {
                             noneSince = null;
                             return;
@@ -980,6 +1062,8 @@ function bandStep(o: Resolved, b: Band, last: boolean): Step {
         });
         guard.close();
         if (ended !== 'done') throw new Error(`knife-cycle ended ${ended} at Woodcutting ${wcLevel(endState)}`);
+        // S07's chopping is over: the group stands down (a band that failed keeps it, for the resume).
+        if (last && group && cue) cue.stop(endState);
     };
 
     return {
@@ -1070,12 +1154,13 @@ export function steps(opts: WoodcuttingOptions = {}): Step[] {
     const oakEnd = bandEnd(o, oak);
     // the band the Prayer postcondition goes on (bury needs to > 15, so oak or willow)
     const willowLast = o.to > oak.end;
+    const cue = o.bones && 'group' in o.bones ? new BoneCue(o.bones.cueDir) : null;
     return [
         walkStep(o, 'woodcutting:walk-oaks', o.sites.oak.stand, s => wcLevel(s) < oakEnd, o.sites.approach),
-        bandStep(o, normal, false),
-        bandStep(o, oak, !willowLast),
+        bandStep(o, normal, false, cue),
+        bandStep(o, oak, !willowLast, cue),
         walkStep(o, 'woodcutting:walk-willows', o.sites.willow.stand, s => wcLevel(s) >= oakEnd && wcLevel(s) < o.to, []),
-        bandStep(o, willow, willowLast),
+        bandStep(o, willow, willowLast, cue),
         ...(o.handBack !== null ? [handBackStep(o, o.handBack)] : []),
         ...(o.dropAxe ? [dropAxeStep(o)] : [])
     ];

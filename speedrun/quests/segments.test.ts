@@ -149,6 +149,20 @@ describe('slotNeed and slotsCover', () => {
         expect(slotNeed(pack(), items, letters, 'E')).toEqual({ slots: 2, peak: 'E', items: ['2 Notes'] });
     });
 
+    test('what the pack holds now and hands back mid-quest frees its slots for later segments', () => {
+        const items: QuestItem[] = [
+            { item: 'Bomb', from: 'A', until: 'B' },
+            { item: /^coins$/i, n: 500, stackable: true, from: 'A', until: 'B' },
+            { item: 'Key', n: 3, from: 'C' },
+        ];
+        // Bomb and coins are held and gone by C, so two of C's three keys go in their slots.
+        expect(slotNeed(pack('Bomb', 'Coins'), items, letters, 'A')).toEqual({ slots: 1, peak: 'C', items: ['3 Key'] });
+        // Nothing held: the bomb and the stack come in at A and leave by C; the keys need three.
+        expect(slotNeed(pack(), items, letters, 'A')).toMatchObject({ slots: 3, peak: 'C' });
+        // A config id picks one of several same-named items.
+        expect(slotNeed(pack('Map part'), [{ item: 0, from: 'A', until: 'A' }, { item: 1, from: 'B' }], letters, 'A')).toMatchObject({ slots: 0 });
+    });
+
     test('nothing to receive needs nothing; an unknown letter throws', () => {
         expect(slotNeed(pack(), [], letters, 'A')).toEqual({ slots: 0, peak: null, items: [] });
         expect(() => slotNeed(pack(), [{ item: 'x', from: 'Z' }], letters, 'A')).toThrow(/segment Z/);

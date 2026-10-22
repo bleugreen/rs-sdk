@@ -278,3 +278,146 @@ in one trade, deposited at the training booth; the scored account must stand at 
 - **The two firings on one continuous session** need a relog in the middle. Whether the scored run
   has natural session breaks to hide them in is for the run plan; the relog itself costs no
   playtime.
+
+## 9. Module: `speedrun/skills/cooking.ts` (S25c, STEP-MANIFEST.md entry 29)
+
+One step, `S25c cooking`, which **is** the run's two planned relogs at the Varrock west booth
+(SCORED on (3185,3436), the wine giver on (3184,3436)). It ends logout-safe: Cooking 99, no notes
+or gems held, no page or bank open.
+
+### How the pieces fit
+
+- **The wine** is rs/41's `splitDelivery` (`helpers/wine-receive.ts`), unchanged in what it
+  sends. The module only fills its waits through four opt-in **window hooks**
+  (`SplitOptions.windows`). With no hooks, the split sends exactly the packets it sent before:
+  a test pins the packet-and-tick sequence captured on the base.
+  - `firstBurst` and `restBurst` add packets to the two deposit bursts, before each close.
+  - `firstWait` and `secondWait` run beside the two `awaitFiring` waits. `secondWait` replaces
+    the final page drain, and the second firing gets 6 ticks of slack, because the gem cycle's
+    bank visits can hold the timer.
+- **The giver** is `giveWine(..., {afterRelog: true})` (`helpers/wine.ts`; role option
+  `afterRelog`). It waits to see SCORED, then sees it gone (relog 1's logout), then back.
+  Seen-first matters: the giver is staged before SCORED reaches the booth. It requests on the
+  first observed state SCORED is back, and re-sends only a click the engine dropped
+  (`DROPPED_TICKS`), never the 27-tick standing re-send, which would miss login + 19.
+- **The gems** are item-cycle's tool mode (`speedrun/lib/item-cycle.ts` and the page program),
+  through three opt-in parameters added for S25c:
+  - `held`: start on the load already held, with no booth click first.
+  - `bank: false`: no visit at all. In W1 the 491 notes still held must stay out of the bank
+    until P1.
+  - `mixed`: a tool-mode load is filled from several recipes in xp order. The blind plan is each
+    type's slots ascending; `uncut_gem.rs2` deletes the first matching uncut gem and adds the cut
+    one to the first free slot, so every cut lands in its own slot.
+
+  The driver's `clearTicks: 0` skips the 3-tick level-up watcher, for W1 only.
+- **The sequence**, phase by phase:
+  1. **Burst 1** (inside the deposit-29 burst): withdraw the chisel (S25d stows it), then the
+     fewest uncut stacks that fill the free slots. For the fleet's gems that is sapphire All
+     (26), so the burst is 7 deposits + chisel + 1 stack + close = 10 events, 2 ticks.
+     Withdrawing every type would be 12 events and 3 ticks. A short supply caps the windows'
+     count; no gems at all falls back to the plain sequence.
+  2. **W1**: `held` + `bank: false` + `mixed` on the 26, then blind continues on every state
+     through **due − 1**. A level-up page open on the due tick holds the timer unless a continue
+     in that tick's packets closes it (wine-window.md §3), so stopping when the chat merely looks
+     quiet is not enough. The due tick's own sends are left to P1.
+  3. **P1**: `splitDelivery`'s booth click and two blind continues a tick (4 events). Then one
+     burst: the notes All, each cut gem All, close.
+  4. **Relog 2.**
+  5. **W2 + P2**: the booth cycle on `mixed` loads (27, 27, 27 for the fleet's gems) with
+     `stow`, so the last visit banks the chisel and the cut gems. The cuts close the second
+     firing's Cooking pages as they go.
+- **Deadlines count from the armed tick, `tickBase + 1`.** A relog's first published state can
+  be a tick later: the lab saw first states at + 1 and + 2, and firings at `tickBase + 21` every
+  time.
+- **The relog guard** (`relogGuarded`) is the only path to a relog. It refuses with a bank or
+  trade open, drains any page, then calls `session.relog` (in page by default, navigation as
+  the fallback). Every relog is logged with its kind (planned-1, planned-2, deadline), `via`,
+  `tickBase`, `loginTick` and cost.
+
+### Resume
+
+Any login arms `fermenting_wine` at login + 20, so the watchdog's reconnect login is itself an
+arming login, and a crash never costs an extra planned relog. The `wineBank` probe (exported as
+`PROBES`) opens the booth for about 3 ticks and reads three things: unfermented wine (1995),
+fermented wine (1993 and 1991), and cut and uncut gems. `splitStage` maps the notes held and
+the bank to where `splitDelivery` re-enters (`SplitOptions.from`):
+
+| Notes held | Bank | Stage |
+|---|---|---|
+| 0 | no wine | not in progress: `run` from relog 1 |
+| > 0 | no wine | `deposit-first` |
+| > 0 | unfermented only | `await-first` (W1 on whatever is held) |
+| > 0 | fermented | `deposit-rest`: the rest rides this login's timer, **no relog 2** |
+| 0 | unfermented and fermented | `await-second` (W2/P2) |
+| 0 | fermented only, Cooking < 99 | refused: `wine exhausted at Cooking L` |
+
+This holds only for a bank with no wine before S25c, which is true of SCORED's. Cooking 99 with
+uncut gems still banked resumes as the gem cycle alone. `RunnerSession` carries `tickBase`
+(optional), so a resumed step knows its login's tick.
+
+### Preconditions (in code)
+
+- Beside the booth, with the booth in view.
+- The staged gems (option `stagedGems`, default H21d's row) are all gems the windows cut. Else the
+  precondition refuses with the reason. The windows cut their total (`windowPlan`), and S25d's
+  hand-off plus the windows' xp is 99 exactly (`craftingAfterWindows`).
+- S25a done (Smithing 99), S25e done (Herblore 99), and S25d done: Crafting xp at or above
+  crafting.ts's `craftingHandoffXp` of the same staged gems. The `lab` option skips these three.
+- At most 27 slots used unless the notes are already held, else
+  `N other items (...): need 1 free slots`.
+- Not in combat, and not hit within 16 ticks.
+
+The chisel is not the step's to clear: the plain sequence never touches it.
+
+### Measured (lab, `speedrun/lab/cooking-accept.ts`, bgsrv-mac, browser client, 300 ms, 2026-10-22)
+
+| Case | Scored ticks | Notes |
+|---|---|---|
+| run levels: Cooking 30, Crafting 96, the fleet's 108 gems, chisel banked | 77, 85 | Cooking 99; 107 cut (the 108th stays banked); peak 28/28; burst 1 opened at login + 8 or 9, done in 2 ticks |
+| the same, chisel held | 81 | burst 1 also 2 ticks: **the chisel's withdraw costs 0** |
+| resume: the session dropped at relog 2 | | probe read 491 unfermented, 29 fermented, 82 uncut, 26 cut; resumed `await-second`, no relog 2, Cooking 99, all 107 cut |
+| WW §1 fixture, gems (Cooking 1, Crafting 55, dragonstones, 160-gem quota) | 114, 115, 115; **98** normalised | WW measured 75-76 |
+| the same, plain (+ 160 standalone) | 133, 123, 133; 113-114 normalised | WW: 52 + 54 = 106 |
+
+Across all reps: both firings at exactly login + 20, both relogs planned, relog cost 1-2 ticks
+`via: launch` (the lab's loopback query login never takes the in-page path), logout latency 0.
+
+**Against entry 29:** at the run's own levels S25c measured 77-85 with the 107 gems inside it,
+against the entry's expected 80. Against WW's comparability fixture, the gem saving is **15-16
+ticks, not 30-31**. Where the gap comes from (read from the reps; not yet decomposed tick by tick):
+- W1 leaks 11 Crafting pages into P1 at Crafting 55, against WW's 5.
+- Each item-cycle run ends with a stow visit and a page drain, which WW's single loop did not
+  pay.
+- Both the plain and the gems variant carry about 6-7 ticks of harness overhead against WW.
+
+At the run's levels the P1 leak is 0, as WW §4 predicts for Crafting 80+.
+
+### Demo (rehearsal twin, browser tab, 2026-10-22 13:20-13:28Z)
+
+The default sequence, as run A, through the module under `speedrun/rehearse.ts`:
+- **Receiver**: throwaway `cairn_wr339`, Cooking 1, in the twin's Chrome tab under rs/339's claim. It ran S00, then the `walkIn` step to the stand, then S25c with `windowWork: 'none'`.
+- **Giver**: throwaway `cairn_wg339` on bbs (lite, its own loopback gateway). It trained Cooking to 42 on chickens and made the wine from fleet grapes and jugs, then ran `wine {receiver, afterRelog: true}`.
+- **Wines: 52, not run A's 59**: the fleet held only 52 jugs of water. That is 29 + 23.
+
+| | Tick | From the armed login |
+|---|---|---|
+| S25c start, at the stand | 139 | |
+| relog 1: **in page**, cost 1, logout latency 0 | 140 | |
+| trade (the giver's afterRelog cue fired on SCORED's return) | 7 ticks | |
+| bank open, 29 deposited, closed | 151-153 | + 11 |
+| first firing, Cooking 1 to 54 | 160 | **+ 20** |
+| P1: 16 pages in 17 ticks, rest banked | to 178 | |
+| relog 2: **in page**, cost 1, logout latency 0 | 179 | |
+| second firing, 54 to 66 | 199 | **+ 20** |
+| end, the pages cleared | 212 | |
+
+**S25c: 73 ticks against run A's 80 (−9%): pass.** These are the run's tab relogs, at 1 tick
+each. The step's postcondition (Cooking 99) failed only because the demo had 52 wines. The
+hosts are clean: the twin has no process, the claim is released, the worktree and env are
+removed; on bbs the giver is logged out and its env and clone deleted; neither name is listed.
+
+Two harness findings (rs/147), neither in this module:
+- The summary's row for a step that spans in-page relogs read 212, the page's end tick. The
+  page count runs on across in-page sessions, so the step's span is end − start.
+- `rehearse.ts` gives the resume walk no module probes, so a step that declares one (S25c's
+  `wineBank`) can't be resumed there.

@@ -166,6 +166,12 @@ export { chunkMessage } from './chunking';
 import { chunkMessage } from './chunking';
 export { Spells, type SpellName } from './spells';
 
+/** Actions the client routes against its scene's collision maps: never reported as a success while the region loads (see sendAction). */
+const WORLD_CLICKS: ReadonlySet<BotAction['type']> = new Set<BotAction['type']>([
+    'walkTo', 'talkToNpc', 'interactNpc', 'interactPlayer', 'interactLoc', 'pickupItem', 'interactGroundItem',
+    'useItemOnLoc', 'useItemOnNpc', 'spellOnNpc', 'spellOnPlayer', 'spellOnGroundItem'
+]);
+
 export class BotSDK {
     readonly config: Required<SDKConfig>;
     private ws: WebSocket | null = null;
@@ -1072,6 +1078,28 @@ export class BotSDK {
     // ============ Plumbing: Raw Actions ============
 
     private async sendAction(action: BotAction): Promise<ActionResult> {
+        // A world click while the client is still building the region ("Loading - please wait")
+        // routes against stale collision maps; the client sends its packet anyway and used to
+        // report success whether or not the player could move. It is still sent (an adjacent
+        // target needs no route: the tutorial guide at login), but never reported as a success:
+        // the result says scene_loading, and the caller confirms the effect or re-sends once
+        // state.sceneReady is true. Clients that never publish sceneReady (older ones) or build
+        // within the tick (lite) are unaffected.
+        if (WORLD_CLICKS.has(action.type) && this.state?.inGame && this.state.sceneReady === false) {
+            const r = await this.dispatchAction(action);
+            if (!r.success) return r;
+            return {
+                ...r,
+                success: false,
+                phase: 'dispatch',
+                reason: 'scene_loading',
+                message: `${action.type} sent while the client was still loading the region (state.sceneReady false): it may not have been routed; confirm its effect, or re-send once sceneReady is true`
+            };
+        }
+        return this.dispatchAction(action);
+    }
+
+    private async dispatchAction(action: BotAction): Promise<ActionResult> {
         if (this.connectionState === 'reconnecting') {
             console.log(`[BotSDK] Waiting for reconnection before sending action: ${action.type}`);
             await this.waitForConnection();

@@ -1,0 +1,8 @@
+window 2026-10-21T20:37:28.913Z - 2026-10-21T20:39:22.044Z: 2485 frames
+tick output arrival interval ms: p10 80 p50 149 p90 293 max 642 (n 678); catch-ups 9 in 1.9 min
+game packet out, ms after its tick's output arrived: p10 1 p50 36 p90 184 max 570 (n 345)
+gateway actions: 21, 21 following a state within 1 s
+  tick output in -> state out (page publication): p10 1 p50 1 p90 1 max 7 (n 21)
+  state out -> action in (gateway, SDK script, gateway): p10 2 p50 5 p90 6 max 21 (n 21)
+  action in -> game packet out (overlay drain to flush): p10 0 p50 1 p90 1 max 4 (n 21)
+  tick output in -> game packet out (whole reaction in the page's view): p10 6 p50 7 p90 8 max 23 (n 21)

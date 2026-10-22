@@ -1,0 +1,22 @@
+# One run-night gate read on the run host (docs/speedrun/research/demo-latency.md, section 10,
+# "Gate history timer"). Started by rs-gate-read.timer; install.sh puts this file and the
+# wrapper in place. The wrapper runs from ~/.local/lib/rs-gate, never from the gate's checkout,
+# because it moves that checkout to ~/run-commit before each read.
+# TimeoutStartSec sits just above the gate's own `timeout 240` so systemd is the second, hard
+# stop, and KillMode=control-group takes every process the read started down with it.
+[Unit]
+Description=Run-night gate read (rs/83): direct-path gate into ~/gate-history
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h
+Environment=PATH=%h/.bun/bin:/usr/local/bin:/usr/bin:/bin
+Environment=GATE_REPO=%h/gate/rs-sdk
+ExecStart=/bin/bash %h/.local/lib/rs-gate/host-gate-read.sh
+TimeoutStartSec=270
+KillMode=control-group
+# The wrapper's last line (the read's summary) is printed just before it exits, often too late
+# for journald to attribute it to this unit, so `journalctl -u` misses it. The identifier rides
+# on the stream itself: read the wrapper's lines with `journalctl --user -t rs-gate-read`.
+SyslogIdentifier=rs-gate-read

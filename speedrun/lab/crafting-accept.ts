@@ -14,7 +14,8 @@
 // S00's tutorialSkip, setup.ts leaveTutorial, before any teleport):
 //   l1    S25d's real start: Crafting 45, the hand-off held (needle, 230 thread, 954 hard leather
 //         as banknotes, with H21d/H21e's chisel, gem and herb notes beside them). Cold arrival: ::tele
-//         to Varrock east bank, then walk in to (3185,3436). To CRAFTING_HANDOFF_XP; the last visit
+//         to Varrock east bank, then walk in to (3185,3436). To the hand-off for H21d's staged gems
+//         (craftingHandoffXp, STEP-MANIFEST.md's row as it stands); the last visit
 //         stows needle, thread and bodies. Reported against --expected (rs/158's figure).
 //   l2    standalone: as l1 with 1,142 leather notes (rs/350's staging), to 99.
 //   cold  the browser standard: the cold walk-in, then two inventories (maxActions 52) and the stow.
@@ -28,7 +29,6 @@
 // Prints one RESULT line per case: ticks, ticks per inventory, the cycle-gap histogram, the
 // per-tick event peak, overBudget, and the level-up backlog.
 
-import { readFileSync, writeFileSync } from 'fs';
 import { hostname, loadavg } from 'os';
 import { join } from 'path';
 import type { BotWorldState } from '../../sdk/types';
@@ -41,7 +41,8 @@ import { levelForXp, xpForLevel } from '../lib/xp';
 import { Observation, resolveResume } from '../runner/resume';
 import { runSteps, type RunnerSession } from '../runner/step';
 import { boothFor, SCORED_TILE, VARROCK_WEST } from '../skills/herblore';
-import { CRAFTING_99_XP, CRAFTING_HANDOFF_XP, craftingLevel, craftingXp, cycleItems, HARD_LEATHER_BODY, ITEM, LOAD, preconditions, STEP_NAME, steps, supplyFor } from '../skills/crafting';
+import { CRAFTING_99_XP, craftingHandoffXp, craftingLevel, loadStagedGems, craftingXp, cycleItems, HARD_LEATHER_BODY, ITEM, LOAD, preconditions, STEP_NAME, steps, supplyFor } from '../skills/crafting';
+import { launchLabBrowser, type LabBrowser } from './browser';
 import { cheat, leaveTutorial, mustTele, near, setstat } from './setup';
 
 const bot = process.argv[2];
@@ -55,6 +56,8 @@ if (!bot || !which || !CASES.includes(which)) {
 const where = () => `host ${hostname()} load ${loadavg().map(l => l.toFixed(1)).join(' ')} at ${new Date().toISOString()}`;
 
 const START_LEVEL = 45;
+/** S25d's stop in the run: the hand-off for H21d's staged gems, as steps() reads them by default. */
+const HANDOFF_XP = craftingHandoffXp(loadStagedGems());
 const VARROCK_EAST_BANK = { x: 3253, z: 3420 };
 /** H21d/H21e's stacks for later steps, handed over with S25d's (the first visit banks them). */
 const LATER_STACKS: Record<string, number> = { chisel: 1, cert_uncut_diamond: 107, cert_iritvial: 405, cert_eye_of_newt: 432 };
@@ -101,23 +104,8 @@ function metrics(sh: ItemCycleShared | undefined): Metrics | null {
     };
 }
 
-const webPort = process.env.WEB_PORT ?? '9300';
-const agentPort = process.env.AGENT_PORT ?? '8300';
-if (which !== 'demo') {
-    const envFile = join(process.cwd(), 'bots', bot, 'bot.env');
-    const text = readFileSync(envFile, 'utf8');
-    writeFileSync(envFile, text.replace(/^CLIENT_URL=.*\n?/m, '').trimEnd() + `\nCLIENT_URL=http://localhost:${webPort}/bot?gateway=${encodeURIComponent(`ws://localhost:${agentPort}`)}\n`, { mode: 0o600 });
-    const cdpPort = Number(webPort) + 7;
-    // loaded here, not at the top: the demo attaches to a running Chrome over CDP, and puppeteer's
-    // module graph does not load under bun on bbs (proxy-agent's `debug` import)
-    const puppeteer = (await import('puppeteer')).default;
-    await puppeteer.launch({
-        headless: process.argv.includes('--headless'),
-        defaultViewport: null,
-        args: ['--no-sandbox', '--window-size=800,660', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', `--remote-debugging-port=${cdpPort}`]
-    });
-    process.env.SPEEDRUN_CDP_URL = `http://127.0.0.1:${cdpPort}`;
-}
+// lab: the tab in the lab's Chrome, DevTools on WEB_PORT + 7; the demo attaches to a running Chrome over CDP
+const chrome: LabBrowser | null = which === 'demo' ? null : await launchLabBrowser(bot, { headless: process.argv.includes('--headless'), cdpPort: Number(process.env.WEB_PORT ?? '9300') + 7 });
 
 const opened: Session = await openSession(bot, { client: 'browser', launch: true, insecureQueryLogin: which !== 'demo' });
 let exitCode = 0;
@@ -200,7 +188,7 @@ await (async () => {
     try {
         if (which === 'l1' || which === 'l2' || which === 'cold') {
             await stage({ walkIn: true });
-            const untilXp = which === 'l2' ? CRAFTING_99_XP : CRAFTING_HANDOFF_XP;
+            const untilXp = which === 'l2' ? CRAFTING_99_XP : HANDOFF_XP;
             await handOff(which === 'l2' ? 1142 : 954);
             result.startXp = craftingXp(state());
             result.supply = supplyFor(craftingXp(state()), untilXp);
@@ -225,7 +213,7 @@ await (async () => {
             console.log(`  resume walk: ${point.mode} ${point.step ?? ''} (${point.reason})`);
             result.resume = { mode: point.mode, step: point.step, logoutTick: before, heldAtLogout: held };
             await runSteps(session, steps(), { log, c: {}, shouldStop: () => false, logout: async () => {}, startMode: point.mode === 'resume' ? 'resume' : 'run', observed: obs, tickMonitor: false });
-            finish({ untilXp: CRAFTING_HANDOFF_XP, reached: craftingXp(state()) >= CRAFTING_HANDOFF_XP });
+            finish({ untilXp: HANDOFF_XP, reached: craftingXp(state()) >= HANDOFF_XP });
         } else {
             // demo: no staff commands; the account's own needle, thread and leather, a booth in view.
             // Right after a login the position is published before the scene's locs: wait for the booth.
@@ -275,6 +263,7 @@ await (async () => {
         const out = await logoutClean(opened).catch(e => ({ ok: false, error: e instanceof Error ? e.message : String(e) }));
         console.log(`LOGOUT ${JSON.stringify(out)}`);
         await closeSession(opened).catch(() => {});
+        await chrome?.kill().catch(() => {});
     }
 })();
 process.exit(exitCode);

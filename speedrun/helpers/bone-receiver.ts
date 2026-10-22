@@ -35,7 +35,7 @@ import type { BotWorldState } from '../../sdk/types';
 import { give, receiveFrom, tradeOf } from '../lib/trade';
 import { canonName, CueWriter, cueDir, FrameLog, scopeOption, writeTopUpAsk } from './altar-cue';
 import { altarData, altarRoomOf, cheat, count, exactItem, isLocalServer, labTele, leaveRoom, pos, standOn, until, type Tile } from './altar-room';
-import { boneServer, DEFAULT_BONE_BANK, readBoneStatuses, S07_SITES } from './bone-giver';
+import { awaitBoneServer, DEFAULT_BONE_BANK, S07_SITES } from './bone-giver';
 import { FORBIDDEN_ACCOUNTS } from './fleet-config';
 import { closeBank, depositAllExcept, openBank, walkNear } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
@@ -182,9 +182,8 @@ export const role: Role = {
                 const wantedAt = s().tick;
                 // The trade, once the pack is empty (the first load starts empty) and the giver is beside us.
                 if (givers) {
-                    let server: string | undefined;
-                    const found = await until(ctx, () => (server = boneServer(readBoneStatuses(cueDir()), givers, Date.now())) !== undefined, 400);
-                    if (!found || !server) {
+                    const { server } = await awaitBoneServer(sdk, cueDir(), givers);
+                    if (!server) {
                         results.push({ load, ok: false, clickToBones: 0, standingAtClick: false, reason: 'no group giver ready' });
                         break;
                     }

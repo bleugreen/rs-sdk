@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { GEOffer, MarketQuote } from '../../sdk/index';
 import type { InventoryItem } from '../../sdk/types';
 import { baseState, FakeSdk } from '../lib/fake-sdk';
-import { BANKS, Buyer, SHOPS, travelPlan } from './buyer';
+import { BANKS, Buyer, homeBank, ladderNear, SHOPS, travelPlan, waitsOnRestock, type Place, type Tile } from './buyer';
 import type { RoleContext } from './role';
 
 const GRAPES = 1987;
@@ -248,10 +248,130 @@ describe('travelPlan', () => {
         expect(travelPlan(SHOPS.nurmof!.stand, BANKS.alKharid)).toEqual(['climb-up', 'toll-east', 'walk']);
     });
 
-    test('every underground shop says how to get down', () => {
-        for (const [name, shop] of Object.entries(SHOPS)) {
-            if (shop.stand.z > 6400) expect({ name, below: !!shop.below }).toEqual({ name, below: true });
+    test('every shop and bank off the surface names its ladder, except the Magic Guild, where the caller climbs', () => {
+        const places: [string, Place][] = [...Object.entries(SHOPS).flatMap(([name, s]): [string, Place][] => [[name, s.stand], [`${name} bank`, s.bank]]), ...Object.entries(BANKS)];
+        for (const [name, p] of places) {
+            if (name === 'magicGuild' || (p.z <= 6400 && !p.level)) continue;
+            expect({ name, ladder: !!p.ladder }).toEqual({ name, ladder: true });
         }
+    });
+
+    test('the Stronghold grocers and bank share one floor: walk between them, no ladder', () => {
+        const { heckel, hudo } = SHOPS;
+        expect(heckel!.bank).toBe(BANKS.gnomeStronghold);
+        expect(hudo!.bank).toBe(BANKS.gnomeStronghold);
+        expect(travelPlan(heckel!.stand, hudo!.stand)).toEqual(['walk']);
+        expect(travelPlan(hudo!.stand, BANKS.gnomeStronghold)).toEqual(['walk']);
+        expect(travelPlan(BANKS.gnomeStronghold, heckel!.stand)).toEqual(['walk']);
+    });
+
+    test('up the Grand Tree from the ground, down it to leave', () => {
+        expect(travelPlan(BANKS.faladorEast, SHOPS.heckel!.stand)).toEqual(['climb-up', 'walk']);
+        expect(travelPlan(BANKS.varrockWest, BANKS.gnomeStronghold)).toEqual(['climb-up', 'walk']);
+        expect(travelPlan(SHOPS.hudo!.stand, BANKS.varrockWest)).toEqual(['climb-down', 'walk']);
+    });
+
+    test('between floors by different ladders: out by one, in by the other', () => {
+        expect(travelPlan(SHOPS.nurmof!.stand, SHOPS.heckel!.stand)).toEqual(['climb-up', 'climb-up', 'walk']);
+        expect(travelPlan(SHOPS.heckel!.stand, SHOPS.nurmof!.stand)).toEqual(['climb-down', 'climb-down', 'walk']);
+        expect(travelPlan(BANKS.alKharid, BANKS.gnomeStronghold)).toEqual(['toll-west', 'climb-up', 'walk']);
+        expect(travelPlan(BANKS.gnomeStronghold, SHOPS.louie!.stand)).toEqual(['climb-down', 'toll-east', 'walk']);
+    });
+
+    test('upstairs with no ladder known (a caller climbed): walk on that floor, find the way down when leaving', () => {
+        const guild = SHOPS.magicGuild!.stand;
+        expect(travelPlan({ x: 2596, z: 3088, level: 1 }, guild)).toEqual(['walk']);
+        expect(travelPlan(guild, BANKS.yanille)).toEqual(['climb-down', 'walk']);
+    });
+});
+
+describe('ladderNear', () => {
+    test('an account found upstairs in the Stronghold leaves by the Grand Tree ladder', () => {
+        expect(ladderNear({ x: 2470, z: 3500, level: 1 })).toBe(SHOPS.heckel!.stand.ladder!);
+    });
+    test('the surface has no ladder; nor does a floor far from every known place', () => {
+        expect(ladderNear({ x: 2470, z: 3500 })).toBeUndefined();
+        expect(ladderNear({ x: 3200, z: 3400, level: 1 })).toBeUndefined();
+    });
+    test('underground by the Ice Mountain trapdoor, not by a ladder upstairs', () => {
+        expect(ladderNear({ x: 3010, z: 9840 })).toBe(SHOPS.nurmof!.stand.ladder!);
+    });
+});
+
+describe('homeBank and waitsOnRestock', () => {
+    const choc = (shop: string) => ({ item: 'Chocolate dust', quantity: 340, source: 'shop' as const, shop });
+    test('a shop-only list starts at its first shop\'s bank; one with a GE line at Varrock west', () => {
+        expect(homeBank([choc('heckel'), choc('hudo')])).toBe(BANKS.gnomeStronghold);
+        expect(homeBank([choc('nosuchshop'), choc('hudo')])).toBe(BANKS.gnomeStronghold);
+        expect(homeBank([choc('heckel'), { item: 'Shark', quantity: 5, source: 'ge' }])).toBe(BANKS.varrockWest);
+    });
+    test('only an empty or too dear shelf is worth camping on', () => {
+        expect(waitsOnRestock('out of stock')).toBe(true);
+        expect(waitsOnRestock('price ~412.0 above 410')).toBe(true);
+        for (const note of [undefined, 'already held', 'out of coins', 'not sold here', 'openShop: no npc']) expect(waitsOnRestock(note)).toBe(false);
+    });
+});
+
+describe('Buyer.walk through the Gnome Stronghold', () => {
+    /** A world where walks arrive, the Grand Tree's ladder changes level, and the tree doors and gate move you to their far side. */
+    function stronghold(at: Tile) {
+        const sdk = new FakeGeSdk(baseState({ player: { worldX: at.x, worldZ: at.z, level: at.level ?? 0 } as never }));
+        const ops = (...texts: string[]) => texts.map((text, i) => ({ text, index: i + 1 }));
+        sdk.push({
+            nearbyLocs: [
+                { id: 1747, name: 'Ladder', x: 2466, z: 3495, optionsWithIndex: ops('Climb-up') },
+                { id: 1748, name: 'Ladder', x: 2466, z: 3495, optionsWithIndex: ops('Climb', 'Climb-up', 'Climb-down') },
+                { id: 1967, name: 'Tree Door', x: 2465, z: 3492, optionsWithIndex: ops('Open') },
+                { id: 190, name: 'Gate', x: 2459, z: 3383, optionsWithIndex: ops('Open') }
+            ] as never
+        });
+        (sdk as unknown as { waitForTicks: (n: number) => Promise<void> }).waitForTicks = async () => {};
+        const calls: string[] = [];
+        const moveTo = (x: number, z: number, level = sdk.state!.player!.level) => sdk.tick(s => ({ player: { ...s.player!, worldX: x, worldZ: z, level } }));
+        const bot = {
+            async walkTo(x: number, z: number) {
+                calls.push(`walkTo ${x},${z},${sdk.state!.player!.level}`);
+                moveTo(x, z);
+                return { success: true, message: 'there' };
+            },
+            async interactLoc(loc: { name: string }, op: string | RegExp) {
+                const p = sdk.state!.player!;
+                calls.push(`${loc.name} ${String(op)}`);
+                if (/climb-up/i.test(String(op))) moveTo(p.worldX, p.worldZ, p.level + 1);
+                else if (/climb-down/i.test(String(op))) moveTo(p.worldX, p.worldZ, p.level - 1);
+                else if (loc.name === 'Tree Door') moveTo(2465, p.worldZ > 3492 ? 3490 : 3494);
+                else if (loc.name === 'Gate') moveTo(2461, p.worldZ > 3383 ? 3382 : 3385);
+                return { success: true, message: 'ok' };
+            }
+        };
+        const ctx = { bot, sdk, account: 'cairn_h99', options: {}, log: () => {}, reportBank: () => {}, signal: new AbortController().signal } as unknown as RoleContext;
+        return { buyer: new Buyer(ctx), sdk, calls };
+    }
+
+    test('from Varrock: through the Stronghold gate and the tree doors, up the ladder, to Heckel on the first floor', async () => {
+        const { buyer, sdk, calls } = stronghold(BANKS.varrockWest);
+        expect(await buyer.walk(SHOPS.heckel!.stand)).toBe(true);
+        expect(calls).toEqual([
+            'walkTo 2461,3382,0', 'Gate /^open$/i',
+            'walkTo 2465,3490,0', 'Tree Door /^open$/i',
+            'walkTo 2466,3494,0', 'Ladder Climb-up',
+            'walkTo 2493,3488,1'
+        ]);
+        expect(sdk.state!.player).toMatchObject({ worldX: 2493, worldZ: 3488, level: 1 });
+    });
+
+    test('from Hudo to the bank stays upstairs; from the bank home goes back down the ladder and out the doors and gate', async () => {
+        const { buyer, calls } = stronghold(SHOPS.hudo!.stand);
+        expect(await buyer.walk(BANKS.gnomeStronghold)).toBe(true);
+        expect(calls).toEqual(['walkTo 2449,3482,1']);
+        calls.length = 0;
+        expect(await buyer.walk(BANKS.varrockWest)).toBe(true);
+        expect(calls).toEqual([
+            'walkTo 2466,3494,1', 'Ladder Climb-down',
+            'walkTo 2465,3494,0', 'Tree Door /^open$/i',
+            'walkTo 2461,3385,0', 'Gate /^open$/i',
+            `walkTo ${BANKS.varrockWest.x},${BANKS.varrockWest.z},0`
+        ]);
     });
 });
 

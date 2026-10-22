@@ -1,0 +1,492 @@
+# tickmanip-cycle tree-knife level=99 phase=0 rolls=30 until=0 dismiss=now reanchor=click xplag=0 gate=off lead=auto demo=true inject-late=0 host=rs-ashburn-run at=2026-10-21T20:17:34.697Z
+setup tick=117 pos=3194,3230 xp=51875 level=56
+T118 send click loc 1276@3191,3234 op1
+T118 bootstrap phase 0
+T122 send knife slot18 on logs slot1
+T122 send button 8889
+T122 send click loc 1276@3191,3234 op1
+T123 MSG You swing your axe at the tree.
+T125 XP +625 (total 52500)
+T125 MSG You get some logs.
+T125 send knife slot18 on logs slot1
+T125 send button 8889
+T125 send drop Logs slot4
+T125 send click loc 1276@3191,3234 op1
+T126 resync (target gone), next phase 0
+T131 send click loc 1276@3189,3229 op1
+T131 bootstrap phase 0
+T134 MSG You swing your axe at the tree.
+T135 send knife slot18 on logs slot1
+T135 send button 8889
+T135 send click loc 1276@3189,3229 op1
+T136 XP +625 (total 53125)
+T136 MSG You swing your axe at the tree.
+T136 MSG You get some logs.
+T137 resync (target gone), next phase 0
+T142 send click loc 1276@3186,3233 op1
+T142 bootstrap phase 0
+T145 MSG You swing your axe at the tree.
+T146 send knife slot18 on logs slot1
+T146 send button 8889
+T146 send drop Logs slot4
+T146 send click loc 1276@3186,3233 op1
+T147 XP +625 (total 53750)
+T147 LEVEL 57
+T147 MSG You swing your axe at the tree.
+T147 MSG You get some logs.
+T148 MSG Congratulations, you just advanced a woodcutting level.
+T148 DIALOG open at 3188,3233: 
+T148 send dismiss dialog
+T148 resync (target gone), next phase 0
+T149 DIALOG closed (open 1 ticks)
+T153 send click loc 1278@3183,3238 op1
+T153 bootstrap phase 0
+T157 send knife slot18 on logs slot1
+T157 send button 8889
+T157 send drop Logs slot4
+T157 send click loc 1278@3183,3238 op1
+T158 MSG You swing your axe at the tree.
+T160 send knife slot18 on logs slot1
+T160 send button 8889
+T160 send click loc 1278@3183,3238 op1
+T161 MSG You swing your axe at the tree.
+T163 XP +625 (total 54375)
+T163 MSG You get some logs.
+T163 send knife slot18 on logs slot1
+T163 send button 8889
+T163 send drop Logs slot4
+T163 send click loc 1278@3183,3238 op1
+T164 resync (target gone), next phase 0
+T169 send click loc 1278@3187,3239 op1
+T169 bootstrap phase 0
+T172 MSG You swing your axe at the tree.
+T173 send knife slot18 on logs slot1
+T173 send button 8889
+T173 send click loc 1278@3187,3239 op1
+T174 XP +625 (total 55000)
+T174 MSG You swing your axe at the tree.
+T174 MSG You get some logs.
+T175 resync (target gone), next phase 0
+T180 send click loc 1278@3185,3241 op1
+T180 bootstrap phase 0
+T183 MSG You swing your axe at the tree.
+T184 send knife slot18 on logs slot1
+T184 send button 8889
+T184 send drop Logs slot4
+T184 send click loc 1278@3185,3241 op1
+T185 XP +625 (total 55625)
+T185 MSG You swing your axe at the tree.
+T185 MSG You get some logs.
+T186 resync (target gone), next phase 0
+T191 send click loc 1276@3190,3241 op1
+T191 bootstrap phase 0
+T195 send knife slot18 on logs slot1
+T195 send button 8889
+T195 send drop Logs slot4
+T195 send click loc 1276@3190,3241 op1
+T196 MSG You swing your axe at the tree.
+T198 XP +625 (total 56250)
+T198 MSG You get some logs.
+T198 send knife slot18 on logs slot1
+T198 send button 8889
+T198 send drop Logs slot4
+T198 send click loc 1276@3190,3241 op1
+T199 resync (target gone), next phase 0
+T204 send click loc 1276@3192,3238 op1
+T204 bootstrap phase 0
+T207 MSG You swing your axe at the tree.
+T208 send knife slot18 on logs slot1
+T208 send button 8889
+T208 send click loc 1276@3192,3238 op1
+T209 MSG You swing your axe at the tree.
+T211 send knife slot18 on logs slot1
+T211 send button 8889
+T211 send click loc 1276@3192,3238 op1
+T212 MSG You swing your axe at the tree.
+T213 XP +625 (total 56875)
+T213 MSG You get some logs.
+T214 resync (target gone), next phase 0
+T219 send click loc 1276@3193,3244 op1
+T219 bootstrap phase 0
+T223 send knife slot18 on logs slot1
+T223 send button 8889
+T223 send drop Logs slot4
+T223 send click loc 1276@3193,3244 op1
+T224 MSG You swing your axe at the tree.
+T226 XP +625 (total 57500)
+T226 MSG You get some logs.
+T226 send knife slot18 on logs slot1
+T226 send button 8889
+T226 send drop Logs slot4
+T226 send click loc 1276@3193,3244 op1
+T227 resync (target gone), next phase 0
+T232 send click loc 1276@3196,3242 op1
+T232 bootstrap phase 0
+T235 MSG You swing your axe at the tree.
+T236 send knife slot18 on logs slot1
+T236 send button 8889
+T236 send click loc 1276@3196,3242 op1
+T237 XP +625 (total 58125)
+T237 LEVEL 58
+T237 MSG You swing your axe at the tree.
+T237 MSG You get some logs.
+T238 MSG Congratulations, you just advanced a woodcutting level.
+T238 DIALOG open at 3195,3243: 
+T238 send dismiss dialog
+T238 resync (target gone), next phase 0
+T239 DIALOG closed (open 1 ticks)
+T243 send click loc 1276@3197,3247 op1
+T243 bootstrap phase 0
+T247 MSG You swing your axe at the tree.
+T247 send knife slot18 on logs slot1
+T247 send button 8889
+T247 send drop Logs slot4
+T247 send click loc 1276@3197,3247 op1
+T248 MSG You swing your axe at the tree.
+T249 XP +625 (total 58750)
+T249 MSG You get some logs.
+T250 resync (target gone), next phase 0
+T255 send click loc 1278@3200,3243 op1
+T255 bootstrap phase 0
+T258 MSG You swing your axe at the tree.
+T259 send knife slot18 on logs slot1
+T259 send button 8889
+T259 send drop Logs slot4
+T259 send click loc 1278@3200,3243 op1
+T260 XP +625 (total 59375)
+T260 MSG You swing your axe at the tree.
+T260 MSG You get some logs.
+T261 resync (target gone), next phase 0
+T266 send click loc 1278@3200,3246 op1
+T266 bootstrap phase 0
+T269 MSG You swing your axe at the tree.
+T270 send knife slot18 on logs slot1
+T270 send button 8889
+T270 send drop Logs slot4
+T270 send click loc 1278@3200,3246 op1
+T271 MSG You swing your axe at the tree.
+T273 send knife slot18 on logs slot1
+T273 send button 8889
+T273 send click loc 1278@3200,3246 op1
+T274 MSG You swing your axe at the tree.
+T276 send knife slot18 on logs slot1
+T276 send button 8889
+T276 send click loc 1278@3200,3246 op1
+T277 MSG You swing your axe at the tree.
+T279 send knife slot18 on logs slot1
+T279 send button 8889
+T279 send click loc 1278@3200,3246 op1
+T280 MSG You swing your axe at the tree.
+T282 send knife slot18 on logs slot1
+T282 send button 8889
+T282 send click loc 1278@3200,3246 op1
+T283 MSG You swing your axe at the tree.
+T285 send knife slot18 on logs slot1
+T285 send button 8889
+T285 send click loc 1278@3200,3246 op1
+T286 MSG You swing your axe at the tree.
+T288 send knife slot18 on logs slot1
+T288 send button 8889
+T288 send click loc 1278@3200,3246 op1
+T289 MSG You swing your axe at the tree.
+T291 send knife slot18 on logs slot1
+T291 send button 8889
+T291 send click loc 1278@3200,3246 op1
+T292 MSG You swing your axe at the tree.
+T292 resync (no xp), next phase 1
+T294 XP +625 (total 60000)
+T294 MSG You get some logs.
+T297 send click loc 1278@3200,3240 op1
+T297 bootstrap phase 1
+T302 MSG You swing your axe at the tree.
+T302 send knife slot18 on logs slot1
+T302 send button 8889
+T302 send drop Logs slot4
+T302 send click loc 1278@3200,3240 op1
+T303 MSG You swing your axe at the tree.
+T305 send knife slot18 on logs slot1
+T305 send button 8889
+T305 send click loc 1278@3200,3240 op1
+T306 MSG You swing your axe at the tree.
+T308 XP +625 (total 60625)
+T308 MSG You get some logs.
+T308 send knife slot18 on logs slot1
+T308 send button 8889
+T308 send drop Logs slot4
+T308 send click loc 1278@3200,3240 op1
+T309 resync (target gone), next phase 1
+T314 send click loc 1276@3198,3236 op1
+T314 bootstrap phase 1
+T316 HP 10 -> 9 at 3199,3239
+T319 MSG You swing your axe at the tree.
+T319 send knife slot18 on logs slot1
+T319 send button 8889
+T319 send click loc 1276@3198,3236 op1
+T320 MSG You swing your axe at the tree.
+T320 HP 9 -> 8 at 3199,3238
+T321 XP +625 (total 61250)
+T321 MSG You get some logs.
+T322 resync (target gone), next phase 1
+T327 send click loc 1276@3192,3238 op1
+T327 bootstrap phase 1
+T332 MSG You swing your axe at the tree.
+T332 send knife slot18 on logs slot1
+T332 send button 8889
+T332 send drop Logs slot4
+T332 send click loc 1276@3192,3238 op1
+T333 MSG You swing your axe at the tree.
+T335 send knife slot18 on logs slot1
+T335 send button 8889
+T335 send click loc 1276@3192,3238 op1
+T336 MSG You swing your axe at the tree.
+T338 XP +625 (total 61875)
+T338 LEVEL 59
+T338 MSG You get some logs.
+T338 send knife slot18 on logs slot1
+T338 send button 8889
+T338 send drop Logs slot4
+T338 send click loc 1276@3192,3238 op1
+T339 MSG Congratulations, you just advanced a woodcutting level.
+T339 DIALOG open at 3194,3238: 
+T339 send dismiss dialog
+T339 resync (target gone), next phase 1
+T340 HP 8 -> 7 at 3194,3238
+T340 DIALOG closed (open 1 ticks)
+T344 HP 7 -> 6 at 3194,3238
+T344 send click loc 1276@3190,3241 op1
+T344 bootstrap phase 1
+T348 MSG You swing your axe at the tree.
+T349 send knife slot18 on logs slot1
+T349 send button 8889
+T349 send click loc 1276@3190,3241 op1
+T350 MSG You swing your axe at the tree.
+T352 HP 6 -> 5 at 3192,3241
+T352 send knife slot18 on logs slot1
+T352 send button 8889
+T352 send click loc 1276@3190,3241 op1
+T353 MSG You swing your axe at the tree.
+T355 send knife slot18 on logs slot1
+T355 send button 8889
+T355 send click loc 1276@3190,3241 op1
+T356 MSG You swing your axe at the tree.
+T358 XP +625 (total 62500)
+T358 MSG You get some logs.
+T358 send knife slot18 on logs slot1
+T358 send button 8889
+T358 send drop Logs slot4
+T358 send click loc 1276@3190,3241 op1
+T359 resync (target gone), next phase 1
+T364 send click loc 1276@3193,3244 op1
+T364 bootstrap phase 1
+T366 MSG Congratulations, you just advanced an attack level.
+T366 DIALOG open at 3193,3243: 
+T366 send dismiss dialog
+T367 MSG You swing your axe at the tree.
+T367 DIALOG closed (open 1 ticks)
+T369 XP +625 (total 63125)
+T369 MSG You get some logs.
+T369 send knife slot18 on logs slot1
+T369 send button 8889
+T369 send drop Logs slot4
+T369 send click loc 1276@3193,3244 op1
+T370 resync (target gone), next phase 1
+T375 send click loc 1276@3196,3242 op1
+T375 bootstrap phase 1
+T377 MSG You swing your axe at the tree.
+T380 send knife slot18 on logs slot1
+T380 send button 8889
+T380 send click loc 1276@3196,3242 op1
+T381 MSG You swing your axe at the tree.
+T383 send knife slot18 on logs slot1
+T383 send button 8889
+T383 send click loc 1276@3196,3242 op1
+T384 MSG You swing your axe at the tree.
+T384 HP 5 -> 4 at 3195,3243
+T386 send knife slot18 on logs slot1
+T386 send button 8889
+T386 send click loc 1276@3196,3242 op1
+T387 MSG You swing your axe at the tree.
+T389 send knife slot18 on logs slot1
+T389 send button 8889
+T389 send click loc 1276@3196,3242 op1
+T390 MSG You swing your axe at the tree.
+T392 XP +625 (total 63750)
+T392 MSG You get some logs.
+T392 HP 4 -> 3 at 3195,3243
+T392 send knife slot18 on logs slot1
+T392 send button 8889
+T392 send drop Logs slot4
+T392 send click loc 1276@3196,3242 op1
+T393 resync (target gone), next phase 1
+T396 HP 3 -> 2 at 3195,3243
+T398 send click loc 1276@3197,3247 op1
+T398 bootstrap phase 1
+T401 MSG You swing your axe at the tree.
+T401 HP 2 -> 3 at 3197,3246
+T402 XP +625 (total 64375)
+T402 MSG You get some logs.
+T403 resync (target gone), next phase 1
+T408 send click loc 1278@3200,3243 op1
+T408 bootstrap phase 1
+T411 MSG You swing your axe at the tree.
+T413 send knife slot18 on logs slot1
+T413 send button 8889
+T413 send drop Logs slot4
+T413 send click loc 1278@3200,3243 op1
+T414 MSG You swing your axe at the tree.
+T416 send knife slot18 on logs slot1
+T416 send button 8889
+T416 send click loc 1278@3200,3243 op1
+T417 MSG You swing your axe at the tree.
+T419 XP +625 (total 65000)
+T419 MSG You get some logs.
+T419 send knife slot18 on logs slot1
+T419 send button 8889
+T419 send drop Logs slot4
+T419 send click loc 1278@3200,3243 op1
+T420 resync (target gone), next phase 1
+T425 send click loc 1278@3200,3246 op1
+T425 bootstrap phase 1
+T427 MSG You swing your axe at the tree.
+T429 XP +625 (total 65625)
+T429 MSG You get some logs.
+T430 resync (target gone), next phase 1
+T431 HP 3 -> 2 at 3200,3245
+T435 send click loc 1278@3200,3240 op1
+T435 bootstrap phase 1
+T440 send knife slot18 on logs slot1
+T440 send button 8889
+T440 send drop Logs slot4
+T440 send click loc 1278@3200,3240 op1
+T441 MSG You swing your axe at the tree.
+T443 XP +625 (total 66250)
+T443 LEVEL 60
+T443 MSG You get some logs.
+T443 send knife slot18 on logs slot1
+T443 send button 8889
+T443 send drop Logs slot4
+T443 send click loc 1278@3200,3240 op1
+T444 MSG Congratulations, you just advanced a woodcutting level.
+T444 DIALOG open at 3200,3242: 
+T444 send dismiss dialog
+T444 resync (target gone), next phase 1
+T447 DIALOG closed (open 3 ticks)
+T449 send click loc 1276@3198,3236 op1
+T449 bootstrap phase 1
+T453 XP +625 (total 66875)
+T453 MSG You swing your axe at the tree.
+T453 MSG You get some logs.
+T454 resync (target gone), next phase 1
+T459 send click loc 1276@3192,3238 op1
+T459 bootstrap phase 1
+T464 MSG You swing your axe at the tree.
+T464 send knife slot18 on logs slot1
+T464 send button 8889
+T464 send drop Logs slot4
+T464 send click loc 1276@3192,3238 op1
+T465 MSG You swing your axe at the tree.
+T466 XP +625 (total 67500)
+T466 MSG You get some logs.
+T467 resync (target gone), next phase 1
+T471 MSG Congratulations, you just advanced an attack level.
+T471 DIALOG open at 3194,3238: 
+T471 send dismiss dialog
+T472 HP 2 -> 1 at 3194,3238
+T472 DIALOG closed (open 1 ticks)
+T472 send click loc 1276@3190,3241 op1
+T472 bootstrap phase 1
+T476 MSG You swing your axe at the tree.
+T477 send knife slot18 on logs slot1
+T477 send button 8889
+T477 send drop Logs slot4
+T477 send click loc 1276@3190,3241 op1
+T478 XP +625 (total 68125)
+T478 MSG You swing your axe at the tree.
+T478 MSG You get some logs.
+T479 resync (target gone), next phase 1
+T484 send click loc 1276@3193,3244 op1
+T484 bootstrap phase 1
+T486 MSG You swing your axe at the tree.
+T489 send knife slot18 on logs slot1
+T489 send button 8889
+T489 send drop Logs slot4
+T489 send click loc 1276@3193,3244 op1
+T490 MSG You swing your axe at the tree.
+T491 XP +625 (total 68750)
+T491 MSG You get some logs.
+T492 resync (target gone), next phase 1
+T497 send click loc 1276@3196,3242 op1
+T497 bootstrap phase 1
+T499 XP +625 (total 69375)
+T499 MSG You swing your axe at the tree.
+T499 MSG You get some logs.
+T500 resync (target gone), next phase 1
+T501 HP 1 -> 2 at 3195,3243
+T505 HP 2 -> 1 at 3195,3243
+T505 send click loc 1276@3197,3247 op1
+T505 bootstrap phase 1
+T509 MSG You swing your axe at the tree.
+T510 HP 1 -> 0 at 3197,3246
+T510 send knife slot18 on logs slot1
+T510 send button 8889
+T510 send drop Logs slot4
+T510 send click loc 1276@3197,3247 op1
+T513 send knife slot18 on logs slot1
+T513 send button 8889
+T513 send drop Logs slot4
+T513 send click loc 1276@3197,3247 op1
+T516 MSG Oh dear you are dead!
+T516 HP 0 -> 10 at 3222,3217
+T516 resync (target gone), next phase 1
+T521 send click loc 1278@3235,3230 op1
+T521 bootstrap phase 1
+T526 send knife slot1 on logs slot2
+T526 send button 8889
+T526 send click loc 1278@3235,3230 op1
+T529 send knife slot1 on logs slot2
+T529 send button 8889
+T529 send click loc 1278@3235,3230 op1
+T532 send knife slot1 on logs slot2
+T532 send button 8889
+T532 send click loc 1278@3235,3230 op1
+T533 MSG You swing your axe at the tree.
+T535 XP +625 (total 70000)
+T535 MSG You get some logs.
+T535 send knife slot1 on logs slot2
+T535 send button 8889
+T535 send click loc 1278@3235,3230 op1
+T536 resync (target gone), next phase 1
+T538 MSG You carefully cut the wood into 15 arrow shafts.
+T538 MSG Congratulations, you just advanced a fletching level.
+T538 DIALOG open at 3235,3229: 
+T538 send dismiss dialog
+T541 send dismiss dialog
+T541 send click loc 1278@3225,3232 op1
+T541 bootstrap phase 1
+T543 DIALOG closed (open 5 ticks)
+T546 send knife slot1 on logs slot3
+T546 send button 8889
+T546 send click loc 1278@3225,3232 op1
+T547 MSG You swing your axe at the tree.
+T549 send knife slot1 on logs slot3
+T549 send button 8889
+T549 send click loc 1278@3225,3232 op1
+T550 MSG You swing your axe at the tree.
+T552 XP +625 (total 70625)
+T552 MSG You get some logs.
+segment: from start T117 to last xp T552: 435 ticks, 30 catches, 14.50 ticks per catch, base 750.0, 1.72 base per tick
+level-ups 4: gap from the level's drop to the next 10:1 12:1 16:1 20:1; re-anchored after 4
+  L57@T147:16R L58@T237:12R L59@T338:20R L60@T443:10R
+spot moves 0: spanning gaps 
+  
+logs given during the run 0
+starters held a label (--inject-late=0): 0
+gate: off
+levels reached: 57@T147 58@T237 59@T338 60@T443
+mode=tree-knife level=99 phase=0 xpEvents=30 gapsCounted=0 breaks=31 resyncs=30 finalPhase=1 dialogs=7
+gap histogram (ticks:count) 
+min gap 0, gcd of gaps 0, span 427 ticks, ticks per xp event 14.72
+rolls in span at cycle ?: ?; success fraction ?
+game xp 18750 (base 750), base xp per tick over span 1.76
+end inventory: logs 2, arrow shafts 15, shrimps 0, packets sent 244
+log /home/ubuntu/rs130/out/20261021T2015-overlay/knife/r1-knife.log

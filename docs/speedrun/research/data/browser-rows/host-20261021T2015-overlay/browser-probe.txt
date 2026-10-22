@@ -1,0 +1,9 @@
+probe start 2026-10-21 13:17:10 PDT: bun docs/speedrun/scripts/tickmanip-latency.ts "$BOT" --no-tele --trials="$TRIALS"
+probe from rs-ashburn-run at 2026-10-21T20:17:10.733Z, server rs-sdk-demo.fly.dev
+latency in ticks (label of the step - label sent): 1:59 2:1  (60 trials, 0 lost, 62 ticks)
+on time 59/60; dominant 1 ticks (98%, lead 0); consecutive trials agree 97%
+sequence: 111111111111111121111111111111111111111111111111111111111111
+gate at plain cycle 4: p 0.98, predicted knife 3.07 vs plain 4 -> manipulate, lead 0
+state publication interval ms: p10 221 p50 304 p90 363 max 519
+send resolve ms: p50 4 p90 5 max 16
+probe end 2026-10-21 13:17:29 PDT, exit 0

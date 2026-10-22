@@ -29,7 +29,11 @@ the scored account its dragon bones in two places (SUPPLIES.md, H4.1-H4.16 and H
   name pattern and a count or `all`. The courier takes only an ask written after it saw the trade
   open (less 300 ms for the two clients' frame arrivals) and newer than the last one it served, so
   an earlier trade's ask is never sized onto this one. It waits up to `askWaitTicks` (2) observed
-  ticks for it; in the lab it was always there on the open frame (`openToAsk` 0).
+  ticks for it; in the lab it was always there on the open frame (`openToAsk` 0). The wait is
+  `altar-cue.ts` `awaitAsk`, which the trade giver's top-up packages share ([mule.md](mule.md)).
+  An ask may carry a `scope`. The courier's carry none, and the courier takes only an unscoped
+  ask, so an ask scoped to the trade giver (family `mule`) can never be served by the courier,
+  and the other way round.
 - **Keeping up.** The courier steps toward a side tile in bounded steps (`stepToSide`): it sends
   the walk without awaiting the walk's action result, then re-reads after at most 4 observed ticks
   or as soon as the account moves. Awaiting the result (`standOn`) stalled it for 180-350 ticks at
@@ -48,6 +52,19 @@ the scored account its dragon bones in two places (SUPPLIES.md, H4.1-H4.16 and H
   lost 6 of 17 due top-ups that way while it held Chebyshev distance 1 (`lab/measure-thieving.ts`).
   The giver picks the nearest of the four orthogonal tiles that no NPC stands on, so never the
   knight's (`sideTiles`); a side the walk cannot reach falls through to the next.
+- **Never across a wall edge (S18).** A side tile counts only if no wall lies on the edge between
+  it and the scored account (`wallBetween`, `onOpenSide`). The stunned account cannot step, so a
+  request across a wall draws 'I can't reach that!' and dies on its own tick (rs/454's engine
+  probe; this was the ~1 in 40 unanswered top-ups, 6 of 191 in the lab). The Ardougne knights'
+  area has walled columns: x=2672 carries an east-edge wall at z 3299-3303 and 3306-3310. The wall
+  is read from either tile's directional wall flag in the SDK pathfinder's collision map
+  (`sdk/pathfinding.ts` `isFlagged`, rsmod's `CollisionFlag.WALL_*`), the map every helper launch
+  already loads, so the helper keeps no map of its own. A blocking loc such as a stall is no wall:
+  a stall tile with an open shared edge stays a side. The same rule decides whether the courier is
+  already on a side, so one standing across a wall re-steps rather than waiting there. With every
+  side walled or taken by an NPC, `stepToSide` faults with 'no free side tile' as before. One gap:
+  the SDK map clears the wall at door positions so routes pass through them, so a closed door on
+  the shared edge is not seen.
 
 The receiver is never named: it is whoever in sight matches the receiver hash in the cue
 directory's `cue.json` (`altar-cue.ts`), which the scored side writes at login. The giver reads
@@ -64,7 +81,7 @@ S07 has four givers, cairn_b01-b04, because one restock round trip is longer tha
 - **Only the server keeps a request standing.** The others wait loaded on the same tile (players stack) with phase `waiting` and detail `queued behind <server>`. They re-read the order every tick or two.
 - **Overlap:** two givers that start requesting on one frame resolve by the same order. The one that has waited less stands down.
 - **After its trade** the server restocks, and its `readyAt` clears, so the next in line takes over within a tick. A request that came to nothing, or a turn waited out, keeps a giver on its tile and its place in the order.
-- **The scored side** names its trade partner by the same rule: `boneServer(readBoneStatuses(cueDir), group, Date.now())` before each load's `receiveFrom`. The stand-in does this with `givers: [...]`. woodcutting.ts still takes a single `bones.giver` name, and making it take the group is the step's half (rs/147, landing as rs/436).
+- **The scored side** names its trade partner by the same rule: `boneServer(readBoneStatuses(cueDir), group, Date.now())` before each load's `receiveFrom`. Both the S07 step (`woodcutting.ts` `bones.group`) and the stand-in (`givers: [...]`) take it from `awaitBoneServer`, which waits on observed ticks while no giver serves and gives up after `SERVER_WAIT_TICKS` (400). The step also writes the S07 bone cue the givers read (`skills/woodcutting.md` section 9, "The giver group").
 - **The last load and its runes.** With a group, `trades` counts the group's loads: the sum of the givers' `trades` in their status files for the current cue session (`groupLoadsDone`). A file from another run, with another session, counts for nothing. S07's last load also hands over T07-08's runes, and the group never knows ahead of time whose turn that will be, because the first round's order comes from who reaches the tile first (b02, b03, b01, b04 on the demo). So **exactly one** giver's entry carries `finalExtras`, and every giver carries `trades` set to S07's load count. That giver is marked `final` in its status. It carries a whole load plus the runes on every trip, and offers the runes only on the group's last load. `boneServer` gives it that load and gives it to no one else. It also passes the final giver over for any load within one rotation of the last (fewer than group-size loads before it), so the final giver is back from its last bank trip and waiting when the last load comes. If the rotation lines up, the final giver's normal turn is already the last load and nothing changes. Otherwise it swaps one turn with the giver after it. The scored step just accepts the runes on its last load, whoever serves it. After the last load there is no server, and the givers end. Only the final giver's bank is staged with the runes (law 1, air 5). For S07 that giver is **cairn_b04** (rs/158's ruling, SUPPLIES.md H4 and T07-08).
 - **Relaunch.** A relaunched giver reads its own status file before it first writes one. If the file's session matches the first cue it sees, it carries on from that file's `trades` (logged `resumed`), so the group's count survives a relaunch. A new session counts from zero.
 

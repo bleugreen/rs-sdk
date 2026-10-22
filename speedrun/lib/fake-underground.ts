@@ -1,11 +1,11 @@
-// Test fixtures for the Dwarven Mine and the Mining Guild cellar (underground.ts): the
-// guild door and the ladders as the server runs them, and a walkTo that, like the SDK
-// pathfinder, never leaves the map it starts on.
+// Test fixtures for the Dwarven Mine, the Mining Guild cellar and Taverley Dungeon
+// (underground.ts): the guild door and the ladders as the server runs them, and a walkTo
+// that, like the SDK pathfinder, never leaves the map it starts on.
 
 import type { BotWorldState, NearbyLoc } from '../../sdk/types';
 import type { FakeSdk, SentAction } from './fake-sdk';
 import type { Tile, TollGateBot } from './toll-gate';
-import { DWARVEN_MINE, GUILD_CELLAR, GUILD_DOOR, GUILD_LADDER, ICE_LADDER, inBox, isUnderground, UNDERGROUND_Z } from './underground';
+import { DWARVEN_MINE, EDGEVILLE_DUNGEON, EDGEVILLE_LADDER, GUILD_CELLAR, GUILD_DOOR, GUILD_LADDER, ICE_LADDER, inBox, isUnderground, TAVERLEY_DUNGEON, TAVERLEY_LADDER, UNDERGROUND_Z } from './underground';
 
 const loc = (id: number, name: string, x: number, z: number, op: string): NearbyLoc =>
     ({ id, name, x, z, level: 0, distance: 1, optionsWithIndex: [{ text: op, opIndex: 1 }], options: [op] }) as NearbyLoc;
@@ -14,7 +14,9 @@ export const doorLoc = loc(GUILD_DOOR.id, 'Door', GUILD_DOOR.at.x, GUILD_DOOR.at
 /** The cellar's ladder is four locs around one tile (map m47_152). */
 export const guildLadderLocs = [[-1, 0], [0, -1], [0, 1], [1, 0]].map(([dx, dz]) => loc(GUILD_LADDER.id, 'Ladder', GUILD_LADDER.at.x + dx!, GUILD_LADDER.at.z + dz!, 'Climb-up'));
 export const iceLadderLoc = loc(ICE_LADDER.id, 'Ladder', ICE_LADDER.at.x, ICE_LADDER.at.z, 'Climb-up');
-const MINE_LOCS = new Set([doorLoc, ...guildLadderLocs, iceLadderLoc]);
+export const taverleyLadderLoc = loc(TAVERLEY_LADDER.id, 'Ladder', TAVERLEY_LADDER.at.x, TAVERLEY_LADDER.at.z, 'Climb-up');
+export const edgevilleLadderLoc = loc(EDGEVILLE_LADDER.id, 'Ladder', EDGEVILLE_LADDER.at.x, EDGEVILLE_LADDER.at.z, 'Climb-up');
+const MINE_LOCS = new Set([doorLoc, ...guildLadderLocs, iceLadderLoc, taverleyLadderLoc, edgevilleLadderLoc]);
 
 const at = (s: BotWorldState): Tile => ({ x: s.player!.worldX, z: s.player!.worldZ });
 const moveTo = (s: BotWorldState, t: Tile) => ({ player: { ...s.player!, worldX: t.x, worldZ: t.z } });
@@ -59,7 +61,8 @@ export function mineWorld(fake: FakeSdk, mining: number): { climbs: Tile[] } {
  */
 export function minePathfinder(fake: FakeSdk, surface?: TollGateBot): { bot: TollGateBot; calls: { to: [number, number]; underground: boolean }[] } {
     const calls: { to: [number, number]; underground: boolean }[] = [];
-    const area = (t: Tile) => (inBox(GUILD_CELLAR, t) ? 'cellar' : inBox(DWARVEN_MINE, t) ? 'mine' : isUnderground(t) ? 'elsewhere' : 'surface');
+    const area = (t: Tile) =>
+        inBox(GUILD_CELLAR, t) ? 'cellar' : TAVERLEY_DUNGEON.some(b => inBox(b, t)) ? 'taverley' : inBox(EDGEVILLE_DUNGEON, t) ? 'edgeville' : inBox(DWARVEN_MINE, t) ? 'mine' : isUnderground(t) ? 'elsewhere' : 'surface';
     const bot: TollGateBot = {
         walkTo: async (x: number, z: number, tol?: number) => {
             const s = fake.state!;

@@ -5,12 +5,27 @@
 // The server drops a click that arrives while a script holds the player (a
 // p_delay, a forced move), and the lite client drops an interaction it
 // believes has no route. Neither says so, so `act` re-sends while the player
-// stands still with no dialogue open. It also re-sends on "I can't reach
+// stands still with no dialogue open, unless the click's script has already
+// answered (a game message, an animation, an interface) to a click sent from an
+// idle player: that click landed, and a re-send would restart its script. It also re-sends on "I can't reach
 // that!", which a door animation or an NPC in the way can cause.
+//
+// Jumps (the jump guard, `settle` and `ClickGuard`): the first click after the
+// player's position jumps is the one most often lost. A scripted move stepped
+// by p_teleport (agility_walk: the Gnome Stronghold gate, the Grand Tree door)
+// still holds the player on the tick it lands, so a click then is dropped; a
+// p_telejump (a teleport, a ladder or stairs, login) does not hold them, but its
+// first click can still miss; and while the browser client rebuilds the region its
+// collision maps are stale, so the SDK refuses world clicks (scene_loading)
+// and the lite client can refuse one as unroutable (cant_reach). So `act` and
+// `talkTo` wait for a settled position (region built, not placed this tick)
+// before the first click, re-send a refused send on the next settled tick, and
+// re-send once a post-jump click that draws no reply within REPLY_TICKS. A
+// click that is not just after a jump and is accepted behaves as before.
 
 import type { BotSDK } from '../../sdk/index';
 import type { BotActions } from '../../sdk/actions';
-import type { BotWorldState, GroundItem, NearbyLoc, NearbyNpc } from '../../sdk/types';
+import { PLAYER_CHAT_TYPES, type BotWorldState, type GroundItem, type NearbyLoc, type NearbyNpc } from '../../sdk/types';
 import { converse, dismissInterrupt, matchInterrupt, type ConverseOptions, type ConverseResult, type ConverseSdk, type Interrupt } from './converse';
 import { pageText, type OptionPattern } from './dialogue';
 import { matchesItem, type ItemPattern } from './items';
@@ -37,7 +52,7 @@ export interface ActOptions {
     interrupts?: readonly Interrupt[];
 }
 
-export interface ActResult {
+export interface ActResult extends JumpCounts {
     ok: boolean;
     /** Click to the first state where `done` held (or to the timeout). */
     ticks: number;
@@ -48,6 +63,171 @@ export interface ActResult {
 }
 
 const CANT_REACH = /can't reach that/i;
+
+// ------------------------------------------------------------------ jumps
+
+/** What the jump guard did for one click; each field is present only when non-zero. */
+export interface JumpCounts {
+    /** Ticks waited before the first click for a settled position (the region built, the player not placed that tick). */
+    settleTicks?: number;
+    /** Re-sends of a send the client refused (cant_reach) or the SDK could not confirm (scene_loading) that drew no reply. */
+    refusedResends?: number;
+    /** Re-sends of a click sent just after a jump that drew no reply within REPLY_TICKS. */
+    unansweredResends?: number;
+}
+
+/** Ticks a post-jump click has to draw a reply before it is re-sent once. */
+export const REPLY_TICKS = 3;
+/** A click sent within this many ticks of the player's last teleport-type update is a post-jump click. */
+export const JUMP_WINDOW = 2;
+/** At most this many re-sends of a refused send per click. */
+export const MAX_REFUSED_RESENDS = 5;
+
+/**
+ * Not yet a position to click from: the client is still building the region (sceneReady false),
+ * or a scripted p_teleport step placed the player this very tick (teleportTick, no jump bit:
+ * agility_walk, the Gnome Stronghold gate, the Grand Tree door), whose script still holds them.
+ * A p_telejump (a ladder, a spell, login) holds nobody, so it does not wait; a click it drops is
+ * caught by ClickGuard's reply check. Clients that publish none of these are always settled.
+ */
+export function unsettled(s: BotWorldState): boolean {
+    return s.sceneReady === false || ((s.player?.teleportTick ?? null) === s.tick && s.player?.teleportJump === false);
+}
+
+/** Wait for a settled position (`unsettled` false); `ticks` is how long that took. */
+export async function settle(sdk: StateSource, maxTicks = 60): Promise<{ ok: boolean; ticks: number }> {
+    const s0 = sdk.getState();
+    if (!s0 || !unsettled(s0)) return { ok: true, ticks: 0 };
+    const r = await waitUntil(sdk, s => !unsettled(s), { maxTicks });
+    return { ok: r.ok, ticks: r.tick - s0.tick };
+}
+
+const refusedSend = (r: unknown) => typeof r === 'object' && r !== null && (r as { success?: unknown }).success === false;
+
+/**
+ * One click and its re-sends under the jump rules. `send` sends it (every re-send of the caller
+ * goes through it too); `step` is fed each published state and re-sends when a refused send can
+ * go out again, or when a post-jump click has drawn no reply in REPLY_TICKS. The reply is
+ * anything the engine does that a dropped click cannot cause: a step, a dialogue or modal, a new
+ * animation, a game message, an inventory change, or the caller's own `answered`.
+ */
+export class ClickGuard {
+    readonly counts: { refusedResends: number; unansweredResends: number } = { refusedResends: 0, unansweredResends: 0 };
+    /**
+     * The last send drew a script's answer (see replyKind): it landed and its script is running
+     * (a loc op that p_delays before its dialogue: Dwarf Cannon's railings, the Wilderness lever,
+     * the spirit trees), so it is never re-sent on idle ticks; re-sending would restart the script.
+     * Only a send from an idle player latches it: when an earlier script was still answering at the
+     * send (busyAt), its later messages and animations are not this click's, and that click may
+     * have been dropped while the script held the player (a climb sent as a potion's boost shows,
+     * before the drink's last message), so it keeps the idle re-send.
+     */
+    scriptAnswered = false;
+    private idleAtSend = true;
+    private refusedAt = -1;
+    private sentAt = -1;
+    private watching = false;
+    private base: ReturnType<typeof snapshot> | null = null;
+
+    constructor(
+        private readonly sdk: StateSource,
+        private readonly click: () => Promise<unknown>,
+        private readonly answered: Pred = () => false,
+        /** Watch the first send for a reply even when it is not just after a jump (S00's first talk after login). */
+        private readonly opts: { alwaysWatch?: boolean } = {}
+    ) {}
+
+    /** Send the click now; a refused send is re-sent from `step`. */
+    async send(): Promise<void> {
+        const s = this.sdk.getState();
+        const tick = s?.tick ?? 0;
+        this.sentAt = tick;
+        this.base = s ? snapshot(s) : null;
+        this.scriptAnswered = false;
+        this.idleAtSend = !s || !busyAt(s);
+        const jumpTick = s?.player?.teleportTick ?? null;
+        // Only the first send after a jump is watched for a reply, and it is re-sent at most once.
+        if (this.counts.unansweredResends === 0 && (this.opts.alwaysWatch || (jumpTick !== null && tick - jumpTick <= JUMP_WINDOW))) this.watching = true;
+        const r = await this.click();
+        // The reply bound runs from the tick the client executed the click (its result came back),
+        // not the tick it was sent: a lagging browser tab can execute it many ticks late (rs/345).
+        this.sentAt = this.sdk.getState()?.tick ?? tick;
+        this.refusedAt = refusedSend(r) ? this.sentAt : -1;
+    }
+
+    /** Feed a published state; true when it re-sent. */
+    step(s: BotWorldState): boolean {
+        if (!this.scriptAnswered && this.idleAtSend && this.base && replyKind(this.base, s) === 'script') this.scriptAnswered = true;
+        if (this.refusedAt >= 0) {
+            // A send reported as scene_loading did go out and may have landed: a reply settles it.
+            if (this.answered(s) || (this.base && replied(this.base, s))) {
+                this.refusedAt = -1;
+                this.watching = false;
+                return false;
+            }
+            if (s.tick <= this.refusedAt || unsettled(s) || this.counts.refusedResends >= MAX_REFUSED_RESENDS) return false;
+            this.counts.refusedResends++;
+            void this.send();
+            return true;
+        }
+        if (!this.watching) return false;
+        if (this.answered(s) || (this.base && replied(this.base, s))) {
+            this.watching = false;
+            return false;
+        }
+        if (s.tick - this.sentAt < REPLY_TICKS || unsettled(s)) return false;
+        this.watching = false;
+        this.counts.unansweredResends++;
+        void this.send();
+        return true;
+    }
+
+    /** The counts as a result's JumpCounts (zero fields left out). */
+    report(settleTicks = 0): JumpCounts {
+        return {
+            ...(settleTicks ? { settleTicks } : {}),
+            ...(this.counts.refusedResends ? { refusedResends: this.counts.refusedResends } : {}),
+            ...(this.counts.unansweredResends ? { unansweredResends: this.counts.unansweredResends } : {}),
+        };
+    }
+}
+
+const invKey = (s: BotWorldState) => s.inventory.map(i => `${i.slot}:${i.id}:${i.count}`).join(',');
+
+function snapshot(s: BotWorldState) {
+    const p = pos(s);
+    return { x: p.x, z: p.z, level: p.level, anim: s.player?.animId ?? -1, inv: invKey(s), messages: s.gameMessages.length ? s.gameMessages.at(-1)!.tick : -1, modal: s.modalOpen };
+}
+
+/**
+ * The engine's first answer to a click since `b` was taken: 'script' when its script has started
+ * (a dialogue or modal, a new animation, a game message, an inventory change), 'moved' when the
+ * only answer is a step, null when nothing yet. Other players' chat, and "I can't reach that!"
+ * (the click failing), are not answers.
+ */
+function replyKind(b: NonNullable<ReturnType<typeof snapshot>>, s: BotWorldState): 'script' | 'moved' | null {
+    // A modal already open at the send (S00's character design) is not an answer.
+    if (s.dialog.isOpen || (s.modalOpen && !b.modal)) return 'script';
+    const anim = s.player?.animId ?? -1;
+    if (anim >= 0 && anim !== b.anim) return 'script';
+    if (s.gameMessages.some(m => m.tick > b.messages && !PLAYER_CHAT_TYPES.includes(m.type) && !CANT_REACH.test(m.text))) return 'script';
+    if (invKey(s) !== b.inv) return 'script';
+    const p = pos(s);
+    return p.x !== b.x || p.z !== b.z || p.level !== b.level ? 'moved' : null;
+}
+
+/** Ticks before a send in which a script's message still marks the player as busy with that script. */
+const BUSY_TICKS = 2;
+
+/** An earlier script is still answering: an animation is playing, or it sent a game message in the last BUSY_TICKS ticks. */
+function busyAt(s: BotWorldState): boolean {
+    if ((s.player?.animId ?? -1) >= 0) return true;
+    return s.gameMessages.some(m => m.tick >= s.tick - BUSY_TICKS && !PLAYER_CHAT_TYPES.includes(m.type) && !CANT_REACH.test(m.text));
+}
+
+function replied(b: NonNullable<ReturnType<typeof snapshot>>, s: BotWorldState): boolean {
+    return replyKind(b, s) !== null;
+}
 
 type DismissSdk = Pick<BotSDK, 'getState' | 'sendClickDialog' | 'clickDialogByText' | 'sendCloseModal'>;
 
@@ -63,10 +243,14 @@ export async function act(sdk: StateSource & Partial<DismissSdk>, click: () => P
     let dismissedKey: string | null = null;
     let dismissedAt = -Infinity;
     let resendAfterInterrupt = false;
-    let sent = t0;
-    let still = t0;
+    const settled = await settle(sdk, opts.maxTicks ?? 60);
+    if (!settled.ok) return { ok: false, ticks: settled.ticks, resends: 0, settleTicks: settled.ticks, reason: 'the region never finished loading' };
+    const guard = new ClickGuard(sdk, click, done);
+    const t1 = sdk.getState()?.tick ?? t0;
+    let sent = t1;
+    let still = t1;
     let last: Tile = pos(sdk);
-    await click();
+    await guard.send();
     const r = await waitUntil(
         sdk,
         s => {
@@ -74,6 +258,11 @@ export async function act(sdk: StateSource & Partial<DismissSdk>, click: () => P
             const p = pos(s);
             if (p.x !== last.x || p.z !== last.z || p.level !== last.level) still = s.tick;
             last = p;
+            if (guard.step(s)) {
+                sent = s.tick;
+                still = s.tick;
+                return false;
+            }
             if (interrupts) {
                 const d = s.dialog;
                 if (d.isOpen) {
@@ -94,23 +283,28 @@ export async function act(sdk: StateSource & Partial<DismissSdk>, click: () => P
                     sent = s.tick;
                     still = s.tick;
                     resends++;
-                    void click();
+                    void guard.send();
                     return false;
                 }
             }
-            if (every <= 0 || resends >= maxResends || s.dialog.isOpen) return false;
+            // The idle re-send is only for a click that drew nothing: one whose script answered has
+            // landed, and re-sending it would restart the script (rs/257: Dwarf Cannon's railing).
+            if (every <= 0 || resends >= maxResends || s.dialog.isOpen || guard.scriptAnswered) return false;
             const refused = messagesSince(s, sent + 1, CANT_REACH).length > 0;
             if (refused || (s.tick - Math.max(sent, still) >= every)) {
                 sent = s.tick;
                 still = s.tick;
                 resends++;
-                void click();
+                void guard.send();
             }
             return false;
         },
         { maxTicks: opts.maxTicks ?? 60 }
     );
-    return { ok: r.ok, ticks: r.tick - t0, resends, ...(interrupts ? { interrupts: dismissed } : {}), ...(r.ok ? {} : { reason: 'timeout' }) };
+    return {
+        ok: r.ok, ticks: r.tick - t0, resends, ...guard.report(settled.ticks),
+        ...(interrupts ? { interrupts: dismissed } : {}), ...(r.ok ? {} : { reason: 'timeout' }),
+    };
 }
 
 export interface ActConverseOptions extends ActOptions, Omit<ConverseOptions, 'until' | 'openTicks'> {
@@ -227,22 +421,36 @@ export interface TalkOptions extends ConverseOptions {
 
 /**
  * Talk to the nearest matching NPC and answer the conversation. A click that
- * opens nothing within `openTicks` is sent again, as a player would. The
- * result's ticks run from the first click.
+ * opens nothing within `openTicks` is sent again, as a player would. Each click
+ * goes out under the jump rules (`ClickGuard`): after a settled position, with a
+ * refused send re-sent on the next tick and a post-jump click that draws no
+ * reply re-sent once, while the conversation listens. The result's ticks run
+ * from the call.
  */
-export async function talkTo(sdk: ActSdk & ConverseSdk, npc: NamePattern | NearbyNpc, choices: OptionPattern[] = [], opts: TalkOptions = {}): Promise<ConverseResult & { npc: NearbyNpc; clicks: number }> {
+export async function talkTo(sdk: ActSdk & ConverseSdk, npc: NamePattern | NearbyNpc, choices: OptionPattern[] = [], opts: TalkOptions = {}): Promise<ConverseResult & JumpCounts & { npc: NearbyNpc; clicks: number }> {
     const n = typeof npc === 'object' && 'index' in npc ? npc : await waitForNpc(sdk, npc, opts.findTicks ?? 10, opts.near);
     if (!n) throw new Error(`no npc ${String(npc)} near ${JSON.stringify(pos(sdk))}`);
     const op = opIndex(n, opts.op ?? /^talk-to$/i) ?? 1;
     const t0 = sdk.getState()?.tick ?? 0;
     const attempts = opts.attempts ?? 3;
+    const settled = await settle(sdk, opts.maxTicks ?? 60);
+    const counts = { refusedResends: 0, unansweredResends: 0 };
     let remaining = choices;
     for (let clicks = 1; ; clicks++) {
+        const guard = new ClickGuard(sdk, () => sdk.sendInteractNpc(n.index, op), s => s.dialog.isOpen);
         const conv = converse(sdk, remaining, opts);
-        await sdk.sendInteractNpc(n.index, op);
-        const r = await conv;
+        const stop = sdk.onStateUpdate(s => void guard.step(s));
+        await guard.send();
+        const r = await conv.finally(stop);
+        counts.refusedResends += guard.counts.refusedResends;
+        counts.unansweredResends += guard.counts.unansweredResends;
         if (r.opened || clicks >= attempts) {
-            return { ...r, startTick: t0, ticks: r.opened ? r.endTick - t0 : 0, npc: n, clicks };
+            const jump: JumpCounts = {
+                ...(settled.ticks ? { settleTicks: settled.ticks } : {}),
+                ...(counts.refusedResends ? { refusedResends: counts.refusedResends } : {}),
+                ...(counts.unansweredResends ? { unansweredResends: counts.unansweredResends } : {}),
+            };
+            return { ...r, ...jump, startTick: t0, ticks: r.opened ? r.endTick - t0 : 0, npc: n, clicks };
         }
         remaining = r.remaining;
     }

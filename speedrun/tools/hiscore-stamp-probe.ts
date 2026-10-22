@@ -9,8 +9,11 @@
 // they print what `hiscore-scrape.ts players` + `analyze` would, without a snapshot.
 // Parsing and stamp grouping live in hiscore-scrape.ts (parsePlayer, analyzeAccount).
 //
-// The board shows a time per row; the exact tick count is in the hover title
-// of each time (`<span title="12,006 ticks">`, web/pages/hiscores.ts). The
+// The board shows a time per row; the exact stamp is in the hover title of
+// each time: `<span title="12,006 ticks">` on the engine's own page
+// (web/pages/hiscores.ts), `<span title="3,601.8 seconds of game time">`
+// (S = 0.3 x ticks, tick rate unchanged) on the demo since about 19:34 UTC
+// 2026-10-22; titleTicks reads both. The
 // player page reads its rows straight from the database, so it shows a write
 // as soon as the login server makes it (only the rank column is cached).
 //

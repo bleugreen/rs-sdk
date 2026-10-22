@@ -25,6 +25,11 @@
 //            helper stand-in as the courier: it brings dragon bones to fill, sharks back to 2, and
 //            the adamant and rune arrowheads once each when the account is down to one tier.
 //            --mode=idle|restart --helper=<bot> [--to=99 --below=2 --bones-below=3]
+//            [--blood=500] the blood runes in Load 0 (S18's share: 30 at N = 100, stun-pack.md 15)
+//            [--superheat[=1|2]] stunPack.superheat (stun-pack.md section 16): Load 0 carries 300
+//            nature runes and ore in place of the bones (skills/thieving.ts superheatLoad, from
+//            Smithing 1: copper and tin for the 12 bronze casts, then iron), the courier brings ore,
+//            and the summary's `stuns` row classes every stun and gives the slip
 // Staging is outside the measured steps. Every step row and every pickpocket end status is
 // printed as a RESULT line; the end statuses carry the gap histograms, skippedTicks, frames,
 // publish, react and loops. Every run also samples the account each tick, and a leg run prints
@@ -39,7 +44,13 @@ import { formatReport, report, TickLog, type TickRow } from '../lib/ticks';
 import { clickBack, decideGiver, decideTradeClick, DROPPED_TICKS, newClickCtx, newGiverCtx, planOffers, sameName, sendTradeClick, tradeOf, type ClickCtx, type GiverCtx, type GiveSpec, type OfferEntry } from '../lib/trade';
 import { waitTicks, waitUntil } from '../lib/wait';
 import { runSteps } from '../runner/step';
-import { type FoodName, type LegMark, steps, type ThievingOptions } from '../skills/thieving';
+import { FOODS, type FoodName, type LegMark, steps, superheatOre, type SuperheatOptions, type ThievingOptions, topUpAsk } from '../skills/thieving';
+import { CueWriter, type CueScope } from '../helpers/altar-cue';
+import { askOffer, BoneGiver } from '../helpers/bone-giver';
+import { memoryRoleState, type RoleContext } from '../helpers/role';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { arg, result } from './common';
 import { cheat, leaveTutorial, near, tele } from './setup';
 
@@ -47,6 +58,9 @@ const bot = process.argv[2] ?? '';
 const mode = process.argv[3] ?? '';
 if (!bot || !mode) throw new Error('usage: measure-thieving.ts <bot> setup|fresh|at|steps|leg [--k=v ...]');
 const where = () => ({ host: hostname(), load: loadavg().map(l => +l.toFixed(1)), at: new Date().toISOString(), tickrate: process.env.NODE_TICKRATE ?? '' });
+
+// the Thieving module writes the courier's ask to the cue directory: a scratch one, never the checkout's
+process.env.RC_CUE_DIR ??= mkdtempSync(join(tmpdir(), 'thieving-cue-'));
 
 const session = await openSession(bot, { client: 'browser', insecureQueryLogin: true });
 const { sdk } = session;
@@ -191,7 +205,15 @@ function runGiver(h: Session, policy: GiverPolicy): { stop: () => void; teles: n
     const out = { teles: 0, stop: () => {}, events: [] as Array<{ tick: number; ev: string }> };
     const ev = (tick: number, e: string) => out.events.push({ tick, ev: e });
     const burst = () => { for (const e of plan) for (const a of e.amounts) void h.sdk.sendOfferItem(e.slot, a); void h.sdk.sendAcceptTrade(); };
-    out.stop = h.sdk.onStateUpdate(hs => {
+    // an exception would otherwise vanish inside the SDK's listener and leave the trade hanging
+    const step = (hs: BotWorldState) => {
+        try {
+            onState(hs);
+        } catch (e) {
+            ev(hs.tick, `error: ${String(e).slice(0, 200)}`);
+        }
+    };
+    const onState = (hs: BotWorldState) => {
         if (!hs?.inGame || hs.tick === lastTick) return;
         lastTick = hs.tick;
         const s = sdk.getState();
@@ -251,7 +273,8 @@ function runGiver(h: Session, policy: GiverPolicy): { stop: () => void; teles: n
             lastTele = hs.tick;
             out.teles++;
         }
-    });
+    };
+    out.stop = h.sdk.onStateUpdate(step);
     return out;
 }
 
@@ -263,13 +286,20 @@ function runGiver(h: Session, policy: GiverPolicy): { stop: () => void; teles: n
  * idle path's request goes out from the page program and is not seen here) and every server
  * op rejection (UNSET_MAP_FLAG, which OpPlayerHandler sends for a click from a delayed player).
  *
- * With `bonesBelow` (the pack) a stun is also due when the account holds fewer bones, and
- * `topUpLog` is one row per due stun: the giver's tile less the account's on +2 (the tick the
- * program decides on) as side, corner, same tile, further or unseen; the tick the request fired
- * (idle: the program's `stun:topup*` counters rising; restart: the module's request click);
- * and whether the trade opened and completed (bones or sharks held went up across it).
+ * With `stock` (the pack) a stun is also due when the account holds fewer of what the pack tops
+ * up (bones, or ore with superheat), and `topUpLog` is one row per due stun: the giver's tile
+ * less the account's on +2 (the tick the program decides on) as side, corner, same tile, further
+ * or unseen; the tick the request fired (idle: the program's `stun:topup*` counters rising;
+ * restart: the module's request click); and whether the trade opened and completed (bones, ore
+ * or sharks held went up across it).
+ *
+ * `stunStats` classes every stun by what its state showed between the failure and the next roll:
+ * a superheat stun (Smithing xp rose, no trade), a bury stun (Prayer xp rose, no trade), a top-up
+ * stun (a trade opened) or a dry one, each with and without a level-up page; the xp ticks' offsets
+ * from the failure; and the slip, superheat stuns' mean failure-to-next less the dry and bury
+ * stuns' (stun-pack.md section 16).
  */
-function trackTopUps(giver: string, below: number, giverEvents: ReadonlyArray<{ tick: number; ev: string }>, bonesBelow?: number) {
+function trackTopUps(giver: string, below: number, giverEvents: ReadonlyArray<{ tick: number; ev: string }>, stock?: { of: (s: BotWorldState) => number; below: number }) {
     const fails: number[] = [], rolls: number[] = [], opens: number[] = [], closes: number[] = [];
     const clicks: number[] = [], rejects: number[] = [];
     const send = sdk.sendTradeRequest.bind(sdk);
@@ -286,16 +316,34 @@ function trackTopUps(giver: string, below: number, giverEvents: ReadonlyArray<{ 
     const seen = new Set<string>();
     let last = -1, wasOpen = false, food = Infinity;
     const bonesOf = (s: BotWorldState) => s.inventory.filter(i => /bones$/i.test(i.name)).reduce((a, i) => a + i.count, 0);
-    const supplies = (s: BotWorldState) => bonesOf(s) + s.inventory.filter(i => /^shark$/i.test(i.name)).length;
+    const oreOf = (s: BotWorldState) => s.inventory.filter(i => /^(iron|copper|tin) ore$/i.test(i.name)).length;
+    const supplies = (s: BotWorldState) => bonesOf(s) + oreOf(s) + s.inventory.filter(i => /^shark$/i.test(i.name)).length;
+    /** Ticks on which a skill's xp rose, and ticks with a dialogue (a level-up page) open. */
+    const xpTicks: Record<'smithing' | 'prayer' | 'magic' | 'fletching', number[]> = { smithing: [], prayer: [], magic: [], fletching: [] };
+    const xpLast: Record<string, number> = {};
+    const pageTicks: number[] = [];
     /** Due stuns (by the +2 state, which is what the program's `fewer` reads), program request ticks, and supplies across each trade. */
     const due: number[] = [], requests: number[] = [], trades: Array<{ open: number; close: number | null; before: number; after: number | null }> = [];
     let reqRun = -1, reqSeen = 0;
+    /** Ticks a bone left the pack (a bury; a trade only adds bones). */
+    const buries: number[] = [];
+    let bonesWas = -1;
     const un = sdk.onStateUpdate((s: BotWorldState) => {
         if (s.tick === last) return;
         last = s.tick;
+        for (const k of Object.keys(xpTicks) as Array<keyof typeof xpTicks>) {
+            const xp = s.skills.find(x => x.name.toLowerCase() === k)?.experience;
+            if (xp === undefined) continue;
+            if (xpLast[k] !== undefined && xp > xpLast[k]!) xpTicks[k].push(s.tick);
+            xpLast[k] = xp;
+        }
+        if (s.dialog?.isOpen) pageTicks.push(s.tick);
+        const b = bonesOf(s);
+        if (bonesWas >= 0) for (let k = b; k < bonesWas; k++) buries.push(s.tick);
+        bonesWas = b;
         const st = programStatus(s);
         if (st && st.name === 'pickpocket') {
-            const n = (st.counters['stun:topup'] ?? 0) + (st.counters['stun:topup:bones'] ?? 0);
+            const n = (st.counters['stun:topup'] ?? 0) + (st.counters['stun:topup:bones'] ?? 0) + (st.counters['stun:topup:ore'] ?? 0);
             if (st.runId !== reqRun) { reqRun = st.runId; reqSeen = 0; }
             for (; reqSeen < n; reqSeen++) requests.push(s.tick);
         }
@@ -315,7 +363,7 @@ function trackTopUps(giver: string, below: number, giverEvents: ReadonlyArray<{ 
             const g = s.nearbyPlayers.find(p => sameName(p.name, giver));
             adjacentAt2[f] = !!g && g.distance <= 1;
             if (g && s.player) offsetAt2[f] = [g.x - s.player.worldX, g.z - s.player.worldZ];
-            if (bonesBelow !== undefined && (food < below || bonesOf(s) < bonesBelow)) due.push(f);
+            if (stock !== undefined && (food < below || stock.of(s) < stock.below)) due.push(f);
         }
         const open = tradeOf(s).isOpen;
         if (open && !wasOpen) { opens.push(s.tick); trades.push({ open: s.tick, close: null, before: supplies(s), after: null }); }
@@ -332,7 +380,9 @@ function trackTopUps(giver: string, below: number, giverEvents: ReadonlyArray<{ 
             const next = rolls.find(r => r > f);
             const open = opens.find(o => o > f && (next === undefined || o < next));
             const close = open === undefined ? undefined : closes.find(c => c >= open);
-            return { f, gap: next === undefined ? null : next - f, open: open === undefined ? null : open - f, close: close === undefined ? null : close - f };
+            // rs/158's measure for the standing request: bones buried after the trade closed, still in this stun
+            const buried = close === undefined ? 0 : buries.filter(t => t > close && (next === undefined || t < next)).length;
+            return { f, gap: next === undefined ? null : next - f, open: open === undefined ? null : open - f, close: close === undefined ? null : close - f, buried };
         }).filter(r => r.gap !== null);
         const stat = (rs: typeof rows) => {
             const hist: Record<number, number> = {};
@@ -345,7 +395,9 @@ function trackTopUps(giver: string, below: number, giverEvents: ReadonlyArray<{ 
         return {
             topUpStuns: topStat, otherStuns: other,
             costPerTopUp: topStat.meanGap !== null && other.meanGap !== null ? +(topStat.meanGap - other.meanGap).toFixed(2) : null,
-            topUps: top.map(r => ({ f: r.f, open: r.open, close: r.close, gap: r.gap })),
+            topUps: top.map(r => ({ f: r.f, open: r.open, close: r.close, gap: r.gap, buried: r.buried })),
+            topUpStunsBurying: top.filter(r => r.buried > 0).length,
+            bonesPerTopUpStun: top.length ? +(top.reduce((a, r) => a + r.buried, 0) / top.length).toFixed(2) : null,
             dueFails: dueFails.length,
             dueNotAdjacent: dueFails.filter(f => adjacentAt2[f] === false).length,
             dueDiagonal: dueFails.filter(f => offsetAt2[f] && offsetAt2[f]![0] !== 0 && offsetAt2[f]![1] !== 0).length,
@@ -388,7 +440,8 @@ function trackTopUps(giver: string, below: number, giverEvents: ReadonlyArray<{ 
             return {
                 f, giverAt2: offsetAt2[f]?.join(',') ?? null, tile: tile(offsetAt2[f]),
                 fired: req === undefined ? null : req - f,
-                opened: tr ? tr.open - f : null, completed: !!tr && tr.after !== null && tr.after > tr.before
+                opened: tr ? tr.open - f : null, closed: tr?.close != null ? tr.close - f : null, completed: !!tr && tr.after !== null && tr.after > tr.before,
+                giver: giverEvents.filter(e => e.tick >= f && e.tick <= f + 16).map(e => `+${e.tick - f} ${e.ev}`)
             };
         });
         const by = (k: string) => rows.filter(r => r.tile === k).length;
@@ -401,43 +454,156 @@ function trackTopUps(giver: string, below: number, giverEvents: ReadonlyArray<{ 
             rows
         };
     };
-    return { stop: () => { un(); sdk.sendTradeRequest = send; }, summary, rollStats, topUpLog };
+    /** The stuns by class (the doc above) and the slip per superheat stun. */
+    const stunStats = () => {
+        const inStun = (ts: readonly number[], f: number, next: number) => ts.filter(t => t > f && t < next);
+        const rows = fails.map(f => {
+            const next = rolls.find(r => r > f);
+            if (next === undefined) return null;
+            const casts = inStun(xpTicks.smithing, f, next), buries = inStun(xpTicks.prayer, f, next);
+            const trade = opens.some(o => o > f && o < next);
+            const pages = inStun(pageTicks, f, next);
+            const page = pages.length > 0;
+            const kind = trade ? 'topup' : casts.length ? 'superheat' : buries.length ? 'bury' : 'dry';
+            return { f, gap: next - f, kind, page, pageFrom: page ? pages[0]! - f : null, casts: casts.map(t => t - f), buries: buries.map(t => t - f) };
+        }).filter((r): r is NonNullable<typeof r> => r !== null);
+        const mean = (a: number[]) => (a.length ? +(a.reduce((x, y) => x + y, 0) / a.length).toFixed(3) : null);
+        const hist = (a: number[]) => { const h: Record<number, number> = {}; for (const v of a) h[v] = (h[v] ?? 0) + 1; return h; };
+        const cls = (pick: (r: (typeof rows)[number]) => boolean) => {
+            const rs = rows.filter(pick);
+            return { n: rs.length, meanGap: mean(rs.map(r => r.gap)), gaps: hist(rs.map(r => r.gap)) };
+        };
+        const byKind: Record<string, ReturnType<typeof cls>> = {};
+        for (const k of ['superheat', 'bury', 'dry', 'topup']) {
+            byKind[k] = cls(r => r.kind === k);
+            byKind[`${k}:page`] = cls(r => r.kind === k && r.page);
+            byKind[`${k}:noPage`] = cls(r => r.kind === k && !r.page);
+        }
+        const sh = byKind.superheat!, ref = cls(r => r.kind === 'dry' || r.kind === 'bury');
+        const shNo = byKind['superheat:noPage']!, refNo = cls(r => (r.kind === 'dry' || r.kind === 'bury') && !r.page);
+        return {
+            byKind,
+            castsPerSuperheatStun: hist(rows.filter(r => r.kind === 'superheat').map(r => r.casts.length)),
+            // the offset a page first showed, and the stun's gap, per class: a page first seen late keeps the attempt waiting
+            pageFrom: Object.fromEntries(['superheat', 'bury', 'dry'].map(k => [k, hist(rows.filter(r => r.kind === k && r.pageFrom !== null).map(r => r.pageFrom!))])),
+            gapByPageFrom: Object.fromEntries(['superheat', 'bury', 'dry'].map(k => {
+                const by: Record<number, number[]> = {};
+                for (const r of rows.filter(x => x.kind === k && x.pageFrom !== null)) (by[r.pageFrom!] ??= []).push(r.gap);
+                return [k, Object.fromEntries(Object.entries(by).map(([o, g]) => [o, { n: g.length, meanGap: mean(g) }]))];
+            })),
+            castOffsets: hist(rows.flatMap(r => r.casts)),
+            buryOffsets: hist(rows.filter(r => r.kind !== 'topup').flatMap(r => r.buries)),
+            topUpBuryOffsets: hist(rows.filter(r => r.kind === 'topup').flatMap(r => r.buries)),
+            slip: sh.meanGap !== null && ref.meanGap !== null ? +(sh.meanGap - ref.meanGap).toFixed(3) : null,
+            slipNoPage: shNo.meanGap !== null && refNo.meanGap !== null ? +(shNo.meanGap - refNo.meanGap).toFixed(3) : null,
+            reference: { n: ref.n, meanGap: ref.meanGap, noPage: refNo }
+        };
+    };
+    return { stop: () => { un(); sdk.sendTradeRequest = send; }, summary, rollStats, topUpLog, stunStats };
 }
 
 /**
- * The pack's courier stand-in (stun-pack.md sections 5 and 6): at each trade it sizes the load from
- * the account's state as the trade opens (nothing else is sent while it is open, so the free slots
- * cannot shrink): sharks back to 2, the adamant and then the rune arrowheads once each when the
- * account is down to one arrowhead tier, and dragon bones in every slot left but one (a new arrow
- * product stack). It keeps 22 bones, 2 sharks and the arrowheads still due, by ::give.
+ * The pack's courier stand-in (stun-pack.md sections 5 and 6): at each trade it reads the account's
+ * state as the trade opens and offers what the Thieving module's ask names (thieving.ts topUpAsk, the
+ * sizing the run's courier gets through the cue directory). It keeps 22 bones, 2 sharks and the
+ * arrowheads still due, by ::give. `--courier=role` runs the run's courier itself instead
+ * (bone-giver.ts, mode on-request; courierRole below).
+ *
+ * With `superheat` the ask carries ore in place of bones (thieving.ts topUpAsk, superheatOre): copper and
+ * tin pairs while bronze casts are due before Smithing 15, iron ore in the rest. The stand-in keeps the
+ * account's next load by ::give, copper and tin at exactly the ask so they go as All (one X a trade,
+ * the iron), and clears its pack when it holds ore no load still wants.
  */
-function courier(): GiverPolicy {
-    const seen = { adamant: false, rune: false };
-    // in-game names are "<tier> arrowtips" (the debug names say arrowheads)
-    const tiers = (s: BotWorldState) => s.inventory.filter(i => /arrow(head|tip)s$/i.test(i.name));
+const ORE_DEBUG: Record<string, string> = { 'copper ore': 'copper_ore', 'tin ore': 'tin_ore', 'iron ore': 'iron_ore' };
+
+/** The ore a load for the account's state brings, as counts to give (thieving.ts superheatOre). */
+function oreLoad(s: BotWorldState, free: number): Array<{ name: string; n: number }> {
+    return superheatOre(s, free).map(l => ({ name: l.name, n: l.give })).filter(e => e.n > 0);
+}
+
+function courier(superheat?: Required<SuperheatOptions>): GiverPolicy {
+    const mem = { tiers: new Set<string>() };
     return {
-        load: (_hs, s) => {
-            if (!s) return [];
-            for (const t of tiers(s)) if (/^adamant/i.test(t.name)) seen.adamant = true; else if (/^rune/i.test(t.name)) seen.rune = true;
-            const sharks = Math.max(0, 2 - s.inventory.filter(i => /^shark$/i.test(i.name)).length);
-            const tier = tiers(s).length <= 1 ? (!seen.adamant ? 'adamant' : !seen.rune ? 'rune' : null) : null;
-            if (tier) seen[tier] = true;
-            const free = 28 - s.inventory.length - (s.inventory.some(i => /^coins$/i.test(i.name)) ? 0 : 1);
-            const bones = Math.max(0, free - sharks - (tier ? 1 : 0) - 1);
-            return [
-                ...(bones > 0 ? [{ item: /^dragon bones$/i, n: bones }] : []),
-                ...(sharks > 0 ? [{ item: /^shark$/i, n: sharks }] : []),
-                ...(tier ? [{ item: new RegExp(`^${tier} arrow(head|tip)s$`, 'i'), n: 'all' as const }] : [])
-            ];
-        },
+        load: (hs, s) => (s ? askOffer({ items: topUpAsk(s, FOODS.shark, true, mem, superheat) }, hs.inventory).specs : []),
         restock: hs => {
             const n = (re: RegExp) => hs.inventory.filter(i => re.test(i.name)).reduce((a, i) => a + i.count, 0);
+            let ore: string[] = [];
+            if (superheat) {
+                const s = sdk.getState();
+                // the account's next full load (its pack less sharks, arrowheads, coins and the arrow
+                // product: 16 slots), counting the bronze casts its held copper and tin still cover
+                const want = s ? oreLoad(s, 28 - 10 - 2) : [];
+                const target = (name: string) => want.find(e => e.name === name)?.n ?? 0;
+                // copper and tin exactly at the next load (offered as All), iron only while a load wants it
+                const stale = Object.keys(ORE_DEBUG).some(name => (name === 'iron ore' ? target(name) === 0 : n(new RegExp(`^${name}$`, 'i')) > target(name)) && n(new RegExp(`^${name}$`, 'i')) > 0);
+                if (stale) return ['~clearinv inv'];
+                const free = 28 - hs.inventory.length;
+                let room = free;
+                ore = Object.entries(ORE_DEBUG).flatMap(([name, debug]) => {
+                    const give = Math.min(room, target(name) - n(new RegExp(`^${name}$`, 'i')));
+                    if (give <= 0) return [];
+                    room -= give;
+                    return [`give ${debug} ${give}`];
+                });
+            }
             return [
-                ...(n(/^dragon bones$/i) < 22 ? [`give dragon_bones ${22 - n(/^dragon bones$/i)}`] : []),
+                ...ore,
+                ...(!superheat && n(/^dragon bones$/i) < 22 ? [`give dragon_bones ${22 - n(/^dragon bones$/i)}`] : []),
                 ...(n(/^shark$/i) < 2 ? [`give shark ${2 - n(/^shark$/i)}`] : []),
-                ...(!seen.adamant && n(/^adamant arrow(head|tip)s$/i) === 0 ? ['give adamant_arrowheads 495'] : []),
-                ...(!seen.rune && n(/^rune arrow(head|tip)s$/i) === 0 ? ['give rune_arrowheads 2595'] : [])
+                ...(!mem.tiers.has('adamant') && n(/^adamant arrow(head|tip)s$/i) === 0 ? ['give adamant_arrowheads 495'] : []),
+                ...(!mem.tiers.has('rune') && n(/^rune arrow(head|tip)s$/i) === 0 ? ['give rune_arrowheads 2595'] : [])
             ];
+        }
+    };
+}
+
+/** The courier's S18 side tile among the knights; it re-steps beside the account from there. */
+const COURIER_SITE = { giver: { x: 2671, z: 3305 }, receiver: { x: 2670, z: 3305 } };
+
+/**
+ * The run's courier (bone-giver.ts, mode on-request) on the helper's session, in this process: the
+ * cue names the account by hash, the module's TopUpAsker writes each ask, and the courier restocks
+ * by ::give (restock kind cheat). Its log lines and trade messages are `events`, for the trace.
+ */
+function courierRole(h: Session, helperBot: string, scored: string, standing: boolean) {
+    const dir = process.env.RC_CUE_DIR!;
+    process.env.HELPER_LAB_TELE = '1';
+    // a launched role has its bot.env's SERVER; restock kind cheat checks it is the local lab
+    process.env.SERVER ??= `localhost:${process.env.WEB_PORT ?? ''}`;
+    const s0 = sdk.getState()!;
+    const scope: CueScope = { step: 'S18', family: 'courier' };
+    new CueWriter(dir, scored, scope).write({ beacons: [{ tick: s0.tick, ms: Date.now() }], turns: [] });
+    const events: Array<{ tick: number; ev: string }> = [];
+    const tick = () => h.sdk.getState()?.tick ?? -1;
+    const seen = new Set<string>();
+    const unMsg = h.sdk.onStateUpdate(hs => {
+        for (const m of hs.gameMessages ?? []) {
+            const key = m.observationId !== undefined ? `o${m.observationId}` : `${m.tick}|${m.text}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            if (/wishes to trade|busy at the moment|^sending trade offer/i.test(m.text)) events.push({ tick: hs.tick, ev: m.text.replace(/^.*(wishes to trade|busy|sending trade offer).*$/i, '$1').toLowerCase() });
+        }
+    });
+    const ac = new AbortController();
+    const options = {
+        mode: 'on-request', item: 'Babydragon bones', hold: 22, refillBelow: 21, standing, scope,
+        restock: { kind: 'cheat' }, sites: [COURIER_SITE],
+        carry: [{ item: 'Shark', count: 2, obj: 'shark' }, { item: 'Adamant arrowtips', count: 495, obj: 'adamant_arrowheads', once: true }, { item: 'Rune arrowtips', count: 2595, obj: 'rune_arrowheads', once: true }]
+    };
+    const ctx: RoleContext = {
+        bot: h.bot, sdk: h.sdk, account: helperBot, options, signal: ac.signal, state: memoryRoleState(), reportBank: () => {},
+        log: (message, data) => {
+            events.push({ tick: tick(), ev: `${message} ${JSON.stringify(data ?? {})}`.slice(0, 240) });
+        }
+    } as RoleContext;
+    const done = new BoneGiver(ctx).run().catch(e => events.push({ tick: tick(), ev: `role error ${String(e).slice(0, 200)}` }));
+    return {
+        events,
+        teles: 0,
+        stop: async () => {
+            ac.abort();
+            await Promise.race([done, Bun.sleep(15_000)]);
+            unMsg();
         }
     };
 }
@@ -520,45 +686,63 @@ switch (mode) {
         const tuMode = arg('mode', 'idle') as 'idle' | 'restart';
         const below = Number(arg('below', '2'));
         const bonesBelow = Number(arg('bones-below', '3'));
-        const helper = await openSession(helperBot, { launch: true, pathfinding: false });
+        const blood = Number(arg('blood', '500'));
+        const shFlag = process.argv.find(a => a === '--superheat' || a.startsWith('--superheat='));
+        const casts = shFlag ? Number(shFlag.split('=')[1] ?? '2') : 0;
+        // --courier=role: the run's courier (bone-giver.ts) instead of the stand-in; --standing turns on its standing request
+        const asRole = arg('courier', 'standin') === 'role';
+        const standing = process.argv.includes('--standing');
+        if (asRole && casts) throw new Error("pack --courier=role --superheat: the run's courier carries no ore yet (rs/41 stages it), so this lab runs with the stand-in only");
+        const helper = await openSession(helperBot, { launch: true, pathfinding: asRole });
         await helper.bot.skipTutorial().catch(() => {});
         await helper.sdk.sendSay('::~clearinv inv');
         // staging, off the clock: SCORED after Monkey Madness and the Mage Arena (stun-pack.md section 3)
         await leaveTutorial(session);
-        for (const [k, v] of [['hitpoints', 97], ['defence', 89], ['prayer', 43], ['magic', 80], ['fletching', 1], ['thieving', 57], ['attack', 70], ['strength', 70], ['ranged', 70]] as const) await say(`setstat ${k} ${v}`);
+        for (const [k, v] of [['hitpoints', 97], ['defence', 89], ['prayer', 43], ['magic', 80], ['fletching', 1], ['thieving', 57], ['attack', 70], ['strength', 70], ['ranged', 70], ['smithing', 1]] as const) await say(`setstat ${k} ${v}`);
         await say('setvar magearena 8');
         await clearInventory();
         await giveAll([['staff_of_fire', 1]]);
         const staff = sdk.getState()!.inventory.find(i => /^staff of fire$/i.test(i.name))!;
         await sdk.sendUseItem(staff.slot, staff.optionsWithIndex.find(o => /wield/i.test(o.text))?.opIndex ?? 2);
         await waitUntil(sdk, s => s.equipment.some(i => /^staff of fire$/i.test(i.name)), { maxTicks: 5 });
-        // Load 0 (H14): runes for 163 casts, headless arrows, bronze to mithril arrowheads, 2 sharks
-        await giveAll([['bloodrune', 500], ['airrune', 500], ['headless_arrow', 3600], ['bronze_arrowheads', 60], ['iron_arrowheads', 90], ['steel_arrowheads', 135], ['mithril_arrowheads', 225], ['shark', 2]]);
+        // Load 0 (H14): runes for 163 casts (or --blood), headless arrows, bronze to mithril arrowheads, 2 sharks;
+        // with superheat its nature runes too
+        const load0: Array<[string, number]> = [['bloodrune', blood], ['airrune', 500], ...(casts ? [['naturerune', 300] as [string, number]] : []), ['headless_arrow', 3600], ['bronze_arrowheads', 60], ['iron_arrowheads', 90], ['steel_arrowheads', 135], ['mithril_arrowheads', 225], ['shark', 2]];
+        await giveAll(load0.filter(([, n]) => n > 0));
         if (!(await tele(sdk, 2670, 3305))) throw new Error('tele to the knights failed');
-        // every free slot less one for coins and one for a new arrow product stack
-        await say(`give dragon_bones ${28 - sdk.getState()!.inventory.length - 2}`);
+        // every free slot less one for coins and one for a new arrow product stack: bones, or the superheat ore
+        const fill = 28 - sdk.getState()!.inventory.length - 2;
+        if (casts) for (const e of oreLoad(sdk.getState()!, fill)) await say(`give ${ORE_DEBUG[e.name]} ${e.n}`);
+        else await say(`give dragon_bones ${fill}`);
         await waitTicks(sdk, 2);
         while (sdk.getState()!.dialog?.isOpen) { await sdk.sendClickDialog(0); await waitTicks(sdk, 1); }
         const giver = helper.sdk.getState()?.player?.name ?? helperBot;
-        const g = runGiver(helper, courier());
-        await waitUntil(sdk, s => s.nearbyPlayers.some(p => sameName(p.name, giver) && Math.abs(p.x - s.player!.worldX) + Math.abs(p.z - s.player!.worldZ) === 1), { maxTicks: 40 });
-        const track = trackTopUps(giver, below, g.events, bonesBelow);
+        const g = asRole ? courierRole(helper, helperBot, sdk.getState()!.player!.name, standing) : runGiver(helper, courier(casts ? { casts, oreBelow: casts } : undefined));
+        await waitUntil(sdk, s => s.nearbyPlayers.some(p => sameName(p.name, giver) && Math.abs(p.x - s.player!.worldX) + Math.abs(p.z - s.player!.worldZ) === 1), { maxTicks: asRole ? 200 : 40 });
+        const oreHeldNow = (s: BotWorldState) => s.inventory.filter(i => /^(iron|copper) ore$/i.test(i.name)).length;
+        const track = trackTopUps(giver, below, g.events, casts ? { of: oreHeldNow, below: casts } : { of: s => s.inventory.filter(i => /bones$/i.test(i.name)).reduce((a, i) => a + i.count, 0), below: bonesBelow });
         const s0 = sdk.getState()!;
-        result('pack', { ...where(), mode: tuMode, giver, below, bonesBelow, hp: s0.player!.hp, inventory: s0.inventory.map(i => `${i.name}x${i.count}`), equipment: s0.equipment.map(i => i.name) });
+        result('pack', { ...where(), mode: tuMode, giver, courier: asRole ? (standing ? 'role, standing' : 'role') : 'stand-in', below, bonesBelow, blood, superheat: casts || false, hp: s0.player!.hp, inventory: s0.inventory.map(i => `${i.name}x${i.count}`), equipment: s0.equipment.map(i => i.name) });
+        const stunPack = casts ? { chargeUnlocked: true, superheat: { casts } } : { bonesBelow, chargeUnlocked: true };
         try {
-            const rows = await runList(steps({ to: Number(arg('to', '99')), food: 'shark', topUp: { giver, below, mode: tuMode }, stunPack: { bonesBelow, chargeUnlocked: true } }).filter(s => s.name === 'thieving:knights'));
+            const rows = await runList(steps({ to: Number(arg('to', '99')), food: 'shark', topUp: { giver, below, mode: tuMode }, stunPack }).filter(s => s.name === 'thieving:knights'));
             const band = rows.find(r => r.step === 'thieving:knights');
             const detail = rows.find(r => r.step === 'thieving:knights:detail')?.meta as { runs?: Array<{ startedTick: number; endedTick?: number }>; pack?: unknown } | undefined;
             const programTicks = (detail?.runs ?? []).reduce((a, r) => a + ((r.endedTick ?? r.startedTick) - r.startedTick), 0);
             const programDeferred = endedPrograms.reduce((a, st) => a + (st.deferred ?? 0), 0);
             result(`pack ${tuMode} summary`, { bandTicks: band?.ticks ?? null, ok: band?.ok ?? false, programTicks, programDeferred, ...track.rollStats(), pack: detail?.pack ?? null, topUpTrades: (detail as { topUp?: unknown } | undefined)?.topUp ?? null, helperTeles: g.teles, ...track.summary() });
             result(`pack ${tuMode} topups`, track.topUpLog());
+            result(`pack ${tuMode} stuns`, track.stunStats());
         } catch (e) {
             result(`pack ${tuMode} summary`, { bandTicks: null, error: String(e), helperTeles: g.teles, ...track.rollStats(), ...track.summary() });
             result(`pack ${tuMode} topups`, track.topUpLog());
+            result(`pack ${tuMode} stuns`, track.stunStats());
         } finally {
+            // the giver's own ticks (its client counts from its login, not the account's)
+            result(`pack ${tuMode} giver`, { accountTick: sdk.getState()?.tick, giverTick: helper.sdk.getState()?.tick, events: g.events.slice(-40) });
             track.stop();
-            g.stop();
+            await g.stop();
+            if (asRole) result(`pack ${tuMode} courier`, { events: g.events.filter(e => !/^(wishes to trade|busy|sending trade offer)$/.test(e.ev)).slice(-150) });
             await closeSession(helper);
         }
         break;

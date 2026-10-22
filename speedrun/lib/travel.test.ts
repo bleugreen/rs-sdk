@@ -3,7 +3,7 @@ import type { BotWorldState, InventoryItem, NearbyLoc, PlayerState } from '../..
 import { baseState, drive, FakeSdk, flush, simulateWalking } from './fake-sdk';
 import { sleep } from './wait';
 import {
-    deletesFollowerItem, expandRoute, hopNeeds, hopsDestination, runesHeld, runTo, SPELLS, teleport, teleportRefusal, travel, wildernessLevel, type Hop,
+    deletesFollowerItem, expandRoute, GNOME_STRONGHOLD_GATE, hopNeeds, hopsDestination, passGate, runesHeld, runTo, SPELLS, teleport, teleportRefusal, throughWebs, travel, wildernessLevel, type Hop,
 } from './travel';
 
 const player = (worldX: number, worldZ: number, level = 0) => ({ name: 'lab', x: worldX, z: worldZ, worldX, worldZ, level, hp: 40, maxHp: 40 }) as PlayerState;
@@ -14,6 +14,140 @@ const magic = (level: number) => [{ name: 'Magic', level, baseLevel: level, expe
 const world = (x: number, z: number, more: Partial<BotWorldState> = {}) => new FakeSdk(baseState({ tick: 100, player: player(x, z), ...more }));
 const at = (sdk: FakeSdk) => ({ x: sdk.state!.player!.worldX, z: sdk.state!.player!.worldZ });
 const sends = (sdk: FakeSdk, method: string) => sdk.sent.filter(a => a.method === method).map(a => a.args);
+
+describe('a hop waits for a built region', () => {
+    test('no lookup or click goes out while the client rebuilds the region after a landing', async () => {
+        const tree = loc(1294, 'Spirit tree', 2542, 3170, ['Talk-to']);
+        const sdk = world(2542, 3169, { sceneReady: false, nearbyLocs: [] });
+        const p = travel(sdk as never, [{ kind: 'tree', to: 'stronghold' }], { maxTicks: 10 });
+        await flush();
+        sdk.tick();
+        await flush();
+        expect(sdk.sent).toEqual([]);
+        sdk.tick({ sceneReady: true, nearbyLocs: [tree] });
+        for (let i = 0; i < 5; i++) await flush();
+        expect(sends(sdk, 'sendInteractLoc')).toEqual([[2542, 3170, 1294, 1]]);
+        sdk.tick({ player: player(2461, 3444) });
+        await drive(sdk, p, 30);
+    });
+});
+
+/**
+ * The Gnome Stronghold gate's server side (gnome_gate.rs2, femi.rs2), one queued patch per tick: a
+ * click from the south starts Femi's boxes scene while %femi_help is 0 (3 pages, the choice, 2
+ * pages; declining sets it), else steps the player 3 tiles north by p_teleport, one a tick.
+ */
+function gnomeGate(sdk: FakeSdk, opts: { femi?: boolean; drop?: number } = {}) {
+    const queue: Array<(s: BotWorldState) => Partial<BotWorldState>> = [];
+    let femi = opts.femi ?? true;
+    let drop = opts.drop ?? 0;
+    const cont = (id: string) => ({ isOpen: true, isWaiting: false, pageId: id, options: [{ index: 1, text: 'Click here to continue', componentId: 4886, buttonType: 6 }] });
+    const choice = { isOpen: true, isWaiting: false, pageId: 'p4', options: [{ index: 1, text: "Sorry, I'm a bit busy.", componentId: 2461, buttonType: 1 }, { index: 2, text: 'OK then.', componentId: 2462, buttonType: 1 }] };
+    const pages = [cont('p1'), cont('p2'), cont('p3'), choice, cont('p5'), cont('p6')];
+    let page = -1;
+    const log = { clicks: 0, chose: [] as string[] };
+    sdk.onSend = a => {
+        if (a.method === 'sendInteractLoc' && a.args[2] === GNOME_STRONGHOLD_GATE.loc.id) {
+            log.clicks++;
+            if (drop-- > 0) return;
+            if (femi && (sdk.state!.player!.worldZ <= 3382)) {
+                page = 0;
+                queue.push(() => ({ dialog: pages[0]! }));
+                return;
+            }
+            const p = sdk.state!.player!;
+            const step = (z: number) => (s: BotWorldState) => ({ player: { ...p, worldZ: z, z, teleportTick: s.tick + 1, teleportJump: false } as PlayerState });
+            const dir = p.worldZ <= 3382 ? 1 : -1;
+            queue.push(() => ({}), step(p.worldZ + dir), step(p.worldZ + 2 * dir), step(p.worldZ + 3 * dir));
+        }
+        if (a.method === 'clickDialogByText' && page >= 0) {
+            const text = String(a.args[0]);
+            if (/busy/.test(text)) {
+                log.chose.push('busy');
+                femi = false;
+            }
+            page++;
+            const next = page < pages.length ? pages[page]! : { isOpen: false, options: [], isWaiting: false };
+            queue.push(() => ({ dialog: next }));
+            if (page >= pages.length) page = -1;
+        }
+    };
+    return { each: (s: BotWorldState) => (queue.shift() ?? (() => ({})))(s), log };
+}
+
+describe('passGate: the Gnome Stronghold gate', () => {
+    const gateLoc = loc(190, 'Gate', 2459, 3383, ['Open']);
+    const north = GNOME_STRONGHOLD_GATE.sides.north;
+
+    test("a first visit: Femi's scene is declined by text, the gate clicked again, and ok only once the player stands north", async () => {
+        const sdk = world(2461, 3382, { nearbyLocs: [gateLoc] });
+        const server = gnomeGate(sdk);
+        const r = await drive(sdk, passGate(sdk as never, GNOME_STRONGHOLD_GATE, north), 120, server.each);
+        expect(r).toMatchObject({ ok: true, clicks: 2, dialogues: 1, options: 1, pages: 5 });
+        expect(server.log.chose).toEqual(['busy']);
+        expect(at(sdk)).toEqual({ x: 2461, z: 3385 });
+    });
+
+    test('a dialogue already open when it starts (bot.walkTo clicked the gate) is answered first', async () => {
+        const sdk = world(2461, 3382, { nearbyLocs: [gateLoc] });
+        const server = gnomeGate(sdk);
+        await sdk.sendInteractLoc(2459, 3383, 190, 1); // the walker's own door opener
+        sdk.tick(server.each);
+        expect(sdk.state!.dialog.isOpen).toBe(true);
+        const r = await drive(sdk, passGate(sdk as never, GNOME_STRONGHOLD_GATE, north), 120, server.each);
+        expect(r).toMatchObject({ ok: true, clicks: 1, dialogues: 1 });
+        expect(at(sdk).z).toBe(3385);
+    });
+
+    test('after Femi: one click and through; already on the far side: no click', async () => {
+        const sdk = world(2461, 3382, { nearbyLocs: [gateLoc] });
+        const server = gnomeGate(sdk, { femi: false });
+        const r = await drive(sdk, passGate(sdk as never, GNOME_STRONGHOLD_GATE, north), 120, server.each);
+        expect(r).toMatchObject({ ok: true, clicks: 1, dialogues: 0 });
+        const again = await passGate(sdk as never, GNOME_STRONGHOLD_GATE, north);
+        expect(again).toMatchObject({ ok: true, clicks: 0, ticks: 0 });
+    });
+
+    test('north to south through the same gate: no dialogue from that side', async () => {
+        const sdk = world(2461, 3385, { nearbyLocs: [gateLoc] });
+        const server = gnomeGate(sdk);
+        const r = await drive(sdk, passGate(sdk as never, GNOME_STRONGHOLD_GATE, GNOME_STRONGHOLD_GATE.sides.south), 120, server.each);
+        expect(r).toMatchObject({ ok: true, clicks: 1, dialogues: 0 });
+        expect(at(sdk).z).toBe(3382);
+    });
+
+    test('a dropped click is re-sent, and a gate that never opens is a failure, never ok', async () => {
+        const sdk = world(2461, 3382, { nearbyLocs: [gateLoc] });
+        const server = gnomeGate(sdk, { femi: false, drop: 1 });
+        const r = await drive(sdk, passGate(sdk as never, GNOME_STRONGHOLD_GATE, north), 120, server.each);
+        expect(r).toMatchObject({ ok: true, clicks: 2 });
+
+        const stuck = world(2461, 3382, { nearbyLocs: [gateLoc] });
+        const dead = gnomeGate(stuck, { femi: false, drop: 99 });
+        const f = await drive(stuck, passGate(stuck as never, GNOME_STRONGHOLD_GATE, north, { maxClicks: 2 }), 400, dead.each);
+        expect(f.ok).toBe(false);
+        expect(f.reason).toMatch(/not through/);
+        expect(at(stuck).z).toBe(3382);
+    });
+
+    test('while the region loads nothing is clicked; the click goes out once it is built', async () => {
+        const sdk = world(2461, 3382, { nearbyLocs: [gateLoc], sceneReady: false });
+        const server = gnomeGate(sdk, { femi: false });
+        let n = 0;
+        const each = (s: BotWorldState) => (++n === 6 ? { ...server.each(s), sceneReady: true } : server.each(s));
+        const p = passGate(sdk as never, GNOME_STRONGHOLD_GATE, north);
+        const r = await drive(sdk, p, 120, each);
+        expect(r).toMatchObject({ ok: true, clicks: 1, settleTicks: 6 });
+    });
+
+    test('as a travel hop', async () => {
+        const sdk = world(2461, 3382, { nearbyLocs: [gateLoc] });
+        const server = gnomeGate(sdk);
+        const r = await drive(sdk, travel(sdk as never, [{ kind: 'gate', gate: GNOME_STRONGHOLD_GATE, to: north }]), 120, server.each);
+        expect(r).toMatchObject({ ok: true, clicks: 2 });
+        expect(r.segments[0]).toMatchObject({ hop: 'through the Gnome Stronghold south gate', ok: true });
+    });
+});
 
 describe('runTo: the chained run', () => {
     test('clicks the furthest route tile within 20 and re-sends 3 tiles before each click ends, so the player never stops', async () => {
@@ -365,4 +499,37 @@ describe('hop data', () => {
         expect(expandRoute({ x: 0, z: 0 }, [{ x: 2, z: 1 }])).toEqual([{ x: 1, z: 1 }, { x: 2, z: 1 }]);
         expect(hopsDestination([{ kind: 'run', to: { x: 5, z: 5 } }, { kind: 'teleport', spell: 'varrock' }])).toEqual(SPELLS.varrock.landing);
     });
+});
+
+/**
+ * The Mage Bank web (web.rs2): a knife on it fails or slashes it, 50% each; a slash removes the web
+ * and lets the player step through. The reply is stamped as each client publishes it: the browser
+ * on the click's own tick, lite on the next (rs/308's probe: a click at tick 25 drew
+ * "You fail to cut through it." stamped 25 on the browser), with a new publication id each time.
+ */
+describe('webs', () => {
+    for (const client of ['browser', 'lite'] as const) {
+        test(`each slash's reply is read on the tick it lands (${client} stamps)`, async () => {
+            const web = loc(733, 'Web', 3095, 3957, ['Slash']);
+            const sdk = world(3096, 3957, { nearbyLocs: [web], inventory: [item(0, 'Knife')] });
+            sdk.pathTo = () => ({ success: true, reachedDestination: false, waypoints: [] });
+            const replies = ['You fail to cut through it.', 'You fail to cut through it.', 'You slash the web apart.'];
+            let publication = 500;
+            sdk.onSend = (a, f) => {
+                if (a.method === 'sendUseItemOnLoc') {
+                    const text = replies.shift()!;
+                    queueMicrotask(() => f.tick(s => ({
+                        gameMessages: [...s.gameMessages, { type: 0, text, sender: '', tick: client === 'browser' ? s.tick : s.tick + 1, observationId: ++publication, fromSelf: false }],
+                        ...(/apart/.test(text) ? { nearbyLocs: [] } : {}),
+                    })));
+                }
+                if (a.method === 'sendWalk') queueMicrotask(() => f.tick({ player: player(3094, 3957) }));
+            };
+            const r = await drive(sdk, throughWebs(sdk as never, [[3094, 3957]]), 120);
+            expect(r.ok).toBe(true);
+            expect(r.webTries).toBe(3);
+            expect(sends(sdk, 'sendUseItemOnLoc')).toHaveLength(3);
+            expect(r.ticks).toBeLessThanOrEqual(6);
+        });
+    }
 });

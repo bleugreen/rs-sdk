@@ -1,0 +1,1 @@
+FAIL (burst): a 59/60 ok; c 3 catch-ups in 1.2 min = 2.4/min fail; b (context) frame interval p90 363 max 561

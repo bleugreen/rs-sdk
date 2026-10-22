@@ -5,6 +5,7 @@ import type { ActionResult, BotWorldState, InventoryItem, NearbyLoc } from '../.
 import { baseState, FakeSdk, flush, type SentAction } from '../lib/fake-sdk';
 import type { ProgramStatus } from '../lib/programs';
 import { TickLog } from '../lib/ticks';
+import { planRoute } from '../lib/item-cycle';
 import { xpForLevel } from '../lib/xp';
 import { Observation, resolveResume } from '../runner/resume';
 import { runSteps, type RunnerSession } from '../runner/step';
@@ -96,6 +97,9 @@ function world(o: { level?: number; xp?: number; inventory?: InventoryItem[]; ba
     });
 }
 
+/** SUPPLIES.md H21e as staged: rs/323's 09:10Z banked count across seven helpers plus cairn_h96's 100 snape grass (rs/332). */
+const STAGED_H21E: Array<[number, number]> = [[91, 298], [95, 166], [99, 115], [101, 74], [103, 53], [105, 45], [221, 418], [225, 250], [231, 190]];
+
 describe('preconditions', () => {
     test('the real start: Herblore 28 at the booth holding H21e passes', () => {
         expect(preconditions(world())).toBe(true);
@@ -109,8 +113,28 @@ describe('preconditions', () => {
         const short = preconditions(world({ inventory: [item(0, 92, 14), item(1, 222, 14)] }));
         expect(short).toMatch(/^supplies short: \d+ base xp \(they reach Herblore \d+; 14 mixes: attack 14\)$/);
         expect(preconditions(world({ inventory: [], bank: [[91, 92], [95, 62], [101, 25], [105, 17], [221, 341], [225, 250]] }))).toMatch(/^supplies short: 29664 base xp \(they reach Herblore 79; 196 mixes/);
+        // rs/323's 02:16 PDT count (banked 09:10Z), from BEFORE cairn_h96's 100 snape grass joined H21e;
+        // not today's stock (that is STAGED_H21E). All six potions play; snape grass was the gap.
+        const preH96: Array<[number, number]> = [[91, 298], [95, 166], [99, 115], [101, 74], [103, 53], [105, 45], [221, 418], [225, 250], [231, 90]];
+        expect(preconditions(world({ inventory: [], bank: preH96 }))).toBe('supplies short: 1714 base xp (they reach Herblore 98; 673 mixes: strength 166, superattack 74, superstrength 45, fishing 53, prayer 37, attack 298)');
         // banked and the bank closed: out of sight, the program's first visit judges them
         expect(preconditions(world({ inventory: [] }))).toBe(true);
+    });
+
+    test("the staged H21e stock (SUPPLIES.md H21e: rs/323's count plus h96's 100 snape grass) reaches 99 with 5,112 base spare", () => {
+        expect(preconditions(world({ inventory: [], bank: STAGED_H21E }))).toBe(true);
+        const plan = planRoute(POST_RITUAL_XP, 99, recipesFor(), new Map(STAGED_H21E));
+        expect([plan.reaches, plan.level, plan.xpShort, plan.actions]).toEqual([true, 99, 0, 547]);
+        // the spare: the overshoot past 99 plus every mix the stock still holds, at its base xp
+        const left = new Map(Object.entries(plan.left).map(([id, n]) => [Number(id), n] as [number, number]));
+        let spare = (plan.loads.at(-1)!.xpAfter - xpForLevel(99)) / 25;
+        for (const r of [...HERB_RECIPES].sort((x, y) => y.xp - x.xp)) {
+            const n = Math.min(left.get(r.a) ?? 0, left.get(r.b!) ?? 0);
+            left.set(r.a, (left.get(r.a) ?? 0) - n);
+            left.set(r.b!, (left.get(r.b!) ?? 0) - n);
+            spare += n * r.xp;
+        }
+        expect(Math.round(spare)).toBe(5112);
     });
 
     test('no booth in view', () => {
