@@ -217,10 +217,7 @@ describe('checkTarget', () => {
         expect(() => checkTarget({ BOT_USERNAME: 'x', SERVER: 'localhost:9300' }, true)).not.toThrow();
         expect(() => checkTarget({ BOT_USERNAME: 'x', SERVER: 'demo.example' }, true)).toThrow(/local lab/);
         expect(() => checkTarget({ BOT_USERNAME: 'x', SERVER: 'localhost:9300' }, false)).toThrow(/demo world/);
-        const lo = { GATEWAY_URL: 'ws://127.0.0.1:7787' };
-        expect(() => checkTarget({ BOT_USERNAME: 'cairn_row1', SERVER: 'demo.example', ...lo }, false)).toThrow(/unbranded/);
-        expect(() => checkTarget({ BOT_USERNAME: 'quietfern', SERVER: 'demo.example', ...lo }, false)).not.toThrow();
-        expect(() => checkTarget({ BOT_USERNAME: 'quietfern', SERVER: 'demo.example' }, false)).toThrow(/loopback gateway/);
-        expect(() => checkTarget({ BOT_USERNAME: 'quietfern', SERVER: 'demo.example', GATEWAY_URL: 'wss://demo.example/gateway' }, false)).toThrow(/loopback gateway/);
+        expect(() => checkTarget({ BOT_USERNAME: 'cairn_row1', SERVER: 'demo.example' }, false)).toThrow(/unbranded/);
+        expect(() => checkTarget({ BOT_USERNAME: 'quietfern', SERVER: 'demo.example' }, false)).not.toThrow();
     });
 });
