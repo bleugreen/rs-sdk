@@ -196,6 +196,43 @@ describe('iron bands', () => {
         const { calls } = await runBand('mining.iron-63', 70, ['Rune pickaxe', 'Knife']);
         expect(calls[0]!.opts.technique).toBe('plain');
     });
+    test('auto: one gate with the explicit measured window and the plain reference at D', async () => {
+        const gateOpts: Array<Record<string, unknown>> = [];
+        const fake = m.deps.inPageGate;
+        m.deps.inPageGate = ((_: unknown, o: Record<string, unknown>) => (gateOpts.push(o), { summary: () => 'fake gate' })) as never;
+        try {
+            const { calls } = await runBand('mining.iron-63', 70, undefined, { technique: 'auto' });
+            expect(calls[0]!.opts.technique).toBe('auto');
+        } finally {
+            m.deps.inPageGate = fake;
+        }
+        expect(gateOpts.length).toBe(1);
+        expect(gateOpts[0]).toMatchObject({ plainTicksPerRoll: 3.61, measureDrops: 120 });
+        expect(m.GATE_MEASURE_DROPS).toBe(120);
+    });
+    test('a restart drops the ores an interrupted run left before starting, and logs them', async () => {
+        gatedCalls.length = 0;
+        const inv = ['Rune pickaxe', 'Knife', 'Logs', 'Iron ore', 'Iron ore', 'Bread', 'Iron ore', 'Iron ore', 'Iron ore', 'Iron ore'];
+        const sdk = new MiningSdk(atZoo(92, inv));
+        let left: string[] = [];
+        onGated = (s, params) => {
+            left = s.state!.inventory.map(i => i.name);
+            s.push({ skills: skills(params.untilLevel as number) });
+        };
+        const ctx = ctxFor(sdk);
+        let t = 100;
+        const timer = setInterval(() => sdk.tick({ tick: ++t }), 1);
+        try {
+            await m.steps({ travel: 'none', respawn: 13, technique: 'knife' }).find(s => s.name === 'mining.iron-63')!.run(ctx);
+        } finally {
+            clearInterval(timer);
+        }
+        expect(gatedCalls.length).toBe(1);
+        expect(left).toEqual(['Rune pickaxe', 'Knife', 'Logs', 'Bread']);
+        expect(sdk.sent.filter(a => a.method === 'sendDropItem').length).toBe(6);
+        const band = (ctx as unknown as { log: TickLog }).log.rows.find(r => r.step === '(band) mining.iron-63')!;
+        expect((band.meta as { oreDrops: Array<{ ores: number }> }).oreDrops.map(d => d.ores)).toEqual([6]);
+    });
     test('a band already passed does nothing', async () => {
         const { calls } = await runBand('mining.iron-15', 64);
         expect(calls).toEqual([]);
