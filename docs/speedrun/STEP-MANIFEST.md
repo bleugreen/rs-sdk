@@ -57,7 +57,7 @@ timed on **observed game ticks** (the tick stream or `TICKMON`), never on wall-c
 droppers (S03, HS6), the bone givers' load timing (H4.1-H4.n) and any `T0 + n ms` launch in run.ts. A
 deadline that stands for a tick count keys off observed ticks; wall clock appears only as an idle
 bound, no new tick for N ticks' worth of time scaled by the configured tick length (on the floor
-since #209's `tickClock`, 4fe2d0a8, inside the floor 31bdff73). The demo has
+since #209's `tickClock`, 4fe2d0a8, inside the floor e392933e). The demo has
 been seen at 0.34-0.37 s a tick, where a wall-clock cue lands early by about (1 - 0.30/actual) of
 its delay and a deadline fires early (RUN-ORDER.md R23).
 
@@ -172,7 +172,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 2 | 1 | Agility | `speedrun/skills/agility.ts` | S11a, S17 | 4,228 | 3,934 | 4,626 | ~690 | in-page | rs/97 `agility` program, `agility-course.ts` | lab-accepted (66 per Wilderness lap, 9 of 9; S11a 114; rs/155); S17 4,114 on the engine's fall roll, 66 the clean-lap floor (rs/270; cairn_jumps' demo run continues as rs/295); run mode 0 on both courses (m, rs/270) |
 | 3 | 4 | Mining | `speedrun/skills/mining.ts` | S09 | 3,157 | 3,148 | 3,775 | ~627 | in-page | rs/97 `knife-mine`, `tickmanip-mine.ts` | **on main, 4235a9e7 (#220; rs/260's snapshot of rs/230's lab-accepted module, rs/147's branch at 59ec3933)**, with `selfStarter` (plain 3.62) and `beforeRestart`; `stay2` bury (#159, rs/182) and restart fix (e5d8a058, #170; rs/207) on main; gate `measureDrops` 120 explicit (rs/259, 314989e9); **demo-measured** (rs/259's cairn_rocks: 3.019 per xp ore uncontested); **rs/298**, the Mining S09 snapshot (3fa6fbe4's ore drop and 314989e9), pending |
 | 4 | 3 | Woodcutting, with the bury | `speedrun/skills/woodcutting.ts` | S07 (+ S25b's bones) | 3,053 | 2,969 | 4,025 (4,121 without #165, history) | ~1,090 | in-page | rs/97 `knife-cycle`; rs/137's bury variant; `bones-wc.ts` | building (rs/211; on rs/147's branch, changing with rs/236; rs/151 closed); gate-off plain + bury on main (rs/162, 3dfc217f, #165); gate `measureDrops` 120 explicit (rs/261, building); run mode 0 (m, rs/261); **the knife demo-measured** (rs/261's cairn_chops, hiscore 3,329; S07 at its luck-free 3,053); **rs/297**, the Woodcutting S07 snapshot, pending |
-| 5 | 11 | Transition legs | `speedrun/runner/legs.ts` + `speedrun/lib/travel.ts` | between steps | 2,215.7 | 2,196.7 | ~2,340 i | ~143 | overlay | `run-transitions-legs.ts`, `run-transitions-lib.ts` | **on main, PR #238** (rs/291's snapshot of rs/198's module for rs/186, merge 5a70e4e6): `legs.ts` and its test, `tools/demo-legs.ts`, `measure-legs.ts`, `measure-ardougne-handoff.ts`, `ticks.ts`'s `travel` rows, run-transitions.md section 10; lab-measured and demo-checked (h55); its walker, `lib/travel.ts`, on main, 0658e896 (#200); rs/294's forcemove fix pending |
+| 5 | 11 | Transition legs | `speedrun/runner/legs.ts` + `speedrun/lib/travel.ts` | between steps | 2,215.7 | 2,196.7 | ~2,340 i | ~143 | overlay | `run-transitions-legs.ts`, `run-transitions-lib.ts` | **on main, PR #238** (rs/291's snapshot of rs/198's module for rs/186, merge 5a70e4e6): `legs.ts` and its test, `tools/demo-legs.ts`, `measure-legs.ts`, `measure-ardougne-handoff.ts`, `ticks.ts`'s `travel` rows, run-transitions.md section 10; lab-measured and demo-checked (h55); its walker, `lib/travel.ts`, on main, 0658e896 (#200); rs/294's forcemove door fix on main (#240); both inside the floor e392933e |
 | 6 | 6 | Thieving and the stun pack | `speedrun/skills/thieving.ts` | S18 (S18b-d inside) | 2,000 | 1,908 | 1,975 + ~120 elsewhere | ~190 | in-page | rs/97 `pickpocket`; rs/132's `stunActions`; `stun-pack-thieve.ts` | building (rs/154, parked under the 2-4 child limit); stun pack: lab-accepted (bury, charge, arrows; rs/132); top-ups ~0 with the courier on a side tile (rs/279, lab); rs/290's opt-in idle re-send building |
 | 7 | 5 | Fishing | `speedrun/skills/fishing.ts` | S22 | 1,995 | 1,969 | 3,410 | ~1,440 | in-page | rs/97 `knife-cycle`, `tickmanip-cycle.ts` | on main, 22552bf4 (#197; rs/231); lab-accepted (1,998 on 78-99; rs/152); gate `measureDrops` 120 explicit (#221) |
 | 8 | 7 | Combat finish | `speedrun/skills/ranged.ts` (`combatFinish`) | S27 | 1,972 | 1,946 | 1,997 (the bow from 70); 2,023-2,211 without the kit | ~265 | overlay | `cannon-kit.ts` (rs/59, on main) | on main, 8a741554 (#212, rs/252's snapshot); lab-accepted (S27 1,972 i on the module's rates, S14 118 m; rs/199, PR #207); lab is the final tier (a demo test is not feasible); run mode ~0, at most ~9 on S27's melee phase (m/i, rs/196) |
@@ -364,15 +364,18 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     RUN-ORDER.md R1's bound); that case is historical on any `RUN_COMMIT` at or after c2d9eada.
     The final logout is still checked on the host (`RUN-HOST.md` step 8). A precondition, not a
     line in the totals;
-  - **`RUN_COMMIT` at or after the run-commit floor, `31bdff73`** (main, 22:24 PDT; one check,
-    `git merge-base --is-ancestor 31bdff73 "$RUN_COMMIT"`, `RUN-HOST.md` "Credentials"). Its newest
-    entries: #232 (the quest shared layer: `converse`'s burst mode and interrupts, `useOn`,
+  - **`RUN_COMMIT` at or after the run-commit floor, `e392933e`** (#240; main, 23:03 PDT; one check,
+    `git merge-base --is-ancestor e392933e "$RUN_COMMIT"`, `RUN-HOST.md` "Credentials"). Its newest
+    entries: #240 (rs/294, the `travel.ts` forcemove door fix: a dropped click is re-sent at the first
+    idle tick, and a stall never reopens the door just passed; entries 8 and 11) and #238 (rs/291's
+    legs module, 5a70e4e6: `runner/legs.ts`, run-transitions.md section 10; entry 11). Its history holds
+    31bdff73 (main, 22:24 PDT), whose own newest entries were #232 (the quest shared layer: `converse`'s burst mode and interrupts, `useOn`,
     `setPrayer`, `segments.ts`, `lab/quests/run.ts` and `ticks.ts`'s note rows; every quest entry),
     #229 (the Firemaking inferred-fire counter, entry 16), #230 (Smithing S25a, `lib/trade.ts`
     `swap()`, and `anvil.ts`'s restock and off-tile fixes; entry 10), #226 (the tick monitor measured
     on the observed period, `TICKMON` gaining `periodMs=`, and gated-program's pause at
     ceil(60000 / period); RUN-ORDER.md R23) and #233 (the lab staging guard: `tele()` and
-    `mustTele()` refuse on Tutorial Island; "How to read an entry"). Its history holds 4fe2d0a8
+    `mustTele()` refuse on Tutorial Island; "How to read an entry"), then 4fe2d0a8
     (#209, rs/246: one idle timeout, `tickClock`, for every tick-keyed wait, `maxTicks` on observed
     ticks and only `IDLE_TICKS`, 20 ticks of silence, in wall clock; R23), 1514f47a (#222, rs/268's
     snapshot of rs/196's Runecraft step module, entry 9), 148788c5 (#221, rs/262: `HostGate`'s
@@ -400,10 +403,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     **rs/243** (the second Thieving part: pickpocket's `stopWhenFoodBelow` and `retargetTicks`,
     entry 6); **rs/147's Agility snapshot**, to be filed (agility's `untilLevel`, closing
     RUN-ORDER.md O40, the program's `eatAt` opt-in, f95f9558, rs/241's work, and the module default
-    `eatAt: 'land'`, a9298868, rs/270; entry 1); **rs/281** (the Grand Tree snapshot, which carries rs/202's door-exit
-    workaround, marked removable; entry 8) and **rs/294** (`travel.ts`'s forcemove fix, which makes
-    the workaround unnecessary; the run commit carries both; entries 8 and 11). rs/291's legs module is on main as PR #238 (merge 5a70e4e6, which descends from 31bdff73),
-    so it is off this list; main names the next floor commit. Gate tooling on main, not floor
+    `eatAt: 'land'`, a9298868, rs/270; entry 1); and **rs/281** (the Grand Tree snapshot, with rs/202's door-exit workaround,
+    marked removable; the floor already carries #240's fix; entry 8). Gate tooling on main, not floor
     items: 5d22252d (#208, `lib/display.ts`) and c4b79f17 (#213, `lib/tab.ts` window helpers);
   - **the login cap**: our simultaneous demo logins, summed across every host, at most 100 with a
     working cap of 80, counted before SCORED logs in (main, 15:35 PDT; `RUN-HOST.md` step 7;
@@ -969,7 +970,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   ~1,039 rolls (the gem-table roll included) at the 3.00 floor + the same start, 3,148. Extra starts are R-row
   costs: a relog ~22, a slip's re-probe 20, a respawn-change restart ~14 with no probe, a measured switch +D
   (RUN-ORDER.md R18). The demo run's own band, 3,172 for 1,047 ores, is not taken: its contested restarts cut
-  it into more segments (R26). **A full pack** stalled that band at 92 after 4-5 restarts, each leaving its
+  it into more segments (R26). The rehearsal as a whole reached 99 in 4,322 ticks by the log (4,317 on the hiscore), a
+  whole-account figure from creation, not a record and not S09's shape. **A full pack** stalled that band at 92 after 4-5 restarts, each leaving its
   last ore; 3fa6fbe4 drops leftover ores before every band start and restart (R27; rs/298). Before (the
   lab's basis, 3,116 for both): 3.00 ticks per ore measured with
   `tickmanip-mine.ts`, 2 × 200 ores, total 3,134 inferred, `skills/mining.md` §2; less the model's
@@ -1217,7 +1219,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   E 49, F 14, G 39, H 40, I 115, J 153, K 126, L 49, M 53, N1 28, N2 132, O 76, P 148; 1,403 m, the
   fastest fixed run, before). Fallback **~1,763** (stock, inferred: the stock column's 270 of extra
   dialogue over the fixed on the measured figure); 1,528.5 / 1,393.5 i before fold-in 13. **The door
-  exit:** the Grand Tree door exit (segments D, G, K and M) needs either rs/202's one-tick-wait workaround (in rs/281's Grand Tree snapshot, marked removable) or rs/294's `travel.ts` forcemove fix (71 ticks to 21, rs/186); the run commit will carry both, and the measured runs already carry the 21-tick exit through the workaround, which rs/198's lab shows matches the fix, so nothing re-prices (no leg row starts with a forced move through that door, i).
+  exit:** the Grand Tree door exit (segments D, G, K and M) needs either rs/202's one-tick wait (in rs/281's Grand Tree snapshot, marked removable) or #240 (rs/294's `travel.ts` forcemove door fix, 71 ticks to 21, rs/186); the floor has #240, and the measured runs already carry the 21-tick exit through the workaround, which rs/198's lab shows matches the fix, so nothing re-prices (no leg row starts with a forced move through that door, i).
 - **The fight and the kit** (rs/202, m): the demon (N2) 113-127 ticks, 20-24 casts, 0 damage, prayer
   21-24, staff of fire worn; across 13 lab Fire Bolt kills 113-163 ticks and 20-30 casts, so 35 chaos
   runes cover it (5 spare at the worst seen). The climb: 1 dose, 0 refusals in every run. Free slots:
@@ -1443,7 +1445,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   (2958,3506) and the large doors at (2958,3509), ~3 ticks each), T22-23 21 / 15; the teleport legs,
   L24c and T21-22, at the mean over the landing square (a random walkable tile within Chebyshev 2,
   `teleport.rs2`) for the expected, the demo reading until rs/198's per-landing-tile table (~40 casts
-  over the 5x5 square, after rs/294's `travel.ts` forcemove fix) gives the true mean, and the lab for
+  over the 5x5 square, now that rs/294's `travel.ts` forcemove fix is on main, #240) gives the true mean, and the lab for
   the best: L24c 8 / 4.5, T21-22 36 / 32.5. Net +17.2 expected and -1.8 best.
 - **Ticks:** **2,215.7** expected and **2,196.7** best for the order, the twelve way-in legs at their whole ticks (1,382 until
   fold-in 11 netted them against the arrival rows the quests counted; the 840.5 moved here, O6).
