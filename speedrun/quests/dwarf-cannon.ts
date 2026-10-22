@@ -490,16 +490,16 @@ async function shed(ctx: Ctx, opts: Options | undefined, tally: Tally): Promise<
     for (let i = 0; i < 80; i++) {
         if (currentTick(sdk) > deadline) throw new Error(`cannon: over ${SHED_MAX_TICKS} ticks (${part} parts fixed)`);
         const started = replyAfter(sdk, CANNON_INSPECTING);
-        const working = replyAfter(sdk, /strange dwarf contraption/i);
+        const contraption = replyAfter(sdk, /strange dwarf contraption/i);
         const notFound = replyAfter(sdk, /can't quite find/i);
         const fix = replyAfter(sdk, CANNON_FIX);
-        const landed = await opStarted(ctx, { name: /broken multicannon/i, radius: 10 }, 'Inspect', started, s => s.dialog.isOpen || working.seen(s) || notFound.seen(s), 'cannon');
+        const landed = await opStarted(ctx, { name: /broken multicannon/i, radius: 10 }, 'Inspect', started, s => s.dialog.isOpen || contraption.seen(s) || notFound.seen(s), 'cannon');
         if (!landed) {
             // The shed door shut in front of the bot (dwarf_cannon.md "The shed door").
             await openDoor(sdk, SHED_DOOR.x, SHED_DOOR.z);
             continue;
         }
-        if (working.first()) return; // stage 8 or later
+        if (contraption.first()) return; // stage 8 or later
         tally.shedInspects++;
         if (notFound.first()) {
             tally.shedFindFails++;
