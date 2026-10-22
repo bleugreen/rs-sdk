@@ -1,17 +1,20 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import type { BotWorldState } from '../../sdk/types';
-import { baseState, FakeSdk } from '../lib/fake-sdk';
+import { baseState, drive, FakeSdk } from '../lib/fake-sdk';
 import { TickLog } from '../lib/ticks';
 import * as m from './mining';
 
 // runGatedProgram is the page's loop; here it records what the band asks of it and levels up.
 const gatedCalls: Array<{ name: string; params: Record<string, unknown>; opts: Record<string, unknown> }> = [];
 let onGated: (sdk: FakeSdk, params: Record<string, unknown>) => void = () => {};
+/** Replaces the whole program for a test that needs the band's abort signal. */
+let gatedImpl: ((sdk: FakeSdk, params: Record<string, unknown>, opts: { signal: AbortSignal }) => Promise<{ segments: never[]; ended: string }>) | null = null;
 const realDeps = { ...m.deps };
 beforeAll(() => {
     m.deps.inPageGate = (() => ({ summary: () => 'fake gate' })) as never;
     m.deps.runGatedProgram = (async (sdk: FakeSdk, name: string, params: Record<string, unknown>, opts: Record<string, unknown>) => {
         gatedCalls.push({ name, params, opts });
+        if (gatedImpl) return gatedImpl(sdk, params, opts as { signal: AbortSignal });
         onGated(sdk, params);
         return { segments: [], ended: 'done' };
     }) as never;
@@ -22,6 +25,21 @@ class MiningSdk extends FakeSdk {
     sendDropItem(slot: number) {
         this.push(s => ({ inventory: s.inventory.filter(i => i.slot !== slot) }));
         return this.sendAction({ method: 'sendDropItem', args: [slot] });
+    }
+}
+
+/** Each tick that sends drops is followed by one server tick, so dropOres's nextTick resolves with no timer. */
+class DropTickSdk extends MiningSdk {
+    private due = false;
+    override sendDropItem(slot: number) {
+        if (!this.due) {
+            this.due = true;
+            setTimeout(() => {
+                this.due = false;
+                this.tick();
+            }, 0);
+        }
+        return super.sendDropItem(slot);
     }
 }
 
@@ -236,6 +254,457 @@ describe('iron bands', () => {
     test('a band already passed does nothing', async () => {
         const { calls } = await runBand('mining.iron-15', 64);
         expect(calls).toEqual([]);
+    });
+});
+
+// ------------------------------------------------------------------ the default path
+
+/**
+ * A scripted zoo band at D=13: two ores left in the pack; a run that sees a foreign ore and a
+ * rock back 16 ticks after it emptied (the respawn watch aborts, D becomes 16, the six-rock lap);
+ * a run that restarts its technique with an ore in the pack and a lap rock empty for 4 ticks.
+ * Returns every send, every program start and the band row's fields as they were before the
+ * fallback, with their ticks.
+ */
+async function defaultPathTrace(mod: typeof m, o: Record<string, unknown>): Promise<string[]> {
+    const trace: string[] = [];
+    const saved = { ...mod.deps };
+    const five = mod.parseSteps(mod.ROTATIONS.five!.steps);
+    const six = mod.parseSteps(mod.ROTATIONS.six!.steps);
+    const sdk = new DropTickSdk(atZoo(70, ['Rune pickaxe', 'Knife', 'Logs', 'Iron ore', 'Iron ore']));
+    sdk.onSend = a => trace.push(`T${sdk.state!.tick} ${a.method} ${a.args.join(',')}`);
+    const setRockLive = (p: readonly [number, number], live: boolean) =>
+        sdk.push(s => ({ nearbyLocs: s.nearbyLocs.map(l => (l.x === p[0] && l.z === p[1] ? { ...l, id: live ? 2092 : 450 } : l)) }));
+    const addOre = (slot: number) => sdk.push(s => ({ inventory: [...s.inventory, item('Iron ore', slot)] }));
+    const lapName = (steps: unknown) => Object.entries(mod.ROTATIONS).find(([, r]) => r.steps === steps)?.[0];
+    let run = 0;
+    mod.deps.inPageGate = (() => ({ summary: () => 'fake gate' })) as never;
+    mod.deps.runGatedProgram = (async (_: unknown, name: string, params: Record<string, unknown>, opts: Record<string, any>) => {
+        run++;
+        trace.push(`T${sdk.state!.tick} ${name} ${lapName(params.steps)} respawn ${params.respawn} until ${params.untilLevel} ${opts.technique} params [${Object.keys(params).sort()}] opts [${Object.keys(opts).sort()}]`);
+        if (run === 1) {
+            sdk.tick();
+            setRockLive(five[0]!.rock, false);
+            addOre(10);
+            for (let i = 0; i < 15; i++) sdk.tick();
+            setRockLive(five[0]!.rock, true);
+            sdk.tick();
+            return { segments: [], ended: opts.signal.aborted ? 'aborted' : 'done' };
+        }
+        addOre(11);
+        setRockLive(six[1]!.rock, false);
+        const t = sdk.state!.tick;
+        await drive(sdk as never, opts.beforeRestart('plain', { technique: 'knife', reason: 'slow' }), 40, s => (s.tick >= t + 4 ? { nearbyLocs: s.nearbyLocs.map(l => (l.x === six[1]!.rock[0] && l.z === six[1]!.rock[1] ? { ...l, id: 2092 } : l)) } : {}));
+        trace.push(`T${sdk.state!.tick} restarted`);
+        sdk.tick({ skills: skills(params.untilLevel as number) });
+        return { segments: [], ended: 'done' };
+    }) as never;
+    const ctx = ctxFor(sdk);
+    try {
+        await mod.steps({ travel: 'none', respawn: 13, technique: 'knife', ...o }).find(s => s.name === 'mining.iron-63')!.run(ctx);
+    } finally {
+        Object.assign(mod.deps, saved);
+    }
+    const meta = (ctx as unknown as { log: TickLog }).log.rows.find(r => r.step === '(band) mining.iron-63')!.meta as Record<string, unknown>;
+    for (const k of ['players', 'respawn', 'rotation', 'restarts', 'restartWaits', 'oreDrops', 'faults', 'observedRespawn', 'gate', 'segments']) trace.push(`${k} ${JSON.stringify(meta[k])}`);
+    return trace;
+}
+
+describe('the default path (no fallback)', () => {
+    // main's mining.ts before the fallback (blob 9abec9d) gives exactly this trace
+    const MAIN = [
+        'T100 sendDropItem 3',
+        'T100 sendDropItem 4',
+        'T101 knife-mine five respawn 13 until 99 knife params [rate,respawn,selfStarter,steps,untilLevel] opts [beforeRestart,log,onSegment,signal,technique]',
+        'T118 sendDropItem 10',
+        'T119 knife-mine six respawn 16 until 99 knife params [rate,respawn,selfStarter,steps,untilLevel] opts [beforeRestart,log,onSegment,signal,technique]',
+        'T119 sendDropItem 11',
+        'T124 restarted',
+        'players null',
+        'respawn 16',
+        'rotation "six"',
+        'restarts [{"tick":118,"why":"observed respawn 16 > scheduled 13","D":16,"rotation":"five"}]',
+        'restartWaits [{"tick":120,"ticks":4,"after":"knife:slow","next":"plain","ok":true}]',
+        'oreDrops [{"tick":100,"ores":2},{"tick":118,"ores":1},{"tick":119,"ores":1}]',
+        'faults 0',
+        'observedRespawn {"6":1,"16":1}',
+        'gate null',
+        'segments []',
+    ];
+    test('fallback none, and no fallback, behave as main did: the same sends, program starts, waits and row', async () => {
+        const none = await defaultPathTrace(m, {});
+        expect(none).toEqual(MAIN);
+        expect(await defaultPathTrace(m, { fallback: 'none' })).toEqual(MAIN);
+    });
+});
+
+// ------------------------------------------------------------------ contention
+
+type Loc = { id: number; name: string; x: number; z: number; level: number; distance: number; options: string[]; optionsWithIndex: { text: string; opIndex: number }[] };
+const rock = (x: number, z: number, live = true): Loc => ({ id: live ? 2092 : 450, name: 'Rocks', x, z, level: 0, distance: 1, options: ['Mine'], optionsWithIndex: [{ text: 'Mine', opIndex: 1 }] });
+const siteLocs = (site: string) => [...new Map(Object.values(m.SITES[site]!.rotations).flatMap(r => m.parseSteps(r.steps)).map(st => [`${st.rock}`, rock(st.rock[0], st.rock[1])])).values()];
+const lapOf = (site: string, D = 13) => m.parseSteps(m.SITES[site]!.rotations[m.lapFor(site, D)]!.steps);
+const xpSkills = (level: number, xp: number, extra: Array<[string, number]> = []) => [{ name: 'Mining', level, baseLevel: level, experience: xp }, ...extra.map(([name, l]) => ({ name, level: l, baseLevel: l, experience: 0 }))];
+/** SCORED at S09: Defence 1, Hitpoints 10, Prayer ~94, Magic 59 (RUN-ORDER.md S04, S07/S25b, S10b). */
+const SCORED: Array<[string, number]> = [['Attack', 1], ['Strength', 1], ['Defence', 1], ['Hitpoints', 10], ['Ranged', 1], ['Prayer', 94], ['Magic', 59]];
+const setRock = (sdk: FakeSdk, p: [number, number], live: boolean, patch: Partial<BotWorldState> = {}) =>
+    sdk.tick(s => ({ nearbyLocs: s.nearbyLocs.map(l => (l.x === p[0] && l.z === p[1] ? rock(p[0], p[1], live) : l)) as never, ...patch }));
+
+describe('ContestWatch: another player\'s ore is a lap depletion with no xp of ours', () => {
+    const lap: Array<[number, number]> = [[2605, 3235], [2602, 3236]];
+    const start = () => new FakeSdk(baseState({ tick: 100, skills: xpSkills(70, 1000), nearbyLocs: lap.map(p => rock(...p)) as never }));
+    test('our depletion (xp on the same label or the next) is ours; one without xp is foreign two labels on', () => {
+        const sdk = start();
+        const events: m.ContestEvent[] = [];
+        const w = new m.ContestWatch(sdk as never, () => lap, e => events.push(e));
+        sdk.tick();
+        setRock(sdk, lap[0]!, false, { skills: xpSkills(70, 1050) }); // ours: same label
+        setRock(sdk, lap[1]!, false);
+        sdk.tick({ skills: xpSkills(70, 1100) }); // ours: xp one label late
+        sdk.tick();
+        sdk.tick();
+        expect(events).toEqual([]);
+        expect(w.own).toBe(2);
+        setRock(sdk, lap[0]!, true);
+        setRock(sdk, lap[0]!, false); // someone else's
+        expect(events).toEqual([]);
+        sdk.tick();
+        expect(events).toEqual([]);
+        sdk.tick();
+        expect(events).toEqual([{ tick: 108, kind: 'depletion', rock: '2605,3235' }]);
+        expect(w.recent(108)).toBe(1);
+        expect(w.recent(108 + m.CONTEST_WINDOW)).toBe(0);
+        w.stop();
+    });
+    test('a rock dead on arrival or out of view is not evidence', () => {
+        const sdk = new FakeSdk(baseState({ tick: 100, skills: xpSkills(70, 0), nearbyLocs: [rock(2605, 3235, false), rock(2602, 3236)] as never }));
+        const events: m.ContestEvent[] = [];
+        const w = new m.ContestWatch(sdk as never, () => lap, e => events.push(e));
+        sdk.tick();
+        sdk.tick({ nearbyLocs: [] }); // the scene reloading
+        sdk.tick({ nearbyLocs: [rock(2605, 3235), rock(2602, 3236)] as never });
+        for (let i = 0; i < 4; i++) sdk.tick();
+        expect(events).toEqual([]);
+        w.stop();
+    });
+    test('a depletion hidden by a scene reload is not evidence and takes no xp (the lab trace at ardougneNorth)', () => {
+        const three: Array<[number, number]> = [[2711, 3329], [2712, 3329], [2713, 3332]];
+        const sdk = new FakeSdk(baseState({ tick: 258, skills: xpSkills(97, 1000), nearbyLocs: three.map(p => rock(...p)) as never }));
+        const events: m.ContestEvent[] = [];
+        const w = new m.ContestWatch(sdk as never, () => three, e => events.push(e));
+        sdk.tick({ skills: xpSkills(97, 1875) }); // T259: our ore off the first rock
+        sdk.tick({ nearbyLocs: [] }); // T260: the region loads
+        sdk.tick({ nearbyLocs: [rock(2711, 3329, false), rock(2712, 3329), rock(2713, 3332)] as never }); // T261: seen dead
+        sdk.tick({ skills: xpSkills(97, 2750) }); // T262: the second ore
+        setRock(sdk, three[1]!, false); // T263: its depletion
+        sdk.tick({ skills: xpSkills(97, 3625) }); // T264
+        setRock(sdk, three[2]!, false); // T265
+        for (let i = 0; i < 4; i++) sdk.tick();
+        expect(events).toEqual([]);
+        expect(w.own).toBe(2);
+        w.stop();
+    });
+    test('the limit: CONTEST_RETRIES events are retried, one more trips', () => {
+        const w = new m.ContestWatch({ onStateUpdate: () => () => {} } as never, () => lap);
+        for (let i = 0; i < m.CONTEST_RETRIES; i++) w.lapTimeout(100 + i);
+        expect(w.tripped(110)).toBe(false);
+        w.lapTimeout(110);
+        expect(w.tripped(110)).toBe(true);
+        expect(w.tripped(100 + m.CONTEST_WINDOW)).toBe(false);
+        expect(m.CONTEST_RETRIES).toBe(2);
+    });
+});
+
+describe('sites', () => {
+    test('every site lap: moves of at most 4, stands beside rocks, 3.00 per ore at D=13 and 15', () => {
+        for (const [site, s] of Object.entries(m.SITES)) {
+            for (const [name, r] of Object.entries(s.rotations)) expect([site, name, m.lapModel(r.steps, 13).problems]).toEqual([site, name, []]);
+            const five = s.rotations.five!.steps;
+            expect([site, m.lapModel(five, 13).ticksPerOre, m.lapModel(five, 15).ticksPerOre]).toEqual([site, 3, 3]);
+        }
+        expect(m.lapModel(m.SITES.rellekka!.rotations.six!.steps, 18).ticksPerOre).toBe(3);
+        expect(m.lapFor('rellekka', 17)).toBe('six');
+        expect(m.lapFor('ardougneNorth', 17)).toBe('five');
+        expect(m.SITES.zoo!.rotations).toBe(m.ROTATIONS);
+    });
+    test('combat level (Player.getCombatLevel): SCORED at S09 is 43, one over the bears\' 42', () => {
+        const at = (extra: Array<[string, number]>) => m.combatLevel(baseState({ skills: xpSkills(64, 0, extra) }));
+        expect(at(SCORED)).toBe(43);
+        expect(at(SCORED.map(([n, l]) => [n, n === 'Prayer' ? 93 : l] as [string, number]))).toBe(42);
+        expect(at([])).toBe(3);
+    });
+    test('fallback: none, auto, or named sites', () => {
+        expect(m.parseFallback(undefined)).toEqual({ sites: [], acceptHazards: false });
+        expect(m.parseFallback('none').sites).toEqual([]);
+        expect(m.parseFallback('auto')).toEqual({ sites: ['ardougneNorth', 'rellekka', 'wilderness31'], acceptHazards: false });
+        expect(m.parseFallback('ardougneNorth,rellekka')).toEqual({ sites: ['ardougneNorth', 'rellekka'], acceptHazards: false });
+        expect(m.parseFallback(['rellekka'], true)).toEqual({ sites: ['rellekka'], acceptHazards: true });
+        expect(m.steps({ fallback: 'rellekka', acceptHazards: 'true' })).toBeDefined();
+        expect(() => m.parseFallback('zoo')).toThrow();
+        expect(() => m.parseFallback('varrock')).toThrow();
+        expect(() => m.steps({ fallback: 'nowhere' })).toThrow();
+    });
+    test('next site: allowed by combat unless acceptHazards, not recently contested first, then the nearest', () => {
+        const auto = m.parseFallback('auto');
+        const none = new Map<string, number>();
+        expect(m.nextSite('zoo', [2604, 3235], 43, auto, none, 1000)).toBe('ardougneNorth');
+        expect(m.nextSite('zoo', [2604, 3235], 42, auto, none, 1000)).toBeUndefined();
+        expect(m.nextSite('zoo', [2604, 3235], 126, auto, none, 1000)).toBe('ardougneNorth');
+        expect(m.nextSite('ardougneNorth', [2713, 3330], 43, auto, new Map([['zoo', 900]]), 1000)).toBe('zoo');
+        // a named list is held to safeFrom too (rs/158): rellekka (129) is skipped at 43, all of it at 3
+        const named = m.parseFallback('ardougneNorth,rellekka');
+        expect(m.nextSite('zoo', [2604, 3235], 43, named, none, 1000)).toBe('ardougneNorth');
+        expect(m.nextSite('ardougneNorth', [2713, 3330], 43, named, new Map([['zoo', 900]]), 1000)).toBe('zoo');
+        expect(m.nextSite('zoo', [2604, 3235], 3, named, none, 1000)).toBeUndefined();
+        expect(m.nextSite('zoo', [2604, 3235], 42, m.parseFallback('rellekka'), none, 1000)).toBeUndefined();
+        // acceptHazards: every listed site, hazards and all
+        const hazards = m.parseFallback('ardougneNorth,rellekka', true);
+        expect(m.nextSite('zoo', [2604, 3235], 3, hazards, none, 1000)).toBe('ardougneNorth');
+        expect(m.nextSite('ardougneNorth', [2713, 3330], 3, hazards, new Map([['zoo', 900]]), 1000)).toBe('rellekka');
+        expect(m.nextSite('ardougneNorth', [2713, 3330], 3, hazards, new Map([['zoo', 900]]), 900 + m.CONTEST_WINDOW)).toBe('zoo');
+        expect(m.nextSite('zoo', [2604, 3235], 42, m.parseFallback('auto', true), none, 1000)).toBe('ardougneNorth');
+    });
+});
+
+describe('contested iron bands', () => {
+    const band = (o: Record<string, unknown>) => m.steps({ travel: 'none', respawn: 13, technique: 'knife', ...o }).find(s => s.name === 'mining.iron-63')!;
+    const atSite = (site: string, level: number, extra: Array<[string, number]> = []) => {
+        const c = m.SITES[site]!.centre;
+        return baseState({ tick: 100, skills: xpSkills(level, 1000, extra), inventory: ['Rune pickaxe', 'Knife', 'Logs'].map(item), player: { worldX: c[0], worldZ: c[1], level: 0 } as BotWorldState['player'], nearbyLocs: siteLocs(site) as never });
+    };
+    const ctxWithWalk = (sdk: FakeSdk, walks: string[]) =>
+        ({
+            session: { sdk, name: 'cairn_test', sessionId: 1 }, sdk, c: {}, log: TickLog.memory('t'),
+            bot: {
+                walkTo: async (x: number, z: number) => {
+                    const to = Object.keys(m.SITES).find(n => Math.max(Math.abs(m.SITES[n]!.centre[0] - x), Math.abs(m.SITES[n]!.centre[1] - z)) <= m.SITE_RADIUS)!;
+                    walks.push(to);
+                    for (let i = 0; i < 5; i++) sdk.tick();
+                    sdk.tick({ player: { worldX: x, worldZ: z, level: 0 } as BotWorldState['player'], nearbyLocs: siteLocs(to) as never });
+                    return { success: true, message: 'ok' };
+                },
+            },
+        }) as never;
+    /** A passer-by's ore off the lap's first rock, then the rock back: one contest event per program run at the zoo. */
+    const passerBy = (sdk: FakeSdk, site: string) => {
+        const r = lapOf(site)[0]!.rock;
+        sdk.tick(); // the watch sees the lap live first
+        setRock(sdk, r, false);
+        sdk.tick();
+        sdk.tick();
+        setRock(sdk, r, true);
+    };
+    const bandRow = (ctx: unknown) => (ctx as { log: TickLog }).log.rows.find(r => r.step === '(band) mining.iron-63')!;
+    afterEach(() => {
+        gatedImpl = null;
+    });
+
+    test('uncontested, the fallback changes nothing: the same program call and the zoo', async () => {
+        const run = async (o: Record<string, unknown>) => {
+            gatedCalls.length = 0;
+            const sdk = new MiningSdk(atZoo(70));
+            onGated = (s, params) => s.push({ skills: skills(params.untilLevel as number) });
+            const ctx = ctxFor(sdk);
+            await band(o).run(ctx);
+            return { calls: [...gatedCalls], row: bandRow(ctx) };
+        };
+        const plain = await run({});
+        const auto = await run({ fallback: 'auto' });
+        expect(auto.calls.length).toBe(1);
+        expect(auto.calls[0]!.params).toEqual(plain.calls[0]!.params);
+        expect(Object.keys(auto.calls[0]!.opts).sort()).toEqual(Object.keys(plain.calls[0]!.opts).sort());
+        expect(auto.calls[0]!.opts.technique).toBe(plain.calls[0]!.opts.technique);
+        expect(plain.row.meta).toMatchObject({ site: 'zoo', contest: { fallback: [], foreign: 0, retries: 0, switches: [] } });
+        expect(auto.row.meta).toMatchObject({ site: 'zoo', contest: { fallback: ['ardougneNorth', 'rellekka', 'wilderness31'], foreign: 0, retries: 0, switches: [] } });
+    });
+
+    test('without a fallback a foreign ore is only logged: no abort, no retry', async () => {
+        gatedCalls.length = 0;
+        const sdk = new MiningSdk(atSite('zoo', 70));
+        gatedImpl = async (s, params) => {
+            passerBy(s, 'zoo');
+            s.tick({ skills: xpSkills(params.untilLevel as number, 9e6) });
+            return { segments: [], ended: 'done' };
+        };
+        const ctx = ctxFor(sdk);
+        await band({}).run(ctx);
+        expect(gatedCalls.length).toBe(1);
+        expect(bandRow(ctx).meta).toMatchObject({ contest: { foreign: 1, retries: 0, switches: [] } });
+    });
+
+    test('two retries in place, then the third contest event leaves for the nearest allowed site', async () => {
+        gatedCalls.length = 0;
+        const sdk = new MiningSdk(atSite('zoo', 70, SCORED));
+        gatedImpl = async (s, params, opts) => {
+            if (Math.abs(s.state!.player!.worldX - 2604) <= m.SITE_RADIUS) {
+                passerBy(s, 'zoo');
+                expect(opts.signal.aborted).toBe(true);
+                return { segments: [], ended: 'aborted' };
+            }
+            s.tick({ skills: xpSkills(params.untilLevel as number, 9e6) });
+            return { segments: [], ended: 'done' };
+        };
+        const walks: string[] = [];
+        const ctx = ctxWithWalk(sdk, walks);
+        await band({ fallback: 'ardougneNorth' }).run(ctx);
+        expect(gatedCalls.length).toBe(m.CONTEST_RETRIES + 2);
+        expect(gatedCalls.slice(0, 3).every(c => c.params.steps === m.ROTATIONS.five!.steps)).toBe(true);
+        expect(gatedCalls[3]!.params.steps).toBe(m.SITES.ardougneNorth!.rotations.five!.steps);
+        expect(walks).toEqual(['ardougneNorth']);
+        const meta = bandRow(ctx).meta as Record<string, any>;
+        expect(meta.site).toBe('ardougneNorth');
+        expect(meta.contest).toMatchObject({ foreign: 3, retries: 2 });
+        expect(meta.contest.switches).toMatchObject([{ from: 'zoo', to: 'ardougneNorth', walkTicks: 6, events: 3 }]);
+        expect(meta.restarts).toEqual([]);
+    });
+
+    test('after a switch the ores the contested lap left are dropped before the new circuit starts', async () => {
+        gatedCalls.length = 0;
+        const sdk = new DropTickSdk(atSite('zoo', 70, SCORED));
+        let zooRuns = 0;
+        let packAtStart: string[] = [];
+        gatedImpl = async (s, params) => {
+            if (Math.abs(s.state!.player!.worldX - 2604) <= m.SITE_RADIUS) {
+                passerBy(s, 'zoo');
+                // the run that trips the contest is cut off with its last ores in the pack
+                if (++zooRuns === m.CONTEST_RETRIES + 1) s.push(st => ({ inventory: [...st.inventory, item('Iron ore', 10), item('Iron ore', 11)] }));
+                return { segments: [], ended: 'aborted' };
+            }
+            packAtStart = s.state!.inventory.map(i => i.name);
+            s.tick({ skills: xpSkills(params.untilLevel as number, 9e6) });
+            return { segments: [], ended: 'done' };
+        };
+        const walks: string[] = [];
+        const ctx = ctxWithWalk(sdk, walks);
+        await band({ fallback: 'ardougneNorth' }).run(ctx);
+        expect(walks).toEqual(['ardougneNorth']);
+        expect(gatedCalls[3]!.params.steps).toBe(m.SITES.ardougneNorth!.rotations.five!.steps);
+        expect(packAtStart).toEqual(['Rune pickaxe', 'Knife', 'Logs']);
+        expect(sdk.sent.filter(a => a.method === 'sendDropItem').map(a => a.args[0])).toEqual([10, 11]);
+        const meta = bandRow(ctx).meta as Record<string, any>;
+        const sw = meta.contest.switches[0];
+        // dropped at the new site, on arrival
+        expect(meta.oreDrops).toEqual([{ tick: sw.tick + sw.walkTicks, ores: 2 }]);
+    });
+
+    test('auto at combat 3 (a rehearsal account): no safe site, so the contested band fails', async () => {
+        const sdk = new MiningSdk(atSite('zoo', 70));
+        gatedImpl = async s => (passerBy(s, 'zoo'), { segments: [], ended: 'aborted' });
+        const walks: string[] = [];
+        await expect(band({ fallback: 'auto' }).run(ctxWithWalk(sdk, walks))).rejects.toThrow(/contested at zoo .* no site left for combat 3/);
+        expect(walks).toEqual([]);
+    });
+
+    test('auto at SCORED\'s combat 43 leaves the zoo for ardougneNorth', async () => {
+        gatedCalls.length = 0;
+        const sdk = new MiningSdk(atSite('zoo', 70, SCORED));
+        gatedImpl = async (s, params) => {
+            if (s.state!.player!.worldX < 2650) return (passerBy(s, 'zoo'), { segments: [], ended: 'aborted' });
+            s.tick({ skills: xpSkills(params.untilLevel as number, 9e6, SCORED) });
+            return { segments: [], ended: 'done' };
+        };
+        const walks: string[] = [];
+        await band({ fallback: 'auto' }).run(ctxWithWalk(sdk, walks));
+        expect(walks).toEqual(['ardougneNorth']);
+    });
+
+    test("rs/158's ruling mid-band: at 43 a named list's unsafe site is never entered, unless acceptHazards", async () => {
+        // contested at the zoo, then at ardougneNorth: the second switch may go to rellekka (129) or the zoo
+        const run = async (o: Record<string, unknown>) => {
+            const sdk = new MiningSdk(atSite('zoo', 70, SCORED));
+            const walks: string[] = [];
+            gatedImpl = async (s, params) => {
+                if (walks.length < 2) return (passerBy(s, walks.length ? 'ardougneNorth' : 'zoo'), { segments: [], ended: 'aborted' });
+                s.tick({ skills: xpSkills(params.untilLevel as number, 9e6, SCORED) });
+                return { segments: [], ended: 'done' };
+            };
+            const ctx = ctxWithWalk(sdk, walks);
+            await band({ fallback: ['ardougneNorth', 'rellekka'], ...o }).run(ctx);
+            return { walks, switches: (bandRow(ctx).meta as Record<string, any>).contest.switches.map((w: { to: string }) => w.to) };
+        };
+        expect(await run({})).toEqual({ walks: ['ardougneNorth', 'zoo'], switches: ['ardougneNorth', 'zoo'] });
+        expect(await run({ acceptHazards: true })).toEqual({ walks: ['ardougneNorth', 'rellekka'], switches: ['ardougneNorth', 'rellekka'] });
+    });
+
+    test('at combat 42 with no safe site, a contest makes no switch and the band fails cleanly; acceptHazards switches', async () => {
+        const at42 = SCORED.map(([n, l]) => [n, n === 'Prayer' ? 93 : l] as [string, number]);
+        for (const fallback of ['auto', ['ardougneNorth', 'rellekka']]) {
+            const refused = new MiningSdk(atSite('zoo', 70, at42));
+            gatedImpl = async s => {
+                if (s.state!.player!.worldX >= 2650) throw new Error('switched away from the zoo at combat 42');
+                return (passerBy(s, 'zoo'), { segments: [], ended: 'aborted' });
+            };
+            const none: string[] = [];
+            await expect(band({ fallback }).run(ctxWithWalk(refused, none))).rejects.toThrow(/contested at zoo .* no site left for combat 42/);
+            expect(none).toEqual([]);
+
+            const sdk = new MiningSdk(atSite('zoo', 70, at42));
+            gatedImpl = async (s, params) => {
+                if (s.state!.player!.worldX < 2650) return (passerBy(s, 'zoo'), { segments: [], ended: 'aborted' });
+                s.tick({ skills: xpSkills(params.untilLevel as number, 9e6, at42) });
+                return { segments: [], ended: 'done' };
+            };
+            const walks: string[] = [];
+            await band({ fallback, acceptHazards: true }).run(ctxWithWalk(sdk, walks));
+            expect(walks).toEqual(['ardougneNorth']);
+        }
+    });
+
+    test('a lap that is never whole: each wait of D+10 is an event, the third leaves', async () => {
+        gatedCalls.length = 0;
+        const zoo = atSite('zoo', 70, SCORED);
+        const first = lapOf('zoo')[0]!.rock;
+        const sdk = new MiningSdk({ ...zoo, nearbyLocs: zoo.nearbyLocs.map(l => (l.x === first[0] && l.z === first[1] ? rock(first[0], first[1], false) : l)) as never });
+        gatedImpl = async (s, params) => (s.tick({ skills: xpSkills(params.untilLevel as number, 9e6) }), { segments: [], ended: 'done' });
+        const walks: string[] = [];
+        const ctx = ctxWithWalk(sdk, walks);
+        const timer = setInterval(() => sdk.tick(), 1);
+        try {
+            await band({ fallback: 'ardougneNorth' }).run(ctx);
+        } finally {
+            clearInterval(timer);
+        }
+        expect(walks).toEqual(['ardougneNorth']);
+        expect(gatedCalls.length).toBe(1);
+        expect((bandRow(ctx).meta as Record<string, any>).contest.events.map((e: m.ContestEvent) => e.kind)).toEqual(['lap', 'lap', 'lap']);
+    });
+
+    test('resumed at a fallback site: the zoo walk stays put and the band mines there', async () => {
+        gatedCalls.length = 0;
+        const sdk = new MiningSdk(atSite('ardougneNorth', 70, SCORED));
+        const zooWalk = m.steps({ travel: 'none', fallback: 'ardougneNorth' }).find(s => s.name === 'mining.travel: zoo')!;
+        const walks: string[] = [];
+        await zooWalk.run(ctxWithWalk(sdk, walks));
+        expect(walks).toEqual([]);
+        expect(band({ fallback: 'ardougneNorth' }).preconditions(sdk.state!, {})).toBe(true);
+        expect(band({}).preconditions(sdk.state!, {})).toMatch(/not at the zoo cluster/);
+        onGated = (s, params) => s.push({ skills: skills(params.untilLevel as number) });
+        await band({ fallback: 'ardougneNorth' }).run(ctxWithWalk(sdk, walks));
+        expect(gatedCalls[0]!.params.steps).toBe(m.SITES.ardougneNorth!.rotations.five!.steps);
+    });
+
+    test("rs/158's combat gate: a fallback with no site safe at this combat refuses S09 unless acceptHazards", () => {
+        // SCORED at Prayer 93 is combat 42, at 94 combat 43
+        const at = (mining: number, prayer: number) => atSite('zoo', mining, SCORED.map(([n, l]) => [n, n === 'Prayer' ? prayer : l] as [string, number]));
+        expect([m.combatLevel(at(70, 93)), m.combatLevel(at(70, 94)), m.SITES.ardougneNorth!.safeFrom]).toEqual([42, 43, 43]);
+        const refusal = (needs: string) => `combat 42: no site the contested-rock fallback may use is safe (${needs})`;
+        for (const [name, mining] of [['mining.iron-15', 45], ['mining.iron-63', 70]] as const) {
+            const pre = (o: Record<string, unknown>, prayer: number) =>
+                [name, m.steps({ travel: 'none', respawn: 13, technique: 'knife', ...o }).find(s => s.name === name)!.preconditions(at(mining, prayer), {})];
+            expect(pre({ fallback: 'auto' }, 93)).toEqual([name, refusal('ardougneNorth needs 43, rellekka 129, wilderness31 never')]);
+            expect(pre({ fallback: 'auto' }, 94)).toEqual([name, true]);
+            expect(pre({ fallback: ['ardougneNorth'] }, 93)).toEqual([name, refusal('ardougneNorth needs 43')]);
+            expect(pre({ fallback: ['rellekka'] }, 93)).toEqual([name, refusal('rellekka needs 129')]);
+            expect(pre({ fallback: 'rellekka,wilderness31' }, 93)).toEqual([name, refusal('rellekka needs 129, wilderness31 never')]);
+            expect(pre({ fallback: ['rellekka'], acceptHazards: true }, 93)).toEqual([name, true]);
+            expect(pre({ fallback: ['rellekka'], acceptHazards: 'true' }, 93)).toEqual([name, true]);
+            expect(pre({ fallback: ['rellekka'], acceptHazards: false }, 93)).toEqual([name, refusal('rellekka needs 129')]);
+            expect(pre({ fallback: 'none' }, 93)).toEqual([name, true]);
+            expect(pre({}, 93)).toEqual([name, true]);
+        }
+        // a band already past is done whatever the combat
+        expect(band({ fallback: 'auto' }).preconditions(at(99, 93), {})).toBe(true);
+        expect(() => m.steps({ acceptHazards: 'yes' })).toThrow(/acceptHazards must be true or false/);
     });
 });
 
