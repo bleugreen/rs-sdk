@@ -1444,10 +1444,9 @@ async function loadSkillModule(spec: string): Promise<SkillModule> {
 const isLocalWorld = (server: string | undefined) => !server || server.startsWith('localhost') || server.startsWith('127.');
 
 /** rs/96's CLI on the gate account, in its own process: it logs the account in on the engine websocket. */
-async function directReadViaCli(gateBot: string, opts: { lab: boolean; runId: string }): Promise<DirectRead> {
-    const dir = join(process.env.TMPDIR ?? '/tmp', 'speedrun');
-    mkdirSync(dir, { recursive: true });
-    const json = join(dir, `gate-${opts.runId}.json`);
+async function directReadViaCli(gateBot: string, opts: { lab: boolean; json: string }): Promise<DirectRead> {
+    const json = opts.json;
+    mkdirSync(dirname(json), { recursive: true });
     rmSync(json, { force: true });
     // This process's own bun: on the host it is ~/.bun/bin/bun, not on a non-login shell's PATH.
     const args = [process.execPath, 'docs/speedrun/scripts/tickmanip-latency.ts', gateBot, '--path=direct', `--json=${json}`, ...(opts.lab ? [] : ['--no-tele'])];
@@ -1534,9 +1533,14 @@ async function main(argv: string[]): Promise<number> {
     const players = (await samplePlayerCount(origin)).players;
     log.append(annotation(log, account, 'gate', GATE_PLAYERS_STEP, { meta: { players, origin, ...(owner ? { claimOwner: owner } : {}) } }));
     if (a.claim) log.append(annotation(log, account, 'gate', '(gate) claim', { meta: { claim: true, note: 'S00 then logout only: no gate read, no probes, no skill steps' } }));
+    // The gate's raw evidence (the direct probe's per-trial rows and tick arrivals, the live
+    // frames) is kept beside the log, so whatever keeps the log keeps it: a scratch directory is
+    // cleared at teardown, and only the per-trial rows can explain a short on-time count.
+    const logPath = log.path ?? join(process.env.TMPDIR ?? '/tmp', 'speedrun', `rehearse-${runId}.jsonl`);
+    const evidencePrefix = join(dirname(logPath), `${basename(logPath, '.jsonl')}-${runId}`);
     let direct: DirectRead | null = null;
     if (a.gateJson) direct = parseDirectJson(JSON.parse(readFileSync(a.gateJson, 'utf-8')), 'gate-json');
-    else if (a.gateBot) direct = await directReadViaCli(a.gateBot, { lab: a.lab, runId });
+    else if (a.gateBot) direct = await directReadViaCli(a.gateBot, { lab: a.lab, json: `${evidencePrefix}-gate.json` });
     if (direct) log.append(annotation(log, account, 'gate', '(gate) direct', { ok: !direct.error && direct.verdict?.on === true, ...(direct.error ? { error: direct.error } : {}), meta: { ...direct, ...(direct.verdict ? { text: verdictText(direct.verdict) } : {}) } }));
     // Which rule the direct read was held to, so every findings doc can say which applied.
     const kind = a.claim ? null : kindGate(a.kind, direct);
@@ -1548,9 +1552,7 @@ async function main(argv: string[]): Promise<number> {
 
     // The gate tab's before-probe, the attempt on the clock from its login, then the after-probe
     // (bracketAttempt: one of these accounts in the world, and on the recorded display, at a time).
-    // The live frames are kept beside the log, as the pass line's evidence.
-    const logPath = log.path ?? join(process.env.TMPDIR ?? '/tmp', 'speedrun', `rehearse-${runId}.jsonl`);
-    const frames = { dir: dirname(logPath), prefix: `${basename(logPath, '.jsonl')}-${runId}` };
+    const frames = { dir: dirname(evidencePrefix), prefix: basename(evidencePrefix) };
     const run = await bracketAttempt(hostTabIO(frames), { ...(a.gateBot ? { gateBot: a.gateBot } : {}), gateProbeTrials: a.gateProbeTrials, bot: a.bot, client: a.client }, {
         gate: r => {
             if (r.read) inPage.push(r.read);
