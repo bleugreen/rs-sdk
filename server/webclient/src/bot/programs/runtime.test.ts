@@ -133,7 +133,8 @@ describe('ProgramRuntime', () => {
         now = 900;
         rt.onTick(makeState({ tick: 4 }), 2, [820, 880]);
         const s = rt.status()!;
-        expect(s.frames).toMatchObject({ n: 3, catchUps: 1, under150: 1, over350: 1 });
+        // no tickMs parameter: judged at the run's median interval, 300 ms
+        expect(s.frames).toMatchObject({ n: 3, catchUps: 1, underHalfT: 1, overSevenSixthsT: 1, T: 300, TSource: 'median' });
         expect(s.publish).toMatchObject({ n: 2, catchUps: 0, max: 600 });
         expect(s.skippedTicks).toBe(1);
         // arrival of the newest decoded frame to the decision: 0, 0, then 900 - 880
