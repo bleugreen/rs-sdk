@@ -5,7 +5,7 @@ import { join } from 'path';
 import { PRAYER_NAMES, type BotWorldState, type InventoryItem, type PrayerName } from '../../../sdk/types';
 import { baseState } from '../../lib/fake-sdk';
 import { SEGMENTS } from '../../quests/monkey-madness';
-import { boundaryCensus, dungeonTraps, FIXTURES, fixtureItems, FREE_KEPT, KIT, MM_VARS, remainingKit, SegmentUse, slotsNeeded, topUpPlan, topUpReserve } from './monkey-madness';
+import { boundaryCensus, dungeonTraps, fixtureAt, FIXTURES, fixtureItems, FREE_KEPT, KIT, MM_VARS, PIN_START, remainingKit, SegmentUse, slotsNeeded, topUpPlan, topUpReserve } from './monkey-madness';
 
 const packNames = (kind: string) => new Set(readFileSync(join(import.meta.dir, '..', '..', '..', 'server', 'content', 'pack', `${kind}.pack`), 'utf8').split('\n').map(l => l.slice(l.indexOf('=') + 1).trim()));
 
@@ -43,6 +43,13 @@ describe('fixtures', () => {
         expect(remainingKit('A', { sharks: 4 }).shark).toBe(4);
     });
 
+    test('a pinned O starts at the Varrock landing with the spare Varrock set spent; no other fixture stages pinned', () => {
+        expect(remainingKit('O', { pinned: true })).toMatchObject({ lawrune: KIT.lawrune! - 1, airrune: KIT.airrune! - 3, firerune: KIT.firerune! - 1, waterrune: KIT.waterrune });
+        expect(fixtureAt('O', { pinned: true }).tile).toEqual(PIN_START);
+        expect(fixtureAt('O').tile).toEqual(FIXTURES.find(f => f.letter === 'O')!.tile);
+        expect(() => fixtureAt('N', { pinned: true })).toThrow(/only O/);
+    });
+
     test("H12 (15 sharks, 4 potions, no bananas) fills A's 28 slots with the seal, the bow and arrows worn", () => {
         expect(slotsNeeded('A') + 1).toBe(28);
         // With few enough sharks every fixture fits.
@@ -57,6 +64,10 @@ describe('fixtures', () => {
             expect([f.letter, slotsNeeded(f.letter, { sharks })]).toEqual([f.letter, Math.min(28 - (f.keepFree ?? FREE_KEPT), slotsNeeded(f.letter))]);
         }
         expect(fixtureItems('K', { sharks: 2 }).find(([k]) => k === 'shark')).toEqual(['shark', 2]);
+        // The pre-dose fills A's 28th slot without costing a shark, and only at A.
+        const a = fixtureItems('A', { predose: true });
+        expect([a.find(([k]) => k === 'shark'), a.find(([k]) => k === '1dose2antipoison')]).toEqual([['shark', KIT.shark!], ['1dose2antipoison', 1]]);
+        expect(fixtureItems('B', { predose: true }).some(([k]) => k === '1dose2antipoison')).toBe(false);
     });
 });
 

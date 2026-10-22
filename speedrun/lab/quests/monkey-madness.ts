@@ -18,7 +18,8 @@
 //   LAB_RUNNERS=0 speedrun/lab/lab.sh <bot> speedrun/lab/quests/monkey-madness.ts:--from=H:--launch   (relogs after each fixture)
 //
 // Other flags: --trace=N (tile, HP, prayer, hits, dialog and knockouts), --sharks=N, --potions=N
-// (prayer potions instead of H12's 6, the freed slots going to sharks), --dialogue=fixed|burst.
+// (prayer potions instead of H12's 6, the freed slots going to sharks), --dialogue=fixed|burst, --pinned (O only:
+// start at the Varrock teleport's landing with the spare Varrock set spent, as a temple-rope pin leaves it).
 // Consumption: every run prints a census (mm_census: the state at each segment boundary and what each segment
 // used) and the end a mean/max table. --trade=D tops up before D with ::give (the gnome-half helper trade):
 // prayer potions to --topPotions=N held (default 2), then sharks into the free slots less topUpReserve.
@@ -34,7 +35,8 @@ import { closeSession, openSession, relog } from '../../lib/session';
 import { TickLog } from '../../lib/ticks';
 import { waitTicks } from '../../lib/wait';
 import { chebyshev, configId, pos } from '../../lib/world';
-import { H12_POTIONS, H12_SHARKS, inCell, REWARD_ITEMS, SEGMENTS, segmentName, steps, type MmContext } from '../../quests/monkey-madness';
+import { BELOW_30_EATING, H12_POTIONS, H12_SHARKS, inCell, REWARD_ITEMS, SEGMENT_EATING, SEGMENTS, segmentName, steps, type EatPolicy, type MmContext, type TopUp } from '../../quests/monkey-madness';
+import { give as giveTo } from '../../lib/trade';
 import { slotNeed } from '../../quests/segments';
 import { BOUNDARY_STEP, runSteps, type Step } from '../../runner/step';
 import { arg, botArg, result } from '../common';
@@ -70,7 +72,7 @@ export type MmVar = (typeof MM_VARS)[number];
  */
 export const KIT: Readonly<Record<string, number>> = {
     gold_bar: 1, ball_of_wool: 1, mm_normal_monkey_bones: 1, magic_shortbow: 1, rune_arrow: 200,
-    '4doseprayerrestore': H12_POTIONS, shark: H12_SHARKS, '4doseantipoison': 1, lawrune: 6, airrune: 6, firerune: 2, waterrune: 4,
+    '4doseprayerrestore': H12_POTIONS, shark: H12_SHARKS, '4dose2antipoison': 1, lawrune: 6, airrune: 6, firerune: 2, waterrune: 4,
 };
 
 /** Kit items each segment uses up, by the segment that uses them. */
@@ -136,20 +138,31 @@ export const FIXTURES: readonly Fixture[] = [
     { letter: 'Z', vars: { ...CH3_DONE, mm_main: 9, mm_garkor: 7, mm_kruk: 1, mm_elder_guard: 1, mm_awowogei: 2, mm_monkey_minder: 1, mm_been_to_final_battle: 1 }, items: { mm_amulet_of_monkey_speak: 1, mm_monkey_greegree_for_normal_monkey: 1, mm_monkey_amulet_mould: 1, mm_sigil: 1 }, tile: NARNODE },
 ];
 
-/** Fixture kit overrides: shark and prayer-potion counts, and the bow by debug name (the 'no magic shortbow' hedge). */
-export interface KitOptions { sharks?: number; potions?: number; bow?: string }
+/**
+ * Fixture kit overrides: shark and prayer-potion counts, and the bow by debug name (the 'no magic shortbow' hedge).
+ * `pinned` (O only): the state a temple-rope pin leaves, at PIN_START with the spare Varrock set spent. `defence`: the
+ * Defence level staged instead of ROUTE_LEVELS' 1 (O43a: defensive casting at S10b-S12 brings it to about 37).
+ */
+export interface KitOptions { sharks?: number; potions?: number; bow?: string; pinned?: boolean; defence?: number; antipoison?: number; predose?: boolean }
+
+/** Where a temple-rope pin's Varrock teleport lands (travel.ts SPELLS.varrock): O's start after a pin. */
+export const PIN_START = { x: 3213, z: 3424, level: 0 };
+/** The spare Varrock set (H12) that the pin's teleport spends. */
+const PIN_SPENT: Readonly<Record<string, number>> = { lawrune: 1, airrune: 3, firerune: 1 };
 
 /** The kit still held at the start of `letter` (H12 minus what earlier segments used), with `sharks` overriding the shark count. */
 export function remainingKit(letter: string, o: KitOptions = {}): Record<string, number> {
     const kit: Record<string, number> = { ...KIT };
     if (o.sharks !== undefined) kit.shark = o.sharks;
     if (o.potions !== undefined) kit['4doseprayerrestore'] = o.potions;
+    if (o.antipoison !== undefined) kit['4dose2antipoison'] = o.antipoison;
     if (o.bow && o.bow !== 'magic_shortbow') {
         delete kit.magic_shortbow;
         kit[o.bow] = 1;
     }
-    for (const [seg, spent] of Object.entries(KIT_SPENT)) {
-        if (seg >= letter) continue;
+    const spends = Object.entries(KIT_SPENT).filter(([seg]) => seg < letter).map(([, spent]) => spent);
+    if (o.pinned) spends.push(PIN_SPENT);
+    for (const spent of spends) {
         for (const [name, n] of Object.entries(spent)) kit[name] = Math.max(0, (kit[name] ?? 0) - n);
     }
     return Object.fromEntries(Object.entries(kit).filter(([, n]) => n > 0));
@@ -159,6 +172,14 @@ export function fixture(letter: string): Fixture {
     const f = FIXTURES.find(x => x.letter === letter);
     if (!f) throw new Error(`no Monkey Madness fixture ${letter}`);
     return f;
+}
+
+/** `letter`'s fixture as staged under `o`: a pinned O starts at PIN_START. */
+export function fixtureAt(letter: string, o: KitOptions = {}): Fixture {
+    const f = fixture(letter);
+    if (!o.pinned) return f;
+    if (letter !== 'O') throw new Error(`--pinned stages only O (the segment after the temple rope), not ${letter}`);
+    return { ...f, tile: PIN_START, note: 'teleported to Varrock from a temple-rope pin' };
 }
 
 /** Stackable kit entries (one slot whatever the count). */
@@ -197,6 +218,8 @@ export function fixtureItems(letter: string, o: KitOptions = {}): Array<[string,
     const free = INVENTORY_SLOTS - (f.keepFree ?? FREE_KEPT) - slotsNeeded(letter, { ...o, sharks: 0 });
     const sharks = Math.min(o.sharks ?? KIT.shark!, Math.max(0, free));
     if (sharks > 0) out.push(['shark', sharks]);
+    // The pre-dose takes A's kept-free slot only until it is drunk at A's start, before Narnode's seal arrives.
+    if (o.predose && letter === 'A') out.push(['1dose2antipoison', 1]);
     return out;
 }
 
@@ -204,7 +227,7 @@ type FixtureSdk = Pick<BotSDK, 'getState' | 'onStateUpdate' | 'sendSay' | 'sendD
 
 /** Put the lab account in `letter`'s start state: route levels, every MM var, the remaining kit, the quest items, the worn items, the tile. */
 export async function applyFixture(sdk: FixtureSdk, letter: string, o: KitOptions = {}): Promise<void> {
-    const f = fixture(letter);
+    const f = fixtureAt(letter, o);
     await sdk.sendCloseModal();
     // Set up away from anything aggressive (the last run may have ended among the atoll's guards).
     // A knockout's fade or a ladder's delay refuses a teleport for a few ticks, so it is retried.
@@ -231,7 +254,7 @@ export async function applyFixture(sdk: FixtureSdk, letter: string, o: KitOption
     for (const [k, n] of rest) await give(sdk, k, n);
     verify(rest);
     // Levels before the wear, so hitpoints and prayer start full.
-    await setStats(sdk, ROUTE_LEVELS);
+    await setStats(sdk, { ...ROUTE_LEVELS, ...(o.defence !== undefined ? { defence: o.defence } : {}) });
     await mustTele(sdk, f.tile.x, f.tile.z, f.tile.level);
     // Worn items go on at the tile: a gree-gree is held only inside the monkey zone (mm_greegree.rs2).
     for (const w of f.worn ?? []) {
@@ -248,8 +271,8 @@ export async function applyFixture(sdk: FixtureSdk, letter: string, o: KitOption
 }
 
 /** Why the account is not in `letter`'s start state, or null: off the fixture's tile, or a var reading back otherwise. */
-export async function fixtureDrift(sdk: Pick<BotSDK, 'getState' | 'onStateUpdate' | 'sendSay'>, letter: string): Promise<string | null> {
-    const f = fixture(letter);
+export async function fixtureDrift(sdk: Pick<BotSDK, 'getState' | 'onStateUpdate' | 'sendSay'>, letter: string, o: KitOptions = {}): Promise<string | null> {
+    const f = fixtureAt(letter, o);
     const at = pos(sdk);
     if (at.level !== f.tile.level || chebyshev(at, f.tile) > 3) return `at ${JSON.stringify(at)}, not the fixture's tile ${JSON.stringify(f.tile)}`;
     const want: Record<string, number> = { ...PREREQ_VARS, ...Object.fromEntries(MM_VARS.map(v => [v, f.vars[v] ?? 0])) };
@@ -273,7 +296,7 @@ const runeArrows = (s: BotWorldState) => [...s.inventory, ...s.equipment].filter
 /** Prayer potion doses held: Prayer potion(4) is 4, and so on. */
 const prayerDoses = (s: BotWorldState) => s.inventory.reduce((n, i) => n + (Number(/^Prayer potion\((\d)\)/i.exec(i.name)?.[1] ?? 0) * i.count), 0);
 
-const antipoisonDoses = (s: BotWorldState) => s.inventory.reduce((n, i) => n + (Number(/^Antipoison\((\d)\)/i.exec(i.name)?.[1] ?? 0) * i.count), 0);
+const antipoisonDoses = (s: BotWorldState) => s.inventory.reduce((n, i) => n + (Number(/antipoison\((\d)\)/i.exec(i.name)?.[1] ?? 0) * i.count), 0);
 const sharksHeld = (s: BotWorldState) => s.inventory.filter(i => i.name === 'Shark').length;
 const potionsHeld = (s: BotWorldState) => s.inventory.filter(i => /^Prayer potion\(\d\)/i.test(i.name)).length;
 const PROTECT = new Set(['protect_from_melee', 'protect_from_missiles', 'protect_from_magic']);
@@ -439,6 +462,48 @@ function trace(sdk: Pick<BotSDK, 'onStateUpdate'>, every: number): () => void {
     });
 }
 
+/**
+ * The lab's stand-in for SUPPLIES.md H12o (rs/158 and main, 10-22 13:3x: 9 sharks + 1 super antipoison(4) at P's start;
+ * the module takes its `want` and `slots` from whatever row the caller passes).
+ */
+export const H12O_LAB: Omit<TopUp, 'from'> = { want: [{ item: /^Shark$/i, amount: 9 }, { item: /^Superantipoison\(4\)$/i, amount: 1 }], slots: 10 };
+/** The helper's tile beside the bridge jump's landing (2803,2724), as rs/463's probe parked it (2803,2723 is blocked). */
+export const HELPER_TILE = { x: 2802, z: 2724 };
+const JUMP_LANDING = { x: 2803, z: 2724 };
+
+/**
+ * Stage the H12o helper at HELPER_TILE with exactly H12o's items and levels that survive the landing's wildlife, and
+ * start its give() when SCORED lands from the bridge jump (the module's receiveTopUp then asks for the trade).
+ */
+async function stageTopUpHelper(helper: Awaited<ReturnType<typeof openSession>>, scored: Pick<BotSDK, 'getState' | 'onStateUpdate'>): Promise<void> {
+    const h = helper.sdk;
+    await clearInventory(h);
+    await setStats(h, { hitpoints: 70, defence: 70, attack: 70, strength: 70 });
+    await give(h, 'shark', 9);
+    await give(h, '4dose2antipoison', 1);
+    await mustTele(h, HELPER_TILE.x, HELPER_TILE.z, 0);
+    const scoredName = scored.getState()!.player!.name;
+    const off = scored.onStateUpdate(s => {
+        const p = pos(s);
+        if (p.level !== 0 || chebyshev(p, JUMP_LANDING) > 4) return;
+        off();
+        void giveTo(h, scoredName, [{ item: /^Shark$/i, n: 'all' }, { item: /^Superantipoison\(4\)$/i }], { maxTicks: 60, openTimeoutMs: 60_000 })
+            .then(r => console.log(`lab helper give: ${JSON.stringify({ ok: r.ok, ticks: r.ticks, reason: r.reason })}`), e => console.log(`lab helper give threw: ${e}`));
+    });
+}
+
+/** --trace: one CLICK line per send SCORED's code makes, with the tick, for click timing (send to landing, re-sends). */
+function logClicks(sdk: BotSDK): void {
+    for (const m of ['sendWalk', 'sendInteractLoc', 'sendInteractNpc', 'sendUseItemOnLoc', 'sendUseItemOnNpc', 'sendUseItem', 'sendTogglePrayer', 'sendClickComponent'] as const) {
+        const rec = sdk as unknown as Record<string, (...a: unknown[]) => unknown>;
+        const orig = rec[m]!.bind(sdk);
+        rec[m] = (...a: unknown[]) => {
+            console.log(`CLICK t=${sdk.getState()?.tick ?? -1} ${m} ${JSON.stringify(a)}`);
+            return orig(...a);
+        };
+    }
+}
+
 /** Mean and max over the runs, per boundary (state on arrival) and per segment (what it used). */
 function printCensus(cs: ReadonlyArray<{ boundaries: BoundaryCensus[]; uses: Array<ReturnType<SegmentUse['summary']>> }>): void {
     const agg = (xs: number[]) => (xs.length ? `${(xs.reduce((a, b) => a + b, 0) / xs.length).toFixed(1)}/${Math.max(...xs)}` : '-');
@@ -481,7 +546,26 @@ async function main(): Promise<void> {
     const i0 = SEGMENTS.findIndex(d => d.letter === from);
     const i1 = SEGMENTS.findIndex(d => d.letter === until);
     if (i0 < 0 || i1 < i0) throw new Error(`bad --from=${from} --until=${until}`);
-    const all = steps({ dialogue, note: line => console.log(line), bow: configId('obj', bow) });
+    /** --eat=segment (default, the ruled table) | below30 (exec 7's first gate chains) | N (eat below N everywhere, no top-ups). */
+    const eat = arg('eat', 'segment');
+    const eating: EatPolicy = eat === 'segment' ? SEGMENT_EATING : eat === 'below30' ? BELOW_30_EATING : { below: {}, otherwise: Number(eat) };
+    if (!Number.isFinite(eating.otherwise)) throw new Error(`bad --eat=${eat}`);
+    console.log(`eating: ${eat} ${JSON.stringify(eating)}`);
+    // --launch: this script owns the client (run with LAB_RUNNERS=0), so it can relog after a fixture's
+    // ::setvar calls; those change the varps but not the quest tab state.quests publishes until a login
+    // (login.rs2 ~update_questlist). Without it the tab may be stale, which nothing in H-M reads.
+    const launch = process.argv.includes('--launch');
+    const session = await openSession(botArg(), launch ? { launch: true } : {});
+    const { sdk } = session;
+    // A bot's first login on this engine's saves is on Tutorial Island, where every fixture's tele() refuses.
+    await leaveTutorial(session);
+    if (traceEvery > 0) logClicks(sdk);
+    /** --topup=<bot>: a second lab bot stands in for H12o's helper (run lab.sh with LAB_BOTS=<bot>). */
+    const topupBot = arg('topup', '');
+    const helper = topupBot ? await openSession(topupBot, { launch: true }) : null;
+    if (helper) await leaveTutorial(helper);
+    const topUpFrom: TopUp | undefined = helper ? { from: helper.sdk.getState()!.player!.name, ...H12O_LAB } : undefined;
+    const all = steps({ dialogue, note: line => console.log(line), bow: configId('obj', bow), eating, ...(topUpFrom ? { topUpFrom } : {}) });
     const chosen = all.slice(i0, i1 + 1);
     /** The gnome-half trade's boundary (a segment letter): a ::give top-up before it, as the helper's trade. */
     const trade = arg('trade', '').toUpperCase();
@@ -504,23 +588,24 @@ async function main(): Promise<void> {
             const plan = topUp ? topUpPlan(ctx.sdk.getState()!, topUpReserve(next!, ctx.sdk.getState()!), topPotions) : [];
             for (const [k, n] of plan) await give(ctx.sdk, k, n);
             if (plan.length) b.given = Object.fromEntries(plan);
+            if (next === 'P' && helper) await stageTopUpHelper(helper, ctx.sdk);
             boundaries.push(b);
             use = next ? new SegmentUse(next, traps) : null;
         },
     });
     const chain: Step<MmContext>[] = [...chosen.flatMap((s, k) => [census(letters[k]!), s]), census(null)];
-    // --launch: this script owns the client (run with LAB_RUNNERS=0), so it can relog after a fixture's
-    // ::setvar calls; those change the varps but not the quest tab state.quests publishes until a login
-    // (login.rs2 ~update_questlist). Without it the tab may be stale, which nothing in H-M reads.
-    const launch = process.argv.includes('--launch');
-    const session = await openSession(botArg(), launch ? { launch: true } : {});
-    const { sdk } = session;
-    // A bot's first login on this engine's saves is on Tutorial Island, where every fixture's tele() refuses.
-    await leaveTutorial(session);
     const table: Record<string, Array<number | string>> = Object.fromEntries(chosen.map(s => [s.name, []]));
     let passes = 0;
     const censuses: Array<{ boundaries: BoundaryCensus[]; uses: Array<ReturnType<SegmentUse['summary']>> }> = [];
-    const kitOpts: KitOptions = { bow, ...(sharks ? { sharks: Number(sharks) } : {}), ...(potions ? { potions: Number(potions) } : {}) };
+    /** --pinned: O from the Varrock teleport's landing, as a temple-rope pin leaves it (the way back is O's start). */
+    const pinned = process.argv.includes('--pinned');
+    /** --defence=N: Defence staged at N (the O43a gate chains), stated on every result with the in-game level and xp. */
+    const defence = arg('defence', '');
+    /** --antipoison=N: super antipoison(4) potions in the kit instead of H12's 1. */
+    const antipoison = arg('antipoison', '');
+    /** --predose: H12 also carries a one-dose super antipoison, drunk at A's start (rs/158's zero-slot option). */
+    const predose = process.argv.includes('--predose');
+    const kitOpts: KitOptions = { bow, pinned, predose, ...(defence ? { defence: Number(defence) } : {}), ...(antipoison ? { antipoison: Number(antipoison) } : {}), ...(sharks ? { sharks: Number(sharks) } : {}), ...(potions ? { potions: Number(potions) } : {}) };
     for (let run = 0; run < runs; run++) {
         // A relog has once come back somewhere else with an older pack (G run 2, 05:27: Lumbridge, then a death), and a
         // fixture once stalled on a client that stopped publishing: both are re-staged, at most three times.
@@ -528,7 +613,7 @@ async function main(): Promise<void> {
             try {
                 await applyFixture(sdk, from, kitOpts);
                 if (launch) await relog(session);
-                const bad = await fixtureDrift(sdk, from);
+                const bad = await fixtureDrift(sdk, from, kitOpts);
                 if (!bad) break;
                 throw new Error(bad);
             } catch (e) {
@@ -544,6 +629,8 @@ async function main(): Promise<void> {
         }
         const log = TickLog.memory();
         const s0 = sdk.getState()!;
+        const def = s0.skills.find(k => k.name === 'Defence');
+        result('mm_staged', { run, defence: { level: def?.baseLevel, xp: def?.experience }, hp: s0.player?.hp, worn: s0.equipment.map(i => i.name) });
         const hp0 = s0.player!.hp, pp0 = s0.prayers?.prayerPoints, doses0 = prayerDoses(s0);
         const sharks0 = s0.inventory.filter(i => i.name === 'Shark').length;
         const arrows0 = runeArrows(s0);

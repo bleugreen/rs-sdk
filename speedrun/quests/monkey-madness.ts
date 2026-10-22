@@ -19,6 +19,14 @@
 // atoll body starts by getting to where it works from (out of the cell, into
 // the town, to its NPC), so a segment entered after a drop finishes the same
 // way as one entered in order.
+//
+// The temple rope pin. N's rope can land the player among the trapdoor
+// guards, who pin them in about 1 climb in 6; N then waits PIN_WAIT ticks and
+// teleports to Varrock. The amulet is already strung by then, so N is done
+// (the amulet is its milestone) and N ends off the atoll. O starts with the
+// way back (wayBack: spirit trees to the stronghold, then U's hangar route),
+// and its preconditions admit any tile off the atoll, so the resume walk
+// enters O from wherever on that way a restart finds the player.
 
 import type { BotWorldState, PrayerName } from '../../sdk/types';
 import type { QuestKey } from '../data/quest-stages';
@@ -27,8 +35,8 @@ import { fight, prayerActive, setPrayer, Upkeep } from '../lib/combat';
 import { converse, type Interrupt } from '../lib/converse';
 import { pageText } from '../lib/dialogue';
 import { compactJournal, journalProbeName, journalText, questStatus, type QuestView } from '../lib/quests';
-import { swap } from '../lib/trade';
-import { glide, GNOME_STRONGHOLD_GATE, passGate, runTo, spiritTree, teleport, teleportRefusal } from '../lib/travel';
+import { receiveFrom, sameName, swap, type GiveSpec, type WantSpec } from '../lib/trade';
+import { deletesFollowerItem, glide, GNOME_STRONGHOLD_GATE, passGate, runTo, SPIRIT_TREES, spiritTree, teleport, teleportRefusal, type Hop } from '../lib/travel';
 import { solveOnPanel } from '../lib/puzzle';
 import { currentTick, waitTicks, waitUntil, type Pred } from '../lib/wait';
 import { chebyshev, findLoc, invCount, messagesSince, pos, waitForNpc, type StateLike } from '../lib/world';
@@ -49,6 +57,13 @@ export interface Options {
     returnMonkey?: 'walk' | 'glider';
     /** Diagnostic lines (the timing choices behind a random step); the lab prints them. Default: dropped. */
     note?: (line: string) => void;
+    /** When sharks are eaten. Default SEGMENT_EATING (the ruled per-segment thresholds, no top-ups). */
+    eating?: EatPolicy;
+    /**
+     * The atoll top-up (SUPPLIES.md H12o): a helper parked beside the bridge jump's landing trades this to SCORED as P
+     * lands there. Off when absent (the default); run.ts passes the ledger row's helper and items.
+     */
+    topUpFrom?: TopUp;
     /**
      * The bow the kit carries for the Jungle Demon (X), by object id. Default the magic shortbow (H12); any bow whose
      * level requirement is at least the rune arrows' fires them (player_ranged.rs2 player_ranged_check_ammo).
@@ -56,10 +71,10 @@ export interface Options {
     bow?: number;
 }
 
-export const DEFAULT_OPTIONS: Required<Omit<Options, 'kitFrom'>> = { dialogue: 'fixed', templeMethod: 'ladder', returnMonkey: 'walk', note: () => {}, bow: 861 /* MM_OBJ.magicShortbow, declared below */ };
+export const DEFAULT_OPTIONS: Required<Omit<Options, 'kitFrom' | 'eating' | 'topUpFrom'>> = { dialogue: 'fixed', templeMethod: 'ladder', returnMonkey: 'walk', note: () => {}, bow: 861 /* MM_OBJ.magicShortbow, declared below */ };
 
-export function resolveOptions(o: Options = {}): Required<Omit<Options, 'kitFrom'>> & Pick<Options, 'kitFrom'> {
-    return { ...DEFAULT_OPTIONS, ...o };
+export function resolveOptions(o: Options = {}): Required<Omit<Options, 'kitFrom' | 'topUpFrom'>> & Pick<Options, 'kitFrom' | 'topUpFrom'> {
+    return { ...DEFAULT_OPTIONS, eating: SEGMENT_EATING, ...o };
 }
 
 /**
@@ -86,7 +101,8 @@ export const MM_OBJ = {
     magicShortbow: 861,
     runeArrow: 892,
     prayerPotion4: 2434, // 4doseprayerrestore
-    antipoison4: 2446, // 4doseantipoison
+    superAntipoison4: 2448, // 4dose2antipoison, "Superantipoison(4)"
+    superAntipoison1: 185, // 1dose2antipoison: H12's optional pre-dose, drunk at A
     shark: 385,
 } as const;
 
@@ -284,6 +300,16 @@ export function outsideTown(src: StateLike): boolean {
     return inArea(src, AREAS.atoll) && p.level === 0 && (p.z <= 2731 || (p.x <= 2730 && p.z <= 2766));
 }
 
+/**
+ * Off Ape Atoll altogether, neither on its surface nor under it (mapsquares 42_142..43_144: the dungeon, the cellar,
+ * under the temple): the mainland, the hangar or Crash Island. Where a temple-rope pin's Varrock teleport leaves the
+ * player, and every leg of the way back.
+ */
+export function offAtoll(src: StateLike): boolean {
+    const p = pos(src);
+    return !(p.x >= AREAS.atoll.x0 && p.x <= AREAS.atoll.x1 && ((p.z >= AREAS.atoll.z0 && p.z <= AREAS.atoll.z1) || (p.z >= 9088 && p.z <= 9279)));
+}
+
 const LANDING = { x: 2801, z: 2707 };
 const RAVINE_END = { x: 2713, z: 2767 };
 const CELL_DOOR = { x: 2771, z: 2795 };
@@ -432,6 +458,12 @@ const TRAPDOOR = { x: 2807, z: 2785 };
 const TRAPDOOR_ACCESS = { x: 2806, z: 2785 };
 /** Under the trapdoor (mm_temple.rs2: 0_43_143_55_49); the rope up lands within 2 of the trapdoor. */
 const TEMPLE_ROPE = { x: 2808, z: 9201 };
+/**
+ * The rope's open sides, south and west first (maps/m43_143.jm2: cave wall on its east). From a diagonal tile the server
+ * answers "I can't reach that!", and zombie monkeys standing on the sides kept a chain there for 30 ticks.
+ */
+export const TEMPLE_ROPE_SIDES: ReadonlyArray<{ x: number; z: number }> = [{ x: 2808, z: 9200 }, { x: 2807, z: 9201 }, { x: 2808, z: 9202 }];
+
 /** West of the trapdoor guards' hunt range (spawns (2803-2805, 2783-2786), maxrange 2). */
 const TEMPLE_CLEAR = { x: 2795, z: 2786 };
 
@@ -489,8 +521,87 @@ export function auntWindowLeft(at: { x: number; z: number }): number {
 const AUNT_WAIT = { x: 2749, z: 2791 };
 const CHILD = { x: 2743, z: 2795 };
 
-/** Eat a shark below this HP. At 42 HP a dungeon pass costs 22-34 HP; eating below 20 measured 0-2 sharks a pass and no deaths. */
-export const EAT_BELOW = 20;
+/**
+ * When a shark is eaten. `below`: per segment letter, eat under this HP; `otherwise` for the segments not listed.
+ * `topUpBelow`, when set: inside O and P, before each dialogue and each ladder (which block eating), eat under it.
+ */
+export interface EatPolicy {
+    below: Readonly<Partial<Record<string, number>>>;
+    otherwise: number;
+    /** Per segment letter, the threshold while inside GUARD_CORRIDOR (replacing `below` there). */
+    corridor?: Readonly<Partial<Record<string, number>>>;
+    topUpBelow?: number;
+}
+
+/**
+ * The temple's Monkey Guards (mm_religious_guard: level 167, attack and strength 130, aggressive melee, hunt range 5),
+ * spawned around the temple on the ground and its first floor (maps/m43_43.jm2). Under the town walks' Protect from
+ * Missiles their 12-15 hits landed in full in J, K and N (rs/201's J/K per-hit trace, 10-22).
+ */
+export const RELIGIOUS_GUARDS: Readonly<Record<number, ReadonlyArray<{ x: number; z: number }>>> = {
+    0: [{ x: 2788, z: 2778 }, { x: 2793, z: 2782 }, { x: 2793, z: 2789 }, { x: 2795, z: 2775 }],
+    1: [{ x: 2790, z: 2790 }, { x: 2797, z: 2780 }, { x: 2797, z: 2791 }],
+};
+/** A guard's hunt range plus one: a leg passing this close to a spawn is walked under Protect from Melee. */
+export const GUARD_REACH = 6;
+/** rs/158's corridor round the guards, floors 0 and 1, where the corridor eat thresholds apply. */
+export const GUARD_CORRIDOR = { x0: 2786, z0: 2774, x1: 2798, z1: 2792 } as const;
+
+export function inGuardCorridor(src: StateLike): boolean {
+    const p = pos(src);
+    return (p.level === 0 || p.level === 1) && tileIn(p, GUARD_CORRIDOR);
+}
+
+/**
+ * The protect prayer for a walk leg from `a` to `b` on `level`: Melee when the straight leg passes within GUARD_REACH of
+ * a religious guard's spawn on that level, else Missiles (the town's archers). Chosen while standing, before the leg's
+ * click: a prayer click mid-walk cancels the walk (rs/241).
+ */
+export function townLegPrayer(a: { x: number; z: number }, b: { x: number; z: number }, level: number): 'protect_from_melee' | 'protect_from_missiles' {
+    const guards = RELIGIOUS_GUARDS[level] ?? [];
+    const n = Math.max(1, chebyshev(a, b));
+    for (let i = 0; i <= n; i++) {
+        const p = { x: Math.round(a.x + ((b.x - a.x) * i) / n), z: Math.round(a.z + ((b.z - a.z) * i) / n) };
+        if (guards.some(g => chebyshev(p, g) <= GUARD_REACH)) return 'protect_from_melee';
+    }
+    return 'protect_from_missiles';
+}
+
+/**
+ * The ruled policy (main and rs/158, 10-22 11:4x): eat below 10 + the segment's worst damage in any 3-tick window, hits
+ * and poison, the max over exec 7's chains (Defence 37) and exec 5's (Defence 1) on bgsrv-mac; no top-ups. A shark heals
+ * 20 against a 42 max, so a threshold of 23 or less wastes nothing.
+ */
+export const SEGMENT_EATING: EatPolicy = {
+    // rs/158 13:4x: outside the guards' corridor, 10 + the worst 3-tick window over every valid round with the hits
+    // within GUARD_REACH of a guard spawn left out; inside it, 10 + the worst window with them in, until a round shows the
+    // zone prayer removes them.
+    below: { H: 27, I: 22, J: 25, K: 26, L: 12, M: 21, N: 23, O: 24, P: 25, Q: 12, R: 16 },
+    corridor: { J: 39, K: 34, N: 29, O: 31 },
+    otherwise: 20,
+};
+
+/**
+ * Exec 7's first gate chains: eat below 30, and in O and P a top-up below 34 before each dialogue and ladder. Measured:
+ * 69-85 HP of each chain's healing went over the 42 max (about 4 sharks), and both clean chains ran out by R.
+ */
+export const BELOW_30_EATING: EatPolicy = { below: {}, otherwise: 30, topUpBelow: 34 };
+
+/** The HP `policy` eats under in segment `letter`, inside the guards' corridor when `corridor`. */
+export function eatBelowFor(policy: EatPolicy, letter: string, corridor = false): number {
+    return (corridor ? policy.corridor?.[letter] : undefined) ?? policy.below[letter] ?? policy.otherwise;
+}
+
+/** A top-up eat is wanted before a dialogue or a ladder: under `topUpBelow` with a shark held. */
+export function topUpWanted(s: BotWorldState, topUpBelow: number): boolean {
+    return (s.player?.hp ?? 0) < topUpBelow && invCount(s, MM_OBJ.shark) > 0;
+}
+
+/** The running segment's eat thresholds, set by stepFor before each body runs. */
+let eating: { below: number; corridorBelow: number; topUpBelow?: number } = { below: SEGMENT_EATING.otherwise, corridorBelow: SEGMENT_EATING.otherwise };
+
+/** The eat threshold where the player stands now. */
+const eatBelowAt = (s: BotWorldState) => (inGuardCorridor(s) ? eating.corridorBelow : eating.below);
 
 /** Drink a prayer potion below this many points while a prayer is on (a dose restores 30 at Prayer 94). */
 export const DRINK_BELOW = 20;
@@ -524,27 +635,32 @@ async function noRetaliate(sdk: Sdk, note: (line: string) => void = () => {}): P
 }
 
 /**
- * Upkeep while `fn` runs, on the atoll and on the gnome half alike: auto-retaliate off, a shark below EAT_BELOW, the
+ * Upkeep while `fn` runs, on the atoll and on the gnome half alike: auto-retaliate off, a shark below the segment's eat threshold, the
  * antipoison on a poisoning and a prayer potion below DRINK_BELOW while a prayer is on. Measured: B's walk through the
  * Karamja jungle poisoned the player, and with no cure the poison killed a 42 HP player in E's hangar.
  */
 async function upkeep<T>(sdk: Sdk, fn: () => Promise<T>): Promise<T> {
     await noRetaliate(sdk);
-    const u = new Upkeep(sdk, { eatBelow: EAT_BELOW, food: MM_OBJ.shark });
+    // Upkeep reads eatBelow on every step, so the threshold follows the player into and out of the guards' corridor.
+    const uo = { eatBelow: eating.below, food: MM_OBJ.shark };
+    const u = new Upkeep(sdk, uo);
     let lastDrink = -Infinity;
     let lastVialDrop = -Infinity;
     // The wildlife's poison (aa_wildlife.rs2) keeps ticking into the next stretch; the antipoison ends it and grants immunity.
     const obs = (m: { observationId?: number; tick: number }) => m.observationId ?? m.tick;
     let seen = Math.max(-1, ...(sdk.getState()?.gameMessages ?? []).map(obs));
-    let lastCure = -Infinity;
+
     const stop = sdk.onStateUpdate(s => {
+        uo.eatBelow = eatBelowAt(s);
         void u.step(s);
         const fresh = s.gameMessages.filter(m => obs(m) > seen);
         if (fresh.length) seen = Math.max(seen, ...fresh.map(obs));
-        if (fresh.some(m => /you have been poisoned/i.test(m.text)) && s.tick - lastCure >= 3) {
-            const cure = s.inventory.find(i => /^Antipoison/i.test(i.name));
+        if (fresh.some(m => /you have been poisoned/i.test(m.text))) lastPoisoned = s.tick;
+        if (cureWanted({ tick: s.tick, lastPoisoned, lastDose: lastAntipoison })) {
+            const cure = s.inventory.find(i => ANTIPOISON.test(i.name));
             if (cure) {
-                lastCure = s.tick;
+                lastAntipoison = s.tick;
+                stepNote(`S15 antipoison: a dose to cure a poisoning at t=${s.tick} (poisoned at t=${lastPoisoned})`);
                 void sdk.sendUseItem(cure.slot, cure.optionsWithIndex.find(o => /^drink$/i.test(o.text))?.opIndex ?? 1);
             }
         }
@@ -569,6 +685,94 @@ async function upkeep<T>(sdk: Sdk, fn: () => Promise<T>): Promise<T> {
     }
 }
 
+/** Any antipoison's doses by name: H12 carries "Superantipoison(4)" (no space), which `^Antipoison` would never match. */
+const ANTIPOISON = /antipoison\(\d\)$/i;
+
+/**
+ * Ticks of poison immunity a super antipoison dose gives: %poison to -20 (anti_poison.rs2), stepped by 1 every 30 ticks
+ * (poison.rs2 set_poison_timer). The dungeon's spikes and spear traps skip their poison while %poison is negative
+ * (ape_atoll_dungeon.rs2).
+ */
+export const SUPER_IMMUNE_TICKS = 600;
+
+/** The tick of the last antipoison dose this run drank (a cure or a pre-dungeon dose); -Infinity after a restart. */
+let lastAntipoison = -Infinity;
+
+/** The tick of the last "You have been poisoned!" this run saw. */
+let lastPoisoned = -Infinity;
+
+/**
+ * Whether to drink an antipoison now: once per fresh poisoning (within 30 ticks of its message), never within 3 ticks of a
+ * dose, in every segment. Deferring C's cure (the Karamja jungle) to save the dose for H-R was measured to fail the HP
+ * floor: in 2 of 3 chains the poison held HP to 20 through Daero's blindfold pages, where no eat can land, and an
+ * 11 then took it to 9 in E.
+ */
+export function cureWanted(o: { tick: number; lastPoisoned: number; lastDose: number }): boolean {
+    return o.lastPoisoned > o.lastDose && o.tick - o.lastDose >= 3 && o.tick - o.lastPoisoned <= 30;
+}
+
+/** A dose is wanted on entering a dungeon pass: one is held, and the last dose's immunity has under 60 ticks left. */
+export function immunityWanted(now: number, lastDose: number, held: boolean): boolean {
+    return held && now - lastDose > SUPER_IMMUNE_TICKS - 60;
+}
+
+/**
+ * H12's optional pre-dose (rs/158's zero-slot option): a one-dose super antipoison in the 28th slot, drunk at A's start
+ * (the vial dropped by upkeep) before Narnode's seal needs the slot. Its ~600 ticks of immunity cover the gnome half's
+ * Karamja jungle (B, C), so the 4-dose potion's doses all reach H-R. A no-op when H12 brought none.
+ */
+async function preDose(sdk: Sdk): Promise<void> {
+    const dose = sdk.getState()!.inventory.find(i => i.id === MM_OBJ.superAntipoison1);
+    if (!dose) return;
+    lastAntipoison = currentTick(sdk);
+    void sdk.sendUseItem(dose.slot, dose.optionsWithIndex.find(o => /^drink$/i.test(o.text))?.opIndex ?? 1);
+    const r = await waitUntil(sdk, s => !s.inventory.some(i => i.id === MM_OBJ.superAntipoison1), { maxTicks: 4 });
+    if (!r.ok) throw new Error(`the pre-dose super antipoison was not drunk (at ${where(sdk)})`);
+    stepNote(`S15 antipoison: the pre-dose at A, t=${lastAntipoison} (immune to about t=${lastAntipoison + SUPER_IMMUNE_TICKS})`);
+}
+
+/** Drink an antipoison dose before a dungeon pass when immunityWanted, so the pass's spikes and spears never poison. */
+async function immune(sdk: Sdk, pass: string): Promise<void> {
+    const s = sdk.getState()!;
+    const dose = s.inventory.find(i => ANTIPOISON.test(i.name));
+    if (!immunityWanted(s.tick, lastAntipoison, !!dose)) return;
+    const names = () => sdk.getState()!.inventory.filter(i => ANTIPOISON.test(i.name)).map(i => i.name).join(',');
+    const before = names();
+    lastAntipoison = s.tick;
+    void sdk.sendUseItem(dose!.slot, dose!.optionsWithIndex.find(o => /^drink$/i.test(o.text))?.opIndex ?? 1);
+    await waitUntil(sdk, () => names() !== before, { maxTicks: 3 });
+    stepNote(`S15 antipoison: a dose before ${pass} at t=${s.tick} (immune to about t=${s.tick + SUPER_IMMUNE_TICKS})`);
+}
+
+/** On while O's and P's bodies run (withTopUps): climb, talk and P's bridge jump then top up first. */
+let topUps = false;
+
+async function withTopUps<T>(fn: () => Promise<T>): Promise<T> {
+    const was = topUps;
+    topUps = true;
+    try {
+        return await fn();
+    } finally {
+        topUps = was;
+    }
+}
+
+/**
+ * The top-up eat before a dialogue or a ladder, inside withTopUps and only when the policy has one. Under the eat
+ * threshold the running upkeep eats on its own, so the top-up waits for that eat first rather than sending a second.
+ */
+async function topUp(sdk: Sdk): Promise<void> {
+    const top = eating.topUpBelow;
+    if (!topUps || top === undefined || sdk.getState()!.dialog.isOpen) return;
+    if ((sdk.getState()!.player?.hp ?? 0) < eating.below) await waitUntil(sdk, s => (s.player?.hp ?? 0) >= eating.below || invCount(s, MM_OBJ.shark) === 0, { maxTicks: 4 });
+    const s = sdk.getState()!;
+    if (!topUpWanted(s, top)) return;
+    const shark = s.inventory.find(i => i.id === MM_OBJ.shark)!;
+    const n = invCount(s, MM_OBJ.shark);
+    void sdk.sendUseItem(shark.slot, shark.optionsWithIndex.find(o => /^eat$/i.test(o.text))?.opIndex ?? 1);
+    await waitUntil(sdk, x => invCount(x, MM_OBJ.shark) < n, { maxTicks: 3 });
+}
+
 /** Dismiss whatever chat pages are open (Lumo's welcome in the cell, an objbox). */
 async function dismiss(sdk: Sdk): Promise<void> {
     if (!sdk.getState()?.dialog.isOpen) return;
@@ -589,6 +793,7 @@ async function click(sdk: Sdk, to: { x: number; z: number }, tol = 1): Promise<b
 
 /** Climb the ladder or rope at (x, z) on the player's level; done when the level changes or the player jumps between surface and underground. */
 async function climb(sdk: Sdk, at: { x: number; z: number }, op: RegExp = /climb/i, extra: { interrupts?: readonly Interrupt[] } = {}): Promise<void> {
+    await topUp(sdk);
     const p0 = pos(sdk);
     const moved: Pred = s => {
         const p = pos(s);
@@ -767,12 +972,34 @@ interface Via {
  * points within 12 tiles are walk clicks (the client's own router); farther
  * ones are walked with the pathfinder.
  */
+const PROTECTS: readonly PrayerName[] = ['protect_from_melee', 'protect_from_missiles'];
+
+/**
+ * Walk in the town under the zone prayer: each leg (a via click, a pathfinder walk) under townLegPrayer, set while
+ * standing before it. The town's Monkey Archers (ranged, attack range 10) poison and hit a Defence 1 human for up to 12;
+ * the temple's religious guards hit 12-15 in melee. When the caller already holds a protect prayer, it is left alone.
+ */
 async function townGo(ctx: Ctx, to: { x: number; z: number }, tol = 0, via: Via | readonly Via[] = []): Promise<void> {
-    // The town's Monkey Archers (ranged, attack range 10) poison and hit a Defence 1 human for up to 12.
-    await praying(ctx.sdk, 'protect_from_missiles', () => townGoUnprayed(ctx, to, tol, via));
+    const { sdk } = ctx;
+    if (PROTECTS.some(p => prayerActive(sdk.getState()!, p))) return townGoUnprayed(ctx, to, tol, via, false);
+    try {
+        await townGoUnprayed(ctx, to, tol, via, true);
+    } finally {
+        for (const p of PROTECTS) if (prayerActive(sdk.getState()!, p)) await setPrayer(sdk, p, false);
+    }
 }
 
-async function townGoUnprayed(ctx: Ctx, to: { x: number; z: number }, tol: number, vias: Via | readonly Via[]): Promise<void> {
+/** Set the zone prayer for the leg from here to `to`, while standing; a switch is noted with its tile. */
+async function legPrayer(sdk: Sdk, to: { x: number; z: number }): Promise<void> {
+    const p = pos(sdk);
+    const want = townLegPrayer(p, to, p.level);
+    if (prayerActive(sdk.getState()!, want)) return;
+    const r = await setPrayer(sdk, want, true);
+    if (!r.ok) throw new Error(`${want} did not turn on: ${r.reason}`);
+    stepNote(`S15 zone prayer: ${want} at ${p.x},${p.z},${p.level} for the leg to ${to.x},${to.z}`);
+}
+
+async function townGoUnprayed(ctx: Ctx, to: { x: number; z: number }, tol: number, vias: Via | readonly Via[], zone = false): Promise<void> {
     const { sdk } = ctx;
     const options = Array.isArray(vias) ? (vias as readonly Via[]) : [vias as Via];
     for (let attempt = 0; attempt < 4; attempt++) {
@@ -781,12 +1008,14 @@ async function townGoUnprayed(ctx: Ctx, to: { x: number; z: number }, tol: numbe
         const via = options.find(v => v.points.length && chebyshev(pos(sdk), v.points[0]!) <= v.within);
         if (via) {
             for (const v of via.points) {
+                if (zone) await legPrayer(sdk, v);
                 if (chebyshev(pos(sdk), v) <= 12) clear = await click(sdk, v);
                 else clear = (await walkTo(ctx.bot, sdk, v.x, v.z, 1)).ok && !inCell(sdk);
                 if (!clear) break;
             }
         }
         if (!clear) continue;
+        if (zone) await legPrayer(sdk, to);
         const r = await walkTo(ctx.bot, sdk, to.x, to.z, tol);
         if (r.ok) return;
         if (!inCell(sdk)) throw new Error(`walk to ${to.x},${to.z} failed at ${where(sdk)}: ${r.message}`);
@@ -840,6 +1069,7 @@ async function useOnNpc(sdk: Sdk, item: number, npcName: RegExp, effect: Pred, i
 
 /** Talk to an NPC through a scripted conversation; throws on a choice the list does not answer, or when fewer than `minPages` pages were seen. */
 async function talk(sdk: Sdk, npc: RegExp, choices: RegExp[], o: { near?: { x: number; z: number }; minPages?: number; idle?: number } = {}): Promise<void> {
+    await topUp(sdk);
     const r = await talkTo(sdk, npc, choices, { maxTicks: 900, idle: o.idle ?? 3, ...(o.near ? { near: o.near } : {}) });
     if (!r.ok || !r.opened) throw new Error(`talk to ${npc}: ${r.reason ?? 'no dialogue'}`);
     if (r.pages < (o.minPages ?? 0)) throw new Error(`talk to ${npc}: ${r.pages} pages, expected at least ${o.minPages}: ${r.transcript.slice(-3).join(' / ')}`);
@@ -942,27 +1172,55 @@ export async function templeEscape(sdk: Sdk, maxTicks: number): Promise<{ ok: bo
     return { ok: true, ticks, via: pos(sdk).level === 1 ? 'ladder' : 'walk' };
 }
 
+/**
+ * Up the temple rope from one of its open sides, standing exactly on it: a walk click onto the side, then the climb.
+ * "I can't reach that!" (or no climb in 12 ticks) moves on to the next side. The landing up top is the server's random
+ * tile 1-2 from the trapdoor (mm_temple.rs2 oploc1: map_findsquare), so no approach here changes the pin odds.
+ */
+async function ropeUp(sdk: Sdk): Promise<void> {
+    for (let i = 0; i < 2 * TEMPLE_ROPE_SIDES.length && underTemple(sdk); i++) {
+        const side = TEMPLE_ROPE_SIDES[i % TEMPLE_ROPE_SIDES.length]!;
+        await act(sdk, () => sdk.sendWalk(side.x, side.z, true), s => chebyshev(pos(s), side) === 0 || !underTemple(s), { resendEvery: 3, maxTicks: 9 });
+        if (chebyshev(pos(sdk), side) !== 0) {
+            stepNote(`S15:N rope: could not stand on ${side.x},${side.z} (at ${where(sdk)})`);
+            continue;
+        }
+        const rope = await findLoc(sdk, { ...TEMPLE_ROPE, op: /climb/i, radius: 5 });
+        if (!rope) throw new Error(`no climbing rope at ${TEMPLE_ROPE.x},${TEMPLE_ROPE.z} (at ${where(sdk)})`);
+        const op = rope.optionsWithIndex.find(o => /climb/i.test(o.text))!.opIndex;
+        const t0 = currentTick(sdk);
+        await act(sdk, () => sdk.sendInteractLoc(rope.x, rope.z, rope.id, op), s => !underTemple(s) || messagesSince(s, t0, /can't reach/i).length > 0, { resendEvery: 4, maxTicks: 12 });
+        if (underTemple(sdk)) stepNote(`S15:N rope: no climb from ${side.x},${side.z}; ${messagesSince(sdk.getState()!, t0, /can't reach/i).length ? "I can't reach that!" : 'no answer'}`);
+    }
+    if (underTemple(sdk)) throw new Error(`the temple rope did not take the player up from any side (at ${where(sdk)})`);
+}
+
 /** The bounded wait on a temple-rope pin before the teleport out: the only pin that freed itself did so at 49 ticks. */
 export const PIN_WAIT = 50;
 
-async function templeOut(ctx: Ctx): Promise<{ pinned: number }> {
+/**
+ * Out of the trapdoor guards' box after the temple rope. `escaped`: pinned past PIN_WAIT and teleported to Varrock
+ * (H12's spare Varrock set); the caller's next step is wayBack. Measured (lab/measure-mm-pin.ts): a pin that lasts this
+ * long held 400+ ticks in 2 of 3; a relog is refused in combat (3 of 3); the Varrock teleport lands in 4 ticks (3 of 3).
+ */
+async function templeOut(ctx: Ctx): Promise<{ pinned: number; escaped: boolean }> {
     const { sdk } = ctx;
     const p = pos(sdk);
-    if (p.level !== 0 || chebyshev(p, TRAPDOOR) > 3) return { pinned: 0 };
+    if (p.level !== 0 || chebyshev(p, TRAPDOOR) > 3) return { pinned: 0, escaped: false };
     return praying(sdk, 'protect_from_melee', async () => {
         const r = await templeEscape(sdk, PIN_WAIT);
         if (!r.ok) {
-            // Measured (lab/measure-mm-pin.ts): a pin that lasts this long held 400+ ticks in 2 of 3; a relog is
-            // refused in combat (3 of 3); the Varrock teleport lands in 4 ticks (3 of 3).
             const t = await teleport(sdk, 'varrock');
-            throw new Error(`pinned by the trapdoor guards for ${r.ticks} ticks; ${t.ok ? 'teleported to Varrock' : 'the Varrock teleport failed too'} (the way back to the atoll is the recovery)`);
+            if (!t.ok) throw new Error(`pinned by the trapdoor guards for ${r.ticks} ticks, and the Varrock teleport failed: ${t.reason} (at ${where(sdk)})`);
+            stepNote(`S15 temple pin: held ${r.ticks} ticks, then the Varrock teleport in ${t.ticks}`);
+            return { pinned: r.ticks, escaped: true };
         }
         const pinned = r.ticks;
         if (pos(sdk).level === 1) {
             await go(ctx, TEMPLE_LADDER_FOOT, 0);
             await climb(sdk, TEMPLE_LADDER);
         }
-        return { pinned };
+        return { pinned, escaped: false };
     });
 }
 
@@ -1063,7 +1321,7 @@ export function h12Kit(bow: number): KitLine[] {
         // No bananas: O searches them from the trees in the aunt's house (BANANA_TREES).
         { name: /^Gold bar$/, n: 1 }, { name: /^Ball of wool$/, n: 1 }, { name: /^Monkey bones$/, n: 1 },
         { name: /bow$/i, n: 1, id: bow }, { name: /^Rune arrow$/, n: 200 },
-        { name: /^Prayer potion\(4\)$/, n: H12_POTIONS }, { name: /^Antipoison\(4\)$/, n: 1 },
+        { name: /^Prayer potion\(4\)$/, n: H12_POTIONS }, { name: /^Superantipoison\(4\)$/, n: 1 },
         // Ardougne 2 casts (2 law, 2 water each), Varrock 2 casts (1 law, 3 air, 1 fire each).
         { name: /^Law rune$/, n: 6 }, { name: /^Air rune$/, n: 6 }, { name: /^Fire rune$/, n: 2 }, { name: /^Water rune$/, n: 4 },
         { name: /^Shark$/, n: H12_SHARKS },
@@ -1082,16 +1340,26 @@ export function kitMissing(s: BotWorldState, bow: number): Array<[RegExp, number
 export const GT_HANDBACK: readonly RegExp[] = [/^Staff of fire$/i, /^Mithril scimitar$/i, /^Knife$/i, /^Coins$/i];
 
 /**
- * The Grand Tree hand-off before A: one swap() with the giver (lib/trade.ts), giving back GT_HANDBACK and taking what
- * H12 lacks; then the bow is wielded and the arrows quivered, which they stay until the gree-gree at R.
+ * The Grand Tree swap's plan from the state: give back the GT_HANDBACK items held, want what H12 still lacks (kitMissing
+ * as amounts). No want means no trade: the kit was already placed (run.ts's H12 hand-off at the tree door).
  */
-async function gtSwap(ctx: Ctx, o: Resolved): Promise<void> {
+export function h12Plan(s: BotWorldState, o: { bow: number }): { give: GiveSpec[]; want: WantSpec[] } {
+    return {
+        give: GT_HANDBACK.filter(p => s.inventory.some(i => p.test(i.name))).map(item => ({ item })),
+        want: kitMissing(s, o.bow).map(([item, amount]) => ({ item, amount })),
+    };
+}
+
+/**
+ * The Grand Tree hand-off before A: one swap() with the giver (lib/trade.ts) by h12Plan, only when H12 is short; then
+ * the bow is wielded and the arrows quivered, which they stay until the gree-gree at R.
+ */
+export async function gtSwap(ctx: Pick<Ctx, 'sdk'>, o: Pick<Resolved, 'bow' | 'kitFrom'>): Promise<void> {
     const { sdk } = ctx;
-    const missing = kitMissing(sdk.getState()!, o.bow);
-    if (missing.length) {
-        if (!o.kitFrom) throw new Error(`H12 kit short (${missing.map(([n, k]) => `${k} ${n.source}`).join(', ')}) and no kitFrom`);
-        const give = GT_HANDBACK.filter(p => sdk.getState()!.inventory.some(i => p.test(i.name))).map(item => ({ item }));
-        const r = await swap(sdk as never, o.kitFrom, give, missing.map(([item, amount]) => ({ item, amount })), { closeModals: true });
+    const plan = h12Plan(sdk.getState()!, o);
+    if (plan.want.length) {
+        if (!o.kitFrom) throw new Error(`H12 kit short (${plan.want.map(w => `${w.amount} ${(w.item as RegExp).source}`).join(', ')}) and no kitFrom`);
+        const r = await swap(sdk as never, o.kitFrom, plan.give, plan.want, { closeModals: true });
         if (!r.ok) throw new Error(`the Grand Tree swap with ${o.kitFrom} failed: ${r.reason ?? 'unknown'}`);
         const still = kitMissing(sdk.getState()!, o.bow);
         if (still.length) throw new Error(`after the swap the kit still lacks ${still.map(([n, k]) => `${k} ${n.source}`).join(', ')}`);
@@ -1126,6 +1394,86 @@ async function intoTree(ctx: Ctx, level: number): Promise<void> {
         await climb(sdk, TREE_LADDER, up ? /^climb-up$/i : /^climb-down$/i, CHATTER);
     }
     if (pos(sdk).level !== level) throw new Error(`not on the Grand Tree's level ${level} (at ${where(sdk)})`);
+}
+
+/**
+ * From the mainland (by `toDaero`, which ends beside Daero on the Grand Tree's first floor), the powered hangar or
+ * Crash Island to Ape Atoll's landing: Daero's blindfold to the hangar (mm_daero.rs2 daero_return_hangar, any mm_main
+ * once he has left the tree), Waydar's glider to Crash Island (mm_waydar.rs2:5-19, from mm_main arrived_atoll) and
+ * Lumdo's boat (mm_lumdo.rs2, lumdo_travelled). By region, so a resume picks up the leg it stands in. None of the three
+ * runs post_tele_checks, so a backpack monkey rides along (travel.ts DELETES_FOLLOWER_ITEM).
+ */
+async function hangarRoute(ctx: Ctx, toDaero: () => Promise<void>): Promise<void> {
+    const { sdk } = ctx;
+    // stopgap until rs/411: the backpack monkey's chatter page after a talk click is taken as the click's answer, so the
+    // click is never re-sent (rs/391's ClickGuard finding): gate chains b and c stood 100 ticks in the hangar, Waydar's
+    // talk never opening. Shorter talks, each retried at most twice more.
+    const hop = async (label: string, npc: RegExp, choices: RegExp[], arrived: (s: BotWorldState) => boolean, opts: Record<string, unknown>) => {
+        let r!: Awaited<ReturnType<typeof talkTo>>;
+        const ok = await stopgapRetry(`${label} talk`, 3, async () => {
+            r = await talkTo(sdk, npc, choices, { maxTicks: 45, ...opts, until: arrived, ...CHATTER });
+            return arrived(sdk.getState()!);
+        });
+        if (!ok) throw new Error(`${label}: ${r.reason ?? r.transcript.slice(-2).join(' / ')} (at ${where(sdk)})`);
+    };
+    if (!inArea(sdk, AREAS.atoll) && !inArea(sdk, HANGAR) && !inArea(sdk, CRASH_ISLAND)) {
+        await toDaero();
+        // Daero (mm_daero.rs2:218-238): Yes, the blindfold, a fade, the powered hangar.
+        await hop('Daero did not take the player to the hangar', /^Daero$/i, [/^Yes$/], s => inArea(s, HANGAR), { idle: 4, near: DAERO });
+    }
+    // "Shall we return to Crash Island?" (mm_waydar.rs2:5-19): Yes, the glider map, a p_delay(3), the island.
+    if (inArea(sdk, HANGAR)) await hop('Waydar did not fly to Crash Island', /^Waydar$/i, [/^Yes$/], s => inArea(s, CRASH_ISLAND), { idle: 4, closeModals: false });
+    if (inArea(sdk, CRASH_ISLAND)) await hop('Lumdo did not sail to the atoll', /^Lumdo$/i, [], s => inArea(s, AREAS.atoll), { idle: 2 });
+}
+
+/** Varrock to the stronghold: Varrock's young spirit tree goes only to Tree Gnome Village (spirit_tree.rs2, loc_1317), whose tree goes on. */
+const TREE_ROUTE: readonly Hop[] = [{ kind: 'teleport', spell: 'varrock' }, { kind: 'tree', to: 'village' }, { kind: 'tree', to: 'stronghold' }];
+
+/** Why TREE_ROUTE must not be taken from this state, or null: its teleport and spirit trees delete a backpack monkey. */
+export function treeRouteRefusal(s: BotWorldState): string | null {
+    if (!holds(s, MM_OBJ.monkey) || !deletesFollowerItem(TREE_ROUTE)) return null;
+    return 'the monkey is in the backpack, and a teleport or spirit tree deletes it (teleport.rs2 post_tele_checks)';
+}
+
+/**
+ * To the Gnome Stronghold by TREE_ROUTE: the Varrock teleport unless already near Varrock's tree (or at the village's,
+ * where a resume may find the player between the two hops), then the trees.
+ */
+async function treesToStronghold(ctx: Ctx): Promise<void> {
+    const { sdk } = ctx;
+    if (inStronghold(sdk) || inGrandTree(sdk)) return;
+    const refused = treeRouteRefusal(sdk.getState()!);
+    if (refused) throw new Error(refused);
+    const atVillage = pos(sdk).level === 0 && chebyshev(pos(sdk), SPIRIT_TREES.village.landing) <= 10;
+    if (!atVillage) {
+        if (!(pos(sdk).level === 0 && chebyshev(pos(sdk), VARROCK_TREE_FOOT) <= 150)) {
+            await unwear(sdk, MM_OBJ.greegree); // a worn gree-gree hides the magic tab
+            await dismiss(sdk);
+            const t = await teleport(sdk, 'varrock');
+            if (!t.ok) throw new Error(`the Varrock teleport: ${t.reason} (at ${where(sdk)})`);
+        }
+        const r = await runTo(sdk, { ...VARROCK_TREE_FOOT, tol: 1 }, { bot: ctx.bot });
+        if (!r.ok) throw new Error(`run to Varrock's spirit tree stopped at ${where(sdk)}: ${r.reason}`);
+        const v = await spiritTree(sdk, 'village');
+        if (!v.ok) throw new Error(`spirit tree to the village: ${v.reason}`);
+    }
+    const s = await spiritTree(sdk, 'stronghold');
+    if (!s.ok) throw new Error(`spirit tree to the stronghold: ${s.reason}`);
+}
+
+/**
+ * The way back to the atoll's landing after a temple-rope pin's Varrock teleport (main's ruling: wait PIN_WAIT,
+ * teleport, return and finish): TREE_ROUTE to the stronghold, into the tree to Daero, then the hangar route. No monkey is
+ * carried at N or O. The caller's toTown is the knockout into the town that H takes.
+ */
+async function wayBack(ctx: Ctx, note: (line: string) => void): Promise<void> {
+    const t0 = currentTick(ctx.sdk);
+    await hangarRoute(ctx, async () => {
+        await treesToStronghold(ctx);
+        await intoTree(ctx, 1);
+        if (chebyshev(pos(ctx.sdk), DAERO) > 3) await go(ctx, DAERO, 2);
+    });
+    note(`S15:O way back to the atoll after a temple pin: ${currentTick(ctx.sdk) - t0} ticks`);
 }
 
 /**
@@ -1248,6 +1596,7 @@ async function childTalks(ctx: Ctx, note: (line: string) => void, progress: Chil
         // Seven pages and the objbox, plus the 6-tile walk in: with 12 left, the aunt came back mid-talk once.
         await window(20);
         note(`S15:O talk 'talisman' at t=${currentTick(sdk)}: aunt ${JSON.stringify(auntTile())}, ${JSON.stringify(left())}, left seen at ${leftAt}`);
+        await topUp(sdk);
         const r = await talkTo(sdk, child, [], { maxTicks: 60, idle: 3, near: CHILD });
         if (!holds(sdk.getState()!, MM_OBJ.talisman)) throw new Error(`no talisman from the child: ${r.reason ?? r.transcript.slice(-2).join(' / ')}`);
         await dismiss(sdk);
@@ -1326,20 +1675,31 @@ const BANANA_SEARCH_TICKS = 2;
 export const BANANA_TREE_IDS: ReadonlySet<number> = new Set([4749, 4750, 4751, 4752, 4753]);
 
 /** Search the house's banana trees, nearest first, until `want` bananas are held. */
+/** The banana tree to search next: the nearest not yet missed in this pick, else the nearest; null with none in fruit. */
+export function nextBananaTree<T extends { x: number; z: number }>(trees: readonly T[], me: { x: number; z: number }, missed: ReadonlySet<string>): T | null {
+    const near = [...trees].sort((a, b) => chebyshev(a, me) - chebyshev(b, me));
+    return near.find(t => !missed.has(`${t.x},${t.z}`)) ?? near[0] ?? null;
+}
+
 async function searchBananas(sdk: Sdk, want: number): Promise<{ searches: number; ticks: number }> {
     const t0 = currentTick(sdk);
     let searches = 0;
+    const missed = new Set<string>();
     for (let i = 0; i < want + 4 && invCount(sdk, MM_OBJ.banana) < want; i++) {
         const me = pos(sdk);
         const trees = (await sdk.scanNearbyLocs(12)).filter(l => BANANA_TREE_IDS.has(l.id) && tileIn({ x: l.x, z: l.z, level: 0 }, AUNT_HOUSE));
-        trees.sort((a, b) => chebyshev(a, me) - chebyshev(b, me));
-        const tree = trees[0];
+        const tree = nextBananaTree(trees, me, missed);
         if (!tree) throw new Error(`no banana tree with fruit in the aunt's house (at ${where(sdk)})`);
         const n = invCount(sdk, MM_OBJ.banana);
         const op = tree.optionsWithIndex.find(o => /^search$/i.test(o.text))?.opIndex ?? 1;
         searches++;
         const r = await act(sdk, () => sdk.sendInteractLoc(tree.x, tree.z, tree.id, op), s => invCount(s, MM_OBJ.banana) > n, { resendEvery: 4, maxTicks: 15 });
-        if (!r.ok) throw new Error(`banana tree at ${tree.x},${tree.z}: no banana (at ${where(sdk)})`);
+        // A hit and the upkeep's eat mid-search cancel the loc op (measured, gate chain b at t 2171); the loop's own bound
+        // (want + 4 searches) is the retry.
+        if (!r.ok) {
+            missed.add(`${tree.x},${tree.z}`);
+            stepNote(`S15:O banana tree at ${tree.x},${tree.z}: no banana in 15 ticks (at ${where(sdk)}); searching another`);
+        }
     }
     if (invCount(sdk, MM_OBJ.banana) < want) throw new Error(`${invCount(sdk, MM_OBJ.banana)} bananas after ${searches} searches`);
     return { searches, ticks: currentTick(sdk) - t0 };
@@ -1432,7 +1792,7 @@ async function demonFight(ctx: Ctx, note: (line: string) => void, bow: number): 
         let steps = 0;
         const centre = (n: { x: number; z: number; tileX?: number; tileZ?: number }) => ({ x: n.tileX ?? n.x, z: n.tileZ ?? n.z });
         const f = await fight(sdk, DEMON, {
-            prayer: 'protect_from_magic', drinkBelow: DRINK_BELOW, stallTicks: 8, eatBelow: EAT_BELOW, food: MM_OBJ.shark,
+            prayer: 'protect_from_magic', drinkBelow: DRINK_BELOW, stallTicks: 8, eatBelow: eating.below, food: MM_OBJ.shark,
             maxTicks: 2000, onDialog: 'continue',
             onTick: async (s, target) => {
                 // An empty quiver does no damage while the demon drains every dose (a measured death), so it fails at once.
@@ -1460,12 +1820,14 @@ async function demonFight(ctx: Ctx, note: (line: string) => void, bow: number): 
  * reach the warehouse, the roofs and the streets), Protect from Melee below
  * (zombies and skeletons, configs/quest_mm.npc).
  */
-async function toZooknock(ctx: Ctx): Promise<void> {
+async function toZooknock(ctx: Ctx, topUpFrom?: TopUp): Promise<void> {
     const { sdk } = ctx;
     await upkeep(sdk, async () => {
-        await jailSafe(sdk, () => praying(sdk, 'protect_from_missiles', async () => {
+        await jailSafe(sdk, async () => {
             if (inArea(sdk, AREAS.westWarehouse) && pos(sdk).level === 0) {
+                // The roofs cross the temple's first floor among its religious guards: the zone prayer per step.
                 for (const r of ROOFS) {
+                    await legPrayer(sdk, r);
                     if (r.climb) await climb(sdk, r);
                     else await go(ctx, r);
                 }
@@ -1476,16 +1838,68 @@ async function toZooknock(ctx: Ctx): Promise<void> {
                     await climb(sdk, BRIDGE_LADDER);
                 }
                 // The jump off the bridge's end: 1 HP, refused while a monkey (quest_mm.rs2:1036-1043).
+                await topUp(sdk);
+                await legPrayer(sdk, JUMP_SQUARE);
                 const r = await opLoc(sdk, { ...JUMP_SQUARE, op: /jump/i, radius: 15 }, /jump/i, s => outsideTown(s), { resendEvery: 5, maxTicks: 40 });
                 if (!r.ok) throw new Error(`the bridge jump did not land (at ${where(sdk)})`);
+                if (topUpFrom) await receiveTopUp(sdk, topUpFrom);
             }
             if (outsideTown(sdk)) {
-                await go(ctx, { x: DUNGEON_LADDER.x, z: DUNGEON_LADDER.z + 1 }, 1);
-                await climb(sdk, DUNGEON_LADDER);
+                const foot = { x: DUNGEON_LADDER.x, z: DUNGEON_LADDER.z + 1 };
+                await legPrayer(sdk, foot);
+                await go(ctx, foot, 1);
+                await immune(sdk, 'the dungeon (ladder)');
+                // stopgap until rs/411: exec 5's chain 2 stood beside this ladder through 30 ticks of op re-sends after a
+                // hit and an eat (t 967-968) and never climbed. A fresh walk to the foot and a new climb, at most twice more.
+                const down = await stopgapRetry('dungeon ladder', 3, async () => {
+                    try {
+                        await climb(sdk, DUNGEON_LADDER);
+                        return true;
+                    } catch {
+                        if (inArea(sdk, AREAS.dungeon)) return true;
+                        await go(ctx, foot, 1);
+                        return false;
+                    }
+                });
+                if (!down) throw new Error(`the bamboo ladder at ${DUNGEON_LADDER.x},${DUNGEON_LADDER.z} did not move the player in 3 climbs (at ${where(sdk)})`);
             }
-        }));
+        });
         await praying(sdk, 'protect_from_melee', () => go(ctx, ZOOKNOCK, 2));
     });
+}
+
+/**
+ * The atoll top-up (H12o): a helper and what it trades. `slots` is what the items take (a shark a slot, a potion a
+ * slot), from the same ledger row as `want`.
+ */
+export interface TopUp {
+    from: string;
+    want: readonly WantSpec[];
+    slots: number;
+}
+
+/** Ticks SCORED waits on the bridge jump's landing for the helper to be in view before asking for the trade. */
+export const TOPUP_WAIT = 30;
+
+/** Why SCORED can't take `t` now, or null: the server refuses a trade wholesale into a pack without room. */
+export function topUpRefusal(s: BotWorldState, t: TopUp): string | null {
+    return freeSlots(s) >= t.slots ? null : `the top-up from ${t.from} needs ${t.slots} free slots, ${freeSlots(s)} free`;
+}
+
+/**
+ * Take the top-up on the bridge jump's landing (2803,2724). The cue: the helper, parked beside the landing with its
+ * give() request standing, is among the players in view; SCORED waits for that up to TOPUP_WAIT ticks, then asks for
+ * the trade (receiveFrom), accepting only `want`.
+ */
+async function receiveTopUp(sdk: Sdk, t: TopUp): Promise<void> {
+    const refused = topUpRefusal(sdk.getState()!, t);
+    if (refused) throw new Error(refused);
+    const t0 = currentTick(sdk);
+    const seen = await waitUntil(sdk, s => s.nearbyPlayers.some(p => sameName(p.name, t.from)), { maxTicks: TOPUP_WAIT });
+    if (!seen.ok) throw new Error(`the top-up helper ${t.from} was not in view at ${where(sdk)} within ${TOPUP_WAIT} ticks`);
+    const r = await receiveFrom(sdk as never, t.from, { want: [...t.want], maxTicks: 60, openMaxTicks: 20 });
+    if (!r.ok) throw new Error(`the top-up from ${t.from}: ${r.reason ?? 'failed'} (at ${where(sdk)})`);
+    stepNote(`S15:P top-up from ${t.from}: ${currentTick(sdk) - t0} ticks, received ${r.received.map(i => `${i.count} ${i.name}`).join(', ')}`);
 }
 
 // ------------------------------------------------------------------ segments
@@ -1505,6 +1919,11 @@ interface Body {
 const onAtoll: Check<MmContext> = s => inArea(s, AREAS.atoll) || `not on Ape Atoll's surface (at ${JSON.stringify(pos(s))})`;
 const inTown: Check<MmContext> = s => (inArea(s, AREAS.atoll) && !outsideTown(s) && !inCell(s)) || `not free in the town (at ${JSON.stringify(pos(s))})`;
 const human: Check<MmContext> = s => !s.equipment.some(i => i.id === MM_OBJ.greegree) || 'wearing the gree-gree';
+/** On the atoll's surface, or off the atoll: O's start, where a temple-rope pin's teleport leaves the way back to it. */
+const onAtollOrAway: Check<MmContext> = s => inArea(s, AREAS.atoll) || offAtoll(s) || `under the atoll (at ${JSON.stringify(pos(s))})`;
+/** N's end: out of the trapdoor guards' box on the atoll, or teleported off it from a pin. */
+export const templeLeft: Check<MmContext> = s =>
+    offAtoll(s) || (inArea(s, AREAS.atoll) && chebyshev(pos(s), TRAPDOOR) >= 4) || `still among the trapdoor guards (at ${JSON.stringify(pos(s))})`;
 
 /** Inside Awowogei's hall: north of Elder Guard 2's door (he shows out anyone more than 1 tile north of him). */
 export function inThroneRoom(src: StateLike): boolean {
@@ -1531,7 +1950,8 @@ export const yRoom: Check<MmContext> = (s, c) => {
     const r = yCover(s, c);
     if (r === true) return true;
     const dead = s.inventory.filter(i => EXIT_DROPS.includes(i.id)).length;
-    return freeSlots(s) + dead >= yNeed(s) || r;
+    // Sharks count as room as for J's crates (roomWithSharks); after R they are surplus, so Y drops what it needs.
+    return roomWithSharks(s) + dead >= yNeed(s) || r;
 };
 
 /**
@@ -1586,9 +2006,17 @@ export const freeSlots = (s: BotWorldState) => 28 - s.inventory.length;
  * Room for each of `ids` not already held: the crates' `inv_add` gives nothing into a full pack (quest_mm.rs2:924-942),
  * and searchCrate eats a shark for room when the pack is full, so a shark held counts as a slot to come.
  */
+/** Free slots plus the sharks held: a shark is eaten (J's crates) or dropped (Y's reward) to make room. */
+export const roomWithSharks = (s: BotWorldState) => freeSlots(s) + invCount(s, MM_OBJ.shark);
+
+/** How many sharks to drop so `need` slots are free (0 when they already are). */
+export function sharksToDrop(s: BotWorldState, need: number): number {
+    return Math.min(invCount(s, MM_OBJ.shark), Math.max(0, need - freeSlots(s)));
+}
+
 export const roomFor = (...ids: number[]): Check<MmContext> => s => {
     const need = ids.filter(id => !holds(s, id)).length;
-    const room = freeSlots(s) + invCount(s, MM_OBJ.shark);
+    const room = roomWithSharks(s);
     return room >= need || `${need} slots needed, ${freeSlots(s)} free and ${invCount(s, MM_OBJ.shark)} sharks to eat for room`;
 };
 const all = (...cs: Check<MmContext>[]): Check<MmContext> => (s, c) => {
@@ -1614,6 +2042,7 @@ const BODIES: Partial<Record<string, Body>> = {
         async run(ctx, o) {
             const { sdk } = ctx;
             await gtSwap(ctx, o);
+            await preDose(sdk);
             await intoTree(ctx, 0);
             // "Start Monkey Madness?" Yes (mm_narnode.rs2:124-140): the story, the seal and its objbox, the chapter card.
             const r = await talkTo(sdk, NARNODE_NPC, [/^Yes$/], { maxTicks: 200, idle: 4, near: NARNODE, closeModals: true, until: s => holds(s, MM_OBJ.royalSeal) });
@@ -1805,7 +2234,7 @@ const BODIES: Partial<Record<string, Body>> = {
     },
     P: {
         preconditions: all(human, holding(MM_OBJ.talisman, MM_OBJ.monkeyBones), s => inArea(s, AREAS.atoll) || inArea(s, AREAS.dungeon) || 'not on the atoll or in its dungeon'),
-        run: ctx => toZooknock(ctx),
+        run: (ctx, o) => withTopUps(() => toZooknock(ctx, o.topUpFrom)),
         postconditions: atZooknock,
     },
     L: {
@@ -1834,13 +2263,16 @@ const BODIES: Partial<Record<string, Body>> = {
                 if (!underTemple(sdk)) {
                     await jailSafe(sdk, async () => {
                         await toTown(ctx);
+                        // Protect from Melee from here to the temple: the ladder's foot is beside the guard at (2795,2775),
+                        // and a hand-over to the trapdoor's prayer there would leave an unprayed tick (gate chain b: 7 + 12).
                         if (o.templeMethod !== 'wait' && pos(sdk).level === 0 && chebyshev(pos(sdk), TRAPDOOR_ACCESS) > 0) {
+                            await setPrayer(sdk, 'protect_from_melee', true);
                             await townGo(ctx, TEMPLE_LADDER_FOOT, 0);
                         }
                     });
                 }
                 // Trapdoor guards above; zombie monkeys round the landing and beside both fires below (maps/m43_143.jm2), all melee.
-                await praying(sdk, 'protect_from_melee', async () => {
+                const out = await praying(sdk, 'protect_from_melee', async () => {
                     if (!underTemple(sdk)) await trapdoor(ctx, o.templeMethod);
                     const st = () => sdk.getState()!;
                     if (holds(st(), MM_OBJ.enchantedBar)) {
@@ -1855,17 +2287,20 @@ const BODIES: Partial<Record<string, Body>> = {
                         const r = await useOn(sdk, MM_OBJ.ballOfWool, { item: MM_OBJ.amuletUnstrung }, s => holds(s, MM_OBJ.amulet), { maxTicks: 10, resendEvery: 3, maxResends: 3 });
                         if (!r.ok) throw new Error(`wool on the amulet: ${r.reason}`);
                     }
-                    await go(ctx, { x: TEMPLE_ROPE.x, z: TEMPLE_ROPE.z - 1 }, 1);
-                    await climb(sdk, TEMPLE_ROPE);
+                    await ropeUp(sdk);
+                    // templeOut inside the same prayer: turned off and on again between them, the trapdoor guards' 13 in
+                    // the one unprayed tick took chain 1 from 23 HP to 10.
+                    return templeOut(ctx);
                 });
-                const out = await templeOut(ctx);
-                o.note(`S15:N temple guards held the player ${out.pinned} ticks after the rope`);
+                o.note(`S15:N temple guards held the player ${out.pinned} ticks after the rope${out.escaped ? '; teleported to Varrock, O takes the way back' : ''}`);
+                // The approach turned it on before the trapdoor's own block, which therefore leaves it on.
+                if (prayerActive(sdk.getState()!, 'protect_from_melee')) await setPrayer(sdk, 'protect_from_melee', false);
             });
         },
-        postconditions: all(holding(MM_OBJ.amulet), onAtoll, s => chebyshev(pos(s), TRAPDOOR) >= 4 || 'still among the trapdoor guards'),
+        postconditions: all(holding(MM_OBJ.amulet), templeLeft),
     },
     O: {
-        preconditions: all(onAtoll, human, s => holds(s, MM_OBJ.amulet) || 'no strung amulet',
+        preconditions: all(onAtollOrAway, human, s => holds(s, MM_OBJ.amulet) || 'no strung amulet',
             s => {
                 if (holds(s, MM_OBJ.talisman)) return true;
                 try {
@@ -1878,13 +2313,16 @@ const BODIES: Partial<Record<string, Body>> = {
         async run(ctx, o) {
             const { sdk } = ctx;
             const progress: ChildProgress = { talks: 0 };
-            await upkeep(sdk, () => jailSafe(sdk, async () => {
-                await templeOut(ctx);
+            await withTopUps(() => upkeep(sdk, () => jailSafe(sdk, async () => {
+                if (!offAtoll(sdk)) await templeOut(ctx);
+                if (offAtoll(sdk)) await wayBack(ctx, o.note);
                 await toTown(ctx);
                 const w = await wield(sdk, MM_OBJ.amulet);
                 if (!w.ok) throw new Error(`the amulet did not go on: ${w.reason}`);
-                await childTalks(ctx, o.note, progress);
-            }));
+                // Protect from Melee through every walk between the wait tile and the house, not only the waits: gate chain
+                // b took 14 (23 HP to 9) on its first unprayed step off the wait tile.
+                await praying(sdk, 'protect_from_melee', () => childTalks(ctx, o.note, progress));
+            })));
         },
         postconditions: holding(MM_OBJ.talisman),
     },
@@ -1925,6 +2363,7 @@ const BODIES: Partial<Record<string, Body>> = {
                 // The dungeon is inside the gree-gree zone (quest_mm.rs2:1102-1108), and a monkey is never jailed.
                 await asMonkey(sdk);
                 if (inArea(sdk, AREAS.dungeon)) {
+                    await immune(sdk, 'the dungeon (R)');
                     await praying(sdk, 'protect_from_melee', () => go(ctx, { x: DUNGEON_EXIT.x, z: DUNGEON_EXIT.z + 1 }, 1));
                     await climb(sdk, DUNGEON_EXIT);
                 }
@@ -2010,23 +2449,7 @@ const BODIES: Partial<Record<string, Body>> = {
         preconditions: all(holding(MM_OBJ.monkey, MM_OBJ.greegree), s => wearing(s, MM_OBJ.amulet) || 'the amulet is not worn'),
         async run(ctx) {
             const { sdk } = ctx;
-            // By region, so a resume picks up the leg it stands in: mainland, the hangar, Crash Island, the atoll.
-            const mainland = () => !inArea(sdk, AREAS.atoll) && !inArea(sdk, HANGAR) && !inArea(sdk, CRASH_ISLAND);
-            if (mainland()) {
-                await zooToDaero(ctx);
-                // Daero at daero_complete (mm_daero.rs2:218-238): Yes, the blindfold, a fade, the powered hangar.
-                const r = await talkTo(sdk, /^Daero$/i, [/^Yes$/], { maxTicks: 120, idle: 4, until: s => inArea(s, HANGAR), near: DAERO, ...CHATTER });
-                if (!inArea(sdk, HANGAR)) throw new Error(`Daero did not take the player to the hangar: ${r.reason ?? r.transcript.slice(-2).join(' / ')} (at ${where(sdk)})`);
-            }
-            if (inArea(sdk, HANGAR)) {
-                // "Shall we return to Crash Island?" (mm_waydar.rs2:5-19): Yes, the glider map, a p_delay(3), the island.
-                const r = await talkTo(sdk, /^Waydar$/i, [/^Yes$/], { maxTicks: 120, idle: 4, until: s => inArea(s, CRASH_ISLAND), closeModals: false, ...CHATTER });
-                if (!inArea(sdk, CRASH_ISLAND)) throw new Error(`Waydar did not fly to Crash Island: ${r.reason ?? r.transcript.slice(-2).join(' / ')} (at ${where(sdk)})`);
-            }
-            if (inArea(sdk, CRASH_ISLAND)) {
-                const r = await talkTo(sdk, /^Lumdo$/i, [], { maxTicks: 90, idle: 2, until: s => inArea(s, AREAS.atoll), ...CHATTER });
-                if (!inArea(sdk, AREAS.atoll)) throw new Error(`Lumdo did not sail to the atoll: ${r.reason ?? r.transcript.slice(-2).join(' / ')} (at ${where(sdk)})`);
-            }
+            await hangarRoute(ctx, () => zooToDaero(ctx));
             await upkeep(sdk, async () => {
                 await asMonkey(sdk);
                 if (outsideTown(sdk)) await throughWestGate(ctx);
@@ -2090,26 +2513,17 @@ const BODIES: Partial<Record<string, Body>> = {
         preconditions: yRoom,
         async run(ctx) {
             const { sdk } = ctx;
-            if (!inStronghold(sdk) && !inGrandTree(sdk)) {
-                // Narnode needs only mm_main = defeated_demon (mm_narnode.rs2:14), so the teleport goes from wherever
-                // the kill left the player, skipping Garkor's and Zooknock's way out of the arena (mm_demon.rs2:476-524).
-                if (!(pos(sdk).level === 0 && chebyshev(pos(sdk), VARROCK_TREE_FOOT) <= 150)) {
-                    await unwear(sdk, MM_OBJ.greegree); // a worn gree-gree hides the magic tab
-                    await dismiss(sdk);
-                    const t = await teleport(sdk, 'varrock');
-                    if (!t.ok) throw new Error(`the Varrock teleport: ${t.reason} (at ${where(sdk)})`);
-                }
-                const r = await runTo(sdk, { ...VARROCK_TREE_FOOT, tol: 1 }, { bot: ctx.bot });
-                if (!r.ok) throw new Error(`run to Varrock's spirit tree stopped at ${where(sdk)}: ${r.reason}`);
-                // Varrock's is a young spirit tree, which goes only to Tree Gnome Village (spirit_tree.rs2, loc_1317);
-                // the village's tree, beside its landing, goes on to the stronghold.
-                for (const to of ['village', 'stronghold'] as const) {
-                    const tr = await spiritTree(sdk, to);
-                    if (!tr.ok) throw new Error(`spirit tree to ${to}: ${tr.reason}`);
-                }
-            }
+            // Narnode needs only mm_main = defeated_demon (mm_narnode.rs2:14), so the teleport goes from wherever the
+            // kill left the player, skipping Garkor's and Zooknock's way out of the arena (mm_demon.rs2:476-524).
+            await treesToStronghold(ctx);
             await intoTree(ctx, 0);
             if (freeSlots(sdk.getState()!) < yNeed(sdk.getState()!)) await dropDead(sdk);
+            const drop = sharksToDrop(sdk.getState()!, yNeed(sdk.getState()!));
+            if (drop > 0) {
+                let k = drop;
+                const d = await dropItems(sdk, i => i.id === MM_OBJ.shark && k-- > 0);
+                if (!d.ok) throw new Error(`could not drop ${drop} sharks for Narnode's reward (at ${where(sdk)})`);
+            }
             // The report (14 pages), the reward and its objbox, the quest-complete scroll, then Narnode's training pages.
             const r = await talkTo(sdk, /^King Narnode( Shareen)?$/i, [], { maxTicks: 200, idle: 3, near: NARNODE, closeModals: true, until: s => questStatus(s, 'mm') === 'complete' });
             if (questStatus(sdk.getState()!, 'mm') !== 'complete') throw new Error(`Narnode did not complete the quest: ${r.reason ?? r.transcript.slice(-2).join(' / ')} (at ${where(sdk)})`);
@@ -2141,6 +2555,7 @@ const BODIES: Partial<Record<string, Body>> = {
             const { sdk } = ctx;
             await upkeep(sdk, async () => {
                 if (inArea(sdk, AREAS.dungeon)) {
+                    await immune(sdk, 'the dungeon (M)');
                     await praying(sdk, 'protect_from_melee', () => go(ctx, { x: DUNGEON_EXIT.x, z: DUNGEON_EXIT.z + 1 }, 1));
                     await climb(sdk, DUNGEON_EXIT);
                 }
@@ -2161,6 +2576,10 @@ export function stepFor(d: SegmentDef, o: Resolved): Step<MmContext> {
         // The gnome half (A-G) runs under the same upkeep as the atoll segments, which wrap their own bodies.
         run: body ? ctx => {
             stepNote = o.note;
+            eating = {
+                below: eatBelowFor(o.eating, d.letter), corridorBelow: eatBelowFor(o.eating, d.letter, true),
+                ...(o.eating.topUpBelow !== undefined ? { topUpBelow: o.eating.topUpBelow } : {}),
+            };
             return d.letter <= 'G' ? upkeep(ctx.sdk, () => body.run(ctx, o)) : body.run(ctx, o);
         } : async () => {
             throw new Error(`${name} is not written yet`);

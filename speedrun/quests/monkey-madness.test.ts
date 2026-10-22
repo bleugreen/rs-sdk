@@ -2,13 +2,14 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-import type { BotWorldState, InventoryItem, QuestJournalState } from '../../sdk/types';
+import type { BotWorldState, InventoryItem, PlayerState, QuestJournalState } from '../../sdk/types';
 import { baseState } from '../lib/fake-sdk';
 import { compactJournal } from '../lib/quests';
-import type { Observed } from '../runner/step';
+import { Observation, resolveResume } from '../runner/resume';
+import type { Observed, RunnerSession } from '../runner/step';
 import {
     BANANA_TREE_IDS, bananaRoomDrops, DEFAULT_OPTIONS, roomFor, doneAt, EXIT_DROPS, exitState, h12Kit, H12_POTIONS, H12_SHARKS, isWaydarIntroEnd, itemMilestone, setStepNote, stopgapRetry, talkableNpc, JOURNAL_MARKS, JOURNAL_PROBE, journalMilestone, MM_OBJ, mmMilestone, PUZZLE_TILE_IDS,
-    patrolLeavesLane, resolveOptions, REWARD_ITEMS, seg, segmentName, SEGMENTS, stepId, yRoom,
+    BELOW_30_EATING, cureWanted, eatBelowFor, inGuardCorridor, sharksToDrop, topUpRefusal, townLegPrayer, type TopUp, immunityWanted, nextBananaTree, SUPER_IMMUNE_TICKS, offAtoll, patrolLeavesLane, SEGMENT_EATING, topUpWanted, resolveOptions, REWARD_ITEMS, seg, segmentName, SEGMENTS, stepId, steps, templeLeft, treeRouteRefusal, yRoom, type MmContext,
 } from './monkey-madness';
 import { slotNeed } from './segments';
 
@@ -49,6 +50,109 @@ const POST_DEMON = `${CH1_DONE}||@dre@Chapter 2:||@dre@Chapter 3:||@str@I earnt 
 const REPORTED = POST_DEMON.replace("@dbl@I must now report to @dre@King Narnode@dbl@.", '@str@I have reported to King Narnode.');
 const COMPLETE = `${REPORTED}||@red@QUEST COMPLETE!||@dbl@I should find Daero and enroll with the Royal Guard training programme.`;
 const TRAINED = `${REPORTED}||@red@QUEST COMPLETE!||@str@I found Daero and enrolled in the Royal Guard training @str@programme.`;
+
+describe('the temple rope pin: the way back and the resume walk', () => {
+    const player = (x: number, z: number, level = 0) => ({ name: 'lab', x, z, worldX: x, worldZ: z, level, hp: 30 }) as unknown as PlayerState;
+    /** O's start as a chain reaches it: the strung amulet and the mould held (N done), the talisman not yet. */
+    const oStage = (x: number, z: number, level = 0, extra: number[] = []) =>
+        baseState({ quests: { mm: 'started' }, player: player(x, z, level), inventory: [MM_OBJ.amulet, MM_OBJ.amuletMould, ...extra].map((id, i) => item(id, i)) } as Partial<BotWorldState>);
+    // Every place the way back passes through: the Varrock teleport's landing (travel.ts SPELLS), the two spirit trees'
+    // landings, Daero's floor of the Grand Tree, the powered hangar, Crash Island (Lumdo's stop), and the atoll's landing.
+    const WAY: ReadonlyArray<readonly [string, number, number, number]> = [
+        ['Varrock', 3213, 3424, 0], ['the village tree', 2542, 3169, 0], ['the stronghold tree', 2461, 3444, 0], ['Daero', 2484, 3487, 1],
+        ['the hangar', 2585, 4516, 0], ['Crash Island', 2894, 2726, 0], ['the atoll landing', 2802, 2707, 0],
+    ];
+
+    test('off the atoll: the mainland, the hangar and Crash Island; not the surface, the dungeon, the cellar or under the temple', () => {
+        for (const [, x, z, level] of WAY.slice(0, -1)) expect(offAtoll(oStage(x, z, level))).toBe(true);
+        for (const [x, z] of [[2802, 2707], [2807, 2785], [2763, 9103], [2782, 9172], [2808, 9201]] as const) expect(offAtoll(oStage(x, z))).toBe(false);
+    });
+
+    test('the resume walk enters O by run from every leg of the way back', async () => {
+        for (const [where, x, z, level] of WAY) {
+            const obs = new Observation(oStage(x, z, level), { [JOURNAL_PROBE]: async () => journal(IN_L) }, {} as RunnerSession);
+            const p = await resolveResume(steps(), obs, {} as MmContext);
+            expect({ where, step: p.step, mode: p.mode }).toEqual({ where, step: 'S15:O-child', mode: 'run' });
+        }
+    });
+
+    test("N's end admits the pin's teleport and the clear tiles, and refuses the guards' box", () => {
+        expect(templeLeft(oStage(3213, 3424), {} as MmContext)).toBe(true);
+        expect(templeLeft(oStage(2794, 2774), {} as MmContext)).toBe(true);
+        expect(templeLeft(oStage(2806, 2785), {} as MmContext)).toMatch(/trapdoor guards/);
+        expect(templeLeft(oStage(2808, 9201), {} as MmContext)).toMatch(/trapdoor guards/);
+    });
+
+    test('the tree route refuses with the backpack monkey carried (DELETES_FOLLOWER_ITEM), and not otherwise', () => {
+        expect(treeRouteRefusal(oStage(3213, 3424))).toBeNull();
+        expect(treeRouteRefusal(oStage(3213, 3424, 0, [MM_OBJ.monkey]))).toMatch(/monkey/);
+    });
+});
+
+describe('antipoison cures', () => {
+    const at = (o: Partial<Parameters<typeof cureWanted>[0]>) => cureWanted({ tick: 1000, lastPoisoned: 1000, lastDose: -Infinity, ...o });
+
+    test('a fresh poisoning is cured once, in any segment', () => {
+        expect(at({})).toBe(true);
+        expect(at({ lastDose: 1000 })).toBe(false); // cured this tick
+        expect(at({ lastPoisoned: 900, lastDose: 950 })).toBe(false); // a later dose covered it
+        expect(at({ lastPoisoned: 960 })).toBe(false); // 40 ticks old: not this poisoning's message
+    });
+});
+
+describe('O: the banana tree to search', () => {
+    const t = (x: number, z: number) => ({ x, z });
+    test('the nearest first; after a miss, the nearest other tree; all missed, the nearest again', () => {
+        const trees = [t(2746, 2793), t(2741, 2797), t(2745, 2797)];
+        const me = { x: 2745, z: 2794 };
+        expect(nextBananaTree(trees, me, new Set())).toEqual(t(2746, 2793));
+        expect(nextBananaTree(trees, me, new Set(['2746,2793']))).toEqual(t(2745, 2797));
+        expect(nextBananaTree(trees, me, new Set(['2746,2793', '2745,2797', '2741,2797']))).toEqual(t(2746, 2793));
+        expect(nextBananaTree([], me, new Set())).toBeNull();
+    });
+});
+
+describe('poison immunity before a dungeon pass', () => {
+    test("a super dose's 600 ticks: a dose is wanted once under 60 are left, and never without one held", () => {
+        expect(SUPER_IMMUNE_TICKS).toBe(20 * 30);
+        expect(immunityWanted(1000, -Infinity, true)).toBe(true);
+        expect(immunityWanted(1000, 500, true)).toBe(false);
+        expect(immunityWanted(1041, 500, true)).toBe(true);
+        expect(immunityWanted(5000, -Infinity, false)).toBe(false);
+    });
+});
+
+describe('eating policy', () => {
+    const at = (hp: number, sharks: number) =>
+        baseState({ player: { name: 'lab', x: 0, z: 0, worldX: 0, worldZ: 0, level: 0, hp } as unknown as PlayerState, inventory: Array.from({ length: sharks }, (_, i) => item(MM_OBJ.shark, i)) } as Partial<BotWorldState>);
+    /** The worst damage in any 3-tick window per segment over every valid round, without and with the hits near the guards. */
+    const WORST_3_TICKS: Record<string, number> = { H: 17, I: 12, J: 15, K: 16, L: 2, M: 11, N: 13, O: 14, P: 15, Q: 2, R: 6 };
+    const WORST_IN_CORRIDOR: Record<string, number> = { J: 29, K: 24, N: 19, O: 21 };
+
+    test('the ruled thresholds are 10 + each segment\'s worst 3-tick damage, H-R, by location; 20 elsewhere; no top-ups', () => {
+        for (const [letter, worst] of Object.entries(WORST_3_TICKS)) expect([letter, eatBelowFor(SEGMENT_EATING, letter)]).toEqual([letter, 10 + worst]);
+        for (const [letter, worst] of Object.entries(WORST_IN_CORRIDOR)) expect([letter, eatBelowFor(SEGMENT_EATING, letter, true)]).toEqual([letter, 10 + worst]);
+        // Outside J, K, N and O the corridor changes nothing.
+        expect(eatBelowFor(SEGMENT_EATING, 'H', true)).toBe(eatBelowFor(SEGMENT_EATING, 'H'));
+        for (const letter of 'ABCDEFGSTUVWXYZ') expect([letter, eatBelowFor(SEGMENT_EATING, letter)]).toEqual([letter, 20]);
+        expect(SEGMENT_EATING.topUpBelow).toBeUndefined();
+    });
+
+    test('the default options eat by the ruled table', () => {
+        expect(resolveOptions().eating).toBe(SEGMENT_EATING);
+        expect(resolveOptions({ eating: BELOW_30_EATING }).eating).toBe(BELOW_30_EATING);
+    });
+
+    test('the below-30 setting eats at 30 everywhere and tops up below 34', () => {
+        expect([eatBelowFor(BELOW_30_EATING, 'K'), eatBelowFor(BELOW_30_EATING, 'A'), BELOW_30_EATING.topUpBelow]).toEqual([30, 30, 34]);
+    });
+
+    test('a top-up is wanted under its threshold with a shark held, not at it or with none', () => {
+        expect(topUpWanted(at(33, 1), 34)).toBe(true);
+        expect(topUpWanted(at(34, 3), 34)).toBe(false);
+        expect(topUpWanted(at(12, 0), 34)).toBe(false);
+    });
+});
 
 describe('segments', () => {
     test('26 unique names A-Z, all prefixed S15:', () => {
@@ -174,7 +278,7 @@ describe('object ids', () => {
             amuletMould: 'mm_monkey_amulet_mould', amulet: 'mm_amulet_of_monkey_speak', amuletUnstrung: 'mm_amulet_of_monkey_speak_without_string',
             talisman: 'mm_monkey_talisman', greegree: 'mm_monkey_greegree_for_normal_monkey', monkey: 'mm_monkey_in_backpack', sigil: 'mm_sigil',
             monkeyBones: 'mm_normal_monkey_bones', goldBar: 'gold_bar', ballOfWool: 'ball_of_wool', banana: 'banana', magicShortbow: 'magic_shortbow',
-            runeArrow: 'rune_arrow', prayerPotion4: '4doseprayerrestore', antipoison4: '4doseantipoison', shark: 'shark',
+            runeArrow: 'rune_arrow', prayerPotion4: '4doseprayerrestore', superAntipoison4: '4dose2antipoison', superAntipoison1: '1dose2antipoison', shark: 'shark',
         };
         for (const [k, name] of Object.entries(debug)) expect([k, pack.get(name)]).toEqual([k, MM_OBJ[k as keyof typeof MM_OBJ]]);
         PUZZLE_TILE_IDS.forEach((id, i) => expect(pack.get(`reinitialisation_${String(i + 1).padStart(2, '0')}`)).toBe(id));
@@ -414,5 +518,53 @@ describe("Y: room for Narnode's reward", () => {
         } as Partial<BotWorldState>);
         expect(yRoom(withDead(26), {} as never)).toBe(true);
         expect(yRoom(withDead(27), {} as never)).toMatch(/needs 4 free slots/);
+    });
+
+    test('sharks count as room (J\'s rule): 1 short with 2 sharks drops 1 and proceeds; with no sharks or dead items it refuses', () => {
+        const withSharks = (others: number, sharks: number) => baseState({
+            inventory: [...Array.from({ length: others }, (_, i) => named('Rune', i)), ...Array.from({ length: sharks }, (_, i) => item(MM_OBJ.shark, others + i))],
+        } as Partial<BotWorldState>);
+        const s = withSharks(23, 2); // 25 held, 3 free, 4 needed
+        expect(yRoom(s, {} as never)).toBe(true);
+        expect(sharksToDrop(s, 4)).toBe(1);
+        expect(sharksToDrop(withSharks(20, 2), 4)).toBe(0);
+        expect(yRoom(withSharks(25, 0), {} as never)).toMatch(/needs 4 free slots/);
+    });
+});
+
+describe('the zone prayer round the temple\'s religious guards', () => {
+    test('a leg passing within 6 of a guard spawn is prayed against melee, others against missiles', () => {
+        // N's walk from the jail yard to the temple ladder's foot, beside the guard at (2795,2775).
+        expect(townLegPrayer({ x: 2765, z: 2794 }, { x: 2794, z: 2774 }, 0)).toBe('protect_from_melee');
+        // J's first via point from Garkor, 3 south of that guard.
+        expect(townLegPrayer({ x: 2805, z: 2762 }, { x: 2795, z: 2772 }, 0)).toBe('protect_from_melee');
+        // The crate building's south door, far from every guard.
+        expect(townLegPrayer({ x: 2780, z: 2770 }, { x: 2771, z: 2763 }, 0)).toBe('protect_from_missiles');
+        // K's roof walk across the temple's first floor.
+        expect(townLegPrayer({ x: 2787, z: 2795 }, { x: 2794, z: 2774 }, 1)).toBe('protect_from_melee');
+        // Level 2 (the bamboo bridges) has no guards.
+        expect(townLegPrayer({ x: 2786, z: 2793 }, { x: 2787, z: 2795 }, 2)).toBe('protect_from_missiles');
+    });
+
+    test('the corridor box covers floors 0 and 1 only', () => {
+        const at = (x: number, z: number, level: number) => baseState({ player: { name: 'lab', x, z, worldX: x, worldZ: z, level, hp: 30 } as unknown as PlayerState } as Partial<BotWorldState>);
+        expect(inGuardCorridor(at(2795, 2780, 0))).toBe(true);
+        expect(inGuardCorridor(at(2795, 2780, 1))).toBe(true);
+        expect(inGuardCorridor(at(2795, 2780, 2))).toBe(false);
+        expect(inGuardCorridor(at(2770, 2780, 0))).toBe(false);
+    });
+});
+
+describe('the atoll top-up (H12o)', () => {
+    const H12O: TopUp = { from: 'helper', want: [{ item: /^Shark$/i, amount: 9 }, { item: /^Superantipoison\(4\)$/i, amount: 1 }], slots: 10 };
+    const held = (n: number) => baseState({ inventory: Array.from({ length: n }, (_, i) => item(MM_OBJ.shark, i)) } as Partial<BotWorldState>);
+
+    test('off by default: no option, no top-up', () => {
+        expect(resolveOptions().topUpFrom).toBeUndefined();
+    });
+
+    test('refused, with the reason, when the pack lacks the slots; taken when it has them', () => {
+        expect(topUpRefusal(held(18), H12O)).toBeNull();
+        expect(topUpRefusal(held(19), H12O)).toMatch(/needs 10 free slots, 9 free/);
     });
 });
