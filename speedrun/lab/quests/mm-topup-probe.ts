@@ -96,6 +96,10 @@ async function stageHelperPack(n: number): Promise<void> {
 await homeTele(helper);
 await clearInventory(helper.sdk);
 await setVars(helper.sdk, { treequest: PREREQ_VARS.treequest, grandtree: PREREQ_VARS.grandtree, ...Object.fromEntries(MM_VARS.map(v => [v, (END_OF_G as Record<string, number>)[v] ?? 0])) });
+// --helperStats=N stages the helper's Attack, Strength, Defence and Hitpoints at N (the fleet's helper is 99/99/99 melee);
+// without it the helper keeps its own levels.
+const helperLevel = arg('helperStats', '');
+if (helperLevel) await setStats(helper.sdk, { attack: Number(helperLevel), strength: Number(helperLevel), defence: Number(helperLevel), hitpoints: Number(helperLevel) });
 await stageHelperPack(offer);
 const helperStats = Object.fromEntries(helper.sdk.getState()!.skills.filter(k => ['Hitpoints', 'Defence', 'Prayer'].includes(k.name)).map(k => [k.name, k.baseLevel]));
 const legs: Record<string, number | string> = {};
