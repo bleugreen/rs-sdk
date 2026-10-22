@@ -283,7 +283,12 @@ export async function restock(ctx: RoleContext, altar: Altar, o: RestockOptions,
         if (o.labSeed && isLocalServer() && !seeded.has(ctx.account)) {
             seeded.add(ctx.account);
             const before = s()?.inventory.length ?? 0;
-            const gives = [...(o.labSeed.essence > 0 ? [{ obj: 'cert_blankrune', n: o.labSeed.essence }] : []), ...(o.labSeed.items ?? [])];
+            // A fresh lab account carries no talisman: seed one (the run's givers are staged with theirs).
+            const gives = [
+                ...(count(s(), altar.talisman) < 1 ? [{ obj: altar.talismanObj, n: 1 }] : []),
+                ...(o.labSeed.essence > 0 ? [{ obj: 'cert_blankrune', n: o.labSeed.essence }] : []),
+                ...(o.labSeed.items ?? [])
+            ];
             for (const g of gives) await cheat(ctx, `give ${g.obj} ${g.n}`);
             await until(ctx, st => st.inventory.length >= before + gives.length, 10);
             phase(`lab: seeded the bank with ${gives.map(g => `${g.n} ${g.obj}`).join(', ')}`);
