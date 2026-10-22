@@ -49,9 +49,12 @@
 // NPC on either route hits a combat-3 account for more than 1, so this is a guard, not a plan.
 //
 // Slots (STEP-MANIFEST.md's inventory ledger, rows H4k to T07-08). The normal band keeps
-// `keepProducts` normal logs (default 1, knife-cycle's own default is 3), counting the kit's:
-// every other log it chops is dropped, so the oaks start with the axe, the knife and one log,
-// which leaves a 23-bone load and the chopped log their 24 slots. With `handBack`, a sixth step,
+// `keepProducts` normal logs (default 1, knife-cycle's own default is 3), counting the kit's,
+// and drops every other log it chops, except the last: the program ends on the label that shows
+// it (rs/196's lab, rs/158's ruling). So each oak and willow band starts by dropping every
+// normal log past `keepProducts`, sent without waiting before the walk to the stand (0 ticks;
+// the starter takes the first log), and the oaks start with the axe, the knife and one log,
+// which leaves a 23-bone load and the chopped log their 24 slots with one to spare. With `handBack`, a sixth step,
 // `woodcutting:hand-back`, runs once `to` is reached: one `swap()` that gives the axe and every
 // bone still held to the partner and takes T07-08's Camelot runes (1 law, 5 air). It is a trade
 // of its own at S07's end, not part of a bone load: the axe chops to the last level, after the
@@ -259,6 +262,11 @@ function count(items: readonly InventoryItem[], re: RegExp): number {
 function axeOf(s: BotWorldState): string | null {
     const all = [...s.equipment, ...s.inventory];
     return (all.find(i => RUNE_AXE.test(i.name)) ?? all.find(i => AXE.test(i.name)))?.name ?? null;
+}
+
+/** Normal logs past the first `keep`: the starter's log is the first in the pack (knife-cycle `invItem`). */
+export function extraLogs(s: BotWorldState, keep: number): InventoryItem[] {
+    return s.inventory.filter(i => LOGS.test(i.name)).slice(keep);
 }
 
 function near(s: BotWorldState, t: Tile, r: number): boolean {
@@ -827,7 +835,8 @@ function bandStep(o: Resolved, b: Band, last: boolean): Step {
         if (l < TREE_LEVEL[b.tree]) return `Woodcutting ${l}, ${b.tree} trees need ${TREE_LEVEL[b.tree]}`;
         if (knifeCapable && (!count(s.inventory, KNIFE) || !count(s.inventory, LOGS))) return `technique ${technique} needs a knife and a normal log`;
         if (knifeCapable && !s.skills.some(k => k.name.toLowerCase() === 'fletching' && k.baseLevel >= 1)) return 'technique needs Fletching 1';
-        const free = 28 - s.inventory.length;
+        // the logs this band drops at its start count as free
+        const free = 28 - s.inventory.length + (b.tree === 'normal' ? 0 : extraLogs(s, o.keepProducts).length);
         if (free < 2) return `${free} free inventory slots, 2 needed`;
         if (!near(s, site.stand, NEAR)) return `not within ${NEAR} tiles of ${site.stand[0]},${site.stand[1]}`;
         if (burying) {
@@ -842,6 +851,12 @@ function bandStep(o: Resolved, b: Band, last: boolean): Step {
         const { sdk, bot, session, log } = ctx;
         const s0 = sdk.getState();
         if (!s0 || passed(s0)) return;
+        if (b.tree !== 'normal') {
+            // a drop keeps the walk queue, and it lands before the first load's trade completes
+            const extra = extraLogs(s0, o.keepProducts);
+            for (const i of extra.slice(0, 5)) void sdk.sendDropItem(i.slot);
+            if (extra.length) o.log(`${b.name}: dropped ${Math.min(5, extra.length)} normal log(s) past ${o.keepProducts} at the band's start`);
+        }
         if (site.trees && !(s0.player?.worldX === site.stand[0] && s0.player?.worldZ === site.stand[1])) {
             // `trees` are the tiles reachable from the stand itself (knife-cycle header)
             const r = await bot.walkTo(site.stand[0], site.stand[1], 0, { timeout: 30_000 });
