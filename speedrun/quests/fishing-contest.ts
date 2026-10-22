@@ -135,11 +135,11 @@ export const RUNES = { air: 2 * SPELLS.camelot.runes.air!, law: 2 * SPELLS.camel
 /**
  * Everything the step holds, for the free-slot checks (brief addendum 8): the kit as segment A
  * receives it, each line until it leaves, then what the content gives. `until` is where the item
- * really leaves the pack: the garlic in the pipe (J), the worm on the catch (K: the catch deletes
- * it and adds the carp, so the garlic's slot already freed at J covers the carp), the carp to Bonzo
- * (L), the trophy to the dwarf and the pass and spade dropped at the exit (N). Coins are a stack
- * and keep their slot (a held stack may outlast the fee); the rod goes on T20-21. Peak 2 (the pass
- * and the worm, E to J), which is the slot ledger's S20 need.
+ * really leaves the pack: the garlic in the pipe (J), the worm on the catch (K, which deletes it
+ * and adds the carp; the garlic's slot, freed at J, covers the carp there), the carp to Bonzo (L),
+ * the trophy to the dwarf and the pass and spade dropped at the exit (N). Coins are a stack and
+ * keep their slot (a held stack may outlast the fee); the rod goes on T20-21. Peak 2 (the pass and
+ * the worm, E to K), which is the slot ledger's S20 need.
  */
 export const QUEST_ITEMS: readonly QuestItem[] = [
     { item: ITEM.rod, name: 'Fishing rod', from: 'A' },
@@ -149,7 +149,7 @@ export const QUEST_ITEMS: readonly QuestItem[] = [
     // mountain_dwarf.rs2:71; never taken back, dropped at N's exit.
     { item: ITEM.pass, name: 'Fishing pass', from: 'B', until: 'N' },
     // mcgrubors_wood.rs2:48 (stackable); hemenster_fishing.rs2:28 spends it.
-    { item: ITEM.worm, name: 'Red vine worm', stackable: true, from: 'E', until: 'J' },
+    { item: ITEM.worm, name: 'Red vine worm', stackable: true, from: 'E', until: 'K' },
     // hemenster_fishing.rs2:31; bonzo.rs2:60 takes it.
     { item: ITEM.carp, name: 'Raw giant carp', from: 'K', until: 'L' },
     // bonzo.rs2:62; mountain_dwarf.rs2:99 takes it.
