@@ -25,8 +25,9 @@ function fire(x: number, z: number): NearbyLoc {
 }
 
 let obs = 0;
-function msg(text: string, tick: number): GameMessage {
-    return { type: 0, text, sender: '', tick, fromSelf: false, observationId: ++obs };
+/** A game message; `observationId` is the publication it first showed in, shared by a tick's lines on the real clients. */
+function msg(text: string, tick: number, observationId = ++obs): GameMessage {
+    return { type: 0, text, sender: '', tick, fromSelf: false, observationId };
 }
 
 function state(o: { tick?: number; at?: Tile; level?: number; xp?: number; ground?: GroundItem[]; fires?: Tile[]; msgs?: GameMessage[]; anim?: number; inv?: string[] } = {}): BotWorldState {
@@ -191,6 +192,25 @@ describe('firemaking: the lighting engine', () => {
         expect(f).toMatchObject({ kind: 'fire', n: 0, tile: [3222, 3219], tier: 'Logs', gap: null, fresh: true, failures: 0, slip: 0 });
         expect(L.firstAttemptTick).toBe(102);
         expect(L.cursor).toBe(1);
+    });
+
+    test('reads every line of a publication: a success behind another line of its tick counts, once', () => {
+        const both = [ground(3222, 3219, 'Logs', 1), ground(3221, 3219, 'Logs', 2)];
+        const at: Tile = [3222, 3219];
+        const L = new Lighter(tiles, state({ tick: 0, at, ground: both }), opts);
+        L.onTick(state({ tick: 0, at, ground: both }));
+        const attempt = msg('You attempt to light the logs.', 1);
+        L.onTick(state({ tick: 1, at, ground: both, msgs: [attempt] }));
+        // Both clients publish once per tick, so every line first seen in a tick carries one id.
+        const pub = ++obs;
+        const tick4 = [attempt, msg('Some earlier line of the tick.', 4, pub), msg('The fire catches and the logs begin to burn.', 4, pub)];
+        const rest = [ground(3221, 3219, 'Logs', 2)];
+        const d = L.onTick(state({ tick: 4, at: [3221, 3219], ground: rest, fires: [at], msgs: tick4 }));
+        expect(L.fires).toBe(1);
+        expect(d.light).toEqual({ x: 3221, z: 3219, itemId: 2 });
+        // the next publication repeats the same lines: nothing new
+        L.onTick(state({ tick: 5, at: [3221, 3219], ground: rest, fires: [at], msgs: tick4 }));
+        expect(L.fires).toBe(1);
     });
 
     test('never resends a light while there is any sign it took; resends after RESEND_AFTER quiet ticks', () => {

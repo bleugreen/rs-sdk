@@ -52,6 +52,7 @@
 // A refill holds SCORED's free slots, not 27: at S03's real start SCORED carries the tinderbox and
 // its rune stacks (RUN-ORDER.md S00-S02), so `capacity` defaults to 28 less the non-log items held.
 
+import { ChatHistory } from '../../sdk/chat-history';
 import { isFlagged, isTileWalkable } from '../../sdk/pathfinding';
 import { CollisionFlag } from '../../server/vendor/rsmod-pathfinder';
 import type { ActionResult, BotWorldState, GameMessage, GroundItem, InventoryItem } from '../../sdk/types';
@@ -510,7 +511,8 @@ export class Lighter {
     private waitFrom: number | null = null;
     private walked = -100;
     private prevLevel: number | null;
-    private readonly seen = new Set<string>();
+    /** Every message of a publication shares its observationId, so new lines are read through the SDK's rule. */
+    private readonly chat = new ChatHistory();
     private levelUp: WatcherMemory = newWatcherMemory();
     private readonly refusedTiles = new Set<string>();
     /** Held mode: the planned tile being walked to and since when. */
@@ -523,7 +525,7 @@ export class Lighter {
     ) {
         this.startTick = start.tick;
         this.prevLevel = fmLevel(start);
-        for (const m of start.gameMessages) this.seen.add(msgKey(m));
+        this.chat.record(start.gameMessages);
         this.levelUp = levelUpStep(this.levelUp, start).mem;
     }
 
@@ -551,10 +553,7 @@ export class Lighter {
         if (lu.click) this.dismissed++;
         const d: Decision = { dismiss: lu.click };
 
-        for (const m of s.gameMessages) {
-            const k = msgKey(m);
-            if (this.seen.has(k)) continue;
-            this.seen.add(k);
+        for (const m of this.chat.record(s.gameMessages)) {
             if (MSG.attempt.test(m.text)) {
                 this.attemptTick = t;
                 this.firstAttemptTick ??= t;
@@ -829,10 +828,6 @@ function useOf(s: BotWorldState, tier: string): { tinderbox: number; log: number
     const tinder = s.inventory.find(i => TINDERBOX.test(i.name));
     const log = s.inventory.find(i => i.name.toLowerCase() === tier.toLowerCase());
     return tinder && log ? { tinderbox: tinder.slot, log: log.slot, itemId: log.id } : undefined;
-}
-
-function msgKey(m: GameMessage): string {
-    return m.observationId !== undefined ? `o${m.observationId}` : `t${m.tick}|${m.text}`;
 }
 
 // ------------------------------------------------------------------ summaries
