@@ -6,7 +6,7 @@ import type { BotWorldState, InventoryItem, NearbyNpc } from '../../sdk/types';
 import { Run } from './bones';
 import { memoryRoleState } from './role';
 import { summarizeWindow } from '../../docs/speedrun/scripts/bones-dev/stats';
-import { carryReached, fishingHaul, foodOverCap, gearRank, healOf, inBabyBlueRoom, inDesert, isClutter, keepOnBank, parseOptions, patrolTour, SPOTS, tollWithdraw, UGTHANKI_SPAWNS } from './bones';
+import { carryReached, fishingHaul, foodOverCap, lootWanted, gearRank, healOf, inBabyBlueRoom, inDesert, isClutter, keepOnBank, parseOptions, patrolTour, SPOTS, tollWithdraw, UGTHANKI_SPAWNS } from './bones';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -50,6 +50,31 @@ test('inBabyBlueRoom: west of the dusty-key gate only; the gate tile is outside'
     expect(inBabyBlueRoom({ x: 2924, z: 9803 })).toBe(false); // cairn_h51 stopped here, 09:26 UTC
     expect(inBabyBlueRoom({ x: 2925, z: 9803 })).toBe(false);
     expect(inBabyBlueRoom({ x: 2884, z: 9798 })).toBe(false); // the ladder bottom is walled off from the room
+});
+
+describe('skipIds', () => {
+    // The druid gatherers' plan for attempts 2-3: leave grimy marrentill, tarromin, cadantine, dwarf weed and lantadyme.
+    const skip = [201, 203, 215, 217, 2485];
+    const want = /^herb$|^(vial of water|coins)$/i;
+    test('default none: existing configs pick up as before', () => {
+        expect(parseOptions({}).skipIds.size).toBe(0);
+        expect(lootWanted({ id: 201, name: 'Herb' }, want, parseOptions({}).skipIds)).toBe(true);
+    });
+    test('a skipped id is left whatever its name; other herbs and the rest of the loot are taken', () => {
+        const ids = parseOptions({ spot: 'chaos_druids', skipIds: skip }).skipIds;
+        for (const id of skip) expect(lootWanted({ id, name: 'Herb' }, want, ids)).toBe(false);
+        for (const id of [199, 205, 207, 209, 211, 213]) expect(lootWanted({ id, name: 'Herb' }, want, ids)).toBe(true);
+        expect(lootWanted({ id: 227, name: 'Vial of water' }, want, ids)).toBe(true);
+        expect(lootWanted({ id: 1, name: 'Bronze longsword' }, want, ids)).toBe(false);
+    });
+    test('refuses a malformed list', () => {
+        expect(() => parseOptions({ skipIds: [201, 'x'] })).toThrow();
+        expect(() => parseOptions({ skipIds: 201 })).toThrow();
+    });
+    test('maxCarry counts only what was picked up: skipped herbs left on the ground never reach the pack', () => {
+        const carried = Array.from({ length: 9 }, () => ({ name: 'Herb', count: 1 }));
+        expect(carryReached(carried, SPOTS.chaos_druids!.bones, 10)).toBe(false);
+    });
 });
 
 describe('maxCarry', () => {
