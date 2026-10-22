@@ -90,9 +90,13 @@ export function sellDecision(bid: number | null | undefined, floor: number): { s
     return { sell: true };
 }
 
-/** What the seller should receive for `quantity` at `price` after the burned fee (rounded down). */
+/**
+ * What the seller receives for `quantity` filled at `price`: the gross less the burned fee, which
+ * the engine rounds down, cumulatively per sell offer (`floor(gross / 20)`, MarketStore.ts).
+ */
 export function expectedProceeds(quantity: number, price: number): number {
-    return Math.floor(quantity * price * (1 - SELLER_FEE));
+    const gross = quantity * price;
+    return gross - Math.floor(gross * SELLER_FEE);
 }
 
 /** The game HTTP origin behind the bot.env SERVER (the same rule as mule.ts pointMarketAtServer). */
@@ -356,7 +360,7 @@ export class CoalProbe {
         sale.coinsReceived = coinsIn(this.s) - coins0;
         sale.result = (sale.filled as number) === quantity ? 'filled' : (sale.filled as number) > 0 ? 'partial' : 'unfilled';
         ctx.event('sale', { result: sale.result, filled: sale.filled, coinsReceived: sale.coinsReceived, expected: sale.expectedCoins });
-        await ctx.bot.closeInterface?.().catch?.(() => undefined);
+        await ctx.bot.closeInterface().catch(() => undefined);
     }
 }
 
