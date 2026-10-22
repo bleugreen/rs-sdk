@@ -4,11 +4,12 @@
 // against the knife-on total, and STEP-MANIFEST.md section 1 against the step table.
 //
 //   bun docs/speedrun/scripts/run-order-sums.ts
-//   EXPECT=34538,31649,37655,35200,38391,35966 bun docs/speedrun/scripts/run-order-sums.ts
+//   EXPECT=34456,31567,37573,35118,38309,35884 bun docs/speedrun/scripts/run-order-sums.ts
+//   FROM=34538,31649,37655,35200,38391,35966 EXPECT=... bun docs/speedrun/scripts/run-order-sums.ts
 //
 // EXPECT pins section 7's six totals (knife on expected / best, knife off in force, knife off
 // without rs/162); a bookkeeping change runs it before and after with the same EXPECT. Exits 1 on
-// any mismatch. Figures may carry half ticks (legs measured to 0.5, the Grand Tree's segment A).
+// any mismatch. FROM names the six totals before a re-pricing and prints each one's change. Figures may carry half ticks (legs measured to 0.5, the Grand Tree's segment A).
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -83,6 +84,11 @@ console.log(`section 7: knife on ${r1(sums[0]!)} / ${r1(sums[1]!)}; knife off in
 sums.forEach((v, i) => eq(v, want[i]!, `section 7 column ${i + 1} against its total row`));
 const exp = process.env.EXPECT?.split(',').map(Number);
 if (exp) exp.forEach((v, i) => eq(sums[i]!, v, `section 7 column ${i + 1} against EXPECT`));
+const from = process.env.FROM?.split(',').map(Number);
+if (from) {
+    const d = sums.map((v, i) => r1(v - from[i]!)).map(x => (x > 0 ? `+${x}` : `${x}`));
+    console.log(`change against FROM: knife on ${d[0]} / ${d[1]}; knife off in force ${d[2]} / ${d[3]}; without rs/162 (history) ${d[4]} / ${d[5]}`);
+}
 
 // M / I / E split.
 const mie = ro.filter(l => /^\| [MIE]: /.test(l)).map(l => num(cells(l)[1]!));

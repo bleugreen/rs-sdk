@@ -170,13 +170,16 @@ relogs, every shortfall or restock pause, and the final logout that writes the h
 (#140) but not main, since #146 did not carry it. Steps 6 and 8 therefore confirm a tab's logout with
 `logoutClean` itself and the login screen in the live view.
 
-**The run-commit floor is one commit, `4cc468e0`** (#205, rs/244's Firemaking snapshot, on main at
-02:22 UTC 2026-10-22). Step 0 checks it once: `git -C ~/rs-sdk merge-base --is-ancestor 4cc468e0 "$RUN_COMMIT"`.
+**The run-commit floor is one commit, `8a741554`** (#212, rs/252's snapshot of rs/199's combat step module, on main at
+02:57 UTC 2026-10-22). Step 0 checks it once: `git -C ~/rs-sdk merge-base --is-ancestor 8a741554 "$RUN_COMMIT"`.
 Its history contains every earlier requirement (rs/158 in the store; here `git merge-base
---is-ancestor <commit> 4cc468e0` for each row), so no per-fix check is kept. What each one brings:
+--is-ancestor <commit> 8a741554` for each row), so no per-fix check is kept. What each one brings:
 
 | Commit | PR | What the run needs from it |
 |---|---|---|
+| `8a741554` | #212 (rs/252) | the combat step module, from rs/199's lab-accepted module: `speedrun/skills/ranged.ts` with `cannonSession` (S14, STEP-MANIFEST.md entry 26) and `combatFinish` (S27, entry 7), `speedrun/lib/cannon.ts`, `speedrun/lib/flick.ts` and `speedrun/lab/measure-ranged.ts`; `FINISH.bowFrom = 50`, the early bow switch S27's ~1,972 assumes; it descends from 0658e896 |
+| `0658e896` | #200 (rs/198) | `speedrun/lib/travel.ts`, the shared walker STEP-MANIFEST.md entry 11's legs run on, with `STALL_TICKS = 20` (a walk that stalls returns `ok: false` instead of throwing), and `act.ts`'s `castTeleport` ending on a refusal with an optional `landed`; byte-identical from rs/198's f0e76192; it contains 73a6a8a3 |
+| `73a6a8a3` | #210 (rs/41; a merge commit) | fleet snapshot 2: rs/41's helper code and docs (the cannon holder's serve mode, rs/189; the anvil and log-row helpers; STEP-MANIFEST.md section 4) |
 | `4cc468e0` | #205 (rs/244) | `speedrun/skills/firemaking.ts` and its test, S03's module (STEP-MANIFEST.md entry 16), from rs/228's lab-gated module; it descends from 22552bf4 |
 | `22552bf4` | #197 (rs/231) | `speedrun/skills/fishing.ts` (S22, STEP-MANIFEST.md entry 5), knife-cycle's `untilXp`, `followSpot` and `dropEach` declared (the net band passes them), the runtime's `hold` parameter and `ctx.starter()`, `speedrun/lib/gated-program.ts` and `xp.ts`, and `fishing.md` with rs/195's corrections |
 | `23ea9f77` | #178 (rs/131) | `rc-cycle`, the scored side of the Runecraft altar hand-off as an in-page program, 7-tick tuned and 8-tick robust schedules, which S06 and S21 run on (m, lab, rs/131: 7.00 ticks per craft with the givers handled first, 8.00 robust, 30 crafts each, no lost trades; STEP-MANIFEST.md entry 9) |
@@ -191,9 +194,10 @@ Its history contains every earlier requirement (rs/158 in the store; here `git m
 | `b6950915` | #177 | a tick program faults at start on any parameter key it does not declare, so a module built against another commit's programs stops instead of running a different program (`tick-programs.md`; STEP-MANIFEST.md entry 0) |
 | `834f376b` | #176 (rs/210) | the in-run tick-cadence monitor on the scored connection: per-minute `TICKMON` rows in the run log, no behaviour change |
 
+**Gate tooling on main, not floor items** (main: gate-script helpers, not run-client code; the floor contains both, so the run host's checkout has them): `5d22252d` (#208, rs/232's `speedrun/lib/display.ts`, the live-frame check for steps 5 and 5a) and `c4b79f17` (#213, rs/232's `speedrun/lib/tab.ts` window helpers, `screenshotTab` among them).
+
 **Pending for the floor**, each moving it to its merge commit when it lands (rs/158 sends the commit,
-and the latest one sent is the floor): #200 (the shared walker `speedrun/lib/travel.ts` with the stall fix, five `speedrun/lib` files; STEP-MANIFEST.md entry 11's legs depend on it); rs/242's `speedrun/lib/display.ts` (the live-frame check for steps 5 and 5a, rs/232's helpers); rs/147's Agility snapshot (agility declares `untilLevel`; it waits on main's sign-off of four default-changing program fixes and the Agility part-2 lab; RUN-ORDER.md O40); and rs/243's Thieving snapshot (pickpocket's `stopWhenFoodBelow` and `retargetTicks`, declared with a packet-fingerprint golden test; STEP-MANIFEST.md entry 6); and rs/252, the snapshot of rs/199's Ranged module (S14 and S27,
-STEP-MANIFEST.md entries 26 and 7, lab-accepted on rs/186's branch as 1ac3b8bc, PR #207). Only #200 has
+and the latest one sent is the floor): rs/147's Agility snapshot (agility declares `untilLevel`; it waits on main's sign-off of four default-changing program fixes and the Agility part-2 lab; RUN-ORDER.md O40); rs/243's Thieving snapshot (pickpocket's `stopWhenFoodBelow` and `retargetTicks`, declared with a packet-fingerprint golden test; STEP-MANIFEST.md entry 6); and PR #198 (rs/198's `speedrun/runner/legs.ts`, STEP-MANIFEST.md entry 11, with its per-leg lab section of `research/run-transitions.md`). Only #198 has
 a PR number so far.
 
 **Leftover check.** It lists every tmux socket on the host with its sessions, other agents' sockets
@@ -404,9 +408,9 @@ Then put the clone on it and build:
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'export PATH=$HOME/.bun/bin:$PATH; cd ~/rs-sdk && git fetch -q origin && git checkout -q --detach "$(cat $HOME/run-commit)" && bun install && (cd server/webclient && bun install && bun run build) && (cd server/gateway && bun install) && mkdir -p ~/recordings ~/rs-run/chrome-profile && git log -1 --oneline && ls server/webclient/out/bot/client.js'
 ```
 
-`RUN_COMMIT` must be at or after the run-commit floor, **`4cc468e0`** (#205; "Credentials" lists
+`RUN_COMMIT` must be at or after the run-commit floor, **`8a741554`** (#212; "Credentials" lists
 what it contains, rs/138's Chrome login and rs/164's tab-logout confirmation among them). One
-check: `git -C ~/rs-sdk merge-base --is-ancestor 4cc468e0 "$RUN_COMMIT"`. A failure means the commit
+check: `git -C ~/rs-sdk merge-base --is-ancestor 8a741554 "$RUN_COMMIT"`. A failure means the commit
 predates at least one of the changes in that table.
 
 Account files: the gate account (step 6) is a throwaway demo account whose name starts with
@@ -687,8 +691,8 @@ is running, not what it shows. Before SCORED's login a frame of the capture must
 with nothing in front of it; a wrong window costs the run's evidence, not ticks (RUN-ORDER.md R20).
 It is a pass line of the start, beside the gate's (a)-(d): no start until it holds. rs/232's
 `speedrun/lib/display.ts` helpers, `frontWindows`, `grabFrame` and `frameShows`, check it from a
-script; they are on rs/147's branch, pending main with rs/242 (building), and until they land the
-operator checks it on the live view (below).
+script; they are on main, 5d22252d (#208), gate tooling rather than a floor item (the floor
+8a741554 contains it), and the operator can also check it on the live view (below).
 
 **Why RDP stays disconnected during the run.** With the operator connected, the capture kept real
 time but wrote only about 23 distinct frames a second (2,389 of ~10,700 dropped over 6 minutes).
