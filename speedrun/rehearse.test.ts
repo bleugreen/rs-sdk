@@ -13,9 +13,9 @@ import { sleep, waitUntil } from './lib/wait';
 import type { Link } from './runner/resume';
 import { BOUNDARY_STEP, type Step } from './runner/step';
 import {
-    compareHiscore, DEFAULT_ATTEMPT_KIND, DEFAULT_GATE_BOT, kindGate, kindText, RECORD_LINE, recordLineAt, type DirectRead, formatPlayers, formatSummary, GATE_PLAYERS_STEP, gateRefusal, type InPageRead, kitMissing, kitWant, parseArgs, parseDirectJson, parseKit, playerReads, playerSwing, ProgramTracker, ReachTracker, SessionClock, summarize, UsageError, attemptFront, bracketAttempt, type FrontIO, frontLine, type FrontReport, gateTabProblems, gateTabRead, recordingProblems, type TabIO,
+    compareHiscore, DEFAULT_ATTEMPT_KIND, DEFAULT_GATE_BOT, kindGate, kindText, RECORD_LINE, recordLineAt, type DirectRead, formatPlayers, formatSummary, GATE_PLAYERS_STEP, gateRefusal, type InPageRead, kitMissing, kitWant, parseArgs, parseDirectJson, parseKit, playerReads, playerSwing,  summarize, UsageError, attemptFront, bracketAttempt, type FrontIO, frontLine, type FrontReport, gateTabProblems, gateTabRead, recordingProblems, type TabIO,
 } from './rehearse';
-import { annotation, PAUSE_STEP, runAttempt } from './lib/attempt';
+import { annotation, PAUSE_STEP, ProgramTracker, ReachTracker, runAttempt, SessionClock } from './lib/attempt';
 import { EXIT_HOST_RESERVED, readReservation, reservationPath, reservationRefusal, ReservationWatch, claimBin, claimOwner, claimToucher, type ClaimTouch, judgeReservation } from './lib/host-reservation';
 import type { PlayerRow } from './tools/hiscore-scrape';
 

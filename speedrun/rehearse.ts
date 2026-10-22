@@ -69,7 +69,7 @@ import { basename, dirname, isAbsolute, join } from 'path';
 import type { BotWorldState } from '../sdk/types';
 import { clock, DemoMonitor, demoOrigin, samplePlayerCount } from './lib/demo-status';
 import { directDecision, type DirectVerdict, verdictText } from './lib/hostgate';
-import { PAUSE_STEP, annotation, runAttempt } from './lib/attempt';
+import { PAUSE_STEP, annotation, ProgramTracker, programRow, ReachTracker, runAttempt, SessionClock } from './lib/attempt';
 import { EXIT_HOST_RESERVED, reservationPath, claimOwner, reservationText, claimBin, claimToucher, ReservationWatch, reservationRefusal } from './lib/host-reservation';
 import { probeInPage, programStatus, type ProgramStatus } from './lib/programs';
 import { reconnectAfterOutage, serverDownProbe } from './lib/reconnect';
@@ -525,86 +525,6 @@ export function formatPlayers(p: PlayerSwing): string[] {
         );
     }
     return lines;
-}
-
-// ------------------------------------------------------------------ trackers (fed every published state)
-
-/** Per client session (lib/session.ts sessionId): first and last in-world tick seen. */
-export class SessionClock {
-    readonly sessions = new Map<number, { first: number; last: number }>();
-    observe(sessionId: number, s: Pick<BotWorldState, 'tick' | 'inGame'>): void {
-        if (!s.inGame) return;
-        const e = this.sessions.get(sessionId);
-        if (!e) this.sessions.set(sessionId, { first: s.tick, last: s.tick });
-        else e.last = Math.max(e.last, s.tick);
-    }
-}
-
-export interface ReachEvent {
-    skill: string;
-    level: number;
-    tick: number;
-}
-
-/** Base-level gains in any skill, one event per level (a multi-level jump gives one per level). */
-export class ReachTracker {
-    private base: Map<string, number> | null = null;
-    observe(s: Pick<BotWorldState, 'skills' | 'tick' | 'inGame'>): ReachEvent[] {
-        if (!s.inGame || !s.skills?.length) return [];
-        const now = new Map(s.skills.map(k => [k.name.toLowerCase(), k.baseLevel] as const));
-        const prev = this.base;
-        this.base = now;
-        if (!prev) return [];
-        const out: ReachEvent[] = [];
-        for (const [skill, level] of now) {
-            const p = prev.get(skill);
-            if (p !== undefined) for (let l = p + 1; l <= level; l++) out.push({ skill, level: l, tick: s.tick });
-        }
-        return out;
-    }
-}
-
-/** In-page program runs to log: each run once, at its end (done, fault, stopped, or replaced by the next). */
-export class ProgramTracker {
-    private last: ProgramStatus | null = null;
-    private readonly logged = new Set<string>();
-    private static key(st: ProgramStatus): string {
-        return `${st.runId}@${st.startedTick}`;
-    }
-    observe(st: ProgramStatus | null): ProgramStatus[] {
-        const out: ProgramStatus[] = [];
-        const prev = this.last;
-        if (prev && (!st || ProgramTracker.key(st) !== ProgramTracker.key(prev)) && !this.logged.has(ProgramTracker.key(prev))) {
-            this.logged.add(ProgramTracker.key(prev));
-            out.push(st && prev.phase === 'running' ? { ...prev, phase: 'replaced' } : prev);
-        }
-        if (st && st.phase !== 'running' && !this.logged.has(ProgramTracker.key(st))) {
-            this.logged.add(ProgramTracker.key(st));
-            out.push(st);
-        }
-        if (st) this.last = st;
-        return out;
-    }
-    /** A run still going when the attempt ended. */
-    flush(): ProgramStatus[] {
-        const prev = this.last;
-        if (!prev || this.logged.has(ProgramTracker.key(prev))) return [];
-        this.logged.add(ProgramTracker.key(prev));
-        return [prev];
-    }
-}
-
-// ------------------------------------------------------------------ rows
-
-export function programRow(log: Pick<TickLog, 'runId'>, account: string, sessionId: number, st: ProgramStatus): TickRow {
-    return annotation(log, account, 'program', `(program) ${st.name}`, {
-        sessionId, startTick: st.startedTick, endTick: st.endedTick ?? st.tick, ok: st.phase !== 'fault', ...(st.fault ? { error: st.fault } : {}),
-        meta: {
-            runId: st.runId, phase: st.phase, params: st.params, counters: st.counters, gauges: st.gauges, packets: st.packets, deferred: st.deferred,
-            skippedTicks: st.skippedTicks, maxTickMs: st.maxTickMs, frames: st.frames, publish: st.publish, react: st.react, loops: st.loops,
-            ...(st.last ? { last: st.last } : {}), ...(st.result !== undefined ? { result: st.result } : {}),
-        },
-    });
 }
 
 // ------------------------------------------------------------------ summary
