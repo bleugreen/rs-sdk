@@ -17,17 +17,16 @@ const sends = (sdk: FakeSdk, method: string) => sdk.sent.filter(a => a.method ==
 
 describe('a hop waits for a built region', () => {
     test('no lookup or click goes out while the client rebuilds the region after a landing', async () => {
-        const tree = loc(1317, 'Spirit tree', 2542, 3170, ['Talk-to']);
+        const tree = loc(1294, 'Spirit tree', 2542, 3170, ['Talk-to']);
         const sdk = world(2542, 3169, { sceneReady: false, nearbyLocs: [] });
-        sdk.scanLocs = [];
         const p = travel(sdk as never, [{ kind: 'tree', to: 'stronghold' }], { maxTicks: 10 });
         await flush();
         sdk.tick();
         await flush();
         expect(sdk.sent).toEqual([]);
         sdk.tick({ sceneReady: true, nearbyLocs: [tree] });
-        await flush();
-        expect(sends(sdk, 'sendInteractLoc')).toEqual([[2542, 3170, 1317, 1]]);
+        for (let i = 0; i < 5; i++) await flush();
+        expect(sends(sdk, 'sendInteractLoc')).toEqual([[2542, 3170, 1294, 1]]);
         sdk.tick({ player: player(2461, 3444) });
         await drive(sdk, p, 30);
     });
