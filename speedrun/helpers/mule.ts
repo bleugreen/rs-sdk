@@ -12,7 +12,8 @@
 //   shared across booths, so the courier walks to Varrock west bank, withdraws its
 //   produce there as notes, trades it to the mule, and walks back to where it was.
 //
-// The scored account's side of a hand-off is `requestPackage` + `receivePackage`.
+// The scored account's side of a hand-off is `requestPackage` (a cue scoped to the hand-off) +
+// `receivePackage`.
 // How the run uses them, and their measured cost in ticks: docs/speedrun/helpers/mule.md.
 //
 // Top-ups. A package line may be `{ item | id, topUp: { max } }` instead of a fixed `amount`:
@@ -39,7 +40,7 @@ import type { ObjPack } from '../lib/obj-pack';
 import { travelTo } from '../lib/toll-gate';
 import { ANY_OFFER, clickBack, decideTradeClick, DROPPED_TICKS, give, newClickCtx, offerSatisfies, openTrade, sameName, sendTradeClick, type ClickCtx } from '../lib/trade';
 import { tickMs } from '../lib/wait';
-import { awaitAsk, cueDir, scopeOption, type AwaitAskOptions, type CueScope, type TopUpAsk } from './altar-cue';
+import { awaitAsk, cueAddresses, cueDir, CueWriter, nameHash, readCue, scopeOption, type AwaitAskOptions, type Cue, type CueScope, type TopUpAsk } from './altar-cue';
 import { runStandalone, type Role, type RoleContext } from './role';
 
 // ============ Places ============
@@ -47,7 +48,6 @@ import { runStandalone, type Role, type RoleContext } from './role';
 /** Where the mule stands: inside Varrock west bank, in reach of the booths, off the GE table. */
 export const MULE_STAND = { x: 3185, z: 3436 };
 export const DEFAULT_COURIERS = '^cairn_h\\d+$';
-const PM_RECEIVED_TYPES = [3, 7];
 
 function onTutorialIsland(x: number, z: number): boolean {
     return x >= 3050 && x <= 3156 && z >= 3056 && z <= 3136;
@@ -784,7 +784,9 @@ class Mule {
     private readonly o: ReturnType<typeof muleOptions>;
     private readonly courierPatterns: RegExp[];
     private readonly requests: ChatCursor;
-    private readonly pms: ChatCursor;
+    /** The last mule cue acted on, and when this role started (a cue older than that, less STALE_CUE_MS, is a past one). */
+    private lastCue: { session: string; seq: number } | null = null;
+    private readonly startMs = Date.now();
     /** Package to serve next, or null. */
     private pending: Package | null = null;
     /** Order mode's packages: every package but those served only on request. */
@@ -816,7 +818,6 @@ class Mule {
         this.o = muleOptions(ctx.options);
         this.courierPatterns = toRegExps(this.o.couriers);
         this.requests = new ChatCursor(ctx.sdk, [TRADE_REQUEST_CHAT_TYPE]);
-        this.pms = new ChatCursor(ctx.sdk, PM_RECEIVED_TYPES);
         this.ordered = this.o.packages.filter(p => !p.onRequest);
         if (this.o.serveMode === 'order') this.pending = this.ordered[0] ?? null;
     }
@@ -864,16 +865,12 @@ class Mule {
         const { ctx } = this;
         const { sdk } = ctx;
 
-        // 1. Package requests: a PM from the scored account, or a line in the request file.
-        const asks: { from: string; text: string }[] = this.pms
-            .next()
-            .filter(pm => this.isServe(pm.sender))
-            .map(pm => ({ from: pm.sender, text: pm.text }));
-        const fileAsk = this.takeFileRequest();
-        if (fileAsk) asks.push({ from: 'requestFile', text: fileAsk });
-        for (const ask of asks) {
-            const pkg = parsePackageRequest(ask.text, this.o.packages);
-            ctx.log('package request', { from: ask.from, text: ask.text, found: pkg?.name ?? null });
+        // 1. Package requests: a new mule cue in the cue directory, scoped to one of our packages.
+        const cue = readCue(this.o.cueDir);
+        if (cue?.scope?.family === 'mule' && newCue(cue, this.lastCue, this.startMs)) {
+            this.lastCue = { session: cue.session, seq: cue.seq };
+            const pkg = packageForCue(cue, this.o.packages, this.o.serve);
+            ctx.log('package request', { step: cue.scope.step, session: cue.session, seq: cue.seq, found: pkg?.name ?? null });
             if (pkg && pkg !== this.pending) {
                 this.pending = pkg;
                 this.held = null;
@@ -906,17 +903,6 @@ class Mule {
         }
         this.phase('idle');
         await nextTick(sdk);
-    }
-
-    /** Pop the first package name from the request file (one name per line), if any. */
-    private takeFileRequest(): string | null {
-        const path = this.o.requestFile;
-        if (!path || !existsSync(path)) return null;
-        const lines = readFileSync(path, 'utf8').split('\n').map(l => l.trim());
-        const first = lines.findIndex(l => l.length > 0);
-        if (first < 0) return null;
-        writeFileSync(path, lines.slice(first + 1).filter(Boolean).map(l => `${l}\n`).join(''));
-        return lines[first]!;
     }
 
     private wantsPackage(): boolean {
