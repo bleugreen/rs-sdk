@@ -361,6 +361,66 @@ describe('trade completion race: cairn_h30 gives cairn_h71 a talisman and 200 no
         expect(Date.now() - t0).toBeLessThan(2_000);
     });
 
+    // trade.rs2 [opplayer4]'s `<name>:tradereq:` as the clients show it.
+    const requestFrom = (sender: string, tick: number): GameMessage => ({ type: 4, text: 'wishes to trade with you.', sender, tick, fromSelf: false });
+    const nearH30 = { nearbyPlayers: [{ index: 7, name: 'cairn_h30', combatLevel: 3, x: 0, z: 0, distance: 1 }] } as unknown as Partial<BotWorldState>;
+    const openWithH30 = { isOpen: true, screen: 'offer' as const, partner: 'cairn_h30', myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false };
+
+    test("openTrade answers the partner's request on the frame it shows when our click was dropped (sent during a delay), not 8 s later", async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, ...nearH30 }));
+        const t0 = Date.now();
+        const result = receiveFrom(sdk as unknown as TradeSdk, 'cairn_h30', { maxTicks: 5 });
+        await flush();
+        expect(sdk.sent.filter(a => a.method === 'sendTradeRequest')).toHaveLength(1);
+        // the click lands on 2 while we are delayed: the engine drops it without a word
+        for (const tick of [2, 3, 4, 5]) sdk.push({ tick });
+        await flush();
+        expect(sdk.sent.filter(a => a.method === 'sendTradeRequest')).toHaveLength(1);
+        // the partner's request lands on our first free tick: our click is the answer
+        sdk.push({ tick: 6, gameMessages: [requestFrom('Cairn H30', 6)] });
+        await flush();
+        expect(sdk.sent.filter(a => a.method === 'sendTradeRequest')).toHaveLength(2);
+        // the same request on the next frame is not answered twice
+        sdk.push({ tick: 7 });
+        await flush();
+        expect(sdk.sent.filter(a => a.method === 'sendTradeRequest')).toHaveLength(2);
+        sdk.push({ tick: 7, trade: openWithH30 });
+        await flush();
+        sdk.push({ tick: 20, trade: undefined });
+        await result;
+        expect(Date.now() - t0).toBeLessThan(2_000);
+    });
+
+    test('openTrade does not answer a request shown on the frame its own click lands on: that click may be what opens the trade', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, ...nearH30 }));
+        const result = receiveFrom(sdk as unknown as TradeSdk, 'cairn_h30', { maxTicks: 5 });
+        await flush();
+        sdk.push({ tick: 2, gameMessages: [requestFrom('cairn_h30', 2)] });
+        await flush();
+        expect(sdk.sent.filter(a => a.method === 'sendTradeRequest')).toHaveLength(1);
+        // a request older than our click was already answered by it
+        sdk.push({ tick: 3, gameMessages: [requestFrom('cairn_h30', 1)] });
+        await flush();
+        expect(sdk.sent.filter(a => a.method === 'sendTradeRequest')).toHaveLength(1);
+        sdk.push({ tick: 3, trade: openWithH30 });
+        await flush();
+        sdk.push({ tick: 20, trade: undefined });
+        await result;
+        expect(sdk.sent.filter(a => a.method === 'sendTradeRequest')).toHaveLength(1);
+    });
+
+    test("openTrade ignores another player's request", async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, ...nearH30 }));
+        const t0 = Date.now();
+        const result = receiveFrom(sdk as unknown as TradeSdk, 'cairn_h30', { maxTicks: 5, openTimeoutMs: 300 });
+        await flush();
+        sdk.push({ tick: 4, gameMessages: [requestFrom('cairn_h31', 4)] });
+        await flush();
+        expect(sdk.sent.filter(a => a.method === 'sendTradeRequest')).toHaveLength(1);
+        expect(await result).toMatchObject({ ok: false, reason: 'no_response' });
+        expect(Date.now() - t0).toBeLessThan(2_000);
+    });
+
     test('receiveFrom() reports a trade that completed as its decline landed as received', async () => {
         const sdk = new FakeSdk(frame(1, fromH30({ theirOffer: offer, partnerAccepted: true })));
         const result = receiveFrom(sdk as unknown as TradeSdk, 'cairn_h30');

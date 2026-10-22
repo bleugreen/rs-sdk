@@ -82,6 +82,23 @@ export class FakeSdk {
         return next;
     }
 
+    /** As BotSDK: resolves with the first state (current or pushed) that matches; rejects after `timeoutMs`. */
+    waitForCondition(pred: (s: BotWorldState) => boolean, timeoutMs = 30_000): Promise<BotWorldState> {
+        return new Promise((resolve, reject) => {
+            if (this.state && pred(this.state)) return resolve(this.state);
+            const unsub = this.onStateUpdate(s => {
+                if (!pred(s)) return;
+                unsub();
+                clearTimeout(timer);
+                resolve(s);
+            });
+            const timer = setTimeout(() => {
+                unsub();
+                reject(new Error('waitForCondition timed out'));
+            }, timeoutMs);
+        });
+    }
+
     /** Advance one tick, optionally changing state. */
     tick(patch: Partial<BotWorldState> | ((s: BotWorldState) => Partial<BotWorldState>) = {}): BotWorldState {
         return this.push(s => ({ tick: s.tick + 1, ...(typeof patch === 'function' ? patch(s) : patch) }));
