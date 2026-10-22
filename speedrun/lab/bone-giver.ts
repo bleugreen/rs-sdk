@@ -13,7 +13,10 @@
 //   --final=N (with --givers): giver N (0-based) carries S07's last-load runes (finalExtras: law 1, air 5) and must
 //   be the one that serves the group's last load, which the stand-in takes with the runes,
 //   --mix=D,B: every giver serves S07's priority list (Dragon bones, then Babydragon bones) from its own Falador
-//   west bank, seeded once with D dragon and B babydragon (restock.labSeed), every withdrawal a real one
+//   west bank, seeded once with D dragon and B babydragon (restock.labSeed), every withdrawal a real one,
+//   --return (with --mix and --givers): S07's trade-and-return rehearsal: the stand-in buries nothing and hands
+//   each load straight back to its giver (bone-receiver.ts returnLoads, bone-giver.ts acceptReturn), paced at a
+//   load's bury time (--pace=T ticks, default 69)
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -67,6 +70,9 @@ const config = {
         const mix = arg('mix', '').split(',').filter(Boolean).map(Number);
         if (mix.length && (mix.length !== 2 || asks.length || mix.some(x => !Number.isInteger(x) || x < 0))) throw new Error('--mix=D,B: two whole counts, standing mode only');
         const MIX = ['Dragon bones', 'Babydragon bones'];
+        const ret = process.argv.includes('--return');
+        if (ret && !(mix.length && nGivers > 1)) throw new Error('--return needs --mix and --givers');
+        const pace = Number(arg('pace', '69'));
         const stock = mix.length
             ? { item: MIX, restock: { kind: 'bank', labSeed: [{ obj: 'cert_dragon_bones', n: mix[0]! }, { obj: 'cert_babydragon_bones', n: mix[1]! }].filter(s => s.n > 0) } }
             : { restock: { kind: 'cheat' } };
@@ -82,12 +88,13 @@ const config = {
                       sites,
                       scope,
                       ...limit,
+                      ...(ret ? { acceptReturn: true } : {}),
                       ...(i === finalAt ? { finalExtras: mix.length ? RUNES.map(({ item, count }) => ({ item, count })) : RUNES } : {})
                   }
         }));
         const who = nGivers > 1 ? { givers } : { giver };
         const extras = finalAt >= 0 ? { finalExtras: RUNES.map(({ item, count }) => ({ item, count })) } : {};
-        const r = { account: receiver, role: 'bone-receiver', receiver: true, final: true, options: asks.length ? { giver, asks, pageLoads: [], scope } : { ...who, loads, pageLoads: pages, holdTicks: hold, scope, ...extras, ...(mix.length ? { item: MIX } : {}) } };
+        const r = { account: receiver, role: 'bone-receiver', receiver: true, final: true, options: asks.length ? { giver, asks, pageLoads: [], scope } : { ...who, loads, pageLoads: pages, holdTicks: hold, scope, ...extras, ...(mix.length ? { item: MIX } : {}), ...(ret ? { returnLoads: true, paceTicks: pace } : {}) } };
         return arg('order', 'giver-first') === 'receiver-first' ? [r, ...g] : [...g, r];
     })()
 };
@@ -106,7 +113,7 @@ const code = await child.exited;
 clearTimeout(killer);
 
 // Both sides, line by line: the receiver's loads and pages, the giver's trades, requests and refusals.
-for (const [who, account, re] of [['receiver', receiver, /"message":"(load|page)"/] as const, ...givers.map(g => [`giver ${g}`, g, /"message":"(trade|request|bounce|phase|trip)"/] as const)]) {
+for (const [who, account, re] of [['receiver', receiver, /"message":"(load|page|givers)"/] as const, ...givers.map(g => [`giver ${g}`, g, /"message":"(trade|request|bounce|phase|trip|return|final bank|bank short)"/] as const)]) {
     let text = '';
     try {
         text = readFileSync(join(runDir, 'logs', `${account}.role.log`), 'utf8');
