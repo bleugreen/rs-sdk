@@ -187,6 +187,60 @@ cannot bury while the trade is open. Capacity is therefore (failures - top-ups) 
   `planOffers` uses for every item. Any helper trade of an unstackable item in a count that is not
   1, 5, 10 or All is exposed to it (cairn://p/rs/136; this lab works around it in its own copy).
 
+### Why a request draws no answer (read and probed, rs/454)
+
+This answers the open question in section 18 (rs/352): 4 of 166 requests drew neither 'Sending trade
+offer...' nor a 'wishes to trade', and the re-send did not help.
+
+**The rule (read).** The partner sees a request only if `[opplayer4]` (trade.rs2) runs. The engine
+runs it only from a tile that reaches the partner: `Player.tryInteract` needs `inOperableDistance`,
+which for a player is rsmod's rectangle reach (`GameMap.reachedEntity`). Probed on the engine's own
+pathfinder, a 1x1 account reaches the partner from a side tile on open ground, and also when the
+partner stands on a blocking stall tile. It does not reach from a corner, from two tiles away, or
+from a side tile with a wall edge between the two. A free account would step to the partner. A
+stunned one cannot. The failure arms `[walktrigger,stunned]` (movecheck.rs2), and
+`Player.processInteraction` runs it before the op and again once the op has a path. Its
+`p_walk(coord)` replaces the path with the path from the tile to itself, which is empty (probed).
+With no step and no path, the engine prints "I can't reach that!" and clears the interaction on
+the request's own tick. No `UnsetMapFlag` is sent, the partner sees nothing, and no line matches
+the lab trace's `trade|busy` filter. So the request is dropped once, on the tick it runs, by
+reach. No queue or delay refuses it, and nothing refuses ops after a request: `[opplayer4]` has
+no delay. A re-send in the same stun meets the same tiles and the same stun (a knight stuns for 8
+ticks, so `%stunned` holds until the failure + 10). It can land only if the partner has moved to a
+reachable tile first.
+
+**What the unanswered stuns fit (inferred).** All four had the stand-in on (1, 0) on +2. That is
+the side tile it tries first, and it picks the tile by NPC occupancy alone. The lab starts at
+(2670, 3305). The walkable column x = 2672 has a wall on its east edge at z 3299-3303 and
+3306-3310 (`sdk/collision-data.json`). An account there, with the stand-in teleported to its
+east, has the giver on a side tile that it cannot reach. The stand-in counts as adjacent and
+never re-teleports, so the re-send fails the same way (0 of 3). The trace keeps only the giver's
+offset, not the tiles, so this is not confirmed.
+
+**The +7 and +8 'op rejections' are the pack's bury, not a refusal window (read).** After the hold
+(+3 to +5) the program resumes the pack at +6. The bury's `p_stopaction` writes an `UnsetMapFlag`,
+the knight click behind it in that tick is refused, and the +7 click lands on the bury's
+`p_delay(0)` tick and is refused too. `StateCollector` counts every `UnsetMapFlag` sent while the
+account stands still, and those land at +7 and +8. Every stocked stun does the same at k = 3 to
+8 (section 13). Answered top-up stuns show none, because the trade is open and the program idles.
+The +8 click is accepted, and the next attempt is on time.
+
+| Engine rule | Where | What happens to the op | When in a stun |
+|---|---|---|---|
+| Player delayed | `OpPlayerHandler`, `OpNpcHandler`, `MoveClickHandler` (`handle`); `World.processClientsIn` | refused, `UnsetMapFlag` | sent at +0 and +1 (the failure's two `p_delay(0)` ticks); a bury's tick and the tick after |
+| A later op in the same tick | `OpHeldHandler` and every op handler (`clearPendingAction`) | replaced, silently | any; the pack gives a request its own tick |
+| No reach and no step | `Player.processInteraction` with `[walktrigger,stunned]` | "I can't reach that!", cleared | any op that needs a step, until the failure + 10 |
+| Still stunned | `[label,attempt_pick_pocket]` (pickpocket.rs2) | accepted; returns without a roll | knight clicks before the failure + 10 |
+
+**Cost and fix (inferred).** An unanswered request costs no Thieving tick: fail to next was 12, 12
+and 15 against about 12, and no click timing recovers a tick. It defers the top-up by one stun and
+spends the hold's pack actions (one bury and three delay-free actions). The fix is the partner's
+tile, not the timing. The partner should stand on a side tile the account reaches, with no wall
+edge between. The stand-in should check that, and so should the program before it sends: the
+program today accepts any player at Chebyshev distance 1, corners included. Rate: 4 of 166 in
+rs/352 (2.4%, Wilson 95% 0.9-6.0%), or 6 of 191 with rs/290's two (3.1%, 1.4-6.7%). All were in
+pack arms (4 of 109, against 0 of 57 in topup arms), too few to separate the arms.
+
 ## 6. Inventory and supply plan
 
 Slots outside the bones: blood runes, air runes, headless arrows, the arrowhead tiers held, the
