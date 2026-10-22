@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 /**
- * Gentle wealth poller for the public demo: the bank board's top 50 and /playerpositions, once per interval
+ * Gentle wealth poller for the public demo: the bank board's top 50, /playerpositions and the GE bid pool (one
+ * book page ranked by coins committed), once per interval
  * (never more often than every 5 minutes), appended to docs/markets/data/poll-<block>.json, one file per block
  * of UTC hours. Public HTTP only; it never logs in. Format and decoding: markets/lib/snapshots.ts.
  *
@@ -17,6 +18,7 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { readBank } from '../lib/boards.ts';
 import { DEMO_SERVER, Gentle } from '../lib/demo.ts';
+import { bidPool, DemoMarket, readBids } from '../lib/market.ts';
 import { familyOf } from '../lib/families.ts';
 import { playerNameKey, readPositions, zoneRoster, type Position } from '../lib/positions.ts';
 import { decodePolls, encodePoll, formatPollFile, jumps, type BankRow, type PollFile } from '../lib/snapshots.ts';
@@ -54,6 +56,7 @@ async function main(): Promise<void> {
     const out = values.out ? resolve(values.out) : DEFAULT_OUT;
     mkdirSync(out, { recursive: true });
     const g = new Gentle({ server: values.server ?? DEMO_SERVER });
+    const market = new DemoMarket(g);
     let previous: BankRow[] | null = null;
     let previousPositions: Position[] | null = null;
 
@@ -61,11 +64,13 @@ async function main(): Promise<void> {
         const at = new Date();
         const bank = await readBank(g).catch(e => (console.error(`${at.toISOString()} bank: ${e instanceof Error ? e.message : e}`), null));
         const positions: Position[] | null = await readPositions(g).catch(e => (console.error(`${at.toISOString()} positions: ${e instanceof Error ? e.message : e}`), null));
+        const bids = await readBids(market, 7).then(bidPool, e => (console.error(`${at.toISOString()} bids: ${e instanceof Error ? e.message : e}`), null));
 
         const path = join(out, blockFile(at, blockHours));
         const file: PollFile = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : { v: 1, source: g.origin, polls: [] };
         if (previous === null && file.polls.length) previous = decodePolls(file).findLast(p => p.bank)?.bank ?? null;
         const record = encodePoll(file, at.toISOString(), bank, positions, n => familyOf(n) !== null, ps => zoneRoster(ps));
+        if (bids) record.bids = bids;
         file.polls.push(record);
         writeFileSync(path, formatPollFile(file));
 
@@ -76,6 +81,7 @@ async function main(): Promise<void> {
         }
         const leaders = (bank ?? []).slice(0, 5).map(r => `${r.name} ${gp(r.gp)}`).join(', ');
         console.log(`${at.toISOString().slice(0, 16)}Z online=${positions?.length ?? '?'} | ${leaders || 'bank read failed'} | families online ${[...online].map(([f, n]) => `${f} ${n}`).join(', ')}`);
+        if (bids) console.log(`  bid pool: ${bids.items} items, ${gp(bids.value)} committed`);
         if (record.zones) console.log(`  zones: ${Object.entries(record.zones).map(([z, names]) => `${z} ${names.length}`).join(', ')}`);
         if (bank && previous) {
             const found = jumps(previous, bank);
