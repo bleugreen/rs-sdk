@@ -17,8 +17,7 @@
 
 import { readFileSync } from 'fs';
 import type { BotWorldState } from '../../sdk/types';
-import { CANNON_PART_OBJS, CANNON_PARTS, CANNONBALL_OBJ } from '../lib/cannon';
-import { objPack } from '../lib/obj-pack';
+import { debugNameFor } from '../lib/ledger-objs';
 import { sameName, swap, type GiveSpec, type WantSpec } from '../lib/trade';
 import { openSession } from '../lib/session';
 import { waitUntil } from '../lib/wait';
@@ -38,42 +37,6 @@ export interface StubPlanFile {
     objs?: Record<string, string>;
 }
 
-/** Ledger NAMEs whose obj.pack debug name is no spelling of them (read from server/content/pack/obj.pack). */
-export const LEDGER_OBJS: Readonly<Record<string, string>> = {
-    'prayer potion(4)': '4doseprayerrestore',
-    'magic potion(4)': '4dose1magic',
-    'ranging potion(4)': '4doserangerspotion',
-    'superantipoison(4)': '4dose2antipoison',
-    'super attack(3)': '3dose2attack',
-    'super strength(3)': '3dose2strength',
-    'bronze arrowtips': 'bronze_arrowheads',
-    'iron arrowtips': 'iron_arrowheads',
-    'steel arrowtips': 'steel_arrowheads',
-    'mithril arrowtips': 'mithril_arrowheads',
-    'adamant arrowtips': 'adamant_arrowheads',
-    'rune arrowtips': 'rune_arrowheads',
-    'bucket of milk': 'bucket_milk',
-    'pot of flour': 'pot_flour',
-    'goblin mail': 'goblin_armour',
-    // lib/cannon.ts CANNON_PARTS / CANNON_PART_OBJS and CANNONBALL_OBJ.
-    ...Object.fromEntries(CANNON_PARTS.map((p, i) => [p.toLowerCase(), CANNON_PART_OBJS[i]!])),
-    cannonball: CANNONBALL_OBJ,
-};
-
-/** The ::give debug name of a ledger entry: the override, its obj id's name, LEDGER_OBJS, or an obj.pack spelling of its NAME. */
-export function debugNameFor(name: string, id: number | undefined, overrides: Readonly<Record<string, string>> = {}, names: ReadonlySet<string> = packNames()): string | null {
-    if (overrides[name]) return overrides[name]!;
-    if (id === undefined && LEDGER_OBJS[name]) return LEDGER_OBJS[name]!;
-    if (id !== undefined) return objPack().names.get(id) ?? null;
-    const base = name.toLowerCase().replace(/\(\*?\d?\)$/, '').replace(/['()]/g, '').trim();
-    for (const c of [base.replace(/\s+/g, '_'), base.replace(/\s+/g, '')]) if (names.has(c)) return c;
-    return null;
-}
-
-let names: Set<string> | null = null;
-function packNames(): Set<string> {
-    return (names ??= new Set(objPack().ids.keys()));
-}
 
 export interface StagedRow {
     row: string;

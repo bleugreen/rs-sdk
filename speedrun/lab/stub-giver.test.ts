@@ -3,7 +3,8 @@ import { readFileSync } from 'fs';
 import { objPack } from '../lib/obj-pack';
 import { CANNON_ROWS, PLACEMENT } from '../runner/chain';
 import { MANIFEST } from '../tools/slot-ledger';
-import { debugNameFor, LEDGER_OBJS, stageRows } from './stub-giver';
+import { debugNameFor, LEDGER_OBJS } from '../lib/ledger-objs';
+import { stageRows } from './stub-giver';
 
 const manifest = readFileSync(MANIFEST, 'utf8');
 
