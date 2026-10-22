@@ -27,7 +27,6 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import puppeteer from 'puppeteer';
 import { altarData, enterRoom, isLocalServer } from '../helpers/altar-room';
 import { memoryRoleState, type RoleContext } from '../helpers/role';
 import { programStatus, stopProgram, type ProgramStatus } from '../lib/programs';
@@ -80,7 +79,7 @@ const config = {
     botsDir,
     runDir,
     loginSpacingMs: 3000,
-    accounts: givers.map((account, i) => ({ account, role: 'altar-giver', options: { altar: 'air', slot: i % 3, essence: 27, restock: { kind: 'bank', ...(labStage ? { labStock: true } : {}) }, ...(path ? { path } : {}) } }))
+    accounts: givers.map((account, i) => ({ account, role: 'altar-giver', ...(path ? { path } : {}), options: { altar: 'air', slot: i % 3, essence: 27, restock: { kind: 'bank', ...(labStage ? { labStock: true } : {}) } } }))
 };
 writeFileSync(join(base, 'launch.json'), JSON.stringify(config, null, 2));
 console.log(`runecraft-demo: ${givers.length} givers (${path ?? 'relay'}), ${cycles} cycles at air, schedule ${schedule}${labStage ? ', lab-staged' : ''}; run files in ${base}`);
@@ -117,13 +116,20 @@ async function giversReady(): Promise<void> {
         if (Date.now() - t0 > Math.min(600_000, remaining())) throw new Error(`givers not ready after ${Math.round((Date.now() - t0) / 1000)} s (ready: ${ready.join(', ') || 'none'}; see ${runDir}/logs)`);
         await Bun.sleep(500);
     }
-    console.log(`givers ready after ${Math.round((Date.now() - t0) / 1000)} s`);
+    // standalone.ts takes a giver's path from the account entry, not the role options; a misplaced
+    // `path` silently falls back to the relay, so fail on any giver the launcher resolved otherwise.
+    const resolved = (JSON.parse(readFileSync(join(runDir, 'launcher.json'), 'utf8')) as { accounts: { account: string; path?: string }[] }).accounts.filter(a => givers.includes(a.account));
+    console.log(`givers ready after ${Math.round((Date.now() - t0) / 1000)} s; paths ${resolved.map(a => `${a.account}:${a.path}`).join(', ')}`);
+    if (resolved.some(a => a.path !== (path ?? 'relay'))) throw new Error(`the launcher resolved ${resolved.map(a => `${a.account}:${a.path}`).join(', ')}, not ${path ?? 'relay'}`);
 }
 
 /** The stand-in's login: the token form over CDP on the demo; the lab's own Chrome and the query form with --lab-stage. */
 async function standInSession(): Promise<Session> {
     if (!labStage) return openSession(scored, { client: 'browser', launch: true });
     const cdpPort = Number(process.env.WEB_PORT ?? 9300) + 6;
+    // Loaded only for --lab-stage: on the demo host's Bun, importing puppeteer at module load
+    // crashes in proxy-agent (`debug_1.default is not a function`) before any login.
+    const puppeteer = (await import('puppeteer')).default;
     browser = await puppeteer.launch({
         headless: process.argv.includes('--headless'),
         defaultViewport: null,
@@ -212,11 +218,10 @@ try {
     if (launcher) {
         (launcher as { kill(sig?: string): void }).kill('SIGINT');
         await Promise.race([(launcher as { exited: Promise<unknown> }).exited, Bun.sleep(60_000)]);
-        const text = existsSync(join(base, 'launcher.log')) ? readFileSync(join(base, 'launcher.log'), 'utf8') : '';
+        const final = existsSync(join(runDir, 'launcher.json')) ? (JSON.parse(readFileSync(join(runDir, 'launcher.json'), 'utf8')) as { accounts: { account: string; logout?: string | null }[] }) : { accounts: [] };
         for (const g of givers) {
-            const unclean = text.includes(`${g}: no clean logout`);
-            const stopped = text.includes(`${g}: stopped`);
-            logouts[g] = unclean ? 'NOT CONFIRMED: no clean logout; client closed' : stopped ? 'logged out (launcher)' : 'NOT CONFIRMED: no stop line in launcher.log';
+            const o = final.accounts.find(a => a.account === g)?.logout;
+            logouts[g] = o === 'out' ? 'logged out (launcher)' : o === 'not-in-world' ? 'logged out (never in world)' : `NOT CONFIRMED: ${o ?? 'no outcome in launcher.json'}`;
         }
     }
     if (browser) await browser.close().catch(() => {});

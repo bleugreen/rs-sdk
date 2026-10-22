@@ -38,7 +38,7 @@ import type { BotWorldState, InventoryItem, NearbyNpc } from '../../sdk/types';
 import { depositMatching, withdrawMany } from '../lib/bank';
 import { advance } from '../lib/dialogue';
 import { withLevelUpDismissal } from '../lib/levelup';
-import { runProgram, stopProgram, type ProgramStatus } from '../lib/programs';
+import { overBudgetMeta, runProgram, stopProgram, type ProgramStatus } from '../lib/programs';
 import { decideReceiver, newReceiverCtx, receiveFrom, type ReceiverCtx } from '../lib/trade';
 import { currentTick, nextTick, tickMs, waitUntil } from '../lib/wait';
 import type { Step, StepContext } from '../runner/step';
@@ -525,7 +525,7 @@ async function runBand(ctx: Ctx, band: Band, end: number, cfg: Config): Promise<
     });
     let policy = eatPolicy(s.player!.maxHp, heldFood(s, cfg.foods).heal, band.stunDamage);
     const restocks: Array<{ ticks: number; food: number; hp: number }> = [];
-    const runs: Array<Pick<ProgramStatus, 'runId' | 'startedTick' | 'endedTick'> & { food: string }> = [];
+    const runs: Array<Pick<ProgramStatus, 'runId' | 'startedTick' | 'endedTick'> & { food: string; overBudget?: number }> = [];
     const restarts: Array<{ failTick: number; restartTick: number; ok: boolean; received: number; reason?: string }> = [];
     const receiver = topUp && mode === 'idle' ? new TopUpReceiver(topUp.giver) : null;
     const unsubscribe = receiver
@@ -552,7 +552,7 @@ async function runBand(ctx: Ctx, band: Band, end: number, cfg: Config): Promise<
             const params = paramsFor(food);
             policy = { eatBelow: params.eatBelow, forcedBelow: params.forcedBelow };
             const st = await runProgram(ctx.sdk, 'pickpocket', params, onProgress ? { onProgress } : {});
-            runs.push({ runId: st.runId, startedTick: st.startedTick, ...(st.endedTick !== undefined ? { endedTick: st.endedTick } : {}), food: food.bankName });
+            runs.push({ runId: st.runId, startedTick: st.startedTick, ...(st.endedTick !== undefined ? { endedTick: st.endedTick } : {}), food: food.bankName, ...overBudgetMeta(st) });
             if (st.phase === 'stopped' && failTick !== null) {
                 // the open and the trade both end by failTick + TOPUP_RESTART_BY
                 const left = failTick + TOPUP_RESTART_BY - currentTick(ctx.sdk);
