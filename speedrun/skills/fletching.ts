@@ -1,0 +1,380 @@
+// S18d-fallback, Fletching standalone (STEP-MANIFEST.md entry 32; docs/speedrun/skills/fletching.md).
+// Fletching's own path is inside S18's stuns (thieving.ts's stun pack, the `arrows` preset): this
+// step finishes it off-stun when S18 ends below 99 (a stun-pack fault, a knife-off night, a short
+// courier). Arrowheads on headless arrows, 15 an action, all stacks, no bank, in place: the page's
+// item-cycle program in stack mode (server/webclient/src/bot/programs/item-cycle.ts, driven by
+// lib/item-cycle.ts) sends ceil(stack / 15) actions a tick, at most 5, best tier first, re-picking
+// the tier from the observed level every tick. One OPHELDU is one user event and there are no loc
+// clicks, so a tick carries 5 actions.
+//
+// The rune keep. S27 fires the 570 rune arrows SCORED fletches from its 570 rune arrowtips, so
+// the step ends only with `keepRune` rune arrows held (pack and quiver). Two things could lose
+// them, and the plan guards both. Below 75, lower tiers share the headless arrows the rune tips
+// need: when going best-first to 75 would leave fewer than the rune tips' share (less one tick of
+// the page's level lag), the run to 75 is capped with `maxActions`. And when Fletching reaches
+// `toLevel` with rune tips still held (the courier brings them late, at about 96), a last run
+// fletches rune only until the keep is made. The step refuses up front when the stock cannot end
+// with the keep.
+//
+// Free slots. `make_arrows` never checks space (arrows.rs2) and INV_ADD drops what does not fit at
+// the player's feet (InvOps.ts), so each new arrow stack needs a free slot on the tier's first
+// action, unless that action empties an input stack first (inv_del runs before inv_add). The plan
+// walks the slots action by action and the step refuses where a stack would not fit.
+//
+// The step re-plans from observed state before each program run, so a resume at any point (or a
+// run cut short) picks up where the stacks are; every tick boundary is logout-safe.
+
+import type { BotWorldState } from '../../sdk/types';
+import { ARROW_TIERS, ARROWS_PER_ACTION, HEADLESS_ARROW, type ArrowTier, type ArrowTierRow } from '../lib/arrows';
+import { runItemCycle, type ItemCycleResult, type ItemRecipe } from '../lib/item-cycle';
+import { levelForXp, XP_RATE, xpForLevel } from '../lib/xp';
+import type { Observed, Step, StepContext } from '../runner/step';
+
+export const skill = 'fletching';
+
+export const STEP_ID = 'S18d-fallback';
+export const STEP_NAME = `${STEP_ID} fletching`;
+
+/** Rune arrows S27 fires, made from S18's 570 rune arrowtips (the inventory ledger's S18 row). */
+export const RUNE_KEEP = 570;
+/** User events the engine decodes per player per tick (ClientGameProtCategory.ts). */
+export const PER_TICK = 5;
+const INVENTORY = 28;
+const RUNE = ARROW_TIERS.find(t => t.tier === 'rune')!;
+/**
+ * Headless arrows the page may still spend on a lower tier after the level reaches 75: it reads the
+ * level one tick late, so one more tick of the old tier, 5 actions of 15.
+ */
+export const LAG_HEADLESS = PER_TICK * ARROWS_PER_ACTION;
+/** Program runs one step makes at most (reserve, route, rune), plus one re-plan after a short run. */
+const MAX_RUNS = 4;
+
+export interface FletchingOptions {
+    /** Target level (default 99). */
+    toLevel?: number;
+    /** Rune arrows held (pack and quiver) when the step ends (default RUNE_KEEP; 0: no keep). */
+    keepRune?: number;
+    /** Tiers to play (default all): the demo's bronze only. */
+    tiers?: ArrowTier[];
+    /** A cap on actions (the demo's 20 ticks): the step then ends there, not at `toLevel`. */
+    maxActions?: number;
+    /** Arrows are members-only (arrows.rs2); the state carries no world flag, the demo is members. */
+    members?: boolean;
+    log?: (msg: string, data?: Record<string, unknown>) => void;
+    /** Each program run's plan and result, for the lab. */
+    onRun?: (run: FletchRun, result: ItemCycleResult) => void;
+}
+
+// ------------------------------------------------------------------ reading the state
+
+function fletchSkill(s: BotWorldState) {
+    return s.skills.find(k => k.name.toLowerCase() === 'fletching');
+}
+
+export function fletchingLevel(s: BotWorldState): number {
+    return fletchSkill(s)?.baseLevel ?? 1;
+}
+
+export function fletchingXp(s: BotWorldState): number {
+    return fletchSkill(s)?.experience ?? 0;
+}
+
+const count = (items: BotWorldState['inventory'], id: number) => items.filter(i => i.id === id).reduce((n, i) => n + Math.max(0, i.count), 0);
+
+/** What the plan needs from the state: the stacks by tier, the quiver's rune arrows, the free slots. */
+export interface FletchStock {
+    /** Game xp. */
+    xp: number;
+    headless: number;
+    tips: Partial<Record<ArrowTier, number>>;
+    /** Finished arrows in the pack, by tier. */
+    arrows: Partial<Record<ArrowTier, number>>;
+    /** Rune arrows worn in the quiver. */
+    runeWorn: number;
+    free: number;
+}
+
+export function stockOf(s: BotWorldState): FletchStock {
+    const inv = s.inventory;
+    return {
+        xp: Math.max(0, fletchingXp(s)),
+        headless: count(inv, HEADLESS_ARROW),
+        tips: Object.fromEntries(ARROW_TIERS.map(t => [t.tier, count(inv, t.tips)])),
+        arrows: Object.fromEntries(ARROW_TIERS.map(t => [t.tier, count(inv, t.arrow)])),
+        runeWorn: count(s.equipment ?? [], RUNE.arrow),
+        free: INVENTORY - inv.filter(i => i.count > 0).length
+    };
+}
+
+export function runeArrowsOf(st: FletchStock): number {
+    return (st.arrows.rune ?? 0) + st.runeWorn;
+}
+
+/** Rune tips this stock can still turn into arrows: tips, headless arrows and Fletching 75 all needed. */
+function runeFletchable(st: FletchStock): number {
+    return levelForXp(st.xp) >= RUNE.level || st.xp >= 0 ? Math.min(st.tips.rune ?? 0, st.headless) : 0;
+}
+
+// ------------------------------------------------------------------ the plan
+
+/**
+ * One program run. `reserve`: below 75, lower tiers capped so the rune tips keep their headless
+ * arrows; `route`: best tier first to `toLevel`; `rune`: past `toLevel`, rune only, to the keep.
+ */
+export interface FletchRun {
+    kind: 'reserve' | 'route' | 'rune' | 'capped';
+    tiers: ArrowTier[];
+    untilLevel?: number;
+    maxActions?: number;
+    actions: number;
+    byTier: Partial<Record<ArrowTier, number>>;
+    /** ceil(actions / 5): the program's work ticks. */
+    ticks: number;
+    levelFrom: number;
+    levelTo: number;
+}
+
+export interface FletchPlan {
+    runs: FletchRun[];
+    actions: number;
+    ticks: number;
+    level: number;
+    xp: number;
+    reaches: boolean;
+    /** Base xp still missing at `toLevel` (0 when it reaches). */
+    baseShort: number;
+    /** Rune arrows held at the end, pack and quiver. */
+    runeArrows: number;
+    keeps: boolean;
+    /** Why a planned action has no slot for its new arrow stack. */
+    slotFault?: string;
+    /** Why the keep is out of reach because reaching 75 needs the rune tips' headless arrows. */
+    reserveBlock?: string;
+    left: FletchStock;
+}
+
+function tierRows(tiers?: readonly ArrowTier[]): ArrowTierRow[] {
+    if (!tiers) return [...ARROW_TIERS];
+    for (const t of tiers) if (!ARROW_TIERS.some(r => r.tier === t)) throw new Error(`unknown arrow tier '${t}' (have: ${ARROW_TIERS.map(r => r.tier).join(', ')})`);
+    return ARROW_TIERS.filter(r => tiers.includes(r.tier));
+}
+
+const clone = (st: FletchStock): FletchStock => ({ ...st, tips: { ...st.tips }, arrows: { ...st.arrows } });
+
+/**
+ * The page's stack mode, action by action: the best tier the level allows with both stacks held,
+ * min(15, tips, headless) an action, until `untilLevel` or `maxActions`. Mutates `st`.
+ */
+function simulate(st: FletchStock, rows: readonly ArrowTierRow[], kind: FletchRun['kind'], stop: { untilLevel?: number; maxActions?: number }): { run: FletchRun; slotFault?: string } {
+    const levelFrom = levelForXp(st.xp);
+    const byTier: FletchRun['byTier'] = {};
+    let n = 0;
+    let slotFault: string | undefined;
+    for (;;) {
+        const level = levelForXp(st.xp);
+        if (stop.untilLevel !== undefined && level >= stop.untilLevel) break;
+        if (stop.maxActions !== undefined && n >= stop.maxActions) break;
+        const r = rows.find(x => x.level <= level && (st.tips[x.tier] ?? 0) > 0 && st.headless > 0);
+        if (!r) break;
+        const tips = st.tips[r.tier]!;
+        const k = Math.min(ARROWS_PER_ACTION, tips, st.headless);
+        // inv_del runs before inv_add: an input stack this action empties frees its slot first
+        const freed = (k === tips ? 1 : 0) + (k === st.headless ? 1 : 0);
+        if ((st.arrows[r.tier] ?? 0) === 0) {
+            if (st.free + freed < 1) {
+                slotFault = `no free slot for ${r.tier} arrows at Fletching ${level}: make_arrows does not check space and the engine drops what does not fit (InvOps INV_ADD), so free a slot first`;
+                break;
+            }
+            st.free -= 1;
+        }
+        st.free += freed;
+        st.tips[r.tier] = tips - k;
+        st.headless -= k;
+        st.arrows[r.tier] = (st.arrows[r.tier] ?? 0) + k;
+        st.xp += k * r.xpPerArrow * XP_RATE;
+        byTier[r.tier] = (byTier[r.tier] ?? 0) + 1;
+        n++;
+    }
+    const run: FletchRun = {
+        kind,
+        tiers: rows.map(r => r.tier),
+        ...(stop.untilLevel !== undefined ? { untilLevel: stop.untilLevel } : {}),
+        ...(stop.maxActions !== undefined ? { maxActions: stop.maxActions } : {}),
+        actions: n,
+        byTier,
+        ticks: Math.ceil(n / PER_TICK),
+        levelFrom,
+        levelTo: levelForXp(st.xp)
+    };
+    return { run, ...(slotFault ? { slotFault } : {}) };
+}
+
+export function planFletch(stock: FletchStock, opts: FletchingOptions = {}): FletchPlan {
+    const to = opts.toLevel ?? 99;
+    const rows = tierRows(opts.tiers);
+    const runeAllowed = rows.some(r => r.tier === 'rune');
+    const keep = opts.keepRune ?? RUNE_KEEP;
+    const st = clone(stock);
+    const runs: FletchRun[] = [];
+    let slotFault: string | undefined;
+    let reserveBlock: string | undefined;
+    const needRune = () => (runeAllowed ? Math.max(0, keep - runeArrowsOf(st)) : 0);
+    const add = (r: { run: FletchRun; slotFault?: string }) => {
+        if (r.run.actions > 0) runs.push(r.run);
+        slotFault ??= r.slotFault;
+    };
+
+    if (opts.maxActions !== undefined) {
+        add(simulate(st, rows, 'capped', { untilLevel: to, maxActions: opts.maxActions }));
+    } else {
+        const lower = rows.filter(r => r.tier !== 'rune');
+        const gate = Math.min(RUNE.level, to);
+        if (levelForXp(st.xp) < gate && needRune() > 0 && (st.tips.rune ?? 0) > 0) {
+            // Would best-first to 75 leave the rune tips their headless arrows, with a tick of lag to spare?
+            const reserve = Math.min(needRune(), st.tips.rune ?? 0);
+            const probe = clone(st);
+            simulate(probe, lower, 'route', { untilLevel: gate });
+            if (probe.headless - reserve < LAG_HEADLESS) {
+                const cap = Math.floor(Math.max(0, st.headless - reserve) / ARROWS_PER_ACTION);
+                add(simulate(st, lower, 'reserve', { untilLevel: gate, maxActions: cap }));
+                if (!slotFault && levelForXp(st.xp) < gate) {
+                    reserveBlock = `reaching Fletching ${gate} needs the headless arrows the rune tips need: ${stock.headless} headless arrows, ${reserve} kept for rune, take the lower tiers only to Fletching ${levelForXp(st.xp)}`;
+                }
+            }
+        }
+        if (!slotFault && !reserveBlock && levelForXp(st.xp) < to) add(simulate(st, rows, 'route', { untilLevel: to }));
+        if (!slotFault && !reserveBlock && levelForXp(st.xp) >= Math.max(to, RUNE.level) && needRune() > 0) {
+            const n = Math.ceil(Math.min(needRune(), st.tips.rune ?? 0, st.headless) / ARROWS_PER_ACTION);
+            if (n > 0) add(simulate(st, [RUNE], 'rune', { maxActions: n }));
+        }
+    }
+
+    const level = levelForXp(st.xp);
+    const target = xpForLevel(to);
+    const actions = runs.reduce((a, r) => a + r.actions, 0);
+    return {
+        runs,
+        actions,
+        ticks: runs.reduce((a, r) => a + r.ticks, 0),
+        level,
+        xp: st.xp,
+        reaches: level >= to,
+        baseShort: Math.max(0, Math.ceil((target - st.xp) / XP_RATE)),
+        runeArrows: runeArrowsOf(st),
+        keeps: keep <= 0 || runeArrowsOf(st) >= keep,
+        ...(slotFault ? { slotFault } : {}),
+        ...(reserveBlock ? { reserveBlock } : {}),
+        left: st
+    };
+}
+
+/** The program's recipe for a tier (item-cycle.ts CycleRecipe, stack mode: a headless, b tips). */
+export function recipeFor(row: ArrowTierRow): ItemRecipe {
+    return { name: `${row.tier}arrow`, level: row.level, xp: row.xpPerArrow * ARROWS_PER_ACTION, a: HEADLESS_ARROW, b: row.tips, products: [row.arrow], per: ARROWS_PER_ACTION };
+}
+
+function describe(plan: FletchPlan): string {
+    const by: Partial<Record<ArrowTier, number>> = {};
+    for (const r of plan.runs) for (const [t, n] of Object.entries(r.byTier)) by[t as ArrowTier] = (by[t as ArrowTier] ?? 0) + n!;
+    const used = ARROW_TIERS.filter(t => by[t.tier]).map(t => `${t.tier} ${by[t.tier]}`).join(', ');
+    return used ? `${plan.actions} actions: ${used}` : 'nothing to fletch at this level';
+}
+
+// ------------------------------------------------------------------ the step
+
+/** Fletching at the target, and the rune keep made or nothing left to make it from. */
+export function finished(s: BotWorldState, opts: FletchingOptions = {}): boolean {
+    if (fletchingLevel(s) < (opts.toLevel ?? 99)) return false;
+    const keep = opts.keepRune ?? RUNE_KEEP;
+    if (keep <= 0 || (opts.tiers && !opts.tiers.includes('rune'))) return true;
+    const st = stockOf(s);
+    return runeArrowsOf(st) >= keep || (fletchingLevel(s) < RUNE.level ? true : runeFletchable(st) === 0);
+}
+
+export function preconditions(s: BotWorldState, opts: FletchingOptions = {}): true | string {
+    if (!s.inGame || !s.player) return 'not in game';
+    if (opts.maxActions === undefined && finished(s, opts)) return true; // nothing to do: S18's stuns got there
+    if (opts.members === false) return 'not a members world: arrows are members-only (arrows.rs2)';
+    let rows: ArrowTierRow[];
+    try {
+        rows = tierRows(opts.tiers);
+    } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+    }
+    const st = stockOf(s);
+    const level = fletchingLevel(s);
+    if (st.headless === 0) return 'no headless arrows held';
+    const usable = rows.filter(r => r.level <= level);
+    if (!usable.some(r => (st.tips[r.tier] ?? 0) > 0)) return `no arrowtips Fletching ${level} can use held (${usable.map(r => r.tier).join(', ')})`;
+    const plan = planFletch(st, opts);
+    if (plan.slotFault) return plan.slotFault;
+    if (plan.reserveBlock) return `rune keep: ${plan.reserveBlock}`;
+    if (opts.maxActions === undefined && !plan.reaches) return `supplies short: ${plan.baseShort} base xp (they reach Fletching ${plan.level}; ${describe(plan)})`;
+    if (!plan.keeps) {
+        const keep = opts.keepRune ?? RUNE_KEEP;
+        return `rune keep: the stock ends with ${plan.runeArrows} rune arrows (pack and quiver), below ${keep} (rune tips ${st.tips.rune ?? 0}, rune arrows ${runeArrowsOf(st)}, headless after the route ${plan.left.headless})`;
+    }
+    return true;
+}
+
+export function postconditions(s: BotWorldState, opts: FletchingOptions = {}): true | string {
+    if (opts.maxActions !== undefined) return true;
+    const to = opts.toLevel ?? 99;
+    if (fletchingLevel(s) < to) return `Fletching ${fletchingLevel(s)} < ${to}`;
+    const keep = opts.keepRune ?? RUNE_KEEP;
+    if (keep > 0 && (!opts.tiers || opts.tiers.includes('rune'))) {
+        const held = runeArrowsOf(stockOf(s));
+        if (held < keep) return `rune keep: ${held} rune arrows held (pack and quiver), below ${keep}`;
+    }
+    return true;
+}
+
+export function fletchingStep(opts: FletchingOptions = {}): Step<any> {
+    const entry = async (ctx: StepContext<any>) => {
+        for (let i = 0; i < MAX_RUNS; i++) {
+            const s = ctx.sdk.getState();
+            if (!s) throw new Error('no state');
+            const plan = planFletch(stockOf(s), opts);
+            const run = plan.runs[0];
+            if (!run) return;
+            if (plan.slotFault) throw new Error(plan.slotFault);
+            opts.log?.(`fletching run ${i + 1}: ${run.kind}, ${run.actions} actions planned (${run.tiers.join('/')}), ${plan.runs.length - 1} more`, { run, planned: plan.actions, plannedTicks: plan.ticks });
+            const result = await runItemCycle(
+                { sdk: ctx.sdk, session: ctx.session, log: ctx.log },
+                {
+                    mode: 'stack',
+                    skill: 'fletching',
+                    recipes: tierRows(run.tiers).map(recipeFor),
+                    ...(run.untilLevel !== undefined ? { untilLevel: run.untilLevel } : {}),
+                    ...(run.maxActions !== undefined ? { maxActions: run.maxActions } : {}),
+                    maxTicks: run.ticks * 2 + 30,
+                    // between runs the next run's first OPHELDU closes a level-up page (OpHeldUHandler)
+                    ...(plan.runs.length > 1 ? { clearTicks: 0 } : {}),
+                    step: STEP_NAME,
+                    ...(opts.log ? { log: opts.log } : {})
+                }
+            );
+            opts.onRun?.(run, result);
+            if (result.actions === 0) throw new Error(`fletching run ${run.kind} ended ${result.ended} with no arrows made`);
+            if (opts.maxActions !== undefined) return;
+        }
+        const s = ctx.sdk.getState();
+        if (s && planFletch(stockOf(s), opts).runs.length) throw new Error(`fletching: still work left after ${MAX_RUNS} program runs`);
+    };
+    const to = opts.toLevel ?? 99;
+    return {
+        name: STEP_NAME,
+        preconditions: s => preconditions(s, opts),
+        run: entry,
+        resume: entry,
+        postconditions: s => postconditions(s, opts),
+        logoutSafe: true,
+        done: (o: Observed) => finished(o.state, opts),
+        inProgress: (o: Observed) => !!o.state.player && !finished(o.state, opts) && fletchingXp(o.state) > 0 && fletchingXp(o.state) < xpForLevel(to) + 1e12
+    };
+}
+
+/** The step-module convention (`skill`, `steps()`): one step, S18d-fallback. */
+export function steps(opts: FletchingOptions = {}): Step<any>[] {
+    return [fletchingStep(opts)];
+}
