@@ -465,7 +465,8 @@ the actions applied in the landing tick / the next tick / later.
 | failed: drag + K failed drags + drag | 5, 8 | 2 / 0 / 0 (3 of 3 each) | 2 / 0 / 0 (3 of 3 each) |
 
 In the lab every burst went out 0.1-0.9 ms after the frame and landed on the next tick. The lab
-reproduces the fork's rule exactly, which validates the method.
+reproduces the fork's rule exactly, which validates the method. Charge behaves like the drag, so on
+our engine nothing in its script holds it to one cast per tick.
 
 The demo run was one session, 23:26:41-23:28:21Z on 22 October, from fedora (a home address) on
 the direct game socket. The page token was mvjz3zys before and after (no restart). Tick
@@ -478,13 +479,12 @@ read); the split within the landing tick was the same as in the others.
 
 **Rule, measured on the demo engine as of 22 October 23:27Z: at most 5 successful user events per
 tick and at most 20 client events (failed user events included). The rest carry over to the next
-tick, in order. Nothing is dropped.** The cap is the fork's, unchanged by the 19:34Z engine change. **Five user actions per tick, and a
-20-event client budget that failed user actions draw on instead of the user cap.** Charge behaves
-like the drag, so on our engine nothing in its script holds it to one cast per tick.
+tick, in order. Nothing is dropped.** The cap is the fork's, unchanged by the engine change of
+19:36Z.
 
 **On the demo, through the run's own path.** rs/396 re-ran rs/287's Father Aereck driver
 (`speedrun/lab/quests/aereck-burst.ts <acct> --launch --client=browser`) at 20:52:46-20:54:43Z on
-22 October. That was after the 19:34Z engine change, at T = 400, with demo token mvjz3zys. It ran on
+22 October. That was after the 19:36Z engine change, at T = 400, with demo token mvjz3zys. It ran on
 the browser client: headless Chrome on the run host through a loopback gateway.ts and proxy.ts,
 with served bundle client.js md5 9e1fe24a. Dialogue continue is RESUME_PAUSEBUTTON, a USER_EVENT
 (model/ResumePauseButton.ts:5), and the driver sends a burst's k continues in one volley
