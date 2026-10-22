@@ -58,6 +58,8 @@ One directory (`RC_CUE_DIR`, default `<checkout>/run-machine/rc-cue/`, gitignore
 
 Pick givers that are `ready` or `armed`, `inRoom`, with a heartbeat under 5 s, standing orthogonally next to the scored tile; oldest `readyAt` first. A client can't see its own player index, so it isn't in the file; giver names are not secret, so look the giver up by name among nearby players. Outcomes: `gave`, `missed` (the schedule ran and the essence is still held), `late` (the turn arrived after its first packet's frame), `clock` (no offset could be resolved), `not-ready` (named while restocking), `no-receiver` (nobody in sight matches the hash), `cancelled` (stop or a new session before the first packet).
 
+**After a failed turn: skip until ready again.** A turn that did not give leaves its giver out of the scored side's picks until the giver reports ready *after that turn was named*: its status `readyAt` later than the first cue write that carried the turn (`MissBench` in `altar-cue.ts`, used by the run's step, `skills/runecraft.ts` `giverFeed`, and the stand-in's `chooseBatch`). A live giver renews `readyAt` with every turn result short of a trade, but only while its client delivers ticks. A giver whose client died can't renew it, whatever its heartbeat says: on the relay its role outlives the client until the relogin, arms the turns it is named for, and fails them on the wall-clock fallback. A relaunched giver reports ready from its new process. A turn first written after its first packet's frame (T+K-1) benches nobody, because the giver may never report on it. A new login also makes the step forget the processing order observed in the giver's previous session (`ScheduleAdapter.login`), so its first turn back goes on the launcher's guess: robust, since it logged in after SCORED.
+
 **Tuned or robust.** Tuned needs every giver handled before the scored account in each tick, which means logged in before the scored account's current login. `launcher.json` (`helpersReady`, each account's `loggedInAt`) and each giver's own `loggedInAt` (updated when it relogs) tell the scored side. Robust is the safe default; use tuned only for a giver that logged in before the scored login. The stand-in does this per giver with `autoRobust`.
 
 ## Rosters and batches
@@ -155,6 +157,17 @@ The relay is the cause, not the schedule or the login order. `docs/speedrun/scri
 From the run host (ashburn, AWS us-east-1, 1.8 ms to the demo; 2026-10-21 16:58-17:00 UTC, 2 givers logged in before the stand-in, tuned): **6 of 8 turns gave, and both measurable gaps were 7 ticks**. The 2 misses were the first turn of a batch. That minute was an overrun burst (7 catch-ups; `speedrun/lab/tick-health.ts`), so it needs repeating in a calm minute before it counts.
 
 So a giver driven through the SDK relay is tick-exact only where that relay is: measure it on the run machine with the same probe before trusting the tuned or the robust schedule. Where it isn't, the giver's schedule has to fire on raw frame arrival inside the client process (the counterpart of the scored side's in-page programs).
+
+### Relaunch mid-cycle (lab, rs/330)
+
+bgsrv-mac, local engine at `NODE_TICKRATE=300`, nature altar, the run's step (`runecraft-accept.ts --cycles=100 --kill-after=8,30,52`), 3 givers logged in first. Each time the cue named cairn_rcg2 for a turn still ahead, it was SIGKILLed: the lite client on the relay, the role process (which is the client) on the direct path. Scored ticks:
+
+| Path | Turns given | Kill to new login | Kill to its next trade | Turns it missed per kill | Others' misses |
+|---|---|---|---|---|---|
+| relay | 100 of 103 | 57 / 76 / 181 | 75 / 90 / 195 | 1 / 1 / 1 | 0 |
+| direct | 100 of 103 | 58 / 122 / 242 | 75 / 139 / 258 | 1 / 1 / 1 | 0 |
+
+Every first trade back was robust (observed scored-first). The time away is the launcher's restart backoff, which grows with each restart (relay 15, 21, 52 s; direct 16, 35, 71 s). Before the giver's live-tick condition, the relay giver missed 3, 4 and 8 turns per kill. Before that, rs/163 measured 3 on the relay and 1 on the direct path with the stand-in. Through rs/330, `runecraft-accept.ts --path=direct` put `path` in the role options, where the launcher ignores it, so the driver's earlier direct-path runs were on the relay.
 
 ## The direct path
 
