@@ -70,6 +70,53 @@ describe('runTo: the chained run', () => {
         expect(at(sdk)).toEqual({ x: 3200, z: 3170 });
     });
 
+    test('a forced move out of a door that then stalls: the stall never opens the door behind', async () => {
+        // As above, but the re-sent click is dropped too, so the run stalls 2 tiles from the door it
+        // was just forcemoved through, which is closed again and the nearest door to the player.
+        const sdk = world(3200, 3200, { nearbyLocs: [loc(1, 'Tree Door', 3200, 3201, ['Open'])] });
+        const sim = simulateWalking(sdk, { accept: n => n > 2 });
+        const r = await drive(sdk, runTo(sdk as never, { x: 3200, z: 3170 }), 600, s => (s.tick === 100 ? { player: player(3200, 3199) } : {}));
+        expect(r.ok).toBe(true);
+        expect(sim.clicks[2]).toMatchObject({ tick: 104, from: { x: 3200, z: 3199 } });
+        expect(sends(sdk, 'sendInteractLoc')).toEqual([]);
+        expect(at(sdk)).toEqual({ x: 3200, z: 3170 });
+    });
+
+    test('a run that starts on the tile of a shut door it must go back out through opens it at the first stall', async () => {
+        // The Dwarf Cannon shed: the player stands inside on the door's tile, its wall on the tile's
+        // west edge, and the content has shut it. The route starts one tile west, so it never lists
+        // the door's tile.
+        const sdk = world(3200, 3200, { nearbyLocs: [loc(1530, 'Door', 3200, 3200, ['Open'])] });
+        let open = false;
+        simulateWalking(sdk, { blocked: x => !open && x === 3199 });
+        const openedAt: number[] = [];
+        const prev = sdk.onSend;
+        sdk.onSend = (a, f) => {
+            prev(a, f);
+            if (a.method === 'sendInteractLoc') {
+                openedAt.push(f.state!.tick);
+                open = true;
+                queueMicrotask(() => f.tick({ nearbyLocs: [loc(1531, 'Door', 3200, 3200, ['Close'])] }));
+            }
+        };
+        const r = await drive(sdk, runTo(sdk as never, { x: 3190, z: 3200 }));
+        expect(r.ok).toBe(true);
+        expect(sends(sdk, 'sendInteractLoc')).toEqual([[3200, 3200, 1530, 1]]);
+        // The first click at 100 and its re-send at 101 do not move the player: the stall is at 103.
+        expect(openedAt).toEqual([103]);
+        expect(at(sdk)).toEqual({ x: 3190, z: 3200 });
+    });
+
+    test('a run that starts beside a shut door its route does not need leaves it alone when it stalls', async () => {
+        const sdk = world(3200, 3200, { nearbyLocs: [loc(1530, 'Gate', 3200, 3201, ['Open'])] });
+        const sim = simulateWalking(sdk, { accept: n => n > 2 });
+        const r = await drive(sdk, runTo(sdk as never, { x: 3230, z: 3200 }));
+        expect(r.ok).toBe(true);
+        expect(sim.clicks[2]).toMatchObject({ tick: 103, from: { x: 3200, z: 3200 } });
+        expect(sends(sdk, 'sendInteractLoc')).toEqual([]);
+        expect(at(sdk)).toEqual({ x: 3230, z: 3200 });
+    });
+
     test('a stall just past a door the run opened never reopens it', async () => {
         const sdk = world(3200, 3200, { nearbyLocs: [loc(1530, 'Door', 3210, 3200, ['Open'])] });
         const closedAt = (x: number, z: number) => sdk.state!.nearbyLocs.some(l => l.x === x && l.z === z && l.options.includes('Open'));
