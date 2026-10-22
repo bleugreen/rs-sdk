@@ -360,19 +360,33 @@ defaults), measured on the run machine itself, just before the run, at the real 
 |---|---|---|---|---|
 | Preconditions: Fly edge `nr` and app `sr` both iad, no mesh hop (`mhn`), TCP connect p50 | iad, iad, none, 5 ms | precondition | `VantageRule` `edge`, `app`, `maxConnectP50Ms` | named; the probe does not run |
 | (a) reactions on the next tick | at least 58 of 60 (60 is a clean pass; 58-59 starts as `marginal`) | pass line | `DirectRule` `floor`, `pass`, `trials` | `investigate` |
-| (b) tick arrival interval p90 over the probe minute | at most 400 ms | report only | `maxTickP90Ms`; `tickP90PassLine: true` makes it a pass line | reported; as a pass line, `re-measure` |
+| (b) tick arrival interval p90 over the probe minute | at most 4/3 T (400 ms at T = 300, 533 at T = 400) | report only | `maxTickP90Ms` fixes it in ms; `tickP90PassLine: true` makes it a pass line | reported; as a pass line, `re-measure` |
 | (c) catch-up ticks per probe minute | at most 2 | pass line, the primary steadiness check | `maxCatchUpsPerMinute` | `re-measure` (overrun period) |
 | (d) the tab's game-loop rate p10 over the probe minute | at least 50 per second | pass line | `minLoopRateP10` | `throttled` |
 
 (b) is report-only because it agreed with (a) on 13 of 15 Ashburn samples, and at least one
 disagreement was (b) passing a bad minute: as an extra pass line it adds nothing (c) does not
 catch and can cost start opportunities. The verdict prints (a) to (d) in that order, each
-marked `pass`, `FAIL`, `report` (`report, over` past its limit) or `not measured`.
+marked `pass`, `FAIL`, `within` or `over` (a report-only check) or `not measured`, with T on
+(b) and (c): `(b) tick p90 447 ms (T 400, report <= 533) within; (c) catch-ups 0/min <= 2
+(< 200 after > 467 ms) pass`.
 
-A catch-up is an interval under 150 ms immediately after one over 350 ms: the server ran
-late and, on its fixed 300 ms grid, ran the next tick at once, so a reaction to the long tick
-misses about half the time (`docs/speedrun/research/demo-latency.md` on rs/83's branch,
-sections 2 and 9). `tickSteadiness(arrivals)` scores it from one arrival time per tick label.
+**Every millisecond limit is a fraction of the tick length T** (main's ruling, 2026-10-22, when
+the demo moved from 300 to 400 ms ticks). A catch-up is an interval under 1/2 T immediately
+after one over 7/6 T (150 and 350 ms at T = 300, 200 and 467 at T = 400): the server ran late
+and, on its fixed grid, ran the next tick at once, so a reaction to the long tick misses about
+half the time (`docs/speedrun/research/demo-latency.md`, sections 2 and 9). A fixed 350 would
+read every ordinary 400 ms tick as long, so one short frame after it would count. The fractions
+live in one place, `server/webclient/src/bot/programs/tick-rule.ts` (`TICK_FRACTIONS`,
+`tickLimits`, `isCatchUp`), which the page's frame counter (`frames.ts`) and the SDK-side gate
+(`hostgate-verdict.ts`) both import. T comes from, in order: the gate CLI's `--tick-ms`; the
+`tickMs` in the hello of the engine's login-free spectator feed (`wss://<server>/worldfeed`,
+`feedTickMs` in hostgate.ts); else the probe's median arrival interval rounded to 50 ms. Every
+summary carries `T` and `TSource` (`flag`, `feed`, `driver` or `median`), the gate CLI's --json
+at its top level too. In the page, T is the run's `tickMs` start parameter (the driver passes a
+measured T: `gated-program.ts` from the latest gate probe), else the run's own median interval.
+wait.ts `tickMs()` is never the gate's T: its 300 is a default, not a reading.
+`tickSteadiness(arrivals, tick)` scores catch-ups from one arrival time per tick label.
 It groups nothing: a 60 ms grouping window, or a bare count of intervals under 200 ms, merges
 the catch-up tick into the one before it, and arrival jitter alone puts 6-18 intervals under
 200 ms into every clean minute. The probe stamps each tick with the socket message's arrival
@@ -387,7 +401,8 @@ server is a broken host or client, not a cost to model: don't start the knife lo
 investigate. (d) is the page's (rs/97 reports its loop rate). An in-process probe has no page
 loop, so `directDecision` reads (d), like (b) and (c) without arrivals, as not measured
 rather than as passed or failed. The pure functions are `directDecision({onTime, trials,
-steadiness: {p90, catchUpsPerMinute}, loopRateP10}, rule)` and `vantageDecision(reading,
+steadiness: {p90, catchUpsPerMinute, T}, loopRateP10}, rule)` (without T, (b) has no line
+and reads not measured unless the rule fixes `maxTickP90Ms`) and `vantageDecision(reading,
 rule)`. `measureVantage(host)` takes the reading with curl, the same request and spacing as
 rs/86's workflow.
 
