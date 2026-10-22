@@ -54,6 +54,7 @@ const GOAL = base(99);
 // ---- the stuns (stun-pack.md sections 2, 3, 14; interleaving.md section 4) ----
 // Stocked stuns are failures less top-up stuns: 70 / 81 / 71 lite, 60 / 54 / 69 browser (m).
 const STOCKED_STUNS = 70; // i, central
+const STOCKED_STUNS_LIVE = { value: STOCKED_STUNS }; // the sensitivity row swaps this
 const CASTS_PER_STUN = 2; // r: p_delay(1) at T+4 and T+7 leaves T+10 undelayed for the click;
 // m: enchant (the same p_delay(1)) landed 1.92 a stun at +2 and +5 (interleaving.md section 4)
 const BONES_PER_STUN = 3; // m: the bury plan's 3.00 a stocked stun, displaced by the 2 casts
@@ -110,12 +111,13 @@ function plan(n: number): Plan {
     const charge = Math.min(Math.floor(runes / BLOOD_PER_CHARGE), Math.ceil((GOAL - START) / CHARGE_XP));
     const chargeBase = START + charge * CHARGE_XP;
     const remain = Math.max(0, GOAL - chargeBase);
-    const stunCasts = Math.min(Math.ceil(remain / SUPERHEAT_XP), STOCKED_STUNS * CASTS_PER_STUN);
+    const stocked = STOCKED_STUNS_LIVE.value;
+    const stunCasts = Math.min(Math.ceil(remain / SUPERHEAT_XP), stocked * CASTS_PER_STUN);
     const stuns = Math.ceil(stunCasts / CASTS_PER_STUN);
     const after = Math.max(0, remain - stunCasts * SUPERHEAT_XP);
     const standalone = Math.ceil(after / SUPERHEAT_XP);
     const bones = stuns * BONES_PER_STUN * S07_PER_BONE;
-    const pages = stunCasts > 0 ? SMITH_PAGES * Math.min(1, stuns / STOCKED_STUNS) : 0;
+    const pages = stunCasts > 0 ? SMITH_PAGES * Math.min(1, stuns / stocked) : 0;
     const shTicks = standalone > 0 ? standalone * (SH_TICKS + SH_SWAP / SH_LOAD) + SH_SETUP : 0;
     const gross = bones + pages + shTicks;
     const credit = smithingCredit(smithXp(stunCasts + standalone));
@@ -124,6 +126,31 @@ function plan(n: number): Plan {
     const s27Extra = castTicks * (1 - CANNON_RATE / BOW_RATE);
     const s27 = bones + pages + s27Extra - smithingCredit(smithXp(stunCasts));
     return { n, charge, chargeBase, level: levelOf(chargeBase), remain, stuns, stunCasts, standalone, bones, gross, credit, s27, s27balls: s27Extra * BALLS_PER_TICK };
+}
+
+// net cost with a different stocked-stun count, less the central figure
+function stunSwing(n: number, stuns: number): number {
+    const central = plan(n);
+    const p = planWith(n, stuns);
+    return (p.gross - p.credit) - (central.gross - central.credit);
+}
+function planWith(n: number, stuns: number): Plan {
+    const saved = STOCKED_STUNS_LIVE.value;
+    STOCKED_STUNS_LIVE.value = stuns;
+    try {
+        return plan(n);
+    } finally {
+        STOCKED_STUNS_LIVE.value = saved;
+    }
+}
+// With the pack failed there are no stuns: Charge standalone at 5 a tick (magic.md, m) and every
+// Superheat after S18. RUN-ORDER's +~120 row already carries Charge standalone at +33 (full runes)
+// and the stun bones in S07 (+52), so this is the increment on that row.
+const CHARGE_STANDALONE_IN_ROW = 33; // r: RUN-ORDER section 7, the stun-pack-fails row
+function packFails(p: Plan): number {
+    const casts = p.stunCasts + p.standalone;
+    const sh = casts > 0 ? casts * (SH_TICKS + SH_SWAP / SH_LOAD) + SH_SETUP : 0;
+    return p.charge / 5 + sh - smithingCredit(smithXp(casts)) - CHARGE_STANDALONE_IN_ROW;
 }
 
 const worst = (() => {
@@ -153,6 +180,8 @@ table(['', ...ps.map(p => `N = ${p.n}`), 'No Charge (worst)'], [
     ['Lever: remainder by Fire Blast in S27 (net)', ...ps.map(p => sgn(p.s27)), sgn(worst.s27)],
     ['  extra cannonballs (spare ~306)', ...ps.map(p => f0(p.s27balls)), f0(worst.s27balls)],
     ['Sensitivity: +1.1 a stun attempt slip (lite enchant, m)', ...ps.map(p => sgn(p.stuns * LITE_ATTEMPT_SLIP)), sgn(worst.stuns * LITE_ATTEMPT_SLIP)],
+    ['Sensitivity: stocked stuns 55 / 80 in place of 70', ...ps.map(p => `${sgn(stunSwing(p.n, 55))} / ${sgn(stunSwing(p.n, 80))}`), `${sgn(stunSwing(KOLODION_RESERVE, 55))} / ${sgn(stunSwing(KOLODION_RESERVE, 80))}`],
+    ['If the stun pack fails too (R31): add to its +~120 row', ...ps.map(p => sgn(packFails(p))), sgn(packFails(worst))],
 ]);
 console.log(`Pure standalone Superheat, no stuns: ${pureStandalone.casts} casts, ${sgn(pureStandalone.t)} gross, ${sgn(pureStandalone.t - pureStandalone.credit)} net.\n`);
 
