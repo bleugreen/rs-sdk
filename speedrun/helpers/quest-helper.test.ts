@@ -6,7 +6,8 @@ import * as tgv from '../quests/tree-gnome-village';
 import { ROUTES } from '../skills/agility';
 import { BANKS } from './buyer';
 import { AGILITY_COURSES } from '../../server/webclient/src/bot/programs/agility-courses';
-import { AGILITY_TO, ARMOUR, freeSlots, gtPlan, kitBank, lapsDone, stepLoc, KIT_COINS, KIT_SHARKS, kitCheck, kitDeposits, kitWithdraws, logShortfall, mmPlan, nearestWaypoint, parsePhases, PHASES, pickTree, ROYAL_SEAL, TGV_KIT, tgvPlan, type QuestPlan } from './quest-helper';
+import { AGILITY_TO, ARMOUR, freeSlots, gtPlan, kitBank, lapsDone, stepLoc, KIT_COINS, KIT_SHARKS, kitCheck, kitDeposits, kitWithdraws, logShortfall, mmPlan, nearestWaypoint, parsePhases, PHASES, pickTree, questLegs, ROYAL_SEAL, TGV_KIT, tgvPlan, type QuestPlan } from './quest-helper';
+import { applySubstitutes, LEG_PREFIX, withLegs } from '../lab/quests/demo-quest';
 import type { NearbyLoc } from '../../sdk/types';
 
 let slot = 0;
@@ -191,5 +192,22 @@ describe('the Gnome course on lite', () => {
         expect(lapsDone(AGILITY_TO, 3)).toBe(false);
         expect(lapsDone(AGILITY_TO, 0)).toBe(true);
         expect(gnome.steps.at(-1)!.xp).toBeGreaterThan(gnome.lapBonus);
+    });
+});
+
+describe('questLegs', () => {
+    const before = async () => {};
+    // The driver's own order: substitutes rename the steps first, then the legs are placed.
+    const placed = (module: typeof tgv | typeof grandTree, plan: QuestPlan) =>
+        withLegs(applySubstitutes(module.steps({ dialogue: 'fixed' }), module.stepId, plan.substitute), module.stepId, questLegs(module, plan, before)).map(s => s.name);
+    test('the pre-quest leg finds a first segment the plan substitutes (TGV A)', () => {
+        const names = placed(tgv, tgvPlan());
+        expect(names[0]).toBe(`${LEG_PREFIX}S10b:A-kit[driver]`);
+        expect(names[1]).toBe('S10b:A-kit[driver]');
+    });
+    test('the Grand Tree keeps its own B, C and J legs beside the pre-quest one', () => {
+        const names = placed(grandTree, gtPlan());
+        expect(names[0]!.startsWith(`${LEG_PREFIX}S11b:A-`)).toBe(true);
+        expect(names.filter(n => n.startsWith(LEG_PREFIX))).toHaveLength(1 + Object.keys(gtPlan().legs).length);
     });
 });

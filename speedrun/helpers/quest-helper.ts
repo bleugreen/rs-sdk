@@ -64,6 +64,7 @@ import { arg, botArg, result } from '../lab/common';
 import { startLoopbackGateway } from '../lab/loopback-gateway';
 import { confirmedLogout } from '../lab/quests/aereck-burst';
 import { checkDemoTarget, formatDemoTable, refuseChat, runDemoQuest, type Leg, type QuestModule, type Substitute } from '../lab/quests/demo-quest';
+import { letterOf } from '../lab/quests/run';
 import * as grandTree from '../quests/grand-tree';
 import { demonInSight, inTree, ITEM as GT_ITEM, TILES as GT } from '../quests/grand-tree';
 import * as tgv from '../quests/tree-gnome-village';
@@ -759,10 +760,21 @@ async function runPlain(session: Session, phase: Phase, list: Step<any>[], log: 
     }
 }
 
-async function runQuest(session: Session, phase: Phase, module: QuestModule, plan: QuestPlan, before: Leg, log: TickLog, until?: string): Promise<PhaseResult> {
-    // The first segment's leg slot: a quest's own legs never sit before its first segment.
+/**
+ * The plan's legs plus `before` ahead of the quest's first segment, every one keyed by segment letter:
+ * a substituted step is renamed `<name>[driver]` before the legs are placed, so only its letter still
+ * finds it. A quest's own legs never sit before its first segment.
+ */
+export function questLegs(module: QuestModule, plan: QuestPlan, before: Leg): Record<string, Leg> {
     const first = module.steps({ dialogue: 'fixed' })[0]!.name;
-    const legs = { ...plan.legs, [first]: before };
+    const letter = letterOf(module.stepId, first);
+    if (!letter) throw new Error(`${first}: not a lettered ${module.stepId} segment`);
+    if (letter in plan.legs) throw new Error(`${module.stepId}: the plan already has a leg before ${letter}`);
+    return { ...plan.legs, [letter]: before };
+}
+
+async function runQuest(session: Session, phase: Phase, module: QuestModule, plan: QuestPlan, before: Leg, log: TickLog, until?: string): Promise<PhaseResult> {
+    const legs = questLegs(module, plan, before);
     const r = await runDemoQuest(session, { module, opts: {}, substitute: plan.substitute, legs, log, ...(until ? { until } : {}) });
     return { phase, ok: r.finished && !r.error, rows: r.rows, start: r.start, ...(r.error ? { error: r.error } : {}) };
 }
