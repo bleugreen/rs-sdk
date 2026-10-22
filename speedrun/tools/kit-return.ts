@@ -1,0 +1,338 @@
+// Return kit items to their giver after a rehearsal row is stamped (a later login no longer moves
+// the row: a hiscore stamp moves only when a level is gained).
+//
+//   bun speedrun/tools/kit-return.ts <account> --to=<giver> --items=rune_axe:1[,item:n...] [--at=3222,3222] [--client=lite]
+//
+// The account's tab must already be in game (tab-login.ts); this attaches through the gateway in
+// bots/<account>/bot.env. Rehearsal accounts are combat 3 with 10 hitpoints, so it never walks
+// one far (rs/296 lost a kit walking cairn_rocks from Ardougne toward Lumbridge):
+//
+// - Within MEET_RADIUS (30) tiles of `--at` (the giver's tile, Lumbridge castle by default), and on
+//   the same level, it runs there.
+// - Farther away it first casts a standard teleport that lands within 30 tiles of `--at`, if the
+//   account can cast one now (Magic level, runes, Wilderness level 20 or below), then runs the
+//   short leg. This content has no home teleport, and a combat-3 account normally has Magic 1, so
+//   in practice a far account is refused: it does not move, logs out, and exits 3 with the
+//   distance and each teleport's refusal. Move the giver to a safe tile within 30 tiles of the
+//   account and pass that tile as --at=x,z.
+// - Every tick of the run, and of the wait on the trade after it, is watched: the first hitpoint
+//   lost or hit taken halts the run where it stands (or declines the trade) and skips the trade.
+//   Logout is refused for 16 ticks after a hit, and an aggressive NPC keeps hitting an account
+//   that stands still or backs off a few tiles, so it runs once to a tile ESCAPE_TILES (20) from
+//   the attacker (the run's start when that is far enough, else straight away from it), logs out
+//   (logoutClean waits out the post-combat window) and exits 4 naming the attacker. It never
+//   resumes the walk or retries. A death on the way is reported as such, with the tile.
+//
+// Then it opens the trade itself and offers exactly the listed items (debug names, as rehearse.ts
+// --kit), retrying once if the first trade closes (a giver serves one request at a time), then
+// logoutClean, confirmed by the page over CDP as tab-logout.ts does (--client=lite, the lab's
+// runner: by logoutClean's own signal). Exit 0 only when the items left the pack and the account
+// is out of game; 1 any other failure.
+
+import type { BotWorldState } from '../../sdk/types';
+import { parseKit } from '../rehearse';
+import { closeSession, loadBotEnv, logoutClean, openSession, type ClientKind, type Session } from '../lib/session';
+import { tabInGame } from '../lib/tab';
+import { give } from '../lib/trade';
+import { fmtTile, runTo, SPELLS, teleportRefusal, travel, wildernessLevel, type Hop, type Spell, type TravelSdk } from '../lib/travel';
+import { sleep } from '../lib/wait';
+import { chebyshev, pos, type StateLike } from '../lib/world';
+
+/**
+ * The longest walk to the giver, in tiles (Chebyshev). 30 tiles is about 15 ticks of running: from
+ * Lumbridge castle's courtyard it stays within the castle grounds, the church and the general store,
+ * where nothing hunts a combat-3 account, and a leg that short gives an attacker one or two hits
+ * before the damage stop, where rs/296's 75-tick walk gave it a kill. It is also the jump
+ * castTeleport counts as a landed teleport.
+ */
+export const MEET_RADIUS = 30;
+/** The giver's default tile: Lumbridge castle courtyard, 4 tiles from the Lumbridge teleport landing. */
+export const DEFAULT_GIVER_TILE = { x: 3222, z: 3222 } as const;
+
+export const EXIT = { ok: 0, failed: 1, usage: 2, refused: 3, damaged: 4 } as const;
+
+export type Approach =
+    | { kind: 'walk'; distance: number }
+    | { kind: 'teleport'; spell: Spell; distance: number }
+    | { kind: 'refuse'; reason: string };
+
+/** How to reach the giver at `at` from where the account stands: walk, teleport first, or refuse. */
+export function planApproach(src: StateLike, at: { x: number; z: number; level?: number }, radius = MEET_RADIUS): Approach {
+    const p = pos(src);
+    const sameLevel = p.level === (at.level ?? 0);
+    const distance = chebyshev(p, at);
+    if (sameLevel && distance <= radius) return { kind: 'walk', distance };
+    const wild = wildernessLevel(p);
+    const where = `${fmtTile(p)}${wild ? ` (Wilderness level ${wild})` : ''} is ${sameLevel ? `${distance} tiles` : `on level ${p.level}, ${distance} tiles`} from the giver at ${fmtTile(at)}`;
+    const spells = (Object.keys(SPELLS) as Spell[])
+        .filter(s => chebyshev(SPELLS[s].landing, at) <= radius)
+        .sort((a, b) => chebyshev(SPELLS[a].landing, at) - chebyshev(SPELLS[b].landing, at));
+    const refusals: string[] = [];
+    for (const spell of spells) {
+        const why = teleportRefusal(src, spell);
+        if (!why) return { kind: 'teleport', spell, distance };
+        refusals.push(`${spell} teleport: ${why}`);
+    }
+    const none = refusals.length ? refusals.join('; ') : `no standard teleport lands within ${radius} tiles of ${fmtTile(at)}`;
+    return {
+        kind: 'refuse',
+        reason: `${where}, beyond the ${radius}-tile walk limit, and no teleport can be cast (${none}; this content has no home teleport). ` +
+            `Not walking: move the giver to a safe tile within ${radius} tiles of the account and pass it as --at=x,z.`,
+    };
+}
+
+export interface Damage {
+    tick: number;
+    hp: number;
+    by: string;
+    /** The attacker's tile when it is in view, else null. */
+    at: { x: number; z: number } | null;
+}
+
+/** A hit on the player itself (the client also publishes others' hits on NPCs as damage_taken). */
+const hitOnMe = (e: BotWorldState['combatEvents'][number], sinceTick: number) => e.type === 'damage_taken' && e.targetType === 'player' && e.tick > sinceTick;
+
+/**
+ * Who hit the player. A hitsplat carries no attacker, so the client credits whoever the player
+ * faces (StateCollector collectCombatEvents): the giver, while a trade is being opened. A player
+ * source is believed only when that player is fighting; otherwise the nearest NPC in combat.
+ */
+export function attackerOf(s: BotWorldState, sinceTick: number): { by: string; at: { x: number; z: number } | null } {
+    const ev = [...s.combatEvents].reverse().find(e => hitOnMe(e, sinceTick));
+    const npcBy = (n: BotWorldState['nearbyNpcs'][number]) => ({ by: `${n.name} (level ${n.combatLevel}) at ${n.x},${n.z}`, at: { x: n.x, z: n.z } });
+    if (ev?.sourceType === 'npc') {
+        const n = s.nearbyNpcs.find(x => x.index === ev.sourceIndex);
+        if (n) return npcBy(n);
+    }
+    const pl = ev?.sourceType === 'other_player' ? s.nearbyPlayers.find(x => x.index === ev.sourceIndex) : undefined;
+    if (pl?.inCombat) return { by: `player ${pl.name} (level ${pl.combatLevel})`, at: { x: pl.x, z: pl.z } };
+    const n = s.nearbyNpcs.filter(x => x.inCombat).sort((a, b) => a.distance - b.distance)[0];
+    if (n) return npcBy(n);
+    if (pl) return { by: `unknown (the client credits ${pl.name}, the player faced, who is not fighting)`, at: null };
+    return { by: ev ? `${ev.sourceType} #${ev.sourceIndex} (not in view)` : 'an unseen source (no attacker in view)', at: null };
+}
+
+/**
+ * How far to get from an attacker before logging out. An NPC chases while its target is within
+ * maxrange (+ attackrange for a ranged or magic attacker) of its spawn, and attacks from within
+ * maxrange of it; maxrange defaults to wanderrange + 2 (NpcType). So 2 x maxrange + attackrange
+ * from where it stood is out of reach: 15 for a young dark wizard (wanderrange 3, attackrange 5),
+ * 16 for a melee NPC with wanderrange 5. Measured (rs/314 lab): a retreat to a start 8 tiles from
+ * the wizard's spawn was chased down and killed during the 16-tick logout wait.
+ */
+export const ESCAPE_TILES = 20;
+
+/**
+ * Where to back off to after a hit: `runFrom` (the tiles just crossed unhurt) when it is
+ * ESCAPE_TILES from the attacker, else the first reachable tile ESCAPE_TILES from it, straight
+ * away first and then turning by 45 degrees, never toward it. Null when nothing is reachable.
+ */
+export function retreatTile(
+    me: { x: number; z: number },
+    attacker: { x: number; z: number } | null,
+    runFrom: { x: number; z: number },
+    reachable: (x: number, z: number) => boolean
+): { x: number; z: number } | null {
+    const from = attacker ?? me;
+    if (chebyshev(runFrom, from) >= ESCAPE_TILES) return runFrom;
+    // Away from the attacker; with no attacker in view (or on its tile), away along the run back.
+    let dx = me.x - from.x;
+    let dz = me.z - from.z;
+    if (dx === 0 && dz === 0) {
+        dx = runFrom.x - me.x;
+        dz = runFrom.z - me.z;
+    }
+    if (dx === 0 && dz === 0) dx = 1;
+    const base = Math.atan2(dz, dx);
+    for (const turn of [0, 1, -1, 2, -2, 3, -3]) {
+        const a = base + (turn * Math.PI) / 4;
+        const unit = Math.max(Math.abs(Math.cos(a)), Math.abs(Math.sin(a)));
+        const t = { x: Math.round(from.x + (Math.cos(a) / unit) * ESCAPE_TILES), z: Math.round(from.z + (Math.sin(a) / unit) * ESCAPE_TILES) };
+        if (reachable(t.x, t.z)) return t;
+    }
+    return null;
+}
+
+/**
+ * A watch over published states from `start`: the first state that shows the player lost a
+ * hitpoint, or took a hit of any size (a 0 is still an attack), after `start`'s tick.
+ */
+export function damageWatch(start: BotWorldState): (s: BotWorldState) => Damage | null {
+    let hp = start.player?.hp ?? 0;
+    const since = start.tick;
+    return s => {
+        const now = s.player?.hp;
+        if (now === undefined) return null;
+        const hit = s.combatEvents.some(e => hitOnMe(e, since));
+        if (now < hp || hit || s.player?.isDead) return { tick: s.tick, hp: now, ...attackerOf(s, since) };
+        hp = Math.max(hp, now);
+        return null;
+    };
+}
+
+export interface ApproachResult {
+    ok: boolean;
+    plan: Approach;
+    reason?: string;
+    damage?: Damage;
+    /** Where the run began, which it crossed unhurt: the account's tile, or the teleport's landing. */
+    runFrom: { x: number; z: number };
+}
+
+/** Get to the giver's tile by `planApproach`, stopping on the first damage. Never retries. */
+export async function approach(sdk: TravelSdk, at: { x: number; z: number }, opts: { radius?: number; log?: boolean } = {}): Promise<ApproachResult> {
+    const s0 = sdk.getState();
+    if (!s0?.player) return { ok: false, plan: { kind: 'refuse', reason: 'no player state' }, reason: 'no player state', runFrom: pos(sdk) };
+    const plan = planApproach(s0, at, opts.radius);
+    const p0 = pos(s0);
+    const runFrom = plan.kind === 'teleport' ? { x: SPELLS[plan.spell].landing.x, z: SPELLS[plan.spell].landing.z } : { x: p0.x, z: p0.z };
+    if (plan.kind === 'refuse') return { ok: false, plan, reason: plan.reason, runFrom };
+    const watch = damageWatch(s0);
+    let damage: Damage | null = null;
+    const stopIf = (s: BotWorldState) => {
+        damage ??= watch(s);
+        return damage ? `took damage from ${damage.by} (hp ${damage.hp})` : null;
+    };
+    const run: Hop = { kind: 'run', to: { x: at.x, z: at.z, tol: 2 } };
+    const hops: Hop[] = plan.kind === 'teleport' ? [{ kind: 'teleport', spell: plan.spell }, run] : [run];
+    const r = await travel(sdk, hops, { walkOnRefusal: false, stopIf, log: opts.log ?? false });
+    const hit = damage as Damage | null;
+    return { ok: r.ok, plan, runFrom, ...(r.reason ? { reason: r.reason } : {}), ...(hit ? { damage: hit } : {}) };
+}
+
+export interface KitReturnOptions {
+    giver: string;
+    items: ReadonlyArray<{ name: string; amount: number }>;
+    at: { x: number; z: number };
+    radius?: number;
+}
+
+export interface KitReturnResult {
+    /** One of EXIT. */
+    code: number;
+    /** Where the account was first seen dead or respawned, if it died during the call. */
+    died: string | null;
+    /** The hit that stopped it, on the way or waiting on the trade. */
+    damage?: Damage;
+    approach?: ApproachResult;
+    gave: boolean;
+    logout: Awaited<ReturnType<typeof logoutClean>>;
+}
+
+const re = (n: string) => new RegExp(`^${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+const held = (inv: ReadonlyArray<{ name: string; count: number }>, n: string) => inv.filter(i => re(n).test(i.name)).reduce((s, i) => s + Math.max(1, i.count), 0);
+
+/** Approach, trade, then logoutClean (always). The caller confirms the logout on its own client. */
+export async function kitReturn(session: Session, o: KitReturnOptions): Promise<KitReturnResult> {
+    const { sdk } = session;
+    const say = (m: string) => console.log(`[kit-return] ${m}`);
+    const tick = () => sdk.getState()?.tick ?? -1;
+    const here = () => fmtTile(pos(sdk));
+    const before = Object.fromEntries(o.items.map(k => [k.name, held(sdk.getState()!.inventory, k.name)]));
+    say(`${session.name}: in game at ${here()} (T${tick()}, hp ${sdk.getState()?.player?.hp}); holds ${JSON.stringify(before)}`);
+    const life0 = sdk.getState()?.player?.lifeId;
+    let deathAt: string | null = null;
+    const stopDeathWatch = sdk.onStateUpdate(s => {
+        if (!deathAt && s.player && (s.player.isDead || (life0 !== undefined && s.player.lifeId !== life0))) deathAt = `${fmtTile(pos(s))} (T${s.tick})`;
+    });
+    let code: number = EXIT.failed;
+    let gave = false;
+    let ap: ApproachResult | undefined;
+    let hurt: Damage | undefined;
+    // Logout is refused for COMBAT_LOGOUT_TICKS after a hit, and an aggressive NPC keeps hitting
+    // an account that stands still: back off once, out of the attacker's reach (retreatTile).
+    const retreat = async (d: Damage, phase: string, runFrom: { x: number; z: number }) => {
+        code = EXIT.damaged;
+        hurt = d;
+        say(`STOPPED ${phase} at ${here()} (T${d.tick}): took damage from ${d.by}, hp ${d.hp}. No trade.`);
+        const reachable = (x: number, z: number) => {
+            const p = sdk.findPath(x, z, 500);
+            return p.success && p.reachedDestination !== false;
+        };
+        const to = retreatTile(pos(sdk), d.at, runFrom, reachable);
+        if (!to) return new Error(`no reachable tile ${ESCAPE_TILES} tiles from the attacker: staying at ${here()}; logging out`);
+        say(`retreating to ${fmtTile(to)}, ${ESCAPE_TILES}+ tiles from ${d.at ? fmtTile(d.at) : 'where the hit landed'}`);
+        const back = await runTo(sdk as unknown as TravelSdk, { ...to, tol: 2 }, { maxTicks: 60 });
+        return new Error(`retreated to ${here()} (T${tick()}, hp ${sdk.getState()?.player?.hp})${back.ok ? '' : ` short of ${fmtTile(to)}: ${back.reason}`}; logging out`);
+    };
+    try {
+        const missing = o.items.filter(k => before[k.name]! < k.amount);
+        if (missing.length) throw new Error(`not holding ${missing.map(k => `${k.amount} ${k.name}`).join(', ')}`);
+        ap = await approach(sdk as unknown as TravelSdk, o.at, { radius: o.radius, log: true });
+        if (ap.plan.kind === 'refuse') {
+            code = EXIT.refused;
+            throw new Error(`REFUSED: ${ap.plan.reason}`);
+        }
+        if (ap.damage) throw await retreat(ap.damage, 'on the way', ap.runFrom);
+        if (!ap.ok) throw new Error(`${ap.plan.kind === 'teleport' ? `${ap.plan.spell} teleport, then ` : ''}run to ${fmtTile(o.at)}: ${ap.reason}`);
+        say(`at ${here()} (T${tick()})${ap.plan.kind === 'teleport' ? ` by the ${ap.plan.spell} teleport` : ''}`);
+        // Waiting on the giver is standing still in the open: the same watch, from the arrival on.
+        const watch = damageWatch(sdk.getState()!);
+        let tradeHit: Damage | null = null;
+        const stopIf = (s: BotWorldState) => {
+            tradeHit ??= watch(s);
+            return tradeHit ? `took damage from ${tradeHit.by} (hp ${tradeHit.hp})` : null;
+        };
+        for (let attempt = 1; attempt <= 2 && !gave && !(tradeHit as Damage | null); attempt++) {
+            const r = await give(sdk, o.giver, o.items.map(k => ({ item: re(k.name), n: k.amount })), { maxTicks: 60, openTimeoutMs: 45_000, stopIf });
+            say(`trade ${attempt}: ${r.ok ? 'ok' : `failed (${r.reason})`}, ${r.ticks} ticks, gave ${JSON.stringify(r.gave)}`);
+            gave = r.ok;
+            if (!gave && !(tradeHit as Damage | null)) await sdk.waitForTicks(3);
+        }
+        const hitWaiting = tradeHit as Damage | null; // assigned in stopIf, which TS does not follow
+        if (hitWaiting && !gave) throw await retreat(hitWaiting, 'waiting on the trade', ap.runFrom);
+        const after = Object.fromEntries(o.items.map(k => [k.name, held(sdk.getState()!.inventory, k.name)]));
+        say(`holds after: ${JSON.stringify(after)}`);
+        gave = gave && o.items.every(k => after[k.name] === before[k.name]! - k.amount);
+        if (gave) code = EXIT.ok;
+    } catch (err) {
+        say((err as Error).message);
+    }
+    const logout = await logoutClean(session);
+    stopDeathWatch();
+    if (deathAt) {
+        say(`THE ACCOUNT DIED: first seen dead or respawned at ${deathAt}. All but the 3 most valuable items are on the ground where it fell; recover them now.`);
+        if (code === EXIT.ok) code = EXIT.failed;
+    }
+    if (!logout.ok) {
+        say(`LOGOUT FAILED (${logout.reason})${code === EXIT.damaged ? `: the account may still be under attack at ${here()}, hp ${sdk.getState()?.player?.hp}. Act on the tab now.` : ''}`);
+        if (code === EXIT.ok) code = EXIT.failed;
+    }
+    return { code, died: deathAt, ...(ap ? { approach: ap } : {}), ...(hurt ? { damage: hurt } : {}), gave, logout };
+}
+
+function parseArgs(argv: readonly string[]) {
+    const account = argv.find(a => !a.startsWith('--'));
+    const opt = (k: string) => argv.find(a => a.startsWith(`--${k}=`))?.slice(k.length + 3);
+    const at = (opt('at') ?? `${DEFAULT_GIVER_TILE.x},${DEFAULT_GIVER_TILE.z}`).split(',').map(Number);
+    const client = (opt('client') ?? 'browser') as ClientKind;
+    const giver = opt('to');
+    const items = opt('items');
+    if (!account || !giver || !items || at.length !== 2 || at.some(n => !Number.isInteger(n)) || (client !== 'browser' && client !== 'lite')) return null;
+    return { account, giver, items: parseKit(items), at: { x: at[0]!, z: at[1]! }, client };
+}
+
+if (import.meta.main) {
+    const a = parseArgs(process.argv.slice(2));
+    if (!a) {
+        console.error('usage: bun speedrun/tools/kit-return.ts <account> --to=<giver> --items=item:n[,...] [--at=x,z] [--client=browser|lite]');
+        process.exit(EXIT.usage);
+    }
+    const env = loadBotEnv(a.account);
+    const session = await openSession(a.account, { client: a.client, pathfinding: true, readyTimeoutMs: 30_000 });
+    const r = await kitReturn(session, { giver: a.giver, items: a.items, at: a.at });
+    await closeSession(session);
+    let outOfGame = r.logout.ok;
+    if (a.client === 'browser') {
+        const cdp = env.CDP_URL ?? process.env.SPEEDRUN_CDP_URL ?? 'http://127.0.0.1:9222';
+        outOfGame = false;
+        for (const t0 = Date.now(); Date.now() - t0 < 15_000; await sleep(300)) {
+            if ((await tabInGame(cdp, env.BOT_USERNAME).catch(() => null)) === false) {
+                outOfGame = true;
+                break;
+            }
+        }
+    }
+    console.log(`[kit-return] ${env.BOT_USERNAME}: ${outOfGame ? 'logged out; out of game' : 'logout NOT confirmed: look at the tab before stopping Chrome'} (click on tick ${r.logout.clickTick})`);
+    process.exit(outOfGame ? r.code : r.code === EXIT.ok ? EXIT.failed : r.code);
+}

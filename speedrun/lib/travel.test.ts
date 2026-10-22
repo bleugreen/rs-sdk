@@ -166,6 +166,25 @@ describe('runTo: the chained run', () => {
         expect(r2.fellBack).toMatch(/^bot\.walkTo after: run to 3240,3200 stalled/);
     });
 
+    test('stopIf halts the run on the tick it fires, with a walk to the tile stood on, and never falls back to bot.walkTo', async () => {
+        const sdk = world(3200, 3200);
+        const sim = simulateWalking(sdk);
+        let walkToCalls = 0;
+        const bot = { walkTo: async () => { walkToCalls++; return { success: true, message: '' }; } };
+        const stopIf = (s: BotWorldState) => (s.tick >= 104 ? 'hit' : null);
+        const r = await drive(sdk, runTo(sdk as never, { x: 3240, z: 3200 }, { stopIf, bot: bot as never }));
+        expect(r).toMatchObject({ ok: false, stopped: 'hit', reason: 'run to 3240,3200: stopped: hit' });
+        expect(sim.clicks.at(-1)).toMatchObject({ x: 3208, z: 3200, tick: 104, from: { x: 3208, z: 3200 } });
+        expect(walkToCalls).toBe(0);
+    });
+
+    test('stopIf before a hop: the teleport is never cast', async () => {
+        const sdk = world(3000, 3500, { inventory: [item(0, 'Air rune', 10), item(1, 'Water rune', 5), item(2, 'Law rune', 5)], skills: magic(40) });
+        const r = await drive(sdk, teleport(sdk as never, 'falador', { stopIf: () => 'hit' }));
+        expect(r).toMatchObject({ ok: false, stopped: 'hit', reason: 'stopped before falador teleport: hit' });
+        expect(sends(sdk, 'sendClickComponent')).toEqual([]);
+    });
+
     test('wildernessAtMost stops the run as soon as the level is low enough', async () => {
         const sdk = world(3288, 3700); // Wilderness 23
         simulateWalking(sdk);
