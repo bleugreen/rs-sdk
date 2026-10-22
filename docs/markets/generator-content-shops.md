@@ -129,8 +129,9 @@ by code. The balloon-pop script was not read; it can only drop what the chest ho
 The buy loop charges per unit at the current stock, with a 1 gp floor. Sell clamps to the held count
 (`calculate_items_amount_sold`) and prices on the unnoted object. `calc_shop_value` clamps the
 stock term to [-5000, 1000] per mille and floors the multiplier at 100 per mille. It also catches a
-negative `scale` result (it sets 2,000,000,000 and logs an error), but that needs `cost` above about
-4.8M, and no object comes close.
+negative `scale` result (it sets 2,000,000,000 and logs an error), but `scale` multiplies in floating
+point before truncating (`server/engine/src/engine/script/handlers/NumberOps.ts`), so the guard needs
+`cost` above about 300M. The most expensive object in the configs costs 500,000.
 
 Arithmetic over every shopkeeper (126 NPCs with `owned_shop`; defaults from
 `shop/configs/shopkeeper.param`: sell 100, buy 60, delta 10):
