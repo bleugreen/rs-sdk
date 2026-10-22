@@ -32,6 +32,16 @@ describe('trips', () => {
         expect(t.map(x => x.ticks)).toEqual([900, 1800]);
         expect(t.map(x => x.board)).toEqual([15000 - 27 * 300, 30000 - 27 * 300]);
     });
+    test('reports a few ticks apart are one visit (deposit, then withdraw)', () => {
+        const visits: BankSnap[] = [
+            { tick: 0, items: [] },
+            { tick: 400, items: [{ id: 995, count: 24 }] },
+            { tick: 404, items: [{ id: 995, count: 30 }] },
+            { tick: 800, items: [{ id: 995, count: 60 }] }
+        ];
+        expect(trips(visits, nameOf, costs).map(x => [x.ticks, x.board])).toEqual([[404, 30], [396, 30]]);
+        expect(trips(visits, nameOf, costs, 0)).toHaveLength(3);
+    });
     test('summary: board and coins per hour, per trip spread', () => {
         const s = summarize(trips(snaps, nameOf, costs), 400, { shark: { buy: 800 } });
         expect(s.trips).toBe(2);
