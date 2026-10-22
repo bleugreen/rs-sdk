@@ -3,8 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import type { BankItem } from '../../sdk/types';
 import { MANIFEST, parseLedger } from '../tools/slot-ledger';
 import { readFileSync } from 'node:fs';
-import { ROUTE_LOADS } from '../skills/magic';
-import { configPackages, MULE1_NO_PACKAGE, MULE1_ON_REQUEST, MULE1_ORDER, muleDrift, muleFromLedger, onRequestGaps, packagesOf, stepAfter, stockWalk } from './mule-ledger';
+import { configPackages, MULE1_NO_PACKAGE, MULE1_ON_REQUEST, MULE1_ORDER, muleDrift, muleFromLedger, onRequestGaps, packagesOf, parseFallbacks, stepAfter, stockWalk } from './mule-ledger';
 
 // Rows in the inventory ledger's grammar (STEP-MANIFEST.md); the items are the test's own.
 const TABLE = `
@@ -12,10 +11,6 @@ const TABLE = `
 |---|---|---|---|---|---|
 | H1 | staff of water x1 [u]; air rune x81 [s]; normal logs x2 [u] | - | - | 4 | fixture (r) |
 | S01 | - | - | +staff of water | 0 | fixture (r) |
-| H3 | <gem ring> x20 [u] | - | - | 20 | fixture (r) |
-| S04 | - | - | - | 0 | fixture (r) |
-| H4e | law rune x1 [s]; air rune x5 [s] | - | - | 1 | fixture (r) |
-| S08 | - | - | - | 0 | fixture (r) |
 | H12 | gold bar x1 [u]; monkey bones @3183 x1 [u]; prayer potion(4) x4 [u]; shark to 15 [u]; law rune x6 [s] | staff of fire x1 (swap); mithril scimitar x1 (swap); antipoison(*) all (swap); coins all (swap) | - | 22 | fixture (r) |
 | S15 Y | - | - | - | 0 | fixture (r) |
 | H21d | chisel x1 [u]; guam potion (unf) @91 x358 [n]; thread x187 [s] | <platebody> x5 (swap); hammer x1 (swap) | - | 3 | fixture (r) |
@@ -24,6 +19,13 @@ const TABLE = `
 | S26 | - | - | - | 0 | fixture (r) |
 | H9 | knife x1 [s] | - | - | 1 | fixture (r) |
 | S27 | - | - | - | 0 | fixture (r) |
+
+### Fallback hand-offs (not walked)
+
+| row | in | out | equip | needAtStart | source |
+|---|---|---|---|---|---|
+| H4e | law rune x1 [s]; air rune x5 [s] | rune axe x1 (swap) | - | 1 | fixture (r) |
+| H4m | babydragon bones x16 [u] | - | - | 16 | fixture (r) |
 `;
 const ROWS = ['H1', 'H12', 'H21d', 'H22'];
 const ask = () => muleFromLedger(TABLE, { rows: ROWS });
@@ -63,25 +65,22 @@ describe('packages from the ledger', () => {
         expect(pkg('H22', fixed()).package.items).toContainEqual({ item: 'Coins', amount: 1000 });
     });
 
-    test("a ring row's loads come from magic.ts ROUTE_LOADS, one package each, in ledger order", () => {
-        const lp = muleFromLedger(TABLE, { rows: ['H1', 'H3#1', 'H3#2', 'H3#3', 'H12'] });
-        expect(lp.map(p => p.package.name)).toEqual(['h1', 'h3-1', 'h3-2', 'h3-3', 'h12']);
-        const h31 = lp[1]!;
-        expect(h31.step).toBe('S04');
-        expect(h31.slots).toBe(20);
-        expect(h31.moduleLines).toEqual([]);
-        expect(lp[2]!.moduleLines).toEqual(['<enchanted ring> x20']);
-        const want = Object.entries(ROUTE_LOADS[0]!).map(([tier, n]) => [`${tier.charAt(0).toUpperCase()}${tier.slice(1)} ring`, n]);
-        expect(h31.package.items.map(i => [i.item, 'amount' in i ? i.amount : null])).toEqual(want);
-        expect(() => muleFromLedger(TABLE, { rows: ['H3#4'] })).toThrow('ROUTE_LOADS has 3 loads');
-        expect(() => muleFromLedger(TABLE, { rows: ['H1#1'] })).toThrow('placeholder');
+    test('the fallback table: its rows, their lines as in the file; none without the heading', () => {
+        const fb = parseFallbacks(TABLE);
+        expect(fb.map(r => r.row)).toEqual(['H4e', 'H4m']);
+        expect(TABLE.split('\n')[fb[0]!.line - 1]).toStartWith('| H4e |');
+        expect(parseFallbacks(TABLE.replace('### Fallback hand-offs (not walked)', ''))).toEqual([]);
+        // The walk never reads it.
+        expect(parseLedger(TABLE).rows.some(r => r.row === 'H4e')).toBe(false);
     });
 
     test('on-request packages come last and are marked; the ordered list must follow the ledger', () => {
         const lp = muleFromLedger(TABLE, { rows: ['H1', 'H12'], onRequest: ['H4e'] });
-        expect(lp.map(p => [p.row, p.onRequest])).toEqual([['H1', false], ['H12', false], ['H4e', true]]);
+        expect(lp.map(p => [p.row, p.onRequest, p.step])).toEqual([['H1', false, 'S01'], ['H12', false, 'S15'], ['H4e', true, null]]);
         expect(lp[2]!.package).toEqual({ name: 'h4e', items: [{ item: 'Law rune', amount: 1 }, { item: 'Air rune', amount: 5 }], onRequest: true });
+        expect(lp[2]!.takesBack.map(b => b.label)).toEqual(['rune axe x1']);
         expect(() => muleFromLedger(TABLE, { rows: ['H12', 'H1'] })).toThrow('H1 is listed after H12, but comes before it in the ledger');
+        expect(() => muleFromLedger(TABLE, { rows: ['H1'], onRequest: ['H12'] })).toThrow('no fallback hand-off row H12');
         expect(onRequestGaps(TABLE)).toEqual([]);
         expect(onRequestGaps(TABLE.replace(/^\| H4e .*$/m, ''))).toEqual(['H4e']);
     });
@@ -169,8 +168,8 @@ describe('stockWalk', () => {
 
 describe('the manifest', () => {
     test("MULE1_ORDER is rs/158's list of cairn_mule1's trades in run order; H4e is served on request", () => {
-        expect([...MULE1_ORDER]).toEqual(['H1', 'H3#1', 'H3#2', 'H3#3', 'H4', 'H4k', 'H6', 'H4p', 'H7', 'H8', 'H9', 'H10', 'H12', 'H13', 'H14', 'H15', 'H16', 'H18', 'H19', 'H20', 'H21d', 'H22']);
-        expect([...MULE1_ON_REQUEST]).toEqual(['H4e']);
+        expect([...MULE1_ORDER]).toEqual(['H1', 'H4', 'H4k', 'H6', 'H4p', 'H7', 'H8', 'H9', 'H10', 'H12', 'H13', 'H14', 'H15', 'H16', 'H18', 'H19', 'H20', 'H21d', 'H22']);
+        expect([...MULE1_ON_REQUEST]).toEqual(['H4e', 'H4m']);
     });
 
     test("every SUPPLIES.md hand-off the trade giver serves is mule1's package, on-request package, or named as having none", () => {
@@ -185,9 +184,10 @@ describe('the manifest', () => {
             // The trade giver (cairn_mule1), not trade giver 2 (cairn_mule2, H21c's wine giver).
             if (/^\s*\**(the )?trade giver(?! 2)/i.test(c[giverCol] ?? '')) supplies.push(id);
         }
-        const ours = new Set([...MULE1_ORDER.map(r => r.split('#')[0]!), ...MULE1_ON_REQUEST, ...Object.keys(MULE1_NO_PACKAGE)]);
+        const ours = new Set<string>([...MULE1_ORDER, ...MULE1_ON_REQUEST, ...Object.keys(MULE1_NO_PACKAGE)]);
         expect(supplies.filter(id => !ours.has(id))).toEqual([]);
-        expect([...ours].filter(id => !supplies.includes(id))).toEqual([]);
+        // Every ordered trade is a trade-giver row there (a row with no package may leave it, as H3 will).
+        expect(MULE1_ORDER.filter(id => !supplies.includes(id))).toEqual([]);
     });
 
     test('every mule1 row builds in both forms, fits 28 slots, and shows no drift against itself', () => {
