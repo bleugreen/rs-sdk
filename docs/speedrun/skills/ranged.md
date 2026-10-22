@@ -65,6 +65,21 @@ rapid rune knives** to 99 (21.95 Ranged per tick at 85 against the control's 18.
 1,688 ticks. That is **1,857 ticks after MM for Ranged 99 + Defence 99 + Hitpoints 99**
 (measured rates, inferred total), with about 5,440 HP as a by-product against the ~4,220 gap.
 
+**Measured through the step module** (`speedrun/skills/ranged.ts`, rs/199; the rows marked
+"the step module" below). S14, the cannon alone to Ranged 50 with the mithril scimitar: **104 /
+124 / 116 / 128 ticks, mean 118**, cannon set-up (8-9) included, 65-72 balls, prayer flat under the
+flick. S27 on the module's own rates is **~1,997** (1,987 of fighting + set-up and pick-up),
+not 1,889. Two findings drive that. **Defence is off the critical path:** the Defence gap closes
+in 214 ticks with the mithril scimitar (152 with rune and glory), before the cannon takes Ranged
+from S14's 50 to 70 (287 ticks), so the weapon's Defence cost is free. **The cannon is slower at
+Ranged 55-66** (12.3 per tick) than at 85 (13.8), and the 1,889 took 13.66 for that stretch. The bow
+phase (1,700) matches the knives' 1,688. Hitpoints fills as a by-product (~5,400 against ~4,220).
+**Switching to the bow as soon as Defence closes** (about Ranged 67) instead of at 70 is faster: from
+one start, Ranged 67 to 70 took 55 ticks with the bow (47 / 54 / 65, gear switch included) against
+85 with the scimitar (73 / 98 / 84), which leaves **S27 at ~1,972**. It is the module's default
+(`finish.bowFrom` 50).
+Supplies: ~1,110 cannonballs (0.6 per tick meleeing, 0.5-0.6 with the bow), ~540 rune arrows.
+
 **Without the kit, plan (e) is 2,051-2,211**: 2,051 on rs/31's rates (230 + 1,821; Prayer 99,
 survival by `::setstat`) and 2,211 on rs/91's own control (Prayer 43, real sips and food;
 inferred total). The difference is mostly the control running 19.88 at Ranged 99 against
@@ -103,6 +118,10 @@ with Protect from Melee, and a rune scimitar unless a ranged weapon is listed.
 | Cannon alone, Battlefield of Khazard (non-Wilderness fallback) | 9.13 | 0 | 0 | 0 | 400 ticks; 16.3 xp/ball (22 hp targets) |
 | Cannon + defensive melee, Battlefield of Khazard | 8.88 | 3.37 | 0 | 1.12 | 400 ticks |
 | **Cannon + rapid magic shortbow, rune arrows** (rs/124), Ranged 70 / 85 / 99 | **15.77 / 19.02 / 20.43** | 0 | 0 | 2.10 / 2.07 / 2.28 | 300 ticks each, 1 run each, bbs at 300 ms; cannon's share 9.47 / 12.80 / 13.58 |
+| **The step module** (`speedrun/skills/ranged.ts`, rs/199): cannon + defensive **mithril** scimitar, no glory, rs/91's three flicked prayers and supers, Ranged 55 / 85 | **12.30 / 13.80** | **6.01 / 6.02** | 0.18 / 0.08 | 2.05 / 2.05 | 400 ticks, 1 run each, local Mac lab, Defence 98; prayer flat |
+| The module with rs/91's own melee kit (rune scimitar + glory), Ranged 85 | 13.09 | 8.45 | 0.49 | 2.96 | 400 ticks, 1 run: reproduces rs/91 config 5 (-4% Ranged, +10% Defence), so the mithril row's Defence is the weapon's cost |
+| **The module: cannon + rapid magic shortbow, rune arrows**, Protect from Melee flicked, ranging potion, Ranged 70 / 85 / 99 | **18.24 / 20.14 / 22.02** | 0 | 0 | 2.28 / 2.76 / 3.13 | 400 ticks, 1 / 2 / 1 runs (85: 20.45 and 19.82); 0.32 arrows and 0.50-0.62 balls per tick; prayer flat |
+| The module, bow without the ranging potion, Ranged 85 | 20.85 | 0 | 0 | 2.87 | 400 ticks, 1 run: inside the potion runs' spread, so one 400-tick window is good to about ±5% |
 | Cannon + rapid rune knives, same session as the bow (rs/124 control) | 15.67 / 18.29 / 19.45 | 0 | 0 | 2.09 / 2.31 / 2.62 | 300 ticks each, 1 run each; cannon's share 9.40 / 11.34 / 11.58; 0.42-0.46 knives per tick |
 
 **The magic shortbow with rune arrows matches rune knives beside the cannon** (rs/124,
@@ -468,3 +487,48 @@ expect one more trade mid-stretch, delivered at the spider site.
   stretch starts.
 - **Knife pick-up:** about half the thrown knives land under the target; picking them
   up costs ticks and was not tried.
+
+## 9. The step module (`speedrun/skills/ranged.ts`, S14 and S27)
+
+The two cannon steps at the Wilderness poison spiders (STEP-MANIFEST.md entries 26 and 7), on the
+primitives `speedrun/lib/cannon.ts` (set-up, the keeper's top-ups and refire, pick-up) and
+`speedrun/lib/flick.ts`. The lab script is `speedrun/lab/measure-ranged.ts`. Both
+run one loop, `runSession`: a session clocked by the zero-drain flick, with the cannon kept
+topped up, and each phase's attacks, sips and gear clicks placed on the ticks the flick leaves
+free. Every decision is a pure function of state and the session's memory (`phaseFor`,
+`specFor`, `chooseConsume`, `gearClick`, `pickTarget`); `runSession` only sequences them.
+`cannonSessionOptions` and `combatFinishOptions` are exactly what the steps run, so the lab
+measures the steps themselves.
+
+- **S27's phases come from levels** (Defence 99, then the bow to 99, then any Hitpoints short
+  by melee; `finish.bowFrom: 70` puts the scimitar phase back between Defence 99 and Ranged 70,
+  which measured about 25 ticks slower), so a restart lands in the right phase and
+  `done` / `inProgress` / `resume` need no memory.
+- **One interaction a tick.** A cannon click and an attack in the same tick lose one of
+  them, and a top-up sent from away from the cannon is a walk that the next attack cancels. So
+  the keeper tops up only from beside the cannon (or after a grace period), and the loop holds
+  attacks and prayer bursts while that walk is in flight.
+- **The protect-prayer re-engage:** under Protect from Melee, "in combat" can mean only that
+  the spiders are attacking us, so a target we have dealt nothing to for `stallTicks` is
+  re-attacked (combat.ts `fight` does the same).
+
+`lib/flick.ts` is the zero-drain flick as a primitive. Prayer drain is a 5-tick timer
+started when a prayer goes on from all-off and cleared when the last goes off
+(`prayer.rs2`), so a burst (every wanted prayer off, the first back on) at least every 4
+ticks means no drain at all. With two or more prayers the rest come back the next tick, to
+stay inside the 5 user events a tick. A sip or eat goes on the tick after the burst: its
+`p_delay` drops prayer buttons for two ticks, and a dropped "off" would let the timer fire.
+The flick runs in the bot loop rather than as an in-page program. At a 4-tick period the loop's
+one-tick round trip keeps prayer flat in every window measured (`flickEvery: 3` is the setting
+for a relay-driven tab), so a program would add machinery without a measured gain.
+
+| Measurement (`lab/measure-ranged.ts`, local Mac lab, 300 ms, through the module) | Result |
+|---|---|
+| S14: Ranged 1 to 50 with the mithril scimitar, set-up included | 104 / 124 / 116 / 128 ticks, mean **118** (inferred 132) |
+| S27 melee phase, mithril, Ranged 55 / 85, per tick | 12.30 / 13.80 Ranged, 6.01 / 6.02 Defence |
+| S27 melee phase, rune scimitar + glory (rs/91's kit), Ranged 85 | 13.09 Ranged, 8.45 Defence (rs/91: 13.66 + 7.65) |
+| S27 bow phase, Ranged 70 / 85 / 99, per tick | 18.24 / 20.14 / 22.02 Ranged (rs/124: 15.77 / 19.02 / 20.43) |
+| Prayer points over each 400-tick S27 window (8) and S14 run (4) | flat in 11; one bow window ended 1 point below its start (98 to 97) |
+| S27 predicted from these rates, bow from 70 | **~1,997** (inferred 1,889); section 1 |
+| Ranged 67 to 70 after Defence closes, scimitar against the bow (one start, n=3 each) | 73 / 98 / 84 (mean 85) against 47 / 54 / 65 (mean 55), the bow's gear switch included |
+| S27 with the bow from Defence's close (the default) | **~1,972** (the segment's 30, scaled to the ~86% of it left when Defence closes) |
