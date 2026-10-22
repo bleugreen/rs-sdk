@@ -13,7 +13,8 @@
 
 import type { BotSDK } from '../../sdk/index';
 import type { ActionResult, BotWorldState } from '../../sdk/types';
-import { type ProbeResult, summarizeProbe, type TickLength, type TickSource, tickSteadiness } from './hostgate';
+import type { FrameSummary } from '../../server/webclient/src/bot/programs/frames';
+import { type ProbeResult, summarizeProbe, type TickLength, tickSteadiness } from './hostgate';
 import { tickMs } from './wait';
 
 /** The page's published program status (server/webclient/src/bot/programs/types.ts). */
@@ -75,20 +76,8 @@ export function marksSince(status: ProgramStatus | null | undefined, name: strin
     return { count: m.count, ticks, missed: fresh - ticks.length };
 }
 
-/** server/webclient/src/bot/programs/frames.ts */
-export interface FrameSummary {
-    n: number;
-    p50: number;
-    p90: number;
-    max: number;
-    underHalfT: number;
-    overSevenSixthsT: number;
-    catchUps: number;
-    catchUpsLastMinute: number;
-    catchUpsPerMinute: number;
-    T: number | null;
-    TSource: TickSource | null;
-}
+/** The page's own summary type, so the two cannot drift. */
+export type { FrameSummary } from '../../server/webclient/src/bot/programs/frames';
 
 /**
  * The `tickMs` start parameter for a measured tick length (a flag or the feed): the page judges
