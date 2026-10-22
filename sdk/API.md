@@ -551,7 +551,7 @@ interface BotWorldState {
   /** Monotonic state publication cursor; advances even for multiple publications in one game tick. */
   revision?: number;
   inGame: boolean;
-  /** The client has built the region around the player. False while it shows "Loading - please wait." (after a login, a teleport or a walk into a new build area): its collision maps are stale then, so a world click (loc, NPC, ground item, walk) cannot be routed. The browser client can sit here for tens of ticks; the lite client builds within the tick. `sendAction` holds world clicks until it is true again. Absent on older clients. */
+  /** The client has built the region around the player. False while it shows "Loading - please wait." (after a login, a teleport or a walk into a new build area): its collision maps are stale then, so a world click (loc, NPC, ground item, walk) cannot be routed. The browser client can sit here for tens of ticks; the lite client builds within the tick. A world click sent while it is false still goes out, but `sendAction` reports it as `success: false, reason: 'scene_loading'`, never as a success. Absent on older clients. */
   sceneReady?: boolean;
   player: PlayerState | null;
   skills: SkillState[];
