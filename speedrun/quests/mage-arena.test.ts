@@ -340,10 +340,11 @@ describe('fightKolodion: Fire Wave finishes on Fire Blast when the blood runs ou
         // every Wave click comes before every Blast click
         expect(a.sent.lastIndexOf(WAVE)).toBeLessThan(a.sent.indexOf(BLAST));
     });
-    test('enough blood: no fallback, no death rune spent', async () => {
+    test('enough blood: no fallback, no death rune spent; the ignored leftovers are on the tally', async () => {
         const a = arena(20, 25, 10);
         const tally = newTally();
-        await drive(a.sdk, fightKolodion(a.sdk as never, { tally }), 200, a.each);
+        await drive(a.sdk, fightKolodion(a.sdk as never, { tally, ignore: [8161] }), 200, a.each);
+        expect(tally.ignored).toEqual([8161]);
         expect(tally.fallback).toBeNull();
         expect(tally.casts).toBe(10);
         expect(a.sent).not.toContain(BLAST);

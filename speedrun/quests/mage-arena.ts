@@ -285,6 +285,8 @@ export interface FightTally {
     runesUsed: number;
     /** The fallback taken when the spell's runes ran out: its spell, the fight tick it started, its runes spent. */
     fallback: { spell: KolodionSpell; at: number; runesUsed: number } | null;
+    /** Npc indices of an earlier fight's leftover forms that this fight ignored (formPicker). */
+    ignored: number[];
     airUsed: number;
     /** Game xp (base = /25). */
     magicXp0: number;
@@ -307,7 +309,7 @@ export interface FightTally {
 
 export function newTally(spell: KolodionSpell = DEFAULT_SPELL): FightTally {
     return {
-        spell, ticks: 0, casts: 0, clicks: 0, runesUsed: 0, fallback: null, airUsed: 0, magicXp0: 0, magicXp1: 0, magicBase0: 0, magicBase1: 0,
+        spell, ticks: 0, casts: 0, clicks: 0, runesUsed: 0, fallback: null, ignored: [], airUsed: 0, magicXp0: 0, magicXp1: 0, magicBase0: 0, magicBase1: 0,
         hp0: 0, hpMin: 0, hp1: 0, prayer0: 0, prayer1: 0, prayerUsed: 0, doses: 0, magicSips: 0, eats: 0, levelUps: 0, forms: [],
     };
 }
@@ -428,6 +430,7 @@ export async function fightKolodion(sdk: Sdk, o: FightOpts = {}): Promise<FightT
     const t = o.tally ?? newTally(spell);
     t.spell = spell;
     t.fallback = null;
+    t.ignored = [...(o.ignore ?? [])];
     const s0 = sdk.getState()!;
     const tArena = s0.tick;
     const maxTicks = o.maxTicks ?? 1500;
