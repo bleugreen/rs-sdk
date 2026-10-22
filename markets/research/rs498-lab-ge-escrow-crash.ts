@@ -1,12 +1,12 @@
 // End-to-end duplication check on a real lab engine (markets Q1a, rs/498;
 // write-up in docs/markets/generator-ge-persistence.md). The in-process probe
-// (ge-persistence-probe.ts) covers each code path; this one runs them through
+// (rs498-ge-persistence-probe.ts) covers each code path; this one runs them through
 // the tick loop, the network handlers, the content trade scripts and a SIGKILL.
 //
 //   LAB_RUNNERS=0 LAB_BOTS="q1abuyer q1achurn" NODE_TICKRATE=400 \
 //   WEB_PORT=9900 WEB_MANAGEMENT_PORT=9901 HISCORES_WEB_PORT=9902 NODE_PORT=44900 AGENT_PORT=7700 \
 //   LAB_TIMEOUT=1500 speedrun/lab/lab.sh q1aseller \
-//     markets/research/lab-ge-escrow-crash.ts:--partner=q1abuyer:--churn=q1achurn
+//     markets/research/rs498-lab-ge-escrow-crash.ts:--partner=q1abuyer:--churn=q1achurn
 //
 // Phase A, Grand Exchange: SELLER lists 100 noted logs @10, BUYER bids 60 @12
 //   (fills 60 @10, 2 gp each back to BUYER), SELLER cancels the 40 left, both
