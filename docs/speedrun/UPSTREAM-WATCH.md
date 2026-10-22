@@ -89,6 +89,57 @@ To check that notifications reach you end to end, run the workflow by hand from 
 with `since` set to an older upstream commit, for example `df3d8888`. That opens or comments on
 the issue with a `[replay]` title and never moves state.
 
+## Which commit is the demo serving?
+
+The demo builds its webclient inside its image (`server/Dockerfile`, `bun run build` after
+copying `server/content`, `webclient`, `engine`, `gateway` and `sdk`) and serves
+`/bot/client.js`, `/bot/ondemandworker.js` and `/client/client.js` (the standard build) from
+it. Two facts make those files a deploy fingerprint:
+
+- Every rebuild produces a new raw md5, even from identical source. So, built by the published
+  Dockerfile, a served md5 that is unchanged across a world restart means the restart reused
+  the same built image (or a cached build layer, which needs all five copied trees unchanged).
+  A changed md5 means a rebuild, not necessarily new code. The demo has since changed its engine
+  with the md5 unchanged (the third state below), so there it dates the webclient build only.
+- To name the source commit, build candidate upstream commits the way the Dockerfile does and
+  compare each with `docs/speedrun/scripts/bundle-compare.ts`. Same source gives equal word
+  multisets; the differing words name the change. The bundle embeds no build date or commit.
+  Upstream commits that leave `server/webclient` and `sdk` untouched build the same client, so
+  this dates the client to a range of commits, not one.
+
+The page's `./bot/client.js?v=` token is `Date.now().toString(36)` at process start
+(`server/engine/src/web/pages/client.ts`), which dates the restart itself. fly.toml `[env]` and
+Fly secrets can change, and restart the machine, without any of this moving.
+
+So the demo is in one of three states:
+
+- **Same webclient build.** The bundle md5 hasn't changed across the restart. Under the
+  published Dockerfile that also means the same engine. In the third state, it doesn't.
+- **Rebuilt from an upstream commit.** The md5 changed, and building candidates names the commit
+  range.
+- **Not on GitHub.** The demo runs engine code that has no upstream commit. A server-rendered
+  string that upstream lacks shows this. It was first seen at about 19:34Z on 22 October, around
+  the 19:36Z "Server is being updated" restart: the hiscores Time hover reads
+  `N seconds of game time` (with N a number of seconds), where b565f2d9 and our fork
+  (`server/engine/src/web/pages/hiscores.ts`) render `N ticks`. In this state a bundle match
+  proves only that the webclient build is unchanged. It says nothing about the engine.
+
+Dated engine changes in the not-on-GitHub state:
+
+| restart (22 Oct) | hiscores hover | `hiscoreChromeSha` | bot bundle md5 |
+|---|---|---|---|
+| 19:36:00Z | `N ticks` to `N seconds of game time` (first seen about 19:34Z) | not yet recorded | not recorded before it |
+| 20:08:13Z | `N seconds of game time` to `N ticks normalized to 400 ms per tick` | `dca2432b61a82319` to `be0f4d8b464dee76` | `353760e9…`, unchanged |
+
+The second case shows the engine is deployed without the bundle being rebuilt, which the
+published Dockerfile would not do. The world feed's hello frame read a configured tick of
+400 ms at 20:19Z the same day.
+
+Every run-night gate read records that hover, a hash of the hiscores page's static chrome, the
+bundle md5 and the configured tick (`hiscoreHover`, `hiscoreChromeSha`, `botBundleMd5`,
+`tickMsConfigured` under `preLogin` in `~/gate-history`; research/demo-latency.md, section 10),
+so the next engine-side change is dated to a read.
+
 ## Extending the watchlist
 
 Each entry has an `id`, a `title`, its `paths` (globs matched with `Bun.Glob`), and a one-line

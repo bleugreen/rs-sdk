@@ -237,6 +237,30 @@ engine at a different point in the output batch (accounts are flushed one after 
 `processClientsOut`), or the load differed between the two minutes. This is listed as open; the
 measured per-vantage margins are what the recommendation uses.
 
+**22 October, 400 ms ticks.** The demo has run 400 ms ticks since its 19:56:28Z restart (the
+spectator feed's hello reads `tickMs: 400`; section 9). The same sweep from the run host at
+20:35-20:39Z (token `mvjz3zys`, 1,255-1,329 online, 10 trials per delay run up then down, so 20
+per delay, SPEEDRUN_TICK_MS=400, no restart during the sweep):
+
+| Added delay `r` | Run host, 22 Oct 20:35Z, T = 400 ms: 1 / 2 ticks |
+| --- | --- |
+| +0, +25, +50, +100 ms | 20 / 0 at each |
+| +150 ms | 18 / 2 |
+| +200 ms | 13 / 7 |
+| +250 ms | 13 / 7 |
+
+The margin after a frame is now above 250 ms at the median, over 0.6 T, against about 50 ms (0.17 T)
+on 21 October at 300 ms. The tick grew by 100 ms but the margin by about 200 ms, so the engine's
+work per tick also fell, to roughly 150-200 ms from about 250. The probe's warm GETs agree: the
+engine answered a GET in 4-48 ms (median) when it arrived 0-150 ms after a frame, and in 94-174 ms
+when it arrived 200-350 ms after, which is a busy stretch of about 200 ms at the end of each 400 ms
+cycle. The fall in work fits the lower population (about 1,250-1,350 online against 1,650-1,800,
+after the per-address cap went from 100 to 50 at the same restart), but the engine is also
+running unpublished code since 19:36Z, so the two can't be separated from here (inference). At
+this margin (a) is close to certain on any calm minute, and next-tick reactions no longer depend
+on sending within a few ms of the frame. Raw output:
+[`data/sweep-runhost-20261022T2035/`](data/sweep-runhost-20261022T2035/) (`sweep.json`, `summary.txt`).
+
 The blind senders (section 6) agree with the sweeps: from home, sends within 50 ms of a frame hit
 the next tick 86% of the time and later sends never did; from Ashburn, 76% within 50 ms, 43% at
 50-100 ms, 12% at 100-150 ms, and none later.
@@ -939,6 +963,64 @@ machine at its current address, and a new address is a fresh draw that needs a m
 before it is trusted. Run-host rows before 23:11 UTC in sections 7, 8 and 10 were measured on the
 held address, so their catch-up rates overstate the server's own overruns.
 
+### 22 October: a demo-side loss at 300 ms, operator restarts, then 400 ms ticks
+
+Every gate row in sections 9 and 10 above is at T = 300 ms. The demo's tick length changed at its
+19:56:28Z restart on 22 October. From then on, rows are T = 400 ms, and the gate's thresholds
+are read in T (tenet 12's principle, re-expressed by main: (c) a catch-up is an interval under
+0.5T right after one over 7/6 T; (b) is reported with T, not used as a pass line).
+
+**The loss, 16:00-19:30Z, T = 300.** Gate reads from the run host (its third address, from
+17:39Z) and the twin, both at Lumbridge from the evening on:
+
+| UTC | Run host (a) | Twin (a) | Note |
+| --- | --- | --- | --- |
+| 13:00-15:30 | 58-59/60 | 59-60/60 | normal |
+| 16:00, 16:30 | 56, 53 | 60, 59 | |
+| 16:41:28 | | | demo restart after a stall (process-start token; rs/41's fleet dropped together) |
+| 17:00-18:30 | 40, 26, 41, 34 | no reads (lab claims) | |
+| 19:00 | 26/60 | 25/60 | same reactions lost on both, offset about four trials |
+| 19:24:45 | | | restart |
+| 19:30 | 60/60, (c) 0 | 60/60, (c) 0 | 1,060 online, refilling |
+
+In the 19:00 pair the ticks arrived on time and evenly on both machines: 3 run-host ticks more
+than 40 ms behind the twin, none in the 135-218 ms held band, no glued pairs. So this was not
+the held-address fault of 21 October. The decline didn't follow the online count (1,610-1,714
+after 16:00Z, fewer than the morning's better minutes) or our own logins (59-61 at every claim).
+It began at the 16:41Z restart, and the first read after it, 19 minutes into the process, was
+already bad, so it was not uptime. The operator said in public at 16:35Z that he was 'working on
+this' and blamed bot load. The likeliest reading is per-tick work grown past the 50 ms margin
+(section 2) without the ticks themselves running late. That was not measured directly.
+
+**Operator changes, 19:36-20:08Z** (dated by the page's process-start token, `client.js?v=`,
+which the engine sets to `Date.now()` at start; server/engine/src/web/pages/client.ts:13):
+
+- 19:36:00Z: restart after a 'Server is being updated' countdown (login code 14). The hiscore Time
+  hover changed from 'N ticks' to 'N seconds of game time', a string in neither upstream b565f2d9
+  nor our fork (server/engine/src/web/pages/hiscores.ts:59-68). The served `bot/client.js` was
+  byte-identical (md5 353760e9), which the published server/Dockerfile can't produce after an
+  engine change, so the demo runs unpublished engine code from a private build.
+- 19:56:28.9Z: restart. **T = 400 ms from here**: the engine's spectator feed
+  (`wss://<host>/worldfeed`, login-free) reports `tickMs: 400` in its hello (World.tickRate,
+  server/engine/src/web/worldfeed.ts:141) and per-tick server intervals with a median of 397-402 ms.
+  rs/41's fleet tick counters agree (0.3015 s per tick at 19:50Z, 0.4000 at 20:00Z). The
+  per-address session cap fell from 100 to 50 (the operator, in public; `MAX_PLAYERS_PER_IP`,
+  server/engine/src/engine/World.ts:1052-1058, refuses with code 7 'World is full', the same code
+  as the world cap), and the world held about 1,050-1,350 online afterwards against 1,650-1,800
+  before.
+- 20:08:12Z: restart. The hover became 'N ticks normalized to 400 ms per tick' (it had the old
+  form at 19:57:48Z), and the bundle was again unchanged.
+
+**After, T = 400.** 20:00Z: both machines 60/60, (c) 0, tick p90 447 (1.12T). 20:30Z: run host
+60/60, (c) 0, p90 488 (1.22T); the twin skipped on a claim. The 20:35Z delay sweep (section 2)
+puts the margin after a frame above 250 ms at the median, over 0.6T. While 400 ms holds, (a) is
+near-certain on any calm minute.
+
+The gate records carry this from 21:00Z on: each read records the feed's configured tick length,
+60 s of the engine's own tick intervals, a `T` field, the process start and an engine fingerprint
+(section 10, 'Gate history timer'). Older history files are not rewritten; read them with T = 300
+before 19:56:28Z on 22 October and T = 400 after.
+
 ## 10. Run-host recommendation
 
 **Where.** The machine that shows the visible browser tab runs in Ashburn: Fly's iad region, AWS
@@ -1113,13 +1195,56 @@ in `docs/speedrun/scripts/host-gate/`, and the read itself is `docs/speedrun/scr
 
   The account is a throwaway whose name and password exist only in the clone's `bots/gate/bot.env`
   (mode 600, on the host). The wrapper redacts the name and password from everything it keeps. A read takes
-  about 3 minutes. If it hangs, systemd kills the unit's whole control group at 270 s, so nothing
-  is left running.
+  about 4 minutes: the pre-login check's 60 s world-feed read, then the gate. If it hangs, systemd
+  kills the unit's whole control group at 345 s (the wrapper's budget holds 75 s for the feed
+  read on top of the probe's unchanged 200-240 s), so nothing is left running.
 - **Where the history lives.** Each firing writes one file, `~/gate-history/<UTC timestamp>.json`.
   A read's file starts with `utc` and `endUtc`, `commit`, `status` (`ok`, `not-probed`, `timeout`
-  or `error`), `on`, `onTime`, `catchUpsPerMinute`, `tickP90Ms`, `players` and `edge`, then
-  `preLogin` (players, `flyMachine`, `flyWorker` from step 4), with the gate's own JSON under
-  `gate`. A change of `flyMachine` between files marks a redeploy or machine swap. A skip writes `status: skip` and its reason in `note`. A broken read (`error`, `timeout`,
+  or `error`), `T`, `on`, `onTime`, `catchUpsPerMinute`, `tickP50Ms`, `tickP90Ms`, `players` and `edge`, then
+  `preLogin` (players, `flyMachine`, `flyWorker`, `serverStartUtc`, `serverStartToken`,
+  `serverUptimeMin`, the feed read and the engine fingerprint from step 4), with the gate's own JSON under
+  `gate`. A change of `flyMachine` between files marks a redeploy or machine swap. The three
+  `server*` fields come from the token in the public page's `client.js?v=<token>` import, which
+  the engine sets once at process start to `Date.now().toString(36)` (so base 36 decodes to the
+  start in epoch ms), and they're null when the page or token can't be read. The uptime is
+  measured to the read's `utc`. A change of `serverStartToken` marks a restart, which the player
+  count alone can miss: on 22 October the world restarted at 19:24:45Z and had 740 online
+  1.6 minutes later, well over the 300 floor. `tickP50Ms` is the gate's median tick interval
+  (`result.steadiness.p50`); about 300 against about 600 tells the two tick rates apart, so it
+  dates a return to 600 ms ticks to a read. Before login, `host-gate-feed.ts` (beside the
+  wrapper) reads the engine's login-free world feed (`wss://<server>/worldfeed`,
+  `server/engine/src/web/worldfeed.ts`) for 60 s on an empty 1x1 tile. It records the hello
+  frame's `tickMsConfigured` (`World.tickRate`, the configured rate) and `feedTick`, plus
+  `feedTickMs` {n, p50, p90, max, min} (the engine's own interval between ticks, with the first
+  frame dropped because it can span the time since the last feed client) and `feedTickGaps`
+  (frames whose tick number jumps by more than 1). These are null when the feed can't be read.
+  On 22 October at 20:19Z it read `tickMsConfigured` 400, p50 401 over 149 intervals. The
+  top-level `T` is the read's tick length: `tickMsConfigured` when the feed was read, else
+  `tickP50Ms` rounded, else null. Records written before `T` existed are labelled in the
+  tables, not rewritten: T = 300 before the 19:56:28Z restart on 22 October and T = 400 after
+  (main's ruling). `preLogin` also carries an engine fingerprint, from public pages fetched
+  alongside the player count, each field null when its fetch fails (`tickMsConfigured` belongs
+  with it):
+  - `hiscoreHover` is the first numeric hover on `/hiscores` (the Time column) with every
+    number as `N`. Upstream b565f2d9 and our fork render `N ticks`. On 22 October the demo
+    rendered `N seconds of game time` from about 19:34Z, then `N ticks normalized to N ms per tick`
+    (400 ms in the live text) after its 20:08Z restart. A change in it is a change in the
+    engine's own wording.
+  - `hiscoreChromeSha` hashes `/hiscores` with the text of every innermost table cell, every
+    player link and every number blanked. Names, ranks, levels and times don't move it; a change
+    in the engine's page template does.
+  - `playercountShape` hashes the `/playercount` response's keys and value types (its text with
+    numbers as `N` if it isn't JSON), so it moves only when that endpoint's format changes.
+  - `botBundleMd5` is the md5 of the served `/bot/client.js`. A webclient rebuild changes it,
+    even from identical source (UPSTREAM-WATCH.md, "Which commit is the demo serving?"), so it
+    dates client rebuilds separately from the engine.
+
+  A change in `hiscoreHover` or `hiscoreChromeSha` with `botBundleMd5` unchanged means an
+  engine-side deploy. The 19:36Z "Server is being updated" restart on 22 October is the first
+  known engine change. The 20:08Z restart that day is the first one seen with the md5
+  unchanged (`353760e9…` before and after). The published `server/Dockerfile` would have rebuilt
+  the bundle, so the demo's engine is deployed some other way, and an unchanged md5 across a
+  restart says nothing about the engine. A skip writes `status: skip` and its reason in `note`. A broken read (`error`, `timeout`,
   `not-probed`) puts its first error line in `note` and the last 40 lines of the probe's output in
   `outputTail`, with the account name and password redacted. The journal keeps one line per
   firing: `journalctl --user -t rs-gate-read`. Use `-t`, not `-u`: `-u` can miss the summary line,
