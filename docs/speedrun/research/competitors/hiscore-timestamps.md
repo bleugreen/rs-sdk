@@ -7,7 +7,11 @@ session that began at playtime 6,261, and the row reads 6,333 (6,261 + 72). The 
 cannot produce that value: the whole session lasted at most 66 seconds (about 220 ticks). The
 Overall row equals the largest skill stamp. Rows are written only at a clean logout and appear
 about 3 s after it. While the account is in the world, nothing on the board moves, including
-across a 1,500-tick autosave. For competitors, two kinds of stamp are logout playtimes and
+across a 1,500-tick autosave. A player page exists from the account's first login, but until
+its first save every row is blank, Overall included (`acquiredl13`, 2026-10-22, in
+`speedrun/tools/fixtures/hiscore`). Every save stamps Overall whatever the levels, and a skill
+row only from level 15 (`LoginServer.ts` `updateHiscores`; `cairn_h90`'s page: Overall 28 and no
+skill rows). For competitors, two kinds of stamp are logout playtimes and
 therefore upper bounds on the true reach tick: a stamp shared by several unrelated skills, and
 a page where every row carries one value. That covers every account in the overall top 25
 except nickoverall, and it covers the record (stunbaron, 35,916). Distinct stamps

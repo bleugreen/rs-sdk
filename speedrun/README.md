@@ -1160,7 +1160,12 @@ minus the step rows (the overhead), split into boundary rows, the resume walk's 
 ticks outside the runner (login to the first step, the end to the logout click). The hiscore
 check (`compareHiscore`, hiscore-timestamps.md): a skill row is the playtime its level was reached
 at (the earlier sessions' playtime plus the client tick); Overall is the latest level gained, or
-the logout playtime (each session's last tick + 1) when no level was gained.
+the logout playtime (each session's last tick + 1) when no level was gained. The page is read
+only once it shows this attempt's save (`hiscoreSettled`): Overall stamped, and the skill's row at
+the log's last level of it when that is 15 or more. The save lands when the player leaves, which a
+logout that wasn't confirmed can delay, so the read polls every 5 s for up to 2 minutes and then
+checks the page as it stands. A page with no save yet reads "no rows saved yet", and "no row
+(under level 15)" means a genuine sub-15 skill.
 
 Stops: the first Ctrl-C stops at the next `logoutSafe` boundary with `logoutClean`; a second
 Ctrl-C, SIGTERM or SIGHUP logs out at once (a browser tab outlives the process, so `timeout`'s
