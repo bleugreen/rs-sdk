@@ -35,7 +35,7 @@ export function mineWorld(fake: FakeSdk, mining: number): { climbs: Tile[] } {
             return;
         }
         if (a.method !== 'sendInteractLoc') return;
-        const [x, z, id] = a.args as number[];
+        const [x, z, id] = a.args as [number, number, number];
         const s = sdk.state!;
         if (id === GUILD_DOOR.id && x === GUILD_DOOR.at.x && z === GUILD_DOOR.at.z) {
             if (mining < GUILD_DOOR.mining) {
