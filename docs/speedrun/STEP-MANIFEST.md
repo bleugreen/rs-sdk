@@ -25,6 +25,11 @@ hand-off, which `speedrun/tools/slot-ledger.ts` checks against every step's free
 splits gets one module and one `Step` object per ID, so `S10a` was Prayer 1-43 (retired in v2: its bones ride S07) and `S10b` is Tree
 Gnome Village. IDs never move: a step that changes place keeps its ID.
 
+**Lab host (main's rule, fold-in 23).** fedora's lab engine stalls 14-40 s and then resumes 1 tick
+later, so every measured figure whose runs were on fedora carries '(fedora)' beside its citation, and
+a failure seen only on fedora never reverts a row from m on its own (RUN-ORDER.md, "How to read the
+numbers").
+
 **Three tick figures** per entry, all on SCORED's clock (in-world ticks at 300 ms):
 
 - **Expected** is RUN-ORDER.md v2's knife-on expected for the step. For a quest it is the **burst**
