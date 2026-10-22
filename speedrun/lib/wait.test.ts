@@ -1,10 +1,14 @@
-import { afterEach, beforeEach, describe, expect, jest, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, jest as bunJest, test } from 'bun:test';
 import { LOST_AFTER_TICKS } from '../runner/resume';
 import { FakeSdk } from './fake-sdk';
 import { IDLE_TICKS, nextTick, waitOrThrow, waitTicks, waitUntil, type WaitResult } from './wait';
 
 // Every test runs on fake timers: a tick is `jest.advanceTimersByTime(ms)`
 // followed by `sdk.tick()`, so the idle timer sees the wall time between ticks.
+
+// The locked @types/bun (1.2.15) predates bun:test's fake timers, which the
+// runtime CI pins (1.4.x) has; this names the part of that API used here.
+const jest = bunJest as unknown as { useFakeTimers(): void; useRealTimers(): void; advanceTimersByTime(ms: number): void };
 
 const saved = process.env.SPEEDRUN_TICK_MS;
 beforeEach(() => {
