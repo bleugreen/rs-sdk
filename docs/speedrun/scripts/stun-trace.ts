@@ -45,11 +45,11 @@ const picks = withMsg(/You pick the/);
 const levelUps = withMsg(/Congratulations/);
 const deferTicks = sorted.filter(t => ticks.get(t)!.defer);
 
-interface Stun { f: number; gap: number | null; deferJ: number[]; lostH: number; levelJ: number[]; row: string[] }
+interface Stun { f: number; gap: number | null; deferJ: number[]; lostH: number; levelJ: number[]; landedJ: number[]; row: string[] }
 const stuns: Stun[] = fails.map(f => {
     const next = attempts.find(a => a > f);
     const row: string[] = [];
-    const deferJ: number[] = [], levelJ: number[] = [];
+    const deferJ: number[] = [], levelJ: number[] = [], landedJ: number[] = [];
     let lostH = 0;
     for (let j = 1; j <= 11; j++) {
         const t = ticks.get(f + j);
@@ -57,10 +57,11 @@ const stuns: Stun[] = fails.map(f => {
         if (t.defer) deferJ.push(j);
         if (t.msgs.some(m => /Congratulations/.test(m))) levelJ.push(j);
         // a delay-free action the server refused: it arrived on a tick the player was delayed
-        if (j >= 3 && j <= 9) lostH += t.ops.filter(o => o === 'c' || o === 'a').length;
+        if (j >= 3 && j <= 10) lostH += t.ops.filter(o => o === 'c' || o === 'a').length;
+        for (const o of t.ops) if (o === 'C' || o === 'A') landedJ.push(j);
         row.push((t.ops.join('') || '-') + (t.defer ? '|' : ''));
     }
-    return { f, gap: next === undefined ? null : next - f, deferJ, lostH, levelJ, row };
+    return { f, gap: next === undefined ? null : next - f, deferJ, lostH, levelJ, landedJ, row };
 });
 
 const mean = (a: number[]) => (a.length ? +(a.reduce((x, y) => x + y, 0) / a.length).toFixed(3) : null);
@@ -78,7 +79,16 @@ console.log(`RESULT trace ${JSON.stringify({
     stunsWithDeferral: deferred.length, deferralsByK: byK,
     lostDelayFreeInWindow: stuns.reduce((a, s) => a + s.lostH, 0),
     failToNextAttempt: { all: { mean: mean(gaps(stuns)), hist: hist(gaps(stuns)) }, deferred: { mean: mean(gaps(deferred)), hist: hist(gaps(deferred)) }, clean: { mean: mean(gaps(clean)), hist: hist(gaps(clean)) } },
-    levelUpInStunByJ: hist(stuns.flatMap(s => s.levelJ))
+    levelUpInStunByJ: hist(stuns.flatMap(s => s.levelJ)),
+    // delay-free actions (C, A) the server accepted, per stun and by the tick they landed on; j >= 9 is T+10 or
+    // later, where xp can queue a level-up page that blocks the next attempt
+    delayFreeLanded: { perStun: mean(stuns.map(s => s.landedJ.length)), byJ: hist(stuns.flatMap(s => s.landedJ)) },
+    xpLateStuns: (() => {
+        const late = stuns.filter(s => s.landedJ.some(j => j >= 9));
+        const paged = stuns.filter(s => s.levelJ.some(j => j >= 9));
+        const rest = stuns.filter(s => !late.includes(s));
+        return { landedAtJ9plus: late.length, gap: { mean: mean(gaps(late)), hist: hist(gaps(late)) }, levelUpAtJ9plus: paged.length, levelUpGap: { mean: mean(gaps(paged)), hist: hist(gaps(paged)) }, others: { mean: mean(gaps(rest)) } };
+    })()
 })}`);
 const head = 'j(k)   ' + Array.from({ length: 11 }, (_, i) => `+${i + 1}(${i})`.padEnd(9)).join('');
 console.log('\nper stun, server ticks F+1..F+11 (k = j-1); gap = next attempt - F (10 on time)\n' + head);
