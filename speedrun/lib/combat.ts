@@ -48,6 +48,10 @@ export function questCastStyle(): Pick<FightOptions, 'castStyle'> {
     return castingStyle.style === 'defensive' ? { castStyle: 'defensive' } : {};
 }
 
+/** Ticks the first cast waits for a style click to show, and the spacing of re-sends. */
+const STYLE_CONFIRM_TICKS = 10;
+const STYLE_RESEND_TICKS = 3;
+
 /** The staff's defensive slot when the combat tab is not published or not recognised: Bash, Pound, Focus. */
 const STAFF_DEFENSIVE_STYLE = 2;
 
@@ -241,6 +245,8 @@ export interface FightResult {
     minHp: number;
     died: boolean;
     targetIndex: number;
+    /** Combat-style clicks sent for `castStyle` (0 when it was already selected). */
+    styleClicks: number;
 }
 
 /**
@@ -256,7 +262,7 @@ export async function fight(sdk: CombatSdk, target: NamePattern | NearbyNpc, o: 
     const doses0 = prayerDoses(s0);
     const r: FightResult = {
         ok: false, end: 'no target', ticks: 0, engaged: -1, dealt: 0, taken: 0, hits: 0, attacks: 0, levelUps: 0,
-        eats: 0, drinks: 0, prayerUsed: 0, prayerDoses: 0, minHp: s0.player?.hp ?? 0, died: false, targetIndex: npc0?.index ?? -1,
+        eats: 0, drinks: 0, prayerUsed: 0, prayerDoses: 0, minHp: s0.player?.hp ?? 0, died: false, targetIndex: npc0?.index ?? -1, styleClicks: 0,
     };
     const end = (s: BotWorldState, e: FightEnd): FightResult => {
         r.end = e;
@@ -281,23 +287,41 @@ export async function fight(sdk: CombatSdk, target: NamePattern | NearbyNpc, o: 
         void (o.spell !== undefined ? sdk.sendSpellOnNpc(idx, o.spell) : sdk.sendInteractNpc(idx, meleeOp));
     };
     const attacking = o.attack !== false;
-    if (attacking && o.spell !== undefined && o.castStyle === 'defensive') {
-        // Sent ahead of the cast on the same tick: the server handles a tick's packets in order.
-        const style = defensiveStyleIndex(s0);
-        if (s0.combatStyle?.currentStyle !== style) void sdk.sendSetCombatStyle(style);
+
+    // set_attackstyle (player_attackstyles.rs2) applies a style click only while the player is free
+    // (p_finduid); otherwise it resyncs the old com_mode without a word, and a cast under the old
+    // style pays no Defence. So the first cast waits until the published style shows the new one,
+    // the click re-sent every STYLE_RESEND_TICKS, and a style that drops back mid-fight is re-sent.
+    // An unpublished combat tab cannot be confirmed: one click, no wait.
+    const wantStyle = attacking && o.spell !== undefined && o.castStyle === 'defensive' ? defensiveStyleIndex(s0) : null;
+    const confirmable = s0.combatStyle !== undefined;
+    let styleSent = -Infinity;
+    const styleOff = (st: BotWorldState) => wantStyle !== null && st.combatStyle?.currentStyle !== wantStyle;
+    const assertStyle = (st: BotWorldState) => {
+        if (!styleOff(st) || st.tick - styleSent < STYLE_RESEND_TICKS || (!confirmable && r.styleClicks > 0)) return;
+        styleSent = st.tick;
+        r.styleClicks++;
+        void sdk.sendSetCombatStyle(wantStyle!);
+    };
+    const nextTick = async (prev: number): Promise<BotWorldState> => {
+        const w = await waitUntil(sdk, st => st.tick > prev, { maxTicks: 50 });
+        if (!w.ok) throw new Error(`fight: the client stopped publishing at tick ${prev}`);
+        return w.state;
+    };
+    let s = s0;
+    assertStyle(s);
+    while (confirmable && styleOff(s) && s.tick - t0 < STYLE_CONFIRM_TICKS) {
+        s = await nextTick(s.tick);
+        assertStyle(s);
     }
-    if (attacking) attack(t0);
+    if (attacking) attack(s.tick);
 
     const levelUp = levelUpChain();
     let answered: { key: string; tick: number } | null = null;
     const seen = new Set<string>();
     let missing = 0;
-    let s = s0;
     for (;;) {
-        const prev = s.tick;
-        const w = await waitUntil(sdk, st => st.tick > prev, { maxTicks: 50 });
-        if (!w.ok) throw new Error(`fight: the client stopped publishing at tick ${prev}`);
-        s = w.state;
+        s = await nextTick(s.tick);
         if (s.tick - t0 > (o.maxTicks ?? 600)) return end(s, 'timeout');
         for (const e of s.combatEvents ?? []) {
             const k = `${e.tick}:${e.observationId ?? ''}:${e.type}:${e.damage}:${e.sourceIndex}:${e.targetIndex}`;
@@ -351,6 +375,7 @@ export async function fight(sdk: CombatSdk, target: NamePattern | NearbyNpc, o: 
         let resend = upkeep.step(s);
         if (o.onTick && (await o.onTick(s, npc))) resend = true;
         if (!attacking || !npc) continue;
+        if (confirmable) assertStyle(s);
         if (o.spell !== undefined) {
             if (resend || s.tick - lastAttack >= (o.castEvery ?? 2)) attack(s.tick);
             continue;
