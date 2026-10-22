@@ -84,7 +84,8 @@ Options (`ROLE_OPTIONS` or the launcher entry's `options`):
 | Key | Default | Meaning |
 |---|---|---|
 | `kits` | required | receiver login name -> kit, in the harness's spelling `rune_axe:1,knife:1,logs:1` (`:noted` for banknotes, `cake:38:noted`) or as `[{ item, amount, noted? }]` with display names |
-| `serve` | none | the receiver to stage and serve now. Without it the role only takes returns |
+| `serve` | none | the receiver to stage and serve now, or an ordered list of them. A receiver with a delivery record is passed over, and the next one is staged as soon as one is served. Without it the role only takes returns |
+| `keepLogs` | 0 | normal logs held back in the bank and never put into a kit (stock for later steps). At start the role chops the bank up to this count; a kit's logs come only from above it |
 | `stand` | 3222,3222 | where to wait |
 | `bank` | Draynor | where kits are staged and returns banked (Lumbridge's own booths are upstairs) |
 | `returns` | every kit receiver | accounts whose trades are answered with `receiveFrom` and banked |
@@ -127,6 +128,44 @@ A hand-off, step by step:
 Returns: start it without `serve` (or leave it running after a hand-off). A
 returning account's trade request is answered with `receiveFrom`. The role gives
 nothing, logs `returned` with what came, and banks it at Draynor.
+
+## Loading full packs: the Firemaking droppers
+
+rs/228's assisted Firemaking 99 (cairn_burns) lights 157 logs that six `fm-row`
+droppers (cairn_d01-d06, `restock: {kind:'held'}`) drop beside the Lumbridge spawn.
+A held dropper logs in already carrying its one 28-log inventory and never banks, so
+the loading happens beforehand, in three hops:
+
+1. **Woodcutters to the giver.** The logs are in the woodcutters' banks (cairn_h10-h13),
+   and the woodcutters stand at Seers'. One at a time, a woodcutter is disabled in the
+   fleet and runs the `handover` role from the dev copy with `crossKandarin: true` and
+   `bank` Draynor. It crosses White Wolf Mountain with nothing withdrawn, withdraws
+   the logs as notes at Draynor and trades them to cairn_mule2 there. Then it is
+   re-enabled on its unchanged woodcutter entry, whose role walks it back to Seers'.
+   The giver lists the woodcutters in `returns`, so it takes and banks those trades.
+2. **The giver to each dropper.** cairn_mule2 runs the giver with all six packs in
+   `kits`, `freeSlots: 28`, `serve` listing d01-d06 in order, and `stand` and `bank`
+   both Draynor. Its bank un-notes the logs, so each pack goes over as 28 real logs.
+   Each dropper gets one delivery record, exactly as a rehearsal kit does.
+3. **Each dropper takes its pack** with this role's `load` option, one dropper at a time:
+
+```json
+{"load":{"from":"cairn_mule2","kit":"logs:2,oak_logs:4,willow_logs:7,maple_logs:13,yew_logs:2","park":{"x":3232,"z":3220}}}
+```
+
+   A fresh account's first login creates it. The role skips the tutorial and banks
+   all 18 starter items at Draynor, so the pack ends up holding nothing but its logs
+   (a held dropper drops whatever it carries). It then waits for the giver to come
+   into view and takes the trade with `receiveFrom`, wanting each log type by its
+   exact name and count. Last, it walks onto its `park` tile, where it will log in
+   for the attempt. The role then returns, and the launcher entry's `final: true`
+   logs it out. A trade that delivered anything short of the pack is never retried:
+   the role ends with an attention line.
+
+The droppers' credentials are in `~/rs-fleet/bots/<name>/bot.env` (created by
+`accounts.ts` `createAccountEnv`, directory 700, file 600). They are never in
+fleet.json. The park tiles are rs/228's: z=3220, x 3232-3237 for d01-d06, beside
+the row (z=3218/3219) and off it.
 
 ## The stall option: cakes from Ardougne
 

@@ -3,7 +3,8 @@ import { describe, expect, test } from 'bun:test';
 import type { InventoryItem } from '../../sdk/types';
 import { planOffers, type GiveResult } from '../lib/trade';
 import { memoryRoleState } from './role';
-import { decideStall, displayName, giveKitOnce, kitDeliveryKey, giveSpecs, kitHeld, kitOptions, kitSlots, lastContact, LUMBRIDGE_SPAWN, parseKit, splitLogs, STALL_BACKOFF_TICKS, stallOptions, type StallView } from './kits';
+import { BANKS } from './buyer';
+import { decideStall, displayName, giveKitOnce, kitDeliveryKey, giveSpecs, kitHeld, kitOptions, kitSlots, lastContact, loadedExactly, loadOptions, LUMBRIDGE_SPAWN, nextReceiver, parseKit, splitLogs, STALL_BACKOFF_TICKS, stallOptions, wantSpecs, type StallView } from './kits';
 
 const inv = (items: [number, number, string, number][]): InventoryItem[] =>
     items.map(([slot, id, name, count]) => ({ slot, id, name, count, optionsWithIndex: [] }));
@@ -55,10 +56,23 @@ describe('kit specs', () => {
 describe('options', () => {
     test('every rs/147 kit fits a fresh account; defaults stand at the tutorial exit', () => {
         const o = kitOptions({ kits: KITS, serve: 'cairn_chops' });
-        expect(o.serve).toBe('cairn_chops');
+        expect(o.serve).toEqual(['cairn_chops']);
         expect(o.stand).toEqual(LUMBRIDGE_SPAWN);
         expect(o.returns.sort()).toEqual(Object.keys(KITS).sort());
-        expect(kitOptions({ kits: KITS }).serve).toBeNull();
+        expect(o.keepLogs).toBe(0);
+        expect(kitOptions({ kits: KITS }).serve).toEqual([]);
+    });
+
+    test('serve as a list keeps its order; a repeat or an unknown receiver is refused', () => {
+        expect(kitOptions({ kits: KITS, serve: ['cairn_steals', 'cairn_chops'] }).serve).toEqual(['cairn_steals', 'cairn_chops']);
+        expect(() => kitOptions({ kits: KITS, serve: ['cairn_chops', 'CAIRN_CHOPS'] })).toThrow(/twice/);
+        expect(() => kitOptions({ kits: KITS, serve: ['cairn_chops', 'cairn_nobody'] })).toThrow(/no kit/);
+    });
+
+    test('keepLogs is 0-27', () => {
+        expect(kitOptions({ kits: KITS, keepLogs: 15 }).keepLogs).toBe(15);
+        expect(() => kitOptions({ kits: KITS, keepLogs: 28 })).toThrow(/keepLogs/);
+        expect(() => kitOptions({ kits: KITS, keepLogs: -1 })).toThrow(/keepLogs/);
     });
 
     test('a kit too big for the receiver, or serving an account with no kit, is refused', () => {
@@ -125,6 +139,72 @@ describe('logs', () => {
         expect(some.fromBank.find(i => i.item === 'Logs')!.amount).toBe(3);
         expect(splitLogs(kit, 10).chop).toBe(0);
         expect(splitLogs(parseKit(KITS.cairn_steals), 0)).toEqual({ fromBank: parseKit(KITS.cairn_steals), chop: 0 });
+    });
+});
+
+/** rs/228's six Firemaking droppers (2026-10-21): 157 logs in route order, spares on the last, dropper 5 with 4 magic spares. */
+const DROPPERS = {
+    cairn_d01: 'logs:2,oak_logs:4,willow_logs:7,maple_logs:13,yew_logs:2',
+    cairn_d02: 'yew_logs:22,magic_logs:6',
+    cairn_d03: 'magic_logs:28',
+    cairn_d04: 'magic_logs:28',
+    cairn_d05: 'magic_logs:28',
+    cairn_d06: 'magic_logs:21,logs:1,oak_logs:1,willow_logs:1,maple_logs:2,yew_logs:2'
+};
+
+describe('a queue of receivers', () => {
+    test('every dropper is a full pack; the giver refuses them at the default 10 free slots', () => {
+        for (const kit of Object.values(DROPPERS)) expect(kitSlots(parseKit(kit))).toBe(28);
+        expect(() => kitOptions({ kits: DROPPERS })).toThrow(/28 slots, the receiver has 10/);
+        expect(kitOptions({ kits: DROPPERS, freeSlots: 28 }).serve).toEqual([]);
+        const logs = Object.values(DROPPERS).flatMap(k => parseKit(k)).reduce((a, i) => a + i.amount, 0);
+        expect(logs).toBe(157 + 11);
+    });
+
+    test('nextReceiver passes over every receiver with a record, in order', async () => {
+        const serve = Object.keys(DROPPERS);
+        const state = memoryRoleState();
+        expect(nextReceiver(serve, state)).toBe('cairn_d01');
+        await state.set(kitDeliveryKey('cairn_d01'), { outcome: 'delivered' });
+        await state.set(kitDeliveryKey('cairn_d02'), { outcome: 'uncertain' });
+        expect(nextReceiver(serve, state)).toBe('cairn_d03');
+        for (const r of serve) await state.set(kitDeliveryKey(r), { outcome: 'delivered' });
+        expect(nextReceiver(serve, state)).toBeNull();
+        expect(nextReceiver([], state)).toBeNull();
+    });
+});
+
+describe('load (the receiving side)', () => {
+    const d01 = { from: 'cairn_mule2', kit: DROPPERS.cairn_d01, park: { x: 3232, z: 3220 } };
+
+    test('options: giver, kit, Draynor by default, an optional park tile', () => {
+        const o = loadOptions(d01);
+        expect(o.from).toBe('cairn_mule2');
+        expect(o.bank).toEqual(BANKS.draynor);
+        expect(o.park).toEqual({ x: 3232, z: 3220 });
+        expect(o.kit.map(i => i.item)).toEqual(['Logs', 'Oak logs', 'Willow logs', 'Maple logs', 'Yew logs']);
+        expect(loadOptions({ from: 'cairn_mule2', kit: 'knife:1' }).park).toBeNull();
+        expect(() => loadOptions({ from: 'Cairn Mule', kit: 'knife:1' })).toThrow(/login name/);
+        expect(() => loadOptions({ from: 'cairn_mule2', kit: 'magic_logs:29' })).toThrow(/29 slots/);
+        expect(() => loadOptions('cairn_mule2')).toThrow(/load/);
+    });
+
+    test('loaded means the exact kit and nothing else: a starter item left over, or one log short, is not', () => {
+        const kit = parseKit('yew_logs:2,magic_logs:3');
+        const logs: [number, number, string, number][] = [[0, 1515, 'Yew logs', 1], [1, 1515, 'Yew logs', 1], [2, 1513, 'Magic logs', 1], [3, 1513, 'Magic logs', 1], [4, 1513, 'Magic logs', 1]];
+        expect(loadedExactly(inv(logs), kit)).toBe(true);
+        expect(loadedExactly(inv([...logs, [5, 590, 'Tinderbox', 1]]), kit)).toBe(false);
+        expect(loadedExactly(inv(logs.slice(1)), kit)).toBe(false);
+        expect(loadedExactly(inv([...logs, [5, 1513, 'Magic logs', 1]]), kit)).toBe(false);
+        expect(loadedExactly([], kit)).toBe(false);
+    });
+
+    test('wantSpecs are anchored: Logs never matches Oak logs', () => {
+        const [normal, oak] = wantSpecs(parseKit('logs:2,oak_logs:4'));
+        expect(normal).toMatchObject({ amount: 2 });
+        expect((normal!.item as RegExp).test('Logs')).toBe(true);
+        expect((normal!.item as RegExp).test('Oak logs')).toBe(false);
+        expect((oak!.item as RegExp).test('oak logs')).toBe(true);
     });
 });
 

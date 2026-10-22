@@ -22,13 +22,19 @@
 // account: over White Wolf Mountain to the East Ardougne baker's stall, steal
 // until `target` cakes are held, bank them, and bring them back noted to the kit
 // giver at Lumbridge (stallTrip below).
+//
+// With `load` set instead, the role is the receiving side for an account that
+// must log in already carrying a full pack (a Firemaking dropper): it leaves the
+// tutorial, banks every starter item, takes its kit from the giver with
+// receiveFrom, walks to its park tile and finishes (loadTrip below).
 import { TRADE_REQUEST_CHAT_TYPE } from '../../sdk/types';
 import type { BotWorldState, InventoryItem } from '../../sdk/types';
 import { crossFromKandarin, crossToKandarin, type Traveller } from '../lib/kandarin';
-import { give, receiveFrom, sameName, type GiveResult, type GiveSpec } from '../lib/trade';
+import { give, receiveFrom, sameName, type GiveResult, type GiveSpec, type WantSpec } from '../lib/trade';
 import { BANKS, Buyer, type Tile } from './buyer';
 import { ChatCursor, isStackableName, planPackage, type PackageItem } from './mule';
-import { runStandalone, type Role, type RoleContext, type RoleState } from './role';
+import { runStandalone, type Role, type RoleContext, type RoleFinish, type RoleState } from './role';
+import { waitForPlayer } from './wine';
 
 /** Where the tutorial's last label drops a new account (tutorial.rs2 tutorial_complete, p_telejump 0_50_50_22_22). */
 export const LUMBRIDGE_SPAWN: Tile = { x: 3222, z: 3222 };
@@ -132,8 +138,8 @@ export function splitLogs(kit: readonly PackageItem[], bankLogs: number): { from
 export interface KitOptions {
     /** Receiver login name -> kit. */
     kits: Record<string, PackageItem[]>;
-    /** The receiver to stage and serve now (a key of `kits`); none = returns only. */
-    serve: string | null;
+    /** Receivers to stage and serve, in order (keys of `kits`); one with a delivery record is passed over. Empty = returns only. */
+    serve: string[];
     /** Where to stand (default the tutorial's exit tile). */
     stand: Tile;
     /** Bank for staging and for returns (default Draynor, the nearest booths to Lumbridge on the ground floor). */
@@ -142,6 +148,8 @@ export interface KitOptions {
     returns: string[];
     /** Free slots a receiver has (default 10, after the tutorial's starter items). */
     freeSlots: number;
+    /** Normal logs held back in the bank for later (never put into a kit); chopped up to this count at start. Default 0. */
+    keepLogs: number;
 }
 
 function tileOption(raw: unknown, fallback: Tile, key: string): Tile {
@@ -165,10 +173,19 @@ export function kitOptions(raw: Record<string, unknown>): KitOptions {
         if (slots > freeSlots) throw new Error(`kits.${name}: needs ${slots} slots, the receiver has ${freeSlots} free`);
         kits[name] = kit;
     }
-    const serve = raw.serve === undefined || raw.serve === null || raw.serve === '' ? null : String(raw.serve).trim().toLowerCase();
-    if (serve !== null && !kits[serve]) throw new Error(`kits: serve "${serve}" has no kit`);
+    const rawServe = raw.serve === undefined || raw.serve === null || raw.serve === '' ? [] : Array.isArray(raw.serve) ? raw.serve : [raw.serve];
+    const serve = rawServe.map(s => String(s).trim().toLowerCase());
+    for (const s of serve) if (!kits[s]) throw new Error(`kits: serve "${s}" has no kit`);
+    if (new Set(serve).size !== serve.length) throw new Error('kits: serve lists a receiver twice');
     const returns = raw.returns === undefined ? Object.keys(kits) : (raw.returns as unknown[]).map(r => String(r).trim().toLowerCase());
-    return { kits, serve, stand: tileOption(raw.stand, LUMBRIDGE_SPAWN, 'stand'), bank: tileOption(raw.bank, BANKS.draynor, 'bank'), returns, freeSlots };
+    const keepLogs = raw.keepLogs === undefined ? 0 : Number(raw.keepLogs);
+    if (!Number.isInteger(keepLogs) || keepLogs < 0 || keepLogs > 27) throw new Error('kits: keepLogs must be 0-27');
+    return { kits, serve, stand: tileOption(raw.stand, LUMBRIDGE_SPAWN, 'stand'), bank: tileOption(raw.bank, BANKS.draynor, 'bank'), returns, freeSlots, keepLogs };
+}
+
+/** The first receiver in `serve` with no delivery record, or null when every one has one. */
+export function nextReceiver(serve: readonly string[], state: Pick<RoleState, 'get'>): string | null {
+    return serve.find(r => state.get(kitDeliveryKey(r)) === undefined) ?? null;
 }
 
 /** Each receiver gets one starter kit, even across role or launcher restarts. */
@@ -219,12 +236,21 @@ class KitGiver {
     private needsBank = false;
     private lastLog = 0;
     private seenReceiver = false;
+    private logsKept = false;
 
     constructor(private readonly ctx: RoleContext) {
         this.o = kitOptions(ctx.options);
         this.buyer = new Buyer(ctx);
         this.requests = new ChatCursor(ctx.sdk, [TRADE_REQUEST_CHAT_TYPE]);
-        this.pending = this.o.serve;
+        this.pending = nextReceiver(this.o.serve, ctx.state);
+    }
+
+    /** On to the next receiver in `serve` that has no delivery record. */
+    private advance(): void {
+        this.pending = nextReceiver(this.o.serve, this.ctx.state);
+        this.staged = false;
+        this.seenReceiver = false;
+        this.shortSince = 0;
     }
 
     private log(message: string, data?: Record<string, unknown>): void {
@@ -247,7 +273,8 @@ class KitGiver {
         await this.buyer.prepare();
         await ctx.bot.dismissBlockingUI();
         if (ctx.sdk.getTradeState().isOpen) await ctx.bot.declineTrade();
-        this.log('kits ready', { serve: this.pending, kit: this.pending ? describe(this.kit) : null, stand: this.o.stand, returns: this.o.returns });
+        const recorded = this.o.serve.filter(r => ctx.state.get(kitDeliveryKey(r)) !== undefined);
+        this.log('kits ready', { serve: this.pending, kit: this.pending ? describe(this.kit) : null, queue: this.o.serve, recorded, stand: this.o.stand, returns: this.o.returns, keepLogs: this.o.keepLogs });
         while (!ctx.signal.aborted) {
             try {
                 await this.cycle();
@@ -263,8 +290,11 @@ class KitGiver {
         const { sdk } = this.ctx;
         if (this.pending && this.ctx.state.get(kitDeliveryKey(this.pending)) !== undefined) {
             this.log('prior hand-off recorded; not serving another kit', { to: this.pending, record: this.ctx.state.get(kitDeliveryKey(this.pending)) });
-            this.pending = null;
-            this.staged = false;
+            this.advance();
+        }
+        if (!this.logsKept && this.o.keepLogs > 0 && !sdk.getTradeState().isOpen) {
+            await this.keepLogs();
+            this.logsKept = true;
         }
         if (this.pending && !this.staged) {
             if (this.shortSince && Date.now() - this.shortSince < SHORT_RETRY_MS) {
@@ -294,7 +324,7 @@ class KitGiver {
         await this.buyer.atBank(this.o.bank, async () => {
             await this.buyer.depositAllBut([]);
             const bank = sdk.getBankItems();
-            const split = splitLogs(this.kit, bank.find(b => sameName(b.name, LOGS))?.count ?? 0);
+            const split = splitLogs(this.kit, Math.max(0, (bank.find(b => sameName(b.name, LOGS))?.count ?? 0) - this.o.keepLogs));
             const plan = planPackage({ name: to, items: split.fromBank }, bank);
             if (plan.missing.length) {
                 short = plan.missing;
@@ -323,6 +353,26 @@ class KitGiver {
         if (!kitHeld(sdk.getInventory(), this.kit)) throw new Error(`kit not in the pack after staging: ${describe(sdk.getInventory()).join(', ')}`);
         this.log('kit staged', { serve: to, kit: describe(this.kit), at: this.o.stand });
         return true;
+    }
+
+    /** Top the bank's normal logs up to `keepLogs`, chopping the shortfall with the bronze axe. */
+    private async keepLogs(): Promise<void> {
+        const { sdk, bot } = this.ctx;
+        let short = 0;
+        await this.buyer.atBank(this.o.bank, async () => {
+            await this.buyer.depositAllBut([]);
+            short = this.o.keepLogs - (sdk.getBankItems().find(b => sameName(b.name, LOGS))?.count ?? 0);
+            if (short <= 0) return;
+            const axe = sdk.getBankItems().find(b => /^bronze axe$/i.test(b.name));
+            if (!axe) throw new Error('keepLogs: no bronze axe in the bank');
+            await bot.withdrawItem(axe, 1);
+        });
+        if (short > 0) {
+            const ok = await this.chopLogs(short);
+            await this.buyer.atBank(this.o.bank, () => this.buyer.depositAllBut([]));
+            if (!ok) this.log('keepLogs short', { want: this.o.keepLogs, short });
+        }
+        this.log('logs kept', { keepLogs: this.o.keepLogs, inBank: sdk.getBankItems().find(b => sameName(b.name, LOGS))?.count ?? 0 });
     }
 
     /** Chop normal trees until the pack holds `want` Logs. */
@@ -371,13 +421,12 @@ class KitGiver {
         // The receiver's own trade request lands in the chat too; it is this trade's, not a return.
         this.requests.next();
         if (r.ok) {
-            this.pending = null;
-            this.staged = false;
             this.needsBank = true;
+            this.advance();
         } else if (this.ctx.state.get(kitDeliveryKey(to)) !== undefined) {
             this.log('hand-off unsettled; check receiver before serving again', { to, inventory: describe(sdk.getInventory()) });
-            this.pending = null;
-            this.staged = false;
+            this.needsBank = true;
+            this.advance();
         }
     }
 
@@ -584,6 +633,103 @@ export async function stallTrip(ctx: RoleContext): Promise<{ cakes: number; deli
     return { cakes, delivered };
 }
 
+// ============ Loading a full pack (Firemaking droppers) ============
+
+export interface LoadOptions {
+    /** The kit giver's login name (cairn_mule2). */
+    from: string;
+    /** Exactly what the pack holds when the role ends. */
+    kit: PackageItem[];
+    /** Where the starter items are banked and the kit is taken (default Draynor, where the giver stands). */
+    bank: Tile;
+    /** The exact tile to end on, which is where the account logs in next time; null stays at the bank. */
+    park: Tile | null;
+}
+
+export function loadOptions(raw: unknown): LoadOptions {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('load: options.load must be { from, kit, bank?, park? }');
+    const o = raw as Record<string, unknown>;
+    const from = String(o.from ?? '').trim().toLowerCase();
+    if (!/^[a-z0-9_]{1,12}$/.test(from)) throw new Error("load: from must be the giver's login name");
+    const kit = parseKit(o.kit, 'load.kit');
+    const slots = kitSlots(kit);
+    if (slots > 28) throw new Error(`load.kit: needs ${slots} slots, a pack has 28`);
+    const park = o.park === undefined || o.park === null ? null : tileOption(o.park, LUMBRIDGE_SPAWN, 'load.park');
+    return { from, kit, bank: tileOption(o.bank, BANKS.draynor, 'load.bank'), park };
+}
+
+/** The pack holds the kit at its exact counts and nothing else (a held fm-row dropper drops every item it carries). */
+export function loadedExactly(inventory: ReadonlyArray<Pick<InventoryItem, 'name' | 'count'>>, kit: readonly PackageItem[]): boolean {
+    const total = (rows: Array<[string, number]>) => {
+        const m = new Map<string, number>();
+        for (const [name, n] of rows) m.set(name, (m.get(name) ?? 0) + n);
+        return m;
+    };
+    const have = total(inventory.map(i => [i.name.toLowerCase(), i.count]));
+    const want = total(kit.map(i => [i.item.toLowerCase(), i.amount]));
+    return have.size === want.size && [...want].every(([name, n]) => have.get(name) === n);
+}
+
+/** What receiveFrom waits for: each kit item by its exact name and count (`Logs` must not match `Oak logs`). */
+export function wantSpecs(kit: readonly PackageItem[]): WantSpec[] {
+    return kit.map(i => ({ item: new RegExp(`^${escapeRegExp(i.item)}$`, 'i'), amount: i.amount }));
+}
+
+/** Trade attempts before giving up; each waits up to LOAD_WAIT_MS for the giver to come into view. */
+const LOAD_ATTEMPTS = 6;
+const LOAD_WAIT_MS = 10 * 60_000;
+
+/**
+ * The receiving side of a full-pack load: tutorial, bank the starter items,
+ * take the kit, park. A trade that delivered anything short of the kit is not
+ * retried: the role ends with an attention line for a person.
+ */
+export async function loadTrip(ctx: RoleContext): Promise<RoleFinish> {
+    const o = loadOptions(ctx.options.load);
+    const { sdk, bot } = ctx;
+    const buyer = new Buyer(ctx);
+    const pack = () => sdk.getInventory();
+    await buyer.prepare();
+    await bot.dismissBlockingUI();
+    if (sdk.getTradeState().isOpen) await bot.declineTrade();
+    if (!loadedExactly(pack(), o.kit)) {
+        const keep = kitHeld(pack(), o.kit) ? o.kit.map(i => i.item) : [];
+        await buyer.atBank(o.bank, () => buyer.depositAllBut(keep));
+        ctx.log('load: waiting for the giver', { from: o.from, kit: describe(o.kit), freeSlots: 28 - pack().length });
+        for (let attempt = 1; attempt <= LOAD_ATTEMPTS && !kitHeld(pack(), o.kit) && !ctx.signal.aborted; attempt++) {
+            if (!(await waitForPlayer(sdk, o.from, LOAD_WAIT_MS))) {
+                ctx.log('load: giver not in view', { from: o.from, attempt });
+                continue;
+            }
+            const r = await receiveFrom(sdk, o.from, { want: wantSpecs(o.kit), openTimeoutMs: 120_000 });
+            ctx.log('load: trade', { from: o.from, attempt, ok: r.ok, reason: r.reason ?? null, received: describe(r.received), ticks: r.ticks });
+            if (r.received.length > 0) break;
+        }
+    }
+    if (!loadedExactly(pack(), o.kit)) {
+        ctx.log('load: NOT loaded', { from: o.from, inventory: describe(pack()), kit: describe(o.kit) });
+        return { attention: `load from ${o.from} incomplete (holds ${describe(pack()).join(', ') || 'nothing'}): read both logs before loading again` };
+    }
+    const parked = o.park ? await parkOn(ctx, buyer, o.park) : true;
+    const p = sdk.getState()?.player;
+    ctx.log('loaded', { from: o.from, kit: describe(o.kit), at: p ? { x: p.worldX, z: p.worldZ } : null, park: o.park, parked, tick: sdk.getState()?.tick ?? null });
+    return parked ? {} : { attention: `loaded but not on the park tile (${o.park!.x},${o.park!.z})` };
+}
+
+/** Stand on exactly `t` (the plain walk stops within a few tiles). */
+async function parkOn(ctx: RoleContext, buyer: Buyer, t: Tile): Promise<boolean> {
+    const on = () => {
+        const p = ctx.sdk.getState()?.player;
+        return !!p && p.worldX === t.x && p.worldZ === t.z;
+    };
+    await buyer.walk(t);
+    for (let i = 0; i < 5 && !on() && !ctx.signal.aborted; i++) {
+        await ctx.bot.walkTo(t.x, t.z, 0);
+        await ctx.sdk.waitForTicks(1).catch(() => {});
+    }
+    return on();
+}
+
 /** One name per distinct inventory item, for depositing every stack once. */
 function firstNames(inventory: ReadonlyArray<{ name: string }>): string[] {
     return [...new Set(inventory.map(i => i.name))];
@@ -594,6 +740,7 @@ export const role: Role = {
     produces: [],
     async run(ctx) {
         if (ctx.options.stall !== undefined) await stallTrip(ctx);
+        else if (ctx.options.load !== undefined) return loadTrip(ctx);
         else await new KitGiver(ctx).run();
     }
 };
