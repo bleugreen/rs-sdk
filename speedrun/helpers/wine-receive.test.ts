@@ -2,7 +2,9 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import type { BotWorldState, InventoryItem } from '../../sdk/types';
 import { baseState, FakeSdk, type SentAction } from '../lib/fake-sdk';
 import { ITEM } from './wine-common';
-import { afterDeposit, depositButtons, receiveWine, splitDelivery, timerHeld, type ReceiverSdk } from './wine-receive';
+import { fakeClock, peek, tickEvery, useFakeTicks } from '../lib/fake-ticks';
+import { IDLE_TICKS, STALLED } from '../lib/wait';
+import { afterDeposit, awaitFiring, depositButtons, drainChat, receiveWine, splitDelivery, timerHeld, type ReceiverSdk } from './wine-receive';
 
 describe('timerHeld / afterDeposit', () => {
     test('the bank must open before the due tick: the timer phase runs before interactions', () => {
@@ -11,6 +13,31 @@ describe('timerHeld / afterDeposit', () => {
         expect(afterDeposit(111, 120)).toBe('await-firing');
         expect(afterDeposit(120, 120)).toBe('relog');
         expect(afterDeposit(135, 120)).toBe('relog');
+    });
+});
+
+describe('waits on a slow minute (fake timers)', () => {
+    useFakeTicks();
+    const cookingXp = (experience: number) => ({ skills: [{ name: 'Cooking', level: 40, baseLevel: 40, experience }] as never });
+
+    test('awaitFiring 300 ticks out at 340 ms a tick sees the firing on its due tick (102 s, past the old 97 s budget)', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 0, ...cookingXp(1_000) }));
+        const p = awaitFiring(sdk, 300);
+        tickEvery(sdk, 340, 299);
+        expect(await peek(p)).toBeUndefined();
+        tickEvery(sdk, 340, 1, cookingXp(1_100));
+        expect(await p).toMatchObject({ fired: true, tick: 300, xpGained: 100 });
+    });
+
+    test('a client that stops publishing ends drainChat as STALLED, and awaitFiring as not fired', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 0, ...cookingXp(1_000) }));
+        const drain = drainChat(sdk);
+        const firing = awaitFiring(sdk, 300);
+        fakeClock.advanceTimersByTime(IDLE_TICKS * 300 - 1);
+        expect(await peek(drain)).toBeUndefined();
+        fakeClock.advanceTimersByTime(1);
+        expect(await drain).toMatchObject({ ok: false, reason: STALLED });
+        expect(await firing).toMatchObject({ fired: false, tick: -1 });
     });
 });
 

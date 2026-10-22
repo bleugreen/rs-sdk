@@ -23,7 +23,7 @@
 //   cueDir     default RC_CUE_DIR, else run-machine/rc-cue in the checkout
 import type { BotWorldState, NearbyPlayer } from '../../sdk/types';
 import { give } from '../lib/trade';
-import { tickMs } from '../lib/wait';
+import { tickClock, tickMs } from '../lib/wait';
 import {
     assertUntracked,
     chooseTurn,
@@ -330,10 +330,13 @@ export class AltarGiver {
             let lastTick = -1;
             const finish = (v: Outcome | { late: number }) => {
                 unsub();
-                clearTimeout(wall);
+                clock.stop();
                 resolve(v);
             };
+            // Reaching `judge` ends the turn; the tick limit only matters if the tick clock restarts.
+            const limit = judge - (this.s?.tick ?? a.myT) + 20;
             const onFrame = (st: BotWorldState) => {
+                clock.see(st);
                 if (st.tick === lastTick) return; // republication within the tick
                 lastTick = st.tick;
                 if (this.armed !== a && !this.started) return finish('cancelled');
@@ -350,9 +353,10 @@ export class AltarGiver {
                     i++;
                 }
                 if (st.tick >= judge) finish(count(st, ESSENCE) < before && !st.trade?.isOpen ? 'gave' : 'missed');
+                else if (clock.elapsed > limit) finish('missed');
             };
+            const clock = tickClock(this.s?.tick, () => finish('missed'), this.s?.tick);
             const unsub = sdk.onStateUpdate(onFrame);
-            const wall = setTimeout(() => finish('missed'), (judge - (this.s?.tick ?? a.myT) + 20) * 1200);
             const cur = this.s;
             if (cur) onFrame(cur);
         });

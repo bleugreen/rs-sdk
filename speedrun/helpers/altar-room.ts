@@ -5,7 +5,7 @@
 import type { BotWorldState, InventoryItem, NearbyLoc } from '../../sdk/types';
 import { ALTARS } from '../lib/runecraft';
 import { withdrawMany } from '../lib/bank';
-import { tickMs } from '../lib/wait';
+import { waitUntil } from '../lib/wait';
 import { closeBank, depositAllExcept, openBank, walkNear } from './mule';
 import type { RoleContext } from './role';
 import { acceptSupplies } from './wine';
@@ -89,14 +89,13 @@ export function findItem(s: BotWorldState | null | undefined, re: RegExp): Inven
     return s?.inventory.find(i => real(i, re));
 }
 
-/** Resolve on the first state for which `pred` holds, or false after `ticks` server ticks. */
+/**
+ * Resolve true on the first state for which `pred` holds, or false once
+ * 2 x (`ticks` + 5) ticks pass (the budget this wait had at a 300 ms tick when
+ * it was wall-clock bounded) or the client stops publishing.
+ */
 export async function until(ctx: Pick<RoleContext, 'sdk'>, pred: (s: BotWorldState) => boolean, ticks: number): Promise<boolean> {
-    // Twice the nominal tick: the demo's ticks run long under load.
-    const ms = (ticks + 5) * tickMs() * 2;
-    return ctx.sdk.waitForCondition(pred, ms).then(
-        () => true,
-        () => false
-    );
+    return (await waitUntil(ctx.sdk, pred, { maxTicks: 2 * (ticks + 5) })).ok;
 }
 
 function nearestLoc(ctx: Pick<RoleContext, 'sdk'>, re: RegExp): NearbyLoc | undefined {

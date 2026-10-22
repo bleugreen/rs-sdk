@@ -34,7 +34,7 @@ import { createHash } from 'node:crypto';
 import { withdrawMany, type WithdrawSpec } from '../lib/bank';
 import { isEastOfTollGate, TOLL_GP, travelTo, type Tile, type TravelResult } from '../lib/toll-gate';
 import { give, sameName, type GiveResult } from '../lib/trade';
-import { waitTicks } from '../lib/wait';
+import { STALLED, waitTicks } from '../lib/wait';
 import { altarData, inRoom, leaveRoom, ROUTE_ALTARS, type AltarName } from './altar-room';
 import { inMine } from './essence';
 import { closeBank, depositAllExcept, ensureOutOfTutorial, openBank } from './mule';
@@ -140,7 +140,7 @@ export function giveOutcome(r: GiveResult, items: Handover['items'], lost: Map<s
     }
     if ([...lost.values()].some(n => n > 0)) return 'uncertain';
     if (r.reason !== undefined && NEVER_OPENED.has(r.reason)) return 'retry';
-    if (r.reason === 'timeout' || r.reason?.startsWith('no settlement')) return 'uncertain';
+    if (r.reason === 'timeout' || r.reason === STALLED || r.reason?.startsWith('no settlement')) return 'uncertain';
     return 'retry';
 }
 

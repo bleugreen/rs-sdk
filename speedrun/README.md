@@ -90,8 +90,13 @@ speedrun/
 - **Wait on ticks or on the effect, never on "any change".** The client
   republishes state after every executed action within the same tick, so
   `waitForStateChange` resolves against stale state. `wait.ts` keys every wait
-  on `state.tick` or on the specific field. Its wall-clock backstop scales
-  with `tickMs()` (`SPEEDRUN_TICK_MS`, else `NODE_TICKRATE`, else 300).
+  on `state.tick` or on the specific field. `maxTicks` is the only limit on
+  a ticking wait, however slow the ticks; a wait fails as `idle` only when no
+  new tick arrives for `IDLE_TICKS` (20) ticks of wall time, scaled by
+  `tickMs()` (`SPEEDRUN_TICK_MS`, else `NODE_TICKRATE`, else 300).
+  `onStates` (feed every state to a step until it returns), `converse` and
+  the helpers' own state listeners take the same two limits from the same
+  `tickClock`; none has a total wall-clock budget.
 - Tick logs go to `speedrun/runs/<runId>.jsonl`, or to `$SPEEDRUN_LOG`.
 
 ## Measurements: provenance

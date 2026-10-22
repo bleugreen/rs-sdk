@@ -129,6 +129,8 @@ export async function stopProgram(sdk: ProgramSdk): Promise<ProgramStatus | null
 export interface AwaitOptions {
     /** Give up after this much wall time (default: no limit). */
     timeoutMs?: number;
+    /** Give up once this many ticks pass while the run is still going (default: no limit); counted on ticks, so a slow minute does not shorten it. */
+    maxTicks?: number;
     /**
      * Reject when no state arrives for this long: the tab is wedged or gone, and the
      * session watchdog will relaunch it (default 20 ticks).
@@ -172,6 +174,9 @@ export function awaitProgram(sdk: ProgramSdk, runId: number, opts: AwaitOptions 
             if (s.tick < lastTick) return finish(() => reject(new ProgramError(`tick went back from ${lastTick} to ${s.tick} (page reloaded?); program run ${runId} is gone`, programStatus(s))));
             lastTick = s.tick;
             const st = programStatus(s);
+            if (opts.maxTicks !== undefined && s.tick - firstTick > opts.maxTicks && !(st && st.runId === runId && st.phase !== 'running')) {
+                return finish(() => reject(new ProgramError(`program run ${runId} still running after ${opts.maxTicks} ticks`, st)));
+            }
             if (!st || st.runId < runId) {
                 if (!seen && s.tick - firstTick <= 10) return;
                 return finish(() => reject(new ProgramError(`program run ${runId} is not in the page's state (page reloaded?)`, st)));
@@ -274,11 +279,11 @@ export type DirectProbeResult = ProbeResult & { path: 'direct'; source: 'in-page
  */
 export async function probeInPage(
     sdk: ProgramSdk,
-    opts: { trials?: number; maxWait?: number; timeoutMs?: number; dirs?: ReadonlyArray<readonly [number, number]> } = {}
+    opts: { trials?: number; maxWait?: number; maxTicks?: number; dirs?: ReadonlyArray<readonly [number, number]> } = {}
 ): Promise<DirectProbeResult> {
     const trials = opts.trials ?? 20;
     const params = { trials, maxWait: opts.maxWait ?? 8, ...(opts.dirs ? { dirs: opts.dirs.map(d => [d[0], d[1]]) } : {}) };
-    const end = await runProgram(sdk, 'probe', params, { timeoutMs: opts.timeoutMs ?? (trials * 3 + 60) * tickMs() });
+    const end = await runProgram(sdk, 'probe', params, { maxTicks: opts.maxTicks ?? trials * 3 + 60 });
     const r = end.result as InPageProbeResult | undefined;
     if (!r) throw new ProgramError('probe ended without a result', end);
     // the page reports gaps between decoded ticks; the gate scores arrivals

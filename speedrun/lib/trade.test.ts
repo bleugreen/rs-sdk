@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import type { BotWorldState, GameMessage, InventoryItem, TradeItem, TradeState } from '../../sdk/types';
 import { baseState, FakeSdk, flush } from './fake-sdk';
+import { fakeClock, microtasks, peek, tickEvery, useFakeTicks } from './fake-ticks';
+import { IDLE_TICKS, STALLED } from './wait';
 import { decideGiver, decideReceiver, give, newGiverCtx, newReceiverCtx, planOffers, receiveFrom, sameName, SETTLE_TICKS, type GiverCtx, type ReceiverCtx, type TradeSdk } from './trade';
 
 const inv = (slot: number, id: number, name: string, count = 1): InventoryItem => ({ slot, id, name, count, optionsWithIndex: [] });
@@ -373,6 +375,38 @@ describe('trade completion race: cairn_h30 gives cairn_h71 a talisman and 200 no
         expect(r.reason).toBe('completed as the decline landed: confirm screen offer does not match');
         expect(r.received.map(i => [i.id, i.count]).sort()).toEqual([[1437, 200], [1438, 1]]);
         expect(sdk.sent.map(a => a.method)).toContain('sendDeclineTrade');
+    });
+
+    describe('on a slow minute (fake timers)', () => {
+        useFakeTicks();
+        const slowly = (sdk: FakeSdk, f: BotWorldState) => {
+            fakeClock.advanceTimersByTime(340);
+            show(sdk, f);
+        };
+
+        test('receiveFrom() receives a trade completing on tick 98 at 340 ms a tick (33.3 s, past the old 33 s budget)', async () => {
+            const sdk = new FakeSdk(frame(0, fromH30({})));
+            const result = receiveFrom(sdk as unknown as TradeSdk, 'cairn_h30');
+            await microtasks();
+            tickEvery(sdk, 340, 95); // the partner takes its time; our offer screen stays empty
+            slowly(sdk, frame(96, fromH30({ theirOffer: offer, partnerAccepted: true })));
+            slowly(sdk, frame(97, fromH30({ screen: 'confirm', theirOffer: offer })));
+            slowly(sdk, frame(98, null, kit));
+            const r = await result;
+            expect(r).toMatchObject({ ok: true, ticks: 98 });
+            expect(r.received.map(i => [i.id, i.count]).sort()).toEqual([[1437, 200], [1438, 1]]);
+        });
+
+        test('a client that stops publishing mid-trade ends it as STALLED', async () => {
+            const sdk = new FakeSdk(frame(0, fromH30({})));
+            const result = receiveFrom(sdk as unknown as TradeSdk, 'cairn_h30');
+            await microtasks();
+            tickEvery(sdk, 300, 5);
+            fakeClock.advanceTimersByTime(IDLE_TICKS * 300 - 1);
+            expect(await peek(result)).toBeUndefined();
+            fakeClock.advanceTimersByTime(1);
+            expect(await result).toMatchObject({ ok: false, ticks: 5, received: [], reason: STALLED });
+        });
     });
 });
 

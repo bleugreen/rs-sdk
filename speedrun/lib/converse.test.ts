@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import type { DialogState } from '../../sdk/types';
 import { burstTicks, converse, dialogueRuns } from './converse';
 import { baseState, FakeSdk, flush } from './fake-sdk';
+import { fakeClock, peek, tickEvery, useFakeTicks } from './fake-ticks';
+import { IDLE_TICKS, STALLED } from './wait';
 
 const words = (...text: string[]) => text.map((t, id) => ({ id, type: 4, buttonType: 0, option: '', text: t }));
 const cont = (pageId: string, text = pageId, isWaiting = false): DialogState => ({
@@ -162,6 +164,42 @@ describe('converse', () => {
         sdk.tick({ modalOpen: false, modalInterface: -1 });
         sdk.tick();
         expect((await p).transcript.some(l => /modal 6020 closed/.test(l))).toBe(true);
+    });
+});
+
+describe('converse on slow and silent clients', () => {
+    useFakeTicks();
+    // A page held open (`isWaiting`, as during a p_delay) is never clicked, so ticks alone drive these.
+    const held = cont('a', 'a', true);
+
+    test('a 400-tick conversation at 340 ms a tick resolves (136 s, past the old 126 s total budget)', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 0 }));
+        const p = converse(sdk as never, [], { idle: 3 });
+        tickEvery(sdk, 340, 396, { dialog: held });
+        tickEvery(sdk, 340, 4, { dialog: closed });
+        expect(await p).toMatchObject({ ok: true, opened: true, firstTick: 1, endTick: 397 });
+        expect(sdk.state!.tick).toBe(400);
+    });
+
+    test('a client that stops publishing ends it IDLE_TICKS x tickMs after the last tick', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 0 }));
+        const p = converse(sdk as never);
+        tickEvery(sdk, 300, 5, { dialog: held });
+        fakeClock.advanceTimersByTime(IDLE_TICKS * 300 - 1);
+        expect(await peek(p)).toBeUndefined();
+        fakeClock.advanceTimersByTime(1);
+        expect(await p).toMatchObject({ ok: false, opened: true, reason: STALLED });
+    });
+
+    test('maxTicks keeps counting across a relaunch that restarts the tick clock', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 100 }));
+        const p = converse(sdk as never, [], { maxTicks: 10 });
+        tickEvery(sdk, 300, 6, { dialog: held });
+        sdk.push({ tick: 0 });
+        tickEvery(sdk, 300, 4, { dialog: held });
+        expect(await peek(p)).toBeUndefined();
+        tickEvery(sdk, 300, 1, { dialog: held });
+        expect(await p).toMatchObject({ ok: false, reason: 'timeout' });
     });
 });
 
