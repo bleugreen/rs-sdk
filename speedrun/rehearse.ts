@@ -420,6 +420,10 @@ export interface KindGate {
     trials: number | null;
     /** The on-time trials the record line needed on this read; null for a measurement or without a read. */
     recordLine: number | null;
+    /** Whether the direct read held the record line (false without a usable read); null for a measurement. */
+    recordHeld: boolean | null;
+    /** Why it did not, by criterion. */
+    recordShort?: string;
     /** (c) on the direct read. */
     catchUpsPerMinute: number | null;
     catchUpLimit: number | null;
@@ -428,6 +432,7 @@ export interface KindGate {
 export function kindGate(kind: AttemptKind, direct: DirectRead | null): KindGate {
     const v = direct?.verdict ?? null;
     const c = v?.checks.find(k => k.id === 'c') ?? null;
+    const short = kind !== 'record' ? null : !direct ? 'record attempt: no direct gate read' : direct.error ? `record attempt: direct gate read failed: ${direct.error}` : recordLineRefusal(v);
     const rule =
         kind === 'record'
             ? `refuses below ${RECORD_LINE.onTime}/${RECORD_LINE.trials} next-tick reactions on the direct read, and on (c); no --force-gate`
@@ -437,17 +442,19 @@ export function kindGate(kind: AttemptKind, direct: DirectRead | null): KindGate
         onTime: v?.onTime ?? null,
         trials: v?.trials ?? null,
         recordLine: kind === 'record' && v ? recordLineAt(Math.max(v.trials, RECORD_LINE.trials)) : null,
+        recordHeld: kind === 'record' ? short === null : null,
+        ...(short ? { recordShort: short } : {}),
         catchUpsPerMinute: c?.value ?? null,
         catchUpLimit: c?.limit ?? null,
     };
 }
 
-/** `kind: record (refuses below 58/60 ...); direct (a) 58/60, line 58; (c) 0/min, limit 2`, for the summary. */
+/** `kind: record (refuses below 58/60 ...); direct (a) 58/60, line 58 held; (c) 0/min, limit 2`, for the summary. */
 export function kindText(g: KindGate): string {
     const read =
         g.onTime === null
             ? 'no direct read'
-            : `direct (a) ${g.onTime}/${g.trials}${g.recordLine === null ? '' : `, line ${g.recordLine}`}; (c) ${g.catchUpsPerMinute === null ? 'not measured' : `${g.catchUpsPerMinute}/min`}, limit ${g.catchUpLimit ?? '?'}`;
+            : `direct (a) ${g.onTime}/${g.trials}${g.recordLine === null ? '' : `, line ${g.recordLine} ${g.recordHeld ? 'held' : 'SHORT'}`}; (c) ${g.catchUpsPerMinute === null ? 'not measured' : `${g.catchUpsPerMinute}/min`}, limit ${g.catchUpLimit ?? '?'}`;
     return `kind: ${g.kind} (${g.rule}); ${read}`;
 }
 
@@ -1529,10 +1536,7 @@ async function main(argv: string[]): Promise<number> {
     if (direct) log.append(annotation(log, account, 'gate', '(gate) direct', { ok: !direct.error && direct.verdict?.on === true, ...(direct.error ? { error: direct.error } : {}), meta: { ...direct, ...(direct.verdict ? { text: verdictText(direct.verdict) } : {}) } }));
     // Which rule the direct read was held to, so every findings doc can say which applied.
     const kind = a.claim ? null : kindGate(a.kind, direct);
-    if (kind) {
-        const why = a.kind === 'record' ? gateRefusal({ direct, inPage: [], players, local, now: Date.now(), kind: 'record' }).filter(r => r.startsWith('record attempt')) : [];
-        log.append(annotation(log, account, 'gate', '(gate) kind', { ok: why.length === 0, ...(why.length ? { error: why.join('; ') } : {}), meta: { ...kind } }));
-    }
+    if (kind) log.append(annotation(log, account, 'gate', '(gate) kind', { ok: kind.recordHeld !== false, ...(kind.recordShort ? { error: kind.recordShort } : {}), meta: { ...kind } }));
     const inPage: InPageRead[] = [];
     const gate: string[] = kind ? [kindText(kind)] : [];
     // The gate tab is a login too.
