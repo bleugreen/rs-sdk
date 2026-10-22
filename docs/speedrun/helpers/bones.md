@@ -42,14 +42,17 @@ for the 140 dragon bones that give the same 10,095 base.
 
 ## Where each tier comes from (read: npc configs, map spawns, scripts)
 
-Every dragon drops its bones on every kill (`death_drop`), and every dragon is cowardly
-(it doesn't attack first) and respawns after 60 ticks. Spawn counts come from the
+Every dragon drops its bones on every kill (`death_drop`) and respawns after 60 ticks. Every
+dragon has huntmode `cowardly`, which despite the name **does attack first at close range**:
+the hunt is `type=player` with `find_newmode=opplayer2` (`all.hunt`), so a dragon takes any
+player within its `huntrange` (2 for baby blues, 4 for adult blues) as a target once neither
+has fought for 8 ticks (`Npc.ts huntPlayers`); measured in [dragons.md](dragons.md). Spawn counts come from the
 `==== NPC ====` sections of `server/content/maps/m<X>_<Z>.jm2` (world x = 64X + x).
 
 | Monster (bones) | Where | Spawns | Access | Danger |
 |---|---|---:|---|---|
 | Baby blue dragon (30), level 48, 50 hp | Taverley dungeon (2892-2909, 9763-9806) | 9 | Dusty key: kill the Jailer (2933, 9693), take the jail key (it always drops), unlock Velrak's cell (2931, 9690) and accept his key (`velrak_the_explorer.rs2`). The room is behind the dusty-key door (2924, 9803), entered from the east after a loop round the dungeon from the ladder | No fire. Hits a 85-defence helper about one fish's worth per kill. The route passes aggressive poison scorpions and chaos dwarves |
-| Baby red dragon (30), level 65, 65 hp | Brimhaven dungeon (2696-2708, 9500-9524), among 6 red dragons | 8 | 875 gp to Saniboch once; vines need an axe and a Woodcutting level; stepping stones need Agility 12 (`karam_dungeon.rs2`) | No fire; red dragons nearby are cowardly |
+| Baby red dragon (30), level 65, 65 hp | Brimhaven dungeon (2696-2708, 9500-9524), among 6 red dragons | 8 | 875 gp to Saniboch once; vines need an axe and a Woodcutting level; stepping stones need Agility 12 (`karam_dungeon.rs2`) | No fire; the red dragons nearby hunt players within their huntrange (see above) |
 | Blue dragon (72), level 111, 105 hp | Taverley dungeon, in the baby blues' room; under the Ogre enclave south of Yanille (2568-2590, 9437-9461) | 4; 6 | As for baby blues; the Ogre enclave is not checked | Dragonfire |
 | Green dragon (72), level 79 | Wilderness (3078-3098, 3810-3821), level 35-39 | 5 | Walk-in | Dragonfire; **PvP is live**: anyone within the wilderness level of your combat level can attack (`pvp_combat.rs2`) |
 | Red dragon (72), level 152 | Brimhaven dungeon; deep wilderness (3181-3223, 3819-3850) | 6; 4 | As for baby reds; wilderness | Dragonfire; PvP |
