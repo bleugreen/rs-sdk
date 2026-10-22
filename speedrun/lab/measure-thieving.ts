@@ -458,6 +458,8 @@ function trackTopUps(giver: string, below: number, giverEventsNow: () => Readonl
         wasOpen = open;
     });
     const summary = () => {
+        // every due stun: food below the bar on the failure, or (the pack) what it tops up below its bar on +2
+        const dueStuns = [...new Set([...dueFails, ...due])].sort((a, b) => a - b);
         // per failure: the gap to the next roll (11 is on time), and whether a trade opened inside it
         const rows = fails.map(f => {
             const next = rolls.find(r => r > f);
@@ -475,7 +477,7 @@ function trackTopUps(giver: string, below: number, giverEventsNow: () => Readonl
             return { stuns: rs.length, meanGap: mean === null ? null : +mean.toFixed(2), sdGap: sd === null ? null : +sd.toFixed(2), hist };
         };
         const top = rows.filter(r => r.open !== null);
-        const other = stat(rows.filter(r => r.open === null && !dueFails.includes(r.f)));
+        const other = stat(rows.filter(r => r.open === null && !dueStuns.includes(r.f)));
         const topStat = stat(top);
         // a stun's window: its failure to +12, cut at the next failure so two stuns never share a tick
         const inStun = (t: number, f: number) => {
@@ -487,7 +489,7 @@ function trackTopUps(giver: string, below: number, giverEventsNow: () => Readonl
         const sentLines = tradeLines.filter(l => /^sending trade offer/i.test(l.text)).map(l => l.tick);
         // per due failure, on the account's clock: the request (the program's or the module's click),
         // the program's re-send, what the engine ran (both sides' lines), and the trade
-        const perDue = dueFails.map(f => {
+        const perDue = dueStuns.map(f => {
             const req = [...requests, ...clicks].filter(t => inStun(t, f)).sort((a, b) => a - b)[0];
             const resent = resends.find(t => inStun(t, f));
             // the engine's answer to the first request: its reply or the partner's line, from the request up to the re-send (or the hold's end)
@@ -512,7 +514,7 @@ function trackTopUps(giver: string, below: number, giverEventsNow: () => Readonl
             const [dx, dz] = o.map(Math.abs) as [number, number];
             return dx + dz === 0 ? 'same' : dx + dz === 1 ? 'side' : dx === 1 && dz === 1 ? 'corner' : 'further';
         };
-        const missed = rows.filter(r => r.open === null && dueFails.includes(r.f));
+        const missed = rows.filter(r => r.open === null && dueStuns.includes(r.f));
         const missedStat = stat(missed);
         return {
             allStuns: stat(rows), topUpStuns: topStat, otherStuns: other, missedDueStuns: missedStat,
@@ -537,13 +539,14 @@ function trackTopUps(giver: string, below: number, giverEventsNow: () => Readonl
             // a stun whose partner saw 'wishes to trade' twice, or whose account the engine answered twice
             doubleRequests: perDue.filter(d => d.wishes > 1 || d.sent > 1).length,
             // every 'wishes to trade' outside a due stun's window (a request the trace did not expect)
-            strayWishes: wishes.filter(t => !dueFails.some(f => inStun(t, f))).length,
+            strayWishes: wishes.filter(t => !dueStuns.some(f => inStun(t, f))).length,
             dueFails: dueFails.length,
-            dueNotAdjacent: dueFails.filter(f => adjacentAt2[f] === false).length,
-            dueDiagonal: dueFails.filter(f => offsetAt2[f] && offsetAt2[f]![0] !== 0 && offsetAt2[f]![1] !== 0).length,
+            dueStuns: dueStuns.length,
+            dueNotAdjacent: dueStuns.filter(f => adjacentAt2[f] === false).length,
+            dueDiagonal: dueStuns.filter(f => offsetAt2[f] && offsetAt2[f]![0] !== 0 && offsetAt2[f]![1] !== 0).length,
             // per due failure, both sides' trade lines at their offset from it (the next 12 ticks)
             requestClicks: clicks.length,
-            trace: dueFails.slice(0, 60).map(f => ({
+            trace: dueStuns.slice(0, 120).map(f => ({
                 f,
                 giverAt2: offsetAt2[f]?.join(',') ?? null,
                 requests: requests.filter(t => inStun(t, f)).map(t => `+${t - f}`),
