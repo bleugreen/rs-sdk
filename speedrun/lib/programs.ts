@@ -87,7 +87,7 @@ export interface FrameSummary {
     catchUpsPerMinute: number;
 }
 
-export type ProgramName = 'probe' | 'knife-cycle' | 'knife-mine' | 'pickpocket' | 'agility' | 'rc-cycle';
+export type ProgramName = 'probe' | 'knife-cycle' | 'knife-mine' | 'pickpocket' | 'agility' | 'rc-cycle' | 'item-cycle';
 
 export type ProgramSdk = Pick<BotSDK, 'getState' | 'onStateUpdate'>;
 

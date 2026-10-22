@@ -2,6 +2,7 @@
 // docs/speedrun/tick-programs.md describes the design and how a step script drives them.
 
 import { createAgility } from './agility.js';
+import { createItemCycle } from './item-cycle.js';
 import { createKnifeCycle } from './knife-cycle.js';
 import { createKnifeMine } from './knife-mine.js';
 import { createPickpocket } from './pickpocket.js';
@@ -21,5 +22,6 @@ export function registerPrograms(runtime: ProgramRuntime): ProgramRuntime {
         .register('knife-mine', createKnifeMine)
         .register('pickpocket', createPickpocket)
         .register('agility', createAgility)
-        .register('rc-cycle', createRcCycle);
+        .register('rc-cycle', createRcCycle)
+        .register('item-cycle', createItemCycle);
 }
