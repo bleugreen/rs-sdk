@@ -158,6 +158,13 @@ consistent with the leash rule.
   the dungeon first (above), so it stood at the jail until the Jailer killed it (about 85k).
   cairn_h56: 0 deaths.
 - Other players in the room: only the fleet's own cairn_H53 (baby blues, [bones.md](bones.md)).
+- **Two accounts, wind spells, 3x rune caps** (both restarted on the tile at 22:23 UTC; read
+  from the role's `banked` lines): cairn_h55 banked 29 in 0.72 h (22 an account-hour, 2
+  trips) and cairn_h56 banked 34 in 1.02 h (21 an account-hour, 3 trips). These are full-trip
+  rates, including the bank walk and shopping: about **43 bones an hour for the pair**. Both
+  took **0 deaths and 0 damage on the tile**. Route damage was 37 and 26 hp, covered by food.
+  Both then stopped at Varrock West waiting for coins (a minimum-law trip prices at about
+  40,000 at these caps), so funding, not the room, set the pace from there.
 
 ## Rune supply: the real ceiling
 
@@ -197,13 +204,47 @@ guild's 40-gp laws are not available, and walking to drops is unsafe (above).
 
 ## Operating
 
-**Adopt an account into the fleet** (bbs, `speedrun/helpers/fleetctl`; funders must match the
-earners that will fund it):
+**Move an account from a dev copy into the fleet** (on bbs; from a checkout, wrap each line
+in `speedrun/helpers/bbs.sh '...'`). The fleet imports `speedrun/helpers/<role>.ts` from its
+own checkout and caches modules for the life of the supervisor, so the role must be deployed
+there and the supervisor restarted before the first assign. `dragons.ts` also needs the
+`bones.ts` exports that ship with it. The restart logs every fleet account out and back in,
+and `update` checks out the ref with `--force`, so it is the coordinator's call:
 
 ```
-fleetctl assign cairn_h55 dragons --options '{"funders":["^cairn_(h|e)\\d+$"]}' && fleetctl reload
-fleetctl assign cairn_h56 dragons --options '{"funders":["^cairn_(h|e)\\d+$"]}' && fleetctl reload
+F=~/rs-fleet/speedrun/helpers/fleetctl
+$F update agent/rs-41-coordinator-0 && $F restart
+test -f ~/rs-fleet/speedrun/helpers/dragons.ts && echo deployed
 ```
+
+Then, one account at a time (`A=cairn_h55`, then `A=cairn_h56`), log the dev copy out cleanly
+before the fleet logs in, so two controllers never drive one account. Signal only the pids the
+dev run recorded in `run/`:
+
+```
+cd ~/rs-dev/dragons
+bash ctl/peek.sh $A                    # on the surface or the safe tile (2901, 9810), not on the route
+touch run/stop-$A                      # role.sh and lite.sh exit instead of relaunching
+kill -INT $(cat run/$A.role.pid); sleep 5
+GATEWAY_URL=ws://127.0.0.1:7745 timeout 90 ~/.bun/bin/bun ctl/logout.ts $A
+                                       # must print "logout sent" (component 2458); on "still in
+                                       # world" (combat blocks logout for 16 ticks) run it again
+kill $(cat run/$A.runner.pid)          # only after "logout sent"
+ps -p $(cat run/$A.liteloop.pid),$(cat run/$A.roleloop.pid) || echo "loops gone"
+$F assign $A dragons --options '{"funders":["^cairn_(h|e)\\d+$"]}' && $F reload
+sleep 60; $F logs $A 30                # the role steps from the account's current state
+```
+
+If the role acts on stale state (pre-move inventory or position; rs/133), force a role-only
+restart by re-assigning with an options change and reloading. After the last account, stop
+the dev gateway (loop first, so it doesn't respawn) and the dev run's private tmux server:
+
+```
+kill $(cat run/gateway.loop.pid); kill $(cat run/gateway.pid)
+tmux -L rs41-dragons kill-server
+```
+
+Funders must match the earners that will fund the account.
 
 **Fund an account** (coordinator names the earner): disable the earner, run one bidder fund
 trip, re-enable it, and check that the earner went back to earning:
@@ -229,7 +270,6 @@ last `step` line of its log.
 
 ## Open
 
-- Full-trip bones per account-hour, including banking and shopping, from a clean hour.
 - A cheaper law: a standing exchange bid below the 2,991 ask (`bidder.ts`).
 - The lab's engine trace (`speedrun/lab/npc-target-trace.patch`) logged only each dragon's
   first state; it needs hooking where the engine processes every NPC every tick before it can
