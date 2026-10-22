@@ -15,7 +15,7 @@
 // H12 before S15), and the packages come in ledger order, which is the order the run pulls them
 // (mule.ts serveMode 'order').
 //
-//   bun speedrun/helpers/mule-ledger.ts [--form ask|fixed] [--rows H1,H3#1,H12] [--on-request H4e] [--manifest PATH]
+//   bun speedrun/helpers/mule-ledger.ts [--form ask|fixed] [--rows H1,H12] [--on-request H4e] [--manifest PATH]
 //       prints { packages } for the mule's options (default MULE1_ORDER, then MULE1_ON_REQUEST)
 //   ... --check FILE [--account cairn_mule1]   drift of FILE's packages (mule options, a packages
 //       list, or fleet.json) against the ledger; exit 1 on any
@@ -27,28 +27,33 @@ import type { BankItem } from '../../sdk/types';
 import { namesNote, refLabel, refMatches, type ItemRef } from '../lib/items';
 import { noteLink, type ObjPack } from '../lib/obj-pack';
 import { gameName, planHandOff } from '../runner/handoff';
-import { ENCHANTS, ringTotal, ROUTE_LOADS, TIER_ORDER } from '../skills/magic';
 import { itemLabel, MANIFEST, parseLedger, type InEntry, type LedgerRow } from '../tools/slot-ledger';
 import { isStackableName, isTopUp, packageOf, planPackage, type Package, type PackageItem } from './mule';
 
 /**
  * cairn_mule1's trades in run order (rs/158's list, 2026-10-22: SUPPLIES.md's trade-giver rows
- * expanded to trades). `H3#n` is H3's ring load n, whose rings are magic.ts ROUTE_LOADS[n-1]: the
- * row names them only as the module's `<gem ring> x20`. H14 is S18's load 0 (the swap); H21e's
- * list rides H21d's row, one trade.
+ * expanded to trades). H14 is S18's load 0 (the swap); H21e's list rides H21d's row, one trade.
  */
-export const MULE1_ORDER = ['H1', 'H3#1', 'H3#2', 'H3#3', 'H4', 'H4k', 'H6', 'H4p', 'H7', 'H8', 'H9', 'H10', 'H12', 'H13', 'H14', 'H15', 'H16', 'H18', 'H19', 'H20', 'H21d', 'H22'] as const;
+export const MULE1_ORDER = ['H1', 'H4', 'H4k', 'H6', 'H4p', 'H7', 'H8', 'H9', 'H10', 'H12', 'H13', 'H14', 'H15', 'H16', 'H18', 'H19', 'H20', 'H21d', 'H22'] as const;
 
-/** cairn_mule1's packages served only when asked for by name (mule.ts onRequest): H4e, the bone runes' fallback. */
-export const MULE1_ON_REQUEST = ['H4e'] as const;
+/**
+ * cairn_mule1's packages served only when asked for by name (mule.ts onRequest), never in the order:
+ * H4e (the bone runes' fallback) and H4m (the bones past S07's capacity, on an overflowing stock).
+ * Their rows are in the ledger's fallback table, which is not walked (FALLBACK_TABLE).
+ */
+export const MULE1_ON_REQUEST = ['H4e', 'H4m'] as const;
 
 /** SUPPLIES.md rows whose giver is the trade giver that have no package of their own on cairn_mule1, and why. */
 export const MULE1_NO_PACKAGE: Readonly<Record<string, string>> = {
+    H3: 'three ring givers, cairn_h81-h83, one load each (magic.ts RING_CONTRACT; rs/158, fold-in 25)',
     H21e: "one trade with H21d: its list is on H21d's ledger row",
     'H14.1-H14.13': "the S18 courier's top-ups, not mule1's (rs/158)",
     H21a: 'the anvil giver, cairn_a01 (rs/158)',
-    'H4m.1-H4m.4': 'bone loads on an overflowing stock only, not in rs/158\'s list (asked)',
+    'H4m.1-H4m.4': 'the on-request package H4m',
 };
+
+/** The heading of the ledger's fallback hand-offs: rows in the ledger's columns that the walk leaves out. */
+export const FALLBACK_TABLE = /^(#+\s*|\*\*)?(\d+\.\s*)?Fallback hand-offs\b/i;
 
 export const INVENTORY_SLOTS = 28;
 
@@ -56,14 +61,13 @@ export const INVENTORY_SLOTS = 28;
 export type TopUpForm = 'ask' | 'fixed';
 
 export interface LedgerPackage {
-    /** The ledger row, or `H3#n` for one of a row's loads. */
     row: string;
-    /** Served only when asked for by name. */
+    /** Served only when asked for by name: a row of the fallback table. */
     onRequest: boolean;
     /** The row's line in the manifest. */
     line: number;
-    /** The step the hand-off feeds: the first S row after it. */
-    step: string;
+    /** The step the hand-off feeds, the first S row after it; null for a fallback row, which has none. */
+    step: string | null;
     /** The mule's package, as mule.ts packageOf reads it. */
     package: Package;
     /** The row's top-ups, by ledger label, whichever form the package serves them in. */
@@ -105,96 +109,79 @@ function lineOf(e: InEntry, at: string, form: TopUpForm): PackageItem {
 }
 
 /**
- * Load `load` of a ring row (H3): the module's `<gem ring> xN` placeholder made concrete from
- * magic.ts ROUTE_LOADS, whose total must be the row's count. Loads 2 and 3 take the previous load's
- * enchanted rings back in the same trade (the module's swap).
+ * One ledger row as a mule package. A walked row's package feeds the step after it; a fallback row
+ * (`fallback`) is served on request and has no step, so it cannot carry a top-up (no scope to ask in).
  */
-export function ringLoadPackage(rows: readonly LedgerRow[], index: number, load: number, pack?: ObjPack): LedgerPackage {
-    const row = rows[index]!;
-    const at = `${row.row} load ${load} (line ${row.line})`;
-    const ring = row.in.find(e => e.placeholder && /ring/i.test(e.name));
-    const rings = ROUTE_LOADS[load - 1];
-    if (!ring || ring.count === null || row.in.length !== 1) throw new Error(`${at}: expected the row's only entry to be a <… ring> xN placeholder`);
-    if (!rings) throw new Error(`${at}: magic.ts ROUTE_LOADS has ${ROUTE_LOADS.length} loads`);
-    if (ringTotal(rings) !== ring.count) throw new Error(`${at}: ROUTE_LOADS[${load - 1}] holds ${ringTotal(rings)} rings, the row ${ring.count}`);
-    const items = TIER_ORDER.filter(t => (rings[t] ?? 0) > 0).map(t => ({ item: ENCHANTS[t].ring, amount: rings[t]! }));
-    return {
-        row: `${row.row}#${load}`,
-        onRequest: false,
-        line: row.line,
-        step: stepAfter(rows, index),
-        package: packageOf({ name: `${row.row.toLowerCase()}-${load}`, items }, pack),
-        topUps: [],
-        slots: ring.count,
-        takesBack: [],
-        moduleLines: load > 1 ? [`<enchanted ring> x${ringTotal(ROUTE_LOADS[load - 2]!)}`] : [],
-    };
-}
-
-/** One ledger row as a mule package. */
-export function packageFromRow(rows: readonly LedgerRow[], index: number, form: TopUpForm = 'ask', pack?: ObjPack): LedgerPackage {
+export function packageFromRow(rows: readonly LedgerRow[], index: number, form: TopUpForm = 'ask', pack?: ObjPack, fallback = false): LedgerPackage {
     const row = rows[index]!;
     const at = `${row.row} (line ${row.line})`;
     const plan = planHandOff(row);
-    const step = stepAfter(rows, index);
+    const step = fallback ? null : stepAfter(rows, index);
     const entries = row.in.filter(e => !e.placeholder);
     if (!entries.length) throw new Error(`${at}: the scored account receives nothing from the mule`);
     const items = entries.map(e => lineOf(e, at, form));
     const topUps = entries.filter(e => e.topUp).map(e => ({ item: itemLabel(e), to: e.count! }));
-    const raw = { name: row.row.toLowerCase(), items, ...(items.some(isTopUp) ? { scope: { step, family: 'mule' } } : {}) };
+    if (fallback && topUps.length && form === 'ask') throw new Error(`${at}: a fallback row has no step to scope a top-up ask to`);
+    const raw = { name: row.row.toLowerCase(), items, ...(items.some(isTopUp) ? { scope: { step, family: 'mule' } } : {}), ...(fallback ? { onRequest: true } : {}) };
     const pkg = packageOf(raw, pack);
     const slots = entries.reduce((n, e) => n + (e.kind === 'u' ? e.count! : 1), 0);
     if (slots > INVENTORY_SLOTS) throw new Error(`${at}: the package fills ${slots} slots, more than the mule's ${INVENTORY_SLOTS}`);
     const takesBack = row.out
         .filter(o => !o.placeholder)
         .map(o => ({ label: `${itemLabel(o)} ${o.count === 'all' ? 'all' : `x${o.count}`}`, ref: o.family ? null : refOf(o), count: o.count ?? 'all' }));
-    return { row: row.row, onRequest: false, line: row.line, step, package: pkg, topUps, slots, takesBack, moduleLines: plan.placeholders };
+    return { row: row.row, onRequest: fallback, line: row.line, step, package: pkg, topUps, slots, takesBack, moduleLines: plan.placeholders };
+}
+
+/**
+ * The ledger's fallback hand-offs: the first table in the ledger's columns after the FALLBACK_TABLE
+ * heading, its rows' lines as in `markdown`. None when the manifest has no such heading.
+ */
+export function parseFallbacks(markdown: string): LedgerRow[] {
+    const lines = markdown.split('\n');
+    const at = lines.findIndex(l => FALLBACK_TABLE.test(l.trim()));
+    if (at < 0) return [];
+    const { rows, errors } = parseLedger(lines.slice(at).join('\n'));
+    if (errors.length) throw new Error(`the fallback hand-offs table does not parse: ${errors.join('; ')}`);
+    return rows.map(r => ({ ...r, line: r.line + at }));
 }
 
 export interface FromLedgerOptions {
-    /** The mule's trades (default MULE1_ORDER): row ids, `ROW#n` for a ring load. They must be in ledger order. */
+    /** The mule's trades in the order it serves them (default MULE1_ORDER); they must be in ledger order. */
     rows?: readonly string[];
-    /** Packages served only by name (default MULE1_ON_REQUEST, or none when `rows` is given). */
+    /** Fallback rows served only by name (default the MULE1_ON_REQUEST rows the fallback table has, or none when `rows` is given). */
     onRequest?: readonly string[];
     form?: TopUpForm;
     pack?: ObjPack;
 }
 
-const loadKey = (p: LedgerPackage) => p.line * 100 + Number(p.row.split('#')[1] ?? 0);
+function only(rows: readonly LedgerRow[], id: string, where: string): number {
+    const at = rows.map((r, i) => (r.row === id ? i : -1)).filter(i => i >= 0);
+    if (at.length !== 1) throw new Error(at.length ? `${at.length} ${where} rows named ${id}` : `no ${where} row ${id}`);
+    return at[0]!;
+}
 
 /**
  * A mule's packages from the ledger in `manifest` (STEP-MANIFEST.md by default): the ordered ones in
  * ledger order (refused when `rows` lists them otherwise, since order mode serves them as listed),
- * then the on-request ones.
+ * then the on-request ones from the fallback table.
  */
 export function muleFromLedger(manifest: string = readFileSync(MANIFEST, 'utf8'), o: FromLedgerOptions = {}): LedgerPackage[] {
     const { rows, errors } = parseLedger(manifest);
     if (errors.length) throw new Error(`the inventory ledger does not parse: ${errors.join('; ')}`);
-    const build = (id: string, onRequest: boolean): LedgerPackage => {
-        const [rowId, load] = id.split('#') as [string, string | undefined];
-        const at = rows.map((r, i) => (r.row === rowId ? i : -1)).filter(i => i >= 0);
-        if (at.length !== 1) throw new Error(at.length ? `${at.length} ledger rows named ${rowId}` : `no ledger row ${rowId}`);
-        const p = load === undefined ? packageFromRow(rows, at[0]!, o.form ?? 'ask', o.pack) : ringLoadPackage(rows, at[0]!, Number(load), o.pack);
-        if (!onRequest) return p;
-        return { ...p, onRequest: true, package: { ...p.package, onRequest: true } };
-    };
-    const ordered = (o.rows ?? MULE1_ORDER).map(id => build(id, false));
-    const keys = ordered.map(loadKey);
-    const late = ordered.findIndex((p, i) => i > 0 && keys[i]! < keys[i - 1]!);
+    const form = o.form ?? 'ask';
+    const ordered = (o.rows ?? MULE1_ORDER).map(id => packageFromRow(rows, only(rows, id, 'ledger'), form, o.pack));
+    const late = ordered.findIndex((p, i) => i > 0 && p.line < ordered[i - 1]!.line);
     if (late >= 0) throw new Error(`${ordered[late]!.row} is listed after ${ordered[late - 1]!.row}, but comes before it in the ledger`);
-    const onRequest = (o.onRequest ?? (o.rows ? [] : missingOnRequest(rows).absentFrom(MULE1_ON_REQUEST))).map(id => build(id, true));
+    const fallbacks = parseFallbacks(manifest);
+    const wanted = o.onRequest ?? (o.rows ? [] : MULE1_ON_REQUEST.filter(id => fallbacks.some(r => r.row === id)));
+    const onRequest = wanted.map(id => packageFromRow(fallbacks, only(fallbacks, id, 'fallback hand-off'), form, o.pack, true));
     return [...ordered, ...onRequest];
 }
 
-/** The on-request packages the ledger has no row for: they cannot be generated (the default skips them). */
-function missingOnRequest(rows: readonly LedgerRow[]) {
-    const has = (id: string) => rows.some(r => r.row === id);
-    return { absentFrom: (ids: readonly string[]) => ids.filter(has), missing: (ids: readonly string[]) => ids.filter(id => !has(id)) };
-}
-
-/** MULE1_ON_REQUEST rows the ledger in `manifest` lacks, so no package can be built for them. */
+/** MULE1_ON_REQUEST rows the fallback table in `manifest` lacks, so no package can be built for them. */
 export function onRequestGaps(manifest: string = readFileSync(MANIFEST, 'utf8')): string[] {
-    return missingOnRequest(parseLedger(manifest).rows).missing(MULE1_ON_REQUEST);
+    const fallbacks = parseFallbacks(manifest);
+    return MULE1_ON_REQUEST.filter(id => !fallbacks.some(r => r.row === id));
 }
 
 /** The mule options' `packages` for these ledger packages. */
