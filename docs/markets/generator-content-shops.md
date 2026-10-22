@@ -81,6 +81,35 @@ value itself, with the same formula: `cost` comes from the `.obj` configs by way
 
 Run 1 got probes A right, but a staging mistake put the 2^31-1 stack in the inventory instead
 of the bank, and probe C started with coins at the cap. Run 2 fixed both, and the table above is from run 2.
+A third run after a refactor (the board-value code moved to `markets/research/content-board-value.ts`)
+gave identical results.
+
+## Lab results: staff hand-off (`trade-staff-handoff.ts`)
+
+This needs per-account staff levels, which `lab.sh`'s `LOCAL_STAFF_LEVEL` can't provide, because it
+applies to everyone. The lab therefore ran with the login server in-process and auto-registration,
+like the demo: `LOGIN_SERVER=true EASY_STARTUP=true DB_BACKEND=sqlite WEBSITE_REGISTRATION=false`,
+with `LOGIN_PORT=44911 FRIEND_PORT=45910 LOGGER_PORT=44912` added to block M2, after
+`bun run sqlite:migrate` in `server/engine`. Staff levels were set in `server/engine/db.sqlite`
+between phases. Phase `login` registered `mkt499r` (receiver) and `mkt499g` (giver). Both rows were
+set to 4 for phase `stage`, which left Tutorial Island and moved both to Varrock west bank. The
+receiver was then set back to 0 for phase `handoff`.
+
+```sh
+# common: the M2 block, NODE_TICKRATE=400, plus the login-server variables above
+LAB_HELPERS=mkt499g speedrun/lab/lab.sh mkt499r markets/research/trade-staff-handoff.ts:--giver=mkt499g:--phase=handoff
+```
+
+| Probe | Result |
+|---|---|
+| H1. Receiver (staff 0) runs `::give coins 1000` | coins 0 before and after: refused |
+| H2. Giver (staff 4) runs `::give airrune` to itself | holds 200,000,025 (a failed earlier attempt left 100M in its save) |
+| H3. Plain trade of the air-rune stack | receiver 0 to 200,000,025; giver 200,000,025 to 0 |
+| H4. Receiver banks it | bank air runes 200,000,050 (plus 25 from the starter kit); board value 390 to 800,000,490, of which air runes (cost 4) are 800,000,200 |
+| H5. Both log out | login server wrote `hiscore_bank` for `mkt499r` (staff 0, value 800,000,490); `mkt499r` is listed on the lab's `/hiscores/bank`; `mkt499g` (staff 4) has no row and is not listed |
+
+The earlier attempt failed only because `giveAll` offered the giver's whole starter kit and
+`trade.rs2`'s space check closed the trade. Offering only the stack fixed it.
 
 ## Candidates examined
 
@@ -225,8 +254,14 @@ derivation. Each of these is a one-shot or fixed-table reward, so none could pro
 
 ## What would explain the leaders
 
-No shop, gathering, crafting or content path above yields hundreds of millions of runes or tens
-of millions of raw fish. The candidates left are outside this scope: the save-v8 recovery escrow and
-Grand Exchange settlement (sibling Q1a), or a server-side change on the demo that the repository
-doesn't show. A latent `inv_moveitem` overflow that a future script could reach is worth fixing
-as a one-line engine change, but it explains nothing today.
+No shop, gathering, crafting or content path above that an ordinary player can reach yields
+hundreds of millions of runes or tens of millions of raw fish. rs/498 rules out persistence and
+the GE. Two explanations remain open. The first is staff-made items traded into an eligible
+account, which the lab shows is possible but which isn't a method available to the markets mission.
+The second is gathering by a large account swarm, which is rs/500's fishing-swarm lead and the
+copyable one. Separating them needs the public signals in section 3. For coins alone, rs/498 adds
+the Managing Miscellania coffers dupe, which was live in this repo for two days (2026-10-09 to
+2026-10-11). The sub-agent audit here read `managing_miscellania.rs2` after the fix.
+
+The latent `inv_moveitem` overflow is worth a one-line engine fix before a future script can
+reach it, but it explains nothing today.
