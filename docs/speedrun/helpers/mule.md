@@ -168,6 +168,40 @@ the S18 courier reads ([bone-giver.md](bone-giver.md), `altar-cue.ts` `writeTopU
 A package with no top-up line takes no `scope`, never waits for an ask, and offers all of each
 staged id, exactly as before.
 
+**Packages from the ledger.** A run-day mule's packages are not written by hand. They are built
+from the same inventory-ledger rows (STEP-MANIFEST.md) the scored side's hand-off steps read, by
+`speedrun/helpers/mule-ledger.ts`:
+
+- Each `in` entry of a row is a package line: `NAME @ID` by `id`, any other NAME by the game's name
+  (`runner/handoff.ts` `gameName`), `[n]` noted. A `NAME to N` top-up is `topUp: { max: N }` in the
+  **ask** form (the package scoped `{ step, family: 'mule' }`, its step the first S row after the
+  hand-off, so H12's is S15), or a fixed N in the **fixed** form. The fixed form is the fallback
+  while the scored side writes no ask: the scored account must hold none of the item (H12: it drops
+  its sharks first), or its `want` differs and it declines.
+- The row's `out` entries are what the scored account gives back in the same trade. The mule
+  accepts any offer from it, so they are reported, not configured. `<NAME>` entries are the step
+  module's own.
+- Every row goes through `planHandOff` first, so a row the scored side refuses is refused here. A
+  row whose `[s]`/`[u]` kind disagrees with `isStackableName` is refused too: the mule sizes a
+  package with that guess, and a stackable it misreads (thread, nails, before they were added)
+  makes it count one slot per item and refuse the package.
+- The packages come in ledger order, which is the order the run pulls them (`serveMode: 'order'`).
+  cairn_mule1's rows are `MULE1_ROWS` (H1, H4, H4k, H6, H4p, H10, H12, H13, H21d with H21e's
+  list, H22).
+
+```sh
+bun speedrun/helpers/mule-ledger.ts [--form ask|fixed] [--rows H12]       # { packages } for ROLE_OPTIONS
+bun speedrun/helpers/mule-ledger.ts --check fleet.json [--form fixed]     # drift; exit 1 on any
+bun speedrun/helpers/mule-ledger.ts --bank stockpile.json                 # stock, served back to back
+```
+
+`--check` (`muleDrift`) compares a config's packages with the ledger's: a missing, extra or
+reordered package, a line missing or extra, a count, a top-up against a fixed count, noted, and the
+scope. It reads mule options, a packages list, or fleet.json's entry for `--account` (default
+cairn_mule1). Zero drift is the run-day gate. `--bank` (`stockWalk`) stages the packages one after
+another against the account's bank in stockpile.json, crediting what each row's give-back returns
+(H12's scimitar serves H22), and lists what runs out.
+
 **Order mode and giving back.** In `order` mode every trade from the scored account
 takes the next package. A trade from the scored account while no package is pending
 is receive-only: the mule accepts any non-empty offer and banks it. A session that
