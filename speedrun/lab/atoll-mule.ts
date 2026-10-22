@@ -284,6 +284,7 @@ try {
     const free = 28 - st0.inventory.length;
     const n = Math.min(M_MAX, free);
     const mt = await trade('M', [{ item: /^shark$/i, amount: n }], { scope: M, count: n }, muleName);
+    await untilTicks('the mule\'s M hand-off line', () => role(/^hand-off$/).some(l => l.data.package === 'H12oM'), 20).catch(() => 0);
     const mHand = role(/^hand-off$/).find(l => l.data.package === 'H12oM');
     const gotM = sharksIn(sdk.getState()!);
     check(mt.r.ok && gotM === n, `M: SCORED with ${free} free slots asked ${n} and received ${gotM} sharks in ${mt.r.ticks} ticks on its clock (attempts ${JSON.stringify(mt.attempts)}); the mule: ${JSON.stringify(mHand?.data ?? null)}`);
@@ -307,6 +308,7 @@ try {
     // ---- P: SCORED on P's tile takes 9 sharks + the potion.
     await mustTele(sdk, P_TILE.x, P_TILE.z);
     const pt = await trade('P', [{ item: /^shark$/i, amount: P_SHARKS }, { item: /^superantipoison\(4\)$/i, amount: 1 }], null, muleName);
+    await untilTicks('the mule\'s P hand-off line', () => role(/^hand-off$/).some(l => l.data.package === 'H12oP'), 20).catch(() => 0);
     const pHand = role(/^hand-off$/).find(l => l.data.package === 'H12oP');
     const stP = sdk.getState()!;
     const potions = stP.inventory.filter(i => /^superantipoison\(4\)$/i.test(i.name)).length;
