@@ -27,7 +27,7 @@
 
 import type { BotWorldState, NearbyNpc } from '../../sdk/types';
 import { type GatedSegment, type GatedTechnique, inPageGate, type InPageGateOptions, runGatedProgram } from '../lib/gated-program';
-import type { ProgramStatus } from '../lib/programs';
+import { overBudgetMeta, type ProgramStatus } from '../lib/programs';
 import type { TickLog } from '../lib/ticks';
 import { tickMs } from '../lib/wait';
 import { baseToXp, levelForXp, XP_RATE, xpForLevel } from '../lib/xp';
@@ -513,6 +513,8 @@ export interface SegmentSummary {
     moves: number;
     /** The program fell back to plain inside the segment (`out of logs`, `no knife`). */
     fellBack?: string;
+    /** Ticks whose sixth and later user events the engine deferred (lib/programs.ts overBudgetMeta). */
+    overBudget?: number;
 }
 
 export interface BandSummary extends Omit<SegmentSummary, 'technique' | 'reason' | 'gap3Share' | 'fellBack'> {
@@ -574,7 +576,8 @@ export function summarizeBand(kind: FishKind, segments: BandSegment[]): BandSumm
             slips: st.counters.slips ?? 0,
             levelUps: res.levelUps ?? st.counters.levelUps ?? 0,
             moves: res.moves ?? st.counters.moves ?? 0,
-            ...(res.fellBack ? { fellBack: res.fellBack } : {})
+            ...(res.fellBack ? { fellBack: res.fellBack } : {}),
+            ...overBudgetMeta(st)
         } satisfies SegmentSummary;
     });
     const sum = (f: (s: SegmentSummary) => number, of = segs) => of.reduce((a, s) => a + f(s), 0);
