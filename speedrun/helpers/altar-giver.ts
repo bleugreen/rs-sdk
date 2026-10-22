@@ -4,21 +4,26 @@
 // tile next to the receiver's, and when the scored side cues its turn through
 // the cue directory (altar-cue.ts) it sends its half of the blind schedule on
 // its own frames: trade request on T+5, offer all and accept on T+6, confirm on
-// T+7 (robust: a second confirm on T+8). Then it restocks and comes back.
+// T+7 (robust: a second confirm on T+8). A 'stock' turn (the scored side's
+// reacting fallback) is traded instead: request on T+5, then offer, accept and
+// confirm on what each frame shows (lib/trade.ts give) until the judge tick.
+// Then it restocks and comes back.
 // Contract, batch mode and measurements: docs/speedrun/helpers/altar-giver.md.
 //
 // Runs beside the scored account on the run machine (standalone.ts), never from
 // the bbs fleet: the blind schedule has no slack for a relayed client.
 //
 // Role options (ROLE_OPTIONS):
-//   altar      'air' (default) or 'nature'
+//   altar      'air' (default), 'body' or 'nature'
 //   slot       0 east (default), 1 west, 2 south of the receiver's tile
 //   essence    essence per trade (default 27; the talisman takes the 28th slot)
-//   schedule   'robust' forces the 8-tick schedule for every turn; default follows the cue
+//   schedule   'robust' forces the 8-tick schedule for every blind turn; default follows the cue
 //   restock    { kind: 'bank'|'trade'|'cheat', bank?, acceptFrom?, restockAt?, labStock? } (altar-room.ts)
 //   gapMs      wait after a frame before sending its packets (default 0: send on arrival)
 //   cueDir     default RC_CUE_DIR, else run-machine/rc-cue in the checkout
 import type { BotWorldState, NearbyPlayer } from '../../sdk/types';
+import { give } from '../lib/trade';
+import { tickMs } from '../lib/wait';
 import {
     assertUntracked,
     chooseTurn,
@@ -28,6 +33,7 @@ import {
     giverSteps,
     judgeTick,
     nameHash,
+    newRequestFrom,
     resolveOffset,
     TRADE_ACCEPT,
     TRADE_CONFIRM,
@@ -37,7 +43,8 @@ import {
     type GiverPhase,
     type Outcome,
     type Schedule,
-    type TurnResult
+    type TurnResult,
+    type TurnSchedule
 } from './altar-cue';
 import { altarData, count, ESSENCE, enterRoom, findAltar, findItem, inRoom, pos, restock, roomTiles, standOn, until, type Altar, type RestockOptions, type Tile } from './altar-room';
 import { ensureOutOfTutorial } from './mule';
@@ -80,8 +87,10 @@ interface Armed {
     T: number;
     myT: number;
     open: number;
-    schedule: Schedule;
+    schedule: TurnSchedule;
     receiverHash: string;
+    /** Our frame when the turn was armed. */
+    armedTick: number;
 }
 
 class Stop extends Error {}
@@ -277,8 +286,9 @@ export class AltarGiver {
             return;
         }
         if (this.armed) this.done.add(this.armed.key); // superseded by a newer turn for us
-        const schedule: Schedule = this.o.schedule === 'robust' ? 'robust' : choice.schedule;
-        this.armed = { key: choice.key, session: cue.session, seq: cue.seq, T: choice.turn.T, myT: choice.myT, open: cue.open, schedule, receiverHash: cue.receiver.sha256 };
+        // The robust option slows the blind schedules; a stock turn reacts and has no schedule to slow.
+        const schedule: TurnSchedule = this.o.schedule === 'robust' && choice.schedule === 'tuned' ? 'robust' : choice.schedule;
+        this.armed = { key: choice.key, session: cue.session, seq: cue.seq, T: choice.turn.T, myT: choice.myT, open: cue.open, schedule, receiverHash: cue.receiver.sha256, armedTick: now };
         this.setPhase('armed');
         this.wakeServe?.();
     }
@@ -290,6 +300,7 @@ export class AltarGiver {
      * our numbering), and judge it once the last landing has had a frame to show.
      */
     private async execute(a: Armed): Promise<Outcome> {
+        if (a.schedule === 'stock') return this.executeStock(a);
         const { sdk } = this.ctx;
         const steps = giverSteps(a.myT, a.open, a.schedule).map(s => ({ send: s.land - 1, actions: s.actions }));
         const judge = judgeTick(a.myT, a.open, a.schedule);
@@ -361,6 +372,45 @@ export class AltarGiver {
         {
             this.result(outcome, a.session, a.T, { myT: a.myT, ...(slips.length || busy ? { detail: `${slips.length ? `slipped frames ${slips.join(',')}` : ''}${busy ? ' receiver busy' : ''}`.trim() } : {}) });
         }
+        return outcome;
+    }
+
+    /**
+     * A stock turn: from the request frame (T+K-1 in our numbering), or as soon as the receiver's
+     * own request shows (the scored side's reacting receive requests when it writes the turn, so
+     * waiting for T+K would only idle), trade the receiver through lib/trade.ts's reacting give:
+     * request or answer, offer every essence, accept, confirm, each on what the frames show,
+     * until the judge tick. The scored side reacts too, so nothing here needs an exact tick.
+     */
+    private async executeStock(a: Armed): Promise<Outcome> {
+        const { sdk } = this.ctx;
+        const judge = judgeTick(a.myT, a.open, 'stock');
+        const requestFrame = a.myT + a.open - 1;
+        // The cue is read a poll or two after the receiver wrote it and requested.
+        const since = Math.min(a.armedTick, a.myT) - 5;
+        this.started = false;
+        await until(this.ctx, st => st.tick >= requestFrame || newRequestFrom(st, a.receiverHash, since) !== null || this.armed !== a, Math.max(0, requestFrame - (this.s?.tick ?? requestFrame)) + 5);
+        let outcome: Outcome;
+        let detail: string | undefined;
+        const receiver = this.s?.nearbyPlayers.find(p => nameHash(p.name) === a.receiverHash);
+        if (this.armed !== a) outcome = 'cancelled';
+        else if (!receiver) outcome = 'no-receiver';
+        else {
+            this.started = true;
+            const left = Math.max(1, judge - (this.s?.tick ?? judge));
+            // By id: a noted stack shares the essence's name (NOTE_IDS) and must not be the offer.
+            const essence = findItem(this.s, ESSENCE)?.id ?? ESSENCE;
+            const r = await give(sdk, receiver.name, [{ item: essence, n: 'all' }], { maxTicks: left, openTimeoutMs: left * tickMs() });
+            outcome = r.ok ? 'gave' : 'missed';
+            if (r.reason) detail = r.reason;
+        }
+        this.started = false;
+        this.done.add(a.key);
+        if (outcome === 'missed' && sdk.getTradeState().isOpen) {
+            await sdk.sendDeclineTrade();
+            await until(this.ctx, st => !st.trade?.isOpen, 5);
+        }
+        if (outcome !== 'cancelled') this.result(outcome, a.session, a.T, { myT: a.myT, ...(detail ? { detail } : {}) });
         return outcome;
     }
 }

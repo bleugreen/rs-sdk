@@ -235,14 +235,20 @@ measured spot checks in section 4):
   against 33.19 for knights.
 - **Watchman (65), Gnome (75), Fremennik (45, needs The Fremennik Trials)** lose
   for the same reason (inferred, model only).
-- **Stalls are unusable in the Ardougne market** (measured, `thieving-stall.ts`,
-  600 ticks each: baker's stall at 5 and silk stall at 20, **0 steals**). The
-  owner (5 tiles, line of sight) or a guard (Ardougne guards and knights, plus
-  paladins at the silver, spice and gem stalls) refuses the steal, and a guard
-  retaliates (`stealing.rs2:98-121`). After that every click returns "You can't
-  steal from the market stall during combat!" (`stealing.rs2:70-73`) until the
-  account dies. Even unguarded, the best stall rate is low: the baker's stall
-  gives 16 base per 8-tick respawn (read).
+- **Ardougne market stalls are no xp source, but the baker's stall works for
+  loot.** The owner (5 tiles, line of sight) or a guard (Ardougne guards and
+  knights, plus paladins at the silver, spice and gem stalls) refuses the steal,
+  and a guard retaliates (`stealing.rs2:98-121`). Every click within 10 ticks of
+  combat is then refused with "You can't steal from the market stall during
+  combat!" (`stealing.rs2:70-73`). `thieving-stall.ts` clicks every tick, so it
+  stays locked: 0 steals in 600 ticks at the baker's and silk stalls (measured).
+  The lock is the click policy, not the stall. From (2667,3312), the tile north
+  of the east baker's stall, where the stall body hides the player from the
+  baker, clicking only while the stall is up and sending nothing for 11 ticks
+  after any combat contact gave 77 steals and 55 cakes per 1,000 ticks (lab,
+  99 combat stats, cairn://p/rs/161; clicking through combat on the same tile
+  gave 8). That is the `stall` option of `speedrun/helpers/kits.ts`. As xp it is
+  still poor: the baker's stall gives 16 base per 8-tick respawn (read).
 - **Trapped chests** need 10 ticks per open (`p_delay(1)` x3 + `p_delay(2)`,
   `thieving.rs2:141-164`) and respawn in 15-800 ticks (`trapped_chest.dbrow`).
   The best, the Ardougne castle chest (72, 500 base, 800-tick respawn), gives

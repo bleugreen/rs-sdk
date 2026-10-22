@@ -130,7 +130,8 @@ export function planPackage(pkg: Package, bank: BankItem[], stackable: (name: st
  * withdrawal, never as a wrong trade.
  */
 export function isStackableName(name: string): boolean {
-    return /^coins$| rune$|arrows?$|arrowtips$|arrowheads$|bolts$|darts?$|dart tips?$|^feathers?$|knife$|cannonballs?$/i.test(name);
+    // Throwing knives (`Rune knife`) stack; the plain `Knife` tool does not.
+    return /^coins$| rune$|arrows?$|arrowtips$|arrowheads$|bolts$|darts?$|dart tips?$|^feathers?$|\S knife$|cannonballs?$/i.test(name);
 }
 
 /** Aggregate an inventory or offer into id -> count. */

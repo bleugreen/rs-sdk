@@ -20,19 +20,32 @@
 // A client that exits is logged in again with backoff, and its role is then
 // restarted (RoleLoop.relaunched) so that it re-reads the new session's state.
 //
+// An account with path 'direct' has no lite runner and no gateway hop: its role
+// process logs in with its own lite client and drives it in-process
+// (HELPER_PATH=direct, speedrun/helpers/role.ts runDirect, speedrun/lib/direct.ts),
+// still in config order: the next account starts only once this one prints that
+// it is in the world. Its logout is the role process's own; a restart of the
+// role is a new login.
+//
 // Stop with SIGINT or SIGTERM (or let a `final` role exit): roles are stopped,
 // each account clicks logout (component 2458) and only then is its client
-// closed. Processes are only ever signalled through their own child handles.
+// closed. Every account stops at once under one deadline (stopDeadlineMs), and
+// whatever of the launcher's own children is still alive at it is SIGKILLed
+// before the launcher exits: the children run in their own process groups, so
+// an outer `timeout` that kills the launcher would otherwise leave them running.
+// Processes are only ever signalled through their own child handles.
 //
 // Config (JSON):
 //   gatewayPort      loopback gateway port (default 7795; the fleet uses 7790-7799 on bbs)
 //   botsDir          directory of <account>/bot.env (default <checkout>/bots)
 //   runDir           logs, launcher.json and the cue directory (default <checkout>/run-machine)
 //   loginSpacingMs   pause between consecutive logins (default 5000)
-//   accounts         [{ account, role, options?, args?, receiver?, final?, after? }]
+//   stopDeadlineMs   a stop's whole budget, accounts and gateway (default 25000; at least 5000)
+//   accounts         [{ account, role, options?, args?, receiver?, final?, after?, path? }]
 //                    receiver: a stand-in for the scored side; not counted in helpersReady
 //                    final:    when this role exits, stop everything
 //                    after:    'ready': log in only once every earlier altar-giver reports ready
+//                    path:     'relay' (default): lite runner + loopback gateway; 'direct': the role's own client
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { Subprocess } from 'bun';
@@ -42,6 +55,7 @@ import { parseBotEnv } from './accounts';
 import { assertUntracked, readStatuses, writeJsonAtomicSync } from './altar-cue';
 import { Backoff, LoginLimiter, loginFailurePolicy } from './backoff';
 import { ACCOUNT_NAME_RE, FORBIDDEN_ACCOUNTS, ROLE_NAME_RE } from './fleet-config';
+import { DIRECT_IN_WORLD_RE, DIRECT_REFUSED_RE } from './role';
 
 const ROOT = resolve(import.meta.dir, '..', '..');
 
@@ -53,6 +67,7 @@ export interface LaunchEntry {
     receiver: boolean;
     final: boolean;
     after: 'login' | 'ready';
+    path: 'relay' | 'direct';
 }
 
 export interface LaunchConfig {
@@ -60,6 +75,7 @@ export interface LaunchConfig {
     botsDir: string;
     runDir: string;
     loginSpacingMs: number;
+    stopDeadlineMs: number;
     accounts: LaunchEntry[];
 }
 
@@ -70,6 +86,8 @@ export function parseLaunchConfig(raw: unknown, root = ROOT): LaunchConfig {
     const port = Number(r.gatewayPort ?? 7795);
     if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error(`bad gatewayPort ${r.gatewayPort}`);
     if (!Array.isArray(r.accounts) || r.accounts.length === 0) throw new Error('accounts must be a non-empty list');
+    const stopDeadlineMs = Number(r.stopDeadlineMs ?? 25_000);
+    if (!Number.isFinite(stopDeadlineMs) || stopDeadlineMs < 5000) throw new Error(`bad stopDeadlineMs ${r.stopDeadlineMs}: at least 5000`);
     const seen = new Set<string>();
     const accounts = r.accounts.map((a: Record<string, unknown>, i: number): LaunchEntry => {
         const account = String(a.account ?? '');
@@ -82,6 +100,8 @@ export function parseLaunchConfig(raw: unknown, root = ROOT): LaunchConfig {
         if (!existsSync(join(root, 'speedrun', 'helpers', `${role}.ts`))) throw new Error(`accounts[${i}]: no speedrun/helpers/${role}.ts`);
         const after = a.after ?? 'login';
         if (after !== 'login' && after !== 'ready') throw new Error(`accounts[${i}]: after must be login or ready`);
+        const path = a.path ?? 'relay';
+        if (path !== 'relay' && path !== 'direct') throw new Error(`accounts[${i}]: path must be relay or direct`);
         return {
             account,
             role,
@@ -89,7 +109,8 @@ export function parseLaunchConfig(raw: unknown, root = ROOT): LaunchConfig {
             args: Array.isArray(a.args) ? a.args.map(String) : [],
             receiver: a.receiver === true,
             final: a.final === true,
-            after
+            after,
+            path
         };
     });
     return {
@@ -97,6 +118,7 @@ export function parseLaunchConfig(raw: unknown, root = ROOT): LaunchConfig {
         botsDir: resolve(root, String(r.botsDir ?? 'bots')),
         runDir: resolve(root, String(r.runDir ?? 'run-machine')),
         loginSpacingMs: Number(r.loginSpacingMs ?? 5000),
+        stopDeadlineMs,
         accounts
     };
 }
@@ -124,7 +146,8 @@ export function roleEnv(base: Record<string, string | undefined>, botEnv: Record
         RC_CUE_DIR: base.RC_CUE_DIR ?? join(runDir, 'rc-cue'),
         // The role's RoleState (role.ts): what a handover already gave survives a role restart.
         ROLE_STATE_DIR: base.ROLE_STATE_DIR ?? join(runDir, 'role-state'),
-        LOGGED_IN_AT: String(loggedInAt)
+        LOGGED_IN_AT: String(loggedInAt),
+        HELPER_PATH: e.path
     };
 }
 
@@ -136,7 +159,7 @@ export interface LauncherStatus {
     gatewayPort: number;
     /** Every non-receiver account is online (logged in since the launcher started it). */
     helpersReady: boolean;
-    accounts: { account: string; role: string; receiver: boolean; state: AccountState; loggedInAt: number | null; logins: number }[];
+    accounts: { account: string; role: string; receiver: boolean; path: LaunchEntry['path']; state: AccountState; loggedInAt: number | null; logins: number }[];
     ms: number;
 }
 
@@ -150,6 +173,8 @@ export function helpersReady(accounts: LauncherStatus['accounts']): boolean {
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 const iso = () => new Date().toISOString();
 const LOGIN_TIMEOUT_MS = 90_000;
+/** A direct-path role's logout: 8 s for the click, a 17-tick combat wait, 8 s again. */
+const DIRECT_STOP_GRACE_MS = 40_000;
 
 async function pipeLines(stream: ReadableStream<Uint8Array>, onLine: (line: string) => void): Promise<void> {
     const decoder = new TextDecoder();
@@ -175,7 +200,78 @@ async function pipeLines(stream: ReadableStream<Uint8Array>, onLine: (line: stri
 // times them out. Bun 1.3 honours `detached` though its types don't declare it.
 const OWN_GROUP = { detached: true } as {};
 
+/** The gateway's share of a stop's deadline: the relay accounts log out through it, so it goes last. */
+const GATEWAY_STOP_RESERVE_MS = 2000;
+
+/** What a stop needs of an account: a graceful stop whose waits end by `deadline`, and a hard kill of its own children. */
+export interface Stoppable {
+    stop(deadline: number): Promise<void>;
+    kill(): void;
+}
+
+/**
+ * Stop every account at once; at `deadline` SIGKILL (through `kill`) each one
+ * whose stop has not finished. Resolves by the deadline with how many were killed.
+ */
+export async function stopAllWithin(items: Stoppable[], deadline: number): Promise<number> {
+    let killed = 0;
+    await Promise.all(
+        items.map(async it => {
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            const late = new Promise<false>(r => (timer = setTimeout(() => r(false), Math.max(0, deadline - Date.now()))));
+            const done = await Promise.race([it.stop(deadline).then(() => true, () => true), late]);
+            clearTimeout(timer);
+            if (!done) {
+                killed++;
+                it.kill();
+            }
+        })
+    );
+    return killed;
+}
+
+/**
+ * A stop request. The first one wins and its arrival fixes the deadline, so the
+ * bound runs from the signal, not from whenever the launcher gets round to
+ * stopping. If the stop has not `finished()` by the deadline (plus `slackMs`),
+ * `onOverdue` runs: the launcher's last resort, which kills its children and exits.
+ */
+export class StopRequest {
+    why: string | null = null;
+    code = 0;
+    deadline = Infinity;
+    /** Resolves when a stop is requested; the start loop races its waits against it. */
+    readonly requested: Promise<void>;
+    private resolve: () => void = () => undefined;
+    private watchdog: ReturnType<typeof setTimeout> | undefined;
+
+    constructor(
+        private readonly budgetMs: number,
+        private readonly onOverdue: () => void,
+        private readonly slackMs = 500
+    ) {
+        this.requested = new Promise<void>(r => (this.resolve = r));
+    }
+
+    request(why: string, code = 0): void {
+        if (this.why !== null) return;
+        this.why = why;
+        this.code = code;
+        this.deadline = Date.now() + this.budgetMs;
+        this.watchdog = setTimeout(this.onOverdue, this.budgetMs + this.slackMs);
+        this.resolve();
+    }
+
+    finished(): void {
+        clearTimeout(this.watchdog);
+    }
+}
+
+/** `ms`, cut to what is left before `deadline`. */
+const remaining = (deadline: number, ms: number) => Math.max(0, Math.min(ms, deadline - Date.now()));
+
 async function exitedWithin(child: { exited: Promise<unknown> }, ms: number): Promise<boolean> {
+    if (ms <= 0) return Promise.race([child.exited.then(() => true), Promise.resolve(false)]);
     return Promise.race([child.exited.then(() => true), sleep(ms).then(() => false)]);
 }
 
@@ -188,6 +284,8 @@ export interface RoleProcess {
 }
 
 export interface RoleLoopHooks {
+    /** Before every start: a direct-path role logs in when it starts, so this is where it waits for a login slot. */
+    beforeSpawn?(): Promise<void>;
     /** Start the role process. Called afresh for every start, so its environment carries the current login. */
     spawn(): RoleProcess;
     isStopping(): boolean;
@@ -234,6 +332,8 @@ export class RoleLoop {
     private async loop(): Promise<void> {
         const { account, role, final } = this.entry;
         while (!this.h.isStopping()) {
+            await this.h.beforeSpawn?.();
+            if (this.h.isStopping()) return;
             const started = Date.now();
             const child = this.h.spawn();
             this.proc = child;
@@ -295,7 +395,7 @@ export class RoleLoop {
 class Launcher {
     private gateway: Subprocess<'ignore', 'pipe', 'pipe'> | null = null;
     private readonly accounts: AccountRun[];
-    private stopping: string | null = null;
+    private readonly stopReq: StopRequest;
     private readonly logins = new LoginLimiter({ perMinute: 6, burst: 3, minSpacingMs: 4000 });
     readonly startedAt = Date.now();
     readonly logDir: string;
@@ -303,6 +403,15 @@ class Launcher {
     constructor(readonly cfg: LaunchConfig) {
         this.logDir = join(cfg.runDir, 'logs');
         this.accounts = cfg.accounts.map(e => new AccountRun(this, e));
+        this.stopReq = new StopRequest(cfg.stopDeadlineMs, () => this.overdue());
+    }
+
+    /** The stop's deadline passed with something still pending: kill every child we hold and exit. */
+    private overdue(): void {
+        this.log(`[launcher] stop not finished ${this.cfg.stopDeadlineMs} ms after ${this.stopReq.why}; killing every child process and exiting`);
+        for (const a of this.accounts) a.kill();
+        if (this.gateway && this.gateway.exitCode === null) this.gateway.kill('SIGKILL');
+        process.exit(this.stopReq.code || 1);
     }
 
     get gatewayUrl(): string {
@@ -310,7 +419,13 @@ class Launcher {
     }
 
     get isStopping(): boolean {
-        return this.stopping !== null;
+        return this.stopReq.why !== null;
+    }
+
+    /** Wait `ms`, or less if a stop is requested meanwhile. */
+    private pauseUnlessStopped(ms: number): Promise<void> {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        return Promise.race([new Promise<void>(r => (timer = setTimeout(r, ms))), this.stopReq.requested]).finally(() => clearTimeout(timer));
     }
 
     log(line: string): void {
@@ -340,36 +455,38 @@ class Launcher {
         assertUntracked(cfg.runDir);
         for (const a of this.accounts) a.preflight();
         mkdirSync(this.logDir, { recursive: true, mode: 0o700 });
-        await this.startGateway();
-        const timer = setInterval(() => this.writeStatus(), 2000);
-        let code = 0;
-        const stop = (why: string, c = 0) => {
-            if (this.stopping) return;
-            this.stopping = why;
-            code = c;
-        };
+        // Before anything is started: a signal from here on stops what exists, within the deadline from its arrival.
+        const stop = (why: string, c = 0) => this.stopReq.request(why, c);
         process.on('SIGINT', () => stop('SIGINT'));
         process.on('SIGTERM', () => stop('SIGTERM'));
         this.onStop = stop;
+        const timer = setInterval(() => this.writeStatus(), 2000);
         try {
+            await this.startGateway();
             // Sequential, in config order: the next account logs in only after the previous one is in the world.
+            // Each wait is raced against a stop: a login still pending is the account's stop's to end.
             for (const a of this.accounts) {
-                if (this.stopping) break;
+                if (this.isStopping) break;
                 if (a.entry.after === 'ready') await this.waitForGiversReady(a);
-                await a.start();
+                if (this.isStopping) break;
+                await Promise.race([a.start(), this.stopReq.requested]);
                 this.writeStatus();
-                if (cfg.loginSpacingMs > 0) await sleep(cfg.loginSpacingMs);
+                if (cfg.loginSpacingMs > 0) await this.pauseUnlessStopped(cfg.loginSpacingMs);
             }
-            this.log(`[launcher] all accounts started; helpersReady=${this.status().helpersReady}`);
-            while (!this.stopping) await sleep(500);
+            if (!this.isStopping) this.log(`[launcher] all accounts started; helpersReady=${this.status().helpersReady}`);
+            await this.stopReq.requested;
         } finally {
-            this.log(`[launcher] stopping: ${this.stopping}`);
-            for (const a of [...this.accounts].reverse()) await a.stop();
-            await this.stopGateway();
+            if (!this.isStopping) this.stopReq.request('startup failed', 1);
+            this.log(`[launcher] stopping: ${this.stopReq.why}`);
+            const deadline = this.stopReq.deadline;
+            const killed = await stopAllWithin(this.accounts, deadline - GATEWAY_STOP_RESERVE_MS);
+            if (killed) this.log(`[launcher] ${killed} account(s) not stopped by the deadline; their processes were killed, and they stay in the world until the server times them out`);
+            await this.stopGateway(deadline);
+            this.stopReq.finished();
             clearInterval(timer);
             this.writeStatus();
         }
-        return code;
+        return this.stopReq.code;
     }
 
     onStop: (why: string, code?: number) => void = () => undefined;
@@ -378,10 +495,10 @@ class Launcher {
         const earlier = this.accounts.slice(0, this.accounts.indexOf(a)).filter(x => x.entry.role === 'altar-giver').map(x => x.entry.account);
         const dir = String(process.env.RC_CUE_DIR ?? join(this.cfg.runDir, 'rc-cue'));
         this.log(`[launcher] ${a.entry.account} waits for ${earlier.join(', ')} to be ready`);
-        while (!this.stopping) {
+        while (!this.isStopping) {
             const ready = new Set(readStatuses(dir).filter(s => s.phase === 'ready' && Date.now() - s.ms < 5000).map(s => s.account));
             if (earlier.every(n => ready.has(n))) return;
-            await sleep(1000);
+            await this.pauseUnlessStopped(1000);
         }
     }
 
@@ -417,26 +534,28 @@ class Launcher {
         const onLine = (l: string) => appendFileSync(logPath, `${iso()} ${l}\n`);
         void pipeLines(child.stdout, onLine);
         void pipeLines(child.stderr, onLine);
+        this.log(`[launcher] gateway started (pid ${child.pid})`);
         const deadline = Date.now() + 20_000;
         while (!(await this.probe())) {
+            if (this.isStopping) return;
             if (child.exitCode !== null || Date.now() > deadline) throw new Error(`gateway did not come up on 127.0.0.1:${this.cfg.gatewayPort}; see ${logPath}`);
             await sleep(250);
         }
         void child.exited.then(c => {
-            if (!this.stopping) this.onStop(`gateway exited with code ${c}`, 1);
+            if (!this.isStopping) this.onStop(`gateway exited with code ${c}`, 1);
         });
         this.log(`[launcher] gateway on 127.0.0.1:${this.cfg.gatewayPort}`);
     }
 
-    private async stopGateway(): Promise<void> {
+    private async stopGateway(deadline: number): Promise<void> {
         const g = this.gateway;
         if (!g || g.exitCode !== null) return;
         g.kill('SIGINT');
-        if (!(await exitedWithin(g, 5000))) g.kill('SIGKILL');
+        if (!(await exitedWithin(g, remaining(deadline, 5000)))) g.kill('SIGKILL');
     }
 }
 
-class AccountRun {
+class AccountRun implements Stoppable {
     state: AccountState = 'queued';
     loggedInAt: number | null = null;
     logins = 0;
@@ -451,7 +570,10 @@ class AccountRun {
         readonly entry: LaunchEntry
     ) {
         this.roles = new RoleLoop(entry, {
+            beforeSpawn: () => this.beforeRoleStart(),
             spawn: () => this.spawnRole(),
+            // A direct-path role logs out before it exits, which can take a combat timer.
+            ...(entry.path === 'direct' ? { killGraceMs: DIRECT_STOP_GRACE_MS } : {}),
             isStopping: () => this.L.isStopping,
             log: line => this.L.log(line),
             onFinal: (why, code) => this.L.onStop(why, code)
@@ -463,7 +585,7 @@ class AccountRun {
     }
 
     summary(): LauncherStatus['accounts'][number] {
-        return { account: this.entry.account, role: this.entry.role, receiver: this.entry.receiver, state: this.state, loggedInAt: this.loggedInAt, logins: this.logins };
+        return { account: this.entry.account, role: this.entry.role, receiver: this.entry.receiver, path: this.entry.path, state: this.state, loggedInAt: this.loggedInAt, logins: this.logins };
     }
 
     private note(stream: 'lite' | 'role', line: string): void {
@@ -490,9 +612,38 @@ class AccountRun {
 
     /** Log in (waiting for it), start the role, and keep both running in the background. */
     async start(): Promise<void> {
+        if (this.entry.path === 'direct') return this.startDirect();
         const first = await this.session();
         this.supervising = this.supervise(first);
         await Promise.race([sleep(1000), this.roles.start()]);
+    }
+
+    private markIn: (() => void) | null = null;
+    private refusal: number | null = null;
+
+    /** Direct path: the role process is the client. Resolves once it says it is in the world (or gives up waiting). */
+    private async startDirect(): Promise<void> {
+        const inWorld = new Promise<'in'>(r => (this.markIn = () => r('in')));
+        const first = await Promise.race([inWorld, this.roles.start().then(() => 'ended' as const), sleep(LOGIN_TIMEOUT_MS).then(() => 'timeout' as const)]);
+        if (first === 'timeout') this.L.log(`[launcher] ${this.entry.account}: not in the world after ${LOGIN_TIMEOUT_MS / 1000}s; starting the next account, this one keeps trying`);
+    }
+
+    /** Before each direct-path start (a login): honour a refusal's delay, then take a login slot. */
+    private async beforeRoleStart(): Promise<void> {
+        if (this.entry.path !== 'direct') return;
+        if (this.refusal !== null) {
+            const p = loginFailurePolicy(this.refusal);
+            if (p.fleetPauseMs) this.L.pauseLogins(p.fleetPauseMs, `${this.entry.account} refused with code ${this.refusal}`);
+            if (p.needsAttention) this.L.log(`[launcher] ${this.entry.account}: login refused with code ${this.refusal}; check its credentials`);
+            this.refusal = null;
+            const until = Date.now() + p.accountDelayMs;
+            while (Date.now() < until && !this.L.isStopping) await sleep(500);
+        }
+        if (this.L.isStopping) return;
+        await this.L.takeLogin();
+        this.state = 'logging-in';
+        this.logins++;
+        this.L.log(`[launcher] ${this.entry.account}: logging in to ${this.botEnv.SERVER} (direct)`);
     }
 
     /** One login: resolves once the client is in the world, with a promise for the session's end. */
@@ -500,6 +651,7 @@ class AccountRun {
         for (;;) {
             if (this.L.isStopping) return { ended: Promise.resolve({ code: null }) };
             await this.L.takeLogin();
+            if (this.L.isStopping) return { ended: Promise.resolve({ code: null }) };
             this.state = 'logging-in';
             this.logins++;
             this.L.log(`[launcher] ${this.entry.account}: logging in to ${this.botEnv.SERVER}`);
@@ -512,6 +664,7 @@ class AccountRun {
                 stderr: 'pipe'
             });
             this.lite = child;
+            this.L.log(`[launcher] ${this.entry.account}: client started (pid ${child.pid})`);
             let markIn: () => void = () => undefined;
             const inWorld = new Promise<'in'>(r => (markIn = () => r('in')));
             let refusal: { code: number } | undefined;
@@ -584,8 +737,26 @@ class AccountRun {
         const onLine = (line: string) => {
             this.note('role', line);
             if (line.startsWith('RESULT ')) this.L.log(`[${e.account}] ${line}`);
+            if (e.path !== 'direct') return;
+            if (DIRECT_IN_WORLD_RE.test(line)) {
+                this.loggedInAt = Date.now();
+                this.state = 'online';
+                this.L.log(`[launcher] ${e.account}: in the world (login ${this.logins}, direct)`);
+                this.L.writeStatus();
+                this.markIn?.();
+            }
+            const refused = DIRECT_REFUSED_RE.exec(line);
+            if (refused) this.refusal = Number(refused[1]);
         };
-        const exited = Promise.all([pipeLines(child.stdout, onLine), pipeLines(child.stderr, onLine), child.exited]).then(() => child.exitCode);
+        const exited = Promise.all([pipeLines(child.stdout, onLine), pipeLines(child.stderr, onLine), child.exited]).then(() => {
+            if (e.path === 'direct' && this.state !== 'stopping') {
+                // The client went with the process: offline until the next start logs in again.
+                this.state = child.exitCode === 0 ? 'stopped' : 'backoff';
+                if (child.exitCode === 3) this.L.onStop(`${e.account}: client revision is older than the server's (exit 3)`, 3);
+                this.L.writeStatus();
+            }
+            return child.exitCode;
+        });
         return {
             pid: child.pid,
             get exitCode() {
@@ -596,29 +767,31 @@ class AccountRun {
         };
     }
 
-    /** Role first (it may be mid-trade), then logout by the button, then the client. */
-    async stop(): Promise<void> {
+    /** Role first (it may be mid-trade), then logout by the button, then the client; every wait ends by `deadline`. */
+    async stop(deadline: number): Promise<void> {
         if (this.state === 'queued') {
             this.state = 'stopped';
             return;
         }
+        // A relay client that never got into the world has nothing to log out of: close it at once.
+        const inWorld = this.state === 'online';
         this.state = 'stopping';
         const role = this.roles.running;
         if (role && role.exitCode === null) {
             role.kill('SIGTERM');
-            if (!(await exitedWithin(role, 15_000))) role.kill('SIGKILL');
+            if (!(await exitedWithin(role, remaining(deadline, this.entry.path === 'direct' ? DIRECT_STOP_GRACE_MS : 15_000)))) role.kill('SIGKILL');
         }
         await this.roles.done.catch(() => undefined);
         const lite = this.lite;
         if (lite && lite.exitCode === null) {
-            const out = await this.logout(lite).catch(e => {
+            const out = !inWorld ? false : await this.logout(lite, deadline).catch(e => {
                 this.L.log(`[launcher] ${this.entry.account}: logout failed: ${e}`);
                 return false;
             });
             if (!out) {
-                this.L.log(`[launcher] ${this.entry.account}: no clean logout; closing the client`);
+                this.L.log(`[launcher] ${this.entry.account}: ${inWorld ? 'no clean logout' : 'not in the world'}; closing the client`);
                 lite.kill('SIGINT');
-                if (!(await exitedWithin(lite, 5000))) lite.kill('SIGKILL');
+                if (!(await exitedWithin(lite, remaining(deadline, 5000)))) lite.kill('SIGKILL');
             }
         }
         await this.supervising?.catch(() => undefined);
@@ -626,8 +799,15 @@ class AccountRun {
         this.L.log(`[launcher] ${this.entry.account}: stopped`);
     }
 
+    /** Past the stop's deadline: SIGKILL this account's own role and client, whatever they are doing. */
+    kill(): void {
+        for (const p of [this.roles.running, this.lite]) if (p && p.exitCode === null) p.kill('SIGKILL');
+        this.state = 'stopped';
+        this.L.log(`[launcher] ${this.entry.account}: killed at the stop deadline`);
+    }
+
     /** Click logout through our own SDK connection and wait for the client to leave. Refused in combat: wait it out once. */
-    private async logout(lite: Subprocess): Promise<boolean> {
+    private async logout(lite: Subprocess, deadline: number): Promise<boolean> {
         const sdk = new BotSDK({
             botUsername: this.entry.account,
             password: this.botEnv.PASSWORD!,
@@ -639,14 +819,14 @@ class AccountRun {
             readyTimeout: 0
         });
         try {
-            await Promise.race([sdk.connect(), sleep(10_000).then(() => Promise.reject(new Error('gateway handshake timed out')))]);
+            await Promise.race([sdk.connect(), sleep(remaining(deadline, 10_000)).then(() => Promise.reject(new Error('gateway handshake timed out')))]);
             for (let attempt = 0; attempt < 2; attempt++) {
                 const clickTick = sdk.getState()?.tick ?? 0;
                 await sdk.sendClickComponent(LOGOUT_BUTTON).catch(() => undefined);
-                if (await exitedWithin(lite, 8_000)) return true;
+                if (await exitedWithin(lite, remaining(deadline, 8_000))) return true;
                 const refused = sdk.getState()?.gameMessages.some(m => /can't log ?out/i.test(m.text) && m.tick >= clickTick);
-                if (!refused) return false;
-                await sdk.waitForCondition(s => s.tick >= clickTick + COMBAT_LOGOUT_TICKS + 1, 15_000).catch(() => undefined);
+                if (!refused || remaining(deadline, 15_000) === 0) return false;
+                await sdk.waitForCondition(s => s.tick >= clickTick + COMBAT_LOGOUT_TICKS + 1, remaining(deadline, 15_000)).catch(() => undefined);
             }
             return false;
         } finally {

@@ -43,7 +43,7 @@ import { join } from 'node:path';
 import type { BotWorldState, NearbyPlayer } from '../../sdk/types';
 import { withdrawMany } from '../lib/bank';
 import { give, tradeOf } from '../lib/trade';
-import { assertUntracked, canonName, CueWatcher, cueDir, nameHash, readJson, writeJsonAtomicSync, type Cue } from './altar-cue';
+import { assertUntracked, canonName, CueWatcher, cueDir, nameHash, newRequestFrom, readJson, writeJsonAtomicSync, type Cue } from './altar-cue';
 import { chebyshev, cheat, count, isLocalServer, labTele, pos, standOn, until, type Tile } from './altar-room';
 import { closeBank, depositAllExcept, ensureOutOfTutorial, openBank, walkNear } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
@@ -193,15 +193,6 @@ export function readBoneAsk(dir: string): BoneAsk | null {
 /** An ask this request may use: newer than the last one served and written within `maxAgeMs`. */
 export function usableAsk(ask: BoneAsk | null, lastSeq: number, now = Date.now(), maxAgeMs = 60_000): BoneAsk | null {
     return ask && ask.seq > lastSeq && now - ask.ms <= maxAgeMs ? ask : null;
-}
-
-/** The tick of the newest trade request from the receiver (by name hash) after `after`, or null. */
-export function newRequestFrom(s: BotWorldState, receiverHash: string, after: number): number | null {
-    let tick: number | null = null;
-    for (const m of s.gameMessages) {
-        if (m.type === 4 && m.tick > after && /wishes to trade/i.test(m.text) && nameHash(m.sender) === receiverHash) tick = Math.max(tick ?? m.tick, m.tick);
-    }
-    return tick;
 }
 
 // ------------------------------------------------------------------ role
