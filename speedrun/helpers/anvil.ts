@@ -40,7 +40,7 @@ import { depositMatching, withdrawMany, type BankSdk } from '../lib/bank';
 import { tickClock, waitUntil, type StateSource } from '../lib/wait';
 import { ANY_OFFER, give, receiveFrom, tradeOf, type GiveSpec, type WantSpec } from '../lib/trade';
 import { assertUntracked, canonName, CueWatcher, cueDir, nameHash, readJson, writeJsonAtomicSync, type Cue } from './altar-cue';
-import { chebyshev, cheat, isLocalServer, labTele, pos, standOn, until, type Tile } from './altar-room';
+import { chebyshev, cheat, isLocalServer, labTele, pos, until, type Tile } from './altar-room';
 import { decideRequest, newRequestCtx } from './bone-giver';
 import { ensureOutOfTutorial } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
