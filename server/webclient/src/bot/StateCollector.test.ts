@@ -221,7 +221,8 @@ describe('BotStateCollector jumps and region loading', () => {
         client.localPlayer.x += 128;
         expect((collector as any).collectPlayerState(6, 100).teleportTick).toBe(5);
         client.localPlayer.teleports = 2;
-        expect((collector as any).collectPlayerState(9, 100).teleportTick).toBe(9);
+        client.localPlayer.lastTeleportJump = false; // an agility_walk p_teleport step
+        expect((collector as any).collectPlayerState(9, 100)).toMatchObject({ teleportTick: 9, teleportJump: false });
         // a second collect within the tick (the overlay's) does not move it
         expect((collector as any).collectPlayerState(10, 100).teleportTick).toBe(9);
     });

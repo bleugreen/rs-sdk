@@ -338,6 +338,12 @@ export interface PlayerState {
      * so a click sent then is dropped. Null before the first.
      */
     teleportTick: number | null;
+    /**
+     * The jump bit of that update: true for p_telejump (teleport spells, ladders and stairs,
+     * login), false for p_teleport, which the scripted moves step by (agility_walk) and whose
+     * script holds the player through the tick it lands. Null before the first.
+     */
+    teleportJump: boolean | null;
 }
 
 // Combat style state

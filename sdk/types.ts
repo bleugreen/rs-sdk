@@ -58,6 +58,13 @@ export interface PlayerState {
      * absent on older clients.
      */
     teleportTick?: number | null;
+    /**
+     * The jump bit of that update: true for p_telejump (teleport spells, ladders and stairs,
+     * login), false for p_teleport, which scripted moves step by (agility_walk) and whose script
+     * holds the player through the tick it lands, so a click then is dropped. Null before the
+     * first; absent on older clients.
+     */
+    teleportJump?: boolean | null;
 }
 
 export interface SkillState {

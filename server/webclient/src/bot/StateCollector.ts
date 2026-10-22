@@ -694,7 +694,8 @@ export class BotStateCollector implements ScanProvider {
             lifeId: this.lifeId,
             respawnCount: this.respawnCount,
             lastDeathTick: this.lastDeathTick,
-            teleportTick: this.teleportTick
+            teleportTick: this.teleportTick,
+            teleportJump: this.teleportTick === null ? null : !!player.lastTeleportJump
         };
     }
 

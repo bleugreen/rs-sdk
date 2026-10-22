@@ -9,11 +9,11 @@
 // that!", which a door animation or an NPC in the way can cause.
 //
 // Jumps (the jump guard, `settle` and `ClickGuard`): the first click after the
-// player's position jumps is the one most often lost. A teleport-type update
-// (a teleport, a ladder or stairs, login, and the scripted moves stepped by
-// p_teleport such as agility_walk: the Gnome Stronghold gate, the Grand Tree
-// door) comes from a script that still holds the player on that tick, so a
-// click then is dropped; and while the browser client rebuilds the region its
+// player's position jumps is the one most often lost. A scripted move stepped
+// by p_teleport (agility_walk: the Gnome Stronghold gate, the Grand Tree door)
+// still holds the player on the tick it lands, so a click then is dropped; a
+// p_telejump (a teleport, a ladder or stairs, login) does not hold them, but its
+// first click can still miss; and while the browser client rebuilds the region its
 // collision maps are stale, so the SDK refuses world clicks (scene_loading)
 // and the lite client can refuse one as unroutable (cant_reach). So `act` and
 // `talkTo` wait for a settled position (region built, not placed this tick)
@@ -83,11 +83,13 @@ export const MAX_REFUSED_RESENDS = 5;
 
 /**
  * Not yet a position to click from: the client is still building the region (sceneReady false),
- * or the server placed the player this very tick (teleportTick), when the placing script still
- * holds them. Clients that publish neither are always settled.
+ * or a scripted p_teleport step placed the player this very tick (teleportTick, no jump bit:
+ * agility_walk, the Gnome Stronghold gate, the Grand Tree door), whose script still holds them.
+ * A p_telejump (a ladder, a spell, login) holds nobody, so it does not wait; a click it drops is
+ * caught by ClickGuard's reply check. Clients that publish none of these are always settled.
  */
 export function unsettled(s: BotWorldState): boolean {
-    return s.sceneReady === false || (s.player?.teleportTick ?? null) === s.tick;
+    return s.sceneReady === false || ((s.player?.teleportTick ?? null) === s.tick && s.player?.teleportJump === false);
 }
 
 /** Wait for a settled position (`unsettled` false); `ticks` is how long that took. */
