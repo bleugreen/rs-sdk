@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { GroundItem, InventoryItem, NearbyNpc } from '../../sdk/types';
-import { banked, carried, FIELDS, hidesOptions, minCoins, nextStep, pickCow, pickHide, shopDueAfterBank, shopNeed, threadNeeded, type Banked, type Carried } from './hides';
+import { banked, carried, FIELDS, hidesOptions, minCoins, nextStep, hidesToWithdraw, pickCow, pickHide, shopDueAfterBank, shopNeed, threadNeeded, type Banked, type Carried } from './hides';
 
 const item = (slot: number, name: string, count = 1): InventoryItem => ({ slot, id: 1000 + slot, name, count, optionsWithIndex: [] });
 const hides = (n: number, from = 1) => Array.from({ length: n }, (_, i) => item(from + i, 'Cowhide'));
@@ -81,6 +81,12 @@ describe('nextStep', () => {
         expect(shopDueAfterBank('tan')).toBe(true);
         expect(shopDueAfterBank('gather')).toBe(true);
         expect(shopDueAfterBank(null)).toBe(true);
+    });
+    test('stranded banked cowhides go back out, as many as fit', () => {
+        expect(hidesToWithdraw(6, 27)).toBe(6);
+        expect(hidesToWithdraw(40, 27)).toBe(27);
+        expect(hidesToWithdraw(0, 27)).toBe(0);
+        expect(hidesToWithdraw(5, 0)).toBe(0);
     });
     test('shopNeed', () => {
         const o = hidesOptions({ target: 1, thread: 230, needle: 1 });

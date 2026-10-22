@@ -167,6 +167,13 @@ export function nextStep(s: Situation, o: HidesOptions): Step {
  */
 export const shopDueAfterBank = (previous: Step | null): boolean => previous !== 'shop';
 
+/**
+ * Cowhides to take back out of the bank: any role that banks the whole inventory
+ * (a handover borrowing the account, a restart's first visit) strands the hides
+ * it carried, and only the tanner turns them into leather.
+ */
+export const hidesToWithdraw = (inBank: number, freeSlots: number): number => Math.max(0, Math.min(inBank, freeSlots));
+
 /** Thread and needles still to buy, or null when the bank already holds them. */
 export function shopNeed(bank: Banked, o: HidesOptions): { thread: number; needle: number } | null {
     const need = { thread: Math.max(0, o.thread - bank.thread), needle: Math.max(0, o.needle - bank.needle) };
@@ -251,6 +258,11 @@ async function bank(ctx: RoleContext, o: HidesOptions, tally: Tally): Promise<Ba
             const w = await bot.withdrawItem(COINS, n);
             if (!w.success) ctx.log('coin withdraw short', { asked: n, message: w.message });
         }
+    }
+    const stranded = hidesToWithdraw(banked(sdk.getBankItems()).hides, carried(sdk.getInventory()).freeSlots);
+    if (stranded > 0) {
+        const w = await bot.withdrawItem(COWHIDE, stranded);
+        ctx.log('took banked cowhides to tan', { asked: stranded, got: w.amountWithdrawn ?? 0 });
     }
     const items = sdk.getBankItems().map(i => ({ id: i.id, name: i.name, count: i.count }));
     ctx.reportBank({ items });
