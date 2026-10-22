@@ -222,8 +222,11 @@ export function pageLabel(t: Pick<CdpTarget, 'url'>): string {
     }
 }
 
+/** Chrome's own UI drawn as WebUI pages (the omnibox popup): listed as pages, but no window of their own. */
+const BROWSER_UI = /^chrome:\/\/[^/]*\.top-chrome\//;
+
 async function listPages(base: string): Promise<CdpTarget[]> {
-    return ((await (await fetch(`${base}/json/list`)).json()) as CdpTarget[]).filter(t => t.type === 'page');
+    return ((await (await fetch(`${base}/json/list`)).json()) as CdpTarget[]).filter(t => t.type === 'page' && !BROWSER_UI.test(t.url));
 }
 
 /** A command on the browser target (the Browser domain lives there, not on a page). */
@@ -291,7 +294,7 @@ export interface TabClose {
  * logout: a closed tab is a dropped client, which the server keeps in the world. It refuses to
  * close Chrome's last window, because Chrome quits with it: stage the next window first.
  */
-export async function closeBotTabs(cdpOrigin: string, botName: string): Promise<TabClose> {
+export async function closeBotTabs(cdpOrigin: string, botName: string, waitMs = 5_000): Promise<TabClose> {
     const base = cdpOrigin.replace(/\/+$/, '');
     const pages = await listPages(base);
     const mine = botTabs(pages, botName);
@@ -300,7 +303,16 @@ export async function closeBotTabs(cdpOrigin: string, botName: string): Promise<
         const res = await fetch(`${base}/json/close/${t.id}`);
         if (!res.ok) throw new Error(`CDP /json/close: HTTP ${res.status}`);
     }
-    return { closed: mine.length, left: (await listPages(base)).map(pageLabel) };
+    // /json/close answers before the target is gone (the twin still listed it right after): wait for it.
+    const ids = new Set(mine.map(t => t.id));
+    const until = Date.now() + waitMs;
+    let left = await listPages(base);
+    while (left.some(t => ids.has(t.id)) && Date.now() < until) {
+        await Bun.sleep(100);
+        left = await listPages(base);
+    }
+    if (left.some(t => ids.has(t.id))) throw new Error(`${botName}'s window was still open ${waitMs} ms after it was closed`);
+    return { closed: mine.length, left: left.map(pageLabel) };
 }
 
 /** The separator between an account's mark and the page's own title (see frontTab). */

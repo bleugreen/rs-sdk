@@ -150,6 +150,19 @@ describe('windows on the recorded display: stage, close, front, raise', () => {
         }
     });
 
+    test('Chrome\'s own UI pages are no windows: they neither keep Chrome up nor count as other pages', async () => {
+        const cdp = fakeCdp('cairn_twin');
+        try {
+            cdp.page.others.push({ id: 'ui', url: 'chrome://omnibox-popup.top-chrome/' }, { id: 'ui2', url: 'chrome://omnibox-popup.top-chrome/omnibox_popup_aim.html' });
+            await expect(closeBotTabs(cdp.origin, 'cairn_twin')).rejects.toThrow("Chrome's last");
+            cdp.page.others.push({ id: 'n1', url: 'http://127.0.0.1:8899/bot?bot=cairn_smoke' });
+            expect(await closeBotTabs(cdp.origin, 'cairn_twin')).toEqual({ closed: 1, left: ['bot=cairn_smoke'] });
+            expect((await frontTab(cdp.origin, 'cairn_smoke', 'cairn_smoke'))!.others).toEqual([]);
+        } finally {
+            cdp.stop();
+        }
+    });
+
     test('frontTab brings the tab to the front, marks its title once, and reports viewport, window and other pages', async () => {
         const cdp = fakeCdp('cairn_smoke');
         try {
