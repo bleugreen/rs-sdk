@@ -496,7 +496,7 @@ describe('the cue gate', () => {
         restart.write({ beacons: beacon, turns: [] });
         await sleep(30);
         expect(t.stops).toEqual([]);
-        expect(t.sessions).toEqual([`stood-down ${program.session}`, `open ${restart.session}`]);
+        expect(t.sessions).toEqual([`open ${pre.session}`, `stood-down ${program.session}`, `open ${restart.session}`]);
         restart.stop(beacon);
         await sleep(30);
         expect(t.stops).toEqual([]);
