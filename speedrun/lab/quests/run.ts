@@ -256,9 +256,9 @@ export function skillXps(s: BotWorldState | null): Record<string, number> {
     return Object.fromEntries(XP_SKILLS.map(k => [k, s?.skills.find(x => x.name.toLowerCase() === k)?.experience ?? 0]));
 }
 
-/** Base xp gained per skill between two `skillXps` snapshots (game xp / XP_RATE, to 0.1). */
+/** Base xp gained per skill of `before` between two `skillXps` snapshots (game xp / XP_RATE, to 0.1); a skill `after` lacks gained nothing. */
 export function baseXpGained(before: Readonly<Record<string, number>>, after: Readonly<Record<string, number>>): Record<string, number> {
-    return Object.fromEntries(Object.keys(before).map(k => [k, Math.round((((after[k] ?? 0) - before[k]!) / XP_RATE) * 10) / 10]));
+    return Object.fromEntries(Object.keys(before).map(k => [k, Math.round((((after[k] ?? before[k]!) - before[k]!) / XP_RATE) * 10) / 10]));
 }
 
 /** Apply the fixture of `from`, run the chosen segments, `runs` times; a failed run is recorded and the next one starts afresh. */
