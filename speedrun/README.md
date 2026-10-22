@@ -89,8 +89,9 @@ speedrun/
                   kit-return.ts (hand a rehearsal account's kit back to its giver and log out:
                   runs only within 30 tiles of the giver's --at tile, else casts a teleport
                   landing there if it can, else refuses without moving (exit 3; this content
-                  has no home teleport, so move the giver and pass --at); halts on the first
-                  hit and logs out (exit 4, naming the attacker));
+                  has no home teleport, so move the giver and pass --at); a hit on the way or
+                  waiting on the trade halts it, it runs once to a tile 20 from the attacker,
+                  then logs out (exit 4, naming the attacker); lab: lab/kit-return-lab.ts);
                   upstream watch (nightly diff of watched upstream paths);
                   drop-probe.ts (the dropped-client stay on the demo, with a throwaway);
                   hiscore-stamp-probe.ts (the live stamp test, plus uncached
