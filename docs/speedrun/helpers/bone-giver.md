@@ -50,7 +50,10 @@ the scored account its dragon bones in two places (SUPPLIES.md, H4.1-H4.16 and H
   knight's (`sideTiles`); a side the walk cannot reach falls through to the next.
 
 The receiver is never named: it is whoever in sight matches the receiver hash in the cue
-directory's `cue.json` (`altar-cue.ts`), which the scored side writes at login. The giver
+directory's `cue.json` (`altar-cue.ts`), which the scored side writes at login. The giver reads
+only a cue scoped to its own step and family (`scope`, altar-giver.md "The cue contract"):
+`{ step: 'S07', family: 'bone' }` for the standing mode, `{ step: 'S18', family: 'courier' }`
+for on-request. Runecraft's S06 cue, which ends with a stop, is invisible to both. The giver
 publishes `bones-<account>.json` there (phase, bones held, trades, refusals).
 
 ## Why a standing request, re-sent on the next tick
@@ -78,6 +81,7 @@ the send while the relay still held the click. Rs/105's three 30-tick trades cam
 | Option | Default | Meaning |
 |---|---|---|
 | `mode` | `standing` | `standing` (S07) or `on-request` (S18) |
+| `scope` | required | `{ step, family }` of the cue it serves: family `bone` in the standing mode, `courier` in on-request (`altar-cue.ts` CueScope) |
 | `item`, `n` | `Dragon bones`, 23 | what and how many per S07 load (unnoted, one press) |
 | `sites` | S07's oak then willow | `[{ giver, receiver }]` tiles in run order; the giver moves on when the receiver is not in sight within `siteWaitTicks` (30). Required for `on-request` (where to wait) |
 | `trades` | no limit | stop after this many trades (else when the cue says stop) |

@@ -50,8 +50,8 @@ const config = {
     runDir,
     loginSpacingMs: 2000,
     accounts: [
-        { account: giver, role: 'cannon', options: { serve: { tile: GIVER_TILE, balls, labStock: true, returnTile: GIVER_TILE } } },
-        { account: receiver, role: 'cannon-receiver', receiver: true, final: true, options: { giver, tile: RECEIVER_TILE, balls, questVarp: quest, setUp, giveBack: true, waitTicks: 1500 } }
+        { account: giver, role: 'cannon', options: { serve: { tile: GIVER_TILE, balls, labStock: true, returnTile: GIVER_TILE, scope: { step: 'S14', family: 'cannon' } } } },
+        { account: receiver, role: 'cannon-receiver', receiver: true, final: true, options: { giver, tile: RECEIVER_TILE, balls, questVarp: quest, setUp, giveBack: true, waitTicks: 1500, scope: { step: 'S14', family: 'cannon' } } }
     ]
 };
 const configPath = join(base, 'launch.json');

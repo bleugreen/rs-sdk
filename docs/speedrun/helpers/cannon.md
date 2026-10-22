@@ -174,6 +174,7 @@ flagged for a person (`attention`). Give each hand-off its own `serve.id` (H11, 
 | `returnTile` | none | Take the set back here afterwards (H11r) |
 | `labStock` | false | Local lab only: make the load with staff commands |
 | `noReplyTicks`, `resendTicks`, `cueDir` | 2, 100, `RC_CUE_DIR` | As the bone giver |
+| `scope` | required without `receiver` | `{ step, family: 'cannon' }` (S14 or S27): the cue the receiver hash comes from; another step's cue is ignored (altar-giver.md, "The cue contract") |
 
 **The scored side's contract**: stand beside the holder and call
 `receiveFrom(holder, { want: loadWant(balls) })` (`loadWant` is exported from `cannon.ts`). A want

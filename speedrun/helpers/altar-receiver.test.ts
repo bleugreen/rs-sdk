@@ -86,15 +86,21 @@ describe('planTurns', () => {
 });
 
 describe('giver options', () => {
+    const scope = { step: 'S06', family: 'altar' };
     test('defaults and validation', () => {
-        const o = giverOptions({}, { RC_CUE_DIR: '/tmp/cue' });
-        expect(o).toMatchObject({ altar: 'air', slot: 0, essence: 27, gapMs: 0, cueDir: '/tmp/cue', restock: { kind: 'bank', essence: 27 } });
+        const o = giverOptions({ scope }, { RC_CUE_DIR: '/tmp/cue' });
+        expect(o).toMatchObject({ altar: 'air', slot: 0, essence: 27, gapMs: 0, cueDir: '/tmp/cue', restock: { kind: 'bank', essence: 27 }, scope });
         expect(o.schedule).toBeUndefined();
-        expect(giverOptions({ essence: 10, restock: { kind: 'cheat' } }).restock).toEqual({ kind: 'cheat', essence: 10 });
-        expect(() => giverOptions({ essence: 28 })).toThrow();
-        expect(() => giverOptions({ slot: 3 })).toThrow();
-        expect(() => giverOptions({ schedule: 'fast' })).toThrow();
-        expect(() => giverOptions({ restock: { kind: 'teleport' } })).toThrow();
+        expect(giverOptions({ scope, essence: 10, restock: { kind: 'cheat' } }).restock).toEqual({ kind: 'cheat', essence: 10 });
+        expect(() => giverOptions({ scope, essence: 28 })).toThrow(/essence/);
+        expect(() => giverOptions({ scope, slot: 3 })).toThrow(/slot/);
+        expect(() => giverOptions({ scope, schedule: 'fast' })).toThrow(/schedule/);
+        expect(() => giverOptions({ scope, restock: { kind: 'teleport' } })).toThrow(/restock.kind/);
+    });
+
+    test('the cue scope is required and must be an altar one', () => {
+        expect(() => giverOptions({})).toThrow(/^scope: a cue scope \{ step, family \} is required/);
+        expect(() => giverOptions({ scope: { step: 'S07', family: 'bone' } })).toThrow(/scope.family must be altar/);
     });
 });
 

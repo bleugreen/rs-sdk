@@ -427,9 +427,51 @@ ladder. So the step waits for the talisman to leave the inventory, re-sends the 
 times, and otherwise stops before any program run. The error names each drop's reply and
 whether a dialog or interface was open. Program rows carry `talismanDrops`.
 
+**The S21 hand-back** (SUPPLIES.md H17e, rs/158's slot ledger). T21-22's Lumbridge teleport
+(1 law, 3 air and 1 earth rune) reaches SCORED after S21's last craft, not before S21: with
+those three stacks held through S21, every load would drop to 24. A talisman and 27 essence fill a
+giver's pack, so no essence giver can carry the runes either. They come from a **hand-back
+giver**, an account on a runes-only trip that holds its talisman and the runes and no essence.
+Because it holds no essence, the feed never offers it to the program. The contract is data in the
+module (`HandBack`, `S21_HAND_BACK`):
+
+- **Who.** A giver that is `ready` or `armed`, in the room and heartbeating, and whose status file
+  lists the items under `handBack` (`[{item, n}]`), or an account the option names (`giver`).
+- **When.** On the first frame after the program ends (the last craft) the module writes a new cue
+  session with a reacting `stock` turn for that giver, three ticks ahead as on the stock rung, and
+  carrying `items`. On a stock turn, `items` replaces the essence: the giver offers exactly those
+  items.
+- **Who requests.** Both sides, as on any stock turn. The giver requests at once and re-sends on
+  each `busy` until the craft's delay ends, and SCORED's `receiveFrom` answers it or requests
+  itself, re-sending a dropped click after `DROPPED_TICKS`. SCORED offers nothing.
+- **Retries.** Three trades (`handBackTries`), each with a turn of its own in the same session,
+  then the step fails with every attempt's reason. A `stop` cue ends the session either way.
+- **Cost.** About 5 ticks on SCORED's clock (+5 i in the ledger). The trade also closes the last
+  craft's level-up dialog, so after a hand-back the module answers the dialog only if it is still
+  open.
+
+S21's band carries the hand-back by default. `s21HandBack: false` turns it off, and a lab band
+opts in with `handBack`. The step is **done** when its craft target is reached and SCORED either
+holds the items or has left the room, because T21-22 spends them. A resume at the target, inside
+the room and without the items, is `inProgress` and runs the hand-back alone. Each hand-back logs
+an annotation row, `runecraft:hand-back` with 0 ticks, carrying its attempts and step ticks. The
+giver's side, meaning the status field, the `items` turn and a runes-only restock, is rs/383's
+(`altar-giver.ts` option `handBack`; on run day cairn_t19, after its essence trades). The contract
+types (`HandBackItem`, `Turn.items`, `GiverStatus.handBack`) live in `altar-cue.ts`; the module
+re-exports `HandBackItem`.
+
+**Lab (m, bgsrv-mac, 300 ms, browser client, rs/383's giver at ab53bc5d;
+`runecraft-accept.ts --altar=body --level=44 --cycles=6 --hand-back`, 3 direct givers and the
+hand-back giver logged in first): 3 of 3 pass.** Each run: 6 crafts, 5 gaps of 7, first craft +7;
+the hand-back first try, **8 ticks from the last craft's frame to the runes in the pack** (the
+manifest priced +5 i; part of the 8 is the craft's own delay, which T21-22's teleport would wait
+out anyway); SCORED ends holding exactly 1 law, 3 air and 1 earth rune beside its body runes; the
+giver logs `gave` (`hand-back: 1 Law rune, 3 Air rune, 1 Earth rune`) and goes `off`; the essence
+feed never offered it to rc-cycle. Step 56 for 6 crafts and the hand-back.
+
 **Level-ups.** Nothing handles level-ups while the program runs: the trade request on T+5
 closes the dialog. Only the last craft's dialog is answered, through `lib/levelup.ts`, after the
-program ends. That costs no ticks the account could have used, because the craft's delay holds
+program ends (and after the hand-back, whose trade usually closes it first). That costs no ticks the account could have used, because the craft's delay holds
 SCORED until the dialog opens.
 
 **Preconditions.**
@@ -520,6 +562,35 @@ bgsrv-mac at load 4-9):
   retry needs at least 189 essence banked per giver. The twin's tick delivery (TICKMON on the
   stand-in's tab) was 172-188 ticks a minute, p90 184-249 ms late, max 985 ms, none glued, and
   every blind turn landed. Every logout was confirmed. (rs/196)
+- **Under the shared message-reader fix** (#287, ChatHistory-based `FreshMessages`; bgsrv-mac,
+  300 ms, browser client, direct path, givers first, tuned, nature at 44, 30 cycles, branch
+  7ddcdc32): **30/30 given, 29 gaps of 7, first craft +7, step 218**, the same as before the fix.
+  (rs/196)
+- **Arriving by the leg** (`--arrive=leg`, main's browser-client standard for clicks right after a
+  landing, rs/308; bgsrv-mac, 300 ms, browser client, direct path, givers first, auto, branch
+  e2d47293). The stand-in is staged at the leg's start with the leg's runes, runs the real leg
+  through `runLeg`, and the step starts on the landing. All 6 runs passed, and the talisman
+  dropped on the first try every time.
+
+  | Run | Leg | Leg ticks | Step | Crafts and gaps | Turns |
+  |---|---|---|---|---|---|
+  | S06 air, 1 to 44, x3 | T05-06 | 76, 76, 75 | 60, 60, 60 | 7, 6 x 7, first +7 | 7/7 given, giver-first, tuned |
+  | body at 44, 10 cycles, x3 | T20-21 (body route) | 73, 70, 70 | 82, 83, 82 | 10, 9 x 7, first +7 | 10/10 given, giver-first, tuned |
+
+  The step's ticks match the teleported runs (S06 60). **T05-06 is 14-15 ticks slower on the
+  browser than its lite figure of 61** (entry 11; 9-10 clicks a run); the body T20-21 is at its
+  69.3. The body step's ~12-13 ticks outside the program (70) are the walk from the entry tile
+  to the stand tile, plus the last craft's level-up dialog. (rs/196)
+- **Demo retry: entry 9's demo PASSES** (rs-sdk-demo.fly.dev from the twin, 2026-10-22
+  12:26-12:33Z; air, auto, 20 cycles; givers h70-h72 on the direct path, logged in first; stand-in
+  h75 in a Chrome tab). Before it, cairn_h30's fleet hand-over banked 200 essence on each giver
+  (213, 219 and 211 after). **20/20 given, 0 missed or late, all tuned and giver-first;
+  13/13 in-batch gaps at 7; first craft +7.** The 6 between-batch gaps (87-89) are the three givers'
+  bank round trips. Counted raw per craft that is 14 of 20 at 7, so rs/158 restated the bar as
+  "every cycle with a ready giver at 7 (at least 18 such cycles), restock gaps reported
+  separately"; the run's rosters (7 for S06, 22 for S21) keep a giver ready. Step 626; the server's
+  tick ran at ~390 ms (p90 late 187-273 ms). The driver's logout check timed out on h75, but
+  /playerpositions showed it offline by 12:33:15Z; the givers logged out with `out`. (rs/196)
 - **The "unexplained run" below was the talisman.** The first run on a freshly booted engine
   gave its first turn and then failed every turn, including the stock rung's. It ended holding
   the nature talisman. A later fresh-boot run stopped on the talisman check instead (3 drops

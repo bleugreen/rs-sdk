@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { BotWorldState, InventoryItem, NearbyLoc, PlayerState } from '../../sdk/types';
-import { nameHash, readCue, writeStatus } from '../helpers/altar-cue';
+import { cueAddresses, nameHash, readCue, writeStatus, type CueScope } from '../helpers/altar-cue';
 import { baseState, FakeSdk, type SentAction } from '../lib/fake-sdk';
 import { ProgramError, rcCueFields, type ProgramStatus } from '../lib/programs';
 import { TickLog } from '../lib/ticks';
@@ -24,7 +24,11 @@ import {
     giverFeed,
     giverSchedule,
     GiverWaitError,
+    handBackGiver,
+    handBackPending,
+    holdsHandBack,
     preconditions,
+    S21_HAND_BACK,
     rcShared,
     ScheduleAdapter,
     steps,
@@ -135,7 +139,7 @@ class Harness {
     statuses: GiverStatusView[] = [];
     launcher: LauncherView | null = null;
     now = 10_000;
-    readonly cues: { session: string; receiver: string; fields: CueFields }[] = [];
+    readonly cues: { session: string; receiver: string; scope: CueScope; fields: CueFields }[] = [];
     readonly starts: Record<string, unknown>[] = [];
     readonly inputs: { givers: GiverEntry[] }[] = [];
     readonly scripts: Script[] = [];
@@ -202,9 +206,9 @@ class Harness {
                 return {};
             },
             rcCueFields,
-            openCue: (_dir, receiver): CueSink => {
+            openCue: (_dir, receiver, scope): CueSink => {
                 const session = `s${++this.sessions}`;
-                return { session, write: fields => void this.cues.push({ session, receiver, fields: structuredClone(fields) }) };
+                return { session, write: fields => void this.cues.push({ session, receiver, scope, fields: structuredClone(fields) }) };
             },
             readStatuses: () => this.statuses,
             readLauncher: () => this.launcher,
@@ -444,10 +448,10 @@ describe('steps and preconditions', () => {
         expect(steps().map(s => s.name)).toEqual(['S06 runecraft', 'S21 runecraft']);
         expect(bands()).toEqual([
             { id: 'S06', altar: 'air', from: 1, untilLevel: 44, load: 26 },
-            { id: 'S21', altar: 'nature', from: 44, untilLevel: 99 }
+            { id: 'S21', altar: 'nature', from: 44, untilLevel: 99, handBack: S21_HAND_BACK }
         ]);
         expect(bands({ untilLevel: 30 })).toEqual([{ id: 'S06', altar: 'air', from: 1, untilLevel: 30, load: 26 }]);
-        expect(bands({ s21Altar: 'body', untilLevel: 60 })[1]).toEqual({ id: 'S21', altar: 'body', from: 44, untilLevel: 60 });
+        expect(bands({ s21Altar: 'body', untilLevel: 60, s21HandBack: false })[1]).toEqual({ id: 'S21', altar: 'body', from: 44, untilLevel: 60 });
         expect(steps().every(s => s.logoutSafe && !!s.done && !!s.inProgress && !!s.resume)).toBe(true);
     });
 
@@ -672,6 +676,8 @@ describe('the step driving rc-cycle', () => {
         };
         await altarStep(nature44, h.opts({ schedule: 'robust' })).run(h.ctx());
         expect(h.starts).toHaveLength(1);
+        // every session, the stock rung's included, is addressed to the band's step
+        expect(new Set(h.cues.map(c => JSON.stringify(c.scope)))).toEqual(new Set([JSON.stringify({ step: 'S21', family: 'altar' })]));
         const stock = h.cues.filter(c => c.session === 's2');
         expect(stock.map(c => [c.fields.turns.map(t => t.schedule), c.fields.stop ?? false])).toEqual([
             [['stock'], false],
@@ -787,10 +793,181 @@ describe('the step driving rc-cycle', () => {
             h.sdk.tick({ skills: [{ name: 'Runecraft', level: 45, baseLevel: 45, experience: 61_512 }] });
             return end;
         });
-        const r = await runSteps(session, steps({ ...h.opts(), untilLevel: 45 }), { log: h.log, c: {}, shouldStop: () => false, logout: async () => {} });
+        const r = await runSteps(session, steps({ ...h.opts(), untilLevel: 45, s21HandBack: false }), { log: h.log, c: {}, shouldStop: () => false, logout: async () => {} });
         expect(r.completed).toBe(2);
         expect(h.starts).toHaveLength(1);
         expect(h.log.rows.filter(r => !r.kind && r.step === 'S06 runecraft')[0]).toMatchObject({ ok: true, ticks: 0 });
+    });
+});
+
+// ------------------------------------------------------------------ hand-back
+
+describe('S21 hand-back (SUPPLIES.md H17e)', () => {
+    const toLevel45: Band = { id: 'S21', altar: 'nature', from: 44, untilLevel: 45, handBack: S21_HAND_BACK };
+    const lvl45 = { skills: [{ name: 'Runecraft', level: 45, baseLevel: 45, experience: 61_512 }] };
+    const lumbridge = (from = 1) => [item(from, 'Law rune'), item(from + 1, 'Air rune', 3), item(from + 2, 'Earth rune')];
+    const handBackStatus = (h: Harness, name: string, o: Partial<GiverStatusView> = {}) => h.giver(name, { essence: 0, handBack: S21_HAND_BACK.items.map(i => ({ ...i })), ...o });
+    const oneCraft = (h: Harness) =>
+        h.scripts.push(async run => {
+            run.step();
+            const end = run.end('done', {}, { result: summary(1) });
+            h.sdk.tick(lvl45);
+            return end;
+        });
+    const handBackCues = (h: Harness) => h.cues.filter(c => c.fields.turns.some(t => 'items' in t));
+
+    test('the contract: T21-22 Lumbridge runes, 1 law, 3 air and 1 earth', () => {
+        expect(S21_HAND_BACK.items).toEqual([
+            { item: 'Law rune', n: 1 },
+            { item: 'Air rune', n: 3 },
+            { item: 'Earth rune', n: 1 }
+        ]);
+        expect(bands()[0]!.handBack).toBeUndefined();
+        const own = { items: [{ item: 'Law rune', n: 2 }], giver: 'lab_hb' };
+        expect(bands({ s21HandBack: own })[1]!.handBack).toBe(own);
+    });
+
+    test('the hand-back giver: ready, fresh, in the room and listing at least the items; a named giver needs no list', () => {
+        const h = new Harness(world({}));
+        const now = h.now;
+        const statuses = [
+            h.giver('lab_g1'),
+            handBackStatus(h, 'lab_short', { handBack: [{ item: 'law rune', n: 1 }, { item: 'air rune', n: 2 }, { item: 'earth rune', n: 1 }] }),
+            handBackStatus(h, 'lab_stale', { ms: now - 6_000 }),
+            handBackStatus(h, 'lab_out', { inRoom: false }),
+            handBackStatus(h, 'lab_restock', { phase: 'restock' }),
+            handBackStatus(h, 'lab_late', { readyAt: 950 }),
+            handBackStatus(h, 'lab_hb', { readyAt: 920 })
+        ];
+        expect(handBackGiver(statuses, now, S21_HAND_BACK)).toBe('lab_hb');
+        expect(handBackGiver(statuses.slice(0, 5), now, S21_HAND_BACK)).toBeUndefined();
+        expect(handBackGiver(statuses, now, { ...S21_HAND_BACK, giver: 'LAB G1' })).toBe('lab_g1');
+        // holding no essence, it is never offered to rc-cycle
+        expect(giverFeed(statuses, now, () => 'tuned').map(e => e.name)).toEqual(['lab_g1']);
+    });
+
+    test('done, inProgress and the resume walk: owed in the room resumes into the hand-back; out of the room it is done', async () => {
+        const s = (o: Parameters<typeof world>[0]) => baseState(world(o));
+        expect(holdsHandBack(s({ inventory: lumbridge() }), S21_HAND_BACK)).toBe(true);
+        expect(holdsHandBack(s({ inventory: lumbridge().slice(0, 2) }), S21_HAND_BACK)).toBe(false);
+        expect(handBackPending(s({ level: 45 }), toLevel45)).toBe(true);
+        expect(handBackPending(s({ level: 44 }), toLevel45)).toBe(false);
+        expect(handBackPending(s({ level: 45, inventory: lumbridge() }), toLevel45)).toBe(false);
+        expect(handBackPending(s({ level: 45, altar: null }), toLevel45)).toBe(false);
+        const step = altarStep(toLevel45);
+        expect(step.postconditions!(s({ level: 45 }), {})).toBe('the hand-back (1 Law rune, 3 Air rune, 1 Earth rune) is not held');
+        expect(step.postconditions!(s({ level: 45, inventory: lumbridge() }), {})).toBe(true);
+        const walk = async (o: Parameters<typeof world>[0]) => {
+            const p = await resolveResume(steps(), new Observation(s(o)), {});
+            return [p.step, p.mode];
+        };
+        expect(await walk({ level: 99 })).toEqual(['S21 runecraft', 'resume']);
+        expect(await walk({ level: 99, inventory: lumbridge() })).toEqual([null, 'finished']);
+        // T21-22 has spent the runes and left the room
+        expect(await walk({ level: 99, altar: null })).toEqual([null, 'finished']);
+    });
+
+    test('after the last craft: a stock turn with the items names the hand-back giver, and the receive wants exactly them', async () => {
+        const h = new Harness(world({}));
+        h.statuses = [h.giver('lab_g1'), handBackStatus(h, 'lab_hb')];
+        oneCraft(h);
+        const received: { partner: string; opts: Parameters<RunecraftDeps['receiveFrom']>[2] }[] = [];
+        h.receive = async (_sdk, partner, opts) => {
+            received.push({ partner, opts });
+            h.sdk.tick(s => ({ inventory: [...s.inventory, ...lumbridge(5)] }));
+            return { ok: true, ticks: 4 };
+        };
+        await altarStep(toLevel45, h.opts()).run(h.ctx());
+        // the program was fed the essence giver only
+        expect((h.starts[0]!.givers as GiverEntry[]).map(g => g.name)).toEqual(['lab_g1']);
+        const cues = handBackCues(h);
+        expect(new Set(cues.map(c => c.session)).size).toBe(1);
+        expect(cues.map(c => [c.fields.turns, c.fields.stop ?? false])).toEqual([
+            [[{ giver: 'lab_hb', T: 105, schedule: 'stock', items: [...S21_HAND_BACK.items] }], false],
+            [[{ giver: 'lab_hb', T: 105, schedule: 'stock', items: [...S21_HAND_BACK.items] }], true]
+        ]);
+        expect(cues[0]!.receiver).toBe(SCORED);
+        // the hand-back session is scoped like the program's: S21, altar
+        expect(h.cues.every(c => c.scope.step === 'S21' && c.scope.family === 'altar')).toBe(true);
+        expect(received).toHaveLength(1);
+        const { partner, opts } = received[0]!;
+        expect(partner).toBe('lab_hb');
+        expect(opts).toMatchObject({ maxTicks: 30, openMaxTicks: 30, noReplyTicks: DROPPED_TICKS });
+        expect(opts.want!.map(w => [(w.item as RegExp).test(w === opts.want![0] ? 'Law rune' : w === opts.want![1] ? 'Air rune' : 'Earth rune'), w.amount])).toEqual([
+            [true, 1],
+            [true, 3],
+            [true, 1]
+        ]);
+        expect((opts.want![1]!.item as RegExp).test('Air runes')).toBe(false);
+        const row = h.log.rows.find(r => r.step === 'runecraft:hand-back');
+        expect(row).toMatchObject({ ok: true, ticks: 0, startTick: 102, endTick: 103, meta: { kind: 'rc-hand-back', band: 'S21', stepTicks: 1, attempts: [{ giver: 'lab_hb', turn: 102, ticks: 4 }] } });
+    });
+
+    test('a failed hand-back is retried in the same cue session; the third failure throws with every reason and stops the cue', async () => {
+        const h = new Harness(world({}));
+        h.statuses = [handBackStatus(h, 'lab_hb')];
+        oneCraft(h);
+        const replies = [
+            { ok: true, ticks: 6 }, // traded, but nothing arrived
+            { ok: false, reason: 'declined' },
+            { ok: false, reason: 'no trade opened in 30 ticks' }
+        ];
+        h.receive = async () => {
+            h.sdk.tick({});
+            return replies.shift()!;
+        };
+        await expect(altarStep(toLevel45, h.opts()).run(h.ctx())).rejects.toThrow('S21 runecraft: the hand-back failed 3 times (lab_hb: traded, but the items are not all held; lab_hb: declined; lab_hb: no trade opened in 30 ticks)');
+        const cues = handBackCues(h);
+        expect(new Set(cues.map(c => c.session)).size).toBe(1);
+        expect(cues.at(-1)!.fields).toMatchObject({ stop: true });
+        expect(cues.at(-1)!.fields.turns.map(t => t.T)).toEqual([105, 106, 107]);
+        expect(h.log.rows.find(r => r.step === 'runecraft:hand-back')).toMatchObject({ ok: false, meta: { attempts: [{}, {}, {}] } });
+        // a retry that lands is enough
+        const h2 = new Harness(world({}));
+        h2.statuses = [handBackStatus(h2, 'lab_hb')];
+        oneCraft(h2);
+        let n = 0;
+        h2.receive = async () => {
+            if (n++ === 0) return { ok: false, reason: 'declined' };
+            h2.sdk.tick(s => ({ inventory: [...s.inventory, ...lumbridge(5)] }));
+            return { ok: true, ticks: 4 };
+        };
+        await altarStep(toLevel45, h2.opts()).run(h2.ctx());
+        expect(handBackCues(h2).at(-1)!.fields.turns).toHaveLength(2);
+    });
+
+    test('a resume at the target in the room runs only the hand-back; holding the items already, nothing', async () => {
+        const h = new Harness(world({ level: 45 }));
+        h.statuses = [handBackStatus(h, 'lab_hb')];
+        h.receive = async () => {
+            h.sdk.tick(s => ({ inventory: [...s.inventory, ...lumbridge(5)] }));
+            return { ok: true, ticks: 4 };
+        };
+        await altarStep(toLevel45, h.opts()).resume!(h.ctx());
+        expect(h.starts).toHaveLength(0);
+        expect(h.sdk.sends('sendDropItem')).toHaveLength(0);
+        expect(handBackCues(h)).toHaveLength(2);
+        const held = new Harness(world({ level: 45, inventory: lumbridge() }));
+        await altarStep(toLevel45, held.opts()).resume!(held.ctx());
+        expect(held.cues).toHaveLength(0);
+        expect(held.log.rows.filter(r => r.step === 'runecraft:hand-back')).toHaveLength(0);
+    });
+
+    test('the hand-back trade closes the level-up dialog, so nothing is clicked after it', async () => {
+        const h = new Harness(world({}));
+        h.statuses = [handBackStatus(h, 'lab_hb')];
+        h.scripts.push(async run => {
+            run.step();
+            const end = run.end('done', {}, { result: summary(1) });
+            h.sdk.tick({ ...lvl45, dialog: { isOpen: true, options: [], isWaiting: false, pageId: 'levelup' } as BotWorldState['dialog'] });
+            return end;
+        });
+        h.receive = async () => {
+            h.sdk.tick(s => ({ inventory: [...s.inventory, ...lumbridge(5)], dialog: { isOpen: false, options: [], isWaiting: false } as BotWorldState['dialog'] }));
+            return { ok: true, ticks: 4 };
+        };
+        await altarStep(toLevel45, h.opts({ dismissLevelUp: true })).run(h.ctx());
+        expect(h.sdk.sends('sendClickDialog')).toHaveLength(0);
     });
 });
 
@@ -824,13 +1001,35 @@ describe('defaultDeps: the real cue and status files', () => {
     afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
     test('a relayed program run writes a cue.json the givers read, naming SCORED only by a hash', () => {
-        const relay = new CueRelay(() => defaultDeps.openCue(dir, 'Lab Scored'), defaultDeps.rcCueFields);
+        const relay = new CueRelay(() => defaultDeps.openCue(dir, 'Lab Scored', { step: 'S06', family: 'altar' }), defaultDeps.rcCueFields);
         const turns = [{ giver: 'lab_g1', T: 110, schedule: 'tuned' as const }];
         relay.update(status({ runId: 7, shared: { v: 1, open: 5, schedule: 'robust', beacons: [{ tick: 100, ms: 1 }], turns, results: [], queue: [], waiting: null } } as Partial<ProgramStatus>));
         expect(readCue(dir)).toMatchObject({ receiver: { sha256: nameHash('lab_scored') }, schedule: 'robust', open: 5, turns, seq: 1 });
         expect(readFileSync(join(dir, 'cue.json'), 'utf8').toLowerCase()).not.toContain('scored');
         relay.stop();
         expect(readCue(dir)).toMatchObject({ stop: true, seq: 2, turns });
+    });
+
+    test("S06's stop cue addresses S06's altar givers only: an S07 bone or S18 courier reader never sees it", async () => {
+        const sub = mkdtempSync(join(tmpdir(), 'rc-scope-'));
+        try {
+            const h = new Harness(world({ altar: AIR_ALTAR, level: 43 }));
+            h.statuses = [h.giver('lab_g1', { essence: 26 })];
+            h.scripts.push(async run => {
+                run.step({ turns: [{ giver: 'lab_g1', T: 110, schedule: 'tuned' }] });
+                return run.end('done', { turns: [{ giver: 'lab_g1', T: 110, schedule: 'tuned' }] }, { result: summary(1) });
+            });
+            const band: Band = bands()[0]!;
+            await altarStep(band, h.opts({ deps: { openCue: defaultDeps.openCue, rcCueFields: defaultDeps.rcCueFields } , cueDir: sub })).run(h.ctx());
+            const cue = readCue(sub)!;
+            expect(cue).toMatchObject({ stop: true, scope: { step: 'S06', family: 'altar' } });
+            expect(cueAddresses(cue, 'S06', 'altar')).toBe(true);
+            expect(cueAddresses(cue, 'S07', 'bone')).toBe(false);
+            expect(cueAddresses(cue, 'S18', 'courier')).toBe(false);
+            expect(cueAddresses(cue, 'S21', 'altar')).toBe(false);
+        } finally {
+            rmSync(sub, { recursive: true, force: true });
+        }
     });
 
     test("readStatuses reads the givers' status files", () => {

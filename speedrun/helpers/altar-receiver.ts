@@ -27,6 +27,7 @@
 //   restock      how to get a talisman to enter with (altar-room.ts RestockOptions; essence 0)
 //   gapMs        wait after a frame before sending (default 0)
 //   cueDir       as altar-giver
+//   scope        required: { step, family: 'altar' }, written on every cue; its givers must carry the same
 import type { BotWorldState, NearbyLoc, NearbyPlayer } from '../../sdk/types';
 import { DROPPED_TICKS, receiveFrom } from '../lib/trade';
 import { tickClock, tickMs } from '../lib/wait';
@@ -35,6 +36,7 @@ import {
     cycleTicks,
     CueWriter,
     MissBench,
+    scopeOption,
     cueDir,
     DEFAULT_OPEN,
     FrameLog,
@@ -151,7 +153,8 @@ class Receiver {
             open: Number(r.open ?? DEFAULT_OPEN),
             keepTalisman: r.keepTalisman === true,
             gapMs: Number(r.gapMs ?? 0),
-            dir: typeof r.cueDir === 'string' ? r.cueDir : cueDir()
+            dir: typeof r.cueDir === 'string' ? r.cueDir : cueDir(),
+            scope: scopeOption(r.scope, ['altar'])
         };
     }
 
@@ -166,7 +169,7 @@ class Receiver {
     async run(): Promise<void> {
         const { ctx } = this;
         const o = this.o;
-        this.writer = new CueWriter(o.dir, ctx.account);
+        this.writer = new CueWriter(o.dir, ctx.account, o.scope);
         const unsub = ctx.sdk.onStateUpdate(st => {
             if (this.frames.add(st.tick) === 'reset') this.loggedInAt = Date.now();
             const xp = this.rcXp(st);
