@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { NearbyLoc, NearbyNpc, PlayerState } from '../../sdk/types';
 import { baseState, FakeSdk } from './fake-sdk';
-import { at, configId, findLoc, findNpc, invCount, messagesSince, pos, routeTiles, tileCounter, waitForNpc } from './world';
+import { at, configId, findLoc, findNpc, invCount, messageCursor, messagesAfter, messagesSince, pos, routeTiles, tileCounter, waitForNpc } from './world';
 
 const player = (worldX: number, worldZ: number, level = 0) => ({ worldX, worldZ, level, hp: 10, maxHp: 10 }) as PlayerState;
 const npc = (index: number, name: string, x: number, z: number, distance: number): NearbyNpc =>
@@ -66,6 +66,19 @@ describe('world', () => {
         expect(invCount(s, /^shark$/i)).toBe(2);
         expect(messagesSince(s, 8)).toEqual(['You can\'t reach that!']);
         expect(messagesSince(s, 0, /reach/)).toEqual(['You can\'t reach that!']);
+    });
+
+    test('messagesAfter reads past a cursor by publication id, falling back to tick', () => {
+        const m = (text: string, tick: number, observationId?: number) => ({ type: 0, text, sender: '', tick, observationId, fromSelf: false });
+        // The browser stamps a reply on the click's tick: tick 25 for a click at 25, published as 33.
+        const before = baseState({ tick: 25, gameMessages: [m('You fail to cut through it.', 17, 24)] });
+        const c = messageCursor(before);
+        expect(c).toBe(24);
+        const after = baseState({ tick: 26, gameMessages: [m('You fail to cut through it.', 17, 24), m('You fail to cut through it.', 25, 33)] });
+        expect(messagesAfter(after, c)).toEqual(['You fail to cut through it.']);
+        expect(messagesSince(after, 26)).toEqual([]);
+        expect(messagesAfter(baseState({ gameMessages: [m('old', 5), m('new', 9)] }), 5)).toEqual(['new']);
+        expect(messageCursor(baseState({ gameMessages: [] }))).toBe(0);
     });
 
     test('tileCounter counts steps and skips teleports and level changes', () => {

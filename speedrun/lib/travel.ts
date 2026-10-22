@@ -23,7 +23,7 @@ import { converse, type ConverseSdk } from './converse';
 import type { OptionPattern } from './dialogue';
 import type { ItemPattern } from './items';
 import { currentTick, waitUntil, type StateSource } from './wait';
-import { chebyshev, findLoc, invCount, invItem, messagesSince, opIndex, pos, skillLevel, stateOf, tileCounter, waitForNpc, type LocQuery, type OpPattern, type StateLike, type Tile } from './world';
+import { chebyshev, findLoc, invCount, invItem, messageCursor, messagesAfter, messagesSince, opIndex, pos, skillLevel, stateOf, tileCounter, waitForNpc, type LocQuery, type OpPattern, type StateLike, type Tile } from './world';
 
 export type TravelSdk = ActSdk & ConverseSdk & Pick<BotSDK, 'findPath'>;
 export type WalkBot = Pick<BotActions, 'walkTo'>;
@@ -784,11 +784,11 @@ const WEB_RESULT = /slash the web apart|fail to cut through/i; // web.rs2
 async function slashWeb(sdk: TravelSdk, trip: Trip, web: NearbyLoc, through: XZ, tries = 12): Promise<boolean> {
     for (let i = 0; i < tries; i++) {
         if (!invItem(sdk, /^knife$/i)) return false;
-        const t = currentTick(sdk) + 1; // the last failed try's message must not count
+        const c = messageCursor(sdk); // the last failed try's reply must not count
         trip.webTries++;
         trip.clicks++;
-        await act(sdk, () => sdk.sendUseItemOnLoc(slotOf(sdk, /^knife$/i), web.x, web.z, web.id), s => messagesSince(s, t, WEB_RESULT).length > 0, { maxTicks: 30 });
-        if (!messagesSince(sdk, t, SLASHED).length) continue;
+        await act(sdk, () => sdk.sendUseItemOnLoc(slotOf(sdk, /^knife$/i), web.x, web.z, web.id), s => messagesAfter(s, c, WEB_RESULT).length > 0, { maxTicks: 30 });
+        if (!messagesAfter(sdk, c, SLASHED).length) continue;
         // A success runs p_delay(1) and a move click sent while delayed is refused
         // (MoveClickHandler), so re-send the step until the player moves.
         const p0 = pos(sdk);

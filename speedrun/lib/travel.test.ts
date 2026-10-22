@@ -3,7 +3,7 @@ import type { BotWorldState, InventoryItem, NearbyLoc, PlayerState } from '../..
 import { baseState, drive, FakeSdk, flush, simulateWalking } from './fake-sdk';
 import { sleep } from './wait';
 import {
-    deletesFollowerItem, expandRoute, GNOME_STRONGHOLD_GATE, hopNeeds, hopsDestination, passGate, runesHeld, runTo, SPELLS, teleport, teleportRefusal, travel, wildernessLevel, type Hop,
+    deletesFollowerItem, expandRoute, GNOME_STRONGHOLD_GATE, hopNeeds, hopsDestination, passGate, runesHeld, runTo, SPELLS, teleport, teleportRefusal, throughWebs, travel, wildernessLevel, type Hop,
 } from './travel';
 
 const player = (worldX: number, worldZ: number, level = 0) => ({ name: 'lab', x: worldX, z: worldZ, worldX, worldZ, level, hp: 40, maxHp: 40 }) as PlayerState;
@@ -499,4 +499,37 @@ describe('hop data', () => {
         expect(expandRoute({ x: 0, z: 0 }, [{ x: 2, z: 1 }])).toEqual([{ x: 1, z: 1 }, { x: 2, z: 1 }]);
         expect(hopsDestination([{ kind: 'run', to: { x: 5, z: 5 } }, { kind: 'teleport', spell: 'varrock' }])).toEqual(SPELLS.varrock.landing);
     });
+});
+
+/**
+ * The Mage Bank web (web.rs2): a knife on it fails or slashes it, 50% each; a slash removes the web
+ * and lets the player step through. The reply is stamped as each client publishes it: the browser
+ * on the click's own tick, lite on the next (rs/308's probe: a click at tick 25 drew
+ * "You fail to cut through it." stamped 25 on the browser), with a new publication id each time.
+ */
+describe('webs', () => {
+    for (const client of ['browser', 'lite'] as const) {
+        test(`each slash's reply is read on the tick it lands (${client} stamps)`, async () => {
+            const web = loc(733, 'Web', 3095, 3957, ['Slash']);
+            const sdk = world(3096, 3957, { nearbyLocs: [web], inventory: [item(0, 'Knife')] });
+            sdk.pathTo = () => ({ success: true, reachedDestination: false, waypoints: [] });
+            const replies = ['You fail to cut through it.', 'You fail to cut through it.', 'You slash the web apart.'];
+            let publication = 500;
+            sdk.onSend = (a, f) => {
+                if (a.method === 'sendUseItemOnLoc') {
+                    const text = replies.shift()!;
+                    queueMicrotask(() => f.tick(s => ({
+                        gameMessages: [...s.gameMessages, { type: 0, text, sender: '', tick: client === 'browser' ? s.tick : s.tick + 1, observationId: ++publication, fromSelf: false }],
+                        ...(/apart/.test(text) ? { nearbyLocs: [] } : {}),
+                    })));
+                }
+                if (a.method === 'sendWalk') queueMicrotask(() => f.tick({ player: player(3094, 3957) }));
+            };
+            const r = await drive(sdk, throughWebs(sdk as never, [[3094, 3957]]), 120);
+            expect(r.ok).toBe(true);
+            expect(r.webTries).toBe(3);
+            expect(sends(sdk, 'sendUseItemOnLoc')).toHaveLength(3);
+            expect(r.ticks).toBeLessThanOrEqual(6);
+        });
+    }
 });

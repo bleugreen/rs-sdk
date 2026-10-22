@@ -426,3 +426,82 @@ T21-22 (Lumbridge teleport, run to (3241,3248)): 40 casts, 14 tiles seen (x 3219
 x 3222 gives 32-33 (z 3216, 3218, 3219: 32; z 3217, 3220: 33), x 3221 gives 33 (z 3216-3220), x
 3220 gives 33 (z 3218, 3219), x 3219 gives 34 (z 3218, 3219). The cast means (4.8 and 33.0, against
 the earlier lab means 4.5 and 32.5) are the expected figures.
+
+**Browser client** (rs/308, phase 1: before rs/309's region-loaded wait; lab, bgsrv-mac, 300 ms,
+`measure-legs.ts --client=browser`, a headless Chrome tab on the lab's /bot page with this
+checkout's bundle, and the lite runs beside it on the same machine; observed ticks; the per-hop
+timeline is `lab/leg-trace.ts`):
+
+| Leg | Lite, same machine | Browser | Browser, 3 ticks' wait after the landing (diagnostic) | Where the browser loses |
+|---|---|---|---|---|
+| T05-06 | 60.7 (61, 61, 60) | **74.1** over 11 runs (64-77); 1 failure in 12 | 66, 66, 66 (63 less the wait) | the first walk click, sent on the landing tick, misroutes: the player walks 14 tiles south (2964,3379 to 2965,3365) for an east target, 128 tiles against 107; in 9 of 11 runs |
+| T20-21 (body) | 69 (67, 69, 71) | **74.7** (69, 85, 69, 67, 70, 88) | 71, 72, 72 | the same misroute after the Falador landing in 2 of 6 (+16, +19) |
+| T10-11 | 20 (20, 20, 20) | 21 (21, 21, 21) | - | the run's first click after the stronghold landing doesn't move the player; re-sent a tick later |
+| T13-14 | 179.7 (185, 176, 178) | 189.3 (211, 179, 178) | - | the first run's knife on the keep web (a cold region after the lever) drew no reply 6 times, re-sent every 6 ticks by act: 47 ticks against 20-24 |
+| T14-15 | 173.7 (173, 174, 174) | **fails 3 of 3** | - | the stronghold tree hop finds no spirit tree at the village (2542,3169) straight after the young tree lands there: the loc lookup runs before the region is built |
+
+With the first walk click held until the region is built, T05-06's run hop is 55 against lite's
+53-54 (an 8-tick wait gives 55-56 too), so the browser's T05-06 excess is the click after the
+landing, not the route or the door. The one unexplained browser failure (the air talisman not in
+the published inventory at the ruins, although the leg's precondition saw it) did not recur in
+6 more runs. Lite on the same machine: T02-03 6, 4, 4 (the coop gate (3236,3295) closed in the
+6, not met in the others); T25-26 42, 42, 42 (no door met). First dialogue page after the click:
+the spirit trees +1 to +2 on both clients; the Ardougne lever +4 on the first pull (the warning)
+and no page after it, where act's 6-idle re-send sends a second pull at +7 or +8 that the
+server drops (the landing at 10-11 either way).
+
+**Browser client, phase 2** (rs/308, after rs/309's settle before every hop (#321, c4e2a681); lab,
+bgsrv-mac, 300 ms, a scratch tree of the mission tip 9dc3d50f, browser and lite on the same host;
+observed ticks). Every leg that clicks right after a teleport, spirit-tree or lever landing, 3 runs
+a client; the door columns split each leg's runs by the state of the doors it met (`RESULT leg`
+door records). No browser run misrouted after a landing. The first click after a landing goes +1
+on the browser (the settle) and +0 on lite.
+
+| Leg | Doors met | Browser, closed | Browser, open | Lite, closed | Lite, open | Catalogue |
+|---|---|---|---|---|---|---|
+| T04-05 | door 2949,3450 | 51, 50, 51 | 43, 43, 43 | 46 | 42, 42 | 44 |
+| T05-06 | none | - | 64, 64, 64 | - | 60, 61, 60 | 61 |
+| T06-07 | gate 2935,3451 | 81, 80, 81 | 74, 74, 74 | 78 | 74, 73 | 74 |
+| T07-08 | 3 doors, 2570-2578,3333 | 138, 138, 140 | 129, 130, 130 | 134 | 128, 128 | 131 |
+| T08-09 | none | - | 49, 50, 49 | - | 49, 50, 49 | 50 |
+| T11-12 | none | - | 72, 73, 73 | - | 71, 72, 72 | 71 |
+| T12-13 | door 2616,3345, gate 2568,3458 | 109 | 101 | 103 | 103, 99 | 121 (r) |
+| T14-15 | door 2650,3305 | 181 | 178, 179 | 175 | 173, 173 | 173.5 |
+| T16-18 | none | - | 8, 7, 7, 8, 7, 7 | - | 6, 7, 6 | 6 |
+| T19-20 | none | - | 41, 39, 39, 42, 41, 41 | - | 39, 38, 39 | 42 |
+| T20-21 (body) | none | - | 69, 70, 69 | - | - | 69.3 |
+| T21-22 (body) | none | - | 34, 33, 34 | - | 33, 34, 33 | 33 |
+| T22-23 | 3 large doors, Lumbridge castle | 24, 22, 23 | 15, 15, 14 | 21 | 15, 14 | 16.3 |
+| T23-24 | door 3053,3259 (open in every run) | - | 98, 98, 98 | - | 94, 90, 90 | 90 |
+| L24a | gate 2935,3451 | 72, 72 | 65, 65, 65, 66 | 70 | 64, 64 | 69 |
+| L24c | none | - | 5, 6, 5 | - | 5, 4, 4 | 4.5 |
+
+A leg's slow first run in a lab is its closed doors, not a cold region: each run after it finds
+the doors the first one opened, and a fresh Chrome tab on an engine that had already been there
+met them closed again and was as slow (T04-05 50, T06-07 81, T07-08 140, T22-23 23, L24a 72).
+On the browser a closed-door leg costs 1-4 ticks more than on lite, an open one about 1 (the
+settle). T05-06 costs +3.7 with no doors. T23-24 walks 177 tiles on the browser in every run
+(lite 171 after its first run): the click from 3006,3289 to 3026,3270 takes 12 ticks against 9,
+a longer client-side route on that stretch, cause not found. T12-13's 121 is the reckoned
+teleport 4 + run 117; both clients measure 99-109. One browser Ardougne cast (T12-13, from
+2566,3199) drew nothing and act re-sent it at +10, landing at +14: 1 in about 60 browser casts in
+these labs, none on lite.
+
+The lever legs and the stronghold tree landing, with the webs fix below (before it, in brackets):
+
+| Leg | Browser | Lite | Catalogue |
+|---|---|---|---|
+| T10-11 | 21, 21, 21 | 20, 20, 20 | 20 |
+| T13-14 | 181, 178, 177 (190, 177) | 179, 180, 176 | 181.5 |
+| T15-16 | 148, 143, 140 (294, 198, 196) | 142, 145, 146; 147, 140 with the fix | 158 (r) |
+| T26-27 | 181, 177, 179 (204, 209, 177) | 178, 177, 179 | 179 |
+
+The lever pull is never re-sent on the browser since #321 (its script answers). The webs were
+the browser's loss: the browser stamps a click's reply with the click's own tick (a knife at tick
+25: "You fail to cut through it." stamped 25), lite with the next. `slashWeb` counted only
+replies stamped from the click tick + 1, so on the browser it never saw an adjacent slash's reply
+and waited out act's 6-tick idle re-send or its 30-tick limit: the Mage Bank web hop took 67-163
+ticks against lite's 13-17, the keep web 47 against 20. It now reads replies past the message
+cursor (`world.ts` messageCursor and messagesAfter, the SDK's observation-id rule), the same on
+both clients: 13-15 on the browser. Phase 1's T13-14 knife that "drew no reply 6 times" was this,
+not a cold region.
