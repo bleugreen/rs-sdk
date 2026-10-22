@@ -606,6 +606,7 @@ export function steps(input: Options = {}): Step<any>[] {
                 // "seem worried", the trapdoor walk (scripted), "happy to help", then the two objboxes.
                 await talk(sdk, opts, NARNODE, {
                     choices: [/seem worried/i, /happy to help/i],
+                    shape: '3c, opt, 3c, state, 8c, opt, 13c',
                     until: s => started(s) && invCount(s, ITEM.book) > 0 && invCount(s, ITEM.bark) > 0 && !underground(s),
                 });
             },
@@ -623,7 +624,7 @@ export function steps(input: Options = {}): Step<any>[] {
                     await go(ctx, TILES.hazelmereLadderFoot, 1);
                     await loc(sdk, "Hazelmere's ladder up", TILES.hazelmereLadder, /^climb-up$/i, lvl(1), { maxTicks: 20 });
                 }
-                await talk(sdk, opts, /^Hazelmere$/i, { until: s => invCount(s, ITEM.scroll) > 0 });
+                await talk(sdk, opts, /^Hazelmere$/i, { shape: '9c', until: s => invCount(s, ITEM.scroll) > 0 });
             },
             postconditions: s => all(need(s, ITEM.scroll, 1, "Hazelmere's scrolls"), invCount(s, ITEM.bark) === 0 ? true : 'still holds the bark sample'),
             logoutSafe: true,
@@ -648,6 +649,7 @@ export function steps(input: Options = {}): Step<any>[] {
                 await enterTree(sdk, ctx);
                 await talk(sdk, opts, NARNODE, {
                     choices: [/I think so/i, /None of the above/i, /None of the above/i, /King's seal/i, /gave the man Daconia/i, /kill the tree/i],
+                    shape: '4c, opt, 2c, opt, opt, opt, 1c, opt, 1c, opt, state, 8c',
                     expect: /First I must warn the tree guardians/i,
                 });
             },
@@ -661,7 +663,7 @@ export function steps(input: Options = {}): Step<any>[] {
             preconditions: isStarted,
             run: async ctx => {
                 await gloughUp(ctx.sdk, ctx);
-                await talk(ctx.sdk, opts, /^Glough$/i, { expect: /Your type can't be trusted/i });
+                await talk(ctx.sdk, opts, /^Glough$/i, { shape: '10c', expect: /Your type can't be trusted/i });
             },
             postconditions: isStarted,
             logoutSafe: true,
@@ -674,7 +676,7 @@ export function steps(input: Options = {}): Step<any>[] {
             run: async ctx => {
                 await gloughDown(ctx.sdk);
                 await enterTree(ctx.sdk, ctx);
-                await talk(ctx.sdk, opts, NARNODE, { expect: /He's on the top level of the tree/i });
+                await talk(ctx.sdk, opts, NARNODE, { shape: '7c', expect: /He's on the top level of the tree/i });
             },
             postconditions: isStarted,
             logoutSafe: true,
@@ -687,7 +689,7 @@ export function steps(input: Options = {}): Step<any>[] {
             run: async ctx => {
                 await enterTree(ctx.sdk, ctx);
                 await treeLadder(ctx.sdk, 3);
-                await talk(ctx.sdk, opts, /^Charlie$/i, { expect: /I don't know what he's up to/i });
+                await talk(ctx.sdk, opts, /^Charlie$/i, { shape: '11c', expect: /I don't know what he's up to/i });
             },
             postconditions: isStarted,
             logoutSafe: true,
@@ -715,7 +717,7 @@ export function steps(input: Options = {}): Step<any>[] {
             run: async ctx => {
                 await gloughUp(ctx.sdk, ctx);
                 // Glough calls the guards, the jail, Charlie, then Narnode lets you out (charlie.rs2, king_narnode.rs2).
-                await talk(ctx.sdk, opts, /^Glough$/i, { expect: /glider pilot fly you away/i });
+                await talk(ctx.sdk, opts, /^Glough$/i, { shape: '4c, state, state, 7c, state, state, 5c', expect: /glider pilot fly you away/i });
             },
             postconditions: isStarted,
             logoutSafe: true,
@@ -749,14 +751,14 @@ export function steps(input: Options = {}): Step<any>[] {
                         void sdk.sendWalk(TILES.shipyardGateFoot.x, TILES.shipyardGateFoot.z, true);
                     });
                     try {
-                        await talk(sdk, opts, /^Gnome pilot$/i, { choices: [/Karamja/i], until: inKaramja });
+                        await talk(sdk, opts, /^Gnome pilot$/i, { choices: [/Karamja/i], shape: '5c, opt, 1c, state, 1c', until: inKaramja });
                     } finally {
                         leave();
                     }
                 }
                 if (pos(sdk).x < TILES.shipyardGate.x) {
                     await go(ctx, TILES.shipyardGateFoot, 1);
-                    await locTalk(sdk, 'shipyard gate', TILES.shipyardGate, /^open$/i, [/Glough sent me/i, /^Ka\.$/, /^Lu\.$/, /^Min\.$/], s => pos(s).x >= TILES.shipyardGate.x, { idle: 2 });
+                    await locTalk(sdk, 'shipyard gate', TILES.shipyardGate, /^open$/i, [/Glough sent me/i, /^Ka\.$/, /^Lu\.$/, /^Min\.$/], s => pos(s).x >= TILES.shipyardGate.x, { idle: 2, shape: '3c, opt, 4c, opt, 1c, opt, 1c, opt, 2c', quest: opts });
                 }
                 if (westOfGate) {
                     toggles.off = await pray(sdk, 'protect_from_melee', false);
@@ -764,7 +766,7 @@ export function steps(input: Options = {}): Step<any>[] {
                     note(ctx, name('I-karamja'), { crash: { hpLost: hp0 - skillLevel(s1, 'hitpoints'), prayerUsed: prayer0 - (s1.prayers?.prayerPoints ?? 0), toggleTicks: toggles } });
                 }
                 await go(ctx, TILES.foreman, 3);
-                await talk(sdk, opts, /^Foreman$/i, { choices: [/no longer with us/i, /worm holes/i, /^Anita/i], until: s => invCount(s, ITEM.order) > 0 });
+                await talk(sdk, opts, /^Foreman$/i, { choices: [/no longer with us/i, /worm holes/i, /^Anita/i], shape: '6c, state, 3c, opt, 3c, opt, 2c, opt, 12c, state, 1c', until: s => invCount(s, ITEM.order) > 0 });
             },
             postconditions: s => need(s, ITEM.order, 1, 'lumber orders'),
             logoutSafe: true,
@@ -784,7 +786,7 @@ export function steps(input: Options = {}): Step<any>[] {
                 await villageToStronghold(sdk);
                 await enterTree(sdk, ctx);
                 await treeLadder(sdk, 3);
-                await talk(sdk, opts, /^Charlie$/i, { expect: /I'll see what I can find/i });
+                await talk(sdk, opts, /^Charlie$/i, { shape: '9c', expect: /I'll see what I can find/i });
             },
             postconditions: isStarted,
             logoutSafe: true,
@@ -800,7 +802,7 @@ export function steps(input: Options = {}): Step<any>[] {
                     await leaveTree(sdk, ctx);
                     await go(ctx, TILES.anitaStairsFoot, 1);
                     await loc(sdk, "Anita's stairs up", TILES.anitaStairs, /^climb-up$/i, lvl(1), { maxTicks: 20 });
-                    await talk(sdk, opts, /^Anita$/i, { until: s => invCount(s, ITEM.key) > 0 });
+                    await talk(sdk, opts, /^Anita$/i, { shape: '6c, state, 4c', until: s => invCount(s, ITEM.key) > 0 });
                     await loc(sdk, "Anita's stairs down", TILES.anitaStairsDown, /^climb-down$/i, lvl(0), { maxTicks: 20 });
                 }
                 await gloughUp(sdk, ctx);
@@ -821,7 +823,7 @@ export function steps(input: Options = {}): Step<any>[] {
                 await gloughDown(ctx.sdk);
                 await enterTree(ctx.sdk, ctx);
                 note(ctx, name('L-twigs'), { freeSlots: freeSlots(ctx.sdk.getState()!) });
-                await talk(ctx.sdk, opts, NARNODE, { until: s => invCount(s, ITEM.twigs) >= 4 });
+                await talk(ctx.sdk, opts, NARNODE, { shape: '9c', until: s => invCount(s, ITEM.twigs) >= 4 });
             },
             postconditions: s => need(s, ITEM.twigs, 4, 'twigs'),
             logoutSafe: true,
@@ -861,7 +863,7 @@ export function steps(input: Options = {}): Step<any>[] {
                 await sceneLoaded(sdk);
                 // A demon already here (re-entry) must not be spawned twice: glough.rs2 adds one without checking.
                 if (demonInSight(sdk.getState()!)) return;
-                note(ctx, name('N1-trapdoor'), { protectOnTicks: await trapdoorScene(sdk) });
+                note(ctx, name('N1-trapdoor'), { protectOnTicks: await trapdoorScene(sdk, opts) });
             },
             postconditions: s => (demonInSight(s) ? true : 'no black demon in sight'),
             logoutSafe: false,
@@ -877,7 +879,7 @@ export function steps(input: Options = {}): Step<any>[] {
                     // Entered after a drop: the demon went with the logout and stage 130 replays the scene.
                     reopened = true;
                     note(ctx, name('N2-demon'), { reentry: { climb: await toPillars(sdk, ctx) } });
-                    await trapdoorScene(sdk);
+                    await trapdoorScene(sdk, opts);
                 }
                 note(ctx, name('N2-demon'), { demon: await killDemon(sdk, opts, reopened) });
             },
@@ -895,7 +897,7 @@ export function steps(input: Options = {}): Step<any>[] {
             run: async ctx => {
                 await go(ctx, TILES.narnodeRoots, 1);
                 // Narnode calls the guard (p_delay 6), the guard searches (p_delay 4): king_narnode.rs2.
-                await talk(ctx.sdk, opts, NARNODE, { expect: /A reward will have to wait/i });
+                await talk(ctx.sdk, opts, NARNODE, { shape: '3c, state, state, state, 1c, state, 8c, state, 1c', expect: /A reward will have to wait/i });
             },
             postconditions: isStarted,
             logoutSafe: true,
@@ -920,7 +922,7 @@ export function steps(input: Options = {}): Step<any>[] {
                 if (invCount(sdk, ITEM.rock) === 0) throw new Error(`searched ${searched} roots and found no Daconia rock`);
                 note(ctx, name('P-daconia'), { root, searched });
                 await go(ctx, TILES.narnodeRoots, 1);
-                await talk(sdk, opts, NARNODE, { until: s => questStatus(s, quest) === 'complete' });
+                await talk(sdk, opts, NARNODE, { shape: '17c, state, 4c', until: s => questStatus(s, quest) === 'complete' });
             },
             postconditions: exitCheck,
             logoutSafe: true,
