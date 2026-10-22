@@ -119,7 +119,9 @@ export class ClickGuard {
     constructor(
         private readonly sdk: StateSource,
         private readonly click: () => Promise<unknown>,
-        private readonly answered: Pred = () => false
+        private readonly answered: Pred = () => false,
+        /** Watch the first send for a reply even when it is not just after a jump (S00's first talk after login). */
+        private readonly opts: { alwaysWatch?: boolean } = {}
     ) {}
 
     /** Send the click now; a refused send is re-sent from `step`. */
@@ -130,9 +132,12 @@ export class ClickGuard {
         this.base = s ? snapshot(s) : null;
         const jumpTick = s?.player?.teleportTick ?? null;
         // Only the first send after a jump is watched for a reply, and it is re-sent at most once.
-        if (this.counts.unansweredResends === 0 && jumpTick !== null && tick - jumpTick <= JUMP_WINDOW) this.watching = true;
+        if (this.counts.unansweredResends === 0 && (this.opts.alwaysWatch || (jumpTick !== null && tick - jumpTick <= JUMP_WINDOW))) this.watching = true;
         const r = await this.click();
-        this.refusedAt = refusedSend(r) ? (this.sdk.getState()?.tick ?? tick) : -1;
+        // The reply bound runs from the tick the client executed the click (its result came back),
+        // not the tick it was sent: a lagging browser tab can execute it many ticks late (rs/345).
+        this.sentAt = this.sdk.getState()?.tick ?? tick;
+        this.refusedAt = refusedSend(r) ? this.sentAt : -1;
     }
 
     /** Feed a published state; true when it re-sent. */

@@ -48,8 +48,10 @@ describe('act', () => {
 });
 
 describe('the jump guard', () => {
-    // A forced move (agility_walk) steps by p_teleport: the player's teleportTick is the tick of each step.
-    const placed = (x: number, z: number, tick: number, level = 0) => ({ ...player(x, z, level), teleportTick: tick }) as PlayerState;
+    // A forced move (agility_walk) steps by p_teleport (no jump bit): teleportTick is the tick of each step.
+    const placed = (x: number, z: number, tick: number, level = 0) => ({ ...player(x, z, level), teleportTick: tick, teleportJump: false }) as PlayerState;
+    // A ladder or a spell lands by p_telejump.
+    const jumped = (x: number, z: number, tick: number, level = 0) => ({ ...player(x, z, level), teleportTick: tick, teleportJump: true }) as PlayerState;
     const sentAt = (sdk: FakeSdk, method: string) => sdk.sent.filter(a => a.method === method).length;
 
     test('act holds the first click while the player was placed this tick, then sends it once and it lands', async () => {
@@ -67,6 +69,37 @@ describe('the jump guard', () => {
         expect(r).toMatchObject({ ok: true, resends: 0, settleTicks: 1 });
         expect(r.unansweredResends).toBeUndefined();
         expect(sentAt(sdk, 'sendInteractLoc')).toBe(1);
+    });
+
+    test('a ladder landing (p_telejump) holds nobody: the click goes out on the landing tick', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 50, player: jumped(2466, 3496, 50, 3) }));
+        const p = act(sdk as never, () => sdk.sendInteractLoc(2466, 3495, 1, 1), () => true);
+        await flush();
+        expect(sentAt(sdk, 'sendInteractLoc')).toBe(1);
+        expect((await p).settleTicks).toBeUndefined();
+    });
+
+    test('the reply bound runs from the tick the client executed the click, not the send tick', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 20, player: jumped(2465, 3493, 20) }));
+        let release: (() => void) | null = null;
+        let n = 0;
+        const click = () => {
+            n++;
+            sdk.sent.push({ method: 'sendInteractNpc', args: [7, 1] });
+            // the first click executes 4 ticks after the send (a lagging tab)
+            return n === 1 ? new Promise<unknown>(r => { release = () => r({ success: true, message: 'ok' }); }) : Promise.resolve({ success: true, message: 'ok' });
+        };
+        let done = false;
+        const p = act(sdk as never, click, () => done, { resendEvery: 0 });
+        await ticks(sdk, 4);
+        release!();
+        await ticks(sdk, 2); // 2 ticks after execution: not yet re-sent
+        expect(n).toBe(1);
+        await ticks(sdk, 1); // 3 ticks after execution, no reply
+        expect(n).toBe(2);
+        done = true;
+        await ticks(sdk, 1);
+        expect(await p).toMatchObject({ ok: true, unansweredResends: 1 });
     });
 
     test('act re-sends once a post-jump click that draws no reply in REPLY_TICKS', async () => {
