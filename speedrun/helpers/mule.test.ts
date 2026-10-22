@@ -603,10 +603,139 @@ describe('carried packages (H12o on Ape Atoll): no bank, a tile per package, wil
         }
     });
 
-    test('P: offers exactly 9 sharks and the antipoison from 17 left after M, waiting for no ask', async () => {
+    /** P's trade from `inv`, with SCORED's scoped ask written on the open frame (none for null). */
+    async function serveP(inv: InventoryItem[], ask: AskItem[] | null) {
+        const dir = mkdtempSync(join(tmpdir(), 'h12o-p-'));
+        const openMs = Date.now();
+        if (ask) writeTopUpAsk(dir, ask, openMs + 5, P);
+        const sdk = new FakeSdk(baseState({ tick: 1, inventory: inv, trade: trade({}) }));
+        const result = serveStaged(sdk as unknown as BotSDK, {} as BotActions, { partner: 'cairn_scored', pkg: hp, held: carriedNeeds(hp, inv).held, exact: true, ask: { dir, openMs, lastServedMs: 0, maxTicks: 3 } });
+        await settle();
+        return { sdk, result };
+    }
+
+    /** SCORED's side of the rest of the trade: our offer up, both confirm, closed. */
+    async function finish(sdk: FakeSdk, mine: TradeItem[], left: InventoryItem[]) {
+        sdk.tick({ inventory: left, trade: trade({ myOffer: mine, myAccepted: true }) });
+        sdk.tick({ trade: trade({ screen: 'confirm', myOffer: mine, partnerAccepted: true }) });
+        await flush();
+        expect(sends(sdk)).toEqual([['sendAcceptTrade']]);
+        sdk.tick({ trade: closed });
+    }
+
+    test('P asked 1 + 5: offers exactly Superantipoison(4) x1 and Shark x5 of its 17, the potion first', async () => {
+        const { sdk, result } = await serveP(afterM(), [{ item: POTION, count: 1 }, { item: '^shark$', count: 5 }]);
+        expect(sends(sdk)).toEqual([['sendOfferItem', 0, -1], ['sendOfferItem', 6, 5], ['sendAcceptTrade']]);
+        await finish(sdk, [{ slot: 0, id: SAPP, name: 'Superantipoison(4)', count: 1 }, { slot: 1, id: SHARK, name: 'Shark', count: 5 }], sharks(12, 11));
+        const r = await result;
+        expect(r.success).toBe(true);
+        expect(r.topUps).toEqual([
+            { item: 'Superantipoison(4)', id: SAPP, max: 1, held: 1, asked: 1, n: 1 },
+            { item: 'Shark', id: SHARK, max: 9, held: 17, asked: 5, n: 5 }
+        ]);
+        expect(r.gave.map(i => [i.id, i.count]).sort()).toEqual([[SAPP, 1], [SHARK, 5]].sort());
+    });
+
+    test('P asked 1 + 0: offers exactly the Superantipoison(4) and no shark (a met top-up is left out of the ask)', async () => {
+        const { sdk, result } = await serveP(afterM(), [{ item: POTION, count: 1 }]);
+        expect(sends(sdk)).toEqual([['sendOfferItem', 0, -1], ['sendAcceptTrade']]);
+        await finish(sdk, [{ slot: 0, id: SAPP, name: 'Superantipoison(4)', count: 1 }], sharks(17, 6));
+        const r = await result;
+        expect(r.success).toBe(true);
+        expect(r.topUps).toEqual([
+            { item: 'Superantipoison(4)', id: SAPP, max: 1, held: 1, asked: 1, n: 1 },
+            { item: 'Shark', id: SHARK, max: 9, held: 17, asked: null, n: 0 }
+        ]);
+        expect(r.gave.map(i => [i.id, i.count])).toEqual([[SAPP, 1]]);
+    });
+
+    test('P\'s clamp: each line takes the ask within [0, max] and what h45 holds', () => {
+        const n = (inv: InventoryItem[], ask: AskItem[]) => topUpCounts(hp, inv, { items: ask }).map(t => [t.asked, t.n]);
+        expect(n(afterM(), [{ item: POTION, count: 3 }, { item: '^shark$', count: 20 }])).toEqual([[3, 1], [20, 9]]);
+        expect(n(afterM(), [{ item: POTION, count: 'all' }, { item: '^shark$', count: 'all' }])).toEqual([['all', 1], ['all', 9]]);
+        expect(n([sapp(0), ...sharks(4, 1)], [{ item: POTION, count: 1 }, { item: '^shark$', count: 7 }])).toEqual([[1, 1], [7, 4]]); // M took more than 13
+        expect(n(sharks(9), [{ item: POTION, count: 1 }, { item: '^shark$', count: 9 }])).toEqual([[1, 0], [9, 9]]); // no potion held
+    });
+
+    test('offer order is inventory slot order with X counts last, never the package\'s line order', async () => {
+        // Sharks staged before the potion: Offer-5 (a button) on slot 0 goes before the potion; 7 is an X count, so it goes last.
+        for (const [count, expected] of [
+            [5, [['sendOfferItem', 0, 5], ['sendOfferItem', 22, -1], ['sendAcceptTrade']]],
+            [7, [['sendOfferItem', 22, -1], ['sendOfferItem', 0, 7], ['sendAcceptTrade']]]
+        ] as const) {
+            const { sdk, result } = await serveP([...sharks(17), sapp(22)], [{ item: POTION, count: 1 }, { item: '^shark$', count }]);
+            expect(sends(sdk)).toEqual(expected as unknown as unknown[][]);
+            for (let i = 0; i < 4; i++) sdk.tick({ trade: closed });
+            expect((await result).success).toBe(false);
+        }
+    });
+
+    test('P asked for nothing: SCORED makes no trade and stops P\'s cue; h45 opens and holds none, logs it, and records the session as served', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'h12o-p0-'));
+        const scored = { index: 9, name: 'Cairn Scored', combatLevel: 3, x: P_TILE.x + 2, z: P_TILE.z, distance: 2 };
+        // M was served earlier in this login, so h45 stands on P's tile.
+        const state = memoryRoleState({ [CARRIED_SERVED_KEY]: [{ pkg: 'H12oM', session: 'm', ms: Date.now() }] });
+        const at = { worldX: P_TILE.x, worldZ: P_TILE.z, x: P_TILE.x, z: P_TILE.z, level: 0, hp: 99, maxHp: 99 } as unknown as PlayerState;
+        const sdk = new FakeSdk(baseState({ tick: 1, player: at, inventory: afterM() }));
+        Object.assign(sdk, { waitForReady: async () => {}, waitForTicks: async () => {}, isBankOpen: () => false, getChat: () => [] });
+        const logs: { m: string; d?: Record<string, unknown> }[] = [];
+        const abort = new AbortController();
+        const ctx = {
+            sdk,
+            bot: { dismissBlockingUI: async () => {}, declineTrade: async () => {} },
+            account: 'cairn_h45',
+            options: { serve: 'cairn_scored', serveMode: 'request', carried: true, cueDir: dir, wildlife: [], keepAliveMinutes: 0, packages: raw },
+            log: (m: string, d?: Record<string, unknown>) => logs.push({ m, d }),
+            reportBank: () => {},
+            signal: abort.signal,
+            state
+        } as unknown as RoleContext;
+        const until = async (label: string, done: () => boolean) => {
+            for (let i = 0; i < 1000 && !done(); i++) await Bun.sleep(2);
+            if (!done()) throw new Error(`timed out: ${label}`);
+        };
+        const trading = (from = 0) => sdk.sent.slice(from).filter(a => /Trade|Offer/.test(a.method)).map(a => a.method);
+        const ticker = setInterval(() => sdk.tick(), 2);
+        try {
+            const running = role.run(ctx);
+            await until('mule ready', () => logs.some(l => l.m === 'mule ready'));
+            const cue = new CueWriter(dir, 'cairn_scored', P);
+            const beacons = () => [{ tick: sdk.state!.tick, ms: Date.now() }];
+            cue.write({ beacons: beacons(), turns: [] });
+            await until('P requested', () => logs.some(l => l.m === 'package request' && l.d?.found === 'H12oP'));
+            // SCORED arrives on P's tile: P is ready, so h45 pre-requests it; SCORED, asking for nothing, never answers.
+            sdk.push({ nearbyPlayers: [scored] } as Partial<BotWorldState>);
+            await until('the pre-request', () => trading().includes('sendTradeRequest'));
+            cue.stop(beacons());
+            await until('P passed', () => logs.some(l => l.m === 'carried: asked for nothing; passed without a trade'));
+            const after = sdk.sent.length;
+            const t0 = sdk.state!.tick;
+            await until('two resend windows', () => sdk.state!.tick > t0 + 2 * RESEND_TICKS);
+            cue.stop(beacons()); // a rewrite of the stop records nothing twice
+            const t1 = sdk.state!.tick;
+            await until('a few more ticks', () => sdk.state!.tick > t1 + 10);
+            abort.abort();
+            await running;
+            // Never a trade: no offer, accept or decline at any point, and no request once P was passed.
+            expect(trading()).toEqual(trading().filter(m => m === 'sendTradeRequest'));
+            expect(trading(after)).toEqual([]);
+            expect(logs.find(l => l.m === 'carried: asked for nothing; passed without a trade')!.d).toEqual({ package: 'H12oP', session: cue.session });
+            expect(logs.filter(l => l.m === 'carried: asked for nothing; passed without a trade')).toHaveLength(1);
+            expect(logs.some(l => l.m === 'hand-off')).toBe(false);
+            const served = carriedServedEntries(state.data[CARRIED_SERVED_KEY]);
+            expect(served.map(e => [e.pkg, e.session])).toEqual([['H12oM', 'm'], ['H12oP', cue.session]]);
+            expect([...carriedDoneSince(served, Date.now())].sort()).toEqual(['H12oM', 'H12oP']);
+        } finally {
+            clearInterval(ticker);
+            abort.abort();
+        }
+    });
+
+    test('a fixed carried package (P before rs/158\'s ruling) is still offered by exact count, waiting for no ask', async () => {
+        const fixed = packageOf({ name: 'H12oP', scope: P, at: P_TILE, items: [{ item: 'Shark', amount: 9 }, { item: 'Superantipoison(4)', amount: 1 }] });
         const inv = [...sharks(17), sapp(17)];
         const sdk = new FakeSdk(baseState({ tick: 1, inventory: inv, trade: trade({}) }));
-        const result = serveStaged(sdk as unknown as BotSDK, {} as BotActions, { partner: 'cairn_scored', pkg: hp, held: carriedNeeds(hp, inv).held, exact: true });
+        const result = serveStaged(sdk as unknown as BotSDK, {} as BotActions, { partner: 'cairn_scored', pkg: fixed, held: carriedNeeds(fixed, inv).held, exact: true });
         await flush();
         expect(sends(sdk)).toEqual([['sendOfferItem', 17, -1], ['sendOfferItem', 0, 9], ['sendAcceptTrade']]);
         const mine: TradeItem[] = [{ slot: 0, id: SHARK, name: 'Shark', count: 9 }, { slot: 1, id: SAPP, name: 'Superantipoison(4)', count: 1 }];
