@@ -16,46 +16,13 @@
 // Servil (2566,3199): T11-12's 71 are not in them. Besides the runner's table, a run fails its check
 // when SCORED lost any HP from the fixture to the end (the acceptance's 0 damage).
 
-import { readFileSync } from 'fs';
 import type { TickRow } from '../../lib/ticks';
 import { ARRIVAL, quest, stepId, steps, TILES, type Options } from '../../quests/fight-arena';
-import { MANIFEST, parseLedger, walk } from '../../tools/slot-ledger';
+import { ledgerAfter } from './ledger';
 import { labMain, type LabQuest, type QuestFixture } from './run';
 
 /** SCORED at S12. */
 export const LEVELS = { attack: 94, strength: 1, defence: 1, hitpoints: 36, magic: 73, prayer: 94, thieving: 1, agility: 75 } as const;
-
-/** Ledger names (lower case, the game's) to obj debug names, for the items SCORED holds at S12. */
-const OBJ: Readonly<Record<string, string>> = {
-    knife: 'knife', 'water rune': 'waterrune', 'antipoison(3)': '3doseantipoison', shark: 'shark', 'death rune': 'deathrune', 'chaos rune': 'chaosrune',
-    'air rune': 'airrune', 'fire rune': 'firerune', coins: 'coins', 'law rune': 'lawrune', 'staff of fire': 'staff_of_fire', 'amulet of magic': 'amulet_of_magic',
-    'khazard helmet': 'khazard_helmet', 'khazard armour': 'khazard_platemail', 'khazard cell keys': 'khazard_cellkeys',
-};
-
-/** `held` / `worn` as slot-ledger.ts renders them ("knife x1, air rune x353") as obj debug name -> count. */
-export function ledgerItems(rendered: string): Record<string, number> {
-    if (rendered.trim() === '-') return {};
-    const out: Record<string, number> = {};
-    for (const part of rendered.split(', ')) {
-        const m = /^(.+) x(\d+|\?)( \(noted\))?$/.exec(part.trim());
-        if (!m) throw new Error(`ledger: cannot read "${part}"`);
-        if (m[2] === '?') throw new Error(`ledger: ${m[1]} is held at an unknown count`);
-        if (m[3]) throw new Error(`ledger: ${m[1]} is noted; the fixture gives unnoted items`);
-        const obj = OBJ[m[1]!];
-        if (!obj) throw new Error(`ledger: no obj name for "${m[1]}" (add it to OBJ)`);
-        out[obj] = (out[obj] ?? 0) + Number(m[2]);
-    }
-    return out;
-}
-
-/** SCORED's pack and worn set once `row` is done, from the ledger. */
-export function ledgerAfter(row: string, markdown = readFileSync(MANIFEST, 'utf8')): { inv: Record<string, number>; worn: Record<string, number> } {
-    const { rows, errors } = parseLedger(markdown);
-    if (errors.length) throw new Error(`the inventory ledger does not parse: ${errors.join('; ')}`);
-    const e = walk(rows).find(x => x.row.row === row);
-    if (!e) throw new Error(`no ledger row ${row}`);
-    return { inv: ledgerItems(e.held), worn: ledgerItems(e.worn) };
-}
 
 const START = ledgerAfter('H9');
 const UNIFORM = ['khazard_helmet', 'khazard_platemail'] as const;
