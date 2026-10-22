@@ -117,9 +117,9 @@ of Goblin Diplomacy's standalone travel that the legs already carried off its ro
 cannon session, Prayer, Crafting and Cooking pass it. Fold-in 13 adds S15's measured H to M (+352),
 so Monkey Madness (4,429) passes Agility (4,327) for rank 1.
 
-The expected column sums to **31,324.5** (the steps) plus the legs' **2,198.5**; RUN-ORDER.md section 6
+The expected column sums to **31,364.5** (the steps) plus the legs' **2,198.5**; RUN-ORDER.md section 6
 adds the allowances (hand-offs outside the figures, level-up pages, contention, overrun, relay,
-retries, restarts) for its **34,808** knife-on expected (31,867 best), against the record of 35,916.
+retries, restarts) for its **34,848** knife-on expected (31,867 best), against the record of 35,916.
 
 **Module status** (the last column; the helper scripts and the programs the entries rely on are in
 "Module status" at the end of this section) is as of this document's commit date, and rs/158 updates
@@ -140,7 +140,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 9 | 8 | The Grand Tree | `speedrun/quests/grand-tree.ts` | S11b | 1,528.5 | 1,393.5 | 1,798.5 | ~405 | overlay | `quest-grandtree-full.ts` | building (rs/185, held: tenet 15) |
 | 10 | 9 | Runecraft | `speedrun/skills/runecraft.ts` | S06, S21 | 1,192 | 1,192 | ~5,220 | ~4,030 | in-page | rs/131's `rc-cycle`; `runecraft-cycle.ts` | **on main, 1514f47a (#222; rs/268's snapshot of rs/196's module, rs/186's branch at 0c349da6)**, the run-commit floor; twin demo pending; **lab-accepted (rs/196, module 3f02f336, relay path (lab): nature at 44 tuned 30/30 at 29 x 7, robust 30/30 at 29 x 8; S06 7/7 at 6 x 7, 58)**; the tuned nature run confirmed on the direct path, 30/30 at 29 x 7 (rs/196, 3b161c12); pending: the auto rule's 'handled before SCORED' field (entry 9); cycle: on main, 23ea9f77 (#178) |
 | 11 | 10 | Smithing | `speedrun/skills/smithing.ts` | S25a | 1,065 | 1,028 | 1,330 | ~302 | overlay | `smithing-trade.ts` | building (rs/186, held: tenet 15) |
-| 12 | 13 | Dragon Slayer | `speedrun/quests/dragon-slayer.ts` | S26 | 929 | 908 | 1,039 | ~131 | overlay | `quest-dragon-*.ts` | building (rs/185, held: tenet 15) |
+| 12 | 13 | Dragon Slayer | `speedrun/quests/dragon-slayer.ts` | S26 | 969 | 908 | 1,079 | ~171 | overlay | `quest-dragon-*.ts` | building (rs/185, held: tenet 15) |
 | 13 | 12 | Dwarf Cannon | `speedrun/quests/dwarf-cannon.ts` | S13 | 855 | 799 | 957 | ~158 | overlay | `quest-mcannon-*.ts` | building (rs/185, held: tenet 15) |
 | 14 | 14 | Tree Gnome Village | `speedrun/quests/tree-gnome-village.ts` | S10b | 793 | 739 | 902 | ~163 | overlay | `quest-tree-full.ts`, `quest-premm-fight.ts` | building (rs/185, held: tenet 15) |
 | 15 | 16 | Firemaking | `speedrun/skills/firemaking.ts` | S03 | 695 | 650 | 735 | ~85 | overlay | `firemaking-line.ts` | on main, 4cc468e0 (#205; rs/244) |
@@ -174,6 +174,14 @@ scripts are in section 4; the shared primitives and their build order are in sec
 2. **`runSteps` idled SCORED at every boundary**: fixed (#92, measured 2 ticks per boundary before
    and 0 after; main, 08:30).
 3. **S09 starts at Mining 64**, not 49 (Plague City's 2,425 base): accepted by main (M0602).
+5. **Arrival levels** (rs/185's audit, 20:50 PDT, under main's 20:39 PDT rule): **no gap** in ten entries: Fight
+   Arena, Plague City, Mage Arena, Sea Slug, Romeo & Juliet, Druidic Ritual, Fishing Contest, Goblin
+   Diplomacy, Doric's and Cook's (no level check, or SCORED at or above the lab's levels, r). The
+   gaps are in entries 8 (the glider-crash jogres, ruled), 13 (Elvarg in mithril, +40 i) and 14
+   (two Khazard commanders, Protect from Melee). Every Protect rule (entries 8, 14 and 26's flick)
+   toggles at a stand or on a click tick: the prayer button cancels a walk in progress
+   (`clearPendingAction`; rs/241's Agility finding), and each toggle's tick cost is pending its
+   module's lab runs.
 4. **The tuned Runecraft cycle needs a direct-path giver**: the givers run on SCORED's machine, the
    Ashburn machine chosen at the gate (RUN-HOST.md steps 4 and 5a), through rs/117's launcher; rs/131 builds the scored side's in-page cycle.
 
@@ -1100,7 +1108,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   the jungle spiders took at most 4 HP. The tick cost of the toggle is pending (rs/202). **Arrival
   levels checked** (rs/202's audit, main's 20:39 PDT rule): Attack 80, Strength 1, Defence 1, HP 28,
   Magic 64, Prayer 94, Agility 22, with **no level gap**. The final A-to-P runs re-price S11b in a
-  later fold-in.
+  later fold-in. The prayer button cancels a walk in progress (`clearPendingAction`; rs/241's Agility
+  finding), so the module toggles at a stand or on a click tick.
 - **Fallback:** Fire Blast if Fire Bolt's casts run short (Magic ~64 after the warlord, unmeasured
   for the demon; ~31 Fire Bolt casts, 31 chaos and 93 air with the staff of fire wielded, fit inside
   H7, and rs/202's lab records the casts); `advance` page by page if the burst fails; no Agility
@@ -1342,17 +1351,39 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   the rune scimitar and helm are unobtainable, rs/124; no glory, rs/123).
 - **Postconditions:** quest complete; 18,650 Strength and Defence (read); 2 QP. Items out: armour can
   go back to a helper.
-- **Ticks:** expected **929**, best **908**: the quest 904 (fixed, inferred, with Elvarg at ~70
-  from 64-75 measured at 99, n=2) / 888 (burst, r21): `quests/README.md` §3 row's 941 / 925 less
-  segment 1, the Varrock teleport and walk to the guild door, 37 inferred, which is T25-26's; plus
-  Scavvo's purchase +15-20 and the adamant helm +5 (estimated, `research/supply-fallbacks.md` §12).
-  Fallback **~1,039** (stock ~1,014, inferred, + the same 25).
+- **Ticks:** expected **969**, best **908**, **lab table pending (rs/258)**: the quest 904 (fixed,
+  inferred, with Elvarg at ~70 from 64-75 measured at 99 with a **rune** scimitar, n=2) / 888 (burst,
+  r21): `quests/README.md` §3 row's 941 / 925 less segment 1, the Varrock teleport and walk to the
+  guild door, 37 inferred, which is T25-26's; plus Scavvo's purchase +15-20 (estimated, re-priced
+  with rs/258's table) and the adamant helm +5 (estimated, `research/supply-fallbacks.md` §12); plus
+  **Elvarg in mithril, +40 (inferred), the expected case** (main, 20:52 PDT): SCORED fights with the
+  mithril scimitar, hit chance ~0.55 and max hit 16 against rune's 0.65 and 20 at Attack 99 and
+  Strength 97 (`combat.rs2:7`, `player_combat.rs2:53-65`, `scimitars.obj`; rs/258's pre-lab
+  estimate, ~110 ticks for Elvarg's 120 HP against ~74), until rs/258's measured fight replaces it.
+  Best keeps the rune scimitar, the upside if h61's GE bid fills (~-40). Fallback **~1,079** (stock
+  ~1,014, inferred, + the same 25 + 40). **Pending notes, not in the expected:** Melzar's Maze by the
+  entrance room's ladder, which drops the player into the chest room (`ladders.rs2:83-85`), ~30
+  against the 259 inferred, -229 (i, verified in the lab before it is priced); the guild to Oziach
+  without a glory, a ~180-tile walk, +72 (i, until measured).
+- **Scavvo's stock** (RUN-ORDER.md R22): one shared rune chainbody and one pair of platelegs
+  (`champions_guild.inv`, r). SCORED buys them upstairs on arrival; **at stock 0 the module takes
+  the cheaper of** waiting for the restock (the engine's restock timer) or going on in mithril (the
+  measured fight), both carried as sensitivities pending rs/258, and it checks stock and fails loudly
+  otherwise. No 32-QP helper exists (rs/41).
+- **A death on Crandor** (r, rs/258): death keeps the three priciest items (`death.rs2`: the rune
+  platelegs, chainbody and adamant helm); the scimitar, amulet, shield, sharks and coins drop and
+  expire in 200 ticks (`lootdrop.constant`); the Karamja wall opens from outside only after it has
+  been opened from Crandor (`crandor.rs2`, `%dragon_wall`). So the return is the ship again (the Duke
+  for a new shield, Ned re-hired, the hull patched again), with a **helper re-supply** of a weapon,
+  food, 3 planks, 12 nails and a hammer; rs/258 builds it as the Elvarg segment's resume path and
+  measures it once.
 - **Primitives:** rs/94 `converse`, `act`, `combat`; `continueBurst`; `travel.ts`.
 - **Mode:** overlay-driven. **Logout-unsafe:** none, every varp is permanent (read). A death on
   Crandor is expensive and its return is untested.
 - **Fallback:** page by page; on a death, the respawn route (untested; to be measured).
-- **Acceptance, local:** `quest-dragon-*.ts` ported, at the post-MM stats, 3 runs. Pass: within 10% of
-  904 for the quest (929 with Scavvo), counted from the guild door, and Elvarg within 10% of 70.
+- **Acceptance, local:** `quest-dragon-*.ts` ported, at the post-MM stats (99/97/89, mithril scimitar
+  and adamant helm), 3 runs. Pass: within 10% of 944 for the quest (969 with Scavvo), counted from
+  the guild door, and Elvarg within 10% of ~110 (the mithril estimate) until rs/258's table sets it.
 - **Acceptance, demo (throwaway):** not feasible (32 QP). Demo coverage: the shared primitives.
 - **Start from:** `quest-dragon-guild.ts`, `quest-dragon-voyage.ts`, `quest-dragon-elvarg.ts`,
   `quest-dragon-lib.ts`, `quest-dragon-wreck-probe.ts`.
@@ -1363,7 +1394,9 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Serves:** S10b; Prayer is already ~94 from S07 (S10a retired). **From Elkoy, the maze entrance
   (2504,3191)**, its arrival tile: the run there from the zoo is T09-10 (entry 11; RUN-ORDER.md O6);
   the warlord by Fire Blast at 1/1/1 and 10 HP under Protect from Melee.
-- **Preconditions:** Magic 59 (Fire Blast, from S04); Plague City done (teleport); Prayer 43 (~94 from S07); the
+- **Preconditions:** Magic 59 (Fire Blast, from S04); Plague City done (teleport); **Prayer at least 43
+  at S10b's start, met** (an ordering check, main 20:52 PDT: Prayer is priced inside S07, whose bury,
+  S25b, ends at ~94 before S10b, which is why S10a is retired; RUN-ORDER.md rows S25b and S10a); the
   pre-MM trade (`SUPPLIES.md` H7, `quests/README.md` §4 step 3): 6 logs, staff of fire, amulet of
   magic, 1 Antipoison(4), 2 sharks (no prayer potions now), and Fire Blast runes for about T/5 casts per fight (the
   rune counts in `pre_mm_fights.md` look too high, flagged by rs/81).
@@ -1374,11 +1407,19 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   1,005 less its ~103 inferred to reach the maze from the Ardougne teleport, which T09-10 replaces.
 - **Primitives:** rs/94 `converse`, `act`, `combat` (spell fight); `continueBurst`; `travel.ts`;
   `trade.receiveFrom`.
+- **Protect from Melee from the crumbled wall to the ladder down** (approved, main 20:52 PDT): two
+  Khazard commanders stand on that stretch (r, `quest_tree.rs2:56-65, 71-75`); ~9 prayer points, ~0
+  ticks (i). The prayer button cancels a walk in progress (`clearPendingAction`; rs/241's Agility
+  finding), so the module toggles at a stand or on a click tick; the toggle's tick cost is pending
+  the lab runs. The rule is also in `quests/README.md` §4 step 3 (rs/185, bfb9ca72).
 - **Mode:** overlay-driven. **Logout-unsafe:** Bolren's closing ceremony until the quest scroll shows
   (`quests/README.md` §4).
 - **Fallback:** Fire Bolt at Magic 51 (warlord 165 measured, n=6: +32).
-- **Acceptance, local:** `quest-tree-full.ts` at route levels, 3 runs. Pass: within 10% of 793, counted
-  from the maze entrance, and the warlord within 10% of 133.
+- **Acceptance, local:** `quest-tree-full.ts` at route levels, **Attack, Strength and Defence 1 and 10
+  HP** (SCORED's arrival; not `quest-gnome-setup.ts`'s 70/70/70), 3 runs. Pass: within 10% of 793,
+  counted from the maze entrance, and the warlord within 10% of 133. The first run also settles the
+  wolves, giant and ogre that spawn 8-16 tiles from the maze route and would hunt combat 43 (rs/185,
+  open), reported as m.
 - **Acceptance, demo (throwaway):** the maze and the first dialogues on a throwaway (no level gate).
   Pass: within 10% of the local segment.
 - **Start from:** `quest-tree-full.ts`, `quest-gnome-fights.ts`, `quest-premm-fight.ts warlord`,
@@ -1652,7 +1693,9 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Primitives:** `lib/cannon.ts` (rs/199's, on main as 8a741554, #212); rs/94 `combat` upkeep (antipoison at the first
   poisoning).
 - **Mode:** overlay-driven. **Logout-unsafe:** combat; Wilderness level 37 at 42 HP and Defence 1
-  (`quests/README.md` §4 step 7).
+  (`quests/README.md` §4 step 7). **The flick's toggles:** the prayer button cancels a walk in
+  progress (`clearPendingAction`; rs/241's Agility finding), so each toggle goes at a stand or on a
+  click tick; its tick cost is pending the module's lab runs (S14's 118 m already carries the flick).
 - **Fallback:** if poisoned without antipoison, the poison takes 24-30 of 42 HP per session (measured,
   n=4); eat and continue.
 - **Acceptance, local:** `quest-premm-cannon.ts` at route stats. Pass: Ranged 50 within 10% of 118.
