@@ -457,6 +457,8 @@ const COURIER_SITE = { giver: { x: 2671, z: 3305 }, receiver: { x: 2670, z: 3305
 function courierRole(h: Session, helperBot: string, scored: string, standing: boolean) {
     const dir = process.env.RC_CUE_DIR!;
     process.env.HELPER_LAB_TELE = '1';
+    // a launched role has its bot.env's SERVER; restock kind cheat checks it is the local lab
+    process.env.SERVER ??= `localhost:${process.env.WEB_PORT ?? ''}`;
     const s0 = sdk.getState()!;
     new CueWriter(dir, scored).write({ beacons: [{ tick: s0.tick, ms: Date.now() }], turns: [] });
     const events: Array<{ tick: number; ev: string }> = [];
