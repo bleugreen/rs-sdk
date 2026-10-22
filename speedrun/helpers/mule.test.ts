@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
@@ -15,15 +18,20 @@ import {
     giveOpenTrade,
     holds,
     isStackableName,
+    muleOptions,
     packageItems,
+    packageOf,
     parsePackageRequest,
     planPackage,
     playerPattern,
     sameItems,
+    serveStaged,
     stagedExactly,
     toRegExps,
+    topUpCounts,
     type Package
 } from './mule';
+import { ASK_SLACK_MS, readTopUpAsk, usableAsk, writeTopUpAsk, type CueScope } from './altar-cue';
 
 const bank = (items: [number, string, number][]): BankItem[] => items.map(([id, name, count], slot) => ({ slot, id, name, count }));
 const inv = (items: [number, number, string, number][]): InventoryItem[] =>
@@ -259,5 +267,161 @@ describe('staging: the giver serves only exactly the package', () => {
         expect(stagedExactly([...rings, { slot: 20, id: 1511, name: 'Logs', count: 1, optionsWithIndex: [] }], held)).toMatchObject({ exact: false, extra: ['Logs x1'] });
         expect(stagedExactly(rings.slice(1), held)).toMatchObject({ exact: false, short: [1637] });
         expect(stagedExactly(rings, null).exact).toBe(false);
+    });
+});
+
+describe('top-up lines (H12 `shark to 15`): the count comes from the scored account\'s scoped ask', () => {
+    const SCOPE: CueScope = { step: 'S15', family: 'mule' };
+    const SHARK = 385;
+    const GOLD = 2357;
+    const sharks = (n: number, from = 0): InventoryItem[] => Array.from({ length: n }, (_, i) => ({ slot: from + i, id: SHARK, name: 'Shark', count: 1, optionsWithIndex: [] }));
+    const gold: InventoryItem = { slot: 15, id: GOLD, name: 'Gold bar', count: 1, optionsWithIndex: [] };
+    const h12 = packageOf({ name: 'h12', scope: SCOPE, items: [{ item: 'Gold bar', amount: 1 }, { item: 'Shark', topUp: { max: 15 } }] });
+    const ask = (items: { item: string; count: number | 'all' }[]) => ({ items });
+    const trade = (t: Partial<TradeState>): TradeState => ({ isOpen: true, screen: 'offer', partner: 'Cairn Scored', myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false, ...t });
+    const closed: TradeState = { isOpen: false, screen: null, partner: null, myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false };
+    const sends = (sdk: FakeSdk) => sdk.sent.splice(0).map(a => [a.method, ...a.args]);
+    const settle = async () => {
+        for (let i = 0; i < 5; i++) await flush();
+    };
+
+    test('options: { item | id, topUp: { max } } with the package scope (family mule); a fixed package is parsed exactly as before', () => {
+        expect(h12).toEqual({ name: 'h12', scope: SCOPE, items: [{ item: 'Gold bar', amount: 1 }, { item: 'Shark', topUp: { max: 15 } }] });
+        expect(packageOf({ name: 'wine', items: [{ item: 'Jug of wine', amount: 28 }] })).toEqual({ name: 'wine', items: [{ item: 'Jug of wine', amount: 28 }] });
+        expect(() => packageItems('p', [{ item: 'Shark', amount: 2, topUp: { max: 15 } }])).toThrow(/no amount/);
+        expect(() => packageItems('p', [{ item: 'Shark', topUp: { max: 0 } }])).toThrow(/topUp.max/);
+        expect(() => packageItems('p', [{ item: 'Shark', topUp: {} }])).toThrow(/topUp.max/);
+        expect(() => packageOf({ name: 'p', items: [{ item: 'Shark', topUp: { max: 15 } }] })).toThrow(/scope/);
+        expect(() => packageOf({ name: 'p', scope: { step: 'S18', family: 'courier' }, items: [{ item: 'Shark', topUp: { max: 15 } }] })).toThrow(/family must be mule/);
+        expect(() => packageOf({ name: 'p', scope: SCOPE, items: [{ item: 'Shark', amount: 2 }] })).toThrow(/scope is for a package with a top-up/);
+        expect(() => packageOf({ name: 'p', scope: SCOPE, items: [{ item: 'Shark', amount: 2 }, { item: 'shark', topUp: { max: 15 } }] })).toThrow(/another line/);
+        const o = muleOptions({ packages: [{ name: 'wine', items: [{ item: 'Jug of wine', amount: 28 }] }] }, { RC_CUE_DIR: '/tmp/cue-x' });
+        expect(o).toMatchObject({ askWaitTicks: 3, cueDir: '/tmp/cue-x', packages: [{ name: 'wine', items: [{ item: 'Jug of wine', amount: 28 }] }] });
+        expect(() => muleOptions({ askWaitTicks: -1 })).toThrow(/askWaitTicks/);
+    });
+
+    test('staging: a top-up line is staged up to its max, after the fixed lines, as far as the bank and the slots allow; never missing', () => {
+        const plan = planPackage(h12, bank([[SHARK, 'Shark', 40], [GOLD, 'Gold bar', 3]]));
+        expect(plan.withdrawals.map(w => [w.bankItem.id, w.amount, !!w.topUp])).toEqual([[GOLD, 1, false], [SHARK, 15, true]]);
+        expect(plan.slots).toBe(16);
+        expect(plan.missing).toEqual([]);
+        expect(plan.topUpShort).toEqual([]);
+        const few = planPackage(h12, bank([[SHARK, 'Shark', 7], [GOLD, 'Gold bar', 3]]));
+        expect(few.withdrawals.map(w => [w.bankItem.id, w.amount])).toEqual([[GOLD, 1], [SHARK, 7]]);
+        expect(few.topUpShort).toEqual([{ item: 'Shark', max: 15, staged: 7 }]);
+        const none = planPackage(h12, bank([[GOLD, 'Gold bar', 3]]));
+        expect(none.missing).toEqual([]);
+        expect(none.topUpShort).toEqual([{ item: 'Shark', max: 15, staged: 0 }]);
+        // 20 unnoted fixed slots leave room for 8 of the 15
+        const full = planPackage(packageOf({ name: 'f', scope: SCOPE, items: [{ item: 'Jug of wine', amount: 20 }, { item: 'Shark', topUp: { max: 15 } }] }), bank([[1993, 'Jug of wine', 40], [SHARK, 'Shark', 40]]));
+        expect(full.slots).toBe(28);
+        expect(full.topUpShort).toEqual([{ item: 'Shark', max: 15, staged: 8 }]);
+    });
+
+    test('the clamp: the ask, within [0, max] and what the mule holds; all means up to max', () => {
+        const inv15 = [...sharks(15), gold];
+        const n = (a: ReturnType<typeof ask> | null, inventory = inv15) => topUpCounts(h12, inventory, a).map(t => [t.asked, t.n]);
+        expect(n(ask([{ item: '^shark$', count: 9 }]))).toEqual([[9, 9]]);
+        expect(n(ask([{ item: '^shark(?:\\(\\d\\))?$', count: 9 }]))).toEqual([[9, 9]]); // rs/393's itemPattern form
+        expect(n(ask([{ item: '^shark$', count: 20 }]))).toEqual([[20, 15]]); // at most max
+        expect(n(ask([{ item: '^shark$', count: 9 }]), [...sharks(7), gold])).toEqual([[9, 7]]); // at most what it holds
+        expect(n(ask([{ item: '^shark$', count: 'all' }]), [...sharks(12), gold])).toEqual([['all', 12]]);
+        expect(n(ask([{ item: '^lobster$', count: 4 }]))).toEqual([[null, 0]]); // names none of it
+        expect(n(null)).toEqual([[null, 0]]); // no ask, none
+        expect(topUpCounts(h12, inv15, ask([{ item: '^shark$', count: 9 }]))).toEqual([{ item: 'Shark', id: SHARK, max: 15, held: 15, asked: 9, n: 9 }]);
+    });
+
+    test('the scope gate (altar-cue usableAsk): a mule reader takes only its own scope; the courier only an unscoped ask', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'mule-ask-'));
+        const mule = writeTopUpAsk(dir, [{ item: '^shark$', count: 9 }], 10_000, SCOPE);
+        expect(readTopUpAsk(dir)).toEqual({ v: 2, items: [{ item: '^shark$', count: 9 }], ms: 10_000, scope: SCOPE });
+        expect(usableAsk(mule, 10_000 + ASK_SLACK_MS, 0, SCOPE)).toEqual(mule);
+        expect(usableAsk(mule, 10_000, 0, { step: 'S16', family: 'mule' })).toBeNull(); // another step
+        expect(usableAsk(mule, 10_000, 0, { step: 'S15', family: 'courier' })).toBeNull(); // another family
+        expect(usableAsk(mule, 10_000, 0)).toBeNull(); // the S18 courier never takes a mule ask
+        const courier = writeTopUpAsk(dir, [{ item: 'bones$', count: 17 }], 10_000);
+        expect(readTopUpAsk(dir)).toEqual({ v: 2, items: [{ item: 'bones$', count: 17 }], ms: 10_000 }); // unchanged shape, no scope key
+        expect(usableAsk(courier, 10_000, 0)).toEqual(courier);
+        expect(usableAsk(courier, 10_000, 0, SCOPE)).toBeNull(); // the mule never takes the courier's
+        expect(usableAsk(mule, 10_000 + ASK_SLACK_MS + 1, 0, SCOPE)).toBeNull(); // written before the open
+        expect(usableAsk(mule, 10_000, 10_000, SCOPE)).toBeNull(); // already served
+        expect(() => writeTopUpAsk(dir, [{ item: '^shark$', count: 9 }], 1, { step: 'S15', family: 'nobody' as CueScope['family'] })).toThrow(/family/);
+    });
+
+    test('end to end: the ask is 9, so mule1 offers exactly 9 of its 15 sharks beside the fixed lines, and confirms', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'mule-ask-'));
+        const staged = [...sharks(15), gold];
+        const openMs = Date.now();
+        writeTopUpAsk(dir, [{ item: '^shark(?:\\(\\d\\))?$', count: 9 }], openMs + 5, SCOPE);
+        const sdk = new FakeSdk(baseState({ tick: 1, inventory: staged, trade: trade({}) }));
+        const result = serveStaged(sdk as unknown as BotSDK, {} as BotActions, { partner: 'cairn_scored', pkg: h12, held: countById(staged), ask: { dir, openMs, lastServedMs: 0, maxTicks: 3 } });
+        await settle();
+        // The gold bar's All press first, the sharks' X of 9 last, then the accept.
+        expect(sends(sdk)).toEqual([['sendOfferItem', 15, -1], ['sendOfferItem', 0, 9], ['sendAcceptTrade']]);
+        const mine: TradeItem[] = [{ slot: 0, id: SHARK, name: 'Shark', count: 9 }, { slot: 1, id: GOLD, name: 'Gold bar', count: 1 }];
+        sdk.tick({ inventory: sharks(6), trade: trade({ myOffer: mine, myAccepted: true }) });
+        await flush();
+        expect(sends(sdk)).toEqual([]);
+        sdk.tick({ trade: trade({ screen: 'confirm', myOffer: mine, partnerAccepted: true }) });
+        await flush();
+        expect(sends(sdk)).toEqual([['sendAcceptTrade']]);
+        sdk.tick({ trade: closed });
+        const r = await result;
+        expect(r.success).toBe(true);
+        expect(r.gave.map(i => [i.id, i.count]).sort()).toEqual([[SHARK, 9], [GOLD, 1]].sort());
+        expect(r.topUps).toEqual([{ item: 'Shark', id: SHARK, max: 15, held: 15, asked: 9, n: 9 }]);
+        expect(r.ask?.ms).toBe(openMs + 5);
+    });
+
+    for (const [label, write] of [
+        ['no ask at all', (_dir: string, _ms: number) => {}],
+        ['an unscoped (S18 courier) ask', (dir: string, ms: number) => void writeTopUpAsk(dir, [{ item: '^shark$', count: 9 }], ms)],
+        ['an ask for another step', (dir: string, ms: number) => void writeTopUpAsk(dir, [{ item: '^shark$', count: 9 }], ms, { step: 'S16', family: 'mule' })],
+        ['an ask for another family', (dir: string, ms: number) => void writeTopUpAsk(dir, [{ item: '^shark$', count: 9 }], ms, { step: 'S15', family: 'courier' })]
+    ] as const) {
+        test(`${label}: after askWaitTicks the fixed lines go alone, no shark is offered, and it is logged`, async () => {
+            const dir = mkdtempSync(join(tmpdir(), 'mule-ask-'));
+            const staged = [...sharks(15), gold];
+            const openMs = Date.now();
+            write(dir, openMs + 5);
+            const logs: string[] = [];
+            const sdk = new FakeSdk(baseState({ tick: 1, inventory: staged, trade: trade({}) }));
+            const result = serveStaged(sdk as unknown as BotSDK, {} as BotActions, { partner: 'cairn_scored', pkg: h12, held: countById(staged), ask: { dir, openMs, lastServedMs: 0, maxTicks: 3 }, log: m => logs.push(m) });
+            for (let i = 0; i < 4; i++) {
+                await Bun.sleep(25);
+                expect(sdk.sent).toEqual([]); // nothing goes out while the ask is awaited
+                sdk.tick();
+            }
+            for (let i = 0; i < 20 && !sdk.sent.some(a => a.method === 'sendAcceptTrade'); i++) {
+                await Bun.sleep(25);
+                sdk.tick();
+            }
+            expect(sends(sdk)).toEqual([['sendOfferItem', 15, -1], ['sendAcceptTrade']]);
+            expect(logs).toContain('top-up: no usable ask; offering none of the top-up lines');
+            for (let i = 0; i < 4; i++) sdk.tick({ trade: closed });
+            const r = await result;
+            expect(r.topUps).toEqual([{ item: 'Shark', id: SHARK, max: 15, held: 15, asked: null, n: 0 }]);
+            expect(r.ask).toBeNull();
+        });
+    }
+
+    test('a package without a top-up behaves exactly as before: no wait for an ask (even one addressed to the mule), all of each staged id', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'mule-ask-'));
+        writeTopUpAsk(dir, [{ item: '^shark$', count: 1 }], Date.now(), SCOPE);
+        const kit = inv([[0, SHARK, 'Shark', 1], [1, SHARK, 'Shark', 1], [2, 554, 'Fire rune', 300]]);
+        const pkg = packageOf({ name: 'kit', items: [{ item: 'Shark', amount: 2 }, { item: 'Fire rune', amount: 300 }] });
+        const sdk = new FakeSdk(baseState({ tick: 1, inventory: kit, trade: trade({ partner: 'Cairn H05' }) }));
+        const result = serveStaged(sdk as unknown as BotSDK, {} as BotActions, { partner: 'cairn_h05', pkg, held: countById(kit), ask: { dir, openMs: 0, lastServedMs: 0, maxTicks: 3 } });
+        await flush();
+        expect(sends(sdk)).toEqual([['sendOfferItem', 0, -1], ['sendOfferItem', 2, -1], ['sendAcceptTrade']]);
+        const mine: TradeItem[] = [{ slot: 0, id: SHARK, name: 'Shark', count: 2 }, { slot: 1, id: 554, name: 'Fire rune', count: 300 }];
+        sdk.tick({ inventory: [], trade: trade({ partner: 'Cairn H05', myOffer: mine, myAccepted: true }) });
+        sdk.tick({ trade: trade({ partner: 'Cairn H05', screen: 'confirm', myOffer: mine, partnerAccepted: true }) });
+        await flush();
+        sdk.tick({ trade: closed });
+        const r = await result;
+        expect(r).toMatchObject({ success: true, topUps: [], ask: null });
+        expect(r.gave.map(i => [i.id, i.count]).sort()).toEqual([[SHARK, 2], [554, 300]]);
+        expect(planPackage(pkg, bank([[SHARK, 'Shark', 10], [554, 'Fire rune', 1000]])).topUpShort).toEqual([]);
     });
 });

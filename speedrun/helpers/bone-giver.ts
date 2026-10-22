@@ -69,7 +69,7 @@ import { give, DROPPED_TICKS, openTrade, tradeOf, type GiveSpec } from '../lib/t
 import { waitUntil } from '../lib/wait';
 import { existsSync, readdirSync } from 'node:fs';
 import { runIsOn } from '../lib/run-mode';
-import { assertUntracked, canonName, CueWatcher, cueDir, nameHash, newRequestFrom, readJson, readTopUpAsk, scopeOption, turnOrder, usableAsk, writeJsonAtomicSync, type Cue, type CueScope, type TopUpAsk } from './altar-cue';
+import { assertUntracked, awaitAsk, canonName, CueWatcher, cueDir, nameHash, newRequestFrom, readJson, scopeOption, turnOrder, writeJsonAtomicSync, type Cue, type CueScope, type TopUpAsk } from './altar-cue';
 import { chebyshev, cheat, count, isLocalServer, labTele, pos, standOn, until, type Tile } from './altar-room';
 import { closeBank, depositAllExcept, ensureOutOfTutorial, openBank, walkNear } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
@@ -659,17 +659,10 @@ export class BoneGiver {
         ctx.log('trade', { ok: r.ok, ticks: r.ticks, asked: ask.items, gave: r.gave.map(i => `${i.name} x${i.count}`), answerToOpen: openTick - answered, openToAsk: askTick - openTick, ...(r.reason ? { reason: r.reason } : {}) });
     }
 
-    /** The ask for the trade open now (altar-cue.ts usableAsk), waiting up to `askWaitTicks` observed ticks; null if none came or the trade closed. */
-    private async waitForAsk(): Promise<TopUpAsk | null> {
+    /** The ask for the trade open now (altar-cue.ts awaitAsk: an unscoped ask), waiting up to `askWaitTicks` observed ticks; null if none came or the trade closed. */
+    private waitForAsk(): Promise<TopUpAsk | null> {
         const { ctx, o } = this;
-        const t0 = this.s!.tick;
-        for (;;) {
-            const ask = usableAsk(readTopUpAsk(o.cueDir), this.openSeenMs, this.lastAskMs);
-            if (ask) return ask;
-            const s = this.s;
-            if (!s || !tradeOf(s).isOpen || s.tick - t0 > o.askWaitTicks || ctx.signal.aborted) return null;
-            await Bun.sleep(15);
-        }
+        return awaitAsk(ctx.sdk, { dir: o.cueDir, openMs: this.openSeenMs, lastServedMs: this.lastAskMs, maxTicks: o.askWaitTicks, signal: ctx.signal });
     }
 
     /**
