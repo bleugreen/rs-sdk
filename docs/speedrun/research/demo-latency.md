@@ -1113,13 +1113,14 @@ in `docs/speedrun/scripts/host-gate/`, and the read itself is `docs/speedrun/scr
 
   The account is a throwaway whose name and password exist only in the clone's `bots/gate/bot.env`
   (mode 600, on the host). The wrapper redacts the name and password from everything it keeps. A read takes
-  about 3 minutes. If it hangs, systemd kills the unit's whole control group at 270 s, so nothing
-  is left running.
+  about 4 minutes: the pre-login check's 60 s world-feed read, then the gate. If it hangs, systemd
+  kills the unit's whole control group at 345 s (the wrapper's budget holds 75 s for the feed
+  read on top of the probe's unchanged 200-240 s), so nothing is left running.
 - **Where the history lives.** Each firing writes one file, `~/gate-history/<UTC timestamp>.json`.
   A read's file starts with `utc` and `endUtc`, `commit`, `status` (`ok`, `not-probed`, `timeout`
-  or `error`), `on`, `onTime`, `catchUpsPerMinute`, `tickP50Ms`, `tickP90Ms`, `players` and `edge`, then
-  `preLogin` (players, `flyMachine`, `flyWorker`, `serverStartUtc`, `serverStartToken` and
-  `serverUptimeMin` from step 4), with the gate's own JSON under
+  or `error`), `T`, `on`, `onTime`, `catchUpsPerMinute`, `tickP50Ms`, `tickP90Ms`, `players` and `edge`, then
+  `preLogin` (players, `flyMachine`, `flyWorker`, `serverStartUtc`, `serverStartToken`,
+  `serverUptimeMin`, the feed read and the engine fingerprint from step 4), with the gate's own JSON under
   `gate`. A change of `flyMachine` between files marks a redeploy or machine swap. The three
   `server*` fields come from the token in the public page's `client.js?v=<token>` import, which
   the engine sets once at process start to `Date.now().toString(36)` (so base 36 decodes to the
@@ -1128,8 +1129,20 @@ in `docs/speedrun/scripts/host-gate/`, and the read itself is `docs/speedrun/scr
   count alone can miss: on 22 October the world restarted at 19:24:45Z and had 740 online
   1.6 minutes later, well over the 300 floor. `tickP50Ms` is the gate's median tick interval
   (`result.steadiness.p50`); about 300 against about 600 tells the two tick rates apart, so it
-  dates a return to 600 ms ticks to a read. `preLogin` also carries an engine fingerprint, from
-  public pages fetched alongside the player count, each field null when its fetch fails:
+  dates a return to 600 ms ticks to a read. Before login, `host-gate-feed.ts` (beside the
+  wrapper) reads the engine's login-free world feed (`wss://<server>/worldfeed`,
+  `server/engine/src/web/worldfeed.ts`) for 60 s on an empty 1x1 tile. It records the hello
+  frame's `tickMsConfigured` (`World.tickRate`, the configured rate) and `feedTick`, plus
+  `feedTickMs` {n, p50, p90, max, min} (the engine's own interval between ticks, with the first
+  frame dropped because it can span the time since the last feed client) and `feedTickGaps`
+  (frames whose tick number jumps by more than 1). These are null when the feed can't be read.
+  On 22 October at 20:19Z it read `tickMsConfigured` 400, p50 401 over 149 intervals. The
+  top-level `T` is the read's tick length: `tickMsConfigured` when the feed was read, else
+  `tickP50Ms` rounded, else null. Records written before `T` existed are labelled in the
+  tables, not rewritten: T = 300 before the 19:56:28Z restart on 22 October and T = 400 after
+  (main's ruling). `preLogin` also carries an engine fingerprint, from public pages fetched
+  alongside the player count, each field null when its fetch fails (`tickMsConfigured` belongs
+  with it):
   - `hiscoreHover` is the first numeric hover on `/hiscores` (the Time column) with every
     number as `N`. Upstream b565f2d9 and our fork render `N ticks`. On 22 October the demo
     rendered `N seconds of game time` from about 19:34Z, then `N ticks normalized to N ms per tick`

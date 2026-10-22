@@ -121,15 +121,24 @@ So the demo is in one of three states:
   string that upstream lacks shows this. It was first seen at about 19:34Z on 22 October, around
   the 19:36Z "Server is being updated" restart: the hiscores Time hover reads
   `N seconds of game time` (with N a number of seconds), where b565f2d9 and our fork
-  (`server/engine/src/web/pages/hiscores.ts`) render `N ticks`. After the 20:08Z restart it
-  read `N ticks normalized to 400 ms per tick`, with the bot bundle's md5 unchanged. So the
-  engine is deployed without the bundle being rebuilt. In this state a bundle match proves only
-  that the webclient build is unchanged. It says nothing about the engine.
+  (`server/engine/src/web/pages/hiscores.ts`) render `N ticks`. In this state a bundle match
+  proves only that the webclient build is unchanged. It says nothing about the engine.
 
-Every run-night gate read records that hover, a hash of the hiscores page's static chrome and
-the bundle md5 (`hiscoreHover`, `hiscoreChromeSha`, `botBundleMd5` under `preLogin` in
-`~/gate-history`; research/demo-latency.md, section 10), so the next engine-side change is
-dated to a read.
+Dated engine changes in the not-on-GitHub state:
+
+| restart (22 Oct) | hiscores hover | `hiscoreChromeSha` | bot bundle md5 |
+|---|---|---|---|
+| 19:36:00Z | `N ticks` to `N seconds of game time` (first seen about 19:34Z) | not yet recorded | not recorded before it |
+| 20:08:13Z | `N seconds of game time` to `N ticks normalized to 400 ms per tick` | `dca2432b61a82319` to `be0f4d8b464dee76` | `353760e9…`, unchanged |
+
+The second case shows the engine is deployed without the bundle being rebuilt, which the
+published Dockerfile would not do. The world feed's hello frame read a configured tick of
+400 ms at 20:19Z the same day.
+
+Every run-night gate read records that hover, a hash of the hiscores page's static chrome, the
+bundle md5 and the configured tick (`hiscoreHover`, `hiscoreChromeSha`, `botBundleMd5`,
+`tickMsConfigured` under `preLogin` in `~/gate-history`; research/demo-latency.md, section 10),
+so the next engine-side change is dated to a read.
 
 ## Extending the watchlist
 
