@@ -118,6 +118,18 @@ export interface Package {
     items: PackageItem[];
     /** Whose top-up ask the package reads (family 'mule'); set exactly when it has a top-up line. */
     scope?: CueScope;
+    /** Served only when asked for by name (a fallback such as H4e): never a step of order mode. */
+    onRequest?: true;
+}
+
+/**
+ * Order mode after a successful serve: the ordered packages advance only when the one served is
+ * the ordered package due, so a package asked for by name in between (a fallback) leaves the
+ * order where it was and the due package comes up again.
+ */
+export function afterServe(ordered: readonly Package[], nextIndex: number, served: Package): { nextIndex: number; pending: Package | null } {
+    const next = ordered[nextIndex] === served ? nextIndex + 1 : nextIndex;
+    return { nextIndex: next, pending: ordered[next] ?? null };
 }
 
 export interface Withdrawal {
@@ -722,16 +734,18 @@ export function packageOf(raw: unknown, pack?: ObjPack): Package {
     const p = (raw ?? {}) as Record<string, unknown>;
     const name = String(p.name);
     const items = packageItems(name, p.items, pack);
+    if (p.onRequest !== undefined && typeof p.onRequest !== 'boolean') throw new Error(`Package ${name}: onRequest must be true or false`);
+    const onRequest = p.onRequest === true ? { onRequest: true as const } : {};
     if (!items.some(isTopUp)) {
         if (p.scope !== undefined) throw new Error(`Package ${name}: scope is for a package with a top-up line`);
-        return { name, items };
+        return { name, items, ...onRequest };
     }
     const labels = items.map(i => refLabel(i).toLowerCase());
     for (const t of items.filter(isTopUp)) {
         const l = refLabel(t).toLowerCase();
         if (labels.filter(x => x === l).length > 1) throw new Error(`Package ${name}: ${refLabel(t)} is a top-up line and another line too`);
     }
-    return { name, items, scope: scopeOption(p.scope, ['mule'], `Package ${name} scope`) };
+    return { name, items, scope: scopeOption(p.scope, ['mule'], `Package ${name} scope`), ...onRequest };
 }
 
 export function muleOptions(raw: Record<string, unknown>, env: Record<string, string | undefined> = process.env): Required<Omit<MuleOptions, 'serve' | 'ge'>> & Pick<MuleOptions, 'serve' | 'ge'> {
@@ -761,6 +775,8 @@ class Mule {
     private readonly pms: ChatCursor;
     /** Package to serve next, or null. */
     private pending: Package | null = null;
+    /** Order mode's packages: every package but those served only on request. */
+    private readonly ordered: Package[];
     private nextIndex = 0;
     /** Ids/counts of the pending package while it sits in the inventory. */
     private held: Map<number, number> | null = null;
@@ -789,7 +805,8 @@ class Mule {
         this.courierPatterns = toRegExps(this.o.couriers);
         this.requests = new ChatCursor(ctx.sdk, [TRADE_REQUEST_CHAT_TYPE]);
         this.pms = new ChatCursor(ctx.sdk, PM_RECEIVED_TYPES);
-        if (this.o.serveMode === 'order') this.pending = this.o.packages[0] ?? null;
+        this.ordered = this.o.packages.filter(p => !p.onRequest);
+        if (this.o.serveMode === 'order') this.pending = this.ordered[0] ?? null;
     }
 
     private isServe(name: string | null | undefined): boolean {
@@ -1013,8 +1030,7 @@ class Mule {
         if (r.success) {
             this.held = null;
             if (this.o.serveMode === 'order') {
-                this.nextIndex++;
-                this.pending = this.o.packages[this.nextIndex] ?? null;
+                ({ nextIndex: this.nextIndex, pending: this.pending } = afterServe(this.ordered, this.nextIndex, pkg));
             } else {
                 this.pending = null;
             }
