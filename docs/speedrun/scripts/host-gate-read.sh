@@ -21,7 +21,9 @@
 #    bots/$GATE_BOT (default `gate`, an alias directory whose mode-600 bot.env holds the
 #    throwaway account). The account name is redacted from everything this script keeps.
 #    Just before it, a no-login check of the bot.env server's public /playercount, with Fly's
-#    machine (sid) and worker (bn) from the flyio-debug header, recorded under `preLogin`.
+#    machine (sid) and worker (bn) from the flyio-debug header, recorded under `preLogin`, with
+#    the game process's start and uptime from the public page's client.js?v= token (null when
+#    the page or token is unreadable; report-only, never a skip).
 #    Under $GATE_MIN_PLAYERS (default 300) online, or no answer, means
 #    `skip: restart suspected (players N)`: a server refilling after a restart is not a reading
 #    of the run's conditions, and a login would only add to its rush.
@@ -46,6 +48,7 @@ budget_end=$((SECONDS + 262))
 utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 commit=
 pre_players= pre_sid= pre_bn=
+pre_start_token= pre_start_utc= pre_uptime_min=
 mkdir -p "$history"
 record="$history/$(date -u -d "$utc" +%Y-%m-%dT%H%M%SZ).json"
 n=1
@@ -63,7 +66,8 @@ write_record() {
     [ -n "$gate" ] && [ -s "$gate" ] && jq -e . "$gate" >/dev/null 2>&1 && gatearg=(--slurpfile g "$gate")
     jq -n "${gatearg[@]}" --arg utc "$utc" --arg end "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg host "$(hostname)" --arg commit "$commit" \
         --arg status "$status" --argjson exit "$code" --arg note "$note" --arg edge "$edge" --arg players "$players" \
-        --arg tail "$tail" --arg pp "$pre_players" --arg psid "$pre_sid" --arg pbn "$pre_bn" '
+        --arg tail "$tail" --arg pp "$pre_players" --arg psid "$pre_sid" --arg pbn "$pre_bn" \
+        --arg pst "$pre_start_token" --arg psu "$pre_start_utc" --arg pup "$pre_uptime_min" '
         $g[0] as $j |
         def orNull: if . == "" then null else . end;
         {utc: $utc, endUtc: $end, host: $host, commit: (if $commit == "" then null else $commit end), status: $status, exit: $exit,
@@ -73,11 +77,30 @@ write_record() {
          players: ($j.vantage.players // (if $players == "" then null else ($players | tonumber) end)),
          edge: ($j.vantage.edge // (if $edge == "" then null else $edge end)),
          connectP50Ms: $j.vantage.connectP50, failures: $j.verdict.failures,
-         preLogin: (if ($pp + $psid + $pbn) == "" then null
+         preLogin: (if ($pp + $psid + $pbn + $pst) == "" then null
                     else {players: ($pp | orNull | if . == null then null else tonumber end),
-                          flyMachine: ($psid | orNull), flyWorker: ($pbn | orNull)} end),
+                          flyMachine: ($psid | orNull), flyWorker: ($pbn | orNull),
+                          serverStartUtc: ($psu | orNull), serverStartToken: ($pst | orNull),
+                          serverUptimeMin: ($pup | orNull | if . == null then null else tonumber end)} end),
          gate: $j}
         + (if $tail == "" then {} else {outputTail: ($tail | split("\n"))} end)' > "$record.tmp" && mv "$record.tmp" "$record"
+}
+# server_start PAGE: the page imports client.js?v=<token>, Date.now().toString(36) taken once at
+# the game process's start (server/engine/src/web/pages/client.ts). Sets pre_start_token,
+# pre_start_utc (ms) and pre_uptime_min (to $utc, one decimal) together, or leaves all three empty.
+server_start() {
+    local tok ms s d t sign=
+    tok=$(grep -aoE 'client\.js\?v=[0-9a-z]{6,12}([^0-9a-z]|$)' "$1" 2>/dev/null | head -1 |
+        sed -E 's/^client\.js\?v=([0-9a-z]+).*$/\1/')
+    [[ $tok =~ ^[0-9a-z]{6,12}$ ]] || return 0
+    ms=$((36#$tok))
+    s=$(date -u -d "@$((ms / 1000))" +%Y-%m-%dT%H:%M:%S 2>/dev/null) && [[ $s =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T ]] || return 0
+    d=$(( $(date -u -d "$utc" +%s) * 1000 - ms ))
+    [ "$d" -lt 0 ] && { sign=-; d=$((-d)); }
+    t=$(( (d + 3000) / 6000 ))
+    pre_start_token=$tok
+    pre_start_utc=$(printf '%s.%03dZ' "$s" $((ms % 1000)))
+    pre_uptime_min="$sign$((t / 10)).$((t % 10))"
 }
 skip() {
     echo "skip: $1"
@@ -168,6 +191,8 @@ case "$server" in
         fly=$(sed -n 's/^flyio-debug:[[:space:]]*//Ip' "$tmp/pc.h" 2>/dev/null | tr -d '\r' | head -1)
         pre_sid=$(jq -r '.sid // empty' <<<"$fly" 2>/dev/null || true)
         pre_bn=$(jq -r '.bn // empty' <<<"$fly" 2>/dev/null || true)
+        curl -s --max-time 8 -o "$tmp/page.html" "https://$server/" || true
+        server_start "$tmp/page.html"
         echo "pre-login: ${pre_players:-?} online, fly machine ${pre_sid:-?}"
         if [ -z "$pre_players" ]; then
             skip "restart suspected (playercount unavailable)"
