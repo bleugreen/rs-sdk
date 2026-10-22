@@ -17,7 +17,7 @@ import { depositAll } from '../../speedrun/lib/bank';
 import { closeSession, openSession } from '../../speedrun/lib/session';
 import { waitTicks, waitUntil } from '../../speedrun/lib/wait';
 import { botArg, result } from '../../speedrun/lab/common';
-import { cheat, leaveTutorial, mustTele, VARROCK_WEST_BANK } from '../../speedrun/lab/setup';
+import { cheat, clearInventory, leaveTutorial, mustTele, VARROCK_WEST_BANK } from '../../speedrun/lab/setup';
 
 const MAX = 0x7fffffff;
 const VARROCK_GENERAL_STORE = { x: 3217, z: 3415 };
@@ -117,18 +117,19 @@ for (const noted of [false, true]) {
     await depositAll(sdk);
 }
 
-// ---- B: full stacks. Bank coins at 2^31-1, then deposit 1000 more (bank_deposit_request refuses), then
+// ---- B: full stacks. Bank coins at exactly 2^31-1, then deposit 1000 more (bank_deposit_request refuses), then
 // withdraw-all while 1000 coins are held (bank_withdraw_request takes inv_itemspace2's overflow off the amount).
 {
     const probe = 'B full-stack deposit and withdraw';
-    await cheat(sdk, `give coins ${MAX}`, 3);
-    await depositAll(sdk);
+    await clearInventory(sdk);
+    await openBankHere();
     const bankCoins0 = bankSlot('Coins')?.count ?? 0;
     if (bankCoins0 < MAX) {
-        // A previous run may have left coins below the cap; top the bank up to exactly 2^31-1.
+        // Top the bank up to exactly 2^31-1 from an inventory holding no coins, so nothing is capped on the way.
         await cheat(sdk, `give coins ${MAX - bankCoins0}`, 3);
         await depositAll(sdk);
     }
+    if ((bankSlot('Coins')?.count ?? 0) !== MAX) throw new Error(`bank coins ${bankSlot('Coins')?.count}, expected ${MAX}`);
     await cheat(sdk, 'give coins 1000', 3);
     const before = snap(sdk.getState());
     const coinsInv = sdk.getState()!.inventory.find(i => i.name === 'Coins');
@@ -148,12 +149,12 @@ for (const noted of [false, true]) {
         afterWithdrawAll: { bank: after.bank['Coins'] ?? 0, inv: after.inv['Coins'], ground: after.ground['Coins'] ?? 0 },
         boardBefore: before.boardValue, boardAfter: after.boardValue, lastMessages: msgs,
     });
-    await depositAll(sdk);
 }
 
 // ---- C: shop round trips (shop.rs2 sell_item / buy_item with ~calc_shop_value)
 {
     await bot.closeBank();
+    await clearInventory(sdk);
     await mustTele(sdk, VARROCK_GENERAL_STORE.x, VARROCK_GENERAL_STORE.z);
     const opened = await bot.openShop(/shop keeper/i);
     if (!opened.success) throw new Error(`openShop: ${opened.message}`);
@@ -180,6 +181,19 @@ for (const noted of [false, true]) {
         const c1 = coins();
         const has1 = sdk.getState()!.inventory.filter(i => i.name === itemName).length;
         expect(probe, c1 <= c0 && has1 === has0, { coinsBefore: c0, coinsAfter: c1, net: c1 - c0, heldBefore: has0, heldAfter: has1 });
+    }
+
+    // Selling into a coin stack already at 2^31-1: shop.rs2 sell_item calls inv_add(coins) after the item has
+    // moved, and Inventory.add caps the stack, so the proceeds are lost. A loss to the seller, never a gain.
+    {
+        await cheat(sdk, `give coins ${MAX}`, 2);
+        await cheat(sdk, 'give iron_bar 1', 3);
+        const c0 = coins();
+        const it = sdk.getState()!.shop.playerItems.find(i => i.name === 'Iron bar');
+        if (it) await sdk.sendShopSell(it.slot, 1);
+        await waitTicks(sdk, 2);
+        const sold = !sdk.getState()!.inventory.some(i => i.name === 'Iron bar');
+        expect('C shop sell into a full coin stack (informational)', coins() <= MAX, { coinsBefore: c0, coinsAfter: coins(), itemGone: sold });
     }
     await sdk.sendCloseShop();
 }
