@@ -188,11 +188,22 @@ The supervisor runs as the transient systemd user unit `rs-fleet` (user lingerin
 
 ### Updating code
 
-**Which ref.** Role children's PRs merge into the rs/41 integration branch (`agent/rs-41-coordinator-0`), not `main`; `main` only receives them when the whole mission ships. So during the mission, deploy the integration branch; after it ships, deploy `main`.
+**Which ref.** Role children's work lands on the rs/41 mission branch and reaches `main` in numbered fleet snapshots (merge commits filed under integration). The fleet deploys `main` at or after the latest snapshot's merge, never the mission branch. Pass `update` the full 40-character hash: a short hash the host cannot fetch fails, and a restart after a failed update silently reloads the old code. Check `git -C ~/rs-fleet rev-parse HEAD` before `restart`.
 
 **Merged code.** `fleetctl update <ref>` takes any branch or commit of the fork (default `main`): it fetches it, checks it out detached, runs `bun install` at the root and in `server/webclient`, and records the ref and commit in `fleet-run/deployed.json`. Then `fleetctl restart` loads it. Runtime files are gitignored and untouched. `fleetctl status` prints the code the running supervisor loaded (`code: running <ref> @ <sha>`) and says when the checkout has moved on and a restart is due.
 
 **Code not yet merged (development).** `speedrun/helpers/bbs.sh push`, run from a checkout on the Mac, rsyncs that checkout's `speedrun/` over the host's, leaving the rest (the clients, the SDK) at whatever `update` last fetched; then `fleetctl restart`. Status shows this as `+ development speedrun/`. The next `fleetctl update` puts `speedrun/` back to the fetched revision.
+
+### Browser-client demos on bbs
+
+Fleet accounts never use the browser client; this is for a child's one-off demo of a step on the browser path. Demo mode (`openSession(bot, { client: 'browser', launch: true })` with no insecure query login) opens `CLIENT_URL` plus a one-time login token in a Chrome it reaches over CDP, so it needs a built bundle, a page server and a `CLIENT_URL`. `~/rs-fleet` provides none of these, and nothing may be built or written there.
+
+1. **Bundle:** in your own dev copy (`~/rs-dev/<name>`), `cd server/webclient && bun run build`. Check that it honours `?server=` with `grep -c 'get("server")' out/bot/client.js` (must be at least 1). Do not grep for the `ignoring ?server=` message: the production build drops every console call (`bundle.ts`, `drop: ['console']`).
+2. **Page server:** from that copy, `bun run proxy.ts --world=https://rs-sdk-demo.fly.dev --port=<page port> --gateway=ws://127.0.0.1:<gateway port>`. It serves `/bot/*` from the copy's `out/bot` and passes everything else to the demo; it refuses to start without a bundle.
+3. **`CLIENT_URL`:** in a temporary bot.env outside `~/rs-fleet`, `CLIENT_URL=http://127.0.0.1:<page port>/bot?server=rs-sdk-demo.fly.dev&gateway=ws://127.0.0.1:<gateway port>`, with `CDP_URL` pointing at the Chrome below. Delete it after the demo.
+4. **Chrome:** Chrome for Testing from `~/.cache/puppeteer`, `--headless=new --remote-debugging-port=<port> --user-data-dir=<fresh dir> --password-store=basic --no-sandbox`, under a `timeout`. The flags follow LAB.md's "Lab and demo browsers" note, which is the one statement of why `--password-store=basic` is required. On bbs, leaving it out stalls the first navigation for about 25 s.
+
+On bbs this page reaches the demo's on-demand cache socket (`wss://rs-sdk-demo.fly.dev/`, 101) and loads its map files before login (rs/41, 2026-10-22). A tab whose `client.js` is the demo's own deployed bundle sends the socket to the page host instead and gets 400. Every demo login counts against the per-IP cap.
 
 ## Helpers on the run machine
 
