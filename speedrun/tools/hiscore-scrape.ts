@@ -64,49 +64,98 @@ export const BANK_SEARCHES = [
 const num = (s: string): number => Number(s.replaceAll(',', '').trim());
 
 /**
- * A Time cell's hover title carries the exact stamp in one of two forms:
- *   `N ticks`                 the engine's own page (lab worlds), and the demo until about 19:34 UTC 2026-10-22;
- *   `S seconds of game time`  the demo since then: S = 0.3 x ticks, with thousands separators and at
- *                             most one decimal, a trailing `.0` dropped (`2,247`, `998.7`).
- * The new form is a deploy marker (the demo runs engine code not yet on GitHub), first seen by rs/455;
- * the tick rate is unchanged, only the title's unit is. Live values matched the old form exactly
- * (cairn_chops Woodcutting 998.7 s = 3,329 ticks, cairn_burns Firemaking 207 s = 690 ticks).
- * The decimal is matched loosely on purpose so an unexpected value reaches titleTicks and fails loudly
- * instead of silently not matching.
+ * A Time cell's hover title carries the exact stamp in one of three forms:
+ *   `N ticks`                              the engine's own page (lab worlds), and the demo until about 19:34 UTC 2026-10-22;
+ *   `S seconds of game time`               the demo from then until its ~19:56 UTC restart: S = ticks x tickMs / 1000,
+ *                                          with thousands separators and at most one decimal (`998.7` = 3,329 ticks at 300 ms);
+ *   `N ticks normalized to M ms per tick`  the demo since that restart, which runs 400 ms ticks; the displayed time is N x M ms.
+ * Both later forms are deploy markers for engine code not on GitHub (first seen by rs/455 and rs/147).
+ * The seconds form carries no rate, so it converts only under one the caller supplies (worldfeedTickMs reads
+ * the server's current rate); no rate is ever assumed.
  */
-const TIME_TITLE = /title="([\d,]+(?:\.\d+)?) (ticks|seconds of game time)"/g;
-
-/**
- * Ticks from one Time title. 0.3 x ticks always has exactly one decimal, so a seconds value that is not
- * a multiple of 0.3 means the demo changed the conversion or format again: that throws rather than
- * rounds, because a rounded stamp would pass rehearse.ts's 2-tick log check while wrong.
- */
-export function titleTicks(value: string, unit: string): number {
-    const n = num(value);
-    if (unit === 'ticks') {
-        if (!Number.isInteger(n)) throw new Error(`time title "${value} ticks" is not a whole tick count`);
-        return n;
-    }
-    const tenths = Math.round(n * 10);
-    if (Math.abs(n * 10 - tenths) > 1e-6 || tenths % 3 !== 0) {
-        throw new Error(`time title "${value} ${unit}" is not a multiple of 0.3 (S = 0.3 x ticks); the hiscore time format has changed`);
-    }
-    return tenths / 3;
+export interface TitleStamp {
+    ticks: number;
+    /** The rate the title is stated in (`normalized to M ms`) or a seconds title was converted under; absent for `N ticks`. */
+    tickMs?: number;
 }
 
-/** Every Time title's stamp in `html`, in page order. */
-export const timeTitleTicks = (html: string): number[] => [...html.matchAll(TIME_TITLE)].map(m => titleTicks(m[1]!, m[2]!));
-const ticksIn = (html: string): number | null => timeTitleTicks(html)[0] ?? null;
+const NUMBER = String.raw`[\d,]+(?:\.\d+)?`;
+const TITLE_FORMS = new RegExp(`^(${NUMBER}) (?:(ticks)(?: normalized to (${NUMBER}) ms per tick)?|seconds of game time)$`);
+
+/** Thrown for a seconds-form title parsed without a tick rate: the caller can look the rate up and parse again. */
+export class TickRateNeeded extends Error {}
+
+/**
+ * The stamp in one Time title (the attribute's text). A title in no known form, a fractional tick count, or a
+ * seconds value that is not a whole number of ticks under `tickMs` throws rather than rounds, because a rounded
+ * stamp would pass rehearse.ts's 2-tick log check while wrong.
+ */
+export function titleTicks(title: string, tickMs?: number): TitleStamp {
+    const m = title.match(TITLE_FORMS);
+    if (!m) throw new Error(`time title "${title}" is in no known form; the hiscore time format has changed`);
+    const n = num(m[1]!);
+    if (m[2]) {
+        if (!Number.isInteger(n)) throw new Error(`time title "${title}" is not a whole tick count`);
+        if (m[3] === undefined) return { ticks: n };
+        const ms = num(m[3]);
+        if (!(ms > 0)) throw new Error(`time title "${title}" names no usable tick rate`);
+        return { ticks: n, tickMs: ms };
+    }
+    if (tickMs === undefined) throw new TickRateNeeded(`time title "${title}" is in seconds and no tick rate was given to convert it under`);
+    const exact = (n * 1000) / tickMs;
+    const ticks = Math.round(exact);
+    if (Math.abs(exact - ticks) > 1e-6) {
+        throw new Error(`time title "${title}" is not a whole number of ${tickMs} ms ticks; the hiscore time format or tick rate has changed`);
+    }
+    return { ticks, tickMs };
+}
+
+/** Every Time title's stamp in `html` (a Time column or cell), in page order. */
+export const timeTitleTicks = (html: string, tickMs?: number): TitleStamp[] => [...html.matchAll(/title="([^"]*)"/g)].map(m => titleTicks(m[1]!, tickMs));
+
+/** The `tickMs` a row carries: present only when its title stated or was converted under a rate. */
+const rateOf = (s: TitleStamp | undefined): { tickMs?: number } => (s?.tickMs === undefined ? {} : { tickMs: s.tickMs });
+
+/** The server's current tick length in ms, from the login-free world feed's hello frame. */
+export async function worldfeedTickMs(origin = BASE_URL, timeoutMs = 10_000): Promise<number> {
+    const url = `${origin.replace(/^http/, 'ws').replace(/\/$/, '')}/worldfeed`;
+    return await new Promise<number>((resolve, reject) => {
+        const ws = new WebSocket(url);
+        const done = (err: Error | null, ms?: number) => {
+            clearTimeout(timer);
+            ws.close();
+            if (err) reject(err);
+            else resolve(ms!);
+        };
+        const timer = setTimeout(() => done(new Error(`${url}: no hello within ${timeoutMs} ms`)), timeoutMs);
+        ws.onmessage = ev => {
+            let msg: { t?: string; tickMs?: unknown };
+            try {
+                msg = JSON.parse(String(ev.data));
+            } catch {
+                return;
+            }
+            if (msg.t !== 'hello') return;
+            if (typeof msg.tickMs === 'number' && msg.tickMs > 0) done(null, msg.tickMs);
+            else done(new Error(`${url}: hello carries no tickMs`));
+        };
+        ws.onerror = () => done(new Error(`${url}: connection failed`));
+    });
+}
 
 export interface BoardRow {
     rank: number;
     name: string;
     level: number;
     ticks: number;
+    tickMs?: number;
 }
 
-/** The ranked boards render four parallel columns (Rank, Name, Level, Time), each a `<br>` list. */
-export function parseBoard(html: string): BoardRow[] {
+/**
+ * The ranked boards render four parallel columns (Rank, Name, Level, Time), each a `<br>` list.
+ * `tickMs` converts seconds-form titles (see titleTicks); without it such a board throws TickRateNeeded.
+ */
+export function parseBoard(html: string, tickMs?: number): BoardRow[] {
     const column = (label: string): string => {
         const m = html.match(new RegExp(`<b>${label}</b><br>([\\s\\S]*?)</td>`));
         return m ? m[1]! : '';
@@ -115,10 +164,10 @@ export function parseBoard(html: string): BoardRow[] {
     const names = [...column('Name').matchAll(/\/hiscores\/player\/([^?"]+)\?/g)].map(m => decodeURIComponent(m[1]!));
     // Quest Points heads its level column "Points".
     const levels = (column('Level') || column('Points')).split('<br>').map(s => s.trim()).filter(Boolean).map(num);
-    const ticks = timeTitleTicks(column('Time'));
-    const n = Math.min(ranks.length, names.length, levels.length, ticks.length);
-    if (n !== names.length || n !== ranks.length) throw new Error(`board columns disagree: ${ranks.length}/${names.length}/${levels.length}/${ticks.length}`);
-    return Array.from({ length: n }, (_, i) => ({ rank: ranks[i]!, name: names[i]!, level: levels[i]!, ticks: ticks[i]! }));
+    const stamps = timeTitleTicks(column('Time'), tickMs);
+    const n = Math.min(ranks.length, names.length, levels.length, stamps.length);
+    if (n !== names.length || n !== ranks.length) throw new Error(`board columns disagree: ${ranks.length}/${names.length}/${levels.length}/${stamps.length}`);
+    return Array.from({ length: n }, (_, i) => ({ rank: ranks[i]!, name: names[i]!, level: levels[i]!, ticks: stamps[i]!.ticks, ...rateOf(stamps[i]) }));
 }
 
 export interface PlayerRow {
@@ -128,13 +177,18 @@ export interface PlayerRow {
     level: number | null;
     /** Hiscore stamp in ticks; null when the skill has no row (under level 15). */
     ticks: number | null;
+    /** The rate the stamp's title stated or was converted under (TitleStamp.tickMs). */
+    tickMs?: number;
 }
 
 /** A row that exists on the page: a level and a stamp (skills under level 15 have neither). */
 export const isStamped = (r: PlayerRow): boolean => r.level !== null && r.ticks !== null;
 
-/** Every row of a player page (Overall, each skill, Quest Points), in page order; null for a missing player. */
-export function parsePlayer(html: string): PlayerRow[] | null {
+/**
+ * Every row of a player page (Overall, each skill, Quest Points), in page order; null for a missing player.
+ * `tickMs` converts seconds-form titles (see titleTicks); without it such a page throws TickRateNeeded.
+ */
+export function parsePlayer(html: string, tickMs?: number): PlayerRow[] | null {
     if (/Player "[^"]*" not found/.test(html)) return null;
     const rows: PlayerRow[] = [];
     // Row links carry whichever profile the page was requested with.
@@ -142,12 +196,14 @@ export function parsePlayer(html: string): PlayerRow[] | null {
     for (const m of html.matchAll(re)) {
         const rank = m[3]!.trim();
         const level = m[4]!.trim();
+        const stamp = timeTitleTicks(m[5]!, tickMs)[0];
         rows.push({
             category: Number(m[1]),
             skill: m[2]!.trim(),
             rank: rank === '-' ? null : num(rank),
             level: level === '-' ? null : num(level),
-            ticks: ticksIn(m[5]!)
+            ticks: stamp?.ticks ?? null,
+            ...rateOf(stamp)
         });
     }
     if (rows.length === 0) throw new Error('player page: no skill rows parsed');
