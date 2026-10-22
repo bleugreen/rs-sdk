@@ -29,8 +29,8 @@
 // reaction and lock recovery are their own.
 
 import type { BotWorldState } from '../../sdk/types';
-import { type DirectRule, type GateOptions, HostGate, type ProbeSdk } from './hostgate';
-import { awaitProgram, probeInPage, ProgramError, type ProgramSdk, type ProgramStatus, startProgram, stopProgram } from './programs';
+import { type DirectRule, type GateOptions, HostGate, type ProbeSdk, type TickLength } from './hostgate';
+import { awaitProgram, probeInPage, ProgramError, type ProgramSdk, type ProgramStatus, startProgram, stopProgram, tickParam } from './programs';
 import { TickPeriod } from './tick-monitor';
 import { tickMs } from './wait';
 
@@ -100,6 +100,12 @@ export interface GatedOptions {
      * unless every rotation rock is live, so its caller waits for them here.
      */
     beforeRestart?: (technique: SegmentTechnique, previous: GatedSegment) => Promise<void>;
+    /**
+     * The server's tick length, passed to each run as its `tickMs` so the page counts catch-ups
+     * at it (tick-rule.ts). Default: the latest gate probe's T when it was measured (a flag or
+     * the feed), else none, and the page judges by its run's median interval.
+     */
+    tick?: TickLength | null;
     /** Abort stops the running program and resolves with `ended: 'aborted'`. */
     signal?: AbortSignal;
     /** `awaitProgram`'s staleMs. */
@@ -131,17 +137,19 @@ export interface InPageGateOptions extends Omit<GateOptions, 'probeWith' | 'prob
     maxWait?: number;
     /** The probe's neighbour steps, free ones only (`probeInPage`); default the page's E, W, N, S. */
     dirs?: ReadonlyArray<readonly [number, number]>;
+    /** The server's tick length for each probe's (b) and (c) (`resolveTickLength`); default the probe's median interval. */
+    tick?: TickLength | null;
 }
 
 /** A HostGate that probes in the page (`probeInPage`) and judges by `IN_PAGE_RULE`, scaled to `trials`. */
 export function inPageGate(sdk: ProgramSdk & ProbeSdk, opts: InPageGateOptions): HostGate {
-    const { trials = 20, maxWait, dirs, plainTicksPerRoll, model, ...rest } = opts;
+    const { trials = 20, maxWait, dirs, tick, plainTicksPerRoll, model, ...rest } = opts;
     return new HostGate(sdk, {
         direct: IN_PAGE_RULE,
         ...rest,
         model: model ?? { plainCycle: plainTicksPerRoll },
         plainTicksPerDrop: plainTicksPerRoll,
-        probeWith: () => probeInPage(sdk, { trials, ...(maxWait !== undefined ? { maxWait } : {}), ...(dirs ? { dirs } : {}) })
+        probeWith: () => probeInPage(sdk, { trials, ...(maxWait !== undefined ? { maxWait } : {}), ...(dirs ? { dirs } : {}), ...(tick ? { tick } : {}) })
     });
 }
 
@@ -176,6 +184,11 @@ export async function runGatedProgram(
     let used = 0;
     let paused = false;
     let resumeProbe = false;
+    const tickFor = (): TickLength | null => {
+        if (opts.tick) return opts.tick;
+        const s = gate?.history.findLast(h => h.result)?.result?.steadiness;
+        return s && s.T !== null && s.TSource ? { T: s.T, source: s.TSource } : null;
+    };
 
     for (;;) {
         if (opts.signal?.aborted) return { segments, ended: 'aborted' };
@@ -190,7 +203,7 @@ export async function runGatedProgram(
             }
         }
         const technique: SegmentTechnique = auto ? (gate!.on && !paused ? 'knife' : 'plain') : (opts.technique as SegmentTechnique);
-        const run: Record<string, unknown> = { ...paramsFor(technique), ...sw[technique] };
+        const run: Record<string, unknown> = { ...paramsFor(technique), ...sw[technique], ...tickParam(tickFor()) };
         if (budgetKey) run[budgetKey] = budget! - used;
         if (maxTicks !== undefined) run.maxTicks = maxTicks - ((sdk.getState()?.tick ?? firstTick) - firstTick);
         if ((budget !== undefined && budget - used <= 0) || (maxTicks !== undefined && (run.maxTicks as number) <= 0)) return { segments, ended: 'done' };
