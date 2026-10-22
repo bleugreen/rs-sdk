@@ -410,6 +410,40 @@ describe('a landed click is not re-sent while its script runs', () => {
         expect(sdk.sent.filter(a => a.method === 'sendInteractLoc')).toHaveLength(2);
     });
 
+    test("a blocked hit's animation is the fight's, not the click's answer: the dropped loc click is re-sent once (rs/391, TGV H)", async () => {
+        // SCORED idle by the door between hits; the Khazard commander's next swing is blocked under
+        // Protect from Melee (a 0 hit) and SCORED's block anim 420 shows; the retaliation swallowed the click.
+        const sdk = new FakeSdk(baseState({ tick: 1, player: player(10, 10) }));
+        const p = act(sdk as never, () => sdk.sendInteractLoc(11, 10, 1, 1), () => false, { resendEvery: 6, maxTicks: 8 });
+        const hit = { tick: 2, observationId: 2, type: 'damage_taken' as const, damage: 0, sourceType: 'npc' as const, sourceIndex: 7, targetType: 'player' as const, targetIndex: -1 };
+        await ticks(sdk, 1, () => ({ player: { ...player(10, 10), animId: 420 }, combatEvents: [hit] }));
+        await ticks(sdk, 1, () => ({ player: { ...player(10, 10), animId: -1 } }));
+        await ticks(sdk, 7);
+        expect((await p).resends).toBe(1);
+        expect(sdk.sent.filter(a => a.method === 'sendInteractLoc')).toHaveLength(2);
+    });
+
+    test("upkeep's eat in a fight (its message and the inventory change) is not the click's answer either", async () => {
+        // rs/201, MM segment K: a hit, then "You eat the shark." one tick after the ladder click; the eat clears the op.
+        const shark = { slot: 0, id: 385, name: 'Shark', count: 1 } as InventoryItem;
+        const sdk = new FakeSdk(baseState({ tick: 1, player: player(10, 10), inventory: [shark] }));
+        const p = act(sdk as never, () => sdk.sendInteractLoc(11, 10, 1, 1), () => false, { resendEvery: 6, maxTicks: 8 });
+        const hit = { tick: 2, observationId: 2, type: 'damage_taken' as const, damage: 6, sourceType: 'npc' as const, sourceIndex: 7, targetType: 'player' as const, targetIndex: -1 };
+        await ticks(sdk, 1, () => ({ player: { ...player(10, 10), animId: 424 }, combatEvents: [hit] }));
+        await ticks(sdk, 1, () => ({ player: { ...player(10, 10), animId: 829 }, inventory: [], gameMessages: [{ type: 0, text: 'You eat the shark.', sender: '', tick: 3, observationId: 3, fromSelf: false }] }));
+        await ticks(sdk, 7, () => ({ player: { ...player(10, 10), animId: -1 } }));
+        expect((await p).resends).toBe(1);
+    });
+
+    test('in a fight, a dialogue the click opened still answers it: no re-send', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: player(10, 10) }));
+        const p = act(sdk as never, () => sdk.sendInteractNpc(3, 1), s => s.dialog.isOpen, { resendEvery: 3, maxTicks: 8 });
+        const hit = { tick: 2, observationId: 2, type: 'damage_taken' as const, damage: 2, sourceType: 'npc' as const, sourceIndex: 7, targetType: 'player' as const, targetIndex: -1 };
+        await ticks(sdk, 1, () => ({ player: { ...player(10, 10), animId: 424 }, combatEvents: [hit] }));
+        await ticks(sdk, 1, () => ({ dialog: cont('npc') }));
+        expect((await p).resends).toBe(0);
+    });
+
     test("other players' chat is not the engine answering the click", async () => {
         const sdk = new FakeSdk(baseState({ tick: 1, player: player(10, 10) }));
         const p = act(sdk as never, () => sdk.sendInteractLoc(5, 5, 1, 1), () => false, { resendEvery: 3, maxTicks: 4 });

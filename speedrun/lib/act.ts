@@ -245,25 +245,49 @@ export class ClickGuard {
 
 const invKey = (s: BotWorldState) => s.inventory.map(i => `${i.slot}:${i.id}:${i.count}`).join(',');
 
+/** The combat-event cursor, on messageCursor's rule: the newest event's observation id, or its tick where it has none. */
+function fightCursor(s: BotWorldState): number {
+    let c = 0;
+    for (const e of s.combatEvents ?? []) c = Math.max(c, e.observationId ?? e.tick);
+    return c;
+}
+
 function snapshot(s: BotWorldState) {
     const p = pos(s);
-    return { x: p.x, z: p.z, level: p.level, anim: s.player?.animId ?? -1, inv: invKey(s), messages: messageCursor(s), modal: s.modalOpen };
+    return { x: p.x, z: p.z, level: p.level, anim: s.player?.animId ?? -1, inv: invKey(s), messages: messageCursor(s), fight: fightCursor(s), modal: s.modalOpen };
+}
+
+/**
+ * The player has been in a fight since the send: a combat event (a hit taken or dealt, blocked or
+ * not) published after it, or a combat target now. Its animations (a blocked hit's block, the
+ * auto-retaliate swing), its messages and upkeep's eats are the fight's, not the click's, and an
+ * eat or the retaliation itself clears the click's pending interaction (rs/391: TGV segment H).
+ */
+function inFightSince(b: NonNullable<ReturnType<typeof snapshot>>, s: BotWorldState): boolean {
+    if (s.player?.combat?.inCombat) return true;
+    return (s.combatEvents ?? []).some(e => (e.observationId ?? e.tick) > b.fight);
 }
 
 /**
  * The engine's first answer to a click since `b` was taken: 'script' when its script has started
  * (a dialogue or modal, a new animation, a game message, an inventory change), 'moved' when the
  * only answer is a step, null when nothing yet. Other players' chat, and "I can't reach that!"
- * (the click failing), are not answers.
+ * (the click failing), are not answers. In a fight since the send only a dialogue, a modal or a
+ * step answers: the fight makes the animations, messages and inventory changes (inFightSince).
  */
 function replyKind(b: NonNullable<ReturnType<typeof snapshot>>, s: BotWorldState): 'script' | 'moved' | null {
     // A modal already open at the send (S00's character design) is not an answer.
     if (s.dialog.isOpen || (s.modalOpen && !b.modal)) return 'script';
+    if (inFightSince(b, s)) return moved(b, s);
     const anim = s.player?.animId ?? -1;
     if (anim >= 0 && anim !== b.anim) return 'script';
     // Past the cursor, not past the send's tick: the browser stamps a reply with the click's own tick.
     if (s.gameMessages.some(m => (m.observationId ?? m.tick) > b.messages && !PLAYER_CHAT_TYPES.includes(m.type) && !CANT_REACH.test(m.text))) return 'script';
     if (invKey(s) !== b.inv) return 'script';
+    return moved(b, s);
+}
+
+function moved(b: NonNullable<ReturnType<typeof snapshot>>, s: BotWorldState): 'moved' | null {
     const p = pos(s);
     return p.x !== b.x || p.z !== b.z || p.level !== b.level ? 'moved' : null;
 }
