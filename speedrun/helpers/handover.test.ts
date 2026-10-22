@@ -6,7 +6,8 @@ import { borderGuard, guard, pathfinder, tollWorld } from '../lib/fake-toll-gate
 import { inAlKharid, isEastOfTollGate, type Tile } from '../lib/toll-gate';
 import type { GiveResult } from '../lib/trade';
 import { STALLED } from '../lib/wait';
-import { finishOf, gameIo, giveOutcome, handoverKey, handoverOptions, leavesKandarin, runHandovers, tollsAfterBank, withdrawSpecs, type Handover, type HandoverIo, type HandoverOptions } from './handover';
+import { refMatches, type ItemRef } from '../lib/items';
+import { bankRefusal, finishOf, gameIo, giveOutcome, handoverKey, handoverOptions, leavesKandarin, offerSpecs, runHandovers, tollsAfterBank, withdrawSpecs, type Handover, type HandoverIo, type HandoverOptions } from './handover';
 import { memoryRoleState, type RoleContext, type RoleState } from './role';
 
 const AL_KHARID = { x: 3290, z: 3170 };
@@ -33,11 +34,13 @@ function carry(fake: FakeSdk, name: string, n: number): void {
     });
 }
 
-function drop(fake: FakeSdk, name: string, n: number): void {
-    fake.push(s => ({ inventory: s.inventory.flatMap(i => (i.name.toLowerCase() !== name.toLowerCase() ? [i] : i.count > n ? [{ ...i, count: i.count - n }] : [])) }));
+/** Take `n` of a handover line (by name, or by its item's or note's id) out of the inventory. */
+function drop(fake: FakeSdk, ref: ItemRef, n: number): void {
+    fake.push(s => ({ inventory: s.inventory.flatMap(i => (!refMatches(ref, i) ? [i] : i.count > n ? [{ ...i, count: i.count - n }] : [])) }));
 }
 
-const delivered = (items: Handover['items']): GiveResult => ({ ok: true, ticks: 3, sent: items.length + 1, gave: items.map(it => ({ slot: -1, id: 0, name: it.item, count: it.n })) });
+const UNF = 'Unfinished potion';
+const delivered = (items: Handover['items']): GiveResult => ({ ok: true, ticks: 3, sent: items.length + 1, gave: items.map(it => ({ slot: -1, id: it.id ?? 0, name: it.item ?? UNF, count: it.n })) });
 
 /**
  * A donor at `at` carrying `carried` coins, border guards on both sides, a
@@ -84,7 +87,7 @@ function setup(
             events.push(`give ${to} ${here()}`);
             given.push(items);
             if (give) return give(fake, items, to);
-            for (const it of items) drop(fake, it.item, it.n);
+            for (const it of items) drop(fake, it, it.n);
             return delivered(items);
         }
     };
@@ -156,7 +159,7 @@ describe('handover across the Al Kharid toll gate', () => {
 describe('trade outcomes are never doubled', () => {
     test('give times out with the coins gone: uncertain, given once, never repeated', async () => {
         const t = setup(LUMBRIDGE, 50, (fake, items) => {
-            for (const it of items) drop(fake, it.item, it.n);
+            for (const it of items) drop(fake, it, it.n);
             return { ok: false, ticks: 100, gave: [], sent: 2, reason: 'timeout' };
         });
         const report = await runHandovers(t.ctx, coinsTo76(145_000), t.io);
@@ -227,7 +230,7 @@ describe('a handover list is never repeated by a restarted run', () => {
         const first = setup(VARROCK_WEST_BANK, 0, (fake, items, to) => {
             tos.push(to);
             if (to === H54) throw new Error('killed mid-trade');
-            for (const it of items) drop(fake, it.item, it.n);
+            for (const it of items) drop(fake, it, it.n);
             return delivered(items);
         });
         await expect(runHandovers(first.ctx, coins(H53, H54, H55), first.io)).rejects.toThrow('killed mid-trade');
@@ -236,7 +239,7 @@ describe('a handover list is never repeated by a restarted run', () => {
 
         const again = setup(VARROCK_WEST_BANK, 0, (fake, items, to) => {
             tos.push(to);
-            for (const it of items) drop(fake, it.item, it.n);
+            for (const it of items) drop(fake, it, it.n);
             return delivered(items);
         }, { state: first.state });
         const report = await runHandovers(again.ctx, coins(H53, H54, H55), again.io);
@@ -250,7 +253,7 @@ describe('a handover list is never repeated by a restarted run', () => {
     test('stopped between two handovers (a stall, a re-login): the rerun gives only the one left', async () => {
         const abort = new AbortController();
         const first = setup(VARROCK_WEST_BANK, 0, (fake, items) => {
-            for (const it of items) drop(fake, it.item, it.n);
+            for (const it of items) drop(fake, it, it.n);
             abort.abort(new Error('stalled'));
             return delivered(items);
         }, { abort });
@@ -265,7 +268,7 @@ describe('a handover list is never repeated by a restarted run', () => {
 
     test('an uncertain trade stays uncertain on every rerun, and asks for a person', async () => {
         const first = setup(VARROCK_WEST_BANK, 0, (fake, items) => {
-            for (const it of items) drop(fake, it.item, it.n);
+            for (const it of items) drop(fake, it, it.n);
             return { ok: false, ticks: 100, gave: [], sent: 2, reason: 'timeout' };
         });
         const report = await runHandovers(first.ctx, coins(H53), first.io);
@@ -371,5 +374,84 @@ describe('crossKandarin: a woodcutter at Seers trades on the Lumbridge side', ()
         expect(handoverOptions(logs({ crossKandarin: true }) as unknown as Record<string, unknown>).crossKandarin).toBe(true);
         expect(handoverOptions(logs() as unknown as Record<string, unknown>).crossKandarin).toBeUndefined();
         expect(() => handoverOptions({ ...logs(), crossKandarin: 'yes' } as unknown as Record<string, unknown>)).toThrow(/crossKandarin/);
+    });
+});
+
+// obj.pack: 91 guamvial / 92 cert_guamvial and 99 ranarrvial / 100 cert_ranarrvial, all named
+// "Unfinished potion" in this revision; 563 lawrune has no note.
+describe('id-addressed items (H21e: one unfinished potion type apart from another)', () => {
+    const GUAM = 91;
+    const GUAM_NOTE = 92;
+    const RANARR = 99;
+    const RANARR_NOTE = 100;
+    const H84 = 'cairn_h84';
+    const MULE1 = 'cairn_mule1';
+    const unfs = (items: Handover['items']): HandoverOptions => ({ bank: VARROCK_WEST_BANK, handovers: [{ to: MULE1, items }] });
+    const asRaw = (o: HandoverOptions) => o as unknown as Record<string, unknown>;
+    const potion = (slot: number, id: number, count: number) => ({ slot, id, name: UNF, count }) as InventoryItem;
+
+    test('options take id or item (exactly one); a note id cannot be noted: false; name lines keep their shape', () => {
+        const o = handoverOptions(asRaw(unfs([{ id: GUAM_NOTE, n: 100 }, { id: RANARR, n: 50, noted: true }, { item: 'Eye of newt', n: 50 }])));
+        expect(o.handovers[0]!.items).toEqual([{ id: GUAM_NOTE, n: 100 }, { id: RANARR, n: 50, noted: true }, { item: 'Eye of newt', n: 50 }]);
+        // The default list id is a digest of the options: a name-only list digests as it always did.
+        expect(handoverOptions({ handovers: [{ to: H84, items: [{ item: 'Coins', n: 1 }] }] }).handovers[0]!.items[0]).toEqual({ item: 'Coins', n: 1 });
+        const bad = (item: Record<string, unknown>) => () => handoverOptions({ handovers: [{ to: MULE1, items: [item] }] });
+        expect(bad({ item: UNF, id: GUAM, n: 1 })).toThrow(/exactly one of item/);
+        expect(bad({ n: 1 })).toThrow(/exactly one of item/);
+        expect(bad({ id: 9_999_999, n: 1 })).toThrow(/not in obj.pack/);
+        expect(bad({ id: GUAM_NOTE, n: 1, noted: false })).toThrow(/is a note/);
+        expect(bad({ id: GUAM, n: 0 })).toThrow(/positive n/);
+    });
+
+    test('noted ids round-trip: withdrawn from the bank by the item id, offered by the note id', () => {
+        const items: Handover['items'] = [{ id: GUAM_NOTE, n: 1 }, { id: RANARR, n: 50 }, { id: GUAM, n: 1 }, { id: 563, n: 4 }];
+        // The bank holds the item, never the note; a note's id or more than one asks for notes.
+        expect(withdrawSpecs(items, 0).map(s => [s.item, s.n, s.asNote])).toEqual([[GUAM, 1, true], [RANARR, 50, true], [GUAM, 1, false], [563, 4, true]]);
+        // Carried after a noted withdrawal: the notes, offered by their own ids.
+        const carried = [potion(0, GUAM_NOTE, 1), potion(1, RANARR_NOTE, 50), { slot: 2, id: 563, name: 'Law rune', count: 4 } as InventoryItem];
+        expect(offerSpecs([{ id: GUAM, n: 1 }, { id: RANARR_NOTE, n: 50 }, { id: 563, n: 4 }], carried)).toEqual([{ item: GUAM_NOTE, n: 1 }, { item: RANARR_NOTE, n: 50 }, { item: 563, n: 4 }]);
+        // Carried unnoted (a single potion): offered by the item id.
+        expect(offerSpecs([{ id: GUAM_NOTE, n: 1 }], [potion(0, GUAM, 1)])).toEqual([{ item: GUAM, n: 1 }]);
+    });
+
+    test('the bank refuses a shared name (give the id) and a short stack; ids pick their own stack', () => {
+        const bank = [{ slot: 0, id: GUAM, name: UNF, count: 300 }, { slot: 1, id: RANARR, name: UNF, count: 40 }];
+        expect(bankRefusal(withdrawSpecs([{ item: UNF, n: 100 }], 0), bank)?.reason).toMatch(/names obj 91 and obj 99: give the id/);
+        expect(bankRefusal(withdrawSpecs([{ id: GUAM, n: 100 }, { id: RANARR_NOTE, n: 40 }], 0), bank)).toBeNull();
+        const short = bankRefusal(withdrawSpecs([{ id: GUAM, n: 100 }, { id: RANARR, n: 50 }], 0), bank);
+        expect(short?.reason).toBe('bank: 99 40/50');
+        expect(short?.missing.map(s => s.item)).toEqual([RANARR]);
+    });
+
+    test('delivered needs each id given in full: another potion type of the same name does not count', () => {
+        const items: Handover['items'] = [{ id: GUAM, n: 100 }, { id: RANARR, n: 50 }];
+        const gave = (...g: [number, number][]): GiveResult => ({ ok: true, ticks: 3, sent: 3, gave: g.map(([id, count]) => ({ slot: -1, id, name: UNF, count })) });
+        expect(giveOutcome(gave([GUAM_NOTE, 100], [RANARR_NOTE, 50]), items, new Map())).toBe('delivered');
+        expect(giveOutcome(gave([GUAM_NOTE, 150]), items, new Map())).toBe('uncertain');
+    });
+
+    test('two potion types of one name are withdrawn, offered and counted apart', async () => {
+        const t = setup(VARROCK_WEST_BANK, 0);
+        let offered: unknown = null;
+        t.io.withdraw = async (_, specs) => {
+            t.withdrawn.push(specs);
+            t.fake.push(s => ({
+                inventory: specs.map((sp, slot) => potion(slot, sp.item === GUAM ? (sp.asNote ? GUAM_NOTE : GUAM) : sp.asNote ? RANARR_NOTE : RANARR, sp.n as number))
+            }));
+            return { ok: true };
+        };
+        // The partner takes the guam and the ranarr leaves too, but the trade reports only the guam.
+        t.io.give = async (ctx, to, items) => {
+            t.given.push(items);
+            offered = offerSpecs(items, ctx.sdk.getInventory());
+            drop(t.fake, { id: GUAM }, 100);
+            return { ok: true, ticks: 3, sent: 3, gave: [{ slot: -1, id: GUAM_NOTE, name: UNF, count: 100 }] };
+        };
+        const report = await runHandovers(t.ctx, unfs([{ id: GUAM, n: 100 }, { id: RANARR_NOTE, n: 50 }]), t.io);
+        expect(t.withdrawn[0]!.map(s => [s.item, s.n, s.asNote])).toEqual([[GUAM, 100, true], [RANARR, 50, true]]);
+        expect(offered).toEqual([{ item: GUAM_NOTE, n: 100 }, { item: RANARR_NOTE, n: 50 }]);
+        // 100 guam notes given is not 50 ranarr: the handover is uncertain, never repeated.
+        expect(report).toEqual({ done: [], uncertain: [MULE1], failed: [] });
+        expect(t.given).toHaveLength(1);
     });
 });
