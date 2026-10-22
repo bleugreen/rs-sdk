@@ -14,8 +14,7 @@
 //   + ledger escrow (open sell remaining, open buy remaining * price)
 //   + ledger claims (offer.items / offer.coins)
 //   + GE tax (coins only, all probes share one ledger so it carries over)
-// is constant. Each step prints the total and, per account, held/ledger.
-// is constant. It also prints the bank value the wealth board would compute
+// is constant. Each step prints the total and, per account, held/ledger. It also prints the bank value the wealth board would compute
 // (LoginServer.ts updateWealthHiscores: sum of ObjType.cost * count over bank).
 //
 // Run from server/engine after `BUILD_VERIFY=false bun run build`:
