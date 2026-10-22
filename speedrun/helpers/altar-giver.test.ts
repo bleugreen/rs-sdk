@@ -116,6 +116,29 @@ describe('altar-giver stock turn', () => {
         expect(await turn).toBe('missed');
     });
 
+    test('a turn that did not give reports ready afresh, which lifts the scored side\'s skip (MissBench)', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 100, inventory: [ESSENCE] }));
+        const g = giverWith(sdk);
+        const inner = g as unknown as { phase: string; readyAt: number | null; frames: { add(t: number, ms: number): unknown } };
+        inner.phase = 'armed';
+        inner.readyAt = 1;
+        inner.frames.add(100, Date.now());
+        const before = Date.now();
+        expect(await runTurn(g, { T: 103, myT: 103, armedTick: 100 })).toBe('no-receiver');
+        expect(inner.readyAt).toBeGreaterThanOrEqual(before);
+    });
+
+    test('a role whose client stopped delivering ticks (the relay after a client death) keeps its old readyAt, so the skip holds', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 100, inventory: [ESSENCE] }));
+        const g = giverWith(sdk);
+        const inner = g as unknown as { phase: string; readyAt: number | null; frames: { add(t: number, ms: number): unknown } };
+        inner.phase = 'armed';
+        inner.readyAt = 1;
+        inner.frames.add(100, Date.now() - 60_000);
+        expect(await runTurn(g, { T: 103, myT: 103, armedTick: 100 })).toBe('no-receiver');
+        expect(inner.readyAt).toBe(1);
+    });
+
     test('a receiver out of sight is reported, with nothing sent', async () => {
         const sdk = new FakeSdk(baseState({ tick: 100, inventory: [ESSENCE] }));
         expect(await runTurn(giverWith(sdk), { T: 103, myT: 103, armedTick: 100 })).toBe('no-receiver');
