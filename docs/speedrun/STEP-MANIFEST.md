@@ -56,7 +56,8 @@ timed on **observed game ticks** (the tick stream or `TICKMON`), never on wall-c
 300 ms: the Runecraft givers' cue (entry 9, H4), the anvil's `cue.json` (H5), the Firemaking
 droppers (S03, H6), the bone givers' load timing (H4.1-H4.n) and any `T0 + n ms` launch in run.ts. A
 deadline that stands for a tick count keys off observed ticks; wall clock appears only as an idle
-bound, no new tick for N ticks' worth of time scaled by the configured tick length. The demo has
+bound, no new tick for N ticks' worth of time scaled by the configured tick length (on the floor
+since #209's `tickClock`, 4fe2d0a8). The demo has
 been seen at 0.34-0.37 s a tick, where a wall-clock cue lands early by about (1 - 0.30/actual) of
 its delay and a deadline fires early (RUN-ORDER.md R23).
 
@@ -332,9 +333,11 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     RUN-ORDER.md R1's bound); that case is historical on any `RUN_COMMIT` at or after c2d9eada.
     The final logout is still checked on the host (`RUN-HOST.md` step 8). A precondition, not a
     line in the totals;
-  - **`RUN_COMMIT` at or after the run-commit floor, `1514f47a`** (#222, rs/268's snapshot of rs/196's
-    Runecraft step module, entry 9; one check, `git merge-base --is-ancestor 1514f47a "$RUN_COMMIT"`,
-    `RUN-HOST.md` "Credentials"). Its history holds 148788c5 (#221, rs/262: `HostGate`'s
+  - **`RUN_COMMIT` at or after the run-commit floor, `4fe2d0a8`** (#209, rs/246: one idle timeout,
+    `tickClock`, for every tick-keyed wait, `maxTicks` on observed ticks and only `IDLE_TICKS`, 20
+    ticks of silence, in wall clock; RUN-ORDER.md R23; one check, `git merge-base --is-ancestor
+    4fe2d0a8 "$RUN_COMMIT"`, `RUN-HOST.md` "Credentials"). Its history holds 1514f47a (#222, rs/268's
+    snapshot of rs/196's Runecraft step module, entry 9), 148788c5 (#221, rs/262: `HostGate`'s
     `measureDrops` default 120, fishing's explicit 120; RUN-ORDER.md R21), 4235a9e7 (#220, rs/260's
     snapshot of rs/230's Mining module: `mining.ts`, knife-mine's `selfStarter`, gated-program's
     `beforeRestart`; entry 4), 8a741554 (#212, rs/252's snapshot of rs/199's combat step module,
@@ -349,11 +352,11 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     it does not declare, so each entry's program keys are the program's declared names) and
     834f376b (#176, rs/210's tick-cadence monitor). Pending, each moving the floor when it lands: rs/147's Agility
     snapshot (agility's `untilLevel`, entry 1, RUN-ORDER.md O40), PR #218 (rs/241's `eatAt: 'land'`,
-    entry 1), #209 (rs/246's `lib/wait.ts` deadlines on observed ticks, RUN-ORDER.md R23), rs/276 (the
+    entry 1), rs/276 (the
     tick monitor's late count against observed intervals and gated-program's pause in observed
     ticks, R23; it changes a run-night pass line), rs/243's Thieving snapshot
     (pickpocket's `stopWhenFoodBelow` and `retargetTicks`, entry 6) and PR #198 (rs/198's
-    `runner/legs.ts`, entry 11); #198, #209 and #218 have PR numbers so far. Gate tooling on main, not floor
+    `runner/legs.ts`, entry 11); #198 and #218 have PR numbers so far. Gate tooling on main, not floor
     items: 5d22252d (#208, `lib/display.ts`) and c4b79f17 (#213, `lib/tab.ts` window helpers);
   - **the login cap**: our simultaneous demo logins, summed across every host, at most 100 with a
     working cap of 80, counted before SCORED logs in (main, 15:35 PDT; `RUN-HOST.md` step 7;
@@ -1503,7 +1506,12 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   slips or resends (m). `firemaking.ts`'s `failures` over-counts (13 against 8 real) through its
   `lost` path; rs/269 fixes it before S03 reports from it. The 695 before was the trade refills'
   (inferred: the model's 658 + 6 trades). The dropped row's pacing is built (H6, `helpers/fm-row.md`:
-  two lab runs of 157 logs, 658 ticks first to last fire, no gap waiting on a log). Best **650** on the dropped row
+  two lab runs of 157 logs, 658 ticks first to last fire, no gap waiting on a log). **An eastward row
+  costs nothing** (rs/269, m, demo): after each light the player steps back onto the previous fire
+  (`firemaking.rs2` `push_player` pushes west first; the `fire` loc is `blockwalk=no`), yet 78 east
+  and 78 west logs both ran at exactly 4.000 ticks per clean log, both lap turns took 4 ticks, and
+  every chained light went at R+2 with 0 slips; the cadence is the script's 4-tick roll clock. No
+  route change; the only effect is 1 tick less slack for a late light on east-row logs. Best **650** on the dropped row
   (measured end to end 634 and 666 with the lab's restock gaps removed). Fallback **735** banking at
   Falador east (inferred) (all `skills/firemaking.md` §1).
 - **Primitives:** `act` (use tinderbox on the next log), `levelup`; `trade.receiveFrom` for the trade

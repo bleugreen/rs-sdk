@@ -170,13 +170,14 @@ relogs, every shortfall or restock pause, and the final logout that writes the h
 (#140) but not main, since #146 did not carry it. Steps 6 and 8 therefore confirm a tab's logout with
 `logoutClean` itself and the login screen in the live view.
 
-**The run-commit floor is one commit, `1514f47a`** (#222, rs/268's snapshot of rs/196's Runecraft step module, on main at
-03:41 UTC 2026-10-22). Step 0 checks it once: `git -C ~/rs-sdk merge-base --is-ancestor 1514f47a "$RUN_COMMIT"`.
+**The run-commit floor is one commit, `4fe2d0a8`** (#209, rs/246's one idle timeout for every tick-keyed wait, on main at
+04:14 UTC 2026-10-22). Step 0 checks it once: `git -C ~/rs-sdk merge-base --is-ancestor 4fe2d0a8 "$RUN_COMMIT"`.
 Its history contains every earlier requirement (rs/158 in the store; here `git merge-base
---is-ancestor <commit> 1514f47a` for each row), so no per-fix check is kept. What each one brings:
+--is-ancestor <commit> 4fe2d0a8` for each row), so no per-fix check is kept. What each one brings:
 
 | Commit | PR | What the run needs from it |
 |---|---|---|
+| `4fe2d0a8` | #209 (rs/246) | one idle timeout, `tickClock`, in place of the total-time backstops on every tick-keyed wait under `speedrun/`: `wait.ts`, `converse`, the trade drive and `wine-receive` (`onStates` merged into one export), anvil `openBooth`, altar-room `until`, the altar-giver's turn, the altar-receiver's `runTurn` and `programs.ts` `probeInPage`. Each keeps its `maxTicks` on observed ticks; the only wall bound is `IDLE_TICKS`, 20 ticks of silence. Deadlines that are seconds by design remain (openTrade's partner response, logout and session waits, role budgets). So a slow-ticking demo no longer fires a tick-count deadline early (RUN-ORDER.md R23); it descends from 1514f47a |
 | `1514f47a` | #222 (rs/268) | the Runecraft step module, from rs/196's lab-accepted module (rs/186's branch at 0c349da6): `speedrun/skills/runecraft.ts` for S06 (the air altar 1-44) and S21 (the altar 44-99; nature by default, body selectable, and the body altar is the S21 plan), its tests, the lab-accept and demo drivers, `runecraft.md` section 9 (STEP-MANIFEST.md entry 9); it descends from 148788c5 |
 | `148788c5` | #221 (rs/262) | `HostGate`'s `measureDrops` default 30 to 120, with a seeded-simulation test; `fishing.ts` passes 120 explicitly on each fly band; README and `tick-manipulation.md` corrected (RUN-ORDER.md R21: the measured switch-off fired on luck at 30); it descends from 4235a9e7 |
 | `4235a9e7` | #220 (rs/260) | the Mining step module, from rs/230's lab-accepted module (rs/147's branch at 59ec3933): `speedrun/skills/mining.ts` (S09, STEP-MANIFEST.md entry 4), knife-mine's `selfStarter` (S09's plain fallback at 3.62 ticks per ore, the knife-off line in force) with its success and rate fields, gated-program's `beforeRestart` and `dirs` pass-through, `programs.ts` `probeInPage(dirs)`; it descends from 8a741554 |
@@ -200,7 +201,7 @@ Its history contains every earlier requirement (rs/158 in the store; here `git m
 **Gate tooling on main, not floor items** (main: gate-script helpers, not run-client code; the floor contains both, so the run host's checkout has them): `5d22252d` (#208, rs/232's `speedrun/lib/display.ts`, the live-frame check for steps 5 and 5a) and `c4b79f17` (#213, rs/232's `speedrun/lib/tab.ts` window helpers, `screenshotTab` among them).
 
 **Pending for the floor**, each moving it to its merge commit when it lands (rs/158 sends the commit,
-and the latest one sent is the floor): rs/147's Agility snapshot (agility declares `untilLevel`; it waits on main's sign-off of four default-changing program fixes and the Agility part-2 lab; RUN-ORDER.md O40); PR #218 (rs/241's `eatAt: 'land'` for the agility program, so S17's eats cost 0, STEP-MANIFEST.md entry 1; building); #209 (rs/246's `speedrun/lib/wait.ts`: `maxTicks` on observed ticks, a 20-tick idle timeout re-armed only by new ticks, relaunch detection; RUN-ORDER.md R23); rs/276 (the tick monitor's late count against a rolling median of observed intervals, the measured period in its per-minute line, and gated-program's pause in observed ticks; it changes a run-night pass line, R23); rs/243's Thieving snapshot (pickpocket's `stopWhenFoodBelow` and `retargetTicks`, declared with a packet-fingerprint golden test; STEP-MANIFEST.md entry 6); and PR #198 (rs/198's `speedrun/runner/legs.ts`, STEP-MANIFEST.md entry 11, with its per-leg lab section of `research/run-transitions.md`). #198, #209 and #218 have
+and the latest one sent is the floor): rs/147's Agility snapshot (agility declares `untilLevel`; it waits on main's sign-off of four default-changing program fixes and the Agility part-2 lab; RUN-ORDER.md O40); PR #218 (rs/241's `eatAt: 'land'` for the agility program, so S17's eats cost 0, STEP-MANIFEST.md entry 1; building); rs/276 (the tick monitor's late count against a rolling median of observed intervals, the measured period in its per-minute line, and gated-program's pause in observed ticks; it changes a run-night pass line, R23); rs/243's Thieving snapshot (pickpocket's `stopWhenFoodBelow` and `retargetTicks`, declared with a packet-fingerprint golden test; STEP-MANIFEST.md entry 6); and PR #198 (rs/198's `speedrun/runner/legs.ts`, STEP-MANIFEST.md entry 11, with its per-leg lab section of `research/run-transitions.md`). #198 and #218 have
 PR numbers so far.
 
 **Leftover check.** It lists every tmux socket on the host with its sessions, other agents' sockets
@@ -411,9 +412,9 @@ Then put the clone on it and build:
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'export PATH=$HOME/.bun/bin:$PATH; cd ~/rs-sdk && git fetch -q origin && git checkout -q --detach "$(cat $HOME/run-commit)" && bun install && (cd server/webclient && bun install && bun run build) && (cd server/gateway && bun install) && mkdir -p ~/recordings ~/rs-run/chrome-profile && git log -1 --oneline && ls server/webclient/out/bot/client.js'
 ```
 
-`RUN_COMMIT` must be at or after the run-commit floor, **`1514f47a`** (#222; "Credentials" lists
+`RUN_COMMIT` must be at or after the run-commit floor, **`4fe2d0a8`** (#209; "Credentials" lists
 what it contains, rs/138's Chrome login and rs/164's tab-logout confirmation among them). One
-check: `git -C ~/rs-sdk merge-base --is-ancestor 1514f47a "$RUN_COMMIT"`. A failure means the commit
+check: `git -C ~/rs-sdk merge-base --is-ancestor 4fe2d0a8 "$RUN_COMMIT"`. A failure means the commit
 predates at least one of the changes in that table.
 
 Account files: the gate account (step 6) is a throwaway demo account whose name starts with
