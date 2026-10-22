@@ -219,6 +219,14 @@ export function handOffPre(s: BotWorldState, plan: HandOffPlan, partner: string)
     for (const w of plan.wield) {
         if (!plan.receive.some(r => r.name === w.name) && !held(s, w)) return `${plan.id}: +${w.name} is neither held nor received`;
     }
+    return handOffRoom(s, plan);
+}
+
+/**
+ * The slot half of handOffPre, which needs no partner in view: the unequips, the trade and the
+ * equip changes after it fit the free slots, counting the slots the given items free.
+ */
+export function handOffRoom(s: BotWorldState, plan: HandOffPlan): true | string {
     const free = INVENTORY_SIZE - s.inventory.length;
     const off = toUnequip(s, plan);
     if (free < off.length) return `${plan.id}: ${free} free slots, and taking off ${off.map(i => i.name).join(', ')} to give needs ${off.length}`;

@@ -8,7 +8,7 @@ import { noteOf } from '../lib/items';
 import { TickLog } from '../lib/ticks';
 import { MANIFEST, parseLedger } from '../tools/slot-ledger';
 import {
-    giveSpecs, handOffFrom, handOffMissing, handOffPre, handOffStep, itemPattern, loadHandOff, planHandOff, runHandOff, toUnequip, tradeKind, tradeLanded,
+    giveSpecs, handOffFrom, handOffMissing, handOffPre, handOffRoom, handOffStep, itemPattern, loadHandOff, planHandOff, runHandOff, toUnequip, tradeKind, tradeLanded,
     type HandOffPlan, type HandOffReport,
 } from './handoff';
 import { Observation, resolveResume } from './resume';
@@ -265,6 +265,17 @@ describe('handOffPre', () => {
     test('refuses when SCORED does not hold what it gives, or holds more than the row gives', () => {
         expect(handOffPre(state(filler(3)), plan('H13'), PARTNER)).toMatch(/holds no magic shortbow to give/);
         expect(handOffPre(state(pack(['Magic shortbow', 2])), plan('H13'), PARTNER)).toMatch(/holds 2 magic shortbow and gives 1/);
+    });
+
+    test('handOffRoom is the slot rule alone: no partner needed, the same refusals as handOffPre', () => {
+        const h13 = plan('H13');
+        const full = (n: number) => [...filler(n), item(n, 'Magic shortbow')];
+        const alone = (inv: InventoryItem[], eq: InventoryItem[] = []) => state(inv, eq, { nearbyPlayers: [] });
+        expect(handOffPre(alone(full(23)), h13, PARTNER)).toMatch(/not in view/);
+        expect(handOffRoom(alone(full(23)), h13)).toBe(true);
+        expect(handOffRoom(alone(full(24)), h13)).toBe(handOffPre(state(full(24)), h13, PARTNER));
+        expect(handOffRoom(alone(full(24)), h13)).toMatch(/the trade adds 5, 1 short/);
+        expect(handOffRoom(alone(filler(28), [wornItem('Mithril scimitar')]), plan('H12'))).toMatch(/taking off Mithril scimitar to give needs 1/);
     });
 });
 
