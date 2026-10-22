@@ -72,3 +72,15 @@ facts that change a plan; the deep references are
 `server/engine/tools/pack/PackFile.ts` only exempts it from the folder-layout check.
 The chromatic dragons and the Mort'ton stores are defined there, so don't exclude
 it from content greps.
+
+## Which code it runs
+
+- **The demo runs unpublished code on top of upstream's tip** (b565f2d920b as of
+  2026-10-22): its board titles read `N ticks normalized to 400 ms per tick`, which
+  no commit contains. Treat the repo as a lower bound on what is live, not an exact
+  copy (rs/515, `docs/markets/demo-revision.md`).
+- The `/` page's `bot/client.js?v=TOKEN` is the server's process start time in
+  base 36 (`parseInt(TOKEN, 36)` gives epoch ms). It is the cheapest public way to
+  detect a restart or deploy. Static files are served with no Last-Modified or ETag.
+- `markets/research/rs-515-demo-revision.ts` re-dates the build in about three
+  minutes with six gentle requests.
