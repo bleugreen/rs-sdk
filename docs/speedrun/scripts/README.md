@@ -37,6 +37,17 @@ lock picking, cannon reloads and quest-specific obstacle/casting strategies.
 Do not replace the measured operation with a different abstraction merely to
 make its imports uniform.
 
+## Bundle identity
+
+`bundle-compare.ts A.js B.js [--split DIR]` says whether two webclient builds
+(`server/webclient` `bun run build` output) come from the same source. A raw md5
+names one build, not a commit, because every build picks new short identifiers.
+The script compares the multiset of 4+ character words and numbers after
+normalising every 1-3 character identifier, which ignores renaming and the
+layout choices that follow from it. The words that differ say what changed.
+Exit 0 means same source. See "Which commit is the demo serving?" in
+[UPSTREAM-WATCH.md](../UPSTREAM-WATCH.md).
+
 ## Results and historical measurements
 
 `Recorder` emits `SEG` lines, a Markdown table and
