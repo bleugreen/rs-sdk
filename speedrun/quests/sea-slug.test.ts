@@ -381,7 +381,7 @@ describe('Q: the exit drops (the slot ledger T19-20 drops, moved into the step)'
 
 describe("a click's message reply on the browser's tick (the click's own) and lite's (the next)", () => {
     const msg = (text: string, tick: number, observationId: number) => ({ type: 0, text, sender: '', tick, observationId, fromSelf: false }) as unknown as BotWorldState['gameMessages'][number];
-    const fail = 'You rub together the dry sticks and the sticks catch fire. The torch smokes momentarily then die out.';
+    const fail = 'You rub together the dry sticks and the sticks smoke momentarily then die out.'; // quest_seaslug.rs2:49
 
     test('replyAfter sees a reply stamped on the click tick, and not an older copy of it', () => {
         const sdk = new FakeSdk(arrival({ tick: 50, gameMessages: [msg(fail, 44, 61)] }));
