@@ -30,6 +30,10 @@ export function mineWorld(fake: FakeSdk, mining: number): { climbs: Tile[] } {
     const before = fake.onSend;
     fake.onSend = (a: SentAction, sdk) => {
         before(a, sdk);
+        if (a.method === 'sendClickDialog' && sdk.state!.dialog.text?.includes('Mining level')) {
+            sdk.push({ dialog: { isOpen: false, isWaiting: false, options: [] } });
+            return;
+        }
         if (a.method !== 'sendInteractLoc') return;
         const [x, z, id] = a.args as number[];
         const s = sdk.state!;
