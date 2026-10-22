@@ -73,11 +73,10 @@
 // The sets are bought as soon as their coins are in hand, otherwise last.
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
-import type { BotWorldState, NearbyLoc } from '../../sdk/types';
+import type { BotWorldState, NearbyLoc, TradeItem } from '../../sdk/types';
 import { TRADE_REQUEST_CHAT_TYPE } from '../../sdk/types';
 import { advance } from '../lib/dialogue';
 import { ANY_OFFER, give, DROPPED_TICKS, offerSatisfies, receiveFrom, swap, tradeOf, type GiveResult, type GiveSpec, type SwapSdk, type TradeSdk, type WantSpec } from '../lib/trade';
-import type { TradeItem } from '../../sdk/types';
 import { INVENTORY_SIZE } from '../lib/items';
 import { assertUntracked, cueDir, CueWatcher, nameHash, scopeOption, type Cue, type CueScope } from './altar-cue';
 import { cheat, isLocalServer, standOn } from './altar-room';
@@ -1348,8 +1347,15 @@ class Cannon {
         }
         try {
             const rec = this.ctx.state.get(serveKey(so.id)) as ServeRecord | undefined;
-            let next = serveResume(rec, holdsLoad(this.sdk.getInventory(), so.balls, so.extras), !!so.returnTile);
+            const inv = this.sdk.getInventory();
+            let next = serveResume(rec, holdsLoad(inv, so.balls, so.extras), !!so.returnTile, holdsExtras(inv, so.returnExtras));
             if (rec) this.log('serve: resuming', { id: so.id, record: rec, next });
+            if (next === 'uncertain-return') {
+                // The set in hand settles it: the take-back completed before the record did.
+                if (!holdsLoad(inv, 0)) this.attention = `cannon take-back ${so.id}: restarted mid-trade and the return extras are gone; taken as returned, check the scored account holds them and this holder the set`;
+                await this.record('returned');
+                next = 'done';
+            }
             if (next === 'uncertain') {
                 this.attention = `cannon hand-off ${so.id}: restarted mid-trade and the load is gone; taken as given, check the receiver holds the set`;
                 await this.record('gave');
@@ -1384,10 +1390,14 @@ class Cannon {
         }
     }
 
-    /** Carry exactly the load: the set, `balls` cannonballs and the extras, from the bank (or staff commands in the lab). */
+    /**
+     * Carry exactly the load: the set, `balls` cannonballs and the extras, from the bank (or staff
+     * commands in the lab), and the return extras for the take-back beside them.
+     */
     private async serveLoad(): Promise<void> {
         const so = this.o.serve!;
-        if (holdsLoad(this.sdk.getInventory(), so.balls, so.extras)) return;
+        const carry = [...so.extras, ...so.returnExtras];
+        if (holdsLoad(this.sdk.getInventory(), so.balls, carry)) return;
         this.setPhase('serve-load');
         if (so.labStock) {
             if (!isLocalServer()) throw new Error('serve.labStock is for the local lab only');
@@ -1395,13 +1405,13 @@ class Cannon {
             await this.waitFor(s => s.inventory.length === 0, 10);
             for (const part of ['twpart1', 'twpart2', 'twpart3', 'twpart4']) await cheat(this.ctx, `give ${part} 1`);
             await cheat(this.ctx, `give mcannonball ${so.balls}`);
-            for (const e of so.extras) await cheat(this.ctx, `give ${e.obj} ${e.count}`);
-            if (!(await this.waitFor(s => holdsLoad(s.inventory, so.balls, so.extras), 15))) throw new Error('the staff give did not arrive');
+            for (const e of carry) await cheat(this.ctx, `give ${e.obj} ${e.count}`);
+            if (!(await this.waitFor(s => holdsLoad(s.inventory, so.balls, carry), 15))) throw new Error('the staff give did not arrive');
             return;
         }
         await this.openBankAt(so.bank);
         await this.depositAllBut(null);
-        const need: [string, number][] = [...CANNON_PARTS.map(p => [p, 1] as [string, number]), ['Cannonball', so.balls], ...so.extras.map(e => [e.item, e.count] as [string, number])];
+        const need: [string, number][] = [...CANNON_PARTS.map(p => [p, 1] as [string, number]), ['Cannonball', so.balls], ...carry.map(e => [e.item, e.count] as [string, number])];
         const short = need.filter(([name, n]) => this.banked(name) < n);
         if (short.length) {
             await this.bot.closeBank();
@@ -1410,10 +1420,11 @@ class Cannon {
         for (const [name, n] of need) await this.bot.withdrawItem(exactName(name), n);
         this.readBank();
         await this.bot.closeBank();
-        if (!holdsLoad(this.sdk.getInventory(), so.balls, so.extras)) throw new Error(`the withdrawals left the load short: ${this.sdk.getInventory().map(i => `${i.name} x${i.count}`).join(', ')}`);
+        if (!holdsLoad(this.sdk.getInventory(), so.balls, carry)) throw new Error(`the withdrawals left the load short: ${this.sdk.getInventory().map(i => `${i.name} x${i.count}`).join(', ')}`);
         this.log('load', {
             balls: this.held(BALL),
             extras: so.extras.map(e => `${e.item} x${e.count}`),
+            returnExtras: so.returnExtras.map(e => `${e.item} x${e.count}`),
             setsLeftInBank: Math.min(...CANNON_PARTS.map(p => this.banked(p))),
             ballsLeftInBank: this.banked('Cannonball')
         });
@@ -1481,12 +1492,45 @@ class Cannon {
     }
 
     /**
+     * The return extras in hand for the take-back. serveLoad carries them with the load, so
+     * this only works when a restart after the give finds them gone (they were never offered:
+     * `returning` is written before that trade); the shortfall comes from the bank.
+     */
+    private async returnLoad(): Promise<void> {
+        const so = this.o.serve!;
+        const short = () => so.returnExtras.map(e => ({ ...e, count: e.count - this.held(exactName(e.item)) })).filter(e => e.count > 0);
+        if (short().length === 0) return;
+        this.setPhase('serve-return-load');
+        if (so.labStock) {
+            if (!isLocalServer()) throw new Error('serve.labStock is for the local lab only');
+            for (const e of short()) await cheat(this.ctx, `give ${e.obj} ${e.count}`);
+        } else {
+            await this.openBankAt(so.bank);
+            const missing = short().filter(e => this.banked(e.item) < e.count);
+            if (missing.length) {
+                await this.bot.closeBank();
+                throw new Error(`the bank is short of the return extras: ${missing.map(e => `${e.item} ${this.banked(e.item)}/${e.count}`).join(', ')}`);
+            }
+            for (const e of short()) await this.bot.withdrawItem(exactName(e.item), e.count);
+            this.readBank();
+            await this.bot.closeBank();
+        }
+        if (!(await this.waitFor(s => holdsExtras(s.inventory, so.returnExtras), 15))) throw new Error(`the return extras did not arrive: ${this.sdk.getInventory().map(i => `${i.name} x${i.count}`).join(', ')}`);
+        this.log('return load', { returnExtras: so.returnExtras.map(e => `${e.item} x${e.count}`) });
+    }
+
+    /**
      * H11r: at `returnTile`, take back the set and whatever balls are left from the
-     * receiver's own trade (SCORED gives; lib/trade.ts receiveFrom). Its request is
-     * found by name hash in the chat; anyone else's trade is declined.
+     * receiver's own trade, giving the return extras in the same trade when there are
+     * any (takeBackTrade). Its request is found by name hash in the chat; anyone else's
+     * trade is declined.
      */
     private async takeBack(): Promise<boolean> {
         const so = this.o.serve!;
+        await this.returnLoad();
+        if (!takeBackFits(this.sdk.getInventory(), so.returnExtras)) {
+            throw new Error(`no room for the set and balls to come back: ${this.sdk.getInventory().map(i => `${i.name} x${i.count}`).join(', ')}`);
+        }
         this.setPhase('serve-return');
         await this.goTo(so.returnTile!, 2, 'the return tile');
         await standOn(this.ctx, so.returnTile!);
@@ -1506,9 +1550,26 @@ class Cannon {
             const from = open.isOpen && partnerIs(s, hash) ? open.partner! : ask?.sender;
             if (from) {
                 if (ask) since = Math.max(since, ask.tick);
-                const r = await receiveFrom(this.sdk, from, { want: loadWant(0), openTimeoutMs: 20_000 });
-                this.log('returned', { ok: r.ok, receiverTicks: r.ticks, received: r.received.map(i => `${i.name} x${i.count}`), waitedTicks: this.tick() - t0, ...(r.reason ? { reason: r.reason } : {}) });
-                if (r.ok) return true;
+                const gives = so.returnExtras.length > 0;
+                if (gives) await this.record('returning');
+                const r = await takeBackTrade(this.sdk, from, so.returnExtras);
+                this.log('returned', {
+                    ok: r.ok,
+                    receiverTicks: r.ticks,
+                    received: r.received.map(i => `${i.name} x${i.count}`),
+                    ...(gives ? { gave: r.gave.map(i => `${i.name} x${i.count}`) } : {}),
+                    waitedTicks: this.tick() - t0,
+                    ...(r.reason ? { reason: r.reason } : {})
+                });
+                if (r.ok) {
+                    if (!takeBackDelivered(r, so.returnExtras)) this.attention = `cannon take-back ${so.id}: the trade completed but not as planned (received ${r.received.map(i => `${i.name} x${i.count}`).join(', ') || 'nothing'}); check both accounts`;
+                    return true;
+                }
+                // A failed trade puts the offered extras back; if they are gone anyway, it is a person's call.
+                if (gives && !(await this.waitFor(s => holdsExtras(s.inventory, so.returnExtras), 5))) {
+                    this.attention = `cannon take-back ${so.id}: the trade reported ${r.reason ?? 'failure'} but the return extras are gone; taken as returned, check both accounts`;
+                    return true;
+                }
                 continue;
             }
             if (this.tick() - lastLog >= 400) {
