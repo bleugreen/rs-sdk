@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { DialogState } from '../../sdk/types';
+import type { BotWorldState, DialogState } from '../../sdk/types';
 import { burstTicks, converse, dialogueRuns, levelUpInterrupt, parseShape, shapeRuns, type Interrupt } from './converse';
 import { baseState, FakeSdk, flush } from './fake-sdk';
 import { fakeClock, peek, tickEvery, useFakeTicks } from './fake-ticks';
@@ -400,5 +400,99 @@ describe('converse interrupts', () => {
         const it = levelUpInterrupt();
         expect(it.match(baseState({ tick: 5, dialog: cont('l', 'Congratulations, you just advanced a Prayer level.') }))).toBe(true);
         expect(it.match(baseState({ tick: 6, dialog: cont('n', 'Thank you, adventurer.') }))).toBe(false);
+    });
+});
+
+describe("converse expect: 'interrupt'", () => {
+    const levelUp = cont('lu', 'Congratulations, you just advanced a Mining level.');
+    const unlock = cont('un', 'You can now mine Iron.');
+    // rs/416's call after Doric's hand-in (converse called at tick 44).
+    const completion = { openTicks: 4, idle: 1, closeModals: true, interrupts: [levelUpInterrupt()] };
+
+    /** A dialogue click shows its page waiting at once; what the next tick shows is the timeline's. */
+    function waitingOnClick(sdk: FakeSdk) {
+        sdk.onSend = (a, f) => {
+            if (!/ClickDialog|clickDialogByText/.test(a.method)) return;
+            const cur = f.state!.dialog;
+            queueMicrotask(() => f.push({ dialog: { ...cur, isWaiting: true } }));
+        };
+    }
+
+    /** Tick once at a time, publishing `at[tick]` on that tick, until `p` settles; the result and the tick it settled on. */
+    async function timeline<T>(sdk: FakeSdk, p: Promise<T>, at: Record<number, Partial<BotWorldState>>, maxTicks = 30) {
+        let settledAt = -1;
+        p.then(() => { settledAt = sdk.state!.tick; }, () => {});
+        for (let i = 0; i < maxTicks; i++) {
+            await flush();
+            if (settledAt >= 0) break;
+            sdk.tick(at[sdk.state!.tick + 1] ?? {});
+        }
+        return { r: await p, at: settledAt };
+    }
+
+    test('the completion level-up page: over at idle after it closes, no openTicks wait', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 44 }));
+        waitingOnClick(sdk);
+        const p = converse(sdk as never, [], { ...completion, expect: 'interrupt' });
+        const { r, at } = await timeline(sdk, p, { 45: { dialog: levelUp }, 46: { dialog: closed } });
+        expect(at).toBe(47);
+        expect(r).toMatchObject({ ok: true, opened: false, pages: 0, levelUps: 0, interrupts: 1, firstTick: 45, endTick: 46, ticks: 2 });
+        expect(r.reason).toBeUndefined();
+        expect(sdk.sent.map(s => s.method)).toEqual(['clickDialogByText']);
+    });
+
+    test('the same pages by default: the interrupt is answered and the whole openTicks waited out, as before', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 44 }));
+        waitingOnClick(sdk);
+        const p = converse(sdk as never, [], completion);
+        const { r, at } = await timeline(sdk, p, { 45: { dialog: levelUp }, 46: { dialog: closed } });
+        expect(at).toBe(49); // 44 + openTicks 4 + 1, rs/416's trace
+        expect(r).toMatchObject({ ok: true, opened: false, pages: 0, levelUps: 0, interrupts: 1, firstTick: -1, endTick: -1, ticks: 0, reason: 'no dialogue opened' });
+    });
+
+    test('an interrupt page and then a real conversation inside the idle wait: both answered', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 44 }));
+        waitingOnClick(sdk);
+        const p = converse(sdk as never, ['Yes'], { ...completion, idle: 2, expect: 'interrupt' });
+        const { r, at } = await timeline(sdk, p, {
+            45: { dialog: levelUp }, 46: { dialog: closed }, 47: { dialog: cont('a', 'Well done, adventurer.') }, 48: { dialog: choice('c', 'Yes', 'No') }, 49: { dialog: closed },
+        });
+        expect(at).toBe(51);
+        expect(r).toMatchObject({ ok: true, opened: true, pages: 1, options: 1, interrupts: 1, firstTick: 45, endTick: 49, remaining: [] });
+        expect(dialogueRuns(r.transcript)).toBe('1c, opt');
+    });
+
+    test('a level-up chain (its unlock page after a closed tick) holds the idle wait open until the last page closes', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 44 }));
+        waitingOnClick(sdk);
+        const p = converse(sdk as never, [], { ...completion, idle: 2, expect: 'interrupt' });
+        const { r, at } = await timeline(sdk, p, { 45: { dialog: levelUp }, 46: { dialog: closed }, 47: { dialog: unlock }, 48: { dialog: closed } });
+        expect(at).toBe(50);
+        expect(r).toMatchObject({ opened: false, interrupts: 2, endTick: 48 });
+    });
+
+    test('a dismissal still in flight when the chat closes is not taken for no page at all', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 44 }));
+        let release = () => {};
+        sdk.clickDialogByText = () => new Promise(res => { release = () => res({ success: true, message: 'ok' }); });
+        const p = converse(sdk as never, [], { ...completion, openTicks: 0, expect: 'interrupt' });
+        sdk.tick({ dialog: levelUp }); // 45
+        await flush();
+        sdk.tick({ dialog: closed }); // 46, the click not yet acknowledged
+        await flush();
+        expect(await peek(p)).toBeUndefined();
+        release();
+        await flush();
+        sdk.tick(); // 47
+        expect(await p).toMatchObject({ ok: true, opened: false, interrupts: 1, endTick: 46 });
+    });
+
+    test('no page at all still ends after openTicks with no dialogue opened; without interrupts it is refused', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 44 }));
+        const p = converse(sdk as never, [], { ...completion, expect: 'interrupt' });
+        const { r, at } = await timeline(sdk, p, {});
+        expect(at).toBe(49);
+        expect(r).toMatchObject({ ok: true, opened: false, interrupts: 0, endTick: -1, ticks: 0, reason: 'no dialogue opened' });
+        await expect(converse(sdk as never, [], { expect: 'interrupt' })).rejects.toThrow(/needs interrupts/);
     });
 });
