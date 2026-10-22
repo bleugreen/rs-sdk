@@ -306,12 +306,13 @@ describe('steps: the free-slot preconditions', () => {
 
     test('S27 with the cannon placed: the pick-up and the shield together', () => {
         const s = st({ Attack: 99, Defence: 99, Ranged: 70, Prayer: 99 }, {
-            inventory: [item(4, 'Cannonball', 1200), item(5, 'Magic shortbow'), ...junk(19)],
+            inventory: [item(4, 'Cannonball', 1200), item(5, 'Magic shortbow'), ...junk(24)],
             equipment: [scim, item(5, 'Anti-dragon shield'), item(13, 'Rune arrow', 570)],
             nearbyLocs: [cannonLoc()],
         });
         expect(slotNeed(s, { pickUp: true, bowAhead: true }).need).toBe(5);
-        expect(pre(combatFinishStep(), s)).toMatch(/^19 other items \(Bones\): need 5 free slots \(4 to pick up the placed cannon; 1 for the Anti-dragon shield the magic shortbow takes off\), 7 free$/);
+        expect(pre(combatFinishStep(), s)).toBe('24 other items (Bones): need 5 free slots (4 to pick up the placed cannon; 1 for the Anti-dragon shield the magic shortbow takes off), 2 free');
+        expect(pre(combatFinishStep(), { ...s, inventory: s.inventory.slice(0, 23) })).toBe(true);
     });
 });
 
