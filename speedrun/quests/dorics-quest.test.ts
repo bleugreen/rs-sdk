@@ -171,7 +171,7 @@ describe("A: H4's free slots, refused up front, agreeing with the slot ledger", 
         await drive(sdk, a.run(ctx) as Promise<unknown>, 5);
         expect(sdk.sent).toEqual([]);
         expect(a.postconditions!(sdk.getState()!, undefined as never)).toBe(true);
-        expect(a.done!(sdk.getState()!, undefined as never)).toBe(true);
+        expect(a.done!(observed(sdk.getState()!), {})).toBe(true);
     });
 });
 
