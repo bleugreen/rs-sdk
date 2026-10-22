@@ -634,7 +634,8 @@ describe('a cue-served hand-off (the cannon holder): the cue, the partner in sig
     test('runHandOffOnCue reports the request standing at the click and the ticks to arrival', async () => {
         const sdk = new TradeServer(state([], [], { tick: 10, nearbyPlayers: [] }), row);
         const r = await drive(sdk, runHandOffOnCue(ctxOf(sdk), h11, PARTNER, { scope: { step: 'S14', family: 'cannon' }, open: async () => {}, waitTicks: 50 }), 300, arrive(14));
-        expect([r.ok, r.standingAtClick, r.arriveTicks]).toEqual([true, true, 4]);
+        // drive's patch at tick 14 lands in tick 15's state: the cue at 10, the partner in sight at 15.
+        expect([r.ok, r.standingAtClick, r.arriveTicks]).toEqual([true, true, 5]);
     });
 
     test("a holder offering the set and balls without the row's extras is never accepted", async () => {
