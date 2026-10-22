@@ -29,7 +29,7 @@
 import type { BotSDK } from '../../../sdk/index';
 import type { BotWorldState } from '../../../sdk/types';
 import { wield } from '../../lib/act';
-import { pageText } from '../../lib/dialogue';
+import { pageText, resetDialogueMemory } from '../../lib/dialogue';
 import { closeSession, openSession, relog, type Session } from '../../lib/session';
 import { TickLog, type TickRow } from '../../lib/ticks';
 import { waitTicks } from '../../lib/wait';
@@ -253,13 +253,20 @@ export interface LabRunOptions {
 /** Apply the fixture of `from`, run the chosen segments, `runs` times; a failed run is recorded and the next one starts afresh. */
 export async function runLabQuest<O extends QuestOptions>(session: Session | RunnerSession, quest: LabQuest<O>, o: LabRunOptions): Promise<LabReport> {
     const dialogue = o.dialogue ?? 'fixed';
-    const all = quest.steps({ ...(quest.options ?? {}), dialogue } as O);
-    const chosen = selectSegments(all, quest.stepId, o.from, o.until);
-    const letter = letterOf(quest.stepId, chosen[0]!.name);
+    // Built afresh for every run: a module's steps() may keep what the run has seen in a closure,
+    // and a later run must not inherit it.
+    const build = () => selectSegments(quest.steps({ ...(quest.options ?? {}), dialogue } as O), quest.stepId, o.from, o.until);
+    let chosen = build();
+    const names = chosen.map(c => c.name);
+    const letter = letterOf(quest.stepId, names[0]!);
     const fixture = quest.fixtures.find(f => f.letter === letter);
     if (!fixture) throw new Error(`${quest.title}: no fixture for segment ${letter}`);
     const records: RunRecord[] = [];
     for (let run = 0; run < (o.runs ?? 1); run++) {
+        if (run > 0) chosen = build();
+        // The dialogue layer remembers the last page it acted on per sdk: run N's last page must not
+        // read as stale when run N+1's first page has the same id.
+        resetDialogueMemory(session.sdk);
         const s = session as Session;
         if (quest.applyFixture) await quest.applyFixture(s, fixture);
         else await applyFixture(s, fixture, quest.staging);
@@ -282,7 +289,7 @@ export async function runLabQuest<O extends QuestOptions>(session: Session | Run
             boundary: log.rows.filter(r => !r.kind && r.step === BOUNDARY_STEP).reduce((a, r) => a + r.ticks, 0),
         });
     }
-    return summarize(quest.title, dialogue, chosen.map(c => c.name), records, quest.reference, quest.stepId);
+    return summarize(quest.title, dialogue, names, records, quest.reference, quest.stepId);
 }
 
 /** With --trace: the player every `every` ticks, and on every hp, dialogue page or new chat line. */

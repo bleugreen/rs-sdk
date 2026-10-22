@@ -63,12 +63,21 @@ export const SPELLS: Readonly<Record<KolodionSpell, { component: number; level: 
 };
 
 /**
- * H13's runes for the fight by spell (SUPPLIES.md H13: 70 blood + 400 air for Fire Wave). Fire
- * Blast's death runes are the lab's maximum casts plus margin: 57-78 casts over 3 fights from the
- * route's arrival (Magic 77, ~9,118 base; m, lab, 300 ms, rs/371), so 78 + 12.
+ * H13's runes for the fight by spell. Fire Wave: 90 blood (main's ruling, 10-22): 25 measured fights
+ * from the route's arrival cast 42-59 times and one outlasted 70 (still on the last form at +383
+ * ticks; m, lab, 300 ms, rs/371). Fire Blast: its lab maximum plus margin, 57-78 casts over 3
+ * fights, so 78 + 12.
  */
-export const SPELL_RUNES: Readonly<Record<KolodionSpell, number>> = { fire_wave: 70, fire_blast: 90 };
+export const SPELL_RUNES: Readonly<Record<KolodionSpell, number>> = { fire_wave: 90, fire_blast: 90 };
 export const AIR_RUNES = 400;
+
+/**
+ * The guard behind a spell: when its runes run out mid-fight the fight finishes on this one, since
+ * every form takes any combat spell. Fire Wave falls back to Fire Blast on death runes, which
+ * SCORED holds none of at S16 (H12 hands Fight Arena's back), so H13 carries FALLBACK_RUNES.
+ */
+export const FALLBACK: Readonly<Record<KolodionSpell, KolodionSpell | null>> = { fire_wave: 'fire_blast', fire_blast: null };
+export const FALLBACK_RUNES = 25;
 
 export type God = 'saradomin' | 'guthix' | 'zamorak';
 /** The statues (chamber.rs2; mage_arena.md step 10). Praying puts the cape on the tile south of it. */
@@ -156,10 +165,16 @@ export function exitClean(keepSharks = KEEP_SHARKS): Check<any> {
     };
 }
 
-/** S16's share of H13: the fight's runes. The staff of fire is worn (a precondition); the prayer potions are counted as prayer budget. */
-export function kit(spell: KolodionSpell): KitItem[] {
+/**
+ * S16's share of H13: the fight's runes, the fallback's included. The staff of fire is worn (a
+ * precondition); the prayer potions are counted as prayer budget. `spellRunes` lowers the spell's
+ * count (the lab's lever for a forced run-out).
+ */
+export function kit(spell: KolodionSpell, spellRunes = SPELL_RUNES[spell]): KitItem[] {
+    const fb = FALLBACK[spell];
     return [
-        { item: SPELLS[spell].rune, n: SPELL_RUNES[spell] },
+        { item: SPELLS[spell].rune, n: spellRunes },
+        ...(fb ? [{ item: SPELLS[fb].rune, n: FALLBACK_RUNES }] : []),
         { item: /^air rune$/i, n: AIR_RUNES },
     ];
 }
@@ -231,8 +246,10 @@ export function entryRefusal(s: BotWorldState): string | null {
 // ------------------------------------------------------------------ options
 
 export interface Options extends QuestOptions {
-    /** The fight's spell. Default 'fire_wave' (H13's blood runes); 'fire_blast' spends death runes instead and frees the 70 blood for S18. */
+    /** The fight's spell. Default 'fire_wave' (H13's blood runes); 'fire_blast' spends death runes instead and frees the blood for S18. */
     spell?: KolodionSpell;
+    /** The spell runes the kit wants (default SPELL_RUNES[spell], H13). The lab lowers it to force the fallback. */
+    spellRunes?: number;
     /** Which statue (default saradomin). Charge does not care; the god only picks the god spell. */
     god?: God;
     /** Drink a prayer potion below this many points in the fight (default 15). */
@@ -260,11 +277,14 @@ export interface FightTally {
     spell: KolodionSpell;
     /** Arena landing to the cellar landing. */
     ticks: number;
-    /** Casts that landed, counted by the spell's rune spent. */
+    /** Casts that landed, counted by the runes spent (the spell's and the fallback's). */
     casts: number;
     /** Cast clicks sent (every 2 ticks while a form is up). */
     clicks: number;
+    /** The spell's own runes. */
     runesUsed: number;
+    /** The fallback taken when the spell's runes ran out: its spell, the fight tick it started, its runes spent. */
+    fallback: { spell: KolodionSpell; at: number; runesUsed: number } | null;
     airUsed: number;
     /** Game xp (base = /25). */
     magicXp0: number;
@@ -287,7 +307,7 @@ export interface FightTally {
 
 export function newTally(spell: KolodionSpell = DEFAULT_SPELL): FightTally {
     return {
-        spell, ticks: 0, casts: 0, clicks: 0, runesUsed: 0, airUsed: 0, magicXp0: 0, magicXp1: 0, magicBase0: 0, magicBase1: 0,
+        spell, ticks: 0, casts: 0, clicks: 0, runesUsed: 0, fallback: null, airUsed: 0, magicXp0: 0, magicXp1: 0, magicBase0: 0, magicBase1: 0,
         hp0: 0, hpMin: 0, hp1: 0, prayer0: 0, prayer1: 0, prayerUsed: 0, doses: 0, magicSips: 0, eats: 0, levelUps: 0, forms: [],
     };
 }
@@ -320,9 +340,10 @@ const protectLevel: Check<any> = s => ((s.prayers?.prayerLevel ?? baseOf(s, 'pra
 const prayerEnough: Check<any> = s => (prayerBudget(s) >= PRAYER_BUDGET ? true : `prayer: ${s.prayers?.prayerPoints ?? 0} points and ${prayerDoses(s)} potion doses make ${prayerBudget(s)}, the fight wants ${PRAYER_BUDGET}`);
 const entryClean: Check<any> = s => entryRefusal(s) ?? true;
 const noGreegree: Check<any> = s => (invItem(s, GREEGREE) ? 'the monkey greegree is still held (dropped at S16\'s start: untradeable and dead)' : true);
-const kitHeld = (spell: KolodionSpell): Check<any> => s => {
-    const short = kit(spell).filter(k => invCount(s, k.item) < (k.n ?? 1));
-    return short.length ? `kit: ${short.map(k => `${String(k.item)} ${invCount(s, k.item)}/${k.n}`).join(', ')}` : true;
+const runeName = (p: string | RegExp) => String(p).replace(/^\/\^?|\$?\/i?$/g, '');
+const kitHeld = (spell: KolodionSpell, spellRunes?: number): Check<any> => s => {
+    const short = kit(spell, spellRunes).filter(k => invCount(s, k.item) < (k.n ?? 1));
+    return short.length ? `kit (H13): ${short.map(k => `${runeName(k.item)} ${invCount(s, k.item)} held, want >= ${k.n}`).join('; ')}` : true;
 };
 const inCellarCheck = within(CELLAR, "Kolodion's cellar");
 const inChamberCheck = within(CHAMBER, 'the chamber');
@@ -331,8 +352,8 @@ const chargeSeen = (memo: { chargeUnlocked: boolean }): Check<any> => () => (mem
 const noDialog: Check<any> = s => (s.dialog.isOpen || s.modalOpen ? 'a dialogue or modal is still open' : true);
 
 /** The fight's start: everything B needs besides the place. */
-export function fightReady(spell: KolodionSpell): Check<any> {
-    return allOf(entryClean, noGreegree, kitHeld(spell), fireStaffWorn, spellReady(spell), protectLevel, prayerEnough);
+export function fightReady(spell: KolodionSpell, spellRunes?: number): Check<any> {
+    return allOf(entryClean, noGreegree, kitHeld(spell, spellRunes), fireStaffWorn, spellReady(spell), protectLevel, prayerEnough);
 }
 
 // ------------------------------------------------------------------ the fight
@@ -353,8 +374,38 @@ function sipMagic(sdk: Sdk, s: BotWorldState): boolean {
 /** Kolodion's forms that can be attacked now. */
 const forms = (s: BotWorldState) => s.nearbyNpcs.filter(n => n.name === 'Kolodion' && n.hp !== 0 && opIndex(n, /attack/i) !== undefined && (FORM_IDS as readonly number[]).includes(n.id));
 
+/**
+ * Which form in view is this fight's own, stage by stage. Forms live 1000 ticks and Kolodion's
+ * teleport clears only out-of-combat leftovers of the stage it starts (kolodion.rs2:136-141), so a
+ * fight aborted at a later form leaves it standing in the arena; with SCORED's own form attacking
+ * (single-way combat) casts at a leftover are refused and the fight never moves. `ignore` holds
+ * the leftovers' npc indices, which the talk reads off the landing tick, before this fight's form
+ * spawns. The stage starts at the lowest form in view that is not ignored (a resumed fight finds its
+ * own) and moves on when the next id appears.
+ */
+export function formPicker(ignore: readonly number[] = []): { current(s: BotWorldState): NearbyNpc | undefined; readonly stage: number } {
+    const skip = new Set(ignore);
+    let stage = -1;
+    return {
+        get stage() {
+            return stage;
+        },
+        current(s) {
+            const fs = forms(s).filter(n => !skip.has(n.index));
+            if (!fs.length) return undefined;
+            if (stage < 0) stage = Math.min(...fs.map(n => n.id)) - FORM_IDS[0];
+            if (!fs.some(n => n.id === FORM_IDS[0] + stage) && fs.some(n => n.id === FORM_IDS[0] + stage + 1)) stage++;
+            return fs.find(n => n.id === FORM_IDS[0] + stage);
+        },
+    };
+}
+
 export interface FightOpts {
     spell?: KolodionSpell;
+    /** Finish on this spell when the first's runes run out (default FALLBACK[spell]; null: none, the fight throws). */
+    fallback?: KolodionSpell | null;
+    /** Npc indices of forms an earlier fight left in the arena (formPicker): never targeted. */
+    ignore?: readonly number[];
     drinkBelow?: number;
     eatBelow?: number;
     maxTicks?: number;
@@ -365,21 +416,31 @@ export interface FightOpts {
 
 /**
  * Fight Kolodion from the arena landing until finish_mage_arena puts SCORED back in the cellar,
- * under Protect from Magic. Only the current stage's form is attacked: the stage starts at the
- * lowest form in view (a resumed fight finds its own) and moves on when the next id appears. A
- * level-up page is dismissed with the cast re-sent behind it (lib/combat.ts); the magic potion is
- * sipped again whenever the boosted level falls below the spell's. Throws on a death, a timeout,
- * or the spell's runes running out.
+ * under Protect from Magic. Only the current stage's form is attacked (formPicker). A level-up page is dismissed with the cast re-sent behind it (lib/combat.ts); the magic potion is
+ * sipped again whenever the boosted level falls below the spell's. When the spell's runes run out
+ * the fight goes on with the fallback's (FALLBACK). Throws on a death, a timeout, or no runes for
+ * either.
  */
 export async function fightKolodion(sdk: Sdk, o: FightOpts = {}): Promise<FightTally> {
     const spell = o.spell ?? DEFAULT_SPELL;
-    const sp = SPELLS[spell];
+    const fb = o.fallback === undefined ? FALLBACK[spell] : o.fallback;
+    let sp = SPELLS[spell];
     const t = o.tally ?? newTally(spell);
     t.spell = spell;
+    t.fallback = null;
     const s0 = sdk.getState()!;
     const tArena = s0.tick;
     const maxTicks = o.maxTicks ?? 1500;
     const runes0 = invCount(s0, sp.rune);
+    const fbRunes0 = fb ? invCount(s0, SPELLS[fb].rune) : 0;
+    const castable = (st: BotWorldState) => invCount(st, sp.rune) >= 1;
+    /** Out of the spell's runes: switch to the fallback if its runes are held; false when there is nothing left to cast. */
+    const fallBack = (st: BotWorldState): boolean => {
+        if (!fb || t.fallback || invCount(st, SPELLS[fb].rune) < 1) return false;
+        sp = SPELLS[fb];
+        t.fallback = { spell: fb, at: st.tick - tArena, runesUsed: 0 };
+        return true;
+    };
     const air0 = invCount(s0, /^air rune$/i);
     const doses0 = prayerDoses(s0);
     t.magicXp0 = skillXp(s0, 'magic');
@@ -387,36 +448,31 @@ export async function fightKolodion(sdk: Sdk, o: FightOpts = {}): Promise<FightT
     t.hp0 = s0.player?.hp ?? 0;
     t.hpMin = t.hp0;
     t.prayer0 = s0.prayers?.prayerPoints ?? 0;
-    let stage = -1;
+    const picker = formPicker(o.ignore);
+    const current = (s: BotWorldState) => picker.current(s);
     let lastSip = -Infinity;
-    const current = (s: BotWorldState): NearbyNpc | undefined => {
-        const fs = forms(s);
-        if (!fs.length) return undefined;
-        if (stage < 0) stage = Math.min(...fs.map(n => n.id)) - FORM_IDS[0];
-        if (!fs.some(n => n.id === FORM_IDS[0] + stage) && fs.some(n => n.id === FORM_IDS[0] + stage + 1)) stage++;
-        return fs.find(n => n.id === FORM_IDS[0] + stage);
-    };
     const lost = (s: BotWorldState) => !inArena(s) && !inCellar(s);
     for (;;) {
         const s = sdk.getState()!;
         if (inCellar(s)) break;
         const elapsed = s.tick - tArena;
-        if (elapsed > maxTicks) throw new Error(`fight: no finish in ${maxTicks} ticks at ${JSON.stringify(pos(s))}, stage ${stage}`);
+        if (elapsed > maxTicks) throw new Error(`fight: no finish in ${maxTicks} ticks at ${JSON.stringify(pos(s))}, stage ${picker.stage}`);
         const w = await waitUntil(sdk, st => inCellar(st) || lost(st) || current(st) !== undefined, { maxTicks: maxTicks - elapsed });
-        if (!w.ok) throw new Error(`fight: no form to attack at +${currentTick(sdk) - tArena} (stage ${stage}; in view ${JSON.stringify(forms(sdk.getState()!).map(n => [n.id, n.hp]))})`);
+        if (!w.ok) throw new Error(`fight: no form to attack at +${currentTick(sdk) - tArena} (stage ${picker.stage}; in view ${JSON.stringify(forms(sdk.getState()!).map(n => [n.id, n.index, n.hp]))}; ignored ${JSON.stringify(o.ignore ?? [])})`);
         if (inCellar(w.state)) break;
         if (lost(w.state)) throw new Error(`fight: left the arena at +${w.state.tick - tArena} (${JSON.stringify(pos(w.state))}): a death?`);
         const target = current(w.state)!;
         const tForm = w.state.tick;
-        if (invCount(w.state, sp.rune) < 1) throw new Error(`fight: out of ${sp.runeName}s at form ${target.id} (+${tForm - tArena})`);
+        if (!castable(w.state) && !fallBack(w.state)) throw new Error(`fight: out of ${sp.runeName}s${fb && t.fallback ? ` (after the ${fb} fallback)` : ''} at form ${target.id} (+${tForm - tArena})`);
         const f = await fight(sdk, target, {
             spell: sp.component, castEvery: 2,
             prayer: 'protect_from_magic', drinkBelow: o.drinkBelow ?? 15,
             food: SHARK, eatBelow: o.eatBelow ?? 30,
             onDialog: 'continue',
             maxTicks: maxTicks - (tForm - tArena),
-            // over when the form changes type in place: the next form is fought by its own id
-            done: st => inCellar(st) || lost(st) || (npcByIndex(st, target.index)?.id ?? target.id) !== target.id,
+            // over when the form changes type in place (the next form is fought by its own id), or
+            // when the runes run out (the loop falls back, or throws)
+            done: st => inCellar(st) || lost(st) || (npcByIndex(st, target.index)?.id ?? target.id) !== target.id || !castable(st),
             onTick: (st, npc) => {
                 o.onTick?.(st, npc);
                 if (boostedOf(st, 'magic') < sp.level && st.tick - lastSip >= 3 && sipMagic(sdk, st)) {
@@ -424,7 +480,6 @@ export async function fightKolodion(sdk: Sdk, o: FightOpts = {}): Promise<FightT
                     t.magicSips++;
                     return true; // an inventory click clears the cast: re-send it
                 }
-                if (invCount(st, sp.rune) < 1) throw new Error(`fight: out of ${sp.runeName}s at form ${target.id} (+${st.tick - tArena})`);
                 return false;
             },
         });
@@ -438,8 +493,9 @@ export async function fightKolodion(sdk: Sdk, o: FightOpts = {}): Promise<FightT
     }
     const s1 = sdk.getState()!;
     t.ticks = s1.tick - tArena;
-    t.runesUsed = runes0 - invCount(s1, sp.rune);
-    t.casts = t.runesUsed;
+    t.runesUsed = runes0 - invCount(s1, SPELLS[spell].rune);
+    if (t.fallback && fb) t.fallback.runesUsed = fbRunes0 - invCount(s1, SPELLS[fb].rune);
+    t.casts = t.runesUsed + (t.fallback?.runesUsed ?? 0);
     t.airUsed = air0 - invCount(s1, /^air rune$/i);
     t.hp1 = s1.player?.hp ?? 0;
     t.prayer1 = s1.prayers?.prayerPoints ?? 0;
@@ -473,10 +529,15 @@ interface RunMemo {
     fought: boolean;
     /** %magearena 8 seen: the staff in hand, or the guardian's stage-8 greeting. */
     chargeUnlocked: boolean;
+    /** Forms in view on the arena landing tick of this run's talk: an earlier fight's leftovers (formPicker). */
+    leftovers: number[];
 }
 
+const staffDropped = (s: BotWorldState) => s.groundItems.some(g => GOD_STAFF.test(g.name) && g.distance <= 3);
+/** The guardian's staff seen: held, or on the ground beside SCORED where the exit dropped it. */
+const staffSeen = (s: BotWorldState) => held(s, GOD_STAFF) || (inChamber(s) && staffDropped(s));
 /** F's durable mark once the exit drops are out: neither god item held, the dropped staff on the ground beside SCORED. */
-const exitedChamber = (s: BotWorldState) => inChamber(s) && !held(s, GOD_STAFF) && !held(s, GOD_CAPE) && s.groundItems.some(g => GOD_STAFF.test(g.name) && g.distance <= 3);
+const exitedChamber = (s: BotWorldState) => inChamber(s) && !held(s, GOD_STAFF) && !held(s, GOD_CAPE) && staffDropped(s);
 
 async function talkKolodion(sdk: Sdk, opts: Options | undefined, memo: RunMemo): Promise<void> {
     const spell = opts?.spell ?? DEFAULT_SPELL;
@@ -493,8 +554,16 @@ async function talkKolodion(sdk: Sdk, opts: Options | undefined, memo: RunMemo):
     const kol = findNpc(sdk, /^Kolodion$/) ?? undefined;
     let refused = false;
     let won = false;
-    // converse reads `until` only while the dialogue is closed: the pages are watched here.
+    let landed = false;
+    memo.leftovers = [];
+    // converse reads `until` only while the dialogue is closed: the pages are watched here. The
+    // landing tick is caught here too: this fight's form spawns at least a tick after it
+    // (kolodion.rs2:142-194), so whatever form is in view then is a leftover.
     const unsub = sdk.onStateUpdate(s => {
+        if (!landed && inArena(s)) {
+            landed = true;
+            memo.leftovers = forms(s).map(n => n.index);
+        }
         const text = pageText(s.dialog);
         if (REFUSED.test(text)) refused = true;
         if (TOUGH_ONE.test(text)) won = true;
@@ -520,6 +589,7 @@ async function fightSegment(sdk: Sdk, opts: Options | undefined, memo: RunMemo):
     const tally = opts?.tally ?? newTally(opts?.spell ?? DEFAULT_SPELL);
     await fightKolodion(sdk, {
         ...(opts?.spell ? { spell: opts.spell } : {}),
+        ignore: memo.leftovers,
         ...(opts?.drinkBelow !== undefined ? { drinkBelow: opts.drinkBelow } : {}),
         ...(opts?.eatBelow !== undefined ? { eatBelow: opts.eatBelow } : {}),
         ...(opts?.fightMaxTicks !== undefined ? { maxTicks: opts.fightMaxTicks } : {}),
@@ -566,11 +636,15 @@ async function statueSegment(sdk: Sdk, opts: Options | undefined): Promise<void>
     }
 }
 
+/** Within talking range: the talk click is sent from here, so a dropped one is re-sent after a few ticks, not after a walk's worth. */
+const GUARDIAN_NEAR = 4;
+
 async function guardianSegment(sdk: Sdk, opts: Options | undefined, memo: RunMemo): Promise<void> {
-    if (held(sdk.getState()!, GOD_STAFF)) memo.chargeUnlocked = true;
+    // Only this attempt's evidence counts: the staff in hand, or dropped beside SCORED by an earlier attempt's exit.
+    memo.chargeUnlocked = staffSeen(sdk.getState()!);
     if (!memo.chargeUnlocked) {
         let guard = findNpc(sdk, GUARDIAN);
-        if (!guard) {
+        if (!guard || guard.distance > GUARDIAN_NEAR) {
             const r = await runTo(sdk, GUARDIAN_STAND);
             if (!r.ok) throw new Error(`guardian: could not reach him (${r.reason ?? 'unknown'})`);
             guard = findNpc(sdk, GUARDIAN);
@@ -581,7 +655,7 @@ async function guardianSegment(sdk: Sdk, opts: Options | undefined, memo: RunMem
             if (HELLO_AGAIN.test(pageText(s.dialog))) again = true;
         });
         // 'No thanks.' answers only his stage-8 choice (a run resumed after the drop); the first visit has none.
-        const d = await talkTo(sdk, guard, ['No thanks.'], { ...talkShape(opts, SHAPE_GUARDIAN), openTicks: 60 }).finally(unsub);
+        const d = await talkTo(sdk, guard, ['No thanks.'], { ...talkShape(opts, SHAPE_GUARDIAN), openTicks: 12 }).finally(unsub);
         if (!d.opened) throw new Error('guardian: no dialogue');
         if (again) memo.chargeUnlocked = true;
         else {
@@ -614,8 +688,8 @@ const stateOf = (o: Observed) => o.state;
 export function steps(opts?: Options) {
     const spell = opts?.spell ?? DEFAULT_SPELL;
     const keepSharks = opts?.keepSharks ?? KEEP_SHARKS;
-    const memo: RunMemo = { fought: opts?.fought ?? false, chargeUnlocked: false };
-    const kitA = kitSegment(opts, kit(spell), {
+    const memo: RunMemo = { fought: opts?.fought ?? false, chargeUnlocked: false, leftovers: [] };
+    const kitA = kitSegment(opts, kit(spell, opts?.spellRunes), {
         letter: 'A', label: 'kit',
         preconditions: allOf(inCellarCheck, kolodionLevel, fireStaffWorn, protectLevel, entryClean, slots('A')),
     });
@@ -629,11 +703,11 @@ export function steps(opts?: Options) {
                     if (!r.ok) throw new Error('kit: the monkey greegree was not dropped');
                 }
             },
-            postconditions: allOf(kitA.postconditions, fightReady(spell)),
+            postconditions: allOf(kitA.postconditions, fightReady(spell, opts?.spellRunes)),
         },
         {
             letter: 'B', label: 'kolodion', logoutSafe: false,
-            preconditions: allOf(inCellarCheck, fightReady(spell)),
+            preconditions: allOf(inCellarCheck, fightReady(spell, opts?.spellRunes)),
             run: ctx => talkKolodion(ctx.sdk, opts, memo),
             postconditions: s => (inArena(s) || memo.fought ? true : `not in the arena after Kolodion's talk: at ${JSON.stringify(pos(s))}`),
         },

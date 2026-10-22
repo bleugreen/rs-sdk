@@ -1,4 +1,5 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test';
+import * as dialogue from '../../lib/dialogue';
 import { baseState, FakeSdk } from '../../lib/fake-sdk';
 import type { TickRow } from '../../lib/ticks';
 import { questSteps, type QuestOptions } from '../../quests/segments';
@@ -71,6 +72,8 @@ describe('runLabQuest', () => {
         const applied: string[] = [];
         const modes: Array<string | undefined> = [];
         const ran: string[] = [];
+        const resets: object[] = [];
+        const spy = spyOn(dialogue, 'resetDialogueMemory').mockImplementation(s => { resets.push(s); });
         const quest: LabQuest<QuestOptions & { extra?: number }> = {
             title: 'Example',
             stepId: 'S99',
@@ -86,7 +89,10 @@ describe('runLabQuest', () => {
         try {
             const r = await runLabQuest(session, quest, { from: 'B', until: 'C', runs: 2, dialogue: 'burst' });
             expect(applied).toEqual(['B', 'B']);
-            expect(modes).toEqual(['burst']);
+            // steps() once per run: a closure's memory never reaches the next run
+            expect(modes).toEqual(['burst', 'burst']);
+            // nor does the dialogue layer's last acted page: forgotten before each run
+            expect(resets).toEqual([sdk, sdk]);
             expect(ran).toEqual(['B', 'C', 'B', 'C']);
             expect(r).toMatchObject({ runs: 2, passes: 2, dialogue: 'burst' });
             expect(r.segments.map(s => s.name)).toEqual(['S99:B-x', 'S99:C-x']);
@@ -96,6 +102,7 @@ describe('runLabQuest', () => {
             expect(checked).toMatchObject({ passes: 0, errors: ['xp short'] });
         } finally {
             clearInterval(timer);
+            spy.mockRestore();
         }
     });
 });

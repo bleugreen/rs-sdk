@@ -9,7 +9,9 @@
 // High Level Alchemy (a fixed 65 base a cast, magic_spells.dbrow) climbs to the nearest cast of N, and
 // the coins it makes are dropped (rs/158's route arrival, 77 at ~9,118); --prayer=N prayer points
 // at arrival (default 40: S15's demon leaves 30-50 of 94, m, rs/201; i for the chain); --potion=0 drops
-// the magic potion from the kit (acceptance (a)); --trace=N.
+// the magic potion from the kit (acceptance (a)); --blood=N stages N blood runes and lowers the kit to
+// match (default H13's 90; ~20 forces the Fire Blast fallback mid-fight); --death=N the death runes
+// behind it (default H13's 25); --trace=N.
 //
 // Fixtures stage SCORED's S16 inventory from STEP-MANIFEST.md's inventory ledger after H13 (the
 // slot-ledger walk, 21/28 with the gree-gree): water 8, law 7, air 756, blood 70, prayer potion(4)
@@ -22,10 +24,10 @@
 // prayer) and the exit's Magic; a summary over the runs follows the table.
 
 import type { BotWorldState } from '../../../sdk/types';
-import { prayerDoses } from '../../lib/combat';
+import { prayerActive, prayerDoses, setPrayer } from '../../lib/combat';
 import { baseToXp, levelForXp, xpForLevel, XP_RATE } from '../../lib/xp';
 import { invItem, skillXp } from '../../lib/world';
-import { exitMagic, newTally, quest, SPELL_RUNES, stepId, steps, type FightTally, type KolodionSpell, type Options } from '../../quests/mage-arena';
+import { exitMagic, FALLBACK_RUNES, newTally, quest, SPELL_RUNES, stepId, steps, type FightTally, type KolodionSpell, type Options } from '../../quests/mage-arena';
 import { arg, result } from '../common';
 import { cheat, dropMatching, give, setvar } from '../setup';
 import { waitTicks } from '../../lib/wait';
@@ -52,7 +54,10 @@ const PACK: Record<string, number> = {
 };
 const SPELL_RUNE_OBJ: Record<KolodionSpell, string> = { fire_wave: 'bloodrune', fire_blast: 'deathrune' };
 /** Fire Blast's pricing carries death runes well past any fight, so the count is the measurement, not the kit. */
-const SPELL_RUNE_COUNT = SPELL === 'fire_blast' ? Math.max(200, SPELL_RUNES.fire_blast) : SPELL_RUNES.fire_wave;
+const BLOOD = arg('blood', '') ? Number(arg('blood', '')) : undefined;
+const SPELL_RUNE_COUNT = SPELL === 'fire_blast' ? Math.max(200, SPELL_RUNES.fire_blast) : (BLOOD ?? SPELL_RUNES.fire_wave);
+/** Fire Wave's fallback runes (H13's death runes). */
+const DEATH = SPELL === 'fire_wave' ? Number(arg('death', String(FALLBACK_RUNES))) : 0;
 const GREEGREE = 'mm_monkey_greegree_for_small_ninja_monkey';
 const WORN = ['staff_of_fire', 'mm_amulet_of_monkey_speak'] as const;
 
@@ -66,7 +71,7 @@ const fx = (letter: string, magearena: number, tile: QuestFixture['tile'], extra
     levels: LEVELS,
     vars: { magearena },
     relog: false, // nothing reads the quest tab: the arena is not on it
-    items: { ...PACK, [SPELL_RUNE_OBJ[SPELL]]: SPELL_RUNE_COUNT, ...extra },
+    items: { ...PACK, [SPELL_RUNE_OBJ[SPELL]]: SPELL_RUNE_COUNT, ...(DEATH ? { deathrune: DEATH } : {}), ...extra },
     worn: WORN,
     tile,
     ...(note ? { note } : {}),
@@ -83,7 +88,9 @@ export const FIXTURES: readonly QuestFixture[] = [
 const tally: FightTally = newTally(SPELL);
 const fights: Array<FightTally & { exit: ReturnType<typeof exitMagic>; ok: boolean }> = [];
 
-const options: Omit<Options, 'dialogue'> = { spell: SPELL, tally, ...(/^[D-F]/.test(FROM) ? { fought: true } : {}) };
+const options: Omit<Options, 'dialogue'> = {
+    spell: SPELL, tally, ...(/^[D-F]/.test(FROM) ? { fought: true } : {}), ...(BLOOD !== undefined && SPELL === 'fire_wave' ? { spellRunes: BLOOD } : {}),
+};
 
 /** High Level Alchemy (interface.pack magic:highlvl_alchemy): 65 base xp a cast, whatever the item. */
 const HIGH_ALCH = { component: 1178, base: 65 } as const;
@@ -128,7 +135,7 @@ function watchGaps(sdk: Parameters<NonNullable<LabQuest['prepare']>>[0]['sdk']):
 }
 
 const lab: LabQuest<Options> = {
-    title: `Mage Arena (${SPELL}, base Magic ${MAGIC}${XP_AT ? ` at ~${XP_AT} base xp` : ''}, prayer ${PRAYER_AT}${POTION ? '' : ', no magic potion'})`,
+    title: `Mage Arena (${SPELL}, base Magic ${MAGIC}${XP_AT ? ` at ~${XP_AT} base xp` : ''}, prayer ${PRAYER_AT}${POTION ? '' : ', no magic potion'}${BLOOD !== undefined ? `, ${BLOOD} blood + ${DEATH} death` : ''})`,
     stepId,
     steps,
     fixtures: FIXTURES,
@@ -141,6 +148,8 @@ const lab: LabQuest<Options> = {
         Object.assign(tally, newTally(SPELL));
         // ::setstat puts the level at its bottom: check the arrival xp is the level's floor.
         await waitTicks(sdk, 2);
+        // An aborted fight leaves Protect from Magic on, draining the next run's arrival points.
+        if (prayerActive(sdk.getState()!, 'protect_from_magic')) await setPrayer(sdk, 'protect_from_magic', false);
         const s = sdk.getState()!;
         const pts = s.prayers?.prayerPoints ?? 0;
         if (f.letter <= 'C' && pts > PRAYER_AT) await cheat(sdk, `~stat_drain prayer ${pts - PRAYER_AT} 0`, 2);
@@ -171,9 +180,9 @@ await labMain(lab);
 if (fights.length) {
     const base = (xp: number) => +(xp / 25).toFixed(1);
     console.log(`\nKolodion, ${SPELL}, base Magic ${MAGIC} (m, lab, 300 ms; from the arena landing to the cellar landing):`);
-    console.log('| run | fight ticks | casts | clicks | runes | air | Magic xp (base) | exit base xp | exit level | HP lost | prayer used | doses | sips | eats |');
-    console.log('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
-    fights.forEach((f, i) => console.log(`| ${i + 1} | ${f.ticks} | ${f.casts} | ${f.clicks} | ${f.runesUsed} | ${f.airUsed} | ${base(f.magicXp1 - f.magicXp0)} | ${base(f.magicXp1)} | ${f.magicBase1} | ${f.hp0 - f.hpMin} | ${f.prayerUsed} | ${f.doses} | ${f.magicSips} | ${f.eats} |`));
+    console.log('| run | fight ticks | casts | clicks | runes | fallback (spell, from tick, runes) | air | Magic xp (base) | exit base xp | exit level | HP lost | prayer used | doses | sips | eats |');
+    console.log('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
+    fights.forEach((f, i) => console.log(`| ${i + 1} | ${f.ticks} | ${f.casts} | ${f.clicks} | ${f.runesUsed} | ${f.fallback ? `${f.fallback.spell}, +${f.fallback.at}, ${f.fallback.runesUsed}` : '-'} | ${f.airUsed} | ${base(f.magicXp1 - f.magicXp0)} | ${base(f.magicXp1)} | ${f.magicBase1} | ${f.hp0 - f.hpMin} | ${f.prayerUsed} | ${f.doses} | ${f.magicSips} | ${f.eats} |`));
     const summary = {
         spell: SPELL, magic: MAGIC, runs: fights.length,
         ticks: stat(fights.map(f => f.ticks)), casts: stat(fights.map(f => f.casts)), runes: stat(fights.map(f => f.runesUsed)),
