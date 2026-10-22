@@ -205,4 +205,4 @@ with 5 ticks of fixed cost from a standing start beside the row. On the demo (rs
 players, strangers standing on the row) the row held exactly 4.00 ticks a log from level 30 to 99
 as well, with no stolen log and no slip: S03's 1-99 measured 683 ticks of playtime from a parked
 login (690 on the row including the claim's 7), with 18 of them an avoidable early login. With the
-launch on observed ticks, 1-99 is about 665 from a parked login at average roll luck (i).
+launch on observed ticks, this run's rolls give about 665 from a parked login (i).
