@@ -355,7 +355,7 @@ describe('I: the shed reads its replies by publication, on either client\'s stam
     // ("can't quite find") is known only by its message.
     const LOC = { x: 2577, z: 3462, id: 5, level: 0, name: 'Broken multicannon', distance: 1, optionsWithIndex: [{ text: 'Inspect', opIndex: 1 }] };
     const PARTS_MENU = { isOpen: true, isWaiting: false, pageId: 'parts', options: ['Pipe', 'Barrel', 'Axle', 'Shaft', 'Nothing'].map((text, i) => ({ index: i + 1, text, buttonType: 1, componentId: 20 + i })) };
-    const WORKING = { isOpen: true, isWaiting: true, pageId: 'working', options: [{ index: 1, text: 'Click here to continue', buttonType: 6, componentId: 10 }], allComponents: [{ text: 'The Cannon seems to be in working order, The Commander will be pleased.' }] };
+    const WORKING = { isOpen: true, isWaiting: false, pageId: 'working', options: [{ index: 1, text: 'Click here to continue', buttonType: 6, componentId: 10 }], allComponents: [{ text: 'The Cannon seems to be in working order, The Commander will be pleased.' }] };
     const CLOSED = { isOpen: false, options: [], isWaiting: false };
     const ROLLS = ['find', 'menu', 'find', 'find', 'menu', 'menu', 'menu', 'working'] as const;
 
