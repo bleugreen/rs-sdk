@@ -492,11 +492,38 @@ export class FmRow {
     private readonly lost = new Set<number>();
     private walkSent = { tick: -10, x: -1, z: -1 };
     private early = 0;
+    private readonly path: Path;
+    // skipOccupied only: where own logs actually went, the current log's candidate slot, fires by tile.
+    private readonly placed = new Map<number, { slot: number; tick: number }>();
+    private candidate: { i: number; slot: number; full: boolean } | null = null;
+    private litSlot = -1;
+    private readonly ledger = new FireLedger();
+    private readonly watchTiles: Tile[] = [];
 
     constructor(private readonly ctx: RoleContext) {
         this.o = fmRowOptions(ctx.options);
-        this.plan = rowPlan(this.o.row);
+        this.path = this.o.tiles ?? this.o.row;
+        this.plan = rowPlan(this.path, S03_LOGS, this.o.spareTiles);
         this.own = ownLogs(this.plan.length, this.o.part, this.o.parts);
+        if (this.o.skipOccupied) {
+            // Every tile a log may land on, with room for one-dropper skips past the layout's end.
+            const seen = new Set<string>();
+            const end = plannedTiles(this.path, this.o.parts, this.o.spareTiles, this.plan.length).at(-1)!.slot + 2 * INVENTORY;
+            for (let s = 0; s <= end; s++) {
+                const t = pathTile(this.path, s);
+                if (!seen.has(tileKey(t))) seen.add(tileKey(t)) && this.watchTiles.push(t);
+            }
+        }
+    }
+
+    private isOwn(i: number): boolean {
+        return inventoryOf(i) % this.o.parts === this.o.part;
+    }
+
+    /** Where log i lies: where it was dropped (skipOccupied), else its planned tile. */
+    private tileOf(i: number): Tile {
+        const p = this.placed.get(i);
+        return p ? pathTile(this.path, p.slot) : this.plan[i]!.tile;
     }
 
     private get s(): BotWorldState | null {
@@ -528,7 +555,10 @@ export class FmRow {
         this.cursor = resumeCursor(this.plan, this.own, ground);
         if (this.cursor > 0) {
             // A restart mid-row: SCORED's progress is relearned from the fires; until then, pace as if it starts now.
-            for (let c = 0; c < this.cursor; c++) this.dropped.set(this.own[c]!, -1);
+            for (let c = 0; c < this.cursor; c++) {
+                this.dropped.set(this.own[c]!, -1);
+                if (o.skipOccupied) this.placed.set(this.own[c]!, { slot: this.plan[this.own[c]!]!.slot, tick: -1 });
+            }
             this.start = this.s!.tick;
             ctx.log('resume', { cursor: this.cursor, next: this.own[this.cursor] });
         } else {
@@ -574,6 +604,13 @@ export class FmRow {
         let heartbeat = Date.now();
         while (!ctx.signal.aborted) {
             const r = await waitUntil(ctx.sdk, fired, { maxTicks: 100 });
+            if (r.ok && o.start === 'cue' && o.cueAt === 'written') {
+                // A dropper that logs in after the cue counts from when it was written, not from now.
+                const ms = readJson<{ ms: number }>(join(o.cueDir, GO_FILE))!.ms;
+                const t = cueTick(r.tick, Date.now(), ms, o.tickMs);
+                ctx.log('cue', { seenTick: r.tick, writtenMs: ms, tickMs: o.tickMs, cueTick: t });
+                return t;
+            }
             if (r.ok) return r.tick;
             if (Date.now() - heartbeat > 60_000) {
                 ctx.log('armed: waiting', { start: o.start });
@@ -590,24 +627,90 @@ export class FmRow {
         if (p.lit >= this.plan.length) return;
         const frontier = this.plan[p.lit]!.tile;
         let locs: NearbyLoc[] = st.nearbyLocs;
-        if (chebyshev(pos(st), frontier) > 14) locs = await this.ctx.sdk.scanNearbyLocs(o.scanRadius).catch(() => st.nearbyLocs);
-        const burning = (t: Tile) => locs.some(l => l.x === t.x && l.z === t.z && FIRE.test(l.name));
-        // Another part's logs are not seen while private; their fires are the only sign, so they always count.
-        const mayCount = (i: number) => inventoryOf(i) % o.parts !== o.part || this.dropped.has(i);
-        const next = advance(p, this.plan, burning, mayCount, st.tick);
-        if (next !== p) {
-            this.progress = next;
-            if (Math.floor(next.lit / 10) > Math.floor(p.lit / 10) || next.lit >= this.plan.length) this.ctx.log('progress', { lit: next.lit, tick: st.tick });
+        let view = 14;
+        if (chebyshev(pos(st), frontier) > 14) {
+            const scanned = await this.ctx.sdk.scanNearbyLocs(o.scanRadius).catch(() => [] as NearbyLoc[]);
+            if (scanned.length > 0) [locs, view] = [scanned, o.scanRadius - 1];
         }
+        const burning = (t: Tile) => locs.some(l => l.x === t.x && l.z === t.z && FIRE.test(l.name));
+        // An empty loc list is a failed scan, not a view with nothing in it: it must not clear the ledger's tiles.
+        if (o.skipOccupied && locs.length > 0) for (const t of this.watchTiles) if (chebyshev(pos(st), t) <= view) this.ledger.watch(t, burning(t), st.tick);
+        if (o.cueAt === 'written' && p.lit === 0) {
+            const c = catchUp(this.plan.length, i => this.fireSlot(i, burning), this.start, st.tick);
+            if (c) {
+                [this.progress, this.litSlot] = [c.progress, c.litSlot];
+                this.ctx.log('catch-up', { lit: c.progress.lit, slot: c.litSlot, tick: st.tick });
+            }
+        }
+        const from = this.progress;
+        if (o.skipOccupied) {
+            const r = advanceFresh(from, this.litSlot, this.plan.length, (i, s) => this.freshFireAt(i, s), st.tick);
+            [this.progress, this.litSlot] = [r.progress, r.litSlot];
+        } else {
+            // Another part's logs are not seen while private; their fires are the only sign, so they always count.
+            const mayCount = (i: number) => !this.isOwn(i) || this.dropped.has(i);
+            this.progress = advance(from, this.plan, burning, mayCount, st.tick);
+        }
+        const next = this.progress;
+        if (next !== p && (Math.floor(next.lit / 10) > Math.floor(p.lit / 10) || next.lit >= this.plan.length)) this.ctx.log('progress', { lit: next.lit, tick: st.tick });
         for (const [i, t] of this.dropped) {
             if (i < this.progress.lit || this.lost.has(i) || t < 0) continue;
             const l = this.plan[i]!;
-            if (chebyshev(pos(st), l.tile) > 14 || burning(l.tile)) continue;
-            if (!st.groundItems.some(g => g.x === l.tile.x && g.z === l.tile.z && g.name.toLowerCase() === l.tier.name.toLowerCase())) {
+            const tile = this.tileOf(i);
+            if (chebyshev(pos(st), tile) > 14 || burning(tile)) continue;
+            if (!st.groundItems.some(g => g.x === tile.x && g.z === tile.z && g.name.toLowerCase() === l.tier.name.toLowerCase())) {
                 this.lost.add(i);
                 this.ctx.log('lost', { i, tier: l.tier.name, droppedAt: t, tick: st.tick });
             }
         }
+    }
+
+    /** For catchUp: the slot of a fire on log i now (skipOccupied: where it was dropped, else anywhere its spares reach). */
+    private fireSlot(i: number, burning: (t: Tile) => boolean): number | null {
+        const placed = this.placed.get(i);
+        if (placed) return burning(pathTile(this.path, placed.slot)) ? placed.slot : null;
+        const first = this.plan[i]!.slot;
+        const last = this.o.skipOccupied ? Math.min(first + this.o.spareTiles, blockLast(i, this.plan.length, this.o.spareTiles, this.o.parts)) : first;
+        for (let s = first; s <= last; s++) if (burning(pathTile(this.path, s))) return s;
+        return null;
+    }
+
+    /**
+     * For advanceFresh: the fresh fire that lit log i. An own log burns where it was
+     * dropped, seen at or after the drop. Another part's log lies somewhere from the slot
+     * after the last fire (or its planned slot) to its block's end; the first fresh fire there counts.
+     */
+    private freshFireAt(i: number, from: number): number | null {
+        if (this.isOwn(i)) {
+            const d = this.placed.get(i);
+            if (!d) return null;
+            const since = this.ledger.freshSince(pathTile(this.path, d.slot));
+            return since !== null && since >= d.tick ? d.slot : null;
+        }
+        const first = Math.max(from, this.plan[i]!.slot);
+        const last = Math.min(blockLast(i, this.plan.length, this.o.spareTiles, this.o.parts), first + 2 * INVENTORY);
+        for (let s = first; s <= last; s++) if (this.ledger.freshSince(pathTile(this.path, s)) !== null) return s;
+        return null;
+    }
+
+    /**
+     * skipOccupied: the tile own log j goes on. It starts at its planned slot, or the slot
+     * after the previous log where a skip pushed that one on, and moves on past any
+     * occupied tile in view, never beyond its block (`blockLast`).
+     */
+    private chooseTile(j: number, st: BotWorldState): Tile {
+        let c = this.candidate;
+        if (c?.i !== j) c = this.candidate = { i: j, slot: Math.max(this.plan[j]!.slot, (this.placed.get(j - 1)?.slot ?? -1) + 1), full: false };
+        const inView = (s: number) => {
+            const t = pathTile(this.path, s);
+            return chebyshev(pos(st), t) <= 14 && occupied(t, st.nearbyLocs, st.groundItems);
+        };
+        if (!c.full && inView(c.slot)) {
+            const r = placeSlot(c.slot, blockLast(j, this.plan.length, this.o.spareTiles, this.o.parts), inView);
+            this.ctx.log(r.full ? 'skip: block full' : 'skip', { i: j, from: c.slot, to: r.slot, tile: pathTile(this.path, r.slot), tick: st.tick });
+            [c.slot, c.full] = [r.slot, r.full];
+        }
+        return pathTile(this.path, c.slot);
     }
 
     /** One tick of the drop loop. True when a log was dropped. */
@@ -620,8 +723,9 @@ export class FmRow {
             await this.restock();
             return false;
         }
-        if (!at(st, log.tile)) {
-            await this.walk(log.tile, st.tick);
+        const tile = o.skipOccupied ? this.chooseTile(j, st) : log.tile;
+        if (!at(st, tile)) {
+            await this.walk(tile, st.tick);
             return false;
         }
         const now = st.tick;
@@ -644,10 +748,12 @@ export class FmRow {
         const early = now < earliestDrop(n, o);
         if (early) this.early++;
         this.dropped.set(j, now);
+        if (o.skipOccupied) this.placed.set(j, { slot: this.candidate!.slot, tick: now });
         this.cursor++;
-        ctx.log('drop', { i: j, tier: log.tier.name, tick: now, ms: Date.now(), target, need: n, lit: this.progress.lit, ...(early ? { early } : {}) });
+        const where = o.skipOccupied ? { slot: this.candidate!.slot, tile } : {};
+        ctx.log('drop', { i: j, tier: log.tier.name, tick: now, ms: Date.now(), target, need: n, lit: this.progress.lit, ...where, ...(early ? { early } : {}) });
         const after = this.own[this.cursor];
-        if (after !== undefined && inventoryOf(after) === k) await this.walk(this.plan[after]!.tile, now, true);
+        if (after !== undefined && inventoryOf(after) === k) await this.walk(o.skipOccupied ? this.chooseTile(after, st) : this.plan[after]!.tile, now, true);
         return true;
     }
 
@@ -676,6 +782,13 @@ export class FmRow {
         const load = loadFor(this.plan, this.own, this.cursor);
         const t0 = this.s?.tick ?? 0;
         const has = () => load.every(l => this.heldCount(l.tier) >= l.n);
+        if (o.restock.kind === 'held') {
+            // A held dropper logs in carrying its inventory and has no bank trip to fall back on.
+            const short = load.filter(l => this.heldCount(l.tier) < l.n).map(l => `${l.n} ${l.tier.name} (holds ${this.heldCount(l.tier)})`);
+            if (short.length > 0) throw new Error(`restock held: short of ${short.join(', ')}; log in carrying the inventory`);
+            ctx.log('held', { inventory: inventoryOf(this.own[this.cursor]!), load: load.map(l => `${l.n} ${l.tier.name}`).join(', ') });
+            return;
+        }
         this.phase('restock', { inventory: inventoryOf(this.own[this.cursor]!), load: load.map(l => `${l.n} ${l.tier.name}`).join(', ') });
         if (o.restock.kind === 'cheat') {
             if (!isLocalServer()) throw new Error('restock kind cheat is for the local lab only');
@@ -692,7 +805,7 @@ export class FmRow {
             const w = await withdrawMany(ctx.sdk, load.map(l => ({ item: new RegExp(`^${l.tier.name}$`, 'i'), n: l.n })));
             await closeBank(ctx);
             if (!w.ok || !has()) throw new Error(`bank withdraw short for ${load.map(l => `${l.n} ${l.tier.name}`).join(', ')} (${w.reason ?? 'short'})`);
-            await this.goTo(this.plan[this.own[this.cursor]!]!.tile);
+            await this.goTo(this.tileOf(this.own[this.cursor]!));
         }
         ctx.log('restocked', { ticks: (this.s?.tick ?? t0) - t0 });
     }
