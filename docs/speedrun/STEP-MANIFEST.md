@@ -379,9 +379,13 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     RUN-ORDER.md R1's bound); that case is historical on any `RUN_COMMIT` at or after c2d9eada.
     The final logout is still checked on the host (`RUN-HOST.md` step 8). A precondition, not a
     line in the totals;
-  - **`RUN_COMMIT` at or after the run-commit floor, `9698b70a`** (#267; main, 02:0x PDT; one check,
-    `git merge-base --is-ancestor 9698b70a "$RUN_COMMIT"`, `RUN-HOST.md` "Credentials"). Its newest
-    entries are #267 (rs/334's snapshot of rs/299's PR #265: `grand-tree.ts` drops `leaveTree`'s one-tick door wait, #240 carrying the exit; and aereck-burst's redundant loopback refusal removed, `sessionGateway` the one guard; entry 8), then 200909b4's #263 (200909b4, rs/326's Firemaking snapshot: rs/245's demo-accepted module, PR #241 into rs/186 as 1cb8ef67; entry 16) and #266 (merge commit fc0b1568, fleet snapshot 3, rs/327: rs/267's single trade-click rule, `noReplyTicks` defaulting to never re-sending with an opt-in re-send after 2 ticks at adjacent sites, and rs/279's S18 side-tile fix for the bone giver; RUN-ORDER.md R24 and R25; it left skills/runecraft.ts out, hence rs/283 below), then d60cee33's #264 (rs/325's snapshot of rs/319's slot-ledger fixes for S07 Woodcutting and S09 Mining, from rs/147 ff20721f; entries 3 and 4, whose text fold-in 18 carries), then d0461244's #234 (rs/280: run on by default after every login, relog, resume and S00, `lib/run-mode.ts`, best effort and recorded, never fatal on the scored path, strict only for the lab opt-out `Step.running: false`; `lib/world.ts` owns `onTutorialIsland`; RUN-ORDER.md O45), #254 (71529b1b, rs/272's melee-rate write-up, docs and lab only; O44, closed), #250 (7cc8afac, rs/312: `openSession` refuses a demo world without a loopback or direct gateway, `allowRelay` a warned opt-out that no caller uses; the precondition of S00 and entry 34), #255 (acec0aec, rs/316's snapshot of rs/186's Magic module at 86051a14: `magic.ts` S02 and S04 with `dropAtStrikeExit`, `handBack: 'keep'` and `RING_CONTRACT.where`; entry 24), #249 (58f98e28, rs/313: Father Aereck's fixed-against-burst dialogue driver), #235 (2ee27d2b, rs/281's Grand Tree snapshot with rs/202's door-exit workaround, marked removable; the floor also carries #240's fix; entry 8) and #247 (173b6992, rs/305: labMain leaves Tutorial Island before the first fixture), then cae93456's
+  - **`RUN_COMMIT` at or after the run-commit floor, `ad820c85`** (#277; main, 04:1x PDT; one check,
+    `git merge-base --is-ancestor ad820c85 "$RUN_COMMIT"`, `RUN-HOST.md` "Credentials"). Its newest
+    entries are #277 (rs/337: `lib/wait.ts` gains an optional observed-tick `idle` bound, default
+    unchanged, and S00's landing wait uses `LANDING_IDLE_TICKS` = 100; entry 34), then bb08bba0's #275
+    (rs/338: `tools/slot-ledger.ts` with its test and fixtures, the `NAME to N [K]` top-up grammar,
+    `ranged.ts`'s S14 and S27 and `smithing.ts`'s S25a free-slot preconditions as reason strings, and
+    smithing's `giveBack` for H21a; the Inventory ledger, entries 7, 10 and 26), then 9698b70a's #267 (rs/334's snapshot of rs/299's PR #265: `grand-tree.ts` drops `leaveTree`'s one-tick door wait, #240 carrying the exit; and aereck-burst's redundant loopback refusal removed, `sessionGateway` the one guard; entry 8), then 200909b4's #263 (200909b4, rs/326's Firemaking snapshot: rs/245's demo-accepted module, PR #241 into rs/186 as 1cb8ef67; entry 16) and #266 (merge commit fc0b1568, fleet snapshot 3, rs/327: rs/267's single trade-click rule, `noReplyTicks` defaulting to never re-sending with an opt-in re-send after 2 ticks at adjacent sites, and rs/279's S18 side-tile fix for the bone giver; RUN-ORDER.md R24 and R25; it left skills/runecraft.ts out, hence rs/283 below), then d60cee33's #264 (rs/325's snapshot of rs/319's slot-ledger fixes for S07 Woodcutting and S09 Mining, from rs/147 ff20721f; entries 3 and 4, whose text fold-in 18 carries), then d0461244's #234 (rs/280: run on by default after every login, relog, resume and S00, `lib/run-mode.ts`, best effort and recorded, never fatal on the scored path, strict only for the lab opt-out `Step.running: false`; `lib/world.ts` owns `onTutorialIsland`; RUN-ORDER.md O45), #254 (71529b1b, rs/272's melee-rate write-up, docs and lab only; O44, closed), #250 (7cc8afac, rs/312: `openSession` refuses a demo world without a loopback or direct gateway, `allowRelay` a warned opt-out that no caller uses; the precondition of S00 and entry 34), #255 (acec0aec, rs/316's snapshot of rs/186's Magic module at 86051a14: `magic.ts` S02 and S04 with `dropAtStrikeExit`, `handBack: 'keep'` and `RING_CONTRACT.where`; entry 24), #249 (58f98e28, rs/313: Father Aereck's fixed-against-burst dialogue driver), #235 (2ee27d2b, rs/281's Grand Tree snapshot with rs/202's door-exit workaround, marked removable; the floor also carries #240's fix; entry 8) and #247 (173b6992, rs/305: labMain leaves Tutorial Island before the first fixture), then cae93456's
     #245 (rs/300, the Agility S11a/S17 snapshot: `skills/agility.ts` and its test with
     `untilLevel` and `eatAt: 'land'`, `programs/agility.ts` with every module key declared, rs/155's four
     accepted default fixes, `startStep: 'auto'`, the pitExit click-by-id fallback and the `FAIL_RE`
@@ -420,7 +424,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     stun actions, after #159's `stay2` bury, entry 4), 3dfc217f (#165, rs/162's plain + bury, the
     knife-off line in force, entry 3), b6950915 (#177: a program faults at start on a parameter key
     it does not declare, so each entry's program keys are the program's declared names) and
-    834f376b (#176, rs/210's tick-cadence monitor). Pending, each moving the floor when it lands, and main names each new floor (main's list, 01:4x PDT, with rs/158's): **rs/309** (the shared-layer browser and click fix, under main: `converse.ts` and `dialogue.ts` `advance()` on a dialogue a loc op opened, the unloaded-region click in the click primitive, the re-send of a talk click after a forced move (S11b's door entries), and a shared gate helper for agility.ts and S15's zoo return; RUN-ORDER.md R29, a run blocker for the quest block); **rs/335** (the S18 stun pack's snapshot and browser lab acceptance, entry 6); **rs/186's event-accounting snapshot** (rs/302's `route: false`, RUN-ORDER.md R30) and **slot-ledger snapshot** (rs/304's `tools/slot-ledger.ts`); **the Herblore module** (rs/302's, entry 27); **rs/147's harness snapshot**; and **the Runecraft follow-up snapshot (rs/186; issue pending)**, after rs/186's `route: false` and event-accounting snapshot: runecraft.ts's per-band load (3da83191: `S06_LOAD` 26, with the free-slot precondition, the giver feed, the stock rung and the xp maths on the band's load; S21 stays at 27) and the line-866 opt-in that #266 left out (5b71a031 and b77e80aa, published in 4eebe6cf: the stock rung's receive passes `noReplyTicks: DROPPED_TICKS` and `openMaxTicks: 30`, asserted in the stock-fallback test); **until it is on main, entry 9's stock fallback is ~31 a cycle on any commit, main's included**, and 9 after (entry 9). Off the list since fold-in 15, all inside the floor: rs/281 (#235), rs/316 (#255), rs/312 (#250), rs/280 (#234), rs/325 (#264), rs/267's two pieces with fleet snapshot 3 (rs/327, #266), rs/326 (#263) and rs/334 (#267). Gate tooling on main, not floor
+    834f376b (#176, rs/210's tick-cadence monitor). Pending, each moving the floor when it lands, and main names each new floor (main's list, 01:4x PDT, with rs/158's): **rs/309** (the shared-layer browser and click fix, under main: `converse.ts` and `dialogue.ts` `advance()` on a dialogue a loc op opened, the unloaded-region click in the click primitive, the re-send of a talk click after a forced move (S11b's door entries), and a shared gate helper for agility.ts and S15's zoo return; RUN-ORDER.md R29, a run blocker for the quest block); **rs/335** (the S18 stun pack's snapshot and browser lab acceptance, entry 6); **rs/186's event-accounting snapshot** (rs/302's `route: false`, RUN-ORDER.md R30); **rs/343** (main's `travel.ts` door-start fix: #240's `doorsBehind` excludes a door the run must pass back through, so a run starting within 2 tiles of one stalls ~25 ticks; RUN-ORDER.md R32); **the Herblore module** (rs/302's, entry 27); **rs/147's harness snapshot**; and **the Runecraft follow-up snapshot (rs/186; issue pending)**, after rs/186's `route: false` and event-accounting snapshot: runecraft.ts's per-band load (3da83191: `S06_LOAD` 26, with the free-slot precondition, the giver feed, the stock rung and the xp maths on the band's load; S21 stays at 27) and the line-866 opt-in that #266 left out (5b71a031 and b77e80aa, published in 4eebe6cf: the stock rung's receive passes `noReplyTicks: DROPPED_TICKS` and `openMaxTicks: 30`, asserted in the stock-fallback test); **until it is on main, entry 9's stock fallback is ~31 a cycle on any commit, main's included**, and 9 after (entry 9). Off the list since fold-in 15, all inside the floor: rs/281 (#235), rs/316 (#255), rs/312 (#250), rs/280 (#234), rs/325 (#264), rs/267's two pieces with fleet snapshot 3 (rs/327, #266), rs/326 (#263), rs/334 (#267), rs/338 (#275, the slot-ledger snapshot) and rs/337 (#277). Gate tooling on main, not floor
     items: 5d22252d (#208, `lib/display.ts`) and c4b79f17 (#213, `lib/tab.ts` window helpers);
   - **the login cap**: our simultaneous demo logins, summed across every host, at most 100 with a
     working cap of 80, counted before SCORED logs in (main, 15:35 PDT; `RUN-HOST.md` step 7;
@@ -664,8 +668,20 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   run client's `sdk.sendUseItem` sends it (local engine; not demo-confirmed, RUN-ORDER.md R5). Arrival levels are Defence 1, ~42 HP, Strength 1 and Magic ~76 (inferred, rs/56
   timeline in `quests/README.md` §4).
 - **Postconditions:** quest complete (ledger; reward xp visible: Strength ~97, Attack 99, Defence ~89
-  per `quests/README.md` §2), 3 QP (20 of the 32 so far). Items out: the bow and leftover arrows
-  can go back to a helper. The gree-gree is not needed later.
+  per `quests/README.md` §2), 3 QP (20 of the 32 so far). Items out (the inventory ledger): at the Grand Tree swap (H12)
+  SCORED wields the bow, quivers the arrows and hands back the staff of fire, the mithril scimitar, the
+  knife, the Fight Arena coins and the dead death and chaos runes; it leaves holding the seal, the mould
+  and the sigil (dropped on T15-16; `quest_mm`, none deleted) and Narnode's 10,000 coins and 3 diamonds
+  (back at H13, with the bow, the leftover rune arrows, the amulet of magic and the antipoisons); the
+  gree-gree is dropped at S16's start. **Y's exit need is 4 free slots** with no coin stack held, 3
+  with one: `mm_narnode.rs2:91` refuses below 3, and the coins take their own slot (computed by
+  `slotNeed`; rs/201). **The gree-gree hides the magic tab** (`quest_mm.rs2`
+  `mm_greegree_transmogrify`: `if_settab(null, ^tab_magic)`, restored on unequip, `equip.rs2:100-106`),
+  so the server drops every spell click while it is worn (lab: casts as a monkey timed out, as a human
+  they landed in 4 ticks): every teleport in S15 is cast with it off, T and Y unequipping first (1
+  free slot). Settled (rs/201's audit): rope pins fall only in segment N, N's and O's preconditions
+  require SCORED human and the gree-gree first goes on in R, so the pin escape's Varrock cast is never
+  made disguised; prayers still work as a monkey (R's Protect from Melee, measured).
 - **Status: H-P lab-proven end to end, Q-Z unrun** (A-G run). The Ape Atoll half (segments H-Z,
   ~3,300 of ~4,400 stock ticks) is written and lab-proven 3 of 3 from H to P (rs/201: H to M 1,466 m,
   N 117, O 388, P 454); Q to Z has never been scripted or run as one route (rs/185). rs/201 writes it fresh, segment by
@@ -765,7 +781,12 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   logs, button 8889, drop, bury]`; on R+2 send only the tree click, which lands on R+3 and rolls at
   once. Accept a trade on a roll label once the last bone is buried, then bootstrap the knife cycle
   again (5 ticks per load, roll gap 8 instead of 3).
-- **Postconditions:** Woodcutting 99; Prayer about 94; axe, knife and logs kept. Items out: none.
+- **Postconditions:** Woodcutting 99; Prayer about 94; the knife and 1 normal log kept (`keepProducts: 1`, every
+  oak and willow band starting by dropping normal logs past 1, 0 ticks); T07-08's Camelot runes held.
+  Items out: the rune axe, handed back at S07's end in H4e's swap (`woodcutting:hand-back`, 4 ticks,
+  +5 i, in force), or dropped by `dropAxe` at 0 ticks once the last bone load carries the runes (21
+  bones, law 1 and air 5: rs/329's `finalExtras` and rs/333's `bones.lastLoad`, both pending on main)
+  (rs/319, d60cee33; the inventory ledger's H4.x, H4e and T07-08).
 - **Ticks:** expected **3,053**, best **2,969** knife (RUN-ORDER.md S07). **The knife on the demo** (rs/261's
   cairn_chops, 2026-10-22 04:03-04:22Z, 1,732-1,782 online, 0.332 s a tick, Rimmington oaks and
   Draynor-west willows, rune axe, no bury, `measureDrops` 120; hiscore 3,329, #1;
@@ -996,16 +1017,19 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   than retrying. Without rs/207 the knife cadence is lost for the rest of the step, up to ~+1,054
   (RUN-ORDER.md R18), so `RUN_COMMIT` must be at or after e5d8a058 (the run-commit floor covers it;
   entry 0).
-- **Preconditions:** rune pickaxe, knife and about 5 normal logs, Fletching 1; Mining 64; position on
+- **Preconditions:** the rune pickaxe and 1 normal log from H4p at S09's start (6 free: the 2 kit slots
+  and the band's 4; rs/319, d60cee33), the knife and S07's kept log, so 2 normal logs, Fletching 1; Mining 64; position on
   the rotation's first standing tile. The same host-gate rule as Woodcutting.
-- **Postconditions:** Mining 99; pickaxe, knife and logs kept: **no log used over 1,050 ores in the page**
+- **Postconditions:** Mining 99; the knife kept, and `mining.exit` drops every pickaxe, log and leftover
+  ore, gem or arrow shaft at 99 (0 ticks, rs/319): **no log used over 1,050 ores in the page**
   (10 logs at the start and 10 at the end over 3,184 knife ticks on `stay2` with `bury`, no Fletching
   xp, 3.033 ticks per ore; one-sided 95% upper bound 0.94 logs per 1,000 knife ticks; m, lab, rs/226;
   `skills/mining.md` section 7 "Logs over a long lap" and `speedrun/lab/measure-mine-logs.ts`, PR
   pending). knife-mine's ore drop on the same label clears the weak fletch queue the tick it would
   fire, so about 5 logs is enough and no log margin applies. rs/230's chain agrees: 0 logs burned in
   3,493 knife ticks from creation and in 14 knife runs of ~7,000 knife ticks (m, lab; it reads the
-  kit as needing 1-2), so the ~5 stand. Items out: none.
+  kit as needing 1-2), so 2 are enough (rs/318 ruling 1: S07's kept log and H4p's). Items out: the
+  pickaxe and the logs, dropped at the exit.
 - **Ticks:** expected **3,157**, best **3,148** (knife). **On the demo** (rs/259's cairn_rocks to 99, m-demo): the
   uncontested knife ran **3.019 ticks per xp ore over 647 ores** (637 gaps of 3, 4 of 6, 0 slips), respawn
   11-12 at 1,534-1,744 online with the five-rock lap at 3.00 throughout, the gate 20/20 with 0 catch-ups at
@@ -1147,9 +1171,19 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   never a diagonal corner and never 2-3 tiles away (its current `follow: 3` / `walkNear(receiver, 1)`
   allows both, losing about 1 in 3 top-ups; the fix is rs/267's, pending on the helpers' deployed
   commit; RUN-ORDER.md R24). HP 40+.
+- **Status (fold-in 18): the stun pack lab-accepted on the browser (rs/335: restart normalised 1,942,
+  idle 1,990).** SCORED runs the default `idle` (rs/335's rerun: 2,052 band ticks, 449 / 89, walk
+  overhead 0.33 ticks a roll, inside section 6's per-knight 0.16-0.47; top-up stuns 11.80 against
+  12.62); S18 stays 2,000 / 1,908. Bones 201 in idle, the plan's ~200. Fletching reached 99 inside the
+  stuns in idle (240 arrow actions); a low-failure run can end one level short, at most 2 actions and
+  ~1 tick (i). **A top-up stun costs 0.65-0.73 ticks on the browser** (lite 0.1-0.3), ~17 top-ups,
+  **~+11 i, not in the expected** (the row's lite basis sits above the browser's normalised figure).
+  Giver tile at the 25 due top-ups: side 21, corner 0, further 4 (none fired, by design); one
+  side-tile request opened no trade and the next stun covered it, the 1-in-~20 miss rs/279 saw.
 - **Status (fold-in 17):** the helper top-up is on main (main's `thieving.ts` top-up now uses `openMaxTicks` / `maxTicks`, with the same deadline); **the stun pack is built (rs/324's work, 0efc315c on rs/147's branch, 1,799 tests pass), lab acceptance pending rs/335** (browser client, 57-99, against rs/317's 2,056, normalised 1,981, and lite's 1,906-1,992), reaching main through a Thieving snapshot; until then `skills/thieving.ts:639` on main throws 'stun pack not implemented' (RUN-ORDER.md R31). rs/324's scope: `stunPack` declared and off by default; bury, Charge and arrows appended as stun actions after `topUpAction`; a refusal at start without Magic 80, Mage Arena stage 8, the supplies, or the giver on a side tile; restart mode covered. **Demo:** rs/315's cairn_steals (twin, 07:16-07:36Z; `rehearsals/thieving.md`, tip 2ff8814d) confirms the program's behaviour, 0 catch-ups, the 2-tick minimum on 88% of success gaps, reaction p90 2 ms, the last level-up and the logout free; no re-price (its 10-HP band on cake is not the run's shape; 36 forced eats against the sim's 16.4, ~+110 the model does not carry, to be checked if the HP plan changes). **Browser:** rs/317's phase 1, no change for the client (RUN-ORDER.md R30).
 - **Postconditions:** Thieving 99, Magic 99, Fletching 99, Prayer 99 (~200 babydragon bones from 96 on the row in force, 92 with every line held); **570
-  rune arrows kept** for S27. Items out: coins and loot, to a helper.
+  rune arrows kept** for S27, quivered. Items out (the inventory ledger): the finished lower tiers, the
+  knights' coins and loot, the sharks and the blood runes, back at H15's swap (P1).
 - **Ticks:** expected **2,000**, best **1,908** (measured: three end-to-end runs from 57 to 99 with
   the pack took 1,908 / 2,098 / 1,997 at 84-93 failures, lite client, local engine,
   `stun-pack-thieve.ts`; plain 1,986, `research/stun-pack.md` §3, §11). The 12-13 top-ups are
@@ -1588,12 +1622,17 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Preconditions:** 32 QP (17 route + 4 Druidic Ritual + 11 filler; read, `champions_guild.rs2:2`);
   Monkey Madness done (Attack 99, Strength ~97, Defence ~89; rune armour needs base Defence 40,
   read); the trade of 12,000 coins, wizard's mind bomb, silk, lobster pot, unfired bowl, 3 planks, 12
-  steel nails, hammer (held from H21a), the mithril scimitar (held from H11), an adamant full helm,
+  steel nails, hammer (H21a's, handed back at H21d and returned in H22), the mithril scimitar (H11's,
+  handed back at the Grand Tree swap and returned in H22; the helm, the amulet of strength and the
+  scimitar are worn at the hand-off, so S26 starts with 2 free), an adamant full helm,
   amulet of strength, about 10 sharks, Varrock, Lumbridge and Falador runes, and ~114,000 coins for
   Scavvo's rune chainbody and platelegs, which SCORED buys upstairs on arrival (`SUPPLIES.md` H22;
   the rune scimitar and helm are unobtainable, rs/124; no glory, rs/123).
 - **Postconditions:** quest complete; 18,650 Strength and Defence (read); 2 QP. Items out: armour can
-  go back to a helper.
+  go back to a helper; Oziach's maze key (never deleted, `oziach.rs2:122-126`) and the hammer are
+  dropped on T26-27 and the m'speak amulet in S26 (the inventory ledger). S26's walked legs stay
+  walked: no castable teleport shortens them, and a charged glory is unobtainable (rs/41, GE check
+  2026-10-22 09:05Z).
 - **Ticks:** expected **1,334, measured** (burst, fold-in 14: rs/258's three burst chains, 1,304 / 1,334 / 1,365, n = 3;
   lab, lite client, browser acceptance pending (O51), mithril kit; rs/258 execution 1 via rs/185 and rs/158,
   2026-10-22), best **1,304** (measured, the fastest chain; 1,364 inferred before, the single pass less the
@@ -1836,7 +1875,12 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Preconditions:** base Magic at least 75 for Fire Wave (boosted check, read, `magic.rs2:22`;
   Kolodion's start check is `stat_base(magic) >= 60`); staff of fire, about 70 blood + 400 air
   runes, a knife for webs, 1 magic potion as insurance, prayer potions, Ardougne runes
-  (`quests/README.md` §4 step 9).
+  (`quests/README.md` §4 step 9). **The entry check** (`mage_arena.rs2:100-138`,
+  `~can_enter_mage_arena`, called at `kolodion.rs2:93`): no arrows, helmet, body armour, legs, shield,
+  gloves or non-staff weapon carried or worn, so H13's swap takes the bow, the leftover rune arrows and
+  the Khazard helmet and platemail, and the gree-gree is dropped before Kolodion (the inventory
+  ledger; rs/158). The module is not built (rs/185, spec pending; its spec carries the check and H13's
+  swap).
 - **Postconditions:** Charge available (ledger); base Magic 80-81 (Kolodion pays 2,787-3,129 base,
   measured, rs/52).
 - **Ticks:** expected **418** (burst, fold-in 14, inferred upper; fight 331 measured at base 71 + potion,
@@ -1950,8 +1994,10 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   Expected **205**, best **203** on the lite client. **H4's slots** (rs/158's rule on rs/285's lab): SCORED drops the 2 body runes with
   the starter junk on T01-02, and S02 drops the 11 mind runes at its exit (nothing on the route casts
   with either; the starter's water runes go too, the staff of water covering water), and S04's exit drops the tinderbox and the
-  leftover 4 earth runes (the 5 diamond enchants spend H1's 50) on T04-05's walk out, because H4 needs 23 free slots and SCORED would arrive at Doric's with 22, and S06 needs 26-27 (entry 9); that leaves 1
-  spare, confirmed (swap 6, 6; receive 6, 6; 4 of 4 trials; `skills/magic.md` section 9). **Not on the walk**: the walk to Doric's with the casts riding measured
+  leftover 4 earth runes (the 5 diamond enchants spend H1's 50) on T04-05's walk out, because S06 needs 26 a load (entry 9). **H4 needs 14 free slots since H4k** took the kits (the 13
+  unstackables and the new law stack, the air merging into the held one; 23 before, with the kits), and
+  the inventory ledger reads 27 free at H4 after the ring swap (rs/318 ruling 10); the 23-slot trial
+  passed with 1 spare (swap 6, 6; receive 6, 6; 4 of 4 trials; `skills/magic.md` section 9). **Not on the walk**: the walk to Doric's with the casts riding measured
   252-258 against ~240 for casting standalone and teleporting, and 2 of 4 riding runs went wrong
   (`research/run-transitions.md` §5). Wind Strike leaves its 5 level-up pages open: answer them
   with a blind burst on the next label (0-7 ticks, `research/levelup-cost.md` §4).
@@ -2110,9 +2156,10 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   are T04-05 (entry 11; RUN-ORDER.md O6).
 - **Preconditions:** 6 clay, 4 copper ore, 2 iron ore (`quests/README.md` §4 step 1). **S04's last 20 enchanted
   rings go back in H4's trade**, and H4 is now clay 6, copper 4, iron 2, the air talisman, law 2 and air 6 (no water, no
-  kits: those come at H4k, S07); SCORED drops the 180-coin reward on T05-06's run. The rings go back as a `swap()` in the same trade (`lib/trade.ts`, on main, #230; `trade.rs2:161-190` counts offered items as freed, so no extra slots): SCORED's half is rs/185's S05 module, `dorics-quest.ts`, using magic.ts's `enchantedRingSpecs(state)`; the trade giver's half already exists, HS1's `giveOpenTrade` (`speedrun/helpers/mule.ts:345-376`), which calls `lib/trade.ts` `give()` with `expectTheirs: ANY_OFFER` and re-accepts after SCORED's offer resets both accepts (`mule.test.ts:128` tests the two-way swap; rs/41). Fallback: a give-only trade at Doric's with the same giver, +4-8 (RUN-ORDER.md sensitivity); the swap costs 0 (6 ticks with the 20 rings and 6 without, m, rs/285). **Slots:** H4 needs 23 free (22
-  unstackables and the new law stack); SCORED has them only after dropping the 2 body runes on T01-02 and
-  the 11 mind runes at S02's exit (entry 24), with 1 to spare (confirmed, 4 of 4 trials, `magic.md` section 9).
+  kits: those come at H4k, S07); SCORED drops the 180-coin reward on T05-06's run. The rings go back as a `swap()` in the same trade (`lib/trade.ts`, on main, #230; `trade.rs2:161-190` counts offered items as freed, so no extra slots): SCORED's half is rs/185's S05 module, `dorics-quest.ts`, using magic.ts's `enchantedRingSpecs(state)`; the trade giver's half already exists, HS1's `giveOpenTrade` (`speedrun/helpers/mule.ts:345-376`), which calls `lib/trade.ts` `give()` with `expectTheirs: ANY_OFFER` and re-accepts after SCORED's offer resets both accepts (`mule.test.ts:128` tests the two-way swap; rs/41). Fallback: a give-only trade at Doric's with the same giver, +4-8 (RUN-ORDER.md sensitivity); the swap costs 0 (6 ticks with the 20 rings and 6 without, m, rs/285). **Slots:** H4 needs 14 free since H4k (the 13
+  unstackables and the new law stack, the air merging; 23 before, with the kits); the inventory ledger
+  reads 27 free after the ring swap, with the 2 body runes dropped on T01-02 and the 11 mind runes at
+  S02's exit (entry 24) (rs/318 ruling 10; the 23-slot trial passed 4 of 4, `magic.md` section 9).
 - **Postconditions:** 1,300 Mining (49); 1 QP.
 - **Ticks:** expected **17** (burst, fold-in 14, inferred), best **17** (the expected), fixed fallback **22** (measured), fallback **43** (stock,
   measured): `quests/README.md` §3 row's 65 / 60 / 90 less its travel, 43 fixed and burst and 47 stock
@@ -2213,6 +2260,15 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   (`docs/speedrun/rehearsals/HARNESS.md` on rs/147's branch). The hiscore check: Overall reads 56
   against the tick log's 57 for the account, one apart (m, same session). SCORED's S00 stays done
   at 8; no total changes.
+- **SCORED's position, confirmed by public reads (2026-10-22; main via rs/158):** its hiscore shows
+  the overall row only (rank 65457, no trained skill, overall stamp 2 s) and its name is absent from
+  /playerpositions: logged out, untouched since S00, 8 ticks on the clock.
+- **Rehearsal and fresh-account note (rs/337, browser client, bgsrv-mac, 5 of 5):** the Lumbridge
+  rebuild after the skip costs 1 observed tick (0.58-0.59 s wall on a quiet machine; a starved tab
+  stretches the wall time to 9-21 s, still 1 tick), and S00's landing wait tolerates up to 100 ticks
+  of silence (`LANDING_IDLE_TICKS`, `start.ts` and `lib/wait.ts`, #277) in place of failing at 6 s.
+  1 of 7 unthrottled fresh-account runs failed with 'the guide did not answer within 12 ticks' (not
+  reproduced; reported to main). SCORED's S00 is done, so none of this touches the scored run.
 - **Precondition: a loopback gateway, enforced on the floor** (rs/287; main, 23:52 PDT; RUN-ORDER.md S00).
   The skip's guide talk has a 12-tick window: rs/287's fresh throwaway ran with an env that had no
   `GATEWAY_URL`, went through the demo's public relay, reached first state at client tick 62 and
@@ -2432,6 +2488,20 @@ rs/158, which owns the loads and hand-offs. A `?` marks a count nobody has measu
 replace it from a census (rs/196, rs/201, the quest modules' exit censuses, the run.ts dress
 rehearsal), never from a guess.
 
+**Fold-in 18 (rs/318) cleared every failing row** on rs/158's rulings: P1, every item leaves at its
+last use, by a 0-tick drop on the next leg or as a `swap` in the next existing trade; P2, an item dead
+for a long stretch goes back to a helper in an existing swap and returns in an existing hand-off
+before its next use; P3, no new trade unless unavoidable, each +5 i on its step; P4, anything else
+is a finding for rs/158. rs/304's walker reads **89 rows: 87 pass, 2 unknown (S18's and S25c's own
+peaks), 0 fail** (83 rows, 22 pass, 4 unknown and 57 failing before). Three trades are new: H4e
+(S07's end, the Camelot runes in and the axe back), H4p (the Mining kit at S09's arrival) and H17e
+(T21-22's runes after S21's last craft). Three sub-rows put a need where it falls: S15 Y (Narnode's
+reward, the step's exit need), S18 load 0 (H14's bones spent before the first top-up) and S25d bank
+(the notes banked on the first booth visit). **Food is not subtracted** unless a floor is measured
+(S17's 2): the top-ups (`NAME to N`) and the walk carry the no-eat count, the slot bound. **Quest
+leftovers are read from the quests' scripts**, each row citing the file and line, and each leaves on
+the next leg or trade.
+
 **Row grammar** (agreed with rs/186 and rs/304, 2026-10-22):
 
 - The table's header line is exactly `| row | in | out | equip | needAtStart | source |`; the table
@@ -2518,7 +2588,7 @@ S10b) or fire (S10b to S14) supplies its element.
 | S15 | m'speak amulet x1 [u]; monkey greegree x1 [u]; gnome royal seal x1 [u]; monkey amulet mould x1 [u]; 10th squad sigil x1 [u] (kept after the quest, all untradeable) | gold bar x1 (hand-in); ball of wool x1 (consume); monkey bones x1 (consume); banana x5 (hand-in); law rune x3 (consume: Ardougne at T and Varrock at Y); water rune x2 (consume); air rune x3 (consume); fire rune x1 (consume) | +m'speak amulet; -amulet of magic; +monkey greegree; -magic shortbow | 2 | rs/201's slot table: D, K and L at 26 against 24 at the swap, bow worn (m); MAN entry 2 (r); the leftovers (`mm_narnode.rs2:131`, `mm_zooknock.rs2:195,222`, `quest_mm.rs2:1087`, `mm_garkor.rs2:40`, none deleted) (r); every teleport cast with the gree-gree off (rs/201, r); food and doses not subtracted (i) |
 | S15 Y | coins x10000 [s]; diamond x3 [u] (Narnode's reward, `mm_narnode.rs2:96-97`) | - | - | 4 | Y's exit need: `mm_narnode.rs2:91` refuses below 3 free, and the coins take a 4th when no coin stack is held (Fight Arena's go back at H12): 4, or 3 with a coin stack, computed by `slotNeed` (rs/318 ruling 5; rs/201; rs/158 02:2x PDT, r) |
 | T15-16 | - | law rune x2 (consume: Ardougne teleport); water rune x2 (consume); gnome royal seal x1 (drop: Monkey Madness's leftovers, untradeable); monkey amulet mould x1 (drop); 10th squad sigil x1 (drop) | - | 0 | RUN-ORDER T15-16 (r); the knife, back at H13 on the landing, cuts the webs (r); Monkey Madness's exit drops, rs/201 (r) |
-| H13 | blood rune x70 [s]; air rune x400 [s]; magic potion x1 [u]; prayer potion x2 [u]; law rune x4 [s] (2 Ardougne); water rune x4 [s]; staff of fire x1 [u] (back from H12: Fire Wave, Charge); knife x1 [u] (back from H12: T15-16's webs) | magic shortbow x1 (swap: back in H23); rune arrow all (swap: unquivered first, back in H23); amulet of magic x1 (swap: dead since S15); khazard helmet x1 (swap: unworn first); khazard platemail x1 (swap: unworn first); coins all (swap: Narnode's reward); diamond x3 (swap); antipoison all (swap: dead since S15); fire rune all (swap: the staff covers fire) | +staff of fire; -monkey greegree | 6 | SUPPLIES H13 (r); rs/318 ruling 5 (r); Kolodion refuses arrows, helmets and body armour carried or worn (`mage_arena.rs2:100-138`), so the armour and the arrows leave here, overruling 'arrows quivered throughout' for S16 to S18 (rs/158 02:2x PDT, r); owner rs/320, H13 out and back 6 / 6 / 6 (m, lab); the bow stays with cairn_mule1 until it passes to h92 for H23; staging rs/331, `helpers/staging.md` ba7303c5 (r) |
+| H13 | blood rune x70 [s]; air rune x400 [s]; magic potion x1 [u]; prayer potion x2 [u]; law rune x4 [s] (2 Ardougne); water rune x4 [s]; staff of fire x1 [u] (back from H12: Fire Wave, Charge); knife x1 [u] (back from H12: T15-16's webs) | magic shortbow x1 (swap: back in H23); rune arrow all (swap: unquivered first, back in H23); amulet of magic x1 (swap: dead since S15); khazard helmet x1 (swap: unworn first); khazard platemail x1 (swap: unworn first); coins all (swap: Narnode's reward); diamond x3 (swap); antipoison all (swap: dead since S15); fire rune all (swap: the staff covers fire) | +staff of fire; -monkey greegree | 6 | SUPPLIES H13 (r); rs/318 ruling 5 (r); Kolodion refuses arrows, helmets and body armour carried or worn (`mage_arena.rs2:100-138`), so the armour and the arrows leave here, overruling 'arrows quivered throughout' for S16 to S18 (rs/158 02:2x PDT, r); owner rs/320, H13 out and back 6 / 6 / 6 (m, lab); the bow stays with cairn_mule1 (h92 holds its own for H23, rs/344); staging rs/331, `helpers/staging.md` ba7303c5 (r) |
 | S16 | god staff x1 [u] (`chamber_guardian.rs2:14`); god cape x1 [u] (`chamber.rs2:19`, picked up) | monkey greegree x1 (drop: untradeable, before Kolodion's check); blood rune x? (consume: Fire Wave); air rune x? (consume) | - | 2 | MAN entry 19 (r); the entry check, no arrows, helmet or body armour carried or worn (`mage_arena.rs2:100-138`, r); Charge needs neither the staff nor the cape (`mage_arena.md`, r); the peak, the cape and the staff (r); the casts are not recorded (i) |
 | T16-18 | - | law rune x2 (consume: Ardougne teleport); water rune x2 (consume); god staff x1 (drop: untradeable, dead); god cape x1 (drop); shark x8 (drop: down to S18's 2; the count is the walk's no-eat bound, and the module drops all but 2) | - | 0 | RUN-ORDER T16-18 (r); P1 (r); the food rule (rs/158 02:2x PDT, r) |
 | H14 | blood rune x500 [s]; air rune x500 [s]; headless arrow x4410 [s]; bronze arrowtips x60 [s]; iron arrowtips x90 [s]; steel arrowtips x135 [s]; mithril arrowtips x1485 [s]; shark to 2 [u]; dragon bones x16 [u] (every free slot less one) | prayer potion all (swap: dead after S16); magic potion x1 (swap); knife x1 (swap: back in H18) | - | 21 | SUPPLIES H14 (r); the knife out here keeps S18's loads at 15-21 (rs/158 02:2x PDT, r); babydragon bones under the dragon-first rule (r); staging rs/331, `helpers/staging.md` ba7303c5 (r) |
@@ -2546,8 +2616,8 @@ S10b) or fire (S10b to S14) supplies its element.
 | S24 legs | - | law rune x2 (consume: Falador and Varrock teleports); air rune x6 (consume); water rune x1 (consume); fire rune x1 (consume) | - | 0 | RUN-ORDER S24 legs (r) |
 | H21a | hammer x1 [u]; bars x25 [u] (the first of 31 trades of 24-25; each later trade takes the 5 platebodies back) | gold bar x1 (swap: dead since S24) | - | 26 | SUPPLIES H21a (r); MAN entry 10 (r); rs/318 ruling 8, every dead item back in the swap, owner rs/304 (`giveBack` on `smithing.ts`) (r); staging rs/331, `helpers/staging.md` ba7303c5 (r) |
 | S25a | platebody x5 [u] (back to the helper in the next trade) | bars x25 (consume: smithed) | - | 0 | MAN entry 10 (r) |
-| H21d | chisel x1 [u]; uncut diamond x391 [n]; guam potion (unf) x41 [n]; irit potion (unf) x405 [n]; eye of newt x432 [n] (H21d and H21e in one trade) | platebody x5 (swap: the last 5, H21a's final hand-back); hammer x1 (swap: back in H22) | - | 5 | SUPPLIES H21d, H21e (r); the hammer out and back for S25e's 28 free (rs/158 02:2x PDT, r); staging rs/331, `helpers/staging.md` ba7303c5 (r) |
-| S25d bank | - | uncut diamond all (deposit: banked on the first booth visit, withdrawn an inventory at a time); guam potion (unf) all (deposit); irit potion (unf) all (deposit); eye of newt all (deposit) | - | 0 | SUPPLIES H21d (r); the first booth visit, before S25d's own need (r) |
+| H21d | chisel x1 [u]; uncut sapphire x? [n]; uncut emerald x? [n]; uncut ruby x? [n]; uncut diamond x2 [n] (the gem-table fallback in force: diamonds unobtainable by 2026-10-23, rs/41; supply short, 6,617 of 39,130 base held, owner rs/41, forecast pending); guam potion (unf) x41 [n]; irit potion (unf) x405 [n]; eye of newt x432 [n] (H21d and H21e in one trade) | platebody x5 (swap: the last 5, H21a's final hand-back); hammer x1 (swap: back in H22) | - | 8 | SUPPLIES H21d, H21e (r); supply-fallbacks.md section 4, 2-4 noted gem stacks in place of one (r); the gem counts wait on rs/41's forecast (rs/331's bank read 08:15-08:32Z: sapphire 63, emerald 23, ruby 20, diamond 2) (r); the hammer out and back for S25e's 28 free (rs/158 02:2x PDT, r); staging rs/331, `helpers/staging.md` ba7303c5 (r) |
+| S25d bank | - | uncut sapphire all (deposit: banked on the first booth visit, withdrawn an inventory at a time); uncut emerald all (deposit); uncut ruby all (deposit); uncut diamond all (deposit); guam potion (unf) all (deposit); irit potion (unf) all (deposit); eye of newt all (deposit) | - | 0 | SUPPLIES H21d (r); the first booth visit, before S25d's own need (r) |
 | S25d | - | chisel x1 (deposit: with the last cut gems, for S25e's 28 free) | - | 27 | MAN entry 28: the chisel and 27 uncut a booth cycle (i); the chisel banked at the last visit (rs/158 02:2x PDT, r) |
 | S25e | - | - | - | 28 | MAN entry 27; rs/302's herblore.ts precondition, 28 free with the notes banked (r) |
 | H21b | - | - | - | 0 | retired on the stock in force, SUPPLIES H21b (r) |
@@ -2556,6 +2626,6 @@ S10b) or fire (S10b to S14) supplies its element.
 | H22 | coins x126000 [s]; wizard's mind bomb x1 [u]; silk x1 [u]; lobster pot x1 [u]; unfired bowl x1 [u]; plank x3 [u]; steel nails x12 [s]; adamant full helm x1 [u]; amulet of strength x1 [u]; shark to 10 [u]; law rune x5 [s] (Varrock, Lumbridge, Falador, Ardougne); air rune x9 [s]; fire rune x1 [s]; earth rune x1 [s]; water rune x3 [s]; hammer x1 [u] (back from H21d); mithril scimitar x1 [u] (back from H12) | chisel x1 (swap: dead since S25c); staff of fire x1 (swap: unwielded, dead) | +adamant full helm; +amulet of strength; -m'speak amulet; +mithril scimitar | 28 | SUPPLIES H22 (r); rs/318 ruling 5, the scimitar back (r); the helm, amulet and scimitar worn at the hand-off, so S26 starts with 2 free (r); owner rs/320 (r); staging rs/331, `helpers/staging.md` ba7303c5 (r) |
 | S26 | rune chainbody x1 [u] (Scavvo); rune platelegs x1 [u]; anti-dragon shield x1 [u] (`duke_horacio.rs2:63`); maze key x1 [u] (Oziach's, `oziach.rs2:122-126`, never deleted) | coins x126000 (consume: the quest's 12,000 and Scavvo's 114,000); wizard's mind bomb x1 (hand-in); silk x1 (hand-in); lobster pot x1 (hand-in); unfired bowl x1 (hand-in); plank x3 (consume: the hull); steel nails x12 (consume); m'speak amulet x1 (drop: untradeable, dead); law rune x3 (consume: Varrock, Lumbridge and Falador teleports); air rune x9 (consume); fire rune x1 (consume); earth rune x1 (consume); water rune x1 (consume) | +rune chainbody; +rune platelegs; +anti-dragon shield | 1 | MAN entry 13 (r); `quest_dragon` (r): the map parts combined and the Crandor map given to Ned (`crandor_map.rs2:38-40`, `ned.rs2:230-231`); the need, Oziach's key before the magic door takes the four items, Scavvo's armour worn as bought (`dragon_slayer.md` step list, r); rs/258's single pass (m); sharks not subtracted (i) |
 | T26-27 | - | law rune x2 (consume: Ardougne teleport); water rune x2 (consume); maze key x1 (drop: Dragon Slayer's leftover); hammer x1 (drop: dead) | - | 0 | RUN-ORDER T26-27 (r); P1; Dragon Slayer's exit drops, rs/185, issue pending (r) |
-| H23 | cannon base x1 [u]; cannon stand x1 [u]; cannon barrels x1 [u]; cannon furnace x1 [u]; cannonball x1200 [s]; ranging potion x3 [u]; super antipoison x2 [u]; super attack x1 [u]; super strength x1 [u]; shark to 12 [u] (for S17, counting S26's leftovers); magic shortbow x1 [u] (back from H13); rune arrow x? [s] (Monkey Madness's leftover, back from H13) | - | - | 16 | SUPPLIES H23 (r); rs/318 ruling 5 (r); owner rs/320 (r); the giver h92, whose cannon trade gives the set, the balls and the bow: staging conditions, the bow passing from cairn_mule1 (H13) to h92 between S16 and S26, and `cannon.ts`'s serve offering it (rs/41's fix); staging rs/331, `helpers/staging.md` ba7303c5 (r) |
+| H23 | cannon base x1 [u]; cannon stand x1 [u]; cannon barrels x1 [u]; cannon furnace x1 [u]; cannonball x1200 [s]; ranging potion x3 [u]; super antipoison x2 [u]; super attack x1 [u]; super strength x1 [u]; shark to 12 [u] (for S17, counting S26's leftovers); magic shortbow x1 [u] (back from H13); rune arrow x? [s] (Monkey Madness's leftover, back from H13) | - | - | 16 | SUPPLIES H23 (r); rs/318 ruling 5 (r); owner rs/320 (r); the giver h92, whose cannon trade gives the set, the balls and its own magic shortbow (rs/344's `serveExtras` on cannon serve; two bows an attempt, so H13's stays on cairn_mule1 and nothing passes between helpers mid-run); the bow's supply staging, rs/346, ETA 05:15 PDT 2026-10-22; staging rs/331, `helpers/staging.md` ba7303c5 (r) |
 | S27 | - | cannonball x1110 (consume) | -mithril scimitar; -anti-dragon shield; +magic shortbow; +rune arrow | 0 | MAN entry 7: the mithril scimitar until Defence 99, then the bow (r); rs/199 (m); a ranging dose frees no slot until its potion is empty, so the walk keeps all 3 (i) |
 | S17 | - | shark x2 (consume: 2-3 eats, the measured floor) | - | 0 | MAN entry 1 (r); rs/270 (m) |
