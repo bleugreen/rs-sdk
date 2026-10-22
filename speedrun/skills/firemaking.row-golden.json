@@ -1,0 +1,1971 @@
+{
+ "lowLevels": {
+  "decisions": [
+   {
+    "t": 5000,
+    "dismiss": false,
+    "walk": [
+     3222,
+     3219
+    ]
+   },
+   {
+    "t": 5030,
+    "dismiss": false,
+    "light": {
+     "x": 3222,
+     "z": 3219,
+     "itemId": 3000
+    }
+   },
+   {
+    "t": 5035,
+    "dismiss": true,
+    "light": {
+     "x": 3221,
+     "z": 3219,
+     "itemId": 3001
+    }
+   },
+   {
+    "t": 5039,
+    "dismiss": false,
+    "light": {
+     "x": 3221,
+     "z": 3219,
+     "itemId": 3001
+    }
+   },
+   {
+    "t": 5056,
+    "dismiss": true,
+    "light": {
+     "x": 3220,
+     "z": 3219,
+     "itemId": 3002
+    }
+   },
+   {
+    "t": 5060,
+    "dismiss": true,
+    "light": {
+     "x": 3219,
+     "z": 3219,
+     "itemId": 3003
+    }
+   },
+   {
+    "t": 5068,
+    "dismiss": true,
+    "light": {
+     "x": 3218,
+     "z": 3219,
+     "itemId": 3004
+    }
+   },
+   {
+    "t": 5076,
+    "dismiss": true,
+    "light": {
+     "x": 3218,
+     "z": 3218,
+     "itemId": 3005
+    }
+   },
+   {
+    "t": 5080,
+    "dismiss": true,
+    "light": {
+     "x": 3219,
+     "z": 3218,
+     "itemId": 3006
+    }
+   },
+   {
+    "t": 5084,
+    "dismiss": true,
+    "light": {
+     "x": 3220,
+     "z": 3218,
+     "itemId": 3007
+    }
+   },
+   {
+    "t": 5092,
+    "dismiss": true,
+    "light": {
+     "x": 3221,
+     "z": 3218,
+     "itemId": 3008
+    }
+   },
+   {
+    "t": 5096,
+    "dismiss": true,
+    "light": {
+     "x": 3222,
+     "z": 3218,
+     "itemId": 3009
+    }
+   },
+   {
+    "t": 5100,
+    "dismiss": true,
+    "light": {
+     "x": 3223,
+     "z": 3218,
+     "itemId": 3010
+    }
+   },
+   {
+    "t": 5104,
+    "dismiss": true,
+    "light": {
+     "x": 3224,
+     "z": 3218,
+     "itemId": 3011
+    }
+   },
+   {
+    "t": 5108,
+    "dismiss": true,
+    "light": {
+     "x": 3226,
+     "z": 3218,
+     "itemId": 3012
+    }
+   },
+   {
+    "t": 5112,
+    "dismiss": true,
+    "light": {
+     "x": 3227,
+     "z": 3218,
+     "itemId": 3013
+    }
+   },
+   {
+    "t": 5116,
+    "dismiss": false,
+    "light": {
+     "x": 3227,
+     "z": 3218,
+     "itemId": 3013
+    }
+   },
+   {
+    "t": 5120,
+    "dismiss": false,
+    "light": {
+     "x": 3227,
+     "z": 3218,
+     "itemId": 3013
+    }
+   },
+   {
+    "t": 5125,
+    "dismiss": true,
+    "light": {
+     "x": 3228,
+     "z": 3218,
+     "itemId": 3014
+    }
+   },
+   {
+    "t": 5129,
+    "dismiss": true,
+    "light": {
+     "x": 3229,
+     "z": 3218,
+     "itemId": 3015
+    }
+   },
+   {
+    "t": 5133,
+    "dismiss": true,
+    "light": {
+     "x": 3230,
+     "z": 3218,
+     "itemId": 3016
+    }
+   },
+   {
+    "t": 5137,
+    "dismiss": true,
+    "light": {
+     "x": 3231,
+     "z": 3218,
+     "itemId": 3017
+    }
+   },
+   {
+    "t": 5141,
+    "dismiss": true,
+    "light": {
+     "x": 3232,
+     "z": 3218,
+     "itemId": 3018
+    }
+   },
+   {
+    "t": 5145,
+    "dismiss": true,
+    "light": {
+     "x": 3233,
+     "z": 3218,
+     "itemId": 3019
+    }
+   },
+   {
+    "t": 5149,
+    "dismiss": true,
+    "light": {
+     "x": 3234,
+     "z": 3218,
+     "itemId": 3020
+    }
+   },
+   {
+    "t": 5153,
+    "dismiss": true,
+    "light": {
+     "x": 3235,
+     "z": 3218,
+     "itemId": 3021
+    }
+   },
+   {
+    "t": 5157,
+    "dismiss": true,
+    "light": {
+     "x": 3236,
+     "z": 3218,
+     "itemId": 3022
+    }
+   },
+   {
+    "t": 5161,
+    "dismiss": false,
+    "light": {
+     "x": 3236,
+     "z": 3219,
+     "itemId": 3023
+    }
+   },
+   {
+    "t": 5165,
+    "dismiss": true,
+    "light": {
+     "x": 3235,
+     "z": 3219,
+     "itemId": 3024
+    }
+   },
+   {
+    "t": 5169,
+    "dismiss": true,
+    "light": {
+     "x": 3234,
+     "z": 3219,
+     "itemId": 3025
+    }
+   },
+   {
+    "t": 5173,
+    "dismiss": true,
+    "light": {
+     "x": 3233,
+     "z": 3219,
+     "itemId": 3026
+    }
+   },
+   {
+    "t": 5177,
+    "dismiss": true,
+    "light": {
+     "x": 3232,
+     "z": 3219,
+     "itemId": 3027
+    }
+   },
+   {
+    "t": 5181,
+    "dismiss": true,
+    "light": {
+     "x": 3231,
+     "z": 3219,
+     "itemId": 3028
+    }
+   },
+   {
+    "t": 5185,
+    "dismiss": true,
+    "light": {
+     "x": 3230,
+     "z": 3219,
+     "itemId": 3029
+    }
+   },
+   {
+    "t": 5189,
+    "dismiss": true,
+    "light": {
+     "x": 3229,
+     "z": 3219,
+     "itemId": 3030
+    }
+   },
+   {
+    "t": 5193,
+    "dismiss": false,
+    "light": {
+     "x": 3228,
+     "z": 3219,
+     "itemId": 3031
+    }
+   },
+   {
+    "t": 5197,
+    "dismiss": true,
+    "light": {
+     "x": 3227,
+     "z": 3219,
+     "itemId": 3032
+    }
+   },
+   {
+    "t": 5201,
+    "dismiss": true,
+    "light": {
+     "x": 3225,
+     "z": 3219,
+     "itemId": 3034
+    }
+   },
+   {
+    "t": 5205,
+    "dismiss": true,
+    "light": {
+     "x": 3224,
+     "z": 3219,
+     "itemId": 3035
+    }
+   },
+   {
+    "t": 5207,
+    "dismiss": false,
+    "light": {
+     "x": 3223,
+     "z": 3219,
+     "itemId": 3036
+    }
+   }
+  ],
+  "events": [
+   {
+    "kind": "nolog",
+    "tick": 5030,
+    "from": 5000,
+    "ticks": 30,
+    "first": true
+   },
+   {
+    "kind": "fire",
+    "tick": 5035,
+    "n": 0,
+    "tile": [
+     3222,
+     3219
+    ],
+    "tier": "Logs",
+    "level": 1,
+    "gap": null,
+    "failures": 0,
+    "fresh": true,
+    "send": null,
+    "slip": 0
+   },
+   {
+    "kind": "resend",
+    "tick": 5039,
+    "tile": [
+     3221,
+     3219
+    ],
+    "backstop": false
+   },
+   {
+    "kind": "fire",
+    "tick": 5056,
+    "n": 1,
+    "tile": [
+     3221,
+     3219
+    ],
+    "tier": "Logs",
+    "level": 10,
+    "gap": 21,
+    "failures": 3,
+    "fresh": true,
+    "send": 0,
+    "slip": 5
+   },
+   {
+    "kind": "fire",
+    "tick": 5060,
+    "n": 2,
+    "tile": [
+     3220,
+     3219
+    ],
+    "tier": "Oak logs",
+    "level": 15,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5068,
+    "n": 3,
+    "tile": [
+     3219,
+     3219
+    ],
+    "tier": "Oak logs",
+    "level": 21,
+    "gap": 8,
+    "failures": 1,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5076,
+    "n": 4,
+    "tile": [
+     3218,
+     3219
+    ],
+    "tier": "Oak logs",
+    "level": 25,
+    "gap": 8,
+    "failures": 1,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5080,
+    "n": 5,
+    "tile": [
+     3218,
+     3218
+    ],
+    "tier": "Oak logs",
+    "level": 28,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5084,
+    "n": 6,
+    "tile": [
+     3219,
+     3218
+    ],
+    "tier": "Willow logs",
+    "level": 31,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5092,
+    "n": 7,
+    "tile": [
+     3220,
+     3218
+    ],
+    "tier": "Willow logs",
+    "level": 34,
+    "gap": 8,
+    "failures": 1,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5096,
+    "n": 8,
+    "tile": [
+     3221,
+     3218
+    ],
+    "tier": "Willow logs",
+    "level": 36,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5100,
+    "n": 9,
+    "tile": [
+     3222,
+     3218
+    ],
+    "tier": "Willow logs",
+    "level": 39,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5104,
+    "n": 10,
+    "tile": [
+     3223,
+     3218
+    ],
+    "tier": "Willow logs",
+    "level": 41,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5108,
+    "n": 11,
+    "tile": [
+     3224,
+     3218
+    ],
+    "tier": "Willow logs",
+    "level": 42,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "skip",
+    "tick": 5108,
+    "tile": [
+     3225,
+     3218
+    ],
+    "reason": "fire"
+   },
+   {
+    "kind": "fire",
+    "tick": 5112,
+    "n": 12,
+    "tile": [
+     3226,
+     3218
+    ],
+    "tier": "Willow logs",
+    "level": 44,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "resend",
+    "tick": 5116,
+    "tile": [
+     3227,
+     3218
+    ],
+    "backstop": false
+   },
+   {
+    "kind": "resend",
+    "tick": 5120,
+    "tile": [
+     3227,
+     3218
+    ],
+    "backstop": false
+   },
+   {
+    "kind": "fire",
+    "tick": 5125,
+    "n": 13,
+    "tile": [
+     3227,
+     3218
+    ],
+    "tier": "Maple logs",
+    "level": 45,
+    "gap": 13,
+    "failures": 0,
+    "fresh": true,
+    "send": 0,
+    "slip": 9
+   },
+   {
+    "kind": "fire",
+    "tick": 5129,
+    "n": 14,
+    "tile": [
+     3228,
+     3218
+    ],
+    "tier": "Maple logs",
+    "level": 47,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5133,
+    "n": 15,
+    "tile": [
+     3229,
+     3218
+    ],
+    "tier": "Maple logs",
+    "level": 49,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5137,
+    "n": 16,
+    "tile": [
+     3230,
+     3218
+    ],
+    "tier": "Maple logs",
+    "level": 50,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5141,
+    "n": 17,
+    "tile": [
+     3231,
+     3218
+    ],
+    "tier": "Maple logs",
+    "level": 51,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5145,
+    "n": 18,
+    "tile": [
+     3232,
+     3218
+    ],
+    "tier": "Maple logs",
+    "level": 53,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5149,
+    "n": 19,
+    "tile": [
+     3233,
+     3218
+    ],
+    "tier": "Maple logs",
+    "level": 54,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5153,
+    "n": 20,
+    "tile": [
+     3234,
+     3218
+    ],
+    "tier": "Maple logs",
+    "level": 55,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5157,
+    "n": 21,
+    "tile": [
+     3235,
+     3218
+    ],
+    "tier": "Maple logs",
+    "level": 56,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5161,
+    "n": 22,
+    "tile": [
+     3236,
+     3218
+    ],
+    "tier": "Maple logs",
+    "level": 57,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5165,
+    "n": 23,
+    "tile": [
+     3236,
+     3219
+    ],
+    "tier": "Maple logs",
+    "level": 57,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5169,
+    "n": 24,
+    "tile": [
+     3235,
+     3219
+    ],
+    "tier": "Maple logs",
+    "level": 58,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5173,
+    "n": 25,
+    "tile": [
+     3234,
+     3219
+    ],
+    "tier": "Maple logs",
+    "level": 59,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5177,
+    "n": 26,
+    "tile": [
+     3233,
+     3219
+    ],
+    "tier": "Yew logs",
+    "level": 60,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5181,
+    "n": 27,
+    "tile": [
+     3232,
+     3219
+    ],
+    "tier": "Yew logs",
+    "level": 61,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5185,
+    "n": 28,
+    "tile": [
+     3231,
+     3219
+    ],
+    "tier": "Yew logs",
+    "level": 62,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5189,
+    "n": 29,
+    "tile": [
+     3230,
+     3219
+    ],
+    "tier": "Yew logs",
+    "level": 63,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5193,
+    "n": 30,
+    "tile": [
+     3229,
+     3219
+    ],
+    "tier": "Yew logs",
+    "level": 64,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5197,
+    "n": 31,
+    "tile": [
+     3228,
+     3219
+    ],
+    "tier": "Yew logs",
+    "level": 64,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5201,
+    "n": 32,
+    "tile": [
+     3227,
+     3219
+    ],
+    "tier": "Yew logs",
+    "level": 65,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "skip",
+    "tick": 5201,
+    "tile": [
+     3226,
+     3219
+    ],
+    "reason": "empty"
+   },
+   {
+    "kind": "fire",
+    "tick": 5205,
+    "n": 33,
+    "tile": [
+     3225,
+     3219
+    ],
+    "tier": "Yew logs",
+    "level": 66,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "lost",
+    "tick": 5207,
+    "tile": [
+     3224,
+     3219
+    ],
+    "tier": "Yew logs"
+   },
+   {
+    "kind": "fire",
+    "tick": 5209,
+    "n": 34,
+    "tile": [
+     3223,
+     3219
+    ],
+    "tier": "Yew logs",
+    "level": 67,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 2,
+    "slip": 0
+   }
+  ],
+  "sim": {
+   "logs": 37,
+   "lit": 35,
+   "gone": 2,
+   "stranded": 0
+  },
+  "counters": {
+   "cursor": 38,
+   "fires": 35,
+   "resends": 3,
+   "dismissed": 32,
+   "startTick": 5000,
+   "firstAttemptTick": 5031,
+   "firstSuccessTick": 5035,
+   "lastSuccessTick": 5209,
+   "endTick": 5209
+  }
+ },
+ "pacedMagic": {
+  "decisions": [
+   {
+    "t": 5000,
+    "dismiss": false,
+    "light": {
+     "x": 3222,
+     "z": 3219,
+     "itemId": 3000
+    }
+   },
+   {
+    "t": 5005,
+    "dismiss": false,
+    "light": {
+     "x": 3221,
+     "z": 3219,
+     "itemId": 3001
+    }
+   },
+   {
+    "t": 5009,
+    "dismiss": false,
+    "light": {
+     "x": 3220,
+     "z": 3219,
+     "itemId": 3002
+    }
+   },
+   {
+    "t": 5013,
+    "dismiss": true,
+    "light": {
+     "x": 3219,
+     "z": 3219,
+     "itemId": 3003
+    }
+   },
+   {
+    "t": 5017,
+    "dismiss": false,
+    "light": {
+     "x": 3219,
+     "z": 3219,
+     "itemId": 3003
+    }
+   },
+   {
+    "t": 5018,
+    "dismiss": false,
+    "light": {
+     "x": 3218,
+     "z": 3219,
+     "itemId": 3004
+    }
+   },
+   {
+    "t": 5023,
+    "dismiss": false,
+    "light": {
+     "x": 3217,
+     "z": 3219,
+     "itemId": 3005
+    }
+   },
+   {
+    "t": 5028,
+    "dismiss": false,
+    "light": {
+     "x": 3215,
+     "z": 3219,
+     "itemId": 3007
+    }
+   },
+   {
+    "t": 5031,
+    "dismiss": true
+   },
+   {
+    "t": 5032,
+    "dismiss": false,
+    "light": {
+     "x": 3214,
+     "z": 3219,
+     "itemId": 3008
+    }
+   },
+   {
+    "t": 5036,
+    "dismiss": false,
+    "light": {
+     "x": 3213,
+     "z": 3219,
+     "itemId": 3009
+    }
+   },
+   {
+    "t": 5040,
+    "dismiss": false,
+    "light": {
+     "x": 3212,
+     "z": 3219,
+     "itemId": 3010
+    }
+   },
+   {
+    "t": 5043,
+    "dismiss": true,
+    "light": {
+     "x": 3216,
+     "z": 3219,
+     "itemId": 3006
+    }
+   },
+   {
+    "t": 5044,
+    "dismiss": false,
+    "light": {
+     "x": 3222,
+     "z": 3219,
+     "itemId": 3011
+    }
+   },
+   {
+    "t": 5048,
+    "dismiss": false,
+    "light": {
+     "x": 3221,
+     "z": 3219,
+     "itemId": 3012
+    }
+   },
+   {
+    "t": 5060,
+    "dismiss": false,
+    "light": {
+     "x": 3218,
+     "z": 3219,
+     "itemId": 3015
+    }
+   },
+   {
+    "t": 5065,
+    "dismiss": true,
+    "light": {
+     "x": 3217,
+     "z": 3219,
+     "itemId": 3016
+    }
+   },
+   {
+    "t": 5072,
+    "dismiss": false,
+    "light": {
+     "x": 3215,
+     "z": 3219,
+     "itemId": 3018
+    }
+   },
+   {
+    "t": 5077,
+    "dismiss": false,
+    "light": {
+     "x": 3214,
+     "z": 3219,
+     "itemId": 3019
+    }
+   },
+   {
+    "t": 5081,
+    "dismiss": true,
+    "light": {
+     "x": 3220,
+     "z": 3219,
+     "itemId": 3013
+    }
+   },
+   {
+    "t": 5089,
+    "dismiss": false,
+    "light": {
+     "x": 3213,
+     "z": 3219,
+     "itemId": 3020
+    }
+   },
+   {
+    "t": 5094,
+    "dismiss": false,
+    "light": {
+     "x": 3212,
+     "z": 3219,
+     "itemId": 3021
+    }
+   },
+   {
+    "t": 5098,
+    "dismiss": false,
+    "light": {
+     "x": 3222,
+     "z": 3219,
+     "itemId": 3022
+    }
+   },
+   {
+    "t": 5102,
+    "dismiss": true,
+    "light": {
+     "x": 3221,
+     "z": 3219,
+     "itemId": 3023
+    }
+   },
+   {
+    "t": 5106,
+    "dismiss": false,
+    "light": {
+     "x": 3220,
+     "z": 3219,
+     "itemId": 3024
+    }
+   },
+   {
+    "t": 5110,
+    "dismiss": false,
+    "light": {
+     "x": 3218,
+     "z": 3219,
+     "itemId": 3026
+    }
+   },
+   {
+    "t": 5116,
+    "dismiss": false,
+    "light": {
+     "x": 3215,
+     "z": 3219,
+     "itemId": 3029
+    }
+   },
+   {
+    "t": 5118,
+    "dismiss": true
+   }
+  ],
+  "events": [
+   {
+    "kind": "fire",
+    "tick": 5005,
+    "n": 0,
+    "tile": [
+     3222,
+     3219
+    ],
+    "tier": "Magic logs",
+    "level": 80,
+    "gap": null,
+    "failures": 0,
+    "fresh": true,
+    "send": null,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5009,
+    "n": 1,
+    "tile": [
+     3221,
+     3219
+    ],
+    "tier": "Magic logs",
+    "level": 80,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5013,
+    "n": 2,
+    "tile": [
+     3220,
+     3219
+    ],
+    "tier": "Magic logs",
+    "level": 80,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "resend",
+    "tick": 5017,
+    "tile": [
+     3219,
+     3219
+    ],
+    "backstop": false
+   },
+   {
+    "kind": "refused",
+    "tick": 5018,
+    "tile": [
+     3219,
+     3219
+    ],
+    "reason": "tile"
+   },
+   {
+    "kind": "fire",
+    "tick": 5023,
+    "n": 3,
+    "tile": [
+     3218,
+     3219
+    ],
+    "tier": "Magic logs",
+    "level": 81,
+    "gap": 10,
+    "failures": 0,
+    "fresh": true,
+    "send": 5,
+    "slip": 6
+   },
+   {
+    "kind": "fire",
+    "tick": 5027,
+    "n": 4,
+    "tile": [
+     3217,
+     3219
+    ],
+    "tier": "Magic logs",
+    "level": 81,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "skip",
+    "tick": 5028,
+    "tile": [
+     3216,
+     3219
+    ],
+    "reason": "empty"
+   },
+   {
+    "kind": "nolog",
+    "tick": 5028,
+    "from": 5027,
+    "ticks": 1,
+    "first": false
+   },
+   {
+    "kind": "fire",
+    "tick": 5031,
+    "n": 5,
+    "tile": [
+     3215,
+     3219
+    ],
+    "tier": "Magic logs",
+    "level": 81,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 1,
+    "slip": 0
+   },
+   {
+    "kind": "nolog",
+    "tick": 5032,
+    "from": 5031,
+    "ticks": 1,
+    "first": false
+   },
+   {
+    "kind": "fire",
+    "tick": 5035,
+    "n": 6,
+    "tile": [
+     3214,
+     3219
+    ],
+    "tier": "Magic logs",
+    "level": 82,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 1,
+    "slip": 0
+   },
+   {
+    "kind": "nolog",
+    "tick": 5036,
+    "from": 5035,
+    "ticks": 1,
+    "first": false
+   },
+   {
+    "kind": "fire",
+    "tick": 5039,
+    "n": 7,
+    "tile": [
+     3213,
+     3219
+    ],
+    "tier": "Magic logs",
+    "level": 82,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 1,
+    "slip": 0
+   },
+   {
+    "kind": "nolog",
+    "tick": 5040,
+    "from": 5039,
+    "ticks": 1,
+    "first": false
+   },
+   {
+    "kind": "fire",
+    "tick": 5043,
+    "n": 8,
+    "tile": [
+     3212,
+     3219
+    ],
+    "tier": "Magic logs",
+    "level": 82,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 1,
+    "slip": 0
+   },
+   {
+    "kind": "skip",
+    "tick": 5043,
+    "tile": [
+     3222,
+     3219
+    ],
+    "reason": "empty"
+   },
+   {
+    "kind": "skip",
+    "tick": 5043,
+    "tile": [
+     3221,
+     3219
+    ],
+    "reason": "empty"
+   },
+   {
+    "kind": "skip",
+    "tick": 5043,
+    "tile": [
+     3220,
+     3219
+    ],
+    "reason": "empty"
+   },
+   {
+    "kind": "skip",
+    "tick": 5043,
+    "tile": [
+     3219,
+     3219
+    ],
+    "reason": "refused"
+   },
+   {
+    "kind": "skip",
+    "tick": 5043,
+    "tile": [
+     3218,
+     3219
+    ],
+    "reason": "empty"
+   },
+   {
+    "kind": "skip",
+    "tick": 5043,
+    "tile": [
+     3217,
+     3219
+    ],
+    "reason": "empty"
+   },
+   {
+    "kind": "refused",
+    "tick": 5044,
+    "tile": [
+     3216,
+     3219
+    ],
+    "reason": "unreachable"
+   },
+   {
+    "kind": "skip",
+    "tick": 5044,
+    "tile": [
+     3215,
+     3219
+    ],
+    "reason": "fire"
+   },
+   {
+    "kind": "skip",
+    "tick": 5044,
+    "tile": [
+     3214,
+     3219
+    ],
+    "reason": "fire"
+   },
+   {
+    "kind": "skip",
+    "tick": 5044,
+    "tile": [
+     3213,
+     3219
+    ],
+    "reason": "fire"
+   },
+   {
+    "kind": "skip",
+    "tick": 5044,
+    "tile": [
+     3212,
+     3219
+    ],
+    "reason": "fire"
+   },
+   {
+    "kind": "fire",
+    "tick": 5047,
+    "n": 9,
+    "tile": [
+     3222,
+     3219
+    ],
+    "tier": "Magic logs",
+    "level": 83,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 1,
+    "slip": 0
+   },
+   {
+    "kind": "nolog",
+    "tick": 5048,
+    "from": 5047,
+    "ticks": 1,
+    "first": false
+   },
+   {
+    "kind": "fire",
+    "tick": 5051,
+    "n": 10,
+    "tile": [
+     3221,
+     3219
+    ],
+    "tier": "Magic logs",
+    "level": 83,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 1,
+    "slip": 0
+   },
+   {
+    "kind": "skip",
+    "tick": 5060,
+    "tile": [
+     3220,
+     3219
+    ],
+    "reason": "empty"
+   },
+   {
+    "kind": "skip",
+    "tick": 5060,
+    "tile": [
+     3219,
+     3219
+    ],
+    "reason": "refused"
+   },
+   {
+    "kind": "nolog",
+    "tick": 5060,
+    "from": 5051,
+    "ticks": 9,
+    "first": false
+   },
+   {
+    "kind": "fire",
+    "tick": 5065,
+    "n": 11,
+    "tile": [
+     3218,
+     3219
+    ],
+    "tier": "Magic logs",
+    "level": 83,
+    "gap": 14,
+    "failures": 0,
+    "fresh": true,
+    "send": 9,
+    "slip": 10
+   },
+   {
+    "kind": "fire",
+    "tick": 5069,
+    "n": 12,
+    "tile": [
+     3217,
+     3219
+    ],
+    "tier": "Magic logs",
+    "level": 84,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "skip",
+    "tick": 5072,
+    "tile": [
+     3216,
+     3219
+    ],
+    "reason": "refused"
+   },
+   {
+    "kind": "nolog",
+    "tick": 5072,
+    "from": 5069,
+    "ticks": 3,
+    "first": false
+   },
+   {
+    "kind": "fire",
+    "tick": 5077,
+    "n": 13,
+    "tile": [
+     3215,
+     3219
+    ],
+    "tier": "Magic logs",
+    "level": 84,
+    "gap": 8,
+    "failures": 0,
+    "fresh": true,
+    "send": 3,
+    "slip": 4
+   },
+   {
+    "kind": "fire",
+    "tick": 5081,
+    "n": 14,
+    "tile": [
+     3214,
+     3219
+    ],
+    "tier": "Magic logs",
+    "level": 84,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "skip",
+    "tick": 5081,
+    "tile": [
+     3213,
+     3219
+    ],
+    "reason": "empty"
+   },
+   {
+    "kind": "skip",
+    "tick": 5081,
+    "tile": [
+     3212,
+     3219
+    ],
+    "reason": "empty"
+   },
+   {
+    "kind": "skip",
+    "tick": 5081,
+    "tile": [
+     3222,
+     3219
+    ],
+    "reason": "empty"
+   },
+   {
+    "kind": "skip",
+    "tick": 5081,
+    "tile": [
+     3221,
+     3219
+    ],
+    "reason": "empty"
+   },
+   {
+    "kind": "fire",
+    "tick": 5085,
+    "n": 15,
+    "tile": [
+     3220,
+     3219
+    ],
+    "tier": "Magic logs",
+    "level": 85,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "skip",
+    "tick": 5089,
+    "tile": [
+     3219,
+     3219
+    ],
+    "reason": "refused"
+   },
+   {
+    "kind": "skip",
+    "tick": 5089,
+    "tile": [
+     3218,
+     3219
+    ],
+    "reason": "empty"
+   },
+   {
+    "kind": "skip",
+    "tick": 5089,
+    "tile": [
+     3217,
+     3219
+    ],
+    "reason": "empty"
+   },
+   {
+    "kind": "skip",
+    "tick": 5089,
+    "tile": [
+     3216,
+     3219
+    ],
+    "reason": "refused"
+   },
+   {
+    "kind": "skip",
+    "tick": 5089,
+    "tile": [
+     3215,
+     3219
+    ],
+    "reason": "fire"
+   },
+   {
+    "kind": "skip",
+    "tick": 5089,
+    "tile": [
+     3214,
+     3219
+    ],
+    "reason": "fire"
+   },
+   {
+    "kind": "nolog",
+    "tick": 5089,
+    "from": 5085,
+    "ticks": 4,
+    "first": false
+   },
+   {
+    "kind": "fire",
+    "tick": 5094,
+    "n": 16,
+    "tile": [
+     3213,
+     3219
+    ],
+    "tier": "Magic logs",
+    "level": 85,
+    "gap": 9,
+    "failures": 0,
+    "fresh": true,
+    "send": 4,
+    "slip": 5
+   },
+   {
+    "kind": "fire",
+    "tick": 5098,
+    "n": 17,
+    "tile": [
+     3212,
+     3219
+    ],
+    "tier": "Magic logs",
+    "level": 85,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5102,
+    "n": 18,
+    "tile": [
+     3222,
+     3219
+    ],
+    "tier": "Magic logs",
+    "level": 85,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5106,
+    "n": 19,
+    "tile": [
+     3221,
+     3219
+    ],
+    "tier": "Magic logs",
+    "level": 86,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "fire",
+    "tick": 5110,
+    "n": 20,
+    "tile": [
+     3220,
+     3219
+    ],
+    "tier": "Magic logs",
+    "level": 86,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "skip",
+    "tick": 5110,
+    "tile": [
+     3219,
+     3219
+    ],
+    "reason": "refused"
+   },
+   {
+    "kind": "fire",
+    "tick": 5114,
+    "n": 21,
+    "tile": [
+     3218,
+     3219
+    ],
+    "tier": "Magic logs",
+    "level": 86,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 0,
+    "slip": 0
+   },
+   {
+    "kind": "skip",
+    "tick": 5116,
+    "tile": [
+     3217,
+     3219
+    ],
+    "reason": "empty"
+   },
+   {
+    "kind": "skip",
+    "tick": 5116,
+    "tile": [
+     3216,
+     3219
+    ],
+    "reason": "refused"
+   },
+   {
+    "kind": "nolog",
+    "tick": 5116,
+    "from": 5114,
+    "ticks": 2,
+    "first": false
+   },
+   {
+    "kind": "fire",
+    "tick": 5118,
+    "n": 22,
+    "tile": [
+     3215,
+     3219
+    ],
+    "tier": "Magic logs",
+    "level": 86,
+    "gap": 4,
+    "failures": 0,
+    "fresh": false,
+    "send": 2,
+    "slip": 0
+   }
+  ],
+  "sim": {
+   "logs": 30,
+   "lit": 23,
+   "gone": 0,
+   "stranded": 6
+  },
+  "counters": {
+   "cursor": 52,
+   "fires": 23,
+   "resends": 1,
+   "dismissed": 7,
+   "startTick": 5000,
+   "firstAttemptTick": 5001,
+   "firstSuccessTick": 5005,
+   "lastSuccessTick": 5118,
+   "endTick": 5700
+  }
+ }
+}

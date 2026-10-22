@@ -27,10 +27,37 @@
 // why `act` (send, then resend until an effect shows) isn't used for the light: an op that has
 // taken can be rolling and failing for several ticks with nothing to show for it, so the loop
 // resends only when there is no sign at all that the light took (`RESEND_AFTER`).
+//
+// The trade supply (`supply: 'trade'`, the manifest's fallback) has no row on the ground. A trade
+// giver standing beside the line hands SCORED one inventory of logs at a time, and the same Lighter,
+// in its `held` mode, uses the tinderbox on the best held log while SCORED stands on the next planned
+// tile. That light drops the log on SCORED's own tile and runs the same 4-tick clock (firemaking.rs2
+// light_logs_inv), so the chain and the push are the row's. Three things differ:
+// - A held light that took is seen at once: the log leaves the inventory when the op runs
+//   (inv_dropslot comes before the clock check). So the loop resends only while the log is still
+//   held, never after; a resend after the drop would put a second log on the tile (firemaking.md
+//   section 6). A refused light ("can't light a fire here") is checked before the drop, so the log
+//   stays in hand and is lit on the next tile.
+// - The ground op walks by itself; the use doesn't. On a westward run the push leaves SCORED on the
+//   next tile, so nothing is walked. A return row or a lap turn is one run step, sent on the success
+//   message, with the use sent the tick SCORED stands on the tile (firemaking.md section 4: the
+//   2-tile step east keeps the chain).
+// - A chained light prints no attempt message, so held mode reads the roll animation as the sign
+//   that the dropped log is still rolling before it relights it (the backstop).
+// When no lightable log is held, the step refills: `receiveFrom` (lib/trade.ts) from the giver,
+// wanting the next `capacity` logs of `routeLogs` from the current xp. The hand-off is stated as data
+// by `tradePlan`: when each refill falls due (SCORED's fire count), SCORED's tile then, the giver's
+// tile beside it, and the package by tier. The giver requests first, as SCORED's last held log rolls,
+// so SCORED's click on its last success accepts at once (firemaking-supply.ts: 5 ticks, 6 of 6).
+// A refill holds SCORED's free slots, not 27: at S03's real start SCORED carries the tinderbox and
+// its rune stacks (RUN-ORDER.md S00-S02), so `capacity` defaults to 28 less the non-log items held.
 
-import type { ActionResult, BotWorldState, GameMessage, GroundItem } from '../../sdk/types';
+import { isFlagged, isTileWalkable } from '../../sdk/pathfinding';
+import { CollisionFlag } from '../../server/vendor/rsmod-pathfinder';
+import type { ActionResult, BotWorldState, GameMessage, GroundItem, InventoryItem } from '../../sdk/types';
 import { levelUpStep, newWatcherMemory, type WatcherMemory } from '../lib/levelup';
 import type { TickRow } from '../lib/ticks';
+import { receiveFrom, type WantSpec } from '../lib/trade';
 import { tickMs, waitUntil } from '../lib/wait';
 import { levelForXp, XP_RATE, xpForLevel } from '../lib/xp';
 import type { Step, StepContext } from '../runner/step';
@@ -184,8 +211,12 @@ export interface FiremakingOptions {
     id?: string;
     /** Stop at this level (default 99). The rehearsal harness passes --to here. */
     toLevel?: number | string;
-    /** Where the logs come from. Only `row` (helper-dropped logs) is built. */
+    /** Where the logs come from: `row` (helper-dropped logs) or `trade` (a giver beside the line). `bank` is not built. */
     supply?: Supply;
+    /** supply trade: the trade giver's name (a helper; never SCORED's). */
+    giver?: string;
+    /** supply trade: logs per refill (default 28 less the non-log items SCORED holds when the step starts). */
+    capacity?: number | string;
     /** The planned tiles in lighting order, the same list the dropper is given (`parseTiles`). */
     tiles?: string | ReadonlyArray<Tile>;
     /** The first log's tile; default the first planned tile. */
@@ -210,6 +241,8 @@ export interface Resolved {
     maxGap: number;
     lookahead: number;
     near: number;
+    giver: string | null;
+    capacity: number | null;
 }
 
 function whole(v: unknown, def: number, what: string, min: number, max = Infinity): number {
@@ -232,8 +265,108 @@ export function resolveOptions(raw: FiremakingOptions = {}): Resolved {
         waitForRow: whole(raw.waitForRow, 150, 'waitForRow', 1),
         maxGap: whole(raw.maxGap, 120, 'maxGap', 1),
         lookahead: whole(raw.lookahead, 6, 'lookahead', 0),
-        near: whole(raw.near, 15, 'near', 0)
+        near: whole(raw.near, 15, 'near', 0),
+        giver: raw.giver === undefined || raw.giver === '' ? null : String(raw.giver),
+        capacity: raw.capacity === undefined || raw.capacity === '' ? null : whole(raw.capacity, 0, 'capacity', 1, 27)
     };
+}
+
+// ------------------------------------------------------------------ the trade supply's hand-off
+
+/** An inventory holds 28; the tinderbox always takes one. */
+export const INVENTORY = 28;
+/**
+ * A trade refill's size at S03's real start: the account holds the tinderbox and seven rune stacks
+ * (RUN-ORDER.md S00-S02), so 20 slots are free and the route is 8 refills of 20 (`tradePlan`).
+ */
+export const S03_REFILL = 20;
+
+export interface TradeRefill {
+    /** 0-based refill number. */
+    k: number;
+    /** SCORED's fire count when this refill is due (all held logs lit). The giver requests at atLit - 1. */
+    atLit: number;
+    /** Logs in the package. */
+    logs: number;
+    /** The package by tier, in route order: obj debug name and count. */
+    package: Array<{ obj: string; name: string; n: number }>;
+    /** Where SCORED stands when the refill is due (the planned tile of log atLit), if tiles are given. */
+    scoredTile: Tile | null;
+    /** Where the giver stands: beside scoredTile, off the planned tiles. */
+    giverTile: Tile | null;
+}
+
+/** The logs a package holds, grouped by tier in route order. */
+export function packageOf(logs: readonly Tier[]): TradeRefill['package'] {
+    const out: TradeRefill['package'] = [];
+    for (const t of logs) {
+        const last = out.at(-1);
+        if (last && last.obj === t.obj) last.n++;
+        else out.push({ obj: t.obj, name: t.name, n: 1 });
+    }
+    return out;
+}
+
+/** Whether a player on tile `a` can step onto the orthogonally adjacent tile `b`. */
+export type Reach = (a: Tile, b: Tile) => boolean;
+
+/**
+ * `Reach` from the SDK's collision map (sdk/pathfinding): `b` is walkable and no wall edge lies
+ * between the two tiles. A trade partner one tile away across a wall edge is out of reach ("I can't
+ * reach that!"), as at the west end of the Falador east lab snake's first row.
+ */
+export function mapReach(a: Tile, b: Tile): boolean {
+    if (!isTileWalkable(0, b[0], b[1])) return false;
+    const dx = b[0] - a[0];
+    const dz = b[1] - a[1];
+    if (Math.abs(dx) + Math.abs(dz) !== 1) return false;
+    const [out, back] =
+        dz === 1 ? [CollisionFlag.WALL_NORTH, CollisionFlag.WALL_SOUTH]
+        : dz === -1 ? [CollisionFlag.WALL_SOUTH, CollisionFlag.WALL_NORTH]
+        : dx === 1 ? [CollisionFlag.WALL_EAST, CollisionFlag.WALL_WEST]
+        : [CollisionFlag.WALL_WEST, CollisionFlag.WALL_EAST];
+    return !isFlagged(a[0], a[1], 0, out) && !isFlagged(b[0], b[1], 0, back);
+}
+
+/**
+ * Where the giver stands for a refill due at planned tile `index`: beside that tile, off the planned
+ * tiles and within `reach` of it (north, then south, east, west). When none is, beside the planned
+ * tile before it, so SCORED's trade click takes one step. Null when neither has one.
+ */
+export function giverTileFor(tiles: readonly Tile[], index: number, reach: Reach = mapReach): Tile | null {
+    if (!tiles.length) return null;
+    const planned = new Set(tiles.map(key));
+    const i = Math.min(index, tiles.length - 1);
+    for (const j of [i, (i - 1 + tiles.length) % tiles.length]) {
+        const at = tiles[j]!;
+        const options: Tile[] = [[at[0], at[1] + 1], [at[0], at[1] - 1], [at[0] + 1, at[1]], [at[0] - 1, at[1]]];
+        const ok = options.find(t => !planned.has(key(t)) && reach(at, t));
+        if (ok) return ok;
+    }
+    return null;
+}
+
+/**
+ * The trade supply's hand-off contract as data: one entry per refill of `capacity` logs, from
+ * `fromXp` to `toLevel`, in the route's order. The giver stands on `giverTile` and sends its trade
+ * request when SCORED's fire count reaches `atLit - 1`; SCORED clicks trade back on its last
+ * success and accepts as soon as the offer holds the package (lib/trade.ts receiveFrom). From 1 to
+ * 99 with an inventory holding only a tinderbox it is SUPPLIES.md H2's 6 trades of 27.
+ */
+export function tradePlan(fromXp: number, toLevel: number, capacity: number, tiles: readonly Tile[] = [], reach: Reach = mapReach): TradeRefill[] {
+    if (!Number.isInteger(capacity) || capacity < 1) throw new Error(`firemaking: capacity must be 1 or more, not ${capacity}`);
+    const route = routeLogs(fromXp, toLevel);
+    const out: TradeRefill[] = [];
+    for (let atLit = 0, k = 0; atLit < route.length; atLit += capacity, k++) {
+        const logs = route.slice(atLit, atLit + capacity);
+        out.push({ k, atLit, logs: logs.length, package: packageOf(logs), scoredTile: tiles.length ? tiles[atLit % tiles.length]! : null, giverTile: giverTileFor(tiles, atLit % Math.max(1, tiles.length), reach) });
+    }
+    return out;
+}
+
+/** Logs per refill when no `capacity` is given: the slots not taken by anything but logs. */
+export function defaultCapacity(inventory: readonly Pick<InventoryItem, 'name'>[]): number {
+    return Math.max(0, INVENTORY - inventory.filter(i => !tierOf(i.name)).length);
 }
 
 // ------------------------------------------------------------------ state readers
@@ -269,6 +402,35 @@ export const MSG = {
 export const RESEND_AFTER = 4;
 /** Resend even with signs of life after this many ticks without a success or an attempt message. */
 export const BACKSTOP_TICKS = 16;
+/** Held mode: ticks walking to a planned tile without arriving before it is passed as unreachable. */
+export const HELD_WALK_TICKS = 12;
+/**
+ * Held mode: ticks without the roll animation before a dropped log is relit where it lies. A rolling
+ * light shows the animation on two ticks of every four (lab trace), so eight quiet ticks mean the
+ * clock has stopped (the lab saw a light roll once and stop at level 82).
+ */
+export const HELD_BACKSTOP_TICKS = 8;
+
+/** Where the Lighter's logs are: on the planned tiles (`ground`, the row) or in SCORED's inventory (`held`, the trade supply). */
+export type LightSource = 'ground' | 'held';
+
+const TINDERBOX = /^tinderbox$/i;
+
+/** How many logs of this name SCORED holds. */
+export function heldCount(s: BotWorldState, name: string): number {
+    const n = name.toLowerCase();
+    return s.inventory.filter(i => i.name.toLowerCase() === n).reduce((a, i) => a + i.count, 0);
+}
+
+/** The best held log the level may light (every tier rolls the same 4 ticks, so the best is used). */
+export function bestHeld(s: BotWorldState, level: number): InventoryItem | undefined {
+    for (const t of [...TIERS].reverse()) {
+        if (t.level > level) continue;
+        const item = s.inventory.find(i => i.name.toLowerCase() === t.name.toLowerCase());
+        if (item) return item;
+    }
+    return undefined;
+}
 
 export type LightEvent =
     | {
@@ -303,6 +465,8 @@ export interface Decision {
     dismiss: boolean;
     light?: { x: number; z: number; itemId: number };
     walk?: Tile;
+    /** Held mode: use the tinderbox (slot) on the log (slot), standing on `tile`. */
+    use?: { tinderbox: number; log: number; itemId: number; tile: Tile };
 }
 
 interface Pending {
@@ -317,6 +481,12 @@ interface Pending {
     goneSince: number | null;
     /** Firemaking xp when the light was first sent. */
     xp: number;
+    /** Held mode: how many of this tier SCORED held when the light was sent. */
+    heldBefore?: number;
+    /** Held mode: the dropped log has been seen lying on its tile. */
+    landed?: boolean;
+    /** Held mode: the last tick a roll animation was seen. */
+    rollTick?: number;
 }
 
 /**
@@ -343,11 +513,13 @@ export class Lighter {
     private readonly seen = new Set<string>();
     private levelUp: WatcherMemory = newWatcherMemory();
     private readonly refusedTiles = new Set<string>();
+    /** Held mode: the planned tile being walked to and since when. */
+    private walkTo: { index: number; since: number } | null = null;
 
     constructor(
         readonly tiles: readonly Tile[],
         start: BotWorldState,
-        readonly o: Pick<Resolved, 'lookahead' | 'entry'> = { lookahead: 6, entry: tiles[0] ?? null }
+        readonly o: Pick<Resolved, 'lookahead' | 'entry'> & { source?: LightSource } = { lookahead: 6, entry: tiles[0] ?? null }
     ) {
         this.startTick = start.tick;
         this.prevLevel = fmLevel(start);
@@ -396,6 +568,8 @@ export class Lighter {
             else if (MSG.tooLow.test(m.text)) this.onRefused(t, 'level');
             else if (MSG.unreachable.test(m.text)) this.onRefused(t, 'unreachable');
         }
+
+        if (this.o.source === 'held') return this.heldTick(s, level, litAt, d);
 
         const p = this.pending;
         if (p) {
@@ -452,6 +626,133 @@ export class Lighter {
         this.pending = { tile: target.tile, index: target.index, itemId: target.item.id, tier: target.item.name, firstSent: t, sentTick: t, from: here(s), evidence: false, goneSince: null, xp: fmXp(s) };
         d.light = { x: target.tile[0], z: target.tile[1], itemId: target.item.id };
         return d;
+    }
+
+    /** Held mode: no lightable log is held and none is being lit, so the step must refill. */
+    outOfLogs(s: BotWorldState): boolean {
+        return this.o.source === 'held' && this.pending === null && !bestHeld(s, fmLevel(s));
+    }
+
+    /** Held mode: a refill has just landed; the ticks it took are the refill's, not a wait for logs. */
+    refilled(): void {
+        this.waitFrom = null;
+        this.walked = -100;
+        this.walkTo = null;
+    }
+
+    /**
+     * Held mode, one tick. A pending light took once its log left the inventory; until then it is
+     * resent after `RESEND_AFTER` quiet ticks, and never after. Once the dropped log has lain on its
+     * tile, it is lit when its success message shows, or, when the message never does, when it has
+     * been gone from the tile a whole tick with a fire there and this account's xp risen (the row's
+     * rule, rs/269); gone without that, it is lost. A dropped log with no roll animation for
+     * `HELD_BACKSTOP_TICKS` (a chained light prints no attempt message, so the animation is the sign
+     * of rolling) is lit where it lies with the ground op. With nothing pending, the best held log is
+     * lit on the next free planned tile, walking there first when SCORED isn't on it.
+     */
+    private heldTick(s: BotWorldState, level: number, litAt: number, d: Decision): Decision {
+        const t = s.tick;
+        const p = this.pending;
+        if (p) {
+            if (heldCount(s, p.tier) < (p.heldBefore ?? 0)) p.evidence = true;
+            const anim = s.player?.animId ?? -1;
+            if (anim !== -1) p.rollTick = t;
+            if (p.evidence) {
+                const onGround = s.groundItems.some(g => g.x === p.tile[0] && g.z === p.tile[1] && g.id === p.itemId);
+                if (onGround) {
+                    p.landed = true;
+                    p.goneSince = null;
+                } else if (p.landed && p.goneSince === null) p.goneSince = t;
+                else if (p.landed && p.goneSince !== null && t - p.goneSince >= 1) {
+                    if (hasFire(s, p.tile) && fmXp(s) > p.xp) this.onSuccess(p.goneSince, litAt, true);
+                    else {
+                        this.events.push({ kind: 'lost', tick: t, tile: p.tile, tier: p.tier });
+                        this.cursor = p.index + 1;
+                        this.pending = null;
+                    }
+                    return d;
+                }
+            }
+            if (!p.evidence && t - p.sentTick >= RESEND_AFTER) {
+                const use = useOf(s, p.tier);
+                if (use) {
+                    this.events.push({ kind: 'resend', tick: t, tile: p.tile, backstop: false });
+                    this.resends++;
+                    p.sentTick = t;
+                    p.heldBefore = heldCount(s, p.tier);
+                    d.use = { ...use, tile: p.tile };
+                }
+            } else if (p.evidence && t - Math.max(p.sentTick, p.rollTick ?? p.sentTick) >= HELD_BACKSTOP_TICKS && anim === -1) {
+                const g = s.groundItems.find(x => x.x === p.tile[0] && x.z === p.tile[1] && x.name.toLowerCase() === p.tier.toLowerCase());
+                if (g) {
+                    this.events.push({ kind: 'resend', tick: t, tile: p.tile, backstop: true });
+                    this.resends++;
+                    p.sentTick = t;
+                    d.light = { x: g.x, z: g.z, itemId: g.id };
+                }
+            }
+            return d;
+        }
+
+        const item = bestHeld(s, level);
+        const target = item ? this.pickTile(s) : null;
+        if (!item || !target) {
+            this.waitFrom ??= t;
+            return d;
+        }
+        if (cheb(here(s), target.tile) !== 0) {
+            if (this.walkTo?.index !== target.index) this.walkTo = { index: target.index, since: t };
+            else if (t - this.walkTo.since > HELD_WALK_TICKS) {
+                this.events.push({ kind: 'refused', tick: t, tile: target.tile, reason: 'unreachable' });
+                this.refusedTiles.add(key(target.tile));
+                this.cursor = target.index + 1;
+                this.walkTo = null;
+                return d;
+            }
+            if (t - this.walked >= 3) {
+                this.walked = t;
+                d.walk = target.tile;
+            }
+            return d;
+        }
+        this.walkTo = null;
+        if (this.waitFrom !== null) {
+            const ticks = t - this.waitFrom;
+            if (ticks > 0) this.events.push({ kind: 'nolog', tick: t, from: this.waitFrom, ticks, first: this.fires === 0 });
+            this.waitFrom = null;
+        }
+        const use = useOf(s, item.name)!;
+        this.cursor = target.index;
+        this.pending = { tile: target.tile, index: target.index, itemId: item.id, tier: item.name, firstSent: t, sentTick: t, from: here(s), evidence: false, goneSince: null, xp: fmXp(s), heldBefore: heldCount(s, item.name) };
+        d.use = { ...use, tile: target.tile };
+        return d;
+    }
+
+    /**
+     * Held mode: the next planned tile to light on, from the cursor, within `lookahead` tiles past
+     * it, with no fire and not refused. Before the first fire, the nearest such planned tile.
+     */
+    private pickTile(s: BotWorldState): { index: number; tile: Tile } | null {
+        const free = (t: Tile) => !hasFire(s, t) && !this.refusedTiles.has(key(t));
+        if (this.fires === 0 && this.cursor === 0) {
+            const me = here(s);
+            let best: { index: number; tile: Tile } | null = null;
+            for (let index = 0; index < this.tiles.length; index++) {
+                const tile = this.tiles[index]!;
+                if (free(tile) && (!best || cheb(me, tile) < cheb(me, best.tile))) best = { index, tile };
+            }
+            return best;
+        }
+        for (let i = this.cursor; i <= this.cursor + this.o.lookahead; i++) {
+            const tile = this.tileAt(i);
+            if (!free(tile)) continue;
+            for (let j = this.cursor; j < i; j++) {
+                const skipped = this.tileAt(j);
+                this.events.push({ kind: 'skip', tick: s.tick, tile: skipped, reason: hasFire(s, skipped) ? 'fire' : 'refused' });
+            }
+            return { index: i, tile };
+        }
+        return null;
     }
 
     /**
@@ -523,6 +824,13 @@ export class Lighter {
     }
 }
 
+/** The tinderbox and log slots for a held light of this tier, or undefined if either is missing. */
+function useOf(s: BotWorldState, tier: string): { tinderbox: number; log: number; itemId: number } | undefined {
+    const tinder = s.inventory.find(i => TINDERBOX.test(i.name));
+    const log = s.inventory.find(i => i.name.toLowerCase() === tier.toLowerCase());
+    return tinder && log ? { tinderbox: tinder.slot, log: log.slot, itemId: log.id } : undefined;
+}
+
 function msgKey(m: GameMessage): string {
     return m.observationId !== undefined ? `o${m.observationId}` : `t${m.tick}|${m.text}`;
 }
@@ -590,6 +898,25 @@ export function lightGroundItem(sdk: LightSdk, l: { x: number; z: number; itemId
     return (sdk as unknown as { sendAction(a: unknown): Promise<ActionResult> }).sendAction({ type: 'interactGroundItem', x: l.x, z: l.z, itemId: l.itemId, optionIndex: 4, reason: 'firemaking' });
 }
 
+/**
+ * One trade refill: the next `capacity` logs of the route from the current xp (at most the free
+ * slots), received from the giver with lib/trade.ts `receiveFrom`. Logged as a `refill` row.
+ */
+async function refill(ctx: StepContext<any>, o: Resolved, k: number, capacity: number): Promise<{ state: BotWorldState; ticks: number; logs: number }> {
+    const { sdk } = ctx;
+    const s0 = sdk.getState();
+    if (!s0) throw new Error('firemaking: no state');
+    const n = Math.min(capacity, INVENTORY - s0.inventory.length);
+    if (n < 1) throw new Error('firemaking: no free slot for a refill');
+    const pkg = packageOf(routeLogs(fmXp(s0), o.toLevel).slice(0, n));
+    const want: WantSpec[] = pkg.map(p => ({ item: new RegExp(`^${p.name}$`, 'i'), amount: p.n }));
+    const r = await receiveFrom(sdk, o.giver!, { want, maxTicks: 60 });
+    const s = sdk.getState() ?? s0;
+    note(ctx, `${o.id} refill`, { k, ok: r.ok, ticks: r.ticks, want: pkg, received: r.received.map(i => ({ name: i.name, n: i.count })), ...(r.reason ? { reason: r.reason } : {}) }, s0.tick, s.tick);
+    if (!r.ok) throw new Error(`firemaking: refill ${k} from the trade giver failed: ${r.reason ?? 'unknown'}`);
+    return { state: s, ticks: r.ticks, logs: pkg.reduce((a, p) => a + p.n, 0) };
+}
+
 export interface RowResult {
     fires: number;
     failures: number;
@@ -599,12 +926,20 @@ export interface RowResult {
     events: LightEvent[];
 }
 
-/** Light the row until `toLevel`, logging a row per fire, per band and per event, then a summary. */
+/**
+ * Light the row until `toLevel`, logging a row per fire, per band and per event, then a summary.
+ * With `supply: 'trade'` the Lighter lights held logs, and the loop refills from the giver whenever
+ * none is left (a `refill` row each, and `refills`/`refillTicks` in the summary).
+ */
 export async function lightRow(ctx: StepContext<any>, o: Resolved): Promise<RowResult> {
     const { sdk } = ctx;
     let s = sdk.getState();
     if (!s) throw new Error('firemaking: no state');
-    const L = new Lighter(o.tiles, s, o);
+    const trade = o.supply === 'trade';
+    const L = new Lighter(o.tiles, s, trade ? { ...o, source: 'held' } : o);
+    const capacity = o.capacity ?? defaultCapacity(s.inventory);
+    let refills = 0;
+    let refillTicks = 0;
     const id = o.id;
     let logged = 0;
     let lastFireTick = s.tick;
@@ -630,11 +965,20 @@ export async function lightRow(ctx: StepContext<any>, o: Resolved): Promise<RowR
             if (d.dismiss) void sdk.sendClickDialog(0).catch(() => {});
             if (d.light) void lightGroundItem(sdk, d.light).catch(() => {});
             if (d.walk) void sdk.sendWalk(d.walk[0], d.walk[1], true).catch(() => {});
+            if (d.use) void sdk.sendUseItemOnItem(d.use.tinderbox, d.use.log).catch(() => {});
             flush();
             const lvl = fmLevel(s);
             if (bandFor(lvl).id !== band.id) {
                 closeBand(band, s.tick);
                 band = bandFor(lvl);
+            }
+            if (trade && L.outOfLogs(s)) {
+                const r = await refill(ctx, o, refills, capacity);
+                refills++;
+                refillTicks += r.ticks;
+                L.refilled();
+                s = r.state;
+                continue;
             }
             const waited = L.waiting(s.tick);
             if (L.fires === 0 && waited > o.waitForRow) throw new Error(`firemaking: no lightable log on the row within ${o.waitForRow} ticks`);
@@ -669,14 +1013,15 @@ export async function lightRow(ctx: StepContext<any>, o: Resolved): Promise<RowR
         sends: Object.fromEntries([0, 1, 2, 3].map(k => [`R+${k + 2}`, fireEvents.filter(e => e.send === k).length]).concat([['later', fireEvents.filter(e => (e.send ?? 0) > 3).length]])),
         lost: count('lost'), refused: count('refused'), skips: count('skip'), resends: L.resends, nolog: count('nolog'),
         nologTicks: L.events.reduce((a, e) => a + (e.kind === 'nolog' && !e.first ? e.ticks : 0), 0),
-        dismissed: L.dismissed, endLevel: fmLevel(s), endXp: fmXp(s)
+        dismissed: L.dismissed, endLevel: fmLevel(s), endXp: fmXp(s),
+        ...(trade ? { supply: 'trade', capacity, refills, refillTicks } : {})
     }, L.startTick, s.tick);
     if (failure !== undefined) throw failure;
     return { fires: L.fires, failures, expectedFailures, startTick: L.startTick, endTick: s.tick, events: L.events };
 }
 
 export function precheck(s: BotWorldState, o: Resolved): true | string {
-    if (o.supply !== 'row') return `supply '${o.supply}' not built`;
+    if (o.supply === 'bank') return `supply '${o.supply}' not built`;
     if (fmLevel(s) >= o.toLevel) return true;
     if (!s.inGame || !s.player) return 'not in game';
     if (!s.inventory.some(i => /^tinderbox$/i.test(i.name))) return 'no tinderbox';
@@ -684,6 +1029,15 @@ export function precheck(s: BotWorldState, o: Resolved): true | string {
     const entry = o.entry!;
     const d = cheb(here(s), entry);
     if (d > o.near) return `not within ${o.near} tiles of the row's entry ${entry[0]},${entry[1]} (${d} away)`;
+    // The row lights logs where they lie and picks nothing up, so it needs no free slot. A trade
+    // refill needs `capacity` slots (default S03_REFILL) beside the non-log items held; held logs
+    // are lit before it.
+    if (o.supply === 'trade') {
+        if (!o.giver) return "supply 'trade' needs the giver option (the trade giver's name)";
+        const other = s.inventory.filter(i => !tierOf(i.name));
+        const need = o.capacity ?? S03_REFILL;
+        if (INVENTORY - other.length < need) return `${other.length} other items (${[...new Set(other.map(i => i.name))].join(', ')}): need ${need} free slots`;
+    }
     return true;
 }
 
