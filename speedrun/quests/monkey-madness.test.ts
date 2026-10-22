@@ -7,9 +7,10 @@ import { baseState } from '../lib/fake-sdk';
 import { compactJournal } from '../lib/quests';
 import type { Observed } from '../runner/step';
 import {
-    DEFAULT_OPTIONS, doneAt, itemMilestone, JOURNAL_MARKS, JOURNAL_PROBE, journalMilestone, MM_OBJ, mmMilestone, PUZZLE_TILE_IDS,
-    patrolLeavesLane, resolveOptions, seg, segmentName, SEGMENTS, stepId,
+    DEFAULT_OPTIONS, doneAt, EXIT_DROPS, exitState, itemMilestone, JOURNAL_MARKS, JOURNAL_PROBE, journalMilestone, MM_OBJ, mmMilestone, PUZZLE_TILE_IDS,
+    patrolLeavesLane, resolveOptions, REWARD_ITEMS, seg, segmentName, SEGMENTS, stepId, yRoom,
 } from './monkey-madness';
+import { slotNeed } from './segments';
 
 const item = (id: number, slot = 0): InventoryItem => ({ slot, id, name: `obj ${id}`, count: 1, optionsWithIndex: [] });
 
@@ -248,5 +249,47 @@ describe('stepping away from the demon', () => {
         expect(t.x).toBeGreaterThanOrEqual(ARENA.x0 + 2);
         expect(t.x).toBeLessThanOrEqual(ARENA.x1 - 2);
         expect(Math.max(Math.abs(t.x - 2745), Math.abs(t.z - 9180))).toBeGreaterThan(3);
+    });
+});
+
+describe('exit', () => {
+    const strength = (xp: number) => ({ name: 'Strength', level: 1, baseLevel: 1, experience: xp });
+    const state = (inv: number[], worn: number[] = [], xp = 35_000) => baseState({
+        inventory: inv.map((id, i) => item(id, i)),
+        equipment: worn.map((id, i) => item(id, i)),
+        skills: [strength(xp)],
+    } as Partial<BotWorldState>);
+
+    test('the exit drops are the seal, the mould and the sigil', () => {
+        expect([...EXIT_DROPS].sort()).toEqual([MM_OBJ.royalSeal, MM_OBJ.amuletMould, MM_OBJ.sigil].sort());
+    });
+
+    test('the exit holds none of them, held or worn, and has the training xp', () => {
+        expect(exitState(state([MM_OBJ.amulet, MM_OBJ.greegree]), {} as never)).toBe(true);
+        for (const id of EXIT_DROPS) {
+            expect(exitState(state([id]), {} as never)).toMatch(/S15's exit drops/);
+            expect(exitState(state([], [id]), {} as never)).toMatch(/S15's exit drops/);
+        }
+        expect(exitState(state([], [], 34_999), {} as never)).toMatch(/below Daero/);
+    });
+});
+
+describe("Y: room for Narnode's reward", () => {
+    const named = (name: string, slot: number, count = 1): InventoryItem => ({ slot, id: 1000 + slot, name, count, optionsWithIndex: [] });
+    const pack = (n: number, coins: boolean) => baseState({
+        inventory: [...(coins ? [named('Coins', 0, 30)] : []), ...Array.from({ length: n - (coins ? 1 : 0) }, (_, i) => named('Shark', i + 1))],
+    } as Partial<BotWorldState>);
+    const letters = SEGMENTS.map(d => d.letter);
+
+    test('4 free slots with no coin stack held, 3 with one', () => {
+        expect(slotNeed(pack(20, false), REWARD_ITEMS, letters, 'Y').slots).toBe(4);
+        expect(slotNeed(pack(20, true), REWARD_ITEMS, letters, 'Y').slots).toBe(3);
+    });
+
+    test('the precondition passes and refuses on exactly those counts', () => {
+        expect(yRoom(pack(24, false), {} as never)).toBe(true);
+        expect(yRoom(pack(25, false), {} as never)).toMatch(/needs 4 free slots.*1 short/);
+        expect(yRoom(pack(25, true), {} as never)).toBe(true);
+        expect(yRoom(pack(26, true), {} as never)).toMatch(/needs 3 free slots/);
     });
 });

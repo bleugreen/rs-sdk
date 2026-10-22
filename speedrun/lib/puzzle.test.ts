@@ -104,7 +104,9 @@ describe('solvePuzzle', () => {
         }
         // At the default weight 2 the measured range is about 50-105 moves; a broken heuristic would blow far past it.
         expect(Math.max(...lengths)).toBeLessThan(130);
-    }, 30_000);
+        // The 40 searches take 0.6 s on an idle x86_64 and 14 s on a loaded arm64 host (bbl, about 250 agent
+        // sessions), where every operation runs 15-20x slower; the bound leaves that host 4x headroom.
+    }, 60_000);
 });
 
 describe('readBoard', () => {

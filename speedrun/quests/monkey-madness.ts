@@ -26,10 +26,13 @@ import { act, actConverse, opLoc, slotOf, talkTo, useOn, walkTo, wield } from '.
 import { fight, prayerActive, setPrayer, Upkeep } from '../lib/combat';
 import { converse, type Interrupt } from '../lib/converse';
 import { compactJournal, journalProbeName, journalText, questStatus, type QuestView } from '../lib/quests';
-import { teleport, teleportRefusal } from '../lib/travel';
+import { swap } from '../lib/trade';
+import { glide, runTo, spiritTree, teleport, teleportRefusal } from '../lib/travel';
+import { solveOnPanel } from '../lib/puzzle';
 import { currentTick, waitTicks, waitUntil, type Pred } from '../lib/wait';
 import { chebyshev, findLoc, invCount, messagesSince, pos, waitForNpc, type StateLike } from '../lib/world';
 import type { Check, Observed, Step, StepContext } from '../runner/step';
+import { slotsCover, type QuestItem } from './segments';
 
 export const quest: QuestKey = 'mm';
 export const stepId = 'S15';
@@ -45,9 +48,14 @@ export interface Options {
     returnMonkey?: 'walk' | 'glider';
     /** Diagnostic lines (the timing choices behind a random step); the lab prints them. Default: dropped. */
     note?: (line: string) => void;
+    /**
+     * The bow the kit carries for the Jungle Demon (X), by object id. Default the magic shortbow (H12); any bow whose
+     * level requirement is at least the rune arrows' fires them (player_ranged.rs2 player_ranged_check_ammo).
+     */
+    bow?: number;
 }
 
-export const DEFAULT_OPTIONS: Required<Omit<Options, 'kitFrom'>> = { dialogue: 'fixed', templeMethod: 'ladder', returnMonkey: 'walk', note: () => {} };
+export const DEFAULT_OPTIONS: Required<Omit<Options, 'kitFrom'>> = { dialogue: 'fixed', templeMethod: 'ladder', returnMonkey: 'walk', note: () => {}, bow: 861 /* MM_OBJ.magicShortbow, declared below */ };
 
 export function resolveOptions(o: Options = {}): Required<Omit<Options, 'kitFrom'>> & Pick<Options, 'kitFrom'> {
     return { ...DEFAULT_OPTIONS, ...o };
@@ -312,6 +320,8 @@ const BRIDGE_EAST_END = { x: 2730, z: 2766 };
  */
 const ELDER_GUARD = { x: 2801, z: 2757 };
 const ELDER_GUARD_SOUTH = { x: 2801, z: 2755 };
+/** Inside Awowogei's hall, the doorway's inner tile: Elder Guard 2's entry teleport ends here (mm_elder_guard.rs2:30-38). */
+const HALL_DOOR_IN = { x: 2802, z: 2759 };
 /** Awowogei's throne (loc 4771, mm_awowogei.rs2:27-93); Uwogo and Murowoi beside it must be within 7 of the player. */
 const THRONE = { x: 2802, z: 2765 };
 /** Ardougne zoo, inside the gree-gree zone (quest_mm.rs2:1102-1108: 0_40_51_32_1 to 0_41_51_15_23). */
@@ -336,6 +346,30 @@ export const MONKEY_CHATTER: Interrupt = {
     match: s => /monkey in your backpack|^The what\?$/i.test((s.dialog.allComponents ?? []).map(c => c.text).join(' ').trim()),
     dismiss: 'continue',
 };
+
+// The gnome side, for the return with the monkey (U) and the report (Y, Z).
+/** The Gnome Stronghold's south gate (loc 190, gnome_gate.rs2): from its south entrance it force-moves the player 3 north. */
+const GNOME_GATE = { x: 2459, z: 3383 };
+const GNOME_GATE_SOUTH = { x: 2461, z: 3382 };
+/** North of the gate: inside the stronghold's walls. */
+const inStronghold = (src: StateLike) => pos(src).z >= GNOME_GATE.z + 2 && pos(src).x < 2560 && pos(src).z < 3600;
+/** The Grand Tree's scripted door (forcemoves 2 tiles), its trunk ladder and the two NPCs (speedrun/quests/grand-tree.ts TILES). */
+const TREE_DOOR = { x: 2464, z: 3492 };
+const TREE_DOOR_OUTSIDE = { x: 2465, z: 3490 };
+const TREE_LADDER = { x: 2466, z: 3495 };
+const NARNODE = { x: 2464, z: 3497 };
+/** Daero on the tree's first floor (quest-mm-full.ts D3). */
+const DAERO = { x: 2484, z: 3487 };
+const inGrandTree = (src: StateLike) => {
+    const p = pos(src);
+    return p.x >= 2455 && p.x <= 2495 && p.z >= 3480 && p.z <= 3510 && (p.level > 0 || p.z >= 3493);
+};
+/** The powered hangar (Daero's blindfold lands at 0_41_70_25_36; mm_daero.rs2 tests mapsquares 40_70-41_71). */
+export const HANGAR = { x0: 2560, z0: 4480, x1: 2687, z1: 4607, level: 0 } as const;
+/** Crash Island (Waydar's flight lands at 0_45_42_13_37; mm_waydar.rs2 tests mapsquare 45_42). */
+export const CRASH_ISLAND = { x0: 2880, z0: 2688, x1: 2943, z1: 2751, level: 0 } as const;
+/** Varrock's spirit tree's foot (grand-tree.ts TILES.varrockTreeFoot): the tree hop needs the tree within 25 tiles. */
+const VARROCK_TREE_FOOT = { x: 3177, z: 3505 };
 
 /** The chapter 3 (level 0) and chapter 4 (level 1) cutscenes' mapsquare 41_71 (quest_mm.rs2:169-255). */
 const CUTSCENE_ZONE = { x0: 2624, z0: 4544, x1: 2687, z1: 4607 } as const;
@@ -489,8 +523,12 @@ async function noRetaliate(sdk: Sdk, note: (line: string) => void = () => {}): P
     if (sdk.getState()?.autoRetaliateEnabled !== false) note('S15: auto-retaliate stayed on after 8 clicks');
 }
 
-/** The atoll's upkeep while `fn` runs: auto-retaliate off, and a shark below EAT_BELOW. */
-async function atollUpkeep<T>(sdk: Sdk, fn: () => Promise<T>): Promise<T> {
+/**
+ * Upkeep while `fn` runs, on the atoll and on the gnome half alike: auto-retaliate off, a shark below EAT_BELOW, the
+ * antipoison on a poisoning and a prayer potion below DRINK_BELOW while a prayer is on. Measured: B's walk through the
+ * Karamja jungle poisoned the player, and with no cure the poison killed a 42 HP player in E's hangar.
+ */
+async function upkeep<T>(sdk: Sdk, fn: () => Promise<T>): Promise<T> {
     await noRetaliate(sdk);
     const u = new Upkeep(sdk, { eatBelow: EAT_BELOW, food: MM_OBJ.shark });
     let lastDrink = -Infinity;
@@ -543,14 +581,17 @@ async function click(sdk: Sdk, to: { x: number; z: number }, tol = 1): Promise<b
 }
 
 /** Climb the ladder or rope at (x, z) on the player's level; done when the level changes or the player jumps between surface and underground. */
-async function climb(sdk: Sdk, at: { x: number; z: number }, op: RegExp = /climb/i): Promise<void> {
+async function climb(sdk: Sdk, at: { x: number; z: number }, op: RegExp = /climb/i, extra: { interrupts?: readonly Interrupt[] } = {}): Promise<void> {
     const p0 = pos(sdk);
     const moved: Pred = s => {
         const p = pos(s);
         return p.level !== p0.level || Math.abs(p.z - p0.z) > 1000;
     };
-    const r = await opLoc(sdk, { ...at, op, radius: 15 }, op, moved, { resendEvery: 5, maxTicks: 30 });
-    if (!r.ok) throw new Error(`${r.loc.name} at ${at.x},${at.z} did not move the player (at ${where(sdk)})`);
+    const r = await opLoc(sdk, { ...at, op, radius: 15 }, op, moved, { resendEvery: 5, maxTicks: 30, ...extra });
+    if (!r.ok) {
+        const d = sdk.getState()?.dialog;
+        throw new Error(`${r.loc.name} at ${at.x},${at.z} did not move the player (at ${where(sdk)}; dialog ${d?.isOpen ? (d.allComponents ?? []).map(c => c.text).join('/') : 'closed'})`);
+    }
 }
 
 /** The jail patrol's gorillas (mm_jail.rs2 mm_jail_patrol). */
@@ -748,10 +789,13 @@ async function locClick(sdk: Sdk, at: { x: number; z: number }, op: RegExp): Pro
  * before the choice, so the search is repeated until `got` holds; a knockout
  * into the cell ends it (the caller's jailSafe takes over).
  */
-async function searchCrate(sdk: Sdk, at: { x: number; z: number }, yes: RegExp, got: Pred, label: string): Promise<void> {
+async function searchCrate(sdk: Sdk, at: { x: number; z: number }, yes: RegExp, got: Pred, label: string, note: (line: string) => void = () => {}): Promise<void> {
     let reason = '';
     for (let i = 0; i < 6 && !inCell(sdk); i++) {
+        // The crate's script waits p_delay(2) before its choice (quest_mm.rs2:904-969), inside act's 5-tick re-send:
+        // the click-to-dialogue ticks are noted for the shared re-send race (rs/309).
         const r = await actConverse(sdk, await locClick(sdk, at, /search/i), [yes], { done: got, maxTicks: 25, idle: 3, resendEvery: 5 });
+        note(`S15 ${label}: dialogue at click+${r.dialogue && r.dialogue.firstTick >= 0 ? r.dialogue.firstTick - r.startTick : 'none'}, resends ${r.resends}`);
         if (r.ok || got(sdk.getState()!)) return;
         reason = r.reason ?? '';
     }
@@ -948,6 +992,146 @@ async function throughWestGate(ctx: Ctx): Promise<void> {
     if (!r.ok && pos(sdk).z < WEST_GATE.z + 2) throw new Error(`the west gate did not let the monkey through: ${r.reason} (at ${where(sdk)})`);
 }
 
+const CHATTER = { interrupts: [MONKEY_CHATTER] } as const;
+
+// ------------------------------------------------------------------ the gnome half (A-G)
+
+/** Daero's blindfold before reinitialisation lands in the unpowered hangar (mm_daero.rs2:234: 0_37_154_25_36). */
+export const OLD_HANGAR = { x0: 2368, z0: 9856, x1: 2431, z1: 9919, level: 0 } as const;
+/** The powered hangar's arrival after the hangar cutscene (quest-mm-full.ts E3). */
+const POWERED = { x: 2649, z: 4507 };
+/** Daero in the powered hangar (quest-mm-full.ts F1). */
+const DAERO_HANGAR = { x: 2648, z: 4512 };
+/** Karamja's shipyard: the west gate the worker opens for the seal, and Caranock (quest-mm-full.ts B5-B8). */
+const SHIPYARD_GATE = { x: 2945, z: 3041 };
+const SHIPYARD_GATE_FOOT = { x: 2943, z: 3041 };
+const CARANOCK = { x: 2956, z: 3024 };
+/** Inside the shipyard's fence, east of its west gate (the glider's landing, (2971,2969), is south of it). */
+const inShipyard = (src: StateLike) => {
+    const p = pos(src);
+    return p.level === 0 && p.x >= SHIPYARD_GATE.x && p.x <= 3000 && p.z >= 3000 && p.z <= 3070;
+};
+/** The Gandius glider's pilot, near its landing (GLIDERS.gandius in travel.ts). */
+const GANDIUS_PILOT = { x: 2970, z: 2974 };
+const NARNODE_NPC = /^King Narnode( Shareen)?$/i;
+
+/** One line of H12's kit: at least `n` held or worn of items whose name matches (or, for the bow, whose id is `id`). */
+interface KitLine { name: RegExp; n: number; id?: number }
+
+/**
+ * H12 (SUPPLIES.md H12, rs/158's final ruling 01:38): the quest's ingredients, the bow and 200 rune arrows (worn from
+ * the swap on), 2 prayer potions, an antipoison, Ardougne and two Varrock casts, and sharks topped up to 9.
+ */
+export function h12Kit(bow: number): KitLine[] {
+    return [
+        { name: /^Gold bar$/, n: 1 }, { name: /^Ball of wool$/, n: 1 }, { name: /^Monkey bones$/, n: 1 }, { name: /^Banana$/, n: 5 },
+        { name: /bow$/i, n: 1, id: bow }, { name: /^Rune arrow$/, n: 200 },
+        { name: /^Prayer potion\(4\)$/, n: 2 }, { name: /^Antipoison\(4\)$/, n: 1 },
+        // Ardougne 2 casts (2 law, 2 water each), Varrock 2 casts (1 law, 3 air, 1 fire each).
+        { name: /^Law rune$/, n: 6 }, { name: /^Air rune$/, n: 6 }, { name: /^Fire rune$/, n: 2 }, { name: /^Water rune$/, n: 4 },
+        { name: /^Shark$/, n: 9 },
+    ];
+}
+
+const carried = (s: BotWorldState, k: KitLine) =>
+    [...s.inventory, ...s.equipment].filter(i => (k.id !== undefined ? i.id === k.id : k.name.test(i.name))).reduce((a, i) => a + i.count, 0);
+
+/** What H12 still lacks, held or worn: `[name, missing]`. */
+export function kitMissing(s: BotWorldState, bow: number): Array<[RegExp, number]> {
+    return h12Kit(bow).map(k => [k.name, k.n - carried(s, k)] as [RegExp, number]).filter(([, n]) => n > 0);
+}
+
+/** What SCORED hands back in the Grand Tree swap (rs/158 01:38): S14's staff of fire, scimitar and knife, and the coins. */
+export const GT_HANDBACK: readonly RegExp[] = [/^Staff of fire$/i, /^Mithril scimitar$/i, /^Knife$/i, /^Coins$/i];
+
+/**
+ * The Grand Tree hand-off before A: one swap() with the giver (lib/trade.ts), giving back GT_HANDBACK and taking what
+ * H12 lacks; then the bow is wielded and the arrows quivered, which they stay until the gree-gree at R.
+ */
+async function gtSwap(ctx: Ctx, o: Resolved): Promise<void> {
+    const { sdk } = ctx;
+    const missing = kitMissing(sdk.getState()!, o.bow);
+    if (missing.length) {
+        if (!o.kitFrom) throw new Error(`H12 kit short (${missing.map(([n, k]) => `${k} ${n.source}`).join(', ')}) and no kitFrom`);
+        const give = GT_HANDBACK.filter(p => sdk.getState()!.inventory.some(i => p.test(i.name))).map(item => ({ item }));
+        const r = await swap(sdk as never, o.kitFrom, give, missing.map(([item, amount]) => ({ item, amount })), { closeModals: true });
+        if (!r.ok) throw new Error(`the Grand Tree swap with ${o.kitFrom} failed: ${r.reason ?? 'unknown'}`);
+        const still = kitMissing(sdk.getState()!, o.bow);
+        if (still.length) throw new Error(`after the swap the kit still lacks ${still.map(([n, k]) => `${k} ${n.source}`).join(', ')}`);
+    }
+    for (const id of [o.bow, MM_OBJ.runeArrow]) {
+        if (wearing(sdk.getState()!, id)) continue;
+        const w = await wield(sdk, id, { maxTicks: 6 });
+        if (!w.ok) throw new Error(`could not wear ${id} at the swap: ${w.reason}`);
+    }
+}
+
+/** Glide from the pilot in reach (Ta Quir Priw on the tree's top floor, or Gandius) to `to` (travel.ts glide). */
+async function glideTo(sdk: Sdk, to: 'gandius' | 'ta_quir_priw'): Promise<void> {
+    const r = await glide(sdk, to);
+    if (!r.ok) throw new Error(`the glider to ${to}: ${r.reason} (at ${where(sdk)})`);
+}
+
+/**
+ * Through the Gnome Stronghold's south gate from the south. On an account's first visit the gate opens Femi's boxes
+ * scene instead (gnome_gate.rs2:21, femi.rs2): declining sets %femi_help, and the next click goes through.
+ *
+ * STAND-IN for rs/309's shared gate helper (travel.ts or act.ts), behind this one function: main's ruling (23:43)
+ * is that no module owns Femi's handling. Swap the body for the shared call when rs/309 lands.
+ */
+async function passStrongholdGate(ctx: Ctx): Promise<void> {
+    const { sdk } = ctx;
+    if (inStronghold(sdk)) return;
+    await go(ctx, GNOME_GATE_SOUTH, 1);
+    for (let i = 0; i < 3 && !inStronghold(sdk); i++) {
+        // Ends on the way through, or as soon as Femi's declined scene closes, so the next click goes at once
+        // (measured: waiting out the click's budget instead stood 22 ticks at the gate).
+        let talked = false;
+        await actConverse(sdk, await locClick(sdk, GNOME_GATE, /^open$/i), [/^Sorry, I'm a bit busy\.$/], {
+            done: s => {
+                if (s.dialog.isOpen) talked = true;
+                return inStronghold(s) || (talked && !s.dialog.isOpen);
+            },
+            maxTicks: 30, idle: 1, resendEvery: 8, ...CHATTER,
+        });
+    }
+    if (!inStronghold(sdk)) throw new Error(`not through the Gnome Stronghold's gate (at ${where(sdk)})`);
+}
+
+/** Into the Grand Tree by its scripted door, and to `level` by the trunk ladder. */
+async function intoTree(ctx: Ctx, level: number): Promise<void> {
+    const { sdk } = ctx;
+    if (!inGrandTree(sdk)) {
+        const r = await runTo(sdk, { ...TREE_DOOR_OUTSIDE, tol: 1 }, { bot: ctx.bot });
+        if (!r.ok) throw new Error(`run to the Grand Tree's door stopped at ${where(sdk)}: ${r.reason}`);
+        const d = await opLoc(sdk, { ...TREE_DOOR, op: /^open$/i, radius: 6 }, /^open$/i, s => pos(s).z >= TREE_DOOR.z + 1, { resendEvery: 5, maxTicks: 20, ...CHATTER });
+        if (!d.ok) throw new Error(`the Grand Tree's door did not let the player in (at ${where(sdk)})`);
+    }
+    for (let i = 0; i < 4 && pos(sdk).level !== level; i++) {
+        const up = pos(sdk).level < level;
+        if (chebyshev(pos(sdk), TREE_LADDER) > 3) await go(ctx, TREE_LADDER, 2);
+        // The backpack monkey chatters whenever the player stands still (mm_zoo_monkey.rs2:108), and act() never re-sends
+        // under an open page: measured, 2 of 3 runs stood 30 ticks at the ladder just inside the door.
+        await climb(sdk, TREE_LADDER, up ? /^climb-up$/i : /^climb-down$/i, CHATTER);
+    }
+    if (pos(sdk).level !== level) throw new Error(`not on the Grand Tree's level ${level} (at ${where(sdk)})`);
+}
+
+/**
+ * The walk home with the monkey (returnMonkey 'walk'): from the zoo to the stronghold's south gate, through it, into
+ * the Grand Tree and up to Daero. No teleport or spirit tree: both delete the monkey (teleport.rs2 post_tele_checks).
+ */
+async function zooToDaero(ctx: Ctx): Promise<void> {
+    const { sdk } = ctx;
+    if (!inStronghold(sdk) && !inGrandTree(sdk)) {
+        const r = await runTo(sdk, { ...GNOME_GATE_SOUTH, tol: 2 }, { bot: ctx.bot });
+        if (!r.ok) throw new Error(`run to the Gnome Stronghold's gate stopped at ${where(sdk)}: ${r.reason}`);
+        await passStrongholdGate(ctx);
+    }
+    await intoTree(ctx, 1);
+    if (chebyshev(pos(sdk), DAERO) > 3) await go(ctx, DAERO, 2);
+}
+
 const AUNT = /^The Monkey's Aunt$/;
 
 /**
@@ -1060,7 +1244,7 @@ export function awayFrom(me: { x: number; z: number }, from: { x: number; z: num
  * DEMON_TOO_CLOSE, step about 6 tiles away and shoot again: at Defence 1 and
  * 42 HP its melee is the danger, and Protect from Magic stops only its spells.
  */
-async function demonFight(ctx: Ctx, note: (line: string) => void): Promise<void> {
+async function demonFight(ctx: Ctx, note: (line: string) => void, bow: number): Promise<void> {
     const { sdk } = ctx;
     const st = () => sdk.getState()!;
     // Protect from Magic before the teleport: on arrival the battle's intro blocks both prayer toggles and equips for
@@ -1075,12 +1259,12 @@ async function demonFight(ctx: Ctx, note: (line: string) => void): Promise<void>
         // The battle's intro (Garkor's queued line, the squad, the demon) opens chats that block inventory ops, so the bow
         // and arrows go on in a loop that clears any open chat between tries.
         const equipped = (id: number) => st().equipment.some(i => i.id === id);
-        for (let i = 0; i < 8 && !(equipped(MM_OBJ.magicShortbow) && equipped(MM_OBJ.runeArrow)); i++) {
+        for (let i = 0; i < 8 && !(equipped(bow) && equipped(MM_OBJ.runeArrow)); i++) {
             await dismiss(sdk);
-            if (!equipped(MM_OBJ.magicShortbow)) await wield(sdk, MM_OBJ.magicShortbow, { maxTicks: 5 });
+            if (!equipped(bow)) await wield(sdk, bow, { maxTicks: 5 });
             if (!equipped(MM_OBJ.runeArrow) && invCount(sdk, MM_OBJ.runeArrow) > 0) await wield(sdk, MM_OBJ.runeArrow, { maxTicks: 5 });
         }
-        if (!equipped(MM_OBJ.magicShortbow)) throw new Error(`the bow did not go on; dialog ${st().dialog.isOpen ? (st().dialog.allComponents ?? []).map(c => c.text).join('/') : 'closed'}; worn ${st().equipment.map(i => i.name).join(', ')}; msgs ${st().gameMessages.slice(-4).map(m => m.text).join(' | ')}`);
+        if (!equipped(bow)) throw new Error(`the bow did not go on; dialog ${st().dialog.isOpen ? (st().dialog.allComponents ?? []).map(c => c.text).join('/') : 'closed'}; worn ${st().equipment.map(i => i.name).join(', ')}; msgs ${st().gameMessages.slice(-4).map(m => m.text).join(' | ')}`);
         const spawn = await waitUntil(sdk, s => s.nearbyNpcs.some(n => DEMON.test(n.name)), { maxTicks: 60 });
         if (!spawn.ok) throw new Error(`no Jungle Demon in the arena (at ${where(sdk)})`);
         let steps = 0;
@@ -1116,7 +1300,7 @@ async function demonFight(ctx: Ctx, note: (line: string) => void): Promise<void>
  */
 async function toZooknock(ctx: Ctx): Promise<void> {
     const { sdk } = ctx;
-    await atollUpkeep(sdk, async () => {
+    await upkeep(sdk, async () => {
         await jailSafe(sdk, () => praying(sdk, 'protect_from_missiles', async () => {
             if (inArea(sdk, AREAS.westWarehouse) && pos(sdk).level === 0) {
                 for (const r of ROOFS) {
@@ -1148,6 +1332,8 @@ type Resolved = ReturnType<typeof resolveOptions>;
 
 interface Body {
     preconditions: Check<MmContext>;
+    /** Preconditions that depend on the options; replaces `preconditions` when given. */
+    pre?: (o: Resolved) => Check<MmContext>;
     run(ctx: Ctx, o: Resolved): Promise<void>;
     postconditions?: Check<MmContext>;
     inProgress?: (o: Observed) => boolean;
@@ -1157,6 +1343,55 @@ interface Body {
 const onAtoll: Check<MmContext> = s => inArea(s, AREAS.atoll) || `not on Ape Atoll's surface (at ${JSON.stringify(pos(s))})`;
 const inTown: Check<MmContext> = s => (inArea(s, AREAS.atoll) && !outsideTown(s) && !inCell(s)) || `not free in the town (at ${JSON.stringify(pos(s))})`;
 const human: Check<MmContext> = s => !s.equipment.some(i => i.id === MM_OBJ.greegree) || 'wearing the gree-gree';
+
+/** Inside Awowogei's hall: north of Elder Guard 2's door (he shows out anyone more than 1 tile north of him). */
+export function inThroneRoom(src: StateLike): boolean {
+    const p = pos(src);
+    return p.level === 0 && p.z >= ELDER_GUARD.z + 2 && p.z <= THRONE.z + 3 && p.x >= ELDER_GUARD.x - 6 && p.x <= THRONE.x + 1;
+}
+
+/**
+ * Narnode's reward (mm_narnode.rs2:89-99): 10,000 coins and 3 diamonds. mm_narnode_reward checks only 3 free slots, but
+ * the diamonds are unstackable, so with no coin stack held it takes 4; with only 3 free, one diamond is lost.
+ */
+export const REWARD_ITEMS: readonly QuestItem[] = [
+    { item: /^Coins$/i, name: 'coins', stackable: true, from: 'Y' },
+    { item: /^Diamond$/i, name: 'diamond', n: 3, from: 'Y' },
+];
+/** Y's room for the reward, by segments.ts slotNeed: 4 free with no coin stack held, 3 with one. */
+export const yRoom: Check<MmContext> = slotsCover(REWARD_ITEMS, SEGMENTS.map(d => d.letter), 'Y');
+
+/**
+ * Quest items dead after S15, dropped by Z (rs/318's inventory ledger, fold-in 18): the royal seal (never taken back,
+ * mm_caranock.rs2 and mm_lumdo.rs2 only show it), the amulet mould (Zooknock returns it) and the sigil.
+ */
+export const EXIT_DROPS: readonly number[] = [MM_OBJ.royalSeal, MM_OBJ.amuletMould, MM_OBJ.sigil];
+
+/** S15's exit: Daero's training xp, and none of EXIT_DROPS held or worn. */
+export const exitState: Check<MmContext> = s => {
+    if (skillXp(s, 'Strength') < DAERO_STRENGTH_XP) return `Strength xp ${skillXp(s, 'Strength')} is below Daero's ${DAERO_STRENGTH_XP}`;
+    const kept = EXIT_DROPS.filter(id => holds(s, id));
+    return kept.length === 0 || `still holding ${kept.join(', ')} (S15's exit drops)`;
+};
+
+/**
+ * Drop EXIT_DROPS: the sigil comes off first if worn (it needs a free slot), then every drop goes out in one tick
+ * (a drop is a 0-tick inventory op while the player stands still).
+ */
+async function dropDead(sdk: Sdk): Promise<void> {
+    if (sdk.getState()!.equipment.some(i => i.id === MM_OBJ.sigil)) await unwear(sdk, MM_OBJ.sigil);
+    for (let i = 0; i < 3 && EXIT_DROPS.some(id => invCount(sdk, id) > 0); i++) {
+        for (const it of sdk.getState()!.inventory.filter(x => EXIT_DROPS.includes(x.id))) void sdk.sendDropItem(it.slot);
+        await waitUntil(sdk, s => !EXIT_DROPS.some(id => invCount(s, id) > 0), { maxTicks: 3 });
+    }
+    const left = EXIT_DROPS.filter(id => invCount(sdk, id) > 0);
+    if (left.length) throw new Error(`could not drop ${left.join(', ')}`);
+}
+
+/** Daero's option 1 grants 35,000 Strength xp (mm_daero.rs2:294-302: stat_advance(strength, 350000), tenths). */
+export const DAERO_STRENGTH_XP = 35_000;
+
+const skillXp = (s: BotWorldState, name: string) => s.skills.find(k => k.name === name)?.experience ?? 0;
 
 export const freeSlots = (s: BotWorldState) => 28 - s.inventory.length;
 
@@ -1176,15 +1411,162 @@ const holding = (...ids: number[]): Check<MmContext> => s => ids.every(id => hol
 const atZooknock: Check<MmContext> = s => (inArea(s, AREAS.dungeon) && chebyshev(pos(s), ZOOKNOCK) <= 4) || `not at Zooknock (at ${JSON.stringify(pos(s))})`;
 
 const BODIES: Partial<Record<string, Body>> = {
+    A: {
+        preconditions: () => true,
+        pre: o => all(
+            s => questStatus(s, 'tree') === 'complete' || 'Tree Gnome Village is not complete',
+            s => questStatus(s, 'grandtree') === 'complete' || 'The Grand Tree is not complete',
+            s => (questStatus(s, 'mm') ?? 'not_started') === 'not_started' || holds(s, MM_OBJ.royalSeal) || 'Monkey Madness is already started',
+            s => !kitMissing(s, o.bow).length || !!o.kitFrom || `H12 kit short and no kitFrom: ${kitMissing(s, o.bow).map(([n, k]) => `${k} ${n.source}`).join(', ')}`,
+            s => (inGrandTree(s) && pos(s).level === 0) || chebyshev(pos(s), TREE_DOOR_OUTSIDE) <= 10 || `not at the Grand Tree (at ${JSON.stringify(pos(s))})`,
+        ),
+        async run(ctx, o) {
+            const { sdk } = ctx;
+            await gtSwap(ctx, o);
+            await intoTree(ctx, 0);
+            // "Start Monkey Madness?" Yes (mm_narnode.rs2:124-140): the story, the seal and its objbox, the chapter card.
+            const r = await talkTo(sdk, NARNODE_NPC, [/^Yes$/], { maxTicks: 200, idle: 4, near: NARNODE, closeModals: true, until: s => holds(s, MM_OBJ.royalSeal) });
+            if (!holds(sdk.getState()!, MM_OBJ.royalSeal)) throw new Error(`no royal seal from Narnode: ${r.reason ?? r.transcript.slice(-2).join(' / ')}`);
+            await dismiss(sdk);
+        },
+        postconditions: holding(MM_OBJ.royalSeal),
+    },
+    B: {
+        preconditions: all(holding(MM_OBJ.royalSeal), s => inGrandTree(s) || s.player !== null && pos(s).z < 3100 || 'not in the Grand Tree or on Karamja'),
+        async run(ctx) {
+            const { sdk } = ctx;
+            if (inGrandTree(sdk)) {
+                await intoTree(ctx, 3);
+                await glideTo(sdk, 'gandius');
+            }
+            // The shipyard's west gate: at mm_main started its worker's pages end with the seal shown, mm_main to
+            // shown_seal and the gate opened (quest_grandtree.rs2 _shipyard_gate, mm_caranock.rs2:45-61). The glider
+            // lands south of the yard, east of the gate, so the gate is taken unless the player is already inside.
+            if (!inShipyard(sdk)) {
+                await go(ctx, SHIPYARD_GATE_FOOT, 1);
+                const g = await actConverse(sdk, await locClick(sdk, SHIPYARD_GATE, /^open$/i), [], { done: s => pos(s).x >= SHIPYARD_GATE.x, maxTicks: 90, idle: 8, resendEvery: 10 });
+                if (pos(sdk).x < SHIPYARD_GATE.x) throw new Error(`the shipyard gate did not open: ${g.reason} (at ${where(sdk)})`);
+            }
+            await go(ctx, CARANOCK, 1);
+            await talk(sdk, /Caranock$/i, [], { near: CARANOCK, minPages: 6 });
+        },
+    },
+    C: {
+        preconditions: holding(MM_OBJ.royalSeal),
+        async run(ctx) {
+            const { sdk } = ctx;
+            if (!inGrandTree(sdk)) {
+                await go(ctx, GANDIUS_PILOT, 2);
+                await glideTo(sdk, 'ta_quir_priw');
+            }
+            await intoTree(ctx, 0);
+            // The report; Narnode writes the orders behind a p_delay(3) (mm_narnode.rs2 p4-p6).
+            const r = await talkTo(sdk, NARNODE_NPC, [], { maxTicks: 200, idle: 6, near: NARNODE, closeModals: true, until: s => holds(s, MM_OBJ.orders) });
+            if (!holds(sdk.getState()!, MM_OBJ.orders)) throw new Error(`no orders from Narnode: ${r.reason ?? r.transcript.slice(-2).join(' / ')}`);
+            await dismiss(sdk);
+        },
+        postconditions: holding(MM_OBJ.orders),
+    },
+    D: {
+        preconditions: s => holds(s, MM_OBJ.orders) || inArea(s, OLD_HANGAR) || 'no orders for Daero',
+        async run(ctx) {
+            const { sdk } = ctx;
+            if (inArea(sdk, OLD_HANGAR)) return;
+            await intoTree(ctx, 1);
+            if (chebyshev(pos(sdk), DAERO) > 3) await go(ctx, DAERO, 2);
+            // The orders, the decode (p_delay 3), then "Leave" only after all three topics were opened (mm_daero.rs2:129-133).
+            const r = await talkTo(sdk, /^Daero$/i, [/journey/i, /Return to previous/i, /10th squad/i, /Return to previous/i, /Caranock/i, /Return to previous/i, /^Leave/i, /Who is it/i], {
+                maxTicks: 300, idle: 8, near: DAERO, closeModals: true, until: s => inArea(s, OLD_HANGAR),
+            });
+            if (!inArea(sdk, OLD_HANGAR)) throw new Error(`Daero did not take the player to the hangar: ${r.reason ?? r.transcript.slice(-2).join(' / ')}`);
+            await dismiss(sdk);
+        },
+        postconditions: s => inArea(s, OLD_HANGAR) || 'not in the hangar',
+    },
+    E: {
+        preconditions: s => inArea(s, OLD_HANGAR) || inArea(s, HANGAR) || 'not in the hangar',
+        inProgress: o => !!journalText(o, 'mm')?.includes(REINIT_PENDING),
+        async run(ctx, o) {
+            const { sdk } = ctx;
+            if (inArea(sdk, HANGAR)) return;
+            // Daero introduces Waydar (mm_daero.rs2 daero_left_grandtree): mm_daero to started_reinit. Once said, he
+            // answers with a menu instead, so the talk is skipped when the reinitialisation line is in the journal.
+            const journal = journalText(sdk.getState()!, 'mm');
+            if (!journal?.includes(REINIT_PENDING)) {
+                await talk(sdk, /^Daero$/i, [], { minPages: 10, idle: 4 });
+                await dismiss(sdk);
+            }
+            const panel = (await sdk.scanNearbyLocs(20)).find(l => /reinitialisation panel/i.test(l.name));
+            if (!panel) throw new Error(`no Reinitialisation Panel near ${where(sdk)}`);
+            const op = panel.optionsWithIndex.find(x => /operate/i.test(x.text))?.opIndex ?? 1;
+            const open = await act(sdk, () => sdk.sendInteractLoc(panel.x, panel.z, panel.id, op), s => !!s.interface.inventories?.some(i => i.componentId === PUZZLE_COMPONENT), { resendEvery: 8, maxTicks: 40 });
+            if (!open.ok) throw new Error(`the panel did not open (at ${where(sdk)})`);
+            // 5 clicks a tick: 9 of 9 scrambles solved, 11-17 ticks (lab/measure-mm-puzzle.ts).
+            const p = await solveOnPanel(sdk, { componentId: PUZZLE_COMPONENT, tileIds: PUZZLE_TILE_IDS, perTick: 5 });
+            o.note(`S15:E puzzle: ${p.planned} moves planned, ${p.moves} sent, ${p.solves} solves, ${p.ticks} ticks`);
+            // The rumble and the hangar cutscene, then the powered hangar (about 20 ticks, measured).
+            const r = await waitUntil(sdk, s => pos(s).level === 0 && chebyshev(pos(s), POWERED) <= 4, { maxTicks: 90 });
+            if (!r.ok) throw new Error(`no powered hangar after the puzzle (at ${where(sdk)})`);
+            await dismiss(sdk);
+        },
+        postconditions: s => inArea(s, HANGAR) || 'not in the powered hangar',
+    },
+    F: {
+        preconditions: s => inArea(s, HANGAR) || inArea(s, CRASH_ISLAND) || 'not in the powered hangar',
+        async run(ctx) {
+            const { sdk } = ctx;
+            if (inArea(sdk, CRASH_ISLAND)) return;
+            if (chebyshev(pos(sdk), DAERO_HANGAR) > 3) await go(ctx, DAERO_HANGAR, 1);
+            // Daero at reinit_complete orders Waydar to fly (mm_daero.rs2:30-42): mm_daero to daero_complete.
+            const d = await talkTo(sdk, /^Daero$/i, [], { maxTicks: 120, idle: 4, near: DAERO_HANGAR });
+            if (!d.ok) throw new Error(`Daero: ${d.reason}`);
+            const r = await talkTo(sdk, /^Waydar$/i, [/^Yes$/], { maxTicks: 120, idle: 4, closeModals: false, until: s => inArea(s, CRASH_ISLAND) });
+            if (!inArea(sdk, CRASH_ISLAND)) throw new Error(`Waydar did not fly to Crash Island: ${r.reason ?? r.transcript.slice(-2).join(' / ')}`);
+        },
+        postconditions: s => inArea(s, CRASH_ISLAND) || 'not on Crash Island',
+    },
+    G: {
+        preconditions: s => inArea(s, CRASH_ISLAND) || inArea(s, AREAS.atoll) || 'not on Crash Island',
+        async run(ctx, o) {
+            const { sdk } = ctx;
+            if (inArea(sdk, AREAS.atoll)) return;
+            // Lumdo (no choices): proof by the seal, then he won't take the player (mm_lumdo.rs2:32-75).
+            const l = await talkTo(sdk, /^Lumdo$/i, [], { maxTicks: 120, idle: 3 });
+            if (!l.ok) throw new Error(`Lumdo: ${l.reason}`);
+            // Waydar orders Lumdo (within 10 tiles), then the chapter 2 cutscene, which ends on the atoll (mm_waydar.rs2:54-82).
+            const onAtoll = (s: BotWorldState) => inArea(s, AREAS.atoll) && pos(s).level === 0;
+            // The flight leaves mm_waydar at 0, so the first talk may be his 4-page arrival intro (mm_waydar.rs2:32-38)
+            // instead of the menu: a talk that closes without the Lumdo option ends at once and the next one asks.
+            for (let i = 0; i < 3 && !onAtoll(sdk.getState()!); i++) {
+                let opened = false, menu = false;
+                const w = await talkTo(sdk, /^Waydar$/i, [/cannot convince Lumdo/i], {
+                    maxTicks: 400, idle: 12, closeModals: true,
+                    until: s => {
+                        if (s.dialog.isOpen) {
+                            opened = true;
+                            if (s.dialog.options.some(x => /cannot convince Lumdo/i.test(x.text))) menu = true;
+                        }
+                        return onAtoll(s) || (opened && !menu && !s.dialog.isOpen);
+                    },
+                });
+                o.note(`S15:G Waydar: ${w.pages} pages${onAtoll(sdk.getState()!) ? ', on the atoll' : ''}`);
+            }
+            if (!onAtoll(sdk.getState()!)) throw new Error(`not on the atoll after the chapter 2 cutscene (at ${where(sdk)})`);
+            const card = await waitUntil(sdk, s => s.modalOpen, { maxTicks: 4 });
+            if (card.ok) await sdk.sendCloseModal();
+            await dismiss(sdk);
+        },
+        postconditions: onAtoll,
+    },
     H: {
         preconditions: all(onAtoll, human),
-        run: ctx => atollUpkeep(ctx.sdk, () => toTown(ctx)),
+        run: ctx => upkeep(ctx.sdk, () => toTown(ctx)),
         postconditions: inTown,
     },
     I: {
         preconditions: all(onAtoll, human),
         async run(ctx) {
-            await atollUpkeep(ctx.sdk, () => jailSafe(ctx.sdk, async () => {
+            await upkeep(ctx.sdk, () => jailSafe(ctx.sdk, async () => {
                 await toTown(ctx);
                 await townGo(ctx, GARKOR, 1, GARKOR_NORTH);
                 // 25 pages, no choice (mm_garkor.rs2:95-126): garkor 0 -> 2.
@@ -1194,21 +1576,21 @@ const BODIES: Partial<Record<string, Body>> = {
     },
     J: {
         preconditions: all(onAtoll, human, roomFor(MM_OBJ.dentures, MM_OBJ.amuletMould)),
-        async run(ctx) {
+        async run(ctx, o) {
             const { sdk } = ctx;
-            await atollUpkeep(sdk, () => jailSafe(sdk, async () => {
+            await upkeep(sdk, () => jailSafe(sdk, async () => {
                 await toTown(ctx);
                 if (!holds(sdk.getState()!, MM_OBJ.dentures)) {
                     await townGo(ctx, DENTURE_CRATE_EAST, 0, inCrateStrip(sdk) ? [] : [CRATES_FROM_GARKOR, CRATES]);
-                    await searchCrate(sdk, DENTURE_CRATE, /^Yes$/, s => holds(s, MM_OBJ.dentures), 'denture crate');
+                    await searchCrate(sdk, DENTURE_CRATE, /^Yes$/, s => holds(s, MM_OBJ.dentures), 'denture crate', o.note);
                 }
                 if (!inArea(sdk, AREAS.cellar)) {
                     await townGo(ctx, { x: HOLE_CRATE.x, z: HOLE_CRATE.z + 1 }, 0, inCrateStrip(sdk) ? [] : [CRATES_FROM_GARKOR, CRATES]);
-                    await searchCrate(sdk, HOLE_CRATE, /Yes, I'm sure/, s => inArea(s, AREAS.cellar), 'crate over the hole');
+                    await searchCrate(sdk, HOLE_CRATE, /Yes, I'm sure/, s => inArea(s, AREAS.cellar), 'crate over the hole', o.note);
                 }
                 if (!holds(sdk.getState()!, MM_OBJ.amuletMould)) {
                     await go(ctx, { x: MOULD_CRATE.x, z: MOULD_CRATE.z - 1 }, 1);
-                    await searchCrate(sdk, MOULD_CRATE, /^Yes$/, s => holds(s, MM_OBJ.amuletMould), 'mould crate');
+                    await searchCrate(sdk, MOULD_CRATE, /^Yes$/, s => holds(s, MM_OBJ.amuletMould), 'mould crate', o.note);
                 }
                 await go(ctx, { x: WEST_ROPE.x, z: WEST_ROPE.z + 1 }, 1);
                 await climb(sdk, WEST_ROPE);
@@ -1222,8 +1604,9 @@ const BODIES: Partial<Record<string, Body>> = {
         postconditions: atZooknock,
     },
     X: {
-        preconditions: all(holding(MM_OBJ.sigil, MM_OBJ.magicShortbow), s => invCount(s, MM_OBJ.runeArrow) > 0 || s.equipment.some(i => i.id === MM_OBJ.runeArrow) || 'no rune arrows'),
-        run: (ctx, o) => demonFight(ctx, o.note),
+        preconditions: () => true,
+        pre: o => all(holding(MM_OBJ.sigil, o.bow), s => invCount(s, MM_OBJ.runeArrow) > 0 || s.equipment.some(i => i.id === MM_OBJ.runeArrow) || 'no rune arrows'),
+        run: (ctx, o) => demonFight(ctx, o.note, o.bow),
     },
     P: {
         preconditions: all(human, holding(MM_OBJ.talisman, MM_OBJ.monkeyBones), s => inArea(s, AREAS.atoll) || inArea(s, AREAS.dungeon) || 'not on the atoll or in its dungeon'),
@@ -1234,7 +1617,7 @@ const BODIES: Partial<Record<string, Body>> = {
         preconditions: all(s => inArea(s, AREAS.dungeon) || 'not in the dungeon', s => holds(s, MM_OBJ.dentures) || holds(s, MM_OBJ.amuletMould) || 'no dentures or mould'),
         async run(ctx) {
             const { sdk } = ctx;
-            if (chebyshev(pos(sdk), ZOOKNOCK) > 3) await atollUpkeep(sdk, () => go(ctx, ZOOKNOCK, 2));
+            if (chebyshev(pos(sdk), ZOOKNOCK) > 3) await upkeep(sdk, () => go(ctx, ZOOKNOCK, 2));
             // The story to need_items (mm_zooknock.rs2:28-37, 304-345), then the amulet's list and back out (259-280).
             await talk(sdk, /zooknock/i, [/What do we need for the monkey amulet\?/, /I'll be back later/], { near: ZOOKNOCK, minPages: 4 });
             const bar: Pred = s => holds(s, MM_OBJ.enchantedBar);
@@ -1252,7 +1635,7 @@ const BODIES: Partial<Record<string, Body>> = {
         preconditions: all(onAtoll, human, holding(MM_OBJ.enchantedBar, MM_OBJ.amuletMould, MM_OBJ.ballOfWool)),
         async run(ctx, o) {
             const { sdk } = ctx;
-            await atollUpkeep(sdk, async () => {
+            await upkeep(sdk, async () => {
                 if (!underTemple(sdk)) {
                     await jailSafe(sdk, async () => {
                         await toTown(ctx);
@@ -1290,7 +1673,7 @@ const BODIES: Partial<Record<string, Body>> = {
         preconditions: all(onAtoll, human, s => holds(s, MM_OBJ.amulet) || 'no strung amulet', s => invCount(s, MM_OBJ.banana) >= 5 || holds(s, MM_OBJ.talisman) || 'fewer than 5 bananas'),
         async run(ctx, o) {
             const { sdk } = ctx;
-            await atollUpkeep(sdk, () => jailSafe(sdk, async () => {
+            await upkeep(sdk, () => jailSafe(sdk, async () => {
                 await templeOut(ctx);
                 await toTown(ctx);
                 const w = await wield(sdk, MM_OBJ.amulet);
@@ -1304,7 +1687,7 @@ const BODIES: Partial<Record<string, Body>> = {
         preconditions: all(human, s => inArea(s, AREAS.dungeon) || 'not in the dungeon', s => holds(s, MM_OBJ.greegree) || (holds(s, MM_OBJ.talisman) && holds(s, MM_OBJ.monkeyBones)) || 'no talisman and bones'),
         async run(ctx, o) {
             const { sdk } = ctx;
-            await atollUpkeep(sdk, async () => {
+            await upkeep(sdk, async () => {
                 const gree: Pred = s => holds(s, MM_OBJ.greegree);
                 if (!gree(sdk.getState()!)) {
                     if (chebyshev(pos(sdk), ZOOKNOCK) > 3) await praying(sdk, 'protect_from_melee', () => go(ctx, ZOOKNOCK, 2));
@@ -1333,7 +1716,7 @@ const BODIES: Partial<Record<string, Body>> = {
         preconditions: all(holding(MM_OBJ.greegree, MM_OBJ.amulet), s => inArea(s, AREAS.dungeon) || inArea(s, AREAS.atoll) || 'not on the atoll or in its dungeon'),
         async run(ctx) {
             const { sdk } = ctx;
-            await atollUpkeep(sdk, async () => {
+            await upkeep(sdk, async () => {
                 // The dungeon is inside the gree-gree zone (quest_mm.rs2:1102-1108), and a monkey is never jailed.
                 await asMonkey(sdk);
                 if (inArea(sdk, AREAS.dungeon)) {
@@ -1352,7 +1735,7 @@ const BODIES: Partial<Record<string, Body>> = {
         preconditions: all(onAtoll, s => wearing(s, MM_OBJ.greegree) || 'not a monkey', s => wearing(s, MM_OBJ.amulet) || 'the amulet is not worn'),
         async run(ctx) {
             const { sdk } = ctx;
-            await atollUpkeep(sdk, async () => {
+            await upkeep(sdk, async () => {
                 // Elder Guard 2 from his south side (5 pages; elder_guard 1), Kruk at the west gate (6 pages, then his
                 // escort to the throne room, mm_kruk.rs2:24-34), and Awowogei's mission (20 pages; awowogei 1).
                 await go(ctx, ELDER_GUARD_SOUTH, 0);
@@ -1380,7 +1763,11 @@ const BODIES: Partial<Record<string, Body>> = {
             const st = () => sdk.getState()!;
             if (!holds(st(), MM_OBJ.monkey)) {
                 if (!inArea(sdk, ZOO)) {
-                    // The teleport keeps nothing back: no monkey is carried yet. Out of the gree-gree zone it comes off.
+                    // A worn gree-gree hides the magic tab (quest_mm.rs2 mm_greegree_transmogrify: if_settab(null,
+                    // ^tab_magic)), and the server drops every spell click with no message: measured, both Ardougne and
+                    // Varrock casts as a monkey timed out, and the same cast as a human landed in 4 ticks. No monkey is
+                    // carried yet, so the teleport loses nothing.
+                    await unwear(sdk, MM_OBJ.greegree);
                     const t = await teleport(sdk, 'ardougne');
                     if (!t.ok) throw new Error(`the Ardougne teleport: ${t.reason}`);
                     await go(ctx, ZOO_EAST, 1);
@@ -1405,11 +1792,139 @@ const BODIES: Partial<Record<string, Body>> = {
         },
         postconditions: all(holding(MM_OBJ.monkey, MM_OBJ.greegree), s => !inCage(s) || 'still in the cage'),
     },
+    U: {
+        preconditions: all(holding(MM_OBJ.monkey, MM_OBJ.greegree), s => wearing(s, MM_OBJ.amulet) || 'the amulet is not worn'),
+        async run(ctx) {
+            const { sdk } = ctx;
+            // By region, so a resume picks up the leg it stands in: mainland, the hangar, Crash Island, the atoll.
+            const mainland = () => !inArea(sdk, AREAS.atoll) && !inArea(sdk, HANGAR) && !inArea(sdk, CRASH_ISLAND);
+            if (mainland()) {
+                await zooToDaero(ctx);
+                // Daero at daero_complete (mm_daero.rs2:218-238): Yes, the blindfold, a fade, the powered hangar.
+                const r = await talkTo(sdk, /^Daero$/i, [/^Yes$/], { maxTicks: 120, idle: 4, until: s => inArea(s, HANGAR), near: DAERO, ...CHATTER });
+                if (!inArea(sdk, HANGAR)) throw new Error(`Daero did not take the player to the hangar: ${r.reason ?? r.transcript.slice(-2).join(' / ')} (at ${where(sdk)})`);
+            }
+            if (inArea(sdk, HANGAR)) {
+                // "Shall we return to Crash Island?" (mm_waydar.rs2:5-19): Yes, the glider map, a p_delay(3), the island.
+                const r = await talkTo(sdk, /^Waydar$/i, [/^Yes$/], { maxTicks: 120, idle: 4, until: s => inArea(s, CRASH_ISLAND), closeModals: false, ...CHATTER });
+                if (!inArea(sdk, CRASH_ISLAND)) throw new Error(`Waydar did not fly to Crash Island: ${r.reason ?? r.transcript.slice(-2).join(' / ')} (at ${where(sdk)})`);
+            }
+            if (inArea(sdk, CRASH_ISLAND)) {
+                const r = await talkTo(sdk, /^Lumdo$/i, [], { maxTicks: 90, idle: 2, until: s => inArea(s, AREAS.atoll), ...CHATTER });
+                if (!inArea(sdk, AREAS.atoll)) throw new Error(`Lumdo did not sail to the atoll: ${r.reason ?? r.transcript.slice(-2).join(' / ')} (at ${where(sdk)})`);
+            }
+            await upkeep(sdk, async () => {
+                await asMonkey(sdk);
+                if (outsideTown(sdk)) await throughWestGate(ctx);
+            });
+        },
+        postconditions: all(holding(MM_OBJ.monkey), s => wearing(s, MM_OBJ.greegree) || 'not a monkey', inTown),
+    },
+    V: {
+        preconditions: all(onAtoll, holding(MM_OBJ.monkey), s => wearing(s, MM_OBJ.greegree) || 'not a monkey', s => wearing(s, MM_OBJ.amulet) || 'the amulet is not worn'),
+        async run(ctx) {
+            const { sdk } = ctx;
+            await upkeep(sdk, async () => {
+                if (!inThroneRoom(sdk)) {
+                    // Elder Guard 2 from his south side: at kruk_spoken he lets the player straight in (mm_elder_guard.rs2:27-40).
+                    await go(ctx, ELDER_GUARD_SOUTH, 0);
+                    const g = await talkTo(sdk, /^Elder Guard$/i, [], { maxTicks: 60, idle: 3, near: ELDER_GUARD, until: inThroneRoom, ...CHATTER });
+                    if (!inThroneRoom(sdk)) throw new Error(`the Elder Guard did not let the player in: ${g.reason ?? g.transcript.slice(-2).join(' / ')} (at ${where(sdk)})`);
+                }
+                // "Have you brought with you a captive?" Yes: the monkey goes, then mm_awowogei_success's 7 pages (mm_awowogei.rs2:40-50, 105-116).
+                const r = await actConverse(sdk, await locClick(sdk, THRONE, /./), [], { maxTicks: 90, idle: 3, resendEvery: 6, ...CHATTER });
+                if (holds(sdk.getState()!, MM_OBJ.monkey)) throw new Error(`Awowogei did not take the monkey: ${r.reason ?? `${r.dialogue?.pages ?? 0} pages`} (at ${where(sdk)})`);
+                await dismiss(sdk);
+            });
+        },
+        postconditions: s => !holds(s, MM_OBJ.monkey) || 'the monkey is still in the backpack',
+    },
+    W: {
+        preconditions: all(onAtoll, s => wearing(s, MM_OBJ.greegree) || 'not a monkey', s => wearing(s, MM_OBJ.amulet) || 'the amulet is not worn'),
+        async run(ctx, o) {
+            const { sdk } = ctx;
+            await upkeep(sdk, async () => {
+                if (holds(sdk.getState()!, MM_OBJ.sigil)) return;
+                if (inThroneRoom(sdk)) {
+                    // From inside, Elder Guard 2 shows the player out 3 tiles south (mm_elder_guard.rs2:19-25). Measured: from
+                    // deeper in the hall the server's approach to him stops two tiles short and no dialogue opens; from the
+                    // doorway's inner tile, where his entry teleport lands, it opens at once.
+                    if (chebyshev(pos(sdk), HALL_DOOR_IN) > 0) await click(sdk, HALL_DOOR_IN, 0);
+                    const g = await talkTo(sdk, /^Elder Guard$/i, [], { maxTicks: 60, idle: 3, near: ELDER_GUARD, until: s => !inThroneRoom(s) });
+                    if (inThroneRoom(sdk)) throw new Error(`the Elder Guard did not show the player out: ${g.reason ?? g.transcript.slice(-2).join(' / ')}`);
+                }
+                if (chebyshev(pos(sdk), GARKOR) > 2) {
+                    for (const p of GARKOR_NORTH.points) await go(ctx, p, 1);
+                }
+                // Garkor at awowogei_complete_mission: 6 pages, then the chapter 4 cutscene (mm_garkor.rs2:129-137,
+                // quest_mm.rs2:211); at learned_plan (the cutscene seen): the plan, then the sigil (mm_garkor.rs2:25-47).
+                const ch4 = (s: BotWorldState) => tileIn(pos(s), { ...CUTSCENE_ZONE, level: 1 });
+                const first = await talkTo(sdk, /garkor/i, [], { maxTicks: 120, idle: 3, near: GARKOR, until: s => ch4(s) || holds(s, MM_OBJ.sigil) });
+                if (ch4(sdk.getState()!) || (!holds(sdk.getState()!, MM_OBJ.sigil) && (await waitUntil(sdk, ch4, { maxTicks: 8 })).ok)) {
+                    o.note(`S15:W chapter 4: ${await chapterCutscene(sdk, 1, 'chapter 4')} pages`);
+                } else if (!holds(sdk.getState()!, MM_OBJ.sigil)) {
+                    throw new Error(`Garkor started neither the chapter 4 cutscene nor the plan: ${first.reason ?? first.transcript.slice(-2).join(' / ')} (at ${where(sdk)})`);
+                }
+                const r = holds(sdk.getState()!, MM_OBJ.sigil) ? first : await talkTo(sdk, /garkor/i, [], { maxTicks: 120, idle: 3, near: GARKOR, until: s => holds(s, MM_OBJ.sigil) });
+                if (!holds(sdk.getState()!, MM_OBJ.sigil)) throw new Error(`no sigil from Garkor: ${r.reason ?? r.transcript.slice(-2).join(' / ')} (at ${where(sdk)})`);
+                await dismiss(sdk);
+            });
+        },
+        postconditions: all(holding(MM_OBJ.sigil), s => wearing(s, MM_OBJ.greegree) || 'not a monkey'),
+    },
+    Y: {
+        preconditions: yRoom,
+        async run(ctx) {
+            const { sdk } = ctx;
+            if (!inStronghold(sdk) && !inGrandTree(sdk)) {
+                // Narnode needs only mm_main = defeated_demon (mm_narnode.rs2:14), so the teleport goes from wherever
+                // the kill left the player, skipping Garkor's and Zooknock's way out of the arena (mm_demon.rs2:476-524).
+                if (!(pos(sdk).level === 0 && chebyshev(pos(sdk), VARROCK_TREE_FOOT) <= 150)) {
+                    await unwear(sdk, MM_OBJ.greegree); // a worn gree-gree hides the magic tab
+                    await dismiss(sdk);
+                    const t = await teleport(sdk, 'varrock');
+                    if (!t.ok) throw new Error(`the Varrock teleport: ${t.reason} (at ${where(sdk)})`);
+                }
+                const r = await runTo(sdk, { ...VARROCK_TREE_FOOT, tol: 1 }, { bot: ctx.bot });
+                if (!r.ok) throw new Error(`run to Varrock's spirit tree stopped at ${where(sdk)}: ${r.reason}`);
+                // Varrock's is a young spirit tree, which goes only to Tree Gnome Village (spirit_tree.rs2, loc_1317);
+                // the village's tree, beside its landing, goes on to the stronghold.
+                for (const to of ['village', 'stronghold'] as const) {
+                    const tr = await spiritTree(sdk, to);
+                    if (!tr.ok) throw new Error(`spirit tree to ${to}: ${tr.reason}`);
+                }
+            }
+            await intoTree(ctx, 0);
+            // The report (14 pages), the reward and its objbox, the quest-complete scroll, then Narnode's training pages.
+            const r = await talkTo(sdk, /^King Narnode( Shareen)?$/i, [], { maxTicks: 200, idle: 3, near: NARNODE, closeModals: true, until: s => questStatus(s, 'mm') === 'complete' });
+            if (questStatus(sdk.getState()!, 'mm') !== 'complete') throw new Error(`Narnode did not complete the quest: ${r.reason ?? r.transcript.slice(-2).join(' / ')} (at ${where(sdk)})`);
+            await dismiss(sdk);
+        },
+        postconditions: s => questStatus(s, 'mm') === 'complete' || 'Monkey Madness is not complete',
+    },
+    Z: {
+        preconditions: s => questStatus(s, 'mm') === 'complete' || 'Monkey Madness is not complete',
+        async run(ctx) {
+            const { sdk } = ctx;
+            await dismiss(sdk);
+            await intoTree(ctx, 1);
+            if (chebyshev(pos(sdk), DAERO) > 3) await go(ctx, DAERO, 2);
+            const xp0 = skillXp(sdk.getState()!, 'Strength');
+            // daero_training (mm_daero.rs2:240-312): 9 pages, option 1, "Several hours later...", then the xp.
+            const r = await talkTo(sdk, /^Daero$/i, [/^Focus on increasing strength and stamina/], {
+                maxTicks: 150, idle: 4, near: DAERO, closeModals: true, until: s => skillXp(s, 'Strength') >= xp0 + DAERO_STRENGTH_XP,
+            });
+            if (skillXp(sdk.getState()!, 'Strength') < xp0 + DAERO_STRENGTH_XP) throw new Error(`no training xp from Daero: ${r.reason ?? r.transcript.slice(-2).join(' / ')}`);
+            await dismiss(sdk);
+            await dropDead(sdk);
+        },
+        postconditions: exitState,
+    },
     M: {
         preconditions: all(s => inArea(s, AREAS.dungeon) || inArea(s, AREAS.atoll) || 'not on the atoll or in its dungeon', holding(MM_OBJ.enchantedBar)),
         async run(ctx) {
             const { sdk } = ctx;
-            await atollUpkeep(sdk, async () => {
+            await upkeep(sdk, async () => {
                 if (inArea(sdk, AREAS.dungeon)) {
                     await praying(sdk, 'protect_from_melee', () => go(ctx, { x: DUNGEON_EXIT.x, z: DUNGEON_EXIT.z + 1 }, 1));
                     await climb(sdk, DUNGEON_EXIT);
@@ -1427,8 +1942,9 @@ export function stepFor(d: SegmentDef, o: Resolved): Step<MmContext> {
     const step: Step<MmContext> = {
         name,
         logoutSafe: d.logoutSafe,
-        preconditions: body?.preconditions ?? (() => `${name} is not written yet`),
-        run: body ? ctx => body.run(ctx, o) : async () => {
+        preconditions: body?.pre?.(o) ?? body?.preconditions ?? (() => `${name} is not written yet`),
+        // The gnome half (A-G) runs under the same upkeep as the atoll segments, which wrap their own bodies.
+        run: body ? ctx => (d.letter <= 'G' ? upkeep(ctx.sdk, () => body.run(ctx, o)) : body.run(ctx, o)) : async () => {
             throw new Error(`${name} is not written yet`);
         },
         postconditions: body?.postconditions ?? (() => true),

@@ -79,85 +79,182 @@ export function isSolvable(b: Board): boolean {
     return inv % 2 === 0;
 }
 
-/** Manhattan distance plus 2 per linear-conflict pair in each row and column. */
-export function heuristic(b: ArrayLike<number>): number {
+/** Manhattan distance of tile `t` (1..24) at `slot` from its home. */
+function manhattan(t: number, slot: number): number {
+    const g = t - 1;
+    return Math.abs((slot % SIZE) - (g % SIZE)) + Math.abs(((slot / SIZE) | 0) - ((g / SIZE) | 0));
+}
+
+/** 2 per pair of tiles in row `r` that both belong to it and are reversed. */
+function rowConflict(b: ArrayLike<number>, base: number, r: number): number {
     let h = 0;
-    for (let s = 0; s < CELLS; s++) {
-        const t = b[s]!;
-        if (!t) continue;
-        const g = t - 1;
-        h += Math.abs((s % SIZE) - (g % SIZE)) + Math.abs(Math.floor(s / SIZE) - Math.floor(g / SIZE));
-    }
-    for (let line = 0; line < SIZE; line++) {
-        for (let a = 0; a < SIZE; a++) {
-            const ra = b[line * SIZE + a]!;
-            if (ra && Math.floor((ra - 1) / SIZE) === line) {
-                for (let c = a + 1; c < SIZE; c++) {
-                    const rc = b[line * SIZE + c]!;
-                    if (rc && Math.floor((rc - 1) / SIZE) === line && rc < ra) h += 2;
-                }
-            }
-            const ca = b[a * SIZE + line]!;
-            if (ca && (ca - 1) % SIZE === line) {
-                for (let c = a + 1; c < SIZE; c++) {
-                    const cc = b[c * SIZE + line]!;
-                    if (cc && (cc - 1) % SIZE === line && cc < ca) h += 2;
-                }
-            }
+    for (let a = 0; a < SIZE; a++) {
+        const ra = b[base + r * SIZE + a]!;
+        if (!ra || ((ra - 1) / SIZE | 0) !== r) continue;
+        for (let c = a + 1; c < SIZE; c++) {
+            const rc = b[base + r * SIZE + c]!;
+            if (rc && ((rc - 1) / SIZE | 0) === r && rc < ra) h += 2;
         }
     }
     return h;
 }
 
-class Heap {
-    private f: number[] = [];
-    private v: number[] = [];
-    get size(): number {
-        return this.f.length;
+/** 2 per pair of tiles in column `col` that both belong to it and are reversed. */
+function colConflict(b: ArrayLike<number>, base: number, col: number): number {
+    let h = 0;
+    for (let a = 0; a < SIZE; a++) {
+        const ca = b[base + a * SIZE + col]!;
+        if (!ca || (ca - 1) % SIZE !== col) continue;
+        for (let c = a + 1; c < SIZE; c++) {
+            const cc = b[base + c * SIZE + col]!;
+            if (cc && (cc - 1) % SIZE === col && cc < ca) h += 2;
+        }
     }
+    return h;
+}
+
+/** Manhattan distance plus 2 per linear-conflict pair in each row and column. */
+export function heuristic(b: ArrayLike<number>): number {
+    let h = 0;
+    for (let s = 0; s < CELLS; s++) if (b[s]) h += manhattan(b[s]!, s);
+    for (let line = 0; line < SIZE; line++) h += rowConflict(b, 0, line) + colConflict(b, 0, line);
+    return h;
+}
+
+/** A binary min-heap of (f, node id) in typed arrays. Equal f pops in no particular order. */
+class Heap {
+    private f = new Float64Array(1 << 16);
+    private v = new Int32Array(1 << 16);
+    size = 0;
     push(f: number, v: number): void {
+        if (this.size === this.f.length) {
+            const nf = new Float64Array(this.f.length * 2), nv = new Int32Array(this.v.length * 2);
+            nf.set(this.f);
+            nv.set(this.v);
+            this.f = nf;
+            this.v = nv;
+        }
         const F = this.f, V = this.v;
-        F.push(f);
-        V.push(v);
-        let i = F.length - 1;
+        let i = this.size++;
         while (i > 0) {
             const p = (i - 1) >> 1;
-            if (F[p]! <= F[i]!) break;
-            [F[p], F[i]] = [F[i]!, F[p]!];
-            [V[p], V[i]] = [V[i]!, V[p]!];
+            if (F[p]! <= f) break;
+            F[i] = F[p]!;
+            V[i] = V[p]!;
             i = p;
         }
+        F[i] = f;
+        V[i] = v;
     }
     pop(): number {
         const F = this.f, V = this.v;
         const top = V[0]!;
-        const lf = F.pop()!, lv = V.pop()!;
-        if (F.length) {
-            F[0] = lf;
-            V[0] = lv;
+        const n = --this.size;
+        if (n > 0) {
+            const lf = F[n]!, lv = V[n]!;
             let i = 0;
             for (;;) {
                 const l = 2 * i + 1, r = l + 1;
-                let m = i;
-                if (l < F.length && F[l]! < F[m]!) m = l;
-                if (r < F.length && F[r]! < F[m]!) m = r;
-                if (m === i) break;
-                [F[m], F[i]] = [F[i]!, F[m]!];
-                [V[m], V[i]] = [V[i]!, V[m]!];
+                let m = -1, mf = lf;
+                if (l < n && F[l]! < mf) (m = l), (mf = F[l]!);
+                if (r < n && F[r]! < mf) m = r;
+                if (m < 0) break;
+                F[i] = F[m]!;
+                V[i] = V[m]!;
                 i = m;
             }
+            F[i] = lf;
+            V[i] = lv;
         }
         return top;
     }
 }
 
+/**
+ * The best depth seen per state key (hi, lo), open addressing with linear
+ * probing in typed arrays, kept at most half full. `get` returns -1 when the
+ * key is absent.
+ */
+class DepthTable {
+    private mask: number;
+    private hi: Uint32Array;
+    private lo: Uint32Array;
+    private d: Int32Array;
+    private n = 0;
+    constructor(bits = 17) {
+        this.mask = (1 << bits) - 1;
+        this.hi = new Uint32Array(1 << bits);
+        this.lo = new Uint32Array(1 << bits);
+        this.d = new Int32Array(1 << bits).fill(-1);
+    }
+    private slot(hi: number, lo: number): number {
+        let i = (lo ^ (hi * 0x9e3779b1)) & this.mask;
+        while (this.d[i]! >= 0 && (this.hi[i] !== hi || this.lo[i] !== lo)) i = (i + 1) & this.mask;
+        return i;
+    }
+    get(hi: number, lo: number): number {
+        return this.d[this.slot(hi, lo)]!;
+    }
+    set(hi: number, lo: number, depth: number): void {
+        let i = this.slot(hi, lo);
+        if (this.d[i]! < 0) {
+            if (2 * ++this.n > this.mask) {
+                this.rehash();
+                i = this.slot(hi, lo);
+            }
+            this.hi[i] = hi;
+            this.lo[i] = lo;
+        }
+        this.d[i] = depth;
+    }
+    private rehash(): void {
+        const { hi, lo, d } = this;
+        this.mask = this.mask * 2 + 1;
+        this.hi = new Uint32Array(this.mask + 1);
+        this.lo = new Uint32Array(this.mask + 1);
+        this.d = new Int32Array(this.mask + 1).fill(-1);
+        for (let j = 0; j < d.length; j++) {
+            if (d[j]! < 0) continue;
+            const i = this.slot(hi[j]!, lo[j]!);
+            this.hi[i] = hi[j]!;
+            this.lo[i] = lo[j]!;
+            this.d[i] = d[j]!;
+        }
+    }
+}
+
+/**
+ * Zobrist tables: a 53-bit state key is the XOR of a 21-bit and a 32-bit
+ * random word per (slot, tile), updated in O(1) per move. Two states sharing
+ * a key (about 1 in 10^4 over a whole hard search) only prune one of them;
+ * every returned path is replayed on real boards, so it is always legal.
+ */
+const ZOBRIST = (() => {
+    let s = 0x2545f491;
+    const next = () => {
+        s ^= s << 13;
+        s ^= s >>> 17;
+        s ^= s << 5;
+        return s >>> 0;
+    };
+    const hi = new Uint32Array(CELLS * CELLS), lo = new Uint32Array(CELLS * CELLS);
+    for (let i = 0; i < hi.length; i++) {
+        hi[i] = next() & 0x1fffff;
+        lo[i] = next();
+    }
+    return { hi, lo };
+})();
+const NEIGHBOURS: readonly number[][] = Array.from({ length: CELLS }, (_, s) => neighbours(s));
+
 export interface SolveOptions {
     /**
      * f = g + weight*h; above 1 trades solution length for search time.
      * Default 2: over 60 seeded 255-step scrambles, 1.5 gives 67 moves mean
-     * but searches up to 5.7 s (p90 1.2 s), while 2 gives 76 moves and at
-     * most 0.8 s. At 5 clicks a tick the extra moves cost about 2 ticks, and
-     * the search's wall time is ticks too.
+     * but searches about 7x longer, while 2 gives 76 moves. At 2, 40 seeded
+     * scrambles take 0.6 s in all (worst 0.16 s) on an idle x86_64 and 14 s
+     * (worst 3.1 s) on a heavily loaded arm64 host. At 5 clicks a tick the
+     * extra moves cost about 2 ticks, and the search's wall time, spent with
+     * the panel open, is ticks too.
      */
     weight?: number;
     /** Give up after this many expansions; default 3,000,000. */
@@ -175,56 +272,120 @@ export function solvePuzzle(b: Board, o: SolveOptions = {}): number[] | null {
     if (isSolved(b)) return [];
     const weight = o.weight ?? 2;
     const limit = o.maxExpansions ?? 3_000_000;
-    const key = (x: Uint8Array) => String.fromCharCode(...x);
-    const goal = key(Uint8Array.from(SOLVED));
+    const { hi: ZH, lo: ZL } = ZOBRIST;
 
-    // Node storage: parallel arrays indexed by node id.
-    const boards: Uint8Array[] = [];
-    const gaps: number[] = [];
-    const depth: number[] = [];
-    const parent: number[] = [];
-    const moved: number[] = [];
-    const best = new Map<string, number>();
+    // Node storage, by node id: the board in a flat byte arena (CELLS per node; the gap is the move's
+    // slot), the parent, the depth and the heuristic. One allocation per doubling, none per node: a
+    // per-node array and string key made the hard scrambles 10-20x slower on a loaded host.
+    let cap = 1 << 16;
+    let boards = new Uint8Array(cap * CELLS);
+    let gap = new Uint8Array(cap);
+    let parent = new Int32Array(cap);
+    let depth = new Uint16Array(cap);
+    let hval = new Uint16Array(cap);
+    let nodes = 0;
+    const grow = () => {
+        cap *= 2;
+        const nb = new Uint8Array(cap * CELLS);
+        nb.set(boards);
+        boards = nb;
+        const ng = new Uint8Array(cap);
+        ng.set(gap);
+        gap = ng;
+        const np = new Int32Array(cap);
+        np.set(parent);
+        parent = np;
+        const nd = new Uint16Array(cap);
+        nd.set(depth);
+        depth = nd;
+        const nh = new Uint16Array(cap);
+        nh.set(hval);
+        hval = nh;
+    };
+    let khi = new Uint32Array(cap), klo = new Uint32Array(cap);
+
+    let h0hi = 0, h0lo = 0;
+    for (let s = 0; s < CELLS; s++) {
+        h0hi ^= ZH[s * CELLS + b[s]!]!;
+        h0lo ^= ZL[s * CELLS + b[s]!]!;
+    }
+    let goalHi = 0, goalLo = 0;
+    for (let s = 0; s < CELLS; s++) {
+        goalHi ^= ZH[s * CELLS + SOLVED[s]!]!;
+        goalLo ^= ZL[s * CELLS + SOLVED[s]!]!;
+    }
+    // XOR yields a signed 32-bit int; keys are compared as unsigned.
+    h0lo >>>= 0;
+    goalLo >>>= 0;
+
+    boards.set(b, 0);
+    gap[0] = b.indexOf(0);
+    parent[0] = -1;
+    depth[0] = 0;
+    hval[0] = heuristic(b);
+    khi[0] = h0hi;
+    klo[0] = h0lo;
+    nodes = 1;
+    const best = new DepthTable();
+    best.set(h0hi, h0lo, 0);
     const heap = new Heap();
-
-    const s0 = Uint8Array.from(b);
-    boards.push(s0);
-    gaps.push(s0.indexOf(0));
-    depth.push(0);
-    parent.push(-1);
-    moved.push(-1);
-    best.set(key(s0), 0);
-    heap.push(weight * heuristic(s0), 0);
+    heap.push(weight * hval[0]!, 0);
 
     let expanded = 0;
     while (heap.size) {
         const id = heap.pop();
-        const cur = boards[id]!;
-        const k = key(cur);
         const d = depth[id]!;
-        if ((best.get(k) ?? Infinity) < d) continue;
-        if (k === goal) {
+        const kh = khi[id]!, kl = klo[id]!;
+        if (best.get(kh, kl) < d) continue;
+        if (kh === goalHi && kl === goalLo) {
             const path: number[] = [];
-            for (let n = id; parent[n]! >= 0; n = parent[n]!) path.push(moved[n]!);
+            // The slot clicked to reach node n is where its gap now is: the tile there moved into the parent's gap.
+            for (let n = id; parent[n]! >= 0; n = parent[n]!) path.push(gap[n]!);
             return path.reverse();
         }
         if (++expanded > limit) return null;
-        const gap = gaps[id]!;
-        for (const slot of neighbours(gap)) {
-            if (slot === gaps[parent[id]!]) continue; // never undo the last move
-            const nb = cur.slice();
-            nb[gap] = nb[slot]!;
-            nb[slot] = 0;
-            const nk = key(nb);
-            if ((best.get(nk) ?? Infinity) <= d + 1) continue;
-            best.set(nk, d + 1);
-            const nid = boards.length;
-            boards.push(nb);
-            gaps.push(slot);
-            depth.push(d + 1);
-            parent.push(id);
-            moved.push(slot);
-            heap.push(d + 1 + weight * heuristic(nb), nid);
+        const g = gap[id]!;
+        const from = parent[id]! >= 0 ? gap[parent[id]!]! : -1;
+        const base = id * CELLS;
+        for (const slot of NEIGHBOURS[g]!) {
+            if (slot === from) continue; // never undo the last move
+            const t = boards[base + slot]!;
+            const nhi = (khi[id]! ^ ZH[slot * CELLS + t]! ^ ZH[g * CELLS + t]! ^ ZH[g * CELLS]! ^ ZH[slot * CELLS]!) >>> 0;
+            const nlo = (klo[id]! ^ ZL[slot * CELLS + t]! ^ ZL[g * CELLS + t]! ^ ZL[g * CELLS]! ^ ZL[slot * CELLS]!) >>> 0;
+            const seen = best.get(nhi, nlo);
+            if (seen >= 0 && seen <= d + 1) continue;
+            best.set(nhi, nlo, d + 1);
+            if (nodes === cap) {
+                grow();
+                const a = new Uint32Array(cap), c = new Uint32Array(cap);
+                a.set(khi);
+                c.set(klo);
+                khi = a;
+                klo = c;
+            }
+            const nid = nodes++;
+            const nbase = nid * CELLS;
+            boards.copyWithin(nbase, base, base + CELLS);
+            // Tile t moves from `slot` into the gap `g`. Its Manhattan term changes, and only the lines it
+            // leaves and enters can change their conflicts: a sideways move keeps its row's order, so only
+            // the two columns; an up/down move only the two rows.
+            const sideways = ((slot / SIZE) | 0) === ((g / SIZE) | 0);
+            const before = sideways
+                ? colConflict(boards, nbase, slot % SIZE) + colConflict(boards, nbase, g % SIZE)
+                : rowConflict(boards, nbase, (slot / SIZE) | 0) + rowConflict(boards, nbase, (g / SIZE) | 0);
+            boards[nbase + g] = t;
+            boards[nbase + slot] = 0;
+            const after = sideways
+                ? colConflict(boards, nbase, slot % SIZE) + colConflict(boards, nbase, g % SIZE)
+                : rowConflict(boards, nbase, (slot / SIZE) | 0) + rowConflict(boards, nbase, (g / SIZE) | 0);
+            const h = hval[id]! + manhattan(t, g) - manhattan(t, slot) + after - before;
+            gap[nid] = slot;
+            parent[nid] = id;
+            depth[nid] = d + 1;
+            hval[nid] = h;
+            khi[nid] = nhi;
+            klo[nid] = nlo;
+            heap.push(d + 1 + weight * h, nid);
         }
     }
     return null;

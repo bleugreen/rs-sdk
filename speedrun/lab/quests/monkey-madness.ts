@@ -2,6 +2,10 @@
 // (speedrun/quests/monkey-madness.ts), for running any segment alone at the
 // route's levels. Lab only: staff commands, never imported by the module.
 //
+// The royal seal is never taken back (mm_caranock.rs2 and mm_lumdo.rs2 only show it), Zooknock returns the mould
+// with the enchanted bar, and the sigil is kept: all three are held from their segment to S15's end, where Z
+// drops them.
+//
 // Sub-varp values are cumulative and follow what a played route leaves
 // (configs/quest_mm.constant, configs/quest_mm.varbit; ::setvar takes varbit
 // names). Where a fixture differs from quest-mm-full.ts's STARTS it says why.
@@ -33,8 +37,12 @@ export const ROUTE_LEVELS = {
     attack: 99, defence: 1, strength: 1, hitpoints: 42, ranged: 50, prayer: 94, magic: 76, thieving: 57, agility: 75,
 } as const;
 
-/** The prerequisite quests' final stages (Tree Gnome Village, The Grand Tree), and Plague City's read scroll (S08), which the Ardougne teleport of T needs. */
-export const PREREQ_VARS = { treequest: 9, grandtree: 160, elenaquest: 30 } as const;
+/**
+ * The prerequisite quests' final stages (Tree Gnome Village, The Grand Tree), Plague City's read scroll (S08; the
+ * Ardougne teleport of T needs elenaquest 30, ^elena_complete_read_scroll, teleport.rs2:35), and Femi never met: the
+ * route reaches the stronghold only by spirit tree before U, whose walk home is its first pass of the south gate.
+ */
+export const PREREQ_VARS = { treequest: 9, grandtree: 160, elenaquest: 30, femi_help: 0 } as const;
 
 /** Every MM var a fixture may set; each fixture sets all of them, so state from a previous fixture never leaks. */
 export const MM_VARS = [
@@ -97,33 +105,40 @@ export const FIXTURES: readonly Fixture[] = [
     { letter: 'D', vars: { mm_main: 2, mm_narnode: 7, mm_caranock: 3 }, items: { mm_gnome_royal_seal: 1, mm_narnode_orders: 1 }, tile: NARNODE },
     { letter: 'E', vars: { mm_main: 2, mm_narnode: 7, mm_caranock: 3, mm_daero: 4, mm_daero_option_bit_one: 1, mm_daero_option_bit_two: 1, mm_daero_option_bit_three: 1 }, items: { mm_gnome_royal_seal: 1 }, tile: { x: 2393, z: 9892, level: 0 }, note: 'no puzzle-complete flag: the full 255-step scramble is under test (STARTS forces the one-move board)' },
     { letter: 'F', vars: { mm_main: 2, mm_narnode: 7, mm_caranock: 3, mm_daero: 6, ...HANGAR_DONE }, items: { mm_gnome_royal_seal: 1 }, tile: { x: 2649, z: 4508, level: 0 } },
-    { letter: 'G', vars: { mm_main: 2, mm_narnode: 7, mm_caranock: 3, mm_daero: 7, mm_waydar: 1, ...HANGAR_DONE }, items: { mm_gnome_royal_seal: 1 }, tile: { x: 2893, z: 2726, level: 0 }, note: 'mm_waydar 1 as the flight leaves it (mm_waydar.rs2:68); STARTS resets it to 0' },
-    { letter: 'H', vars: { ...ATOLL_ARRIVED, ...HANGAR_DONE }, items: {}, tile: { x: 2801, z: 2707, level: 0 } },
-    { letter: 'I', vars: { ...ATOLL_ARRIVED, ...HANGAR_DONE, mm_jail_count: 1 }, items: {}, tile: OUTSIDE_CELL },
-    { letter: 'J', vars: { ...ATOLL_ARRIVED, ...HANGAR_DONE, mm_jail_count: 1, mm_garkor: 2 }, items: {}, tile: GARKOR },
-    { letter: 'K', vars: { ...ATOLL_ARRIVED, ...HANGAR_DONE, mm_jail_count: 1, mm_garkor: 2 }, items: { mm_monkey_dentures: 1, mm_monkey_amulet_mould: 1 }, tile: { x: 2749, z: 2768, level: 0 }, note: 'the western rope lands within 2 of (2749,2768) (quest_mm.rs2:1012-1017)' },
-    { letter: 'L', vars: { ...ATOLL_ARRIVED, ...HANGAR_DONE, mm_jail_count: 1, mm_garkor: 2 }, items: { mm_monkey_dentures: 1, mm_monkey_amulet_mould: 1 }, tile: ZOOKNOCK },
-    { letter: 'M', vars: { ...ATOLL_ARRIVED, ...HANGAR_DONE, ...AMULET_DONE, mm_jail_count: 1, mm_garkor: 2 }, items: { mm_enchanted_gold_bar: 1, mm_monkey_amulet_mould: 1 }, tile: ZOOKNOCK },
-    { letter: 'N', vars: { ...ATOLL_ARRIVED, ...HANGAR_DONE, ...AMULET_DONE, mm_jail_count: 2, mm_garkor: 2 }, items: { mm_enchanted_gold_bar: 1, mm_monkey_amulet_mould: 1 }, tile: OUTSIDE_CELL },
-    { letter: 'O', vars: { ...ATOLL_ARRIVED, ...HANGAR_DONE, ...AMULET_DONE, mm_jail_count: 2, mm_garkor: 2 }, items: { mm_amulet_of_monkey_speak: 1, mm_monkey_amulet_mould: 1 }, tile: { x: 2794, z: 2774, level: 0 }, note: 'N ends out of the trapdoor guards\' box: by the ladders (here, the south ladder\'s foot) or by a walk west' },
-    { letter: 'P', vars: { ...ATOLL_ARRIVED, ...HANGAR_DONE, ...AMULET_DONE, mm_jail_count: 2, mm_garkor: 2, mm_monkey_child: 7, mm_monkey_child_waiting_for_talisman: 1 }, items: { mm_amulet_of_monkey_speak: 1, mm_monkey_talisman: 1, mm_monkey_amulet_mould: 1 }, worn: ['mm_amulet_of_monkey_speak'], tile: { x: 2743, z: 2797, level: 0 } },
-    { letter: 'Q', vars: { ...ATOLL_ARRIVED, ...HANGAR_DONE, ...AMULET_DONE, mm_jail_count: 2, mm_garkor: 2, mm_monkey_child: 7, mm_monkey_child_waiting_for_talisman: 1 }, items: { mm_amulet_of_monkey_speak: 1, mm_monkey_talisman: 1, mm_monkey_amulet_mould: 1 }, worn: ['mm_amulet_of_monkey_speak'], tile: ZOOKNOCK },
-    { letter: 'R', vars: { ...CH3_DONE, mm_garkor: 2 }, items: { mm_amulet_of_monkey_speak: 1, mm_monkey_greegree_for_normal_monkey: 1, mm_monkey_amulet_mould: 1 }, worn: ['mm_amulet_of_monkey_speak'], tile: ZOOKNOCK, note: 'the chapter 3 cutscene returns the player to the tile it was queued from (%mm_cutscene_coord, quest_mm.rs2:469): next to Zooknock' },
-    { letter: 'S', vars: { ...CH3_DONE, mm_garkor: 4 }, items: { mm_amulet_of_monkey_speak: 1, mm_monkey_greegree_for_normal_monkey: 1, mm_monkey_amulet_mould: 1 }, worn: ['mm_amulet_of_monkey_speak', 'mm_monkey_greegree_for_normal_monkey'], tile: GARKOR },
-    { letter: 'T', vars: { ...CH3_DONE, mm_garkor: 4, mm_kruk: 1, mm_elder_guard: 1, mm_awowogei: 1 }, items: { mm_amulet_of_monkey_speak: 1, mm_monkey_greegree_for_normal_monkey: 1, mm_monkey_amulet_mould: 1 }, worn: ['mm_amulet_of_monkey_speak', 'mm_monkey_greegree_for_normal_monkey'], tile: AWOWOGEI },
-    { letter: 'U', vars: { ...CH3_DONE, mm_garkor: 4, mm_kruk: 1, mm_elder_guard: 1, mm_awowogei: 1, mm_monkey_minder: 1 }, items: { mm_amulet_of_monkey_speak: 1, mm_monkey_greegree_for_normal_monkey: 1, mm_monkey_amulet_mould: 1, mm_monkey_in_backpack: 1 }, worn: ['mm_amulet_of_monkey_speak'], tile: { x: 2614, z: 3273, level: 0 }, note: 'outside the zoo cage; the minder lets a human out next to himself (mm_monkey_minder.rs2:19)' },
-    { letter: 'V', vars: { ...CH3_DONE, mm_garkor: 4, mm_kruk: 1, mm_elder_guard: 1, mm_awowogei: 1, mm_monkey_minder: 1 }, items: { mm_amulet_of_monkey_speak: 1, mm_monkey_greegree_for_normal_monkey: 1, mm_monkey_amulet_mould: 1, mm_monkey_in_backpack: 1 }, worn: ['mm_amulet_of_monkey_speak', 'mm_monkey_greegree_for_normal_monkey'], tile: AWOWOGEI },
-    { letter: 'W', vars: { ...CH3_DONE, mm_garkor: 4, mm_kruk: 1, mm_elder_guard: 1, mm_awowogei: 2, mm_monkey_minder: 1 }, items: { mm_amulet_of_monkey_speak: 1, mm_monkey_greegree_for_normal_monkey: 1, mm_monkey_amulet_mould: 1 }, worn: ['mm_amulet_of_monkey_speak', 'mm_monkey_greegree_for_normal_monkey'], tile: AWOWOGEI },
-    { letter: 'X', vars: { ...CH3_DONE, mm_main: 5, mm_garkor: 6, mm_kruk: 1, mm_elder_guard: 1, mm_awowogei: 2, mm_monkey_minder: 1 }, items: { mm_amulet_of_monkey_speak: 1, mm_monkey_greegree_for_normal_monkey: 1, mm_monkey_amulet_mould: 1, mm_sigil: 1 }, worn: ['mm_amulet_of_monkey_speak', 'mm_monkey_greegree_for_normal_monkey', 'rune_arrow'], tile: GARKOR, note: 'as W leaves it: a monkey beside Garkor with the sigil held, the bow in the pack; bit 15 (waiting_for_final_battle) clear, as quest-mm-demon.ts:45-60' },
-    { letter: 'Y', vars: { ...CH3_DONE, mm_main: 6, mm_garkor: 7, mm_kruk: 1, mm_elder_guard: 1, mm_awowogei: 2, mm_monkey_minder: 1, mm_been_to_final_battle: 1 }, items: { mm_amulet_of_monkey_speak: 1, mm_monkey_greegree_for_normal_monkey: 1, mm_monkey_amulet_mould: 1 }, tile: { x: 2712, z: 2784, level: 0 }, note: 'after Zooknock\'s teleport out (mm_demon.rs2:523): the arena squad only exists after a real kill, so the fixture starts on the far side of it' },
-    { letter: 'Z', vars: { ...CH3_DONE, mm_main: 9, mm_garkor: 7, mm_kruk: 1, mm_elder_guard: 1, mm_awowogei: 2, mm_monkey_minder: 1, mm_been_to_final_battle: 1 }, items: {}, tile: NARNODE },
+    { letter: 'G', vars: { mm_main: 2, mm_narnode: 7, mm_caranock: 3, mm_daero: 7, ...HANGAR_DONE }, items: { mm_gnome_royal_seal: 1 }, tile: { x: 2893, z: 2726, level: 0 }, note: 'mm_waydar 0 as the flight leaves it (measured: his first talk on the island is the arrival intro)' },
+    { letter: 'H', vars: { ...ATOLL_ARRIVED, ...HANGAR_DONE }, items: { mm_gnome_royal_seal: 1 }, tile: { x: 2801, z: 2707, level: 0 } },
+    { letter: 'I', vars: { ...ATOLL_ARRIVED, ...HANGAR_DONE, mm_jail_count: 1 }, items: { mm_gnome_royal_seal: 1 }, tile: OUTSIDE_CELL },
+    { letter: 'J', vars: { ...ATOLL_ARRIVED, ...HANGAR_DONE, mm_jail_count: 1, mm_garkor: 2 }, items: { mm_gnome_royal_seal: 1 }, tile: GARKOR },
+    { letter: 'K', vars: { ...ATOLL_ARRIVED, ...HANGAR_DONE, mm_jail_count: 1, mm_garkor: 2 }, items: { mm_gnome_royal_seal: 1, mm_monkey_dentures: 1, mm_monkey_amulet_mould: 1 }, tile: { x: 2749, z: 2768, level: 0 }, note: 'the western rope lands within 2 of (2749,2768) (quest_mm.rs2:1012-1017)' },
+    { letter: 'L', vars: { ...ATOLL_ARRIVED, ...HANGAR_DONE, mm_jail_count: 1, mm_garkor: 2 }, items: { mm_gnome_royal_seal: 1, mm_monkey_dentures: 1, mm_monkey_amulet_mould: 1 }, tile: ZOOKNOCK },
+    { letter: 'M', vars: { ...ATOLL_ARRIVED, ...HANGAR_DONE, ...AMULET_DONE, mm_jail_count: 1, mm_garkor: 2 }, items: { mm_gnome_royal_seal: 1, mm_enchanted_gold_bar: 1, mm_monkey_amulet_mould: 1 }, tile: ZOOKNOCK },
+    { letter: 'N', vars: { ...ATOLL_ARRIVED, ...HANGAR_DONE, ...AMULET_DONE, mm_jail_count: 2, mm_garkor: 2 }, items: { mm_gnome_royal_seal: 1, mm_enchanted_gold_bar: 1, mm_monkey_amulet_mould: 1 }, tile: OUTSIDE_CELL },
+    { letter: 'O', vars: { ...ATOLL_ARRIVED, ...HANGAR_DONE, ...AMULET_DONE, mm_jail_count: 2, mm_garkor: 2 }, items: { mm_gnome_royal_seal: 1, mm_amulet_of_monkey_speak: 1, mm_monkey_amulet_mould: 1 }, tile: { x: 2794, z: 2774, level: 0 }, note: 'N ends out of the trapdoor guards\' box: by the ladders (here, the south ladder\'s foot) or by a walk west' },
+    { letter: 'P', vars: { ...ATOLL_ARRIVED, ...HANGAR_DONE, ...AMULET_DONE, mm_jail_count: 2, mm_garkor: 2, mm_monkey_child: 7, mm_monkey_child_waiting_for_talisman: 1 }, items: { mm_gnome_royal_seal: 1, mm_amulet_of_monkey_speak: 1, mm_monkey_talisman: 1, mm_monkey_amulet_mould: 1 }, worn: ['mm_amulet_of_monkey_speak'], tile: { x: 2743, z: 2797, level: 0 } },
+    { letter: 'Q', vars: { ...ATOLL_ARRIVED, ...HANGAR_DONE, ...AMULET_DONE, mm_jail_count: 2, mm_garkor: 2, mm_monkey_child: 7, mm_monkey_child_waiting_for_talisman: 1 }, items: { mm_gnome_royal_seal: 1, mm_amulet_of_monkey_speak: 1, mm_monkey_talisman: 1, mm_monkey_amulet_mould: 1 }, worn: ['mm_amulet_of_monkey_speak'], tile: ZOOKNOCK },
+    { letter: 'R', vars: { ...CH3_DONE, mm_garkor: 2 }, items: { mm_gnome_royal_seal: 1, mm_amulet_of_monkey_speak: 1, mm_monkey_greegree_for_normal_monkey: 1, mm_monkey_amulet_mould: 1 }, worn: ['mm_amulet_of_monkey_speak'], tile: ZOOKNOCK, note: 'the chapter 3 cutscene returns the player to the tile it was queued from (%mm_cutscene_coord, quest_mm.rs2:469): next to Zooknock' },
+    { letter: 'S', vars: { ...CH3_DONE, mm_garkor: 4 }, items: { mm_gnome_royal_seal: 1, mm_amulet_of_monkey_speak: 1, mm_monkey_greegree_for_normal_monkey: 1, mm_monkey_amulet_mould: 1 }, worn: ['mm_amulet_of_monkey_speak', 'mm_monkey_greegree_for_normal_monkey'], tile: GARKOR },
+    { letter: 'T', vars: { ...CH3_DONE, mm_garkor: 4, mm_kruk: 1, mm_elder_guard: 1, mm_awowogei: 1 }, items: { mm_gnome_royal_seal: 1, mm_amulet_of_monkey_speak: 1, mm_monkey_greegree_for_normal_monkey: 1, mm_monkey_amulet_mould: 1 }, worn: ['mm_amulet_of_monkey_speak', 'mm_monkey_greegree_for_normal_monkey'], tile: AWOWOGEI },
+    { letter: 'U', vars: { ...CH3_DONE, mm_garkor: 4, mm_kruk: 1, mm_elder_guard: 1, mm_awowogei: 1, mm_monkey_minder: 1 }, items: { mm_gnome_royal_seal: 1, mm_amulet_of_monkey_speak: 1, mm_monkey_greegree_for_normal_monkey: 1, mm_monkey_amulet_mould: 1, mm_monkey_in_backpack: 1 }, worn: ['mm_amulet_of_monkey_speak'], tile: { x: 2611, z: 3283, level: 0 }, note: 'where T ends, outside the zoo cage (T measured 2606-2612, 3283-3285); (2614,3273) is walled in, the SDK pathfinder finds no way out of it' },
+    { letter: 'V', vars: { ...CH3_DONE, mm_garkor: 4, mm_kruk: 1, mm_elder_guard: 1, mm_awowogei: 1, mm_monkey_minder: 1 }, items: { mm_gnome_royal_seal: 1, mm_amulet_of_monkey_speak: 1, mm_monkey_greegree_for_normal_monkey: 1, mm_monkey_amulet_mould: 1, mm_monkey_in_backpack: 1 }, worn: ['mm_amulet_of_monkey_speak', 'mm_monkey_greegree_for_normal_monkey'], tile: AWOWOGEI },
+    { letter: 'W', vars: { ...CH3_DONE, mm_garkor: 4, mm_kruk: 1, mm_elder_guard: 1, mm_awowogei: 2, mm_monkey_minder: 1 }, items: { mm_gnome_royal_seal: 1, mm_amulet_of_monkey_speak: 1, mm_monkey_greegree_for_normal_monkey: 1, mm_monkey_amulet_mould: 1 }, worn: ['mm_amulet_of_monkey_speak', 'mm_monkey_greegree_for_normal_monkey'], tile: AWOWOGEI },
+    { letter: 'X', vars: { ...CH3_DONE, mm_main: 5, mm_garkor: 6, mm_kruk: 1, mm_elder_guard: 1, mm_awowogei: 2, mm_monkey_minder: 1 }, items: { mm_gnome_royal_seal: 1, mm_amulet_of_monkey_speak: 1, mm_monkey_greegree_for_normal_monkey: 1, mm_monkey_amulet_mould: 1, mm_sigil: 1 }, worn: ['mm_amulet_of_monkey_speak', 'mm_monkey_greegree_for_normal_monkey', 'rune_arrow'], tile: GARKOR, note: 'as W leaves it: a monkey beside Garkor with the sigil held, the bow in the pack; bit 15 (waiting_for_final_battle) clear, as quest-mm-demon.ts:45-60' },
+    { letter: 'Y', vars: { ...CH3_DONE, mm_main: 6, mm_garkor: 7, mm_kruk: 1, mm_elder_guard: 1, mm_awowogei: 2, mm_monkey_minder: 1, mm_been_to_final_battle: 1 }, items: { mm_gnome_royal_seal: 1, mm_amulet_of_monkey_speak: 1, mm_monkey_greegree_for_normal_monkey: 1, mm_monkey_amulet_mould: 1, mm_sigil: 1 }, tile: { x: 2702, z: 9173, level: 1 }, note: 'where X ends, in the arena (measured 4 of 4); Y teleports out from there (Narnode needs only mm_main 6)' },
+    { letter: 'Z', vars: { ...CH3_DONE, mm_main: 9, mm_garkor: 7, mm_kruk: 1, mm_elder_guard: 1, mm_awowogei: 2, mm_monkey_minder: 1, mm_been_to_final_battle: 1 }, items: { mm_gnome_royal_seal: 1, mm_amulet_of_monkey_speak: 1, mm_monkey_greegree_for_normal_monkey: 1, mm_monkey_amulet_mould: 1, mm_sigil: 1 }, tile: NARNODE },
 ];
 
+/** Fixture kit overrides: shark and prayer-potion counts, and the bow by debug name (the 'no magic shortbow' hedge). */
+export interface KitOptions { sharks?: number; potions?: number; bow?: string }
+
 /** The kit still held at the start of `letter` (H12 minus what earlier segments used), with `sharks` overriding the shark count. */
-export function remainingKit(letter: string, o: { sharks?: number; potions?: number } = {}): Record<string, number> {
+export function remainingKit(letter: string, o: KitOptions = {}): Record<string, number> {
     const kit: Record<string, number> = { ...KIT };
     if (o.sharks !== undefined) kit.shark = o.sharks;
     if (o.potions !== undefined) kit['4doseprayerrestore'] = o.potions;
+    if (o.bow && o.bow !== 'magic_shortbow') {
+        delete kit.magic_shortbow;
+        kit[o.bow] = 1;
+    }
     for (const [seg, spent] of Object.entries(KIT_SPENT)) {
         if (seg >= letter) continue;
         for (const [name, n] of Object.entries(spent)) kit[name] = Math.max(0, (kit[name] ?? 0) - n);
@@ -141,7 +156,7 @@ export function fixture(letter: string): Fixture {
 const STACKABLE = new Set(['rune_arrow', 'lawrune', 'airrune', 'firerune', 'waterrune']);
 
 /** Inventory slots a fixture's items and kit take (worn items excluded). */
-export function slotsNeeded(letter: string, o: { sharks?: number; potions?: number } = {}): number {
+export function slotsNeeded(letter: string, o: KitOptions = {}): number {
     const f = fixture(letter);
     const all: Record<string, number> = { ...remainingKit(letter, o) };
     for (const [k, n] of Object.entries(f.items)) all[k] = (all[k] ?? 0) + n;
@@ -163,14 +178,14 @@ export const FREE_KEPT = 2;
  * and `::give` into a full inventory drops silently, so the food is what
  * gives way.
  */
-export function fixtureItems(letter: string, o: { sharks?: number; potions?: number } = {}): Array<[string, number]> {
+export function fixtureItems(letter: string, o: KitOptions = {}): Array<[string, number]> {
     const f = fixture(letter);
-    const kit = remainingKit(letter, { sharks: 0, ...(o.potions !== undefined ? { potions: o.potions } : {}) });
+    const kit = remainingKit(letter, { ...o, sharks: 0 });
     const out: Array<[string, number]> = [];
     for (const [k, n] of Object.entries(f.items)) out.push([k, n + (kit[k] ?? 0)]);
     for (const [k, n] of Object.entries(kit)) if (!(k in f.items)) out.push([k, n]);
     // Two slots stay free: the most any segment picks up (J's dentures and mould).
-    const free = INVENTORY_SLOTS - FREE_KEPT - slotsNeeded(letter, { sharks: 0, ...(o.potions !== undefined ? { potions: o.potions } : {}) });
+    const free = INVENTORY_SLOTS - FREE_KEPT - slotsNeeded(letter, { ...o, sharks: 0 });
     const sharks = Math.min(o.sharks ?? KIT.shark!, Math.max(0, free));
     if (sharks > 0) out.push(['shark', sharks]);
     return out;
@@ -179,7 +194,7 @@ export function fixtureItems(letter: string, o: { sharks?: number; potions?: num
 type FixtureSdk = Pick<BotSDK, 'getState' | 'onStateUpdate' | 'sendSay' | 'sendDropItem' | 'sendUseEquipmentItem' | 'sendCloseModal' | 'sendUseItem'>;
 
 /** Put the lab account in `letter`'s start state: route levels, every MM var, the remaining kit, the quest items, the worn items, the tile. */
-export async function applyFixture(sdk: FixtureSdk, letter: string, o: { sharks?: number; potions?: number } = {}): Promise<void> {
+export async function applyFixture(sdk: FixtureSdk, letter: string, o: KitOptions = {}): Promise<void> {
     const f = fixture(letter);
     await sdk.sendCloseModal();
     // Set up away from anything aggressive (the last run may have ended among the atoll's guards).
@@ -190,6 +205,9 @@ export async function applyFixture(sdk: FixtureSdk, letter: string, o: { sharks?
     const vars: Array<[string, number]> = [...Object.entries(PREREQ_VARS), ...MM_VARS.map(v => [v, f.vars[v] ?? 0] as [string, number])];
     await Promise.all(vars.map(([k, v]) => cheat(sdk, `setvar ${k} ${v}`)));
     await waitTicks(sdk, Math.ceil(vars.length / 5) + 2);
+    // The hangar's board persists per account until it has more than one empty slot (mm_puzzle.rs2 mm_open_puzzle):
+    // clear it, so E meets the fresh 255-step scramble a first visit gets.
+    if (letter <= 'E') await cheat(sdk, '~clearinv reinitialisation_inv', 1);
     const items = fixtureItems(letter, o);
     for (const [k, n] of items) await give(sdk, k, n);
     const held = sdk.getState()!.inventory;
@@ -210,6 +228,9 @@ export async function applyFixture(sdk: FixtureSdk, letter: string, o: { sharks?
 
 /** Lumbridge's courtyard: nothing attacks there. */
 const STAGING = { x: 3222, z: 3218 };
+
+/** Rune arrows held and quivered. */
+const runeArrows = (s: BotWorldState) => [...s.inventory, ...s.equipment].filter(i => i.name === 'Rune arrow').reduce((n, i) => n + i.count, 0);
 
 /** Prayer potion doses held: Prayer potion(4) is 4, and so on. */
 const prayerDoses = (s: BotWorldState) => s.inventory.reduce((n, i) => n + (Number(/^Prayer potion\((\d)\)/i.exec(i.name)?.[1] ?? 0) * i.count), 0);
@@ -258,10 +279,12 @@ async function main(): Promise<void> {
     const potions = arg('potions', '');
     /** Prayer points at the start instead of full (e.g. 40: N's end after a 200-tick pin by the trapdoor guards). */
     const prayerAt = arg('prayer', '');
+    /** The Jungle Demon's bow by obj debug name instead of H12's magic shortbow (e.g. yew_shortbow). */
+    const bow = arg('bow', 'magic_shortbow');
     const i0 = SEGMENTS.findIndex(d => d.letter === from);
     const i1 = SEGMENTS.findIndex(d => d.letter === until);
     if (i0 < 0 || i1 < i0) throw new Error(`bad --from=${from} --until=${until}`);
-    const all = steps({ dialogue, note: line => console.log(line) });
+    const all = steps({ dialogue, note: line => console.log(line), bow: configId('obj', bow) });
     const chosen = all.slice(i0, i1 + 1);
     // --launch: this script owns the client (run with LAB_RUNNERS=0), so it can relog after a fixture's
     // ::setvar calls; those change the varps but not the quest tab state.quests publishes until a login
@@ -274,7 +297,7 @@ async function main(): Promise<void> {
     const table: Record<string, Array<number | string>> = Object.fromEntries(chosen.map(s => [s.name, []]));
     let passes = 0;
     for (let run = 0; run < runs; run++) {
-        await applyFixture(sdk, from, { ...(sharks ? { sharks: Number(sharks) } : {}), ...(potions ? { potions: Number(potions) } : {}) });
+        await applyFixture(sdk, from, { bow, ...(sharks ? { sharks: Number(sharks) } : {}), ...(potions ? { potions: Number(potions) } : {}) });
         if (launch) await relog(session);
         if (prayerAt) {
             const now = sdk.getState()!.prayers?.prayerPoints ?? 0;
@@ -284,6 +307,7 @@ async function main(): Promise<void> {
         const s0 = sdk.getState()!;
         const hp0 = s0.player!.hp, pp0 = s0.prayers?.prayerPoints, doses0 = prayerDoses(s0);
         const sharks0 = s0.inventory.filter(i => i.name === 'Shark').length;
+        const arrows0 = runeArrows(s0);
         const untrace = traceEvery > 0 ? trace(sdk, traceEvery) : () => undefined;
         let error: string | undefined;
         try {
@@ -301,7 +325,7 @@ async function main(): Promise<void> {
             run, from, until, ok: !error, ...(error ? { error } : {}),
             ticks: Object.fromEntries(log.rows.filter(r => r.step !== BOUNDARY_STEP).map(r => [r.step, r.ticks])), boundary,
             hp: [hp0, s.player?.hp], sharks: [sharks0, s.inventory.filter(i => i.name === 'Shark').length],
-            prayer: [pp0, s.prayers?.prayerPoints], potionDoses: [doses0, prayerDoses(s)], at: pos(s),
+            prayer: [pp0, s.prayers?.prayerPoints], potionDoses: [doses0, prayerDoses(s)], runeArrows: [arrows0, runeArrows(s)], at: pos(s),
         });
     }
     console.log(`\nMonkey Madness ${from}..${until}, ${passes}/${runs} clean (dialogue ${dialogue})`);
