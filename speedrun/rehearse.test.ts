@@ -125,7 +125,7 @@ describe('kit', () => {
 
 const checkC = (ok: boolean | null, value: number | null = ok === false ? 4 : 0.5): GateCheck => ({ id: 'c', name: 'catch-ups per minute', role: 'pass', ok, value, limit: 2 });
 const verdict = (c: GateCheck): DirectVerdict => ({
-    path: 'direct', on: c.ok !== false, status: c.ok === false ? 're-measure' : 'pass', onTime: 60, trials: 60, passAt: 60, floorAt: 58, lead: 0, failures: [],
+    path: 'direct', on: c.ok !== false, status: c.ok === false ? 're-measure' : 'pass', onTime: 60, trials: 60, passAt: 60, floorAt: 58, lead: 0, failures: [], T: 300, TSource: 'feed',
     checks: [{ id: 'a', name: 'on-time trials', role: 'pass', ok: true, value: 60, limit: 58 }, { id: 'b', name: 'tick p90', role: 'report', ok: true, value: 310, limit: 400 }, c, { id: 'd', name: 'loop rate p10', role: 'pass', ok: null, value: null, limit: 50 }],
 });
 const now = Date.parse('2026-10-21T20:00:00Z');

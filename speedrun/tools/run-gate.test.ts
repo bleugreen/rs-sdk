@@ -19,7 +19,7 @@ xwininfo: Window id: 0x3b8 (the root window) (has no name)
 
 const gate = (over: Partial<MachineGate>): MachineGate => ({
     machine: 'm', startedUtc: '2026-10-23T01:00:00Z', endUtc: '2026-10-23T01:09:00Z', status: 'pass',
-    a: { onTime: 60, trials: 60, passAt: 60, floorAt: 58 }, b: { p90: 380 }, c: { perMinute: 0 }, d: { lowest: 70, median: 72, highest: 73, samples: 30 },
+    a: { onTime: 60, trials: 60, passAt: 60, floorAt: 58 }, b: { p90: 380, T: 300, limit: 400 }, c: { perMinute: 0, T: 300 }, d: { lowest: 70, median: 72, highest: 73, samples: 30 },
     players: 1600, gateLogout: 'confirmed', failures: [], scene: null, locs: null, tile: null, ...over,
 });
 
@@ -42,7 +42,7 @@ describe('windows on the recorded display', () => {
 });
 
 describe('the gate verdict', () => {
-    const direct = (onTime: number, catchUps: number) => ({ onTime, trials: 60, steadiness: { p90: 380, catchUpsPerMinute: catchUps }, players: 1600, logoutOk: true });
+    const direct = (onTime: number, catchUps: number) => ({ onTime, trials: 60, steadiness: { p90: 380, catchUpsPerMinute: catchUps, T: 300, TSource: 'feed' as const }, players: 1600, logoutOk: true });
     test('(d) as runhost-loops summarises it', () => {
         expect(loopsSummary([{ loopsP10: 72 }, { loopsP10: 70.6 }, { loopsP10: null }, { loopsP10: 73.3 }, { loopsP10: 71 }])).toEqual({ lowest: 70.6, median: 71, highest: 73.3, samples: 4 });
         expect(loopsSummary([])).toBeNull();
@@ -61,13 +61,22 @@ describe('the gate verdict', () => {
         expect(machineVerdict(direct(60, 0), null, { requireLoops: false }).status).toBe('pass');
     });
     test('the direct CLI json', () => {
-        const j = JSON.stringify({ vantage: { players: 1700 }, result: { onTime: 59, trials: 60, steadiness: { p90: 390, catchUpsPerMinute: 1 } }, logout: { ok: true } });
-        expect(parseDirectJson(j)).toEqual({ onTime: 59, trials: 60, steadiness: { p90: 390, catchUpsPerMinute: 1 }, players: 1700, logoutOk: true });
+        const j = JSON.stringify({ vantage: { players: 1700 }, T: 400, TSource: 'feed', result: { onTime: 59, trials: 60, steadiness: { p90: 390, catchUpsPerMinute: 1, T: 400, TSource: 'feed' } }, logout: { ok: true } });
+        expect(parseDirectJson(j)).toEqual({ onTime: 59, trials: 60, steadiness: { p90: 390, catchUpsPerMinute: 1, T: 400, TSource: 'feed' }, players: 1700, logoutOk: true });
+        // a file written before T: (b) has no line, (c) still reads
+        const old = parseDirectJson(JSON.stringify({ result: { onTime: 60, trials: 60, steadiness: { p90: 390, catchUpsPerMinute: 0 } } }));
+        expect(old.steadiness).toEqual({ p90: 390, catchUpsPerMinute: 0, T: null, TSource: null });
+        expect(machineVerdict(old, null, { requireLoops: false }).verdict.checks.map(c => c.ok)).toEqual([true, null, true, null]);
         expect(() => parseDirectJson('{}')).toThrow('no probe result');
     });
     test('a row names (a)-(d), the status, the gate logout and the report-only scene, locs and tile', () => {
         const row = gateRow('twin', gate({ gateLogout: 'unconfirmed' }));
         for (const s of ['01:00Z', '(a) 60/60', '(b) p90 380 ms', '(c) 0/min', '(d) p10 70 / 72 / 73', 'pass', 'gate logout unconfirmed', 'report only: scene -, locs -, tile -']) expect(row).toContain(s);
+        expect(row).toContain('(b) p90 380 ms (T 300, report <= 400)');
+        expect(row).toContain('(c) 0/min (< 150 after > 350 ms)');
+        const at400 = gateRow('twin', gate({ b: { p90: 447, T: 400, limit: 533.3 }, c: { perMinute: 0, T: 400 } }));
+        expect(at400).toContain('(b) p90 447 ms (T 400, report <= 533)');
+        expect(at400).toContain('(c) 0/min (< 200 after > 467 ms)');
         expect(gateRow('run', null)).toContain('not gated');
         const read = gate({
             scene: { inGame: { tick: 0, s: 4.2 }, built: { tick: 3, s: 4.4, firstLook: false }, last: { sceneState: 2, tick: 3 }, looks: 12, waitedS: 4.4 },
@@ -84,7 +93,7 @@ describe('the gate verdict', () => {
 describe('choosing the machine (RUN-HOST.md step 5a.2)', () => {
     const marginal = (): MachineGate[] => [
         gate({ status: 'marginal', a: { onTime: 59, trials: 60, passAt: 60, floorAt: 58 } }),
-        gate({ c: { perMinute: 2 } }),
+        gate({ c: { perMinute: 2, T: 300 } }),
         gate({ d: { lowest: 55, median: 70, highest: 72, samples: 30 } }),
     ];
     const pair = (prefer: Machine, p: MachineGate | null, o: MachineGate | null) => (prefer === 'twin' ? { twin: p, run: o } : { run: p, twin: o });
@@ -106,22 +115,22 @@ describe('choosing the machine (RUN-HOST.md step 5a.2)', () => {
             });
             test('both pass, the preferred one at the margin and the other clean: the tiebreak picks the other', () => {
                 for (const p of marginal()) {
-                    const c = choose(pair(prefer, p, gate({ c: { perMinute: 1 } })), prefer);
+                    const c = choose(pair(prefer, p, gate({ c: { perMinute: 1, T: 300 } })), prefer);
                     expect(c).toMatchObject({ machine: other, prefer, tiebreak: true });
                     expect(choiceLine(c)).toStartWith(`chosen: ${other} (tiebreak: preferred ${prefer} passed only at the margin: (`);
                     expect(choiceLine(c)).toEndWith(`; ${other} read clean)`);
                 }
             });
             test('the preferred one at the margin but the other not clearly better: the preferred machine', () => {
-                const p = gate({ c: { perMinute: 2 } });
-                for (const o of [gate({ c: { perMinute: 2 } }), gate({ status: 'marginal', a: { onTime: 59, trials: 60, passAt: 60, floorAt: 58 } })]) {
+                const p = gate({ c: { perMinute: 2, T: 300 } });
+                for (const o of [gate({ c: { perMinute: 2, T: 300 } }), gate({ status: 'marginal', a: { onTime: 59, trials: 60, passAt: 60, floorAt: 58 } })]) {
                     const c = choose(pair(prefer, p, o), prefer);
                     expect(c).toMatchObject({ machine: prefer, tiebreak: false });
                     expect(c.reason).toContain(`preferred ${prefer} at the margin ((c) 2/min) but ${other} not clearly better`);
                 }
             });
             test('the other at the margin and the preferred clean: still the preferred machine', () => {
-                expect(choose(pair(prefer, gate({}), gate({ c: { perMinute: 2 } })), prefer)).toMatchObject({ machine: prefer, tiebreak: false });
+                expect(choose(pair(prefer, gate({}), gate({ c: { perMinute: 2, T: 300 } })), prefer)).toMatchObject({ machine: prefer, tiebreak: false });
             });
             test('only the preferred passes: it; only the other passes: the other', () => {
                 expect(choose(pair(prefer, gate({}), gate({ status: 're-measure' })), prefer)).toMatchObject({ machine: prefer, tiebreak: false });

@@ -197,7 +197,9 @@ So P(miss | next interval under 200 ms) = 14/29 = 48% (100% at 04:13), against P
 edge at about 150 ms: next interval under 50 ms, 5 of 5 missed; 50-100, 4 of 4; 100-150, 3 of 4;
 150-200, 2 of 16; 200-250, 1 of 21; 250 or more, 9 of 205. A bare count of intervals under 200 ms
 is no use as a signal (clean minutes have 6-18 of them from arrival jitter alone); the signal is a
-**catch-up**: an interval under 150 ms immediately after one over 350 ms.
+**catch-up**: an interval under 150 ms immediately after one over 350 ms. These were measured at
+300 ms ticks; the gate now states them as fractions of the tick length T, under 1/2 T after over
+7/6 T (section 10).
 
 **Counting ticks from raw frames needs care.** The demo sends small non-tick frames (1-4 bytes)
 between ticks, and a catch-up tick can arrive within a few ms of the one before it. Grouping
@@ -1092,8 +1094,11 @@ vantage adds path jitter that looks like overruns (section 9):
   two false passes, 10:43 and 11:18 (54 and 55 of 60 at 1.6 and 0.8 per minute), were caught by
   (a), which is why (a) stays a pass line; at most 1 also failed 05:09 and 12:02 at 60 of 60, and
   at most 4 passed 07:01; section 9, 'Overrun bursts overnight'), a catch-up being an
-  interval under 150 ms immediately after one over 350 ms, counted from decoded ticks (not from raw
-  frames grouped 60 ms apart, which hides them; section 3).
+  interval under 1/2 T immediately after one over 7/6 T, T the server's tick length (150 and 350 ms
+  at the 300 ms ticks these samples ran at; `server/webclient/src/bot/programs/tick-rule.ts`),
+  counted from decoded ticks (not from raw frames grouped 60 ms apart, which hides them;
+  section 3). Recalibrating the limit of 2 against (a) at 400 ms ticks is still to do.
+  (b)'s report line is likewise 4/3 T: 400 ms at T = 300.
 - **(a)** the direct in-page probe lands **at least 58 of 60** reactions on the next tick;
 - **(d)** the tab's machine meets item 4 below.
 - **(b), reported as context, not a pass line:** tick publication interval p90. It agreed with (a)

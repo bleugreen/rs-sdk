@@ -68,7 +68,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
 import { join, resolve } from 'path';
-import { DIRECT_RULE, directDecision, type DirectVerdict, verdictText } from '../lib/hostgate-verdict';
+import { catchUpText, DIRECT_RULE, directDecision, type DirectVerdict, tickP90Text, type TickSource, verdictText } from '../lib/hostgate-verdict';
 
 // ------------------------------------------------------------------ fixed names (RUN-HOST.md "Names and ports")
 
@@ -158,24 +158,27 @@ export function loopsSummary(samples: ReadonlyArray<{ loopsP10?: unknown }>): Lo
 export interface DirectRead {
     onTime: number;
     trials: number;
-    steadiness: { p90: number; catchUpsPerMinute: number } | null;
+    /** `T`: the tick length (b) and (c) were read at, with its source; null in a file without one. */
+    steadiness: { p90: number; catchUpsPerMinute: number; T: number | null; TSource: TickSource | null } | null;
     players: number | null;
     logoutOk: boolean | null;
 }
 
 export function parseDirectJson(text: string): DirectRead {
     const j = JSON.parse(text) as {
-        result?: { onTime?: number; trials?: number; steadiness?: { p90?: number; catchUpsPerMinute?: number } };
+        result?: { onTime?: number; trials?: number; steadiness?: { p90?: number; catchUpsPerMinute?: number; T?: unknown; TSource?: unknown } };
         vantage?: { players?: number };
         logout?: { ok?: boolean };
     };
     const r = j.result;
     if (!r || typeof r.onTime !== 'number' || typeof r.trials !== 'number') throw new Error('the direct gate wrote no probe result');
     const s = r.steadiness;
+    const T = typeof s?.T === 'number' && s.T > 0 ? s.T : null;
+    const TSource = T !== null && typeof s?.TSource === 'string' ? (s.TSource as TickSource) : null;
     return {
         onTime: r.onTime,
         trials: r.trials,
-        steadiness: s && typeof s.p90 === 'number' && typeof s.catchUpsPerMinute === 'number' ? { p90: s.p90, catchUpsPerMinute: s.catchUpsPerMinute } : null,
+        steadiness: s && typeof s.p90 === 'number' && typeof s.catchUpsPerMinute === 'number' ? { p90: s.p90, catchUpsPerMinute: s.catchUpsPerMinute, T, TSource } : null,
         players: j.vantage?.players ?? null,
         logoutOk: typeof j.logout?.ok === 'boolean' ? j.logout.ok : null,
     };
@@ -190,8 +193,10 @@ export interface MachineGate {
     endUtc: string;
     status: GateStatus;
     a: { onTime: number; trials: number; passAt: number; floorAt: number } | null;
-    b: { p90: number } | null;
-    c: { perMinute: number } | null;
+    /** (b) with the T it was read at and its report line, 4/3 T (null with no T). */
+    b: { p90: number; T: number | null; limit: number | null } | null;
+    /** (c), with the T its catch-ups were counted at. */
+    c: { perMinute: number; T: number | null } | null;
     d: LoopsSummary | null;
     players: number | null;
     /** confirmed: logoutClean saw the page out of game. The window is killed either way. */
@@ -331,14 +336,14 @@ export function gateRow(m: string, g: MachineGate | null): string {
     if (!g) return `${m.padEnd(5)} not gated`;
     const minute = g.startedUtc.slice(11, 16);
     const a = g.a ? `${g.a.onTime}/${g.a.trials}` : '-';
-    const b = g.b ? `${g.b.p90} ms` : '-';
-    const c = g.c ? `${g.c.perMinute}/min` : '-';
+    const b = g.b ? tickP90Text(g.b.p90, g.b.T, g.b.limit) : '-';
+    const c = g.c ? `${g.c.perMinute}/min${g.c.T !== null ? ` (${catchUpText(g.c.T)})` : ''}` : '-';
     const d = g.d ? `${g.d.lowest} / ${g.d.median} / ${g.d.highest}` : '-';
     const scene = g.scene?.built ? `${g.scene.built.firstLook ? '<=' : ''}t${g.scene.built.tick ?? '?'}` : g.scene ? 'not built' : '-';
     const locs = g.locs?.look ? String(g.locs.look.locs) : '-';
     const tile = g.tile ? (g.tile.atSpawn ? 'at spawn' : `${g.tile.fromSpawn} from spawn`) : '-';
     return (
-        `${m.padEnd(5)} ${minute}Z  (a) ${a.padEnd(6)} (b) p90 ${b.padEnd(7)} (c) ${c.padEnd(9)} (d) p10 ${d.padEnd(20)} ${g.status.padEnd(10)} online ${g.players ?? '?'}  gate logout ${g.gateLogout}` +
+        `${m.padEnd(5)} ${minute}Z  (a) ${a.padEnd(6)} (b) p90 ${b.padEnd(30)} (c) ${c.padEnd(30)} (d) p10 ${d.padEnd(20)} ${g.status.padEnd(10)} online ${g.players ?? '?'}  gate logout ${g.gateLogout}` +
         `  | report only: scene ${scene}, locs ${locs}, tile ${tile}${g.failures.length ? `  [${g.failures.join('; ')}]` : ''}`
     );
 }
@@ -931,8 +936,8 @@ async function onGate(ctx: Ctx, argv: readonly string[]): Promise<number> {
         g.players = direct.players;
         const pre = machineVerdict(direct, null, { requireLoops: false });
         g.a = { onTime: direct.onTime, trials: direct.trials, passAt: pre.verdict.passAt, floorAt: pre.verdict.floorAt };
-        g.b = direct.steadiness ? { p90: direct.steadiness.p90 } : null;
-        g.c = direct.steadiness ? { perMinute: direct.steadiness.catchUpsPerMinute } : null;
+        g.b = direct.steadiness ? { p90: direct.steadiness.p90, T: direct.steadiness.T, limit: pre.verdict.checks.find(k => k.id === 'b')?.limit ?? null } : null;
+        g.c = direct.steadiness ? { perMinute: direct.steadiness.catchUpsPerMinute, T: direct.steadiness.T } : null;
         if (direct.logoutOk === false) step(ctx, '(a)-(c)', 'WARNING: the direct probe did not confirm its logout; the tab login may meet "already logged in"');
         if (!startable(pre.status)) {
             g.status = pre.status;

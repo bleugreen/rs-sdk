@@ -28,6 +28,11 @@
 // `measureVantage` reads the preconditions for the direct path (Fly edge and TCP connect),
 // which `vantageDecision` checks before anything logs in.
 //
+// The tick length T that (b) and (c) are read at comes from `resolveTickLength`: an explicit
+// value (the CLI's --tick-ms), else the engine's spectator feed hello (`feedTickMs`, no login),
+// else the probe's own median interval rounded to 50 ms (tickSteadiness). Never wait.ts
+// `tickMs()`, whose 300 is a default, not a reading.
+//
 // A constant latency costs nothing: a loop anchored on its own bootstrap send shifts every
 // roll by the same amount, and a loop anchored on an observed roll sends `mode - 1` ticks
 // early (the lead). What costs is a starter whose latency differs from the dominant one. In
@@ -38,7 +43,7 @@
 // cycle unless the loop says otherwise.
 
 import { spawnSync } from 'node:child_process';
-import { type CycleModel, type DirectRule, type HostVerdict, hostVerdict, latencyHistogram, type ProbePath, type ProbeSummary, steadinessHistogram, summarizeProbe, type TickSteadiness, tickSteadiness, type VantageReading, verdictText } from './hostgate-verdict';
+import { type CycleModel, type DirectRule, type HostVerdict, hostVerdict, latencyHistogram, type ProbePath, type ProbeSummary, steadinessHistogram, summarizeProbe, type TickLength, type TickSteadiness, tickSteadiness, validTickMs, type VantageReading, verdictText } from './hostgate-verdict';
 import { tickMs } from './wait';
 
 export * from './hostgate-verdict';
@@ -76,6 +81,8 @@ export interface ProbeOptions {
      * is scored over a whole probe minute (the run-night gate passes 60000). Default 0.
      */
     steadyMs?: number;
+    /** The server's tick length for the steadiness (`resolveTickLength`); absent: the probe's median interval. */
+    tick?: TickLength | null;
 }
 
 export interface ProbeResult extends ProbeSummary {
@@ -111,7 +118,7 @@ export function probeOnTime(sdk: ProbeSdk, opts: ProbeOptions = {}): Promise<Pro
     const path = sdk.path ?? 'relay';
     return new Promise<ProbeResult>((resolve, reject) => {
         const s0 = sdk.getState();
-        const empty = (reason: string): ProbeResult => ({ ...summarizeProbe([]), path, latencies: [], lost: 0, ticks: 0, tickArrivals: [], steadiness: tickSteadiness([]), sendMs: [], reason });
+        const empty = (reason: string): ProbeResult => ({ ...summarizeProbe([]), path, latencies: [], lost: 0, ticks: 0, tickArrivals: [], steadiness: tickSteadiness([], opts.tick), sendMs: [], reason });
         if (!s0?.inGame || !s0.player) {
             resolve(empty('not in game'));
             return;
@@ -149,7 +156,7 @@ export function probeOnTime(sdk: ProbeSdk, opts: ProbeOptions = {}): Promise<Pro
         const finish = (endTick: number, reason?: string) => {
             if (done) return;
             stop();
-            resolve({ ...summarizeProbe(latencies), path, latencies, lost, ticks: endTick - s0.tick, tickArrivals, steadiness: tickSteadiness(tickArrivals), sendMs, ...(reason ? { reason } : {}) });
+            resolve({ ...summarizeProbe(latencies), path, latencies, lost, ticks: endTick - s0.tick, tickArrivals, steadiness: tickSteadiness(tickArrivals, opts.tick), sendMs, ...(reason ? { reason } : {}) });
         };
         const trialsDone = (tick: number) => {
             if (span() >= steadyMs) return finish(tick);
@@ -232,6 +239,61 @@ export async function measureVantage(host: string, opts: { samples?: number; gap
     } catch {}
     const str = (v: unknown) => (typeof v === 'string' && v ? v : null);
     return { edge: str(fly.nr), app: str(fly.sr), meshHop: str(fly.mhn), connectMs, players };
+}
+
+/**
+ * The engine's configured tick length from its spectator feed (server/engine/src/web/worldfeed.ts):
+ * the hello frame it sends on connect carries `tickMs` (World.tickRate). No login and no
+ * subscription; the socket closes on the hello. Null when no usable hello arrives within
+ * `timeoutMs`. wss:// for a remote host, ws:// for localhost.
+ */
+export function feedTickMs(host: string, opts: { timeoutMs?: number; socket?: (url: string) => WebSocket } = {}): Promise<number | null> {
+    const local = host.startsWith('localhost') || host.startsWith('127.');
+    const url = `${local ? 'ws' : 'wss'}://${host}/worldfeed`;
+    return new Promise(resolve => {
+        let ws: WebSocket;
+        try {
+            ws = (opts.socket ?? (u => new WebSocket(u)))(url);
+        } catch {
+            resolve(null);
+            return;
+        }
+        let settled = false;
+        const done = (v: number | null) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            try {
+                ws.close();
+            } catch {}
+            resolve(v);
+        };
+        const timer = setTimeout(() => done(null), opts.timeoutMs ?? 5000);
+        ws.onmessage = event => {
+            try {
+                const m = JSON.parse(String(event.data)) as { t?: unknown; tickMs?: unknown };
+                if (m.t === 'hello') done(validTickMs(m.tickMs));
+            } catch {}
+        };
+        ws.onerror = () => done(null);
+        ws.onclose = () => done(null);
+    });
+}
+
+/**
+ * The gate's tick length T: `explicitMs` (the CLI's --tick-ms) when given, else the feed hello's
+ * `tickMs` from `host`, else null, which leaves T to the probe's median interval
+ * (tickSteadiness, source `median`). Throws on an explicit value that is not a tick length.
+ */
+export async function resolveTickLength(opts: { explicitMs?: number; host?: string; feed?: (host: string) => Promise<number | null> }): Promise<TickLength | null> {
+    if (opts.explicitMs !== undefined) {
+        const T = validTickMs(opts.explicitMs);
+        if (T === null) throw new Error(`--tick-ms must be a tick length in ms above 0, not ${opts.explicitMs}`);
+        return { T, source: 'flag' };
+    }
+    if (!opts.host) return null;
+    const T = await (opts.feed ?? feedTickMs)(opts.host).catch(() => null);
+    return T !== null ? { T, source: 'feed' } : null;
 }
 
 /** One probe, one decision, by the probe's path. */
@@ -389,7 +451,7 @@ export class HostGate {
         this.opts.log?.(
             `T${tick} gate (${why}${result.path === 'direct' ? ', direct' : ''}): latency ${latencyHistogram(result.latencies) || '-'} of ${result.trials}` +
                 `${result.reason ? ` (${result.reason})` : ''}, same as previous ${result.sameAsPrevious.toFixed(2)}, in ${result.ticks} ticks;` +
-                ` ticks p50 ${st.p50} p90 ${st.p90} max ${st.max} ms, ${st.catchUps} catch-ups (${steadinessHistogram(st) || '-'});` +
+                ` ticks p50 ${st.p50} p90 ${st.p90} max ${st.max} ms, T ${st.T ?? '?'} (${st.TSource ?? 'none'}), ${st.catchUps} catch-ups (${steadinessHistogram(st) || '-'});` +
                 ` ${verdictText(verdict)} -> ` +
                 (switched ? `SWITCH ${mode(was)} -> ${mode(this.on)}` : mode(this.on))
         );

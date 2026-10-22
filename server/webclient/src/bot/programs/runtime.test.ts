@@ -133,11 +133,25 @@ describe('ProgramRuntime', () => {
         now = 900;
         rt.onTick(makeState({ tick: 4 }), 2, [820, 880]);
         const s = rt.status()!;
-        expect(s.frames).toMatchObject({ n: 3, catchUps: 1, under150: 1, over350: 1 });
+        // no tickMs parameter: judged at the run's median interval, 300 ms
+        expect(s.frames).toMatchObject({ n: 3, catchUps: 1, underHalfT: 1, overSevenSixthsT: 1, T: 300, TSource: 'median' });
         expect(s.publish).toMatchObject({ n: 2, catchUps: 0, max: 600 });
         expect(s.skippedTicks).toBe(1);
         // arrival of the newest decoded frame to the decision: 0, 0, then 900 - 880
         expect(s.react).toMatchObject({ n: 3, max: 20 });
+    });
+
+    test("the tickMs parameter is the T a run's frames are judged by; a bad one is a bad parameter", () => {
+        const rt = new ProgramRuntime({ dispatch: () => ({ success: true, message: '' }), now: () => 0 });
+        rt.register('a', declared(() => ({ onTick: c => c.progress() })));
+        expect(rt.start('a', { tickMs: 400 }).frames).toMatchObject({ T: 400, TSource: 'driver' });
+        // 440 then 180 is a catch-up at T = 300, not at the driver's 400
+        rt.onTick(makeState({ tick: 1 }), 1, [0]);
+        rt.onTick(makeState({ tick: 2 }), 1, [400]);
+        rt.onTick(makeState({ tick: 3 }), 1, [840]);
+        rt.onTick(makeState({ tick: 4 }), 1, [1020]);
+        expect(rt.status()!.frames).toMatchObject({ n: 3, catchUps: 0, underHalfT: 1, overSevenSixthsT: 0, T: 400, TSource: 'driver' });
+        expect(rt.start('a', { tickMs: 0 })).toMatchObject({ phase: 'fault', fault: 'bad parameters: tickMs must be a tick length in ms above 0, got 0' });
     });
 
     test('a factory that throws reports bad parameters as a fault', () => {
@@ -174,7 +188,7 @@ describe('ProgramRuntime', () => {
         const second = h.runtime.start('a', { dropEach: true });
         expect(first.phase).toBe('replaced');
         expect(second.phase).toBe('fault');
-        expect(second.fault).toBe('bad parameters: a does not declare dropEach (accepts: stallTicks, hold)');
+        expect(second.fault).toBe('bad parameters: a does not declare dropEach (accepts: stallTicks, hold, tickMs)');
     });
 
     test('registering a factory without a declaration is refused', () => {

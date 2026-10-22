@@ -3,7 +3,7 @@
 // variant in-page-oak).
 //
 //   bun docs/speedrun/scripts/knife-minutes.ts <session dir> [--phases=knife,plain] [--chance=32,100]
-//       [--level=N] [--limit=2] [--soft=400,225] [--json=PATH]
+//       [--level=N] [--limit=2] [--soft=400,225] [--tick-ms=N] [--json=PATH]
 //
 // Stamps. On a page at main c14428fc or later the harness polls knife-cycle's status every 2.5 s:
 // {t, n, k, pr, sl, rs, lu, sw} = the program's tick, marks.successes' count and its last 12 ticks
@@ -17,8 +17,9 @@
 // log in that window (exact when the window holds one log, the usual case at a 2.5 s poll).
 //
 // Minutes. Ticks on the page are inbound game frames of 5+ bytes grouped when under 8 ms apart
-// (page-send-delays.ts). A catch-up is an interval < 150 ms right after one > 350 ms (the gate's
-// (c), demo-latency.md section 10); a soft pair one < --soft[1] ms after one > --soft[0] ms (section 9,
+// (page-send-delays.ts). A catch-up is an interval < 1/2 T right after one > 7/6 T (the gate's
+// (c), tick-rule.ts, demo-latency.md section 10), T --tick-ms or else the session's median page
+// tick interval rounded to 50 ms; a soft pair one < --soft[1] ms after one > --soft[0] ms (section 9,
 // 'Miss rate by the next tick interval'). Each gap between consecutive logs belongs to the log that
 // ends it, and is classed two ways: by the wall-clock minute of that log (calm when the minute's
 // catch-ups, scaled to a full minute, are at most --limit), and by the catch-ups in the 60 s before
@@ -30,6 +31,7 @@
 // phase resync is timing. `slips` counts the 'resync (no xp)' re-locks.
 import { readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { isCatchUp, tickFromMedian, validTickMs } from '../../../server/webclient/src/bot/programs/tick-rule';
 
 const dir = process.argv[2];
 const flag = (name: string) => process.argv.find(a => a.startsWith(`--${name}=`))?.split('=')[1];
@@ -53,16 +55,22 @@ for (const l of readFileSync(join(dir, 'page/frames.jsonl'), 'utf8').split('\n')
     lastIn = f.t;
 }
 const iv = ticks.slice(1).map((t, i) => t - ticks[i]!);
+const ivSorted = [...iv].sort((a, b) => a - b);
+const tickFlag = flag('tick-ms');
+const T = tickFlag !== undefined ? validTickMs(Number(tickFlag)) : ivSorted.length ? tickFromMedian(ivSorted[Math.floor(ivSorted.length / 2)]!) : null;
+if (T === null) { console.error(tickFlag !== undefined ? `--tick-ms must be a tick length in ms above 0, not ${tickFlag}` : 'no page ticks to take T from: pass --tick-ms'); process.exit(2); }
+const TSource = tickFlag !== undefined ? 'flag' : 'median';
 // Wall time of each catch-up and soft pair: the arrival that ends the short interval.
 const catchUps: number[] = [], softs: number[] = [];
 for (let i = 1; i < iv.length; i++) {
-    if (iv[i - 1]! > 350 && iv[i]! < 150) catchUps.push(ticks[i + 1]!);
+    if (isCatchUp(iv[i]!, iv[i - 1]!, T)) catchUps.push(ticks[i + 1]!);
     if (iv[i - 1]! > softLong && iv[i]! < softShort) softs.push(ticks[i + 1]!);
 }
 const within = (xs: number[], a: number, b: number) => xs.filter(x => x > a && x <= b).length;
 
 let level = Number(flag('level') ?? readFileSync(join(dir, 'knife-full.log'), 'utf8').match(/woodcutting (\d+)/)?.[1] ?? NaN);
-const report: Record<string, unknown> = { chance: [lo, hi], limit: LIMIT, soft: [softLong, softShort], pageTicks: ticks.length, catchUps: catchUps.length, softs: softs.length };
+const report: Record<string, unknown> = { chance: [lo, hi], limit: LIMIT, soft: [softLong, softShort], T, TSource, pageTicks: ticks.length, catchUps: catchUps.length, softs: softs.length };
+console.log(`T ${T} ms (${TSource === 'flag' ? '--tick-ms' : 'median page tick interval'})`);
 
 type Poll = { wall: number; t: number; n?: number; pr?: number; sl?: number; rs?: number; lu?: number; sw?: number; fc?: number; fu?: number; fo?: number; fn?: number };
 const BINS = [['0-2', 2], ['2-5', 5], ['5-10', 10], ['over 10', Infinity]] as const;
@@ -89,7 +97,8 @@ for (const phase of phases) {
         if (m[2] === 'result') {
             final = j;
             if (typeof j.tick === 'number') polls.push({ wall, t: j.tick, n: j.marks?.successes?.count, pr: j.counters?.phaseResyncs ?? 0, sl: j.counters?.slips ?? 0, rs: j.counters?.resyncs ?? 0, lu: j.counters?.levelUps ?? 0, sw: j.counters?.switches ?? 0,
-                fc: j.frames?.catchUps, fu: j.frames?.under150, fo: j.frames?.over350, fn: j.frames?.n });
+                // sessions recorded before the T-relative names carry under150 / over350
+                fc: j.frames?.catchUps, fu: j.frames?.underHalfT ?? j.frames?.under150, fo: j.frames?.overSevenSixthsT ?? j.frames?.over350, fn: j.frames?.n });
             const mk = j.marks?.successes;
             if (mk) mk.ticks.forEach((t: number, i: number) => stamps.set(mk.count - mk.ticks.length + 1 + i, t));
         } else if (Array.isArray(j.k)) {

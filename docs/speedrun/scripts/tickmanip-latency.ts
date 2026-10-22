@@ -2,14 +2,22 @@
 // (docs/speedrun/skills/tick-manipulation.md, "Run-time host gate").
 //
 //   bun docs/speedrun/scripts/tickmanip-latency.ts <bot> [--path=relay|direct] [--trials=60] [--no-tele] [--bot=NAME]
+//       [--tick-ms=N]
 //       relay only:  [--plain=4] [--miss=4]
-//       direct only: [--steady=60] [--edge=iad|any] [--max-connect=5] [--floor=58] [--p90=400]
+//       direct only: [--steady=60] [--edge=iad|any] [--max-connect=5] [--floor=58] [--p90=MS]
 //                    [--p90-pass] [--catchups=2] [--json=PATH]
 //
 // A CLI over speedrun/lib/hostgate.ts `probeOnTime`: every predicted loop assumes a packet
 // sent while state label c is current is processed on server tick c+1. It prints the trials
 // per latency, the dominant offset, how often consecutive trials agree, the tick arrival
 // intervals (p50/p90/max, a 50 ms histogram, catch-ups), and the gate's verdict for the path.
+//
+// The tick length T that (b) and (c) are read at (tick-rule.ts: a catch-up is under 1/2 T after
+// over 7/6 T, (b)'s report line 4/3 T) is --tick-ms when given; else the `tickMs` of the
+// engine's spectator feed hello (wss://<server>/worldfeed, no login, 5 s timeout); else the
+// probe's median arrival interval rounded to 50 ms. The source is printed beside T and written
+// as `T` and `TSource` at the top of --json (and in result.steadiness). --p90 fixes (b)'s line
+// in ms instead of 4/3 T.
 //
 // --path=relay (default) probes through the SDK (runner, gateway, lite client: `runScript`)
 // and prints the cost model's verdict for a loop whose plain cycle is --plain ticks (default
@@ -20,7 +28,7 @@
 // the vantage preconditions (Fly edge iad, app iad, no mesh hop, TCP connect p50 <= 5 ms)
 // and, if one fails, says which and exits 2 without logging in. Then it probes, keeps reading
 // ticks until --steady seconds (default 60) of arrivals are in, and prints the direct go/no-go:
-// (a) on time >= 58/60, (b) tick p90 <= 400 ms (reported only; --p90-pass makes it a pass
+// (a) on time >= 58/60, (b) tick p90 <= 4/3 T (reported only; --p90-pass makes it a pass
 // line), (c) <= 2 catch-ups per minute ((d), the page's loop rate, is the in-page probe's; not
 // measured here). Exit 0 when the loops may start, 1 when not. Needs server/webclient's dependencies (`cd server/webclient && bun install`).
 // --bot=NAME overrides <bot>: under lab.sh, whose runner holds <bot>, the direct probe logs
@@ -42,7 +50,7 @@ import { writeFileSync } from 'fs';
 import { hostname } from 'os';
 import { runScript } from '../../../sdk/runner';
 import { type DirectLogoutResult, directLogoutText, openDirectSession } from '../../../speedrun/lib/direct';
-import { directDecision, gateDecision, latencyHistogram, measureVantage, type ProbeResult, probeOnTime, steadinessHistogram, vantageDecision, verdictText } from '../../../speedrun/lib/hostgate';
+import { catchUpText, directDecision, gateDecision, latencyHistogram, measureVantage, type ProbeResult, probeOnTime, resolveTickLength, steadinessHistogram, type TickLength, vantageDecision, verdictText } from '../../../speedrun/lib/hostgate';
 import { loadBotEnv } from '../../../speedrun/lib/session';
 
 const flag = (name: string) => process.argv.find(a => a.startsWith(`--${name}=`))?.split('=')[1];
@@ -59,15 +67,23 @@ const q = (xs: number[], p: number) => {
 if (PATH !== 'relay' && PATH !== 'direct') throw new Error(`--path must be relay or direct, not ${PATH}`);
 if (!BOT) throw new Error('usage: tickmanip-latency.ts <bot> [--path=relay|direct] ...');
 
+/** T before the probe: --tick-ms, else the feed hello; null leaves it to the probe's median. */
+async function tickBefore(host: string | undefined): Promise<TickLength | null> {
+    const tick = await resolveTickLength({ explicitMs: num('tick-ms'), host });
+    console.log(`tick length: ${tick ? `T ${tick.T} ms (${tick.source === 'flag' ? '--tick-ms' : 'the world feed hello'})` : 'no --tick-ms and no feed hello: T from the median interval'}`);
+    return tick;
+}
+
 function printProbe(r: ProbeResult, server: string) {
     const s = r.steadiness;
     console.log(`probe (${r.path}) from ${hostname()} at ${new Date().toISOString()}, server ${server}`);
     console.log(`latency in ticks (label of the step - label sent): ${latencyHistogram(r.latencies)}  (${r.trials} trials, ${r.lost} lost, ${r.ticks} ticks)${r.reason ? `  ${r.reason}` : ''}`);
     console.log(`on time ${r.onTime}/${r.trials}; dominant ${r.mode} ticks (${(r.modeFraction * 100).toFixed(0)}%, lead ${Math.max(0, r.mode - 1)}); consecutive trials agree ${(r.sameAsPrevious * 100).toFixed(0)}%`);
     console.log(`sequence: ${r.latencies.join('')}`);
+    const atT = s.T !== null ? `T ${s.T} (${s.TSource}): ${s.overSevenSixthsT} over 7/6 T, ${s.underHalfT} under 1/2 T, ${s.catchUps} catch-ups ${catchUpText(s.T)}` : `T unknown: ${s.catchUps} catch-ups`;
     console.log(
         `tick ${r.path === 'direct' ? 'arrival' : 'publication'} interval ms over ${(s.spanMs / 1000).toFixed(1)} s: p10 ${s.p10} p50 ${s.p50} p90 ${s.p90} max ${s.max};` +
-            ` ${s.over350} over 350, ${s.under150} under 150, ${s.catchUps} catch-ups (${s.catchUpsPerMinute}/min)`
+            ` ${atT} (${s.catchUpsPerMinute}/min)`
     );
     console.log(`tick interval histogram (50 ms buckets): ${steadinessHistogram(s) || '-'}`);
     console.log(`send resolve ms: p50 ${q(r.sendMs, 0.5)} p90 ${q(r.sendMs, 0.9)} max ${q(r.sendMs, 1)}`);
@@ -83,7 +99,8 @@ if (PATH === 'relay') {
                 await sdk.sendSay('::tele 0,50,50,22,18');
                 await sdk.waitForTicks(6);
             }
-            const r = await probeOnTime(sdk, { trials: N });
+            const tick = await tickBefore(process.env.SERVER);
+            const r = await probeOnTime(sdk, { trials: N, tick });
             printProbe(r, process.env.SERVER ?? '(bot.env)');
             const v = gateDecision(r, { plainCycle: PLAIN, missCost: num('miss') });
             console.log(`gate (relay) at plain cycle ${PLAIN}: ${verdictText(v)} -> ${v.on ? 'manipulate' : 'plain loop'}`);
@@ -108,6 +125,8 @@ if (PATH === 'relay') {
             process.exit(2);
         }
     }
+    // before the login: the feed needs none
+    const tick = await tickBefore(host);
     const session = await openDirectSession({ host, username: env.BOT_USERNAME, password: env.PASSWORD });
     // Every way out of the probe goes through the logout (session.logout() is idempotent).
     const logOutAndExit = (code: number) => void session.logout().then(lo => console.log(`logout (direct): ${directLogoutText(lo)}`)).finally(() => process.exit(code));
@@ -130,7 +149,7 @@ if (PATH === 'relay') {
             session.client.flush();
             await session.waitTicks(6);
         }
-        const r = await probeOnTime(session.sdk, { trials: N, steadyMs: Number(flag('steady') ?? 60) * 1000 });
+        const r = await probeOnTime(session.sdk, { trials: N, steadyMs: Number(flag('steady') ?? 60) * 1000, tick });
         printProbe(r, host);
         const v = directDecision(r, { floor: num('floor'), maxTickP90Ms: num('p90'), tickP90PassLine: process.argv.includes('--p90-pass'), maxCatchUpsPerMinute: num('catchups') });
         console.log(`gate (direct): ${verdictText(v)} -> ${v.on ? 'start the in-page loops' : `do not start: ${v.failures.join('; ')}`}`);
@@ -139,7 +158,7 @@ if (PATH === 'relay') {
             const t0 = r.tickArrivals[0] ?? 0;
             const { tickArrivals, ...rest } = r;
             saveJson = logout => {
-                writeFileSync(json, JSON.stringify({ ...out, result: { ...rest, tickArrivalsMs: tickArrivals.map(t => Math.round((t - t0) * 10) / 10) }, verdict: v, logout }, null, 2));
+                writeFileSync(json, JSON.stringify({ ...out, T: r.steadiness.T, TSource: r.steadiness.TSource, result: { ...rest, tickArrivalsMs: tickArrivals.map(t => Math.round((t - t0) * 10) / 10) }, verdict: v, logout }, null, 2));
                 console.log(`wrote ${json}`);
             };
         }

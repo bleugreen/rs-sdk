@@ -13,7 +13,8 @@
 
 import type { BotSDK } from '../../sdk/index';
 import type { ActionResult, BotWorldState } from '../../sdk/types';
-import { type ProbeResult, summarizeProbe, tickSteadiness } from './hostgate';
+import type { FrameSummary } from '../../server/webclient/src/bot/programs/frames';
+import { type ProbeResult, summarizeProbe, type TickLength, tickSteadiness } from './hostgate';
 import { tickMs } from './wait';
 
 /** The page's published program status (server/webclient/src/bot/programs/types.ts). */
@@ -35,8 +36,9 @@ export interface ProgramStatus {
     maxTickMs: number;
     /**
      * Server frame intervals during the run, from raw arrivals: a catch-up is an interval
-     * under 150 ms right after one over 350 ms (server overrun). The in-run gate rule
-     * reads `frames.catchUpsLastMinute` and `publish.p90`.
+     * under 1/2 T right after one over 7/6 T (server overrun; tick-rule.ts), T the run's
+     * `tickMs` start parameter or else its median interval. The in-run gate rule reads
+     * `frames.catchUpsLastMinute` and `publish.p90`.
      */
     frames: FrameSummary;
     /** The page's state publication intervals during the run. */
@@ -74,17 +76,15 @@ export function marksSince(status: ProgramStatus | null | undefined, name: strin
     return { count: m.count, ticks, missed: fresh - ticks.length };
 }
 
-/** server/webclient/src/bot/programs/frames.ts */
-export interface FrameSummary {
-    n: number;
-    p50: number;
-    p90: number;
-    max: number;
-    under150: number;
-    over350: number;
-    catchUps: number;
-    catchUpsLastMinute: number;
-    catchUpsPerMinute: number;
+/** The page's own summary type, so the two cannot drift. */
+export type { FrameSummary } from '../../server/webclient/src/bot/programs/frames';
+
+/**
+ * The `tickMs` start parameter for a measured tick length (a flag or the feed): the page judges
+ * the run's frames at it. Nothing for a median, which the page measures itself.
+ */
+export function tickParam(tick: TickLength | null | undefined): { tickMs?: number } {
+    return tick && tick.source !== 'median' ? { tickMs: tick.T } : {};
 }
 
 export type ProgramName = 'probe' | 'knife-cycle' | 'knife-mine' | 'pickpocket' | 'agility' | 'rc-cycle' | 'item-cycle';
@@ -290,10 +290,10 @@ export type DirectProbeResult = ProbeResult & { path: 'direct'; source: 'in-page
  */
 export async function probeInPage(
     sdk: ProgramSdk,
-    opts: { trials?: number; maxWait?: number; maxTicks?: number; dirs?: ReadonlyArray<readonly [number, number]> } = {}
+    opts: { trials?: number; maxWait?: number; maxTicks?: number; dirs?: ReadonlyArray<readonly [number, number]>; tick?: TickLength | null } = {}
 ): Promise<DirectProbeResult> {
     const trials = opts.trials ?? 20;
-    const params = { trials, maxWait: opts.maxWait ?? 8, ...(opts.dirs ? { dirs: opts.dirs.map(d => [d[0], d[1]]) } : {}) };
+    const params = { trials, maxWait: opts.maxWait ?? 8, ...(opts.dirs ? { dirs: opts.dirs.map(d => [d[0], d[1]]) } : {}), ...tickParam(opts.tick) };
     const end = await runProgram(sdk, 'probe', params, { maxTicks: opts.maxTicks ?? trials * 3 + 60 });
     const r = end.result as InPageProbeResult | undefined;
     if (!r) throw new ProgramError('probe ended without a result', end);
@@ -305,7 +305,7 @@ export async function probeInPage(
         lost: r.lost,
         ticks: r.ticks,
         tickArrivals,
-        steadiness: tickSteadiness(tickArrivals),
+        steadiness: tickSteadiness(tickArrivals, opts.tick),
         sendMs: [],
         ...(r.reason ? { reason: r.reason } : {}),
         path: 'direct',

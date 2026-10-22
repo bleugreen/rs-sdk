@@ -1,12 +1,17 @@
 // Tick cadence as the page lived it, for the host gate's in-run rule
-// (direct probe >= 58/60, publication p90 <= 400 ms, <= 1 catch-up per minute;
-// cairn://p/rs/83 and rs/102, docs/speedrun/research/demo-latency.md).
+// (cairn://p/rs/83 and rs/102, docs/speedrun/research/demo-latency.md).
 //
-// A catch-up is an interval under 150 ms right after one over 350 ms: the server
-// overran a tick and the next one followed at once. A reaction to the long tick then
-// misses about half the time. Fed from raw frame arrivals (the websocket message that
-// carried each PLAYER_INFO), never from game-loop passes, which merge back-to-back
-// ticks into one and would hide exactly these.
+// A catch-up is an interval under 1/2 T right after one over 7/6 T, T the tick length
+// (tick-rule.ts; 150 and 350 ms at T = 300): the server overran a tick and the next one
+// followed at once. A reaction to the long tick then misses about half the time. Fed from
+// raw frame arrivals (the websocket message that carried each PLAYER_INFO), never from
+// game-loop passes, which merge back-to-back ticks into one and would hide exactly these.
+//
+// T is the driver's (the `tickMs` start parameter, source `driver`); without one it is the
+// run's own median interval so far, rounded to the nearest 50 ms (source `median`), so each
+// interval is judged against the T known when it arrived.
+
+import { isCatchUp, type TickSource, tickFromMedian, tickLimits } from './tick-rule.js';
 
 export interface FrameSummary {
     /** Intervals measured. */
@@ -14,13 +19,17 @@ export interface FrameSummary {
     p50: number;
     p90: number;
     max: number;
-    under150: number;
-    over350: number;
+    /** Intervals under 1/2 T, and over 7/6 T. */
+    underHalfT: number;
+    overSevenSixthsT: number;
     catchUps: number;
     /** Catch-ups in the 60 s before the last arrival. */
     catchUpsLastMinute: number;
     /** Catch-ups per minute over the whole run. */
     catchUpsPerMinute: number;
+    /** The tick length the intervals were judged by, ms, and where it came from; null before any interval without a driver's T. */
+    T: number | null;
+    TSource: TickSource | null;
 }
 
 export interface MsSummary {
@@ -70,11 +79,19 @@ export class FrameStats {
     private prevGap: number | null = null;
     // 10 ms buckets up to 3 s; longer intervals land in the last bucket
     private readonly gaps = new MsHistogram(10, 301);
-    private under150 = 0;
-    private over350 = 0;
+    private underHalfT = 0;
+    private overSevenSixthsT = 0;
     private catchUps = 0;
 
     private readonly recentCatchUps: number[] = [];
+
+    /** `tickMs`: the driver's tick length; absent or null judges by the running median. */
+    constructor(private readonly tickMs: number | null = null) {}
+
+    /** The tick length now: the driver's, else the median interval so far rounded to 50 ms. */
+    tick(): number | null {
+        return this.tickMs ?? (this.gaps.n ? tickFromMedian(this.gaps.percentile(0.5)) : null);
+    }
 
     /** A frame arrived at `at` (wall ms, performance.now()). */
     add(at: number): void {
@@ -86,11 +103,15 @@ export class FrameStats {
         const gap = at - this.last;
         this.last = at;
         this.gaps.add(gap);
-        if (gap < 150) this.under150++;
-        if (gap > 350) this.over350++;
-        if (gap < 150 && this.prevGap !== null && this.prevGap > 350) {
-            this.catchUps++;
-            this.recentCatchUps.push(at);
+        const T = this.tick();
+        if (T !== null) {
+            const l = tickLimits(T);
+            if (gap < l.catchUpUnderMs) this.underHalfT++;
+            if (gap > l.catchUpAfterOverMs) this.overSevenSixthsT++;
+            if (isCatchUp(gap, this.prevGap, T)) {
+                this.catchUps++;
+                this.recentCatchUps.push(at);
+            }
         }
         this.prevGap = gap;
         while (this.recentCatchUps.length && this.recentCatchUps[0]! < at - 60_000) this.recentCatchUps.shift();
@@ -98,16 +119,19 @@ export class FrameStats {
 
     summary(): FrameSummary {
         const minutes = this.first !== null && this.last !== null ? (this.last - this.first) / 60_000 : 0;
+        const T = this.tick();
         return {
             n: this.gaps.n,
             p50: this.gaps.percentile(0.5),
             p90: this.gaps.percentile(0.9),
             max: Math.round(this.gaps.max),
-            under150: this.under150,
-            over350: this.over350,
+            underHalfT: this.underHalfT,
+            overSevenSixthsT: this.overSevenSixthsT,
             catchUps: this.catchUps,
             catchUpsLastMinute: this.recentCatchUps.length,
-            catchUpsPerMinute: minutes > 0 ? Math.round((this.catchUps / Math.max(1, minutes)) * 100) / 100 : 0
+            catchUpsPerMinute: minutes > 0 ? Math.round((this.catchUps / Math.max(1, minutes)) * 100) / 100 : 0,
+            T,
+            TSource: this.tickMs !== null ? 'driver' : T !== null ? 'median' : null
         };
     }
 }

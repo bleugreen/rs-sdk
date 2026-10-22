@@ -23,10 +23,11 @@
 //     counts in the "latency in ticks" form tickmanip-latency.ts prints, or the knife cycle's
 //     ticks per roll. Exits 1 on an exception or a program that ends in fault.
 //
-//   bun docs/speedrun/scripts/demo-browser-page.ts frames --dir=DIR [--from=MS] [--to=MS]
+//   bun docs/speedrun/scripts/demo-browser-page.ts frames --dir=DIR [--from=MS] [--to=MS] [--tick-ms=N]
 //     Where the time goes on the page's sockets between two epoch-ms marks: the interval
-//     between tick outputs arriving on the game socket (and the catch-up ticks: under 150 ms
-//     right after one over 350 ms), how long after a tick's output each
+//     between tick outputs arriving on the game socket (and the catch-up ticks: under 1/2 T
+//     right after one over 7/6 T, tick-rule.ts; T --tick-ms, else the median interval rounded
+//     to 50 ms), how long after a tick's output each
 //     game packet leaves, and for every gateway action the chain
 //       tick output in -> state out to the gateway -> action in from the gateway -> game packet out.
 //     Frame times are the browser's own (Chrome DevTools Network events), so they exclude
@@ -34,6 +35,7 @@
 import puppeteer, { type Page } from 'puppeteer';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { catchUpText, isCatchUp, tickFromMedian, validTickMs } from '../../../server/webclient/src/bot/programs/tick-rule';
 
 const [cmd, ...rest] = process.argv.slice(2);
 const opt = (name: string, def?: string) => rest.find(a => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? def;
@@ -234,7 +236,7 @@ function summarise(v: any): 'fault' | 'ok' {
         console.log(`knife-cycle: ${r.rolls} rolls, ${r.ticks} ticks, ${f(r.ticksPerRoll)} ticks per roll (mean gap), ${f(r.ticksPerRollOverSpan)} over the span of ${r.span}; gaps ${JSON.stringify(r.histogram)}; starters ${r.starters}, resyncs ${r.resyncs}, moves ${r.moves}, level-ups ${Array.isArray(r.levelUps) ? r.levelUps.length : r.levelUps}`);
     }
     const stat = (s: any) => ['p50', 'p90', 'max'].map(k => `${k} ${typeof s?.[k] === 'number' ? s[k].toFixed(0) : '?'}`).join(' ');
-    if (v.frames) console.log(`server frame interval ms in the page: ${stat(v.frames)}, catch-ups ${v.frames.catchUps ?? '?'} (${typeof v.frames.catchUpsPerMinute === 'number' ? v.frames.catchUpsPerMinute.toFixed(1) : '?'}/min), under 150 ${v.frames.under150 ?? '?'}, over 350 ${v.frames.over350 ?? '?'}`);
+    if (v.frames) console.log(`server frame interval ms in the page: ${stat(v.frames)}, T ${v.frames.T ?? '?'} (${v.frames.TSource ?? '?'}), catch-ups ${v.frames.catchUps ?? '?'} (${typeof v.frames.catchUpsPerMinute === 'number' ? v.frames.catchUpsPerMinute.toFixed(1) : '?'}/min), under 1/2 T ${v.frames.underHalfT ?? '?'}, over 7/6 T ${v.frames.overSevenSixthsT ?? '?'}`);
     if (v.publish) console.log(`page publication interval ms: ${stat(v.publish)}`);
     if (typeof v.phase === 'string') {
         console.log(`program ${v.name} ${v.phase}${v.fault ? ` (fault: ${typeof v.fault === 'string' ? v.fault : JSON.stringify(v.fault)})` : ''}: deferred ${v.deferred}, skippedTicks ${v.skippedTicks}, maxTickMs ${v.maxTickMs}, packets ${v.packets}`);
@@ -263,10 +265,12 @@ function frames() {
 
     console.log(`window ${new Date(from).toISOString()} - ${to === Number.MAX_SAFE_INTEGER ? 'end' : new Date(to).toISOString()}: ${all.length} frames`);
     const intervals = ticks.slice(1).map((t, i) => t - ticks[i]!);
-    // A catch-up: a tick under 150 ms after one that came over 350 ms late (rs/97's definition).
-    const catchUps = intervals.filter((v, i) => i > 0 && v < 150 && intervals[i - 1]! > 350).length;
+    const tickFlag = opt('tick-ms');
+    const T = tickFlag !== undefined ? validTickMs(Number(tickFlag)) : intervals.length ? tickFromMedian(q(intervals, 0.5)) : null;
+    const catchUps = T === null ? 0 : intervals.filter((v, i) => i > 0 && isCatchUp(v, intervals[i - 1]!, T)).length;
     const minutes = ticks.length > 1 ? (ticks[ticks.length - 1]! - ticks[0]!) / 60_000 : 0;
-    console.log(`tick output arrival interval ms: ${quantiles(intervals)}; catch-ups ${catchUps} in ${minutes.toFixed(1)} min`);
+    const atT = T === null ? 'T unknown' : `T ${T} (${tickFlag !== undefined ? '--tick-ms' : 'median'}), ${catchUpText(T)}`;
+    console.log(`tick output arrival interval ms: ${quantiles(intervals)}; catch-ups ${catchUps} in ${minutes.toFixed(1)} min (${atT})`);
     const gameOut = of('game', 'out');
     console.log(`game packet out, ms after its tick's output arrived: ${quantiles(gameOut.map(t => t - last(ticks, t)).filter(Number.isFinite))}`);
 
