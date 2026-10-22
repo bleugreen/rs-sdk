@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { ASK_SLACK_MS, nameHash, newRequestFrom, readTopUpAsk, usableAsk, writeTopUpAsk } from './altar-cue';
 import type { Cue } from './altar-cue';
 import type { RoleContext } from './role';
-import { askOffer, BoneGiver, boneGiverOptions, boneServer, carryDue, groupLoadsDone, isFinalLoad, legRan, loadOffer, npcTiles, onSide, partnerIs, readBoneStatuses, requestUntilOpen, S07_SITES, sideTiles, type BoneStatus } from './bone-giver';
+import { askOffer, BoneGiver, boneGiverOptions, boneServer, boneWithdrawals, carryDue, groupLoadsDone, isFinalLoad, legRan, loadOffer, npcTiles, onSide, partnerIs, readBoneStatuses, requestUntilOpen, S07_SITES, sideTiles, type BoneStatus } from './bone-giver';
 import { assertDemoStandIn } from './bone-receiver';
 
 const o = { noReplyTicks: 3, resendTicks: 100 };
@@ -130,6 +130,46 @@ describe('a group of bone givers takes turns (S07 b01-b04)', () => {
         expect(() => bgo({ group: ['cairn_b01', 'cairn_b01'] })).toThrow(/twice/);
         const site = [{ giver: { x: 1, z: 2 }, receiver: { x: 1, z: 3 } }];
         expect(() => bgo({ mode: 'on-request', sites: site, group: ['cairn_b01', 'cairn_b02'] })).toThrow(/standing mode/);
+    });
+});
+
+describe('the item priority list (S07: dragon bones first, then babydragon, from each giver\'s own bank)', () => {
+    const MIX = ['Dragon bones', 'Babydragon bones'];
+    const specs = (xs: { item: RegExp | string; n: number }[]) => xs.map(s => [String(s.item), s.n]);
+
+    test('a single item behaves as before: one spec of the whole load, from the one item', () => {
+        const o = bgo({});
+        expect(o.items).toEqual(['Dragon bones']);
+        expect(specs(loadOffer(o, 0))).toEqual([['/^Dragon bones$/i', 23]]);
+        expect(specs(loadOffer(o, 0, () => 5))).toEqual([['/^Dragon bones$/i', 23]]);
+        expect(boneWithdrawals([{ name: 'Dragon bones', count: 40 }, { name: 'Babydragon bones', count: 99 }], o.items, 23)).toEqual({ specs: [{ item: /^Dragon bones$/i, n: 23 }], short: 0 });
+    });
+
+    test('the bank fills a load from the first bone it still holds, then the next', () => {
+        const bank = (d: number, b: number) => [{ name: 'Dragon bones', count: d }, { name: 'Babydragon bones', count: b }, { name: 'Law rune', count: 1 }];
+        expect(specs(boneWithdrawals(bank(63, 200), MIX, 23).specs)).toEqual([['/^Dragon bones$/i', 23]]);
+        expect(specs(boneWithdrawals(bank(17, 200), MIX, 23).specs)).toEqual([['/^Dragon bones$/i', 17], ['/^Babydragon bones$/i', 6]]);
+        expect(specs(boneWithdrawals(bank(0, 200), MIX, 23).specs)).toEqual([['/^Babydragon bones$/i', 23]]);
+        expect(boneWithdrawals(bank(5, 10), MIX, 23).short).toBe(8);
+    });
+
+    test('the load offers what is carried, first item first; the last load keeps finalN and the extras', () => {
+        const o = bgo({ item: MIX, group: ['cairn_b01', 'cairn_b02'], trades: 4, finalExtras: [{ item: 'Law rune', count: 1 }, { item: 'Air rune', count: 5 }] });
+        const carried = (d: number, b: number) => (name: string) => (name === 'Dragon bones' ? d : b);
+        expect(specs(loadOffer(o, 0, carried(17, 6)))).toEqual([['/^Dragon bones$/i', 17], ['/^Babydragon bones$/i', 6]]);
+        expect(specs(loadOffer(o, 0, carried(0, 23)))).toEqual([['/^Babydragon bones$/i', 23]]);
+        // The final giver holds 23 and offers 21, dragon first, beside the runes.
+        expect(specs(loadOffer(o, 3, carried(10, 13)))).toEqual([['/^Dragon bones$/i', 10], ['/^Babydragon bones$/i', 11], ['/^Law rune$/i', 1], ['/^Air rune$/i', 5]]);
+    });
+
+    test('options: distinct names, the standing mode only; labSeed on the bank restock only', () => {
+        expect(bgo({ item: MIX }).item).toBe('Dragon bones');
+        expect(() => bgo({ item: [] })).toThrow(/non-empty list/);
+        expect(() => bgo({ item: ['Dragon bones', 'dragon bones'] })).toThrow(/twice/);
+        const site = [{ giver: { x: 1, z: 2 }, receiver: { x: 1, z: 3 } }];
+        expect(() => bgo({ mode: 'on-request', sites: site, item: MIX })).toThrow(/standing mode/);
+        expect(bgo({ restock: { kind: 'bank', labSeed: [{ obj: 'cert_dragon_bones', n: 30 }] } }).restock.labSeed).toEqual([{ obj: 'cert_dragon_bones', n: 30 }]);
+        expect(() => bgo({ restock: { kind: 'cheat', labSeed: [{ obj: 'x', n: 1 }] } })).toThrow(/labSeed/);
     });
 });
 
