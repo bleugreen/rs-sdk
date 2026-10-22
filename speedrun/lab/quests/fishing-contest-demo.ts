@@ -21,7 +21,10 @@
 // 4. Without a rod, buy one from Harry's Fishing Shop (catherby.inv: fishingshop2).
 // 4a. --train-fishing, for an account below the quest's Fishing 10: buy a small net from Harry, net on
 //    Catherby beach until Fishing 10 (each early catch is a level-up page, cleared before the next
-//    cast), and drop the catch, since segment N refuses raw shrimps at the exit.
+//    cast), and drop the catch, since segment N refuses raw shrimps at the exit. Unproven on the demo:
+//    its one real-server use (cairn_h55, 22:12-22:17Z on 22 Oct) caught nothing in 600 ticks with no
+//    per-click trace, and a demo-wide disconnect at 22:15:50Z falls inside that window; 1 to 10 in
+//    124 ticks on the lab.
 // 5. Run to the arrival tile (2820,3486) and require segment A's own preconditions.
 // Then the module's fourteen segments in one dialogue mode, each timed by its TickLog row and set
 // beside the lite lab mean from docs/speedrun/quests/fishing_contest.md. The first output line after
