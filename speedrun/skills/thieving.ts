@@ -80,6 +80,7 @@ import { XP_RATE, xpForLevel } from '../lib/xp';
 import { Spells } from '../../sdk/spells';
 import type { Step, StepContext } from '../runner/step';
 import { cueDir, writeTopUpAsk, type AskItem } from '../helpers/altar-cue';
+import type { RuneUseTable } from '../lib/travel';
 
 export const skill = 'thieving';
 
@@ -569,6 +570,17 @@ export const ARROWHEAD_TIERS: ReadonlyArray<readonly [string, number]> = ARROW_T
 
 /** Charge's level (magic_spells.dbrow magic_spell_charge), checked against the boosted level (magic.rs2:22). */
 export const CHARGE_LEVEL = 80;
+
+/**
+ * S18's runes on the route, Charge and Superheat in every stocked stun with the staff of fire
+ * worn: the maxima of stun-pack.md section 16's full-Charge runs (c1, c2: 149 / 148 Charges at 3
+ * blood and 3 air, magic_spells.dbrow magic_spell_charge; 162 / 158 Superheats at 1 nature,
+ * magic_spell_superheat). tools/rune-pins.ts holds them to the inventory ledger.
+ */
+export const S18_MAX_CHARGES = 149;
+export const S18_MAX_SUPERHEATS = 162;
+export const RUNE_USE: RuneUseTable = { S18: { bloodrune: 3 * S18_MAX_CHARGES, airrune: 3 * S18_MAX_CHARGES, naturerune: S18_MAX_SUPERHEATS } };
+export const RUNE_STAFF = 'staff of fire';
 /** Any dose of a magic potion: +4 Magic (consume_effects.dbrow 1magic_consumable_effect). */
 const MAGIC_POTION = /^magic potion\([1-4]\)$/i;
 
