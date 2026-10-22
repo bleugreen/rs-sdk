@@ -560,8 +560,8 @@ export interface OpenOptions extends ClickRule {
      * modal makes us busy() (Player.ts), and the partner's request bounces. Needs `sendCloseModal`.
      */
     closeModals?: boolean;
-    /** Checked on every frame: true ends the open with reason 'stopped'. */
-    stopped?: () => boolean;
+    /** Checked on every frame the screens are not open, with that frame: true ends the open with reason 'stopped'. */
+    stopped?: (s: BotWorldState) => boolean;
 }
 
 /**
@@ -606,7 +606,7 @@ export async function openTrade(sdk: TradeSdk & Partial<Pick<BotSDK, 'sendCloseM
             if (done) return;
             clock.see(s);
             if (tradeOf(s).isOpen) return finish({ ok: true, openTick: s.tick });
-            if (opts.stopped?.()) return fail('stopped');
+            if (opts.stopped?.(s)) return fail('stopped');
             if (clock.elapsed > maxTicks) return fail('no_response');
             if (landedTick < 0 && ctx.sentTick >= 0 && tradeClickReply(s, ctx.sentTick) === 'sent') landedTick = s.tick;
             const player = s.nearbyPlayers.find(p => sameName(p.name, partner));
@@ -715,11 +715,20 @@ export interface GiveOptions {
     openTimeoutMs?: number;
     /** openTrade's `noReplyTicks` (opt-in DROPPED_TICKS beside the partner). */
     noReplyTicks?: number;
+    /** Checked on every published state from the open on: a reason declines the trade and ends the give. */
+    stopIf?: (s: BotWorldState) => string | null;
 }
 
 async function giveImpl(sdk: TradeSdk, partner: string, specs: readonly GiveSpec[] | 'all', opts: GiveOptions): Promise<GiveResult> {
-    const open = await openTrade(sdk, partner, { maxTicks: opts.openMaxTicks, timeoutMs: opts.openTimeoutMs ?? 60_000, noReplyTicks: opts.noReplyTicks });
-    if (!open.ok) return { ok: false, ticks: 0, gave: [], sent: 0, reason: open.reason };
+    const stopIf = opts.stopIf;
+    let stopWhy = null as string | null;
+    const open = await openTrade(sdk, partner, {
+        maxTicks: opts.openMaxTicks,
+        timeoutMs: opts.openTimeoutMs ?? 60_000,
+        noReplyTicks: opts.noReplyTicks,
+        ...(stopIf ? { stopped: (s: BotWorldState) => !!(stopWhy = stopIf(s)) } : {})
+    });
+    if (!open.ok) return { ok: false, ticks: 0, gave: [], sent: 0, reason: open.reason === 'stopped' && stopWhy ? `stopped: ${stopWhy}` : open.reason };
     const start = open.firstClickTick;
     const s0 = sdk.getState()!;
     const plan = planOffers(s0.inventory, specs);
@@ -730,6 +739,11 @@ async function giveImpl(sdk: TradeSdk, partner: string, specs: readonly GiveSpec
     let ctx = newGiverCtx(partner, s0.inventory, plan, opts.expectTheirs);
     let sent = 0;
     const r = await onStates(sdk, opts.maxTicks ?? 100, s => {
+        const why = stopIf?.(s);
+        if (why) {
+            void sdk.sendDeclineTrade();
+            return { ok: false, tick: s.tick, gave: [] as TradeItem[], reason: `stopped: ${why}` };
+        }
         const d = decideGiver(s, ctx);
         ctx = d.next;
         switch (d.action) {

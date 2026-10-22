@@ -301,6 +301,8 @@ export interface TravelResult {
     /** Set when a fallback carried the trip: a refused teleport walked, or bot.walkTo after the run gave up. */
     fellBack?: string;
     reason?: string;
+    /** Set when `stopIf` stopped the trip: its reason. */
+    stopped?: string;
 }
 
 export interface EatOptions {
@@ -327,6 +329,12 @@ export interface TravelOptions {
     maxStalls?: number;
     /** Print each hop as it ends. */
     log?: boolean;
+    /**
+     * Checked before each hop and on every published tick of a run: a reason stops the trip there
+     * (a run halts with a walk to the tile it stands on) and becomes the result's `stopped`. A run
+     * with `stopIf` never falls back to bot.walkTo, which cannot be stopped part way.
+     */
+    stopIf?: (s: BotWorldState) => string | null;
 }
 
 interface HopOutcome {
@@ -334,6 +342,8 @@ interface HopOutcome {
     reason?: string;
     /** A teleport the content (or the precheck) refused: no runes, Wilderness above 20, not learnt. */
     refused?: string;
+    /** `stopIf`'s reason, when it stopped the hop. */
+    stopped?: string;
     note?: string;
 }
 
@@ -365,14 +375,14 @@ class Trip {
         this.doors.push({ x: l.x, z: l.z, level, id: l.id, name: l.name, state, tick });
     }
 
-    finish(ok: boolean, reason?: string): TravelResult {
+    finish(ok: boolean, reason?: string, stopped?: string): TravelResult {
         this.counter.stop();
         this.stopHp();
         const endTick = currentTick(this.sdk);
         return {
             ok, startTick: this.startTick, endTick, ticks: endTick - this.startTick, at: pos(this.sdk), segments: this.segments,
             clicks: this.clicks, tiles: this.counter.tiles, doors: this.doors, webTries: this.webTries, ate: this.ate, hpMin: this.hpMin,
-            ...(this.fellBack ? { fellBack: this.fellBack } : {}), ...(reason ? { reason } : {}),
+            ...(this.fellBack ? { fellBack: this.fellBack } : {}), ...(reason ? { reason } : {}), ...(stopped ? { stopped } : {}),
         };
     }
 }
@@ -389,12 +399,16 @@ export async function travel(sdk: TravelSdk, hops: readonly Hop[], opts: TravelO
     try {
         for (let i = opts.from ?? 0; i < hops.length; i++) {
             const h = hops[i]!;
+            const s0 = sdk.getState();
+            const halt = s0 ? opts.stopIf?.(s0) : null;
+            if (halt) return trip.finish(false, `stopped before ${hopLabel(h)}: ${halt}`, halt);
             const t0 = currentTick(sdk);
             const r = await runHop(sdk, trip, h, opts);
             const note = r.note ?? r.refused ?? r.reason;
             trip.segments.push({ hop: hopLabel(h), ok: r.ok, startTick: t0, ticks: currentTick(sdk) - t0, ...(note ? { note } : {}) });
             if (opts.log) console.log(`  [travel] ${hopLabel(h)}: ${r.ok ? 'ok' : 'FAILED'} ${currentTick(sdk) - t0} ticks${note ? ` (${note})` : ''}`);
             if (r.ok) continue;
+            if (r.stopped) return trip.finish(false, `${hopLabel(h)}: stopped: ${r.stopped}`, r.stopped);
             const next = hops.findIndex((x, j) => j > i && x.kind === 'run');
             if (h.kind === 'teleport' && r.refused && opts.walkOnRefusal !== false && next > i) {
                 trip.fellBack = `walked: ${hopLabel(h)} refused (${r.refused})`;
@@ -608,7 +622,7 @@ async function hopRun(sdk: TravelSdk, trip: Trip, to: Area, opts: TravelOptions,
     const maxStalls = opts.maxStalls ?? 8;
     const done = (s: BotWorldState | null) => !!s && (inArea(s, goal) || (wildAtMost !== undefined && pos(s).level === 0 && wildernessLevel(pos(s)) <= wildAtMost));
     const fallback = async (why: string): Promise<HopOutcome> => {
-        if (!opts.bot) return { ok: false, reason: why };
+        if (!opts.bot || opts.stopIf) return { ok: false, reason: why };
         trip.fellBack = `bot.walkTo after: ${why}`;
         const r = await walkTo(opts.bot, sdk, goal.x, goal.z, goal.tol);
         return done(sdk.getState()) ? { ok: true, note: trip.fellBack } : { ok: false, reason: `${why}; bot.walkTo: ${r.message}` };
@@ -640,6 +654,13 @@ async function hopRun(sdk: TravelSdk, trip: Trip, to: Area, opts: TravelOptions,
     for (;;) {
         const s = sdk.getState();
         if (!s) return { ok: false, reason: 'no state' };
+        const halt = opts.stopIf?.(s);
+        if (halt) {
+            const here = pos(s);
+            trip.clicks++;
+            await sdk.sendWalk(here.x, here.z, true);
+            return { ok: false, stopped: halt, reason: halt };
+        }
         if (done(s)) return { ok: true };
         if (t - start > maxTicks) return fallback(`run to ${fmtTile(goal)} exceeded ${maxTicks} ticks at ${fmtTile(pos(s))}`);
         const p = pos(s);
