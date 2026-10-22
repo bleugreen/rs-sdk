@@ -39,6 +39,13 @@ two-way driver on the giver's state machine. The hand-off with the anvil helper 
 seq per inventory, seq N+1 announced as N's bars arrive, the hammer in seq 0, and a final `collect`
 hand-back. `supply: 'bank'` is the Varrock west booth fallback.
 
+The hand-back returns only what the step made: the chain snapshots the inventory on its first entry
+and hands back, offers or deposits only the excess over it, so an item SCORED arrives with that looks
+like a product (a starter bronze dagger) stays. After a process restart the snapshot is taken afresh,
+so products held across the restart stay too: the safe direction. On the live server H5's bank
+restock takes 15-18 ticks per inventory, so the turnaround reads true only when the make chain
+hides it (about 20 bars or more per inventory); with 3-bar inventories the gap is the restock.
+
 | Start | Ticks to 99 | Basis |
 |---|---|---|
 | **Level 1, the step module with the helper staged** | **1,065** (to 99 plus the final hand-back) | measured end to end, `speedrun/lab/smithing-accept.ts --from 1 --until 99`, 300 ms, 31 inventories, a scripted stand-in for H5 |
