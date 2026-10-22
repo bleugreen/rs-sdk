@@ -25,7 +25,7 @@
 
 import type { BotWorldState, PrayerName } from '../../sdk/types';
 import { act, actConverse, talkTo, useOn, type ActOptions } from '../lib/act';
-import { COMBAT_SPELLS, fight, prayerActive, questCastStyle, setPrayer, type FightResult } from '../lib/combat';
+import { COMBAT_SPELLS, fight, prayerActive, setPrayer, type FightResult } from '../lib/combat';
 import { converse, type ConverseResult } from '../lib/converse';
 import { pageText, type OptionPattern } from '../lib/dialogue';
 import { INVENTORY_SIZE, type ItemPattern } from '../lib/items';
@@ -539,7 +539,7 @@ export async function killDemon(sdk: Sdk, opts: Options, reopened: boolean): Pro
     const castRunes = (s: BotWorldState) => invCount(s, SPELLS.fire_bolt.rune) + invCount(s, SPELLS.fire_blast.rune);
     const runes0 = castRunes(sdk.getState()!);
     const out = (sp: keyof typeof SPELLS): Pred => s => invCount(s, SPELLS[sp].rune) === 0 || invCount(s, ITEM.air) < SPELLS[sp].air;
-    const base = { prayer: 'protect_from_melee' as const, drinkBelow: 8, eatBelow: 14, maxTicks: 1500, findTicks: 10, ...questCastStyle() };
+    const base = { prayer: 'protect_from_melee' as const, drinkBelow: 8, eatBelow: 14, maxTicks: 1500, findTicks: 10 };
     const fights = [await fight(sdk, DEMON, { ...base, spell: SPELLS[first].component, done: out(first) })];
     let fallback = false;
     if (fights[0]!.end === 'done' && first === 'fire_bolt' && demonInSight(sdk.getState()!)) {
