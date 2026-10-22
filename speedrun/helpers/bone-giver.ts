@@ -77,7 +77,7 @@
 import { join } from 'node:path';
 import type { BotWorldState, NearbyPlayer } from '../../sdk/types';
 import { withdrawMany } from '../lib/bank';
-import { give, DROPPED_TICKS, openTrade, tradeOf, type GiveSpec } from '../lib/trade';
+import { give, DROPPED_TICKS, openTrade, receiveFrom, tradeOf, type GiveSpec } from '../lib/trade';
 import { waitUntil } from '../lib/wait';
 import { existsSync, readdirSync } from 'node:fs';
 import { runIsOn } from '../lib/run-mode';
