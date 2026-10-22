@@ -3,8 +3,9 @@ import { fakeCdp } from './fake-cdp';
 import { FakeSdk, flush, runToggleServer } from './fake-sdk';
 import { IF_RUN_ON, runIsOn } from './run-mode';
 import { loginTokenProof } from '../../server/webclient/login-token';
-import { IF_RETALIATE_OFF, IF_RETALIATE_ON } from './session';
 import {
+    IF_RETALIATE_OFF,
+    IF_RETALIATE_ON,
     LOGOUT_BUTTON,
     abandonClient,
     backoffMs,
