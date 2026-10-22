@@ -463,3 +463,36 @@ noise) is noise at n = 1 and was not the basis.
 - **Lab tooling fixes** (rs/335): tickprog-lab.sh now shows create-bot's output and stops without
   a bot.env (rs/324's earlier failure was an underscore in the name); the courier stand-in looked
   for `arrowheads`, but the items are `<tier> arrowtips`.
+
+## 15. rs/356's reader fix on the browser (rs/363)
+
+rs/356 fixed `FreshMessages` (`server/webclient/src/bot/programs/util.ts`). Before the fix it keyed
+each message by its publication id, so it kept only the first message of each tick. Now it records
+every published state into the SDK's `ChatHistory`. S18 idle with the pack was re-labbed on the fix
+(605198d9): bgsrv-mac, block 24, 300 ms, headless, fresh accounts (cairnsp363a, giver
+cairnsh363a), with the same command as section 14 but without the decode trace. A sidecar (not
+committed) in `measure-thieving.ts` pack mode logged each publication's new messages in order.
+
+| Run | Band ticks | S / F | Success gap | Fail to next | Normalised | Walk overhead per roll | Bones (Prayer) | Charge (Magic) | Arrow actions (Fletching) | Top-ups due / fired / completed | Giver on +2: side / corner / same / further | Cost per top-up | Program deferrals |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| idle (cairnsp363a, 605198d9) | 2,011 | 449 / 93 | 2.04 | 11.76 | 1,907 | 0.16 | 214 (43→85) | 165 (80→99) | 240 (1→99) | 23 / 23 / 23 | 23 / 0 / 0 / 0 | -0.5 (noise) | 0 |
+
+**No behaviour change (measured).** Pickpocket acts on four lines: 'You pick the', 'You fail to
+pick', 'You've been stunned!' and 'during combat'. The stun pack reads no message text. Of 2,702
+new messages in 1,743 publications, none of the lines the program acts on came after another line
+in its tick: picks 449/449, failures 93/93 and stuns 93/93 were all first. The stun line always
+arrived exactly 2 ticks after the failure line, and all 12 eats were also first. The old reader
+would have dropped 959 lines, none of which the program acts on. They were level-ups, repeated
+'You're stunned!', 'Sending trade offer...' (third of three, 23 of 23) and the pack's charge, dig,
+arrow and heal lines. So both readers gave the program the same inputs on the browser. The driver's
+own tracker still uses the one-key-per-tick reader, and its counts match the program's here (449 /
+93).
+
+**Why 1,907 is below rs/335's 1,942-2,123 (measured, then inferred).** The normalised figure is
+the zero-wander floor, 449 × 2 + 84.2 × 11 = 1,824, plus the run's wander tail: the success gaps
+above 2 and the failure gaps above 11. This run's tail was 89 ticks over 542 rolls (gaps of 3-4
+after 15 successes, gaps of 12-18 after 26 failures), with 18 'I can't reach that!' lines. That
+comes to +83 normalised, against +118 for cairnsp335c and +166 for cairnsp335d. The whole
+difference is knight wander, which section 14 already identified as the row's main source of
+noise. Nothing in the reader fix can move it, because the program's inputs did not change. The
+row S18 uses stays as section 14 left it.
