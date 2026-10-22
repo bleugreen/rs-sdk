@@ -336,7 +336,7 @@ export function gateRow(m: string, g: MachineGate | null): string {
     if (!g) return `${m.padEnd(5)} not gated`;
     const minute = g.startedUtc.slice(11, 16);
     const a = g.a ? `${g.a.onTime}/${g.a.trials}` : '-';
-    const b = g.b ? tickP90Text(g.b.p90, g.b.T, g.b.limit).slice(4) : '-';
+    const b = g.b ? tickP90Text(g.b.p90, g.b.T, g.b.limit) : '-';
     const c = g.c ? `${g.c.perMinute}/min${g.c.T !== null ? ` (${catchUpText(g.c.T)})` : ''}` : '-';
     const d = g.d ? `${g.d.lowest} / ${g.d.median} / ${g.d.highest}` : '-';
     const scene = g.scene?.built ? `${g.scene.built.firstLook ? '<=' : ''}t${g.scene.built.tick ?? '?'}` : g.scene ? 'not built' : '-';

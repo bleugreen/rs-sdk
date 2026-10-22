@@ -383,9 +383,9 @@ export function hostVerdict(r: ProbeSummary & DirectEvidence & { path?: ProbePat
     return r.path === 'direct' ? directDecision(r, direct) : gateDecision(r, model);
 }
 
-/** (b) for logs: `p90 447 ms (T 400, report <= 533)`; the limit's role is `report` or `pass`. */
+/** (b)'s value for logs: `447 ms (T 400, report <= 533)`; the limit's role is `report` or `pass`. */
 export function tickP90Text(p90: number | null, T: number | null, limit: number | null, role: GateCheck['role'] = 'report'): string {
-    const head = p90 === null ? 'p90 -' : `p90 ${p90} ms`;
+    const head = p90 === null ? '-' : `${p90} ms`;
     if (limit === null) return `${head} (T unknown, no ${role} line)`;
     return `${head} (${T !== null ? `T ${T}, ` : ''}${role} <= ${msText(limit)})`;
 }
@@ -404,7 +404,7 @@ export function verdictText(v: HostVerdict): string {
     const T = v.T ?? null;
     return (
         `(a) on time ${v.onTime}/${v.trials}, pass ${v.passAt}, floor ${v.floorAt} ${mark(a)};` +
-        ` (b) tick ${tickP90Text(b.value, T, b.limit, b.role)} ${mark(b)};` +
+        ` (b) tick p90 ${tickP90Text(b.value, T, b.limit, b.role)} ${mark(b)};` +
         ` (c) catch-ups ${val(c, '/min')}<= ${c.limit}${T !== null ? ` (${catchUpText(T)})` : ''} ${mark(c)};` +
         ` (d) loop p10 ${val(d, '/s')}>= ${d.limit} ${mark(d)}: ${v.status}`
     );
