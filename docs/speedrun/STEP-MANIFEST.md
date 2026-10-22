@@ -156,9 +156,9 @@ of Goblin Diplomacy's standalone travel that the legs already carried off its ro
 cannon session, Prayer, Crafting and Cooking pass it. Fold-in 13 adds S15's measured H to M (+352),
 so Monkey Madness (4,429) passes Agility (4,327) for rank 1.
 
-The expected column sums to **31,688** (the steps) plus the legs' **2,209.5**; RUN-ORDER.md section 6
+The expected column sums to **31,963** (the steps) plus the legs' **2,209.5**; RUN-ORDER.md section 6
 adds the allowances (hand-offs outside the figures, level-up pages, contention, overrun, relay,
-retries, restarts) for its **35,182.5** knife-on expected (32,341.7 best), against the record of 35,916.
+retries, restarts) for its **35,457.5** knife-on expected (32,541.7 best), against the record of 35,916.
 
 **Module status** (the last column; the helper scripts and the programs the entries rely on are in
 "Module status" at the end of this section) is as of this document's commit date, and rs/158 updates
@@ -180,7 +180,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 10 | 9 | Runecraft | `speedrun/skills/runecraft.ts` | S06, S21 | 1,192 | 1,192 | ~5,220 | ~4,030 | in-page | rs/131's `rc-cycle`; `runecraft-cycle.ts` | **on main, 1514f47a (#222; rs/268's snapshot of rs/196's module, rs/186's branch at 0c349da6)**, the run-commit floor; **lab-accepted, with a partial demo confirmation** (9/9 tuned on the real server, n small; the 20-cycle demo acceptance pending); **lab-accepted (rs/196, module 3f02f336, relay path (lab): nature at 44 tuned 30/30 at 29 x 7, robust 30/30 at 29 x 8; S06 7/7 at 6 x 7, 58)**; the tuned nature run confirmed on the direct path, 30/30 at 29 x 7 (rs/196, 3b161c12); pending: the auto rule's 'handled before SCORED' field (entry 9); cycle: on main, 23ea9f77 (#178) |
 | 11 | 10 | Smithing | `speedrun/skills/smithing.ts` | S25a | 1,065 | 1,028 | 1,330 | ~302 | overlay | `smithing-trade.ts` | **on main (#230)**, with `lib/trade.ts` `swap()` and `anvil.ts`'s restock and off-tile fixes; the demo attempt inconclusive (rs/197, entry 10) |
 | 12 | 13 | Dragon Slayer | `speedrun/quests/dragon-slayer.ts` | S26 | 1,380 | 1,364 | ~1,490 | ~126 | overlay | `quest-dragon-*.ts` | building (rs/258 under rs/185); **lab: a single pass per segment, 1,380** (rs/258), the three acceptance chains to come; run mode: no `p_walk`, re-paths at ten moving NPCs and the six maze monsters, lever ~0 (r, rs/258) |
-| 13 | 12 | Dwarf Cannon | `speedrun/quests/dwarf-cannon.ts` | S13 | 855 | 799 | 957 | ~158 | overlay | `quest-mcannon-*.ts` | building (rs/257 under rs/185); run mode: no `p_walk`, re-paths at Lawgof (A, C, E, H, J, L) and Nulodion (K), lever ~0 (r, rs/257) |
+| 13 | 12 | Dwarf Cannon | `speedrun/quests/dwarf-cannon.ts` | S13 | 1,130 | 999 | ~1,232 | ~233 | overlay | `quest-mcannon-*.ts` | building (rs/257 under rs/185); **lab: 3 runs a mode at SCORED's levels, 1,137 fixed / 999 burst** (rs/257); run mode: no `p_walk`, re-paths at Lawgof (A, C, E, H, J, L) and Nulodion (K), lever ~0 (r, rs/257) |
 | 14 | 14 | Tree Gnome Village | `speedrun/quests/tree-gnome-village.ts` | S10b | 793 | 739 | 902 | ~163 | overlay | `quest-tree-full.ts`, `quest-premm-fight.ts` | building (rs/185, held: tenet 15) |
 | 15 | 16 | Firemaking | `speedrun/skills/firemaking.ts` | S03 | 681 | 650 | 735 | ~85 | overlay | `firemaking-line.ts` | on main, 4cc468e0 (#205; rs/244), with the inferred-fire counter (#229); **demo-measured**, 681 m (rs/269, cairn_burns) |
 | 16 | 17 | Fight Arena | `speedrun/quests/fight-arena.ts` | S12 | 571 | 524 | 646 | ~122 | overlay | `quest-arena-run.ts` | building (rs/185, held: tenet 15) |
@@ -1501,19 +1501,35 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   Ardougne of them for the way in (T12-13).
 - **Postconditions:** quest complete (ledger), 750 Crafting, 1 QP, the right to buy the cannon (read,
   `nulodion.rs2:2` via rs/41).
-- **Ticks:** expected **855** (fixed, inferred), best **799** (burst, r21), fallback **957** (stock,
-  measured): `quests/README.md` §3 row's 976 / 920 / 1,078 less step 1's 121, the Ardougne teleport
-  and the walk to Lawgof, which are T12-13's. **Advance notice (rs/257, inferred, not in the
-  expected):** at SCORED's arrival levels, Crafting and Smithing 1, the railings succeed 24% of the
-  time against the 45% priced and the shed rolls 53% against 99% (`railings.rs2:78`,
-  `mcannon_broken_cannon.rs2:90-97`), so ~1,080-1,100 (+230-245) until rs/257's lab rows price it
-  (RUN-ORDER.md section 7, "The quest block's go/no-go figure"). Food: the sharks come through H10
-  from helper stock, sized at the measured damage x1.5 (main, 20:39 PDT).
+- **Ticks:** expected **1,130** (measured; rs/257, lab, 300 ms, from the arrival tile beside Lawgof (2571,3463), the full quest A-L, 3 runs a mode at each level set, all passed, 0 deaths; per-segment table in rs/257's message to rs/158, 21:58 PDT), best **999** (measured, the real-level burst
+  mean), fallback **~1,232** (inferred: the stock column's ~102 over the fixed on the measured figure). At SCORED's
+  real levels (Crafting 1, Smithing 1, 42 HP, Magic 76): fixed 913 / 1,155 / 1,344 (mean 1,137), burst 973 / 1,077 /
+  946 (mean 999); at 60/60, the old basis, fixed 758 and burst 731. The expected is the fixed mean with the
+  railings (B) at the measured rate, the railings (B) are luck-dominated: 42 successes in 220 tries over the real-level runs, 19.1%, against the read roll `stat_random(crafting, 60, 150)` on the current level (`railings.rs2:78`; `PlayerOps.ts:591-600`; r), 61/256 = 23.8% at Crafting 1, while 60/60 ran high, 36 in 61 (59% against 44.5%); jointly P < 0.001 (rs/185), so it looks systematic (a counting artefact or a steeper roll than the read), and **it rests on the measured rate until rs/257's try-count check explains the gap**: 31.4 tries at 12.6 ticks a try plus
+  ~54 of B's other ticks, ~450 against B's measured 457. **~1,052 at the read 23.8%** is the upside if rs/257
+  finds a counting artefact. Spread (a sensitivity): p90 +~275 and p99 +~500 on the measured rate, +~150 and
+  +~325 on the read. The shed (I), 133-164 at 1/1 against 66 at 60/60, is kept as measured. 855 / 799 / 957
+  before (`quests/README.md` §3's 976 / 920 / 1,078 less step 1's 121).
+- **Food (H10: 8 sharks):** damage 34 / 93 / 143 / 49 / 80 / 56 over the six real-level runs (mean 76),
+  sharks eaten 1 / 3 / 6 / 1 / 3 / 2, the lowest HP 7; main's rule (the measured damage x1.5, whole
+  sharks; 20:39 PDT) gives 6, and rs/158 sets 8 for margin (the 143-damage run ate all 6; stock ~298;
+  rs/41 confirms). The module refuses a railing try that one failure could kill.
+- **Slot precondition:** **14 free slots after H10 when S13 starts, or 17 if SCORED holds none of the
+  water, air and law stacks** (rs/257, `quest_mcannon.obj`; no quest item stacks): the peak is the end
+  of segment A, where Lawgof's `inv_add(inv, mcannonrailing1_obj, 6)` adds 6 railings; the remains
+  (1), the tool kit (1) and the notes and mould (2) never exceed it. The module checks its free slots at
+  its start and stops loudly rather than `inv_add` into a full inventory. SCORED's S12 exit inventory is
+  not measured yet (RUN-ORDER.md O46, owner rs/185 via the S12 module): the only source is SUPPLIES.md's
+  inferred H7-H10 consumption, bounded upstream by rs/202's 18 free slots at S11b's start with H8 held
+  and 14 at segment L (m).
+- **Levers (unpriced; RUN-ORDER.md O47):** Crafting 30 at arrival saves ~95 (i) and roughly halves the
+  damage; raising Smithing or Crafting is worth ~70-100 (m) on the shed. The railing order and shed
+  tactics are not levers.
 - **Primitives:** rs/94 `converse`, `act`, `world`; `continueBurst`; `travel.ts`.
 - **Mode:** overlay-driven. **Logout-unsafe:** none; all varps are permanent.
 - **Fallback:** `advance` page by page.
 - **Acceptance, local:** `quest-mcannon-run.ts`'s route through the module, 3 runs. Pass: within 10%
-  of 855 fixed (799 burst), counted from Lawgof's tile.
+  of 1,137 fixed (999 burst) at SCORED's real levels, counted from Lawgof's tile.
 - **Acceptance, demo (throwaway):** feasible end to end (no level gate is recorded in
   `quests/dwarf_cannon.md`). Pass: within 10% of the local figure. That run also produces the
   cannon holder.
