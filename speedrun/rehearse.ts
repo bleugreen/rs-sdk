@@ -6,7 +6,7 @@
 //       [--gate-bot=<gate account env, default cairn_twin off a local world>] [--gate-json=<file>]
 //       [--gate-probe-trials=60] [--probe-trials=0]
 //       [--force-gate] [--from=<step name or index>] [--log=<file>] [--lab] [--insecure-query-login]
-//       [--host-reservation=<file>] [--claim-owner=<rs/NNN>]
+//       [--host-reservation=<file>] [--claim-owner=<rs/NNN>] [--kind=measurement|record]
 //   bun speedrun/rehearse.ts --claim --bot=<env name> [--client=browser|lite] [--log=<file>] [--lab]
 //       [--host-reservation=<file>] [--claim-owner=<rs/NNN>]
 //
@@ -38,6 +38,10 @@
 //    It refuses to start when (c) fails (an overrun period: wait and re-read), when the world does
 //    not answer, when a non-lab world has no direct read, when the gate tab's probe, logout or
 //    window close failed, or when no recording runs on $DISPLAY; --force-gate overrides.
+//    The attempt kind (--kind, default measurement) picks the direct read's rule: a measurement
+//    refuses on (c) only; a record attempt (a fresh name raced once) also refuses below 58/60
+//    next-tick reactions on a 60-trial direct read (tenet 12's (a) line), and takes no
+//    --force-gate. A `(gate) kind` row records the kind, its rule and the read's (a) and (c).
 // 2. It launches the rehearsal client and, beside its first steps, takes the live-frame pass line:
 //    its tab is the only window, maximised and in front of $DISPLAY, and a frame grabbed as the
 //    recording grabs shows its page (a `(gate) live frame` row; a warning, never a stop, when it
@@ -96,6 +100,15 @@ export interface KitItem {
 
 export type Technique = 'auto' | 'knife' | 'plain';
 
+/**
+ * What the attempt is for, which picks the direct gate read's rule (gateRefusal). measurement:
+ * a run that prices a method, refused on (c) only. record: a fresh name raced once, which must
+ * not start on a failing minute, so it is also held to RECORD_LINE and cannot be forced.
+ */
+export type AttemptKind = 'measurement' | 'record';
+export const ATTEMPT_KINDS: readonly AttemptKind[] = ['measurement', 'record'];
+export const DEFAULT_ATTEMPT_KIND: AttemptKind = 'measurement';
+
 export interface RehearseArgs {
     /** A module under speedrun/skills (`woodcutting`) or a module path (`speedrun/runner/stub.ts`); absent with --claim. */
     skill?: string;
@@ -117,6 +130,8 @@ export interface RehearseArgs {
     /** In-page probe trials on the rehearsal account after S00 (on its clock). */
     probeTrials: number;
     forceGate: boolean;
+    /** measurement (the default) or record; a claim carries the default and logs no kind. */
+    kind: AttemptKind;
     from?: number | string;
     /** The host reservation file (default reservationPath()). */
     hostReservation?: string;
@@ -124,11 +139,11 @@ export interface RehearseArgs {
     claimOwner?: string;
 }
 
-const VALUE_FLAGS = new Set(['skill', 'bot', 'client', 'to', 'log', 'kit-from', 'kit', 'technique', 'skill-opt', 'gate-bot', 'gate-json', 'gate-probe-trials', 'probe-trials', 'from', 'host-reservation', 'claim-owner']);
+const VALUE_FLAGS = new Set(['skill', 'bot', 'client', 'to', 'log', 'kit-from', 'kit', 'technique', 'skill-opt', 'gate-bot', 'gate-json', 'gate-probe-trials', 'probe-trials', 'from', 'host-reservation', 'claim-owner', 'kind']);
 // --insecure-query-login is read by lib/session.ts from process.argv (lab-only browser login).
 const SWITCHES = new Set(['lab', 'force-gate', 'insecure-query-login', 'claim']);
 /** What --claim refuses: everything that would add a login, a probe or a step after S00. */
-const NOT_WITH_CLAIM = ['skill', 'to', 'kit-from', 'kit', 'technique', 'skill-opt', 'gate-bot', 'gate-json', 'gate-probe-trials', 'probe-trials', 'force-gate', 'from'];
+const NOT_WITH_CLAIM = ['skill', 'to', 'kit-from', 'kit', 'technique', 'skill-opt', 'gate-bot', 'gate-json', 'gate-probe-trials', 'probe-trials', 'force-gate', 'from', 'kind'];
 /** The skill label a claim's log, summary and hiscore check carry. */
 export const CLAIM_SKILL = 'claim';
 
@@ -140,7 +155,7 @@ export const USAGE = `usage: bun speedrun/rehearse.ts --skill=<name|module.ts> -
     [--gate-bot=<gate account env, default ${DEFAULT_GATE_BOT} off a local world>] [--gate-json=<file>]
     [--gate-probe-trials=60] [--probe-trials=0]
     [--force-gate] [--from=<step name or index>] [--log=<file>] [--lab] [--insecure-query-login]
-    [--host-reservation=<file>] [--claim-owner=<rs/NNN>]
+    [--host-reservation=<file>] [--claim-owner=<rs/NNN>] [--kind=measurement|record]
        bun speedrun/rehearse.ts --claim --bot=<env name> [--client=browser|lite] [--log=<file>] [--lab]
     [--host-reservation=<file>] [--claim-owner=<rs/NNN>]`;
 
@@ -213,6 +228,11 @@ export function parseArgs(argv: readonly string[], opts: { defaultGateBot?: stri
     if (gateProbeTrials > 0 && !gateBot) throw new UsageError('--gate-probe-trials runs on the gate account\'s tab: it needs --gate-bot');
     const probeTrials = v.has('probe-trials') ? wholeNumber('probe-trials', v.get('probe-trials')!, 0) : 0;
     if (probeTrials > 0 && client !== 'browser') throw new UsageError('--probe-trials needs --client=browser: the lite client hosts no in-page programs');
+    const kind = v.get('kind') ?? DEFAULT_ATTEMPT_KIND;
+    if (!ATTEMPT_KINDS.includes(kind as AttemptKind)) throw new UsageError(`--kind must be ${ATTEMPT_KINDS.join(' or ')}, not "${kind}"`);
+    if (kind === 'record' && v.has('force-gate')) {
+        throw new UsageError('--force-gate cannot start a record attempt: a record starts only on a passing gate (drop --force-gate, or run --kind=measurement)');
+    }
 
     const from = v.get('from');
     return {
@@ -226,6 +246,7 @@ export function parseArgs(argv: readonly string[], opts: { defaultGateBot?: stri
         gateProbeTrials,
         probeTrials,
         forceGate: v.has('force-gate'),
+        kind: kind as AttemptKind,
         ...(v.has('log') ? { log: v.get('log')! } : {}),
         ...(kitFrom ? { kitFrom } : {}),
         ...(kitSpec ? { kit: parseKit(kitSpec) } : {}),
@@ -333,22 +354,51 @@ export function parseDirectJson(j: unknown, source: DirectRead['source']): Direc
 }
 
 /**
+ * A record attempt's (a) line on the direct read (tenet 12): at least 58 of 60 trials reacted on
+ * the next tick, calibrated at 58/60 with 17/17 agreement against (c) at most 2. 60/60 would
+ * refuse good minutes. A read of more trials is held to the same share, rounded up; a shorter
+ * read cannot show 58/60 and refuses.
+ */
+export const RECORD_LINE = { onTime: 58, trials: 60 } as const;
+
+/** The on-time trials a record attempt needs from a direct read of `trials` trials. */
+export function recordLineAt(trials: number): number {
+    return Math.ceil((trials * RECORD_LINE.onTime) / RECORD_LINE.trials - 1e-9);
+}
+
+/** Why the record line refuses the direct read, by criterion; null when it holds. */
+function recordLineRefusal(v: DirectVerdict | null): string | null {
+    const line = `${RECORD_LINE.onTime}/${RECORD_LINE.trials}`;
+    if (!v) return `record attempt: the direct gate read has no verdict, so the (a) record line (${line}) cannot be checked`;
+    if (v.trials < RECORD_LINE.trials) return `record attempt: (a) the direct gate read ran ${v.trials} trials, under the ${RECORD_LINE.trials} the record line (${line}) is read on: re-read with --trials=${RECORD_LINE.trials} or more`;
+    const at = recordLineAt(v.trials);
+    if (v.onTime < at) return `record attempt: (a) ${v.onTime}/${v.trials} next-tick reactions on the direct read, under the record line of ${at}/${v.trials}: wait and re-read (or run it as --kind=measurement)`;
+    return null;
+}
+
+/**
  * Why not to start, or [] to go. The rule (RUN-HOST.md step 6, rs/102): (c) failing on any read is
  * an overrun period, so wait and re-read rather than start into a burst. A world that does not
  * answer, a failed or stale direct read, or (off the lab) no direct read at all also refuse.
- * (a), (b) and (d) are printed with the verdicts but do not refuse here.
+ * For a measurement, (a), (b) and (d) are printed with the verdicts but do not refuse here. A
+ * record attempt (`kind: 'record'`) also refuses without a direct read, lab or not, and below
+ * RECORD_LINE on it.
  */
-export function gateRefusal(i: { direct: DirectRead | null; inPage: readonly InPageRead[]; players: number | null; local: boolean; now: number; claim?: boolean }): string[] {
+export function gateRefusal(i: { direct: DirectRead | null; inPage: readonly InPageRead[]; players: number | null; local: boolean; now: number; claim?: boolean; kind?: AttemptKind }): string[] {
     const out: string[] = [];
+    const record = i.kind === 'record';
     if (!i.local && i.players === null) out.push('the world does not answer /playercount (down or restarting): wait for it');
     if (!i.direct) {
         // A claim measures nothing, so it needs no gate read; a silent world still refuses it.
-        if (!i.local && !i.claim) out.push('no direct gate read: pass --gate-bot=<gate account> or --gate-json=<file> (RUN-HOST.md step 6)');
+        if (record) out.push(`record attempt: no direct gate read to hold to the (a) record line (${RECORD_LINE.onTime}/${RECORD_LINE.trials}): pass --gate-bot=<gate account> or --gate-json=<file>`);
+        else if (!i.local && !i.claim) out.push('no direct gate read: pass --gate-bot=<gate account> or --gate-json=<file> (RUN-HOST.md step 6)');
     } else if (i.direct.error) {
         out.push(`direct gate read failed: ${i.direct.error}`);
     } else {
         const c = i.direct.verdict?.checks.find(k => k.id === 'c');
         if (c?.ok === false) out.push(`(c) ${c.value} catch-ups per minute over ${c.limit} on the direct read: an overrun period; wait and re-read`);
+        const a = record ? recordLineRefusal(i.direct.verdict) : null;
+        if (a) out.push(a);
         const age = i.direct.takenAt ? i.now - Date.parse(i.direct.takenAt) : Number.NaN;
         if (i.direct.source === 'gate-json' && !(age <= GATE_MAX_AGE_MS)) {
             out.push(`the direct gate read is ${Number.isFinite(age) ? `${Math.round(age / 60_000)} min old` : 'undated'} (at most ${GATE_MAX_AGE_MS / 60_000} min)`);
@@ -359,6 +409,46 @@ export function gateRefusal(i: { direct: DirectRead | null; inPage: readonly InP
         if (c?.ok === false) out.push(`(c) ${c.value} catch-ups per minute over ${c.limit} on the ${r.label} in-page probe: an overrun period; wait and re-read`);
     }
     return out;
+}
+
+/** The `(gate) kind` row's meta: the attempt kind, the rule it ran under, and the direct read's (a) and (c). */
+export interface KindGate {
+    kind: AttemptKind;
+    rule: string;
+    /** (a) on the direct read; null without a read with a verdict. */
+    onTime: number | null;
+    trials: number | null;
+    /** The on-time trials the record line needed on this read; null for a measurement or without a read. */
+    recordLine: number | null;
+    /** (c) on the direct read. */
+    catchUpsPerMinute: number | null;
+    catchUpLimit: number | null;
+}
+
+export function kindGate(kind: AttemptKind, direct: DirectRead | null): KindGate {
+    const v = direct?.verdict ?? null;
+    const c = v?.checks.find(k => k.id === 'c') ?? null;
+    const rule =
+        kind === 'record'
+            ? `refuses below ${RECORD_LINE.onTime}/${RECORD_LINE.trials} next-tick reactions on the direct read, and on (c); no --force-gate`
+            : 'refuses on (c) only';
+    return {
+        kind, rule,
+        onTime: v?.onTime ?? null,
+        trials: v?.trials ?? null,
+        recordLine: kind === 'record' && v ? recordLineAt(Math.max(v.trials, RECORD_LINE.trials)) : null,
+        catchUpsPerMinute: c?.value ?? null,
+        catchUpLimit: c?.limit ?? null,
+    };
+}
+
+/** `kind: record (refuses below 58/60 ...); direct (a) 58/60, line 58; (c) 0/min, limit 2`, for the summary. */
+export function kindText(g: KindGate): string {
+    const read =
+        g.onTime === null
+            ? 'no direct read'
+            : `direct (a) ${g.onTime}/${g.trials}${g.recordLine === null ? '' : `, line ${g.recordLine}`}; (c) ${g.catchUpsPerMinute === null ? 'not measured' : `${g.catchUpsPerMinute}/min`}, limit ${g.catchUpLimit ?? '?'}`;
+    return `kind: ${g.kind} (${g.rule}); ${read}`;
 }
 
 // ------------------------------------------------------------------ host reservation
@@ -1437,8 +1527,14 @@ async function main(argv: string[]): Promise<number> {
     if (a.gateJson) direct = parseDirectJson(JSON.parse(readFileSync(a.gateJson, 'utf-8')), 'gate-json');
     else if (a.gateBot) direct = await directReadViaCli(a.gateBot, { lab: a.lab, runId });
     if (direct) log.append(annotation(log, account, 'gate', '(gate) direct', { ok: !direct.error && direct.verdict?.on === true, ...(direct.error ? { error: direct.error } : {}), meta: { ...direct, ...(direct.verdict ? { text: verdictText(direct.verdict) } : {}) } }));
+    // Which rule the direct read was held to, so every findings doc can say which applied.
+    const kind = a.claim ? null : kindGate(a.kind, direct);
+    if (kind) {
+        const why = a.kind === 'record' ? gateRefusal({ direct, inPage: [], players, local, now: Date.now(), kind: 'record' }).filter(r => r.startsWith('record attempt')) : [];
+        log.append(annotation(log, account, 'gate', '(gate) kind', { ok: why.length === 0, ...(why.length ? { error: why.join('; ') } : {}), meta: { ...kind } }));
+    }
     const inPage: InPageRead[] = [];
-    const gate: string[] = [];
+    const gate: string[] = kind ? [kindText(kind)] : [];
     // The gate tab is a login too.
     if (a.gateProbeTrials > 0 && refuseIfReserved()) return EXIT_HOST_RESERVED;
 
@@ -1474,8 +1570,9 @@ async function main(argv: string[]): Promise<number> {
             // The gate took minutes; a reservation may have appeared meanwhile. --force-gate does not override it.
             const res = reserved();
             if (res) return { code: EXIT_HOST_RESERVED, reasons: [res] };
-            const reasons = [...gateRefusal({ direct, inPage, players, local, now: Date.now(), claim: a.claim }), ...(before ? gateTabProblems(before) : []), ...recProblems];
+            const reasons = [...gateRefusal({ direct, inPage, players, local, now: Date.now(), claim: a.claim, kind: a.kind }), ...(before ? gateTabProblems(before) : []), ...recProblems];
             if (!reasons.length) return null;
+            // parseArgs refuses --force-gate with --kind=record, so a record attempt never gets past here.
             if (!a.forceGate) return { code: 3, reasons };
             for (const r of reasons) console.warn(`[rehearse] --force-gate: starting anyway: ${r}`);
             return null;
@@ -1607,7 +1704,7 @@ async function main(argv: string[]): Promise<number> {
     });
     if (run.refused) {
         for (const r of run.refused.reasons) console.error(`[rehearse] REFUSED: ${r}`);
-        console.error(`[rehearse] nothing was logged in for the attempt; ${run.refused.code === EXIT_HOST_RESERVED ? 'run again once the reservation is gone' : 're-read the gate and run again (or --force-gate)'}`);
+        console.error(`[rehearse] nothing was logged in for the attempt; ${run.refused.code === EXIT_HOST_RESERVED ? 'run again once the reservation is gone' : a.kind === 'record' ? 're-read the gate and run again (a record attempt takes no --force-gate)' : 're-read the gate and run again (or --force-gate)'}`);
         return run.refused.code;
     }
     const session = run.session!;
