@@ -1,8 +1,15 @@
-# Run host: the Ashburn machine, step by step
+# Run hosts: the two Ashburn machines, step by step
 
 The scored run is played first person in our fork's browser webclient, in a visible Chrome tab on
-a dedicated machine in Ashburn (cairn://p/rs/tenets/12, which supersedes tenet 11). This page is that machine's runbook, in run
-order: what to check, what to start, what to record, how to measure the gate, and how to stop.
+one of **two run-capable machines in Ashburn: the run host** (rs-ashburn-run) **and the twin**
+(rs-ashburn-rehearsal). Both are kept with the same RUN_COMMIT, gate history timer, host
+reservation, recording and live-view setup, and the run starts on whichever passes the gate
+immediately before the start (cairn://p/rs/tenets/17, approved 17:44 PDT 2026-10-21; it narrows
+tenet 12's single named machine and tenet 13's "never from the twin"). Tenet 12
+(cairn://p/rs/tenets/12, which supersedes tenet 11) still sets the gate and the configuration. This
+page is both machines' runbook, in run order: what to check, what to start, what to record, how to
+measure the gate, how to choose the machine (step 5a), and how to stop. Steps 0-5 run on both
+machines; from step 7 on, "the chosen machine" is the one step 5a picked.
 [RUN-ORDER.md](RUN-ORDER.md) section 1 summarises it; the gate's conditions and the knife switching
 rule live there. **SCORED** is the scored account; its real name never appears here, in a commit, a
 log line or a chat message. Figures carry a label: **m** measured (with the time), **r** read from a
@@ -20,6 +27,8 @@ bring-up by eye. With RDP disconnected the tab runs exactly as fast as with it c
 recording is smooth. A connected session costs the recording about a fifth of its frames.
 
 ## Rules for every launch on the host
+
+These rules hold on both machines; "the host" in them is whichever machine the command runs on.
 
 **Every launch is reaped by its own hard timeout.** Nothing on the host may depend on an agent, an
 ssh session or a person being alive to stop it (main, 10:20 PDT 2026-10-21, after rs/134's last
@@ -88,28 +97,32 @@ then at `85a28dc8d`, whose older `tickmanip-latency.ts` needs an attached tab an
 within 17 s. Main has since moved `~/rs-sdk` to main `ae6d5664` (rs/96's direct CLI and rs/127),
 and from now on only step 0's run commit moves it (r: main via rs/103, 2026-10-21). Afterwards the leftover check showed no tmux server, no process and no reservation.
 
-**Probe slots, while rs/96 and rs/130 measure on the host.** Nothing is tested, rehearsed or
-verified on the host in minutes :00-:03, :15-:25, :30-:33 or :45-:55 of any hour. Use :04-:14,
+**Probe slots, while rs/96 and rs/130 measure on the run host.** Nothing is tested, rehearsed or
+verified on the run host in minutes :00-:03, :15-:25, :30-:33 or :45-:55 of any hour. Use :04-:14,
 :26-:29, :34-:44 and :56-:59, and fit the whole thing, bound included, inside one window (r: main via
 rs/103, 2026-10-21). Run the leftover check (below) first. If anything is running that isn't yours,
-leave it alone and wait.
+leave it alone and wait. The probe slots are the run host's; the twin's day-to-day bookings are rs/147's
+slot files (`docs/speedrun/rehearsals/HOST.md` on rs/147's branch, "Slots").
 
-**Host reservation.** The reservation is the file `/home/ubuntu/host-reserved.json`:
+**Host reservation.** On each machine the reservation is the file `/home/ubuntu/host-reserved.json`:
 
 ```json
 {"owner":"<issue or run>","until":"<RFC3339, UTC>","reason":"..."}
 ```
 
-rs/83's gate history timer honours it ("Gate history timer", below "The host"): every firing skips
+rs/83's gate history timer honours it on either machine ("Gate history timer", below "The two machines"): every firing skips
 while `until` is in the future, and a reservation whose `until` has passed (owner gone) is ignored,
 so a forgotten removal costs nothing and nothing needs cleaning by hand (r: main via rs/103, 10:45
 PDT). The timer runs from its own clone, `~/gate/rs-sdk`, at the commit in `~/run-commit` (step 0),
 never from `~/rs-sdk`. Who writes it:
 
-- **the run**: step 0, on run night, before anything else starts, with `until` covering setup, the
-  9 h run bound above and an hour's margin; the run never disables the timer instead. run.ts refuses
-  to start unless the reservation is live and the run's own, and removes it after SCORED's final
-  clean logout;
+- **the run**: step 0, on run night, on **both** machines, before anything else starts, with `until`
+  covering setup, the 9 h run bound above and an hour's margin; the run never disables the timer
+  instead. run.ts, on the chosen machine, refuses to start unless the reservation is live and the
+  run's own, and removes it after SCORED's final clean logout. The machine not chosen keeps its
+  reservation until the run's teardown (step 9), so its timer skips and rehearsals there stay paused
+  (step 5a; on the twin, rehearsal attempts read the file at pre-flight once rs/213 lands, and rs/147
+  checks it by hand until then);
 - **a rehearsal**: by hand, before anything starts, with `until` = now + the rehearsal's bound
   (30 min); removed after teardown;
 - **any other slot holder** (a measurement child, a probe, a check of these commands): for its slot;
@@ -136,8 +149,8 @@ and in shell history (rs/130). It is gone from this runbook; never rebuild it.
 
 `tab-login.ts` and the page server's token endpoints are on main since rs/138's merge (#120,
 `96fc462a`), so every command marked **requires rs/138 on RUN_COMMIT** needs step 0's `RUN_COMMIT`
-to be `96fc462a` or a descendant of it (the run-commit floor below contains it). **No real account's credentials, fleet or SCORED, go on the
-host while `~/rs-sdk` is at an older commit** (main, 10:20 PDT): step 4 (the helpers are fleet
+to be `96fc462a` or a descendant of it (the run-commit floor below contains it). **No real account's credentials, fleet or SCORED, go on
+either machine while its `~/rs-sdk` is at an older commit** (main, 10:20 PDT): step 4 (the helpers are fleet
 accounts) and step 7 (SCORED) check this first.
 
 `RUN_COMMIT` must also include **rs/164**, which is on main as **`c2d9eada`** (#146, "Snapshot
@@ -193,6 +206,10 @@ reservations:
 ```sh
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@3.209.186.185 'for s in /tmp/tmux-$(id -u)/*; do [ -S "$s" ] && echo "tmux -L $(basename $s): $(tmux -S $s ls 2>&1 | tr "\n" " ")"; done; L=; for p in $(pgrep "^(chrome.*|ffmpeg|bun|timeout)$"); do grep -q rs-gate-read.service /proc/$p/cgroup 2>/dev/null || L="$L,$p"; done; if [ -n "$L" ]; then ps -o pid,etime,comm -p "${L#,}"; else echo "no chrome, ffmpeg, bun or timeout process outside the gate timer"; fi; echo "gate timer read: $(systemctl --user is-active rs-gate-read.service)"; cat ~/host-reserved.json 2>/dev/null || echo "no host reservation"'
 ```
+
+**Twin:** rehearsals there may also leave an Xvfb (`:99`), which `tmux kill-server` does not stop
+(m, rs/149; rs/147's HOST.md). Add `pgrep -a -x Xvfb` to the check there, and stop a leftover
+rehearsal Xvfb with `pkill -TERM -x Xvfb` only when no rehearsal holds a slot.
 
 ## The host
 
