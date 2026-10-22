@@ -1471,12 +1471,68 @@ same second; m, as cited).
 | 00:00 | after the change | 60, 1.0, 388.6 ms: **pass** | 60, 1.0, 388.0 ms: **pass** | 1,670 | m: the host thread, 17:03 PDT: aligned to 0.4 ms, 0 late or glued |
 | 00:30 (unpaired: the twin was in a rehearsal) | after the change | 60, 0, 515 ms: **pass** on (a) and (c) | - | 1,731 | m: rs/83, 17:33 PDT |
 | Gate (d) after the change, either machine with the opening roster | after the change | **pending** (no (d) read since the move; the giver-load check's tab side is the next one, rs/host) | **pending** | | |
+| rs/83's 17 same-minute pairs, up to 2026-10-22, before the run host's 17:39Z rotation (the pairs main called final-address) | the run host's previous address: a reading of its old route | **4 of 17 pass**, with held ticks on its path; at 17:30Z (a) 26 of 60, with no late ticks | **17 of 17 pass** | | m: rs/83, relayed by main and rs/158, 10:4x PDT 2026-10-22, and the host thread; the pair-by-pair table **pending** rs/83 |
+| After the run host's 17:39Z rotation | its new address | **pending**: 4+ clean same-minute pairs before it can be the fallback | | | the host thread; rs/158, 10:5x PDT |
 | rs/170's raw pair files (`tickArrivalsMs`) | | | `docs/speedrun/rehearsals/twin-pairs/` on `agent/rs-170-builder-0` (rs/170 is closed): **pending** their merge, for a tick-by-tick table here | | |
 
 The raw arrivals of every pair are kept on the run host (`~/host-captures`) and on bgsrv-mac
 (`~/hostpair`) by the host thread. Two clean pairs and one clean single read at the new address make
 the route "consistent with fixed"; the series continues on both timers (rs/83, 16:32 PDT), and starts
 again after the next address change.
+
+## Measured: run-gate.ts rehearsed on the twin, 2026-10-22
+
+**On the twin, not the run host** (m, rs/247, 2026-10-22 02:41-02:57Z; PR #216, merge commit
+`b1a2765d`). A dated reading of the twin's route and the tool at that time, not a property of the
+machine ("The host"). Conditions: the recording on `:10` from 02:40:13Z, RDP disconnected,
+1,534-1,652 online, under an `rs-claim` of rs/247's, with two fresh throwaway accounts, a gate
+account and a stand-in for SCORED (never the scored account). The run host's leg of `gate` was not
+run live, because the tool was not yet on its checkout; the two-machine path and the choice rule are
+covered by `speedrun/tools/run-gate.test.ts` only.
+
+| | The twin, 02:41-02:57Z |
+|---|---|
+| Gates | 3, the twin only (`gate` warned that it gated one machine) |
+| (a) direct reactions | 60/60 in each |
+| (c) catch-ups | 0 a minute in each |
+| (b) tick p90 (reported, not a pass line) | 405-489 ms |
+| (d) tab loop p10, lowest / median / highest sample | 71.5 / 72.5 / 73.1 over 30 samples |
+| Recording | 29.9-29.97 fps, 0 dropped (1,017 s, 30,503 frames) |
+| Live frame, difference from the page's screenshot (pass at most 12/255) | 2.8 and 3.0 before login, 2.4 and 2.3 in game, against page contrast 48.8-50.8 |
+| Hand-off | one Bot Client window, 1920x1029; 61 of ours online plus the stand-in's 1, under 80; secrets `0 0 0` |
+
+Two forced unconfirmed-logout cases, which exist only with `--rehearsal`:
+
+- **`--rehearse=kept-chrome`**: `logoutClean` was skipped and the gate Chrome **not** killed, the old
+  `logout && kill` behaviour on an unconfirmed logout. `gate` **stopped** at its closed check, which
+  found the `chrome` session, 12 processes on the profile and 1 Bot Client window. The `handoff` that
+  followed **stopped at the step-7 precondition, exit 2**, before it opened anything.
+- **`--rehearse=unconfirmed-logout`**: `logoutClean` was skipped and the kill left on. The gate
+  Chrome was **killed unconditionally**, the closed check passed and the gate passed. The hand-off
+  that followed **passed**, with a live frame of 3.0 before login and 2.3 in game. The gate account
+  stayed in the world 2 min 43 s to 4 min 51 s after the kill.
+
+All m. The kept-chrome case shows the closed checks catching the window main's 19:08 PDT ruling
+forbids; the unconfirmed-logout case shows the unconditional kill clearing it.
+
+## Measured: the run tab's browser profile, 2026-10-22
+
+**A cold Chrome profile costs scene-load time at login, and a warm one doesn't** (m, rs/424 and
+rs/41's warm-profile probes, 2026-10-22; relayed by rs/158 at 09:42 and 10:04 PDT). Through the
+run's client origin a browser-client login took 40.3 s to in-game on a cold profile and reached
+`sceneState` 2 at tick 83. On a warm profile it took 4.5 s, with `sceneState` 2 at the first poll and
+441 of 442 models from IndexedDB. The cache is keyed by the exact page origin, since Chrome names the
+IndexedDB directory by scheme, host and port, and it survives a Chrome restart on the same
+user-data-dir. A copied profile kept all 1,257 IndexedDB keys at the same origin, and 12 of 12 maps
+plus 100 sampled models loaded from cache with 0 socket requests. These were measured on Chrome 148
+(chrome-headless-shell); the Ashburn machines run google-chrome 156, and a profile from one does not
+carry over to the other (step 7). Earlier, rs/424 measured a cold-profile login taking 22 ticks to
+scene-ready on Tutorial Island and 73 at Varrock west bank, with ~80 players there (models at about
+15 files a second).
+
+**The twin's run profile already holds ~174 MB of cache** under the origin directory
+`http_127.0.0.1_8899` (m, the host thread, 17:45Z 2026-10-22, relayed by rs/158; a dated reading, not
+a property).
 
 ## Measured: the demo's tick period, 2026-10-22
 
