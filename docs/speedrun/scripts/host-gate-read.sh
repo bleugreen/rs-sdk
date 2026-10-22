@@ -98,6 +98,7 @@ server_start() {
     d=$(( $(date -u -d "$utc" +%s) * 1000 - ms ))
     [ "$d" -lt 0 ] && { sign=-; d=$((-d)); }
     t=$(( (d + 3000) / 6000 ))
+    [ "$t" -eq 0 ] && sign=
     pre_start_token=$tok
     pre_start_utc=$(printf '%s.%03dZ' "$s" $((ms % 1000)))
     pre_uptime_min="$sign$((t / 10)).$((t % 10))"
