@@ -1,0 +1,315 @@
+// Hand-off steps: one Step builder for every hand-off row of STEP-MANIFEST.md's inventory ledger
+// (H1 from the mule at S01, the out-and-back hand-offs H13, H16, H18, H22, H23, and any later H
+// row). The row is the data: what SCORED receives is its `in`, what it gives is its `out` (reason
+// `swap` or `trade`), and what it wears afterwards is its `equip`. Nothing here names an item; the
+// rows are read through speedrun/tools/slot-ledger.ts's parser, the one reader of that table.
+//
+// The trade is lib/trade.ts: swap() when SCORED gives anything (with or without receiving),
+// receiveFrom() when it only receives. swap() offers only the inventory, so an item the row gives
+// while it is worn is unequipped first; the row's `+NAME` / `-NAME` are applied after the trade.
+//
+// The partner (an account name, fleet staging, rs/41's) stands on the hand-off tile before SCORED
+// arrives; the step does not wait for it or walk (the legs carry the travel). preconditions refuse
+// with a reason when the partner is not in view, when SCORED does not hold what it gives, or when
+// what it receives will not fit the free slots, counting the slots the given items free (the
+// server counts offered items as freed, trade.rs2) and the slot each unequip takes first.
+//
+// Resume: `done` is the post-hand-off state (every `in` held at its count, every given item gone,
+// the equip changes in place), so a restart after the trade skips it. Later steps consume what a
+// hand-off brought, so `done` also takes `supersededBy`, the next milestone's own `done`, which
+// run.ts passes in: the resume walk needs every done milestone to stay done. A logout after the
+// trade landed but before the equip changes leaves `inProgress`, entered through `resume`, which
+// applies the equip only. A logout mid-trade refunds both sides, and the step runs again.
+
+import { readFileSync } from 'fs';
+import type { BotSDK } from '../../sdk/index';
+import type { BotWorldState, InventoryItem, TradeItem } from '../../sdk/types';
+import { INVENTORY_SIZE } from '../lib/items';
+import { DROPPED_TICKS, receiveFrom, sameName, swap, type GiveSpec, type SwapSdk, type WantSpec } from '../lib/trade';
+import { waitOrThrow } from '../lib/wait';
+import { opIndex } from '../lib/world';
+import { MANIFEST, parseLedger, type InEntry, type Kind, type LedgerRow } from '../tools/slot-ledger';
+import type { ObservedCheck, Step } from './step';
+
+/**
+ * Ledger names whose game name differs (the ledger says `normal logs` where the game says `Logs`).
+ * Every other ledger name is the game's, lower-cased; a potion's dose suffix `(4)` is matched.
+ */
+const GAME_NAMES: Readonly<Record<string, string>> = { 'normal logs': 'logs' };
+
+const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** The game items a ledger NAME stands for. */
+export function itemPattern(name: string): RegExp {
+    return new RegExp(`^${escape(GAME_NAMES[name] ?? name)}(?:\\(\\d\\))?$`, 'i');
+}
+
+export interface Received {
+    name: string;
+    pattern: RegExp;
+    count: number;
+    kind: Kind;
+    /** Top up to `count` counting what SCORED holds (the H10 form): the trade asks for the difference. */
+    topUp: boolean;
+}
+
+export interface Given {
+    name: string;
+    pattern: RegExp;
+    count: number | 'all';
+}
+
+export interface Worn {
+    name: string;
+    pattern: RegExp;
+}
+
+export interface HandOffPlan {
+    id: string;
+    /** The row's line in the source file. */
+    line: number;
+    receive: Received[];
+    give: Given[];
+    /** `+NAME`: worn after the trade. */
+    wield: Worn[];
+    /** `-NAME`: not worn after the trade (displaced by a wield, or taken off). */
+    unwield: Worn[];
+}
+
+export type TradeKind = 'swap' | 'receive';
+
+/** swap() when SCORED gives anything; receiveFrom() when it only receives. */
+export const tradeKind = (p: HandOffPlan): TradeKind => (p.give.length ? 'swap' : 'receive');
+
+/** A ledger row as a hand-off: refused when it is not a hand-off the trade can carry out. */
+export function planHandOff(row: LedgerRow): HandOffPlan {
+    const at = `${row.row} (line ${row.line})`;
+    if (!/^H/.test(row.row)) throw new Error(`${at} is not a hand-off row`);
+    const give = row.out.map(e => {
+        if (e.reason !== 'swap' && e.reason !== 'trade') throw new Error(`${at}: out ${e.name} (${e.reason}) is not given in the trade; a hand-off only gives (swap or trade)`);
+        return { name: e.name, pattern: itemPattern(e.name), count: e.count ?? 'all' };
+    });
+    const receive = row.in.map((e: InEntry & { topUp?: boolean }) => {
+        if (e.count === null) throw new Error(`${at}: in ${e.name} x? has no count, so the trade cannot check the offer`);
+        return { name: e.name, pattern: itemPattern(e.name), count: e.count, kind: e.kind, topUp: e.topUp === true };
+    });
+    const both = give.filter(g => receive.some(r => r.name === g.name));
+    if (both.length) throw new Error(`${at}: ${both.map(g => g.name).join(', ')} both given and received`);
+    if (!give.length && !receive.length) throw new Error(`${at}: nothing given and nothing received`);
+    const worn = (on: boolean) => row.equip.filter(e => e.on === on).map(e => ({ name: e.name, pattern: itemPattern(e.name) }));
+    return { id: row.row, line: row.line, receive, give, wield: worn(true), unwield: worn(false) };
+}
+
+/** The row `id` of the inventory ledger in `markdown` (STEP-MANIFEST.md), as a hand-off. */
+export function handOffFrom(markdown: string, id: string): HandOffPlan {
+    const { rows, errors } = parseLedger(markdown);
+    if (errors.length) throw new Error(`the inventory ledger does not parse: ${errors.join('; ')}`);
+    const found = rows.filter(r => r.row === id);
+    if (found.length !== 1) throw new Error(found.length ? `${found.length} ledger rows named ${id}` : `no ledger row ${id}`);
+    return planHandOff(found[0]!);
+}
+
+/** `handOffFrom` on a file, STEP-MANIFEST.md by default. */
+export function loadHandOff(id: string, file: string = MANIFEST): HandOffPlan {
+    return handOffFrom(readFileSync(file, 'utf8'), id);
+}
+
+// ------------------------------------------------------------------ state checks
+
+const total = (items: readonly InventoryItem[], p: RegExp) => items.reduce((a, i) => a + (p.test(i.name) ? i.count : 0), 0);
+const held = (s: BotWorldState, p: RegExp) => total(s.inventory, p) + total(s.equipment, p);
+const isWorn = (s: BotWorldState, p: RegExp) => s.equipment.some(e => p.test(e.name));
+
+/** Worn items the trade gives that must come off first: swap() offers only the inventory. */
+export function toUnequip(s: BotWorldState, plan: HandOffPlan): InventoryItem[] {
+    return plan.give.flatMap(g => {
+        const inPack = total(s.inventory, g.pattern);
+        if (g.count !== 'all' && inPack >= g.count) return [];
+        return s.equipment.filter(e => g.pattern.test(e.name));
+    });
+}
+
+/** Inventory slots the given items free once offered (after the unequips, one slot each). */
+function slotsFreed(s: BotWorldState, plan: HandOffPlan, unequipped: readonly InventoryItem[]): number {
+    const pack = [...s.inventory, ...unequipped];
+    return plan.give.reduce((a, g) => {
+        const slots = pack.filter(i => g.pattern.test(i.name));
+        if (g.count === 'all') return a + slots.length;
+        const stacked = slots.length === 1 && slots[0]!.count > 1;
+        return a + (stacked ? (g.count >= slots[0]!.count ? 1 : 0) : Math.min(g.count, slots.length));
+    }, 0);
+}
+
+/** How many of `r` the trade asks for: its COUNT, or for a top-up what SCORED lacks of it. */
+export function wanted(s: BotWorldState, r: Received): number {
+    return r.topUp ? Math.max(0, r.count - held(s, r.pattern)) : r.count;
+}
+
+/** Slots the received items add: one per unstackable asked for, one for a stack SCORED does not hold. */
+function slotsAdded(s: BotWorldState, plan: HandOffPlan): number {
+    return plan.receive.reduce((a, r) => {
+        const n = wanted(s, r);
+        if (n === 0) return a;
+        return a + (r.kind === 'u' ? n : s.inventory.some(i => r.pattern.test(i.name)) ? 0 : 1);
+    }, 0);
+}
+
+export function handOffPre(s: BotWorldState, plan: HandOffPlan, partner: string): true | string {
+    if (!s.inGame) return 'not in game';
+    if (!s.nearbyPlayers.some(p => sameName(p.name, partner))) return `${plan.id}: ${partner} is not in view (the partner stands on the hand-off tile before SCORED arrives)`;
+    for (const g of plan.give) {
+        const h = held(s, g.pattern);
+        if (h === 0) return `${plan.id}: holds no ${g.name} to give`;
+        if (g.count !== 'all' && h < g.count) return `${plan.id}: holds ${h} ${g.name}, gives ${g.count}`;
+        // done reads a given item as gone; part of it left behind would never read done.
+        if (g.count !== 'all' && h > g.count) return `${plan.id}: holds ${h} ${g.name} and gives ${g.count}; the row must give all of it`;
+    }
+    for (const w of plan.wield) {
+        if (!plan.receive.some(r => r.name === w.name) && !held(s, w.pattern)) return `${plan.id}: +${w.name} is neither held nor received`;
+    }
+    const free = INVENTORY_SIZE - s.inventory.length;
+    const off = toUnequip(s, plan);
+    if (free < off.length) return `${plan.id}: ${free} free slots, and taking off ${off.map(i => i.name).join(', ')} to give needs ${off.length}`;
+    const freed = slotsFreed(s, plan, off);
+    const adds = slotsAdded(s, plan);
+    const room = free - off.length + freed;
+    if (room < adds) return `${plan.id}: ${free} free slots, ${freed} freed by what it gives: the trade adds ${adds}, ${adds - room} short`;
+    // Each wield frees a slot, each item it displaces (a `-NAME`) takes one back.
+    const after = room - adds + plan.wield.length - plan.unwield.length;
+    if (after < 0) return `${plan.id}: the equip changes after the trade need ${-after} more free slots`;
+    return true;
+}
+
+/** What the post-hand-off state still lacks; empty once the hand-off is complete. */
+export function handOffMissing(s: BotWorldState, plan: HandOffPlan): string[] {
+    const out: string[] = [];
+    for (const r of plan.receive) {
+        const h = held(s, r.pattern);
+        if (h < r.count) out.push(`${r.name} ${h} of ${r.count}`);
+    }
+    for (const g of plan.give) {
+        const h = held(s, g.pattern);
+        if (h > 0) out.push(`${g.name} x${h} still held`);
+    }
+    for (const w of plan.wield) if (!isWorn(s, w.pattern)) out.push(`${w.name} not worn`);
+    for (const w of plan.unwield) if (isWorn(s, w.pattern)) out.push(`${w.name} still worn`);
+    return out;
+}
+
+/** The trade has landed: every `in` held, every given item gone (the equip changes may be pending). */
+export function tradeLanded(s: BotWorldState, plan: HandOffPlan): boolean {
+    return plan.receive.every(r => held(s, r.pattern) >= r.count) && plan.give.every(g => held(s, g.pattern) === 0);
+}
+
+// ------------------------------------------------------------------ the step
+
+export type HandOffSdk = SwapSdk & Pick<BotSDK, 'sendUseItem' | 'sendUseEquipmentItem'>;
+
+export interface HandOffReport {
+    id: string;
+    partner: string;
+    trade: TradeKind;
+    ok: boolean;
+    /** SCORED's clock: its first trade click to the outcome. */
+    ticks: number;
+    /** swap() only: its first trade click to the screens opening. */
+    openTicks?: number;
+    received: string[];
+    gave: string[];
+    /** Items taken off to be given, before the trade. */
+    unequipped: string[];
+    reason?: string;
+}
+
+export interface HandOffOptions<C> {
+    /** The partner's account name (fleet staging, rs/41). */
+    partner: string | ((c: C) => string);
+    /** The next milestone's `done`: once it holds, this hand-off counts as done whatever the inventory shows. */
+    supersededBy?: ObservedCheck<C>;
+    /** Observed ticks to get the screens open (default 30): swap()'s openTicks, receiveFrom()'s openMaxTicks. */
+    openTicks?: number;
+    /** Observed ticks from the screens opening to the outcome (default 40). */
+    maxTicks?: number;
+    /** receiveFrom only: re-send a trade click that drew no reply after this many ticks (default DROPPED_TICKS: the partner stands beside SCORED). swap() always uses DROPPED_TICKS. */
+    noReplyTicks?: number;
+    onReport?: (r: HandOffReport) => void;
+}
+
+const names = (xs: readonly TradeItem[]) => xs.map(i => `${i.name} x${i.count}`);
+
+/** Take off the worn items the trade gives, all in one tick, and wait until they are in the pack. */
+async function unequipGives(sdk: HandOffSdk, plan: HandOffPlan): Promise<InventoryItem[]> {
+    const off = toUnequip(sdk.getState()!, plan);
+    if (!off.length) return off;
+    for (const e of off) void sdk.sendUseEquipmentItem(e.slot, opIndex(e, /^remove$/i) ?? 1);
+    await waitOrThrow(sdk, s => off.every(e => !s.equipment.some(x => x.slot === e.slot && x.id === e.id)), 5, `${plan.id}: taking off ${off.map(e => e.name).join(', ')} to give`);
+    return off;
+}
+
+/** The row's equip changes: every wield in one tick, then any `-NAME` a wield did not displace. */
+export async function applyEquip(sdk: HandOffSdk, plan: HandOffPlan): Promise<void> {
+    const s = sdk.getState()!;
+    const on = plan.wield.filter(w => !isWorn(s, w.pattern));
+    for (const w of on) {
+        const item = s.inventory.find(i => w.pattern.test(i.name));
+        if (!item) throw new Error(`${plan.id}: +${w.name}: not in the pack`);
+        void sdk.sendUseItem(item.slot, opIndex(item, /^(wield|wear)$/i) ?? 2);
+    }
+    if (on.length) await waitOrThrow(sdk, st => on.every(w => isWorn(st, w.pattern)), 5, `${plan.id}: wielding ${on.map(w => w.name).join(', ')}`);
+    const st = sdk.getState()!;
+    const off = plan.unwield.flatMap(w => st.equipment.filter(e => w.pattern.test(e.name)));
+    for (const e of off) void sdk.sendUseEquipmentItem(e.slot, opIndex(e, /^remove$/i) ?? 1);
+    if (off.length) await waitOrThrow(sdk, x => plan.unwield.every(w => !isWorn(x, w.pattern)), 5, `${plan.id}: taking off ${off.map(e => e.name).join(', ')}`);
+}
+
+/** One hand-off: unequip what is given while worn, trade, then the equip changes. */
+export async function runHandOff(sdk: HandOffSdk, plan: HandOffPlan, partner: string, o: Omit<HandOffOptions<unknown>, 'partner' | 'supersededBy'> = {}): Promise<HandOffReport> {
+    const off = await unequipGives(sdk, plan);
+    const s0 = sdk.getState()!;
+    const want: WantSpec[] = plan.receive.map(r => ({ item: r.pattern, amount: wanted(s0, r) })).filter(w => w.amount > 0);
+    const openTicks = o.openTicks ?? 30;
+    let report: HandOffReport;
+    if (!want.length && !plan.give.length) {
+        // Every top-up already met and nothing to give: no trade.
+        report = { id: plan.id, partner, trade: 'receive', ok: true, ticks: 0, received: [], gave: [], unequipped: [] };
+    } else if (tradeKind(plan) === 'swap') {
+        const give: GiveSpec[] = plan.give.map(g => ({ item: g.pattern, n: g.count }));
+        const r = await swap(sdk, partner, give, want, { closeModals: true, openTicks, maxTicks: o.maxTicks ?? 40 });
+        report = { id: plan.id, partner, trade: 'swap', ok: r.ok, ticks: r.ticks, openTicks: r.openTicks, received: names(r.received), gave: names(r.gave), unequipped: off.map(e => e.name), ...(r.reason ? { reason: r.reason } : {}) };
+    } else {
+        const r = await receiveFrom(sdk, partner, { want, maxTicks: o.maxTicks ?? 40, openMaxTicks: openTicks, openTimeoutMs: Infinity, noReplyTicks: o.noReplyTicks ?? DROPPED_TICKS });
+        report = { id: plan.id, partner, trade: 'receive', ok: r.ok, ticks: r.ticks, received: names(r.received), gave: [], unequipped: [], ...(r.reason ? { reason: r.reason } : {}) };
+    }
+    o.onReport?.(report);
+    if (!report.ok) throw new Error(`${plan.id} with ${partner}: ${report.reason ?? 'the trade failed'}`);
+    await applyEquip(sdk, plan);
+    return report;
+}
+
+/** The resumable Step for one hand-off row. Its name starts with the row id (`H13 hand-off`). */
+export function handOffStep<C>(plan: HandOffPlan, opts: HandOffOptions<C>): Step<C> {
+    const partner = (c: C) => (typeof opts.partner === 'function' ? opts.partner(c) : opts.partner);
+    const sdkOf = (sdk: unknown) => sdk as HandOffSdk;
+    return {
+        name: `${plan.id} hand-off`,
+        logoutSafe: true,
+        preconditions: (s, c) => handOffPre(s, plan, partner(c)),
+        postconditions: s => {
+            const missing = handOffMissing(s, plan);
+            return missing.length ? `${plan.id} after the trade: ${missing.join('; ')}` : true;
+        },
+        done: (o, c) => handOffMissing(o.state, plan).length === 0 || !!opts.supersededBy?.(o, c),
+        inProgress: o => tradeLanded(o.state, plan) && handOffMissing(o.state, plan).length > 0,
+        async run(ctx) {
+            await runHandOff(sdkOf(ctx.sdk), plan, partner(ctx.c), opts);
+        },
+        async resume(ctx) {
+            await applyEquip(sdkOf(ctx.sdk), plan);
+        },
+    };
+}
+
+/** `handOffStep` for ledger row `id`, read from STEP-MANIFEST.md (or `file`). */
+export function handOff<C>(id: string, opts: HandOffOptions<C> & { file?: string }): Step<C> {
+    return handOffStep(loadHandOff(id, opts.file), opts);
+}
