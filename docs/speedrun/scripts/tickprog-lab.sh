@@ -4,10 +4,12 @@
 # (tickprog-tab.ts), then each tickprog-measure.ts mode in order, then stop everything.
 #
 #   LAB_BLOCK=tickmanip NODE_TICKRATE=300 bash docs/speedrun/scripts/tickprog-lab.sh <bot> <mode>[:--k=v:...] ...
-#   e.g. ... tickprog-lab.sh cairn_tp1 probe:--trials=60 mine:--ores=200 fly:--until=99 wedge
+#   e.g. ... tickprog-lab.sh cairntp1 probe:--trials=60 mine:--ores=200 fly:--until=99 wedge
+#
+# Bot names are letters and digits only, at most 12 (bots/create-bot.ts refuses anything else).
 #
 # A spec whose first part is a .ts path runs that driver against the open tab instead:
-#   ... tickprog-lab.sh cairn_fl1 speedrun/lab/measure-fishing.ts:fly:--level=78
+#   ... tickprog-lab.sh cairnfl1 speedrun/lab/measure-fishing.ts:fly:--level=78
 #
 # `wedge` runs tickprog-wedge.ts (the watchdog check) instead of a measurement.
 #
@@ -23,6 +25,7 @@
 # $LAB_LOG (default $TMPDIR/tickprog-<block>): engine, gateway, tab (the page's [program]
 # lines) and tab/stats.log (render samples once a second).
 set -u
+# The filters are line-buffered so a batch killed at its bound still shows every line so far.
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
 BOT=$1; shift
 BLOCK=${LAB_BLOCK:-tickmanip}
@@ -64,9 +67,16 @@ wait_for "$LOG/engine.log" 'World ready' 900 || exit 1
 PIDS+=($!)
 sleep 2
 
+# A bot without a bot.env is created; create-bot's refusal (a bad name) is shown and ends the lab.
+ensure_bot() {
+    [ -f "$ROOT/bots/$1/bot.env" ] && return 0
+    (cd "$ROOT" && bun bots/create-bot.ts "$1" --local --no-chat > "$LOG/create-bot-$1.log" 2>&1)
+    [ -f "$ROOT/bots/$1/bot.env" ] || { echo "create-bot $1 left no bot.env:"; cat "$LOG/create-bot-$1.log"; exit 2; }
+}
+
 # HELPER=<bot> sets up a second account for the modes that trade with one (pickpocket --helper)
 for b in "$BOT" ${HELPER:-}; do
-    [ -f "$ROOT/bots/$b/bot.env" ] || (cd "$ROOT" && bun bots/create-bot.ts "$b" --local --no-chat > /dev/null)
+    ensure_bot "$b"
     sed -i.bak -e "s#^SERVER=.*#SERVER=localhost:$WEB_PORT#" -e "s#^GATEWAY_URL=.*#GATEWAY_URL=ws://localhost:$AGENT_PORT#" -e 's#^TELEMETRY=.*#TELEMETRY=false#' "$ROOT/bots/$b/bot.env"
 done
 
@@ -75,9 +85,7 @@ givers() { # lite runners for the rc mode, logged in one at a time in list order
     IFS=',' read -r -a GLIST <<< "$GIVERS"
     GI=0
     for G in "${GLIST[@]}"; do
-        if [ ! -f "$ROOT/bots/$G/bot.env" ]; then
-            (cd "$ROOT" && bun bots/create-bot.ts "$G" --local --no-chat > /dev/null)
-        fi
+        ensure_bot "$G"
         sed -i.bak -e "s#^SERVER=.*#SERVER=localhost:$WEB_PORT#" -e "s#^GATEWAY_URL=.*#GATEWAY_URL=ws://localhost:$AGENT_PORT#" -e 's#^TELEMETRY=.*#TELEMETRY=false#' "$ROOT/bots/$G/bot.env"
         GI=$((GI + 1)); IP=$(echo "${GIVERS_IP:-}" | cut -d, -f$GI)
         (cd "$ROOT/server/webclient" && LITE_CLIENT_IP=$IP exec bun src/lite/runner.ts "$G") > "$LOG/runner-$G.log" 2>&1 &
@@ -103,15 +111,15 @@ for spec in "$@"; do
         (cd "$ROOT" && bun docs/speedrun/scripts/tickprog-throttle.ts --debug-port=$((9390 + N)) "${parts[@]:1}") 2>&1 || STATUS=$?
         continue
     fi
-    if [[ "${parts[0]}" == *.ts ]]; then # a step-module driver (speedrun/lab/measure-*.ts)
-        (cd "$ROOT" && bun "${parts[0]}" "$BOT" "${parts[@]:1}") 2>&1 | grep -vE 'Pathfinding|^\[(Runner|BotSDK)\]' || STATUS=$?
+    if [[ "${parts[0]}" == *.ts ]]; then # a step-module driver (speedrun/lab/measure-*.ts); SPEEDRUN_CDP_URL is this tab's DevTools port
+        (cd "$ROOT" && SPEEDRUN_CDP_URL="http://127.0.0.1:$((9390 + N))" bun "${parts[0]}" "$BOT" "${parts[@]:1}") 2>&1 | grep --line-buffered -vE 'Pathfinding|^\[(Runner|BotSDK)\]' || STATUS=$?
         continue
     fi
     if [ "${parts[0]}" = wedge ]; then # the watchdog check; it leaves the tab wedged, so run it last
-        (cd "$ROOT" && bun docs/speedrun/scripts/tickprog-wedge.ts "$BOT" --debug-port=$((9390 + N)) "${parts[@]:1}") 2>&1 | grep -vE 'Pathfinding|^\[(Runner|BotSDK)\]|LOGOUT DEBUG' || STATUS=$?
+        (cd "$ROOT" && bun docs/speedrun/scripts/tickprog-wedge.ts "$BOT" --debug-port=$((9390 + N)) "${parts[@]:1}") 2>&1 | grep --line-buffered -vE 'Pathfinding|^\[(Runner|BotSDK)\]|LOGOUT DEBUG' || STATUS=$?
         continue
     fi
-    (cd "$ROOT" && bun docs/speedrun/scripts/tickprog-measure.ts "$BOT" "${parts[@]}") 2>&1 | grep -vE 'Pathfinding|^\[(Runner|BotSDK)\]' || STATUS=$?
+    (cd "$ROOT" && bun docs/speedrun/scripts/tickprog-measure.ts "$BOT" "${parts[@]}") 2>&1 | grep --line-buffered -vE 'Pathfinding|^\[(Runner|BotSDK)\]' || STATUS=$?
 done
 echo "=== render samples (tab/stats.log, last 5) ==="; tail -5 "$LOG/tab/stats.log"
 exit $STATUS
