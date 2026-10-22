@@ -205,6 +205,8 @@ Fleet accounts never use the browser client; this is for a child's one-off demo 
 
 On bbs this page reaches the demo's on-demand cache socket (`wss://rs-sdk-demo.fly.dev/`, 101) and loads its map files before login (rs/41, 2026-10-22). A tab whose `client.js` is the demo's own deployed bundle sends the socket to the page host instead and gets 400. Every demo login counts against the per-IP cap.
 
+**Wait for the scene before reading it.** `openSession` returns as soon as ticks advance, before the scene is built. A fresh profile loads every model the scene needs through the on-demand worker, at about 15 files a second on bbs. That took 6.8 s (tick 22) on Tutorial Island, and 25.8 s (tick 74, about 350 models, with about 80 players nearby) at Varrock west bank (rs/41 probes on bbs, 2026-10-22, n=1 each). Until then `nearbyLocs` is 0, even though nothing has failed. Wait for `nearbyLocs > 0`, or for the page's scene state to reach 2, with a budget of at least 60 s at busy sites before treating 0 locs as a fault.
+
 ## Helpers on the run machine
 
 A few helpers trade with the scored account on exact ticks, with no time to react: the Runecraft altar givers (the blind 7-tick cycle, `skills/runecraft.md` section 4), the trade giver that serves the scored account's hand-offs (the `mule` role) and the wine giver (the `wine` role with `receiver`, which is the same account as the trade giver). A relayed client from bbs is a tick late often enough to break those schedules, so these helpers run as lite clients **on the machine that runs the scored account**, beside its client, and not in the fleet. Everything else (gathering, crafting, buying, couriering stock to the trade giver ahead of a hand-off) stays on bbs.
