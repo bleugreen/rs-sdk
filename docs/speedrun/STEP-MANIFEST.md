@@ -940,7 +940,11 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   5 ticks, restart with one plain transition. Forced-slip reference: iron **3.51** ticks per ore
   with 15% of starters held, against 3.53 (measured; `skills/README.md`, open question 1). For
   contention, the second cluster north of East Ardougne (2710-2715, 3328-3332), 3.74 by the planner
-  and 4.02-4.12 measured at respawn 19 without a starter (`skills/mining.md` §4).
+  and 4.02-4.12 measured at respawn 19 without a starter (`skills/mining.md` §4). **The zoo contested by
+  other teams** (RUN-ORDER.md R26; m-demo, rs/259: waves of 7-10 accounts for ~40 of ~70 minutes,
+  ~70-100 ticks an interruption, ~335 that night): **rs/286** builds detection in the module and an
+  alternate 3.00-an-ore circuit by rule, with the switch lab-measured; the zoo stays the default, and
+  the north cluster was held by another group on the demo too.
 - **Acceptance, local:** browser tab, 300 ms, respawn 13 emulated, 200 ores at 99. Pass: at most
   **3.15** ticks per ore (3.00 +5%). rs/97's program measured 3.00 with 200 of 200 on the predicted
   tick (rs/97 in-page results via main, 05:50), and rs/82's overlay loop measured 3.05 in a tab
