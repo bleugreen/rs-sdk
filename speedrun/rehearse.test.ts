@@ -5,7 +5,9 @@ import { join } from 'path';
 import { baseState, FakeSdk } from './lib/fake-sdk';
 import type { DirectVerdict, GateCheck } from './lib/hostgate';
 import type { ProgramStatus } from './lib/programs';
-import { LOGOUT_BUTTON, logoutClean, type Session, startWatchdog } from './lib/session';
+import type { FrameCheck, FrontWindows, RecordingState, XWindow } from './lib/display';
+import { type ClientKind, LOGOUT_BUTTON, logoutClean, type LogoutResult, type Session, startWatchdog } from './lib/session';
+import type { TabFront } from './lib/tab';
 import { TickLog, type TickRow } from './lib/ticks';
 import { sleep, waitUntil } from './lib/wait';
 import type { Link } from './runner/resume';
@@ -14,6 +16,7 @@ import {
     annotation, compareHiscore, DEFAULT_GATE_BOT, type DirectRead, EXIT_HOST_RESERVED, formatPlayers, formatSummary, GATE_PLAYERS_STEP, gateRefusal, type InPageRead, kitMissing, kitWant,
     parseArgs, parseDirectJson, parseKit, PAUSE_STEP, playerReads, playerSwing, ProgramTracker, ReachTracker, readReservation, reservationPath, reservationRefusal, ReservationWatch,
     runAttempt, SessionClock, summarize, UsageError,
+    attemptFront, bracketAttempt, type FrontIO, frontLine, type FrontReport, gateTabProblems, gateTabRead, recordingProblems, type TabIO,
 } from './rehearse';
 import type { PlayerRow } from './tools/hiscore-scrape';
 
@@ -532,5 +535,272 @@ describe('host reservation: in flight (runAttempt)', () => {
         expect(ran).toEqual(['one', 'two']);
         expect(r).toEqual({ outcome: 'stopped before "three"; logged out', code: 4, paused: null });
         expect(client.logoutClicks()).toBe(1);
+    });
+});
+
+describe('the gate tab and the attempt never share the recorded display', () => {
+    const okVerdict = verdict(checkC(true));
+    const out = (ok: boolean): LogoutResult => (ok ? { ok, clickTick: 9, lastInWorldTick: 9, latencyTicks: 0, wallMs: 200, confirmedBy: 'page' } : { ok, clickTick: 9, lastInWorldTick: 9, latencyTicks: 0, wallMs: 5000, reason: 'still in game after timeout' });
+    const recording = (on: boolean | null): RecordingState => ({ display: ':10', on, ...(on ? { pid: 7, file: 'rec.mkv' } : {}) });
+
+    /** Every session and display event in order, over FakeSdk sessions. `recordings` answers io.recording() in turn (the last repeats). */
+    function fakeIO(o: { probeThrows?: boolean; gateLogout?: boolean; openThrows?: string; recordings?: (boolean | null)[]; closeThrows?: string } = {}) {
+        const events: string[] = [];
+        const recs = [...(o.recordings ?? [true, false])];
+        const io: TabIO = {
+            open: async (bot: string, client: ClientKind) => {
+                events.push(`open ${bot} ${client}`);
+                if (o.openThrows === bot) throw new Error('no in-game state within 120000 ms');
+                return { name: bot, client, sdk: new FakeSdk(baseState()), expectInWorld: true, sessionId: 1 } as unknown as Session;
+            },
+            probe: async (s, trials, label) => {
+                events.push(`probe ${s.name} ${trials}`);
+                if (o.probeThrows) throw new Error('the page published no loops');
+                return { label, account: s.name, verdict: okVerdict, loopRateP10: 72, at: '' };
+            },
+            logout: async s => {
+                events.push(`logout ${s.name}`);
+                return out(o.gateLogout ?? true);
+            },
+            stage: async bot => {
+                events.push(`stage ${bot}`);
+                return { how: 'opened', was: 'normal' };
+            },
+            closeTab: async s => {
+                events.push(`closeTab ${s.name}`);
+                if (o.closeThrows) throw new Error(o.closeThrows);
+                return { closed: 1, left: [] };
+            },
+            close: async s => void events.push(`close ${s.name}`),
+            front: async s => {
+                events.push(`front ${s.name}`);
+                return { ok: true, mark: s.name, display: ':10', tab: null, windows: null, frame: null, raised: false, warnings: [] };
+            },
+            recording: async () => {
+                const on = recs.length > 1 ? recs.shift()! : recs[0]!;
+                events.push(`recording ${on}`);
+                return recording(on);
+            },
+            pause: async () => void events.push('pause'),
+        };
+        return { io, events };
+    }
+    const gateBefore = ['open cairn_twin browser', 'probe cairn_twin 60', 'logout cairn_twin', 'stage cairn_smoke', 'closeTab cairn_twin', 'close cairn_twin'];
+    const gateAfter = ['open cairn_twin browser', 'probe cairn_twin 60', 'logout cairn_twin', 'closeTab cairn_twin', 'close cairn_twin'];
+    const opts = { gateBot: 'cairn_twin', gateProbeTrials: 60, bot: 'cairn_smoke', client: 'browser' as const };
+
+    function hooks(events: string[], o: { refuse?: string[]; loggedOut?: boolean; skipAfter?: string } = {}) {
+        const gates: string[] = [];
+        const fronts: FrontReport[] = [];
+        const recordings: RecordingState[] = [];
+        return {
+            gates,
+            fronts,
+            recordings,
+            h: {
+                gate: (r: { when: string }) => void gates.push(r.when),
+                refusal: (_: unknown, rec: RecordingState) => {
+                    recordings.push(rec);
+                    return o.refuse ? { code: 3, reasons: o.refuse } : null;
+                },
+                front: (f: FrontReport) => void fronts.push(f),
+                waiting: () => void events.push('waiting'),
+                attempt: async (s: Session) => {
+                    events.push(`attempt ${s.name}`);
+                    return { value: 'chain done', loggedOut: o.loggedOut ?? true, ...(o.skipAfter ? { skipAfter: o.skipAfter } : {}) };
+                },
+            },
+        };
+    }
+
+    test('gate out, attempt window staged, gate window closed, recording read, then the login; the after-probe once the recording stops', async () => {
+        const { io, events } = fakeIO({ recordings: [true, true, true, false] });
+        const { h, gates, fronts, recordings } = hooks(events);
+        const r = await bracketAttempt(io, opts, h, { pollMs: 1 });
+        expect(events).toEqual([
+            ...gateBefore, 'recording true', 'open cairn_smoke browser', 'front cairn_smoke', 'attempt cairn_smoke',
+            'recording true', 'waiting', 'pause', 'recording true', 'pause', 'recording false', ...gateAfter,
+        ]);
+        expect(gates).toEqual(['before', 'after']);
+        expect(recordings.map(x => x.on)).toEqual([true]);
+        expect(fronts.map(f => f.ok)).toEqual([true]);
+        expect(r.value).toBe('chain done');
+        expect(r.before?.staged).toEqual({ how: 'opened', was: 'normal' });
+        expect(r.after?.read?.label).toBe('gate tab after');
+        expect(r.refused).toBeNull();
+    });
+
+    test('a recording that does not stop: no gate window is opened on it', async () => {
+        const { io, events } = fakeIO({ recordings: [true] });
+        const r = await bracketAttempt(io, opts, hooks(events).h, { recordingWaitMs: 5, pollMs: 1 });
+        expect(events.filter(e => e.startsWith('open'))).toEqual(['open cairn_twin browser', 'open cairn_smoke browser']);
+        expect(r.after).toBeNull();
+        expect(r.afterSkipped).toContain('the recording on :10 was still running');
+    });
+
+    test('a refusal opens nothing for the attempt, and the gate account is already out', async () => {
+        const { io, events } = fakeIO();
+        const r = await bracketAttempt(io, opts, hooks(events, { refuse: ['(c) 4 catch-ups per minute'] }).h);
+        expect(events).toEqual([...gateBefore, 'recording true']);
+        expect(r.refused).toEqual({ code: 3, reasons: ['(c) 4 catch-ups per minute'] });
+        expect(r.session).toBeUndefined();
+    });
+
+    test('the after-probe waits for the attempt\'s confirmed logout, and skips when the attempt paused for the gate/run', async () => {
+        const a = fakeIO();
+        const r = await bracketAttempt(a.io, opts, hooks(a.events, { loggedOut: false }).h);
+        expect(a.events.at(-1)).toBe('attempt cairn_smoke');
+        expect(r.afterSkipped).toContain("cairn_smoke's logout was not confirmed");
+        const b = fakeIO();
+        const p = await bracketAttempt(b.io, opts, hooks(b.events, { skipAfter: 'paused for the gate/run' }).h);
+        expect(b.events.at(-1)).toBe('attempt cairn_smoke');
+        expect(p.afterSkipped).toBe('paused for the gate/run');
+    });
+
+    test('no gate probes: no gate tab, no staging, no after-probe wait', async () => {
+        const { io, events } = fakeIO();
+        const r = await bracketAttempt(io, { ...opts, gateProbeTrials: 0 }, hooks(events).h);
+        expect(events).toEqual(['recording true', 'open cairn_smoke browser', 'front cairn_smoke', 'attempt cairn_smoke']);
+        expect(r.before).toBeNull();
+        expect(r.after).toBeNull();
+    });
+
+    test('a lite attempt stages no window', async () => {
+        const { io, events } = fakeIO();
+        await bracketAttempt(io, { ...opts, client: 'lite' }, hooks(events).h);
+        expect(events.slice(0, 5)).toEqual(['open cairn_twin browser', 'probe cairn_twin 60', 'logout cairn_twin', 'closeTab cairn_twin', 'close cairn_twin']);
+    });
+
+    test('a front check that throws is a warning, never the attempt\'s end', async () => {
+        const { io, events } = fakeIO();
+        io.front = async () => {
+            throw new Error('CDP Page.bringToFront: websocket error');
+        };
+        const { h, fronts } = hooks(events);
+        const r = await bracketAttempt(io, opts, h, { pollMs: 1 });
+        expect(r.value).toBe('chain done');
+        expect(fronts[0]!.ok).toBeNull();
+        expect(fronts[0]!.warnings[0]).toContain('websocket error');
+    });
+
+    test('a failed probe still logs the gate account out and closes its window, and stands in the way', async () => {
+        const { io, events } = fakeIO({ probeThrows: true });
+        const r = await gateTabRead(io, 'cairn_twin', 60, 'before', { stage: 'cairn_smoke' });
+        expect(events).toEqual(gateBefore);
+        expect(gateTabProblems(r)).toEqual(['gate tab before: the probe failed: the page published no loops']);
+    });
+
+    test('an unconfirmed gate logout leaves the window (a closed tab is a client the server keeps in the world) and refuses', async () => {
+        const { io, events } = fakeIO({ gateLogout: false });
+        const r = await gateTabRead(io, 'cairn_twin', 60, 'before', { stage: 'cairn_smoke' });
+        expect(events).toEqual(['open cairn_twin browser', 'probe cairn_twin 60', 'logout cairn_twin', 'close cairn_twin']);
+        expect(gateTabProblems(r)[0]).toContain('the logout was not confirmed (still in game after timeout): cairn_twin may still be in the world');
+    });
+
+    test('a gate window that will not close (Chrome\'s last), a gate tab that does not open, no CDP: each stands in the way', async () => {
+        const last = fakeIO({ closeThrows: "cairn_twin's window is Chrome's last" });
+        expect(gateTabProblems(await gateTabRead(last.io, 'cairn_twin', 60, 'before'))).toEqual(["gate tab before: the window was not closed: cairn_twin's window is Chrome's last"]);
+        const shut = fakeIO({ openThrows: 'cairn_twin' });
+        expect(gateTabProblems(await gateTabRead(shut.io, 'cairn_twin', 60, 'before'))).toEqual(['gate tab before: the gate tab did not open: no in-game state within 120000 ms']);
+        const bare = fakeIO();
+        bare.io.closeTab = async () => null;
+        expect(gateTabProblems(await gateTabRead(bare.io, 'cairn_twin', 60, 'before'))[0]).toContain('no CDP_URL');
+    });
+
+    test('no recording on the display before the login refuses; an unknown one does not', () => {
+        expect(recordingProblems(recording(false))[0]).toContain('no recording on :10: start it before the attempt\'s login');
+        expect(recordingProblems(recording(true))).toEqual([]);
+        expect(recordingProblems({ display: null, on: null, why: 'no DISPLAY' })).toEqual([]);
+    });
+});
+
+describe('attemptFront: the live-frame pass line', () => {
+    const win = (name: string, id = '0x1'): XWindow => ({ id, name, types: ['NORMAL'], states: [] });
+    const shows = (name: string): FrontWindows => ({ active: win(name), top: win(name), windows: 3 });
+    const ours = shows('cairn_smoke - 2004Scape Bot Client');
+    const gateWin = shows('cairn_twin - 2004Scape Bot Client');
+    const frame = (match: boolean | null, n = 1): FrameCheck => ({ path: `f-${n}.png`, match, diff: match ? 3.2 : 41.5, at: { x: 0, y: 48 }, contrast: match === null ? 2 : 40, max: 12 });
+    const tab = (o: Partial<TabFront> = {}): TabFront => ({
+        title: 'cairn_smoke - 2004Scape Bot Client', focused: true, visibility: 'visible', viewport: { width: 1920, height: 978, dpr: 1 }, windowState: 'maximized', others: [], ...o,
+    });
+
+    function frontIO(looks: { w: FrontWindows; f: FrameCheck }[], o: Partial<FrontIO> = {}) {
+        const calls: string[] = [];
+        const ws = looks.map(l => l.w);
+        const fs = looks.map(l => l.f);
+        const io: FrontIO = {
+            display: ':10',
+            tab: async mark => {
+                calls.push(`tab ${mark}`);
+                return tab();
+            },
+            raise: async () => void calls.push('raise'),
+            windows: async () => {
+                calls.push('windows');
+                return ws.shift()!;
+            },
+            frame: async n => {
+                calls.push(`frame ${n}`);
+                return fs.shift()!;
+            },
+            settle: async () => {},
+            ...o,
+        };
+        return { io, calls };
+    }
+
+    test('in front, only window, maximised, and the frame shows it: PASS, nothing raised', async () => {
+        const { io, calls } = frontIO([{ w: ours, f: frame(true) }]);
+        const f = await attemptFront('cairn_smoke', io);
+        expect(f.ok).toBe(true);
+        expect(f.raised).toBe(false);
+        expect(calls).toEqual(['tab cairn_smoke', 'windows', 'frame 1']);
+        expect(frontLine(f)).toBe("live frame: PASS: cairn_smoke's tab is the only window, maximised and in front of :10; the frame shows it (difference 3.2 at 0,48; f-1.png)");
+    });
+
+    test('covered by the gate window: raised once, looked at again, PASS with the cover recorded', async () => {
+        const { io, calls } = frontIO([{ w: gateWin, f: frame(false, 1) }, { w: ours, f: frame(true, 2) }]);
+        const f = await attemptFront('cairn_smoke', io);
+        expect(calls).toEqual(['tab cairn_smoke', 'windows', 'frame 1', 'raise', 'windows', 'frame 2']);
+        expect(f.ok).toBe(true);
+        expect(f.before?.windows?.top?.name).toBe('cairn_twin - 2004Scape Bot Client');
+        expect(frontLine(f)).toContain('raised over "cairn_twin - 2004Scape Bot Client"');
+    });
+
+    test('the window is ours but the frame shows something else: raised, and FAIL if it still does', async () => {
+        const { io, calls } = frontIO([{ w: ours, f: frame(false, 1) }, { w: ours, f: frame(false, 2) }]);
+        const f = await attemptFront('cairn_smoke', io);
+        expect(calls).toContain('raise');
+        expect(f.ok).toBe(false);
+        expect(f.warnings).toEqual(["the live frame of :10 does not show cairn_smoke's tab (difference 41.5 over 12), even after raising it: the recording shows something else"]);
+        expect(frontLine(f)).toStartWith("live frame: FAIL for cairn_smoke's tab");
+    });
+
+    test('another page open, or a window not maximised, fails without a raise', async () => {
+        const others = frontIO([{ w: ours, f: frame(true) }], { tab: async () => tab({ others: ['bot=cairn_twin'] }) });
+        const a = await attemptFront('cairn_smoke', others.io);
+        expect(a.ok).toBe(false);
+        expect(a.warnings[0]).toBe("other pages are open on Chrome (bot=cairn_twin): the attempt's tab must be the only window");
+        expect(others.calls).not.toContain('raise');
+        const small = await attemptFront('cairn_smoke', frontIO([{ w: ours, f: frame(true) }], { tab: async () => tab({ windowState: 'normal' }) }).io);
+        expect(small.warnings).toEqual(["cairn_smoke's window is normal, not maximised"]);
+    });
+
+    test('a name that only contains the account is not its mark', async () => {
+        const twin = shows('cairn_smoke_2 - 2004Scape Bot Client');
+        expect((await attemptFront('cairn_smoke', frontIO([{ w: twin, f: frame(true) }, { w: twin, f: frame(true) }]).io)).ok).toBe(false);
+    });
+
+    test('no display, no frame, or an inconclusive frame: UNVERIFIED (null), warned', async () => {
+        const none = await attemptFront('cairn_smoke', frontIO([], { windows: null }).io);
+        expect(none.ok).toBeNull();
+        expect(none.warnings).toEqual(['no DISPLAY: what the display shows was not read']);
+        expect(frontLine(none)).toStartWith("live frame: UNVERIFIED for cairn_smoke's tab");
+        const broken = await attemptFront('cairn_smoke', frontIO([{ w: ours, f: frame(true) }], { frame: async () => { throw new Error('ffmpeg x11grab :10: exit 1'); } }).io);
+        expect(broken.ok).toBeNull();
+        expect(broken.warnings).toEqual(['the live frame could not be taken: ffmpeg x11grab :10: exit 1']);
+        const flat = await attemptFront('cairn_smoke', frontIO([{ w: ours, f: frame(null) }]).io);
+        expect(flat.ok).toBeNull();
+        expect(flat.warnings[0]).toContain('inconclusive (contrast 2');
     });
 });
