@@ -164,8 +164,8 @@ scripts are in section 4; the shared primitives and their build order are in sec
 2. **`runSteps` idled SCORED at every boundary**: fixed (#92, measured 2 ticks per boundary before
    and 0 after; main, 08:30).
 3. **S09 starts at Mining 64**, not 49 (Plague City's 2,425 base): accepted by main (M0602).
-4. **The tuned Runecraft cycle needs a direct-path giver**: the givers run on the Ashburn machine
-   through rs/117's launcher; rs/131 builds the scored side's in-page cycle.
+4. **The tuned Runecraft cycle needs a direct-path giver**: the givers run on SCORED's machine, the
+   Ashburn machine chosen at the gate (RUN-HOST.md steps 4 and 5a), through rs/117's launcher; rs/131 builds the scored side's in-page cycle.
 
 ### Module status
 
@@ -305,7 +305,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     in-page probe at least 58 of 60; (b) publication p90 reported, not a pass line; (c) at most 2
     catch-up ticks per probe minute (a failure means re-measure); (d) the tab loop rate p10 at least
     50 per second (`speedrun/lib/hostgate-verdict.ts`, `tickSteadiness`). The start time is chosen
-    by a 3-5 minute gate read, not by the clock.
+    by a 3-5 minute gate read, not by the clock, taken on both Ashburn machines in the same minute,
+    which also chooses the machine (RUN-HOST.md step 5a; tenet 17).
 - **In-run pause rule** (rs/102, main 07:45): a reactive or knife step pauses when catch-ups exceed
   about 5 per minute and resumes when they fall under 1 per minute; `demo-status.ts`'s
   `restartLikely` (at least ~10 a minute for 2 minutes) triggers the same pause, never a save.
@@ -968,11 +969,12 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   robust, 29 x 8. **Resume:** a page reload after 8 crafts was resumed by `runResumable`, and the
   remaining 12 ran at 7, the resumed first trade again at 7 (m). **Fault:** with 6 trades forced to
   fail, the program restarted robust and recovered at 8 a craft (m).
-- **Pending change that S21's 7-tick pricing depends on:** the module's auto rule picks tuned only
-  for givers that logged in before SCORED. Under main's bucket rule (givers on a lower bucket, logged
-  in after SCORED) it would wrongly choose robust, +1 a craft (~+161 on S21). rs/196 switches it to a
-  'handled before SCORED' field published by the giver side once rs/131 confirms the rule
-  (RUN-ORDER.md R12, O38).
+- **The auto rule and placement:** the module's auto rule picks tuned for givers that logged in
+  before SCORED, which is right for the plan of record: every giver on SCORED's machine, one address
+  group, logged in first (main, 16:35 PDT; RUN-ORDER.md R12, measured by rs/131). Only the
+  lower-group alternative (givers on the other Ashburn machine, logged in after SCORED) would need
+  rs/196's 'handled before SCORED' field and a cross-machine cue; until both exist that alternative
+  is not used, and S21's 7-tick pricing does not depend on them.
 - **S06's air runes:** SCORED drops the 594 air runes S06 makes (crafts at Runecraft 1, 20, 28, 34,
   37, 40 and 43, floor(level / 11) + 1 a essence, r, `runecraft.rs2`) on T06-07, ~1-2 ticks (i;
   rs/158's decision). S21 refuses to start while they are held, because a 27-essence trade plus the

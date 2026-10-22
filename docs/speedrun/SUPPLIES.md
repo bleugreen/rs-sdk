@@ -125,18 +125,27 @@ logs in after SCORED drops to the robust 8-tick schedule for its own trades.
 
 ### Peak concurrent logins (the swarm bound)
 
-Main's rule (15:35 PDT; a tenet is proposed): **our simultaneous demo logins, summed across every
-host, stay at or under 100, with a working cap of 80.** The server's operator bans at 100
+Tenet 16 (cairn://p/rs/tenets/16, approved 17:43 PDT) and main's working cap: **our simultaneous
+demo logins, summed across every host, both Ashburn machines included, stay at or under 100, with a
+working cap of 80.** The server's operator bans at 100
 simultaneous connections per IP, and deliberately spreading across IPs to evade it is what gets
 accounts banned. The count is taken across every host before SCORED's login (RUN-HOST.md step 7),
-and fleet accounts not needed during the run are logged out.
+and fleet accounts not needed during the run are logged out. Rehearsals on the Ashburn machine the run
+does not use are paused from the gate to the run's teardown, and anything of ours still logged in
+there counts.
 
-The rosters are this page's givers. Every rs/117 giver logs in **before SCORED's run login** ("How
-hand-offs work"; RUN-ORDER.md R12): login order decides the tuned Runecraft cycle and the bone
-givers' roll-label requests, and SCORED does not relog until S25c. So **S21's givers are online from
+The rosters are this page's givers. Every rs/117 giver runs on SCORED's machine and logs in **before
+SCORED's run login** ("How hand-offs work"; RUN-ORDER.md R12, measured): on one machine login order
+decides the tuned Runecraft cycle and the bone givers' roll-label requests, and SCORED does not relog
+until S25c. So **S21's givers are online from
 the run login, not only in S21**, and the peak is at the start. An account no longer needed can log
 out (the 7 air givers after S06, b01-b04 after S07's last load, the S21 givers after S21) without
 disturbing the others' order (i).
+
+**At the start gate**, before the machine is chosen (RUN-HOST.md step 5a): S06's 7 air-altar givers
+and a gate account on **each** Ashburn machine, 16 in all, plus the ambassador and the bbs roles the
+run uses; the rest of the roster logs in on the chosen machine after the choice, and the other
+machine's 7 log out.
 
 | Phase | SCORED and the ambassador | Trade-giver pool (the hand-offs, H4m, S18's top-ups, the wine) | Air altar givers (S06) | Bone givers b01-b04 (S07) | Body-altar givers (S21) | Run accounts | With the gathering fleet (~53) | Nature altar instead (~52 givers): run accounts; with the fleet |
 |---|---|---|---|---|---|---|---|---|
@@ -157,24 +166,21 @@ when the rest of the fleet is out.)
   (gathering is finished by run day; RUN-HOST.md step 7), not one of two fixes. Drawing the 7 air
   and 4 bone givers from the 22 body-altar givers also helps: 26 run accounts, ~79 with the fleet.
   rs/117 sets the roster.
-- **Per machine.** In S21 one machine holds ~25 of these (22 givers, the 2 trade givers and
-  SCORED; the ambassador is elsewhere), above main's ~20-per-machine note. Flagged to rs/host and
-  main; fold-in 10 places the accounts across machines (RUN-ORDER.md O38).
-- **Open: when S21's givers log in** (RUN-ORDER.md O38). This table follows this page's reading of
-  R12, every rs/117 giver in before SCORED. The host thread's plan (16:15 PDT, going into fold-in
-  10) logs S21's roster in later, on the running machine only, with only S06's 7 givers at the
-  start; if processing order follows login order, rs/131's `rc-cycle` then finishes each SCORED-first
-  turn on the robust 8-tick schedule, ~+161 on S21. Under that plan the start falls to ~68 with the
-  fleet in (15 run accounts) and S21 stays ~79. rs/host and main decide, with rs/131 and rs/117 on
-  processing order.
+- **Per machine.** From the run login through S06 the chosen machine holds SCORED and ~35 givers
+  (7 air, 22 body, 4 bone, 2 trade; the ambassador is elsewhere), ~25 by S21. That is fine on the
+  swarm side: the demo's bound is per IP and the cap a total, and main's "~20 a machine" was an
+  observation, not a cap (main, 16:24 PDT). The CPU side is the giver-load check, pending
+  (RUN-ORDER.md O41).
+- **Settled: S21's givers log in before SCORED** (RUN-ORDER.md O38, settled; main, 16:35-16:36
+  PDT), on SCORED's machine, so this table stands. The host plan of a later S21 login (16:15 PDT) is
+  withdrawn.
 - **The nature altar** (RUN-ORDER.md's sensitivity row) takes ~52 givers: ~107-109 through S21 with
   the fleet in, ~30 more givers than the body plan's 22, so it requires **logging out at least 30
-  fleet accounts**, which is plausible because gathering is finished by run day. If the givers log in
-  before SCORED (the open question above), that holds
-  **from before SCORED's run login through the end of S21**, not for S21 alone, and it is at least 40
-  unless the 7 air and 4 bone givers are drawn from the 52 (~120 at the start otherwise). A SCORED
-  relog before S21 (~3.6 ticks, RUN-ORDER.md section 4) would let the givers log in late instead; no
-  step plans one (RUN-ORDER.md O38).
+  fleet accounts**, which is plausible because gathering is finished by run day. With the givers in
+  before SCORED (settled), that holds **from before SCORED's run login through the end of S21**,
+  not for S21 alone, and it is at least 40 unless the 7 air and 4 bone givers are drawn from the 52
+  (~120 at the start otherwise). It stays eligible only if rs/194 holds 4 or more talismans before
+  the run's eve and the ~65-client load check passes (main, 17:07 PDT; RUN-ORDER.md O41).
 
 ### Status by hand-off: rs/41's forecast to 2026-10-23
 
@@ -302,7 +308,7 @@ section 1).
    section 1, "Status by hand-off"), ~126,000 coins in H22.
 8. rs/117's helpers on the run machine (the trade-giver pool, the four S07 bone givers, the 7 air altar
    givers, the N altar givers for S21, at the body altar while no nature talismans are held (22
-   givers on 23 body talismans, m, lab, rs/163; when S21's givers log in is open, RUN-ORDER.md O38), and the talisman keeper if they arrive) are logged in, before SCORED.
+   givers on 23 body talismans, m, lab, rs/163; they log in before SCORED, RUN-ORDER.md O38, settled), and the talisman keeper if they arrive) are logged in, before SCORED. "The run machine" is the Ashburn machine chosen at the gate (RUN-HOST.md step 5a).
 9. H1-H5 and H4.1 are staged (H1 at the landing tile, H2's row dropped and past its reveal, H4 at
    Doric's, H4.1 at the oak tile, H5's seven givers in the air altar room or ready to enter).
 10. The H17 roster is staffed and rehearsed, or the logout fallback is agreed.
