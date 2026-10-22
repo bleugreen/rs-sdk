@@ -33,6 +33,13 @@
 // entered anywhere off Crandor at stage 9, returns by the ship: a Dragonfire shield from the Duke,
 // the re-supply (weapon, food, planks, nails, hammer) from `resupplyFrom`, Ned re-hired, the hull
 // patched again, the voyage. A death inside L's fight takes the same path.
+//
+// Lab acceptance. Lite (PR #298, bgsrv-mac): 3 fixed and 3 burst A-L chains, burst mean 1,292.
+// Browser client (rs/378, the Ashburn twin, local lab engine, burst, bundle built from ff300a82 with
+// rs/309's click layer): two A-L chains, 1,424 and 1,299 ticks, and every loc-op-dialogue and
+// post-landing segment (B-G, I-L) 3 of 3 from its lab fixture (lab/quests/dragon-slayer.ts). The
+// 1,424 holds B's only stall in 5 B runs: 37 ticks (4 in the others) from the welcome page closing
+// to the Guild master's dialogue opening; the door and the page were on time.
 
 import type { BotWorldState, NearbyLoc, PrayerName } from '../../sdk/types';
 import { measure } from '../lib/ticks';
