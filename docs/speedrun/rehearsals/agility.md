@@ -138,6 +138,7 @@ lab bot (unit-tested on the fake SDK only).
 Not a record attempt: section 6 prices the plan below stunagile's row. Under
 main's ruling (addendum 18 as amended 19:56 PDT), cairn_jumps runs to 99 as a
 measurement once rs/147 grants it, with protect off and the kit in section 6.4.
+The run itself, in its sessions, is section 7.
 
 ## 6. Prayer 43 and Protect from Melee (rs/241)
 
@@ -464,3 +465,77 @@ So 66 is this engine's floor for the Wilderness lap, and stunagile's implied ave
 over 52 -> 99 can't come from a faster clean lap. Its 6,772 sits at our distribution's 21st percentile
 (section 6.7): a run with fewer falls explains it. The cairn_jumps attempt's per-lap log will show
 the demo's own spread of fall loops.
+
+## 7. Demo run: cairn_jumps (rs/295, rs/310)
+
+One account, `cairn_jumps`, one tick log (`~/rs-run/cairn_jumps.jsonl` on the twin) across every
+session, so total playtime is one series; the hiscore is the authority on the total. Machine: the
+twin (HOST.md), browser client on the xrdp display `:10`, Chrome 156, page served from the
+attempt's worktree, gateway from `~/rs-sdk`. Module defaults throughout: `eatAt: 'land'`,
+`eatGap: 3`, `pauseFor: 'threat'`, `playerRadius: 15`, `maxPauses: 3`, protect off. Every figure
+is measured (m) from the tick log, the harness log and its summary, unless labelled.
+
+### 7.1 Session A: creation to the Gnome south gate (rs/295, 2026-10-22 06:08-06:14Z)
+
+Worktree `~/rs-295` at 82cadf6d; `--kit-from=cairn_mule2 --kit=knife:1,cake:7,shark:2`, the
+top-up `topUpWant=cake:18` from `cairn_mule2`, and a drop of the starter items.
+
+| Row | Result |
+|---|---|
+| `(gate) players` | 1,791 online |
+| `(gate) direct` (cairn_twin, 06:08:38Z) | (a) 59/60, (c) 0 catch-ups/min, tick p90 481.5 ms (over the 400 report line); vantage edge iad, TCP connect p50 1.9 ms |
+| `(gate) in-page before` (cairn_twin's tab) | (a) 58/60, (c) 0/min, loop p10 72.8/s, tick p90 503 ms |
+| `(gate) recording` | `~/recordings/rs295-agility-20261022T060833Z.mkv` on `:10` |
+| `(gate) live frame` | PASS: cairn_jumps's tab the only window, maximised, in front; frame difference 2.2 |
+| S00 tutorial skip | **4 ticks** (2-6) |
+| S01 kit | **8 ticks** (6-14) |
+| `agility:top-up` | settled on tick 24 (the trade 6 ticks), inside walk-gnome |
+| `agility:walk-gnome` | **561 ticks** (14-575), **failed at the gate**: `No path to (2461, 3386) from (2461, 3382)` |
+| Logout | click on tick 575, confirmed by the page; session 576 ticks |
+| `(players) end` | 1,790 |
+| TICKMON | 0 glued ticks in every minute; tick period 327-368 ms |
+
+One cake was eaten on the walk (rs/295's report). The player reached the gate tile (2461,3382)
+about tick 570. The gate click opened Femi's first-visit scene ('Hello there.', tick 571), the
+browser client's dialogue was not continued, and the retried walk met the closed gate (rs/309's
+fault 1).
+
+### 7.2 Session B: the first resume (rs/295, 06:24Z)
+
+Worktree `~/rs-295` at e67edee1 (any failed leg tries the gate). The gate came from a direct read
+taken just before (cairn_twin, 06:22:33Z: (a) 58/60, (c) 0/min, tick p90 475.6 ms; 1,795 online),
+with no gate tab (`--gate-probe-trials=0`). The same recording was still running, and the live
+frame passed (difference 2.3).
+
+The harness resumed at `agility:walk-gnome` (S00 and the kit already done). The session started
+under 'Loading - please wait': the old gate pass clicked the gate before the region was built and
+returned success without the player moving (rs/309's fault 2), the walk failed again at (2461,3382),
+and the step failed on tick 10. Logout click on tick 10; session 11 ticks; 1,793 online at the end.
+
+### 7.3 Totals after rs/295
+
+| | Ticks |
+|---|---|
+| Steps | S00 4, kit 8, walk-gnome 561 + 9 = 570; 582 in all |
+| Sessions | 576 + 11 = 587 |
+| Playtime by the log (each session's last tick + 1) | **589** |
+| Hiscore Overall | **576**: session A's 577 less 1; session B's 12 don't show, because the row moves only on a level gain (HARNESS.md, "Relogs") |
+| Agility | 1 (no hiscore row under 15) |
+
+The model's fixed part to the Gnome course start is 25 (S00, kit, top-up) + 595 (Lumbridge to the
+course start, the lab's 571-592 to the gate plus the pass, section 1) = 620. Session A was on that
+pace to the gate (14 + 561 to arrive about tick 570, against the lab's 571-592).
+
+### 7.4 The resume (rs/310)
+
+The resume runs from a worktree of rs/147's mission branch at 71c86565, which carries rs/309's
+shared layer (#321, c4e2a681): `passGate` in `speedrun/lib/travel.ts` clears Femi's scene and
+confirms the far side, and a world click while the region loads is reported as `scene_loading`,
+never as a success. Served-page check before login, on the bundle built in `~/rs-310`: `eatAt` 4
+hits and rs/309's `sceneReady` 1 hit; `GNOME_STRONGHOLD_GATE` is Bun-side, in the worktree's
+`travel.ts` and `agility.ts`. The launch is session B's, with the cairn_twin gate tab back (2
+logins), `--claim-owner=rs/310`, and the same `--log`.
+
+Status: staged on the twin and waiting for a window. Main's twin order for 2026-10-22 puts this
+resume last, after rs/185's browser runs, host's gate work, rs/393's `--until=S14` dress rehearsal
+and rs/439's Firemaking, and only if about 55 minutes remain before the floor freeze.
