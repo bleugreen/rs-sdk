@@ -88,7 +88,9 @@ const config = {
                       sites,
                       scope,
                       ...limit,
-                      ...(ret ? { acceptReturn: true } : {}),
+                      // The returning stand-in idles through its pace, so a standing request goes stale and opens only on a
+                      // re-send (the run's burying account keeps bouncing it fresh): re-send every 30 ticks instead of 100.
+                      ...(ret ? { acceptReturn: true, resendTicks: Number(arg('resend', '30')) } : {}),
                       ...(i === finalAt ? { finalExtras: mix.length ? RUNES.map(({ item, count }) => ({ item, count })) : RUNES } : {})
                   }
         }));
