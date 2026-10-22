@@ -6,10 +6,18 @@
 // mis-clicked, and the choice queue only advances when a click is accepted.
 // Level-up pages (and their unlock pages) that interrupt a conversation are
 // dismissed and counted apart from the conversation's own pages.
+//
+// Burst mode: given the conversation's known shape (`shape`, CONVENTIONS.md
+// notation) and `burst`, each run of two or more pure continue pages is cleared
+// with one blind `continueBurst`. Every page is checked against the shape as it
+// comes; the first disagreement, or a burst that does not land whole, turns
+// bursting off and the rest goes one page per tick. A shape that over-counts a
+// run before a choice is not detectable (the extra continue is refused by the
+// engine at the choice and costs nothing); one that under-counts is.
 
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState } from '../../sdk/types';
-import { classifyPage, clickContinue, clickOption, findOption, pageText, type OptionPattern } from './dialogue';
+import { classifyPage, clickContinue, clickOption, continueBurst, findOption, pageText, type OptionPattern } from './dialogue';
 import { levelUpChain } from './levelup';
 import { tickMs, type Pred, type StateSource } from './wait';
 
@@ -39,6 +47,82 @@ export interface ConverseOptions {
     closeModals?: boolean;
     /** Print each answered page. */
     log?: boolean;
+    /**
+     * Pages the conversation did not ask for (the Monkey Madness backpack
+     * monkey's chat): each page an entry matches is dismissed, counted in
+     * `interrupts`, and never counted as the conversation opening or reopening.
+     * Checked before the level-up rule.
+     */
+    interrupts?: readonly Interrupt[];
+    /**
+     * The conversation's known shape in CONVENTIONS.md notation, as recorded in
+     * the quest docs: `Nc` a run of N pure continue pages, `opt` (or `N opt`) an
+     * option click, `state` a continue page after which the server changes
+     * state (a varp, an item, a p_delay), never burst across. For example
+     * "3c, opt, 3c, state, 8c, opt, 13c". The pages seen are checked against it
+     * (result `shape`); with `burst` it also drives the bursts.
+     */
+    shape?: string;
+    /**
+     * Clear each run of two or more continues in `shape` with one blind burst
+     * (lib/dialogue.ts `continueBurst`, rs/51), falling back to one page per
+     * tick once a burst does not land or the pages leave the shape. Requires
+     * `shape`; false (the default) answers every page as it comes.
+     */
+    burst?: boolean;
+}
+
+/**
+ * An unsolicited page and how to get rid of it, for `converse` and `act`.
+ * `match` sees published states with a dialogue open. It may be called more
+ * than once for one state and must give the same answer each time; it may keep
+ * state across ticks (as `levelUpChain` does). A chain
+ * of pages (the monkey's three-page dream) needs a `match` that covers every
+ * page of it.
+ */
+export interface Interrupt {
+    /** For transcripts. */
+    name?: string;
+    match: (s: BotWorldState) => boolean;
+    /** `continue` clicks the page on (a chat page); `close` sends close-modal. */
+    dismiss: 'continue' | 'close';
+}
+
+/** Level-up pages and the unlock pages after them, as an Interrupt (fresh chain state per call). */
+export function levelUpInterrupt(): Interrupt {
+    return { name: 'level-up', match: levelUpChain(), dismiss: 'continue' };
+}
+
+/** The first entry matching `s`, if its dialogue is open. */
+export function matchInterrupt(interrupts: readonly Interrupt[] | undefined, s: BotWorldState): Interrupt | undefined {
+    if (!interrupts?.length || !s.dialog.isOpen) return undefined;
+    return interrupts.find(i => i.match(s));
+}
+
+/** Send an interrupt's dismissal. */
+export function dismissInterrupt(sdk: Pick<BotSDK, 'getState' | 'sendClickDialog' | 'clickDialogByText' | 'sendCloseModal'>, it: Interrupt) {
+    return it.dismiss === 'close' ? sdk.sendCloseModal() : clickContinue(sdk);
+}
+
+/** One part of a conversation's shape: a run of pure continue pages, an option click, or a state-changing continue page. */
+export type ShapePart = { kind: 'continue'; n: number } | { kind: 'opt' } | { kind: 'state' };
+
+/** What a conversation run with a `shape` did with it. */
+export interface ConverseShape {
+    /** Bursting was asked for. */
+    burst: boolean;
+    /** Continue pages cleared by blind bursts; the rest of `pages` (`stepPages`) went one per tick. */
+    burstPages: number;
+    stepPages: number;
+    /** Bursts sent, and those that did not land whole (each turns bursting off). */
+    bursts: number;
+    failedBursts: number;
+    /** The shape given and the pages seen, both as `dialogueRuns` writes them (state pages count as continues). */
+    expected: string;
+    seen: string;
+    matches: boolean;
+    /** Why bursting or shape-following stopped early, with the tick: the pages left the shape, or a burst failed. */
+    stopped?: string;
 }
 
 export interface ConverseResult {
@@ -63,9 +147,54 @@ export interface ConverseResult {
     /** Choices not used. */
     remaining: OptionPattern[];
     reason?: string;
+    /** Present when `shape` was given. */
+    shape?: ConverseShape;
+    /** Pages dismissed by `interrupts` (present when interrupts were given). */
+    interrupts?: number;
 }
 
 const short = (s: string) => s.replace(/\s+/g, ' ').slice(0, 90);
+
+/** Parse a shape ("4c, opt, 6c, state, 2c"; "7 opt" is seven option clicks). Adjacent continue runs merge. Throws on anything else. */
+export function parseShape(shape: string): ShapePart[] {
+    const parts: ShapePart[] = [];
+    for (const raw of shape.split(',')) {
+        const t = raw.trim();
+        if (!t) continue;
+        const c = /^(\d+)\s*c$/i.exec(t);
+        const o = /^(?:(\d+)\s*)?opt$/i.exec(t);
+        if (c && Number(c[1]) > 0) {
+            const prev = parts.at(-1);
+            if (prev?.kind === 'continue') prev.n += Number(c[1]);
+            else parts.push({ kind: 'continue', n: Number(c[1]) });
+        } else if (o && (o[1] === undefined || Number(o[1]) > 0)) {
+            for (let i = 0; i < Number(o[1] ?? 1); i++) parts.push({ kind: 'opt' });
+        } else if (/^state$/i.test(t)) {
+            parts.push({ kind: 'state' });
+        } else {
+            throw new Error(`converse: bad shape token "${t}" in "${shape}" (want Nc, opt, N opt or state)`);
+        }
+    }
+    return parts;
+}
+
+/** A shape as `dialogueRuns` would write the transcript of a conversation that follows it: state pages count as continues. */
+export function shapeRuns(shape: string | readonly ShapePart[]): string {
+    const parts = typeof shape === 'string' ? parseShape(shape) : shape;
+    const out: string[] = [];
+    let c = 0;
+    for (const p of parts) {
+        if (p.kind === 'opt') {
+            if (c) out.push(`${c}c`);
+            c = 0;
+            out.push('opt');
+        } else c += p.kind === 'state' ? 1 : p.n;
+    }
+    if (c) out.push(`${c}c`);
+    return out.join(', ');
+}
+
+const partText = (p: ShapePart | undefined, used = 0) => (!p ? 'the end' : p.kind === 'continue' ? `${p.n}c (${used} done)` : p.kind);
 
 /**
  * Answer the dialogue that is open or about to open. Call it right after the
@@ -85,6 +214,57 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
         res.transcript.push(`[${tick}] ${line}`);
         if (opts.log) console.log(`  [dlg ${tick}] ${line}`);
     };
+    if (opts.burst && opts.shape === undefined) return Promise.reject(new Error('converse: burst needs the conversation\'s shape'));
+    let plan: ShapePart[] | null;
+    try {
+        plan = opts.shape !== undefined ? parseShape(opts.shape) : null;
+    } catch (e) {
+        return Promise.reject(e);
+    }
+    const shape: ConverseShape | undefined = plan
+        ? { burst: !!opts.burst, burstPages: 0, stepPages: 0, bursts: 0, failedBursts: 0, expected: shapeRuns(plan), seen: '', matches: false }
+        : undefined;
+    if (shape) res.shape = shape;
+    if (opts.interrupts) res.interrupts = 0;
+    // Position in the shape: the part the next page belongs to, and the pages of a continue run already answered.
+    const cursor = { part: 0, used: 0 };
+    let following = plan !== null;
+    let bursting = following && !!opts.burst;
+    const expected = () => (plan && following ? plan[cursor.part] : undefined);
+    const leave = (tick: number, why: string) => {
+        if (shape && shape.stopped === undefined) {
+            shape.stopped = `[${tick}] ${why}`;
+            note(tick, `shape: ${why}`);
+        }
+        bursting = false;
+    };
+    const diverge = (tick: number, why: string) => {
+        if (!following) return;
+        leave(tick, `${why} at part ${cursor.part + 1}, ${partText(plan![cursor.part], cursor.used)}`);
+        following = false;
+    };
+    /** Before answering a page: does the shape expect it? */
+    const expect = (tick: number, kind: 'continue' | 'opt') => {
+        const p = expected();
+        if (!following) return;
+        if (kind === 'opt' ? p?.kind !== 'opt' : p?.kind !== 'continue' && p?.kind !== 'state') diverge(tick, `${kind === 'opt' ? 'a choice' : 'a continue page'} came`);
+    };
+    /** After answering: move the cursor past what was answered. */
+    const consume = (tick: number, kind: 'continue' | 'opt', n = 1) => {
+        const p = expected();
+        if (!p) return;
+        if (kind === 'opt' || p.kind === 'state') {
+            cursor.part++;
+            cursor.used = 0;
+            return;
+        }
+        if (p.kind !== 'continue' || cursor.used + n > p.n) return diverge(tick, `${n} continue page(s) answered`);
+        cursor.used += n;
+        if (cursor.used === p.n) {
+            cursor.part++;
+            cursor.used = 0;
+        }
+    };
 
     return new Promise((resolve, reject) => {
         let last: { key: string; tick: number; sawWaiting: boolean } | null = null;
@@ -92,6 +272,7 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
         let closedSince = -1;
         let untilAt = -1;
         let lastModal = -1;
+        let interruptKey: string | undefined;
         let done = false;
         const stop = () => {
             done = true;
@@ -103,6 +284,11 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
             stop();
             res.ok = ok;
             if (reason) res.reason = reason;
+            if (shape) {
+                shape.stepPages = res.pages - shape.burstPages;
+                shape.seen = dialogueRuns(res.transcript);
+                shape.matches = shape.seen === shape.expected;
+            }
             if (res.opened) {
                 res.endTick = closedSince >= 0 ? Math.max(closedSince, untilAt) : (sdk.getState()?.tick ?? t0);
                 res.ticks = res.endTick - t0;
@@ -115,10 +301,18 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
             reject(e instanceof Error ? e : new Error(String(e)));
         };
 
-        const answer = async (s: BotWorldState) => {
+        const answer = async (s: BotWorldState, it: Interrupt | undefined) => {
             busy = true;
             try {
                 const d = s.dialog;
+                if (it) {
+                    const r = await dismissInterrupt(sdk, it);
+                    if (r.success) {
+                        res.interrupts = (res.interrupts ?? 0) + 1;
+                        note(s.tick, `interrupt${it.name ? ` ${it.name}` : ''}: ${short(pageText(d))}`);
+                    } else last = null;
+                    return;
+                }
                 if (levelUp(s)) {
                     const r = await clickContinue(sdk);
                     if (r.success) {
@@ -128,13 +322,56 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
                     return;
                 }
                 if (classifyPage(d) === 'continue') {
+                    expect(s.tick, 'continue');
+                    const p = expected();
+                    const k = p?.kind === 'continue' ? p.n - cursor.used : 0;
+                    if (bursting && k >= 2 && shape) {
+                        const next = plan![cursor.part + 1];
+                        const until: Pred | undefined = !next
+                            ? st => !st.dialog.isOpen
+                            : next.kind === 'opt'
+                              ? st => classifyPage(st.dialog) === 'choice' && !st.dialog.isWaiting
+                              : undefined; // a state page next: only a quiet tick tells the landing apart
+                        const text = short(pageText(d));
+                        const b = await continueBurst(sdk, k, { ...(until ? { until } : {}), maxTicks: Math.ceil(k / 5) + 3 });
+                        shape.bursts++;
+                        const landed = (how: string) => {
+                            res.pages += k;
+                            for (let i = 0; i < k; i++) note(s.tick, `page: ${i === 0 ? text : `(${how} ${i + 1}/${k})`}`);
+                            consume(s.tick, 'continue', k);
+                            last = null;
+                        };
+                        if (b.mode === 'burst' && b.ok) {
+                            shape.burstPages += k;
+                            landed('burst');
+                            return;
+                        }
+                        shape.failedBursts++;
+                        if (b.mode === 'fallback' && b.ok) {
+                            // The first continue went out, the client refused the blind rest, and they went one per tick.
+                            leave(s.tick, `burst of ${k} fell back to one page per tick`);
+                            landed('fallback');
+                            return;
+                        }
+                        if (b.mode === 'fallback' && b.ticks === 0) {
+                            // Nothing was sent: answer this page the ordinary way, below.
+                            leave(s.tick, `burst refused: ${b.reason ?? 'unknown'}`);
+                        } else {
+                            // Some pages moved, how many is unknown: the shape can no longer be followed.
+                            diverge(s.tick, `burst of ${k} did not land (${b.reason ?? 'unknown'})`);
+                            last = null;
+                            return;
+                        }
+                    }
                     const r = await clickContinue(sdk);
                     if (r.success) {
                         res.pages++;
                         note(s.tick, `page: ${short(pageText(d))}`);
+                        consume(s.tick, 'continue');
                     } else last = null;
                     return;
                 }
+                expect(s.tick, 'opt');
                 const idx = queue.findIndex(p => findOption(d, p) !== undefined);
                 let pattern: OptionPattern | undefined = idx >= 0 ? queue[idx] : undefined;
                 if (pattern === undefined) {
@@ -148,6 +385,7 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
                     res.options++;
                     if (idx >= 0 && !opts.keep) queue.splice(idx, 1);
                     note(s.tick, `> ${c.text}${idx < 0 ? ' (default)' : ''}`);
+                    consume(s.tick, 'opt');
                 } else if (c.reason === 'unsupported_client') {
                     fail(new Error('converse: the client does not support guarded dialogue clicks; update and restart it'));
                 } else last = null; // stale or gone: judge the next published page afresh
@@ -166,21 +404,26 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
             if (s.tick - t0 > maxTicks) return finish(false, 'timeout');
             const d = s.dialog;
             if (d.isOpen) {
-                if (!res.opened) {
-                    res.opened = true;
-                    res.firstTick = s.tick;
-                }
-                closedSince = -1;
-                untilAt = -1;
                 const key = d.pageId ?? `${pageText(d)}|${d.options.map(o => o.text).join('/')}`;
                 if (last && last.key === key && d.isWaiting) last.sawWaiting = true;
-                if (d.isWaiting || busy) return;
                 // A page keeps its id after its continue is sent, so the same id is a new
                 // page only once we saw it waiting; a page still unchanged after STALL_TICKS
                 // had its click dropped.
-                if (last && last.key === key && !last.sawWaiting && s.tick - last.tick < STALL_TICKS) return;
+                const fresh = !d.isWaiting && !busy && !(last && last.key === key && !last.sawWaiting && s.tick - last.tick < STALL_TICKS);
+                const it = fresh ? matchInterrupt(opts.interrupts, s) : undefined;
+                if (it) interruptKey = key;
+                // An interrupt page (and its waiting copy) is not the conversation opening or reopening.
+                if (key !== interruptKey) {
+                    if (!res.opened) {
+                        res.opened = true;
+                        res.firstTick = s.tick;
+                    }
+                    closedSince = -1;
+                    untilAt = -1;
+                }
+                if (!fresh) return;
                 last = { key, tick: s.tick, sawWaiting: false };
-                void answer(s);
+                void answer(s, it);
                 return;
             }
             if (opts.closeModals && s.modalOpen && s.modalInterface !== lastModal) {
@@ -197,7 +440,8 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
             const u = !opts.until || opts.until(s);
             if (!u) untilAt = -1;
             else if (untilAt < 0) untilAt = s.tick;
-            if (u && s.tick - closedSince >= idle && !(opts.closeModals && s.modalOpen)) finish(true);
+            // Not while a click (or a burst, which spans ticks) is still being answered: its counts are not in yet.
+            if (u && s.tick - closedSince >= idle && !busy && !(opts.closeModals && s.modalOpen)) finish(true);
         }
 
         const unsub = sdk.onStateUpdate(onState);

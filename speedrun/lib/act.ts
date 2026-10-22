@@ -11,8 +11,8 @@
 import type { BotSDK } from '../../sdk/index';
 import type { BotActions } from '../../sdk/actions';
 import type { BotWorldState, GroundItem, NearbyLoc, NearbyNpc } from '../../sdk/types';
-import { converse, type ConverseOptions, type ConverseResult, type ConverseSdk } from './converse';
-import type { OptionPattern } from './dialogue';
+import { converse, dismissInterrupt, matchInterrupt, type ConverseOptions, type ConverseResult, type ConverseSdk, type Interrupt } from './converse';
+import { pageText, type OptionPattern } from './dialogue';
 import { matchesItem, type ItemPattern } from './items';
 import { waitUntil, type Pred, type StateSource } from './wait';
 import { chebyshev, findLoc, invCount, invItem, messagesSince, opIndex, pos, tileCounter, waitForNpc, worn, type LocQuery, type NamePattern, type OpPattern, type Tile } from './world';
@@ -27,6 +27,14 @@ export interface ActOptions {
     resendEvery?: number;
     /** At most this many re-sends (default 5). */
     maxResends?: number;
+    /**
+     * Pages the step did not ask for (converse.ts `Interrupt`): each is
+     * dismissed as it shows, and once it has gone the click is re-sent (outside
+     * `resendEvery` and `maxResends`). Needs an sdk with sendClickDialog,
+     * clickDialogByText and sendCloseModal. Default none: an open dialogue only
+     * holds off re-sends.
+     */
+    interrupts?: readonly Interrupt[];
 }
 
 export interface ActResult {
@@ -35,16 +43,26 @@ export interface ActResult {
     ticks: number;
     resends: number;
     reason?: string;
+    /** Pages dismissed by `interrupts` (present when interrupts were given). */
+    interrupts?: number;
 }
 
 const CANT_REACH = /can't reach that/i;
 
+type DismissSdk = Pick<BotSDK, 'getState' | 'sendClickDialog' | 'clickDialogByText' | 'sendCloseModal'>;
+
 /** Send `click`, then wait for `done`, re-sending a click that was evidently dropped. */
-export async function act(sdk: StateSource, click: () => Promise<unknown>, done: Pred, opts: ActOptions = {}): Promise<ActResult> {
+export async function act(sdk: StateSource & Partial<DismissSdk>, click: () => Promise<unknown>, done: Pred, opts: ActOptions = {}): Promise<ActResult> {
     const t0 = sdk.getState()?.tick ?? 0;
     const every = opts.resendEvery ?? 6;
     const maxResends = opts.maxResends ?? 5;
+    const interrupts = opts.interrupts?.length ? opts.interrupts : undefined;
+    if (interrupts && !(sdk.sendClickDialog && sdk.clickDialogByText && sdk.sendCloseModal)) throw new Error('act: interrupts need an sdk that can click and close dialogues');
     let resends = 0;
+    let dismissed = 0;
+    let dismissedKey: string | null = null;
+    let dismissedAt = -Infinity;
+    let resendAfterInterrupt = false;
     let sent = t0;
     let still = t0;
     let last: Tile = pos(sdk);
@@ -56,6 +74,30 @@ export async function act(sdk: StateSource, click: () => Promise<unknown>, done:
             const p = pos(s);
             if (p.x !== last.x || p.z !== last.z || p.level !== last.level) still = s.tick;
             last = p;
+            if (interrupts) {
+                const d = s.dialog;
+                if (d.isOpen) {
+                    const key = d.pageId ?? pageText(d);
+                    // One dismissal per page; the same page still up 3 ticks later had its click dropped.
+                    const it = !d.isWaiting && (key !== dismissedKey || s.tick - dismissedAt >= 3) ? matchInterrupt(interrupts, s) : undefined;
+                    if (it) {
+                        dismissedKey = key;
+                        dismissedAt = s.tick;
+                        dismissed++;
+                        resendAfterInterrupt = true;
+                        void dismissInterrupt(sdk as DismissSdk, it);
+                    }
+                    return false;
+                }
+                if (resendAfterInterrupt) {
+                    resendAfterInterrupt = false;
+                    sent = s.tick;
+                    still = s.tick;
+                    resends++;
+                    void click();
+                    return false;
+                }
+            }
             if (every <= 0 || resends >= maxResends || s.dialog.isOpen) return false;
             const refused = messagesSince(s, sent + 1, CANT_REACH).length > 0;
             if (refused || (s.tick - Math.max(sent, still) >= every)) {
@@ -68,7 +110,7 @@ export async function act(sdk: StateSource, click: () => Promise<unknown>, done:
         },
         { maxTicks: opts.maxTicks ?? 60 }
     );
-    return { ok: r.ok, ticks: r.tick - t0, resends, ...(r.ok ? {} : { reason: 'timeout' }) };
+    return { ok: r.ok, ticks: r.tick - t0, resends, ...(interrupts ? { interrupts: dismissed } : {}), ...(r.ok ? {} : { reason: 'timeout' }) };
 }
 
 export interface ActConverseOptions extends ActOptions, Omit<ConverseOptions, 'until' | 'openTicks'> {
@@ -109,7 +151,8 @@ export async function actConverse(sdk: ConverseSdk, click: () => Promise<unknown
     try {
         const cur = sdk.getState();
         if (cur) observe(cur);
-        const a = await act(sdk, click, s => s.dialog.isOpen || effectTick >= 0, {
+        // An interrupt page is not the action's dialogue: act dismisses it and re-sends.
+        const a = await act(sdk, click, s => (s.dialog.isOpen && !matchInterrupt(opts.interrupts, s)) || effectTick >= 0, {
             ...opts,
             maxTicks: opts.done ? maxTicks : Math.min(opts.openTicks ?? 30, maxTicks),
         });
@@ -217,6 +260,119 @@ export async function invOp(sdk: ActSdk, item: ItemPattern, op: OpPattern, done?
         return { ok: true, ticks: 0, resends: 0 };
     }
     return act(sdk, click, done, { resendEvery: 3, maxTicks: 10, ...opts });
+}
+
+/**
+ * What to use an item on. A loc given with its tile and id (or a NearbyLoc) is
+ * clicked as is, with no lookup, so locs the client does not list (bridged
+ * levels) work; any other loc query goes through `findLoc`. An NPC is the
+ * nearest match (or that NPC). An item is the first inventory match other
+ * than the used item's own slot.
+ */
+export type UseTarget = { loc: LocQuery | NearbyLoc } | { npc: NamePattern | NearbyNpc } | { item: ItemPattern };
+
+export interface UseOnOptions {
+    /** Give up after this many ticks (default 60). */
+    maxTicks?: number;
+    /**
+     * Opt-in blind re-send, act's rule: after this many ticks standing still
+     * with no dialogue open. Default 0, because most uses spend the item or
+     * start an action, and a second click can spend a second item.
+     */
+    resendEvery?: number;
+    /**
+     * Re-send a click that evidently did nothing: none of movement, an
+     * animation, a dialogue or modal, a game message or an inventory change
+     * for this many ticks after the send (or after the last step walked toward
+     * the target). "I can't reach that!" counts as nothing at once. Default 6;
+     * 0 never re-sends.
+     */
+    droppedAfter?: number;
+    /** At most this many re-sends of either kind (default 2). */
+    maxResends?: number;
+}
+
+export interface UseOnResult extends ActResult {
+    /** Something other than walking was seen after a send: the use reached the server. */
+    landed: boolean;
+    /** The send, as clicked. */
+    target: { kind: 'loc'; x: number; z: number; id: number } | { kind: 'npc'; index: number; name: string } | { kind: 'item'; slot: number; name: string };
+}
+
+const invSignature = (s: BotWorldState) => s.inventory.map(i => `${i.slot}:${i.id}:${i.count}`).join(',');
+
+/**
+ * Use an inventory item on a loc, an NPC or another item, and wait for `done`.
+ * Unlike `act`, it does not re-send blindly by default (see UseOnOptions).
+ */
+export async function useOn(sdk: ActSdk, item: ItemPattern, target: UseTarget, done: Pred, opts: UseOnOptions = {}): Promise<UseOnResult> {
+    const used = invItem(sdk, item);
+    if (!used) throw new Error(`useOn: no ${String(item)} in the inventory`);
+    const slotNow = () => invItem(sdk, item)?.slot ?? used.slot;
+    let click: () => Promise<unknown>;
+    let sent: UseOnResult['target'];
+    if ('loc' in target) {
+        const q = target.loc;
+        const exact = 'optionsWithIndex' in q || (q.x !== undefined && q.z !== undefined && q.id !== undefined);
+        const l = exact ? (q as { x: number; z: number; id: number }) : await findLoc(sdk, q);
+        if (!l) throw new Error(`useOn: no loc ${JSON.stringify(q)} near ${JSON.stringify(pos(sdk))}`);
+        sent = { kind: 'loc', x: l.x, z: l.z, id: l.id };
+        click = () => sdk.sendUseItemOnLoc(slotNow(), l.x, l.z, l.id);
+    } else if ('npc' in target) {
+        const t = target.npc;
+        const n = typeof t === 'object' && 'index' in t ? t : await waitForNpc(sdk, t, 10);
+        if (!n) throw new Error(`useOn: no npc ${String(t)} near ${JSON.stringify(pos(sdk))}`);
+        sent = { kind: 'npc', index: n.index, name: n.name };
+        click = () => sdk.sendUseItemOnNpc(slotNow(), n.index);
+    } else {
+        const pattern = target.item;
+        const other = (src: BotWorldState | null) => src?.inventory.find(i => matchesItem(i, pattern) && i.slot !== (invItem(src, item)?.slot ?? used.slot)) ?? null;
+        const o = other(sdk.getState());
+        if (!o) throw new Error(`useOn: no ${String(pattern)} to use ${used.name} on`);
+        sent = { kind: 'item', slot: o.slot, name: o.name };
+        click = () => sdk.sendUseItemOnItem(slotNow(), other(sdk.getState())?.slot ?? o.slot);
+    }
+
+    const s0 = sdk.getState();
+    const t0 = s0?.tick ?? 0;
+    const every = opts.resendEvery ?? 0;
+    const droppedAfter = opts.droppedAfter ?? 6;
+    const maxResends = opts.maxResends ?? 2;
+    let resends = 0;
+    let landed = false;
+    let sentAt = t0;
+    let moved = t0;
+    let last: Tile = pos(sdk);
+    let inv = s0 ? invSignature(s0) : '';
+    let anim = s0?.player?.animId ?? -1;
+    const resend = (tick: number) => {
+        sentAt = tick;
+        moved = tick;
+        resends++;
+        void click();
+    };
+    await click();
+    const r = await waitUntil(
+        sdk,
+        s => {
+            if (done(s)) return true;
+            const p = pos(s);
+            if (p.x !== last.x || p.z !== last.z || p.level !== last.level) moved = s.tick;
+            last = p;
+            const a = s.player?.animId ?? -1;
+            const sig = invSignature(s);
+            const refused = messagesSince(s, sentAt + 1, CANT_REACH).length > 0;
+            if (s.dialog.isOpen || s.modalOpen || (a >= 0 && a !== anim) || sig !== inv || messagesSince(s, sentAt + 1).some(m => !CANT_REACH.test(m))) landed = true;
+            anim = a;
+            inv = sig;
+            if (resends >= maxResends || s.dialog.isOpen) return false;
+            if (every > 0 && s.tick - Math.max(sentAt, moved) >= every) resend(s.tick);
+            else if (!landed && droppedAfter > 0 && (refused || s.tick - Math.max(sentAt, moved) >= droppedAfter)) resend(s.tick);
+            return false;
+        },
+        { maxTicks: opts.maxTicks ?? 60 }
+    );
+    return { ok: r.ok, ticks: r.tick - t0, resends, landed: landed || r.ok, target: sent, ...(r.ok ? {} : { reason: landed ? 'done never held' : 'timeout' }) };
 }
 
 /** Wear or wield the first matching item, confirmed by the equipment list. */
