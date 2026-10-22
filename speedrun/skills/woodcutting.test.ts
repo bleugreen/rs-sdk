@@ -677,7 +677,9 @@ describe('woodcutting: the band ledger and rs/158\'s table', () => {
 /**
  * The normal band's plain loop, the real knife-cycle, against a scripted engine: a click on the
  * live tree rolls r0 ticks later, every roll lands a log in the first free slot and fells the tree
- * (a new one stands), a drop empties its slot. Returns what the pack holds once the drops land.
+ * (a new one stands), a drop empties its slot. The last roll takes the level to the band's end, so
+ * the program ends on that label, as at Woodcutting 15. Returns what the pack holds once the
+ * drops already sent have landed.
  */
 function normalBand(params: Record<string, unknown>, kit: string[], rolls: number) {
     const m = CYCLE_METHODS.tree!;
@@ -689,7 +691,7 @@ function normalBand(params: Record<string, unknown>, kit: string[], rolls: numbe
     let nextRoll: number | null = null;
     let chopping = false;
     let logs = 0;
-    const spec = () => ({ tick, x: 2914, z: 3494, skills: { Woodcutting: { xp, level: 1 } }, inventory: inv, animId: chopping ? 1 : -1, locs: [{ id: treeId, x: 2915 + (treeId % 2), z: 3494, name: 'Tree', options: ['Chop down'] }] });
+    const spec = () => ({ tick, x: 2914, z: 3494, skills: { Woodcutting: { xp, level: logs >= rolls ? 15 : 1 } }, inventory: inv, animId: chopping ? 1 : -1, locs: [{ id: treeId, x: 2915 + (treeId % 2), z: 3494, name: 'Tree', options: ['Chop down'] }] });
     h.start('cycle', { ...params, technique: 'plain', maxTicks: rolls * 20 }, makeState(spec()));
     const pending: Array<{ at: number; type: string; locId?: number; slot?: number }> = [];
     const land = () => {
@@ -704,7 +706,7 @@ function normalBand(params: Record<string, unknown>, kit: string[], rolls: numbe
             }
         }
     };
-    while (logs < rolls && h.status.phase === 'running' && tick < 1000 + rolls * 20) {
+    while (h.status.phase === 'running' && tick < 1000 + rolls * 20) {
         tick++;
         land();
         if (chopping && nextRoll === tick) {
@@ -719,11 +721,13 @@ function normalBand(params: Record<string, unknown>, kit: string[], rolls: numbe
         }
         for (const s of h.step(makeState(spec()))) pending.push({ at: tick + 1, type: s.action.type, locId: (s.action as { locId?: number }).locId, slot: (s.action as { slot?: number }).slot });
     }
-    // the last label's drop lands on the next tick
-    tick++;
-    land();
+    // whatever was sent on the last labels lands
+    for (let i = 0; i < 2; i++) {
+        tick++;
+        land();
+    }
     const held = inv.filter((i): i is string => i !== null);
-    return { logs, held, used: held.length };
+    return { logs, held, used: held.length, phase: h.status.phase };
 }
 
 describe('woodcutting: the slot ledger, H4k to H4.x (rs/158 spec 1)', () => {
@@ -738,20 +742,62 @@ describe('woodcutting: the slot ledger, H4k to H4.x (rs/158 spec 1)', () => {
         expect(() => steps({ keepProducts: '1.5' })).toThrow(/keepProducts/);
     });
 
-    test("H4.x: from H4k's axe, knife and one log, the band's own knife-cycle reaches the oaks with 3 slots used, 25 free for the 24-slot load", () => {
+    test("the band's own knife-cycle from H4k's axe, knife and one log: keepProducts 1 ends on 2 logs, the last landing on the label that ends it (rs/196's lab)", () => {
         const r = normalBand(bandParams({}, 'normal', 15)('plain'), ['Rune axe', 'Knife', 'Logs'], 12);
+        expect(r.phase).toBe('done');
         expect(r.logs).toBe(12);
-        expect(r.held.sort()).toEqual(['Knife', 'Logs', 'Rune axe']);
-        expect(28 - r.used).toBe(25);
-        // 23 bones and the chopped log (the ledger's H4.x need)
-        expect(28 - r.used).toBeGreaterThanOrEqual(24);
+        expect(r.held.sort()).toEqual(['Knife', 'Logs', 'Logs', 'Rune axe']);
+        expect(28 - r.used).toBe(24);
     });
 
-    test("knife-cycle's own default (3) is the defect: 5 slots used and 23 free against 24", () => {
+    test("knife-cycle's own default (3) is the defect: 4 logs, 22 free against H4.x's 24", () => {
         const { keepProducts: _, ...programDefault } = bandParams({}, 'normal', 15)('plain');
         const r = normalBand(programDefault, ['Rune axe', 'Knife', 'Logs'], 12);
-        expect(r.held.filter(n => n === 'Logs')).toHaveLength(3);
-        expect(28 - r.used).toBe(23);
+        expect(r.held.filter(n => n === 'Logs')).toHaveLength(4);
+        expect(28 - r.used).toBe(22);
+    });
+
+    test('H4.x: the oak band drops the logs past 1 at its start, before its walk and its first load: the oaks hold the axe, the knife and 1 log, 25 free', async () => {
+        const end = normalBand(bandParams({}, 'normal', 15)('plain'), ['Rune axe', 'Knife', 'Logs'], 12);
+        const at15 = state({ level: 15, items: end.held, at: [2913, 3493] });
+        const h = harness(at15, { bury: true, bones: { giver: 'cairn_b01' } });
+        h.sdk.onSend = (a, sdk) => {
+            if (a.method === 'sendDropItem') sdk.push(s => ({ inventory: s.inventory.filter(i => i.slot !== a.args[0]) }));
+        };
+        const oak = h.byName('woodcutting:oak-15-73');
+        // the dropped log counts as free: 24 + 1 against the 23-bone load and its log
+        expect(oak.preconditions(at15, {})).toBe(true);
+        const order: string[] = [];
+        const onSend = h.sdk.onSend;
+        h.sdk.onSend = (a, sdk) => (order.push(a.method), onSend(a, sdk));
+        const walk = h.ctx.bot.walkTo;
+        (h.ctx.bot as { walkTo: typeof walk }).walkTo = (async (...args: Parameters<typeof walk>) => (order.push('walkTo'), walk(...args))) as typeof walk;
+        const held: string[][] = [];
+        const receive = h.byName; // keep the harness's receive: record the pack it sees
+        void receive;
+        await oak.run(h.ctx);
+        expect(order.slice(0, 2)).toEqual(['sendDropItem', 'walkTo']);
+        const s = h.sdk.getState()!;
+        // the bones load (23) arrived after the drop: the kit is the axe, the knife and the first log
+        expect(s.inventory.filter(i => !/bones$/i.test(i.name)).map(i => i.name).sort()).toEqual(['Knife', 'Logs', 'Rune axe']);
+        expect(s.inventory.filter(i => /^logs$/i.test(i.name))[0]!.slot).toBe(end.held.indexOf('Logs'));
+        expect(h.receives).toHaveLength(1);
+        void held;
+        // the ledger's H4.x: 25 free at the load, against 23 bones and the chopped log
+        expect(28 - (s.inventory.length - 23)).toBe(25);
+    });
+
+    test('a pack already at 1 log drops nothing; keepProducts 3 keeps 3 at the start too', async () => {
+        const one = harness(state({ level: 15 }));
+        await one.byName('woodcutting:oak-15-73').run(one.ctx);
+        expect(drops_(one.sdk)).toEqual([]);
+        const four = state({ level: 15, items: ['Rune axe', 'Knife', 'Logs', 'Logs', 'Logs', 'Logs'] });
+        const three = harness(four, { keepProducts: 3 });
+        await three.byName('woodcutting:oak-15-73').run(three.ctx);
+        expect(drops_(three.sdk)).toEqual([5]);
+        const willow = harness(state({ level: 80, items: ['Rune axe', 'Knife', 'Logs', 'Logs'] }));
+        await willow.byName('woodcutting:willow-73-99').run(willow.ctx);
+        expect(drops_(willow.sdk)).toEqual([3]);
     });
 });
 
