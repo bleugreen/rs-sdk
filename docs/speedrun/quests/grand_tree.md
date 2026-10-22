@@ -190,7 +190,17 @@ The lab ran at 100 ms ticks: the black demon fight is reaction-dependent and was
   (`grandtree_black_demon.rs2:15-22`), and the stage needs the kill.
 - **The demon trapdoor scene** spawns Glough next to you; talking to him resets
   nothing but costs pages.
-- **Wrong translation answers** restart the five choices (`king_narnode.rs2:415-418`).
+- **The demon does not attack first.** No script sets its `%npc_aggressive_player`
+  and its config has no hunt mode (`grandtree_black_demon.rs2:1-13`,
+  `[grandtree_blackdemon]`), so it fights only once attacked. Measured: with every
+  prayer off, the scene and 40 more ticks standing still with the demon 3 tiles
+  away cost 0 HP (`speedrun/lab/quests/grand-tree-probes.ts`). Protect from Melee
+  is needed from the first hit on it, not from the trapdoor.
+- **Wrong translation answers** do not restart the choices. A wrong pick drops into
+  the wrong-only sets (`narnode_incorrect_b2`-`b5`, `king_narnode.rs2:334-401`),
+  which end at `narnode_incorrect_final` (`:415-418`) with no stage change. Talking
+  to Narnode again at stage 20 starts the five choices from the top (measured: the
+  re-talk set stage 30 in 26 ticks, `grand-tree-probes.ts`).
 - **Logout-unsafe stretch: the black demon (segment N).** The demon deletes itself
   when its player is not found or is more than 17 tiles away
   (`grandtree_black_demon.rs2:15-22`), and the stage moves only on the kill; a
