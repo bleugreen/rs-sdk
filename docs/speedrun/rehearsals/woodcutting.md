@@ -222,6 +222,25 @@ window, each answered by a stop and a 20-tick re-probe, at ticks 1,008 and 1,403
   modelled. The waits that the demo's player count removed (about 70 ticks) and a near-neutral
   willow luck (+21 over the band) are what put it at p10.
 
+### Run mode (main, 21:32 PDT: the run toggle isn't persisted across logins)
+
+Lab on bgsrv-mac, S07's Taverley stands, `measure-woodcutting.ts --run=off|on`. The run button
+was pressed before any step started, since it runs `p_clearpendingaction`. Movement was counted per
+tick from the published tile (m):
+
+| Step | Run off | Run on | Movement |
+|---|---|---|---|
+| normal 1-15 | 22 ticks | 22 | 8 tiles in both: 3 run ticks, 2 walk ticks |
+| oak 15-30 | 58 | 57 | 20 tiles, all the probe's 1-tile steps; none after the probe |
+| willow 73-80 | 367 | 427 | 20 and 40 tiles, all probe steps (the run-on case had a slip and a second probe); none after |
+| walk-oaks, walk-willows | 277, 61 | 277, 61 | identical |
+
+**Run mode costs S07 nothing.** The oak and willow bands chop every listed tree from the stand tile,
+so tree switches and respawn re-targets never move the player, and a probe step is one tile, which
+takes one tick either way. The walks are ctrl-run moves (`MoveClickHandler.ts` `tempRun`), which
+run whatever `option_run` says while energy is 100%, as infinite run keeps it. The willow
+difference is chop luck and one more slip, not movement.
+
 ### Procedure notes
 
 - **Timing:** nothing in the module times an action on wall-clock multiples of 300 ms (rs/158
