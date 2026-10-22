@@ -1,5 +1,24 @@
 import { describe, expect, test } from 'bun:test';
-import { junk, shouldReclick } from './fish';
+import { bigNetPerRoll, junk, shouldReclick } from './fish';
+
+describe('bigNetPerRoll', () => {
+    test('at 99: bass 41/256, oyster 8/256, two mackerel rolls', () => {
+        const r = bigNetPerRoll(99);
+        expect(r.get('raw_bass')).toBeCloseTo(41 / 256, 9);
+        expect(r.get('oystershell')).toBeCloseTo(8 / 256, 9);
+        expect(r.get('raw_mackerel')).toBeCloseTo((66 + 11) / 256, 9);
+    });
+    test('no bass below 46 and no cod below 23', () => {
+        expect(bigNetPerRoll(45).has('raw_bass')).toBe(false);
+        expect(bigNetPerRoll(22).has('raw_cod')).toBe(false);
+        expect(bigNetPerRoll(46).has('raw_bass')).toBe(true);
+    });
+    test('the bass to oyster ratio rises with level, 5.1 at 99', () => {
+        const ratio = (l: number) => bigNetPerRoll(l).get('raw_bass')! / bigNetPerRoll(l).get('oystershell')!;
+        expect(ratio(99)).toBeCloseTo(41 / 8, 6);
+        expect(ratio(60)).toBeLessThan(ratio(99));
+    });
+});
 
 describe('shouldReclick', () => {
     test('click first, and again when the clicked spot moved', () => {
