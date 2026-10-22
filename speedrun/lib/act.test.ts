@@ -177,6 +177,24 @@ describe('the jump guard', () => {
         });
     });
 
+    test('a caller clock anchored before the send (a tab already behind at the send) lengthens the reply bound', async () => {
+        await lagging(async (sdk, click, release, count) => {
+            // The caller knew the server at tick 34 by the time the click executed (its own anchor).
+            const guard = new ClickGuard(sdk as never, click, () => false, { alwaysWatch: true, clock: () => 34 });
+            const stop = sdk.onStateUpdate(s => void guard.step(s));
+            const sent = guard.send();
+            await ticks(sdk, 1);
+            release();
+            await sent;
+            expect(guard.replyFrom).toBe(34);
+            await ticks(sdk, 15); // tab tick 36: 2 past the caller's 34
+            expect(count()).toBe(1);
+            await ticks(sdk, 1);
+            expect(count()).toBe(2);
+            stop();
+        });
+    });
+
     test("on a tab behind the server, act's idle re-send counts from the server tick the click reached", async () => {
         await lagging(async (sdk, click, release, count) => {
             // Not just after a jump: only the idle re-send can fire.

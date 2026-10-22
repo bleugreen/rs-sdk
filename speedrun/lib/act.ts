@@ -142,7 +142,16 @@ export class ClickGuard {
         private readonly click: () => Promise<unknown>,
         private readonly answered: Pred = () => false,
         /** Watch the first send for a reply even when it is not just after a jump (S00's first talk after login). */
-        private readonly opts: { alwaysWatch?: boolean } = {}
+        private readonly opts: {
+            alwaysWatch?: boolean;
+            /**
+             * A server clock (wait.ts serverClock) anchored where the tab was last known current. The
+             * guard's own clock starts from the state at the send, which a tab already starved at the
+             * send (S00 throttled from login) publishes ticks late, so it cannot see that lag; the
+             * later of the two counts. Only ever lengthens the bound.
+             */
+            clock?: (wallMs: number) => number;
+        } = {}
     ) {}
 
     /**
@@ -186,7 +195,8 @@ export class ClickGuard {
             this.inFlight--;
         }
         const executed = this.sdk.getState()?.tick ?? tick;
-        this.reachedAt = Math.max(executed, clock(Date.now()));
+        const now = Date.now();
+        this.reachedAt = Math.max(executed, clock(now), this.opts.clock?.(now) ?? -1);
         // A refusal is the client's own (no route, region loading): it can go again on the tab's next settled tick.
         this.refusedAt = refusedSend(r) ? executed : -1;
     }

@@ -150,7 +150,7 @@ async function skipObserved({ sdk, session, log }: StepContext<unknown>, landing
         // The first click after login is the one most often lost (the browser client is still
         // building the region): sent from a settled position, and re-sent once if it draws no reply.
         await settle(sdk);
-        guard = new ClickGuard(sdk, () => sdk.sendInteractNpc(guide.index, talk.opIndex), st => st.dialog.isOpen, { alwaysWatch: true });
+        guard = new ClickGuard(sdk, () => sdk.sendInteractNpc(guide.index, talk.opIndex), st => st.dialog.isOpen, { alwaysWatch: true, clock });
         talkSent = sdk.getState()?.tick ?? -1;
         await guard.send();
         // The page wait below runs from this tick; a tab behind the server gets the page that much later.
