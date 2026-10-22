@@ -54,7 +54,54 @@ export interface WaitOptions {
     after?: number;
 }
 
-const STALLED = `no new tick for ${IDLE_TICKS} ticks (client stopped publishing?)`;
+/** Why a wait failed with reason `idle`, for messages. */
+export const STALLED = `no new tick for ${IDLE_TICKS} ticks (client stopped publishing?)`;
+
+export interface TickClock {
+    /** Ticks seen since `from`, as forward steps of `state.tick`, so the count carries on across a client relaunch, whose tick clock restarts. */
+    readonly elapsed: number;
+    /** Feed every published state. Only a new tick re-arms the idle timer: republishes within one tick never bring a tick limit closer. */
+    see(s: BotWorldState): void;
+    /** Disarm for good; later `see` calls only count. */
+    stop(): void;
+}
+
+/**
+ * The tick count and dead-client detector for anything that listens to
+ * published states with a tick limit: `onIdle` fires once no new tick has
+ * arrived for `IDLE_TICKS * tickMs()`. Armed on creation; `lastTick` is the
+ * tick already seen (it does not count as new). There is deliberately no
+ * total-time budget: ticks are the limit, however slowly they come.
+ */
+export function tickClock(from: number, onIdle: () => void, lastTick?: number): TickClock {
+    const idleMs = IDLE_TICKS * tickMs();
+    let prev = from;
+    let last = lastTick;
+    let elapsed = 0;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const arm = () => {
+        clearTimeout(timer);
+        timer = setTimeout(onIdle, idleMs);
+    };
+    arm();
+    return {
+        get elapsed() {
+            return elapsed;
+        },
+        see(s) {
+            elapsed += Math.max(0, s.tick - prev);
+            prev = s.tick;
+            if (s.tick === last) return;
+            last = s.tick;
+            if (!stopped) arm();
+        },
+        stop() {
+            stopped = true;
+            clearTimeout(timer);
+        },
+    };
+}
 
 /**
  * Resolve on the first published state satisfying `pred`, or `{ok:false}`:
@@ -72,33 +119,22 @@ export function waitUntil(sdk: StateSource, pred: Pred, opts: WaitOptions): Prom
             resolve({ ok: true, state: cur, tick: cur.tick });
             return;
         }
-        const idleMs = IDLE_TICKS * tickMs();
-        let prevTick = after ?? cur?.tick ?? 0;
-        let elapsed = 0;
         let last: BotWorldState | null = cur;
         let done = false;
-        let idle: ReturnType<typeof setTimeout> | undefined;
         const finish = (r: WaitResult) => {
             if (done) return;
             done = true;
             unsubscribe();
-            clearTimeout(idle);
+            clock.stop();
             resolve(r);
         };
-        const armIdle = () => {
-            clearTimeout(idle);
-            idle = setTimeout(() => finish({ ok: false, reason: 'idle', state: last, tick: last?.tick ?? -1 }), idleMs);
-        };
+        const clock = tickClock(after ?? cur?.tick ?? 0, () => finish({ ok: false, reason: 'idle', state: last, tick: last?.tick ?? -1 }), cur?.tick);
         const unsubscribe = sdk.onStateUpdate(s => {
-            const fresh = s.tick !== last?.tick;
             last = s;
-            elapsed += Math.max(0, s.tick - prevTick);
-            prevTick = s.tick;
+            clock.see(s);
             if (counts(s) && pred(s)) finish({ ok: true, state: s, tick: s.tick });
-            else if (elapsed > maxTicks) finish({ ok: false, reason: 'maxTicks', state: s, tick: s.tick });
-            else if (fresh) armIdle();
+            else if (clock.elapsed > maxTicks) finish({ ok: false, reason: 'maxTicks', state: s, tick: s.tick });
         });
-        armIdle();
     });
 }
 

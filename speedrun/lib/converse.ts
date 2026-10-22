@@ -11,7 +11,7 @@ import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState } from '../../sdk/types';
 import { classifyPage, clickContinue, clickOption, findOption, pageText, type OptionPattern } from './dialogue';
 import { levelUpChain } from './levelup';
-import { tickMs, type Pred, type StateSource } from './wait';
+import { STALLED, tickClock, type Pred, type StateSource } from './wait';
 
 export type ConverseSdk = StateSource & Pick<BotSDK, 'sendClickDialog' | 'clickDialogByText' | 'sendCloseModal'>;
 
@@ -23,7 +23,7 @@ export interface ConverseOptions {
     idle?: number;
     /** Ticks to wait for the first page (default 15); after that the result has `opened: false`. */
     openTicks?: number;
-    /** Give up after this many ticks (default 400). */
+    /** Give up after this many ticks (default 400), however slowly they come; only a client that stops publishing ends it sooner. */
     maxTicks?: number;
     /** Over only once this also holds with the dialogue closed: a scripted walk or teleport after the last page. */
     until?: Pred;
@@ -96,7 +96,7 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
         const stop = () => {
             done = true;
             unsub();
-            clearTimeout(wall);
+            clock.stop();
         };
         const finish = (ok: boolean, reason?: string) => {
             if (done) return;
@@ -163,7 +163,8 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
 
         function onState(s: BotWorldState): void {
             if (done) return;
-            if (s.tick - t0 > maxTicks) return finish(false, 'timeout');
+            clock.see(s);
+            if (clock.elapsed > maxTicks) return finish(false, 'timeout');
             const d = s.dialog;
             if (d.isOpen) {
                 if (!res.opened) {
@@ -190,7 +191,7 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
             }
             if (!s.modalOpen) lastModal = -1;
             if (!res.opened) {
-                if (s.tick - t0 > openTicks) finish(true, 'no dialogue opened');
+                if (clock.elapsed > openTicks) finish(true, 'no dialogue opened');
                 return;
             }
             if (closedSince < 0) closedSince = s.tick;
@@ -200,8 +201,8 @@ export function converse(sdk: ConverseSdk, choices: OptionPattern[] = [], opts: 
             if (u && s.tick - closedSince >= idle && !(opts.closeModals && s.modalOpen)) finish(true);
         }
 
+        const clock = tickClock(t0, () => finish(false, STALLED), sdk.getState()?.tick);
         const unsub = sdk.onStateUpdate(onState);
-        const wall = setTimeout(() => finish(false, 'client stopped publishing'), (maxTicks + 20) * tickMs());
         const cur = sdk.getState();
         if (cur) onState(cur);
     });
