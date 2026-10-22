@@ -37,7 +37,7 @@ import { converse, dismissInterrupt, matchInterrupt, type ConverseOptions, type 
 import { pageText, type OptionPattern } from './dialogue';
 import { matchesItem, type ItemPattern } from './items';
 import { serverClock, waitUntil, type Pred, type StateSource } from './wait';
-import { chebyshev, findLoc, invCount, invItem, messageCursor, messagesAfter, opIndex, pos, tileCounter, waitForNpc, worn, type LocQuery, type NamePattern, type OpPattern, type Tile } from './world';
+import { chebyshev, findLoc, invCount, invItem, messageCursor, opIndex, pos, replyAfter, tileCounter, waitForNpc, worn, type LocQuery, type NamePattern, type OpPattern, type Tile } from './world';
 
 export type ActSdk = StateSource &
     Pick<BotSDK, 'sendInteractNpc' | 'sendInteractLoc' | 'sendUseItem' | 'sendUseItemOnItem' | 'sendUseItemOnLoc' | 'sendUseItemOnNpc' | 'sendPickup' | 'sendWalk' | 'sendClickComponent' | 'sendDropItem' | 'scanNearbyLocs' | 'scanGroundItems'>;
@@ -70,6 +70,8 @@ export interface ActResult extends JumpCounts {
 }
 
 const CANT_REACH = /can't reach that/i;
+/** Any game message but CANT_REACH: a click's reply that says it landed. */
+const NOT_CANT_REACH = new RegExp(`^(?![\\s\\S]*${CANT_REACH.source})`, 'i');
 
 // ------------------------------------------------------------------ jumps
 
@@ -136,6 +138,7 @@ export class ClickGuard {
     private inFlight = 0;
     private watching = false;
     private base: ReturnType<typeof snapshot> | null = null;
+    private cantReach: ReturnType<typeof replyAfter> | null = null;
 
     constructor(
         private readonly sdk: StateSource & Partial<Pick<BotSDK, 'getStateReceivedAt'>>,
@@ -165,9 +168,9 @@ export class ClickGuard {
         return this.reachedAt;
     }
 
-    /** The message cursor (world.ts messageCursor) at the last send: its replies are the messages after it. */
-    get messageCursor(): number {
-        return this.base?.messages ?? 0;
+    /** The engine answered the last send with "I can't reach that!" (world.ts replyAfter, taken before the click). */
+    refusedBy(s: BotWorldState): boolean {
+        return this.cantReach?.seen(s) ?? false;
     }
 
     /** A send the tab has not executed yet: it cannot have drawn a reply, so nothing re-sends it. */
@@ -182,6 +185,7 @@ export class ClickGuard {
         const clock = serverClock(tick, this.sdk.getStateReceivedAt?.() || Date.now());
         this.reachedAt = tick;
         this.base = s ? snapshot(s) : null;
+        this.cantReach = replyAfter(this.sdk, CANT_REACH);
         this.scriptAnswered = false;
         this.idleAtSend = !s || !busyAt(s);
         const jumpTick = s?.player?.teleportTick ?? null;
@@ -338,8 +342,7 @@ export async function act(sdk: StateSource & Partial<DismissSdk>, click: () => P
             // The idle re-send is only for a click that drew nothing: one whose script answered has
             // landed, and re-sending it would restart the script (rs/257: Dwarf Cannon's railing).
             if (every <= 0 || resends >= maxResends || s.dialog.isOpen || guard.scriptAnswered || guard.pending) return false;
-            const refused = messagesAfter(s, guard.messageCursor, CANT_REACH).length > 0;
-            if (refused || (s.tick - Math.max(sent, still, guard.replyFrom) >= every)) {
+            if (guard.refusedBy(s) || (s.tick - Math.max(sent, still, guard.replyFrom) >= every)) {
                 sent = s.tick;
                 still = s.tick;
                 resends++;
@@ -597,14 +600,17 @@ export async function useOn(sdk: ActSdk, item: ItemPattern, target: UseTarget, d
     let resends = 0;
     let landed = false;
     let sentAt = t0;
-    let cursor = messageCursor(s0);
+    // Each send's replies, from the cursor taken just before it goes out.
+    let refusal = replyAfter(sdk, CANT_REACH);
+    let reply = replyAfter(sdk, NOT_CANT_REACH);
     let moved = t0;
     let last: Tile = pos(sdk);
     let inv = s0 ? invSignature(s0) : '';
     let anim = s0?.player?.animId ?? -1;
     const resend = (tick: number) => {
         sentAt = tick;
-        cursor = messageCursor(sdk);
+        refusal = replyAfter(sdk, CANT_REACH);
+        reply = replyAfter(sdk, NOT_CANT_REACH);
         moved = tick;
         resends++;
         void click();
@@ -619,8 +625,8 @@ export async function useOn(sdk: ActSdk, item: ItemPattern, target: UseTarget, d
             last = p;
             const a = s.player?.animId ?? -1;
             const sig = invSignature(s);
-            const refused = messagesAfter(s, cursor, CANT_REACH).length > 0;
-            if (s.dialog.isOpen || s.modalOpen || (a >= 0 && a !== anim) || sig !== inv || messagesAfter(s, cursor).some(m => !CANT_REACH.test(m))) landed = true;
+            const refused = refusal.seen(s);
+            if (s.dialog.isOpen || s.modalOpen || (a >= 0 && a !== anim) || sig !== inv || reply.seen(s)) landed = true;
             anim = a;
             inv = sig;
             if (resends >= maxResends || s.dialog.isOpen) return false;
@@ -710,7 +716,7 @@ export const TELEPORT_REFUSED = /mysterious force blocks|can't use this teleport
  */
 export async function castTeleport(sdk: ActSdk, spell: keyof typeof TELEPORTS | number, maxTicks = 25, landed?: Pred): Promise<ActResult & { at: Tile }> {
     const p0 = pos(sdk);
-    const cursor = messageCursor(sdk);
+    const refused = replyAfter(sdk, TELEPORT_REFUSED);
     const component = typeof spell === 'number' ? spell : TELEPORTS[spell];
     let refusal: string | undefined;
     const r = await act(
@@ -719,8 +725,9 @@ export async function castTeleport(sdk: ActSdk, spell: keyof typeof TELEPORTS | 
         s => {
             const d = chebyshev(pos(s), p0);
             if (d > 30 || pos(s).level !== p0.level || (d > 0 && landed?.(s))) return true;
-            refusal = messagesAfter(s, cursor, TELEPORT_REFUSED)[0];
-            return refusal !== undefined;
+            if (!refused.seen(s)) return false;
+            refusal = refused.first();
+            return true;
         },
         { maxResends: 1, maxTicks }
     );
