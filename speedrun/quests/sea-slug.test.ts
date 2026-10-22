@@ -4,11 +4,12 @@ import { QUESTS } from '../data/quest-stages';
 import { baseState, drive, FakeSdk } from '../lib/fake-sdk';
 import { journalProbeName } from '../lib/quests';
 import { TickLog } from '../lib/ticks';
+import { replyAfter } from '../lib/world';
 import { Observation, resolveResume } from '../runner/resume';
 import type { Observed, RunnerSession, StepContext } from '../runner/step';
 import { DEFAULT_DIALOGUE, slotNeed } from './segments';
 import {
-    afterMessage, ARRIVAL, CAROLINE_AT, LANDED, LEVEL_UP_TICKS, replyAfter, DEAD_AT_EXIT, DOOR_SCENE_TICKS, DOORS, doorState, inWitchaven, ITEM, LETTERS, observed, offshore, onIsland, onPlatformGround, onPlatformUp,
+    afterMessage, ARRIVAL, CAROLINE_AT, LANDED, LEVEL_UP_TICKS, DEAD_AT_EXIT, DOOR_SCENE_TICKS, DOORS, doorState, inWitchaven, ITEM, LETTERS, observed, offshore, onIsland, onPlatformGround, onPlatformUp,
     openBridgedDoor, QUEST_ITEMS, quest, stageCeiling, stageFloor, stepId, steps, type BridgedDoor, type DoorOutcome,
 } from './sea-slug';
 
