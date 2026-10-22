@@ -364,9 +364,11 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     RUN-ORDER.md R1's bound); that case is historical on any `RUN_COMMIT` at or after c2d9eada.
     The final logout is still checked on the host (`RUN-HOST.md` step 8). A precondition, not a
     line in the totals;
-  - **`RUN_COMMIT` at or after the run-commit floor, `811e9eb2`** (#242; main, after 23:09 PDT; one check,
-    `git merge-base --is-ancestor 811e9eb2 "$RUN_COMMIT"`, `RUN-HOST.md` "Credentials"). Its newest
-    entry is #242 (rs/298, the Mining S09 snapshot: `mining.ts`'s `dropOres` before every iron-band start
+  - **`RUN_COMMIT` at or after the run-commit floor, `de3a4944`** (#243; one check,
+    `git merge-base --is-ancestor de3a4944 "$RUN_COMMIT"`, `RUN-HOST.md` "Credentials"). Its newest
+    entry is #243 (rs/297, the Woodcutting S07 snapshot as cairn_chops raced it: `woodcutting.ts` and its
+    test, the lab driver and findings, knife-cycle's opt-in `waitRespawn` declared; `kit-return.ts`
+    deliberately not carried, not being on S07's path; entry 3), then 811e9eb2's #242 (rs/298, the Mining S09 snapshot: `mining.ts`'s `dropOres` before every iron-band start
     and restart, 3fa6fbe4, and `GATE_MEASURE_DROPS` 120, 314989e9, with `rehearsals/mining.md` section 10,
     cairn_rocks' demo run; entry 4, RUN-ORDER.md R21 and R27), then e392933e's #240 (rs/294, the `travel.ts` forcemove door fix: a dropped click is re-sent at the first
     idle tick, and a stall never reopens the door just passed; entries 8 and 11) and #238 (rs/291's
@@ -405,9 +407,8 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     rs/267's single trade-request rule (`openTrade` governs `swap()`) is reconciled with #230's
     `trade.ts`: `openTrade` with the altar giver (3042ae95: the Runecraft stock rung at 9 a cycle and a
     busy partner's retry at ~2, entry 9) and the S18 courier holding a side tile (R24); the helpers'
-    pieces must be on the helpers' deployed commit before they serve SCORED; **rs/297**, the Woodcutting S07 snapshot, **PR #243** in review (cairn_chops' raced code
-    and any knife-cycle opt-in hunks it needs; entry 3);
-    **rs/301**, the Thieving S18 options (carries rs/243's work: pickpocket's
+    pieces must be on the helpers' deployed commit before they serve SCORED;
+    **rs/301**, the Thieving S18 options (commit d94e12fa, PR to come; it carries rs/243's work: pickpocket's
     `stopWhenFoodBelow` and `retargetTicks`, the top-up contract and the restart fallback's `trade.ts`
     opt-ins; entry 6); and **rs/281** (the Grand Tree snapshot, with rs/202's door-exit workaround,
     marked removable; the floor already carries #240's fix; entry 8). Gate tooling on main, not floor
