@@ -9,17 +9,21 @@
 # Bun on PATH: use ~/.bun/bin/bun or `bash -lc '...'`.
 set -euo pipefail
 
-HOST="${ASHBURN_HOST:-ubuntu@3.209.186.185}"
+HOST="${ASHBURN_HOST:-${RS_RUN_HOST:+ubuntu@$RS_RUN_HOST}}"
+if [[ ! "$HOST" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9][A-Za-z0-9.-]*$ ]]; then
+  echo "Set RS_RUN_HOST from the private host thread, or ASHBURN_HOST=user@host." >&2
+  exit 2
+fi
 KEY="$HOME/.rs-fleet/id_ed25519_ashburn"
 # The pinned key is always offered, beside the machine's own file when it has
 # one, so a builder whose ~/.rs-fleet file predates an address change still
-# verifies the host instead of failing. Public address first, then the
-# Tailscale one (rs-ashburn). The VM kept its host key when its address moved
-# from 54.242.152.95, which is no longer pinned.
+# verifies the host instead of failing. The destination comes from private
+# configuration, never a repository-pinned address. The run host keeps its
+# host key across address changes.
 PINNED="$(mktemp "${TMPDIR:-/tmp}/ashburn_known_hosts.XXXXXX")"
 trap 'rm -f "$PINNED"' EXIT
 # One file, not a space-separated list: push hands "${SSH[*]}" to rsync -e, which splits on spaces.
-echo '3.209.186.185,100.66.164.37 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBYCG1nNhhY0ax6lRCgxT6oxfNh4NW7mlLOdQeoWZ0wE' >"$PINNED"
+printf '%s ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBYCG1nNhhY0ax6lRCgxT6oxfNh4NW7mlLOdQeoWZ0wE\n' "${HOST#*@}" >"$PINNED"
 if [ -r "$HOME/.rs-fleet/known_hosts_ashburn" ]; then
   cat "$HOME/.rs-fleet/known_hosts_ashburn" >>"$PINNED"
 fi
