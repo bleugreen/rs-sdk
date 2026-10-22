@@ -1,7 +1,7 @@
 // A scriptable stand-in for BotSDK in unit tests: push states, record sends.
 // Only the members the speedrun modules touch are implemented.
 
-import type { ActionResult, BotWorldState, DialogState, GameMessage, InventoryItem, SkillState, TradeState } from '../../sdk/types';
+import type { ActionResult, BotWorldState, DialogState, GameMessage, InventoryItem, SkillState, TradeItem, TradeState } from '../../sdk/types';
 import { PLAYER_CHAT_TYPES } from '../../sdk/types';
 import type { RuneName, RuneUse } from './travel';
 
@@ -200,6 +200,139 @@ export class FakeSdk {
 
     sendSay(message: string) { return this.chatResult(this.record('sendSay', message), message); }
     sendPrivateMessage(targetName: string, message: string) { return this.chatResult(this.record('sendPrivateMessage', targetName, message), message); }
+}
+
+export interface TradePartnerRules {
+    /** The partner's name on the trade screens. */
+    partner: string;
+    /** Whether an item stacks in the pack. */
+    stacks: (t: { id: number; name: string }) => boolean;
+    /** Whether an item goes in the weapon slot: wielding one displaces the worn weapon into the pack. */
+    weapon: (name: string) => boolean;
+    /** The session drops on this tick with the trade open, and the server refunds our offer. */
+    logoutAt?: number;
+}
+
+/** The equipment slot a wielded weapon takes (the client's worn inventory). */
+const WEAPON_SLOT = 3;
+
+/**
+ * The server and a partner whose request stands (the hand-off giver on its tile): our trade click
+ * opens the screens with its offer up and accepted; an offer of ours resets both accepts and the
+ * partner re-accepts two ticks later; the confirm accept swaps the items. Equip clicks land a tick
+ * later, a wield displacing the worn weapon into the pack.
+ */
+export class FakeTradePartner extends FakeSdk {
+    private queue: Array<{ due: number; fx: (s: BotWorldState) => Partial<BotWorldState> }> = [];
+    tradeClicks: number[] = [];
+    unequipTicks: number[] = [];
+
+    constructor(s: BotWorldState, private theirs: TradeItem[], private rules: TradePartnerRules) {
+        super(s);
+        this.onSend = a => this.serve(a);
+    }
+
+    private later(fx: (s: BotWorldState) => Partial<BotWorldState>, d = 1) {
+        this.queue.push({ due: this.state!.tick + d, fx });
+    }
+
+    private packItem(slot: number, t: { id: number; name: string }, count: number): InventoryItem {
+        return { slot, id: t.id, name: t.name, count, optionsWithIndex: this.rules.weapon(t.name) ? [{ text: 'Wield', opIndex: 2 }] : [] };
+    }
+
+    /** Put items into the first free inventory slots, merging stacks. */
+    addTo(inv: readonly InventoryItem[], items: readonly TradeItem[]): InventoryItem[] {
+        const out = [...inv];
+        const free = () => { for (let s = 0; ; s++) if (!out.some(i => i.slot === s)) return s; };
+        for (const t of items) {
+            const stacks = this.rules.stacks(t);
+            const stack = stacks ? out.find(i => i.id === t.id) : undefined;
+            if (stack) out[out.indexOf(stack)] = { ...stack, count: stack.count + t.count };
+            else if (stacks) out.push(this.packItem(free(), t, t.count));
+            else for (let k = 0; k < t.count; k++) out.push(this.packItem(free(), t, 1));
+        }
+        return out;
+    }
+
+    private serve(a: SentAction) {
+        const s = this.state!;
+        const toConfirm = (tr: NonNullable<BotWorldState['trade']>) => ({ trade: { ...tr, screen: 'confirm' as const, myAccepted: false, partnerAccepted: true } });
+        switch (a.method) {
+            case 'sendTradeRequest':
+                this.tradeClicks.push(s.tick);
+                this.later(cur => ({
+                    gameMessages: [...cur.gameMessages, { type: 0, text: 'Sending trade offer...', tick: cur.tick, sender: '', fromSelf: false }],
+                    trade: cur.trade?.isOpen ? undefined : { isOpen: true, screen: 'offer', partner: this.rules.partner, myOffer: [], theirOffer: this.theirs, myAccepted: false, partnerAccepted: true },
+                }));
+                break;
+            case 'sendOfferItem': {
+                const slot = a.args[0] as number;
+                this.later(cur => {
+                    const it = cur.inventory.find(i => i.slot === slot);
+                    if (!it || !cur.trade?.isOpen) return {};
+                    const moved = cur.inventory.filter(i => i.id === it.id).reduce((n, i) => n + i.count, 0);
+                    return { inventory: cur.inventory.filter(i => i.id !== it.id), trade: { ...cur.trade, myOffer: [...cur.trade.myOffer, { slot: 0, id: it.id, name: it.name, count: moved }], myAccepted: false, partnerAccepted: false } };
+                });
+                this.later(cur => {
+                    const tr = cur.trade;
+                    if (!tr?.isOpen || tr.screen !== 'offer') return {};
+                    return tr.myAccepted ? toConfirm(tr) : { trade: { ...tr, partnerAccepted: true } };
+                }, 2);
+                break;
+            }
+            case 'sendAcceptTrade':
+                this.later(cur => {
+                    const tr = cur.trade;
+                    if (!tr?.isOpen) return {};
+                    if (tr.screen === 'offer') return tr.partnerAccepted ? toConfirm(tr) : { trade: { ...tr, myAccepted: true } };
+                    return { trade: undefined, inventory: this.addTo(cur.inventory, tr.theirOffer), gameMessages: [...cur.gameMessages, { type: 0, text: 'Accepted trade.', tick: cur.tick, sender: '', fromSelf: false }] };
+                });
+                break;
+            case 'sendDeclineTrade':
+                this.later(cur => (cur.trade?.isOpen ? { trade: undefined, inventory: this.addTo(cur.inventory, cur.trade.myOffer) } : {}));
+                break;
+            case 'sendUseEquipmentItem': {
+                this.unequipTicks.push(s.tick);
+                const slot = a.args[0] as number;
+                this.later(cur => {
+                    const e = cur.equipment.find(x => x.slot === slot);
+                    return e ? { equipment: cur.equipment.filter(x => x !== e), inventory: this.addTo(cur.inventory, [{ slot: 0, id: e.id, name: e.name, count: e.count }]) } : {};
+                });
+                break;
+            }
+            case 'sendUseItem': {
+                const slot = a.args[0] as number;
+                this.later(cur => {
+                    const it = cur.inventory.find(i => i.slot === slot);
+                    if (!it) return {};
+                    const weapon = this.rules.weapon(it.name);
+                    const displaced = weapon ? cur.equipment.filter(e => this.rules.weapon(e.name)) : [];
+                    const inventory = this.addTo(cur.inventory.filter(i => i !== it), displaced.map(e => ({ slot: 0, id: e.id, name: e.name, count: e.count })));
+                    const kept = cur.equipment.filter(e => !displaced.includes(e));
+                    const at = weapon ? WEAPON_SLOT : (() => { for (let q = 0; ; q++) if (!kept.some(e => e.slot === q)) return q; })();
+                    return { inventory, equipment: [...kept, { slot: at, id: it.id, name: it.name, count: 1, optionsWithIndex: [{ text: 'Remove', opIndex: 1 }] }] };
+                });
+                break;
+            }
+        }
+    }
+
+    override tick(patch: Partial<BotWorldState> | ((s: BotWorldState) => Partial<BotWorldState>) = {}): BotWorldState {
+        return this.push(cur => {
+            let next: BotWorldState = { ...cur, tick: cur.tick + 1, ...(typeof patch === 'function' ? patch(cur) : patch) };
+            if (this.rules.logoutAt !== undefined && next.tick >= this.rules.logoutAt) {
+                // The session is gone: the server closes the trade and refunds our offer.
+                const refund = next.trade?.isOpen ? next.trade.myOffer : [];
+                this.queue = [];
+                return { ...next, trade: undefined, inventory: this.addTo(next.inventory, refund), inGame: false };
+            }
+            for (let i = 0; i < this.queue.length; ) {
+                if (this.queue[i]!.due <= next.tick) next = { ...next, ...this.queue.splice(i, 1)[0]!.fx(next) };
+                else i++;
+            }
+            return next;
+        });
+    }
 }
 
 /**

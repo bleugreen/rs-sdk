@@ -206,6 +206,28 @@ function slotsAdded(s: BotWorldState, plan: HandOffPlan): number {
     }, 0);
 }
 
+/** The trade's slot arithmetic: free now, the unequips it needs first, what the gives free and the receives take, and what is left after the equip changes. */
+export interface SlotPlan {
+    free: number;
+    off: InventoryItem[];
+    freed: number;
+    adds: number;
+    /** Free slots for the receives: free, less the unequips, plus what the gives free. */
+    room: number;
+    /** Free slots once the trade and the equip changes are done (negative: short). */
+    after: number;
+}
+
+export function slotPlan(s: BotWorldState, plan: HandOffPlan): SlotPlan {
+    const free = INVENTORY_SIZE - s.inventory.length;
+    const off = toUnequip(s, plan);
+    const freed = slotsFreed(s, plan, off);
+    const adds = slotsAdded(s, plan);
+    const room = free - off.length + freed;
+    // Each wield frees a slot, each item it displaces (a `-NAME`) takes one back.
+    return { free, off, freed, adds, room, after: room - adds + plan.wield.length - plan.unwield.length };
+}
+
 export function handOffPre(s: BotWorldState, plan: HandOffPlan, partner: string): true | string {
     if (!s.inGame) return 'not in game';
     if (!s.nearbyPlayers.some(p => sameName(p.name, partner))) return `${plan.id}: ${partner} is not in view (the partner stands on the hand-off tile before SCORED arrives)`;
@@ -219,15 +241,9 @@ export function handOffPre(s: BotWorldState, plan: HandOffPlan, partner: string)
     for (const w of plan.wield) {
         if (!plan.receive.some(r => r.name === w.name) && !held(s, w)) return `${plan.id}: +${w.name} is neither held nor received`;
     }
-    const free = INVENTORY_SIZE - s.inventory.length;
-    const off = toUnequip(s, plan);
+    const { free, off, freed, adds, room, after } = slotPlan(s, plan);
     if (free < off.length) return `${plan.id}: ${free} free slots, and taking off ${off.map(i => i.name).join(', ')} to give needs ${off.length}`;
-    const freed = slotsFreed(s, plan, off);
-    const adds = slotsAdded(s, plan);
-    const room = free - off.length + freed;
     if (room < adds) return `${plan.id}: ${free} free slots, ${freed} freed by what it gives: the trade adds ${adds}, ${adds - room} short`;
-    // Each wield frees a slot, each item it displaces (a `-NAME`) takes one back.
-    const after = room - adds + plan.wield.length - plan.unwield.length;
     if (after < 0) return `${plan.id}: the equip changes after the trade need ${-after} more free slots`;
     return true;
 }

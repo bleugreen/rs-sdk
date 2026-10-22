@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import type { BotWorldState, InventoryItem, TradeItem } from '../../sdk/types';
-import { baseState, drive, FakeSdk, type SentAction } from '../lib/fake-sdk';
+import { baseState, drive, FakeSdk, FakeTradePartner } from '../lib/fake-sdk';
 import { noteOf } from '../lib/items';
 import { TickLog } from '../lib/ticks';
 import { MANIFEST, parseLedger } from '../tools/slot-ledger';
@@ -70,117 +70,13 @@ function state(inventory: InventoryItem[], equipment: InventoryItem[] = [], o: P
 const tradeItems = (entries: Array<[string, number?]>): TradeItem[] =>
     entries.map(([name, n = 1]) => ({ slot: 0, id: IDS[name] ?? 9999, name, count: n }));
 
-/** Put items into the first free inventory slots, merging stacks. */
-function addTo(inv: InventoryItem[], items: readonly TradeItem[]): InventoryItem[] {
-    const out = [...inv];
-    const free = () => { for (let s = 0; ; s++) if (!out.some(i => i.slot === s)) return s; };
-    for (const t of items) {
-        const stack = stacks(t) ? out.find(i => i.id === t.id) : undefined;
-        if (stack) out[out.indexOf(stack)] = { ...stack, count: stack.count + t.count };
-        else if (stacks(t)) out.push({ ...item(free(), t.name, t.count), id: t.id });
-        else for (let k = 0; k < t.count; k++) out.push({ ...item(free(), t.name), id: t.id });
-    }
-    return out;
-}
-
 /**
- * The server and a partner whose request stands (the hand-off giver on its tile): our trade click
- * opens the screens with its offer up and accepted; an offer of ours resets both accepts and the
- * partner re-accepts two ticks later; the confirm accept swaps the items. Equip clicks land a tick
- * later, a wield displacing the worn weapon into the pack. `logoutAt`: the session drops on that
- * tick with the trade open, and the server refunds our offer.
+ * lib/fake-sdk.ts's trade partner under this file's item rules. `logoutAt`: the session drops on
+ * that tick with the trade open, and the server refunds our offer.
  */
-class TradeServer extends FakeSdk {
-    private queue: Array<{ due: number; fx: (s: BotWorldState) => Partial<BotWorldState> }> = [];
-    tradeClicks: number[] = [];
-    unequipTicks: number[] = [];
-
-    constructor(s: BotWorldState, private theirs: TradeItem[], private opts: { logoutAt?: number } = {}) {
-        super(s);
-        this.onSend = a => this.serve(a);
-    }
-
-    sendCloseModal() { return this.sendAction({ method: 'sendCloseModal', args: [] }); }
-
-    private later(fx: (s: BotWorldState) => Partial<BotWorldState>, d = 1) {
-        this.queue.push({ due: this.state!.tick + d, fx });
-    }
-
-    private serve(a: SentAction) {
-        const s = this.state!;
-        const toConfirm = (tr: NonNullable<BotWorldState['trade']>) => ({ trade: { ...tr, screen: 'confirm' as const, myAccepted: false, partnerAccepted: true } });
-        switch (a.method) {
-            case 'sendTradeRequest':
-                this.tradeClicks.push(s.tick);
-                this.later(cur => ({
-                    gameMessages: [...cur.gameMessages, { type: 0, text: 'Sending trade offer...', tick: cur.tick, sender: '', fromSelf: false }],
-                    trade: cur.trade?.isOpen ? undefined : { isOpen: true, screen: 'offer', partner: PARTNER, myOffer: [], theirOffer: this.theirs, myAccepted: false, partnerAccepted: true },
-                }));
-                break;
-            case 'sendOfferItem': {
-                const slot = a.args[0] as number;
-                this.later(cur => {
-                    const it = cur.inventory.find(i => i.slot === slot);
-                    if (!it || !cur.trade?.isOpen) return {};
-                    const moved = cur.inventory.filter(i => i.id === it.id).reduce((n, i) => n + i.count, 0);
-                    return { inventory: cur.inventory.filter(i => i.id !== it.id), trade: { ...cur.trade, myOffer: [...cur.trade.myOffer, { slot: 0, id: it.id, name: it.name, count: moved }], myAccepted: false, partnerAccepted: false } };
-                });
-                this.later(cur => {
-                    const tr = cur.trade;
-                    if (!tr?.isOpen || tr.screen !== 'offer') return {};
-                    return tr.myAccepted ? toConfirm(tr) : { trade: { ...tr, partnerAccepted: true } };
-                }, 2);
-                break;
-            }
-            case 'sendAcceptTrade':
-                this.later(cur => {
-                    const tr = cur.trade;
-                    if (!tr?.isOpen) return {};
-                    if (tr.screen === 'offer') return tr.partnerAccepted ? toConfirm(tr) : { trade: { ...tr, myAccepted: true } };
-                    return { trade: undefined, inventory: addTo(cur.inventory, tr.theirOffer), gameMessages: [...cur.gameMessages, { type: 0, text: 'Accepted trade.', tick: cur.tick, sender: '', fromSelf: false }] };
-                });
-                break;
-            case 'sendDeclineTrade':
-                this.later(cur => (cur.trade?.isOpen ? { trade: undefined, inventory: addTo(cur.inventory, cur.trade.myOffer) } : {}));
-                break;
-            case 'sendUseEquipmentItem': {
-                this.unequipTicks.push(s.tick);
-                const slot = a.args[0] as number;
-                this.later(cur => {
-                    const e = cur.equipment.find(x => x.slot === slot);
-                    return e ? { equipment: cur.equipment.filter(x => x !== e), inventory: addTo(cur.inventory, [{ slot: 0, id: e.id, name: e.name, count: 1 }]) } : {};
-                });
-                break;
-            }
-            case 'sendUseItem': {
-                const slot = a.args[0] as number;
-                this.later(cur => {
-                    const it = cur.inventory.find(i => i.slot === slot);
-                    if (!it) return {};
-                    const displaced = cur.equipment.filter(e => WEAPON.test(e.name) && WEAPON.test(it.name));
-                    const inventory = addTo(cur.inventory.filter(i => i !== it), displaced.map(e => ({ slot: 0, id: e.id, name: e.name, count: 1 })));
-                    return { inventory, equipment: [...cur.equipment.filter(e => !displaced.includes(e)), { ...wornItem(it.name), id: it.id }] };
-                });
-                break;
-            }
-        }
-    }
-
-    override tick(patch: Partial<BotWorldState> | ((s: BotWorldState) => Partial<BotWorldState>) = {}): BotWorldState {
-        return this.push(cur => {
-            let next: BotWorldState = { ...cur, tick: cur.tick + 1, ...(typeof patch === 'function' ? patch(cur) : patch) };
-            if (this.opts.logoutAt !== undefined && next.tick >= this.opts.logoutAt) {
-                // The session is gone: the server closes the trade and refunds our offer.
-                const refund = next.trade?.isOpen ? next.trade.myOffer : [];
-                this.queue = [];
-                return { ...next, trade: undefined, inventory: addTo(next.inventory, refund), inGame: false };
-            }
-            for (let i = 0; i < this.queue.length; ) {
-                if (this.queue[i]!.due <= next.tick) next = { ...next, ...this.queue.splice(i, 1)[0]!.fx(next) };
-                else i++;
-            }
-            return next;
-        });
+class TradeServer extends FakeTradePartner {
+    constructor(s: BotWorldState, theirs: TradeItem[], opts: { logoutAt?: number } = {}) {
+        super(s, theirs, { partner: PARTNER, stacks, weapon: name => WEAPON.test(name), ...opts });
     }
 }
 

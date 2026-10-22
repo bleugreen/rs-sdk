@@ -4,7 +4,8 @@
 // From the arrival tile in Kolodion's cellar (2543,4713; legs.ts T15-16 brings SCORED down the mage
 // bank ladder) to the god staff in hand in the chamber below, outside the Wilderness. Six
 // segments, as docs/speedrun/quests/mage_arena.md's step list and quest-magearena-run.ts:
-//   A kit          H13 held (or received from `kitFrom`), the entry check, the gree-gree dropped
+//   A kit          H13 held (or received from `kitFrom`), the entry check, the gree-gree dropped; with
+//                  `h13At: 'cellar'`, H13's one swap with `kitFrom` on the arrival tile first
 //   B kolodion     the talk and the arena teleport (logout-unsafe from here)
 //   C fight        the five forms; finish_mage_arena teleports back to the cellar
 //   D pool         the sparkling pool to the chamber
@@ -35,16 +36,18 @@ import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem, NearbyNpc } from '../../sdk/types';
+import { applyEquip, handOffMissing, handOffPre, itemPattern, loadHandOff, matches, runHandOff, slotPlan, tradeLanded, wanted, type Given, type HandOffPlan, type HandOffReport } from '../runner/handoff';
 import { dropItems, opLoc, pickup, talkTo } from '../lib/act';
 import { fight, prayerActive, prayerDoses, setPrayer } from '../lib/combat';
 import { converse, levelUpInterrupt } from '../lib/converse';
 import { pageText } from '../lib/dialogue';
-import type { ItemPattern } from '../lib/items';
+import { matchesItem, type ItemPattern } from '../lib/items';
+import { logNote } from '../lib/ticks';
 import { runTo, sumUse, type RuneName, type RuneUse, type RuneUseTable } from '../lib/travel';
 import { currentTick, waitTicks, waitUntil } from '../lib/wait';
 import { findLoc, findNpc, invCount, invItem, messagesSince, npcByIndex, opIndex, pos, skillLevel, skillXp, worn } from '../lib/world';
-import type { Check, Observed } from '../runner/step';
-import { allOf, inBox, kitSegment, questSteps, slotsCover, talkShape, within, type Box, type KitItem, type QuestItem, type QuestOptions, type Segment } from './segments';
+import type { Check, Observed, StepContext } from '../runner/step';
+import { allOf, inBox, kitSegment, questSteps, slotNeed, slotsCover, talkShape, within, type Box, type KitItem, type QuestItem, type QuestOptions, type Segment } from './segments';
 
 export const quest = 'magearena' as const;
 export const stepId = 'S16';
@@ -238,13 +241,26 @@ export function barredReason(item: Pick<InventoryItem, 'id' | 'name'>, where: 'w
     return null;
 }
 
+/** An item Kolodion's entry check bars, where SCORED has it, and the category or type it is barred by. */
+export interface Barred {
+    item: InventoryItem;
+    where: 'worn' | 'carried';
+    why: string;
+}
+
+/** Every item the entry check bars, worn and carried, read by item id (barredReason). */
+export function entryBarred(s: BotWorldState): Barred[] {
+    const of = (item: InventoryItem, where: Barred['where']): Barred[] => {
+        const why = barredReason(item, where);
+        return why === null ? [] : [{ item, where, why }];
+    };
+    return [...s.equipment.flatMap(i => of(i, 'worn')), ...s.inventory.flatMap(i => of(i, 'carried'))];
+}
+
 /** The entry check as the server runs it: every barred item carried or worn, or null when Kolodion would let SCORED in. */
 export function entryRefusal(s: BotWorldState): string | null {
-    const bad = [
-        ...s.equipment.map(i => [i, barredReason(i, 'worn'), 'worn'] as const),
-        ...s.inventory.map(i => [i, barredReason(i, 'carried'), 'carried'] as const),
-    ].filter(([, why]) => why !== null);
-    return bad.length ? `Kolodion's entry check (mage_arena.rs2:100-138) refuses: ${bad.map(([i, why, where]) => `${i.name} ${where} (${why})`).join(', ')}` : null;
+    const bad = entryBarred(s);
+    return bad.length ? `Kolodion's entry check (mage_arena.rs2:100-138) refuses: ${bad.map(b => `${b.item.name} ${b.where} (${b.why})`).join(', ')}` : null;
 }
 
 // ------------------------------------------------------------------ options
@@ -271,7 +287,25 @@ export interface Options extends QuestOptions {
      * segment D start without B having seen it (the lab's D fixture). In the run, B or C sets it.
      */
     fought?: boolean;
+    /**
+     * Where H13 is handed (rs/158's proposal, rs/488; main rules on adopting it). 'ardougne' (the
+     * default): at the Ardougne teleport landing before T15-16, so A finds the staff of fire worn and
+     * the entry check clean and only tops the kit up from `kitFrom`. 'cellar': here on the arrival
+     * tile, outside the Wilderness, so the fight's runes never cross it; A does H13's one swap with
+     * `kitFrom` (cellarPlan) and wields the staff, and the entry check and the staff move to A's
+     * postconditions.
+     */
+    h13At?: H13At;
+    /** The cellar swap's ledger row (default STEP-MANIFEST.md's H13, read when the steps are built in cellar mode). */
+    h13Plan?: HandOffPlan;
+    /** The cellar swap's report (its ticks and what moved), for the lab. */
+    onH13?: (r: HandOffReport) => void;
 }
+
+export type H13At = 'ardougne' | 'cellar';
+export const DEFAULT_H13_AT: H13At = 'ardougne';
+/** The inventory ledger row the cellar swap trades. */
+export const H13_ROW = 'H13';
 
 export const DEFAULT_SPELL: KolodionSpell = 'fire_wave';
 export const DEFAULT_GOD: God = 'saradomin';
@@ -393,6 +427,105 @@ const noDialog: Check<any> = s => (s.dialog.isOpen || s.modalOpen ? 'a dialogue 
 /** The fight's start: everything B needs besides the place. */
 export function fightReady(spell: KolodionSpell, spellRunes?: number): Check<any> {
     return allOf(entryClean, noGreegree, kitHeld(spell, spellRunes), fireStaffWorn, spellReady(spell), protectLevel, prayerEnough);
+}
+
+// ------------------------------------------------------------------ H13 in the cellar
+
+/**
+ * H13 as the cellar swap trades it: the ledger row, its give list extended by every item the entry
+ * check bars that the row does not already give, each by obj id and all of it (runHandOff takes a
+ * worn one off first). The extras are read off the state the swap starts from.
+ */
+export function cellarPlan(s: BotWorldState, row: HandOffPlan): HandOffPlan {
+    const extra: Given[] = [];
+    for (const { item } of entryBarred(s)) {
+        if (row.give.some(g => matches(g, item)) || extra.some(g => g.ids!.includes(item.id))) continue;
+        extra.push({ name: item.name.toLowerCase(), pattern: itemPattern(item.name), ids: [item.id], perObj: true, count: 'all' });
+    }
+    return extra.length ? { ...row, give: [...row.give, ...extra] } : row;
+}
+
+/** The fight's kit lines the swap leaves short: held now plus what the row's `in` adds. */
+function kitShortAfter(s: BotWorldState, row: HandOffPlan, items: readonly KitItem[]): string[] {
+    return items.flatMap(k => {
+        const n = k.n ?? 1;
+        const adds = row.receive.filter(r => matchesItem({ id: r.ids?.[0] ?? -1, name: r.name }, k.item)).reduce((a, r) => a + wanted(s, r), 0);
+        const have = invCount(s, k.item) + adds;
+        return have < n ? [`${runeName(k.item)} ${have} of ${n}`] : [];
+    });
+}
+
+/**
+ * A's start in cellar mode, before the swap: the helper named and in view, nothing the row hands in
+ * that Kolodion bars, the row's `in` covering the fight's kit, every item the swap gives held, and
+ * room for the swap and then for E's cape and F's staff. Once the swap has landed (a resume) only
+ * the slots are asked again.
+ */
+function cellarReady(row: HandOffPlan, kitFrom: string | undefined, items: readonly KitItem[]): Check<any> {
+    const at = `${row.id} in the cellar`;
+    return s => {
+        const plan = cellarPlan(s, row);
+        if (tradeLanded(s, plan)) return slots('A')(s, undefined);
+        if (!kitFrom) return `${at}: no kitFrom, the helper on the arrival tile to swap with (h13At 'cellar')`;
+        const both = entryBarred(s).filter(b => row.receive.some(r => matches(r, b.item)));
+        if (both.length) return `${at}: the row hands in ${both.map(b => b.item.name).join(', ')}, which Kolodion's entry check bars`;
+        const short = kitShortAfter(s, row, items);
+        if (short.length) return `${at}: the row's in leaves the fight's kit short: ${short.join('; ')}`;
+        const pre = handOffPre(s, plan, kitFrom);
+        if (pre !== true) return `${at}: ${pre}`;
+        // The gree-gree is dropped after the swap: one slot back.
+        const free = slotPlan(s, plan).after + (held(s, GREEGREE) ? 1 : 0);
+        const need = slotNeed(s, QUEST_ITEMS, LETTERS, 'A');
+        return free >= need.slots ? true : `inventory: ${free} free slots after the ${row.id} swap and the gree-gree's drop, segment ${need.peak} needs ${need.slots} (${need.items.join(', ')}): ${need.slots - free} short`;
+    };
+}
+
+/** The row's post-swap state: every `in` held, every given item gone, the staff worn and the gree-gree off. */
+const h13Done = (row: HandOffPlan): Check<any> => s => {
+    const missing = handOffMissing(s, row);
+    return missing.length ? `${row.id} after the cellar swap: ${missing.join('; ')}` : true;
+};
+
+/** The swap, or after a logout that landed it, only the equip changes. */
+async function cellarSwap(sdk: Sdk, row: HandOffPlan, kitFrom: string | undefined, onReport?: (r: HandOffReport) => void): Promise<void> {
+    const plan = cellarPlan(sdk.getState()!, row);
+    if (tradeLanded(sdk.getState()!, plan)) return applyEquip(sdk, plan);
+    if (!kitFrom) throw new Error(`${row.id} in the cellar: no kitFrom to swap with`);
+    await runHandOff(sdk, plan, kitFrom, onReport ? { onReport } : {});
+}
+
+// ------------------------------------------------------------------ the arena player log
+
+/** Players within this many tiles (Chebyshev) of SCORED in the arena get a note row. */
+export const ARENA_WATCH_TILES = 15;
+/** The note rows' step name. */
+export const ARENA_PLAYERS_NOTE = `${stepId}:arena-players`;
+
+/** One player seen near SCORED in the arena. Never the name. `form`: the Kolodion form being fought, null on B's landing. */
+export interface ArenaSighting {
+    tick: number;
+    distance: number;
+    combatLevel: number;
+    form: number | null;
+}
+
+/**
+ * The players within ARENA_WATCH_TILES of SCORED in the arena that `seen` has not had at this form.
+ * `seen` keys on the player's world slot, so a player is logged once per form however long it stays.
+ */
+export function arenaSightings(s: BotWorldState, form: number | null, seen: Set<string>): ArenaSighting[] {
+    const me = s.player;
+    if (!me || !inArena(s)) return [];
+    const out: ArenaSighting[] = [];
+    for (const p of s.nearbyPlayers) {
+        const distance = Math.max(Math.abs(p.x - me.worldX), Math.abs(p.z - me.worldZ));
+        if (distance > ARENA_WATCH_TILES) continue;
+        const key = `${p.index}@${form ?? 'landing'}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ tick: s.tick, distance, combatLevel: p.combatLevel, form });
+    }
+    return out;
 }
 
 // ------------------------------------------------------------------ the fight
@@ -573,6 +706,17 @@ interface RunMemo {
     chargeUnlocked: boolean;
     /** Forms in view on the arena landing tick of this run's talk: an earlier fight's leftovers (formPicker). */
     leftovers: number[];
+    /** The arena player log: the form being fought (null before the first), and who was logged at which. */
+    form: number | null;
+    seenPlayers: Set<string>;
+}
+
+/** Log arenaSightings as note rows for as long as the returned unsubscribe is not called. Logs only. */
+function watchArena(ctx: StepContext<any>, memo: RunMemo): () => void {
+    const target = ctx.session ?? ctx.sdk;
+    return ctx.sdk.onStateUpdate(s => {
+        for (const row of arenaSightings(s, memo.form, memo.seenPlayers)) logNote(ctx.log, target, ARENA_PLAYERS_NOTE, { ...row });
+    });
 }
 
 const staffDropped = (s: BotWorldState) => s.groundItems.some(g => GOD_STAFF.test(g.name) && g.distance <= 3);
@@ -636,6 +780,9 @@ async function fightSegment(sdk: Sdk, opts: Options | undefined, memo: RunMemo):
         ...(opts?.eatBelow !== undefined ? { eatBelow: opts.eatBelow } : {}),
         ...(opts?.fightMaxTicks !== undefined ? { maxTicks: opts.fightMaxTicks } : {}),
         tally,
+        onTick: (_, npc) => {
+            if (npc) memo.form = npc.id;
+        },
     });
     memo.fought = true;
     // finish_mage_arena: the landing, then Kolodion's congratulations (5 pages, mage_arena.rs2:154-156).
@@ -727,36 +874,80 @@ async function exitDrop(sdk: Sdk, keepSharks: number): Promise<void> {
 const slots = (at: (typeof LETTERS)[number]) => slotsCover(QUEST_ITEMS, LETTERS, at);
 const stateOf = (o: Observed) => o.state;
 
-export function steps(opts?: Options) {
-    const spell = opts?.spell ?? DEFAULT_SPELL;
-    const keepSharks = opts?.keepSharks ?? KEEP_SHARKS;
-    const memo: RunMemo = { fought: opts?.fought ?? false, chargeUnlocked: false, leftovers: [] };
+/** Untradeable and dead once S15 is over: dropped at A's end, before Kolodion's check. */
+async function dropGreegree(sdk: Sdk): Promise<void> {
+    if (!invItem(sdk.getState(), GREEGREE)) return;
+    const r = await dropItems(sdk, i => GREEGREE.test(i.name));
+    if (!r.ok) throw new Error('kit: the monkey greegree was not dropped');
+}
+
+/** A with H13 handed at the Ardougne landing: the kit topped up from `kitFrom` if short, the gree-gree dropped. */
+function ardougneKit(opts: Options | undefined, spell: KolodionSpell): Segment {
     const kitA = kitSegment(opts, kit(spell, opts?.spellRunes), {
         letter: 'A', label: 'kit',
         preconditions: allOf(inCellarCheck, kolodionLevel, fireStaffWorn, protectLevel, entryClean, slots('A')),
     });
-    const segs: Segment[] = [
-        {
-            ...kitA,
-            async run(ctx) {
-                await kitA.run(ctx);
-                if (invItem(ctx.sdk.getState(), GREEGREE)) {
-                    const r = await dropItems(ctx.sdk, i => GREEGREE.test(i.name));
-                    if (!r.ok) throw new Error('kit: the monkey greegree was not dropped');
-                }
-            },
-            postconditions: allOf(kitA.postconditions, fightReady(spell, opts?.spellRunes)),
+    return {
+        ...kitA,
+        async run(ctx) {
+            await kitA.run(ctx);
+            await dropGreegree(ctx.sdk);
         },
+        postconditions: allOf(kitA.postconditions, fightReady(spell, opts?.spellRunes)),
+    };
+}
+
+/**
+ * A with H13 handed here: the one swap with `kitFrom` (cellarPlan: the row plus whatever Kolodion
+ * bars), the staff wielded, the gree-gree dropped. SCORED arrives with the bow, the arrows and the
+ * Khazard armour and without the staff, so the entry check and the staff are postconditions.
+ */
+function cellarKit(opts: Options | undefined, spell: KolodionSpell): Segment {
+    const row = opts?.h13Plan ?? loadHandOff(H13_ROW);
+    return {
+        letter: 'A', label: 'kit', logoutSafe: true,
+        // No knife check: a knife held is T15-16's need (the Deserted Keep's webs, cut before the
+        // cellar), not S16's. Kolodion lets one in, so the row may still hand it over here.
+        preconditions: allOf(inCellarCheck, kolodionLevel, protectLevel, cellarReady(row, opts?.kitFrom, kit(spell, opts?.spellRunes))),
+        async run(ctx) {
+            await cellarSwap(ctx.sdk, row, opts?.kitFrom, opts?.onH13);
+            await dropGreegree(ctx.sdk);
+        },
+        postconditions: allOf(fireStaffWorn, entryClean, h13Done(row), fightReady(spell, opts?.spellRunes), slots('A')),
+    };
+}
+
+export function steps(opts?: Options) {
+    const spell = opts?.spell ?? DEFAULT_SPELL;
+    const keepSharks = opts?.keepSharks ?? KEEP_SHARKS;
+    const memo: RunMemo = { fought: opts?.fought ?? false, chargeUnlocked: false, leftovers: [], form: null, seenPlayers: new Set() };
+    const segs: Segment[] = [
+        (opts?.h13At ?? DEFAULT_H13_AT) === 'cellar' ? cellarKit(opts, spell) : ardougneKit(opts, spell),
         {
             letter: 'B', label: 'kolodion', logoutSafe: false,
             preconditions: allOf(inCellarCheck, fightReady(spell, opts?.spellRunes)),
-            run: ctx => talkKolodion(ctx.sdk, opts, memo),
+            async run(ctx) {
+                memo.form = null;
+                const unwatch = watchArena(ctx, memo);
+                try {
+                    await talkKolodion(ctx.sdk, opts, memo);
+                } finally {
+                    unwatch();
+                }
+            },
             postconditions: s => (inArena(s) || memo.fought ? true : `not in the arena after Kolodion's talk: at ${JSON.stringify(pos(s))}`),
         },
         {
             letter: 'C', label: 'fight', logoutSafe: false,
             preconditions: s => (inArena(s) || memo.fought ? true : 'not in the arena'),
-            run: ctx => fightSegment(ctx.sdk, opts, memo),
+            async run(ctx) {
+                const unwatch = watchArena(ctx, memo);
+                try {
+                    await fightSegment(ctx.sdk, opts, memo);
+                } finally {
+                    unwatch();
+                }
+            },
             postconditions: allOf(inCellarCheck, noDialog),
             // A relog in the arena (16 ticks out of combat) lands back in it: the fight goes on.
             inProgress: o => inArena(stateOf(o)),
