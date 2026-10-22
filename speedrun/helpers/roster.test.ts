@@ -40,13 +40,24 @@ describe('launcher entries', () => {
             expect(parsed.accounts.map(a => a.options)).toEqual(giverEntries(accounts, { role }).map(a => a.options as Record<string, unknown>));
             expect(parsed.gatewayPort).toBe(7796);
             expect(parsed.stopDeadlineMs).toBe(25_000);
+            // Run-day givers log in on S21's open and out on its stop; the load check logs in at once.
+            if (role === 'altar-giver') {
+                expect(parsed.accounts.every(a => a.loginOn?.step === 'S21' && a.loginOn.family === 'altar' && a.loginOn.waitMs > 9 * 3600_000)).toBe(true);
+                expect(parsed.accounts.every(a => a.stopOn?.step === 'S21' && a.stopOn.family === 'altar')).toBe(true);
+            } else expect(parsed.accounts.every(a => a.loginOn === null && a.stopOn === null)).toBe(true);
         }
     });
 
     test('run-day givers: body altar, direct path, slots round-robin', () => {
         const e = giverEntries(roster(4).accounts, { role: 'altar-giver', acceptFrom: '^cairn_h31$' });
         expect(e.map(x => (x.options as { slot: number }).slot)).toEqual([0, 1, 2, 0]);
-        expect(e[0]).toEqual({ account: 'cairn_t01', role: 'altar-giver', path: 'direct', options: { altar: 'body', slot: 0, essence: 27, restock: { kind: 'bank', acceptFrom: '^cairn_h31$' }, scope: { step: 'S21', family: 'altar' } } });
+        expect(e[0]).toEqual({
+            account: 'cairn_t01',
+            role: 'altar-giver',
+            path: 'direct',
+            options: { altar: 'body', slot: 0, essence: 27, restock: { kind: 'bank', acceptFrom: '^cairn_h31$' }, scope: { step: 'S21', family: 'altar' } },
+            loginOn: { step: 'S21', family: 'altar' }
+        });
         expect(giverEntries(['cairn_t01'], { role: 'altar-giver' })[0]!.options).toMatchObject({ restock: { kind: 'bank' } });
         expect(e.every(x => !('receiver' in x) && !('final' in x))).toBe(true);
     });
