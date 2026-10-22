@@ -16,6 +16,8 @@
 //
 // Setup uses staff cheats and is untimed; the timed span is the step's own TickLog row.
 
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { decideRequest, newRequestCtx } from '../helpers/bone-giver';
 import { isTileWalkable } from '../../sdk/pathfinding';
 import { pathTiles } from '../lib/paths';
@@ -42,7 +44,31 @@ const COOP_GATE = { x: 3235, z: 3295 };
 /** S05's arrival tile at Doric's (RUN-ORDER.md T04-05). */
 const DORIC = { x: 2952, z: 3451 };
 
-const scored = await openSession(botArg());
+// S01's tile, where the staging stands before a cold arrival: 74 tiles south of the coop and the row,
+// outside the area the client has loaded around them, so the teleport rebuilds the region.
+const S01_TILE = { x: 3222, z: 3222 };
+
+// --client=browser: SCORED in a Chrome tab on the lab's /bot page (main's standard for clicks right
+// after a landing; lab.sh with LAB_RUNNERS=0, so only the givers get lite runners). The page
+// publishes to the gateway named in its URL.
+const browserMode = arg('client', 'lite') === 'browser';
+let browser: { close(): Promise<void> } | null = null;
+if (browserMode) {
+    const webPort = process.env.WEB_PORT ?? '9300';
+    const agentPort = process.env.AGENT_PORT ?? '8300';
+    const cdpPort = Number(webPort) + 5;
+    const puppeteer = (await import('puppeteer')).default;
+    browser = await puppeteer.launch({
+        headless: true,
+        defaultViewport: null,
+        args: ['--no-sandbox', '--window-size=800,660', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', `--remote-debugging-port=${cdpPort}`],
+    });
+    process.env.SPEEDRUN_CDP_URL = `http://127.0.0.1:${cdpPort}`;
+    const envPath = join(process.cwd(), 'bots', botArg(), 'bot.env');
+    const clientUrl = `CLIENT_URL=http://localhost:${webPort}/bot?gateway=${encodeURIComponent(`ws://localhost:${agentPort}`)}`;
+    writeFileSync(envPath, readFileSync(envPath, 'utf8').replace(/^CLIENT_URL=.*\n?/m, '').trimEnd() + `\n${clientUrl}\n`, { mode: 0o600 });
+}
+const scored = await openSession(botArg(), browserMode ? { client: 'browser', launch: true, insecureQueryLogin: true } : {});
 const log = labLog(`magic-${mode}`);
 const noStop = { shouldStop: () => false, logout: async () => {} };
 
@@ -100,8 +126,16 @@ if (mode === 'diamond25') {
     result('magic diamond25', { pass, casts: r.casts, gaps: histogram(gaps), span: r.xpTicks.length ? r.xpTicks.at(-1)! - r.xpTicks[0]! : 0, clicks: r.clicks, ...(r.reason ? { reason: r.reason } : {}) });
 } else if (mode === 's02') {
     await leaveTutorial(scored);
-    const st = scored.sdk.getState()!;
-    if (magicLevel(st) > 1) throw new Error(`s02 needs a fresh account (Magic ${magicLevel(st)}); name a new lab bot`);
+    // As S01 leaves SCORED: Magic 1 at the landing tile, the starter runes (a reset, so a lab
+    // account serves several runs). Then a cold arrival at the coop and the step at once.
+    await mustTele(scored.sdk, S01_TILE.x, S01_TILE.z);
+    await wipe(scored);
+    if (magicLevel(scored.sdk.getState()) > 1) {
+        await cheat(scored.sdk, 'setstat magic 1');
+        await waitUntil(scored.sdk, st => magicXp(st) === 0, { maxTicks: 10 });
+    }
+    if (magicXp(scored.sdk.getState()) !== 0) throw new Error(`s02 needs Magic xp 0, not ${magicXp(scored.sdk.getState())}`);
+    await giveAll(scored, ['tinderbox 1', 'airrune 25', 'mindrune 15', 'waterrune 6', 'earthrune 4', 'bodyrune 2'], 6);
     await mustTele(scored.sdk, COOP_GATE.x, COOP_GATE.z);
     const reports: MagicReport[] = [];
     const [s02] = steps({ onReport: r => reports.push(r) });
@@ -117,7 +151,8 @@ if (mode === 'diamond25') {
     const givers: Session[] = [];
     for (const n of giverNames.slice(0, nLoads)) givers.push(await openSession(n, { pathfinding: false }));
     for (const s of [scored, ...givers]) await leaveTutorial(s);
-    await mustTele(scored.sdk, ROW_END.x, ROW_END.z);
+    // SCORED is staged away from the row and arrives cold just before the step (below).
+    await mustTele(scored.sdk, S01_TILE.x, S01_TILE.z);
     const tiles = giverTiles(givers.length);
     for (const [i, g] of givers.entries()) await mustTele(g.sdk, tiles[i]!.x, tiles[i]!.z);
     for (const s of [scored, ...givers]) await wipe(s);
