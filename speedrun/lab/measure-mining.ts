@@ -24,6 +24,8 @@
 //          --bear-ticks=400 (are the bears there aggressive to combat 3?). The helper is tick-perfect
 //          (it primes its clock on a spare rock and lands its click on the respawn tick), so at
 //          D=15, where it ties the lap, the server's player order decides who rolls first.
+//          --acceptHazards=true starts the band at a combat where no --fallback site is safe
+//          (the band's combat gate refuses it otherwise; mining.md section 11).
 //          --attach=1 attaches to a helper that is already in the world instead of launching it:
 //          with GIVERS=<helper> tickprog-lab.sh logs it in as a lite runner before the tab, so the
 //          server handles it before the main and it wins a same-tick race.
@@ -45,7 +47,7 @@ const bot = process.argv[2];
 const which = process.argv[3];
 const flag = (name: string, def?: string) => process.argv.find(a => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? def;
 if (!bot || !['chain', 'drops', 'contest'].includes(which ?? '')) {
-    console.error('usage: bun speedrun/lab/measure-mining.ts <bot> chain|drops|contest [--respawn=13] [--to=99] [--technique=auto] [--logs=4] [--n=10] [--level=95] [--baseline=90] [--fallback=auto] [--bear-ticks=400] [--attach=1]');
+    console.error('usage: bun speedrun/lab/measure-mining.ts <bot> chain|drops|contest [--respawn=13] [--to=99] [--technique=auto] [--logs=4] [--n=10] [--level=95] [--baseline=90] [--fallback=auto] [--acceptHazards=false] [--bear-ticks=400] [--attach=1]');
     process.exit(2);
 }
 const where = () => `host ${hostname()} load ${loadavg().map(l => l.toFixed(1)).join(' ')} at ${new Date().toISOString()}`;
@@ -307,7 +309,7 @@ async function contest(sdk: Sdk & Parameters<typeof runSteps>[0]['sdk'], actions
         });
 
         const log = TickLog.open(undefined, flag('log'));
-        const band = steps({ to: flag('to', '99'), respawn: D, technique: (flag('technique', 'knife') as 'knife'), travel: 'none', fallback: flag('fallback', 'auto') }).filter(s => s.name === 'mining.iron-63');
+        const band = steps({ to: flag('to', '99'), respawn: D, technique: (flag('technique', 'knife') as 'knife'), travel: 'none', fallback: flag('fallback', 'auto'), acceptHazards: flag('acceptHazards', 'false') }).filter(s => s.name === 'mining.iron-63');
         const t0 = sdk.getState()!.tick;
         let err: unknown = null;
         try {
