@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseBank } from './boards.ts';
 import { census, familyOf } from './families.ts';
-import { parsePositions, zoneOf } from './positions.ts';
+import { parsePositions, zoneOf, zoneRoster } from './positions.ts';
 
 const fixture = (name: string) => readFileSync(join(import.meta.dir, 'fixtures', name), 'utf8');
 const positions = parsePositions(JSON.parse(fixture('playerpositions.json')));
@@ -19,6 +19,14 @@ describe('positions (recorded 2026-10-22 ~22:1xZ)', () => {
         expect(zoneOf(positions.find(p => p.name === 'Soko')!)).toBe('Varrock west bank (GE)');
         expect(zoneOf(positions.find(p => p.name === 'Banker')!)).toBe('Varrock west bank (GE)');
         expect(zoneOf({ x: 3222, z: 3218, level: 0 })).toBeNull();
+    });
+
+    test('rosters every player per watched zone', () => {
+        const roster = zoneRoster(positions);
+        expect(roster['Varrock west bank (GE)']).toContain('Banker');
+        expect(roster["Seers' Village bank"]!.filter(n => /^Goo\d/.test(n))).toHaveLength(19);
+        expect(roster['Catherby fishing shore']).toEqual(expect.arrayContaining(['Goo026', 'Goo027', 'Goo028', 'Goo030']));
+        expect(Object.values(roster).flat()).toHaveLength(new Set(Object.values(roster).flat()).size);
     });
 });
 

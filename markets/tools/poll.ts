@@ -6,7 +6,9 @@
  *
  *   bun markets/tools/poll.ts [--every=300] [--block-hours=6] [--out=docs/markets/data] [--once] [--server=HOST]
  *
- * Each poll prints the leaders and online family counts; a gain too large for ordinary play between two polls
+ * Each poll also records every player standing in the watched zones (markets/lib/positions.ts ZONES: the GE
+ * table, the banks, the fishing spots, the essence mine and the air altar). Each poll prints the leaders, online
+ * family counts and zone headcounts; a gain too large for ordinary play between two polls
  * (markets/lib/snapshots.ts jumps()) prints a JUMP line.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -15,7 +17,7 @@ import { parseArgs } from 'node:util';
 import { readBank } from '../lib/boards.ts';
 import { DEMO_SERVER, Gentle } from '../lib/demo.ts';
 import { familyOf } from '../lib/families.ts';
-import { readPositions, type Position } from '../lib/positions.ts';
+import { readPositions, zoneRoster, type Position } from '../lib/positions.ts';
 import { decodePolls, encodePoll, formatPollFile, jumps, type BankRow, type PollFile } from '../lib/snapshots.ts';
 
 const MIN_EVERY_S = 300;
@@ -51,7 +53,8 @@ async function main(): Promise<void> {
         const path = join(out, blockFile(at, blockHours));
         const file: PollFile = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : { v: 1, source: g.origin, polls: [] };
         if (previous === null && file.polls.length) previous = decodePolls(file).findLast(p => p.bank)?.bank ?? null;
-        file.polls.push(encodePoll(file, at.toISOString(), bank, positions, n => familyOf(n) !== null));
+        const record = encodePoll(file, at.toISOString(), bank, positions, n => familyOf(n) !== null, ps => zoneRoster(ps));
+        file.polls.push(record);
         writeFileSync(path, formatPollFile(file));
 
         const online = new Map<string, number>();
@@ -61,6 +64,7 @@ async function main(): Promise<void> {
         }
         const leaders = (bank ?? []).slice(0, 5).map(r => `${r.name} ${gp(r.gp)}`).join(', ');
         console.log(`${at.toISOString().slice(0, 16)}Z online=${positions?.length ?? '?'} | ${leaders || 'bank read failed'} | families online ${[...online].map(([f, n]) => `${f} ${n}`).join(', ')}`);
+        if (record.zones) console.log(`  zones: ${Object.entries(record.zones).map(([z, names]) => `${z} ${names.length}`).join(', ')}`);
         if (bank && previous) {
             for (const j of jumps(previous, bank)) console.log(`  JUMP ${j.name} ${j.from === null ? 'new' : gp(j.from)} -> ${gp(j.to)} (+${gp(j.delta)})`);
         }
