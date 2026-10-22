@@ -27,7 +27,12 @@
 // Food: `eatBelow` alone eats on the tick of an obstacle click. With `eatGap` it
 // eats in any phase, mid-obstacle included (the agility scripts never read the
 // eat's %action_delay), at most once per `eatGap` ticks, and HP at or below
-// `eatBelow` with no food left ends the run (`ended: 'no-food'`).
+// `eatBelow` with no food left ends the run (`ended: 'no-food'`). An eat is an
+// inventory click, which clears the pending interaction (OpHeldHandler), so one
+// that lands while the player walks to an obstacle cancels the obstacle and the
+// step sits out `stepTimeout`. `eatAt: 'land'` holds such an eat for the next
+// click tick (sent before the click) or an idle tick after a fall, unless HP is
+// within one skeleton hit of death.
 
 import type { NearbyPlayer } from '../types.js';
 import { AGILITY_COURSES, inBox, stepFromPosition, type AgilityCourse, type AgilityStep, type Box } from './agility-courses.js';
@@ -40,6 +45,8 @@ const REFUSED_RE = /from here|from this side/i;
 const UNDERGROUND = 6400;
 /** Ticks after a fail message in which a hit counts as the fall's (the barbarian water bite comes a few ticks later). */
 const FALL_WINDOW = 6;
+/** The armed skeletons' max hit (all.npc): at or below it, `eatAt: 'land'` eats at once whatever the phase. */
+const LETHAL_HIT = 3;
 
 /** wilderness_levels.rs2: (z - 3520) / 8 + 1 on the surface, from 9920 underground; 0 outside. */
 export function wildernessLevel(x: number, z: number): number {
@@ -188,7 +195,7 @@ type Phase =
 createAgility.params = [
     'course', 'laps', 'maxTicks', 'technique', 'settleTicks', 'food', 'eatBelow', 'stepTimeout', 'startStep',
     // opt-in: absent, the program sends what it sent before each was added
-    'untilLevel', 'eatGap', 'restockBelow', 'protect', 'protectRange', 'protectNpc', 'flickGap',
+    'untilLevel', 'eatGap', 'eatAt', 'restockBelow', 'protect', 'protectRange', 'protectNpc', 'flickGap',
     'pauseFor', 'playerRadius', 'threatTargetRange', 'threatCloseTiles', 'threatCloseTicks'
 ] as const;
 export function createAgility(params: ProgramParams): TickProgram {
@@ -203,6 +210,8 @@ export function createAgility(params: ProgramParams): TickProgram {
     const eatBelow = num(params.eatBelow, 0, 'eatBelow');
     const eatAnyPhase = params.eatGap !== undefined;
     const eatGap = num(params.eatGap, 3, 'eatGap');
+    const eatAt = oneOf(params.eatAt, ['any', 'land'] as const, 'any', 'eatAt');
+    if (eatAt === 'land' && !eatAnyPhase) throw new Error("eatAt: 'land' needs eatGap");
     /** End `low-food` between obstacles once this many food items or fewer are left (-1: off), for a restock. */
     const restockBelow = num(params.restockBelow, -1, 'restockBelow');
     // Protect from Melee (prayer 14): 'hold' keeps it on; 'near' has it on only while an NPC matching
@@ -459,17 +468,23 @@ export function createAgility(params: ProgramParams): TickProgram {
             if (t - startTick > maxTicks) return end(ctx, 'maxTicks');
             if (level >= untilLevel) return end(ctx, 'level');
 
-            // food, in any phase (with eatGap)
-            if (eatAnyPhase && eatBelow > 0 && p.hp <= eatBelow && t - lastEatTick >= eatGap) {
+            // food, in any phase (with eatGap); 'land' holds it through an obstacle wait
+            const eatDue = () => eatAnyPhase && eatBelow > 0 && p.hp <= eatBelow && t - lastEatTick >= eatGap;
+            const eatNow = (): boolean => {
                 const food = invItem(s, foodRe);
-                if (!food) return end(ctx, 'no-food', { hp: p.hp });
+                if (!food) {
+                    end(ctx, 'no-food', { hp: p.hp });
+                    return false;
+                }
                 if (ctx.send({ type: 'useInventoryItem', slot: food.slot, optionIndex: itemOp(food, /^eat$/i, 1) }, 'eat')) {
                     lastEatTick = t;
                     eats++;
                     lap.eats++;
                     ctx.count('eats');
                 }
-            }
+                return true;
+            };
+            if (eatDue() && (eatAt === 'any' || phase.kind !== 'wait' || p.hp <= LETHAL_HIT) && !eatNow()) return;
 
             // Protect from Melee, every tick but the first 3 after an obstacle click: the button runs
             // p_clearpendingaction, which would cancel the walk to the obstacle. On a click tick the
@@ -564,6 +579,8 @@ export function createAgility(params: ProgramParams): TickProgram {
 
             // the click: the next obstacle, on the label that showed the last one done
             const st = stepAt(i);
+            // a held eat goes out first: the click after it sets the interaction again
+            if (eatAt === 'land' && eatDue() && !eatNow()) return;
             if (!eatAnyPhase && eatBelow > 0 && p.hp <= eatBelow) {
                 const food = invItem(s, foodRe);
                 if (food && ctx.send({ type: 'useInventoryItem', slot: food.slot, optionIndex: itemOp(food, /^eat$/i, 1) }, 'eat')) {

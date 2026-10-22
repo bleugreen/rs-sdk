@@ -120,6 +120,45 @@ describe('agility course', () => {
         expect(eats.map(e => e.tick).slice(0, 3)).toEqual([54, 57, 60]);
     });
 
+    test("eatAt 'land' holds an eat through the obstacle wait and sends it just before the next click", () => {
+        let hp = 99;
+        const { h } = run({
+            ticks: 40,
+            params: { eatBelow: 50, eatGap: 3, eatAt: 'land', food: '^cake$' },
+            spec: t => {
+                if (t === 54) hp = 40;
+                return { hp, inventory: [{ name: 'Cake', options: ['Eat'] }] };
+            }
+        });
+        const clicks = h.sent.filter(s => s.action.type === 'interactLoc').map(s => s.tick);
+        const eats = h.sent.filter(s => s.action.type === 'useInventoryItem');
+        const nextClick = clicks.find(c => c > 54)!;
+        expect(eats[0]!.tick).toBe(nextClick);
+        // same tick, eat first: the click sets the interaction the eat cleared
+        const order = h.sent.filter(s => s.tick === nextClick).map(s => s.action.type);
+        expect(order).toEqual(['useInventoryItem', 'interactLoc']);
+        // never inside a wait: every eat is on a click tick
+        for (const e of eats) expect(clicks).toContain(e.tick);
+    });
+
+    test("eatAt 'land' eats at once mid-wait when HP is within a skeleton hit of death", () => {
+        let hp = 99;
+        const { h } = run({
+            ticks: 20,
+            params: { eatBelow: 6, eatGap: 3, eatAt: 'land', food: '^cake$' },
+            spec: t => {
+                if (t === 54) hp = 3;
+                return { hp, inventory: [{ name: 'Cake', options: ['Eat'] }] };
+            }
+        });
+        expect(h.sent.find(s => s.action.type === 'useInventoryItem')!.tick).toBe(54);
+    });
+
+    test("eatAt 'land' needs eatGap", () => {
+        expect(() => createAgility({ course: 'wilderness', laps: 1, eatBelow: 6, eatAt: 'land' })).toThrow(/needs eatGap/);
+        expect(() => createAgility({ course: 'wilderness', laps: 1, eatAt: 'sometimes' })).toThrow(/eatAt/);
+    });
+
     test('with eatGap, ends no-food when HP is at or below eatBelow and nothing is left to eat', () => {
         const { h } = run({ ticks: 40, params: { eatBelow: 50, eatGap: 3 }, spec: t => ({ hp: t >= 55 ? 30 : 99 }) });
         expect(h.status.phase).toBe('done');
