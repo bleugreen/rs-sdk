@@ -1,24 +1,21 @@
-// The run toggle and interaction approaches (lib/run-mode.ts):
+// The run toggle and an interaction approach (lib/run-mode.ts):
 //   speedrun/lab/lab.sh srlab1 speedrun/lab/measure-run-approach.ts:--n=3
 //
-// A. Client-routed: from one start tile, op-click the same tree 8-15 tiles away
-//    ("Chop down"; no axe needed, only the approach is measured) with the toggle
-//    off, then on. Both clients send the MOVE_OPCLICK route with the ctrl-run
-//    flag (lite movement.ts tryMoveTo, browser Client.ts tryMove), which sets
-//    the engine's tempRun, so this approach runs either way.
-// B. Engine-driven: the engine's interaction test `::~itest 27`
-//    (cheat_interactions.rs2) adds a goblin 10 tiles away and calls
-//    p_opnpc(2). The engine paths to an NPC (or player) target itself
-//    (Player.ts pathToPathingTarget); with no client route there is no tempRun,
-//    so the toggle alone sets the pace. The same holds for an engine re-path
-//    after the player stood still for a tick (tempRun clears on any tick
-//    without a step) and for scripted p_walk. A loc target has no such path:
-//    with clientRoutefinder on, the engine never paths to a loc itself
-//    (`::~itest 25`, p_oploc on a tree 10 tiles away, does not move at all).
+// From one start tile, op-click the same tree 8-15 tiles away ("Chop down";
+// no axe needed, only the approach is measured) with the toggle off, then on,
+// `n` times each. Reported per attempt: ticks from the click's tick to the tick
+// of the last step, the tiles stepped (summed per tick, so detours count), and
+// the ticks with a step.
 //
-// Reported per attempt: ticks from the click's tick to the tick of the last
-// step, the tiles stepped (summed per tick, so detours count), and the ticks
-// with a step. Lab only (staff commands, and itest clears the inventory).
+// Measured 2026-10-21 (lite client, 300 ms): 14 tiles in 7 ticks both ways.
+// Both clients send the MOVE_OPCLICK route with the ctrl-run flag (lite
+// movement.ts tryMoveTo, browser Client.ts tryMove), which sets the engine's
+// tempRun, so a client-routed approach runs whatever the toggle says. Read, not
+// measured here: the toggle decides the pace only where the engine moves the
+// player with no fresh ctrl-run route: its own re-path to an NPC or player
+// target (Player.ts pathToPathingTarget) once tempRun has cleared (any tick
+// without a step clears it), and scripted p_walk. With clientRoutefinder on the
+// engine never paths to a loc by itself.
 
 import type { BotWorldState, NearbyLoc } from '../../sdk/types';
 import { ensureRun, ensureRunOn, runIsOn } from '../lib/run-mode';
@@ -26,7 +23,7 @@ import { closeSession, openSession } from '../lib/session';
 import { waitTicks, waitUntil } from '../lib/wait';
 import { onTutorialIsland } from '../lib/world';
 import { arg, botArg, result } from './common';
-import { cheat, tele } from './setup';
+import { tele } from './setup';
 
 const n = Number(arg('n', '3'));
 /** Start tiles to try, in order, until one has a tree 8-15 tiles away. */
@@ -46,19 +43,14 @@ if (onTutorialIsland(sdk.getState()?.player)) {
     await ensureRunOn(sdk);
 }
 
-interface Approach { part: 'A client route' | 'B engine p_opnpc'; mode: 'walk' | 'run'; ticks: number; tiles: number; stepTicks: number; toggle: boolean | null }
+interface Approach { mode: 'walk' | 'run'; ticks: number; tiles: number; stepTicks: number; toggle: boolean | null }
 
-/**
- * Fire `go`, then follow the player tick by tick until it has stepped and then
- * stood still for 4 ticks. A jump of more than 2 tiles (a teleport) restarts
- * the count from the new tile.
- */
-async function follow(part: Approach['part'], running: boolean, go: () => Promise<unknown>): Promise<Approach> {
+/** Set the toggle, fire `go`, then follow the player until it has stepped and then stood still for 4 ticks. */
+async function follow(running: boolean, go: () => Promise<unknown>): Promise<Approach> {
     await ensureRun(sdk, running);
     await waitTicks(sdk, 1);
     const s0 = sdk.getState()!;
     let last = { x: s0.player!.worldX, z: s0.player!.worldZ };
-    let startTick = s0.tick;
     let lastMoveTick = s0.tick;
     let tiles = 0;
     let stepTicks = 0;
@@ -67,10 +59,7 @@ async function follow(part: Approach['part'], running: boolean, go: () => Promis
         if (!p) return;
         const d = Math.max(Math.abs(p.worldX - last.x), Math.abs(p.worldZ - last.z));
         last = { x: p.worldX, z: p.worldZ };
-        if (d > 2) {
-            startTick = lastMoveTick = s.tick;
-            tiles = stepTicks = 0;
-        } else if (d > 0) {
+        if (d > 0) {
             tiles += d;
             stepTicks++;
             lastMoveTick = s.tick;
@@ -79,13 +68,9 @@ async function follow(part: Approach['part'], running: boolean, go: () => Promis
     await go();
     await waitUntil(sdk, s => tiles > 0 && s.tick - lastMoveTick >= 4, { maxTicks: 60, after: s0.tick });
     unsub();
-    return { part, mode: running ? 'run' : 'walk', ticks: lastMoveTick - startTick, tiles, stepTicks, toggle: runIsOn(sdk.getState()) };
+    return { mode: running ? 'run' : 'walk', ticks: lastMoveTick - s0.tick, tiles, stepTicks, toggle: runIsOn(sdk.getState()) };
 }
 
-const rows: Approach[] = [];
-const record = (a: Approach) => { rows.push(a); result('approach', a); };
-
-// A. Client-routed op-click.
 const chop = (l: NearbyLoc) => l.optionsWithIndex.find(o => /chop/i.test(o.text));
 let start: { x: number; z: number } | null = null;
 let tree: NearbyLoc | null = null;
@@ -106,30 +91,22 @@ for (const s of STARTS) {
 }
 if (!start || !tree) throw new Error('no tree 8-15 tiles from any start tile');
 const op = chop(tree)!.opIndex;
-result('setup A', { start, tree: { name: tree.name, id: tree.id, x: tree.x, z: tree.z }, chebyshev: Math.max(Math.abs(tree.x - start.x), Math.abs(tree.z - start.z)) });
+result('setup', { start, tree: { name: tree.name, id: tree.id, x: tree.x, z: tree.z }, chebyshev: Math.max(Math.abs(tree.x - start.x), Math.abs(tree.z - start.z)) });
+
+const rows: Approach[] = [];
 for (let i = 0; i < n; i++) {
     for (const running of [false, true]) {
         await tele(sdk, start.x, start.z);
         await waitTicks(sdk, 3);
-        record(await follow('A client route', running, () => sdk.sendInteractLoc(tree!.x, tree!.z, tree!.id, op)));
+        const a = await follow(running, () => sdk.sendInteractLoc(tree!.x, tree!.z, tree!.id, op));
+        rows.push(a);
+        result('approach', a);
     }
 }
-
-// B. Engine-driven p_opnpc (the goblin is deleted 5 ticks after it is added,
-// so a walk is cut short; the pace over the steps taken is what counts).
-for (let i = 0; i < n; i++) {
-    for (const running of [false, true]) {
-        record(await follow('B engine p_opnpc', running, () => cheat(sdk, '~itest 27')));
-        await waitTicks(sdk, 3);
-    }
-}
-
-for (const part of ['A client route', 'B engine p_opnpc'] as const) {
-    for (const mode of ['walk', 'run'] as const) {
-        const m = rows.filter(r => r.part === part && r.mode === mode);
-        const sum = (f: (r: Approach) => number) => m.reduce((s, r) => s + f(r), 0);
-        result(`summary ${part} ${mode}`, { n: m.length, meanTicks: +(sum(r => r.ticks) / m.length).toFixed(2), meanTiles: +(sum(r => r.tiles) / m.length).toFixed(2), tilesPerStepTick: +(sum(r => r.tiles) / sum(r => r.stepTicks)).toFixed(2) });
-    }
+for (const mode of ['walk', 'run'] as const) {
+    const m = rows.filter(r => r.mode === mode);
+    const sum = (f: (r: Approach) => number) => m.reduce((s, r) => s + f(r), 0);
+    result(`summary ${mode}`, { n: m.length, meanTicks: +(sum(r => r.ticks) / m.length).toFixed(2), meanTiles: +(sum(r => r.tiles) / m.length).toFixed(2), tilesPerStepTick: +(sum(r => r.tiles) / sum(r => r.stepTicks)).toFixed(2) });
 }
 await ensureRunOn(sdk);
 await closeSession(session);
