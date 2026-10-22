@@ -139,7 +139,8 @@ describe('live prices', () => {
         const general = { buyMultiplier: 400, sellMultiplier: 1300, haggle: 30 };
         expect(livePrices(100, general, 1, null)).toEqual({ buy: 127, sell: 37 });
         expect(livePrices(100, general, 10, null)).toEqual({ buy: 100, sell: 10 });
-        expect(livePrices(100, general, 50, null)).toEqual({ buy: 10, sell: 10 }); // both floor at 100/1000 of cost
+        // The haggle offset caps at 1000: the buy price bottoms out at (1300-1000)/1000 of cost, the offer at 100/1000.
+        expect(livePrices(100, general, 50, null)).toEqual({ buy: 30, sell: 10 });
         expect(livePrices(1, general, 50, null).buy).toBe(1); // a purchase never costs 0
         expect(shopValue(100, 30, 400, 1)).toBe(37);
     });
@@ -186,8 +187,9 @@ describe('records', () => {
             buyPrice: 4,
             sellPrice: 2,
             valuePrice: 5,
-            computedBuyPrice: 4,
-            computedSellPrice: 2
+            // 100 under the configured 5,000: twice the base price (the SDK's buyPrice still says 4).
+            computedBuyPrice: 8,
+            computedSellPrice: 6
         });
         // Not in the base config: priced from its whole count, and flagged.
         expect(items[1]).toMatchObject({ obj: 'chaosrune', stockBase: null, inBaseConfig: false, valuePrice: null, computedBuyPrice: 9, computedSellPrice: 9 });
