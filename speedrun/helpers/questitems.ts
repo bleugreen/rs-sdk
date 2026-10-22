@@ -373,16 +373,7 @@ export class Gatherer {
                 await this.until(() => this.inv(drop) > before, 6);
                 continue;
             }
-            const hp = this.sdk.getSkill('Hitpoints');
-            if (hp && hp.level * 2 < hp.baseLevel) {
-                // Rest back to 80% rather than re-engaging just above half.
-                this.log('resting', { hp: hp.level, of: hp.baseLevel });
-                await this.until(() => {
-                    const h = this.sdk.getSkill('Hitpoints');
-                    return !h || h.level * 5 >= h.baseLevel * 4;
-                }, 1500);
-                continue;
-            }
+            if (await this.rest()) continue;
             const target = this.sdk
                 .getNearbyNpcs()
                 .filter(n => npc.test(n.name) && !n.inCombat && n.reachable !== false)
@@ -411,6 +402,21 @@ export class Gatherer {
             }
         }
         return kills;
+    }
+
+    /**
+     * Under half Hitpoints, wait where the account stands until 80% (helpers carry no food):
+     * resting to 80% rather than going on just above half. True when it rested.
+     */
+    async rest(): Promise<boolean> {
+        const hp = this.sdk.getSkill('Hitpoints');
+        if (!hp || hp.level * 2 >= hp.baseLevel) return false;
+        this.log('resting', { hp: hp.level, of: hp.baseLevel });
+        await this.until(() => {
+            const h = this.sdk.getSkill('Hitpoints');
+            return !h || h.level * 5 >= h.baseLevel * 4;
+        }, 1500);
+        return true;
     }
 
     /** Train whichever of Attack, Strength and Defence is lowest: an even account kills faster and is hit less. */
@@ -593,6 +599,9 @@ export const TASKS: Record<string, Task> = {
         makes: g => [want('Snape grass', g.n(1))],
         run: async g => {
             await trainOnGoblins(g);
+            // The hobgoblins there cost a ~50-Hitpoint account about 10 a pack of grass,
+            // so a bulk run rests at the bank between trips.
+            await g.rest();
             await g.pickup('Snape grass', [...T.snapeGrass], () => g.held('Snape grass') >= g.target('Snape grass'));
         }
     },
