@@ -4,7 +4,7 @@
 # scripts in order, then stops everything.
 #
 #   [NODE_TICKRATE=300] [LAB_HELPERS="srlab2"] [LAB_RUNNERS=0] \
-#     [WEB_PORT=9300 WEB_MANAGEMENT_PORT=9301 HISCORES_WEB_PORT=9302 NODE_PORT=44000 AGENT_PORT=8300] \
+#     [WEB_PORT=9300 WEB_MANAGEMENT_PORT=9301 HISCORES_WEB_PORT=9302 NODE_PORT=44000 AGENT_PORT=8300] [LAB_TIMEOUT=900] \
 #     speedrun/lab/lab.sh <bot> <script.ts>[:arg:arg] ...
 #
 # Each script runs as `bun <script> <bot> <args...>`; arguments follow the
@@ -31,6 +31,15 @@ export WEB_PORT=${WEB_PORT:-9300} WEB_MANAGEMENT_PORT=${WEB_MANAGEMENT_PORT:-930
 PIDS=()
 cleanup() { for p in "${PIDS[@]}"; do kill "$p" 2>/dev/null; done; sleep 1; for p in "${PIDS[@]}"; do kill -9 "$p" 2>/dev/null; done; }
 trap cleanup EXIT
+# A signal exits through the EXIT trap, so a killed lab stops its engine, gateway and clients too.
+trap 'exit 124' TERM INT HUP ALRM
+# LAB_TIMEOUT=<seconds> bounds the whole lab (macOS has no timeout(1)).
+if [ -n "${LAB_TIMEOUT:-}" ]; then
+    # The sleep gets /dev/null and dies with its watcher: an orphaned sleep holding the
+    # output would keep a pipe reading the lab open until the timeout.
+    (sleep "$LAB_TIMEOUT" </dev/null >/dev/null 2>&1 & s=$!; trap 'kill $s 2>/dev/null; exit 0' TERM; wait $s; echo "lab.sh: LAB_TIMEOUT ${LAB_TIMEOUT}s reached, stopping"; kill -TERM $$) &
+    PIDS+=($!)
+fi
 
 wait_for() { # file phrase seconds
     for _ in $(seq 1 "$3"); do grep -q "$2" "$1" 2>/dev/null && return 0; sleep 1; done
@@ -50,10 +59,17 @@ PIDS+=($!)
 echo $! > "$LOG/engine.pid"
 export LAB_LOG=$LOG
 wait_for "$LOG/engine.log" 'World ready' 900 || exit 1
+# "World ready" prints before the web server binds: a port held by another lab fails after it,
+# and the scripts would then drive that lab's engine without an error.
+bound() { # log name
+    sleep 2
+    if grep -q 'EADDRINUSE\|Failed to start server' "$1"; then echo "$2 could not bind its port (another lab on this block?):"; grep -m1 'Failed to start server\|EADDRINUSE' "$1"; return 1; fi
+}
+bound "$LOG/engine.log" engine || exit 1
 
 (cd "$ROOT/server/gateway" && exec bun run gateway.ts) > "$LOG/gateway.log" 2>&1 &
 PIDS+=($!)
-sleep 2
+bound "$LOG/gateway.log" gateway || exit 1
 
 RUNNERS="${LAB_HELPERS:-}"
 [ "${LAB_RUNNERS:-1}" != "0" ] && RUNNERS="$BOT $RUNNERS"
