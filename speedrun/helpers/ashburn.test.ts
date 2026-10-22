@@ -1,0 +1,32 @@
+import { expect, test } from 'bun:test';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
+
+test('Ashburn pins the current address even with an older local known_hosts file', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ashburn-test-'));
+    try {
+        const home = join(dir, 'home');
+        const bin = join(dir, 'bin');
+        mkdirSync(join(home, '.rs-fleet'), { recursive: true });
+        mkdirSync(bin);
+        writeFileSync(join(home, '.rs-fleet', 'known_hosts_ashburn'), 'old-host ssh-ed25519 old-key\n');
+        writeFileSync(join(bin, 'ssh'), '#!/bin/sh\nprintf "%s\\n" "$@"\n', { mode: 0o700 });
+        const env = { ...process.env, HOME: home, TMPDIR: dir, PATH: bin + ':' + process.env.PATH };
+        delete env.ASHBURN_HOST;
+        const script = resolve(import.meta.dir, 'ashburn.sh');
+        const result = spawnSync('bash', [script, 'true'], { env, encoding: 'utf8' });
+        expect(result.status).toBe(0);
+        expect(result.stdout).toContain('ubuntu@3.209.186.185');
+        expect(result.stdout).toContain('StrictHostKeyChecking=yes');
+        const pinned = readFileSync(join(dir, 'ashburn_known_hosts'), 'utf8');
+        expect(pinned).toContain('3.209.186.185,100.66.164.37 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBYCG1nNhhY0ax6lRCgxT6oxfNh4NW7mlLOdQeoWZ0wE');
+        expect(pinned).toContain('old-host ssh-ed25519 old-key');
+        const override = spawnSync('bash', [script, 'true'], { env: { ...env, ASHBURN_HOST: 'ubuntu@test-host' }, encoding: 'utf8' });
+        expect(override.status).toBe(0);
+        expect(override.stdout).toContain('ubuntu@test-host');
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
