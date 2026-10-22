@@ -6,7 +6,9 @@
 // Runs the same way on any machine with bun and curl (a GitHub Actions runner, a cloud VM,
 // a home box). Credentials come from BOT_USERNAME/PASSWORD in the environment, else from
 // bots/<--bot>/bot.env. Use a throwaway cairn_-prefixed account; the demo auto-registers it on
-// first login. Writes one JSON file (--out, default $TMPDIR) and prints a text summary.
+// first login. Writes one JSON file (--out, default $TMPDIR) and prints a text summary. A
+// localhost or 127.* --host (a lab engine) is reached over plain http and ws, as the lite session
+// does; the http and ws phases measure the demo's Fly routing and assume TLS.
 //
 // Phases (default: http,ws,react). Every request is spaced out; nothing here is a load test.
 //   http    --http=N fresh-connection GETs of a nonexistent path through curl, --http-gap-ms
@@ -25,7 +27,7 @@
 //           against the tick arrivals, so its server-side wait can be read against tick phase.
 //   burst   --bursts=B times: on a fresh tick, --burst-n (<=4) walks --burst-spacing ms apart;
 //           reports the tick each lands on, after T and relative to the first.
-//   blind   --blind=N walks on a fixed --blind-period (ms) clock, not waiting for state (the
+//   blind   --blind=N walks on a fixed --blind-period (ms, default one tick) clock, not waiting for state (the
 //           knife loop's shape), each aimed at the tick after the latest one seen; reports the
 //           share landing on the aimed tick and the slip distribution by send phase.
 //           burst and blind walk inside a 2x2 block of open ground: run react first, or stand
@@ -33,14 +35,32 @@
 //   sample  --minutes=M of tick steadiness: inbound frame intervals plus /playercount every
 //           30 s, no input beyond keepalives.
 //
+// Ending early. The JSON is rewritten after each unit of work (an http round, a react-delay
+// group, a burst, a sample), so even a SIGKILL keeps most of a run. On every other exit it is
+// written once more, with `status` and the text summary of what was gathered: the normal end
+// (exit 0), a lost game socket (exit 3), SIGTERM or SIGINT (exit 143 or 130; `timeout` sends
+// SIGTERM) and an uncaught error (exit 1). An early end records `aborted: {utc, phase, reason,
+// kind}` and prints `ABORTED at <utc>: <reason>`. The game socket counts as lost on its close or
+// error event, on a failed send, once the connection reports itself closed, or after
+// SILENCE_TICKS ticks without a tick. The probe then stops rather than logging in again: a world
+// that has just restarted is refilling, which is not a reading of the conditions being measured.
+//
+// Tick length. tickMs() from speedrun/lib/wait.ts: SPEEDRUN_TICK_MS, else NODE_TICKRATE, else
+// 300. The demo announces its tick length in the spectator feed's hello (`tickMs`); pass it as
+// SPEEDRUN_TICK_MS. It sets the blind clock's default period, the send-phase buckets and the
+// silence watchdog, and is recorded as `tickMs` (and `tickMsFrom`). The frame-interval
+// thresholds in frameStats (over400, catchUps) are the run gate's definitions in fixed ms and do
+// not follow it.
+//
 // Timing model. The engine reads input once at the start of a tick and flushes all output at
 // its end, on the same thread that serves HTTP and websocket upgrades. A packet sent r ms after
-// the tick-T frame arrives lands on T+k when r + RTT < k*300 - C, where C is the time from tick
+// the tick-T frame arrives lands on T+k when r + RTT < k*tick - C, where C is the time from tick
 // start to output flush. So the delay at which reactions flip from k to k+1 ticks measures C.
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { tmpdir, hostname } from 'node:os';
 import { join } from 'node:path';
+import { tickMs } from '../../../speedrun/lib/wait';
 
 const args = new Map<string, string>();
 for (const a of process.argv.slice(2)) {
@@ -59,6 +79,12 @@ const MINUTES = Number(args.get('minutes') ?? 10);
 const STARTED = new Date();
 const OUT = args.get('out') ?? join(process.env.TMPDIR ?? tmpdir(), `demo-latency-${LABEL}-${STARTED.toISOString().replace(/[:.]/g, '-')}.json`);
 const REPO = new URL('../../../', import.meta.url).pathname;
+const SECURED = !(HOST.startsWith('localhost') || HOST.startsWith('127.'));
+const ORIGIN = `${SECURED ? 'https' : 'http'}://${HOST}`;
+const TICK_MS = tickMs();
+const TICK_MS_FROM = ['SPEEDRUN_TICK_MS', 'NODE_TICKRATE'].find(k => Number(process.env[k]) === TICK_MS && tickMs({ [k]: process.env[k] }) === TICK_MS) ?? 'default';
+/** Ticks without a tick after which the game session counts as lost. */
+const SILENCE_TICKS = 15;
 
 /** Wall clock in ms with sub-ms resolution. */
 const now = (): number => performance.timeOrigin + performance.now();
@@ -87,9 +113,125 @@ const report: any = {
     host: HOST,
     startedUtc: STARTED.toISOString(),
     startedPdt: pdt(STARTED.getTime()),
-    args: Object.fromEntries(args)
+    args: Object.fromEntries(args),
+    tickMs: TICK_MS,
+    tickMsFrom: TICK_MS_FROM,
+    status: 'running',
+    aborted: null
 };
-const summary: string[] = [`demo-latency-probe ${LABEL} (${hostname()}) ${report.startedPdt} PDT -> ${HOST}`];
+/** Summary lines of the phases that have finished; a running phase adds its own (see inPhase). */
+const summary: string[] = [`demo-latency-probe ${LABEL} (${hostname()}) ${report.startedPdt} PDT -> ${HOST}, tick ${TICK_MS} ms (${TICK_MS_FROM})`];
+
+// ------------------------------------------------------------------ lifecycle
+
+/** The game socket is gone. `at` is when the probe noticed (wall ms). */
+class SessionLost extends Error {
+    constructor(
+        message: string,
+        readonly at: number
+    ) {
+        super(message);
+    }
+}
+
+/** A readable reason for a thrown value: ClientStream throws the WebSocket itself on a dead socket. */
+function describe(e: unknown): string {
+    if (e instanceof Error) return e.message || e.name;
+    if (e instanceof WebSocket) return `write to a dead game socket (readyState ${e.readyState})`;
+    return String(e);
+}
+
+let currentPhase = 'start';
+/** The phase in progress and how to write up what it has gathered so far. */
+let running: { name: string; snapshot: () => string[] } | null = null;
+let aborted: { utc: string; phase: string; reason: string; kind: 'socket' | 'signal' | 'error' } | null = null;
+let session: { close: () => void } | null = null;
+let finished = false;
+
+/**
+ * Run one phase. `snapshot` sets the phase's report section from what it holds now and returns
+ * its summary lines; it runs at checkpoints, on an exit mid-phase, and once when the phase ends
+ * (however it ends), so it must be idempotent and cope with a phase that stopped anywhere.
+ */
+async function inPhase(name: string, snapshot: () => string[], body: () => Promise<void>) {
+    currentPhase = name;
+    running = { name, snapshot };
+    try {
+        await body();
+    } finally {
+        running = null;
+        summary.push(...snapshot());
+    }
+}
+
+function composeReport(status: 'running' | 'complete' | 'aborted'): string[] {
+    const lines = [...summary, ...(running?.snapshot() ?? [])];
+    if (aborted) lines.push(`ABORTED at ${aborted.utc}: ${aborted.reason} (phase ${aborted.phase})`);
+    report.status = status;
+    report.aborted = aborted;
+    report.summary = lines;
+    return lines;
+}
+
+/** Write through a temporary file, so a kill mid-write leaves the previous checkpoint intact. */
+function saveReport() {
+    writeFileSync(`${OUT}.partial`, JSON.stringify(report));
+    renameSync(`${OUT}.partial`, OUT);
+}
+
+/** Rewrite the JSON with everything gathered so far. Call only between timing-sensitive steps. */
+function checkpoint() {
+    try {
+        composeReport('running');
+        saveReport();
+    } catch (e) {
+        console.error(`[probe] checkpoint to ${OUT} failed: ${describe(e)}`);
+    }
+}
+
+/** Write the JSON and print the summary (once, whichever path gets here first), then exit. */
+function finish(code: number): never {
+    if (!finished) {
+        finished = true;
+        try {
+            session?.close();
+        } catch {}
+        report.endedUtc = new Date().toISOString();
+        report.endedPdt = pdt(Date.now());
+        const lines = composeReport(aborted ? 'aborted' : 'complete');
+        try {
+            saveReport();
+        } catch (e) {
+            console.error(`[probe] writing ${OUT} failed: ${describe(e)}`);
+        }
+        console.log(lines.join('\n'));
+        console.log(`json: ${OUT}`);
+    }
+    process.exit(code);
+}
+
+function abort(kind: 'socket' | 'signal' | 'error', reason: string, code: number, at: number = now()): never {
+    aborted ??= { utc: new Date(at).toISOString(), phase: currentPhase, reason, kind };
+    return finish(code);
+}
+
+process.on('SIGTERM', () => abort('signal', 'SIGTERM', 143));
+process.on('SIGINT', () => abort('signal', 'SIGINT', 130));
+process.on('uncaughtException', e => abort('error', `uncaught: ${describe(e)}`, 1));
+process.on('unhandledRejection', e => abort('error', `unhandled rejection: ${describe(e)}`, 1));
+
+const playercount = (): Promise<number | null> =>
+    fetch(`${ORIGIN}/playercount`, { signal: AbortSignal.timeout(10_000) })
+        .then(r => r.json())
+        .then((j: any) => j.count as number)
+        .catch(() => null);
+
+/** A note when the world's tick, as measured, is not the tick length the probe was given. */
+function tickNote(intervals: Record<string, number> | null): string[] {
+    const p50 = intervals?.p50;
+    if (!p50 || Math.abs(p50 - TICK_MS) <= 0.15 * TICK_MS) return [];
+    return [`note: tick interval p50 ${p50} ms, but the probe ran on tickMs ${TICK_MS} (${TICK_MS_FROM}); set SPEEDRUN_TICK_MS to the world's tick`];
+}
 
 // ------------------------------------------------------------------ http
 
