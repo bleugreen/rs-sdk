@@ -277,7 +277,7 @@ describe('agility Wilderness decisions', () => {
                         return;
                     }
                     const z0 = sdk.state!.player!.worldZ;
-                    for (let k = 1; k <= 3; k++) setTimeout(() => sdk.tick(s => ({ player: { ...s.player!, worldZ: z0 + k, teleportTick: s.tick + 1 } })), k);
+                    for (let k = 1; k <= 3; k++) setTimeout(() => sdk.tick(s => ({ player: { ...s.player!, worldZ: z0 + k, teleportTick: s.tick + 1, teleportJump: false } })), k);
                 }
                 if (a.method === 'clickDialogByText' && page >= 0) {
                     if (/busy/.test(String(a.args[0]))) femi = false;

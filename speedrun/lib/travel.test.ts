@@ -39,7 +39,7 @@ function gnomeGate(sdk: FakeSdk, opts: { femi?: boolean; drop?: number } = {}) {
                 return;
             }
             const p = sdk.state!.player!;
-            const step = (z: number) => (s: BotWorldState) => ({ player: { ...p, worldZ: z, z, teleportTick: s.tick + 1 } as PlayerState });
+            const step = (z: number) => (s: BotWorldState) => ({ player: { ...p, worldZ: z, z, teleportTick: s.tick + 1, teleportJump: false } as PlayerState });
             const dir = p.worldZ <= 3382 ? 1 : -1;
             queue.push(() => ({}), step(p.worldZ + dir), step(p.worldZ + 2 * dir), step(p.worldZ + 3 * dir));
         }
