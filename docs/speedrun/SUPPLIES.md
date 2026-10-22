@@ -156,6 +156,8 @@ logs in after SCORED drops to the robust 8-tick schedule for its own trades.
 
 ### Peak concurrent logins (the swarm bound)
 
+**Since fold-in 28 (main 13:3x via rs/158): per address, on the late-login order.** The operator's **per-IP cap is 50**, with **45 proposed as the working cap** (tenet 16's successor, pending), so the bound is per address, not a total. **The S21 givers log in late**, and once they report ready SCORED relogs to fall behind them in its address bucket (RUN-ORDER.md R12, the 'relog before S21', +2 ticks, m, in-page); the families log out as they finish (the S03 droppers after S03, the ring givers after S04, the air givers after S06, b01-b04 after S07), so **the peak per address is ~30 instead of ~49** (i; rs/41's measured peak per address pending). The triggers are run.ts's (rs/393), acted on by rs/41's schedule. The table below is the earlier plan, every giver in before SCORED, kept as the upper bound.
+
 Tenet 16 (cairn://p/rs/tenets/16, approved 17:43 PDT) and main's working cap: **our simultaneous
 demo logins, summed across every host, both Ashburn machines included, stay at or under 100, with a
 working cap of 80.** The server's operator bans at 100
@@ -203,8 +205,8 @@ when the rest of the fleet is out.)
   swarm side: the demo's bound is per IP and the cap a total, and main's "~20 a machine" was an
   observation, not a cap (main, 16:24 PDT). The CPU side is the giver-load check, pending
   (RUN-ORDER.md O41).
-- **Settled: S21's givers log in before SCORED** (RUN-ORDER.md O38, settled; main, 16:35-16:36
-  PDT), on SCORED's machine, so this table stands. The host plan of a later S21 login (16:15 PDT) is
+- **Superseded in fold-in 28: S21's givers log in late** (the late-login order above; RUN-ORDER.md R12). Before: S21's givers logged in before SCORED (RUN-ORDER.md O38; main, 16:35-16:36
+  PDT), on SCORED's machine, which is the table. The host plan of a later S21 login (16:15 PDT) is
   withdrawn.
 - **The nature altar** (RUN-ORDER.md's sensitivity row) takes ~52 givers: ~107-109 through S21 with
   the fleet in, ~30 more givers than the body plan's 22, so it requires **logging out at least 30
