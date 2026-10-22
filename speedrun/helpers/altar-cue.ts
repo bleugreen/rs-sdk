@@ -22,7 +22,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, watch, writeFileSync, type FSWatcher } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import type { BotWorldState } from '../../sdk/types';
-import { isTradeRequest } from '../lib/trade';
+import { isTradeRequest, tradeOf } from '../lib/trade';
 
 export const CUE_VERSION = 1;
 export const CUE_FILE = 'cue.json';
@@ -57,8 +57,12 @@ export interface Turn {
     schedule?: TurnSchedule;
 }
 
-/** The helper families that read a cue. bone-giver is two: 'bone' in S07's standing mode, 'courier' in S18's on-request mode. */
-export const CUE_FAMILIES = ['altar', 'bone', 'courier', 'anvil', 'cannon'] as const;
+/**
+ * The helper families that read a cue. bone-giver is two: 'bone' in S07's standing mode, 'courier' in
+ * S18's on-request mode. 'mule' is the trade giver's top-up packages (mule.ts), which read only a scoped
+ * top-up ask. The list is a shared contract (run.ts's cue writes, the cue snapshot): only ever append.
+ */
+export const CUE_FAMILIES = ['altar', 'bone', 'courier', 'anvil', 'cannon', 'mule'] as const;
 export type CueFamily = (typeof CUE_FAMILIES)[number];
 
 /**
@@ -458,6 +462,11 @@ export function turnOrder<T extends TurnCandidate>(
  * only an ask written after it saw the trade open (less `ASK_SLACK_MS` for the two clients'
  * frame arrivals) and newer than the last one it served, so an ask left over from an earlier
  * trade is never sized onto this one.
+ *
+ * The trade giver's top-up packages (mule.ts, H12's `shark to 15`) read the same ask, written the
+ * same way, with a `scope` naming the package's step and family 'mule'. An ask's scope addresses
+ * it as a cue's does (usableAsk): the S18 courier's asks carry none, so neither reader can take
+ * the other's.
  */
 export const ASK_FILE = 'topup-ask.json';
 
@@ -475,6 +484,8 @@ export interface TopUpAsk {
     items: AskItem[];
     /** Date.now() at the write. */
     ms: number;
+    /** Whom the ask is for; absent on the S18 courier's asks (thieving.ts). */
+    scope?: CueScope;
 }
 
 function askError(items: unknown): string | null {
@@ -491,22 +502,57 @@ function askError(items: unknown): string | null {
     return null;
 }
 
-export function writeTopUpAsk(dir: string, items: AskItem[], ms = Date.now()): TopUpAsk {
-    const err = askError(items);
+export function writeTopUpAsk(dir: string, items: AskItem[], ms = Date.now(), scope?: CueScope): TopUpAsk {
+    const err = askError(items) ?? (scope ? scopeError(scope) : null);
     if (err) throw new Error(err);
-    const ask: TopUpAsk = { v: 2, items: items.map(a => ({ item: a.item, count: a.count })), ms };
+    const ask: TopUpAsk = { v: 2, items: items.map(a => ({ item: a.item, count: a.count })), ms, ...(scope ? { scope: { step: scope.step, family: scope.family } } : {}) };
     writeJsonAtomicSync(join(dir, ASK_FILE), ask);
     return ask;
 }
 
 export function readTopUpAsk(dir: string): TopUpAsk | null {
     const a = readJson<TopUpAsk>(join(dir, ASK_FILE));
-    return a && a.v === 2 && Number.isFinite(a.ms) && askError(a.items) === null ? a : null;
+    return a && a.v === 2 && Number.isFinite(a.ms) && askError(a.items) === null && (a.scope === undefined || scopeError(a.scope) === null) ? a : null;
 }
 
-/** The ask for the trade the courier saw open at `openMs`: written since then (less the slack) and after the last one served. */
-export function usableAsk(ask: TopUpAsk | null, openMs: number, lastServedMs: number): TopUpAsk | null {
-    return ask && ask.ms >= openMs - ASK_SLACK_MS && ask.ms > lastServedMs ? ask : null;
+/**
+ * The ask for the trade the reader saw open at `openMs`: written since then (less the slack), after
+ * the last one served, and addressed to the reader. A reader with a `scope` takes only an ask carrying
+ * that scope; a reader without one (the S18 courier) only an ask carrying none.
+ */
+export function usableAsk(ask: TopUpAsk | null, openMs: number, lastServedMs: number, scope?: CueScope): TopUpAsk | null {
+    if (!ask || ask.ms < openMs - ASK_SLACK_MS || ask.ms <= lastServedMs) return null;
+    const addressed = scope ? cueAddresses(ask, scope.step, scope.family) : ask.scope === undefined;
+    return addressed ? ask : null;
+}
+
+export interface AwaitAskOptions {
+    /** The cue directory holding ASK_FILE. */
+    dir: string;
+    /** Date.now() at the first frame that showed the trade open. */
+    openMs: number;
+    /** Date.now() of the ask last served (0: none yet). */
+    lastServedMs: number;
+    /** Observed ticks to wait for the ask after the call. */
+    maxTicks: number;
+    /** The reader's scope (usableAsk). */
+    scope?: CueScope;
+    signal?: AbortSignal;
+}
+
+/**
+ * The ask for the trade open now (usableAsk), polled every 15 ms for up to `maxTicks` observed ticks;
+ * null when none came, the trade closed, or `signal` aborted. Every ask reader waits through this.
+ */
+export async function awaitAsk(sdk: { getState(): BotWorldState | null }, o: AwaitAskOptions): Promise<TopUpAsk | null> {
+    const t0 = sdk.getState()?.tick ?? 0;
+    for (;;) {
+        const ask = usableAsk(readTopUpAsk(o.dir), o.openMs, o.lastServedMs, o.scope);
+        if (ask) return ask;
+        const s = sdk.getState();
+        if (!s || !tradeOf(s).isOpen || s.tick - t0 > o.maxTicks || o.signal?.aborted) return null;
+        await Bun.sleep(15);
+    }
 }
 
 // ------------------------------------------------------------------ files
