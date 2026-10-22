@@ -7,7 +7,7 @@ import { baseState } from '../lib/fake-sdk';
 import { compactJournal } from '../lib/quests';
 import type { Observed } from '../runner/step';
 import {
-    BANANA_TREE_IDS, DEFAULT_OPTIONS, doneAt, EXIT_DROPS, exitState, h12Kit, H12_POTIONS, H12_SHARKS, isWaydarIntroEnd, itemMilestone, setStepNote, stopgapRetry, talkableNpc, JOURNAL_MARKS, JOURNAL_PROBE, journalMilestone, MM_OBJ, mmMilestone, PUZZLE_TILE_IDS,
+    BANANA_TREE_IDS, bananaRoomDrops, DEFAULT_OPTIONS, roomFor, doneAt, EXIT_DROPS, exitState, h12Kit, H12_POTIONS, H12_SHARKS, isWaydarIntroEnd, itemMilestone, setStepNote, stopgapRetry, talkableNpc, JOURNAL_MARKS, JOURNAL_PROBE, journalMilestone, MM_OBJ, mmMilestone, PUZZLE_TILE_IDS,
     patrolLeavesLane, resolveOptions, REWARD_ITEMS, seg, segmentName, SEGMENTS, stepId, yRoom,
 } from './monkey-madness';
 import { slotNeed } from './segments';
@@ -340,6 +340,52 @@ describe('exit', () => {
     });
 });
 
+describe("J: room for the crates' items", () => {
+    const pack = (others: number, sharks: number) => baseState({
+        inventory: [
+            ...Array.from({ length: others }, (_, i) => item(2000 + i, i)),
+            ...Array.from({ length: sharks }, (_, i) => item(MM_OBJ.shark, others + i)),
+        ],
+    } as Partial<BotWorldState>);
+    const j = roomFor(MM_OBJ.dentures, MM_OBJ.amuletMould);
+
+    test('a chain arrives with one free slot: the sharks eaten for room cover the rest', () => {
+        expect(j(pack(12, 15), {} as never)).toBe(true);
+    });
+
+    test('refuses a full pack with no shark to eat', () => {
+        expect(j(pack(28, 0), {} as never)).toMatch(/2 slots needed, 0 free and 0 sharks/);
+    });
+});
+
+describe("O: room for the five picked bananas", () => {
+    // `others` filler slots, `sharks` sharks and `bananas` bananas, each one slot.
+    const pack = (others: number, sharks: number, bananas = 0) => baseState({
+        inventory: [
+            ...Array.from({ length: others }, (_, i) => item(2000 + i, i)),
+            ...Array.from({ length: sharks }, (_, i) => item(MM_OBJ.shark, others + i)),
+            ...Array.from({ length: bananas }, (_, i) => item(MM_OBJ.banana, others + sharks + i)),
+        ],
+    } as Partial<BotWorldState>);
+
+    test('no drop with five free slots', () => {
+        expect(bananaRoomDrops(pack(11, 12))).toBe(0);
+    });
+
+    test("a chain's arrival (one free slot) sets four sharks down", () => {
+        expect(bananaRoomDrops(pack(15, 12))).toBe(4);
+    });
+
+    test('bananas already held count toward the five', () => {
+        expect(bananaRoomDrops(pack(15, 10, 2))).toBe(2);
+        expect(bananaRoomDrops(pack(15, 8, 5))).toBe(0);
+    });
+
+    test('refuses when the sharks cannot make the room', () => {
+        expect(() => bananaRoomDrops(pack(26, 1))).toThrow(/no room for 5 bananas: 1 free and 1 sharks/);
+    });
+});
+
 describe("Y: room for Narnode's reward", () => {
     const named = (name: string, slot: number, count = 1): InventoryItem => ({ slot, id: 1000 + slot, name, count, optionsWithIndex: [] });
     const pack = (n: number, coins: boolean) => baseState({
@@ -357,5 +403,16 @@ describe("Y: room for Narnode's reward", () => {
         expect(yRoom(pack(25, false), {} as never)).toMatch(/needs 4 free slots.*1 short/);
         expect(yRoom(pack(25, true), {} as never)).toBe(true);
         expect(yRoom(pack(26, true), {} as never)).toMatch(/needs 3 free slots/);
+    });
+
+    test('the mould and sigil held count as room: Y drops them before the reward', () => {
+        const withDead = (n: number) => baseState({
+            inventory: [
+                ...Array.from({ length: n - 2 }, (_, i) => named('Shark', i)),
+                item(MM_OBJ.amuletMould, n - 2), item(MM_OBJ.sigil, n - 1),
+            ],
+        } as Partial<BotWorldState>);
+        expect(yRoom(withDead(26), {} as never)).toBe(true);
+        expect(yRoom(withDead(27), {} as never)).toMatch(/needs 4 free slots/);
     });
 });
