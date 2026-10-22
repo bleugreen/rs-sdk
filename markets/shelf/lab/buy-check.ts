@@ -28,13 +28,11 @@ await waitUntil(sdk, st => st.shop.shopItems.length > 0, { maxTicks: 5 });
 
 const item = (id: number): ShopItem => sdk.getState()!.shop.shopItems.find(i => i.id === id)!;
 async function value(it: ShopItem): Promise<number | null> {
-    const before = sdk.getState()!.gameMessages.length;
     const t0 = sdk.getState()!.tick;
     await sdk.sendClickComponentWithOption(SHOP_STOCK_COMPONENT, VALUE_OPTION, it.slot);
     const r = await waitUntil(sdk, st => st.gameMessages.some(m => m.tick >= t0 && parseValueMessage(m.text)?.name === it.name), { maxTicks: 6 });
     if (!r.ok) return null;
     const m = [...r.state.gameMessages].reverse().find(x => x.tick >= t0 && parseValueMessage(x.text)?.name === it.name);
-    void before;
     return m ? parseValueMessage(m.text)!.price : null;
 }
 
