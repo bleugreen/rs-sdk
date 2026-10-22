@@ -257,9 +257,9 @@ failures below 37):**
 | Item | Quantity | Where helpers get it (read) | Scarcity |
 |---|---|---|---|
 | Kebab mixture (`bowl_oniontomugthanki`) | 340 | helpers combine bowl + onion, + tomato, + cooked ugthanki meat (delay-free, no level, `ugthanki_kebab.rs2:73-113`) | depends on the meat |
-| Cooked ugthanki meat (for the above) | 340 | raw meat drops from Ugthanki camels, 1 per kill (`ugthanki.rs2:1-11`); 25 spawns in the Kharidian desert (`maps/m49_47`..`m51_48`); cooked at level 1, 40 base for the helper | no GE market (uncontested); combat helpers |
+| Cooked ugthanki meat (for the above) | 340 | raw meat drops from Ugthanki camels, 1 per kill (`ugthanki.rs2:1-11`); 25 spawns in the Kharidian desert (`maps/m49_47`..`m51_48`); cooked at level 1, 40 base for the helper. Gathered by the bones role's `ugthanki` spot (`docs/speedrun/helpers/bones.md`): about 125 per account-hour on one measured trip, desert ceiling about 385 an hour | no GE market (uncontested); combat helpers |
 | Onion, tomato | 340 each | gnome and Miscellania shops; Port Sarim food shop (tomatoes, 3 in stock); farm spawns | moderate |
-| Bowl | 14-28 (they come back with each kebab) | Catherby and Yanille shops, 2 each | easy |
+| Bowl | 340 for a stock made in advance (each noted mixture holds its bowl until the scored account makes the kebab; only then does the bowl come back) | Catherby and Yanille shops, 2 each | easy |
 | Pitta bread | 340 | helper at **Cooking 58** cooks pitta dough (`cooking_generic.dbrow:131-138`); dough from flour + water | needs a Cooking-58 helper |
 
 **Route 2b, fish (1 -> 99)**: about 80 swordfish + 170 sharks (+ about 20 low-level fish); fishing

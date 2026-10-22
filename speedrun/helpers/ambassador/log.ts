@@ -21,6 +21,7 @@ export type LogKind =
     | 'decision'
     | 'sent'
     | 'blocked'
+    | 'retry'
     | 'ratelimited'
     | 'stale'
     | 'muted'
@@ -130,6 +131,7 @@ export function formatRecord(r: LogRecord): string {
                 ? `${time} ? invalid model reply (${r.error})`
                 : `${time} ? ${r.respond ? `reply ${ch}to ${r.to}: ${q(r.text)}` : 'no reply'}${r.injection ? ' [model: injection]' : ''} (${r.ms} ms)`;
         case 'blocked':
+        case 'retry':
         case 'ratelimited':
         case 'stale':
         case 'muted':

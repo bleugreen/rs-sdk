@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import type { NearbyPlayer } from '../../sdk/types';
 import type { GiverStatus } from './altar-cue';
 import { giverOptions } from './altar-giver';
-import { count, ESSENCE, findItem, roomTiles } from './altar-room';
+import { altarData, count, ESSENCE, findItem, NOTE_IDS, roomTiles } from './altar-room';
 import { chooseBatch, planTurns } from './altar-receiver';
 
 const status = (account: string, over: Partial<GiverStatus> = {}): GiverStatus => ({
@@ -107,5 +107,16 @@ describe('carried items', () => {
         expect(count(s, ESSENCE)).toBe(27);
         expect(count(s, AIR)).toBe(1);
         expect(findItem(s, ESSENCE)?.slot).toBe(2);
+    });
+
+    test('body altar: its talisman, Edgeville bank, and a noted body talisman is not a load', () => {
+        const body = altarData('body');
+        expect(body.level).toBe(20);
+        expect(body.bank).toEqual({ x: 3094, z: 3491 });
+        expect(body.ruins).toEqual({ level: 0, x: 3053, z: 3445 });
+        expect(NOTE_IDS.has(1447)).toBe(true);
+        const s = inv([[1447, 'Body talisman', 5], [1446, 'Body talisman', 1]]);
+        expect(count(s, body.talisman)).toBe(1);
+        expect(findItem(s, body.talisman)?.slot).toBe(1);
     });
 });

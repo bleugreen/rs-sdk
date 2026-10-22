@@ -57,6 +57,8 @@ speedrun/
                          watchdog (docs/speedrun/research/competitors/hiscore-timestamps.md 5.1)
     measure-restart.ts   engine SIGKILL and client SIGKILL mid-run: what rolls back, reconnect
                          and resume times (docs/speedrun/RESILIENCE.md section 6)
+    measure-mine-logs.ts logs and Fletching xp over a long in-page knife-mine lap, run in
+                         tickprog-lab.sh's tab (docs/speedrun/skills/mining.md section 7)
   tools/          tab-login.ts (log an account's browser tab in with a one-time token over
                   CDP; see "Logging the browser tab in");
                   upstream watch (nightly diff of watched upstream paths);

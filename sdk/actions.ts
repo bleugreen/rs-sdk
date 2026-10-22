@@ -1747,7 +1747,7 @@ export class BotActions {
      */
     private findUsableBankBooth(): NearbyLoc | null {
         const booths = this.sdk.getNearbyLocs()
-            .filter(l => /bank booth|bank chest/i.test(l.name) && !/^closed/i.test(l.name) && l.optionsWithIndex.length > 0)
+            .filter(l => /bank booth|bank chest|shantay chest/i.test(l.name) && !/^closed/i.test(l.name) && l.optionsWithIndex.length > 0)
             .sort((a, b) => a.distance - b.distance);
         return booths.find(l => l.optionsWithIndex.some(o => /bank|use/i.test(o.text))) ?? booths[0] ?? null;
     }
@@ -1804,7 +1804,9 @@ export class BotActions {
         if (bankBoothNow) {
             const bankOpt = bankBoothNow.optionsWithIndex.find(o => /^bank$/i.test(o.text)) ||
                            bankBoothNow.optionsWithIndex.find(o => /use.quickly/i.test(o.text)) ||
-                           bankBoothNow.optionsWithIndex.find(o => /use/i.test(o.text));
+                           bankBoothNow.optionsWithIndex.find(o => /use/i.test(o.text)) ||
+                           // Shantay's chest: Open, then a mesbox the wait loop below clicks through.
+                           bankBoothNow.optionsWithIndex.find(o => /^open$/i.test(o.text));
             if (bankOpt) {
                 await this.sdk.sendInteractLoc(bankBoothNow.x, bankBoothNow.z, bankBoothNow.id, bankOpt.opIndex);
                 interactSuccess = true;

@@ -206,6 +206,8 @@ export interface SentRecord {
     /** canon() of the player answered, or null for an opener. */
     to: string | null;
     norm: string;
+    /** The line as sent, for the near-repeat guard (records from older state files lack it). */
+    text?: string;
 }
 
 /** Persisted across restarts in state.json, so a crash loop cannot reset the limits. */
@@ -230,9 +232,9 @@ export function parseLimiterState(raw: unknown): LimiterState {
     if (!raw || typeof raw !== 'object') return s;
     const r = raw as Partial<LimiterState>;
     if (Array.isArray(r.sent)) {
-        s.sent = r.sent.filter(
-            (x): x is SentRecord => !!x && typeof x.at === 'number' && typeof x.norm === 'string' && ['reply', 'decline', 'opener'].includes(x.kind)
-        );
+        s.sent = r.sent
+            .filter((x): x is SentRecord => !!x && typeof x.at === 'number' && typeof x.norm === 'string' && ['reply', 'decline', 'opener'].includes(x.kind))
+            .map(x => (typeof x.text === 'string' ? x : { at: x.at, kind: x.kind, to: x.to, norm: x.norm }));
     }
     if (Array.isArray(r.openers)) s.openers = r.openers.filter((x): x is string => typeof x === 'string');
     if (typeof r.lastOpenerAt === 'number') s.lastOpenerAt = r.lastOpenerAt;
@@ -281,18 +283,27 @@ export class Limiter {
             if (!to) return 'decline-without-player';
             if (now - (this.state.declines[canon(to)] ?? -Infinity) < L.declineEveryMs) return 'decline-limit';
         }
-        if (kind === 'opener') {
-            if (now - this.state.lastOpenerAt < L.openerEveryMs) return 'opener-limit';
-            if (this.state.openers.some(o => similarity(o, text) >= L.repeatSimilarity)) return 'opener-reused';
-        }
+        if (kind === 'opener' && now - this.state.lastOpenerAt < L.openerEveryMs) return 'opener-limit';
+        return this.repeatOf(now, kind, text);
+    }
+
+    /** Whether this line is (nearly word for word) one already said: 'opener-reused', 'repeat' or null. */
+    repeatOf(now: number, kind: SendKind, text: string): 'opener-reused' | 'repeat' | null {
+        const L = this.limits;
+        if (kind === 'opener' && this.state.openers.some(o => similarity(o, text) >= L.repeatSimilarity)) return 'opener-reused';
         if (this.state.sent.some(s => now - s.at < L.repeatWindowMs && similarity(s.norm, text) >= L.repeatSimilarity)) return 'repeat';
         return null;
+    }
+
+    /** Our latest `n` lines, oldest first, as sent (or normalised, for records from older state files). */
+    recentTexts(n: number): string[] {
+        return this.state.sent.slice(-n).map(s => s.text ?? s.norm);
     }
 
     record(now: number, kind: SendKind, to: string | null, text: string): void {
         const L = this.limits;
         const who = to ? canon(to) : null;
-        this.state.sent.push({ at: now, kind, to: who, norm: normText(text) });
+        this.state.sent.push({ at: now, kind, to: who, norm: normText(text), text });
         if (who) {
             const recent = this.state.sent.filter(s => s.to === who && now - s.at < L.perPlayerWindowMs).length;
             if (recent >= L.perPlayerBurst) this.state.cooldowns[who] = now + L.perPlayerCooldownMs;

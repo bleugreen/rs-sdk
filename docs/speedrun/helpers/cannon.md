@@ -11,6 +11,10 @@ account does everything and is the one that meets the scored account at run time
 ROLE_OPTIONS='{"balls":1160}' bun speedrun/helpers/cannon.ts cairn_h92
 ```
 
+With `serve` in its options the same role is the **cannon holder** at run time: it hands the
+scored account one set and its cannonballs in one trade (H11, H23) and can take them back
+(H11r). See "Serve mode" below.
+
 ## Options
 
 | Option | Default | Meaning |
@@ -23,6 +27,7 @@ ROLE_OPTIONS='{"balls":1160}' bun speedrun/helpers/cannon.ts cairn_h92
 | `food` | `5` | Sharks bought at the exchange before the railings (0: rest instead). |
 | `foodWaitMinutes` | `10` | How long to wait at Varrock West for food money before going without. |
 | `stopAfter` | none | `quest` stops once the quest is complete (development). |
+| `serve` | none | Hand the set and balls over instead of questing and producing (below). |
 
 ## The quest
 
@@ -102,3 +107,109 @@ The receiver only accepts while it is waiting (`waiting for funding` or
 
 At about 12.5 ticks a bar plus the bank walk, 1,160 balls (290 bars, 11 trips) is about
 4,000-4,500 ticks, 20-25 minutes, once the bars are in.
+
+## What the quest gates, and what it does not
+
+Read from the content (rs/189):
+
+- **Buying** is gated. Nulodion's shop (`[opnpc3,nulodion]`) and his cannon sale (`[opnpc1,nulodion]`,
+  the `^mcannon_complete` case only) refuse anyone below `^mcannon_complete`.
+- **Trading** is not. The four parts (`twpart1`-`twpart4` in `quest_mcannon.obj`) and `mcannonball`
+  carry no `tradeable=no`, and `trade.rs2`'s `movetotrade` checks only `oc_tradeable` and members
+  items on a free world. The mould, Nulodion's notes, the manual and the tool kit are the
+  untradeable ones.
+- **Using**: only Set-up on the base checks the quest (`cannon_setup.rs2 [opheld1,twpart1]`).
+  Adding the other parts, loading, firing and picking up check only that the cannon is yours.
+- **Making balls** needs the mould (only from Nulodion), Smithing 35 and a members world;
+  `cannonballs.rs2` does not read `%mcannon` itself.
+
+So one helper has to do the quest to buy the sets and make the balls, but anyone can receive
+them; SCORED, quest-complete after S13, can set the cannon up.
+
+## Serve mode (the hand-off)
+
+```
+ROLE_OPTIONS='{"serve":{"id":"H11","tile":{"x":2570,"z":3463},"balls":100,"returnTile":{"x":2661,"z":3301}}}' \
+  bun speedrun/helpers/cannon.ts cairn_h92
+```
+
+1. **Load.** Unless it already carries a set and `balls` cannonballs, it banks everything at
+   `serve.bank` (default Falador west; every bank is one bank) and withdraws one of each part
+   and exactly `balls` balls. Exactly the load is carried, so each of the five items is one
+   All press in the trade (`items.ts amountButtons`).
+2. **Stand** on `serve.tile` (walking over White Wolf Mountain if the tile is west of it).
+3. **Find the receiver by name hash, never by name**: `serve.receiver` (the sha256 of the scored
+   account's canonical name, `altar-cue.ts nameHash`; a plain name is refused), or else the
+   `receiver.sha256` of `cue.json` in the cue directory, which the scored side writes at login.
+4. **Keep a request standing** (`bone-giver.ts requestUntilOpen`, shared with the bone giver):
+   sent when the receiver comes into sight, re-sent on the next tick after a "busy" refusal,
+   refreshed every 100 ticks. The scored step's own trade click (`lib/trade.ts receiveFrom`)
+   then opens both screens at once.
+5. **Give everything in one trade** (`lib/trade.ts give`). A trade opened by anyone else is declined.
+6. With `serve.returnTile`: **take the set back** (H11r). It stands there, waits for the
+   receiver's own trade request (matched by hash in the chat), and receives with
+   `receiveFrom`, wanting the four parts; leftover balls are optional.
+
+Each hand-off is recorded in the role's `ctx.state` under `cannon-serve:<id>`: `giving` just
+before the trade, then `gave`, then `returned`. A restarted holder resumes from the record and
+never gives a hand-off twice; a restart after `giving` with the load gone is taken as given and
+flagged for a person (`attention`). Give each hand-off its own `serve.id` (H11, H23).
+
+| `serve` option | Default | Meaning |
+|---|---|---|
+| `tile` | required | Where the holder stands (beside the scored account's tile) |
+| `balls` | required | Cannonballs in the load (H11: 100; H23: ~1,100) |
+| `id` | `x,zxballs` | Names the hand-off in `ctx.state` |
+| `receiver` | the cue | sha256 hex of the scored account's canonical name |
+| `bank` | Falador west | Where to load |
+| `returnTile` | none | Take the set back here afterwards (H11r) |
+| `labStock` | false | Local lab only: make the load with staff commands |
+| `noReplyTicks`, `resendTicks`, `cueDir` | 3, 100, `RC_CUE_DIR` | As the bone giver |
+
+**The scored side's contract**: stand beside the holder and call
+`receiveFrom(holder, { want: loadWant(balls) })` (`loadWant` is exported from `cannon.ts`). For
+H11r, `give(holder, loadSpecs(leftover))`.
+
+**Stand-in receiver**: `speedrun/helpers/cannon-receiver.ts` writes the cue, waits for the
+holder's request, receives as the scored step does and reports the trade's ticks on its own
+clock; in the lab it can set `%mcannon` and try Set-up, and it can give the load back.
+
+### Measured in the lab (bgsrv-ub, `NODE_TICKRATE=300`, 2026-10-21)
+
+`speedrun/lab/cannon-handoff.ts`, the Lumbridge cow pen, holder cairn_h71 with staff-made stock,
+receiver cairn_h76 with `%mcannon` set by staff command (not a real quest run):
+
+| Receiver `%mcannon` | Trade | Receiver clock: click to items | Request standing at the click | Set-up on the base | Back to the holder (giver / holder's clock) |
+|---|---|---|---|---|---|
+| 11 (complete) | set + 100 balls, one trade | **4 ticks** | yes, 1 send, 0 refusals | "You place the cannon base on the ground." | 5 / 4 ticks |
+| 0 (not started) | set + 100 balls, one trade | **4 ticks** | yes | "You can't set up this cannon." | 5 / 4 ticks |
+
+4 ticks is the receiver floor SUPPLIES.md measured for a few stacks.
+
+### Demo leg (rs-sdk-demo, 2026-10-22 00:56-01:06 UTC)
+
+No throwaway has done Dwarf Cannon, so the acceptance ran as a round trip of h92's spare set
+with a fresh account, on Falador west bank's floor (holder 2945,3369, receiver 2944,3369):
+
+| Leg | Giver | Receiver | One trade | Items | Receiver clock | Giver clock |
+|---|---|---|---|---|---|---|
+| 1 | cairn_h92 (serve) | cairn_h93, fresh (`cannon-receiver.ts`) | yes | base, stand, barrels, furnace, 100 balls | 8 ticks | 6 |
+| 2 | cairn_h93 (serve) | cairn_h92, quest complete (serve `returnTile`) | yes | base, stand, barrels, furnace, 100 balls | **6 ticks** | 4 |
+
+Both holders found their partner by name hash, with 0 refusals. Leg 2 is the acceptance: a
+quest-complete account receives a set and balls in one trade. Leg 1's 8 ticks are likely
+inflated by the stand-in's own measurement. It counts the holder's request only once it is on
+its own tile, so it missed the one sent while it walked in, clicked after its 30-tick wait, and
+the 8 likely include walking to the holder. Set-up was not tried on the demo.
+
+h92's bank, read with the bank open before the leg and again after it banked the returned load,
+was identical (inventory empty both times):
+
+| Item | Before | After |
+|---|---|---|
+| Cannon base, stand, barrels, furnace | 2 each | 2 each |
+| Cannonball | 1,416 | 1,416 |
+| Coins | 4,246 | 4,246 |
+| Ammo mould / Instruction manual | 3 / 2 | 3 / 2 |
+
+During the leg, h92's load left 1 set and 1,316 balls in its bank.

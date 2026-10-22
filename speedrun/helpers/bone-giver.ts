@@ -43,7 +43,7 @@ import { join } from 'node:path';
 import type { BotWorldState, NearbyPlayer } from '../../sdk/types';
 import { withdrawMany } from '../lib/bank';
 import { give, tradeOf } from '../lib/trade';
-import { assertUntracked, canonName, CueWatcher, cueDir, nameHash, readJson, writeJsonAtomicSync, type Cue } from './altar-cue';
+import { assertUntracked, canonName, CueWatcher, cueDir, nameHash, newRequestFrom, readJson, writeJsonAtomicSync, type Cue } from './altar-cue';
 import { chebyshev, cheat, count, isLocalServer, labTele, pos, standOn, until, type Tile } from './altar-room';
 import { closeBank, depositAllExcept, ensureOutOfTutorial, openBank, walkNear } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
@@ -166,6 +166,74 @@ export function decideRequest(s: BotWorldState, ctx: RequestCtx, o: Pick<BoneGiv
     return { action: 'wait', next: ctx };
 }
 
+export interface RequestOutcome {
+    ok: boolean;
+    /** Frames from our first request to the screens opening. */
+    waited: number;
+    sends: number;
+    bounces: number;
+    reason?: string;
+}
+
+export interface StandingRequestHooks {
+    /** The receiver, found in sight by its name hash; undefined while it is out of sight. */
+    receiver(): NearbyPlayer | undefined;
+    /** True when the cue says stop. */
+    stopped(): boolean;
+    log(message: string, data?: Record<string, unknown>): void;
+}
+
+/**
+ * Keep a trade request standing with the receiver (decideRequest) until its own
+ * trade click opens both screens. Gives up when it is out of sight for 10 frames,
+ * the cue stops, or the role is aborted. Shared by every giver that requests
+ * first: the bone giver and the cannon holder's serve mode (cannon.ts).
+ */
+export function requestUntilOpen(ctx: Pick<RoleContext, 'sdk' | 'signal'>, o: Pick<BoneGiverOptions, 'noReplyTicks' | 'resendTicks'>, hooks: StandingRequestHooks): Promise<RequestOutcome> {
+    const { sdk } = ctx;
+    return new Promise(resolve => {
+        let rc = newRequestCtx();
+        let first = -1;
+        let lastTick = -1;
+        let unseen = 0;
+        const finish = (ok: boolean, reason?: string) => {
+            unsub();
+            clearInterval(guard);
+            resolve({ ok, waited: first < 0 ? 0 : (sdk.getState()?.tick ?? first) - first, sends: rc.sends, bounces: rc.bounces, ...(reason ? { reason } : {}) });
+        };
+        const onFrame = (st: BotWorldState) => {
+            if (st.tick === lastTick && !tradeOf(st).isOpen) return;
+            const fresh = st.tick !== lastTick;
+            lastTick = st.tick;
+            if (hooks.stopped()) return finish(false, 'cue stop');
+            const receiver = hooks.receiver();
+            if (!receiver && !tradeOf(st).isOpen) {
+                if (fresh && ++unseen > 10) return finish(false, 'receiver left sight');
+                return;
+            }
+            unseen = 0;
+            const d = decideRequest(st, rc, o);
+            rc = d.next;
+            if (d.action === 'open') return finish(true);
+            if (d.action !== 'send') return;
+            // A refusal is answered on the frame that carries it, so the re-send lands on the next tick.
+            if (d.why === 'bounce') hooks.log('bounce', { tick: st.tick });
+            if (first < 0) first = st.tick;
+            void sdk.sendTradeRequest(receiver!.index);
+        };
+        const unsub = sdk.onStateUpdate(onFrame);
+        const guard = setInterval(() => ctx.signal.aborted && finish(false, 'aborted'), 500);
+        const cur = sdk.getState();
+        if (cur) onFrame(cur);
+    });
+}
+
+/** True when the open trade's partner is the receiver (by name hash). */
+export function partnerIs(s: BotWorldState | null | undefined, receiverHash: string | null | undefined): boolean {
+    const partner = s ? tradeOf(s).partner : null;
+    return !!partner && !!receiverHash && nameHash(partner) === receiverHash;
+}
+
 // ------------------------------------------------------------------ on request (S18)
 
 export const ASK_FILE = 'bones-ask.json';
@@ -195,29 +263,11 @@ export function usableAsk(ask: BoneAsk | null, lastSeq: number, now = Date.now()
     return ask && ask.seq > lastSeq && now - ask.ms <= maxAgeMs ? ask : null;
 }
 
-/** The tick of the newest trade request from the receiver (by name hash) after `after`, or null. */
-export function newRequestFrom(s: BotWorldState, receiverHash: string, after: number): number | null {
-    let tick: number | null = null;
-    for (const m of s.gameMessages) {
-        if (m.type === 4 && m.tick > after && /wishes to trade/i.test(m.text) && nameHash(m.sender) === receiverHash) tick = Math.max(tick ?? m.tick, m.tick);
-    }
-    return tick;
-}
-
 // ------------------------------------------------------------------ role
 
 const exact = (name: string) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
 
 export type BonePhase = 'start' | 'restock' | 'travel' | 'waiting' | 'requested' | 'trading' | 'fault' | 'off';
-
-export interface RequestOutcome {
-    ok: boolean;
-    /** Frames from our first request to the screens opening. */
-    waited: number;
-    sends: number;
-    bounces: number;
-    reason?: string;
-}
 
 export class BoneGiver {
     readonly o: BoneGiverOptions;
@@ -318,15 +368,14 @@ export class BoneGiver {
         }
         if (this.cue?.stop) return;
         this.setPhase('requested');
-        const req = await this.requestUntilOpen();
+        const req = await requestUntilOpen(ctx, o, { receiver: () => this.receiverInSight(), stopped: () => !!this.cue?.stop, log: ctx.log });
         this.bounces += req.bounces;
         if (!req.ok) {
             ctx.log('request', { ...req });
             return;
         }
         const t = tradeOf(this.s!);
-        const hash = this.cue?.receiver.sha256;
-        if (!t.partner || !hash || nameHash(t.partner) !== hash) {
+        if (!t.partner || !partnerIs(this.s, this.cue?.receiver.sha256)) {
             ctx.log('request: someone else opened a trade; declining');
             await ctx.sdk.sendDeclineTrade();
             return;
@@ -363,8 +412,7 @@ export class BoneGiver {
         if (answered === null) return;
         const opened = await until(ctx, st => tradeOf(st).isOpen, 5);
         const t = tradeOf(this.s!);
-        const hash = this.cue?.receiver.sha256;
-        if (!opened || !t.partner || !hash || nameHash(t.partner) !== hash) {
+        if (!opened || !t.partner || !partnerIs(this.s, this.cue?.receiver.sha256)) {
             ctx.log('request: no trade with the scored account opened', { opened });
             if (opened) await ctx.sdk.sendDeclineTrade();
             return;
@@ -408,46 +456,6 @@ export class BoneGiver {
             const guard = setInterval(() => ctx.signal.aborted && finish(null), 500);
             // Requests already answered or from before we started are not ours to answer.
             if (this.lastRequestTick < 0) this.lastRequestTick = this.s?.tick ?? -1;
-        });
-    }
-
-    /** Keep a request standing until the receiver's click opens the screens. Gives up if it leaves sight or the cue stops. */
-    private requestUntilOpen(): Promise<RequestOutcome> {
-        const { ctx, o } = this;
-        return new Promise(resolve => {
-            let rc = newRequestCtx();
-            let first = -1;
-            let lastTick = -1;
-            let unseen = 0;
-            const finish = (ok: boolean, reason?: string) => {
-                unsub();
-                clearInterval(guard);
-                resolve({ ok, waited: first < 0 ? 0 : (this.s?.tick ?? first) - first, sends: rc.sends, bounces: rc.bounces, ...(reason ? { reason } : {}) });
-            };
-            const onFrame = (st: BotWorldState) => {
-                if (st.tick === lastTick && !tradeOf(st).isOpen) return;
-                const fresh = st.tick !== lastTick;
-                lastTick = st.tick;
-                if (this.cue?.stop) return finish(false, 'cue stop');
-                const receiver = this.receiverInSight();
-                if (!receiver && !tradeOf(st).isOpen) {
-                    if (fresh && ++unseen > 10) return finish(false, 'receiver left sight');
-                    return;
-                }
-                unseen = 0;
-                const d = decideRequest(st, rc, o);
-                rc = d.next;
-                if (d.action === 'open') return finish(true);
-                if (d.action !== 'send') return;
-                // A refusal is answered on the frame that carries it, so the re-send lands on the next tick.
-                if (d.why === 'bounce') this.ctx.log('bounce', { tick: st.tick });
-                if (first < 0) first = st.tick;
-                void ctx.sdk.sendTradeRequest(receiver!.index);
-            };
-            const unsub = ctx.sdk.onStateUpdate(onFrame);
-            const guard = setInterval(() => ctx.signal.aborted && finish(false, 'aborted'), 500);
-            const cur = this.s;
-            if (cur) onFrame(cur);
         });
     }
 

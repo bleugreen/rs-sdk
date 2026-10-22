@@ -15,6 +15,8 @@ import {
     giverSteps,
     judgeTick,
     nameHash,
+    STOCK_MIN_TICKS,
+    STOCK_WINDOW,
     readCue,
     readStatuses,
     resolveOffset,
@@ -149,6 +151,21 @@ describe('turns', () => {
         expect(chooseTurn(cue({ turns }), 'cairn_h70', 0, 0, new Set([turnKey('s1', 221)])).kind).toBe('none');
         expect(chooseTurn(cue({ turns }), 'cairn_h72', 0, 0, new Set()).kind).toBe('none');
         expect(chooseTurn(cue({ turns, stop: true }), 'cairn_h70', 0, 0, new Set()).kind).toBe('none');
+    });
+
+    test('stock: judged STOCK_WINDOW ticks after the request, T+27 at K = 5, where the scored side gives up', () => {
+        expect(STOCK_WINDOW).toBe(22);
+        expect(judgeTick(200, 5, 'stock')).toBe(227);
+    });
+
+    test('stock: armed ahead of its request frame and after it, late only once a reacting trade no longer fits', () => {
+        const c = cue({ schedule: 'robust', turns: [{ giver: 'cairn_h71', T: 200, schedule: 'stock' }] });
+        expect(chooseTurn(c, 'cairn_h71', 0, 197, new Set())).toMatchObject({ kind: 'arm', schedule: 'stock', myT: 200 });
+        // blind turns are late from T+K-1 on; a stock turn still has 22 ticks to react in
+        expect(chooseTurn(c, 'cairn_h71', 0, 210, new Set())).toMatchObject({ kind: 'arm', schedule: 'stock' });
+        expect(chooseTurn(c, 'cairn_h71', 0, 227 - STOCK_MIN_TICKS, new Set()).kind).toBe('arm');
+        expect(chooseTurn(c, 'cairn_h71', 0, 227 - STOCK_MIN_TICKS + 1, new Set()).kind).toBe('late');
+        expect(chooseTurn(c, 'cairn_h71', 0, 227, new Set()).kind).toBe('none');
     });
 
     test('a new session makes old turn keys irrelevant', () => {

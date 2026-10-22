@@ -1,12 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { BankItem, InventoryItem } from '../../sdk/types';
+import type { BotActions } from '../../sdk/actions';
+import type { BotSDK } from '../../sdk/index';
+import type { BankItem, InventoryItem, TradeItem, TradeState } from '../../sdk/types';
+import { baseState, FakeSdk, flush } from '../lib/fake-sdk';
 import {
     accountMatches,
     canonName,
     countById,
     courierPicks,
     firstSlotPerId,
+    giveOpenTrade,
     holds,
     isStackableName,
     parsePackageRequest,
@@ -84,7 +88,8 @@ describe('packages', () => {
 
     test('stackable guess covers coins, runes and ammunition but not plain items', () => {
         for (const n of ['Coins', 'Law rune', 'Rune arrows', 'Mithril dart tips', 'Feather', 'Rune arrowtips']) expect(isStackableName(n)).toBe(true);
-        for (const n of ['Rune essence', 'Logs', 'Shark', 'Rune platebody']) expect(isStackableName(n)).toBe(false);
+        for (const n of ['Rune essence', 'Logs', 'Shark', 'Rune platebody', 'Knife']) expect(isStackableName(n)).toBe(false);
+        expect(isStackableName('Rune knife')).toBe(true);
     });
 });
 
@@ -117,5 +122,42 @@ describe('courier', () => {
         expect(courierPicks(b, toRegExps(['logs$']), 28).map(i => i.name)).toEqual(['Logs', 'Oak logs']);
         expect(courierPicks(b, toRegExps(['logs$']), 1).map(i => i.name)).toEqual(['Logs']);
         expect(courierPicks(b, toRegExps([]), 28)).toEqual([]);
+    });
+});
+
+describe('giveOpenTrade: the two-way swap (lib/trade.ts give with ANY_OFFER)', () => {
+    const kit = inv([[0, 385, 'Shark', 1], [1, 385, 'Shark', 1], [2, 554, 'Fire rune', 300]]);
+    const mine: TradeItem[] = [{ slot: 0, id: 385, name: 'Shark', count: 2 }, { slot: 1, id: 554, name: 'Fire rune', count: 300 }];
+    const theirs: TradeItem[] = [{ slot: 0, id: 1127, name: 'Rune platebody', count: 2 }];
+    const trade = (t: Partial<TradeState>): TradeState => ({ isOpen: true, screen: 'offer', partner: 'Cairn H05', myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false, ...t });
+    const closed: TradeState = { isOpen: false, screen: null, partner: null, myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false };
+    const methods = (sdk: FakeSdk) => sdk.sent.splice(0).map(a => a.method);
+
+    test('offers the package in one burst, re-accepts after the partner\'s hand-back resets it, confirms, and reports what came back', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, inventory: kit, trade: trade({}) }));
+        const result = giveOpenTrade(sdk as unknown as BotSDK, {} as BotActions, 'cairn_h05', kit);
+        await flush();
+        // Two shark slots go in one exact press, the runes in one, the accept behind them.
+        expect(methods(sdk)).toEqual(['sendOfferItem', 'sendOfferItem', 'sendAcceptTrade']);
+        // The scored account's items land after our accept: both accepts reset.
+        sdk.tick({ inventory: [], trade: trade({ myOffer: mine, theirOffer: theirs }) });
+        await flush();
+        expect(methods(sdk)).toEqual(['sendAcceptTrade']);
+        sdk.tick({ trade: trade({ screen: 'confirm', myOffer: mine, theirOffer: theirs, partnerAccepted: true }) });
+        await flush();
+        expect(methods(sdk)).toEqual(['sendAcceptTrade']);
+        sdk.tick({ inventory: inv([[0, 1127, 'Rune platebody', 1], [1, 1127, 'Rune platebody', 1]]), trade: closed });
+        const r = await result;
+        expect(r.success).toBe(true);
+        expect(r.gave.map(i => [i.id, i.count]).sort()).toEqual([[385, 2], [554, 300]]);
+        expect(r.received.map(i => [i.id, i.count])).toEqual([[1127, 2]]);
+        expect(methods(sdk)).toEqual([]);
+    });
+
+    test('a trade open with anyone else gives nothing', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, inventory: kit, trade: trade({ partner: 'Cairn H06' }) }));
+        const r = await giveOpenTrade(sdk as unknown as BotSDK, {} as BotActions, 'cairn_h05', kit);
+        expect(r.success).toBe(false);
+        expect(sdk.sent).toEqual([]);
     });
 });
