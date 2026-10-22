@@ -326,13 +326,13 @@ describe('runTo: the chained run', () => {
         return { sdk, sim, from, run: () => drive(sdk, runTo(sdk as never, { x: goalX, z: 3200 }), 600, each) };
     }
 
-    test('a door missing from a mid-rebuild frame on the click tick is opened at the next built tick, with no stall', async () => {
-        // The second click (tick 109, from 3218 to 3238) falls on the rebuild frame, and the door at 3230 is in its stretch.
+    test('a door missing from a mid-rebuild frame on the click tick is judged by the frame before: opened on that tick, as on lite', async () => {
+        // The second click (tick 109, from 3218) falls on the rebuild frame, and the door at 3230 is in its stretch.
         const t = doorRun(3230, 3260, s => (s.tick === 109 ? 'rebuild' : 'door'));
         const r = await t.run();
         expect(r.ok).toBe(true);
-        expect(t.sim.clicks.slice(0, 2)).toMatchObject([{ x: 3220, tick: 100 }, { x: 3238, tick: 109, from: { x: 3218 } }]);
-        expect(t.from).toEqual([{ tick: 110, x: 3220 }]);
+        expect(t.sim.clicks[0]).toMatchObject({ x: 3220, tick: 100 });
+        expect(t.from).toEqual([{ tick: 109, x: 3218 }]);
         expect(sends(t.sdk, 'sendInteractLoc')).toEqual([[3230, 3200, 1530, 1]]);
         expect(r.doors).toEqual([expect.objectContaining({ x: 3230, z: 3200, state: 'closed' })]);
         expect(at(t.sdk)).toEqual({ x: 3260, z: 3200 });
@@ -377,6 +377,16 @@ describe('runTo: the chained run', () => {
         expect(r.ok).toBe(true);
         expect(sends(sdk, 'sendInteractLoc')).toEqual([[3206, 3200, 1530, 1]]);
         expect(at(sdk)).toEqual({ x: 3220, z: 3200 });
+    });
+
+    test('a door missing from a rebuild that outlasts the grace is opened at the first built tick after it', async () => {
+        // Rebuild frames 107-109: by the click at 109 the last built frame (106) is 3 ticks old.
+        const t = doorRun(3230, 3260, s => (s.tick >= 107 && s.tick <= 109 ? 'rebuild' : 'door'));
+        const r = await t.run();
+        expect(r.ok).toBe(true);
+        expect(t.sim.clicks.slice(0, 2)).toMatchObject([{ x: 3220, tick: 100 }, { x: 3238, tick: 109, from: { x: 3218 } }]);
+        expect(t.from).toEqual([{ tick: 110, x: 3220 }]);
+        expect(at(t.sdk)).toEqual({ x: 3260, z: 3200 });
     });
 
     test('a door listed only on a frame published mid-rebuild is never opened from it', async () => {

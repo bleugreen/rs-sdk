@@ -614,6 +614,12 @@ function buildRoute(sdk: TravelSdk, goal: Area, via: readonly XZ[]): XZ[] {
  */
 const sceneBuilt = (s: BotWorldState) => s.sceneReady !== false;
 
+/**
+ * How old the last built frame may be to stand in for a mid-rebuild one: locs are in world
+ * coordinates, so a door a frame or two ago is still where it was. S12 B's rebuild lasts one frame.
+ */
+const REBUILD_GRACE_TICKS = 2;
+
 /** The route index nearest `p` in [from, to]; past it when the player stands on that tile, so a door under the player is never ahead. */
 function routeAhead(route: readonly XZ[], p: XZ, from: number, to: number): number {
     let best = from;
@@ -744,10 +750,17 @@ async function hopRun(sdk: TravelSdk, trip: Trip, to: Area, opts: TravelOptions,
     let reachFrom = pos(sdk);
     let dismissed = '';
     const doorTries = new Map<string, number>();
-    /** A closed door on route[from..to] the run may still try (twice each), or null. */
+    /** The last frame published with a built scene. */
+    let lastBuilt: BotWorldState | null = null;
+    /**
+     * A closed door on route[from..to] the run may still try (twice each), or null. A mid-rebuild
+     * frame lists none of the scene's locs, so it is judged by the last built frame if that is recent.
+     */
     const doorAhead = (st: BotWorldState, from: number, to: number): NearbyLoc | null => {
-        if (!sceneBuilt(st)) return null;
-        const door = onRoute(st, route, from, to, CLOSED_DOOR);
+        if (sceneBuilt(st)) lastBuilt = st;
+        const scene = sceneBuilt(st) ? st : lastBuilt && st.tick - lastBuilt.tick <= REBUILD_GRACE_TICKS ? lastBuilt : null;
+        if (!scene) return null;
+        const door = onRoute(scene, route, from, to, CLOSED_DOOR);
         return door && (doorTries.get(doorKey(door)) ?? 0) < 2 ? door : null;
     };
     /** Open `door` as part of the run, then start the run afresh from wherever that leaves the player. Null to go on; an outcome to end the hop. */
@@ -769,6 +782,7 @@ async function hopRun(sdk: TravelSdk, trip: Trip, to: Area, opts: TravelOptions,
     for (;;) {
         const s = sdk.getState();
         if (!s) return { ok: false, reason: 'no state' };
+        if (sceneBuilt(s)) lastBuilt = s;
         const halt = opts.stopIf?.(s);
         if (halt) {
             const here = pos(s);
