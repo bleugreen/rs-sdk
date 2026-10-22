@@ -99,6 +99,12 @@ Tree doors that ordinary pathfinding treats as solid. Upstairs shops name their
 ladder approach. Leaving the grocers first returns to the central landing because
 the down ladder is outside the shop's scan radius.
 
+The Stronghold gate is busy on the demo. Every crossing, by anyone, deletes the
+closed gate for 5 ticks (`gnome_gate.rs2`), and with other players going both ways
+it was clickable in only 45 of 118 observed ticks. A crossing therefore waits up to
+30 ticks for the gate to show and clicks up to six times; one empty scan means
+nothing.
+
 ### Keeping the carp
 
 The carp is tradeable and does not decay. The helper banks existing carp and all
@@ -107,6 +113,19 @@ bait**. The contest decision function counts catches from worms consumed and
 chooses to leave at two, or immediately if a restarted round's count is unknown.
 Every normal exit answers Bonzo's quit dialogue at the gate; it never offers him
 the catch. Consumed garlic is not replenished after the carp target is met.
+
+The rules behind this, from `hemenster_fishing.rs2` and `bonzo.rs2`: paying sets the
+contest stage to 1, each catch adds one, and at stage 4 (the third catch) Bonzo takes
+every carp carried. Leaving through the gate resets the stage to 0 only while Bonzo
+is within 12 tiles, which he always is, since he stands by the gate. Talking to Bonzo
+mid-round also hands over the catch, so the helper talks to him only to pay.
+
+**The garlic pipe.** The `garlicpipe` loc sits on three fence tiles, 2636-2638 at
+z 3446. It is a straight wall decoration, and the engine only lets you use an item on
+that shape from the loc's own tile (`ReachStrategy.reachWallDecor1`). 2636 and 2637
+are lake, so the helper stands on 2638,3446 and uses the garlic on the pipe there.
+The stash is a permanent flag (`%hemenster_pipe_stashed`): after the first one,
+paying Bonzo puts you beside the pipes at once, with no more garlic.
 
 ### Gold, nails and staging
 
@@ -120,6 +139,12 @@ h96's Goblin mail 4, Raw rat meat 2 and Raw bear meat 2 were delivered to
 sender ledger and the receiver's exact bank deltas. Both donors were logged out
 afterwards. h96's 102 snape grass had already been staged separately by rs/331.
 The fresh h94 bank had no planks; those remain the far set's responsibility.
+
+The far set followed the same way: h95's handover `rs173-h95-mule1-20261022T1150Z`
+gave mule1 monkey bones, torch, rope, spade, swamp paste, ball of wool, dwellberries
+and chocolate dust (2 each) and plank 4. It started at the Ardougne north bank, and
+`crossKandarin` took it over White Wolf Mountain before it withdrew anything, so
+nothing staged was carried across. From login to delivery took 3 minutes.
 Details and delivery ids are on [rs/173](cairn://p/rs/173).
 
 ## Measured in the lab (local engine, 300 ms ticks, 25x xp)
@@ -136,6 +161,8 @@ Details and delivery ids are on [rs/173](cairn://p/rs/173).
 | Ardougne south bank to the gnome grocer; buy 2 dwellberries and 2 chocolate dust | 263 | focused lab, funded fixture; includes Femi's first-entry dialogue |
 | Grocer to the Barbarian Outpost; collect 4 planks | 254 | returns to the central ladder, then through both scripted passages |
 | Outpost to Seers' bank; deposit the far items | 207 | focused lab ends at `done`, all 8 items banked |
+| Catherby to McGrubor's Wood; dig 2 red vine worms | 187 | through the loose railing |
+| Worms to Hemenster, one round, 2 carp banked | 341 | enter, pay, garlic at 2638,3446, two catches, quit through Bonzo, bank at Seers'; the contest stage ends at 0 |
 
 ## On the demo (bbs, gateway 7762)
 
@@ -145,6 +172,15 @@ Both sets ran to `done` unattended on 2026-10-21, each from a fresh account with
 |---|---|---|---|---|
 | cairn_h94 | southwest | 42 min, including one restart for a code fix | knife 2, bucket of water 5, bucket of milk 3, egg 2, logs 7, pot of flour 2, banana 6, raw beef 2, raw chicken 2, fishing rod 2, fishing bait 5, lobster pot 2, copper ore 5, iron ore 3, clay 7, soft clay 1, wizard's mind bomb 2, unfired bowl 2, silk 2, cadava berries 2, orange dye 2, blue dye 2 | one "Mining operation was rejected" on iron, one barmaid dialogue that did not open |
 | cairn_h96 | drops | 26 min | goblin mail 4, raw rat meat 2, raw bear meat 2, snape grass 2 | none |
+
+The far set ran on 2026-10-22 on cairn_h95, from its own dev copy (gateway 7764):
+
+| Account | Set | Wall time | Final holdings | Errors |
+|---|---|---|---|---|
+| cairn_h95 | far | 95 min: 39 min to everything except the grocers, then the gnome task parked twice on the busy gate until the wait fix, one restart to deploy it, and 4 min to `done` | Hitpoints 30, monkey bones 2, torch 2, rope 2, spade 2, swamp paste 2, ball of wool 2, dwellberries 2, chocolate dust 2, plank 4 | the gate (above) |
+
+In that run, coins took 17 minutes and Hitpoints 30 took 15. The Karamja, Port
+Khazard, Ardougne and Barbarian Outpost errands took 7 minutes together.
 
 The four goblin mails took 154 goblin kills, an unlucky run (at 5 in 128 four mails average
 about 102 kills), which left the account at about 46 Attack, Strength and Defence. The rats, bears and snape grass
@@ -164,3 +200,11 @@ then took under three minutes together.
 - **Spawns behind closed doors:** the spade spawns in Falador (inside a house) and Draynor
   Manor are unreachable to the pathfinder. A pickup gives up after five misses.
 - **Lab fixtures:** `::give onion 4` gives one onion, so test the dyes from real onions.
+  A given fishing pass does not start Fishing Contest; set `fishingcompo` to 1 with
+  `::setvar`, or Bonzo never takes the fee.
+- **A missing loc is not always gone for good.** Scripted gates and doors that swap
+  themselves out on use disappear for a few ticks whenever another player crosses.
+  Wait for them rather than failing on one scan.
+- **Wall decorations are used from their own tile.** A use on a straight wall decoration
+  reports success and then does nothing unless the player stands on the loc's tile. Pick
+  a copy of the loc that sits on a walkable tile.
