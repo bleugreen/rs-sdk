@@ -53,6 +53,8 @@ interface LoadResult {
     giver?: string;
     /** The last load's extras received, against what was due. */
     extras?: string[];
+    /** With a bone list: how many of each the load brought. */
+    bones?: string[];
     ok: boolean;
     clickToBones: number;
     standingAtClick: boolean;
@@ -69,7 +71,9 @@ export const role: Role = {
         const lab = isLocalServer();
         if (!lab) assertDemoStandIn(ctx.account);
         const o = ctx.options;
-        const BONES = exactItem(String(o.item ?? 'Dragon bones'));
+        // item: one bone, or the givers' priority list (bone-giver.ts item), every one of which it takes and buries.
+        const boneNames = (Array.isArray(o.item) ? o.item : [o.item ?? 'Dragon bones']).map(String);
+        const BONES = new RegExp(`^(?:${boneNames.map(n => exactItem(n).source.slice(1, -1)).join('|')})$`, 'i');
         // One giver by name, or a group taking turns (bone-giver.ts group): then each load comes from the group's server (boneServer).
         const givers = Array.isArray(o.givers) ? (o.givers as string[]).map(String) : null;
         if (!!givers === (o.giver !== undefined)) throw new Error('bone-receiver: give exactly one of options.giver and options.givers');
@@ -165,6 +169,7 @@ export const role: Role = {
                     clickToBones: r.ticks,
                     standingAtClick,
                     ...(extras.length ? { extras: extras.map(e => `${count(s(), e.item)} of ${e.count} ${e.name}`) } : {}),
+                    ...(boneNames.length > 1 ? { bones: boneNames.map(b => `${count(s(), exactItem(b))} ${b}`) } : {}),
                     ...(r.reason ? { reason: r.reason } : {})
                 };
                 results.push(res);
