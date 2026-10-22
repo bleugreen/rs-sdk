@@ -1,0 +1,531 @@
+{
+ "label": "lab-fedora-charge",
+ "machine": "bginf-halo",
+ "platform": "linux/x64",
+ "host": "localhost:9340",
+ "path": "lite client, direct game socket (no gateway relay)",
+ "account": "<redacted>",
+ "startedUtc": "2026-10-22T22:40:33.054Z",
+ "speedrunTickMs": null,
+ "pageTokenBefore": "mvk4jnnu",
+ "packets": {
+  "user": "INV_BUTTOND opcode 253 (USER_EVENT), com 3214 inventory:inv, [inv_buttond,inventory] -> inv_movetoslot",
+  "client": "EVENT_CAMERA_POSITION opcode 193 (CLIENT_EVENT), 4 bytes",
+  "failed": "INV_BUTTOND out of an empty slot: handler returns false, counted as CLIENT_EVENT by the fork"
+ },
+ "tracer": 557,
+ "inventoryAtStart": [
+  1352,
+  591,
+  304,
+  316,
+  1926,
+  1932,
+  2310,
+  1266,
+  1206,
+  1278,
+  1172,
+  842,
+  883,
+  557,
+  559,
+  556,
+  558,
+  560,
+  566,
+  555,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0
+ ],
+ "repeats": [
+  {
+   "cls": "ifbutton",
+   "n": 5,
+   "drags": 5,
+   "start": 14,
+   "dir": 1,
+   "sendLabel": 41,
+   "sendAfterFrameMs": 0.2,
+   "bytes": 15,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 5,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 5,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 5,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    302.7,
+    602.7,
+    902.7
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 5,
+    "nextTick": 0,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "ifbutton",
+   "n": 5,
+   "drags": 5,
+   "start": 14,
+   "dir": 1,
+   "sendLabel": 47,
+   "sendAfterFrameMs": 0.2,
+   "bytes": 15,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 5,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 5,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 5,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    302.7,
+    603.1,
+    902.6
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 5,
+    "nextTick": 0,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "ifbutton",
+   "n": 5,
+   "drags": 5,
+   "start": 14,
+   "dir": 1,
+   "sendLabel": 53,
+   "sendAfterFrameMs": 0.4,
+   "bytes": 15,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 5,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 5,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 5,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    301,
+    600.8,
+    901.2
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 5,
+    "nextTick": 0,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "ifbutton",
+   "n": 6,
+   "drags": 6,
+   "start": 14,
+   "dir": 1,
+   "sendLabel": 59,
+   "sendAfterFrameMs": 0.3,
+   "bytes": 18,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 5,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 6,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 6,
+     "glued": false
+    },
+    {
+     "rel": 4,
+     "k": 6,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    297.3,
+    594.4,
+    893.6,
+    1195.2
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 5,
+    "nextTick": 1,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "ifbutton",
+   "n": 6,
+   "drags": 6,
+   "start": 14,
+   "dir": 1,
+   "sendLabel": 66,
+   "sendAfterFrameMs": 0.2,
+   "bytes": 18,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 5,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 6,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 6,
+     "glued": false
+    },
+    {
+     "rel": 4,
+     "k": 6,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    303.1,
+    602.8,
+    901.6,
+    1201.2
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 5,
+    "nextTick": 1,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "ifbutton",
+   "n": 6,
+   "drags": 6,
+   "start": 14,
+   "dir": 1,
+   "sendLabel": 73,
+   "sendAfterFrameMs": 0.2,
+   "bytes": 18,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 5,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 6,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 6,
+     "glued": false
+    },
+    {
+     "rel": 4,
+     "k": 6,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    302.4,
+    601,
+    902.3,
+    1199.7
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 5,
+    "nextTick": 1,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "ifbutton",
+   "n": 8,
+   "drags": 8,
+   "start": 14,
+   "dir": 1,
+   "sendLabel": 80,
+   "sendAfterFrameMs": 0.3,
+   "bytes": 24,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 5,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 8,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 8,
+     "glued": false
+    },
+    {
+     "rel": 4,
+     "k": 8,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    300.6,
+    599.6,
+    899,
+    1200.6
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 5,
+    "nextTick": 3,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "ifbutton",
+   "n": 8,
+   "drags": 8,
+   "start": 14,
+   "dir": 1,
+   "sendLabel": 87,
+   "sendAfterFrameMs": 0.3,
+   "bytes": 24,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 5,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 8,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 8,
+     "glued": false
+    },
+    {
+     "rel": 4,
+     "k": 8,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    303.9,
+    601.3,
+    900.8,
+    1199.6
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 5,
+    "nextTick": 3,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  },
+  {
+   "cls": "ifbutton",
+   "n": 8,
+   "drags": 8,
+   "start": 14,
+   "dir": 1,
+   "sendLabel": 94,
+   "sendAfterFrameMs": 0.2,
+   "bytes": 24,
+   "samples": [
+    {
+     "rel": 1,
+     "k": 5,
+     "glued": false
+    },
+    {
+     "rel": 2,
+     "k": 8,
+     "glued": false
+    },
+    {
+     "rel": 3,
+     "k": 8,
+     "glued": false
+    },
+    {
+     "rel": 4,
+     "k": 8,
+     "glued": false
+    }
+   ],
+   "tickArrivalsMs": [
+    300.2,
+    600.5,
+    898.4,
+    1197.8
+   ],
+   "summary": {
+    "firstRel": 1,
+    "sameTick": 5,
+    "nextTick": 3,
+    "later": 0,
+    "missing": 0,
+    "glued": false
+   }
+  }
+ ],
+ "preflight": {
+  "cls": "preflight",
+  "n": 1,
+  "drags": 1,
+  "start": 13,
+  "dir": 1,
+  "sendLabel": 29,
+  "sendAfterFrameMs": 0.9,
+  "bytes": 8,
+  "samples": [
+   {
+    "rel": 1,
+    "k": 1,
+    "glued": false
+   },
+   {
+    "rel": 2,
+    "k": 1,
+    "glued": false
+   },
+   {
+    "rel": 3,
+    "k": 1,
+    "glued": false
+   }
+  ],
+  "tickArrivalsMs": [
+   301.7,
+   602.2,
+   900.6
+  ],
+  "summary": {
+   "firstRel": 1,
+   "sameTick": 1,
+   "nextTick": 0,
+   "later": 0,
+   "missing": 0,
+   "glued": false
+  }
+ },
+ "ifbuttonCalibration": {
+  "counterBefore": null,
+  "samples": [
+   {
+    "rel": 1,
+    "k": 1,
+    "glued": false
+   },
+   {
+    "rel": 2,
+    "k": 1,
+    "glued": false
+   },
+   {
+    "rel": 3,
+    "k": 1,
+    "glued": false
+   }
+  ]
+ },
+ "ifbutton": {
+  "button": 1193,
+  "counterObj": 566,
+  "perCast": 3,
+  "packet": "IF_BUTTON opcode 86 (USER_EVENT), magic:charge"
+ },
+ "tickIntervalMs": {
+  "n": 97,
+  "p10": 297,
+  "p50": 300,
+  "p90": 302
+ },
+ "pageTokenAfter": "mvk4jnnu",
+ "restartedDuringRun": false,
+ "endedUtc": "2026-10-22T22:41:08.447Z",
+ "table": {
+  "ifbutton 5": {
+   "5/0/0": 3
+  },
+  "ifbutton 6": {
+   "5/1/0": 3
+  },
+  "ifbutton 8": {
+   "5/3/0": 3
+  }
+ }
+}
