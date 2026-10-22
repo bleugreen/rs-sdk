@@ -512,6 +512,7 @@ describe('role wiring', () => {
         await role.observe(state);
         role.placed.set(0, { slot: 1, tick: 1001 });
         role.dropped.set(0, 1001);
+        state.groundItems = [{ name: 'Logs', ...LIST[1]! }];
         state.tick = 1100;
         await role.observe(state);
         expect(role.progress.lit).toBe(0);
