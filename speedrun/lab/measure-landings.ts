@@ -38,7 +38,9 @@ await runScript(async ({ bot, sdk }) => {
             try {
                 await mustTele(sdk, START.x, START.z, 0);
                 await waitTicks(sdk, 2);
-                let landed: { x: number; z: number } | null = null;
+                // Assigned only in the state callback, so the initialiser carries the full type: a plain
+                // `= null` narrows `landed` to null for the compiler, and to never at the read below.
+                let landed = null as { x: number; z: number } | null;
                 const off = sdk.onStateUpdate(s => {
                     const p = s.player;
                     if (!landed && p && Math.abs(p.worldX - landingArea.x) <= (landingArea.tol ?? 2) && Math.abs(p.worldZ - landingArea.z) <= (landingArea.tol ?? 2) && (Math.abs(p.worldX - START.x) > 5 || Math.abs(p.worldZ - START.z) > 5)) landed = { x: p.worldX, z: p.worldZ };
