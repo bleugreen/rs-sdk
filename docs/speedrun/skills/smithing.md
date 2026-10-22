@@ -33,8 +33,22 @@ level 1 to 34 in 9 items; after that it is platebodies only: iron (33), steel (4
 adamant (88). Every item costs 5 ticks whatever its bar count, so the 5-bar platebody is the
 best item at every level from 33 up.
 
+The step module is `speedrun/skills/smithing.ts` (S25a). Each trade is `lib/trade.ts` `swap()`, a
+two-way driver on the giver's state machine. The hand-off with the anvil helper H5
+(`speedrun/helpers/anvil.ts`) is kept as data in the module's `ANVIL_CONTRACT`: the plan file and
+seq per inventory, seq N+1 announced as N's bars arrive, the hammer in seq 0, and a final `collect`
+hand-back. `supply: 'bank'` is the Varrock west booth fallback.
+
+The hand-back returns only what the step made: the chain snapshots the inventory on its first entry
+and hands back, offers or deposits only the excess over it, so an item SCORED arrives with that looks
+like a product (a starter bronze dagger) stays. After a process restart the snapshot is taken afresh,
+so products held across the restart stay too: the safe direction. On the live server H5's bank
+restock takes 15-18 ticks per inventory, so the turnaround reads true only when the make chain
+hides it (about 20 bars or more per inventory); with 3-bar inventories the gap is the restock.
+
 | Start | Ticks to 99 | Basis |
 |---|---|---|
+| **Level 1, the step module with the helper staged** | **1,065** (to 99 plus the final hand-back) | measured end to end, `speedrun/lab/smithing-accept.ts --from 1 --until 99`, 300 ms, 31 inventories, a scripted stand-in for H5 |
 | **Level 1 (no on-route quest gives Smithing)** | **1,147**, or about **1,107** with the helper already staged | measured end to end, `smithing-trade.ts --from 1 --until 99`, 300 ms, 31 inventories; the first trade waited 40 ticks on the lab helper's own setup |
 | Same route, model | 1,111 | inferred, `smithing-model.ts --overhead 10` (the measured turnaround) |
 | Bank instead of a helper (Varrock west booth, raw packets) | about 1,330 | inferred, model with the measured 42-tick bank cycle (overhead 17) |
@@ -211,7 +225,16 @@ go to Prayer (inferred). Column 5 of the summary row is therefore n/a.
   ticks on a third of the inventories before the fix. Re-send the offer until `myOffer` holds the
   items, then accept.
 - **Close modals before trading.** A level-up dialog or the "not enough bars" box left open makes
-  the scored account `busy()`, and the helper's requests bounce.
+  the scored account `busy()`, and the helper's requests bounce. The scored account's own trade
+  click closes the open page.
+- **Level-ups wait out the make chain.** Each item that crosses a level queues `[advancestat]` on
+  the engine queue. That queue runs only while the player is accessible, and a make-5 chain keeps
+  the player delayed until the last item's delay ends. The queued pages then open one per tick.
+  The trade click closes each page, but the same tick's engine queue opens the next one before
+  the trade interaction runs. So an inventory whose k items crossed a level opens its trade about
+  k ticks late. This is an engine floor: no page exists before the last xp, so none can be closed
+  early, and a continue click only adds the unlock pages. Read the turnaround bound against
+  inventories without this backlog.
 - **Refused interface clicks.** `InvButtonHandler` drops a click while the player is delayed or
   when the clicked slot's item does not match; it happened about once per 10 inventories. Because
   `attempt_smithing` starts with `if_close`, an interface still open the tick after the click
@@ -264,4 +287,7 @@ helpers can alch or sell to recover costs; it has no effect on the scored ticks.
   for the bank fallback.
 - **Turnaround floor.** The trade turnaround has 3 ticks of forced delay plus about 3 ticks of
   trade screens. A client that pre-sends the trade click and offer on exact ticks might get it to
-  about 7 (the model gives 1,014 ticks to 99 at 7).
+  about 7 (the model gives 1,014 ticks to 99 at 7). The step module measures 9 on every inventory
+  without a level-up backlog (22 of 31): 5 ticks from the last xp to the trade screens, 3 to the
+  bars, 1 to the make click. Inventories with a backlog take 11-15 ticks (seq 2-8 and 18 on the
+  default plan, section 6).

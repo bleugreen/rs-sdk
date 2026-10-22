@@ -36,11 +36,11 @@
 import { join } from 'node:path';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem, NearbyLoc } from '../../sdk/types';
-import { withdrawMany } from '../lib/bank';
-import { tickClock, type StateSource } from '../lib/wait';
+import { depositMatching, withdrawMany, type BankSdk } from '../lib/bank';
+import { tickClock, waitUntil, type StateSource } from '../lib/wait';
 import { ANY_OFFER, give, receiveFrom, tradeOf, type GiveSpec, type WantSpec } from '../lib/trade';
 import { assertUntracked, canonName, CueWatcher, cueDir, nameHash, readJson, writeJsonAtomicSync, type Cue } from './altar-cue';
-import { chebyshev, cheat, isLocalServer, labTele, pos, standOn, until, type Tile } from './altar-room';
+import { chebyshev, cheat, isLocalServer, labTele, pos, until, type Tile } from './altar-room';
 import { decideRequest, newRequestCtx } from './bone-giver';
 import { ensureOutOfTutorial } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
@@ -169,11 +169,14 @@ export function asDelivered(v: unknown): Delivered | null {
 export type AnvilStep = 'stop' | 'wait-plan' | 'stage' | 'go-to-tile' | 'wait-receiver' | 'request';
 
 /** The next thing to do, from what is known now. */
-export function nextStep(o: { plan: AnvilPlan | null; delivered: Delivered | null; exact: boolean; onTile: boolean; receiverInSight: boolean; cueStop: boolean }): AnvilStep {
+export function nextStep(o: { plan: AnvilPlan | null; delivered: Delivered | null; exact: boolean; onTile: boolean; receiverInSight: boolean; cueStop: boolean; tradeOpen: boolean }): AnvilStep {
     if (o.cueStop || o.plan?.stop) return 'stop';
     if (!o.plan) return 'wait-plan';
     if (o.delivered && o.delivered.session === o.plan.session && o.delivered.seq >= o.plan.seq) return 'wait-plan';
     if (!o.exact) return 'stage';
+    // Staged with a trade already open (the scored account's click took our standing request while we
+    // were off the tile): trade now. A walk or a new request click would close it.
+    if (o.tradeOpen) return 'request';
     if (!o.onTile) return 'go-to-tile';
     if (!o.receiverInSight) return 'wait-receiver';
     return 'request';
@@ -248,6 +251,54 @@ export function openBooth(sdk: BoothSdk, opts: { maxClicks?: number; maxTicks?: 
         const guard = setInterval(() => opts.signal?.aborted && finish(false, sdk.getState(), 'aborted'), 500);
         if (cur) onFrame(cur);
     });
+}
+
+/**
+ * At an open bank, make the inventory exactly `give`: everything outside it goes in, and only once
+ * it has left the inventory do the withdrawals go out (lib/bank.ts depositMatching, bounded by
+ * observed ticks). Fired in the same tick as the withdrawals, a Deposit-All of 4 handed-back
+ * daggers left one behind on the demo server, and the next trade offered the wrong slot. A deposit
+ * that did not land is sent once more before giving up.
+ */
+export async function restockAtBank(sdk: BankSdk, give: Record<string, number>): Promise<{ ok: boolean; reason?: string }> {
+    const inv = () => sdk.getState()?.inventory ?? [];
+    const deposit = staging(inv(), give).deposit.map(d => d.id);
+    if (deposit.length) {
+        let d = await depositMatching(sdk, deposit);
+        if (!d.ok) d = await depositMatching(sdk, deposit);
+        if (!d.ok) return { ok: false, reason: `the deposit did not land (${d.reason}): ${d.remaining.map(i => i.name).join(', ')}` };
+    }
+    const withdraw = () => withdrawMany(sdk, staging(inv(), give).withdraw.map(x => ({ item: itemRe(x.name), n: x.n })));
+    let w = await withdraw();
+    let exact = await waitUntil(sdk, s => staging(s.inventory, give).exact, { maxTicks: 5 });
+    // A withdrawal that did not land (the live server dropped one) goes again for what is still short;
+    // an over-count (a late landing after all) is not topped up but fails below.
+    if (!exact.ok && staging(inv(), give).deposit.length === 0) {
+        w = await withdraw();
+        exact = await waitUntil(sdk, s => staging(s.inventory, give).exact, { maxTicks: 5 });
+    }
+    if (!exact.ok) return { ok: false, reason: `bank left the inventory off the plan (${w.reason ?? 'no reason'}): ${JSON.stringify(staging(inv(), give))}` };
+    return { ok: true };
+}
+
+/**
+ * Walk onto `tile`, giving way to a trade: one the scored account opens while we walk is ours to
+ * take, and a further walk would close it, so the walk stops the moment a trade opens.
+ */
+export async function walkToTile(ctx: Pick<RoleContext, 'sdk' | 'signal'>, tile: Tile): Promise<'on-tile' | 'trade'> {
+    const at = (s: BotWorldState | null | undefined) => pos(s).x === tile.x && pos(s).z === tile.z;
+    const trading = (s: BotWorldState | null | undefined) => !!s && tradeOf(s).isOpen;
+    for (let attempt = 0; attempt < 5 && !ctx.signal.aborted; attempt++) {
+        const s = ctx.sdk.getState();
+        if (trading(s)) return 'trade';
+        if (at(s)) return 'on-tile';
+        await ctx.sdk.sendWalk(tile.x, tile.z);
+        await waitUntil(ctx.sdk, st => at(st) || trading(st), { maxTicks: 34 });
+    }
+    const s = ctx.sdk.getState();
+    if (trading(s)) return 'trade';
+    if (!at(s)) throw new Error(`could not stand on ${tile.x},${tile.z}`);
+    return 'on-tile';
 }
 
 // ------------------------------------------------------------------ options
@@ -363,7 +414,8 @@ export class AnvilHelper {
             exact: !!this.plan && !!s && staging(s.inventory, this.plan.give).exact,
             onTile: !!s && pos(s).x === this.o.tile.x && pos(s).z === this.o.tile.z,
             receiverInSight: !!this.receiverInSight(),
-            cueStop: !!this.cue?.stop
+            cueStop: !!this.cue?.stop,
+            tradeOpen: !!s && tradeOf(s).isOpen
         });
     }
 
@@ -410,7 +462,7 @@ export class AnvilHelper {
                 return;
             case 'go-to-tile':
                 this.setPhase('travel', 'to the anvil');
-                await standOn(ctx, o.tile);
+                await walkToTile(ctx, o.tile);
                 return;
             case 'wait-receiver':
                 this.setPhase('waiting', 'for the scored account');
@@ -536,14 +588,9 @@ export class AnvilHelper {
         const st = staging(this.s!.inventory, plan.give);
         const short = st.withdraw.filter(w => (this.s!.bank.items.filter(i => itemRe(w.name).test(i.name)).reduce((a, i) => a + i.count, 0)) < w.n);
         if (short.length) throw new Error(`the bank ${this.s!.bank.items.length ? 'is' : 'is empty, so'} short of ${short.map(w => `${w.n} ${w.name}`).join(', ')}`);
-        // Deposits first in the same tick: the server handles our packets in order, so the withdrawals find the room.
-        for (const d of st.deposit) void ctx.sdk.sendBankDeposit(d.slot, -1);
-        const w = await withdrawMany(ctx.sdk, st.withdraw.map(x => ({ item: itemRe(x.name), n: x.n })));
-        const exact = await until(ctx, s => staging(s.inventory, plan.give).exact, 5);
+        const r = await restockAtBank(ctx.sdk, plan.give);
         ctx.reportBank({ items: this.s!.bank.items.map(i => ({ id: i.id, name: i.name, count: i.count })) });
-        if (!exact) {
-            throw new Error(`bank left the inventory off the plan (${w.reason ?? 'no reason'}): ${JSON.stringify(staging(this.s!.inventory, plan.give))}`);
-        }
+        if (!r.ok) throw new Error(r.reason);
     }
 
     /** Lab only: top the bank up with staff-made notes (deposited, so the bank holds them unnoted). */
