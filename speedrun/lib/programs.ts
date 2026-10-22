@@ -204,6 +204,17 @@ export async function runProgram(sdk: ProgramSdk, name: ProgramName | string, pa
     return awaitProgram(sdk, started.runId, opts);
 }
 
+/**
+ * Ticks whose sixth and later user events the engine deferred to the next tick (the page's
+ * `counters.overBudget`: a tick of 5 sends that held a routed op was 6 events). As a row's
+ * meta: `{ overBudget }` when there were any, else nothing, so a row without overflow is
+ * unchanged.
+ */
+export function overBudgetMeta(status: Pick<ProgramStatus, 'counters'> | null | undefined): { overBudget?: number } {
+    const n = status?.counters?.overBudget ?? 0;
+    return n > 0 ? { overBudget: n } : {};
+}
+
 /** The running (or last) program's counters, from the latest state. */
 export function programCounters(sdk: ProgramSdk): Record<string, number> {
     return programStatus(sdk.getState())?.counters ?? {};
