@@ -11,11 +11,12 @@
 //     SCORED staged as P starts (route levels, bow worn, --sharks held); round 2 with Protect from Melee on, round 3
 //     also poisoned;
 //  4. the helper's relog on the tile (does it come back there?);
-//  5. SCORED runs the module's segments P..--until from the tile with the sharks it took (default P only).
+//  5. SCORED drinks one super antipoison dose (immunity for the pass) and runs the module's segments P..--until from
+//     the tile with the sharks it took (default P only).
 // Lab only: staff commands throughout.
 
 import type { BotWorldState } from '../../../sdk/types';
-import { talkTo, walkTo, wield } from '../../lib/act';
+import { invOp, talkTo, walkTo, wield } from '../../lib/act';
 import { setPrayer } from '../../lib/combat';
 import { closeSession, openSession, relog, type Session } from '../../lib/session';
 import { TickLog } from '../../lib/ticks';
@@ -230,6 +231,10 @@ result('mm_topup_relog', relogRow);
 const i0 = SEGMENTS.findIndex(d => d.letter === 'P');
 const i1 = SEGMENTS.findIndex(d => d.letter === until);
 const chain = steps({ note: line => console.log(line) }).slice(i0, i1 + 1);
+// The pre-dungeon dose (rs/201's `immune` on newer module revisions): drunk here so P's pass runs immune whichever
+// module revision this tree carries.
+const dose = scored.sdk.getState()!.inventory.find(i => /^Superantipoison\(\d\)$/i.test(i.name));
+if (dose) await invOp(scored.sdk as never, dose.id, /^drink$/i, s => !s.inventory.some(i => i.slot === dose.slot && i.id === dose.id), { maxTicks: 6 });
 const use = new SegmentUse(`P..${until}`, dungeonTraps());
 const unuse = scored.sdk.onStateUpdate(s => use.see(s));
 const log = TickLog.memory();
