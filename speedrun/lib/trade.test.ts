@@ -396,6 +396,19 @@ describe('trade completion race: cairn_h30 gives cairn_h71 a talisman and 200 no
         expect(Date.now() - t0).toBeLessThan(2_000);
     });
 
+    test('give with resendTicks Infinity never re-sends a standing request (the wine giver: 27 ticks would miss login + 19)', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, ...nearH30, inventory: [inv(0, 1996, 'Unfermented wine', 520)] }));
+        const result = give(sdk as unknown as TradeSdk, 'cairn_h30', [{ item: 1996, n: 'all' }], { openMaxTicks: 40, noReplyTicks: DROPPED_TICKS, resendTicks: Infinity });
+        await flush();
+        expect(requests(sdk)).toBe(1);
+        sdk.push({ tick: 2, gameMessages: [sending(2)] });
+        for (let t = 3; t <= 35; t++) sdk.push({ tick: t });
+        await flush();
+        expect(requests(sdk)).toBe(1);
+        for (let t = 36; t <= 45; t++) sdk.push({ tick: t });
+        expect((await result).ok).toBe(false);
+    });
+
     test('openTrade does not re-send a request answered on its landing frame, nor count an older answer as this one', async () => {
         const sdk = new FakeSdk(baseState({ tick: 1, ...nearH30, gameMessages: [sending(1)] }));
         const result = receiveFrom(sdk as unknown as TradeSdk, 'cairn_h30', { maxTicks: 5, noReplyTicks: DROPPED_TICKS });

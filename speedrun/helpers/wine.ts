@@ -25,10 +25,12 @@
 //   giveAmount  wines per hand-off (default: all held)
 //   acceptFrom  RegExp source of account names whose trades it accepts, e.g. couriers
 //               or the mule delivering noted grapes and jugs of water (optional)
+//   afterRelog  true: the run-day wine giver (S25c). Make nothing; give the notes to
+//               `receiver` right after it relogs in sight (giveWine's afterRelog)
 import type { BotSDK } from '../../sdk/index';
-import type { InventoryItem } from '../../sdk/types';
+import type { BotWorldState, InventoryItem } from '../../sdk/types';
 import { depositMatching, withdrawMany } from '../lib/bank';
-import { give, receiveFrom, sameName } from '../lib/trade';
+import { DROPPED_TICKS, give, receiveFrom, sameName } from '../lib/trade';
 import type { Role, RoleContext } from './role';
 import { runStandalone } from './role';
 import {
@@ -229,14 +231,54 @@ export async function waitForPlayer(sdk: BotSDK, name: string, ms: number): Prom
     return sdk.waitForCondition(() => seen(), ms).then(() => true, () => false);
 }
 
+/** Give-up for each wait of the after-relog cue (seen, gone, back): the giver is staged well before the relog. */
+export const RELOG_CUE_TIMEOUT_MS = 4 * 3_600_000;
+
+/**
+ * The receiver's relog as the giver sees it: in sight, then out of sight (the logout),
+ * then back. Resolves with the tick of the first state that shows it back, or null at a
+ * give-up. Seen-before-gone matters: the giver is staged before the receiver reaches the
+ * booth, so an absence at the start is not the logout.
+ */
+export async function awaitRelogReturn(sdk: Pick<BotSDK, 'getState' | 'waitForCondition'>, name: string, timeoutMs = RELOG_CUE_TIMEOUT_MS): Promise<number | null> {
+    const inSight = (s: BotWorldState) => s.nearbyPlayers.some(p => sameName(p.name, name));
+    const wait = (pred: (s: BotWorldState) => boolean) => sdk.waitForCondition(pred, timeoutMs).then(
+        s => s,
+        () => null
+    );
+    if (!(await wait(inSight))) return null;
+    if (!(await wait(s => !inSight(s)))) return null;
+    const back = await wait(inSight);
+    return back ? back.tick : null;
+}
+
+export interface GiveWineOptions {
+    /**
+     * Give right after the receiver's relog (S25c's planned relog 1): wait for it to be seen,
+     * gone and back (awaitRelogReturn), request on the first state it is back, and re-send only
+     * a click the engine dropped (decideTradeClick's DROPPED_TICKS rule), never the standing
+     * re-send, whose 27 ticks would miss the receiver's login + 19. Observed ticks only.
+     */
+    afterRelog?: boolean;
+    /** Give-up for each wait of the after-relog cue (default RELOG_CUE_TIMEOUT_MS). */
+    cueTimeoutMs?: number;
+}
+
 /** Trade `amount` (default all) noted unfermented wine to `receiver` with the burst giver. */
-export async function giveWine(ctx: Ctx, receiver: string, amount = -1, openTimeoutMs = 120_000): Promise<GiveResult> {
+export async function giveWine(ctx: Ctx, receiver: string, amount = -1, openTimeoutMs = 120_000, opts: GiveWineOptions = {}): Promise<GiveResult> {
     const { sdk } = ctx;
     if (invCount(sdk, ITEM.wine) > 0) throw new Error('loose unfermented wine in the inventory: note it before trading');
     const before = invCount(sdk, ITEM.wineNote);
     if (before === 0) return { success: false, given: 0, ticks: 0, message: 'no noted wine held' };
-    if (!(await waitForPlayer(sdk, receiver, openTimeoutMs))) return { success: false, given: 0, ticks: 0, message: `${receiver} never came into sight` };
-    const r = await give(sdk, receiver, [{ item: ITEM.wineNote, n: amount > 0 ? Math.min(amount, before) : 'all' }], { openTimeoutMs });
+    if (opts.afterRelog) {
+        const back = await awaitRelogReturn(sdk, receiver, opts.cueTimeoutMs);
+        if (back === null) return { success: false, given: 0, ticks: 0, message: `${receiver} was not seen to relog in sight` };
+        ctx.log('wine giver: receiver back after its relog', { receiver, tick: back });
+    } else if (!(await waitForPlayer(sdk, receiver, openTimeoutMs))) return { success: false, given: 0, ticks: 0, message: `${receiver} never came into sight` };
+    const r = await give(sdk, receiver, [{ item: ITEM.wineNote, n: amount > 0 ? Math.min(amount, before) : 'all' }], {
+        openTimeoutMs,
+        ...(opts.afterRelog ? { noReplyTicks: DROPPED_TICKS, resendTicks: Infinity } : {})
+    });
     return { success: r.ok, given: before - invCount(sdk, ITEM.wineNote), ticks: r.ticks, message: r.reason ?? 'ok' };
 }
 
@@ -301,6 +343,17 @@ export const role: Role = {
         const amount = typeof ctx.options.giveAmount === 'number' ? ctx.options.giveAmount : -1;
         const acceptFrom = typeof ctx.options.acceptFrom === 'string' ? new RegExp(ctx.options.acceptFrom, 'i') : null;
         await walkNear(ctx, VARROCK_WEST_BANK.x, VARROCK_WEST_BANK.z, 3);
+        if (ctx.options.afterRelog === true) {
+            if (!receiver) throw new Error('afterRelog needs a receiver');
+            // the run-day giver: no making, no bank visit; only the hand-off on the receiver's relog
+            for (let attempt = 1; !ctx.signal.aborted && invCount(sdk, ITEM.wineNote) > 0; attempt++) {
+                // the next chance is the receiver's next relog: a stuck giver shows here, once a wait
+                ctx.log('wine giver: waiting for the receiver to relog in sight', { receiver, attempt, notes: invCount(sdk, ITEM.wineNote) });
+                const g = await giveWine(ctx, receiver, amount, 120_000, { afterRelog: true });
+                ctx.log('hand-off', { ...g, receiver, afterRelog: true });
+            }
+            return;
+        }
         while (!ctx.signal.aborted) {
             try {
                 const r = await makeNotedWine(ctx, target);

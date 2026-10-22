@@ -139,6 +139,15 @@ describe('runItemCycle', () => {
         expect(programParams({ ...SPEC, booth: { ...SPEC.booth!, stand } }).booth).toEqual({ ...SPEC.booth, stand });
     });
 
+    test('programParams carries held, bank and mixed when given (the cooking windows), and leaves them out otherwise', () => {
+        const tool = { ...SPEC, mode: 'tool' as const, skill: 'crafting' };
+        expect(programParams({ ...tool, held: true, bank: false, mixed: true })).toMatchObject({ held: true, bank: false, mixed: true });
+        expect(Object.keys(programParams(tool))).not.toEqual(expect.arrayContaining(['held']));
+        for (const k of ['held', 'bank', 'mixed']) expect(programParams(tool)).not.toHaveProperty(k);
+        // clearTicks is the driver's, never the program's
+        expect(programParams({ ...tool, clearTicks: 0 })).not.toHaveProperty('clearTicks');
+    });
+
     test('done: resolves with the result; one program row and one note; the watcher runs out its ticks', async () => {
         const sdk = new PageSdk(baseState({ tick: 100 }));
         const log = TickLog.memory('t');
