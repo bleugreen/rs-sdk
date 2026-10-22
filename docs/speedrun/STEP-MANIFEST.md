@@ -51,6 +51,15 @@ engine line), **inferred** (arithmetic or a model over measured and read inputs,
 `[rs/59]` on cairn://p/rs/59/1/coordinator, `[rs/94]` on cairn://p/rs/94/1/builder and `[rs/97]`
 on cairn://p/rs/97/1/builder.
 
+**Timing (run-wide; main, 20:59 PDT).** Every cue-timed hand-off, helper login or helper action is
+timed on **observed game ticks** (the tick stream or `TICKMON`), never on wall-clock multiples of
+300 ms: the Runecraft givers' cue (entry 9, H4), the anvil's `cue.json` (H5), the Firemaking
+droppers (S03, H6), the bone givers' load timing (H4.1-H4.n) and any `T0 + n ms` launch in run.ts. A
+deadline that stands for a tick count keys off observed ticks; wall clock appears only as an idle
+bound, no new tick for N ticks' worth of time scaled by the configured tick length. The demo has
+been seen at 0.34-0.37 s a tick, where a wall-clock cue lands early by about (1 - 0.30/actual) of
+its delay and a deadline fires early (RUN-ORDER.md R23).
+
 **Mode.** An entry is **in-page** when its loop reacts on the decoded tick or sends on predicted
 ticks. That means an rs/97 tick program inside the browser webclient, started and awaited through
 `speedrun/lib/programs.ts` [rs/97] (`startProgram`, `awaitProgram`, `runProgram`, `probeInPage`).
@@ -117,9 +126,9 @@ of Goblin Diplomacy's standalone travel that the legs already carried off its ro
 cannon session, Prayer, Crafting and Cooking pass it. Fold-in 13 adds S15's measured H to M (+352),
 so Monkey Madness (4,429) passes Agility (4,327) for rank 1.
 
-The expected column sums to **31,364.5** (the steps) plus the legs' **2,198.5**; RUN-ORDER.md section 6
+The expected column sums to **31,350.5** (the steps) plus the legs' **2,198.5**; RUN-ORDER.md section 6
 adds the allowances (hand-offs outside the figures, level-up pages, contention, overrun, relay,
-retries, restarts) for its **34,848** knife-on expected (31,867 best), against the record of 35,916.
+retries, restarts) for its **34,834** knife-on expected (31,867 best), against the record of 35,916.
 
 **Module status** (the last column; the helper scripts and the programs the entries rely on are in
 "Module status" at the end of this section) is as of this document's commit date, and rs/158 updates
@@ -143,7 +152,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 12 | 13 | Dragon Slayer | `speedrun/quests/dragon-slayer.ts` | S26 | 969 | 908 | 1,079 | ~171 | overlay | `quest-dragon-*.ts` | building (rs/185, held: tenet 15) |
 | 13 | 12 | Dwarf Cannon | `speedrun/quests/dwarf-cannon.ts` | S13 | 855 | 799 | 957 | ~158 | overlay | `quest-mcannon-*.ts` | building (rs/185, held: tenet 15) |
 | 14 | 14 | Tree Gnome Village | `speedrun/quests/tree-gnome-village.ts` | S10b | 793 | 739 | 902 | ~163 | overlay | `quest-tree-full.ts`, `quest-premm-fight.ts` | building (rs/185, held: tenet 15) |
-| 15 | 16 | Firemaking | `speedrun/skills/firemaking.ts` | S03 | 695 | 650 | 735 | ~85 | overlay | `firemaking-line.ts` | on main, 4cc468e0 (#205; rs/244) |
+| 15 | 16 | Firemaking | `speedrun/skills/firemaking.ts` | S03 | 681 | 650 | 735 | ~85 | overlay | `firemaking-line.ts` | on main, 4cc468e0 (#205; rs/244); **demo-measured**, 681 m (rs/269, cairn_burns) |
 | 16 | 17 | Fight Arena | `speedrun/quests/fight-arena.ts` | S12 | 571 | 524 | 646 | ~122 | overlay | `quest-arena-run.ts` | building (rs/185, held: tenet 15) |
 | 17 | 18 | Plague City | `speedrun/quests/plague-city.ts` | S08 | 491 | 435 | 608 | ~173 | overlay | `quest-plague-city-*.ts` | building (rs/185, held: tenet 15) |
 | 18 | 19 | Mage Arena | `speedrun/quests/mage-arena.ts` | S16 | 425 | 418 | 448 | ~30 | overlay | `quest-magearena-*.ts` | building (rs/185, held: tenet 15) |
@@ -236,6 +245,8 @@ are filed under main and held until tenet 15 is answered.
   options, entry 9), so it is **lab-accepted on the floor**, and its tuned nature run is confirmed on
   the direct path (entry 9).
 - **16.** On main, 4cc468e0 (#205): rs/244's snapshot of rs/228's lab-gated module, with its test.
+  **Demo-measured**: rs/269's cairn_burns ran S03 at 681 on the demo, the first whole step measured
+  end to end there (entry 16).
 - **15.** The primary path is the bury option inside entry 3 (knife-cycle `bury` on main; the
   gate-off plain + bury is rs/162's, lab-measured and on main as 3dfc217f, #165); the booth fallback `skills/prayer.ts` is rs/186's.
 
@@ -338,9 +349,11 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     it does not declare, so each entry's program keys are the program's declared names) and
     834f376b (#176, rs/210's tick-cadence monitor). Pending, each moving the floor when it lands: rs/147's Agility
     snapshot (agility's `untilLevel`, entry 1, RUN-ORDER.md O40), PR #218 (rs/241's `eatAt: 'land'`,
-    entry 1), rs/243's Thieving snapshot
+    entry 1), #209 (rs/246's `lib/wait.ts` deadlines on observed ticks, RUN-ORDER.md R23), rs/276 (the
+    tick monitor's late count against observed intervals and gated-program's pause in observed
+    ticks, R23; it changes a run-night pass line), rs/243's Thieving snapshot
     (pickpocket's `stopWhenFoodBelow` and `retargetTicks`, entry 6) and PR #198 (rs/198's
-    `runner/legs.ts`, entry 11); #198 and #218 have PR numbers so far. Gate tooling on main, not floor
+    `runner/legs.ts`, entry 11); #198, #209 and #218 have PR numbers so far. Gate tooling on main, not floor
     items: 5d22252d (#208, `lib/display.ts`) and c4b79f17 (#213, `lib/tab.ts` window helpers);
   - **the login cap**: our simultaneous demo logins, summed across every host, at most 100 with a
     working cap of 80, counted before SCORED logs in (main, 15:35 PDT; `RUN-HOST.md` step 7;
@@ -1467,12 +1480,30 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Parameters:** `row` (start tile and direction), `supply: 'row' | 'trade' | 'bank'`.
 - **Preconditions:** a tinderbox (in the tutorial starter kit, `[rs/59] research/travel-and-overhead.md`);
   the row dropped ahead and revealed (a dropped obj is private to its dropper for 100 ticks, read,
-  `WorldConfig.ts:38,115` via the same doc, row 5).
+  `WorldConfig.ts:38,115` via the same doc, row 5). **The droppers are in the world before the cue
+  and use `cueAt: 'seen'`** (counting from the observed tick) until rs/41's child measures the
+  observed tick period: `cueAt: 'written'` converts wall time into ticks at 300 ms and starts early
+  on a slow demo (RUN-ORDER.md R23). The step's launch waits on a dropper's observed tick, never on
+  T0 + n x 300 ms.
 - **Postconditions:** Firemaking 99. It must pass 30 before S19 Sea Slug (read,
   `quest_seaslug.rs2:43`). Items out: none.
-- **Ticks:** expected **695** with trade refills (inferred: the model's 658 + 6 trades). The dropped
-  row's pacing is built (H6, `helpers/fm-row.md`: two lab runs of 157 logs, 658 ticks first to last
-  fire, no gap waiting on a log). Best **650** on the dropped row
+- **Ticks:** expected **681, measured on the demo** (rs/269's cairn_burns, 2026-10-22 03:43-03:47Z,
+  ~1,700-1,790 online; the six droppers at 2 logins per host; the gate 60/60 direct and 58/60
+  in-page; `rehearsals/firemaking.md` on rs/147's line, rs/269 at 2480e3b4). The session ran 683
+  ticks from a parked login: 2 from the login to the step, 21 fixed before the first light, and 660
+  of line (157 logs, 8 failed rolls against 7.58 expected; the first roll 3 ticks after the attempt,
+  then 4 a roll); the hiscore read 690 (#1), against the model's median 669. **~665 (inferred)** from
+  a parked login once the launch waits on a dropper's observed tick (`speedrun/tools/tick-wait.ts`):
+  the harness launched at T0 + 75 x 300 ms of wall clock on a demo ticking at 0.34-0.37 s, so the
+  login landed ~20 ticks before log 0 turned public and the first light went at tick 23, not ~3
+  (RUN-ORDER.md R23); from a standing start the fixed cost is ~5 with the launch on observed ticks.
+  **The line rate is confirmed on the demo**: per band (ticks / fires / failures) 1-15 12 / 2 / 4,
+  15-30 32 / 4 / 4, 30-45 28 / 7 / 0, 45-60 52 / 13 / 0, 60-75 96 / 24 / 0, 75-99 428 / 107 / 0,
+  **exactly 4.00 ticks a log from 30 to 99 with strangers standing on the row**: no stolen logs,
+  slips or resends (m). `firemaking.ts`'s `failures` over-counts (13 against 8 real) through its
+  `lost` path; rs/269 fixes it before S03 reports from it. The 695 before was the trade refills'
+  (inferred: the model's 658 + 6 trades). The dropped row's pacing is built (H6, `helpers/fm-row.md`:
+  two lab runs of 157 logs, 658 ticks first to last fire, no gap waiting on a log). Best **650** on the dropped row
   (measured end to end 634 and 666 with the lab's restock gaps removed). Fallback **735** banking at
   Falador east (inferred) (all `skills/firemaking.md` §1).
 - **Primitives:** `act` (use tinderbox on the next log), `levelup`; `trade.receiveFrom` for the trade
@@ -1979,7 +2010,11 @@ bones, bidder, grapes, wine maker, coins) are supply, not step scripts; `SUPPLIE
   `woodcutter.ts`.
 - **Acceptance:** as entry 16; no gap over 4 ticks caused by a missing log. Met in the lab, two runs:
   0 such gaps, no log public more than 48 ticks before SCORED wanted it (`helpers/fm-row.md`). Not
-  tick-exact; the run machine only for its `cue` start. Open: the coop row, bank restocks, demo.
+  tick-exact; the run machine only for its `cue` start. Open: the coop row, bank restocks. **Demo:**
+  six droppers at 2 logins per host carried S03 to 681 (rs/269), with no log stolen. **Run day:** in
+  the world before the cue and on `cueAt: 'seen'` until rs/41's child measures the observed tick
+  period (`cueAt: 'written'`'s `cueTick`, fm-row.ts:350, starts ~15% early at 0.35 s a tick;
+  RUN-ORDER.md R23).
 
 ### H7. Carp catcher: `speedrun/helpers/carp.ts` (building, rs/173)
 

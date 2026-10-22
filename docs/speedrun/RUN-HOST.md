@@ -200,8 +200,8 @@ Its history contains every earlier requirement (rs/158 in the store; here `git m
 **Gate tooling on main, not floor items** (main: gate-script helpers, not run-client code; the floor contains both, so the run host's checkout has them): `5d22252d` (#208, rs/232's `speedrun/lib/display.ts`, the live-frame check for steps 5 and 5a) and `c4b79f17` (#213, rs/232's `speedrun/lib/tab.ts` window helpers, `screenshotTab` among them).
 
 **Pending for the floor**, each moving it to its merge commit when it lands (rs/158 sends the commit,
-and the latest one sent is the floor): rs/147's Agility snapshot (agility declares `untilLevel`; it waits on main's sign-off of four default-changing program fixes and the Agility part-2 lab; RUN-ORDER.md O40); PR #218 (rs/241's `eatAt: 'land'` for the agility program, so S17's eats cost 0, STEP-MANIFEST.md entry 1; building); rs/243's Thieving snapshot (pickpocket's `stopWhenFoodBelow` and `retargetTicks`, declared with a packet-fingerprint golden test; STEP-MANIFEST.md entry 6); and PR #198 (rs/198's `speedrun/runner/legs.ts`, STEP-MANIFEST.md entry 11, with its per-leg lab section of `research/run-transitions.md`). Only #198 has
-a PR number so far.
+and the latest one sent is the floor): rs/147's Agility snapshot (agility declares `untilLevel`; it waits on main's sign-off of four default-changing program fixes and the Agility part-2 lab; RUN-ORDER.md O40); PR #218 (rs/241's `eatAt: 'land'` for the agility program, so S17's eats cost 0, STEP-MANIFEST.md entry 1; building); #209 (rs/246's `speedrun/lib/wait.ts`: `maxTicks` on observed ticks, a 20-tick idle timeout re-armed only by new ticks, relaunch detection; RUN-ORDER.md R23); rs/276 (the tick monitor's late count against a rolling median of observed intervals, the measured period in its per-minute line, and gated-program's pause in observed ticks; it changes a run-night pass line, R23); rs/243's Thieving snapshot (pickpocket's `stopWhenFoodBelow` and `retargetTicks`, declared with a packet-fingerprint golden test; STEP-MANIFEST.md entry 6); and PR #198 (rs/198's `speedrun/runner/legs.ts`, STEP-MANIFEST.md entry 11, with its per-leg lab section of `research/run-transitions.md`). #198, #209 and #218 have
+PR numbers so far.
 
 **Leftover check.** It lists every tmux socket on the host with its sessions, other agents' sockets
 included, plus every `chrome*`, `ffmpeg`, `bun` and `timeout` process with its age, and the host
@@ -1113,3 +1113,13 @@ The raw arrivals of every pair are kept on the run host (`~/host-captures`) and 
 (`~/hostpair`) by the host thread. Two clean pairs and one clean single read at the new address make
 the route "consistent with fixed"; the series continues on both timers (rs/83, 16:32 PDT), and starts
 again after the next address change.
+
+## Measured: the demo's tick period, 2026-10-22
+
+**The demo ran at 0.34-0.37 s a tick** around 03:4xZ on 2026-10-22: rs/210's tick monitor (step 7's
+`TICKMON` rows) read 161-177 ticks a minute against 200 at 300 ms, during rs/269's S03 demo run
+(m, a demo observation, dated; RUN-ORDER.md R23). The score is in ticks, so a slow tick costs
+nothing itself; what it exposes is any cue or deadline timed in wall clock, which lands early (an
+S03 launch at T0 + 75 x 300 ms cost ~18 ticks). Until rs/276 lands, `tick-monitor.ts` anchors its
+expected tick times on the nominal 300 ms, so on a slow demo it counts every tick as late: read its
+late count beside the ticks-per-minute figure, not as a route alarm on its own.
