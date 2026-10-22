@@ -222,9 +222,14 @@ export function provisionPlan(stock: Stockpile, r: Roster, total = S21_ESSENCE):
     const talismans = allocate(stock, 'Body talisman', r.accounts, 1);
     // One donor pass in roster order: the hand-back giver takes only its trades' essence, so its bank runs out after its last trade.
     const essenceTransfers = allocateEach(stock, 'Rune essence', r.accounts, a => (a === handBackAccount ? hb.essence : essence.perGiver));
-    // A few runes: from a donor already logging in rather than one more login in the hand-back giver's batch.
+    // A few runes, best in a trade the hand-back giver already gets (its talisman or essence donor, if one holds
+    // them all); else item by item from donors already logging in, before one more login in its batch.
     const bulkDonors = new Set([...talismans, ...essenceTransfers].map(t => t.from));
-    const handBackTransfers = S21_HAND_BACK.flatMap(i => allocateEach(stock, i.item, r.accounts, a => (a === handBackAccount ? i.n : 0), bulkDonors));
+    const held = (a: string, item: string) => (stock.accounts[a]?.bank ?? []).filter(x => x.name === item).reduce((n, x) => n + x.count, 0);
+    const sameTrade = [...new Set([...talismans, ...essenceTransfers].filter(t => t.to === handBackAccount).map(t => t.from))].find(a => S21_HAND_BACK.every(i => held(a, i.item) >= i.n));
+    const handBackTransfers: Transfer[] = sameTrade
+        ? S21_HAND_BACK.map(i => ({ from: sameTrade, to: handBackAccount, item: i.item, count: i.n }))
+        : S21_HAND_BACK.flatMap(i => allocateEach(stock, i.item, r.accounts, a => (a === handBackAccount ? i.n : 0), bulkDonors));
     const donors = new Set([...bulkDonors, ...handBackTransfers.map(t => t.from)]);
     // The five-client provisioning budget includes donors, not only recipients.
     if (donors.size >= PROVISION_BATCH) throw new Error('too many donors for one provisioning window; ask rs/41 to consolidate stock first');
