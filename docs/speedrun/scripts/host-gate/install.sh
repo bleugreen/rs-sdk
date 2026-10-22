@@ -7,6 +7,9 @@
 #
 # Copies the wrapper (host-gate-read.sh), the units and these scripts to ~/.local/lib/rs-gate,
 # so the timer never runs code from the checkout the wrapper moves to ~/run-commit.
+# It also installs the claim lock, rs-claim (tenet 21), to ~/.local/bin/rs-claim, mode 755, but
+# only when the installed copy differs from this one; it prints both sha256s either way.
+# uninstall.sh leaves rs-claim in place: the lock outlives the timer.
 # --every 30 (default) fires at :00 and :30; --every 15 at :00, :15, :30 and :45. Rerunning with
 # the other value switches the cadence of an installed timer in place.
 # --repo is the gate's own clone (default ~/gate/rs-sdk), holding bots/gate/bot.env.
@@ -52,7 +55,21 @@ if [ "$here" != "$lib" ]; then
     wrapper="$here/../host-gate-read.sh"
     [ -f "$wrapper" ] || { echo "install.sh: no host-gate-read.sh next to $here" >&2; exit 1; }
     mkdir -p "$lib"
-    cp "$wrapper" "$here/rs-gate-read.service" "$here/rs-gate-read.timer" "$here/install.sh" "$here/uninstall.sh" "$lib/"
+    cp "$wrapper" "$here/rs-gate-read.service" "$here/rs-gate-read.timer" "$here/install.sh" "$here/uninstall.sh" "$here/rs-claim" "$lib/"
+fi
+
+# The claim lock writes the ~/host-reserved.json every firing skips on. Replace the installed copy
+# only when it differs from this one, so a rerun (a cadence switch) never touches a matching lock.
+claim="$HOME/.local/bin/rs-claim"
+want=$(sha256sum "$lib/rs-claim" | cut -d' ' -f1)
+have=$(if [ -f "$claim" ]; then sha256sum "$claim" | cut -d' ' -f1; else echo none; fi)
+if [ "$have" = "$want" ]; then
+    [ -x "$claim" ] || chmod 755 "$claim"
+    echo "rs-claim: installed $have, repo $want: the same, left as it is"
+else
+    mkdir -p "$HOME/.local/bin"
+    install -m 755 "$lib/rs-claim" "$claim"
+    echo "rs-claim: installed $have, repo $want: different, replaced (mode 755)"
 fi
 
 dest="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"

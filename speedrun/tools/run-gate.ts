@@ -8,7 +8,8 @@
 //
 //   bun speedrun/tools/run-gate.ts up      [--machines=run,twin] [--rehearsal] [--claim=OWNER]
 //   bun speedrun/tools/run-gate.ts gate    --gate-run=ACCOUNT --gate-twin=ACCOUNT [--machines=run,twin]
-//                                          [--minutes=5] [--rehearsal] [--claim=OWNER] [--rehearse=CASE]
+//                                          [--prefer=run|twin] [--minutes=5] [--rehearsal] [--claim=OWNER]
+//                                          [--rehearse=CASE]
 //   bun speedrun/tools/run-gate.ts handoff --machine=run|twin --scored-env=PATH [--max-gate-age=20]
 //                                          [--cap=80] [--rehearsal] [--claim=OWNER]
 //
@@ -19,10 +20,17 @@
 // stops a step halfway: the on-machine run finishes into ~/rs-run/gate-<UTC>/steps.log on the
 // machine, and the Mac prints the same lines prefixed [run] or [twin] and keeps a copy in
 // --log-dir (default ~/rs-run-gate). `gate` runs both machines in parallel, prints (a)-(d) per
-// machine, chooses (RUN-HOST.md step 5a.2: the run host when both pass, the twin only on the
-// tiebreak) and writes choice.json; `handoff` refuses a machine the latest choice did not name, or
-// a choice older than --max-gate-age minutes. Between the two, step 5a.4-5a.5's roster moves and
-// step 7's login count happen through rs/117's launcher, as before.
+// machine, chooses (RUN-HOST.md step 5a.2: the preferred machine when both pass, DEFAULT_PREFER
+// unless --prefer says otherwise, and the other only on the tiebreak) and writes choice.json;
+// `handoff` refuses a machine the latest choice did not name, or a choice older than
+// --max-gate-age minutes. Between the two, step 5a.4-5a.5's roster moves and step 7's login count
+// happen through rs/117's launcher, as before.
+//
+// Beside (a)-(d), `gate` prints three report-only lines from the gate tab, never pass or fail:
+// `scene`, the page ticks from the gate tab's login to the client's sceneState 2 (the gate tab and
+// SCORED's share the run profile and its origin, so this reads how warm the profile is); `locs`, the
+// SDK's nearby locs once the scene is built; and `tile`, where the gate account stands against
+// Lumbridge spawn, where it is parked as the profile's warm-up probe.
 //
 // Main's recording rulings (cairn://p/rs/main/messages, 18:16 and 19:08 PDT 2026-10-21) are hard
 // checks here:
@@ -46,8 +54,10 @@
 // Exit codes: 0 pass, 1 a pass line failed (or no machine passes), 2 a precondition or a tool
 // failed (STOP), 3 re-measure ((c) failed, or (d) marginal).
 //
-// SCORED's name is never printed: `handoff` reads it from --scored-env and relabels every line it
-// prints, its frames and its logs as SCORED.
+// No account's name is printed: `handoff` reads SCORED's from --scored-env and relabels every line
+// it prints, its frames and its logs as SCORED; `gate` relabels each gate account as GATE-run or
+// GATE-twin in its lines, its STOP lines, its JSON and the files it leaves in ~/rs-run/gate-*, and
+// the Mac relabels both again in what it prints, its log and choice.json.
 //
 // --rehearsal: 30-minute bounds instead of the run's 9 h, `rehearsal-` recordings, and it requires
 // --claim with an owner other than host or run. --rehearse=unconfirmed-logout skips the gate tab's
@@ -86,6 +96,15 @@ export const CHROME_FLAGS = [
 
 export type Machine = 'run' | 'twin';
 export const MACHINES: readonly Machine[] = ['run', 'twin'];
+export const otherMachine = (m: Machine): Machine => (m === 'run' ? 'twin' : 'run');
+const machineName = (m: Machine) => (m === 'run' ? 'the run host' : 'the twin');
+
+/**
+ * Where the run starts when both machines pass: the twin is the expected start machine and the
+ * run host the fallback (main, 10:4x PDT 2026-10-22, from rs/83's same-minute pair series: the twin
+ * passed 17 of 17, the run host 4 of 17; tenet 17). `gate --prefer=run|twin` overrides it.
+ */
+export const DEFAULT_PREFER: Machine = 'twin';
 
 export class Stop extends Error {
     constructor(
@@ -178,6 +197,10 @@ export interface MachineGate {
     /** confirmed: logoutClean saw the page out of game. The window is killed either way. */
     gateLogout: 'confirmed' | 'unconfirmed' | 'not-run';
     failures: string[];
+    /** Report only, never part of the status: the gate tab's scene, locs and tile. Null when not read. */
+    scene: SceneRead | null;
+    locs: LocsRead | null;
+    tile: TileRead | null;
 }
 
 export const startable = (s: GateStatus | undefined) => s === 'pass' || s === 'marginal';
@@ -205,29 +228,56 @@ export function machineVerdict(direct: DirectRead, loops: LoopsSummary | null, o
     return { status, verdict, failures };
 }
 
+/** Where a passing gate sits at the margin: (a) under 60 of 60, (c) above 1 a minute (the line is 2), a (d) sample under 60. */
+export function marginOf(g: MachineGate): string[] {
+    return [
+        g.a && g.a.onTime < g.a.passAt ? `(a) ${g.a.onTime}/${g.a.trials}` : '',
+        g.c && g.c.perMinute > 1 ? `(c) ${g.c.perMinute}/min` : '',
+        g.d && g.d.lowest < 60 ? `(d) lowest ${g.d.lowest}/s` : '',
+    ].filter(Boolean);
+}
+
+/** A read clearly better than a marginal one: (a) 60 of 60 and (c) at most 1 a minute. */
+const cleanRead = (g: MachineGate) => !!g.a && g.a.onTime >= g.a.passAt && !!g.c && g.c.perMinute <= 1;
+
+export interface Choice {
+    machine: Machine | null;
+    /** The preference in force (DEFAULT_PREFER or --prefer). */
+    prefer: Machine;
+    /** True when the tiebreak moved the start off the preferred machine. */
+    tiebreak: boolean;
+    reason: string;
+}
+
 /**
- * RUN-HOST.md step 5a.2. One passes: start on it. Both pass: the run host, unless it passed only
- * at the margin ((a) under 60 of 60, (c) above 1 a minute, i.e. at the line of 2, or a (d) sample
- * under 60) while the twin read (a) 60 of 60 and (c) at most 1. Neither: no start.
+ * RUN-HOST.md step 5a.2. One passes: start on it. Both pass: the preferred machine, unless it
+ * passed only at the margin (marginOf) while the other read clean ((a) 60 of 60, (c) at most 1):
+ * then the other, by the tiebreak. Neither: no start.
  */
-export function choose(gates: Partial<Record<Machine, MachineGate | null>>): { machine: Machine | null; reason: string } {
-    const run = gates.run ?? null;
-    const twin = gates.twin ?? null;
+export function choose(gates: Partial<Record<Machine, MachineGate | null>>, prefer: Machine = DEFAULT_PREFER): Choice {
+    const other = otherMachine(prefer);
+    const pg = gates[prefer] ?? null;
+    const og = gates[other] ?? null;
     const ok = (g: MachineGate | null): g is MachineGate => !!g && startable(g.status);
     const why = (m: Machine, g: MachineGate | null) => `${m} ${g ? `${g.status}${g.failures.length ? ` (${g.failures.join('; ')})` : ''}` : 'not gated'}`;
-    if (ok(run) && ok(twin)) {
-        const runMargin = [
-            run.a && run.a.onTime < run.a.passAt ? `(a) ${run.a.onTime}/${run.a.trials}` : '',
-            run.c && run.c.perMinute > 1 ? `(c) ${run.c.perMinute}/min` : '',
-            run.d && run.d.lowest < 60 ? `(d) lowest ${run.d.lowest}/s` : '',
-        ].filter(Boolean);
-        const twinClean = !!twin.a && twin.a.onTime >= twin.a.passAt && !!twin.c && twin.c.perMinute <= 1;
-        if (runMargin.length && twinClean) return { machine: 'twin', reason: `both pass; the run host only at the margin (${runMargin.join(', ')}) and the twin clean: the tiebreak picks the twin` };
-        return { machine: 'run', reason: runMargin.length ? `both pass; the run host at the margin (${runMargin.join(', ')}) but the twin not clearly better: the run host, the default` : 'both pass: the run host, the default' };
+    const pick = (machine: Machine | null, reason: string, tiebreak = false): Choice => ({ machine, prefer, tiebreak, reason });
+    if (ok(pg) && ok(og)) {
+        const margin = marginOf(pg);
+        if (margin.length && cleanRead(og)) return pick(other, `tiebreak: preferred ${prefer} passed only at the margin: ${margin.join(', ')}; ${other} read clean`, true);
+        return pick(prefer, margin.length ? `both pass; preferred ${prefer} at the margin (${margin.join(', ')}) but ${other} not clearly better: the preferred machine` : `both pass: the preferred machine, ${prefer}`);
     }
-    if (ok(run)) return { machine: 'run', reason: `only the run host passes; ${why('twin', twin)}` };
-    if (ok(twin)) return { machine: 'twin', reason: `only the twin passes; ${why('run', run)}` };
-    return { machine: null, reason: `no machine passes: ${why('run', run)}; ${why('twin', twin)}` };
+    if (ok(pg)) return pick(prefer, `only ${machineName(prefer)} passes; ${why(other, og)}`);
+    if (ok(og)) return pick(other, `only ${machineName(other)} passes; ${why(prefer, pg)}`);
+    return pick(null, `no machine passes: ${why('run', gates.run ?? null)}; ${why('twin', gates.twin ?? null)}`);
+}
+
+/** The step log's choice line; a tiebreak reads `chosen: run (tiebreak: preferred twin ...)`. */
+export const choiceLine = (c: Choice) => `chosen: ${c.machine ?? 'NONE'} (${c.reason})`;
+
+export function parsePrefer(v: string | undefined): Machine {
+    if (v === undefined) return DEFAULT_PREFER;
+    if (v === 'run' || v === 'twin') return v;
+    throw new Stop(`--prefer takes run or twin, not ${v}`);
 }
 
 export interface ClaimStatus {
@@ -255,13 +305,27 @@ export function parseClaimStatus(text: string): ClaimStatus {
     };
 }
 
-/** Replace an account's name (and the in-game form, underscores as spaces) with `label`. */
-export function relabel(text: string, name: string | null, label: string): string {
-    if (!name) return text;
+/**
+ * Replace each account's name (and its in-game form, underscores as spaces, in any case) with its
+ * label. Longer names go first, so a name that contains another is never half-replaced.
+ */
+export function relabelAll(text: string, pairs: ReadonlyArray<readonly [string | null | undefined, string]>): string {
+    const label = new Map<string, string>();
+    for (const [name, l] of pairs) if (name) for (const form of [name, name.replace(/_/g, ' ')]) label.set(form.toLowerCase(), l);
+    if (!label.size) return text;
     const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const forms = [...new Set([name, name.replace(/_/g, ' ')])].map(esc).join('|');
-    return text.replace(new RegExp(forms, 'gi'), label);
+    const forms = [...label.keys()].sort((x, y) => y.length - x.length).map(esc).join('|');
+    return text.replace(new RegExp(forms, 'gi'), m => label.get(m.toLowerCase())!);
 }
+
+/** Replace one account's name (and the in-game form) with `label`. */
+export const relabel = (text: string, name: string | null, label: string) => relabelAll(text, [[name, label]]);
+
+/** What a gate account is called in everything run-gate prints or writes. */
+export const gateLabel = (m: Machine | null) => (m ? `GATE-${m}` : 'GATE');
+
+/** Both machines' gate accounts relabelled at once: what the Mac runs over every line, its log and choice.json. */
+export const gateScrub = (accounts: Partial<Record<Machine, string | undefined>>) => (s: string) => relabelAll(s, MACHINES.map(m => [accounts[m], gateLabel(m)] as const));
 
 export function gateRow(m: string, g: MachineGate | null): string {
     if (!g) return `${m.padEnd(5)} not gated`;
@@ -270,7 +334,188 @@ export function gateRow(m: string, g: MachineGate | null): string {
     const b = g.b ? `${g.b.p90} ms` : '-';
     const c = g.c ? `${g.c.perMinute}/min` : '-';
     const d = g.d ? `${g.d.lowest} / ${g.d.median} / ${g.d.highest}` : '-';
-    return `${m.padEnd(5)} ${minute}Z  (a) ${a.padEnd(6)} (b) p90 ${b.padEnd(7)} (c) ${c.padEnd(9)} (d) p10 ${d.padEnd(20)} ${g.status.padEnd(10)} online ${g.players ?? '?'}  gate logout ${g.gateLogout}${g.failures.length ? `  [${g.failures.join('; ')}]` : ''}`;
+    const scene = g.scene?.built ? `${g.scene.built.firstLook ? '<=' : ''}t${g.scene.built.tick ?? '?'}` : g.scene ? 'not built' : '-';
+    const locs = g.locs?.look ? String(g.locs.look.locs) : '-';
+    const tile = g.tile ? (g.tile.atSpawn ? 'at spawn' : `${g.tile.fromSpawn} from spawn`) : '-';
+    return (
+        `${m.padEnd(5)} ${minute}Z  (a) ${a.padEnd(6)} (b) p90 ${b.padEnd(7)} (c) ${c.padEnd(9)} (d) p10 ${d.padEnd(20)} ${g.status.padEnd(10)} online ${g.players ?? '?'}  gate logout ${g.gateLogout}` +
+        `  | report only: scene ${scene}, locs ${locs}, tile ${tile}${g.failures.length ? `  [${g.failures.join('; ')}]` : ''}`
+    );
+}
+
+// ------------------------------------------------------------------ the gate tab's scene, locs and tile (report only)
+
+/** Lumbridge spawn: each machine's gate account is parked there as the run profile's warm-up probe. */
+export const LUMBRIDGE_SPAWN = { x: 3222, z: 3218, level: 0 } as const;
+/** Within this many tiles (Chebyshev, on the spawn's level) reads as at Lumbridge spawn. */
+export const SPAWN_RADIUS = 5;
+/** rs/41's bbs reading (cairn://p/rs/41, bbs-warm): the scene built at page tick 73-83 on a cold profile at a busy site, 3-4 warm. */
+const SCENE_REFERENCE = 'bbs reference: warm 3-4 ticks, cold 73-83 at a busy site';
+
+/** One light look at the page: in game, the client's sceneState (2: built), and the overlay's tick count. */
+export interface ScenePoll {
+    inGame: boolean;
+    sceneState: number | null;
+    /** BotOverlay.serverTick: the page's ticks in game, 0 when it enters the world on a fresh load. */
+    tick: number | null;
+}
+
+export const SCENE_EXPRESSION = `(() => {
+    const c = window.gameClient;
+    if (!c) return null;
+    const o = c.botOverlay;
+    return { inGame: !!c.ingame, sceneState: typeof c.sceneState === 'number' ? c.sceneState : null, tick: o && typeof o.serverTick === 'number' ? o.serverTick : null };
+})()`;
+
+export interface Tile {
+    x: number;
+    z: number;
+    level: number;
+}
+
+/** The SDK state's view, from the page's own BotOverlay.getState(): counts and the tile only, never a name. */
+export interface StateLook {
+    tick: number;
+    sceneReady: boolean;
+    locs: number;
+    npcs: number;
+    players: number;
+    tile: Tile | null;
+}
+
+export const STATE_EXPRESSION = `(() => {
+    const o = window.gameClient && window.gameClient.botOverlay;
+    if (!o || typeof o.getState !== 'function') return null;
+    const s = o.getState();
+    const p = s.player;
+    const n = a => (Array.isArray(a) ? a.length : 0);
+    return { tick: s.tick, sceneReady: !!s.sceneReady, locs: n(s.nearbyLocs), npcs: n(s.nearbyNpcs), players: n(s.nearbyPlayers), tile: p ? { x: p.worldX, z: p.worldZ, level: p.level } : null };
+})()`;
+
+export interface SceneRead {
+    /** The first look that saw the page in game: its page tick and seconds after tab-login started. */
+    inGame: { tick: number | null; s: number } | null;
+    /**
+     * The first look that saw sceneState 2. `firstLook` when that was also the first in-game look:
+     * the scene was built by then, so its tick is an upper bound.
+     */
+    built: { tick: number | null; s: number; firstLook: boolean } | null;
+    /** The last look in game, for a scene not built. */
+    last: { sceneState: number | null; tick: number | null } | null;
+    looks: number;
+    waitedS: number;
+}
+
+export interface LocsRead {
+    /** The first look with locs, or the last look when none had any. */
+    look: StateLook | null;
+    waitedS: number;
+    error?: string;
+}
+
+export interface TileRead extends Tile {
+    /** Chebyshev distance to Lumbridge spawn on the same level; null on another level. */
+    fromSpawn: number | null;
+    atSpawn: boolean;
+}
+
+export interface Clock {
+    now(): number;
+    sleep(ms: number): Promise<void>;
+}
+const realClock: Clock = { now: () => Date.now(), sleep: ms => Bun.sleep(ms) };
+const secs = (ms: number) => Math.round(ms / 100) / 10;
+
+/**
+ * Watch the gate tab from before its login until the scene is built. It looks every `everyMs`
+ * (a look that fails, as during the login's navigation, counts as no look), and gives up when
+ * `stopped()` says the login failed, `afterInGameMs` after the page entered the world, or at
+ * `limitMs` in all.
+ */
+export async function watchScene(
+    look: () => Promise<ScenePoll | null>,
+    opts: { stopped: () => boolean; clock?: Clock; everyMs?: number; limitMs?: number; afterInGameMs?: number }
+): Promise<SceneRead> {
+    const clock = opts.clock ?? realClock;
+    const t0 = clock.now();
+    const r: SceneRead = { inGame: null, built: null, last: null, looks: 0, waitedS: 0 };
+    let inGameAt: number | null = null;
+    for (;;) {
+        const p = await look().catch(() => null);
+        const t = clock.now();
+        r.looks++;
+        if (p?.inGame) {
+            const first = inGameAt === null;
+            if (first) {
+                inGameAt = t;
+                r.inGame = { tick: p.tick, s: secs(t - t0) };
+            }
+            r.last = { sceneState: p.sceneState, tick: p.tick };
+            if (p.sceneState === 2) {
+                r.built = { tick: p.tick, s: secs(t - t0), firstLook: first };
+                break;
+            }
+        }
+        if (opts.stopped() || t - t0 >= (opts.limitMs ?? 240_000) || (inGameAt !== null && t - inGameAt >= (opts.afterInGameMs ?? 120_000))) break;
+        await clock.sleep(opts.everyMs ?? 250);
+    }
+    r.waitedS = secs(clock.now() - t0);
+    return r;
+}
+
+/** The SDK's nearby locs once the scene is built: the first look with any, for up to `waitMs` (locs follow the scene by about a tick). */
+export async function readLocs(look: () => Promise<StateLook | null>, opts: { clock?: Clock; everyMs?: number; waitMs?: number } = {}): Promise<LocsRead> {
+    const clock = opts.clock ?? realClock;
+    const t0 = clock.now();
+    let last: StateLook | null = null;
+    let error: string | undefined;
+    for (;;) {
+        try {
+            const l = await look();
+            if (l) last = l;
+        } catch (e) {
+            error = e instanceof Error ? e.message : String(e);
+        }
+        if ((last && last.locs > 0) || clock.now() - t0 >= (opts.waitMs ?? 10_000)) break;
+        await clock.sleep(opts.everyMs ?? 500);
+    }
+    return { look: last, waitedS: secs(clock.now() - t0), ...(last ? {} : { error: error ?? 'no SDK state on the page' }) };
+}
+
+export function tileRead(t: Tile): TileRead {
+    const fromSpawn = t.level === LUMBRIDGE_SPAWN.level ? Math.max(Math.abs(t.x - LUMBRIDGE_SPAWN.x), Math.abs(t.z - LUMBRIDGE_SPAWN.z)) : null;
+    return { ...t, fromSpawn, atSpawn: fromSpawn !== null && fromSpawn <= SPAWN_RADIUS };
+}
+
+export function sceneLine(r: SceneRead | null, why?: string): string {
+    const head = 'scene (report only):';
+    if (!r) return `${head} not read${why ? `: ${why}` : ''}`;
+    if (!r.inGame) return `${head} not read: the page never reported in game (${r.looks} looks over ${r.waitedS} s)`;
+    if (r.built) {
+        const at = r.built.firstLook ? `by page tick ${r.built.tick ?? '?'} (already built at the first in-game look)` : `at page tick ${r.built.tick ?? '?'}`;
+        const after = r.built.firstLook ? '' : `, ${secs((r.built.s - r.inGame.s) * 1000)} s after in game (tick ${r.inGame.tick ?? '?'})`;
+        return `${head} sceneState 2 ${at}, ${r.built.s} s after tab-login started${after}; ${SCENE_REFERENCE}`;
+    }
+    return `${head} NOT built ${secs((r.waitedS - r.inGame.s) * 1000)} s after in game (tick ${r.inGame.tick ?? '?'}): sceneState ${r.last?.sceneState ?? '?'} at page tick ${r.last?.tick ?? '?'}; ${SCENE_REFERENCE}`;
+}
+
+export function locsLine(r: LocsRead | null, why?: string): string {
+    const head = 'locs (report only):';
+    if (!r) return `${head} not read${why ? `: ${why}` : ''}`;
+    if (!r.look) return `${head} not read: ${r.error ?? 'no SDK state'}`;
+    const l = r.look;
+    const around = `(${l.npcs} NPCs, ${l.players} players nearby)`;
+    if (l.locs > 0) return `${head} ${l.locs} locs at page tick ${l.tick} ${around}; > 0 expected`;
+    return `${head} 0 locs for ${r.waitedS} s after the scene was built, last at page tick ${l.tick} ${around}; > 0 expected: the tab sees no scenery`;
+}
+
+export function tileLine(t: TileRead | null, why?: string): string {
+    const head = 'tile (report only):';
+    if (!t) return `${head} not read${why ? `: ${why}` : ''}`;
+    const spawn = `Lumbridge spawn (${LUMBRIDGE_SPAWN.x}, ${LUMBRIDGE_SPAWN.z}, level ${LUMBRIDGE_SPAWN.level})`;
+    const n = (k: number | null) => `${k} tile${k === 1 ? '' : 's'}`;
+    const where = t.atSpawn ? `at ${spawn}, ${n(t.fromSpawn)} from it` : t.fromSpawn === null ? `on level ${t.level}, not ${spawn}'s level` : `${n(t.fromSpawn)} from ${spawn}`;
+    return `${head} (${t.x}, ${t.z}, level ${t.level}): ${where}`;
 }
 
 /** Single-quote for a POSIX shell. */
@@ -608,18 +853,60 @@ async function onUp(ctx: Ctx, argv: readonly string[]) {
     console.log(`UP-RESULT ${JSON.stringify({ ok: true, recording: file, utc: utc() })}`);
 }
 
+/** Rewrite a file another tool left in the gate's folder with every line through `say` (the gate account's label). */
+function scrubFile(path: string, say: (s: string) => string) {
+    if (!existsSync(path)) return;
+    const text = readFileSync(path, 'utf8');
+    const out = say(text);
+    if (out !== text) writeFileSync(path, out);
+}
+
+/**
+ * The report-only lines from the gate tab, after its login: `scene` (from `watched`), then `locs`
+ * and `tile` from the SDK state once the scene is built. They go in the gate's JSON and never
+ * stop the gate.
+ */
+async function reportScene(ctx: Ctx, g: MachineGate, gate: string, watched: SceneRead | null, why?: string) {
+    const say = (s: string) => console.log(ctx.say(`[gate] ${utc()} ${s}`));
+    g.scene = watched;
+    say(sceneLine(watched, why));
+    if (!watched?.built) {
+        const not = why ?? 'the scene was not built';
+        say(locsLine(null, not));
+        say(tileLine(null, not));
+        return;
+    }
+    const { evaluateInTab } = await import('../lib/tab');
+    g.locs = await readLocs(() => evaluateInTab<StateLook | null>(CDP, gate, STATE_EXPRESSION, 3_000).then(r => r?.value ?? null));
+    say(locsLine(g.locs));
+    g.tile = g.locs.look?.tile ? tileRead(g.locs.look.tile) : null;
+    say(tileLine(g.tile, 'the SDK state has no player'));
+}
+
 async function onGate(ctx: Ctx, argv: readonly string[]): Promise<number> {
     const f = flags(argv);
     const gate = checkAccount(f.get('gate') ?? '', '--gate');
+    const role = f.get('role') ?? null;
+    if (role !== null && role !== 'run' && role !== 'twin') throw new Stop(`--role takes run or twin, not ${role}`);
+    // From here no line, file or result names the gate account (as SCORED in `handoff`).
+    const plain = ctx.say;
+    ctx.say = s => relabel(plain(s), gate, gateLabel(role));
+    const say = (s: string) => console.log(ctx.say(s));
     const minutes = Number(f.get('minutes') ?? '5');
     const rehearse = f.get('rehearse') ?? null;
     if (rehearse && !['unconfirmed-logout', 'kept-chrome'].includes(rehearse)) throw new Stop(`--rehearse is unconfirmed-logout or kept-chrome, not ${rehearse}`);
     if (rehearse && !ctx.rehearsal) throw new Stop('--rehearse needs --rehearsal');
-    const g: MachineGate = { machine: (await capture(['hostname'])).out.trim(), startedUtc: utc(), endUtc: '', status: 'not-probed', a: null, b: null, c: null, d: null, players: null, gateLogout: 'not-run', failures: [] };
+    const g: MachineGate = {
+        machine: (await capture(['hostname'])).out.trim(), startedUtc: utc(), endUtc: '', status: 'not-probed', a: null, b: null, c: null, d: null, players: null,
+        gateLogout: 'not-run', failures: [], scene: null, locs: null, tile: null,
+    };
+    const json = join(ctx.out, 'direct.json');
+    const jsonl = join(ctx.out, 'loops.jsonl');
     const finish = (code: number) => {
         g.endUtc = utc();
-        writeFileSync(join(ctx.out, 'verdict.json'), JSON.stringify(g, null, 2));
-        console.log(`GATE-RESULT ${JSON.stringify(g)}`);
+        for (const p of [json, jsonl]) scrubFile(p, ctx.say);
+        writeFileSync(join(ctx.out, 'verdict.json'), ctx.say(JSON.stringify(g, null, 2)));
+        say(`GATE-RESULT ${JSON.stringify(g)}`);
         return code;
     };
     try {
@@ -633,12 +920,11 @@ async function onGate(ctx: Ctx, argv: readonly string[]): Promise<number> {
         if (timer === 'active') throw new Stop('a gate history timer read is in progress (rs-gate-read.service active): wait for it to finish');
         await recordingCheck(ctx);
         const env = await envFile(join(ROOT, 'bots', gate, 'bot.env'), 'the gate account');
-        step(ctx, 'preconditions', `claim live, stack up, no tab on ${ctx.display}, gate timer ${timer}, gate account ${gate}`);
+        step(ctx, 'preconditions', `claim live, stack up, no tab on ${ctx.display}, gate timer ${timer}, gate account ${gateLabel(role)}`);
 
         // (a)-(c): rs/96's direct CLI, before the gate tab opens (it logs the account in itself).
-        const json = join(ctx.out, 'direct.json');
         step(ctx, '(a)-(c)', `tickmanip-latency.ts ${gate} --path=direct --no-tele (bound 15m)`);
-        const dcode = await stream(['timeout', '--kill-after=30s', '15m', bun, 'docs/speedrun/scripts/tickmanip-latency.ts', gate, '--path=direct', '--no-tele', `--json=${json}`], l => `  ${l}`);
+        const dcode = await stream(['timeout', '--kill-after=30s', '15m', bun, 'docs/speedrun/scripts/tickmanip-latency.ts', gate, '--path=direct', '--no-tele', `--json=${json}`], l => ctx.say(`  ${l}`));
         if (dcode === 2) throw new Stop('(a)-(c) not probed: a vantage precondition failed (edge iad, TCP connect p50 <= 5 ms); see the vantage line');
         if (!existsSync(json)) throw new Stop(`(a)-(c): the direct CLI exited ${dcode} without a result`);
         const direct = parseDirectJson(readFileSync(json, 'utf8'));
@@ -651,7 +937,7 @@ async function onGate(ctx: Ctx, argv: readonly string[]): Promise<number> {
         if (!startable(pre.status)) {
             g.status = pre.status;
             g.failures = pre.failures;
-            console.log(`STOP: (a)-(c) ${pre.status}: ${pre.failures.join('; ')}; (d) not measured`);
+            say(`STOP: (a)-(c) ${pre.status}: ${pre.failures.join('; ')}; (d) not measured`);
             return finish(pre.status === 're-measure' ? 3 : 1);
         }
 
@@ -661,13 +947,23 @@ async function onGate(ctx: Ctx, argv: readonly string[]): Promise<number> {
         try {
             await launchTab(ctx, gate, GATE_TAB_BOUND);
             await chromeFlagsCheck(ctx);
-            await tabLogin(ctx, gate);
+            // The scene watch starts before the login's navigation, so it sees the page enter the world.
+            const { evaluateInTab } = await import('../lib/tab');
+            let loginFailed = false;
+            const watching = watchScene(() => evaluateInTab<ScenePoll | null>(CDP, gate, SCENE_EXPRESSION, 3_000).then(r => r?.value ?? null), { stopped: () => loginFailed });
+            try {
+                await tabLogin(ctx, gate);
+            } catch (e) {
+                loginFailed = true;
+                await reportScene(ctx, g, gate, await watching, 'the login failed');
+                throw e;
+            }
+            await reportScene(ctx, g, gate, await watching);
             await secretsCheck(ctx, env.password);
-            const jsonl = join(ctx.out, 'loops.jsonl');
             step(ctx, '(d)', `runhost-loops.ts ${gate} --minutes=${minutes} (bound 10m)`);
             const lcode = await stream(
                 ['timeout', '--kill-after=30s', '10m', bun, 'docs/speedrun/scripts/runhost-loops.ts', gate, '--label=gate', `--minutes=${minutes}`, `--display=${ctx.display}`, `--out=${jsonl}`, `--progress=${ctx.progress}`],
-                l => (/^\[(Runner|BotSDK)\]|Pathfinding|LOGOUT DEBUG/.test(l) ? null : `  ${l}`)
+                l => (/^\[(Runner|BotSDK)\]|Pathfinding|LOGOUT DEBUG/.test(l) ? null : ctx.say(`  ${l}`))
             );
             const samples = existsSync(jsonl) ? readFileSync(jsonl, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l) as { loopsP10?: unknown }) : [];
             loops = loopsSummary(samples);
@@ -682,7 +978,7 @@ async function onGate(ctx: Ctx, argv: readonly string[]): Promise<number> {
                 const snippet =
                     'const m = await import("./speedrun/lib/session.ts"); const s = await m.openSession(process.env.B, { client: "browser", pathfinding: false, readyTimeoutMs: 30000 }); ' +
                     'const r = await m.logoutClean(s); console.log(r.ok ? "logged out; the page is out of game" : "not confirmed: " + r.reason); await m.closeSession(s); process.exit(r.ok ? 0 : 1);';
-                const lo = await stream(['timeout', '--kill-after=30s', '3m', bun, '-e', snippet], l => (/^\[(Runner|BotSDK)\]|LOGOUT DEBUG/.test(l) ? null : `  ${l}`), { env: { ...process.env, B: gate } });
+                const lo = await stream(['timeout', '--kill-after=30s', '3m', bun, '-e', snippet], l => (/^\[(Runner|BotSDK)\]|LOGOUT DEBUG/.test(l) ? null : ctx.say(`  ${l}`)), { env: { ...process.env, B: gate } });
                 g.gateLogout = lo === 0 ? 'confirmed' : 'unconfirmed';
                 step(ctx, 'gate logout', lo === 0 ? 'confirmed by the page' : `NOT CONFIRMED (exit ${lo}); the window is killed anyway`);
             }
@@ -700,16 +996,17 @@ async function onGate(ctx: Ctx, argv: readonly string[]): Promise<number> {
         g.d = loops;
         g.status = v.status;
         g.failures = v.failures;
-        console.log(`[gate] ${verdictText(v.verdict)}`);
-        console.log(`[gate] ${gateRow(g.machine, g)}`);
+        say(`[gate] ${verdictText(v.verdict)}`);
+        say(`[gate] ${gateRow(g.machine, g)}`);
         return finish(startable(v.status) ? 0 : v.status === 're-measure' ? 3 : 1);
     } catch (e) {
-        if (!(e instanceof Stop)) throw e;
-        g.failures.push(e.message);
+        // Any error ends in a result line, so the Mac's choice sees this machine as gated and failed.
+        const stop = e instanceof Stop ? e : new Stop(`run-gate failed: ${e instanceof Error ? e.message : String(e)}`);
+        g.failures.push(stop.message);
         // A stop after (a)-(c) were read is a failed gate; before them, nothing was probed.
         if (g.status !== 're-measure') g.status = g.a ? 'fail' : 'not-probed';
-        console.log(`STOP: ${e.message}`);
-        return finish(e.code);
+        say(`STOP: ${stop.message}`);
+        return finish(stop.code);
     }
 }
 
@@ -824,7 +1121,7 @@ async function onMachine(argv: readonly string[]): Promise<number> {
         throw new Stop(`on-machine takes up, gate or handoff, not ${cmd}`);
     } catch (e) {
         if (!(e instanceof Stop)) throw e;
-        console.log(`STOP: ${e.message}`);
+        console.log(ctx.say(`STOP: ${e.message}`));
         return e.code;
     }
 }
@@ -837,10 +1134,11 @@ interface RemoteRun {
     lines: string[];
 }
 
-async function remote(m: Machine, args: readonly string[], opts: { checkout: string; stamp: string; bound: string; log: string }): Promise<RemoteRun> {
+async function remote(m: Machine, args: readonly string[], opts: { checkout: string; stamp: string; bound: string; log: string; scrub?: (s: string) => string }): Promise<RemoteRun> {
     const lines: string[] = [];
     const argv = [...sshArgv(m, process.env), remoteLine(opts.checkout, opts.stamp, opts.bound, args)];
-    const code = await stream(argv, l => {
+    const code = await stream(argv, raw => {
+        const l = opts.scrub ? opts.scrub(raw) : raw;
         lines.push(l);
         const out = `[${m}] ${l}`;
         appendFileSync(opts.log, out + '\n');
@@ -894,19 +1192,23 @@ async function mac(argv: readonly string[]): Promise<number> {
         const accounts: Record<Machine, string | undefined> = { run: f.get('gate-run'), twin: f.get('gate-twin') };
         for (const m of ms) checkAccount(accounts[m] ?? '', `--gate-${m}`);
         if (ms.length === 2 && accounts.run === accounts.twin) throw new Stop('each machine gates on its own account: one account is in the world only once (RUN-HOST.md step 0)');
+        const prefer = parsePrefer(f.get('prefer'));
+        // Each machine relabels its own account; this catches either name in anything that comes back.
+        const scrub = gateScrub(accounts);
         const extra = ['minutes', 'rehearse'].flatMap(k => (f.get(k) ? [`--${k}=${f.get(k)}`] : []));
+        say(`[run-gate] preference: ${prefer} (${f.get('prefer') ? '--prefer' : 'the default'}; both pass: ${prefer}, unless the tiebreak moves it)`);
         if (ms.length < 2) say(`[run-gate] WARNING: gating ${ms.join('')} only; a run-day choice gates both machines in the same minute (tenet 17)`);
-        const runs = await Promise.all(ms.map(m => remote(m, ['gate', `--gate=${accounts[m]}`, ...extra, ...pass], { checkout, stamp, bound: '40m', log })));
+        const runs = await Promise.all(ms.map(m => remote(m, ['gate', `--gate=${accounts[m]}`, `--role=${m}`, ...extra, ...pass], { checkout, stamp, bound: '40m', log, scrub })));
         const gates: Partial<Record<Machine, MachineGate | null>> = {};
         for (const r of runs) gates[r.machine] = resultOf<MachineGate>(r, 'GATE-RESULT');
         say('');
         say('[run-gate] the gate, per machine (RUN-HOST.md step 5a.3: record both):');
         for (const m of MACHINES) if (ms.includes(m)) say(`  ${gateRow(m, gates[m] ?? null)}`);
-        const choice = choose(gates);
-        say(`[run-gate] chosen: ${choice.machine ?? 'NONE'}: ${choice.reason}`);
-        const record = { utc: utc(), stamp, machines: ms, rehearsal, gates, choice };
-        writeFileSync(join(logDir, `choice-${stamp}.json`), JSON.stringify(record, null, 2));
-        writeFileSync(join(logDir, 'choice.json'), JSON.stringify(record, null, 2));
+        const choice = choose(gates, prefer);
+        say(`[run-gate] ${choiceLine(choice)}`);
+        const record = scrub(JSON.stringify({ utc: utc(), stamp, machines: ms, rehearsal, prefer, gates, choice }, null, 2));
+        writeFileSync(join(logDir, `choice-${stamp}.json`), record);
+        writeFileSync(join(logDir, 'choice.json'), record);
         if (choice.machine) say(`[run-gate] next: the roster on ${choice.machine} (RUN-HOST.md step 5a.4-5a.5), then \`handoff --machine=${choice.machine}\``);
         return choice.machine ? 0 : runs.some(r => r.code === 3) && !runs.some(r => r.code === 2) ? 3 : 1;
     }
