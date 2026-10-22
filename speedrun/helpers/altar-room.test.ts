@@ -3,7 +3,16 @@ import { FakeSdk } from '../lib/fake-sdk';
 import { fakeClock, peek, tickEvery, useFakeTicks } from '../lib/fake-ticks';
 import { IDLE_TICKS } from '../lib/wait';
 import { baseState } from '../lib/fake-sdk';
-import { altarData, bankWithdrawals, holdsItems, until } from './altar-room';
+import { altarData, altarRoomOf, bankWithdrawals, holdsItems, until } from './altar-room';
+
+describe('altarRoomOf', () => {
+    const at = (worldX: number, worldZ: number, level = 0) => baseState({ player: { worldX, worldZ, level } as never });
+    test("names the room a helper was left in (cairn_h75 in the air room after rs/196's demo), null outside", () => {
+        expect(altarRoomOf(at(2844, 4832))).toBe('air');
+        expect(altarRoomOf(at(2946, 3368))).toBeNull();
+        expect(altarRoomOf(baseState({}))).toBeNull();
+    });
+});
 
 describe('bankWithdrawals: an essence load, or the hand-back once the essence has run out', () => {
     const body = altarData('body');
