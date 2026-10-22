@@ -281,6 +281,23 @@ async function op(ctx: Ctx, q: LocQuery, option: string | RegExp, done: (s: BotW
     if (!r.ok) throw new Error(`${what}: no effect within ${maxTicks} ticks at ${JSON.stringify(pos(ctx.sdk))}`);
 }
 
+/**
+ * Op a loc whose script prints `started` at once and only opens its dialogue or prints its result
+ * after p_delays: the railings' Inspect (two p_delay(2) before the choice) and the cannon's (p_delay(3)
+ * before the menu). The click counts as landed on `started`, so act.ts's re-send after 6 idle ticks
+ * cannot fire into the delays: on the demo the railing choice opened 6-7 ticks after the click, the
+ * re-sent Inspect restarted the search and closed the choice it had opened, and the 'Try' click
+ * landed on nothing (rs/257's demo trace). Then waits for `ready` without clicking again. False
+ * when the op itself took no effect (a shut door in front of the shed's cannon).
+ */
+async function opStarted(ctx: Ctx, q: LocQuery, option: string | RegExp, since: number, started: RegExp, ready: (s: BotWorldState) => boolean, what: string, maxTicks = 40): Promise<boolean> {
+    const sdk = sdkOf(ctx);
+    const r = await opLoc(sdk, q, option, s => ready(s) || messagesSince(s, since, started).length > 0, { maxTicks, interrupts: interrupts() });
+    if (!r.ok) return false;
+    await waitOrThrow(sdk, ready, 15, `${what}: the dialogue after the op`);
+    return true;
+}
+
 /** Wait for a game message matching `re` sent from tick `since` on; returns those messages. */
 async function message(sdk: StateSource, since: number, re: RegExp, maxTicks: number, what: string): Promise<string[]> {
     await waitOrThrow(sdk, s => messagesSince(s, since, re).length > 0, maxTicks, what);
@@ -347,6 +364,7 @@ export async function eatForCrossing(sdk: ActSdk & StateSource, food: ItemPatter
 // ------------------------------------------------------------------ segment runs
 
 const ALREADY_FIXED_RAILING = /already fixed this railing/i;
+const RAILING_SEARCH = /^You search the railing/i;
 const ALL_RAILINGS_FIXED = /fixed all these railings/i;
 const RAILING_RESULT = /no problems|fail and cut/i;
 
@@ -371,7 +389,9 @@ async function railings(ctx: Ctx, opts: Options | undefined, tally: Tally): Prom
                 await eatIfLow(ctx, opts, tally);
                 // From the next tick on: the last try's message must not count.
                 const since = currentTick(sdk) + 1;
-                await op(ctx, { x: r.x, z: r.z, id: r.id, radius: 25 }, 'Inspect', s => s.dialog.isOpen || messagesSince(s, since, ALREADY_FIXED_RAILING).length > 0, `railing at ${r.x},${r.z}`, 40);
+                const where = `railing at ${r.x},${r.z}`;
+                const landed = await opStarted(ctx, { x: r.x, z: r.z, id: r.id, radius: 25 }, 'Inspect', since, RAILING_SEARCH, s => s.dialog.isOpen || messagesSince(s, since, ALREADY_FIXED_RAILING).length > 0, where);
+                if (!landed) throw new Error(`${where}: no effect within 40 ticks at ${JSON.stringify(pos(sdk))}`);
                 if (messagesSince(sdk, since, ALREADY_FIXED_RAILING).length) {
                     tally.railingsSkipped++;
                     break;
@@ -452,6 +472,7 @@ async function lollk(ctx: Ctx, opts: Options | undefined): Promise<void> {
 }
 
 const CANNON_INSPECT = /can't quite find|strange dwarf contraption/i;
+const CANNON_INSPECTING = /^You inspect the multi cannon/i;
 const CANNON_FIX = /manage to fix it|fail to fix it|already fixed this part|need a tool kit/i;
 const PARTS = ['Pipe', 'Barrel', 'Axle', 'Shaft'] as const;
 
@@ -464,8 +485,8 @@ async function shed(ctx: Ctx, opts: Options | undefined, tally: Tally): Promise<
     for (let i = 0; i < 80; i++) {
         if (currentTick(sdk) > deadline) throw new Error(`cannon: over ${SHED_MAX_TICKS} ticks (${part} parts fixed)`);
         const since = currentTick(sdk) + 1;
-        const r = await opLoc(sdk, { name: /broken multicannon/i, radius: 10 }, 'Inspect', s => s.dialog.isOpen || messagesSince(s, since, CANNON_INSPECT).length > 0, { maxTicks: 40 });
-        if (!r.ok) {
+        const landed = await opStarted(ctx, { name: /broken multicannon/i, radius: 10 }, 'Inspect', since, CANNON_INSPECTING, s => s.dialog.isOpen || messagesSince(s, since, CANNON_INSPECT).length > 0, 'cannon');
+        if (!landed) {
             // The shed door shut in front of the bot (dwarf_cannon.md "The shed door").
             await openDoor(sdk, SHED_DOOR.x, SHED_DOOR.z);
             continue;

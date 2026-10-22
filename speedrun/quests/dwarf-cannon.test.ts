@@ -301,6 +301,54 @@ describe('B: the railings', () => {
     });
 });
 
+describe('B: an Inspect whose choice opens after act.ts\'s re-send line is clicked once (the demo trace)', () => {
+    const CHOICE_DELAY = 7; // the demo: the click at t, the search message at t+1, the choice at t+7
+    const railingLoc = (x: number, z: number, id: number) => ({ x, z, id, level: 0, name: 'Damaged railing', distance: 1, optionsWithIndex: [{ text: 'Inspect', opIndex: 1 }] });
+    const RAILS = [[2556, 3475, 15], [2558, 3472, 16], [2557, 3464, 17], [2559, 3462, 18], [2564, 3460, 19], [2572, 3460, 20]] as const;
+    const choiceDialog = { isOpen: true, isWaiting: false, pageId: 'railing', options: [{ index: 1, text: 'Try to replace the railing.', buttonType: 1, componentId: 20 }, { index: 2, text: 'Leave it be.', buttonType: 1, componentId: 21 }] };
+
+    for (const dialogue of ['burst', 'fixed'] as const) {
+        test(`${dialogue}: six railings, six Inspect clicks, each fixed first try`, async () => {
+            const s = startOf('B').state;
+            s.player = player(2556, 3476, 42);
+            s.nearbyLocs = RAILS.map(([x, z, id]) => railingLoc(x, z, id)) as unknown as BotWorldState['nearbyLocs'];
+            s.gameMessages = [];
+            const sdk = new FakeSdk(s);
+            // The railing script as the real server runs it: a second Inspect during the delays restarts the search and shuts the choice.
+            const events = new Map<number, (st: BotWorldState) => Partial<BotWorldState>>();
+            const msg = (st: BotWorldState, ...text: string[]) => ({ gameMessages: [...st.gameMessages, ...text.map(t => ({ type: 0, tick: st.tick + 1, text: t }))] }) as Partial<BotWorldState>;
+            let restarts = 0;
+            sdk.onSend = (a, f) => {
+                const t = f.state!.tick;
+                if (a.method === 'sendInteractLoc') {
+                    if (events.size || f.state!.dialog.isOpen) restarts++;
+                    events.clear();
+                    f.push({ dialog: { isOpen: false, options: [], isWaiting: false } });
+                    events.set(t + 1, st => msg(st, 'You search the railing...'));
+                    events.set(t + CHOICE_DELAY, () => ({ dialog: choiceDialog }) as Partial<BotWorldState>);
+                } else if (/ClickDialog|clickDialogByText/.test(a.method) && f.state!.dialog.isOpen) {
+                    f.push({ dialog: { isOpen: false, options: [], isWaiting: false } });
+                    events.set(t + 3, st => msg(st, 'You attempt to replace the missing railing...', 'You replace the railing with no problems.'));
+                }
+            };
+            const each = (st: BotWorldState): Partial<BotWorldState> => {
+                const e = events.get(st.tick + 1);
+                if (!e) return {};
+                events.delete(st.tick + 1);
+                return e(st);
+            };
+            const session = { sdk, bot: {}, name: 'lab', sessionId: 0 } as unknown as RunnerSession;
+            const ctx = { session, sdk, bot: session.bot, c: {}, log: TickLog.memory('t') } as unknown as StepContext<unknown>;
+            const tally = newTally();
+            await drive(sdk, steps({ dialogue, tally })[1]!.run(ctx) as Promise<unknown>, 400, each);
+            expect(restarts).toBe(0);
+            expect(sdk.sent.filter(a => a.method === 'sendInteractLoc').length).toBe(6);
+            expect(tally.railingTries).toBe(6);
+            expect(tally.railingFails).toBe(0);
+        });
+    }
+});
+
 describe('L: the exit state', () => {
     const post = (s: BotWorldState) => byLetter('L').postconditions(s, {});
     const done = (over: Partial<BotWorldState> = {}) => arrival({ quests: { elena: 'complete', mcannon: 'complete' } as BotWorldState['quests'], player: player(2571, 3461), ...over });
