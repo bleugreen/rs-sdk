@@ -50,7 +50,8 @@ function gnomeGate(sdk: FakeSdk, opts: { femi?: boolean; drop?: number } = {}) {
                 femi = false;
             }
             page++;
-            queue.push(() => ({ dialog: page < pages.length ? pages[page]! : { isOpen: false, options: [], isWaiting: false } }));
+            const next = page < pages.length ? pages[page]! : { isOpen: false, options: [], isWaiting: false };
+            queue.push(() => ({ dialog: next }));
             if (page >= pages.length) page = -1;
         }
     };
