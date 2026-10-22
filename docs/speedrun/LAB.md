@@ -72,6 +72,15 @@ account leaves the island the way the run does, through S00's `tutorialSkip`
 and `tele()`/`mustTele()` refuse to teleport off the island at all. A raw `::tele` bypasses that
 guard, so stage through `setup.ts`.
 
+On the browser client, S00 itself needs a machine at normal load. Its last click ("Yes please.")
+teleports the account to Lumbridge, and the tab then fetches and rebuilds the region before it
+publishes another frame. On the `local` Mac at a load average of about 165 (16 cores) that silence
+outlasted `lib/wait.ts`'s idle detector (`IDLE_TICKS` of wall time), so the skip failed with "not
+at Lumbridge with the starter kit 8 ticks after the skip" although every click had landed, and an
+earlier attempt timed out waiting for the guide's first page. The same driver passed 6 of 6
+fresh-account skips on bgsrv-mac at a load of 4 (rs/320, 2026-10-22). Check `uptime` before a
+browser lab that starts on a fresh account.
+
 ### Which client a number was taken on
 
 Every measured number under `docs/speedrun/skills/` was taken on the **headless lite
