@@ -305,20 +305,101 @@ ROLE_OPTIONS='{"mule":"cairn_mule1","items":["^logs$"]}' bun speedrun/helpers/mu
 Mule options: `serve` (the scored account), `couriers` (default `^cairn_h\d+$`),
 `packages`, `serveMode` (`order` | `request`), `giver` (`burst` | `stock`), `preRequest`
 (default true), `stand` (default 3185,3436), `ge`, `cueDir` (where package cues and top-up asks
-are read; default `RC_CUE_DIR`, else `run-machine/rc-cue`; on run day mule1's own directory,
-`<cue root>/mule`, as `mule-ledger.ts` prints it),
-and for top-up lines `askWaitTicks` (default 3).
+are read; default `RC_CUE_DIR`, else `run-machine/rc-cue`, the directory the givers' cues use; on run day
+mule1's own directory, `<cue root>/mule`, as `mule-ledger.ts` prints it),
+for top-up lines `askWaitTicks` (default 3), and for packages carried from login `carried`
+(default false; a package's `at` tile only with it), `wildlife` and `clearTiles`, and
+`keepAliveMinutes` (both guards off unless `carried`, so a banked mule behaves as before).
 
-**H12o, the atoll helper.** cairn_h45 runs the mule role from the run-machine launcher, logged
-out until its hand-off is asked for: `{ account: 'cairn_h45', role: 'mule', loginOn: { step:
-'H12o', family: 'mule' }, options: { serve, serveMode: 'request', packages: [<H12o's package from
-mule-ledger.ts, scope { step: 'H12o', family: 'mule' }>] } }`. `run.ts` opens the cue at least 52
-ticks before Monkey Madness segment P, which logs the account in. The mule then reads the same cue
-as its request, and the cue's stop after the trade logs the account out (HELPERS.md, "The cue
-gate"). The launcher passes the opening cue's time as `LOGIN_CUE_MS`, and the mule counts its cues
-from then (`cueEpoch`), so a login slower than `STALE_CUE_MS` still serves the request. One
-`cue.json` per directory: no other mule-family cue may be open while H12o's is. If one ever has to
-be, give cairn_h45 its own `cueDir`.
+**Carried packages** (`carried: true`). Where there is no bank (Ape Atoll), the mule logs in
+already holding every package. Each package's lines are found in the inventory (`carriedNeeds`; a
+login that is short of any package logs `carried: SHORT`), and every line is offered by exact count
+(`serveStaged`'s `exact`), because the inventory holds the other packages too: P's 9 sharks are
+never "all the sharks". A top-up line still takes the ask's count, clamped to its max. A package may
+name its tile, `at: { x, z }` (carried mode only). The mule stands on the pending package's tile,
+else on the first package not yet served or withdrawn (`carriedStand`), and walks there as soon as
+that tile changes, so it moves on straight after a trade or a stop cue. What it served goes to
+RoleState (`carriedServed`, by cue session), so a restarted role never serves a cue twice. There are
+no courier trades and no GE. Two guards, on by default only in carried mode:
+
+- **Wildlife** (`wildlife`, default the atoll's jungle spider, scorpion and snake; `clearTiles`,
+  default 1). Any NPC hit on either trader closes the trade for both (`npc_combat_melee.rs2`'s
+  `if_close`). So before it pre-requests, and again before it opens a requested trade, the mule kills
+  (lib/combat.ts `fight`) any NPC that hit it in the last 8 ticks and any named species within
+  `clearTiles` (`wildlifeThreat`). The atoll's three hunt with `aa_aggressive_melee`: hunt range 1,
+  `check_nottoostrong=off`, so they do attack a level-100+ helper (quest_mm.npc, quest_mm.hunt).
+- **Keep-alive** (`keepAliveMinutes`, default 5). After that long with no input it steps to a
+  neighbouring tile and back (`keepAliveStep`). A click on its own tile sends no packet at all (the
+  lite client's route finds no step), so the no-op has to be a step. Never during a trade, nor with
+  the served account within 12 tiles. The published engine has no input-inactivity kick (the lite
+  client sends keepalive packets, and its AFK `IDLE_TIMER` is the browser client's); this guards
+  against the demo's unpublished one (rs/433).
+
+**H12o, the atoll helper.** cairn_h45 (99 Attack, Strength, Defence and Hitpoints, wearing the best
+melee armour it can buy: rune full helm, chainbody, platelegs, kiteshield, scimitar; the platebody
+needs Dragon Slayer) serves SCORED twice on Ape Atoll in one login, from the run-machine launcher:
+
+```json
+{ "account": "cairn_h45", "role": "mule", "cueDir": "run-machine/h45-cue",
+  "loginOn": { "step": "H12oM", "family": "mule" },
+  "stopOn":  { "step": "H12oP", "family": "mule" },
+  "options": { "serve": "<SCORED>", "serveMode": "request", "carried": true, "packages": [
+    { "name": "H12oM", "scope": { "step": "H12oM", "family": "mule" }, "at": { "x": 2763, "z": 2704 },
+      "items": [{ "item": "Shark", "topUp": { "max": 13 } }] },
+    { "name": "H12oP", "scope": { "step": "H12oP", "family": "mule" }, "at": { "x": 2803, "z": 2724 },
+      "items": [{ "item": "Shark", "amount": 9 }, { "item": "Superantipoison(4)", "amount": 1 }] } ] } }
+```
+
+The game names the potion `Superantipoison(4)` (obj 2448, `4dose2antipoison`), one word. h45 logs in
+carrying 22 sharks and the potion, 23 slots, and nothing else in the pack. Its own `cueDir` keeps
+mule1's H12 cue apart; there H12oP's cue replaces H12oM's in the one `cue.json`. What `run.ts` writes
+(rs/393), with SCORED as the receiver:
+
+1. **H12oM opens** at least ~100 ticks before SCORED climbs out onto M's tile (2763,2704), the dungeon
+   exit ladder's top. The launcher logs h45 in on it (`LOGIN_CUE_MS`, `cueEpoch`), and the mule reads
+   the same cue as M's request: it walks from P's tile to M's and clears the wildlife there.
+2. **M's ask**, on the first frame showing the trade with h45 open:
+   `writeTopUpAsk(dir, [{ item: '^shark$', count: n }], Date.now(), { step: 'H12oM', family: 'mule' })`,
+   n = SCORED's free slots up to 13, `want` exactly n sharks. With n = 0 there's no trade: write H12oM's
+   **stop**, and the mule moves on to P (it does the same straight after M's trade).
+3. **H12oP opens** any time after M (a new cue session). h45 waits logged in on P's tile (2803,2724),
+   ~850 ticks; SCORED's trade there wants 9 Shark + 1 Superantipoison(4), with no ask.
+4. **H12oP stops** after P's trade: the launcher logs h45 out at once.
+
+Measured end to end (`speedrun/lab/atoll-mule.ts`, rs/483, fedora lab, T=400, the launcher's relay
+path, a stand-in SCORED appearing on each tile as a ladder climb would put it):
+
+| Leg | Ticks |
+|---|---|
+| H12oM's open to h45 in the world (parked on P's tile) | 2 |
+| The walk P -> M (logged in on P's tile, as parked) | 23 |
+| Open to the mule ready at M | 30 |
+| Wildlife at M: 2 jungle spiders spawned on the tile, both killed (6 HP taken at Defence 99 in rune) | 18 and 28 |
+| M's trade, SCORED's clock (10 free slots, asked 10, given exactly 10 of 22) | 5 (mule's giver 3) |
+| The walk M -> P, starting straight after M | 23 |
+| The wait at P: 850 ticks (5.7 min), 0 hits, 1 keep-alive (after 300 s idle, a 2-tick step) | 850 |
+| P's trade, SCORED's clock (9 sharks + 1 potion) | 5 (mule's giver 4) |
+| H12oP's stop to the launcher's logout | 2 |
+
+SCORED arrived 70 ticks after the open while the mule was still on its second spider; the
+pre-request waited for the kill, which cost SCORED a few ticks. The login and walk took 30 ticks, so
+the ~100-tick lead in step 1 leaves room for the wildlife.
+
+**Where h45 waits, and the restock between attempts.** Staged at run eve, h45 parks **logged out on
+P's tile, loaded**. A relog lands on the same tile: the lab's login put it at (2803,2724), and it
+took no hits there in 850 ticks logged in (rs/463: 0 in 100-tick parks). After P's trade it holds
+22 - n - 9 sharks (n = M's count) and nothing else. Before the next attempt it must restock to 22
+sharks and the potion, and there is no bank on the atoll:
+
+1. Lumdo (at the landing, 2802,2707) to Crash Island, then Waydar's return to the Gnome Stronghold.
+2. Bank at the Grand Tree: deposit the leftover sharks, withdraw 22 Shark and 1 Superantipoison(4),
+   and keep the rune set worn and nothing else in the pack.
+3. Back via Daero (the blindfold) to Waydar, Crash Island and Lumdo: 42 ticks (rs/463, m), then the
+   ~10-tick walk from the landing to P's tile; log out there.
+
+The outward leg and the bank visit aren't measured (a few hundred ticks, i). The trip runs on h45's
+clock, between attempts, and costs SCORED nothing. Running it is a staging step, not the role's: the
+mule role only serves, and the restock is done by hand or by a staging script that doesn't exist yet.
 
 In the fleet: one mule account is enough; a second (`cairn_mule2`) helps only for
 back-to-back hand-offs or while the first is at the GE. The module exports `role`
