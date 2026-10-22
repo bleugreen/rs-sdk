@@ -226,6 +226,9 @@ async function main(): Promise<void> {
         const s0 = sdk.getState()!;
         console.log(`aereck-burst: ${session.name} on ${lab ? 'the lab' : 'the demo'}, ${client} client, at ${s0.player?.worldX},${s0.player?.worldZ} tick ${s0.tick}; ${n} talks ${modes.join(',')}`);
         if (onTutorialIsland(s0.player)) {
+            // S00 sends its talk only after accepting the design screen; a talk while it is open is ignored.
+            const guide = s0.nearbyNpcs.find(n => /^runescape guide$/i.test(n.name));
+            console.log(`before S00: modalOpen=${s0.modalOpen} modalInterface=${s0.modalInterface} dialog=${s0.dialog.isOpen ? (s0.dialog.isWaiting ? 'waiting' : 'open') : 'closed'} guide=${guide ? `in view (index ${guide.index})` : 'not in view'} gateway=${/^wss?:\/\/(127\.|localhost)/.test(session.env.GATEWAY_URL ?? '') ? 'loopback' : 'remote'}`);
             const log = TickLog.open(`aereck-${session.name}`);
             await runSteps(session, [tutorialSkip], { log, c: {}, shouldStop: () => false, tickMonitor: false });
             console.log(`tutorial skipped: at ${sdk.getState()?.player?.worldX},${sdk.getState()?.player?.worldZ}`);
