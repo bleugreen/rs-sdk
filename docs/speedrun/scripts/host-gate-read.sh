@@ -74,7 +74,7 @@ write_record() {
         --arg phh "$pre_hover" --arg phc "$pre_chrome" --arg pps "$pre_pc_shape" --arg pbm "$pre_bundle_md5" '
         $g[0] as $j |
         def orNull: if . == "" then null else . end;
-        # tickSteadiness'"'"'s p50 (speedrun/lib/hostgate-verdict.ts), or the same nearest rank over the arrivals
+        # the p50 of tickSteadiness (speedrun/lib/hostgate-verdict.ts), else its nearest rank over the arrivals
         def p50ms: ($j.result.steadiness // {}) as $s |
             if ($s.p50 | type) == "number" and ($s.n // 1) > 0 then $s.p50
             else ([($j.result.tickArrivalsMs // []) as $a | range(1; $a | length) | $a[.] - $a[. - 1]] | sort) as $iv |
