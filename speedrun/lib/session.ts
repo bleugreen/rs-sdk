@@ -21,7 +21,7 @@
 import { appendFileSync, existsSync, mkdirSync, openSync, readFileSync } from 'fs';
 import { join } from 'path';
 import type { Subprocess } from 'bun';
-import type { BotSDK } from '../../sdk/index';
+import { BotSDK, deriveGatewayUrl } from '../../sdk/index';
 import type { BotActions } from '../../sdk/actions';
 import type { BotStatus, BotWorldState } from '../../sdk/types';
 import { pageInGame, pageLogin, pageLoginState, type PageLoginStart } from './tab';
@@ -68,7 +68,69 @@ export function loadBotEnv(name: string, botsDir: string = join(ROOT, 'bots')): 
  */
 export type BrowserLogin = { token: string } | { insecureQueryLogin: true };
 
-const isLoopbackHost = (host: string) => host.startsWith('localhost') || host.startsWith('127.');
+/** The host name of `host`, `host:port`, `[v6]:port` or a bare IPv6 address, lowercased. */
+function hostName(host: string): string {
+    const h = host.trim().toLowerCase();
+    if (h.startsWith('[')) {
+        const end = h.indexOf(']');
+        return h.slice(1, end > 0 ? end : undefined);
+    }
+    const parts = h.split(':');
+    return parts.length > 2 ? h : parts[0]!;
+}
+
+/** localhost, 127.0.0.0/8 or ::1, with or without a port. */
+export function isLoopbackHost(host: string): boolean {
+    const name = hostName(host);
+    return name === 'localhost' || name === '::1' || /^127(\.\d{1,3}){3}$/.test(name);
+}
+
+/**
+ * Which way a session's SDK reaches its client. `direct`: the in-process bridge (lib/direct.ts,
+ * a `direct://` URL). `loopback`: a gateway on this machine. `public`: anything else, which on a
+ * remote world is its public relay gateway.
+ */
+export type GatewayPath = 'direct' | 'loopback' | 'public';
+
+export function gatewayPath(url: string): GatewayPath {
+    let u: URL;
+    try {
+        u = new URL(url);
+    } catch {
+        return 'public';
+    }
+    if (u.protocol === 'direct:') return 'direct';
+    return (u.protocol === 'ws:' || u.protocol === 'wss:') && isLoopbackHost(u.hostname) ? 'loopback' : 'public';
+}
+
+/**
+ * The gateway URL a session on `world` uses, the one the SDK and the lite runner it launches both
+ * pick (server/webclient/src/lite/runner.ts): bot.env GATEWAY_URL, else the process's, else the
+ * one derived from SERVER, which for a remote world is its public relay.
+ *
+ * A remote world (anything not on loopback: the demo) is refused unless that URL is a loopback
+ * gateway or the direct bridge. Through the demo's public relay the state arrives 10-60 ticks
+ * late and actions are lost, so every timing taken that way is wrong (rs/287's first demo
+ * attempt). A local engine is never refused. `allowRelay` opens on the relay anyway, for a probe
+ * that measures it, and says so on `warn`.
+ */
+export function sessionGateway(env: BotEnv, world: string, opts: { allowRelay?: boolean; warn?: (line: string) => void } = {}): string {
+    const set = env.GATEWAY_URL
+        ? { value: env.GATEWAY_URL, from: 'bot.env' }
+        : process.env.GATEWAY_URL
+          ? { value: process.env.GATEWAY_URL, from: 'the environment' }
+          : null;
+    const url = set?.value ?? deriveGatewayUrl(env.SERVER);
+    if (isLoopbackHost(world) || gatewayPath(url) !== 'public') return url;
+    const seen = set ? `GATEWAY_URL=${set.value} (from ${set.from})` : `GATEWAY_URL unset (so ${url})`;
+    const why =
+        `${env.BOT_USERNAME} on ${world} with ${seen}: a demo session must use a loopback gateway (GATEWAY_URL=ws://127.0.0.1:<port>) ` +
+        `or the direct path, because the demo's public relay delivers state 10-60 ticks late and loses actions ` +
+        `(rs/287: first state at tick 62, a missed 12-tick dialogue window, a refused logout)`;
+    if (!opts.allowRelay) throw new Error(`refusing to open ${why}`);
+    (opts.warn ?? console.error)(`[speedrun] !!! allowRelay: opening ${why}; every tick figure from this session carries the relay's latency !!!`);
+    return url;
+}
 
 /** The world the page logs in to: CLIENT_URL's ?server= when it names one, else SERVER. */
 export function pageWorld(env: BotEnv): string {
@@ -191,6 +253,11 @@ export interface OpenOptions {
      * Defaults to whether the process was started with --insecure-query-login.
      */
     insecureQueryLogin?: boolean;
+    /**
+     * Open on a remote world through its public relay gateway instead of refusing (sessionGateway).
+     * Only for a probe that measures the relay itself: it warns, and its timings are not the run's.
+     */
+    allowRelay?: boolean;
 }
 
 /**
@@ -200,13 +267,14 @@ export interface OpenOptions {
  */
 export async function openSession(botName: string, opts: OpenOptions = {}): Promise<Session> {
     const env = loadBotEnv(botName);
-    const { BotSDK, deriveGatewayUrl } = await import('../../sdk/index');
+    const client = opts.client ?? 'lite';
+    const gatewayUrl = sessionGateway(env, client === 'browser' ? pageWorld(env) : env.SERVER || 'localhost', { allowRelay: opts.allowRelay });
     const { BotActions } = await import('../../sdk/actions');
     if (opts.pathfinding !== false) (await import('../../sdk/pathfinding')).initPathfinding();
     const sdk = new BotSDK({
         botUsername: env.BOT_USERNAME,
         password: env.PASSWORD,
-        gatewayUrl: env.GATEWAY_URL ?? deriveGatewayUrl(env.SERVER),
+        gatewayUrl,
         connectionMode: 'control',
         autoReconnect: true,
         autoLaunchBrowser: false,
@@ -216,7 +284,7 @@ export async function openSession(botName: string, opts: OpenOptions = {}): Prom
     mkdirSync(logDir, { recursive: true });
     const session: Session = {
         name: env.BOT_USERNAME,
-        client: opts.client ?? 'lite',
+        client,
         env,
         insecureQueryLogin: opts.insecureQueryLogin ?? process.argv.includes('--insecure-query-login'),
         sdk,
@@ -231,7 +299,7 @@ export async function openSession(botName: string, opts: OpenOptions = {}): Prom
         launchedAt: 0,
         lastProgressAt: Date.now(),
         watchdog: null,
-        logPath: join(logDir, `${env.BOT_USERNAME}-${opts.client ?? 'lite'}.log`),
+        logPath: join(logDir, `${env.BOT_USERNAME}-${client}.log`),
     };
     sdk.onStateUpdate(s => track(session, s));
     if (opts.launch) await launchClient(session);

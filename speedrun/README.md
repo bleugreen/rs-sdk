@@ -404,6 +404,18 @@ research-script boundary and retained quest-specific code.
   connect, so with `launch` the advance gets the whole ready budget: a demo
   login takes about 20 s. If it fails after launching, it logs the client out
   (or kills it) before rethrowing, so no runner is left holding the player.
+- On a remote world (the demo: any SERVER, or browser `?server=`, that is not
+  localhost, 127.0.0.0/8 or ::1) `openSession` refuses to open unless the
+  gateway it would use (`sessionGateway`: bot.env GATEWAY_URL, else the
+  process's, else the one derived from SERVER, the same order the lite runner
+  follows) is a loopback gateway or the direct bridge. Through the demo's
+  public relay the state arrives 10-60 ticks late and actions are lost
+  (rs/287's first demo attempt), so no timing taken that way is the run's. A
+  local engine is never refused. `allowRelay: true` opens anyway, with a loud
+  warning, and is only for a probe that measures the relay itself. The fleet
+  and standalone launchers hand their roles a loopback GATEWAY_URL of their own
+  and never go through `openSession`; the direct path (`lib/direct.ts`) has no
+  gateway at all.
 - `launchClient` spawns the lite runner (`server/webclient`, `src/lite/runner.ts`)
   or opens the browser client URL; each launch bumps `sessionId`, and the
   client's tick counter restarts with it. The runner gets its own process
