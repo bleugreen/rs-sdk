@@ -329,6 +329,14 @@ const GUILD_OUTSIDE: Pt = { x: 2657, z: 3439 };
 const GUILD_INSIDE: Pt = { x: 2660, z: 3436 };
 
 const KNIFE = /^knife$/i;
+/** Any woodcutting axe; shafts need one in the pack (a death loses the starter bronze axe). */
+export const AXE = /^(bronze|iron|steel|black|mithril|adamant|rune|dragon) axe$/i;
+
+/** What the shafts phase does about its axe: keep it, take one from the bank, or stop. */
+export function axeAction(inPack: boolean, banked: number): 'ok' | 'withdraw' | 'none' {
+    if (inPack) return 'ok';
+    return banked > 0 ? 'withdraw' : 'none';
+}
 const LOGS = /^logs$/i;
 const SHAFT = /^arrow shaft$/i;
 const FEATHER = /^feather$/i;
@@ -478,6 +486,17 @@ class Fletcher {
         }
     }
 
+    private async ensureAxe(): Promise<void> {
+        const act = axeAction(!!this.slot(AXE), this.banked(AXE));
+        if (act === 'ok') return;
+        if (act === 'withdraw') {
+            await this.atBank(BANKS.draynor, async () => void (await this.withdraw(AXE, 1)));
+            if (this.slot(AXE)) return;
+        }
+        // The GE has no axe sellers and the role does not buy one: bank one on this account and restart.
+        throw new Error('no axe in the pack or the bank: the shafts phase needs one');
+    }
+
     private async cutCarriedLogs(): Promise<void> {
         while (this.slot(LOGS)) {
             this.checkSignal();
@@ -518,6 +537,7 @@ class Fletcher {
     private async makeShafts(target: number): Promise<void> {
         this.setPhase('shafts', { woodcutting: this.sdk.getSkill('Woodcutting')?.baseLevel, fletching: this.sdk.getSkill('Fletching')?.baseLevel });
         await this.ensureKnife();
+        await this.ensureAxe();
         const t0 = this.tick();
         const shafts0 = this.held(SHAFT);
         let logs = 0;
@@ -526,6 +546,7 @@ class Fletcher {
             this.checkSignal();
             await this.bot.dismissBlockingUI();
             if (!this.slot(KNIFE)) await this.ensureKnife();
+            if (!this.slot(AXE)) await this.ensureAxe();
             if (this.slot(LOGS)) await this.cutCarriedLogs();
             else if (await this.chopOne()) logs++;
             // Bank the shafts every ~20 minutes so the ledger sees progress and a death costs little.

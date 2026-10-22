@@ -14,6 +14,8 @@ import {
     xpForLevel,
     DRAYNOR_APPROACH,
     headlessStep,
+    axeAction,
+    AXE,
     jailBypass,
     LUMBRIDGE_WOODS,
     PATIENT_ADAMANT_PRICE,
@@ -185,5 +187,15 @@ describe('makeButton', () => {
         const opts = [b(1, 'Make 10'), b(2, 'Make 5'), b(3, 'Yew Long Bow')];
         expect(makeButton(opts, opts[2]!)).toEqual({ button: opts[0]!, kind: '10' });
         expect(makeButton([b(1, 'Yew Long Bow')], b(1, 'Yew Long Bow'))).toEqual({ button: b(1, 'Yew Long Bow'), kind: '1' });
+    });
+});
+
+describe('axeAction', () => {
+    test('an axe in the pack: keep chopping', () => expect(axeAction(true, 0)).toBe('ok'));
+    test('none in the pack, one banked: withdraw it', () => expect(axeAction(false, 1)).toBe('withdraw'));
+    test('none anywhere (a death lost it): stop', () => expect(axeAction(false, 0)).toBe('none'));
+    test('AXE matches every tier and not a pickaxe', () => {
+        for (const n of ['Bronze axe', 'Rune axe', 'Dragon axe']) expect(AXE.test(n)).toBe(true);
+        for (const n of ['Bronze pickaxe', 'Axe', 'Battleaxe']) expect(AXE.test(n)).toBe(false);
     });
 });

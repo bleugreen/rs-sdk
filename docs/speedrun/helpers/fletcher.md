@@ -32,6 +32,11 @@ restart resumes where the last run stopped.
 Shafts, feathers and headless arrows are all stackable, so the pack never fills
 and the line needs no bank trips except to protect progress against a death.
 
+The shafts phase needs an axe in the pack. A death loses the starter bronze
+axe, so the role takes an axe from the bank when one is banked (`ensureAxe`) and
+otherwise stops with "no axe"; the GE has no axe sellers, so bank one on the
+account by handover first (cairn_h78 died once in the Lumbridge woods, 2026-10-22).
+
 ### Where to chop, and the Draynor jail guards
 
 Only normal logs make arrow shafts (`cut_logs.dbrow`). The obvious trees, the
