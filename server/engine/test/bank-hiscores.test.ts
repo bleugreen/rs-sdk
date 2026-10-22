@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseBankSnapshots, rankMatchingBanks } from '../src/web/pages/BankHiscores.js';
 
-// A fixture process that imports the engine costs about 1 s of CPU on an idle
-// host and 2.5-6 s on a loaded 8-core one, so bun's 5 s default has no headroom.
-// Matches the other engine subprocess tests.
+// A fixture process that imports the engine is CPU-bound: about 1 s on an idle
+// 8-core host, up to 3.6 s with its cores 4x oversubscribed and 7.3 s at 8x, so
+// bun's 5 s default fails on a busy machine. Matches the other engine subprocess tests.
 const ENGINE_SUBPROCESS_TIMEOUT_MS = 15_000;
 
 const item = (name: string, value: number, count = 100) => ({ name, value, count });
