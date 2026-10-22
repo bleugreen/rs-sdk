@@ -1253,9 +1253,10 @@ describe('thieving: the knight choice', () => {
         const done = steps({ food: 'shark', ...UNCROWDED }).find(x => x.name === 'thieving:knights')!.run(ctx);
         await settle(() => sdk.starts.length === 1);
         expect(sdk.starts[0]!.params.prefer).toEqual([22, 21]);
-        sdk.publish({ gauges: { target: 22 } });
-        sdk.publish({ gauges: { target: 22 }, counters: { rolls: 4 } });
-        sdk.publish({ gauges: { target: 21 }, counters: { retargets: 1 } });
+        for (const p of [{ gauges: { target: 22 } }, { gauges: { target: 22 }, counters: { rolls: 4 } }, { gauges: { target: 21 }, counters: { retargets: 1 } }]) {
+            await flush();
+            sdk.publish(p);
+        }
         await flush();
         sdk.publish({ phase: 'done', result: { reason: 'level' } }, { skills: [{ name: 'Thieving', level: 99, baseLevel: 99, experience: 0 }] as never });
         await done;
@@ -1269,7 +1270,7 @@ describe('thieving: the knight choice', () => {
         sdk.state = { ...sdk.state!, bank: { isOpen: false, noteMode: false, items: [{ slot: 0, id: 501, name: 'Shark', count: 11 }] } } as BotWorldState;
         sdk.onSend = (a, s) => {
             // the crowd has moved to B by the time the account is back
-            if (a.method === 'sendBankWithdraw') s.tick(st => ({ inventory: [...st.inventory, item(1, 'Shark')], nearbyPlayers: [{ kind: 'player', index: 40, name: 'zecho', combatLevel: 99, x: 2672, z: 3310, distance: 5 }] }) as never);
+            if (a.method === 'sendBankWithdraw') s.tick(st => ({ inventory: [...st.inventory, ...Array.from({ length: 11 }, (_, i) => item(i + 1, 'Shark'))], nearbyPlayers: [{ kind: 'player', index: 40, name: 'zecho', combatLevel: 99, x: 2672, z: 3310, distance: 5 }] }) as never);
         };
         sdk.ending = [() => ({ status: { result: { reason: 'food' } } }), levelTo(99)];
         const { ctx } = harness(sdk);
