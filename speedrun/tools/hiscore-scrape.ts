@@ -62,10 +62,38 @@ export const BANK_SEARCHES = [
 // Parsing
 
 const num = (s: string): number => Number(s.replaceAll(',', '').trim());
-const ticksIn = (html: string): number | null => {
-    const m = html.match(/title="([\d,]+) ticks"/);
-    return m ? num(m[1]!) : null;
-};
+
+/**
+ * A Time cell's hover title carries the exact stamp in one of two forms:
+ *   `N ticks`                 the engine's own page (lab worlds), and the demo until about 19:34 UTC 2026-10-22;
+ *   `S seconds of game time`  the demo since then: S = 0.3 x ticks, with thousands separators and at
+ *                             most one decimal, a trailing `.0` dropped (`2,247`, `998.7`).
+ * The decimal is matched loosely on purpose so an unexpected value reaches titleTicks and fails loudly
+ * instead of silently not matching.
+ */
+const TIME_TITLE = /title="([\d,]+(?:\.\d+)?) (ticks|seconds of game time)"/g;
+
+/**
+ * Ticks from one Time title. 0.3 x ticks always has exactly one decimal, so a seconds value that is not
+ * a whole number of 0.3 s ticks means the demo changed its tick length or format again: that throws
+ * rather than rounds, because a rounded stamp would pass rehearse.ts's 2-tick log check while wrong.
+ */
+export function titleTicks(value: string, unit: string): number {
+    const n = num(value);
+    if (unit === 'ticks') {
+        if (!Number.isInteger(n)) throw new Error(`time title "${value} ticks" is not a whole tick count`);
+        return n;
+    }
+    const tenths = Math.round(n * 10);
+    if (Math.abs(n * 10 - tenths) > 1e-6 || tenths % 3 !== 0) {
+        throw new Error(`time title "${value} ${unit}" is not a whole number of 0.3 s ticks; the hiscore time format has changed`);
+    }
+    return tenths / 3;
+}
+
+/** Every Time title's stamp in `html`, in page order. */
+export const timeTitleTicks = (html: string): number[] => [...html.matchAll(TIME_TITLE)].map(m => titleTicks(m[1]!, m[2]!));
+const ticksIn = (html: string): number | null => timeTitleTicks(html)[0] ?? null;
 
 export interface BoardRow {
     rank: number;
@@ -84,7 +112,7 @@ export function parseBoard(html: string): BoardRow[] {
     const names = [...column('Name').matchAll(/\/hiscores\/player\/([^?"]+)\?/g)].map(m => decodeURIComponent(m[1]!));
     // Quest Points heads its level column "Points".
     const levels = (column('Level') || column('Points')).split('<br>').map(s => s.trim()).filter(Boolean).map(num);
-    const ticks = [...column('Time').matchAll(/title="([\d,]+) ticks"/g)].map(m => num(m[1]!));
+    const ticks = timeTitleTicks(column('Time'));
     const n = Math.min(ranks.length, names.length, levels.length, ticks.length);
     if (n !== names.length || n !== ranks.length) throw new Error(`board columns disagree: ${ranks.length}/${names.length}/${levels.length}/${ticks.length}`);
     return Array.from({ length: n }, (_, i) => ({ rank: ranks[i]!, name: names[i]!, level: levels[i]!, ticks: ticks[i]! }));
