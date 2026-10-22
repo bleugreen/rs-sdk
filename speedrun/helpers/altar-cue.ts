@@ -51,6 +51,8 @@ export interface Turn {
     giver: string;
     /** Tick the scored account's craft lands on, in the scored account's numbering. The trade opens on T + open. */
     T: number;
+    /** The hand-back (S21's end): trade exactly these items instead of essence, as a reacting stock turn. */
+    items?: HandBackItem[];
     /** Overrides the cue's schedule for this turn, e.g. robust for a giver that logged in after the scored account, or a reacting stock turn. */
     schedule?: TurnSchedule;
 }
@@ -134,6 +136,16 @@ export interface TurnResult {
     ms: number;
 }
 
+/**
+ * One item of a hand-back: the item's exact name and how many. After a band's last craft a
+ * hand-back giver trades SCORED these instead of essence (S21: T21-22's Lumbridge runes, SUPPLIES.md
+ * H17e); the scored side's half is runecraft.ts HandBack, whose item type has this shape.
+ */
+export interface HandBackItem {
+    item: string;
+    n: number;
+}
+
 export interface GiverStatus {
     v: typeof CUE_VERSION;
     account: string;
@@ -152,6 +164,8 @@ export interface GiverStatus {
     last?: TurnResult;
     /** Trades given since the role started. */
     gave: number;
+    /** A hand-back giver carrying its hand-back, and no essence: what it holds for SCORED. */
+    handBack?: HandBackItem[];
     detail?: string;
     /** Heartbeat: rewritten at least every 2 s. */
     ms: number;
