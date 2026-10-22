@@ -32,7 +32,7 @@ import { converse, levelUpInterrupt, type ConverseResult, type ConverseSdk } fro
 import { pageText, type OptionPattern } from '../lib/dialogue';
 import type { ItemPattern } from '../lib/items';
 import { JOURNAL_FRESH_TICKS, journalProbeName, questDone, questStatus, requireQuestStage, type QuestView, type StageName } from '../lib/quests';
-import { CROSSING_HITPOINTS, crossFromKandarin, crossToKandarin, type Traveller } from '../lib/kandarin';
+import { CROSSING_HITPOINTS, crossFromKandarin, crossingRestTarget, crossToKandarin, type Traveller } from '../lib/kandarin';
 import { logNote } from '../lib/ticks';
 import { addRunes, FOOD, inArea, missingRunes, runTo, SPELLS, teleport, type Area, type Spell, type TravelSdk } from '../lib/travel';
 import { currentTick, waitOrThrow, waitTicks, waitUntil, type StateSource } from '../lib/wait';
@@ -290,6 +290,15 @@ export function defaultEatAt(baseHpLevel: number): number {
     return 3 * railingDamage(baseHpLevel);
 }
 
+/** Eat one `food` and wait for HP to rise above `hp`; throws if it does not. */
+async function eatOne(sdk: ActSdk & StateSource, food: ItemPattern, hp: number, tally: Tally, what: string): Promise<void> {
+    const t0 = currentTick(sdk);
+    const r = await invOp(sdk, food, /^eat$/i, st => (st.player?.hp ?? 0) > hp, { maxTicks: 8, resendEvery: 3, maxResends: 2 });
+    if (!r.ok) throw new Error(`${what}: eating at HP ${hp} did not raise it`);
+    tally.eats++;
+    tally.eatTicks += currentTick(sdk) - t0;
+}
+
 /**
  * Before a railing try: eat while HP is at or below `eatAt`. Refuses (throws) a try that one
  * failure could kill when there is no food left: a death here costs the run far more than a stop.
@@ -307,11 +316,22 @@ async function eatIfLow(ctx: Ctx, opts: Options | undefined, tally: Tally): Prom
             if (hp <= dmg) throw new Error(`railings: HP ${hp} and no food: one failure (${dmg}) could kill`);
             return;
         }
-        const t0 = currentTick(sdk);
-        const r = await invOp(sdk, food, /^eat$/i, st => (st.player?.hp ?? 0) > hp, { maxTicks: 8, resendEvery: 3, maxResends: 2 });
-        if (!r.ok) throw new Error(`railings: eating at HP ${hp} did not raise it`);
-        tally.eats++;
-        tally.eatTicks += currentTick(sdk) - t0;
+        await eatOne(sdk, food, hp, tally, 'railings');
+    }
+}
+
+/**
+ * Before a White Wolf Mountain crossing: eat up to the HP kandarin.ts's restForCrossing would
+ * otherwise stand still for, one point every 100 ticks. The walk out to Nulodion leaves a 30 HP
+ * throwaway on 11-14, and the walk back started there and died (rs/257 execution 2, 1 of 2 runs).
+ * With no food left the crossing's own rest takes over.
+ */
+export async function eatForCrossing(sdk: ActSdk & StateSource, food: ItemPattern, tally: Tally): Promise<void> {
+    const target = crossingRestTarget(baseHp(sdk.getState()));
+    for (let i = 0; i < 4; i++) {
+        const hp = sdk.getState()?.player?.hp ?? 0;
+        if (hp >= target || !invItem(sdk, food)) return;
+        await eatOne(sdk, food, hp, tally, 'crossing');
     }
 }
 
@@ -483,11 +503,13 @@ async function repaired(ctx: Ctx, opts: Options | undefined): Promise<void> {
 }
 
 /** Segment K: Falador teleport (or the walk), the Black Guard base, Nulodion's notes and mould (stage 10). */
-async function nulodion(ctx: Ctx, opts: Options | undefined): Promise<void> {
+async function nulodion(ctx: Ctx, opts: Options | undefined, tally: Tally): Promise<void> {
     const sdk = sdkOf(ctx);
     if (!near(sdk.getState(), BASE)) {
-        if (walking(opts)) await crossFromKandarin(traveller(ctx), NULODION_STAND, 'the Black Guard base');
-        else await cast(ctx, 'falador');
+        if (walking(opts)) {
+            await eatForCrossing(sdk, opts?.food ?? FOOD, tally);
+            await crossFromKandarin(traveller(ctx), NULODION_STAND, 'the Black Guard base');
+        } else await cast(ctx, 'falador');
         await go(ctx, NULODION_STAND, 'to the Black Guard base');
     }
     await openDoor(sdk, NULODION_DOOR.x, NULODION_DOOR.z);
@@ -496,11 +518,13 @@ async function nulodion(ctx: Ctx, opts: Options | undefined): Promise<void> {
 }
 
 /** Segment L: Ardougne teleport (or the walk), Lawgof takes the notes and mould, the quest completes; its scroll and level-up pages are closed. */
-async function complete(ctx: Ctx, opts: Options | undefined): Promise<void> {
+async function complete(ctx: Ctx, opts: Options | undefined, tally: Tally): Promise<void> {
     const sdk = sdkOf(ctx);
     if (!near(sdk.getState(), CAMP)) {
-        if (walking(opts)) await crossToKandarin(traveller(ctx), LAWGOF_STAND, 'Lawgof');
-        else await cast(ctx, 'ardougne');
+        if (walking(opts)) {
+            await eatForCrossing(sdk, opts?.food ?? FOOD, tally);
+            await crossToKandarin(traveller(ctx), LAWGOF_STAND, 'Lawgof');
+        } else await cast(ctx, 'ardougne');
     }
     await lawgof(ctx, opts, [], SHAPES.complete);
     await waitOrThrow(sdk, s => questStatus(s, quest) === 'complete', 10, 'Dwarf Cannon complete');
@@ -607,14 +631,14 @@ export function steps(opts?: Options) {
         {
             letter: 'K', label: 'nulodion', logoutSafe: true,
             preconditions: slots('K'),
-            run: ctx => nulodion(ctx, opts),
+            run: ctx => nulodion(ctx, opts, tally),
             postconditions: s => (invItem(s, NOTES) && invItem(s, MOULD) ? true : 'the notes and mould are not both held'),
             done: o => questDone(quest)(o) || (atLeast(o, 'return_to_dwarf_commander_with_notes') && holds(o, NOTES) && holds(o, MOULD)),
             probes,
         },
         {
             letter: 'L', label: 'lawgof-complete', logoutSafe: true,
-            run: ctx => complete(ctx, opts),
+            run: ctx => complete(ctx, opts, tally),
             postconditions: allOf(stageAtLeast(quest, 'complete'), inCamp, s => (s.dialog.isOpen || s.modalOpen ? 'a dialogue or modal is still open' : true)),
             done: o => questDone(quest)(o),
         },

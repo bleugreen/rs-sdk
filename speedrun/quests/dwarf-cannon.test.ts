@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import type { BotWorldState, InventoryItem, PlayerState, QuestJournalState } from '../../sdk/types';
-import { baseState, FakeSdk } from '../lib/fake-sdk';
+import { baseState, drive, FakeSdk } from '../lib/fake-sdk';
 import { journalProbeName } from '../lib/quests';
 import { TickLog } from '../lib/ticks';
 import { Observation, resolveResume } from '../runner/resume';
 import type { Observed, RunnerSession, StepContext } from '../runner/step';
 import { DEFAULT_DIALOGUE } from './segments';
-import { ARRIVAL, defaultEatAt, LETTERS, MIN_FOOD, observed, QUEST_ITEMS, quest, railingDamage, stepId, steps } from './dwarf-cannon';
+import { ARRIVAL, defaultEatAt, eatForCrossing, LETTERS, MIN_FOOD, newTally, observed, QUEST_ITEMS, quest, railingDamage, stepId, steps } from './dwarf-cannon';
 
 let nextSlot = 0;
 const item = (name: string, count = 1): InventoryItem => ({ slot: nextSlot++, id: 1000 + nextSlot, name, count, optionsWithIndex: [] }) as unknown as InventoryItem;
@@ -162,6 +162,51 @@ describe('A with teleports: false (the demo throwaway walks K and L)', () => {
     });
     test('the teleport path still refuses the same account', () => {
         expect(byLetter('A').preconditions(throwaway(30), {})).not.toBe(true);
+    });
+});
+
+describe('eatForCrossing: the walk back starts fed, not on what the walk out left', () => {
+    const SHARK_HEAL = 20;
+    /** A 30 HP throwaway at `hp` holding `n` sharks; the fake server eats a shark the tick after each Eat click. */
+    function crossing(hp: number, n: number) {
+        nextSlot = 0;
+        const shark = () => ({ ...item('Shark'), optionsWithIndex: [{ text: 'Eat', opIndex: 1 }] }) as unknown as InventoryItem;
+        const s = baseState({ tick: 100, skills: [skill('Hitpoints', 30)], player: { ...player(2571, 3461, hp), maxHp: 30 }, inventory: Array.from({ length: n }, shark) });
+        const sdk = new FakeSdk(s);
+        let eat = false;
+        sdk.onSend = a => { if (a.method === 'sendUseItem') eat = true; };
+        const each = (st: BotWorldState): Partial<BotWorldState> => {
+            if (!eat) return {};
+            eat = false;
+            return { player: { ...st.player!, hp: Math.min(30, st.player!.hp + SHARK_HEAL) }, inventory: st.inventory.slice(1) };
+        };
+        return { sdk, each, eats: () => sdk.sent.filter(a => a.method === 'sendUseItem').length };
+    }
+
+    test('at 12 HP it eats to the crossing target (30) before walking', async () => {
+        const c = crossing(12, 3);
+        const tally = newTally();
+        await drive(c.sdk, eatForCrossing(c.sdk as never, /^shark$/i, tally), 60, c.each);
+        expect(c.sdk.getState()!.player!.hp).toBe(30);
+        expect(tally.eats).toBe(1);
+        expect(c.eats()).toBe(1);
+    });
+    test('at 5 HP one shark is not enough: it eats again', async () => {
+        const c = crossing(5, 3);
+        const tally = newTally();
+        await drive(c.sdk, eatForCrossing(c.sdk as never, /^shark$/i, tally), 60, c.each);
+        expect(c.sdk.getState()!.player!.hp).toBe(30);
+        expect(tally.eats).toBe(2);
+    });
+    test('rested already: no click', async () => {
+        const c = crossing(30, 3);
+        await drive(c.sdk, eatForCrossing(c.sdk as never, /^shark$/i, newTally()), 10, c.each);
+        expect(c.eats()).toBe(0);
+    });
+    test('no food: no click, the crossing\'s own rest takes over', async () => {
+        const c = crossing(12, 0);
+        await drive(c.sdk, eatForCrossing(c.sdk as never, /^shark$/i, newTally()), 10, c.each);
+        expect(c.eats()).toBe(0);
     });
 });
 
