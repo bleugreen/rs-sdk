@@ -48,6 +48,11 @@ run RUN-HOST.md's commands unchanged: they reach the run host.
   attempt's bound, which is the expected wall time times 1.5 (rs/147's brief). For example, `T=3h`
   for a 2-hour estimate. The gate account's tab stays `T=15m`, the gate CLI `15m`, the sampler
   `10m`, `tab-login.ts` `3m`, and `tab-logout.ts` `2m`.
+- **One display, several accounts.** The gate account's tab and the attempt's are windows of the
+  same Chrome on the xrdp display, and the recording grabs that display whole. Don't open a second
+  client window by hand. The harness closes the gate's window before the attempt logs in, checks
+  a live frame of the display, and opens no gate window again until the recording has stopped
+  (HARNESS.md, "What the recording shows"). Pass the display to the harness as `DISPLAY`.
 - **No host reservation, no gate timer.** This host has no `~/host-reserved.json`, no
   `~/run-commit` and no rs/83 timer. The probe-slot minutes in RUN-HOST.md (:00-:03 and so on)
   protect measurements on the run host and don't apply here. The slot files below take the

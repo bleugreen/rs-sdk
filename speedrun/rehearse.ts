@@ -23,12 +23,19 @@
 //    attempt: a live one there logs out, writes a `(gate) paused for the gate/run` row, and exits 5.
 // 1. Off the clock, before the rehearsal account logs in: /playercount; the direct gate read
 //    ((a)-(c), rs/96's CLI docs/speedrun/scripts/tickmanip-latency.ts run on the gate account with
-//    --gate-bot, or the --json file it wrote with --gate-json); and the in-page probe on the gate
-//    account's own tab (--gate-probe-trials, browser). Each is a `gate` header row in the tick log.
+//    --gate-bot, or the --json file it wrote with --gate-json); the in-page probe on the gate
+//    account's own tab (--gate-probe-trials, browser), in a session of its own that logs out, puts
+//    the rehearsal account's bare window on the display and closes the gate's before the rehearsal
+//    account logs in (bracketAttempt); and whether a recording runs on $DISPLAY. Each is a `gate`
+//    header row in the tick log.
 //    Off a local world the gate account is cairn_twin unless --gate-bot or --gate-json says otherwise.
 //    It refuses to start when (c) fails (an overrun period: wait and re-read), when the world does
-//    not answer, or when a non-lab world has no direct read; --force-gate overrides.
-// 2. It launches the rehearsal client and runs, under the watchdog (rs/101's policy: a wedged
+//    not answer, when a non-lab world has no direct read, when the gate tab's probe, logout or
+//    window close failed, or when no recording runs on $DISPLAY; --force-gate overrides.
+// 2. It launches the rehearsal client and, beside its first steps, takes the live-frame pass line:
+//    its tab is the only window, maximised and in front of $DISPLAY, and a frame grabbed as the
+//    recording grabs shows its page (a `(gate) live frame` row; a warning, never a stop, when it
+//    fails). It runs, under the watchdog (rs/101's policy: a wedged
 //    client is logged out, never killed to log it out): speedrun/skills/start.ts (S00), an
 //    optional in-page probe on this account (--probe-trials, on the clock), an optional kit
 //    receive (S01: lib/trade.ts receiveFrom with `want`; on the lab, --kit alone uses ::give),
@@ -36,7 +43,8 @@
 //    /playercount is read every 10 minutes through the attempt and once after the logout (a
 //    `players` row each; a background HTTP GET, no game packets).
 // 3. logoutClean the moment the chain ends (a last step that logged out by itself is fine), the
-//    session rows, the gate tab's after-probe, the public hiscore row against the log, a summary
+//    session rows, a fresh gate session's after-probe once that logout is confirmed and the
+//    recording on $DISPLAY has stopped, the public hiscore row against the log, a summary
 //    (with a warning line when the player count swung by more than half: a demo restart and refill).
 //
 // Stop: the first Ctrl-C stops at the next logoutSafe boundary with logoutClean; a second logs
@@ -48,13 +56,17 @@
 
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'fs';
 import { homedir } from 'os';
-import { isAbsolute, join } from 'path';
+import { basename, dirname, isAbsolute, join } from 'path';
 import type { BotWorldState } from '../sdk/types';
 import { clock, DemoMonitor, demoOrigin, samplePlayerCount } from './lib/demo-status';
 import { directDecision, type DirectVerdict, verdictText } from './lib/hostgate';
 import { probeInPage, programStatus, type ProgramStatus } from './lib/programs';
 import { reconnectAfterOutage, serverDownProbe } from './lib/reconnect';
-import { type ClientKind, closeSession, loadBotEnv, logoutClean, type LogoutResult, openSession, ROOT, type Session, startWatchdog } from './lib/session';
+import {
+    type FrameCheck, frameShows, type FrontWindows, frontWindows, grabFrame, type RecordingState, recordingState, type XWindow, xpropRunner,
+} from './lib/display';
+import { closeBotTabs, frontTab, raiseTabWindow, screenshotTab, stageBotTab, type TabClose, type TabFront, type TabStage, TITLE_MARK_SEPARATOR } from './lib/tab';
+import { cdpUrl, type ClientKind, closeSession, loadBotEnv, logoutClean, type LogoutResult, openSession, ROOT, type Session, startWatchdog } from './lib/session';
 import { formatReport, newRunId, parseLog, report, type RowKind, type StepReport, TickLog, type TickRow } from './lib/ticks';
 import { receiveFrom, type WantSpec } from './lib/trade';
 import { tickMs, waitUntil } from './lib/wait';
@@ -831,6 +843,345 @@ export async function runAttempt(session: Session, chain: ReadonlyArray<Step<any
     }
 }
 
+// ------------------------------------------------------------------ the gate tab and the attempt's window
+//
+// Every tab on the host's Chrome is a window on its one X display, and the recording grabs the
+// display whole. Main's run-night ruling (cairn://p/rs/host, 2026-10-21 18:16 PDT), which rows
+// follow too: the gate's probe tab is logged out and its window closed before the attempt logs in;
+// the attempt's tab is the only browser window on the recorded display, maximised; the recording
+// runs before the attempt's login, and a live frame of it in the attempt's first seconds is a
+// pass line of the gate; and no other window comes up on that display until the attempt ends and
+// the recording has stopped.
+
+export interface TabIO {
+    /** openSession with a launch: logs the account in and waits for an advancing tick. */
+    open(bot: string, client: ClientKind): Promise<Session>;
+    probe(s: Session, trials: number, label: string): Promise<InPageRead>;
+    logout(s: Session): Promise<LogoutResult>;
+    /** Put this account's client window on the display, logged out, maximised (lib/tab.ts stageBotTab); null without CDP. */
+    stage(bot: string): Promise<TabStage | null>;
+    /** Close the account's tabs (lib/tab.ts closeBotTabs); null without CDP. */
+    closeTab(s: Session): Promise<TabClose | null>;
+    /** closeSession: disconnects the SDK. */
+    close(s: Session): Promise<void>;
+    /** Bring the attempt's tab to the front and check what the display shows (attemptFront). */
+    front(s: Session): Promise<FrontReport>;
+    /** Whether a recording runs on the display (lib/display.ts recordingState). */
+    recording(): Promise<RecordingState>;
+    pause(ms: number): Promise<void>;
+}
+
+export interface GateTabRead {
+    when: 'before' | 'after';
+    label: string;
+    account: string;
+    read: InPageRead | null;
+    error?: string;
+    logout: LogoutResult | null;
+    /** The attempt's window, staged before the gate's closes (before the attempt only). */
+    staged?: TabStage | null;
+    stageError?: string;
+    tab: TabClose | null;
+    tabError?: string;
+}
+
+const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/**
+ * One in-page probe on the gate account's tab, in a session of its own: log in, probe, log out,
+ * then (only after a confirmed logout: a closed tab is a dropped client, which the server keeps in
+ * the world) stage `opts.stage`'s window and close the gate's, disconnect, and only then return.
+ * Staging first keeps Chrome up, since it quits with its last window.
+ */
+export async function gateTabRead(io: TabIO, bot: string, trials: number, when: GateTabRead['when'], opts: { stage?: string } = {}): Promise<GateTabRead> {
+    const label = `gate tab ${when}`;
+    let s: Session;
+    try {
+        s = await io.open(bot, 'browser');
+    } catch (e) {
+        return { when, label, account: bot, read: null, error: `the gate tab did not open: ${message(e)}`, logout: null, tab: null };
+    }
+    const out: GateTabRead = { when, label, account: s.name, read: null, logout: null, tab: null };
+    try {
+        try {
+            out.read = await io.probe(s, trials, label);
+        } catch (e) {
+            out.error = `the probe failed: ${message(e)}`;
+        }
+        out.logout = await io.logout(s).catch(e => ({ ok: false, clickTick: -1, lastInWorldTick: -1, latencyTicks: 0, wallMs: 0, reason: message(e) }));
+        if (out.logout.ok) {
+            if (opts.stage) {
+                try {
+                    out.staged = await io.stage(opts.stage);
+                } catch (e) {
+                    out.stageError = message(e);
+                }
+            }
+            try {
+                out.tab = await io.closeTab(s);
+            } catch (e) {
+                out.tabError = message(e);
+            }
+        }
+    } finally {
+        await io.close(s);
+    }
+    return out;
+}
+
+/** What in a gate tab read stands in the way: before the attempt each one refuses it. */
+export function gateTabProblems(r: GateTabRead): string[] {
+    const out: string[] = [];
+    if (r.error) out.push(`${r.label}: ${r.error}`);
+    if (r.logout && !r.logout.ok) out.push(`${r.label}: the logout was not confirmed (${r.logout.reason ?? 'unknown'}): ${r.account} may still be in the world, and its window is still open`);
+    if (r.stageError) out.push(`${r.label}: the attempt's window could not be put on the display: ${r.stageError}`);
+    if (r.tabError) out.push(`${r.label}: the window was not closed: ${r.tabError}`);
+    if (r.logout?.ok && !r.tab && !r.tabError) out.push(`${r.label}: no CDP_URL, so the window was not closed and can cover the attempt's`);
+    return out;
+}
+
+/** A recording problem before the attempt's login (RUN-HOST.md step 5): none running on the display. */
+export function recordingProblems(r: RecordingState): string[] {
+    return r.on === false ? [`no recording on ${r.display}: start it before the attempt's login (RUN-HOST.md step 5), so the video opens on the attempt's tab`] : [];
+}
+
+/** What the display showed at one look: the window in front and the live frame. */
+export interface FrontLook {
+    windows: FrontWindows | null;
+    frame: FrameCheck | null;
+}
+
+export interface FrontReport {
+    /** The gate's pass line: true passes, false fails, null could not be read. */
+    ok: boolean | null;
+    /** The account name the tab's title carries (lib/tab.ts frontTab). */
+    mark: string;
+    display: string | null;
+    tab: TabFront | null;
+    /** The last look (after the raise, when one was needed). */
+    windows: FrontWindows | null;
+    frame: FrameCheck | null;
+    /** The first look, when it failed and the window was raised. */
+    before?: FrontLook;
+    raised: boolean;
+    warnings: string[];
+}
+
+export interface FrontIO {
+    display: string | null;
+    tab(mark: string): Promise<TabFront | null>;
+    raise(): Promise<void>;
+    /** Null: no display to read (no DISPLAY in the environment). */
+    windows: (() => Promise<FrontWindows>) | null;
+    /** A live frame of the display, matched against the tab's own render; `n` numbers the look. */
+    frame: ((n: number) => Promise<FrameCheck>) | null;
+    /** Lets the window manager and Chrome apply the last change before the display is read. */
+    settle(): Promise<void>;
+}
+
+const carriesMark = (w: XWindow | null | undefined, mark: string) => !!w && w.name.startsWith(mark + TITLE_MARK_SEPARATOR);
+
+/**
+ * The gate's pass line for the recording, in the attempt's first seconds: the attempt's tab is the
+ * window in front of the display, a live frame grabbed as the recording grabs shows its page, it is
+ * the only page on Chrome, and its window is maximised. When the window or the frame shows
+ * something else, the tab is raised once and looked at again. It never throws: what it could not
+ * do or read goes into `warnings`.
+ */
+export async function attemptFront(mark: string, d: FrontIO): Promise<FrontReport> {
+    const r: FrontReport = { ok: null, mark, display: d.display, tab: null, windows: null, frame: null, raised: false, warnings: [] };
+    try {
+        r.tab = await d.tab(mark);
+        if (!r.tab) r.warnings.push(`no tab for ${mark} on Chrome's DevTools port`);
+    } catch (e) {
+        r.warnings.push(`the tab could not be brought to the front: ${message(e)}`);
+    }
+    if (!d.windows) {
+        r.warnings.push('no DISPLAY: what the display shows was not read');
+        return r;
+    }
+    const look = async (n: number): Promise<FrontLook> => {
+        await d.settle();
+        const l: FrontLook = { windows: null, frame: null };
+        try {
+            l.windows = await d.windows!();
+        } catch (e) {
+            r.warnings.push(`the display could not be read: ${message(e)}`);
+        }
+        if (d.frame) {
+            try {
+                l.frame = await d.frame(n);
+            } catch (e) {
+                r.warnings.push(`the live frame could not be taken: ${message(e)}`);
+            }
+        } else r.warnings.push('no live frame: it can only be grabbed with a display');
+        return l;
+    };
+    const covered = (l: FrontLook) => (l.windows !== null && !carriesMark(l.windows.top, mark)) || l.frame?.match === false;
+    let l = await look(1);
+    if (covered(l)) {
+        r.before = l;
+        try {
+            await d.raise();
+            r.raised = true;
+        } catch (e) {
+            r.warnings.push(`the window could not be raised: ${message(e)}`);
+        }
+        l = await look(2);
+    }
+    r.windows = l.windows;
+    r.frame = l.frame;
+    const after = r.raised ? ', even after raising it' : '';
+    const fails: string[] = [];
+    if (l.windows && !carriesMark(l.windows.top, mark)) fails.push(`the window in front of ${d.display} is "${l.windows.top?.name ?? 'none'}", not ${mark}'s tab${after}`);
+    if (l.frame?.match === false) fails.push(`the live frame of ${d.display} does not show ${mark}'s tab (difference ${l.frame.diff} over ${l.frame.max})${after}: the recording shows something else`);
+    if (r.tab && r.tab.others.length > 0) fails.push(`other pages are open on Chrome (${r.tab.others.join(', ')}): the attempt's tab must be the only window`);
+    if (r.tab && r.tab.windowState !== 'maximized') fails.push(`${mark}'s window is ${r.tab.windowState}, not maximised`);
+    if (l.frame?.match === null) r.warnings.push(`the live frame is inconclusive (contrast ${l.frame.contrast}${l.frame.diff === null ? ', the page is larger than the display' : ''})`);
+    r.warnings.push(...fails);
+    r.ok = fails.length > 0 ? false : !l.windows || !l.frame || l.frame.match === null || !r.tab ? null : true;
+    return r;
+}
+
+export function frontLine(f: FrontReport): string {
+    if (f.ok) {
+        const raised = f.raised ? `; raised over "${f.before?.windows?.top?.name ?? 'none'}"` : '';
+        return `live frame: PASS: ${f.mark}'s tab is the only window, maximised and in front of ${f.display}; the frame shows it (difference ${f.frame?.diff} at ${f.frame?.at?.x},${f.frame?.at?.y}; ${f.frame?.path})${raised}`;
+    }
+    return `live frame: ${f.ok === false ? 'FAIL' : 'UNVERIFIED'} for ${f.mark}'s tab: ${f.warnings.join('; ')}`;
+}
+
+export interface Refusal {
+    code: number;
+    reasons: string[];
+}
+
+export interface Bracketed<T> {
+    before: GateTabRead | null;
+    /** The display's recording, read right before the attempt's login. */
+    recording: RecordingState;
+    refused: Refusal | null;
+    session?: Session;
+    value?: T;
+    front?: FrontReport;
+    after: GateTabRead | null;
+    afterSkipped?: string;
+}
+
+/** How long the after-probe waits for the recording to stop before it gives up on the probe. */
+export const RECORDING_WAIT_MS = 10 * 60_000;
+
+/**
+ * The order that keeps the gate account off the attempt's recording: the gate tab's probe runs and
+ * its session ends (logged out, the attempt's window staged, the gate's closed) before the attempt
+ * logs in; the attempt's front check runs beside its first steps; and a fresh gate session probes
+ * again only once the attempt's logout is confirmed and the recording has stopped, so the video
+ * ends on the attempt. One of the attempt's accounts is in the world at a time.
+ */
+export async function bracketAttempt<T>(
+    io: TabIO,
+    o: { gateBot?: string; gateProbeTrials: number; bot: string; client: ClientKind },
+    h: {
+        gate(r: GateTabRead): void;
+        /** Why not to start, given the gate tab's read and the display's recording; null to go. */
+        refusal(before: GateTabRead | null, recording: RecordingState): Refusal | null;
+        front(f: FrontReport, s: Session): void;
+        attempt(s: Session): Promise<{ value: T; loggedOut: boolean; skipAfter?: string }>;
+        /** The after-probe has begun waiting for the recording to stop. */
+        waiting?(r: RecordingState): void;
+    },
+    opts: { recordingWaitMs?: number; pollMs?: number } = {}
+): Promise<Bracketed<T>> {
+    const probing = o.gateBot !== undefined && o.gateProbeTrials > 0;
+    const before = probing ? await gateTabRead(io, o.gateBot!, o.gateProbeTrials, 'before', o.client === 'browser' ? { stage: o.bot } : {}) : null;
+    if (before) h.gate(before);
+    const recording = await io.recording();
+    const refused = h.refusal(before, recording);
+    if (refused) return { before, recording, refused, after: null };
+
+    const session = await io.open(o.bot, o.client);
+    const failed = (e: unknown): FrontReport => ({ ok: null, mark: session.name, display: null, tab: null, windows: null, frame: null, raised: false, warnings: [`the front check failed: ${message(e)}`] });
+    // Beside the attempt, not before it: the account is in the world and its clock is running.
+    const front = io.front(session).catch(failed).then(f => {
+        h.front(f, session);
+        return f;
+    });
+    const { value, loggedOut, skipAfter } = await h.attempt(session);
+    const f = await front;
+    const done = { before, recording, refused, session, value, front: f };
+    if (!probing) return { ...done, after: null };
+    if (!loggedOut) return { ...done, after: null, afterSkipped: `${session.name}'s logout was not confirmed, so the gate account stays out` };
+    if (skipAfter) return { ...done, after: null, afterSkipped: skipAfter };
+
+    const waitMs = opts.recordingWaitMs ?? RECORDING_WAIT_MS;
+    const until = Date.now() + waitMs;
+    let rec = await io.recording();
+    if (rec.on === true) h.waiting?.(rec);
+    while (rec.on === true && Date.now() < until) {
+        await io.pause(opts.pollMs ?? 5_000);
+        rec = await io.recording();
+    }
+    if (rec.on === true) {
+        return { ...done, after: null, afterSkipped: `the recording on ${rec.display} was still running ${Math.round(waitMs / 60_000)} min after the logout, so no gate window was opened on it` };
+    }
+    const after = await gateTabRead(io, o.gateBot!, o.gateProbeTrials, 'after');
+    h.gate(after);
+    return { ...done, after };
+}
+
+/** The host's TabIO: lib/session.ts, lib/tab.ts over each env's CDP_URL, lib/display.ts on $DISPLAY. */
+function hostTabIO(frames: { dir: string; prefix: string }): TabIO {
+    const display = process.env.DISPLAY || null;
+    return {
+        open: (bot, client) => openSession(bot, { client, launch: true }),
+        probe: inPageRead,
+        logout: s => logoutClean(s),
+        stage: async bot => {
+            const env = loadBotEnv(bot);
+            const cdp = cdpUrl(env);
+            if (!cdp) return null;
+            if (!env.CLIENT_URL) throw new Error(`${bot} has no CLIENT_URL, so its bare client window can't be opened`);
+            // The bare page carries the bot's name and no token: it waits on the title screen.
+            const url = new URL(env.CLIENT_URL);
+            url.searchParams.set('bot', env.BOT_USERNAME);
+            return stageBotTab(cdp, env.BOT_USERNAME, url.toString());
+        },
+        closeTab: async s => {
+            const cdp = cdpUrl(s.env);
+            return cdp ? closeBotTabs(cdp, s.env.BOT_USERNAME) : null;
+        },
+        close: closeSession,
+        recording: () => recordingState(display),
+        pause: ms => Bun.sleep(ms),
+        front: async s => {
+            const cdp = cdpUrl(s.env);
+            const skipped = (why: string): FrontReport => ({ ok: null, mark: s.name, display: null, tab: null, windows: null, frame: null, raised: false, warnings: [why] });
+            if (s.client !== 'browser') return skipped('the lite client has no window');
+            if (!cdp) return skipped('no CDP_URL: the tab was not brought to the front');
+            const bot = s.env.BOT_USERNAME;
+            mkdirSync(frames.dir, { recursive: true });
+            return attemptFront(s.name, {
+                display,
+                tab: mark => frontTab(cdp, bot, mark),
+                raise: () => raiseTabWindow(cdp, bot),
+                windows: display ? () => frontWindows(xpropRunner(display)) : null,
+                frame: display
+                    ? async n => {
+                          const framePath = join(frames.dir, `${frames.prefix}-frame-${n}.png`);
+                          const pagePath = join(frames.dir, `${frames.prefix}-page-${n}.png`);
+                          await grabFrame(display, framePath);
+                          const page = await screenshotTab(cdp, bot);
+                          if (!page) throw new Error(`${bot} has no tab to render`);
+                          await Bun.write(pagePath, page);
+                          return frameShows(framePath, pagePath);
+                      }
+                    : null,
+                settle: () => Bun.sleep(500),
+            });
+        },
+    };
+}
+
 // ------------------------------------------------------------------ the attempt
 
 export interface SkillModule {
@@ -910,19 +1261,15 @@ async function main(argv: string[]): Promise<number> {
 
     // 0. Pre-flight: no login of any kind while the host is reserved for the gate or the run.
     const reservation = new ReservationWatch(reservationPath(a.hostReservation));
-    let gateTab: Session | null = null;
-    const refuseIfReserved = async (): Promise<boolean> => {
-        const why = reservationRefusal(reservation);
+    const reserved = (): string | null => reservationRefusal(reservation);
+    const refuseIfReserved = (): boolean => {
+        const why = reserved();
         if (!why) return false;
         console.error(`[rehearse] REFUSED: ${why}`);
         console.error('[rehearse] nothing was logged in for the attempt');
-        if (gateTab) {
-            await logoutClean(gateTab).catch(() => {});
-            await closeSession(gateTab);
-        }
         return true;
     };
-    if (await refuseIfReserved()) return EXIT_HOST_RESERVED;
+    if (refuseIfReserved()) return EXIT_HOST_RESERVED;
 
     const mod = a.claim ? null : await loadSkillModule(a.skill!);
     const skillName = mod?.skill ?? CLAIM_SKILL;
@@ -944,163 +1291,183 @@ async function main(argv: string[]): Promise<number> {
     else if (a.gateBot) direct = await directReadViaCli(a.gateBot, { lab: a.lab, runId });
     if (direct) log.append(annotation(log, account, 'gate', '(gate) direct', { ok: !direct.error && direct.verdict?.on === true, ...(direct.error ? { error: direct.error } : {}), meta: { ...direct, ...(direct.verdict ? { text: verdictText(direct.verdict) } : {}) } }));
     const inPage: InPageRead[] = [];
-    if (a.gateProbeTrials > 0) {
-        if (await refuseIfReserved()) return EXIT_HOST_RESERVED;
-        gateTab = await openSession(a.gateBot!, { client: 'browser', launch: true });
-        inPage.push(await inPageRead(gateTab, a.gateProbeTrials, 'gate tab before'));
-        log.append(annotation(log, gateTab.name, 'gate', '(gate) in-page before', { meta: { ...inPage[0]!, text: verdictText(inPage[0]!.verdict) } }));
-    }
-    const gate = [
-        `${players ?? '?'} players online`,
-        ...(direct ? [gateLine({ label: `direct (${direct.source}, ${direct.takenAt ?? 'undated'})`, verdict: direct.verdict, ...(direct.error ? { error: direct.error } : {}) })] : []),
-        ...inPage.map(r => gateLine(r)),
-    ];
-    for (const g of gate) console.log(`[gate] ${g}`);
-    const refusal = gateRefusal({ direct, inPage, players, local, now: Date.now(), claim: a.claim });
-    if (refusal.length) {
-        if (!a.forceGate) {
-            for (const r of refusal) console.error(`[rehearse] REFUSED: ${r}`);
-            console.error('[rehearse] nothing was logged in for the attempt; re-read the gate and run again (or --force-gate)');
-            if (gateTab) {
-                await logoutClean(gateTab).catch(() => {});
-                await closeSession(gateTab);
+    const gate: string[] = [];
+    // The gate tab is a login too.
+    if (a.gateProbeTrials > 0 && refuseIfReserved()) return EXIT_HOST_RESERVED;
+
+    // The gate tab's before-probe, the attempt on the clock from its login, then the after-probe
+    // (bracketAttempt: one of these accounts in the world, and on the recorded display, at a time).
+    // The live frames are kept beside the log, as the pass line's evidence.
+    const logPath = log.path ?? join(process.env.TMPDIR ?? '/tmp', 'speedrun', `rehearse-${runId}.jsonl`);
+    const frames = { dir: dirname(logPath), prefix: `${basename(logPath, '.jsonl')}-${runId}` };
+    const run = await bracketAttempt(hostTabIO(frames), { ...(a.gateBot ? { gateBot: a.gateBot } : {}), gateProbeTrials: a.gateProbeTrials, bot: a.bot, client: a.client }, {
+        gate: r => {
+            if (r.read) inPage.push(r.read);
+            const problems = gateTabProblems(r);
+            log.append(annotation(log, r.account, 'gate', `(gate) in-page ${r.when}`, {
+                ok: problems.length === 0,
+                ...(problems.length ? { error: problems.join('; ') } : {}),
+                meta: { ...(r.read ? { ...r.read, text: verdictText(r.read.verdict) } : { label: r.label, account: r.account }), logout: r.logout, staged: r.staged ?? null, tab: r.tab },
+            }));
+            for (const p of problems) console.warn(`[gate] WARNING: ${p}`);
+        },
+        refusal: (before, recording) => {
+            gate.push(
+                `${players ?? '?'} players online`,
+                ...(direct ? [gateLine({ label: `direct (${direct.source}, ${direct.takenAt ?? 'undated'})`, verdict: direct.verdict, ...(direct.error ? { error: direct.error } : {}) })] : []),
+                ...(before?.read ? [gateLine(before.read)] : [])
+            );
+            const recProblems = a.client === 'browser' ? recordingProblems(recording) : [];
+            const recLine = recording.on === true ? `recording on ${recording.display}: running (${recording.file ?? `pid ${recording.pid}`})` : `recording on ${recording.display ?? '?'}: ${recording.on === false ? 'NONE' : `unknown (${recording.why})`}`;
+            if (a.client === 'browser') {
+                gate.push(recLine);
+                log.append(annotation(log, account, 'gate', '(gate) recording', { ok: recording.on === true, ...(recProblems.length ? { error: recProblems.join('; ') } : {}), meta: { ...recording } }));
             }
-            return 3;
-        }
-        for (const r of refusal) console.warn(`[rehearse] --force-gate: starting anyway: ${r}`);
-    }
-    // The gate takes minutes; a reservation may have appeared meanwhile. --force-gate does not override it.
-    if (await refuseIfReserved()) return EXIT_HOST_RESERVED;
+            for (const g of gate) console.log(`[gate] ${g}`);
+            // The gate took minutes; a reservation may have appeared meanwhile. --force-gate does not override it.
+            const res = reserved();
+            if (res) return { code: EXIT_HOST_RESERVED, reasons: [res] };
+            const reasons = [...gateRefusal({ direct, inPage, players, local, now: Date.now(), claim: a.claim }), ...(before ? gateTabProblems(before) : []), ...recProblems];
+            if (!reasons.length) return null;
+            if (!a.forceGate) return { code: 3, reasons };
+            for (const r of reasons) console.warn(`[rehearse] --force-gate: starting anyway: ${r}`);
+            return null;
+        },
+        front: (f, s) => {
+            log.append(annotation(log, account, 'gate', '(gate) live frame', { sessionId: s.sessionId, ok: f.ok === true, ...(f.ok ? {} : { error: f.warnings.join('; ') }), meta: { ...f } }));
+            if (f.ok) console.log(`[gate] ${frontLine(f)}`);
+            else console.warn(`[gate] WARNING: ${frontLine(f)}`);
+        },
+        waiting: r => console.log(`[gate] the after-probe waits for the recording on ${r.display} to stop (RUN-HOST.md step 8), at most ${RECORDING_WAIT_MS / 60_000} min`),
+        attempt: async session => {
+            const clock = new SessionClock();
+            const reach = new ReachTracker();
+            const programs = new ProgramTracker();
+            let seenSession = session.sessionId;
+            const closeSessionRow = (id: number, ended: 'logout' | 'relaunch', endTick?: number, logout?: LogoutResult) => {
+                const e = clock.sessions.get(id);
+                if (!e) return;
+                const end = endTick ?? e.last;
+                log.append(annotation(log, account, 'session', '(session)', { sessionId: id, startTick: 0, endTick: end, meta: { firstObservedTick: e.first, ended, ...(logout ? { logout } : {}) } }));
+                clock.sessions.delete(id);
+            };
+            const unsubscribe = session.sdk.onStateUpdate(s => {
+                if (session.sessionId !== seenSession) {
+                    closeSessionRow(seenSession, 'relaunch');
+                    seenSession = session.sessionId;
+                }
+                clock.observe(session.sessionId, s);
+                for (const r of reach.observe(s)) log.append(annotation(log, account, 'reach', `(reach) ${r.skill} ${r.level}`, { sessionId: session.sessionId, startTick: r.tick, meta: { skill: r.skill, level: r.level } }));
+                for (const st of programs.observe(programStatus(s))) log.append(programRow(log, account, session.sessionId, st));
+            });
+            // /playercount through the attempt (rs/158): an HTTP GET beside the game socket, no game packets.
+            const readPlayers = async (label: 'during' | 'end') => {
+                const smp = await samplePlayerCount(origin);
+                // The client tick ties a read to the band it fell in; after the logout the state is stale.
+                const st = session.expectInWorld ? session.sdk.getState() : null;
+                log.append(annotation(log, account, 'players', `(players) ${label}`, {
+                    sessionId: session.sessionId, ...(st?.inGame ? { startTick: st.tick } : {}),
+                    meta: { players: smp.players, at: new Date(smp.at).toISOString(), ms: smp.ms, ...(smp.error ? { error: smp.error } : {}) },
+                }));
+                console.log(`[players] ${smp.players ?? `no answer (${smp.error})`}`);
+            };
+            const playersTimer = setInterval(() => void readPlayers('during'), PLAYERS_EVERY_MS);
+            const monitor = local ? null : new DemoMonitor(origin);
+            const wd = startWatchdog(session, {
+                onEvent: e => console.log(`[watchdog] ${e.verdict}: ${e.reason}`),
+                ...(monitor ? { serverDown: serverDownProbe(monitor), actions: { reconnect: s => reconnectAfterOutage(s, { monitor }) } } : {}),
+            });
 
-    // 2. The attempt, on the clock from the login.
-    const session = await openSession(a.bot, { client: a.client, launch: true });
-    const clock = new SessionClock();
-    const reach = new ReachTracker();
-    const programs = new ProgramTracker();
-    let seenSession = session.sessionId;
-    const closeSessionRow = (id: number, ended: 'logout' | 'relaunch', endTick?: number, logout?: LogoutResult) => {
-        const e = clock.sessions.get(id);
-        if (!e) return;
-        const end = endTick ?? e.last;
-        log.append(annotation(log, account, 'session', '(session)', { sessionId: id, startTick: 0, endTick: end, meta: { firstObservedTick: e.first, ended, ...(logout ? { logout } : {}) } }));
-        clock.sessions.delete(id);
-    };
-    const unsubscribe = session.sdk.onStateUpdate(s => {
-        if (session.sessionId !== seenSession) {
-            closeSessionRow(seenSession, 'relaunch');
-            seenSession = session.sessionId;
-        }
-        clock.observe(session.sessionId, s);
-        for (const r of reach.observe(s)) log.append(annotation(log, account, 'reach', `(reach) ${r.skill} ${r.level}`, { sessionId: session.sessionId, startTick: r.tick, meta: { skill: r.skill, level: r.level } }));
-        for (const st of programs.observe(programStatus(s))) log.append(programRow(log, account, session.sessionId, st));
+            let lastLogout: LogoutResult | null = null;
+            const leave = async (): Promise<LogoutResult> => {
+                const r = await logoutClean(session);
+                lastLogout = r;
+                console.log(`[rehearse] logout: ${r.ok ? `out after the click on tick ${r.clickTick}` : `NOT confirmed (${r.reason})`}`);
+                return r;
+            };
+            let stopAsked = false;
+            let gateStop: string | null = null;
+            let leaving: Promise<unknown> | null = null;
+            const leaveNow = (exitCode: number) => {
+                if (leaving) return;
+                console.error('[rehearse] logging out now');
+                leaving = leave().finally(() => process.exit(exitCode));
+            };
+            const onSigint = () => {
+                if (stopAsked) return leaveNow(130);
+                stopAsked = true;
+                console.error('[rehearse] stop requested: logging out at the next logout-safe boundary (Ctrl-C again to log out now)');
+            };
+            // A browser tab outlives this process: on a `timeout` bound, leave the world before exiting.
+            const onTerm = () => leaveNow(143);
+            process.on('SIGINT', onSigint);
+            process.on('SIGTERM', onTerm);
+            process.on('SIGHUP', onTerm);
+
+            const chain: Step<any>[] = [...start.steps()];
+            if (a.probeTrials > 0) {
+                chain.push({
+                    name: 'gate: in-page probe',
+                    preconditions: s => (s.inGame ? true : 'not in game'),
+                    run: async () => {
+                        const r = await inPageRead(session, a.probeTrials, 'rehearsal tab');
+                        inPage.push(r);
+                        log.append(annotation(log, account, 'gate', '(gate) in-page rehearsal', { meta: { ...r, text: verdictText(r.verdict) } }));
+                        console.log(`[gate] ${gateLine(r)}`);
+                        const why = gateRefusal({ direct: null, inPage: [r], players, local: true, now: Date.now() });
+                        if (why.length && !a.forceGate) gateStop = why.join('; ');
+                    },
+                    postconditions: () => true,
+                    logoutSafe: true,
+                });
+            }
+            if (a.kit) chain.push(kitStep(a.kit, a.kitFrom));
+            if (mod) chain.push(...mod.steps({ to: a.to, ...(a.technique ? { technique: a.technique } : {}), ...a.skillOpts }));
+
+            const result = await runAttempt(session, chain, {
+                log,
+                account,
+                link: sessionLink(session),
+                reservation,
+                stopAsked: () => stopAsked,
+                gateStop: () => gateStop,
+                logout: () => leave(),
+                ...(a.from !== undefined ? { from: a.from } : {}),
+                onEvent: e => console.log(`[resume] ${JSON.stringify(e)}`),
+            });
+            if (result.paused) console.error(`[rehearse] ${result.outcome}`);
+
+            // 3. Out of the world at once, then everything that costs no ticks.
+            if (session.expectInWorld && !leaving) await leave();
+            // After a deliberate logout (expectInWorld false) the watchdog relaunches nothing; stop it outright.
+            wd.stop();
+            clearInterval(playersTimer);
+            monitor?.stop();
+            process.off('SIGINT', onSigint);
+            for (const st of programs.flush()) log.append(programRow(log, account, session.sessionId, st));
+            unsubscribe();
+            const out = lastLogout as LogoutResult | null;
+            // A step that logged out itself: its click was on the last in-world tick (logout latency 0).
+            closeSessionRow(session.sessionId, 'logout', out?.ok ? out.lastInWorldTick : session.lastInWorldTick, out ?? undefined);
+            await readPlayers('end');
+            return {
+                value: result,
+                loggedOut: out ? out.ok : !session.expectInWorld,
+                // The host is reserved: the gate account stays out too, without its after-probe.
+                ...(result.paused ? { skipAfter: 'paused for the gate/run' } : {}),
+            };
+        },
     });
-    // /playercount through the attempt (rs/158): an HTTP GET beside the game socket, no game packets.
-    const readPlayers = async (label: 'during' | 'end') => {
-        const smp = await samplePlayerCount(origin);
-        // The client tick ties a read to the band it fell in; after the logout the state is stale.
-        const st = session.expectInWorld ? session.sdk.getState() : null;
-        log.append(annotation(log, account, 'players', `(players) ${label}`, {
-            sessionId: session.sessionId, ...(st?.inGame ? { startTick: st.tick } : {}),
-            meta: { players: smp.players, at: new Date(smp.at).toISOString(), ms: smp.ms, ...(smp.error ? { error: smp.error } : {}) },
-        }));
-        console.log(`[players] ${smp.players ?? `no answer (${smp.error})`}`);
-    };
-    const playersTimer = setInterval(() => void readPlayers('during'), PLAYERS_EVERY_MS);
-    const monitor = local ? null : new DemoMonitor(origin);
-    const wd = startWatchdog(session, {
-        onEvent: e => console.log(`[watchdog] ${e.verdict}: ${e.reason}`),
-        ...(monitor ? { serverDown: serverDownProbe(monitor), actions: { reconnect: s => reconnectAfterOutage(s, { monitor }) } } : {}),
-    });
-
-    let lastLogout: LogoutResult | null = null;
-    const leave = async (): Promise<LogoutResult> => {
-        const r = await logoutClean(session);
-        lastLogout = r;
-        console.log(`[rehearse] logout: ${r.ok ? `out after the click on tick ${r.clickTick}` : `NOT confirmed (${r.reason})`}`);
-        return r;
-    };
-    let stopAsked = false;
-    let gateStop: string | null = null;
-    let leaving: Promise<unknown> | null = null;
-    const leaveNow = (code: number) => {
-        if (leaving) return;
-        console.error('[rehearse] logging out now');
-        leaving = leave().finally(() => process.exit(code));
-    };
-    const onSigint = () => {
-        if (stopAsked) return leaveNow(130);
-        stopAsked = true;
-        console.error('[rehearse] stop requested: logging out at the next logout-safe boundary (Ctrl-C again to log out now)');
-    };
-    // A browser tab outlives this process: on a `timeout` bound, leave the world before exiting.
-    const onTerm = () => leaveNow(143);
-    process.on('SIGINT', onSigint);
-    process.on('SIGTERM', onTerm);
-    process.on('SIGHUP', onTerm);
-
-    const chain: Step<any>[] = [...start.steps()];
-    if (a.probeTrials > 0) {
-        chain.push({
-            name: 'gate: in-page probe',
-            preconditions: s => (s.inGame ? true : 'not in game'),
-            run: async () => {
-                const r = await inPageRead(session, a.probeTrials, 'rehearsal tab');
-                inPage.push(r);
-                log.append(annotation(log, account, 'gate', '(gate) in-page rehearsal', { meta: { ...r, text: verdictText(r.verdict) } }));
-                console.log(`[gate] ${gateLine(r)}`);
-                const why = gateRefusal({ direct: null, inPage: [r], players, local: true, now: Date.now() });
-                if (why.length && !a.forceGate) gateStop = why.join('; ');
-            },
-            postconditions: () => true,
-            logoutSafe: true,
-        });
+    if (run.refused) {
+        for (const r of run.refused.reasons) console.error(`[rehearse] REFUSED: ${r}`);
+        console.error(`[rehearse] nothing was logged in for the attempt; ${run.refused.code === EXIT_HOST_RESERVED ? 'run again once the reservation is gone' : 're-read the gate and run again (or --force-gate)'}`);
+        return run.refused.code;
     }
-    if (a.kit) chain.push(kitStep(a.kit, a.kitFrom));
-    if (mod) chain.push(...mod.steps({ to: a.to, ...(a.technique ? { technique: a.technique } : {}), ...a.skillOpts }));
-
-    const { outcome, code, paused } = await runAttempt(session, chain, {
-        log,
-        account,
-        link: sessionLink(session),
-        reservation,
-        stopAsked: () => stopAsked,
-        gateStop: () => gateStop,
-        logout: () => leave(),
-        ...(a.from !== undefined ? { from: a.from } : {}),
-        onEvent: e => console.log(`[resume] ${JSON.stringify(e)}`),
-    });
-    if (paused) console.error(`[rehearse] ${outcome}`);
-
-    // 3. Out of the world at once, then everything that costs no ticks.
-    if (session.expectInWorld && !leaving) await leave();
-    // After a deliberate logout (expectInWorld false) the watchdog relaunches nothing; stop it outright.
-    wd.stop();
-    clearInterval(playersTimer);
-    monitor?.stop();
-    process.off('SIGINT', onSigint);
-    for (const st of programs.flush()) log.append(programRow(log, account, session.sessionId, st));
-    unsubscribe();
-    const out = lastLogout as LogoutResult | null;
-    // A step that logged out itself: its click was on the last in-world tick (logout latency 0).
-    closeSessionRow(session.sessionId, 'logout', out?.ok ? out.lastInWorldTick : session.lastInWorldTick, out ?? undefined);
-    await readPlayers('end');
-
-    if (gateTab && paused) {
-        // The host is reserved: the gate account leaves too, without its after-probe.
-        gate.push('gate tab after: skipped (paused for the gate/run)');
-        await logoutClean(gateTab).catch(() => {});
-        await closeSession(gateTab);
-    } else if (gateTab) {
-        try {
-            const after = await inPageRead(gateTab, a.gateProbeTrials, 'gate tab after');
-            log.append(annotation(log, gateTab.name, 'gate', '(gate) in-page after', { meta: { ...after, text: verdictText(after.verdict) } }));
-            gate.push(gateLine(after));
-        } catch (e) {
-            gate.push(`gate tab after: failed (${e instanceof Error ? e.message : e})`);
-        }
-        await logoutClean(gateTab).catch(() => {});
-        await closeSession(gateTab);
-    }
+    const session = run.session!;
+    const { outcome, code } = run.value!;
+    if (run.front) gate.push(frontLine(run.front));
+    if (run.after) gate.push(...(run.after.read ? [gateLine(run.after.read)] : []), ...gateTabProblems(run.after));
+    if (run.afterSkipped) gate.push(`gate tab after: skipped: ${run.afterSkipped}`);
 
     const summary = summarize([...earlier, ...log.rows]);
     let checks: HiscoreCheck[] | null = null;

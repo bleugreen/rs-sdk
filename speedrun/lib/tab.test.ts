@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { loginTokenProof } from '../../server/webclient/login-token';
 import { fakeCdp } from './fake-cdp';
-import { botTabs, evaluateInTab, pageLogin, pageLoginExpression, pageLoginState, type CdpTarget } from './tab';
+import {
+    botTabs, closeBotTabs, evaluateInTab, frontTab, pageLabel, pageLogin, pageLoginExpression, pageLoginState, raiseTabWindow, screenshotTab, stageBotTab, type CdpTarget,
+} from './tab';
 
 test('botTabs finds this bot\'s client pages and nothing else', () => {
     const targets: CdpTarget[] = [
@@ -90,6 +92,97 @@ describe('pageLogin: the tab logs itself back in, no navigation', () => {
         try {
             expect(await evaluateInTab(cdp.origin, 'srtest', '1 + 1')).toEqual({ value: 2 });
             await expect(evaluateInTab(cdp.origin, 'srtest', 'window.nope.x')).rejects.toThrow(/page threw/);
+        } finally {
+            cdp.stop();
+        }
+    });
+});
+
+describe('windows on the recorded display: stage, close, front, raise', () => {
+    test('pageLabel names a client page by its bot and never carries the query string', () => {
+        expect(pageLabel({ url: 'http://127.0.0.1:8899/bot?server=rs-sdk-demo.fly.dev&bot=cairn_twin&token=secret-1' })).toBe('bot=cairn_twin');
+        expect(pageLabel({ url: 'http://127.0.0.1:8899/other?token=secret-1' })).toBe('http://127.0.0.1:8899/other');
+        expect(pageLabel({ url: 'about:blank' })).toBe('about:blank');
+        expect(pageLabel({ url: 'chrome://newtab/' })).toBe('chrome://newtab/');
+        expect(pageLabel({ url: 'not a url' })).toBe('(unparsed url)');
+    });
+
+    test('stage opens the next account\'s bare window and maximises it; then the gate\'s window can close', async () => {
+        const cdp = fakeCdp('cairn_twin');
+        try {
+            cdp.page.window = 'normal';
+            const bare = 'http://127.0.0.1:8899/bot?server=rs-sdk-demo.fly.dev&bot=cairn_smoke';
+            expect(await stageBotTab(cdp.origin, 'cairn_smoke', bare)).toEqual({ how: 'opened', was: 'normal' });
+            expect(cdp.page.opened).toEqual([bare]);
+            expect(cdp.page.windowStates).toEqual(['maximized']);
+            expect(await closeBotTabs(cdp.origin, 'cairn_twin')).toEqual({ closed: 1, left: ['bot=cairn_smoke'] });
+            expect(cdp.page.closed).toEqual(['t1']);
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    test('stage keeps a window the account already has, maximising it through normal when minimised', async () => {
+        const cdp = fakeCdp('cairn_smoke');
+        try {
+            cdp.page.window = 'minimized';
+            expect(await stageBotTab(cdp.origin, 'cairn_smoke', 'unused')).toEqual({ how: 'present', was: 'minimized' });
+            expect(cdp.page.opened).toEqual([]);
+            expect(cdp.page.windowStates).toEqual(['normal', 'maximized']);
+            cdp.page.windowStates = [];
+            await stageBotTab(cdp.origin, 'cairn_smoke', 'unused');
+            expect(cdp.page.windowStates).toEqual([]);
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    test('closeBotTabs refuses Chrome\'s last window, since Chrome quits with it', async () => {
+        const cdp = fakeCdp('cairn_twin');
+        try {
+            await expect(closeBotTabs(cdp.origin, 'cairn_twin')).rejects.toThrow("cairn_twin's window is Chrome's last");
+            expect(cdp.page.closed).toEqual([]);
+            cdp.page.tab = false;
+            cdp.page.others.push({ id: 't2', url: 'about:blank' });
+            expect(await closeBotTabs(cdp.origin, 'cairn_twin')).toEqual({ closed: 0, left: ['about:blank'] });
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    test('frontTab brings the tab to the front, marks its title once, and reports viewport, window and other pages', async () => {
+        const cdp = fakeCdp('cairn_smoke');
+        try {
+            cdp.page.others.push({ id: 't2', url: 'http://127.0.0.1:8899/bot?bot=cairn_twin&token=secret-3' });
+            const f = await frontTab(cdp.origin, 'cairn_smoke', 'cairn_smoke');
+            expect(f).toEqual({
+                title: 'cairn_smoke - 2004Scape Bot Client', focused: true, visibility: 'visible', viewport: { width: 1920, height: 978, dpr: 1 }, windowState: 'maximized', others: ['bot=cairn_twin'],
+            });
+            expect(cdp.page.methods.slice(0, 2)).toEqual(['Page.bringToFront', 'Runtime.evaluate']);
+            expect((await frontTab(cdp.origin, 'cairn_smoke', 'cairn_smoke'))!.title).toBe('cairn_smoke - 2004Scape Bot Client');
+            expect(await frontTab(cdp.origin, 'nobody', 'nobody')).toBeNull();
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    test('screenshotTab returns the page\'s PNG bytes; null without a tab', async () => {
+        const cdp = fakeCdp('cairn_smoke');
+        try {
+            expect([...(await screenshotTab(cdp.origin, 'cairn_smoke'))!]).toEqual([0x89, 0x50, 0x4e, 0x47]);
+            expect(await screenshotTab(cdp.origin, 'nobody')).toBeNull();
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    test('raiseTabWindow minimises the window, then restores it to maximised', async () => {
+        const cdp = fakeCdp('cairn_smoke');
+        try {
+            await raiseTabWindow(cdp.origin, 'cairn_smoke');
+            expect(cdp.page.windowStates).toEqual(['minimized', 'normal', 'maximized']);
+            expect(cdp.page.methods.at(-1)).toBe('Page.bringToFront');
+            await expect(raiseTabWindow(cdp.origin, 'nobody')).rejects.toThrow('nobody has no tab');
         } finally {
             cdp.stop();
         }

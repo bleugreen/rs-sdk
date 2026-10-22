@@ -1,8 +1,11 @@
 // A stand-in for Chrome's DevTools port with one bot's page behind it, for unit tests.
 //
-// /json/list lists the tab. Its websocket answers Runtime.evaluate by running the expression
-// against a fake `window.gameClient`, so the page scripts in lib/tab.ts execute for real, and it
-// records Page.navigate. The same server plays the page server's one-time token endpoints
+// /json/list lists the tab, and any other pages a test adds (`page.others`); /json/close/<id>
+// closes one. Its websocket answers Runtime.evaluate by running the expression against a fake
+// `window.gameClient` and `document`, so the page scripts in lib/tab.ts execute for real, and it
+// records Page.navigate and every other method. /json/version names a browser websocket on the
+// same server, which answers Browser.getWindowForTarget and Browser.setWindowBounds for the tab's
+// one window (`page.window`). The same server plays the page server's one-time token endpoints
 // (server/webclient/proxy.ts: POST /bot/login-token mints against the account's proof, POST
 // /bot/login redeems once), so a test sees every token minted and redeemed.
 
@@ -31,6 +34,22 @@ export interface FakeCdp {
         minted: string[];
         redeemed: string[];
         autoLogins: { username: string; password: string }[];
+        /** Other page targets on the same Chrome, listed after the tab. */
+        others: { id: string; url: string }[];
+        /** Target ids closed through /json/close. */
+        closed: string[];
+        /** Every websocket method received, page and browser alike, in order. */
+        methods: string[];
+        /** What the page's `document` answers. */
+        document: { title: string; visibilityState: string; focused: boolean };
+        /** The tab's window state, and every state Browser.setWindowBounds set, in order. */
+        window: 'normal' | 'minimized' | 'maximized' | 'fullscreen';
+        windowStates: string[];
+        /** URLs opened through PUT /json/new (each becomes one of `others`). */
+        opened: string[];
+        /** What Page.captureScreenshot returns, and the page's window size. */
+        screenshot: Uint8Array;
+        viewport: { innerWidth: number; innerHeight: number; devicePixelRatio: number };
     };
     client: FakeGameClient;
     /**
@@ -62,6 +81,15 @@ export function fakeCdp(bot: string, password = 'x'): FakeCdp {
         minted: [],
         redeemed: [],
         autoLogins: [],
+        others: [],
+        closed: [],
+        methods: [],
+        document: { title: '2004Scape Bot Client', visibilityState: 'visible', focused: true },
+        window: 'maximized',
+        windowStates: [],
+        opened: [],
+        screenshot: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+        viewport: { innerWidth: 1920, innerHeight: 978, devicePixelRatio: 1 },
     };
     const client: FakeGameClient = {
         ingame: true,
@@ -89,10 +117,22 @@ export function fakeCdp(bot: string, password = 'x'): FakeCdp {
 
     let pageUrl = '';
     async function evaluate(expression: string): Promise<Record<string, unknown>> {
-        const window = { gameClient: page.hasClient ? client : undefined };
+        const window = { gameClient: page.hasClient ? client : undefined, ...page.viewport };
         const location = { href: pageUrl };
+        const document = {
+            get title() {
+                return page.document.title;
+            },
+            set title(v: string) {
+                page.document.title = v;
+            },
+            get visibilityState() {
+                return page.document.visibilityState;
+            },
+            hasFocus: () => page.document.focused,
+        };
         try {
-            const value = await new Function('window', 'location', 'fetch', `return (${expression});`)(window, location, fetch);
+            const value = await new Function('window', 'location', 'fetch', 'document', `return (${expression});`)(window, location, fetch, document);
             return value === undefined ? { result: { type: 'undefined' } } : { result: { type: typeof value, value: JSON.parse(JSON.stringify(value)) } };
         } catch (err) {
             return { result: { type: 'object' }, exceptionDetails: { text: 'Uncaught', exception: { description: String(err) } } };
@@ -105,7 +145,28 @@ export function fakeCdp(bot: string, password = 'x'): FakeCdp {
         async fetch(req, srv) {
             const path = new URL(req.url).pathname;
             if (path === '/json/list') {
-                return Response.json(page.tab ? [{ id: 't1', type: 'page', url: pageUrl, webSocketDebuggerUrl: `ws://127.0.0.1:${srv.port}/devtools/page/t1` }] : []);
+                const target = (id: string, url: string) => ({ id, type: 'page', url, webSocketDebuggerUrl: `ws://127.0.0.1:${srv.port}/devtools/page/${id}` });
+                return Response.json([...(page.tab ? [target('t1', pageUrl)] : []), ...page.others.map(o => target(o.id, o.url))]);
+            }
+            if (path === '/json/version') {
+                return Response.json({ Browser: 'FakeChrome/1', webSocketDebuggerUrl: `ws://127.0.0.1:${srv.port}/devtools/browser/b1` });
+            }
+            if (path === '/json/new' && req.method === 'PUT') {
+                const url = decodeURIComponent(new URL(req.url).search.slice(1));
+                const id = `n${page.opened.length + 1}`;
+                page.opened.push(url);
+                page.others.push({ id, url });
+                return Response.json({ id, type: 'page', url });
+            }
+            const close = path.match(/^\/json\/close\/(.+)$/);
+            if (close) {
+                const id = close[1]!;
+                const known = (id === 't1' && page.tab) || page.others.some(o => o.id === id);
+                if (!known) return new Response(`No such target id: ${id}`, { status: 404 });
+                page.closed.push(id);
+                if (id === 't1') page.tab = false;
+                else page.others = page.others.filter(o => o.id !== id);
+                return new Response('Target is closing');
             }
             if (path === '/bot/login-token' && req.method === 'POST') {
                 const body = (await req.json()) as { bot?: string; proof?: string };
@@ -126,6 +187,24 @@ export function fakeCdp(bot: string, password = 'x'): FakeCdp {
         websocket: {
             async message(ws, m) {
                 const msg = JSON.parse(String(m)) as { id: number; method: string; params?: Record<string, unknown> };
+                page.methods.push(msg.method);
+                if (msg.method === 'Browser.getWindowForTarget') {
+                    ws.send(JSON.stringify({ id: msg.id, result: { windowId: 1, bounds: { windowState: page.window } } }));
+                    return;
+                }
+                if (msg.method === 'Page.captureScreenshot') {
+                    ws.send(JSON.stringify({ id: msg.id, result: { data: Buffer.from(page.screenshot).toString('base64') } }));
+                    return;
+                }
+                if (msg.method === 'Browser.setWindowBounds') {
+                    const state = (msg.params?.bounds as { windowState?: FakeCdp['page']['window'] } | undefined)?.windowState;
+                    if (state) {
+                        page.window = state;
+                        page.windowStates.push(state);
+                    }
+                    ws.send(JSON.stringify({ id: msg.id, result: {} }));
+                    return;
+                }
                 if (msg.method === 'Runtime.evaluate') {
                     page.evaluations++;
                     const expression = String(msg.params?.expression ?? '');

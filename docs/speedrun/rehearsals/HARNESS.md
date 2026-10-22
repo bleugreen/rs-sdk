@@ -129,10 +129,11 @@ is not at the attempt's commit, run from a worktree of it, as the demo acceptanc
 Then replace `cd ~/rs-sdk` with `cd` to that worktree.
 
 ```sh
-# B: the bound, expected wall time x 1.5 (a 99 is about 1-3 h); ACCOUNT: the name rs/147 assigned.
-B=4h; ACCOUNT=<account>; mkdir -p ~/rs-run
+# B: the bound, expected wall time x 1.5 (a 99 is about 1-3 h); ACCOUNT: the name rs/147 assigned;
+# D: the operator's xrdp display, where Chrome and the recording are (RUN-HOST.md step 2).
+B=4h; ACCOUNT=<account>; D=:10; mkdir -p ~/rs-run
 tmux -L rehearsal new-session -d -s "$ACCOUNT" \
-  "cd ~/rs-sdk && exec timeout --kill-after=30s $B ~/.bun/bin/bun speedrun/rehearse.ts \
+  "cd ~/rs-sdk && exec timeout --kill-after=30s $B env DISPLAY=$D ~/.bun/bin/bun speedrun/rehearse.ts \
      --skill=<skill> --bot=$ACCOUNT --gate-bot=cairn_twin \
      --kit-from=<giver> --kit=<item:n,...> \
      --log=$HOME/rs-run/$ACCOUNT.jsonl >>$HOME/rs-run/$ACCOUNT.log 2>&1"
@@ -149,6 +150,74 @@ tmux -L rehearsal new-session -d -s "$ACCOUNT" \
   count's range, plus a `MOVED` line if it swung by more than half (a demo restart and refill).
 - Watch with `tail -f ~/rs-run/$ACCOUNT.log`; afterwards `bun speedrun/lib/ticks.ts report
   ~/rs-run/$ACCOUNT.jsonl`.
+- `DISPLAY` names the recorded display, for the recording check and the live-frame pass line
+  (below). Without it the attempt runs the same, and the pass line is reported as unverified.
+- Start the recording (RUN-HOST.md step 5) before the harness. It refuses the attempt (exit 3)
+  when no recording runs on `DISPLAY`.
+- After the attempt account's logout (`[rehearse] logout: out ...` in the log), stop the recording
+  (RUN-HOST.md step 8). The after-probe waits for that, at most 10 minutes.
+
+## What the recording shows
+
+The on-VM recording grabs the whole X display (RUN-HOST.md step 5). Every tab on the host's
+Chrome, the gate account's and the attempt account's alike, is a window on that display, so the
+recording shows whichever window is on top. Until rs/232, the harness opened the gate tab for the
+before-probe and kept it logged in for the after-probe, and then opened the attempt's tab. The gate
+window stayed on top, and cairn_casts' whole Fishing recording shows cairn_twin.
+
+The harness now follows main's run-night ruling (cairn://p/rs/host, 2026-10-21 18:16 PDT), which
+holds for rows too: the gate's window is closed before the attempt logs in; the attempt's tab is the
+only browser window on the recorded display, maximised; the recording runs before the attempt's
+login, and a live frame of it is a pass line of the gate; and no other window comes up on that
+display until the attempt ends. In order (`rehearse.ts` `bracketAttempt`):
+
+1. **The gate tab.** The gate account logs in, runs the 60-trial in-page probe, and logs out with
+   `logoutClean`. Once the logout is confirmed:
+   - the attempt account's bare client window (its `CLIENT_URL` with `bot=<name>` and no token) is
+     put on the display, logged out and maximised (`lib/tab.ts` `stageBotTab`);
+   - then the gate's window is closed (`closeBotTabs`), and its session disconnects.
+
+   Opening the attempt's window first is what keeps Chrome up, since Chrome quits with its last
+   window. `closeBotTabs` refuses to close Chrome's last window. The gate window is closed only
+   after a confirmed logout: a closed tab is a dropped client, which the server keeps in the world
+   for up to 500 ticks. If the probe, logout, staging or close fails, the attempt is refused (exit
+   3), as a failing gate is.
+2. **The recording.** Right before the attempt's login, the harness checks that an ffmpeg x11grab
+   of `DISPLAY` writing a file is running (`lib/display.ts` `recordingState`). The operator's live
+   view is another x11grab of the display, but it serves HTTP (`-listen`), so it doesn't count. With
+   no recording, the attempt is refused (exit 3). A `(gate) recording` row records the result.
+3. **The login, then the live-frame pass line.** The attempt account logs in by re-navigating its
+   staged window. Once it is in the world, alongside its first steps (so the attempt's clock pays
+   nothing), the harness:
+   - brings the tab to the front and prefixes its title with the account name, for example
+     `cairn_smoke - 2004Scape Bot Client`. Every client page has the same title, and the prefix is
+     what tells the windows apart.
+   - reads which window is on top of the display with `xprop` (from x11-utils, which the setup
+     script installs; the twin has no xdotool), skipping the panel, the desktop and minimised
+     windows;
+   - grabs one frame of the display with ffmpeg x11grab, exactly as the recording grabs it, and
+     matches it against the page's own render (`Page.captureScreenshot`). Both are compared at 1/8
+     size, in gray, at every place the page could sit, and they match when the mean difference is
+     at most 12 of 255 (`frameShows`).
+
+   It passes when the tab's window is on top, the frame shows its page, it is Chrome's only page,
+   and its window is maximised. When the window on top or the frame shows something else, it
+   raises the tab once (minimise, restore, maximise, over CDP) and looks again. The result is a
+   `(gate) live frame` row, ok only on a pass, with the frame PNGs kept beside the log as evidence.
+   The summary also gets a `gate: live frame: PASS|FAIL|UNVERIFIED` line. A failure prints a
+   `[gate] WARNING` line and never stops the attempt. A frame of a near-flat page, such as a black
+   loading screen, is inconclusive, and that reports as unverified.
+4. **The after-probe.** It runs only once the attempt account's logout is confirmed **and** the
+   recording on the display has stopped, so the video ends on the attempt. The harness waits up to
+   10 minutes for the recording to stop. Past that, it skips the after-probe rather than open a
+   gate window on a running recording. A fresh gate session logs in, probes, logs out and closes
+   its window. The probe is also skipped when the attempt's logout was not confirmed, or when the
+   attempt paused for the gate/run (rs/213).
+
+So the recording shows the gate account's window for its before-probe, if the recording was
+already running then, and the attempt account's window from its login to its logout. Only one of
+an attempt's accounts is in the world at any moment, where before there were two for the whole
+attempt. The cost is one more gate-account login per attempt, off the attempt's clock.
 
 The lab form, for a dry run of a skill module (no browser, no gate tab, staff kit):
 
