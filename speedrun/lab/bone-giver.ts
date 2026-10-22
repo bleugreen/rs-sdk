@@ -7,7 +7,9 @@
 //     speedrun/lab/lab.sh bonelab speedrun/lab/bone-giver.ts:--loads=10
 //
 // Options: --asks=15,21,... (S18 on-request top-ups of those sizes), --loads=N (default 10), --pages=2,5 (loads followed by a held level-up page), --hold=6,
-//   --order=giver-first (default, the run's order) | receiver-first
+//   --order=giver-first (default, the run's order) | receiver-first,
+//   --givers=N: N givers (cairn_h70, h71, ...) taking turns as one group (bone-giver.ts group, S07's b01-b04),
+//   the stand-in taking each load from the group's server (boneServer)
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -25,9 +27,12 @@ const webPort = process.env.WEB_PORT ?? '9300';
 const base = mkdtempSync(join(tmpdir(), 'bone-lab-'));
 const botsDir = join(base, 'bots');
 const runDir = join(base, 'run');
-const giver = 'cairn_h70';
+const nGivers = Number(arg('givers', '1'));
+if (!Number.isInteger(nGivers) || nGivers < 1 || nGivers > 4) throw new Error('--givers must be 1-4');
+const givers = Array.from({ length: nGivers }, (_, i) => `cairn_h7${i}`);
+const giver = givers[0]!;
 const receiver = 'cairn_h75';
-for (const account of [giver, receiver]) {
+for (const account of [...givers, receiver]) {
     mkdirSync(join(botsDir, account), { recursive: true, mode: 0o700 });
     writeFileSync(
         join(botsDir, account, 'bot.env'),
@@ -45,9 +50,14 @@ const config = {
     // before the scored account (SUPPLIES.md section 5); --order=receiver-first measures the reverse.
     accounts: (() => {
         const sites = [{ giver: { x: 2913, z: 3494 }, receiver: { x: 2914, z: 3494 } }];
-        const g = { account: giver, role: 'bone-giver', options: asks.length ? { mode: 'on-request', restock: { kind: 'cheat' }, sites } : { restock: { kind: 'cheat' }, sites, trades: loads } };
-        const r = { account: receiver, role: 'bone-receiver', receiver: true, final: true, options: asks.length ? { giver, asks, pageLoads: [] } : { giver, loads, pageLoads: pages, holdTicks: hold } };
-        return arg('order', 'giver-first') === 'receiver-first' ? [r, g] : [g, r];
+        const scope = asks.length ? { step: 'S18', family: 'courier' } : { step: 'S07', family: 'bone' };
+        if (asks.length && nGivers > 1) throw new Error('--givers is for the standing mode (S07)');
+        // A group runs until the stand-in has its loads (the launcher stops everyone when the final role ends).
+        const limit = nGivers > 1 ? { group: givers } : { trades: loads };
+        const g = givers.map(account => ({ account, role: 'bone-giver', options: asks.length ? { mode: 'on-request', restock: { kind: 'cheat' }, sites, scope } : { restock: { kind: 'cheat' }, sites, scope, ...limit } }));
+        const who = nGivers > 1 ? { givers } : { giver };
+        const r = { account: receiver, role: 'bone-receiver', receiver: true, final: true, options: asks.length ? { giver, asks, pageLoads: [], scope } : { ...who, loads, pageLoads: pages, holdTicks: hold, scope } };
+        return arg('order', 'giver-first') === 'receiver-first' ? [r, ...g] : [...g, r];
     })()
 };
 const configPath = join(base, 'launch.json');
@@ -65,7 +75,7 @@ const code = await child.exited;
 clearTimeout(killer);
 
 // Both sides, line by line: the receiver's loads and pages, the giver's trades, requests and refusals.
-for (const [who, account, re] of [['receiver', receiver, /"message":"(load|page)"/], ['giver', giver, /"message":"(trade|request|bounce|phase)"/]] as const) {
+for (const [who, account, re] of [['receiver', receiver, /"message":"(load|page)"/] as const, ...givers.map(g => [`giver ${g}`, g, /"message":"(trade|request|bounce|phase|trip)"/] as const)]) {
     let text = '';
     try {
         text = readFileSync(join(runDir, 'logs', `${account}.role.log`), 'utf8');

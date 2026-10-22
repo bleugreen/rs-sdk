@@ -23,6 +23,13 @@
 //   --junk-after=N     ::give SCORED a junk item after N crafts (26 free slots: every trade fails, the
 //                      program faults); with --junk-clear it is dropped once the next program run starts,
 //                      with --junk-clear-stock once the cue carries the stock rung's first turn
+//   --arrive=tele|leg  tele (default): ::tele into the room. leg: stage at the leg's start with its runes and
+//                      Magic 37, run the real leg (air T05-06; body T20-21, the body route) through
+//                      runner/legs.ts runLeg, and start the step on the landing, so the step's first
+//                      clicks come right after the ruins' teleport (main's browser-client standard, rs/308)
+//   --hand-back        S21's hand-back: one more giver (cairn_rch1, rs/383's `handBack` option, bank restock)
+//                      staged in its own tab with only its talisman and the Lumbridge runes; the band
+//                      carries S21_HAND_BACK, so the step names it after the last craft
 //   --headless         Chrome without a window
 // The scored stand-in is the lab bot named on the lab.sh line; never the scored account.
 // Prints one RESULT line with the step's ticks and the program rows.
@@ -30,17 +37,19 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import puppeteer from 'puppeteer';
 import { closeSession, login, logoutClean, openSession, type Session } from '../lib/session';
 import { TickLog } from '../lib/ticks';
 import { waitUntil } from '../lib/wait';
 import { readCue } from '../helpers/altar-cue';
 import { programStatus } from '../lib/programs';
 import { Observation, resolveResume, runResumable, sessionLink } from '../runner/resume';
+import { BODY_ALTAR_LEGS, legById, runLeg, type LegStep } from '../runner/legs';
 import { runSteps } from '../runner/step';
+import { labClientUrl, launchLabBrowser } from './browser';
+import { mustTele } from './setup';
 import { onTutorialIsland } from '../lib/world';
 import { tutorialSkip } from '../skills/start';
-import { ALTAR_ROOMS, altarStep, craftXp, findAltar, rcLevel, rcXp, readLauncherFile, xpAfterCrafts, type AltarName, type Band, type ScheduleMode } from '../skills/runecraft';
+import { ALTAR_ROOMS, altarStep, craftXp, findAltar, rcLevel, rcXp, readLauncherFile, xpAfterCrafts, S21_HAND_BACK, type AltarName, type Band, type ScheduleMode } from '../skills/runecraft';
 
 const scored = process.argv[2];
 if (!scored) throw new Error('usage: runecraft-accept.ts <lab-scored-bot> --giver-root=DIR [...]');
@@ -56,6 +65,16 @@ const untilLevel = flag('until-level');
 const nGivers = Number(flag('givers', '3'));
 const path = flag('path');
 const headless = process.argv.includes('--headless');
+/** --hand-back: one more giver, staged with its talisman and the Lumbridge runes, trades them after the last craft (S21's H17e). */
+const handBack = process.argv.includes('--hand-back');
+const HB = 'cairn_rch1';
+/** The band's id is the cue's step: the givers read only the cue scoped to it. */
+const bandId = altar === 'air' && level === 1 && untilLevel === '44' ? 'S06' : 'LAB';
+const arrive = flag('arrive', 'tele')!;
+if (arrive !== 'tele' && arrive !== 'leg') throw new Error('--arrive must be tele or leg');
+/** The leg that lands in each room; the nature route (the Brimhaven ship) is not staged here. */
+const ARRIVAL_LEG: Partial<Record<AltarName, () => LegStep>> = { air: () => legById('T05-06'), body: () => legById('T20-21', BODY_ALTAR_LEGS) };
+if (arrive === 'leg' && !ARRIVAL_LEG[altar]) throw new Error(`--arrive=leg has no staged leg into the ${altar} room (air or body)`);
 const webPort = process.env.WEB_PORT ?? '9300';
 const agentPort = Number(process.env.AGENT_PORT ?? 8300);
 
@@ -71,7 +90,8 @@ mkdirSync(cueDir, { recursive: true, mode: 0o700 });
 process.env.RC_CUE_DIR = cueDir;
 // standalone.ts takes only cairn_ helper names (fleet-config.ts ACCOUNT_NAME_RE); these exist on the lab engine alone
 const givers = Array.from({ length: nGivers }, (_, i) => `cairn_rcg${i + 1}`);
-for (const account of givers) {
+const helpers = handBack ? [...givers, HB] : givers;
+for (const account of helpers) {
     mkdirSync(join(botsDir, account), { recursive: true, mode: 0o700 });
     writeFileSync(join(botsDir, account, 'bot.env'), `BOT_USERNAME=${account}\nPASSWORD=${randomBytes(6).toString('hex')}\nSERVER=localhost:${webPort}\nSHOW_CHAT=false\nTELEMETRY=false\nPROFANITY_FILTER=false\n`, { mode: 0o600 });
 }
@@ -80,19 +100,14 @@ const config = {
     botsDir,
     runDir,
     loginSpacingMs: 2000,
-    accounts: givers.map((account, i) => ({ account, role: 'altar-giver', ...(path ? { path } : {}), options: { altar, slot: i % 3, essence: 27, restock: { kind: 'cheat' } } }))
+    accounts: givers.map((account, i) => ({ account, role: 'altar-giver', ...(path ? { path } : {}), options: { altar, slot: i % 3, essence: 27, restock: { kind: 'cheat' }, scope: { step: bandId, family: 'altar' } } })).concat(handBack ? [{ account: HB, role: 'altar-giver', ...(path ? { path } : {}), options: { altar, slot: givers.length % 3, essence: 27, restock: { kind: 'bank' } as never, scope: { step: bandId, family: 'altar' }, handBack: S21_HAND_BACK.items.map(i => ({ ...i })) } as never }] : [])
 };
 writeFileSync(join(base, 'launch.json'), JSON.stringify(config, null, 2));
 console.log(`runecraft-accept: ${altar} from ${level}, ${cycles ? `${cycles} cycles` : `until ${untilLevel ?? 99}`}, schedule ${schedule}, ${order}, ${givers.length} givers${path ? ` (${path})` : ''}; run files in ${base}`);
 
 // the block's spare ports: the givers' loopback gateway on AGENT_PORT+5, Chrome's DevTools on WEB_PORT+5
 const cdpPort = Number(webPort) + 5;
-const browser = await puppeteer.launch({
-    headless,
-    defaultViewport: null,
-    args: ['--no-sandbox', '--window-size=800,660', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', `--remote-debugging-port=${cdpPort}`]
-});
-process.env.SPEEDRUN_CDP_URL = `http://127.0.0.1:${cdpPort}`;
+const chrome = await launchLabBrowser(scored, { headless, cdpPort });
 
 let launcher: ReturnType<typeof Bun.spawn> | null = null;
 const startGivers = async () => {
@@ -106,7 +121,7 @@ const startGivers = async () => {
     const t0 = Date.now();
     for (;;) {
         const l = readLauncherFile(runDir);
-        const ready = givers.filter(g => {
+        const ready = helpers.filter(g => {
             try {
                 const s = JSON.parse(readFileSync(join(cueDir, `giver-${g}.json`), 'utf8'));
                 return s.phase === 'ready' && s.inRoom && Date.now() - s.ms < 5000;
@@ -114,23 +129,37 @@ const startGivers = async () => {
                 return false;
             }
         });
-        if (l?.helpersReady && ready.length === givers.length) break;
+        if (l?.helpersReady && ready.length === helpers.length) break;
         if (Date.now() - t0 > 240_000) throw new Error(`givers not ready after 240 s (ready: ${ready.join(', ') || 'none'}; see ${base}/run/logs)`);
         await Bun.sleep(500);
     }
     console.log(`givers ready after ${Math.round((Date.now() - t0) / 1000)} s`);
 };
 
-// The page publishes to the gateway named in its URL; without one it uses the default port, not the lab's.
-const scoredEnv = join(process.cwd(), 'bots', scored, 'bot.env');
-const envText = readFileSync(scoredEnv, 'utf8');
-const clientUrl = `CLIENT_URL=http://localhost:${webPort}/bot?gateway=${encodeURIComponent(`ws://localhost:${agentPort}`)}`;
-writeFileSync(scoredEnv, envText.replace(/^CLIENT_URL=.*\n?/m, '').trimEnd() + `\n${clientUrl}\n`, { mode: 0o600 });
 
 let session: Session | null = null;
+/** The arrival leg's figures under --arrive=leg. */
+let legRow: Record<string, unknown> | null = null;
 const log = TickLog.open(undefined, join(base, 'ticks.jsonl'));
 let exit = 0;
 try {
+    if (handBack) {
+        // its own tab, once: out of the tutorial, then only its talisman and the runes (rs/383: 'carry them in')
+        const hbEnv = join(process.cwd(), 'bots', HB);
+        mkdirSync(hbEnv, { recursive: true, mode: 0o700 });
+        writeFileSync(join(hbEnv, 'bot.env'), readFileSync(join(botsDir, HB, 'bot.env'), 'utf8').trimEnd() + `\nGATEWAY_URL=ws://localhost:${agentPort}\nCLIENT_URL=${labClientUrl()}\n`, { mode: 0o600 });
+        console.log('hand-back giver: staging in its own tab');
+        const hb = await openSession(HB, { client: 'browser', launch: true, insecureQueryLogin: true });
+        console.log('hand-back giver: session open');
+        if (onTutorialIsland(hb.sdk.getState()?.player)) await runSteps(hb, [tutorialSkip], { log: TickLog.memory('hb'), c: {}, shouldStop: () => false, logout: async () => {} });
+        const sayHb = async (cmd: string) => { await hb.sdk.sendSay(cmd); await hb.sdk.waitForTicks(2); };
+        while (hb.sdk.getState()?.dialog.isOpen) { await hb.sdk.sendClickDialog(0); await hb.sdk.waitForTicks(1); }
+        await sayHb('::~clearinv inv');
+        for (const [obj, n] of [[TALISMAN_OBJ[altar], 1], ['lawrune', 1], ['airrune', 3], ['earthrune', 1]] as const) await sayHb(`::give ${obj} ${n}`);
+        console.log(`hand-back giver staged: ${hb.sdk.getState()!.inventory.map(i => `${i.name} x${i.count}`).join(', ')}`);
+        console.log(`hand-back giver staging logout: ${JSON.stringify(await logoutClean(hb))}`);
+        await closeSession(hb).catch(() => {});
+    }
     if (order === 'givers-first') await startGivers();
     session = await openSession(scored, { client: 'browser', launch: true, insecureQueryLogin: true });
     const sdk = session.sdk;
@@ -150,18 +179,30 @@ try {
     await say('::~clearinv inv');
     await say(`::setstat runecraft ${level}`);
     await say(`::give ${TALISMAN_OBJ[altar]} 1`);
-    await say(`::tele ${LAB_ENTER[altar]}`);
-    const inRoom = await waitUntil(sdk, s => !!findAltar(s) && rcLevel(s) === level && s.inventory.some(i => ALTAR_ROOMS[altar].talisman.test(i.name)), { maxTicks: 40 });
+    if (arrive === 'leg') {
+        // the leg's Falador teleport (1 law, 3 air, 1 water at Magic 37), staged at the leg's start, never at a click tile
+        const l = ARRIVAL_LEG[altar]!();
+        await say('::setstat magic 37');
+        for (const [obj, n] of [['lawrune', 1], ['airrune', 3], ['waterrune', 1]] as const) await say(`::give ${obj} ${n}`);
+        await mustTele(sdk, l.def.start.x, l.def.start.z);
+        if (order === 'scored-first') await startGivers();
+        const t0 = sdk.getState()!.tick;
+        const r = await runLeg(l.def, { sdk, bot: session.bot, log, session }, l.name);
+        legRow = { leg: l.def.id, ticks: sdk.getState()!.tick - t0, travelTicks: r?.ticks ?? null, expected: l.def.expected.ticks, clicks: r?.clicks ?? null };
+        console.log(`arrived by ${l.def.id}: ${JSON.stringify(legRow)}`);
+    } else await say(`::tele ${LAB_ENTER[altar]}`);
+    const inRoom = await waitUntil(sdk, s => (arrive === 'leg' || !!findAltar(s)) && rcLevel(s) === level && s.inventory.some(i => ALTAR_ROOMS[altar].talisman.test(i.name)), { maxTicks: 40 });
     if (!inRoom.ok) throw new Error('the stand-in did not reach the altar room with its talisman at the band level');
-    if (order === 'scored-first') await startGivers();
+    if (order === 'scored-first' && arrive === 'tele') await startGivers();
 
     const xp0 = rcXp(sdk.getState()!);
     const band: Band = {
-        id: altar === 'air' && level === 1 && untilLevel === '44' ? 'S06' : 'LAB',
+        id: bandId,
         altar,
         from: level,
         untilLevel: Number(untilLevel ?? 99),
-        ...(cycles ? { untilXp: xpAfterCrafts(altar, xp0, Number(cycles)) } : {})
+        ...(cycles ? { untilXp: xpAfterCrafts(altar, xp0, Number(cycles)) } : {}),
+        ...(handBack ? { handBack: S21_HAND_BACK } : {})
     };
     const fallback = flag('fallback') as 'stock' | 'none' | undefined;
     const giverWait = flag('giver-wait');
@@ -177,7 +218,7 @@ try {
         if (!s.inGame) return;
         if (reloadAfter && !reloaded && crafts() >= Number(reloadAfter)) {
             reloaded = true;
-            void browser.pages().then(ps => ps.find(p => p.url().includes(`bot=${scored}`))?.reload()).then(() => console.log(`reloaded the page after ${reloadAfter} crafts`));
+            void chrome.browser.pages().then(ps => ps.find(p => p.url().includes(`bot=${scored}`))?.reload()).then(() => console.log(`reloaded the page after ${reloadAfter} crafts`));
         }
         if (junkAfter && junked === null && crafts() >= Number(junkAfter)) {
             junked = programStatus(s)?.runId ?? 0;
@@ -232,7 +273,10 @@ try {
     const stepRow = stepRows.length ? { ticks: stepRows.reduce((n, r) => n + r.ticks, 0), ok: stepRows.every(r => r.ok) } : undefined;
     const programs = log.rows.filter(r => r.kind === 'program').map(r => ({ ok: r.ok, ticks: r.ticks, ...(r.error ? { error: r.error } : {}), ...r.meta }));
     const inventory = session?.sdk.getState()?.inventory.map(i => `${i.name}${i.count > 1 ? ` x${i.count}` : ''}`) ?? [];
-    console.log(`RESULT ${JSON.stringify({ altar, level, order, schedule, path: path ?? 'relay', givers: givers.length, stepTicks: stepRow?.ticks ?? null, stepOk: stepRow?.ok ?? false, programs, inventory, log: join(base, 'ticks.jsonl') })}`);
+    const arrival = legRow;
+    const stepStart = log.rows.find(r => !r.kind && r.step.endsWith('runecraft'))?.startTick ?? null;
+    const handBackRows = log.rows.filter(r => r.step === 'runecraft:hand-back').map(r => ({ ok: r.ok, ...(r.error ? { error: r.error } : {}), ...r.meta }));
+    console.log(`RESULT ${JSON.stringify({ handBackRows, altar, level, order, schedule, arrive, arrival, stepStart, path: path ?? 'relay', givers: givers.length, stepTicks: stepRow?.ticks ?? null, stepOk: stepRow?.ok ?? false, programs, inventory, log: join(base, 'ticks.jsonl') })}`);
     if (session) {
         await logoutClean(session).catch(() => {});
         await closeSession(session).catch(() => {});
@@ -241,6 +285,6 @@ try {
         (launcher as { kill(sig?: string): void }).kill('SIGINT');
         await Promise.race([(launcher as { exited: Promise<unknown> }).exited, Bun.sleep(20_000)]);
     }
-    await browser.close().catch(() => {});
+    await chrome.kill().catch(() => {});
 }
 process.exit(exit);

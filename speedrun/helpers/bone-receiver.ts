@@ -1,4 +1,4 @@
-// bone-receiver (role, local lab only): a stand-in for the scored account's S07
+// bone-receiver (role, a stand-in, never the scored account): a stand-in for the scored account's S07
 // step, to measure the bone giver (bone-giver.ts) from the scored side. It stands
 // on the chopping tile, writes the cue (its name hash) for the giver, buries one
 // bone every `buryEvery` ticks as the knife cycle does (so it is busy two ticks in
@@ -15,22 +15,42 @@
 //
 // Role options: giver (account, required), loads (default 8), n (23), buryEvery (3),
 //   site {x,z} (default the oak tile 2914,3494), pageLoads (default [2, 5]), holdTicks (6),
-//   asks [15, 21, ...]: S18's top-ups instead (the giver in mode on-request): before each
-//   trade write that size with writeBoneAsk, then click trade; loads = asks.length
+//   asks [15, 21, ...]: S18's top-ups instead (the giver in mode on-request): click trade,
+//   and on the frame that shows it open write that many bones as the top-up ask
+//   (altar-cue.ts writeTopUpAsk), as the Thieving module does; loads = asks.length;
+//   item (default 'Dragon bones'): the bones it takes and buries.
+//
+// On the local lab it clears its pack and teleports with staff commands. Anywhere else (the
+// demo) it uses none: it banks what it carries at Falador west, walks to the site, and raises
+// no level-up pages. There it runs only as a run-machine test account (STAND_IN_ACCOUNTS), never
+// a fleet or scored account, because it buries what it is given.
 import type { BotWorldState } from '../../sdk/types';
-import { receiveFrom } from '../lib/trade';
-import { CueWriter, cueDir, FrameLog } from './altar-cue';
-import { cheat, count, isLocalServer, labTele, pos, until, type Tile } from './altar-room';
-import { S07_SITES, writeBoneAsk } from './bone-giver';
+import { receiveFrom, tradeOf } from '../lib/trade';
+import { canonName, CueWriter, cueDir, FrameLog, scopeOption, writeTopUpAsk } from './altar-cue';
+import { altarData, altarRoomOf, cheat, count, exactItem, isLocalServer, labTele, leaveRoom, pos, standOn, until, type Tile } from './altar-room';
+import { boneServer, DEFAULT_BONE_BANK, readBoneStatuses, S07_SITES } from './bone-giver';
+import { FORBIDDEN_ACCOUNTS } from './fleet-config';
+import { closeBank, depositAllExcept, openBank, walkNear } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
 
-const BONES = /^dragon bones$/i;
+/** The run machine's test accounts (bbs ~/rs-run-machine/bots), the only ones the stand-in runs as off the lab. */
+export const STAND_IN_ACCOUNTS: ReadonlySet<string> = new Set(['cairn_h70', 'cairn_h71', 'cairn_h72', 'cairn_h75']);
+
+/** Off the lab: refuse any account but a run-machine test account. */
+export function assertDemoStandIn(account: string): void {
+    const a = canonName(account);
+    if (FORBIDDEN_ACCOUNTS.has(a) || !STAND_IN_ACCOUNTS.has(a)) {
+        throw new Error(`bone-receiver buries what it is given: off the local lab it runs only as a run-machine test account (${[...STAND_IN_ACCOUNTS].join(', ')}), never a fleet or scored account (got ${account})`);
+    }
+}
 /** How a trade request shows in the receiver's chat (lite/protocol/incoming.ts: type 4, "wishes to trade with you."). */
 const isRequestFrom = (giver: string) => (m: { type: number; text: string; sender: string }) =>
     m.type === 4 && /wishes to trade/i.test(m.text) && m.sender.toLowerCase().replace(/\s+/g, '_') === giver.toLowerCase();
 
 interface LoadResult {
     load: number;
+    /** The giver this load came from. */
+    giver?: string;
     ok: boolean;
     clickToBones: number;
     standingAtClick: boolean;
@@ -44,28 +64,66 @@ export const role: Role = {
     name: 'bone-receiver',
     produces: [],
     async run(ctx: RoleContext) {
-        if (!isLocalServer()) throw new Error('bone-receiver is a lab stand-in; it uses staff commands');
+        const lab = isLocalServer();
+        if (!lab) assertDemoStandIn(ctx.account);
         const o = ctx.options;
-        const giver = String(o.giver ?? '');
-        if (!giver) throw new Error('bone-receiver: options.giver is required');
+        const BONES = exactItem(String(o.item ?? 'Dragon bones'));
+        // One giver by name, or a group taking turns (bone-giver.ts group): then each load comes from the group's server (boneServer).
+        const givers = Array.isArray(o.givers) ? (o.givers as string[]).map(String) : null;
+        if (!!givers === (o.giver !== undefined)) throw new Error('bone-receiver: give exactly one of options.giver and options.givers');
+        const named = String(o.giver ?? '');
+        if (!givers && !named) throw new Error('bone-receiver: options.giver must name the giver');
+        let giver = named;
         const asks = Array.isArray(o.asks) ? (o.asks as number[]).map(Number) : null;
         const loads = asks ? asks.length : Number(o.loads ?? 8);
+        // The giver it stands in for reads only its own step's cue: 'courier' for the asks (S18), else 'bone' (S07).
+        const scope = scopeOption(o.scope, [asks ? 'courier' : 'bone']);
         const sizeOf = (load: number) => (asks ? asks[load]! : Number(o.n ?? 23));
         const buryEvery = Number(o.buryEvery ?? 3);
         const site: Tile = (o.site as Tile) ?? S07_SITES[0]!.receiver;
-        const pageLoads = new Set((o.pageLoads as number[]) ?? [2, 5]);
+        // A level-up page needs a staff command, so the demo raises none.
+        const pageLoads = new Set((o.pageLoads as number[]) ?? (lab ? [2, 5] : []));
+        if (!lab && pageLoads.size) throw new Error('bone-receiver: pageLoads need staff commands (local lab only)');
         const holdTicks = Number(o.holdTicks ?? 6);
         const { sdk } = ctx;
         const s = () => sdk.getState() as BotWorldState;
 
         const frames = new FrameLog();
-        const unsub = sdk.onStateUpdate(st => void frames.add(st.tick));
-        const writer = new CueWriter(cueDir(), ctx.account);
+        /** The bones to ask for once the next trade opens (asks mode). */
+        let pendingAsk: number | null = null;
+        const unsub = sdk.onStateUpdate(st => {
+            frames.add(st.tick);
+            if (pendingAsk !== null && tradeOf(st).isOpen) {
+                writeTopUpAsk(cueDir(), [{ item: BONES.source, count: pendingAsk }]);
+                pendingAsk = null;
+            }
+        });
+        const writer = new CueWriter(cueDir(), ctx.account, scope);
         const results: LoadResult[] = [];
         try {
-            await cheat(ctx, '~clearinv inv');
-            await until(ctx, st => st.inventory.length === 0, 10);
-            if (pos(s()).x !== site.x || pos(s()).z !== site.z) await labTele(ctx, site);
+            if (lab) {
+                await cheat(ctx, '~clearinv inv');
+                await until(ctx, st => st.inventory.length === 0, 10);
+                if (pos(s()).x !== site.x || pos(s()).z !== site.z) await labTele(ctx, site);
+            } else {
+                // Left in an altar room (the Runecraft stand-in uses these accounts too): out by its portal first.
+                const room = altarRoomOf(s());
+                if (room) {
+                    ctx.log('leaving the altar room', { altar: room });
+                    await leaveRoom(ctx, altarData(room));
+                }
+                // An empty pack has a load's free slots: bank what we carry at the givers' bank, then walk over.
+                if (s().inventory.length) {
+                    const bank = DEFAULT_BONE_BANK;
+                    if (!(await walkNear(ctx, bank.x, bank.z, 3))) throw new Error('could not reach Falador west bank');
+                    if (!(await openBank(ctx))) throw new Error('could not open the bank');
+                    await depositAllExcept(sdk);
+                    await closeBank(ctx);
+                    if (s().inventory.length) throw new Error(`the pack still holds ${s().inventory.length} items after the deposit`);
+                }
+                if (!(await walkNear(ctx, site.x, site.z, 2))) throw new Error(`could not reach the site ${site.x},${site.z}`);
+                await standOn(ctx, site);
+            }
             await until(ctx, () => frames.recent().length >= 4, 10);
             writer.write({ beacons: frames.recent(), turns: [] });
 
@@ -73,6 +131,15 @@ export const role: Role = {
             let requestSince = s().tick;
             for (let load = 0; load < loads && !ctx.signal.aborted; load++) {
                 // The trade, once the pack is empty (the first load starts empty) and the giver is beside us.
+                if (givers) {
+                    let server: string | undefined;
+                    const found = await until(ctx, () => (server = boneServer(readBoneStatuses(cueDir()), givers, Date.now())) !== undefined, 400);
+                    if (!found || !server) {
+                        results.push({ load, ok: false, clickToBones: 0, standingAtClick: false, reason: 'no group giver ready' });
+                        break;
+                    }
+                    giver = server;
+                }
                 const near = (st: BotWorldState) => st.nearbyPlayers.some(p => p.name.toLowerCase().replace(/\s+/g, '_') === giver.toLowerCase());
                 if (!(await until(ctx, near, 400))) {
                     results.push({ load, ok: false, clickToBones: 0, standingAtClick: false, reason: 'giver never came into sight' });
@@ -80,9 +147,9 @@ export const role: Role = {
                 }
                 const standingAtClick = s().gameMessages.some(m => m.tick >= requestSince && isRequestFrom(giver)(m));
                 const n = sizeOf(load);
-                if (asks) writeBoneAsk(cueDir(), n, load + 1);
+                if (asks) pendingAsk = n;
                 const r = await receiveFrom(sdk, giver, { want: [{ item: BONES, amount: n }], openTimeoutMs: 60_000 });
-                const res: LoadResult = { load, ok: r.ok && count(s(), BONES) >= n, clickToBones: r.ticks, standingAtClick, ...(r.reason ? { reason: r.reason } : {}) };
+                const res: LoadResult = { load, giver, ok: r.ok && count(s(), BONES) >= n, clickToBones: r.ticks, standingAtClick, ...(r.reason ? { reason: r.reason } : {}) };
                 results.push(res);
                 ctx.log('load', { ...res });
                 if (!res.ok) break;
@@ -135,6 +202,7 @@ export const role: Role = {
                 ok: done.length,
                 clickToBones: { mean: mean(done.map(r => r.clickToBones)), all: done.map(r => r.clickToBones) },
                 standingAtClick: done.filter(r => r.standingAtClick).length,
+                givers: done.map(r => r.giver ?? null),
                 buryGap: { mean: mean(done.flatMap(r => (r.buryGap === undefined ? [] : [r.buryGap]))), all: done.map(r => r.buryGap ?? null) },
                 pages: results.flatMap(r => (r.page ? [{ load: r.load, ...r.page }] : []))
             })}`

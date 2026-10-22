@@ -27,7 +27,22 @@ held. Tasks are listed in route order, so a fresh account walks its set once.
   Hitpoints below half. Helpers carry no food.
 - Options: `set`, `spare` (default true: one spare of each item where it is cheap), `only` and
   `skip` (task ids), `float` (coins carried, default 400; under 100 the account pickpockets
-  Lumbridge men back up to it).
+  Lumbridge men back up to it), `counts` (held targets by item name that replace the tasks'
+  own; a name no selected task gathers is refused at start).
+- **Bulk runs.** `counts` turns any errand into a stockpile run: the loop banks whenever the
+  pack fills and goes back until the held target is met. The Herblore secondaries line
+  (cairn://p/rs/332) uses it for snape grass:
+  `{"set":"drops","only":["snapegrass"],"counts":{"Snape grass":102}}`. The three spawns
+  respawn 30 ticks after a pickup, shortened by the server's player-count scaling
+  (`World.scaleByPlayerCount`), and the nearest booth is Falador west. The hobgoblins there
+  hunt any player of combat level up to twice theirs (56 and 84) within one tile, so a
+  10-Hitpoint coin earner is a poor fit. On the demo (2026-10-22) h96, at combat 56 and 49
+  Hitpoints, picked 100 in four trips of about 24, each about 2.5 minutes, but lost about 10
+  Hitpoints a trip. The task therefore rests at the bank under half Hitpoints (`rest()`, the
+  same rule `kill` uses: wait to 80%), which took 10-15 minutes between trips.
+- **Targets have one source.** A task's `run` reads its targets from the running task
+  (`g.target(item)`, `g.wants()`), which is the task with `counts` applied, so a run never
+  stops at a number of its own.
 
 ## Sets and sources
 
@@ -53,12 +68,86 @@ held. Tasks are listed in route order, so a fresh account walks its set once.
 | | ratmeat | raw rat meat 2 | giant rats, Lumbridge swamp (every kill) |
 | | bearmeat | raw bear meat 2 | brown bears west of Lumbridge (every kill), after Attack 20 |
 | | snapegrass | snape grass 2 | spawns on the hobgoblin peninsula, after Attack 20 |
+| far (h95) | coins, hitpoints | float; Hitpoints 30 | own pickpocket earnings, then Lumbridge cows through `kandarin.ts` |
+| | monkeybones | monkey bones 2 | monkeys west of Musa Point |
+| | jiminua | torch 2, rope 2, spade 2 | Jiminua's jungle store, Karamja; the unlit torch is named **Torch** in game |
+| | swamppaste | swamp paste 2 | Port Khazard general store |
+| | wool | ball of wool 2 | Aemad's Adventuring Supplies, East Ardougne |
+| | gnome | dwellberries 2, chocolate dust 2 | Heckel Funch, with Hudo as fallback; Grand Tree first floor |
+| | planks | plank 4 | four ground spawns at the Barbarian Outpost; three needed for H22 |
+| carp (h97) | coins, hitpoints | float; Hitpoints 30 | own pickpocket earnings, then Lumbridge cows |
+| | garlic | garlic 2 while carp is short | Morgan's upstairs cupboard, Draynor |
+| | rod, fishing | fishing rod 1; Fishing 10 | Gerrant's rod; tutorial net at Musa Point |
+| | spade, pass | spade 1, fishing pass 1 | Jiminua; mountain dwarf at the Kandarin end of the tunnel |
+| | worms | one red vine worm per missing carp | McGrubor's Wood, through the loose railing, with a spade |
+| | carp | raw giant carp 2 | Hemenster contest, pipe spot; quit before the third catch |
 
-Not yet in a set: the Karamja and Ardougne errands (unlit torch, rope and spade from
-Jiminua's jungle store, monkey bones, swamp paste from the Port Khazard general store, ball
-of wool, dwellberries and chocolate dust from the Gnome Stronghold, the three planks at the
-Barbarian Outpost) and the Fishing Contest carp helper (h97). The gold bar and the 12 steel
-nails come from the bars role (cairn://p/rs/119), which has the Smithing for them.
+Run the new sets with `{"set":"far"}` and `{"set":"carp"}`. Turning `spare` off
+uses the quest's exact item counts, including three planks and one carp.
+
+### Overseas travel and banking
+
+`speedrun/lib/ships.ts` owns the four 30-coin voyages between Port Sarim and Musa
+Point, and Brimhaven and Ardougne, including disembarking across the gangplank.
+Both sets earn their own fares and sail rather than crossing White Wolf Mountain.
+The gatherer chooses banks on its current land mass and carries tools and fares
+through Karamja, which has no bank in its bank table. It does not sail back merely
+to satisfy another task's carry list. Any Al Kharid toll crossing uses `travelTo`.
+
+`speedrun/lib/passages.ts` routes through the scripted Stronghold gate and Grand
+Tree doors that ordinary pathfinding treats as solid. Upstairs shops name their
+ladder approach. Leaving the grocers first returns to the central landing because
+the down ladder is outside the shop's scan radius.
+
+The Stronghold gate is busy on the demo. Every crossing, by anyone, deletes the
+closed gate for 5 ticks (`gnome_gate.rs2`), and with other players going both ways
+it was clickable in only 45 of 118 observed ticks. A crossing therefore waits up to
+30 ticks for the gate to show and clicks up to six times; one empty scan means
+nothing.
+
+### Keeping the carp
+
+**The raw giant carp is not tradeable** (`server/content/scripts/skill_fishing/configs/fishing.obj`, `[raw_giant_carp]` `tradeable=no`; the red vine worm and the fishing pass are untradeable too). On the demo, h97's two carp could not be handed to mule1: the offer arrived empty both times. So the scored account catches its own carp, and helpers stage only garlic, rod, bait, coins and a spade for H16 (rs/158, 2026-10-22). The `carp` set below still works and documents the contest, but what it produces cannot reach the scored account.
+
+The helper banks existing carp and all
+bait before each trip, then withdraws **at most two red vine worms and no ordinary
+bait**. The contest decision function counts catches from worms consumed and
+chooses to leave at two, or immediately if a restarted round's count is unknown.
+Every normal exit answers Bonzo's quit dialogue at the gate; it never offers him
+the catch. Consumed garlic is not replenished after the carp target is met.
+
+The rules behind this, from `hemenster_fishing.rs2` and `bonzo.rs2`: paying sets the
+contest stage to 1, each catch adds one, and at stage 4 (the third catch) Bonzo takes
+every carp carried. Leaving through the gate resets the stage to 0 only while Bonzo
+is within 12 tiles, which he always is, since he stands by the gate. Talking to Bonzo
+mid-round also hands over the catch, so the helper talks to him only to pay.
+
+**The garlic pipe.** The `garlicpipe` loc sits on three fence tiles, 2636-2638 at
+z 3446. It is a straight wall decoration, and the engine only lets you use an item on
+that shape from the loc's own tile (`ReachStrategy.reachWallDecor1`). 2636 and 2637
+are lake, so the helper stands on 2638,3446 and uses the garlic on the pipe there.
+The stash is a permanent flag (`%hemenster_pipe_stashed`): after the first one,
+paying Bonzo puts you beside the pipes at once, with no more garlic.
+
+### Gold, nails and staging
+
+The smithing account cairn_h20 supplied one gold bar and 12 steel nails (named
+**Nails**, item 1539) to h94. The gold bar did not come from h80: its jewellery
+targets were complete and it had no spare bar.
+
+On 2026-10-22, h94's southwest stock including spares, Gold bar 1 and Nails 12, and
+h96's Goblin mail 4, Raw rat meat 2 and Raw bear meat 2 were delivered to
+**cairn_mule1** for staging. Each one-shot handover was checked against both its
+sender ledger and the receiver's exact bank deltas. Both donors were logged out
+afterwards. h96's 102 snape grass had already been staged separately by rs/331.
+The fresh h94 bank had no planks; those remain the far set's responsibility.
+
+The far set followed the same way: h95's handover `rs173-h95-mule1-20261022T1150Z`
+gave mule1 monkey bones, torch, rope, spade, swamp paste, ball of wool, dwellberries
+and chocolate dust (2 each) and plank 4. It started at the Ardougne north bank, and
+`crossKandarin` took it over White Wolf Mountain before it withdrew anything, so
+nothing staged was carried across. From login to delivery took 3 minutes.
+Details and delivery ids are on [rs/173](cairn://p/rs/173).
 
 ## Measured in the lab (local engine, 300 ms ticks, 25x xp)
 
@@ -71,6 +160,11 @@ nails come from the bars role (cairn://p/rs/119), which has the Smithing for the
 | Woad 4, mind bomb 2 | 133 | |
 | Crafting 1 to 8 and the bowl, from 7 soft clay | 191 | |
 | Onions, woad, berries and Aggie's dyes (no spares), from Lumbridge | 802 | |
+| Ardougne south bank to the gnome grocer; buy 2 dwellberries and 2 chocolate dust | 263 | focused lab, funded fixture; includes Femi's first-entry dialogue |
+| Grocer to the Barbarian Outpost; collect 4 planks | 254 | returns to the central ladder, then through both scripted passages |
+| Outpost to Seers' bank; deposit the far items | 207 | focused lab ends at `done`, all 8 items banked |
+| Catherby to McGrubor's Wood; dig 2 red vine worms | 187 | through the loose railing |
+| Worms to Hemenster, one round, 2 carp banked | 341 | enter, pay, garlic at 2638,3446, two catches, quit through Bonzo, bank at Seers'; the contest stage ends at 0 |
 
 ## On the demo (bbs, gateway 7762)
 
@@ -80,6 +174,15 @@ Both sets ran to `done` unattended on 2026-10-21, each from a fresh account with
 |---|---|---|---|---|
 | cairn_h94 | southwest | 42 min, including one restart for a code fix | knife 2, bucket of water 5, bucket of milk 3, egg 2, logs 7, pot of flour 2, banana 6, raw beef 2, raw chicken 2, fishing rod 2, fishing bait 5, lobster pot 2, copper ore 5, iron ore 3, clay 7, soft clay 1, wizard's mind bomb 2, unfired bowl 2, silk 2, cadava berries 2, orange dye 2, blue dye 2 | one "Mining operation was rejected" on iron, one barmaid dialogue that did not open |
 | cairn_h96 | drops | 26 min | goblin mail 4, raw rat meat 2, raw bear meat 2, snape grass 2 | none |
+
+The far set ran on 2026-10-22 on cairn_h95, from its own dev copy (gateway 7764):
+
+| Account | Set | Wall time | Final holdings | Errors |
+|---|---|---|---|---|
+| cairn_h95 | far | 95 min: 39 min to everything except the grocers, then the gnome task parked twice on the busy gate until the wait fix, one restart to deploy it, and 4 min to `done` | Hitpoints 30, monkey bones 2, torch 2, rope 2, spade 2, swamp paste 2, ball of wool 2, dwellberries 2, chocolate dust 2, plank 4 | the gate (above) |
+
+In that run, coins took 17 minutes and Hitpoints 30 took 15. The Karamja, Port
+Khazard, Ardougne and Barbarian Outpost errands took 7 minutes together.
 
 The four goblin mails took 154 goblin kills, an unlucky run (at 5 in 128 four mails average
 about 102 kills), which left the account at about 46 Attack, Strength and Defence. The rats, bears and snape grass
@@ -99,3 +202,11 @@ then took under three minutes together.
 - **Spawns behind closed doors:** the spade spawns in Falador (inside a house) and Draynor
   Manor are unreachable to the pathfinder. A pickup gives up after five misses.
 - **Lab fixtures:** `::give onion 4` gives one onion, so test the dyes from real onions.
+  A given fishing pass does not start Fishing Contest; set `fishingcompo` to 1 with
+  `::setvar`, or Bonzo never takes the fee.
+- **A missing loc is not always gone for good.** Scripted gates and doors that swap
+  themselves out on use disappear for a few ticks whenever another player crosses.
+  Wait for them rather than failing on one scan.
+- **Wall decorations are used from their own tile.** A use on a straight wall decoration
+  reports success and then does nothing unless the player stands on the loc's tile. Pick
+  a copy of the loc that sits on a walkable tile.

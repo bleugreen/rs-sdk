@@ -4,6 +4,7 @@
 // (altar-receiver.ts). Mechanics: docs/speedrun/skills/runecraft.md section 4.
 import type { BotWorldState, InventoryItem, NearbyLoc } from '../../sdk/types';
 import { ALTARS } from '../lib/runecraft';
+import type { HandBackItem } from './altar-cue';
 import { withdrawMany } from '../lib/bank';
 import { waitUntil } from '../lib/wait';
 import { closeBank, depositAllExcept, openBank, walkNear } from './mule';
@@ -65,6 +66,12 @@ export function inRoom(s: BotWorldState | null | undefined, altar: Altar): boole
     return p.level === altar.enter.level && Math.max(Math.abs(p.x - altar.enter.x), Math.abs(p.z - altar.enter.z)) <= 24;
 }
 
+/** The route altar whose room the player stands in, or null: a helper left in a room can't walk out of it. */
+export function altarRoomOf(s: BotWorldState | null | undefined): AltarName | null {
+    for (const name of Object.keys(ROUTE_ALTARS) as AltarName[]) if (inRoom(s, altarData(name))) return name;
+    return null;
+}
+
 export function isLocalServer(server = process.env.SERVER ?? ''): boolean {
     return /^(localhost|127\.)/.test(server);
 }
@@ -87,6 +94,11 @@ export function count(s: BotWorldState | null | undefined, re: RegExp): number {
 /** The first carried slot holding the item itself (never a note). */
 export function findItem(s: BotWorldState | null | undefined, re: RegExp): InventoryItem | undefined {
     return s?.inventory.find(i => real(i, re));
+}
+
+/** Every carried slot holding the item itself (never a note), in slot order. */
+export function carriedSlots(s: BotWorldState | null | undefined, re: RegExp): InventoryItem[] {
+    return (s?.inventory ?? []).filter(i => real(i, re)).sort((a, b) => a.slot - b.slot);
 }
 
 /**
@@ -163,6 +175,54 @@ export interface RestockOptions {
     restockAt?: Tile;
     /** Local lab only: create missing essence and talismans with staff commands instead of waiting for supplies. */
     labStock?: boolean;
+    /**
+     * bank only: the hand-back giver's items. When the bank holds less than a load of essence
+     * and every one of these, the trip is runes-only: the talisman and exactly these, no essence
+     * (bankWithdrawals).
+     */
+    handBack?: readonly HandBackItem[];
+    /**
+     * Local lab only: on this process's first bank visit, staff-give this much noted essence and
+     * these items (by staff-give name) into the pack, so the visit banks them and every withdrawal
+     * from then on is a real one (labStock instead conjures each load at the bank).
+     */
+    labSeed?: { essence: number; items?: { obj: string; n: number }[] };
+}
+
+/** Accounts this process has seeded (RestockOptions.labSeed): once each. */
+const seeded = new Set<string>();
+
+/** The item by its exact name (any case): a rune name must not match another rune. */
+export function exactItem(name: string): RegExp {
+    return new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+}
+
+/** Every hand-back item is carried in at least its count. */
+export function holdsItems(s: BotWorldState | null | undefined, items: readonly HandBackItem[]): boolean {
+    return items.length > 0 && items.every(i => count(s, exactItem(i.item)) >= i.n);
+}
+
+/**
+ * What one bank visit withdraws, after everything but one talisman went in: the talisman if
+ * none is carried, and either a load of essence or, for a hand-back giver whose bank can't make a
+ * load any more but holds every hand-back item, exactly those items (a runes-only trip). Empty
+ * specs: the bank is short.
+ */
+export function bankWithdrawals(
+    bank: readonly { name: string; count: number }[],
+    s: BotWorldState | null | undefined,
+    altar: Pick<Altar, 'talisman'>,
+    o: Pick<RestockOptions, 'essence' | 'handBack'>
+): { specs: { item: RegExp; n: number }[]; runesOnly: boolean } {
+    const bankHas = (re: RegExp) => bank.filter(i => re.test(i.name)).reduce((n, i) => n + i.count, 0);
+    const specs: { item: RegExp; n: number }[] = [];
+    if (count(s, altar.talisman) < 1 && bankHas(altar.talisman) > 0) specs.push({ item: altar.talisman, n: 1 });
+    const want = o.essence - count(s, ESSENCE);
+    if (want <= 0) return { specs, runesOnly: false };
+    if (bankHas(ESSENCE) >= want) return { specs: [...specs, { item: ESSENCE, n: want }], runesOnly: false };
+    const hb = o.handBack ?? [];
+    if (hb.length && hb.every(i => bankHas(exactItem(i.item)) >= i.n)) return { specs: [...specs, ...hb.map(i => ({ item: exactItem(i.item), n: i.n }))], runesOnly: true };
+    return { specs, runesOnly: false };
 }
 
 /** A staff command; refused anywhere but the local lab. */
@@ -185,10 +245,14 @@ export async function labTele(ctx: Pick<RoleContext, 'sdk'>, to: Tile & { level?
     await until(ctx, s => pos(s).x === x && pos(s).z === z, 10);
 }
 
-/** Make sure exactly the talisman and `essence` rune essence are carried, by the configured route. Leaves the room first if needed. */
+/**
+ * Make sure exactly the talisman and `essence` rune essence are carried, by the configured route,
+ * or for a hand-back giver whose essence has run out, the talisman and its hand-back items
+ * (bankWithdrawals). Leaves the room first if needed.
+ */
 export async function restock(ctx: RoleContext, altar: Altar, o: RestockOptions, phase: (detail: string) => void): Promise<void> {
     const s = () => ctx.sdk.getState();
-    const loaded = () => count(s(), ESSENCE) >= o.essence && count(s(), altar.talisman) >= 1;
+    const loaded = () => (count(s(), ESSENCE) >= o.essence || (!!o.handBack && holdsItems(s(), o.handBack))) && count(s(), altar.talisman) >= 1;
     if (loaded()) return;
 
     if (o.kind === 'cheat') {
@@ -222,15 +286,25 @@ export async function restock(ctx: RoleContext, altar: Altar, o: RestockOptions,
     while (!loaded() && !ctx.signal.aborted) {
         phase(`banking at ${bank.x},${bank.z}`);
         if (!(await walkNear(ctx, bank.x, bank.z, 3))) throw new Error('could not reach the bank');
+        if (o.labSeed && isLocalServer() && !seeded.has(ctx.account)) {
+            seeded.add(ctx.account);
+            const before = s()?.inventory.length ?? 0;
+            // A fresh lab account carries no talisman: seed one (the run's givers are staged with theirs).
+            const gives = [
+                ...(count(s(), altar.talisman) < 1 ? [{ obj: altar.talismanObj, n: 1 }] : []),
+                ...(o.labSeed.essence > 0 ? [{ obj: 'cert_blankrune', n: o.labSeed.essence }] : []),
+                ...(o.labSeed.items ?? [])
+            ];
+            for (const g of gives) await cheat(ctx, `give ${g.obj} ${g.n}`);
+            await until(ctx, st => st.inventory.length >= before + gives.length, 10);
+            phase(`lab: seeded the bank with ${gives.map(g => `${g.n} ${g.obj}`).join(', ')}`);
+        }
         if (!(await openBank(ctx))) throw new Error('could not open the bank');
         // Keep one talisman; everything else (runes, notes, spare talismans) goes in. Notes come back out unnoted.
         const talisman = findItem(s(), altar.talisman);
         await depositAllExcept(ctx.sdk, talisman ? new Map([[talisman.id, 1]]) : new Map());
-        const bankHas = (re: RegExp) => ctx.sdk.getBankItems().filter(i => re.test(i.name)).reduce((n, i) => n + i.count, 0);
-        const specs = [];
-        if (count(s(), altar.talisman) < 1 && bankHas(altar.talisman) > 0) specs.push({ item: altar.talisman, n: 1 });
-        const want = o.essence - count(s(), ESSENCE);
-        if (want > 0 && bankHas(ESSENCE) >= want) specs.push({ item: ESSENCE, n: want });
+        const { specs, runesOnly } = bankWithdrawals(ctx.sdk.getBankItems(), s(), altar, o);
+        if (runesOnly) phase('runes-only trip: the essence has run out, taking the hand-back');
         if (specs.length) {
             const w = await withdrawMany(ctx.sdk, specs);
             if (!w.ok) ctx.log('withdraw incomplete', { reason: w.reason });

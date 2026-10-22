@@ -8,23 +8,30 @@ import {
     assertUntracked,
     canonName,
     chooseTurn,
+    cueAddresses,
     CueWatcher,
     CueWriter,
     cycleTicks,
     FrameLog,
     giverSteps,
     judgeTick,
+    MissBench,
     nameHash,
+    STATUS_FRESH_MS,
     STOCK_MIN_TICKS,
     STOCK_WINDOW,
+    turnOrder,
     readCue,
     readStatuses,
     resolveOffset,
+    scopeOption,
     scoredSteps,
     turnKey,
     writeStatus,
     type Beacon,
-    type Cue
+    type Cue,
+    type CueFamily,
+    type CueScope
 } from './altar-cue';
 
 const frames = (ticks: number[], ms0: number, step = 300, jitter: (i: number) => number = () => 0): Beacon[] =>
@@ -32,6 +39,7 @@ const frames = (ticks: number[], ms0: number, step = 300, jitter: (i: number) =>
 
 const cue = (over: Partial<Cue> = {}): Cue => ({
     v: 1,
+    scope: { step: 'S06', family: 'altar' },
     session: 's1',
     seq: 1,
     receiver: { sha256: nameHash('stand_in') },
@@ -174,6 +182,58 @@ describe('turns', () => {
     });
 });
 
+describe('MissBench', () => {
+    test('a failed turn skips its giver until it reports ready after the turn was named', () => {
+        const b = new MissBench();
+        b.miss('Cairn H71', 5_000);
+        // its status from before the turn (a dead client: the file stops changing)
+        expect(b.skips({ account: 'cairn_h71', readyAt: 4_000 })).toBe(true);
+        expect(b.skips({ account: 'cairn_h71', readyAt: null })).toBe(true);
+        expect(b.skips({ account: 'cairn_h71', readyAt: 5_000 })).toBe(true);
+        expect(b.skips({ account: 'cairn_h70', readyAt: 1 })).toBe(false);
+        expect(b.benched).toEqual(['cairn_h71']);
+        // ready again after the turn (a live giver's result, or a relaunched process): lifted for good
+        expect(b.skips({ account: 'cairn_h71', readyAt: 5_001 })).toBe(false);
+        expect(b.skips({ account: 'cairn_h71', readyAt: 4_000 })).toBe(false);
+        expect(b.benched).toEqual([]);
+    });
+
+    test('a later miss moves the bar; a turn no cue carried benches nobody', () => {
+        const b = new MissBench();
+        b.miss('g1', 5_000);
+        b.miss('g1', 7_000);
+        b.miss('g1', 6_000);
+        expect(b.skips({ account: 'g1', readyAt: 6_500 })).toBe(true);
+        expect(b.skips({ account: 'g1', readyAt: 7_001 })).toBe(false);
+        b.miss('g2', undefined);
+        expect(b.skips({ account: 'g2', readyAt: 1 })).toBe(false);
+    });
+});
+
+describe('turnOrder: the one turn-taking rule of both giver families', () => {
+    const now = 100_000;
+    const c = (account: string, readyAt: number | null, extra: { ms?: number; holding?: boolean; ok?: boolean } = {}) => ({ account, readyAt, ms: extra.ms ?? now - 1_000, holding: !!extra.holding, ok: extra.ok ?? true });
+    const names = (xs: { account: string }[]) => xs.map(x => x.account);
+    const rule = { eligible: (x: { ok: boolean }) => x.ok, holding: (x: { holding: boolean }) => x.holding };
+
+    test('current, eligible candidates: those holding the turn first, then oldest ready, then by name', () => {
+        const order = turnOrder([c('b03', 500), c('b02', 300), c('b04', 300), c('b01', 900, { holding: true })], now, rule);
+        expect(names(order)).toEqual(['b01', 'b02', 'b04', 'b03']);
+    });
+
+    test('a stale heartbeat or an ineligible candidate is out; an unknown readyAt goes last', () => {
+        const order = turnOrder([c('b01', 100, { ms: now - STATUS_FRESH_MS - 1 }), c('b02', 200, { ok: false }), c('b03', null), c('b04', 400)], now, rule);
+        expect(names(order)).toEqual(['b04', 'b03']);
+    });
+
+    test('a giver benched after a failed turn (MissBench) is skipped until it reports ready again', () => {
+        const bench = new MissBench();
+        bench.miss('b01', 1_000);
+        expect(names(turnOrder([c('b01', 900), c('b02', 950)], now, { ...rule, bench }))).toEqual(['b02']);
+        expect(names(turnOrder([c('b01', 1_001), c('b02', 950)], now, { ...rule, bench }))).toEqual(['b02', 'b01']);
+    });
+});
+
 describe('names', () => {
     test('hash of the display name equals hash of the login name', () => {
         expect(nameHash('Cairn H75')).toBe(nameHash('cairn_h75'));
@@ -183,18 +243,90 @@ describe('names', () => {
     });
 });
 
+const S06_ALTAR: CueScope = { step: 'S06', family: 'altar' };
+
+describe('cue scopes', () => {
+    test('a cue addresses only its own step and family; a cue without a scope addresses nobody', () => {
+        expect(cueAddresses(cue(), 'S06', 'altar')).toBe(true);
+        expect(cueAddresses(cue(), 'S21', 'altar')).toBe(false);
+        expect(cueAddresses(cue(), 'S06', 'bone')).toBe(false);
+        expect(cueAddresses({ ...cue(), scope: undefined } as unknown as Cue, 'S06', 'altar')).toBe(false);
+        expect(cueAddresses(null, 'S06', 'altar')).toBe(false);
+    });
+
+    test('the writer refuses a missing or malformed scope', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'rc-cue-'));
+        expect(() => new CueWriter(dir, 'x', undefined as unknown as CueScope)).toThrow(/scope \{ step, family \} is required/);
+        expect(() => new CueWriter(dir, 'x', { step: '', family: 'altar' })).toThrow(/needs a step/);
+        expect(() => new CueWriter(dir, 'x', { step: 'S07', family: 'bones' as CueFamily })).toThrow(/family must be one of/);
+    });
+
+    test("a role's scope option must name a family the role serves", () => {
+        expect(scopeOption({ step: 'S07', family: 'bone' }, ['bone'])).toEqual({ step: 'S07', family: 'bone' });
+        expect(() => scopeOption({ step: 'S07', family: 'courier' }, ['bone'])).toThrow(/scope.family must be bone/);
+        expect(() => scopeOption(undefined, ['altar'])).toThrow(/^scope: a cue scope/);
+    });
+
+    test("S06's stop is invisible to an S07 bone and an S18 courier watcher; an S06 altar watcher stops on it; each foreign scope is logged once", async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'rc-cue-'));
+        const seen: Record<string, Cue[]> = { altar: [], bone: [], courier: [] };
+        const logs: Record<string, string[]> = { altar: [], bone: [], courier: [] };
+        const watch = (k: 'altar' | 'bone' | 'courier', scope: CueScope) => new CueWatcher(dir, scope, c => seen[k]!.push(c), { pollMs: 5, log: m => logs[k]!.push(m) });
+        const watchers = [watch('altar', S06_ALTAR), watch('bone', { step: 'S07', family: 'bone' }), watch('courier', { step: 'S18', family: 'courier' })];
+        const w = new CueWriter(dir, 'scored', S06_ALTAR);
+        w.addTurn({ giver: 'cairn_h70', T: 10 }, [{ tick: 3, ms: 1 }]);
+        await Bun.sleep(30);
+        w.stop([{ tick: 4, ms: 2 }]);
+        await Bun.sleep(30);
+        expect(seen.altar!.at(-1)!.stop).toBe(true);
+        expect(seen.bone).toEqual([]);
+        expect(seen.courier).toEqual([]);
+        expect(logs.bone).toEqual(['cue ignored: addressed to another step or family']);
+        expect(logs.courier).toEqual(['cue ignored: addressed to another step or family']);
+        expect(logs.altar).toEqual([]);
+
+        // S07's own cue, written after S06's stop, reaches the bone watcher and only it.
+        new CueWriter(dir, 'scored', { step: 'S07', family: 'bone' }).write({ beacons: [{ tick: 5, ms: 3 }], turns: [] });
+        await Bun.sleep(30);
+        expect(seen.bone!.map(c => [c.scope.step, !!c.stop])).toEqual([['S07', false]]);
+        expect(seen.altar!.every(c => c.scope.step === 'S06')).toBe(true);
+        for (const x of watchers) x.close();
+    });
+
+    test('a cue without a scope is refused, logged once, and never reaches the role', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'rc-cue-'));
+        const seen: Cue[] = [];
+        const logs: string[] = [];
+        const watcher = new CueWatcher(dir, S06_ALTAR, c => seen.push(c), { pollMs: 5, log: m => logs.push(m) });
+        const { scope: _scope, ...legacy } = cue({ stop: true });
+        writeFileSync(join(dir, 'cue.json'), JSON.stringify(legacy));
+        await Bun.sleep(30);
+        writeFileSync(join(dir, 'cue.json'), JSON.stringify({ ...legacy, seq: 2 }));
+        await Bun.sleep(30);
+        watcher.close();
+        expect(seen).toEqual([]);
+        expect(logs).toEqual(['cue refused: cue.json has no scope { step, family }']);
+    });
+
+    test('the watcher refuses to start without a scope', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'rc-cue-'));
+        expect(() => new CueWatcher(dir, undefined as unknown as CueScope, () => {})).toThrow(/CueWatcher: a cue scope/);
+    });
+});
+
 describe('files', () => {
     test('writer, watcher and status files round-trip, and the cue never holds the name', async () => {
         const dir = mkdtempSync(join(tmpdir(), 'rc-cue-'));
         const seen: Cue[] = [];
-        const watcher = new CueWatcher(dir, c => seen.push(c), 5);
-        const w = new CueWriter(dir, 'secret_name');
+        const watcher = new CueWatcher(dir, S06_ALTAR, c => seen.push(c), { pollMs: 5 });
+        const w = new CueWriter(dir, 'secret_name', S06_ALTAR);
         w.addTurn({ giver: 'cairn_h70', T: 10 }, [{ tick: 3, ms: 1 }]);
         w.addTurn({ giver: 'cairn_h71', T: 17 }, [{ tick: 4, ms: 2 }]);
         await Bun.sleep(60);
         watcher.close();
         const read = readCue(dir)!;
         expect(read.seq).toBe(2);
+        expect(read.scope).toEqual(S06_ALTAR);
         expect(read.turns.map(t => t.giver)).toEqual(['cairn_h70', 'cairn_h71']);
         expect(JSON.stringify(read)).not.toContain('secret');
         expect(read.receiver.sha256).toBe(nameHash('Secret Name'));

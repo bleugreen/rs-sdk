@@ -123,7 +123,7 @@ that trade belongs to the quest plan.
 - **Hard leather body** is the one leather item crafted directly: `[opheldu,hard_leather]` with a
   needle calls `@craft_leather(hardleather_body, 1)`, which makes it at once without the queue
   every other leather item uses (`leather.rs2:36,47-48,116-134`). One thread per 5 bodies.
-  Not measured; inferred to run like gems (26 per inventory with needle and thread).
+  Measured since in the module (section 9): 26 per inventory, 7.0 ticks per inventory.
 - **Level-up boxes.** OPHELDU closes the chat modal, so cutting never stalls. At a bank visit
   each pending level-up (a queued `p_pausebutton` script, `levelup.rs2`) holds the booth for a
   tick; the 14-23 tick gaps in the runs are bursts that crossed several levels at once.
@@ -200,8 +200,13 @@ Fallback lists (from 42):
   30 elemental runes each, so **828 cosmic runes** (GE: 370 ever traded, no sellers now) and
   276 unpowered orbs (molten glass + glassblowing pipe, Crafting 46).
 - **Diamonds only**: 364 uncut diamonds, chisel.
-- **Hard leather bodies**: about 1,120 hard leather (cowhides tanned by a helper; cows are
-  everywhere; GE cowhides last traded at 100 gp), 1 needle, about 225 thread. Supply-safe.
+- **Hard leather bodies**: 954 hard leather per attempt (928 bodies to the hand-off plus a spare
+  inventory; 1,142 for the standalone 45 to 99), 1 needle, and floor((n-1+4)/5)+1 thread for n
+  bodies (section 9: 187 to the hand-off, 224 to 99). There is no GE market for hard leather and
+  only a handful of cowhides (2026-10-22), so the `hides` helper role takes cowhides in the
+  Lumbridge fields and has the Al Kharid tanner tan them at 3 gp each: about 250-585 leather per
+  account-hour, measured ([helpers/hides.md](../helpers/hides.md)). Staged for attempt 1 on
+  cairn_mule1: 1,169 leather, 250 thread, 2 needles. Supply-safe.
 
 **Hand-off.** One trade of noted gems (1-3 stacks) plus the chisel, deposited at the training
 booth. The scored account must stand at a bank for the cycle.
@@ -212,6 +217,89 @@ booth. The scored account must stand at a bank for the cycle.
   cosmic runes (828 for orbs) are the next constraints. The helper-supply issues under rs/41
   should price each line in helper-hours; the scored-account cost difference is only about 20
   ticks between dragonstone, battlestaves and diamonds.
-- **Hard leather cadence** is inferred from the gem cycle, not measured.
+- **Hard leather cadence**: measured, section 9 (7.0 ticks per 26 on the browser client).
 - **Crafting before Dwarf Cannon** would speed the railings; that trade is for the quest plan.
 - **Production latency** not measured; late packets slip a tick, they are not dropped.
+
+## 9. Module: `speedrun/skills/crafting.ts` (S25d, STEP-MANIFEST.md entry 28)
+
+**The line in force is hard leather bodies, not gems.** The fleet can't source the diamonds by
+run day, and every gem it holds goes to S25c's wine windows (rs/158's ruling, 2026-10-22). S25d
+makes hard leather bodies from Crafting 45 (Dwarf Cannon's 750 plus Goblin Diplomacy's 200 base)
+and **stops at `CRAFTING_HANDOFF_XP`**, not 99. The windows' gems (6,567.5 base) then carry
+Crafting to 99 in S25c.
+
+**The hand-off constant** is defined once, in `crafting.ts`, and `cooking.ts` imports it:
+`CRAFTING_HANDOFF_XP = xpForLevel(99) - WINDOW_GEM_BASE_XP x XP_RATE` = 834,270.5 game xp
+(33,370.82 base, Crafting 96). The stop is the step option `untilXp`, which defaults to the
+hand-off. `CRAFTING_99_XP` is the standalone stop.
+
+**Mechanics read from this server's content** (crafting.test.ts checks each one):
+
+- `craft_hardleather_body` (leather.dbrow) needs level 28 and gives 350 tenths, which is 35 base and
+  875 game xp. Needle on hard leather calls `@craft_leather(hardleather_body, 1)`, which makes the
+  body at once: no make-X interface, no delay. It is one OPHELDU, one user event, so 5 a tick.
+- **Thread.** One is worn out every 5th body (`%thread_used > 4`). The varp is `scope=perm` and not
+  transmitted, so the module assumes the worst case, 4. Before body n it needs
+  floor((n - 1 + 4) / 5) + 1 thread: 6 for a load of 26, 187 for 928 bodies. With no thread, the
+  content opens an objbox and makes nothing.
+- Needle and thread both stack, so a load is 28 - 2 = **26**.
+- From 45: **928 bodies** to the hand-off, 1,116 to 99. Per attempt: 954 hard leather (928 plus a
+  spare inventory), at least 187 thread and 1 needle. rs/350 stages 1,142 leather and 230 thread.
+
+**How it runs.** It uses the page's item-cycle program in tool mode (needle as the tool), with two
+opt-in additions to the program (item-cycle.ts):
+
+- **`keep`, on a recipe.** Items held beside the tool through every visit. They are never
+  deposited, and they are withdrawn All when missing. The thread is `{ id, every: 5 }`. When the
+  thread held can't cover the load at the worst-case wear, the same visit withdraws the bank's
+  stack ahead of the leather. If there's none to withdraw, the load shrinks to what the thread
+  covers. A worn-out stack seen with actions still unsent closes the objbox and faults `out of
+  obj 1734 mid-load` instead of stalling.
+- **`stow`.** At the stop, the booth click rides with the last bodies and one more visit deposits
+  everything: bodies, needle and thread. S25e (Herblore) then starts with 28 free slots, which is
+  rs/158's slot ledger.
+
+The step passes an **exact `maxActions`** = ceil((untilXp - xp) / 875), counted from the state it
+starts or resumes in, so the last withdraw holds only the bodies the stop needs. The body that
+reaches `untilXp` is the last one. `done` means the stop is reached *and* the cycle is stowed
+(no needle, leather or bodies held). A logout between the last body and the stow therefore
+resumes, and the program only stows.
+
+**Preconditions** return a reason and never throw:
+
+- Crafting at least 28, and the booth in view.
+- The free-slot rule: `N other items (...): need 28 free slots`. The cycle's own items and their
+  notes don't count. Neither do H21d/H21e's stacks that the first visit banks: the chisel, uncut
+  gem notes and herb notes.
+- Leather short (judged when the notes are held or the bank is open).
+- Thread short of `threadFor(bodies)` (judged with the bank open).
+
+**Measured** (bgsrv-mac, browser client, in page, `NODE_TICKRATE=300`, load 3.5-5.6 on 12 cores,
+2026-10-22, `speedrun/lab/crafting-accept.ts`):
+
+| Case | Runs | Step ticks | Visits | Open-to-open gaps (ticks: count) | Per inventory | Event peak, overBudget |
+|---|---|---|---|---|---|---|
+| l1: 45 to the hand-off, cold walk-in, hand-off held as notes | 3 | **263**, 263, 263 | 37 (1 reset, 1 stow) | 7: 33, 6: 1, 8: 1, 12: 1 | 7.03 | 5, 0 |
+| l2: standalone, 45 to 99 (1,142 notes) | 1 | **314** | 44 | 7: 40, 8: 2, 12: 1 | 7.02 | 5, 0 |
+| cold: cold walk-in, 52 bodies and the stow | 3 | 26, 26, 26 | 3 | 8: 1, 12: 1 | | 5, 0 |
+| l5: logout after 273 bodies, then login, `resume` and the stop | 1 | 83 + 187 | 11 + 27 | 7: 22, 8: 3 | 7.13 | 5, 0 |
+
+Every run had 0 drift and ended stowed with 28 free slots. It overshot the hand-off by 496.5 xp,
+less than one body. The steady cycle is **7 ticks per 26 bodies**: 26 actions, the booth click,
+the bodies' deposit, the leather's withdraw and the close make 30 events, at 5 a tick.
+The first visit is a reset that banks the hand-off notes. Its 12-tick gap is that reset plus the
+level-up pages, 6 ticks of backlog over 51 level-ups. rs/158 priced S25d at 292 (91 + 201,
+inferred). The measured **263 is 9.9% under** that.
+
+**Demo (passed on the demo server, 2026-10-22 11:25Z).** The demo ran on cairn_h80, borrowed from
+rs/41 at Crafting 79. rs/350 handed it 78 hard leather, 1 needle and 20 thread. It ran in a browser
+tab on rs-ashburn-rehearsal under an `rs-claim`: the host's own Chrome on `:10`, a local gateway
+(never the relay), and `crafting-accept.ts demo` with maxActions 26 and the stow. Result: 26 bodies
+from 2 visits (the reset and the stow), with an **open-to-open turnaround of 7 ticks** (pass bar 7.7,
+within 10% of the lab's 7.03). The program ran 10 ticks, with an event peak of 5, overBudget 0 and
+drift 0. The logout was clean and confirmed by the page. Bank afterwards: needle 1, thread 15,
+hard leather 52, bodies 26.
+Three earlier attempts from a headless tab on bbs never got the region's locs: the state had 0
+locs and 16 npcs after 65 ticks, so there was no booth. That's a property of the tab's map fetch
+on bbs, not of the module. Browser demos that click locs belong on the Ashburn machines.

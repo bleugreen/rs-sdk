@@ -1,6 +1,92 @@
 // Item matching shared by the bank and trade planners.
+import { noteLink, type ObjPack } from './obj-pack';
+
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
 export type ItemPattern = string | RegExp | number;
+
+/** Every obj's id and debug name, one `id=name` line each. */
+export const OBJ_PACK = join(import.meta.dir, '../../server/content/pack/obj.pack');
+
+let objs: { byId: Map<number, string>; byName: Map<string, number> } | null = null;
+
+function objPack() {
+    if (!objs) {
+        objs = { byId: new Map(), byName: new Map() };
+        for (const line of readFileSync(OBJ_PACK, 'utf8').split('\n')) {
+            const m = line.match(/^(\d+)=(\S+)$/);
+            if (!m) continue;
+            objs.byId.set(Number(m[1]), m[2]!);
+            objs.byName.set(m[2]!, Number(m[1]));
+        }
+    }
+    return objs;
+}
+
+/** The obj's debug name (`guamvial`), or undefined when obj.pack has no such id. */
+export function objName(id: number): string | undefined {
+    return objPack().byId.get(id);
+}
+
+/**
+ * The id of the obj's banknote, or undefined when it has none. The packer links obj X to the obj
+ * named `cert_X` (its certlink, server/engine/tools/pack/config/ObjConfig.ts), so the note is read
+ * from obj.pack by that name rather than assumed to be the next id.
+ */
+export function noteOf(id: number): number | undefined {
+    const name = objName(id);
+    return name === undefined || name.startsWith('cert_') ? undefined : objPack().byName.get(`cert_${name}`);
+}
+
+/**
+ * An item as a role's options name it: by exact name (case-insensitive), or by obj
+ * id where names collide (every unfinished potion is "Unfinished potion"). An id may
+ * be the item's or its note's (obj-pack.ts noteLink); either one matches both forms.
+ */
+export interface NamedRef {
+    item: string;
+    id?: undefined;
+}
+export interface IdRef {
+    id: number;
+    item?: undefined;
+}
+export type ItemRef = NamedRef | IdRef;
+
+/** Read `{ item }` or `{ id }` (exactly one) from options; an id must be in obj.pack. */
+export function itemRef(raw: Record<string, unknown>, where: string, pack?: ObjPack): ItemRef {
+    const hasItem = raw.item !== undefined;
+    const hasId = raw.id !== undefined;
+    if (hasItem === hasId) throw new Error(`${where} needs exactly one of item (a name) or id (an obj id)`);
+    if (hasItem) {
+        if (typeof raw.item !== 'string' || !raw.item.trim()) throw new Error(`${where}.item must be a name`);
+        return { item: raw.item };
+    }
+    const id = Number(raw.id);
+    if (!Number.isInteger(id) || id < 0) throw new Error(`${where}.id must be an obj id`);
+    noteLink(id, pack);
+    return { id };
+}
+
+/** How a ref reads in logs and reports: its name, or `obj <id>`. */
+export function refLabel(ref: ItemRef): string {
+    return ref.id !== undefined ? `obj ${ref.id}` : ref.item;
+}
+
+const normName = (x: string) => x.toLowerCase().replace(/[\s_]+/g, ' ').trim();
+
+/** A named ref matches by exact name (notes share it); an id ref matches its item's id and its note's. */
+export function refMatches(ref: ItemRef, item: { id: number; name: string }, pack?: ObjPack): boolean {
+    if (ref.id === undefined) return normName(item.name) === normName(ref.item);
+    const link = noteLink(ref.id, pack);
+    return item.id === link.item || item.id === link.note;
+}
+
+/** True when the ref is a note's id, which asks for a noted withdrawal. */
+export function namesNote(ref: ItemRef, pack?: ObjPack): boolean {
+    return ref.id !== undefined && noteLink(ref.id, pack).note === ref.id;
+}
 
 /**
  * A number matches the item id; a string is a case-insensitive substring of

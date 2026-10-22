@@ -15,14 +15,21 @@ export interface StateSpec {
     maxHp?: number;
     animId?: number;
     skills?: Record<string, { xp: number; level?: number }>;
-    /** By slot; null is an empty slot (the items after it keep their slots). */
-    inventory?: Array<string | { name: string; options?: string[]; count?: number } | null>;
+    /** By slot; null is an empty slot (the items after it keep their slots). Without an id an item gets 1000 + slot. */
+    inventory?: Array<string | { name: string; id?: number; options?: string[]; count?: number } | null>;
+    /** The bank, by bank slot; omitted means closed and empty. */
+    bank?: { isOpen?: boolean; items: Array<{ id: number; name?: string; count: number }> };
     /** Worn items, by name. */
     equipment?: string[];
     npcs?: Array<Partial<NearbyNpc> & { index: number; name: string; options?: string[] }>;
     locs?: Array<Partial<NearbyLoc> & { id: number; x: number; z: number; name: string; options?: string[] }>;
     /** Players in sight; a missing x/z stands one tile east of the player. */
     players?: Array<Partial<NearbyPlayer> & { index: number; name: string }>;
+    /**
+     * Game messages, oldest first. A message's observation id is the publication it first showed
+     * in, as the collector stamps it: the harness publishes once a tick, so every message of one
+     * tick shares one id (its `tick`, by default the state's). `id` overrides it.
+     */
     messages?: Array<{ text: string; tick?: number; id?: number; type?: number; sender?: string }>;
     /** Open trade fields; omitted (and no tradeOpen) means no trade open. */
     trade?: Partial<TradeState>;
@@ -44,7 +51,8 @@ export function makeState(spec: StateSpec): BotWorldState {
         const name = typeof it === 'string' ? it : it.name;
         const options = typeof it === 'string' ? ['Use', 'Drop'] : (it.options ?? ['Use', 'Drop']);
         const count = typeof it === 'string' ? 1 : (it.count ?? 1);
-        return [{ slot, id: 1000 + slot, name, count, optionsWithIndex: options.map((text, i) => ({ text, opIndex: i + 1 })) }];
+        const id = typeof it === 'string' ? 1000 + slot : (it.id ?? 1000 + slot);
+        return [{ slot, id, name, count, optionsWithIndex: options.map((text, i) => ({ text, opIndex: i + 1 })) }];
     });
     const npcs = (spec.npcs ?? []).map(n => {
         const options = n.options ?? ['Talk-to'];
@@ -74,7 +82,7 @@ export function makeState(spec: StateSpec): BotWorldState {
         const pz = p.z ?? z;
         return { kind: 'player', combatLevel: 3, combatTargetType: 'none', combatTargetIndex: -1, inCombat: false, ...p, x: px, z: pz, distance: Math.max(Math.abs(px - x), Math.abs(pz - z)) };
     });
-    const messages: GameMessage[] = (spec.messages ?? []).map(m => ({ type: m.type ?? 0, text: m.text, sender: m.sender ?? '', tick: m.tick ?? spec.tick, observationId: m.id, fromSelf: false }));
+    const messages: GameMessage[] = (spec.messages ?? []).map(m => ({ type: m.type ?? 0, text: m.text, sender: m.sender ?? '', tick: m.tick ?? spec.tick, observationId: m.id ?? m.tick ?? spec.tick, fromSelf: false }));
     const trade: TradeState = { isOpen: false, screen: null, partner: null, myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false, ...(spec.trade || spec.tradeOpen ? { isOpen: true, screen: 'offer', ...spec.trade } : {}) };
     const skills = Object.entries(spec.skills ?? {}).map(([name, v]) => ({ name, level: v.level ?? 99, baseLevel: v.level ?? 99, experience: v.xp }));
     if (!skills.some(s => s.name.toLowerCase() === 'hitpoints')) skills.push({ name: 'Hitpoints', level: spec.hp ?? 99, baseLevel: spec.maxHp ?? 99, experience: 0 });
@@ -95,6 +103,7 @@ export function makeState(spec: StateSpec): BotWorldState {
         modalInterface: trade.isOpen ? 3323 : -1,
         nearbyLocs: locs,
         trade,
+        bank: { isOpen: spec.bank?.isOpen ?? false, items: (spec.bank?.items ?? []).map((b, slot) => ({ slot, id: b.id, name: b.name ?? `obj ${b.id}`, count: b.count })), noteMode: false },
         groundItems: [],
         gameMessages: messages,
         combatEvents: spec.combatEvents ?? [],

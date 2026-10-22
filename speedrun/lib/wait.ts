@@ -23,6 +23,17 @@ export function tickMs(env: Record<string, string | undefined> = process.env): n
     return 300;
 }
 
+/**
+ * The server tick at a wall time, as the client will count it, from a tick the client was current
+ * on (`tick0`, received at `wall0`). A starved browser tab decodes ticks behind the server, so the
+ * tick it reads when it executes a click can be many ticks short of the tick the click reached;
+ * take the larger of the two. Wall time here only ever lengthens a tick bound: on a current tab the
+ * two agree, and a slower real tick (the demo's 340-370 ms) only overestimates.
+ */
+export function serverClock(tick0: number, wall0: number): (wallMs: number) => number {
+    return wallMs => tick0 + Math.max(0, Math.floor((wallMs - wall0) / tickMs()));
+}
+
 export function currentTick(sdk: StateSource): number {
     return sdk.getState()?.tick ?? -1;
 }

@@ -49,6 +49,22 @@ export interface PlayerState {
     respawnCount: number;
     /** Public game tick when death was last observed, or null if none was observed. */
     lastDeathTick: number | null;
+    /**
+     * Public game tick of the player's last teleport-type position update: a server-placed
+     * move rather than a walk or run step. Teleports, ladders and stairs (plane changes),
+     * login, and the scripted moves that step by p_teleport (agility_walk: the Gnome
+     * Stronghold gate, the Grand Tree door). The placing script usually still holds the
+     * player that tick, so a click sent then is dropped silently. Null before the first;
+     * absent on older clients.
+     */
+    teleportTick?: number | null;
+    /**
+     * The jump bit of that update: true for p_telejump (teleport spells, ladders and stairs,
+     * login), false for p_teleport, which scripted moves step by (agility_walk) and whose script
+     * holds the player through the tick it lands, so a click then is dropped. Null before the
+     * first; absent on older clients.
+     */
+    teleportJump?: boolean | null;
 }
 
 export interface SkillState {
@@ -582,6 +598,17 @@ export interface BotWorldState {
     /** Monotonic state publication cursor; advances even for multiple publications in one game tick. */
     revision?: number;
     inGame: boolean;
+    /**
+     * The client has built the region around the player. False while it shows
+     * "Loading - please wait." (after a login, a teleport or a walk into a new
+     * build area): its collision maps are stale then, so a world click (loc,
+     * NPC, ground item, walk) cannot be routed. The browser client can sit here
+     * for tens of ticks; the lite client builds within the tick. A world click
+     * sent while it is false still goes out, but `sendAction` reports it as
+     * `success: false, reason: 'scene_loading'`, never as a success. Absent on
+     * older clients.
+     */
+    sceneReady?: boolean;
     player: PlayerState | null;
     skills: SkillState[];
     inventory: InventoryItem[];

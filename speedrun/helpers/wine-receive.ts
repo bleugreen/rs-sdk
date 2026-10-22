@@ -256,12 +256,20 @@ export interface NoteDeposit {
 }
 
 /**
+ * Extra bank packets for a deposit burst, sent after the deposit buttons and before
+ * the close, on the state the burst starts from (bank slots do not move while the
+ * bank is open). Returns how many packets it sent, so the wait covers them.
+ */
+export type BurstExtra = (s: BotWorldState) => number;
+
+/**
  * With the bank open, deposit `amount` noted wines (the bank stores them
  * unnoted) and, with `close`, close the bank in the same burst: the engine
  * handles the deposit clicks before the close request, which it applies later
- * in the same tick.
+ * in the same tick. `extra` rides in the burst ahead of the close (the cooking
+ * windows' chisel and gem withdrawals).
  */
-export async function depositNotes(sdk: ReceiverSdk, amount: number | 'all', opts: { close?: boolean; maxTicks?: number } = {}): Promise<NoteDeposit> {
+export async function depositNotes(sdk: ReceiverSdk, amount: number | 'all', opts: { close?: boolean; maxTicks?: number; extra?: BurstExtra } = {}): Promise<NoteDeposit> {
     const s = sdk.getState();
     if (!s?.bank.isOpen) return { ok: false, deposited: 0, doneTick: -1, reason: 'bank not open' };
     const note = s.inventory.find(i => i.id === ITEM.wineNote);
@@ -271,9 +279,10 @@ export async function depositNotes(sdk: ReceiverSdk, amount: number | 'all', opt
     const left = held - n;
     const buttons = depositButtons(n, held);
     for (const b of buttons) void sdk.sendBankDeposit(note.slot, b);
+    const extra = opts.extra ? opts.extra(s) : 0;
     if (opts.close) void sdk.sendCloseModal();
     const xAmount = buttons.some(b => b !== -1 && b !== 1 && b !== 5 && b !== 10);
-    const r = await onStates(sdk, opts.maxTicks ?? Math.ceil(buttons.length / 5) + (xAmount ? 10 : 6), st =>
+    const r = await onStates(sdk, opts.maxTicks ?? Math.ceil((buttons.length + extra) / 5) + (xAmount ? 10 : 6), st =>
         count(st, ITEM.wineNote) <= left && (!opts.close || bankClosed(st)) ? st.tick : undefined
     );
     const after = count(sdk.getState(), ITEM.wineNote);
@@ -337,12 +346,12 @@ export interface TimedDeposit {
 }
 
 /** Open the bank (through any level-up pages), deposit `amount` notes, close; judge it against the timer due at `dueTick`. */
-export async function depositForTimer(ctx: ReceiverCtx, amount: number | 'all', dueTick: number): Promise<TimedDeposit> {
+export async function depositForTimer(ctx: ReceiverCtx, amount: number | 'all', dueTick: number, extra?: BurstExtra): Promise<TimedDeposit> {
     const { sdk } = ctx;
     const t0 = sdk.getState()?.tick ?? 0;
     const open = await openBankThroughPages(sdk);
     if (!open.ok) throw new Error(`could not open the bank: ${open.reason}`);
-    const d = await depositNotes(sdk, amount, { close: true });
+    const d = await depositNotes(sdk, amount, { close: true, ...(extra ? { extra } : {}) });
     if (!d.ok) throw new Error(`deposit failed: ${d.reason}`);
     const out = { deposited: d.deposited, bankOpenTick: open.openTick, doneTick: d.doneTick, bankTicks: d.doneTick - t0, pages: open.pages, held: timerHeld(open.openTick, dueTick) };
     ctx.log?.('wine deposit', { ...out, dueTick });
@@ -414,6 +423,83 @@ export async function receiveWine(ctx: ReceiverCtx, giver: string, opts: LoginWi
 
 export type SecondArming = 'make' | 'relog';
 
+/**
+ * Work for the scored account to do inside the split's waits (S25c's gem cutting,
+ * skills/cooking.ts). Every hook is optional, and with none the split sends exactly
+ * what it sends without them.
+ */
+export interface SplitWindows {
+    /** Extra packets in the first deposit's burst, before its close (withdraw the chisel and a gem stack). */
+    firstBurst?: BurstExtra;
+    /**
+     * Runs alongside the wait for the first firing, due at `due`; awaitFiring starts first so
+     * its xp baseline is read before the window acts. It must leave no modal open on `due`.
+     */
+    firstWait?: (due: number) => Promise<void>;
+    /** Extra packets in the rest's deposit burst, before its close (deposit the cut gems). */
+    restBurst?: BurstExtra;
+    /**
+     * Runs alongside the wait for the second firing and replaces the final drainChat: it
+     * owns that firing's level-up pages. Its bank visits may hold the timer a tick or two,
+     * so the firing is awaited with SECOND_WAIT_SLACK.
+     */
+    secondWait?: (due: number) => Promise<void>;
+}
+
+/** awaitFiring's slack for the second firing when a window's bank visits may hold the timer. */
+export const SECOND_WAIT_SLACK = 6;
+
+/**
+ * Where a split delivery starts. 'trade' is the whole sequence; the others resume it
+ * after a reconnect, whose login is itself an arming login (any login sets
+ * fermenting_wine for login + 20), so a resume never needs an extra relog:
+ *  - 'deposit-first': the notes are held, nothing banked: deposit `first` for this login's timer;
+ *  - 'await-first': the first batch is banked: wait for this login's firing;
+ *  - 'deposit-rest': the first firing is done and the rest still held: deposit it for this
+ *    login's timer (no arming relog; the deadline relog if the bank opens too late);
+ *  - 'await-second': the rest is banked: wait for this login's firing.
+ */
+export type SplitStage = 'trade' | 'deposit-first' | 'await-first' | 'deposit-rest' | 'await-second';
+const STAGES: readonly SplitStage[] = ['trade', 'deposit-first', 'await-first', 'deposit-rest', 'await-second'];
+
+/** The wine in the bank: unfermented (1995), and fermented (jugs of wine 1993 and bad wine 1991). */
+export interface WineBank {
+    unfermented: number;
+    fermented: number;
+}
+
+export function wineBankOf(items: ReadonlyArray<{ id: number; count: number }>): WineBank {
+    const n = (id: number) => items.reduce((k, i) => (i.id === id ? k + i.count : k), 0);
+    return { unfermented: n(ITEM.wine), fermented: n(ITEM.jugWine) + n(ITEM.badWine) };
+}
+
+/**
+ * The stage a split resumes at, from the noted wine held and the bank. A firing turns
+ * every banked unfermented wine into wine or bad wine, so fermented wine in the bank
+ * means the first firing is done. That holds only for a bank with no wine before the
+ * split (SCORED's, on run day): an account with leftover jugs of wine or bad wine reads
+ * as past its first firing. 'exhausted': no wine left anywhere.
+ */
+export function splitStage(notesHeld: number, bank: WineBank): SplitStage | 'exhausted' {
+    if (bank.fermented > 0) {
+        if (notesHeld > 0) return 'deposit-rest';
+        return bank.unfermented > 0 ? 'await-second' : 'exhausted';
+    }
+    if (notesHeld > 0) return bank.unfermented > 0 ? 'await-first' : 'deposit-first';
+    // all of it banked before any firing: this login's firing rolls it in one
+    return bank.unfermented > 0 ? 'await-second' : 'trade';
+}
+
+/** awaitFiring for `due`, with `window` run beside it; awaitFiring starts first (its xp baseline). */
+async function firingWith(sdk: StateSource, due: number, slack: number, window?: (due: number) => Promise<void>): Promise<Firing> {
+    const firing = awaitFiring(sdk, due, slack);
+    if (!window) return firing;
+    const [f, w] = await Promise.allSettled([firing, window(due)]);
+    if (w.status === 'rejected') throw w.reason;
+    if (f.status === 'rejected') throw f.reason;
+    return f.value;
+}
+
 export interface SplitResult {
     received: number;
     first: number;
@@ -459,9 +545,13 @@ export interface SplitOptions extends LoginWindow {
      * login.
      */
     arming?: SecondArming;
-    /** Click through the second firing's level-up pages (default true). */
+    /** Click through the second firing's level-up pages (default true; `windows.secondWait` replaces it). */
     drainFinal?: boolean;
     openTimeoutMs?: number;
+    /** Work inside the waits (none by default). */
+    windows?: SplitWindows;
+    /** Where to start (default 'trade'); a resume derives it with `splitStage`. */
+    from?: SplitStage;
 }
 
 /**
@@ -488,37 +578,44 @@ export interface SplitOptions extends LoginWindow {
 export async function splitDelivery(ctx: ReceiverCtx, giver: string, opts: SplitOptions): Promise<SplitResult> {
     const { sdk } = ctx;
     const first = opts.first ?? 29;
+    const win = opts.windows ?? {};
+    const from = opts.from ?? 'trade';
+    const reaches = (stage: SplitStage) => STAGES.indexOf(from) <= STAGES.indexOf(stage);
     let arming: SecondArming = opts.arming ?? 'relog';
-    const t = await takeTrade(ctx, giver, first + 1, arming === 'make', opts.openTimeoutMs ?? 120_000);
+    const t = reaches('trade') ? await takeTrade(ctx, giver, first + 1, arming === 'make', opts.openTimeoutMs ?? 120_000) : { received: 0, tradeTicks: 0, skipped: true };
     const received = t.skipped ? 0 : t.received;
 
     // First firing: the login timer.
     let loginTick = opts.loginTick;
     let missRelogs = 0;
-    const bank1 = await depositForTimer(ctx, first, loginTick + FERMENT_TIMER_TICKS);
-    if (!bank1.held) {
+    const bank1 = reaches('deposit-first') ? await depositForTimer(ctx, first, loginTick + FERMENT_TIMER_TICKS, win.firstBurst) : null;
+    if (bank1 && !bank1.held) {
         loginTick = await requireRelog(opts)();
         missRelogs++;
     }
-    let f1 = await awaitFiring(sdk, loginTick + FERMENT_TIMER_TICKS);
-    if (!f1.fired && bank1.held && opts.relog) {
-        // Rare: the bank opened on the boundary tick and the timer fired just before
-        // it, or every roll failed (0.81^29, 0.2%). A relog settles both: the new
-        // login's timer rolls whatever is still unfermented.
-        loginTick = await opts.relog();
-        missRelogs++;
-        f1 = await awaitFiring(sdk, loginTick + FERMENT_TIMER_TICKS);
+    let f1: Firing = { fired: false, tick: -1, level: cooking(sdk.getState()).level, xpGained: 0 };
+    if (reaches('await-first')) {
+        f1 = await firingWith(sdk, loginTick + FERMENT_TIMER_TICKS, 3, win.firstWait);
+        if (!f1.fired && (bank1?.held ?? true) && opts.relog) {
+            // Rare: the bank opened on the boundary tick and the timer fired just before
+            // it, or every roll failed (0.81^29, 0.2%). A relog settles both: the new
+            // login's timer rolls whatever is still unfermented.
+            loginTick = await opts.relog();
+            missRelogs++;
+            f1 = await firingWith(sdk, loginTick + FERMENT_TIMER_TICKS, 3, win.firstWait);
+        }
     }
     const rest = count(sdk.getState(), ITEM.wineNote);
-    ctx.log?.('wine first firing', { ...f1, loginTick, rest });
+    if (reaches('await-first')) ctx.log?.('wine first firing', { ...f1, loginTick, rest });
 
     const out: SplitResult = {
         received, first, rest, tradeTicks: t.tradeTicks, tradeSkipped: t.skipped,
-        firstBankTicks: bank1.bankTicks, firstBankOpenTick: bank1.bankOpenTick, firstHeld: bank1.held, missRelogs, loginTick,
+        firstBankTicks: bank1?.bankTicks ?? 0, firstBankOpenTick: bank1?.bankOpenTick ?? -1, firstHeld: bank1?.held ?? true, missRelogs, loginTick,
         firstFermentTick: f1.tick, levelAfterFirst: f1.level, arming: 'none',
         secondBankTicks: 0, pagesTicks: 0, pagesAfterFirst: 0, resumesAfterFirst: 0, rearmMakeTick: -1, secondLoginTick: -1,
         secondFermentTick: -1, levelAfterSecond: f1.level, finalPagesTicks: 0, finalPages: 0
     };
+    if (from === 'deposit-rest' || from === 'await-second') return secondFiring(ctx, opts, out, from, win);
     if (rest <= 0) return out;
 
     if (arming === 'make' && f1.level < WINE_COOKING_LEVEL) {
@@ -540,7 +637,7 @@ export async function splitDelivery(ctx: ReceiverCtx, giver: string, opts: Split
         out.pagesTicks = open.openTick - t2;
         out.pagesAfterFirst = open.pages;
         out.resumesAfterFirst = open.resumes;
-        const d = await depositNotes(sdk, 'all', { close: true });
+        const d = await depositNotes(sdk, 'all', { close: true, ...(win.restBurst ? { extra: win.restBurst } : {}) });
         if (!d.ok) throw new Error(`split delivery: deposit of the rest failed (${d.reason})`);
         out.secondBankTicks = d.doneTick - t2;
         const mk = await makeOneWine(sdk);
@@ -558,19 +655,40 @@ export async function splitDelivery(ctx: ReceiverCtx, giver: string, opts: Split
         out.pagesTicks = open.openTick - t2;
         out.pagesAfterFirst = open.pages;
         out.resumesAfterFirst = open.resumes;
-        const d = await depositNotes(sdk, 'all', { close: true });
+        const d = await depositNotes(sdk, 'all', { close: true, ...(win.restBurst ? { extra: win.restBurst } : {}) });
         if (!d.ok) throw new Error(`split delivery: deposit of the rest failed (${d.reason})`);
         out.secondBankTicks = d.doneTick - t2;
         const login2 = await doRelog();
         out.secondLoginTick = login2;
         due = login2 + FERMENT_TIMER_TICKS;
     }
+    return awaitSecond(ctx, opts, out, due, win);
+}
 
-    const f2 = await awaitFiring(sdk, due);
+/** The resume stages past the first firing: this login's timer is the second firing (no arming relog). */
+async function secondFiring(ctx: ReceiverCtx, opts: SplitOptions, out: SplitResult, from: 'deposit-rest' | 'await-second', win: SplitWindows): Promise<SplitResult> {
+    let due = out.loginTick + FERMENT_TIMER_TICKS;
+    if (from === 'deposit-rest') {
+        const d = await depositForTimer(ctx, 'all', due, win.restBurst);
+        out.secondBankTicks = d.bankTicks;
+        out.pagesAfterFirst = d.pages;
+        if (!d.held) {
+            const login = await requireRelog(opts)();
+            out.missRelogs++;
+            out.secondLoginTick = login;
+            due = login + FERMENT_TIMER_TICKS;
+        }
+    }
+    return awaitSecond(ctx, opts, out, due, win);
+}
+
+async function awaitSecond(ctx: ReceiverCtx, opts: SplitOptions, out: SplitResult, due: number, win: SplitWindows): Promise<SplitResult> {
+    const { sdk } = ctx;
+    const f2 = await firingWith(sdk, due, win.secondWait ? SECOND_WAIT_SLACK : 3, win.secondWait);
     out.secondFermentTick = f2.tick;
     out.levelAfterSecond = f2.level;
     ctx.log?.('wine second firing', { ...f2, due });
-    if (f2.fired && opts.drainFinal !== false) {
+    if (f2.fired && opts.drainFinal !== false && !win.secondWait) {
         const dr = await drainChat(sdk);
         out.finalPagesTicks = dr.endTick - dr.startTick;
         out.finalPages = dr.pages;

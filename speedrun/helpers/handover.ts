@@ -5,8 +5,10 @@
 // earner to a buyer.
 //
 // Travel: the donor may stand on either side of the Al Kharid toll gate (coin
-// earners work in Al Kharid). Every leg goes through travelTo, which pays the
-// toll when the destination is across the fence. A leg that fails ends the
+// earners work in Al Kharid), or underground in the Dwarven Mine or the Mining
+// Guild cellar (smelters). Every leg goes through travelTo, which climbs out
+// first (lib/underground.ts) and pays the toll when the destination is across
+// the fence. A leg that fails ends the
 // attempt before the next step: the bank is opened only once the donor stands
 // at `bank`, since openBank opens whatever booth is nearest. Coins for the toll
 // crossings still ahead (out to `meet`, back to `bank`) are withdrawn with the
@@ -29,26 +31,37 @@
 //   bank       { x, z } bank to withdraw at (default: the nearest booth in reach of where it stands)
 //   meet       { x, z } where to trade (default: stay at the bank)
 //   handovers  [{ to: 'cairn_h70', items: [{ item: 'Air talisman', n: 1 }, { item: 'Rune essence', n: 300 }] }]
-//              non-stackable items above one are withdrawn as notes
+//              an item is named exactly (`item`) or by obj id (`id`, where names collide: every
+//              unfinished potion is 'Unfinished potion', every grimy herb 'Herb'). An id may be the
+//              item's or its note's (obj.pack); a note's id is withdrawn noted. Otherwise more than
+//              one is withdrawn as notes, and `noted: true | false` says so explicitly. A name that
+//              matches two different bank items, or a bank stack short of `n`, is not withdrawn.
 //   crossKandarin  true lets a donor standing in Kandarin (a woodcutter at Seers') reach a `bank` or
 //              `meet` on the Lumbridge side over White Wolf Mountain (speedrun/lib/kandarin.ts
 //              crossFromKandarin). It crosses before the bank is opened, so nothing withdrawn
 //              crosses; its own role (`then`) takes it back. Default false: such a leg fails.
 import { createHash } from 'node:crypto';
 import { withdrawMany, type WithdrawSpec } from '../lib/bank';
+import { itemRef, matchesItem, namesNote, refLabel, refMatches, type ItemPattern, type ItemRef } from '../lib/items';
+import { noteLink } from '../lib/obj-pack';
 import { crossFromKandarin, kandarinTile } from '../lib/kandarin';
 import { isEastOfTollGate, TOLL_GP, travelTo, type Tile, type TravelResult } from '../lib/toll-gate';
-import { give, sameName, type GiveResult } from '../lib/trade';
+import { give, sameName, type GiveResult, type GiveSpec } from '../lib/trade';
+import { climbToSurface, isUnderground, NO_WAY_UP } from '../lib/underground';
 import { STALLED, waitTicks } from '../lib/wait';
 import { altarData, inRoom, leaveRoom, ROUTE_ALTARS, type AltarName } from './altar-room';
 import { inMine } from './essence';
 import { closeBank, depositAllExcept, ensureOutOfTutorial, openBank } from './mule';
 import { runStandalone, type Role, type RoleContext, type RoleFinish } from './role';
 import { waitForPlayer } from './wine';
+import type { BankItem, InventoryItem } from '../../sdk/types';
+
+/** One line of a handover: an item by name or obj id, how many, and optionally whether noted. */
+export type HandoverItem = ItemRef & { n: number; noted?: boolean };
 
 export interface Handover {
     to: string;
-    items: { item: string; n: number }[];
+    items: HandoverItem[];
 }
 
 export interface HandoverOptions {
@@ -65,8 +78,18 @@ export function handoverOptions(raw: Record<string, unknown>): HandoverOptions {
     const handovers = list.map((h: Record<string, unknown>, i: number) => {
         const to = String(h.to ?? '');
         if (!/^cairn_[a-z0-9_]{1,6}$/.test(to)) throw new Error(`handovers[${i}].to must be a cairn_ account`);
-        const items = (Array.isArray(h.items) ? h.items : []).map((it: Record<string, unknown>) => ({ item: String(it.item), n: Number(it.n) }));
-        if (items.length === 0 || items.some(it => !it.item || !Number.isInteger(it.n) || it.n < 1)) throw new Error(`handovers[${i}].items need item and a positive n`);
+        const raw = Array.isArray(h.items) ? (h.items as Record<string, unknown>[]) : [];
+        if (raw.length === 0) throw new Error(`handovers[${i}].items is empty`);
+        const items = raw.map((it, j): HandoverItem => {
+            const where = `handovers[${i}].items[${j}]`;
+            const ref = itemRef(it, where);
+            const n = Number(it.n);
+            if (!Number.isInteger(n) || n < 1) throw new Error(`${where} needs a positive n`);
+            if (it.noted !== undefined && typeof it.noted !== 'boolean') throw new Error(`${where}.noted must be true or false`);
+            if (it.noted === false && namesNote(ref)) throw new Error(`${where}: obj ${ref.id} is a note, so it cannot be noted: false`);
+            // Name-only lines keep exactly their old shape: the list's default id is a digest of it.
+            return { ...ref, n, ...(typeof it.noted === 'boolean' ? { noted: it.noted } : {}) };
+        });
         return { to, items };
     });
     if (raw.id !== undefined && (typeof raw.id !== 'string' || !/^[\w.-]{1,64}$/.test(raw.id))) throw new Error('handover: options.id must be 1-64 letters, digits, _ . or -');
@@ -112,7 +135,23 @@ function priorRecord(ctx: RoleContext, key: string): HandoverRecord | null {
 }
 
 const exact = (name: string) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
-const isCoins = (name: string) => /^coins$/i.test(name.trim());
+const COINS = 995;
+const isCoins = (it: ItemRef) => (it.id !== undefined ? noteLink(it.id).item === COINS : /^coins$/i.test(it.item.trim()));
+
+/** What a line is withdrawn as: a note's id or `noted: true` notes it, else more than one is noted. */
+export function withdrawnNoted(it: HandoverItem): boolean {
+    return it.noted ?? (namesNote(it) || it.n > 1);
+}
+
+/** The bank pattern of a line: its exact name, or the item's own id (the bank never holds a note). */
+function bankPattern(it: ItemRef): ItemPattern {
+    return it.id !== undefined ? noteLink(it.id).item : exact(it.item);
+}
+
+/** Per-line key for counting what is carried: one per name, one per item id. */
+function lineKey(it: ItemRef): string {
+    return it.id !== undefined ? `obj ${noteLink(it.id).item}` : it.item.toLowerCase();
+}
 
 /**
  * What one attempt came to. 'retry': nothing left this account and another
@@ -130,25 +169,63 @@ export function tollsAfterBank(at: Tile, o: Pick<HandoverOptions, 'bank' | 'meet
 
 /** The withdrawal for one handover, plus `tollCoins` more coins to pay the gate with. */
 export function withdrawSpecs(items: Handover['items'], tollCoins: number): WithdrawSpec[] {
-    const specs: WithdrawSpec[] = items.map(it => ({ item: exact(it.item), n: it.n, asNote: it.n > 1 }));
+    const specs: WithdrawSpec[] = items.map(it => ({ item: bankPattern(it), n: it.n, asNote: withdrawnNoted(it) }));
     if (tollCoins <= 0) return specs;
-    const i = items.findIndex(it => isCoins(it.item));
+    const i = items.findIndex(isCoins);
     if (i >= 0) specs[i] = { ...specs[i]!, n: (specs[i]!.n as number) + tollCoins };
     else specs.push({ item: exact('Coins'), n: tollCoins, asNote: false });
     return specs;
 }
 
+/**
+ * Why `specs` must not be withdrawn from `bank`, or null. A name matching two different
+ * bank items would take whichever comes first (address it by id), and a stack smaller
+ * than the count would be withdrawn whole and handed over short.
+ */
+export function bankRefusal(specs: readonly WithdrawSpec[], bank: readonly BankItem[]): { reason: string; missing: WithdrawSpec[] } | null {
+    const reasons: string[] = [];
+    const missing: WithdrawSpec[] = [];
+    for (const spec of specs) {
+        const matches = bank.filter(b => matchesItem(b, spec.item));
+        const label = spec.item instanceof RegExp ? spec.item.source.replace(/^\^|\$$/g, '') : String(spec.item);
+        if (new Set(matches.map(b => b.id)).size > 1) {
+            reasons.push(`${label} names ${matches.map(b => `obj ${b.id}`).join(' and ')}: give the id`);
+            missing.push(spec);
+            continue;
+        }
+        const have = matches[0]?.count ?? 0;
+        if (typeof spec.n === 'number' && have < spec.n) {
+            reasons.push(`${label} ${have}/${spec.n}`);
+            missing.push(spec);
+        }
+    }
+    return reasons.length ? { reason: `bank: ${reasons.join(', ')}`, missing } : null;
+}
+
+/**
+ * The trade offer for a handover: a name by its exact name, an id by whichever of its
+ * item's or note's id is carried (the note after a noted withdrawal).
+ */
+export function offerSpecs(items: Handover['items'], inventory: readonly InventoryItem[]): GiveSpec[] {
+    return items.map(it => {
+        if (it.id === undefined) return { item: exact(it.item), n: it.n };
+        const link = noteLink(it.id);
+        const id = [link.note, link.item].find(x => x !== null && inventory.some(i => i.id === x)) ?? link.item;
+        return { item: id, n: it.n };
+    });
+}
+
 const NEVER_OPENED = new Set(['player_not_found', 'no_response', 'nothing to give']);
 
 /**
- * Classify a give() result. `lost` is how many of each handover item (by
- * lower-case name) left the inventory, read a few ticks after give returned.
+ * Classify a give() result. `lost` is how many of each handover line (by
+ * lower-case name, or item id) left the inventory, read a few ticks after give returned.
  * Delivered needs the trade to report every item gone; anything that may have
  * moved part of the handover is uncertain.
  */
 export function giveOutcome(r: GiveResult, items: Handover['items'], lost: Map<string, number>): Outcome {
     if (r.ok) {
-        const all = items.every(it => r.gave.filter(g => sameName(g.name, it.item)).reduce((a, g) => a + g.count, 0) >= it.n);
+        const all = items.every(it => r.gave.filter(g => refMatches(it, g)).reduce((a, g) => a + g.count, 0) >= it.n);
         return all ? 'delivered' : 'uncertain';
     }
     if ([...lost.values()].some(n => n > 0)) return 'uncertain';
@@ -186,9 +263,12 @@ export const gameIo: HandoverIo = {
     depositAll: async ctx => {
         await depositAllExcept(ctx.sdk);
     },
-    withdraw: (ctx, specs) => withdrawMany(ctx.sdk, specs),
+    withdraw: async (ctx, specs) => {
+        const refused = bankRefusal(specs, ctx.sdk.getBankItems());
+        return refused ? { ok: false, ...refused } : withdrawMany(ctx.sdk, specs);
+    },
     waitForPartner: (ctx, name) => waitForPlayer(ctx.sdk, name, 20 * 60_000),
-    give: (ctx, to, items) => give(ctx.sdk, to, items.map(it => ({ item: exact(it.item), n: it.n })), { openTimeoutMs: 120_000 })
+    give: (ctx, to, items) => give(ctx.sdk, to, offerSpecs(items, ctx.sdk.getInventory()), { openTimeoutMs: 120_000 })
 };
 
 function here(ctx: RoleContext): Tile {
@@ -198,7 +278,7 @@ function here(ctx: RoleContext): Tile {
 
 function carried(ctx: RoleContext, items: Handover['items']): Map<string, number> {
     const inv = ctx.sdk.getState()?.inventory ?? [];
-    return new Map(items.map(it => [it.item.toLowerCase(), inv.filter(i => sameName(i.name, it.item)).reduce((a, i) => a + i.count, 0)]));
+    return new Map(items.map(it => [lineKey(it), inv.filter(i => refMatches(it, i)).reduce((a, i) => a + i.count, 0)]));
 }
 
 function reportBank(ctx: RoleContext): void {
@@ -216,7 +296,8 @@ async function go(ctx: RoleContext, o: Pick<HandoverOptions, 'crossKandarin'>, t
 
 function legFailed(ctx: RoleContext, leg: 'bank' | 'meet', to: Tile, r: TravelResult): Outcome {
     ctx.log(`handover: could not reach the ${leg}; not opening a bank here`, { to, from: here(ctx), reason: r.reason, paid: r.paid });
-    return r.reason === 'toll gate: no toll' ? 'stop' : 'retry';
+    // Another attempt would fail the same way: no toll, or a dungeon with no known way up.
+    return r.reason === 'toll gate: no toll' || r.reason?.startsWith(NO_WAY_UP) ? 'stop' : 'retry';
 }
 
 /** One attempt at handover `h`, recorded in ctx.state under `key` from just before the trade opens. */
@@ -257,7 +338,7 @@ export async function handoverOnce(ctx: RoleContext, h: Handover, o: HandoverOpt
     const lost = new Map([...before].map(([name, n]) => [name, n - (after.get(name) ?? 0)]));
     const outcome = giveOutcome(r, h.items, lost);
     await ctx.state.set(key, outcome === 'delivered' || outcome === 'uncertain' ? record(outcome) : undefined);
-    ctx.log('handover', { to: h.to, ok: r.ok, outcome, gave: r.gave.map(i => `${i.name} x${i.count}`), reason: r.reason });
+    ctx.log('handover', { to: h.to, ok: r.ok, outcome, gave: r.gave.map(i => `${i.name} (obj ${i.id}) x${i.count}`), reason: r.reason });
     if (outcome === 'uncertain') ctx.log('handover: outcome uncertain; not repeating it. Check the receiver before giving again', { to: h.to, items: h.items, lost: Object.fromEntries(lost) });
     return outcome;
 }
@@ -319,7 +400,10 @@ export function finishOf(report: HandoverReport): RoleFinish {
 /**
  * Get to where a bank is reachable on foot. The fleet parks essence miners
  * wherever their trip stopped, often inside the essence mine, and an altar
- * helper may be parked in an altar room; both are left by their portal.
+ * helper may be parked in an altar room; both are left by their portal. A
+ * smelter may be in the Dwarven Mine or the guild cellar: it climbs out here so
+ * that a list with no `bank` opens a booth on the surface. A failed climb is
+ * logged and left to the legs, whose travelTo tries again or reports it.
  */
 async function leaveEnclosure(ctx: RoleContext): Promise<void> {
     for (const name of Object.keys(ROUTE_ALTARS) as AltarName[]) {
@@ -335,6 +419,10 @@ async function leaveEnclosure(ctx: RoleContext): Promise<void> {
         for (let t = 0; t < 25 && inMine(ctx.sdk.getState()); t++) await ctx.sdk.waitForTicks(1).catch(() => {});
     }
     if (inMine(ctx.sdk.getState())) throw new Error('the essence mine portal did not take us out');
+    if (isUnderground(here(ctx))) {
+        const r = await climbToSurface(ctx.bot, ctx.sdk, { log: ctx.log, signal: ctx.signal });
+        if (!r.ok) ctx.log('handover: still underground', { at: here(ctx), reason: r.reason });
+    }
 }
 
 export const role: Role = {

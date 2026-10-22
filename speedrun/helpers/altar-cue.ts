@@ -51,12 +51,53 @@ export interface Turn {
     giver: string;
     /** Tick the scored account's craft lands on, in the scored account's numbering. The trade opens on T + open. */
     T: number;
+    /** The hand-back (S21's end): trade exactly these items instead of essence, as a reacting stock turn. */
+    items?: HandBackItem[];
     /** Overrides the cue's schedule for this turn, e.g. robust for a giver that logged in after the scored account, or a reacting stock turn. */
     schedule?: TurnSchedule;
 }
 
+/** The helper families that read a cue. bone-giver is two: 'bone' in S07's standing mode, 'courier' in S18's on-request mode. */
+export const CUE_FAMILIES = ['altar', 'bone', 'courier', 'anvil', 'cannon'] as const;
+export type CueFamily = (typeof CUE_FAMILIES)[number];
+
+/**
+ * Whom a cue is for: one run step (run.ts's id: 'S06', 'S07', 'S18', 'S21', ...) and one helper
+ * family. A reader acts only on a cue that addresses it (cueAddresses), its `stop` included, so a
+ * cue is never a global stop: Runecraft's S06 stop can't stand down S07's bone givers or the S18
+ * courier reading the same directory. A cue without a scope addresses nobody.
+ */
+export interface CueScope {
+    step: string;
+    family: CueFamily;
+}
+
+export function scopeError(scope: unknown): string | null {
+    const s = scope as Partial<CueScope> | null | undefined;
+    if (!s || typeof s !== 'object') return 'a cue scope { step, family } is required';
+    if (typeof s.step !== 'string' || !s.step.trim()) return `a cue scope needs a step (got ${JSON.stringify(s.step)})`;
+    if (!CUE_FAMILIES.includes(s.family as CueFamily)) return `a cue scope's family must be one of ${CUE_FAMILIES.join(', ')} (got ${JSON.stringify(s.family)})`;
+    return null;
+}
+
+/** A reader role's `scope` option, checked against the families the role serves. */
+export function scopeOption(raw: unknown, families: readonly CueFamily[], name = 'scope'): CueScope {
+    const err = scopeError(raw);
+    if (err) throw new Error(`${name}: ${err}`);
+    const s = raw as CueScope;
+    if (!families.includes(s.family)) throw new Error(`${name}.family must be ${families.join(' or ')} for this role (got ${s.family})`);
+    return { step: s.step, family: s.family };
+}
+
+/** The cue is for the reader of `step` and `family`. */
+export function cueAddresses(cue: Pick<Cue, 'scope'> | null | undefined, step: string, family: CueFamily): boolean {
+    return !!cue?.scope && cue.scope.step === step && cue.scope.family === family;
+}
+
 export interface Cue {
     v: typeof CUE_VERSION;
+    /** Whom the cue is for (CueScope); required, and fixed for a writer's life. */
+    scope: CueScope;
     /** Changes on every scored login; a giver's bookkeeping (offset, turns done) is per session. */
     session: string;
     /** Increases on every write. */
@@ -95,6 +136,16 @@ export interface TurnResult {
     ms: number;
 }
 
+/**
+ * One item of a hand-back: the item's exact name and how many. After a band's last craft a
+ * hand-back giver trades SCORED these instead of essence (S21: T21-22's Lumbridge runes, SUPPLIES.md
+ * H17e); the scored side's half is runecraft.ts HandBack, whose item type has this shape.
+ */
+export interface HandBackItem {
+    item: string;
+    n: number;
+}
+
 export interface GiverStatus {
     v: typeof CUE_VERSION;
     account: string;
@@ -104,12 +155,17 @@ export interface GiverStatus {
     essence: number;
     tile: { x: number; z: number; level: number } | null;
     inRoom: boolean;
-    /** Ready since (Date.now()); the scored side can queue givers in this order. */
+    /**
+     * Ready since (Date.now()); the scored side can queue givers in this order. Renewed with every
+     * turn result short of a trade, so a giver that missed reports ready again (MissBench).
+     */
     readyAt: number | null;
     armed?: { session: string; seq: number; T: number; myT: number; schedule: TurnSchedule };
     last?: TurnResult;
     /** Trades given since the role started. */
     gave: number;
+    /** A hand-back giver carrying its hand-back, and no essence: what it holds for SCORED. */
+    handBack?: HandBackItem[];
     detail?: string;
     /** Heartbeat: rewritten at least every 2 s. */
     ms: number;
@@ -318,6 +374,141 @@ export function chooseTurn(cue: Cue, account: string, offset: number, myNow: num
     return { kind: 'none' };
 }
 
+// ------------------------------------------------------------------ the skip rule after a failed turn
+
+/**
+ * The scored side's rule for a giver whose turn did not give: skip it until it reports ready
+ * after that turn was named, i.e. until its status's `readyAt` is later than the first cue write
+ * that carried the turn. A live giver reports a fresh `readyAt` with every turn result it gives
+ * short of a trade (altar-giver.ts `result`), so it is back within one status write. A giver whose
+ * client died can't report anything, whatever its heartbeat says meanwhile (on the relay path the
+ * role outlives its client until the relogin), and a relaunched one reports ready from its new
+ * process. So a relaunch costs the one turn the giver was named for when it died. A turn no cue
+ * write carried benches nobody: the giver never saw it, so it would never report on it.
+ * Both clocks are Date.now() on one machine (the givers run beside the scored client).
+ */
+export class MissBench {
+    private readonly since = new Map<string, number>();
+
+    /** A turn naming `giver` failed; `namedAt` is Date.now() of the first cue write carrying it (undefined: none did). */
+    miss(giver: string, namedAt: number | undefined): void {
+        if (namedAt === undefined) return;
+        const k = canonName(giver);
+        this.since.set(k, Math.max(this.since.get(k) ?? 0, namedAt));
+    }
+
+    /** True while the giver has not reported ready since its failed turn was named; a report lifts the bench. */
+    skips(s: Pick<GiverStatus, 'account' | 'readyAt'>): boolean {
+        const k = canonName(s.account);
+        const since = this.since.get(k);
+        if (since === undefined) return false;
+        if (s.readyAt !== null && s.readyAt > since) {
+            this.since.delete(k);
+            return false;
+        }
+        return true;
+    }
+
+    /** The benched givers, by canonical name. */
+    get benched(): string[] {
+        return [...this.since.keys()];
+    }
+}
+
+// ------------------------------------------------------------------ turn order (both giver families)
+
+/** A helper's status is current while its heartbeat is this recent (every status writer rewrites at least every 2 s). */
+export const STATUS_FRESH_MS = 5_000;
+
+/** What the turn order reads from a helper's status file. */
+export interface TurnCandidate {
+    account: string;
+    /** Ready (loaded and in place) since, Date.now(); null when not ready. */
+    readyAt: number | null;
+    /** The status's heartbeat. */
+    ms: number;
+}
+
+/**
+ * The giver families' one turn-taking rule. Of the candidates whose status is current, that
+ * qualify (`eligible`) and are not benched after a failed turn (MissBench): those already holding
+ * the turn (`holding`: a bone giver's request standing or its trade open) first, then oldest ready
+ * first, ties by name. The altar side's batch picks from it (altar-receiver.ts chooseBatch), and the
+ * bone givers take turns by its first entry (bone-giver.ts boneServer).
+ */
+export function turnOrder<T extends TurnCandidate>(
+    candidates: readonly T[],
+    now: number,
+    o: { eligible: (c: T) => boolean; holding?: (c: T) => boolean; bench?: Pick<MissBench, 'skips'> }
+): T[] {
+    const rank = (c: T) => (o.holding?.(c) ? 0 : 1);
+    return candidates
+        .filter(c => now - c.ms <= STATUS_FRESH_MS && o.eligible(c) && !o.bench?.skips(c))
+        .sort((a, b) => rank(a) - rank(b) || (a.readyAt ?? Infinity) - (b.readyAt ?? Infinity) || canonName(a.account).localeCompare(canonName(b.account)));
+}
+
+// ------------------------------------------------------------------ the top-up ask (S18)
+
+/**
+ * S18's top-up courier (bone-giver.ts, mode on-request) can't see the scored account's
+ * inventory, and the trade screen doesn't show its free slots, so the scored side sizes each
+ * load (SUPPLIES.md H14.x) and writes it here. It writes on the frame that shows the trade
+ * open: from then until the trade ends it sends nothing else, so its free slots can't change
+ * under the ask. The courier offers what the ask names, each item with one press, and takes
+ * only an ask written after it saw the trade open (less `ASK_SLACK_MS` for the two clients'
+ * frame arrivals) and newer than the last one it served, so an ask left over from an earlier
+ * trade is never sized onto this one.
+ */
+export const ASK_FILE = 'topup-ask.json';
+
+/** The two clients see a frame within a few ms of each other on one machine; this covers a slow one. */
+export const ASK_SLACK_MS = 300;
+
+/** One item the scored side wants: a case-insensitive name pattern, and a count or every one the courier holds. */
+export interface AskItem {
+    item: string;
+    count: number | 'all';
+}
+
+export interface TopUpAsk {
+    v: 2;
+    items: AskItem[];
+    /** Date.now() at the write. */
+    ms: number;
+}
+
+function askError(items: unknown): string | null {
+    if (!Array.isArray(items) || items.length === 0) return 'an ask needs at least one item';
+    for (const a of items as AskItem[]) {
+        if (typeof a?.item !== 'string' || !a.item) return 'an ask item needs a name pattern';
+        try {
+            new RegExp(a.item, 'i');
+        } catch {
+            return `an ask item's pattern does not compile: ${a.item}`;
+        }
+        if (a.count !== 'all' && !(Number.isInteger(a.count) && a.count >= 1)) return `an ask item's count must be a whole number of at least 1 or 'all' (got ${JSON.stringify(a.count)})`;
+    }
+    return null;
+}
+
+export function writeTopUpAsk(dir: string, items: AskItem[], ms = Date.now()): TopUpAsk {
+    const err = askError(items);
+    if (err) throw new Error(err);
+    const ask: TopUpAsk = { v: 2, items: items.map(a => ({ item: a.item, count: a.count })), ms };
+    writeJsonAtomicSync(join(dir, ASK_FILE), ask);
+    return ask;
+}
+
+export function readTopUpAsk(dir: string): TopUpAsk | null {
+    const a = readJson<TopUpAsk>(join(dir, ASK_FILE));
+    return a && a.v === 2 && Number.isFinite(a.ms) && askError(a.items) === null ? a : null;
+}
+
+/** The ask for the trade the courier saw open at `openMs`: written since then (less the slack) and after the last one served. */
+export function usableAsk(ask: TopUpAsk | null, openMs: number, lastServedMs: number): TopUpAsk | null {
+    return ask && ask.ms >= openMs - ASK_SLACK_MS && ask.ms > lastServedMs ? ask : null;
+}
+
 // ------------------------------------------------------------------ files
 
 export function writeJsonAtomicSync(path: string, value: unknown): void {
@@ -382,18 +573,23 @@ export function readStatuses(dir: string): GiverStatus[] {
         .filter((s): s is GiverStatus => !!s && s.v === CUE_VERSION);
 }
 
-/** The scored side's handle on cue.json. One writer per session. */
+/** The scored side's handle on cue.json. One writer per session, for one scope. */
 export class CueWriter {
     readonly session: string;
+    readonly scope: CueScope;
     private seq = 0;
     private cue: Cue | null = null;
 
     constructor(
         readonly dir: string,
         private readonly receiverName: string,
+        scope: CueScope,
         session = `${Date.now().toString(36)}-${randomBytes(3).toString('hex')}`
     ) {
+        const err = scopeError(scope);
+        if (err) throw new Error(`CueWriter: ${err}`);
         assertUntracked(dir);
+        this.scope = { step: scope.step, family: scope.family };
         this.session = session;
     }
 
@@ -402,6 +598,7 @@ export class CueWriter {
         if (fields.beacons.length === 0) throw new Error('a cue needs at least one beacon');
         this.cue = {
             v: CUE_VERSION,
+            scope: this.scope,
             session: this.session,
             seq: ++this.seq,
             receiver: { sha256: nameHash(this.receiverName) },
@@ -430,21 +627,38 @@ export class CueWriter {
     }
 }
 
+export interface CueWatcherOptions {
+    /** Poll interval beside fs.watch (default 20 ms). */
+    pollMs?: number;
+    /** Where the once-per-scope notes on ignored cues go (a role's ctx.log); default stderr. */
+    log?: (message: string, data?: Record<string, unknown>) => void;
+}
+
 /**
- * Calls `onCue` with every new cue (new session or higher seq). Watches the
- * directory and polls as well: fs.watch can coalesce or miss renames on some
- * platforms, and a poll every `pollMs` bounds the delay either way.
+ * Calls `onCue` with every new cue addressed to `scope` (new session or higher seq). A cue
+ * for another step or family, or one without a scope, never reaches `onCue`, its stop included;
+ * each such scope is logged once. Watches the directory and polls as well: fs.watch can coalesce
+ * or miss renames on some platforms, and a poll every `pollMs` bounds the delay either way.
  */
 export class CueWatcher {
     private last: { session: string; seq: number } | null = null;
     private timer: ReturnType<typeof setInterval> | null = null;
     private watcher: FSWatcher | null = null;
+    private readonly ignored = new Set<string>();
+    private readonly scope: CueScope;
+    private readonly log: NonNullable<CueWatcherOptions['log']>;
 
     constructor(
         private readonly dir: string,
+        scope: CueScope,
         private readonly onCue: (cue: Cue) => void,
-        pollMs = 20
+        opts: CueWatcherOptions = {}
     ) {
+        const err = scopeError(scope);
+        if (err) throw new Error(`CueWatcher: ${err}`);
+        this.scope = { step: scope.step, family: scope.family };
+        this.log = opts.log ?? ((message, data) => console.error(`[cue] ${message}`, JSON.stringify(data ?? {})));
+        const pollMs = opts.pollMs ?? 20;
         mkdirSync(dir, { recursive: true, mode: 0o700 });
         try {
             this.watcher = watch(dir, () => this.check());
@@ -458,6 +672,16 @@ export class CueWatcher {
     check(): void {
         const cue = readCue(this.dir);
         if (!cue) return;
+        if (!cueAddresses(cue, this.scope.step, this.scope.family)) {
+            const theirs = scopeError(cue.scope) === null ? `${cue.scope.step}/${cue.scope.family}` : null;
+            const key = theirs ?? '(none)';
+            if (!this.ignored.has(key)) {
+                this.ignored.add(key);
+                if (theirs) this.log('cue ignored: addressed to another step or family', { cue: cue.scope, ours: this.scope });
+                else this.log('cue refused: cue.json has no scope { step, family }', { ours: this.scope });
+            }
+            return;
+        }
         if (this.last && this.last.session === cue.session && this.last.seq >= cue.seq) return;
         this.last = { session: cue.session, seq: cue.seq };
         this.onCue(cue);

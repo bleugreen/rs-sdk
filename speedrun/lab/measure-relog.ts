@@ -16,13 +16,13 @@
 // and gets back in through reconnect.ts reconnectAfterOutage with login({ inPage: true }), so it
 // shows whether a page whose game socket died logs itself back in or falls back to the navigation.
 
-import { chmodSync, existsSync, openSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, openSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import puppeteer from 'puppeteer';
 import type { Subprocess } from 'bun';
 import { reconnectAfterOutage } from '../lib/reconnect';
 import { closeSession, login, type LoginResult, logoutClean, openSession, ROOT } from '../lib/session';
 import { pageInGame } from '../lib/tab';
+import { launchLabBrowser } from './browser';
 import { tele, VARROCK_WEST_BANK } from './setup';
 import { onTutorialIsland } from '../lib/world';
 import { waitTicks } from '../lib/wait';
@@ -44,10 +44,12 @@ const proxy = Bun.spawn(
     ['bun', 'proxy.ts', `--world=http://localhost:${webPort}`, `--port=${PAGE_PORT}`, `--gateway=ws://localhost:${agentPort}`, `--bots-dir=${join(ROOT, 'bots')}`],
     { cwd: join(ROOT, 'server', 'webclient'), stdout: Bun.file(join(log, 'proxy.log')), stderr: 'inherit' }
 );
-const browser = await puppeteer.launch({
+// Chrome on its DevTools port, the bot's tab on the page server; the launcher points bot.env's CLIENT_URL
+// there and the session (and relog-probe.ts, which inherits SPEEDRUN_CDP_URL) at this Chrome.
+const browser = await launchLabBrowser(bot, {
     headless: !process.argv.includes('--headful'),
-    defaultViewport: null,
-    args: ['--no-sandbox', '--window-size=800,660', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', `--remote-debugging-port=${CDP_PORT}`],
+    cdpPort: CDP_PORT,
+    clientUrl: `http://127.0.0.1:${PAGE_PORT}/bot?server=localhost:${webPort}&gateway=ws://localhost:${agentPort}`,
 });
 
 let status = 1;
@@ -118,11 +120,6 @@ async function restartRelog(): Promise<number> {
 
 try {
     await Bun.sleep(1_500);
-    const envPath = join(ROOT, 'bots', bot, 'bot.env');
-    const lines = readFileSync(envPath, 'utf8').split('\n').filter(l => l && !/^(CLIENT_URL|CDP_URL)=/.test(l));
-    lines.push(`CLIENT_URL=http://127.0.0.1:${PAGE_PORT}/bot?server=localhost:${webPort}&gateway=ws://localhost:${agentPort}`, `CDP_URL=http://127.0.0.1:${CDP_PORT}`);
-    writeFileSync(envPath, lines.join('\n') + '\n');
-    chmodSync(envPath, 0o600);
     if (process.argv.includes('--restart')) {
         status = await restartRelog();
         throw null; // straight to the teardown
@@ -143,6 +140,7 @@ try {
 
     const probe = Bun.spawn(['bun', 'speedrun/tools/relog-probe.ts', bot, `--via=${via}`, `--n=${n}`, '--bank', `--json=${join(log, `relog-${bot}.json`)}`], {
         cwd: ROOT,
+        env: { ...process.env },
         stdout: 'inherit',
         stderr: 'inherit',
     });
@@ -150,7 +148,7 @@ try {
 } catch (err) {
     if (err !== null) throw err;
 } finally {
-    await browser.close().catch(() => {});
+    await browser.kill().catch(() => {});
     proxy.kill();
     engines.replacement?.kill('SIGKILL');
 }

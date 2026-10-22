@@ -18,12 +18,12 @@
 import type { BotSDK } from '../../sdk/index';
 import type { BotActions } from '../../sdk/actions';
 import type { BotWorldState, NearbyLoc } from '../../sdk/types';
-import { act, actConverse, castTeleport, clickWalk, slotOf, walkTo, TELEPORTS, type ActSdk } from './act';
-import type { ConverseSdk } from './converse';
+import { act, actConverse, castTeleport, clickWalk, settle, slotOf, walkTo, TELEPORTS, type ActSdk, type JumpCounts } from './act';
+import { converse, type ConverseSdk } from './converse';
 import type { OptionPattern } from './dialogue';
 import type { ItemPattern } from './items';
 import { currentTick, waitUntil, type StateSource } from './wait';
-import { chebyshev, findLoc, invCount, invItem, messagesSince, opIndex, pos, skillLevel, stateOf, tileCounter, waitForNpc, type LocQuery, type OpPattern, type StateLike, type Tile } from './world';
+import { chebyshev, findLoc, invCount, invItem, messageCursor, messagesAfter, messagesSince, opIndex, pos, skillLevel, stateOf, tileCounter, waitForNpc, type LocQuery, type OpPattern, type StateLike, type Tile } from './world';
 
 export type TravelSdk = ActSdk & ConverseSdk & Pick<BotSDK, 'findPath'>;
 export type WalkBot = Pick<BotActions, 'walkTo'>;
@@ -203,6 +203,8 @@ export type Hop =
     | { kind: 'loc'; loc: LocQuery; op?: OpPattern; arrive?: Area | Region; level?: number; answers?: OptionPattern[]; label?: string }
     /** Use an item on a loc until `arrive` holds (a talisman on the altar ruins). */
     | { kind: 'item-on-loc'; item: ItemPattern; loc: LocQuery; arrive: Area; label?: string }
+    /** Through a gate (`passGate`) to its side `to`. */
+    | { kind: 'gate'; gate: Gate; to: Region }
     | { kind: 'tree'; to: SpiritTree }
     | { kind: 'lever'; lever: Lever }
     | { kind: 'ship'; route: Ship }
@@ -218,7 +220,7 @@ export type HopKind = Hop['kind'];
  */
 export const DELETES_FOLLOWER_ITEM: Readonly<Record<HopKind, boolean>> = {
     teleport: true, tree: true, lever: true,
-    run: false, click: false, webs: false, loc: false, 'item-on-loc': false, ship: false, glider: false, lumdo: false,
+    run: false, click: false, webs: false, loc: false, 'item-on-loc': false, gate: false, ship: false, glider: false, lumdo: false,
 };
 
 export function deletesFollowerItem(hops: readonly Hop[]): boolean {
@@ -255,6 +257,7 @@ export function hopLabel(h: Hop): string {
         case 'webs': return `webs to ${h.goals.map(g => `${g[0]},${g[1]}`).join(' ')}`;
         case 'loc': return h.label ?? `loc ${String(h.loc.name ?? h.loc.id)}`;
         case 'item-on-loc': return h.label ?? `${String(h.item)} on loc ${String(h.loc.name ?? h.loc.id)}`;
+        case 'gate': return `through the ${h.gate.label}`;
         case 'tree': return `spirit tree to ${h.to}`;
         case 'lever': return `${h.lever} lever`;
         case 'ship': return `ship to ${h.route}`;
@@ -471,6 +474,11 @@ export function lumdoBoat(sdk: TravelSdk, to: LumdoStop, opts: TravelOptions = {
 }
 
 async function runHop(sdk: TravelSdk, trip: Trip, h: Hop, opts: TravelOptions): Promise<HopOutcome> {
+    // Every hop starts from a settled position (act.ts `settle`): straight after a landing the
+    // browser client is still rebuilding the region, its loc lists are empty and its collision maps
+    // stale, so a lookup there finds nothing (the village spirit tree) and a walk click is misrouted.
+    const settled = await settle(sdk, 60);
+    if (!settled.ok) return { ok: false, reason: 'the region never finished loading' };
     switch (h.kind) {
         case 'teleport': return hopTeleport(sdk, trip, h.spell);
         case 'run': return hopRun(sdk, trip, h.to, opts, h.via ?? [], h.wildernessAtMost);
@@ -481,6 +489,11 @@ async function runHop(sdk: TravelSdk, trip: Trip, h: Hop, opts: TravelOptions): 
         }
         case 'webs': return hopWebs(sdk, trip, h.goals, opts);
         case 'loc': return hopLoc(sdk, trip, h);
+        case 'gate': {
+            const r = await passGate(sdk, h.gate, h.to);
+            trip.clicks += r.clicks;
+            return r.ok ? { ok: true, note: `${r.clicks} clicks, ${r.dialogues} dialogues` } : { ok: false, reason: r.reason };
+        }
         case 'item-on-loc': return hopItemOnLoc(sdk, trip, h);
         case 'tree': return hopTree(sdk, trip, h.to);
         case 'lever': return hopLever(sdk, trip, h.lever);
@@ -585,11 +598,15 @@ function doorPassed(s: BotWorldState, door: { x: number; z: number }): Set<strin
 }
 
 /**
- * The door a run starting at `at` has just come through: every door or gate loc within 2 tiles that
- * `route` does not cross. A door the run needs is on its route, and the run opens that one itself.
+ * The doors a run starting at `at` may have just come through: every door or gate loc within 2 tiles
+ * that the run cannot need. A door's wall lies on an edge of its own tile, so a run crosses it only
+ * by stepping into or out of that tile. `route` lists every tile after the start, so a door the run
+ * needs is either on it (the run opens that one ahead) or under the player, where the first step may
+ * cross its wall: the Dwarf Cannon shed door shuts with the player on its tile, inside.
  */
 function doorsBehind(s: BotWorldState, at: { x: number; z: number }, route: ReadonlyArray<{ x: number; z: number }>): Set<string> {
-    return new Set(s.nearbyLocs.filter(l => DOORISH(l) && chebyshev(l, at) <= 2 && !route.some(t => t.x === l.x && t.z === l.z)).map(doorKey));
+    const crossable = (l: NearbyLoc) => (l.x === at.x && l.z === at.z) || route.some(t => t.x === l.x && t.z === l.z);
+    return new Set(s.nearbyLocs.filter(l => DOORISH(l) && chebyshev(l, at) <= 2 && !crossable(l)).map(doorKey));
 }
 
 /** Open a door as part of the run: the server walks to it, then opens it. Ok once no closed door is on its tile. */
@@ -633,8 +650,8 @@ async function hopRun(sdk: TravelSdk, trip: Trip, to: Area, opts: TravelOptions,
     let route = buildRoute(sdk, goal, via);
     // A stall never opens the door the run last went through. The Grand Tree's door forcemoves the
     // player through it (gnome_gate.rs2 open_tree_door), so opening it again from the far side sends
-    // them straight back (rs/185: ~50 ticks on each exit). At the start that door is the one just
-    // come through; afterwards it is the last one the run opened.
+    // them straight back (rs/185: ~50 ticks on each exit). At the start that is any door nearby the
+    // run cannot cross (doorsBehind); afterwards it is the last one the run opened.
     let passed = doorsBehind(sdk.getState()!, pos(sdk), route);
     let idx = 0;
     let target: XZ | null = null;
@@ -767,11 +784,11 @@ const WEB_RESULT = /slash the web apart|fail to cut through/i; // web.rs2
 async function slashWeb(sdk: TravelSdk, trip: Trip, web: NearbyLoc, through: XZ, tries = 12): Promise<boolean> {
     for (let i = 0; i < tries; i++) {
         if (!invItem(sdk, /^knife$/i)) return false;
-        const t = currentTick(sdk) + 1; // the last failed try's message must not count
+        const c = messageCursor(sdk); // the last failed try's reply must not count
         trip.webTries++;
         trip.clicks++;
-        await act(sdk, () => sdk.sendUseItemOnLoc(slotOf(sdk, /^knife$/i), web.x, web.z, web.id), s => messagesSince(s, t, WEB_RESULT).length > 0, { maxTicks: 30 });
-        if (!messagesSince(sdk, t, SLASHED).length) continue;
+        await act(sdk, () => sdk.sendUseItemOnLoc(slotOf(sdk, /^knife$/i), web.x, web.z, web.id), s => messagesAfter(s, c, WEB_RESULT).length > 0, { maxTicks: 30 });
+        if (!messagesAfter(sdk, c, SLASHED).length) continue;
         // A success runs p_delay(1) and a move click sent while delayed is refused
         // (MoveClickHandler), so re-send the step until the player moves.
         const p0 = pos(sdk);
@@ -831,6 +848,122 @@ async function hopWebs(sdk: TravelSdk, trip: Trip, goals: ReadonlyArray<readonly
         if (!reached) return { ok: false, reason: `webs: did not reach ${gx},${gz} (at ${fmtTile(pos(sdk))})` };
     }
     return { ok: true, note: `${trip.webTries} web tries` };
+}
+
+// ------------------------------------------------------------------ gates
+
+/**
+ * A gate a route passes through: the closed gate loc, its open option, and the two sides it
+ * joins. A gate's script can open a dialogue instead of the gate: `answers` are that dialogue's
+ * choices, by text (continue pages are continued, and a choice page none of them matches takes
+ * its first option).
+ */
+export interface Gate {
+    label: string;
+    loc: { id: number; x: number; z: number };
+    /** The open option (default Open). */
+    op?: OpPattern;
+    /** Each side as a region covering its approach; `passGate` ends in the one it is given. */
+    sides: { readonly [side: string]: Region };
+    answers?: readonly OptionPattern[];
+}
+
+/**
+ * The Gnome Stronghold's south gate (gnome_areagate, loc 190; gnome_gate.rs2). Its script places
+ * the player on its south (2461,3382) or north (2461,3385) entrance and steps them 3 tiles
+ * through by p_teleport (agility_walk), so it never shows a Close option. From the south on a
+ * first visit, with Femi beside it, it starts her boxes scene instead (femi.rs2
+ * grandtree_femi_boxes): 3 pages and a choice, declined by "Sorry, I'm a bit busy.", which sets
+ * %femi_help and leaves the gate shut, so the gate is clicked again. The Grand Tree stages that
+ * close the gate to the player are not handled: the run does the Grand Tree by then.
+ */
+export const GNOME_STRONGHOLD_GATE = {
+    label: 'Gnome Stronghold south gate',
+    loc: { id: 190, x: 2459, z: 3383 },
+    // Bands around the passage, checked tile by tile on the SDK collision map: every walkable tile
+    // in each is reached from its own entrance and not from the other's (the wall bends away
+    // west of x 2458 and east of 2465). A tile in neither answers no side (gateSide null).
+    sides: {
+        north: { x: [2458, 2465], z: [3385, 3440] },
+        south: { x: [2456, 2466], z: [3360, 3382] },
+    },
+    answers: [/^Sorry, I'm a bit busy\.$/],
+} as const satisfies Gate;
+
+/** The side of `gate` whose region holds `t` (on level 0), or null when neither does. */
+export function gateSide(gate: Gate, t: { x: number; z: number; level?: number }): string | null {
+    for (const [side, r] of Object.entries(gate.sides)) {
+        if ((t.level ?? 0) === (r.level ?? 0) && t.x >= r.x[0] && t.x <= r.x[1] && t.z >= r.z[0] && t.z <= r.z[1]) return side;
+    }
+    return null;
+}
+
+export interface GateResult extends JumpCounts {
+    ok: boolean;
+    startTick: number;
+    ticks: number;
+    /** Gate clicks sent (re-sends of a dropped click included). */
+    clicks: number;
+    /** Dialogues the gate's script opened, and their pages and choices. */
+    dialogues: number;
+    pages: number;
+    options: number;
+    at: Tile;
+    reason?: string;
+}
+
+/**
+ * Go through `gate` to its side `to`, and return only once the published position is inside
+ * `to`: never on a click sent. A dialogue already open when it starts (a gate click sent by
+ * someone else, as bot.walkTo's door opener does) or opened by the gate is answered with the
+ * gate's `answers`, and the gate clicked again. Each click goes through `act`, so it waits for
+ * the region to load and the position to settle after a jump, and is re-sent when dropped.
+ * Already in `to`: ok with no click.
+ */
+export async function passGate(sdk: TravelSdk, gate: Gate, to: Region, opts: { maxClicks?: number; maxTicks?: number; log?: boolean } = {}): Promise<GateResult> {
+    const startTick = currentTick(sdk);
+    const maxClicks = opts.maxClicks ?? 4;
+    const maxTicks = opts.maxTicks ?? 150;
+    const res: GateResult = { ok: false, startTick, ticks: 0, clicks: 0, dialogues: 0, pages: 0, options: 0, at: pos(sdk) };
+    const jump: Required<JumpCounts> = { settleTicks: 0, refusedResends: 0, unansweredResends: 0 };
+    const end = (ok: boolean, reason?: string): GateResult => {
+        const out: GateResult = { ...res, ok, ticks: currentTick(sdk) - startTick, at: pos(sdk), ...(reason ? { reason } : {}) };
+        for (const k of ['settleTicks', 'refusedResends', 'unansweredResends'] as const) if (jump[k]) out[k] = jump[k];
+        if (opts.log) console.log(`  [gate] ${gate.label}: ${ok ? 'through' : `FAILED (${reason})`} in ${out.ticks} ticks, ${res.clicks} clicks, ${res.dialogues} dialogues`);
+        return out;
+    };
+    const answer = async () => {
+        const c = await converse(sdk, [...(gate.answers ?? [])], { idle: 1, openTicks: 1, maxTicks: 80, keep: true, unmatched: 'first', log: opts.log });
+        if (c.opened) res.dialogues++;
+        res.pages += c.pages;
+        res.options += c.options;
+        return c;
+    };
+    const out = () => currentTick(sdk) - startTick > maxTicks;
+    for (let attempt = 0; ; attempt++) {
+        if (within(sdk, to)) return end(true);
+        if (out()) return end(false, `not through after ${maxTicks} ticks (at ${fmtTile(pos(sdk))})`);
+        if (sdk.getState()?.dialog.isOpen) {
+            const c = await answer();
+            if (!c.ok) return end(false, `the gate's dialogue: ${c.reason}`);
+            continue;
+        }
+        if (attempt >= maxClicks * 2 || res.clicks >= maxClicks) return end(false, `not through after ${res.clicks} clicks (at ${fmtTile(pos(sdk))})`);
+        // The loc can be missing while the region loads, or for the 5 ticks the script swaps it out.
+        const found = await waitUntil(sdk, s => within(s, to) || s.dialog.isOpen || s.nearbyLocs.some(l => l.id === gate.loc.id && l.x === gate.loc.x && l.z === gate.loc.z), { maxTicks: 30 });
+        if (!found.ok) return end(false, `no ${gate.label} at ${gate.loc.x},${gate.loc.z} in view (at ${fmtTile(pos(sdk))})`);
+        const l = found.state.nearbyLocs.find(x => x.id === gate.loc.id && x.x === gate.loc.x && x.z === gate.loc.z);
+        if (!l) continue;
+        const op = opIndex(l, gate.op ?? /^open$/i);
+        if (op === undefined) return end(false, `${l.name} at ${l.x},${l.z} has no option ${String(gate.op ?? 'Open')}: ${l.options.join('/')}`);
+        const r = await act(sdk, () => {
+            res.clicks++;
+            return sdk.sendInteractLoc(l.x, l.z, l.id, op);
+        }, s => within(s, to) || s.dialog.isOpen, { resendEvery: 6, maxResends: 2, maxTicks: 30 });
+        jump.settleTicks += r.settleTicks ?? 0;
+        jump.refusedResends += r.refusedResends ?? 0;
+        jump.unansweredResends += r.unansweredResends ?? 0;
+    }
 }
 
 // ------------------------------------------------------------------ locs, trees, levers, ships, gliders, boats

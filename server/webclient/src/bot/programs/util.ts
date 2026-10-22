@@ -1,5 +1,6 @@
 // Small readers over the published state shared by the tick programs.
 
+import { ChatHistory } from '../../../../../sdk/chat-history.js';
 import type { BotWorldState, GameMessage, InventoryItem } from '../types.js';
 import type { ProgramContext } from './types.js';
 
@@ -82,36 +83,20 @@ export function tile(value: unknown, name: string): [number, number] {
 }
 
 /**
- * Yields the game messages a state carries that were not seen before. The
- * collector keeps a rolling window, so a message is identified by its
- * observation id when it has one, else by tick, text and repeat count.
+ * Yields the game messages a state carries that were not seen before, each once and in order.
+ * A message's observation id is the publication it first showed in, so every message of one
+ * tick shares it: a message is its id plus its place among that publication's messages. This
+ * is the SDK's ChatHistory rule, used as is so the page and the SDK read one stream one way.
  */
 export class FreshMessages {
-    private readonly ids = new Set<number>();
-    private readonly texts = new Map<string, number>();
+    private readonly history = new ChatHistory();
 
     constructor(initial?: BotWorldState | null) {
         if (initial) this.take(initial);
     }
 
     take(s: BotWorldState): GameMessage[] {
-        const fresh: GameMessage[] = [];
-        const counts = new Map<string, number>();
-        for (const m of s.gameMessages ?? []) {
-            if (m.observationId !== undefined) {
-                if (this.ids.has(m.observationId)) continue;
-                this.ids.add(m.observationId);
-                fresh.push(m);
-                continue;
-            }
-            const key = `${m.tick}|${m.text}`;
-            const n = (counts.get(key) ?? 0) + 1;
-            counts.set(key, n);
-            if ((this.texts.get(key) ?? 0) >= n) continue;
-            this.texts.set(key, n);
-            fresh.push(m);
-        }
-        return fresh;
+        return this.history.record(s.gameMessages ?? []);
     }
 }
 

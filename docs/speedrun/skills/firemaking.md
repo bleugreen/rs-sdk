@@ -466,6 +466,28 @@ click), then the held lights; no resend, no slip. All six pass. A page bundle
 (`server/webclient/out/bot`) older than the client changes fails every
 browser run with "no in-game state": rebuild it first (`bun run build`).
 
+**Reading game messages (rs/364).** The `Lighter` reads new game messages
+through the SDK's `ChatHistory` (`sdk/chat-history.ts`). A message's
+`observationId` is the publication it first showed in, and both clients
+publish once a tick, so every line of one tick shares it. The module first
+keyed messages on that id alone, the rs/356 FreshMessages defect, so it saw
+only the first line of each tick: a success, refusal or attempt behind
+another line of its tick was dropped. `ChatHistory.record` counts the lines
+sharing a publication. The row golden is unchanged: its scripted server gives
+every message its own id, so the old and the new rule agree there.
+`firemaking.test.ts` pins a success behind another line of its tick.
+
+Re-measured after the fix, browser client, full 1 -> 99 on the row
+(`--client=browser --arrive=walk`, fresh accounts, bgsrv-mac, 300 ms,
+2026-10-22): **647, 663, 683** (2, 6 and 11 failed rolls); 157 of 157 lit
+and dropped, 0 lost, refused, waited for or inferred. Every gap is 4 x the
+lighting attempts on its log except the two lap turns (9 ticks at logs 54 and
+108, as before); laps 2 and 3 are 4.000 per fire. Overhead beyond 4 ticks a
+roll is 11 in each run: the lite runs' 16 less the approach, since these
+walk to the entry. With the expected 7.58 failures that is ~669. One
+backstop resend (run 3) fell inside a 32-tick gap of 8 attempts and cost
+nothing. No cadence change.
+
 **Demo acceptance (entry 16), passed on the demo server.** Judged by entry
 16's line: every gap equals 4 ticks per roll on that log (the trace shows one
 start of the roll animation per failed roll and none for the roll that

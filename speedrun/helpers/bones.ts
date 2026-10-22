@@ -32,7 +32,7 @@ import { Buyer } from './buyer';
 import { EatGuard } from './eat-guard';
 import { waitForFreshState } from '../lib/fresh-state';
 import { accountMatches, playerPattern } from './mule';
-import { isEastOfTollGate, travelTo } from '../lib/toll-gate';
+import { isEastOfTollGate, TOLL_GP, travelTo } from '../lib/toll-gate';
 
 interface Box { x1: number; z1: number; x2: number; z2: number }
 interface Tile { x: number; z: number }
@@ -531,6 +531,31 @@ export function keepOnBank(name: string, lv: { fishing: number; cooking: number 
         (NET_FISH.test(name) && lv.cooking < 15);
 }
 
+const COINS = /^coins$/i;
+
+/** Whether the carried product (`product`, a spot's `bones`) has reached `maxCarry`: the bank trigger short of a full pack. */
+export function carryReached(inventory: readonly { name: string; count: number }[], product: RegExp, maxCarry: number): boolean {
+    return inventory.filter(i => product.test(i.name)).reduce((a, i) => a + i.count, 0) >= maxCarry;
+}
+
+/** Edible food past the first `cap` units carried, by id, in inventory order: what a bank visit deposits under `keepFood`. */
+export function foodOverCap(inventory: readonly InventoryItem[], cap: number): { id: number; n: number }[] {
+    let kept = 0;
+    const over = new Map<number, number>();
+    for (const i of inventory) {
+        if (!edible(i)) continue;
+        const stay = Math.max(0, Math.min(i.count, cap - kept));
+        kept += stay;
+        if (i.count > stay) over.set(i.id, (over.get(i.id) ?? 0) + i.count - stay);
+    }
+    return [...over].map(([id, n]) => ({ id, n }));
+}
+
+/** What a bank visit at `at` takes out so the walk away can pay the Al Kharid toll: 10 gp when east of the gate. */
+export function tollWithdraw(at: { x: number; z: number }): { re: RegExp; n: number }[] {
+    return isEastOfTollGate(at) ? [{ re: COINS, n: TOLL_GP }] : [];
+}
+
 /**
  * Carried items that send the fishing fallback to the bank first: the spot's product, and coins
  * unless the spot keeps them carried. Kept coins survive every bank visit, so counting them
@@ -619,6 +644,17 @@ interface Options {
     maxPlayersNearTarget: number;
     /** Stop training a combat skill at this level (the style picker skips it). */
     styleCap: number;
+    /**
+     * Most food a bank visit leaves carried; the rest is banked (default: all of it). A borrowed
+     * account that needs no food (99 Defence at chaos druids) otherwise spends its bag on it.
+     */
+    keepFood: number;
+    /**
+     * Bank once this many of the spot's product (its `bones`: bones, or herbs at the druids) are
+     * carried, before the pack is full (default: only when full). Caps what a death in the
+     * Wilderness can cost.
+     */
+    maxCarry: number;
     /** Log every fight at the spot (outcome, game ticks, position, live targets in view): for measuring kill rates. */
     trace: boolean;
 }
@@ -650,6 +686,8 @@ export function parseOptions(o: Record<string, unknown>): Options {
         loot: typeof o.loot === 'string' ? new RegExp(o.loot, 'i') : DEFAULT_LOOT,
         maxPlayersNearTarget: num('maxPlayersNearTarget', 0),
         styleCap: num('styleCap', 99),
+        keepFood: num('keepFood', Infinity),
+        maxCarry: num('maxCarry', Infinity),
         trace: o.trace === true
     };
 }
@@ -990,13 +1028,21 @@ export class Run {
         // un-noted, and without fishing the fishing kit and raw fish only cost slots.
         const fishingKit = (n: string) => ROD.test(n) || FEATHER.test(n) || RAW_FISH.test(n) || NET.test(n) || NET_FISH.test(n);
         const fishing = this.fishing();
-        const keep = (i: InventoryItem) => (this.opt.spot.keep?.test(i.name) ?? false) ||
+        // Al Kharid's only way out to the west is the toll gate, which walkOnce pays from carried
+        // coins: a bank visit east of it keeps (or takes out) the toll.
+        const toll = tollWithdraw(this.pos());
+        withdraw = [...withdraw, ...toll];
+        const keep = (i: InventoryItem) => (this.opt.spot.keep?.test(i.name) ?? false) || (toll.length > 0 && COINS.test(i.name)) ||
             (keepOnBank(i.name, lv, this.opt.spot.requires) && !(FOOD.test(i.name) && !edible(i)) && (fishing || !fishingKit(i.name)));
         const seen = new Set<number>();
         for (const item of this.state().inventory) {
             if (seen.has(item.id) || keep(item)) continue;
             seen.add(item.id);
             await this.bot.depositItem(item, -1);
+        }
+        for (const { id, n } of foodOverCap(this.state().inventory, this.opt.keepFood)) {
+            const item = this.state().inventory.find(i => i.id === id);
+            if (item) await this.bot.depositItem(item, n);
         }
         for (const w of withdraw) {
             const have = this.state().inventory.filter(i => w.re.test(i.name) && (!FOOD.test(i.name) || edible(i))).reduce((a, i) => a + i.count, 0);
@@ -1629,6 +1675,10 @@ export class Run {
         await this.dropSpareKeys();
         if (this.freeSlots() === 0) {
             await this.bank('full', spot, this.tripKit());
+            return;
+        }
+        if (carryReached(this.state().inventory, spot.bones, this.opt.maxCarry)) {
+            await this.bank('carry', spot, this.tripKit());
             return;
         }
         const p = this.pos();

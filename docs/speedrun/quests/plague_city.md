@@ -180,17 +180,36 @@ The clerk's expected retries (14 ticks stock) shrink in the same proportion.
 
 ## Risks and gotchas
 
-- **The clerk is random.** The stage only advances if Bravek is within 7 tiles of the
-  *player* when the clerk's last page runs (`clerk.rs2:52`, `.npc_find(coord, bravek, 7,
-  0)`, which searches round the player's tile). Bravek has no `wanderrange` in
-  `bravek.npc`, so he drifts round (2536,3314), and before this step the player cannot
-  stand east of x = 2529. From x = 2528 he is out of range even at his spawn. Measured
-  from (2529,3316): 5 of 8 tries advanced (20 ticks, 7 + 2 clicks), the misses cost 18
-  ticks (6 + 2) and must be repeated. Bravek's x when the dialogue ended was 2534-2536 on
-  every hit and 2537-2538 on every miss, so a client can wait for him to drift west
-  before clicking.
+- **The clerk is random, unless you stand east of his desk.** The stage only advances if
+  Bravek is within 7 tiles of the *player* when the clerk's last page runs (`clerk.rs2:52`,
+  `.npc_find(coord, bravek, 7, 0)`, which searches round the player's tile). Bravek has no
+  `wanderrange` in `bravek.npc`, so he drifts round (2536,3314). The clerk stands behind his
+  desk at (2528,3317) (`maps/m39_51.jm2`: the desk, loc 608, is at (2528,3316)). (2529,3316) is
+  blocked to a walker (m); the earlier measurement (5 of 8 tries from (2529,3316)) was taken
+  after a staff teleport onto it. A talk started from anywhere else is walked round to
+  (2527,3317), from where Bravek must stand at x 2534 or less: 1 try in 3 landed there (m, lab,
+  rs/400). **(2529,3317), east of the clerk, is reachable by a run and the talk keeps the player
+  on it** (m, lab probe, rs/400), and from there Bravek's spawn is in reach: 6 of 6 first tries
+  landed in rs/400's acceptance (Bravek at x 2531-2535 when the page ran). The module also holds
+  the clerk's "Mr Bravek, there's a ... here" page until Bravek is within 7 tiles (at most 30
+  ticks); it was never needed from (2529,3317).
 - **Walking into the plague house basement area and the Rehnison house needs the doors
   opened**; a run click cannot path through a closed door. Count each door as an op.
+- **Edmond's house.** Its west wall runs along x 2570 with a door at (2570,3333): Edmond
+  waits *outside* it, in the garden; Alrena is in the first room and the picture behind a
+  second door at (2574,3333) (`maps/m40_52.jm2`). Both doors shut again on their own, so a
+  talk to Edmond from Alrena's room can find no route and open nothing (m, rs/400: one run in
+  three). Open the doors first.
+- **Tiles the walker cannot stand on** (m, rs/400): (2530,9702) in front of the sewer grill
+  (the pipe's ops walk there themselves; stand on the manhole landing (2530,9703)), (2529,3316)
+  beside the clerk, and (2534,3269) south of the barrel. A run aimed at the cell door's front
+  tile (2539,9672) is aimed at the door loc's own tile: the run opens the door on its route,
+  which with the key unlocks it and teleports the player into the cell past the goal (+44 ticks,
+  m). Click the door from the stairs landing instead.
+- **Message boxes the next click closes.** Each pour (`mud_patch.rs2:41-50`), each cure mix
+  (`cakes.rs2:131-143`) and the barrel's key ends on a box with nothing after it, and the next
+  op closes it (`Player.clearPendingAction` closes the modal), so the four pours chain at 1 tick
+  each with no continue (m, rs/400: 5-7 ticks for the walk and four pours, against 16).
 - **Wear the gas mask before the pipe**: without it Edmond refuses (`sewerpipe.rs2:7`).
 - **Don't start Biohazard early**: at `%biohazard` >= 1 the mud patch says "The ground's
   been filled in" and digging no longer works (`mud_patch.rs2:15`).
@@ -204,16 +223,63 @@ The clerk's expected retries (14 ticks stock) shrink in the same proportion.
 
 ## Open questions
 
-- Whether equipping the gas mask while running (step 13) costs anything; it was measured
-  standing (2 ticks).
-- Whether the clerk can be talked to from a tile nearer Bravek through the office door
-  frame; (2529,3316) was the closest tile tried.
+- Whether equipping the gas mask while running (step 13) costs anything; it is measured
+  standing beside the grill at 1 tick (rs/400).
+- Answered (rs/400): the clerk is talked to from (2529,3317), east of his desk.
 - Arrival: the Camelot teleport is a placeholder; the README should cost the arrival from
   wherever the previous quest ends (Ardougne itself has no teleport until this quest is
   done).
 
+## The step module and its lab acceptance (rs/400)
+
+`speedrun/quests/plague-city.ts` (S08, STEP-MANIFEST.md entry 18) runs the route from Edmond's
+arrival tile (2568,3334) to the magic scroll read, in 26 segments; `speedrun/lab/quests/plague-city.ts`
+stages SCORED's arrival levels (Magic 59, Mining 49) and pack (the knife, one log, the staff of water
+worn, then H6) for each. Measured on the lab (bgsrv-ub, lite client, 300 ms, 2026-10-22), 3 full
+chains a mode, every one passing with the scroll read observed and the Ardougne teleport landing
+afterwards. Ticks are from Edmond's tile; H6's trade (row 0, 9 m) is staged, not run.
+
+| Segment | Steps above | Fixed (m, 3 runs) | Burst (m, 3 runs) |
+|---|---|---|---|
+| A kit | 0 (staged) | 0 | 0 |
+| B Edmond's start | 2 | 19.3 | 10 |
+| C the picture (the two house doors) | 3 | 8.7 | 7.7 |
+| D Alrena | 4 | 16 | 13.3 |
+| E Edmond, the gas mask | 5 | 6.3 | 7.3 |
+| F the cure | 6 | 2 | 2 |
+| G the mud patch (four chained pours) | 7-8 | 5.7 | 6.3 |
+| H the dig | 9 | 3 | 3 |
+| I the run to the grill, the rope | 10-11 | 22 | 22 |
+| J Edmond in the sewer | 12 (to Edmond) | 14.7 | 13.3 |
+| K back to the pipe, the mask, the climb | 12 (back), 13 | 17.7 | 16.3 |
+| L Jethick | 14 | 20.7 | 17 |
+| M the Rehnisons' door | 15 | 20.7 | 19.3 |
+| N Ted | 16 | 5.7 | 5.7 |
+| O the stairs, Milli, the stairs | 17 | 15.7 | 12.3 |
+| P out of the house, the plague house door | 17 (door), 18 | 46 | 44 |
+| Q the clerk | 19 | 36 | 37 |
+| R Bravek's door, Bravek | 20-21 | 17 | 16 |
+| S Bravek, the warrant | 22 | 14.3 | 11 |
+| T to the plague house, in | 23-24 | 34 | 33 |
+| U the barrel | 25 | 3 | 3 |
+| V the stairs down | 26 (stairs) | 1 | 1 |
+| W the cell door, Elena | 26 (door), 27 | 12 | 12 |
+| X back to Edmond | 28-30 | 51 | 51 |
+| Y Edmond's reward | 31 | 7.7 | 7 |
+| Z the scroll read, the exit drops | 32 | 6 | 6 |
+| **Total** (runs) | | **406** (399, 405, 414) | **376.7** (372, 380, 378) |
+
+With the trade's 9, 415 fixed and 386 burst, against the manifest's 491 fixed (m, from the stock
+figures) and 435 burst (i). The gains on the stock model: the clerk lands on the first try from
+(2529,3317) (36 against ~46 with retries), the chained pours (G), the barrel and stairs answered by
+the next click (U, V), and the sewer leg's measured run (I, J). Segment Z includes the exit drops
+(the gas mask taken off, then the spade, the four buckets and the mask dropped at once: 3 ticks),
+which the slot ledger had on T08-09.
+
 ## Scripts
 
+- `speedrun/quests/plague-city.ts` (the S08 step module) and `speedrun/lab/quests/plague-city.ts`
+  (its lab acceptance through `labMain`).
 - `docs/speedrun/scripts/quest-plague-city-segments.ts <bot> [segment...]`: segments
   `start cure mud sewer west clerk bravek rescue exit`.
 - `docs/speedrun/scripts/quest-plague-city-routes.ts`: offline route tiles for every leg.

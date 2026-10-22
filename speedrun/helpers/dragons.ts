@@ -269,6 +269,14 @@ export interface DragonOptions {
     shopPrices: { staff: number; mind: number; chaos: number; death: number };
 }
 
+/**
+ * What the role telegrabs, by item name. Not the room's blue dragon scales: none of their five
+ * spawns is in line of sight from SAFE_TILE (dragons.md, measured on the demo).
+ */
+export function lootPattern(o: Pick<DragonOptions, 'hides'>): RegExp {
+    return o.hides ? /^(dragon bones|dragonhide)$/i : /^dragon bones$/i;
+}
+
 export function dragonOptions(o: Record<string, unknown>): DragonOptions {
     const num = (k: string, d: number) => (typeof o[k] === 'number' ? (o[k] as number) : d);
     const p = (o.prices ?? {}) as Record<string, number>;
@@ -542,7 +550,7 @@ class Dragons {
         this.bot = ctx.bot;
         this.run = new Run(ctx, parseOptions({ spot: 'baby_blue', fish: false, train: o.train, eatAt: 0.5, fleeAt: 0.3 }));
         this.requests = new ChatCursor(ctx.sdk, [TRADE_REQUEST_CHAT_TYPE]);
-        this.loot = o.hides ? /^(dragon bones|dragonhide)$/i : /^dragon bones$/i;
+        this.loot = lootPattern(o);
     }
 
     traveller(): Traveller {

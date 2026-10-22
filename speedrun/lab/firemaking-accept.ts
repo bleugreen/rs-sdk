@@ -28,10 +28,9 @@
 // RESULT reports every lap: lap 1 (logs 0-53) carries the failed rolls below level 43, so the
 // chain's own pace is lap 2 (logs 54-107, every roll certain, no lap turn inside it).
 
-import { appendFileSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import puppeteer from 'puppeteer';
 import { runScript } from '../../sdk/runner';
 import { closeSession, openSession, type Session } from '../lib/session';
 import type { BotWorldState } from '../../sdk/types';
@@ -41,8 +40,9 @@ import { give as tradeGive } from '../lib/trade';
 import { tickMs, waitUntil } from '../lib/wait';
 import { runSteps } from '../runner/step';
 import { defaultCapacity, DEFAULT_ID, steps, tradePlan, type Tile } from '../skills/firemaking';
+import { launchLabBrowser } from './browser';
 import { arg, botArg, result } from './common';
-import { cheat, clearInventory, give, mustTele, setstat } from './setup';
+import { cheat, clearInventory, give, leaveTutorial, mustTele, setstat } from './setup';
 
 const ROOT = resolve(import.meta.dir, '..', '..');
 // runScript copies the running bot's bot.env into process.env (sdk/runner.ts), and a helper that
@@ -76,8 +76,9 @@ const S03_RUNES = ['airrune', 'mindrune', 'waterrune', 'earthrune', 'bodyrune', 
 const emit = (o: Record<string, unknown>) => console.log(JSON.stringify({ role, ...o }));
 const at = (s: BotWorldState | null, t: Tile) => s?.player?.worldX === t[0] && s?.player?.worldZ === t[1];
 
-async function outOfTutorial(actions: { skipTutorial(): Promise<unknown> }, sdk: { getState(): BotWorldState | null; sendClickDialog(o: number): Promise<unknown>; waitForTicks(n: number): Promise<unknown> }) {
-    await actions.skipTutorial().catch(() => {});
+/** Off Tutorial Island through S00's tutorialSkip (every side tab open), then any open dialog dismissed. */
+async function outOfTutorial(actions: Session['bot'], sdk: Session['sdk']) {
+    await leaveTutorial({ sdk, bot: actions, name: me, sessionId: 0 });
     while (sdk.getState()?.dialog.isOpen) {
         await sdk.sendClickDialog(0);
         await sdk.waitForTicks(1);
@@ -123,6 +124,8 @@ if (role === 'giver') {
 // ------------------------------------------------------------------ the helper process
 
 const base = arg('out', '') || mkdtempSync(join(tmpdir(), `fm-accept-${supply}-`));
+// An --out directory must exist before the helper log and the browser proxy's log files open in it.
+mkdirSync(base, { recursive: true });
 interface Line { message?: string; phase?: string; i?: number; k?: number; tick?: number; ms?: number; need?: number; early?: boolean; ok?: boolean; [k: string]: unknown }
 const lines: Line[] = [];
 const waiters: Array<{ pred: (l: Line) => boolean; res: (l: Line) => void }> = [];
@@ -287,27 +290,18 @@ if (client === 'browser') {
         stdout: Bun.file(join(base, 'proxy.log')),
         stderr: Bun.file(join(base, 'proxy.err'))
     });
-    const envPath = join(ROOT, 'bots', me, 'bot.env');
-    const lines = readFileSync(envPath, 'utf8').split('\n').filter(l => l && !/^(CLIENT_URL|CDP_URL)=/.test(l));
-    lines.push(`CLIENT_URL=http://127.0.0.1:${pagePort}/bot?server=localhost:${webPort}&gateway=ws://localhost:${agentPort}`, `CDP_URL=http://127.0.0.1:${cdpPort}`);
-    writeFileSync(envPath, lines.join('\n') + '\n', { mode: 0o600 });
     for (let k = 0; k < 50; k++) {
         if (await fetch(`http://127.0.0.1:${pagePort}/bot?bot=x`, { redirect: 'manual' }).then(() => true, () => false)) break;
         await Bun.sleep(200);
     }
-    const browser = await puppeteer.launch({
-        headless: true,
-        defaultViewport: null,
-        args: ['--no-sandbox', '--window-size=800,660', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', `--remote-debugging-port=${cdpPort}`]
-    });
-    process.env.SPEEDRUN_CDP_URL = `http://127.0.0.1:${cdpPort}`;
+    const browser = await launchLabBrowser(me, { cdpPort, clientUrl: `http://127.0.0.1:${pagePort}/bot?server=localhost:${webPort}&gateway=ws://localhost:${agentPort}` });
     let session: Session | null = null;
     try {
         session = await openSession(me, { client: 'browser', launch: true });
         await scoredRun(session.bot, session.sdk);
     } finally {
         if (session) await closeSession(session).catch(() => {});
-        await browser.close().catch(() => {});
+        await browser.kill().catch(() => {});
         proxy.kill('SIGTERM');
     }
 } else await runScript(async ({ bot, sdk }) => scoredRun(bot, sdk), { timeout: 0, printState: false });

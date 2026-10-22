@@ -87,9 +87,17 @@ tick later; the shape is the same. Measure through the demo's public gateway and
 
 1. **Configure the packages** in the mule's options, in the order the run will pull
    them (`serveMode: 'order'`, the default). Each package is a list of
-   `{ item, amount, noted? }` with exact item names. Noted items take one slot each.
-   A package must fit the scored account's free inventory slots (stackable items it
-   already holds merge).
+   `{ item, amount, noted? }` with exact item names, or `{ id, amount, noted? }` with an
+   obj id where names collide: in this revision every unfinished potion is "Unfinished
+   potion" and every grimy herb "Herb", so H21e's potion types are told apart only by id
+   (`server/content/pack/obj.pack`; guam unf 91, ranarr unf 99). An id may be the item's
+   or its note's (`cert_<name>` in the pack, resolved by `speedrun/lib/obj-pack.ts`): the
+   bank holds the item, and a note's id asks for a noted withdrawal (`noted: false` with
+   one is refused). The mule stages, checks and offers by id, so one type never stands
+   in for another. A name that matches two different bank items is never resolved to the
+   first: the package is reported short (`ambiguous` in the log) until it names ids.
+   Noted items take one slot each. A package must fit the scored account's free
+   inventory slots (stackable items it already holds merge).
 2. **Arrive** in Varrock west bank with no modal open (the trade request is refused
    while a bank or shop is open on either side; `receivePackage` retries through
    "busy" for the mule's side) and with enough free slots.

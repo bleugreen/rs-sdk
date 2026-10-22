@@ -20,9 +20,7 @@
 // - `idle` (default): the program sends the trade request itself, as a `player` stun action
 //   on the stun's +2 once fewer than `below` food items are left, and with
 //   `idleOnInterface` sends nothing while the trade is open; this module's TopUpReceiver
-//   accepts the offer and confirm screens (`lib/trade.ts` `decideReceiver`). `resend: true`
-//   (off by default) has the program send a request the engine never answered once more,
-//   TOPUP_RESEND_TICKS after it and inside the program's request hold.
+//   accepts the offer and confirm screens (`lib/trade.ts` `decideReceiver`).
 // - `restart` (the fallback): the module stops the program on the first failure with food
 //   below `below`, receives the trade (`receiveFrom`, re-sending a request the stun's delay
 //   dropped), and starts the program again by TOPUP_RESTART_BY ticks after the failure, whose
@@ -53,6 +51,21 @@
 // stunned account cannot step round one to reach it (rs/279). The detail row reports what the
 // pack sent (`stun:*` counters summed over the band's program runs), the Prayer, Magic and
 // Fletching experience and levels it gained, and the sip's ticks when there was one.
+//
+// Superheat (`stunPack.superheat`, off by default; stun-pack.md sections 15 and 16). Every
+// stocked stun casts Superheat Item on an ore in place of the three burials, whose bones move
+// to S07: `casts` a stun (default 2, at +2 and +5: the spell's p_delay(1) rests the two ticks
+// after each, and a cast from +6 on would refuse the +8 click). Iron ore from Smithing 15, copper
+// with tin before it and whenever no iron is held (SUPERHEAT_BRONZE_CASTS of them from Smithing
+// 1). Each cast tick sends no knight click, which its delay would refuse, so it carries four
+// delay-free actions: the bars made are dropped first, then Charge while the blood runes last,
+// then arrows. The ore arrives through the same top-up trade as the bones did: a `topup:ore`
+// request on the stun's +2 once fewer than `oreBelow` ores (default `casts`) are held, and the
+// courier fills the free slots (superheatLoad, in the slot ledger's `NAME to N [K]` grammar). With
+// superheat on, Charge is no longer the only way to Magic 99, so the band starts without blood
+// runes (Charge then never fires); Superheat itself needs Magic 43 (boosted, as the engine checks
+// it), nature runes, a staff of fire wielded or four fire runes a cast, and ore for a cast. The
+// detail row adds the casts, the bars dropped, the skipped clicks and the Smithing gained.
 
 import type { BotWorldState, InventoryItem, NearbyNpc } from '../../sdk/types';
 import { depositMatching, withdrawMany } from '../lib/bank';
@@ -62,7 +75,10 @@ import { withLevelUpDismissal } from '../lib/levelup';
 import { overBudgetMeta, runProgram, stopProgram, type ProgramStatus } from '../lib/programs';
 import { decideReceiver, newReceiverCtx, receiveFrom, sameName, type ReceiverCtx } from '../lib/trade';
 import { currentTick, nextTick, tickMs, waitUntil } from '../lib/wait';
+import { XP_RATE, xpForLevel } from '../lib/xp';
+import { Spells } from '../../sdk/spells';
 import type { Step, StepContext } from '../runner/step';
+import { cueDir, writeTopUpAsk, type AskItem } from '../helpers/altar-cue';
 
 export const skill = 'thieving';
 
@@ -209,8 +225,6 @@ export interface TopUp {
     below: number;
     /** See the header (default 'idle'). */
     mode?: 'idle' | 'restart';
-    /** Idle mode only: re-send an unanswered request once, TOPUP_RESEND_TICKS after it (default off). */
-    resend?: boolean;
 }
 
 /** Ticks after the failure by which a stopped program must be running again (the header). */
@@ -222,14 +236,6 @@ export const TOPUP_RESTART_BY = 9;
  * (OpPlayerHandler): in the lab every one of 13 such requests vanished and no top-up landed.
  */
 export const TOPUP_NO_REPLY_TICKS = 2;
-/**
- * Idle mode's `resend`: the program's `requestResend`, ticks after the +2 request. A request that
- * has drawn neither a trade nor "Sending trade offer..." by then was dropped: in rs/279's
- * side-tile lab, 1 of 10 requests never reached the giver. 3 is the last tick of the program's
- * request hold (REQUEST_HOLD), so the re-send displaces no click, and a request that ran even
- * 2 ticks late has already been answered.
- */
-export const TOPUP_RESEND_TICKS = 3;
 
 /** The `player` stun action that requests the top-up on a stun's +2. */
 export function topUpAction(topUp: TopUp, food: Food): Record<string, unknown> {
@@ -308,13 +314,82 @@ export class TopUpReceiver {
     }
 }
 
+// ------------------------------------------------------------------ the courier's ask
+
+/** The pack's top-up brings the food back to this many (stun-pack.md section 6). */
+export const PACK_FOOD_TO = 2;
+/** Arrowtip tiers the courier brings, once each, when the account is down to one tier (stun-pack.md section 6). */
+export const COURIER_TIERS = ['adamant', 'rune'] as const;
+const ARROWTIPS = /arrow(head|tip)s$/i;
+
+/** Which courier tiers the account has held or been sent (so each is asked for once). */
+export interface AskMemory {
+    tiers: Set<string>;
+}
+
+/**
+ * What this account asks the courier for, from its state as the trade opens (stun-pack.md
+ * section 5, step 3): while the trade is open it sends nothing else, so its free slots can't
+ * shrink. Free slots keep one for the knights' coins until some are held. With the pack: food
+ * back to PACK_FOOD_TO, the next courier tier once the account is down to one arrowtip tier
+ * (while Fletching is below 99), and bones in every slot left but one, which stays free for a
+ * new arrow product stack; with superheat (`superheat`) those slots take its ore (superheatOre).
+ * Without the pack: food in every free slot. The courier offers each item with one press
+ * (bone-giver.ts askOffer), so a courier holding exactly the ore asked offers it as All.
+ */
+export function topUpAsk(s: BotWorldState, food: Food, pack: boolean, mem: AskMemory, superheat?: Required<SuperheatOptions>): AskItem[] {
+    const inv = s.inventory;
+    const free = 28 - inv.length - (inv.some(i => /^coins$/i.test(i.name)) ? 0 : 1);
+    const foodItem = `^(${food.names.map(escape).join('|')})$`;
+    if (!pack) return free > 0 ? [{ item: foodItem, count: free }] : [];
+    const fletching = baseOf(s, 'fletching') < 99;
+    const tiersHeld = inv.filter(i => ARROWTIPS.test(i.name));
+    for (const t of tiersHeld) for (const c of COURIER_TIERS) if (new RegExp(`^${c} `, 'i').test(t.name)) mem.tiers.add(c);
+    const tier = fletching && tiersHeld.length <= 1 ? COURIER_TIERS.find(c => !mem.tiers.has(c)) : undefined;
+    if (tier) mem.tiers.add(tier);
+    const sharks = Math.max(0, PACK_FOOD_TO - edibleFood(s, food).length);
+    const bones = Math.max(0, free - sharks - (tier ? 1 : 0) - (fletching ? 1 : 0));
+    // with superheat the bone slots take the ore (superheatOre), copper and tin before iron
+    const stock = superheat ? superheatOre(s, bones).map(l => ({ item: `^${l.name}$`, count: l.give })) : bones > 0 ? [{ item: BONES_PATTERN, count: bones }] : [];
+    return [
+        ...stock,
+        ...(sharks > 0 ? [{ item: foodItem, count: sharks }] : []),
+        ...(tier ? [{ item: `^${tier} arrow(head|tip)s$`, count: 'all' as const }] : [])
+    ];
+}
+
+/**
+ * Writes the courier's ask (altar-cue.ts writeTopUpAsk) on the frame that shows a trade with it
+ * open, in both top-up modes. Fed every published state.
+ */
+export class TopUpAsker {
+    readonly asks: Array<{ tick: number; items: AskItem[]; shortfall?: string }> = [];
+    private wasOpen = false;
+    private readonly mem: AskMemory = { tiers: new Set() };
+
+    constructor(private readonly giver: string, private readonly dir: string, private readonly foods: readonly Food[], private readonly pack: boolean, private readonly superheat?: Required<SuperheatOptions>) {}
+
+    step(s: BotWorldState): AskItem[] | null {
+        const t = s.trade;
+        const open = !!t?.isOpen && sameName(t.partner, this.giver);
+        const edge = open && !this.wasOpen;
+        this.wasOpen = open;
+        if (!edge) return null;
+        const items = topUpAsk(s, heldFood(s, this.foods), this.pack, this.mem, this.superheat);
+        if (items.length) writeTopUpAsk(this.dir, items);
+        const shortfall = this.superheat ? ironShortfall(s, items) : undefined;
+        this.asks.push({ tick: s.tick, items, ...(shortfall ? { shortfall } : {}) });
+        return items;
+    }
+}
+
 /**
  * Restart mode: this status shows a failure the last one did not, with food below `below`, or,
- * with the stun pack, fewer than `bones.below` bones held.
+ * with the stun pack, fewer than `stock.below` of what it tops up held (bones, or ore with superheat).
  */
-export function topUpDue(status: Pick<ProgramStatus, 'counters' | 'gauges'>, seenFails: number, below: number, bones?: { held: number; below: number }): boolean {
+export function topUpDue(status: Pick<ProgramStatus, 'counters' | 'gauges'>, seenFails: number, below: number, stock?: { held: number; below: number }): boolean {
     if ((status.counters.fails ?? 0) <= seenFails) return false;
-    return (status.gauges.food ?? Infinity) < below || (!!bones && bones.held < bones.below);
+    return (status.gauges.food ?? Infinity) < below || (!!stock && stock.held < stock.below);
 }
 
 // ------------------------------------------------------------------ stun pack
@@ -333,7 +408,20 @@ export interface StunPackOptions {
      * program run so Charge's boosted check passes (default on; it fires only in that case).
      */
     sipForCharge?: boolean;
+    /** Superheat Item in every stocked stun in place of the burials (the header). Off unless passed; `true` takes the defaults. */
+    superheat?: SuperheatOptions | boolean;
 }
+
+/** `stunPack.superheat`. */
+export interface SuperheatOptions {
+    /** Casts a stocked stun, 1 (at +2) or 2 (at +2 and +5; default). */
+    casts?: number;
+    /** A top-up is due once fewer than this many ores are held (default `casts`, one stocked stun's). */
+    oreBelow?: number;
+}
+
+/** The parsed pack: every field set, and `superheat` only when it is on. */
+export type StunPackConfig = Required<Omit<StunPackOptions, 'superheat'>> & { superheat?: Required<SuperheatOptions> };
 
 /** A stocked stun buries 3 (stun-pack.md section 5): with fewer held, the next stun's top-up is due. */
 export const STUN_PACK_BONES_BELOW = 3;
@@ -349,15 +437,64 @@ export function bonesTopUpAction(topUp: TopUp, bonesBelow: number): Record<strin
     return { name: 'topup:bones', kind: 'player', player: `^${escape(topUp.giver)}$`, fewer: [{ item: BONES_PATTERN, than: bonesBelow }], window: [2, 2] };
 }
 
+// ------------------------------------------------------------------ superheat
+
+/** Superheat Item (magic_spells.dbrow magic_spell_superheat: Magic 43, 1 nature and 4 fire runes, 53 base). */
+export const SUPERHEAT_LEVEL = 43;
+/** Its IF component (interface.pack magic:superheat_item), as `spellOnItem` sends it. */
+export const SUPERHEAT_SPELL = Spells.SUPERHEAT;
+/** Iron's Smithing level (smelting.struct); below it only bronze, copper with tin, is cast. */
+export const SUPERHEAT_IRON_SMITHING = 15;
+/** Smithing game xp a bronze bar pays (smelting.struct productexp 62, 6.2 base). */
+const BRONZE_SMITHING_XP = 6.2 * XP_RATE;
+/** Bronze casts from Smithing 1 to SUPERHEAT_IRON_SMITHING (12: 1,860 game xp at 155 a bar). */
+export const SUPERHEAT_BRONZE_CASTS = Math.ceil(xpForLevel(SUPERHEAT_IRON_SMITHING) / BRONZE_SMITHING_XP);
+
+const ORE = { iron: '^iron ore$', copper: '^copper ore$', tin: '^tin ore$', any: '^(iron|copper) ore$' } as const;
+const NATURE = '^nature runes?$';
+const FIRE = '^fire runes?$';
+
+/**
+ * The Superheat stun actions, iron first: on iron ore from Smithing 15, else copper with tin. Each
+ * is a p_delay(1) action ('tick2') whose tick takes no knight click (`skipClick`), fired at +2 and,
+ * with 2 casts, +5 (the header). With no fire staff worn each cast also needs its 4 fire runes.
+ */
+export function superheatActions(sh: Required<SuperheatOptions>, fireStaffWorn: boolean): Record<string, unknown>[] {
+    const runes = [{ item: NATURE, count: 1 }, ...(fireStaffWorn ? [] : [{ item: FIRE, count: 4 }])];
+    const cast = { kind: 'spellOnItem', spell: SUPERHEAT_SPELL, delay: 'tick2', skipClick: true, window: sh.casts === 2 ? [2, 5] : [2, 2] };
+    return [
+        { name: 'superheat:iron', ...cast, on: ORE.iron, needs: runes, skill: 'smithing', from: SUPERHEAT_IRON_SMITHING },
+        { name: 'superheat:bronze', ...cast, on: ORE.copper, needs: [{ item: ORE.tin, count: 1 }, ...runes] }
+    ];
+}
+
+/**
+ * The bars Superheat makes, dropped (delay-free, drop.rs2) so the next ore top-up has their slots.
+ * By op 5: a bar declares no ops, so its published options are empty and the client's Drop is implicit.
+ */
+export const DROP_BARS = { name: 'drop:bars', kind: 'item', item: '^(bronze|iron) bar$', op: 5 } as const;
+
+/** The `player` stun action that requests a top-up on a stun's +2 when the ore runs low. */
+export function oreTopUpAction(topUp: TopUp, oreBelow: number): Record<string, unknown> {
+    return { name: 'topup:ore', kind: 'player', player: `^${escape(topUp.giver)}$`, fewer: [{ item: ORE.any, than: oreBelow }], window: [2, 2] };
+}
+
+/** Superheat's actions after the top-up: the casts, the bar drops, then Charge and arrows (the header). */
+function superheatPack(sh: Required<SuperheatOptions>, fireStaffWorn: boolean): unknown[] {
+    return [...superheatActions(sh, fireStaffWorn), DROP_BARS, 'charge', 'arrows'];
+}
+
 /**
  * The knights band's `stunActions`, or none: idle mode puts the food top-up first and, with the
- * pack, the bones top-up and the presets after it; restart mode's module requests its own top-ups,
- * so the program gets only the presets.
+ * pack, the bones (or with superheat the ore) top-up and the pack's actions after it; restart
+ * mode's module requests its own top-ups, so the program gets only the pack's actions.
  */
-export function stunActionsFor(topUp: TopUp | undefined, food: Food, pack: Required<StunPackOptions> | undefined): unknown[] | undefined {
+export function stunActionsFor(topUp: TopUp | undefined, food: Food, pack: StunPackConfig | undefined, fireStaffWorn = true): unknown[] | undefined {
     const mode = topUp?.mode ?? 'idle';
-    if (topUp && mode === 'idle') return [topUpAction(topUp, food), ...(pack ? [bonesTopUpAction(topUp, pack.bonesBelow), ...STUN_PACK_ACTIONS] : [])];
-    if (pack) return [...STUN_PACK_ACTIONS];
+    const sh = pack?.superheat;
+    const actions = !pack ? [] : sh ? superheatPack(sh, fireStaffWorn) : [...STUN_PACK_ACTIONS];
+    if (topUp && mode === 'idle') return [topUpAction(topUp, food), ...(pack ? [sh ? oreTopUpAction(topUp, sh.oreBelow) : bonesTopUpAction(topUp, pack.bonesBelow), ...actions] : [])];
+    if (pack) return actions;
     return undefined;
 }
 
@@ -367,6 +504,59 @@ const held = (s: BotWorldState, re: RegExp) => s.inventory.filter(i => re.test(i
 
 export function bonesHeld(s: BotWorldState): number {
     return held(s, new RegExp(BONES_PATTERN, 'i'));
+}
+
+/** The ores Superheat casts on (iron and copper; tin only goes with copper). */
+export function oreHeld(s: BotWorldState): number {
+    return held(s, new RegExp(ORE.any, 'i'));
+}
+
+/**
+ * The ore a superheat top-up brings, in the slot ledger's `in` grammar (`NAME to N [u]`,
+ * STEP-MANIFEST.md's Inventory ledger; tools/slot-ledger.ts parseIn): `free` slots filled with
+ * copper and tin pairs for the bronze casts still due before Smithing 15, and iron ore in the
+ * rest. Empty when nothing is due. The courier sizes its load from it as the trade opens.
+ */
+export function superheatLoad(s: BotWorldState, free: number): string {
+    return superheatOre(s, free).map(l => `${l.name} to ${l.to} [u]`).join('; ');
+}
+
+/** One line of a superheat load: the ore, the count the account holds once it arrives, and how many arrive. */
+export interface OreLine {
+    name: 'copper ore' | 'tin ore' | 'iron ore';
+    to: number;
+    give: number;
+}
+
+/** superheatLoad's lines (the doc there): the one sizing of a superheat ore load. */
+export function superheatOre(s: BotWorldState, free: number): OreLine[] {
+    const smith = s.skills.find(k => k.name.toLowerCase() === 'smithing');
+    const xp = smith?.experience ?? 0;
+    const copper = held(s, new RegExp(ORE.copper, 'i')), tin = held(s, new RegExp(ORE.tin, 'i')), iron = held(s, new RegExp(ORE.iron, 'i'));
+    const bronzeDue = (smith?.baseLevel ?? 1) >= SUPERHEAT_IRON_SMITHING ? 0 : Math.max(0, Math.ceil((xpForLevel(SUPERHEAT_IRON_SMITHING) - xp) / BRONZE_SMITHING_XP) - Math.min(copper, tin));
+    const slots = Math.max(0, free);
+    const pairs = Math.min(bronzeDue, Math.floor(slots / 2));
+    const more = slots - 2 * pairs;
+    return [
+        ...(pairs > 0 ? [{ name: 'copper ore', to: copper + pairs, give: pairs }, { name: 'tin ore', to: tin + pairs, give: pairs }] as OreLine[] : []),
+        ...(more > 0 ? [{ name: 'iron ore', to: iron + more, give: more }] as OreLine[] : [])
+    ];
+}
+
+/**
+ * rs/158's floor (via rs/41): the courier gives iron way first when its trip needs room, down to
+ * this many a load. Once bronze is done, a load that leaves the account fewer iron ores than this
+ * is recorded as a shortfall on the band's detail row (TopUpAsker), never cut silently.
+ */
+export const IRON_LOAD_FLOOR = 8;
+
+/** The shortfall a superheat ask records, or none (IRON_LOAD_FLOOR). */
+export function ironShortfall(s: BotWorldState, items: readonly AskItem[]): string | undefined {
+    if (baseOf(s, 'smithing') < SUPERHEAT_IRON_SMITHING) return undefined;
+    const asked = items.find(a => a.item === `^iron ore$`)?.count;
+    const n = typeof asked === 'number' ? asked : 0;
+    const have = held(s, new RegExp(ORE.iron, 'i'));
+    return have + n < IRON_LOAD_FLOOR ? `the ore load leaves ${have + n} iron ore (${have} held, ${n} asked), below the floor of ${IRON_LOAD_FLOOR}: the account's free slots are short` : undefined;
 }
 
 /** Kolodion's reward at Mage Arena stage 8 (quest-stages.ts magearena: the god staff given). */
@@ -385,36 +575,69 @@ const MAGIC_POTION = /^magic potion\([1-4]\)$/i;
  * The magic potion `sipForCharge` drinks before the band's first program run, or none: only at
  * base Magic CHARGE_LEVEL - 1 with the boosted level still below CHARGE_LEVEL (the header).
  */
-export function chargeSipPotion(s: BotWorldState, pack: Pick<Required<StunPackOptions>, 'sipForCharge'>): InventoryItem | undefined {
+export function chargeSipPotion(s: BotWorldState, pack: Pick<StunPackConfig, 'sipForCharge'>): InventoryItem | undefined {
     if (!pack.sipForCharge || baseOf(s, 'magic') !== CHARGE_LEVEL - 1 || boostedOf(s, 'magic') >= CHARGE_LEVEL) return undefined;
     return s.inventory.find(i => MAGIC_POTION.test(i.name));
 }
 
 /** Charge's level refusal: base, boosted, and whether a potion is held (and why it is not sipped). */
-function chargeLevelRefusal(s: BotWorldState, pack: Pick<Required<StunPackOptions>, 'sipForCharge'>): string {
+function chargeLevelRefusal(s: BotWorldState, pack: Pick<StunPackConfig, 'sipForCharge'>): string {
     const base = baseOf(s, 'magic');
     const potion = s.inventory.some(i => MAGIC_POTION.test(i.name));
     const why = !potion ? '' : !pack.sipForCharge ? ' (sipForCharge off)' : ` (the sip is for base ${CHARGE_LEVEL - 1} only)`;
     return `the stun pack's Charge needs Magic ${CHARGE_LEVEL}: base ${base}, boosted ${boostedOf(s, 'magic')}, ${potion ? 'a magic potion held' : 'no magic potion held'}${why}`;
 }
 
+const CHARGE_BLOOD = /^blood runes?$/i;
+const CHARGE_AIR = /^air runes?$/i;
+
+/**
+ * Whether Charge's checks apply: the program fires Charge while base Magic is below 99
+ * (stun-actions.ts STUN_PRESETS.charge). With superheat on, only while a cast's runes are held:
+ * without them Charge never fires and Superheat carries Magic (the blood-rune shortfall).
+ */
+export function chargeDue(s: BotWorldState, pack: Pick<StunPackConfig, 'superheat'>): boolean {
+    if (baseOf(s, 'magic') >= 99) return false;
+    return !pack.superheat || (held(s, CHARGE_BLOOD) >= 3 && held(s, CHARGE_AIR) >= 3);
+}
+
+/** Superheat's start check (the header): why its first cast cannot go out, or null. */
+export function superheatRefusal(s: BotWorldState): string | null {
+    const magic = boostedOf(s, 'magic');
+    if (magic < SUPERHEAT_LEVEL) return `the stun pack's Superheat needs Magic ${SUPERHEAT_LEVEL}: boosted ${magic}`;
+    const nature = held(s, new RegExp(NATURE, 'i'));
+    if (nature < 1) return "the stun pack's Superheat needs nature runes (holding 0)";
+    const fire = held(s, new RegExp(FIRE, 'i'));
+    if (!s.equipment.some(i => FIRE_STAFF.test(i.name)) && fire < 4) return `the stun pack's Superheat needs a staff of fire wielded or 4 fire runes a cast (holding ${fire} fire runes)`;
+    // the program gates iron on base Smithing (stun-actions.ts `skill`)
+    const smithing = baseOf(s, 'smithing');
+    const iron = held(s, new RegExp(ORE.iron, 'i')), copper = held(s, new RegExp(ORE.copper, 'i')), tin = held(s, new RegExp(ORE.tin, 'i'));
+    if (!(smithing >= SUPERHEAT_IRON_SMITHING && iron > 0) && !(copper > 0 && tin > 0)) {
+        return `the stun pack's Superheat needs ore for a cast: iron ore at Smithing ${SUPERHEAT_IRON_SMITHING} or more, or copper and tin ore (Smithing ${smithing}; holding ${iron} iron, ${copper} copper, ${tin} tin)`;
+    }
+    return null;
+}
+
 /**
  * The pack's start check (the header): true, or why the band refuses. Read from the band's
- * start state: Charge's and the arrows' supplies for their first stun (more arrive by top-up)
- * and the giver's tile.
+ * start state: Charge's, Superheat's and the arrows' supplies for their first stun (more arrive
+ * by top-up) and the giver's tile.
  */
-export function stunPackCheck(s: BotWorldState, giver: string, pack: Pick<Required<StunPackOptions>, 'chargeUnlocked' | 'sipForCharge'>): true | string {
+export function stunPackCheck(s: BotWorldState, giver: string, pack: Pick<StunPackConfig, 'chargeUnlocked' | 'sipForCharge' | 'superheat'>): true | string {
     const p = s.player;
     if (!p) return 'no player';
-    // the program fires Charge while base Magic is below 99 (stun-actions.ts STUN_PRESETS.charge)
-    if (baseOf(s, 'magic') < 99) {
+    if (chargeDue(s, pack)) {
         if (boostedOf(s, 'magic') < CHARGE_LEVEL && !chargeSipPotion(s, pack)) return chargeLevelRefusal(s, pack);
         const staff = [...s.inventory, ...s.equipment].some(i => GOD_STAFF.test(i.name));
         if (!pack.chargeUnlocked && !staff) return "the stun pack's Charge needs Mage Arena stage 8 (staff_given): no god staff held or worn, and no chargeUnlocked from the run's record";
         if (!s.equipment.some(i => FIRE_STAFF.test(i.name))) return "the stun pack's Charge needs a staff of fire wielded (its fire runes)";
-        const blood = held(s, /^blood runes?$/i);
-        const air = held(s, /^air runes?$/i);
+        const blood = held(s, CHARGE_BLOOD);
+        const air = held(s, CHARGE_AIR);
         if (blood < 3 || air < 3) return `the stun pack's Charge needs 3 blood and 3 air runes (holding ${blood} and ${air})`;
+    }
+    if (pack.superheat) {
+        const no = superheatRefusal(s);
+        if (no) return no;
     }
     const fletching = baseOf(s, 'fletching');
     if (fletching < 99) {
@@ -429,19 +652,36 @@ export function stunPackCheck(s: BotWorldState, giver: string, pack: Pick<Requir
     return true;
 }
 
-/** `stunPack` as given: off, or every field set (validated: it may come off a command line). */
-export function parseStunPack(value: unknown, topUp: TopUp | undefined): Required<StunPackOptions> | undefined {
+/** `stunPack.superheat` as given: off, or every field set. */
+export function parseSuperheat(value: unknown): Required<SuperheatOptions> | undefined {
     if (value === undefined || value === false) return undefined;
-    if (value !== true && (typeof value !== 'object' || value === null || Array.isArray(value))) throw new Error(`stunPack must be true or { bonesBelow?, chargeUnlocked?, sipForCharge? } (got ${JSON.stringify(value)})`);
+    if (value !== true && (typeof value !== 'object' || value === null || Array.isArray(value))) throw new Error(`stunPack.superheat must be true or { casts?, oreBelow? } (got ${JSON.stringify(value)})`);
+    const o = (value === true ? {} : value) as SuperheatOptions;
+    const keys = ['casts', 'oreBelow'];
+    for (const k of Object.keys(o)) if (!keys.includes(k)) throw new Error(`stunPack.superheat has no option '${k}' (${keys.join(', ')})`);
+    const casts = o.casts ?? 2;
+    // a third cast would land from +6, whose p_delay(1) refuses the click on +8
+    if (casts !== 1 && casts !== 2) throw new Error(`stunPack.superheat.casts must be 1 or 2 (got ${JSON.stringify(o.casts)})`);
+    const oreBelow = o.oreBelow ?? casts;
+    if (!Number.isInteger(oreBelow) || oreBelow < 1) throw new Error(`stunPack.superheat.oreBelow must be a whole number of at least 1 (got ${JSON.stringify(o.oreBelow)})`);
+    return { casts, oreBelow };
+}
+
+/** `stunPack` as given: off, or every field set (validated: it may come off a command line). */
+export function parseStunPack(value: unknown, topUp: TopUp | undefined): StunPackConfig | undefined {
+    if (value === undefined || value === false) return undefined;
+    if (value !== true && (typeof value !== 'object' || value === null || Array.isArray(value))) throw new Error(`stunPack must be true or { bonesBelow?, chargeUnlocked?, sipForCharge?, superheat? } (got ${JSON.stringify(value)})`);
     const o = (value === true ? {} : value) as StunPackOptions;
-    const keys = ['bonesBelow', 'chargeUnlocked', 'sipForCharge'];
+    const keys = ['bonesBelow', 'chargeUnlocked', 'sipForCharge', 'superheat'];
     for (const k of Object.keys(o)) if (!keys.includes(k)) throw new Error(`stunPack has no option '${k}' (${keys.join(', ')})`);
     const bonesBelow = o.bonesBelow ?? STUN_PACK_BONES_BELOW;
     if (!Number.isInteger(bonesBelow) || bonesBelow < 1) throw new Error(`stunPack.bonesBelow must be a whole number of at least 1 (got ${JSON.stringify(o.bonesBelow)})`);
     if (o.chargeUnlocked !== undefined && typeof o.chargeUnlocked !== 'boolean') throw new Error('stunPack.chargeUnlocked must be true or false');
     if (o.sipForCharge !== undefined && typeof o.sipForCharge !== 'boolean') throw new Error('stunPack.sipForCharge must be true or false');
-    if (!topUp) throw new Error('stunPack needs topUp: its bones arrive through the top-up trade (stun-pack.md section 5)');
-    return { bonesBelow, chargeUnlocked: o.chargeUnlocked ?? false, sipForCharge: o.sipForCharge ?? true };
+    const superheat = parseSuperheat(o.superheat);
+    if (superheat && o.bonesBelow !== undefined) throw new Error('stunPack.bonesBelow has no effect with superheat: its stocked stuns cast in place of the burials, and the bones move to S07');
+    if (!topUp) throw new Error(`stunPack needs topUp: its ${superheat ? 'ore' : 'bones'} arrive through the top-up trade (stun-pack.md section 5)`);
+    return { bonesBelow, chargeUnlocked: o.chargeUnlocked ?? false, sipForCharge: o.sipForCharge ?? true, ...(superheat ? { superheat } : {}) };
 }
 
 /** `sipForCharge`'s one dose, on observed ticks: sent on `sentTick`, the boost first published on `boostedTick`. */
@@ -460,7 +700,7 @@ export interface ChargeSip {
 export const CHARGE_SIP_MAX_TICKS = 8;
 
 /** Drink `sipForCharge`'s dose if one is due (chargeSipPotion) and wait until the boosted level shows CHARGE_LEVEL. */
-async function sipForCharge(ctx: Ctx, pack: Required<StunPackOptions>): Promise<ChargeSip | undefined> {
+async function sipForCharge(ctx: Ctx, pack: StunPackConfig): Promise<ChargeSip | undefined> {
     const s = state(ctx);
     const pot = chargeSipPotion(s, pack);
     if (!pot) return undefined;
@@ -476,28 +716,30 @@ async function sipForCharge(ctx: Ctx, pack: Required<StunPackOptions>): Promise<
 
 const PACK_SKILLS = ['prayer', 'magic', 'fletching'] as const;
 
-function packSkills(s: BotWorldState): Record<(typeof PACK_SKILLS)[number], { xp: number; level: number }> {
+function packSkills(s: BotWorldState): Record<(typeof PACK_SKILLS)[number] | 'smithing', { xp: number; level: number }> {
     const one = (n: string) => {
         const k = s.skills.find(x => x.name.toLowerCase() === n);
         return { xp: k?.experience ?? 0, level: k?.baseLevel ?? 1 };
     };
-    return { prayer: one('prayer'), magic: one('magic'), fletching: one('fletching') };
+    return { prayer: one('prayer'), magic: one('magic'), fletching: one('fletching'), smithing: one('smithing') };
 }
 
-/** The pack's line in the detail row: what it sent (summed `stun:*` counters) and the experience it gained. */
-export function packReport(counters: Readonly<Record<string, number>>, before: ReturnType<typeof packSkills>, after: ReturnType<typeof packSkills>, bonesBelow: number) {
+/** The pack's line in the detail row: what it sent (summed `stun:*` counters) and the experience it gained; with superheat, its casts, drops and Smithing too. */
+export function packReport(counters: Readonly<Record<string, number>>, before: ReturnType<typeof packSkills>, after: ReturnType<typeof packSkills>, pack: Pick<StunPackConfig, 'bonesBelow' | 'superheat'>) {
     const sent = (re: RegExp) => Object.entries(counters).filter(([k]) => re.test(k)).reduce((a, [, n]) => a + n, 0);
+    const skills = pack.superheat ? [...PACK_SKILLS, 'smithing' as const] : PACK_SKILLS;
     return {
-        bonesBelow,
+        bonesBelow: pack.bonesBelow,
         buried: sent(/^stun:bury$/),
         charges: sent(/^stun:charge$/),
         arrowActions: sent(/^stun:arrows:/),
-        topUpRequests: sent(/^stun:topup(:bones)?$/),
+        topUpRequests: sent(/^stun:topup(:bones|:ore)?$/),
+        ...(pack.superheat ? { superheat: pack.superheat, superheats: sent(/^stun:superheat:/), barDrops: sent(/^stun:drop:bars$/), clickSkips: counters.stunClickSkips ?? 0 } : {}),
         fired: counters.stunFired ?? 0,
         rejected: counters.stunRejected ?? 0,
         counters: Object.fromEntries(Object.entries(counters).filter(([k]) => k.startsWith('stun'))),
-        xp: Object.fromEntries(PACK_SKILLS.map(k => [k, after[k].xp - before[k].xp])),
-        levels: Object.fromEntries(PACK_SKILLS.map(k => [k, [before[k].level, after[k].level]]))
+        xp: Object.fromEntries(skills.map(k => [k, after[k].xp - before[k].xp])),
+        levels: Object.fromEntries(skills.map(k => [k, [before[k].level, after[k].level]]))
     };
 }
 
@@ -526,7 +768,7 @@ interface Config {
     foods: readonly Food[];
     restock: Restock;
     topUp?: TopUp;
-    stunPack?: Required<StunPackOptions>;
+    stunPack?: StunPackConfig;
 }
 
 // ------------------------------------------------------------------ movement
@@ -738,11 +980,11 @@ async function runBand(ctx: Ctx, band: Band, end: number, cfg: Config): Promise<
         if (ok !== true) throw new Error(ok);
     }
     // before the first program run, outside every stun: the check passed at base 79 on the potion
-    const sip = pack ? await sipForCharge(ctx, pack) : undefined;
+    const sip = pack && chargeDue(state(ctx), pack) ? await sipForCharge(ctx, pack) : undefined;
     const skills0 = packSkills(state(ctx));
     const stunCounters: Record<string, number> = {};
     const paramsFor = (food: Food) => {
-        const stunActions = stunActionsFor(topUp, food, pack);
+        const stunActions = stunActionsFor(topUp, food, pack, state(ctx).equipment.some(i => FIRE_STAFF.test(i.name)));
         return {
             npc: band.npc,
             untilLevel: end,
@@ -753,8 +995,7 @@ async function runBand(ctx: Ctx, band: Band, end: number, cfg: Config): Promise<
             stopWhenFoodBelow: 1,
             retargetTicks: 12,
             ...(topUp && mode === 'idle' ? { idleOnInterface: true } : {}),
-            ...(stunActions ? { stunActions } : {}),
-            ...(topUp && mode === 'idle' && topUp.resend ? { requestResend: TOPUP_RESEND_TICKS } : {})
+            ...(stunActions ? { stunActions } : {})
         };
     };
     let policy = eatPolicy(s.player!.maxHp, heldFood(s, cfg.foods).heal, band.stunDamage);
@@ -762,9 +1003,12 @@ async function runBand(ctx: Ctx, band: Band, end: number, cfg: Config): Promise<
     const runs: Array<Pick<ProgramStatus, 'runId' | 'startedTick' | 'endedTick'> & { food: string; overBudget?: number }> = [];
     const restarts: Array<{ failTick: number; restartTick: number; ok: boolean; received: number; reason?: string }> = [];
     const receiver = topUp && mode === 'idle' ? new TopUpReceiver(topUp.giver) : null;
-    const unsubscribe = receiver
+    // the courier sizes nothing itself: it can't see this inventory (helpers/bone-giver.md)
+    const asker = topUp ? new TopUpAsker(topUp.giver, cueDir(), cfg.foods, !!pack, pack?.superheat) : null;
+    const unsubscribe = asker
         ? ctx.sdk.onStateUpdate(s => {
-            const a = receiver.step(s);
+            asker.step(s);
+            const a = receiver?.step(s);
             if (a === 'accept') void ctx.sdk.sendAcceptTrade();
             else if (a === 'decline') void ctx.sdk.sendDeclineTrade();
         })
@@ -776,8 +1020,8 @@ async function runBand(ctx: Ctx, band: Band, end: number, cfg: Config): Promise<
             const onProgress = topUp && mode === 'restart'
                 ? (st: ProgramStatus) => {
                     const s = ctx.sdk.getState();
-                    const bones = pack && s ? { held: bonesHeld(s), below: pack.bonesBelow } : undefined;
-                    if (failTick === null && topUpDue(st, seenFails, topUp.below, bones)) {
+                    const stock = pack && s ? (pack.superheat ? { held: oreHeld(s), below: pack.superheat.oreBelow } : { held: bonesHeld(s), below: pack.bonesBelow }) : undefined;
+                    if (failTick === null && topUpDue(st, seenFails, topUp.below, stock)) {
                         failTick = st.tick;
                         void stopProgram(ctx.sdk).catch(() => {});
                     }
@@ -820,8 +1064,8 @@ async function runBand(ctx: Ctx, band: Band, end: number, cfg: Config): Promise<
         startTick: t, endTick: t, ticks: 0, wallMs: 0, ok: true,
         meta: {
             anchor, policy, food: cfg.foods.map(f => f.bankName).join(','), runs, restocks,
-            ...(topUp ? { topUp: { mode, trades: receiver?.trades ?? [], restarts } } : {}),
-            ...(pack ? { pack: { ...packReport(stunCounters, skills0, packSkills(state(ctx)), pack.bonesBelow), ...(sip ? { sip } : {}) } } : {})
+            ...(topUp ? { topUp: { mode, trades: receiver?.trades ?? [], restarts, asks: asker?.asks ?? [] } } : {}),
+            ...(pack ? { pack: { ...packReport(stunCounters, skills0, packSkills(state(ctx)), pack), ...(sip ? { sip } : {}) } } : {})
         },
         tickMs: tickMs(), at: new Date().toISOString()
     });
@@ -881,8 +1125,6 @@ export function steps(opts: ThievingOptions = {}): Step[] {
     const foods = parseFoods(opts.food);
     const topUp = opts.topUp;
     if (topUp && (!topUp.giver || !(topUp.below >= 1) || !['idle', 'restart', undefined].includes(topUp.mode))) throw new Error(`topUp needs a giver, below >= 1 and mode idle or restart (got ${JSON.stringify(topUp)})`);
-    if (topUp?.resend !== undefined && typeof topUp.resend !== 'boolean') throw new Error(`topUp.resend must be true or false (got ${JSON.stringify(topUp.resend)})`);
-    if (topUp?.resend && topUp.mode === 'restart') throw new Error('topUp.resend is for idle mode; restart mode re-sends through receiveFrom');
     const stunPack = parseStunPack(opts.stunPack, topUp);
     const cfg: Config = { to: opts.to ?? 99, foods, restock: opts.restock ?? 'bank', ...(topUp ? { topUp } : {}), ...(stunPack ? { stunPack } : {}) };
     const [men, ...ardougne] = BANDS;

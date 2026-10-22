@@ -39,7 +39,7 @@ describe('the offers snapshot', () => {
         expect(back?.fills).toEqual(fills);
         const cfg = boardConfig({ bidder: 'cairn_h61', offersFile: path, list: [{ item: 'Nature talisman', quantity: 6, maxPrice: 30_000 }] });
         if (!cfg.ok) throw new Error(cfg.error);
-        expect(liveBounties(cfg.value, back, T0 + 60_000).map(b => [b.item, b.price, b.quantity])).toEqual([['Nature talisman', 30_000, 5]]);
+        expect(liveBounties(cfg.value, readOffersFile, T0 + 60_000).map(b => [b.item, b.price, b.quantity])).toEqual([['Nature talisman', 30_000, 5]]);
     });
 
     test('a missing, torn or malformed file is no offers', () => {

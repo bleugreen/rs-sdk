@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { NearbyLoc, NearbyNpc, PlayerState } from '../../sdk/types';
 import { baseState, FakeSdk } from './fake-sdk';
-import { at, configId, findLoc, findNpc, invCount, messagesSince, pos, routeTiles, tileCounter, waitForNpc } from './world';
+import { at, configId, findLoc, findNpc, invCount, messageCursor, messagesAfter, messagesSince, pos, replyAfter, routeTiles, tileCounter, waitForNpc } from './world';
 
 const player = (worldX: number, worldZ: number, level = 0) => ({ worldX, worldZ, level, hp: 10, maxHp: 10 }) as PlayerState;
 const npc = (index: number, name: string, x: number, z: number, distance: number): NearbyNpc =>
@@ -44,6 +44,20 @@ describe('world', () => {
         expect(await findLoc(sdk as never, { op: 'climb' })).toBeNull(); // string ops match exactly
     });
 
+    test('findLoc waits for the region to be built before it reads the loc lists', async () => {
+        const tree = loc(1317, 'Spirit tree', 2542, 3170, 1, ['Talk-to', 'Travel']);
+        const sdk = new FakeSdk(baseState({ tick: 1, sceneReady: false, nearbyLocs: [] }));
+        let found: NearbyLoc | null | undefined;
+        const p = findLoc(sdk as never, { op: /travel/i }).then(l => (found = l));
+        await Promise.resolve();
+        sdk.tick();
+        await Promise.resolve();
+        expect(found).toBeUndefined();
+        sdk.tick({ sceneReady: true, nearbyLocs: [tree] });
+        await p;
+        expect(found?.id).toBe(1317);
+    });
+
     test('invCount sums stacks; messagesSince keeps game messages from a tick on', () => {
         const s = baseState({
             inventory: [{ slot: 0, id: 1, name: 'Shark', count: 1, optionsWithIndex: [] }, { slot: 1, id: 1, name: 'Shark', count: 1, optionsWithIndex: [] }],
@@ -52,6 +66,38 @@ describe('world', () => {
         expect(invCount(s, /^shark$/i)).toBe(2);
         expect(messagesSince(s, 8)).toEqual(['You can\'t reach that!']);
         expect(messagesSince(s, 0, /reach/)).toEqual(['You can\'t reach that!']);
+    });
+
+    test('messagesAfter reads past a cursor by publication id, falling back to tick', () => {
+        const m = (text: string, tick: number, observationId?: number) => ({ type: 0, text, sender: '', tick, observationId, fromSelf: false });
+        // The browser stamps a reply on the click's tick: tick 25 for a click at 25, published as 33.
+        const before = baseState({ tick: 25, gameMessages: [m('You fail to cut through it.', 17, 24)] });
+        const c = messageCursor(before);
+        expect(c).toBe(24);
+        const after = baseState({ tick: 26, gameMessages: [m('You fail to cut through it.', 17, 24), m('You fail to cut through it.', 25, 33)] });
+        expect(messagesAfter(after, c)).toEqual(['You fail to cut through it.']);
+        expect(messagesSince(after, 26)).toEqual([]);
+        expect(messagesAfter(baseState({ gameMessages: [m('old', 5), m('new', 9)] }), 5)).toEqual(['new']);
+        expect(messageCursor(baseState({ gameMessages: [] }))).toBe(0);
+    });
+
+    test('replyAfter sees a reply stamped on the click tick on either client, and not an older copy', () => {
+        const m = (text: string, tick: number, observationId?: number) => ({ type: 0, text, sender: '', tick, observationId, fromSelf: false });
+        const nope = 'You fail to cut through it.';
+        // An older copy of the same reply, published before the click.
+        const sdk = new FakeSdk(baseState({ tick: 25, gameMessages: [m(nope, 17, 24)] }));
+        const reply = replyAfter(sdk, /fail to cut/);
+        expect(reply.seen(sdk.getState()!)).toBe(false);
+        expect(reply.first()).toBeUndefined();
+        // The browser stamps the click's reply on the click's own tick (25), published later.
+        sdk.tick(s => ({ gameMessages: [...s.gameMessages, m(nope, 25, 33)] }));
+        expect(reply.seen(sdk.getState()!)).toBe(true);
+        expect(reply.first()).toBe(nope);
+        // Lite stamps it on the next tick and has no publication id: the tick fallback still counts it.
+        const lite = new FakeSdk(baseState({ tick: 25, gameMessages: [m(nope, 17)] }));
+        const liteReply = replyAfter(lite, /fail to cut/);
+        lite.tick(s => ({ gameMessages: [...s.gameMessages, m(nope, 26)] }));
+        expect(liteReply.seen(lite.getState()!)).toBe(true);
     });
 
     test('tileCounter counts steps and skips teleports and level changes', () => {

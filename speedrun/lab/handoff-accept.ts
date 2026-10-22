@@ -15,7 +15,11 @@
 //   invocation, since only a first login is fresh.
 // H13 and other rows: <scored> holds what the row gives (a weapon worn, so it comes off first) and
 //   arrives by ::tele beside the partner, already on its tile (--tile, default the Ardougne teleport
-//   landing), and the step runs at once; `--n` runs.
+//   landing), and the step runs at once; `--n` runs. A `NAME(*)` give names no one obj to stage:
+//   `--hold=OBJ,OBJ,...` puts those objs (debug names, one each) in SCORED's pack instead, e.g.
+//   H13's mixed antipoison doses (speedrun/lab/fixtures/handoff-h13-doses.md):
+//   --hold=3doseantipoison,1doseantipoison,1doseantipoison. An `@ID` entry is staged as its obj (its
+//   note for an `in` at [n]).
 // The partner is rs/41's HS1 giver code (helpers/mule.ts giveOpenTrade, burst, ANY_OFFER), with
 // lib/trade.ts's one trade-click rule (decideTradeClick) for its standing request. --client=browser puts <scored> in a Chrome tab on the lab's
 // /bot page (lab.sh with LAB_RUNNERS=0, so only the partner gets a lite runner).
@@ -24,12 +28,11 @@
 // give succeeded. Reports the step's in-world ticks per run (the TickLog row: observed ticks).
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import puppeteer from 'puppeteer';
+import { readFileSync } from 'node:fs';
 import { giveOpenTrade } from '../helpers/mule';
 import { wield } from '../lib/act';
 import { closeSession, openSession, type Session } from '../lib/session';
+import { objName } from '../lib/items';
 import { formatReport, report } from '../lib/ticks';
 import { clickBack, decideTradeClick, newClickCtx, sameName, sendTradeClick, tradeOf } from '../lib/trade';
 import { nextTick, waitTicks, waitUntil } from '../lib/wait';
@@ -38,6 +41,7 @@ import { handOffFrom, handOffStep, type HandOffPlan, type HandOffReport } from '
 import { runSteps } from '../runner/step';
 import { LUMBRIDGE_SPAWN } from '../skills/start';
 import { MANIFEST } from '../tools/slot-ledger';
+import { launchLabBrowser, type LabBrowser } from './browser';
 import { arg, botArg, labLog, result } from './common';
 import { cheat, leaveTutorial, mustTele, setStats } from './setup';
 
@@ -67,23 +71,13 @@ function debugName(name: string): string {
     throw new Error(`no obj debug name for "${name}": add it to DEBUG_NAMES`);
 }
 
+/** The obj ::give stages for an entry: its id's obj (the note, for an `in` at [n]), else by name. */
+const objFor = (e: { name: string; ids?: readonly number[] }) => (e.ids ? objName(e.ids[0]!)! : debugName(e.name));
+const hold = arg('hold', '').split(',').filter(Boolean);
+
 // --client=browser, as magic-accept.ts: a headless Chrome on the lab's /bot page.
 const browserMode = arg('client', 'lite') === 'browser';
-let browser: { close(): Promise<void> } | null = null;
-if (browserMode) {
-    const webPort = process.env.WEB_PORT ?? '9300';
-    const agentPort = process.env.AGENT_PORT ?? '8300';
-    const cdpPort = Number(webPort) + 5;
-    browser = await puppeteer.launch({
-        headless: true,
-        defaultViewport: null,
-        args: ['--no-sandbox', '--window-size=800,660', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', `--remote-debugging-port=${cdpPort}`],
-    });
-    process.env.SPEEDRUN_CDP_URL = `http://127.0.0.1:${cdpPort}`;
-    const envPath = join(process.cwd(), 'bots', botArg(), 'bot.env');
-    const clientUrl = `CLIENT_URL=http://localhost:${webPort}/bot?gateway=${encodeURIComponent(`ws://localhost:${agentPort}`)}`;
-    writeFileSync(envPath, readFileSync(envPath, 'utf8').replace(/^CLIENT_URL=.*\n?/m, '').trimEnd() + `\n${clientUrl}\n`, { mode: 0o600 });
-}
+const browser: LabBrowser | null = browserMode ? await launchLabBrowser(botArg()) : null;
 
 const scored = await openSession(botArg(), browserMode ? { client: 'browser', launch: true, insecureQueryLogin: true } : {});
 const partner = await openSession(partnerName, { pathfinding: false });
@@ -98,8 +92,8 @@ async function wipe(s: Session): Promise<void> {
 }
 
 /** ::give every entry, and wait until the inventory holds them all. */
-async function stage(s: Session, items: ReadonlyArray<{ name: string; count: number | 'all'; kind?: string }>): Promise<void> {
-    for (const i of items) await cheat(s.sdk, `give ${debugName(i.name)} ${i.count === 'all' ? 1 : i.count}`);
+async function stage(s: Session, items: ReadonlyArray<{ obj: string; count: number | 'all'; kind?: string }>): Promise<void> {
+    for (const i of items) await cheat(s.sdk, `give ${i.obj} ${i.count === 'all' ? 1 : i.count}`);
     const slots = items.reduce((a, i) => a + (i.kind === 'u' ? (i.count as number) : i.kind === undefined && i.count !== 'all' ? (i.count as number) : 1), 0);
     const r = await waitUntil(s.sdk, st => st.inventory.length >= slots, { maxTicks: 15 });
     if (!r.ok) throw new Error(`staging ${s.name}: ${s.sdk.getState()?.inventory.length} of ${slots} slots`);
@@ -141,7 +135,7 @@ for (let n = 0; n < runs; n++) {
     if (onTutorialIsland(partner.sdk.getState()?.player)) await leave(partner);
     await mustTele(partner.sdk, PARTNER_TILE.x, PARTNER_TILE.z);
     await wipe(partner);
-    await stage(partner, plan.receive);
+    await stage(partner, plan.receive.map(r => ({ obj: objFor(r), count: r.count, kind: r.kind })));
 
     let fresh = false;
     if (row === 'H1') {
@@ -187,7 +181,9 @@ for (let n = 0; n < runs; n++) {
 async function stageGives(s: Session, p: HandOffPlan): Promise<void> {
     // The levels SCORED has by the out-and-back rows (the magic shortbow is Ranged 50; the scimitar Attack 20).
     await setStats(s.sdk, { ranged: 50, attack: 20 });
-    await stage(s, p.give.map(g => ({ name: g.name, count: g.count === 'all' ? 1 : g.count, kind: 'u' })));
+    // A family's doses come from --hold.
+    const named = p.give.filter(g => !g.perObj || g.ids);
+    await stage(s, [...named.map(g => ({ obj: objFor(g), count: g.count === 'all' ? 1 : g.count, kind: 'u' })), ...hold.map(obj => ({ obj, count: 1, kind: 'u' }))]);
     for (const g of p.give) {
         if (!/bow|staff|scimitar|sword|knife|axe/i.test(g.name)) continue;
         const w = await wield(s.sdk, g.pattern);
@@ -201,5 +197,5 @@ result(`handoff ${row}`, { pass, client: browserMode ? 'browser' : 'lite', trade
 console.log(formatReport(report(log.rows)));
 await closeSession(partner);
 await closeSession(scored);
-await browser?.close();
+await browser?.kill();
 process.exit(pass ? 0 : 1);

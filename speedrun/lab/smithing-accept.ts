@@ -43,6 +43,8 @@ const until = Number(arg('until', '99'));
 const helperName = arg('helper', '');
 if (supply === 'helper' && !helperName) throw new Error('--helper=<bot> is required with supply helper');
 const realRole = arg('role', 'standin') === 'anvil';
+/** S25a's cue (altar-cue.ts CueScope): the anvil role reads only a cue scoped to it. */
+const ANVIL_SCOPE = { step: 'S25a', family: 'anvil' } as const;
 if (realRole && supply !== 'helper') throw new Error('--role=anvil needs supply helper');
 
 const scored = await openSession(botArg());
@@ -153,13 +155,13 @@ if (realRole) {
     const { writeAnvilPlan } = (await import(anvilPath)) as { writeAnvilPlan: (dir: string, m: AnvilPlanMsg) => unknown };
     const cueDir = mkdtempSync(join(tmpdir(), 'anvil-cue-'));
     const s0 = scored.sdk.getState()!;
-    new CueWriter(cueDir, scoredName).write({ beacons: [{ tick: s0.tick, ms: Date.now() }], turns: [] });
+    new CueWriter(cueDir, scoredName, ANVIL_SCOPE).write({ beacons: [{ tick: s0.tick, ms: Date.now() }], turns: [] });
     const write = (m: AnvilPlanMsg) => { announced.push(m); writeAnvilPlan(cueDir, m); };
     announceTo = write;
     const first = firstAnnouncement(s0, `${runId}/pre`, { untilLevel: until });
     if (!first) throw new Error('nothing to make');
     write(first);
-    const env: Record<string, string | undefined> = { ...process.env, ROLE_OPTIONS: JSON.stringify({ restock: { kind: arg('restock', 'bank'), labStock: true }, cueDir }), RC_CUE_DIR: cueDir, HELPER_LAB_TELE: '1' };
+    const env: Record<string, string | undefined> = { ...process.env, ROLE_OPTIONS: JSON.stringify({ restock: { kind: arg('restock', 'bank'), labStock: true }, cueDir, scope: ANVIL_SCOPE }), RC_CUE_DIR: cueDir, HELPER_LAB_TELE: '1' };
     for (const k of ['BOT_USERNAME', 'PASSWORD', 'SERVER', 'GATEWAY_URL', 'SHOW_CHAT']) delete env[k];
     roleProc = Bun.spawn(['bun', 'speedrun/helpers/anvil.ts', helperName], { cwd: resolve(import.meta.dir, '../..'), env, stdout: 'inherit', stderr: 'inherit' });
     // A throw here must not leave the role holding the lab's output pipe.

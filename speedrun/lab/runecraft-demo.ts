@@ -34,6 +34,7 @@ import { closeSession, loadBotEnv, logoutClean, openSession, type LogoutResult, 
 import { TickLog } from '../lib/ticks';
 import { waitUntil } from '../lib/wait';
 import { runSteps } from '../runner/step';
+import { launchLabBrowser, type LabBrowser } from './browser';
 import { leaveTutorial, mustTele } from './setup';
 import { altarStep, inRoom, preconditions, rcLevel, rcShared, rcXp, readLauncherFile, xpAfterCrafts, type Band, type ScheduleMode } from '../skills/runecraft';
 
@@ -79,14 +80,14 @@ const config = {
     botsDir,
     runDir,
     loginSpacingMs: 3000,
-    accounts: givers.map((account, i) => ({ account, role: 'altar-giver', ...(path ? { path } : {}), options: { altar: 'air', slot: i % 3, essence: 27, restock: { kind: 'bank', ...(labStage ? { labStock: true } : {}) } } }))
+    accounts: givers.map((account, i) => ({ account, role: 'altar-giver', ...(path ? { path } : {}), options: { altar: 'air', slot: i % 3, essence: 27, restock: { kind: 'bank', ...(labStage ? { labStock: true } : {}) }, scope: { step: 'DEMO', family: 'altar' } } })) // the band id below
 };
 writeFileSync(join(base, 'launch.json'), JSON.stringify(config, null, 2));
 console.log(`runecraft-demo: ${givers.length} givers (${path ?? 'relay'}), ${cycles} cycles at air, schedule ${schedule}${labStage ? ', lab-staged' : ''}; run files in ${base}`);
 
 let launcher: ReturnType<typeof Bun.spawn> | null = null;
 let session: Session | null = null;
-let browser = null as { close(): Promise<void> } | null;
+let browser = null as LabBrowser | null;
 let lastRc = null as ProgramStatus | null;
 let exit = 0;
 const log = TickLog.open(undefined, join(base, 'ticks.jsonl'));
@@ -126,19 +127,7 @@ async function giversReady(): Promise<void> {
 /** The stand-in's login: the token form over CDP on the demo; the lab's own Chrome and the query form with --lab-stage. */
 async function standInSession(): Promise<Session> {
     if (!labStage) return openSession(scored, { client: 'browser', launch: true });
-    const cdpPort = Number(process.env.WEB_PORT ?? 9300) + 6;
-    // Loaded only for --lab-stage: on the demo host's Bun, importing puppeteer at module load
-    // crashes in proxy-agent (`debug_1.default is not a function`) before any login.
-    const puppeteer = (await import('puppeteer')).default;
-    browser = await puppeteer.launch({
-        headless: process.argv.includes('--headless'),
-        defaultViewport: null,
-        args: ['--no-sandbox', '--window-size=800,660', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', `--remote-debugging-port=${cdpPort}`]
-    });
-    process.env.SPEEDRUN_CDP_URL = `http://127.0.0.1:${cdpPort}`;
-    const envPath = join(ROOT, 'bots', scored, 'bot.env');
-    const clientUrl = `CLIENT_URL=http://localhost:${process.env.WEB_PORT ?? 9300}/bot?gateway=${encodeURIComponent(`ws://localhost:${process.env.AGENT_PORT ?? 8300}`)}`;
-    writeFileSync(envPath, readFileSync(envPath, 'utf8').replace(/^CLIENT_URL=.*\n?/m, '').trimEnd() + `\n${clientUrl}\n`, { mode: 0o600 });
+    browser = await launchLabBrowser(scored, { headless: process.argv.includes('--headless'), cdpPort: Number(process.env.WEB_PORT ?? 9300) + 6 });
     return openSession(scored, { client: 'browser', launch: true, insecureQueryLogin: true });
 }
 
@@ -224,7 +213,7 @@ try {
             logouts[g] = o === 'out' ? 'logged out (launcher)' : o === 'not-in-world' ? 'logged out (never in world)' : `NOT CONFIRMED: ${o ?? 'no outcome in launcher.json'}`;
         }
     }
-    if (browser) await browser.close().catch(() => {});
+    if (browser) await browser.kill().catch(() => {});
     if (Object.values(logouts).some(v => !v.startsWith('logged out'))) exit = 1;
     const stepRow = stepRows.length ? { ticks: stepRows.reduce((n, r) => n + r.ticks, 0), ok: stepRows.every(r => r.ok) } : undefined;
     console.log(`RESULT ${JSON.stringify({ scored, givers, cycles, schedule, path: path ?? 'relay', labStage, stepTicks: stepRow?.ticks ?? null, stepOk: stepRow?.ok ?? false, programs, turns, inventory, logouts, runFiles: base })}`);

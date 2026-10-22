@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { NearbyPlayer } from '../../sdk/types';
-import type { GiverStatus } from './altar-cue';
+import { MissBench, type GiverStatus } from './altar-cue';
 import { giverOptions } from './altar-giver';
 import { altarData, count, ESSENCE, findItem, NOTE_IDS, roomTiles } from './altar-room';
 import { chooseBatch, planTurns } from './altar-receiver';
@@ -34,6 +34,14 @@ describe('chooseBatch', () => {
     const me = { x: 2844, z: 4832 };
     const nearby = [player('Cairn H70', 2845, 4832, 11), player('Cairn H71', 2843, 4832, 12), player('Cairn H72', 2845, 4831, 13)];
     const base = { schedule: 'tuned' as const, autoRobust: true, myLoggedInAt: 500, now: 11_000 };
+
+    test('a giver benched after a failed turn is skipped until it reports ready after that turn', () => {
+        const bench = new MissBench();
+        bench.miss('cairn_h70', 2);
+        const all = [status('cairn_h70', { readyAt: 1 }), status('cairn_h71', { readyAt: 3 })];
+        expect(chooseBatch(all, nearby, me, { ...base, bench }).map(c => c.giver)).toEqual(['cairn_h71']);
+        expect(chooseBatch([status('cairn_h70', { readyAt: 4 }), all[1]!], nearby, me, { ...base, bench }).map(c => c.giver)).toEqual(['cairn_h71', 'cairn_h70']);
+    });
 
     test('ready, fresh, adjacent givers, oldest ready first; diagonal ones are skipped', () => {
         const b = chooseBatch([status('cairn_h71', { readyAt: 5 }), status('cairn_h70', { readyAt: 3 }), status('cairn_h72')], nearby, me, base);
@@ -78,15 +86,21 @@ describe('planTurns', () => {
 });
 
 describe('giver options', () => {
+    const scope = { step: 'S06', family: 'altar' };
     test('defaults and validation', () => {
-        const o = giverOptions({}, { RC_CUE_DIR: '/tmp/cue' });
-        expect(o).toMatchObject({ altar: 'air', slot: 0, essence: 27, gapMs: 0, cueDir: '/tmp/cue', restock: { kind: 'bank', essence: 27 } });
+        const o = giverOptions({ scope }, { RC_CUE_DIR: '/tmp/cue' });
+        expect(o).toMatchObject({ altar: 'air', slot: 0, essence: 27, gapMs: 0, cueDir: '/tmp/cue', restock: { kind: 'bank', essence: 27 }, scope });
         expect(o.schedule).toBeUndefined();
-        expect(giverOptions({ essence: 10, restock: { kind: 'cheat' } }).restock).toEqual({ kind: 'cheat', essence: 10 });
-        expect(() => giverOptions({ essence: 28 })).toThrow();
-        expect(() => giverOptions({ slot: 3 })).toThrow();
-        expect(() => giverOptions({ schedule: 'fast' })).toThrow();
-        expect(() => giverOptions({ restock: { kind: 'teleport' } })).toThrow();
+        expect(giverOptions({ scope, essence: 10, restock: { kind: 'cheat' } }).restock).toEqual({ kind: 'cheat', essence: 10 });
+        expect(() => giverOptions({ scope, essence: 28 })).toThrow(/essence/);
+        expect(() => giverOptions({ scope, slot: 3 })).toThrow(/slot/);
+        expect(() => giverOptions({ scope, schedule: 'fast' })).toThrow(/schedule/);
+        expect(() => giverOptions({ scope, restock: { kind: 'teleport' } })).toThrow(/restock.kind/);
+    });
+
+    test('the cue scope is required and must be an altar one', () => {
+        expect(() => giverOptions({})).toThrow(/^scope: a cue scope \{ step, family \} is required/);
+        expect(() => giverOptions({ scope: { step: 'S07', family: 'bone' } })).toThrow(/scope.family must be altar/);
     });
 });
 

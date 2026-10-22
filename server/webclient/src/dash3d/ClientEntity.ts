@@ -60,10 +60,15 @@ export default abstract class ClientEntity extends ModelSource {
     animDelayMove: number = 0;
     preanimRouteLength: number = 0;
     turnspeed: number = 32;
+    /** Teleport-type position updates applied so far, and the jump bit of the last (the bot state's teleportTick and teleportJump). */
+    teleports: number = 0;
+    lastTeleportJump: boolean = false;
 
     abstract isReady(): boolean;
 
     teleport(jump: boolean, x: number, z: number): void {
+        this.teleports++;
+        this.lastTeleportJump = jump;
         if (this.primaryAnim !== -1 && SeqType.list[this.primaryAnim].postanim_move === PostanimMove.ABORTANIM) {
             this.primaryAnim = -1;
         }

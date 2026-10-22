@@ -6,7 +6,7 @@ import type { BotWorldState, InventoryItem, NearbyNpc } from '../../sdk/types';
 import { Run } from './bones';
 import { memoryRoleState } from './role';
 import { summarizeWindow } from '../../docs/speedrun/scripts/bones-dev/stats';
-import { fishingHaul, gearRank, healOf, inBabyBlueRoom, inDesert, isClutter, keepOnBank, parseOptions, patrolTour, SPOTS, UGTHANKI_SPAWNS } from './bones';
+import { carryReached, fishingHaul, foodOverCap, gearRank, healOf, inBabyBlueRoom, inDesert, isClutter, keepOnBank, parseOptions, patrolTour, SPOTS, tollWithdraw, UGTHANKI_SPAWNS } from './bones';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -50,6 +50,59 @@ test('inBabyBlueRoom: west of the dusty-key gate only; the gate tile is outside'
     expect(inBabyBlueRoom({ x: 2924, z: 9803 })).toBe(false); // cairn_h51 stopped here, 09:26 UTC
     expect(inBabyBlueRoom({ x: 2925, z: 9803 })).toBe(false);
     expect(inBabyBlueRoom({ x: 2884, z: 9798 })).toBe(false); // the ladder bottom is walled off from the room
+});
+
+describe('maxCarry', () => {
+    const herbs = (n: number) => Array.from({ length: n }, () => ({ name: 'Herb', count: 1 }));
+    const druids = SPOTS.chaos_druids!;
+    test('defaults to banking only when full', () => {
+        expect(parseOptions({}).maxCarry).toBe(Infinity);
+        expect(carryReached(herbs(27), druids.bones, Infinity)).toBe(false);
+    });
+    test('Edgeville druids with maxCarry 10: the tenth herb carried sends it to the bank; vials, coins and runes do not count', () => {
+        expect(parseOptions({ spot: 'chaos_druids', maxCarry: 10 }).maxCarry).toBe(10);
+        const other = [{ name: 'Vial of water', count: 1 }, { name: 'Coins', count: 300 }, { name: 'Law rune', count: 4 }];
+        expect(carryReached([...herbs(9), ...other], druids.bones, 10)).toBe(false);
+        expect(carryReached([...herbs(10), ...other], druids.bones, 10)).toBe(true);
+    });
+    test('a stack of the product counts by its size', () => {
+        expect(carryReached([{ name: 'Big bones', count: 12 }], /^big bones$/i, 10)).toBe(true);
+    });
+});
+
+describe('keepFood', () => {
+    let slot = 0;
+    const item = (id: number, name: string, count = 1, eat = true) =>
+        ({ slot: slot++, id, name, count, optionsWithIndex: eat ? [{ text: 'Eat', opIndex: 1 }] : [] }) as unknown as InventoryItem;
+    const kebabs = (n: number) => Array.from({ length: n }, () => item(1971, 'Kebab'));
+
+    test('defaults to keeping all food (the old behaviour)', () => {
+        expect(parseOptions({}).keepFood).toBe(Infinity);
+        expect(foodOverCap(kebabs(24), Infinity)).toEqual([]);
+    });
+    test('cairn_h51 with 24 kebabs and keepFood 4: 20 go in the bank, the coins stay out of it', () => {
+        expect(parseOptions({ keepFood: 4 }).keepFood).toBe(4);
+        const inv = [item(995, 'Coins', 200, false), ...kebabs(24), item(199, 'Herb', 1, false)];
+        expect(foodOverCap(inv, 4)).toEqual([{ id: 1971, n: 20 }]);
+        expect(foodOverCap(inv, 0)).toEqual([{ id: 1971, n: 24 }]);
+    });
+    test('the cap counts across food kinds in inventory order; noted (uneatable) food is not counted', () => {
+        const inv = [item(385, 'Shark'), item(385, 'Shark'), ...kebabs(3), item(386, 'Shark', 50, false)];
+        expect(foodOverCap(inv, 3)).toEqual([{ id: 1971, n: 2 }]);
+    });
+});
+
+describe('tollWithdraw', () => {
+    test('a bank east of the toll gate keeps the 10 gp toll (Al Kharid bank, where the coins role banks)', () => {
+        const t = tollWithdraw({ x: 3270, z: 3167 });
+        expect(t).toHaveLength(1);
+        expect(t[0]!.re.test('Coins')).toBe(true);
+        expect(t[0]!.n).toBe(10);
+    });
+    test('banks west of the gate take nothing out', () => {
+        expect(tollWithdraw({ x: 2946, z: 3368 })).toEqual([]); // Falador west
+        expect(tollWithdraw({ x: 3185, z: 3436 })).toEqual([]); // Varrock west
+    });
 });
 
 describe('keepOnBank', () => {

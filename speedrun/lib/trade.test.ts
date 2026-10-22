@@ -3,7 +3,8 @@ import type { BotWorldState, GameMessage, InventoryItem, TradeItem, TradeState }
 import { baseState, FakeSdk, flush } from './fake-sdk';
 import { fakeClock, microtasks, peek, tickEvery, useFakeTicks } from './fake-ticks';
 import { IDLE_TICKS, STALLED } from './wait';
-import { clickBack, decideGiver, decideReceiver, decideTradeClick, give, newClickCtx, newGiverCtx, newReceiverCtx, DROPPED_TICKS, openTrade, planOffers, receiveFrom, RESEND_TICKS, sameName, SETTLE_TICKS, type ClickCtx, type GiverCtx, type ReceiverCtx, type TradeSdk } from './trade';
+import { offerSatisfies as sdkOfferSatisfies } from '../../sdk/trade-helpers';
+import { clickBack, decideGiver, decideReceiver, decideTradeClick, give, newClickCtx, newGiverCtx, newReceiverCtx, DROPPED_TICKS, offerSatisfies, openTrade, planOffers, receiveFrom, RESEND_TICKS, sameName, SETTLE_TICKS, type ClickCtx, type GiverCtx, type ReceiverCtx, type TradeSdk, type WantSpec } from './trade';
 import type { SentAction } from './fake-sdk';
 
 const inv = (slot: number, id: number, name: string, count = 1): InventoryItem => ({ slot, id, name, count, optionsWithIndex: [] });
@@ -395,6 +396,19 @@ describe('trade completion race: cairn_h30 gives cairn_h71 a talisman and 200 no
         expect(Date.now() - t0).toBeLessThan(2_000);
     });
 
+    test('give with resendTicks Infinity never re-sends a standing request (the wine giver: 27 ticks would miss login + 19)', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, ...nearH30, inventory: [inv(0, 1996, 'Unfermented wine', 520)] }));
+        const result = give(sdk as unknown as TradeSdk, 'cairn_h30', [{ item: 1996, n: 'all' }], { openMaxTicks: 40, noReplyTicks: DROPPED_TICKS, resendTicks: Infinity });
+        await flush();
+        expect(requests(sdk)).toBe(1);
+        sdk.push({ tick: 2, gameMessages: [sending(2)] });
+        for (let t = 3; t <= 35; t++) sdk.push({ tick: t });
+        await flush();
+        expect(requests(sdk)).toBe(1);
+        for (let t = 36; t <= 45; t++) sdk.push({ tick: t });
+        expect((await result).ok).toBe(false);
+    });
+
     test('openTrade does not re-send a request answered on its landing frame, nor count an older answer as this one', async () => {
         const sdk = new FakeSdk(baseState({ tick: 1, ...nearH30, gameMessages: [sending(1)] }));
         const result = receiveFrom(sdk as unknown as TradeSdk, 'cairn_h30', { maxTicks: 5, noReplyTicks: DROPPED_TICKS });
@@ -776,5 +790,41 @@ describe('openTrade: the one driver', () => {
         stop = true;
         sdk.push({ tick: 11 });
         expect(await p).toMatchObject({ ok: false, reason: 'stopped', sends: 1 });
+    });
+});
+
+describe('offerSatisfies: speedrun\'s one want rule', () => {
+    // Unfinished potion: 91 the guam obj, 92 its note; the two Air rune entries one stack split in two.
+    const offer: TradeItem[] = [
+        { slot: 0, id: 556, name: 'Air rune', count: 300 },
+        { slot: 1, id: 556, name: 'Air rune', count: 100 },
+        { slot: 2, id: 91, name: 'Unfinished potion', count: 1 },
+        { slot: 3, id: 92, name: 'Unfinished potion', count: 40 },
+        { slot: 4, id: 2434, name: 'Prayer potion(4)', count: 2 },
+    ];
+    const byName: Array<[WantSpec[], boolean]> = [
+        [[{ item: 'Air rune', amount: 400 }], true], // exact name, a stack split across two entries summed
+        [[{ item: 'Air rune', amount: 401 }], false],
+        [[{ item: 'air RUNE', amount: 400 }], true], // case-blind
+        [[{ item: 'rune', amount: 400 }], true], // a substring
+        [[{ item: 'Unfinished potion', amount: 41 }], true], // a noted and an unnoted stack alike
+        [[{ item: /^prayer potion\(\d\)$/i, amount: 2 }], true],
+        [[{ item: /^prayer potion\(\d\)$/i, amount: 3 }], false],
+        [[{ item: 'Air rune', amount: 400 }, { item: 'Shark' }], false], // every want, default amount 1
+        [[{ item: 'Shark', amount: 0 }], true],
+        [[], true],
+    ];
+
+    test('a name want counts exactly as sdk/trade-helpers.ts offerSatisfies does', () => {
+        for (const [want, expected] of byName) {
+            expect([offerSatisfies(want, offer), sdkOfferSatisfies(want as Parameters<typeof sdkOfferSatisfies>[0], offer)]).toEqual([expected, expected]);
+        }
+        expect(offerSatisfies(undefined, [])).toBe(true);
+    });
+
+    test('an id want counts that obj only: the note and the unnoted obj are told apart', () => {
+        expect(offerSatisfies([{ item: 92, amount: 40 }], offer)).toBe(true);
+        expect(offerSatisfies([{ item: 92, amount: 41 }], offer)).toBe(false);
+        expect(offerSatisfies([{ item: 91, amount: 1 }, { item: 556, amount: 400 }], offer)).toBe(true);
     });
 });

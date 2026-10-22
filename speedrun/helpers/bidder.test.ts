@@ -135,6 +135,21 @@ describe('our price never goes down', () => {
         expect(d).toMatchObject({ action: 'replace', cancel: [15945], price: 1650 });
     });
 
+    test('liftAsks takes a resting ask above our bid up to the cap, and only with the option', () => {
+        const blood = lineOptions({ item: 'Blood rune', target: 1616, tranche: 350, maxPrice: 1500, minPrice: 1150, liftAsks: true });
+        const ours = [offer({ id: 20086, item: 565, price: 1150, quantity: 350, remaining: 350, filled: 0 })];
+        // The demo seller re-listed 86 at 1,205 above our resting 1,150 (2026-10-22 11:08 UTC).
+        const d = decideBid({ held: 0, ours, quote: book([[15_821, 579]], ours, { ask: 1205 }), coins: 500_000, options: blood, floor: 1150 });
+        expect(d).toMatchObject({ action: 'replace', cancel: [20086], price: 1205 });
+        // Above the cap, or without the option: held as before.
+        expect(decideBid({ held: 0, ours, quote: book([[15_821, 579]], ours, { ask: 1600 }), coins: 500_000, options: blood, floor: 1150 })).toMatchObject({ action: 'hold' });
+        expect(decideBid({ held: 0, ours, quote: book([[15_821, 579]], ours, { ask: 1205 }), coins: 500_000, options: { ...blood, liftAsks: false }, floor: 1150 })).toMatchObject({ action: 'hold' });
+        // A fresh tranche starts at the ask when it is above the floor.
+        expect(decideBid({ held: 0, ours: [], quote: book([[15_821, 579]], [], { ask: 1205 }), coins: 500_000, options: blood, floor: 1150 })).toMatchObject({ action: 'place', price: 1205 });
+        expect(() => lineOptions({ item: 'Blood rune', target: 1, maxPrice: 1, liftAsks: 'yes' })).toThrow(/liftAsks/);
+        expect(lineOptions({ item: 'Grapes', target: 1, maxPrice: 1 }).liftAsks).toBe(false);
+    });
+
     test('the floor never lifts a bid past the cap', () => {
         const d = decideBid({ held: 0, ours: [], quote: book([[10, 1000]]), coins: 1_000_000, options: opts, floor: 3500 });
         expect(d.price).toBe(3000);

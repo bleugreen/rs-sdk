@@ -32,6 +32,11 @@ restart resumes where the last run stopped.
 Shafts, feathers and headless arrows are all stackable, so the pack never fills
 and the line needs no bank trips except to protect progress against a death.
 
+The shafts phase needs an axe in the pack. A death loses the starter bronze
+axe, so the role takes an axe from the bank when one is banked (`ensureAxe`) and
+otherwise stops with "no axe"; the GE has no axe sellers, so bank one on the
+account by handover first (cairn_h78 died once in the Lumbridge woods, 2026-10-22).
+
 ### Where to chop, and the Draynor jail guards
 
 Only normal logs make arrow shafts (`cut_logs.dbrow`). The obvious trees, the
@@ -132,11 +137,47 @@ which is what's left at the caps, plus 5% and 500. Measured at Hickton with
 three lines: about 10 seconds per pass, each shelf taken back to its cap as
 it restocks.
 
+## Bows mode: strung bows for the scored account
+
+The scored route wields a magic shortbow (SUPPLIES.md H12, H23), and no shop
+sells one in this revision, so a helper makes them (cairn://p/rs/346):
+
+```
+ROLE_OPTIONS='{"mode":"bows","bows":[{"bow":"yew shortbow","count":2},{"bow":"magic shortbow","count":6}]}' bun speedrun/helpers/fletcher.ts cairn_h78
+```
+
+Everything happens at Varrock west bank, beside the Grand Exchange. Each step
+is chosen from the live level, xp and holdings (`bowsStep`, unit-tested): the
+first line short of its count that the level allows is made (buy logs and bow
+strings at the GE if short, withdraw, cut, string, bank); otherwise it trains
+on the best bow `trainLog` allows, buying exactly the logs the level needs. So
+a restart anywhere resumes, and nothing is bought twice.
+
+| Fact | Source |
+|---|---|
+| Magic shortbow: cut and string at Fletching 80, 83.3 base xp each; magic longbow 85 | `cut_logs.dbrow`, `bows.dbrow` |
+| Cutting is a weak-queued action, one log per 2-3 ticks, chained by Make-X with the carried count (`makeButton` finds the product's Make-X; the count dialog takes the number) | `cut_logs.rs2` |
+| Stringing is delay-free, one bow per use, no Crafting needed (strings bought) | `bows.rs2` |
+| Unstrung and strung bows share their name ("Magic shortbow" is 72 unstrung, 861 strung), so the role counts and moves bows by id (`BOWS`) | `obj.pack` |
+| **The demo's level curve is 2^(l/10), not the standard 2^(l/7)**: level 80 is 267,169 xp (`xpForLevel`), so 73 -> 80 was 51 yew longbows, not ~530 | `Player.ts` levelExperience |
+
+Measured on the demo, cairn_h78 from Fletching 73 (2026-10-22, 09:43-09:48
+UTC): 2 yew shortbows bought, cut and strung in 20 s; 51 yew logs bought (399
+gp) and cut in 2 trips of 149 and 112 ticks, bank included (**about 2,300
+logs per hour**), reaching 80; 6 magic logs (2,250 gp) and 6 bow strings (146
+gp) bought, cut and strung in 16 s. Five minutes and about 35,000 gp in all.
+The GE listed 26,000 yew logs, 49,000 magic logs and 766 bow strings.
+
 ## Options
 
 | Option | Mode | Default | Meaning |
 |---|---|---|---|
-| `mode` | both | `headless` | `headless` or `camp` |
+| `mode` | all | `headless` | `headless`, `camp` or `bows` |
+| `bows` | bows | `[{bow:'magic shortbow',count:6}]` | Strung bows to hold, in order (`BOWS` keys) |
+| `level` | bows | 80 | Fletching to train to; a line needing more raises it |
+| `trainLog` | bows | `Yew logs` | The log trained on, bought at the GE when short |
+| `maxPrices` | bows | `MAX_PRICES` | GE caps per item name (yew 450, magic 2,600, bow string 250) |
+| `xpRate` | bows | 25 | The server's xp multiplier |
 | `target` | headless | 4245 | Headless arrows to hold (bank + pack) |
 | `maxFeatherPrice` | headless | 6 | Gerrant's live price cap per feather |
 | `shop` | camp | (required) | `hickton` or `dargaud` |
@@ -145,7 +186,7 @@ it restocks.
 | `crossingHitpoints` | camp | 40 | Hitpoints to train before the crossing |
 | `passTicks` | camp | 20 | How long each line waits for a restock per pass |
 | `reportMinutes` | camp | 30 | Bank and log holdings this often while camping |
-| `funders` | both | `^cairn_h\d+$` | Accounts whose trades are accepted at Varrock west bank |
+| `funders` | all | `^cairn_h\d+$` | Accounts whose trades are accepted at Varrock west bank |
 
 ## Accounts and hand-over
 
@@ -153,7 +194,7 @@ it restocks.
 |---|---|---|
 | cairn_h76 | Hickton camper | Small tiers bought; camping adamant, rune and mithril arrowtips |
 | cairn_h77 | Dargaud camper | Not created: the other 1,660 adamant stay unbought unless asked for |
-| cairn_h78 | Headless line | Done: 4,245 headless arrows in its bank; logged out |
+| cairn_h78 | Headless line, then bows | Headless arrows handed to the mule. Fletching 81 since rs/346: made 6 strung magic shortbows (1 handed to cairn_mule1) and 2 strung yew shortbows; holds the rest and ~265k gp at Varrock west. Disabled in the fleet; ran from `~/rs-346` on bbs (launcher configs in `run-machine/`, gateway 127.0.0.1:7826, systemd user unit `rs-346-h78`) |
 | cairn_h79 | spare | Not created |
 
 During development the accounts ran from a dev copy on bbs (`~/rs-dev/fletcher`,

@@ -1,7 +1,57 @@
 import { describe, expect, test } from 'bun:test';
-import type { InventoryItem } from '../../sdk/types';
-import { buttonAmount, pairsForRound, planMakes } from './wine';
+import type { BotSDK } from '../../sdk/index';
+import type { BotWorldState, InventoryItem } from '../../sdk/types';
+import { baseState, FakeSdk } from '../lib/fake-sdk';
+import { awaitRelogReturn, buttonAmount, giveWine, pairsForRound, planMakes } from './wine';
 import { ITEM } from './wine-common';
+
+const flush = () => new Promise(r => setTimeout(r, 0));
+const SCORED = { nearbyPlayers: [{ index: 9, name: 'SCORED', combatLevel: 90, x: 3185, z: 3436, distance: 1 }] } as unknown as Partial<BotWorldState>;
+const NOBODY = { nearbyPlayers: [] } as unknown as Partial<BotWorldState>;
+
+describe('awaitRelogReturn and giveWine afterRelog (S25c: the giver requests on the receiver\'s relog 1)', () => {
+    test('seen, gone, back: resolves on the first state back; an absence before the receiver arrives does not arm it', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, ...NOBODY }));
+        let back: number | null | undefined;
+        void awaitRelogReturn(sdk as unknown as BotSDK, 'scored', 5_000).then(t => (back = t));
+        sdk.tick(NOBODY);
+        sdk.tick(SCORED); // arrives at the booth (S25e): seen, not yet the relog
+        await flush();
+        expect(back).toBeUndefined();
+        sdk.tick(SCORED);
+        sdk.tick(NOBODY); // relog 1's logout
+        sdk.tick(NOBODY);
+        await flush();
+        expect(back).toBeUndefined();
+        sdk.tick(SCORED); // tick 7: back
+        await flush();
+        expect(back).toBe(7);
+    });
+
+    test('a give-up on any of the three waits is null', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, ...SCORED }));
+        expect(await awaitRelogReturn(sdk as unknown as BotSDK, 'SCORED', 20)).toBeNull();
+    });
+
+    test('giveWine afterRelog sends no trade request before the receiver is back, then requests at once', async () => {
+        const notes = [{ slot: 0, id: ITEM.wineNote, name: 'Unfermented wine', count: 520, optionsWithIndex: [] }] as unknown as InventoryItem[];
+        const sdk = new FakeSdk(baseState({ tick: 1, ...SCORED, inventory: notes }));
+        const log: string[] = [];
+        const ctx = { sdk: sdk as unknown as BotSDK, bot: {} as never, log: (m: string) => void log.push(m) };
+        const done = giveWine(ctx, 'SCORED', -1, 300, { afterRelog: true, cueTimeoutMs: 5_000 });
+        const requests = () => sdk.sent.filter(a => a.method === 'sendTradeRequest').length;
+        sdk.tick(SCORED);
+        sdk.tick(NOBODY);
+        await flush();
+        expect(requests()).toBe(0);
+        sdk.tick(SCORED);
+        await flush();
+        expect(requests()).toBe(1);
+        expect(log).toContain('wine giver: receiver back after its relog');
+        // the fake never opens the trade: the open gives up at its wall-clock bound
+        expect((await done).success).toBe(false);
+    });
+});
 
 const item = (slot: number, id: number, name: string, count = 1): InventoryItem => ({ slot, id, name, count, optionsWithIndex: [] }) as unknown as InventoryItem;
 

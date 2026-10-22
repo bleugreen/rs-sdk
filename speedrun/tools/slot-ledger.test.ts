@@ -2,7 +2,7 @@ import { describe, expect, spyOn, test } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { evidenceLabel, main, MANIFEST, parseLedger, render, summary, walk, type LedgerEntry } from './slot-ledger';
+import { evidenceLabel, main, MANIFEST, parseItem, parseLedger, render, summary, walk, type LedgerEntry } from './slot-ledger';
 
 const HEAD = '| row | in | out | equip | needAtStart | source |\n|---|---|---|---|---|---|\n';
 const table = (...rows: string[]) => HEAD + rows.join('\n') + '\n';
@@ -211,6 +211,119 @@ describe('top-ups: NAME to N [K] brings the held count up to N', () => {
     });
 });
 
+describe('item identity: NAME @ID, NAME(*) and <NAME> (rs/365)', () => {
+    test('the parse: an id, a family and a placeholder; an unmarked entry carries none of them', () => {
+        const { rows, errors } = parseLedger(table(
+            '| H21d | guam potion (unf) @91 x41 [n] (obj `guamvial`); <bars> x25 [u]; prayer potion(*) x2 [u]; torch x1 [u] (unlit, obj `torch_unlit`) | antipoison(*) all (swap: dead); <platebody> x5 (swap); hammer @2347 x1 (swap) | - | 2 | (r) |',
+        ));
+        expect(errors).toEqual([]);
+        expect(rows[0]!.in).toEqual([
+            { name: 'guam potion (unf)', id: 91, count: 41, kind: 'n' },
+            { name: 'bars', placeholder: true, count: 25, kind: 'u' },
+            { name: 'prayer potion', family: true, count: 2, kind: 'u' },
+            { name: 'torch', count: 1, kind: 'u' },
+        ]);
+        expect(rows[0]!.out).toEqual([
+            { name: 'antipoison', family: true, count: 'all', reason: 'swap' },
+            { name: 'platebody', placeholder: true, count: 5, reason: 'swap' },
+            { name: 'hammer', id: 2347, count: 1, reason: 'swap' },
+        ]);
+        expect(Object.keys(parseItem('antipoison(3)'))).toEqual(['name']);
+    });
+
+    test('a malformed mark is an error naming the line, not part of a name', () => {
+        const { errors } = parseLedger(table('| S00 | torch @lit x1 [u] | - | - | 0 | (r) |', '| S01 | <bars x1 [u] | - | - | 0 | (r) |', '| S02 | - | torch @594(*) x1 (drop) | - | 0 | (r) |'));
+        expect(errors).toHaveLength(3);
+        expect(errors[0]).toMatch(/line 3 \(S00\): item "torch @lit": expected NAME, NAME @ID, NAME\(\*\) or <NAME>/);
+        expect(errors[1]).toMatch(/item "<bars"/);
+        expect(errors[2]).toMatch(/item "torch @594\(\*\)"/);
+    });
+
+    test("rs/158's case 1, ambiguous game names: two ids under one name are two stacks", () => {
+        const unf = run(table(
+            '| H21d | unfinished potion @91 x41 [n]; unfinished potion @101 x405 [n] | - | - | 2 | (r) |',
+            '| S25d | - | unfinished potion @91 all (deposit) | - | 0 | (r) |',
+        ));
+        expect(byRow(unf, 'H21d')).toMatchObject({ used: 2, held: 'unfinished potion x41 (noted), unfinished potion x405 (noted)' });
+        expect(byRow(unf, 'S25d')).toMatchObject({ used: 1, held: 'unfinished potion x405 (noted)' });
+        // By name they are one stack, a slot short of the truth.
+        expect(byRow(run(table('| H21d | unfinished potion x41 [n]; unfinished potion x405 [n] | - | - | 1 | (r) |')), 'H21d').used).toBe(1);
+        // H15 to T19-20: the unlit torch in, the lit one beside it, the unlit one burnt, the lit one dropped.
+        const torch = run(table(
+            '| H15 | torch @596 x1 [u] | - | - | 1 | (r) |',
+            '| S19 | torch @594 x1 [u] | torch @596 x1 (consume) | - | 1 | (r) |',
+            '| T19-20 | - | torch @594 x1 (drop) | - | 0 | (r) |',
+        ));
+        expect(torch.map(e => [e.row.row, e.verdict, e.used])).toEqual([['H15', 'pass', 1], ['S19', 'pass', 1], ['T19-20', 'pass', 0]]);
+        // An unmarked name over two id stacks is ambiguous, unless it takes all of them.
+        const both = '| S19 | torch @596 x1 [u]; torch @594 x1 [u] | - | - | 2 | (r) |';
+        expect(run(table(both, '| T19 | - | torch x1 (drop) | - | 0 | (r) |'))[1]!.notes[0]).toBe('torch names 2 stacks (torch @596, torch @594); name it by id');
+        expect(byRow(run(table(both, '| T19 | - | torch all (drop) | - | 0 | (r) |')), 'T19')).toMatchObject({ verdict: 'pass', used: 0 });
+    });
+
+    test('case 2, dose-changing potions: NAME(*) takes from every dose form held, each a stack of its own', () => {
+        const e = run(table(
+            '| H7 | antipoison(3) x1 [u] | - | - | 1 | (r) |',
+            '| H12 | antipoison(4) x1 [u]; prayer potion(4) x2 [u] | - | - | 3 | (r) |',
+            '| H13 | - | antipoison(*) all (swap: whatever doses are left) | - | 0 | (r) |',
+            '| H14 | - | prayer potion(*) x2 (swap) | - | 0 | (r) |',
+        ));
+        expect(byRow(e, 'H12')).toMatchObject({ used: 4, held: 'antipoison(3) x1, antipoison(4) x1, prayer potion(4) x2' });
+        expect(byRow(e, 'H13')).toMatchObject({ verdict: 'pass', used: 2, held: 'prayer potion(4) x2' });
+        expect(byRow(e, 'H14')).toMatchObject({ verdict: 'pass', used: 0 });
+        // A count comes out of the forms in turn, and no more than is held.
+        const mixed = '| H12 | prayer potion(4) x1 [u]; prayer potion(2) x2 [u] | - | - | 3 | (r) |';
+        expect(byRow(run(table(mixed, '| H14 | - | prayer potion(*) x2 (swap) | - | 0 | (r) |')), 'H14')).toMatchObject({ used: 1, held: 'prayer potion(2) x1' });
+        expect(run(table(mixed, '| H14 | - | prayer potion(*) x4 (swap) | - | 0 | (r) |'))[1]!.notes[0]).toBe('prayer potion(*): 4 out, 3 held');
+        // A family in is its own stack; a potion of another name is not one of its doses.
+        const own = run(table('| H13 | prayer potion(*) x2 [u]; super prayer potion(4) x1 [u] | - | - | 3 | (r) |', '| H14 | - | prayer potion(*) all (swap) | - | 0 | (r) |'));
+        expect(byRow(own, 'H13').held).toBe('prayer potion(*) x2, super prayer potion(4) x1');
+        expect(byRow(own, 'H14')).toMatchObject({ used: 1, held: 'super prayer potion(4) x1' });
+    });
+
+    test('case 3, category placeholders: <NAME> takes its slots, and an unconverted row finds it by name', () => {
+        const e = run(table(
+            '| H21a | hammer x1 [u]; <bars> x25 [u] | - | - | 26 | (r) |',
+            '| S25a | <platebody> x5 [u] | bars x25 (consume: smithed) | - | 0 | (r) |',
+            '| H21d | - | <platebody> x5 (swap) | - | 0 | (r) |',
+        ));
+        expect(byRow(e, 'H21a')).toMatchObject({ used: 26, held: 'hammer x1, bars x25' });
+        expect(byRow(e, 'S25a')).toMatchObject({ verdict: 'pass', used: 6, held: 'hammer x1, platebody x5' });
+        expect(byRow(e, 'H21d')).toMatchObject({ verdict: 'pass', used: 1 });
+    });
+
+    test('case 4, noted stacks: an id at [n] is one slot; a table converted one row at a time walks as by name', () => {
+        const byName = '| H21d | guam potion (unf) x41 [n] | - | - | 1 | (r) |';
+        const byId = '| H21d | guam potion (unf) @91 x41 [n] | - | - | 1 | (r) |';
+        expect(byRow(run(table(byId)), 'H21d')).toMatchObject({ used: 1, held: 'guam potion (unf) x41 (noted)' });
+        expect(byRow(run(table(byName, '| S25d | - | guam potion (unf) @91 all (deposit) | - | 0 | (r) |')), 'S25d')).toMatchObject({ verdict: 'pass', used: 0 });
+        expect(byRow(run(table(byId, '| S25d | - | guam potion (unf) all (deposit) | - | 0 | (r) |')), 'S25d')).toMatchObject({ verdict: 'pass', used: 0 });
+        // An id in on a stack an unconverted row brought in by name merges with it (and gives it the id)...
+        expect(byRow(run(table(byName, '| H21e | guam potion (unf) @91 x9 [n] | - | - | 0 | (r) |')), 'H21e')).toMatchObject({ used: 1, held: 'guam potion (unf) x50 (noted)' });
+        // ...but an id stack is not another id's.
+        expect(byRow(run(table(byId, '| H21e | guam potion (unf) @101 x9 [n] | - | - | 1 | (r) |')), 'H21e').used).toBe(2);
+    });
+});
+
+describe("rs/158's fold-in 18 table: the id grammar beside the names", () => {
+    // fold-in-18.walk.txt was written by the parser before rs/365, on fold-in-18.md.
+    const golden = fixture('fold-in-18').length ? readFileSync(join(import.meta.dir, 'fixtures/slot-ledger/fold-in-18.walk.txt'), 'utf8') : '';
+    const output = (md: string) => {
+        const entries = run(md);
+        return `${render(entries)}\n\n${summary(entries).text}\n`;
+    };
+
+    test('walks byte-identical to the parser before ids', () => {
+        expect(output(fixture('fold-in-18'))).toBe(golden);
+    });
+
+    test('with its touched rows written as NAME @ID, NAME(*) and <NAME>, walks the same', () => {
+        const ids = fixture('fold-in-18-ids');
+        for (const form of ['guam potion (unf) @91 x41 [n]', 'torch @596 x1 [u]', 'antipoison(*) all', 'prayer potion(*) all', '<bars> x25 [u]', '<gem ring> x20 [u]']) expect(ids).toContain(form);
+        expect(output(ids)).toBe(golden);
+    });
+});
+
 describe("tonight's routes (fixtures inferred from the documents)", () => {
     test('as first routed: H4 refused, 22 free against 23 (rs/285)', () => {
         const entries = run(fixture('route-original'));
@@ -269,9 +382,7 @@ describe('STEP-MANIFEST.md', () => {
         expect(rows[0]!.row).toBe('S00');
         expect(() => walk(rows)).not.toThrow();
     });
-    // rs/158's last-fix fold-in flips this to `test.skipIf(!...)` like the one above, once its table
-    // walks clean: every row then passes, and any later change that breaks a row fails the suite.
-    test.todo('its Inventory ledger has no failing row', () => {
+    test('its Inventory ledger has no failing row', () => {
         const s = summary(walk(parseLedger(text).rows));
         expect(s.failed.map(e => `${e.row.row}: ${e.notes.join('; ')}`)).toEqual([]);
     });

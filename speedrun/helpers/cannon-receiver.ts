@@ -13,12 +13,15 @@
 //
 // Role options: giver (account, required), tile {x,z} (required), balls (required),
 //   giveBack (default false), waitTicks for the holder (default 6000),
+//   expectBack [{ item, count }] (needs giveBack): what the holder gives in the give-back
+//     trade (its serve.returnExtras; H11r: Magic shortbow 1, Rune arrow 200). With it the
+//     give-back is one two-way trade (lib/trade.ts swap), judged in both directions,
 //   lab only: questVarp (::setvar mcannon N first; 11 is complete), setUp (default false)
-import type { BotWorldState } from '../../sdk/types';
-import { give, receiveFrom, sameName } from '../lib/trade';
-import { CueWriter, cueDir, FrameLog } from './altar-cue';
+import type { BotWorldState, TradeItem } from '../../sdk/types';
+import { give, offerSatisfies, receiveFrom, sameName, swap, type SwapSdk } from '../lib/trade';
+import { CueWriter, cueDir, FrameLog, scopeOption } from './altar-cue';
 import { chebyshev, cheat, isLocalServer, labTele, pos, standOn, until, type Tile } from './altar-room';
-import { holdsLoad, loadSpecs, loadWant } from './cannon';
+import { extraWants, holdsLoad, loadSpecs, loadWant, serveExtras, type ServeExtra } from './cannon';
 import { ensureOutOfTutorial, walkNear } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
 
@@ -32,7 +35,33 @@ export interface ReceiverResult {
     received: string[];
     reason?: string;
     setUp?: { message: string | null; placed: boolean; pickedUp: boolean };
-    gaveBack?: { ok: boolean; giverTicks: number; reason?: string };
+    gaveBack?: { ok: boolean; giverTicks: number; received?: string[]; reason?: string };
+}
+
+export interface GiveBackResult {
+    ok: boolean;
+    ticks: number;
+    gave: TradeItem[];
+    received: TradeItem[];
+    reason?: string;
+}
+
+/**
+ * The H11r direction: the set and `balls` leftover balls (none: the parts alone) back to the
+ * holder in one trade. With `expectBack` the holder offers its return extras in the same
+ * trade, so it is lib/trade.ts swap (give the load, want the extras); without, the plain give,
+ * which declines anything the holder offers.
+ */
+export async function giveBackTrade(sdk: SwapSdk, giver: string, balls: number, expectBack: readonly ServeExtra[]): Promise<GiveBackResult> {
+    const specs = balls > 0 ? loadSpecs(balls) : loadSpecs(1).slice(0, 4);
+    if (expectBack.length === 0) return { ...(await give(sdk, giver, specs, { openTimeoutMs: 60_000 })), received: [] };
+    // Our request stands until the holder, which polls its chat every tick, clicks back.
+    return swap(sdk, giver, specs, extraWants(expectBack), { openTicks: 200, maxTicks: 100 });
+}
+
+/** Delivered both ways: the set left (and `balls` balls with it), and every expected item arrived. */
+export function giveBackDelivered(r: Pick<GiveBackResult, 'ok' | 'gave' | 'received'>, balls: number, expectBack: readonly ServeExtra[]): boolean {
+    return r.ok && offerSatisfies(loadWant(balls), r.gave) && offerSatisfies(extraWants(expectBack), r.received);
 }
 
 const lines = (s: BotWorldState, since: number) => s.gameMessages.filter(m => m.tick > since && m.type === 0).map(m => m.text);
@@ -74,8 +103,11 @@ export const role: Role = {
         const tile: Tile = { x: t.x, z: t.z };
         const balls = Number(o.balls);
         if (!Number.isInteger(balls) || balls < 1) throw new Error('cannon-receiver: options.balls is required');
+        const scope = scopeOption(o.scope, ['cannon']);
         const lab = isLocalServer();
         if ((o.questVarp !== undefined || o.setUp) && !lab) throw new Error('questVarp and setUp are for the local lab only');
+        const expectBack = serveExtras(o.expectBack, false, 'cannon-receiver: expectBack');
+        if (expectBack.length && !o.giveBack) throw new Error('cannon-receiver: expectBack needs giveBack');
         const { sdk } = ctx;
         const s = () => sdk.getState() as BotWorldState;
 
@@ -92,7 +124,7 @@ export const role: Role = {
 
         const frames = new FrameLog();
         const unsub = sdk.onStateUpdate(st => void frames.add(st.tick));
-        const writer = new CueWriter(cueDir(), ctx.account);
+        const writer = new CueWriter(cueDir(), ctx.account, scope);
         let result: ReceiverResult = { ok: false, ticks: 0, standingAtClick: false, received: [], reason: 'not started' };
         try {
             await until(ctx, () => frames.recent().length >= 4, 10);
@@ -121,9 +153,14 @@ export const role: Role = {
             }
             if (o.giveBack) {
                 const held = s().inventory.filter(i => BALL.test(i.name)).reduce((a, i) => a + i.count, 0);
-                const g = await give(sdk, giver, held > 0 ? loadSpecs(held) : loadSpecs(1).slice(0, 4), { openTimeoutMs: 60_000 });
-                result.gaveBack = { ok: g.ok, giverTicks: g.ticks, ...(g.reason ? { reason: g.reason } : {}) };
-                ctx.log('gave back', { ...result.gaveBack, gave: g.gave.map(i => `${i.name} x${i.count}`) });
+                const g = await giveBackTrade(sdk, giver, held, expectBack);
+                result.gaveBack = {
+                    ok: giveBackDelivered(g, held, expectBack),
+                    giverTicks: g.ticks,
+                    ...(expectBack.length ? { received: g.received.map(i => `${i.name} x${i.count}`) } : {}),
+                    ...(g.reason ? { reason: g.reason } : {})
+                };
+                ctx.log('gave back', { ...result.gaveBack, tradeOk: g.ok, gave: g.gave.map(i => `${i.name} x${i.count}`) });
                 // A final role's exit stops the launcher: let the holder log its side of the trade first.
                 await sdk.waitForTicks(5);
             }

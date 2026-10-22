@@ -67,8 +67,7 @@ function model(o: ModelOpts) {
     let runes = 0;
     let delayedThrough = -1;
     let craftClicks = 0;
-    const msgs: Array<{ text: string; tick: number; id: number; type: number; sender: string }> = [];
-    let msgId = 0;
+    const msgs: Array<{ text: string; tick: number; type: number; sender: string }> = [];
     interface Giver { name: string; essence: number; readyAt: number; done: Set<string>; armed: { T: number; myT: number; schedule: string; fired: boolean } | null; out: Map<number, Pkt[]> }
     const givers: Giver[] = giverNames.map(name => ({ name, essence: 27, readyAt: EPOCH, done: new Set(), armed: null, out: new Map() }));
     // run.ts's part: offer the ready givers, oldest readyAt first, whenever one restocks
@@ -165,7 +164,7 @@ function model(o: ModelOpts) {
             trade = { giver: g, screen: 'offer', offered: 0, accS: false, accG: false };
         } else {
             outstanding.set(fwd, t);
-            if (who !== 'scored') msgs.push({ text: 'wishes to trade with you.', tick: t, id: msgId++, type: 4, sender: display(g.name) });
+            if (who !== 'scored') msgs.push({ text: 'wishes to trade with you.', tick: t, type: 4, sender: display(g.name) });
         }
     };
 

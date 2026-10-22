@@ -9,6 +9,10 @@
 // offer, accept and confirm on what each frame shows (lib/trade.ts give) until
 // the judge tick.
 // Then it restocks and comes back.
+// The hand-back giver (option handBack, S21's end) makes one more trip once its essence runs
+// out: its talisman and the hand-back items, no essence. Its status lists them under
+// `handBack`, the scored side names it in a stock turn carrying `items`, it trades exactly
+// those, and it is done.
 // Contract, batch mode and measurements: docs/speedrun/helpers/altar-giver.md.
 //
 // Runs beside the scored account on the run machine (standalone.ts), never from
@@ -17,14 +21,19 @@
 // Role options (ROLE_OPTIONS):
 //   altar      'air' (default), 'body' or 'nature'
 //   slot       0 east (default), 1 west, 2 south of the receiver's tile
-//   essence    essence per trade (default 27; the talisman takes the 28th slot)
+//   essence    essence per trade, offered exactly by count (default 27; the talisman takes the 28th slot).
+//              A giver holding more counts itself loaded and offers `essence` of them (essencePresses)
 //   schedule   'robust' forces the 8-tick schedule for every blind turn; default follows the cue
 //   restock    { kind: 'bank'|'trade'|'cheat', bank?, acceptFrom?, restockAt?, labStock? } (altar-room.ts)
 //   gapMs      wait after a frame before sending its packets (default 0: send on arrival)
+//   handBack   [{ item, n }]: this giver is the hand-back giver (bank restock only). Once its bank
+//              can't make an essence load it takes exactly these (and its talisman) instead
+//              (altar-room.ts bankWithdrawals), and hands them over on a turn carrying `items`
 //   cueDir     default RC_CUE_DIR, else run-machine/rc-cue in the checkout
+//   scope      required: { step, family: 'altar' }, the cue this giver serves (altar-cue.ts CueScope; S06 or S21)
 import type { BotWorldState, NearbyPlayer } from '../../sdk/types';
 import { DROPPED_TICKS, give } from '../lib/trade';
-import { tickClock } from '../lib/wait';
+import { tickClock, tickMs } from '../lib/wait';
 import {
     assertUntracked,
     chooseTurn,
@@ -35,10 +44,12 @@ import {
     judgeTick,
     nameHash,
     resolveOffset,
+    scopeOption,
     TRADE_ACCEPT,
     TRADE_CONFIRM,
     writeStatus,
     type Cue,
+    type CueScope,
     type GiverAction,
     type GiverPhase,
     type Outcome,
@@ -46,7 +57,9 @@ import {
     type TurnResult,
     type TurnSchedule
 } from './altar-cue';
-import { altarData, count, ESSENCE, enterRoom, findAltar, findItem, inRoom, pos, restock, roomTiles, standOn, until, type Altar, type RestockOptions, type Tile } from './altar-room';
+import { isXAmount } from '../lib/items';
+import { altarData, carriedSlots, count, ESSENCE, enterRoom, exactItem, findAltar, findItem, holdsItems, inRoom, pos, restock, roomTiles, standOn, until, type Altar, type RestockOptions, type Tile } from './altar-room';
+import type { HandBackItem } from './altar-cue';
 import { ensureOutOfTutorial } from './mule';
 import { runStandalone, type Role, type RoleContext } from './role';
 
@@ -54,10 +67,29 @@ export interface GiverOptions {
     altar: string;
     slot: number;
     essence: number;
+    /** The hand-back giver's items (S21: 1 law, 3 air, 1 earth); absent for every other giver. */
+    handBack?: HandBackItem[];
     schedule?: Schedule;
     restock: RestockOptions;
     gapMs: number;
     cueDir: string;
+    scope: CueScope;
+}
+
+/** The `handBack` option: distinct items by name, each a whole count, beside the talisman. */
+export function handBackOption(raw: unknown, restockKind: string): HandBackItem[] | undefined {
+    if (raw === undefined) return undefined;
+    if (!Array.isArray(raw) || raw.length === 0) throw new Error('handBack must be a non-empty list of { item, n }');
+    if (restockKind !== 'bank') throw new Error('handBack needs restock kind bank: the runes-only trip is decided at the bank');
+    const items = raw.map((r, i) => {
+        const e = (r ?? {}) as Record<string, unknown>;
+        const n = Number(e.n);
+        if (typeof e.item !== 'string' || !e.item.trim() || !Number.isInteger(n) || n < 1) throw new Error(`handBack[${i}] needs an item name and a whole n of at least 1`);
+        return { item: e.item, n };
+    });
+    if (new Set(items.map(i => i.item.toLowerCase())).size !== items.length) throw new Error('handBack names an item twice');
+    if (items.length > 27) throw new Error('handBack does not fit beside the talisman');
+    return items;
 }
 
 export function giverOptions(raw: Record<string, unknown>, env: Record<string, string | undefined> = process.env): GiverOptions {
@@ -69,15 +101,46 @@ export function giverOptions(raw: Record<string, unknown>, env: Record<string, s
     const r = (raw.restock ?? {}) as Partial<RestockOptions>;
     const kind = r.kind ?? 'bank';
     if (!['bank', 'trade', 'cheat'].includes(kind)) throw new Error(`restock.kind must be bank, trade or cheat (got ${kind})`);
+    const handBack = handBackOption(raw.handBack, kind);
     return {
         altar: String(raw.altar ?? 'air'),
         slot,
+        ...(handBack ? { handBack } : {}),
         essence,
         ...(raw.schedule ? { schedule: raw.schedule as Schedule } : {}),
         restock: { ...r, kind, essence },
         gapMs: Number(raw.gapMs ?? 0),
-        cueDir: typeof raw.cueDir === 'string' ? raw.cueDir : cueDir(env)
+        cueDir: typeof raw.cueDir === 'string' ? raw.cueDir : cueDir(env),
+        scope: scopeOption(raw.scope, ['altar'])
     };
+}
+
+/** Client packets of the user-event kind (trade buttons included) the engine decodes per player per tick (ClientGameProtCategory.USER_EVENT); the rest wait a tick. */
+export const USER_EVENTS_PER_TICK = 5;
+
+/**
+ * The trade-offer presses that put exactly `n` essence in the offer on the frame they are
+ * sent, with the accept behind them on the same tick, or null when fewer than `n` are carried.
+ *
+ * - Holding exactly `n`: one All press, which moves inv_total, that is exactly `n`.
+ * - Holding more: 10/5/1 presses, all on the highest essence slot. trade.rs2 movetotrade moves
+ *   that many of the slot's object, and the engine takes them from the lowest slots first
+ *   (Inventory.remove), so that slot keeps its essence until the last press.
+ * - When those presses and the accept would not fit one tick's USER_EVENTS_PER_TICK, one
+ *   Offer-X press of `n`. It costs the count dialog's round trip, a tick or more, so a blind turn
+ *   misses; the stock turn absorbs it.
+ *
+ * Never an Offer-All with more than `n` held: the server would move every essence, and the
+ * scored account refuses an offer bigger than its free slots (S06 runs 26 a load, rs/158).
+ */
+export function essencePresses(s: BotWorldState | null | undefined, n: number): Array<{ slot: number; amount: number }> | null {
+    const slots = carriedSlots(s, ESSENCE);
+    const held = slots.reduce((a, i) => a + i.count, 0);
+    if (held < n || slots.length === 0) return null;
+    const top = slots[slots.length - 1]!.slot;
+    if (held === n) return [{ slot: top, amount: -1 }];
+    const amounts = [...Array(Math.floor(n / 10)).fill(10), ...Array(Math.floor((n % 10) / 5)).fill(5), ...Array(n % 5).fill(1)];
+    return amounts.length < USER_EVENTS_PER_TICK ? amounts.map(amount => ({ slot: top, amount })) : [{ slot: top, amount: n }];
 }
 
 interface Armed {
@@ -91,9 +154,14 @@ interface Armed {
     receiverHash: string;
     /** Our frame when the turn was armed. */
     armedTick: number;
+    /** A hand-back turn: these items instead of essence. */
+    items?: HandBackItem[];
 }
 
 class Stop extends Error {}
+
+/** A client whose newest tick arrived within this many ticks is alive (a catch-up burst stays inside it). */
+const LIVE_FRAME_TICKS = 5;
 
 export class AltarGiver {
     private readonly o: GiverOptions;
@@ -111,11 +179,22 @@ export class AltarGiver {
     private last: TurnResult | undefined;
     private gave = 0;
     private tile: Tile | null = null;
+    /** The hand-back went over: nothing more to give. */
+    private handedBack = false;
 
     constructor(private readonly ctx: RoleContext) {
         this.o = giverOptions(ctx.options);
         this.altar = altarData(this.o.altar);
         this.loggedInAt = Number(process.env.LOGGED_IN_AT) || null;
+    }
+
+    /** Loaded for the hand-back: its items carried and short of an essence load. */
+    private holdsHandBack(): boolean {
+        return !!this.o.handBack && count(this.s, ESSENCE) < this.o.essence && holdsItems(this.s, this.o.handBack);
+    }
+
+    private loaded(): boolean {
+        return count(this.s, ESSENCE) >= this.o.essence || this.holdsHandBack();
     }
 
     private get s(): BotWorldState | null {
@@ -144,6 +223,7 @@ export class AltarGiver {
             ...(this.armed ? { armed: { session: this.armed.session, seq: this.armed.seq, T: this.armed.T, myT: this.armed.myT, schedule: this.armed.schedule } } : {}),
             ...(this.last ? { last: this.last } : {}),
             gave: this.gave,
+            ...(this.holdsHandBack() ? { handBack: this.o.handBack!.map(i => ({ ...i })) } : {}),
             ...(this.detail ? { detail: this.detail } : {}),
             ms: Date.now()
         });
@@ -151,6 +231,15 @@ export class AltarGiver {
 
     private result(outcome: Outcome, session: string, T: number, extra: { myT?: number; detail?: string } = {}): void {
         this.last = { session, T, outcome, ...extra, ms: Date.now() };
+        // Still loaded after the turn: ready again from now, which is what lifts the scored side's
+        // skip after a failed turn (altar-cue.ts MissBench), and puts us behind the givers that
+        // have waited longer. Only while our client delivers ticks: on the relay a role outlives
+        // its dead client, arms the turns it is named for and fails them on the wall-clock
+        // fallback, and renewing then lifted the skip turn after turn (lab: 3, 4 and 8 misses a
+        // kill, against 1 on the direct path).
+        const lastFrame = this.frames.recent(1)[0]?.ms;
+        const live = lastFrame !== undefined && Date.now() - lastFrame <= LIVE_FRAME_TICKS * tickMs();
+        if (outcome !== 'gave' && live && (this.phase === 'ready' || this.phase === 'armed')) this.readyAt = Date.now();
         this.ctx.log('turn', { outcome, T, ...extra });
         this.publish();
     }
@@ -165,7 +254,7 @@ export class AltarGiver {
                 this.offset = null;
             }
         });
-        const watcher = new CueWatcher(this.o.cueDir, cue => this.onCue(cue));
+        const watcher = new CueWatcher(this.o.cueDir, this.o.scope, cue => this.onCue(cue), { log: (m, d) => ctx.log(m, d) });
         const heartbeat = setInterval(() => this.publish(), 1000);
         try {
             await ensureOutOfTutorial(ctx);
@@ -192,9 +281,15 @@ export class AltarGiver {
     /** One loop: get loaded, get onto the tile, serve until a trade is given. Restartable from any position. */
     private async cycle(): Promise<void> {
         const { ctx } = this;
-        if (count(this.s, ESSENCE) < this.o.essence || count(this.s, this.altar.talisman) < 1) {
+        if (this.handedBack) {
+            // S21 is over for us: stay logged in and quiet until the launcher stops us.
+            this.setPhase('off', 'hand-back given');
+            await new Promise<void>(resolve => (ctx.signal.aborted ? resolve() : ctx.signal.addEventListener('abort', () => resolve(), { once: true })));
+            return;
+        }
+        if (!this.loaded() || count(this.s, this.altar.talisman) < 1) {
             this.setPhase('restock');
-            await restock(ctx, this.altar, this.o.restock, d => this.setPhase('restock', d));
+            await restock(ctx, this.altar, { ...this.o.restock, ...(this.o.handBack ? { handBack: this.o.handBack } : {}) }, d => this.setPhase('restock', d));
         }
         if (ctx.signal.aborted) return;
         if (!inRoom(this.s, this.altar)) {
@@ -220,7 +315,7 @@ export class AltarGiver {
         this.setPhase('ready');
         if (this.cue) this.onCue(this.cue);
         while (!ctx.signal.aborted) {
-            if (count(this.s, ESSENCE) < this.o.essence) return;
+            if (!this.loaded()) return;
             if (!this.armed) {
                 if (!this.onTile()) return; // pushed off or teleported: cycle() puts us back
                 await new Promise<void>(resolve => {
@@ -234,7 +329,8 @@ export class AltarGiver {
             const outcome = await this.execute(a);
             if (this.armed === a) this.armed = null; // else a newer turn superseded it before its first packet
             if (outcome === 'gave') {
-                this.gave++;
+                if (a.items) this.handedBack = true;
+                else this.gave++;
                 return;
             }
             this.setPhase('ready');
@@ -287,10 +383,20 @@ export class AltarGiver {
             this.result('not-ready', cue.session, choice.turn.T, { detail: this.phase });
             return;
         }
+        // A hand-back turn needs its items carried; an essence turn needs the essence (a hand-back giver has none).
+        const items = choice.turn.items?.length ? choice.turn.items : undefined;
+        const short = items
+            ? holdsItems(this.s, items) ? null : 'named for a hand-back without its items'
+            : count(this.s, ESSENCE) >= this.o.essence ? null : this.holdsHandBack() ? 'named for essence while holding the hand-back' : 'named for essence without a load';
+        if (short) {
+            this.done.add(choice.key);
+            this.result('not-ready', cue.session, choice.turn.T, { detail: short });
+            return;
+        }
         if (this.armed) this.done.add(this.armed.key); // superseded by a newer turn for us
         // The robust option slows the blind schedules; a stock turn reacts and has no schedule to slow.
         const schedule: TurnSchedule = this.o.schedule === 'robust' && choice.schedule === 'tuned' ? 'robust' : choice.schedule;
-        this.armed = { key: choice.key, session: cue.session, seq: cue.seq, T: choice.turn.T, myT: choice.myT, open: cue.open, schedule, receiverHash: cue.receiver.sha256, armedTick: now };
+        this.armed = { key: choice.key, session: cue.session, seq: cue.seq, T: choice.turn.T, myT: choice.myT, open: cue.open, schedule, receiverHash: cue.receiver.sha256, armedTick: now, ...(items ? { items: items.map(i => ({ ...i })) } : {}) };
         this.setPhase('armed');
         this.wakeServe?.();
     }
@@ -302,7 +408,7 @@ export class AltarGiver {
      * our numbering), and judge it once the last landing has had a frame to show.
      */
     private async execute(a: Armed): Promise<Outcome> {
-        if (a.schedule === 'stock') return this.executeStock(a);
+        if (a.schedule === 'stock' || a.items) return this.executeStock(a);
         const { sdk } = this.ctx;
         const steps = giverSteps(a.myT, a.open, a.schedule).map(s => ({ send: s.land - 1, actions: s.actions }));
         const judge = judgeTick(a.myT, a.open, a.schedule);
@@ -320,9 +426,14 @@ export class AltarGiver {
                         void sdk.sendDeclineTrade();
                         continue;
                     }
-                    const slot = findItem(this.s, ESSENCE)?.slot;
-                    if (slot !== undefined) void sdk.sendOfferItem(slot, -1);
-                    void sdk.sendClickComponent(TRADE_ACCEPT);
+                    const presses = essencePresses(this.s, this.o.essence) ?? [];
+                    const x = presses.find(p => isXAmount(p.amount));
+                    // An Offer-X resolves after its count dialog: the accept goes behind the count.
+                    if (x) void sdk.sendOfferItem(x.slot, x.amount).then(() => sdk.sendClickComponent(TRADE_ACCEPT));
+                    else {
+                        for (const p of presses) void sdk.sendOfferItem(p.slot, p.amount);
+                        void sdk.sendClickComponent(TRADE_ACCEPT);
+                    }
                 } else void sdk.sendClickComponent(TRADE_CONFIRM);
             }
         };
@@ -404,8 +515,11 @@ export class AltarGiver {
             const left = Math.max(1, judge - (this.s?.tick ?? judge));
             // By id: a noted stack shares the essence's name (NOTE_IDS) and must not be the offer.
             const essence = findItem(this.s, ESSENCE)?.id ?? ESSENCE;
+            // Exactly `essence` by count: one All press when that is all we hold, else one Offer-X (items.ts amountButtons),
+            // with give()'s accept behind the count. A hand-back turn offers exactly its items, by exact name, and no essence.
+            const specs = a.items ? a.items.map(i => ({ item: exactItem(i.item), n: i.n })) : [{ item: essence, n: this.o.essence }];
             // Beside the receiver in the altar room: a silent click was dropped (lib/trade.ts DROPPED_TICKS).
-            const r = await give(sdk, receiver.name, [{ item: essence, n: 'all' }], { maxTicks: left, openMaxTicks: left, noReplyTicks: DROPPED_TICKS });
+            const r = await give(sdk, receiver.name, specs, { maxTicks: left, openMaxTicks: left, noReplyTicks: DROPPED_TICKS });
             outcome = r.ok ? 'gave' : 'missed';
             if (r.reason) detail = r.reason;
         }
@@ -415,6 +529,7 @@ export class AltarGiver {
             await sdk.sendDeclineTrade();
             await until(this.ctx, st => !st.trade?.isOpen, 5);
         }
+        if (a.items && outcome === 'gave') detail = `hand-back: ${a.items.map(i => `${i.n} ${i.item}`).join(', ')}`;
         if (outcome !== 'cancelled') this.result(outcome, a.session, a.T, { myT: a.myT, ...(detail ? { detail } : {}) });
         return outcome;
     }
