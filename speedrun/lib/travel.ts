@@ -610,15 +610,18 @@ function buildRoute(sdk: TravelSdk, goal: Area, via: readonly XZ[]): XZ[] {
  * Whether `s.nearbyLocs` describes the scene around the player. The browser publishes a frame while
  * it rebuilds the map region (`sceneReady` false), and that frame's loc list is not the scene's: on
  * S12 B the closed house door (2609,3190) was missing from it on exactly the tick the run clicked
- * past the door (rs/484). The lite client is always ready.
+ * past the door (rs/484). Nothing is decided from such a frame, and no loc click goes out on one:
+ * the browser drops a door click sent mid-rebuild (S12 B: 48 ticks against 37 when it did). The
+ * lite client is always ready.
  */
 const sceneBuilt = (s: BotWorldState) => s.sceneReady !== false;
 
-/**
- * How old the last built frame may be to stand in for a mid-rebuild one: locs are in world
- * coordinates, so a door a frame or two ago is still where it was. S12 B's rebuild lasts one frame.
- */
-const REBUILD_GRACE_TICKS = 2;
+/** The last route index from `from` on within `reach` of `p`: the furthest tile a click from `p` would take. */
+function reachEnd(route: readonly XZ[], from: number, p: XZ, reach: number): number {
+    let end = from;
+    for (let i = from; i < route.length && chebyshev(route[i]!, p) <= reach; i++) end = i;
+    return end;
+}
 
 /** The route index nearest `p` in [from, to]; past it when the player stands on that tile, so a door under the player is never ahead. */
 function routeAhead(route: readonly XZ[], p: XZ, from: number, to: number): number {
@@ -737,7 +740,7 @@ async function hopRun(sdk: TravelSdk, trip: Trip, to: Area, opts: TravelOptions,
     let passed = doorsBehind(sdk.getState()!, pos(sdk), route);
     let idx = 0;
     let target: XZ | null = null;
-    /** The route index of `target`: the outstanding click walks route[idx..targetIdx]. */
+    /** The route index of `target`: the outstanding click walks route[idx..targetIdx], and the player is somewhere on it. */
     let targetIdx = -1;
     let final = false;
     let lastPos = pos(sdk);
@@ -750,17 +753,10 @@ async function hopRun(sdk: TravelSdk, trip: Trip, to: Area, opts: TravelOptions,
     let reachFrom = pos(sdk);
     let dismissed = '';
     const doorTries = new Map<string, number>();
-    /** The last frame published with a built scene. */
-    let lastBuilt: BotWorldState | null = null;
-    /**
-     * A closed door on route[from..to] the run may still try (twice each), or null. A mid-rebuild
-     * frame lists none of the scene's locs, so it is judged by the last built frame if that is recent.
-     */
+    /** A closed door on route[from..to] the run may still try (twice each), or null; none on a mid-rebuild frame. */
     const doorAhead = (st: BotWorldState, from: number, to: number): NearbyLoc | null => {
-        if (sceneBuilt(st)) lastBuilt = st;
-        const scene = sceneBuilt(st) ? st : lastBuilt && st.tick - lastBuilt.tick <= REBUILD_GRACE_TICKS ? lastBuilt : null;
-        if (!scene) return null;
-        const door = onRoute(scene, route, from, to, CLOSED_DOOR);
+        if (!sceneBuilt(st)) return null;
+        const door = onRoute(st, route, from, to, CLOSED_DOOR);
         return door && (doorTries.get(doorKey(door)) ?? 0) < 2 ? door : null;
     };
     /** Open `door` as part of the run, then start the run afresh from wherever that leaves the player. Null to go on; an outcome to end the hop. */
@@ -819,11 +815,15 @@ async function hopRun(sdk: TravelSdk, trip: Trip, to: Area, opts: TravelOptions,
             lastMove = t;
             needClick = true;
         }
-        // The door check below runs on the click's tick; a door the click's stretch crosses can also
-        // show only later: outside the 15-tile loc scan when the click reached 20, or missing from a
-        // browser frame published mid-rebuild. Each later tick looks again, from the player on.
+        // A closed door on the route within the run's reach is opened on the first built tick it is
+        // listed, between clicks too, not only when a click falls due: the loc scan lists 15 tiles to
+        // a click's 20, and a browser frame published mid-rebuild lists no door at all, so a door
+        // checked only at click time can be missed for a whole click (S12 B: +9 ticks, rs/484). The
+        // op click's server-side approach runs at the walk's 2 tiles a tick (rs/280), so opening a
+        // door early costs nothing.
         if (!needClick && target) {
-            const door = doorAhead(s, routeAhead(route, p, idx, targetIdx), targetIdx);
+            const from = routeAhead(route, p, idx, targetIdx);
+            const door = doorAhead(s, from, reachEnd(route, from, p, reach));
             if (door) {
                 const end = await openAhead(door);
                 if (end) return end;
@@ -861,8 +861,7 @@ async function hopRun(sdk: TravelSdk, trip: Trip, to: Area, opts: TravelOptions,
                 reach = reachMax;
                 reachFrom = here;
             }
-            let ti = idx;
-            for (let i = idx; i < route.length && chebyshev(route[i]!, here) <= reach; i++) ti = i;
+            let ti = reachEnd(route, idx, here, reach);
             // A via point is a click target: the client's own routing past it is what via avoids.
             const v = via[0];
             if (v) for (let j = idx; j <= ti; j++) if (route[j]!.x === v.x && route[j]!.z === v.z) { ti = j; break; }
