@@ -21,14 +21,18 @@
 // does no quest or production. It carries one set (the four parts) and `balls`
 // cannonballs from the bank, stands on `tile`, keeps a trade request standing with
 // the scored account (bone-giver.ts requestUntilOpen), and gives the whole load in
-// one trade (lib/trade.ts give) when the scored account's own click opens it, taking
-// back whatever the scored account offers in that same trade (H23: the magic shortbow). With
+// one trade (lib/trade.ts give) when the scored account's own click opens it, with any
+// `extras` (H11: the mithril scimitar, runes and sharks; H23: the magic shortbow) in the same
+// offer, taking back whatever the scored account offers in that trade (nothing is expected). With
 // `returnTile`, it then waits there for the set and the leftover balls to come back
 // (H11r) and banks them. The scored account is never named: it is whoever in sight
 // matches `receiver` (the sha256 of its canonical name, altar-cue.ts nameHash) or,
 // without it, the receiver hash in the cue directory's cue.json.
 //   serve.tile {x,z}        where the holder stands (required)
 //   serve.balls n           cannonballs in the load (required)
+//   serve.extras [{ item, count, obj? }]  more items in the same trade, by exact name; the load
+//                           (4 parts, the balls, the extras) must fit 28 slots; `obj` is the
+//                           staff-give name for labStock
 //   serve.receiver hex      sha256 of the scored account's canonical name (default: the cue)
 //   serve.bank {x,z}        where to load from (default Falador west; every bank is one bank)
 //   serve.returnTile {x,z}  after the give, take the set back here
@@ -70,7 +74,7 @@ import { cheat, isLocalServer, standOn } from './altar-room';
 import { partnerIs, requestUntilOpen } from './bone-giver';
 import { Buyer } from './buyer';
 import { CROSSING_HITPOINTS, crossingSettings, TAVERLEY, trainHitpointsOnCows, type Pt } from '../lib/kandarin';
-import { accountMatches, ChatCursor, DEFAULT_COURIERS, MULE_STAND, toRegExps } from './mule';
+import { accountMatches, ChatCursor, DEFAULT_COURIERS, isStackableName, MULE_STAND, toRegExps } from './mule';
 import type { Role, RoleContext, RoleFinish } from './role';
 import { runStandalone } from './role';
 import { inTutorial } from './wine-common';
@@ -175,11 +179,22 @@ export function railingDamage(baseHitpoints: number): number {
 
 // ------------------------------------------------------------------ serve mode (pure)
 
+/** An item handed over with the set in the serve's one trade. */
+export interface ServeExtra {
+    /** Exact name, case-insensitive. */
+    item: string;
+    count: number;
+    /** Staff-give debug name, for labStock. */
+    obj?: string;
+}
+
 export interface ServeOptions {
     /** Names this hand-off in ctx.state, so a restart never gives it twice (default from tile and balls). */
     id: string;
     tile: Pt;
     balls: number;
+    /** Offered beside the set and balls in the same trade (H11's scimitar, runes and sharks; H23's shortbow). */
+    extras: ServeExtra[];
     /** sha256 of the scored account's canonical name; null: read it from the cue. */
     receiver: string | null;
     bank: Pt;
@@ -211,40 +226,75 @@ export function serveOptions(raw: unknown, env: Record<string, string | undefine
         if (!SHA256_HEX.test(receiver)) throw new Error('serve.receiver must be the sha256 hex of the scored account\'s canonical name (altar-cue.ts nameHash), not a name');
     }
     const tile = tileOption(r.tile, 'serve.tile');
+    const labStock = r.labStock === true;
+    const extras = serveExtras(r.extras, labStock);
+    const stacks = loadStacks(extras);
+    if (stacks > 28) throw new Error(`serve.extras: the load takes ${stacks} slots (the 4 parts, the balls and the extras), more than 28`);
     return {
         id: typeof r.id === 'string' && r.id ? r.id : `${tile.x},${tile.z}x${balls}`,
         tile,
         balls,
+        extras,
         receiver,
         bank: r.bank === undefined ? FALADOR_BANK : tileOption(r.bank, 'serve.bank'),
         returnTile: r.returnTile === undefined ? null : tileOption(r.returnTile, 'serve.returnTile'),
-        labStock: r.labStock === true,
+        labStock,
         noReplyTicks: Number(r.noReplyTicks ?? DROPPED_TICKS),
         resendTicks: Number(r.resendTicks ?? 100),
         cueDir: typeof r.cueDir === 'string' ? r.cueDir : cueDir(env)
     };
 }
 
-const exactName = (name: string) => new RegExp(`^${name}$`, 'i');
+// Potion names carry parentheses ("Ranging potion(4)"), so a name is escaped before anchoring.
+const exactName = (name: string) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
 const BALL = /^cannonball$/i;
 
-/**
- * The hand-off as give() specs: each part once and `balls` cannonballs. The
- * parts are unstackable and the balls one stack, so with exactly the load carried
- * every entry is a single All press (items.ts amountButtons): 5 offers, one trade.
- */
-export function loadSpecs(balls: number): GiveSpec[] {
-    return [...CANNON_PARTS.map(p => ({ item: exactName(p), n: 1 })), { item: BALL, n: balls }];
+/** serve.extras: `[{ item, count, obj? }]`, each a distinct item that is not part of the set or the balls. */
+export function serveExtras(raw: unknown, labStock: boolean): ServeExtra[] {
+    if (raw === undefined) return [];
+    if (!Array.isArray(raw)) throw new Error('serve.extras must be a list of { item, count }');
+    const extras = (raw as Record<string, unknown>[]).map((e, i) => {
+        const count = Number(e?.count);
+        if (typeof e?.item !== 'string' || !e.item.trim() || !Number.isInteger(count) || count < 1) throw new Error(`serve.extras[${i}] needs an item name and a whole count`);
+        if (e.obj !== undefined && typeof e.obj !== 'string') throw new Error(`serve.extras[${i}].obj must be a staff-give name`);
+        if (labStock && typeof e.obj !== 'string') throw new Error(`serve.extras[${i}] needs obj (the staff-give name) with labStock`);
+        return { item: e.item.trim(), count, ...(typeof e.obj === 'string' ? { obj: e.obj } : {}) };
+    });
+    const names = new Set<string>();
+    for (const e of extras) {
+        const key = e.item.toLowerCase();
+        if (names.has(key)) throw new Error(`serve.extras lists ${e.item} twice`);
+        if (BALL.test(e.item) || CANNON_PARTS.some(p => p.toLowerCase() === key)) throw new Error(`serve.extras: ${e.item} is already in the load`);
+        names.add(key);
+    }
+    return extras;
 }
 
 /**
- * The serve's one trade, already open with `partner`: the load out, and whatever the scored
- * account puts up taken back in the same trade (ANY_OFFER; H23 hands the magic shortbow back,
- * the scored side's swap). Its offer resets both accepts; give() re-accepts once per tick while
- * our offer is the whole load, and checks both offers again on the confirm screen.
+ * Slots the load takes, in the holder's inventory and in the trade offer alike: one per
+ * part, one for the balls, one per stackable extra, and `count` per unstackable one.
  */
-export function serveTrade(sdk: TradeSdk, partner: string, balls: number): Promise<GiveResult> {
-    return give(sdk, partner, loadSpecs(balls), { expectTheirs: ANY_OFFER, openTimeoutMs: 5_000 });
+export function loadStacks(extras: readonly ServeExtra[] = []): number {
+    return CANNON_PARTS.length + 1 + extras.reduce((n, e) => n + (isStackableName(e.item) ? 1 : e.count), 0);
+}
+
+/**
+ * The hand-off as give() specs: each part once, `balls` cannonballs and each extra.
+ * Exactly the load is carried, so every entry is a single All press (items.ts
+ * amountButtons): 5 offers plus one per extra, one trade.
+ */
+export function loadSpecs(balls: number, extras: readonly ServeExtra[] = []): GiveSpec[] {
+    return [...CANNON_PARTS.map(p => ({ item: exactName(p), n: 1 })), { item: BALL, n: balls }, ...extras.map(e => ({ item: exactName(e.item), n: e.count }))];
+}
+
+/**
+ * The serve's one trade, already open with `partner`: the load and its extras out, and whatever
+ * the scored account puts up taken back in the same trade (ANY_OFFER; no hand-off expects
+ * anything back, and taking it is harmless). Its offer resets both accepts; give() re-accepts
+ * once per tick while our offer is the whole load, and checks both offers again on the confirm screen.
+ */
+export function serveTrade(sdk: TradeSdk, partner: string, balls: number, extras: readonly ServeExtra[] = []): Promise<GiveResult> {
+    return give(sdk, partner, loadSpecs(balls, extras), { expectTheirs: ANY_OFFER, openTimeoutMs: 5_000 });
 }
 
 /** What the receiver must see offered before it accepts: the set, and the balls when there are any. */
@@ -252,10 +302,10 @@ export function loadWant(balls: number): WantSpec[] {
     return [...CANNON_PARTS.map(p => ({ item: exactName(p), amount: 1 })), ...(balls > 0 ? [{ item: BALL, amount: balls }] : [])];
 }
 
-/** True when `inventory` carries a whole set and at least `balls` cannonballs. */
-export function holdsLoad(inventory: ReadonlyArray<{ name: string; count: number }>, balls: number): boolean {
+/** True when `inventory` carries a whole set, at least `balls` cannonballs, and every extra. */
+export function holdsLoad(inventory: ReadonlyArray<{ name: string; count: number }>, balls: number, extras: readonly ServeExtra[] = []): boolean {
     const n = (re: RegExp) => inventory.filter(i => re.test(i.name)).reduce((a, i) => a + i.count, 0);
-    return CANNON_PARTS.every(p => n(exactName(p)) >= 1) && n(BALL) >= balls;
+    return CANNON_PARTS.every(p => n(exactName(p)) >= 1) && n(BALL) >= balls && extras.every(e => n(exactName(e.item)) >= e.count);
 }
 
 /** A hand-off's progress in ctx.state: `giving` is written just before the trade, so a crash mid-trade is seen. */
@@ -1217,7 +1267,7 @@ class Cannon {
         }
         try {
             const rec = this.ctx.state.get(serveKey(so.id)) as ServeRecord | undefined;
-            let next = serveResume(rec, holdsLoad(this.sdk.getInventory(), so.balls), !!so.returnTile);
+            let next = serveResume(rec, holdsLoad(this.sdk.getInventory(), so.balls, so.extras), !!so.returnTile);
             if (rec) this.log('serve: resuming', { id: so.id, record: rec, next });
             if (next === 'uncertain') {
                 this.attention = `cannon hand-off ${so.id}: restarted mid-trade and the load is gone; taken as given, check the receiver holds the set`;
@@ -1253,10 +1303,10 @@ class Cannon {
         }
     }
 
-    /** Carry exactly the load: the set and `balls` cannonballs, from the bank (or staff commands in the lab). */
+    /** Carry exactly the load: the set, `balls` cannonballs and the extras, from the bank (or staff commands in the lab). */
     private async serveLoad(): Promise<void> {
         const so = this.o.serve!;
-        if (holdsLoad(this.sdk.getInventory(), so.balls)) return;
+        if (holdsLoad(this.sdk.getInventory(), so.balls, so.extras)) return;
         this.setPhase('serve-load');
         if (so.labStock) {
             if (!isLocalServer()) throw new Error('serve.labStock is for the local lab only');
@@ -1264,12 +1314,13 @@ class Cannon {
             await this.waitFor(s => s.inventory.length === 0, 10);
             for (const part of ['twpart1', 'twpart2', 'twpart3', 'twpart4']) await cheat(this.ctx, `give ${part} 1`);
             await cheat(this.ctx, `give mcannonball ${so.balls}`);
-            if (!(await this.waitFor(s => holdsLoad(s.inventory, so.balls), 15))) throw new Error('the staff give did not arrive');
+            for (const e of so.extras) await cheat(this.ctx, `give ${e.obj} ${e.count}`);
+            if (!(await this.waitFor(s => holdsLoad(s.inventory, so.balls, so.extras), 15))) throw new Error('the staff give did not arrive');
             return;
         }
         await this.openBankAt(so.bank);
         await this.depositAllBut(null);
-        const need: [string, number][] = [...CANNON_PARTS.map(p => [p, 1] as [string, number]), ['Cannonball', so.balls]];
+        const need: [string, number][] = [...CANNON_PARTS.map(p => [p, 1] as [string, number]), ['Cannonball', so.balls], ...so.extras.map(e => [e.item, e.count] as [string, number])];
         const short = need.filter(([name, n]) => this.banked(name) < n);
         if (short.length) {
             await this.bot.closeBank();
@@ -1278,8 +1329,13 @@ class Cannon {
         for (const [name, n] of need) await this.bot.withdrawItem(exactName(name), n);
         this.readBank();
         await this.bot.closeBank();
-        if (!holdsLoad(this.sdk.getInventory(), so.balls)) throw new Error(`the withdrawals left the load short: ${this.sdk.getInventory().map(i => `${i.name} x${i.count}`).join(', ')}`);
-        this.log('load', { balls: this.held(BALL), setsLeftInBank: Math.min(...CANNON_PARTS.map(p => this.banked(p))), ballsLeftInBank: this.banked('Cannonball') });
+        if (!holdsLoad(this.sdk.getInventory(), so.balls, so.extras)) throw new Error(`the withdrawals left the load short: ${this.sdk.getInventory().map(i => `${i.name} x${i.count}`).join(', ')}`);
+        this.log('load', {
+            balls: this.held(BALL),
+            extras: so.extras.map(e => `${e.item} x${e.count}`),
+            setsLeftInBank: Math.min(...CANNON_PARTS.map(p => this.banked(p))),
+            ballsLeftInBank: this.banked('Cannonball')
+        });
     }
 
     /** Stand on the tile with the load, keep a request standing, and give everything in one trade once the receiver's click opens it. */
@@ -1316,7 +1372,7 @@ class Cannon {
         this.setPhase('serve-trading');
         await this.record('giving');
         const before = this.sdk.getInventory().map(i => ({ ...i }));
-        const r = await serveTrade(this.sdk, partner, so.balls);
+        const r = await serveTrade(this.sdk, partner, so.balls, so.extras);
         const received = this.sdk.getInventory().filter(i => !before.some(b => b.id === i.id)).map(i => `${i.name} x${i.count}`);
         this.log('hand-off', {
             ok: r.ok,
@@ -1334,7 +1390,7 @@ class Cannon {
             return true;
         }
         // A failed trade puts the offered items back; if they are gone anyway, it is a person's call.
-        if (await this.waitFor(s => holdsLoad(s.inventory, so.balls), 5)) {
+        if (await this.waitFor(s => holdsLoad(s.inventory, so.balls, so.extras), 5)) {
             await this.record(undefined);
             return false;
         }

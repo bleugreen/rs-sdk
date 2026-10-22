@@ -4,7 +4,7 @@ import { offerSatisfies } from '../../sdk/trade-helpers';
 import { baseState, FakeSdk, flush } from '../lib/fake-sdk';
 import { planOffers } from '../lib/trade';
 import { nameHash } from './altar-cue';
-import { holdsLoad, interfaceText, ironOreToBuy, isWest, loadSpecs, loadWant, nextWork, parseOptions, railingDamage, serveOptions, serveResume, serveTrade, stageFromJournal, type Holdings } from './cannon';
+import { holdsLoad, interfaceText, ironOreToBuy, isWest, loadSpecs, loadStacks, loadWant, nextWork, parseOptions, railingDamage, serveOptions, serveResume, serveTrade, stageFromJournal, type Holdings } from './cannon';
 
 // Journal pages as the lite client published them in the lab (interface 8134, `::setvar mcannon N`).
 const JOURNAL: Record<number, string[]> = {
@@ -162,7 +162,7 @@ describe('serve mode', () => {
         expect(plan.map(e => e.expected)).toEqual([1, 1, 1, 1, 100]);
     });
 
-    test('two-way serve (H23): the load goes out, the scored account\'s magic shortbow comes back in the same trade, re-accepted after its offer resets both accepts', async () => {
+    test('the take-back (ANY_OFFER): whatever the scored account offers comes back in the same trade, re-accepted after its offer resets both accepts', async () => {
         const load = inv(LOAD);
         const mine: TradeItem[] = load.map((i, slot) => ({ slot, id: i.id, name: i.name, count: i.count }));
         const bow: TradeItem[] = [{ slot: 0, id: 861, name: 'Magic shortbow', count: 1 }];
@@ -189,6 +189,74 @@ describe('serve mode', () => {
         const out = await r;
         expect(out.ok).toBe(true);
         expect(out.gave.map(i => i.name).sort()).toEqual(LOAD.map(([n]) => n).sort());
+    });
+
+    describe('serve extras (H11: mithril scimitar, law 4, water 4, shark 2; H23: the magic shortbow)', () => {
+        const H11_EXTRAS = [{ item: 'Mithril scimitar', count: 1 }, { item: 'Law rune', count: 4 }, { item: 'Water rune', count: 4 }, { item: 'Shark', count: 2 }];
+        /** The load as carried: parts and balls, then each extra (an unstackable one in one slot per item, all one id). */
+        const carried = (extras: { item: string; count: number }[]): InventoryItem[] => {
+            const out = inv(LOAD);
+            for (const [k, e] of extras.entries()) {
+                const slots = /shark|scimitar|shortbow|potion/i.test(e.item) ? e.count : 1;
+                for (let s = 0; s < slots; s++) out.push({ slot: out.length, id: 500 + k, name: e.item, count: e.count / slots, optionsWithIndex: [] } as unknown as InventoryItem);
+            }
+            return out;
+        };
+
+        test('options: extras are distinct items outside the load, and the load fits 28 slots', () => {
+            const o = serveOptions({ id: 'H11', tile: { x: 1, z: 2 }, balls: 100, extras: H11_EXTRAS }, {});
+            expect(o.extras).toEqual(H11_EXTRAS);
+            // 4 parts + balls + scimitar + law + water + 2 sharks.
+            expect(loadStacks(o.extras)).toBe(10);
+            expect(serveOptions({ tile: { x: 1, z: 2 }, balls: 1 }, {}).extras).toEqual([]);
+            // 23 sharks fill the last slots exactly; one more is 29.
+            expect(serveOptions({ tile: { x: 1, z: 2 }, balls: 1, extras: [{ item: 'Shark', count: 23 }] }, {}).extras).toHaveLength(1);
+            expect(() => serveOptions({ tile: { x: 1, z: 2 }, balls: 1, extras: [{ item: 'Shark', count: 24 }] }, {})).toThrow(/29 slots/);
+            expect(() => serveOptions({ tile: { x: 1, z: 2 }, balls: 1, extras: [{ item: 'Shark', count: 1 }, { item: 'shark', count: 1 }] }, {})).toThrow(/twice/);
+            expect(() => serveOptions({ tile: { x: 1, z: 2 }, balls: 1, extras: [{ item: 'Cannonball', count: 10 }] }, {})).toThrow(/already in the load/);
+            expect(() => serveOptions({ tile: { x: 1, z: 2 }, balls: 1, extras: [{ item: 'Shark', count: 0 }] }, {})).toThrow(/whole count/);
+            expect(() => serveOptions({ tile: { x: 1, z: 2 }, balls: 1, labStock: true, extras: [{ item: 'Shark', count: 2 }] }, {})).toThrow(/needs obj/);
+            expect(serveOptions({ tile: { x: 1, z: 2 }, balls: 1, labStock: true, extras: [{ item: 'Shark', count: 2, obj: 'shark' }] }, {}).extras[0]!.obj).toBe('shark');
+        });
+
+        test('the extras are one more All press each, in the same offer as the set and balls', () => {
+            const plan = planOffers(carried(H11_EXTRAS), loadSpecs(100, H11_EXTRAS));
+            expect(plan.map(e => [e.name, e.expected])).toEqual([...LOAD, ...H11_EXTRAS.map(e => [e.item, e.count])]);
+            expect(plan.every(e => e.amounts.length === 1 && e.amounts[0] === -1)).toBe(true);
+            // A potion's parentheses are matched literally.
+            const potion = [{ item: 'Ranging potion(4)', count: 3 }];
+            expect(planOffers(carried(potion), loadSpecs(100, potion)).map(e => e.name)).toContain('Ranging potion(4)');
+            expect(holdsLoad(carried(potion), 100, potion)).toBe(true);
+            expect(holdsLoad(carried([{ item: 'Ranging potion4', count: 3 }]), 100, potion)).toBe(false);
+        });
+
+        test('holdsLoad counts every extra', () => {
+            expect(holdsLoad(carried(H11_EXTRAS), 100, H11_EXTRAS)).toBe(true);
+            expect(holdsLoad(carried(H11_EXTRAS.slice(0, 3)), 100, H11_EXTRAS)).toBe(false);
+            expect(holdsLoad(carried([...H11_EXTRAS.slice(0, 3), { item: 'Shark', count: 1 }]), 100, H11_EXTRAS)).toBe(false);
+        });
+
+        test('H11 serve: the set, balls and extras go out in one trade, nothing comes back, and the confirm screen is accepted', async () => {
+            const load = carried(H11_EXTRAS);
+            const mine: TradeItem[] = load.map(i => ({ slot: i.slot, id: i.id, name: i.name, count: i.count }));
+            const trade = (t: Partial<TradeState>): TradeState => ({ isOpen: true, screen: 'offer', partner: 'Scored Player', myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false, ...t });
+            const sdk = new FakeSdk(baseState({ tick: 1, inventory: load, trade: trade({}) }));
+            const methods = () => sdk.sent.splice(0).map(a => a.method);
+            const r = serveTrade(sdk, 'Scored Player', 100, H11_EXTRAS);
+            await flush();
+            // Nine All presses (5 for the load, 4 extras) and the accept behind them.
+            expect(methods()).toEqual([...Array(9).fill('sendOfferItem'), 'sendAcceptTrade']);
+            sdk.tick({ trade: trade({ myOffer: mine, myAccepted: true, partnerAccepted: true }) });
+            await flush();
+            sdk.tick({ trade: trade({ screen: 'confirm', myOffer: mine, partnerAccepted: true }) });
+            await flush();
+            expect(methods()).toEqual(['sendAcceptTrade']);
+            sdk.tick({ inventory: [], trade: undefined });
+            await flush();
+            const out = await r;
+            expect(out.ok).toBe(true);
+            expect(new Set(out.gave.map(i => i.name))).toEqual(new Set([...LOAD.map(([n]) => n), ...H11_EXTRAS.map(e => e.item)]));
+        });
     });
 
     test('holdsLoad needs every part and enough balls', () => {

@@ -20,11 +20,14 @@
 // `travelTo` is the walk for roles that may start on either side: it crosses
 // first when the destination is across the fence, and reports failure instead
 // of stalling, so a caller can refuse to open whatever bank happens to be near.
+// Started underground with a surface destination, it climbs out first
+// (underground.ts: the Dwarven Mine and the Mining Guild cellar).
 
 import type { BotActions } from '../../sdk/actions';
 import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, NearbyNpc } from '../../sdk/types';
 import { dialogText } from './dialogue';
+import { climbToSurface, isUnderground } from './underground';
 import { waitTicks, type StateSource } from './wait';
 
 export interface Tile {
@@ -158,7 +161,7 @@ export interface TravelResult {
     ok: boolean;
     /** Toll paid on the way. */
     paid: number;
-    /** Why it failed: 'toll gate: <crossTollGate reason>', 'cant reach', 'aborted', 'no player state'. */
+    /** Why it failed: 'toll gate: <crossTollGate reason>', 'underground: <climbToSurface reason>', 'cant reach', 'aborted', 'no player state'. */
     reason?: string;
 }
 
@@ -171,10 +174,11 @@ export interface TravelOptions {
 }
 
 /**
- * Walk to within `tolerance` of `to` (Chebyshev), crossing the toll gate first
- * when `to` is on the other side of the fence, then stepping clear of the gate
- * on the west side. Never asks walkTo for a destination across the fence.
- * Success is read from where the player stands, not from walkTo's answer.
+ * Walk to within `tolerance` of `to` (Chebyshev): first out of the underground
+ * when the player is below ground and `to` is not, then across the toll gate
+ * when `to` is on the other side of the fence, then clear of the gate on the
+ * west side. Never asks walkTo for a destination across the fence or on another
+ * map. Success is read from where the player stands, not from walkTo's answer.
  */
 export async function travelTo(bot: TollGateBot, sdk: TollGateSdk, to: Tile, opts: TravelOptions = {}): Promise<TravelResult> {
     const tolerance = opts.tolerance ?? 3;
@@ -183,9 +187,16 @@ export async function travelTo(bot: TollGateBot, sdk: TollGateSdk, to: Tile, opt
         const p = sdk.getState()?.player;
         return p ? { x: p.worldX, z: p.worldZ } : null;
     };
-    const start = here();
+    let start = here();
     if (!start) return { ok: false, paid: 0, reason: 'no player state' };
     if (chebyshev(start, to) <= tolerance) return { ok: true, paid: 0 };
+
+    if (isUnderground(start) && !isUnderground(to)) {
+        if (opts.signal?.aborted) return { ok: false, paid: 0, reason: 'aborted' };
+        const r = await climbToSurface(bot, sdk, { log, signal: opts.signal });
+        if (!r.ok) return { ok: false, paid: 0, reason: r.reason };
+        start = here()!;
+    }
 
     let paid = 0;
     const toEast = isEastOfTollGate(to);

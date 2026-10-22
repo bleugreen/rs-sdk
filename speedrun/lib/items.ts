@@ -1,6 +1,56 @@
 // Item matching shared by the bank and trade planners.
+import { noteLink, type ObjPack } from './obj-pack';
 
 export type ItemPattern = string | RegExp | number;
+
+/**
+ * An item as a role's options name it: by exact name (case-insensitive), or by obj
+ * id where names collide (every unfinished potion is "Unfinished potion"). An id may
+ * be the item's or its note's (obj-pack.ts noteLink); either one matches both forms.
+ */
+export interface NamedRef {
+    item: string;
+    id?: undefined;
+}
+export interface IdRef {
+    id: number;
+    item?: undefined;
+}
+export type ItemRef = NamedRef | IdRef;
+
+/** Read `{ item }` or `{ id }` (exactly one) from options; an id must be in obj.pack. */
+export function itemRef(raw: Record<string, unknown>, where: string, pack?: ObjPack): ItemRef {
+    const hasItem = raw.item !== undefined;
+    const hasId = raw.id !== undefined;
+    if (hasItem === hasId) throw new Error(`${where} needs exactly one of item (a name) or id (an obj id)`);
+    if (hasItem) {
+        if (typeof raw.item !== 'string' || !raw.item.trim()) throw new Error(`${where}.item must be a name`);
+        return { item: raw.item };
+    }
+    const id = Number(raw.id);
+    if (!Number.isInteger(id) || id < 0) throw new Error(`${where}.id must be an obj id`);
+    noteLink(id, pack);
+    return { id };
+}
+
+/** How a ref reads in logs and reports: its name, or `obj <id>`. */
+export function refLabel(ref: ItemRef): string {
+    return ref.id !== undefined ? `obj ${ref.id}` : ref.item;
+}
+
+const normName = (x: string) => x.toLowerCase().replace(/[\s_]+/g, ' ').trim();
+
+/** A named ref matches by exact name (notes share it); an id ref matches its item's id and its note's. */
+export function refMatches(ref: ItemRef, item: { id: number; name: string }, pack?: ObjPack): boolean {
+    if (ref.id === undefined) return normName(item.name) === normName(ref.item);
+    const link = noteLink(ref.id, pack);
+    return item.id === link.item || item.id === link.note;
+}
+
+/** True when the ref is a note's id, which asks for a noted withdrawal. */
+export function namesNote(ref: ItemRef, pack?: ObjPack): boolean {
+    return ref.id !== undefined && noteLink(ref.id, pack).note === ref.id;
+}
 
 /**
  * A number matches the item id; a string is a case-insensitive substring of
