@@ -144,7 +144,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 3 | 4 | Mining | `speedrun/skills/mining.ts` | S09 | 3,116 | 3,116 | 3,775 | ~659 | in-page | rs/97 `knife-mine`, `tickmanip-mine.ts` | **on main, 4235a9e7 (#220; rs/260's snapshot of rs/230's lab-accepted module, rs/147's branch at 59ec3933)**, with `selfStarter` (plain 3.62) and `beforeRestart`; `stay2` bury (#159, rs/182) and restart fix (e5d8a058, #170; rs/207) on main; gate `measureDrops` 120 by the default, its explicit value pending rs/259 |
 | 4 | 3 | Woodcutting, with the bury | `speedrun/skills/woodcutting.ts` | S07 (+ S25b's bones) | 3,027 | 2,969 | 4,025 (4,121 without #165, history) | ~1,090 | in-page | rs/97 `knife-cycle`; rs/137's bury variant; `bones-wc.ts` | building (rs/211; on rs/147's branch, changing with rs/236; rs/151 closed); gate-off plain + bury on main (rs/162, 3dfc217f, #165); gate `measureDrops` 120 explicit (rs/261, building) |
 | 5 | 11 | Transition legs | `speedrun/runner/legs.ts` + `speedrun/lib/travel.ts` | between steps | 2,198.5 | 2,198.5 | ~2,340 i | ~140 | overlay | `run-transitions-legs.ts`, `run-transitions-lib.ts` | lab-measured (PR #198, open; rs/198 for rs/186); its walker, `lib/travel.ts`, on main, 0658e896 (#200) |
-| 6 | 6 | Thieving and the stun pack | `speedrun/skills/thieving.ts` | S18 (S18b-d inside) | 2,000 | 1,908 | 1,975 + ~120 elsewhere | ~190 | in-page | rs/97 `pickpocket`; rs/132's `stunActions`; `stun-pack-thieve.ts` | building (rs/154, parked under the 2-4 child limit); stun pack: lab-accepted (bury, charge, arrows; rs/132) |
+| 6 | 6 | Thieving and the stun pack | `speedrun/skills/thieving.ts` | S18 (S18b-d inside) | 2,000 | 1,908 | 1,975 + ~120 elsewhere | ~190 | in-page | rs/97 `pickpocket`; rs/132's `stunActions`; `stun-pack-thieve.ts` | building (rs/154, parked under the 2-4 child limit); stun pack: lab-accepted (bury, charge, arrows; rs/132); top-ups ~0 with the courier on a side tile (rs/279, lab); rs/290's opt-in idle re-send building |
 | 7 | 5 | Fishing | `speedrun/skills/fishing.ts` | S22 | 1,995 | 1,969 | 3,410 | ~1,440 | in-page | rs/97 `knife-cycle`, `tickmanip-cycle.ts` | on main, 22552bf4 (#197; rs/231); lab-accepted (1,998 on 78-99; rs/152); gate `measureDrops` 120 explicit (#221) |
 | 8 | 7 | Combat finish | `speedrun/skills/ranged.ts` (`combatFinish`) | S27 | 1,972 | 1,946 | 1,997 (the bow from 70); 2,023-2,211 without the kit | ~265 | overlay | `cannon-kit.ts` (rs/59, on main) | on main, 8a741554 (#212, rs/252's snapshot); lab-accepted (S27 1,972 i on the module's rates, S14 118 m; rs/199, PR #207); lab is the final tier (a demo test is not feasible) |
 | 9 | 8 | The Grand Tree | `speedrun/quests/grand-tree.ts` | S11b | 1,493 | 1,403 | 1,763 | ~360 | overlay | `quest-grandtree-full.ts` | building (rs/202 under rs/185); **lab: 3 of 3 full A-to-P runs at SCORED's levels** (1,403 / 1,504 / 1,422) |
@@ -997,21 +997,24 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   completed at + 7 or + 8, and the + 9 click lands on T + 11, the attempt. **The fallback stops the
   program and restarts it within + 9 ticks of the trade** (`pickpocket` otherwise clicks the knight on
   every tick, stun ticks included, and that click closes an open trade): +9 a top-up, about **+117**
-  if all ~13 (H14.1-H14.13) fall back (RUN-ORDER.md sensitivity table). The program's new keys
+  if all ~13 (H14.1-H14.13) fall back (RUN-ORDER.md sensitivity table). **Superseded by rs/279's lab** (m, 300 ms, Thieving 57-99, tree 27c493f6): the cause of the missed top-ups was the giver's tile, not the code. The engine's player op uses rectangle reach (`GameMap.reachedEntity`) and a stunned SCORED cannot step round a corner, so a top-up costs **~0 in either mode with the courier on a side tile**: idle 9 of 10 (one unexplained miss), restart 10 of 10 at +0.30. **Idle stays the default.** Restart mode also needs rs/273's re-send fix (pending: before it, the request at + 0 fell inside the stun's two `p_delay(0)` ticks and was dropped, 0 trades). The band totals (1,870-2,010) are single runs driven by the failure count, so S18's total is not re-priced from them. The one idle miss with a side tile (at 1471: the request fired, the courier never saw 'wishes to trade') is named and unexplained; **rs/290** (building, opt-in) re-sends at + 3 inside `REQUEST_HOLD` and becomes the default only if its lab passes (RUN-ORDER.md R24). The program's new keys
   `stopWhenFoodBelow` and `retargetTicks` are declared, with a packet-fingerprint golden test,
   **pending rs/243's snapshot** (on the floor's pending list, entry 0). A top-up stun buries nothing either way (rs/132, `pickpocket.ts` doc comment at
   e5f83a36).
 - **Preconditions:** Thieving 57 (Fight Arena's 2,175 base). Charge: Mage Arena stage 8, the god
   staff given (rs/114, `quests/quest-state.md`), base Magic 80. Staff of fire wielded. Load 0 (H14):
   500 blood + 500 air runes (489 needed), 4,410 headless arrows, bronze 60, iron 90, steel 135,
-  mithril 1,485 arrowheads, 2 sharks, ~16 dragon bones. The trade giver (Ashburn, rs/117) within 3
-  tiles at all times. HP 40+.
+  mithril 1,485 arrowheads, 2 sharks, ~16 dragon bones. **The top-up courier** (rs/41's `bone-giver.ts`
+  on-request mode, Ashburn) **holds an orthogonally adjacent tile of SCORED at each due stun + 2**,
+  never a diagonal corner and never 2-3 tiles away (its current `follow: 3` / `walkNear(receiver, 1)`
+  allows both, losing about 1 in 3 top-ups; the fix is rs/267's, pending on the helpers' deployed
+  commit; RUN-ORDER.md R24). HP 40+.
 - **Postconditions:** Thieving 99, Magic 99, Fletching 99, Prayer 99 (~200 bones from ~94); **570
   rune arrows kept** for S27. Items out: coins and loot, to a helper.
 - **Ticks:** expected **2,000**, best **1,908** (measured: three end-to-end runs from 57 to 99 with
   the pack took 1,908 / 2,098 / 1,997 at 84-93 failures, lite client, local engine,
   `stun-pack-thieve.ts`; plain 1,986, `research/stun-pack.md` §3, §11). The 12-13 top-ups are
-  inside (about 0.1-0.3 each at k = 2, §5); level-up pages arrived naturally (§9). rs/132's in-page lab (bgsrv-mac, 300 ms, level 55 held, 300
+  inside (about 0.1-0.3 each at k = 2, §5; ~0 each with the courier on a side tile, rs/279); level-up pages arrived naturally (§9). rs/132's in-page lab (bgsrv-mac, 300 ms, level 55 held, 300
   rolls each, m) shows the pack costs no Thieving time in the page: plain 0.1785 rolls a tick against
   bury+charge 0.1656, the gap being the success draw (0.640 against 0.600; at the predicted 0.607
   both come to 0.168, against #94's 0.173); 3.00 bones and 8.04 Charges a stun; with arrows, 7.97
