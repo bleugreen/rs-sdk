@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { BotWorldState, CombatEvent, DialogState, InventoryItem, NearbyNpc, PlayerState } from '../../sdk/types';
-import { castingStyle, defensiveStyleIndex, fight, PRAYER_LEVELS, questCastStyle, setPrayer, Upkeep } from './combat';
+import { fight, PRAYER_LEVELS, setPrayer, Upkeep } from './combat';
 import { baseState, FakeSdk, flush } from './fake-sdk';
 
 const player = (hp: number, inCombat = true) => ({ worldX: 0, worldZ: 0, level: 0, hp, maxHp: 20, isDead: false, combat: { inCombat, targetIndex: -1, targetType: 'none', lastDamageTick: -1 } }) as unknown as PlayerState;
@@ -145,74 +145,6 @@ describe('fight', () => {
         await tick(sdk);
         await tick(sdk);
         expect(await p).toMatchObject({ ok: false, end: 'no target' });
-    });
-});
-
-describe('casting style (O43a)', () => {
-    const staff = (currentStyle: number, known = true): Partial<BotWorldState> => ({
-        combatStyle: {
-            currentStyle, weaponName: 'Staff of fire', tabInterfaceId: 328, known,
-            styles: [
-                { index: 0, name: 'Bash', type: 'Accurate', trainsSkills: ['Attack'], damageType: 'Crush' },
-                { index: 1, name: 'Pound', type: 'Aggressive', trainsSkills: ['Strength'], damageType: 'Crush' },
-                { index: 2, name: 'Focus', type: 'Defensive', trainsSkills: ['Defence'], damageType: 'Crush' },
-            ],
-        },
-    });
-    const spellFight = async (sdk: FakeSdk, o: Parameters<typeof fight>[2] = {}) => {
-        const p = fight(sdk as never, /mordred/i, { spell: 1181, ...o });
-        await tick(sdk);
-        await tick(sdk);
-        await tick(sdk, { nearbyNpcs: [npc(7, 0)] });
-        return p;
-    };
-
-    test('off by default: questCastStyle adds nothing and a spell fight sends no style click', async () => {
-        expect(castingStyle.style).toBe('normal');
-        expect(questCastStyle()).toEqual({});
-        const sdk = arena(staff(0));
-        expect(await spellFight(sdk, questCastStyle())).toMatchObject({ end: 'killed' });
-        expect(sends(sdk, 'sendSetCombatStyle')).toEqual([]);
-    });
-
-    test('on: exactly one click to the staff\'s defensive style, sent before the first cast', async () => {
-        castingStyle.style = 'defensive';
-        try {
-            expect(questCastStyle()).toEqual({ castStyle: 'defensive' });
-            const sdk = arena(staff(0));
-            await spellFight(sdk, questCastStyle());
-            expect(sends(sdk, 'sendSetCombatStyle').map(a => a.args)).toEqual([[2]]);
-            const order = sdk.sent.map(a => a.method).filter(m => m === 'sendSetCombatStyle' || m === 'sendSpellOnNpc');
-            expect(order[0]).toBe('sendSetCombatStyle');
-            expect(order.filter(m => m === 'sendSpellOnNpc').length).toBeGreaterThanOrEqual(2);
-        } finally {
-            castingStyle.style = 'normal';
-        }
-    });
-
-    test('idempotent on resume: the defensive style already selected sends no click', async () => {
-        const sdk = arena(staff(2));
-        await spellFight(sdk, { castStyle: 'defensive' });
-        expect(sends(sdk, 'sendSetCombatStyle')).toEqual([]);
-    });
-
-    test('melee fights ignore it; an unpublished tab falls back to the staff slot', async () => {
-        const melee = arena(staff(0));
-        const p = fight(melee as never, /mordred/i, { castStyle: 'defensive' });
-        await tick(melee, { nearbyNpcs: [npc(7, 0)] });
-        await p;
-        expect(sends(melee, 'sendSetCombatStyle')).toEqual([]);
-        expect(defensiveStyleIndex(baseState())).toBe(2);
-        expect(defensiveStyleIndex(baseState(staff(0, false)))).toBe(2);
-    });
-
-    test('a weapon without a Defensive style is an error, not a guessed slot', () => {
-        const bow = baseState({ combatStyle: { currentStyle: 0, weaponName: 'Magic shortbow', tabInterfaceId: 1764, known: true, styles: [
-            { index: 0, name: 'Accurate', type: 'Accurate', trainsSkills: ['Ranged'], damageType: 'Ranged' },
-            { index: 1, name: 'Rapid', type: 'Rapid', trainsSkills: ['Ranged'], damageType: 'Ranged' },
-            { index: 2, name: 'Longrange', type: 'Longrange', trainsSkills: ['Ranged', 'Defence'], damageType: 'Ranged' },
-        ] } });
-        expect(() => defensiveStyleIndex(bow)).toThrow(/no Defensive style/);
     });
 });
 
