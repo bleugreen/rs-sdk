@@ -231,7 +231,7 @@ export async function stopAllWithin(items: Stoppable[], deadline: number): Promi
 }
 
 /** `ms`, cut to what is left before `deadline`. */
-const until = (deadline: number, ms: number) => Math.max(0, Math.min(ms, deadline - Date.now()));
+const remaining = (deadline: number, ms: number) => Math.max(0, Math.min(ms, deadline - Date.now()));
 
 async function exitedWithin(child: { exited: Promise<unknown> }, ms: number): Promise<boolean> {
     if (ms <= 0) return Promise.race([child.exited.then(() => true), Promise.resolve(false)]);
@@ -497,7 +497,7 @@ class Launcher {
         const g = this.gateway;
         if (!g || g.exitCode !== null) return;
         g.kill('SIGINT');
-        if (!(await exitedWithin(g, until(deadline, 5000)))) g.kill('SIGKILL');
+        if (!(await exitedWithin(g, remaining(deadline, 5000)))) g.kill('SIGKILL');
     }
 }
 
@@ -721,7 +721,7 @@ class AccountRun implements Stoppable {
         const role = this.roles.running;
         if (role && role.exitCode === null) {
             role.kill('SIGTERM');
-            if (!(await exitedWithin(role, until(deadline, this.entry.path === 'direct' ? DIRECT_STOP_GRACE_MS : 15_000)))) role.kill('SIGKILL');
+            if (!(await exitedWithin(role, remaining(deadline, this.entry.path === 'direct' ? DIRECT_STOP_GRACE_MS : 15_000)))) role.kill('SIGKILL');
         }
         await this.roles.done.catch(() => undefined);
         const lite = this.lite;
@@ -733,7 +733,7 @@ class AccountRun implements Stoppable {
             if (!out) {
                 this.L.log(`[launcher] ${this.entry.account}: no clean logout; closing the client`);
                 lite.kill('SIGINT');
-                if (!(await exitedWithin(lite, until(deadline, 5000)))) lite.kill('SIGKILL');
+                if (!(await exitedWithin(lite, remaining(deadline, 5000)))) lite.kill('SIGKILL');
             }
         }
         await this.supervising?.catch(() => undefined);
@@ -761,14 +761,14 @@ class AccountRun implements Stoppable {
             readyTimeout: 0
         });
         try {
-            await Promise.race([sdk.connect(), sleep(until(deadline, 10_000)).then(() => Promise.reject(new Error('gateway handshake timed out')))]);
+            await Promise.race([sdk.connect(), sleep(remaining(deadline, 10_000)).then(() => Promise.reject(new Error('gateway handshake timed out')))]);
             for (let attempt = 0; attempt < 2; attempt++) {
                 const clickTick = sdk.getState()?.tick ?? 0;
                 await sdk.sendClickComponent(LOGOUT_BUTTON).catch(() => undefined);
-                if (await exitedWithin(lite, until(deadline, 8_000))) return true;
+                if (await exitedWithin(lite, remaining(deadline, 8_000))) return true;
                 const refused = sdk.getState()?.gameMessages.some(m => /can't log ?out/i.test(m.text) && m.tick >= clickTick);
-                if (!refused || until(deadline, 15_000) === 0) return false;
-                await sdk.waitForCondition(s => s.tick >= clickTick + COMBAT_LOGOUT_TICKS + 1, until(deadline, 15_000)).catch(() => undefined);
+                if (!refused || remaining(deadline, 15_000) === 0) return false;
+                await sdk.waitForCondition(s => s.tick >= clickTick + COMBAT_LOGOUT_TICKS + 1, remaining(deadline, 15_000)).catch(() => undefined);
             }
             return false;
         } finally {
