@@ -7,15 +7,29 @@
 # generated on each builder machine (~/.rs-fleet/id_ed25519_ashburn) with the VM's
 # host key pinned, never StrictHostKeyChecking=no. Non-login commands do not have
 # Bun on PATH: use ~/.bun/bin/bun or `bash -lc '...'`.
+#
+# The host's addresses never live in this repository (the fork is public). Set them
+# in your local shell from cairn://p/rs/host:
+#   RS_RUN_HOST     the run host's public address, bare or as user@address (user defaults to ubuntu)
+#   RS_RUN_TAILNET  optional: its Tailscale address, pinned alongside the public one
 set -euo pipefail
 
-HOST="${ASHBURN_HOST:-ubuntu@54.242.152.95}"
+if [ -z "${RS_RUN_HOST:-}" ]; then
+  echo "ashburn.sh: RS_RUN_HOST is not set; set it from cairn://p/rs/host" >&2
+  exit 2
+fi
+case "$RS_RUN_HOST" in
+  *@*) HOST="$RS_RUN_HOST" ;;
+  *) HOST="ubuntu@$RS_RUN_HOST" ;;
+esac
+ADDRESS="${HOST#*@}"
+
 KEY="$HOME/.rs-fleet/id_ed25519_ashburn"
 KNOWN_HOSTS="$HOME/.rs-fleet/known_hosts_ashburn"
 if [ ! -r "$KNOWN_HOSTS" ]; then
   KNOWN_HOSTS="${TMPDIR:-/tmp}/ashburn_known_hosts"
-  # Public address first, then the Tailscale one (rs-ashburn).
-  echo '54.242.152.95,100.66.164.37 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBYCG1nNhhY0ax6lRCgxT6oxfNh4NW7mlLOdQeoWZ0wE' >"$KNOWN_HOSTS"
+  # The host key survives address rotations; only the address list changes.
+  echo "$ADDRESS${RS_RUN_TAILNET:+,$RS_RUN_TAILNET} ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBYCG1nNhhY0ax6lRCgxT6oxfNh4NW7mlLOdQeoWZ0wE" >"$KNOWN_HOSTS"
 fi
 SSH=(ssh -o BatchMode=yes -o UserKnownHostsFile="$KNOWN_HOSTS" -o StrictHostKeyChecking=yes -o CheckHostIP=no)
 if [ -r "$KEY" ]; then
