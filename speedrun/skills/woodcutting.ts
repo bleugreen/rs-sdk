@@ -882,15 +882,44 @@ function walkStep(o: Resolved, name: string, goal: Tile, needed: (s: BotWorldSta
     };
 }
 
-function bandStep(o: Resolved, b: Band, last: boolean): Step {
+/**
+ * S07's bone cue for a giver group: one CueWriter, so one session, for the whole step. It names the
+ * scored account (by hash) to the givers, which ignore every cue not scoped S07_BONE_CUE.
+ */
+export class BoneCue {
+    private writer: CueWriter | null = null;
+    constructor(readonly dir: string) {}
+
+    private static beacons(s: BotWorldState | null): Beacon[] {
+        return [{ tick: s?.tick ?? 0, ms: Date.now() }];
+    }
+
+    write(s: BotWorldState | null, receiver: string): void {
+        this.writer ??= new CueWriter(this.dir, receiver, S07_BONE_CUE);
+        this.writer.write({ beacons: BoneCue.beacons(s), turns: [] });
+    }
+
+    stop(s: BotWorldState | null): void {
+        this.writer?.stop(BoneCue.beacons(s));
+    }
+
+    get session(): string | null {
+        return this.writer?.session ?? null;
+    }
+}
+
+function bandStep(o: Resolved, b: Band, last: boolean, cue: BoneCue | null): Step {
     const end = bandEnd(o, b);
     const site = o.sites[b.tree];
     const technique = bandTechnique(b.tree, o.technique);
     const knifeCapable = technique !== 'plain';
     const burying = o.bury !== null && b.tree !== 'normal';
     const giver = burying ? o.bones : null;
+    const group = giver && 'group' in giver ? giver : null;
     const passed = (s: BotWorldState) => wcLevel(s) >= end;
     const bonesHeld = (s: BotWorldState) => s.inventory.filter(i => o.bonesRe.test(i.name)).length;
+    /** The last load (lastLoad's, with the runes) came: no other follows. */
+    const lastCame = (s: BotWorldState | null) => !!s && giver?.lastLoad != null && runesHeld(s);
     const params = paramsOf(o, b.tree, end);
 
     const pre = (s: BotWorldState): true | string => {
@@ -948,18 +977,31 @@ function bandStep(o: Resolved, b: Band, last: boolean): Step {
         const topUp = async () => {
             const t0 = sdk.getState()?.tick ?? 0;
             const before = bonesHeld(sdk.getState()!);
-            const r = await o.receive(sdk, giver!.giver, { want: [{ item: o.bonesRe, amount: giver!.lastLoad ?? giver!.load }], maxTicks: 60, openTimeoutMs: 20_000 });
+            // A group's load comes from its server, whoever that is now.
+            let partner: string | null = giver && 'giver' in giver ? giver.giver : null;
+            let wait: ServerWait | null = null;
+            if (group) {
+                wait = await awaitBoneServer(sdk, group.cueDir, group.group, group.serverWait);
+                partner = wait.server ?? null;
+            }
+            const want = { want: [{ item: o.bonesRe, amount: giver!.lastLoad ?? giver!.load }], maxTicks: 60, openTimeoutMs: 20_000 };
+            const r: ReceiveResult = partner !== null ? await o.receive(sdk, partner, want) : { ok: false, ticks: 0, received: [], reason: `no giver of the group served within ${group!.serverWait} observed ticks` };
             const t1 = sdk.getState()?.tick ?? t0;
             const got = bonesHeld(sdk.getState()!) - before;
             loads++;
-            annotation(log, session, 'woodcutting:bones-load', t0, t1, r.ok, { kind: 'wc-bones-load', band: b.name, load: loads, ticks: r.ticks, stepTicks: t1 - t0, received: got, ...(r.reason ? { reason: r.reason } : {}) });
-            if (!r.ok) throw new Error(`${b.name}: bone load ${loads} from ${giver!.giver} failed: ${r.reason}`);
+            annotation(log, session, 'woodcutting:bones-load', t0, t1, r.ok, {
+                kind: 'wc-bones-load', band: b.name, load: loads, ticks: r.ticks, stepTicks: t1 - t0, received: got, ...(r.reason ? { reason: r.reason } : {}),
+                ...(wait ? { giver: partner, serverWait: wait.waited } : {})
+            });
+            if (!r.ok) throw new Error(`${b.name}: bone load ${loads} from ${partner ?? `the group (${group!.group.join(', ')})`} failed: ${r.reason}`);
             ledger.bonesLoad();
         };
 
         let ended = 'stopped';
         // a load before the first start when the pack is empty, and after each stop for one
-        let needLoad = !!giver && knifeCapable && bonesHeld(s0) === 0;
+        let needLoad = !!giver && knifeCapable && bonesHeld(s0) === 0 && !lastCame(s0);
+        // The group finds the scored account by the cue: written before the first load, every band.
+        if (group && cue) cue.write(sdk.getState(), session.name);
         try {
             for (;;) {
                 if (guard.hit) break;
@@ -977,7 +1019,7 @@ function bandStep(o: Resolved, b: Band, last: boolean): Step {
                     log: o.log,
                     onProgress: (st, tech) => {
                         ledger.observe(st, tech, wcLevel(sdk.getState()));
-                        if (!giver || tech !== 'knife' || stop.signal.aborted) return;
+                        if (!giver || tech !== 'knife' || stop.signal.aborted || lastCame(sdk.getState())) return;
                         if (st.gauges.bonesLeft !== 0) {
                             noneSince = null;
                             return;
@@ -1020,6 +1062,8 @@ function bandStep(o: Resolved, b: Band, last: boolean): Step {
         });
         guard.close();
         if (ended !== 'done') throw new Error(`knife-cycle ended ${ended} at Woodcutting ${wcLevel(endState)}`);
+        // S07's chopping is over: the group stands down (a band that failed keeps it, for the resume).
+        if (last && group && cue) cue.stop(endState);
     };
 
     return {
@@ -1110,12 +1154,13 @@ export function steps(opts: WoodcuttingOptions = {}): Step[] {
     const oakEnd = bandEnd(o, oak);
     // the band the Prayer postcondition goes on (bury needs to > 15, so oak or willow)
     const willowLast = o.to > oak.end;
+    const cue = o.bones && 'group' in o.bones ? new BoneCue(o.bones.cueDir) : null;
     return [
         walkStep(o, 'woodcutting:walk-oaks', o.sites.oak.stand, s => wcLevel(s) < oakEnd, o.sites.approach),
-        bandStep(o, normal, false),
-        bandStep(o, oak, !willowLast),
+        bandStep(o, normal, false, cue),
+        bandStep(o, oak, !willowLast, cue),
         walkStep(o, 'woodcutting:walk-willows', o.sites.willow.stand, s => wcLevel(s) >= oakEnd && wcLevel(s) < o.to, []),
-        bandStep(o, willow, willowLast),
+        bandStep(o, willow, willowLast, cue),
         ...(o.handBack !== null ? [handBackStep(o, o.handBack)] : []),
         ...(o.dropAxe ? [dropAxeStep(o)] : [])
     ];
