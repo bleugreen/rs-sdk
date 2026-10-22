@@ -1,6 +1,7 @@
 // S06 and S21: Runecraft at the altar inside the room (STEP-MANIFEST.md entry 9;
 // docs/speedrun/skills/runecraft.md, "The step module"). SCORED stands beside the
-// altar and never leaves; a giver beside it trades 27 rune essence per cycle on a
+// altar and never leaves; a giver beside it trades a load of rune essence (27; 26 at
+// S06, S06_LOAD) per cycle on a
 // tick-exact schedule that the page's rc-cycle program runs
 // (server/webclient/src/bot/programs/rc-cycle.ts). This module drives that program:
 //
@@ -28,6 +29,7 @@ import { levelUpStep, newWatcherMemory, type WatcherMemory } from '../lib/levelu
 import { ALTARS } from '../lib/runecraft';
 import {
     awaitProgram,
+    overBudgetMeta,
     ProgramError,
     rcCueFields,
     sendProgramInput,
@@ -88,20 +90,26 @@ export function inRoom(s: BotWorldState, altar: AltarName): boolean {
 const ALTAR = /^altar$/i;
 const ESSENCE = /^rune essence$/i;
 const CRAFT = /^craft/i;
-/** Essence per trade: the inventory's 28 slots less the rune stack. */
+/** Essence per trade unless a band says otherwise: the inventory's 28 slots less the rune stack. */
 export const LOAD = 27;
+/**
+ * S06's load. SCORED carries T06-07's Falador teleport law runes through S06 beside the air
+ * runes, which leaves 26 free slots. Seven crafts of 26 still reach Runecraft 44 (seven of 27
+ * end at 45), so the band keeps its 7 crafts; S06's givers carry `essence: 26` (altar-giver.ts).
+ */
+export const S06_LOAD = 26;
 const TALISMAN_DROPS = 3;
 /** Game xp per base xp point (fly.toml NODE_XPRATE; rc-cycle's XP_RATE). */
 export const XP_RATE = 25;
 
 /** Game xp of one craft of a full load at `altar` (base xp per essence: speedrun/lib/runecraft.ts ALTARS). */
-export function craftXp(altar: AltarName): number {
-    return LOAD * ALTARS[altar]!.xp * XP_RATE;
+export function craftXp(altar: AltarName, load = LOAD): number {
+    return load * ALTARS[altar]!.xp * XP_RATE;
 }
 
 /** An xp target `crafts` full loads past `xp0`, half a load short so rounding never adds or drops a craft. */
-export function xpAfterCrafts(altar: AltarName, xp0: number, crafts: number): number {
-    return xp0 + Math.round((crafts - 0.5) * craftXp(altar));
+export function xpAfterCrafts(altar: AltarName, xp0: number, crafts: number, load = LOAD): number {
+    return xp0 + Math.round((crafts - 0.5) * craftXp(altar, load));
 }
 
 /** One band of a step: crafting at `altar` from Runecraft `from` until `untilLevel` (or `untilXp`, for a lab run of N cycles). */
@@ -111,6 +119,8 @@ export interface Band {
     from: number;
     untilLevel: number;
     untilXp?: number;
+    /** Essence per trade (default LOAD). The band's givers must carry exactly this many (`essence`). */
+    load?: number;
 }
 
 // ------------------------------------------------------------------ views
@@ -334,13 +344,13 @@ export class ScheduleAdapter {
 // ------------------------------------------------------------------ giver feed
 
 /**
- * The givers to offer the page, oldest-ready first: loaded (27 essence), in the
+ * The givers to offer the page, oldest-ready first: loaded (`load` essence), in the
  * room, ready or armed, with a status written in the last 5 s (a giver rewrites it
  * at least every 2 s).
  */
-export function giverFeed(statuses: readonly GiverStatusView[], now: number, scheduleOf: (giver: string) => RcSchedule): GiverEntry[] {
+export function giverFeed(statuses: readonly GiverStatusView[], now: number, scheduleOf: (giver: string) => RcSchedule, load = LOAD): GiverEntry[] {
     return statuses
-        .filter(s => (s.phase === 'ready' || s.phase === 'armed') && s.inRoom && now - s.ms <= STATUS_FRESH_MS && s.essence >= LOAD)
+        .filter(s => (s.phase === 'ready' || s.phase === 'armed') && s.inRoom && now - s.ms <= STATUS_FRESH_MS && s.essence >= load)
         .sort((a, b) => (a.readyAt ?? Infinity) - (b.readyAt ?? Infinity))
         .map(s => ({ name: s.account, schedule: scheduleOf(s.account), ...(s.readyAt !== null ? { readyAt: s.readyAt } : {}) }));
 }
@@ -506,7 +516,7 @@ export const DEFAULT_GIVER_WAIT_TICKS = 300;
 /** The bands of `steps()`: S06 air 1-44, then S21 44-99 at nature (or body), capped by untilLevel. */
 export function bands(opts: Pick<RunecraftOptions, 's21Altar' | 'untilLevel'> = {}): Band[] {
     const cap = opts.untilLevel ?? 99;
-    const out: Band[] = [{ id: 'S06', altar: 'air', from: 1, untilLevel: Math.min(44, cap) }];
+    const out: Band[] = [{ id: 'S06', altar: 'air', from: 1, untilLevel: Math.min(44, cap), load: S06_LOAD }];
     if (cap > 44) out.push({ id: 'S21', altar: opts.s21Altar ?? 'nature', from: 44, untilLevel: cap });
     return out;
 }
@@ -526,8 +536,10 @@ export function preconditions(s: BotWorldState, band: Band): true | string {
     const known = ALTAR_ROOMS[band.altar].stand;
     const stand = altar && standTile(altar);
     if (stand && known && (stand.x !== known.x || stand.z !== known.z)) return `the altar in sight (${altar!.x},${altar!.z}) is not the ${band.altar} altar`;
+    // A trade of `load` essence needs that many free slots beside the altar's rune stack (28 in all).
+    const load = band.load ?? LOAD;
     const other = otherItems(s, band.altar);
-    if (other.length) return `${other.length} other items (${[...new Set(other)].join(', ')}): need ${LOAD} free slots`;
+    if (other.length > 27 - load) return `${other.length} other items (${[...new Set(other)].join(', ')}): need ${load} free slots`;
     return true;
 }
 
@@ -622,7 +634,7 @@ class Driver {
                     : giverSchedule(this.mode, launcher, g, scored, now);
             this.assigned.set(g, choice);
             return choice.schedule;
-        });
+        }, this.band.load ?? LOAD);
     }
 
     async run(): Promise<void> {
@@ -668,7 +680,7 @@ class Driver {
         const s = this.state();
         const dialog = s.dialog?.isOpen ? `dialog open (${(s.dialog.text ?? '').slice(0, 60)})` : 'no dialog';
         const modal = s.interface?.isOpen ? `interface ${s.interface.interfaceId} open` : 'no interface';
-        throw new Error(`the ${this.band.altar} talisman is still held after ${TALISMAN_DROPS} drops (${replies.join('; ')}; ${dialog}; ${modal}); a trade of ${LOAD} essence needs its slot`);
+        throw new Error(`the ${this.band.altar} talisman is still held after ${TALISMAN_DROPS} drops (${replies.join('; ')}; ${dialog}; ${modal}); a trade of ${this.band.load ?? LOAD} essence needs its slot. The server ignores inventory ops while the inventory tab is hidden, as on a new account that never left the tutorial state (S00's skip opens the tabs)`);
     }
 
     /**
@@ -806,6 +818,7 @@ class Driver {
                 mode: this.mode,
                 ...(summary ? { summary } : {}),
                 counters: st?.counters ?? {},
+                ...overBudgetMeta(st),
                 // the session's first trade: ticks from the program's start to its first craft
                 ...(st?.marks?.crafts && st.marks.crafts.count === st.marks.crafts.ticks.length && st.marks.crafts.ticks.length ? { firstCraftAfter: st.marks.crafts.ticks[0]! - startTick } : {}),
                 schedules: Object.fromEntries([...this.assigned].map(([g, a]) => [g, a.schedule])),
@@ -863,7 +876,7 @@ class Driver {
                     const turn = this.state().tick;
                     turns.push({ giver: giver.name, T: turn + lead, schedule: 'stock' });
                     sink.write({ beacons: [...beacons], turns: [...turns], schedule: 'robust', open });
-                    const r = await deps.receiveFrom(sdk, giver.name, { want: [{ item: ESSENCE, amount: LOAD }], maxTicks: 30, openTimeoutMs: 30 * tickMs() });
+                    const r = await deps.receiveFrom(sdk, giver.name, { want: [{ item: ESSENCE, amount: this.band.load ?? LOAD }], maxTicks: 30, openTimeoutMs: 30 * tickMs() });
                     trades++;
                     timeline.push({ turn, receive: r.ticks ?? -1, received: this.state().tick, ...(r.ok ? {} : { reason: r.reason }) });
                     if (!r.ok) {

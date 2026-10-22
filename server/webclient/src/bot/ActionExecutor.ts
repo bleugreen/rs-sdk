@@ -13,6 +13,12 @@ export interface ActionResult {
     phase?: 'validation' | 'routing' | 'dispatch' | 'observation' | 'completion';
     /** Stable failure category suitable for retry decisions. */
     reason?: string;
+    /**
+     * User-event packets the action wrote, when more than one: 2 for an op the client
+     * routed (MOVE_OPCLICK, then the op). The engine decodes 5 user events a player a tick,
+     * so the in-page runtime budgets by this. Absent means 1.
+     */
+    userEvents?: number;
 }
 
 export type ActionResultOrPromise = ActionResult | Promise<ActionResult>;
@@ -168,7 +174,7 @@ export class ActionExecutor {
 
                 case 'interactNpc': {
                     const result = this.wrapClientAction(
-                        this.client.interactNpc(action.npcIndex, action.optionIndex),
+                        this.client.interactNpc(action.npcIndex, action.optionIndex, action.route !== false),
                         `Interacting with NPC #${action.npcIndex}`,
                         'Failed to interact with NPC'
                     );
@@ -188,7 +194,7 @@ export class ActionExecutor {
 
                 case 'interactLoc': {
                     const result = this.wrapClientAction(
-                        this.client.interactLoc(action.x, action.z, action.locId, action.optionIndex),
+                        this.client.interactLoc(action.x, action.z, action.locId, action.optionIndex, action.route !== false),
                         `Interacting with loc ${action.locId}`,
                         'Failed to interact with location'
                     );
@@ -214,7 +220,7 @@ export class ActionExecutor {
 
                 case 'pickupItem': {
                     const result = this.wrapClientAction(
-                        this.client.pickupGroundItem(action.x, action.z, action.itemId),
+                        this.client.pickupGroundItem(action.x, action.z, action.itemId, action.route !== false),
                         `Picking up item ${action.itemId}`,
                         'Failed to pickup item'
                     );
@@ -421,7 +427,7 @@ export class ActionExecutor {
 
                 case 'interactGroundItem': {
                     const result = this.wrapClientAction(
-                        this.client.interactGroundItem(action.x, action.z, action.itemId, action.optionIndex),
+                        this.client.interactGroundItem(action.x, action.z, action.itemId, action.optionIndex, action.route !== false),
                         `Interacting with ground item ${action.itemId}`,
                         'Failed to interact with ground item'
                     );
@@ -535,6 +541,8 @@ export class ActionExecutor {
                 this.warnUnreachable(successMsg);
                 return { success: true, message: `${successMsg} (unrouted - ap-range attempt)`, phase: 'dispatch', data: { routed: false } };
             }
+            // a route was found: tryMove wrote MOVE_OPCLICK ahead of the op
+            if (result.routed === true) return { success: true, message: successMsg, phase: 'dispatch', userEvents: 2 };
             return { success: true, message: successMsg, phase: 'dispatch' };
         }
         if (result.reason === 'cant_reach') {

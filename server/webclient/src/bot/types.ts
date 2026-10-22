@@ -540,7 +540,7 @@ export type BotAction =
     | { type: 'none'; reason: string }
     | { type: 'wait'; reason: string; ticks?: number }
     | { type: 'talkToNpc'; npcIndex: number; reason: string }
-    | { type: 'interactNpc'; npcIndex: number; optionIndex: number; reason: string }
+    | { type: 'interactNpc'; npcIndex: number; optionIndex: number; reason: string; route?: boolean }
     | { type: 'interactPlayer'; playerIndex: number; optionIndex: number; reason: string }
     | { type: 'clickDialogOption'; optionIndex: number; reason: string; guard?: { pageId: string; componentId: number }; blind?: boolean }
     // clickComponent: IF_BUTTON packet - for simple buttons, spellcasting, etc.
@@ -552,9 +552,12 @@ export type BotAction =
     | { type: 'walkTo'; x: number; z: number; running?: boolean; reason: string }
     | { type: 'useInventoryItem'; slot: number; optionIndex: number; interfaceId?: number; reason: string }
     | { type: 'dropItem'; slot: number; reason: string }
-    | { type: 'pickupItem'; x: number; z: number; itemId: number; reason: string }
-    | { type: 'interactGroundItem'; x: number; z: number; itemId: number; optionIndex: number; reason: string }
-    | { type: 'interactLoc'; x: number; z: number; locId: number; optionIndex: number; reason: string }
+    // route: false on these two and interactNpc, as on interactLoc: the op alone, refused unless in reach
+    | { type: 'pickupItem'; x: number; z: number; itemId: number; reason: string; route?: boolean }
+    | { type: 'interactGroundItem'; x: number; z: number; itemId: number; optionIndex: number; reason: string; route?: boolean }
+    // route: false sends the OPLOC without its MOVE_OPCLICK (one user event, not two); the client
+    // refuses it (not_in_reach) unless the player already stands in reach. Default: routed.
+    | { type: 'interactLoc'; x: number; z: number; locId: number; optionIndex: number; reason: string; route?: boolean }
     | { type: 'useItemOnItem'; sourceSlot: number; targetSlot: number; reason: string }
     | { type: 'useItemOnLoc'; itemSlot: number; x: number; z: number; locId: number; reason: string }
     | { type: 'useItemOnNpc'; itemSlot: number; npcIndex: number; reason: string }
