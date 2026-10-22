@@ -1147,7 +1147,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   never a diagonal corner and never 2-3 tiles away (its current `follow: 3` / `walkNear(receiver, 1)`
   allows both, losing about 1 in 3 top-ups; the fix is rs/267's, pending on the helpers' deployed
   commit; RUN-ORDER.md R24). HP 40+.
-- **Postconditions:** Thieving 99, Magic 99, Fletching 99, Prayer 99 (~200 bones from ~94); **570
+- **Postconditions:** Thieving 99, Magic 99, Fletching 99, Prayer 99 (~200 babydragon bones from 96 on the row in force, 92 with every line held); **570
   rune arrows kept** for S27. Items out: coins and loot, to a helper.
 - **Ticks:** expected **2,000**, best **1,908** (measured: three end-to-end runs from 57 to 99 with
   the pack took 1,908 / 2,098 / 1,997 at 84-93 failures, lite client, local engine,
@@ -1686,7 +1686,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   fallback (the bones there at 2.07 ticks each) and for a knife-off night with bones left over.
 - **Parameters:** `bones` count, `mode: 'inline' | 'booth'`, `untilLevel`.
 - **Preconditions:** inline: entry 3's. Booth: the bones in the bank at Varrock west.
-- **Postconditions:** Prayer ~94 when S07 ends with every line held, 99 when S18 ends. On the 21:20
+- **Postconditions:** Prayer 92 when S07 ends with every line held (355 dragon bones, 25,560 base, on the engine's curve, `Player.ts` levelExperience; '~94' before fold-in 17), 96 on the row in force under the dragon-first rule (413 dragon + 141 babydragon, 33,966 base), 95 on today's stock; 99 when S18 ends. On the 21:20
   UTC stock ~95 when S07 ends, ~96 after the Mining lap (`knife-mine`'s bury, on main, #159;
   RUN-ORDER.md O35, closed) and 99 when S18 ends, with none at the booth; if the Mining bury cannot
   fire, ~98 when S18 ends and 99 at the booth in S25 with the ~85 past S07. On the forecast at 2026-10-23 (~413 dragon,
