@@ -1093,6 +1093,14 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Logout-unsafe:** from opening Glough's trapdoor to the black demon kill, because the demon
   deletes itself on logout or beyond 17 tiles (`quests/README.md` §4). Protect from Melee goes on
   before the trapdoor opens.
+- **Module rule: Protect from Melee from boarding the glider to the shipyard gate** (rs/202, m, lab).
+  The jogres at the Karamja glider crash were never priced; unprotected, they killed SCORED in **3
+  of 11** lab runs at its arrival stats. With the prayer on from boarding to the shipyard gate, **0
+  HP lost in 10 of 10 runs**, for 4-7 prayer points. The black demon does not attack first (m), and
+  the jungle spiders took at most 4 HP. The tick cost of the toggle is pending (rs/202). **Arrival
+  levels checked** (rs/202's audit, main's 20:39 PDT rule): Attack 80, Strength 1, Defence 1, HP 28,
+  Magic 64, Prayer 94, Agility 22, with **no level gap**. The final A-to-P runs re-price S11b in a
+  later fold-in.
 - **Fallback:** Fire Blast if Fire Bolt's casts run short (Magic ~64 after the warlord, unmeasured
   for the demon; ~31 Fire Bolt casts, 31 chaos and 93 air with the staff of fire wielded, fit inside
   H7, and rs/202's lab records the casts); `advance` page by page if the burst fails; no Agility
