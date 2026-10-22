@@ -35,6 +35,12 @@
 // program avoids that target for AVOID_TICKS and takes the next nearest. A knight's
 // longest follow is about 8 ticks, so 12 never fires on a reachable target.
 //
+// `prefer: [npcIndex, ...]` (off by default): whenever the program takes a fresh target (its
+// first, one given up by `retargetTicks`, or one gone from sight) it takes the first listed
+// index that matches `npc`, is in sight and is not avoided, and only then the nearest. The step
+// module orders the list (thieving.ts `knight`), so a retarget off the first goes to the second.
+// With a list, the target's index is published as the `target` gauge.
+//
 // Stun actions (`stunActions`, off by default): rs/106's stun pack. On the ticks of the window
 // after a failure (`stunWindow`, offsets from the tick that shows it) the program sends actions
 // resolved from the inventory, ahead of the knight click: bury, Charge, arrowheads on headless
@@ -71,7 +77,7 @@ export type PickpocketEnd = 'level' | 'rolls' | 'maxTicks' | 'food';
 /** How long a target given up by `retargetTicks` stays avoided. */
 const AVOID_TICKS = 100;
 
-createPickpocket.params = ['npc', 'option', 'rolls', 'untilLevel', 'maxTicks', 'every', 'eat', 'food', 'heal', 'forcedBelow', 'eatBelow', 'stopWhenFoodBelow', 'retargetTicks', 'idleOnInterface', 'stunActions', 'stunWindow', 'stunPerTick'] as const;
+createPickpocket.params = ['npc', 'option', 'rolls', 'untilLevel', 'maxTicks', 'every', 'eat', 'food', 'heal', 'forcedBelow', 'eatBelow', 'stopWhenFoodBelow', 'retargetTicks', 'prefer', 'idleOnInterface', 'stunActions', 'stunWindow', 'stunPerTick'] as const;
 export function createPickpocket(params: ProgramParams): TickProgram {
     const npcRe = regex(params.npc, '^Knight of Ardougne$', 'npc');
     const opRe = regex(params.option, '^pickpocket$', 'option');
@@ -87,8 +93,13 @@ export function createPickpocket(params: ProgramParams): TickProgram {
     const eatBelowParam = params.eatBelow === undefined ? undefined : num(params.eatBelow, 0, 'eatBelow');
     const stopBelow = num(params.stopWhenFoodBelow, 0, 'stopWhenFoodBelow');
     const retargetTicks = num(params.retargetTicks, 0, 'retargetTicks');
+    const prefer = params.prefer === undefined ? [] : params.prefer;
+    if (!Array.isArray(prefer) || !prefer.every(i => Number.isInteger(i) && i >= 0)) throw new Error('prefer must be a list of npc indices');
     const idleOnInterface = params.idleOnInterface === true;
     const stun = params.stunActions === undefined ? null : new StunPack({ actions: params.stunActions, window: params.stunWindow, perTick: params.stunPerTick });
+
+    const freshTarget = (candidates: NearbyNpc[]): NearbyNpc | undefined =>
+        prefer.map(i => candidates.find(n => n.index === i)).find(n => n !== undefined) ?? candidates.sort((a, b) => a.distance - b.distance)[0];
 
     const messages = new FreshMessages();
     let started = false;
@@ -299,8 +310,11 @@ export function createPickpocket(params: ProgramParams): TickProgram {
             const cur = target;
             target = cur && s.nearbyNpcs.some(n => n.index === cur.index)
                 ? s.nearbyNpcs.find(n => n.index === cur.index)
-                : s.nearbyNpcs.filter(n => npcRe.test(n.name) && !((avoid.get(n.index) ?? 0) > t)).sort((a, b) => a.distance - b.distance)[0];
-            if (target && target.index !== cur?.index) targetSince = t;
+                : freshTarget(s.nearbyNpcs.filter(n => npcRe.test(n.name) && !((avoid.get(n.index) ?? 0) > t)));
+            if (target && target.index !== cur?.index) {
+                targetSince = t;
+                if (prefer.length) ctx.gauge('target', target.index);
+            }
             const op = target?.optionsWithIndex.find(o => opRe.test(o.text));
             if ((t - startTick) % every !== 0) return;
             if (target && op) {
