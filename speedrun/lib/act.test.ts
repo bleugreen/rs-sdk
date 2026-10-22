@@ -266,12 +266,13 @@ describe('a landed click is not re-sent while its script runs', () => {
 
     test('a click that drew nothing is still re-sent after the idle ticks; a walk that stops short is re-clicked', async () => {
         const sdk = new FakeSdk(baseState({ tick: 1, player: player(10, 10) }));
+        // waitUntil gives up once more than maxTicks ticks have passed: maxTicks + 1 ticks end each wait.
         const p = act(sdk as never, () => sdk.sendInteractLoc(5, 5, 1, 1), () => false, { resendEvery: 3, maxTicks: 4 });
-        await ticks(sdk, 4);
+        await ticks(sdk, 5);
         expect((await p).resends).toBe(1);
 
         const w = new FakeSdk(baseState({ tick: 1, player: player(10, 10) }));
-        const q = act(w as never, () => w.sendWalk(0, 10), () => false, { resendEvery: 3, maxTicks: 6 });
+        const q = act(w as never, () => w.sendWalk(0, 10), () => false, { resendEvery: 3, maxTicks: 5 });
         await ticks(w, 1, () => ({ player: player(8, 10) })); // it moves (a landed walk), then stops short
         await ticks(w, 5);
         expect((await q).resends).toBe(1);
@@ -281,7 +282,7 @@ describe('a landed click is not re-sent while its script runs', () => {
         const sdk = new FakeSdk(baseState({ tick: 1, player: player(10, 10) }));
         const p = act(sdk as never, () => sdk.sendInteractLoc(5, 5, 1, 1), () => false, { resendEvery: 3, maxTicks: 4 });
         await ticks(sdk, 1, () => ({ gameMessages: [{ type: 2, text: 'hi', sender: 'someone', tick: 2, fromSelf: false }] }));
-        await ticks(sdk, 3);
+        await ticks(sdk, 4);
         expect((await p).resends).toBe(1);
     });
 });
