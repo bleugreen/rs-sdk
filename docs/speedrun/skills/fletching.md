@@ -254,3 +254,27 @@ is ceil(294 / 5), and the 2 ticks above it are the three level-gated short ticks
 Before `fill` the same cases took 62 (one tier a tick). On the rune-list route of section 2 the
 module took 51 program ticks on the browser (before `fill`; that route has no fillable switch), against `delayfree-cycle.ts`'s 50-tick span on lite on
 the same host (the script's figure, not the module's; lite hosts no programs).
+
+**Demo (entry 32), reduced, bbs, cairn_h97, 30 actions** (2026-10-22, 18:25:52-18:27:10Z;
+`fletching-accept.ts demo --actions=30`, the account's own 500 bronze tips and 1,650 headless arrows,
+no staff commands, no keep; this branch's bundle served by proxy.ts, headless Chrome for Testing, a
+loopback gateway, the live world). **6/6 work ticks sent 5, overBudget 0, all 30 landed, nothing
+lost. The strict landing bar was MISSED by one tick: batches landed on ticks 80, 81, -, 83-86, with
+one one-tick slip at the third batch.** Accepted on what the module controls (rs/186), the same
+standard as entries 9, 10 and 16. Reduced because the GE had no bronze tips at any price: 30
+actions against the manifest's 100 (20 ticks). One tier, so `fill` was not exercised. sceneReady
+came 74 ticks after the first state (tick 78) on a fresh Chrome profile, with 89 locs at the first
+action; logout clicked at tick 88 and confirmed by the page. The program spanned 7 ticks in 2,257 ms.
+
+*Inferred:* one batch reached the server after its tick had closed, and the server's 5 user events a
+tick carried that one-tick lag through every later batch. That matches two batches on time, then a
+tick with nothing, then every batch exactly one tick late with none lost. *Open:* whether the page
+sent that batch late or its packets arrived late across bbs to the demo server. The tick log has no
+per-tick page timeline to tell the two apart.
+
+*The program's own count read 25, not 30*, because it credits an action by the xp it sees before it
+ends, and the sixth batch landed on tick 86, a tick after the program ended. The step's `done` and
+postconditions read the state (Fletching level and rune arrows held), never that count. The one
+place the step did read it was the guard that faults a run which made nothing. A short capped run
+whose only batch slipped like this would have read 0 and faulted with its arrows made, so that
+guard now checks the state (headless arrows consumed within 3 ticks) before faulting.
