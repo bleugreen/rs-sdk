@@ -202,17 +202,18 @@ describe('planFletch: tier order', () => {
         expect(first(44, all)).toEqual([]);
     });
 
-    test("today's 304-action stock from 1: one route run, 291 actions, 59 work ticks, every rune tip used, 13 mithril actions left", () => {
+    test("today's 304-action stock from 1: one route run, 291 actions, 61 work ticks (59 if tiers packed), every rune tip used, 13 mithril actions left", () => {
         const plan = planFletch(stockOf(world({ level: 1 })));
         expect(plan.runs.map(r => r.kind)).toEqual(['route']);
         expect(plan.runs[0]!.byTier).toEqual({ bronze: 4, iron: 6, steel: 9, mithril: 86, adamant: 148, rune: 38 });
-        expect([plan.actions, plan.ticks, plan.level, plan.runeArrows, plan.keeps]).toEqual([291, 59, 99, 570, true]);
+        // one tier a tick: the bronze 4, iron 6, steel 9, rune 38 and the 115 adamant after rune each end on a short tick
+        expect([plan.actions, Math.ceil(plan.actions / 5), plan.ticks, plan.level, plan.runeArrows, plan.keeps]).toEqual([291, 59, 61, 99, 570, true]);
         expect([plan.left.tips.mithril, plan.left.headless]).toEqual([195, 195]);
     });
 
     test("fold-in 19's 294-action stock: every tip used, 99 with 2.18 base spare (the manifest's figure)", () => {
         const plan = planFletch(stockOf(world({ level: 1, stacks: today({ headless: 4410, adamant: 2070 }) })));
-        expect([plan.actions, plan.ticks, plan.level, plan.left.headless]).toEqual([294, 59, 99, 0]);
+        expect([plan.actions, plan.ticks, plan.level, plan.left.headless]).toEqual([294, 61, 99, 0]);
         expect((plan.xp - xpForLevel(99)) / XP_RATE).toBeCloseTo(2.18, 2);
     });
 });
