@@ -635,7 +635,7 @@ describe('host reservation: in flight (runAttempt)', () => {
         const s = {
             name: 'srtest', client: 'lite', env: { BOT_USERNAME: 'srtest', PASSWORD: 'x' }, sdk, bot: {}, sessionId: 1, expectInWorld: true,
             child: { pid: 4242 }, childExit: null as number | null, lastInWorldTick: 10, lastAdvanceAt: now, launchedAt: now - 60_000,
-            lastProgressAt: now, watchdog: null, logPath: '/dev/null',
+            ticksSinceProgress: 0, watchdog: null, logPath: '/dev/null',
         };
         const session = s as unknown as Session;
         let online = true;

@@ -2,7 +2,7 @@
 # One-batch lab for overlay-trace.ts: the engine and gateway on one port block
 # (docs/speedrun/LAB.md), the browser bundle, then the traced tab and probe, then stop.
 #
-#   [BUNDLE_REV=<rev>] [LAB_BLOCK=overlay] NODE_TICKRATE=300 bash docs/speedrun/scripts/overlay-trace-lab.sh <bot> [--trials=60]
+#   [BUNDLE_REV=<rev>] [LAB_BLOCK=overlay] NODE_TICKRATE=400 bash docs/speedrun/scripts/overlay-trace-lab.sh <bot> [--trials=60]
 #
 # The default block, overlay (web 9110, agent 8010), is its own so a long-lived lab on a
 # shared block (rs/97 keeps one on tickmanip) cannot serve its bundle to this tab; the script
@@ -26,7 +26,7 @@ for port in $WEB_PORT $WEB_MANAGEMENT_PORT $HISCORES_WEB_PORT $NODE_PORT $AGENT_
         echo "port $port is already listening; another lab holds block $BLOCK"; exit 2
     fi
 done
-export NODE_TICKRATE=${NODE_TICKRATE:-300}
+export NODE_TICKRATE=${NODE_TICKRATE:-400}
 LOG=${LAB_LOG:-${TMPDIR:-/tmp}/overlay-trace-$BLOCK}
 mkdir -p "$LOG"
 load() { cut -d' ' -f1-3 /proc/loadavg 2>/dev/null || sysctl -n vm.loadavg; }

@@ -8,7 +8,7 @@ function session(): Session {
     return {
         name: 'srtest', client: 'lite', env: { BOT_USERNAME: 'srtest', PASSWORD: 'x', SERVER: 'localhost:9300' }, sdk: new FakeSdk(),
         sessionId: 1, expectInWorld: true, child: null, childExit: null, lastInWorldTick: 100, lastAdvanceAt: 0, launchedAt: 0,
-        lastProgressAt: 0, watchdog: null, logPath: '/dev/null',
+        ticksSinceProgress: 0, watchdog: null, logPath: '/dev/null',
     } as unknown as Session;
 }
 

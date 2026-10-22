@@ -496,10 +496,10 @@ export class AnvilHelper {
         }
         this.setPhase('trading', `seq ${plan.seq}${plan.collect ? ' collect' : ''}`);
         const r = plan.collect
-            ? await receiveFrom(ctx.sdk, t.partner, { want: COLLECT_WANT, openTimeoutMs: 5_000 }).then(x => ({ ...x, gave: [] as { count: number }[] }))
+            ? await receiveFrom(ctx.sdk, t.partner, { want: COLLECT_WANT, openMaxTicks: 17 }).then(x => ({ ...x, gave: [] as { count: number }[] }))
             : // The scored account hands back whatever it made (a refused make click leaves 4), so any offer
               // of theirs is fine; our own offer is what the giver checks exactly, on both screens.
-              await give(ctx.sdk, t.partner, giveSpecs(plan.give), { expectTheirs: ANY_OFFER, openTimeoutMs: 5_000 });
+              await give(ctx.sdk, t.partner, giveSpecs(plan.give), { expectTheirs: ANY_OFFER, openMaxTicks: 17 });
         const st = this.s!;
         // A completed trade is the only way the bars leave: count it even when the outcome came back unsettled.
         const delivered = r.ok || (!plan.collect && plannedGone(st.inventory, plan.give));

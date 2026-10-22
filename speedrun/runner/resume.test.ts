@@ -4,9 +4,9 @@ import { baseState, FakeSdk, runToggleServer } from '../lib/fake-sdk';
 import { IF_RUN_ON, runIsOn } from '../lib/run-mode';
 import type { Session } from '../lib/session';
 import { TickLog } from '../lib/ticks';
-import { sleep, waitUntil } from '../lib/wait';
+import { sleep, TickPeriod, waitUntil } from '../lib/wait';
 import { FencedError } from './fence';
-import { DROP_STEP, Observation, RESUME_STEP, ResumeError, resolveResume, runResumable, sessionLink, type Link } from './resume';
+import { DROP_STEP, LOST_AFTER_TICKS, Observation, RESUME_STEP, ResumeError, resolveResume, runResumable, sessionLink, type Link } from './resume';
 import type { RunnerSession, Step } from './step';
 
 const prevTick = process.env.SPEEDRUN_TICK_MS;
@@ -305,4 +305,38 @@ describe('sessionLink', () => {
         (s as { expectInWorld: boolean }).expectInWorld = false;
         expect(link.isLost()).toBe(false);
     });
+
+    const atTickMs = (ms: number, body: () => Promise<void>) => async () => {
+        process.env.SPEEDRUN_TICK_MS = String(ms);
+        try {
+            await body();
+        } finally {
+            process.env.SPEEDRUN_TICK_MS = '5';
+        }
+    };
+    const silentFor = (s: Session, ms: number) => ((s as { lastAdvanceAt: number }).lastAdvanceAt = Date.now() - ms);
+
+    for (const t of [300, 400]) {
+        test(`at ${t} ms ticks: lost after the same ${LOST_AFTER_TICKS} ticks of silence, and the reason counts them`, atTickMs(t, async () => {
+            const { s } = fakeSession();
+            (s as { period: TickPeriod }).period = new TickPeriod();
+            const link = sessionLink(s);
+            silentFor(s, (LOST_AFTER_TICKS - 0.5) * t);
+            expect(link.isLost()).toBe(false);
+            silentFor(s, (LOST_AFTER_TICKS + 0.5) * t);
+            expect(await link.lost(new AbortController().signal)).toMatch(/^no tick for ~18 ticks \(\d+ ms\)$/);
+        }));
+    }
+
+    test('an observed period slower than nominal (600 against 400 ms) lengthens the bound to 17 observed ticks', atTickMs(400, async () => {
+        const { s } = fakeSession();
+        const period = new TickPeriod();
+        for (let k = 0; k <= 40; k++) period.see(k, k * 600);
+        (s as { period: TickPeriod }).period = period;
+        const link = sessionLink(s);
+        silentFor(s, (LOST_AFTER_TICKS + 0.5) * 400);
+        expect(link.isLost()).toBe(false);
+        silentFor(s, (LOST_AFTER_TICKS + 0.5) * 600);
+        expect(await link.lost(new AbortController().signal)).toMatch(/^no tick for ~18 ticks \(\d+ ms\)$/);
+    }));
 });

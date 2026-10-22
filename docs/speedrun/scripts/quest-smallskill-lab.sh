@@ -13,7 +13,7 @@
 # to $TMPDIR/smallskill-lab/<bot>.out. The engine and gateway run in the
 # foreground because an agent batch waits for every process it started.
 #
-# NODE_TICKRATE=300 is the production tick (fly.toml:26); dialogue and walking
+# NODE_TICKRATE defaults to 400, the demo's tick since 2026-10-22 (the worldfeed hello); dialogue and walking
 # reactions depend on it (primitives.md). BUILD_LIVE_RELOAD=false keeps the dev
 # reload thread from fs.watch()ing all of content/ (EMFILE on Linux).
 set -u
@@ -29,7 +29,7 @@ done
 case "${1:-}" in
     --engine)
         cd server/engine && exec env WEB_PORT=9010 WEB_MANAGEMENT_PORT=9011 HISCORES_WEB_PORT=9012 NODE_PORT=43710 \
-            BUILD_VERIFY=false BUILD_LIVE_RELOAD=false NODE_TICKRATE=${NODE_TICKRATE:-300} LOCAL_STAFF_LEVEL=4 \
+            BUILD_VERIFY=false BUILD_LIVE_RELOAD=false NODE_TICKRATE=${NODE_TICKRATE:-400} LOCAL_STAFF_LEVEL=4 \
             bun run src/app.ts ;;
     --gateway)
         cd server/gateway && exec env AGENT_PORT=7910 WEB_MANAGEMENT_PORT=9011 bun run gateway ;;

@@ -5,7 +5,7 @@
 # e.g. bash docs/speedrun/scripts/quest-dragon-lab.sh quest-dragon-elvarg.ts 70 3 -- quest-dragon-voyage.ts 2
 #
 # Engine flags beyond docs/speedrun/LAB.md:
-#  NODE_TICKRATE=300     production tick, as primitives.md uses for dialogue timing
+#  NODE_TICKRATE         default 400, the demo's tick since 2026-10-22 (primitives.md timed dialogue at 300)
 #  BUILD_LIVE_RELOAD=false  the hot-reload dev thread (server/engine/src/cache/DevThread.ts)
 #                        watches the content tree and exhausts an 8192 open-file
 #                        limit (EMFILE) on a fresh checkout; the lab doesn't need it
@@ -17,7 +17,7 @@ for p in $W $MGMT $HS $NODE $AGENT; do fuser -k $p/tcp 2>/dev/null; done
 pkill -f "^bun src/lite/runner[.]ts $BOT\$" 2>/dev/null; sleep 1
 [ -d node_modules ] || bun install >/dev/null 2>&1
 for d in server/engine server/webclient server/gateway; do [ -d $d/node_modules ] || (cd $d && bun install >/dev/null 2>&1); done
-(cd server/engine && WEB_PORT=$W WEB_MANAGEMENT_PORT=$MGMT HISCORES_WEB_PORT=$HS NODE_PORT=$NODE BUILD_VERIFY=false BUILD_LIVE_RELOAD=false NODE_TICKRATE=300 LOCAL_STAFF_LEVEL=4 exec bun run src/app.ts >"$LOG/engine.log" 2>&1) &
+(cd server/engine && WEB_PORT=$W WEB_MANAGEMENT_PORT=$MGMT HISCORES_WEB_PORT=$HS NODE_PORT=$NODE BUILD_VERIFY=false BUILD_LIVE_RELOAD=false NODE_TICKRATE=${NODE_TICKRATE:-400} LOCAL_STAFF_LEVEL=4 exec bun run src/app.ts >"$LOG/engine.log" 2>&1) &
 EPID=$!; GPID=; RPID=
 cleanup() { kill $RPID $GPID $EPID 2>/dev/null; sleep 1; for p in $W $MGMT $HS $NODE $AGENT; do fuser -k $p/tcp 2>/dev/null; done; }
 trap cleanup EXIT

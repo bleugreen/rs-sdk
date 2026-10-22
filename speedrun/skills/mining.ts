@@ -334,7 +334,7 @@ export function parseFallback(v: unknown, acceptHazards = false): Fallback {
  * lap, which over the band's ~3,000 ticks costs far more than the walk.
  */
 export const CONTEST_RETRIES = 2;
-/** Ticks (3 minutes) over which contest events count; rs/259's group held the zoo for 3+ minutes. */
+/** Ticks: the window for counting contest events (rs/340, rs/435); 3 min at 300 ms, 4 min at 400 ms. rs/259's group held the zoo for 3+ minutes. */
 export const CONTEST_WINDOW = 600;
 /** Site changes per band; past them a contested band fails (the harness logs out cleanly). */
 export const MAX_SWITCHES = 2;
@@ -525,7 +525,7 @@ function kitStep(to: number, giver: string): Step<any> {
             if (skip(sdk.getState()!)) return;
             await dropOres(sdk);
             const t0 = currentTick(sdk);
-            const r = await deps.receiveFrom(sdk, giver, { want: [...H4P_KIT], maxTicks: 60, openTimeoutMs: 20_000 });
+            const r = await deps.receiveFrom(sdk, giver, { want: [...H4P_KIT], maxTicks: 60, openMaxTicks: 67 });
             ctx.log.append({ ...row(ctx, 'mining.kit: H4p', { kind: 'mining-kit', ok: r.ok, ticks: r.ticks, received: r.received.map(i => `${i.name} x${i.count}`), ...(r.reason ? { reason: r.reason } : {}) }, t0), ticks: 0, ok: r.ok });
             if (!r.ok) throw new Error(`H4p from the trade giver failed: ${r.reason}`);
         },

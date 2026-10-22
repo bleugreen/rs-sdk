@@ -31,6 +31,7 @@ import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem } from '../../sdk/types';
 import { depositMatching, withdrawMany } from '../lib/bank';
 import { DROPPED_TICKS, give, receiveFrom, sameName } from '../lib/trade';
+import { tickMs } from '../lib/wait';
 import type { Role, RoleContext } from './role';
 import { runStandalone } from './role';
 import {
@@ -265,7 +266,7 @@ export interface GiveWineOptions {
 }
 
 /** Trade `amount` (default all) noted unfermented wine to `receiver` with the burst giver. */
-export async function giveWine(ctx: Ctx, receiver: string, amount = -1, openTimeoutMs = 120_000, opts: GiveWineOptions = {}): Promise<GiveResult> {
+export async function giveWine(ctx: Ctx, receiver: string, amount = -1, openTimeoutMs = 400 * tickMs(), opts: GiveWineOptions = {}): Promise<GiveResult> {
     const { sdk } = ctx;
     if (invCount(sdk, ITEM.wine) > 0) throw new Error('loose unfermented wine in the inventory: note it before trading');
     const before = invCount(sdk, ITEM.wineNote);
@@ -300,7 +301,7 @@ export async function prepareRearmKit(ctx: Ctx): Promise<void> {
 }
 
 /** Trade every noted wine plus one grapes and one jug of water to `receiver` (the split-delivery kit). */
-export async function giveWineKit(ctx: Ctx, receiver: string, openTimeoutMs = 120_000): Promise<GiveResult> {
+export async function giveWineKit(ctx: Ctx, receiver: string, openTimeoutMs = 400 * tickMs()): Promise<GiveResult> {
     const { sdk } = ctx;
     if (invCount(sdk, ITEM.wine) > 0) throw new Error('loose unfermented wine in the inventory: note it before trading');
     const before = invCount(sdk, ITEM.wineNote);
@@ -323,7 +324,7 @@ export async function acceptSupplies(ctx: Ctx, from: RegExp, waitMs: number): Pr
         ctx.log('trade request ignored', { from: sender });
         return null;
     }
-    const r = await receiveFrom(sdk, sender, { openTimeoutMs: 20_000 });
+    const r = await receiveFrom(sdk, sender, { openMaxTicks: 67 });
     ctx.log('supplies received', { from: sender, ok: r.ok, received: r.received.map(i => `${i.name} x${i.count}`), reason: r.reason });
     return r.ok ? sender : null;
 }
@@ -349,7 +350,7 @@ export const role: Role = {
             for (let attempt = 1; !ctx.signal.aborted && invCount(sdk, ITEM.wineNote) > 0; attempt++) {
                 // the next chance is the receiver's next relog: a stuck giver shows here, once a wait
                 ctx.log('wine giver: waiting for the receiver to relog in sight', { receiver, attempt, notes: invCount(sdk, ITEM.wineNote) });
-                const g = await giveWine(ctx, receiver, amount, 120_000, { afterRelog: true });
+                const g = await giveWine(ctx, receiver, amount, 400 * tickMs(), { afterRelog: true });
                 ctx.log('hand-off', { ...g, receiver, afterRelog: true });
             }
             return;
@@ -359,7 +360,7 @@ export const role: Role = {
                 const r = await makeNotedWine(ctx, target);
                 ctx.log('noted wine held', { ...r });
                 if (receiver && r.noted > 0 && sdk.getState()?.nearbyPlayers.some(p => sameName(p.name, receiver))) {
-                    const g = await giveWine(ctx, receiver, amount, 30_000);
+                    const g = await giveWine(ctx, receiver, amount, 100 * tickMs());
                     ctx.log('hand-off', { ...g, receiver });
                     continue;
                 }

@@ -199,7 +199,7 @@ export const role: Role = {
                 const n = sizeOf(load);
                 if (asks) pendingAsk = n;
                 const extras = isLast(load) ? finalExtras : [];
-                const r = await receiveFrom(sdk, giver, { want: [{ item: BONES, amount: n }, ...extras.map(e => ({ item: e.item, amount: e.count }))], openTimeoutMs: 60_000 });
+                const r = await receiveFrom(sdk, giver, { want: [{ item: BONES, amount: n }, ...extras.map(e => ({ item: e.item, amount: e.count }))], openMaxTicks: 200 });
                 const extrasOk = extras.every(e => count(s(), e.item) >= e.count);
                 const res: LoadResult = {
                     load,

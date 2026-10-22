@@ -48,7 +48,7 @@ import { crossFromKandarin, kandarinTile } from '../lib/kandarin';
 import { isEastOfTollGate, TOLL_GP, travelTo, type Tile, type TravelResult } from '../lib/toll-gate';
 import { give, sameName, type GiveResult, type GiveSpec } from '../lib/trade';
 import { climbToSurface, isUnderground, NO_WAY_UP } from '../lib/underground';
-import { STALLED, waitTicks } from '../lib/wait';
+import { STALLED, tickMs, waitTicks } from '../lib/wait';
 import { altarData, inRoom, leaveRoom, ROUTE_ALTARS, type AltarName } from './altar-room';
 import { inMine } from './essence';
 import { closeBank, depositAllExcept, ensureOutOfTutorial, openBank } from './mule';
@@ -267,8 +267,8 @@ export const gameIo: HandoverIo = {
         const refused = bankRefusal(specs, ctx.sdk.getBankItems());
         return refused ? { ok: false, ...refused } : withdrawMany(ctx.sdk, specs);
     },
-    waitForPartner: (ctx, name) => waitForPlayer(ctx.sdk, name, 20 * 60_000),
-    give: (ctx, to, items) => give(ctx.sdk, to, offerSpecs(items, ctx.sdk.getInventory()), { openTimeoutMs: 120_000 })
+    waitForPartner: (ctx, name) => waitForPlayer(ctx.sdk, name, 4000 * tickMs()),
+    give: (ctx, to, items) => give(ctx.sdk, to, offerSpecs(items, ctx.sdk.getInventory()), { openMaxTicks: 400 })
 };
 
 function here(ctx: RoleContext): Tile {

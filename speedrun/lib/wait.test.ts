@@ -3,7 +3,7 @@ import { LOST_AFTER_TICKS } from '../runner/resume';
 import { FakeSdk } from './fake-sdk';
 import { fakeClock as jest, peek, tickEvery, useFakeTicks } from './fake-ticks';
 import type { BotWorldState } from '../../sdk/types';
-import { failureReason, IDLE_PERIOD_MIN_SPAN_MS, IDLE_TICKS, idleBoundMs, nextTick, onStates, STALLED, tickPeriod, waitOrThrow, waitTicks, waitUntil, type WaitResult } from './wait';
+import { DEMO_TICK_MS, failureReason, IDLE_PERIOD_MIN_SPAN_MS, IDLE_TICKS, idleBoundMs, nextTick, onStates, periodMs, serverClock, STALLED, TickPeriod, tickMs, waitOrThrow, waitTicks, waitUntil, type WaitResult } from './wait';
 
 useFakeTicks();
 
@@ -93,17 +93,15 @@ describe('an idle bound for a known silent window', () => {
     });
 
     test('scales with the observed tick period, never below tickMs', () => {
-        let ms = 0;
-        const at = (period: ReturnType<typeof tickPeriod>, tick: number, t: number) => { ms = t; period.see({ tick } as BotWorldState); };
-        const slow = tickPeriod(60_000, () => ms);
-        for (let k = 0; k <= 10; k++) at(slow, 100 + k, 400 * k);
+        const slow = new TickPeriod();
+        for (let k = 0; k <= 20; k++) slow.see(100 + k, 400 * k);
         expect(idleBoundMs({ ticks: 100, period: slow })).toBe(100 * 400);
-        const burst = tickPeriod(60_000, () => ms);
-        for (let k = 0; k <= 20; k++) at(burst, 100 + k, 150 * k);
+        const burst = new TickPeriod();
+        for (let k = 0; k <= 20; k++) burst.see(100 + k, 150 * k);
         expect(idleBoundMs({ ticks: 100, period: burst })).toBe(100 * 300);
-        const short = tickPeriod(60_000, () => ms);
-        at(short, 1, 0);
-        at(short, 2, IDLE_PERIOD_MIN_SPAN_MS - 1);
+        const short = new TickPeriod();
+        short.see(1, 0);
+        short.see(2, IDLE_PERIOD_MIN_SPAN_MS - 1);
         expect(idleBoundMs({ ticks: 100, period: short })).toBe(100 * 300);
         expect(idleBoundMs()).toBe(IDLE_TICKS * 300);
     });
@@ -177,44 +175,65 @@ describe('onStates', () => {
     });
 });
 
-describe('tickPeriod', () => {
-    /** A client publishing tick `tick` at `t` ms, on a clock of its own. */
-    const client = (windowMs: number) => {
-        let ms = 0;
-        const p = tickPeriod(windowMs, () => ms);
-        const at = (tick: number, t: number) => {
-            ms = t;
-            p.see({ tick } as BotWorldState);
-        };
-        return { p, at };
-    };
-
-    test('ms per tick from the ticks seen, null until they span minSpanMs; republishes within a tick do not count', () => {
-        const { p, at } = client(60_000);
-        for (let k = 0; k <= 50; k++) at(100 + k, 350 * k);
+describe('TickPeriod.msPerTick: the observed period, once it has watched long enough', () => {
+    test('null until measured and the arrivals span minSpanMs; republishes within a tick do not count', () => {
+        const p = new TickPeriod();
+        for (let k = 0; k <= 50; k++) p.see(100 + k, 350 * k);
         expect(p.msPerTick(20_000)).toBeNull();
         for (let k = 51; k <= 100; k++) {
-            at(100 + k, 350 * k);
-            at(100 + k, 350 * k + 120);
+            p.see(100 + k, 350 * k);
+            p.see(100 + k, 350 * k + 120);
         }
         expect(p.msPerTick(20_000)).toBe(350);
     });
 
-    test('only the window counts: 300 ms ticks for 30 s, then 400 ms ticks for the last 40 s', () => {
-        const { p, at } = client(40_000);
+    test('the rolling window follows a change: 300 ms ticks for 30 s, then 400 ms ticks for 40 s', () => {
+        const p = new TickPeriod();
         let [ms, tick] = [0, 0];
-        for (; ms < 30_000; ms += 300) at(tick++, ms);
-        for (const end = ms + 40_000; ms <= end; ms += 400) at(tick++, ms);
+        for (; ms < 30_000; ms += 300) p.see(tick++, ms);
+        for (const end = ms + 40_000; ms <= end; ms += 400) p.see(tick++, ms);
         expect(p.msPerTick(20_000)).toBe(400);
     });
 
-    test('a relaunch restarts the measurement', () => {
-        const { p, at } = client(60_000);
-        for (let k = 0; k <= 100; k++) at(500 + k, 350 * k);
+    test('a relaunch restarts the span, so the time away is not read as ticks; the period stands', () => {
+        const p = new TickPeriod();
+        for (let k = 0; k <= 100; k++) p.see(500 + k, 350 * k);
+        p.see(3, 60_000);
+        p.see(4, 60_350);
         expect(p.msPerTick(20_000)).toBe(350);
-        at(3, 60_000);
-        expect(p.msPerTick(0)).toBeNull();
-        for (let k = 1; k <= 80; k++) at(3 + k, 60_000 + 300 * k);
-        expect(p.msPerTick(20_000)).toBe(300);
     });
+});
+
+describe('the tick length at 300 and 400 ms', () => {
+    test('tickMs falls back to DEMO_TICK_MS (400), the demo since its 2026-10-22 restart', () => {
+        expect(DEMO_TICK_MS).toBe(400);
+        expect(tickMs({})).toBe(400);
+        expect(tickMs({ NODE_TICKRATE: '300' })).toBe(300);
+    });
+
+    for (const ms of [300, 400]) {
+        test(`at ${ms} ms: periodMs and serverClock read the observed period once trusted, the nominal before`, () => {
+            process.env.SPEEDRUN_TICK_MS = '400';
+            const p = new TickPeriod();
+            expect(periodMs(p)).toBe(400);
+            for (let k = 0; k <= 20; k++) p.see(k, k * ms);
+            expect(periodMs(p)).toBe(ms);
+            const clock = serverClock(100, 0, p);
+            expect(clock(10 * ms)).toBe(110);
+            expect(serverClock(100, 0)(10 * 400)).toBe(110);
+            process.env.SPEEDRUN_TICK_MS = '300';
+        });
+
+        test(`at ${ms} ms a tick: the default idle bound fires after IDLE_TICKS ticks of silence, not before`, async () => {
+            process.env.SPEEDRUN_TICK_MS = String(ms);
+            const sdk = new FakeSdk();
+            const p = waitUntil(sdk, () => false, { maxTicks: 10_000 });
+            tickEvery(sdk, ms, 3);
+            jest.advanceTimersByTime(IDLE_TICKS * ms - 1);
+            expect(await peek(p)).toBeUndefined();
+            jest.advanceTimersByTime(1);
+            expect(await p).toMatchObject({ ok: false, reason: 'idle', tick: 103 });
+            process.env.SPEEDRUN_TICK_MS = '300';
+        });
+    }
 });

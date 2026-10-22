@@ -500,8 +500,20 @@ export function tradeClickReply(s: BotWorldState, sinceTick: number): 'sent' | '
 /** The opt-in `noReplyTicks` for a caller beside its partner: silent frames after a click's action result before it counts as dropped. */
 export const DROPPED_TICKS = 2;
 
-/** Observed ticks a standing request waits for a trade before it is re-sent (about 8 s at 300 ms). */
+/** Observed ticks a standing request waits for a trade before it is re-sent. */
 export const RESEND_TICKS = 27;
+
+/** Observed ticks an open gets by default (what the old 60 s wall default stood for at 300 ms). */
+export const OPEN_MAX_TICKS = 200;
+
+/**
+ * The wall-clock backstop for an open bounded by `maxTicks` observed ticks: twice their nominal
+ * length, so it only ends an open whose ticks come at under half speed (the idle detector ends a
+ * client that stopped publishing). No backstop for an open with no tick bound.
+ */
+export function openBackstopMs(maxTicks: number): number {
+    return Number.isFinite(maxTicks) ? 2 * maxTicks * tickMs() : Infinity;
+}
 
 export interface ClickCtx {
     /** Frame our latest click went out on; -1 before the first. */
@@ -561,9 +573,9 @@ export function sendTradeClick(sdk: TradeSdk, playerIndex: number, sentTick: num
 }
 
 export interface OpenOptions extends ClickRule {
-    /** Observed ticks to get the screens open (default: no tick limit). */
+    /** Observed ticks to get the screens open (default OPEN_MAX_TICKS, or no tick limit when `timeoutMs` is given). */
     maxTicks?: number;
-    /** Wall-clock give-up (default 60 s; Infinity for none). */
+    /** Wall-clock give-up (default openBackstopMs(maxTicks); Infinity for none). A caller that sets only this keeps a wall-only bound. */
     timeoutMs?: number;
     /** Ticks the partner may be out of sight before player_not_found (default 5). */
     goneTicks?: number;
@@ -589,9 +601,9 @@ export async function openTrade(sdk: TradeSdk & Partial<Pick<BotSDK, 'sendCloseM
     const open = now ? tradeOf(now) : CLOSED;
     if (open.isOpen && sameName(open.partner, partner)) return { ok: true, firstClickTick: now!.tick, openTick: now!.tick, landedTick: -1, sends: 0, bounces: 0 };
     if (open.isOpen) await sdk.sendDeclineTrade();
-    const maxTicks = opts.maxTicks ?? Infinity;
+    const maxTicks = opts.maxTicks ?? (opts.timeoutMs === undefined ? OPEN_MAX_TICKS : Infinity);
     const goneTicks = opts.goneTicks ?? 5;
-    const timeoutMs = opts.timeoutMs ?? 60_000;
+    const timeoutMs = opts.timeoutMs ?? openBackstopMs(maxTicks);
 
     let ctx = newClickCtx();
     let firstClickTick = -1;
@@ -673,7 +685,7 @@ export async function receiveFrom(
     const s0 = sdk.getState();
     if (!s0) throw new Error('receiveFrom: no state');
     let ctx = newReceiverCtx(partner, s0.inventory, opts.want);
-    const open = await openTrade(sdk, partner, { maxTicks: opts.openMaxTicks, timeoutMs: opts.openTimeoutMs ?? 60_000, noReplyTicks: opts.noReplyTicks });
+    const open = await openTrade(sdk, partner, { maxTicks: opts.openMaxTicks, timeoutMs: opts.openTimeoutMs, noReplyTicks: opts.noReplyTicks });
     if (!open.ok) return { ok: false, ticks: 0, received: [], reason: open.reason };
     const start = open.firstClickTick;
     const r = await onStates(sdk, opts.maxTicks ?? 100, s => {
@@ -721,9 +733,9 @@ export interface GiveOptions {
     /** What the partner may put up (default: nothing; ANY_OFFER for anything). */
     expectTheirs?: WantSpec[];
     maxTicks?: number;
-    /** Observed ticks to get the trade open (default: no tick limit). */
+    /** Observed ticks to get the trade open (openTrade's `maxTicks`: default OPEN_MAX_TICKS). */
     openMaxTicks?: number;
-    /** Wall-clock give-up for opening (default 60 s). */
+    /** Wall-clock give-up for opening (openTrade's `timeoutMs`: default openBackstopMs). */
     openTimeoutMs?: number;
     /** openTrade's `noReplyTicks` (opt-in DROPPED_TICKS beside the partner). */
     noReplyTicks?: number;
@@ -738,7 +750,7 @@ async function giveImpl(sdk: TradeSdk, partner: string, specs: readonly GiveSpec
     let stopWhy = null as string | null;
     const open = await openTrade(sdk, partner, {
         maxTicks: opts.openMaxTicks,
-        timeoutMs: opts.openTimeoutMs ?? 60_000,
+        timeoutMs: opts.openTimeoutMs,
         noReplyTicks: opts.noReplyTicks,
         ...(opts.resendTicks !== undefined ? { resendTicks: opts.resendTicks } : {}),
         ...(stopIf ? { stopped: (s: BotWorldState) => !!(stopWhy = stopIf(s)) } : {})

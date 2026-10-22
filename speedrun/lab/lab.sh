@@ -3,7 +3,7 @@
 # speedrun port block (9300-9302, node 44000, gateway 8300), runs the given
 # scripts in order, then stops everything.
 #
-#   [NODE_TICKRATE=300] [LAB_HELPERS="srlab2"] [LAB_RUNNERS=0] \
+#   [NODE_TICKRATE=400] [LAB_HELPERS="srlab2"] [LAB_RUNNERS=0] \
 #     [WEB_PORT=9300 WEB_MANAGEMENT_PORT=9301 HISCORES_WEB_PORT=9302 NODE_PORT=44000 AGENT_PORT=8300] [LAB_TIMEOUT=900] \
 #     speedrun/lab/lab.sh <bot> <script.ts>[:arg:arg] ...
 #
@@ -26,7 +26,7 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 BOT=$1; shift
 LOG=${LAB_LOG:-${TMPDIR:-/tmp}/speedrun-lab}
 mkdir -p "$LOG"
-export NODE_TICKRATE=${NODE_TICKRATE:-300}
+export NODE_TICKRATE=${NODE_TICKRATE:-400}  # the demo's tick since 2026-10-22 (lib/wait.ts DEMO_TICK_MS)
 export PROFANITY_FILTER=false NODE_PROFANITY_FILTER=false
 
 # Overridable so several labs can run side by side (each needs its own block).

@@ -64,6 +64,7 @@ import { resolveSkillDialogProduct } from '../../sdk/action-quantity';
 import { TRADE_REQUEST_CHAT_TYPE } from '../../sdk/types';
 import type { BotWorldState, InventoryItem } from '../../sdk/types';
 import { receiveFrom } from '../lib/trade';
+import { tickMs } from '../lib/wait';
 import { BANKS, Buyer, SHOPS } from './buyer';
 import { cheb, crossFromKandarin, crossingSettings, crossToKandarin, inKandarin, trainHitpointsOnCows, trainOnCows, travel, type Pt, type Traveller } from '../lib/kandarin';
 import { accountMatches, ChatCursor, DEFAULT_COURIERS, toRegExps } from './mule';
@@ -553,14 +554,14 @@ class Fletcher {
             if (this.tick() - lastBank > 4000) {
                 await this.atBank(BANKS.draynor, () => this.deposit(SHAFT));
                 const made = this.held(SHAFT) - shafts0;
-                const hours = ((this.tick() - t0) * 0.3) / 3600;
+                const hours = ((this.tick() - t0) * tickMs()) / 3_600_000;
                 this.ctx.log('shafts banked', { shafts: this.held(SHAFT), made, logs, perHour: Math.round(made / Math.max(hours, 1e-6)), woodcutting: this.sdk.getSkill('Woodcutting')?.baseLevel });
                 lastBank = this.tick();
             }
         }
         await this.cutCarriedLogs();
         await this.atBank(BANKS.draynor, () => this.deposit(SHAFT));
-        const hours = ((this.tick() - t0) * 0.3) / 3600;
+        const hours = ((this.tick() - t0) * tickMs()) / 3_600_000;
         this.ctx.log('shafts done', { shafts: this.held(SHAFT), made: this.held(SHAFT) - shafts0, logs, ticks: this.tick() - t0, perHour: Math.round((this.held(SHAFT) - shafts0) / Math.max(hours, 1e-6)) });
     }
 
@@ -729,7 +730,7 @@ class Fletcher {
         const budget = () => fixedCoins ?? remainingBudget(lines, item => this.buyer.held(item));
         const crossingHp = Number(this.ctx.options.crossingHitpoints ?? 40);
         const passTicks = Number(this.ctx.options.passTicks ?? 20);
-        const reportTicks = Math.round(Number(this.ctx.options.reportMinutes ?? 30) * 200);
+        const reportTicks = Math.round((Number(this.ctx.options.reportMinutes ?? 30) * 60_000) / tickMs());
         const spec = SHOPS[shop]!;
         const remaining = () => lines.filter(l => this.buyer.held(l.item) < l.quantity);
         const holdings = () => Object.fromEntries(lines.map(l => [l.item, this.buyer.held(l.item)]));
@@ -741,7 +742,7 @@ class Fletcher {
         let lastReport = 0;
         const report = () => {
             const held = holdings();
-            const hours = since ? Math.max(((this.tick() - since.tick) * 0.3) / 3600, 1e-6) : 0;
+            const hours = since ? Math.max(((this.tick() - since.tick) * tickMs()) / 3_600_000, 1e-6) : 0;
             const perHour = since ? Object.fromEntries(lines.map(l => [l.item, Math.round((held[l.item]! - since!.held[l.item]!) / hours)])) : {};
             this.ctx.log('camp holdings', { held, perHour, hours: +hours.toFixed(2), coins: this.held(COINS) });
             lastReport = this.tick();
@@ -999,7 +1000,7 @@ class Fletcher {
             if (this.inv(logRe) === 0) break;
             const n = await this.cutCarried(bow);
             cut += n;
-            const hours = Math.max(((this.tick() - t0) * 0.3) / 3600, 1e-6);
+            const hours = Math.max(((this.tick() - t0) * tickMs()) / 3_600_000, 1e-6);
             const left = logsToLevel(this.xp(), step.target, trainingBow(this.level(), bow.log) ?? bow, Number(this.ctx.options.xpRate ?? 25));
             this.ctx.log('trip', {
                 bow: bow.name,

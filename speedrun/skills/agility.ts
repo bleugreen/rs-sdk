@@ -587,7 +587,7 @@ async function walkRoute(ctx: StepContext<unknown>, route: ReadonlyArray<readonl
         if (side) while (i < route.length - 1 && sideOf(i) && sideOf(i) !== side && route.some((_, k) => k > i && sideOf(k) === side)) i++;
         for (; i < route.length; i++) {
             const [x, z] = route[i]!;
-            let r = await ctx.bot.walkTo(x, z, 2, { timeout: 90_000 });
+            let r = await ctx.bot.walkTo(x, z, 2, { timeout: 300 * tickMs() });
             if (r.success) continue;
             // A closed gate (the Gnome Stronghold's) fails the walk in more than one way: the
             // pathfinder's "no path", or a path walked up to the gate that ends "Stuck at" /
@@ -596,7 +596,7 @@ async function walkRoute(ctx: StepContext<unknown>, route: ReadonlyArray<readonl
             // when the leg ends across it, then walk the leg once more.
             const first = r.message;
             const gated = await throughGate(ctx, x, z, first);
-            r = await ctx.bot.walkTo(x, z, 3, { timeout: 90_000 });
+            r = await ctx.bot.walkTo(x, z, 3, { timeout: 300 * tickMs() });
             if (!r.success) throw new Error(`walk to (${x},${z}): ${r.message} (first try: ${first}; ${gated})`);
         }
     } finally {
@@ -654,7 +654,7 @@ async function leaveKeep(ctx: StepContext<unknown>): Promise<number> {
         const s = sdk.getState()!;
         const p = s.player!;
         if (cheb(p.worldX, p.worldZ, KEEP_WEB[0], KEEP_WEB[1] - 1) > 1) {
-            const r = await ctx.bot.walkTo(KEEP_WEB[0], KEEP_WEB[1] - 1, 1, { timeout: 30_000 });
+            const r = await ctx.bot.walkTo(KEEP_WEB[0], KEEP_WEB[1] - 1, 1, { timeout: 100 * tickMs() });
             if (!r.success) throw new Error(`walk to the keep web: ${r.message}`);
             continue;
         }
@@ -682,7 +682,7 @@ async function crossRidge(ctx: StepContext<unknown>): Promise<number> {
         const s = sdk.getState()!;
         const p = s.player!;
         if (cheb(p.worldX, p.worldZ, RIDGE_GATE.approach[0], RIDGE_GATE.approach[1]) > 1) {
-            const r = await ctx.bot.walkTo(RIDGE_GATE.approach[0], RIDGE_GATE.approach[1], 1, { timeout: 30_000 });
+            const r = await ctx.bot.walkTo(RIDGE_GATE.approach[0], RIDGE_GATE.approach[1], 1, { timeout: 100 * tickMs() });
             if (!r.success) throw new Error(`walk to the ridge gate: ${r.message}`);
         }
         void sdk.sendInteractLoc(RIDGE_GATE.x, RIDGE_GATE.z, RIDGE_GATE.id, 1);

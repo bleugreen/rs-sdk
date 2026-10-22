@@ -38,77 +38,11 @@
 //   overBudgetMeta). Printed only when nonzero, so a minute with no overflow reads as it always did.
 
 import type { TickLog, TickRow } from './ticks';
-import { tickMs as defaultTickMs } from './wait';
+import { PERIOD_GAP_TICKS, tickMs as defaultTickMs, TickPeriod } from './wait';
 
-/** Ticks one period sample spans (`TickPeriod`). */
-export const PERIOD_SPAN_TICKS = 8;
-/** Period samples the rolling median is taken over: about 16 s of ticks at the demo's 340 ms. */
-export const PERIOD_WINDOW = 40;
-/** Samples before the median replaces the nominal tick length: from the 13th tick, about 4 s in. */
-export const PERIOD_MIN_SAMPLES = 5;
-
-/**
- * The server's tick period as this side observes it: the rolling median of the last
- * `PERIOD_WINDOW` per-tick intervals, each measured across `PERIOD_SPAN_TICKS` ticks, and the
- * nominal length until `PERIOD_MIN_SAMPLES` of them exist.
- *
- * Why a span and not single intervals: a held tick and the one glued behind it give single
- * intervals of +hold and ~0, and a path that pairs ticks (every other one held) alternates them,
- * where a median of single intervals flips between ~0 and twice the period. Across 8 ticks a hold
- * moves only the samples starting or ending on it, by hold / 8, and a lasting shift (a stall)
- * raises 8 samples of 40 by shift / 8, which the median ignores. The window follows the demo's
- * period as it moves between minutes (161-177 ticks a minute on 2026-10-21) while a minute of
- * holds cannot drag it. The warm-up is short so that the first minute's late counts are against
- * the measured period; before it, the nominal length still re-anchors on every on-time arrival,
- * so a steady slow stream reads offsets of the difference (40 ms at 340), not late.
- */
-export class TickPeriod {
-    private last: number | null = null;
-    /** Arrival times of the last `PERIOD_SPAN_TICKS + 1` consecutive labels, ending at `last`. */
-    private times: number[] = [];
-    private samples: number[] = [];
-    private median: number | null = null;
-
-    constructor(readonly nominalMs: number, readonly gapTicks: number = TICKMON_DEFAULTS.gapTicks) {}
-
-    /** Milliseconds per tick: the rolling median once measured, else the nominal length. */
-    get ms(): number {
-        return this.median ?? this.nominalMs;
-    }
-
-    get measured(): boolean {
-        return this.median !== null;
-    }
-
-    /**
-     * Tick `label` arrived at `at` (ms). A repeat is ignored; a publication that moves the label
-     * by k is k arrivals at one time; a label that goes back or jumps past `gapTicks` restarts
-     * the span (the samples so far stand: a relaunch does not change the server's tick).
-     */
-    see(label: number, at: number): void {
-        const last = this.last;
-        if (last === label) return;
-        this.last = label;
-        if (last === null || label < last || label - last > this.gapTicks) {
-            this.times = [at];
-            return;
-        }
-        for (let l = last + 1; l <= label; l++) {
-            this.times.push(at);
-            if (this.times.length > PERIOD_SPAN_TICKS + 1) this.times.shift();
-            if (this.times.length === PERIOD_SPAN_TICKS + 1) this.sample((at - this.times[0]!) / PERIOD_SPAN_TICKS);
-        }
-    }
-
-    private sample(ms: number): void {
-        this.samples.push(ms);
-        if (this.samples.length > PERIOD_WINDOW) this.samples.shift();
-        if (this.samples.length < PERIOD_MIN_SAMPLES) return;
-        const s = [...this.samples].sort((a, b) => a - b);
-        const mid = s.length >> 1;
-        this.median = s.length % 2 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2;
-    }
-}
+// The observed-period estimator lives in wait.ts (one implementation); the monitor reads its
+// cadence against it, and its constants are re-exported for the monitor's readers.
+export { PERIOD_MIN_SAMPLES, PERIOD_SPAN_TICKS, PERIOD_WINDOW, TickPeriod } from './wait';
 
 export interface TickCadenceConfig {
     /** Nominal milliseconds per server tick (default `tickMs()`): the period until `TickPeriod` has measured one. */
@@ -121,7 +55,7 @@ export interface TickCadenceConfig {
     gapTicks: number;
 }
 
-export const TICKMON_DEFAULTS: Omit<TickCadenceConfig, 'tickMs'> = { lateMs: 120, gluedMs: 5, gapTicks: 17 };
+export const TICKMON_DEFAULTS: Omit<TickCadenceConfig, 'tickMs'> = { lateMs: 120, gluedMs: 5, gapTicks: PERIOD_GAP_TICKS };
 
 /** What one window of arrivals came to. */
 export interface CadenceCounts {

@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import type { BotWorldState } from '../../sdk/types';
-import { cheb, COW_PEN, CROSSING_HITPOINTS, crossingRestTarget, inCowPen, inKandarin, restForCrossing, TAVERLEY, westOfTaverley, type Traveller } from './kandarin';
+import type { BotSDK } from '../../sdk/index';
+import { baseState, FakeSdk } from './fake-sdk';
+import { fakeClock, microtasks, tickEvery, useFakeTicks } from './fake-ticks';
+import { cheb, COW_PEN, CROSSING_HITPOINTS, crossingRestTarget, crossingSettings, inCowPen, inKandarin, restForCrossing, TAVERLEY, westOfTaverley, type Traveller } from './kandarin';
 
 const at = (x: number, z: number, level = 0) => ({ player: { worldX: x, worldZ: z, level } }) as unknown as BotWorldState;
 
@@ -86,3 +89,24 @@ describe('restForCrossing', () => {
         await expect(restForCrossing(a.t)).rejects.toThrow(/aborted/);
     });
 });
+
+
+for (const ms of [300, 400]) {
+    describe(`crossingSettings at ${ms} ms a tick: auto-retaliate is confirmed in observed ticks`, () => {
+        useFakeTicks(ms);
+
+        test('off on the 9th tick of a server 50% slower than nominal is waited for, with one press (past the old 3 s wall bound)', async () => {
+            const sdk = new FakeSdk(baseState({ tick: 0, autoRetaliateEnabled: true }));
+            const logs: string[] = [];
+            const p = crossingSettings(sdk as unknown as BotSDK, m => logs.push(m));
+            await microtasks();
+            tickEvery(sdk, ms * 1.5, 8);
+            await microtasks();
+            fakeClock.advanceTimersByTime(ms * 1.5);
+            sdk.tick({ autoRetaliateEnabled: false });
+            await p;
+            expect(logs).toEqual([]);
+            expect(sdk.sent.filter(a => a.method === 'sendClickComponent').length).toBe(1);
+        });
+    });
+}

@@ -798,7 +798,7 @@ const state = (ctx: Ctx): BotWorldState => {
 async function walk(ctx: Ctx, to: Tile, tolerance = 2): Promise<void> {
     const d = dist(state(ctx), to);
     if (d <= tolerance) return;
-    const r = await ctx.bot.walkTo(to.x, to.z, tolerance, { timeout: Math.max(60_000, (d + 40) * tickMs() * 1.5) });
+    const r = await ctx.bot.walkTo(to.x, to.z, tolerance, { timeout: Math.max(200, (d + 40) * 1.5) * tickMs() });
     if (!r.success) throw new Error(`walk to ${to.x},${to.z}: ${r.message}`);
 }
 

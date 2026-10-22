@@ -554,7 +554,7 @@ function tick(sdk: BotSDK): number {
     return sdk.getState()?.tick ?? 0;
 }
 
-async function nextTick(sdk: BotSDK, maxMs = 2_000): Promise<void> {
+async function nextTick(sdk: BotSDK, maxMs = 5 * tickMs()): Promise<void> {
     const t = tick(sdk);
     await sdk.waitForCondition(s => s.tick > t, maxMs).catch(() => {});
 }
@@ -629,12 +629,8 @@ export async function depositAllExcept(sdk: BotSDK, keep: Map<number, number> = 
     if (targets.length === 0) return true;
     await Promise.all(targets.map(i => sdk.sendBankDeposit(i.slot, -1)));
     const ids = new Set(targets.map(i => i.id));
-    try {
-        await sdk.waitForCondition(s => !s.inventory.some(i => ids.has(i.id)), 5_000 + targets.length * 400);
-        return true;
-    } catch {
-        return false;
-    }
+    // The server drains 5 a tick: ceil(n / 5) ticks, with slack for the bank's own delay.
+    return (await waitUntil(sdk, s => !s.inventory.some(i => ids.has(i.id)), { maxTicks: 17 + 2 * targets.length })).ok;
 }
 
 // ============ Giver ============
@@ -717,7 +713,7 @@ export async function giveOpenTrade(
     }
 
     const specs = offered.map(i => ({ item: i.id, n: count(i.id) }));
-    const r = await give(sdk, partner, specs, { expectTheirs: ANY_OFFER, maxTicks: Math.ceil(timeoutMs / tickMs()), openTimeoutMs: 5_000 });
+    const r = await give(sdk, partner, specs, { expectTheirs: ANY_OFFER, maxTicks: Math.ceil(timeoutMs / tickMs()), openMaxTicks: 17 });
     const { gained } = diffItems(invBefore, sdk.getInventory());
     const message = r.ok ? `Gave package to ${partner}${r.reason ? ` (${r.reason})` : ''}` : `Not given: ${r.reason ?? 'unknown'}`;
     return { success: r.ok, message, ticks: r.ticks, gave: r.gave, received: gained };
@@ -1353,8 +1349,8 @@ class Mule {
         const t = sdk.getTradeState();
         if (t.isOpen && canonName(t.partner ?? '') === canonName(name)) return true;
         await closeBank(this.ctx);
-        // About 15 s of ticks at 600 ms; the wall clock only gives up.
-        const r = await openTrade(sdk, name, { maxTicks: 25, timeoutMs: 30_000 });
+        // About 15 s of ticks at 400 ms; the default backstop only gives up.
+        const r = await openTrade(sdk, name, { maxTicks: 38 });
         if (!r.ok) this.ctx.log('trade open failed', { with: name, result: r.reason });
         return r.ok;
     }

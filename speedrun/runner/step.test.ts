@@ -277,4 +277,27 @@ describe('runSteps on a stale state', () => {
         const ab = boundaries(log.rows).find(r => r.meta?.from === 'a')!;
         expect([ab.ticks, ab.meta?.waits]).toEqual([1, ['stale']]);
     });
+
+    test('a server slower than nominal (60 ms observed, 20 nominal): a state 30 ms old is current, no tick waited', async () => {
+        const { session, sdk } = manualSession(10);
+        const log = TickLog.memory('t');
+        const seen: number[] = [];
+        const steps = [
+            step('a', {
+                run: async () => {
+                    // 2.4 s of 60 ms ticks: long enough for the observed period to be trusted (IDLE_PERIOD_MIN_SPAN_MS)
+                    for (let k = 0; k < 40; k++) {
+                        await sleep(60);
+                        sdk.tick();
+                    }
+                    await sleep(30);
+                },
+            }),
+            step('b', { preconditions: s => { seen.push(s.tick); return true; } }),
+        ];
+        await runSteps(session, steps, { log, c: { trace: [] }, shouldStop: () => false });
+        expect(seen).toEqual([50]);
+        const ab = boundaries(log.rows).find(r => r.meta?.from === 'a')!;
+        expect([ab.ticks, ab.meta?.waits]).toEqual([0, []]);
+    });
 });

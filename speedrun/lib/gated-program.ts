@@ -31,8 +31,7 @@
 import type { BotWorldState } from '../../sdk/types';
 import { type DirectRule, type GateOptions, HostGate, type ProbeSdk, type TickLength } from './hostgate';
 import { awaitProgram, probeInPage, ProgramError, type ProgramSdk, type ProgramStatus, startProgram, stopProgram, tickParam } from './programs';
-import { TickPeriod } from './tick-monitor';
-import { tickMs } from './wait';
+import { tickMs, TickPeriod } from './wait';
 
 /** The span of the page's `frames.catchUpsLastMinute` (server/webclient/src/bot/programs/frames.ts). */
 const CATCH_UP_WINDOW_MS = 60_000;
@@ -230,6 +229,7 @@ export async function runGatedProgram(
         try {
             status = await awaitProgram(sdk, started.runId, {
                 ...(opts.staleMs !== undefined ? { staleMs: opts.staleMs } : {}),
+                period,
                 onProgress: st => {
                     // the state carrying `st` is the one just received
                     period.see(st.tick, sdk.getStateReceivedAt?.() || Date.now());
