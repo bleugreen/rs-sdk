@@ -283,7 +283,7 @@ if (client === 'browser') {
     const agentPort = process.env.AGENT_PORT ?? '8300';
     const cdpPort = Number(webPort) + 5;
     const pagePort = Number(webPort) + 6;
-    const proxy = Bun.spawn([process.execPath, 'proxy.ts', `--world=http://localhost:${webPort}`, `--port=${pagePort}`, `--gateway=ws://localhost:${agentPort}`, `--bots-dir=${join(ROOT, 'bots')}`], {
+    const proxy = Bun.spawn(['bun', 'proxy.ts', `--world=http://localhost:${webPort}`, `--port=${pagePort}`, `--gateway=ws://localhost:${agentPort}`, `--bots-dir=${join(ROOT, 'bots')}`], {
         cwd: join(ROOT, 'server', 'webclient'),
         stdout: Bun.file(join(base, 'proxy.log')),
         stderr: Bun.file(join(base, 'proxy.err'))
