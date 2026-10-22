@@ -305,7 +305,8 @@ export function walk(rows: readonly LedgerRow[]): LedgerEntry[] {
         const notes: string[] = [];
         let verdict: Verdict = 'pass';
         const worse = (v: Verdict) => {
-            const rank: Verdict[] = ['pass', 'unknown', 'SHORT', 'OVERFLOW', 'ERROR'];
+            // A short row is the cause; the overflow it leaves is its consequence.
+            const rank: Verdict[] = ['pass', 'unknown', 'OVERFLOW', 'SHORT', 'ERROR'];
             if (rank.indexOf(v) > rank.indexOf(verdict)) verdict = v;
         };
         const attempt = (what: () => void) => {
