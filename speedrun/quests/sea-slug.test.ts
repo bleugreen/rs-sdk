@@ -8,7 +8,7 @@ import { Observation, resolveResume } from '../runner/resume';
 import type { Observed, RunnerSession, StepContext } from '../runner/step';
 import { DEFAULT_DIALOGUE, slotNeed } from './segments';
 import {
-    afterMessage, ARRIVAL, CAROLINE_AT, LANDED, LEVEL_UP_TICKS, DEAD_AT_EXIT, DOOR_SCENE_TICKS, DOORS, doorState, inWitchaven, ITEM, LETTERS, observed, offshore, onIsland, onPlatformGround, onPlatformUp,
+    afterMessage, ARRIVAL, CAROLINE_AT, LANDED, LEVEL_UP_TICKS, replyAfter, DEAD_AT_EXIT, DOOR_SCENE_TICKS, DOORS, doorState, inWitchaven, ITEM, LETTERS, observed, offshore, onIsland, onPlatformGround, onPlatformUp,
     openBridgedDoor, QUEST_ITEMS, quest, stageCeiling, stageFloor, stepId, steps, type BridgedDoor, type DoorOutcome,
 } from './sea-slug';
 
@@ -376,6 +376,40 @@ describe('Q: the exit drops (the slot ledger T19-20 drops, moved into the step)'
         expect(sdk.sent.map(a => a.method)).not.toContain('sendInteractNpc');
         expect(byLetter('Q').postconditions(sdk.getState()!, {})).toBe(true);
         expect(sdk.getState()!.inventory.map(i => i.name).sort()).toEqual(['Air rune', 'Law rune', 'Water rune']);
+    });
+});
+
+describe("a click's message reply on the browser's tick (the click's own) and lite's (the next)", () => {
+    const msg = (text: string, tick: number, observationId: number) => ({ type: 0, text, sender: '', tick, observationId, fromSelf: false }) as unknown as BotWorldState['gameMessages'][number];
+    const fail = 'You rub together the dry sticks and the sticks catch fire. The torch smokes momentarily then die out.';
+
+    test('replyAfter sees a reply stamped on the click tick, and not an older copy of it', () => {
+        const sdk = new FakeSdk(arrival({ tick: 50, gameMessages: [msg(fail, 44, 61)] }));
+        const r = replyAfter(sdk, LANDED.rubFailed);
+        expect(r.seen(sdk.getState()!)).toBe(false);
+        sdk.push(st => ({ gameMessages: [...st.gameMessages, msg(fail, 50, 70)] })); // browser: the click's tick 50
+        expect(r.seen(sdk.getState()!)).toBe(true);
+        expect(r.first()).toBe(fail);
+    });
+
+    test('K: a failed rub answered on the click tick is seen at once, and the next rub lights the torch', async () => {
+        const s = stateAt(STARTS.K!);
+        const sdk = new FakeSdk(s);
+        let rubs = 0;
+        let obs = 100;
+        sdk.onSend = (a, f) => {
+            if (a.method !== 'sendUseItem') return;
+            rubs++;
+            const t = f.state!.tick;
+            if (rubs === 1) queueMicrotask(() => f.push(st => ({ gameMessages: [...st.gameMessages, msg(fail, t, ++obs)] })));
+            else setTimeout(() => f.tick(st => ({ inventory: st.inventory.map(i => (i.id === ITEM.torchUnlit ? { ...i, id: ITEM.torchLit } : i)) })), 1);
+        };
+        const { ctx } = ctxFor(sdk);
+        const t0 = sdk.getState()!.tick;
+        await drive(sdk, byLetter('K').run(ctx) as Promise<unknown>, 30);
+        expect(rubs).toBe(2);
+        expect(sdk.getState()!.tick - t0).toBeLessThan(5); // not the 10-tick wait a missed reply costs
+        expect(byLetter('K').postconditions(sdk.getState()!, {})).toBe(true);
     });
 });
 

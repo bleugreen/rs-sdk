@@ -42,7 +42,7 @@ import { journalProbeName, questStage, questStatus, requireQuestStage, type Ques
 import { logNote } from '../lib/ticks';
 import { inArea, runTo, type Area, type TravelSdk } from '../lib/travel';
 import { currentTick, waitTicks, waitUntil, type Pred } from '../lib/wait';
-import { configId, invCount, messagesSince, pos } from '../lib/world';
+import { configId, invCount, messageCursor, messagesAfter, pos } from '../lib/world';
 import { QUESTS } from '../data/quest-stages';
 import type { Check, Observed, StepContext } from '../runner/step';
 import { allOf, baseLevels, inBox, kitSegment, kitWant, questSteps, slotsCover, talkShape, type Box, type KitItem, type QuestItem, type QuestOptions, type Segment } from './segments';
@@ -475,14 +475,23 @@ async function pickupAt(ctx: Ctx, seg: Letter, what: string, item: number, at: {
     note(ctx, seg, { pickup: what, waited: currentTick(sdk) - t0 - r.ticks, clickToHeld: r.ticks, resends: r.resends });
 }
 
+/**
+ * A click's game-message reply matching `re`, from a cursor taken before the click: the browser
+ * stamps a reply on the click's own tick and lite on the next, so no tick offset serves both.
+ */
+export function replyAfter(sdk: Pick<Sdk, 'getState'>, re: RegExp): { seen: (s: BotWorldState) => boolean; first: () => string | undefined } {
+    const cursor = messageCursor(sdk.getState());
+    return { seen: s => messagesAfter(s, cursor, re).length > 0, first: () => messagesAfter(sdk.getState(), cursor, re)[0] };
+}
+
 /** Climb the platform ladder to `level` (up from the ground floor, down from the upper floor). */
 async function climb(ctx: Ctx, seg: Letter, level: 0 | 1): Promise<void> {
     const sdk = sdkOf(ctx);
     if (pos(sdk).level === level) return;
     const loc = level === 1 ? LOC.ladderUp : LOC.ladderDown;
-    const t0 = currentTick(sdk);
-    const r = await clickLoc(sdk, loc, s => pos(s).level === level || messagesSince(s, t0 + 1, LANDED.smacked).length > 0, 40);
-    if (pos(sdk).level !== level) fail(seg, messagesSince(sdk, t0 + 1, LANDED.smacked).length ? 'the fishermen stopped the climb: no lit torch' : `the ladder did not take SCORED to level ${level} (${r.reason ?? ''})`, sdk);
+    const smacked = replyAfter(sdk, LANDED.smacked);
+    const r = await clickLoc(sdk, loc, s => pos(s).level === level || smacked.seen(s), 40);
+    if (pos(sdk).level !== level) fail(seg, smacked.first() ? 'the fishermen stopped the climb: no lit torch' : `the ladder did not take SCORED to level ${level} (${r.reason ?? ''})`, sdk);
     note(ctx, seg, { loc: level === 1 ? 'the ladder up' : 'the ladder down', clickToLevel: r.ticks, resends: r.resends, ...(r.settleTicks ? { settleTicks: r.settleTicks } : {}) });
 }
 
@@ -495,8 +504,8 @@ async function lightTorch(ctx: Ctx, seg: Letter): Promise<void> {
     const tries: number[] = [];
     for (let i = 0; i < RUB_TRIES && !holds(sdk.getState()!, ITEM.torchLit); i++) {
         if (!holds(sdk.getState()!, ITEM.torchUnlit)) fail(seg, 'no torch to light', sdk);
-        const t0 = currentTick(sdk);
-        const r = await invOp(sdk, ITEM.dry, /^rub-together$/i, s => holds(s, ITEM.torchLit) || messagesSince(s, t0 + 1, LANDED.rubFailed).length > 0, { resendEvery: 0, maxTicks: 10 });
+        const failed = replyAfter(sdk, LANDED.rubFailed);
+        const r = await invOp(sdk, ITEM.dry, /^rub-together$/i, s => holds(s, ITEM.torchLit) || failed.seen(s), { resendEvery: 0, maxTicks: 10 });
         if (!r.ok) fail(seg, 'the rub drew no answer', sdk);
         tries.push(r.ticks);
     }
@@ -507,10 +516,10 @@ async function lightTorch(ctx: Ctx, seg: Letter): Promise<void> {
 /** A loc op with no dialogue whose script ends on a game message (the panel, the crane). */
 async function locMessage(ctx: Ctx, seg: Letter, what: string, loc: LocAt, landed: RegExp, maxTicks = 30): Promise<void> {
     const sdk = sdkOf(ctx);
-    const t0 = currentTick(sdk);
-    const r = await clickLoc(sdk, loc, s => messagesSince(s, t0 + 1, landed).length > 0, maxTicks);
+    const reply = replyAfter(sdk, landed);
+    const r = await clickLoc(sdk, loc, reply.seen, maxTicks);
     if (!r.ok) fail(seg, `${what}: no '${landed.source}' within ${maxTicks} ticks`, sdk);
-    note(ctx, seg, { loc: what, clickToEffect: r.ticks, resends: r.resends, message: messagesSince(sdk, t0 + 1, landed)[0] });
+    note(ctx, seg, { loc: what, clickToEffect: r.ticks, resends: r.resends, message: reply.first() });
 }
 
 /**
