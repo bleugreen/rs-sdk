@@ -50,6 +50,8 @@ speedrun/
     fishing.ts    S22 fly fishing under the gated knife loop, and the from-1 net and walk bands
     mining.ts     S09 iron at the Ardougne zoo under the gated knife-mine loop, and the from-1 bands
     woodcutting.ts  S07: normal trees, oaks and willows at Taverley under the in-page gate
+    thieving.ts   S18, pickpocketing from any level (men, the ship to Ardougne, a bank stop,
+                  warrior women, guards, knights) with the in-page pickpocket program
   rehearse.ts     one single-skill rehearsal attempt end to end (gate, S00, kit, steps, logout, hiscore)
   lab/            local lab: never imported by lib/
     lab.sh        engine + gateway + lite runners on port block 9300
@@ -848,6 +850,54 @@ tutorial. Precondition: on Tutorial Island. Postcondition: on (3222,3222) with t
 |---|---|
 | S00 step row, first published state to Lumbridge with the kit | **3** (3 of 3): question page +1, choice page +2, landed +3 |
 | Stock `bot.skipTutorial()` (manifest entry 34, `travel-walk-enchant.ts`) | 6 |
+
+## skills/thieving.ts (S18)
+
+Pickpocketing from any level to `to`, STEP-MANIFEST.md entry 6, with the in-page `pickpocket`
+program. `steps({to, food, restock, topUp})` returns `thieving:men` (1-25, Lumbridge men at the
+tutorial exit, or Ardougne market men for an account already there), `thieving:to-ardougne`,
+`thieving:provision`, `thieving:warrior-women` (25-40), `thieving:guards` (40-55),
+`thieving:knights-55` (55-57) and `thieving:knights` (57-`to`). Bands are data (`BANDS`: NPC
+regex, spawn anchors read from the map files, stun damage). Each band reads the base level and
+is a no-op at or past its end, so the scored run, which arrives from Fight Arena at 57 with its
+food, runs only `thieving:knights`; the 55-57 split gives a rehearsal's 57-99 row the run's shape.
+Every band has `done`/`inProgress` from the level and is `logoutSafe`.
+
+- **Eating** (`eatPolicy(maxHp, heal, stunDamage)`): forced at the stun damage (one failure from
+  death), in a success window once a whole bite fits under the cap. At 10 HP that is 6/1 for
+  cake on men and 4/3 for shark on knights; at 40 HP shark on knights, 20/3. Each band passes
+  `stopWhenFoodBelow: 1`, so the program ends with `reason: 'food'` when the last bite is gone
+  and an eat is due; the band then restocks (default: the East Ardougne south bank, booths at
+  (2656,3283)/(2656,3286)) and starts the program again. Each band also passes
+  `retargetTicks: 12`, so a nearest target the player cannot reach is given up.
+- **The leg** is the ship route only: Port Sarim, Musa Point, the Karamja path, the Brimhaven
+  customs officer (60 gp in fares). Overland killed a 10 HP lab account on White Wolf Mountain.
+- **The bank stop** deposits everything but coins (the starter kit and the food's banknotes) and
+  fills the free slots with the food, unnoted. It is a no-op when edible food is held and no
+  notes are.
+- **Helper top-ups** (`topUp: { giver, below, mode }`, the scored run's path). The program clicks
+  every tick and a click closes a trade, so the trade must own the account while it is open.
+  `mode: 'idle'` (default): the program sends the request as a `player` stun action on the
+  stun's +2 once fewer than `below` food items are left (`topUpAction`), and with
+  `idleOnInterface` sends nothing while the trade is open; the module's `TopUpReceiver` accepts
+  the offer and confirm screens (`lib/trade.ts` `decideReceiver`) and sends nothing otherwise.
+  `mode: 'restart'` (fallback): the module stops the program on the first failure with food
+  below `below` (`topUpDue`), runs `receiveFrom`, and starts it again by `TOPUP_RESTART_BY` (9)
+  ticks after the failure, whose click lands on the next attempt's tick. Both log to the band's
+  detail row (`topUp.trades` or `topUp.restarts`).
+- **Technique** is accepted and ignored: the program clicks blindly every tick, so there is no
+  knife or plain cadence and no in-band probe. A band with work left fails its precondition on
+  the lite client (the page publishes `program`; the lite client does not).
+- **The stun pack is a seam** (`stunPack` throws; main keeps it out of the rehearsal row): the
+  program side is rs/132's `stunActions`, and the pack's entries (bury, Charge, arrows) go after
+  `topUpAction` in the same list, with the courier's supplies arriving through the same top-up
+  trade. Its preconditions: base Magic 80 and Mage Arena stage 8 for Charge, the giver next to
+  the account when the request goes out.
+
+Each band appends a 0-tick `<band>:detail` row (anchor, policy, program runs, restock trips,
+top-ups), and the leg a `thieving:to-ardougne:detail` row (HP lost, coins); the harness logs the
+program status rows. Lab passes: `lab/measure-thieving.ts` through `tickprog-lab.sh`; results in
+`docs/speedrun/rehearsals/thieving.md`.
 
 ## rehearse.ts
 

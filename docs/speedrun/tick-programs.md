@@ -98,7 +98,7 @@ the host gate can select with the same parameters.
 | `probe` | `speedrun/lib/hostgate.ts` `probeOnTime` | `trials`, `maxWait` | n/a |
 | `knife-mine` | `tickmanip-mine.ts` | `steps` (stand>rock pairs), `respawn`, `ores`, `starter: 'knife' \| 'none'`; opt-in `bury`, `success` (failed iron rolls below 63) and `rate` (the pickaxe's mining_rate by level) | `starter: 'none'` (plain and adjacent-rock transitions) |
 | `knife-cycle` | `tickmanip-cycle.ts`; `bury` from `bones-wc.ts --mode=knifebury` | `method` (`fly`, `willow`, `oak`, `tree`, `cage`, or an object), `successes` / `untilLevel` / `untilXp` (game xp) / `maxTicks`, `reanchor`, `trees` (the loc tiles reached from the standing tile), `bury` (oak and willow) | `technique: 'plain'`; with `bury`, plain + bury; opt-in `followSpot` (re-click a moved spot on the label that shows its new tile) and `dropEach` (drop the product on the label that shows it, with the re-click, both landing on R+1) |
-| `pickpocket` | `thieving-pickpocket.ts` (`--eat=auto`); `stunActions` from `stun-pack-thieve.ts` (rs/106) | `npc`, `rolls`, `food`, `eatBelow`, `forcedBelow`, `stunActions` (`bury`, `charge`, `arrows`, or action objects), `stunWindow`, `stunPerTick` | n/a: it clicks every tick |
+| `pickpocket` | `thieving-pickpocket.ts` (`--eat=auto`); `stunActions` from `stun-pack-thieve.ts` (rs/106) | `npc`, `rolls` / `untilLevel`, `food`, `heal`, `eatBelow`, `forcedBelow`, `stopWhenFoodBelow`, `retargetTicks`, `idleOnInterface`, `stunActions` (`bury`, `charge`, `arrows`, or action objects), `stunWindow`, `stunPerTick` | n/a: it clicks every tick |
 | `agility` | `agility-course.ts` | `course` (`gnome`, `barbarian`, `wilderness`, or an object; `agility-courses.ts`), `laps` / `maxTicks` / `untilLevel`, `startStep` (a name, or `auto`: from the tile), `food`, `eatBelow`; opt-in: `eatGap` (eats in any phase, at most once per `eatGap` ticks, and ends `no-food`), `restockBelow` (ends `low-food`), `protect` (`hold`, `near`, `flick`, with `protectRange`, `protectNpc`, `flickGap`), Wilderness watch: `pauseFor` (`none`, `threat`, `any`), `playerRadius`, `threatTargetRange`, `threatCloseTiles`, `threatCloseTicks` | `technique: 'plain'` waits `settleTicks` after each obstacle |
 | `rc-cycle` | `runecraft-cycle.ts --mode=tuned/robust` (the scored half) | `untilLevel` / `untilXp`, `schedule` (default `robust`), `givers`, `open` (5), `lead` (3) | the stock 15-tick reacting cycle (SDK side) |
 
@@ -265,7 +265,18 @@ Notes that differ from the lite scripts:
   the program before them (knife-mine.test.ts's golden timelines).
 - Pickpocket eats only in a success window (with the click that follows a success, at
   least 4 ticks after the stun ended), and at once only when HP is at or below
-  `forcedBelow`. A bite during a stun costs 3 ticks (`thieving.md`).
+  `forcedBelow`. A bite during a stun costs 3 ticks (`thieving.md`). The default
+  `eatBelow` is `maxHp - heal` floored at `forcedBelow + 1` (at 10 HP the bare
+  difference is negative), and a banknote of the food (no Eat option) is not food: the
+  two default changes, neither of which can bind at the scored run's HP with real food.
+  Bites are counted when the food slots change, not per eat packet (`eatSends`), and the
+  gap after a bite is kept apart (`gapAfterSuccessEat`, `gapAfterFailEat`,
+  `eatTicksLost`). Every end carries a `reason` (`level`, `rolls`, `maxTicks`, `food`)
+  and `levelTicks`, the tick each level was first seen. Opt-ins: `stopWhenFoodBelow: n`
+  ends the run with `reason: 'food'` when fewer than n food items are left and an eat is
+  due, with the player free to walk; `retargetTicks: n` avoids, for 100 ticks, a target
+  that yields no roll for n ticks outside a stun and outside an idle trade (unreachable).
+  The test's default-identical fingerprints pin the packets without them.
 - **Stun actions** (`stunActions`, off by default, so the program is unchanged without
   them): rs/106's stun pack (`research/stun-pack.md`). On each failure the program sends,
   ahead of its knight click, actions resolved from that tick's inventory and skills, on the
