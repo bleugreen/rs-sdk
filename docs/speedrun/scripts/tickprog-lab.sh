@@ -103,8 +103,8 @@ for spec in "$@"; do
         (cd "$ROOT" && bun docs/speedrun/scripts/tickprog-throttle.ts --debug-port=$((9390 + N)) "${parts[@]:1}") 2>&1 || STATUS=$?
         continue
     fi
-    if [[ "${parts[0]}" == *.ts ]]; then # a step-module driver (speedrun/lab/measure-*.ts)
-        (cd "$ROOT" && bun "${parts[0]}" "$BOT" "${parts[@]:1}") 2>&1 | grep -vE 'Pathfinding|^\[(Runner|BotSDK)\]' || STATUS=$?
+    if [[ "${parts[0]}" == *.ts ]]; then # a step-module driver (speedrun/lab/measure-*.ts); SPEEDRUN_CDP_URL is this tab's DevTools port
+        (cd "$ROOT" && SPEEDRUN_CDP_URL="http://127.0.0.1:$((9390 + N))" bun "${parts[0]}" "$BOT" "${parts[@]:1}") 2>&1 | grep -vE 'Pathfinding|^\[(Runner|BotSDK)\]' || STATUS=$?
         continue
     fi
     if [ "${parts[0]}" = wedge ]; then # the watchdog check; it leaves the tab wedged, so run it last
