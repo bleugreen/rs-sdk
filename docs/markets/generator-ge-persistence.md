@@ -133,22 +133,98 @@ script points the check at `WEB_PORT`.
 
 ## Leads outside this layer
 
-These are for the content audit (Q1b) and the operator. They were not tested here.
+The stacks need a source outside persistence and the GE. This section covers the
+two that remain. The content audit is rs/499 (Q1b).
 
-- **Managing Miscellania coffers coin dupe.** Reported in PR #73 by kadeski and
-  fixed 2026-10-11 (`ca0fe09cc8`, hardened in `fb26497163`; `server/PATCHES.md`
-  lists the vendor patch). Coins at the 2^31 cap for both accounts fit an
-  exploited coin generator from before that date. The other stacks would need
-  coins turned into goods faster than shops restock (one unit per tick), so the
-  GE trade history (`/api/market/*`) for raw shark, air runes and fire runes is
-  the next thing to check.
-- **Staff debugprocs on the demo.** `fly.toml` sets `NODE_DEBUG=true` and leaves
-  `NODE_PRODUCTION` unset (default false). With production false, an account
-  with staff level 4 or higher can run debugprocs
-  (`ClientCheatHandler.ts`, the `!Environment.node.production && staffModLevel >= 4` branch), including
-  `~bank_preset` and `~bank_f2p` in `content/scripts/_test/scripts/cheats/cheat_bank.rs2`,
-  which fill a bank with 2^31−1 coins and runes. That is an operator lever, not a
-  player one; `HISCORES_HIDDEN_NAMES` already hides known test presets.
+### Coins: the Managing Miscellania coffers dupe
+
+- **Mechanism.** In the deposit handler before the fix
+  (`managing_miscellania.rs2`, `[if_button,misc_both_manage:com_88]`), a
+  requested amount above the coffers' free space was clamped to that space, and
+  the clamp to the coins actually carried sat in an `else if` that never ran.
+  `inv_del` removes only what the player carries, while `%misc_coffers` was
+  credited the full amount. Carrying 1 coin and asking for more than the free
+  space therefore credited up to 5,000,000, which the withdraw handler paid out
+  as coins. The withdraw handler also accepted counts of 0 or less.
+- **Window in this repo.** The script arrived with the LostCity 274 to 289
+  upgrade, `8601955cfb` on 2026-10-09; revision 274 had no Managing
+  Miscellania. The fix is `ca0fe09cc8` (Kaden Staker, 2026-10-11 17:29 -0600),
+  merged as PR #73 in `e4441c6233` (2026-10-11 19:36 -0400) and hardened a minute
+  later in `fb26497163` with a regression test
+  (`server/engine/test/miscellania-coffers.test.ts`). The bug was in the code for
+  about two days.
+- **What the demo ran.** No public signal shows it. `/api/version` returns only
+  the game revision (`web/pages/api.ts`, `handleVersionApi`), and no workflow
+  deploys to Fly (`.github/workflows` holds ci, demo-latency-probe and
+  upstream-watch), so deploys are manual and the deployed commit is not recorded.
+  `fly.toml` changed on 2026-10-09 as well (`a6d124cec2`, which also hid local
+  test presets from the boards). That fits a 289 deploy that day but does not
+  prove one. The only dated public signal is each bank snapshot's date on the
+  board, which belongs to the board-timeline child. A jump in the leaders' coins
+  between 10-09 and 10-11 would place the dupe on the demo.
+- **Yield (arithmetic, not measured in the lab).** At most 5,000,000 coins per
+  deposit-and-withdraw cycle, for 1 coin. Each handler waits on a message box, a
+  count dialog and two `p_delay(0)` ticks, so about 5 ticks each and about 10
+  per cycle: roughly 3 s at the demo's 300 ms tick and 1,200 cycles an hour, up
+  to about 6B coins an hour. The 2,147,483,647 stack cap is reached after 430
+  cycles, about 20 minutes.
+- It makes coins and nothing else.
+
+### Could coins at the cap have bought the stacks from shops?
+
+No. A shop slot below its base stock gains one unit every `stockrate` ticks and
+stops at the base stock (`World.ts`, shop restock in the cleanup phase). At the
+demo's 300 ms tick (12,000 ticks an hour), the whole world's shops restock:
+
+| Item | Shops (base stock, ticks per unit) | World restock per hour | Leader's stack | Hours to buy it |
+|---|---|---|---|---|
+| Air rune | Varrock (2000, 10), Port Sarim (1000, 10), `quest_mm` (1000, 10), Magic Guild (3000, 18), Mage Arena (200, 50) | 4,507 | 1,923,311,135 | about 427,000 (49 years) |
+| Mind rune | Varrock (1000, 10), Port Sarim (1000, 10), Magic Guild (3000, 18), Mage Arena (140, 50) | 3,307 | 247,717,228 | about 74,900 (8.5 years) |
+| Fire rune | the five air-rune shops | 4,507 | 65.9M | about 14,600 (1.7 years) |
+| Raw shark | Canifis (1, 1000); the Catherby, Miscellania and Rellekka fish shops have base stock 0 | 12 | 7,148,932 | about 596,000 |
+| Raw bass | fish shops with base stock 0 only | 0 | 10,787,666 | never |
+| Shark | no shop | 0 | 18,044,690 | never |
+
+Buying out the base stock after each restart adds a few thousand units at most.
+The GE has run since 2026-09-07, about 1,100 hours before this was written.
+So the stacks needed sellers (other players' items, by trade or GE) or a
+generator. The GE itself creates nothing (this doc).
+
+### Staff-made items
+
+- **Where the level comes from and what it unlocks:** rs/499,
+  `docs/markets/generator-content-shops.md` section 3. In short, the level comes
+  from the account row (default 0); cheats need level 3 or 4; debug procs also
+  need a non-production world; `NODE_DEBUG` lowers nothing.
+- **Added here.** On the demo's non-production config, `giveother` and
+  `teleother` are production-only (`ClientCheatHandler.ts`,
+  `cmd === 'giveother' && Environment.node.production`). So a staff account can
+  `::give` only to itself, and items reach another bank only by trade or the GE.
+  The debug proc `~bank_preset` (`content/scripts/_test/scripts/cheats/cheat_bank.rs2`)
+  clears the bank, then fills it with 2,147,483,647 coins, 2,147,483,647 of each
+  of 14 rune types and of caskets, and 65,535 of each talisman, ore, bar, log,
+  raw and cooked fish (raw shark and raw bass included) and uncut gem.
+- **Public fields that mark a staff account: none.** `/playerpositions`
+  (`web/worldfeed.ts`, `getPlayerPositionsJson`) carries x, z, level and name.
+  The world feed's player rows carry slot, name, x, z, level and combat level.
+  The boards carry no such field, but every board query, the player page
+  included, filters `account.staffmodlevel <= 1` (`web/pages/hiscores.ts`,
+  `RankedHiscoresWorker.ts`), and `hiscoreEligible` (`LoginServer.ts`) writes no
+  rows above level 1. So any account visible on a board is level 0 or 1 when the
+  page renders, and an account at level 2 or above is absent from every board.
+  The chat crown would show the level, but only to someone logged in.
+- **Public evidence that would settle it.** For staff-made items: GE history
+  (`/api/market/*`) showing large volumes of these items at odd prices just
+  before a leader's stack grew; counts in a bank that are whole multiples of the
+  preset amounts (65,535 or 2,147,483,647; the bank board's item search gives
+  exact counts); a single-snapshot jump in the board timeline. Against it: a
+  ramp in the timeline that matches gathering or market volume. nickai at
+  exactly 2,147M (coins at the cap and little else) is what either a
+  `~bank_preset` coin line or a coffers run leaves, and public data alone cannot
+  tell them apart.
+
+### Other notes
+
 - **Offline grants.** `server/engine/tools/server/grant-bank-item.ts` patches a
   `.sav` at version 7. Any player with a ledger row loads the row instead
   (property 2 above), so on the demo such a grant does not take effect for
