@@ -821,6 +821,16 @@ on 2538b7d8 or later**, so every reader, the fleet's on bbs included, has the sc
 options; that restart, like every update, keeps step 0's deploy rules. The run machines' launcher
 runs from `~/rs-sdk` at `RUN_COMMIT`, which the floor puts after 2538b7d8.
 
+**A sixth family, `mule`** (rs/429, landed 029c6825 on rs/41's branch; relayed by rs/158 at 10:30
+PDT 2026-10-22). mule.ts serves H12's `Shark topUp {max: 15}` from an ask scoped
+`{step: 'S15', family: 'mule'}` that SCORED writes on the first open-trade frame. So the families
+are six: altar (S06, S21), bone (S07), courier (S18), anvil (S25a), cannon (S14, S27) and mule (S15's
+H12). The mule reader is **pending** until fleet code carrying rs/429 is on main and deployed, which
+is fleet snapshot 8 (rs/438); rs/393's writer is pending likewise.
+
+**On run night the opening roster logs in on both machines after `up` and before `gate`** (step
+5a), so each gate is read under the opening load.
+
 **Which helpers the rule binds:**
 
 | Helper | Tick-exact? | Where |
@@ -888,16 +898,18 @@ Two rules from this page apply to that launch:
 - **Only once `~/rs-sdk` is at a `RUN_COMMIT` that includes #120** (rs/138, on main). The helpers are
   fleet accounts, so their credentials stay off the host before that ("Credentials").
 
-## 5. Start the recording
+## 5. The recording and the live view (`up`)
 
 The recording is captured on the VM itself, not over RDP: ffmpeg grabs the session's X display
-(r: main, 09:13; rejected: recording at the Mac end over RDP). Start it **before SCORED's first
-login** (step 5a's hand-over, line 6), which is before step 7, and before the gate so the gate is measured with the capture
-running, as in the run. Bound: `T=9h` for the run, `T=30m` for a rehearsal. At the bound `timeout`
-sends SIGINT, which ffmpeg treats like `q`: it finishes the file:
+(r: main, 09:13; rejected: recording at the Mac end over RDP). `up` (step 3) starts it **before the
+gate and before SCORED's first login**, so the gate is measured with the capture running, as in the
+run, and `handoff` refuses unless it is running and advancing (step 5a, hand-over line 3). `up` runs
+it in session `rec` of `tmux -L run`, writing `~/recordings/run-<UTC>.mkv` (`rehearsal-<UTC>.mkv`
+with `--rehearsal`). At the bound (`T=9h`, or `T=30m`) `timeout` sends SIGINT, which ffmpeg treats
+like `q`: it finishes the file. Its line, for reference, not to paste:
 
-```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'T=9h; mkdir -p ~/recordings; rm -f ~/recordings/ffmpeg-progress.log; F=$HOME/recordings/run-$(date -u +%Y%m%dT%H%M%SZ).mkv; tmux -L run new-session -d -s rec "exec timeout -s INT --kill-after=30s $T ffmpeg -hide_banner -loglevel warning -f x11grab -draw_mouse 1 -framerate 30 -video_size 1920x1080 -i :10.0+0,0 -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -progress $HOME/recordings/ffmpeg-progress.log $F 2>>$HOME/recordings/ffmpeg.log"; sleep 5; echo $F; grep -E "^(fps|drop_frames|speed)=" ~/recordings/ffmpeg-progress.log | tail -3; df -h / | tail -1'
+```
+exec timeout -s INT --kill-after=30s $T ffmpeg -hide_banner -loglevel warning -f x11grab -draw_mouse 1 -framerate 30 -video_size 1920x1080 -i :10.0+0,0 -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -progress ~/recordings/ffmpeg-progress.log ~/recordings/run-<UTC>.mkv 2>>~/recordings/ffmpeg.log
 ```
 
 The line is main's decision (x11grab, 1920x1080, 30 fps, libx264 `-preset veryfast -crf 20`) plus
@@ -908,19 +920,23 @@ three choices made here (and the bound, above):
   `ffmpeg -i run.mkv -c copy run.mp4`.
 - **`-pix_fmt yuv420p`**: from an RGB grab, x264 otherwise encodes 4:4:4, which QuickTime and most
   players and sites will not play (i).
-- **`-progress`**: ffmpeg's frame, fps and drop counters, read by the gate sampler and by the checks
-  below. No audio is recorded.
+- **`-progress`**: ffmpeg's frame, fps and drop counters, read by the gate sampler, by run-gate.ts's
+  advancing-frame check and by the check below. No audio is recorded.
 
 Size: 7.2 Mbit/s at 30 fps in game, about 3.3 GB an hour (m: 288 MB in 318 s, 16:41-16:47 UTC; i: per
 hour), against 51 GB free (m, 16:15 UTC); the disk holds well over ten hours.
 
-**The live-frame pass line** (step 5a, hand-over item 4). The fps and drop counters say the capture
+**The live-frame pass line** (step 5a, hand-over line 4). The fps and drop counters say the capture
 is running, not what it shows. Before SCORED's login a frame of the capture must show the run tab,
 with nothing in front of it; a wrong window costs the run's evidence, not ticks (RUN-ORDER.md R20).
-It is a pass line of the start, beside the gate's (a)-(d): no start until it holds. rs/232's
-`speedrun/lib/display.ts` helpers, `frontWindows`, `grabFrame` and `frameShows`, check it from a
-script; they are on main, 5d22252d (#208), gate tooling rather than a floor item (the floor
-contains it), and the operator can also check it on the live view (below).
+It is a pass line of the start, beside the gate's (a)-(d): no start until it holds. `handoff` checks
+it, before SCORED's login and again in game: the window in front is the run tab, and an x11grab
+frame of the display matches the page's own screenshot (rs/232's `speedrun/lib/display.ts`
+`frontWindows`, `grabFrame` and `frameShows`, with `speedrun/lib/tab.ts` `screenshotTab`; pass at a
+mean grey difference of at most 12/255, against 1.1 for the same window and 54.9 for a different
+one). It waits up to 20 s for a conclusive look and never raises or touches a window. Those helpers
+are on main, 5d22252d (#208) and c4b79f17 (#213), gate tooling rather than floor items (the floor
+contains them). The operator can also see it on the live view (below).
 
 **Why RDP stays disconnected during the run.** With the operator connected, the capture kept real
 time but wrote only about 23 distinct frames a second (2,389 of ~10,700 dropped over 6 minutes).
@@ -933,36 +949,39 @@ Check the recording during the run with:
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'grep -E "^(frame|fps|drop_frames|dup_frames|speed|out_time)=" ~/recordings/ffmpeg-progress.log | tail -6; ls -la ~/recordings; df -h / | tail -1'
 ```
 
-**The operator's live view**, started with the recording and left running until teardown. It is a
-3 fps, 960x540 MJPEG stream on the tailnet address, which the operator opens in a browser at
-`http://$RS_RUN_TAILNET:8090/live.mjpg` (over Tailscale, like RDP). ffmpeg's `-listen 1` serves one
-viewer and exits when that viewer leaves, so it runs in a loop; a reload reconnects. It is bound to the
-tailnet address only, never the public one. It is a **separate low-rate grab, not a second output of
-the recording's ffmpeg**: an HTTP `-listen` output blocks its process until a viewer connects and
-fails when the viewer leaves. Inside the recording's process that would hold up or end the
-recording (i). As its own process, it can come and go without touching the recording file. Bound:
-`T=9h` for the run, `T=30m` for a rehearsal; at the bound the signal reaches the loop's shell and
-the ffmpeg inside it (`-nostdin` keeps a stray key in the pane away from ffmpeg):
-
-```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'T=9h; tmux -L run new-session -d -s live "exec timeout --kill-after=30s $T bash -c \"while true; do ffmpeg -nostdin -hide_banner -loglevel warning -f x11grab -draw_mouse 1 -framerate 3 -video_size 1920x1080 -i :10.0+0,0 -vf scale=960:540 -c:v mjpeg -q:v 8 -f mpjpeg -listen 1 http://'"$RS_RUN_TAILNET"':8090/live.mjpg; sleep 1; done\""'
-```
+**The operator's live view**, started by `up` with the recording and left running until teardown,
+in session `live`. It is a 3 fps, 960x540 MJPEG stream, view-only, which the operator opens in a
+browser. On the run host `up` binds it to the tailnet address only (`$RS_RUN_TAILNET`, from the Mac's
+shell), never the public one, at `http://$RS_RUN_TAILNET:8090/live.mjpg` (over Tailscale, like RDP).
+ffmpeg's `-listen 1` serves one viewer and exits when that viewer leaves, so it runs in a loop; a
+reload reconnects. It is a **separate low-rate grab, not a second output of the recording's
+ffmpeg**: an HTTP `-listen` output blocks its process until a viewer connects and fails when the
+viewer leaves. Inside the recording's process that would hold up or end the recording (i). As its
+own process, it can come and go without touching the recording file. At its bound the signal reaches
+the loop's shell and the ffmpeg inside it.
 
 It costs 3.7% of one core (m: `pidstat` over 40 s, 16:53 UTC, ~150 kbit/s), and the recording
 beside it still wrote 29.7 fps with no drops (m: 70 s, 16:54 UTC). It was tested with `curl` on the
-host (217 frames in 72 s); nobody has opened it in the operator's browser yet. Teardown stops it with
-the rest of the stack (or `tmux -L run kill-session -t live` on its own).
+host (217 frames in 72 s). Teardown stops it with the rest of the stack (or
+`tmux -L run kill-session -t live` on its own).
 
-**Twin:** there is no tailnet address to bind, so the live view binds `127.0.0.1:8090` (the filter in
-"Reaching them" makes that change), and the operator opens it through an ssh tunnel from the Mac,
-`ssh -N -L 8091:127.0.0.1:8090` with the twin's ssh options to `ubuntu@"$RS_TWIN_HOST"`, then
-`http://127.0.0.1:8091/live.mjpg` (local port 8091 so it can sit beside the run host's view). On the
-twin `curl` received 23 JPEG parts in 6 s from it (m, rs/149, 20:32 UTC; HOST.md, which tunnels to
-local port 8090). The tunnel is one ssh session: if it drops, the view stops and the recording on
-the machine does not (i). The twin's recording beside its gate tab wrote 29.91 fps with 0 dropped
-(m, rs/149, read 5).
+**Twin:** there is no tailnet address to bind, so `up` binds the twin's live view to
+`127.0.0.1:8090` (`run-gate up --live-bind=127.0.0.1`), 3 fps MJPEG at 960x540, view-only with no
+input. Until the operator authorises Tailscale on it, watch it through this tunnel, run on the
+operator's Mac (the host thread, relayed by rs/158 at 10:4x PDT 2026-10-22, as written), then open
+`http://127.0.0.1:8090/live.mjpg`:
 
-## 5a. Choose the machine: the gate on both
+```sh
+ssh -N -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -L 8090:127.0.0.1:8090 ubuntu@"$RS_TWIN_HOST"
+```
+
+The operator's remote desktop stays disconnected throughout (tenet 12). The tunnel is one ssh
+session: if it drops, the view stops and the recording on the machine does not (i). On the twin
+`curl` received 23 JPEG parts in 6 s from the live view (m, rs/149, 20:32 UTC). The twin's recording
+beside its gate tab wrote 29.91 fps with 0 dropped (m, rs/149, read 5), and 29.9-29.97 fps with 0
+dropped under run-gate.ts (m, rs/247, "Measured: run-gate.ts rehearsed on the twin").
+
+## 5a. Choose the machine: `gate` on both
 
 SCORED's machine is chosen by the gate immediately before the start, not named in advance (tenet
 17). Both machines have been through steps 0-5: claimed, on RUN_COMMIT, the tab stack up, the
@@ -975,33 +994,57 @@ under the nature plan, and a ban costs the run. No rehearsal claim may run into 
 flight pauses at its next step boundary once the run's claim appears (rehearse.ts, `--claim-owner`;
 speedrun/README.md, "Under a claim").
 
-1. **Gate both in the same minute.** Run step 6 on both machines at once: the quiesce check, then
-   (a)-(c) started in the same minute on both (rs/96's CLI, the same flags), then (d) on both, each
-   on its own gate account. Same-minute reads compare the two delivery paths on one server minute: on
-   2026-10-21 the server's own tick distribution was the same on both machines to the millisecond
-   while one address's path held ticks (m, the host thread's pairs, 21:00-23:00Z). If they cannot
-   overlap (one ssh line down, say), run them back to back, the run host first, and record that they
-   did not share a minute. **Only reads taken after a machine's last address change count**, here
-   and in the gate history: a read is a dated read of that machine's route at the time ("The host").
-2. **Choose.**
-   - **One passes:** start on it.
-   - **Both pass:** start on **the run host**, the default: its route read clean after its 23:11Z
-     address change ("Measured: the route after the address change"; re-qualified after any later
-     change), and the run host stays preferred by its documentation
-     (main, 15:54 PDT; under tenet 17 that is only a default). **The tiebreak:** start on the twin
-     instead only when its read is clearly better in that minute, meaning the run host passed at the
-     margin ((a) 58 or 59 of 60, or (c) exactly 2 catch-ups a minute, or a (d) sample under 60 loops
-     a second) while the twin read (a) 60 of 60 and (c) at most 1.
-   - **Neither passes:** no start. RUN-ORDER.md section 1's rule applies to both: the knife stays
-     off on a failed gate, and the start waits for a passing read (re-measure both; the gate history
-     on both shows when).
-3. **Record both reads**: for each machine the minute, (a) on-time of 60, (b) p90, (c) catch-ups a
-   minute, (d) lowest / median / highest p10 and the players online, with the choice and the reason,
-   in the run's record and, after the run, in "Measured" below. Each machine keeps its own outputs
-   (`~/rs-run/gate-loops.jsonl` and the CLI's output) until teardown.
+**The expected machine is the twin** (main's ruling, relayed by rs/158 at 10:4x and 10:5x PDT
+2026-10-22; "The host"): the twin passed 17 of 17 of rs/83's final-address pairs, and the run host
+is the fallback pending 4+ clean pairs on its new address (rotated 17:39Z). Both are still gated in
+the same minute (tenet 17): a gate read is a dated read of each route, and the choice is made on it.
+
+Before `gate`, on both machines: `up` passed (step 3); the opening roster is in (step 4); the gate
+account's env check passed (step 3); the quiesce check is clean (step 6); and each gate account
+stands at the Lumbridge spawn, so its tab's login is also the run profile's warm-up (step 7).
+
+1. **Gate both in the same minute: `gate`.** It runs step 6 on both machines in parallel, each on
+   its own gate account, and refuses the same account twice (one account is in the world only once).
+   The two names are typed on the Mac and never committed. Bound: 40 min a machine:
+
+   ```sh
+   bun speedrun/tools/run-gate.ts gate --gate-run=RUN_GATE_ACCOUNT --gate-twin=TWIN_GATE_ACCOUNT --claim=run
+   ```
+
+   Same-minute reads compare the two delivery paths on one server minute: on 2026-10-21 the
+   server's own tick distribution was the same on both machines to the millisecond while one
+   address's path held ticks (m, the host thread's pairs, 21:00-23:00Z). If one machine can't be
+   reached, `--machines=twin` (or `run`) gates the other alone; the tool warns that it gated one
+   machine, and its choice can only be that one. **Only reads taken after a machine's last address
+   change count**, here and in the gate history: a read is a dated read of that machine's route at
+   the time ("The host"). The tool doesn't know addresses, so this one is the operator's check.
+2. **Choose.** The tool prints `chosen: run`, `twin` or `NONE` with the reason, and writes
+   `choice.json` on the Mac, which `handoff` reads.
+   - **One passes:** start on it. A pass includes a marginal (a), 58 or 59 of 60.
+   - **Both pass:** start on **the twin**, the expected machine. **Caveat, until rs/440 merges:**
+     run-gate.ts on main still makes the run host the default when both pass, and picks the twin
+     only on its tiebreak: the run host passed at the margin ((a) under 60 of 60, (c) above 1 a
+     minute, or a (d) sample under 60 loops a second) while the twin read (a) 60 of 60 and (c) at
+     most 1. `handoff` refuses a machine the latest gate did not choose. So until then, **a
+     both-pass `gate` that names the run host goes to main before any hand-off.** rs/440 (the host
+     thread, **pending**) makes the twin the both-pass default, with `--prefer=run|twin`, and removes
+     this caveat.
+   - **Neither passes:** no start; `gate` exits 1 (3 when a machine read re-measure and none stopped
+     on a precondition). RUN-ORDER.md section 1's rule applies to both: the knife stays off on a
+     failed gate, and the start waits for a passing read (re-measure both; the gate history on both
+     shows when).
+3. **Record both reads.** The tool prints one row per machine: the minute, (a) on-time of 60, (b)
+   p90, (c) catch-ups a minute, (d) lowest / median / highest p10, the verdict, the players online
+   and whether the gate logout was confirmed; then the choice and its reason. Copy them into the
+   run's record and, after the run, into "Measured" below. Each machine keeps its outputs in
+   `~/rs-run/gate-<UTC>/` until teardown, and the Mac keeps `~/rs-run-gate/choice-<UTC>.json`.
+   **The tool's step log names the gate account** (its `preconditions` and `(a)-(c)` lines), against
+   step 0's "never print either name": until rs/440 relabels them `GATE-run` and `GATE-twin`, keep
+   that log out of chat and out of any committed file, and copy only the rows.
 4. **On the chosen machine:** the rest of the roster logs in through rs/117's launcher before SCORED
    (22 body-altar, 4 bone and 2 trade givers; 22 logins took 190 s through the launcher's limiter, m,
-   rs/214 on the run host, 00:35-00:39Z on 2026-10-22), then step 7's login count, then SCORED.
+   rs/214 on the run host, 00:35-00:39Z on 2026-10-22), then step 7's login count (`handoff`
+   re-checks it), then `handoff`, within 20 minutes of the gate (`--max-gate-age`).
 5. **On the other machine,** before SCORED's first login: its 7 opening givers log out cleanly
    (HELPERS.md teardown; send their stop at least 5 minutes before they must be out of the world,
    since the server logs out at most one player per tick world-wide: HELPERS.md, "Stopping", rs/267)
@@ -1009,19 +1052,24 @@ speedrun/README.md, "Under a claim").
    claim stays live and rehearsals there stay paused until the run's teardown (above). **The
    only logins allowed on it until then are gate probes**, and only when the gate script needs them
    off the recorded display (line 6).
-6. **Hand over from the gate to the run, on the chosen machine** (main's recording rule, 18:16 PDT
-   2026-10-21, after cairn_casts' rehearsal recorded the gate account's tab instead of the attempt
-   because the gate tab stayed on top of the recorded display; rs/147):
-   1. the gate probe tab is **logged out and closed** before the run tab opens (step 6's
-      logout-before-Chrome-stops command does both);
-   2. the run tab is the **only browser window on the recorded display**: `DISPLAY=:10 xwininfo
-      -root -tree` lists one `Bot Client` window (step 3's check);
-   3. the recording is **already running before the run tab's login** (step 5);
-   4. **a live frame of the capture shows the run tab** (step 5's pass line): the live view, a grab of
-      the same display, shows SCORED's tab before step 7's tab-login. This is a pass line of the gate, beside tenet
-      12's (a)-(d): no start until it holds. A wrong window costs the run's evidence, not ticks
-      (RUN-ORDER.md R20);
-   5. any later probe runs on **the other machine**, never on the recorded display.
+6. **Hand over from the gate to the run, on the chosen machine: `handoff`** (step 7). Main's
+   recording rule (18:16 PDT 2026-10-21, after cairn_casts' rehearsal recorded the gate account's
+   tab instead of the attempt because the gate tab stayed on top of the recorded display; rs/147;
+   19:08 PDT for the unconditional kill). Every line is a hard check of the tool:
+   1. the gate probe tab is **logged out and closed** before the run tab opens: `gate` logs it out
+      with `logoutClean` and then **kills the gate Chrome unconditionally, confirmed logout or not**;
+      after the kill, and again at the start of `handoff`, no `chrome` session on the `run` socket,
+      no process on `rs-run/chrome-profile` and no Bot Client window may be left;
+   2. the run tab is the **only browser window on the recorded display**: exactly one `Bot Client`
+      window, 1920 wide, before SCORED's login and after it;
+   3. the recording is **already running and advancing before the run tab's login**, with RDP at 0
+      connections (step 5);
+   4. **a live frame of the capture shows the run tab** (step 5's pass line), before SCORED's login
+      and again in game. This is a pass line of the gate, beside tenet 12's (a)-(d): no start until
+      it holds. A wrong window costs the run's evidence, not ticks (RUN-ORDER.md R20);
+   5. any later probe that needs a tab runs on **the machine not chosen**, never on the recorded
+      display (main, 18:16 PDT): `gate` and `handoff` both refuse to start while any Bot Client
+      window or run-profile Chrome exists, so nothing in the tool opens a window beside the run tab.
 
 **No second gate mid-run.** SCORED's logged-in ticks keep counting and the recording, the live view
 and the helpers are on the chosen machine, so the run never stops to re-measure or to change
@@ -1029,73 +1077,78 @@ machine. The held-tick monitor (step 7) is how a path going bad mid-run would be
 so far: the hold of 2026-10-21 was a persistent property of one address over about 5 hours; no path
 has yet been seen going bad mid-run (the host thread, 16:15 PDT).
 
-## 6. Quiesce check and the gate
+## 6. Quiesce check and the gate (`gate`)
 
 **Quiesce.** Nothing runs on the machine but the session's desktop, the `run` tmux stack (gateway,
-page server, Chrome, recording), rs/117's launcher with its lite runners and roles, and system
-daemons. The `run` stack includes the live view (step 5). On the twin, no rehearsal process or
-Xvfb either (the leftover check, "Twin:"). The drained Cairn executor's daemon (`cairn-exec`) was idle at 0.3% of a core (m, 16:15
-UTC); whether it stays up during the run is main's call. No second Chrome, no other `bun`, no other
-ffmpeg, and no tmux server but `run` (the leftover check, "Rules for every launch", lists them all).
-The gate history timer is quiet: step 0's claim makes every firing skip, so no
-`rs-gate-read.service` process should appear here.
+page server, recording, live view), rs/117's launcher with its lite runners and roles, and system
+daemons. On the twin, no rehearsal process or Xvfb either (the leftover check, "Twin:"). The drained
+Cairn executor's daemon (`cairn-exec`) was idle at 0.3% of a core (m, 16:15 UTC); whether it stays
+up during the run is main's call. No Chrome at all, no other `bun`, no other ffmpeg, and no tmux
+server but `run` (the leftover check, "Rules for every launch", lists them all). The gate history
+timer is quiet: step 0's claim makes every firing skip, so no `rs-gate-read.service` process should
+appear here. `gate` itself refuses while a run-profile Chrome or a Bot Client window exists, or a
+timer read is in progress; the rest of this list is the operator's to read:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'uptime; ls /tmp/tmux-$(id -u)/; ps -eo pid,pcpu,etime,args --sort=-pcpu | cut -c1-160 | head -20; pgrep -c -f "chrome --type=gpu-process" | sed "s/^/Chrome GPU processes (expect 1): /"'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'uptime; ls /tmp/tmux-$(id -u)/; ps -eo pid,pcpu,etime,args --sort=-pcpu | cut -c1-160 | head -20'
 ```
 
 **The gate** is measured on **each** candidate machine inside step 5a, right before the run, at the
 real player count, and **on a gate account, never SCORED**, each machine its own (step 0): SCORED's
 playtime starts at its first login, which is step 7. The opening roster is logged in on the machine
-being gated (step 4).
-Measure it in the run's configuration: RDP disconnected, with the recording and the live view running.
-The conditions and what to do on a failure are in RUN-ORDER.md section 1 and tenet 12.
+being gated (step 4). It is measured in the run's configuration: RDP disconnected, with the
+recording and the live view running. The conditions and what to do on a failure are in RUN-ORDER.md
+section 1 and tenet 12. `gate` (step 5a) runs it on each machine in this order; every line is a
+hard check, and the first that fails stops that machine:
 
-- **(a)-(c)**, next-tick reactions, tick publication p90 and catch-ups: rs/96's direct-path CLI,
-  `docs/speedrun/scripts/tickmanip-latency.ts <gate account> --path=direct --no-tele`
-  (cairn://p/rs/96, PR #101; its procedure and verdict are in `skills/tick-manipulation.md`, "Run-time
-  host gate"). It logs the gate account in itself, in-process, so run it **before** the gate account's
-  tab opens, with the tab closed. Fixed by #142 (9d26aa87): it logs the account out at the end of the
-  read, so (d)'s tab-login of the same account no longer sees 'already logged in', once `RUN_COMMIT`
-  is at or after 9d26aa87 ("Gate history timer"). Bound: 15 min (its probe gives up
-  after 10):
+1. **Preconditions:** a live claim; display `:10` at 1920x1080 and 24 planes, and RDP at 0
+   connections; no `chrome` session, no run-profile process and no Bot Client window on the display
+   (it never gates where a run tab may be); the `up` stack's sessions `gateway`, `page`, `rec` and
+   `live`; no gate history timer read in progress; the recording advancing; and the gate account's
+   env file at `~/rs-sdk/bots/<gate>/bot.env`, mode 600, with a `PASSWORD`.
+2. **(a)-(c)**, next-tick reactions, tick publication p90 and catch-ups: rs/96's direct-path CLI,
+   `docs/speedrun/scripts/tickmanip-latency.ts <gate account> --path=direct --no-tele`
+   (cairn://p/rs/96, PR #101; its procedure and verdict are in `skills/tick-manipulation.md`,
+   "Run-time host gate"), bound 15 min (its probe gives up after 10). It logs the gate account in
+   itself, in-process, so it runs before the gate tab opens, and since #142 (9d26aa87) it logs the
+   account out at the end of the read ("Gate history timer"). Its vantage preconditions (step 1: edge
+   `iad`, TCP connect p50 at most 5 ms) stop the machine as not probed. **The gate stops here, before
+   any tab, unless (a)-(c) can start.** (a) below the floor of 58 of 60 on a steady server reads
+   `investigate` (`speedrun/lib/hostgate-verdict.ts` `directDecision`), which the tool counts as a
+   fail (`machineVerdict`): it prints `STOP: (a)-(c) fail` and the machine exits 1 (`onGate`). (c)
+   above 2 a minute reads re-measure, exit 3, even when (a) is short too. Either way that machine
+   can't be chosen: the run never starts on a machine whose read is under the floor, which rs/315's
+   Thieving rehearsal harness let through at 57 of 60.
+3. **(d)**, the tab's loop rate: it opens the gate account's tab (step 3's line, bound 15 min),
+   checks the six flags, logs it in with tab-login and runs the secrets check (`0 0 0`). Then it
+   samples for five minutes (`--minutes=5`) with `docs/speedrun/scripts/runhost-loops.ts`, bound
+   10 min. The sampler attaches through the loopback gateway and runs the in-page probe (the page
+   publishes `loops` only while a program runs). Every 10 s it reads the page's loop rate beside each
+   process's CPU and ffmpeg's frame counters.
+4. **The gate tab's logout, then the kill.** It logs the tab out with `logoutClean`, attaching through
+   the gateway with `client: 'browser'` (bound 3 min; with `RUN_COMMIT` at or after `c2d9eada` it
+   confirms from the page's own in-game flag, "Credentials"). Then it **kills the gate Chrome
+   unconditionally, confirmed logout or not** (main, 19:08 PDT 2026-10-21): the `chrome` tmux
+   session, then SIGTERM, then SIGKILL on the profile. A failed launch, login or sampler still ends
+   in the kill. The reason: there is one Chrome per profile. A gate Chrome left up after an
+   unconfirmed logout would take SCORED's `--app` window into its own process, leave the gate window
+   on the recorded display, and end SCORED's tab at the gate tab's 15-minute bound. What a kill
+   without a confirmed logout costs is one login slot for a few minutes. The account stays in the
+   world until the server's no-connection timeout: 2 min 43 s to 4 min 51 s after the forced kill on
+   the twin (m, rs/247, 2026-10-22). The gate row then says `gate logout unconfirmed`.
+5. **Closed.** After the kill there must be no `chrome` session, no process on
+   `rs-run/chrome-profile` and no Bot Client window, or the gate stops.
+6. **The verdict**, through `directDecision` with (d) as the lowest 10-second sample. (d) is read
+   from the lowest / median / highest 10-second p10. **Pass**: the lowest sample is at least 50 per
+   second. **Marginal**: the median is at least 50 but a sample fell below: re-measure (exit 3).
+   **Fail**: the median is below 50. (d) not measured is never a pass. On 2026-10-21 every sample in
+   every condition was 70-73 (m, below). During the run, the page keeps publishing `loops` while
+   SCORED's programs run, which is what the in-run monitor reads.
 
-```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'cd ~/rs-sdk && timeout --kill-after=30s 15m ~/.bun/bin/bun docs/speedrun/scripts/tickmanip-latency.ts GATE_ACCOUNT --path=direct --no-tele'
-```
+**Open, for the host thread** (2026-10-22, rs/410): rs/249's gate-wrapper fix (`host-gate-read.sh`'s
+password redaction, "Gate history timer") is not yet installed on either machine.
 
-- **(d)**, the tab's loop rate: open the gate account's tab and log it in (step 3's Chrome and
-  tab-login commands with the gate account's env file), let it reach the game, then sample for five minutes with
-  `docs/speedrun/scripts/runhost-loops.ts`. It attaches to the tab through the loopback gateway, runs
-  the in-page probe (the page publishes `loops` only while a program runs), and every 10 s prints the
-  page's loop rate beside each process's CPU and ffmpeg's frame counters. **Before Chrome is stopped,
-  the gate account's tab is logged out** with `logoutClean`, so the account doesn't linger in the
-  world. The command below attaches to the running tab through the gateway (`openSession` with
-  `client: 'browser'`, which does not relaunch it) and calls `logoutClean`, the same call a run
-  script makes. With `RUN_COMMIT` at or after `c2d9eada` that call confirms the logout from the
-  page's own in-game flag over Chrome's DevTools port, so it is trustworthy from the tab
-  ("Credentials"). It exits 0 once the page is out of game and 1 when it isn't confirmed, and the
-  command stops Chrome only on 0. It also exits 1 when the tab is already out, because there is no
-  advancing tick to attach to. Then check in the live view that the tab shows the login screen.
-  This attach-and-logout command is new with c2d9eada and has not yet run on the twin, where
-  rs/149's tab-logout.ts did this job (not on main, "Credentials"). Bounds: the tab `T=15m`
-  (step 3's command), the sampler 10 min, the logout 3 min. **Never kill the tab while the
-  account is in game.** If the ssh line dies or the logout isn't confirmed, look at the live view and
-  re-run the logout part of the command until it shows the login screen. Only then close the tab
-  with `kill-session`. The tab's own bound is the last resort: it closes the tab at `T=15m` and
-  leaves the account to the server's no-connection timeout.
-
-```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'cd ~/rs-sdk && timeout --kill-after=30s 10m ~/.bun/bin/bun docs/speedrun/scripts/runhost-loops.ts GATE_ACCOUNT --label=gate --minutes=5 --display=:10 --out=$HOME/rs-run/gate-loops.jsonl 2>&1 | grep -v -E "^\[(Runner|BotSDK)\]|Pathfinding|LOGOUT DEBUG"; B=GATE_ACCOUNT timeout --kill-after=30s 3m ~/.bun/bin/bun -e "const m = await import(\"./speedrun/lib/session.ts\"); const s = await m.openSession(process.env.B, { client: \"browser\", pathfinding: false, readyTimeoutMs: 30000 }); const r = await m.logoutClean(s); console.log(r.ok ? \"logged out; the page is out of game\" : \"not confirmed: \" + r.reason); await m.closeSession(s); process.exit(r.ok ? 0 : 1);" && tmux -L run kill-session -t chrome'
-```
-
-Read (d) from the summary line's `loops p10` (lowest / median / highest 10-second sample). **Pass**:
-the lowest sample is at least 50 per second. **Marginal**: the median is at least 50 but a sample
-fell below: re-measure. **Fail**: the median is below 50. On 2026-10-21 every sample in every
-condition was 70-73 (m, below). During the run, the page keeps publishing `loops` while SCORED's
-programs run, which is what the in-run monitor reads.
-
-## 7. SCORED's tab: the run's first login
+## 7. SCORED's tab: the run's first login (`handoff`)
 
 **Only once `RUN_COMMIT` includes #120** (rs/138, on main since `96fc462a`; "Credentials").
 
@@ -1115,47 +1168,101 @@ player per tick world-wide, so a stop of many accounts queues (rs/267; HELPERS.m
 SUPPLIES.md, "Peak concurrent logins", has the count by run phase: on the body-altar plan (22 givers,
 rs/163) the start is ~90 with the gathering fleet's ~53 in and 37 without it, so **logging the
 unneeded fleet out first is mandatory**. S21's givers log in before SCORED, on the chosen machine
-(step 4; RUN-ORDER.md O38, settled). Do not log SCORED in over the cap.
+(step 4; RUN-ORDER.md O38, settled). Do not log SCORED in over the cap. `handoff` re-checks it as a
+hard check: our accounts online, as `rs-claim status` counts them on `/playerpositions` (every
+host's), plus SCORED's 1, at most 80 (`--cap`); it refuses if the count can't be read.
 
 **The gate's Chrome is gone before SCORED's tab opens.** After an unconfirmed gate logout the gate
-tab's Chrome can still be running on the run profile; SCORED's `--app` window then joins that
-process (the same `--user-data-dir`) and dies with it at the gate tab's `T=15m` bound (rs/232's
-read-only check against main's 18:16 PDT recording rule, via rs/147). So the `chrome` session must be
-gone from the `run` socket and no process may hold `rs-run/chrome-profile` (the bracket keeps the
-check's own shell, whose command line holds the pattern, out of `pgrep`'s match, as with step 3's
-`"token""="`). Expect `ok`:
+tab's Chrome could still be running on the run profile; SCORED's `--app` window would then join that
+process (the same `--user-data-dir`) and die with it at the gate tab's `T=15m` bound (rs/232's
+read-only check against main's 18:16 PDT recording rule, via rs/147). `gate` kills it
+unconditionally (step 6), and `handoff` checks first that no `chrome` session is left on the `run`
+socket, no process holds `rs-run/chrome-profile`, and no Bot Client window is on `:10`. It refuses
+(exit 2) on any of them. Never open SCORED's tab beside it.
+
+**The run tab's profile is warm before SCORED's tab opens** (main's rulings, relayed by rs/158 at
+09:42, 10:04, 10:4x and 10:5x PDT 2026-10-22; m, rs/424 and rs/41, "Measured: the run tab's browser
+profile"). A fresh Chrome profile is cold: the client fetches models and maps over its cache socket
+as the scene loads, which at SCORED's first login, at Lumbridge with the clock running, costs ticks.
+The cache is per profile and per page address (rs/41). Ashburn's run and gate tabs use
+google-chrome **156** with `~/rs-run/chrome-profile` on origin `http://127.0.0.1:8899`; a profile
+warmed on bbs (chrome-headless-shell 148) doesn't carry over, so warm on the Ashburn machine itself,
+at that exact origin (rs/41, via rs/158). Two layers, of which run-gate.ts checks neither:
+
+- **The warm-up: the twin's own profile.** The run profile is the twin's persistent
+  `~/rs-run/chrome-profile`, warmed by rs/393's `--until=S14` dress rehearsal through the run's exact
+  client address, `127.0.0.1:8899`. It stays on the twin, the expected start machine (step 5a). Only
+  if the run falls back to the run host is it moved to the run host's `~/rs-run/chrome-profile`, in
+  this order: SIGTERM its Chrome; `cp -a` the profile; delete `Singleton*` in the copy (the
+  `SingletonLock` names the host and pid, and without the delete Chrome exits 21, 'profile in use
+  on another computer'); delete `Default/Sessions` (otherwise session restore reopens the last tab);
+  then a login-free check that the IndexedDB key count matches the source's. The move needs the
+  same served origin and the same Chrome major on both machines (the host thread confirms both). No
+  command for the move is on this page: it is the host thread's.
+- **The verification pass, always: the gate account's login.** After the final served-webclient
+  rebuild (step 0) and before the run tab opens, a browser-client login through the run's
+  `CLIENT_URL` at the Lumbridge spawn must reach **`sceneState` 2 within a few ticks, with archive-0
+  urgent requests about 0**. Each machine's gate account, parked at the Lumbridge spawn, is that
+  login (main, 10:5x PDT): one gate-tab login serves as the (d) tab, the warm-up and rs/440's
+  `scene`, `locs` and `tile` lines (**pending rs/440**; the parking is a sibling issue under the host
+  thread, **pending**). It warms the run because the gate tab and the run tab are opened by the same
+  `launchTab` in `speedrun/tools/run-gate.ts`, on the same `--user-data-dir` (its `PROFILE`,
+  `~/rs-run/chrome-profile`) and the same page (its `PAGE`, `http://127.0.0.1:8899`). The cache
+  lives on disk in the profile, so it survives `gate`'s unconditional kill. **The rule behind it:**
+  the gate login warms the run only while the gate tab uses the same Chrome profile directory and the
+  exact client address the run tab will use. If either ever differs, the verification pass is a
+  separate probe login through the run's profile, never SCORED's, whose Chrome is gone before
+  `handoff` and whose login counts against the cap until it is out.
+
+The gate timer's direct-path login opens no browser and warms nothing, and a fresh or `mkdtemp`
+profile is cold.
+
+**The hand-off.** On the chosen machine, with the machine chosen (step 5a), the full roster in
+(step 4), the recording running (step 5), the gate's Chrome gone, the profile warm and the login
+count at or under 80: put `$SCORED_ENV` on it (step 0), run step 3's env check with
+`ENV=$SCORED_ENV` (expect only `mode 600`), then hand over. `$SCORED_ENV` is set in the Mac's shell
+to the env file's path on the machine. Use `--machine=run` when the gate chose the run host. Bound:
+12 min:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'if tmux -L run has-session -t chrome 2>/dev/null; then echo "chrome session still up"; elif pgrep -af "rs-run/chrome-[p]rofile"; then echo "Chrome still holds the run profile"; else echo ok; fi'
+bun speedrun/tools/run-gate.ts handoff --machine=twin --scored-env="$SCORED_ENV" --claim=run
 ```
 
-If either is left, log the gate tab out and stop it (step 6's logout-before-Chrome-stops command),
-then check again. Never open SCORED's tab beside it.
+On the Mac it refuses a machine the latest gate did not choose, a choice older than 20 minutes
+(`--max-gate-age`; gate again), and a rehearsal's gate for the run's hand-off or the other way
+round. Then on the machine, in order, each a hard check:
 
-On the chosen machine, with the machine chosen (step 5a), the full roster in (step 4), the
-recording running (step 5), the gate's Chrome gone and the login count at or under 80, put
-`$SCORED_ENV` on it (step 0), run step 3's env check with `ENV=$SCORED_ENV` (expect only
-`mode 600`), and launch Chrome as in step 3 with `ENV=$SCORED_ENV` and `T=9h`.
-Repeat step 3's window check for SCORED's window: exactly one `Bot Client` window on `:10`, 1920
-wide (step 3 measured 1920x1029 below XFCE's top panel). Expect one line:
+1. SCORED's env file is at `bots/<BOT_USERNAME>/bot.env` in the checkout, mode 600, with a
+   `PASSWORD`;
+2. the claim is live, and **the step-7 preconditions** hold: no `chrome` session, no process on
+   `rs-run/chrome-profile`, no Bot Client window;
+3. display `:10` is at 1920x1080 and 24 planes, and **RDP is at 0 connections**;
+4. **the recording is running and advancing**;
+5. **the login count**: ours online plus SCORED's 1 is at most 80;
+6. it opens SCORED's bare page in Chrome (step 3's line, `T=9h`) and requires the six flags and
+   **exactly one Bot Client window, 1920 wide**;
+7. **the live-frame pass line** (step 5): the window in front is the run tab, and an x11grab frame
+   of the display matches the page's own screenshot, at most 12/255;
+8. only then it logs SCORED in with tab-login. After the login it runs **the secrets check,
+   `0 0 0`**, and repeats the one-window check and the live frame in game.
 
-```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'DISPLAY=:10 xwininfo -root -tree | grep "Bot Client"'
-```
+It ends `PASS: SCORED is in game, alone and in front on the recorded display, with the recording
+showing it` and exits 0. SCORED's name is never printed: every line, frame and result says SCORED. A
+stop before the login leaves SCORED's bare page up and not logged in, for the operator to read in
+the live view. A stop after it leaves SCORED in game: touch nothing on the display, and tell main.
 
-Then log it in with step 3's tab-login
-command, with the same `ENV`; it exits 0 once SCORED is in game. run.ts checks that step 0's
-claim is live and the run's own, and refuses to start otherwise. From here the run scripts drive the tab through the gateway on
-7780 (RUN-ORDER.md, STEP-MANIFEST.md). Nobody touches the window. Relaunches during the run go the
-same way: session.ts mints a fresh token from `CLIENT_URL` and re-navigates the tab over
-`CDP_URL`. The run's relogs use `login(session, {inPage: true})`, with this navigation as the fallback.
-With rs/174's fix on `RUN_COMMIT` either path costs ~2 ticks on SCORED's clock (first SDK state at
-login + 1; m, rs/174 on the twin against the demo); without it a navigated relog passes ~19-20
-ticks before the bot layer sees state (m, rs/164 and rs/174; RUN-ORDER.md section 4).
+run.ts checks that step 0's claim is live and the run's own, and refuses to start otherwise. From
+here the run scripts drive the tab through the gateway on 7780 (RUN-ORDER.md, STEP-MANIFEST.md).
+Nobody touches the window. Relaunches during the run go the same way: session.ts mints a fresh token
+from `CLIENT_URL` and re-navigates the tab over `CDP_URL`. The run's relogs use
+`login(session, {inPage: true})`, with this navigation as the fallback. With rs/174's fix on
+`RUN_COMMIT` either path costs ~2 ticks on SCORED's clock (first SDK state at login + 1; m, rs/174
+on the twin against the demo); without it a navigated relog passes ~19-20 ticks before the bot
+layer sees state (m, rs/164 and rs/174; RUN-ORDER.md section 4).
 
 **Watching SCORED's own tick stream during the run** (rs/210, on main as #176, 834f376b; measured
-against the observed tick period since rs/276's #226, de66634b; reporting `overBudget` since #325,
-3daddf0c; all inside the run-commit floor). The start gate reads each candidate's path once. During the run, the step runner
+against the observed tick period since rs/276's #226, de66634b; reporting `overBudget` since #325;
+all inside the run-commit floor). The start gate reads each candidate's path once. During the run, the step runner
 (`runSteps` or `runResumable`) runs a passive tick-cadence monitor on SCORED's connection from its
 first in-world tick. It acts on nothing. Once a minute it appends a `kind: "tickmon"` row to the run
 log (`speedrun/runs/<runId>.jsonl`) and prints the same line, tagged `TICKMON`, on the run's stdout:
@@ -1221,15 +1328,16 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o 
 
 ## 8. Stop the recording and pull it
 
-On the chosen machine (in its ssh form). The recording holds the run only if step 5a's hand-over
-(line 6) passed: the run tab alone on the recorded display. After SCORED's final clean logout (the run script's `logoutClean`), and only once that logout is
+On the chosen machine (in its ssh form). The recording holds the run only if `handoff` passed (step
+5a, hand-over line 6): the run tab alone on the recorded display. After SCORED's final clean logout (the run script's `logoutClean`), and only once that logout is
 confirmed, stop ffmpeg with `q`, so it finishes the file, and check what it wrote. The final logout
 is what writes SCORED's hiscore row (RUN-ORDER.md section 4, "Final logout"). With `RUN_COMMIT` at
 or after `c2d9eada` ("Credentials"), `logoutClean` confirms the logout from the page's own in-game
 flag, so its own result is trustworthy from the tab. The confirmation is both of these: the run
 script's final `logoutClean` result reads `ok: true` with `confirmedBy: 'page'`, and the live view
 shows the login screen. If the result is not `ok`, or the live view still shows SCORED in game, log
-SCORED out with step 6's attach-and-logout command on SCORED's account (below). It calls the same
+SCORED out with the attach-and-logout command below (the same `logoutClean` call `gate` makes for the
+gate tab). It calls the same
 `logoutClean` and exits 0 once the page is out of game. **Never kill the tab while SCORED is in
 game.** `ENV` is `$SCORED_ENV`, as in step 7. Bound: 3 min. Its error messages can carry the
 account's name, so keep its output out of chat and logs:
