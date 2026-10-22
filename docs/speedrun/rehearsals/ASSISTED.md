@@ -18,14 +18,60 @@ inferred (arithmetic or a model over m and r inputs, basis given).
 | Skill | #1 (ticks) | Bar (95%) | Our total from the parked name | Margin under the bar | Lever verdict | Supplies line | Logins (twin) | Verdict |
 |---|---|---|---|---|---|---|---|---|
 | Fletching | jackalopefr1 **58** | **55** | ~66 (i) | **-11** (over) | public: 5 actions per tick, shown by #1 | fletcher h76-h79; rune arrowtips not held | 1 + 1 giver for one trade | **NO**: structural floor |
-| Firemaking | jackalopefm4 **706** | **670** | median 667-682 (i); P(at or under the bar) 45-57% | about 0 (coin flip) | none used | woodcutter h10-h14; free stock covers it | 1 (dropper on bbs) | **NO** under the 5% rule (about 95% to take #1) |
+| Firemaking | jackalopefm4 **706** | **670** | median 667-682 (i); P(at or under the bar) 45-57% | about 0 (coin flip) | none used | woodcutter h10-h14; free stock covers it | 1 (dropper on bbs) | Priced NO at the 5% bar. **Main: GO**, gated on P(#1) >= 90% on the model (see Rulings) |
 | Crafting | nickgemcut **197** | **187** | ~189 with dragonstones, ~205-215 with diamonds (i) | **-2 to -28** (over) | public: 5 cuts per tick, shown by #1 | jeweller h80-h83; no diamonds, no dragonstones | n/a | **NO**: no supply, and over the bar anyway |
-| Smithing | stunsmither **1,337** | **1,270** | ~1,160 (i, on a 1,024 m lab route) | **~+110** (~8%) | none used | bars h20-h29; ~365 adamantite bars not held | 2 (account + anvil helper) | **GO, gated on adamantite** and a from-spawn lab run |
+| Smithing | stunsmither **1,337** | **1,270** | ~1,160 (i, on a 1,024 m lab route) | **~+110** (~8%) | none used | bars h20-h29; ~365 adamantite bars not held | 2 (account + anvil helper) | Priced GO, gated on adamantite. **Main: DEFERRED** until SCORED's adamantite is met (see Rulings) |
 
 In one line: **only Smithing has room**, about 110 ticks under its bar. It needs about 365
 adamantite bars that the fleet doesn't hold. Fletching sits on a floor nobody can go under.
 Firemaking's expected total lands on its bar, and Crafting has no gems. No skill here needs a
 lever to be priced, so tenet 18's disclosure rule blocks none of them.
+
+## Rulings
+
+Main ruled on this pricing at 2026-10-21 17:17:07 PDT (cairn://p/rs/main/messages):
+
+- **Smithing: DEFERRED, not GO.** The ~365 adamantite bars earmarked for SCORED stay with SCORED.
+  No new farming line opens for an assisted batch while SCORED's stock is incomplete. Once rs/41
+  reports SCORED's adamantite target met, with the two-account line otherwise idle, rs/147 may ask
+  rs/41 for a separate surplus batch. The row then becomes GO on the prerequisites in the Smithing
+  section: rs/197 and rs/188 lab-accepted, and one from-spawn lab run at about 1,180 or better.
+  Not before.
+- **Firemaking: GO.** The standard is restated, not relaxed. The 5% margin exists so a public row
+  can't lose to variance, and the number that measures that is the probability of taking #1. So
+  **the gate for an attempt row is P(#1) >= 90% on the model**, and the 5% margin stays the
+  planning target. Conditions: only after tenet 18's verdict; the twin only, booked with host
+  outside the gate reads and the Fishing window; no withheld lever (this route uses none).
+- **Fletching and Crafting: NO** as priced.
+
+**The Firemaking gate, checkable.** P(#1) is the share of simulated 1-99 lines whose total, the
+line plus the fixed ticks before the first light, comes in under jackalopefm4's 706. That means
+705 or less: a tie's rank isn't established, so a tie counts as a loss. Inputs:
+
+- **The line:** 400,000 Monte Carlo runs on `firemaking-model.ts`'s level table (`Player.ts`
+  levelExperience) and roll, `stat_random(firemaking, 64, 512)` (r, `firemaking.rs2`).
+  - The highest log tier is used per level.
+  - The first light starts the clock at +3 ticks, and every roll after it is +4, success or
+    failure (m, firemaking.md §4: 4.00 ticks per fire on a dropped row).
+  - The stamp lands one tick after the last roll.
+  - Mean 658, p10 640, p90 680 (i).
+- **The fixed ticks:** `cairn_burns`'s 8 parked (m, CLAIMS.md), about 3 login frames (m,
+  HARNESS.md), and the walk from the spawn (3222,3222) to the row's first log.
+
+| Fixed ticks before the first light | P(#1) | P(at or under the 670 bar) |
+|---|---|---|
+| 11-13 (a row starting at the spawn) | 95.7% | 56.7% |
+| 14-17 | 94.3% | 47-57% |
+| 18-21 | 92.5% | 37-47% |
+| 22-25 | 90.1% | 26-37% |
+| 26-29 (the road row at (3200,3226) at its far estimate) | 87.0% | 17-26% |
+
+**So the gate holds only while the fixed ticks are 25 or fewer, which means a walk to the first
+log of about 14 ticks or less.** The road row at (3200,3226) (12-15 ticks of walk, i) sits on the
+edge, and a row at the spawn is comfortably inside. The model assumes every light lands by R+4,
+and that no log is missing from the dropped row or taken by another player. Each missed light or
+log gap costs 4 ticks or more and counts exactly like 4 more fixed ticks. So a row with 22 fixed
+ticks has one such slip of slack before the gate fails.
 
 ## Converting a row to ticks
 
@@ -167,6 +213,9 @@ about a 95% chance at #1 on free supplies; that is main's call, not a recommenda
 lever that would open real room is pyre logs (~430 ticks; firemaking.md §5). They need Shades of
 Mort'ton to stage 65 on the account itself, so a fresh account can't use them.
 
+**Main's ruling (17:17:07 PDT): GO, gated on P(#1) >= 90% on the model**, with the conditions and
+the checkable gate in the Rulings section above.
+
 ## Crafting
 
 **1. The #1 route, reconstructed.** nickgemcut reached 99 at tick 197 (m). The only Crafting
@@ -277,6 +326,10 @@ adamantite for a separate batch are worth it; (2) rs/197's module and rs/188's h
 lab acceptance; (3) the from-spawn lab run above confirms the walk and offload. Without
 adamantite, the mithril-only route is on the bar, so it's a NO.
 
+**Main's ruling (17:17:07 PDT): DEFERRED.** No assisted batch draws on SCORED's adamantite, and
+no new line opens for one. The row becomes GO on (2) and (3) only after rs/41 reports SCORED's
+adamantite target met with the line otherwise idle (Rulings section).
+
 ## What this changes elsewhere
 
 - **S25a's pricing (scored run).** rs/188's 1,024 lab ticks are below STEP-MANIFEST.md entry 10's
@@ -286,8 +339,9 @@ adamantite, the mithril-only route is on the bar, so it's a NO.
 
 ## Open
 
-- Whether a clear Firemaking row starts at the spawn tile. It moves the bar odds between 57% and
-  27% (lab, `firemaking-rows.ts`). It only matters if main relaxes the margin.
+- Whether a clear Firemaking row starts within about 14 ticks of walk from the spawn tile
+  (`firemaking-rows.ts`, then the lab). Main's P(#1) >= 90% gate depends on it (Rulings): a row at
+  the spawn gives 95.7%; the road row at (3200,3226) gives 87-90%.
 - Whether OPHELD drops stop a running walk in this engine. If they don't, the kit offload costs
   nothing (lab, a few ticks).
 - The rs/41 figures are a ledger snapshot from about 15:05 PDT, given by message. The per-role
