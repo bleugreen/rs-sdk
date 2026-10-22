@@ -382,7 +382,8 @@ class KitGiver {
             const bank = sdk.getBankItems();
             const split = splitLogs(load, Math.max(0, (bank.find(b => sameName(b.name, LOGS))?.count ?? 0) - this.o.keepLogs));
             const plan = planPackage({ name: receiverOf(to), items: split.fromBank }, bank);
-            X                short = plan.missing;
+            if (plan.missing.length || plan.ambiguous.length) {
+                short = plan.ambiguous.length ? { missing: plan.missing, ambiguous: plan.ambiguous } : plan.missing;
                 return;
             }
             for (const w of plan.withdrawals) {
