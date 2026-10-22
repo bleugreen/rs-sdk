@@ -846,8 +846,9 @@ giver two tiles away on +2, so the program correctly sent nothing.
 **Results (measured).**
 
 - **The 'answered' check works on the browser.** The program's reader surfaced 'Sending trade
-  offer...' on all 162 answered requests, every one of them behind other lines of its publication.
-  No re-send ever followed an answer (`resendAfterAnswer` 0).
+  offer...' on all 162 answered requests (`programSent` equal to `accountSent` in every arm; in the
+  topup arms all 57 came after another line of their publication). No re-send ever followed an
+  answer (`resendAfterAnswer` 0).
 - **No trade closed and no request went twice.** 0 closed trades in 7 arms. 0 double requests, and
   in round 2 no 'wishes to trade' fell outside a due stun's window.
 - **The re-send recovered nothing.** 4 of 166 requests (2.4%) went unanswered, all with the giver
@@ -868,5 +869,5 @@ the re-send is the wrong remedy for it. Why the engine refuses the ops is open. 
 no per-packet record, so it needs an engine-side probe of `OpPlayerHandler` for the account.
 
 **For S18.** Leave `topUp.resend` off. It is safe (no double request, no closed trade), but it has
-recovered 0 of 3 dropped requests and costs about 4 ticks in the stun where it fires. The default
+recovered 0 of 3 dropped requests and cost 3 to 4 ticks in the stun where it fired. The default
 packet stream is unchanged, so the option costs nothing while off.
