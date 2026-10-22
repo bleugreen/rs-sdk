@@ -1,5 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { createHash } from 'crypto';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { readTopUpAsk } from '../helpers/altar-cue';
+
+// The top-up bands write the courier's ask to the cue directory: never the checkout's run-machine/,
+// which on the run machine is the live one.
+const CUE = mkdtempSync(join(tmpdir(), 'thieving-cue-'));
+process.env.RC_CUE_DIR = CUE;
 import type { ActionResult, BotWorldState, InventoryItem } from '../../sdk/types';
 import { createPickpocket } from '../../server/webclient/src/bot/programs/pickpocket';
 import type { ProgramAction, ProgramContext, TickProgram } from '../../server/webclient/src/bot/programs/types';
@@ -10,7 +19,7 @@ import type { Step, StepContext } from '../runner/step';
 import { STUN_PRESETS } from '../../server/webclient/src/bot/programs/stun-actions';
 import {
     ARDOUGNE_SOUTH_BANK, ARROWHEAD_TIERS, BANDS, bonesTopUpAction, chargeSipPotion, type ChargeSip, eatPolicy, FOODS, foodPattern, packReport, parseStunPack, RETALK_QUIET_TICKS, retalkDue, steps, STUN_PACK_ACTIONS, STUN_PACK_BONES_BELOW,
-    stunPackCheck, TOPUP_RESTART_BY, topUpAction, topUpDue, TopUpReceiver
+    stunPackCheck, TOPUP_RESTART_BY, topUpAction, topUpAsk, TopUpAsker, topUpDue, TopUpReceiver
 } from './thieving';
 
 describe('sail retalk', () => {
@@ -358,9 +367,49 @@ describe('thieving helper top-ups', () => {
 
         expect(sdk.sent.map(a => a.method)).toEqual(['sendAcceptTrade', 'sendAcceptTrade']);
         expect(sdk.ops).toEqual(['start']);
-        const meta = ctx.log.rows.find(r => r.step === 'thieving:knights:detail')!.meta as { topUp: { mode: string; trades: Array<{ ok: boolean; received: number }> } };
+        const meta = ctx.log.rows.find(r => r.step === 'thieving:knights:detail')!.meta as { topUp: { mode: string; trades: Array<{ ok: boolean; received: number }>; asks: Array<{ items: unknown }> } };
         expect(meta.topUp.mode).toBe('idle');
         expect(meta.topUp.trades.map(t => [t.ok, t.received])).toEqual([[true, 10]]);
+        // the courier's ask, written on the open frame: 2 slots of cake held, one kept for coins, cake in the other 25
+        const ask = [{ item: '^(Cake|2/3 cake|Slice of cake)$', count: 25 }];
+        expect(meta.topUp.asks.map(a => a.items)).toEqual([ask]);
+        expect(readTopUpAsk(CUE)!.items).toEqual(ask);
+    });
+
+    test('topUpAsk with the pack: bones to fill, food back to 2, the next courier tier once at one tier held, one slot for arrows', () => {
+        const skills = (fletching: number) => [{ name: 'Thieving', level: 60, baseLevel: 60, experience: 0 }, { name: 'Fletching', level: fletching, baseLevel: fletching, experience: 0 }] as never;
+        const pack = (tiers: string[], o: { fletching?: number; coins?: boolean; sharks?: number } = {}) => {
+            const names = ['Blood rune', 'Air rune', 'Headless arrow', ...tiers.map(t => `${t} arrowtips`), 'Mithril arrow', ...(o.coins === false ? [] : ['Coins']), 'Babydragon bones', 'Babydragon bones'];
+            const inv = names.map((n, i) => item(i, n, { eat: false }));
+            for (let k = 0; k < (o.sharks ?? 1); k++) inv.push(item(inv.length, 'Shark'));
+            return { ...world({ level: 60, x: 2670, z: 3305 }), skills: skills(o.fletching ?? 50), inventory: inv } as BotWorldState;
+        };
+        const mem = { tiers: new Set<string>() };
+        // 9 slots held, coins among them: 19 free; 1 shark back, the adamant tier's slot, one for a new arrow stack: 16 bones
+        expect(topUpAsk(pack(['Mithril']), FOODS.shark, true, mem)).toEqual([{ item: 'bones$', count: 16 }, { item: '^(Shark)$', count: 1 }, { item: '^adamant arrow(head|tip)s$', count: 'all' }]);
+        // two tiers held: no tier; the adamant one was asked for once
+        expect(topUpAsk(pack(['Mithril', 'Adamant'], { sharks: 2 }), FOODS.shark, true, mem)).toEqual([{ item: 'bones$', count: 16 }]);
+        // down to adamant: rune, then nothing more
+        expect(topUpAsk(pack(['Adamant'], { sharks: 2 }), FOODS.shark, true, mem).at(-1)).toEqual({ item: '^rune arrow(head|tip)s$', count: 'all' });
+        expect(topUpAsk(pack(['Rune'], { sharks: 2 }), FOODS.shark, true, mem).map(a => a.item)).toEqual(['bones$']);
+        // no coins yet: one slot stays for the loot; Fletching 99: no tier and no arrow slot
+        expect(topUpAsk(pack(['Mithril'], { coins: false }), FOODS.shark, true, { tiers: new Set() })[0]).toEqual({ item: 'bones$', count: 16 });
+        expect(topUpAsk(pack(['Mithril'], { fletching: 99, sharks: 2 }), FOODS.shark, true, { tiers: new Set() })).toEqual([{ item: 'bones$', count: 18 }]);
+    });
+
+    test('TopUpAsker: writes once per trade with the courier, on the frame that shows it open; nothing for anyone else', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'asker-'));
+        const asker = new TopUpAsker(GIVER, dir, [FOODS.cake], false);
+        let s = world({ level: 60, x: 2670, z: 3305, maxHp: 40, inventory: [cake(0), cake(1)] });
+        const at = (patch: Partial<BotWorldState>) => (s = { ...s, ...patch, tick: s.tick + 1 } as BotWorldState);
+        expect(asker.step(s)).toBeNull();
+        expect(asker.step(at({ trade: screen('offer', 'stranger') as never }))).toBeNull();
+        expect(readTopUpAsk(dir)).toBeNull();
+        expect(asker.step(at({ trade: CLOSED as never }))).toBeNull();
+        expect(asker.step(at({ trade: screen('offer') as never }))).toEqual([{ item: '^(Cake|2/3 cake|Slice of cake)$', count: 25 }]);
+        expect(asker.step(at({ trade: screen('confirm') as never }))).toBeNull();
+        expect(readTopUpAsk(dir)!.items[0]!.count).toBe(25);
+        expect(asker.asks.map(a => a.tick)).toEqual([s.tick - 1]);
     });
 
     test('restart mode: stop at the failure, receive the trade, restart within TOPUP_RESTART_BY ticks', async () => {
