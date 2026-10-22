@@ -95,7 +95,15 @@ export interface EntryOptions {
     acceptFrom?: string;
 }
 
-/** One launcher entry per giver, in login order, slots round-robin, every one on the direct path. */
+/** The cue S21's givers serve, and the one whose open logs them in. */
+export const S21_SCOPE = { step: 'S21', family: 'altar' } as const;
+
+/**
+ * One launcher entry per giver, in login order, slots round-robin, every one on the direct path. A
+ * run-day giver logs in only when S21's cue opens (`loginOn`: runecraft.ts's pre-login step opens it
+ * before SCORED's relog, main's per-address schedule) and out on its stop; the idle load check logs
+ * in at once.
+ */
 export function giverEntries(accounts: string[], o: EntryOptions): Record<string, unknown>[] {
     validateAccounts(accounts);
     if (o.role !== 'idle' && o.role !== 'altar-giver') throw new Error('role must be idle or altar-giver');
@@ -105,9 +113,9 @@ export function giverEntries(accounts: string[], o: EntryOptions): Record<string
         if (o.role === 'idle') return { account, role: 'idle', path: 'direct', options: { heartbeatMinutes: 1 } };
         const restock: Record<string, unknown> = { kind: 'bank' };
         if (o.acceptFrom) restock.acceptFrom = o.acceptFrom;
-        const options: Record<string, unknown> = { altar: 'body', slot: i % GIVER_SLOTS, essence: ESSENCE_PER_TRIP, restock, scope: { step: 'S21', family: 'altar' } };
+        const options: Record<string, unknown> = { altar: 'body', slot: i % GIVER_SLOTS, essence: ESSENCE_PER_TRIP, restock, scope: { ...S21_SCOPE } };
         if (i === handBack) options.handBack = S21_HAND_BACK.map(h => ({ ...h }));
-        return { account, role: 'altar-giver', path: 'direct', options };
+        return { account, role: 'altar-giver', path: 'direct', options, loginOn: { ...S21_SCOPE } };
     });
 }
 
