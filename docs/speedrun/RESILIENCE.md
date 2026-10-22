@@ -196,6 +196,10 @@ the manifest against the game on every start, operator restarts included:
    steps (legs, banking) whose effect is already in the state are skipped.
 3. If nothing qualifies, it stops for the operator with every candidate's reason.
 
+Every walk first turns the run toggle on (`lib/run-mode.ts`). The toggle is
+not saved, and a session brought back by a relaunch or a page reload never
+went through `login`, which does the same.
+
 Steps that need more than the published state declare **probes** (a bank-open
 probe, a quest-journal read; rs/114's quest status and journal). Probes cost
 ticks, so they run only when the walk reaches a step that declares them, once
