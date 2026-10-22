@@ -24,7 +24,7 @@
 // in sight' test waits for the scene first (rs/185 addendum 4).
 
 import type { BotWorldState, PrayerName } from '../../sdk/types';
-import { act, actConverse, talkTo, useOn } from '../lib/act';
+import { act, actConverse, talkTo, useOn, type ActOptions } from '../lib/act';
 import { fight, prayerActive, setPrayer, type FightResult } from '../lib/combat';
 import { converse, type ConverseResult } from '../lib/converse';
 import { pageText, type OptionPattern } from '../lib/dialogue';
