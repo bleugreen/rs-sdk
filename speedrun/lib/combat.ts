@@ -22,7 +22,7 @@ import { waitUntil, type Pred, type StateSource } from './wait';
 import { npcByIndex, opIndex, waitForNpc, type NamePattern } from './world';
 
 export type UpkeepSdk = StateSource & Pick<BotSDK, 'sendUseItem' | 'sendTogglePrayer'>;
-export type CombatSdk = UpkeepSdk & Pick<BotSDK, 'sendInteractNpc' | 'sendSpellOnNpc' | 'sendClickDialog' | 'clickDialogByText' | 'sendSetCombatStyle'>;
+export type CombatSdk = UpkeepSdk & Pick<BotSDK, 'sendInteractNpc' | 'sendSpellOnNpc' | 'sendClickDialog' | 'clickDialogByText'>;
 
 /**
  * Standard-spellbook combat spells the route casts: interface component, Magic level, the rune
@@ -33,32 +33,6 @@ export const COMBAT_SPELLS = {
     fire_blast: { component: 1181, magic: 59, rune: /^Death rune$/i, runeName: 'death', air: 4, fire: 5 },
 } as const;
 export type CombatSpell = keyof typeof COMBAT_SPELLS;
-
-/**
- * The style the route's quest spell fights cast under: S10b's warlord, S11b's demon and S12's
- * arena fights, each spreading `questCastStyle()` into its fight options (Kolodion's fight does
- * not). 'defensive' selects the staff's defensive button ("Focus", style_melee_defensive) before
- * the first cast, and pvm_spell_success (player_magic.rs2) then pays each damage as 1.33 Magic
- * plus 1 Defence base xp instead of 2 Magic. 'normal', the default, leaves the style alone.
- */
-export const castingStyle: { style: 'normal' | 'defensive' } = { style: 'normal' };
-
-/** The quest fights' share of `castingStyle`, as fight options. */
-export function questCastStyle(): Pick<FightOptions, 'castStyle'> {
-    return castingStyle.style === 'defensive' ? { castStyle: 'defensive' } : {};
-}
-
-/** The staff's defensive slot when the combat tab is not published or not recognised: Bash, Pound, Focus. */
-const STAFF_DEFENSIVE_STYLE = 2;
-
-/** The combat-tab index of the wielded weapon's Defensive style. */
-export function defensiveStyleIndex(s: BotWorldState): number {
-    const cs = s.combatStyle;
-    if (!cs?.known) return STAFF_DEFENSIVE_STYLE;
-    const d = cs.styles.find(x => /^defensive$/i.test(x.type));
-    if (!d) throw new Error(`the ${cs.weaponName} has no Defensive style (styles ${cs.styles.map(x => `${x.index}:${x.name}/${x.type}`).join(', ')})`);
-    return d.index;
-}
 
 export function prayerActive(s: BotWorldState, prayer: PrayerName): boolean {
     return s.prayers?.activePrayers?.[PRAYER_INDICES[prayer]] === true;
@@ -199,8 +173,6 @@ export interface FightOptions extends UpkeepOptions {
     /** Cast this spell component on the target instead of meleeing, every `castEvery` ticks (default 2; the cast delay keeps the real rate). */
     spell?: number;
     castEvery?: number;
-    /** With `spell`: select this combat style before the first cast, unless it is already selected (see `castingStyle`). */
-    castStyle?: 'defensive';
     /** Give up after this many ticks (default 600). */
     maxTicks?: number;
     /** Ticks to wait for the target to come into view (default 10). */
@@ -281,11 +253,6 @@ export async function fight(sdk: CombatSdk, target: NamePattern | NearbyNpc, o: 
         void (o.spell !== undefined ? sdk.sendSpellOnNpc(idx, o.spell) : sdk.sendInteractNpc(idx, meleeOp));
     };
     const attacking = o.attack !== false;
-    if (attacking && o.spell !== undefined && o.castStyle === 'defensive') {
-        // Sent ahead of the cast on the same tick: the server handles a tick's packets in order.
-        const style = defensiveStyleIndex(s0);
-        if (s0.combatStyle?.currentStyle !== style) void sdk.sendSetCombatStyle(style);
-    }
     if (attacking) attack(t0);
 
     const levelUp = levelUpChain();
