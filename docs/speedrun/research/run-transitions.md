@@ -397,10 +397,32 @@ spread where that is wider.
 | T21-22 | 36 | 32.5 | +10.8% | miss (bar 3.25) | none |
 
 The misses are read from the hop breakdowns, not measured separately. L24b met two closed doors at
-about 3 ticks each, the whole gap, the same door-state split as T22-23 in the lab. L24c (Varrock
-teleport, 5 ticks, then 3 to walk 4 tiles to (3211,3425)) and T21-22 (Lumbridge teleport 4, run
-32) fit the spread of a teleport's landing tile, which the lab's small samples don't cover. No leg
-was slow in a way that points at latency: the clean legs are within 3%, and T06-07 came in 3 ticks
-under. So the demo confirms the walker. The door-bound legs (L24b, T22-23) should be priced as a
-range by door state, and the teleport legs (L24c, T21-22) as a range by landing tile, rather than
-as one mean (asked of rs/158).
+about 3 ticks each, the whole gap, the same door-state split as T22-23 in the lab. The two teleport
+misses are NOT landing spread: the landing tables below put L24c at 4-7 and T21-22 at 32-34 over
+every tile seen, and the demo's 8 and 36 lie above both. On the demo, L24c's Varrock cast took 5
+ticks (4 in all 80 lab casts) and then a 3-tick walk-on. T21-22's Lumbridge cast took 4 and its run
+32 (28-30 in the lab). The demo's other casts split the same way: the Falador cast took 5 for T23-24
+and L24a, and 4 for T06-07. So the excess is a demo-side cost of about 1-3 ticks on a teleport leg,
+a cast or walk click landing a tick late, which one reading per leg can't size further. The clean
+legs are within 3%, and T06-07 came in 3 ticks under, so the walker itself is confirmed. Pricing
+(rs/158, fold-in 13): door-bound legs at the closed-door figure for the expected and the open-door
+figure for the best; teleport legs at the landing tables' cast mean for the expected.
+
+**Landing tables** (rs/198, lab, 300 ms, patched travel.ts through `runLeg` as the run casts it,
+Magic 99, every cast started outside both landing squares). L24c (Varrock teleport, walk-on to
+(3211,3425)): 80 casts, 22 of 25 tiles seen, the cast 4 ticks every time; mean over casts **4.83**,
+over tiles seen 4.98, range 4-7. Ticks by landing tile (casts in brackets):
+
+| landing x \ z | 3422 | 3423 | 3424 | 3425 | 3426 |
+|---|---|---|---|---|---|
+| 3211 | 5.25 (4) | 5 (2) | 4 (5) | 4 (5) | 4 (6) |
+| 3212 | 5 (2) | 5 (2) | 4 (5) | 4 (6) | 4 (2) |
+| 3213 | 5 (4) | 5 (5) | – | 5 (4) | – |
+| 3214 | 5 (2) | 5 (9) | 5 (3) | 5 (2) | 6 (3) |
+| 3215 | 6 (1) | – | 6 (2) | 6.25 (4) | 6 (2) |
+
+T21-22 (Lumbridge teleport, run to (3241,3248)): 40 casts, 14 tiles seen (x 3219-3222, z
+3216-3220), the cast 4 ticks every time; mean over casts **32.98**, over tiles 32.93, range 32-34.
+x 3222 gives 32-33 (z 3216, 3218, 3219: 32; z 3217, 3220: 33), x 3221 gives 33 (z 3216-3220), x
+3220 gives 33 (z 3218, 3219), x 3219 gives 34 (z 3218, 3219). The cast means (4.8 and 33.0, against
+the earlier lab means 4.5 and 32.5) are the expected figures.
