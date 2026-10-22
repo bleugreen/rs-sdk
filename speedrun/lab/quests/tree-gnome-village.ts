@@ -16,6 +16,10 @@
 // stall 42 and 108 ticks right after a maze-giant fight; this checks whether a post-kill talk click
 // still drops. D's ticks in this mode are from beside Montai, not from the arrival tile.
 //
+// --no-retaliate turns auto-retaliate off in every fixture (main's run-wide setting for SCORED, until
+// the shared login helper sets it): with it on, the stronghold commander's attack turns SCORED on him
+// and segment H's door and ladder clicks are swallowed.
+//
 // --warlord=fire_bolt runs the fallback spell. Besides the runner's table this prints the aggro
 // census: every NPC seen within 16 tiles of SCORED (name, combat level, nearest approach), each one
 // seen in combat or targeting while near, and every hit SCORED took with its source.
@@ -23,6 +27,7 @@
 import type { BotWorldState } from '../../../sdk/types';
 import { arg, result } from '../common';
 import { COMBAT_SPELLS, fight, setPrayer } from '../../lib/combat';
+import { waitUntil } from '../../lib/wait';
 import { chebyshev } from '../../lib/world';
 import { BOLREN, JUMP_IN, MONTAI, quest, stepId, steps, WARLORD, type Options } from '../../quests/tree-gnome-village';
 import { cheat, mustTele } from '../setup';
@@ -31,6 +36,9 @@ import { labMain, type LabQuest, type QuestFixture } from './run';
 const WARLORD_SPELL = arg('warlord', 'fire_blast');
 if (WARLORD_SPELL !== 'fire_blast' && WARLORD_SPELL !== 'fire_bolt') throw new Error(`--warlord=${WARLORD_SPELL}: want fire_blast or fire_bolt`);
 const MONTAI_FIGHT = process.argv.includes('--montai-fight');
+const NO_RETALIATE = process.argv.includes('--no-retaliate');
+/** The controls tab's auto-retaliate off button (interface.pack controls:com_3, player_controls.rs2). */
+const IF_AUTO_RETALIATE_OFF = 151;
 
 /** SCORED arriving at S10b. */
 const LEVELS = { attack: 1, strength: 1, defence: 1, hitpoints: 10, magic: 59, prayer: 94 } as const;
@@ -148,6 +156,15 @@ const lab: LabQuest<Options> = {
         censusWatch.stop = session.sdk.onStateUpdate(watch);
         const lv = (k: string) => session.sdk.getState()?.skills.find(x => x.name.toLowerCase() === k);
         console.log(`LEVELS hp ${lv('hitpoints')?.level} prayer ${lv('prayer')?.level} magic ${lv('magic')?.level} attack ${lv('attack')?.level}`);
+        if (NO_RETALIATE) {
+            const sdk = session.sdk;
+            for (let i = 0; i < 8 && sdk.getState()?.autoRetaliateEnabled !== false; i++) {
+                await sdk.sendClickComponent(IF_AUTO_RETALIATE_OFF);
+                await waitUntil(sdk, s => s.autoRetaliateEnabled === false, { maxTicks: 4 });
+            }
+            if (sdk.getState()?.autoRetaliateEnabled !== false) throw new Error('--no-retaliate: auto-retaliate stayed on after 8 clicks');
+            console.log('AUTO-RETALIATE off');
+        }
         if (MONTAI_FIGHT && fixture.letter === 'D') await killGiantBesideMontai(session.sdk);
     },
 };
