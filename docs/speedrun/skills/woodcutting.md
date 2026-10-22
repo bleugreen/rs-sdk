@@ -320,3 +320,52 @@ with trades** (inferred, 23 bones in 23 x 3.21 + 5 ticks). Not measured in-page:
 itself, which the program leaves to the step script (stop, `receiveFrom`, start). The restart
 re-anchors on observed xp, so it may cost a few ticks more than the lite script's bootstrap.
 The willow band is not measured in-page.
+
+### The giver group (S07's b01-b04 taking turns)
+
+On the run the loads come from four givers taking turns (`helpers/bone-giver.md` "Taking turns":
+one restock round trip on the demo, 205-215 ticks, is longer than three loads of burying). The
+step takes them with `bones.group` (CLI `boneGroup=cairn_b01,cairn_b02,cairn_b03,cairn_b04`) in
+place of one `bones.giver`:
+
+- **Whose turn.** Before each load's `receiveFrom` the step takes its partner from
+  `bone-giver.ts` `awaitBoneServer`: `boneServer` over the givers' status files in the cue
+  directory, the same rule the givers use to decide which of them keeps a request standing. While
+  no giver serves (every one away at the bank) it waits on observed ticks, up to `serverWait`
+  (default `SERVER_WAIT_TICKS`, 400, about two round trips), and a load that finds none fails the
+  band: `bone load N from the group (...) failed: no giver of the group served within N observed
+  ticks`. The bone-receiver stand-in (`givers`) takes its partner from the same function. Each
+  load's row carries the giver and the ticks waited for it (`giver`, `serverWait`).
+- **The cue.** The givers find the scored account only through `cue.json`, and read only a cue
+  scoped `{ step: 'S07', family: 'bone' }` (`S07_BONE_CUE`). Nothing else writes one (Runecraft's
+  S06 cue is scoped to S06's altar givers and ends with a stop they never see), so the step writes
+  it: at each burying band's start, before the first load, in one cue session for the whole step
+  (the group counts its loads per session, across both bands), and a stop when S07's last band
+  reaches `to`. A band that fails leaves the cue standing for the resume. With one `bones.giver`
+  the step writes no cue, as before.
+- **The last load.** The want is the same whichever giver serves, so `bones.lastLoad` (21) holds
+  for the group as for one giver; which giver carries T07-08's runes is the helpers' choice
+  (`finalExtras` on one giver, served on the group's last load by `boneServer`). Once the runes
+  are in, that load was the last: the band asks for no other, and the knife cycle chops on without
+  bones to the band end, as the bones run out well before 99.
+- `handBack: true` names one giver, so it is refused with a group (name the partner instead).
+
+**Measured** (local engine, `NODE_TICKRATE=300`, a headless Chrome tab on bgsrv-mac, load 2.2-5.2,
+2026-10-22 18:29-18:41Z, `speedrun/lab/measure-woodcutting.ts band --level=15 --bury --givers=4`:
+cairn_b01-b04 under the run-machine launcher with staff-made bones, so a giver's restock takes a
+tick, not the demo's ~211; the lab's 25x xp rate, so a band is short in ticks):
+
+| | Run A: this step on main's helpers, oak 15-65 | Run B: rs/383's group last load (`--final=7`, its helpers at 4838513b), oak 15-72 |
+|---|---|---|
+| Loads | **6 of 6**, b01, b02, b03, b01, b04, b02 | **7 of 7**, b01, b02, b03, b01, b02, b03, then b04 with 21 bones, 1 law and 5 air |
+| Click to bones (`receiveFrom` ticks) | **4** (the first 5) | **4** (the first and the last 5) |
+| Waiting for a server | 0 ticks on every load | 0 ticks on every load |
+| Band ticks around the loads (stop, trade, restart) | 46 for 6, ~7.7 a load | 51 for 7, ~7.3 a load |
+| After the last load | | no load asked; chopped on 220 ticks to 72 (the gate went plain at T643), runes held at the end |
+
+The step always traded the giver `boneServer` named, and no giver requested out of turn. Run A's
+b01 came round again before b04's first turn because b04 logged in after b01 had already given
+load 1 and stood loaded again (a 1-tick lab restock): the longest-waiting rule, not a skip. In
+run B, b04 was held for the last load as rs/383's rule intends. Against rs/383's lab of the
+stand-in (4 ticks a load, a bury gap of 7) the step takes the same 4 ticks a load. Not measured
+here: the demo's round trips, and the willow band.

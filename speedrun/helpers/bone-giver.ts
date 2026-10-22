@@ -66,7 +66,7 @@ import { join } from 'node:path';
 import type { BotWorldState, NearbyPlayer } from '../../sdk/types';
 import { withdrawMany } from '../lib/bank';
 import { give, DROPPED_TICKS, openTrade, tradeOf, type GiveSpec } from '../lib/trade';
-import { waitUntil } from '../lib/wait';
+import { waitUntil, type StateSource } from '../lib/wait';
 import { existsSync, readdirSync } from 'node:fs';
 import { runIsOn } from '../lib/run-mode';
 import { assertUntracked, awaitAsk, canonName, CueWatcher, cueDir, nameHash, newRequestFrom, readJson, scopeOption, turnOrder, writeJsonAtomicSync, type Cue, type CueScope, type TopUpAsk } from './altar-cue';
@@ -402,6 +402,29 @@ export function boneServer(statuses: readonly BoneStatus[], group: readonly stri
             holding: s => s.phase === 'requested' || s.phase === 'trading'
         }
     )[0]?.account;
+}
+
+/** Observed ticks the scored side waits for the group's server before it refuses the load (about two restock round trips). */
+export const SERVER_WAIT_TICKS = 400;
+
+export interface ServerWait {
+    /** The group's server, or undefined when none served within the bound. */
+    server: string | undefined;
+    /** Observed ticks waited for it: 0 when one was serving at the call. */
+    waited: number;
+}
+
+/**
+ * The scored side's half of the turn rule, before each load's receiveFrom: the group's server
+ * (boneServer, read from the same status files the givers read), waiting on observed ticks while
+ * none serves, for at most `maxTicks`. The S07 step (woodcutting.ts `bones.group`) and the
+ * stand-in (bone-receiver `givers`) both take their partner from here.
+ */
+export async function awaitBoneServer(sdk: StateSource, dir: string, group: readonly string[], maxTicks: number = SERVER_WAIT_TICKS): Promise<ServerWait> {
+    const t0 = sdk.getState()?.tick ?? 0;
+    let server: string | undefined;
+    const r = await waitUntil(sdk, () => (server = boneServer(readBoneStatuses(dir), group, Date.now())) !== undefined, { maxTicks });
+    return { server: r.ok ? server : undefined, waited: Math.max(0, r.tick - t0) };
 }
 
 export class BoneGiver {

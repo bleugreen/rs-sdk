@@ -68,7 +68,7 @@ S07 has four givers, cairn_b01-b04, because one restock round trip is longer tha
 - **Only the server keeps a request standing.** The others wait loaded on the same tile (players stack) with phase `waiting` and detail `queued behind <server>`. They re-read the order every tick or two.
 - **Overlap:** two givers that start requesting on one frame resolve by the same order. The one that has waited less stands down.
 - **After its trade** the server restocks, and its `readyAt` clears, so the next in line takes over within a tick. A request that came to nothing, or a turn waited out, keeps a giver on its tile and its place in the order.
-- **The scored side** names its trade partner by the same rule: `boneServer(readBoneStatuses(cueDir), group, Date.now())` before each load's `receiveFrom`. The stand-in does this with `givers: [...]`. woodcutting.ts still takes a single `bones.giver` name, and making it take the group is the step's half (rs/147).
+- **The scored side** names its trade partner by the same rule: `boneServer(readBoneStatuses(cueDir), group, Date.now())` before each load's `receiveFrom`. Both the S07 step (`woodcutting.ts` `bones.group`) and the stand-in (`givers: [...]`) take it from `awaitBoneServer`, which waits on observed ticks while no giver serves and gives up after `SERVER_WAIT_TICKS` (400). The step also writes the S07 bone cue the givers read (`skills/woodcutting.md` section 9, "The giver group").
 
 Lab, local engine at 300 ms (`speedrun/lab/bone-giver.ts --givers=3 --loads=6 --pages=`, staff-made bones, 2026-10-22):
 
