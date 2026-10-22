@@ -6,7 +6,7 @@ import { TickLog } from '../lib/ticks';
 import { onTutorialIsland } from '../lib/world';
 import type { StepContext } from '../runner/step';
 import { IDLE_TICKS } from '../lib/wait';
-import { LANDING_IDLE_TICKS, LUMBRIDGE_SPAWN, PLAYER_KIT, tutorialSkip } from './start';
+import { CHOICE_TICKS, LANDING_IDLE_TICKS, LUMBRIDGE_SPAWN, PLAYER_KIT, REPLY_TICKS, TALK_TICKS, tutorialSkip } from './start';
 
 const prevTick = process.env.SPEEDRUN_TICK_MS;
 beforeAll(() => { process.env.SPEEDRUN_TICK_MS = '5'; });
@@ -23,9 +23,21 @@ const choice = (yes: string) => ({ isOpen: true, isWaiting: false, pageId: 'p2',
  * publishes the landing as the next tick; null never lands.
  */
 class TutorialSdk extends FakeSdk {
-    constructor(private readonly offer: string, landAfterMs: number | null = 1) {
+    /** `drop`: how many of the first talk / continue clicks the engine never answers. */
+    constructor(private readonly offer: string, landAfterMs: number | null = 1, drop: { talk?: number; cont?: number; cantReach?: boolean } = {}) {
         super(baseState({ tick: 3, player: { worldX: 3094, worldZ: 3106 } as BotWorldState['player'], modalOpen: true, modalInterface: PLAYER_KIT, nearbyNpcs: [guide] as unknown as BotWorldState['nearbyNpcs'] }));
+        let talks = drop.talk ?? 0;
+        let conts = drop.cont ?? 0;
         this.onSend = (a, sdk) => {
+            if (a.method === 'sendInteractNpc' && talks-- > 0) {
+                // The engine's refusal when the guide steps off the tile next to the player that tick.
+                if (drop.cantReach) {
+                    const tick = sdk.getState()!.tick;
+                    setTimeout(() => sdk.tick(s => ({ gameMessages: [...s.gameMessages, { type: 0, text: "I can't reach that!", sender: '', tick, fromSelf: false }] })), 1);
+                }
+                return;
+            }
+            if (a.method === 'sendClickDialog' && conts-- > 0) return;
             if (a.method === 'sendInteractNpc') setTimeout(() => sdk.tick({ modalOpen: false, modalInterface: -1, dialog: cont as BotWorldState['dialog'] }), 1);
             if (a.method === 'sendClickDialog') setTimeout(() => sdk.tick({ dialog: choice(this.offer) as BotWorldState['dialog'] }), 1);
             if (a.method === 'clickDialogByText' && landAfterMs !== null) setTimeout(() => sdk.tick({ dialog: { isOpen: false, options: [], isWaiting: false }, player: { worldX: LUMBRIDGE_SPAWN.x, worldZ: LUMBRIDGE_SPAWN.z } as BotWorldState['player'], inventory: KIT as BotWorldState['inventory'] }), landAfterMs);
@@ -37,6 +49,33 @@ class TutorialSdk extends FakeSdk {
 }
 
 const ctx = (sdk: FakeSdk, log = TickLog.memory('t')) => ({ sdk, bot: {}, session: { sdk }, c: {}, log }) as unknown as StepContext<unknown>;
+
+/** Run `p` with the server ticking every 2 ms, as it does while a dropped click goes unanswered. */
+async function ticking<T>(sdk: FakeSdk, p: () => Promise<T>): Promise<T> {
+    const ticker = setInterval(() => sdk.tick(), 2);
+    try {
+        return await p();
+    } finally {
+        clearInterval(ticker);
+    }
+}
+
+/**
+ * Run `p` at a nominal tick length of `ms`. S00 puts a click's server tick at the later of the tick
+ * the client executed it and the wall time since its first state over the tick length; at 50 ms the
+ * wall-time side never passes these fakes' 1-2 ms ticks, so the observed ticks alone decide.
+ */
+async function atTickMs<T>(ms: number, p: () => Promise<T>): Promise<T> {
+    const prev = process.env.SPEEDRUN_TICK_MS;
+    process.env.SPEEDRUN_TICK_MS = String(ms);
+    try {
+        return await p();
+    } finally {
+        process.env.SPEEDRUN_TICK_MS = prev;
+    }
+}
+
+const sentMethods = (sdk: FakeSdk) => sdk.sent.map(s => s.method).filter(m => m !== 'sendClickComponent');
 
 describe('S00 tutorial skip', () => {
     test('accepts the design, talks, continues once and takes "Yes please.": three server round trips', async () => {
@@ -125,6 +164,99 @@ describe('S00 tutorial skip', () => {
         expect(err?.message).toMatch(
             new RegExp(`^not at Lumbridge with the starter kit after the skip \\(the tab stayed silent past ${LANDING_IDLE_TICKS} ticks, 0\\.5 s\\): last state tick 5 \\(choice page at 5\\), at 3094,3106 without the kit, silent 0\\.\\d s$`)
         );
+    });
+
+    test('a dropped talk is sent once more REPLY_TICKS after it executed, logged, and the skip goes on', async () => {
+        const sdk = new TutorialSdk('Yes please.', 1, { talk: 1 });
+        const log = TickLog.memory('t');
+        await atTickMs(50, () => ticking(sdk, () => tutorialSkip.run(ctx(sdk, log))));
+        expect(sentMethods(sdk)).toEqual(['sendAcceptCharacterDesign', 'sendInteractNpc', 'sendInteractNpc', 'sendClickDialog', 'clickDialogByText']);
+        expect(tutorialSkip.postconditions(sdk.getState()!, {})).toBe(true);
+        const notes = log.rows.filter(r => r.step === 'S00:resend').map(r => r.meta);
+        expect(notes).toEqual([{ click: 'talk', resends: 1, clicks: `sent 3, executed 3 (ok); sent ${3 + REPLY_TICKS}, executed ${3 + REPLY_TICKS} (ok)` }]);
+    });
+
+    test('two dropped talks fail after TALK_TICKS with every click and the last state in the message', async () => {
+        const sdk = new TutorialSdk('Yes please.', 1, { talk: 2 });
+        const err = await atTickMs(50, () => ticking(sdk, () => tutorialSkip.run(ctx(sdk)).then(() => null, (e: Error) => e)));
+        expect(sentMethods(sdk)).toEqual(['sendAcceptCharacterDesign', 'sendInteractNpc', 'sendInteractNpc']);
+        expect(err?.message).toBe(
+            `the guide did not answer within ${TALK_TICKS} ticks of the click: 2 clicks (sent 3, executed 3 (ok); sent 7, executed 7 (ok)); ` +
+            `last state tick 16 at 3094,3106, no page, modal ${PLAYER_KIT}`
+        );
+    });
+
+    test('a dropped continue is sent once more and the choice page is answered', async () => {
+        const sdk = new TutorialSdk('Yes please.', 1, { cont: 1 });
+        const log = TickLog.memory('t');
+        await atTickMs(50, () => ticking(sdk, () => tutorialSkip.run(ctx(sdk, log))));
+        expect(sentMethods(sdk)).toEqual(['sendAcceptCharacterDesign', 'sendInteractNpc', 'sendClickDialog', 'sendClickDialog', 'clickDialogByText']);
+        expect(tutorialSkip.postconditions(sdk.getState()!, {})).toBe(true);
+        expect(log.rows.filter(r => r.step === 'S00:resend').map(r => r.meta?.click)).toEqual(['continue']);
+    });
+
+    test('a talk refused with "I can\'t reach that!" is sent once more on the next tick', async () => {
+        const sdk = new TutorialSdk('Yes please.', 1, { talk: 1, cantReach: true });
+        const log = TickLog.memory('t');
+        await atTickMs(50, () => ticking(sdk, () => tutorialSkip.run(ctx(sdk, log))));
+        expect(sentMethods(sdk)).toEqual(['sendAcceptCharacterDesign', 'sendInteractNpc', 'sendInteractNpc', 'sendClickDialog', 'clickDialogByText']);
+        expect(log.rows.filter(r => r.step === 'S00:resend').map(r => r.meta?.clicks)).toEqual(['sent 3, executed 3 (ok); sent 4, executed 4 (ok)']);
+        expect(tutorialSkip.postconditions(sdk.getState()!, {})).toBe(true);
+    });
+
+    test('a tab far behind the server: the reply bound counts from the server tick the click reached, not its execution', async () => {
+        // As at 30x throttle: the continue executes while the tab is ~10 ticks behind the server, and
+        // the choice page comes once the tab has decoded that far, 9 observed ticks after execution.
+        await atTickMs(20, async () => {
+            const sdk = new TutorialSdk('Yes please.');
+            const content = sdk.onSend;
+            sdk.onSend = (a, s) => { if (a.method !== 'sendClickDialog') content(a, s); };
+            sdk.sendClickDialog = (...args: unknown[]) => {
+                sdk.sent.push({ method: 'sendClickDialog', args });
+                return (async () => {
+                    // ~10 server ticks of wall time pass while the tab decodes two.
+                    await Bun.sleep(100); sdk.tick();
+                    await Bun.sleep(110); sdk.tick();
+                    setTimeout(async () => {
+                        for (let i = 0; i < 8; i++) { await Bun.sleep(1); sdk.tick(); }
+                        sdk.tick({ dialog: choice('Yes please.') as BotWorldState['dialog'] });
+                    }, 1);
+                    return { success: true, message: 'ok' };
+                })();
+            };
+            const log = TickLog.memory('t');
+            await tutorialSkip.run(ctx(sdk, log));
+            expect(sentMethods(sdk)).toEqual(['sendAcceptCharacterDesign', 'sendInteractNpc', 'sendClickDialog', 'clickDialogByText']);
+            expect(log.rows.filter(r => r.step === 'S00:resend')).toHaveLength(0);
+            expect(tutorialSkip.postconditions(sdk.getState()!, {})).toBe(true);
+        });
+    });
+
+    test('a lagging tab that executes the continue 8 ticks after it was sent is waited for, never re-sent', async () => {
+        // As measured with the tab throttled 14x from login: the client decodes a backlog of ticks before
+        // it runs the queued click, and the choice page comes 2 ticks after the click executed.
+        const sdk = new TutorialSdk('Yes please.');
+        const content = sdk.onSend;
+        sdk.onSend = (a, s) => { if (a.method !== 'sendClickDialog') content(a, s); };
+        let sentAt = -1;
+        sdk.sendClickDialog = (...args: unknown[]) => {
+            sdk.sent.push({ method: 'sendClickDialog', args });
+            sentAt = sdk.getState()!.tick;
+            return (async () => {
+                for (let i = 0; i < 8; i++) { await Bun.sleep(1); sdk.tick(); }
+                setTimeout(() => sdk.tick(), 1);
+                setTimeout(() => sdk.tick({ dialog: choice('Yes please.') as BotWorldState['dialog'] }), 3);
+                return { success: true, message: 'ok' };
+            })();
+        };
+        const log = TickLog.memory('t');
+        await tutorialSkip.run(ctx(sdk, log));
+        expect(sentMethods(sdk)).toEqual(['sendAcceptCharacterDesign', 'sendInteractNpc', 'sendClickDialog', 'clickDialogByText']);
+        expect(log.rows.filter(r => r.step === 'S00:resend')).toHaveLength(0);
+        expect(sentAt).toBe(4);
+        // The landing is 1 tick after the choice page, which was 10 ticks after the send: past the old 6-tick bound.
+        expect(sdk.getState()!.tick).toBeGreaterThan(sentAt + CHOICE_TICKS + 1);
+        expect(tutorialSkip.postconditions(sdk.getState()!, {})).toBe(true);
     });
 
     test('stops when the skip is not offered', async () => {

@@ -13,6 +13,17 @@
 // (map_live) the step fails: the full tutorial costs far more than any fallback would save.
 // On landing it turns run on (lib/run-mode.ts), which no login can do on the island.
 //
+// The talk goes through lib/act.ts's ClickGuard, which re-sends it once when it draws no reply.
+// The guide refuses about one talk in thirty with "I can't reach that!": it wanders, and when it
+// stands next to the player the client sends no route, so a step it takes that tick leaves the
+// engine nothing to walk.
+//
+// The waits after the continue and after "Yes please." count from the server tick the click
+// reached (lib/wait.ts serverClock), not from the page. A starved browser tab runs a queued click
+// only when it has decoded its backlog of ticks, and decodes the reply after the rest of it: with
+// the tab throttled 30x from login, the continue sent at tick 4 executed at tick 19, wall time put
+// the server near tick 29, and the choice page came at 30.
+//
 // The landing wait spans a silent window: after the telejump the browser client rebuilds the
 // Lumbridge region and publishes nothing until it is built, then publishes the landing as the
 // next tick (the rebuild costs no observed ticks). The window is ~0.6 s on a quiet machine and
@@ -23,7 +34,7 @@ import { ClickGuard, settle } from '../lib/act';
 import { classifyPage } from '../lib/dialogue';
 import { ensureRunOn } from '../lib/run-mode';
 import { logNote } from '../lib/ticks';
-import { idleBoundMs, tickPeriod, waitUntil, type IdleBound } from '../lib/wait';
+import { idleBoundMs, serverClock, tickPeriod, waitUntil, type IdleBound } from '../lib/wait';
 import { onTutorialIsland } from '../lib/world';
 import type { Step, StepContext } from '../runner/step';
 
@@ -41,6 +52,12 @@ export const PLAYER_KIT = 3559;
  * resumable runner recovers it. The measured table is in speedrun/README.md, section skills/start.ts.
  */
 export const LANDING_IDLE_TICKS = 100;
+/** Ticks from the talk's execution to the guide's page (ClickGuard's one re-send included). */
+export const TALK_TICKS = 12;
+/** Ticks from the continue reaching the server to the choice page. */
+export const CHOICE_TICKS = 6;
+/** Ticks from "Yes please." reaching the server to the landing with the starter kit. */
+export const LANDING_TICKS = 8;
 /** Items of the starter kit the postcondition checks (tutorial.rs2 inv_add list). */
 export const STARTER_KIT = [/^bronze axe$/i, /^tinderbox$/i, /^small fishing net$/i, /^bronze pickaxe$/i] as const;
 
@@ -86,8 +103,35 @@ function where(s: BotWorldState | null): string {
     return s?.player ? `${s.player.worldX},${s.player.worldZ}` : 'unknown';
 }
 
+/** The last state, for failure messages: tick, position, page, modal and the last game message. */
+function stateTrace(s: BotWorldState | null): string {
+    if (!s) return 'no state';
+    const d = s.dialog;
+    const page = d.isOpen ? `${classifyPage(d)} page${d.isWaiting ? ' (waiting)' : ''}` : 'no page';
+    const msg = s.gameMessages.at(-1);
+    return `last state tick ${s.tick} at ${where(s)}, ${page}, modal ${s.modalOpen ? s.modalInterface : 'none'}${msg ? `, last message "${msg.text}" (tick ${msg.tick})` : ''}`;
+}
+
+/** A click's ticks for failure messages: sent, executed (its action result came back), reached the server. */
+interface ClickTicks {
+    sent: number;
+    executed: number;
+    reached: number;
+}
+
+const clickTicks = (c: ClickTicks) => `sent ${c.sent}, executed ${c.executed}, reached ${c.reached}`;
+
 async function skipObserved({ sdk, session, log }: StepContext<unknown>, landingIdle: IdleBound): Promise<void> {
     let s = sdk.getState()!;
+    const clock = serverClock(s.tick, sdk.getStateReceivedAt?.() || Date.now());
+    /** Send a click and wait for its action result: the tab has executed it. */
+    const click = async <T>(send: () => Promise<T>): Promise<ClickTicks & { result: T }> => {
+        const sent = sdk.getState()?.tick ?? -1;
+        const result = await send();
+        const executed = sdk.getState()?.tick ?? sent;
+        return { sent, executed, reached: Math.max(executed, clock(Date.now())), result };
+    };
+
     // The design screen arrives with the first in-world frames; give it one tick if it is not up yet.
     if (!designOpen(s) && !s.dialog.isOpen) {
         const w = await waitUntil(sdk, st => designOpen(st) || st.dialog.isOpen, { maxTicks: 1 });
@@ -96,6 +140,7 @@ async function skipObserved({ sdk, session, log }: StepContext<unknown>, landing
     if (designOpen(s)) void sdk.sendAcceptCharacterDesign();
 
     let guard: ClickGuard | null = null;
+    let talkSent = -1;
     if (!s.dialog.isOpen) {
         const guide = guideOf(s);
         if (!guide) throw new Error('no RuneScape Guide in view');
@@ -105,22 +150,28 @@ async function skipObserved({ sdk, session, log }: StepContext<unknown>, landing
         // building the region): sent from a settled position, and re-sent once if it draws no reply.
         await settle(sdk);
         guard = new ClickGuard(sdk, () => sdk.sendInteractNpc(guide.index, talk.opIndex), st => st.dialog.isOpen, { alwaysWatch: true });
+        talkSent = sdk.getState()?.tick ?? -1;
         await guard.send();
     }
 
     // Page one: the guide's question, a continue page.
     const stopGuard = guard ? sdk.onStateUpdate(st => void guard.step(st)) : () => {};
-    const asked = await waitUntil(sdk, st => classifyPage(st.dialog) !== 'none' && !st.dialog.isWaiting, { maxTicks: 12 }).finally(stopGuard);
-    if (!asked.ok) throw new Error('the guide did not answer within 12 ticks');
+    const asked = await waitUntil(sdk, st => classifyPage(st.dialog) !== 'none' && !st.dialog.isWaiting, { maxTicks: TALK_TICKS }).finally(stopGuard);
+    const resends = guard?.report() ?? {};
+    if (Object.keys(resends).length) logNote(log, session, 'S00:resend', { click: 'talk', ...resends });
+    if (!asked.ok) {
+        const talked = guard ? `talk sent at tick ${talkSent}, re-sends ${JSON.stringify(resends)}; ` : '';
+        throw new Error(`the guide did not answer within ${TALK_TICKS} ticks (${talked}${stateTrace(asked.state)})`);
+    }
     let page = asked.state;
     if (classifyPage(page.dialog) === 'continue') {
         // The page body is checked when the client published it (dialog history); the lite client
         // leaves it empty, and the choice page below is the guard that always holds.
         const body = pageBody(page);
         if (body && !SKIP_PAGE.test(body)) throw new Error(`the guide's first page does not offer the skip: "${body}"`);
-        void sdk.sendClickDialog(0);
-        const next = await waitUntil(sdk, st => classifyPage(st.dialog) === 'choice', { maxTicks: 6, after: page.tick });
-        if (!next.ok) throw new Error('no choice page after the guide\'s question');
+        const cont = await click(() => sdk.sendClickDialog(0));
+        const next = await waitUntil(sdk, st => classifyPage(st.dialog) === 'choice', { maxTicks: CHOICE_TICKS + Math.max(0, cont.reached - page.tick), after: page.tick });
+        if (!next.ok) throw new Error(`no choice page after the guide's question within ${CHOICE_TICKS} ticks of the continue reaching the server (${clickTicks(cont)}; ${stateTrace(next.state)})`);
         page = next.state;
     }
 
@@ -128,15 +179,15 @@ async function skipObserved({ sdk, session, log }: StepContext<unknown>, landing
     if (!page.dialog.options.some(o => YES.test(o.text))) {
         throw new Error(`the skip is not offered (choice: ${page.dialog.options.map(o => o.text).join(' / ')})`);
     }
-    const clicked = await sdk.clickDialogByText(YES);
-    if (!clicked.success) throw new Error(`clicking "Yes please.": ${clicked.message}`);
+    const yes = await click(() => sdk.clickDialogByText(YES));
+    if (!yes.result.success) throw new Error(`clicking "Yes please.": ${yes.result.message}`);
 
     const boundMs = idleBoundMs(landingIdle);
-    const landed = await waitUntil(sdk, st => atSpawn(st) && hasStarterKit(st), { maxTicks: 8, after: page.tick, idle: landingIdle });
+    const landed = await waitUntil(sdk, st => atSpawn(st) && hasStarterKit(st), { maxTicks: LANDING_TICKS + Math.max(0, yes.reached - page.tick), after: page.tick, idle: landingIdle });
     if (!landed.ok) {
         const why = landed.reason === 'idle'
             ? `the tab stayed silent past ${LANDING_IDLE_TICKS} ticks, ${(boundMs / 1000).toFixed(1)} s`
-            : '8 ticks passed';
+            : `${LANDING_TICKS} ticks passed after "Yes please." reached the server (${clickTicks(yes)})`;
         const kit = landed.state && hasStarterKit(landed.state) ? 'with' : 'without';
         throw new Error(`not at Lumbridge with the starter kit after the skip (${why}): last state tick ${landed.tick} (choice page at ${page.tick}), at ${where(landed.state)} ${kit} the kit, silent ${(landed.silentMs / 1000).toFixed(1)} s`);
     }
