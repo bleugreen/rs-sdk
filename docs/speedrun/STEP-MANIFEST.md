@@ -202,7 +202,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 24 | 27 | Herblore | `speedrun/skills/herblore.ts` | S25e | 170 | 117 | ~200 e | ~83 | overlay | `delayfree-cycle.ts` | building (rs/186, held: tenet 15) |
 | 25 | 26 | Pre-MM cannon session | `speedrun/skills/ranged.ts` (`cannonSession`) | S14 | 118 | 104 | ~162 | ~58 | overlay | `quest-premm-cannon.ts`, `ranged-cannon.ts` | on main, 8a741554 (#212, rs/252's snapshot); lab-accepted (S27 1,972 i on the module's rates, S14 118 m; rs/199, PR #207); lab is the final tier (a demo test is not feasible) |
 | 26 | 15 | Prayer (bones inside S07; the booth as fallback) | `speedrun/skills/woodcutting.ts` bury option; `speedrun/skills/prayer.ts` for the booth | S25b (S10a retired) | 95 | 65 | 735 (the booth) | ~670 | in-page with S07 | `bones-wc.ts`, `prayer-bury.ts` | bury in S07: building (rs/211); gate-off plain + bury on main (rs/162, 3dfc217f, #165); booth: building (rs/186, held: tenet 15) |
-| 27 | 28 | Crafting | `speedrun/skills/crafting.ts` | S25d | 91 | 85 | 121 (no gems in the windows) | ~36 | overlay | `delayfree-cycle.ts` | building (rs/186, held: tenet 15) |
+| 27 | 28 | Crafting | `speedrun/skills/crafting.ts` | S25d | 91 | 85 | 121 (no gems in the windows) | ~36 | overlay | `delayfree-cycle.ts` | **lab-accepted** (263 m on the leather route, browser, 3 of 3; rs/359) and **demo-accepted** (rs/359, 11:25Z: cairn_h80, browser, 26 bodies, 7 ticks a turnaround against the lab's 7.03 and the bar's 7.7, event peak 5, overBudget 0, a clean page-confirmed logout) |
 | 28 | 29 | Cooking (wine) + gems in the windows | `speedrun/skills/cooking.ts` | S25c | 80 | 75 | ~131 (kebabs, supplies not held) | ~56 | overlay | `wine-receive.ts` [rs/41], `wine-window-lab.ts` | building (rs/186, held: tenet 15); item-cycle's opt-in `mixed` loads for W2 and P2 building (rs/339), on the floor's pending list; `stow` on main (#302) |
 | 29 | 25 | Goblin Diplomacy | `speedrun/quests/goblin-diplomacy.ts` | S24 | 41 | 41 | 102 | ~61 | overlay | none (page counts only) | building (rs/185, held: tenet 15) |
 | 30 | 30 | Doric's Quest | `speedrun/quests/dorics-quest.ts` | S05 | 17 | 17 | 43 | ~26 | overlay | `quest-smallskill-doric.ts` | building (rs/185, held: tenet 15) |
@@ -2169,9 +2169,11 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   the gem stacks and H21e's herbs** (not against its 28 free); S25c's first burst withdraws the chisel
   and gems (0 i if it shares the burst's tick, +1 otherwise); S25d's last visit deposits the needle,
   thread and bodies, so S25e starts at 28 free. Priced in RUN-ORDER.md's scenario rows at **+172**:
-  **263 m** (fold-in 19; rs/359, lab, browser, 3 of 3: 45 to `CRAFTING_HANDOFF_XP`, 928 bodies in 37 visits, 7.0
-  ticks per 26 bodies; **Kind M (lab, rs/359)** on the leather route; the demo not run, needing a borrowed
-  account at Crafting 28+) against this entry's 91 (+177 i before, 928 x 7.5 / 26 = 267.7). The fallback with
+  **263 m, lab-measured and demo-confirmed** (fold-in 19; rs/359, lab, browser, 3 of 3: 45 to `CRAFTING_HANDOFF_XP`, 928 bodies in 37 visits, 7.0
+  ticks per 26 bodies; **Kind M (lab, rs/359)** on the leather route; **demo-accepted** (rs/359,
+  2026-10-22 11:25Z, fold-in 20): cairn_h80 in a browser tab on the twin with a local gateway, 26 hard
+  leather bodies, a 7-tick open-to-open turnaround against the lab's 7.03 and the demo bar's 7.7, event
+  peak 5, overBudget 0, a clean page-confirmed logout) against this entry's 91 (+177 i before, 928 x 7.5 / 26 = 267.7). The fallback with
   no gems in the windows is the leather route standalone to 99, **314 m**; S25e starts at 28 free in every run.
 - **Postconditions:** Crafting 99. Items out: the cut gems (the windows) and the hard leather bodies.
 - **Ticks:** expected **91**, best **85**: the diamond-only supply's ~121 from 42 (dragonstones
