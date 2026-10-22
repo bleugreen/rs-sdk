@@ -140,6 +140,32 @@ export type RuneUseTable = Readonly<Record<string, RuneUse>>;
 
 export const runeName = (r: Rune): RuneName => `${r}rune`;
 
+/** A rune cost by element (a teleport's `SPELLS[spell].runes`) as a rune use. */
+export function runeUseOf(runes: Runes): RuneUse {
+    const out: Partial<Record<RuneName, number>> = {};
+    for (const [r, n] of Object.entries(runes) as [Rune, number][]) if (n) out[runeName(r)] = n;
+    return out;
+}
+
+/** `use` taken `times` over, less the element `staff` (a worn staff's name, `staff of fire`) supplies. */
+export function scaleUse(use: RuneUse, times: number, staff?: string): RuneUse {
+    const supplied = staff ? staffElement(staff) : null;
+    const out: Partial<Record<RuneName, number>> = {};
+    for (const [r, n] of Object.entries(use) as [RuneName, number][]) {
+        if (n * times && !(supplied && r === runeName(supplied))) out[r] = n * times;
+    }
+    return out;
+}
+
+/** A teleport's runes for `times` casts as a rune use, less the element `staff` supplies. */
+export const spellUse = (spell: Spell, times = 1, staff?: string): RuneUse => scaleUse(runeUseOf(SPELLS[spell].runes), times, staff);
+
+export function sumUse(...uses: readonly RuneUse[]): RuneUse {
+    const out: Partial<Record<RuneName, number>> = {};
+    for (const u of uses) for (const [r, n] of Object.entries(u) as [RuneName, number][]) if (n) out[r] = (out[r] ?? 0) + n;
+    return out;
+}
+
 export function addRunes(a: Runes, b: Runes): Runes {
     const out: Runes = { ...a };
     for (const [r, n] of Object.entries(b) as [Rune, number][]) out[r] = (out[r] ?? 0) + n;
