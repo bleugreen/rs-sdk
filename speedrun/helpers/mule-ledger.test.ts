@@ -82,7 +82,7 @@ describe('packages from the ledger', () => {
         expect(() => muleFromLedger(TABLE, { rows: ['H12', 'H1'] })).toThrow('H1 is listed after H12, but comes before it in the ledger');
         expect(() => muleFromLedger(TABLE, { rows: ['H1'], onRequest: ['H12'] })).toThrow('no fallback hand-off row H12');
         expect(onRequestGaps(TABLE)).toEqual([]);
-        expect(onRequestGaps(TABLE.replace(/^\| H4e .*$/m, ''))).toEqual(['H4e']);
+        expect(onRequestGaps(TABLE.replace(/^\| H4e .*\n/m, ''))).toEqual(['H4e']);
     });
 
     test('refuses a row the mule would size wrongly, an unknown row, and a row with no step after it', () => {
