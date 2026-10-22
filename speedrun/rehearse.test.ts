@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { baseState, FakeSdk } from './lib/fake-sdk';
@@ -15,7 +15,7 @@ import { BOUNDARY_STEP, type Step } from './runner/step';
 import {
     annotation, compareHiscore, DEFAULT_GATE_BOT, type DirectRead, EXIT_HOST_RESERVED, formatPlayers, formatSummary, GATE_PLAYERS_STEP, gateRefusal, type InPageRead, kitMissing, kitWant,
     parseArgs, parseDirectJson, parseKit, PAUSE_STEP, playerReads, playerSwing, ProgramTracker, ReachTracker, readReservation, reservationPath, reservationRefusal, ReservationWatch,
-    runAttempt, SessionClock, summarize, UsageError,
+    runAttempt, SessionClock, summarize, UsageError, claimBin, claimOwner, claimToucher, type ClaimTouch, judgeReservation,
     attemptFront, bracketAttempt, type FrontIO, frontLine, type FrontReport, gateTabProblems, gateTabRead, recordingProblems, type TabIO,
 } from './rehearse';
 import type { PlayerRow } from './tools/hiscore-scrape';
@@ -388,6 +388,128 @@ describe('host reservation: pre-flight', () => {
     });
 });
 
+/** ~/host-reserved.json as rs-claim (host's claim lock) writes it: a take, and host's preempt of a holder. */
+const claimJson = (owner: string, until: string) =>
+    JSON.stringify({ owner, logins: 2, what: 'firemaking attempt', reason: 'firemaking attempt', taken: '2026-10-22T03:30:00Z', touched: '2026-10-22T03:30:00Z', until });
+const preemptJson = (displaced: string, until: string) =>
+    JSON.stringify({
+        owner: 'host', logins: 1, what: 'gate series', reason: 'gate series', taken: '2026-10-22T03:40:00Z', touched: '2026-10-22T03:40:00Z', starts: '2026-10-22T03:45:00Z', until,
+        displaced: { owner: displaced, logins: 2, what: 'firemaking attempt', until: '2026-10-22T04:40:00Z' },
+    });
+
+describe('host reservation: the claim the attempt runs under (pre-flight)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'rehearse-claim-'));
+    afterAll(() => rmSync(dir, { recursive: true, force: true }));
+    const at = Date.parse('2026-10-22T04:00:00Z');
+    const file = (name: string, text: string) => {
+        const p = join(dir, name);
+        writeFileSync(p, text);
+        return p;
+    };
+    const watch = (path: string, owner?: string) => {
+        const warnings: string[] = [];
+        return { w: new ReservationWatch(path, { now: () => at, warn: m => warnings.push(m), ...(owner ? { owner } : {}) }), warnings };
+    };
+
+    test('the owner: --claim-owner, else $SPEEDRUN_CLAIM_OWNER, else none', () => {
+        expect(claimOwner(undefined, {})).toBeUndefined();
+        expect(claimOwner(undefined, { SPEEDRUN_CLAIM_OWNER: 'rs/228' })).toBe('rs/228');
+        expect(claimOwner('rs/229', { SPEEDRUN_CLAIM_OWNER: 'rs/228' })).toBe('rs/229');
+        expect(claimOwner(undefined, { SPEEDRUN_CLAIM_OWNER: '  ' })).toBeUndefined();
+        expect(parseArgs(['--skill=x', '--bot=b', '--claim-owner=rs/228']).claimOwner).toBe('rs/228');
+        expect(parseArgs(['--claim', '--bot=b', '--claim-owner=rs/228'], { defaultGateBot: DEFAULT_GATE_BOT }).claimOwner).toBe('rs/228');
+        expect(parseArgs(['--skill=x', '--bot=b']).claimOwner).toBeUndefined();
+        expect(() => parseArgs(['--skill=x', '--bot=b', '--claim-owner'])).toThrow('--claim-owner needs a value');
+    });
+
+    test('rs-claim\'s file parses: a take as a plain reservation, a preempt naming whom it displaced', () => {
+        expect(judgeReservation(claimJson('rs/228', '2026-10-22T04:30:00Z'), at)).toEqual({ state: 'live', reservation: { owner: 'rs/228', until: '2026-10-22T04:30:00Z', reason: 'firemaking attempt' } });
+        expect(judgeReservation(preemptJson('rs/228', '2026-10-22T05:00:00Z'), at)).toEqual({ state: 'live', reservation: { owner: 'host', until: '2026-10-22T05:00:00Z', reason: 'gate series', displaced: 'rs/228' } });
+    });
+
+    test('our own live claim: passes, silently', () => {
+        const { w, warnings } = watch(file('own.json', claimJson('rs/228', '2026-10-22T04:30:00Z')), 'rs/228');
+        expect(reservationRefusal(w)).toBeNull();
+        expect(warnings).toEqual([]);
+    });
+
+    test('another owner\'s live claim: refused, as without an owner', () => {
+        const p = file('other.json', claimJson('rs/247', '2026-10-22T04:30:00Z'));
+        const why = reservationRefusal(watch(p, 'rs/228').w);
+        expect(why).toContain('the host is reserved by rs/247 until 2026-10-22T04:30:00Z (firemaking attempt)');
+        expect(why).toContain('not our claim (rs/228)');
+        // Without --claim-owner every live claim refuses, ours included (unchanged).
+        expect(reservationRefusal(watch(file('own-unnamed.json', claimJson('rs/228', '2026-10-22T04:30:00Z'))).w)).toContain('reserved by rs/228');
+    });
+
+    test('host\'s preempt of our claim: refused, naming the preempt', () => {
+        const why = reservationRefusal(watch(file('preempt.json', preemptJson('rs/228', '2026-10-22T05:00:00Z')), 'rs/228').w);
+        expect(why).toContain('reserved by host until 2026-10-22T05:00:00Z (gate series), preempting rs/228');
+        expect(why).toContain('which preempts our claim (rs/228)');
+    });
+
+    test('our claim gone stale: passes with one warning (nobody else holds the machine)', () => {
+        const { w, warnings } = watch(file('stale.json', claimJson('rs/228', '2026-10-22T03:59:00Z')), 'rs/228');
+        expect(reservationRefusal(w)).toBeNull();
+        expect(reservationRefusal(w)).toBeNull();
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]).toContain('our claim went stale (rs/228 until 2026-10-22T03:59:00Z');
+        expect(warnings[0]).toContain('rs-claim touch rs/228');
+    });
+
+    test('no file and malformed: not live, as without an owner (no file under an owner warns that no claim is held)', () => {
+        const none = watch(join(dir, 'absent.json'), 'rs/228');
+        expect(reservationRefusal(none.w)).toBeNull();
+        expect(none.warnings).toHaveLength(1);
+        expect(none.warnings[0]).toContain('no claim in');
+        const torn = watch(file('torn.json', '{"owner": "rs/228", "until": '), 'rs/228');
+        expect(reservationRefusal(torn.w)).toBeNull();
+        expect(reservationRefusal(torn.w)).toBeNull();
+        expect(torn.warnings).toHaveLength(1);
+        expect(torn.warnings[0]).toContain('is malformed, so it is not a live reservation: not JSON');
+    });
+});
+
+describe('rs-claim touch (best-effort, against a fake rs-claim)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'rehearse-rsclaim-'));
+    afterAll(() => rmSync(dir, { recursive: true, force: true }));
+    const fake = (name: string, body: string) => {
+        const p = join(dir, name);
+        writeFileSync(p, `#!/bin/sh\necho "$@" >> "$0.calls"\n${body}\n`);
+        chmodSync(p, 0o755);
+        return p;
+    };
+
+    test('finds rs-claim on PATH, else in ~/.local/bin, else nowhere', () => {
+        const home = join(dir, 'home');
+        mkdirSync(join(home, '.local', 'bin'), { recursive: true });
+        expect(claimBin({ HOME: home, PATH: '' })).toBeNull();
+        const local = join(home, '.local', 'bin', 'rs-claim');
+        writeFileSync(local, '#!/bin/sh\n');
+        chmodSync(local, 0o755);
+        expect(claimBin({ HOME: home, PATH: '' })).toBe(local);
+        const pathDir = join(dir, 'path');
+        mkdirSync(pathDir);
+        writeFileSync(join(pathDir, 'rs-claim'), '#!/bin/sh\n');
+        chmodSync(join(pathDir, 'rs-claim'), 0o755);
+        expect(claimBin({ HOME: home, PATH: pathDir })).toBe(join(pathDir, 'rs-claim'));
+    });
+
+    test('exit codes and output come back; a hung touch is killed at the timeout', async () => {
+        const ok = fake('ok', 'echo "rs/228 logins=2 until=2026-10-22T04:40:00Z (live)"; exit 0');
+        expect(await claimToucher(ok)('rs/228')).toEqual({ code: 0, out: 'rs/228 logins=2 until=2026-10-22T04:40:00Z (live)' });
+        expect(readFileSync(`${ok}.calls`, 'utf-8')).toBe('touch rs/228\n');
+        const pre = fake('pre', 'echo "PREEMPTED: host logins=1"; exit 3');
+        expect(await claimToucher(pre)('rs/228')).toEqual({ code: 3, out: 'PREEMPTED: host logins=1' });
+        const hung = fake('hung', 'exec sleep 5');
+        const t0 = Date.now();
+        const r = await claimToucher(hung, 200)('rs/228');
+        expect(r.code).toBeNull();
+        expect(Date.now() - t0).toBeLessThan(3_000);
+        expect((await claimToucher(join(dir, 'missing'))('rs/228')).code).toBeNull();
+    });
+});
+
 describe('host reservation: in flight (runAttempt)', () => {
     const prevTick = process.env.SPEEDRUN_TICK_MS;
     beforeAll(() => { process.env.SPEEDRUN_TICK_MS = '5'; });
@@ -520,6 +642,96 @@ describe('host reservation: in flight (runAttempt)', () => {
         expect(r).toEqual({ outcome: 'chain done', code: 0, paused: null });
         expect(client.logoutClicks()).toBe(0);
         expect(tlog.rows.some(x => x.step === PAUSE_STEP)).toBe(false);
+    });
+
+    /** runAttempt over the three-step chain under `owner`'s claim; `between` rewrites the file after a step. */
+    async function underClaim(path: string, owner: string, between: Record<string, () => void>, opts: { touch?: (o: string) => Promise<ClaimTouch> } = {}) {
+        const client = liteClient();
+        const ran: string[] = [];
+        const warnings: string[] = [];
+        const tlog = TickLog.memory('claim');
+        const reservation = new ReservationWatch(path, { owner, warn: m => warnings.push(m), ...(opts.touch ? { touch: opts.touch, touchEveryMs: 0 } : {}) });
+        const r = await runAttempt(client.session, chain(ran, between), {
+            log: tlog, account: 'srtest', link: client.link, from: 0,
+            reservation, stopAsked: () => false, gateStop: () => null,
+            logout: () => logoutClean(client.session),
+        });
+        client.stop();
+        await reservation.settled();
+        return { r, ran, warnings, tlog, client };
+    }
+
+    test('under our own live claim: the chain finishes, no logout, and the claim is touched at boundaries', async () => {
+        const path = join(dir, 'own.json');
+        writeFileSync(path, claimJson('rs/228', inAnHour()));
+        const touched: string[] = [];
+        const { r, ran, warnings, client } = await underClaim(path, 'rs/228', {}, { touch: async o => (touched.push(o), { code: 0, out: 'live' }) });
+        expect(ran).toEqual(['one', 'two', 'three']);
+        expect(r).toEqual({ outcome: 'chain done', code: 0, paused: null });
+        expect(client.logoutClicks()).toBe(0);
+        expect(touched.length).toBeGreaterThanOrEqual(1);
+        expect(new Set(touched)).toEqual(new Set(['rs/228']));
+        expect(warnings).toEqual([]);
+    });
+
+    test('host preempts our claim between two steps: clean logout there, the pause row naming the preempt, exit 5', async () => {
+        const path = join(dir, 'preempted.json');
+        writeFileSync(path, claimJson('rs/228', inAnHour()));
+        const until = inAnHour();
+        const { r, ran, tlog, client } = await underClaim(path, 'rs/228', { one: () => writeFileSync(path, preemptJson('rs/228', until)) });
+        expect(ran).toEqual(['one']);
+        expect(r.code).toBe(EXIT_HOST_RESERVED);
+        expect(r.paused).toEqual({ owner: 'host', until, reason: 'gate series', displaced: 'rs/228' });
+        expect(r.outcome).toContain(`PAUSED for the gate/run: the host is reserved by host until ${until} (gate series), preempting rs/228; logged out before "two"`);
+        expect(client.logoutClicks()).toBe(1);
+        expect(client.session.expectInWorld).toBe(false);
+        const pause = tlog.rows.filter(x => x.kind === 'gate' && x.step === PAUSE_STEP);
+        expect(pause).toHaveLength(1);
+        expect(pause[0]!.meta).toMatchObject({ owner: 'host', displaced: 'rs/228', path, before: 'two', logout: { ok: true } });
+    });
+
+    test('another owner holding the machine mid-run (our claim lost): the same pause', async () => {
+        const path = join(dir, 'taken.json');
+        writeFileSync(path, claimJson('rs/228', inAnHour()));
+        const { r, ran, client } = await underClaim(path, 'rs/228', { two: () => writeFileSync(path, claimJson('rs/247', inAnHour())) });
+        expect(ran).toEqual(['one', 'two']);
+        expect(r.code).toBe(EXIT_HOST_RESERVED);
+        expect(r.paused?.owner).toBe('rs/247');
+        expect(client.logoutClicks()).toBe(1);
+    });
+
+    test('our claim gone stale mid-run: one warning, and the chain finishes', async () => {
+        const path = join(dir, 'stale.json');
+        writeFileSync(path, claimJson('rs/228', inAnHour()));
+        const { r, ran, warnings, client } = await underClaim(path, 'rs/228', { one: () => writeFileSync(path, claimJson('rs/228', '2026-10-21T00:00:00Z')) });
+        expect(ran).toEqual(['one', 'two', 'three']);
+        expect(r).toEqual({ outcome: 'chain done', code: 0, paused: null });
+        expect(client.logoutClicks()).toBe(0);
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]).toContain('our claim went stale');
+    });
+
+    test('a touch that exits 3 (preempted) pauses at the next boundary, though the file still reads ours', async () => {
+        const path = join(dir, 'touch3.json');
+        writeFileSync(path, claimJson('rs/228', inAnHour()));
+        const touched: string[] = [];
+        const { r, ran, client } = await underClaim(path, 'rs/228', {}, { touch: async o => (touched.push(o), { code: 3, out: 'PREEMPTED: host logins=1' }) });
+        expect(touched).toEqual(['rs/228']);
+        expect(ran).toEqual(['one', 'two']);
+        expect(r.code).toBe(EXIT_HOST_RESERVED);
+        expect(r.paused).toMatchObject({ owner: 'host', displaced: 'rs/228' });
+        expect(r.paused?.reason).toContain('rs-claim touch exited 3: PREEMPTED: host logins=1');
+        expect(client.logoutClicks()).toBe(1);
+    });
+
+    test('a touch that fails otherwise warns once and changes nothing', async () => {
+        const path = join(dir, 'touch1.json');
+        writeFileSync(path, claimJson('rs/228', inAnHour()));
+        const { r, ran, warnings } = await underClaim(path, 'rs/228', {}, { touch: async () => ({ code: null, out: 'no answer in 10 s' }) });
+        expect(ran).toEqual(['one', 'two', 'three']);
+        expect(r.code).toBe(0);
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]).toContain('rs-claim touch rs/228 did not answer: no answer in 10 s');
     });
 
     test('no file: Ctrl-C still stops at the boundary with exit 4, as before', async () => {
