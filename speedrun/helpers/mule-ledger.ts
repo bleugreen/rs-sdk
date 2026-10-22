@@ -4,16 +4,17 @@
 //
 // The row is the data. Each `in` entry the scored account receives is a line the mule offers: by id
 // for `NAME @ID`, else by the game's name; noted for [n]. A top-up (`NAME to N`) is either
-// `topUp: { max: N }` with the package scoped to the hand-off's step (the `ask` form, served from the
-// scored side's top-up ask) or a fixed N (the `fixed` form, the fallback while no ask writer is
-// deployed: SCORED must then hold none of it, or it declines). The row's `out` entries are what the
+// `topUp: { max: N }` (the `ask` form, served from the scored side's top-up ask) or a fixed N (the
+// `fixed` form, the fallback while no ask writer is deployed: SCORED drops what it holds of it at
+// the tile first, or it declines). Every package is scoped `{ step: <hand-off id>, family: 'mule' }`:
+// the key a cue asks for it by (mule.ts packageForCue) and the scope of its top-up ask. The row's `out` entries are what the
 // mule takes back in the same trade; the mule accepts any offer from the scored account, so they
 // are reported (`takesBack`), not configured. Every row goes through planHandOff first, so a row the
 // scored side refuses is refused here too.
 //
-// A package's scope step is the first S row after the hand-off row (the step that consumes it:
-// H12 before S15), and the packages come in ledger order, which is the order the run pulls them
-// (mule.ts serveMode 'order').
+// The packages come in ledger order, which is the order the run pulls them (mule.ts serveMode
+// 'order', the fallback to asking by cue); each also records the step it feeds, the first S row
+// after it (H12 before S15).
 //
 //   bun speedrun/helpers/mule-ledger.ts [--form ask|fixed] [--rows H1,H12] [--on-request H4e] [--manifest PATH]
 //       prints { packages } for the mule's options (default MULE1_ORDER, then MULE1_ON_REQUEST)
@@ -121,8 +122,9 @@ export function packageFromRow(rows: readonly LedgerRow[], index: number, form: 
     if (!entries.length) throw new Error(`${at}: the scored account receives nothing from the mule`);
     const items = entries.map(e => lineOf(e, at, form));
     const topUps = entries.filter(e => e.topUp).map(e => ({ item: itemLabel(e), to: e.count! }));
-    if (fallback && topUps.length && form === 'ask') throw new Error(`${at}: a fallback row has no step to scope a top-up ask to`);
-    const raw = { name: row.row.toLowerCase(), items, ...(items.some(isTopUp) ? { scope: { step, family: 'mule' } } : {}), ...(fallback ? { onRequest: true } : {}) };
+    // The scope keys the package for the cue that asks for it and for its top-up ask: the hand-off id,
+    // unique per mule trade where a step id is not (two hand-offs can feed one step).
+    const raw = { name: row.row.toLowerCase(), items, scope: { step: row.row, family: 'mule' }, ...(fallback ? { onRequest: true } : {}) };
     const pkg = packageOf(raw, pack);
     const slots = entries.reduce((n, e) => n + (e.kind === 'u' ? e.count! : 1), 0);
     if (slots > INVENTORY_SLOTS) throw new Error(`${at}: the package fills ${slots} slots, more than the mule's ${INVENTORY_SLOTS}`);
