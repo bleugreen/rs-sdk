@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import '../../lite/test-support/browser-globals.js';
 
-import { createKnifeMine, parseMineSteps } from './knife-mine.js';
+import { createKnifeMine, failRunLimit, parseMineSteps, parseRate, parseSuccess } from './knife-mine.js';
 import { Harness, makeState } from './testkit.js';
 
 // rs/5's zoo-cluster rotation at respawn 13 (tickmanip-mine-run.sh, mining.md section 4)
@@ -20,11 +20,29 @@ const STAY2 = '2603,3233>2602,3233 2605,3234>2605,3235 2605,3234>2605,3233 2602,
  * rock for `respawn` ticks. A run of up to 2 tiles lands in the walk's own tick.
  * A bury (bury_bone.rs2) stops the interaction, rejects every packet landing on the
  * next tick (p_delay(0)) and gives its Prayer xp then.
+ *
+ * Below 63 (`fail`): a failed roll gives nothing, leaves the rock live and the
+ * interaction running, which rolls again `rate`+1 later unless a packet interrupts
+ * it. A click that swings prints "You swing your pick at the rock.": on landing when
+ * the clock is ahead, a tick later when it had expired (`swings: false` hides them).
  */
-function mine(opts: { starter: 'knife' | 'none'; ticks: number; respawn?: number; steps?: string; bones?: number; drop?: (n: number, type: string) => boolean; params?: Record<string, unknown> }) {
+function mine(opts: {
+    starter: 'knife' | 'none';
+    ticks: number;
+    respawn?: number;
+    drop?: (n: number, type: string) => boolean;
+    params?: Record<string, unknown>;
+    level?: number;
+    rate?: number;
+    fail?: (n: number, tick: number) => boolean;
+    swings?: boolean;
+    steps?: string;
+    bones?: number;
+}) {
     const D = opts.respawn ?? 13;
-    const rotation = opts.steps ?? D13;
-    const steps = parseMineSteps(rotation);
+    const rate = opts.rate ?? 2;
+    const list = opts.steps ?? D13;
+    const steps = parseMineSteps(list);
     const rockTiles = [...new Set(steps.map(s => `${s.rock[0]},${s.rock[1]}`))];
     const h = new Harness('mine', createKnifeMine);
     let tick = 500;
@@ -41,9 +59,17 @@ function mine(opts: { starter: 'knife' | 'none'; ticks: number; respawn?: number
     const rolls: number[] = [];
     const buries: number[] = [];
     const rejected: Array<{ at: number; type: string }> = [];
+    const fails: Array<{ tick: number; rock: string }> = [];
+    const messages: Array<{ text: string; tick: number; id: number }> = [];
+    let swingDue: { at: number; rock: string } | null = null;
+    let attempts = 0;
+    const swing = () => {
+        if (opts.swings !== false) messages.push({ text: 'You swing your pick at the rock.', tick, id: messages.length + 1 });
+    };
     const state = () => makeState({
         tick, x: pos[0], z: pos[1],
-        skills: { Mining: { xp }, Prayer: { xp: prayerXp } },
+        skills: { Mining: { xp, level: opts.level ?? 99 }, Prayer: { xp: prayerXp } },
+        messages: messages.slice(-10),
         inventory: ['Rune pickaxe', 'Knife', 'Logs', 'Logs', 'Iron ore', ...Array.from({ length: bones }, () => ({ name: 'Dragon bones', options: ['Bury', 'Drop'] }))],
         locs: rockTiles.map(k => {
             const [x, z] = k.split(',').map(Number);
@@ -51,7 +77,7 @@ function mine(opts: { starter: 'knife' | 'none'; ticks: number; respawn?: number
             return { id: live ? 2092 : 450, x: x!, z: z!, name: live ? 'Rocks' : 'Rocks', options: live ? ['Mine', 'Prospect'] : ['Prospect'] };
         })
     });
-    h.start('mine', { steps: rotation, respawn: D, starter: opts.starter, maxTicks: opts.ticks, ...opts.params }, state());
+    h.start('mine', { steps: list, respawn: D, starter: opts.starter, maxTicks: opts.ticks, ...opts.params }, state());
     let n = 0;
     for (let i = 0; i < opts.ticks + 20 && h.status.phase === 'running'; i++) {
         tick++;
@@ -68,26 +94,35 @@ function mine(opts: { starter: 'knife' | 'none'; ticks: number; respawn?: number
             if (p.type === 'useInventoryItem') {
                 target = null;
                 rollAt = null;
+                swingDue = null;
                 delayedTo = tick + 1;
                 continue;
             }
             if (p.type === 'useItemOnItem' && clock < tick) clock = tick + 2;
-            if (p.type === 'useItemOnItem' || p.type === 'dropItem' || p.type === 'walkTo') { target = null; rollAt = null; }
+            if (p.type === 'useItemOnItem' || p.type === 'dropItem' || p.type === 'walkTo') { target = null; rollAt = null; swingDue = null; }
             if (p.type === 'walkTo') pos = [p.x!, p.z!];
             if (p.type === 'interactLoc') {
                 const k = `${p.x},${p.z}`;
                 if ((respawnAt.get(k) ?? 0) > tick) continue; // depleted: nothing to mine
                 target = k;
-                if (clock >= tick) rollAt = clock;
-                else { clock = tick + 2; rollAt = clock; }
+                swingDue = null;
+                if (clock >= tick) { rollAt = clock; swing(); }
+                else { clock = tick + rate; rollAt = clock; swingDue = { at: tick + 1, rock: k }; }
             }
         }
+        if (swingDue && swingDue.at === tick && target === swingDue.rock) { swing(); swingDue = null; }
         if (target && rollAt === tick) {
-            xp += 350;
-            rolls.push(tick);
-            respawnAt.set(target, tick + D);
-            target = null;
-            rollAt = null;
+            if (opts.fail?.(attempts++, tick)) {
+                fails.push({ tick, rock: target });
+                clock = tick;
+                rollAt = tick + 1 + rate;
+            } else {
+                xp += 350;
+                rolls.push(tick);
+                respawnAt.set(target, tick + D);
+                target = null;
+                rollAt = null;
+            }
         }
         for (const s of h.step(state())) {
             if (opts.drop?.(n++, s.action.type)) continue;
@@ -95,11 +130,52 @@ function mine(opts: { starter: 'knife' | 'none'; ticks: number; respawn?: number
             pending.push({ at: tick + 1, type: a.type, x: a.x, z: a.z });
         }
     }
-    return { h, rolls, buries, rejected };
+    return { h, rolls, fails, buries, rejected };
 }
+
+/** Compact packet timeline (tick offset from the first packet, type and tile). */
+function timeline(h: Harness): string {
+    const t0 = h.sent[0]?.tick ?? 0;
+    return h.sent.map(s => {
+        const a = s.action as { type: string; x?: number; z?: number };
+        return `${s.tick - t0}:${a.type}${a.x !== undefined ? `@${a.x},${a.z}` : ''}`;
+    }).join(' ');
+}
+
+/** FNV-1a, enough to pin a timeline. */
+function digest(s: string): string {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193) >>> 0;
+    return h.toString(16);
+}
+
+/** The default-parameter scenarios whose packets must not change with the opt-in parameters. */
+const REGRESSION = {
+    knife: () => mine({ starter: 'knife', ticks: 300 }),
+    plain: () => mine({ starter: 'none', ticks: 300 }),
+    lostClick: () => { let d = false; return mine({ starter: 'knife', ticks: 300, drop: (n, type) => (!d && n > 40 && type === 'interactLoc' ? (d = true) : false) }); },
+    lostStarter: () => { let d = false; return mine({ starter: 'knife', ticks: 200, drop: (n, type) => (!d && n > 40 && type === 'useItemOnItem' ? (d = true) : false) }); },
+    plainD19: () => mine({ starter: 'none', ticks: 300, respawn: 19 })
+};
 
 const gapsOf = (t: number[]) => t.slice(1).map((v, i) => v - t[i]!);
 const sends = (h: Harness) => h.sent.map(s => `T${s.tick} ${JSON.stringify(s.action)}`);
+
+/** Digests of REGRESSION's timelines with main@8233253b's knife-mine.ts (no `success`, no `rate`). */
+const GOLDEN: Record<string, string> = { knife: 'f066cb32', plain: '42c89bd8', lostClick: 'c016c8ef', lostStarter: '4b15bada', plainD19: 'c0b9ff8b' };
+
+describe('knife mining: hold', () => {
+    test('hold 0 sends exactly what no hold sends; hold 1 holds every starter tick a label', () => {
+        const base = mine({ starter: 'knife', ticks: 120 });
+        expect(mine({ starter: 'knife', ticks: 120, params: { hold: 0 } }).h.timeline()).toEqual(base.h.timeline());
+        const held = mine({ starter: 'knife', ticks: 120, params: { hold: 1 } });
+        const first = base.h.sent.find(s => s.action.type === 'useItemOnItem')!.tick;
+        const bundle = (h: typeof base.h, t: number) => h.sent.filter(s => s.tick === t).map(s => s.action.type);
+        expect(bundle(held.h, first + 1).slice(0, 2)).toEqual(['useItemOnItem', 'clickComponent']);
+        expect(bundle(held.h, first)).not.toContain('useItemOnItem');
+        expect(held.h.status.counters.held).toBeGreaterThan(0);
+    });
+});
 
 describe('knife mining', () => {
     test('holds 3 ticks per ore at respawn 13 on the five-rock rotation', () => {
@@ -220,6 +296,135 @@ describe('knife mining', () => {
 
     test('bury needs lead 0', () => {
         expect(() => createKnifeMine({ steps: STAY2, ores: 5, lead: 1, bury: true })).toThrow(/lead 0/);
+    });
+
+    test('without the opt-in parameters, every packet is as before (golden timelines from main@8233253b)', () => {
+        const got = Object.fromEntries(Object.entries(REGRESSION).map(([k, run]) => [k, digest(timeline(run().h))]));
+        expect(got).toEqual(GOLDEN);
+    });
+
+    test('selfStarter is inert under the knife and false is the default: the same packets', () => {
+        for (const [starter, respawn, sel] of [['knife', 13, true], ['knife', 19, true], ['none', 13, false], ['none', 19, false]] as const) {
+            const base = mine({ starter, ticks: 300, respawn });
+            expect(timeline(mine({ starter, ticks: 300, respawn, params: { selfStarter: sel } }).h)).toBe(timeline(base.h));
+        }
+    });
+
+    test('selfStarter: plain on the five-rock lap tricks on the next rock itself, 18 ticks per lap at D=13 and D=15', () => {
+        for (const respawn of [13, 15]) {
+            const { h, rolls } = mine({ starter: 'none', ticks: 600, respawn, params: { selfStarter: true } });
+            const r = h.status.result as { slips: number; transitions: Record<string, number>; onPredictedTick: number; ores: number };
+            expect(r.slips).toBe(0);
+            expect(r.onPredictedTick).toBe(r.ores);
+            const g = gapsOf(rolls.slice(5));
+            // per lap: two trick transitions of 3 and three plain ones of 4
+            const laps = Math.floor(g.length / 5);
+            expect(g.slice(0, laps * 5).reduce((a, b) => a + b, 0)).toBe(laps * 18);
+            expect(r.transitions.trick).toBeGreaterThan(0);
+            expect(h.sent.some(s => s.action.type === 'useItemOnItem')).toBe(false);
+        }
+        // without it the same lap never tricks: 4 ticks per ore
+        const plain = mine({ starter: 'none', ticks: 600 });
+        expect((plain.h.status.result as { transitions: Record<string, number> }).transitions.trick).toBe(0);
+    });
+
+    test('success at 63+ and rate 2 are inert: the same packets as without them', () => {
+        for (const [starter, respawn] of [['knife', 13], ['none', 13], ['none', 19]] as const) {
+            const base = mine({ starter, ticks: 300, respawn });
+            const opt = mine({ starter, ticks: 300, respawn, level: 63, params: { success: 'iron', rate: 2 } });
+            expect(timeline(opt.h)).toBe(timeline(base.h));
+            expect((opt.h.status.result as { failed: number }).failed).toBe(0);
+        }
+    });
+
+    test('a failed roll with its swing seen is planned from like a success: no slip, the next roll 3 ticks on', () => {
+        const { h, rolls, fails } = mine({ starter: 'knife', ticks: 400, level: 30, params: { success: 'iron' }, fail: n => n > 6 && n % 4 === 0 });
+        const r = h.status.result as { slips: number; failed: number; ores: number };
+        expect(fails.length).toBeGreaterThan(20);
+        expect(r.slips).toBe(0);
+        expect(r.failed).toBe(fails.length);
+        // every attempt, success or failure, 3 ticks after the one before
+        const attempts = [...rolls, ...fails.map(f => f.tick)].sort((a, b) => a - b);
+        expect(gapsOf(attempts.slice(3)).every(g => g === 3)).toBe(true);
+        // the transition after a failure goes out on the failed roll's own label
+        const f = fails[3]!.tick;
+        expect(h.sent.filter(s => s.tick === f).map(s => s.action.type)).toEqual(['useItemOnItem', 'clickComponent', 'dropItem', 'walkTo']);
+    });
+
+    test('a failed rock stays schedulable: its next visit does not wait for a respawn', () => {
+        // respawn 20 on the 15-tick five-rock lap: every depleted rock makes the next visit wait
+        const { h, fails } = mine({ starter: 'knife', ticks: 300, respawn: 20, level: 30, params: { success: 'iron' }, fail: n => n === 12 });
+        expect(fails.length).toBe(1);
+        const rock = fails[0]!.rock;
+        const plans = h.logs.filter(l => /plan #\d+ \w+ .* rock /.test(l));
+        const failLine = h.logs.findIndex(l => l.includes(`failed roll@${fails[0]!.tick}`));
+        expect(failLine).toBeGreaterThan(-1);
+        const next = h.logs.slice(failLine).find(l => l.includes(`rock ${rock} `) && l.includes('plan #'))!;
+        expect(next).toContain(' starter ');
+        expect(plans.filter(l => l.includes(' waited ')).length).toBeGreaterThan(5);
+    });
+
+    test('a miss without the swing message is left to the default handling, packet for packet', () => {
+        // the player keeps mining the rock and rolls again rate+1 later: a late roll, or past
+        // the slack a slip, exactly as without `success`
+        for (const rate of [2, 7]) {
+            const fail = (n: number) => n === 12 || n === 30;
+            const base = mine({ starter: 'knife', ticks: 300, level: 30, rate, swings: false, fail, params: { rate } });
+            const opt = mine({ starter: 'knife', ticks: 300, level: 30, rate, swings: false, fail, params: { success: 'iron', rate } });
+            expect(timeline(opt.h)).toBe(timeline(base.h));
+            const r = opt.h.status.result as { slips: number; failed: number };
+            expect(r.failed).toBe(0);
+            expect(r.slips).toBe(rate === 7 ? 2 : 0);
+        }
+    });
+
+    test('a lost starter is late, not failed: one tick and no slip, as without success', () => {
+        let dropped = false;
+        const { h, rolls } = mine({ starter: 'knife', ticks: 200, level: 30, params: { success: 'iron' }, drop: (n, type) => (!dropped && n > 40 && type === 'useItemOnItem' ? (dropped = true) : false) });
+        const r = h.status.result as { slips: number; failed: number };
+        expect(r.slips).toBe(0);
+        expect(r.failed).toBe(0);
+        expect(gapsOf(rolls.slice(3)).filter(x => x !== 3)).toEqual([4]);
+    });
+
+    test('a run of misses the success chance does not explain is not taken for failures', () => {
+        // level 62: 254/256, so one miss in a row is plausible and a second is not: it is
+        // left to the default handling (here a late roll on the same rock)
+        const { h, fails } = mine({ starter: 'knife', ticks: 300, level: 62, params: { success: 'iron' }, fail: n => n === 12 || n === 13 });
+        const r = h.status.result as { slips: number; failed: number };
+        expect(fails.length).toBe(2);
+        expect(r.failed).toBe(1);
+        expect(r.slips).toBe(0);
+    });
+
+    test('plain with a mithril pickaxe (rate 4) predicts every roll, failures included', () => {
+        const { h, rolls, fails } = mine({ starter: 'none', ticks: 400, level: 25, rate: 4, params: { success: 'iron', rate: [[41, 2], [31, 3], [21, 4], [6, 5], [0, 7]] }, fail: n => n > 4 && n % 3 === 0 });
+        const r = h.status.result as { slips: number; failed: number; onPredictedTick: number; ores: number };
+        expect(fails.length).toBeGreaterThan(10);
+        expect(r.slips).toBe(0);
+        expect(r.failed).toBe(fails.length);
+        expect(r.onPredictedTick).toBe(r.ores);
+        expect(rolls.length).toBe(r.ores);
+    });
+
+    test('the knife holds 3 ticks with a bronze pickaxe (rate 7): the starter sets the clock whatever the tier', () => {
+        const { h, rolls } = mine({ starter: 'knife', ticks: 300, level: 20, rate: 7, params: { success: 'iron', rate: 7 } });
+        expect(gapsOf(rolls.slice(3)).every(g => g === 3)).toBe(true);
+        expect((h.status.result as { slips: number }).slips).toBe(0);
+    });
+
+    test('parses success, rate and the miss-run limit', () => {
+        expect(parseSuccess(undefined)).toBeNull();
+        expect(parseSuccess('iron')).toEqual([96, 350]);
+        expect(parseSuccess([128, 400])).toEqual([128, 400]);
+        expect(() => parseSuccess('copper')).toThrow();
+        expect(parseRate(undefined)(10)).toBe(2);
+        const r = parseRate([[41, 2], [31, 3], [21, 4], [6, 5], [0, 7]]);
+        expect([1, 6, 20, 21, 35, 41, 99].map(r)).toEqual([7, 5, 5, 4, 3, 2, 2]);
+        expect(() => parseRate(0)).toThrow();
+        expect(failRunLimit(1)).toBe(0);
+        expect(failRunLimit(254 / 256)).toBe(1);
+        expect(failRunLimit(133 / 256)).toBe(6); // 0.48^7 < 1% <= 0.48^6
     });
 
     test('parses both step forms', () => {

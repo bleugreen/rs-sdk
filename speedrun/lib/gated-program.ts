@@ -87,6 +87,12 @@ export interface GatedOptions {
     onSegment?: (segment: GatedSegment) => void;
     /** Every published status of every run. */
     onProgress?: (status: ProgramStatus, technique: SegmentTechnique) => void;
+    /**
+     * Opt-in: awaited before every start after the first (a switch, a re-probe's return, a
+     * resume), after any probe, with the technique about to run. knife-mine faults at start
+     * unless every rotation rock is live, so its caller waits for them here.
+     */
+    beforeRestart?: (technique: SegmentTechnique, previous: GatedSegment) => Promise<void>;
     /** Abort stops the running program and resolves with `ended: 'aborted'`. */
     signal?: AbortSignal;
     /** `awaitProgram`'s staleMs. */
@@ -116,17 +122,19 @@ export interface InPageGateOptions extends Omit<GateOptions, 'probeWith' | 'prob
     /** Probe trials (default 20). Every probe is on the account's clock. */
     trials?: number;
     maxWait?: number;
+    /** The probe's neighbour steps, free ones only (`probeInPage`); default the page's E, W, N, S. */
+    dirs?: ReadonlyArray<readonly [number, number]>;
 }
 
 /** A HostGate that probes in the page (`probeInPage`) and judges by `IN_PAGE_RULE`, scaled to `trials`. */
 export function inPageGate(sdk: ProgramSdk & ProbeSdk, opts: InPageGateOptions): HostGate {
-    const { trials = 20, maxWait, plainTicksPerRoll, model, ...rest } = opts;
+    const { trials = 20, maxWait, dirs, plainTicksPerRoll, model, ...rest } = opts;
     return new HostGate(sdk, {
         direct: IN_PAGE_RULE,
         ...rest,
         model: model ?? { plainCycle: plainTicksPerRoll },
         plainTicksPerDrop: plainTicksPerRoll,
-        probeWith: () => probeInPage(sdk, { trials, ...(maxWait !== undefined ? { maxWait } : {}) })
+        probeWith: () => probeInPage(sdk, { trials, ...(maxWait !== undefined ? { maxWait } : {}), ...(dirs ? { dirs } : {}) })
     });
 }
 
@@ -178,6 +186,11 @@ export async function runGatedProgram(
         if (budgetKey) run[budgetKey] = budget! - used;
         if (maxTicks !== undefined) run.maxTicks = maxTicks - ((sdk.getState()?.tick ?? firstTick) - firstTick);
         if ((budget !== undefined && budget - used <= 0) || (maxTicks !== undefined && (run.maxTicks as number) <= 0)) return { segments, ended: 'done' };
+        if (opts.beforeRestart && segments.length) {
+            await opts.beforeRestart(technique, segments[segments.length - 1]!);
+            if (opts.signal?.aborted) return { segments, ended: 'aborted' };
+            if (maxTicks !== undefined) run.maxTicks = maxTicks - ((sdk.getState()?.tick ?? firstTick) - firstTick);
+        }
 
         const started = await startProgram(sdk, name, run);
         log(`T${started.tick} ${name} run ${started.runId} ${technique}${paused ? ' (paused)' : ''}`);

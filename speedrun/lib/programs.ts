@@ -267,10 +267,18 @@ export type DirectProbeResult = ProbeResult & { path: 'direct'; source: 'in-page
  * The host gate's latency probe issued from the page itself (the direct path a
  * reactive program uses): the same walk trial as `probeOnTime`, summarized by the
  * same function, so the gate reads both paths alike. Ends on its start tile.
+ *
+ * `dirs` are the neighbour steps the probe tries, in order (the page's default is E, W, N, S).
+ * Each blocked one costs maxWait + 1 ticks before the next is tried, so a caller that knows
+ * which neighbours are free (a tree stand) passes those.
  */
-export async function probeInPage(sdk: ProgramSdk, opts: { trials?: number; maxWait?: number; timeoutMs?: number } = {}): Promise<DirectProbeResult> {
+export async function probeInPage(
+    sdk: ProgramSdk,
+    opts: { trials?: number; maxWait?: number; timeoutMs?: number; dirs?: ReadonlyArray<readonly [number, number]> } = {}
+): Promise<DirectProbeResult> {
     const trials = opts.trials ?? 20;
-    const end = await runProgram(sdk, 'probe', { trials, maxWait: opts.maxWait ?? 8 }, { timeoutMs: opts.timeoutMs ?? (trials * 3 + 60) * tickMs() });
+    const params = { trials, maxWait: opts.maxWait ?? 8, ...(opts.dirs ? { dirs: opts.dirs.map(d => [d[0], d[1]]) } : {}) };
+    const end = await runProgram(sdk, 'probe', params, { timeoutMs: opts.timeoutMs ?? (trials * 3 + 60) * tickMs() });
     const r = end.result as InPageProbeResult | undefined;
     if (!r) throw new ProgramError('probe ended without a result', end);
     // the page reports gaps between decoded ticks; the gate scores arrivals

@@ -173,6 +173,29 @@ describe('runGatedProgram', () => {
         expect(total(run.segments)).toBe(30);
     });
 
+    test('beforeRestart: awaited before each restart (not the first start) with the next technique; without it nothing waits', async () => {
+        const runOnce = async (wait: number | null) => {
+            const page = new FakePage(gather({ knife: 6, plain: 4 }));
+            const gate = scriptedGate(page, [20]);
+            const calls: Array<{ technique: string; previous: string; tick: number }> = [];
+            const beforeRestart = async (technique: string, previous: GatedSegment) => {
+                calls.push({ technique, previous: `${previous.technique}:${previous.reason}`, tick: page.sdk.state!.tick });
+                const t0 = page.sdk.state!.tick;
+                await new Promise<void>(r => { const un = page.sdk.onStateUpdate(s => { if (s.tick >= t0 + wait!) { un(); r(); } }); });
+            };
+            const run = await drive(page, runGatedProgram(page.sdk, 'knife-mine', { steps: '2604,3235>2605,3235', ores: 30 }, { gate, technique: 'auto', ...(wait !== null ? { beforeRestart } : {}) }));
+            return { page, run, calls };
+        };
+        const base = await runOnce(null);
+        const waited = await runOnce(7);
+        expect(shape(waited.run.segments)).toEqual(['knife:measured', 'plain:done']);
+        expect(waited.calls).toEqual([{ technique: 'plain', previous: 'knife:measured', tick: waited.calls[0]!.tick }]);
+        const gap = (p: FakePage) => p.runs()[1]!.tick - p.runs()[0]!.tick;
+        expect(gap(waited.page) - gap(base.page)).toBe(7);
+        expect(total(waited.run.segments, 'ores')).toBe(30);
+        expect(base.calls).toEqual([]);
+    });
+
     test('measured switch-off: N is measureDrops, and the margin asks the knife to be that share faster', async () => {
         const runWith = async (opts: Partial<GateOptions>) => {
             const page = new FakePage(gather({ knife: 3, plain: 4 }));
@@ -295,6 +318,13 @@ describe('inPageGate', () => {
         expect(await drive(page, gate.probe('start'))).toBe(true);
         expect(page.starts[0]!.params.trials).toBe(10);
         expect(gate.history[0]!.verdict).toMatchObject({ passAt: 10, floorAt: 10 });
+    });
+
+    test('dirs reach the page probe as given; without them the probe starts exactly as before', async () => {
+        const page = probePage(Array(20).fill(1));
+        const gate = inPageGate(page.sdk, { plainTicksPerRoll: 4, dirs: [[0, -1], [-1, 0]] });
+        await drive(page, gate.probe('start'));
+        expect(page.starts).toEqual([{ name: 'probe', params: { trials: 20, maxWait: 8, dirs: [[0, -1], [-1, 0]] }, tick: 1000 }]);
     });
 
     test('arms the measured switch-off from plainTicksPerRoll', () => {
