@@ -13,6 +13,7 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { BANK_SEARCHES } from '../../speedrun/tools/hiscore-scrape.ts';
 import { readBank, type ValueRow } from '../lib/boards.ts';
+import { writerExclusion } from '../lib/accounts.ts';
 import { Gentle } from '../lib/demo.ts';
 import { CENSUS_SEARCHES } from './census.ts';
 
@@ -57,8 +58,10 @@ const n = (x: number | null) => (x === null ? '-' : x.toLocaleString('en-US'));
 async function main(): Promise<void> {
     const { values } = parseArgs({
         args: Bun.argv.slice(2),
-        options: { out: { type: 'string' }, q: { type: 'string' }, diff: { type: 'string' }, against: { type: 'string' }, name: { type: 'string' } }
+        options: { out: { type: 'string' }, q: { type: 'string' }, diff: { type: 'string' }, against: { type: 'string' }, name: { type: 'string' }, 'placeholder-data': { type: 'boolean' } }
     });
+    // Reading live and writing a file needs the accounts list; an offline diff only prints.
+    const ex = values.against ? null : writerExclusion();
     let now: Searches;
     if (values.against) {
         now = loadSearches(JSON.parse(readFileSync(values.against, 'utf8')));
@@ -67,7 +70,7 @@ async function main(): Promise<void> {
         const queries = values.q ? values.q.split(',') : DEFAULT_QUERIES;
         const takenAt = new Date();
         now = {};
-        for (const q of queries) now[q] = await readBank(g, q);
+        for (const q of queries) now[q] = ex!.keep(await readBank(g, q));
         const out = values.out ? resolve(values.out) : resolve(import.meta.dir, '../../docs/markets/data');
         mkdirSync(out, { recursive: true });
         const file = join(out, `bank-searches-${stamp(takenAt)}.json`);
