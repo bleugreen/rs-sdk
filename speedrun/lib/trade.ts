@@ -31,7 +31,7 @@
 // "Accepted trade." message it sends both players as the items swap.
 
 import type { BotSDK } from '../../sdk/index';
-import type { ActionResult, BotWorldState, InventoryItem, TradeItem, TradeState } from '../../sdk/types';
+import type { ActionResult, BotWorldState, GameMessage, InventoryItem, TradeItem, TradeState } from '../../sdk/types';
 import { countInventoryById, diffInventories, offerSatisfies, shortfall } from '../../sdk/trade-helpers';
 import { amountButtons, isXAmount, matchesItem, type ItemPattern } from './items';
 import { tickMs, type StateSource } from './wait';
@@ -419,11 +419,26 @@ export interface OpenResult {
 /** trade.rs2 [opplayer4]: the engine's refusal of a request while the target is busy (a delay, a level-up page). */
 export const TRADE_BUSY_RE = /is busy at the moment/i;
 
+/** trade.rs2 [opplayer4]'s `<name>:tradereq:`, as both clients show it: chat type 4 from the requester. */
+export const TRADE_REQUEST_RE = /wishes to trade/i;
+
+export function isTradeRequest(m: GameMessage): boolean {
+    return m.type === 4 && TRADE_REQUEST_RE.test(m.text);
+}
+
 /**
  * Open a trade with `partner` by name. A trade request to a player who has
  * already requested us is the acceptance and opens both screens at once. A
  * request refused because the partner is busy is re-sent on the frame that
  * shows the refusal; one that stands unanswered is re-sent every 8 s.
+ *
+ * The partner's own request, arriving after our click has landed, is answered
+ * on the frame it shows. It proves our request is not standing (had it been,
+ * their click would have opened the trade): the engine drops a click from a
+ * delayed player without a word (OpPlayerHandler), so a request sent during a
+ * craft's delay is lost. A request shown on the frame our click lands on is not
+ * answered: that click may be the answer, and a click on an open trade closes
+ * it (clearPendingAction).
  */
 export async function openTrade(sdk: TradeSdk, partner: string, opts: { timeoutMs?: number } = {}): Promise<OpenResult> {
     const timeoutMs = opts.timeoutMs ?? 60_000;
@@ -435,6 +450,7 @@ export async function openTrade(sdk: TradeSdk, partner: string, opts: { timeoutM
 
     let firstClickTick = -1;
     let lastRefusal = -1;
+    let lastAnswered = -1;
     while (Date.now() < deadline) {
         const s = sdk.getState();
         const player = s?.nearbyPlayers.find(p => sameName(p.name, partner));
@@ -448,11 +464,15 @@ export async function openTrade(sdk: TradeSdk, partner: string, opts: { timeoutM
         const clickTick = s!.tick;
         void sdk.sendTradeRequest(player.index);
         const refusal = (st: BotWorldState) => st.gameMessages.find(m => m.tick >= clickTick && m.tick > lastRefusal && TRADE_BUSY_RE.test(m.text));
-        await waitState(sdk, st => tradeOf(st).isOpen || refusal(st) !== undefined, Math.min(8_000, deadline - Date.now()));
+        const asked = (st: BotWorldState) =>
+            st.tick >= clickTick + 2 ? st.gameMessages.find(m => m.tick > clickTick && m.tick > lastAnswered && isTradeRequest(m) && sameName(m.sender, partner)) : undefined;
+        await waitState(sdk, st => tradeOf(st).isOpen || refusal(st) !== undefined || asked(st) !== undefined, Math.min(8_000, deadline - Date.now()));
         const after = sdk.getState();
         if (after && tradeOf(after).isOpen) return { ok: true, firstClickTick };
         const refused = after ? refusal(after) : undefined;
         if (refused) lastRefusal = refused.tick;
+        const request = after ? asked(after) : undefined;
+        if (request) lastAnswered = request.tick;
     }
     return { ok: false, firstClickTick, reason: 'no_response' };
 }
