@@ -4,12 +4,14 @@ import {
     fareBetween,
     inRangingGuild,
     judgeStop,
+    livePrices,
     parseArgs,
     parseOptions,
     parseStops,
     parseValueMessage,
     RANGING_GUILD_DOOR,
     shelfRecords,
+    shopValue,
     STOPS,
     type StopKey,
     stopOf,
@@ -18,8 +20,8 @@ import {
 } from './stops';
 
 describe('stop table', () => {
-    test('ships the ten stops markets numbered, in the default route, and the three config-only ones', () => {
-        expect([...DEFAULT_ROUTE].sort()).toEqual(['aubury', 'betty', 'dargaud', 'davon', 'drogo', 'gemtrader', 'grum', 'herquin', 'hickton', 'jiminua']);
+    test("ships markets' ten stops and the scan's four in the default route, and the three config-only ones", () => {
+        expect([...DEFAULT_ROUTE].sort()).toEqual(['aubury', 'betty', 'dargaud', 'davon', 'drogo', 'gemtrader', 'general-falador', 'general-lumbridge', 'general-varrock', 'grum', 'herquin', 'hickton', 'jiminua', 'zaff']);
         for (const k of DEFAULT_ROUTE) expect(stopOf(k).configOnly).toBeUndefined();
         const configOnly = Object.values(STOPS)
             .filter(s => 'configOnly' in s)
@@ -42,9 +44,13 @@ describe('stop table', () => {
     test('zones: Al Kharid behind the toll gate, Karamja and Kandarin by ship, the Dwarven Mine on the mainland', () => {
         const zones = Object.fromEntries(DEFAULT_ROUTE.map(k => [k, zoneOf(stopOf(k).stand)]));
         expect(zones).toEqual({
+            'general-lumbridge': 'mainland',
             gemtrader: 'alkharid',
             aubury: 'mainland',
+            'general-varrock': 'mainland',
+            zaff: 'mainland',
             drogo: 'mainland',
+            'general-falador': 'mainland',
             herquin: 'mainland',
             grum: 'mainland',
             betty: 'mainland',
@@ -121,6 +127,24 @@ describe('fares and skips', () => {
     });
 });
 
+describe('live prices', () => {
+    // Measured in the lab at Aubury (runeshop: deathrune configured 1,000, cost 30, sell multiplier 1000, haggle 10):
+    // Value said 30 at 1,000 and 999 on the shelf, 33 at 989, 36 at 979, while the SDK said 30 throughout.
+    const aubury = { buyMultiplier: 550, sellMultiplier: 1000, haggle: 10 };
+    test('match the server Value as the shelf drains below its configured stock', () => {
+        expect([1000, 999, 989, 979].map(n => livePrices(30, aubury, n, 1000).buy)).toEqual([30, 30, 33, 36]);
+    });
+
+    test('stock outside the base config is priced from its whole count, so a general store pays less the more it holds', () => {
+        const general = { buyMultiplier: 400, sellMultiplier: 1300, haggle: 30 };
+        expect(livePrices(100, general, 1, null)).toEqual({ buy: 127, sell: 37 });
+        expect(livePrices(100, general, 10, null)).toEqual({ buy: 100, sell: 10 });
+        expect(livePrices(100, general, 50, null)).toEqual({ buy: 10, sell: 10 }); // both floor at 100/1000 of cost
+        expect(livePrices(1, general, 50, null).buy).toBe(1); // a purchase never costs 0
+        expect(shopValue(100, 30, 400, 1)).toBe(37);
+    });
+});
+
 describe('records', () => {
     const shop = {
         title: "Aubury's Rune Shop.",
@@ -130,17 +154,50 @@ describe('records', () => {
             { slot: 1, id: 562, name: 'Chaos rune', count: 250, baseCost: 90, buyPrice: 90, sellPrice: 54 }
         ]
     };
-    const read = { stop: 'aubury', read: 1, utc: '2026-10-22T23:00:00.000Z', tick: 1234, at: { x: 3253, z: 3402, level: 0 }, legMs: 61_000, legTicks: 152, shop, values: new Map([['fire rune', 5]]) };
+    const names = new Map([
+        [554, 'firerune'],
+        [562, 'chaosrune']
+    ]);
+    const content = { inv: 'runeshop', objName: (id: number) => names.get(id), stockBase: (obj: string) => (obj === 'firerune' ? 5000 : undefined) };
+    const read = { stop: 'aubury', read: 1, utc: '2026-10-22T23:00:00.000Z', tick: 1234, at: { x: 3253, z: 3402, level: 0 }, legMs: 61_000, legTicks: 152, shop, values: new Map([[0, 5]]), inv: 'runeshop', content };
 
     test('one shop line with the config, then one line per shelf slot with the issue-required fields', () => {
         const [head, ...items] = shelfRecords(read);
-        expect(head).toEqual({ kind: 'shop', utc: read.utc, stop: 'aubury', read: 1, shopTitle: shop.title, tick: 1234, shopConfig: shop.shopConfig, items: 2, at: read.at, legMs: 61_000, legTicks: 152 });
+        expect(head).toEqual({ kind: 'shop', utc: read.utc, stop: 'aubury', read: 1, shopTitle: shop.title, inv: 'runeshop', tick: 1234, shopConfig: shop.shopConfig, items: 2, at: read.at, legMs: 61_000, legTicks: 152 });
         expect(items).toHaveLength(2);
-        const required = ['utc', 'stop', 'shopTitle', 'slot', 'itemId', 'name', 'count', 'baseCost', 'buyPrice', 'sellPrice'];
+        const required = ['utc', 'stop', 'shopTitle', 'slot', 'itemId', 'name', 'count', 'baseCost', 'buyPrice', 'sellPrice', 'inv', 'obj'];
         for (const r of items) for (const k of required) expect(r).toHaveProperty(k);
-        expect(items[0]).toEqual({ kind: 'item', utc: read.utc, stop: 'aubury', read: 1, shopTitle: shop.title, tick: 1234, slot: 0, itemId: 554, name: 'Fire rune', count: 4900, baseCost: 4, buyPrice: 4, sellPrice: 2, valuePrice: 5 });
-        expect(items[1]!.valuePrice).toBeNull();
+        expect(items[0]).toEqual({
+            kind: 'item',
+            utc: read.utc,
+            stop: 'aubury',
+            read: 1,
+            shopTitle: shop.title,
+            inv: 'runeshop',
+            tick: 1234,
+            slot: 0,
+            itemId: 554,
+            name: 'Fire rune',
+            obj: 'firerune',
+            count: 4900,
+            stockBase: 5000,
+            inBaseConfig: true,
+            baseCost: 4,
+            buyPrice: 4,
+            sellPrice: 2,
+            valuePrice: 5,
+            computedBuyPrice: 4,
+            computedSellPrice: 2
+        });
+        // Not in the base config: priced from its whole count, and flagged.
+        expect(items[1]).toMatchObject({ obj: 'chaosrune', stockBase: null, inBaseConfig: false, valuePrice: null, computedBuyPrice: 9, computedSellPrice: 9 });
         for (const r of [head, ...items]) expect(JSON.parse(JSON.stringify(r))).toEqual(r);
+    });
+
+    test('without content the names and computed prices are null and inv is the table name', () => {
+        const [head, ...items] = shelfRecords({ ...read, content: null, inv: 'runeshop' });
+        expect(head.inv).toBe('runeshop');
+        expect(items[0]).toMatchObject({ inv: 'runeshop', obj: null, stockBase: null, inBaseConfig: null, computedBuyPrice: null, valuePrice: 5 });
     });
 
     test('parseValueMessage reads the server Value reply only', () => {
