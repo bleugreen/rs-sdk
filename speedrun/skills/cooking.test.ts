@@ -13,11 +13,10 @@ import {
     CHISEL,
     chooseStacks,
     cookingStep,
-    CRAFTING_AFTER_WINDOWS,
+    craftingAfterWindows,
     CUT_IDS,
     firstBurst,
     GEM_RECIPES,
-    GEMS_IN_WINDOWS,
     newRun,
     preconditions,
     relogGuarded,
@@ -26,14 +25,32 @@ import {
     STEP_NAME,
     steps,
     UNCUT_IDS,
-    windowGemBaseXp,
-    WINDOW_GEMS,
+    windowPlan,
+    windowsXp,
     windowWorkFor,
     wineBankProbe,
     withdrawButtons,
     type WineBankProbe
 } from './cooking';
-import { CRAFTING_HANDOFF_XP, WINDOW_GEM_BASE_XP } from './crafting';
+import { craftingHandoffXp, type StagedGem } from './crafting';
+
+/** rs/158's full window mix (107 gems, 6,567.5 base), as H21d's row names it. */
+const FULL: StagedGem[] = [
+    { name: 'uncut sapphire', count: 62 },
+    { name: 'uncut emerald', count: 23 },
+    { name: 'uncut ruby', count: 20 },
+    { name: 'uncut diamond', count: 2 }
+];
+/** rs/41's short mix, by id: 6 sapphire, 5 emerald and 3 ruby fewer (93 gems). */
+const SHORT: StagedGem[] = [
+    { name: 'uncut sapphire', id: 1623, count: 56 },
+    { name: 'uncut emerald', id: 1621, count: 18 },
+    { name: 'uncut ruby', id: 1619, count: 17 },
+    { name: 'uncut diamond', id: 1617, count: 2 }
+];
+/** The tests' own staged list, so a change to H21d's row does not move their numbers. */
+const O = { stagedGems: FULL };
+const HANDOFF = craftingHandoffXp(FULL);
 
 const STAND = { x: 3185, z: 3436 };
 const BOOTH_LOC = { id: 2213, name: 'Bank booth', x: 3186, z: 3436, level: 0, distance: 1, options: ['Use', 'Use-quickly'], optionsWithIndex: [{ text: 'Use', opIndex: 1 }, { text: 'Use-quickly', opIndex: 2 }] };
@@ -43,7 +60,7 @@ const item = (slot: number, id: number, count = 1, name = `obj ${id}`): Inventor
 const skillsOf = (o: { cooking?: number; crafting?: number; smithing?: number; herblore?: number }) =>
     [
         ['Cooking', o.cooking ?? xpForLevel(30)],
-        ['Crafting', o.crafting ?? CRAFTING_HANDOFF_XP],
+        ['Crafting', o.crafting ?? HANDOFF],
         ['Smithing', o.smithing ?? xpForLevel(99)],
         ['Herblore', o.herblore ?? xpForLevel(99)]
     ].map(([name, experience]) => ({ name, level: levelForXp(experience as number), baseLevel: levelForXp(experience as number), experience })) as never;
@@ -57,12 +74,29 @@ function world(o: { inventory?: InventoryItem[]; skills?: Parameters<typeof skil
 }
 
 describe('the content', () => {
-    test('the windows cut 107 gems, 6,567.5 base: exactly the hand-off to 99 (crafting.ts defines the hand-off)', () => {
-        expect(GEMS_IN_WINDOWS).toBe(107);
-        expect(WINDOW_GEMS).toEqual({ diamond: 2, ruby: 20, emerald: 23, sapphire: 62 });
-        expect(windowGemBaseXp()).toBe(WINDOW_GEM_BASE_XP);
-        expect(CRAFTING_AFTER_WINDOWS).toBe(xpForLevel(99));
-        expect(CRAFTING_HANDOFF_XP + windowGemBaseXp() * XP_RATE).toBe(xpForLevel(99));
+    test("the full mix: the windows cut 107, 6,567.5 base; S25d's stop plus the windows' xp is 99 exactly", () => {
+        const plan = windowPlan(O);
+        if (typeof plan === 'string') throw new Error(plan);
+        expect(plan).toEqual({ counts: { sapphire: 62, emerald: 23, ruby: 20, diamond: 2 }, total: 107, handoffXp: 834270.5 });
+        expect(windowsXp(plan.counts)).toBe(6567.5 * XP_RATE);
+        expect(plan.handoffXp + windowsXp(plan.counts)).toBe(xpForLevel(99));
+        expect(craftingAfterWindows(plan)).toBe(xpForLevel(99));
+    });
+
+    test("the short mix: the windows cut 93, 5,675 base; S25d's stop plus the windows' xp is 99 exactly", () => {
+        const plan = windowPlan({ stagedGems: SHORT });
+        if (typeof plan === 'string') throw new Error(plan);
+        expect(plan).toEqual({ counts: { sapphire: 56, emerald: 18, ruby: 17, diamond: 2 }, total: 93, handoffXp: craftingHandoffXp(SHORT) });
+        expect(windowsXp(plan.counts)).toBe(5675 * XP_RATE);
+        expect(craftingHandoffXp(SHORT) + windowsXp(plan.counts)).toBe(xpForLevel(99));
+        expect(craftingAfterWindows(plan)).toBe(xpForLevel(99));
+    });
+
+    test('an empty mix: nothing to cut, the hand-off is 99; an unknown gem: refused with the reason', () => {
+        expect(windowPlan({ stagedGems: [] })).toMatchObject({ total: 0, handoffXp: xpForLevel(99) });
+        expect(windowPlan({ stagedGems: [{ id: 1631, count: 1 }] })).toMatch(/^staged gems \(H21d\): gem @1631 is not an uncut gem the windows cut/);
+        expect(preconditions(world(), { stagedGems: [{ name: 'uncut opal', count: 3 }] })).toMatch(/^staged gems \(H21d\): uncut opal is not an uncut gem/);
+        expect(() => newRun(world(), { stagedGems: [{ id: 1631, count: 1 }] })).toThrow('gem @1631 is not an uncut gem');
     });
 
     test('GEM_RECIPES: chisel on each uncut gem, its cut product and xp (jeweller.ts GEM)', () => {
@@ -102,35 +136,38 @@ describe('burst 1: the fewest stacks that fill the free slots', () => {
 
 describe('preconditions', () => {
     test('at the booth with S25a, S25d and S25e done, nothing held: pass', () => {
-        expect(preconditions(world())).toBe(true);
+        expect(preconditions(world(), O)).toBe(true);
     });
     test('the free-slot rule: 28 items held refuse with the module template; 27 pass', () => {
         const inv = Array.from({ length: 28 }, (_, i) => item(i, 1511 + (i % 2), 1, i % 2 ? 'Oak logs' : 'Logs'));
-        expect(preconditions(world({ inventory: inv }))).toBe('28 other items (Logs, Oak logs): need 1 free slots');
-        expect(preconditions(world({ inventory: inv.slice(0, 27) }))).toBe(true);
+        expect(preconditions(world({ inventory: inv }), O)).toBe('28 other items (Logs, Oak logs): need 1 free slots');
+        expect(preconditions(world({ inventory: inv.slice(0, 27) }), O)).toBe(true);
         // the chisel is not "other", but it still takes the slot
-        expect(preconditions(world({ inventory: [item(0, CHISEL, 1, 'Chisel'), ...inv.slice(1)] }))).toBe('27 other items (Oak logs, Logs): need 1 free slots');
+        expect(preconditions(world({ inventory: [item(0, CHISEL, 1, 'Chisel'), ...inv.slice(1)] }), O)).toBe('27 other items (Oak logs, Logs): need 1 free slots');
         // a resume with the notes already held needs no slot for them
-        expect(preconditions(world({ inventory: [item(0, WINE.wineNote, 491), ...inv.slice(1)] }))).toBe(true);
+        expect(preconditions(world({ inventory: [item(0, WINE.wineNote, 491), ...inv.slice(1)] }), O)).toBe(true);
     });
     test('not beside the booth, or the booth not in view', () => {
-        expect(preconditions(world({ at: { x: 3180, z: 3436 } }))).toMatch(/^not beside the booth/);
-        expect(preconditions(world({ at: { x: 3184, z: 3436 } }))).toBe(true);
-        expect(preconditions({ ...world(), nearbyLocs: [{ ...BOOTH_LOC, x: 3190 }] as never })).toMatch(/^no bank booth/);
+        expect(preconditions(world({ at: { x: 3180, z: 3436 } }), O)).toMatch(/^not beside the booth/);
+        expect(preconditions(world({ at: { x: 3184, z: 3436 } }), O)).toBe(true);
+        expect(preconditions({ ...world(), nearbyLocs: [{ ...BOOTH_LOC, x: 3190 }] as never }, O)).toMatch(/^no bank booth/);
     });
     test('S25a, S25e and S25d each not done; lab fixtures skip them', () => {
-        expect(preconditions(world({ skills: { smithing: xpForLevel(98) } }))).toBe('S25a not done: Smithing 98');
-        expect(preconditions(world({ skills: { herblore: xpForLevel(80) } }))).toBe('S25e not done: Herblore 80');
-        expect(preconditions(world({ skills: { crafting: CRAFTING_HANDOFF_XP - 1 } }))).toMatch(/^S25d not done: Crafting xp/);
-        expect(preconditions(world({ skills: { smithing: 0, herblore: 0, crafting: xpForLevel(55) } }), { lab: true })).toBe(true);
+        expect(preconditions(world({ skills: { smithing: xpForLevel(98) } }), O)).toBe('S25a not done: Smithing 98');
+        expect(preconditions(world({ skills: { herblore: xpForLevel(80) } }), O)).toBe('S25e not done: Herblore 80');
+        expect(preconditions(world({ skills: { crafting: HANDOFF - 1 } }), O)).toBe('S25d not done: Crafting xp 834269.5 < 834270.5 (the hand-off for the 107 staged gems)');
+        // the short mix stops S25d later: the full mix's hand-off is short of it
+        expect(preconditions(world(), { stagedGems: SHORT })).toBe('S25d not done: Crafting xp 834270.5 < 856583 (the hand-off for the 93 staged gems)');
+        expect(preconditions(world({ skills: { crafting: craftingHandoffXp(SHORT) } }), { stagedGems: SHORT })).toBe(true);
+        expect(preconditions(world({ skills: { smithing: 0, herblore: 0, crafting: xpForLevel(55) } }), { ...O, lab: true })).toBe(true);
     });
     test('in combat, or hit within 16 ticks: refuse (the relog would wait it out on the scored clock)', () => {
-        expect(preconditions(world({ inCombat: true }))).toMatch(/^in combat/);
-        expect(preconditions(world({ tick: 100, lastDamageTick: 90 }))).toBe('hit 10 ticks ago: a relog waits 16 ticks out of combat');
-        expect(preconditions(world({ tick: 100, lastDamageTick: 83 }))).toBe(true);
+        expect(preconditions(world({ inCombat: true }), O)).toMatch(/^in combat/);
+        expect(preconditions(world({ tick: 100, lastDamageTick: 90 }), O)).toBe('hit 10 ticks ago: a relog waits 16 ticks out of combat');
+        expect(preconditions(world({ tick: 100, lastDamageTick: 83 }), O)).toBe(true);
     });
     test('Cooking 99 passes (done); Crafting 99 turns the window work off', () => {
-        expect(preconditions(world({ skills: { cooking: xpForLevel(99) }, at: { x: 0, z: 0 } }))).toBe(true);
+        expect(preconditions(world({ skills: { cooking: xpForLevel(99) }, at: { x: 0, z: 0 } }), O)).toBe(true);
         expect(windowWorkFor(world({ skills: { crafting: xpForLevel(99) } }))).toBe('none');
         expect(windowWorkFor(world())).toBe('gems');
         expect(windowWorkFor(world(), { windowWork: 'none' })).toBe('none');
@@ -140,13 +177,13 @@ describe('preconditions', () => {
 describe('relog labels', () => {
     test('the arming relog once the first firing shows; a deadline before it, and after a resume past it', () => {
         const s = world();
-        const run = newRun(s);
+        const run = newRun(s, O);
         expect(relogKind(run, s)).toBe('deadline');
         const fired = world({ skills: { cooking: xpForLevel(53) } });
         expect(relogKind(run, fired)).toBe('planned-2');
         run.planned2 = true;
         expect(relogKind(run, fired)).toBe('deadline');
-        expect(relogKind({ ...newRun(s), pastFirst: true }, fired)).toBe('deadline');
+        expect(relogKind({ ...newRun(s, O), pastFirst: true }, fired)).toBe('deadline');
     });
 });
 
@@ -210,7 +247,7 @@ class Engine {
         (o.inventory ?? []).forEach((x, i) => (this.inv[i] = x ? { ...x } : null));
         this.bank = (o.bank ?? [{ id: CHISEL, count: 1 }, { id: 1617, count: 2 }, { id: 1619, count: 20 }, { id: 1621, count: 23 }, { id: 1623, count: 62 }]).map(b => ({ ...b }));
         this.cooking = o.cooking ?? xpForLevel(30);
-        this.crafting = o.crafting ?? CRAFTING_HANDOFF_XP;
+        this.crafting = o.crafting ?? HANDOFF;
         this.due = o.due ?? Infinity;
         this.sdk = new PageSdk(this.state(this.loginTick));
         this.sdk.onSend = a => this.onSend(a);
@@ -438,7 +475,7 @@ async function runModule(e: Engine, opts: Parameters<typeof steps>[0] = {}) {
     engine = e;
     const log = TickLog.memory('t');
     e.start();
-    const result = await runSteps(sessionOf(e), steps({ relog: e.relog, ...opts }), { log, c: {}, shouldStop: () => false, logout: async () => {}, tickMonitor: false });
+    const result = await runSteps(sessionOf(e), steps({ relog: e.relog, ...O, ...opts }), { log, c: {}, shouldStop: () => false, logout: async () => {}, tickMonitor: false });
     return { result, log, notes: log.rows.filter(r => r.kind === 'note').map(r => r.meta as Record<string, unknown>) };
 }
 
@@ -539,7 +576,7 @@ describe('S25c through runSteps (scripted world)', () => {
         e.pages = 2;
         e.sdk.push(e.state(e.sdk.state!.tick));
         const ctx = { session: sessionOf(e), sdk: e.sdk, bot: {}, c: {}, log: TickLog.memory('t') } as unknown as StepContext<any>;
-        const run = newRun(e.sdk.state!);
+        const run = newRun(e.sdk.state!, O);
         await relogGuarded(ctx, run, 'planned-1', { relog: e.relog });
         const relogAt = e.sends.length;
         expect(e.sends.slice(0, relogAt).some(s => s.method === 'sendClickDialog')).toBe(true);
@@ -556,14 +593,14 @@ describe('burst hooks on scripted state', () => {
 
     test('burst 1 with the chisel held: one packet, sapphire All', () => {
         const sdk = new FakeSdk(world());
-        const n = firstBurst(ctxFor(sdk), newRun(world()))(bankState([item(0, WINE.wineNote, 491), item(1, CHISEL)], [{ id: 1623, count: 62 }, { id: 1619, count: 20 }]));
+        const n = firstBurst(ctxFor(sdk), newRun(world(), O))(bankState([item(0, WINE.wineNote, 491), item(1, CHISEL)], [{ id: 1623, count: 62 }, { id: 1619, count: 20 }]));
         expect(n).toBe(1);
         expect(sdk.sent).toEqual([{ method: 'sendBankWithdraw', args: [0, -1] }]);
     });
 
     test('burst 1 with no chisel anywhere: the plain sequence', () => {
         const sdk = new FakeSdk(world());
-        const run = newRun(world());
+        const run = newRun(world(), O);
         expect(firstBurst(ctxFor(sdk), run)(bankState([item(0, WINE.wineNote, 491)], [{ id: 1623, count: 62 }]))).toBe(0);
         expect(run.windowWork).toBe('none');
         expect(sdk.sent).toEqual([]);
@@ -571,7 +608,7 @@ describe('burst hooks on scripted state', () => {
 
     test('burst 1 with a short supply: the windows cut what is on hand', () => {
         const sdk = new FakeSdk(world());
-        const run = newRun(world());
+        const run = newRun(world(), O);
         firstBurst(ctxFor(sdk), run)(bankState([item(0, WINE.wineNote, 491)], [{ id: CHISEL, count: 1 }, { id: 1623, count: 10 }]));
         expect(run.gems).toBe(10);
         expect(sdk.sent).toEqual([{ method: 'sendBankWithdraw', args: [0, 1] }, { method: 'sendBankWithdraw', args: [1, -1] }]);
@@ -579,7 +616,7 @@ describe('burst hooks on scripted state', () => {
 
     test('the rest burst: deposit All of each cut gem held', () => {
         const sdk = new FakeSdk(world());
-        const n = restBurst(ctxFor(sdk), newRun(world()))(bankState([item(0, WINE.wineNote, 491), item(1, CHISEL), item(2, 1607), item(3, 1607), item(4, 1601), item(5, 1623)], []));
+        const n = restBurst(ctxFor(sdk), newRun(world(), O))(bankState([item(0, WINE.wineNote, 491), item(1, CHISEL), item(2, 1607), item(3, 1607), item(4, 1601), item(5, 1623)], []));
         expect(n).toBe(2);
         expect(sdk.sent).toEqual([{ method: 'sendBankDeposit', args: [4, -1] }, { method: 'sendBankDeposit', args: [2, -1] }]);
     });
@@ -593,7 +630,7 @@ async function resumeAt(e: Engine, tickBase: number, opts: Parameters<typeof ste
     const session = sessionOf(e, tickBase);
     const probe = await wineBankProbe(session);
     const observed: Observed = { state: e.sdk.state!, probed: { wineBank: probe } };
-    const step = cookingStep({ relog: e.relog, ...opts });
+    const step = cookingStep({ relog: e.relog, ...O, ...opts });
     const log = TickLog.memory('t');
     const ctx = { session, sdk: e.sdk, bot: {}, c: {}, log, observed } as unknown as StepContext<any>;
     const inProgress = step.inProgress!(observed, {});
@@ -626,7 +663,7 @@ describe('resume after a mid-step logout (the reconnect login arms the timer: no
     });
 
     test('the 29 banked, gems held (a crash in W1): await-first, W1 on what is held, then P1 and the arming relog', async () => {
-        const e = new Engine({ tick: 500, crafting: CRAFTING_HANDOFF_XP + 10 * 50 * 25, inventory: [notes(491), { id: CHISEL, count: 1 }, ...sapphires(10, SAPPHIRE.cut), ...sapphires(16)], bank: [{ id: WINE.wine, count: 29 }, ...GEM_BANK()], due: 520 });
+        const e = new Engine({ tick: 500, crafting: HANDOFF + 10 * 50 * 25, inventory: [notes(491), { id: CHISEL, count: 1 }, ...sapphires(10, SAPPHIRE.cut), ...sapphires(16)], bank: [{ id: WINE.wine, count: 29 }, ...GEM_BANK()], due: 520 });
         const r = await resumeAt(e, 498);
         await r.step.resume!(r.ctx);
         // nothing deposited before the firing
@@ -638,7 +675,7 @@ describe('resume after a mid-step logout (the reconnect login arms the timer: no
     });
 
     test('the first firing done, the rest held (a logout between relog 1 and relog 2): the rest rides this login, NO relog 2', async () => {
-        const e = new Engine({ tick: 500, cooking: AFTER_FIRST, crafting: CRAFTING_HANDOFF_XP + 26 * 50 * 25, inventory: [notes(491), { id: CHISEL, count: 1 }, ...sapphires(26, SAPPHIRE.cut)], bank: [{ id: WINE.jugWine, count: 29 }, ...GEM_BANK()], due: 520 });
+        const e = new Engine({ tick: 500, cooking: AFTER_FIRST, crafting: HANDOFF + 26 * 50 * 25, inventory: [notes(491), { id: CHISEL, count: 1 }, ...sapphires(26, SAPPHIRE.cut)], bank: [{ id: WINE.jugWine, count: 29 }, ...GEM_BANK()], due: 520 });
         const r = await resumeAt(e, 498);
         expect(r.inProgress).toBe(true);
         await r.step.resume!(r.ctx);
@@ -661,7 +698,7 @@ describe('resume after a mid-step logout (the reconnect login arms the timer: no
     });
 
     test('the rest banked (a logout after relog 2): await-second, W2 only', async () => {
-        const e = new Engine({ tick: 500, cooking: AFTER_FIRST, crafting: CRAFTING_HANDOFF_XP + 26 * 50 * 25, inventory: [{ id: CHISEL, count: 1 }], bank: [{ id: WINE.wine, count: 491 }, { id: WINE.jugWine, count: 29 }, ...GEM_BANK(), { id: SAPPHIRE.cut, count: 26 }], due: 520 });
+        const e = new Engine({ tick: 500, cooking: AFTER_FIRST, crafting: HANDOFF + 26 * 50 * 25, inventory: [{ id: CHISEL, count: 1 }], bank: [{ id: WINE.wine, count: 491 }, { id: WINE.jugWine, count: 29 }, ...GEM_BANK(), { id: SAPPHIRE.cut, count: 26 }], due: 520 });
         const r = await resumeAt(e, 498);
         await r.step.resume!(r.ctx);
         expect(e.relogs).toBe(0);
@@ -672,7 +709,7 @@ describe('resume after a mid-step logout (the reconnect login arms the timer: no
     });
 
     test('Cooking 99 with gems still banked (a logout in P2): only the gem cycle', async () => {
-        const e = new Engine({ tick: 500, cooking: xpForLevel(99), crafting: CRAFTING_HANDOFF_XP + 26 * 50 * 25, bank: [{ id: CHISEL, count: 1 }, { id: WINE.jugWine, count: 520 }, ...GEM_BANK(), { id: SAPPHIRE.cut, count: 26 }] });
+        const e = new Engine({ tick: 500, cooking: xpForLevel(99), crafting: HANDOFF + 26 * 50 * 25, bank: [{ id: CHISEL, count: 1 }, { id: WINE.jugWine, count: 520 }, ...GEM_BANK(), { id: SAPPHIRE.cut, count: 26 }] });
         const r = await resumeAt(e, 498);
         expect(r.done).toBe(false);
         expect(r.inProgress).toBe(true);
@@ -720,7 +757,7 @@ describe('step fields', () => {
         expect(walk!.postconditions(world({ at: { x: 3222, z: 3222 } }), {})).toBe('not at the stand (3185,3436)');
         expect(walk!.postconditions(world(), {})).toBe(true);
         // lab 'false' is not lab: the S25 checks stay on
-        expect(steps({ lab: 'false' as never })[0]!.preconditions(world({ skills: { smithing: xpForLevel(50) } }), {})).toBe('S25a not done: Smithing 50');
+        expect(steps({ ...O, lab: 'false' as never })[0]!.preconditions(world({ skills: { smithing: xpForLevel(50) } }), {})).toBe('S25a not done: Smithing 50');
         expect(steps({ lab: 'true' as never })[0]!.preconditions(world({ skills: { smithing: xpForLevel(50) } }), {})).toBe(true);
     });
 
