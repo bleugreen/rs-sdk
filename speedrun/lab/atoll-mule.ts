@@ -12,11 +12,13 @@
 //   4. H12oP stops: the launcher logs h45 out.
 // Prints RESULT lines (FAIL for a check that does not hold). Through lab.sh, h45 with a bot.env only:
 //
-//   NODE_TICKRATE=400 LAB_BOTS=cairn_lab45 LAB_TIMEOUT=2400 speedrun/lab/lab.sh <scored> 'speedrun/lab/atoll-mule.ts:--mule=cairn_lab45'
+//   NODE_TICKRATE=400 LAB_TIMEOUT=2400 speedrun/lab/lab.sh <scored> 'speedrun/lab/atoll-mule.ts'
+// (h45's stand-in is cairn_lab45, a lab-only name; its bot.env is written on first use).
 //
 // Options: --wait=850 (ticks SCORED is away between the trades), --lead=70, --spiders=2, --gw=8479
 // (the launcher's loopback gateway port).
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { Subprocess } from 'bun';
@@ -72,6 +74,16 @@ async function giveN(s: Session, obj: string, n: number, matches: RegExp): Promi
 // ---- 1. Stage h45 through its own client, then park it logged out on P's tile.
 // The launcher takes cairn_ helper names only; a lab-only one (cairn_lab45) exists on the lab engine alone.
 const muleBot = arg('mule', 'cairn_lab45');
+// bots/create-bot.ts takes no underscore, so the lab account's bot.env (gitignored) is written here.
+const muleEnvPath = join(ROOT, 'bots', muleBot, 'bot.env');
+if (!existsSync(muleEnvPath)) {
+    mkdirSync(join(ROOT, 'bots', muleBot), { recursive: true, mode: 0o700 });
+    writeFileSync(
+        muleEnvPath,
+        `BOT_USERNAME=${muleBot}\nPASSWORD=${randomBytes(6).toString('hex')}\nSERVER=localhost:${process.env.WEB_PORT ?? '9300'}\nGATEWAY_URL=ws://localhost:${process.env.AGENT_PORT ?? '8300'}\nSHOW_CHAT=false\nTELEMETRY=false\nPROFANITY_FILTER=false\n`,
+        { mode: 0o600 }
+    );
+}
 const muleEnv = loadBotEnv(muleBot);
 const muleAcct = muleEnv.BOT_USERNAME!;
 const scoredBot = botArg();
