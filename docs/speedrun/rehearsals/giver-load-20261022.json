@@ -1,0 +1,599 @@
+{
+  "checks": [
+    {
+      "host": "3.209.186.185",
+      "runtimeSource": "dd2164c7",
+      "startedAtMs": 1792629341170,
+      "accounts": [
+        {
+          "account": "cairn_t01",
+          "loggedInAt": "2026-10-22T00:35:45.240000+00:00",
+          "logins": 1,
+          "lastHeartbeat": {
+            "t": "2026-10-22T00:51:45.850Z",
+            "account": "cairn_t01",
+            "role": "idle",
+            "path": "direct",
+            "message": "idle",
+            "x": 3094,
+            "z": 3106,
+            "stateAgeMs": 132
+          },
+          "maxHeartbeatStateAgeMs": 509,
+          "logout": [
+            {
+              "t": "2026-10-22T00:52:00.304Z",
+              "account": "cairn_t01",
+              "role": "idle",
+              "path": "direct",
+              "message": "logout: out of the world: server sent LOGOUT 1 tick(s) after the first click (1 click, 237 ms)"
+            }
+          ],
+          "deadlineKilled": false
+        },
+        {
+          "account": "cairn_t02",
+          "loggedInAt": "2026-10-22T00:35:53.771000+00:00",
+          "logins": 1,
+          "lastHeartbeat": {
+            "t": "2026-10-22T00:51:54.389Z",
+            "account": "cairn_t02",
+            "role": "idle",
+            "path": "direct",
+            "message": "idle",
+            "x": 3094,
+            "z": 3106,
+            "stateAgeMs": 144
+          },
+          "maxHeartbeatStateAgeMs": 689,
+          "logout": [
+            {
+              "t": "2026-10-22T00:52:00.652Z",
+              "account": "cairn_t02",
+              "role": "idle",
+              "path": "direct",
+              "message": "logout: out of the world: server sent LOGOUT 2 tick(s) after the first click (1 click, 585 ms)"
+            }
+          ],
+          "deadlineKilled": false
+        },
+        {
+          "account": "cairn_t03",
+          "loggedInAt": "2026-10-22T00:36:02.143000+00:00",
+          "logins": 1,
+          "lastHeartbeat": {
+            "t": "2026-10-22T00:51:02.963Z",
+            "account": "cairn_t03",
+            "role": "idle",
+            "path": "direct",
+            "message": "idle",
+            "x": 3094,
+            "z": 3106,
+            "stateAgeMs": 11
+          },
+          "maxHeartbeatStateAgeMs": 371,
+          "logout": [
+            {
+              "t": "2026-10-22T00:52:01.170Z",
+              "account": "cairn_t03",
+              "role": "idle",
+              "path": "direct",
+              "message": "logout: out of the world: server sent LOGOUT 3 tick(s) after the first click (1 click, 1103 ms)"
+            }
+          ],
+          "deadlineKilled": false
+        },
+        {
+          "account": "cairn_t04",
+          "loggedInAt": "2026-10-22T00:36:09.906000+00:00",
+          "logins": 1,
+          "lastHeartbeat": {
+            "t": "2026-10-22T00:51:10.436Z",
+            "account": "cairn_t04",
+            "role": "idle",
+            "path": "direct",
+            "message": "idle",
+            "x": 3094,
+            "z": 3106,
+            "stateAgeMs": 299
+          },
+          "maxHeartbeatStateAgeMs": 340,
+          "logout": [
+            {
+              "t": "2026-10-22T00:52:01.679Z",
+              "account": "cairn_t04",
+              "role": "idle",
+              "path": "direct",
+              "message": "logout: out of the world: server sent LOGOUT 4 tick(s) after the first click (1 click, 1612 ms)"
+            }
+          ],
+          "deadlineKilled": false
+        },
+        {
+          "account": "cairn_t05",
+          "loggedInAt": "2026-10-22T00:36:17.913000+00:00",
+          "logins": 1,
+          "lastHeartbeat": {
+            "t": "2026-10-22T00:51:18.365Z",
+            "account": "cairn_t05",
+            "role": "idle",
+            "path": "direct",
+            "message": "idle",
+            "x": 3094,
+            "z": 3106,
+            "stateAgeMs": 94
+          },
+          "maxHeartbeatStateAgeMs": 484,
+          "logout": [
+            {
+              "t": "2026-10-22T00:52:02.080Z",
+              "account": "cairn_t05",
+              "role": "idle",
+              "path": "direct",
+              "message": "logout: out of the world: server sent LOGOUT 5 tick(s) after the first click (1 click, 2013 ms)"
+            }
+          ],
+          "deadlineKilled": false
+        },
+        {
+          "account": "cairn_t06",
+          "loggedInAt": "2026-10-22T00:36:25.902000+00:00",
+          "logins": 1,
+          "lastHeartbeat": {
+            "t": "2026-10-22T00:51:26.381Z",
+            "account": "cairn_t06",
+            "role": "idle",
+            "path": "direct",
+            "message": "idle",
+            "x": 3094,
+            "z": 3106,
+            "stateAgeMs": 122
+          },
+          "maxHeartbeatStateAgeMs": 492,
+          "logout": [],
+          "deadlineKilled": true
+        },
+        {
+          "account": "cairn_t07",
+          "loggedInAt": "2026-10-22T00:36:34.783000+00:00",
+          "logins": 1,
+          "lastHeartbeat": {
+            "t": "2026-10-22T00:51:35.223Z",
+            "account": "cairn_t07",
+            "role": "idle",
+            "path": "direct",
+            "message": "idle",
+            "x": 3094,
+            "z": 3106,
+            "stateAgeMs": 345
+          },
+          "maxHeartbeatStateAgeMs": 429,
+          "logout": [],
+          "deadlineKilled": true
+        },
+        {
+          "account": "cairn_t08",
+          "loggedInAt": "2026-10-22T00:36:42.781000+00:00",
+          "logins": 1,
+          "lastHeartbeat": {
+            "t": "2026-10-22T00:51:43.179Z",
+            "account": "cairn_t08",
+            "role": "idle",
+            "path": "direct",
+            "message": "idle",
+            "x": 3094,
+            "z": 3106,
+            "stateAgeMs": 264
+          },
+          "maxHeartbeatStateAgeMs": 385,
+          "logout": [],
+          "deadlineKilled": true
+        },
+        {
+          "account": "cairn_t09",
+          "loggedInAt": "2026-10-22T00:36:51.159000+00:00",
+          "logins": 1,
+          "lastHeartbeat": {
+            "t": "2026-10-22T00:51:51.440Z",
+            "account": "cairn_t09",
+            "role": "idle",
+            "path": "direct",
+            "message": "idle",
+            "x": 3094,
+            "z": 3106,
+            "stateAgeMs": 3780
+          },
+          "maxHeartbeatStateAgeMs": 3780,
+          "logout": [],
+          "deadlineKilled": true
+        },
+        {
+          "account": "cairn_t10",
+          "loggedInAt": "2026-10-22T00:36:58.354000+00:00",
+          "logins": 1,
+          "lastHeartbeat": {
+            "t": "2026-10-22T00:51:59.045Z",
+            "account": "cairn_t10",
+            "role": "idle",
+            "path": "direct",
+            "message": "idle",
+            "x": 3094,
+            "z": 3106,
+            "stateAgeMs": 304
+          },
+          "maxHeartbeatStateAgeMs": 351,
+          "logout": [
+            {
+              "t": "2026-10-22T00:52:02.588Z",
+              "account": "cairn_t10",
+              "role": "idle",
+              "path": "direct",
+              "message": "logout: out of the world: server sent LOGOUT 6 tick(s) after the first click (1 click, 2520 ms)"
+            }
+          ],
+          "deadlineKilled": false
+        },
+        {
+          "account": "cairn_t11",
+          "loggedInAt": "2026-10-22T00:37:06.692000+00:00",
+          "logins": 1,
+          "lastHeartbeat": {
+            "t": "2026-10-22T00:51:07.279Z",
+            "account": "cairn_t11",
+            "role": "idle",
+            "path": "direct",
+            "message": "idle",
+            "x": 3094,
+            "z": 3106,
+            "stateAgeMs": 18
+          },
+          "maxHeartbeatStateAgeMs": 322,
+          "logout": [
+            {
+              "t": "2026-10-22T00:52:02.968Z",
+              "account": "cairn_t11",
+              "role": "idle",
+              "path": "direct",
+              "message": "logout: out of the world: server sent LOGOUT 7 tick(s) after the first click (1 click, 2898 ms)"
+            }
+          ],
+          "deadlineKilled": false
+        },
+        {
+          "account": "cairn_t12",
+          "loggedInAt": "2026-10-22T00:37:14.594000+00:00",
+          "logins": 1,
+          "lastHeartbeat": {
+            "t": "2026-10-22T00:51:14.967Z",
+            "account": "cairn_t12",
+            "role": "idle",
+            "path": "direct",
+            "message": "idle",
+            "x": 3094,
+            "z": 3106,
+            "stateAgeMs": 111
+          },
+          "maxHeartbeatStateAgeMs": 367,
+          "logout": [
+            {
+              "t": "2026-10-22T00:52:03.404Z",
+              "account": "cairn_t12",
+              "role": "idle",
+              "path": "direct",
+              "message": "logout: out of the world: server sent LOGOUT 8 tick(s) after the first click (1 click, 3337 ms)"
+            }
+          ],
+          "deadlineKilled": false
+        },
+        {
+          "account": "cairn_t13",
+          "loggedInAt": "2026-10-22T00:37:24.672000+00:00",
+          "logins": 1,
+          "lastHeartbeat": {
+            "t": "2026-10-22T00:51:24.944Z",
+            "account": "cairn_t13",
+            "role": "idle",
+            "path": "direct",
+            "message": "idle",
+            "x": 3094,
+            "z": 3106,
+            "stateAgeMs": 284
+          },
+          "maxHeartbeatStateAgeMs": 494,
+          "logout": [
+            {
+              "t": "2026-10-22T00:52:03.746Z",
+              "account": "cairn_t13",
+              "role": "idle",
+              "path": "direct",
+              "message": "logout: out of the world: server sent LOGOUT 9 tick(s) after the first click (1 click, 3679 ms)"
+            }
+          ],
+          "deadlineKilled": false
+        },
+        {
+          "account": "cairn_t14",
+          "loggedInAt": "2026-10-22T00:37:34.836000+00:00",
+          "logins": 1,
+          "lastHeartbeat": {
+            "t": "2026-10-22T00:51:35.339Z",
+            "account": "cairn_t14",
+            "role": "idle",
+            "path": "direct",
+            "message": "idle",
+            "x": 3094,
+            "z": 3106,
+            "stateAgeMs": 26
+          },
+          "maxHeartbeatStateAgeMs": 470,
+          "logout": [
+            {
+              "t": "2026-10-22T00:52:04.222Z",
+              "account": "cairn_t14",
+              "role": "idle",
+              "path": "direct",
+              "message": "logout: out of the world: server sent LOGOUT 10 tick(s) after the first click (1 click, 4154 ms)"
+            }
+          ],
+          "deadlineKilled": false
+        },
+        {
+          "account": "cairn_t15",
+          "loggedInAt": "2026-10-22T00:37:44.534000+00:00",
+          "logins": 1,
+          "lastHeartbeat": {
+            "t": "2026-10-22T00:51:44.912Z",
+            "account": "cairn_t15",
+            "role": "idle",
+            "path": "direct",
+            "message": "idle",
+            "x": 3094,
+            "z": 3106,
+            "stateAgeMs": 472
+          },
+          "maxHeartbeatStateAgeMs": 472,
+          "logout": [],
+          "deadlineKilled": true
+        },
+        {
+          "account": "cairn_t16",
+          "loggedInAt": "2026-10-22T00:37:54.437000+00:00",
+          "logins": 1,
+          "lastHeartbeat": {
+            "t": "2026-10-22T00:51:54.838Z",
+            "account": "cairn_t16",
+            "role": "idle",
+            "path": "direct",
+            "message": "idle",
+            "x": 3094,
+            "z": 3106,
+            "stateAgeMs": 7174
+          },
+          "maxHeartbeatStateAgeMs": 7174,
+          "logout": [],
+          "deadlineKilled": true
+        },
+        {
+          "account": "cairn_t17",
+          "loggedInAt": "2026-10-22T00:38:03.695000+00:00",
+          "logins": 1,
+          "lastHeartbeat": {
+            "t": "2026-10-22T00:51:04.036Z",
+            "account": "cairn_t17",
+            "role": "idle",
+            "path": "direct",
+            "message": "idle",
+            "x": 3094,
+            "z": 3106,
+            "stateAgeMs": 247
+          },
+          "maxHeartbeatStateAgeMs": 319,
+          "logout": [],
+          "deadlineKilled": true
+        },
+        {
+          "account": "cairn_t18",
+          "loggedInAt": "2026-10-22T00:38:13.575000+00:00",
+          "logins": 1,
+          "lastHeartbeat": {
+            "t": "2026-10-22T00:51:14.020Z",
+            "account": "cairn_t18",
+            "role": "idle",
+            "path": "direct",
+            "message": "idle",
+            "x": 3094,
+            "z": 3106,
+            "stateAgeMs": 395
+          },
+          "maxHeartbeatStateAgeMs": 474,
+          "logout": [
+            {
+              "t": "2026-10-22T00:52:04.645Z",
+              "account": "cairn_t18",
+              "role": "idle",
+              "path": "direct",
+              "message": "logout: out of the world: server sent LOGOUT 11 tick(s) after the first click (1 click, 4576 ms)"
+            }
+          ],
+          "deadlineKilled": false
+        },
+        {
+          "account": "cairn_t19",
+          "loggedInAt": "2026-10-22T00:38:24.769000+00:00",
+          "logins": 1,
+          "lastHeartbeat": {
+            "t": "2026-10-22T00:51:25.505Z",
+            "account": "cairn_t19",
+            "role": "idle",
+            "path": "direct",
+            "message": "idle",
+            "x": 3094,
+            "z": 3106,
+            "stateAgeMs": 453
+          },
+          "maxHeartbeatStateAgeMs": 453,
+          "logout": [
+            {
+              "t": "2026-10-22T00:52:05.338Z",
+              "account": "cairn_t19",
+              "role": "idle",
+              "path": "direct",
+              "message": "logout: out of the world: server sent LOGOUT 12 tick(s) after the first click (1 click, 5268 ms)"
+            }
+          ],
+          "deadlineKilled": false
+        },
+        {
+          "account": "cairn_t20",
+          "loggedInAt": "2026-10-22T00:38:35.241000+00:00",
+          "logins": 1,
+          "lastHeartbeat": {
+            "t": "2026-10-22T00:51:35.961Z",
+            "account": "cairn_t20",
+            "role": "idle",
+            "path": "direct",
+            "message": "idle",
+            "x": 3094,
+            "z": 3106,
+            "stateAgeMs": 28
+          },
+          "maxHeartbeatStateAgeMs": 471,
+          "logout": [],
+          "deadlineKilled": true
+        },
+        {
+          "account": "cairn_t21",
+          "loggedInAt": "2026-10-22T00:38:44.761000+00:00",
+          "logins": 1,
+          "lastHeartbeat": {
+            "t": "2026-10-22T00:51:45.217Z",
+            "account": "cairn_t21",
+            "role": "idle",
+            "path": "direct",
+            "message": "idle",
+            "x": 3094,
+            "z": 3106,
+            "stateAgeMs": 29
+          },
+          "maxHeartbeatStateAgeMs": 427,
+          "logout": [
+            {
+              "t": "2026-10-22T00:52:06.512Z",
+              "account": "cairn_t21",
+              "role": "idle",
+              "path": "direct",
+              "message": "logout: out of the world: server sent LOGOUT 13 tick(s) after the first click (1 click, 6444 ms)"
+            }
+          ],
+          "deadlineKilled": false
+        },
+        {
+          "account": "cairn_t22",
+          "loggedInAt": "2026-10-22T00:38:55.004000+00:00",
+          "logins": 1,
+          "lastHeartbeat": {
+            "t": "2026-10-22T00:51:55.247Z",
+            "account": "cairn_t22",
+            "role": "idle",
+            "path": "direct",
+            "message": "idle",
+            "x": 3094,
+            "z": 3106,
+            "stateAgeMs": 7583
+          },
+          "maxHeartbeatStateAgeMs": 7583,
+          "logout": [],
+          "deadlineKilled": true
+        }
+      ],
+      "stopEvidence": [
+        "2026-10-22T00:52:00.065569+00:00 requesting launcher stop",
+        "2026-10-22T00:52:00.065Z [launcher] stopping: SIGTERM",
+        "2026-10-22T00:52:23.067Z [launcher] 9 account(s) not stopped by the deadline; their processes were killed, and they stay in the world until the server times them out",
+        "2026-10-22T00:52:23.182733+00:00 cleanup: credentials removed=27 forced_pids=[] launcher_exit=0"
+      ],
+      "serverPresence": {
+        "observedAt": "2026-10-22T00:53:38.381919+00:00",
+        "totalPlayers": 1743,
+        "rosterPresent": [
+          {
+            "x": 3094,
+            "z": 3106,
+            "level": 0,
+            "name": "Cairn T06"
+          },
+          {
+            "x": 3094,
+            "z": 3106,
+            "level": 0,
+            "name": "Cairn T07"
+          },
+          {
+            "x": 3094,
+            "z": 3106,
+            "level": 0,
+            "name": "Cairn T08"
+          },
+          {
+            "x": 3094,
+            "z": 3106,
+            "level": 0,
+            "name": "Cairn T09"
+          },
+          {
+            "x": 3094,
+            "z": 3106,
+            "level": 0,
+            "name": "Cairn T15"
+          },
+          {
+            "x": 3094,
+            "z": 3106,
+            "level": 0,
+            "name": "Cairn T16"
+          },
+          {
+            "x": 3094,
+            "z": 3106,
+            "level": 0,
+            "name": "Cairn T17"
+          },
+          {
+            "x": 3094,
+            "z": 3106,
+            "level": 0,
+            "name": "Cairn T20"
+          },
+          {
+            "x": 3094,
+            "z": 3106,
+            "level": 0,
+            "name": "Cairn T22"
+          }
+        ]
+      },
+      "measurement": {
+        "kind": "idle direct clients on Tutorial Island",
+        "loginRefusals": 0,
+        "substitutions": [],
+        "firstToLastLoginMs": 189764,
+        "startToFullRosterMs": 193834,
+        "fullRosterUntilStopMs": 785061,
+        "hostTabRecording": "did not run; no loop-rate or recording-fps verdict",
+        "provisioned": false
+      },
+      "cleanup": {
+        "observedAt": "2026-10-22T00:52:54Z",
+        "remainingCredentialFiles": 0,
+        "removedCredentialFiles": 27,
+        "port7796": "free",
+        "tmux": "no live server on any socket",
+        "processes": "no chrome, ffmpeg, bun or timeout outside inactive gate timer",
+        "reservation": "host-owned until 00:57; untouched",
+        "cleanLogouts": 13,
+        "deadlineKills": 9,
+        "serverRelease": "not yet confirmed"
+      }
+    }
+  ]
+}
