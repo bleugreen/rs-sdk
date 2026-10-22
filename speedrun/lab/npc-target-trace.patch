@@ -1,0 +1,30 @@
+--- a/server/engine/src/engine/entity/Npc.ts	2026-10-21 16:42:52.091669041 -0400
++++ b/server/engine/src/engine/entity/Npc.ts	2026-10-21 16:42:52.091669041 -0400
+@@ -35,6 +35,11 @@
+ import ScriptState from '#/engine/script/ScriptState.js';
+ import ServerTriggerType from '#/engine/script/ServerTriggerType.js';
+ import World from '#/engine/World.js';
++
++// Lab-only (speedrun/lab/npc-target-trace.patch): LAB_NPC_TRACE=<debugname> logs that NPC type's
++// target, mode and hunt state whenever they change, as NPCTRACE lines in the engine log.
++const labTraceType = process.env.LAB_NPC_TRACE;
++const labTraceLast = new Map<number, string>();
+ import LinkList from '#/datastruct/LinkList.js';
+ import { printError } from '#/util/Logger.js';
+ 
+@@ -583,6 +588,15 @@
+     }
+ 
+     private processMovementInteraction() {
++        if (labTraceType && NpcType.get(this.type).debugname === labTraceType) {
++            const t = this.target;
++            const who = t instanceof Player ? t.username : t ? 'npc' : null;
++            const key = `${who}|${this.targetOp}|${this.huntMode}|${this.x},${this.z}|${this.isActive}`;
++            if (labTraceLast.get(this.nid) !== key) {
++                labTraceLast.set(this.nid, key);
++                console.log('NPCTRACE ' + JSON.stringify({ tick: World.currentTick, nid: this.nid, x: this.x, z: this.z, sx: this.startX, sz: this.startZ, target: who, tx: t?.x, tz: t?.z, op: this.targetOp, hunt: this.huntMode, active: this.isActive }));
++            }
++        }
+         if (this.delayed || !this.isActive) {
+             return;
+         }
