@@ -170,13 +170,18 @@ relogs, every shortfall or restock pause, and the final logout that writes the h
 (#140) but not main, since #146 did not carry it. Steps 6 and 8 therefore confirm a tab's logout with
 `logoutClean` itself and the login screen in the live view.
 
-**The run-commit floor is one commit, `23ea9f77`** (#178, rs/131's `rc-cycle`, on main at 00:37 UTC
-2026-10-22). Step 0 checks it once: `git -C ~/rs-sdk merge-base --is-ancestor 23ea9f77 "$RUN_COMMIT"`.
+**The run-commit floor is one commit, `8a741554`** (#212, rs/252's snapshot of rs/199's combat step module, on main at
+02:57 UTC 2026-10-22). Step 0 checks it once: `git -C ~/rs-sdk merge-base --is-ancestor 8a741554 "$RUN_COMMIT"`.
 Its history contains every earlier requirement (rs/158 in the store; here `git merge-base
---is-ancestor <commit> 23ea9f77` for each row), so no per-fix check is kept. What each one brings:
+--is-ancestor <commit> 8a741554` for each row), so no per-fix check is kept. What each one brings:
 
 | Commit | PR | What the run needs from it |
 |---|---|---|
+| `8a741554` | #212 (rs/252) | the combat step module, from rs/199's lab-accepted module: `speedrun/skills/ranged.ts` with `cannonSession` (S14, STEP-MANIFEST.md entry 26) and `combatFinish` (S27, entry 7), `speedrun/lib/cannon.ts`, `speedrun/lib/flick.ts` and `speedrun/lab/measure-ranged.ts`; `FINISH.bowFrom = 50`, the early bow switch S27's ~1,972 assumes; it descends from 0658e896 |
+| `0658e896` | #200 (rs/198) | `speedrun/lib/travel.ts`, the shared walker STEP-MANIFEST.md entry 11's legs run on, with `STALL_TICKS = 20` (a walk that stalls returns `ok: false` instead of throwing), and `act.ts`'s `castTeleport` ending on a refusal with an optional `landed`; byte-identical from rs/198's f0e76192; it contains 73a6a8a3 |
+| `73a6a8a3` | #210 (rs/41; a merge commit) | fleet snapshot 2: rs/41's helper code and docs (the cannon holder's serve mode, rs/189; the anvil and log-row helpers; STEP-MANIFEST.md section 4) |
+| `4cc468e0` | #205 (rs/244) | `speedrun/skills/firemaking.ts` and its test, S03's module (STEP-MANIFEST.md entry 16), from rs/228's lab-gated module; it descends from 22552bf4 |
+| `22552bf4` | #197 (rs/231) | `speedrun/skills/fishing.ts` (S22, STEP-MANIFEST.md entry 5), knife-cycle's `untilXp`, `followSpot` and `dropEach` declared (the net band passes them), the runtime's `hold` parameter and `ctx.starter()`, `speedrun/lib/gated-program.ts` and `xp.ts`, and `fishing.md` with rs/195's corrections |
 | `23ea9f77` | #178 (rs/131) | `rc-cycle`, the scored side of the Runecraft altar hand-off as an in-page program, 7-tick tuned and 8-tick robust schedules, which S06 and S21 run on (m, lab, rs/131: 7.00 ticks per craft with the givers handled first, 8.00 robust, 30 crafts each, no lost trades; STEP-MANIFEST.md entry 9) |
 | `efdbe2e2` | #164 (rs/174) | `speedrun/lib/tab.ts` `reloadOrOpenTab` closes the old page's gateway socket before a navigation, so a relog's first SDK state is at login + 1, not + 19 to + 20 (m, rs/174 on the twin against the demo, 21:58-22:08Z; RUN-ORDER.md section 4, R1, R17); the in-page relog `login(s, {inPage: true})` |
 | `96fc462a` | #120 (rs/138) | step 3's Chrome login, `tab-login.ts` and the page server's token endpoints (above) |
@@ -189,10 +194,11 @@ Its history contains every earlier requirement (rs/158 in the store; here `git m
 | `b6950915` | #177 | a tick program faults at start on any parameter key it does not declare, so a module built against another commit's programs stops instead of running a different program (`tick-programs.md`; STEP-MANIFEST.md entry 0) |
 | `834f376b` | #176 (rs/210) | the in-run tick-cadence monitor on the scored connection: per-minute `TICKMON` rows in the run log, no behaviour change |
 
-**Pending for the floor:** rs/147's Fishing snapshot PR (number pending; `b2e02cbe` on rs/147's branch, directly on 23ea9f77). It declares knife-cycle's `followSpot`, `dropEach` and
-`untilXp`, which Fishing's net band passes; until it is on main a page built from main faults on that
-band (STEP-MANIFEST.md entry 5). The run commit must include it, and the floor moves to its merge
-commit when it lands.
+**Gate tooling on main, not floor items** (main: gate-script helpers, not run-client code; the floor contains both, so the run host's checkout has them): `5d22252d` (#208, rs/232's `speedrun/lib/display.ts`, the live-frame check for steps 5 and 5a) and `c4b79f17` (#213, rs/232's `speedrun/lib/tab.ts` window helpers, `screenshotTab` among them).
+
+**Pending for the floor**, each moving it to its merge commit when it lands (rs/158 sends the commit,
+and the latest one sent is the floor): rs/147's Agility snapshot (agility declares `untilLevel`; it waits on main's sign-off of four default-changing program fixes and the Agility part-2 lab; RUN-ORDER.md O40); rs/243's Thieving snapshot (pickpocket's `stopWhenFoodBelow` and `retargetTicks`, declared with a packet-fingerprint golden test; STEP-MANIFEST.md entry 6); and PR #198 (rs/198's `speedrun/runner/legs.ts`, STEP-MANIFEST.md entry 11, with its per-leg lab section of `research/run-transitions.md`). Only #198 has
+a PR number so far.
 
 **Leftover check.** It lists every tmux socket on the host with its sessions, other agents' sockets
 included, plus every `chrome*`, `ffmpeg`, `bun` and `timeout` process with its age, and the host
@@ -402,9 +408,9 @@ Then put the clone on it and build:
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'export PATH=$HOME/.bun/bin:$PATH; cd ~/rs-sdk && git fetch -q origin && git checkout -q --detach "$(cat $HOME/run-commit)" && bun install && (cd server/webclient && bun install && bun run build) && (cd server/gateway && bun install) && mkdir -p ~/recordings ~/rs-run/chrome-profile && git log -1 --oneline && ls server/webclient/out/bot/client.js'
 ```
 
-`RUN_COMMIT` must be at or after the run-commit floor, **`23ea9f77`** (#178; "Credentials" lists
+`RUN_COMMIT` must be at or after the run-commit floor, **`8a741554`** (#212; "Credentials" lists
 what it contains, rs/138's Chrome login and rs/164's tab-logout confirmation among them). One
-check: `git -C ~/rs-sdk merge-base --is-ancestor 23ea9f77 "$RUN_COMMIT"`. A failure means the commit
+check: `git -C ~/rs-sdk merge-base --is-ancestor 8a741554 "$RUN_COMMIT"`. A failure means the commit
 predates at least one of the changes in that table.
 
 Account files: the gate account (step 6) is a throwaway demo account whose name starts with
@@ -680,6 +686,14 @@ three choices made here (and the bound, above):
 Size: 7.2 Mbit/s at 30 fps in game, about 3.3 GB an hour (m: 288 MB in 318 s, 16:41-16:47 UTC; i: per
 hour), against 51 GB free (m, 16:15 UTC); the disk holds well over ten hours.
 
+**The live-frame pass line** (step 5a, hand-over item 4). The fps and drop counters say the capture
+is running, not what it shows. Before SCORED's login a frame of the capture must show the run tab,
+with nothing in front of it; a wrong window costs the run's evidence, not ticks (RUN-ORDER.md R20).
+It is a pass line of the start, beside the gate's (a)-(d): no start until it holds. rs/232's
+`speedrun/lib/display.ts` helpers, `frontWindows`, `grabFrame` and `frameShows`, check it from a
+script; they are on main, 5d22252d (#208), gate tooling rather than a floor item (the floor
+8a741554 contains it), and the operator can also check it on the live view (below).
+
 **Why RDP stays disconnected during the run.** With the operator connected, the capture kept real
 time but wrote only about 23 distinct frames a second (2,389 of ~10,700 dropped over 6 minutes).
 Disconnected, it wrote 29.9 a second with none dropped (m, "Measured"). The capture is not short of
@@ -773,8 +787,8 @@ reservation appears (rs/147's HOST.md, to match main's ruling).
    2. the run tab is the **only browser window on the recorded display**: `DISPLAY=:10 xwininfo
       -root -tree` lists one `Bot Client` window (step 3's check);
    3. the recording is **already running before the run tab's login** (step 5);
-   4. **a live frame of the capture shows the run tab**: the live view, a grab of the same display,
-      shows SCORED's tab before step 7's tab-login. This is a pass line of the gate, beside tenet
+   4. **a live frame of the capture shows the run tab** (step 5's pass line): the live view, a grab of
+      the same display, shows SCORED's tab before step 7's tab-login. This is a pass line of the gate, beside tenet
       12's (a)-(d): no start until it holds. A wrong window costs the run's evidence, not ticks
       (RUN-ORDER.md R20);
    5. any later probe runs on **the other machine**, never on the recorded display.
@@ -872,9 +886,32 @@ rs/163) the start is ~90 with the gathering fleet's ~53 in and 37 without it, so
 unneeded fleet out first is mandatory**. S21's givers log in before SCORED, on the chosen machine
 (step 4; RUN-ORDER.md O38, settled). Do not log SCORED in over the cap.
 
+**The gate's Chrome is gone before SCORED's tab opens.** After an unconfirmed gate logout the gate
+tab's Chrome can still be running on the run profile; SCORED's `--app` window then joins that
+process (the same `--user-data-dir`) and dies with it at the gate tab's `T=15m` bound (rs/232's
+read-only check against main's 18:16 PDT recording rule, via rs/147). So the `chrome` session must be
+gone from the `run` socket and no process may hold `rs-run/chrome-profile` (the bracket keeps the
+check's own shell, whose command line holds the pattern, out of `pgrep`'s match, as with step 3's
+`"token""="`). Expect `ok`:
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'if tmux -L run has-session -t chrome 2>/dev/null; then echo "chrome session still up"; elif pgrep -af "rs-run/chrome-[p]rofile"; then echo "Chrome still holds the run profile"; else echo ok; fi'
+```
+
+If either is left, log the gate tab out and stop it (step 6's logout-before-Chrome-stops command),
+then check again. Never open SCORED's tab beside it.
+
 On the chosen machine, with the machine chosen (step 5a), the full roster in (step 4), the
-recording running (step 5) and the login count at or under 80, put `$SCORED_ENV` on it (step 0) and
-launch Chrome as in step 3 with `ENV=$SCORED_ENV` and `T=9h`. Then log it in with step 3's tab-login
+recording running (step 5), the gate's Chrome gone and the login count at or under 80, put
+`$SCORED_ENV` on it (step 0) and launch Chrome as in step 3 with `ENV=$SCORED_ENV` and `T=9h`.
+Repeat step 3's window check for SCORED's window: exactly one `Bot Client` window on `:10`, 1920
+wide (step 3 measured 1920x1029 below XFCE's top panel). Expect one line:
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'DISPLAY=:10 xwininfo -root -tree | grep "Bot Client"'
+```
+
+Then log it in with step 3's tab-login
 command, with the same `ENV`; it exits 0 once SCORED is in game. run.ts checks that step 0's host
 reservation is live and the run's own, and refuses to start otherwise. From here the run scripts drive the tab through the gateway on
 7780 (RUN-ORDER.md, STEP-MANIFEST.md). Nobody touches the window. Relaunches during the run go the
