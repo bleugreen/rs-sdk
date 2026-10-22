@@ -154,11 +154,11 @@ RUN-ORDER.md O6): the legs (2,222.5) pass Thieving, Fishing, Combat and the Gran
 Slayer passes Dwarf Cannon, Magic passes Fishing Contest and Herblore passes Goblin Diplomacy. Fold-in 11's part 5 takes the ~82
 of Goblin Diplomacy's standalone travel that the legs already carried off its row (to 61), so the
 cannon session, Prayer, Crafting and Cooking pass it. Fold-in 13 adds S15's measured H to M (+352),
-so Monkey Madness (4,429) passed Agility (4,327) for rank 1; fold-in 15's N to P (+275) puts it at 4,704.
+so Monkey Madness (4,429) passed Agility (4,327) for rank 1; fold-in 15's N to P and the rope pin (+310) put it at 4,739.
 
-The expected column sums to **32,238** (the steps) plus the legs' **2,209.5**; RUN-ORDER.md section 6
+The expected column sums to **32,273** (the steps) plus the legs' **2,209.5**; RUN-ORDER.md section 6
 adds the allowances (hand-offs outside the figures, level-up pages, contention, overrun, relay,
-retries, restarts) for its **35,732.5** knife-on expected (32,761.7 best), against the record of 35,916.
+retries, restarts) for its **35,767.5** knife-on expected (32,796.7 best), against the record of 35,916.
 
 **Module status** (the last column; the helper scripts and the programs the entries rely on are in
 "Module status" at the end of this section) is as of this document's commit date, and rs/158 updates
@@ -168,7 +168,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | Rank | # | Entry | Module | Steps | Expected | Best | Fallback | At stake | Mode | Code to start from | Module status |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 0 | 0 | Run chain | `speedrun/run.ts`, `runner/resume.ts` | all | boundary idle 0 m (#92); restarts ~5 each (an in-page relog, ~2, rs/174) | 0 | | | overlay | `runner/step.ts`, `runner/resume.ts` (main) | `run.ts`: building (rs/186, held: tenet 15); `runner/step.ts`, `resume.ts` on main (#29, #104, #146) |
-| 1 | 2 | Monkey Madness | `speedrun/quests/monkey-madness.ts` | S15 | 4,704 | 4,246 | 5,238 | ~992 | overlay | `quest-mm-*.ts` | **H-P lab-proven end to end, Q-Z unrun** (A-G run; H-M 3 of 3, 1,466 m; N, O, P 3 of 3, 117 / 388 / 454 m; Q-Z being written by rs/201); run mode: no `p_walk`, re-paths at the Monkey Child (O) and the zoo (T), lever ~0 (r, rs/201) |
+| 1 | 2 | Monkey Madness | `speedrun/quests/monkey-madness.ts` | S15 | 4,739 | 4,281 | 5,273 | ~992 | overlay | `quest-mm-*.ts` | **H-P lab-proven end to end, Q-Z unrun** (A-G run; H-M 3 of 3, 1,466 m; N, O, P 3 of 3, 117 / 388 / 454 m; Q-Z being written by rs/201); run mode: no `p_walk`, re-paths at the Monkey Child (O) and the zoo (T), lever ~0 (r, rs/201) |
 | 2 | 1 | Agility | `speedrun/skills/agility.ts` | S11a, S17 | 4,228 | 3,934 | 4,626 | ~690 | in-page | rs/97 `agility` program, `agility-course.ts` | lab-accepted (66 per Wilderness lap, 9 of 9; S11a 114; rs/155); S17 4,114 on the engine's fall roll, 66 the clean-lap floor (rs/270; cairn_jumps' demo run continues as rs/295); run mode 0 on both courses (m, rs/270) |
 | 3 | 4 | Mining | `speedrun/skills/mining.ts` | S09 | 3,157 | 3,148 | 3,775 | ~627 | in-page | rs/97 `knife-mine`, `tickmanip-mine.ts` | **on main, 4235a9e7 (#220; rs/260's snapshot of rs/230's lab-accepted module, rs/147's branch at 59ec3933)**, with `selfStarter` (plain 3.62) and `beforeRestart`; `stay2` bury (#159, rs/182) and restart fix (e5d8a058, #170; rs/207) on main; gate `measureDrops` 120 explicit (rs/259, 314989e9); **demo-measured** (rs/259's cairn_rocks: 3.019 per xp ore uncontested); **rs/298**, the Mining S09 snapshot (3fa6fbe4's ore drop and 314989e9), pending |
 | 4 | 3 | Woodcutting, with the bury | `speedrun/skills/woodcutting.ts` | S07 (+ S25b's bones) | 3,053 | 2,969 | 4,025 (4,121 without #165, history) | ~1,090 | in-page | rs/97 `knife-cycle`; rs/137's bury variant; `bones-wc.ts` | building (rs/211; on rs/147's branch, changing with rs/236; rs/151 closed); gate-off plain + bury on main (rs/162, 3dfc217f, #165); gate `measureDrops` 120 explicit (rs/261, building); run mode 0 (m, rs/261); **the knife demo-measured** (rs/261's cairn_chops, hiscore 3,329; S07 at its luck-free 3,053); **rs/297**, the Woodcutting S07 snapshot, pending |
@@ -243,7 +243,7 @@ are filed under main and held until tenet 15 is answered.
   costs, cross-checked by its level crossings (948 m for 76-85) and rs/155's 858 m (RUN-ORDER.md S17). The demo rehearsal is still to run.
 - **2.** **H-P lab-proven end to end, Q-Z unrun** (A-G run; rs/201 ran H to M 3 of 3 at route
   levels, 1,466 against the fixed column's 1,114, and N, O and P 3 of 3 chained at the kit floor, 117 /
-  388 / 454 against 83 / 197 / 374; Q-Z being written by rs/201); ~882 of the 4,704 is estimated (entry 2).
+  388 / 454 against 83 / 197 / 374; Q-Z being written by rs/201); ~882 of the 4,739 is estimated (entry 2).
 - **3.** rs/211 builds the module (rs/151 is closed), including the bury-in-willows rule for a
   gate-off stretch, on rs/162's plain + bury (on main as 3dfc217f, #165, inside the run-commit floor; entry 3).
   A module is present on rs/147's branch and is changing with rs/236's opt-ins (knife-cycle
@@ -647,7 +647,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   N 117, O 388, P 454); Q to Z has never been scripted or run as one route (rs/185). rs/201 writes it fresh, segment by
   segment, lab-proven 3 of 3, and sends measured ticks per segment to rs/158. It is the run date's
   critical path (RUN-ORDER.md O36).
-- **Ticks:** expected **4,704** (fixed client, with the failure budget: `quests/README.md` §3's 4,077, 3,897
+- **Ticks:** expected **4,739** (fixed client, with the failure budget: `quests/README.md` §3's 4,077, 3,897
   success + ~180, with segments H to P as measured, **2,425 measured** end to end, lab, 300 ms, route
   levels, fixed dialogue, the kit floor; rs/201's ledger, cairn://p/rs/201, against rs/185's fixed
   column): H to M 1,466 against 1,114, +352 (chains 1,438 / 1,414 / 1,546; the jail yard's patrol
@@ -656,19 +656,23 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   are a phase cost (the fixed-dialogue talks nearly fill the aunt's ~54-tick safe window, so the
   bananas talk slipped to her next loop, +100-126); P 454 (456 / 458 / 448 and 449, no deaths)
   against 374, +80. The failure budget: the aunt retired (6 of 6 clean), 180 to 60, -120; the rope pin
-  at ~1 in 3, +~90 (inferred, rs/185's +70-110). The rest: ~1,397 inferred (the gnome half as played,
+  at 1 in 3 chains, ~375 a pin (wait 50 ticks, then a Varrock teleport; the way back ~320, inferred),
+  +~125 (inferred, rs/185, 23:15 PDT; +90 before). The rest: ~1,397 inferred (the gnome half as played,
   the atoll segments outside H-P measured one at a time, the trade, the expected failures and the rope
   pin) and ~882 estimated (the atoll rows outside H-P that `quests/monkey_madness.md` tags R, T or I,
-  never measured); RUN-ORDER.md S15. Best **4,246** (burst success path 3,546, r21 recomputation, plus
+  never measured); RUN-ORDER.md S15. Best **4,281** (burst success path 3,546, r21 recomputation, plus
   the same expected failures, with H to M at its fastest chain, 1,414, +300, and N, O and P at their
-  fastest, 116, 340 and 448, with the same -120 and +90, +220). O's burst (~236-300, inferred, to be
-  measured) is a lever on the best case only. Fallback **~5,238** (stock column with failures, +352 and
-  +275, inferred). Per segment (rs/201, means): H jail1 172, I garkor 60, J cellar 318 (one chain 392: a
+  fastest, 116, 340 and 448, with the same -120 and +125, +255). O's burst (~236-300, inferred, to be
+  measured) is a lever on the best case only. Fallback **~5,273** (stock column with failures, +352 and
+  +310, inferred). Per segment (rs/201, means): H jail1 172, I garkor 60, J cellar 318 (one chain 392: a
   summoned guard's knockout, ~+110 a recurrence), K dungeon1 434, L amulet 97, M jail2 385, N 117, O
   388, P 454; the dungeon has run 0 deaths in 9 passes at the kit floor under Protect from Melee. **R5's
-  bad case beyond the expected is ~+300, the working figure** (the demon twice and the rope escape),
-  with the death after a rope pin (~340) the one open item: P from a pinned start passed 2 of 2 (441,
-  460), and a third clean run retires it; otherwise ~+640 and a third prayer potion (RUN-ORDER.md R5).
+  bad case beyond the expected is the demon's piece + ~250** (a pin's ~375 less its 125 in the expected),
+  read as ~+300 and ~+550 with the demon's piece pending from rs/185; the death after a rope pin
+  (~340) is retired (rs/185, 23:15 PDT; P from a pinned start passed 2 of 2, 441 and 460), unless main
+  overrules (RUN-ORDER.md R5). **The rope-pin rule:** wait 50 ticks, then a Varrock teleport (3 of 3 in
+  4 ticks; waiting freed 1 of 3 and a relog 0 of 3, logout being refused in combat; m, rs/201: 9 pins
+  in 55 climbs); H12 carries one Varrock teleport's runes for it.
   The quest document's own split: travel 2,277, dialogue 826 fixed / 463 burst, interactions 250, fight
   267, waits 336 (mixed measured, read and inferred; `quests/monkey_madness.md`, "Tick total").
 - **Primitives:** `lib/dialogue.ts` `continueBurst` with known page counts, guarded choices (rs/94
