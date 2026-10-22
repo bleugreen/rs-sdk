@@ -432,10 +432,10 @@ describe('compareHiscore on live player pages', () => {
     });
 
     test('a real sub-15 row stays "under level 15": cairn_h90 (every skill under 15) and cairn_runes\'s Attack', () => {
-        const s = summarize([reached('woodcutting', 5, 40), session(59251)]);
+        const s = summarize([session(59251)]);
         expect(compareHiscore(s, sub15Page(), 'woodcutting')).toEqual([
             { row: 'Woodcutting', hiscore: null, expected: null, diff: null, ok: null, basis: 'no row (under level 15)' },
-            { row: 'Overall', hiscore: 59252, expected: 40, diff: 59212, ok: false, basis: 'the latest level gained in the log', tickMs: 400 },
+            { row: 'Overall', hiscore: 59252, expected: 59252, diff: 0, ok: true, basis: 'logout playtime (no level gained)', tickMs: 400 },
         ]);
         expect(compareHiscore(runesLog(), runesPage(), 'attack')[0]).toEqual({ row: 'Attack', hiscore: null, expected: null, diff: null, ok: null, basis: 'no row (under level 15)' });
     });
