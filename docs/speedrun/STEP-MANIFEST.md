@@ -1972,6 +1972,13 @@ bones, bidder, grapes, wine maker, coins) are supply, not step scripts; `SUPPLIE
   SCORED when the step starts).
 - **Acceptance:** demo, the receiver ticks above (6.7 / 8 / 10) for 1 / 10 / 20 stacks at a tile away
   from Varrock west.
+- **Open: `preRequest()`** re-sends a request every 15 s of wall clock without checking for an open
+  trade, which closes the trade it lands on (rs/285). The exposure is under 5% a hand-off and a hit
+  costs ~4-8 ticks, at most ~10 over the run (e, rs/41's reading of `mule.ts:600-761`; RUN-ORDER.md
+  R25). rs/267 moves it onto the shared `decideRequest` rule in game ticks, a net-patch commit on
+  rs/41's branch (pending), which must be on the helpers' deployed commit before the giver serves
+  SCORED. **H4's package is the giver's entire inventory when it trades** (rs/267's staging rule in
+  the run-machine package config).
 
 ### HS2. Stun-pack courier: `speedrun/helpers/bone-giver.ts`, S18 on-request mode (on rs/41's branch, rs/141; the Charge and Fletching stacks building, rs/163)
 
