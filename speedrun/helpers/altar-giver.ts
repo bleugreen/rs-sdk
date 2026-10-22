@@ -24,7 +24,7 @@
 //   cueDir     default RC_CUE_DIR, else run-machine/rc-cue in the checkout
 import type { BotWorldState, NearbyPlayer } from '../../sdk/types';
 import { DROPPED_TICKS, give } from '../lib/trade';
-import { tickClock } from '../lib/wait';
+import { tickClock, tickMs } from '../lib/wait';
 import {
     assertUntracked,
     chooseTurn,
@@ -95,6 +95,9 @@ interface Armed {
 
 class Stop extends Error {}
 
+/** A client whose newest tick arrived within this many ticks is alive (a catch-up burst stays inside it). */
+const LIVE_FRAME_TICKS = 5;
+
 export class AltarGiver {
     private readonly o: GiverOptions;
     private readonly altar: Altar;
@@ -151,6 +154,15 @@ export class AltarGiver {
 
     private result(outcome: Outcome, session: string, T: number, extra: { myT?: number; detail?: string } = {}): void {
         this.last = { session, T, outcome, ...extra, ms: Date.now() };
+        // Still loaded after the turn: ready again from now, which is what lifts the scored side's
+        // skip after a failed turn (altar-cue.ts MissBench), and puts us behind the givers that
+        // have waited longer. Only while our client delivers ticks: on the relay a role outlives
+        // its dead client, arms the turns it is named for and fails them on the wall-clock
+        // fallback, and renewing then lifted the skip turn after turn (lab: 3, 4 and 8 misses a
+        // kill, against 1 on the direct path).
+        const lastFrame = this.frames.recent(1)[0]?.ms;
+        const live = lastFrame !== undefined && Date.now() - lastFrame <= LIVE_FRAME_TICKS * tickMs();
+        if (outcome !== 'gave' && live && (this.phase === 'ready' || this.phase === 'armed')) this.readyAt = Date.now();
         this.ctx.log('turn', { outcome, T, ...extra });
         this.publish();
     }
