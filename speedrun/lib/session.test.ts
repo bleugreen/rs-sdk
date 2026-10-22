@@ -13,6 +13,7 @@ import {
     mintLoginToken,
     openBrowserClient,
     parseBotEnv,
+    relog,
     startWatchdog,
     watchdogDecision,
     type LogoutResult,
@@ -549,6 +550,48 @@ describe('login with inPage: the tab logs back in where it is', () => {
             expect(cdp.page.expressions.some(e => e.includes('autoLogin'))).toBe(false);
             // The old page's gateway socket is closed for good before the navigation.
             expect(cdp.client.botOverlay!.gateway).toMatchObject({ connected: false, preventReconnect: true });
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    /** pageSession, but in the world at tick 40 with a position, so relog has a session to log out of. */
+    function inWorldPageSession(cdp: ReturnType<typeof fakeCdp>) {
+        const f = pageSession(cdp);
+        cdp.client.ingame = true;
+        f.session.expectInWorld = true;
+        f.sdk.state = { ...f.sdk.state!, player: { worldX: 3092, worldZ: 3243 } as never };
+        f.sdk.onSend = a => {
+            if (a.method === 'sendClickComponent' && a.args[0] === LOGOUT_BUTTON) cdp.page.inGame = false;
+        };
+        return f;
+    }
+
+    test('relog logs a browser tab back in where it stands by default, and reports the new session', async () => {
+        const cdp = fakeCdp('srtest', PASSWORD);
+        try {
+            const { session, sdk } = inWorldPageSession(cdp);
+            cdp.hooks.onAutoLogin = () => getsIn(cdp, sdk);
+            const r = await relog(session, { offlineMs: 0, loginTimeoutMs: 3_000 });
+            expect(r.logout).toMatchObject({ ok: true, confirmedBy: 'page' });
+            expect(r).toMatchObject({ via: 'page', attempts: 1, tickBase: 40, loginTick: 41 });
+            expect(r.loginTick - r.tickBase).toBe(1);
+            expect(cdp.page.navigations).toEqual([]);
+        } finally {
+            cdp.stop();
+        }
+    });
+
+    test('relog with inPage false navigates the tab, and the fresh client counts from 1', async () => {
+        const cdp = fakeCdp('srtest', PASSWORD);
+        try {
+            const { session, sdk } = inWorldPageSession(cdp);
+            cdp.hooks.onNavigate = () => getsIn(cdp, sdk, 1);
+            const r = await relog(session, { offlineMs: 0, loginTimeoutMs: 3_000, inPage: false });
+            expect(r.logout).toMatchObject({ ok: true, confirmedBy: 'page' });
+            expect(r).toMatchObject({ via: 'launch', attempts: 1, tickBase: 0, loginTick: 1 });
+            expect(cdp.page.navigations).toHaveLength(1);
+            expect(cdp.page.autoLogins).toEqual([]);
         } finally {
             cdp.stop();
         }
