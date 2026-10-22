@@ -750,7 +750,6 @@ export function steps(input: Options = {}): Step<any>[] {
                     await treeLadder(sdk, 3);
                     // Not during the landing's p_delay(4), which drops clicks: once a page is up. So the
                     // pilot's shape (grand_tree.md: "5c, opt, 1c, state, 1c") ends at the first crash page.
-                    // Not during the landing's p_delay(4), which drops clicks: once a page is up.
                     let left = false;
                     const leave = sdk.onStateUpdate(s => {
                         if (left || !inKaramja(s) || !s.dialog?.isOpen) return;
