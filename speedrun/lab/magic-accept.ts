@@ -325,6 +325,6 @@ if (mode === 'h4') {
 }
 
 console.log(formatReport(report(log.rows)));
-await browser?.close();
 await closeSession(scored);
+await browser?.close();
 process.exit(pass ? 0 : 1);
