@@ -54,7 +54,7 @@ async function scenario(label: string, expect: number, stage: () => Promise<void
     if (!pass) failed++;
     result(`kit-return ${label}`, {
         pass, expect, code: r.code, from, lastSeenAt: pos(kit.sdk), ticks: (kit.sdk.getState()?.tick ?? t0) - t0,
-        plan: r.approach?.plan, reason: r.approach?.reason, damage: r.approach?.damage, gave: r.gave,
+        plan: r.approach?.plan, reason: r.approach?.reason, damage: r.damage, gave: r.gave,
         giverReceived: g?.received ?? null, logout: { ok: r.logout.ok, by: r.logout.confirmedBy, reason: r.logout.reason },
         died: r.died, deaths: kit.sdk.getState()?.player?.respawnCount ?? null,
     });

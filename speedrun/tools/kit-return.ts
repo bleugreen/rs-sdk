@@ -15,8 +15,8 @@
 //   in practice a far account is refused: it does not move, logs out, and exits 3 with the
 //   distance and each teleport's refusal. Move the giver to a safe tile within 30 tiles of the
 //   account and pass that tile as --at=x,z.
-// - Every tick of the run is watched: the first hitpoint lost or hit taken halts the run where it
-//   stands and skips the trade. Logout is refused for 16 ticks after a hit, and an aggressive NPC
+// - Every tick of the run, and of the wait on the trade after it, is watched: the first hitpoint
+//   lost or hit taken halts the run where it stands (or declines the trade) and skips the trade. Logout is refused for 16 ticks after a hit, and an aggressive NPC
 //   keeps hitting an account that stands still, so it runs back once to where the run began (the
 //   tiles it just crossed unhurt), logs out (logoutClean waits out the post-combat window) and
 //   exits 4 naming the attacker. It never resumes the walk or retries.
@@ -160,6 +160,8 @@ export interface KitReturnResult {
     code: number;
     /** Where the account was first seen dead or respawned, if it died during the call. */
     died: string | null;
+    /** The hit that stopped it, on the way or waiting on the trade. */
+    damage?: Damage;
     approach?: ApproachResult;
     gave: boolean;
     logout: Awaited<ReturnType<typeof logoutClean>>;
@@ -184,6 +186,16 @@ export async function kitReturn(session: Session, o: KitReturnOptions): Promise<
     let code: number = EXIT.failed;
     let gave = false;
     let ap: ApproachResult | undefined;
+    let hurt: Damage | undefined;
+    // Logout is refused for COMBAT_LOGOUT_TICKS after a hit, and an aggressive NPC keeps hitting
+    // an account that stands still: back off once over the tiles the run just crossed unhurt.
+    const retreat = async (d: Damage, phase: string, to: { x: number; z: number }) => {
+        code = EXIT.damaged;
+        hurt = d;
+        say(`STOPPED ${phase} at ${here()} (T${d.tick}): took damage from ${d.by}, hp ${d.hp}. No trade.`);
+        const back = await runTo(sdk as unknown as TravelSdk, { ...to, tol: 1 }, { maxTicks: 60 });
+        return new Error(`retreated to ${here()} (T${tick()}, hp ${sdk.getState()?.player?.hp})${back.ok ? '' : ` short of ${fmtTile(to)}: ${back.reason}`}; logging out`);
+    };
     try {
         const missing = o.items.filter(k => before[k.name]! < k.amount);
         if (missing.length) throw new Error(`not holding ${missing.map(k => `${k.amount} ${k.name}`).join(', ')}`);
@@ -192,22 +204,23 @@ export async function kitReturn(session: Session, o: KitReturnOptions): Promise<
             code = EXIT.refused;
             throw new Error(`REFUSED: ${ap.plan.reason}`);
         }
-        if (ap.damage) {
-            code = EXIT.damaged;
-            say(`STOPPED at ${here()} (T${ap.damage.tick}): took damage from ${ap.damage.by}, hp ${ap.damage.hp}. No trade.`);
-            // Logout is refused for COMBAT_LOGOUT_TICKS after a hit, and an aggressive NPC keeps
-            // hitting an account that stands still: back off once over the tiles just crossed unhurt.
-            const back = await runTo(sdk as unknown as TravelSdk, { ...ap.runFrom, tol: 1 }, { maxTicks: 60 });
-            throw new Error(`retreated to ${here()} (T${tick()}, hp ${sdk.getState()?.player?.hp})${back.ok ? '' : ` short of ${fmtTile(ap.runFrom)}: ${back.reason}`}; logging out`);
-        }
+        if (ap.damage) throw await retreat(ap.damage, 'on the way', ap.runFrom);
         if (!ap.ok) throw new Error(`${ap.plan.kind === 'teleport' ? `${ap.plan.spell} teleport, then ` : ''}run to ${fmtTile(o.at)}: ${ap.reason}`);
         say(`at ${here()} (T${tick()})${ap.plan.kind === 'teleport' ? ` by the ${ap.plan.spell} teleport` : ''}`);
-        for (let attempt = 1; attempt <= 2 && !gave; attempt++) {
-            const r = await give(sdk, o.giver, o.items.map(k => ({ item: re(k.name), n: k.amount })), { maxTicks: 60, openTimeoutMs: 45_000 });
+        // Waiting on the giver is standing still in the open: the same watch, from the arrival on.
+        const watch = damageWatch(sdk.getState()!);
+        let tradeHit: Damage | null = null;
+        const stopIf = (s: BotWorldState) => {
+            tradeHit ??= watch(s);
+            return tradeHit ? `took damage from ${tradeHit.by} (hp ${tradeHit.hp})` : null;
+        };
+        for (let attempt = 1; attempt <= 2 && !gave && !tradeHit; attempt++) {
+            const r = await give(sdk, o.giver, o.items.map(k => ({ item: re(k.name), n: k.amount })), { maxTicks: 60, openTimeoutMs: 45_000, stopIf });
             say(`trade ${attempt}: ${r.ok ? 'ok' : `failed (${r.reason})`}, ${r.ticks} ticks, gave ${JSON.stringify(r.gave)}`);
             gave = r.ok;
-            if (!gave) await sdk.waitForTicks(3);
+            if (!gave && !tradeHit) await sdk.waitForTicks(3);
         }
+        if (tradeHit && !gave) throw await retreat(tradeHit, 'waiting on the trade', ap.runFrom);
         const after = Object.fromEntries(o.items.map(k => [k.name, held(sdk.getState()!.inventory, k.name)]));
         say(`holds after: ${JSON.stringify(after)}`);
         gave = gave && o.items.every(k => after[k.name] === before[k.name]! - k.amount);
@@ -225,7 +238,7 @@ export async function kitReturn(session: Session, o: KitReturnOptions): Promise<
         say(`LOGOUT FAILED (${logout.reason})${code === EXIT.damaged ? `: the account may still be under attack at ${here()}, hp ${sdk.getState()?.player?.hp}. Act on the tab now.` : ''}`);
         if (code === EXIT.ok) code = EXIT.failed;
     }
-    return { code, died: deathAt, ...(ap ? { approach: ap } : {}), gave, logout };
+    return { code, died: deathAt, ...(ap ? { approach: ap } : {}), ...(hurt ? { damage: hurt } : {}), gave, logout };
 }
 
 function parseArgs(argv: readonly string[]) {
