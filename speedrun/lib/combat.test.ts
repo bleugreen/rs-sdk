@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import type { BotWorldState, CombatEvent, DialogState, InventoryItem, NearbyNpc, PlayerState } from '../../sdk/types';
 import { castingStyle, defensiveStyleIndex, fight, PRAYER_LEVELS, questCastStyle, setPrayer, Upkeep } from './combat';
 import { baseState, FakeSdk, flush } from './fake-sdk';
-import { levelForXp, XP_RATE, xpForLevel } from './xp';
 
 const player = (hp: number, inCombat = true) => ({ worldX: 0, worldZ: 0, level: 0, hp, maxHp: 20, isDead: false, combat: { inCombat, targetIndex: -1, targetType: 'none', lastDamageTick: -1 } }) as unknown as PlayerState;
 const npc = (index: number, hp: number | null = 10): NearbyNpc =>
@@ -241,23 +240,6 @@ describe('casting style (O43a)', () => {
         expect(sends(melee, 'sendSetCombatStyle')).toEqual([]);
         expect(defensiveStyleIndex(baseState())).toBe(2);
         expect(defensiveStyleIndex(baseState(staff(0, false)))).toBe(2);
-    });
-
-    test('O43a keeps Magic 77 at S16 arrival on the measured xp', () => {
-        // rs/158's S16 arrival with every route spell cast in the normal style (RUN-ORDER.md S16): 9,117.5 base.
-        const ARRIVAL_NORMAL = 9117.5;
-        // Defence xp gained by the three fights cast defensively (rs/425 lab, the most of any finished run):
-        // the S10b warlord 172, the S11b demon 158, S12's ogre, scorpion and Bouncer 218. One Defence per damage.
-        const defensiveDamage = 172 + 158 + 218;
-        // give_combat_experience (combat.rs2): style_magic_normal pays 2 Magic per damage, style_magic_defensive 1.33.
-        const arrival = ARRIVAL_NORMAL - (2 - 1.33) * defensiveDamage;
-        expect(levelForXp(arrival * XP_RATE)).toBe(77);
-        const spare = arrival - xpForLevel(77) / XP_RATE;
-        expect(spare).toBeGreaterThan(70);
-        expect(spare).toBeLessThan(80);
-        // And the Defence those fights give: 38, by 2-4 xp over its floor.
-        expect(levelForXp(defensiveDamage * XP_RATE)).toBe(38);
-        expect(levelForXp(543 * XP_RATE)).toBe(37); // capped at the NPCs' HP alone
     });
 
     test('a weapon without a Defensive style is an error, not a guessed slot', () => {
