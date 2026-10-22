@@ -86,19 +86,34 @@ skeleton damage, not the falls or the lap.
   bot.walkTo's own door opener had clicked the gate and opened the scene). The
   scored run's S11a arrives by spirit tree; S15's walked zoo return meets this
   gate once.
+- **bot.walkTo opens any "door" next to where its path goes, obstacles included.**
+  `sdk/actions.ts` walkTo lists as doors every static-collision door on or
+  cardinally beside a path waypoint (`sdk/pathfinding.ts` findDoorsAlongPath),
+  the path's last tile included. Once the player is within 15 tiles of such a
+  waypoint it clicks the loc's Open op (actions-helpers.ts `openDoorAt`). After
+  3 `cant_reach` results it blocks the loc for a while and re-routes. It never
+  asks what the Open op does. When the "door" is an obstacle whose Open op
+  moves the player (an agility gate, a scripted one-way gate), a walk that only
+  ends beside it sets the obstacle off mid-walk, then walks on from wherever the
+  script left the player. The case found is loc 2309, the Wilderness course's
+  ridge gate (rs/494). A walk that must end near such a loc should end two or
+  more tiles from it, and the step should click the loc itself.
 - **The ridge gate is the ridge.** Loc 2309's only op, Open, runs the ridge
   crossing (`wilderness_course.rs2`): the player is forcemoved north up the
   one-tile corridor (x 2998, z 3917-3930) into the course, or dropped into the
-  wolf pit east of it. bot.walkTo counts a door beside its path's last tile as
-  one to open, so any walk ending on the gate's south tile (2998,3916) clicks
-  the ridge mid-walk, then walks on from inside the course and comes back down
-  through the course gate (lab, 400 ms: 100 ticks for a 9-tile walk, two fall
-  rolls). rs/310's session D stopped in the corridor at (2998,3918) this way.
-  So walks end on `RIDGE_GATE.stage` (2998,3914), and `crossRidge` clicks the
-  gate from there or from the corridor (a click from inside the corridor
-  crosses too: 16 ticks in the lab), and walks back to the stage from the pit
-  (`speedrun/lab/ridge-gate.ts`, rs/494). The scored run reaches the course
-  from the south by T27-17 and never takes this route.
+  wolf pit east of it. So the old route's last walk, to the gate's south tile
+  (2998,3916), clicked the ridge mid-walk. bot.walkTo then walked on from inside
+  the course and came back down through the course gate. In the lab (executor
+  fedora, host bginf-halo, 400 ms, browser client, rs/494) that walk took
+  100 ticks for 9 tiles with two fall rolls in one run, and ended "Stuck at"
+  after 146 ticks in another. rs/310's session D stopped in the corridor at
+  (2998,3918) this way. The unfixed module from that tile is a race: it failed
+  1 of 2 lab runs. Walks now end on `RIDGE_GATE.stage` (2998,3914). `crossRidge`
+  clicks the gate from there or from the corridor; a click from inside the
+  corridor crosses too, in 16 ticks, 4 of 4 lab runs. From the wolf pit it walks
+  back to the stage first (28 ticks, 2 of 2). `speedrun/lab/ridge-gate.ts`
+  holds the cases. The scored run reaches the course from the south by T27-17
+  and never takes this route.
 - **Monkey bars** rejected as planned (level-6 Wilderness spiders and earth
   warriors against a 10 HP account).
 
