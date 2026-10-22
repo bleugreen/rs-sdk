@@ -38,8 +38,8 @@
 // Browser client (rs/378, the Ashburn twin, local lab engine, burst, bundle built from ff300a82 with
 // rs/309's click layer): two A-L chains, 1,424 and 1,299 ticks, and every loc-op-dialogue and
 // post-landing segment (B-G, I-L) 3 of 3 from its lab fixture (lab/quests/dragon-slayer.ts). The
-// 1,424 holds B's only stall in 5 B runs: 33 ticks before the Guild master's talk opened after the
-// welcome page, with no fault seen in the door or the page.
+// 1,424 holds B's only stall in 5 B runs: 37 ticks (4 in the others) from the welcome page closing
+// to the Guild master's dialogue opening; the door and the page were on time.
 
 import type { BotWorldState, NearbyLoc, PrayerName } from '../../sdk/types';
 import { measure } from '../lib/ticks';
