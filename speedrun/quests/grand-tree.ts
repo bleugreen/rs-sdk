@@ -25,7 +25,7 @@
 
 import type { BotWorldState, PrayerName } from '../../sdk/types';
 import { act, actConverse, talkTo, useOn, type ActOptions } from '../lib/act';
-import { fight, prayerActive, setPrayer, type FightResult } from '../lib/combat';
+import { COMBAT_SPELLS, fight, prayerActive, setPrayer, type FightResult } from '../lib/combat';
 import { converse, type ConverseResult } from '../lib/converse';
 import { pageText, type OptionPattern } from '../lib/dialogue';
 import { INVENTORY_SIZE, type ItemPattern } from '../lib/items';
@@ -57,11 +57,7 @@ export function resolveOptions(o: Options = {}): Required<Omit<Options, 'kitFrom
 
 // ------------------------------------------------------------------ data
 
-/** Standard-spellbook combat spells: component id, Magic level, the rune used up, air per cast (fire comes from the staff). */
-export const SPELLS = {
-    fire_bolt: { component: 1169, magic: 35, rune: /^Chaos rune$/i, runeName: 'chaos', air: 3, fire: 4 },
-    fire_blast: { component: 1181, magic: 59, rune: /^Death rune$/i, runeName: 'death', air: 4, fire: 5 },
-} as const;
+const SPELLS = COMBAT_SPELLS;
 
 /** Casts the kit must cover: rs/56's 153-tick kill at the 5-tick cast delay is ~31. */
 export const DEMON_CASTS = 35;
