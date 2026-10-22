@@ -1650,9 +1650,41 @@ the log; nobody steps in. Run it on the chosen machine: it takes the lap's stand
 only a count, and names nobody. Bound: 1 min. Expect `0 other accounts` on an uncontested cluster
 (run without SCORED's name at 14:36Z on 2026-10-22, it read 0 of 1,639 online):
 
-<!-- S09-COUNT -->
 ```sh
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'ENV=SCORED_ENV; cd ~/rs-sdk && S="$(sed -n "s/^BOT_USERNAME=//p" "$ENV")" timeout --kill-after=30s 1m ~/.bun/bin/bun -e "const { ROTATIONS, parseSteps } = await import(\"./speedrun/skills/mining.ts\"); const { playerNameKey } = await import(\"./speedrun/lib/demo-status.ts\"); const stands = parseSteps(ROTATIONS.five.steps).map(s => s.stand); const me = playerNameKey(process.env.S ?? \"\"); const b = await (await fetch(\"https://rs-sdk-demo.fly.dev/playerpositions\", { signal: AbortSignal.timeout(10000) })).json(); const all = Array.isArray(b) ? b : b.players; const n = all.filter(p => p.level === 0 && stands.some(([x, z]) => Math.max(Math.abs(p.x - x), Math.abs(p.z - z)) <= 1) && playerNameKey(p.name) !== me && !playerNameKey(p.name).startsWith(\"cairn \")).length; console.log(new Date().toISOString().slice(0, 19) + \"Z zoo iron cluster: \" + n + \" other accounts within 1 tile of a lap stand, \" + all.length + \" online\");"'
+```
+
+**Before S18: the knights' square** (rs/147's lever (1), via rs/158 at 13:39 PDT 2026-10-22).
+rs/453's census found 37 of 42 rival accounts at Thieving 99 standing in one East Ardougne square,
+the square of S18's knights (RUN-ORDER.md, S18's crowded-knight-square risk line). Players don't
+block players, so a crowd doesn't stop SCORED or the courier, though it may pin a knight in place
+(rs/147's read, on rs/477). Before S18 starts, the operator reads the square once and logs the count
+in the run's record with the least-crowded knight, beside S09's reading. **It is informational:**
+nobody steps in, and S18's module picks its own knight, with rs/480's opt-in
+`knight: { prefer: 'uncrowded' }` (rs/147's lever (2); off by default, floor-pending).
+
+The square here is the knights' wander area: their four spawns, (2653,3300), (2669,3298),
+(2671,3313) and (2652,3318), each with `wanderrange=15` (thieving.md), so x 2637-2686 and z
+3283-3333 on level 0. It is wider than the market, and its count includes every account there, so it
+isn't comparable with the census's 37. The command reads `/playerpositions` once (live positions,
+refreshed at most once a second: `getPlayerPositionsJson` in `server/engine/src/web/worldfeed.ts`,
+r) for the other accounts in the square, leaving ours and SCORED out as S09's does. Then it reads
+one tick of the login-free world feed for the knights' tiles (NPC types 23 and 26,
+`knight_of_ardougne` and `knight_of_ardougne2` in `server/content/pack/npc.pack`). For each knight
+it counts the other accounts on the 8 tiles around it, the count rs/480's choice uses. Ties go to
+the knight nearest the module's anchor, (2670,3305) (`BANDS` in `speedrun/skills/thieving.ts`). It
+prints counts and tiles only, never a name; `none seen` means the feed showed no knight in the
+square. Run it on the chosen machine. Bound: 1 min:
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'ENV=SCORED_ENV; cd ~/rs-sdk && S="$(sed -n "s/^BOT_USERNAME=//p" "$ENV")" timeout --kill-after=30s 1m ~/.bun/bin/bun -e "const { playerNameKey } = await import(\"./speedrun/lib/demo-status.ts\"); const me = playerNameKey(process.env.S ?? \"\"); const q = { x: 2637, z: 3283, w: 50, h: 51 }; const inQ = p => p.level === 0 && p.x >= q.x && p.x < q.x + q.w && p.z >= q.z && p.z < q.z + q.h; const b = await (await fetch(\"https://rs-sdk-demo.fly.dev/playerpositions\", { signal: AbortSignal.timeout(10000) })).json(); const all = Array.isArray(b) ? b : b.players; const others = all.filter(p => inQ(p) && playerNameKey(p.name) !== me && !playerNameKey(p.name).startsWith(\"cairn \")); const ks = await new Promise((ok, no) => { const ws = new WebSocket(\"wss://rs-sdk-demo.fly.dev/worldfeed\"); const t = setTimeout(() => { ws.close(); no(new Error(\"no knights from the world feed within 15 s\")); }, 15000); ws.onmessage = e => { const m = JSON.parse(String(e.data)); if (m.t === \"hello\") ws.send(JSON.stringify({ t: \"sub\", ...q })); else if (m.t === \"tick\" && Array.isArray(m.n)) { clearTimeout(t); ws.close(); ok(m.n.filter(r => r.f === 1 && (r.t === 23 || r.t === 26) && r.l === 0)); } }; ws.onerror = () => { clearTimeout(t); no(new Error(\"the world feed refused the connection\")); }; }); const near = k => others.filter(p => Math.max(Math.abs(p.x - k.x), Math.abs(p.z - k.z)) === 1).length; const d = k => Math.max(Math.abs(k.x - 2670), Math.abs(k.z - 3305)); const rows = ks.map(k => ({ x: k.x, z: k.z, n: near(k) })).sort((a, c) => a.n - c.n || d(a) - d(c)); console.log(new Date().toISOString().slice(0, 19) + \"Z knight square: \" + others.length + \" other accounts, \" + all.length + \" online; knights (tile, others adjacent): \" + (rows.map(r => \"(\" + r.x + \",\" + r.z + \") \" + r.n).join(\", \") || \"none seen\") + \"; least crowded: \" + (rows[0] ? \"the knight at (\" + rows[0].x + \",\" + rows[0].z + \"), \" + rows[0].n + \" adjacent\" : \"none\"));"'
+```
+
+Its remote part, run through `bash -c` on fedora without SCORED's name at 20:53Z on 2026-10-22, exit
+0, read (m, a dated observation of the demo):
+
+```
+2026-10-22T20:53:00Z knight square: 148 other accounts, 1238 online; knights (tile, others adjacent): (2669,3307) 1, (2661,3316) 4, (2674,3315) 12, (2663,3305) 16; least crowded: the knight at (2669,3307), 1 adjacent
 ```
 
 ## 8. Stop the recording and pull it
@@ -1674,6 +1706,12 @@ account's name, so keep its output out of chat and logs:
 ```sh
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'ENV=SCORED_ENV; cd ~/rs-sdk && B="$(basename "$(dirname "$ENV")")" timeout --kill-after=30s 3m ~/.bun/bin/bun -e "const m = await import(\"./speedrun/lib/session.ts\"); const s = await m.openSession(process.env.B, { client: \"browser\", pathfinding: false, readyTimeoutMs: 30000 }); const r = await m.logoutClean(s); console.log(r.ok ? \"logged out; the page is out of game\" : \"not confirmed: \" + r.reason); await m.closeSession(s); process.exit(r.ok ? 0 : 1);"'
 ```
+
+Dry-run it first ("Rules for every launch"): the same line with `printf "<%s>\n"` placed inside the
+quotes immediately before `timeout`, so the machine's shell prints the words it would run, one per
+line, and nothing attaches or logs out. The `-e` script must come back as one word; the output names
+no account, since the directory goes in `B`, which `printf` doesn't print (m, fedora, the same form
+on a stand-in path, 2026-10-22).
 
 Expect `logged out; the page is out of game`, and exit 0. On exit 1 (`not confirmed`, or no
 advancing tick to attach to, which is also what a tab already out of game gives), look at the tab in
@@ -1880,8 +1918,8 @@ went from 300 to 396 ms between the 19:30Z and 20:00Z pairs (m, the host thread,
 at 13:0x PDT); rs/83 measured p50 402 (relayed by rs/158 at 13:1x PDT). The feed still read 400 at
 20:10Z (m, rs/469, step 5a's command, from fedora). Rows and the score are in ticks, so nothing is
 re-priced here; wall clock is x4/3, about 3.9 h for our row ("Rules for every launch"). Tenet 12's
-(a) is in ticks and unaffected; (b) and (c) are fixed millisecond values set at 300 ms, pending #370
-(step 6).
+(a) is in ticks and unaffected; (b) and (c) become fractions of T with rs/471, pending; until it
+merges they are fixed millisecond values set at 300 ms (step 6).
 
 ## Measured: the demo relay holding SDK actions, 2026-10-22
 
