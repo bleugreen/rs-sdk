@@ -110,6 +110,23 @@ The page's `./bot/client.js?v=` token is `Date.now().toString(36)` at process st
 (`server/engine/src/web/pages/client.ts`), which dates the restart itself. fly.toml `[env]` and
 Fly secrets can change, and restart the machine, without any of this moving.
 
+So the demo is in one of three states:
+
+- **Same image.** The bundle md5 hasn't changed across the restart.
+- **Rebuilt from an upstream commit.** The md5 changed, and building candidates names the commit
+  range.
+- **Not on GitHub.** The demo runs engine code that has no upstream commit. A server-rendered
+  string that upstream lacks shows this. It was first seen at about 19:34Z on 22 October, around
+  the 19:36Z "Server is being updated" restart: the hiscores Time hover reads
+  `N seconds of game time` (with N a number of seconds), where b565f2d9 and our fork
+  (`server/engine/src/web/pages/hiscores.ts`) render `N ticks`. In this state a bundle match
+  proves only that the webclient build is unchanged. It says nothing about the engine.
+
+Every run-night gate read records that hover, a hash of the hiscores page's static chrome and
+the bundle md5 (`hiscoreHover`, `hiscoreChromeSha`, `botBundleMd5` under `preLogin` in
+`~/gate-history`; research/demo-latency.md, section 10), so the next engine-side change is
+dated to a read.
+
 ## Extending the watchlist
 
 Each entry has an `id`, a `title`, its `paths` (globs matched with `Bun.Glob`), and a one-line
