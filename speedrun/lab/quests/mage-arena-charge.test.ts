@@ -4,7 +4,7 @@ import { baseState, FakeSdk } from '../../lib/fake-sdk';
 import { hopNeeds, hopsDestination } from '../../lib/travel';
 import * as mageArena from '../../quests/mage-arena';
 import {
-    attackSeen, BLOOD_RUNES, CHARGE_COMPONENT, chargeProbe, DEATH_RUNES, MAX_CASTS, parseDeliveries, probeRows, probeTicks, TO_CELLAR, type ProbeSample,
+    attackSeen, BLOOD_RUNES, CHARGE_COMPONENT, chargeProbe, DEATH_RUNES, inDragonRoom, inTaverleyDungeon, MAX_CASTS, parseDeliveries, probeRows, probeTicks, routeOut, TO_CELLAR, type ProbeSample,
 } from './mage-arena-charge';
 
 const prevTick = process.env.SPEEDRUN_TICK_MS;
@@ -58,6 +58,23 @@ describe('attackSeen', () => {
         expect(attackSeen(at(2543, 4713, 90, ['x']), at(2543, 4713, 70, ['x']))).toBeNull();
         expect(attackSeen(at(3100, 3950, 90), at(3100, 3950, 70))).toBeNull();
         expect(attackSeen(at(3100, 3950, 70, ['x']), at(3100, 3950, 80, ['x']))).toBeNull();
+    });
+});
+
+describe('routeOut', () => {
+    test('from the dragons\' safe tile: SAFE_ROUTE reversed, ending inside the dusty-key door', () => {
+        const r = routeOut({ x: 2901, z: 9810 });
+        expect(r[0]).toEqual({ x: 2901, z: 9810 });
+        expect(r.at(-1)).toEqual({ x: 2923, z: 9803 });
+        expect(r.length).toBe(23);
+        expect(inDragonRoom({ x: 2901, z: 9810 })).toBe(true);
+        expect(inDragonRoom({ x: 2925, z: 9803 })).toBe(false);
+        expect(inTaverleyDungeon({ x: 2884, z: 9798 })).toBe(true);
+        expect(inTaverleyDungeon({ x: 2543, z: 4713 })).toBe(false);
+    });
+
+    test('from part-way along it starts at the nearest route tile', () => {
+        expect(routeOut({ x: 2912, z: 9808 })[0]).toEqual({ x: 2912, z: 9808 });
     });
 });
 

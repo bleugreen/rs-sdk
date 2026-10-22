@@ -10,6 +10,7 @@
 // stands, then the logout.
 //
 // Phases, each skipped when the account's state shows it done, so a relaunch resumes:
+//   out       a dragons-role account parked in Taverley dungeon's dragon room climbs out first
 //   receive   at Varrock west bank (the couriers' tile, mule.ts MULE_STAND), take each one-shot
 //             fleet handover in --receive ([{from, item, n}]) in whatever order the givers come
 //   prayer    bank everything (worn too), bury big bones to Prayer 37 (Protect from Magic)
@@ -37,7 +38,9 @@ import { FOOD, hopsDestination, teleport, travel, wildernessLevel, within, type 
 import { nextTick, waitTicks, waitUntil } from '../../lib/wait';
 import { invCount, invItem, pos, skillLevel, skillXp, worn } from '../../lib/world';
 import * as mageArena from '../../quests/mage-arena';
+import { DUSTY_KEY_DOOR, TAVERLEY_DUNGEON_BOTTOM } from '../../helpers/bones';
 import { BANKS, Buyer, SHOPS } from '../../helpers/buyer';
+import { SAFE_ROUTE } from '../../helpers/dragons';
 import { MULE_STAND } from '../../helpers/mule';
 import { memoryRoleState, type RoleContext } from '../../helpers/role';
 import { arg, botArg, result } from '../common';
@@ -186,6 +189,48 @@ async function receiveAll(session: Session, buyer: Buyer, deliveries: Delivery[]
     if (owed.length) throw new Error(`receive: still owed after ${minutes} min: ${JSON.stringify(owed)}`);
 }
 
+/** Taverley dungeon (dragons.ts): the blue dragons' room lies west of the dusty-key door, its ladder up at the bottom. */
+export const inTaverleyDungeon = (t: { x: number; z: number }) => t.z > 9700 && t.z < 9900 && t.x > 2840 && t.x < 2960;
+export const inDragonRoom = (t: { x: number; z: number }) => inTaverleyDungeon(t) && t.x < DUSTY_KEY_DOOR.x;
+
+/** SAFE_ROUTE back to the door from the tile nearest the player, one tile per click (dragons.ts walkRoute). */
+export function routeOut(p: { x: number; z: number }): { x: number; z: number }[] {
+    const back = [...SAFE_ROUTE].reverse();
+    const d = (t: { x: number; z: number }) => Math.max(Math.abs(t.x - p.x), Math.abs(t.z - p.z));
+    const i = back.reduce((best, t, j) => (d(t) < d(back[best]!) ? j : best), 0);
+    return back.slice(i);
+}
+
+/**
+ * Out of the dragon room (a dragons-role account logs out on its safe tile): SAFE_ROUTE reversed one
+ * tile per click, never inside an adult's leash, the dusty-key door from inside, then up the ladder.
+ */
+async function leaveTaverleyDungeon(session: Session): Promise<void> {
+    const sdk = session.sdk;
+    if (!inTaverleyDungeon(pos(sdk))) return;
+    if (inDragonRoom(pos(sdk))) {
+        for (const t of routeOut(pos(sdk))) {
+            for (let attempt = 0; attempt < 3 && (pos(sdk).x !== t.x || pos(sdk).z !== t.z); attempt++) {
+                void sdk.sendWalk(t.x, t.z, false);
+                await waitUntil(sdk, s => s.player?.worldX === t.x && s.player?.worldZ === t.z, { maxTicks: 4 });
+            }
+            if (pos(sdk).x !== t.x || pos(sdk).z !== t.z) throw new Error(`dragon room: route step to ${t.x},${t.z} failed at ${JSON.stringify(pos(sdk))}`);
+        }
+        for (let attempt = 0; attempt < 4 && pos(sdk).x < DUSTY_KEY_DOOR.x; attempt++) {
+            const door = (await sdk.scanNearbyLocs(4)).find(l => /door|gate/i.test(l.name) && l.x === DUSTY_KEY_DOOR.x && l.z === DUSTY_KEY_DOOR.z);
+            if (door) await session.bot.interactLoc(door, /open/i);
+            await waitUntil(sdk, s => (s.player?.worldX ?? 0) >= DUSTY_KEY_DOOR.x, { maxTicks: 10 });
+        }
+        if (pos(sdk).x < DUSTY_KEY_DOOR.x) throw new Error('dragon room: the dusty-key door did not let us out');
+    }
+    const r = await travel(sdk, [
+        { kind: 'run', to: { ...TAVERLEY_DUNGEON_BOTTOM, tol: 2 } },
+        { kind: 'loc', loc: { x: TAVERLEY_DUNGEON_BOTTOM.x, z: TAVERLEY_DUNGEON_BOTTOM.z, name: /ladder/i }, op: /^climb-up$/i, label: 'Taverley dungeon ladder up' },
+    ], { bot: session.bot, log: true });
+    if (!r.ok || inTaverleyDungeon(pos(sdk))) throw new Error(`Taverley dungeon: not out (${r.reason ?? 'still underground'})`);
+    say('out of Taverley dungeon', { at: pos(sdk), ticks: r.ticks });
+}
+
 /** Bury big bones from the bank until Prayer reaches `level`. */
 async function prayerTo(session: Session, buyer: Buyer, level: number): Promise<void> {
     const sdk = session.sdk;
@@ -257,6 +302,7 @@ async function toChargeTile(
 ): Promise<void> {
     const s0 = state(session);
     if (!inCellarOrBeyond(s0) && !kitHeld(s0)) {
+        await leaveTaverleyDungeon(session);
         await buyer.atBank(BANKS.varrockWest, () => buyer.depositAllBut(['Coins']));
         await receiveAll(session, buyer, deliveries, minutes);
         await prayerTo(session, buyer, PRAYER_LEVEL);
