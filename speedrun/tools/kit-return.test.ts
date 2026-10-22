@@ -115,14 +115,15 @@ describe('approach', () => {
     test('a hit on the way halts the run where it stands, names the attacker, and never resumes', async () => {
         const sdk = new FakeSdk(state(3250, 3222));
         const sim = simulateWalking(sdk);
+        // `drive` patches each new tick from the state before it: the hit shows on tick 105.
         const r = await drive(sdk, approach(sdk as never, DEFAULT_GIVER_TILE), 600, s =>
-            s.tick === 104 ? { player: { ...s.player!, hp: 9 }, combatEvents: [hit(104, 1)], nearbyNpcs: [wizard(s.player!.worldX - 2, 3222)] } : {});
+            s.tick === 104 ? { player: { ...s.player!, hp: 9 }, combatEvents: [hit(105, 1)], nearbyNpcs: [wizard(s.player!.worldX - 2, 3222)] } : {});
         expect(r.ok).toBe(false);
-        expect(r.damage).toMatchObject({ tick: 104, hp: 9, by: expect.stringMatching(/^Dark wizard \(level 7\)/) });
+        expect(r.damage).toMatchObject({ tick: 105, hp: 9, by: expect.stringMatching(/^Dark wizard \(level 7\)/) });
         expect(r.reason).toMatch(/stopped: took damage from Dark wizard/);
         // The last click is a walk to the tile the player stood on when the hit showed: the halt.
         const stopAt = sim.clicks.at(-1)!;
-        expect(stopAt).toMatchObject({ x: stopAt.from.x, z: stopAt.from.z, tick: 104 });
+        expect(stopAt).toMatchObject({ x: stopAt.from.x, z: stopAt.from.z, tick: 105 });
         const x = sdk.state!.player!.worldX;
         for (let i = 0; i < 5; i++) sdk.tick();
         expect(sdk.state!.player!.worldX).toBe(x);
