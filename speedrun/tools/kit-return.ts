@@ -16,8 +16,10 @@
 //   distance and each teleport's refusal. Move the giver to a safe tile within 30 tiles of the
 //   account and pass that tile as --at=x,z.
 // - Every tick of the run is watched: the first hitpoint lost or hit taken halts the run where it
-//   stands, skips the trade, logs out (logoutClean waits out the post-combat window first) and
-//   exits 4 naming the attacker. It never retries.
+//   stands and skips the trade. Logout is refused for 16 ticks after a hit, and an aggressive NPC
+//   keeps hitting an account that stands still, so it runs back once to where the run began (the
+//   tiles it just crossed unhurt), logs out (logoutClean waits out the post-combat window) and
+//   exits 4 naming the attacker. It never resumes the walk or retries.
 //
 // Then it opens the trade itself and offers exactly the listed items (debug names, as rehearse.ts
 // --kit), retrying once if the first trade closes (a giver serves one request at a time), then
@@ -30,7 +32,7 @@ import { parseKit } from '../rehearse';
 import { closeSession, loadBotEnv, logoutClean, openSession, type ClientKind, type Session } from '../lib/session';
 import { tabInGame } from '../lib/tab';
 import { give } from '../lib/trade';
-import { fmtTile, SPELLS, teleportRefusal, travel, wildernessLevel, type Hop, type Spell, type TravelSdk } from '../lib/travel';
+import { fmtTile, runTo, SPELLS, teleportRefusal, travel, wildernessLevel, type Hop, type Spell, type TravelSdk } from '../lib/travel';
 import { sleep } from '../lib/wait';
 import { chebyshev, pos, type StateLike } from '../lib/world';
 
@@ -121,14 +123,18 @@ export interface ApproachResult {
     plan: Approach;
     reason?: string;
     damage?: Damage;
+    /** Where the run began, which it crossed unhurt: the account's tile, or the teleport's landing. */
+    runFrom: { x: number; z: number };
 }
 
 /** Get to the giver's tile by `planApproach`, stopping on the first damage. Never retries. */
 export async function approach(sdk: TravelSdk, at: { x: number; z: number }, opts: { radius?: number; log?: boolean } = {}): Promise<ApproachResult> {
     const s0 = sdk.getState();
-    if (!s0?.player) return { ok: false, plan: { kind: 'refuse', reason: 'no player state' }, reason: 'no player state' };
+    if (!s0?.player) return { ok: false, plan: { kind: 'refuse', reason: 'no player state' }, reason: 'no player state', runFrom: pos(sdk) };
     const plan = planApproach(s0, at, opts.radius);
-    if (plan.kind === 'refuse') return { ok: false, plan, reason: plan.reason };
+    const p0 = pos(s0);
+    const runFrom = plan.kind === 'teleport' ? { x: SPELLS[plan.spell].landing.x, z: SPELLS[plan.spell].landing.z } : { x: p0.x, z: p0.z };
+    if (plan.kind === 'refuse') return { ok: false, plan, reason: plan.reason, runFrom };
     const watch = damageWatch(s0);
     let damage: Damage | null = null;
     const stopIf = (s: BotWorldState) => {
@@ -139,7 +145,7 @@ export async function approach(sdk: TravelSdk, at: { x: number; z: number }, opt
     const hops: Hop[] = plan.kind === 'teleport' ? [{ kind: 'teleport', spell: plan.spell }, run] : [run];
     const r = await travel(sdk, hops, { walkOnRefusal: false, stopIf, log: opts.log ?? false });
     const hit = damage as Damage | null;
-    return { ok: r.ok, plan, ...(r.reason ? { reason: r.reason } : {}), ...(hit ? { damage: hit } : {}) };
+    return { ok: r.ok, plan, runFrom, ...(r.reason ? { reason: r.reason } : {}), ...(hit ? { damage: hit } : {}) };
 }
 
 export interface KitReturnOptions {
@@ -181,7 +187,11 @@ export async function kitReturn(session: Session, o: KitReturnOptions): Promise<
         }
         if (ap.damage) {
             code = EXIT.damaged;
-            throw new Error(`STOPPED at ${here()} (T${ap.damage.tick}): took damage from ${ap.damage.by}, hp ${ap.damage.hp}. No trade; logging out.`);
+            say(`STOPPED at ${here()} (T${ap.damage.tick}): took damage from ${ap.damage.by}, hp ${ap.damage.hp}. No trade.`);
+            // Logout is refused for COMBAT_LOGOUT_TICKS after a hit, and an aggressive NPC keeps
+            // hitting an account that stands still: back off once over the tiles just crossed unhurt.
+            const back = await runTo(sdk as unknown as TravelSdk, { ...ap.runFrom, tol: 1 }, { maxTicks: 60 });
+            throw new Error(`retreated to ${here()} (T${tick()}, hp ${sdk.getState()?.player?.hp})${back.ok ? '' : ` short of ${fmtTile(ap.runFrom)}: ${back.reason}`}; logging out`);
         }
         if (!ap.ok) throw new Error(`${ap.plan.kind === 'teleport' ? `${ap.plan.spell} teleport, then ` : ''}run to ${fmtTile(o.at)}: ${ap.reason}`);
         say(`at ${here()} (T${tick()})${ap.plan.kind === 'teleport' ? ` by the ${ap.plan.spell} teleport` : ''}`);
