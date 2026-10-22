@@ -214,7 +214,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 31 | 31 | Cook's Assistant | `speedrun/quests/cooks-assistant.ts` | S23 | 12 | 12 | 31 | ~19 | overlay | `quest-primitives-dialogue.ts` | **browser-accepted** (rs/416, bgsrv-mac, burst, tree 349da9f4 with rs/416's ec4f1b36; fold-in 25: 12 from arrival, equal to lite); lab-measured on lite (fold-in 23); on rs/186's branch as 644525c3, wired into run.ts, its snapshot to main pending (entry 0) |
 | 32 | 33 | Hand-offs (H1 and every H row) | `speedrun/runner/handoff.ts` | S01 | 8 | 8 | ~10 | ~2 | overlay | `lib/trade.ts`, `mule.ts` [rs/41] | **on main (#285, 272f2ab6, rs/357), lab and demo accepted** (H1 7 ticks against 8.42 on the demo, rs/355; lab H1 5, H13 out and back 6, lite and browser, rs/320); run.ts's wiring pending (rs/186) |
 | 33 | 34 | Tutorial skip | `speedrun/skills/start.ts` | S00 | 8 (done) | 8 | - | - | overlay | done: SCORED claimed and parked at 8 ticks; the skip for rehearsal and gate accounts measured 3 (lab) and 4 (demo) | on main, c2d9eada (#146) |
-| 34 | 32 | Fletching | `speedrun/skills/fletching.ts` | S18d (inside the stun pack) | 0 | 0 | ~61 standalone | ~59 | in-page (with Thieving) | `stun-pack-thieve.ts`, `delayfree-cycle.ts` | standalone fallback: **rs/409** (building; fold-in 23); in-stun: lab-accepted (arrows; rs/132), plugged into rs/154's module by rs/186 |
+| 34 | 32 | Fletching | `speedrun/skills/fletching.ts` | S18d (inside the stun pack) | 0 | 0 | ~61 standalone | ~59 | in-page (with Thieving) | `stun-pack-thieve.ts`, `delayfree-cycle.ts` | standalone fallback: **rs/409** (building; fold-in 23), **demo-accepted, reduced** (rs/186, bbs, cairn_h97, 30 actions, all landed; fold-in 25); in-stun: lab-accepted (arrows; rs/132), plugged into rs/154's module by rs/186 |
 
 Every figure in the table is restated with its label and source in the entry below it. Helper-side
 scripts are in section 4; the shared primitives and their build order are in section 5.
@@ -2594,7 +2594,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   replaces the old '61 on 304 actions' basis, `skills/fletching.md` §2, 59 on 294). item-cycle's opt-in
   `fill` (when a tier runs out inside a tick, the rest goes to the next tier the level allows; rs/186
   approved) is part of rs/409's pending snapshot: on rs/186's branch as 940414c6 (lab 61 against a bar of
-  61.95), its snapshot to main to be filed; the demo pending (bronze, on cairn_h72 once rs/331 stocks it).
+  61.95), its snapshot to main to be filed. **Demo-accepted, reduced** (fold-in 25: rs/186, bbs, cairn_h97, 30 actions): 6 work ticks at 5 actions each, overBudget 0, all 30 landed, one batch a tick late with every later one shifted by one, nothing lost; accepted on what the module controls (the late batch is a burst-tick landing slip, RUN-ORDER.md section 6's named part).
   Off the route, so no total moves.
 - **Primitives:** the stun-pack extension of the pickpocket program (entry 6, rs/132).
 - **Mode:** in-page with Thieving.
