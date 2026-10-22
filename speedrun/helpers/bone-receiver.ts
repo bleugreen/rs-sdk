@@ -15,13 +15,14 @@
 //
 // Role options: giver (account, required), loads (default 8), n (23), buryEvery (3),
 //   site {x,z} (default the oak tile 2914,3494), pageLoads (default [2, 5]), holdTicks (6),
-//   asks [15, 21, ...]: S18's top-ups instead (the giver in mode on-request): before each
-//   trade write that size with writeBoneAsk, then click trade; loads = asks.length
+//   asks [15, 21, ...]: S18's top-ups instead (the giver in mode on-request): click trade,
+//   and on the frame that shows it open write that many bones as the top-up ask
+//   (altar-cue.ts writeTopUpAsk), as the Thieving module does; loads = asks.length
 import type { BotWorldState } from '../../sdk/types';
-import { receiveFrom } from '../lib/trade';
-import { CueWriter, cueDir, FrameLog } from './altar-cue';
+import { receiveFrom, tradeOf } from '../lib/trade';
+import { CueWriter, cueDir, FrameLog, writeTopUpAsk } from './altar-cue';
 import { cheat, count, isLocalServer, labTele, pos, until, type Tile } from './altar-room';
-import { S07_SITES, writeBoneAsk } from './bone-giver';
+import { S07_SITES } from './bone-giver';
 import { runStandalone, type Role, type RoleContext } from './role';
 
 const BONES = /^dragon bones$/i;
@@ -59,7 +60,15 @@ export const role: Role = {
         const s = () => sdk.getState() as BotWorldState;
 
         const frames = new FrameLog();
-        const unsub = sdk.onStateUpdate(st => void frames.add(st.tick));
+        /** The bones to ask for once the next trade opens (asks mode). */
+        let pendingAsk: number | null = null;
+        const unsub = sdk.onStateUpdate(st => {
+            frames.add(st.tick);
+            if (pendingAsk !== null && tradeOf(st).isOpen) {
+                writeTopUpAsk(cueDir(), [{ item: BONES.source, count: pendingAsk }]);
+                pendingAsk = null;
+            }
+        });
         const writer = new CueWriter(cueDir(), ctx.account);
         const results: LoadResult[] = [];
         try {
@@ -80,7 +89,7 @@ export const role: Role = {
                 }
                 const standingAtClick = s().gameMessages.some(m => m.tick >= requestSince && isRequestFrom(giver)(m));
                 const n = sizeOf(load);
-                if (asks) writeBoneAsk(cueDir(), n, load + 1);
+                if (asks) pendingAsk = n;
                 const r = await receiveFrom(sdk, giver, { want: [{ item: BONES, amount: n }], openTimeoutMs: 60_000 });
                 const res: LoadResult = { load, ok: r.ok && count(s(), BONES) >= n, clickToBones: r.ticks, standingAtClick, ...(r.reason ? { reason: r.reason } : {}) };
                 results.push(res);
