@@ -128,5 +128,20 @@ else {
     if (level < 77) fail.push(`O43a: S16 would arrive at Magic ${level}, under 77`);
 }
 
+// R29's closed-door sensitivity (rs/484): a browser walk misses a closed door at click time and stalls
+// ~+9 before opening it. Browser-measured rows carry it; this counts, in the quest docs of the quests
+// measured only on lite, the route-table rows that pass a door (trapdoors and the way-in leg excluded):
+// an upper bound (i), since doors a module opens by click are not hopRun's to miss.
+const LITE_ONLY: Record<string, string> = { S08: 'plague_city.md', S11b: 'grand_tree.md', S15: 'monkey_madness.md', S16: 'mage_arena.md', S20: 'fishing_contest.md' };
+let doors = 0;
+const byQuest = Object.entries(LITE_ONLY).map(([row, f]) => {
+    const n = readFileSync(join(dir, 'quests', f), 'utf8').split('\n')
+        .filter(l => /^\| ?([A-Z]\d?|\d+) \|/.test(l) && !/Camelot teleport/.test(l))
+        .reduce((k, l) => k + (l.replace(/trapdoor/gi, '').match(/\bdoors?\b/gi) ?? []).length, 0);
+    doors += n;
+    return `${row} ${n}`;
+});
+console.log(`R29 door sensitivity (lite-only quests): ${byQuest.join(', ')}; ${doors} doors x ~9 = ~+${doors * 9} at most (i)`);
+
 if (fail.length) { console.error(`FAIL\n${fail.join('\n')}`); process.exit(1); }
 console.log('every cross-check passes');
