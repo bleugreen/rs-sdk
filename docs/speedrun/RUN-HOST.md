@@ -818,7 +818,8 @@ family, never a global stop). In rs/186's final wording, on main since 2538b7d8 
 reader role takes a required `scope` in its launcher options: {S06|S21, altar}, {S07, bone},
 {S18, courier}, {S25a, anvil}, {S14|S27, cannon}. Before each step whose helpers read a cue, run.ts
 writes a fresh cue with that step's scope (no stop). `session` remains the per-login key. A cue
-without a scope is refused." The readers and runecraft.ts's writer are on the floor.
+without a scope is refused." The readers and the runecraft.ts and woodcutting.ts writers are on the
+floor.
 
 **One writer per helper step's cue** (main, 11:5x PDT 2026-10-22; rs/186). rs/186's wording has
 run.ts write every step's cue; main's rule names exactly one writer for each helper step:
