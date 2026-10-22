@@ -2,6 +2,7 @@ import { describe, expect, setSystemTime, test } from 'bun:test';
 import type { BotWorldState, DialogState, InventoryItem, NearbyLoc, NearbyNpc, PlayerState } from '../../sdk/types';
 import { act, actConverse, castTeleport, ClickGuard, openDoor, opLoc, pickup, talkTo, useOn, wield } from './act';
 import { baseState, FakeSdk, flush } from './fake-sdk';
+import { configId } from './world';
 
 const player = (worldX: number, worldZ: number, level = 0) => ({ worldX, worldZ, level, hp: 10, maxHp: 10 }) as PlayerState;
 const loc = (id: number, name: string, x: number, z: number, ops: string[]): NearbyLoc =>
@@ -444,6 +445,49 @@ describe('a landed click is not re-sent while its script runs', () => {
         expect((await p).resends).toBe(0);
     });
 
+    // rs/391, rs/457 (TGV H on lite): the Khazard commander faces SCORED from t81; SCORED's blocks come at
+    // t81, t85, t89 with inCombat false and no combat event (both start at t91). A door click at t88 was
+    // dropped; the block at t89 latched it as answered and nothing re-sent it to the 40-tick bound.
+    for (const anim of [420, 424, 1156]) {
+        test(`a block (anim ${anim}) with no combat event and inCombat false is the fight's, not the click's: re-sent at the bound`, async () => {
+            const sdk = new FakeSdk(baseState({ tick: 88, player: player(2509, 3255) }));
+            const p = act(sdk as never, () => sdk.sendInteractLoc(2510, 3255, 1, 1), () => false, { maxTicks: 8 });
+            await ticks(sdk, 1, () => ({ player: { ...player(2509, 3255), animId: anim } }));
+            await ticks(sdk, 8, () => ({ player: { ...player(2509, 3255), animId: -1 } }));
+            expect((await p).resends).toBe(1);
+        });
+    }
+
+    const commander = (targetIndex: number, options = ['Attack']): NearbyNpc =>
+        ({ ...npc(7, 'Khazard commander'), tileX: 2510, tileZ: 3256, size: 1, targetIndex, options, optionsWithIndex: options.map((text, i) => ({ text, opIndex: i + 1 })) }) as NearbyNpc;
+
+    test('an attacker beside the player facing them makes it a fight: the retaliation swing is not the answer', async () => {
+        // Auto-retaliate on (the regression's own shape): SCORED's swing shows before any event or inCombat.
+        const sdk = new FakeSdk(baseState({ tick: 81, player: player(2509, 3255), nearbyNpcs: [commander(32769)] }));
+        const p = act(sdk as never, () => sdk.sendInteractLoc(2510, 3255, 1, 1), () => false, { maxTicks: 8 });
+        await ticks(sdk, 1, () => ({ player: { ...player(2509, 3255), animId: 419 } }));
+        await ticks(sdk, 8, () => ({ player: { ...player(2509, 3255), animId: -1 } }));
+        expect((await p).resends).toBe(1);
+    });
+
+    test("a talker facing the player (no Attack option), or an attacker facing nobody, is no fight: the click's animation answers it", async () => {
+        for (const near of [commander(32769, ['Talk-to']), commander(-1)]) {
+            const sdk = new FakeSdk(baseState({ tick: 1, player: player(2509, 3255), nearbyNpcs: [near] }));
+            const p = act(sdk as never, () => sdk.sendInteractLoc(2510, 3255, 1, 1), () => false, { maxTicks: 8 });
+            await ticks(sdk, 1, () => ({ player: { ...player(2509, 3255), animId: 832 } }));
+            await ticks(sdk, 8, () => ({ player: { ...player(2509, 3255), animId: -1 } }));
+            expect((await p).resends).toBe(0);
+        }
+    });
+
+    test("the player's own attack animation out of a fight still answers (Sea Slug's kick at the panel: human_unarmedkick)", async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1, player: player(10, 10) }));
+        const p = act(sdk as never, () => sdk.sendInteractLoc(11, 10, 1, 1), () => false, { maxTicks: 8 });
+        await ticks(sdk, 1, () => ({ player: { ...player(10, 10), animId: 423 } }));
+        await ticks(sdk, 8, () => ({ player: { ...player(10, 10), animId: -1 } }));
+        expect((await p).resends).toBe(0);
+    });
+
     test("other players' chat is not the engine answering the click", async () => {
         const sdk = new FakeSdk(baseState({ tick: 1, player: player(10, 10) }));
         const p = act(sdk as never, () => sdk.sendInteractLoc(5, 5, 1, 1), () => false, { resendEvery: 3, maxTicks: 4 });
@@ -476,6 +520,30 @@ describe('act interrupts', () => {
         await ticks(sdk, 5, () => ({ dialog: page('q', 'Hello traveller.') }));
         expect(await p).toMatchObject({ ok: false, resends: 0, interrupts: 0 });
         expect(sdk.sent.map(s => s.method)).toEqual(['sendWalk']);
+    });
+
+    // rs/201, MM U: the backpack monkey's chatter page opened right after the talk click to Waydar and was
+    // taken as its answer, so the dropped talk was never re-sent.
+    const npcChat = (speaker: string, line: string): DialogState =>
+        ({ ...cont(speaker), allComponents: [{ id: configId('interface', 'npcchat1:com_1'), type: 4, buttonType: 0, option: '', text: speaker }, { id: configId('interface', 'npcchat1:com_2'), type: 4, buttonType: 0, option: '', text: line }] });
+    const watched = async (opts: ConstructorParameters<typeof ClickGuard>[3], page: DialogState) => {
+        const sdk = new FakeSdk(baseState({ tick: 20, player: player(10, 10) }));
+        const guard = new ClickGuard(sdk as never, () => sdk.sendInteractNpc(4, 1), undefined, { alwaysWatch: true, ...opts });
+        const stop = sdk.onStateUpdate(s => void guard.step(s));
+        await guard.send();
+        await ticks(sdk, 5, () => ({ dialog: page }));
+        stop();
+        return sdk.sent.filter(a => a.method === 'sendInteractNpc').length;
+    };
+
+    test("another NPC's chat page is not a talk click's answer: the click is re-sent at REPLY_TICKS", async () => {
+        expect(await watched({ npc: 'Waydar' }, npcChat('Monkey', 'Ook ook!'))).toBe(2);
+        expect(await watched({ npc: 'Waydar' }, npcChat('Waydar', 'Shall we return to Crash Island?'))).toBe(1);
+    });
+
+    test("a page the caller dismisses as an interrupt is not the click's answer; the player's own page is", async () => {
+        expect(await watched({ interrupts: [monkey] }, page('m', 'The monkey in your backpack... I\'m tired!'))).toBe(2);
+        expect(await watched({ npc: 'Waydar', interrupts: [monkey] }, page('p', 'Hello.'))).toBe(1);
     });
 
     test('interrupts need an sdk that can dismiss pages', async () => {

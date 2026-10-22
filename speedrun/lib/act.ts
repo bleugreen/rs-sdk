@@ -37,7 +37,7 @@ import { converse, dismissInterrupt, matchInterrupt, type ConverseOptions, type 
 import { pageText, type OptionPattern } from './dialogue';
 import { matchesItem, type ItemPattern } from './items';
 import { serverClock, waitUntil, type Pred, type StateSource } from './wait';
-import { chebyshev, findLoc, invCount, invItem, messageCursor, opIndex, pos, replyAfter, tileCounter, waitForNpc, worn, type LocQuery, type NamePattern, type OpPattern, type Tile } from './world';
+import { chebyshev, configIds, findLoc, invCount, invItem, messageCursor, opIndex, pos, replyAfter, tileCounter, waitForNpc, worn, type LocQuery, type NamePattern, type OpPattern, type Tile } from './world';
 
 export type ActSdk = StateSource &
     Pick<BotSDK, 'sendInteractNpc' | 'sendInteractLoc' | 'sendUseItem' | 'sendUseItemOnItem' | 'sendUseItemOnLoc' | 'sendUseItemOnNpc' | 'sendPickup' | 'sendWalk' | 'sendClickComponent' | 'sendDropItem' | 'scanNearbyLocs' | 'scanGroundItems'>;
@@ -118,7 +118,8 @@ const refusedSend = (r: unknown) => typeof r === 'object' && r !== null && (r as
  * goes through it too); `step` is fed each published state and re-sends when a refused send can
  * go out again, or when a post-jump click has drawn no reply in REPLY_TICKS. The reply is
  * anything the engine does that a dropped click cannot cause: a step, a dialogue or modal, a new
- * animation, a game message, an inventory change, or the caller's own `answered`.
+ * animation, a game message, an inventory change, or the caller's own `answered`; but no page the
+ * click did not open (`opts.npc`, `opts.interrupts`) and nothing a fight makes (inFightSince).
  */
 export class ClickGuard {
     readonly counts: { refusedResends: number; unansweredResends: number } = { refusedResends: 0, unansweredResends: 0 };
@@ -154,6 +155,13 @@ export class ClickGuard {
              * later of the two counts. Only ever lengthens the bound.
              */
             clock?: (wallMs: number) => number;
+            /**
+             * The NPC the click talks to, by name: another NPC's chat page (the backpack monkey's
+             * chatter as Waydar's talk goes out, rs/201 MM U) is not this click's answer.
+             */
+            npc?: string;
+            /** Pages the caller dismisses as not the step's (converse.ts Interrupt): never this click's answer. */
+            interrupts?: readonly Interrupt[];
         } = {}
     ) {}
 
@@ -184,7 +192,7 @@ export class ClickGuard {
         const tick = s?.tick ?? 0;
         const clock = serverClock(tick, this.sdk.getStateReceivedAt?.() || Date.now());
         this.reachedAt = tick;
-        this.base = s ? snapshot(s) : null;
+        this.base = s ? snapshot(s, this.opts) : null;
         this.cantReach = replyAfter(this.sdk, CANT_REACH);
         this.scriptAnswered = false;
         this.idleAtSend = !s || !busyAt(s);
@@ -252,32 +260,100 @@ function fightCursor(s: BotWorldState): number {
     return c;
 }
 
-function snapshot(s: BotWorldState) {
+function snapshot(s: BotWorldState, page: { npc?: string; interrupts?: readonly Interrupt[] } = {}) {
     const p = pos(s);
-    return { x: p.x, z: p.z, level: p.level, anim: s.player?.animId ?? -1, inv: invKey(s), messages: messageCursor(s), fight: fightCursor(s), modal: s.modalOpen };
+    return {
+        x: p.x, z: p.z, level: p.level, anim: s.player?.animId ?? -1, inv: invKey(s), messages: messageCursor(s), fight: fightCursor(s), modal: s.modalOpen,
+        npc: page.npc?.trim().toLowerCase(), interrupts: page.interrupts,
+        /** A fight was seen since the send (inFightSince), latched for the rest of this send's window. */
+        fought: false,
+    };
+}
+
+let defendSeqs: ReadonlySet<number> | null = null;
+
+/**
+ * The player's block and defend animations: seq.pack's human_*_block, _def and _defence (420
+ * human_stafforb_block, 424 human_unarmedblock, 1156 human_shield_defence ...), what combat.rs2
+ * combat_defend_anim plays on a hit. No other script plays one on the player but for a hit
+ * (dragonfire, Nezikchened, the big-fish event's blow), so one is a fight, never a click's answer.
+ */
+function defendAnim(id: number): boolean {
+    defendSeqs ??= new Set([...configIds('seq')].filter(([name]) => /^human_\w*(block|def|defence)$/.test(name)).map(([, seq]) => seq));
+    return defendSeqs.has(id);
+}
+
+/** A player target as an NPC publishes it: StateCollector passes faceEntity raw, a player slot + 32768. */
+const PLAYER_TARGET = 32768;
+
+/**
+ * An attackable NPC beside the player, facing a player: the attacker on the player before any
+ * hit of its is published (rs/457: the Khazard commander faces SCORED from t81, SCORED's blocks
+ * at t81, t85, t89 come with inCombat false and no combat event; both start at t91). A talker
+ * faces the player too (chat.rs2 chatnpc: playerfaceclose), but only an NPC with an Attack
+ * option counts, and in a fight a dialogue or a step still answers.
+ */
+function attackerBeside(s: BotWorldState): boolean {
+    const p = pos(s);
+    return s.nearbyNpcs.some(n => {
+        if (!(n.targetIndex >= PLAYER_TARGET) || !n.options.some(o => /^attack$/i.test(o))) return false;
+        if (n.tileX === undefined || n.tileZ === undefined) return n.distance <= 1;
+        const size = n.size ?? 1;
+        const dx = Math.max(n.tileX - p.x, p.x - (n.tileX + size - 1), 0);
+        const dz = Math.max(n.tileZ - p.z, p.z - (n.tileZ + size - 1), 0);
+        return Math.max(dx, dz) <= 1;
+    });
 }
 
 /**
  * The player has been in a fight since the send: a combat event (a hit taken or dealt, blocked or
- * not) published after it, or a combat target now. Its animations (a blocked hit's block, the
- * auto-retaliate swing), its messages and upkeep's eats are the fight's, not the click's, and an
- * eat or the retaliation itself clears the click's pending interaction (rs/391: TGV segment H).
+ * not) published after it, a combat target, a block or defend animation of the player's, or an
+ * attacker beside them; once seen, for the rest of the send's window. Its animations (a blocked
+ * hit's block, the auto-retaliate swing), its messages and upkeep's eats are the fight's, not the
+ * click's, and an eat or the retaliation itself clears the click's pending interaction (rs/391,
+ * rs/457: TGV segment H). The lite client publishes inCombat and the hit events of a fight's first
+ * ~10 ticks late, so the player's own block and the attacker's facing are what mark them.
  */
-function inFightSince(b: NonNullable<ReturnType<typeof snapshot>>, s: BotWorldState): boolean {
-    if (s.player?.combat?.inCombat) return true;
-    return (s.combatEvents ?? []).some(e => (e.observationId ?? e.tick) > b.fight);
+function inFightSince(b: ReturnType<typeof snapshot>, s: BotWorldState): boolean {
+    if (b.fought) return true;
+    b.fought = !!s.player?.combat?.inCombat
+        || (s.combatEvents ?? []).some(e => (e.observationId ?? e.tick) > b.fight)
+        || defendAnim(s.player?.animId ?? -1)
+        || attackerBeside(s);
+    return b.fought;
+}
+
+/** npcchat1-4's name component (interface.pack npcchatN:com_1, which chat.rs2 chatnpc_page sets to the speaker's name). */
+let npcChatNames: ReadonlySet<number> | null = null;
+
+/** The NPC speaking on the open page, or undefined when it is not an NPC's chat page (the player's, a message box, a choice). */
+function npcSpeaker(s: BotWorldState): string | undefined {
+    if (!npcChatNames) {
+        const ids = configIds('interface');
+        npcChatNames = new Set([1, 2, 3, 4].map(n => ids.get(`npcchat${n}:com_1`)).filter((id): id is number => id !== undefined));
+    }
+    const name = s.dialog.allComponents?.find(c => npcChatNames!.has(c.id))?.text;
+    return name === undefined ? undefined : name.trim().toLowerCase();
+}
+
+/** The open page is the click's answer: not a page the caller dismisses, nor another NPC's chat when the click talks to an NPC. */
+function pageAnswers(b: ReturnType<typeof snapshot>, s: BotWorldState): boolean {
+    if (!s.dialog.isOpen || matchInterrupt(b.interrupts, s)) return false;
+    const speaker = b.npc ? npcSpeaker(s) : undefined;
+    return speaker === undefined || speaker === b.npc;
 }
 
 /**
  * The engine's first answer to a click since `b` was taken: 'script' when its script has started
  * (a dialogue or modal, a new animation, a game message, an inventory change), 'moved' when the
- * only answer is a step, null when nothing yet. Other players' chat, and "I can't reach that!"
- * (the click failing), are not answers. In a fight since the send only a dialogue, a modal or a
- * step answers: the fight makes the animations, messages and inventory changes (inFightSince).
+ * only answer is a step, null when nothing yet. Other players' chat, "I can't reach that!" (the
+ * click failing) and a page the click did not open (pageAnswers) are not answers. In a fight since
+ * the send only a dialogue, a modal or a step answers: the fight makes the animations, messages and
+ * inventory changes (inFightSince).
  */
-function replyKind(b: NonNullable<ReturnType<typeof snapshot>>, s: BotWorldState): 'script' | 'moved' | null {
+function replyKind(b: ReturnType<typeof snapshot>, s: BotWorldState): 'script' | 'moved' | null {
     // A modal already open at the send (S00's character design) is not an answer.
-    if (s.dialog.isOpen || (s.modalOpen && !b.modal)) return 'script';
+    if (pageAnswers(b, s) || (s.modalOpen && !b.modal)) return 'script';
     if (inFightSince(b, s)) return moved(b, s);
     const anim = s.player?.animId ?? -1;
     if (anim >= 0 && anim !== b.anim) return 'script';
@@ -287,7 +363,7 @@ function replyKind(b: NonNullable<ReturnType<typeof snapshot>>, s: BotWorldState
     return moved(b, s);
 }
 
-function moved(b: NonNullable<ReturnType<typeof snapshot>>, s: BotWorldState): 'moved' | null {
+function moved(b: ReturnType<typeof snapshot>, s: BotWorldState): 'moved' | null {
     const p = pos(s);
     return p.x !== b.x || p.z !== b.z || p.level !== b.level ? 'moved' : null;
 }
@@ -301,7 +377,7 @@ function busyAt(s: BotWorldState): boolean {
     return s.gameMessages.some(m => m.tick >= s.tick - BUSY_TICKS && !PLAYER_CHAT_TYPES.includes(m.type) && !CANT_REACH.test(m.text));
 }
 
-function replied(b: NonNullable<ReturnType<typeof snapshot>>, s: BotWorldState): boolean {
+function replied(b: ReturnType<typeof snapshot>, s: BotWorldState): boolean {
     return replyKind(b, s) !== null;
 }
 
@@ -321,7 +397,7 @@ export async function act(sdk: StateSource & Partial<DismissSdk>, click: () => P
     let resendAfterInterrupt = false;
     const settled = await settle(sdk, opts.maxTicks ?? 60);
     if (!settled.ok) return { ok: false, ticks: settled.ticks, resends: 0, settleTicks: settled.ticks, reason: 'the region never finished loading' };
-    const guard = new ClickGuard(sdk, click, done);
+    const guard = new ClickGuard(sdk, click, done, { interrupts });
     const t1 = sdk.getState()?.tick ?? t0;
     let sent = t1;
     let still = t1;
@@ -512,7 +588,8 @@ export async function talkTo(sdk: ActSdk & ConverseSdk, npc: NamePattern | Nearb
     const counts = { refusedResends: 0, unansweredResends: 0 };
     let remaining = choices;
     for (let clicks = 1; ; clicks++) {
-        const guard = new ClickGuard(sdk, () => sdk.sendInteractNpc(n.index, op), s => s.dialog.isOpen);
+        // The answer is this NPC's conversation opening (replyKind), not any page: see ClickGuard's npc.
+        const guard = new ClickGuard(sdk, () => sdk.sendInteractNpc(n.index, op), undefined, { npc: n.name, interrupts: opts.interrupts });
         const conv = converse(sdk, remaining, opts);
         const stop = sdk.onStateUpdate(s => void guard.step(s));
         await guard.send();
