@@ -439,7 +439,7 @@ export function steps(opts?: Options) {
             letter: 'B', label: 'dwarf-pass', logoutSafe: true,
             // At stage 0 B needs A's kit: the resume walk takes the latest segment that can start, and
             // must not skip A's check by starting B on a fresh arrival without the kit.
-            preconditions: allOf(nearTunnel, s => (questStatus(s, quest) === 'started' ? true : kitHeld(s)), slots('B')),
+            preconditions: allOf(nearTunnel, (s, c) => (questStatus(s, quest) === 'started' ? true : kitHeld(s, c)), slots('B')),
             run: ctx => dwarfPass(ctx, opts),
             postconditions: hasItem(ITEM.pass, 'the fishing pass'),
             done: o => (atLeast(o, 'started') && holds(o, ITEM.pass)) || won(o),
