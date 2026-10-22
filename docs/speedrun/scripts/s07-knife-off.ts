@@ -169,47 +169,6 @@ console.log(`\naxe: adamant +${r(S07knife * 0.13)} / mithril +${r(S07knife * 0.2
     console.log(`S06: crafts at levels ${lv.join(', ')}: ${runes} air runes`);
 }
 
-// Re-sum the documents' own tables, as written: RUN-ORDER.md section 7 (each column, with 'same'
-// and the bracketed 'without rs/162, history' cells), its M / I / E split, and STEP-MANIFEST.md's expected column.
-{
-    const { readFileSync } = await import('node:fs');
-    const { join } = await import('node:path');
-    const dir = join(import.meta.dir, '..');
-    const num = (t: string) => Number(t.replace(/[*,]/g, ''));
-    const pair = (cell: string) => { const m = cell.match(/\*{0,2}([\d,]+) \/ ([\d,]+)/); if (!m) throw new Error(`no pair in ${cell}`); return [num(m[1]!), num(m[2]!)] as const; };
-    const ro = readFileSync(join(dir, 'RUN-ORDER.md'), 'utf8').split('\n');
-    const start = ro.findIndex(l => l.startsWith('| Line (tally id) |'));
-    const sums = [0, 0, 0, 0, 0, 0];
-    let total: string[] = [], totalPB: string[] = [];
-    for (const l of ro.slice(start + 2)) {
-        const c = l.split('|').slice(1, -1).map(x => x.trim());
-        if (c[0]!.startsWith('**Total**')) { total = c; continue; }
-        if (c[0]!.startsWith('Total, knife off without')) { totalPB = c; break; }
-        const on = pair(c[2]!);
-        const off = c[3] === 'same' ? on : pair(c[3]!);
-        const pbm = c[3]!.match(/\(([\d,]+) \/ ([\d,]+) without rs\/162, history\)/);
-        const pb = pbm ? [num(pbm[1]!), num(pbm[2]!)] : off;
-        [on[0], on[1], off[0], off[1], pb[0]!, pb[1]!].forEach((v, i) => (sums[i]! += v));
-    }
-    const want = [...pair(total[2]!), ...pair(total[3]!), ...pair(totalPB[3]!)];
-    console.log(`\nRUN-ORDER.md section 7, re-summed from the document: knife on ${sums[0]} / ${sums[1]}; knife off in force (with rs/162) ${sums[2]} / ${sums[3]}; without rs/162 (history) ${sums[4]} / ${sums[5]}`);
-    console.log(`  the document's total rows: ${want.join(', ')}`);
-    if (sums.some((v, i) => v !== want[i])) throw new Error('section 7 does not re-sum');
-    const mie = ro.filter(l => /^\| [MIE]: /.test(l)).map(l => num(l.split('|')[2]!.trim()));
-    const mieTotal = num(ro.find(l => l.startsWith('| **Total** | **') && !l.includes('/'))!.split('|')[2]!.trim());
-    console.log(`  M / I / E ${mie.join(' / ')} = ${mie.reduce((a, b) => a + b, 0)} (the document's total ${mieTotal})`);
-    if (mie.reduce((a, b) => a + b, 0) !== mieTotal || mieTotal !== sums[0]) throw new Error('M / I / E does not re-sum');
-
-    const man = readFileSync(join(dir, 'STEP-MANIFEST.md'), 'utf8').split('\n');
-    const h = man.findIndex(l => l.startsWith('| Rank | # | Entry |'));
-    let steps = 0, legs = 0;
-    for (const l of man.slice(h + 2)) {
-        if (!l.startsWith('|')) break;
-        const c = l.split('|').slice(1, -1).map(x => x.trim());
-        const v = c[5]!.match(/^([\d,]+)/);
-        if (!v) continue; // the run chain's row carries no step ticks
-        if (c[2] === 'Transition legs') legs = num(v[1]!); else steps += num(v[1]!);
-    }
-    console.log(`STEP-MANIFEST.md expected column: steps ${steps}, legs ${legs}`);
-    if (steps !== 31908 || legs !== 1382) throw new Error('the manifest column does not re-sum to 31,908 + 1,382');
-}
+// The documents' own tables are re-summed by docs/speedrun/scripts/run-order-sums.ts, which
+// replaced this script's fold-in 9 block when fold-in 11 (rs/218) moved the quests' way-in travel
+// into the legs and the step table took half ticks.
