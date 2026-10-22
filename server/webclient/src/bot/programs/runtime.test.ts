@@ -192,7 +192,7 @@ describe('ProgramRuntime', () => {
         let now = 1000;
         const seen: Array<readonly { tick: number; ms: number }[]> = [];
         const rt = new ProgramRuntime({ dispatch: () => ({ success: true, message: '' }), now: () => now, wallNow: () => 1.8e12 + now });
-        rt.register('a', () => ({ onTick: c => { seen.push(c.frames); c.progress(); } }));
+        rt.register('a', declared(() => ({ onTick: c => { seen.push(c.frames); c.progress(); } })));
         rt.start('a');
         rt.onTick(makeState({ tick: 7 }), 1, [995]);
         now = 1700;
@@ -215,7 +215,7 @@ describe('ProgramRuntime', () => {
     test('input reaches the running program; a refusal or no program fails without ending the run', () => {
         const got: unknown[] = [];
         const h = new Harness('a', () => ({ onTick: c => c.progress(), onInput: d => { if (d === 'bad') throw new Error('bad input'); got.push(d); return { ok: true }; } }));
-        h.runtime.register('mute', () => ({ onTick: c => c.progress() }));
+        h.runtime.register('mute', declared(() => ({ onTick: c => c.progress() })));
         expect(h.runtime.command({ op: 'input', data: 1 }).success).toBe(false);
         h.start('a');
         expect(h.runtime.command({ op: 'input', data: { q: [1] } })).toMatchObject({ success: true, data: { ok: true } });
