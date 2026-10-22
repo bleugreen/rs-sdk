@@ -12,6 +12,7 @@
 //
 //   | row | in | out | equip | needAtStart | source |
 //   in      NAME xCOUNT [K] (note); ...      K: s stackable, u unstackable, n noted
+//           NAME to N [K] (note): a top-up to N counting what is held, pack and worn (the H10 form)
 //   out     NAME xCOUNT (REASON ...); NAME all (REASON ...)
 //           REASON: drop, trade, swap, consume, hand-in, deposit; `swap` leaves in the same
 //           trade as the row's `in`, so it frees its slots before the need check
@@ -24,6 +25,8 @@
 // Stackable and noted items take one slot per NAME whatever the count; unstackables one per item;
 // worn items none. A COUNT of `?` is carried as unknown: an unstackable at `x?` takes no slots and
 // leaves every row while it is held 'unknown' rather than 'pass', since its slots are not known.
+// A top-up brings max(0, N - held) in, as runner/handoff.ts's trade asks: an unstackable takes that
+// many slots, a stack or noted item one slot when the pack holds none of it and some comes, else none.
 //
 // Exit: 0 when no row fails (unknown rows are listed; --strict fails them too), 1 when a row
 // fails, 2 when the table is missing or does not parse.
@@ -40,8 +43,11 @@ export type Evidence = 'm' | 'r' | 'i';
 
 export interface InEntry {
     name: string;
+    /** COUNT, or a top-up's N; null for `?`. */
     count: number | null;
     kind: Kind;
+    /** `NAME to N [K]`: bring the held count (pack and worn) up to `count`, not add `count`. */
+    topUp?: boolean;
 }
 
 export interface OutEntry {
@@ -128,9 +134,10 @@ const count = (text: string): number | null => (text === '?' ? null : Number(tex
 export function parseIn(cell: string): InEntry[] {
     if (empty(cell)) return [];
     return splitTop(cell, '; ').map(e => {
-        const m = e.match(/^(.+?) x(\d+|\?) \[([sun])\](?:\s*\(.*\))?$/);
-        if (!m) throw new Error(`in entry "${e}": expected NAME xCOUNT [s|u|n]`);
-        return { name: m[1]!, count: count(m[2]!), kind: m[3] as Kind };
+        const m = e.match(/^(.+?) (?:x(\d+|\?)|to (\d+)) \[([sun])\](?:\s*\(.*\))?$/);
+        if (!m) throw new Error(`in entry "${e}": expected NAME xCOUNT [s|u|n] or NAME to N [s|u|n]`);
+        if (m[3] !== undefined) return { name: m[1]!, count: Number(m[3]), kind: m[4] as Kind, topUp: true };
+        return { name: m[1]!, count: count(m[2]!), kind: m[4] as Kind };
     });
 }
 
@@ -253,9 +260,28 @@ class Pack {
         return [...this.inv].filter(([, h]) => h.kind === 'u' && h.count === null).map(([n]) => n);
     }
 
+    /** The count of `name` held in the pack and worn; null when either is unknown. */
+    held(name: string): number | null {
+        let n: number | null = 0;
+        for (const map of [this.inv, this.worn]) {
+            const h = map.get(name);
+            if (h) n = n === null || h.count === null ? null : n + h.count;
+        }
+        return n;
+    }
+
+    /** How many of `e` arrive: its COUNT, or for a top-up what is lacking (null when unknown). */
+    arriving(e: InEntry): number | null {
+        if (!e.topUp) return e.count;
+        const h = this.held(e.name);
+        return h === null ? null : Math.max(0, e.count! - h);
+    }
+
     /** Slots `e` would add to the inventory as it stands. */
     adds(e: InEntry): number {
-        if (e.kind === 'u') return e.count ?? 0;
+        const n = this.arriving(e);
+        if (e.kind === 'u') return n ?? 0;
+        if (e.topUp && n === 0) return 0;
         return this.inv.has(e.name) ? 0 : 1;
     }
 
@@ -318,6 +344,7 @@ export function walk(rows: readonly LedgerRow[]): LedgerEntry[] {
             }
         };
         const unknownCounts = [...row.in.filter(e => e.count === null).map(e => `in ${e.name} x?`), ...row.out.filter(e => e.count === null).map(e => `out ${e.name} x?`)];
+        for (const e of row.in.filter(e => e.topUp && pack.held(e.name) === null)) unknownCounts.push(`in ${e.name} to ${e.count}: held at an unknown count`);
 
         // (1) swap outs, then (2) the need check.
         for (const e of row.out.filter(e => e.reason === 'swap')) attempt(() => pack.out(e));
@@ -341,7 +368,11 @@ export function walk(rows: readonly LedgerRow[]): LedgerEntry[] {
             notes.push(`the trade adds ${adds} slots, ${freeForIn} free`);
         }
         if (isHandOff(row.row) && row.need !== null && adds > row.need) notes.push(`needAtStart ${row.need} understates the ${adds} slots its in adds`);
-        for (const e of row.in) attempt(() => pack.add(pack.inv, e.name, e.kind, e.count));
+        for (const e of row.in) {
+            const n = pack.arriving(e);
+            if (e.topUp && n === 0) continue;
+            attempt(() => pack.add(pack.inv, e.name, e.kind, n));
+        }
         // (5) equip, (6) the 28.
         for (const e of row.equip) attempt(() => pack.equip(e));
         const used = pack.used();
