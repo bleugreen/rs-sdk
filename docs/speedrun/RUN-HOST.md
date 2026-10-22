@@ -223,8 +223,8 @@ has not yet sent from the twin's run-capable install (its window opened at 00:26
 
 | | Run host | Twin | Source |
 |---|---|---|---|
-| Name | **rs-ashburn-run**; instance id **pending (rs/host)** | **the twin** (rs/147's; launched 2026-10-21 12:57 PDT by rs/149) | r: the host thread, 16:12 PDT; HOST.md |
-| Machine | AWS us-east-1c, c7i.2xlarge: 8 vCPU (Xeon Platinum 8488C), 16 GB, 60 GB gp3, **no GPU**, Ubuntu 24.04 | the same class on the run host's subnet: 8 vCPU (Xeon Platinum 8488C), 15 GB as read on the machine, 60 GB gp3, no GPU; the run host's AMI, Ubuntu 24.04.5 | run host r: main on cairn://p/rs/103, 08:45 and 08:53 PDT, CPU model m (`/proc/cpuinfo`); twin m, HOST.md |
+| Name | **rs-ashburn-run**, also its hostname ("Hostnames", below); instance id **pending (rs/host)** | **`rs-ashburn-rehearsal`**, the twin (rs/147's; launched 2026-10-21 12:57 PDT by rs/149) | r: the host thread, 16:12 PDT; HOST.md |
+| Machine | AWS us-east-1c, c7i.2xlarge: 8 vCPU (Xeon Platinum 8488C), 16 GB, 60 GB gp3, **no GPU**, Ubuntu 24.04 | AWS us-east-1c, c7i.2xlarge, same AMI as rs-ashburn-run, on the run host's subnet: 8 vCPU (Xeon Platinum 8488C), 15 GB as read on the machine, 60 GB gp3, no GPU; the run host's AMI, Ubuntu 24.04.5 | run host r: main on cairn://p/rs/103, 08:45 and 08:53 PDT, CPU model m (`/proc/cpuinfo`); twin m, HOST.md |
 | Address | addresses: cairn://p/rs/host. The run host is **rs-ashburn-run**; its public address is an Elastic IP, changed at 23:11Z on 2026-10-21, and the earlier address is released. Commands use `$RS_RUN_HOST` | an Elastic IP, so it survives a stop. Commands use `$RS_TWIN_HOST` | r: the host thread, 16:12 PDT; HOST.md |
 | The engine's processing group (the address's last octet & 7; step 4) | **1**, as of 2026-10-21 | **0**, as of 2026-10-21 | m: the host thread and main, 16:25-16:33 PDT (the demo sees each machine's public address, flyio-debug `ra`). Groups change when an address changes; the current one is in cairn://p/rs/host |
 | Ingress | SSH and RDP admit only the operator's address | the same: a copy of the run host's security group | r |
@@ -235,7 +235,9 @@ has not yet sent from the twin's run-capable install (its window opened at 00:26
 | Display | `:10` when it is the first session since boot; read it in step 2 | `:10`, 1920x1080, 24 planes, made by the operator's first connect (m, 20:17:57 UTC); a stop of the instance ends it | r, m |
 | One desktop per user | a second session (another resolution, say) starts and dies at once, because `xfce4-session` cannot run twice for one user; the old session holds the only desktop. **Changing resolution means ending the session first** | the same | r: main, 09:26 PDT |
 | Screen | screensaver and locker removed, `xset` no-blank at login, logind `IdleAction=ignore` | none installed, `xset` no-blank autostart, `IdleAction=ignore` | r |
-| Chrome | 156.0.8078.47 at `/usr/bin/google-chrome`, software rendered (its renderers run with `--disable-gpu-compositing`) | 156.0.8078.47, held at that version (`apt-mark hold`) | m |
+| Chrome | 156.0.8078.47 at `/usr/bin/google-chrome`, software rendered (its renderers run with `--disable-gpu-compositing`) | `google-chrome` 156.0.8078.47, held at that version (`apt-mark hold`) | m |
+| Run profile, page origin | `/home/ubuntu/rs-run/chrome-profile`, `http://127.0.0.1:8899` | run profile `/home/ubuntu/rs-run/chrome-profile`, page origin `http://127.0.0.1:8899`: the run tab's warmed profile (step 7) | r: the host thread, 10:4x PDT 2026-10-22 |
+| Live view (step 5) | `$RS_RUN_TAILNET:8090`, on the tailnet | 127.0.0.1:8090 (no tailnet; watch with `ssh -L 8090:127.0.0.1:8090 ...` until Tailscale is installed on it) | r: the host thread, 10:4x PDT 2026-10-22 |
 | Tools | ffmpeg 6.1.1; Bun 1.4.3 at `~/.bun/bin/bun`, **not on PATH** for non-login ssh commands; tmux; sysstat (`pidstat`) | the same, with tmux 3.4, sysstat 12.6.1 and Xvfb (rehearsals use it, never the run) | m |
 | Checkout | `/home/ubuntu/rs-sdk`, a long-lived clone of our fork for the page server, the gateway and helper runners; only step 0 moves it | `/home/ubuntu/rs-sdk`, kept on main day to day because rehearsal attempts add worktrees from it; on run night step 0 moves it to RUN_COMMIT under the run's claim with no attempt worktree in use, and if the twin is not chosen it goes back to main after the run's teardown | r: main; rs/147, 16:18-16:34 PDT |
 | `~/run-commit` and the gate clone `~/gate/rs-sdk` | written by step 0 only, on both machines together; the clone follows it at its next firing | the same: rs/249's install wrote the run host's RUN_COMMIT, and from then on only step 0 | r: rs/83 and the host thread, 16:13-16:36 PDT; m, rs/249, 02:29-02:32Z 2026-10-22 |
@@ -254,13 +256,32 @@ first pairs read clean, tick for tick with the twin ("Measured: the route after 
 at the end): the hold followed the address. A gate read is therefore a dated read of a machine's
 **route at the time**, not a property of the machine. The host thread will change rs-ashburn-run's
 address again before run day, timed so the gate series can re-qualify the new route (rs/158,
-2026-10-21); only reads taken after the last address change count (step 5a). A held route can strike
-either machine, which is why both are kept run-capable and both are gated (tenet 17).
+2026-10-21), and did so at 17:39Z on 2026-10-22. Only reads taken after the last address change
+count (step 5a), so rs/83's 4 of 17 for the run host are readings of its old route: the run host is
+the **fallback pending 4+ clean pairs on the new address (rotated 17:39Z)** (main, relayed by rs/158
+at 10:5x PDT). A held route can strike either machine, which is why both are kept run-capable and
+both are gated (tenet 17).
+
+**The expected start machine** (the host thread, 10:4x PDT 2026-10-22, as written). Under tenet 17
+and main's 2026-10-22 10:4x PDT ruling, the **twin is the expected start machine** and
+rs-ashburn-run is the fallback. The reason is rs/83's same-minute pair series on the final
+addresses: twin 17 of 17 pass, run host 4 of 17, with held ticks on the run host's path. The run
+host's address was rotated again at 17:39Z 2026-10-22 and is re-judged on 4+ clean same-minute
+pairs. `run-gate gate` gates both machines and picks the twin when both pass (rs/440; until rs/440
+merges, the caveat in step 5a stands). Per-skill rehearsals and lab claims use whichever machine is
+free through rs-claim, and they end on the twin at the floor freeze on run eve.
+
+**Hostnames** (the host thread, 10:4x PDT 2026-10-22, as written). The run host's hostname is
+`rs-ashburn-run` and the twin's `rs-ashburn-rehearsal`, both kept across reboots
+(`/etc/cloud/cloud.cfg.d/99-rs-hostname.cfg`, preserve_hostname: true). Gate-history JSON records
+the machine name, never an EC2 `ip-172-31-*` name.
 
 **Reaching them.** Every command below is pasted on the Mac (zsh or bash) and runs on a machine over
 an exact ssh line (or `speedrun/helpers/ashburn.sh` once rs/41 merges it). **Every command on this
-page is written for the run host.** From Cairn, run it in a batch on executor `local`, `bgsrv-mac`
-or `bgsrv-ub`.
+page is written for the run host**, except run-gate.ts's three (steps 3-7), which run on the Mac
+itself and reach both machines with their own keys. From Cairn, run a run-host command in a batch on
+executor `local`, `bgsrv-mac` or `bgsrv-ub`; run-gate.ts needs the twin's key too, so `local` or
+bgsrv-ub.
 
 ```sh
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'uptime'
@@ -275,7 +296,7 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -
 **The twin's form of any command** changes four strings and nothing else: the key, the known_hosts
 file, the host variable, and the live view's bind address (step 5). Paste the run host's command
 through this filter on the Mac and run what it prints; never run a run-host command unchanged with
-the twin in mind, or the other way round:
+the twin in mind, or the other way round (run-gate.ts needs no filter):
 
 ```sh
 pbpaste | sed -e 's/id_ed25519_ashburn/id_ed25519_rehearsal/g' -e 's/known_hosts_ashburn/known_hosts_rehearsal/g' -e 's/RS_RUN_HOST/RS_TWIN_HOST/g' -e 's/"[$]RS_RUN_TAILNET"/127.0.0.1/g'
@@ -426,7 +447,9 @@ writes it to **`~/run-commit`**: one line, the full 40-hex commit. Only step 0 w
 writes it **on both machines together**, one straight after the other, and on each **before** it
 moves `~/rs-sdk`. rs/83's gate timer reads the same file on each machine and checks that commit out
 in its own clone, `~/gate/rs-sdk`, at its next firing, so a file moved on one machine only splits
-the two gate series by commit (rs/249, 2026-10-22). Replace `C` with the full commit:
+the two gate series by commit (rs/249, 2026-10-22). On each machine it then checks `~/rs-sdk` out
+to that same full hash and verifies that `git rev-parse HEAD` equals `~/run-commit` (the deploy
+command below; rs/410, 15:11Z 2026-10-22). Replace `C` with the full commit:
 
 ```sh
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'C=0000000000000000000000000000000000000000; case "$C" in *[!0-9a-f]*) echo "not a commit: $C"; exit 1;; esac; [ ${#C} -eq 40 ] || { echo "need the full 40-hex commit"; exit 1; }; printf "%s\n" "$C" >$HOME/run-commit.tmp && mv $HOME/run-commit.tmp $HOME/run-commit && cat $HOME/run-commit'
@@ -449,18 +472,55 @@ the run commit, no scaffolding` before it installs or builds anything. The fleet
 rs/41's: `fleetctl update` with the full hash, run on its own (fleetctl itself runs under
 `set -euo pipefail`), then the same two checks in the fleet's checkout before any restart (step 4).
 
-Then put the clone on it, check it and build. Every install is `--frozen-lockfile`, so a checkout
-whose lockfile disagrees with its `package.json` stops here:
+Then put the clone on it, check it, install and build. Every install is `--frozen-lockfile`, in the
+repository root, `server/webclient`, `server/engine` and `server/gateway`, all before the build
+(rs/410's step 0, 2026-10-22), so a checkout whose lockfile disagrees with its `package.json` stops
+here:
 
 ```sh
-ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'export PATH=$HOME/.bun/bin:$PATH; C=$(cat $HOME/run-commit); cd ~/rs-sdk && git fetch -q origin && git checkout -q --detach "$C" && [ "$(git rev-parse HEAD)" = "$C" ] && [ -z "$(git status --porcelain --untracked-files=no)" ] && [ -z "$(git ls-files "*.jjconflict*")" ] && ! git grep -q -E "^(<<<<<<<|>>>>>>>)( |\$)" HEAD && echo "HEAD is the run commit, no scaffolding" && bun install --frozen-lockfile && (cd server/webclient && bun install --frozen-lockfile && bun run build) && (cd server/gateway && bun install --frozen-lockfile) && mkdir -p ~/recordings ~/rs-run/chrome-profile && git log -1 --oneline && ls server/webclient/out/bot/client.js'
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'export PATH=$HOME/.bun/bin:$PATH; C=$(cat $HOME/run-commit); cd ~/rs-sdk && git fetch -q origin && git checkout -q --detach "$C" && [ "$(git rev-parse HEAD)" = "$C" ] && [ -z "$(git status --porcelain --untracked-files=no)" ] && [ -z "$(git ls-files "*.jjconflict*")" ] && ! git grep -q -E "^(<<<<<<<|>>>>>>>)( |\$)" HEAD && echo "HEAD is the run commit, no scaffolding" && bun install --frozen-lockfile && (cd server/webclient && bun install --frozen-lockfile) && (cd server/engine && bun install --frozen-lockfile) && (cd server/gateway && bun install --frozen-lockfile) && (cd server/webclient && bun run build) && mkdir -p ~/recordings ~/rs-run/chrome-profile && git log -1 --oneline && ls server/webclient/out/bot/client.js'
 ```
 
-`RUN_COMMIT` must be at or after the run-commit floor, **`3daddf0c`** (#325; "Credentials" names it,
-and STEP-MANIFEST.md entry 0 lists what it contains, rs/138's Chrome login and rs/164's tab-logout
-confirmation among them). One check:
-`git -C ~/rs-sdk merge-base --is-ancestor 3daddf0c "$RUN_COMMIT"`. A failure means the commit
-predates at least one of the changes in that list.
+**What identifies a build** (main's ruling, relayed by rs/158 at 10:05 PDT 2026-10-22). A figure,
+and the run, is identified by the commit it was built from, which fixes the webclient tree, plus the
+host. Bun's minifier does not build byte for byte reproducibly: the same commit built in a fresh
+checkout gives a different bundle md5, and the two machines' md5s differ by its naming (m, rs/410's
+step 0 on the run host at 15:11Z and the twin at 15:15Z, 2026-10-22). So an md5 proves only that
+one machine serves what it built. Step 3's served = built check runs within each machine and is
+never compared across machines or builders, and tenet 17's "the same RUN_COMMIT on both machines" is
+checked by commit hash: `git rev-parse HEAD` against `~/run-commit` on each, in the command above.
+The page server serves `out/bot` per request with `no-store` (`server/webclient/proxy.ts`), so a
+rebuilt client bundle needs no restart of it (rs/410).
+
+**The floor check, a hard stop** (main's ruling, relayed by rs/158 at 09:24 PDT 2026-10-22;
+STEP-MANIFEST.md entry 0). The floor is read from entry 0's line on origin/main, "`RUN_COMMIT` at
+or after the run-commit floor, `<hash>`", its single source ("Credentials"). Set `N` to the floor
+main last named (cairn://p/rs/main/messages, or the host thread's messages). The command stops unless
+that line gives exactly one hash, the line and `N` are the same commit, and `RUN_COMMIT` is at or
+after it. It also checks that `RUN_COMMIT` contains run-gate.ts (#216, `b1a2765d`), the gate tooling
+steps 3-7 run from this checkout, which lies outside the floor. **Any mismatch is a stop, not a
+note**: tell main. Expect `floor ok`:
+
+```sh
+ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'N=FLOOR_MAIN_NAMED; cd ~/rs-sdk && C=$(cat $HOME/run-commit) || exit 1; git fetch -q origin main && git show origin/main:docs/speedrun/STEP-MANIFEST.md >$HOME/rs-run/manifest-main.md || { echo "STOP: cannot read STEP-MANIFEST.md on origin/main"; exit 1; }; L=$(sed -n -E "s/.*RUN_COMMIT. at or after the run-commit floor, .([0-9a-f]{7,40}).*/\1/p" $HOME/rs-run/manifest-main.md); case "$L" in ""|*[!0-9a-f]*) echo "STOP: entry 0 does not give exactly one floor"; exit 1;; esac; F=$(git rev-parse -q --verify "$L^{commit}") || { echo "STOP: the floor $L is not in this clone"; exit 1; }; [ "$F" = "$(git rev-parse -q --verify "$N^{commit}")" ] || { echo "STOP: entry 0 names $L, main last named $N"; exit 1; }; git merge-base --is-ancestor "$F" "$C" || { echo "STOP: RUN_COMMIT is before the floor $L"; exit 1; }; git merge-base --is-ancestor b1a2765d "$C" || { echo "STOP: RUN_COMMIT lacks run-gate.ts (#216)"; exit 1; }; echo "floor ok: $L, RUN_COMMIT at or after it, run-gate.ts in it"'
+```
+
+**The run-eve freeze** (main's ruling; STEP-MANIFEST.md entry 0). The last floor is named at least
+2 h before the gate series starts; after that no merge moves the floor without the line's update in
+the same window.
+
+**Run eve** (the host thread, 10:4x PDT 2026-10-22, as written). At the floor freeze (at least 2 h
+before the start), host switches both machines' timers to `install.sh --every 15` and takes the twin
+with `rs-claim preempt`. From then until `run-gate gate`, no lab engine, rehearsal or install runs on
+the twin. The run profile on the twin is the persistent `~/rs-run/chrome-profile`, warmed through
+`http://127.0.0.1:8899` (rs/393's dress rehearsal, then the gate tab's own login, whose `scene` line
+reports the warm-up in ticks once rs/440 merges). Never start from a fresh profile. A profile copied
+between the two Ashburn machines keeps its cache (same origin, same Chrome major 156) after deleting
+`Singleton*` and `Default/Sessions` in the copy.
+
+**The run tab's profile is warm before it opens** (step 7, main's ruling). This step's build is the
+final served-webclient rebuild unless another follows; step 7's verification login (the gate tab's,
+step 6) runs after the last one, so a later rebuild means running it again.
 
 **The inventory check, before the start is called.** On any checkout at `RUN_COMMIT` (it reads only
 the repository), run
@@ -490,7 +550,9 @@ written here only as `$SCORED_ENV`. It must be `~/rs-sdk/bots/<account>/bot.env`
 named after `BOT_USERNAME` (`bots/*/` is gitignored, so it stays outside git): the page server and
 the run's session.ts both read accounts from `~/rs-sdk/bots`. **It is not put on the host until
 `~/rs-sdk` is at a `RUN_COMMIT` that includes #120.** Never use a fleet or helper account for the gate.
-SCORED's env file goes only on the machine step 5a chooses, after the choice.
+SCORED's env file goes only on the machine step 5a chooses, after the choice. run-gate.ts enforces
+the shape for both: it refuses an env file that is not `bots/<BOT_USERNAME>/bot.env` in the
+checkout, is not mode 600, or has no `PASSWORD`.
 
 **Twin:** step 0 runs there only under the run's claim and with no rehearsal attempt worktree
 in use, since attempts add their worktrees from `~/rs-sdk`; if the twin is not chosen, `~/rs-sdk`
@@ -513,13 +575,15 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o 
 Pass: the request id ends in `-iad`, and p50 is at most 5 ms. On 2026-10-21 at 16:26 UTC, on the run
 host at its old address: `-iad`, p50 1.9 ms, p90 2.6, max 2.7 over 20 (m). The twin's gate reads
 showed TCP p50 1.9-2.3 ms (m, rs/149 and rs/170, 20:22-23:30Z). rs/96's gate CLI checks the same preconditions itself
-before it probes (step 6), so this step is the early warning, not the record.
+before it probes, and `gate` (step 6) stops a machine as not probed when they fail, so this step is
+the early warning, not the record.
 
 ## 2. The operator's remote desktop
 
 RDP is for the pre-run steps only. Connecting creates the desktop session that Chrome and the
-recording live in. The operator stays connected to watch steps 2 and 3 come up, then **disconnects
-before the recording starts** (step 5) and watches the live view from then on. Neither the recording
+recording live in. The operator stays connected to check the session by eye, then **disconnects
+before step 3's `up`**, which starts the recording and refuses while a remote desktop connection is
+up, and watches the live view from then on. Neither the recording
 nor the run goes through RDP. Client settings (labels as in Microsoft's Windows App for macOS; check
 them against the client in use):
 
@@ -536,7 +600,7 @@ them against the client in use):
 
 **Twin:** the operator connects to `$RS_TWIN_HOST:3389`, the public address, with the same client
 settings; the twin is not on the tailnet. On run night the operator holds two sessions, one per
-machine, and disconnects both before step 5 starts the recordings.
+machine, and disconnects both before step 3's `up` starts the stacks and the recordings.
 
 After the operator connects, read which display the session is on and its geometry; it must be
 1920x1080 at 24 planes. If it is not, the session predates the client settings: main ends it from
@@ -546,7 +610,9 @@ the host and the operator connects again (one desktop per user, above).
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_ashburn -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_ashburn -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@"$RS_RUN_HOST" 'sudo grep "Session started successfully" /var/log/xrdp-sesman.log | tail -1; ls /tmp/.X11-unix; DISPLAY=:10 xdpyinfo | grep -E "dimensions|depth of root"; ss -tn state established "( sport = :3389 )" | tail -n +2 | wc -l | sed "s/^/RDP connections: /"'
 ```
 
-The commands below use `:10`. If the log names another display, replace `:10` everywhere.
+The commands below use `:10`. If the log names another display, replace `:10` everywhere and pass
+the same to run-gate.ts as `--display=`. `up`, `gate` and `handoff` re-check the geometry and RDP at
+0 connections themselves.
 
 **Connected or not.** xorgxrdp's X server keeps running and drawing when the client disconnects,
 and Chrome's window stays mapped, so Chrome sees no change: the page's loop rate was the same
