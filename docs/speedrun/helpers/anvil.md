@@ -58,8 +58,11 @@ says what it takes to carry exactly the plan: one deposit-all per item id outsid
 (products, a note stack of a planned name, or a planned item over count) and the shortfall to
 withdraw. Restock `bank` re-clicks the booth nearest the anvil every tick until the bank
 opens, then in that tick deposits and withdraws (the deposits go first in the same tick, and
-the server handles them in order). It reports the bank (`ctx.reportBank`) and walks back onto
-the tile. The standing request is the bone giver's `decideRequest`: a refusal ("is busy at the
+the server handles them in order). The booth wait (`openBooth`) is bounded: it gives up after
+40 clicks or 50 ticks with a reason, and an empty bank counts as open once it has stayed open
+into the next tick, so `labStock` can fill it in the lab and elsewhere staging fails with "the
+bank is empty, so short of ..." instead of waiting for items that never come. It reports the
+bank (`ctx.reportBank`) and walks back onto the tile. The standing request is the bone giver's `decideRequest`: a refusal ("is busy at the
 moment") is answered on the frame that carries it.
 
 ## Options (`ROLE_OPTIONS`)

@@ -25,7 +25,8 @@
 // Role options (ROLE_OPTIONS):
 //   restock      { kind: 'bank' | 'cheat', labStock?: boolean } (default bank). bank: the
 //                Varrock west booth, re-clicked every tick until it opens, products
-//                deposited and the exact bars withdrawn in the tick it opens. cheat:
+//                deposited and the exact bars withdrawn in the tick it opens (an empty
+//                bank opens too, and then fails short unless labStock fills it). cheat:
 //                ~clearinv and ::give on the tile (local lab only). labStock (lab only):
 //                top the bank up with staff-made notes when it runs short.
 //   tile         {x,z} where to stand (default 3187,3427)
@@ -33,8 +34,10 @@
 //   noReplyTicks, resendTicks   the standing request (bone-giver.ts decideRequest): 3, 100
 //   cueDir       default RC_CUE_DIR, else run-machine/rc-cue in the checkout
 import { join } from 'node:path';
+import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem, NearbyLoc } from '../../sdk/types';
 import { withdrawMany } from '../lib/bank';
+import { tickMs, type StateSource } from '../lib/wait';
 import { ANY_OFFER, give, receiveFrom, tradeOf, type GiveSpec, type WantSpec } from '../lib/trade';
 import { assertUntracked, canonName, CueWatcher, cueDir, nameHash, readJson, writeJsonAtomicSync, type Cue } from './altar-cue';
 import { chebyshev, cheat, isLocalServer, labTele, pos, standOn, until, type Tile } from './altar-room';
@@ -182,6 +185,68 @@ export function boothOf(s: BotWorldState): { loc: NearbyLoc; op: number } | null
     if (!loc) return null;
     const op = (loc.optionsWithIndex.find(o => /^use-quickly$/i.test(o.text)) ?? loc.optionsWithIndex.find(o => /^(bank|use)$/i.test(o.text)))?.opIndex ?? 1;
     return { loc, op };
+}
+
+export type BoothSdk = StateSource & Pick<BotSDK, 'sendInteractLoc'>;
+
+export interface BoothOpen {
+    ok: boolean;
+    clicks: number;
+    /** Ticks from the first frame seen to the frame it ended on. */
+    ticks: number;
+    /** The bank opened with nothing in it. */
+    empty: boolean;
+    reason?: 'clicks' | 'ticks' | 'stalled' | 'aborted';
+}
+
+/**
+ * Re-click the booth nearest the anvil every tick until the bank opens. Resolves on the
+ * frame the bank shows its items, or, for an empty bank, once it has stayed open into a
+ * later tick with none: what to do about an empty bank is the caller's call. Bounded by
+ * clicks, by ticks, and by wall clock for a client that stops publishing.
+ */
+export function openBooth(sdk: BoothSdk, opts: { maxClicks?: number; maxTicks?: number; signal?: AbortSignal } = {}): Promise<BoothOpen> {
+    const maxClicks = opts.maxClicks ?? 40;
+    const maxTicks = opts.maxTicks ?? maxClicks + 10;
+    return new Promise(resolve => {
+        let firstTick: number | null = null;
+        let clickTick = -1;
+        let clicks = 0;
+        let openTick: number | null = null;
+        let done = false;
+        const finish = (ok: boolean, st: BotWorldState | null, reason?: BoothOpen['reason']) => {
+            if (done) return;
+            done = true;
+            unsub();
+            clearInterval(guard);
+            clearTimeout(wall);
+            const ticks = st && firstTick !== null ? st.tick - firstTick : 0;
+            resolve({ ok, clicks, ticks, empty: ok && !!st && st.bank.items.length === 0, ...(reason ? { reason } : {}) });
+        };
+        const onFrame = (st: BotWorldState) => {
+            if (done) return;
+            firstTick ??= st.tick;
+            if (st.bank.isOpen) {
+                // The item list can arrive a frame after the modal, within the same tick.
+                if (st.bank.items.length || (openTick !== null && st.tick > openTick)) return finish(true, st);
+                openTick ??= st.tick;
+                return;
+            }
+            openTick = null;
+            if (st.tick - firstTick >= maxTicks) return finish(false, st, 'ticks');
+            if (st.tick === clickTick) return;
+            if (clicks >= maxClicks) return finish(false, st, 'clicks');
+            clickTick = st.tick;
+            clicks++;
+            const b = boothOf(st);
+            if (b) void sdk.sendInteractLoc(b.loc.x, b.loc.z, b.loc.id, b.op);
+        };
+        const unsub = sdk.onStateUpdate(onFrame);
+        const guard = setInterval(() => opts.signal?.aborted && finish(false, sdk.getState(), 'aborted'), 500);
+        const wall = setTimeout(() => finish(false, sdk.getState(), 'stalled'), (maxTicks + 10) * tickMs());
+        const cur = sdk.getState();
+        if (cur) onFrame(cur);
+    });
 }
 
 // ------------------------------------------------------------------ options
@@ -463,11 +528,13 @@ export class AnvilHelper {
      */
     private async bankStage(plan: AnvilPlan): Promise<void> {
         const { ctx, o } = this;
-        if (!(await this.openBooth())) throw new Error('the bank did not open');
+        const open = await openBooth(ctx.sdk, { signal: ctx.signal });
+        if (!open.ok) throw new Error(`the bank did not open (${open.reason}: ${open.clicks} clicks over ${open.ticks} ticks)`);
+        if (open.empty) ctx.log('bank: opened empty', { labStock: o.restock.labStock });
         if (o.restock.labStock) await this.labStock(plan);
         const st = staging(this.s!.inventory, plan.give);
         const short = st.withdraw.filter(w => (this.s!.bank.items.filter(i => itemRe(w.name).test(i.name)).reduce((a, i) => a + i.count, 0)) < w.n);
-        if (short.length) throw new Error(`the bank is short of ${short.map(w => `${w.n} ${w.name}`).join(', ')}`);
+        if (short.length) throw new Error(`the bank ${this.s!.bank.items.length ? 'is' : 'is empty, so'} short of ${short.map(w => `${w.n} ${w.name}`).join(', ')}`);
         // Deposits first in the same tick: the server handles our packets in order, so the withdrawals find the room.
         for (const d of st.deposit) void ctx.sdk.sendBankDeposit(d.slot, -1);
         const w = await withdrawMany(ctx.sdk, st.withdraw.map(x => ({ item: itemRe(x.name), n: x.n })));
@@ -476,32 +543,6 @@ export class AnvilHelper {
         if (!exact) {
             throw new Error(`bank left the inventory off the plan (${w.reason ?? 'no reason'}): ${JSON.stringify(staging(this.s!.inventory, plan.give))}`);
         }
-    }
-
-    private openBooth(): Promise<boolean> {
-        const { ctx } = this;
-        return new Promise(resolve => {
-            let lastTick = -1;
-            let clicks = 0;
-            const finish = (ok: boolean) => {
-                unsub();
-                clearInterval(guard);
-                resolve(ok);
-            };
-            const onFrame = (st: BotWorldState) => {
-                // The bank's item list can arrive a frame after the modal.
-                if (st.bank.isOpen && st.bank.items.length) return finish(true);
-                if (st.tick === lastTick || st.bank.isOpen) return;
-                lastTick = st.tick;
-                if (++clicks > 40) return finish(false);
-                const b = boothOf(st);
-                if (b) void ctx.sdk.sendInteractLoc(b.loc.x, b.loc.z, b.loc.id, b.op);
-            };
-            const unsub = ctx.sdk.onStateUpdate(onFrame);
-            const guard = setInterval(() => ctx.signal.aborted && finish(false), 500);
-            const cur = this.s;
-            if (cur) onFrame(cur);
-        });
     }
 
     /** Lab only: top the bank up with staff-made notes (deposited, so the bank holds them unnoted). */
