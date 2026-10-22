@@ -461,7 +461,7 @@ describe('HostGate', () => {
             expect(await drive(direct, dg.probe('start'))).toBe(false);
             expect(dg.history[0]!.result!.path).toBe('direct');
             expect(dg.history[0]!.verdict).toMatchObject({ path: 'direct', status: 'investigate', onTime: 57, trials: 60 });
-            expect(lines[0]).toMatch(/gate \(start, direct\): latency 1:57 2:3 of 60, .*ticks p50 300 p90 300 max 300 ms, 0 catch-ups \(300:\d+\); \(a\) on time 57\/60, pass 60, floor 58 FAIL; .*: investigate -> plain$/);
+            expect(lines[0]).toMatch(/gate \(start, direct\): latency 1:57 2:3 of 60, .*ticks p50 300 p90 300 max 300 ms, T 300 \(median\), 0 catch-ups \(300:\d+\); \(a\) on time 57\/60, pass 60, floor 58 FAIL; .*: investigate -> plain$/);
         });
         test('direct: 58 of 60 starts, and the direct rule is configurable through GateOptions', async () => {
             const twoLate = (n: number) => (n === 10 || n === 20 ? 1 : 0);
