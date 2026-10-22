@@ -158,7 +158,7 @@ so Monkey Madness (4,429) passes Agility (4,327) for rank 1.
 
 The expected column sums to **31,277** (the steps) plus the legs' **2,215.7**; RUN-ORDER.md section 6
 adds the allowances (hand-offs outside the figures, level-up pages, contention, overrun, relay,
-retries, restarts) for its **34,777.7** knife-on expected (31,900.7 best), against the record of 35,916.
+retries, restarts) for its **34,777.7** knife-on expected (31,886.7 best), against the record of 35,916.
 
 **Module status** (the last column; the helper scripts and the programs the entries rely on are in
 "Module status" at the end of this section) is as of this document's commit date, and rs/158 updates
@@ -176,7 +176,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 6 | 6 | Thieving and the stun pack | `speedrun/skills/thieving.ts` | S18 (S18b-d inside) | 2,000 | 1,908 | 1,975 + ~120 elsewhere | ~190 | in-page | rs/97 `pickpocket`; rs/132's `stunActions`; `stun-pack-thieve.ts` | building (rs/154, parked under the 2-4 child limit); stun pack: lab-accepted (bury, charge, arrows; rs/132); top-ups ~0 with the courier on a side tile (rs/279, lab); rs/290's opt-in idle re-send building |
 | 7 | 5 | Fishing | `speedrun/skills/fishing.ts` | S22 | 1,995 | 1,969 | 3,410 | ~1,440 | in-page | rs/97 `knife-cycle`, `tickmanip-cycle.ts` | on main, 22552bf4 (#197; rs/231); lab-accepted (1,998 on 78-99; rs/152); gate `measureDrops` 120 explicit (#221) |
 | 8 | 7 | Combat finish | `speedrun/skills/ranged.ts` (`combatFinish`) | S27 | 1,972 | 1,946 | 1,997 (the bow from 70); 2,023-2,211 without the kit | ~265 | overlay | `cannon-kit.ts` (rs/59, on main) | on main, 8a741554 (#212, rs/252's snapshot); lab-accepted (S27 1,972 i on the module's rates, S14 118 m; rs/199, PR #207); lab is the final tier (a demo test is not feasible); run mode ~0, at most ~9 on S27's melee phase (m/i, rs/196) |
-| 9 | 8 | The Grand Tree | `speedrun/quests/grand-tree.ts` | S11b | 1,493 | 1,403 | 1,763 | ~360 | overlay | `quest-grandtree-full.ts` | building (rs/202 under rs/185); **lab: 3 of 3 full A-to-P runs at SCORED's levels** (1,403 / 1,504 / 1,422) |
+| 9 | 8 | The Grand Tree | `speedrun/quests/grand-tree.ts` | S11b | 1,493 | ~1,389 | 1,763 | ~374 | overlay | `quest-grandtree-full.ts` | building (rs/202 under rs/185); **lab: 3 of 3 full A-to-P runs at SCORED's levels** (1,403 / 1,504 / 1,422) |
 | 10 | 9 | Runecraft | `speedrun/skills/runecraft.ts` | S06, S21 | 1,192 | 1,192 | ~5,220 | ~4,030 | in-page | rs/131's `rc-cycle`; `runecraft-cycle.ts` | **on main, 1514f47a (#222; rs/268's snapshot of rs/196's module, rs/186's branch at 0c349da6)**, the run-commit floor; **lab-accepted, with a partial demo confirmation** (9/9 tuned on the real server, n small; the 20-cycle demo acceptance pending); **lab-accepted (rs/196, module 3f02f336, relay path (lab): nature at 44 tuned 30/30 at 29 x 7, robust 30/30 at 29 x 8; S06 7/7 at 6 x 7, 58)**; the tuned nature run confirmed on the direct path, 30/30 at 29 x 7 (rs/196, 3b161c12); pending: the auto rule's 'handled before SCORED' field (entry 9); cycle: on main, 23ea9f77 (#178) |
 | 11 | 10 | Smithing | `speedrun/skills/smithing.ts` | S25a | 1,065 | 1,028 | 1,330 | ~302 | overlay | `smithing-trade.ts` | **on main (#230)**, with `lib/trade.ts` `swap()` and `anvil.ts`'s restock and off-tile fixes; the demo attempt inconclusive (rs/197, entry 10) |
 | 12 | 13 | Dragon Slayer | `speedrun/quests/dragon-slayer.ts` | S26 | 969 | 908 | 1,079 | ~171 | overlay | `quest-dragon-*.ts` | building (rs/258 under rs/185); run mode: no `p_walk`, re-paths at ten moving NPCs and the six maze monsters, lever ~0 (r, rs/258) |
@@ -400,8 +400,9 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     **rs/243** (the second Thieving part: pickpocket's `stopWhenFoodBelow` and `retargetTicks`,
     entry 6); **rs/147's Agility snapshot**, to be filed (agility's `untilLevel`, closing
     RUN-ORDER.md O40, the program's `eatAt` opt-in, f95f9558, rs/241's work, and the module default
-    `eatAt: 'land'`, a9298868, rs/270; entry 1); and **rs/294** (`travel.ts`'s forcemove fix; entries 8 and
-    11). rs/291's legs module is on main as PR #238 (merge 5a70e4e6, which descends from 31bdff73),
+    `eatAt: 'land'`, a9298868, rs/270; entry 1); **rs/281** (the Grand Tree snapshot, which carries rs/202's door-exit
+    workaround, marked removable; entry 8) and **rs/294** (`travel.ts`'s forcemove fix, which makes
+    the workaround unnecessary; the run commit carries both; entries 8 and 11). rs/291's legs module is on main as PR #238 (merge 5a70e4e6, which descends from 31bdff73),
     so it is off this list; main names the next floor commit. Gate tooling on main, not floor
     items: 5d22252d (#208, `lib/display.ts`) and c4b79f17 (#213, `lib/tab.ts` window helpers);
   - **the login cap**: our simultaneous demo logins, summed across every host, at most 100 with a
@@ -1211,9 +1212,12 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   with his trapdoor walk and two objboxes), as RUN-ORDER.md O6 has it. Per segment (means): A 73, B
   178, C 158.7, D 41.7, E 51.7, F 21.3, G 38.7, H 47.7, I 141, J 157, K 130, L 62.3, M 52, N1 31, N2
   121.3, O 83.7, P 54 (the draw). B and C on the real `travel.ts`: 178 against 184 inferred, 158-159
-  against 141 (+13%). Best **1,403** (m, the fastest run). Fallback **~1,763** (stock, inferred: the
-  stock column's 270 of extra dialogue over the fixed on the measured figure). No burst figure yet
-  (the conversations carry no shapes), so the burst column is unchanged; 1,528.5 / 1,393.5 i before.
+  against 141 (+13%). Best **~1,389** (m/i: rs/202's one burst A-to-P chain, 1,433, 0 failed bursts, every shape held, with P
+  at 148 on a drawn root 14, re-based to P's expected 104; n = 1; per segment A 56, B 171, C 148, D 36,
+  E 49, F 14, G 39, H 40, I 115, J 153, K 126, L 49, M 53, N1 28, N2 132, O 76, P 148; 1,403 m, the
+  fastest fixed run, before). Fallback **~1,763** (stock, inferred: the stock column's 270 of extra
+  dialogue over the fixed on the measured figure); 1,528.5 / 1,393.5 i before fold-in 13. **The door
+  exit:** the Grand Tree door exit (segments D, G, K and M) needs either rs/202's one-tick-wait workaround (in rs/281's Grand Tree snapshot, marked removable) or rs/294's `travel.ts` forcemove fix (71 ticks to 21, rs/186); the run commit will carry both, and the measured runs already carry the 21-tick exit through the workaround, which rs/198's lab shows matches the fix, so nothing re-prices (no leg row starts with a forced move through that door, i).
 - **The fight and the kit** (rs/202, m): the demon (N2) 113-127 ticks, 20-24 casts, 0 damage, prayer
   21-24, staff of fire worn; across 13 lab Fire Bolt kills 113-163 ticks and 20-30 casts, so 35 chaos
   runes cover it (5 spare at the worst seen). The climb: 1 dose, 0 refusals in every run. Free slots:
@@ -1244,7 +1248,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   for the demon; ~31 Fire Bolt casts, 31 chaos and 93 air with the staff of fire wielded, fit inside
   H7, and rs/202's lab records the casts); `advance` page by page if the burst fails; no Agility
   potion at all, S11a laps to 25 (+37, entry 1).
-- **Acceptance, local:** at the route's levels, 3 runs. Pass: within 10% of 1,528.5 fixed (1,393.5 with
+- **Acceptance, local:** at the route's levels, 3 runs. Pass: within 10% of 1,493 fixed (~1,389 with
   burst), counted from the Grand Tree door; demon kill within 10% of 153; 0 damage under Protect from Melee (as in rs/56's 20 fights).
 - **Acceptance, demo (throwaway):** the level-free opening segments (King Narnode, the first
   dialogues, the glider and spirit tree legs) on a throwaway with TGV done. Pass: within 10% of the
