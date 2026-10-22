@@ -911,7 +911,7 @@ bun speedrun/rehearse.ts --skill=<name|module.ts> --bot=<env name> [--to=99] [--
     [--gate-bot=<gate account env, default cairn_twin off a local world>] [--gate-json=<file>]
     [--gate-probe-trials=60] [--probe-trials=0]
     [--force-gate] [--from=<step name or index>] [--log=<file>] [--lab] [--insecure-query-login]
-    [--host-reservation=<file>]
+    [--host-reservation=<file>] [--claim-owner=<rs/NNN>]
 ```
 
 1. **Gate, off the clock.** `/playercount`; the direct read on a separate gate account
@@ -960,14 +960,16 @@ the next step), and exits 5. Nothing restarts it: once the file is gone or expir
 command resumes from game state, and every summary over that log prints a `PAUSED for the
 gate/run` line per pause.
 
-**Claiming a name: `--claim`.** `bun speedrun/rehearse.ts --claim --bot=<name> --log=<file>` runs
-S00 and then `logoutClean`, nothing else. The tutorial skip creates the account, and the clean
-logout parks it. There is no gate account (not even the default `cairn_twin`), no direct read, no
-tab probes and no skill module, so a claim is exactly one login. A world that does not answer
-`/playercount` still refuses it. It writes a `(gate) claim` row, so the log says it was a claim.
-The summary and the hiscore check run as for an attempt, against the Overall row only.
-`--claim` refuses every option that would add a login, a probe or a step
-(docs/speedrun/rehearsals/CLAIMS.md).
+**Under a claim: `--claim-owner`.** The file is host's claim lock: `rs-claim take OWNER ...`
+writes it with the taker as `owner`, and host's `preempt` replaces it with `"owner": "host"` and
+the holder it displaced under `displaced.owner` (HOST.md, 'Claims'). `--claim-owner=<rs/NNN>`,
+else `$SPEEDRUN_CLAIM_OWNER`, names the claim the attempt runs under (not to be confused with
+`--claim`, which parks a name). A live claim of that owner blocks nothing; one gone stale prints a
+warning and blocks nothing, since nobody else holds the machine. Any other live owner refuses at
+pre-flight and pauses at a boundary, a preempt of ours included. Where `rs-claim` is installed (on
+PATH or in `~/.local/bin`), each boundary also starts `rs-claim touch <owner>` in the background,
+at most once a minute and killed after 10 s. Its exit 3 (preempted) pauses at the next boundary,
+and any other failure only warns.
 
 The tick log adds annotation rows: `(session)` from client tick 0 (the login) to the logout click
 per client session, `(program)` per in-page program run (its final `ProgramStatus`), `(reach)` per

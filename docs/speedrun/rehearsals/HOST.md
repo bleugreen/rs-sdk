@@ -124,13 +124,25 @@ ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -
 ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.rs-fleet/id_ed25519_rehearsal -o UserKnownHostsFile=$HOME/.rs-fleet/known_hosts_rehearsal -o StrictHostKeyChecking=yes -o CheckHostIP=no ubuntu@$RS_TWIN_HOST '~/.local/bin/rs-claim release rs/NNN; ~/.local/bin/rs-claim status'
 ```
 
-**Open gap: `rehearse.ts` reads the claim's file.** `speedrun/rehearse.ts`'s pre-flight (rs/213,
-"Run-capable twin" below) treats any live `~/host-reserved.json` as a reservation, whoever owns
-it. It has no way to recognise the claim it runs under, the way the gate timer's `RS_GATE_OWNER`
-does. Under your own claim, then, it would refuse at pre-flight with exit 5. That is inferred from
-the lock's file and the harness's check; nobody has run it yet. Don't hide the file from the
-harness with `--host-reservation`, because that also hides a preempt. Until the harness learns its
-own claim, ask rs/147 before launching `rehearse.ts` under a claim.
+**`rehearse.ts` under your claim: `--claim-owner=rs/NNN`.** The harness's pre-flight (rs/213,
+"Run-capable twin" below) reads the claim's own file, `~/host-reserved.json`. Name the claim you
+took with `--claim-owner=rs/NNN` (or `SPEEDRUN_CLAIM_OWNER=rs/NNN`), as the gate timer's
+`RS_GATE_OWNER` names its own. Without it, the harness refuses under your own claim (exit 5).
+
+- A live claim of that owner is yours and blocks nothing. Any other live owner refuses at
+  pre-flight with exit 5, never forced.
+- At each step boundary, a claim that is no longer yours pauses the attempt as a reservation does
+  (below). So does host's preempt of it, which `rs-claim` writes as `"owner": "host"` with
+  `"displaced": {"owner": "rs/NNN", ...}`. The pause is a clean logout, no relaunch, 'paused for
+  the gate/run' and exit 5, and the harness then prints the `rs-claim release` you owe.
+- A claim of yours that has gone stale prints a warning and the attempt goes on, since nobody else
+  holds the machine.
+- Where `rs-claim` is installed, the harness also runs `rs-claim touch` at step boundaries, in
+  the background and at most once a minute. A touch that exits 3 pauses the attempt at the next
+  boundary. A boundary comes only between steps, so a long band (about 12 minutes for willows
+  73-99) goes untouched until it ends.
+
+Don't hide the file from the harness with `--host-reservation`, because that also hides a preempt.
 
 **Leftover check**, before any launch and after any teardown or bound. It is RUN-HOST.md's check with
 Xvfb added and the claim's status in place of the reservation. After teardown, expect no tmux
@@ -375,14 +387,15 @@ helpers count against the same 100-per-IP ban line and 80 working cap as the run
   - Since 2026-10-22 02:28Z it is `rs-claim`'s lock ("Claims", above), which extends this object.
     Every holder writes it through `rs-claim take`: the scored run's step 0 (covering the gate
     and, on the chosen machine, the run), rs/host for installs and hand reads, and every
-    rehearsal. The slot files are retired. See "Open gap" above for what that means for
-    `rehearse.ts`.
+    rehearsal. The slot files are retired. `rehearse.ts` tells the claim it runs under from
+    everyone else's with `--claim-owner` ("Claims", above).
   - Check: `cat ~/host-reserved.json 2>/dev/null || echo none`.
 
-  `speedrun/rehearse.ts` enforces this (rs/213). While the sentinel is live it refuses at
-  pre-flight, before any login, and exits 5; `--force-gate` does not override it. In flight it
-  re-reads the file at each step boundary and, if a reservation has appeared, logs out cleanly and
-  stops. It checks only at boundaries, so a long band (for example willows 73-99, about 12 minutes)
+  `speedrun/rehearse.ts` enforces this (rs/213). While the sentinel is live and is not the claim
+  named by `--claim-owner`, it refuses at pre-flight, before any login, and exits 5;
+  `--force-gate` does not override it. In flight it re-reads the file at each step boundary and,
+  if a reservation not its own has appeared (another owner, or host's preempt of its claim),
+  logs out cleanly and stops. It checks only at boundaries, so a long band (for example willows 73-99, about 12 minutes)
   finishes first.
 - **Run night, for an attempt in flight.** main announces the run night's window. Take no claim
   whose `MINUTES` would run into it; host preempts any claim still held when it opens. If an attempt is in flight when a

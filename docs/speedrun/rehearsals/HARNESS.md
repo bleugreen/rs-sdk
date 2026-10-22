@@ -129,8 +129,9 @@ and the gate account `cairn_twin`'s needs the same. Off a local world the harnes
 `cairn_twin` when no `--gate-bot` is given; the command below names it anyway.
 `cairn_gate` is rs/149's personal gate account, and the harness never uses it. Before
 launching: your `rs-claim` (HOST.md, "Claims"; `~/rehearsal-slots/` is retired) and the
-leftover check. Read HOST.md's "Open gap" first: the harness's pre-flight does not yet tell its
-own claim from a host reservation. When the host checkout
+leftover check. Pass that claim's owner as `--claim-owner=rs/NNN`. Without it, the pre-flight
+reads your own claim as a reservation and refuses with exit 5. With it, another owner or host's
+preempt still refuses, or pauses at a step boundary. When the host checkout
 is not at the attempt's commit, run from a worktree of it, as the demo acceptance did (HOST.md).
 Then replace `cd ~/rs-sdk` with `cd` to that worktree.
 
@@ -140,7 +141,7 @@ Then replace `cd ~/rs-sdk` with `cd` to that worktree.
 B=4h; ACCOUNT=<account>; D=:10; mkdir -p ~/rs-run
 tmux -L rehearsal new-session -d -s "$ACCOUNT" \
   "cd ~/rs-sdk && exec timeout --kill-after=30s $B env DISPLAY=$D ~/.bun/bin/bun speedrun/rehearse.ts \
-     --skill=<skill> --bot=$ACCOUNT --gate-bot=cairn_twin \
+     --skill=<skill> --bot=$ACCOUNT --gate-bot=cairn_twin --claim-owner=rs/NNN \
      --kit-from=<giver> --kit=<item:n,...> \
      --log=$HOME/rs-run/$ACCOUNT.jsonl >>$HOME/rs-run/$ACCOUNT.log 2>&1"
 ```
@@ -151,7 +152,9 @@ tmux -L rehearsal new-session -d -s "$ACCOUNT" \
   second C-c logs out at once.
 - Exit 3 means the gate refused: nothing was logged in for the attempt. Wait and run again.
   Exit 4 means stopped or paused: run the same command again, with the same `--log`, and it resumes
-  from game state.
+  from game state. Exit 5 means the host is someone else's: refused at pre-flight, or paused for
+  the gate/run at a step boundary (HOST.md, "Claims"). After host's preempt, release your claim
+  once teardown is confirmed, and run again only once `rs-claim status` shows the machine free.
 - `/playercount` goes into the log every 10 minutes as a `(players)` row. The summary prints the
   count's range, plus a `MOVED` line if it swung by more than half (a demo restart and refill).
 - Watch with `tail -f ~/rs-run/$ACCOUNT.log`; afterwards `bun speedrun/lib/ticks.ts report

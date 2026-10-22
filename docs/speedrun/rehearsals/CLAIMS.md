@@ -86,7 +86,7 @@ name `N`:
 3. Claim it, bounded, as the whole command of a tmux session:
 
    ```sh
-   N=<name>; tmux -L rehearsal new-session -d -s "$N" "cd ~/rs-167 && exec timeout --kill-after=30s 5m ~/.bun/bin/bun speedrun/rehearse.ts --claim --bot=$N --log=$HOME/rs-run/$N-claim.jsonl >>$HOME/rs-run/$N-claim.log 2>&1"
+   N=<name>; tmux -L rehearsal new-session -d -s "$N" "cd ~/rs-167 && exec timeout --kill-after=30s 5m ~/.bun/bin/bun speedrun/rehearse.ts --claim --bot=$N --claim-owner=rs/NNN --log=$HOME/rs-run/$N-claim.jsonl >>$HOME/rs-run/$N-claim.log 2>&1"
    ```
 
    `--claim` (speedrun/README.md) is S00 and then `logoutClean`, with no gate read and no second
