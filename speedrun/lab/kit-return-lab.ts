@@ -6,8 +6,8 @@
 // Scenarios, each with one bronze axe to return, at 10 hitpoints unless noted:
 //   refuse-far        Magic 1 at rs/296's Ardougne tile: refused, never moves (exit 3)
 //   teleport-first    Magic 31 and the runes at Draynor: Lumbridge teleport, run, trade (exit 0)
-//   damage-stop       Magic 1, 16 tiles out, a young dark wizard spawned on the route 6 tiles
-//                     ahead: halted, backed off to the start, logged out alive (exit 4, naming it)
+//   damage-stop       Magic 1, 16 tiles out, a young dark wizard spawned on the account 8 tiles
+//                     into the run: halted, backed off to the start, logged out alive (exit 4)
 // A scenario passes only if the account did not die.
 //   refuse-wilderness Magic 99 and the runes on the Wilderness Agility course, 99 hitpoints so
 //                     the course's monsters do not kill it first: refused (exit 3)
@@ -31,7 +31,7 @@ const runes = async () => {
 };
 
 let failed = 0;
-async function scenario(label: string, expect: number, stage: () => Promise<void>) {
+async function scenario(label: string, expect: number, stage: () => Promise<void>, during?: () => () => void) {
     if (await isLoggedOut(kit)) await login(kit);
     await waitTicks(kit.sdk, 3);
     await clearInventory(kit.sdk);
@@ -45,7 +45,9 @@ async function scenario(label: string, expect: number, stage: () => Promise<void
         ? giver.sdk.waitForTradeRequest({ from: kit.name, timeout: 120_000 }).then(req => (req ? receiveFrom(giver.sdk, kit.name) : null))
         : null;
     const t0 = kit.sdk.getState()!.tick;
+    const stopDuring = during?.();
     const r = await kitReturn(kit, { giver: giver.name, items, at: DEFAULT_GIVER_TILE });
+    stopDuring?.();
     const g = await recv;
     const giverAxes = giver.sdk.getState()!.inventory.filter(i => /^bronze axe$/i.test(i.name)).length;
     const pass = r.code === expect && r.logout.ok && !r.died && (expect !== EXIT.ok || giverAxes === giverAxes0 + 1);
@@ -64,11 +66,16 @@ await scenario('teleport-first', EXIT.ok, async () => {
     await runes();
     await mustTele(kit.sdk, 3093, 3244);
 });
-await scenario('damage-stop', EXIT.damaged, async () => {
-    // The wizard (hunt range 3) on the route, 6 tiles from the start; east of x 3238 is the River Lum.
-    await mustTele(kit.sdk, 3232, 3222);
-    await cheat(kit.sdk, 'npcadd young_dark_wizard', 2);
-    await mustTele(kit.sdk, 3238, 3222);
+// An ambush: the wizard spawns on the account's own tile once the run is 8 tiles west of the
+// start (east of x 3238 is the River Lum). A wizard spawned beside the start either missed it
+// (it wanders, hunt range 3) or drew auto-retaliate before the walk began.
+await scenario('damage-stop', EXIT.damaged, () => mustTele(kit.sdk, 3238, 3222), () => {
+    let spawned = false;
+    return kit.sdk.onStateUpdate(s => {
+        if (spawned || !s.player || s.player.worldX > 3230) return;
+        spawned = true;
+        void cheat(kit.sdk, 'npcadd young_dark_wizard');
+    });
 });
 await scenario('refuse-wilderness', EXIT.refused, async () => {
     await setStats(kit.sdk, { magic: 99, hitpoints: 99 });
