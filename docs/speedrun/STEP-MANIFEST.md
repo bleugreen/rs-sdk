@@ -87,8 +87,9 @@ hidden tabs, while its givers leave the tutorial through `bot.skipTutorial()` (r
 talisman-drop stop was this artefact).
 
 **Run mode (rs/280; RUN-ORDER.md O45).** Run on is the scored account's default (main, 21:32 PDT): rs/280's
-`ensureRunOn` turns the toggle on after every login and relog (`option_run` is not saved), with a
-per-step opt-out for lab A/B only. The lever is ~0: every walk the shared walker sends and every
+`lib/run-mode.ts` (on main as #234, d0461244, the run-commit floor) turns it on by default after every login, relog, resume and S00
+(`option_run` is not saved), best effort, confirmed from state and recorded, never fatal on the scored path; it is strict only
+for the lab opt-out `Step.running: false` (main, 01:15 PDT). The lever is ~0: every walk the shared walker sends and every
 op-click approach already carries the ctrl-run flag (`tempRun`), so locs, ground items, obstacles
 and the first leg to an NPC run at 2 tiles a tick with the toggle off (m, rs/280). The toggle matters
 only where the engine moves the player without a fresh ctrl-run route: its own re-path to a moving
@@ -378,9 +379,10 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     RUN-ORDER.md R1's bound); that case is historical on any `RUN_COMMIT` at or after c2d9eada.
     The final logout is still checked on the host (`RUN-HOST.md` step 8). A precondition, not a
     line in the totals;
-  - **`RUN_COMMIT` at or after the run-commit floor, `cae93456`** (#245; one check,
-    `git merge-base --is-ancestor cae93456 "$RUN_COMMIT"`, `RUN-HOST.md` "Credentials"). Its newest
-    entry is #245 (rs/300, the Agility S11a/S17 snapshot: `skills/agility.ts` and its test with
+  - **`RUN_COMMIT` at or after the run-commit floor, `d0461244`** (#234; main, 01:15 PDT; one check,
+    `git merge-base --is-ancestor d0461244 "$RUN_COMMIT"`, `RUN-HOST.md` "Credentials"). Its newest
+    entries are #234 (rs/280: run on by default after every login, relog, resume and S00, `lib/run-mode.ts`, best effort and recorded, never fatal on the scored path, strict only for the lab opt-out `Step.running: false`; `lib/world.ts` owns `onTutorialIsland`; RUN-ORDER.md O45), #254 (71529b1b, rs/272's melee-rate write-up, docs and lab only; O44, closed), #250 (7cc8afac, rs/312: `openSession` refuses a demo world without a loopback or direct gateway, `allowRelay` a warned opt-out that no caller uses; the precondition of S00 and entry 34), #255 (acec0aec, rs/316's snapshot of rs/186's Magic module at 86051a14: `magic.ts` S02 and S04 with `dropAtStrikeExit`, `handBack: 'keep'` and `RING_CONTRACT.where`; entry 24), #249 (58f98e28, rs/313: Father Aereck's fixed-against-burst dialogue driver), #235 (2ee27d2b, rs/281's Grand Tree snapshot with rs/202's door-exit workaround, marked removable; the floor also carries #240's fix; entry 8) and #247 (173b6992, rs/305: labMain leaves Tutorial Island before the first fixture), then cae93456's
+    #245 (rs/300, the Agility S11a/S17 snapshot: `skills/agility.ts` and its test with
     `untilLevel` and `eatAt: 'land'`, `programs/agility.ts` with every module key declared, rs/155's four
     accepted default fixes, `startStep: 'auto'`, the pitExit click-by-id fallback and the `FAIL_RE`
     export, `agility-courses.ts`, `agility-model.ts` and `rehearsals/agility.md`; entry 1; RUN-ORDER.md O40,
@@ -418,15 +420,13 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
     stun actions, after #159's `stay2` bury, entry 4), 3dfc217f (#165, rs/162's plain + bury, the
     knife-off line in force, entry 3), b6950915 (#177: a program faults at start on a parameter key
     it does not declare, so each entry's program keys are the program's declared names) and
-    834f376b (#176, rs/210's tick-cadence monitor). Pending, each moving the floor when it lands (main and rs/158, 23:09 PDT and after):
-    **rs/280** (run on after every login and relog, `ensureRunOn`; RUN-ORDER.md O45); **rs/267's
+    834f376b (#176, rs/210's tick-cadence monitor). Pending, each moving the floor when it lands, and main names each new floor (main and rs/158, 23:09 PDT and after): **rs/267's
     changes via rs/41's branch**: the trade giver's re-send moved onto `decideRequest` in game ticks
     (commit pending; R25), and two pieces that reach main in **rs/41's fleet snapshot 3**, filed once
     rs/267's single trade-request rule (`openTrade` governs `swap()`) is reconciled with #230's
     `trade.ts`: `openTrade` with the altar giver (3042ae95: the Runecraft stock rung at 9 a cycle and a
     busy partner's retry at ~2, entry 9) and the S18 courier holding a side tile (R24); the helpers'
-    pieces must be on the helpers' deployed commit before they serve SCORED; **the shared dialogue and click fixes** (rs/147's child, issue to come: `advance()` on a dialogue a loc op opened, and a click on an unloaded region that returns true without moving; RUN-ORDER.md R29, a run blocker for the quest block); and **rs/281** (the Grand Tree snapshot, with rs/202's door-exit workaround,
-    marked removable; the floor already carries #240's fix; entry 8). Gate tooling on main, not floor
+    pieces must be on the helpers' deployed commit before they serve SCORED; **rs/309** (the shared-layer browser fix, under main: `converse.ts` and `dialogue.ts` `advance()` on a dialogue a loc op opened, the unloaded-region click in the click primitive, and a shared gate helper for agility.ts and S15's zoo return; RUN-ORDER.md R29, a run blocker for the quest block); and **the slot-ledger snapshot (rs/304)**. Off the list since fold-in 15: rs/281 (#235), rs/316 (#255), rs/312 (#250) and rs/280 (#234), all inside the floor. Gate tooling on main, not floor
     items: 5d22252d (#208, `lib/display.ts`) and c4b79f17 (#213, `lib/tab.ts` window helpers);
   - **the login cap**: our simultaneous demo logins, summed across every host, at most 100 with a
     working cap of 80, counted before SCORED logs in (main, 15:35 PDT; `RUN-HOST.md` step 7;
@@ -1487,7 +1487,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   bound by their paths, not by energy, and an energy potion is worth 0. Infinite run keeps energy full
   but does not turn running on (`Player.ts:755-757`); `travel.ts` sends every walk with the run flag
   (`travel.ts:693, 721, 763`), which the measured ~2 tiles a tick confirm, so the leg rows stand, and
-  rs/280 turns the toggle on after every login (O45).
+  rs/280 turns the toggle on after every login (#234, on the floor; O45).
 - **Postconditions:** within the tolerance of the destination tile.
 - **The demo check** (rs/198 via rs/186; cairn_h55, the loopback gateway on bbs, 05:26-05:29Z;
   run-transitions.md section 10, on main): within the bar, m-demo, T01-02 51 (lab 50), T23-24 94
@@ -2190,6 +2190,16 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   (`docs/speedrun/rehearsals/HARNESS.md` on rs/147's branch). The hiscore check: Overall reads 56
   against the tick log's 57 for the account, one apart (m, same session). SCORED's S00 stays done
   at 8; no total changes.
+- **Precondition: a loopback gateway, enforced on the floor** (rs/287; main, 23:52 PDT; RUN-ORDER.md S00).
+  The skip's guide talk has a 12-tick window: rs/287's fresh throwaway ran with an env that had no
+  `GATEWAY_URL`, went through the demo's public relay, reached first state at client tick 62 and
+  aborted ('the guide did not answer within 12 ticks') with a clean logout; the same account, start.ts
+  and client passed on a loopback `GATEWAY_URL` (first state at tick 2; m, demo). Five rehearsal
+  accounts passed S00 on the demo that night through rs/147's harness. Enforced by fleet.ts's and
+  standalone.ts's refusals of other gateways, the run-night checklist and run.ts's asserts, RUN-HOST.md
+  step 3, and `openSession`'s refusal of a demo world without a loopback or direct gateway (rs/312,
+  #250, 7cc8afac, inside the floor; `allowRelay` a warned opt-out no caller uses). No retry of the
+  guide talk is needed, and none is built.
 - **logoutSafe:** yes.
 
 ## 4. Helper-side scripts
