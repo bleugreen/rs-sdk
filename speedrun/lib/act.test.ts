@@ -518,7 +518,7 @@ describe('loc, npc and item helpers', () => {
         const sdk = new FakeSdk(baseState({ tick: 1, player: player(3000, 3000), inventory: runes }));
         const p = castTeleport(sdk as never, 'ardougne');
         // The cast animation and the runes taken on its first tick; the landing published 11 ticks later.
-        await ticks(sdk, 12, i => (i === 0 ? { player: { ...player(3000, 3000), animId: 714 }, inventory: [{ ...runes[0], count: 1 }] } : i === 11 ? { player: player(2661, 3302) } : {}));
+        await ticks(sdk, 12, i => (i === 0 ? { player: { ...player(3000, 3000), animId: 714 }, inventory: [{ ...runes[0]!, count: 1 }] } : i === 11 ? { player: player(2661, 3302) } : {}));
         expect(await p).toMatchObject({ ok: true, resends: 0, ticks: 12 });
         expect(sdk.sent.length).toBe(1);
     });
