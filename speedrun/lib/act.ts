@@ -6,8 +6,8 @@
 // p_delay, a forced move), and the lite client drops an interaction it
 // believes has no route. Neither says so, so `act` re-sends while the player
 // stands still with no dialogue open, unless the click's script has already
-// answered (a game message, an animation, an interface): that click landed,
-// and a re-send would restart its script. It also re-sends on "I can't reach
+// answered (a game message, an animation, an interface) to a click sent from an
+// idle player: that click landed, and a re-send would restart its script. It also re-sends on "I can't reach
 // that!", which a door animation or an NPC in the way can cause.
 //
 // Jumps (the jump guard, `settle` and `ClickGuard`): the first click after the
@@ -117,8 +117,13 @@ export class ClickGuard {
      * The last send drew a script's answer (see replyKind): it landed and its script is running
      * (a loc op that p_delays before its dialogue: Dwarf Cannon's railings, the Wilderness lever,
      * the spirit trees), so it is never re-sent on idle ticks; re-sending would restart the script.
+     * Only a send from an idle player latches it: when an earlier script was still answering at the
+     * send (busyAt), its later messages and animations are not this click's, and that click may
+     * have been dropped while the script held the player (a climb sent as a potion's boost shows,
+     * before the drink's last message), so it keeps the idle re-send.
      */
     scriptAnswered = false;
+    private idleAtSend = true;
     private refusedAt = -1;
     private sentAt = -1;
     private watching = false;
@@ -139,6 +144,7 @@ export class ClickGuard {
         this.sentAt = tick;
         this.base = s ? snapshot(s) : null;
         this.scriptAnswered = false;
+        this.idleAtSend = !s || !busyAt(s);
         const jumpTick = s?.player?.teleportTick ?? null;
         // Only the first send after a jump is watched for a reply, and it is re-sent at most once.
         if (this.counts.unansweredResends === 0 && (this.opts.alwaysWatch || (jumpTick !== null && tick - jumpTick <= JUMP_WINDOW))) this.watching = true;
@@ -151,7 +157,7 @@ export class ClickGuard {
 
     /** Feed a published state; true when it re-sent. */
     step(s: BotWorldState): boolean {
-        if (!this.scriptAnswered && this.base && replyKind(this.base, s) === 'script') this.scriptAnswered = true;
+        if (!this.scriptAnswered && this.idleAtSend && this.base && replyKind(this.base, s) === 'script') this.scriptAnswered = true;
         if (this.refusedAt >= 0) {
             // A send reported as scene_loading did go out and may have landed: a reply settles it.
             if (this.answered(s) || (this.base && replied(this.base, s))) {
@@ -207,6 +213,15 @@ function replyKind(b: NonNullable<ReturnType<typeof snapshot>>, s: BotWorldState
     if (invKey(s) !== b.inv) return 'script';
     const p = pos(s);
     return p.x !== b.x || p.z !== b.z || p.level !== b.level ? 'moved' : null;
+}
+
+/** Ticks before a send in which a script's message still marks the player as busy with that script. */
+const BUSY_TICKS = 2;
+
+/** An earlier script is still answering: an animation is playing, or it sent a game message in the last BUSY_TICKS ticks. */
+function busyAt(s: BotWorldState): boolean {
+    if ((s.player?.animId ?? -1) >= 0) return true;
+    return s.gameMessages.some(m => m.tick >= s.tick - BUSY_TICKS && !PLAYER_CHAT_TYPES.includes(m.type) && !CANT_REACH.test(m.text));
 }
 
 function replied(b: NonNullable<ReturnType<typeof snapshot>>, s: BotWorldState): boolean {

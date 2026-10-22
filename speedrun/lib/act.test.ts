@@ -278,6 +278,19 @@ describe('a landed click is not re-sent while its script runs', () => {
         expect((await q).resends).toBe(1);
     });
 
+    test("a click sent while an earlier script still answers is re-sent: that script's later message is not the click's answer", async () => {
+        // grand-tree.ts climbToPillars: the climb goes out as the potion's boost shows, while the drink
+        // script still holds the player (dropped); the drink's second message follows a tick later.
+        const msg = (text: string, tick: number) => ({ type: 0, text, sender: '', tick, fromSelf: false });
+        const drink = msg('You drink some of your agility potion.', 1);
+        const sdk = new FakeSdk(baseState({ tick: 1, player: { ...player(10, 10), animId: 829 }, gameMessages: [drink] }));
+        const p = act(sdk as never, () => sdk.sendInteractLoc(5, 5, 1, 1), () => false, { resendEvery: 3, maxTicks: 4 });
+        await ticks(sdk, 1, () => ({ player: { ...player(10, 10), animId: -1 }, gameMessages: [drink, msg('You have 3 doses of potion left.', 2)] }));
+        await ticks(sdk, 4);
+        expect((await p).resends).toBe(1);
+        expect(sdk.sent.filter(a => a.method === 'sendInteractLoc')).toHaveLength(2);
+    });
+
     test("other players' chat is not the engine answering the click", async () => {
         const sdk = new FakeSdk(baseState({ tick: 1, player: player(10, 10) }));
         const p = act(sdk as never, () => sdk.sendInteractLoc(5, 5, 1, 1), () => false, { resendEvery: 3, maxTicks: 4 });
