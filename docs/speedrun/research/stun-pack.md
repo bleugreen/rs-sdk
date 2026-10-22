@@ -475,3 +475,147 @@ ticks, while base 79 to 80 is at most 3.99 casts (two stocked stuns) at 180 base
 comes before the program, not in a stun window, because the program gates stun actions on base
 level with no fire-once rule, so a sip action would repeat every stun. The refusal string names
 base, boosted, and whether a potion is held.
+
+## 15. Blood-rune shortfall: Charge to N, then the cheapest completion (rs/367)
+
+The question (cairn://p/rs/367, main's spec via rs/158): the pack prices Magic 80-99 as 163 Charge
+casts inside the stuns, about 489 blood runes, and only 100 are held. S16's Kolodion fight keeps 70
+(SUPPLIES.md H13, rs/185). For N = 100, 250 and 400 blood runes held in total, how far does Charge
+take Magic, what is the cheapest completion to 99, and what does it cost against the full-Charge
+plan? Model: [`stun-pack-shortfall.ts`](../scripts/stun-pack-shortfall.ts) (`bun
+docs/speedrun/scripts/stun-pack-shortfall.ts [N ...]`, no server). No lab was run: every candidate's
+stun-castability is either already measured inside knight stuns (interleaving.md section 4) or
+read from the scripts below, and the one open figure, the in-page attempt cost of a delayed spell,
+needs the stun action this section names (see Open).
+
+### The engine facts the table rests on (read)
+
+- **Charge**: 3 blood, 3 fire, 3 air, 180 base, Magic 80 (`magic_spells.dbrow`), the staff of fire
+  covering the fire (`magic.rs2` `staff_runes`). So S18 gets N - 70 runes and floor((N - 70) / 3)
+  casts. Full Charge from the bottom of 80 is 163 casts and 489 blood, so N = 559 is the break-even.
+- **The curve**: base 80 = 10,686.8, 99 = 39,938.3 (`Player.ts` `levelExperience`, `lib/xp.ts`),
+  29,251.6 base to find from 80. A start at 81 (a high Kolodion yield) is 769 base, 4.3 casts, less.
+- **The stun is a varp, not a `p_delay`.** A failure sets `%stunned` and `%action_delay`
+  (`thieving.rs2:49-50`) and the pickpocket script returns while they hold (`pickpocket.rs2:130-137`).
+  No spell script reads either varp, so **every spell is castable inside a stun**; what limits it
+  is its own `p_delay`, which rejects every op packet on the following ticks (`OpHeldTHandler` and
+  the other handlers refuse while `player.delayed`; an IF_BUTTON is accepted but Charge's protected
+  script does not run). The window is T+4..T+10, T+10 must stay undelayed for the knight click
+  (section 2's k = 8), and nothing with xp lands on T+10.
+- **What a stun holds** (delaying ticks T+4..T+9): three buries (2 ticks each, the plan in force), or
+  **two `p_delay(1)` spells at T+4 and T+7** (Superheat, the enchants, Low Alchemy), or one High
+  Alchemy (`p_delay(3)`, 5 ticks). Measured inside knight stuns at Thieving 80 (interleaving.md
+  section 4, lite, observation-driven): enchant at +2 and +5 landed **1.92 a stun**, High Alchemy
+  **1.00 a stun (28 of 28)**. A delayed spell therefore displaces the stun's three bones, and the
+  delay-free slots drop from 9 to 8 (4 before each cast, less ~1.2 page resumes), still above the
+  ~4.8 Charge plus arrows need (section 2).
+- **Blood runes cannot be made.** This revision has no blood altar (`runecraft.md`: soul and blood
+  have no `rune_type`). They come from the Magic Guild shelf (1,000 at 50 gp, restocking 1 per 300
+  ticks, shared, found empty on 2026-10-21, `helpers/runes.md`) or the GE (ask 959 for 99, bid 578
+  for 15,623, `helpers/market.md`, 2026-10-21 snapshot).
+
+### The completion candidates
+
+| Spell | Runes (fire from the staff of fire) | Base a cast | In a stun | Base a stun | Standalone | Supply (who makes more) | Verdict |
+|---|---|---|---|---|---|---|---|
+| **Superheat Item** | 1 nature (+4 fire) | 53 r | 2 (T+4, T+7), r; as enchant's 1.92 m | **106** | 3.00 ticks a cast m (magic.md section 4), 17.7 base a tick | nature: Magic Guild 1,000 at 20 gp, GE ask 441 for 515,020 (market.md); iron ore: GE ask 109 for 39,835, or the smelter role mines it (`helpers/smelter.md`); copper and tin, any helper. Needs Smithing 1 (bronze, copper + tin) then 15 (iron), r: `superheat.rs2:37`, `smelting.struct`; SCORED is Smithing 1 until S25a, so the first 12 casts are bronze | **chosen** |
+| High Alchemy | 1 nature (+5 fire) | 65 r | 1, m | 65 | 5 ticks m, 13.0 base a tick | nature as above; any item (noted items are not refused by `alchemy.rs2` or `OpHeldTHandler`, r, untested, so one slot could hold the whole stack) | the fallback if ore top-ups fail: 61% of Superheat's xp a stun |
+| Low Alchemy | 1 nature (+3 fire) | 31 r | 2, r | 62 | 3 ticks m, 10.3 | as High Alchemy | loses to High Alchemy on runes |
+| Enchant, Lvl-5 / Lvl-4 | 15 earth + 15 water + 1 cosmic / 10 earth + 1 cosmic | 78 / 67 r | 2, m (1.92) | 156 / 134 | 3 ticks m | dragonstones **unobtainable**, diamonds 5 held and owed to S25d (SUPPLIES.md) | no supply |
+| Enchant, Lvl-3 / Lvl-2 | 5 fire + 1 cosmic / 3 air + 1 cosmic | 59 / 37 r | 2 | 118 / 74 | 3 ticks | rubies contested (GE bid 10,000), rings need gold bars and a jeweller | ruby would beat Superheat by 12 a stun, not worth a gem line |
+| Fire Blast (combat) | 1 death + 4 air (+5 fire) | 34.5 + 2 a damage r | **no**: attacking sets `%lastcombat` and the pickpocket refuses for 8 ticks (`pickpocket.rs2:125`) | - | ~8 base a tick in S27 (i) | death: Magic Guild 1,000, 110 banked | a lever for the remainder (below) |
+| Bones to Bananas, Telekinetic Grab, Charge Orb, teleports | | 25 / 43 / 66-76 / 35-68 | 1 at best, or impossible (an obelisk, a ground item, a move) | | | | out |
+
+Charge is the only delay-free xp spell, so nothing can ride the stuns' delay-free slots in its place.
+The cheapest completion is **Superheat in the stuns first**, in every stocked stun (~70, i, from
+section 3 and 14's 54-81 failures less top-ups), with the stun's bones moved to S07's knife loop
+at **0.26 a bone** (r: RUN-ORDER section 7, '200 more bones in S07 (+52)'; BP measured 0.23; S07
+has room, RUN-ORDER's today's-stock row puts 978 bones there). Each such stun is 106 base for
+~0.8 ticks, against 6.6 ticks standalone. What the stuns cannot hold goes **after S18, as a
+standalone Superheat row (S18e)** at the market with the courier swapping 20 ore for 20 bars a load:
+3.00 a cast m plus 6 a swap i, 3.3 ticks a cast. It must come before S25a, because Superheat also pays
+Smithing (6.2 base on bronze, 12.5 on iron, r), and S25a's slowest band is its first: 1-48 cost 128
+ticks for 1,131 base (smithing.md section 2, m), so the credit runs ~1.4 S25a ticks a cast at first
+and ~0.35 later (i, the bands scaled to S25a's 1,065).
+
+### The table
+
+Against the full-Charge plan (S18 as priced, 2,000 m: Charge 0 ticks inside the stuns, ~200 bones
+buried there). Figures from `stun-pack-shortfall.ts`.
+
+| | N = 100 | N = 250 | N = 400 | No Charge (worst) |
+|---|---|---|---|---|
+| Blood for S18 (N - 70) | 30 | 180 | 330 | 0 |
+| **Charge casts** | **10** r | **60** r | **110** r | 0 |
+| **Magic reached by Charge** (base xp) | **82** (12,487) r | **90** (21,487) r | **95** (30,487) r | 80 (10,687) |
+| Base xp still to find | 27,452 | 18,452 | 9,452 | 29,252 |
+| **Completion** | Superheat: 140 in 70 stuns, **378 after S18** | Superheat: 140 in the stuns, **209 after** | Superheat: 140 in the stuns, **39 after** | Superheat: 140 in the stuns, 412 after |
+| Runes and ore | 518 nature; 12 copper, 12 tin, 506 iron ore | 349 nature; 12 + 12, 337 iron | 179 nature; 12 + 12, 167 iron | 552 nature; 12 + 12, 540 iron |
+| Inside or after the stuns | both; after = S18e at the market, before T18-19 | both | both, after is ~135 ticks | both |
+| Bones moved to S07 (~210) | +55 i | +55 i | +55 i | +55 i |
+| **Ticks against the full-Charge plan, gross** | **+1,313** i | **+755** i | **+194** i | **+1,425** i |
+| Smithing credit in S25a | -286 i | -228 i | -152 i | -297 i |
+| **Net** | **+1,027** i | **+527** i | **+42** i | **+1,128** i |
+| Worst-route ticks (no Charge at all; pure standalone, no stuns, in brackets) | +1,425 gross / +1,128 net (+1,828 / +1,530) | same | same | |
+| Lever: the remainder by Fire Blast in S27 in place of the bow (net) | +813 i | +414 i | +15 i | +893 i |
+| Lever's extra cannonballs (~306 spare) | 488 | 269 | 50 | 532 |
+
+Sensitivities (i, the model's rows): stocked stuns 55 or 80 in place of 70, **+87 / -58** at every
+N; the lite enchant's measured +1.1 ticks a stun to the next attempt (13.4 against 12.3), **+77** if
+the in-page program shows it too. It came from observation jitter landing the second cast on T+9
+(interleaving.md's own reading), which a tick-locked program does not have, so 0 is the central
+figure and +77 the bound. Gross includes ~5 e for the ~75 Smithing levels' pages inside the stuns.
+
+**The curve** (Charge until the runes run out, then Superheat, stuns first):
+
+| N | 70 | 120 | 170 | 220 | 270 | 320 | 370 | 420 | 436 | 470 | 520 | 559 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Charge casts | 0 | 16 | 33 | 50 | 66 | 83 | 100 | 116 | 122 | 133 | 150 | 163 |
+| Superheat stuns / after | 140 / 412 | 140 / 358 | 140 / 300 | 140 / 243 | 140 / 188 | 140 / 131 | 140 / 73 | 140 / 18 | 138 / 0 | 101 / 0 | 43 / 0 | 0 |
+| Gross | +1,425 | +1,247 | +1,056 | +868 | +686 | +498 | +307 | +125 | +59 | +43 | +19 | 0 |
+| Net of Smithing | +1,128 | +967 | +795 | +625 | +468 | +305 | +139 | -18 | -75 | -74 | -28 | 0 |
+
+Below N = 436 every 3 blood runes are 180 base, 3.4 Superheats after S18, **~11 ticks gross (~3.7 a
+rune)**; above it the stuns hold the whole remainder and the cost is only the bones moved (~0.8 a
+stun), which the Smithing credit outweighs.
+
+### What the table does not change, and what it needs
+
+- **The "+~120" check.** The '~+120 pack's work elsewhere' is RUN-ORDER section 7's stun-pack-fails
+  row (R31): plain pickpocket -25, Charge standalone +33, Fletching standalone +59, 200 bones in S07
+  +52. Its +33 is 163 casts at 5 a tick, so it **assumes the full 489 blood runes and prices none of
+  this**. If the pack fails and the runes are short as well, there are no stuns to superheat in:
+  Charge standalone takes 2 / 12 / 22 ticks and every Superheat is after S18, which adds **+1,398 /
+  +909 / +434** (net of Smithing) to that row at N = 100 / 250 / 400 (i, the model's last row).
+- **The S27 lever** (i, unmeasured): in S27's bow phase the cannon pays ~13.0 Ranged a tick and the
+  bow lifts it to ~20.1 (RG, m), so a tick of Fire Blast in place of the bow costs only 0.35 S27
+  ticks and pays ~8 Magic (34.5 a cast over the 5-tick delay plus damage; 7-9.8 is the honest range,
+  Kolodion's Fire Wave measured 8.8). That is ~23 base a tick against Superheat's 16-19, about 200
+  ticks better at N = 100, but it needs a cast phase in `combatFinish`, ~490 more cannonballs than
+  the ~306 spare at N = 100, and one death rune a cast (~500). It is a lever to measure if N = 100
+  holds at staging, not the column.
+- **Blood-side levers** (i): each blood rune moved into Charge is worth ~3.7 ticks below N = 436.
+  Kolodion's fight is about 50-58 Fire Waves (magic.md section 1, inferred), so the 70 reserve
+  holds ~12-20 runes of margin; a Fire Blast Kolodion (death runes) would free all 70 for ~23 casts,
+  ~250 ticks at N = 100, against a slower fight that is unmeasured. The GE's 99 at 959 and the guild
+  shelf's 1 per 300 ticks are the only top-ups.
+- **A lead beyond the shortfall** (i): the curve goes negative from N ~420, so Superheat in the stuns
+  pays through S25a even at full blood: 140 casts for Smithing alone, ~-75 net, at the cost of the
+  bones moved and a tighter delay-free budget (163 casts + 294 arrows against ~476 slots). For rs/147
+  to weigh; it is not in the table's baseline.
+
+**Module and staging changes the completion needs** (none made here; for rs/147 to file):
+
+1. A `superheat` stun action in the in-page `pickpocket` program
+   (`server/webclient/src/bot/programs/stun-actions.ts`): OPHELDT Superheat on the first ore at k = 2
+   and k = 5, up to 4 delay-free actions before each in the same tick, no bury in those stuns, no xp
+   action on T+10. Its acceptance lab is the open figure: the next attempt against stocked bury
+   stuns (0 or the lite +1.1).
+2. `skills/thieving.ts` `stunPack`: ore in place of bones in load 0 and the top-ups (bronze for the
+   first 12 casts, iron after Smithing 15; no coal held, or Smithing 30 turns iron into steel,
+   `superheat.rs2:27`), the bars dropped or swapped back, a nature-rune precondition, and the Charge
+   action stopping when the blood runs out (it already does: 'Charge while Magic < 99 and runes last').
+3. A standalone Superheat step (S18e) after S18, with the courier's ore swaps; before S25a.
+4. Staging: ~210 more bones in S07's loads (H4.x), the courier's loads switched to ore, and the
+   nature runes and ore bought (rs/41's fleet stock of nature runes and iron ore is not in
+   SUPPLIES.md's ledger; cairn_h51 holds some nature runes, count not recorded).
