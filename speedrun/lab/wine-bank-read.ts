@@ -254,12 +254,11 @@ const readAt = [22, 30, 38, 46, 54, 62];
 let lastWine = '';
 for (const at of readAt) {
     while (tickOf(b.sdk) - b.loginTick < at) await b.sdk.waitForStateUpdate();
-    const before = JSON.stringify(wineItems(b.sdk.getBankItems()));
     await readBank(b, `+${at}`);
+    // once the unfermented wine is gone, one confirming read is enough
     const now = JSON.stringify(wineItems(b.sdk.getBankItems()));
-    if (lastWine && now === lastWine && !now.includes(`"id":${ITEM.wine}`)) break;
+    if (lastWine && now === lastWine && !now.includes(`"id":${ITEM.wine},`)) break;
     lastWine = now;
-    void before;
 }
 out('done', { loginTick: b.loginTick, tick: tickOf(b.sdk), cooking: b.sdk.getSkill('Cooking') });
 await logout(b, 'read');
