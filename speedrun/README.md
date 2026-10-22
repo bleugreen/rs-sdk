@@ -23,7 +23,11 @@ speedrun/
     combat.ts     fight (one target by world index), Upkeep (prayer, potions, food), setPrayer
     world.ts      position, entity/item/skill queries, message windows and tile counters
     paths.ts      collision-map route lengths (separate from light world queries)
-    act.ts        act, actConverse, talkTo, useOn, loc/item/door actions, walks and spell teleports
+    act.ts        act, actConverse, talkTo, useOn, loc/item/door actions, walks and spell teleports;
+                  the jump guard every click goes through (settle, ClickGuard: docs/speedrun/LAB.md,
+                  "Region loads and jumps")
+    travel.ts     travel(hops): runs, teleports, locs, gates (passGate, GNOME_STRONGHOLD_GATE),
+                  spirit trees, the lever, ships, gliders, Lumdo's boat
     idle.ts       message-based idle waits and animation-based settled predicates
     session.ts    openSession, launchClient, logoutClean, waitLoggedOut, login, startWatchdog,
                   abandonClient, markProgress
