@@ -13,6 +13,7 @@
 //   load      a long ::tele to the gate's south side, then the gate click at once, under
 //             'Loading - please wait' when the browser is still building the region
 //   module    speedrun/skills/agility.ts's agility:walk-gnome from the gate's south side
+//   module-east  the same from (2489,3389), the route point before the gate (the demo's approach)
 //   converse  the gate clicked through act.ts actConverse (converse.ts's continue path)
 //   advance   the gate clicked, then lib/dialogue.ts advance() page by page
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -124,12 +125,19 @@ try {
                 await cheat(sdk, `tele 0,${SOUTH[0] >> 6},${SOUTH[1] >> 6},${SOUTH[0] & 63},${SOUTH[1] & 63}`);
                 const landed = await waitUntil(sdk, s => s.player?.worldX === SOUTH[0] && s.player?.worldZ === SOUTH[1], { maxTicks: 20 });
                 const scene = sdk.getState()?.sceneReady;
+                const clickTick = sdk.getState()?.tick ?? 0;
                 const click = await sdk.sendInteractLoc(GATE.x, GATE.z, GATE.id, 1);
-                const moved = await waitUntil(sdk, s => s.dialog.isOpen || north(s) || (s.player?.worldZ ?? 0) !== SOUTH[1], { maxTicks: 40 });
-                const ready = await waitUntil(sdk, s => s.sceneReady !== false, { maxTicks: 120 });
-                out = { landed: landed.ok, sceneAtClick: scene, click, movedOrDialog: moved.ok, at: pos(sdk), sceneReadyTick: ready.ok ? ready.tick : null };
-            } else if (phase === 'module') {
+                let readyTick: number | null = null;
+                const stop = sdk.onStateUpdate(s => {
+                    if (readyTick === null && s.sceneReady !== false) readyTick = s.tick;
+                });
+                const outcome = await waitUntil(sdk, s => s.dialog.isOpen || north(s), { maxTicks: 40 });
+                stop();
+                out = { landed: landed.ok, sceneAtClick: scene, clickTick, click, readyTick, dialogOrThrough: outcome.ok, dialog: sdk.getState()?.dialog.isOpen ?? false, at: pos(sdk) };
+            } else if (phase === 'module' || phase === 'module-east') {
                 await stage(session);
+                // module-east: the demo's approach, the route point before the gate's south entrance
+                if (phase === 'module-east') await mustTele(sdk, 2489, 3389);
                 const step = agilitySteps({ to: 2 }).find(st => st.name === 'agility:walk-gnome')!;
                 const log = TickLog.memory();
                 try {
