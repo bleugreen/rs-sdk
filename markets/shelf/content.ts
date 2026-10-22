@@ -28,8 +28,8 @@ export function parseInvConfigs(text: string, into = new Map<string, StockLine[]
             into.set(inv, []);
             continue;
         }
-        const stock = /^stock\d+=([^,]+),(\d+),(\d+)/.exec(line);
-        if (inv && stock) into.get(inv)!.push({ obj: stock[1]!, count: Number(stock[2]), rate: Number(stock[3]) });
+        const stock = /^stock\d+=([^,]+),(\d+)(?:,(\d+))?/.exec(line);
+        if (inv && stock) into.get(inv)!.push({ obj: stock[1]!, count: Number(stock[2]), rate: Number(stock[3] ?? 0) });
     }
     return into;
 }
