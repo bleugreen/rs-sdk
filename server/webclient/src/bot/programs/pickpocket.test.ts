@@ -573,6 +573,23 @@ describe('pickpocket stun actions', () => {
         });
     });
 
+    test('a roll line that is not the first message of its publication still counts', () => {
+        // every message of one tick shares the publication's observation id
+        const npcs = [{ index: 12, name: 'Knight of Ardougne', options: ['Talk-to', 'Attack', 'Pickpocket'] }];
+        const h = new Harness('pp', createPickpocket);
+        h.start('pp', { rolls: 2 }, makeState({ tick: 1, npcs }));
+        const msgs: Array<{ text: string; tick: number }> = [];
+        for (let t = 2; t < 30 && h.status.phase === 'running'; t++) {
+            if (t === 3) msgs.push({ text: 'You eat the shark.', tick: t }, { text: 'It heals some health.', tick: t }, { text: "You fail to pick the knight's pocket.", tick: t });
+            if (t === 14) msgs.push({ text: "You're stunned!", tick: t }, { text: "You pick the knight's pocket.", tick: t });
+            h.step(makeState({ tick: t, npcs, messages: msgs }));
+        }
+        expect(h.status.phase).toBe('done');
+        expect(h.status.counters.fails).toBe(1);
+        expect(h.status.counters.successes).toBe(1);
+        expect(h.status.endedTick).toBe(14);
+    });
+
     test('rejects a window outside the stun and unknown presets', () => {
         const h = new Harness('pp', createPickpocket);
         for (const params of [{ stunWindow: [1, 6] }, { stunWindow: [2, 8] }, { stunWindow: [5, 3] }, { stunActions: ['juggle'] }, { stunActions: [{ kind: 'item', item: 'x' }] }, { stunActions: [] }, { stunActions: [{ kind: 'player' }] }, { stunActions: [{ kind: 'button', component: 1, window: [4, 2] }] }]) {
