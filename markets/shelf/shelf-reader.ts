@@ -27,6 +27,7 @@ import { travelTo } from '../../speedrun/lib/toll-gate';
 import { isUnderground } from '../../speedrun/lib/underground';
 import { waitTicks, waitUntil } from '../../speedrun/lib/wait';
 import { onTutorialIsland } from '../../speedrun/lib/world';
+import { chooseInv, type Content, loadContent } from './content';
 import { readOnlyBot, readOnlySdk, SHOP_STOCK_COMPONENT, VALUE_OPTION } from './read-only';
 import {
     type Entry,
@@ -37,6 +38,7 @@ import {
     parseOptions,
     parseValueMessage,
     RANGING_GUILD_DOOR,
+    type ShelfContent,
     type ShelfRecord,
     shelfRecords,
     type Stop,
@@ -66,6 +68,8 @@ export class ShelfReader {
     private readonly bot: BotActions;
     private readonly sdk: BotSDK;
     private readonly out: string;
+    /** The checkout's shop content; null (and the records' content fields null) when it cannot be read. */
+    private content: Content | null = null;
 
     constructor(
         private readonly ctx: RoleContext,
@@ -103,6 +107,11 @@ export class ShelfReader {
 
     async run(): Promise<void> {
         mkdirSync(dirname(this.out), { recursive: true });
+        try {
+            this.content = loadContent();
+        } catch (e) {
+            this.ctx.log('no shop content: inv stays the table name, obj, stockBase and computed prices are null', { error: String(e) });
+        }
         await this.sdk.waitForCondition(s => (s.player?.worldX ?? 0) > 0, 60_000);
         if (onTutorialIsland(this.state.player)) {
             const r = await this.bot.skipTutorial();
@@ -257,32 +266,48 @@ export class ShelfReader {
             const utc = new Date().toISOString();
             const tick = s.tick;
             const values = await this.valueAll(shop.shopItems);
-            const records = shelfRecords({ stop: stop.key, read, utc, tick, at: this.here(), legMs: leg.ms, legTicks: leg.ticks, shop, values });
+            const records = shelfRecords({ stop: stop.key, read, utc, tick, at: this.here(), legMs: leg.ms, legTicks: leg.ticks, shop, values, inv: stop.inv[0]!, content: this.shelfContent(stop, shop.shopItems) });
             for (const r of records) this.emit(r);
-            const missing = shop.shopItems.filter(i => !values.has(lower(i.name))).map(i => i.name);
-            this.ctx.log('shelf', { stop: stop.key, read, title: shop.title, items: shop.shopItems.length, valued: values.size, missing, legMs: leg.ms, legTicks: leg.ticks });
+            const missing = shop.shopItems.filter(i => !values.has(i.slot)).map(i => `${i.slot}:${i.name}`);
+            const items = records.slice(1) as Extract<ShelfRecord, { kind: 'item' }>[];
+            const disagree = items.filter(i => i.valuePrice !== null && i.computedBuyPrice !== null && i.valuePrice !== i.computedBuyPrice).map(i => `${i.slot}:${i.name}`);
+            this.ctx.log('shelf', { stop: stop.key, read, title: shop.title, inv: records[0].inv, items: shop.shopItems.length, valued: values.size, missing, valueVsComputed: disagree, legMs: leg.ms, legTicks: leg.ticks });
         } finally {
             await this.bot.closeShop();
         }
     }
 
+    /** The content for this read: the stop's inventory (of several, the one matching the shelf), its stock config and object names. */
+    private shelfContent(stop: Stop, items: readonly ShopItem[]): ShelfContent | null {
+        const content = this.content;
+        if (!content) return null;
+        const inv = chooseInv(stop.inv, content, items.map(i => content.objName(i.id) ?? null));
+        const stock = new Map((content.stock(inv) ?? []).map(s => [s.obj, s.count]));
+        return { inv, objName: id => content.objName(id), stockBase: obj => stock.get(obj) };
+    }
+
     /**
      * The server's live buy price of each item: the shop's Value option, answered
-     * with "<name>: currently costs <n>gp." (shop.rs2). Clicks go out in batches;
-     * an item without an answer is asked once more. Prices by lower-cased name.
+     * with "<name>: currently costs <n>gp." (shop.rs2). Clicks go out in batches
+     * and the server answers them in order, so each answer goes to the first
+     * unanswered slot of the batch with that name: two slots may share a name
+     * (Betty's two "Wizards hat" objects). An unanswered slot is asked once more
+     * on its own. Prices by slot.
      */
-    private async valueAll(items: ShopItem[]): Promise<Map<string, number>> {
-        const values = new Map<string, number>();
+    private async valueAll(items: ShopItem[]): Promise<Map<number, number>> {
+        const values = new Map<number, number>();
         let pending = items;
         for (let pass = 0; pass < 2 && pending.length > 0; pass++) {
-            for (let i = 0; i < pending.length; i += VALUE_BATCH) {
+            const size = pass === 0 ? VALUE_BATCH : 1;
+            for (let i = 0; i < pending.length; i += size) {
                 this.checkSignal();
                 if (!this.sdk.getState()?.shop.isOpen) return values;
-                const batch = pending.slice(i, i + VALUE_BATCH);
+                const batch = pending.slice(i, i + size);
                 const seen = new Map<string, number>();
                 for (const m of this.state.gameMessages) seen.set(msgKey(m), (seen.get(msgKey(m)) ?? 0) + 1);
                 const collect = (s: BotWorldState) => {
                     const left = new Map(seen);
+                    const answered = new Set<number>();
                     for (const m of s.gameMessages) {
                         const k = msgKey(m);
                         const old = left.get(k) ?? 0;
@@ -291,15 +316,18 @@ export class ShelfReader {
                             continue;
                         }
                         const v = m.type === 0 ? parseValueMessage(m.text) : null;
-                        if (v) values.set(lower(v.name), v.price);
+                        const slot = v && batch.find(b => !answered.has(b.slot) && lower(b.name) === lower(v.name));
+                        if (!v || !slot) continue;
+                        answered.add(slot.slot);
+                        values.set(slot.slot, v.price);
                     }
-                    return batch.every(b => values.has(lower(b.name)));
+                    return batch.every(b => values.has(b.slot));
                 };
                 for (const it of batch) await this.sdk.sendClickComponentWithOption(SHOP_STOCK_COMPONENT, VALUE_OPTION, it.slot);
                 await waitUntil(this.sdk, collect, { maxTicks: VALUE_WAIT_TICKS });
                 collect(this.state);
             }
-            pending = pending.filter(it => !values.has(lower(it.name)));
+            pending = pending.filter(it => !values.has(it.slot));
         }
         return values;
     }
