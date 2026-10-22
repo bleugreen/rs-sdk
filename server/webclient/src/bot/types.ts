@@ -330,6 +330,14 @@ export interface PlayerState {
     respawnCount: number;
     /** Public game tick when death was last observed, or null if none was observed. */
     lastDeathTick: number | null;
+    /**
+     * Public game tick of the last teleport-type update of this player: a server-placed move
+     * rather than a walk or run step. Teleports, ladders and stairs (plane changes), login, and
+     * the scripted moves that step by p_teleport (agility_walk: the Gnome Stronghold gate, the
+     * Grand Tree door). The script that placed the player usually still holds them that tick,
+     * so a click sent then is dropped. Null before the first.
+     */
+    teleportTick: number | null;
 }
 
 // Combat style state

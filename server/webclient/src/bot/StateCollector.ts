@@ -123,6 +123,8 @@ export class BotStateCollector implements ScanProvider {
     private lifeId: number = 0;
     private respawnCount: number = 0;
     private lastDeathTick: number | null = null;
+    private lastTeleports = 0;
+    private teleportTick: number | null = null;
 
     private lastFaceEntity: number | null = null;
     private faceEntitySetCycle: number = Number.NEGATIVE_INFINITY;
@@ -661,6 +663,12 @@ export class BotStateCollector implements ScanProvider {
             this.lifeId++;
         }
 
+        const teleports: number = player.teleports ?? 0;
+        if (teleports !== this.lastTeleports) {
+            this.lastTeleports = teleports;
+            this.teleportTick = currentTick;
+        }
+
         const pos = serverPos(player);
         return {
             name: player.name || 'Unknown',
@@ -685,7 +693,8 @@ export class BotStateCollector implements ScanProvider {
             isDead,
             lifeId: this.lifeId,
             respawnCount: this.respawnCount,
-            lastDeathTick: this.lastDeathTick
+            lastDeathTick: this.lastDeathTick,
+            teleportTick: this.teleportTick
         };
     }
 
