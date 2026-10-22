@@ -85,7 +85,8 @@ const config = {
     botsDir,
     runDir,
     loginSpacingMs: 2000,
-    accounts: givers.map((account, i) => ({ account, role: 'altar-giver', options: { altar, slot: i % 3, essence: 27, restock: { kind: 'cheat' }, ...(path ? { path } : {}) } }))
+    // `path` is the launcher entry's key (standalone.ts LaunchEntry), not a role option.
+    accounts: givers.map((account, i) => ({ account, role: 'altar-giver', ...(path ? { path } : {}), options: { altar, slot: i % 3, essence: 27, restock: { kind: 'cheat' } } }))
 };
 writeFileSync(join(base, 'launch.json'), JSON.stringify(config, null, 2));
 console.log(`runecraft-accept: ${altar} from ${level}, ${cycles ? `${cycles} cycles` : `until ${untilLevel ?? 99}`}, schedule ${schedule}, ${order}, ${givers.length} givers${path ? ` (${path})` : ''}; run files in ${base}`);
