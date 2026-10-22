@@ -34,23 +34,51 @@ export function parseInvConfigs(text: string, into = new Map<string, StockLine[]
     return into;
 }
 
-export interface NpcShop {
+/** A shop's price parameters (shop.rs2 openshop): multipliers and the haggle, per mille of the base cost. */
+export interface ShopParams {
+    buy?: number;
+    sell?: number;
+    /** shop_delta: the price moves haggle/1000 of the base cost per unit away from the configured stock. */
+    haggle?: number;
+}
+
+export interface NpcShop extends ShopParams {
     debug: string;
     name: string;
     inv: string;
 }
 
-/** NPC configs that own a shop: `[debug]`, `name=`, `param=owned_shop,<inv>`. */
+/** NPC configs that own a shop: `[debug]`, `name=`, `param=owned_shop,<inv>` and its price params. */
 export function parseNpcShops(text: string): NpcShop[] {
     const out: NpcShop[] = [];
-    let cur: { debug: string; name: string } | null = null;
+    let cur: (Partial<NpcShop> & { debug: string; name: string }) | null = null;
+    const flush = () => {
+        if (cur?.inv) out.push(cur as NpcShop);
+    };
+    const param = (line: string, key: string) => (line.startsWith(`param=${key},`) ? Number(line.slice(`param=${key},`.length)) : undefined);
     for (const raw of text.split('\n')) {
         const line = raw.trim();
         const head = /^\[([^\]]+)\]$/.exec(line);
-        if (head) cur = { debug: head[1]!, name: '' };
-        else if (cur && line.startsWith('name=')) cur.name = line.slice(5);
-        else if (cur && line.startsWith('param=owned_shop,')) out.push({ ...cur, inv: line.slice('param=owned_shop,'.length) });
+        if (head) {
+            flush();
+            cur = { debug: head[1]!, name: '' };
+        } else if (!cur) continue;
+        else if (line.startsWith('name=')) cur.name = line.slice(5);
+        else if (line.startsWith('param=owned_shop,')) cur.inv = line.slice('param=owned_shop,'.length);
+        else {
+            cur.buy = param(line, 'shop_buy_multiplier') ?? cur.buy;
+            cur.sell = param(line, 'shop_sell_multiplier') ?? cur.sell;
+            cur.haggle = param(line, 'shop_delta') ?? cur.haggle;
+        }
     }
+    flush();
+    return out;
+}
+
+/** Shops a script opens itself: `~openshop(<inv>, <buy>, <sell>, <haggle>, "<title>")` (Zaff's). */
+export function parseScriptShops(text: string): Map<string, ShopParams> {
+    const out = new Map<string, ShopParams>();
+    for (const m of text.matchAll(/~openshop\((\w+),\s*(\d+),\s*(\d+),\s*(\d+),/g)) out.set(m[1]!, { buy: Number(m[2]), sell: Number(m[3]), haggle: Number(m[4]) });
     return out;
 }
 
@@ -63,6 +91,8 @@ export interface Content {
     stock(inv: string): readonly StockLine[] | undefined;
     /** An object's debug name by id. */
     objName(id: number): string | undefined;
+    /** An inventory's price params from its shopkeeper's config or the script that opens it. */
+    shopParams(inv: string): ShopParams | undefined;
 }
 
 let loaded: Content | null = null;
@@ -73,8 +103,14 @@ export function loadContent(): Content {
     if (!existsSync(CONTENT_SCRIPTS)) throw new Error(`shop content needs ${CONTENT_SCRIPTS}, which this checkout does not have`);
     const invs = new Map<string, StockLine[]>();
     for (const f of filesUnder(CONTENT_SCRIPTS, '.inv')) parseInvConfigs(readFileSync(f, 'utf8'), invs);
+    const params = new Map<string, ShopParams>();
+    for (const f of filesUnder(CONTENT_SCRIPTS, '.rs2')) {
+        const text = readFileSync(f, 'utf8');
+        if (text.includes('~openshop(')) for (const [inv, p] of parseScriptShops(text)) params.set(inv, p);
+    }
+    for (const n of contentNpcShops()) if (!params.has(n.inv)) params.set(n.inv, { buy: n.buy, sell: n.sell, haggle: n.haggle });
     const pack = objPack();
-    loaded = { stock: inv => invs.get(inv), objName: id => pack.names.get(id) };
+    loaded = { stock: inv => invs.get(inv), objName: id => pack.names.get(id), shopParams: inv => params.get(inv) };
     return loaded;
 }
 
