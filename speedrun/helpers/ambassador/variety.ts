@@ -87,6 +87,16 @@ export function isProbe(text: string): boolean {
 
 // ------------------------------------------------------------------ the near-repeat guard
 
+/** Pebble's running bits (persona.md), by the words that mark them. */
+export const BITS: Record<string, RegExp> = {
+    gerald: /\bgerald\b/i,
+    collection: /\b(exhibit|collection|museum|curator)\b/i,
+    forecast: /\b(forecast|sunny|drizzle|cloudy|showers|weather)\b/i,
+    kebabs: /\bkebabs?\b/i,
+    tile: /\b(my|this|the) (tile|crack)\b/i
+};
+
+
 export const GUARD = {
     /** How many of our latest lines a new one is compared with. */
     window: 30,
@@ -99,10 +109,13 @@ export const GUARD = {
     questionWindow: 8,
     /** A content word already in this many of the last wordWindow lines is a near-repeat (the running joke said once too often). */
     wordMax: 3,
-    wordWindow: 8
+    wordWindow: 8,
+    /** A running bit (BITS) already in this many of the last bitWindow lines is a near-repeat: a bit, not a tic. */
+    bitMax: 1,
+    bitWindow: 5
 } as const;
 
-export type Guard = typeof GUARD;
+export type Guard = { readonly [K in keyof typeof GUARD]: number };
 
 /** Content words of a line (four letters or more, not stopwords), plural s dropped. */
 export function contentWords(text: string): Set<string> {
@@ -114,7 +127,7 @@ export function contentWords(text: string): Set<string> {
 }
 
 export interface NearRepeat {
-    reason: 'opener' | 'phrase' | 'word' | 'probe' | 'questions';
+    reason: 'opener' | 'phrase' | 'word' | 'bit' | 'probe' | 'questions';
     /** The overused opener or phrase, for the retry prompt and the log. */
     detail: string;
 }
@@ -139,6 +152,10 @@ export function nearRepeat(text: string, recent: readonly string[], g: Guard = G
     const lately = recent.slice(-g.wordWindow).map(contentWords);
     for (const w of contentWords(text)) {
         if (!theirs.has(w) && lately.filter(s => s.has(w)).length >= g.wordMax) return { reason: 'word', detail: `"${w}" again` };
+    }
+    for (const [bit, re] of Object.entries(BITS)) {
+        if (!re.test(text) || heard.some(h => re.test(h))) continue;
+        if (recent.slice(-g.bitWindow).filter(l => re.test(l)).length >= g.bitMax) return { reason: 'bit', detail: `the ${bit} bit again so soon` };
     }
     if (isQuestion(text) && recent.slice(-g.questionWindow).filter(isQuestion).length >= g.questionMax) {
         return { reason: 'questions', detail: `${g.questionMax} of your last ${g.questionWindow} lines were questions` };
@@ -219,7 +236,7 @@ export function analyse(sent: readonly SentLine[], g: Guard = GUARD): VarietyRep
     const openers = new Map<string, number>();
     const grams = new Map<string, number>();
     const selfBy = new Map<string, number>();
-    const guardHits: VarietyReport['guardHits'] = { opener: 0, phrase: 0, word: 0, probe: 0, questions: 0 };
+    const guardHits: VarietyReport['guardHits'] = { opener: 0, phrase: 0, word: 0, bit: 0, probe: 0, questions: 0 };
     let questions = 0;
     let probes = 0;
     let selfLines = 0;
@@ -290,7 +307,92 @@ export function sentLines(records: Iterable<Record<string, unknown>>, sinceMs = 
     return out;
 }
 
+// ------------------------------------------------------------------ character
+
+
+const OPINION = /\b(best|finest|worst|overrated|underrated|favou?rite|i (think|reckon|maintain|stand by|say)|in my (view|opinion)|nothing beats|cuisine|out of five)\b/i;
+
+/** A line someone said to us, for the callback measure. */
+export interface HeardLine {
+    at: number;
+    sender: string;
+    text: string;
+}
+
+export interface CharacterReport {
+    lines: number;
+    /** Lines per running bit, and how many lines used any. */
+    bits: Record<string, number>;
+    bitLines: number;
+    /** Lines that state an opinion. */
+    opinions: number;
+    /** Lines to a player we had already spoken to in the window. */
+    toReturning: number;
+    /**
+     * Lines to a player that pick up a word of theirs from more than 90 s before, which
+     * their latest lines do not contain: a callback to something said earlier.
+     */
+    callbacks: number;
+    avgWords: number;
+    exclaimShare: number;
+}
+
+export function character(sent: readonly SentLine[], heard: readonly HeardLine[]): CharacterReport {
+    const lines = [...sent].sort((a, b) => a.at - b.at);
+    const bits: Record<string, number> = Object.fromEntries(Object.keys(BITS).map(k => [k, 0]));
+    let bitLines = 0;
+    let opinions = 0;
+    let toReturning = 0;
+    let callbacks = 0;
+    const spoken = new Set<string>();
+    for (const l of lines) {
+        const hit = Object.entries(BITS).filter(([, re]) => re.test(l.text));
+        for (const [k] of hit) bits[k]!++;
+        if (hit.length) bitLines++;
+        if (OPINION.test(l.text)) opinions++;
+        if (!l.to) continue;
+        const who = l.to.toLowerCase();
+        if (spoken.has(who)) toReturning++;
+        spoken.add(who);
+        const theirs = heard.filter(h => h.sender.toLowerCase() === who && h.at <= l.at);
+        const recent = new Set(theirs.filter(h => l.at - h.at <= 90_000).flatMap(h => [...contentWords(h.text)]));
+        const earlier = new Set(theirs.filter(h => l.at - h.at > 90_000).flatMap(h => [...contentWords(h.text)].filter(w => w.length >= 5)));
+        if ([...contentWords(l.text)].some(w => earlier.has(w) && !recent.has(w))) callbacks++;
+    }
+    const n = lines.length;
+    return {
+        lines: n,
+        bits,
+        bitLines,
+        opinions,
+        toReturning,
+        callbacks,
+        avgWords: n ? lines.reduce((s, l) => s + words(l.text).length, 0) / n : 0,
+        exclaimShare: n ? lines.filter(l => l.text.includes('!')).length / n : 0
+    };
+}
+
+/** Lines heard from players (the `seen` kind, not our own accounts) from chat-log records. */
+export function heardLines(records: Iterable<Record<string, unknown>>, sinceMs = -Infinity, untilMs = Infinity): HeardLine[] {
+    const out: HeardLine[] = [];
+    for (const r of records) {
+        if (r.kind !== 'seen' || r.ours || typeof r.text !== 'string' || typeof r.sender !== 'string' || typeof r.t !== 'string') continue;
+        const at = Date.parse(r.t);
+        if (at >= sinceMs && at < untilMs) out.push({ at, sender: r.sender, text: r.text });
+    }
+    return out;
+}
+
 const pct = (x: number) => `${(100 * x).toFixed(1)}%`;
+
+export function formatCharacter(c: CharacterReport): string {
+    const share = (k: number) => (c.lines ? pct(k / c.lines) : '-');
+    return [
+        `running bits: ${c.bitLines} lines (${share(c.bitLines)}): ${Object.entries(c.bits).map(([k, v]) => `${k} ${v}`).join(', ')}`,
+        `opinions: ${c.opinions} (${share(c.opinions)}); to returning players: ${c.toReturning}; callbacks: ${c.callbacks} (${share(c.callbacks)})`,
+        `words per line: ${c.avgWords.toFixed(1)}; lines with !: ${pct(c.exclaimShare)}`
+    ].join('\n');
+}
 
 export function formatReport(r: VarietyReport): string {
     const out = [
@@ -330,6 +432,9 @@ if (import.meta.main) {
     }
     const since = flag('since');
     const until = flag('until');
-    const report = analyse(sentLines(records, since ? Date.parse(since) : -Infinity, until ? Date.parse(until) : Infinity));
-    console.log(process.argv.includes('--json') ? JSON.stringify(report, null, 2) : formatReport(report));
+    const [from, to] = [since ? Date.parse(since) : -Infinity, until ? Date.parse(until) : Infinity];
+    const sent = sentLines(records, from, to);
+    const report = analyse(sent);
+    const char = character(sent, heardLines(records, from, to));
+    console.log(process.argv.includes('--json') ? JSON.stringify({ ...report, character: char }, null, 2) : `${formatReport(report)}\n${formatCharacter(char)}`);
 }

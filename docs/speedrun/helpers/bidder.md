@@ -74,7 +74,7 @@ subtracts ours from the totals, and the rest belongs to others:
 
 ## Options
 
-Role options are `{ "lines": [ ...line options... ], "recheckMinutes", "fillCheckMinutes", "funders" }`.
+Role options are `{ "lines": [ ...line options... ], "recheckMinutes", "fillCheckMinutes", "funders", "offersFile" }`.
 Without `lines`, the options themselves are a single line.
 
 | Line option | Default | Meaning |
@@ -93,6 +93,11 @@ Without `lines`, the options themselves are a single line.
 | `recheckMinutes` | 30 | Minutes between market rechecks |
 | `fillCheckMinutes` | 3 | Minutes between peeks for fills waiting to be collected |
 | `funders` | `^cairn_h\d+$` | Login-name RegExps whose trades are accepted as funding |
+| `offersFile` | none | Write our open offers and the last week of collected fills to this JSON file (`true`: `<checkout>/fleet-run/ge-offers.json`) for the ambassador's Bounty Board |
+
+### The offers file (for the Bounty Board)
+
+The public market cannot tell our bid from a competitor's, so the ambassador announces a bounty only from the bidder's own record (docs/speedrun/AMBASSADOR.md, Pebble's Bounty Board). With `offersFile` set, the bidder writes `{version, account, writtenAt, offers: [{id, item, itemId, side, state, price, quantity, remaining, filled}], fills: [{item, n, at}]}` (`speedrun/helpers/ge-offers.ts`). It writes after each recheck and each fill peek, while the exchange is open so the offers are current, replacing the file whole (temp file, then rename). Fills are recorded as they are collected and kept for a week, carried across restarts by the file itself. A failed write is logged as `offers file error` and changes nothing else: buying, cancelling and funding are untouched. A parked bidder stops writing, and after 30 minutes the ambassador treats the file as stale, so the board goes quiet without anyone editing it.
 
 The options cairn_h61 runs with:
 
