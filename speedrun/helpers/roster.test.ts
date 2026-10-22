@@ -36,7 +36,7 @@ describe('launcher entries', () => {
             const parsed = parseLaunchConfig(JSON.parse(JSON.stringify(generated)));
             expect(parsed.accounts.map(a => a.account)).toEqual(accounts);
             expect(parsed.accounts.every(a => a.path === 'direct' && a.role === role && !a.receiver && !a.final)).toBe(true);
-            expect(parsed.accounts.map(a => a.options)).toEqual(giverEntries(accounts, { role }).map(a => a.options));
+            expect(parsed.accounts.map(a => a.options)).toEqual(giverEntries(accounts, { role }).map(a => a.options as Record<string, unknown>));
             expect(parsed.gatewayPort).toBe(7796);
             expect(parsed.stopDeadlineMs).toBe(25_000);
         }
