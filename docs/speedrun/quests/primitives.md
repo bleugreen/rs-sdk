@@ -180,7 +180,7 @@ if the server is patched. Bursts cover pure-continue pages only. See
 | Watchtower | Magic 58 and the Watchtower quest (`%itwatchtower` ≥ 14) | **4**. It lands on the top floor of the Watchtower at (2932,4711, level 2) (`magic_spells.dbrow:114`), so add the climb down to reach Yanille. | level 20 |
 | Amulet of glory | charged amulet (4 charges); Edgeville, Karamja, Draynor Village, Al Kharid | **6**: 2 to the choice, 4 to arrival | **level 30** |
 | Games necklace | charged necklace (8 uses); Burthorpe games room only (arrived at about (2208,4941)) | **8**: 4 to the choice (it has a `p_delay(1)` first), 4 to arrival | level 20 |
-| Ring of dueling | | **does not teleport here**. The obj exists (`enchanted_jewelry.obj`) but no script uses it (read). | |
+| Ring of dueling | charged ring; Duel Arena (3315,3235) or Castle Wars (2440,3090) | **about 8** (read, not measured): `p_delay(1)`, a choice, then `~player_teleport_normal` (`general/scripts/enchanted_jewellry/ring_of_dueling.rs2:1-34`) | level 20 |
 
 Notes:
 
