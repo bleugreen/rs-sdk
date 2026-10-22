@@ -5,7 +5,7 @@ ahead of jackalopefm4's 3m 31s (706), on 2026-10-22 03:43-03:47Z (20:43-20:47 PD
 gate had predicted 669 at the median line with P(#1) = 95.7%. The 21 ticks over the median were an
 early login (+18, the launch was timed in 300 ms wall ticks while the demo ran 0.34-0.37 s a tick),
 roll luck (+4) and one parked tick fewer (-1). See "Demo attempt" below. jackalopefma later took #1 at
-673 ticks (3m 21s at 300 ms). Re-raced by cairn_ashes at 664 ticks (rs/439, below).
+673 ticks (3m 21s at 300 ms). Re-raced by cairn_ashes at 664 ticks, #1 again (rs/439, below).
 
 Labels: **m** measured in the retained lab output ([firemaking-evidence.json](firemaking-evidence.json));
 **r** read from code or content; **i** inferred.
@@ -176,7 +176,7 @@ here, at 0.37 s ticks and about 1,700 players (m, r; rs/269).
 has 665 playtime) on 2026-10-22 20:36-20:40Z**, under jackalopefma's 673 (#1 since that morning) and
 cairn_burns's 690. The model put P(beating 673) at 65%, below the 90% gate, so it was run and labelled
 as a **measurement** of S03 on the current floor (rs/364's message reader, rs/309's ClickGuard),
-not a record attempt. At 20:43Z the board had not yet listed it (its page showed rank '-').
+not a record attempt. The board listed it #1 at 20:44:42Z, ahead of jackalopefma 673 and cairn_burns 690.
 Labels: **m** measured, **r** read, **i** inferred.
 
 **The change: no parked claim, login on the cue.** cairn_burns was claimed and parked in advance
