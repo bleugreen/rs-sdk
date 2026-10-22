@@ -96,3 +96,16 @@ regularly hides the damage. Before measuring anywhere with aggressive NPCs,
 The SDK pathfinder does not model Ape Atoll's bamboo ladders and bridges or
 the Grand Tree's scripted doors. Walk legs that cross them step by step in the
 lab before trusting a route.
+
+## Port blocks and quest varps
+
+- **"World ready" prints before the engine binds its web port.** A block another lab already
+  holds used to pass `lab.sh`'s readiness check, and the scripts then drove *that* lab's engine
+  with no error. `lab.sh` now fails on a bind error. Before choosing a block, check it with
+  `lsof -nP -iTCP:<port> -sTCP:LISTEN` for all five ports.
+- **Bound long labs with `LAB_TIMEOUT=<seconds>`** (macOS has no `timeout(1)`) and run them in a
+  terminal, waiting on an output sentinel. A signal exits `lab.sh` through its cleanup.
+- **`::setvar <quest> <complete>` does not recolour the quest tab**, which is what `quests` and
+  `questDone` read. The colours come from `~update_questlist`, which login runs, so relog once after
+  the setvar: own the client with `LAB_RUNNERS=0`, `openSession(bot, {launch: true})`, then
+  `relog(session)`.
