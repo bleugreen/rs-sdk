@@ -50,14 +50,14 @@ restores the backpack from the snapshot taken before the action
 
 ## Candidates
 
-Probes P1 to P7 are in `markets/research/ge-persistence-probe.ts`. Each step
+Probes P1 to P7 are in `markets/research/rs498-ge-persistence-probe.ts`. Each step
 checks one sum over the accounts involved: items held (every inventory, notes
 folded into the base item, escrow, saved overflow), plus ledger escrow (open sell
 remaining, open buy remaining × price), plus ledger claims (`offer.items`,
 `offer.coins`), plus GE tax for coins. Any rise is reported as a duplication. A
 "crash" rebuilds every player from its ledger row with nothing written since the
 last checkpoint, which is what a SIGKILL leaves. L1 and L2 are in
-`markets/research/lab-ge-escrow-crash.ts`, run on a lab engine with bots.
+`markets/research/rs498-lab-ge-escrow-crash.ts`, run on a lab engine with bots.
 
 | # | Candidate | Code path | Test | Result |
 |---|---|---|---|---|
@@ -91,7 +91,7 @@ In-process probe, from a built engine (`BUILD_VERIFY=false bun run build` in
 `server/engine`):
 
 ```sh
-cd server/engine && bun ../../markets/research/ge-persistence-probe.ts
+cd server/engine && bun ../../markets/research/rs498-ge-persistence-probe.ts
 ```
 
 Result: `conserved` for P1, P2, P3, the four P4 variants, P5, P6 and P7.
@@ -102,7 +102,7 @@ Bot lab:
 LAB_RUNNERS=0 LAB_BOTS="q1abuyer q1achurn" NODE_TICKRATE=400 \
 WEB_PORT=9900 WEB_MANAGEMENT_PORT=9901 HISCORES_WEB_PORT=9902 NODE_PORT=44900 AGENT_PORT=7700 \
 LAB_TIMEOUT=1500 speedrun/lab/lab.sh q1aseller \
-  markets/research/lab-ge-escrow-crash.ts:--partner=q1abuyer:--churn=q1achurn
+  markets/research/rs498-lab-ge-escrow-crash.ts:--partner=q1abuyer:--churn=q1achurn
 ```
 
 Recorded run:
