@@ -585,11 +585,15 @@ function doorPassed(s: BotWorldState, door: { x: number; z: number }): Set<strin
 }
 
 /**
- * The door a run starting at `at` has just come through: every door or gate loc within 2 tiles that
- * `route` does not cross. A door the run needs is on its route, and the run opens that one itself.
+ * The doors a run starting at `at` may have just come through: every door or gate loc within 2 tiles
+ * that the run cannot need. A door's wall lies on an edge of its own tile, so a run crosses it only
+ * by stepping into or out of that tile. `route` lists every tile after the start, so a door the run
+ * needs is either on it (the run opens that one ahead) or under the player, where the first step may
+ * cross its wall: the Dwarf Cannon shed door shuts with the player on its tile, inside.
  */
 function doorsBehind(s: BotWorldState, at: { x: number; z: number }, route: ReadonlyArray<{ x: number; z: number }>): Set<string> {
-    return new Set(s.nearbyLocs.filter(l => DOORISH(l) && chebyshev(l, at) <= 2 && !route.some(t => t.x === l.x && t.z === l.z)).map(doorKey));
+    const crossable = (l: NearbyLoc) => (l.x === at.x && l.z === at.z) || route.some(t => t.x === l.x && t.z === l.z);
+    return new Set(s.nearbyLocs.filter(l => DOORISH(l) && chebyshev(l, at) <= 2 && !crossable(l)).map(doorKey));
 }
 
 /** Open a door as part of the run: the server walks to it, then opens it. Ok once no closed door is on its tile. */
@@ -633,8 +637,8 @@ async function hopRun(sdk: TravelSdk, trip: Trip, to: Area, opts: TravelOptions,
     let route = buildRoute(sdk, goal, via);
     // A stall never opens the door the run last went through. The Grand Tree's door forcemoves the
     // player through it (gnome_gate.rs2 open_tree_door), so opening it again from the far side sends
-    // them straight back (rs/185: ~50 ticks on each exit). At the start that door is the one just
-    // come through; afterwards it is the last one the run opened.
+    // them straight back (rs/185: ~50 ticks on each exit). At the start that is any door nearby the
+    // run cannot cross (doorsBehind); afterwards it is the last one the run opened.
     let passed = doorsBehind(sdk.getState()!, pos(sdk), route);
     let idx = 0;
     let target: XZ | null = null;
