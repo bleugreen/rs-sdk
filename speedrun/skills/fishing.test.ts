@@ -9,8 +9,8 @@ import { xpForLevel } from '../lib/xp';
 import { Observation, resolveResume } from '../runner/resume';
 import type { Step, StepContext } from '../runner/step';
 import {
-    bandFor, DRAYNOR, expectedRolls, feathersNeeded, FLY_PARAMS, flyRollsPerCatch, type FishingOptions, NET_METHOD, PLAIN_TICKS_PER_ROLL, RIVER,
-    rollYield, skill, steps, summarizeBand, type BandSegment
+    answerThreat, bandFor, DRAYNOR, expectedRolls, feathersNeeded, FLY_PARAMS, flyRollsPerCatch, type FishingOptions, GUARD_DEFAULTS, type GuardIo, NET_METHOD, PLAIN_TICKS_PER_ROLL, RIVER,
+    rollYield, SAFE, skill, steps, summarizeBand, threatOf, type BandSegment
 } from './fishing';
 
 const S22 = 240300; // 9,612 base
@@ -304,5 +304,208 @@ describe('fishing: summarizeBand', () => {
     test('catches are read from knife-cycle\'s successes counter, with no result', () => {
         const bare: BandSegment = { ...seg('knife', 'done', S22, xpForLevel(99), 2000, 0), status: status({ startedTick: 0, endedTick: 2000, counters: { successes: 517 } }) };
         expect(summarizeBand('fly', [bare]).catches).toBe(517);
+    });
+});
+
+// ------------------------------------------------------------------ spider guard
+
+const SPIDER_INDEX = 412;
+
+function fighter(o: { hp?: number; at?: { x: number; z: number }; spiderAt?: { x: number; z: number }; tick?: number; hits?: Array<{ tick: number; index?: number }>; spiderHp?: number | null; food?: number; inCombat?: boolean }): Partial<BotWorldState> {
+    const at = o.at ?? RIVER;
+    const sp = o.spiderAt ?? at;
+    return {
+        tick: o.tick ?? 1000,
+        player: { worldX: at.x, worldZ: at.z, hp: o.hp ?? 10, maxHp: 10, isDead: false, lifeId: 1, respawnCount: 0, combat: { inCombat: o.inCombat ?? false, targetIndex: o.inCombat ? SPIDER_INDEX : -1, targetType: o.inCombat ? 'npc' : 'none', lastDamageTick: -1 } } as unknown as BotWorldState['player'],
+        combatEvents: (o.hits ?? []).map(h => ({ tick: h.tick, type: 'damage_taken' as const, damage: 1, sourceType: 'npc' as const, sourceIndex: h.index ?? SPIDER_INDEX, targetType: 'player' as const, targetIndex: -1 })),
+        nearbyNpcs: [...(o.spiderHp === null ? [] : [{ kind: 'npc', id: 59, index: SPIDER_INDEX, name: 'Giant spider', combatLevel: 2, x: sp.x, z: sp.z, tileX: sp.x, tileZ: sp.z, distance: 1, hp: o.spiderHp ?? 5, maxHp: 5, healthPercent: null, targetIndex: -1, inCombat: true, lastCombatTick: null, animId: -1, spotanimId: -1, optionsWithIndex: [], options: ['Attack'] }]), { kind: 'npc', id: 1, index: 7, name: 'Fishing spot', combatLevel: 0, x: 3239, z: 3242, distance: 2, hp: null, maxHp: null, healthPercent: null, targetIndex: -1, inCombat: false, lastCombatTick: null, animId: -1, spotanimId: -1, optionsWithIndex: [], options: [] }] as BotWorldState['nearbyNpcs'],
+        inventory: Array.from({ length: o.food ?? 2 }, (_, i) => ({ slot: i, id: 300 + i, name: i ? 'Bread' : 'Shrimps', count: 1, optionsWithIndex: [{ text: 'Eat', opIndex: 1 }] }))
+    };
+}
+
+/** A scripted session: each wait advances one tick through `world(tick)`; the calls are recorded. */
+function scriptedIo(sdk: FakeSdk, world: (tick: number, s: BotWorldState, io: { attacked: number; ate: number }) => Partial<BotWorldState>) {
+    const seen = { attacked: 0, ate: 0, walks: [] as Array<[number, number]> };
+    const io: GuardIo = {
+        state: () => sdk.getState(),
+        wait: async n => {
+            for (let i = 0; i < n; i++) sdk.push(s => ({ tick: s.tick + 1, ...world(s.tick + 1, s, seen) }));
+        },
+        walkTo: async (x, z) => {
+            seen.walks.push([x, z]);
+            sdk.push(s => ({ tick: s.tick + 5, player: { ...s.player!, worldX: x, worldZ: z } }));
+            return true;
+        },
+        attack: async () => {
+            seen.attacked++;
+            return true;
+        },
+        eat: async () => {
+            seen.ate++;
+            sdk.push(s => ({ player: { ...s.player!, hp: s.player!.hp + 3 }, inventory: s.inventory.slice(1) }));
+            return true;
+        }
+    };
+    return { io, seen };
+}
+
+describe('fishing: spider guard, the threat', () => {
+    const at = (o: Parameters<typeof fighter>[0]) => baseState(fighter(o));
+
+    test('a hit with a spider beside us is answered at or below atHp (8 of 10), not above', () => {
+        expect(threatOf(at({ hp: 10 }), 0)).toBeNull();
+        expect(threatOf(at({ hp: 9, hits: [{ tick: 990 }] }), 0)).toBeNull();
+        expect(threatOf(at({ hp: 8, hits: [{ tick: 990 }, { tick: 995 }] }), 0)).toEqual({ tick: 995, index: SPIDER_INDEX, name: 'Giant spider', hp: 8 });
+    });
+
+    test('the attacker is the spider beside us, whatever the event names as its source (the fishing spot, in the lab)', () => {
+        expect(threatOf(at({ hp: 7, hits: [{ tick: 990, index: 7 }] }), 0)).toMatchObject({ index: SPIDER_INDEX, name: 'Giant spider' });
+        // two tiles away still counts, three does not
+        expect(threatOf(at({ hp: 7, spiderAt: { x: RIVER.x + 2, z: RIVER.z - 2 }, hits: [{ tick: 990, index: 7 }] }), 0)).toMatchObject({ name: 'Giant spider' });
+        expect(threatOf(at({ hp: 7, spiderAt: { x: RIVER.x, z: RIVER.z - 3 }, hits: [{ tick: 990, index: 7 }] }), 0)).toBeNull();
+    });
+
+    test('only hits after `since` count; with no spider beside us only eatAt answers', () => {
+        expect(threatOf(at({ hp: 6, hits: [{ tick: 990 }] }), 990)).toBeNull();
+        expect(threatOf(at({ hp: 6, spiderHp: null, hits: [{ tick: 990, index: 7 }] }), 0)).toBeNull();
+        expect(threatOf(at({ hp: 4, spiderHp: null, hits: [{ tick: 990, index: 7 }] }), 0)).toMatchObject({ name: 'Fishing spot', hp: 4 });
+        expect(threatOf(at({ hp: 3, spiderHp: null, hits: [{ tick: 990, index: 99 }] }), 0)).toMatchObject({ name: 'unknown' });
+    });
+
+    test('the safe tile is out of both river spiders\' chase: more than maxrange + 1 = 13 from each spawn', () => {
+        // and from the south spot tiles (3239, 3241-3244), where a lab ::npcadd spider spawns
+        for (const spawn of [{ x: 3243, z: 3236 }, { x: 3245, z: 3232 }, { x: 3240, z: 3242 }]) expect(Math.max(Math.abs(SAFE.x - spawn.x), Math.abs(SAFE.z - spawn.z))).toBeGreaterThan(13);
+    });
+});
+
+describe('fishing: spider guard, an engagement', () => {
+    const threat = { tick: 1000, index: SPIDER_INDEX, name: 'Giant spider', hp: 8 };
+
+    test('flee: it runs to the safe tile and ends when no hit lands for quietTicks and no spider is beside us', async () => {
+        const sdk = new FakeSdk(baseState(fighter({ hp: 8, hits: [{ tick: 1000 }] })));
+        const { io, seen } = scriptedIo(sdk, () => ({}));
+        const ev = await answerThreat(io, threat);
+        expect(seen.walks).toEqual([[SAFE.x, SAFE.z]]);
+        expect(ev).toMatchObject({ fled: true, fought: false, killed: false, end: 'quiet', ate: 0, hpFrom: 8, hpTo: 8, startTick: 1000, endTick: 1010, ticks: 10 });
+        expect(seen.attacked).toBe(0);
+    });
+
+    test('a spider that follows is not quiet: once it stands beside us at the safe tile it is fought', async () => {
+        const sdk = new FakeSdk(baseState(fighter({ hp: 8, hits: [{ tick: 1000 }] })));
+        // it walks 1 tile a tick toward the safe tile and hits once it arrives; it dies to the first attack
+        const { io, seen } = scriptedIo(sdk, (t, s, n) => {
+            const spider = s.nearbyNpcs.find(m => m.index === SPIDER_INDEX);
+            if (!spider) return {};
+            if (n.attacked) return { nearbyNpcs: s.nearbyNpcs.filter(m => m.index !== SPIDER_INDEX) };
+            const z = Math.min(SAFE.z - 1, spider.tileZ! + 1);
+            const there = z === SAFE.z - 1;
+            return {
+                nearbyNpcs: s.nearbyNpcs.map(m => (m.index === SPIDER_INDEX ? { ...m, x: SAFE.x, tileX: SAFE.x, z, tileZ: z } : m)),
+                combatEvents: there ? [...s.combatEvents, { tick: t, type: 'damage_taken', damage: 1, sourceType: 'npc', sourceIndex: 7, targetType: 'player', targetIndex: -1 }] : s.combatEvents
+            };
+        });
+        const ev = await answerThreat(io, threat);
+        expect(ev).toMatchObject({ fought: true, killed: true, end: 'killed', attacker: 'Giant spider' });
+        expect(seen.attacked).toBe(1);
+    });
+
+    test('fight: a spider that still hits at the safe tile is fought to its death, eating at eatAt', async () => {
+        const sdk = new FakeSdk(baseState(fighter({ hp: 6, hits: [{ tick: 1000 }] })));
+        // it stays beside us and hits 1 every 2 ticks; once attacked it loses 1 hitpoint every 4 ticks
+        const { io, seen } = scriptedIo(sdk, (t, s, n) => {
+            const spider = s.nearbyNpcs.find(m => m.index === SPIDER_INDEX);
+            const hp = spider && n.attacked && t % 4 === 0 ? spider.hp! - 1 : spider?.hp;
+            const hit = spider && t % 2 === 0;
+            const p = s.player!;
+            return {
+                player: { ...s.player!, hp: hit ? s.player!.hp - 1 : s.player!.hp, combat: { ...s.player!.combat, inCombat: n.attacked > 0, targetType: 'npc', targetIndex: SPIDER_INDEX } },
+                combatEvents: hit ? [...s.combatEvents, { tick: t, type: 'damage_taken', damage: 1, sourceType: 'npc', sourceIndex: SPIDER_INDEX, targetType: 'player', targetIndex: -1 }] : s.combatEvents,
+                nearbyNpcs: hp === undefined || (hp ?? 0) <= 0 ? s.nearbyNpcs.filter(m => m.index !== SPIDER_INDEX) : s.nearbyNpcs.map(m => (m.index === SPIDER_INDEX ? { ...m, hp, x: p.worldX, tileX: p.worldX, z: p.worldZ, tileZ: p.worldZ } : m))
+            };
+        });
+        const ev = await answerThreat(io, threat);
+        expect(ev).toMatchObject({ fled: true, fought: true, killed: true, end: 'killed' });
+        expect(seen.attacked).toBeGreaterThanOrEqual(1);
+        expect(seen.ate).toBeGreaterThanOrEqual(1);
+        expect(ev.hpTo).toBeGreaterThan(0);
+    });
+
+    test('an attacker that is not a spider is fled from, never fought', async () => {
+        const sdk = new FakeSdk(baseState(fighter({ hp: 4, hits: [{ tick: 1000, index: 7 }] })));
+        const { io, seen } = scriptedIo(sdk, (t, s) => ({ combatEvents: [...s.combatEvents, { tick: t, type: 'damage_taken', damage: 0, sourceType: 'npc', sourceIndex: 7, targetType: 'player', targetIndex: -1 }] }));
+        const ev = await answerThreat(io, { ...threat, index: 7, name: 'Dark wizard', hp: 4 }, { ...GUARD_DEFAULTS, maxWait: 10 });
+        expect(ev).toMatchObject({ fought: false, end: 'timeout' });
+        expect(seen.attacked).toBe(0);
+        expect(seen.ate).toBe(1);
+    });
+
+    test('a death during the engagement ends it as died', async () => {
+        const sdk = new FakeSdk(baseState(fighter({ hp: 2, hits: [{ tick: 1000 }], food: 0 })));
+        const { io } = scriptedIo(sdk, (_t, s) => ({ player: { ...s.player!, hp: 0, isDead: true } }));
+        expect((await answerThreat(io, threat)).end).toBe('died');
+    });
+});
+
+describe('fishing: spider guard in the fly bands', () => {
+    const start = () => baseState({ ...state({ xp: S22, items: FLY_KIT, feathers: 600 }), ...fighter({}), skills: state({ xp: S22 }).skills, inventory: state({ xp: S22, items: FLY_KIT, feathers: 600 }).inventory });
+    const hitOnFirstRun = (sdk: FakeSdk, call: Call): GatedRun | undefined => {
+        if ((call as Call & { n?: number }).n) return undefined;
+        (call as Call & { n?: number }).n = 1;
+        sdk.push(s => ({ tick: s.tick + 1, player: { ...s.player!, hp: 8 }, combatEvents: [{ tick: s.tick + 1, type: 'damage_taken', damage: 1, sourceType: 'npc', sourceIndex: 7, targetType: 'player', targetIndex: -1 }], nearbyNpcs: fighter({}).nearbyNpcs! }));
+        call.opts.onProgress?.(status({ phase: 'running' }), 'knife');
+        return call.opts.signal?.aborted ? { segments: [], ended: 'aborted' } : undefined;
+    };
+
+    test('off by default: a spider hit does not stop the program', async () => {
+        let n = 0;
+        const h = harness(start(), {}, (sdk, call) => (n++ ? undefined : hitOnFirstRun(sdk, call)));
+        await h.byName('fishing:fly-78-99').run(h.ctx);
+        expect(h.calls).toHaveLength(1);
+        expect(h.log.rows.map(r => r.step)).not.toContain('fishing:fly-78-99:guard');
+    });
+
+    test('on: the hit stops the run, the guard answers it, and the band resumes on the same gate', async () => {
+        let n = 0;
+        const answered: number[] = [];
+        const io = (): GuardIo => ({
+            state: () => null,
+            wait: async () => {},
+            walkTo: async () => true,
+            attack: async () => true,
+            eat: async () => true
+        });
+        const h = harness(start(), {
+            spiderGuard: 'true',
+            guardIo: ((ctx: StepContext<Record<string, never>>) => {
+                const base = io();
+                const sdk = ctx.sdk as unknown as FakeSdk;
+                return {
+                    ...base,
+                    state: () => sdk.getState(),
+                    wait: async () => void sdk.push(s => ({ tick: s.tick + 1 })),
+                    walkTo: async (x: number, z: number) => {
+                        answered.push(sdk.getState()!.tick);
+                        sdk.push(s => ({ tick: s.tick + 5, player: { ...s.player!, worldX: x, worldZ: z } }));
+                        return true;
+                    }
+                };
+            }) as never
+        }, (sdk, call) => (n++ ? undefined : hitOnFirstRun(sdk, call)));
+        await h.byName('fishing:fly-78-99').run(h.ctx);
+        expect(answered).toHaveLength(1);
+        expect(h.calls).toHaveLength(2);
+        expect(h.calls[0]!.opts.gate).toBeDefined();
+        expect(h.calls[0]!.opts.gate === h.calls[1]!.opts.gate).toBe(true);
+        expect(h.gates).toHaveLength(1);
+        const guardRow = h.log.rows.find(r => r.step === 'fishing:fly-78-99:guard')!;
+        expect(guardRow.ticks).toBe(0);
+        expect(guardRow.meta).toMatchObject({ attacker: 'Giant spider', end: 'quiet', fled: true, engagement: 1 });
+        expect(h.log.rows.find(r => r.step === 'fishing:fly-78-99:summary')!.meta).toMatchObject({ ended: 'done', guard: { engagements: 1 } });
+    });
+
+    test('the net band never runs the guard; guard options from the CLI are validated', () => {
+        expect(() => steps({ spiderGuard: 'true', guard: { atHp: '7', eatAt: '3' } })).not.toThrow();
+        expect(() => steps({ spiderGuard: 'true', guard: { atHp: 'x' } })).toThrow(/guard.atHp/);
+        expect(() => steps({ spiderGuard: 'true', guard: { bogus: 1 } as never })).toThrow(/unknown guard option bogus/);
     });
 });

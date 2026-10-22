@@ -18,6 +18,11 @@
 //          --logs=5 (normal logs in the kit), --technique=auto|knife|plain (default auto), --feathers=800, --hold=0.15 (rs/156's
 //          forced slip), --bad-probe (a gate rule no probe passes: the gate must run plain and
 //          re-probe every 500 ticks), --log=<path>
+// spider guard: --guard (the module's spiderGuard), --south (fly: start on the south spots'
+//          bank, 3240,3243, where the river's spiders reach), --spiders=K (spawn K giant
+//          spiders with ::npcadd at the bot's tile, the first --spider-after=150 ticks into the
+//          steps and then every --spider-every=400). A spawned spider's spawn point is the
+//          bot's tile, so it is a harsher case than the river's own; fight it with --stats=default.
 
 import { hostname, loadavg } from 'os';
 import { runScript } from '../../sdk/runner';
@@ -54,7 +59,10 @@ await runScript(async ({ bot: actions, sdk }) => {
         await setstat(sdk, 'fishing', Number(flag('level', '20')));
         if (flag('stats', '70') !== 'default') for (const stat of ['hitpoints', 'attack', 'strength', 'defence']) await setstat(sdk, stat, Number(flag('stats', '70')));
         await kit();
-        if (!(await tele(sdk, RIVER.x, RIVER.z))) throw new Error('tele to the river failed');
+        // a fresh account's starter food, which the drop above took (tutorial.rs2: shrimp, bread)
+        if (flag('stats', '70') === 'default') await give(sdk, ['shrimp', 'bread']);
+        const at = has('south') ? { x: 3240, z: 3243 } : RIVER;
+        if (!(await tele(sdk, at.x, at.z))) throw new Error('tele to the river failed');
     } else {
         await kit();
     }
@@ -81,6 +89,20 @@ await runScript(async ({ bot: actions, sdk }) => {
         deaths = p.respawnCount;
     });
 
+    const spiders = Number(flag('spiders', '0'));
+    if (spiders > 0) {
+        let spawned = 0;
+        let nextAt = sdk.getState()!.tick + Number(flag('spider-after', '150'));
+        const every = Number(flag('spider-every', '400'));
+        sdk.onStateUpdate(s => {
+            if (spawned >= spiders || s.tick < nextAt || !s.player) return;
+            spawned++;
+            nextAt = s.tick + every;
+            console.log(`  T${s.tick} spawning giant spider ${spawned}/${spiders} at ${s.player.worldX},${s.player.worldZ} (hitpoints ${s.player.hp}, combat ${s.player.combatLevel})`);
+            void cheat(sdk, 'npcadd giantspider1');
+        });
+    }
+
     const s0 = sdk.getState()!;
     console.log(`measure-fishing ${which}: Fishing ${fishingOf(s0).level} (${fishingOf(s0).xp} xp) at ${s0.player?.worldX},${s0.player?.worldZ}; ${where()}`);
     const log = TickLog.open(undefined, flag('log'));
@@ -90,6 +112,7 @@ await runScript(async ({ bot: actions, sdk }) => {
         technique: flag('technique', 'auto') as 'auto' | 'knife' | 'plain',
         ...(hold ? { params: { hold: Number(hold) } } : {}),
         ...(has('bad-probe') ? { gate: { direct: { trials: 20, pass: 21, floor: 21 } } } : {}),
+        ...(has('guard') ? { spiderGuard: true } : {}),
         log: line => console.log(`  ${line}`)
     });
     const session = { sdk, bot: actions, name: bot, sessionId: 0 };
@@ -99,6 +122,7 @@ await runScript(async ({ bot: actions, sdk }) => {
         const end = sdk.getState();
         console.log(`measure-fishing ${which} end: Fishing ${end ? fishingOf(end).level : '?'}; min hitpoints ${minHp}; ${where()}`);
         console.log(formatReport(report(log.rows)));
+        for (const r of log.rows.filter(r => r.step.endsWith(':guard'))) console.log(`${r.step}: ${JSON.stringify(r.meta)}`);
         for (const r of log.rows.filter(r => r.step.endsWith(':summary'))) {
             const { segments, histogram, ...band } = r.meta as Record<string, unknown>;
             console.log(`${r.step}: ${JSON.stringify(band)}`);

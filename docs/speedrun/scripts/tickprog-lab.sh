@@ -6,6 +6,9 @@
 #   LAB_BLOCK=tickmanip NODE_TICKRATE=300 bash docs/speedrun/scripts/tickprog-lab.sh <bot> <mode>[:--k=v:...] ...
 #   e.g. ... tickprog-lab.sh cairn_tp1 probe:--trials=60 mine:--ores=200 fly:--until=99 wedge
 #
+# A spec whose first part is a .ts path runs that driver against the open tab instead:
+#   ... tickprog-lab.sh cairn_fl1 speedrun/lab/measure-fishing.ts:fly:--level=78
+#
 # `wedge` runs tickprog-wedge.ts (the watchdog check) instead of a measurement.
 #
 # GIVERS=a,b logs lite runners in for the `rc` mode's essence givers: before the tab with
@@ -98,6 +101,10 @@ for spec in "$@"; do
     echo "=== ${parts[*]} (load $(load)) ==="
     if [ "${parts[0]}" = throttle ]; then # Chrome background throttling check (tickprog-throttle.ts)
         (cd "$ROOT" && bun docs/speedrun/scripts/tickprog-throttle.ts --debug-port=$((9390 + N)) "${parts[@]:1}") 2>&1 || STATUS=$?
+        continue
+    fi
+    if [[ "${parts[0]}" == *.ts ]]; then # a step-module driver (speedrun/lab/measure-*.ts)
+        (cd "$ROOT" && bun "${parts[0]}" "$BOT" "${parts[@]:1}") 2>&1 | grep -vE 'Pathfinding|^\[(Runner|BotSDK)\]' || STATUS=$?
         continue
     fi
     if [ "${parts[0]}" = wedge ]; then # the watchdog check; it leaves the tab wedged, so run it last

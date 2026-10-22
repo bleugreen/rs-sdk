@@ -20,8 +20,12 @@
 // the knife bundle carries the drop, and the plain loop does it with `dropEach`. Plain also
 // follows a moved spot by its tile (`followSpot`). Level-ups are answered inside the page by
 // the program on the reaction path, so no SDK-side watcher runs beside it.
+//
+// The spider guard (opt-in, `spiderGuard`): a fresh combat-3 account is prey for the river's
+// giant spiders, and a fishing loop that keeps re-clicking the spot never retaliates, so a
+// spider can kill it and the feathers are lost. See `answerThreat`.
 
-import type { BotWorldState } from '../../sdk/types';
+import type { BotWorldState, NearbyNpc } from '../../sdk/types';
 import { type GatedSegment, type GatedTechnique, inPageGate, type InPageGateOptions, runGatedProgram } from '../lib/gated-program';
 import type { ProgramStatus } from '../lib/programs';
 import type { TickLog } from '../lib/ticks';
@@ -62,6 +66,214 @@ export const PLAIN_TICKS_PER_ROLL = 5.35;
 
 /** Feathers carried per expected catch. */
 export const FEATHER_MARGIN = 1.15;
+
+// ------------------------------------------------------------------ spider guard
+
+/**
+ * Where the guard runs to: the bank beside the northmost spot tile (3238,3255). The river's
+ * giant spiders spawn at (3243,3236) and (3245,3232) (m50_50.jm2) and wander 10, so they never
+ * stand north of z 3248; an engaged NPC gives up a target more than maxrange + 1 = 13 tiles
+ * from its spawn (Npc.ts targetWithinMaxRange; maxrange defaults to wanderrange + 2). This
+ * tile is 20 from the nearer spawn, and 14 even from the south spot tiles themselves, so it
+ * also ends the chase of a spider spawned where the bot fishes (the lab's `::npcadd`). The
+ * program's restart from here takes the nearest spot, a north one when one is there.
+ */
+export const SAFE = { x: 3239, z: 3256 } as const;
+
+/** giantspider1: combat 2, huntmode cowardly, huntrange 1; it hunts players up to combat 4 (Npc.ts: combat > vislevel x 2 is too strong). */
+export const SPIDER = /^giant spider$/i;
+
+export interface GuardOptions {
+    /** Attackers the guard answers by name; any NPC is answered once hitpoints reach `eatAt`. */
+    attacker: RegExp;
+    /** Answer a hit from `attacker` at or below these hitpoints (a fresh account has 10; the spider hits 1). */
+    atHp: number;
+    /** Eat (the starter shrimps and bread) at or below these hitpoints. */
+    eatAt: number;
+    /** Ticks without a hit that end an engagement. */
+    quietTicks: number;
+    /** Ticks to wait for quiet at the safe tile before fighting. */
+    maxWait: number;
+    /** Ticks a fight may take before the guard gives up on it. */
+    maxFight: number;
+}
+
+export const GUARD_DEFAULTS: GuardOptions = { attacker: SPIDER, atHp: 8, eatAt: 4, quietTicks: 10, maxWait: 40, maxFight: 200 };
+
+/** An attacker this close (tiles, Chebyshev, on its route tile) is the one hitting us. */
+export const ATTACKER_REACH = 2;
+/**
+ * An engagement is not over while an attacker is this close: a spider that follows arrives some
+ * ticks after us. The river's own spiders never come within 8 of `SAFE` (they stop at z 3248).
+ */
+export const QUIET_REACH = 6;
+
+export interface Threat {
+    tick: number;
+    index: number;
+    name: string;
+    hp: number;
+}
+
+/** The newest NPC hit on the player after `since`, or null. */
+function lastHit(s: BotWorldState, since: number): { tick: number; index: number } | null {
+    let hit: { tick: number; index: number } | null = null;
+    for (const e of s.combatEvents ?? []) {
+        if (e.type !== 'damage_taken' || e.sourceType !== 'npc' || e.tick <= since) continue;
+        if (!hit || e.tick >= hit.tick) hit = { tick: e.tick, index: e.sourceIndex };
+    }
+    return hit;
+}
+
+/**
+ * The nearest `attacker` NPC within ATTACKER_REACH of the player. The hit's own source index
+ * cannot name it: the published damage event carries the player's interaction target (the
+ * fishing spot) as its source while the player fishes (measured in the lab, rs/195), so the
+ * attacker is found by where it stands.
+ */
+export function attackerNear(s: BotWorldState, g: GuardOptions = GUARD_DEFAULTS, reach = ATTACKER_REACH): NearbyNpc | undefined {
+    const p = s.player;
+    if (!p) return undefined;
+    let best: NearbyNpc | undefined;
+    let bestD = Infinity;
+    for (const n of s.nearbyNpcs) {
+        if (!g.attacker.test(n.name) || n.hp === 0) continue;
+        const d = Math.max(Math.abs((n.tileX ?? n.x) - p.worldX), Math.abs((n.tileZ ?? n.z) - p.worldZ));
+        if (d <= reach && d < bestD) {
+            best = n;
+            bestD = d;
+        }
+    }
+    return best;
+}
+
+/** The hit the guard must answer, if any: with an `attacker` beside us at or below `atHp`, or from anything at or below `eatAt`. */
+export function threatOf(s: BotWorldState, since: number, g: GuardOptions = GUARD_DEFAULTS): Threat | null {
+    const p = s.player;
+    const hit = p ? lastHit(s, since) : null;
+    if (!p || !hit) return null;
+    const near = attackerNear(s, g);
+    if (near && p.hp <= g.atHp) return { tick: hit.tick, index: near.index, name: near.name, hp: p.hp };
+    if (p.hp <= g.eatAt) return { tick: hit.tick, index: near?.index ?? hit.index, name: near?.name ?? s.nearbyNpcs.find(n => n.index === hit.index)?.name ?? 'unknown', hp: p.hp };
+    return null;
+}
+
+/** What the guard needs from the session; a seam for tests. */
+export interface GuardIo {
+    state(): BotWorldState | null;
+    wait(ticks: number): Promise<unknown>;
+    walkTo(x: number, z: number): Promise<boolean>;
+    attack(npcIndex: number): Promise<boolean>;
+    eat(): Promise<boolean>;
+}
+
+export function guardIo(ctx: Pick<StepContext<Record<string, never>>, 'sdk' | 'bot'>): GuardIo {
+    const { sdk, bot } = ctx;
+    return {
+        state: () => sdk.getState(),
+        wait: n => sdk.waitForTicks(n),
+        walkTo: async (x, z) => (await bot.walkTo(x, z, 1)).success,
+        attack: async i => {
+            const npc = sdk.getState()?.nearbyNpcs.find(n => n.index === i);
+            return npc ? (await bot.attack(npc)).success : false;
+        },
+        eat: async () => (await bot.eatFood()).success
+    };
+}
+
+export interface Engagement {
+    startTick: number;
+    endTick: number;
+    ticks: number;
+    attacker: string;
+    hpFrom: number;
+    hpTo: number;
+    /** Reached the safe tile. */
+    fled: boolean;
+    /** Still hit at the safe tile, so it fought. */
+    fought: boolean;
+    killed: boolean;
+    ate: number;
+    /** How it ended: quiet, killed, or a bound ran out. */
+    end: 'quiet' | 'killed' | 'gone' | 'timeout' | 'died';
+}
+
+const hasFood = (s: BotWorldState) => s.inventory.some(i => i.optionsWithIndex.some(o => /^eat$/i.test(o.text)));
+const dead = (s: BotWorldState, lifeId: number | undefined) => !!s.player && (s.player.isDead || (lifeId !== undefined && s.player.lifeId !== lifeId));
+
+/**
+ * Answer a threat: run to `SAFE`, where the river spiders cannot follow, and wait until no hit
+ * has landed for `quietTicks` and no attacker stands beside us (a following spider walks 1 tile
+ * a tick to our 2, so it arrives after we do), eating at `eatAt`. A spider that reaches us there
+ * (one spawned further north than the river's) is fought until it dies: it has 5 hitpoints and
+ * minus 10 to every defence, so a combat-3 account wins, eating as it goes. Eating clears the
+ * attack (OpHeldHandler), so the attack is re-sent while the target lives.
+ */
+export async function answerThreat(io: GuardIo, threat: Threat, g: GuardOptions = GUARD_DEFAULTS): Promise<Engagement> {
+    const s0 = io.state()!;
+    const lifeId = s0.player?.lifeId;
+    const ev: Engagement = { startTick: s0.tick, endTick: s0.tick, ticks: 0, attacker: threat.name, hpFrom: s0.player?.hp ?? 0, hpTo: 0, fled: false, fought: false, killed: false, ate: 0, end: 'timeout' };
+    let hitAt = threat.tick;
+    const eatIfLow = async (s: BotWorldState) => {
+        if ((s.player?.hp ?? 0) <= g.eatAt && hasFood(s) && (await io.eat())) ev.ate++;
+    };
+    const finish = (end: Engagement['end']) => {
+        const s = io.state()!;
+        ev.end = end;
+        ev.endTick = s.tick;
+        ev.ticks = s.tick - ev.startTick;
+        ev.hpTo = s.player?.hp ?? 0;
+        return ev;
+    };
+
+    ev.fled = await io.walkTo(SAFE.x, SAFE.z);
+    const arrived = io.state()!.tick;
+    let target: NearbyNpc | undefined;
+    for (let n = 0; n <= g.maxWait; n++) {
+        const s = io.state()!;
+        if (dead(s, lifeId)) return finish('died');
+        hitAt = Math.max(hitAt, lastHit(s, hitAt)?.tick ?? hitAt);
+        await eatIfLow(s);
+        const near = attackerNear(s, g);
+        if (s.tick - hitAt >= g.quietTicks && !attackerNear(s, g, QUIET_REACH)) return finish('quiet');
+        if (near && hitAt > arrived) {
+            target = near;
+            break;
+        }
+        await io.wait(1);
+    }
+    if (!target) return finish('timeout');
+
+    ev.fought = true;
+    ev.attacker = target.name;
+    const index = target.index;
+    const until = io.state()!.tick + g.maxFight;
+    // `attacked`: an attack is in (re-sent when combat drops); `struck`: one ever went in, so a vanished target was killed
+    let attacked = false;
+    let struck = false;
+    for (;;) {
+        const s = io.state()!;
+        if (dead(s, lifeId)) return finish('died');
+        if (s.tick > until) return finish('timeout');
+        const npc = s.nearbyNpcs.find(n => n.index === index);
+        if (!npc || npc.hp === 0) {
+            ev.killed = !!npc || struck;
+            return finish(ev.killed ? 'killed' : 'gone');
+        }
+        if ((s.player?.hp ?? 0) <= g.eatAt && hasFood(s)) {
+            await eatIfLow(s);
+            attacked = false;
+        } else {
+            const c = s.player?.combat;
+            const engaged = !!c && c.inCombat && c.targetType === 'npc' && c.targetIndex === index;
+            if (!engaged && !attacked) attacked = await io.attack(index);
+            else if (engaged) attacked = true;
+            struck ||= attacked;
+        }
+        await io.wait(1);
+        if (!(io.state()!.player?.combat.inCombat ?? false)) attacked = false;
+    }
+}
 
 // ------------------------------------------------------------------ roll model
 
@@ -175,9 +387,17 @@ export interface FishingOptions {
     gate?: Partial<InPageGateOptions>;
     /** Extra knife-cycle parameters, test and lab only (rs/156's forced-slip `hold`); never set on an attempt. */
     params?: Record<string, unknown>;
-    /** Test seams for the gated loop and the gate. */
+    /**
+     * Answer the river spiders on the fly bands (`answerThreat`). Off by default: the scored run
+     * reaches S22 at combat levels no spider hunts. A fresh account's rehearsal turns it on.
+     */
+    spiderGuard?: boolean | string;
+    /** GuardOptions over GUARD_DEFAULTS (hitpoint thresholds may come from the CLI as strings). */
+    guard?: Partial<Record<keyof GuardOptions, unknown>>;
+    /** Test seams for the gated loop, the gate and the guard's session calls. */
     runGated?: typeof runGatedProgram;
     makeGate?: typeof inPageGate;
+    guardIo?: typeof guardIo;
     log?: (line: string) => void;
     [k: string]: unknown;
 }
@@ -190,9 +410,26 @@ interface Resolved {
     flyToXp: number;
     gate: Partial<InPageGateOptions>;
     params: Record<string, unknown>;
+    guard: GuardOptions | null;
     runGated: typeof runGatedProgram;
     makeGate: typeof inPageGate;
+    guardIo: typeof guardIo;
     log: (line: string) => void;
+}
+
+function resolveGuard(opts: FishingOptions): GuardOptions | null {
+    const on = opts.spiderGuard === true || opts.spiderGuard === 'true' || opts.spiderGuard === '1';
+    if (!on) return null;
+    const g: GuardOptions = { ...GUARD_DEFAULTS };
+    for (const [k, v] of Object.entries(opts.guard ?? {})) {
+        if (k === 'attacker') g.attacker = v instanceof RegExp ? v : new RegExp(String(v), 'i');
+        else if (k in g) {
+            const n = Number(v);
+            if (!Number.isFinite(n) || n < 0) throw new Error(`fishing: guard.${k} must be a non-negative number, got ${v}`);
+            (g as unknown as Record<string, number>)[k] = n;
+        } else throw new Error(`fishing: unknown guard option ${k}`);
+    }
+    return g;
 }
 
 function resolve(opts: FishingOptions): Resolved {
@@ -210,8 +447,10 @@ function resolve(opts: FishingOptions): Resolved {
         flyToXp: Math.min(runStartXp, xpForLevel(to)),
         gate: opts.gate ?? {},
         params: opts.params ?? {},
+        guard: resolveGuard(opts),
         runGated: opts.runGated ?? runGatedProgram,
         makeGate: opts.makeGate ?? inPageGate,
+        guardIo: opts.guardIo ?? guardIo,
         log: opts.log ?? (() => {})
     };
 }
@@ -426,6 +665,13 @@ function bandStep(o: Resolved, b: Band): Step {
         let fromXp = start.xp;
         let noFeathersAt: number | null = null;
         let kitLost: string | null = null;
+        // The river's spiders: answered between program runs, on the same gate (no fresh probe).
+        const guard = fly ? o.guard : null;
+        const io = guard ? o.guardIo(ctx) : null;
+        const engagements: Engagement[] = [];
+        let guardSince = s0.tick;
+        // set from the onProgress closure, which TypeScript's narrowing does not follow
+        let threat = null as Threat | null;
         const params = { ...(fly ? FLY_PARAMS : NET_PARAMS), ...o.params, ...b.end };
         const runWith = (tech: GatedTechnique) => {
             const stop = new AbortController();
@@ -440,8 +686,12 @@ function bandStep(o: Resolved, b: Band): Step {
                     const s = sdk.getState();
                     if (!s) return;
                     // Without this the fly attempt goes silent and the program faults at its stall window.
+                    const t = guard ? threatOf(s, guardSince, guard) : null;
                     if (carried(s, FEATHER) === 0) {
                         noFeathersAt = fishingOf(s).level;
+                        stop.abort();
+                    } else if (t) {
+                        threat = t;
                         stop.abort();
                     } else if (tech !== 'plain' && (!carried(s, KNIFE) || !carried(s, LOGS))) {
                         // A completed fletch used the last log (or the knife is gone): the program is
@@ -462,16 +712,42 @@ function bandStep(o: Resolved, b: Band): Step {
                 }
             });
         };
-        let result = await runWith(technique);
-        if (kitLost !== null && noFeathersAt === null) {
-            o.log(`${b.name}: ${kitLost}: finishing the band plain`);
-            result = await runWith('plain');
+        let tech = technique;
+        let died: Engagement | null = null;
+        let result = await runWith(tech);
+        for (;;) {
+            if (noFeathersAt !== null) break;
+            if (threat && io && guard) {
+                const t = threat;
+                threat = null;
+                o.log(`${b.name}: T${t.tick} hit by ${t.name} #${t.index} at ${t.hp} hitpoints: guard`);
+                const ev = await answerThreat(io, t, guard);
+                engagements.push(ev);
+                annotation(log, session, `${b.name}:guard`, ev.startTick, ev.endTick, ev.end !== 'died' && ev.end !== 'timeout', { ...ev, engagement: engagements.length });
+                o.log(`${b.name}: guard ${ev.end} after ${ev.ticks} ticks (fled ${ev.fled}, fought ${ev.fought}, ate ${ev.ate}, hitpoints ${ev.hpFrom} -> ${ev.hpTo})`);
+                guardSince = ev.endTick;
+                if (ev.end === 'died') {
+                    died = ev;
+                    break;
+                }
+                result = await runWith(tech);
+                continue;
+            }
+            if (kitLost !== null && tech !== 'plain') {
+                o.log(`${b.name}: ${kitLost}: finishing the band plain`);
+                tech = 'plain';
+                result = await runWith(tech);
+                continue;
+            }
+            break;
         }
         const end = sdk.getState();
         annotation(log, session, `${b.name}:summary`, segments[0]?.status.startedTick ?? s0.tick, end?.tick ?? s0.tick, result.ended === 'done', {
             ended: result.ended, ...(kitLost ? { kitLost } : {}), startLevel: start.level, endLevel: end ? fishingOf(end).level : start.level, ...summarizeBand(b.kind, segments),
-            ...(gate ? { gate: { history: gate.history.map(h => ({ tick: h.tick, why: h.why, on: h.on, switched: h.switched, ...(h.measured ? { measured: h.measured } : {}) })), switches: gate.switches() } } : {})
+            ...(gate ? { gate: { history: gate.history.map(h => ({ tick: h.tick, why: h.why, on: h.on, switched: h.switched, ...(h.measured ? { measured: h.measured } : {}) })), switches: gate.switches() } } : {}),
+            ...(guard ? { guard: { engagements: engagements.length, ticks: engagements.reduce((a, e) => a + e.ticks, 0), list: engagements } } : {})
         });
+        if (died) throw new Error(`died to ${died.attacker} at Fishing ${end ? fishingOf(end).level : '?'} (guard engagement ${engagements.length})`);
         if (noFeathersAt !== null) throw new Error(`out of feathers at Fishing ${noFeathersAt}`);
         if (result.ended !== 'done') throw new Error(`knife-cycle ended ${result.ended} at Fishing ${end ? fishingOf(end).level : '?'}`);
     };
