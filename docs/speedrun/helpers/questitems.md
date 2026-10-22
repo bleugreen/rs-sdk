@@ -36,7 +36,13 @@ held. Tasks are listed in route order, so a fresh account walks its set once.
   respawn 30 ticks after a pickup, shortened by the server's player-count scaling
   (`World.scaleByPlayerCount`), and the nearest booth is Falador west. The hobgoblins there
   hunt any player of combat level up to twice theirs (56 and 84) within one tile, so a
-  10-Hitpoint coin earner is a poor fit; h96's drops-set combat is enough.
+  10-Hitpoint coin earner is a poor fit. On the demo (2026-10-22) h96, at combat 56 and 49
+  Hitpoints, picked 100 in four trips of about 24, each about 2.5 minutes, but lost about 10
+  Hitpoints a trip. The task therefore rests at the bank under half Hitpoints (`rest()`, the
+  same rule `kill` uses: wait to 80%), which took 10-15 minutes between trips.
+- **Targets have one source.** A task's `run` reads its targets from the running task
+  (`g.target(item)`, `g.wants()`), which is the task with `counts` applied, so a run never
+  stops at a number of its own.
 
 ## Sets and sources
 
