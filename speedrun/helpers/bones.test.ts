@@ -6,7 +6,40 @@ import type { BotWorldState, InventoryItem, NearbyNpc } from '../../sdk/types';
 import { Run } from './bones';
 import { memoryRoleState } from './role';
 import { summarizeWindow } from '../../docs/speedrun/scripts/bones-dev/stats';
-import { gearRank, healOf, inBabyBlueRoom, isClutter, keepOnBank, parseOptions } from './bones';
+import { fishingHaul, gearRank, healOf, inBabyBlueRoom, inDesert, isClutter, keepOnBank, parseOptions, patrolTour, SPOTS, UGTHANKI_SPAWNS } from './bones';
+
+describe('ugthanki spot', () => {
+    test('the desert is south of the Shantay Pass gate; the camp, chest and Al Kharid are not', () => {
+        expect(inDesert({ x: 3303, z: 3115 })).toBe(true); // south of the gate
+        expect(inDesert({ x: 3303, z: 3118 })).toBe(false); // north of the gate
+        expect(inDesert({ x: 3309, z: 3121 })).toBe(false); // Shantay's chest
+        expect(inDesert({ x: 3270, z: 3167 })).toBe(false); // Al Kharid bank
+        for (const s of UGTHANKI_SPAWNS) expect(inDesert(s)).toBe(true);
+    });
+    test('patrolTour visits every spawn once, nearest first', () => {
+        const tour = patrolTour({ x: 3303, z: 3115 }, UGTHANKI_SPAWNS);
+        expect(tour).toHaveLength(25);
+        expect(new Set(tour.map(t => `${t.x},${t.z}`)).size).toBe(25);
+        expect(tour[0]).toEqual({ x: 3291, z: 3100 });
+        expect(patrolTour({ x: 0, z: 0 }, [{ x: 5, z: 5 }, { x: 1, z: 1 }, { x: 9, z: 0 }])).toEqual([{ x: 1, z: 1 }, { x: 5, z: 5 }, { x: 9, z: 0 }]);
+    });
+    test('the spot keeps its passes over bank visits, patrols, and buys food at the exchange', () => {
+        const o = parseOptions({ spot: 'ugthanki' });
+        expect(o.spot).toBe(SPOTS.ugthanki!);
+        expect(o.food).toBe('ge');
+        expect(o.spot.keep?.test('Shantay pass')).toBe(true);
+        expect(o.spot.bones.test('Raw ugthanki meat')).toBe(true);
+        expect(o.spot.patrol).toHaveLength(25);
+    });
+    test('fishingHaul: coins are a haul only where the spot banks them', () => {
+        const ugthanki = SPOTS.ugthanki!;
+        const coins = [{ name: 'Coins' }, { name: 'Shantay pass' }];
+        expect(fishingHaul(coins, ugthanki)).toBe(false);
+        expect(fishingHaul([...coins, { name: 'Raw ugthanki meat' }], ugthanki)).toBe(true);
+        expect(fishingHaul(coins, SPOTS.baby_blue!)).toBe(true);
+        expect(fishingHaul([{ name: 'Shark' }], SPOTS.baby_blue!)).toBe(false);
+    });
+});
 
 test('inBabyBlueRoom: west of the dusty-key gate only; the gate tile is outside', () => {
     expect(inBabyBlueRoom({ x: 2898, z: 9775 })).toBe(true);
@@ -148,6 +181,20 @@ describe('preferred spot recovery', () => {
         } finally {
             now.mockRestore(); ask.mockRestore(); receiver.mockRestore(); buy.mockRestore();
         }
+    });
+
+    test('an ugthanki bank visit keeps its coins, and the fishing fallback then fishes instead of banking again', async () => {
+        // cairn_h51, GE food unaffordable: fishing fallback, bank for the coins, coins kept, bank again (979 visits).
+        const { run, sdk, item } = harness();
+        run.opt.spot = SPOTS.ugthanki!;
+        run.activeSpot = run.opt.spot;
+        sdk.push({ inventory: [item('Coins', 995), item('Shantay pass', 1854), item('Raw ugthanki meat', 1859)] });
+        expect(fishingHaul(run.state().inventory, run.opt.spot)).toBe(true);
+        expect(await run.bank('out of food', run.opt.spot)).toBe(true);
+        expect(run.carrying(/^coins$/i)).toBe(true);
+        expect(run.carrying(/^shantay pass$/i)).toBe(true);
+        expect(run.carrying(/^raw ugthanki meat$/i)).toBe(false);
+        expect(fishingHaul(run.state().inventory, run.opt.spot)).toBe(false);
     });
 
     test('a stale empty inventory is re-read before any recovery or downgrade', async () => {

@@ -498,6 +498,15 @@ export function keepOnBank(name: string, lv: { fishing: number; cooking: number 
         (NET_FISH.test(name) && lv.cooking < 15);
 }
 
+/**
+ * Carried items that send the fishing fallback to the bank first: the spot's product, and coins
+ * unless the spot keeps them carried. Kept coins survive every bank visit, so counting them
+ * banked forever (an ugthanki account, coins kept for Shantay passes, made 979 chest visits in 32 min).
+ */
+export function fishingHaul(inventory: { name: string }[], spot: Pick<Spot, 'bones' | 'keep'>): boolean {
+    return inventory.some(i => spot.bones.test(i.name) || (/^coins$/i.test(i.name) && !(spot.keep?.test(i.name) ?? false)));
+}
+
 /** Bootstrap leftovers that only cost loot slots at the spot: raw net fish once Cooking is 15, and anything burnt. */
 export function isClutter(name: string, cooking: number): boolean {
     return /^burnt /i.test(name) || (NET_FISH.test(name) && cooking >= 15);
@@ -1561,8 +1570,7 @@ export class Run {
         }
         if (fishing && this.food().length < this.opt.minFood) {
             this.phase('food:fish');
-            const haul = this.state().inventory.some(i => spot.bones.test(i.name) || /^coins$/i.test(i.name));
-            if (haul || !this.carrying(ROD) || !this.carrying(FEATHER) || this.freeSlots() < 8) {
+            if (fishingHaul(this.state().inventory, spot) || !this.carrying(ROD) || !this.carrying(FEATHER) || this.freeSlots() < 8) {
                 await this.bank('out of food', spot, this.tripKit());
                 return;
             }
