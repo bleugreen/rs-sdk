@@ -22,6 +22,13 @@
 // before the first click, re-send a refused send on the next settled tick, and
 // re-send once a post-jump click that draws no reply within REPLY_TICKS. A
 // click that is not just after a jump and is accepted behaves as before.
+//
+// Silence is counted from the server tick a click reached (`ClickGuard.replyFrom`):
+// the later of the tick the tab executed it and wait.ts `serverClock` at that moment.
+// A starved browser tab executes a queued click late and decodes the reply after
+// the rest of its backlog, so its own tick undercounts how long the server has had
+// the click. Both re-sends (the reply watch and `act`'s idle re-send) count from
+// there, and neither fires while the tab has not executed the click yet.
 
 import type { BotSDK } from '../../sdk/index';
 import type { BotActions } from '../../sdk/actions';
@@ -29,8 +36,8 @@ import { PLAYER_CHAT_TYPES, type BotWorldState, type GroundItem, type NearbyLoc,
 import { converse, dismissInterrupt, matchInterrupt, type ConverseOptions, type ConverseResult, type ConverseSdk, type Interrupt } from './converse';
 import { pageText, type OptionPattern } from './dialogue';
 import { matchesItem, type ItemPattern } from './items';
-import { waitUntil, type Pred, type StateSource } from './wait';
-import { chebyshev, findLoc, invCount, invItem, messagesSince, opIndex, pos, tileCounter, waitForNpc, worn, type LocQuery, type NamePattern, type OpPattern, type Tile } from './world';
+import { serverClock, waitUntil, type Pred, type StateSource } from './wait';
+import { chebyshev, findLoc, invCount, invItem, messageCursor, opIndex, pos, replyAfter, tileCounter, waitForNpc, worn, type LocQuery, type NamePattern, type OpPattern, type Tile } from './world';
 
 export type ActSdk = StateSource &
     Pick<BotSDK, 'sendInteractNpc' | 'sendInteractLoc' | 'sendUseItem' | 'sendUseItemOnItem' | 'sendUseItemOnLoc' | 'sendUseItemOnNpc' | 'sendPickup' | 'sendWalk' | 'sendClickComponent' | 'sendDropItem' | 'scanNearbyLocs' | 'scanGroundItems'>;
@@ -63,6 +70,8 @@ export interface ActResult extends JumpCounts {
 }
 
 const CANT_REACH = /can't reach that/i;
+/** Any game message but CANT_REACH: a click's reply that says it landed. */
+const NOT_CANT_REACH = new RegExp(`^(?![\\s\\S]*${CANT_REACH.source})`, 'i');
 
 // ------------------------------------------------------------------ jumps
 
@@ -76,7 +85,7 @@ export interface JumpCounts {
     unansweredResends?: number;
 }
 
-/** Ticks a post-jump click has to draw a reply before it is re-sent once. */
+/** Ticks a post-jump click has to draw a reply, from the server tick it reached, before it is re-sent once. */
 export const REPLY_TICKS = 3;
 /** A click sent within this many ticks of the player's last teleport-type update is a post-jump click. */
 export const JUMP_WINDOW = 2;
@@ -125,39 +134,81 @@ export class ClickGuard {
     scriptAnswered = false;
     private idleAtSend = true;
     private refusedAt = -1;
-    private sentAt = -1;
+    private reachedAt = -1;
+    private inFlight = 0;
     private watching = false;
     private base: ReturnType<typeof snapshot> | null = null;
+    private cantReach: ReturnType<typeof replyAfter> | null = null;
 
     constructor(
-        private readonly sdk: StateSource,
+        private readonly sdk: StateSource & Partial<Pick<BotSDK, 'getStateReceivedAt'>>,
         private readonly click: () => Promise<unknown>,
         private readonly answered: Pred = () => false,
         /** Watch the first send for a reply even when it is not just after a jump (S00's first talk after login). */
-        private readonly opts: { alwaysWatch?: boolean } = {}
+        private readonly opts: {
+            alwaysWatch?: boolean;
+            /**
+             * A server clock (wait.ts serverClock) anchored where the tab was last known current. The
+             * guard's own clock starts from the state at the send, which a tab already starved at the
+             * send (S00 throttled from login) publishes ticks late, so it cannot see that lag; the
+             * later of the two counts. Only ever lengthens the bound.
+             */
+            clock?: (wallMs: number) => number;
+        } = {}
     ) {}
+
+    /**
+     * The server tick the last send reached, which every silence bound counts from: the later of
+     * the tick the tab executed it (its action result came back) and wait.ts `serverClock` then,
+     * from the state current at the send. On a current tab the two agree; a starved tab executes a
+     * click late and is still behind the server when it does (rs/345), so its own tick would bring a
+     * re-send before the reply can arrive. Wall time only ever lengthens the bound.
+     */
+    get replyFrom(): number {
+        return this.reachedAt;
+    }
+
+    /** The engine answered the last send with "I can't reach that!" (world.ts replyAfter, taken before the click). */
+    refusedBy(s: BotWorldState): boolean {
+        return this.cantReach?.seen(s) ?? false;
+    }
+
+    /** A send the tab has not executed yet: it cannot have drawn a reply, so nothing re-sends it. */
+    get pending(): boolean {
+        return this.inFlight > 0;
+    }
 
     /** Send the click now; a refused send is re-sent from `step`. */
     async send(): Promise<void> {
         const s = this.sdk.getState();
         const tick = s?.tick ?? 0;
-        this.sentAt = tick;
+        const clock = serverClock(tick, this.sdk.getStateReceivedAt?.() || Date.now());
+        this.reachedAt = tick;
         this.base = s ? snapshot(s) : null;
+        this.cantReach = replyAfter(this.sdk, CANT_REACH);
         this.scriptAnswered = false;
         this.idleAtSend = !s || !busyAt(s);
         const jumpTick = s?.player?.teleportTick ?? null;
         // Only the first send after a jump is watched for a reply, and it is re-sent at most once.
         if (this.counts.unansweredResends === 0 && (this.opts.alwaysWatch || (jumpTick !== null && tick - jumpTick <= JUMP_WINDOW))) this.watching = true;
-        const r = await this.click();
-        // The reply bound runs from the tick the client executed the click (its result came back),
-        // not the tick it was sent: a lagging browser tab can execute it many ticks late (rs/345).
-        this.sentAt = this.sdk.getState()?.tick ?? tick;
-        this.refusedAt = refusedSend(r) ? this.sentAt : -1;
+        this.inFlight++;
+        let r: unknown;
+        try {
+            r = await this.click();
+        } finally {
+            this.inFlight--;
+        }
+        const executed = this.sdk.getState()?.tick ?? tick;
+        const now = Date.now();
+        this.reachedAt = Math.max(executed, clock(now), this.opts.clock?.(now) ?? -1);
+        // A refusal is the client's own (no route, region loading): it can go again on the tab's next settled tick.
+        this.refusedAt = refusedSend(r) ? executed : -1;
     }
 
     /** Feed a published state; true when it re-sent. */
     step(s: BotWorldState): boolean {
         if (!this.scriptAnswered && this.idleAtSend && this.base && replyKind(this.base, s) === 'script') this.scriptAnswered = true;
+        if (this.pending) return false;
         if (this.refusedAt >= 0) {
             // A send reported as scene_loading did go out and may have landed: a reply settles it.
             if (this.answered(s) || (this.base && replied(this.base, s))) {
@@ -175,7 +226,7 @@ export class ClickGuard {
             this.watching = false;
             return false;
         }
-        if (s.tick - this.sentAt < REPLY_TICKS || unsettled(s)) return false;
+        if (s.tick - this.reachedAt < REPLY_TICKS || unsettled(s)) return false;
         this.watching = false;
         this.counts.unansweredResends++;
         void this.send();
@@ -194,24 +245,49 @@ export class ClickGuard {
 
 const invKey = (s: BotWorldState) => s.inventory.map(i => `${i.slot}:${i.id}:${i.count}`).join(',');
 
+/** The combat-event cursor, on messageCursor's rule: the newest event's observation id, or its tick where it has none. */
+function fightCursor(s: BotWorldState): number {
+    let c = 0;
+    for (const e of s.combatEvents ?? []) c = Math.max(c, e.observationId ?? e.tick);
+    return c;
+}
+
 function snapshot(s: BotWorldState) {
     const p = pos(s);
-    return { x: p.x, z: p.z, level: p.level, anim: s.player?.animId ?? -1, inv: invKey(s), messages: s.gameMessages.length ? s.gameMessages.at(-1)!.tick : -1, modal: s.modalOpen };
+    return { x: p.x, z: p.z, level: p.level, anim: s.player?.animId ?? -1, inv: invKey(s), messages: messageCursor(s), fight: fightCursor(s), modal: s.modalOpen };
+}
+
+/**
+ * The player has been in a fight since the send: a combat event (a hit taken or dealt, blocked or
+ * not) published after it, or a combat target now. Its animations (a blocked hit's block, the
+ * auto-retaliate swing), its messages and upkeep's eats are the fight's, not the click's, and an
+ * eat or the retaliation itself clears the click's pending interaction (rs/391: TGV segment H).
+ */
+function inFightSince(b: NonNullable<ReturnType<typeof snapshot>>, s: BotWorldState): boolean {
+    if (s.player?.combat?.inCombat) return true;
+    return (s.combatEvents ?? []).some(e => (e.observationId ?? e.tick) > b.fight);
 }
 
 /**
  * The engine's first answer to a click since `b` was taken: 'script' when its script has started
  * (a dialogue or modal, a new animation, a game message, an inventory change), 'moved' when the
  * only answer is a step, null when nothing yet. Other players' chat, and "I can't reach that!"
- * (the click failing), are not answers.
+ * (the click failing), are not answers. In a fight since the send only a dialogue, a modal or a
+ * step answers: the fight makes the animations, messages and inventory changes (inFightSince).
  */
 function replyKind(b: NonNullable<ReturnType<typeof snapshot>>, s: BotWorldState): 'script' | 'moved' | null {
     // A modal already open at the send (S00's character design) is not an answer.
     if (s.dialog.isOpen || (s.modalOpen && !b.modal)) return 'script';
+    if (inFightSince(b, s)) return moved(b, s);
     const anim = s.player?.animId ?? -1;
     if (anim >= 0 && anim !== b.anim) return 'script';
-    if (s.gameMessages.some(m => m.tick > b.messages && !PLAYER_CHAT_TYPES.includes(m.type) && !CANT_REACH.test(m.text))) return 'script';
+    // Past the cursor, not past the send's tick: the browser stamps a reply with the click's own tick.
+    if (s.gameMessages.some(m => (m.observationId ?? m.tick) > b.messages && !PLAYER_CHAT_TYPES.includes(m.type) && !CANT_REACH.test(m.text))) return 'script';
     if (invKey(s) !== b.inv) return 'script';
+    return moved(b, s);
+}
+
+function moved(b: NonNullable<ReturnType<typeof snapshot>>, s: BotWorldState): 'moved' | null {
     const p = pos(s);
     return p.x !== b.x || p.z !== b.z || p.level !== b.level ? 'moved' : null;
 }
@@ -289,9 +365,8 @@ export async function act(sdk: StateSource & Partial<DismissSdk>, click: () => P
             }
             // The idle re-send is only for a click that drew nothing: one whose script answered has
             // landed, and re-sending it would restart the script (rs/257: Dwarf Cannon's railing).
-            if (every <= 0 || resends >= maxResends || s.dialog.isOpen || guard.scriptAnswered) return false;
-            const refused = messagesSince(s, sent + 1, CANT_REACH).length > 0;
-            if (refused || (s.tick - Math.max(sent, still) >= every)) {
+            if (every <= 0 || resends >= maxResends || s.dialog.isOpen || guard.scriptAnswered || guard.pending) return false;
+            if (guard.refusedBy(s) || (s.tick - Math.max(sent, still, guard.replyFrom) >= every)) {
                 sent = s.tick;
                 still = s.tick;
                 resends++;
@@ -549,12 +624,17 @@ export async function useOn(sdk: ActSdk, item: ItemPattern, target: UseTarget, d
     let resends = 0;
     let landed = false;
     let sentAt = t0;
+    // Each send's replies, from the cursor taken just before it goes out.
+    let refusal = replyAfter(sdk, CANT_REACH);
+    let reply = replyAfter(sdk, NOT_CANT_REACH);
     let moved = t0;
     let last: Tile = pos(sdk);
     let inv = s0 ? invSignature(s0) : '';
     let anim = s0?.player?.animId ?? -1;
     const resend = (tick: number) => {
         sentAt = tick;
+        refusal = replyAfter(sdk, CANT_REACH);
+        reply = replyAfter(sdk, NOT_CANT_REACH);
         moved = tick;
         resends++;
         void click();
@@ -569,8 +649,8 @@ export async function useOn(sdk: ActSdk, item: ItemPattern, target: UseTarget, d
             last = p;
             const a = s.player?.animId ?? -1;
             const sig = invSignature(s);
-            const refused = messagesSince(s, sentAt + 1, CANT_REACH).length > 0;
-            if (s.dialog.isOpen || s.modalOpen || (a >= 0 && a !== anim) || sig !== inv || messagesSince(s, sentAt + 1).some(m => !CANT_REACH.test(m))) landed = true;
+            const refused = refusal.seen(s);
+            if (s.dialog.isOpen || s.modalOpen || (a >= 0 && a !== anim) || sig !== inv || reply.seen(s)) landed = true;
             anim = a;
             inv = sig;
             if (resends >= maxResends || s.dialog.isOpen) return false;
@@ -652,10 +732,15 @@ export const TELEPORT_REFUSED = /mysterious force blocks|can't use this teleport
  * fly spots is exactly 30); one re-cast if the first is dropped. A refusal message ends the wait
  * at once with `ok: false` and a `refused: ...` reason. travel.ts `teleport` adds the precheck,
  * the landing tile and the walk on refusal.
+ *
+ * The re-cast is `act`'s idle re-send at its default bound, as for any world click. A cast that
+ * landed answers on its first tick (teleport.rs2: the cast animation and the runes taken, the jump
+ * two ticks later), which latches `scriptAnswered`, so a slow landing (a browser region rebuild)
+ * is never re-cast; only a cast that drew nothing is, 6 ticks after it reached the server.
  */
 export async function castTeleport(sdk: ActSdk, spell: keyof typeof TELEPORTS | number, maxTicks = 25, landed?: Pred): Promise<ActResult & { at: Tile }> {
     const p0 = pos(sdk);
-    const t0 = sdk.getState()?.tick ?? 0;
+    const refused = replyAfter(sdk, TELEPORT_REFUSED);
     const component = typeof spell === 'number' ? spell : TELEPORTS[spell];
     let refusal: string | undefined;
     const r = await act(
@@ -664,10 +749,11 @@ export async function castTeleport(sdk: ActSdk, spell: keyof typeof TELEPORTS | 
         s => {
             const d = chebyshev(pos(s), p0);
             if (d > 30 || pos(s).level !== p0.level || (d > 0 && landed?.(s))) return true;
-            refusal = messagesSince(s, t0 + 1, TELEPORT_REFUSED)[0];
-            return refusal !== undefined;
+            if (!refused.seen(s)) return false;
+            refusal = refused.first();
+            return true;
         },
-        { resendEvery: 10, maxResends: 1, maxTicks }
+        { maxResends: 1, maxTicks }
     );
     return refusal !== undefined ? { ...r, ok: false, reason: `refused: ${refusal}`, at: pos(sdk) } : { ...r, at: pos(sdk) };
 }

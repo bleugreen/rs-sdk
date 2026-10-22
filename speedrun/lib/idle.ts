@@ -2,7 +2,7 @@
 import { clickContinue, type DialogueSdk } from './dialogue';
 import { levelUpChain } from './levelup';
 import { currentTick, waitUntil, type Pred, type WaitResult } from './wait';
-import { messagesSince, pos } from './world';
+import { messageCursor, messagesAfter, pos } from './world';
 
 export interface IdleOptions {
     /** Consecutive ticks without movement, a new game message or an open dialogue. Default 3. */
@@ -26,6 +26,8 @@ export async function idle(sdk: DialogueSdk, { still = 3, maxTicks }: IdleOption
     const levelUp = levelUpChain();
     const clicked = new Set<string>();
     const t0 = currentTick(sdk);
+    // New messages are those past the cursor: the browser stamps one with the tick it answered, which can be t0.
+    const cursor = messageCursor(sdk);
     let last = t0;
     let changed = false;
     let levelUps = 0;
@@ -33,7 +35,7 @@ export async function idle(sdk: DialogueSdk, { still = 3, maxTicks }: IdleOption
     let said = 0;
     const r = await waitUntil(sdk, s => {
         const q = pos(s);
-        const n = messagesSince(s, t0 + 1).length;
+        const n = messagesAfter(s, cursor).length;
         if (s.dialog.isOpen || q.x !== p.x || q.z !== p.z || q.level !== p.level || n !== said) {
             last = s.tick;
             changed = true;

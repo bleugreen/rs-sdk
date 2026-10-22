@@ -179,8 +179,14 @@ stairs, teleport spells, login), which holds nobody. `speedrun/lib/act.ts` appli
 to every `act`/`actConverse`/`talkTo` click: wait for a settled position (region built, not
 on a held step's tick), re-send a send the client refused (`cant_reach`) or could not
 confirm (`scene_loading`) on the next settled tick unless a reply came, and re-send once a
-click sent within 2 ticks of a jump that draws no reply in 3 ticks, counted from when the
-client executed it. Results carry `settleTicks`, `refusedResends` and `unansweredResends`.
+click sent within 2 ticks of a jump that draws no reply in 3 ticks. Every silence bound (the
+reply watch and `act`'s idle re-send, 6 ticks by default, the same for a teleport cast as for
+any world click) counts from the server tick the click reached: the later of the tick the tab
+executed it and wait.ts `serverClock` then, so a starved browser tab, still behind the server
+when it executes a queued click, is not re-sent before its reply can arrive (rs/345, rs/411).
+A click's replies are read past the message cursor taken just before it went out (world.ts
+`replyAfter` over `messageCursor`), never past a tick: the browser stamps an immediate reply
+with the click's own tick and lite with the next. Results carry `settleTicks`, `refusedResends` and `unansweredResends`.
 Measured on the Grand Tree (lite, bgsrv-ub, cairn://p/rs/309): every tree entry's Narnode
 talk now leaves the landing tile in 2 ticks (25 of 25), against 17-19 on 11 of 13 before
 (rs/299). Charlie is talked to through his cell bars, so the lite client never finds a route
@@ -202,6 +208,16 @@ is still answering (an animation playing, or a game message in the last 2 ticks)
 idle re-send, because that script's later messages are not its answer and the click may
 have been dropped while the script held the player. Glough's tree climb, sent as an Agility
 potion's boost shows, is the measured case.
+
+In a fight none of those answers counts. Once the player has a combat target, or a combat
+event (a hit taken or dealt, blocked or not) has been published since the send, only a
+dialogue, a modal or a step answers a click: the block animation under Protect from Melee,
+the auto-retaliate swing, the hit messages and upkeep's eat are the fight's, and the
+retaliation or the eat (an inventory op) clears the click's pending interaction. Before
+this, a blocked hit's animation latched a swallowed door click as landed and nothing
+re-sent it (rs/391: TGV segment H, 1 of 3 on lite). Every login also turns auto-retaliate
+off (session.ts `setAutoRetaliate`, beside `ensureRunOn`): the run's fights are all
+module-initiated, and a phase that fights back sets it on itself.
 
 The browser client publishes each dialogue component's whole text, as the lite client does.
 It used to cut each line at 50 characters, so `pageText` lost the end of every long line
