@@ -533,6 +533,17 @@ export function keepOnBank(name: string, lv: { fishing: number; cooking: number 
 
 const COINS = /^coins$/i;
 
+export function skipIdsOption(raw: unknown): ReadonlySet<number> {
+    if (raw === undefined) return new Set();
+    if (!Array.isArray(raw) || raw.some(x => !Number.isInteger(x) || (x as number) < 0)) throw new Error('bones: skipIds must be a list of obj ids');
+    return new Set(raw as number[]);
+}
+
+/** A ground item the loot step wants: its name matches and its id is not skipped. */
+export function lootWanted(g: { id: number; name: string }, want: RegExp, skipIds: ReadonlySet<number>): boolean {
+    return !skipIds.has(g.id) && want.test(g.name);
+}
+
 /** Whether the carried product (`product`, a spot's `bones`) has reached `maxCarry`: the bank trigger short of a full pack. */
 export function carryReached(inventory: readonly { name: string; count: number }[], product: RegExp, maxCarry: number): boolean {
     return inventory.filter(i => product.test(i.name)).reduce((a, i) => a + i.count, 0) >= maxCarry;
@@ -655,6 +666,12 @@ interface Options {
      * Wilderness can cost.
      */
     maxCarry: number;
+    /**
+     * Obj ids never picked up (default none). Unidentified herbs are all named 'Herb', so only an
+     * id tells a grimy marrentill from a grimy ranarr: a herb gatherer leaves the ones its plan
+     * has no use for, which other players' kills leave lying in their dozens.
+     */
+    skipIds: ReadonlySet<number>;
     /** Log every fight at the spot (outcome, game ticks, position, live targets in view): for measuring kill rates. */
     trace: boolean;
 }
@@ -688,6 +705,7 @@ export function parseOptions(o: Record<string, unknown>): Options {
         styleCap: num('styleCap', 99),
         keepFood: num('keepFood', Infinity),
         maxCarry: num('maxCarry', Infinity),
+        skipIds: skipIdsOption(o.skipIds),
         trace: o.trace === true
     };
 }
@@ -1140,7 +1158,7 @@ export class Run {
     async loot(want: RegExp, at: Tile): Promise<Outcome> {
         await this.sdk.waitForTicks(1);
         // Keys are needed once; other players' spares lie around the dragon room.
-        const wanted = (g: GroundItem) => (want.test(g.name) && !(/ key$/i.test(g.name) && this.carrying(exact(g.name)))) || this.upgrade(g.name);
+        const wanted = (g: GroundItem) => (lootWanted(g, want, this.opt.skipIds) && !(/ key$/i.test(g.name) && this.carrying(exact(g.name)))) || this.upgrade(g.name);
         const bonesFirst = (g: GroundItem) => Number(/bones/i.test(g.name));
         for (let pass = 0; pass < 6; pass++) {
             const g = (await this.sdk.scanGroundItems(6))
