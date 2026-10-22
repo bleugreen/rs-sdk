@@ -111,12 +111,14 @@ const fate = (u: Unit, from: string, uses?: [RegExp, string]) => {
     const k = u.name.toLowerCase();
     const fam = k.replace(/\(\d\)$/, '');
     const mine = (n: string) => n.toLowerCase() === k || n.toLowerCase().replace(/\(\d\)$/, '') === fam;
+    // Worn through a step means still worn once the step's row is done; S17's course uses no kit.
     let wornThrough: string | null = null;
-    for (const r of rows.slice(at(from) + 1)) {
+    for (let i = at(from) + 1; i < rows.length; i++) {
+        const r = rows[i]!;
         const o = r.out.find(e => mine(e.name));
         if (o && (o.reason === 'consume' || o.reason === 'hand-in')) return `needed: ${o.reason} at ${r.row}`;
         if (o) return wornThrough ? `needed: worn through ${wornThrough}, back at ${r.row}` : `returned unused (${o.reason} at ${r.row})`;
-        if (u.worn && isStep(r) && !wornThrough) wornThrough = r.row;
+        if (!wornThrough && isStep(r) && r.row !== 'S17' && entries[i]!.stacks.worn.some(w => mine(w.name))) wornThrough = r.row;
     }
     return wornThrough ? `needed: worn through ${wornThrough}` : `not used after ${from}`;
 };
