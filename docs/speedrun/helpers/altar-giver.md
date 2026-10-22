@@ -67,7 +67,65 @@ The giver doesn't know which of these it is in. It serves whenever it is ready a
 
 When a turn fails, the stand-in stops the cue, declines any open screen, burns what it holds and starts a new chain with a fresh virtual T. The run's step should do the same.
 
+## Roster (S21, body altar)
+
+The body-altar roster is **22 givers** and **23 body talismans**, including the scored account's own. The lab restock round trip via Edgeville bank was 139–142 ticks, so $N = \lceil142/7\rceil + 1 = 22$ (rs/163). The lab supplied essence at the bank with a staff command; a fully stocked real-bank withdrawal still needs confirmation before treating this as a measured demo throughput guarantee.
+
+`speedrun/helpers/roster.ts` generates the roster, direct-path launcher config and a **plan only** for provisioning. It never logs in, moves stock or changes fleet assignments. Use a checkout carrying rs/163's body route and direct-path launcher; older launchers ignore `path` and would measure a different workload.
+
+### Accounts and launch order
+
+Use `cairn_t01` through `cairn_t22` in order. Their credentials are on bbs at `~/rs-fleet/bots/<name>/bot.env`; the first demo login claims the name. A refused primary keeps its place and takes the next unused spare, t23–t27. Record every refusal and substitution. Do not invent names, treat an already-online account as a free spare, or retry a refused login aggressively.
+
+```sh
+bun speedrun/helpers/roster.ts config > run-machine/body-roster.json
+bun speedrun/helpers/roster.ts config --refused=cairn_t05 > run-machine/body-roster.json
+bun speedrun/helpers/roster.ts config --role=idle --gateway-port=7796 > run-machine/load-check.json
+bun speedrun/helpers/roster.ts plan --stockpile=/private/path/stockpile.json
+```
+
+Every body giver entry has this shape; slots rotate 0, 1, 2 (east, west, south), then repeat. Several givers can share a tile.
+
+```json
+{ "account": "cairn_t01", "role": "altar-giver", "path": "direct",
+  "options": { "altar": "body", "slot": 0, "essence": 27,
+               "restock": { "kind": "bank" } } }
+```
+
+No giver is `receiver` or `final`. All helpers log in **on the chosen scored machine before SCORED**, and share its local cue directory. A lower processing bucket on another machine is not a placement plan: the cue is local, not cross-machine. A giver that relogs after SCORED loses tuned ordering and takes robust turns until SCORED next relogs.
+
+### Run-day provisioning procedure
+
+Obtain rs/41's approval and fresh headroom first, including every donor and recipient. The simultaneous demo total across all hosts must stay at or below 80. Provision at most **five clients at once, donors included**. The planner reserves donor places: with two donors it emits recipient batches of three (seven batches of three, then one), not five recipients plus two donors.
+
+1. Read bbs `~/rs-fleet/forbidden-accounts.txt` and `stockpile.json` read-only. Check all recipients and donors against the current forbidden list; copy that list into the provisioning checkout so the shared validator also enforces it. Never use the scored account. Never modify the fleet checkout, its supervisor or port 7790. Only rs/41 borrows fleet donors.
+2. Refresh the plan against that ledger and have rs/41 reserve stock. At 2026-10-22 00:01Z the banks held 57 body talismans: h51 28, h52 15, h53 8, h54 6. Essence banks h30–h33 held 17,643 / 17,468 / 17,895 / 18,004. That snapshot allocates 22 talismans from h51 and 5,346 essence from h33; retain the scored account's separate talisman. These are observed holdings, **not completed transfers**.
+3. For each approved batch, use an isolated checkout and gateway outside bbs ports 7790–7799. Complete and verify the tutorial skip (S00, `speedrun/skills/start.ts`); the altar-giver startup also calls `ensureOutOfTutorial`. An idle load check does **not** complete this step. Fresh idle accounts remain on Tutorial Island.
+4. Supply each giver with **one real body talisman and 243 essence**, nine loads of 27. S21's requirement is 5,238 essence; 243 each gives 5,346 total. Essence may arrive noted, but must be deposited and withdrawn unnoted before serving. Use the giver's bank restock at Edgeville (3094,3491), with `restock.acceptFrom` anchored to the approved donor names during provisioning.
+5. rs/41 assigns each donor its own one-shot `handover` list and unique batch id, with `--return` to restore its previous role. Generate each donor's items from the plan: h51 gives talismans and h33 gives essence, so this snapshot needs **two donor trades per giver**, not one fictitious combined-stock donor. The donor walks to the agreed Edgeville meeting tile; the giver accepts supply trades while short of either item. Do not resend an `uncertain` handover: inspect the recipient and reconcile the donor's durable role state first.
+6. Verify each giver has finished S00, entered the body altar, and published `ready` on its assigned tile with one talisman and 27 unnoted essence. Verify its bank contains the remaining 216 essence (243 total provisioned, 27 carried), and the donor records show delivered. Capture this per-account readiness ledger. Stop the batch with confirmed clean logouts before starting the next; remove temporary credentials after teardown.
+7. On run night only, stage mode-600 credentials on the two candidate hosts confirmed by rs/host: **rs-ashburn-run** and **rs-ashburn-rehearsal** (resolve their current addresses from the private host thread; use the canonical `ashburn.sh` private configuration documented by the host owner; never commit a destination address). Coordinate with the twin's owner; do not upload there during an unrelated rehearsal. Gate and select the machine using RUN-HOST.md, then start the full roster on the selected machine before SCORED. Never log the same account into both hosts. Remove unused host copies and remove run-host copies after the run.
+
+Before the run, repeat the actual-bank readiness check with the final launcher and record all 22 accounts' tutorial state, tile, talisman, carried/banked essence, credential destination and clean logout. The load check alone proves none of those provisioning requirements.
+
+### Giver-load check
+
+Use `standalone.ts` with `role: "idle", path: "direct"` when the accounts are not provisioned for a real loop. This exercises one game-stream-decoding process per helper; it is not an altar-throughput test. The launcher's sequential limiter and jittered exponential backoff govern login attempts.
+
+Follow the host's booked window, reservation and leftover check from RUN-HOST.md. Do not start until rs/41 posts the fleet log-down confirmation. Use only the named accounts from an isolated host folder, credentials transferred without passwords in argv and stored mode 600. Start under `exec timeout --kill-after=30s <bound>`, with explicit teardown before the slot end. Use a launcher whose bounded shutdown reaps its detached children; an outer timeout alone does not reap detached process groups in older launchers. Never pattern-kill.
+
+Record login successes/refusals/substitutions, first and last login timestamps, per-account state and reconnect count, full-roster duration, confirmed logout and removal of every copied credential. Post the post-teardown leftover check to rs/host and the roster issue. Host owns the simultaneous tab/recording measurements: pass lines are loop-rate p10 at least 50/s and recording at least 29 fps with zero drops. A 22-client point measures the body givers alone; the 34-client point includes the other co-located helpers. Neither substitutes for the run-night gate.
+
 ## Measured
+
+### Idle roster load, 2026-10-22
+
+The run host accepted t01–t22 on the direct path without refusals or substitutions. Launcher start was 00:35:41.170 UTC; first login 00:35:45.240, last 00:38:55.004 (193.834 seconds from launch). All accounts logged in once and remained on Tutorial Island at 3094,3106. This did not skip S00 or provision supplies. Per-account login, heartbeat and logout evidence is in [giver-load-20261022.json](../rehearsals/giver-load-20261022.json).
+
+SIGTERM arrived at 00:52:00.065. Thirteen accounts confirmed server LOGOUT; nine reached the launcher's account-stop deadline and were killed at 00:52:23.067. Several of those nine already had stale state before the signal. All processes and all 27 copied credential files (22 primaries plus five unused spares) were gone by 00:52:54. The nine killed accounts remained listed by the server at 00:54:22 and were absent by 00:56:50. Process cleanup was bounded, but **22 clean logouts were not achieved**; the launcher owner is investigating the nine stalled sessions.
+
+The host-owned tab/recording job did not run, so this check supplies **no gate (d) or recording-fps verdict**. It is not evidence that a scored-style tab passes with the roster present. That simultaneous measurement remains required. The planned 34-client follow-up was deferred by rs/41 at 01:01 UTC because host confirmation and a reservation were absent; no second-slot credentials were transferred and no second launcher started. A replacement slot needs host approval and fresh fleet headroom if it falls outside the original log-down window.
+
 
 Lab (local engine at `NODE_TICKRATE=300`, the launcher with 3 givers and the stand-in on the build slot, air altar; `speedrun/lab/altar-givers.ts`):
 
