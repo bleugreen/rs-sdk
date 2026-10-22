@@ -203,7 +203,7 @@ it with each fold-in. Earliest plausible run date: **2026-10-23, more likely the
 | 25 | 26 | Pre-MM cannon session | `speedrun/skills/ranged.ts` (`cannonSession`) | S14 | 118 | 104 | ~162 | ~58 | overlay | `quest-premm-cannon.ts`, `ranged-cannon.ts` | on main, 8a741554 (#212, rs/252's snapshot); lab-accepted (S27 1,972 i on the module's rates, S14 118 m; rs/199, PR #207); lab is the final tier (a demo test is not feasible) |
 | 26 | 15 | Prayer (bones inside S07; the booth as fallback) | `speedrun/skills/woodcutting.ts` bury option; `speedrun/skills/prayer.ts` for the booth | S25b (S10a retired) | 95 | 65 | 735 (the booth) | ~670 | in-page with S07 | `bones-wc.ts`, `prayer-bury.ts` | bury in S07: building (rs/211); gate-off plain + bury on main (rs/162, 3dfc217f, #165); booth: building (rs/186, held: tenet 15) |
 | 27 | 28 | Crafting | `speedrun/skills/crafting.ts` | S25d | 91 | 85 | 121 (no gems in the windows) | ~36 | overlay | `delayfree-cycle.ts` | **on main, c8ea24da (#302; rs/380's snapshot of rs/186 at 95f0aeac), inside the run-commit floor**, with the item-cycle program and `stow`; **lab-accepted** (263 m on the leather route, browser, 3 of 3; rs/359) and **demo-accepted** (rs/359, 11:25Z: cairn_h80, browser, 26 bodies, 7 ticks a turnaround against the lab's 7.03 and the bar's 7.7, event peak 5, overBudget 0, a clean page-confirmed logout) |
-| 28 | 29 | Cooking (wine) + gems in the windows | `speedrun/skills/cooking.ts` | S25c | 80 | 75 | ~131 (kebabs, supplies not held) | ~56 | overlay | `wine-receive.ts` [rs/41], `wine-window-lab.ts` | building (rs/186, held: tenet 15); item-cycle's opt-in `mixed` loads for W2 and P2 building (rs/339), on the floor's pending list; `stow` on main (#302) |
+| 28 | 29 | Cooking (wine) + gems in the windows | `speedrun/skills/cooking.ts` | S25c | 81 | 77 | ~131 (kebabs, supplies not held) | ~54 | overlay | `wine-receive.ts` [rs/41], `wine-window-lab.ts` | **lab-measured through the module at the run's levels** (rs/339, `cooking-accept.ts`, browser, 81 / 77 m, slots m; fold-in 22); building (rs/186, held: tenet 15); item-cycle's opt-in `mixed` loads for W2 and P2 building (rs/339), on the floor's pending list; `stow` on main (#302) |
 | 29 | 25 | Goblin Diplomacy | `speedrun/quests/goblin-diplomacy.ts` | S24 | 41 | 41 | 102 | ~61 | overlay | none (page counts only) | building (rs/185, held: tenet 15) |
 | 30 | 30 | Doric's Quest | `speedrun/quests/dorics-quest.ts` | S05 | 17 | 17 | 43 | ~26 | overlay | `quest-smallskill-doric.ts` | building (rs/185, held: tenet 15) |
 | 31 | 31 | Cook's Assistant | `speedrun/quests/cooks-assistant.ts` | S23 | 12 | 12 | 31 | ~19 | overlay | `quest-primitives-dialogue.ts` | building (rs/185, held: tenet 15) |
@@ -2267,7 +2267,7 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   noted wines; bank, **burst 1**: deposit 29, withdraw the chisel x1 and All uncut sapphire (26 of
   the 62: a bank withdraw larger than the free space moves only what fits, `bank.rs2`
   `bank_withdraw_request`), close, by login + 19: 10 events in 2 ticks, as WW's measured diamond
-  burst, the chisel's withdraw 0 ticks (i, rs/339);
+  burst, the chisel's withdraw sharing burst 1's 2 ticks (m, rs/339, fold-in 22);
   **W1** cut the load, then continue pages; first firing at login + 20; **P1** only the booth click
   and two blind continues per tick; deposit the rest of the wine and the cut gems; relog 2; **W2**
   the gem cycle with booth visits on item-cycle's opt-in **`mixed` loads** (building, rs/339; the
@@ -2290,11 +2290,12 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   commit (#146; entry 0), so `logoutClean` confirms each relog's logout from the page. The up to
   ~60 ticks of unconfirmed wait each relog risked before rs/164 (i, RUN-ORDER.md R1's bound) are
   gone on such a `RUN_COMMIT`; the tab relog's ~2 also needs rs/174's merge commit (entry 0).
-- **Free slots: needAtStart 27** (rs/339, i; the inventory ledger, fold-in 20): the chisel and 26
-  uncut gems beside the noted-wine slot, peak 28/28; SCORED enters with only the noted wine.
+- **Free slots: needAtStart 27** (m, rs/339, 3 reps through the module; fold-in 22; the inventory
+  ledger): relog 1 entry 0, after the trade 1, burst 1 28, W1 28, relog 2 entry 1, W2 and P2 loads 28, end 0; the chisel and 26 uncut gems beside the noted-wine slot, peak 28/28; SCORED enters with only
+  the noted wine.
 - **Postconditions:** Cooking 99; 107 more gems cut. Items out: the wine (29 deposited at burst 1,
   the rest at P1) and the chisel (stowed on the last visit), so SCORED leaves with 28 free for H22.
-- **Ticks:** expected **80**, best **75**: WINE's demo run A and projection, 75-85, measured with 2
+- **Ticks:** expected **81**, best **77**, measured through the module (m, lab, browser; rs/339, through the module (`cooking-accept.ts`), bgsrv-mac, browser, 300 ms, rs/339's hash 14b1f173, at the run's levels (Cooking 30, Crafting 96, the fleet's 108 gems), 3 reps: 77, 85, 81 scored ticks; `cooking.md` section 9; fold-in 22). Before: expected 80, best 75, WINE's demo run A and projection, 75-85, measured with 2
   ticks per relog on the lite client; a tab relog with rs/174's fix measured ~2 on the twin
   (RUN-ORDER.md section 4), so fold-in 3's + 2 x 18 is undone. The
   gems save 30-31 ticks of Crafting at Crafting 55 (measured, wine-window.md §2, n = 3) and about 36
@@ -2309,8 +2310,13 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
 - **Fallback:** `receiveWine`'s deadline fallback (one clean relog); the plain sequence with no work in
   the windows (Crafting then 121).
 - **Acceptance, local:** `wine-window-lab.ts --variants=plain,gems --reps=3` through the module. Pass:
-  Cooking 99 in all 3, the first firing at login + 20, and the gems variant within 2 ticks of the
-  measured 75-76 normalised.
+  Cooking 99 in all 3, the first firing at login + 20, and **measured at the run's levels within 10%
+  of the row** (rs/158, fold-in 22; it replaces 'the gems variant within 2 ticks of the measured 75-76
+  normalised'). **Met** (rs/339): 81 against the row's 80. **The WW-fixture gap, a note, not a risk:**
+  WW section 1's Crafting-55 fixture did not reproduce through the module, 98 normalised against WW's
+  75-76, so the windows save 15-16 ticks there, not 30-31; rs/339 traces it to Crafting-55 page leaks
+  (11 against 5), item-cycle's stow and page drains, and about 6-7 ticks of harness overhead. At the
+  run's levels the leak is 0.
 - **Acceptance, demo (throwaway):** the default sequence on a throwaway receiver with a wine-maker
   throwaway, as run A. Pass: session ticks within 10% of run A.
 - **Start from:** [rs/41] `speedrun/helpers/wine-receive.ts`; `docs/speedrun/scripts/wine-window-lab.ts`,
@@ -2852,7 +2858,7 @@ S10b) or fire (S10b to S14) supplies its element.
 | S25e | - | - | - | 28 | MAN entry 27; rs/302's herblore.ts precondition, 28 free with the notes banked (r) |
 | H21b | - | - | - | 0 | retired on the stock in force, SUPPLIES H21b (r) |
 | H21c | unfermented wine x520 [n] | - | - | 1 | SUPPLIES H21c: SCORED enters relog 1 holding at most 27 items (r) |
-| S25c | - | unfermented wine all (deposit: 29 at burst 1, the rest at P1) | - | 27 | MAN entry 29 (r); WW section 5 (r); **the need, rs/339's design figures** (i; its lab sends the measured row; fold-in 20): the chisel and 26 uncut gems beside the noted-wine slot, peak 28/28; burst 1 deposits 29 wine and withdraws the chisel x1 and All uncut sapphire, 26 of the 62, because a bank withdraw larger than the free space moves only what fits (`bank.rs2` `bank_withdraw_request`, r): 10 events in 2 ticks, as WW's measured diamond burst, the chisel's withdraw 0 ticks (i); W2 and P2 cut item-cycle's opt-in `mixed` loads, 26 + 27 + 27 + 27 (building, rs/339) (i); the chisel and the gems are withdrawn and stowed inside the step, so neither is in this row's `in` or `out`: the chisel comes out at burst 1 and goes back by item-cycle's `stow` (rs/359, on main with #302) on the last visit, and SCORED leaves with 28 free for H22 (r) |
+| S25c | - | unfermented wine all (deposit: 29 at burst 1, the rest at P1) | - | 27 | MAN entry 29 (r); WW section 5 (r); **the need, measured** (m, rs/339, 3 reps through the module; fold-in 22: relog 1 entry 0, after the trade 1, burst 1 28, W1 28, relog 2 entry 1, W2 and P2 loads 28, end 0): the chisel and 26 uncut gems beside the noted-wine slot, peak 28/28; burst 1 deposits 29 wine and withdraws the chisel x1 and All uncut sapphire, 26 of the 62, because a bank withdraw larger than the free space moves only what fits (`bank.rs2` `bank_withdraw_request`, r): 10 events in 2 ticks, the chisel's withdraw sharing them (m, rs/339); W2 and P2 cut item-cycle's opt-in `mixed` loads, 26 + 27 + 27 + 27 (building, rs/339) (i); the chisel and the gems are withdrawn and stowed inside the step, so neither is in this row's `in` or `out`: the chisel comes out at burst 1 and goes back by item-cycle's `stow` (rs/359, on main with #302) on the last visit, and SCORED leaves with 28 free for H22 (r) |
 | H22 | coins to 126000 [s] (a top-up netted against what SCORED holds, rs/158's ruling, fold-in 19: coins stack, so no slot and no ticks; rs/41 stages the difference); wizard's mind bomb x1 [u]; silk x1 [u]; lobster pot x1 [u]; unfired bowl x1 [u]; plank x3 [u]; nails x12 [s]; adamant full helm x1 [u]; amulet of strength x1 [u]; shark to 10 [u]; law rune x5 [s] (Varrock, Lumbridge, Falador, Ardougne); air rune x9 [s]; fire rune x1 [s]; earth rune x1 [s]; water rune x3 [s]; hammer x1 [u] (back from H21d); mithril scimitar x1 [u] (back from H12) | staff of fire x1 (swap: unwielded, dead) | +adamant full helm; +amulet of strength; -m'speak amulet; +mithril scimitar | 28 | SUPPLIES H22 (r); rs/318 ruling 5, the scimitar back (r); the helm, amulet and scimitar worn at the hand-off, so S26 starts with 2 free (r); owner rs/320 (r); staging rs/331, `helpers/staging.md` ba7303c5 (r) |
 | S26 | rune chainbody x1 [u] (Scavvo); rune platelegs x1 [u]; dragonfire shield x1 [u] (`duke_horacio.rs2:63`) | coins x126000 (consume: the quest's 12,000 and Scavvo's 114,000); wizard's mind bomb x1 (hand-in); silk x1 (hand-in); lobster pot x1 (hand-in); unfired bowl x1 (hand-in); plank x3 (consume: the hull); nails x12 (consume); m'speak amulet x1 (drop: at the start of segment B, +1 tick, rs/258's addendum 8; untradeable, dead); law rune x3 (consume: Varrock, Lumbridge and Falador teleports); air rune x9 (consume); fire rune x1 (consume); earth rune x1 (consume); water rune x1 (consume) | +rune chainbody; +rune platelegs; +dragonfire shield | 2 | MAN entry 13 (r); the need 2 (rs/258's addendum 8, fold-in 19: the module works it out from the step's item list, the peak at segment C, where Scavvo's chainbody and platelegs are bought before they are worn, and still 2 at E without the armour; 1 before), against exactly 2 free after H22, 0 spare; `quest_dragon` (r): the map parts combined and the Crandor map given to Ned (`crandor_map.rs2:38-40`, `ned.rs2:230-231`); the need, Oziach's key before the magic door takes the four items, Scavvo's armour worn as bought (`dragon_slayer.md` step list, r); rs/258's single pass (m); Oziach's maze key (never deleted, `oziach.rs2:122-126`) dropped by the module at L's exit, 0 ticks (rs/258, r); sharks not subtracted (i) |
 | T26-27 | - | law rune x2 (consume: Ardougne teleport); water rune x2 (consume); hammer x1 (drop: dead) | - | 0 | RUN-ORDER T26-27 (r); P1 (r) |
