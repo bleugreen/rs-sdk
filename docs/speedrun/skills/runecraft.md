@@ -450,8 +450,12 @@ route), and were meant to be on the direct path, but **every run in this section
 path**. The lab drivers set the giver's `path` inside the role's `options`, which nothing reads;
 `standalone.ts` takes it from the account entry into `HELPER_PATH`. The drivers now put it on the
 account entry, and `runecraft-demo.ts` refuses to start if the launcher resolved any other path.
-So the step has not yet run against direct-path givers. On the lab's loopback engine the path
-makes no measurable difference (the two tables below agree):
+The first real direct-path run came after the fix (3b161c12, same machine and port block, one
+tree for the stand-in and the givers, `runecraft-accept.ts --path=direct`): nature 44, auto
+(chose tuned), givers first, **30/30, 29 x 7, step 218**. The launcher resolved `path: direct`
+for all 3 givers, each logged in `[direct]`, there was no lite runner, and every logout was `out`.
+That matches the relay run below exactly, so on the lab's loopback engine the path makes no
+measurable difference:
 
 | Run | Login order | Turns given | Gaps | Step ticks |
 |---|---|---|---|---|
