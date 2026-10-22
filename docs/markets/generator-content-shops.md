@@ -10,10 +10,10 @@ over the bank (`server/engine/src/server/login/LoginServer.ts`, `updateHiscores`
 
 ## Answer
 
-**Nothing in this scope explains those stacks.** Every path a player can reach in content,
-shops, trade, bank, duel, party room and certs conserves items and coins, and the lab confirms
-this for the count edges (counts above what is held, full 2^31-1 stacks, shop round trips). What
-the code reading did find:
+**No player-reachable path in this scope explains those stacks.** Every path an ordinary player
+can reach in content, shops, trade, bank, duel, party room and certs conserves items and coins.
+The lab confirms this for the count edges (counts above what is held, full 2^31-1 stacks, shop
+round trips). What the code reading did find:
 
 - One **latent engine bug** that scripts can't reach. `INV_MOVEITEM` and `INV_MOVEITEM_CERT`
   (`server/engine/src/engine/script/handlers/InvOps.ts`) compute the overflow they drop on the
@@ -25,18 +25,24 @@ the code reading did find:
 - **Small duplications of tools and quest items** (gnome restaurant utensils, the Legends' Quest
   machete). These are worth a few coins per cycle at most.
 - **One cross-shop arbitrage** (ruby rings, Irksol to Grum), worth about 1,400 gp per restock.
-- **Developer cheats are ruled out** as an explanation for anyone on the board (section 3).
+- **Staff-made items fed into an eligible bank: open candidate, confirmed possible in the lab**
+  (section 3). An ordinary player can't run a cheat, and a staff account can't hold a board row.
+  But a staff account (level 3 or 4, which only whoever runs the demo can set in the account row)
+  can `::give` items to itself and trade them to an ordinary account. Nothing in trade, bank or
+  the GE checks staff level or where an item came from, and the receiver's bank counts in full. The lab
+  moved 200M air runes this way and the receiver got a board row worth 800M. Whether this
+  happened on the demo needs public evidence (timeline, GE volume, account-family census), which
+  is rs/500's job.
 
-Outside this scope, the strongest remaining lead is the save-v8 **recovery escrow**, added
-2026-09-07 (commit `e5282efdd93`). `Player.save` snapshots the contents of `tradeoffer`,
-`dueloffer`, `duelwinnings`, `partyroom_tempinv`, `deathkeep`, `trail_rewardinv`,
-`trawler_rewardinv` and `duelarrows` into every save, `PlayerLoading` re-grants them on load, and
-`World` retries the grant each tick (`Player.RECOVERABLE_INVENTORIES`, `Player.recoverItems`).
-Whether a save taken mid-trade can also be completed by the trade belongs to sibling Q1a
-(GE ledger and save-v8 escrow persistence), and is not audited here.
+**For the markets mission, the staff path is not a method available to us**: it needs a staff
+level that only the operator can grant. The copyable lead is rs/500's fishing swarm.
+
+The save-v8 recovery escrow (`Player.RECOVERABLE_INVENTORIES`, added 2026-09-07 in
+`e5282efdd93`) was the other lead outside this scope. Sibling rs/498 has ruled it out
+(`docs/markets/generator-ge-persistence.md`).
 
 A duplication that doubles a stack needs about 31 iterations to reach 2^31 from 1, and a fixed
-yield needs a loop. Nothing found here has either shape.
+yield needs a loop. No player-reachable path found here has either shape.
 
 ## Lab setup
 
@@ -98,16 +104,55 @@ before moving. Deposit refuses when the bank stack would pass 2^31-1, and moves 
 `amount - overflow`. Noted withdraw uses `inv_moveitem_cert` with the same clamped count.
 **Ruled out** (lab A and B).
 
-### 3. Developer cheats and staff level
+### 3. Developer cheats, staff level, and staff-made items
 
-`::give`, `::givemany` and the debug procs need `staffModLevel >= 3`/`4` and, for debug procs,
-a non-production world (`server/engine/src/network/game/client/handler/ClientCheatHandler.ts`).
-No cheat is open to staff level 0. The demo runs with the login server (`fly.toml`,
-`LOGIN_SERVER = "true"` since its first commit), so staff level comes from the `account` row,
-whose default is 0 (`server/engine/prisma/*/schema.prisma`). The old local-login grant of staff
-level 4 on non-production worlds (removed in `e0de0694e6b`, 2026-02-02) never applied to the demo. Any
-account above staff level 1 is skipped by `hiscoreEligible`, so a staff account could not refresh
-a board row anyway. `NODE_DEBUG=true` only adds diagnostic messages. **Ruled out.**
+**What an ordinary player can do: no cheat.** `::give`, `::givemany` and the debug procs need
+`staffModLevel >= 3`/`4`, and debug procs also need a non-production world
+(`server/engine/src/network/game/client/handler/ClientCheatHandler.ts`). The demo runs with the
+login server (`fly.toml`, `LOGIN_SERVER = "true"` since its first commit), so staff level comes from
+the `account` row, which defaults to 0 (`server/engine/prisma/*/schema.prisma`). The old local-login
+grant of staff level 4 on non-production worlds (removed in `e0de0694e6b`, 2026-02-02) never
+applied to the demo. `NODE_DEBUG=true` only adds diagnostic messages. The lab confirms that a
+staff-0 account's `::give` is ignored (probe H1 below).
+
+**What a staff account can't do: hold a board row.** `hiscoreEligible` (`LoginServer.ts`) writes
+no rows for an account above staff level 1, and every board query filters
+`account.staffmodlevel <= 1` (rs/498's doc covers the queries). The lab confirms the staff giver
+gets no row (probe H5).
+
+**What is not ruled out: staff-made items fed into an eligible bank.** On the demo's non-production
+config, `::giveother` and `::teleother` are production-only, so a staff account can `::give` only
+to itself (rs/498). From there the items can reach an ordinary account in three ways. A plain
+trade leaves no public trace. The GE shows up in `/api/market` history. A drop followed by a
+pickup also leaves no trace: the receiver sees the drop once the reveal timer expires. Nothing on
+these paths checks staff level or origin:
+
+- `trade.rs2`, `bank.rs2`, `shop.rs2` and the GE code (`server/engine/src/engine/market/`) contain
+  no staff checks. The only staff checks in content are death item loss (`death.rs2`) and a staff
+  stat boost (`appearance.rs2`), and neither gates items.
+- An inventory slot is `{ id, count }` (`Inventory.ts`), with no record of where it came from.
+
+The lab ran this path end to end (section "Lab results: staff hand-off"). This is an **open
+candidate**, and settling it on the demo needs public evidence (below and in rs/498's doc).
+rs/498 also notes that the debug proc `~bank_preset` (`_test/scripts/cheats/cheat_bank.rs2`) fills
+a bank with 2,147,483,647 of each rune type and coins, and 65,535 of each raw fish, ore, log and
+gem.
+
+**Public signals that would separate staff-fed stacks from a swarm or a dupe:**
+
+| Signal | Staff-fed | Gathering swarm | Dupe or generator |
+|---|---|---|---|
+| GE volume (`/api/market` history) for the item | none, if fed by trade or drop | sales or none; feeders usually trade | none |
+| Board timeline (bank snapshot dates and values) | the stack appears in one step between snapshots | a steady ramp matching gather rates times account count | a run of steps, doubling or fixed yield per cycle |
+| Exact counts (bank board item search) | round numbers: 100,000,000, multiples of 65,535, 2,147,483,647 | irregular | multiples of the per-cycle yield |
+| Feeder accounts | few or none; one staff account is enough | many accounts with the item's skill trained, seen on `/playerpositions` at the resource | one or two accounts |
+| Skills of the holder and its family | unrelated to the items | matches the items (fishing for raw shark and bass) | anything |
+
+nickai3's air rune count (1,923,311,135) and banker's shark count (18,044,690) aren't round
+numbers or multiples of 65,535. That is weak evidence against a one-step staff give of those
+stacks, but they could be the remainder after trading or spending. Coins at exactly 2,147,483,647
+fit a staff give, `~bank_preset`, the Managing Miscellania coffers dupe (rs/498) and a long
+accumulation that hit the cap equally well.
 
 ### 4. Trade (`interface_trade/scripts/trade.rs2`)
 
