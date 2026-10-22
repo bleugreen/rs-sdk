@@ -299,12 +299,19 @@ async function main() {
     };
     const openBank = async (): Promise<boolean> => {
         for (let attempt = 0; attempt < 3; attempt++) {
-            const idx = client.findNpcIndexByExactName('Banker');
-            if (idx === undefined) throw new Error('no Banker in view');
-            const r = client.interactNpc(idx, 3);
+            // A booth's op 2 opens the bank at once ([oploc2,bankbooth] @openbank, bank_booth.rs2).
+            const st = (client as any).collectBotState(0) as { nearbyLocs: { id: number; name: string; x: number; z: number; distance: number; optionsWithIndex: { text: string; opIndex: number }[] }[] };
+            const booth = st.nearbyLocs.filter(l => /^bank booth$/i.test(l.name) && l.optionsWithIndex.some(o => o.opIndex === 2)).sort((a, b) => a.distance - b.distance)[0];
+            let r: unknown;
+            if (booth) r = client.interactLoc(booth.x, booth.z, booth.id, 2);
+            else {
+                const idx = client.findNpcIndexByExactName('Banker');
+                if (idx === undefined) throw new Error('no bank booth or Banker in view');
+                r = client.interactNpc(idx, 3);
+            }
             client.flush();
             const p = client.getPlayerPosition();
-            console.log(`bank: Banker #${idx}, op 3 -> ${JSON.stringify(r)}, player at ${p?.worldX},${p?.worldZ}, modal ${client.mainModalId}`);
+            console.log(`bank: ${booth ? `booth ${booth.id} at ${booth.x},${booth.z} op 2` : 'Banker op 3'} -> ${JSON.stringify(r)}, player at ${p?.worldX},${p?.worldZ}`);
             if (await waitUntil(() => client.isBankOpen(), 15)) return true;
             console.log(`bank: not open after 15 ticks, modal ${client.mainModalId}`);
         }
