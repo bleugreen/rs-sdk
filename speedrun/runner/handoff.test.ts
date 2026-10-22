@@ -4,10 +4,11 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import type { BotWorldState, InventoryItem, TradeItem } from '../../sdk/types';
 import { baseState, drive, FakeSdk, type SentAction } from '../lib/fake-sdk';
+import { noteOf } from '../lib/items';
 import { TickLog } from '../lib/ticks';
 import { MANIFEST, parseLedger } from '../tools/slot-ledger';
 import {
-    handOffFrom, handOffMissing, handOffPre, handOffStep, itemPattern, loadHandOff, planHandOff, runHandOff, toUnequip, tradeKind, tradeLanded,
+    giveSpecs, handOffFrom, handOffMissing, handOffPre, handOffStep, itemPattern, loadHandOff, planHandOff, runHandOff, toUnequip, tradeKind, tradeLanded,
     type HandOffPlan, type HandOffReport,
 } from './handoff';
 import { Observation, resolveResume } from './resume';
@@ -40,6 +41,9 @@ const IDS: Record<string, number> = {
     Shark: 385, Tinderbox: 590, 'Bronze axe': 1351,
 };
 const STACKS = /rune$|^coins$|^cannonball$/i;
+/** Banknotes stack whatever their name (obj.pack: cert_guamvial, cert_iritvial). */
+const NOTES = new Set([92, 102]);
+const stacks = (t: { id: number; name: string }) => STACKS.test(t.name) || NOTES.has(t.id);
 const WEAPON = /staff|bow|scimitar|knife|axe/i;
 
 const item = (slot: number, name: string, count = 1): InventoryItem => ({
@@ -71,10 +75,10 @@ function addTo(inv: InventoryItem[], items: readonly TradeItem[]): InventoryItem
     const out = [...inv];
     const free = () => { for (let s = 0; ; s++) if (!out.some(i => i.slot === s)) return s; };
     for (const t of items) {
-        const stack = STACKS.test(t.name) ? out.find(i => i.id === t.id) : undefined;
+        const stack = stacks(t) ? out.find(i => i.id === t.id) : undefined;
         if (stack) out[out.indexOf(stack)] = { ...stack, count: stack.count + t.count };
-        else if (STACKS.test(t.name)) out.push(item(free(), t.name, t.count));
-        else for (let k = 0; k < t.count; k++) out.push(item(free(), t.name));
+        else if (stacks(t)) out.push({ ...item(free(), t.name, t.count), id: t.id });
+        else for (let k = 0; k < t.count; k++) out.push({ ...item(free(), t.name), id: t.id });
     }
     return out;
 }
@@ -402,6 +406,127 @@ describe('a top-up row: top up to N counting what is held', () => {
         await drive(sdk, runHandOff(sdk, h10, PARTNER, { onReport: r => reports.push(r) }), 20);
         expect(sdk.sent).toEqual([]);
         expect(reports[0]).toMatchObject({ ok: true, ticks: 0 });
+    });
+});
+
+// ------------------------------------------------------------------ item identity (rs/365)
+
+describe('item identity: NAME @ID by obj id, NAME(*) by any dose, <NAME> left to the module', () => {
+    const LEDGER = `
+| row | in | out | equip | needAtStart | source |
+|---|---|---|---|---|---|
+| H21d | guam potion (unf) @91 x41 [n]; irit potion (unf) @101 x405 [n] | <platebody> x5 (swap: smithing.ts's); hammer x1 (swap) | - | 2 | fixture (r) |
+| H15 | torch @596 x1 [u] (unlit) | torch @594 x1 (swap: the lit one) | - | 1 | fixture (r) |
+| H15n | torch x1 [u] | torch x1 (swap) | - | 1 | fixture (r) |
+| H13 | blood rune x70 [s] | antipoison(*) all (swap: whatever doses are left) | - | 1 | fixture (r) |
+| H13n | blood rune x70 [s] | antipoison all (swap) | - | 1 | fixture (r) |
+| H3 | <gem ring> x20 [u] | - | - | 20 | fixture (r) |
+| H90 | torch @595 x1 [u] | - | - | 1 | fixture (r) |
+| H91 | torch @99999 x1 [u] | - | - | 1 | fixture (r) |
+| H92 | monkey greegree @4031 x1 [n] | - | - | 1 | fixture (r) |
+`;
+    const idPlan = (id: string) => handOffFrom(LEDGER, id);
+    const obj = (slot: number, id: number, name: string, count = 1): InventoryItem => ({ slot, id, name, count, optionsWithIndex: [] });
+    const unf = (id: number, count: number): TradeItem => ({ slot: 0, id, name: 'Unfinished potion', count });
+    const hammer = (slot: number) => obj(slot, 2347, 'Hammer');
+
+    test('the plan: ids checked against obj.pack, a noted in by its note (the cert link), an out by either form', () => {
+        const h21d = idPlan('H21d');
+        expect(h21d.receive.map(r => [r.name, r.ids, r.kind])).toEqual([['guam potion (unf)', [92], 'n'], ['irit potion (unf)', [102], 'n']]);
+        expect(h21d.give.map(g => [g.name, g.ids, g.perObj])).toEqual([['hammer', undefined, false]]);
+        expect(h21d.placeholders).toEqual(['<platebody>']);
+        expect(idPlan('H15').receive[0]!.ids).toEqual([596]);
+        expect(idPlan('H15').give[0]!.ids).toEqual([594, 595]);
+        // The notes are read by name from obj.pack (cert_guamvial, cert_iritvial); the greegree has none.
+        expect([noteOf(91), noteOf(101), noteOf(4031), noteOf(92)]).toEqual([92, 102, undefined, undefined]);
+        expect(() => idPlan('H90')).toThrow(/torch @595 is a banknote \(cert_torch_lit\)/);
+        expect(() => idPlan('H91')).toThrow(/obj.pack has no obj 99999/);
+        expect(() => idPlan('H92')).toThrow(/monkey greegree @4031 \[n\]: mm_monkey_greegree_for_normal_monkey has no note/);
+    });
+
+    test('H21d: the two unfinished potions, both named so in game, are told apart by id', async () => {
+        const h21d = idPlan('H21d');
+        // Two noted stacks to come, the hammer's slot freed: 1 free is enough, 0 is not.
+        expect(handOffPre(state([...filler(26), hammer(26)]), h21d, PARTNER)).toBe(true);
+        expect(handOffPre(state([...filler(27), hammer(27)]), h21d, PARTNER)).toMatch(/the trade adds 2, 1 short/);
+        // Irit notes held: only the guam stack is new. Unnoted guam is not the noted stack.
+        expect(handOffPre(state([...filler(26), hammer(26), obj(27, 102, 'Unfinished potion', 5)]), h21d, PARTNER)).toBe(true);
+        expect(handOffPre(state([...filler(26), hammer(26), obj(27, 91, 'Unfinished potion')]), h21d, PARTNER)).toMatch(/the trade adds 2, 1 short/);
+        // 446 guam notes are not 41 guam and 405 irit.
+        expect(handOffMissing(state([obj(0, 92, 'Unfinished potion', 446)]), h21d)).toEqual(['irit potion (unf) 0 of 405']);
+        // The swap: the hammer out, both stacks in, the placeholder's platebodies not offered.
+        const sdk = new TradeServer(state([...filler(3), hammer(3)]), [unf(92, 41), unf(102, 405)]);
+        const { step, reports } = await runStep(sdk, h21d);
+        expect(reports[0]).toMatchObject({ trade: 'swap', ok: true, gave: ['Hammer x1'] });
+        expect(sdk.state!.inventory.filter(i => i.name === 'Unfinished potion').map(i => [i.id, i.count])).toEqual([[92, 41], [102, 405]]);
+        expect(step.postconditions(sdk.state!, {})).toBe(true);
+        // An offer of the right name and the wrong obj is not accepted.
+        const wrong = new TradeServer(state([...filler(3), hammer(3)]), [unf(92, 446)]);
+        await expect(drive(wrong, runHandOff(wrong, h21d, PARTNER, { maxTicks: 10 }), 100)).rejects.toThrow(/^H21d with Helper/);
+        expect(wrong.state!.inventory.some(i => i.id === 92)).toBe(false);
+    });
+
+    test("H15: the unlit torch in and the lit one out, which by name would be one item both ways", async () => {
+        const h15 = idPlan('H15');
+        const lit = (slot: number) => obj(slot, 594, 'Torch');
+        const unlit = (slot: number) => obj(slot, 596, 'Torch');
+        expect(() => idPlan('H15n')).toThrow(/torch both given and received/);
+        expect(handOffMissing(state([lit(0)]), h15)).toEqual(['torch 0 of 1', 'torch x1 still held']);
+        expect(handOffMissing(state([unlit(0)]), h15)).toEqual([]);
+        // Holding both: one lit torch held, one given, so the row gives all of it.
+        expect(handOffPre(state([lit(0), unlit(1)]), h15, PARTNER)).toBe(true);
+        expect(giveSpecs(state([lit(0), unlit(1)]), h15)).toEqual([{ item: 594, n: 1 }]);
+        const sdk = new TradeServer(state([...filler(2), lit(2)]), [{ slot: 0, id: 596, name: 'Torch', count: 1 }]);
+        const { step, reports } = await runStep(sdk, h15);
+        expect(reports[0]).toMatchObject({ trade: 'swap', ok: true, gave: ['Torch x1'] });
+        expect(sdk.state!.inventory.filter(i => i.name === 'Torch').map(i => i.id)).toEqual([596]);
+        expect(step.postconditions(sdk.state!, {})).toBe(true);
+    });
+
+    test('H13: antipoison(*) all gives back every dose form held, one offer each', async () => {
+        const h13 = idPlan('H13');
+        const s = state([...filler(5), obj(5, 175, 'Antipoison(3)'), obj(6, 179, 'Antipoison(1)'), obj(7, 179, 'Antipoison(1)')]);
+        expect(giveSpecs(s, h13)).toEqual([{ item: 175, n: 'all' }, { item: 179, n: 'all' }]);
+        // Unmarked, the row stays one name pattern, which planOffers turns into one obj's offer.
+        const named = giveSpecs(s, idPlan('H13n'));
+        expect(named.map(g => String(g.item))).toEqual([String(itemPattern('antipoison'))]);
+        expect(handOffPre(s, h13, PARTNER)).toBe(true);
+        const sdk = new TradeServer(s, tradeItems([['Blood rune', 70]]));
+        const { step, reports } = await runStep(sdk, h13);
+        expect(reports[0]).toMatchObject({ trade: 'swap', ok: true });
+        expect([...reports[0]!.gave].sort()).toEqual(['Antipoison(1) x2', 'Antipoison(3) x1']);
+        expect(sdk.state!.inventory.some(i => /^Antipoison/.test(i.name))).toBe(false);
+        expect(step.postconditions(sdk.state!, {})).toBe(true);
+    });
+
+    test("a <placeholder> is the module's: not traded, not checked, never a refusal", async () => {
+        const h3 = idPlan('H3');
+        expect(h3).toMatchObject({ receive: [], give: [], placeholders: ['<gem ring>'] });
+        expect(handOffPre(state(filler(28)), h3, PARTNER)).toBe(true);
+        expect(handOffMissing(state([]), h3)).toEqual([]);
+        const sdk = new TradeServer(state(filler(2)), []);
+        await drive(sdk, runHandOff(sdk, h3, PARTNER), 20);
+        expect(sdk.sent).toEqual([]);
+    });
+
+    test("rs/158's fold-in 18 table in the id grammar: its H rows plan as the names did", () => {
+        const read = (f: string) => parseLedger(readFileSync(join(import.meta.dir, '../tools/fixtures/slot-ledger', `${f}.md`), 'utf8')).rows.filter(r => /^H/.test(r.row));
+        const plans = (rows: ReturnType<typeof read>) => rows.map(r => {
+            try {
+                planHandOff(r);
+                return `${r.row}: plans`;
+            } catch (e) {
+                return (e as Error).message;
+            }
+        });
+        const ids = read('fold-in-18-ids');
+        expect(plans(ids)).toEqual(plans(read('fold-in-18')));
+        const row = (id: string) => planHandOff(ids.find(r => r.row === id)!);
+        expect(row('H13').give.filter(g => g.perObj).map(g => g.name)).toEqual(['antipoison']);
+        expect(row('H14').give.filter(g => g.perObj).map(g => g.name)).toEqual(['prayer potion', 'magic potion']);
+        expect(row('H21d').receive.filter(r => r.ids).map(r => [r.name, r.ids])).toEqual([['guam potion (unf)', [92]], ['irit potion (unf)', [102]]]);
+        expect(row('H21d').placeholders).toEqual(['<platebody>']);
+        expect(row('H15').receive.find(r => r.name === 'torch')!.ids).toEqual([596]);
     });
 });
 

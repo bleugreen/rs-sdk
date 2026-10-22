@@ -11,9 +11,16 @@
 // rs/304, 2026-10-22):
 //
 //   | row | in | out | equip | needAtStart | source |
-//   in      NAME xCOUNT [K] (note); ...      K: s stackable, u unstackable, n noted
-//           NAME to N [K] (note): a top-up to N counting what is held, pack and worn (the H10 form)
-//   out     NAME xCOUNT (REASON ...); NAME all (REASON ...)
+//   in      ITEM xCOUNT [K] (note); ...      K: s stackable, u unstackable, n noted
+//           ITEM to N [K] (note): a top-up to N counting what is held, pack and worn (the H10 form)
+//   out     ITEM xCOUNT (REASON ...); ITEM all (REASON ...)
+//   ITEM    NAME        the game name (lower-case; a potion's dose suffix optional), matched by name
+//           NAME @ID    obj ID, always the UNNOTED one: matched by id, NAME only a label; with [n]
+//                       the noted form, whose id runner/handoff.ts reads through the obj's cert
+//           NAME(*)     any dose of the potion NAME (antipoison(*) all): each dose form held is
+//                       a stack of its own, and an out takes from every one
+//           <NAME>      a category placeholder (<bars>, <gem ring>), supplied by the module the
+//                       row's source names; handoff.ts never trades it, the walk counts its slots
 //           REASON: drop, trade, swap, consume, hand-in, deposit; `swap` leaves in the same
 //           trade as the row's `in`, so it frees its slots before the need check
 //   equip   +NAME (inventory to worn); -NAME (worn to inventory)
@@ -22,8 +29,11 @@
 //
 // Within a row: (1) swap outs; (2) free >= needAtStart; (3) the other outs; (4) `in`, which for a
 // hand-off (an H row) must fit the free slots as one trade; (5) equip; (6) used <= 28.
-// Stackable and noted items take one slot per NAME whatever the count; unstackables one per item;
-// worn items none. A COUNT of `?` is carried as unknown: an unstackable at `x?` takes no slots and
+// Stackable and noted items take one slot per stack whatever the count; unstackables one per item;
+// worn items none. A stack is keyed by its id where an entry gives one (two noted stacks sharing a
+// game name, @91 and @101, are two slots), else by its name. An entry finds what is held by its id,
+// then by name among stacks that carry no id, so a table converted to ids one row at a time walks
+// as it did by name; an unmarked NAME matching two id stacks is ambiguous unless it takes `all`. A COUNT of `?` is carried as unknown: an unstackable at `x?` takes no slots and
 // leaves every row while it is held 'unknown' rather than 'pass', since its slots are not known.
 // A top-up brings max(0, N - held) in, as runner/handoff.ts's trade asks: an unstackable takes that
 // many slots, a stack or noted item one slot when the pack holds none of it and some comes, else none.
@@ -41,8 +51,19 @@ export const REASONS = ['drop', 'trade', 'swap', 'consume', 'hand-in', 'deposit'
 export type Reason = (typeof REASONS)[number];
 export type Evidence = 'm' | 'r' | 'i';
 
-export interface InEntry {
+/** The item an entry names: one of the four ITEM forms. */
+export interface ItemRef {
+    /** The game name, or with `id` a label; without the `(*)` or `<>` marks. */
     name: string;
+    /** `NAME @ID`: the unnoted obj id. */
+    id?: number;
+    /** `NAME(*)`: any dose of the potion NAME. */
+    family?: true;
+    /** `<NAME>`: a category placeholder, left to the module the row's source names. */
+    placeholder?: true;
+}
+
+export interface InEntry extends ItemRef {
     /** COUNT, or a top-up's N; null for `?`. */
     count: number | null;
     kind: Kind;
@@ -50,8 +71,7 @@ export interface InEntry {
     topUp?: boolean;
 }
 
-export interface OutEntry {
-    name: string;
+export interface OutEntry extends ItemRef {
     /** A number, 'all' (everything held under the name), or null for `?`. */
     count: number | 'all' | null;
     reason: Reason;
@@ -131,13 +151,29 @@ export function cells(line: string): string[] {
 const empty = (cell: string) => cell === '-' || cell === '';
 const count = (text: string): number | null => (text === '?' ? null : Number(text));
 
+/** An entry's ITEM: `NAME`, `NAME @ID`, `NAME(*)` or `<NAME>`. */
+export function parseItem(text: string): ItemRef {
+    let m = text.match(/^<([^<>@]+)>$/);
+    if (m) return { name: m[1]!.trim(), placeholder: true };
+    m = text.match(/^([^<>@]+?)\s*\(\*\)$/);
+    if (m) return { name: m[1]!, family: true };
+    m = text.match(/^([^<>@]+?) @(\d+)$/);
+    if (m) return { name: m[1]!, id: Number(m[2]) };
+    if (/[<>@]|\(\*\)/.test(text)) throw new Error(`item "${text}": expected NAME, NAME @ID, NAME(*) or <NAME>`);
+    return { name: text };
+}
+
+/** An ITEM as the ledger writes it. */
+export const itemLabel = (e: ItemRef) => (e.placeholder ? `<${e.name}>` : e.family ? `${e.name}(*)` : e.id !== undefined ? `${e.name} @${e.id}` : e.name);
+
 export function parseIn(cell: string): InEntry[] {
     if (empty(cell)) return [];
     return splitTop(cell, '; ').map(e => {
         const m = e.match(/^(.+?) (?:x(\d+|\?)|to (\d+)) \[([sun])\](?:\s*\(.*\))?$/);
-        if (!m) throw new Error(`in entry "${e}": expected NAME xCOUNT [s|u|n] or NAME to N [s|u|n]`);
-        if (m[3] !== undefined) return { name: m[1]!, count: Number(m[3]), kind: m[4] as Kind, topUp: true };
-        return { name: m[1]!, count: count(m[2]!), kind: m[4] as Kind };
+        if (!m) throw new Error(`in entry "${e}": expected NAME xCOUNT [s|u|n] or NAME to N [s|u|n] (NAME, NAME @ID, NAME(*) or <NAME>)`);
+        const item = parseItem(m[1]!);
+        if (m[3] !== undefined) return { ...item, count: Number(m[3]), kind: m[4] as Kind, topUp: true };
+        return { ...item, count: count(m[2]!), kind: m[4] as Kind };
     });
 }
 
@@ -148,7 +184,7 @@ export function parseOut(cell: string): OutEntry[] {
         if (!m) throw new Error(`out entry "${e}": expected NAME xCOUNT (REASON ...) or NAME all (REASON ...)`);
         const reason = m[4]!.trim().split(/[\s:;,]/)[0]!;
         if (!(REASONS as readonly string[]).includes(reason)) throw new Error(`out entry "${e}": reason "${reason}" is not one of ${REASONS.join(', ')}`);
-        return { name: m[1]!, count: m[3] ? 'all' : count(m[2]!), reason: reason as Reason };
+        return { ...parseItem(m[1]!), count: m[3] ? 'all' : count(m[2]!), reason: reason as Reason };
     });
 }
 
@@ -219,10 +255,40 @@ export function parseLedger(markdown: string): ParseResult {
 
 // ------------------------------------------------------------------ the walk
 
-interface Held {
+/** A stack held, or worn: one slot when stackable or noted, one per item when not. */
+interface Held extends ItemRef {
     kind: Kind;
     /** null: unknown. */
     count: number | null;
+}
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** `name` is a dose form of the potion `family` (or the family's own name). */
+export const isDoseOf = (family: string, name: string) => new RegExp(`^${escapeRe(family)}(?:\\(\\d\\))?$`).test(name);
+
+/** How a stack shows in the report: its name, `(*)` for a family stack. */
+const shown = (h: Held) => (h.family ? `${h.name}(*)` : h.name);
+
+/**
+ * The stacks in `list` that `e` names: a family every dose form of it; an id the stack of that id,
+ * else a stack of its name that carries no id (one an unconverted row brought in); a name every
+ * stack of that name.
+ */
+function named(list: readonly Held[], e: ItemRef): Held[] {
+    if (e.family) return list.filter(h => isDoseOf(e.name, h.name));
+    if (e.id !== undefined) {
+        const byId = list.filter(h => h.id === e.id);
+        return byId.length ? byId : list.filter(h => h.id === undefined && !h.family && h.name === e.name);
+    }
+    return list.filter(h => !h.family && h.name === e.name);
+}
+
+/** The one stack `e` names in `list`, if any; refused when it names more than one. */
+function one(list: readonly Held[], e: ItemRef): Held | undefined {
+    const found = named(list, e);
+    if (found.length > 1) throw new Error(`${itemLabel(e)} names ${found.length} stacks (${found.map(h => `${shown(h)}${h.id !== undefined ? ` @${h.id}` : ''}`).join(', ')}); name it by id`);
+    return found[0];
 }
 
 export type Verdict = 'pass' | 'unknown' | 'SHORT' | 'OVERFLOW' | 'ERROR';
@@ -245,36 +311,41 @@ export interface LedgerEntry {
 
 const isHandOff = (row: string) => /^H/.test(row);
 
+/** The item part of a stack: what an add merges on. */
+const refOf = (e: ItemRef): ItemRef => ({ name: e.name, ...(e.id !== undefined ? { id: e.id } : {}), ...(e.family ? { family: true as const } : {}), ...(e.placeholder ? { placeholder: true as const } : {}) });
+
 class Pack {
-    inv = new Map<string, Held>();
-    worn = new Map<string, Held>();
+    inv: Held[] = [];
+    worn: Held[] = [];
 
     used(): number {
         let n = 0;
-        for (const h of this.inv.values()) n += h.kind === 'u' ? (h.count ?? 0) : 1;
+        for (const h of this.inv) n += h.kind === 'u' ? (h.count ?? 0) : 1;
         return n;
     }
 
     /** Unstackables held at an unknown count: their slots are not known. */
     unknownSlots(): string[] {
-        return [...this.inv].filter(([, h]) => h.kind === 'u' && h.count === null).map(([n]) => n);
+        return this.inv.filter(h => h.kind === 'u' && h.count === null).map(shown);
     }
 
-    /** The count of `name` held in the pack and worn; null when either is unknown. */
-    held(name: string): number | null {
+    /** The count of `e` held in the pack and worn; null when any of it is unknown. */
+    held(e: ItemRef): number | null {
         let n: number | null = 0;
-        for (const map of [this.inv, this.worn]) {
-            const h = map.get(name);
-            if (h) n = n === null || h.count === null ? null : n + h.count;
-        }
+        for (const h of [...named(this.inv, e), ...named(this.worn, e)]) n = n === null || h.count === null ? null : n + h.count;
         return n;
     }
 
     /** How many of `e` arrive: its COUNT, or for a top-up what is lacking (null when unknown). */
     arriving(e: InEntry): number | null {
         if (!e.topUp) return e.count;
-        const h = this.held(e.name);
+        const h = this.held(e);
         return h === null ? null : Math.max(0, e.count! - h);
+    }
+
+    /** The stack an `in` of `e` lands on: a family entry its own family stack, else the one `e` names. */
+    private stackFor(list: readonly Held[], e: ItemRef): Held | undefined {
+        return e.family ? list.find(h => h.family && h.name === e.name) : one(list, e);
     }
 
     /** Slots `e` would add to the inventory as it stands. */
@@ -282,45 +353,75 @@ class Pack {
         const n = this.arriving(e);
         if (e.kind === 'u') return n ?? 0;
         if (e.topUp && n === 0) return 0;
-        return this.inv.has(e.name) ? 0 : 1;
+        return this.stackFor(this.inv, e) ? 0 : 1;
     }
 
-    add(map: Map<string, Held>, name: string, kind: Kind, n: number | null): void {
-        const h = map.get(name);
-        if (h && h.kind !== kind) throw new Error(`${name} is held as [${h.kind}], added as [${kind}]`);
-        map.set(name, { kind, count: h ? (h.count === null || n === null ? null : h.count + n) : n });
+    add(list: Held[], e: ItemRef, kind: Kind, n: number | null): void {
+        const h = this.stackFor(list, e);
+        if (!h) {
+            list.push({ ...refOf(e), kind, count: n });
+            return;
+        }
+        if (h.kind !== kind) throw new Error(`${shown(h)} is held as [${h.kind}], added as [${kind}]`);
+        h.count = h.count === null || n === null ? null : h.count + n;
+        // A stack an unconverted row brought in by name learns its id.
+        if (e.id !== undefined) h.id = e.id;
     }
 
-    take(map: Map<string, Held>, name: string, n: number | 'all' | null): Held {
-        const h = map.get(name)!;
+    take(list: Held[], h: Held, n: number | 'all' | null): Held {
         if (n === 'all') {
-            map.delete(name);
+            list.splice(list.indexOf(h), 1);
             return h;
         }
-        if (n !== null && h.count !== null && n > h.count) throw new Error(`${name}: ${n} out, ${h.count} held`);
+        if (n !== null && h.count !== null && n > h.count) throw new Error(`${shown(h)}: ${n} out, ${h.count} held`);
         const left = n === null || h.count === null ? null : h.count - n;
-        if (left === 0) map.delete(name);
-        else map.set(name, { ...h, count: left });
-        return { kind: h.kind, count: n === null ? null : n };
+        if (left === 0) list.splice(list.indexOf(h), 1);
+        else h.count = left;
+        return { ...refOf(h), kind: h.kind, count: n === null ? null : n };
     }
 
     out(e: OutEntry): void {
-        if (this.inv.has(e.name)) this.take(this.inv, e.name, e.count);
-        else if (this.worn.has(e.name)) this.take(this.worn, e.name, e.count);
-        else throw new Error(`${e.name} out (${e.reason}) but neither held nor worn`);
+        const inv = named(this.inv, e);
+        const where = inv.length ? this.inv : this.worn;
+        const found = inv.length ? inv : named(this.worn, e);
+        if (!found.length) throw new Error(`${itemLabel(e)} out (${e.reason}) but neither held nor worn`);
+        if (e.count === 'all') {
+            // Everything held under the item: every dose form of a family, every stack of a name.
+            for (const list of [this.inv, this.worn]) for (const h of named(list, e)) this.take(list, h, 'all');
+            return;
+        }
+        if (!e.family) {
+            this.take(where, one(where, e)!, e.count);
+            return;
+        }
+        // A family's count comes out of its dose forms in turn.
+        const total = this.held(e);
+        if (e.count === null || total === null) {
+            this.take(where, found[0]!, e.count);
+            return;
+        }
+        if (e.count > total) throw new Error(`${itemLabel(e)}: ${e.count} out, ${total} held`);
+        let left = e.count;
+        for (const list of [this.inv, this.worn]) {
+            for (const h of named(list, e)) {
+                const n = Math.min(left, h.count!);
+                if (n > 0) this.take(list, h, n);
+                left -= n;
+            }
+        }
     }
 
     /** Wear one unstackable, or a whole stack (the quiver). */
     equip(e: EquipEntry): void {
         const [from, to] = e.on ? [this.inv, this.worn] : [this.worn, this.inv];
-        const h = from.get(e.name);
+        const h = one(from, { name: e.name });
         if (!h) throw new Error(`${e.on ? '+' : '-'}${e.name}: not ${e.on ? 'held' : 'worn'}`);
-        const moved = this.take(from, e.name, h.kind === 'u' ? 1 : 'all');
-        this.add(to, e.name, moved.kind, moved.count);
+        const moved = this.take(from, h, h.kind === 'u' ? 1 : 'all');
+        this.add(to, moved, moved.kind, moved.count);
     }
 
-    static show(map: Map<string, Held>): string {
-        return [...map].map(([n, h]) => `${n} x${h.count ?? '?'}${h.kind === 'n' ? ' (noted)' : ''}`).join(', ') || '-';
+    static show(list: readonly Held[]): string {
+        return list.map(h => `${shown(h)} x${h.count ?? '?'}${h.kind === 'n' ? ' (noted)' : ''}`).join(', ') || '-';
     }
 }
 
@@ -343,8 +444,8 @@ export function walk(rows: readonly LedgerRow[]): LedgerEntry[] {
                 notes.push((e as Error).message);
             }
         };
-        const unknownCounts = [...row.in.filter(e => e.count === null).map(e => `in ${e.name} x?`), ...row.out.filter(e => e.count === null).map(e => `out ${e.name} x?`)];
-        for (const e of row.in.filter(e => e.topUp && pack.held(e.name) === null)) unknownCounts.push(`in ${e.name} to ${e.count}: held at an unknown count`);
+        const unknownCounts = [...row.in.filter(e => e.count === null).map(e => `in ${itemLabel(e)} x?`), ...row.out.filter(e => e.count === null).map(e => `out ${itemLabel(e)} x?`)];
+        for (const e of row.in.filter(e => e.topUp && pack.held(e) === null)) unknownCounts.push(`in ${itemLabel(e)} to ${e.count}: held at an unknown count`);
 
         // (1) swap outs, then (2) the need check.
         for (const e of row.out.filter(e => e.reason === 'swap')) attempt(() => pack.out(e));
@@ -362,7 +463,8 @@ export function walk(rows: readonly LedgerRow[]): LedgerEntry[] {
         // (3) the other outs, (4) in.
         for (const e of row.out.filter(e => e.reason !== 'swap')) attempt(() => pack.out(e));
         const freeForIn = INVENTORY_SLOTS - pack.used();
-        const adds = row.in.reduce((a, e) => a + pack.adds(e), 0);
+        let adds = 0;
+        attempt(() => (adds = row.in.reduce((a, e) => a + pack.adds(e), 0)));
         if (isHandOff(row.row) && adds > 0 && freeForIn >= 0 && adds > freeForIn) {
             worse('SHORT');
             notes.push(`the trade adds ${adds} slots, ${freeForIn} free`);
@@ -371,7 +473,7 @@ export function walk(rows: readonly LedgerRow[]): LedgerEntry[] {
         for (const e of row.in) {
             const n = pack.arriving(e);
             if (e.topUp && n === 0) continue;
-            attempt(() => pack.add(pack.inv, e.name, e.kind, n));
+            attempt(() => pack.add(pack.inv, e, e.kind, n));
         }
         // (5) equip, (6) the 28.
         for (const e of row.equip) attempt(() => pack.equip(e));

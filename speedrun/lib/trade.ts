@@ -32,17 +32,29 @@
 
 import type { BotSDK } from '../../sdk/index';
 import type { ActionResult, BotWorldState, GameMessage, InventoryItem, TradeItem, TradeState } from '../../sdk/types';
-import { countInventoryById, diffInventories, offerSatisfies, shortfall } from '../../sdk/trade-helpers';
+import { countInventoryById, diffInventories, shortfall } from '../../sdk/trade-helpers';
 import { amountButtons, isXAmount, matchesItem, type ItemPattern } from './items';
 import { failureReason, onStates, tickClock, tickMs, type StateSource } from './wait';
 
 export type TradeSdk = StateSource &
     Pick<BotSDK, 'sendTradeRequest' | 'sendOfferItem' | 'sendAcceptTrade' | 'sendDeclineTrade'>;
 
-/** A want spec: at least `amount` (default 1) of items whose name matches. */
+/** A want spec: at least `amount` (default 1) of items it matches (matchesItem: a name, or an obj id). */
 export interface WantSpec {
-    item: string | RegExp;
+    item: ItemPattern;
     amount?: number;
+}
+
+/**
+ * True when the offer holds every want at its amount; no wants is any offer, nothing included.
+ * speedrun's one want rule (the receiver, the giver's check of the partner's offer, the mule): a name
+ * want counts as sdk/trade-helpers.ts's offerSatisfies does (a string is a case-blind substring of
+ * the item name, a RegExp is tested on it, the counts of every matching offer entry summed, a noted
+ * and an unnoted stack alike since they share the name), and an obj id (a number) counts by id,
+ * which the sdk's name-only rule cannot express.
+ */
+export function offerSatisfies(want: readonly WantSpec[] | undefined, offer: readonly TradeItem[]): boolean {
+    return (want ?? []).every(w => offer.reduce((n, i) => n + (matchesItem(i, w.item) ? i.count : 0), 0) >= (w.amount ?? 1));
 }
 
 export interface GiveSpec {
@@ -324,7 +336,7 @@ export function newGiverCtx(partner: string, inventory: readonly InventoryItem[]
 }
 
 function theirsAcceptable(theirs: readonly TradeItem[], expect: WantSpec[] | undefined): boolean {
-    return expect ? offerSatisfies(expect, [...theirs]) : theirs.length === 0;
+    return expect ? offerSatisfies(expect, theirs) : theirs.length === 0;
 }
 
 /**
