@@ -210,6 +210,8 @@ describe('anvilOptions and the booth', () => {
     });
 
     test('rejects what it cannot do', () => {
+        expect(() => anvilOptions({})).toThrow(/^scope: a cue scope/);
+        expect(() => anvilOptions({ scope: { step: 'S25a', family: 'altar' } })).toThrow(/scope.family must be anvil/);
         expect(() => ao({ restock: { kind: 'trade' } })).toThrow();
         expect(() => ao({ trades: 0 })).toThrow();
         expect(() => ao({ tile: { x: 'a', z: 1 } })).toThrow();

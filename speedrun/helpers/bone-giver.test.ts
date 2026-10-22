@@ -28,6 +28,14 @@ const bgo = (raw: Record<string, unknown>, env?: Record<string, string | undefin
     boneGiverOptions({ scope: raw.mode === 'on-request' ? { step: 'S18', family: 'courier' } : { step: 'S07', family: 'bone' }, ...raw }, env);
 
 describe('bone giver options', () => {
+    test('the cue scope is required: bone for the standing mode (S07), courier for on-request (S18)', () => {
+        expect(() => boneGiverOptions({})).toThrow(/^scope: a cue scope/);
+        expect(bgo({}).scope).toEqual({ step: 'S07', family: 'bone' });
+        expect(() => boneGiverOptions({ scope: { step: 'S18', family: 'courier' } })).toThrow(/scope.family must be bone/);
+        const site = [{ giver: { x: 1, z: 2 }, receiver: { x: 1, z: 3 } }];
+        expect(() => boneGiverOptions({ mode: 'on-request', sites: site, scope: { step: 'S07', family: 'bone' } })).toThrow(/scope.family must be courier/);
+    });
+
     test('defaults: 23 dragon bones, the S07 oak then willow sites, bank restock, until stopped', () => {
         const r = bgo({}, { RC_CUE_DIR: '/tmp/cue' });
         expect(r).toMatchObject({ item: 'Dragon bones', n: 23, siteWaitTicks: 30, noReplyTicks: 2, resendTicks: 100, cueDir: '/tmp/cue' });

@@ -133,6 +133,12 @@ describe('serve mode', () => {
         expect(o.bank).toEqual({ x: 2946, z: 3369 }); // Falador west, where h92 banks
     });
 
+    test('options: the cue scope is required without a receiver hash, and must be a cannon one', () => {
+        expect(() => serveOptions({ tile: { x: 1, z: 2 }, balls: 1 }, {})).toThrow(/^serve.scope: a cue scope/);
+        expect(() => serveOptions({ tile: { x: 1, z: 2 }, balls: 1, scope: { step: 'S14', family: 'bone' } }, {})).toThrow(/serve.scope.family must be cannon/);
+        expect(serveOptions({ tile: { x: 1, z: 2 }, balls: 1, receiver: 'a'.repeat(64) }, {}).scope).toBeNull();
+    });
+
     test('options: without a receiver hash it is read from the cue directory', () => {
         const o = so({ tile: { x: 1, z: 2 }, balls: 1, returnTile: { x: 2661, z: 3301 } }, { RC_CUE_DIR: '/tmp/cue-x' });
         expect(o.receiver).toBeNull();
