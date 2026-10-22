@@ -5,6 +5,7 @@ import * as grandTree from '../quests/grand-tree';
 import * as tgv from '../quests/tree-gnome-village';
 import { ROUTES } from '../skills/agility';
 import { ARMOUR, freeSlots, gtPlan, KIT_COINS, KIT_SHARKS, kitCheck, kitDeposits, kitWithdraws, logShortfall, mmPlan, nearestWaypoint, parsePhases, PHASES, pickTree, ROYAL_SEAL, TGV_KIT, tgvPlan, type QuestPlan } from './quest-helper';
+import type { NearbyLoc } from '../../sdk/types';
 
 let slot = 0;
 const item = (name: string, count = 1, id = 9000 + slot): InventoryItem => ({ slot: slot++, id, name, count, optionsWithIndex: [] }) as unknown as InventoryItem;
@@ -124,7 +125,7 @@ describe('nearestWaypoint', () => {
     });
 });
 
-describe('the kit leaves room for Montai\'s logs', () => {
+describe("the kit leaves room for Montai's logs", () => {
     const sharks = (n: number) => Array.from({ length: n }, () => item('Shark'));
     test('the full kit and 6 logs fill the pack exactly', () => {
         const s = state({ inventory: [...sharks(KIT_SHARKS), item('Bronze axe'), item('Coins', KIT_COINS)], equipment: [] });
@@ -151,7 +152,7 @@ describe('the kit leaves room for Montai\'s logs', () => {
 });
 
 describe('pickTree', () => {
-    const loc = (x: number, z: number, name = 'Tree', op = 'Chop down') => ({ x, z, id: 1276, name, optionsWithIndex: [{ text: op, opIndex: 1 }] }) as unknown as import('../../sdk/types').NearbyLoc;
+    const loc = (x: number, z: number, name = 'Tree', op = 'Chop down') => ({ x, z, id: 1276, name, optionsWithIndex: [{ text: op, opIndex: 1 }] }) as unknown as NearbyLoc;
     const here = { x: 3256, z: 3243 };
     test('the nearest choppable tree in range, skipping trees given up on and other locs', () => {
         const near = loc(3258, 3243);
