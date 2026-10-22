@@ -41,6 +41,8 @@ export interface PollRecord {
     families: CompactPosition[];
     /** Every player standing in each watched zone (positions.ts ZONES); absent in polls before it was recorded. */
     zones?: Record<string, string[]>;
+    /** The GE's open bid side in total (market.ts bidPool); absent in polls before it was recorded. */
+    bids?: { items: number; quantity: number; value: number };
 }
 
 export interface PollFile {
