@@ -63,7 +63,7 @@ named in the gap column.
 | H4 | mule1 | in: clay 6, copper ore 4, iron ore 2, air talisman 1, law 2, air 6; back: the 20 enchanted rings | mule1 (clay 7, copper 5, iron 3 from h94, rs/173 09:38 UTC) | **yes** | Package precondition: the giver's entire inventory (`mule.ts` `stagedExactly`, rs/267) |
 | H5 | air-altar givers | in: rune essence 26 a load, 7 loads (182); each giver keeps its own air talisman | essence 101,782 (h30-h33) | h70-h72 by rs/196's sequence | Each S06 giver holds exactly 26 a load, and `altar-giver.ts` offers exactly `essence` by count (rs/329 item 2). Four givers to name (rs/41, rs/196) |
 | H4k | mule1 | in: rune axe 1, knife 1, normal logs 1 | mule1 | **yes** | A separate trade at the Taverley trees (2912,3495), not b01's first bone load |
-| H4.x | b01-b04 | in: bones 23 a load; **every dragon bone first, then babydragon**, until S07's bury reaches **30,264.5 base Prayer xp (Prayer 95 at S07's end, for combat 43 by S09)** (rs/158 via rs/41, 03:0x PDT; dragon 72 base, babydragon 30); **the last load also gives law 1, air 5**; SCORED gives nothing | dragon **172** (h56 91, h55 49, h61 32; h55/h56 still farming); babydragon **1,533** (h51 563, h52 403, h53 274, h54 293); big 2,526 (bank lines 08:48-09:56 UTC) | no | On 172 dragon, S07 = 172 dragon + **597 babydragon = 769 bones, ~34 loads** (the row in force assumed 413 dragon + 141 babydragon, 554 bones). Each extra dragon bone farmed removes 2.4 babydragon, down to 554 bones at 325 dragon. rs/158 returns per-account counts for b01-b04, then rs/331 stages them. Final-load runes: rs/329 item 1 (`finalExtras`), from mule1's surplus. The axe is not handed back |
+| H4.x | b01-b04 | in: bones 23 a load; **every dragon bone first, then babydragon**, until S07's bury reaches **30,264.5 base Prayer xp (Prayer 95 at S07's end, for combat 43 by S09)** (rs/158 via rs/41, 03:0x PDT; dragon 72 base, babydragon 30); **the last load also gives law 1, air 5**; SCORED gives nothing | dragon **172** (h56 91, h55 49, h61 32; h55/h56 still farming); babydragon **1,533** (h51 563, h52 403, h53 274, h54 293); big 2,526 (bank lines 08:48-09:56 UTC) | no | **rs/158's staging-time formula (03:0x PDT; re-run it at staging, because h55/h56 keep farming):** S18's courier takes 200 babydragon + 20 spare. S07 takes every dragon bone held, then babydragon until S07 reaches 39,938 - 6,000 = **33,938 base** (Prayer 99 less S18's 200), and at least 30,264.5 (Prayer 95, S09's floor). On today's 172 dragon: 12,384 + **719 babydragon** = **891 bones, ~39 loads** of 23 (the last smaller, with law 1 and air 5; rs/329's `finalN`/`finalExtras`), within S07's ~978 capacity. Load i goes to b0((i-1) mod 4 + 1), dragon bones in the earliest loads, ~10 loads (~222-230 bones) per giver. Spare: ~594 babydragon and all 2,526 big bones. Each extra dragon bone replaces 2.4 babydragon (floor 554 bones at 325 dragon). The axe is not handed back |
 | H6 | mule1 | in: dwellberries 1, bucket of water 4, spade 1, rope 1, chocolate dust 1, bucket of milk 1, snape grass 1, law 2, water 2 (Ardougne only; the Camelot runes ride H4.x's last load) | snape grass, buckets of water 5, milk 3 and runes on mule1; **dwellberries, spade, rope, chocolate dust: none held** | partly | The four are rs/173's `far` set on cairn_h95 (rs/173 execution 2, delivering to mule1) |
 | H4p | mule1 | in: rune pickaxe 1, normal logs 2 | mule1 | **yes** | On the forecast stock H4m has no loads, so there is no trade at the zoo to merge into: H4p is its own trade at S09's arrival. If H4m fires (an overflow stock), H4p rides H4m.1 |
 | H7 | mule1 | in: logs 6, staff of fire 1, amulet of magic 1, antipoison(4) 1, shark 2, death 110, chaos 40, air 550 | mule1, except the amulet and antipoison | partly | **Amulet of magic: none**: h80's sapphire amulet enchanted (Enchant 1, Magic 7) by a helper (rs/41). **Antipoison: none**: Jiminua's sells (3)-dose at 432, or mixed from h85's marrentill (rs/41) |
@@ -90,7 +90,18 @@ named in the gap column.
 | H23 | h92 + mule1 | in: cannon set 1, cannonballs 1,200 and h92's own magic shortbow 1 in h92's trade (`serveExtras`, rs/344); ranging potion(4) 3, super antipoison(4) 2, super attack(4) 1, super strength(4) 1, shark 12 (mule1) | set, balls on h92; sharks on mule1; **no potions, no bow held** | partly | Potions: rs/348 (resting GE bids below, from rs/331). Bow: 3 on mule1 for h92 (one per attempt), moved into h92's bank with H11's extras when rs/344's `serve.extras` lands, served as `[{"item":"Magic shortbow","count":1}]`. Hedge: 2 yew shortbows on mule2 (rs/346; rs/41) |
 | DS re-supply (contingency, rs/258) | mule2 | mithril scimitar, hammer, 8 sharks; planks 3, nails 12 | on mule2: scimitar, hammer, sharks | partly | Planks and nails: GE bids rest on mule2 (#19502 at 450, #19505 at 200), neither ever traded; fallback nails smithed by a smelter (h20/h21 steel), planks from the Rimmington spawn. Re-run `kits/mule2-ds.json` to collect fills (rs/41, low priority) |
 
-**Fully staged today:** H1, H3, H4, H4k, H4p, H9, H10, H18, H19 and H20. The cannon set
+**Fully staged today:** H1, H3, H4, H4k, H4p, H9, H10, H18, H19 and H20.
+
+**The executed contract is main's ledger.** `speedrun/runner/handoff.ts` (rs/320, on main at
+272f2ab6) builds each hand-off from the row's `in`, `out` and `equip` in STEP-MANIFEST.md's
+ledger on main, which is still the pre-fold-in-18 version. It disagrees with this page (the
+rulings this page follows) on H4k/H4p, H6, H10 (top-up), H12's out (knife, coins, dead items),
+H13 (staff of fire and knife in, bow out), H16 (body talisman in, knife out), H17's last-giver
+runes, H18 (knife), H21a (dead items back), H22 (scimitar; and `steel nails` should read
+"Nails", the game's name for id 1539) and H23 (bow, now h92's). Sent to rs/158 (03:12 PDT) for
+fold-in 18. mule1's stock covers both versions; the givers' package definitions follow whatever
+the ledger on main says when the run starts. Leftover kits after an attempt go back with
+`speedrun/tools/kit-return.ts` (on main), not ad-hoc trips. The cannon set
 and balls (H11, H23) are on h92, and the wine (H21c) is on h40. Every other row is partly staged,
 with the missing items named above.
 
@@ -129,7 +140,7 @@ against held at 09:57 UTC:
 
 | Giver | Rows | Per attempt | Held now | Attempt 1 | Attempts 2-3 |
 |---|---|---|---|---|---|
-| cairn_mule1 | H1, H4, H6-H10, H12, H13, H14, H15, H16, H18-H20, H22 | air 1,591; law 43; water 29; fire 85; earth 53; cosmic 60; death 110; chaos 40; blood 570 | air 1,678; law 57; water 67; fire 285; earth 131; cosmic 62; death 110; chaos 40; blood 0 | held except blood (rs/347) | short per attempt: air ~1,600, cosmic 60, death 110, chaos 40, law ~49. Cosmic (h51-h54: 122), chaos (h53, h54: 221) and law (h52-h54: 340) are in the fleet; death (36 held) and air need GE buys (proposed to rs/41: ~190 death, ~3,200 air) |
+| cairn_mule1 | H1, H4, H6-H10, H12, H13, H14, H15, H16, H18-H20, H22 | air 1,591; law 43; water 29; fire 85; earth 53; cosmic 60; death 110; chaos 40; blood 570 | **10:09 UTC:** air 4,878; law 157; water 67; fire 285; earth 131; cosmic 190; chaos 120; death 241 (+59 resting on h65, #19864); blood 0 | held except blood (rs/347) | 3 attempts (plus the small sets below) need air ~4,800, law ~147, cosmic 180, chaos 120, fire 255: **held**. Short for attempt 3: death 30 (29 once #19864 fills), water ~32, earth ~31 (rs/331, small GE or shop buy) |
 | cairn_h92 | H11 | law 4, water 4 | 0 | from mule1's surplus with the H11 extras (rs/344) | as attempt 1 |
 | b01-b04 (the last bone load) | H4.x | law 1, air 5 | 0 | from mule1's surplus once the b-accounts are stocked | as attempt 1 |
 | last body-altar giver | H17 | law 1, air 3, earth 1 | 0 | from mule1's surplus once rs/330's option lands | as attempt 1 |
@@ -204,6 +215,9 @@ fresh id `rs331-<donor>-mule1-1`. fleet.json backups are in `~/rs-dev/staging-33
 | 09:53-09:56 | cairn_h90 | magic shortbow line target 3 → 0 (backup `...bak-20261022T095343Z`; rs/347's blood-rune edit kept as found); SIGINT to the bidder child, the loop restarted it | #19530 cancelled |
 | 09:55-09:58 | cairn_mule2 (outside the fleet) | launcher on port 7784 (1 extra login) as a `mule` receiver at Varrock west, `couriers: ^cairn_h78$` | logged out 09:58 (`logout: out`) |
 | 09:56 | cairn_h78 (fleet, disabled) | handover rs331-h78-bows-1 `--then idle`: magic shortbow 5 → mule1; yew shortbow 2 → mule2 | `fletcher` headless, target 4,410, disabled; logged out 09:58 |
+| 09:59-10:02 | cairn_h65 (fleet) | `buyer`: air rune 3,200 at 21 (67,200), death rune 131 (45,719), 59 more resting at 349 (#19864); then handover rs331-h65-mule1-1: death 131, air 3,200 → mule1 | `coins` {} |
+| 10:02-10:03 | cairn_h52, cairn_h51 (fleet) | handovers rs331-h52-mule1-1 (cosmic 20), rs331-h51-mule1-2 (cosmic 16) → mule1 | `coins` {} |
+| 10:04-10:09 | cairn_h53, cairn_h54 (rs/41's transient unit `rs194-talisman`) | unit saved (`~/rs-dev/staging-331/rs194-talisman.unit.saved`, `.show.saved`); SIGINT to its MainPID 3647196; both confirmed out of the world; launcher on port 7785: rs331-h54-mule1-1 (cosmic 54), rs331-h53-mule1-1 (cosmic 38, chaos 80, law 100) → mule1; nature talismans left in place | unit recreated with `systemd-run`, identical properties (diff empty); both on `bones` at `nature_hobgoblins` by 10:09:31 |
 
 Re-running the same buyer list on h62 or h63 collects any fills and buys only the shortfall.
 Those offers, and h90's blood-rune line, are handed to rs/347 and rs/348, which own blood runes
