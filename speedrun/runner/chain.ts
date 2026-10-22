@@ -108,6 +108,20 @@ export interface RunConfig {
     s21Givers?: readonly string[];
     /** The cue directory the helpers read (run.ts sets RC_CUE_DIR to it, so thieving's asks land there too). */
     cueDir: string;
+    /** mule1's own cue directory, where its package cues and top-up asks go (default muleCueDir: <cueDir>/mule). */
+    muleCueDir?: string;
+}
+
+/**
+ * S09's mining options: a contested zoo band may move to any other site whose hunters leave SCORED's
+ * combat level alone (`fallback: 'auto'`, mining.ts nextSite with the `safeFrom` gate, #371).
+ * `acceptHazards` is never set for SCORED: it is for rehearsals that mean to walk into a site's hunters.
+ */
+export const S09_MINING: mining.MiningOpts = { travel: 'none', dropAtExit: true, fallback: 'auto' };
+
+/** mule1's cue directory (STEP-MANIFEST.md "Cue layout"): the run config's `muleCueDir`, else `<cueDir>/mule`. */
+export function muleCueDir(cfg: Pick<RunConfig, 'cueDir' | 'muleCueDir'>): string {
+    return cfg.muleCueDir ?? join(cfg.cueDir, 'mule');
 }
 
 /** Where the modules' cues go: run.ts's CueKeeper, a recorder in tests. */
@@ -184,6 +198,9 @@ export const INTERNAL: Readonly<Record<string, string>> = {
     H12: 'S15 monkey-madness (gtSwap at King Narnode)',
     H12a: 'S15 monkey-madness (gtSwap at King Narnode)',
     H12b: 'S15 monkey-madness (gtSwap at King Narnode)',
+    // rs/185's ruling: both H12o legs trade inside Monkey Madness; run.ts only fires the helper's login trigger before M.
+    'H12o-M': 'S15 monkey-madness, segment M (H12o\'s first leg)',
+    'H12o-P': 'S15 monkey-madness, segment P (H12o\'s second leg)',
     'H14.x': 'S18 thieving (idle top-ups)',
     H17: 'S21 runecraft (altar roster)',
     H17e: 'S21 runecraft (hand-back)',
@@ -526,7 +543,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         L('T08-09'),
         // H4p, the run's only rune pickaxe, is a placed hand-off (no kitGiver: mining emits no kit step).
         ...before('S09'),
-        ...steps('S09', pick('mining', mining.steps({ travel: 'none', dropAtExit: true }), ['mining.iron-63', 'mining.exit'])),
+        ...steps('S09', pick('mining', mining.steps(S09_MINING), ['mining.iron-63', 'mining.exit'])),
         L('T09-10'),
         ...before('S10b'),
         ...steps('S10b', treeGnomeVillage.steps()),
@@ -613,7 +630,7 @@ export function buildChain(cfg: RunConfig, o: ChainOptions): ChainStep[] {
         const plan = handOffFrom(manifest, e.row);
         const scope = CANNON_ROWS[e.row];
         // A row with a `to N` entry is served by a standing giver that sizes it from SCORED's ask (mule.ts, rs/429), scoped to the row.
-        const ask = !scope && plan.receive.some(r => r.topUp) ? { scope: muleScope(e.row), ask: { dir: cfg.cueDir } } : undefined;
+        const ask = !scope && plan.receive.some(r => r.topUp) ? { scope: muleScope(e.row), ask: { dir: muleCueDir(cfg) } } : undefined;
         const cue = scope ? { scope, open: (ctx: Pick<StepContext<unknown>, 'sdk'>) => o.cues.open(scope, ctx, { fresh: false }) } : ask;
         const s = tag(e.id, 'handoff', handOffStep(plan, { partner: partner(e.row), ...(supersededBy ? { supersededBy } : {}), ...(cue ? { cue } : {}) }), cue ? { cue: cue.scope } : {});
         out.unshift(!scope && MULE_ROWS.includes(e.row) ? muleCued(s, e.row, o.cues) : s);

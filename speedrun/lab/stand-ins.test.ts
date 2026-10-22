@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'fs';
+import { join } from 'path';
+import { matchesItem } from '../lib/items';
+import { parseLedger } from '../tools/slot-ledger';
 import { baseState, FakeSdk } from '../lib/fake-sdk';
 import { OBJ_PACK } from '../lib/items';
 import { xpForLevel } from '../lib/xp';
@@ -52,6 +55,17 @@ describe('the table', () => {
             for (const g of si.give) expect(`${si.stepId} ${g.obj} ${names.has(g.obj)}`).toBe(`${si.stepId} ${g.obj} true`);
             for (const v of [...si.varps, ...si.xp, ...si.give, ...si.take, si.qp, si.end, ...(si.wear ?? []), ...(si.unwear ?? [])]) expect(v.source.length).toBeGreaterThan(5);
         }
+    });
+
+    test("S15's counted consumption is the ledger row's consume entries, count for count (what `take` drops whole aside)", () => {
+        const row = parseLedger(readFileSync(join(import.meta.dir, '../../docs/speedrun/STEP-MANIFEST.md'), 'utf8')).rows.find(r => r.row === 'S15')!;
+        const mm = standInFor('S15')!;
+        const as = (name: string, id = -1) => ({ name, id });
+        const whole = (e: { name: string; id?: number }) => mm.take.some(t => matchesItem(as(e.name, e.id), t.item));
+        const want = row.out.filter(e => e.reason === 'consume' && !whole(e)).map(e => `${e.name} x${e.count}`).sort();
+        expect(mm.consume!.map(c => `${c.ledger} x${c.n}`).sort()).toEqual(want);
+        for (const c of mm.consume!) expect(`${c.ledger} ${matchesItem(as(c.ledger), c.item)}`).toBe(`${c.ledger} true`);
+        for (const c of mm.consume!) expect(c.source.length).toBeGreaterThan(5);
     });
 
     test("xp is base xp: Monkey Madness's +35,000 Hitpoints takes HP 42 to 97", () => {

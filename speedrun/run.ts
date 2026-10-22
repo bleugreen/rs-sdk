@@ -61,8 +61,8 @@ import { newRunId, parseLog, TickLog, type TickRow } from './lib/ticks';
 import { startRunTabMemory, type TabMemorySetting } from './lib/tab-memory';
 import { formatRunReport, runReport } from './runner/run-report';
 import { patchMethod } from './runner/fence';
-import { buildChain, chainProbes, missingOnPath, resolveFrom, sliceUntil, type ChainOptions, type ChainStep, type CueSink, type RunConfig } from './runner/chain';
-import { CueKeeper, prepareCueDir } from './runner/cue-keeper';
+import { buildChain, chainProbes, missingOnPath, muleCueDir, resolveFrom, sliceUntil, type ChainOptions, type ChainStep, type CueSink, type RunConfig } from './runner/chain';
+import { prepareCueDir, RunCues } from './runner/cue-keeper';
 import { sessionLink } from './runner/resume';
 
 export class UsageError extends Error {
@@ -152,7 +152,7 @@ export function loadRunConfig(path: string, runDir: string, env: Record<string, 
     if (absent.length) throw new UsageError(`--config ${path} lacks ${absent.join(', ')}`);
     const dir = env.RC_CUE_DIR || join(runDir, 'rc-cue');
     if (setEnv) env.RC_CUE_DIR = dir;
-    return { ...(c as RunConfig), cueDir: resolve(dir) };
+    return { ...(c as RunConfig), cueDir: resolve(dir), ...(typeof c.muleCueDir === 'string' ? { muleCueDir: resolve(c.muleCueDir) } : {}) };
 }
 
 /**
@@ -320,7 +320,7 @@ export interface ChainRunOptions {
     chain: readonly ChainStep[];
     reservation: Watch;
     from?: number;
-    cues?: CueKeeper;
+    cues?: RunCues;
     /** Console tag (default 'run'). */
     label?: string;
     /** A browser session's per-minute tab memory rows (lib/tab-memory.ts): the launched Chrome's pid, the chunk's label. */
@@ -425,7 +425,7 @@ async function main(argv: string[]): Promise<number> {
         return EXIT_REFUSED;
     }
     // The cues name the login (hashed), never the bot's env directory.
-    const keeper = new CueKeeper(cfg.cueDir, loadBotEnv(a.bot).BOT_USERNAME);
+    const keeper = new RunCues({ main: cfg.cueDir, mule: muleCueDir(cfg) }, loadBotEnv(a.bot).BOT_USERNAME);
     const built = chainOrRefusal(cfg, keeper, { s21Relog: a.s21Relog });
     if ('refusal' in built) {
         console.error(`[gate] REFUSED run config: ${built.refusal}`);
@@ -451,7 +451,7 @@ async function main(argv: string[]): Promise<number> {
 
     const earlier = existsSync(a.log) ? parseLog(readFileSync(a.log, 'utf8')) : [];
     const fresh = earlier.length === 0 && from === undefined;
-    const removed = prepareCueDir(cfg.cueDir, { fresh });
+    const removed = [...prepareCueDir(cfg.cueDir, { fresh }), ...prepareCueDir(muleCueDir(cfg), { fresh }).map(f => `mule/${f}`)];
     const log = TickLog.open(`run-${newRunId()}`, a.log);
     const bin = owner ? claimBin() : null;
     const reservation = new ReservationWatch(reservationPath(a.hostReservation), { label: 'run', ...(owner ? { owner, touch: bin ? claimToucher(bin) : null } : {}) });

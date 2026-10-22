@@ -96,9 +96,9 @@ import { newRunId, TickLog } from '../lib/ticks';
 import { loadRunConfig, runChainOnSession } from '../run';
 import type { BotWorldState } from '../../sdk/types';
 import { h4PlanOf } from '../quests/dorics-quest';
-import { buildChain, CANNON_ROWS, KIT_PARTNER_ROWS, KIT_SEGMENTS, noteRow, PLACEMENT, sliceUntil, resolveFrom, STAND_IN_ROWS, type ChainStep, type RunConfig } from '../runner/chain';
-import { CueKeeper, prepareCueDir } from '../runner/cue-keeper';
-import { applyEquip, handOffFrom, type HandOffPlan, type HandOffSdk } from '../runner/handoff';
+import { buildChain, CANNON_ROWS, KIT_PARTNER_ROWS, KIT_SEGMENTS, muleCueDir, noteRow, PLACEMENT, sliceUntil, resolveFrom, STAND_IN_ROWS, type ChainStep, type RunConfig } from '../runner/chain';
+import { prepareCueDir, RunCues } from '../runner/cue-keeper';
+import { applyEquip, handOffFrom, unequipGives, type HandOffPlan, type HandOffSdk } from '../runner/handoff';
 import type { LegStep } from '../runner/legs';
 import { TILES } from '../runner/legs';
 import { formatRunReport, runReport, STAFF_SUPPLY_STEP, STAND_IN_STEP } from '../runner/run-report';
@@ -158,6 +158,8 @@ export function staffSupplyStep(step: ChainStep, manifest: string, planOf?: (s: 
     const run = async (ctx: StepContext<unknown>) => {
         const sdk = ctx.sdk as unknown as HandOffSdk & Parameters<typeof dropMatching>[0];
         const plan = fixed ?? planOf!(sdk.getState()! as BotWorldState);
+        // A worn give (H13's helmet, armour and arrows: "swap: unworn first") comes off first, as the real trade takes it.
+        await unequipGives(sdk, plan);
         if (plan.give.length) await dropMatching(sdk, plan.give.flatMap((g): Parameters<typeof dropMatching>[1][number][] => (g.ids ? [...g.ids] : [g.pattern])));
         for (const st of rows[0]!.stage) await give(sdk, st.obj, st.n);
         await applyEquip(sdk, plan);
@@ -389,7 +391,7 @@ async function main(argv: string[]): Promise<number> {
     }
     // A cannon row the lab config names a holder for (cannon.ts serve, labStock) runs SCORED's real step.
     const cannonServed = Object.keys(CANNON_ROWS).filter(r => raw.partners[r] && raw.partners[r] !== STAFF);
-    const keeper = new CueKeeper(cfg.cueDir, env.BOT_USERNAME);
+    const keeper = new RunCues({ main: cfg.cueDir, mule: muleCueDir(cfg) }, env.BOT_USERNAME);
     const full = buildChain(cfg, { cues: keeper, manifest });
     const sliced = sliceUntil(full, a.until);
     const kitServed = Object.keys(KIT_SEGMENTS).filter(r => raw.partners[r] && raw.partners[r] !== STAFF);
@@ -441,6 +443,7 @@ async function main(argv: string[]): Promise<number> {
 
     const log = TickLog.open(`dress-${newRunId()}`, a.log);
     prepareCueDir(cfg.cueDir, { fresh: from === undefined || boundary !== null });
+    prepareCueDir(muleCueDir(cfg), { fresh: from === undefined || boundary !== null });
     let stub: ReturnType<typeof Bun.spawn> | null = null;
     const ringSessions: Session[] = [];
     let ringStop = false;

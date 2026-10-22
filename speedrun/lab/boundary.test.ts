@@ -37,7 +37,7 @@ describe('reading RUN-ORDER levels', () => {
         expect(ends('S04')).toEqual({ magic: 59 });
         expect(ends('S25b')).toEqual({ prayer: 99 });
         expect(ends('S18')).toEqual({ thieving: 99, magic: 99, fletching: 99, smithing: 54 });
-        expect(ends('S12')).toEqual({ attack: 99, thieving: 57, magic: 76 });
+        expect(ends('S12')).toEqual({ attack: 99, thieving: 57, magic: 76, hitpoints: 31 });
         expect(ends('S27')).toEqual({ defence: 99, ranged: 99, hitpoints: 99 });
         expect(rowLevels('S15', rows.S15!).rewards.map(r => `${r.skill} ${r.base}`)).toEqual(['strength 35000', 'hitpoints 35000', 'attack 20000', 'defence 20000']);
     });
@@ -79,7 +79,7 @@ describe('chunk boundaries (pinned: a change here is a change in the docs or the
         expect(b.quests.map(q => `${q.key}=${q.value}`)).toEqual(['doric=100', 'elena=30']);
         expect(b.qp).toBe(2);
         expect(b.ledgerAfter).toBe('S10a');
-        expect(items(b.inv)).toEqual(['knife x1', 'waterrune x2']);
+        expect(items(b.inv)).toEqual(['knife x1']);
         expect(items(b.worn)).toEqual(['staff_of_water x1']);
         expect(b.tile).toEqual({ x: 2604, z: 3235 });
         expect(b.unresolved).toEqual([]);
@@ -91,7 +91,7 @@ describe('chunk boundaries (pinned: a change here is a change in the docs or the
         expect(b.quests.map(q => q.key)).toEqual(['doric', 'elena', 'tree', 'grandtree', 'arena', 'mcannon']);
         expect(b.qp).toBe(12);
         expect(b.ledgerAfter).toBe('S14');
-        expect(items(b.inv)).toEqual(['knife x1', 'waterrune x6', '3doseantipoison x1', 'shark x8', 'deathrune x84', 'chaosrune x9', 'airrune x353', 'firerune x1', 'coins x1000', 'twpart1 x1', 'twpart2 x1', 'twpart3 x1', 'twpart4 x1', 'mcannonball x30', 'lawrune x4', 'staff_of_fire x1']);
+        expect(items(b.inv)).toEqual(['knife x1', '3doseantipoison x1', 'shark x8', 'deathrune x49', 'chaosrune x16', 'airrune x234', 'firerune x1', 'coins x1000', 'twpart1 x1', 'twpart2 x1', 'twpart3 x1', 'twpart4 x1', 'mcannonball x30', 'lawrune x4', 'waterrune x4', 'staff_of_fire x1']);
         expect(items(b.worn)).toEqual(['amulet_of_magic x1', 'khazard_helmet x1', 'khazard_platemail x1', 'mithril_scimitar x1']);
         expect(b.tile).toEqual({ x: 3288, z: 3810 });
         expect(b.unresolved).toEqual([]);
@@ -148,11 +148,11 @@ describe("a crafted stack the ledger carries as `x?`", () => {
         expect(() => craftedRunes({ ...band, altar: 'nature' })).toThrow('no rune multiple');
     });
 
-    test("S07's boundary holds the air runes held before S06 plus the crafted ones, not an unresolved stack", () => {
+    test("S07's boundary holds the 21 air runes held before S06 plus S06's 572 crafted ones, from the ledger now that its S06 row states the stack (fold-in 28)", () => {
         const b = at('S07');
         const air = b.inv.find(i => i.obj === 'airrune')!;
         expect(air.n).toBe(21 + 572);
-        expect(air.source).toContain('21 held before S06');
+        expect(air.source).toBe('ledger, after S06');
         expect(b.unresolved.filter(u => /air rune/.test(u))).toEqual([]);
     });
 
@@ -198,6 +198,6 @@ describe('staging', () => {
         const s = stagedState(b, { doric: 'complete', elena: 'complete' }, 2);
         s.skills.find(k => k.name === 'Mining')!.baseLevel = 98;
         s.inventory.pop();
-        expect(stagedOff(s, b)).toEqual(['mining 98 (staged 99)', 'pack water rune x0 (staged 2)']);
+        expect(stagedOff(s, b)).toEqual(['mining 98 (staged 99)', 'pack knife x0 (staged 1)']);
     });
 });

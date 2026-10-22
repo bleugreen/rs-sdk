@@ -26,6 +26,15 @@ import { baseToXp, levelForXp } from '../lib/xp';
 import type { StepContext } from '../runner/step';
 import { cheat, dropMatching, give, mustTele, setstat, setvar } from './setup';
 
+export interface Consumed {
+    item: ItemPattern;
+    n: number;
+    /** The entry's name in the ledger row. */
+    ledger: string;
+    obj?: string;
+    source: string;
+}
+
 export interface StandIn {
     /** The chain id it replaces (every step of that id, and the legs inside the group). */
     stepId: string;
@@ -42,6 +51,11 @@ export interface StandIn {
     give: readonly { obj: string; n: number; source: string }[];
     /** What the step consumes or hands in: dropped. */
     take: readonly { item: ItemPattern; source: string }[];
+    /**
+     * What the step uses up by count (eaten, drunk, cast), the rest kept: the ledger row's counted
+     * `consume` entries under their ledger names. `obj` (the ::give name) returns a stack's remainder.
+     */
+    consume?: readonly Consumed[];
     /** Worn at the step's end (wielded from the pack) and taken off. */
     wear?: readonly { item: ItemPattern; source: string }[];
     unwear?: readonly { item: ItemPattern; source: string }[];
@@ -77,6 +91,15 @@ export const STAND_INS: readonly StandIn[] = [
             { item: /^ball of wool$/i, source: `${MAN} ledger S15 out` },
             { item: 3183, source: `${MAN} ledger S15 out: monkey bones @3183` },
             { item: /^banana$/i, source: `${MAN} ledger S15 out (hand-in)` },
+        ],
+        consume: [
+            { item: /^superantipoison\(1\)$/i, n: 1, ledger: 'superantipoison(1)', source: `${MAN} ledger S15 out: drunk at A's start, the vial dropped` },
+            { item: /^shark$/i, n: 14, ledger: 'shark', source: `${MAN} ledger S15 out: eaten (1 held at the exit)` },
+            { item: /^prayer potion\(4\)$/i, n: 2, ledger: 'prayer potion(4)', source: `${MAN} ledger S15 out: drunk, the vials dropped` },
+            { item: /^law rune$/i, n: 3, ledger: 'law rune', obj: 'lawrune', source: `${MAN} ledger S15 out: Ardougne at T, Varrock at Y` },
+            { item: /^water rune$/i, n: 2, ledger: 'water rune', obj: 'waterrune', source: `${MAN} ledger S15 out` },
+            { item: /^air rune$/i, n: 3, ledger: 'air rune', obj: 'airrune', source: `${MAN} ledger S15 out` },
+            { item: /^fire rune$/i, n: 1, ledger: 'fire rune', obj: 'firerune', source: `${MAN} ledger S15 out` },
         ],
         wear: [
             { item: /^m'speak amulet$/i, source: `${MAN} ledger S15 equip +m'speak amulet` },
@@ -148,6 +171,8 @@ export async function applyStandIn(ctx: Pick<StepContext<unknown>, 'sdk'>, si: S
     await setvar(sdk, 'qp', (s0.questPoints ?? 0) + si.qp.add);
     for (const [skill, level] of Object.entries(levels)) await setstat(sdk, skill, level);
     if (si.take.length) await dropMatching(sdk, si.take.map(t => t.item));
+    const consumed: string[] = [];
+    for (const c of si.consume ?? []) consumed.push(await consumeCount(sdk, c));
     for (const g of si.give) await give(sdk, g.obj, g.n);
     for (const w of si.wear ?? []) {
         const it = sdk.getState()!.inventory.find(i => matchesItem(i, w.item));
@@ -161,7 +186,24 @@ export async function applyStandIn(ctx: Pick<StepContext<unknown>, 'sdk'>, si: S
         await waitUntil(sdk, st => (si.wear ?? []).every(w => st.equipment.some(e => matchesItem(e, w.item))), { maxTicks: 10 });
     }
     await mustTele(sdk, si.end.x, si.end.z, si.end.level ?? 0);
-    return { stepId: si.stepId, levels, qp: si.qp.add, varps: si.varps.map(v => `${v.name}=${v.value}`), gave: si.give.map(g => `${g.obj} x${g.n}`), end: si.end };
+    return { stepId: si.stepId, levels, qp: si.qp.add, varps: si.varps.map(v => `${v.name}=${v.value}`), gave: si.give.map(g => `${g.obj} x${g.n}`), consumed, end: si.end };
+}
+
+/**
+ * Remove `c.n` of what matches `c.item`: unstacked copies dropped one each, a stack dropped whole and
+ * its remainder given back. Never more than is held; a shortfall is reported, not thrown.
+ */
+async function consumeCount(sdk: StandInSdk, c: Consumed): Promise<string> {
+    const held = sdk.getState()!.inventory.filter(i => matchesItem(i, c.item));
+    const total = held.reduce((a, i) => a + i.count, 0);
+    const n = Math.min(c.n, total);
+    const stack = held.length === 1 && held[0]!.count > 1;
+    if (stack && n < total && !c.obj) throw new Error(`STAND-IN consume ${c.ledger}: a stack, and no ::give name to return ${total - n}`);
+    const drop = stack ? held : held.slice(0, n);
+    await Promise.all(drop.map(i => sdk.sendDropItem(i.slot)));
+    if (drop.length) await waitUntil(sdk, s => !drop.some(d => s.inventory.some(i => i.slot === d.slot && i.id === d.id)), { maxTicks: 10 });
+    if (stack && n < total) await give(sdk, c.obj!, total - n);
+    return `${c.ledger} ${n}${n < c.n ? ` of ${c.n} (held ${total})` : ''}`;
 }
 
 /** The chain step a dress rehearsal runs in place of `si`'s missing step group: a `STAND-IN <id>` row. */

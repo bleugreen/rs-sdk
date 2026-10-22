@@ -81,3 +81,41 @@ export class CueKeeper implements CueSink {
         this.current = null;
     }
 }
+
+/**
+ * The run's cue writers (STEP-MANIFEST.md "Cue layout"): mule1 reads its own directory, so a
+ * {Hx, mule} hand-off opens and stops its cue there and never closes the one open in the main
+ * directory (S07's bone givers and S18's courier log out on their own scope's stop, and a keeper
+ * writes a stop for whatever it had open before opening another). Every other family shares the main one.
+ */
+export class RunCues implements CueSink {
+    readonly main: CueKeeper;
+    readonly mule: CueKeeper;
+
+    constructor(dirs: { main: string; mule: string }, receiver: string) {
+        this.main = new CueKeeper(dirs.main, receiver);
+        this.mule = new CueKeeper(dirs.mule, receiver);
+    }
+
+    attach(sdk: Pick<StateSource, 'onStateUpdate'>): () => void {
+        const offs = [this.main.attach(sdk), this.mule.attach(sdk)];
+        return () => offs.forEach(off => off());
+    }
+
+    private keeper(scope: CueScope): CueKeeper {
+        return scope.family === 'mule' ? this.mule : this.main;
+    }
+
+    open(scope: CueScope, ctx: Pick<StepContext<unknown>, 'sdk'>, o: { fresh: boolean }): Promise<void> {
+        return this.keeper(scope).open(scope, ctx, o);
+    }
+
+    stop(scope: CueScope): void {
+        this.keeper(scope).stop(scope);
+    }
+
+    close(): void {
+        this.mule.close();
+        this.main.close();
+    }
+}

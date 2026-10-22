@@ -364,7 +364,7 @@ export async function runHandOffOnCue(ctx: Pick<StepContext<unknown>, 'sdk'>, pl
 const names = (xs: readonly TradeItem[]) => xs.map(i => `${i.name} x${i.count}`);
 
 /** Take off the worn items the trade gives, all in one tick, and wait until they are in the pack. */
-async function unequipGives(sdk: HandOffSdk, plan: HandOffPlan): Promise<InventoryItem[]> {
+export async function unequipGives(sdk: HandOffSdk, plan: HandOffPlan): Promise<InventoryItem[]> {
     const off = toUnequip(sdk.getState()!, plan);
     if (!off.length) return off;
     for (const e of off) void sdk.sendUseEquipmentItem(e.slot, opIndex(e, /^remove$/i) ?? 1);

@@ -15,11 +15,12 @@ import { TickLog } from '../lib/ticks';
 import { sleep, waitUntil } from '../lib/wait';
 import { MANIFEST } from '../tools/slot-ledger';
 import * as cooking from '../skills/cooking';
+import * as mining from '../skills/mining';
 import {
-    ALTERNATIVES, anvilAnnounce, cueAround, FAMILY_CUES, KIT_PARTNER_ROWS, KIT_SEGMENTS, buildChain, CENSUS_STEP, chainIds, chainProbes, ledgerCoverage, ledgerRows, missingOnPath, missingStep, MULE_ROWS, muleCued, muleScope, parseStepTable, PLACEMENT, resolveFrom, sliceUntil, tag,
+    ALTERNATIVES, anvilAnnounce, cueAround, FAMILY_CUES, KIT_PARTNER_ROWS, KIT_SEGMENTS, buildChain, CENSUS_STEP, chainIds, chainProbes, ledgerCoverage, ledgerRows, missingOnPath, missingStep, MULE_ROWS, muleCued, muleCueDir, muleScope, S09_MINING, parseStepTable, PLACEMENT, resolveFrom, sliceUntil, tag,
     whenNeeded, withCue, type ChainStep, type CueSink, type RunConfig,
 } from './chain';
-import { CueKeeper, prepareCueDir } from './cue-keeper';
+import { CueKeeper, prepareCueDir, RunCues } from './cue-keeper';
 import { FencedError } from './fence';
 import { legsFor, netTotal, type LegStep } from './legs';
 import { Observation, resolveResume, type Link } from './resume';
@@ -492,6 +493,56 @@ describe('cues', () => {
         await muleCued(stub('H12'), 'H12', r.cues).resume!(ctx);
         expect(r.opened).toEqual([{ scope: muleScope('H9'), fresh: true }, { scope: muleScope('H12'), fresh: true }, { scope: muleScope('H12'), fresh: true }]);
         expect(r.stopped).toEqual([muleScope('H9'), muleScope('H12'), muleScope('H12')]);
+    });
+
+    test("S09 mines with the contested-rock fallback 'auto' and never acceptHazards: only sites whose hunters leave SCORED's combat alone", () => {
+        expect(S09_MINING.fallback).toBe('auto');
+        expect('acceptHazards' in S09_MINING).toBe(false);
+        const fb = mining.parseFallback(S09_MINING.fallback);
+        expect(fb.acceptHazards).toBe(false);
+        expect(fb.sites.length).toBeGreaterThan(0);
+        expect(fb.sites).not.toContain('zoo');
+        // No SCORED path sets it: the chain and run.ts never name it.
+        for (const f of ['chain.ts', '../run.ts']) expect(readFileSync(join(import.meta.dir, f), 'utf8').replace(/^\s*(\/\/|\*).*$/gm, '')).not.toContain('acceptHazards');
+        expect(chain.filter(s => s.id === 'S09').length).toBeGreaterThan(0);
+    });
+
+    test("mule1's cue directory is the run config's muleCueDir, else <cueDir>/mule", () => {
+        expect(muleCueDir({ cueDir: '/run/rc-cue' })).toBe(join('/run/rc-cue', 'mule'));
+        expect(muleCueDir({ cueDir: '/run/rc-cue', muleCueDir: '/elsewhere/mule1' })).toBe('/elsewhere/mule1');
+    });
+
+    test('a mule hand-off during S07 (H4k) leaves the bone cue alone: the mule cue and its stop go to <cueDir>/mule, the bone cue stays open with no stop', async () => {
+        const d = mkdtempSync(join(tmpdir(), 'chain-runcues-'));
+        const muleDir = muleCueDir({ cueDir: d });
+        prepareCueDir(d, { fresh: true });
+        prepareCueDir(muleDir, { fresh: true });
+        const sdk = new FakeSdk(baseState({ tick: 1, inGame: true }));
+        const cues = new RunCues({ main: d, mule: muleDir }, 'Scored Name');
+        const off = cues.attach(sdk);
+        const timer = setInterval(() => sdk.tick(), 2);
+        const ctx = { sdk: sdk as unknown as RunnerSession['sdk'] } as StepContext<unknown>;
+        const read = (dir: string) => JSON.parse(readFileSync(join(dir, CUE_FILE), 'utf8')) as Cue;
+        try {
+            await cues.open({ step: 'S07', family: 'bone' }, ctx, { fresh: true });
+            const bone = read(d);
+            let during: Cue | null = null;
+            const h4k: ChainStep = { id: 'H4k', kind: 'handoff', name: 'H4k hand-off', logoutSafe: true, preconditions: () => true, postconditions: () => true, run: async () => { during = read(muleDir); } };
+            await muleCued(h4k, 'H4k', cues).run(ctx);
+            const boneAfter = read(d);
+            const muleAfter = read(muleDir);
+            expect(during!.scope).toEqual({ step: 'H4k', family: 'mule' });
+            expect(during!.stop ?? false).toBe(false);
+            expect(muleAfter.session).toBe(during!.session);
+            expect(muleAfter.stop).toBeTruthy();
+            expect(boneAfter).toEqual(bone);
+            expect(boneAfter.scope).toEqual({ step: 'S07', family: 'bone' });
+            expect(boneAfter.stop ?? false).toBe(false);
+            expect(cues.main.open_).toEqual({ step: 'S07', family: 'bone' });
+        } finally {
+            clearInterval(timer);
+            off();
+        }
     });
 
     test("S03's droppers are cued at S01, the run's first login: the go file between S00 and the H1 hand-off", async () => {
