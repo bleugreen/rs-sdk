@@ -573,7 +573,7 @@ claim. The claim kept the twin's gate timer off its :00/:30 reads from 20:46Z to
 | `(gate) in-page before` | (a) 60/60, (c) 0/min, loop p10 72.5/s, tick p90 450 ms |
 | `(gate) recording` | `~/recordings/rs310-agility-20261022T204646Z.mkv` on `:10` (1,108 s) |
 | `(gate) live frame` | PASS: cairn_jumps's tab the only window, maximised, in front; difference 2.3 |
-| Inventory at login | knife, 2 sharks, 25 cake slots (the kit's 7 and the top-up's 18, one partly eaten); S01 skipped |
+| Inventory | knife, 2 sharks, 24 cakes and 1 empty slot (the 25th cake eaten in session A), read from the recording at 20:56:55Z; the band ate nothing, so it is also the login inventory. S01 skipped |
 | `agility:gate` north | **14 ticks, 2 clicks, 1 dialogue** (Femi's first visit cleared), ended north: rs/309's helper |
 | `agility:walk-gnome` | **49 ticks** (4-53), from the gate to the course |
 | `agility:gnome` 1 -> 52 | **1,043 ticks** (53-1096), 17 laps, 124 obstacles; clean laps 59 (one 60); 0 falls, 0 eats; program frames p50 400, p90 480 ms, 0 catch-ups |
