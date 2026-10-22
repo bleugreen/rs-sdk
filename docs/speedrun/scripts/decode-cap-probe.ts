@@ -268,7 +268,7 @@ async function main() {
     // no queue). Casts are counted by the blood-rune stack, given as 301 so its slot is recognisable.
     let counterObj = 0;
     if (IFBUTTON.length && args.has('charge-setup')) {
-        for (const c of ['setstat magic 80', 'setvar magearena 8', 'give blood_rune 301', 'give fire_rune 302', 'give air_rune 303']) {
+        for (const c of ['setstat magic 80', 'setvar magearena 8', 'give bloodrune 301', 'give firerune 302', 'give airrune 303']) {
             cheat(c);
             await waitTicks(3);
         }
