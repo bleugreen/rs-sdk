@@ -53,7 +53,10 @@ describe('finalExtras: the last S07 load also carries T07-08\'s Camelot runes', 
         expect(names(0)).toEqual([['/^Dragon bones$/i', 23]]);
         expect(names(1)).toEqual([['/^Dragon bones$/i', 23]]);
         expect(isFinalLoad(o, 2)).toBe(true);
-        expect(names(2)).toEqual([['/^Dragon bones$/i', 23], ['/^Law rune$/i', 1], ['/^Air rune$/i', 5]]);
+        // The last load fits the same 23 free slots: 21 bones and the two rune stacks.
+        expect(names(2)).toEqual([['/^Dragon bones$/i', 21], ['/^Law rune$/i', 1], ['/^Air rune$/i', 5]]);
+        expect(names(2)).toEqual(loadOffer({ ...o, finalN: 21 }, 2).map(s => [String(s.item), s.n]));
+        expect(loadOffer(boneGiverOptions({ trades: 3, finalN: 23, finalExtras: RUNES }, {}), 2)[0]!.n).toBe(23);
         // Without finalExtras no load is special.
         const plain = boneGiverOptions({ trades: 3 }, {});
         expect(isFinalLoad(plain, 2)).toBe(false);
@@ -62,8 +65,10 @@ describe('finalExtras: the last S07 load also carries T07-08\'s Camelot runes', 
 
     test('options: needs a finite trades count, the standing mode, 28 slots, and obj for the lab cheat', () => {
         expect(() => boneGiverOptions({ finalExtras: RUNES }, {})).toThrow(/needs trades/);
-        expect(() => boneGiverOptions({ trades: 3, n: 27, finalExtras: RUNES }, {})).toThrow(/28 slots/);
-        expect(boneGiverOptions({ trades: 3, n: 26, finalExtras: RUNES }, {}).finalExtras).toHaveLength(2);
+        expect(() => boneGiverOptions({ trades: 3, finalN: 27, finalExtras: RUNES }, {})).toThrow(/28 slots/);
+        expect(() => boneGiverOptions({ trades: 3, finalN: 0, finalExtras: RUNES }, {})).toThrow(/finalN/);
+        expect(boneGiverOptions({ trades: 3, n: 28, finalExtras: RUNES }, {})).toMatchObject({ finalN: 26 });
+        expect(boneGiverOptions({ trades: 3 }, {}).finalN).toBe(23);
         expect(() => boneGiverOptions({ trades: 3, finalExtras: [{ item: 'Law rune', count: 0 }] }, {})).toThrow(/whole count/);
         expect(() => boneGiverOptions({ trades: 3, restock: { kind: 'cheat' }, finalExtras: [{ item: 'Law rune', count: 1 }] }, {})).toThrow(/obj/);
         const site = [{ giver: { x: 1, z: 2 }, receiver: { x: 1, z: 3 } }];
@@ -71,14 +76,14 @@ describe('finalExtras: the last S07 load also carries T07-08\'s Camelot runes', 
     });
 
     test('the last load is one burst of three All presses, and the scored account\'s offer is never accepted (no expectTheirs)', async () => {
-        const bones = Array.from({ length: 23 }, (_, slot) => ({ slot, id: 536, name: 'Dragon bones', count: 1, optionsWithIndex: [] }));
-        const inventory = [...bones, { slot: 23, id: 563, name: 'Law rune', count: 1, optionsWithIndex: [] }, { slot: 24, id: 556, name: 'Air rune', count: 5, optionsWithIndex: [] }];
+        const bones = Array.from({ length: 21 }, (_, slot) => ({ slot, id: 536, name: 'Dragon bones', count: 1, optionsWithIndex: [] }));
+        const inventory = [...bones, { slot: 21, id: 563, name: 'Law rune', count: 1, optionsWithIndex: [] }, { slot: 22, id: 556, name: 'Air rune', count: 5, optionsWithIndex: [] }];
         const trade = { isOpen: true, screen: 'offer' as const, partner: 'Scored Player', myOffer: [], theirOffer: [], myAccepted: false, partnerAccepted: false };
         const sdk = new FakeSdk(baseState({ tick: 10, inventory, trade } as Partial<BotWorldState>));
         const r = give(sdk, 'Scored Player', loadOffer(o, 2), { openTimeoutMs: 5_000, maxTicks: 6 });
         await flush();
-        expect(sdk.sent.splice(0).map(a => [a.method, ...a.args])).toEqual([['sendOfferItem', 0, -1], ['sendOfferItem', 23, -1], ['sendOfferItem', 24, -1], ['sendAcceptTrade']]);
-        const mine = [{ slot: 0, id: 536, name: 'Dragon bones', count: 23 }, { slot: 1, id: 563, name: 'Law rune', count: 1 }, { slot: 2, id: 556, name: 'Air rune', count: 5 }];
+        expect(sdk.sent.splice(0).map(a => [a.method, ...a.args])).toEqual([['sendOfferItem', 0, -1], ['sendOfferItem', 21, -1], ['sendOfferItem', 22, -1], ['sendAcceptTrade']]);
+        const mine = [{ slot: 0, id: 536, name: 'Dragon bones', count: 21 }, { slot: 1, id: 563, name: 'Law rune', count: 1 }, { slot: 2, id: 556, name: 'Air rune', count: 5 }];
         const theirs = [{ slot: 0, id: 1351, name: 'Bronze axe', count: 1 }];
         // The scored account puts something up: both accepts reset, and the giver does not re-accept.
         for (let i = 0; i < 3; i++) {

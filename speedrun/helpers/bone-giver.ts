@@ -32,6 +32,7 @@
 //   resendTicks  re-send a standing request after this long without a trade (default 100)
 //   finalExtras  [{ item, count, obj? }] offered beside the bones on the LAST load only (needs `trades`;
 //                S07's T07-08 Camelot runes, law 1 and air 5); `obj` names the staff give for restock cheat
+//   finalN       bones on that last load (default n - finalExtras.length: the same free slots as every load)
 //   cueDir       default RC_CUE_DIR, else run-machine/rc-cue in the checkout
 //
 // mode 'on-request' (S18's stun-pack top-ups, SUPPLIES.md H14.1-H14.13): the scored
@@ -93,6 +94,8 @@ export interface BoneGiverOptions {
     noReplyTicks: number;
     resendTicks: number;
     finalExtras: Extra[];
+    /** Bones on the last load, the one that carries finalExtras. */
+    finalN: number;
     cueDir: string;
 }
 
@@ -131,7 +134,11 @@ export function boneGiverOptions(raw: Record<string, unknown>, env: Record<strin
         if (mode !== 'standing') throw new Error('finalExtras is for the standing mode (S07) only');
         if (!Number.isFinite(trades)) throw new Error('finalExtras needs trades: the last load is the trades-th');
         // Bones are unstackable, each extra is one stack: the last load is n + extras slots.
-        if (n + finalExtras.length > 28) throw new Error(`n + finalExtras must fit 28 slots (got ${n} + ${finalExtras.length})`);
+    }
+    // The receiver frees `n` slots a load; by default the last load fits the same slots, extras included.
+    const finalN = raw.finalN === undefined ? n - finalExtras.length : Number(raw.finalN);
+    if (finalExtras.length && (!Number.isInteger(finalN) || finalN < 1 || finalN + finalExtras.length > 28)) {
+        throw new Error(`finalN must be at least 1 and finalN + finalExtras must fit 28 slots (got ${raw.finalN ?? finalN} + ${finalExtras.length})`);
     }
     return {
         mode,
@@ -146,6 +153,7 @@ export function boneGiverOptions(raw: Record<string, unknown>, env: Record<strin
         noReplyTicks: Number(raw.noReplyTicks ?? DROPPED_TICKS),
         resendTicks: Number(raw.resendTicks ?? 100),
         finalExtras,
+        finalN: finalExtras.length ? finalN : n,
         cueDir: typeof raw.cueDir === 'string' ? raw.cueDir : cueDir(env)
     };
 }
@@ -157,10 +165,15 @@ export function isFinalLoad(o: Pick<BoneGiverOptions, 'trades' | 'finalExtras'>,
     return o.finalExtras.length > 0 && tradesDone === o.trades - 1;
 }
 
-/** The standing mode's offer for the load after `tradesDone` trades: `n` bones, plus `finalExtras` on the last load. */
-export function loadOffer(o: Pick<BoneGiverOptions, 'item' | 'n' | 'trades' | 'finalExtras'>, tradesDone: number): GiveSpec[] {
+/** Bones on the load after `tradesDone` trades: `finalN` on the last load, else `n`. */
+export function loadBones(o: Pick<BoneGiverOptions, 'n' | 'finalN' | 'trades' | 'finalExtras'>, tradesDone: number): number {
+    return isFinalLoad(o, tradesDone) ? o.finalN : o.n;
+}
+
+/** The standing mode's offer for the load after `tradesDone` trades: `n` bones, or `finalN` bones and `finalExtras` on the last load. */
+export function loadOffer(o: Pick<BoneGiverOptions, 'item' | 'n' | 'finalN' | 'trades' | 'finalExtras'>, tradesDone: number): GiveSpec[] {
     const extras = isFinalLoad(o, tradesDone) ? o.finalExtras : [];
-    return [{ item: exact(o.item), n: o.n }, ...extras.map(e => ({ item: exact(e.item), n: e.count }))];
+    return [{ item: exact(o.item), n: loadBones(o, tradesDone) }, ...extras.map(e => ({ item: exact(e.item), n: e.count }))];
 }
 
 // ------------------------------------------------------------------ the standing request
@@ -372,9 +385,10 @@ export class BoneGiver {
         if (this.o.mode === 'on-request') return this.onRequestCycle();
         const { ctx, o } = this;
         const extras = isFinalLoad(o, this.trades) ? o.finalExtras : [];
-        if (this.held() !== o.n || extras.some(e => count(this.s, exact(e.item)) < e.count)) {
+        const bones = loadBones(o, this.trades);
+        if (this.held() !== bones || extras.some(e => count(this.s, exact(e.item)) < e.count)) {
             this.setPhase('restock', extras.length ? 'the last load' : '');
-            await this.restock(o.n, extras);
+            await this.restock(bones, extras);
         }
         const site = o.sites[this.site]!;
         this.setPhase('travel', `site ${this.site}`);
