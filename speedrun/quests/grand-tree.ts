@@ -33,8 +33,8 @@ import { questStage, questStatus, journalProbeName, type QuestView } from '../li
 import { logNote } from '../lib/ticks';
 import { runTo, spiritTree, teleport } from '../lib/travel';
 import { receiveFrom, type WantSpec } from '../lib/trade';
-import { currentTick, waitUntil, type Pred } from '../lib/wait';
-import { chebyshev, configId, findLoc, findNpc, invCount, invItem, messagesSince, opIndex, pos, skillLevel, worn, type LocQuery, type Tile } from '../lib/world';
+import { waitUntil, type Pred } from '../lib/wait';
+import { chebyshev, configId, findLoc, findNpc, invCount, invItem, opIndex, pos, replyAfter, skillLevel, worn, type LocQuery, type Tile } from '../lib/world';
 import type { Step, StepContext } from '../runner/step';
 import { DEFAULT_DIALOGUE, talkShape, type QuestOptions } from './segments';
 
@@ -558,16 +558,20 @@ export async function killDemon(sdk: Sdk, opts: Options, reopened: boolean): Pro
     return report;
 }
 
-/** Search one root; true when it held the rock (its objbox opened or the rock arrived). */
-async function searchRoot(sdk: Sdk, n: number): Promise<boolean> {
+/**
+ * Search one root; true when it held the rock (its objbox opened or the rock arrived). An empty
+ * root is told by its reply after the click (replyAfter): the browser stamps that reply on the
+ * click's own tick, so a tick offset would miss it there.
+ */
+export async function searchRoot(sdk: Sdk, n: number): Promise<boolean> {
     const [x, z] = ROOTS[n]!;
     const l = await findLoc(sdk, { x, z, op: /^search$/i });
     if (!l) throw new Error(`no root ${n} at (${x},${z})`);
-    const t0 = currentTick(sdk);
+    const empty = replyAfter(sdk, ROOT_EMPTY);
     const found = (s: BotWorldState) => /Daconia/i.test(pageText(s.dialog)) || invCount(s, ITEM.rock) > 0;
     // A second search is harmless (an empty root prints again; the rock root gives one rock), so a
     // dropped click is re-sent once the player has stood still for 4 ticks.
-    const r = await act(sdk, () => sdk.sendInteractLoc(l.x, l.z, l.id, opIndex(l, /^search$/i)!), s => found(s) || messagesSince(s, t0 + 1, ROOT_EMPTY).length > 0, { resendEvery: 4, maxResends: 2, maxTicks: 40 });
+    const r = await act(sdk, () => sdk.sendInteractLoc(l.x, l.z, l.id, opIndex(l, /^search$/i)!), s => found(s) || empty.seen(s), { resendEvery: 4, maxResends: 2, maxTicks: 40 });
     if (!r.ok) throw new Error(`searching root ${n} at (${x},${z}) gave no answer within 40 ticks`);
     if (!found(sdk.getState()!)) return false;
     await dismissPages(sdk);

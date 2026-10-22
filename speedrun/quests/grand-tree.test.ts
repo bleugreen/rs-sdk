@@ -8,7 +8,7 @@ import { journalProbeName } from '../lib/quests';
 import { TickLog } from '../lib/ticks';
 import type { Observed, RunnerSession, StepContext } from '../runner/step';
 import {
-    AGILITY_AFTER, ardougneTeleport, climbToPillars, entryCheck, exitCheck, FREE_SLOTS, gtStage, kitCheck, resolveOptions, steps, TILES,
+    AGILITY_AFTER, ardougneTeleport, climbToPillars, entryCheck, exitCheck, FREE_SLOTS, gtStage, kitCheck, resolveOptions, ROOTS, searchRoot, steps, TILES,
 } from './grand-tree';
 
 const prevTick = process.env.SPEEDRUN_TICK_MS;
@@ -316,6 +316,28 @@ describe('N: the trapdoor and the demon', () => {
         expect(steps()[13]!.preconditions(s, {})).toBe(true);
         expect(steps()[14]!.preconditions({ ...s, equipment: [] }, {})).toMatch(/holds 1 fire runes and no staff of fire worn, needs 4/);
         expect(steps({ demonSpell: 'fire_blast' })[14]!.preconditions({ ...s, equipment: [] }, {})).toMatch(/needs 5/);
+    });
+});
+
+describe('P: searching a root', () => {
+    const empty = "You search the root but don't find anything.";
+    const msg = (text: string, tick: number, observationId: number) => ({ type: 0, text, tick, observationId, sender: '', fromSelf: false });
+
+    test('an empty root stamped on the click\'s own tick (the browser) is recognised after one click', async () => {
+        const [x, z] = ROOTS[10]!;
+        // The previous root's reply is already in the history; it must not end this search.
+        const s0 = routeState({ player: player(x, z + 1), nearbyLocs: [locAt('Root', x, z, ['Search'], 9)] });
+        const sdk = new FakeSdk({ ...s0, gameMessages: [msg(empty, s0.tick - 3, 7)] as BotWorldState['gameMessages'] });
+        sdk.onSend = (a, f) => {
+            if (a.method === 'sendInteractLoc') f.tick(s => ({ gameMessages: [...s.gameMessages, msg(empty, s.tick, 8)] as BotWorldState['gameMessages'] }));
+        };
+        const stop = ticking(sdk);
+        try {
+            expect(await searchRoot(asSdk(sdk), 10)).toBe(false);
+        } finally {
+            stop();
+        }
+        expect(sentOf(sdk, 'sendInteractLoc')).toHaveLength(1);
     });
 });
 
