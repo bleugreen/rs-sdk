@@ -22,6 +22,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, watch, writeFileSync, type FSWatcher } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import type { BotWorldState } from '../../sdk/types';
+import { isTradeRequest } from '../lib/trade';
 
 export const CUE_VERSION = 1;
 export const CUE_FILE = 'cue.json';
@@ -34,7 +35,7 @@ export const DEFAULT_OPEN = 5;
 export type Schedule = 'tuned' | 'robust';
 /**
  * What a single turn asks of its giver: one of the blind schedules, or 'stock', the scored
- * side's last fallback (the reacting cycle, about 15 ticks): the giver requests on T+K and
+ * side's last fallback (the reacting cycle): the giver requests as soon as it is armed and
  * then reacts to what it sees (offer everything, accept, confirm) until the judge tick.
  */
 export type TurnSchedule = Schedule | 'stock';
@@ -129,7 +130,7 @@ export function nameHash(name: string): string {
 export function newRequestFrom(s: BotWorldState, receiverHash: string, after: number): number | null {
     let tick: number | null = null;
     for (const m of s.gameMessages) {
-        if (m.type === 4 && m.tick > after && /wishes to trade/i.test(m.text) && nameHash(m.sender) === receiverHash) tick = Math.max(tick ?? m.tick, m.tick);
+        if (m.tick > after && isTradeRequest(m) && nameHash(m.sender) === receiverHash) tick = Math.max(tick ?? m.tick, m.tick);
     }
     return tick;
 }
