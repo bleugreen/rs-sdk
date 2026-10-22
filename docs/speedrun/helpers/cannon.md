@@ -145,7 +145,7 @@ ROLE_OPTIONS='{"serve":{"id":"H11","tile":{"x":2570,"z":3463},"balls":100,"retur
    sent when the receiver comes into sight, re-sent on the next tick after a "busy" refusal,
    refreshed every 100 ticks. The scored step's own trade click (`lib/trade.ts receiveFrom`)
    then opens both screens at once.
-5. **Give everything in one trade** (`lib/trade.ts give`). A trade opened by anyone else is declined.
+5. **Give everything in one trade** (`cannon.ts serveTrade`, `lib/trade.ts give` with `expectTheirs: ANY_OFFER`), taking back whatever the scored account offers in that trade (H23: the magic shortbow, through the scored side's `swap(give, want: loadWant(balls))`); its offer resets both accepts and the holder re-accepts. A trade opened by anyone else is declined.
 6. With `serve.returnTile`: **take the set back** (H11r). It stands there, waits for the
    receiver's own trade request (matched by hash in the chat), and receives with
    `receiveFrom`, wanting the four parts; leftover balls are optional.

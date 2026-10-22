@@ -23,7 +23,7 @@ The talisman is the 28th slot, so a giver gives 27 essence. The scored account d
 |---|---|---|
 | `altar` | `air` | `air` (levels 1-44), `nature` (44-99) or `body` (20-99, the S21 fallback while nature talismans are at 0; banks at Edgeville) |
 | `slot` | 0 | 0 east, 1 west, 2 south of the scored tile |
-| `essence` | 27 | essence per trade |
+| `essence` | 27 | essence per trade, **exactly by count**: holding at least `essence` counts as loaded, and the offer is one All press only when exactly `essence` is held, else 10/5/1 presses on the highest essence slot in the same tick as the accept (the engine takes from the lowest slot first, and decodes 5 user events a tick), else one Offer-X (a tick late; the stock turn's `give()` uses it). S06 runs 26 (rs/158) |
 | `schedule` | follow the cue | `robust` forces the 8-tick schedule for every turn |
 | `restock` | `{ kind: 'bank' }` | `{ kind, bank?, acceptFrom?, restockAt?, labStock? }` as above |
 | `gapMs` | 0 | wait after a frame arrives before sending (0: send on arrival) |
