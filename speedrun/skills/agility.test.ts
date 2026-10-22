@@ -313,7 +313,9 @@ describe('agility Wilderness decisions', () => {
             const log = TickLog.memory();
             const ctx = ctxFor(sdk, log);
             walker(ctx, (x, z) => x === 2461 && z === 3386);
-            await step(steps(), 'agility:walk-gnome').run(ctx as never);
+            // the server's clock: converse ends a conversation on a quiet tick after the last page
+            const clock = setInterval(() => sdk.tick(), 5);
+            await step(steps(), 'agility:walk-gnome').run(ctx as never).finally(() => clearInterval(clock));
             expect(sdk.sent.filter(a => a.method === 'sendInteractLoc')).toHaveLength(2);
             expect(sdk.sent.some(a => a.method === 'clickDialogByText' && /busy/.test(String(a.args[0])))).toBe(true);
             expect(sdk.getState()!.player!.worldZ).toBe(3385);
