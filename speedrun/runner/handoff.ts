@@ -32,10 +32,11 @@ import type { BotSDK } from '../../sdk/index';
 import type { BotWorldState, InventoryItem, TradeItem } from '../../sdk/types';
 import { INVENTORY_SIZE, noteOf, objName } from '../lib/items';
 import { DROPPED_TICKS, receiveFrom, sameName, swap, type GiveSpec, type SwapSdk, type WantSpec } from '../lib/trade';
-import { waitOrThrow } from '../lib/wait';
+import { waitOrThrow, waitUntil } from '../lib/wait';
+import type { CueScope } from '../helpers/altar-cue';
 import { opIndex } from '../lib/world';
 import { itemLabel, MANIFEST, parseLedger, type InEntry, type ItemRef, type Kind, type LedgerRow } from '../tools/slot-ledger';
-import type { ObservedCheck, Step } from './step';
+import type { ObservedCheck, Step, StepContext } from './step';
 
 /**
  * Ledger names whose game name differs (the ledger says `normal logs` where the game says `Logs`).
@@ -203,9 +204,9 @@ function slotsAdded(s: BotWorldState, plan: HandOffPlan): number {
     }, 0);
 }
 
-export function handOffPre(s: BotWorldState, plan: HandOffPlan, partner: string): true | string {
+export function handOffPre(s: BotWorldState, plan: HandOffPlan, partner: string, o: { partnerInView?: boolean } = {}): true | string {
     if (!s.inGame) return 'not in game';
-    if (!s.nearbyPlayers.some(p => sameName(p.name, partner))) return `${plan.id}: ${partner} is not in view (the partner stands on the hand-off tile before SCORED arrives)`;
+    if (o.partnerInView !== false && !s.nearbyPlayers.some(p => sameName(p.name, partner))) return `${plan.id}: ${partner} is not in view (the partner stands on the hand-off tile before SCORED arrives)`;
     for (const g of plan.give) {
         const h = held(s, g);
         if (h === 0) return `${plan.id}: holds no ${g.name} to give`;
@@ -216,6 +217,14 @@ export function handOffPre(s: BotWorldState, plan: HandOffPlan, partner: string)
     for (const w of plan.wield) {
         if (!plan.receive.some(r => r.name === w.name) && !held(s, w)) return `${plan.id}: +${w.name} is neither held nor received`;
     }
+    return handOffRoom(s, plan);
+}
+
+/**
+ * The slot half of handOffPre, which needs no partner in view: the unequips, the trade and the
+ * equip changes after it fit the free slots, counting the slots the given items free.
+ */
+export function handOffRoom(s: BotWorldState, plan: HandOffPlan): true | string {
     const free = INVENTORY_SIZE - s.inventory.length;
     const off = toUnequip(s, plan);
     if (free < off.length) return `${plan.id}: ${free} free slots, and taking off ${off.map(i => i.name).join(', ')} to give needs ${off.length}`;
@@ -282,6 +291,53 @@ export interface HandOffOptions<C> {
     /** receiveFrom only: re-send a trade click that drew no reply after this many ticks (default DROPPED_TICKS: the partner stands beside SCORED). swap() always uses DROPPED_TICKS. */
     noReplyTicks?: number;
     onReport?: (r: HandOffReport) => void;
+    /** A partner that serves on a cue (the cannon holder, cannon.ts serve mode): see runHandOffOnCue. */
+    cue?: HandOffCue;
+}
+
+/**
+ * A hand-off whose partner waits for a cue (helpers/altar-cue.ts) before it comes and requests:
+ * the cannon holder serves H11 and H23 only to the receiver its {S14|S27, cannon} cue names.
+ */
+export interface HandOffCue {
+    scope: CueScope;
+    /** Open `scope`'s cue for the partner: the run's CueKeeper (runner/chain.ts), or a stand-in's own. */
+    open: (ctx: Pick<StepContext<unknown>, 'sdk'>) => Promise<void>;
+    /** Observed ticks to wait for the partner to come into sight after the cue (default 6000). */
+    waitTicks?: number;
+    /** Observed ticks, once it is in sight, for its standing request to arrive (default 30). */
+    requestTicks?: number;
+}
+
+/** What runHandOffOnCue adds to the trade's report. */
+export interface CueHandOffReport extends HandOffReport {
+    /** The partner's request was standing when SCORED clicked. */
+    standingAtClick: boolean;
+    /** Observed ticks from the cue to the partner in sight. */
+    arriveTicks: number;
+}
+
+const requestFrom = (partner: string, since: number) => (s: BotWorldState) =>
+    s.gameMessages.some(m => m.tick >= since && m.type === 4 && /wishes to trade/i.test(m.text) && sameName(m.sender, partner));
+
+/**
+ * The cue-served hand-off, one sequence for the run (H11, H23) and the lab stand-in
+ * (helpers/cannon-receiver.ts): open the cue, wait (bounded, observed ticks) for the partner in
+ * sight, give its standing request a moment, then the row's own trade (runHandOff), so every `in`
+ * of the row, the extras with the set, is wanted and checked.
+ */
+export async function runHandOffOnCue(ctx: Pick<StepContext<unknown>, 'sdk'>, plan: HandOffPlan, partner: string, cue: HandOffCue, o: Omit<HandOffOptions<unknown>, 'partner' | 'supersededBy' | 'cue'> = {}): Promise<CueHandOffReport> {
+    const sdk = ctx.sdk as unknown as HandOffSdk;
+    await cue.open(ctx);
+    const since = sdk.getState()?.tick ?? 0;
+    const near = (s: BotWorldState) => s.nearbyPlayers.some(p => sameName(p.name, partner));
+    const seen = await waitUntil(sdk, near, { maxTicks: cue.waitTicks ?? 6000 });
+    if (!seen.ok) throw new Error(`${plan.id}: ${partner} did not come into sight within ${cue.waitTicks ?? 6000} ticks of the ${cue.scope.step}/${cue.scope.family} cue`);
+    const arriveTicks = seen.tick - since;
+    await waitUntil(sdk, requestFrom(partner, since), { maxTicks: cue.requestTicks ?? 30 });
+    const standingAtClick = requestFrom(partner, since)(sdk.getState()!);
+    const report = await runHandOff(sdk, plan, partner, o);
+    return { ...report, standingAtClick, arriveTicks };
 }
 
 const names = (xs: readonly TradeItem[]) => xs.map(i => `${i.name} x${i.count}`);
@@ -342,7 +398,8 @@ export function handOffStep<C>(plan: HandOffPlan, opts: HandOffOptions<C>): Step
     return {
         name: `${plan.id} hand-off`,
         logoutSafe: true,
-        preconditions: (s, c) => handOffPre(s, plan, partner(c)),
+        // A cue-served partner comes after the cue, so it need not be in view yet.
+        preconditions: (s, c) => handOffPre(s, plan, partner(c), { partnerInView: !opts.cue }),
         postconditions: s => {
             const missing = handOffMissing(s, plan);
             return missing.length ? `${plan.id} after the trade: ${missing.join('; ')}` : true;
@@ -350,7 +407,8 @@ export function handOffStep<C>(plan: HandOffPlan, opts: HandOffOptions<C>): Step
         done: (o, c) => handOffMissing(o.state, plan).length === 0 || !!opts.supersededBy?.(o, c),
         inProgress: o => tradeLanded(o.state, plan) && handOffMissing(o.state, plan).length > 0,
         async run(ctx) {
-            await runHandOff(sdkOf(ctx.sdk), plan, partner(ctx.c), opts);
+            if (opts.cue) await runHandOffOnCue(ctx, plan, partner(ctx.c), opts.cue, opts);
+            else await runHandOff(sdkOf(ctx.sdk), plan, partner(ctx.c), opts);
         },
         async resume(ctx) {
             await applyEquip(sdkOf(ctx.sdk), plan);

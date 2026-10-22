@@ -18,6 +18,7 @@ import {
     parseBotEnv,
     relog,
     sessionGateway,
+    settleScene,
     startWatchdog,
     watchdogDecision,
     type LogoutResult,
@@ -720,5 +721,42 @@ describe('login with inPage: the tab logs back in where it is', () => {
         } finally {
             cdp.stop();
         }
+    });
+});
+
+describe("settleScene: a launched browser tab's scene, the same wait as the resume walk's", () => {
+    const ticking = (sdk: FakeSdk, each: (tick: number) => Partial<ReturnType<FakeSdk['getState']> & object> = () => ({})) => setInterval(() => sdk.tick(s => each(s.tick)), 2);
+
+    test('waits for sceneReady and records the wait on the session', async () => {
+        const sdk = new FakeSdk();
+        sdk.push({ tick: 1, inGame: true, sceneReady: false, nearbyLocs: [] });
+        const timer = ticking(sdk, t => (t >= 12 ? { sceneReady: true } : {}));
+        const s = { sdk, name: 'lab' } as unknown as Session;
+        const r = await settleScene(s, 50);
+        clearInterval(timer);
+        expect(r.ready).toBe(true);
+        expect(r.ticks).toBeGreaterThanOrEqual(10);
+        expect(s.scene).toEqual(r);
+        expect(sdk.getState()!.sceneReady).toBe(true);
+    });
+
+    test('an older client without the flag counts as ready at once', async () => {
+        const sdk = new FakeSdk();
+        sdk.push({ tick: 1, inGame: true });
+        expect(await settleScene({ sdk, name: 'lab' } as unknown as Session, 50)).toEqual({ ready: true, ticks: 0 });
+    });
+
+    test('a scene that never loads: recorded as a timeout and warned, never thrown', async () => {
+        const sdk = new FakeSdk();
+        sdk.push({ tick: 1, inGame: true, sceneReady: false });
+        const timer = ticking(sdk);
+        const warn = spyOn(console, 'warn').mockImplementation(() => {});
+        const s = { sdk, name: 'lab' } as unknown as Session;
+        const r = await settleScene(s, 5);
+        clearInterval(timer);
+        expect(r.ready).toBe(false);
+        expect(s.scene?.ready).toBe(false);
+        expect(warn.mock.calls.join(' ')).toContain('scene was not ready');
+        warn.mockRestore();
     });
 });

@@ -6,6 +6,7 @@ import type { Session } from '../lib/session';
 import { TickLog } from '../lib/ticks';
 import { sleep, waitUntil } from '../lib/wait';
 import { FencedError } from './fence';
+import { awaitScene } from '../lib/wait';
 import { DROP_STEP, Observation, RESUME_STEP, ResumeError, resolveResume, runResumable, sessionLink, type Link } from './resume';
 import type { RunnerSession, Step } from './step';
 
@@ -250,6 +251,75 @@ describe('runResumable', () => {
         const walks = log.rows.filter(row => row.step === RESUME_STEP).map(row => row.meta?.run);
         expect(walks).toEqual([{ on: true, presses: 0 }, { on: true, presses: 1 }]);
         expect(client.offlineSends).toBe(0);
+    });
+
+    test('a session that comes back still loading its scene is observed only once sceneReady holds, and no step runs before', async () => {
+        const journal = { stage: 'not started' };
+        const client = droppingClient(world(1, 0, 0));
+        const c: C = { trace: [], fenced: 0 };
+        const log = TickLog.memory('t');
+        let dropped = false;
+        let loadingTicks = -1;
+        const sendsWhileLoading: string[] = [];
+        const dropping = client.sdk.onSend;
+        client.sdk.onSend = (a, s) => {
+            dropping(a, s);
+            if (s.getState()?.sceneReady === false) sendsWhileLoading.push(a.method);
+        };
+        client.sdk.onStateUpdate(s => {
+            if (!dropped && s.inGame && mining(s) >= 3) {
+                dropped = true;
+                queueMicrotask(() => client.drop());
+                setTimeout(() => { client.restore(2); client.sdk.push({ sceneReady: false }); loadingTicks = 0; }, 100);
+            }
+            // The scene finishes loading 20 ticks after the login (link.restored itself waits ~5).
+            if (loadingTicks >= 0 && s.sceneReady === false && ++loadingTicks > 20) queueMicrotask(() => client.sdk.push({ sceneReady: true }));
+        });
+        let readyAtResume = null as boolean | null;
+        let observedReady = null as boolean | undefined | null;
+        const steps = manifest(journal).map(s => s.name !== 'mine-to-5' ? s : {
+            ...s,
+            resume: async (ctx: Parameters<Step<C>['run']>[0]) => {
+                readyAtResume = ctx.sdk.getState()!.sceneReady !== false;
+                observedReady = ctx.observed?.state.sceneReady;
+                return s.resume!(ctx);
+            },
+        });
+        const r = await runResumable(client.session, steps, { log, c, link: client.link, shouldStop: () => false, probes: { journal: async () => journal.stage } });
+        await sleep(120);
+        client.stop();
+        expect(r.drops).toBe(1);
+        expect(readyAtResume).toBe(true);
+        expect(observedReady).toBe(true);
+        expect(sendsWhileLoading).toEqual([]);
+        const scenes = log.rows.filter(row => row.step === RESUME_STEP).map(row => row.meta?.scene as { ready: boolean; ticks: number });
+        expect(scenes[0]).toEqual({ ready: true, ticks: 0 });
+        expect(scenes[1]!.ready).toBe(true);
+        expect(scenes[1]!.ticks).toBeGreaterThanOrEqual(10);
+    });
+
+    test('awaitScene: an older client without sceneReady counts as ready at once; a scene that never loads gives up at the bound', async () => {
+        const sdk = new FakeSdk(baseState({ tick: 1 }));
+        expect(await awaitScene(sdk as unknown as RunnerSession['sdk'], 5)).toEqual({ ready: true, ticks: 0 });
+        sdk.push({ sceneReady: false });
+        const timer = setInterval(() => sdk.tick(), 2);
+        const r = await awaitScene(sdk as unknown as RunnerSession['sdk'], 5);
+        clearInterval(timer);
+        expect(r.ready).toBe(false);
+        expect(r.ticks).toBeGreaterThan(5);
+    });
+
+    test('a scene that never loads within the bound is walked anyway, tagged ready: false, not thrown', async () => {
+        const client = droppingClient({ ...world(5, 20, 0), sceneReady: false });
+        const log = TickLog.memory('t');
+        const r = await runResumable(client.session, manifest({ stage: 'complete' }), {
+            log, c: { trace: [], fenced: 0 }, link: client.link, shouldStop: () => false, sceneMaxTicks: 3, probes: { journal: async () => 'complete' },
+        });
+        client.stop();
+        expect(r.points[0]?.mode).toBe('finished');
+        const scene = log.rows.find(row => row.step === RESUME_STEP)?.meta?.scene as { ready: boolean; ticks: number };
+        expect(scene.ready).toBe(false);
+        expect(scene.ticks).toBeGreaterThan(3);
     });
 
     test('the operator --from overrides only the first walk', async () => {

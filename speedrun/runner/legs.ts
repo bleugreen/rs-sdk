@@ -213,7 +213,8 @@ export const TILES = {
     daero: { x: 2484, z: 3486, level: 1 },
     kolodionCellar: { x: 2543, z: 4713, tol: 4 },
     chamberGuardian: { x: 2506, z: 4696 },
-    knights: { x: 2655, z: 3305, tol: 3 },
+    /** S18's knights anchor (thieving.ts `thieving:knights`), so the band does not walk ~15 unpriced tiles from the market. */
+    knights: { x: 2670, z: 3305, tol: 3 },
     caroline: { x: 2716, z: 3302, tol: 1 },
     /** Beside the tunnel stairs (2820,3484, a loc): the quest clicks the stairs and the dwarf stops it. */
     fishingContest: { x: 2820, z: 3486, tol: 1 },
@@ -271,8 +272,8 @@ export const LEGS: readonly LegStep[] = [
         expected: { ticks: 74, label: 'm', source: rt('L06') + ': 75, 73', net: 74 },
     }),
     leg('T07a', T.taverleyOaks, T.taverleyWillows, [run(T.taverleyWillows.x, T.taverleyWillows.z, T.taverleyWillows.tol)], {
-        after: 'S07 oaks', before: 'S07 willows', method: 'run, oak tile to willow tile',
-        expected: { ticks: 46, label: 'i', source: 'RUN-ORDER.md T07a: 88 tiles at 0.51 ticks per route tile (quests/primitives.md section 2)', net: 46 },
+        after: 'woodcutting:oak-15-73', before: 'woodcutting:willow-73-99', method: 'run, oak tile to willow tile',
+        expected: { ticks: 58, label: 'm', source: "run-transitions.md section 10: rs/198's lab, 58, 58 over its 114-tile route (46 i over 88 tiles before)", net: 58 },
     }),
     leg('T07-08', T.taverleyWillows, T.edmond, [tele('camelot'), run(T.edmond.x, T.edmond.z, T.edmond.tol)], {
         after: 'S07', before: 'S08', method: 'Camelot teleport + run', countedBy: 'S08',
@@ -331,8 +332,8 @@ export const LEGS: readonly LegStep[] = [
         expected: { ticks: 158, label: 'r', source: 'mage_arena.md "Tick total": 4 + 61 + 15 + 75 + 3 (run-transitions.md section 2)', net: 0 },
     }),
     leg('T16-18', T.chamberGuardian, T.knights, [tele('ardougne'), run(T.knights.x, T.knights.z, T.knights.tol)], {
-        after: 'S16', before: 'S18', method: 'Ardougne teleport from the chamber + run',
-        expected: { ticks: 6, label: 'm', source: 'run-transitions.md section 4, `L16B`: 6, 6, 6', net: 6 },
+        after: 'S16', before: 'S18', method: 'Ardougne teleport from the chamber + run to the knights anchor',
+        expected: { ticks: 14, label: 'i', source: 'run-transitions.md section 4, `L16B`: 6, 6, 6 to the market (2655,3305), + 8 i for the run on to the anchor (2670,3305) (rs/158, fold-in 23; until measured)', net: 14 },
     }),
     leg('T18-19', T.knights, T.caroline, [run(T.caroline.x, T.caroline.z, T.caroline.tol)], {
         after: 'S18', before: 'S19', method: 'run the market to Caroline', countedBy: 'S19',
@@ -366,15 +367,15 @@ export const LEGS: readonly LegStep[] = [
         expected: { ticks: 90, label: 'm', source: rt('L23f') + ': 90, 90', net: 45 },
     }),
     leg('L24a', T.rustyAnchor, T.kaqemeex, [tele('falador'), run(T.kaqemeex.x, T.kaqemeex.z, T.kaqemeex.tol)], {
-        after: 'S24 Goblin Diplomacy (Rusty Anchor)', before: 'S24 Druidic Ritual', method: 'Falador teleport + run to Kaqemeex',
+        after: 'S24:G2-dye-mail', before: 'S24:D1-kaqemeex-start', method: 'Falador teleport + run to Kaqemeex',
         expected: { ticks: 69, label: 'm', source: rt('L24a') + ': 74, 64', net: 69 },
     }),
     leg('L24b', T.kaqemeex, T.goblinGenerals, [run(T.goblinGenerals.x, T.goblinGenerals.z, T.goblinGenerals.tol)], {
-        after: 'S24 Druidic Ritual', before: 'S24 Goblin Village', method: 'run Kaqemeex to the generals',
+        after: 'S24:D9-kaqemeex-reward', before: 'S24:G3-orange-request', method: 'run Kaqemeex to the generals',
         expected: { ticks: 54, label: 'm', source: rt('L24b') + ': 56, 52', net: 54 },
     }),
     leg('L24c', T.goblinGenerals, T.romeo, [tele('varrock'), run(T.romeo.x, T.romeo.z, T.romeo.tol)], {
-        after: 'S24 Goblin Village', before: 'S24 Romeo and Juliet', method: 'Varrock teleport + run to Romeo',
+        after: 'S24:G6-plain-mail', before: 'S24:R1-juliet', method: 'Varrock teleport + run to Romeo',
         expected: { ticks: 4.5, label: 'm', source: rt('L24c') + ': 5, 4', net: 4.5 },
     }),
     leg('T24-25', T.romeo, T.westAnvil, [run(T.westAnvil.x, T.westAnvil.z, T.westAnvil.tol)], {
@@ -382,7 +383,7 @@ export const LEGS: readonly LegStep[] = [
         expected: { ticks: 13, label: 'm', source: rt('L24e') + ': 13, 13', net: 13 },
     }),
     leg('T25-26', T.westBooth, T.championsGuild, [run(T.championsGuild.x, T.championsGuild.z, T.championsGuild.tol)], {
-        after: 'S25', before: 'S26', method: "run the booth to the Champions' Guild door", countedBy: 'S26',
+        after: 'S25c', before: 'S26', method: "run the booth to the Champions' Guild door", countedBy: 'S26',
         expected: { ticks: 44, label: 'm', source: rt('L25') + ': 39, 49', net: 7 },
     }),
     leg('T26-27', T.elvargExit, T.spiders, TO_SPIDERS, {
@@ -438,6 +439,59 @@ export function legById(id: string, catalogue: readonly LegStep[] = LEGS): LegSt
 /** The legs that follow step `after`, in run order (run.ts interleaves them by id). */
 export function legsAfter(after: string, catalogue: readonly LegStep[] = LEGS): LegStep[] {
     return catalogue.filter(l => l.def.after === after);
+}
+
+// ------------------------------------------------------------------ splits
+
+/** A standard teleport's cast to landing (run-transitions.md section 2: "teleport 4" in every teleport leg's parts). */
+export const TELEPORT_TICKS = 4;
+
+export interface SplitOptions {
+    /** Where part a ends and part b starts (default: the landing of hop `afterHop` when it is a teleport). */
+    meet?: Area;
+    /** Part a's share of the leg's figure (default TELEPORT_TICKS when part a ends with a teleport). */
+    firstTicks?: number;
+    /** Its source, for part a's `expected.source`. */
+    firstSource?: string;
+}
+
+const tenth = (n: number) => Math.round(n * 10) / 10;
+
+/**
+ * A leg cut in two after hop `afterHop`, so a hand-off can sit between the parts (the Ardougne
+ * landing, SUPPLIES' meeting spread 2659-2663, 3299-3303). Part a (`<id>a`) runs hops 0..afterHop
+ * and arrives in `meet`; part b (`<id>b`) runs the rest from there. No new travel: each part is an
+ * ordinary leg whose checkpoints are the original's, renumbered. `expected` splits in proportion,
+ * part a's ticks from `firstTicks`, and the two nets sum to the original's exactly.
+ */
+export function splitLeg(l: LegStep, afterHop: number, o: SplitOptions = {}): [LegStep, LegStep] {
+    const d = l.def;
+    if (afterHop < 0 || afterHop >= d.hops.length - 1) throw new Error(`${d.id}: cannot split after hop ${afterHop} of ${d.hops.length}`);
+    const cut = d.hops[afterHop]!;
+    const meet = o.meet ?? (cut.kind === 'teleport' ? SPELLS[cut.spell].landing : undefined);
+    if (!meet) throw new Error(`${d.id}: hop ${afterHop} is not a teleport, so the split needs a meeting area`);
+    const firstTicks = o.firstTicks ?? (cut.kind === 'teleport' && afterHop === 0 ? TELEPORT_TICKS : undefined);
+    if (firstTicks === undefined) throw new Error(`${d.id}: part a's share of ${d.expected.ticks} ticks must be given (firstTicks)`);
+    if (firstTicks <= 0 || firstTicks >= d.expected.ticks) throw new Error(`${d.id}: part a's ${firstTicks} ticks are outside the leg's ${d.expected.ticks}`);
+    const share = firstTicks / d.expected.ticks;
+    const netA = tenth(d.expected.net * share);
+    const cps = d.checkpoints ?? [];
+    const a: LegOptions = {
+        after: d.after, before: `${d.id}b`, method: `${d.method}, part a (to the landing)`,
+        ...(d.food ? { food: d.food } : {}),
+        ...(cps.some(c => c.after < afterHop) ? { checkpoints: cps.filter(c => c.after < afterHop) } : {}),
+        expected: { ticks: firstTicks, label: d.expected.label, source: o.firstSource ?? `${d.id} split after hop ${afterHop}: ${firstTicks} of ${d.expected.ticks} (${d.expected.source})`, net: netA },
+    };
+    const rest = cps.filter(c => c.after > afterHop).map(c => ({ after: c.after - afterHop - 1, in: c.in }));
+    const b: LegOptions = {
+        after: `${d.id}a`, before: d.before, method: `${d.method}, part b (from the landing)`,
+        ...(d.food ? { food: d.food } : {}),
+        ...(d.nextStart ? { nextStart: d.nextStart } : {}),
+        ...(d.countedBy ? { countedBy: d.countedBy } : {}),
+        ...(rest.length ? { checkpoints: rest } : {}),
+        expected: { ticks: tenth(d.expected.ticks - firstTicks), label: d.expected.label, source: `${d.id} split after hop ${afterHop}: the rest of ${d.expected.ticks} (${d.expected.source})`, net: tenth(d.expected.net - netA) },
+    };
+    return [leg(`${d.id}a`, d.start, meet, d.hops.slice(0, afterHop + 1), a), leg(`${d.id}b`, meet, d.dest, d.hops.slice(afterHop + 1), b)];
 }
 
 /** The step-module convention: every leg, or the ones named. */

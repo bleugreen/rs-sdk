@@ -20,6 +20,11 @@
 // the first matching uncut gem and adds the cut one to the first free slot, so
 // every cut stays in its slot whatever the order of the types.
 // stack no bank: two stacks (arrowheads on headless arrows), `per` items an action.
+//       One tier a tick by default. `fill`: when the best tier's stack runs out
+//       inside the tick's room, the rest of the tick goes to the next-best tier
+//       the seen level allows and the inventory holds (the slots never move, so
+//       the sends stay blind). A tier the level reaches only when this tick's
+//       burst lands is not filled in: the server would refuse it.
 //
 // The mixes are blind: the whole list for an inventory is fixed on the tick the
 // refilled inventory is seen, and each tick sends the next ones without reading
@@ -309,7 +314,7 @@ function bump(h: Record<number, number>, key: number): void {
     h[key] = (h[key] ?? 0) + 1;
 }
 
-createItemCycle.params = ['mode', 'skill', 'recipes', 'booth', 'untilLevel', 'untilXp', 'maxActions', 'perTick', 'maxTicks', 'stow', 'held', 'bank', 'mixed'] as const;
+createItemCycle.params = ['mode', 'skill', 'recipes', 'booth', 'untilLevel', 'untilXp', 'maxActions', 'perTick', 'maxTicks', 'stow', 'held', 'bank', 'mixed', 'fill'] as const;
 export function createItemCycle(params: ProgramParams): TickProgram {
     if (params.mode === undefined) throw new Error('mode is required: pair, tool or stack');
     const mode: CycleMode = oneOf(params.mode, ['pair', 'tool', 'stack'] as const, 'pair', 'mode');
@@ -317,7 +322,7 @@ export function createItemCycle(params: ProgramParams): TickProgram {
     if (typeof skill !== 'string' || !skill) throw new Error('skill must be a skill name');
     const recipes = recipesParam(params.recipes, mode);
     // Each key is read as params.<key> so index.test.ts's declared-equals-read check can see it.
-    const flag = (name: 'stow' | 'held' | 'bank' | 'mixed', v: unknown): boolean | undefined => {
+    const flag = (name: 'stow' | 'held' | 'bank' | 'mixed' | 'fill', v: unknown): boolean | undefined => {
         if (v !== undefined && typeof v !== 'boolean') throw new Error(`${name} must be a boolean`);
         return v as boolean | undefined;
     };
@@ -332,6 +337,8 @@ export function createItemCycle(params: ProgramParams): TickProgram {
     if (!banks && stow) throw new Error('stow needs a bank visit: it cannot go with bank: false');
     if (mixed && mode !== 'tool') throw new Error('mixed applies to tool mode only');
     if (mixed && recipes.some(r => r.keep)) throw new Error('mixed loads take no keep items');
+    const fill = flag('fill', params.fill) === true;
+    if (fill && mode !== 'stack') throw new Error('fill applies to stack mode only');
     const booth = mode === 'stack' || (!banks && params.booth === undefined) ? null : boothParam(params.booth);
     const untilLevel = num(params.untilLevel, 0, 'untilLevel');
     const untilXp = num(params.untilXp, 0, 'untilXp');
@@ -354,7 +361,7 @@ export function createItemCycle(params: ProgramParams): TickProgram {
     let mixes: Mix[] = [];
     /** `mixed`: the recipe of each of `mixes`. */
     let mixRecipes: CycleRecipe[] = [];
-    /** `mixed`: the recipes of the actions sent and not yet seen landed, oldest first. */
+    /** `mixed` and `fill`: the recipes of the actions sent and not yet seen landed, oldest first. */
     const inFlight: CycleRecipe[] = [];
     let heldPending = heldStart;
     let next = 0;
@@ -413,7 +420,7 @@ export function createItemCycle(params: ProgramParams): TickProgram {
 
             const xp = skillXp(s, skill);
             let landed = 0;
-            if (xp > lastXp && mixed) {
+            if (xp > lastXp && (mixed || fill)) {
                 // credit the oldest actions in flight whose xp the gain covers (at least one)
                 const gained = xp - lastXp;
                 let acc = 0;
@@ -905,19 +912,44 @@ export function createItemCycle(params: ProgramParams): TickProgram {
 
             const stack = () => {
                 const has = (id: number | undefined) => s.inventory.find(i => i.id === id && i.count > 0);
-                const r = byXp.find(x => x.level <= level && has(x.a) && has(x.b));
+                const usable = byXp.filter(x => x.level <= level && has(x.a) && has(x.b));
+                const r = usable[0];
                 if (!r) return finish('out of supplies');
                 if (remaining() <= 0) return finish('maxActions');
-                const heads = has(r.b)!;
-                const shafts = has(r.a)!;
-                const per = r.per ?? 15;
-                pending = Math.ceil(Math.min(heads.count, shafts.count) / per);
                 current = r;
-                const k = Math.min(pending, remaining());
-                for (let i = 0; i < k && room(); i++) {
-                    if (!send({ type: 'useItemOnItem', sourceSlot: heads.slot, targetSlot: shafts.slot }, `use ${heads.slot}->${shafts.slot}`)) break;
-                    sentActions++;
-                    acted++;
+                if (!fill) {
+                    const heads = has(r.b)!;
+                    const shafts = has(r.a)!;
+                    pending = Math.ceil(Math.min(heads.count, shafts.count) / (r.per ?? 15));
+                    const k = Math.min(pending, remaining());
+                    for (let i = 0; i < k && room(); i++) {
+                        if (!send({ type: 'useItemOnItem', sourceSlot: heads.slot, targetSlot: shafts.slot }, `use ${heads.slot}->${shafts.slot}`)) break;
+                        sentActions++;
+                        acted++;
+                    }
+                    return;
+                }
+                // fill: tier after tier, each action taking min(per, its tips, the shared stack left)
+                const left = new Map<number, number>();
+                const count = (it: InventoryItem) => left.get(it.slot) ?? it.count;
+                pending = 0;
+                for (const x of usable) {
+                    const heads = has(x.b)!;
+                    const shafts = has(x.a)!;
+                    const per = x.per ?? 15;
+                    for (let h = count(heads), a = count(shafts); h > 0 && a > 0; ) {
+                        const n = Math.min(per, h, a);
+                        h -= n;
+                        a -= n;
+                        pending++;
+                        if (remaining() <= 0 || !room()) continue;
+                        if (!send({ type: 'useItemOnItem', sourceSlot: heads.slot, targetSlot: shafts.slot }, `use ${heads.slot}->${shafts.slot}`)) continue;
+                        sentActions++;
+                        acted++;
+                        inFlight.push(x);
+                        left.set(heads.slot, h);
+                        left.set(shafts.slot, a);
+                    }
                 }
             };
 

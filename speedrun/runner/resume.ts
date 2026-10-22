@@ -20,6 +20,11 @@
 //
 // Each walk starts by turning run on (lib/run-mode.ts), however the session
 // came back: a relaunched client or reloaded page logged in without login().
+// It then waits for the client's own scene-ready signal (lib/wait.ts awaitScene,
+// the one wait the launch path uses too) before it observes: a fresh login shows
+// "Loading - please wait." for tens of ticks on the browser client, and its
+// nearby locs and NPCs are empty then, which is also what a normal empty scene
+// looks like, so only the flag can tell.
 //
 // runResumable runs that walk, then the steps, and on a dropped connection
 // abandons the step attempt (runner/fence.ts), waits for the session to come
@@ -30,7 +35,7 @@ import { ensureRunOn } from '../lib/run-mode';
 import type { Session } from '../lib/session';
 import { startRunTickMonitor } from '../lib/tick-monitor';
 import { tickSpan, type TickLog } from '../lib/ticks';
-import { currentTick, nextTick, sleep, tickMs } from '../lib/wait';
+import { awaitScene, currentTick, nextTick, sleep, tickMs } from '../lib/wait';
 import { Fence } from './fence';
 import { resolveStart, runSteps, type Observed, type RunnerSession, type RunStepsOptions, type RunStepsResult, type Step } from './step';
 
@@ -207,6 +212,8 @@ export interface ResumableOptions<C> extends Omit<RunStepsOptions<C>, 'from' | '
     /** Longest wait for the session to come back (default 30 min: a restart takes ~2-3). */
     restoreTimeoutMs?: number;
     onEvent?: (e: ResumeEvent) => void;
+    /** Bound on each walk's scene wait (default lib/wait.ts SCENE_READY_MAX_TICKS); past it the walk observes anyway. */
+    sceneMaxTicks?: number;
 }
 
 export interface ResumableResult extends RunStepsResult {
@@ -245,6 +252,8 @@ export async function runResumable<C>(session: RunnerSession, steps: ReadonlyArr
             // Whatever brought the session back (the watchdog's login or relaunch, a
             // reloaded page) left a fresh login, and a fresh login walks.
             const runMode = await ensureRunOn(session.sdk);
+            // Never a fault: a scene that does not load in time is observed as it is and the row says so.
+            const scene = await awaitScene(session.sdk, opts.sceneMaxTicks);
             const state = session.sdk.getState()!;
             const obs = new Observation(state, opts.probes, session);
             let point: ResumePoint;
@@ -256,7 +265,7 @@ export async function runResumable<C>(session: RunnerSession, steps: ReadonlyArr
             }
             const { observed: _o, ...summary } = point;
             points.push(summary);
-            row(opts.log, session, RESUME_STEP, startTick, startSession, t0, { attempt, ...summary, probes: Object.keys(obs.probed), run: runMode });
+            row(opts.log, session, RESUME_STEP, startTick, startSession, t0, { attempt, ...summary, probes: Object.keys(obs.probed), run: runMode, scene });
             opts.onEvent?.({ kind: 'resume', attempt, point: summary });
             if (point.mode === 'finished') return { completed: 0, drops, points };
 

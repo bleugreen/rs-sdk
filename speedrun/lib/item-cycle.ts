@@ -77,6 +77,8 @@ export interface ItemCycleSpec {
     bank?: boolean;
     /** Tool mode: a load holds several recipes' inputs, filled in xp order (the cooking windows' gems). */
     mixed?: boolean;
+    /** Stack mode: a tick whose best tier runs out carries on with the next tier the level allows (Fletching). */
+    fill?: boolean;
     /**
      * Ticks the level-up watcher runs after the program (default LEVEL_UP_CLEAR_TICKS). 0: none, for
      * a caller that clears the pages itself against a deadline (cooking's W1, through the due tick).
@@ -252,7 +254,7 @@ export const LEVEL_UP_CLEAR_TICKS = 3;
 export function programParams(spec: ItemCycleSpec): Record<string, unknown> {
     const p: Record<string, unknown> = { mode: spec.mode, skill: spec.skill, recipes: spec.recipes.map(r => ({ ...r, ...(r.keep ? { keep: r.keep.map(k => ({ ...k })) } : {}) })) };
     if (spec.booth) p.booth = { ...spec.booth };
-    for (const k of ['untilLevel', 'untilXp', 'maxActions', 'perTick', 'maxTicks', 'stallTicks', 'stow', 'held', 'bank', 'mixed'] as const) if (spec[k] !== undefined) p[k] = spec[k];
+    for (const k of ['untilLevel', 'untilXp', 'maxActions', 'perTick', 'maxTicks', 'stallTicks', 'stow', 'held', 'bank', 'mixed', 'fill'] as const) if (spec[k] !== undefined) p[k] = spec[k];
     return p;
 }
 
