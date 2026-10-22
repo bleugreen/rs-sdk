@@ -20,7 +20,9 @@
 //             rune-only run, two program runs in the real page; 570 rune arrows at the end.
 //   demo      a borrowed account's own headless arrows and bronze tips, bronze only, `--actions=N`
 //             (default 100: 20 ticks), no keep, no staff commands. The tab is the host's own Chrome
-//             (SPEEDRUN_CDP_URL), the gateway a loopback one. Pass: 5 actions on >= 90% of work ticks.
+//             (SPEEDRUN_CDP_URL), the gateway a loopback one. Before any click it waits up to
+//             SCENE_TICKS for sceneReady and then for locs, and stops if either never shows.
+//             Pass: 5 actions on >= 90% of work ticks.
 // options: --log=<path>, --actions=N (demo)
 // Prints one RESULT line: program ticks (first tick to done, the page's count, on observed ticks),
 // the step's ticks (with the level-up clear), actions, the sends-per-tick histogram over ticks with
@@ -52,6 +54,11 @@ export const TARGET = 59;
 export const BAR = TARGET * 1.05;
 /** The demo's pass: 5 actions on at least 90% of the ticks with work pending. */
 export const DEMO_SHARE = 0.9;
+/**
+ * The demo's bound on the region load before its first click: sceneReady, then the bank's locs. A cold
+ * Chrome profile at Varrock west took about 75 ticks before locs appeared.
+ */
+export const SCENE_TICKS = 200;
 
 const T = Object.fromEntries(ARROW_TIERS.map(t => [t.tier, t])) as Record<string, (typeof ARROW_TIERS)[number]>;
 const TIPS = (o: Partial<Record<'bronze' | 'iron' | 'steel' | 'mithril' | 'adamant' | 'rune', number>>) => Object.entries(o).map(([t, n]) => [`${t}_arrowheads`, n] as const);
@@ -159,6 +166,14 @@ await (async () => {
         if (which === 'demo') {
             // the account's own stacks; nothing staged
             await waitUntil(sdk, st => !!st.player && st.skills.length > 0, { maxTicks: 30 });
+            // openSession does not wait for the region: a click before sceneReady may go unrouted, and a
+            // bank with no locs has not loaded. Nothing is sent until both show; past the bound, stop.
+            const t0 = state().tick;
+            const ready = await waitUntil(sdk, st => st.sceneReady === true, { maxTicks: SCENE_TICKS });
+            const locs = ready.ok ? await waitUntil(sdk, st => st.nearbyLocs.length > 0, { maxTicks: SCENE_TICKS - (ready.tick - t0) }) : null;
+            result.scene = { sceneReadyTicks: ready.ok ? ready.tick - t0 : null, locsTicks: locs?.ok ? locs.tick - t0 : null, locs: state().nearbyLocs.length, at: [state().player?.worldX, state().player?.worldZ] };
+            if (!ready.ok) throw new Error(`sceneReady not true within ${SCENE_TICKS} ticks (${ready.reason}): stopped before any click`);
+            if (!locs!.ok) throw new Error(`0 locs within ${SCENE_TICKS} ticks of the first state (${locs!.reason}): stopped before any click`);
             const s = state();
             const n = Math.min(held(HEADLESS_ARROW), held(T.bronze!.tips));
             const actions = Math.min(Number(flag('actions', '100')), Math.floor(n / 15));
