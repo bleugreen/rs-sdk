@@ -96,10 +96,11 @@ copying `server/content`, `webclient`, `engine`, `gateway` and `sdk`) and serves
 `/bot/client.js`, `/bot/ondemandworker.js` and `/client/client.js` (the standard build) from
 it. Two facts make those files a deploy fingerprint:
 
-- Every rebuild produces a new raw md5, even from identical source. So a served md5 that is
-  unchanged across a world restart means the restart reused the same built image (or a cached
-  build layer, which needs all five copied trees unchanged). A changed md5 means a rebuild, not
-  necessarily new code.
+- Every rebuild produces a new raw md5, even from identical source. So, built by the published
+  Dockerfile, a served md5 that is unchanged across a world restart means the restart reused
+  the same built image (or a cached build layer, which needs all five copied trees unchanged).
+  A changed md5 means a rebuild, not necessarily new code. The demo has since changed its engine
+  with the md5 unchanged (the third state below), so there it dates the webclient build only.
 - To name the source commit, build candidate upstream commits the way the Dockerfile does and
   compare each with `docs/speedrun/scripts/bundle-compare.ts`. Same source gives equal word
   multisets; the differing words name the change. The bundle embeds no build date or commit.
@@ -112,15 +113,18 @@ Fly secrets can change, and restart the machine, without any of this moving.
 
 So the demo is in one of three states:
 
-- **Same image.** The bundle md5 hasn't changed across the restart.
+- **Same webclient build.** The bundle md5 hasn't changed across the restart. Under the
+  published Dockerfile that also means the same engine. In the third state, it doesn't.
 - **Rebuilt from an upstream commit.** The md5 changed, and building candidates names the commit
   range.
 - **Not on GitHub.** The demo runs engine code that has no upstream commit. A server-rendered
   string that upstream lacks shows this. It was first seen at about 19:34Z on 22 October, around
   the 19:36Z "Server is being updated" restart: the hiscores Time hover reads
   `N seconds of game time` (with N a number of seconds), where b565f2d9 and our fork
-  (`server/engine/src/web/pages/hiscores.ts`) render `N ticks`. In this state a bundle match
-  proves only that the webclient build is unchanged. It says nothing about the engine.
+  (`server/engine/src/web/pages/hiscores.ts`) render `N ticks`. After the 20:08Z restart it
+  read `N ticks normalized to 400 ms per tick`, with the bot bundle's md5 unchanged. So the
+  engine is deployed without the bundle being rebuilt. In this state a bundle match proves only
+  that the webclient build is unchanged. It says nothing about the engine.
 
 Every run-night gate read records that hover, a hash of the hiscores page's static chrome and
 the bundle md5 (`hiscoreHover`, `hiscoreChromeSha`, `botBundleMd5` under `preLogin` in
