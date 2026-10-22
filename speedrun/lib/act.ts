@@ -37,7 +37,7 @@ import { converse, dismissInterrupt, matchInterrupt, type ConverseOptions, type 
 import { pageText, type OptionPattern } from './dialogue';
 import { matchesItem, type ItemPattern } from './items';
 import { serverClock, waitUntil, type Pred, type StateSource } from './wait';
-import { chebyshev, findLoc, invCount, invItem, messagesSince, opIndex, pos, tileCounter, waitForNpc, worn, type LocQuery, type NamePattern, type OpPattern, type Tile } from './world';
+import { chebyshev, findLoc, invCount, invItem, messageCursor, messagesAfter, opIndex, pos, tileCounter, waitForNpc, worn, type LocQuery, type NamePattern, type OpPattern, type Tile } from './world';
 
 export type ActSdk = StateSource &
     Pick<BotSDK, 'sendInteractNpc' | 'sendInteractLoc' | 'sendUseItem' | 'sendUseItemOnItem' | 'sendUseItemOnLoc' | 'sendUseItemOnNpc' | 'sendPickup' | 'sendWalk' | 'sendClickComponent' | 'sendDropItem' | 'scanNearbyLocs' | 'scanGroundItems'>;
@@ -156,6 +156,11 @@ export class ClickGuard {
         return this.reachedAt;
     }
 
+    /** The message cursor (world.ts messageCursor) at the last send: its replies are the messages after it. */
+    get messageCursor(): number {
+        return this.base?.messages ?? 0;
+    }
+
     /** A send the tab has not executed yet: it cannot have drawn a reply, so nothing re-sends it. */
     get pending(): boolean {
         return this.inFlight > 0;
@@ -228,7 +233,7 @@ const invKey = (s: BotWorldState) => s.inventory.map(i => `${i.slot}:${i.id}:${i
 
 function snapshot(s: BotWorldState) {
     const p = pos(s);
-    return { x: p.x, z: p.z, level: p.level, anim: s.player?.animId ?? -1, inv: invKey(s), messages: s.gameMessages.length ? s.gameMessages.at(-1)!.tick : -1, modal: s.modalOpen };
+    return { x: p.x, z: p.z, level: p.level, anim: s.player?.animId ?? -1, inv: invKey(s), messages: messageCursor(s), modal: s.modalOpen };
 }
 
 /**
@@ -242,7 +247,8 @@ function replyKind(b: NonNullable<ReturnType<typeof snapshot>>, s: BotWorldState
     if (s.dialog.isOpen || (s.modalOpen && !b.modal)) return 'script';
     const anim = s.player?.animId ?? -1;
     if (anim >= 0 && anim !== b.anim) return 'script';
-    if (s.gameMessages.some(m => m.tick > b.messages && !PLAYER_CHAT_TYPES.includes(m.type) && !CANT_REACH.test(m.text))) return 'script';
+    // Past the cursor, not past the send's tick: the browser stamps a reply with the click's own tick.
+    if (s.gameMessages.some(m => (m.observationId ?? m.tick) > b.messages && !PLAYER_CHAT_TYPES.includes(m.type) && !CANT_REACH.test(m.text))) return 'script';
     if (invKey(s) !== b.inv) return 'script';
     const p = pos(s);
     return p.x !== b.x || p.z !== b.z || p.level !== b.level ? 'moved' : null;
@@ -322,7 +328,7 @@ export async function act(sdk: StateSource & Partial<DismissSdk>, click: () => P
             // The idle re-send is only for a click that drew nothing: one whose script answered has
             // landed, and re-sending it would restart the script (rs/257: Dwarf Cannon's railing).
             if (every <= 0 || resends >= maxResends || s.dialog.isOpen || guard.scriptAnswered || guard.pending) return false;
-            const refused = messagesSince(s, sent + 1, CANT_REACH).length > 0;
+            const refused = messagesAfter(s, guard.messageCursor, CANT_REACH).length > 0;
             if (refused || (s.tick - Math.max(sent, still, guard.replyFrom) >= every)) {
                 sent = s.tick;
                 still = s.tick;
@@ -601,8 +607,8 @@ export async function useOn(sdk: ActSdk, item: ItemPattern, target: UseTarget, d
             last = p;
             const a = s.player?.animId ?? -1;
             const sig = invSignature(s);
-            const refused = messagesSince(s, sentAt + 1, CANT_REACH).length > 0;
-            if (s.dialog.isOpen || s.modalOpen || (a >= 0 && a !== anim) || sig !== inv || messagesSince(s, sentAt + 1).some(m => !CANT_REACH.test(m))) landed = true;
+            const refused = messagesAfter(s, cursor, CANT_REACH).length > 0;
+            if (s.dialog.isOpen || s.modalOpen || (a >= 0 && a !== anim) || sig !== inv || messagesAfter(s, cursor).some(m => !CANT_REACH.test(m))) landed = true;
             anim = a;
             inv = sig;
             if (resends >= maxResends || s.dialog.isOpen) return false;
@@ -701,7 +707,7 @@ export async function castTeleport(sdk: ActSdk, spell: keyof typeof TELEPORTS | 
         s => {
             const d = chebyshev(pos(s), p0);
             if (d > 30 || pos(s).level !== p0.level || (d > 0 && landed?.(s))) return true;
-            refusal = messagesSince(s, t0 + 1, TELEPORT_REFUSED)[0];
+            refusal = messagesAfter(s, cursor, TELEPORT_REFUSED)[0];
             return refusal !== undefined;
         },
         { maxResends: 1, maxTicks }
