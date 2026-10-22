@@ -95,7 +95,7 @@ const unsub = sdk.onStateUpdate(s => {
     }
     if (!success || rolls.length < 2) return;
     const due: string[] = [];
-    if (BONES && count(s, /^dragon bones$/i) < 3 && boneRoom(s) > 0) due.push(`give dragon_bones ${boneRoom(s) + count(s, /^dragon bones$/i) > 0 ? boneRoom(s) : 0}`);
+    if (BONES && count(s, /^dragon bones$/i) < 3 && boneRoom(s) > 0) due.push(`give dragon_bones ${boneRoom(s)}`);
     if (count(s, /^shark$/i) < SHARKS) due.push(`give shark ${SHARKS - count(s, /^shark$/i)}`);
     if (HOLD && lvl(s, 'thieving') !== HOLD) due.push(`setstat thieving ${HOLD}`);
     if (HOLD && lvl(s, 'magic') >= 99) due.push(`setstat magic ${MAGIC}`);
