@@ -36,7 +36,7 @@ Three 99-melee coin earners, borrowed and run standalone from a dev copy on bbs,
 | cairn_h51 | east | about 550 | Same field |
 | cairn_h41 | north | about 245 | Its own kills: close to the clean spawn rate |
 
-One trip (27 hides, then the gate, the tanner, the bank and back) takes about 3 minutes and costs about 100 gp (81 tanning, 20 toll). The east field's free hides depend on who else is there; about 250 an hour is the floor from kills alone. Dommik's thread shelf refilled far faster than the inventory's 1 per 5 ticks suggests (176 bought in about 3 minutes).
+End to end, the three accounts made 1,247 hard leather in about 1 h 25 min, including two restarts and five handovers. One trip (27 hides, then the gate, the tanner, the bank and back) takes about 3 minutes and costs about 100 gp (81 tanning, 20 toll). The east field's free hides depend on who else is there; about 250 an hour is the floor from kills alone. Dommik's thread shelf refilled far faster than the inventory's 1 per 5 ticks suggests (176 bought in about 3 minutes).
 
 ## Delivery
 
