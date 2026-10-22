@@ -61,6 +61,7 @@ import { overBudgetMeta, runProgram, stopProgram, type ProgramStatus } from '../
 import { decideReceiver, newReceiverCtx, receiveFrom, sameName, type ReceiverCtx } from '../lib/trade';
 import { currentTick, nextTick, tickMs, waitUntil } from '../lib/wait';
 import type { Step, StepContext } from '../runner/step';
+import { cueDir, writeTopUpAsk, type AskItem } from '../helpers/altar-cue';
 
 export const skill = 'thieving';
 
@@ -293,6 +294,71 @@ export class TopUpReceiver {
         this.trades.push({ openTick: this.openTick, endTick: s.tick, ok, received, ...(reason ? { reason } : {}) });
         this.ctx = null;
         this.before = s.inventory;
+    }
+}
+
+// ------------------------------------------------------------------ the courier's ask
+
+/** The pack's top-up brings the food back to this many (stun-pack.md section 6). */
+export const PACK_FOOD_TO = 2;
+/** Arrowtip tiers the courier brings, once each, when the account is down to one tier (stun-pack.md section 6). */
+export const COURIER_TIERS = ['adamant', 'rune'] as const;
+const ARROWTIPS = /arrow(head|tip)s$/i;
+
+/** Which courier tiers the account has held or been sent (so each is asked for once). */
+export interface AskMemory {
+    tiers: Set<string>;
+}
+
+/**
+ * What this account asks the courier for, from its state as the trade opens (stun-pack.md
+ * section 5, step 3): while the trade is open it sends nothing else, so its free slots can't
+ * shrink. Free slots keep one for the knights' coins until some are held. With the pack: food
+ * back to PACK_FOOD_TO, the next courier tier once the account is down to one arrowtip tier
+ * (while Fletching is below 99), and bones in every slot left but one, which stays free for a
+ * new arrow product stack. Without it: food in every free slot. The courier offers each item
+ * with one press (bone-giver.ts askOffer).
+ */
+export function topUpAsk(s: BotWorldState, food: Food, pack: boolean, mem: AskMemory): AskItem[] {
+    const inv = s.inventory;
+    const free = 28 - inv.length - (inv.some(i => /^coins$/i.test(i.name)) ? 0 : 1);
+    const foodItem = `^(${food.names.map(escape).join('|')})$`;
+    if (!pack) return free > 0 ? [{ item: foodItem, count: free }] : [];
+    const fletching = baseOf(s, 'fletching') < 99;
+    const tiersHeld = inv.filter(i => ARROWTIPS.test(i.name));
+    for (const t of tiersHeld) for (const c of COURIER_TIERS) if (new RegExp(`^${c} `, 'i').test(t.name)) mem.tiers.add(c);
+    const tier = fletching && tiersHeld.length <= 1 ? COURIER_TIERS.find(c => !mem.tiers.has(c)) : undefined;
+    if (tier) mem.tiers.add(tier);
+    const sharks = Math.max(0, PACK_FOOD_TO - edibleFood(s, food).length);
+    const bones = Math.max(0, free - sharks - (tier ? 1 : 0) - (fletching ? 1 : 0));
+    return [
+        ...(bones > 0 ? [{ item: BONES_PATTERN, count: bones }] : []),
+        ...(sharks > 0 ? [{ item: foodItem, count: sharks }] : []),
+        ...(tier ? [{ item: `^${tier} arrow(head|tip)s$`, count: 'all' as const }] : [])
+    ];
+}
+
+/**
+ * Writes the courier's ask (altar-cue.ts writeTopUpAsk) on the frame that shows a trade with it
+ * open, in both top-up modes. Fed every published state.
+ */
+export class TopUpAsker {
+    readonly asks: Array<{ tick: number; items: AskItem[] }> = [];
+    private wasOpen = false;
+    private readonly mem: AskMemory = { tiers: new Set() };
+
+    constructor(private readonly giver: string, private readonly dir: string, private readonly foods: readonly Food[], private readonly pack: boolean) {}
+
+    step(s: BotWorldState): AskItem[] | null {
+        const t = s.trade;
+        const open = !!t?.isOpen && sameName(t.partner, this.giver);
+        const edge = open && !this.wasOpen;
+        this.wasOpen = open;
+        if (!edge) return null;
+        const items = topUpAsk(s, heldFood(s, this.foods), this.pack, this.mem);
+        if (items.length) writeTopUpAsk(this.dir, items);
+        this.asks.push({ tick: s.tick, items });
+        return items;
     }
 }
 
@@ -749,9 +815,12 @@ async function runBand(ctx: Ctx, band: Band, end: number, cfg: Config): Promise<
     const runs: Array<Pick<ProgramStatus, 'runId' | 'startedTick' | 'endedTick'> & { food: string; overBudget?: number }> = [];
     const restarts: Array<{ failTick: number; restartTick: number; ok: boolean; received: number; reason?: string }> = [];
     const receiver = topUp && mode === 'idle' ? new TopUpReceiver(topUp.giver) : null;
-    const unsubscribe = receiver
+    // the courier sizes nothing itself: it can't see this inventory (helpers/bone-giver.md)
+    const asker = topUp ? new TopUpAsker(topUp.giver, cueDir(), cfg.foods, !!pack) : null;
+    const unsubscribe = asker
         ? ctx.sdk.onStateUpdate(s => {
-            const a = receiver.step(s);
+            asker.step(s);
+            const a = receiver?.step(s);
             if (a === 'accept') void ctx.sdk.sendAcceptTrade();
             else if (a === 'decline') void ctx.sdk.sendDeclineTrade();
         })
@@ -807,7 +876,7 @@ async function runBand(ctx: Ctx, band: Band, end: number, cfg: Config): Promise<
         startTick: t, endTick: t, ticks: 0, wallMs: 0, ok: true,
         meta: {
             anchor, policy, food: cfg.foods.map(f => f.bankName).join(','), runs, restocks,
-            ...(topUp ? { topUp: { mode, trades: receiver?.trades ?? [], restarts } } : {}),
+            ...(topUp ? { topUp: { mode, trades: receiver?.trades ?? [], restarts, asks: asker?.asks ?? [] } } : {}),
             ...(pack ? { pack: { ...packReport(stunCounters, skills0, packSkills(state(ctx)), pack.bonesBelow), ...(sip ? { sip } : {}) } } : {})
         },
         tickMs: tickMs(), at: new Date().toISOString()
