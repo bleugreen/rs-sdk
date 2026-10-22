@@ -5,6 +5,7 @@ import type { FakeSdk } from '../lib/fake-sdk';
 import { borderGuard, guard, pathfinder, tollWorld } from '../lib/fake-toll-gate';
 import { inAlKharid, isEastOfTollGate, type Tile } from '../lib/toll-gate';
 import type { GiveResult } from '../lib/trade';
+import { STALLED } from '../lib/wait';
 import { finishOf, gameIo, giveOutcome, handoverKey, handoverOptions, runHandovers, tollsAfterBank, withdrawSpecs, type Handover, type HandoverIo, type HandoverOptions } from './handover';
 import { memoryRoleState, type RoleContext, type RoleState } from './role';
 
@@ -184,6 +185,9 @@ describe('trade outcomes are never doubled', () => {
         expect(giveOutcome({ ...delivered(items), gave: [{ slot: -1, id: 995, name: 'Coins', count: 100 }] }, items, none)).toBe('uncertain');
         expect(giveOutcome({ ok: false, ticks: 0, gave: [], sent: 0, reason: 'player_not_found' }, items, none)).toBe('retry');
         expect(giveOutcome({ ok: false, ticks: 5, gave: [], sent: 2, reason: 'partner confirm offer is not acceptable' }, items, none)).toBe('retry');
+        // a client that went silent mid-trade may have moved the items, like a timeout
+        expect(giveOutcome({ ok: false, ticks: 5, gave: [], sent: 2, reason: 'timeout' }, items, none)).toBe('uncertain');
+        expect(giveOutcome({ ok: false, ticks: 5, gave: [], sent: 2, reason: STALLED }, items, none)).toBe('uncertain');
         expect(giveOutcome({ ok: false, ticks: 5, gave: [], sent: 2, reason: 'closed before completing' }, items, new Map([['coins', 145_000]]))).toBe('uncertain');
     });
 });
