@@ -507,11 +507,20 @@ cost-if-not-built is RUN-ORDER.md's sensitivity table and stays priced there unt
   `%treequest` 9 and `%grandtree` 160, ledger). Ranged 50 **base** for the magic shortbow (read,
   `tier50.rs2:6`), from S14. Prayer 43 for both protect prayers (S07 leaves ~94). The helper trade before segment A
   (`quests/README.md` §4 step 8): gold bar, ball of wool, monkey bones, 5 bananas, magic shortbow +
-  100 rune arrows, 6 prayer potions (insurance, O27), about 15 food, Varrock and Ardougne runes, a second
-  antipoison(4). **H12's quantities are provisional** (`SUPPLIES.md` H12; RUN-ORDER.md O37): its
-  unstackables alone are ~30 slots with the bow and arrows worn, before the rune stacks, the items
-  already held and the untradeable quest items. rs/201 counts SCORED's real inventory at S14's exit,
-  measures food and potion use at 42 HP and Defence 1, and proposes the split. H12 can be split or
+  100 rune arrows, **2 prayer potions**, **sharks in the freed slots (9 at the floor)**, Varrock and
+  Ardougne runes, a second antipoison(4). **H12 is superseded and provisional** (`SUPPLIES.md` H12;
+  RUN-ORDER.md O37): in rs/201's lab chains of segments H to M (played as a human at 42 HP and
+  Defence 1), the kit as first written, 6 prayer potions and so only 5 sharks, **died in 3 of 3**,
+  each with all 24 doses unused; 2 prayer potions and 9 sharks **survived 3 of 3**, ending on 0-2
+  sharks, using ~70 of the base 94 prayer points plus 4-5 doses and 1 antipoison drink (m, lab).
+  **Main's kit rule (20:33 PDT):** size H12 for 3 of 3 clean chains with margin, not for chains
+  ending on 0-2 sharks; 2 potions and 9 sharks is the floor, and the final shark count comes from
+  rs/201's N-to-Q and demon (X) measurements (pending; rs/185 reports end-of-chain shark counts
+  through Q). If the inventory cannot carry the margin, a higher Hitpoints or Defence level before
+  MM is priced against the order (RUN-ORDER.md O43). **Inventory census: 2 free slots at segment J**
+  for the dentures and the mould (a full pack gets nothing from the crates). The unstackables are
+  ~30 slots with the bow and arrows worn, before the rune stacks, the items already held and the
+  untradeable quest items. H12 can be split or
   moved only at the Grand Tree in segment C or D (no helper reaches the hangar or the atoll), in
   rs/158's order: fewer sharks and doses, a two-way trade at C or D, a Grand Tree bank deposit. The
   gold bar is not made yet (cairn_h20 mines and smelts it); the wool and monkey bones come from
