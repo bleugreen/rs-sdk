@@ -609,17 +609,32 @@ interface Trial {
 }
 
 async function phaseReact(s: Session) {
-    await waitTicks(s, 5);
-    const start = s.ticks.at(-1)!;
-    const home: [number, number] = [start.x, start.z];
+    let home: [number, number] | null = null;
     const steps: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
     let stepIdx = 0;
     const trials: Trial[] = [];
-    const http = warmHttpSampler([`https://${HOST}/cairn-latency-probe-404`, `https://${HOST}:7443/cairn-latency-probe-404`]);
+    let http: ReturnType<typeof warmHttpSampler> | null = null;
+    // The gateway on :7443 is the demo's; a lab engine has none.
+    const warmUrls = SECURED ? [`${ORIGIN}/cairn-latency-probe-404`, `https://${HOST}:7443/cairn-latency-probe-404`] : [`${ORIGIN}/cairn-latency-probe-404`];
+    await inPhase('react', () => reactSnapshot(s, home, trials, http?.samples ?? []), async () => {
+        try {
+            await waitTicks(s, 5);
+            const start = s.ticks.at(-1)!;
+            const at: [number, number] = (home = [start.x, start.z]);
+            http = warmHttpSampler(warmUrls);
+            for (const delay of DELAYS) {
+                await s.guard(reactGroup(delay, at));
+                checkpoint();
+            }
+            await http.stop();
+        } finally {
+            void http?.stop();
+        }
+    });
 
-    for (const delay of DELAYS) {
+    function reactGroup(delay: number, home: [number, number]) {
         let done = 0;
-        await new Promise<void>(resolve => {
+        return new Promise<void>(resolve => {
             let pending: { label: number; from: string; arrival: number; decoded: number; sent: number } | null = null;
             let cooldown = 2;
             const l = (t: Tick) => {
@@ -646,10 +661,10 @@ async function phaseReact(s: Session) {
                 const p = { label: t.label, from: pos, arrival: t.arrival, decoded: t.decoded, sent: 0 };
                 pending = p;
                 const send = () => {
-                    const r = s.client.walkTo(tx, tz, false);
-                    s.client.flush();
+                    let moved = true;
+                    if (!s.trySend(() => (moved = s.client.walkTo(tx, tz, false).moved))) return; // lost: s.guard ends the group
                     p.sent = now();
-                    if (!r.moved) stepIdx++;
+                    if (!moved) stepIdx++;
                 };
                 if (delay > 0) setTimeout(send, Math.max(0, t.arrival + delay - now()));
                 else send();
@@ -657,10 +672,12 @@ async function phaseReact(s: Session) {
             s.onTick(l);
         });
     }
-    await http.stop();
+}
 
+/** The react phase's report section and summary from the trials gathered so far. */
+function reactSnapshot(s: Session, home: [number, number] | null, trials: Trial[], warmSamples: { url: string; t0: number; t1: number }[]): string[] {
     // Per trial: the landed tick, and the tick-to-tick arrival intervals around the trigger, so a
-    // slow trial can be tied to an overrun (interval well over 300 ms) or a short idle gap.
+    // slow trial can be tied to an overrun (interval well over a tick) or a short idle gap.
     const arrivalOf = new Map(s.ticks.map(t => [t.label, t.arrival]));
     const gap = (a: number, b: number) => (arrivalOf.has(a) && arrivalOf.has(b) ? Math.round((arrivalOf.get(b)! - arrivalOf.get(a)!) * 10) / 10 : null);
     for (const t of trials as (Trial & Record<string, unknown>)[]) {
@@ -671,24 +688,28 @@ async function phaseReact(s: Session) {
     }
 
     // Place each warm request against the tick frames: phase = time since the last frame arrival.
-    const warm = http.samples.map(h => {
+    const warm = warmSamples.map(h => {
         const i = frameBefore(s.frames, h.t0);
         return { gateway: h.url.includes(':7443'), ttfbMs: h.t1 - h.t0, phaseMs: i >= 0 ? h.t0 - s.frames[i]!.t : null, t0: h.t0 };
     });
     report.react = { home, trials, warm, frames: frameStats(s.frames), ticks: s.ticks.map(t => [t.label, Math.round(t.arrival * 10) / 10, Math.round(t.decoded * 10) / 10]) };
-    summary.push(`react: login ${s.loginMs.toFixed(0)} ms, ${s.frames.length} messages, msgs/tick ${fmtQ(report.react.frames.messagesPerBurst)}, tick interval ${fmtQ(report.react.frames.intervals)}`);
+    const lines = [`react: login ${s.loginMs.toFixed(0)} ms, ${s.frames.length} messages, msgs/tick ${fmtQ(report.react.frames.messagesPerBurst)}, tick interval ${fmtQ(report.react.frames.intervals)}`];
+    lines.push(...tickNote(report.react.frames.intervals));
     for (const delay of DELAYS) {
         const ts = trials.filter(t => t.delay === delay);
-        summary.push(`react delay +${delay} ms: ticks ${JSON.stringify(hist(ts.map(t => t.ticks)))}  reactMs ${fmtQ(quantiles(ts.map(t => t.reactMs)))}`);
+        if (ts.length) lines.push(`react delay +${delay} ms: ticks ${JSON.stringify(hist(ts.map(t => t.ticks)))}  reactMs ${fmtQ(quantiles(ts.map(t => t.reactMs)))}`);
     }
+    const missing = DELAYS.filter(d => !trials.some(t => t.delay === d));
+    if (missing.length) lines.push(`react: no trials at +${missing.join(', +')} ms`);
     for (const gw of [false, true]) {
         const ws = warm.filter(w => w.gateway === gw);
-        summary.push(`warm GET ${gw ? 'gateway:7443' : 'engine:443 '} ttfb ${fmtQ(quantiles(ws.map(w => w.ttfbMs)))}`);
-        // ttfb by phase bucket (50 ms buckets since last frame arrival)
+        lines.push(`warm GET ${gw ? 'gateway:7443' : 'engine:443 '} ttfb ${fmtQ(quantiles(ws.map(w => w.ttfbMs)))}`);
+        // ttfb by phase bucket (50 ms buckets since last frame arrival, up to two ticks)
         const buckets: Record<string, number[]> = {};
-        for (const w of ws) if (w.phaseMs !== null && w.phaseMs < 600) (buckets[String(Math.floor(w.phaseMs / 50) * 50)] ??= []).push(w.ttfbMs);
-        summary.push('  by phase since frame: ' + Object.entries(buckets).sort((a, b) => Number(a[0]) - Number(b[0])).map(([k, v]) => `${k}:${quantiles(v)!.p50}(${v.length})`).join(' '));
+        for (const w of ws) if (w.phaseMs !== null && w.phaseMs < 2 * TICK_MS) (buckets[String(Math.floor(w.phaseMs / 50) * 50)] ??= []).push(w.ttfbMs);
+        lines.push('  by phase since frame: ' + Object.entries(buckets).sort((a, b) => Number(a[0]) - Number(b[0])).map(([k, v]) => `${k}:${quantiles(v)!.p50}(${v.length})`).join(' '));
     }
+    return lines;
 }
 
 // ------------------------------------------------------------------ burst and blind
