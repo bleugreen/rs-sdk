@@ -332,8 +332,11 @@ async function stream(argv: string[], map: (line: string) => string | null, opts
     const pump = async (s: ReadableStream<Uint8Array>) => {
         const dec = new TextDecoder();
         let buf = '';
-        for await (const chunk of s) {
-            buf += dec.decode(chunk, { stream: true });
+        const reader = s.getReader();
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += dec.decode(value, { stream: true });
             let i: number;
             while ((i = buf.indexOf('\n')) >= 0) {
                 const out = map(buf.slice(0, i));
