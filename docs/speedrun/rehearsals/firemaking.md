@@ -144,6 +144,19 @@ fm-01-15 12 / 2 / 4; fm-15-30 32 / 4 / 4; fm-30-45 28 / 7 / 0; fm-45-60 52 / 13 
 fm-75-99 428 / 107 / 0. Every band from 30 runs at exactly 4 ticks a log, as in the lab, at about
 1,700 players and with 20-odd strangers standing on the row.
 
+**The push on the eastward row costs nothing.** After each light, firemaking.rs2's `push_player`
+teleports the player one tile west if it can (then east, south, north). The `fire` loc has
+`blockwalk=no` (cooking_sources.loc), so a lit fire doesn't stop it. On the westward rows (z=3219)
+the push lands on the next log. On the eastward row (z=3218, 26 of the lap's 51 tiles) it lands on
+the previous tile's fire, and the player walks 2 tiles east to the next log: the visible
+back-and-forth in the recording. The cadence is the script's roll clock (`%action_delay =
+map_clock + 4` per roll), not movement. The next light is sent on the success message and lands
+R+2, and 2 tiles at run take 1 tick inside that wait. Measured on the demo: 78 eastward logs and 78
+westward logs, **both at exactly 4.000 ticks per clean log**, and both lap turns at 4 ticks. So a
+west-only route can't gain, and its empty runs back east would only add ticks. The only effect is
+slack: an eastward light spends 1 of the 3 ticks it may lose before it slips (R+4). It never slipped
+here, at 0.37 s ticks and about 1,700 players (m, r; rs/269).
+
 **Incidents (none on the clock).**
 - The first dropper launch failed: the bbs deploy folder had no `server/webclient/node_modules`,
   so each lite client exited in 20 ms on `Cannot find package 'fflate'`. Nobody logged in. Fixed by
