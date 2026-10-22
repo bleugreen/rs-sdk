@@ -450,15 +450,42 @@ failures the step is **~674 on the row and ~719 by trades** (i: 4 x (157 +
 giver request, then a held light that rolled once and stopped (25 ticks
 under the old 16-tick backstop).
 
-**Demo acceptance: not run.** Two things stand in the way:
+**Free slots.** `preconditions` refuses the trade supply when 28 less the
+non-log items held is below a refill (`capacity`, default `S03_REFILL` = 20),
+as `N other items (...): need M free slots`; the row picks nothing up and
+needs no slot.
 
-- Entry 16's pass line (4 ticks on at least 18 of 19 gaps, 20 normal logs) is
-  out of reach for a fresh lighter: from level 1 the rolls fail often until
-  level 43, so 15 of 19 gaps are 4 ticks on average, and 18 or more come up
-  about 1 time in 20 (`rollChance` with the 25x xp rate). A line the module
-  controls is "every gap is 4 ticks per roll, no slip, and nothing lost to
-  anyone's pickup".
-- H6 (`fm-row.ts`) always drops S03's route (2 normal logs, then oak, willow,
-  maple, ...). A throwaway dropper can only chop normal logs, so the 20-log
-  normal row needs a log-list option on the role (rs/187), or a dropper in
-  the acceptance script.
+**Browser client, 3 + 3 runs** (`firemaking-accept.ts --client=browser
+--arrive=walk --to=30`): SCORED in a headless Chrome tab through the run's
+page path (`proxy.ts` in front of the lab world, token login over CDP), walking
+from the Lumbridge spawn to the row so its region loads on arrival. Row: the
+first light attempt 7, 6 and 7 ticks after the step started 10 tiles out; 6
+logs each, no refusal, no slip. Trade: the first trade request after arrival
+took 4 ticks on the giver's side (the refill 9, 8 and 8 with the account's
+click), then the held lights; no resend, no slip. All six pass. A page bundle
+(`server/webclient/out/bot`) older than the client changes fails every
+browser run with "no in-game state": rebuild it first (`bun run build`).
+
+**Demo acceptance (entry 16), passed on the demo server.** Judged by entry
+16's line: every gap equals 4 ticks per roll on that log (the trace shows one
+start of the roll animation per failed roll and none for the roll that
+lights, calibrated on 451 chained lab gaps), with no walk, dropped click or
+helper wait, and no log lost to anyone's pickup. Two throwaways under the
+run-machine launcher (`standalone.ts`, a loopback gateway on bbs), driven by
+`speedrun/lab/firemaking-demo.ts`:
+
+- Staging: `cairn_f02` (fresh) chops its own 20 normal logs by Lumbridge
+  castle (`speedrun/helpers/fm-demo.ts`, mode `stage`), then is logged out.
+- The row: `cairn_f02` drops them with H6 (`fm-row.ts`, its `logs` option
+  `[{obj:'logs', n:20}]`, restock `held`, start `sighted`) on the first 20
+  tiles of rs/228's Lumbridge row; `cairn_f01` (fresh) runs the S03 step
+  (`fm-demo.ts`, mode `light`). `fm-demo.ts` is a demo lighter role, a test
+  double for the scored side, not a run helper.
+
+2026-10-22, from bbs: **20 of 20 lit; all 19 gaps equal 4 x rolls** (12, 8, 8,
+4, 4, 12, 4, 8, 4, 12, then nine 4s; 9 failed rolls, no tick unseen); no
+slip, resend, refusal or skip; the dropper dropped 20, 20 lit, 0 lost, 0
+early; both accounts logged out cleanly in both phases. The old line's raw
+count: 13 of 19 gaps at 4 ticks (18 of 19 comes up about 1 time in 20 for a
+fresh lighter, from the rolls alone). The local dry run of the same flow:
+20 of 20, every gap 4 x rolls, 17 of 19 at 4.
