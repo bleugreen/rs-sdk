@@ -94,7 +94,9 @@ speedrun/
   a ticking wait, however slow the ticks; a wait fails as `idle` only when no
   new tick arrives for `IDLE_TICKS` (20) ticks of wall time, scaled by
   `tickMs()` (`SPEEDRUN_TICK_MS`, else `NODE_TICKRATE`, else 300).
-  `converse` takes the same two limits from the same `tickClock`.
+  `onStates` (feed every state to a step until it returns), `converse` and
+  the helpers' own state listeners take the same two limits from the same
+  `tickClock`; none has a total wall-clock budget.
 - Tick logs go to `speedrun/runs/<runId>.jsonl`, or to `$SPEEDRUN_LOG`.
 
 ## Measurements: provenance
