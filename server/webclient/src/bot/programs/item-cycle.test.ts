@@ -1070,19 +1070,20 @@ describe('item-cycle stack mode (arrows)', () => {
  * call without it) must send exactly what the program sent before `fill` existed. Each golden is the
  * whole stream of one run to its end: every packet of every tick, every field in order, as the
  * pre-fill program (main 23f93a66) sent it in this world. Omitting `fill` and passing `fill: false`
- * must both reproduce it.
+ * must both reproduce it. To regenerate, swap that program's item-cycle.ts in and print `runShape`.
  */
 describe('the default send stream: fill off leaves every other call shape unchanged', () => {
     const stream = (w: World): string[] => {
         const by = new Map<number, string[]>();
         for (const { tick, action } of w.h.sent) {
-            const { type, ...rest } = action as unknown as Record<string, unknown>;
-            const one = [type, ...Object.entries(rest).map(([k, v]) => `${k}=${JSON.stringify(v)}`)].join(' ');
+            // reason is the runtime's stamp (`program item-cycle`) on every action, not the program's
+            const { type, reason: _, ...rest } = action as unknown as Record<string, unknown>;
+            const one = `${type}(${Object.entries(rest).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(',')})`;
             by.set(tick, [...(by.get(tick) ?? []), one]);
         }
         const st = w.h.status;
-        const end = st.phase === 'fault' ? st.fault : st.phase === 'done' ? (st.result as ItemCycleResult).ended : 'still running';
-        return [...[...by].map(([t, sends]) => `T${t} ${sends.join(' | ')}`), `end ${st.phase}: ${end}`];
+        const end = st.phase === 'fault' ? st.fault : st.phase === 'done' ? `${(st.result as ItemCycleResult).ended}, ${(st.result as ItemCycleResult).actions} actions` : 'still running';
+        return [...[...by].map(([t, sends]) => `T${t} ${sends.join(' ')}`), `end ${st.phase}: ${end}`];
     };
 
     const gems = (id: number, n: number): Obj[] => Array.from({ length: n }, () => ({ id, count: 1 }));
@@ -1095,6 +1096,16 @@ describe('the default send stream: fill off leaves every other call shape unchan
         'herblore pair': {
             world: extra => new World({ mode: 'pair', recipes: [attack, superAttack], xp: LEVEL_XP[45]! - 2 * 625 + 1, bank: [{ id: GUAM_UNF, count: 14 }, { id: IRIT_UNF, count: 28 }, { id: EYE, count: 50 }], params: extra }),
             ticks: 60
+        },
+        // herblore.ts off the stand tile: every booth click routed (two events), a 5-tick cycle
+        'herblore pair routed': {
+            world: extra => new World({ mode: 'pair', recipes: [attack], xp: LEVEL_XP[90]! + 1, inventory: inv14(GUAM_UNF, EYE), bank: [{ id: GUAM_UNF, count: 30 }, { id: EYE, count: 30 }], stand: false, params: { maxActions: 30, ...extra } }),
+            ticks: 40
+        },
+        // tool on gems: a held load, then the booth cycle, some cuts smashing into crushed gemstone
+        'crafting gems held smash': {
+            world: extra => new World({ mode: 'tool', recipes: [opal], xp: LEVEL_XP[10]!, inventory: [{ id: CHISEL, count: 1 }, ...gems(UNCUT_OPAL, 10)], bank: [{ id: UNCUT_OPAL, count: 27 }], smash: n => n % 7 === 3, params: { untilLevel: undefined, maxActions: 37, held: true, ...extra } }),
+            ticks: 40
         },
         // crafting.ts: tool, booth, maxActions + untilXp, stow
         'crafting tool stow': {
