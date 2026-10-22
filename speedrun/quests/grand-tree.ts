@@ -538,7 +538,7 @@ export async function killDemon(sdk: Sdk, opts: Options, reopened: boolean): Pro
         fights.push(await fight(sdk, npc, { ...base, spell: SPELLS.fire_blast.component, done: out('fire_blast') }));
     }
     const last = fights[fights.length - 1]!;
-    await setPrayer(sdk, 'protect_from_melee', false);
+    await pray(sdk, 'protect_from_melee', false);
     const report: DemonReport = { spell: first, fallback, ...sumFights(fights), casts: runes0 - castRunes(sdk.getState()!), end: last.end, staffWorn: worn(sdk, ITEM.staffOfFire) !== null, reopened };
     if (last.end !== 'killed') throw new Error(`the demon fight ended '${last.end}' (${JSON.stringify(report)})`);
     return report;
