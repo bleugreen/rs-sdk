@@ -36,21 +36,23 @@ import { receiveFrom, type WantSpec } from '../lib/trade';
 import { currentTick, waitTicks, waitUntil, type Pred } from '../lib/wait';
 import { chebyshev, configId, findLoc, findNpc, invCount, invItem, messagesSince, opIndex, pos, skillLevel, worn, type LocQuery, type Tile } from '../lib/world';
 import type { Step, StepContext } from '../runner/step';
-import type { QuestOptions } from './segments';
+import { DEFAULT_DIALOGUE, talkShape, type QuestOptions } from './segments';
 
 export const quest = 'grandtree' as const;
 export const stepId = 'S11b';
 
 export interface Options extends QuestOptions {
-    // dialogue: default 'fixed' here. No conversation carries a converse `shape` yet, so 'burst'
-    // answers page by page exactly as 'fixed' does.
+    // dialogue: default DEFAULT_DIALOGUE (burst). Each conversation carries its shape from
+    // grand_tree.md's "Dialogue runs"; a burst that does not land falls back by itself.
     // kitFrom: the H8 giver at the Grand Tree door. Absent, or the kit already held, means check only.
+    /** Observation only: called with each conversation's result (the lab prints its shape match). */
+    onTalk?: (who: string, r: ConverseResult) => void;
     /** Default 'fire_bolt'. */
     demonSpell?: 'fire_bolt' | 'fire_blast';
 }
 
-export function resolveOptions(o: Options = {}): Required<Omit<Options, 'kitFrom'>> & Pick<Options, 'kitFrom'> {
-    return { dialogue: o.dialogue ?? 'fixed', demonSpell: o.demonSpell ?? 'fire_bolt', ...(o.kitFrom ? { kitFrom: o.kitFrom } : {}) };
+export function resolveOptions(o: Options = {}): Required<Omit<Options, 'kitFrom' | 'onTalk'>> & Pick<Options, 'kitFrom' | 'onTalk'> {
+    return { dialogue: o.dialogue ?? DEFAULT_DIALOGUE, demonSpell: o.demonSpell ?? 'fire_bolt', ...(o.kitFrom ? { kitFrom: o.kitFrom } : {}), ...(o.onTalk ? { onTalk: o.onTalk } : {}) };
 }
 
 // ------------------------------------------------------------------ data
@@ -311,13 +313,15 @@ async function loc(sdk: Sdk, what: string, at: { x: number; z: number }, op: Reg
 }
 
 /** A loc op that opens a conversation (a spirit tree, a gate's password, a search with an objbox), finished on `done`. */
-async function locTalk(sdk: Sdk, what: string, q: LocQuery, op: RegExp, choices: OptionPattern[], done: Pred, opts: ActOptions & { idle?: number } = {}): Promise<void> {
+async function locTalk(sdk: Sdk, what: string, q: LocQuery, op: RegExp, choices: OptionPattern[], done: Pred, opts: ActOptions & { idle?: number; shape?: string; quest?: Options } = {}): Promise<void> {
     const l = await findLoc(sdk, { ...q, op });
     if (!l) throw new Error(`${what}: no loc ${JSON.stringify({ ...q, op: String(op) })} near ${JSON.stringify(pos(sdk))}`);
     const r = await actConverse(sdk, () => sdk.sendInteractLoc(l.x, l.z, l.id, opIndex(l, op)!), choices, {
         done, idle: opts.idle ?? 2, maxTicks: opts.maxTicks ?? 200, closeModals: true, unmatched: 'stop',
         ...(opts.resendEvery !== undefined ? { resendEvery: opts.resendEvery } : {}),
+        ...(opts.shape ? talkShape(resolveOptions(opts.quest), opts.shape) : {}),
     });
+    if (r.dialogue) opts.quest?.onTalk?.(what, r.dialogue);
     if (!r.ok) throw new Error(`${what}: ${r.reason}`);
 }
 
@@ -327,6 +331,8 @@ interface TalkOpts {
     /** Otherwise (or as well) the conversation ends once this holds with the dialogue closed. */
     until?: Pred;
     choices?: OptionPattern[];
+    /** The conversation's shape, grand_tree.md "Dialogue runs" (CONVENTIONS.md notation). */
+    shape?: string;
 }
 
 /**
@@ -342,7 +348,11 @@ async function talk(sdk: Sdk, opts: Options, npc: RegExp, t: TalkOpts): Promise<
     });
     try {
         const until: Pred = s => (!t.expect || !fixed || seen) && (!t.until || t.until(s));
-        const r = await talkTo(sdk, npc, t.choices ?? [], { idle: 2, maxTicks: 600, unmatched: 'stop', closeModals: true, findTicks: 15, until });
+        const r = await talkTo(sdk, npc, t.choices ?? [], {
+            idle: 2, maxTicks: 600, unmatched: 'stop', closeModals: true, findTicks: 15, until,
+            ...(t.shape ? talkShape(resolveOptions(opts), t.shape) : {}),
+        });
+        opts.onTalk?.(npc.source, r);
         if (!r.opened) throw new Error(`${npc.source}: no conversation opened after ${r.clicks} clicks`);
         if (!r.ok) {
             const p = pos(sdk);
@@ -487,10 +497,11 @@ async function villageToStronghold(sdk: Sdk): Promise<void> {
 }
 
 /** Open the trapdoor with Protect from Melee on, and answer Glough's scene until the demon is in sight. */
-async function trapdoorScene(sdk: Sdk): Promise<number> {
+async function trapdoorScene(sdk: Sdk, opts: Options): Promise<number> {
     const prayerTicks = await pray(sdk, 'protect_from_melee', true);
     await loc(sdk, 'trapdoor', TILES.trapdoor, /^open$/i, underground, { maxTicks: 20 });
-    await converse(sdk, [], { idle: 2, openTicks: 20, maxTicks: 80, until: demonInSight, closeModals: true, unmatched: 'stop' });
+    const scene = await converse(sdk, [], { idle: 2, openTicks: 20, maxTicks: 80, until: demonInSight, closeModals: true, unmatched: 'stop', ...talkShape(resolveOptions(opts), 'state, 4c') });
+    opts.onTalk?.('trapdoor scene', scene);
     if (!demonInSight(sdk.getState()!)) throw new Error('no black demon in sight after the trapdoor scene');
     return prayerTicks;
 }
