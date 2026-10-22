@@ -33,13 +33,13 @@
 
 import type { BotWorldState, PrayerName, QuestJournalState } from '../../sdk/types';
 import { actConverse, dropItems, opLoc, talkTo, wield, type ActSdk } from '../lib/act';
-import { COMBAT_SPELLS, fight, prayerActive, setPrayer, type CombatSdk, type FightOptions, type FightResult } from '../lib/combat';
+import { COMBAT_SPELLS, combatSpellUse, fight, prayerActive, setPrayer, type CombatSdk, type FightOptions, type FightResult } from '../lib/combat';
 import { converse, levelUpInterrupt, type ConverseResult, type ConverseSdk } from '../lib/converse';
 import { pageText, type OptionPattern } from '../lib/dialogue';
 import type { ItemPattern } from '../lib/items';
 import { journalProbeName, questStatus, requireQuestStage, type QuestView, type StageName } from '../lib/quests';
 import { logNote } from '../lib/ticks';
-import { FOOD, inArea, missingRunes, runTo, SPELLS as TELEPORTS, type Area, type TravelSdk } from '../lib/travel';
+import { FOOD, inArea, missingRunes, runTo, spellUse, SPELLS as TELEPORTS, sumUse, type Area, type RuneUseTable, type TravelSdk } from '../lib/travel';
 import { currentTick, waitUntil, type Pred, type StateSource } from '../lib/wait';
 import { configId, findLoc, findNpc, invCount, opIndex, pos, worn, type NamePattern } from '../lib/world';
 import type { Check, Observed, StepContext } from '../runner/step';
@@ -64,6 +64,21 @@ export const MIN_FOOD = 3;
 /** Fire Blasts the fights may take: SUPPLIES.md's T/5 upper bound for the chain, ~56. */
 export const MIN_CASTS = 56;
 const FIRE_BLAST = COMBAT_SPELLS.fire_blast;
+/** The fights' Fire Blasts at their measured maximum: rs/379's chains took 28-35 over G-I (m, lab, fedora, 6 of 6). */
+export const MAX_CASTS = 35;
+
+/** The worn staff whose element RUNE_USE leaves out (castRunes counts its fire). */
+export const RUNE_STAFF = 'staff of fire';
+
+/**
+ * The step's runes on the route (lib/travel.ts RuneUseTable): Fire Blasts at their measured maximum.
+ * They were measured as the chain's total over the ogre (G), the scorpion (H) and Bouncer (I), so
+ * the whole is declared on G.
+ */
+export const RUNE_USE: RuneUseTable = { G: combatSpellUse('fire_blast', MAX_CASTS, RUNE_STAFF) };
+
+/** What entryCheck wants held at A: MIN_CASTS Fire Blasts' runes, and T12-13's Ardougne teleport (nextLegRunes). */
+export const RUNE_NEED: RuneUseTable = { A: sumUse(combatSpellUse('fire_blast', MIN_CASTS, RUNE_STAFF), spellUse('ardougne', 1, RUNE_STAFF)) };
 
 // ------------------------------------------------------------------ places and things
 

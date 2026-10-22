@@ -52,7 +52,7 @@ import type { ItemPattern } from '../lib/items';
 
 import { journalProbeName, questPoints, questStatus, requireQuestStage, type QuestView } from '../lib/quests';
 import { receiveFrom, type WantSpec } from '../lib/trade';
-import { runTo, teleport, type Area, type TravelResult } from '../lib/travel';
+import { runTo, spellUse, sumUse, teleport, type Area, type RuneUseTable, type TravelResult } from '../lib/travel';
 import { waitTicks, waitUntil, type Pred } from '../lib/wait';
 import { chebyshev, configId, findLoc, invCount, invItem, opIndex, pos, waitForNpc, worn, type LocQuery } from '../lib/world';
 import type { Step, StepContext } from '../runner/step';
@@ -163,6 +163,15 @@ export function kitItems(opts: Options = {}): KitItem[] {
         { item: ITEM.law, n: 2 }, { item: ITEM.air, n: 6 }, { item: ITEM.earth, n: 1 }, { item: ITEM.water, n: 1 },
     ];
 }
+
+/**
+ * The step's runes on the route (lib/travel.ts RuneUseTable): Lumbridge at F (to the Duke), Falador at
+ * G (to the maze). No staff is worn: H22 takes the staff of fire back.
+ */
+export const RUNE_USE: RuneUseTable = { F: spellUse('lumbridge'), G: spellUse('falador') };
+
+/** What A's kit (kitItems) wants held: both casts' runes. */
+export const RUNE_NEED: RuneUseTable = { A: sumUse(RUNE_USE.F!, RUNE_USE.G!) };
 
 export const KIT_WORN: ReadonlyArray<[string, RegExp]> = [['a rune (or mithril) scimitar', ITEM.scimitar], ['adamant full helm', ITEM.helm], ['amulet of strength', ITEM.amulet]];
 

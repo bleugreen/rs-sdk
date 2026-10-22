@@ -40,7 +40,7 @@ import { fight, prayerActive, prayerDoses, setPrayer } from '../lib/combat';
 import { converse, levelUpInterrupt } from '../lib/converse';
 import { pageText } from '../lib/dialogue';
 import type { ItemPattern } from '../lib/items';
-import { runTo } from '../lib/travel';
+import { runTo, sumUse, type RuneName, type RuneUse, type RuneUseTable } from '../lib/travel';
 import { currentTick, waitTicks, waitUntil } from '../lib/wait';
 import { findLoc, findNpc, invCount, invItem, messagesSince, npcByIndex, opIndex, pos, skillLevel, skillXp, worn } from '../lib/world';
 import type { Check, Observed } from '../runner/step';
@@ -271,6 +271,37 @@ export interface Options extends QuestOptions {
 
 export const DEFAULT_SPELL: KolodionSpell = 'fire_wave';
 export const DEFAULT_GOD: God = 'saradomin';
+
+/**
+ * Fire Wave's measured maximum from the route's arrival: 42-59 casts over rs/371's 25 counted fights
+ * (m, lab, 300 ms). One more fight outlasted 70 casts uncounted; SPELL_RUNES' 90 and the fallback
+ * are sized for it (RUNE_USE_FALLBACK).
+ */
+export const FIRE_WAVE_MAX_CASTS = 59;
+
+/** The rune each spell uses up, by debug name (SPELLS' `rune`). */
+const SPELL_RUNE: Readonly<Record<KolodionSpell, RuneName>> = { fire_wave: 'bloodrune', fire_blast: 'deathrune' };
+/** `casts` casts of `spell`, its fire the staff's. */
+const castUse = (spell: KolodionSpell, casts: number): RuneUse => ({ [SPELL_RUNE[spell]]: casts, airrune: SPELLS[spell].air * casts });
+
+/** The worn staff whose element RUNE_USE leaves out (fightReady wants it worn). */
+export const RUNE_STAFF = 'staff of fire';
+
+/** The step's runes on the route (lib/travel.ts RuneUseTable): the fight (C) at Fire Wave's measured maximum. */
+export const RUNE_USE: RuneUseTable = { C: castUse(DEFAULT_SPELL, FIRE_WAVE_MAX_CASTS) };
+
+/** What fightReady wants held from B on (A receives it): the default spell's kit, its fallback's included. */
+export const RUNE_NEED: RuneUseTable = {
+    B: sumUse(
+        { [SPELL_RUNE[DEFAULT_SPELL]]: SPELL_RUNES[DEFAULT_SPELL], airrune: AIR_RUNES },
+        FALLBACK[DEFAULT_SPELL] ? { [SPELL_RUNE[FALLBACK[DEFAULT_SPELL]!]]: FALLBACK_RUNES } : {},
+    ),
+};
+
+/** The fallback path: the spell's runes all spent, then the fallback's. */
+export const RUNE_USE_FALLBACK: RuneUseTable = {
+    C: sumUse(castUse(DEFAULT_SPELL, SPELL_RUNES[DEFAULT_SPELL]), FALLBACK[DEFAULT_SPELL] ? castUse(FALLBACK[DEFAULT_SPELL]!, FALLBACK_RUNES) : {}),
+};
 
 /** What one fight did, for the lab and the run's record. */
 export interface FightTally {
