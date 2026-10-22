@@ -800,3 +800,73 @@ comes to +83 normalised, against +118 for cairnsp335c and +166 for cairnsp335d. 
 difference is knight wander, which section 14 already identified as the row's main source of
 noise. Nothing in the reader fix can move it, because the program's inputs did not change. The
 row S18 uses stays as section 14 left it.
+
+## 18. The opt-in request re-send, `requestResend` (rs/290, rs/352)
+
+**What it does.** The pickpocket program's `requestResend: n` (off by default; thieving.ts
+`topUp.resend: true` in idle mode passes n = 3) sends a `player` request once more, n ticks after
+it and inside REQUEST_HOLD, when the engine has answered it with neither an open trade nor
+'Sending trade offer...'. The engine prints that line in the same `[opplayer4]` script that shows
+the partner 'wishes to trade' (trade.rs2), so without it the partner never saw the request. The
+line reaches the pack through the program's own `FreshMessages`, which on the browser carries it as
+the third message of its publication, behind two 'You're stunned!' lines (rs/356's fix, section
+17). The pack stamps every request as a status mark under the action's name and every re-send as
+`<name>:resend`, so the lab places both on the account's clock. With the option off, every
+packet of the nine golden scenarios is unchanged, including `topupIdleDropped`, whose engine
+loses every other request.
+
+**The trace (measure-thieving.ts `topup` and `pack`, `--resend=1`).** Per due stun, on the
+account's observed tick: the program's request and re-send (its marks), the account's 'Sending
+trade offer...', the giver's 'wishes to trade' (seen on the giver's tick and moved onto the
+account's by the sampled clock offset, which held at one value and its neighbours in every run,
+with no event unmapped), and the trade. `doubleRequests` counts stuns in which the partner saw two
+requests or the engine answered two, `resendAfterAnswer` counts re-sends that followed an answer,
+and `unansweredFirst` counts requests the engine never answered, by the giver's tile on +2.
+
+**Runs (measured).** bgsrv-mac, browser client, 300 ms, Thieving 57 to 99, fresh accounts, the
+helper stand-in on a side tile. Each arm ran from its own scratch copy at f599a357 or 882a2e2c
+(the same program). Round 1 ran two labs at once (load about 1). Round 2 ran three (load 6.4).
+The `topup` arms use `--below=20`, which makes every stun with fewer than 20 sharks due, to get
+more than 20 top-ups. The `pack` arms use S18's defaults (below 2, bones below 3).
+
+| Arm | Re-send | Band ticks | S / F | Success gap | Fail to next | Normalised | Due / requested / completed | Unanswered requests | Re-sends (landed) | Double requests | Closed trades |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| topup, round 1 (i352xa1) | off | 1,895 | 449 / 77 | 2.145 | 12.05 | 1,978 | 29 / 28 / 28 | 0 | 0 | 0 | 0 |
+| topup, round 1 (r352xa1) | on | 2,052 | 449 / 87 | 2.205 | 12.17 | 2,015 | 31 / 29 / 29 | 0 | 0 | 0 | 0 |
+| pack, round 1 (p352xa1) | off | 2,287 | 449 / 100 | 2.228 | 12.83 | 2,081 | 23 / 23 / 22 | 1 (side) | 0 | 0 of 14 checked* | 0 |
+| pack, round 1 (q352xa1) | on | 2,071 | 449 / 86 | 2.252 | 12.31 | 2,048 | 20 / 19 / 19 | 0 | 0 | 0 of 11 checked* | 0 |
+| pack, round 2 (p352ya1) | off | 1,938 | 449 / 88 | 2.058 | 11.50 | 1,892 | 23 / 23 / 21 | 2 (side) | 0 | 0 | 0 |
+| pack, round 2 (q352ya1) | on | 2,070 | 449 / 91 | 2.134 | 12.19 | 1,984 | 22 / 22 / 21 | 1 (side) | 1 (0) | 0 | 0 |
+| pack, round 2 (s352ya1) | on | 2,028 | 449 / 88 | 2.179 | 11.91 | 1,981 | 23 / 22 / 22 | 0 | 0 | 0 | 0 |
+
+\* Round 1's per-stun checks covered only the food-due stuns. f599a357 extends them to every
+due stun, the bones-due ones included, and round 2 ran on it. The due stuns not requested had the
+giver two tiles away on +2, so the program correctly sent nothing.
+
+**Results (measured).**
+
+- **The 'answered' check works on the browser.** The program's reader surfaced 'Sending trade
+  offer...' on all 162 answered requests, every one of them behind other lines of its publication.
+  No re-send ever followed an answer (`resendAfterAnswer` 0).
+- **No trade closed and no request went twice.** 0 closed trades in 7 arms. 0 double requests, and
+  in round 2 no 'wishes to trade' fell outside a due stun's window.
+- **The re-send recovered nothing.** 4 of 166 requests (2.4%) went unanswered, all with the giver
+  on a side tile (1, 0) on +2. The one re-send (q352ya1, failure at 270: request +2, re-send +5)
+  drew no answer either, and its stun took 16 ticks, against 12, 12 and 15 for the three
+  unanswered stuns with the option off. rs/290's two re-sends at +5 also never landed: 0 of 3.
+- **Pace and top-ups.** Neither moved in a way the re-send explains. It fired once in four arms, so
+  the arms with it on sent the same packets as the arms with it off on every other stun. The
+  normalised spread between paired arms (-33 to +92) is the success gap, which is knight wander
+  and machine load (section 17). Completed top-ups per request: 71 of 74 off, 91 of 92 on.
+
+**What an unanswered request looks like (measured, then inferred).** In the three such stuns with
+the option off, the account's knight clicks after the hold were rejected by the server (op
+rejections at +7 and +8, which no answered stun shows), and the giver saw nothing at all. The
+engine refused the account's ops for several ticks after the request. A second request inside the
+same stun lands in that window too. So this is not a lost packet that a second packet repairs, and
+the re-send is the wrong remedy for it. Why the engine refuses the ops is open. The lab logs keep
+no per-packet record, so it needs an engine-side probe of `OpPlayerHandler` for the account.
+
+**For S18.** Leave `topUp.resend` off. It is safe (no double request, no closed trade), but it has
+recovered 0 of 3 dropped requests and costs about 4 ticks in the stun where it fires. The default
+packet stream is unchanged, so the option costs nothing while off.
