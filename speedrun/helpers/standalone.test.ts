@@ -111,10 +111,10 @@ describe('launcher config', () => {
     });
 
     test("cueDir: per account, and the same directory as the role's options.cueDir", () => {
-        const root = '/checkout';
+        const root = resolve(import.meta.dir, '..', '..');
         const own = parseLaunchConfig({ accounts: [{ account: 'cairn_h45', role: 'idle', cueDir: 'run-machine/h12o-cue' }] }, root).accounts[0]!;
-        expect(own.cueDir).toBe('/checkout/run-machine/h12o-cue');
-        expect(accountCueDir(own, '/tmp/run', { RC_CUE_DIR: '/tmp/cues' })).toBe('/checkout/run-machine/h12o-cue');
+        expect(own.cueDir).toBe(join(root, 'run-machine', 'h12o-cue'));
+        expect(accountCueDir(own, '/tmp/run', { RC_CUE_DIR: '/tmp/cues' })).toBe(join(root, 'run-machine', 'h12o-cue'));
         const fromOptions = parseLaunchConfig({ accounts: [{ account: 'cairn_h45', role: 'idle', options: { cueDir: '/var/cue' } }] }, root).accounts[0]!;
         expect(fromOptions.cueDir).toBe('/var/cue');
         expect(() => parseLaunchConfig({ accounts: [{ account: 'cairn_h45', role: 'idle', cueDir: '/a', options: { cueDir: '/b' } }] }, root)).toThrow(/differ/);
