@@ -14,6 +14,7 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { BOARD_PAGE_SIZE, CATEGORY_NAMES, OVERALL, parseBoard, QUEST_POINTS, SKILLS, withServerRate, type BoardRow } from '../../speedrun/tools/hiscore-scrape.ts';
 import { readBank, readOutfit, readRunite, type ValueRow } from '../lib/boards.ts';
+import { writerExclusion } from '../lib/accounts.ts';
 import { Gentle } from '../lib/demo.ts';
 import { census, familyOf, type FamilyCensus } from '../lib/families.ts';
 import { readPositions, zoneOf } from '../lib/positions.ts';
@@ -35,14 +36,15 @@ export function renderCensus(c: FamilyCensus[]): string {
 }
 
 async function main(): Promise<void> {
-    const { values } = parseArgs({ args: Bun.argv.slice(2), options: { out: { type: 'string' }, 'overall-pages': { type: 'string' } } });
+    const { values } = parseArgs({ args: Bun.argv.slice(2), options: { out: { type: 'string' }, 'overall-pages': { type: 'string' }, 'placeholder-data': { type: 'boolean' } } });
+    const ex = writerExclusion();
     const out = values.out ? resolve(values.out) : resolve(import.meta.dir, '../../docs/markets/data');
     const pages = Number(values['overall-pages'] ?? 10);
     const g = new Gentle();
     const takenAt = new Date();
     const board = async (category: number, rank?: number): Promise<BoardRow[]> => {
         const html = await g.text(boardPath(category, rank));
-        return withServerRate(g.origin, tickMs => parseBoard(html, tickMs));
+        return ex.keep(await withServerRate(g.origin, tickMs => parseBoard(html, tickMs)));
     };
 
     const boards: Record<string, BoardRow[]> = {};
@@ -50,12 +52,14 @@ async function main(): Promise<void> {
     for (const cat of [...Object.keys(SKILLS).map(Number), QUEST_POINTS]) {
         boards[CATEGORY_NAMES[cat]!] = [...(await board(cat)), ...(await board(cat, 1 + BOARD_PAGE_SIZE))];
     }
-    const bank = await readBank(g);
+    const bank = ex.keep(await readBank(g));
     const searches: Record<string, ValueRow[]> = {};
-    for (const q of CENSUS_SEARCHES) searches[q] = await readBank(g, q);
-    const outfit = await readOutfit(g);
-    const runite = await readRunite(g);
-    const positions = await readPositions(g);
+    for (const q of CENSUS_SEARCHES) searches[q] = ex.keep(await readBank(g, q));
+    const outfit = ex.keep(await readOutfit(g));
+    const rawRunite = await readRunite(g);
+    const runite = { allTime: ex.keep(rawRunite.allTime), week: ex.keep(rawRunite.week), today: ex.keep(rawRunite.today) };
+    const rawPositions = await readPositions(g);
+    const positions = ex.keep(rawPositions);
 
     const sources: Record<string, { name: string }[]> = { ...boards, bank, outfit, ...Object.fromEntries(Object.entries(searches).map(([q, rows]) => [`bank:${q}`, rows])) };
     for (const [period, rows] of Object.entries(runite)) sources[`runite:${period}`] = rows;
@@ -74,7 +78,7 @@ async function main(): Promise<void> {
             outfit: family(outfit),
             runite,
             boards: Object.fromEntries(Object.entries(boards).map(([k, rows]) => [k, { rows: rows.length, family: family(rows) }])),
-            online: positions.length,
+            online: rawPositions.length,
             familyPositions: family(positions).map(p => ({ ...p, zone: zoneOf(p) })),
             census: result
         })
