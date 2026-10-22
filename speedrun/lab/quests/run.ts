@@ -13,7 +13,9 @@
 // --trace=N prints the player every N ticks and on every hp, dialogue or chat
 // change; --launch makes this script launch (and own) the bot's client, which
 // a fixture's relog needs: run lab.sh with LAB_RUNNERS=0 then. Lab only: staff
-// commands.
+// commands. Under the table the report lists each run's `note` rows (what a
+// segment recorded about itself: casts, refusals, free slots), and a quest's
+// `check` can fail a run whose segments passed (a reward's xp).
 //
 // ::setvar changes a quest's varp but not the quest tab's colours, which are
 // what the bot publishes as `quests` (lib/quests.ts): the content recolours
