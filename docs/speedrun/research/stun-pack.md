@@ -535,8 +535,8 @@ has room, RUN-ORDER's today's-stock row puts 978 bones there). Each such stun is
 standalone Superheat row (S18e)** at the market with the courier swapping 20 ore for 20 bars a load:
 3.00 a cast m plus 6 a swap i, 3.3 ticks a cast. It must come before S25a, because Superheat also pays
 Smithing (6.2 base on bronze, 12.5 on iron, r), and S25a's slowest band is its first: 1-48 cost 128
-ticks for 1,131 base (smithing.md section 2, m), so the credit runs ~1.4 S25a ticks a cast at first
-and ~0.35 later (i, the bands scaled to S25a's 1,065).
+ticks for 1,131 base (smithing.md section 2, m), so the credit runs ~1.3 S25a ticks an iron cast up
+to Smithing 48 and ~0.3-0.45 after (i, the bands scaled to S25a's 1,065).
 
 ### The table
 
@@ -591,8 +591,8 @@ stun), which the Smithing credit outweighs.
   bow lifts it to ~20.1 (RG, m), so a tick of Fire Blast in place of the bow costs only 0.35 S27
   ticks and pays ~8 Magic (34.5 a cast over the 5-tick delay plus damage; 7-9.8 is the honest range,
   Kolodion's Fire Wave measured 8.8). That is ~23 base a tick against Superheat's 16-19, about 200
-  ticks better at N = 100, but it needs a cast phase in `combatFinish`, ~490 more cannonballs than
-  the ~306 spare at N = 100, and one death rune a cast (~500). It is a lever to measure if N = 100
+  ticks better at N = 100, but it needs a cast phase in `combatFinish`, ~490 more cannonballs
+  against ~306 spare at N = 100, and one death rune a cast (~500). It is a lever to measure if N = 100
   holds at staging, not the column.
 - **Blood-side levers** (i): each blood rune moved into Charge is worth ~3.7 ticks below N = 436.
   Kolodion's fight is about 50-58 Fire Waves (magic.md section 1, inferred), so the 70 reserve
