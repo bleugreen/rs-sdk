@@ -1118,8 +1118,15 @@ in `docs/speedrun/scripts/host-gate/`, and the read itself is `docs/speedrun/scr
 - **Where the history lives.** Each firing writes one file, `~/gate-history/<UTC timestamp>.json`.
   A read's file starts with `utc` and `endUtc`, `commit`, `status` (`ok`, `not-probed`, `timeout`
   or `error`), `on`, `onTime`, `catchUpsPerMinute`, `tickP90Ms`, `players` and `edge`, then
-  `preLogin` (players, `flyMachine`, `flyWorker` from step 4), with the gate's own JSON under
-  `gate`. A change of `flyMachine` between files marks a redeploy or machine swap. A skip writes `status: skip` and its reason in `note`. A broken read (`error`, `timeout`,
+  `preLogin` (players, `flyMachine`, `flyWorker`, `serverStartUtc`, `serverStartToken` and
+  `serverUptimeMin` from step 4), with the gate's own JSON under
+  `gate`. A change of `flyMachine` between files marks a redeploy or machine swap. The three
+  `server*` fields come from the token in the public page's `client.js?v=<token>` import, which
+  the engine sets once at process start to `Date.now().toString(36)` (so base 36 decodes to the
+  start in epoch ms), and they're null when the page or token can't be read. The uptime is
+  measured to the read's `utc`. A change of `serverStartToken` marks a restart, which the player
+  count alone can miss: on 22 October the world restarted at 19:24:45Z and had 740 online
+  1.6 minutes later, well over the 300 floor. A skip writes `status: skip` and its reason in `note`. A broken read (`error`, `timeout`,
   `not-probed`) puts its first error line in `note` and the last 40 lines of the probe's output in
   `outputTail`, with the account name and password redacted. The journal keeps one line per
   firing: `journalctl --user -t rs-gate-read`. Use `-t`, not `-u`: `-u` can miss the summary line,
