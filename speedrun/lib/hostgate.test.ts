@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import type { BotWorldState, PlayerState } from '../../sdk/types';
 import { baseState, FakeSdk, flush } from './fake-sdk';
 import { type DirectClient, directProbeSdk } from './direct';
-import { directDecision, gateDecision, HostGate, latencyHistogram, probeOnTime, type ProbeState, summarizeProbe, steadinessHistogram, tickSteadiness, ticksPerDrop, vantageDecision, verdictText } from './hostgate';
+import { catchUpText, directDecision, feedTickMs, gateDecision, HostGate, latencyHistogram, probeOnTime, type ProbeState, resolveTickLength, summarizeProbe, steadinessHistogram, tickLimits, tickSteadiness, ticksPerDrop, vantageDecision, verdictText } from './hostgate';
 
 const HOME: [number, number] = [3200, 3200];
 const player = (x: number, z: number) => ({ name: 'probe', worldX: x, worldZ: z }) as PlayerState;
@@ -248,6 +248,58 @@ describe('tickSteadiness', () => {
     test('fewer than two arrivals is all zeros', () => {
         expect(tickSteadiness([5])).toMatchObject({ n: 0, spanMs: 0, p90: 0, catchUps: 0, catchUpsPerMinute: 0, histogram: {}, T: null, TSource: null });
     });
+    test('the limits are fractions of T: exactly 150, 350 and 400 ms at T = 300', () => {
+        expect(tickLimits(300)).toEqual({ T: 300, catchUpUnderMs: 150, catchUpAfterOverMs: 350, tickP90Ms: 400 });
+        expect(tickLimits(400)).toMatchObject({ catchUpUnderMs: 200 });
+        expect(tickLimits(400).catchUpAfterOverMs).toBeCloseTo(466.67, 2);
+        expect(tickLimits(400).tickP90Ms).toBeCloseTo(533.33, 2);
+        expect(catchUpText(400)).toBe('< 200 after > 467 ms');
+    });
+    test('at T = 400: 180 after 480 is a catch-up, 180 after 440 is not, nor is 140 after 420 (which is at T = 300)', () => {
+        const at400 = { T: 400, source: 'feed' } as const;
+        expect(tickSteadiness(grid([400, 480, 180, 400]), at400)).toMatchObject({ catchUps: 1, overSevenSixthsT: 1, underHalfT: 1, T: 400, TSource: 'feed' });
+        expect(tickSteadiness(grid([400, 440, 180, 400]), at400).catchUps).toBe(0);
+        expect(tickSteadiness(grid([400, 420, 140, 400]), at400).catchUps).toBe(0);
+        expect(tickSteadiness(grid([300, 420, 140, 300]), { T: 300, source: 'flag' }).catchUps).toBe(1);
+    });
+    test('at T = 400 an ordinary tick before a short frame is no catch-up (it was at a fixed 350)', () => {
+        // one frame glued to its predecessor, then a long one: 1 catch-up by the old fixed 150/350
+        expect(tickSteadiness(grid([400, 400, 120, 680, 400]), { T: 400, source: 'feed' }).catchUps).toBe(0);
+        expect(tickSteadiness(grid([400, 400, 120, 680, 400]), { T: 300, source: 'flag' }).catchUps).toBe(1);
+        // a steady 400 ms stream with +-30 ms jitter, judged at its own median
+        const jitter = Array.from({ length: 200 }, (_, i) => 400 + [-30, 30, -15, 15, 0][i % 5]!);
+        expect(tickSteadiness(grid(jitter))).toMatchObject({ T: 400, TSource: 'median', catchUps: 0, overSevenSixthsT: 0 });
+    });
+    test('without T the median interval rounded to 50 ms stands for it', () => {
+        expect(tickSteadiness(grid([...Array(20).fill(396), 480, 180]))).toMatchObject({ T: 400, TSource: 'median', catchUps: 1 });
+        expect(tickSteadiness(grid(Array(20).fill(340)))).toMatchObject({ T: 350, TSource: 'median' });
+    });
+});
+
+describe('resolveTickLength', () => {
+    test('an explicit --tick-ms wins, and the feed is not read', async () => {
+        let read = 0;
+        const feed = async () => (read++, 600);
+        expect(await resolveTickLength({ explicitMs: 400, host: 'demo.example', feed })).toEqual({ T: 400, source: 'flag' });
+        expect(read).toBe(0);
+        await expect(resolveTickLength({ explicitMs: 0 })).rejects.toThrow(/--tick-ms/);
+    });
+    test("else the feed hello's tickMs; else null, which leaves T to the probe's median", async () => {
+        expect(await resolveTickLength({ host: 'demo.example', feed: async () => 400 })).toEqual({ T: 400, source: 'feed' });
+        expect(await resolveTickLength({ host: 'demo.example', feed: async () => null })).toBeNull();
+        expect(await resolveTickLength({ host: 'demo.example', feed: async () => { throw new Error('refused'); } })).toBeNull();
+        expect(await resolveTickLength({})).toBeNull();
+    });
+    test("feedTickMs takes the hello's tickMs and closes; no hello is null", async () => {
+        const fake = (frames: string[]) => (url: string) => {
+            const ws = { url, closed: false, onmessage: null as ((e: { data: string }) => void) | null, onerror: null, onclose: null, close() { this.closed = true; } };
+            setTimeout(() => frames.forEach(data => ws.onmessage?.({ data })), 0);
+            return ws as unknown as WebSocket;
+        };
+        expect(await feedTickMs('demo.example', { socket: fake(['{"t":"hello","v":1,"tick":9,"tickMs":400,"players":2}']) })).toBe(400);
+        expect(await feedTickMs('demo.example', { socket: fake(['{"t":"hello","tickMs":0}']) })).toBeNull();
+        expect(await feedTickMs('demo.example', { timeoutMs: 20, socket: fake([]) })).toBeNull();
+    });
 });
 
 describe('directDecision', () => {
@@ -302,6 +354,19 @@ describe('directDecision', () => {
         expect(slow.failures).toEqual(['tab throttled: loop rate p10 4/s under 50 (check the run-machine setup)']);
         expect(directDecision({ ...probe(60), loopRateP10: 45 }, { minLoopRateP10: 40 }).status).toBe('pass');
         expect(directDecision(probe(60)).checks.map(c => [c.id, c.ok])).toEqual([['a', true], ['b', true], ['c', true], ['d', null]]);
+    });
+    test('(b) at T = 400: p90 447 ms is within the 533 ms report line, and the text says so', () => {
+        const v = directDecision({ onTime: 60, trials: 60, steadiness: { p90: 447, catchUpsPerMinute: 0, T: 400, TSource: 'feed' } });
+        expect(v).toMatchObject({ status: 'pass', T: 400, TSource: 'feed' });
+        expect(v.checks[1]).toMatchObject({ id: 'b', role: 'report', ok: true, value: 447, limit: 533.3 });
+        expect(verdictText(v)).toBe('(a) on time 60/60, pass 60, floor 58 pass; (b) tick p90 447 ms (T 400, report <= 533) within; (c) catch-ups 0/min <= 2 (< 200 after > 467 ms) pass; (d) loop p10 >= 50 not measured: pass');
+        expect(directDecision({ onTime: 60, trials: 60, steadiness: { p90: 540, catchUpsPerMinute: 0, T: 400 } }).checks[1]!.ok).toBe(false);
+    });
+    test('(b) without T has no line and is not measured, unless the rule fixes one; (c) still reads', () => {
+        const v = directDecision({ onTime: 60, trials: 60, steadiness: { p90: 447, catchUpsPerMinute: 3 } });
+        expect(v.checks.map(c => [c.id, c.ok])).toEqual([['a', true], ['b', null], ['c', false], ['d', null]]);
+        expect(v).toMatchObject({ status: 're-measure', T: null });
+        expect(directDecision({ onTime: 60, trials: 60, steadiness: { p90: 447, catchUpsPerMinute: 0 } }, { maxTickP90Ms: 400 }).checks[1]).toMatchObject({ ok: false, limit: 400 });
     });
     test('without steadiness, (b) and (c) are not measured and (a) decides', () => {
         expect(directDecision({ onTime: 60, trials: 60 })).toMatchObject({ status: 'pass' });

@@ -45,6 +45,17 @@ describe('FrameStats', () => {
         expect(fed([300, 420, 140], 300).summary().catchUps).toBe(1);
     });
 
+    test('at T = 400 an ordinary tick before a short frame is no catch-up, so the pause rule is not tripped', () => {
+        // a frame glued to its predecessor after an ordinary tick: a catch-up at a fixed 350
+        expect(fed([400, 400, 120, 680, 400], 400).summary().catchUps).toBe(0);
+        expect(fed([400, 400, 120, 680, 400], 300).summary().catchUps).toBe(1);
+        // a minute of steady 400 ms ticks with +-30 ms jitter and a glued frame every 10 s
+        const gaps = Array.from({ length: 150 }, (_, i) => (i % 25 === 24 ? 120 : 400 + [-30, 30, -15, 15, 0][i % 5]!));
+        expect(fed(gaps, 400).summary()).toMatchObject({ catchUps: 0, catchUpsLastMinute: 0 });
+        expect(fed(gaps).summary()).toMatchObject({ T: 400, catchUps: 0, catchUpsLastMinute: 0 });
+        expect(fed(gaps, 300).summary().catchUpsLastMinute).toBe(6);
+    });
+
     test("without the driver's T, the run's median interval rounded to 50 ms stands for it", () => {
         const f = fed([...Array(20).fill(396), 480, 180]);
         expect(f.summary()).toMatchObject({ T: 400, TSource: 'median', catchUps: 1 });
